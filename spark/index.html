@@ -637,7 +637,7 @@ const TYPES = {
   ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
     smoke: 1.6, fog: [0.86, 0.03, 230], flame: 0, ramp: [[0.97, 0.02, 230], [0.8, 0.08, 225], [0.5, 0.1, 250]], lift: -3.2, warm: false,
     glow: [[0.3, 0.12, 260], [0.6, 0.12, 225], [0.9, 0.06, 225]], light: [0.86, 0.07, 230], flare: 'frost', flareN: 180 },
-  confetti: { n: 1.6, life: [0.5, 0.8], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 2.0, speed: 0.9, spark: 'hue',
+  confetti: { n: 1.6, life: [0.2, 0.4], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, loft: 3, size: 2.0, speed: 0.9, spark: 'hue',
     flutter: { life: [1.2, 2.2], k: [7, 10], drift: 0.8 }, bits: 6,
     smoke: 0, fog: [0.6, 0, 0], flame: 0, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: false,
     glow: 'cycle', light: 'cycle', flare: 'cannon', flareN: 320 },
@@ -655,7 +655,8 @@ function tintOf(m) {
 const span = ([a, b]) => a + (b - a) * rnd();
 const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
 // The most fork children one frame may write; the spark ring holds 8000.
-const FORK_CAP = 600;
+// A flare may write this many more.
+const FORK_CAP = 600, FLARE_FORKS = 1800;
 let forks = 0;
 // Popcorn kernels that wait on the floor: where, and when each pops.
 const corn = [];
@@ -771,6 +772,17 @@ function setYaw(yaw) {
 setYaw(0.8);
 const CONE = Math.tan(12 * Math.PI / 180);
 let toothAcc = 0, rate = 0;
+// A strike owes one spark, so a sparse type never gives a dead click.
+let owed = false;
+// Sparks for one tooth. A hot wheel throws more.
+// A type with under one spark a tooth throws one now and then.
+function toothCount(m, lite) {
+  const more = m.n * lite * (1 + 0.8 * hot);
+  return m.n < 1 ? (rnd() < more ? 1 : 0) : Math.floor(more * 2 * rnd() + 0.5 * rnd());
+}
+// How hard the sparks drive the light, the smoke and the flame, 0 to 1.
+// A sparse type goes by the wheel's speed; its spark rate says too little.
+const drive = () => (TYPES[pick].n < 1 ? clamp(wheel.omega / GRIND) : clamp(rate / 250));
 // Each passing tooth scrapes 0 to 3 particles off the flint.
 function emit(dt) {
   forks = 0;
@@ -789,10 +801,9 @@ function emit(dt) {
     const t0 = time - dt * (toothAcc / Math.max(1, teethRate * dt));
     // Single ticks while the teeth are slow; the rasp takes over above 25 a second.
     if (teethRate < 26) cue(t0, 'tick', P.set(0, -R, 0), 1 - clamp((teethRate - 14) / 12));
-    // A type with under one spark a tooth throws one now and then.
-    // A hot wheel throws more sparks, and bigger ones.
-    const more = m.n * lite * (1 + 0.8 * hot);
-    const count = more < 1 ? (rnd() < more ? 1 : 0) : Math.floor(more * 2 * rnd() + 0.5 * rnd());
+    let count = toothCount(m, lite);
+    if (owed && count === 0) count = 1;
+    if (count) owed = false;
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
       V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
@@ -831,11 +842,15 @@ function blast(o) {
 function flare() {
   const m = TYPES[pick], n = Math.round(m.flareN * (reduced() ? 0.5 : 1));
   const UP = THREE.Object3D.DEFAULT_UP;
+  // The flare forks on its own budget, so every spark of it can be a star.
+  forks = FORK_CAP - FLARE_FORKS;
   const from = () => new THREE.Vector3(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
   // A direction round the jet: a turn inside the fan, then some lift.
   const aim = (fan, lift) => new THREE.Vector3().copy(TANGENT).applyAxisAngle(UP, (rnd() - 0.5) * fan * Math.PI / 180).setY(lift).normalize();
-  const shoot = (v, o = {}, lifeK = 1) => launch(from(), v, time, span(m.life) * lifeK, m.heat[0], m.heat[1], span(m.k),
-    m.size * (0.8 + 0.6 * rnd()) * (m.flareSize ?? 1), { tint: tintOf(m), trail: m.trail, ...o });
+  // Reduced motion: shorter lives, and no forks for a type that forks once.
+  const still = reduced();
+  const shoot = (v, o = {}, lifeK = 1) => launch(from(), v, time, span(m.life) * lifeK * (still ? 0.6 : 1), m.heat[0], m.heat[1], span(m.k),
+    m.size * (0.8 + 0.6 * rnd()) * (m.flareSize ?? 1), { fd: still && (o.depth ?? m.depth) < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail, ...o });
   if (m.flare === 'fan') {
     // A wide fan of the type's own sparks.
     for (let i = 0; i < n; i++) shoot(aim(70, 0.05 + 0.5 * rnd()).multiplyScalar(6 + 12 * rnd()), m.flareFork ? { fork: m.flareFork } : {}, 1.2);
@@ -870,9 +885,12 @@ function flare() {
     }
   }
   // A burning type sends up a fireball.
-  if (m.warm) blast({ pos: [0.25, -R + 0.1, 0], radius: 0.55, vel: [0, 2.5, 0], grip: 0.6, smoke: 1.2 * m.smoke, heat: 1.5 });
+  // Heat draws only where smoke is, so the fireball carries some.
+  if (m.warm) blast({ pos: [0.25, -R + 0.1, 0], radius: 0.55, vel: [0, 2.5, 0], grip: 0.6, smoke: 1.2 * Math.max(m.smoke, 0.25), heat: 1.5 });
   flash = reduced() ? 0 : 1;
-  cue(time, 'thump', P.set(0, -R, 0), 1);
+  // The thump plays at once; the cue queue may be full of the flare's pops.
+  const ac = kit.live();
+  if (ac && kit.noise) play(ac, ac.currentTime + 0.02, { kind: 'thump', x: 0, y: -R, z: 0, level: 1 });
   hot = HEAT.after;
 }
 
@@ -1348,7 +1366,7 @@ function smokeStep(dt) {
     if (!smokeLive) return;
     smokeUntil = Math.min(smokeUntil, time + FADE_FOR);
   }
-  const m = TYPES[pick], j = allowed ? clamp(rate / 250) : 0;
+  const m = TYPES[pick], j = allowed ? drive() : 0;
   // A short kick after a reset stands one thin wisp over the flint.
   const kicking = kick > 0;
   const feed = Math.max(j, kicking ? 0.55 : 0);
@@ -1368,7 +1386,7 @@ function smokeStep(dt) {
       // Cold fog leaves downward.
       puff({ pos: [0.12, -R + 0.02, 0], radius: 0.2, vel: [0.6 * j, m.lift < 0 ? -0.4 : 0.9, 0], grip: 0.3 * feed, smoke: FEED.smoke * feed * m.smoke * (1 + 1.5 * hot) });
       // The flame lick: heat a little down the jet, where it clears the rim.
-      if (j > 0.02 && m.warm) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * m.smoke, heat: FEED.heat * j * m.flame * (1 + 2 * hot) });
+      if (j > 0.02 && m.warm) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * Math.max(m.smoke, 0.25), heat: FEED.heat * j * m.flame * (1 + 2 * hot) });
       // The jet drags the air along its first stretch.
       if (j > 0.02) {
         const speed = 2 + Math.min(16, wheel.omega * R * 0.675);
@@ -1492,11 +1510,11 @@ function draw() {
   contact.color.lerp(tone.light === 'cycle' ? glowTo : tone.light, 0.12);
   uContactCol.value.copy(contact.color);
   uJetCol.value.copy(contact.color);
-  uJet.value = clamp(rate / 250);
+  uJet.value = drive();
   sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
   // The contact light follows the spark rate, so the knurl flashes warm.
-  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : (6 + 3 * hot) * clamp(rate / 250) + 12 * flash;
+  contact.intensity = reduced() ? 1.5 * drive() : (6 + 3 * hot) * drive() + 12 * flash;
   uContactI.value = contact.intensity;
   pipeline.render();
 }
@@ -1748,6 +1766,7 @@ function strike() {
   if (wheel.omega < 3) scrape();
   wheel.omega = Math.max(wheel.omega, (Math.PI / 2) / FRICTION);
   hot = clamp(hot + HEAT.strike);
+  owed = true;
   live();
 }
 act.reset = () => {
@@ -1762,6 +1781,7 @@ act.reset = () => {
   seedEmbers(time);
   hot = 0;
   flash = 0;
+  owed = false;
   corn.length = 0;
   clearSmoke();
   kick = KICK;

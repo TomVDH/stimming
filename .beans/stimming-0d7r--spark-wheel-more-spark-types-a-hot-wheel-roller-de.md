@@ -33,3 +33,13 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
   - tests/bar-v2.html: 105 of 108. The three failures (narrow moves, narrow slider, values survive) are the same three as before this work; they are in the shell.
   - Not checkable in the pane: frame rate on a visible screen, sound by ear (the new thump), drag by hand, a phone, reduced motion (code review only).
   - Changes from the plan's start values are in the plan run's rulings: Comet arcs (loft) and throws about seven a second; Ice lift -3.2; comet trails are a faint haze; heat follows wheel speed; glow 2.2 at full heat with a knurl glow map; each type has a spark light colour.
+
+- 2026-11-14, final review by a fresh reader: no Critical, six Important, four Minor. One fix pass, each fix with a test seen to fail first (set t8, nine checks); t1 to t6 and t8 all pass after it.
+  - The flare's thump played nothing; it now plays through the page's own `play()`.
+  - Sparkler's star stopped at the fork cap (610 children); a flare now has its own fork budget (1800).
+  - A flare under reduced motion was full size; it now has shorter sparks and no deep forks.
+  - Comet and Popcorn gave no spark on most clicks; a strike now owes one spark.
+  - Comet's light, flame and fireball were near zero, because they followed the spark rate; sparse types now follow the wheel speed, and a thin smoke type still feeds a flame.
+  - Confetti left the frame before it fluttered; shorter first flight, a loft of 3.
+  - The count rule for sparse types now reads the type's own `n`, so reduced motion and the ladder's last rung do not turn a metal into a now-and-then type.
+  - Left for later (minor): Confetti runs the smoke sim on nothing; a hard flick on Sparkler can overwrite live sparks; some code comments break the one-fact, twelve-word rule.
