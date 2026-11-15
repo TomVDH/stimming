@@ -559,6 +559,11 @@ const OUTU = {
   uHall: { value: 0 },
   // The near tunnel's two mouths, in world x.
   uTun: { value: new THREE.Vector2(-1e9, -1e9) },
+  // The two rail bridges nearest the eye, as world x from and to; and what each crosses.
+  uBr: { value: new THREE.Vector4(-1e9, -1e9, -1e9, -1e9) },
+  uBrK: { value: new THREE.Vector2() },
+  // The two road decks nearest the eye, over the line: centre x and half width, twice.
+  uOv: { value: new THREE.Vector4(-1e9, 0, -1e9, 0) },
   uPz: { value: 0 },
   // The station clock's hands, in radians: hours, minutes, seconds.
   uClock: { value: new THREE.Vector3() },
@@ -728,6 +733,14 @@ const terrain = (() => {
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   return g;
 })();
+// Rail bridges (tools/line.py): uBr holds the two spans nearest the eye in world x.
+const BRL = /* glsl */`
+uniform vec4 uBr;
+uniform vec2 uBrK;
+// Metres onto the nearest rail bridge; below zero off it.
+float brIn(float x) { return max(min(x - uBr.x, uBr.y - x), min(x - uBr.z, uBr.w - x)); }
+// Under a bridge the ground is dug out to a floor 6.5 m under the rails; it climbs back by 41 m out.
+float brFloor(float z) { return mix(-9.0, -1.0, smoothstep(26.0, 41.0, -z)); }`;
 const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   uniforms: OUTU,
   vertexShader: /* glsl */`
@@ -758,6 +771,7 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${LAND}
   ${HAZE}
   ${LANDTILE}
+  ${BRL}
   ${WATER}
   // The reflected ray climbs to the far slopes; a coarse march finds them.
   // Four halvings between the last miss and the hit place the shore.
@@ -780,6 +794,8 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     return sky;
   }
   void main() {
+    // Under a rail bridge a road, a river or a dip passes below: the ground there is dug out.
+    if (brIn(vP.x) > 0.0 && vP.z < -8.0 && vP.z > -42.0 && vP.y > brFloor(vP.z) - 0.05) discard;
     vec3 V = normalize(cameraPosition - vP);
     float dist = length(cameraPosition - vP);
     vec3 sg = seg(vP.x);
@@ -1186,6 +1202,7 @@ const PROPG = /* glsl */`
 uniform float uCamX;
 uniform vec2 uStn;
 ${ROAD}
+${BRL}
 // Wraps a patch x round the camera; y counts the wraps, so each pass differs.
 vec2 wrapP(float x, float P) { float wx = uCamX + mod(x - uCamX + P * 0.5, P) - P * 0.5; return vec2(wx, floor((wx - x) / P + 0.5)); }
 float slopeAt(vec2 xz, float e) { float h = land(xz); return 1.0 - normalize(vec3(h - land(xz + vec2(e, 0.0)), e, h - land(xz + vec2(0.0, e)))).y; }
@@ -1193,7 +1210,9 @@ bool atStation(vec2 xz, float m) { return uStn.y > 0.0 && abs(xz.x - uStn.x) < u
 // True within m metres of a mapped road's middle line.
 bool onRoad(vec2 xz, float m) { return roadD(xz) < m - 2.6; }
 // Zurich HB's track field, from 260 m behind the hall to the throat 2.1 km out.
+// Every prop also keeps off the ground dug out under a rail bridge.
 bool inYard(vec2 xz, float m) {
+  if (brIn(xz.x) > -3.0 && xz.y > -44.0) return true;
   float d = mod(xz.x + ${f8(TILE / 2)}, ${f8(TILE)}) - ${f8(TILE / 2)};
   return d > -280.0 - m && d < 2100.0 + m && xz.y > -76.0 + 66.0 * smoothstep(1400.0, 2050.0, d) - 9.0 - m;
 }
@@ -2749,7 +2768,8 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 // A lit solid: the fragment sets alb (and may add glow) from vP and N.
-const solid = body => new THREE.ShaderMaterial({
+// extra adds GLSL the body needs, such as the land heights.
+const solid = (body, extra = '') => new THREE.ShaderMaterial({
   uniforms: OUTU,
   vertexShader: worldVS,
   fragmentShader: /* glsl */`
@@ -2762,6 +2782,9 @@ const solid = body => new THREE.ShaderMaterial({
   ${HAZE}
   ${STNL}
   ${TUNL}
+  ${BRL}
+  ${extra}
+  uniform vec4 uOv;
   void main() {
     vec3 N = normalize(vN);
     vec3 V = normalize(vP - cameraPosition);
@@ -3204,6 +3227,10 @@ out.add(bed);
   const top = new THREE.PlaneGeometry(500, 9.5).rotateX(-Math.PI / 2).translate(0, -2.5, -5.25);
   const slope = new THREE.PlaneGeometry(500, 7.2).rotateX(-Math.PI / 2).rotateX(Math.atan2(-3.5, 6.2)).translate(0, -4.25, -13.1);
   const body = /* glsl */`
+  // On a bridge the bank gives way to the deck: nothing stands past its edge.
+  if (brIn(vP.x) > 0.0 && (N.y < 0.95 || vP.z < -8.3)) discard;
+  // A road deck overhead shades the bed by day.
+  shade *= 1.0 - 0.85 * max(step(abs(vP.x - uOv.x), uOv.y), step(abs(vP.x - uOv.z), uOv.w));
   // zc runs across the second track from its centre line, 5.6 m out.
   float zc = vP.z + 5.6;
   float s = uSmear;
@@ -3244,7 +3271,7 @@ out.add(bed);
     // A concrete cable trough runs along the bed between the tracks.
     alb = mix(alb, vec3(0.32, 0.31, 0.29), smoothstep(0.26, 0.2, abs(zc - 2.9)) * 0.8);
     // Weeds and grass take the far verge, so the bed melts into the slope.
-    float verge = smoothstep(-2.6, -4.0, zc + (vnoise(vec2(vP.x * 0.8, 1.0)) - 0.5) * 0.8);
+    float verge = smoothstep(-2.6, -4.0, zc + (vnoise(vec2(vP.x * 0.8, 1.0)) - 0.5) * 0.8) * step(brIn(vP.x), 0.0);
     alb = mix(alb, vec3(0.08, 0.15, 0.04) * (0.8 + 0.4 * mix(vnoise(vP.xz * 3.0), 0.5, smoothstep(0.3, 0.8, (fwidth(vP.x) + s) * 3.0))), verge);
   } else {
     // The slope is grass, with a little stone near its top.
@@ -3447,6 +3474,186 @@ function tunNear(x) {
 // How far the window is inside a tunnel: 0 outside, 1 past the first 20 m.
 let tunT = 0;
 
+/* Bridges (tools/line.py): where the line crosses a road, a river or a dip, and where a road crosses over it. */
+const LINE = ROUTE.line;
+// Each rail bridge as world x from and to, at its place nearest x, with its kind and its distance from x.
+const brSpans = x => LINE.rail.map(([a, b, k]) => { const x0 = x + ((((a - x + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2; return [x0, x0 + b - a, k, Math.max(x0 - x, x - x0 - (b - a), 0)]; }).sort((p, q) => p[3] - q[3]);
+// Each road over the line as world centre x and width along the line, nearest x first.
+const ovSpans = x => LINE.over.map(([c, w, sk, cl]) => { const xc = x + ((((c - x + TILE / 2) % TILE) + TILE) % TILE) - TILE / 2; return [xc, w, sk, cl, Math.max(Math.abs(xc - x) - w / 2, 0)]; }).sort((p, q) => p[4] - q[4]);
+// One bridge is drawn at each of the two nearest spans: a floor and two abutments below, the deck edge and a railing.
+// The floor and walls read the land, so they show only where the dig cuts below it.
+const bridges = [0, 1].map(() => {
+  const g = new THREE.Group();
+  // uSpan: the span's start x, its length, and what it crosses (0 road, 1 water, 2 dip).
+  const U = { ...OUTU, uSpan: { value: new THREE.Vector3(0, 1, 0) } };
+  const floorM = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: /* glsl */`
+    ${BRL}
+    varying vec3 vP;
+    void main() {
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      w.y = brFloor(w.z);
+      vP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    uniform float uSmear, uTime;
+    uniform vec3 uSpan;
+    ${NOISE}
+    ${LAND}
+    ${TRAIN}
+    ${HAZE}
+    void main() {
+      // Where the land lies lower than the dig, the land shows itself.
+      if (land(vP.xz) < vP.y - 0.05) discard;
+      float L = uSpan.y, k = uSpan.z, c = abs(vP.x - uSpan.x - L * 0.5), d = L * 0.5 - c;
+      vec3 V = normalize(vP - cameraPosition);
+      float keep = 1.0 - smoothstep(0.2, 0.8, (fwidth(vP.x) + uSmear) * 1.5);
+      // Grass with dark clumps on the banks and the climb out.
+      vec3 alb = mix(vec3(0.07, 0.12, 0.04), vec3(0.1, 0.14, 0.05), vnoise(vP.xz * 0.5) * keep + 0.5 * (1.0 - keep));
+      float wet = 0.0;
+      if (k < 0.5) {
+        // A road: asphalt as wide as the gap allows, a white edge line, a dashed middle.
+        float hw = min(3.5, L * 0.5 - 1.5);
+        float road = smoothstep(hw + 0.1, hw - 0.1, c);
+        vec3 asph = vec3(0.09, 0.09, 0.095) * (0.9 + 0.2 * vnoise(vP.xz * 3.0) * keep);
+        asph = mix(asph, vec3(0.7), smoothstep(0.12, 0.05, abs(c - hw + 0.3)) * keep);
+        asph = mix(asph, vec3(0.7), smoothstep(0.07, 0.03, c) * step(0.5, fract(vP.z / 6.0)) * keep);
+        alb = mix(alb, asph, road);
+      } else if (k < 1.5) {
+        // A river: it fills the gap but for a bank at each end.
+        wet = smoothstep(2.4, 3.2, d);
+      } else {
+        // A dip: rough grass and a gravel track down the middle.
+        alb = mix(alb, vec3(0.16, 0.15, 0.13), smoothstep(1.4, 1.0, c) * 0.8);
+      }
+      vec3 day = sunC() * clamp((uSun.y + 0.3) / 1.3, 0.0, 1.0) * 0.8 + skyA(1.0) * 1.1;
+      vec3 night = vec3(0.006, 0.007, 0.01) + vec3(1.0, 0.66, 0.36) * trainLight(vP) * 0.04;
+      // The deck shades the ground right under it.
+      vec3 col = alb * mix(night, day, uDay) * mix(1.0, 0.4, smoothstep(-13.0, -9.0, vP.z));
+      if (wet > 0.0) {
+        // The water runs out from under the bridge; ripples move with it and blur with the smear.
+        vec2 q = vec2(vP.x * 0.6, vP.z * 0.25 + uTime * 0.6);
+        vec3 Nw = normalize(vec3((vnoise(q * 3.0) - 0.5) * 0.12 * keep, 1.0, (vnoise(q * 3.0 + 7.0) - 0.5) * 0.12));
+        vec3 R = reflect(V, Nw);
+        float F = 0.03 + 0.97 * pow(1.0 - max(-V.y, 0.0), 5.0);
+        vec3 body = mix(vec3(0.0, 0.004, 0.006), vec3(0.02, 0.05, 0.045), uDay);
+        vec3 wc = (body * (1.0 - F) + skyCol(R) * F) * mix(1.0, 0.35, smoothstep(-13.0, -9.0, vP.z));
+        col = mix(col, wc, wet);
+      }
+      gl_FragColor = vec4(mix(col, hazeCol(V, vP), hazeAmt(vP)), 1.0);
+    }`,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 34, 1, 30).rotateX(-Math.PI / 2).translate(0.5, 0, -25.2), floorM);
+  // The abutments: concrete faces from the floor up to the land, one at each end, facing into the gap.
+  const wallM = solid(/* glsl */`
+    if (land(vP.xz) < vP.y - 0.05 || vP.y < brFloor(vP.z) - 0.1) discard;
+    // Board-marked concrete near the deck; further out the wing walls weather and moss over.
+    alb = vec3(0.3, 0.29, 0.27) * (0.85 + 0.2 * vnoise(vec2(vP.z * 0.3, vP.y * 2.0)));
+    alb *= 1.0 - 0.15 * step(0.85, fract(vP.y / 0.6));
+    alb = mix(alb, vec3(0.08, 0.11, 0.05), smoothstep(-16.0, -30.0, vP.z) * 0.6);
+    alb *= 1.0 - 0.2 * uRain;`, LAND);
+  wallM.side = THREE.DoubleSide;
+  const wall = x => new THREE.Mesh(new THREE.PlaneGeometry(34, 10.5).rotateY(Math.PI / 2).translate(x, -4.25, -25.2), wallM);
+  // The deck edge past the second track: its concrete face, then a low upstand.
+  const edge = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.55).translate(0.5, -2.9, -8.3), solid(/* glsl */`
+    alb = vec3(0.32, 0.31, 0.29) * (0.88 + 0.15 * vnoise(vec2(vP.x * 0.4, vP.y * 6.0)));
+    // A drip line under the deck edge.
+    alb *= 1.0 - 0.35 * smoothstep(-3.3, -3.6, vP.y);
+    alb *= 1.0 - 0.2 * uRain;`));
+  // The railing: posts every 2 m and two rails, drawn as one quad that the smear blurs.
+  const rail = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.2).translate(0.5, -1.55, -8.35), new THREE.ShaderMaterial({
+    uniforms: OUTU, transparent: true, depthWrite: false,
+    vertexShader: /* glsl */`varying vec3 vP; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vP = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vP;
+    uniform float uSmear, uCamX;
+    ${HAZE}
+    float boxc(float d, float hw, float b) { return clamp((hw - abs(d)) / max(b, 0.01) + 0.5, 0.0, 1.0); }
+    void main() {
+      float bl = uSmear + fwidth(vP.x);
+      // A post's cover falls as the smear spreads it.
+      float post = boxc(mod(vP.x, 2.0) - 1.0, 0.04, bl) * min(1.0, 0.08 / (0.08 + bl));
+      // A handrail on top and two lighter rails below; at 8 m a thinner one would vanish.
+      float rl = max(boxc(vP.y + 1.0, 0.06, 0.01), max(boxc(vP.y + 1.42, 0.035, 0.01), boxc(vP.y + 1.8, 0.035, 0.01)));
+      float a = max(post, rl);
+      if (a < 0.01) discard;
+      vec3 day = vec3(0.28, 0.29, 0.3) * (sunC() * max(uSun.y, 0.0) * 0.5 + skyA(0.5) * 1.2);
+      vec3 night = vec3(0.01) + vec3(1.0, 0.66, 0.36) * 0.006;
+      gl_FragColor = vec4(mix(night, day, uDay), a);
+    }`,
+  }));
+  rail.renderOrder = 3;
+  // The deck and its railing ride with the track; the floor and walls stand in the land.
+  const deck = new THREE.Group();
+  deck.add(edge, rail);
+  g.add(floor, wall(0), wall(1), deck);
+  g.traverse(m => { m.frustumCulled = false; });
+  g.visible = false;
+  out.add(g);
+  return { g, deck, U };
+});
+// Roads over the line: a deck across both tracks on a far abutment, with wing walls that fall to the ground.
+// Each deck is built for its width when it comes near.
+const ovMat = solid(/* glsl */`
+  // Board-marked concrete; the deck's underside sits in its own shade.
+  alb = vec3(0.3, 0.295, 0.28) * (0.88 + 0.18 * vnoise(vec2(vP.x * 0.3 + vP.z * 0.3, vP.y * 1.5)));
+  alb *= 1.0 - 0.12 * step(0.88, fract(vP.y / 0.7));
+  if (N.y < -0.5) { alb *= 0.55; shade = 0.0; }
+  // Rain streaks run down from the deck's lip.
+  alb *= 1.0 - 0.25 * smoothstep(0.55, 0.85, vnoise(vec2(vP.x * 1.5 + vP.z, 1.0))) * smoothstep(3.6, 1.0, vP.y) * step(0.5, abs(N.z));
+  alb *= 1.0 - 0.2 * uRain;`);
+ovMat.side = THREE.DoubleSide;
+const overs = [0, 1].map(() => {
+  const m = new THREE.Mesh(new THREE.BufferGeometry(), ovMat);
+  m.frustumCulled = false; m.visible = false; m.userData.w = -1;
+  out.add(m);
+  return m;
+});
+// The deck spans z = 7 to z = -12, 6 m over the rails; the far abutment's face stands at z = -10.
+function ovGeo(w) {
+  const parts = [];
+  const box = (x0, x1, y0, y1, z0, z1) => parts.push(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2).toNonIndexed());
+  const h = w / 2;
+  box(-h, h, 3.55, 4.65, -12, 7);
+  // The parapets along the road's two edges.
+  box(-h, -h + 0.35, 4.65, 5.7, -12, 7);
+  box(h - 0.35, h, 4.65, 5.7, -12, 7);
+  // The far abutment, and wing walls whose tops fall to the ground over 12 m.
+  box(-h, h, -3.2, 3.55, -16, -10);
+  const wing = new THREE.BufferGeometry(), P = [];
+  for (const sx of [-1, 1]) {
+    const a = sx * h, b = sx * (h + 12);
+    P.push(a, -3.2, -10, b, -3.2, -10, a, 4.65, -10, b, -3.2, -10, b, -2.6, -10, a, 4.65, -10);
+  }
+  wing.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  // Both wings face the train; winding alone would turn one of them away.
+  wing.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({ length: P.length / 3 }, () => [0, 0, 1]).flat(), 3));
+  let n = 0;
+  for (const g of parts) { g.computeVertexNormals(); n += g.attributes.position.count; }
+  parts.push(wing);
+  n += wing.attributes.position.count;
+  const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
+  let o = 0;
+  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nrm.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  return geo;
+}
+// The line's curvature at x, in 1 / m: positive turns toward the window.
+const curveAt = x => {
+  const K = LINE.curve.k, n = K.length;
+  if (!n) return 0;
+  const f = (((x % TILE) + TILE) % TILE) / LINE.curve.ds, i = Math.floor(f) % n;
+  return (K[i] + (K[(i + 1) % n] - K[i]) * (f - Math.floor(f))) * 1e-4;
+};
+// brK is 1 on a rail bridge and ovK 1 under a road deck; the sound and the cabin light read them.
+// cant is the carriage's roll on a curve; sway is the head's lean from the curve's pull.
+let brK = 0, ovK = 0, cant = 0, sway = 0;
+
 /* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
 // The windows look into a saloon: a ceiling light strip, seat backs and the far windows.
 // The glass mirrors the sky and catches the sun; the body curves, so its sheen changes with height.
@@ -3516,6 +3723,8 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
 }`;
 /* The oncoming train: now and then a two-unit train rushes past on the second track. */
 // One quad spans its whole side; the shader draws body, windows and doors, blurred by the relative speed.
+// oppMesh rolls with the track on curves.
+let oppMesh = null;
 {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 4.0).translate(0.5, -0.4, -4.95), new THREE.ShaderMaterial({
     uniforms: OUTU, transparent: true, depthWrite: true,
@@ -3554,6 +3763,7 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
   }));
   m.frustumCulled = false;
   m.renderOrder = 2;
+  oppMesh = m;
   out.add(m);
 }
 
@@ -4504,14 +4714,26 @@ function place() {
   const yaw = Math.atan2(eye.x, eye.z) * (0.55 + 0.35 * near);
   W.uYaw.value = yaw;
   // The cabin rides the same jolts and a slow sway, so the window bobs with the outside.
+  // On a curve the carriage rolls on the cant; the far land tilts in the window, the track does not.
+  // The roll is about the line, so for a camera looking out sideways it is a pitch.
+  const cv = curveAt(camX);
+  // Real cant tops out near 150 mm, some 0.1 rad; a little less reads better in a window.
+  cant = THREE.MathUtils.clamp(cv * 60, -0.06, 0.06);
+  // The view swings back on a curve toward the window side, forward on one away from it.
+  const swing = THREE.MathUtils.clamp(cv * 25, -0.06, 0.06);
+  // The pull the cant leaves over sways the head: off the glass toward the window side's curve, onto it on the other.
+  sway += (THREE.MathUtils.clamp((speed * speed * cv - 9.81 * cant) * 0.006, -0.03, 0.03) - sway) * 0.04;
+  bed.rotation.x = -cant;
+  if (oppMesh) oppMesh.rotation.x = -cant;
   W.uEye.value.copy(eye);
+  W.uEye.value.z += sway;
   W.uEye.value.y += j * 0.004 + Math.sin(time * 1.3) * 0.0012 * k;
   W.uEye.value.x += Math.sin(time * 0.71 + 1.0) * 0.0015 * k + nod;
   // The wall sits 1 m out; the jolt and the roll move only the world outside.
-  outCam.position.set(camX + eye.x + nod, eye.y + j * 0.006, eye.z - 1);
+  outCam.position.set(camX + eye.x + nod, eye.y + j * 0.006, eye.z - 1 + sway);
   // Under the Churfirsten the eye lifts to the summits.
   const sg = seg(camX);
-  outCam.rotation.set(pitch0 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016, yaw + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
+  outCam.rotation.set(pitch0 + 0.03 * sg.l + 0.12 * sg.w + j * 0.0016 - cant, yaw + swing + Math.sin(time * 0.31) * 0.002 * k, Math.sin(time * 0.9) * 0.0022 * k, 'YXZ');
   parapet.position.x = camX;
   bed.position.x = camX;
   // The nearest station within a kilometre gets the platform.
@@ -4590,6 +4812,39 @@ function place() {
     mounds.forEach((m, i) => { m.visible = !!t; if (t) { m.position.x = i ? t[1] : t[0]; m.scale.x = i ? 1 : -1; } });
     tunT = t ? THREE.MathUtils.smoothstep(Math.min(camX - t[0], t[1] - camX), 0, 20) : 0;
   }
+  // The two nearest rail bridges: their spans for the shaders, a dig, abutments, a deck edge and a railing.
+  {
+    const sp = brSpans(camX);
+    const [p = [-1e9, -1e9, 0, 1e9], q = [-1e9, -1e9, 0, 1e9]] = sp;
+    OUTU.uBr.value.set(p[0], p[1], q[0], q[1]);
+    OUTU.uBrK.value.set(p[2], q[2]);
+    [p, q].forEach((b, i) => {
+      const B = bridges[i];
+      B.g.visible = b[3] < 500;
+      if (!B.g.visible) return;
+      B.g.position.x = b[0];
+      B.g.scale.x = b[1] - b[0];
+      B.U.uSpan.value.set(b[0], b[1] - b[0], b[2]);
+      B.deck.rotation.x = -cant;
+    });
+    brK = THREE.MathUtils.smoothstep(Math.min(camX - p[0], p[1] - camX), -2, 2);
+  }
+  // The two nearest roads over the line: a deck built for each one's width.
+  {
+    const sp = ovSpans(camX);
+    sp.slice(0, 2).forEach((o, i) => {
+      const m = overs[i];
+      m.visible = !!o && o[4] < 600;
+      if (!m.visible) return;
+      if (m.userData.w !== o[1]) { m.geometry.dispose(); m.geometry = ovGeo(o[1]); m.userData.w = o[1]; }
+      m.position.x = o[0];
+      // A skew bridge turns about the line; past half a radian it would cross the window side on.
+      m.rotation.y = THREE.MathUtils.clamp(o[2], -0.5, 0.5);
+    });
+    const [a = [-1e9, 0], b = [-1e9, 0]] = sp;
+    OUTU.uOv.value.set(a[0], a[1] / 2, b[0], b[1] / 2);
+    ovK = a[0] > -1e8 ? THREE.MathUtils.smoothstep(a[1] / 2 + 1.5 - Math.abs(camX - a[0]), 0, 3) : 0;
+  }
   const night = 1 - dayV;
   for (let i = 0; i < NL; i++) OUTU.uLP.value[i].set(lampX[i + 1], 0.1, -2.7, Math.max(0, lampK[i + 1]) * night);
   // The sixteen nearest towns light the haze, the ground and the water.
@@ -4627,6 +4882,8 @@ function place() {
   if (platform.visible) { const dx = Math.abs(camX - platform.position.x); if (OUTU.uHall.value > 0.5 && dx < 200) sunK = 0; }
   // A tunnel takes the sun away.
   sunK *= 1 - tunT;
+  // A road deck overhead takes the sun away for a moment.
+  sunK *= 1 - ovK;
   for (let i = 0; i < 3; i++) W.uPost.value[i].set(posts[i] ?? 9, 0, sunK);
   drawPid(((camX % TILE) + TILE) % TILE);
   OUTU.uDay.value = dayV;
@@ -4800,6 +5057,9 @@ return {
   get rain() { return W.uRain.value; },
   // How far the window is inside a tunnel, 0 to 1.
   get tunnel() { return tunT; },
+  // 1 on a rail bridge, and 1 under a road deck.
+  get bridge() { return brK; },
+  get under() { return ovK; },
   get day() { return dayV; },
   setTime(v, now) {
     aimHour(hourOf(v));
@@ -4908,7 +5168,7 @@ renderer.toneMappingExposure = 1.0;
 // B is 255 on a lake, else town density up to 250.
 async function loadRoute() {
   const opt = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg, tun] = await Promise.all([
+  const [meta, img, bld, simg, rimg, nimg, fimg, pbin, wimg, tun, line] = await Promise.all([
     fetch('route.json').then(r => r.json()),
     new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = 'route.png'; }),
     // OSM buildings, 8 bytes each; the ride runs without them.
@@ -4930,6 +5190,8 @@ async function loadRoute() {
     qs.has('nowoods') ? null : opt('woods.png'),
     // Tunnels in route metres (tools/tunnels.py); without them the line runs in the open.
     fetch('tunnels.json').then(r => r.ok ? r.json() : []).catch(() => []),
+    // Bridges, roads over the line and its curvature (tools/line.py); without them the line runs straight on its bank.
+    fetch('line.json').then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
@@ -5023,7 +5285,7 @@ async function loadRoute() {
     wd = new Uint8Array(g5.getImageData(0, 0, wimg.width, wimg.height).data.buffer);
     ww = wimg.width;
   }
-  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, tun, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
+  return { meta, w: c.width, ht: c.height, h, f, lk: lkH, sh, sw, rd, rw, nr, nw, fd, fw, wd, ww, tun, line: line || { rail: [], over: [], curve: { ds: 20, k: [] } }, paths: new Uint16Array(pbin.slice(0, pbin.byteLength & ~1)), bld: new Uint8Array(bld.byteLength >= 8 ? bld : new ArrayBuffer(8)) };
 }
 const ROUTE = await loadRoute();
 const S = build({ THREE });
@@ -5368,8 +5630,10 @@ function recorded(v, ac, now, sp, k) {
   const [g, ls, pk, sub] = eqAt(sp / UREF, sp > 0.3 ? drive : 0);
   // A tunnel throws the roar back: louder, with more low end.
   const tk = S.tunnel * Math.min(1, sp / 8);
-  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** ((g + 6 * tk) / 20), now, 0.25);
-  v.bed.ls.gain.setTargetAtTime(ls + 4 * tk, now, 0.25);
+  // A bridge rings hollow and a little louder; a road deck overhead throws back a short rush.
+  const bk = S.bridge * Math.min(1, sp / 8), ok = S.under * Math.min(1, sp / 8);
+  v.bed.g.gain.setTargetAtTime(1.1 * 10 ** ((g + 6 * tk + 2.5 * bk + 4 * ok) / 20), now, ok > 0 ? 0.06 : 0.25);
+  v.bed.ls.gain.setTargetAtTime(ls + 4 * tk + 3 * bk, now, 0.25);
   v.bed.pk.gain.setTargetAtTime(pk, now, 0.25);
   v.bed.sub.gain.setTargetAtTime(sub, now, 0.25);
   v.bed.src.playbackRate.setTargetAtTime(0.94 + 0.06 * Math.min(1, sp / UREF), now, 1.0);
