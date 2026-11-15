@@ -157,7 +157,8 @@ stage.prepend(canvas);
 // Every spark and ember shader reads these.
 const uTime = uniform(0), uRes = uniform(new THREE.Vector2(1, 1));
 
-const BG = col(0.075, 0.008, 250);
+// The room is a dark teal, not a workshop black.
+const BG = col(0.085, 0.022, 205);
 const scene = new THREE.Scene();
 scene.background = BG;
 scene.fog = new THREE.Fog(BG, 6, 24);
@@ -256,60 +257,148 @@ const plateGeo = new THREE.ExtrudeGeometry(plateShape, { depth: PLATE, bevelEnab
 // The plate's full width ends at the rim's edge; its bevel is the chamfer beyond.
 plateGeo.translate(0, 0, WIDTH / 2 - PLATE);
 const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, WIDTH - 0.1, 32, 1);
-const nutGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.07, 6, 1);
-const flintMat = new THREE.MeshStandardMaterial({ color: col(0.36, 0.006, 70), metalness: 0.1, roughness: 0.92 });
-const flintGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.16, 32, 1);
-// The striker mount: a fork holds the axle, a tube holds the flint.
-const mountMat = new THREE.MeshStandardMaterial({ color: col(0.4, 0.008, 250), metalness: 0.7, roughness: 0.5 });
-const tubeGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.45, 40, 1);
-// The tube glows with the rim; the fork and the foot stay dark.
-const tubeMat = mountMat.clone();
-const footGeo = new THREE.BoxGeometry(1.4, 0.12, 0.84);
-const armGeo = new THREE.BoxGeometry(0.16, 1.88, 0.07);
+
+/* ---------- the lighter ---------- */
+// The mount is a table lighter in the space-age manner.
+// One swept enamel body holds the axle; a fluted brass column holds the flint.
+// Each part takes its own share of the room's reflection.
+// A material's own map does not use the scene's dim setting.
+const shine = (m, k) => { m.envMap = scene.environment; m.envMapIntensity = k; return m; };
+const chrome = shine(new THREE.MeshStandardMaterial({ color: col(0.9, 0.004, 250), metalness: 1, roughness: 0.2 }), 0.75);
+const brass = shine(new THREE.MeshStandardMaterial({ color: col(0.8, 0.105, 86), metalness: 1, roughness: 0.26 }), 0.85);
+// The body is turquoise enamel under a clear coat.
+const shell = shine(new THREE.MeshPhysicalMaterial({ color: col(0.6, 0.095, 195), metalness: 0, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.08 }), 0.5);
+// The collar glows with the rim; the other brass stays cold.
+const tubeMat = brass.clone();
+// Flutes round the column, as a tangent-space normal map.
+function fluteMap(n) {
+  const W = 512, d = new Uint8Array(W * 4);
+  for (let x = 0; x < W; x++) {
+    // A flute is a round groove; its slope runs from edge to edge.
+    const sl = (((x / W) * n) % 1 - 0.5) * 1.7, l = Math.hypot(sl, 1), i = x * 4;
+    d[i] = (sl / l * 0.5 + 0.5) * 255;
+    d[i + 1] = 128;
+    d[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+    d[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(d, W, 1);
+  t.wrapS = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
+}
+const shaftMat = brass.clone();
+shaftMat.normalMap = fluteMap(16);
+shaftMat.normalScale = new THREE.Vector2(1.3, 1.3);
+// The flint is a ferro rod: dark metal with fine drawn lines.
+function scoreMap() {
+  const S = 64, d = new Uint8Array(S * S * 4);
+  for (let x = 0; x < S; x++) {
+    const line = 0.36 + 0.3 * Math.random();
+    for (let y = 0; y < S; y++) {
+      const i = (y * S + x) * 4;
+      d[i + 1] = 255 * Math.min(1, line + 0.08 * Math.random());
+      d[i + 3] = 255;
+    }
+  }
+  const t = new THREE.DataTexture(d, S, S);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+const flintMat = shine(new THREE.MeshStandardMaterial({ color: col(0.5, 0.012, 70), metalness: 0.9, roughness: 1, roughnessMap: scoreMap() }), 0.4);
+// The body is one swept form in the space-age manner.
+// A low foot runs under the wheel, curves up at the back and sweeps over to the axle.
+const FOOT_TOP = -1.535, BODY_Z = WIDTH / 2 + 0.08, BODY_DEEP = 0.07;
+const V2 = (x, y) => new THREE.Vector2(x, y);
+// The side view of one cheek: the foot, the back sweep, the boss at the axle.
+const cheek = new THREE.Shape();
+cheek.moveTo(0.62, FLOOR);
+cheek.lineTo(-0.85, FLOOR);
+cheek.splineThru([V2(-1.3, -1.53), V2(-1.53, -1.1), V2(-1.5, -0.55), V2(-1.2, -0.05), V2(-0.7, 0.22), V2(-0.076, 0.163)]);
+cheek.absarc(0, 0, 0.18, 2.007, -2.53, true);
+cheek.splineThru([V2(-0.55, -0.04), V2(-1.0, -0.27), V2(-1.25, -0.7), V2(-1.22, -1.1), V2(-1.0, -1.38), V2(-0.6, -1.5)]);
+cheek.lineTo(0.45, -1.56);
+cheek.quadraticCurveTo(0.66, -1.57, 0.62, FLOOR);
+const cheekGeo = new THREE.ExtrudeGeometry(cheek, { depth: BODY_DEEP, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.01, bevelSegments: 2, curveSegments: 20 });
+cheekGeo.translate(0, 0, -BODY_DEEP / 2);
+// The foot between the cheeks: the same low profile, full width.
+const sole = new THREE.Shape();
+sole.moveTo(0.62, FLOOR);
+sole.lineTo(-1.0, FLOOR);
+sole.quadraticCurveTo(-1.12, -1.6, -1.0, -1.44);
+sole.lineTo(-0.6, -1.5);
+sole.lineTo(0.45, -1.56);
+sole.quadraticCurveTo(0.66, -1.57, 0.62, FLOOR);
+const soleGeo = new THREE.ExtrudeGeometry(sole, { depth: 2 * BODY_Z, bevelEnabled: false, curveSegments: 12 });
+soleGeo.translate(0, 0, -BODY_Z);
+// The column, from the foot up: a ring, the fluted shaft, two collars, the flint.
+const ring = (r, h) => new THREE.CylinderGeometry(r, r, h, 48, 1);
+const COLUMN = [[ring(0.19, 0.03), brass], [new THREE.CylinderGeometry(0.15, 0.15, -1.17 - FOOT_TOP, 48, 1, true), shaftMat], [ring(0.17, 0.03), tubeMat], [ring(0.135, 0.025), tubeMat]];
+const flintGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.12, 32, 1);
+// A brass ball caps each end of the axle.
+const capGeo = new THREE.SphereGeometry(0.11, 32, 20);
 const pinGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.9, 32, 1);
+// Two brass rings lie in each face of the roller.
+const inlayGeo = [new THREE.RingGeometry(0.84, 0.885, 96), new THREE.RingGeometry(0.255, 0.3, 64)];
 
 // The yaw shows the knurled rim band three-quarter on.
 // The pivot's x axis is the spray direction; the mount turns with it.
 function makeWheel() {
   const pivot = new THREE.Group();
-  pivot.rotation.y = 0.8;
+  pivot.rotation.y = 0.6;
   // The spin group's z axis is the axle.
   const spin = new THREE.Group();
   const rimTube = new THREE.Mesh(rimGeo, rimMat);
   rimTube.rotation.x = Math.PI / 2;
   const near = new THREE.Mesh(plateGeo, faceMat), far = new THREE.Mesh(plateGeo, faceMat);
   far.rotation.y = Math.PI;
-  const hub = new THREE.Mesh(hubGeo, mountMat);
+  const hub = new THREE.Mesh(hubGeo, chrome);
   hub.rotation.x = Math.PI / 2;
   spin.add(rimTube, near, far, hub);
-  const flint = new THREE.Mesh(flintGeo, flintMat);
-  flint.position.y = -R - 0.07;
-  const tube = new THREE.Mesh(tubeGeo, tubeMat);
-  tube.position.y = -R - 0.31;
-  const foot = new THREE.Mesh(footGeo, mountMat);
-  foot.position.set(-0.25, FLOOR + 0.06, 0);
-  const pin = new THREE.Mesh(pinGeo, mountMat);
-  pin.rotation.x = Math.PI / 2;
-  pivot.add(spin, flint, tube, foot, pin);
-  // The arms lean back from the hub, so the spray side stays clear.
-  // A hex nut holds the pin outside each arm.
-  for (const z of [-0.36, 0.36]) {
-    const arm = new THREE.Mesh(armGeo, mountMat);
-    arm.position.set(-0.37, -0.7, z);
-    arm.rotation.z = -0.49;
-    const nut = new THREE.Mesh(nutGeo, mountMat);
-    nut.rotation.x = Math.PI / 2;
-    nut.position.z = Math.sign(z) * 0.43;
-    pivot.add(arm, nut);
+  for (const side of [1, -1]) {
+    for (const g of inlayGeo) {
+      const inlay = new THREE.Mesh(g, brass);
+      // The ring lies a hair over the plate, so it does not flicker.
+      inlay.position.z = side * (WIDTH / 2 + BEVEL + 0.0015);
+      if (side < 0) inlay.rotation.y = Math.PI;
+      spin.add(inlay);
+    }
   }
+  pivot.add(spin);
+  // The body: a cheek each side of the wheel, and the foot between them.
+  for (const side of [1, -1]) {
+    const part = new THREE.Mesh(cheekGeo, shell);
+    part.position.z = side * BODY_Z;
+    const cap = new THREE.Mesh(capGeo, brass);
+    cap.position.z = side * (BODY_Z + BODY_DEEP / 2 + 0.03);
+    pivot.add(part, cap);
+  }
+  pivot.add(new THREE.Mesh(soleGeo, shell));
+  let y = FOOT_TOP;
+  // The column rises under the rim's lowest point.
+  for (const [geo, mat] of COLUMN) {
+    const part = new THREE.Mesh(geo, mat);
+    part.position.y = y + geo.parameters.height / 2;
+    y += geo.parameters.height;
+    pivot.add(part);
+  }
+  const flint = new THREE.Mesh(flintGeo, flintMat);
+  flint.position.y = -R + 0.01 - 0.06;
+  const pin = new THREE.Mesh(pinGeo, chrome);
+  pin.rotation.x = Math.PI / 2;
+  pivot.add(flint, pin);
   return { pivot, spin };
 }
 const real = makeWheel();
 scene.add(real.pivot);
 
 /* ---------- lights ---------- */
-// A cool rim light from behind on the left picks out the knurl.
-const rim = new THREE.DirectionalLight(col(0.9, 0.03, 240), 2.4);
+// A cream rim light from behind on the left picks out the knurl.
+const rim = new THREE.DirectionalLight(col(0.93, 0.03, 95), 2.4);
 rim.position.set(-4, 5, -4);
 // A weak fill from the front right shows the face.
 const fill = new THREE.DirectionalLight(col(0.8, 0.02, 80), 0.35);
@@ -324,7 +413,7 @@ scene.add(rim, fill);
 
 /* ---------- floor ---------- */
 // A wet floor: a dark, glossy sheet over a mirrored copy of the scene.
-const floorMat = new THREE.MeshStandardMaterial({ color: col(0.1, 0.006, 250), metalness: 0, roughness: 0.28, transparent: true, opacity: 0.88 });
+const floorMat = new THREE.MeshStandardMaterial({ color: col(0.15, 0.045, 195), metalness: 0, roughness: 0.28, transparent: true, opacity: 0.88 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = FLOOR;
@@ -353,7 +442,7 @@ const hazeMat = new THREE.MeshBasicNodeMaterial({ depthWrite: false, fog: false 
   const d = uv().sub(vec2(0.56, 0.6)).mul(vec2(1, 2.4));
   // The glow dies out toward the horizon, so the floor's far edge shows no line.
   const lift = smoothstep(0.53, 0.64, uv().y);
-  hazeMat.colorNode = vec4(uniform(BG).add(uniform(col(0.3, 0.03, 245)).mul(exp(d.dot(d).mul(-12))).mul(lift)), 1);
+  hazeMat.colorNode = vec4(uniform(BG).add(uniform(col(0.36, 0.07, 195)).mul(exp(d.dot(d).mul(-12))).mul(lift)), 1);
 }
 const hazeGeo = new THREE.PlaneGeometry(120, 60);
 const haze = new THREE.Mesh(hazeGeo, hazeMat);

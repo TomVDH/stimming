@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T07:43:37Z
+updated_at: 2026-11-15T07:53:29Z
 parent: stimming-oh7b
 ---
 
@@ -51,3 +51,10 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
 - 2026-11-15, Tom: "change camera angle to sth better, reduce volume of fx significantly". Test set t10 (seen to fail first), then t1 to t6, t8, t9 and t10 pass.
   - Camera: low, near the floor. Wide: yaw 0.6, aim(30, -0.4, 10.4, 0.05, 0.27). Tall: yaw 1.15, aim(34, 0.9, 14.4, 0.75, 0.3). Wheel size on screen is the same. Stills read at 1280 x 720, 375 x 812 and 812 x 375.
   - Sound: every source goes through one gain, LEVEL 0.3 (about 10 dB down). I read "volume of fx" as sound loudness. Not heard by ear.
+
+- 2026-11-15, Tom, three steps: "pbr the flint and improve its stand ... table lighter art deco", then "arced space age arm, more atom style, change environment a little, make less industrial", then "wtf are the atoms in the axis, sweeping arm integrated with base". Test set t11 (seen to fail first); t1 to t6 and t8 to t11 pass.
+  - Final: one swept turquoise enamel body (two cheeks and the foot between them, clear coat) from the floor round the back and over to the axle; a fluted brass column holds the flint; brass ball caps on the axle; two brass inlay rings in each roller face. The hex nuts are gone (this replaces the design doc's nut).
+  - The flint is a ferro rod: metal 0.9 with a drawn-line roughness map. Brass, chrome and the enamel each take their own share of the room's reflection (a material's own map skips the scene's 0.15).
+  - Rejected by Tom on sight: orbit rings and electron balls at the axle (my wrong read of "atom style"); a hoop arm that stood on a stepped plinth.
+  - Room: dark teal background, turquoise backdrop glow, teal tabletop, a cream rim light.
+  - Name clashes met: mix (TSL) and body (the blackbody ramp); the new names are quiet and shell.

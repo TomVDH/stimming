@@ -27,7 +27,9 @@
 | The wheel is bigger, sits lower left and stands on a striker mount: fork, flint tube, foot. The yaw is flipped, so the sparks fly right and away from the camera. | Bean `stimming-zqrm`; F5 in [fidgets.md](fidgets.md) |
 | The choice is `Sparks`, a stepper of eight types (keys 1 to 8): Ferro, Steel, Titanium, Sparkler, Comet, Ice, Confetti, Popcorn. Each new type has its own trick. | [spark-zany.md](spark-zany.md) |
 | The rim heats while the wheel grinds: red, orange, white. A full heat sheds in one flare, one kind per type, with a thump. | [spark-zany.md](spark-zany.md) |
-| The roller has a face with five holes, a bevel and axle nuts. | [spark-zany.md](spark-zany.md) |
+| The roller has a face with five holes, a bevel and two brass inlay rings. | [spark-zany.md](spark-zany.md) |
+| The mount is a space-age table lighter (Tom, 2026-11-15): one swept turquoise enamel body from foot to axle, a fluted brass column for the flint, brass ball caps. The materials are physically based. | Bean `stimming-0d7r` |
+| The camera sits low, near the floor. The room is a dark teal. Every sound goes through one quiet mix. | Bean `stimming-0d7r` |
 
 Still open: Tom's look on a visible screen, the frame rate there, sound by ear, a phone, real reduced motion.
 
