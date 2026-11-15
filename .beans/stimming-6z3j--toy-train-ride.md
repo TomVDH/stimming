@@ -189,7 +189,7 @@ Open from the critics:
 - [x] Dev: window.__train.S.hold(x) parks the train at a route metre
 - [x] Terrain seams: cubic B-spline height sampling (bilinear creased along the 13 m grid); per-pixel normals at every distance; terrain shadows marched per pixel with a bias, no triangle-edged shadows
 - [x] Dark spots: no lone woods on flat floors, lighter woods; farm fields blend at their edges and fade in from 300 m; hedges only far
-- [ ] Walensee: the mirrored far shore at Murg shows jagged grey blocks
+- [x] Walensee: the mirrored far shore at Murg shows jagged grey blocks. The mirror no longer shows them; the pale cliff band and shore seam behind them are fixed in stimming-1f2m
 - [x] Signs matte: no self light, flat muted navy, soft white rule; station LED strips dark by day, half as strong at night; columns and slab matte, warm light concrete, calmer sky fill
 - [x] Terrain restyle, smooth and neat: muted sage meadows in wide bands, no grain, far roofs merge into a soft town tint (no speckle), gentle woods, softer shadows
 - [x] Props, placed on the GPU from the map (a placement pass per kind writes base point and size per texel): broadleaf and spruce trees (woods dense, lone trees on meadows, none past 1 km), low shrubs beyond the second track, Swiss chalets (plaster ground floor, timber above, shuttered windows lit at night), barns on farms, plaster blocks in Zurich, timber fences that follow the ground, white round bales in groups, a country road with timber poles and three sagging wires
