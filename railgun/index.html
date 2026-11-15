@@ -316,6 +316,8 @@ const U = {
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
   uAstR: { value: 0.05 },
   uAstC: { value: new THREE.Vector3(...AMBER) },
+  // The rock's fiery fill of the sky, 0 far out to 1 at the end.
+  uFill: { value: 0 },
   // The rock as a light on the clouds: world position, strength; its reach in metres.
   uRockL: { value: new THREE.Vector4(0, 0, 0, 0) },
   uRockR: { value: 10000 },
@@ -529,6 +531,7 @@ uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
 uniform vec3 uAstC;
+uniform float uFill;
 uniform vec4 uRockL;
 uniform float uRockR;
 uniform vec4 uBolt;
@@ -707,7 +710,15 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-vec3 k2skyS(vec3 dir, float sunK) { return k2skyB(dir, sunK) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
+// The nearing rock fills the sky with fire: strongest round it and low down.
+// The sky's own colour also leans to orange under it.
+vec3 rockFill(vec3 c, vec3 dir) {
+  if (uFill < 0.001) return c;
+  float toward = pow(max(dot(dir, uAst.xyz), 0.0), 3.0), low = exp(-max(dir.y, 0.0) * 3.0);
+  c = mix(c, c * vec3(1.3, 0.82, 0.55), 0.6 * uFill);
+  return c + uAstC * uFill * (0.05 + 0.6 * toward + 0.12 * low);
+}
+vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
 /* ---------- end K2 ---------- */
 
@@ -3743,6 +3754,10 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uVeil: { value: 0 }, uZoom: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // The streak's colour: blue-white for the shot, fire for the falling rock.
+      uLF2C: { value: new THREE.Vector3(0.75, 0.86, 1.0) },
+      // The nearing rock's own flare: screen place and strength.
+      uLF3: { value: new THREE.Vector3(0.5, 0.5, 0) },
       // The flares' ghost gain: 0 keeps a flare one level streak.
       uGhost: { value: 1 },
       // Light shafts from the blast: its place on screen, strength, sky fill.
@@ -3759,7 +3774,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec2 uRes;
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
-    uniform vec3 uLF, uLF2, uGodC;
+    uniform vec3 uLF, uLF2, uLF2C, uLF3, uGodC;
     uniform float uGhost;
     uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
@@ -3846,7 +3861,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       }
       vec3 c = c0 * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The muzzle flash: a long level blue-white streak.
-      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5 * uGhost)) * uLF2.z;
+      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, uLF2C, 0.8, vec3(0.3, 1.8, 0.5 * uGhost)) * uLF2.z;
+      // The nearing rock: a fiery glow and a soft level streak.
+      if (uLF3.z > 0.001) c += flFlare(vUv, uLF3.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.5, 0.18), 0.6), 1.1, vec3(1.2, 0.9, 0.6 * uGhost)) * uLF3.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9 * uGhost)) * uLF.z;
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -4325,6 +4342,15 @@ function aimAst() {
   const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
+  // The sky fills with the rock's fire over the last two thirds of its fall.
+  // The strike drives rockGlowK up: the fill reaches full as it comes down.
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.pow(sstep(Math.min(ast.s, 1), 0.3, 1), 1.2) * Math.min(1, 0.7 + 0.3 * rockGlowK) : 0;
+  U.uFill.value = fk;
+  // The rock's own flare: faint far out, strong near the end; the strike has its own.
+  tmpA.copy(ast.pos).project(camera);
+  const fon = astMesh.visible && !strike && !sight && tmpA.z < 1 && Math.abs(tmpA.x) < 1.3 && Math.abs(tmpA.y) < 1.3;
+  grade.uniforms.uLF3.value.set(tmpA.x * 0.5 + 0.5, tmpA.y * 0.5 + 0.5, fon ? (reduced() ? 0.5 : 1) * 0.35 * U.uFill.value : 0);
+  grade.uniforms.uLF2C.value.set(0.75, 0.86, 1.0);
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
@@ -8212,6 +8238,8 @@ function updateStrike() {
   // No ghosts in the game over: the flare stays one level streak.
   grade.uniforms.uGhost.value = 0;
   // The level streak carries the flare; the warm veil sits under it.
+  // The streak burns the rock's colour, hotter toward contact.
+  grade.uniforms.uLF2C.value.set(1.0, lerp(0.5, 0.68, u), lerp(0.18, 0.36, u));
   grade.uniforms.uLF2.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 1.4 * lf : 0);
   grade.uniforms.uLF.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 0.5 * lf : 0);
   bq.copy(strikeP).project(camera);
