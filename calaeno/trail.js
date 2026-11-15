@@ -195,8 +195,8 @@ void main() {
 }`;
 
 // One train: rad at the head, k metres wider per metre, len metres long.
-// burn is the fire in the core behind the engine, 0 to 1.
-export function makeTrail(vol, { rad, k, len, burn = 0.6 }) {
+// burn is the rock's core fire, 0 to 1; a propeller's contrail has none.
+export function makeTrail(vol, { rad, k, len, burn = 0 }) {
   const u = {
     ...AIR_U,
     uVol: { value: vol },
@@ -205,9 +205,10 @@ export function makeTrail(vol, { rad, k, len, burn = 0.6 }) {
     uRad: { value: rad }, uK: { value: k }, uLen: { value: len },
     uBurn: { value: burn }, uTrail: { value: 1 }, uFlow: { value: 0 },
     uSteps: { value: 72 }, uLSteps: { value: 4 },
-    // The rock's own fire and ash; the soot is paler, for an engine.
+    // The rock's own fire and ash; the fire stays off.
     uHot: { value: new THREE.Vector3(...linFit(0.95, 0.06, 80)) }, uFireC: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uEmberC: { value: new THREE.Vector3(...linFit(0.55, 0.18, 35)) },
-    uSoot: { value: new THREE.Vector3(...linFit(0.5, 0.015, 60)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
+    // A contrail is ice: near white from the first metre.
+    uSoot: { value: new THREE.Vector3(...linFit(0.84, 0.008, 250)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
   };
   const mesh = new THREE.Mesh(GEO, new THREE.ShaderMaterial({
     uniforms: u, transparent: true, depthWrite: false, depthTest: false,

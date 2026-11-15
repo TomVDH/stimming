@@ -96,9 +96,57 @@ function calaenoGeometry() {
   for (const [x, z] of ENGINES) parts.push(at(loft(NACELLE, 10), x, -14, z));
   return mergeGeometries(parts);
 }
-// Each propeller is a blur: one thin disc behind its nacelle.
+// Each propeller is one disc behind its nacelle; the shader draws its blades.
+// aHub holds the disc's centre and its turn: 1 or -1.
+const PROP_R = 62;
 function propGeometry() {
-  return mergeGeometries(ENGINES.map(([x, z]) => at(new THREE.CircleGeometry(62, 24), x, -14, z + 4)));
+  return mergeGeometries(ENGINES.map(([x, z], i) => {
+    const g = at(new THREE.CircleGeometry(PROP_R, 28), x, -14, z + 4);
+    const n = g.attributes.position.count, hub = new Float32Array(n * 3);
+    for (let v = 0; v < n; v++) hub.set([x, -14, i % 2 ? -1 : 1], v * 3);
+    g.setAttribute('aHub', new THREE.BufferAttribute(hub, 3));
+    return g;
+  }));
+}
+// Two rows of blades turn against each other, slowly enough to read.
+function propMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...AIR_U },
+    side: THREE.DoubleSide, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    vertexShader: /* glsl */`
+    attribute vec3 aHub;
+    varying vec3 vWP, vHub;
+    varying vec2 vQ;
+    void main() {
+      vQ = (position.xy - aHub.xy) / ${PROP_R.toFixed(1)};
+      vHub = aHub;
+      vec4 w = modelMatrix * vec4(position, 1.0);
+      vWP = w.xyz;
+      gl_Position = projectionMatrix * viewMatrix * w;
+    }`,
+    fragmentShader: /* glsl */`
+    varying vec3 vWP, vHub;
+    varying vec2 vQ;
+    ${AIR}
+    // One row of n blades at angle a: 1 on a blade, 0 between.
+    float row(float a, float n, float r) {
+      float d = abs(fract(a * n / 6.2832) - 0.5);
+      float w = 0.5 - mix(0.2, 0.09, r);
+      return smoothstep(w - 0.03, w + 0.03, d);
+    }
+    void main() {
+      float r = length(vQ), a = atan(vQ.y, vQ.x);
+      if (r > 1.0) discard;
+      float t = uTime * 1.9 * vHub.z + vHub.x * 0.013;
+      float span = smoothstep(1.0, 0.94, r) * smoothstep(0.1, 0.16, r);
+      float blade = max(row(a + t, 4.0, r), row(a - t * 0.83 + 0.4, 4.0, r)) * span;
+      // A faint disc of blur, the blades, and the hub.
+      float al = clamp(0.08 * smoothstep(1.0, 0.9, r) + 0.85 * blade + smoothstep(0.14, 0.1, r), 0.0, 1.0);
+      vec3 col = vec3(0.02, 0.022, 0.026) * (uHorC * 0.4 + uZenC * 0.3 + 0.05);
+      gl_FragColor = vec4(caAir(col, vWP, 1.0) * al, al);
+    }`,
+  });
 }
 
 /* ---------- the escort: a delta dart, 58 m long ---------- */
@@ -198,7 +246,7 @@ const RED = [9, 0.5, 0.3], GREEN = [0.4, 8, 1.2], WHITE = [9, 9, 9];
 export function makeCalaeno(uPx) {
   const group = new THREE.Group();
   const mesh = new THREE.Mesh(calaenoGeometry(), craftMaterial(1));
-  const props = new THREE.Mesh(propGeometry(), craftMaterial(1, 0.3));
+  const props = new THREE.Mesh(propGeometry(), propMaterial());
   mesh.frustumCulled = props.frustumCulled = false;
   const lights = lamps([
     [-1925, 0, 430, 5, ...RED, 1, 0, 1], [1925, 0, 430, 5, ...GREEN, 1, 0, 1],
