@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T07:45:32Z
+updated_at: 2026-11-15T07:50:25Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -24,6 +24,7 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] Ten more block models each (Tom, 2026-11-15): East Van adds Containers, Train, Trolley bus, Corner store, Raccoon, Rain, Silos, Couch, Blossom, Sulphur; Belgium adds Chocolate, Pralines, Crate, Belfry, Cobbles, Mussels, Frietkot, Motorway, Sprouts, Fountain
 - [x] Tom, 2026-11-15: the voxel dioramas are "cute but not the style". Read icons/sheet.html: the Isometric block is one bold block with face art. New set at serieslab/blocks.html (kit and icons in serieslab/blocks.js, on the sheet's cube geometry): East Van has House, Crow, Containers, Rain, Trolley bus, Peaks; Belgium has Tricolour, Waffle, Frites, Beer, Chocolate, Frietkot
 - [x] Dutch-angle photo framings as a second style (Tom's ask): serieslab/shots.html, six shots each, knobs for tilt and frame
+- [x] Tom, 2026-11-15: yes to the single-block style, more of these. Ten more each: East Van adds Corner store, Bin, Couch, Blossom, Train, Pole, Nigiri, Log, Ferry, Skunk; Belgium adds Crate, Cobbles, Pralines, Belfry, Gable, Speculoos, Bread machine, Motorway, Canal, Spheres
 - [ ] Tom picks the subject and the style for East Van and Belgium
 - [ ] Theme series icons in the same style
 - [ ] Remove the rejected lab pages (places, systems) once the pick ships

@@ -44,6 +44,9 @@ function block({ w = 1, d = 1, h = 50, dx = 0, dy = 0 } = {}) {
         `<path d="M${f(A[0])} ${f(A[1])}L${f(B[0])} ${f(B[1])}L${f(C[0])} ${f(C[1])}M${f(B[0])} ${f(B[1])}L${f(p(u1, v1, z1)[0])} ${f(p(u1, v1, z1)[1])}" style="fill:none;stroke:${BG};stroke-width:0.9;stroke-linejoin:round"/>`;
     },
     poly: (pts, fill) => `<path d="${path(pts.map(q => p(...q)))}" style="fill:${fill}"/>`,
+    // A flat patch on the plane v (a left-facing wall) or the plane u (a right-facing wall).
+    fl: (u0, u1, v, z0, z1, c) => b.poly([[u0, v, z0], [u1, v, z0], [u1, v, z1], [u0, v, z1]], c),
+    fr: (u, v0, v1, z0, z1, c) => b.poly([[u, v0, z0], [u, v1, z0], [u, v1, z1], [u, v0, z1]], c),
   };
   return b;
 }
@@ -176,6 +179,182 @@ export const BLOCKS = {
     }],
   ],
 };
+
+const E = (x, y, rx, ry, c) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" style="fill:${c}"/>`;
+// A ball in the shared light: a dark edge, the body, one glint.
+const ball = ([x, y], r, c) => C(f(x), f(y), r, dark(c)) + C(f(x - r * 0.1), f(y - r * 0.1), r * 0.86, c) + C(f(x - r * 0.36), f(y - r * 0.38), r * 0.26, lite(lite(c)));
+const wire = (a, c, sag, col, w = 0.9) => `<path d="M${f(a[0])} ${f(a[1])}Q${f((a[0] + c[0]) / 2)} ${f((a[1] + c[1]) / 2 + sag)} ${f(c[0])} ${f(c[1])}" style="fill:none;stroke:${col};stroke-width:${w};stroke-linecap:round"/>`;
+const shade = 'oklch(0 0 0 / 0.16)';
+
+BLOCKS.eastvan.push(
+  // The corner store: two awnings, lit windows, a sign on the roof.
+  ['Corner store', () => {
+    const b = block({ h: 44, dy: 8 }), WALL = 'oklch(0.92 0.04 95)', TRIM = 'oklch(0.55 0.1 160)';
+    const stripe = (a, c) => [20, 60].map(t => b.poly(a(t), c)).join('');
+    return svg(b, b.body(['oklch(0.62 0.03 250)', WALL, dark(WALL)]),
+      b.left(R(8, 50, 40, 36, LIT, 2) + R(60, 44, 24, 56, INK, 2) + R(0, 92, 100, 8, shade)), b.right(R(12, 50, 72, 36, mix(LIT, 82, 'black'), 2) + R(0, 92, 100, 8, shade)), b.shade(), b.edges(),
+      b.poly([[100, 0, 26], [100, 100, 26], [126, 100, 46], [126, 0, 46]], dark(RED)), stripe(t => [[100, t, 26], [100, t + 20, 26], [126, t + 20, 46], [126, t, 46]], mix(WHITE, 72, 'black')),
+      b.poly([[0, 100, 26], [100, 100, 26], [100, 126, 46], [0, 126, 46]], RED), stripe(t => [[t, 100, 26], [t + 20, 100, 26], [t + 20, 126, 46], [t, 126, 46]], WHITE),
+      b.box(10, 90, 82, 90, -36, 0, TRIM), b.fl(16, 84, 90, -29, -8, LIT));
+  }],
+  // A bin with its lid up a crack; two eyes look out. A striped tail hangs over.
+  ['Bin', () => {
+    const b = block({ w: 0.8, d: 0.8, h: 58, dy: 9 }), G = 'oklch(0.56 0.1 160)', FUR = 'oklch(0.72 0.015 275)';
+    const gap = R(0, 0, 100, 14, INK);
+    return svg(b, b.body(G), b.left(R(14, 36, 72, 42, shade, 4) + gap + E(34, 7, 8, 4.6, LIT) + E(62, 7, 8, 4.6, LIT) + E(35, 7.4, 3, 3, INK) + E(63, 7.4, 3, 3, INK) + E(20, 100, 13, 8, INK)),
+      b.right(gap + E(80, 100, 13, 8, INK)), b.shade(), b.edges(),
+      b.box(-5, 105, -5, 105, -11, 0, mix(G, 88, 'black')), b.box(38, 62, 105, 111, -9, -3, dark(G)),
+      [0, 1, 2, 3].map(i => b.box(100, 116, 28, 46, 14 + i * 13, 27 + i * 13, i % 2 ? 'oklch(0.3 0.015 275)' : FUR)).join(''));
+  }],
+  // A free couch from the kerb, as one block.
+  ['Couch', () => {
+    const b = block({ w: 1.3, d: 0.74, h: 16, dy: 17 }), M = 'oklch(0.74 0.14 80)';
+    return svg(b, b.body(M), b.top(R(6, 20, 42, 74, 'oklch(1 0 0 / 0.16)', 7) + R(52, 20, 42, 74, 'oklch(1 0 0 / 0.16)', 7)), b.left(R(0, 78, 100, 22, shade)), b.right(R(0, 78, 100, 22, shade)), b.shade(), b.edges(),
+      b.box(-9, 6, -2, 104, -75, 100, M), b.box(0, 100, -2, 16, -150, 0, M), b.box(94, 109, -2, 104, -75, 100, M),
+      b.box(30, 70, 116, 120, -40, 100, 'oklch(0.74 0.07 70)'), b.fl(36, 64, 120, 0, 22, INK), b.fl(40, 60, 120, 44, 62, INK));
+  }],
+  // A block of cherry tree: bark below, blossom over the top, petals falling.
+  ['Blossom', () => {
+    const b = block({ w: 0.92, d: 0.92, h: 50 }), P = 'oklch(0.85 0.1 350)', BARK = 'oklch(0.44 0.06 45)';
+    const lip = c => `<path d="M0 -2H100V30Q92 46 82 30Q74 18 64 34Q52 52 40 32Q30 18 20 30Q10 44 0 26Z" style="fill:${c}"/>`;
+    const petals = s => [[16, 62], [38, 78], [58, 60], [78, 84], [88, 58], [26, 92], [66, 94]].map(([x, y], i) => E(x, y + (i * s) % 6, 3.4, 2.4, P)).join('');
+    return svg(b, b.body([P, BARK, dark(BARK)]), b.left(R(30, 0, 5, 100, shade) + R(66, 0, 4, 100, shade) + petals(3) + lip(mix(P, 90, 'black'))), b.right(R(40, 0, 5, 100, shade) + petals(5) + lip(mix(P, 74, 'black'))),
+      b.top(C(28, 30, 14, 'oklch(1 0 0 / 0.4)') + C(64, 52, 18, 'oklch(1 0 0 / 0.35)') + C(36, 74, 10, 'oklch(0.7 0.16 350 / 0.5)') + C(78, 22, 8, 'oklch(0.7 0.16 350 / 0.5)')), b.shade(), b.edges());
+  }],
+  // A train car on its raised beam.
+  ['Train', () => {
+    const b = block({ w: 1.5, d: 0.5, h: 12, dy: 12 }), CON = 'oklch(0.8 0.015 90)', BLUE = 'oklch(0.6 0.16 255)';
+    return svg(b, b.box(14, 28, 26, 74, 100, 400, CON), b.box(72, 86, 26, 74, 100, 400, CON), b.body(CON), b.shade(), b.edges(),
+      b.box(5, 95, 8, 92, -210, 0, WHITE), b.fl(5, 95, 92, -75, -50, BLUE),
+      [0, 1, 2, 3, 4].map(i => b.fl(10 + i * 17, 23 + i * 17, 92, -175, -100, GLASS)).join(''),
+      b.fr(95, 16, 84, -180, -95, 'oklch(0.46 0.07 245)'), b.fr(95, 12, 26, -55, -28, mix(LIT, 85, 'black')), b.fr(95, 74, 88, -55, -28, mix(LIT, 85, 'black')));
+  }],
+  // A pole: two arms, glass on top, a can, and a very small crow.
+  ['Pole', () => {
+    const b = block({ w: 0.3, d: 0.3, h: 92, dy: 8 }), WOOD = 'oklch(0.6 0.09 60)', ARM = 'oklch(0.72 0.1 66)', GL = 'oklch(0.88 0.06 200)', WIRE = 'oklch(0.62 0.03 275)';
+    const tops = [-150, -84, 168, 234];
+    return svg(b, tops.map(u => wire(b.p(u + 8, 50, 2), [u < 0 ? -6 : 134, b.p(u + 8, 50, 2)[1] + (u < 0 ? -6 : 10)], 7, WIRE)).join(''),
+      b.box(-170, 270, 30, 70, 8, 15, ARM), b.box(-90, 190, 30, 70, 26, 32, ARM), tops.map(u => b.box(u, u + 16, 42, 58, 1, 8, GL)).join(''),
+      b.body(WOOD), b.left(R(30, 0, 7, 100, shade) + R(66, 0, 5, 100, shade)), b.top(C(50, 50, 30, shade) + C(50, 50, 13, shade)), b.shade(), b.edges(),
+      b.box(104, 150, 18, 82, 36, 54, 'oklch(0.68 0.02 250)'),
+      b.box(196, 222, 36, 64, -9, 8, 'oklch(0.42 0.12 290)'), b.box(202, 216, 64, 82, -3, 3, 'oklch(0.8 0.15 62)'));
+  }],
+  // A piece of salmon on a block of rice.
+  ['Nigiri', () => {
+    const b = block({ w: 1.25, d: 0.62, h: 20, dy: 13 }), RICE = 'oklch(0.96 0.01 95)', S = 'oklch(0.74 0.16 45)';
+    const grains = s => Array.from({ length: 16 }, (_, i) => E(6 + (i * 37 + s) % 90, 14 + (i * 23 + s * 3) % 76, 4.4, 7, 'oklch(0 0 0 / 0.07)')).join('');
+    return svg(b, b.body(RICE), b.left(grains(2)), b.right(grains(7)), b.shade(), b.edges(),
+      b.box(-6, 106, 6, 94, -80, 0, S),
+      [0, 1, 2, 3].map(i => b.poly([[8 + i * 26, 6, -80], [15 + i * 26, 6, -80], [27 + i * 26, 94, -80], [20 + i * 26, 94, -80]], 'oklch(1 0 0 / 0.55)') + b.fl(20 + i * 26, 27 + i * 26, 94, -80, 0, 'oklch(1 0 0 / 0.4)')).join(''));
+  }],
+  // A log: bark, rings on the cut end, moss and one mushroom.
+  ['Log', () => {
+    const b = block({ w: 1.4, d: 0.58, h: 32, dy: 6 }), BARK = 'oklch(0.44 0.06 45)', END = 'oklch(0.82 0.08 75)';
+    const ring = (r, o) => `<ellipse cx="50" cy="50" rx="${r}" ry="${r}" style="fill:none;stroke:oklch(0.5 0.09 55 / ${o});stroke-width:3.2"/>`;
+    return svg(b, b.body([mix(BARK, 86, 'white'), BARK, END]), b.left(Array.from({ length: 9 }, (_, i) => R(5 + i * 11, (i * 17) % 20, 3, 70 + (i * 13) % 30, shade)).join('')),
+      b.right(ring(40, 0.9) + ring(29, 0.7) + ring(18, 0.7) + ring(8, 0.9) + `<path d="M50 50L92 30" style="stroke:oklch(0.4 0.08 50 / 0.7);stroke-width:2"/>`),
+      b.top(E(26, 50, 18, 34, 'oklch(0.66 0.15 140 / 0.9)') + E(60, 30, 10, 18, 'oklch(0.72 0.16 135 / 0.9)')), b.shade(), b.edges(),
+      b.box(70, 76, 40, 60, -30, 0, WHITE), b.box(62, 84, 26, 74, -56, -30, RED));
+  }],
+  // The harbour ferry on a slab of water.
+  ['Ferry', () => {
+    const b = block({ w: 1.2, d: 1, h: 10, dy: 24 }), SEA = 'oklch(0.68 0.12 232)', HULL = 'oklch(0.72 0.17 50)';
+    return svg(b, b.body(SEA), b.top(R(0, 40, 14, 5, 'oklch(1 0 0 / 0.6)', 2) + R(2, 54, 10, 4, 'oklch(1 0 0 / 0.5)', 2) + R(20, 84, 30, 3, 'oklch(1 0 0 / 0.35)', 1.5) + R(60, 12, 26, 3, 'oklch(1 0 0 / 0.35)', 1.5)), b.shade(), b.edges(),
+      b.box(14, 88, 26, 74, -130, 0, HULL), b.box(20, 82, 30, 70, -270, -130, WHITE),
+      [0, 1, 2, 3].map(i => b.fl(25 + i * 14, 35 + i * 14, 70, -235, -165, GLASS)).join(''), b.fr(82, 36, 64, -235, -165, 'oklch(0.3 0.05 255)'),
+      b.box(52, 64, 42, 58, -350, -270, INK), b.fl(52, 64, 58, -330, -310, HULL));
+  }],
+  // A skunk as a block: the white stripe runs from tail to nose.
+  ['Skunk', () => {
+    const b = block({ w: 0.9, d: 0.9, h: 44, dy: 10 }), K = 'oklch(0.36 0.04 300)', PINK = 'oklch(0.82 0.11 345)';
+    const eye = x => E(x, 34, 11, 11, 'oklch(0.99 0 0)') + E(x + 2, 36, 6, 6, 'oklch(0.1 0.01 275)');
+    return svg(b, b.box(30, 70, -34, -6, -150, 60, K), b.fl(40, 60, -6, -150, 0, WHITE), b.poly([[40, -34, -150], [60, -34, -150], [60, -6, -150], [40, -6, -150]], WHITE),
+      b.box(14, 34, 84, 106, 100, 112, K), b.box(66, 86, 84, 106, 100, 112, K),
+      b.body(K), b.top(R(38, 0, 24, 100, WHITE)), b.left(`<path d="M38 0H62L56 62H44Z" style="fill:${WHITE}"/>` + eye(20) + eye(80)), b.shade(), b.edges(),
+      b.box(42, 58, 100, 114, 56, 72, PINK));
+  }],
+);
+
+BLOCKS.belgian.push(
+  // A beer crate: nine caps on top, a handle on each side.
+  ['Crate', () => {
+    const b = block({ h: 40, dy: 3 }), GOLD = 'oklch(0.84 0.14 90)';
+    const caps = [22, 50, 78].flatMap(y => [22, 50, 78].map(x => C(x, y, 10.5, 'oklch(0.4 0.08 55)') + C(x, y, 6.5, GOLD) + C(x - 2, y - 2, 2, 'oklch(1 0 0 / 0.7)'))).join('');
+    return svg(b, b.body(RED), b.top(R(7, 7, 86, 86, INK, 5) + caps), b.left(R(0, 56, 100, 26, WHITE) + R(32, 16, 36, 17, INK, 8.5)), b.right(R(0, 56, 100, 26, mix(WHITE, 74, 'black')) + R(32, 16, 36, 17, INK, 8.5)), b.shade(), b.edges());
+  }],
+  // A slab of cobbles; one stone stands proud.
+  ['Cobbles', () => {
+    const b = block({ h: 20, dy: 4 }), G = ['oklch(0.66 0.015 275)', 'oklch(0.74 0.03 80)', 'oklch(0.58 0.02 255)'];
+    const stones = [5, 37, 69].flatMap((y, j) => [5, 37, 69].map((x, i) => R(x, y, 26, 26, G[(i + j * 2) % 3], 7) + `<path d="M${x + 4} ${y + 9}a6 6 0 0 1 6 -6h9" style="fill:none;stroke:oklch(1 0 0 / 0.3);stroke-width:2;stroke-linecap:round"/>`)).join('');
+    const joints = R(0, 46, 100, 6, 'oklch(0 0 0 / 0.3)') + [31, 65].map(x => R(x, 0, 5, 46, 'oklch(0 0 0 / 0.3)')).join('') + [14, 48, 82].map(x => R(x, 52, 5, 48, 'oklch(0 0 0 / 0.3)')).join('');
+    return svg(b, b.body('oklch(0.4 0.012 275)'), b.top(stones), b.left(R(0, 0, 100, 100, 'oklch(0.62 0.015 275)') + joints), b.right(R(0, 0, 100, 100, 'oklch(0.48 0.015 275)') + joints), b.shade(), b.edges(),
+      b.box(37, 63, 37, 63, -45, 0, G[1]));
+  }],
+  // A box of pralines with a gold ribbon; one praline got out.
+  ['Pralines', () => {
+    const b = block({ w: 0.95, d: 0.95, h: 40, dy: 7 }), BOX = 'oklch(0.56 0.17 20)', GOLD = 'oklch(0.84 0.14 90)';
+    return svg(b, b.body(BOX), b.top(R(42, 0, 16, 100, lite(GOLD)) + R(0, 42, 100, 16, lite(GOLD))), b.left(R(42, 0, 16, 100, GOLD) + R(0, 22, 100, 3, 'oklch(0 0 0 / 0.3)')), b.right(R(42, 0, 16, 100, dark(GOLD)) + R(0, 22, 100, 3, 'oklch(0 0 0 / 0.35)')), b.shade(), b.edges(),
+      b.box(26, 46, 42, 58, -34, 0, GOLD), b.box(54, 74, 42, 58, -34, 0, GOLD), b.box(44, 56, 44, 56, -22, 0, dark(GOLD)),
+      b.box(112, 134, 62, 84, 56, 100, 'oklch(0.42 0.08 45)'), b.poly([[118, 68, 56], [128, 68, 56], [128, 78, 56], [118, 78, 56]], GOLD));
+  }],
+  // A belfry: clock, tall windows, a slate spire with a flag.
+  ['Belfry', () => {
+    const b = block({ w: 0.46, d: 0.46, h: 76, dy: 18 }), ST = 'oklch(0.84 0.05 82)', SL = 'oklch(0.5 0.06 255)';
+    const clock = E(50, 16, 30, 7.9, 'oklch(0.99 0 0)') + `<path d="M50 16V11M50 16H62" style="fill:none;stroke:${INK};stroke-width:3;stroke-linecap:round"/>`;
+    const face = g => clock + R(34, 34, 32, 24, g, 10) + R(34, 64, 32, 16, g, 6);
+    const top = b.p(50, 50, -52);
+    return svg(b, b.body(ST), b.left(face(GLASS) + R(34, 88, 32, 12, INK, 4)), b.right(face(dark(GLASS))), b.shade(), b.edges(),
+      b.box(-8, 108, -8, 108, -5, 0, mix(ST, 88, 'black')),
+      b.poly([[4, 96, -5], [96, 96, -5], [50, 50, -52]], SL), b.poly([[96, 4, -5], [96, 96, -5], [50, 50, -52]], dark(SL)),
+      `<path d="M${f(top[0])} ${f(top[1])}v-12" style="stroke:${WHITE};stroke-width:1"/>` + R(f(top[0]), f(top[1] - 12), 3, 5.4, 'oklch(0.32 0.014 275)') + R(f(top[0] + 3), f(top[1] - 12), 3, 5.4, 'oklch(0.88 0.17 95)') + R(f(top[0] + 6), f(top[1] - 12), 3, 5.4, 'oklch(0.56 0.21 27)'));
+  }],
+  // A brick house with a stepped gable.
+  ['Gable', () => {
+    const b = block({ w: 0.8, d: 0.72, h: 52, dy: 19 }), BR = 'oklch(0.6 0.13 36)', SL = 'oklch(0.48 0.05 255)';
+    const courses = Array.from({ length: 8 }, (_, i) => R(0, 6 + i * 12, 100, 1.6, shade)).join('');
+    return svg(b, b.body([SL, BR, dark(BR)]), b.left(courses + R(14, 16, 28, 26, LIT, 2) + R(58, 16, 28, 26, GLASS, 2) + R(14, 60, 28, 40, INK, 2) + R(58, 58, 28, 24, GLASS, 2)), b.right(courses + R(34, 20, 32, 24, dark(GLASS), 2)), b.shade(), b.edges(),
+      b.box(12, 88, 86, 100, -24, 0, BR), b.box(26, 74, 86, 100, -48, -24, BR), b.box(40, 60, 86, 100, -72, -48, BR), b.fl(44, 56, 100, -40, -29, GLASS));
+  }],
+  // A speculoos biscuit: a pressed windmill, dots round the rim, a few crumbs.
+  ['Speculoos', () => {
+    const b = block({ w: 1.12, d: 0.8, h: 9, dy: 0 }), B = 'oklch(0.64 0.11 55)', D = 'oklch(0.48 0.1 50)';
+    const dots = [...[10, 23, 36, 50, 64, 77, 90].flatMap(t => [[t, 8], [t, 92]]), ...[26, 44, 62, 80].flatMap(t => [[8, t - 3], [92, t - 3]])].map(([x, y]) => E(x, y, 2.6, 3.4, D)).join('');
+    const mill = `<path d="M43 80L46.4 48H53.6L57 80Z" style="fill:${D}"/><g transform="rotate(38 50 46)"><rect x="47.6" y="14" width="4.8" height="64" rx="2" style="fill:${D}"/><rect x="18" y="43.6" width="64" height="4.8" rx="2" style="fill:${D}"/></g>`;
+    return svg(b, b.body(B), b.top(dots + mill), b.shade(), b.edges(), b.box(112, 119, 20, 29, 30, 100, B), b.box(104, 109, 52, 58, 50, 100, B), b.box(60, 66, 112, 119, 40, 100, B));
+  }],
+  // The bread machine: loaves behind glass, a coin slot, a hatch.
+  ['Bread machine', () => {
+    const b = block({ w: 0.8, d: 0.6, h: 66, dy: 11 }), M = 'oklch(0.9 0.012 250)', LOAF = 'oklch(0.74 0.12 65)';
+    const loaves = [0, 1, 2].flatMap(i => [0, 1].map(j => R(12 + j * 27, 14 + i * 20, 22, 12, LOAF, 6) + R(15 + j * 27, 16 + i * 20, 12, 2.4, 'oklch(1 0 0 / 0.4)', 1.2))).join('');
+    return svg(b, b.body(M), b.left(R(7, 9, 62, 64, 'oklch(0.36 0.06 70)', 2) + loaves + [0, 1].map(i => R(7, 28.6 + i * 20, 62, 1.6, 'oklch(0 0 0 / 0.5)')).join('') + R(75, 12, 18, 42, 'oklch(0.72 0.02 250)', 2) + R(81, 20, 6, 2.4, INK) + R(79, 34, 10, 12, LIT, 1.5) + R(7, 80, 62, 13, INK, 2)),
+      b.right([0, 1, 2, 3].map(i => R(20, 60 + i * 8, 60, 3, shade)).join('')), b.shade(), b.edges(),
+      b.box(8, 92, 78, 90, -20, 0, RED), b.fl(14, 86, 90, -16, -4, LIT));
+  }],
+  // The lit motorway: a slab of road, one lamp, one car.
+  ['Motorway', () => {
+    const b = block({ w: 1.3, d: 0.8, h: 10, dy: 28 }), ASP = 'oklch(0.36 0.012 275)', STEEL = 'oklch(0.7 0.02 250)';
+    return svg(b, b.body(ASP), b.top(E(48, 52, 34, 34, 'oklch(0.9 0.15 95 / 0.22)') + R(0, 7, 100, 3, WHITE) + R(0, 90, 100, 3, WHITE) + [0, 1, 2, 3].map(i => R(6 + i * 25, 48, 13, 4, WHITE)).join('')), b.shade(), b.edges(),
+      b.box(46, 50, 1, 6, -640, 0, STEEL), b.poly([[48, 44, -600], [22, 52, 0], [74, 52, 0]], 'oklch(0.9 0.15 95 / 0.2)'),
+      b.box(46, 50, 6, 50, -640, -615, STEEL), b.box(43, 53, 36, 52, -615, -590, LIT),
+      b.box(62, 92, 60, 84, -130, 0, RED), b.box(68, 86, 62, 82, -220, -130, 'oklch(0.62 0.08 240)'));
+  }],
+  // The canal cut through a quay: three houses, one bridge.
+  ['Canal', () => {
+    const b = block({ w: 1.1, d: 1, h: 16, dy: 22 }), ST = 'oklch(0.76 0.03 85)', WA = 'oklch(0.6 0.12 235)';
+    const house = (u0, u1, hgt, c, lit) => b.box(u0, u1, 2, 24, -hgt, 0, c) + b.fl(u0 + 5, u0 + 12, 24, -hgt + 30, -hgt + 80, lit ? LIT : GLASS) + b.fl(u1 - 12, u1 - 5, 24, -hgt + 30, -hgt + 80, lit ? GLASS : LIT) + b.fl(u0 + 9, u0 + 17, 24, -70, 0, INK);
+    return svg(b, b.body(ST), b.top(R(0, 32, 100, 38, WA) + R(8, 40, 22, 2.6, 'oklch(1 0 0 / 0.45)', 1.3) + R(58, 58, 28, 2.6, 'oklch(1 0 0 / 0.4)', 1.3) + R(34, 50, 12, 2.4, 'oklch(1 0 0 / 0.35)', 1.2)),
+      b.right(R(30, 0, 38, 62, dark(WA))), b.shade(), b.edges(),
+      house(3, 30, 190, 'oklch(0.62 0.13 36)', true), house(34, 62, 250, 'oklch(0.86 0.09 85)', false), house(66, 96, 170, 'oklch(0.74 0.09 20)', true),
+      b.box(44, 60, 26, 34, -34, 0, mix(ST, 82, 'black')), b.box(44, 60, 68, 76, -34, 0, mix(ST, 82, 'black')), b.box(42, 62, 24, 78, -58, -34, mix(ST, 90, 'black')));
+  }],
+  // A steel cube with a ball on every corner.
+  ['Spheres', () => {
+    const b = block({ w: 0.78, d: 0.78, h: 39, dy: 2 }), STEEL = 'oklch(0.78 0.03 245)';
+    const panel = R(16, 16, 68, 68, 'oklch(0 0 0 / 0.14)', 4);
+    return svg(b, ball(b.p(0, 0), 9, STEEL), b.body(STEEL), b.left(panel), b.right(panel), b.top(panel), b.shade(), b.edges(),
+      [[0, 100, 0], [100, 0, 0], [0, 100, 100], [100, 0, 100], [100, 100, 100], [100, 100, 0]].map(q => ball(b.p(...q), 9, STEEL)).join(''), ball(b.p(50, 50, 0), 7, 'oklch(0.72 0.2 318)'));
+  }],
+);
 
 // One icon: key and motif.
 export function blockIcon(key, label) {
