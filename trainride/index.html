@@ -539,6 +539,8 @@ const OUTU = {
   uSunTint: { value: new THREE.Vector3(1, 0.95, 0.86) },
   uSkyLow: { value: new THREE.Vector3(1, 0.8, 0.6) },
   uDusk: { value: 0 },
+  // How still the lakes lie, 0 breezy to 1 a mirror.
+  uCalm: { value: 0 },
   uDay: { value: 0 },
   uGP: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
   uGC: { value: Array.from({ length: NG }, () => new THREE.Vector4()) },
@@ -773,25 +775,106 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
   ${LANDTILE}
   ${BRL}
   ${WATER}
-  // The reflected ray climbs to the far slopes; a coarse march finds them.
-  // Four halvings between the last miss and the hit place the shore.
-  vec3 mirrorLand(vec3 P, vec3 Rm, vec3 sky, float sgz) {
-    float t = 20.0;
-    for (int i = 0; i < 32; i++) {
-      vec3 q = P + Rm * t;
-      if (landO(q.xz, 3) > q.y) {
-        float lo = t / 1.25, hi = t;
-        for (int b = 0; b < 4; b++) { float m = 0.5 * (lo + hi); vec3 qm = P + Rm * m; if (landO(qm.xz, 3) > qm.y) hi = m; else lo = m; }
-        q = P + Rm * hi;
-        float qh = landO(q.xz, 3) + 20.0;
-        vec3 a = mix(vec3(0.03, 0.07, 0.025), vec3(0.11, 0.105, 0.1), smoothstep(1100.0, 1500.0, qh));
-        a = mix(a, vec3(0.85, 0.88, 0.93), smoothstep(mix(1450.0, 1080.0, sgz), mix(1650.0, 1280.0, sgz), qh));
-        vec3 lit = mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
-        return mix(a * lit, hazeCol(Rm, q), hazeAmt(q));
-      }
-      t *= 1.25;
+  uniform float uScale, uCalm;
+  // Terrain shadow: a short march toward the sun, soft-edged.
+  // The march starts on the smooth map, a little up: small bumps must not shade themselves.
+  float sunShadow(vec3 P) {
+    vec3 o = vec3(P.x, max(P.y, landC(P.xz)) + 4.0, P.z);
+    float st = 30.0, s = 1.0;
+    for (int i = 0; i < 11; i++) {
+      vec3 q = o + uSun * st;
+      s = min(s, clamp(4.0 * (q.y - landC(q.xz)) / st + 0.5, 0.0, 1.0));
+      st *= 1.75;
     }
-    return sky;
+    return smoothstep(0.0, 1.0, s);
+  }
+  // The land's light at P, seen along V toward the eye: sun, sky, rim, moon and town pools.
+  vec3 litLand(vec3 P, vec3 alb, vec3 N, float ao, float glowK, vec3 V, float vSh) {
+    float dist = length(cameraPosition - P);
+    float shSoft = mix(0.72 + 0.28 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
+    // Wrapped key light: the sun bends softly round each hill.
+    float wrapD = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
+    float keyL = wrapD * wrapD * shSoft;
+    // Shade is tinted cool blue, never dead black.
+    vec3 shadeTint = mix(vec3(0.42, 0.5, 0.75), vec3(1.0), keyL);
+    // Shaded faces get strong sky fill and a soft green bounce from sunlit ground.
+    vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * keyL + skyA(N.y) * ao * shadeTint * 1.9 + sunC() * vec3(0.05, 0.065, 0.04) * (1.0 - keyL) * (1.0 - uRain * 0.7);
+    // Rim light: edges turned from the eye catch a warm line, strongest against the sun.
+    float rimF = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    day += sunC() * vec3(1.0, 0.82, 0.55) * rimF * (0.06 + 0.3 * pow(max(dot(-V, uSun), 0.0), 2.0)) * (1.0 - uRain * 0.8);
+    // Against the sun, grass and leaves glow at their edges.
+    float back = pow(max(dot(-V, uSun), 0.0), 6.0) * (1.0 - uRain);
+    day += sunC() * back * glowK * vec3(0.9, 1.0, 0.6);
+    // Night: moonlight wraps too, and ridges keep a cool moon rim.
+    vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
+    night += vec3(0.25, 0.3, 0.42) * 0.12 * pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    vec3 c = alb * mix(night, day, uDay);
+    // Town glow pools: each bright source lights the ground round it.
+    if (uDay < 0.99) {
+      vec3 pool = vec3(0.0);
+      for (int i = 0; i < ${NG}; i++) {
+        float d = length(uGP[i].xyz - P);
+        pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0);
+      }
+      c += alb * pool * (1.0 - uDay);
+    }
+    return c;
+  }
+  // The baked tiles at a level of detail: foot is the metres one sample must cover.
+  // The finest tile that holds the point answers; x of a is below zero past every tile.
+  void landTileLod(vec2 xz, float foot, out vec4 a, out vec4 b) {
+    float ax = abs(xz.x - uCamX), t = -xz.y;
+    vec2 p = vec2(xz.x, t);
+    ${CAS.map(([s, W, H], k) => `if (ax < ${f8(W * s / 2 * 0.94)} && t < ${f8(H * s * 0.94)}) {
+      vec2 uv = p * vec2(${f8(1 / (W * s))}, ${f8(1 / (H * s))});
+      float l = max(log2(foot / ${f8(s)}), 0.0);
+      a = textureLod(tA${k}, uv, l); b = textureLod(tB${k}, uv, l);
+      return;
+    }`).join(' else ')}
+    a = vec4(-1.0); b = vec4(0.0);
+  }
+  // The lake's mirror: the reflected ray climbs to the far slopes.
+  // The march runs along the ray's heading and keeps the highest skyline it sees.
+  // The ray's depth under that skyline sets the cover, so the mirrored edge is soft.
+  // wid is that edge's width as a slope; foot0 is the eye's footprint on the water.
+  // It returns the lit land in rgb and its cover in a.
+  vec4 mirrorLand(vec3 P, vec3 Rm, float wid, float foot0) {
+    float hl = length(Rm.xz);
+    vec2 hd = Rm.xz / hl;
+    float slope = Rm.y / hl, s = 20.0, best = -1e3, sBest = 20.0, sHit = -1.0;
+    // 32 steps reach 20 km, past the ridges behind the far shore.
+    for (int i = 0; i < 32; i++) {
+      float a = (landO(P.xz + hd * s, 3) - P.y) / s;
+      if (a > best) { best = a; sBest = s; }
+      // Past the hit, a few more steps find any higher skyline behind.
+      if (sHit < 0.0 && a > slope) sHit = s;
+      if (sHit > 0.0 && s > sHit * 2.5) break;
+      s *= 1.25;
+    }
+    float cover = smoothstep(-wid, wid, best - slope);
+    if (cover <= 0.0) return vec4(0.0);
+    // Three halvings place the hit; a miss shows the skyline itself, faintly.
+    float sh = sBest;
+    if (sHit > 0.0) {
+      float lo = sHit / 1.25, hi = sHit;
+      for (int b = 0; b < 3; b++) { float m = 0.5 * (lo + hi); if (landO(P.xz + hd * m, 3) - P.y > slope * m) hi = m; else lo = m; }
+      sh = hi;
+    }
+    vec2 qxz = P.xz + hd * sh;
+    vec3 q = vec3(qxz.x, landO(qxz, 3), qxz.y);
+    // The image blurs with distance, and the ripples smear it further.
+    float tq = length(q - P);
+    vec4 m0, m1;
+    landTileLod(q.xz, foot0 + tq / (uScale * 400.0) + tq * wid * 0.5, m0, m1);
+    vec3 col;
+    vec3 Vq = normalize(P - q);
+    if (m0.x < 0.0) col = vec3(0.03, 0.07, 0.025) * mix(vec3(0.02, 0.025, 0.04), sunC() * 0.45 + skyA(1.0), uDay);
+    else {
+      vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
+      float vSh = uDay > 0.01 ? sunShadow(q) : 1.0;
+      col = litLand(q, m0.rgb * m0.rgb, N, m1.z, m0.a * 0.32, Vq, vSh);
+    }
+    return vec4(mix(col, hazeCol(-Vq, q), hazeAmt(q)), cover);
   }
   void main() {
     // Under a rail bridge a road, a river or a dip passes below: the ground there is dug out.
@@ -806,48 +889,10 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
     vec3 alb = m0.rgb * m0.rgb;
     float glowK = m0.a * 0.32, ao = m1.z, wd = m1.w;
     vec3 N = normalize(vec3(m1.x, sqrt(max(1.0 - dot(m1.xy, m1.xy), 0.0004)), m1.y));
-    // Wrapped key light: the sun bends softly round each hill.
-    // Terrain self-shadow stays gentle: the coarse vertex march must never punch black holes.
-    // Terrain shadow: a short march toward the sun at each pixel, soft-edged.
+    // Terrain shadow: a short march toward the sun at each pixel.
     float vSh = 1.0;
-    if (uDay > 0.01 && dist > 60.0) {
-      // The march starts on the smooth map, a little up: small bumps must not shade themselves.
-      vec3 o = vec3(vP.x, max(vP.y, landC(vP.xz)) + 4.0, vP.z);
-      float st = 30.0;
-      for (int i = 0; i < 11; i++) {
-        vec3 q = o + uSun * st;
-        vSh = min(vSh, clamp(4.0 * (q.y - landC(q.xz)) / st + 0.5, 0.0, 1.0));
-        st *= 1.75;
-      }
-      vSh = smoothstep(0.0, 1.0, vSh);
-    }
-    float shSoft = mix(0.72 + 0.28 * vSh, 1.0, max(uRain * 0.7, smoothstep(250.0, 60.0, dist)));
-    float wrapD = clamp((dot(N, uSun) + 0.3) / 1.3, 0.0, 1.0);
-    float keyL = wrapD * wrapD * shSoft;
-    // Shade is tinted cool blue, never dead black.
-    vec3 shadeTint = mix(vec3(0.42, 0.5, 0.75), vec3(1.0), keyL);
-    // Shaded faces get strong sky fill and a soft green bounce from sunlit ground.
-    vec3 day = sunC() * vec3(1.0, 0.95, 0.85) * keyL + skyA(N.y) * ao * shadeTint * 1.9 + sunC() * vec3(0.05, 0.065, 0.04) * (1.0 - keyL) * (1.0 - uRain * 0.7);
-    // Rim light: edges turned from the eye catch a warm line, strongest against the sun.
-    float rimF = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-    day += sunC() * vec3(1.0, 0.82, 0.55) * rimF * (0.06 + 0.3 * pow(max(dot(-V, uSun), 0.0), 2.0)) * (1.0 - uRain * 0.8);
-    // Against the sun, grass and leaves glow at their edges.
-    float back = pow(max(dot(-V, uSun), 0.0), 6.0) * (1.0 - uRain);
-    day += sunC() * back * glowK * vec3(0.9, 1.0, 0.6);
-    // Night: the moon behind the peaks, and a faint sky.
-    // Night: moonlight wraps too, and ridges keep a cool moon rim.
-    vec3 night = vec3(0.3, 0.34, 0.42) * 0.5 * clamp((dot(N, uMoon) + 0.25) / 1.25, 0.0, 1.0) + vec3(0.012, 0.016, 0.026);
-    night += vec3(0.25, 0.3, 0.42) * 0.12 * pow(1.0 - max(dot(N, V), 0.0), 3.0);
-    vec3 c = alb * mix(night, day, uDay);
-    // Town glow pools: each bright source lights the ground round it.
-    if (uDay < 0.99) {
-      vec3 pool = vec3(0.0);
-      for (int i = 0; i < ${NG}; i++) {
-        float d = length(uGP[i].xyz - vP);
-        pool += uGC[i].rgb * uGP[i].w * 500.0 / (d * d + 2500.0);
-      }
-      c += alb * pool * (1.0 - uDay);
-    }
+    if (uDay > 0.01 && dist > 60.0) vSh = sunShadow(vP);
+    vec3 c = litLand(vP, alb, N, ao, glowK, V, vSh);
     // Water: rippled on the river, calm on the lakes.
     // Lakes are flat; the coarse lake mask must not paint water up a cliff.
     float water = smoothstep(2.0, -2.0, wd) * smoothstep(0.985, 0.997, normalize(vN).y);
@@ -855,7 +900,8 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       // The shared water (shared/water.js): swell, chop and wave sets; a wave too fine
       // for a pixel moves into sig2, so far water becomes a smooth glitter path.
       float foot = max(max(fwidth(vP.x), fwidth(vP.z)), 0.001), sig2;
-      vec2 slopeW = wtWaves(vP.xz, uTime, foot, 0.012, 0.16, 0.4, sig2);
+      // A calm hour lowers the chop most; the long swell stays a little.
+      vec2 slopeW = wtWaves(vP.xz, uTime, foot, 0.012 * (1.0 - 0.5 * uCalm), 0.16 * (1.0 - 0.75 * uCalm), 0.4, sig2);
       // Rain rings, as hard as it falls.
       slopeW += wtRings(vP.xz, uTime, foot, uRain, 0.6, sig2);
       vec3 Nw = wtNormal(slopeW);
@@ -864,10 +910,11 @@ const land = new THREE.Mesh(terrain, new THREE.ShaderMaterial({
       float F = wtFresnel(-V, Nw);
       vec3 refl = skyCol(R);
       // The land in the mirror uses a calmer normal, so far slopes do not break into blobs.
-      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.45, 1.0, -slopeW.y * 0.45)));
+      vec3 Rm = reflect(-V, normalize(vec3(-slopeW.x * 0.3, 1.0, -slopeW.y * 0.3)));
       Rm.y = max(Rm.y, 0.005);
-      // Two mirror rays a hair apart, averaged, so the mirrored shoreline has a soft edge.
-      refl = 0.5 * (mirrorLand(vP, Rm, refl, sg.z) + mirrorLand(vP, normalize(Rm + vec3(0.0, 0.006, 0.0)), refl, sg.z));
+      // The mirrored skyline softens with the roughness no pixel resolves.
+      vec4 ml = mirrorLand(vP, Rm, 0.003 + sqrt(sig2) * 0.12, foot);
+      refl = mix(refl, ml.rgb, ml.a);
       // Lake Zurich is blue-green; the Walensee is emerald; shallows near the shore run lighter.
       float shallow = smoothstep(-25.0, -2.0, wd);
       vec3 deep = mix(vec3(0.006, 0.035, 0.05), vec3(0.004, 0.055, 0.045), sg.z);
@@ -4662,12 +4709,13 @@ let wetMul = 1;
 let mode = MODES.rain, mk = 0, air = 1, rainT = 0, dayT = 0, dayV = 0;
 // Five hours (Tom, 2026-11-10). day is the daylight share; sun is the direction to the sun.
 // tint colours the sun; low colours the horizon, and dusk sets how strong that band is.
+// calm stills the lakes: the wind drops at dawn and dusk, so they mirror the shore.
 const HOURS = {
-  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4 },
-  noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0 },
-  afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1 },
-  evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85 },
-  night: { day: 0, sun: [-0.76, 0.07, -0.65], tint: [1.0, 0.58, 0.3], low: [0.4, 0.3, 0.3], dusk: 0 },
+  morning: { day: 0.9, sun: [0.62, 0.17, -0.77], tint: [1.0, 0.82, 0.64], low: [0.98, 0.8, 0.7], dusk: 0.4, calm: 0.75 },
+  noon: { day: 1, sun: [-0.22, 0.86, -0.46], tint: [1.0, 0.98, 0.95], low: [0.9, 0.88, 0.85], dusk: 0, calm: 0.1 },
+  afternoon: { day: 1, sun: [-0.6, 0.36, -0.72], tint: [1.0, 0.95, 0.86], low: [1.0, 0.85, 0.7], dusk: 0.1, calm: 0 },
+  evening: { day: 0.82, sun: [-0.76, 0.08, -0.65], tint: [1.0, 0.62, 0.3], low: [1.0, 0.6, 0.28], dusk: 0.85, calm: 0.8 },
+  night: { day: 0, sun: [-0.76, 0.07, -0.65], tint: [1.0, 0.58, 0.3], low: [0.4, 0.3, 0.3], dusk: 0, calm: 0.55 },
 };
 const hourOf = v => HOURS[v === 'day' ? 'afternoon' : v] || HOURS.night;
 let hourT = hourOf('night');
@@ -5030,6 +5078,8 @@ function update(dt, pace) {
   OUTU.uSunTint.value.lerp(tintT, kh);
   OUTU.uSkyLow.value.lerp(lowT, kh);
   OUTU.uDusk.value += (hourT.dusk - OUTU.uDusk.value) * kh;
+  // Rain brings wind: it roughens a calm lake.
+  OUTU.uCalm.value += (hourT.calm * (1 - Math.min(1, air)) - OUTU.uCalm.value) * kh;
   // No rain falls in a tunnel.
   OUTU.uRain.value = Math.min(1, air) * (1 - tunT);
   OUTU.uPour.value = air * (1 - tunT);
@@ -5063,7 +5113,7 @@ return {
   get day() { return dayV; },
   setTime(v, now) {
     aimHour(hourOf(v));
-    if (now) { dayV = dayT; OUTU.uSun.value.copy(sunT); W.uSunW.value.copy(sunT); OUTU.uSunTint.value.copy(tintT); OUTU.uSkyLow.value.copy(lowT); OUTU.uDusk.value = hourT.dusk; place(); }
+    if (now) { dayV = dayT; OUTU.uSun.value.copy(sunT); W.uSunW.value.copy(sunT); OUTU.uSunTint.value.copy(tintT); OUTU.uSkyLow.value.copy(lowT); OUTU.uDusk.value = hourT.dusk; OUTU.uCalm.value = hourT.calm * (1 - Math.min(1, air)); place(); }
   },
   setSpeed(v) { target = v; },
   // Dev: a plan view of the outside from h metres up; off returns to the window.
