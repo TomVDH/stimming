@@ -1,11 +1,11 @@
 ---
 # stimming-bq7g
 title: 'Ten seconds: a more compelling rocket'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-10T08:49:58Z
-updated_at: 2026-11-15T05:12:58Z
+updated_at: 2026-11-15T05:13:06Z
 parent: stimming-4wu3
 ---
 
@@ -26,3 +26,9 @@ Tom (2026-11-10): the rocket itself needs to be more compelling. Today the body 
 
 - [x] Far roar deeper and bassier (Tom): slower recording, a low shelf, a low-pass from 1.5 kHz, crackle as low thumps
 - [x] Square outline on the exhaust (Tom): the flame quad fades at every edge; the tail is narrower
+
+## Summary of Changes
+
+- Flame: shock diamonds, eddies, a breathing tail, a size floor, the shared streak at ignition.
+- Thrust sound: Tom's recorded roar, deeper and bassier far away.
+- Rocket body: Ten seconds flies shared/rocket.js (far detail), lit by its own shader; flame quad from makeFlame. Needs list: docs/plans/ascent-launch.md.
