@@ -199,20 +199,24 @@ float noise(vec2 p) {
 }
 float fbm(vec2 p) {
   float s = 0.0, a = 0.5;
-  for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
+  // Each octave turns, so the value grid never lines up.
+  for (int i = 0; i < 5; i++) { s += a * noise(p); p = mat2(0.8, 0.6, -0.6, 0.8) * p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
   return s / 0.97;
 }
 `;
-// The light map: red holds pools on the ground; green, blue and alpha hold air glow.
-// Air glow lives in three depth bands, so near grass skips far flashes.
-// Band centres: 4, 12 and 35 m. The weights always sum to 1.
+// Light map red: the pools on the ground.
+// Light map green, blue and alpha: air glow in three depth bands.
+// Depth bands keep far flashes off the near grass.
+// Band centres sit at 4, 12 and 35 m.
+// The band weights always sum to 1.
 const BANDS = `
 vec3 bandW(float z) {
   float t = clamp(log2(z / 4.0) / 3.1293 * 2.0, 0.0, 2.0);
   return max(vec3(0.0), 1.0 - abs(vec3(t) - vec3(0.0, 1.0, 2.0)));
 }
 `;
-// The front grass sways by height; every pass that reads it shares this.
+// The front grass sways more toward its tips.
+// Every pass that reads the grass uses this sway.
 const SWAY = `
 uniform float uT, uSway, uGrassH;
 vec2 sway(vec2 uv, vec2 view) {
@@ -251,7 +255,7 @@ float woods(float X) {
 }
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
 float sdE(vec2 p, vec2 c, vec2 r) { vec2 q = (p - c) / r; return (length(q) - 1.0) * min(r.x, r.y); }
-// The lantern tree's crown, in metres: x right, y up from the ground.
+// The lantern tree's crown, in metres from the trunk foot.
 float crown(vec2 q) {
   float d = sdE(q, vec2(0.0, 6.7), vec2(4.6, 2.8));
   d = smin(d, sdE(q, vec2(-3.3, 5.8), vec2(2.2, 1.7)), 0.8);
@@ -354,7 +358,9 @@ void main() {
   float gap = fbm(q * 2.2 + 11.0);
   cc *= 1.0 - smoothstep(0.6, 0.66, gap) * smoothstep(-1.4, -0.2, dc);
   float front = uTree.y - 3.0 * sqrt(clamp(-dc / 2.4, 0.0, 1.0));
-  vec3 leaf = uLeaf * (0.4 + 0.9 * fbm(q * 1.6 + 5.0)) * (0.65 + 0.7 * noise(q * 7.0));
+  // Leaf clumps: two turned noise scales, squared for dark gaps between them.
+  float lf = 0.55 * noise(mat2(0.8, 0.6, -0.6, 0.8) * q * 6.0) + 0.45 * noise(mat2(0.28, 0.96, -0.96, 0.28) * q * 13.0 + 3.0);
+  vec3 leaf = uLeaf * (0.4 + 0.9 * fbm(q * 1.6 + 5.0)) * (0.5 + 1.1 * lf * lf);
   col = mix(col, leaf, cc);
   iz = mix(iz, 1.0 / front, cc);
   kind = mix(kind, 0.75, cc);
@@ -420,7 +426,8 @@ void main() {
     // The woods are far behind the swarm: only haze lies over them.
     col = b.rgb * uAmb + uFly * L.a * 0.0012 * uHaze * uLightK;
   } else if (kind < 0.6) {
-    // The meadow takes the pools under the fireflies; the sky lights it blue.
+    // The meadow takes the pools under the fireflies.
+    // The sky adds a dim blue light.
     col = b.rgb * (uAmb * uSkyLight + uFly * L.r * uLightK * 0.75);
   } else {
     // Leaves and bark take the air glow at their own depth.
@@ -437,7 +444,7 @@ void main() {
 }`;
 
 /* ---------- fireflies ---------- */
-// Instanced sprites: a sharp core far away, a soft bokeh disc up close.
+// Instanced sprites: a sharp core far away, a soft disc up close.
 const FLY_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec4 aA;
@@ -446,9 +453,13 @@ uniform vec2 uView;
 out vec2 vP;
 out vec4 vA;
 out vec4 vB;
+out float vR;
 void main() {
-  float R = max(aA.z * 9.0 + aA.w * 0.5, aA.w + aA.z * 3.0) + 1.5;
+  // The quad holds the core, the disc and the halo with room to fade.
+  float hr = aA.z * 4.0 + aA.w * 0.4;
+  float R = max(aA.z * 4.0, aA.w * 1.3 + aA.z * 2.0) + hr * 2.5 + 1.0;
   vP = aCorner * R;
+  vR = R;
   vA = aA;
   vB = aB;
   vec2 p = aA.xy + vP;
@@ -459,6 +470,7 @@ precision highp float;
 in vec2 vP;
 in vec4 vA;
 in vec4 vB;
+in float vR;
 uniform sampler2D uBase, uMat;
 uniform vec2 uView, uRes;
 uniform vec3 uFly, uLamp;
@@ -466,14 +478,16 @@ out vec4 o;
 ${SWAY}
 void main() {
   float d = length(vP), s = vA.z, c = vA.w;
-  // Each shape holds the same light, so a big disc is a dim disc.
+  // Every shape holds the same light, so a big disc is dim.
   float core = exp(-d * d / (2.0 * s * s)) / (6.2832 * s * s);
-  // The disc edge softens as the disc grows, so a dim disc is no flat dot.
+  // A big disc gets a soft edge and a brighter rim, like a lens blur.
   float ed = max(s, 0.22 * c);
-  float disc = smoothstep(c + ed, c - ed, d) / (3.1416 * (c * c + ed * ed)) * (1.0 + 0.35 * smoothstep(0.4 * c, c, d));
-  float k = mix(core, disc, smoothstep(0.6 * s, 2.2 * s, c));
-  float hr = s * 5.0 + c * 0.6;
-  k += 0.09 * exp(-d / hr) / (6.2832 * hr * hr);
+  float disc = smoothstep(c + ed, c - ed, d) / (3.1416 * (c * c + ed * ed)) * (0.75 + 0.6 * smoothstep(0.45 * c, 0.95 * c, d));
+  float dk = smoothstep(0.6 * s, 2.2 * s, c);
+  float k = mix(core, disc, dk);
+  // The halo fades out before the quad edge, so no square shows.
+  float hr = s * 4.0 + c * 0.4;
+  k += 0.09 * exp(-d / hr) / (6.2832 * hr * hr) * (1.0 - smoothstep(0.55 * vR, vR, d));
   // A nearer surface hides the firefly: woods, leaves, bark, front grass.
   vec2 uv = gl_FragCoord.xy / uRes;
   float sIz = texture(uBase, uv).a;
@@ -481,7 +495,8 @@ void main() {
   vis *= 1.0 - texture(uMat, uv - sway(uv, uView)).r;
   float I = vB.x * k * vis;
   if (I < 1e-4) discard;
-  vec3 tint = mix(uFly, uLamp, vB.z);
+  // A blurred disc is paler than a sharp core.
+  vec3 tint = mix(mix(uFly, vec3(1.0, 0.97, 0.75), 0.3 * dk), uLamp, vB.z);
   // A strong core runs toward white; the lantern's white is warm.
   vec3 hot = mix(vec3(1.0, 1.0, 0.9), vec3(1.0, 0.78, 0.5), vB.z);
   o = vec4(mix(tint, hot, clamp(I * 0.05, 0.0, 0.55)) * I, 1.0);
@@ -516,7 +531,7 @@ const COL = {
   skyMid: linFit(0.18, 0.05, 266),
   skyLow: linFit(0.24, 0.045, 252),
   glow: linFit(0.45, 0.11, 45).map(v => v * 0.5),
-  // Night sky light: blue and dim, scaled so its brightest channel is 1.5.
+  // Night sky light: blue, with its brightest channel at 1.5.
   skyLight: linFit(0.7, 0.12, 255).map((v, _, a) => (v / Math.max(...a)) * 1.5),
   line: linFit(0.1, 0.016, 262),
   ground: linFit(0.36, 0.07, 140),
@@ -534,9 +549,9 @@ const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { layout(); bake();
 /* ---------- camera ---------- */
 // A pinhole camera on a low rise looks level over the meadow.
 // The horizon sits high; the lens shifts, it does not tilt.
-// From up here the swarm spreads over the ground, so waves can be seen.
+// From the rise, the swarm spreads out and waves show.
 const EYE = 3.2, ZT = 38, Z0 = 2.6, Z1 = 60;
-let w = 1, h = 1, dpr = 1, W = 1, H = 1, f = 1, yh = 1, half = 1, treeU = 0.42, treeX = 0;
+let w = 1, h = 1, dpr = 1, W = 1, H = 1, f = 1, yh = 1, half = 1, treeU = 0.42, treeX = 0, eScale = 1;
 let base = null, hdr = null, lightT = null, lightDiv = 4;
 
 /* ---------- the swarm ---------- */
@@ -558,7 +573,8 @@ const gauss = () => { let u = 0; while (!u) u = rnd(); return Math.sqrt(-2 * Mat
 // A rhythm: its cycle in seconds and its flashes within one cycle.
 // Each flash is a quick rise, then an exponential fade.
 // Burst flashes stay 0.36 s apart: under three flashes a second.
-// sp widens the spread of a slow rhythm, so each one locks in about a minute.
+// sp widens the spread of a slow rhythm.
+// So every rhythm locks in about a minute.
 const RHYTHM = {
   pulse: { T: 0.95, at: [0], amp: [1], a: 0.04, tau: 0.09, sp: 1 },
   double: { T: 1.3, at: [0, 0.16], amp: [1, 0.7], a: 0.03, tau: 0.06, sp: 1.37 },
@@ -597,7 +613,8 @@ const coupling = () => 12 * pull ** 1.75 * kc();
 
 /* ---------- the light grid ---------- */
 // Each firefly sees the flashes near it on a coarse ground grid.
-// Flash light and firefly count blur alike; their ratio is the local mean.
+// Flash light and firefly count blur alike.
+// Their ratio is the local mean flash.
 const CELL = 1.5;
 let GW = 1, GH = 1, GX0 = 0, GZ0 = 0, gB = new Float32Array(1), gC = new Float32Array(1), gT = new Float32Array(1);
 let ker = [1], KR = 0;
@@ -656,7 +673,7 @@ function spawnOne(i) {
     PZ[i] = z;
     PX[i] = (rnd() * 2 - 1) * 1.15 * z * half;
     PY[i] = 0.3 + 2.4 * rnd() ** 2;
-    // A few drift close to the lens, at eye height: big soft discs.
+    // A few drift close to the lens at eye height.
     if (i < 14) { PZ[i] = Z0 + 3.5 * rnd(); PY[i] = EYE - 0.3 + 1.6 * rnd(); PX[i] = (rnd() * 2 - 1) * PZ[i] * half; }
     // Each keeps a home height and depth that it drifts round.
     HY[i] = PY[i]; HZ[i] = PZ[i];
@@ -692,12 +709,17 @@ function layout() {
   W = Math.max(1, Math.round(w * dpr)); H = Math.max(1, Math.round(h * dpr));
   canvas.width = W; canvas.height = H;
   const asp = w / h;
-  // Wide stages keep a 42 degree height; tall ones keep a 54 degree width.
+  // A wide stage keeps a 42 degree view height.
+  // A tall stage keeps a 54 degree view width.
   f = Math.min(h / (2 * Math.tan((21 * Math.PI) / 180)), w / (2 * Math.tan((27 * Math.PI) / 180)));
+  // A tall phone crops the sides instead, so the meadow stays large.
+  if (asp < 1) f = Math.max(f, h * 0.75);
+  // Firefly light follows the image scale, so phones do not blow out.
+  eScale = Math.pow(f / 940, 1.5);
   yh = h * (asp < 1 ? 0.4 : 0.34);
   const oldHalf = half;
   half = w / 2 / f;
-  // The meadow keeps its place on the screen when the stage changes shape.
+  // Meadow fireflies keep their screen place when the stage changes shape.
   const k = half / oldHalf;
   if (k !== 1) for (let i = 0; i < NM; i++) PX[i] *= k;
   treeU = asp < 1 ? 0.28 : 0.42;
@@ -757,7 +779,7 @@ function instanced(layout) {
   return { vao, buf };
 }
 const sprI = instanced([4, 4]), splI = instanced([4, 1, 4]);
-// The same three air bands as the shader: centres 4, 12 and 35 m.
+// These are the shader's three air bands.
 const BW = [0, 0, 0];
 function bandW(z) {
   const t = clamp((Math.log2(z / 4) / 3.1293) * 2, 0, 2);
@@ -782,7 +804,8 @@ function lampOn(sx, sy) {
 function lampOff() { lamp.on = false; }
 
 /* ---------- scatter ---------- */
-// A touch startles the fireflies near it: they flash in a ring and lose the beat.
+// A touch startles the fireflies near it.
+// They flash in a ring and lose the beat.
 const startle = [];
 function scatter(sx, sy, power = 1, dir = null) {
   const R = (0.1 * Math.min(w, h) + 34) * (0.75 + 0.25 * power);
@@ -793,7 +816,7 @@ function scatter(sx, sy, power = 1, dir = null) {
     if (d > R || CD[i] > 0) continue;
     const k = 1 - d / R;
     CD[i] = 0.3;
-    // Near the touch every clock is lost; at the edge only some are.
+    // Near the touch every clock resets; at the edge only some do.
     if (Math.random() < 0.35 + 0.65 * k) TH[i] = Math.random();
     if (!rm) {
       SD[i] = (d / R) * 0.22 + Math.random() * 0.05;
@@ -813,7 +836,8 @@ function scatter(sx, sy, power = 1, dir = null) {
 
 /* ---------- step ---------- */
 // One sim step: drift, light, clocks, flashes. dt in seconds.
-// Onsets list the fireflies that start a flash this step, and which flash.
+// Onsets list the fireflies that start a flash this step.
+// onsetK holds which flash of the rhythm starts.
 const onsets = [], onsetK = [];
 let simT = 0, order = 0;
 function step(dt) {
@@ -841,13 +865,13 @@ function step(dt) {
     PX[i] += VX[i] * dt; PY[i] += VY[i] * dt; PZ[i] += VZ[i] * dt;
     if (PY[i] < 0.12) { PY[i] = 0.12; VY[i] = Math.abs(VY[i]); }
     if (PZ[i] < 1.8) { PZ[i] = 1.8; VZ[i] = Math.abs(VZ[i]); }
-    // A meadow firefly that drifts off one side comes back on the other.
+    // A meadow firefly that drifts off one side returns on the other.
     if (i < NM) {
       const lim = 1.2 * PZ[i] * half;
       if (PX[i] > lim) PX[i] -= 2 * lim; else if (PX[i] < -lim) PX[i] += 2 * lim;
     }
   }
-  // Light: what each firefly sees is the mean flash of those near it.
+  // Each firefly sees the mean flash of the fireflies near it.
   gB.fill(0); gC.fill(0);
   let sum = 0;
   for (let i = 0; i < N; i++) {
@@ -877,7 +901,7 @@ function step(dt) {
     // A bright crowd dazzles: the response saturates.
     S /= 1 + S * 0.125;
     let d = (NU[i] + K * S * -Math.sin(TAU * (TH[i] - THC))) * dt;
-    // Light slows a clock to a third at most; it never stops it.
+    // Light slows a clock to a third at most, never to zero.
     if (d < NU[i] * dt * 0.3) d = NU[i] * dt * 0.3;
     const th0 = TH[i], end = th0 + d;
     // Each flash of the rhythm starts as the clock passes its mark.
@@ -897,7 +921,7 @@ function step(dt) {
     else if (ST[i] > 0) ST[i] = Math.max(0, ST[i] - dt / 0.28);
   }
   order = Math.hypot(cx, cy) / N;
-  // The lantern keeps its own beat and pulls on no one's clock but theirs.
+  // The lantern keeps its own beat; no light changes its clock.
   lamp.b = 0;
   if (lamp.k > 0) {
     const l0 = lamp.th, l1 = l0 + dt / T0;
@@ -913,9 +937,9 @@ const E0 = 240;
 function fill() {
   const ap = reduced() ? tune.aperture * 0.5 : tune.aperture, zf = 12;
   let ns = 0, nl = 0;
-  // A splat too small for the map grows, and dims to keep its light.
+  // A splat too small for the map grows and dims.
   const minR = (2.5 * lightDiv) / dpr;
-  // A pool goes to the ground channel; air glow to its depth bands.
+  // A pool goes to the ground channel, air glow to its bands.
   const putSplat = (x, y, rx, ry, I, z, pool) => {
     const o = nl * 9;
     const gx = Math.max(rx, minR), gy = Math.max(ry, minR);
@@ -934,15 +958,15 @@ function fill() {
     const ember = 0.016 * clamp((16 - z) / 8) * clamp((z - 4.5) / 2);
     const s = clamp((0.022 * f) / z, 0.55, 2.0);
     const coc = ap * f * Math.max(0, iz - 1 / zf);
-    const R = Math.max(s * 9 + coc * 0.5, coc + s * 3) + 2;
+    const R = Math.max(s * 4, coc * 1.3 + s * 2) + (s * 4 + coc * 0.4) * 2.5 + 1;
     if (sx > -R && sx < w + R && sy > -R && sy < h + R && glow + ember > 0.002) {
       const o = ns * 8;
       SPR[o] = sx; SPR[o + 1] = sy; SPR[o + 2] = s; SPR[o + 3] = coc;
-      SPR[o + 4] = E0 * Math.pow(10 * iz, 1.3) * (glow + ember); SPR[o + 5] = iz; SPR[o + 6] = 0; SPR[o + 7] = 0;
+      SPR[o + 4] = E0 * eScale * Math.pow(10 * iz, 1.3) * (glow + ember); SPR[o + 5] = iz; SPR[o + 6] = 0; SPR[o + 7] = 0;
       ns++;
     }
     if (glow > 0.01) {
-      // Air glow round the firefly, and a pool on the grass below it.
+      // Air glow round the firefly, and a pool on the grass below.
       const ra = (1.7 * f) / z;
       putSplat(sx, sy, ra, ra, glow, z, false);
       const rg = ((0.35 + 0.35 * PY[i]) * f) / z;
@@ -954,7 +978,7 @@ function fill() {
     const s = 3.4, coc = ap * f * Math.max(0, iz - 1 / zf) * 0.4;
     const o = ns * 8;
     SPR[o] = lamp.x; SPR[o + 1] = lamp.y; SPR[o + 2] = s; SPR[o + 3] = coc;
-    SPR[o + 4] = E0 * 3 * glow; SPR[o + 5] = iz; SPR[o + 6] = 1; SPR[o + 7] = 0;
+    SPR[o + 4] = E0 * eScale * 3 * glow; SPR[o + 5] = iz; SPR[o + 6] = 1; SPR[o + 7] = 0;
     ns++;
     const ra = (2.4 * f) / z;
     putSplat(lamp.x, lamp.y, ra, ra, glow * 2.2, z, false);
@@ -1031,7 +1055,7 @@ function draw(t) {
   bindTex(compP, 'uHdr', hdr.tex, 0);
   bindTex(compP, 'uBloom', bl, 1);
   gl.uniform2f(compP.u('uRes'), W, H);
-  gl.uniform1f(compP.u('uBloomK'), tune.bloom);
+  gl.uniform1f(compP.u('uBloomK'), tune.bloom * clamp(f / 940, 0.6, 1));
   gl.uniform1f(compP.u('uExpo'), tune.exposure);
   gl.uniform1f(compP.u('uGrainK'), 0.035);
   gl.uniform1f(compP.u('uSeedG'), reduced() ? 0 : Math.floor(t * 24) % 97);
@@ -1087,7 +1111,7 @@ function patter(ac, at, level, pan) {
   voice(ac, at, g, pan);
   src.start(at, Math.random() * 0.9, dur + 0.01);
 }
-// One heart sound: a low sine falls in pitch over a soft thud.
+// One heart sound: a falling low sine over a soft thud.
 function thump(ac, at, level, f0, f1) {
   const o = ac.createOscillator(), g = ac.createGain();
   o.frequency.setValueAtTime(f0, at);
@@ -1106,8 +1130,10 @@ function thump(ac, at, level, f0, f1) {
   src.connect(lp).connect(gn).connect(kit.out);
   src.start(at, Math.random() * 0.8, 0.1);
 }
-// A whole crowd in step lands as a heartbeat; a big crowd adds a warm chord.
-// Pulse: each flash is a lub and a dub. Double: its two flashes are the lub and the dub.
+// A crowd in step lands as a heartbeat.
+// A big crowd adds a warm chord.
+// Pulse: each flash makes a lub and a dub.
+// Double: its first flash is the lub, its second the dub.
 // Burst: each flash is one low beat, falling through the volley.
 function heartbeat(ac, at, level, k) {
   if (RH === RHYTHM.pulse) {
@@ -1160,7 +1186,7 @@ function whoosh(ac, at, power, pan) {
   src.start(at, Math.random() * 0.6, 0.35);
 }
 // Onsets in the last frames find a crowd that flashes as one.
-// Each frame keeps its onset count and the flash most of them started.
+// Each frame keeps its onset count and its most common flash.
 const win = [0, 0, 0], winK = [0, 0, 0], perK = [0, 0, 0, 0];
 let peak = 0, peakK = 0, rising = false, lastBeat = -9;
 function listen(dt) {
@@ -1173,7 +1199,7 @@ function listen(dt) {
   win.shift(); win.push(n);
   winK.shift(); winK.push(top);
   const sum = win[0] + win[1] + win[2];
-  // Out of step, about N * dt * flashes / T0 onsets land in each frame.
+  // Out of step, this many onsets land in each frame.
   const expect = (N * 3 * dt * RH.at.length) / T0;
   if (sum > peak) { peak = sum; peakK = winK[win.indexOf(Math.max(...win))]; rising = true; }
   let beat = 0;
@@ -1189,7 +1215,8 @@ function listen(dt) {
   if (!ac || !kit.noise) { startle.length = 0; return; }
   const at = ac.currentTime + 0.03;
   if (beat) heartbeat(ac, at, 0.5 * beat ** 0.8, peakK);
-  // Rain: a few drops and one tick per frame, from the nearest flashes.
+  // Rain: a few drops and one tick per frame.
+  // The tick comes from the nearest flash.
   if (n) {
     let best = -1;
     for (const i of onsets) if (best < 0 || PZ[i] < PZ[best]) best = i;
@@ -1279,17 +1306,21 @@ act.shuffle = () => {
   scramble();
   if (!reduced()) for (let i = 0; i < N; i++) SD[i] = Math.random() * 0.7;
 };
-act.leadDown = () => lampOn(w * (0.5 - 0.3 * (treeU > 0 ? 1 : -1) * 0.5), yh + (h - yh) * 0.18);
+// The Lead chip lights the lantern left of the tree, just below the horizon.
+act.leadDown = () => lampOn(w * 0.35, yh + (h - yh) * 0.18);
 act.leadUp = () => lampOff();
+// Reset returns the pull, the rhythm and the meadow to the start.
 act.reset = () => {
   ui.slider.set(PULL0);
   pull = PULL0;
+  ui.choice.set('pulse');
+  act.rhythm('pulse');
   lampOff();
   spawn();
 };
 act.spread = () => { retune(); };
 act.sight = () => { makeKernel(); };
-// A new rhythm keeps every clock where it is, so order carries over.
+// A new rhythm keeps every clock, so order carries over.
 act.rhythm = v => {
   RH = RHYTHM[v] || RHYTHM.pulse;
   T0 = RH.T;

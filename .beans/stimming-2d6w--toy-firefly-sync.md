@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T08:57:39Z
-updated_at: 2026-11-15T09:34:04Z
+updated_at: 2026-11-15T09:41:34Z
 parent: stimming-oh7b
 ---
 
@@ -21,8 +21,8 @@ Tier: raw WebGL2 (instanced sprites, a baked night scene lit by the fireflies, b
 - [x] Night scene: sky, tree line, lantern tree, meadow, front grass, lit by the fireflies
 - [x] Fireflies: instanced sprites with depth, bokeh, glow; bloom and grade
 - [x] Gestures: tap scatters, drag sweeps, hold leads; Shuffle; Pull slider; Rhythm choice (Pulse, Double, Burst)
-- [ ] Sound: ticks, rain, heartbeat through audioKit, muted by default
-- [ ] Quality: detail level, pixel ratio, slow-frame step, whenVisible, reduced motion
+- [x] Sound: ticks, rain, heartbeat through audioKit, muted by default
+- [x] Quality: detail level, pixel ratio, slow-frame step, whenVisible, reduced motion
 - [ ] QA in the browser pane: console, gestures, controls, sound, 1280, 375 x 812, 812 x 375
-- [ ] Toy doc docs/toys/fireflies.md
+- [x] Toy doc docs/toys/fireflies.md
 - [ ] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
