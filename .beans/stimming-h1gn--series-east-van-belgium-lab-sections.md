@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:49:15Z
-updated_at: 2026-11-15T09:26:17Z
+updated_at: 2026-11-15T09:39:16Z
 ---
 
 Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per toy; a place beats a theme. Sections show in the Lab only first. Toys with no series sit in one last section with no name.
@@ -50,4 +50,5 @@ Tom, 2026-11-14: place series (Belgium, East Van, more later). One series per to
 - [x] No depth icons: shared/series/depth.js and serieslab/depth.html are deleted; the layered tilt icon and its sheen are gone too
 - [x] East Van Wires and the Belgium Flag zoomed out a little (a shot may set `zoom`)
 - [x] Vista and the eight other shots redesigned as whole, centred subjects: Vista (a film still), Atom, Moon, Blob, Compass, Button, Prism, Dandelion, Saucer; series.json now names Moon and Blob
-- [ ] Tom reviews the redesigned shots
+- [x] Alternate Vistas shots on Tom's ask: Window, Viaduct, Lighthouse, Peak, Viewer, Launch (beside the film still)
+- [ ] Tom reviews the redesigned shots and picks the Vistas one

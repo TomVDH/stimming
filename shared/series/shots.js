@@ -216,6 +216,62 @@ export const SHOTS = {
       <path d="M-70 52H170" stroke="oklch(0.86 0.1 235 / 0.9)" stroke-width="0.7"/><path d="M26 52H86" stroke="oklch(0.95 0.06 230)" stroke-width="1.5" stroke-linecap="round"/>
       <circle cx="40" cy="45" r="2.6" fill="oklch(0.9 0.1 200 / 0.4)"/><circle cx="32" cy="41" r="1.4" fill="oklch(0.95 0.1 60 / 0.5)"/>
       <path d="M24 39q2 -2.4 4 0q2 -2.4 4 0M68 36q1.6 -2 3.2 0q1.6 -2 3.2 0" stroke="oklch(0.14 0.03 285)" stroke-width="0.8" fill="none" stroke-linecap="round"/>`],
+    // The view from a window seat: a wing, a low sun, the shade half down.
+    ['Window', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.8 0.02 90)'], [1, 'oklch(0.66 0.025 80)']])}"/>
+      <rect x="25" y="17" width="50" height="66" rx="23" fill="oklch(0.95 0.012 90)"/><rect x="27.4" y="19.4" width="45.2" height="61.2" rx="20.6" fill="oklch(0.74 0.02 85)"/>
+      <rect x="31" y="23" width="38" height="54" rx="17" fill="${k.lin([[0.2, 'oklch(0.36 0.12 285)'], [0.6, 'oklch(0.66 0.17 15)'], [0.78, 'oklch(0.9 0.13 78)']])}"/>
+      <circle cx="44" cy="62" r="9" fill="oklch(0.98 0.08 90 / 0.5)" filter="${k.blur}"/><circle cx="44" cy="62" r="4.6" fill="oklch(0.99 0.05 95)"/>
+      <path d="M31 66Q38 63 46 66T62 65T69 67V60A17 17 0 0 1 52 77H48A17 17 0 0 1 31 60Z" fill="oklch(0.86 0.06 30)"/>
+      <path d="M69 60L43 55.6L44.6 53L69 51Z" fill="oklch(0.93 0.012 250)"/><path d="M43 55.6L40.6 47L43.4 48.4L44.6 53Z" fill="oklch(0.8 0.02 250)"/><path d="M69 60L43 55.6L69 57Z" fill="oklch(0.7 0.03 255)"/>
+      <path d="M31 40A17 17 0 0 1 48 23H52A17 17 0 0 1 69 40Z" fill="oklch(0.91 0.018 90)"/><rect x="46.6" y="37.4" width="6.8" height="2.6" rx="1.3" fill="oklch(0.66 0.02 85)"/>`],
+    // A viaduct across a low sun; a lit train is on it.
+    ['Viaduct', 1, k => `<rect ${FIELD} fill="${k.lin([[0.1, 'oklch(0.3 0.1 275)'], [0.5, 'oklch(0.62 0.17 345)'], [0.75, 'oklch(0.9 0.13 76)']])}"/>
+      <circle cx="50" cy="50" r="30" fill="oklch(0.98 0.08 90 / 0.4)" filter="${k.blur}"/><circle cx="50" cy="50" r="19" fill="oklch(0.985 0.06 94)"/>
+      <path d="M-70 82Q20 70 50 76T170 78V170H-70Z" fill="oklch(0.3 0.09 300)"/>
+      <path fill-rule="evenodd" d="M12 53H88V82H12Z${[17, 31, 45, 59, 73].map(x => `M${x} 82V64a5 5 0 0 1 10 0V82Z`).join('')}" fill="${SIL}"/>
+      <path d="M10 51H90V54H10Z" fill="${SIL}"/>
+      <path d="M27 46.4h9v4.6h-9zM37 46.4h9v4.6h-9zM47 46.4h9v4.6h-9zM57 45.6h10.4l2.2 2.6v2.8H57z" fill="${SIL}"/>
+      <path d="M28.6 47.6h2.4v1.6h-2.4zM32.4 47.6h2.4v1.6h-2.4zM38.6 47.6h2.4v1.6h-2.4zM42.4 47.6h2.4v1.6h-2.4zM48.6 47.6h2.4v1.6h-2.4zM52.4 47.6h2.4v1.6h-2.4zM59 47.2h3v1.6h-3z" fill="oklch(0.95 0.15 92)"/>`],
+    // A lighthouse on its rock; the lamp throws one beam.
+    ['Lighthouse', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.22 0.08 265)'], [0.6, 'oklch(0.42 0.1 235)'], [0.9, 'oklch(0.7 0.1 200)']])}"/>
+      <g fill="oklch(1 0 0 / 0.85)"><circle cx="26" cy="22" r="0.8"/><circle cx="70" cy="30" r="0.7"/><circle cx="34" cy="38" r="0.6"/><circle cx="76" cy="18" r="0.7"/></g>
+      <path d="${P([[50, 25], [100, 10], [100, 36]])}" fill="oklch(0.96 0.13 95 / 0.42)"/><path d="${P([[50, 25], [0, 16], [0, 30]])}" fill="oklch(0.96 0.13 95 / 0.16)"/>
+      <rect x="-70" y="70" width="240" height="120" fill="oklch(0.3 0.08 240)"/><path d="M20 76h12M44 80h14M66 75h12M30 84h10M60 85h12" stroke="oklch(0.8 0.08 210 / 0.7)" stroke-width="1" stroke-linecap="round"/>
+      <path d="M30 72C32 64 40 62 46 64C50 60 58 60 62 65C68 64 72 68 72 72Z" fill="oklch(0.2 0.04 270)"/>
+      <path d="${P([[43.6, 65], [56.4, 65], [54, 31], [46, 31]])}" fill="oklch(0.97 0.01 90)"/>
+      <path d="${P([[44.4, 54], [55.6, 54], [55.1, 47], [44.9, 47]])}${P([[45.4, 40], [54.6, 40], [54.2, 34], [45.8, 34]])}" fill="oklch(0.6 0.21 27)"/>
+      <path d="${P([[50, 31], [54, 31], [56.4, 65], [50, 65]])}" fill="oklch(0 0 0 / 0.14)"/>
+      <rect x="43" y="28.6" width="14" height="2.6" rx="1" fill="oklch(0.2 0.04 270)"/><rect x="46" y="21.6" width="8" height="7" fill="oklch(0.97 0.13 95)"/><path d="M44.6 21.6H55.4L50 15.6Z" fill="oklch(0.6 0.21 27)"/>
+      <circle cx="50" cy="25" r="7" fill="oklch(0.98 0.12 95 / 0.6)" filter="${k.blur}"/><rect x="48.2" y="57" width="3.6" height="8" rx="1.8" fill="oklch(0.2 0.04 270)"/>`],
+    // One peak with snow on it, a pale sun behind, and its picture in the lake.
+    ['Peak', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.28 0.1 272)'], [0.5, 'oklch(0.6 0.15 342)'], [0.72, 'oklch(0.9 0.12 72)']])}"/>
+      <circle cx="62" cy="40" r="20" fill="oklch(0.98 0.07 90 / 0.4)" filter="${k.blur}"/><circle cx="62" cy="40" r="11" fill="oklch(0.985 0.05 94)"/>
+      <path d="${P([[50, 22], [80, 68], [20, 68]])}" fill="oklch(0.5 0.1 300)"/><path d="${P([[50, 22], [80, 68], [55, 68], [57, 46]])}" fill="oklch(0.38 0.09 295)"/>
+      <path d="M50 22L58.4 35L54.4 33L51.6 38.6L47.2 33.6L42.6 36.4Z" fill="oklch(0.98 0.01 250)"/>
+      <rect x="-70" y="68" width="240" height="120" fill="oklch(0.44 0.1 300)"/>
+      <path d="${P([[20, 68], [80, 68], [50, 92]])}" fill="oklch(0.56 0.11 305 / 0.7)"/>
+      <path d="M26 73h14M48 77h16M34 81h10M58 72h12M44 85h12" stroke="oklch(0.9 0.08 60 / 0.7)" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 68Q10 62 26 67L30 60L34 67Q50 70 66 67L70 61L74 67Q100 64 170 68V70H-70Z" fill="oklch(0.24 0.07 290)"/>`],
+    // A coin viewer at a lookout, turned to the sea.
+    ['Viewer', -1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.4 0.09 230)'], [0.55, 'oklch(0.74 0.09 190)'], [0.7, 'oklch(0.93 0.09 80)']])}"/>
+      <circle cx="28" cy="64" r="16" fill="oklch(0.98 0.08 85 / 0.45)" filter="${k.blur}"/><path d="M19 64A9 9 0 0 1 37 64Z" fill="oklch(0.99 0.05 92)"/>
+      <rect x="-70" y="64" width="240" height="120" fill="oklch(0.46 0.09 225)"/><path d="M16 68h24M22 72h14M56 69h18M66 74h12" stroke="oklch(0.95 0.07 85 / 0.7)" stroke-width="1" stroke-linecap="round"/>
+      <path d="M-70 82H170V170H-70Z" fill="oklch(0.28 0.04 260)"/>
+      <path d="${P([[44, 82], [60, 82], [56.6, 78], [47.4, 78]])}" fill="oklch(0.2 0.03 270)"/><rect x="50.2" y="54" width="3.6" height="25" fill="oklch(0.2 0.03 270)"/>
+      <rect x="47.4" y="60" width="9.2" height="8" rx="1.6" fill="oklch(0.62 0.2 27)"/><rect x="50.4" y="62.4" width="3.2" height="0.9" fill="oklch(0.2 0.03 270)"/>
+      <g transform="rotate(-10 52 44)"><path d="M44 52V46M60 52V46" stroke="oklch(0.2 0.03 270)" stroke-width="2.4"/><path d="M44 52H60" stroke="oklch(0.2 0.03 270)" stroke-width="2.4" stroke-linecap="round"/>
+        <rect x="32" y="35" width="38" height="16" rx="8" fill="oklch(0.9 0.02 240)"/><path d="M40 35H62A8 8 0 0 1 70 43H32A8 8 0 0 1 40 35Z" fill="oklch(0.97 0.01 240)"/>
+        <ellipse cx="33.6" cy="43" rx="3.4" ry="7.4" fill="oklch(0.24 0.04 260)"/><ellipse cx="33" cy="41" rx="1.2" ry="2.8" fill="oklch(0.8 0.08 220)"/>
+        <rect x="68" y="38" width="6" height="4.4" rx="1.6" fill="oklch(0.24 0.04 260)"/><rect x="68" y="44" width="6" height="4.4" rx="1.6" fill="oklch(0.24 0.04 260)"/></g>`],
+    // A launch at dawn: one bright line climbs and bends.
+    ['Launch', 1, k => `<rect ${FIELD} fill="${k.lin([[0, 'oklch(0.2 0.08 272)'], [0.55, 'oklch(0.48 0.14 322)'], [0.78, 'oklch(0.88 0.13 70)']])}"/>
+      <g fill="oklch(1 0 0 / 0.85)"><circle cx="26" cy="24" r="0.8"/><circle cx="36" cy="40" r="0.6"/><circle cx="76" cy="46" r="0.7"/><circle cx="28" cy="54" r="0.6"/></g>
+      <path d="M-70 76H170V170H-70Z" fill="oklch(0.2 0.05 285)"/>
+      <path d="M40 76C40 56 46 38 62 26" fill="none" stroke="oklch(0.96 0.13 85 / 0.7)" stroke-width="6" stroke-linecap="round" filter="${k.blur}"/>
+      <path d="M40 76C40 56 46 38 62 26" fill="none" stroke="oklch(0.995 0.03 95)" stroke-width="1.9" stroke-linecap="round"/>
+      <g transform="rotate(38 63.4 24.8)"><path d="M61.6 28V21.4Q63.4 17 65.2 21.4V28Z" fill="oklch(0.98 0.01 250)"/><path d="M61.6 28L59.8 30H61.6ZM65.2 28L67 30H65.2Z" fill="oklch(0.62 0.2 27)"/></g>
+      <g fill="oklch(0.96 0.03 60 / 0.8)" filter="${k.blur}"><ellipse cx="40" cy="75" rx="13" ry="4.6"/><ellipse cx="30" cy="77" rx="8" ry="3.4"/><ellipse cx="51" cy="77" rx="8" ry="3.4"/></g>
+      <path d="M28 76V60M26 64h4M26 69h4" stroke="oklch(0.14 0.03 285)" stroke-width="1.3" stroke-linecap="round"/>`],
   ],
   poke: [
     // One big red button; someone has just let go.
