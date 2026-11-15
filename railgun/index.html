@@ -6154,21 +6154,21 @@ float dens(vec3 p, out vec3 em) {
   d *= 1.0 - 0.85 * fd;
   // The soot skin starts thin and thickens as the fire dies.
   d *= mix(0.4, 1.0, smoothstep(0.5, 7.0, age));
-  // The soot erodes from the rim and its thin parts, gone by 38 s.
-  float er = smoothstep(5.0, 28.0, age);
+  // The soot erodes from the rim and its thin parts, gone by 90 s.
+  float er = smoothstep(10.0, 70.0, age);
   // Large cells tear it into tufts, not grain.
   float e = 0.7 * texture(uVol, w * 0.5 + vec3(age * 0.008)).b + 0.3 * texture(uVol, w * 1.2).g;
   d = clamp((d - er * (0.1 + 0.8 * e + 0.35 * r)) / max(1.0 - 0.75 * er, 0.12), 0.0, 1.0);
   // It thins as it grows, so the sky shows through.
   // A denser core: the soot is thickest at the heart of the ball.
-  return vd + d * 2.6 / Rb * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.85, r))) * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(26.0, 38.0, age));
+  return vd + d * 2.6 / Rb * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.85, r))) * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(65.0, 90.0, age));
 }
 // Soot turns to pale ash as it cools, like the comet trail.
 vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 // The fire's core and the falling pieces light the smoke from inside.
 vec3 vlight(vec3 p) {
   vec3 b = p - uBP;
-  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(26.0, 38.0, uFb.x));
+  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(65.0, 90.0, uFb.x));
   // Soot between the core and p swallows the fire's light.
   // The outer billows then take the sun, not the fire.
   float rr = length(b) / rb();
@@ -6434,26 +6434,6 @@ function drawVolumes() {
   renderer.setClearColor(volClear, ca);
   renderer.setRenderTarget(null);
 }
-// The impact's dark plume: the tail's own smoke shader, short and thick,
-// from the blast on ahead along the rock's path, where the debris flies.
-const plumeTrain = makeMini();
-plumeTrain.pu.uSoot.value.set(...linFit(0.32, 0.012, 50));
-const brHead = new THREE.Vector3(), brAway = new THREE.Vector3();
-function updateBridge(ha, R) {
-  const on = ha > 0.4 && ha < 46;
-  if (!on) { plumeTrain.m.visible = false; return; }
-  // The head hides in the blast; the smoke streams on ahead along the pieces' path.
-  brAway.copy(ast.away).negate();
-  // Its round head tucks a rock's radius back into the main tail, so the two merge.
-  brHead.copy(blastFx.P).addScaledVector(ast.away, R).setY(blastFx.P.y + R * ast.away.y + 18 * ha);
-  // It swells in, burns a while at its root, then thins and breaks up.
-  // It is gone by 24 s, before it breaks down to a lone knot.
-  const fade = THREE.MathUtils.smoothstep(ha, 0.4, 3) * (1 - THREE.MathUtils.smoothstep(ha, 14, 24));
-  aimMini(plumeTrain, brHead, brAway, R * (0.9 + 0.8 * (1 - Math.exp(-ha / 3))), R * 7, fade, 0.4 * Math.exp(-ha / 4));
-  plumeTrain.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(ha, 8, 24);
-  // One segment covers the whole plume, so its bound never clips the smoke.
-  plumeTrain.pu.uX0.value = 0; plumeTrain.pu.uSeg.value = R * 7 * 1.03;
-}
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
 // The Wilson cloud and the shock front are whole spheres.
@@ -6475,10 +6455,10 @@ function updateVoid() {
 }
 function updateBlast() {
   updateVoid();
-  if (!blastFx) { plumeTrain.m.visible = false; fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
+  if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
   // The void outlives the soot: the blast state holds until the sky heals.
-  if (ha > 70) { blastFx = null; updateBlast(); return; }
+  if (ha > 95) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
@@ -6491,14 +6471,14 @@ function updateBlast() {
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   // The tail's eaten end grows with the cloud and keeps its last size.
   U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.08));
-  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 5, 28)) * (1 - THREE.MathUtils.smoothstep(ha, 26, 38));
+  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 10, 70)) * (1 - THREE.MathUtils.smoothstep(ha, 65, 90));
   // Soot needs fewer steps than fire.
   // While the fire burns it needs full steps; soot alone needs fewer.
   const soot = ha > 12;
   // A deeper march toward the sun: the ball shades itself in billows, as the tail does.
   u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 3 : 4; u.uLs.value = 0.1 * Rb;
-  // The soot is gone by 38 s; the blast state lives on for the void.
-  fireball.visible = ha < 39;
+  // The soot is gone by 90 s; the blast state lives on for the void.
+  fireball.visible = ha < 91;
   // The Wilson shell flashes round the fireball and burns off.
   const ga = reduced() ? 0.5 : 1, A = hitShellA.material.uniforms, B = hitShellB.material.uniforms;
   A.uC.value.copy(blastFx.P); A.uR.value = R * 1.4 + 20000 * (1 - Math.exp(-ha / 5));
@@ -6521,7 +6501,6 @@ function updateBlast() {
   // It stays until Reset.
   if (!voidFx) voidFx = { P: blastFx.P.clone(), R, k: Math.min(1, k), t0: blastFx.t0 };
   updateBursts(ha, R, k);
-  updateBridge(ha, R);
 }
 // Each burst: a warm flash through the soot, a spray of sparks, a flicker of light.
 const burstP = new THREE.Vector3();
@@ -6600,11 +6579,11 @@ function shardAt(i, age, out, vel) {
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 // Each trail is a chain of short trains laid along the shard's own arc.
-const SEG = 4;
+const SEG = 5;
 // Four trailed pieces: scaled-down rocks, not slabs.
 // uDebL and uPool hold one slot per piece.
 const chunks = Array.from({ length: 4 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
-const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chQ = new THREE.Vector3(), chA = new THREE.Vector3();
+const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chA = new THREE.Vector3();
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
 const chunkGlow = chunks.map(() => makeFlare(linFit(0.78, 0.13, 52)));
@@ -6640,24 +6619,17 @@ function stepChunks() {
     flare(chunkGlow[ci], chP, r * (8 + 0.15 * age) * Math.max(shr, 0.3), on * (0.022 + 0.05 * Math.exp(-age / 6)));
     // Each piece's glow lights the smoke round it.
     U.uDebL.value[ci].set(chP.x, chP.y, chP.z, on * r * (0.35 + 0.8 * Math.exp(-age / 6)));
-    const flown = Math.hypot(chP.x - sPos.array[ch.i * 3], chP.y - sPos.array[ch.i * 3 + 1], chP.z - sPos.array[ch.i * 3 + 2]);
     // The train reaches all the way back to the burst, where the main trail ends.
     // So the main trail splits into the debris trains.
-    const len = flown + r, step = len / SEG;
-    // Walk back in time; mark a joint every step metres of arc.
+    // Each joint sits at a fixed share of the age, so no joint jumps.
+    // The square packs joints near the burst, where the piece flew fastest.
     chPts[0].copy(chP); chX[0] = 0;
-    let k = 1, s = 0, tb = age;
-    chQ.copy(chP);
-    const dt = Math.max(age, 0.05) / 60;
-    for (let n = 0; n < 60 && k <= SEG; n++) {
-      tb = Math.max(0, tb - dt);
-      shardAt(ch.i, tb, chA, chV);
-      s += chA.distanceTo(chQ); chQ.copy(chA);
-      while (k <= SEG && s >= k * step) { chPts[k].copy(chA); chX[k] = k * step; k++; }
-      if (tb <= 0) break;
+    for (let k = 1; k <= SEG; k++) {
+      const f = 1 - k / SEG;
+      shardAt(ch.i, age * f * f, chPts[k], chV);
+      chX[k] = chX[k - 1] + chPts[k].distanceTo(chPts[k - 1]);
     }
-    // A young trail reaches back to the burst point.
-    for (; k <= SEG; k++) { chPts[k].copy(chQ); chX[k] = k * step; }
+    const len = chX[SEG] + r;
     for (let j = 0; j < SEG; j++) {
       const t = ch.segs[j], seg = chPts[j].distanceTo(chPts[j + 1]);
       if (seg < 1) { t.m.visible = false; continue; }
@@ -6667,9 +6639,9 @@ function stepChunks() {
       // The far end stays full while the main trail does, and fades with it.
       t.pu.uJoin.value = Math.min(1, 3 * PU.uTrail.value);
       t.pu.uSteps.value = rung >= 2 ? 8 : 12;
-      // A debris trail widens a third as fast as the main tail, and frays as it ages.
-      t.pu.uK.value = 0.035;
-      t.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(age, 5, 28);
+      // A debris trail widens fast and billows; it frays only a little.
+      t.pu.uK.value = 0.06;
+      t.pu.uBreak.value = 0.25 * THREE.MathUtils.smoothstep(age, 10, 40);
     }
   }
 }
@@ -7004,10 +6976,20 @@ function shatter(c) {
     const a = j * Math.PI * 2 / chunks.length + 0.4 + (rnd() - 0.5) * 1.4, sp = (150 + 220 * c) * (R / 600) * (0.6 + 0.8 * rnd());
     const go = (190 + 140 * c) * (R / 600) * (0.7 + 0.55 * rnd());
     bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.9).addScaledVector(up, (0.45 * Math.sin(a) + 0.5 + 0.6 * rnd()) * sp).addScaledVector(fw, go);
-    // Each is a small copy of the rock: a twentieth to a sixth of its radius.
-    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.05 + 0.11 * Math.pow(rnd(), 1.5)), d[2], d[3]);
+    // Each is a small copy of the rock: a tenth to a quarter of its radius.
+    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.1 + 0.15 * Math.pow(rnd(), 1.5)), d[2], d[3]);
   });
-  shardGeo.instanceCount = keep.length;
+  // A crowd of big burning pieces lobs out round the trained ones.
+  // They smoke through the stars, not trains, so they cost little.
+  const crowd = reduced() ? 0 : Math.min(SHARD_MAX - keep.length, 24);
+  for (let j = keep.length; j < keep.length + crowd; j++) {
+    const a = rnd() * Math.PI * 2, sp = (110 + 200 * c) * (R / 600) * (0.5 + rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, (0.6 * Math.sin(a) + 0.4 + 0.6 * rnd()) * sp).addScaledVector(fw, (150 + 120 * c) * (R / 600) * (0.5 + 0.8 * rnd()));
+    bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.5 * R).add(P);
+    sPos.setXYZ(j, bp.x, bp.y, bp.z); sVel.setXYZW(j, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
+    sSeed.setXYZW(j, rnd() * 100, R * (0.1 + 0.2 * Math.pow(rnd(), 1.4)), simT, 14 + rnd() * 10);
+  }
+  shardGeo.instanceCount = keep.length + crowd;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
   chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; ch.burstAt = 0; ch.burstP = null; });
   // Embers: burning pieces fly out all round and arc down.
