@@ -1,10 +1,11 @@
 ---
 # stimming-ouak
 title: 'Train Ride: aerial photo projected softly on the land'
-status: in-progress
+status: completed
 type: spike
+priority: normal
 created_at: 2026-11-15T08:46:17Z
-updated_at: 2026-11-15T08:46:17Z
+updated_at: 2026-11-15T09:31:19Z
 parent: stimming-6z3j
 ---
 
@@ -24,4 +25,8 @@ Tom asked (2026-11-15): can satellite imagery project softly on the landscape?
 - [x] The photo skips water, the line's own bank, steep faces, rock and snow; grey counts only in towns or on flat ground, and from 40 m out; the dark class is gone (the mapped woods cover trees)
 - [x] Credit: SWISSIMAGE © swisstopo in annex.json
 - [x] QA: 1280, 375 x 812, 812 x 375; clean console; first frame about 0.2 s later warm; frame time unchanged (the photo lives in the bake)
-- [ ] Tom checks
+- [x] Tom checks: merged to main (2026-11-15)
+
+## Summary of Changes
+
+tools/sat.py bakes SWISSIMAGE along the route into two WebP maps (1.9 MB). The land bake recolours the photo in the toy palette: town ground, roof tile, bare earth, and meadow patches. Water, the bank, steep faces, rock and snow keep their own colours.
