@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T04:16:31Z
-updated_at: 2026-11-15T05:39:13Z
+updated_at: 2026-11-15T05:41:23Z
 parent: stimming-oh7b
 ---
 
@@ -17,7 +17,7 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
 - [x] Stage 4: spark/gpu.html, port at parity, no smoke
 - [x] Stage 5: K3 fluid smoke and flame, coupled to the sparks
 - [x] Stage 6: quality ladder, Smoke toggle, idle, reduced motion
-- [ ] Stage 7: swap gpu.html to index.html, no-WebGPU redirect, toys.json legacy true
+- [x] Stage 7: swap gpu.html to index.html, no-WebGPU redirect, toys.json legacy true
 - [ ] Stage 8: docs and final QA
 
 ## Notes
@@ -64,3 +64,7 @@ Plan (Tom approved, 2026-11-14): move Spark wheel to the three.js 0.186.1 WebGPU
   - GPU time for one frame, submit to done, while grinding at 2496 x 1344 on this Mac (Metal): 5.1 ms without smoke, 7.9 ms with smoke on High, 7.8 ms on rung 1, 6.4 ms on rung 3. Worst frame 14.7 ms. These are from a timer-driven probe in a hidden pane, not a visible 60 Hz run.
   - Tom's stored site quality is High; the probe used a page flag in its place and did not write the setting.
   - Not checked: a visible screen, a slower GPU, a phone, reduced motion (code review only).
+
+- Stage 7 (2026-11-14): spark/index.html is the WebGPU build; spark/gpu.html is gone; toys.json has legacy true, so Settings shows Classic on the fresh page and Fresh on the classic page.
+  - No WebGPU: a head script, an adapter check before three.js loads, and a backend check after init each send the visitor to legacy.html and keep the query. A visitor who came from legacy.html stays and reads the fail line, which links back. legacy.html never redirects, so no loop.
+  - Tested with a throwaway twin whose WebGPU check always fails: a direct visit landed on legacy.html?t=1; a visit from the classic page stayed and showed the line and its link.
