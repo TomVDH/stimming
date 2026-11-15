@@ -142,6 +142,8 @@ let goMix = (() => {
     return localStorage.getItem(K) || 'penta';
   } catch { return 'penta'; }
 })();
+// The sun rays' gain; the Dev sheet's Sun rays row sets it.
+let shaftGain = 1.6;
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
@@ -182,6 +184,10 @@ const ui = initPage({ id: 'railgun', bar: {
     // Fast rock: the rock falls ten times faster; off is the normal speed.
     { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
     { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
+    // Sun bearing: the dusk sun's angle right of the look, in degrees.
+    { type: 'slider', id: 'sunaz', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
+    // Sun rays: the strength of the cloud shadows in the low air.
+    { type: 'slider', id: 'shafts', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
     // Tone: the curve, then exposure, contrast and colour on top of the grade.
@@ -371,9 +377,12 @@ const U = {
 U.uStarT = U.uTime;
 
 /* ---------- sun: late light over a dusty plain ---------- */
-// The sun sits low on the right, a little ahead of the eye.
-// It lights the near flank; shadows rake away to the left.
-const SUN_AZ = new THREE.Vector2(0.62, -0.78).normalize();
+// The low sun sits at the frame's right edge, ahead of the eye.
+// It backlights the gun; shadows rake toward the eye.
+// VIEW_AZ is the rest look's bearing.
+// sunSwing turns the low sun right of it, in degrees.
+const VIEW_AZ = rad(-155.6);
+let sunSwing = 36;
 const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 const sstep = THREE.MathUtils.smoothstep;
 const lerp = THREE.MathUtils.lerp;
@@ -384,7 +393,7 @@ const MOON_C = [0.09, 0.11, 0.16];
 // Latitude thirty degrees: the equinox sun stands sixty degrees up at noon.
 // The sun rises ahead and right, crosses the sky ahead and left, sets behind.
 const PHI = rad(30);
-const SKY = { E: new THREE.Vector3(SUN_AZ.x, 0, SUN_AZ.y).normalize(), S: new THREE.Vector3(), P: new THREE.Vector3() };
+const SKY = { E: new THREE.Vector3(), S: new THREE.Vector3(), P: new THREE.Vector3() };
 const skyFrame = () => {
   SKY.S.crossVectors(yUp, SKY.E);
   SKY.P.copy(yUp).multiplyScalar(Math.sin(PHI)).addScaledVector(SKY.S, -Math.cos(PHI));
@@ -398,20 +407,25 @@ function skyDir(H, d, out) {
 }
 // The morning hour angle where the sun stands deg degrees up.
 const hourOf = deg => -Math.acos(clamp(Math.sin(rad(deg)) / Math.cos(PHI), -1, 1));
-// Turn the frame so the dusk sun lands on the first look's bearing.
-skyFrame();
-{
+// Turn the frame so the dusk sun lands sw degrees right of the look.
+function aimSky(sw = sunSwing) {
+  const az = VIEW_AZ - rad(sw);
+  SKY.E.set(Math.sin(az), 0, Math.cos(az));
+  skyFrame();
   const d = skyDir(hourOf(5.6), 0, new THREE.Vector3());
-  SKY.E.applyAxisAngle(yUp, Math.atan2(SKY.E.x, SKY.E.z) - Math.atan2(d.x, d.z));
+  SKY.E.applyAxisAngle(yUp, az - Math.atan2(d.x, d.z));
   skyFrame();
 }
+aimSky();
 // The moon runs six hours behind the sun, low in the south.
 // At night on the slider it stands high on the left.
 const MOON_H = rad(93.5), MOON_DEC = rad(-33.7);
 const skyRot = new THREE.Matrix4();
 U.uSkyRot = { value: new THREE.Matrix3() };
 let skyH = 0;
-function sun(deg) { skyAt(hourOf(deg)); }
+// The low sun swings toward the frame.
+// A high sun keeps the old bearing, 63 degrees right.
+function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
 function skyAt(H) {
   skyH = H;
   skyDir(H, 0, U.uSunD.value);
@@ -853,11 +867,143 @@ vec3 impSky(vec3 dir) {
 }
 `;
 
+/* ---------- sun rays: cloud shadows in the low air ---------- */
+// A low sun throws cloud and trail shadows through a dust layer.
+// Each shadow is its occluder pushed away from the sun.
+// The view ray's length in lit air sets the rays' light.
+const SHAFT_N = 24, SHAFT_TR = 7;
+const SHAFT_U = {
+  // Strength, the dust layer's top in metres, the ray's reach in metres.
+  // The veil stands taller than real air.
+  // The trail's high shadow then shows.
+  uShaft: { value: new THREE.Vector3(0, 30000, 160000) },
+  // Ellipsoids: centre and across radius; uOccV holds each upright radius.
+  uOcc: { value: Array.from({ length: SHAFT_N }, () => new THREE.Vector4()) }, uOccV: { value: new Float32Array(SHAFT_N) }, uOccN: { value: 0 },
+  // The trail as a chain: each point and its radius.
+  uTr: { value: Array.from({ length: SHAFT_TR }, () => new THREE.Vector4()) }, uTrN: { value: 0 },
+};
+const SHAFT_GLSL = /* glsl */`
+uniform vec3 uShaft;
+uniform vec4 uOcc[${SHAFT_N}];
+uniform float uOccV[${SHAFT_N}];
+uniform int uOccN;
+uniform vec4 uTr[${SHAFT_TR}];
+uniform int uTrN;
+// The ray's length inside the dust layer, from t0 to t1.
+// The layer is even from the ground to uShaft.y.
+float shM(vec3 ro, vec3 rd, float t0, float t1) {
+  if (rd.y > 1e-5) t1 = min(t1, (uShaft.y - ro.y) / rd.y);
+  return max(t1 - t0, 0.0);
+}
+// Clip the span iv to the part where a + b t is below zero.
+vec2 shSide(vec2 iv, float a, float b) {
+  if (abs(b) < 1e-6) return a < 0.0 ? iv : vec2(1.0, 0.0);
+  float tz = -a / b;
+  return b > 0.0 ? vec2(iv.x, min(iv.y, tz)) : vec2(max(iv.x, tz), iv.y);
+}
+// It returns the ray's lit share, 0 to 1, and its layer depth.
+vec2 shafts(vec3 ro, vec3 rd, float L) {
+  vec3 s = uSunD;
+  float all_ = shM(ro, rd, 0.0, L), dark = 0.0;
+  for (int i = 0; i < ${SHAFT_N}; i++) {
+    if (i >= uOccN) break;
+    // Squash y so the ellipsoid turns into a sphere.
+    float q = uOcc[i].w / uOccV[i];
+    vec3 o = ro - uOcc[i].xyz, d = rd, sq = s;
+    o.y *= q; d.y *= q; sq.y *= q; sq = normalize(sq);
+    // Seen down the sunlight, the shadow is a disc.
+    vec3 op = o - sq * dot(o, sq), dp = d - sq * dot(d, sq);
+    float A = dot(dp, dp), B = dot(op, dp), C = dot(op, op) - uOcc[i].w * uOcc[i].w, D = B * B - A * C;
+    if (D <= 0.0 || A < 1e-9) continue;
+    D = sqrt(D);
+    vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
+    // Only the side away from the sun lies in shadow.
+    iv = shSide(iv, dot(o, sq), dot(d, sq));
+    dark += shM(ro, rd, iv.x, iv.y);
+  }
+  for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
+    if (i >= uTrN - 1) break;
+    // One piece of the trail cone, as a slab of its mean radius.
+    vec3 a0 = uTr[i].xyz, a1 = uTr[i + 1].xyz, r = ro - a0;
+    vec3 u = (a1 - a0) - s * dot(a1 - a0, s);
+    float len = length(u);
+    if (len < 1.0) continue;
+    u /= len;
+    vec3 rp = r - s * dot(r, s), dp = rd - s * dot(rd, s);
+    vec3 w0 = rp - u * dot(rp, u), w1 = dp - u * dot(dp, u);
+    float rad = 0.5 * (uTr[i].w + uTr[i + 1].w);
+    float A = dot(w1, w1), B = dot(w0, w1), C = dot(w0, w0) - rad * rad, D = B * B - A * C;
+    if (D <= 0.0 || A < 1e-9) continue;
+    D = sqrt(D);
+    vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
+    // Keep to the piece's own stretch.
+    float ga = dot(rp, u), gb = dot(dp, u);
+    iv = shSide(iv, ga - len, gb);
+    iv = shSide(iv, -ga, -gb);
+    iv = shSide(iv, dot(r - 0.5 * (a1 - a0), s), dot(rd, s));
+    dark += shM(ro, rd, iv.x, iv.y);
+  }
+  return vec2(1.0 - min(dark / max(all_, 1.0), 1.0), all_);
+}
+// Shadow bands dim the sky; lit dust adds a sunward glow.
+vec3 shaftSky(vec3 c, vec3 rd, float L) {
+  if (uShaft.x < 0.001) return c;
+  vec2 sh = shafts(cameraPosition, rd, L);
+  float cs = dot(rd, uSunD), g = 0.62;
+  float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cs, 1.5) * 0.08 + 0.05;
+  // The bands stay off the horizon.
+  // The heaps' low shadows pile up there.
+  float dk = 0.7 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
+  // A long path through lit dust stops adding light.
+  float lit = 1.0 - exp(-sh.y * sh.x / 40000.0);
+  return c * (1.0 - min(dk * uShaft.x, 0.85)) + uGlowC * ph * lit * 0.4 * uShaft.x;
+}`;
+// Each cloud's world centre, as the cloud vertex shader drifts it.
+const hs1 = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+function shaftList(list) {
+  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0] }));
+}
+let shaftOcc = null;
+const shaftV = new THREE.Vector3();
+function updateShafts() {
+  const up = U.uSunD.value.y, u = SHAFT_U;
+  // The rays need a low sun: dawn and late day only.
+  const k = shaftGain * sstep(up, -0.06, 0.0) * (1 - sstep(up, 0.3, 0.55)) * (1 - U.uStars.value);
+  u.uShaft.value.x = reduced() ? 0.6 * k : k;
+  if (k < 0.001) return;
+  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS)];
+  const t = CLOUD_U.uCloudC.value;
+  let n = 0;
+  for (const c of shaftOcc) {
+    if (n >= SHAFT_N) break;
+    const heap = c.kind === 0, ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1;
+    const a = (ph - 0.5) * rad(16) * (heap ? 1 : 0.2), life = heap ? sstep(Math.sin(Math.PI * ph), 0, 0.4) : 1;
+    if (life < 0.05) continue;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    // A heap is a squat dome; a tower is a tall column.
+    const R = (heap ? 0.75 : 0.4) * c.W * life, V = (heap ? 0.55 : 0.5) * c.H * life;
+    u.uOcc.value[n].set(c.p.x * ca - c.p.z * sa, c.base + (heap ? 0.4 : 0.5) * c.H, c.p.x * sa + c.p.z * ca, R);
+    u.uOccV.value[n++] = V;
+  }
+  // The soot ball shades the air behind it.
+  if (U.uSootK.value > 0.05 && n < SHAFT_N) { const S = U.uSootS.value; u.uOcc.value[n].set(S.x, S.y, S.z, S.w * 0.8); u.uOccV.value[n++] = S.w * 0.8; }
+  u.uOccN.value = n;
+  // The trail: a cone from the rock, out along its away line.
+  let m = 0;
+  if (PU.uTrail.value > 0.2 && astMesh.visible) {
+    for (let x = 0; m < SHAFT_TR; m++, x = x * 1.9 + 6000) {
+      shaftV.copy(ast.pos).add(PU.uDrift.value).addScaledVector(ast.away, x);
+      u.uTr.value[m].set(shaftV.x, shaftV.y, shaftV.z, 0.7 * (1.05 * ast.R + PU.uK.value * x) * Math.min(1, PU.uTrail.value));
+    }
+  }
+  u.uTrN.value = m;
+}
+
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...IMP_U }, side: THREE.BackSide, depthWrite: false,
+  uniforms: { ...U, ...IMP_U, ...SHAFT_U }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} ${IMP_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(k2sky(d) + impSky(d), 1.0); }`,
+  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(k2sky(d), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
 sky.renderOrder = -1;
 scene.add(sky);
@@ -1304,7 +1450,7 @@ function cloudLayer(list, order) {
 }
 // Heaps stand in front of the rock's track: they draw after its smoke.
 // Clusters with open sky between; two small ones nearer.
-const heaps = cloudLayer([
+const HEAPS = [
   [-6, 37000, 1550, 3600, 2000, 0], [-1, 33000, 1450, 2000, 1300, 0], [3, 36500, 1600, 2400, 1500, 0],
   [9, 16000, 1250, 900, 650, 0],
   [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0],
@@ -1313,11 +1459,13 @@ const heaps = cloudLayer([
   // Nearer the eye, between the far clusters.
   [-13, 22000, 1400, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
   [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 1450, 2100, 1300, 0],
-], 2.2);
+];
+const heaps = cloudLayer(HEAPS, 2.2);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
-const tower = cloudLayer([[-3, 96000, 1500, 9000, 10500, 1], [27, 74000, 1500, 15000, 15500, 1], [49, 88000, 1500, 10500, 12500, 1], [71, 104000, 1500, 7500, 9000, 1]], 1.5);
+const TOWERS = [[-3, 96000, 1500, 9000, 10500, 1], [27, 74000, 1500, 15000, 15500, 1], [49, 88000, 1500, 10500, 12500, 1], [71, 104000, 1500, 7500, 9000, 1]];
+const tower = cloudLayer(TOWERS, 1.5);
 
 /* ---------- the gun: one clean artillery piece ---------- */
 // Every piece is a straight block or drum; one merged mesh, one draw call.
@@ -3975,6 +4123,7 @@ function draw() {
   updateLaser();
   updateBeacon(1 / 30);
   CLOUD_U.uCloudC.value = simT;
+  updateShafts();
   // The thermal lens sees through smoke and dust.
   if (sight) plume.visible = chargeDust.visible = shotDust.visible = caseDustV.visible = muzzleSmoke.visible = false;
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
@@ -9277,6 +9426,10 @@ window.__qa = {
   },
   // Set the bloom strength, as the Settings slider does.
   bloom(v) { gfx.bloom = v; setBloom(); },
+  // Set the sun rays' gain, as the Dev slider does.
+  shafts(v) { shaftGain = v; draw(); },
+  // Turn the dusk sun v degrees right of the look.
+  swing(v) { sunSwing = v; aimSky(); setSun(); },
   hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
   hulkSite: i => hulkSite(i, new THREE.Vector3()).toArray(),
   // The ground ease g at age a after the break.
@@ -9421,7 +9574,7 @@ setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
 // The stored graphics settings apply before the first frame.
-gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
+gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; shaftGain = ui.setting('shafts').value; sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value;
 setBloom(); setTone();
 setGrain();
