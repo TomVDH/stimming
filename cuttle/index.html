@@ -1,0 +1,1266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cuttlefish skin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Cuttlefish skin: a close view of living skin. */
+:root { --stage: oklch(0.1 0.015 40); }
+.stage--cuttle canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--cuttle canvas.on { opacity: 1; }
+.stage--cuttle { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--cuttle canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Cuttlefish skin</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--cuttle" id="stage" tabindex="0" role="application" aria-label="Living cuttlefish skin, close up. Move the pointer and waves of colour run out from it. Click to send one pulse. Hold still and the skin stares back. A fast flick makes it flash pale.">
+      <p class="fail" hidden>Cuttlefish skin needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Cuttlefish skin</h1>
+    <div class="vignette">
+      <div>
+        <h2>Colour pulled open by muscle</h2>
+        <p>Each fleck in a cuttlefish's skin is a chromatophore: a small elastic bag of yellow, red or brown pigment, ringed by tiny muscles. Nerves run straight from the brain to those muscles. When they contract, they pull the bag open into a flat disc of colour; when they relax, it springs shut to a dot. A whole pattern can change in under a second.</p>
+        <p>Under the pigment, iridophores reflect blue and green by interference, and leucophores scatter white. Cuttlefish use this skin to hide and to speak. <em>Cloud</em> sends dark bands rolling across the body, often while the animal stalks a crab. <em>Mottle</em> breaks its outline. Males show <em>Zebra</em> stripes to rivals, and a sudden pale <em>Flash</em> with dark eye spots startles a predator. Cuttlefish appear to be colour-blind.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 240 120" role="img" aria-label="One chromatophore twice. On the left it is shut: a small dark dot with slack muscle fibres round it. On the right the fibres pull and it is open: a wide golden disc.">
+          <g stroke="oklch(0.62 0.03 30)" stroke-width="1.4" stroke-linecap="round">
+            <path d="M60 60L60 22M60 60L87 33M60 60L98 60M60 60L87 87M60 60L60 98M60 60L33 87M60 60L22 60M60 60L33 33" stroke-dasharray="2 3"/>
+            <path d="M180 60L180 18M180 60L210 30M180 60L222 60M180 60L210 90M180 60L180 102M180 60L150 90M180 60L138 60M180 60L150 30"/>
+          </g>
+          <circle cx="60" cy="60" r="7" fill="oklch(0.36 0.07 45)"/>
+          <path d="M180 26C192 27 199 32 208 40C214 49 214 56 213 63C212 74 206 82 198 88C190 93 181 95 172 93C161 90 154 84 149 75C145 66 146 56 150 47C155 37 166 27 180 26Z" fill="oklch(0.8 0.15 86)" opacity="0.92"/>
+          <circle cx="180" cy="60" r="5" fill="oklch(0.68 0.16 70)"/>
+        </svg>
+        <figcaption>One chromatophore, shut and pulled open.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+const DISPLAYS = ['cloud', 'mottle', 'zebra', 'flash'];
+let zoomUi = 1;
+// The handlers bind once the GL state exists.
+const act = { pick() {}, ink() {}, reset() {}, zoom() {} };
+const ui = initPage({ id: 'cuttle', bar: {
+  choice: { label: 'Display', value: 'cloud', options: [
+    { value: 'cloud', label: 'Cloud', key: '1' },
+    { value: 'mottle', label: 'Mottle', key: '2' },
+    { value: 'zebra', label: 'Zebra', key: '3' },
+    { value: 'flash', label: 'Flash', key: '4' },
+  ], onPick: v => act.pick(v) },
+  actions: [{ verb: 'ink', key: 'I', onPress: () => act.ink() }],
+  slider: { label: 'Zoom', min: 0.6, max: 1.8, step: 0.01, value: 1, onInput: v => { zoomUi = v; act.zoom(); } },
+  settings: [
+    { type: 'toggle', id: 'startle', label: 'Startle flash', value: true, persist: true },
+  ],
+  dev: [
+    { type: 'slider', id: 'sheen', label: 'Sheen', min: 0, max: 2, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'gloss', label: 'Gloss', min: 0, max: 2, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'nerve', label: 'Twitch', min: 0, max: 2, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.5, max: 1.8, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.01, value: 1, persist: true },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['move', 'it watches'], ['click', 'pulse'], ['hold', 'stare'], ['drag fast', 'startle']],
+} });
+const val = id => ui.setting(id)?.value;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Cuttlefish skin needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const TRI_VS = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, filter = gl.NEAREST, mips = false) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  const levels = mips ? Math.floor(Math.log2(Math.max(w, h))) + 1 : 1;
+  gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA16F, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(tex) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return fb;
+}
+const vao = gl.createVertexArray();
+
+/* ---------- GLSL ---------- */
+const RINGS = 24;
+const COMMON = `
+// An integer hash: one well mixed 32-bit value.
+uint pcg(uint v) {
+  uint s = v * 747796405u + 2891336453u;
+  uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+float u01(uint v) { return float(pcg(v)) * (1.0 / 4294967295.0); }
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+// Each octave turns, so no grid lines show through.
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * noise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(7.3, 1.7); a *= 0.5; }
+  return s / 0.9375;
+}
+// The tissue drifts slowly; cells and layers move together.
+vec2 warp(vec2 p, float t) {
+  return 0.011 * (vec2(noise(p * 2.2 + vec2(t * 0.13, 0.0)), noise(p * 2.2 + vec2(5.2, t * 0.11))) - 0.5);
+}
+`;
+// The cell lattice: a jittered square grid, turned per layer.
+const GRID = `
+uniform ivec2 uDim;
+// Pitch in skin units, cos and sin of the turn, layer index.
+uniform vec4 uGrid;
+uniform uint uSeed;
+uint cellId(ivec2 ij) { return pcg(uint(ij.x) + pcg(uint(ij.y) + pcg(uint(uGrid.w) * 977u + uSeed))); }
+vec2 cellHome(ivec2 ij, uint id) {
+  vec2 j = vec2(u01(id), u01(id ^ 0x9e3779b9u)) - 0.5;
+  vec2 g = (vec2(ij) - vec2(uDim) * 0.5 + 0.5 + j * 0.8) * uGrid.x;
+  return mat2(uGrid.y, uGrid.z, -uGrid.z, uGrid.y) * g;
+}
+`;
+
+/* ---------- the skin's wishes: target openness per pigment ---------- */
+// x is brown-black, y is red, z is yellow; 1 is a cell pulled wide open.
+const PATTERNS = `
+uniform float uT;
+uniform int uDispA, uDispB;
+// The display switch: origin, front radius, front width.
+uniform vec4 uSw;
+// The pointer: position, motion, presence.
+uniform vec4 uPtr;
+// The stare: position, amount.
+uniform vec4 uStare;
+// The startle flash: position, age, strength.
+uniform vec4 uFlash;
+// The flash display's origin.
+uniform vec2 uOrg;
+uniform vec4 uRing[${RINGS}];
+// Ring speed and width.
+uniform vec2 uRingK;
+// Ink: the dark rush, then the pale escape.
+uniform vec2 uInkS;
+const float TAU = 6.28318;
+float cosw(float x) { return 0.5 + 0.5 * cos(TAU * x); }
+vec3 worley(vec2 x) {
+  vec2 n = floor(x), f = fract(x), id = vec2(0);
+  float d1 = 8.0, d2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), r = g + vec2(hash(n + g), hash(n + g + 17.31)) * 0.9 + 0.05 - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = n + g; } else if (d < d2) d2 = d;
+  }
+  return vec3(sqrt(d1), sqrt(d2) - sqrt(d1), hash(id + 3.7));
+}
+// Cloud: broad dark bands roll across a pale skin.
+vec3 cloudD(vec2 p, float t) {
+  float a = 0.55 + 0.4 * sin(t * 0.021);
+  vec2 d = vec2(cos(a), sin(a));
+  vec2 q = p * 2.1;
+  float w = 1.1 * fbm(q * 0.6 + vec2(0.0, t * 0.035));
+  float ph = dot(q, d) + w - t * 0.3;
+  float band = smoothstep(0.4, 0.92, cosw(ph));
+  // Bands thin and break along their length.
+  band *= smoothstep(0.1, 0.55, noise(q * 1.3 + d.yx * 3.0 + vec2(t * 0.05, 0.0)));
+  float fringe = smoothstep(0.35, 0.85, cosw(ph + 0.07));
+  float m = noise(p * 9.0 + 11.0), m2 = noise(p * 3.5 - 7.0);
+  float k = 0.0 + 0.06 * m + 0.95 * band;
+  float r = 0.03 + 0.14 * m2 + 0.7 * max(band, fringe * 0.5);
+  float y = 0.08 + 0.32 * m2 * m2 * (1.0 - band) + 0.3 * band;
+  return vec3(k, r, y);
+}
+// Mottle: dark blotches and white squares over a finer patchwork of rust and gold.
+vec3 mottleD(vec2 p, float t) {
+  vec2 q = p * 5.0;
+  q += 0.6 * vec2(fbm(q * 0.3 + t * 0.03), fbm(q * 0.3 + 5.2 - t * 0.03));
+  vec3 v = worley(q);
+  float h = v.z;
+  float pulse = 0.5 + 0.5 * sin(t * 0.45 + h * TAU);
+  // Blotch cores shrink a little from their edges, so blotches read apart.
+  float body = smoothstep(0.02, 0.2, v.y);
+  float dark = smoothstep(0.46, 0.3, h) * (0.75 + 0.25 * pulse) * body;
+  float pale = smoothstep(0.84, 0.9, h) * body;
+  // The fine patchwork: small cells of colour, each pulsing on its own.
+  vec3 w = worley(p * 11.0 + vec2(0.0, t * 0.05));
+  float fine = smoothstep(0.3, 0.6, w.z) * (0.65 + 0.35 * sin(t * 0.8 + w.z * TAU)) * smoothstep(0.02, 0.12, w.y);
+  float k = 0.02 + 0.95 * dark + 0.18 * fine;
+  float r = 0.05 + 0.6 * dark + 0.85 * fine;
+  float y = 0.3 + 0.5 * (1.0 - fine) * (1.0 - dark);
+  return vec3(k, r, y) * (1.0 - 0.95 * pale);
+}
+// Zebra: black bars on white, pulsing; a stare curls them into rings.
+vec3 zebraD(vec2 p, float t) {
+  float a = 1.3;
+  vec2 d = vec2(cos(a), sin(a));
+  vec2 q = p * 5.0;
+  float ph = dot(q, d) + 1.3 * fbm(q * 0.13 + 1.7) + 0.3 * fbm(q * 0.3 + t * 0.04) - t * 0.06;
+  float c = cosw(ph);
+  // A stare bends the bars into rings round the pointer.
+  float ds = length(p - uStare.xy);
+  float wr = uStare.z * exp(-pow(ds / 0.32, 2.0));
+  c = mix(c, cosw(ds * 5.5 - t * 0.12), wr);
+  float s = smoothstep(0.4, 0.6, c);
+  float pulse = 0.8 + 0.2 * sin(t * 1.25 - ph * 0.5);
+  return vec3(0.01 + 0.99 * s * pulse, 0.02 + 0.4 * s, 0.03 + 0.12 * s);
+}
+// Flash: pale and pearly, with a dark flush every few seconds.
+vec3 flashD(vec2 p, float t) {
+  float m = noise(p * 12.0 + 4.0);
+  vec3 base = vec3(0.02 + 0.05 * m, 0.04 + 0.07 * m, 0.14 + 0.14 * m);
+  float T = 4.6;
+  float k = mod(t + 1.8, T);
+  float tau = k - length(p - uOrg) / 1.3;
+  float env = smoothstep(0.0, 0.1, tau) * exp(-max(tau - 0.3, 0.0) / 0.4) * step(0.0, tau);
+  return base + env * vec3(0.95, 0.75, 0.35);
+}
+vec3 display(int k, vec2 p, float t) {
+  if (k == 1) return mottleD(p, t);
+  if (k == 2) return zebraD(p, t);
+  if (k == 3) return flashD(p, t);
+  return cloudD(p, t);
+}
+// The eye spot: a dark pupil, a pale ring and a dark rim, grown from the middle.
+vec3 eyeSpot(vec3 tg, vec2 p) {
+  float a = uStare.z;
+  float e = length(p - uStare.xy) / (0.13 * (0.35 + 0.65 * a));
+  float core = 1.0 - smoothstep(0.62, 0.8, e);
+  float ring = smoothstep(0.66, 0.84, e) * (1.0 - smoothstep(1.3, 1.45, e));
+  float rim = smoothstep(1.35, 1.5, e) * (1.0 - smoothstep(1.85, 2.15, e));
+  tg = mix(tg, vec3(1.0, 0.95, 0.6), core * a);
+  tg = mix(tg, vec3(0.0), ring * a);
+  return mix(tg, vec3(0.95, 0.7, 0.3), rim * a);
+}
+// The white square of a disruptive pattern, with a dark frame.
+vec3 whiteSquare(vec3 tg, vec2 p) {
+  float a = uStare.z;
+  vec2 q = mat2(0.97, 0.26, -0.26, 0.97) * (p - uStare.xy);
+  float sq = max(abs(q.x), abs(q.y)) / (0.11 * sqrt(max(a, 0.01)));
+  float inside = 1.0 - smoothstep(0.85, 1.0, sq);
+  float frame = smoothstep(0.95, 1.05, sq) * (1.0 - smoothstep(1.3, 1.5, sq));
+  tg = mix(tg, vec3(0.0, 0.03, 0.15), inside * a);
+  return mix(tg, vec3(1.0, 0.8, 0.4), frame * a);
+}
+vec3 skin(vec2 p) {
+  vec3 tg = display(uDispA, p, uT);
+  if (uDispB != uDispA) {
+    float k = smoothstep(uSw.z, uSw.z - uSw.w, length(p - uSw.xy));
+    if (k > 0.0) tg = mix(tg, display(uDispB, p, uT), k);
+  }
+  // Stillness: the skin copies a figure where the pointer rests.
+  if (uStare.z > 0.002) {
+    if (uDispB == 1) tg = whiteSquare(tg, p);
+    else if (uDispB != 2) tg = eyeSpot(tg, p);
+  }
+  // Rings: a band of colour with a dark lead, and a pale wake behind it.
+  float lead = 0.0, band = 0.0, pale = 0.0;
+  for (int i = 0; i < ${RINGS}; i++) {
+    vec4 R = uRing[i];
+    if (R.w <= 0.0) continue;
+    float d = length(p - R.xy) - R.z * uRingK.x;
+    float w = uRingK.y * (1.0 + 0.5 * R.z);
+    float fade = R.w * smoothstep(3.0, 0.8, R.z) * smoothstep(0.0, 0.12, R.z);
+    lead += fade * exp(-pow((d - 0.5 * w) / (0.6 * w), 2.0));
+    band += fade * exp(-d * d / (w * w));
+    pale += fade * exp(-pow((d + 2.2 * w) / (1.3 * w), 2.0));
+  }
+  tg = mix(tg, vec3(0.0), clamp(pale * 0.6, 0.0, 0.85));
+  tg += min(band, 1.3) * vec3(0.25, 0.95, 0.75) + min(lead, 1.3) * vec3(0.9, 0.3, 0.0);
+  // A moving pointer pales the cells right under it.
+  float pd = length(p - uPtr.xy);
+  tg *= 1.0 - uPtr.z * uPtr.w * 0.8 * exp(-pd * pd / 0.0036);
+  // The startle: a pale front races out, then the cells slam back dark.
+  if (uFlash.w > 0.0) {
+    float tau = uFlash.z - length(p - uFlash.xy) / 2.4;
+    float blanch = step(0.0, tau) * (1.0 - smoothstep(0.3, 0.6, tau));
+    float rebound = exp(-pow((tau - 0.8) / 0.25, 2.0));
+    tg = mix(tg, vec3(0.0), blanch * uFlash.w);
+    tg += rebound * uFlash.w * vec3(0.7, 0.5, 0.1);
+  }
+  // Ink: the skin flushes dark, then blanches as the animal flees.
+  tg = mix(tg, vec3(1.0, 0.85, 0.4), uInkS.x);
+  tg *= 1.0 - 0.85 * uInkS.y;
+  return clamp(tg, 0.0, 1.0);
+}
+`;
+
+/* ---------- cell state: one texel per cell ---------- */
+// Each cell eases to its wish on a spring with its own stiffness.
+const UPDATE_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uPrev;
+uniform float uDt, uSnap, uNerve, uFleshT;
+// Spring stiffness range for this layer.
+uniform vec2 uK;
+out vec4 o;
+${COMMON}
+${GRID}
+${PATTERNS}
+void main() {
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  uint id = cellId(ij);
+  vec2 p = cellHome(ij, id);
+  p += warp(p, uFleshT);
+  vec3 tg3 = skin(p);
+  int L = int(uGrid.w);
+  float tg = L == 0 ? tg3.x : L == 1 ? tg3.y : tg3.z;
+  float h1 = u01(id + 1u), h2 = u01(id + 2u), h3 = u01(id + 3u), h4 = u01(id + 4u);
+  // Some cells sit wider or tighter than the field asks.
+  tg += (h1 - 0.5) * 0.16;
+  // Each cell wanders a little on its own.
+  tg += (noise(vec2(uT * (0.3 + 0.9 * h2), h3 * 91.0)) - 0.5) * 0.14 * uNerve;
+  // Now and then a cell twitches open.
+  float slot = floor(uT * (1.2 + 2.4 * h4) + h3 * 7.0);
+  tg += step(0.986, u01(id ^ (uint(slot) * 2654435761u))) * 0.6 * uNerve;
+  tg = clamp(tg, 0.0, 1.0);
+  vec2 sv = texelFetch(uPrev, ij, 0).rg;
+  if (uSnap > 0.5) { o = vec4(tg, 0.0, 0.0, 1.0); return; }
+  // Opening is a muscle pull, quick; shutting is an elastic recoil.
+  float k = mix(uK.x, uK.y, h2) * (tg > sv.x ? 1.35 : 0.75);
+  float c = 2.0 * 0.6 * sqrt(k);
+  float dt = uDt * 0.5;
+  for (int i = 0; i < 2; i++) {
+    sv.y += (k * (tg - sv.x) - c * sv.y) * dt;
+    sv.x += sv.y * dt;
+  }
+  o = vec4(clamp(sv.x, -0.05, 1.12), sv.y, 0.0, 1.0);
+}`;
+
+/* ---------- pigment: one soft disc per cell ---------- */
+// Instanced quads add each cell's optical depth into one buffer.
+const CELL_VS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uState;
+uniform vec2 uRes, uC;
+uniform float uUnit, uFleshT, uRmax;
+out vec2 vQ;
+// Lobe count, lobe phase, star depth, optical depth scale.
+flat out vec4 vA;
+// Oval turn, oval ratio, openness, radius in pixels.
+flat out vec4 vB;
+// Each cell's own shade of its pigment.
+flat out vec3 vTint;
+${COMMON}
+${GRID}
+void main() {
+  int i = gl_InstanceID;
+  ivec2 ij = ivec2(i % uDim.x, i / uDim.x);
+  uint id = cellId(ij);
+  vec2 c = cellHome(ij, id);
+  c += warp(c, uFleshT);
+  float s = clamp(texelFetch(uState, ij, 0).r, 0.0, 1.12);
+  float h5 = u01(id + 5u), h6 = u01(id + 6u), h7 = u01(id + 7u), h8 = u01(id + 8u);
+  float size = 0.7 + 0.55 * h5;
+  float rMax = uRmax * size * uGrid.x;
+  // A shut cell stays a dot until its muscles really pull.
+  float r = mix(0.045 * size * uGrid.x, rMax, pow(s, 1.5));
+  float rPx = r * uUnit;
+  vec2 cPx = uC + c * uUnit;
+  float ext = rPx * 1.2 + 1.5;
+  vec2 corner = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1)) * 2.0 - 1.0;
+  bool off = rPx < 0.15 || cPx.x + ext < 0.0 || cPx.y + ext < 0.0 || cPx.x - ext > uRes.x || cPx.y - ext > uRes.y;
+  gl_Position = off ? vec4(2.0, 2.0, 2.0, 1.0) : vec4((cPx + corner * ext) / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vQ = corner * ext / max(rPx, 1e-3);
+  // The pigment stays the same, so a small disc holds it denser.
+  float rel = max(rPx, 0.9) / (rMax * uUnit);
+  float od = min(pow(rel, -1.2), 2.2);
+  float open = smoothstep(0.1, 0.9, s);
+  // A half-open cell pulls into soft points between its muscles.
+  float star = 0.01 + 0.04 * (1.0 - abs(2.0 * open - 1.0)) * h6;
+  vA = vec4(floor(9.0 + 10.0 * h6), h7 * 6.2832, star, od);
+  vB = vec4(h8 * 3.1416, 0.82 + 0.18 * h5, open, rPx);
+  // Shades drift a little: some cells redder, some deeper.
+  float h9 = u01(id + 9u), h10 = u01(id + 10u);
+  vTint = (0.82 + 0.36 * h9) * vec3(1.0 - 0.18 * (h10 - 0.5), 1.0, 1.0 + 0.3 * (h10 - 0.5));
+}`;
+const CELL_FS = `#version 300 es
+precision highp float;
+in vec2 vQ;
+flat in vec4 vA, vB;
+flat in vec3 vTint;
+uniform vec3 uSig;
+out vec4 o;
+void main() {
+  float ca = cos(vB.x), sa = sin(vB.x);
+  vec2 q = mat2(ca, sa, -sa, ca) * vQ;
+  q.x /= vB.y;
+  float rho = length(q);
+  if (rho > 1.3) discard;
+  float th = atan(q.y, q.x), ph = vA.y;
+  // Low lobes give an uneven round; fine points mark the muscle pulls.
+  float low = 0.065 * sin(2.0 * th + ph) + 0.045 * sin(3.0 * th + 1.7 * ph) + 0.025 * sin(5.0 * th + 2.9 * ph);
+  float lob = 1.0 + low * (1.2 - 0.5 * vB.z) + vA.z * (0.6 * sin(vA.x * th + ph) + 0.4 * sin((vA.x + 3.0) * th - 1.7 * ph));
+  float aa = 1.1 / max(vB.w, 1.0);
+  float cov = 1.0 - smoothstep(lob - aa, lob + aa, rho);
+  if (cov <= 0.0) discard;
+  float u = rho / lob;
+  // Pigment thins in the middle of an open disc and gathers at its rim.
+  float dens = 0.74 + 0.4 * smoothstep(0.55, 1.0, u) + 0.14 * exp(-pow((u - 0.94) / 0.06, 2.0));
+  // A shut cell keeps a dense core; every cell keeps a small nucleus.
+  dens += 0.6 * (1.0 - vB.z) * exp(-u * u * 12.0) + 0.25 * exp(-u * u * 50.0);
+  // Faint radial fibres run through the open disc.
+  dens *= 1.0 + 0.08 * vB.z * sin(th * 37.0 + 3.0 * sin(th * 5.0 + ph)) * smoothstep(0.4, 0.95, u);
+  o = vec4(uSig * vTint * vA.w * dens * cov, cov);
+}`;
+
+/* ---------- composite: the deep layers, the pigment over them, the wet film ---------- */
+const COMP_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uPig, uInk;
+uniform float uInkOn;
+uniform vec2 uRes, uC;
+uniform float uUnit, uFleshT, uT, uLod, uSheen, uGloss, uGrain, uExpo, uPap, uGlow, uIrid;
+// The point light: position in skin units and height.
+uniform vec3 uLp;
+uniform vec3 uFlesh, uWhite;
+uniform int uLevel;
+out vec4 o;
+${COMMON}
+${GRADE}
+${OUTPUT}
+// Linear RGB for one wavelength in nm: three soft bumps.
+vec3 spectral(float l) {
+  float r = exp(-pow((l - 610.0) / 48.0, 2.0)) + 0.25 * exp(-pow((l - 425.0) / 25.0, 2.0));
+  float g = exp(-pow((l - 545.0) / 46.0, 2.0));
+  float b = exp(-pow((l - 455.0) / 36.0, 2.0));
+  return vec3(r, g, b);
+}
+// A smooth blur from one mip level: four taps hide its blocks.
+vec3 soft(vec2 uv, float lod) {
+  vec2 d = exp2(lod) * 0.5 / uRes;
+  return 0.25 * (textureLod(uPig, uv + vec2(-d.x, -d.y), lod).rgb + textureLod(uPig, uv + vec2(d.x, -d.y), lod).rgb
+    + textureLod(uPig, uv + vec2(-d.x, d.y), lod).rgb + textureLod(uPig, uv + vec2(d.x, d.y), lod).rgb);
+}
+// The film's colours, round a loop: teal, blue, violet, rose.
+vec3 filmCol(float x) {
+  x = fract(x) * 4.0;
+  vec3 c0 = vec3(0.12, 0.62, 0.6), c1 = vec3(0.16, 0.36, 0.85), c2 = vec3(0.46, 0.28, 0.8), c3 = vec3(0.8, 0.36, 0.5);
+  float f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  if (x < 1.0) return mix(c0, c1, f);
+  if (x < 2.0) return mix(c1, c2, f);
+  if (x < 3.0) return mix(c2, c3, f);
+  return mix(c3, c0, f);
+}
+// Papillae: low soft domes the skin can raise.
+float papillae(vec2 p) {
+  vec2 q = p * 11.0, n = floor(q), f = fract(q);
+  float h = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), c = g + 0.2 + 0.6 * vec2(hash(n + g + 2.1), hash(n + g + 8.3));
+    float sz = 0.35 + 0.25 * hash(n + g + 5.7);
+    float d = length(f - c) / sz;
+    h += max(0.0, 1.0 - d * d) * max(0.0, 1.0 - d * d);
+  }
+  return h;
+}
+// The broad swell and fine grain of the skin.
+float relief(vec2 p) {
+  return 0.012 * fbm(p * 2.6 + vec2(uFleshT * 0.02, 0.0)) + 0.0012 * noise(p * 46.0);
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy, uv = fc / uRes;
+  vec2 p = (fc - uC) / uUnit;
+  p -= warp(p, uFleshT);
+  vec4 P = texture(uPig, uv);
+  vec3 od = P.rgb;
+  // Light spreads in the tissue, so the pigment shades a soft halo too.
+  if (uLevel > 0) od = mix(od, soft(uv, uLod), 0.2);
+  vec3 T = exp(-od);
+  // The pigment floats above the deep layers and casts a faint shadow on them.
+  // The shadow falls away from the light, longer further out.
+  vec2 dl = p - uLp.xy;
+  float dlen = length(dl);
+  vec2 sOff = dl / max(dlen, 1e-3) * (0.002 + 0.004 * min(dlen, 0.8) / 0.8) * uUnit / uRes;
+  vec3 sh = uLevel > 0 ? exp(-0.2 * soft(uv - sOff, uLod)) : vec3(1.0);
+
+  // Relief: one pixel steps for the normal.
+  // The sheen reads only the broad swell; papillae shade and glint.
+  float e = 1.0 / uUnit;
+  vec3 h0 = vec3(relief(p), relief(p + vec2(e, 0.0)), relief(p + vec2(0.0, e)));
+  vec3 Nm = normalize(vec3(-(h0.y - h0.x) / e, -(h0.z - h0.x) / e, 1.0));
+  vec3 N = Nm;
+  if (uPap > 0.01) {
+    vec3 hp = uPap * 0.006 * vec3(papillae(p), papillae(p + vec2(e, 0.0)), papillae(p + vec2(0.0, e)));
+    h0 += hp;
+    N = normalize(vec3(-(h0.y - h0.x) / e, -(h0.z - h0.x) / e, 1.0));
+  }
+  vec3 Lv = uLp - vec3(p, 0.0);
+  float ld = length(Lv);
+  vec3 L = Lv / ld, V = vec3(0.0, 0.0, 1.0), H = normalize(L + V);
+
+  // Leucophores: soft white patches; bare flesh between them is dusky.
+  float leu = smoothstep(0.34, 0.66, fbm(p * 2.2 + 13.0));
+  leu = 0.1 + 0.9 * leu * (0.85 + 0.15 * noise(p * 70.0));
+  vec3 base = mix(uFlesh, uWhite, leu) * sh;
+  float diff = 0.74 + 0.26 * dot(N, normalize(vec3(-0.4, 0.5, 1.0)));
+
+  // Iridophores: a film whose colour turns with the angle to the light.
+  // It shows best over the dusky flesh, where no white scatters under it.
+  vec3 Nw = normalize(vec3(Nm.xy * 4.0, 1.0));
+  float cw = clamp(dot(H, Nw), 0.0, 1.0);
+  // Small domains of plates vary the film's thickness.
+  float dom = fbm(p * 11.0 + 3.0);
+  float thick = fbm(p * 1.1 + vec2(21.0, uT * 0.01)) + 0.45 * dom;
+  float ph = thick * 1.2 + (1.0 - cw) * 2.4;
+  vec3 film = filmCol(ph);
+  // The sheen lives round the light, where the plates face it.
+  // A pale display bares the whole iridescent layer, in patches.
+  float broad = (0.03 + 0.42 * smoothstep(0.86, 1.0, cw)) * (1.0 - 0.4 * leu);
+  broad += uIrid * (0.16 + 0.4 * smoothstep(0.5, 1.0, cw)) * smoothstep(0.3, 0.72, dom) * (0.7 + 0.6 * fbm(p * 3.0 - 4.0));
+  vec3 irid = film * broad * uSheen * (1.0 + uGlow);
+  // A soft pool of light follows the light; the rest of the skin is dimmer.
+  float pool = 0.66 + 0.4 * exp(-dlen * dlen / 0.25);
+  vec3 col = (base * diff + irid) * T * pool;
+
+  // A wet film over everything: a tight cluster of glints on the relief.
+  float NH = max(dot(N, H), 0.0);
+  float spec = pow(NH, 900.0) * 0.32;
+  col += vec3(1.0, 0.97, 0.93) * spec * uGloss;
+
+  // Ink in the water: sepia smoke over the skin, wispy at its edges.
+  if (uInkOn > 0.0) {
+    float d = texture(uInk, uv).r;
+    if (d > 0.002) {
+      // Fine curls ride on the cloud, warped so they read as smoke.
+      vec2 iq = vec2(uv.x * uRes.x / uRes.y, uv.y) * 5.0;
+      iq += 0.6 * vec2(fbm(iq + vec2(uT * 0.06, 0.0)), fbm(iq + vec2(4.1, -uT * 0.05)));
+      float f = fbm(iq * 1.7);
+      d *= 0.25 + 1.5 * f * f + 0.3 * smoothstep(0.8, 2.5, d);
+      col = col * exp(-d * vec3(1.9, 2.25, 2.7)) + vec3(0.06, 0.04, 0.026) * (1.0 - exp(-d * 1.4)) * pool;
+    }
+  }
+
+  float asp = uRes.x / uRes.y;
+  col *= gdVignette(uv, asp, 0.85, 0.26);
+  col *= gdGrain(gdHash(fc + vec2(uT * 61.0, uT * 37.0)), gdLuma(col), 0.035 * uGrain, vec2(0.6, 1.0));
+  o = vec4(ouFilm(max(col, 0.0), uExpo, fc), 1.0);
+}`;
+
+/* ---------- ink: a cloud in the water, in screen space ---------- */
+// One density channel, carried by a slow swirl and a first puff.
+const INK_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uPrev;
+uniform vec2 uRes, uSrc, uJet;
+uniform float uDt, uT, uAge, uAsp, uPace;
+out vec4 o;
+${COMMON}
+// The water's slow swirl: the curl of a noise field.
+vec2 swirl(vec2 q) {
+  float e = 0.02;
+  float a = fbm(q + vec2(0.0, e)) - fbm(q - vec2(0.0, e));
+  float b = fbm(q + vec2(e, 0.0)) - fbm(q - vec2(e, 0.0));
+  return vec2(a, -b) / (2.0 * e);
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 q = vec2(uv.x * uAsp, uv.y), s = vec2(uSrc.x * uAsp, uSrc.y), d = q - s;
+  float r = length(d);
+  // The first puff throws the ink out in lobes, then the jet trails off.
+  float lobe = 0.35 + 1.3 * noise(vec2(atan(d.y, d.x) * 1.4 + 9.0, uSrc.x * 17.0));
+  vec2 v = d / max(r, 0.02) * 0.5 * lobe * exp(-uAge / 0.5) * exp(-r * r / 0.1);
+  v += uJet * 0.42 * exp(-uAge / 0.9) * exp(-r * r / 0.06);
+  // Two swirls curl the cloud into tendrils: one broad, one fine.
+  v += 0.05 * swirl(q * 2.4 + vec2(0.0, uT * 0.05)) + 0.022 * swirl(q * 9.0 - vec2(uT * 0.08, 0.0)) + vec2(0.005, 0.014);
+  v *= uPace;
+  vec2 b = q - v * uDt;
+  float den = texture(uPrev, vec2(b.x / uAsp, b.y)).r * exp(-uDt / 7.0);
+  float src = smoothstep(0.9, 0.0, uAge) * exp(-r * r / 0.004) * 16.0 * uDt;
+  o = vec4(den + src, 0.0, 0.0, 1.0);
+}`;
+
+const updateP = program(TRI_VS, UPDATE_FS), cellP = program(CELL_VS, CELL_FS), compP = program(TRI_VS, COMP_FS), inkP = program(TRI_VS, INK_FS);
+
+/* ---------- colours ---------- */
+// The deep layers: bare flesh and the white of the leucophores.
+const FLESH = linFit(0.66, 0.06, 32), WHITE = linFit(0.88, 0.025, 85);
+// What one open cell of each pigment shows over white, as optical depth.
+const sigma = c => c.map((v, i) => Math.max(0, -Math.log(Math.max(v, 1e-4) / WHITE[i])));
+const PIG = [sigma(linFit(0.42, 0.055, 52)), sigma(linFit(0.63, 0.15, 42)), sigma(linFit(0.84, 0.12, 86))];
+
+/* ---------- layers ---------- */
+// Brown-black cells are the largest and slowest; yellow are the smallest and quickest.
+// Pitch in skin units, turn in radians, open radius in pitches, spring range.
+const LAYERS = [
+  { pitch: 0.04, ang: 0.31, rmax: 0.72, k: [22, 40] },
+  { pitch: 0.029, ang: 1.13, rmax: 0.6, k: [30, 55] },
+  { pitch: 0.021, ang: 2.29, rmax: 0.56, k: [42, 80] },
+];
+const SEED = 1103;
+LAYERS.forEach(L => { L.cols = 0; L.tex = null; L.fb = null; L.i = 0; });
+
+/* ---------- layout ---------- */
+// Skin units: the stage's short side spans about one unit at zoom 1.
+let size = { w: 1, h: 1, dpr: 1 }, unitCss = 800, baseZoom = 1, pig = null, pigFb = null, pigW = 0, pigH = 0;
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => { resize(); wake(); } });
+const zoom = () => baseZoom * zoomUi;
+function allocLayers(reach) {
+  for (const L of LAYERS) {
+    const n = Math.ceil((2 * reach) / L.pitch) + 2;
+    if (L.tex && n <= L.cols) continue;
+    L.tex?.forEach(t => gl.deleteTexture(t));
+    L.fb?.forEach(f => gl.deleteFramebuffer(f));
+    L.cols = n;
+    L.tex = [texture(n, n), texture(n, n)];
+    L.fb = L.tex.map(target);
+    L.i = 0;
+    L.fresh = true;
+  }
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  // A hidden or tiny stage still gets a sane scale.
+  const short = Math.max(160, Math.min(w, h));
+  // Small stages look closer, large ones look wider.
+  baseZoom = clamp(1100 / short, 0.9, 2.2);
+  unitCss = short * zoom();
+  // The lattices cover the stage at the widest zoom, up to a cap.
+  allocLayers(Math.min(3, (0.5 * Math.hypot(w, h)) / (short * baseZoom * 0.6) + 0.08));
+  if (canvas.width !== pigW || canvas.height !== pigH) {
+    if (pig) { gl.deleteTexture(pig); gl.deleteFramebuffer(pigFb); }
+    pigW = canvas.width; pigH = canvas.height;
+    pig = texture(pigW, pigH, gl.LINEAR, true);
+    pigFb = target(pig);
+  }
+  // The ink grid is half the stage in CSS pixels, at most 640 wide.
+  const iw = Math.max(8, Math.round(Math.min(640, w / 2))), ih = Math.max(8, Math.round(iw * h / w));
+  if (iw !== ink.w || ih !== ink.h) {
+    ink.tex?.forEach(t => gl.deleteTexture(t));
+    ink.fb?.forEach(f => gl.deleteFramebuffer(f));
+    ink.w = iw; ink.h = ih; ink.i = 0;
+    ink.tex = [texture(iw, ih, gl.LINEAR), texture(iw, ih, gl.LINEAR)];
+    ink.fb = ink.tex.map(target);
+    clearInk();
+  }
+}
+function clearInk() {
+  for (const fb of ink.fb) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+}
+// A stage point in CSS pixels, as skin units with y up.
+const toSkin = (x, y) => [(x - size.w / 2) / unitCss, (size.h / 2 - y) / unitCss];
+
+/* ---------- the animal's state ---------- */
+let time = 0, patT = 0, fleshT = 0;
+let dispA = 0, dispB = 0;
+const sw = { x: 0, y: 0, r: 99 };
+const SW_V = 0.6, SW_W = 0.14;
+const ptr = { x: 0, y: 0, in: false, down: false, motion: 0, still: 0, travel: 0, lastRing: -9, sx: 0, sy: 0, lastT: 0 };
+const stare = { x: 0, y: 0, a: 0, locked: false };
+const flash = { x: 0, y: 0, t0: -99, ready: 0 };
+const rings = [];
+const RING_V = 0.26, RING_W = 0.034, RING_LIFE = 3.0;
+const ringU = new Float32Array(RINGS * 4);
+// The ink cloud lives in its own small grid, in stage uv.
+const ink = { t0: -99, x: 0.5, y: 0.5, jx: 0, jy: 1, tex: null, fb: null, w: 0, h: 0, i: 0 };
+const INK_LIFE = 14;
+// The light rests above and to the upper left; the pointer carries it.
+const REST = [-0.16, 0.12];
+const light = { x: REST[0], y: REST[1], tx: REST[0], ty: REST[1] };
+// After a long still spell the animal settles and the loop sleeps.
+let lastInput = performance.now(), sleep = 0, settled = 0, drowsy = 0;
+const IDLE = () => (reduced() ? 20 : 90);
+const poke = () => { lastInput = performance.now(); };
+
+function emitRing(x, y, amp) {
+  if (reduced()) return;
+  if (rings.length >= RINGS) rings.shift();
+  rings.push({ x, y, t0: time, amp });
+  ringSound(x, amp);
+}
+
+/* ---------- passes ---------- */
+function setGrid(p, L, k) {
+  gl.uniform2i(p.u('uDim'), L.cols, L.cols);
+  gl.uniform4f(p.u('uGrid'), L.pitch, Math.cos(L.ang), Math.sin(L.ang), k);
+  gl.uniform1ui(p.u('uSeed'), SEED);
+}
+function setPatterns(p) {
+  gl.uniform1f(p.u('uT'), patT);
+  gl.uniform1i(p.u('uDispA'), dispA);
+  gl.uniform1i(p.u('uDispB'), dispB);
+  gl.uniform4f(p.u('uSw'), sw.x, sw.y, sw.r, SW_W);
+  gl.uniform4f(p.u('uPtr'), ptr.x, ptr.y, ptr.motion, ptr.in ? 1 : 0);
+  gl.uniform4f(p.u('uStare'), stare.x, stare.y, stare.a, 0);
+  const fa = time - flash.t0;
+  gl.uniform4f(p.u('uFlash'), flash.x, flash.y, fa, fa < 2.5 ? 1 : 0);
+  gl.uniform2f(p.u('uOrg'), ...flashOrigin());
+  ringU.fill(0);
+  rings.forEach((r, i) => ringU.set([r.x, r.y, time - r.t0, r.amp], i * 4));
+  gl.uniform4fv(p.u('uRing'), ringU);
+  gl.uniform2f(p.u('uRingK'), RING_V, RING_W);
+  gl.uniform2f(p.u('uInkS'), ...inkSkin());
+}
+function updateCells(dt, snap) {
+  gl.useProgram(updateP);
+  setPatterns(updateP);
+  gl.uniform1f(updateP.u('uDt'), dt);
+  gl.uniform1f(updateP.u('uSnap'), snap ? 1 : 0);
+  gl.uniform1f(updateP.u('uNerve'), (val('nerve') ?? 1) * (reduced() ? 0.3 : 1));
+  gl.uniform1f(updateP.u('uFleshT'), fleshT);
+  gl.uniform1i(updateP.u('uPrev'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindVertexArray(vao);
+  LAYERS.forEach((L, k) => {
+    setGrid(updateP, L, k);
+    gl.uniform2f(updateP.u('uK'), ...L.k);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb[1 - L.i]);
+    gl.viewport(0, 0, L.cols, L.cols);
+    gl.bindTexture(gl.TEXTURE_2D, L.tex[L.i]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    L.i = 1 - L.i;
+    L.fresh = false;
+  });
+}
+function drawPigment() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, pigFb);
+  gl.viewport(0, 0, pigW, pigH);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(cellP);
+  const d = size.dpr;
+  gl.uniform2f(cellP.u('uRes'), pigW, pigH);
+  gl.uniform2f(cellP.u('uC'), (size.w / 2) * d, (size.h / 2) * d);
+  gl.uniform1f(cellP.u('uUnit'), unitCss * d);
+  gl.uniform1f(cellP.u('uFleshT'), fleshT);
+  gl.uniform1i(cellP.u('uState'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindVertexArray(vao);
+  LAYERS.forEach((L, k) => {
+    setGrid(cellP, L, k);
+    gl.uniform1f(cellP.u('uRmax'), L.rmax);
+    gl.uniform3f(cellP.u('uSig'), ...PIG[k]);
+    gl.bindTexture(gl.TEXTURE_2D, L.tex[L.i]);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.cols * L.cols);
+  });
+  gl.disable(gl.BLEND);
+  if (D.level > 0) {
+    gl.bindTexture(gl.TEXTURE_2D, pig);
+    gl.generateMipmap(gl.TEXTURE_2D);
+  }
+}
+function composite() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(compP);
+  const d = size.dpr;
+  gl.uniform2f(compP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform2f(compP.u('uC'), (size.w / 2) * d, (size.h / 2) * d);
+  gl.uniform1f(compP.u('uUnit'), unitCss * d);
+  gl.uniform1f(compP.u('uFleshT'), fleshT);
+  gl.uniform1f(compP.u('uT'), time);
+  // The soft halo: about four CSS pixels at any pixel ratio.
+  gl.uniform1f(compP.u('uLod'), Math.log2(Math.max(1, 4 * d)));
+  gl.uniform1f(compP.u('uSheen'), val('sheen') ?? 1);
+  gl.uniform1f(compP.u('uGloss'), val('gloss') ?? 1);
+  gl.uniform1f(compP.u('uGrain'), val('grain') ?? 1);
+  gl.uniform1f(compP.u('uExpo'), 0.9 * (val('expo') ?? 1));
+  gl.uniform1f(compP.u('uPap'), papAmt);
+  gl.uniform1f(compP.u('uIrid'), iridAmt);
+  gl.uniform1f(compP.u('uGlow'), flashGlow());
+  gl.uniform3f(compP.u('uLp'), light.x, light.y, 0.5);
+  gl.uniform3f(compP.u('uFlesh'), ...FLESH);
+  gl.uniform3f(compP.u('uWhite'), ...WHITE);
+  gl.uniform1i(compP.u('uLevel'), D.level);
+  gl.uniform1i(compP.u('uPig'), 0);
+  gl.uniform1i(compP.u('uInk'), 1);
+  gl.uniform1f(compP.u('uInkOn'), time - ink.t0 < INK_LIFE ? 1 : 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, ink.tex[ink.i]);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, pig);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// The ink grid steps only while a cloud is alive.
+function stepInk(dt) {
+  const age = time - ink.t0;
+  if (age >= INK_LIFE || dt <= 0) return;
+  gl.useProgram(inkP);
+  gl.uniform2f(inkP.u('uRes'), ink.w, ink.h);
+  gl.uniform2f(inkP.u('uSrc'), ink.x, ink.y);
+  gl.uniform2f(inkP.u('uJet'), ink.jx, ink.jy);
+  gl.uniform1f(inkP.u('uDt'), dt);
+  gl.uniform1f(inkP.u('uT'), time);
+  gl.uniform1f(inkP.u('uAge'), age);
+  gl.uniform1f(inkP.u('uAsp'), ink.w / ink.h);
+  gl.uniform1f(inkP.u('uPace'), reduced() ? 0.4 : 1);
+  gl.uniform1i(inkP.u('uPrev'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, ink.fb[1 - ink.i]);
+  gl.viewport(0, 0, ink.w, ink.h);
+  gl.bindTexture(gl.TEXTURE_2D, ink.tex[ink.i]);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  ink.i = 1 - ink.i;
+}
+function render(dt, snap = false) {
+  updateCells(dt, snap);
+  stepInk(dt);
+  drawPigment();
+  composite();
+}
+
+/* ---------- helpers the passes read ---------- */
+let papAmt = 0, iridAmt = 0;
+// The flash display flushes from the pointer, or from a slow wandering point.
+function flashOrigin() {
+  if (ptr.in) return [ptr.x, ptr.y];
+  return [0.25 * Math.sin(patT * 0.07), 0.18 * Math.cos(patT * 0.05)];
+}
+// The startle lights the sheen for a moment.
+function flashGlow() {
+  const a = time - flash.t0;
+  return a < 0 || a > 1.5 ? 0 : 1.6 * Math.exp(-a / 0.4);
+}
+function inkSkin() {
+  const a = time - ink.t0;
+  if (a < 0 || a > 9) return [0, 0];
+  const dark = Math.exp(-Math.pow((a - 0.25) / 0.22, 2));
+  const pale = clamp((a - 0.45) / 0.3) * Math.exp(-Math.max(0, a - 2.5) / 1.6);
+  return [dark, pale];
+}
+
+/* ---------- sound: faint and wet ---------- */
+const kit = audioKit({ gain: 0.42 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// The pan of a skin point, from its place on the stage.
+const panOf = x => clamp((x * unitCss) / (size.w / 2), -1, 1) * 0.7;
+function voice(ac, node, pan, at, dur) {
+  const p = ac.createStereoPanner();
+  p.pan.value = pan;
+  node.connect(p).connect(kit.out);
+  return at + dur;
+}
+// A wet tick: a few milliseconds of filtered noise.
+function tick(ac, at, { f, q = 3, dur = 0.006, level = 0.03, pan = 0 }) {
+  const src = ac.createBufferSource(), flt = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  flt.type = 'bandpass';
+  flt.frequency.value = f * jit(0.15);
+  flt.Q.value = q;
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.3), at + 0.001);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  src.connect(flt).connect(g);
+  voice(ac, g, pan, at, dur);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A drop: a small air pocket rings with a rising chirp.
+function plip(ac, at, { f, level, pan = 0, dur = 0.06, rise = 1.9 }) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  const f0 = f * jit(0.12);
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * rise, at + dur);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.004);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  o.connect(g);
+  voice(ac, g, pan, at, dur);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// A soft thump: a sine that falls in pitch.
+function thump(ac, at, { f0, f1, dur, level, pan = 0 }) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + 0.012);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  o.connect(g);
+  voice(ac, g, pan, at, dur);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// A breath of water: filtered noise that sweeps.
+function swish(ac, at, { f0, f1, dur, level, type = 'bandpass', q = 0.8, pan = 0 }) {
+  const src = ac.createBufferSource(), flt = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  flt.type = type;
+  flt.Q.value = q;
+  flt.frequency.setValueAtTime(f0, at);
+  flt.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + Math.min(0.15, dur * 0.3));
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  src.connect(flt).connect(g);
+  voice(ac, g, pan, at, dur);
+  src.start(at);
+  src.stop(at + dur + 0.05);
+}
+let lastRingSound = 0;
+// A ring: one deep drop and a little wet crackle.
+function ringSound(x, amp) {
+  const ac = kit.live();
+  if (!ac || !kit.noise || ac.currentTime - lastRingSound < 0.07) return;
+  lastRingSound = ac.currentTime;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  plip(ac, at, { f: 170 + 260 / (0.6 + amp), level: 0.035 + 0.06 * Math.min(amp, 1.7), pan, dur: 0.07 + 0.03 * amp, rise: 1.6 });
+  for (let i = 0; i < 2 + Math.round(amp * 2); i++) tick(ac, at + 0.02 + Math.random() * 0.12, { f: 2200 + 3000 * Math.random(), level: 0.016, pan });
+}
+// The startle: a low thump, a rush of water, a spray of ticks.
+function startleSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  thump(ac, at, { f0: 150, f1: 48, dur: 0.38, level: 0.26, pan });
+  swish(ac, at, { f0: 2600, f1: 380, dur: 0.5, level: 0.09, type: 'lowpass', q: 0.7, pan });
+  for (let i = 0; i < 8; i++) tick(ac, at + 0.05 + Math.random() * 0.5, { f: 1800 + 3600 * Math.random(), level: 0.022, pan: clamp(pan + (Math.random() - 0.5) * 0.6, -1, 1) });
+}
+// The stare locks: a soft low swell, a fifth over it.
+function stareSound(x) {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime + 0.01, pan = panOf(x);
+  for (const [f, lv] of [[98, 0.05], [147, 0.025]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = f * jit(0.01);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(lv, at + 0.3);
+    g.gain.exponentialRampToValueAtTime(1e-4, at + 1.8);
+    o.connect(g);
+    voice(ac, g, pan, at, 1.8);
+    o.start(at);
+    o.stop(at + 1.85);
+  }
+}
+// A display change: a slow wash of water from the origin.
+function switchSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  swish(ac, ac.currentTime + 0.01, { f0: 420, f1: 2100, dur: 1.5, level: 0.05, pan: panOf(x) });
+}
+// Ink: a soft blast, a low push and a few bubbles.
+function inkSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  swish(ac, at, { f0: 1700, f1: 220, dur: 1.0, level: 0.17, type: 'lowpass', q: 0.6, pan });
+  thump(ac, at, { f0: 85, f1: 40, dur: 0.35, level: 0.2, pan });
+  for (let i = 0; i < 9; i++) plip(ac, at + 0.15 + Math.random() * 1.1, { f: 500 + 900 * Math.random(), level: 0.035, pan: clamp(pan + (Math.random() - 0.5) * 0.5, -1, 1), dur: 0.04 });
+}
+// The skin's own crackle: a few faint ticks, more while it changes.
+function crackle(dt, busy) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const n = (0.6 + 26 * busy) * dt;
+  if (Math.random() < n) tick(ac, ac.currentTime + Math.random() * 0.02, { f: 2400 + 3600 * Math.random(), q: 4, dur: 0.004 + 0.006 * Math.random(), level: 0.008 + 0.016 * busy, pan: (Math.random() - 0.5) * 1.2 });
+}
+// How busy the skin is now, from 0 to 1, for the crackle.
+function busy() {
+  const fa = time - flash.t0, ia = time - ink.t0;
+  return clamp(rings.length / 10 + (fa < 1.5 ? 0.8 : 0) + (ia < 2 ? 0.6 : 0) + (dispA !== dispB ? 0.3 : 0) + ptr.motion * 0.3);
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const raw = (now - last) / 1000;
+    last = now;
+    if (raw > 0 && raw < 0.5) D.frame(raw);
+    const dt = clamp(raw, 0, 1 / 20);
+    time += dt;
+    // A long still spell slows the skin to rest.
+    drowsy = (now - lastInput) / 1000 > IDLE() ? 1 : 0;
+    sleep += (drowsy - sleep) * (1 - Math.exp(-dt / (drowsy ? 2.5 : 0.35)));
+    const pace = (reduced() ? 0.2 : 1) * (1 - sleep);
+    patT += dt * pace;
+    fleshT += dt * pace;
+    step(dt);
+    render(dt);
+    crackle(dt * (1 - sleep), busy());
+    // Once it rests and every cell has settled, the loop stops.
+    const calm = drowsy && sleep > 0.995 && !rings.length && time - ink.t0 > INK_LIFE && time - flash.t0 > 3 && dispA === dispB && stare.a === 0;
+    settled = calm ? settled + dt : 0;
+    again = settled < 3;
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf);
+  }
+}
+function step(dt) {
+  // The light eases after the pointer.
+  const k = 1 - Math.exp(-dt / 0.12);
+  light.x += (light.tx - light.x) * k;
+  light.y += (light.ty - light.y) * k;
+  // Motion fades once the pointer stops.
+  ptr.motion *= Math.exp(-dt / 0.25);
+  // Stillness builds a stare; motion breaks it; a resting animal lets it go.
+  if (ptr.in) ptr.still += dt;
+  const want = ptr.in && !drowsy && ptr.still > (ptr.down ? 0.25 : 0.45) ? 1 : 0;
+  const rate = want ? (ptr.down ? 0.9 : 0.55) : drowsy ? 0.3 : 2.5;
+  // A new stare starts where the pointer rests.
+  if (want && stare.a === 0) { stare.x = ptr.x; stare.y = ptr.y; }
+  stare.a += clamp(want - stare.a, -rate * dt, rate * dt);
+  if (want) { const ks = 1 - Math.exp(-dt / 0.3); stare.x += (ptr.x - stare.x) * ks; stare.y += (ptr.y - stare.y) * ks; }
+  if (stare.a > 0.9 && !stare.locked) { stare.locked = true; stareSound(stare.x); }
+  if (stare.a < 0.2) stare.locked = false;
+  // Rings die after their life.
+  while (rings.length && time - rings[0].t0 > RING_LIFE) rings.shift();
+  // The switch front runs out until it covers the stage.
+  if (dispB !== dispA) {
+    sw.r += SW_V * dt * (reduced() ? 4 : 1);
+    if (sw.r > reachNow() + SW_W) dispA = dispB;
+  }
+  // Mottle raises the papillae; Flash bares the iridescent layer.
+  const kd = 1 - Math.exp(-dt / 0.8);
+  papAmt += ((dispB === 1 ? 1 : 0) - papAmt) * kd;
+  iridAmt += ((dispB === 3 ? 1 : 0) - iridAmt) * kd;
+}
+// The far corner of the stage, in skin units.
+const reachNow = () => (0.5 * Math.hypot(size.w, size.h)) / unitCss + 0.2;
+
+/* ---------- pointer ---------- */
+const STARTLE_V = 2.6, RING_GAP = 0.11;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function seen(e) {
+  const [cx, cy] = local(e);
+  const [x, y] = toSkin(cx, cy);
+  const t = e.timeStamp / 1000;
+  if (ptr.in) {
+    const dist = Math.hypot(x - ptr.x, y - ptr.y), dt = Math.max(1 / 240, t - ptr.lastT);
+    const v = dist / dt;
+    ptr.motion = Math.max(ptr.motion, clamp(v / 1.2));
+    ptr.travel += dist;
+    if (dist > 0.002) ptr.still = 0;
+    // A fast flick startles the animal.
+    if (v > STARTLE_V && time > flash.ready && val('startle') !== false && !reduced()) startle(x, y);
+    // Waves run out from the pointer as it travels.
+    if (ptr.travel > RING_GAP && time - ptr.lastRing > 0.22) {
+      emitRing(x, y, clamp(0.35 + v / 1.6, 0.35, 1.1));
+      ptr.travel = 0;
+      ptr.lastRing = time;
+    }
+  }
+  ptr.x = x; ptr.y = y; ptr.lastT = t; ptr.in = true;
+  // The light hangs a little above and left of the pointer, so glare never hides it.
+  light.tx = x - 0.14; light.ty = y + 0.12;
+  poke();
+  wake();
+}
+function startle(x, y) {
+  flash.x = x; flash.y = y; flash.t0 = time; flash.ready = time + 1.6;
+  startleSound(x);
+}
+function pulse(x, y) {
+  poke();
+  emitRing(x, y, 1.7);
+}
+let press = null;
+function down(e) {
+  if (e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr.in = false;
+  seen(e);
+  ptr.down = true;
+  ptr.still = 0;
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, moved: false };
+}
+function move(e) {
+  if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.moved = true;
+  if (!press && e.pointerType !== 'mouse') return;
+  seen(e);
+}
+function up(e) {
+  if (!press || e.pointerId !== press.id) return;
+  const tap = !press.moved && e.timeStamp - press.t < 320 && e.type === 'pointerup';
+  press = null;
+  ptr.down = false;
+  if (tap) pulse(ptr.x, ptr.y);
+  // A lifted finger leaves; a mouse stays in view.
+  if (e.pointerType !== 'mouse') leave();
+  wake();
+}
+function leave() {
+  ptr.in = false;
+  ptr.still = 0;
+  [light.tx, light.ty] = REST;
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('pointerleave', e => { if (!press && e.pointerType === 'mouse') leave(); });
+// Space sends a pulse from the middle of the stage.
+stage.addEventListener('keydown', e => {
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  if (e.target !== stage) return;
+  e.preventDefault();
+  pulse(0, 0);
+  wake();
+});
+
+/* ---------- actions ---------- */
+act.pick = v => {
+  const k = DISPLAYS.indexOf(v);
+  poke();
+  if (k < 0 || k === dispB) return;
+  // A switch in flight lands at once; the new one spreads from the pointer.
+  dispA = dispB;
+  dispB = k;
+  const o = ptr.in ? [ptr.x, ptr.y] : [0, 0];
+  sw.x = o[0]; sw.y = o[1]; sw.r = 0;
+  switchSound(o[0]);
+  wake();
+};
+// Ink jets from the pointer, or from low on the stage, away from the middle.
+act.ink = () => {
+  poke();
+  const [cx, cy] = ptr.in ? [ptr.x * unitCss + size.w / 2, size.h / 2 - ptr.y * unitCss] : [size.w * (0.35 + 0.3 * Math.random()), size.h * 0.72];
+  ink.x = clamp(cx / size.w); ink.y = clamp(1 - cy / size.h);
+  const a = Math.atan2(0.5 - ink.y, 0.5 - ink.x) + (Math.random() - 0.5) * 0.8;
+  ink.jx = Math.cos(a); ink.jy = Math.sin(a);
+  if (time - ink.t0 > INK_LIFE) clearInk();
+  ink.t0 = time;
+  inkSound(ptr.in ? ptr.x : 0);
+  wake();
+};
+act.zoom = () => { unitCss = Math.max(160, Math.min(size.w, size.h)) * zoom(); poke(); wake(); };
+act.reset = () => {
+  rings.length = 0;
+  stare.a = 0;
+  flash.t0 = -99;
+  ink.t0 = -99;
+  clearInk();
+  zoomUi = 1;
+  ui.slider.set(1);
+  act.zoom();
+  ui.choice.set('cloud');
+  dispA = dispB = 0;
+  sw.r = 99;
+  wake();
+};
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders compile and the first frame draws.
+resize();
+render(0, true);
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+
+new ResizeObserver(() => { resize(); if (ready) render(0, LAYERS.some(L => L.fresh)); }).observe(stage);
+onReducedChange(() => { poke(); wake(); });
+// A hidden tab stops the loop and lets the sound sleep.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+// A press anywhere wakes the sound; with the loop asleep, it sleeps again.
+addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf); });
+wake();
+</script>
+</body>
+</html>
