@@ -3,11 +3,14 @@
 // The camera looks east (-z) over the line; the sun rises behind the washing.
 import * as THREE from 'three';
 import { rng, col } from './kit.js';
+import { airUniforms, airify, cliffSky, beams } from './cliff-air.js';
 
 const LINE_Z = 0;
 const SEA = -60;
 const EYE = [0, 1.3, 9];
 const EYE_PHONE = [0, 1.3, 17];
+const LAMP = [520, SEA + 65 + 28, -1600];
+const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // The cliff edge wanders across the headland, about 16 m past the line.
 const edgeZ = x => -16 + 3 * Math.sin(x / 9) + 1.6 * Math.sin(x / 4.3 + 1);
@@ -32,7 +35,8 @@ export default {
   cord: [0.05, 0.05, 0.05],
   hangFrom: 0.5,
   start: 3,
-  fog: [600, 12000],
+  // Three's own fog stays off; the air shader does this work.
+  fog: [1e6, 2e6],
   fill: 1.3,
   wash: [
     { w: 1.4, h: 1.1, c: [0.95, 0.01, 90] },
@@ -47,18 +51,31 @@ export default {
     const phone = aspect < 1, eye = phone ? EYE_PHONE : EYE;
     cam.fov = phone ? 64 : 38;
     cam.near = 0.1;
-    cam.far = 20000;
+    cam.far = 45000;
     cam.aspect = aspect;
     cam.position.set(...eye);
     cam.lookAt(0, eye[1] + (phone ? 4 : 7), -200);
     cam.updateProjectionMatrix();
   },
 
+  // Light on the near scene follows the sun over the horizon.
+  light(sun, { sunLight, hemi, renderer, bloom }) {
+    const y = sun.dir.y;
+    sunLight.intensity = 3.4 * sm(-0.012, 0.035, y);
+    hemi.intensity = 0.6 + 0.7 * sm(-0.08, 0.04, y);
+    // The eye adapts to the dark before dawn.
+    renderer.toneMappingExposure = 1.4 - 0.85 * sm(-0.07, 0.05, y);
+    bloom.strength = 0.22 + 0.1 * sm(-0.02, 0.05, y);
+    // Only the sun and the lantern bloom, not the bright sky around them.
+    bloom.threshold = 3;
+  },
+
   build(scene) {
     const R = rng(29);
     const group = new THREE.Group();
     scene.add(group);
-    const grey = (L, rough = 0.95) => new THREE.MeshStandardMaterial({ color: col([L, 0.005, 250]), roughness: rough });
+    const u = airUniforms(-SEA);
+    const grey = (L, rough = 0.95) => airify(new THREE.MeshStandardMaterial({ color: col([L, 0.005, 250]), roughness: rough }), u);
 
     /* ---------- the headland ---------- */
     // A dense grid near the edge carries the lip and the face.
@@ -76,8 +93,9 @@ export default {
     group.add(land);
 
     /* ---------- the sea ---------- */
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(30000, 20000), grey(0.4, 0.3));
-    sea.rotation.x = -Math.PI / 2; sea.position.set(0, SEA, -9000);
+    // The fog hides it; it runs out to the horizon under the fog.
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(90000, 43000), grey(0.2, 0.3));
+    sea.rotation.x = -Math.PI / 2; sea.position.set(0, SEA, -20500);
     group.add(sea);
 
     /* ---------- posts, pulleys, the wall ---------- */
@@ -104,15 +122,35 @@ export default {
       group.add(m);
       return m;
     };
-    head(-420, -1500, 420, 70, 240, 0.5);
-    head(700, -3200, 1100, 120, 500, 0.55);
-    head(-1800, -7000, 2600, 220, 900, 0.6);
+    head(480, -1600, 420, 70, 240, 0.5);
+    head(-1100, -3300, 1100, 120, 500, 0.55);
+    head(2200, -7200, 2600, 220, 900, 0.6);
     const tower = new THREE.Mesh(new THREE.CylinderGeometry(4, 5.5, 26, 16), grey(0.92));
-    tower.position.set(-470, SEA + 65 + 13, -1500);
+    tower.position.set(LAMP[0], SEA + 65 + 13, LAMP[2]);
     group.add(tower);
-    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 4, 12), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: col([0.9, 0.1, 85]), emissiveIntensity: 2 }));
-    lantern.position.set(-470, SEA + 65 + 28, -1500);
+    const lantern = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 4, 12), airify(new THREE.MeshStandardMaterial({ color: 0x222222, emissive: col([0.9, 0.1, 85]), emissiveIntensity: 2 }), u));
+    lantern.position.set(...LAMP);
     group.add(lantern);
+
+    /* ---------- sky and beam ---------- */
+    const dome = cliffSky(group, u);
+    const beam = beams(group, LAMP);
+    const toCam = new THREE.Vector3();
+    group.userData.tick = (t, sun, cam) => {
+      u.uSunDir.value.copy(sun.dir);
+      u.uT.value = t;
+      dome.position.copy(cam.position);
+      // Before dawn the beam turns; at sunrise it fades out.
+      const k = 1 - sm(-0.03, 0.02, sun.dir.y);
+      const a = t * 0.5;
+      beam.turn.rotation.y = a;
+      beam.turn.visible = k > 0.001;
+      beam.u.uK.value = 4 * k;
+      // The lantern flashes when a beam sweeps past the eye.
+      toCam.set(cam.position.x - LAMP[0], 0, cam.position.z - LAMP[2]).normalize();
+      const f = Math.abs(Math.cos(a) * toCam.x - Math.sin(a) * toCam.z) ** 60;
+      lantern.material.emissiveIntensity = (1.5 + 60 * f) * Math.max(k, 0.15);
+    };
     return group;
   },
 };
