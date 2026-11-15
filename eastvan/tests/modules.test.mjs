@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const NAMES = ['house', 'yard', 'lane'];
+const NAMES = ['house', 'yard', 'lane', 'run'];
 const mods = await Promise.all(NAMES.map(n => import(`../modules/${n}.js`)));
 // Eaves, awnings and fence posts may hang this far past the plinth.
 const SLACK = 0.6;

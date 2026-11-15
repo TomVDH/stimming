@@ -1,12 +1,14 @@
 // East Van: the living things on the walk's modules.
 // houseLife: a cat, a lawn flamingo, cherry petals and chimney smoke.
-// laneLife: a basketball. Each one adds its own poke to the list.
+// laneLife: a basketball, compost flies, laundry, two crows. runLife: petals.
+// Each one adds its own poke to the list.
 // Both work in their module's own numbers, inside the module's group.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gsap } from 'gsap';
 import { reduced } from '../shared/stim.js';
 import { COL, PARTS } from './lot.js';
+import { PARTS as RUN_PARTS } from './modules/run.js';
 import { lin, lift, lerp, paint, PAINT, beamGeo } from './kit.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -70,64 +72,9 @@ export function houseLife(scene, crown, pokes) {
   }
 
   /* ---------- cherry petals: a slow drift, and a burst from the tree ---------- */
-  {
-    const N = 220, list = Array.from({ length: N }, () => ({ on: false })), dummy = new THREE.Object3D(), s = { shake: 0 };
-    const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.11, 0.075), new THREE.MeshLambertMaterial({ color: lin(lift(COL.blossom, 0.06)), side: THREE.DoubleSide }), N);
-    mesh.frustumCulled = false;
-    dummy.scale.setScalar(0); dummy.updateMatrix();
-    for (let i = 0; i < N; i++) mesh.setMatrixAt(i, dummy.matrix);
-    scene.add(mesh); noInk.push(mesh);
-    const blobs = PARTS.filter(q => q.k === 'crown');
-    // The ground under a point. Off the plinth there is none.
-    const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -12.9 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
-    function emit(push) {
-      const p = list.find(q => !q.on);
-      if (!p) return;
-      const b = blobs[Math.floor(Math.random() * blobs.length)], a = rand(0, 6.283), e = rand(-0.9, 0.5), r = b.r * rand(0.7, 1);
-      Object.assign(p, {
-        on: true, land: 0, x: b.p[0] + Math.cos(a) * Math.cos(e) * r, y: b.p[1] + Math.sin(e) * r, z: b.p[2] + Math.sin(a) * Math.cos(e) * r,
-        vx: Math.cos(a) * push, vy: push * rand(0, 0.8), vz: Math.sin(a) * push, a: rand(0, 6.283), spin: rand(2, 6), rx: rand(0, 6.283), rz: rand(0, 6.283),
-      });
-    }
-    poke('tree', new THREE.Vector3(-5, 4.9, 6.1), 1.9, () => {
-      if (still()) {
-        // No motion: the petals just lie under the tree.
-        for (let i = 0; i < 30; i++) { const p = list.find(q => !q.on); if (p) Object.assign(p, { on: true, land: rand(8, 14), x: rand(-6.9, -2.5), z: rand(4.2, 8.8), a: rand(0, 6.283) }); }
-        return;
-      }
-      for (let i = 0; i < 70; i++) emit(rand(0.6, 2.2));
-      gsap.fromTo(s, { shake: 1 }, { shake: 0, duration: 1, ease: 'power2.out' });
-    });
-    let next = 1, busy = false;
-    updates.push((t, dt) => {
-      crown.rotation.z = still() ? 0 : Math.sin(t * 0.9) * 0.012 + s.shake * Math.sin(t * 30) * 0.035;
-      if (!still() && (next -= dt) < 0) { next = rand(0.5, 1.4); emit(0); }
-      if (!busy && !list.some(p => p.on)) return;
-      busy = false;
-      list.forEach((p, i) => {
-        if (!p.on) return;
-        busy = true;
-        let k = 1;
-        if (p.land) {
-          // A landed petal lies flat, then shrinks away.
-          p.land -= dt; k = Math.min(1, p.land);
-          if (p.land <= 0) p.on = false;
-          dummy.position.set(p.x, floor(p.x, p.z) + 0.015, p.z); dummy.rotation.set(-Math.PI / 2, 0, p.a);
-        } else {
-          p.vy = Math.max(-0.95, p.vy - 2.6 * dt); p.vx *= 1 - 1.5 * dt; p.vz *= 1 - 1.5 * dt;
-          p.x += (p.vx + 0.3 + Math.sin(t * 2.5 + p.a) * 0.5) * dt; p.z += (p.vz + Math.cos(t * 2.1 + p.a) * 0.3) * dt; p.y += p.vy * dt;
-          p.rx += p.spin * dt; p.rz += p.spin * 0.6 * dt;
-          const f = floor(p.x, p.z);
-          if (p.y <= f + 0.02 && p.y > f - 0.3) p.land = rand(10, 18);
-          else if (p.y < -5) p.on = false;
-          dummy.position.set(p.x, p.y, p.z); dummy.rotation.set(p.rx, p.a, p.rz);
-        }
-        dummy.scale.setScalar(p.on ? k : 0); dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
-      });
-      mesh.instanceMatrix.needsUpdate = true;
-    });
-  }
+  // The ground under a point. Off the plinth there is none.
+  const floor = (x, z) => (Math.abs(x) > 7 || z > 10 || z < -12.9 ? -99 : z < 4 ? 0.21 : z < 6.8 ? 0.16 : 0.01);
+  petals(scene, crown, PARTS.filter(q => q.k === 'crown'), floor, { id: 'tree', at: [-5, 4.9, 6.1], r: 1.9, lie: [-6.9, -2.5, 4.2, 8.8] }, poke, updates, noInk);
 
   /* ---------- chimney smoke: round puffs that rise and shrink ---------- */
   {
@@ -329,4 +276,74 @@ export function buildCrow(scene, home, away) {
       wingL.rotation.z = -beat; wingR.rotation.z = beat;
     },
   };
+}
+
+/* ---------- cherry petals, shared by every cherry tree on the walk ---------- */
+// blobs: the crown's parts. floor(x, z): the ground height, or -99 off the plinth.
+// tree: the poke's id, point and reach, and the box [x0, x1, z0, z1] petals lie in.
+function petals(scene, crown, blobs, floor, tree, poke, updates, noInk) {
+  const still = () => reduced();
+  const N = 220, list = Array.from({ length: N }, () => ({ on: false })), dummy = new THREE.Object3D(), s = { shake: 0 };
+  const mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.11, 0.075), new THREE.MeshLambertMaterial({ color: lin(lift(COL.blossom, 0.06)), side: THREE.DoubleSide }), N);
+  mesh.frustumCulled = false;
+  dummy.scale.setScalar(0); dummy.updateMatrix();
+  for (let i = 0; i < N; i++) mesh.setMatrixAt(i, dummy.matrix);
+  scene.add(mesh); noInk.push(mesh);
+  function emit(push) {
+    const p = list.find(q => !q.on);
+    if (!p) return;
+    const b = blobs[Math.floor(Math.random() * blobs.length)], a = rand(0, 6.283), e = rand(-0.9, 0.5), r = b.r * rand(0.7, 1);
+    Object.assign(p, {
+      on: true, land: 0, x: b.p[0] + Math.cos(a) * Math.cos(e) * r, y: b.p[1] + Math.sin(e) * r, z: b.p[2] + Math.sin(a) * Math.cos(e) * r,
+      vx: Math.cos(a) * push, vy: push * rand(0, 0.8), vz: Math.sin(a) * push, a: rand(0, 6.283), spin: rand(2, 6), rx: rand(0, 6.283), rz: rand(0, 6.283),
+    });
+  }
+  poke(tree.id, new THREE.Vector3(...tree.at), tree.r, () => {
+    if (still()) {
+      // No motion: the petals just lie under the tree.
+      for (let i = 0; i < 30; i++) { const p = list.find(q => !q.on); if (p) Object.assign(p, { on: true, land: rand(8, 14), x: rand(tree.lie[0], tree.lie[1]), z: rand(tree.lie[2], tree.lie[3]), a: rand(0, 6.283) }); }
+      return;
+    }
+    for (let i = 0; i < 70; i++) emit(rand(0.6, 2.2));
+    gsap.fromTo(s, { shake: 1 }, { shake: 0, duration: 1, ease: 'power2.out' });
+  });
+  let next = 1, busy = false;
+  updates.push((t, dt) => {
+    crown.rotation.z = still() ? 0 : Math.sin(t * 0.9) * 0.012 + s.shake * Math.sin(t * 30) * 0.035;
+    if (!still() && (next -= dt) < 0) { next = rand(0.5, 1.4); emit(0); }
+    if (!busy && !list.some(p => p.on)) return;
+    busy = false;
+    list.forEach((p, i) => {
+      if (!p.on) return;
+      busy = true;
+      let k = 1;
+      if (p.land) {
+        // A landed petal lies flat, then shrinks away.
+        p.land -= dt; k = Math.min(1, p.land);
+        if (p.land <= 0) p.on = false;
+        dummy.position.set(p.x, floor(p.x, p.z) + 0.015, p.z); dummy.rotation.set(-Math.PI / 2, 0, p.a);
+      } else {
+        p.vy = Math.max(-0.95, p.vy - 2.6 * dt); p.vx *= 1 - 1.5 * dt; p.vz *= 1 - 1.5 * dt;
+        p.x += (p.vx + 0.3 + Math.sin(t * 2.5 + p.a) * 0.5) * dt; p.z += (p.vz + Math.cos(t * 2.1 + p.a) * 0.3) * dt; p.y += p.vy * dt;
+        p.rx += p.spin * dt; p.rz += p.spin * 0.6 * dt;
+        const f = floor(p.x, p.z);
+        if (p.y <= f + 0.02 && p.y > f - 0.3) p.land = rand(10, 18);
+        else if (p.y < -5) p.on = false;
+        dummy.position.set(p.x, p.y, p.z); dummy.rotation.set(p.rx, p.a, p.rz);
+      }
+      dummy.scale.setScalar(p.on ? k : 0); dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  });
+}
+
+// Lane run: the cherry tree over the far fence drops its petals.
+export function runLife(scene, crown, pokes) {
+  const updates = [], noInk = [];
+  const poke = (id, pos, r, fire) => pokes.push({ id, pos, r, fire });
+  // The ground under a point: yard, lane or verge. Off the plinth there is none.
+  const floor = (x, z) => (Math.abs(x) > 7 || z > -16.5 || z < -28.5 ? -99 : z > -22.5 ? 0.21 : z > -26.5 ? 0.06 : 0.18);
+  petals(scene, crown, RUN_PARTS.filter(q => q.k === 'crown'), floor, { id: 'tree2', at: [5.4, 4.6, -27.6], r: 1.7, lie: [3.5, 6.8, -26.4, -23] }, poke, updates, noInk);
+  return { noInk, update(t, dt) { for (const f of updates) f(t, dt); } };
 }
