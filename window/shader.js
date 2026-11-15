@@ -3,6 +3,7 @@
 // Pass 2 draws the cabin, the frame and the panes; the glass samples pass 1.
 
 import { GLASS_RAIN } from '../shared/glassrain.js';
+import { VAN } from './van.js';
 
 export const QUAD_VS = `#version 300 es
 in vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
@@ -53,9 +54,12 @@ vec2 skyUV(vec3 d) {
 `;
 
 /* ---------- pass 1: the outside ---------- */
-export const outsideFS = ({ ALT, WIN, MAXCELL, MAXFL }) => `#version 300 es
+// van: build the Vancouver world in. It is a build of its own,
+// so the usual pass compiles no map code and keeps its compile time.
+export const outsideFS = ({ ALT, WIN, MAXCELL, MAXFL, van = false }) => `#version 300 es
 precision highp float;
 precision highp sampler3D;
+${van ? '#define VAN' : ''}
 ${common({ ALT, WIN })}
 // uLit: how strongly street and town lights burn; daylight turns them down.
 uniform vec2 uRes, uOutRes; uniform float uTime, uTowns, uLit, uFocal, uCover, uFlash, uCirrus;
@@ -66,6 +70,15 @@ uniform vec2 uCam;
 uniform float uLand;
 // The hidden ode world: on, start map x and y in source pixels, km per pixel.
 uniform vec4 uOde; uniform sampler2D uOdeMap;
+#ifdef VAN
+// The Vancouver world: map x at world x 0, map y at world z 0, flight sign.
+// uVanA: sea and fresh water shares. uVanB: height, built-up land, forest.
+uniform vec3 uVan; uniform sampler2D uVanA, uVanB;
+// The map's size in km and in coast pixels; the land file has half the pixels.
+const vec2 VAN_KM = vec2(${VAN.km[0].toFixed(2)}, ${VAN.km[1].toFixed(2)}), VAN_PX = vec2(${VAN.size[0].toFixed(1)}, ${VAN.size[1].toFixed(1)});
+// The flight loop in km, the top height in km, one coast texel in km.
+const float VAN_LOOP = ${VAN.loop.toFixed(1)}, VAN_EMAX = ${VAN.emax.toFixed(2)}, VAN_TX = ${(VAN.km[0] / VAN.size[0]).toFixed(5)};
+#endif
 // The sea's glitter: 1 under the moon, 0 under the sun.
 // uSeaWind: wind at sea level in m/s; the weather sets it.
 uniform float uSeaNight, uSeaWind;
@@ -191,15 +204,58 @@ const float SEA = 0.3;
 // Relief land has more open sea: about a third of the map.
 const float SEAR = 0.42;
 float seaField(vec2 w) { return vnoise(w / 260.0 + 3.7) * 0.65 + vnoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 95.0 + 1.3) * 0.35; }
+#ifdef VAN
+/* ---------- the Vancouver world: where the map lies ---------- */
+// A world point in map km: x east of the west edge, y north of the south edge.
+// The map comes round again every VAN_LOOP km of flight.
+vec2 vanP(vec2 w) {
+  float g = 0.5 * (VAN_LOOP - VAN_KM.x);
+  return vec2(mod(uVan.z * w.x + uVan.x + g, VAN_LOOP) - g, w.y + uVan.y);
+}
+vec2 vanUV(vec2 p) { return vec2(p.x / VAN_KM.x, 1.0 - p.y / VAN_KM.y); }
+// A smooth read of a map: cubic B-spline weights from four bilinear taps.
+// Plain bilinear shows the texel grid along every thresholded edge.
+vec4 vanCubic(sampler2D t, vec2 uv, vec2 size) {
+  vec2 x = uv * size - 0.5, i = floor(x), f = x - i, f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = 1.0 - g0;
+  vec2 h0 = (i - 0.5 + w1 / g0) / size, h1 = (i + 1.5 + w3 / g1) / size;
+  return g0.y * (g0.x * textureLod(t, vec2(h0.x, h0.y), 0.0) + g1.x * textureLod(t, vec2(h1.x, h0.y), 0.0))
+    + g1.y * (g0.x * textureLod(t, vec2(h0.x, h1.y), 0.0) + g1.x * textureLod(t, vec2(h1.x, h1.y), 0.0));
+}
+// A map read at a mip: the smooth read up close, the plain mip far off.
+vec4 vanTex(sampler2D t, vec2 uv, vec2 size, float lod) {
+  if (lod >= 1.5) return textureLod(t, uv, lod);
+  vec4 c = vanCubic(t, uv, size);
+  return lod <= 0.5 ? c : mix(c, textureLod(t, uv, lod), lod - 0.5);
+}
+// How far inside the map a point lies: 0 at the edge, 1 from 12 km in.
+float vanIn(vec2 p) { vec2 e = min(p, VAN_KM - p); return smoothstep(0.0, 12.0, min(e.x, e.y)); }
+// The far country past the map's edges: its land field, then its mountain share.
+// East lie mountains, then an ocean, then an island range before the map.
+vec2 vanFar(vec2 w) {
+  vec2 p = vanP(w);
+  float g = 0.5 * (VAN_LOOP - VAN_KM.x), n = vnoise(w / 38.0 + 4.2) - 0.5;
+  float sea = smoothstep(-0.3 * g, -0.42 * g, p.x + 14.0 * n);
+  // South of the map the strait runs on; its east shore holds.
+  sea = max(sea, smoothstep(0.0, -8.0, p.y) * smoothstep(100.0, 84.0, p.x + 14.0 * n) * smoothstep(-0.3 * g, -0.2 * g, p.x));
+  float land = 1.0 - sea;
+  return vec2(SEAR + mix(-0.2, 0.22, land), land * mix(0.7, 1.0, vnoise(w / 55.0 + 9.1)));
+}
+#endif
 // The land field for relief: the sea field, or the ode world's traced coasts.
 // index.html mirrors it, so no airport lands in the sea.
 float landField(vec2 w) {
+#ifdef VAN
+  return vanFar(w).x;
+#else
   if (uOde.x < 0.5) return seaField(w);
   vec2 px = vec2(uOde.y + w.x / uOde.w, uOde.z - w.y / uOde.w);
   float m = textureLod(uOdeMap, (px - 55.0) / vec2(1890.0, 1085.0), 0.0).r;
   // Coasts meander, so the traced edges never run straight.
   float fr = (vnoise(w / 70.0 + 5.1) - 0.5) * 0.3 + (vnoise(w / 22.0 + 9.7) - 0.5) * 0.1;
   return SEAR + 0.8 * (m - 0.5) + fr;
+#endif
 }
 
 // Set by landBase for landCover: the water share, the open sea share.
@@ -310,8 +366,12 @@ vec3 landFlat(vec2 w, float fw) {
 // Mountain belts: long ranges about 50 km wide, broken by passes.
 // index.html mirrors it, so no airport lands on a peak.
 float beltField(vec2 w) {
+#ifdef VAN
+  return vanFar(w).y;
+#else
   float r = 1.0 - abs(2.0 * vnoise(mat2(0.6, -0.8, 0.8, 0.6) * w / 170.0 + 11.3) - 1.0);
   return smoothstep(0.55, 0.9, r) * smoothstep(0.25, 0.6, vnoise(w / 75.0 + 2.2));
+#endif
 }
 // Eroded ridges: height about 0.25 to 0.8, and its gradient per km.
 // Steep coarse octaves damp the finer ones, so valley floors stay smooth.
@@ -389,6 +449,63 @@ vec2 reliefParallax(vec2 w, vec3 d, vec3 up) {
   }
   return w;
 }
+
+#ifdef VAN
+/* ---------- the Vancouver world: real height for the marches ---------- */
+// The map's height in km at a map point; lod picks the land mip.
+float vanH(vec2 p, float lod) { float v = textureLod(uVanB, vanUV(p), lod).r; return VAN_EMAX * v * v; }
+// Ground height in km: the map inside, the far ranges outside.
+float vanElev(vec2 w, float lod) {
+  vec2 p = vanP(w);
+  float k = vanIn(p), e = 0.0;
+  if (k > 0.0) e = k * vanH(p, lod);
+  if (k < 1.0) {
+    vec2 f = vanFar(w);
+    float base = 2.5 * (f.x - SEAR), mt = f.y * MTN * (peaks(w, 3, 0.0).x + 0.04 - PK0);
+    e += (1.0 - k) * max(base + mt * valleyK(mt, base), 0.0);
+  }
+  return e;
+}
+// Soft shadow of the real ridges: a short march toward the sun or moon.
+float vanShadow(vec2 w, float e0) {
+  float lh = length(uSun.xz);
+  if (uSun.y <= 0.0 || lh < 1e-3) return 1.0;
+  vec2 sd = uSun.xz / lh;
+  float tn = uSun.y / lh, s = 1.0, t = 0.3;
+  for (int i = 0; i < 9; i++) {
+    float rh = e0 + 0.03 + t * tn;
+    // Above every peak, nothing more can block the light.
+    if (rh > 3.2) break;
+    // Longer steps read a coarser mip, so no thin ridge slips between them.
+    s = min(s, 7.0 * (rh - vanElev(w + sd * t, clamp(log2(t / 0.6), 0.0, 5.0))) / t);
+    t *= 1.7;
+  }
+  return smoothstep(0.0, 1.0, s);
+}
+// The ray meets real high ground before the sea-level sphere.
+// The march runs from the highest peak down to sea level, toward the far hit.
+vec2 vanParallax(vec2 w, vec3 d, vec3 up) {
+  float sd = max(-dot(d, up), 0.12);
+  vec2 hd = normalize(d.xz + 1e-6) * sqrt(1.0 - sd * sd) / sd;
+  const float top = 3.0;
+  // Grazing rays cover more ground, so they take more steps.
+  int N = int(mix(12.0, 32.0, smoothstep(1.5, 6.0, length(hd))));
+  float lod = clamp(log2(length(hd) * top / float(N) / 0.3), 0.0, 5.0);
+  float hPrev = top, ePrev = vanElev(w - hd * top, lod);
+  for (int i = 1; i <= 32; i++) {
+    if (i > N) break;
+    float h = top * (1.0 - float(i) / float(N));
+    float e = vanElev(w - hd * h, lod);
+    if (e >= h) {
+      // One secant step between the last two heights.
+      float a = (hPrev - ePrev) / max((hPrev - ePrev) - (h - e), 1e-4);
+      return w - hd * mix(hPrev, h, a);
+    }
+    hPrev = h; ePrev = e;
+  }
+  return w;
+}
+#endif
 
 // Farm districts: cells about 6 km across, each with its own field pattern.
 // A district sets the field angle, the strip size and the crop mix.
@@ -507,10 +624,129 @@ vec3 landRelief(vec2 w, float fw) {
   gHab = (1.0 - gWater) * smoothstep(1.0, 0.35, slope) * smoothstep(1.5, 0.7, E) * (1.0 + 0.4 * smoothstep(0.1, 0.0, sf - SEAR));
   return g;
 }
+#ifdef VAN
+/* ---------- the Vancouver world: the land from the map ---------- */
+// Set by landBase: how far the pixel lies inside the map.
+// Set by landVan: the built-up share at the pixel.
+float gVanK = 0.0, gBuilt = 0.0;
+// Fine ridges the map cannot hold: three octaves, height and gradient per km.
+vec3 vanDetail(vec2 w, float fw) {
+  mat2 M = mat2(0.8, 0.6, -0.6, 0.8) / 0.9;
+  float h = 0.0, b = 0.5, sc = 0.9;
+  vec2 g = vec2(0.0);
+  for (int i = 0; i < 3; i++) {
+    float k = fd(sc, fw);
+    if (k > 0.0) {
+      vec3 v = vnoiseD(M * w + float(i) * 5.17);
+      h += b * k * (0.5 - abs(2.0 * v.x - 1.0));
+      g += b * k * (transpose(M) * (-2.0 * sign(v.x - 0.5) * v.yz));
+    }
+    b *= 0.5; sc *= 0.5;
+    M = mat2(1.6, 1.2, -1.2, 1.6) * M;
+  }
+  return vec3(h, g);
+}
+// Real land: the map sets the height, the coast, the forest and the towns.
+vec3 landVan(vec2 w, vec2 p, float fw) {
+  apNear(w);
+  vec2 uv = vanUV(p);
+  // The mip follows the pixel's footprint; the land file has half the coast's size.
+  float lod = clamp(log2(max(0.7 * fw, 1e-3) / VAN_TX), 0.0, 9.0), lodL = max(lod - 1.0, 0.0);
+  vec4 A = vanTex(uVanA, uv, VAN_PX, lod), B = vanTex(uVanB, uv, 0.5 * VAN_PX, lodL);
+  // Height, and its slope from points one land texel apart, or one footprint.
+  float E = VAN_EMAX * B.r * B.r, hx = max(2.0 * VAN_TX, fw);
+  vec2 G = vec2(vanH(p + vec2(hx, 0.0), lodL) - vanH(p - vec2(hx, 0.0), lodL), vanH(p + vec2(0.0, hx), lodL) - vanH(p - vec2(0.0, hx), lodL)) / (2.0 * hx);
+  // The map's x runs against the world's on a mirrored seat.
+  G.x *= uVan.z;
+  // Steep ground gets fine ridges; flat ground stays smooth.
+  vec3 dt = vanDetail(w, fw);
+  float amp = 0.11 * smoothstep(0.05, 0.5, length(G));
+  E += amp * dt.x; G += amp * dt.yz;
+  float slope = length(G);
+  // The coast: the water share crosses one half. A fine fray hides the texel grid.
+  float wat = A.r + A.g + 0.14 * (vnoise(w / 0.08 + 3.1) - 0.5) * fd(0.08, fw);
+  float aa = clamp(0.5 * fw / VAN_TX, 0.04, 0.5);
+  gWater = smoothstep(0.5 - aa, 0.5 + aa, wat);
+  // Tidal water is the sea; lakes and upper rivers lie still.
+  gSea = gWater * smoothstep(0.25, 0.75, A.r / max(A.r + A.g, 1e-3));
+  // Forest: the map's share, frayed at three scales into ragged edges.
+  vec2 wv = w + 2.5 * vec2(vnoise(w / 7.0 + 3.0), vnoise(w / 7.0 + 8.0));
+  float fn = 0.55 * vnoise(wv / 3.2 + 1.7) + 0.3 * mix(0.5, vnoise(wv / 1.1 + 4.4), fd(1.1, fw)) + 0.15 * mix(0.5, vnoise(w / 0.35 + 2.2), fd(0.35, fw));
+  float fa = 0.03 + fw * 0.1;
+  // One finer octave breaks the edge inside a single map texel.
+  float forest = smoothstep(0.5 - fa, 0.5 + fa, B.b + 0.5 * (fn - 0.5) + 0.2 * (vnoise(w / 0.11 + 6.6) - 0.5) * fd(0.11, fw));
+  // Open lowland is farmland: the delta and the valley floor.
+  float farm = smoothstep(0.2, 0.08, slope) * smoothstep(0.3, 0.12, E);
+  float fk;
+  vec3 crop = farmland(w, fw, fk);
+  vec3 open = mix(vec3(0.27, 0.32, 0.16) * (0.85 + 0.3 * fn), crop, farm);
+  // The town by day: grey roofs and paving, mottled by block and by district.
+  // It reads darker than the fields and lighter than the forest.
+  float cn = 0.6 * vnoise(w / 0.9 + 12.0) + 0.4 * mix(0.5, vnoise(w / 0.22 + 5.0), fd(0.22, fw));
+  vec3 town = vec3(0.215, 0.205, 0.19) * (0.7 + 0.6 * cn) * (0.8 + 0.4 * mix(0.5, vnoise(w / 0.13 + 3.0), fd(0.13, fw)));
+  open = mix(open, town, smoothstep(0.12, 0.5, B.g + 0.3 * (cn - 0.5)));
+  // High open ground: alpine meadow, then rock; steep faces stay bare.
+  float grit = mix(0.5, vnoise(w / 0.6 + 3.3), fd(0.6, fw));
+  vec3 rock = vec3(0.36, 0.33, 0.3) * (0.7 + 0.6 * grit);
+  open = mix(open, mix(vec3(0.26, 0.3, 0.16), rock, smoothstep(1.1, 1.6, E)), smoothstep(0.5, 1.0, E));
+  open = mix(open, rock, smoothstep(0.7, 1.2, slope));
+  vec3 alb = mix(open, vec3(0.04, 0.075, 0.04), forest);
+  // Gentle ground gets its slopes tripled, so the uplands read from 11 km.
+  // Steep ground keeps a smaller lift, so ridges read through the haze.
+  vec2 Gs = G * mix(3.0, 1.6, smoothstep(0.06, 0.3, slope));
+  vec3 n = normalize(vec3(-Gs.x, 1.0, -Gs.y));
+  vec2 lz = normalize(uSun.xz + 1e-5);
+  // Snow: a late winter snow line near 1 km, lower on shaded slopes.
+  // It caps the North Shore peaks; the map's coarse height runs a little low.
+  // Steep rock sheds it. Forest hides it near the line and whitens higher up.
+  // So valleys stay dark between white ridges, and snow never reads as cloud.
+  float sl = 1.0 + 0.3 * (vnoise(w / 7.0 + 1.7) - 0.5) + 0.2 * dot(n.xz, lz);
+  float snow = smoothstep(sl - 0.2, sl + 0.15, E) * smoothstep(1.6, 0.8, slope);
+  snow *= 1.0 - forest * mix(0.8, 0.2, smoothstep(sl + 0.1, sl + 0.6, E));
+  // A plain white, not the far peaks' glare: wide snow must keep its shading.
+  alb = mix(alb, vec3(0.8, 0.86, 0.98), snow);
+  // Inside the fence: mown grass, dark runways, a pale apron.
+  // The grass stays dull; a real field between twin runways is large.
+  vec3 am = apMasks(fw);
+  alb = mix(mix(mix(alb, vec3(0.4, 0.45, 0.28), 0.8 * am.x), vec3(0.3), am.y), vec3(1.2), am.z);
+  float skyK = clamp(1.0 - length(Gs), 0.4, 1.0) + 0.5 * dot(n.xz, lz);
+  float sh = gWater < 1.0 ? vanShadow(w, E) : 1.0;
+  vec3 g = uAmb * 0.03 * alb * skyK;
+  g += uSunL * 0.1 * alb * max(dot(n, uSun), 0.0) * sh * gCloudSh;
+  // The sea floor: a shelf that deepens over about 1.5 km from the shore.
+  float off = textureLod(uVanA, uv, lod + 3.5).r;
+  gE = mix(E, -0.06 * smoothstep(0.4, 1.0, off), gWater);
+  gEG = G;
+  // Sheltered water: no surf line. On land, the mountain share follows the height.
+  gBelt = mix(smoothstep(0.15, 0.5, E), 1.0, gWater);
+  gBuilt = B.g;
+  // Lone lamps keep to the open lowland.
+  gHab = (1.0 - gWater) * farm * (1.0 - 0.8 * forest);
+  return g;
+}
+#endif
 vec3 landBase(vec2 w, float fw) {
   gW = w; gHab = 1.0;
   gCloudSh = cloudShadow(w);
+#ifdef VAN
+  // The real land inside the map; at its edge it fades into the far country.
+  // Each land function stands here once, so the pass compiles it once.
+  vec2 p = vanP(w);
+  gVanK = vanIn(p);
+  vec3 a = vec3(0.0), b = vec3(0.0);
+  float e = 0.0, bl = 0.0, wa = 0.0, se = 0.0, hb = 0.0;
+  vec2 eg = vec2(0.0);
+  if (gVanK > 0.0) { a = landVan(w, p, fw); e = gE; bl = gBelt; wa = gWater; se = gSea; hb = gHab; eg = gEG; }
+  if (gVanK < 1.0) {
+    b = landRelief(w, fw);
+    e = mix(gE, e, gVanK); eg = mix(gEG, eg, gVanK); bl = mix(gBelt, bl, gVanK);
+    wa = mix(gWater, wa, gVanK); se = mix(gSea, se, gVanK); hb = mix(gHab, hb, gVanK);
+  }
+  gE = e; gEG = eg; gBelt = bl; gWater = wa; gSea = se; gHab = hb;
+  return mix(b, a, gVanK);
+#else
   return uLand < 0.5 ? landFlat(w, fw) : landRelief(w, fw);
+#endif
 }
 
 // The pixel's ground footprint: view heading xy, then along and across radii.
@@ -761,6 +997,13 @@ vec2 townWarp(vec2 w) {
 // Town light under the deck, spread wide as the cloud scatters it.
 // It grows with town size; each falls to zero inside 15 km.
 float townDome(vec2 w) {
+  float vk = 0.0, vg = 0.0;
+#ifdef VAN
+  // The real town's glow: its built-up share over about 13 km.
+  vec2 p = vanP(w);
+  vk = vanIn(p);
+  if (vk > 0.0) vg = 2.6 * textureLod(uVanB, vanUV(p), 6.0).g;
+#endif
   vec2 i = floor(w / 16.0);
   float g = 0.0;
   for (int k = 0; k < 9; k++) {
@@ -772,7 +1015,7 @@ float townDome(vec2 w) {
   // Relief land: no town glow over open sea; little over the peaks.
   if (uLand > 0.5) g *= smoothstep(SEAR - 0.06, SEAR + 0.03, landField(w)) * (1.0 - 0.5 * beltField(w));
   // The scale keeps the deck's mean glow at its approved level.
-  return g * 0.83 * uLit;
+  return mix(g, vg, vk) * 0.83 * uLit;
 }
 
 // The town field at one ground point.
@@ -858,6 +1101,30 @@ Town townAt(vec2 w, float fw) {
   return t;
 }
 
+#ifdef VAN
+// The real town: the map's built-up land, with roads on the survey grid.
+// Arterial roads run north and east every half mile, as in Vancouver.
+Town townVan(vec2 w, float fw) {
+  vec2 p = vanP(w), uv = vanUV(p);
+  // The wider town, over about 3 km and 13 km.
+  float mid = textureLod(uVanB, uv, 4.0).g, wide = textureLod(uVanB, uv, 6.0).g;
+  float k = smoothstep(0.5, 1.0, gVanK) * mix(0.75, 1.2, clamp((uTowns - 0.5) / 1.2, 0.0, 1.0));
+  Town t = Town(0.0, 0.0, 1e3, 0.0, 0.0, 0.0, 0.0, 1.0, 1e3, 0.0, 0.0, p);
+  t.dens = k * smoothstep(0.06, 0.55, gBuilt) * (0.55 + 1.1 * mid);
+  t.dome = k * 3.0 * wide;
+  t.core = mid * mid;
+  vec2 a = abs(fract(p / 0.805 + 0.5) - 0.5) * 0.805;
+  bool ns = a.x < a.y;
+  t.road = min(a.x, a.y);
+  t.along = ns ? p.y : p.x;
+  t.seed = hash12(vec2(floor((ns ? p.x : p.y) / 0.805 + 0.5), ns ? 3.0 : 61.0));
+  t.rank = 0.4 + 0.6 * mid;
+  // Roads show in town, and faintly across the farmland.
+  t.fade = k * max(smoothstep(0.08, 0.35, mid), 0.3 * gHab);
+  return t;
+}
+#endif
+
 // Distance to the nearest cell edge, from the two nearest jittered points.
 // About a third of the edges stay dark, so blocks merge.
 float streetCells(vec2 p) {
@@ -913,6 +1180,19 @@ vec3 boomLight(vec2 w, float reach) {
   float d2 = dot(w - uBoom.xy, w - uBoom.xy);
   return vec3(1.0, 0.6, 0.32) * uBoomL.x / (1.0 + d2 / (reach * reach));
 }
+// The stand-in pass's ground: the flat country, or the map in plain colours.
+vec3 standGround(vec2 w, float fw) {
+#ifdef VAN
+  vec2 p = vanP(w), uv = vanUV(p);
+  float lod = clamp(log2(max(0.7 * fw, 1e-3) / VAN_TX), 0.0, 9.0), k = vanIn(p);
+  vec4 A = textureLod(uVanA, uv, lod), B = textureLod(uVanB, uv, max(lod - 1.0, 0.0));
+  vec3 alb = mix(mix(vec3(0.3, 0.33, 0.2), vec3(0.3), B.g), vec3(0.04, 0.075, 0.04), B.b * k);
+  alb = mix(alb, vec3(0.02, 0.07, 0.1), smoothstep(0.4, 0.6, A.r + A.g) * k);
+  return alb * (uAmb * 0.03 + uSunL * 0.1 * max(uSun.y, 0.0));
+#else
+  return landFlat(w, fw);
+#endif
+}
 vec3 ground(vec2 w, float fw) {
   // The land under the lights: fields, woods, hills.
   vec3 g = landBase(w, fw);
@@ -921,10 +1201,24 @@ vec3 ground(vec2 w, float fw) {
   if (uBoomL.y > 0.0) { vec2 cq = w - uBoom.xy; g += vec3(1.0, 0.4, 0.1) * uBoomL.y * 0.6 * exp(-dot(cq, cq) / 3.0); }
   // Everything added after this point is man-made light.
   vec3 gLand = g;
+#ifdef VAN
+  // Inside the map the real town stands; past its edge, the far country's towns.
+  bool van = gVanK > 0.5;
+  Town t;
+  if (van) t = townVan(w, fw);
+  else {
+    t = townAt(w, fw);
+    // They fade out before the real town fades in.
+    float hk = gHab * (1.0 - smoothstep(0.0, 0.5, gVanK));
+    t.dens *= hk;
+    t.fade *= min(hk, 1.0);
+  }
+#else
   Town t = townAt(w, fw);
   // Relief land: towns fill valleys and coasts, never water or peaks.
   t.dens *= gHab;
   t.fade *= min(gHab, 1.0);
+#endif
   vec2 wq = t.wq;
   // Districts differ in their share of LED lamps.
   // Old centres have new LED lamps; the sprawl keeps sodium.
@@ -947,6 +1241,10 @@ vec3 ground(vec2 w, float fw) {
     float grain = mix(0.5, vnoise(wq / 0.12 + 3.0), fd(0.12, fw));
     vec3 roof = vec3(dot(gLand, vec3(0.3, 0.5, 0.2))) * vec3(1.0, 1.0, 1.02) * (1.0 + 0.4 * grain);
     vec3 dl = (roof - gLand) * lit * 0.6;
+#ifdef VAN
+    // The map's own town colour stands; it needs no second coat of roofs.
+    if (van) dl = vec3(0.0);
+#endif
     gLand += dl; g += dl;
   }
   if (lit > 0.002) {
@@ -957,6 +1255,13 @@ vec3 ground(vec2 w, float fw) {
     if (fw < 0.055) {
       vec2 sb = mat2(-0.47, -0.88, 0.88, -0.47) * wq / 0.09;
       float e = max(1.0 - smoothstep(0.0, 0.12, streetCells(wq / 0.2)), 0.6 * (1.0 - smoothstep(0.0, 0.1, abs(vnoise(sb) - 0.5))));
+#ifdef VAN
+      // The real town: avenues every 100 m, streets every 160 m, in long blocks.
+      if (van) {
+        vec2 sq = vec2(abs(fract(wq.x / 0.16) - 0.5) * 0.16, abs(fract(wq.y / 0.1) - 0.5) * 0.1);
+        e = 1.0 - smoothstep(0.0, 0.024, min(sq.x, sq.y));
+      }
+#endif
       web = mix(0.4, e, smoothstep(0.5, 0.15, fw / 0.11));
     }
     // Lamps string along the streets; cores burn brighter than the sprawl.
@@ -972,6 +1277,10 @@ vec3 ground(vec2 w, float fw) {
     // Roofs and the low haze catch some of the street light.
     g += mix(avg, vec3(1.0, 0.55, 0.22), 0.4) * lit * min(t.dens, 1.3) * 0.004;
   }
+#ifdef VAN
+  // By day the arterial roads show as thin dark lines across the town.
+  if (van) { vec3 dr = -gLand * 0.3 * band(t.road, 0.02, max(fw, 1e-3)) * t.fade; gLand += dr; g += dr; }
+#endif
   // Roads: a faint thread of traffic, lit with lamps through towns and villages.
   float rw = max(0.012, fw * 0.6);
   if (t.road < 0.3 + 4.0 * rw) {
@@ -1397,7 +1706,11 @@ vec3 outside(vec3 d, float focal1, out float skyA) {
   vec4 cl = deck(d), ml = midLayer(d);
   gDeckT = cl.a;
   // High ground meets the ray before sea level does.
+#ifdef VAN
+  if (uLand > 1.5 && cl.a * ml.a > 0.002) w = vanParallax(w, d, normalize(P));
+#else
   if (uLand > 1.5 && cl.a * ml.a > 0.002) w = reliefParallax(w, d, normalize(P));
+#endif
   // Ground under thick cloud never shows, so it costs nothing.
   vec3 g = cl.a * ml.a > 0.002 ? landCover(ground(w, fw), fw, d, normalize(P)) : vec3(0.0);
   // The air between: the baked view ray dims the ground and adds its glow.
@@ -2996,7 +3309,7 @@ void main() {
 // The stand-in compiles in about 3 s and draws while the full pass compiles.
 // Each listed function keeps its signature; its body returns the given value.
 const STAND_IN = {
-  ground: 'landFlat(w, fw)', landCover: 'g', nearFog: 'c', stormAir: 'c',
+  ground: 'standGround(w, fw)', landCover: 'g', nearFog: 'c', stormAir: 'c',
   deck: 'vec4(0.0, 0.0, 0.0, 1.0)', midLayer: 'vec4(0.0, 0.0, 0.0, 1.0)', cirrus: 'vec4(0.0, 0.0, 0.0, 1.0)',
   stem: 'vec4(0.0, 0.0, 0.0, 1.0)', rainShaft: 'vec4(0.0, 0.0, 0.0, 1.0)', sprites: 'vec3(0.0)', aurora: 'vec3(0.0)',
 };

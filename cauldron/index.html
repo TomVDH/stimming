@@ -1,0 +1,2489 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.01 40); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Soup cauldron</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Soup cauldron: one big iron pot over a fire, seen from a little above. */
+:root { --stage: oklch(0.07 0.01 40); }
+.stage--cauldron canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--cauldron canvas.on { opacity: 1; }
+.stage--cauldron { cursor: grab; }
+.stage--cauldron.is-stirring { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--cauldron canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Soup cauldron</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--cauldron" id="stage" tabindex="0" role="application" aria-label="A big iron pot of soup over a fire. Drag on the soup in a circle to stir it. Click the soup to throw the next thing in. Hold the left or right arrow key to stir.">
+      <p class="fail" hidden>Soup cauldron needs WebGL 2 with float targets, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Soup cauldron</h1>
+    <div class="vignette">
+      <div>
+        <h2>Why stirred soup sinks in the middle</h2>
+        <p>Stir a pot and every bit of soup tries to carry on in a straight line. The wall stops it and turns it, so the soup piles up against the iron and falls away at the centre. When the whole pot turns at one speed, the surface takes the shape of a parabola. In 1687 Isaac Newton used a spinning bucket of water to argue that turning is real: the water knows it spins, because its surface curves.</p>
+        <p>Heat comes in through the iron at the bottom. The soup there turns to steam, and the bubbles rise and burst at the top. In thin broth they are small and quick. Thick soup holds each bubble under a heavy skin until it is big enough to break through, so it rises slowly and bursts with a low plop.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 240 170" role="img" aria-label="A cut through a pot of soup. The surface curves down into a bowl at the middle and rises at the walls. Curved arrows show the soup turning, and steam rises above it.">
+          <path d="M28 46h184c0 62-28 104-92 104S28 108 28 46Z" fill="oklch(0.2 0.01 260)"/>
+          <path d="M38 52c18 2 36 30 82 30s64-28 82-30c-2 54-26 88-82 88S40 106 38 52Z" fill="oklch(0.66 0.15 60)"/>
+          <path d="M38 52c18 2 36 30 82 30s64-28 82-30" fill="none" stroke="oklch(0.9 0.08 80)" stroke-width="2.5" stroke-linecap="round"/>
+          <rect x="22" y="40" width="196" height="9" rx="4.5" fill="oklch(0.32 0.01 260)"/>
+          <g fill="none" stroke="oklch(0.94 0.02 90)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M68 104c16 10 88 10 104 0"/>
+            <path d="M164 98l9 6-9 7"/>
+            <path d="M172 118c-16 9-88 9-104 0"/>
+            <path d="M76 112l-9 6 9 6"/>
+          </g>
+          <g fill="none" stroke="oklch(0.8 0.02 80)" stroke-width="2" stroke-linecap="round" opacity="0.7">
+            <path d="M92 32c-6-6 6-10 0-18"/>
+            <path d="M120 30c-6-6 6-10 0-18"/>
+            <path d="M148 32c-6-6 6-10 0-18"/>
+          </g>
+        </svg>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, onQuality, reduced, onReducedChange, audioKit, stage as mark, pageReady } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const rand = (a = 0, b = 1) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+const FIRE0 = 0.5;
+let fire = FIRE0;
+// The handlers bind once the GL state exists.
+const act = { add() {}, clear() {}, reset() {} };
+const ui = initPage({ id: 'cauldron', bar: {
+  actions: [
+    { verb: 'add', noun: 'Thing', key: 'T', onPress: () => act.add() },
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+  ],
+  slider: { label: 'Fire', min: 0, max: 1, step: 0.01, value: FIRE0, onInput: v => { fire = v; fireSound(v); wake(); } },
+  // The steady simmer can be switched off; the plops and pops still play.
+  settings: [
+    { type: 'toggle', id: 'simmer', label: 'Simmer sound', value: true, persist: true },
+  ],
+  dev: [
+    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'stir'], ['click', 'throw in'], ['← →', 'stir']],
+} });
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Soup cauldron needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, internal, format, data = null) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  return fb;
+}
+const vao = gl.createVertexArray();
+
+/* ---------- GLSL: shared maths ---------- */
+// Array sizes: things, bubbles, droplets, puffs, sparks.
+const NB = 24, NBUB = 20, ND = 24, NP = 12, NS = 20;
+const COMMON = `
+#define PI 3.14159265
+float hash12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float noise2(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float noise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash13(i), b = hash13(i + vec3(1.0, 0.0, 0.0)), c = hash13(i + vec3(0.0, 1.0, 0.0)), d = hash13(i + vec3(1.0, 1.0, 0.0));
+  float e = hash13(i + vec3(0.0, 0.0, 1.0)), g = hash13(i + vec3(1.0, 0.0, 1.0)), h = hash13(i + vec3(0.0, 1.0, 1.0)), k = hash13(i + vec3(1.0));
+  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y), mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z);
+}
+float fbm2(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * noise2(p); p = p * 2.03 + vec2(7.3, 1.7); a *= 0.5; }
+  return s / 0.9375;
+}
+float fbm3(vec3 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * noise3(p); p = p * 2.07 + vec3(5.1, 1.3, 7.7); a *= 0.5; }
+  return s / 0.875;
+}
+// OKLab to linear sRGB.
+vec3 lab2lin(vec3 c) {
+  float l = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
+  float m = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
+  float s = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
+  l = l * l * l; m = m * m * m; s = s * s * s;
+  return vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+// OKLCH to linear sRGB, clipped at zero.
+vec3 lch(float L, float C, float h) { float r = radians(h); return max(lab2lin(vec3(L, C * cos(r), C * sin(r))), 0.0); }
+vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v); }
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
+`;
+
+/* ---------- GLSL: the pot ---------- */
+// World units, y up; the soup rests at y = 0.
+// The belly is an ellipsoid; a torus rolls the rim.
+const POT = `
+const float BCY = -0.48;
+const vec3 RO = vec3(1.154, 1.181, 1.154);
+const vec3 RI = vec3(1.104, 1.131, 1.104);
+const float RY = 0.13, RR = 1.01, RT = 0.08;
+const float GROUND = -1.86;
+// Ray against an ellipsoid: near and far distance, or -1.
+vec2 iEll(vec3 ro, vec3 rd, vec3 c, vec3 r) {
+  vec3 o = (ro - c) / r, d = rd / r;
+  float a = dot(d, d), b = dot(o, d), cc = dot(o, o) - 1.0;
+  float h = b * b - a * cc;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h) / a;
+}
+// Ray against an infinite upright cylinder round the pot axis.
+vec2 iCyl(vec3 ro, vec3 rd, float r) {
+  float a = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - r * r;
+  float h = b * b - a * c;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h) / a;
+}
+float sdRim(vec3 p) { p.y -= RY; return length(vec2(length(p.xz) - RR, p.y)) - RT; }
+// The rim lives in a thin slab, so a short march finds it.
+float traceRim(vec3 ro, vec3 rd, float tEnd) {
+  if (rd.y >= 0.0) return -1.0;
+  float t = max((RY + RT - ro.y) / rd.y, 0.0), t1 = min((RY - RT - ro.y) / rd.y, tEnd);
+  for (int i = 0; i < 28; i++) {
+    if (t > t1) break;
+    float d = sdRim(ro + rd * t);
+    if (d < 0.0005 * t) return t;
+    t += d;
+  }
+  return -1.0;
+}
+`;
+
+/* ---------- GLSL: the things, as signed distances ---------- */
+// Each thing is drawn in its floating pose, in world units at scale 1.
+// The lying things float on their side: length along x, the thin side along y.
+const SDF = `
+float sdEll(vec3 p, vec3 r) { float k0 = length(p / r), k1 = length(p / (r * r)); return k0 * (k0 - 1.0) / max(k1, 1e-6); }
+float sdCap(vec3 p, vec3 a, vec3 b, float r) { vec3 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h) - r; }
+float sdRBox(vec3 p, vec3 b, float r) { vec3 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r; }
+float sdTor(vec3 p, float R, float r) { return length(vec2(length(p.xz) - R, p.y)) - r; }
+float sdCyl(vec3 p, float r, float h) { vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h); return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)); }
+float smin(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+float dot2(vec3 v) { return dot(v, v); }
+float sdRCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a;
+  float l2 = dot(ba, ba), rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1.0 / l2;
+  vec3 pa = p - a;
+  float y = dot(pa, ba), z = y - l2;
+  float x2 = dot2(pa * l2 - ba * y), y2 = y * y * l2, z2 = z * z * l2;
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+float sdStar5(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0 * max(dot(k1, p), 0.0) * k1;
+  p -= 2.0 * max(dot(k2, p), 0.0) * k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+// A flat 2D shape made solid along y, with round edges.
+float extrude(float d2, float y, float h, float r) { vec2 w = vec2(d2 + r, abs(y) - h + r); return min(max(w.x, w.y), 0.0) + length(max(w, 0.0)) - r; }
+// The mushroom slice outline: the cap dome above the stem.
+float sliceShape(vec2 q) {
+  float cap = max((length(q / vec2(0.12, 0.075)) - 1.0) * 0.07, -q.y);
+  vec2 s = abs(q - vec2(0.0, -0.065)) - vec2(0.035, 0.065);
+  return min(cap, length(max(s, 0.0)) + min(max(s.x, s.y), 0.0));
+}
+
+vec2 sdCarrot(vec3 p, float s) {
+  float d = sdRCone(p, vec3(-0.27, 0.0, 0.0), vec3(0.3, 0.0, 0.0), 0.1 + s, 0.016 + 0.5 * s);
+  d += 0.0035 * sin(p.x * 90.0) * step(p.x, 0.27);
+  vec3 q = p - vec3(-0.28, 0.0, 0.0);
+  float l = sdCap(q, vec3(0.0), vec3(-0.2, 0.03, 0.0), 0.011);
+  l = min(l, sdCap(q, vec3(0.0), vec3(-0.16, 0.02, 0.1), 0.01));
+  l = min(l, sdCap(q, vec3(0.0), vec3(-0.16, 0.02, -0.1), 0.01));
+  l = min(l, sdEll(q - vec3(-0.23, 0.03, 0.0), vec3(0.065, 0.012, 0.04)));
+  l = min(l, sdEll(q - vec3(-0.19, 0.02, 0.12), vec3(0.055, 0.012, 0.035)));
+  l = min(l, sdEll(q - vec3(-0.19, 0.02, -0.12), vec3(0.055, 0.012, 0.035)));
+  return d < l ? vec2(d * 0.9, 0.0) : vec2(l, 1.0);
+}
+vec2 sdOnion(vec3 p, float s) {
+  float d = sdEll(p, vec3(0.16, 0.14, 0.145) + s);
+  d = smin(d, sdRCone(p, vec3(0.1, 0.0, 0.0), vec3(0.23, 0.01, 0.0), 0.055, 0.01), 0.05);
+  d = smin(d, sdEll(p - vec3(-0.16, 0.0, 0.0), vec3(0.02, 0.035, 0.035)), 0.02);
+  return vec2(d, 0.0);
+}
+vec2 sdFish(vec3 p, float s) {
+  float d = smin(sdEll(p - vec3(0.05, 0.0, 0.0), vec3(0.25, 0.055 + s, 0.115 + s)), sdEll(p - vec3(-0.19, 0.0, 0.0), vec3(0.13, 0.028, 0.055)), 0.07);
+  vec3 va = p - vec3(-0.37, 0.0, 0.045); va.xz = rot2(0.6) * va.xz;
+  vec3 vb = p - vec3(-0.37, 0.0, -0.045); vb.xz = rot2(-0.6) * vb.xz;
+  float fin = min(sdEll(va, vec3(0.08, 0.008, 0.032)), sdEll(vb, vec3(0.08, 0.008, 0.032)));
+  vec3 vd = p - vec3(0.0, 0.0, 0.115); vd.xz = rot2(-0.2) * vd.xz;
+  fin = min(fin, sdEll(vd, vec3(0.11, 0.007, 0.04)));
+  vec3 vp = p - vec3(0.1, 0.04, -0.035); vp.xz = rot2(-0.6) * vp.xz;
+  fin = min(fin, sdEll(vp, vec3(0.05, 0.007, 0.02)));
+  return fin < d ? vec2(fin, 1.0) : vec2(d, 0.0);
+}
+vec2 sdBeet(vec3 p, float s) {
+  float d = sdEll(p, vec3(0.13, 0.12, 0.125) + s);
+  d = smin(d, sdRCone(p, vec3(-0.08, 0.0, 0.0), vec3(-0.3, 0.0, 0.03), 0.05, 0.004), 0.04);
+  vec3 q = p - vec3(0.1, 0.0, 0.0);
+  float st = min(sdCap(q, vec3(0.0), vec3(0.2, 0.045, 0.07), 0.011), sdCap(q, vec3(0.0), vec3(0.18, 0.04, -0.08), 0.011));
+  vec3 la = q - vec3(0.29, 0.05, 0.11); la.xz = rot2(0.35) * la.xz;
+  vec3 lb = q - vec3(0.27, 0.045, -0.12); lb.xz = rot2(-0.42) * lb.xz;
+  float lf = min(sdEll(la, vec3(0.12, 0.012, 0.06)), sdEll(lb, vec3(0.11, 0.012, 0.055)));
+  if (st < d && st < lf) return vec2(st, 1.0);
+  return lf < d ? vec2(lf, 2.0) : vec2(d, 0.0);
+}
+vec2 sdDuck(vec3 p) {
+  float d = sdEll(p - vec3(-0.01, 0.0, 0.0), vec3(0.165, 0.105, 0.125));
+  d = smin(d, sdEll(p - vec3(-0.145, 0.07, 0.0), vec3(0.055, 0.04, 0.05)), 0.05);
+  d = smin(d, length(p - vec3(0.075, 0.16, 0.0)) - 0.092, 0.06);
+  float bk = sdEll(p - vec3(0.178, 0.145, 0.0), vec3(0.065, 0.024, 0.05));
+  return bk < d ? vec2(bk, 1.0) : vec2(d, 0.0);
+}
+vec2 sdBoot(vec3 p, float s) {
+  float d = sdRBox(p - vec3(-0.07, 0.0, 0.08), vec3(0.085, 0.07 + s, 0.15), 0.045);
+  d = smin(d, sdRBox(p - vec3(0.06, 0.0, -0.075), vec3(0.16, 0.068 + s, 0.06), 0.05), 0.06);
+  d = smin(d, sdEll(p - vec3(0.19, 0.0, -0.075), vec3(0.085, 0.066 + s, 0.062)), 0.04);
+  d = min(d, sdRBox(p - vec3(-0.1, 0.0, -0.14), vec3(0.06, 0.066, 0.03), 0.012));
+  d = max(d, -sdRBox(p - vec3(-0.07, 0.0, 0.24), vec3(0.055, 0.045, 0.08), 0.02));
+  return vec2(d, 0.0);
+}
+vec2 sdStar(vec3 p, float s) { return vec2(extrude(sdStar5(p.xz, 0.2, 0.48), p.y, 0.045 + s, 0.035), 0.0); }
+vec2 sdTomato(vec3 p, float s) {
+  float a = atan(p.z, p.x);
+  float d = (length(p * vec3(1.0, 1.12, 1.0)) - 0.128 * (1.0 + 0.03 * cos(5.0 * a)) - s) * 0.85;
+  float cal = max(sdStar5(p.xz, 0.075, 0.38), abs(p.y - 0.112) - 0.009) - 0.004;
+  cal = min(cal, sdCap(p, vec3(0.0, 0.1, 0.0), vec3(0.012, 0.155, 0.0), 0.011));
+  return cal < d ? vec2(cal, 1.0) : vec2(d, 0.0);
+}
+vec2 sdMush(vec3 p, float s) {
+  p = vec3(p.y, p.x, p.z);
+  float cap = max(sdEll(p - vec3(0.0, 0.02, 0.0), vec3(0.155, 0.1, 0.155) + s), -(p.y - 0.015));
+  cap = smin(cap, sdTor(p - vec3(0.0, 0.022, 0.0), 0.125, 0.024), 0.025);
+  float stem = sdCap(p, vec3(0.0, -0.15, 0.0), vec3(0.0, 0.02, 0.0), 0.05 + s);
+  return stem < cap ? vec2(stem, 1.0) : vec2(cap, 0.0);
+}
+vec2 sdBones(vec3 p) {
+  float d = sdCap(p, vec3(-0.27, 0.0, 0.0), vec3(0.17, 0.0, 0.0), 0.011);
+  vec3 q = p;
+  float k = clamp(floor(q.x / 0.05 + 0.5), -4.0, 2.0);
+  q.x -= k * 0.05;
+  float len = 0.1 - abs(k + 1.0) * 0.012;
+  d = min(d, sdCap(q, vec3(0.0), vec3(-0.035, 0.0, len), 0.0065));
+  d = min(d, sdCap(q, vec3(0.0), vec3(-0.035, 0.0, -len * 0.9), 0.0065));
+  float sk = sdEll(p - vec3(0.23, 0.0, 0.0), vec3(0.08, 0.032, 0.068));
+  sk = max(sk, -(length(p - vec3(0.255, 0.0, 0.022)) - 0.02));
+  d = min(d, sk);
+  vec3 t = p - vec3(-0.27, 0.0, 0.0);
+  d = min(d, min(sdCap(t, vec3(0.0), vec3(-0.11, 0.0, 0.065), 0.006), sdCap(t, vec3(0.0), vec3(-0.11, 0.0, -0.065), 0.006)));
+  d = min(d, sdCap(t, vec3(0.0), vec3(-0.12, 0.0, 0.0), 0.005));
+  return vec2(d, 0.0);
+}
+// Kinds: 0 carrot, 1 onion, 2 fish, 3 beetroot, 4 duck, 5 pea, 6 boot, 7 star, 8 tomato, 9 mushroom,
+// then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
+vec2 sdKind(int k, vec3 p, float s) {
+  switch (k) {
+    case 0: return sdCarrot(p, s);
+    case 1: return sdOnion(p, s);
+    case 2: return sdFish(p, s);
+    case 3: return sdBeet(p, s);
+    case 4: return sdDuck(p);
+    case 5: return vec2(length(p) - 0.04 - s, 0.0);
+    case 6: return sdBoot(p, s);
+    case 7: return sdStar(p, s);
+    case 8: return sdTomato(p, s);
+    case 9: return sdMush(p, s);
+    case 10: return vec2(sdCyl(p, 0.075, 0.016) - 0.006, 0.0);
+    case 11: return vec2(sdTor(p, 0.1, 0.017), 0.0);
+    case 12: return sdBones(p);
+    case 13: return vec2(sdRBox(p, vec3(0.042), 0.012), 0.0);
+    case 14: return vec2(max(length(p) - 0.07, p.y - 0.018), 0.0);
+  }
+  return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
+}
+`;
+
+/* ---------- GLSL: the dye field ---------- */
+// The soup's colour lives in OKLab, weighted: rgb holds Lab times weight, a the weight.
+// Mixing weighted Lab mixes colours the way the eye expects.
+const DYE_INIT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec3 uLab;
+uniform float uExt, uSeed;
+layout(location = 0) out vec4 oDye;
+layout(location = 1) out vec4 oAux;
+${COMMON}
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uExt;
+  // Fresh broth is not flat: faint lighter and darker streaks.
+  float n = fbm2(p * 3.0 + uSeed) - 0.5;
+  oDye = vec4(uLab + vec3(0.06 * n, 0.0, 0.015 * n), 1.0);
+  oAux = vec4(0.0);
+}`;
+// One step: the soup carries its colour, the boil mixes it, the things tint it.
+// Aux: r glitter, g fat.
+const DYE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uDye, uAux, uVel;
+uniform float uDt, uExt, uTime, uConv, uRelax;
+uniform vec4 uMean;
+uniform vec4 uPlume[4];
+uniform int uNE;
+uniform vec4 uE[32];
+layout(location = 0) out vec4 oDye;
+layout(location = 1) out vec4 oAux;
+${COMMON}
+// Soup velocity in soup units a second: the stir, the plumes and a slow curl.
+vec2 flow(vec2 p) {
+  vec2 v = texture(uVel, p / uExt * 0.5 + 0.5).xy;
+  for (int i = 0; i < 4; i++) {
+    vec2 d = p - uPlume[i].xy;
+    v += uPlume[i].z * d * exp(-dot(d, d) / (uPlume[i].w * uPlume[i].w));
+  }
+  vec2 q = p * 2.2 + vec2(uTime * 0.05, -uTime * 0.04);
+  float e = 0.05, n0 = noise2(q), nx = noise2(q + vec2(e, 0.0)), ny = noise2(q + vec2(0.0, e));
+  return v + uConv * 0.05 * vec2(ny - n0, n0 - nx) / e;
+}
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uExt;
+  if (dot(p, p) > 1.0) { oDye = uMean; oAux = vec4(0.0); return; }
+  vec2 v1 = flow(p);
+  vec2 s = p - uDt * flow(p - 0.5 * uDt * v1);
+  float l = length(s);
+  if (l > 0.995) s *= 0.995 / l;
+  vec2 su = s / uExt * 0.5 + 0.5;
+  vec4 d = texture(uDye, su), a = texture(uAux, su);
+  // Upwelling plumes bring up the mixed pot from below.
+  float up = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 dd = p - uPlume[i].xy; up += exp(-dot(dd, dd) / (uPlume[i].w * uPlume[i].w * 0.4)); }
+  float k = clamp(uRelax + up * uConv * 0.5 * uDt, 0.0, 1.0);
+  d = mix(d, uMean, k);
+  a.g *= 1.0 - 1.5 * k;
+  a.r *= 1.0 - 0.3 * k;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uNE) break;
+    vec4 e0 = uE[i * 2], e1 = uE[i * 2 + 1];
+    vec2 dd = p - e0.xy;
+    float w = e0.w * exp(-dot(dd, dd) / (e0.z * e0.z));
+    if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
+    else if (e1.w < 1.5) a.g += w;
+    else a.r += w;
+  }
+  oDye = d;
+  oAux = max(a, 0.0);
+}`;
+
+/* ---------- GLSL: ripples ---------- */
+// A wave field on the surface: r height, g the last height.
+const RIP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uRip;
+uniform vec2 uTexel;
+uniform float uExt, uDamp;
+uniform int uNI;
+uniform vec4 uImp[16];
+out vec4 o;
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uExt;
+  if (dot(p, p) > 0.99) { o = vec4(0.0); return; }
+  vec2 c = texture(uRip, vUv).xy;
+  float l = texture(uRip, vUv - vec2(uTexel.x, 0.0)).x, r = texture(uRip, vUv + vec2(uTexel.x, 0.0)).x;
+  float b = texture(uRip, vUv - vec2(0.0, uTexel.y)).x, t = texture(uRip, vUv + vec2(0.0, uTexel.y)).x;
+  float h = (2.0 * c.x - c.y + 0.42 * (l + r + b + t - 4.0 * c.x)) * uDamp;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uNI) break;
+    vec2 d = p - uImp[i].xy;
+    h += uImp[i].w * exp(-dot(d, d) / (uImp[i].z * uImp[i].z));
+  }
+  o = vec4(clamp(h, -0.2, 0.2), c.x, 0.0, 1.0);
+}`;
+
+/* ---------- GLSL: the layers at half size ---------- */
+// Back: the night, the ground, the coals and the flames behind the pot.
+// Front, premultiplied: the flames in front of the pot, the sparks and the steam.
+const LAYER_FS = `#version 300 es
+precision highp float;
+uniform vec3 uCam, uRight, uUp, uFwd;
+uniform float uFocal;
+uniform vec2 uPP;
+uniform float uTime, uFire, uFlick, uLevel, uSteam, uSwirl, uSteps;
+uniform vec3 uFireCol, uGlowCol;
+uniform int uNP;
+uniform vec4 uPuff[${NP}];
+uniform int uNS;
+uniform vec4 uSpark[${NS * 2}];
+layout(location = 0) out vec4 oBack;
+layout(location = 1) out vec4 oFront;
+${COMMON}
+${POT}
+// Flame colour by heat: deep red, orange, yellow, then white.
+vec3 fireRamp(float x) {
+  vec3 c = mix(vec3(0.45, 0.04, 0.01), vec3(1.0, 0.3, 0.04), smoothstep(0.05, 0.45, x));
+  c = mix(c, vec3(1.0, 0.62, 0.2), smoothstep(0.45, 0.85, x));
+  c = mix(c, vec3(1.0, 0.9, 0.7), smoothstep(0.9, 1.3, x));
+  return c * (0.25 + 2.4 * x * x);
+}
+// Flame height in world units.
+float flameH() { return 0.3 + 1.1 * uFire; }
+// One tongue of flame on a card: x across, -1 to 1; y up, 0 to 1.
+float tongue(vec2 uv, float seed) {
+  if (uv.y < 0.0 || uv.y > 1.3 || abs(uv.x) > 1.3) return 0.0;
+  float y = uv.y;
+  float n = fbm2(vec2(uv.x * 1.3 + seed, y * 1.7 - uTime * 2.1));
+  float n2 = fbm2(vec2(uv.x * 5.0 - seed, y * 7.0 - uTime * 5.0));
+  // A teardrop that sways as it rises: wide at the root, a point at the tip.
+  float x = uv.x - (n - 0.5) * 1.4 * y * y;
+  float w = 0.62 * pow(max(1.0 - y, 0.0), 0.75) * (0.65 + 0.6 * n);
+  float d = 1.0 - abs(x) / max(w, 0.02);
+  // Fine noise frays the edge; the core stays bright.
+  d += (n2 - 0.5) * 0.9 * (0.25 + y);
+  return pow(clamp(d, 0.0, 1.0), 0.8) * pow(max(1.0 - y, 0.0), 0.35) * smoothstep(0.0, 0.1, y);
+}
+// A log: a capsule test, returning the hit distance and the place along it.
+vec2 iLog(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
+  vec3 ba = pb - pa, oa = ro - pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
+  float h = b * b - a * c;
+  if (h < 0.0) return vec2(-1.0);
+  float t = (-b - sqrt(h)) / a, y = baoa + t * bard;
+  if (y > 0.0 && y < baba) return vec2(t, y / baba);
+  vec3 oc = y <= 0.0 ? oa : ro - pb;
+  b = dot(rd, oc); c = dot(oc, oc) - r * r; h = b * b - c;
+  return h > 0.0 ? vec2(-b - sqrt(h), y <= 0.0 ? 0.0 : 1.0) : vec2(-1.0);
+}
+float steamDens(vec3 p) {
+  float hy = p.y - uLevel;
+  if (hy < -0.02) return 0.0;
+  float r = length(p.xz), R = 0.8 + 0.22 * hy;
+  float edge = 1.0 - smoothstep(R * 0.45, R, r);
+  // The steam turns with the soup, most near the surface.
+  vec2 xz = rot2(uSwirl * exp(-hy * 1.4)) * p.xz;
+  vec3 q = vec3(xz.x, hy, xz.y) * 1.35 + vec3(0.0, -uTime * 0.42, 0.0);
+  q += 0.75 * vec3(noise3(q * 0.5 + 3.1), 0.0, noise3(q * 0.5 + 7.7));
+  float n = fbm3(q);
+  // Wisps: only the tops of the noise make steam.
+  // Steam shows a little above the surface, where it cools, then thins out.
+  float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6);
+  float d = smoothstep(0.56 - 0.1 * uSteam, 0.82, n) * base * edge * 2.6;
+  // Puffs: a burst bubble sends up a round cloud.
+  for (int i = 0; i < ${NP}; i++) {
+    if (i >= uNP) break;
+    vec4 pf = uPuff[i];
+    float age = pf.z;
+    vec3 c = vec3(pf.x, uLevel + 0.05 + age * 1.0, pf.y);
+    float rad = 0.1 + age * 0.38;
+    vec3 dv = p - c;
+    float dd = dot(dv, dv) / (rad * rad);
+    if (dd < 1.0) d += pf.w * (1.0 - age) * (1.0 - dd) * smoothstep(0.35, 0.75, n) * 1.8;
+  }
+  return d;
+}
+// Light in the steam: the hot soup below, the fire past the rim, the night.
+vec3 steamLight(vec3 p) {
+  float hy = max(p.y - uLevel, 0.0), r = length(p.xz);
+  vec3 L = (uGlowCol * 0.7 + vec3(0.07, 0.065, 0.06)) * exp(-hy * 1.3);
+  L += uFireCol * uFlick * 0.9 * smoothstep(0.6, 1.4, r) * exp(-hy * 0.9);
+  // The lamp above catches the tops of the clouds.
+  L += vec3(0.16, 0.145, 0.13) * smoothstep(0.0, 1.2, hy);
+  return L + vec3(0.05, 0.05, 0.06);
+}
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec3 ro = uCam, rd = normalize(uFwd + uRight * ((fc.x - uPP.x) / uFocal) + uUp * ((fc.y - uPP.y) / uFocal));
+  // The night, warmer round the fire.
+  vec3 back = mix(vec3(0.014, 0.01, 0.016), vec3(0.004, 0.005, 0.011), smoothstep(-0.7, 0.1, rd.y));
+  vec3 fp = vec3(0.0, GROUND + 0.3, 0.3), oc = fp - ro;
+  float dl = length(oc - rd * dot(oc, rd));
+  back += uFireCol * uFlick * (0.05 / (1.0 + dl * dl * 1.4) + 0.12 * exp(-dl * dl * 2.0));
+  // The ground: dark ash, lit by the fire, with a bed of coals under the pot.
+  float tg = (GROUND - ro.y) / rd.y, tSolid = 1e9;
+  if (tg > 0.0) {
+    vec3 P = ro + rd * tg;
+    float r = length(P.xz);
+    vec3 g = vec3(0.016, 0.013, 0.012) * (0.55 + 0.6 * noise2(P.xz * 3.0));
+    g += uFireCol * uFlick * (0.012 + 0.09 * exp(-r * r * 0.45));
+    float ember = fbm2(P.xz * 6.0 + vec2(0.0, uTime * 0.15));
+    float hot = smoothstep(0.5, 0.82, ember) * smoothstep(1.5, 0.7, r) * (0.3 + 0.9 * uFire);
+    back = g + fireRamp(hot * 0.8) * hot * 0.7;
+    tSolid = tg;
+  }
+  // Four logs meet under the pot; their inner ends burn.
+  for (int i = 0; i < 4; i++) {
+    float a = 0.42 + float(i) * 1.5708;
+    vec3 dir = vec3(cos(a), 0.0, sin(a));
+    vec3 pa = dir * 0.42 + vec3(0.0, GROUND + 0.1, 0.0), pb = dir * 2.25 + vec3(0.0, GROUND + 0.13, 0.0);
+    vec2 hl = iLog(ro, rd, pa, pb, 0.115);
+    if (hl.x > 0.0 && hl.x < tSolid) {
+      tSolid = hl.x;
+      vec3 P = ro + rd * hl.x;
+      float s = hl.y, around = atan(P.y - GROUND - 0.1, dot(P.xz, vec2(-dir.z, dir.x)));
+      // Bark: dark rings and long cracks; the burnt end glows in its cracks.
+      vec3 wood = vec3(0.02, 0.014, 0.01) * (0.6 + 0.6 * noise2(vec2(s * 30.0, around * 2.0)));
+      float lit = 1.0 / (1.0 + dot(P.xz, P.xz) * 1.2);
+      wood += uFireCol * uFlick * 0.08 * lit * (0.6 + 0.4 * sin(around));
+      float crack = smoothstep(0.62, 0.8, noise2(vec2(s * 26.0, around * 3.0) + float(i) * 7.0));
+      float burn = smoothstep(0.45, 0.0, s) * (0.4 + uFire);
+      back = wood + fireRamp(0.45 + 0.3 * burn) * crack * burn * 0.3 + fireRamp(0.3) * burn * 0.06;
+    }
+  }
+  // Flames: tongues on cards round the foot of the pot, each card facing the eye.
+  // A card before the belly draws in front; one behind draws behind the pot.
+  vec3 fl = vec3(0.0), flb = vec3(0.0);
+  float H = flameH();
+  vec2 be = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
+  float tFront = be.x > 0.0 ? be.x : 1e9;
+  if (uFire > 0.01) for (int i = 0; i < 14; i++) {
+    float fi = float(i), h1 = hash12(vec2(fi, 3.7)), h2 = hash12(vec2(fi, 8.1)), h3 = hash12(vec2(fi, 1.3));
+    float a = fi / 14.0 * 6.2832 + h1 * 0.4;
+    vec3 c = vec3(cos(a) * (0.95 + 0.3 * h2), GROUND + 0.05, sin(a) * (0.95 + 0.3 * h2));
+    float tc = dot(c - ro, uFwd) / dot(rd, uFwd);
+    if (tc <= 0.0 || tc > tSolid + 0.5) continue;
+    vec3 q = ro + rd * tc - c;
+    float w = 0.24 + 0.16 * h3, hh = H * (0.7 + 0.5 * h1);
+    float f = tongue(vec2(dot(q, uRight) / w, dot(q, uUp) / hh), fi * 7.3);
+    if (f <= 0.0) continue;
+    vec3 e = fireRamp(f * (0.75 + 0.35 * h2)) * f * 0.5;
+    if (tc < tFront) fl += e; else flb += e;
+  }
+  back += flb;
+  // Sparks rise off the fire.
+  for (int i = 0; i < ${NS}; i++) {
+    if (i >= uNS) break;
+    vec4 s = uSpark[i * 2], s2 = uSpark[i * 2 + 1];
+    vec2 pa = fc - s.xy, ba = s.zw;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-3), 0.0, 1.0);
+    float d = length(pa - ba * h);
+    fl += vec3(1.0, 0.5, 0.14) * s2.x * exp(-d * d / (s2.y * s2.y)) * (1.0 - 0.7 * h);
+  }
+  // Steam: march the column over the soup, up to the pot.
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  float tEnd = 1e9;
+  vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
+  if (eo.x > 0.0) {
+    float tO = (RY - ro.y) / rd.y;
+    vec3 pO = ro + rd * tO;
+    tEnd = dot(pO.xz, pO.xz) < RR * RR ? (uLevel - ro.y) / rd.y : eo.x;
+  }
+  vec2 tc = iCyl(ro, rd, 2.0);
+  if (tc.y > 0.0 && uSteam > 0.001) {
+    float t0 = max(max(tc.x, 0.0), (uLevel + 2.8 - ro.y) / rd.y), t1 = min(min(tc.y, tEnd), (uLevel - 0.02 - ro.y) / rd.y);
+    if (t1 > t0) {
+      int N = int(uSteps);
+      float dt = (t1 - t0) / float(N);
+      // A soft per-pixel offset hides the step bands; the upscale smooths it.
+      float t = t0 + dt * (0.5 + 0.6 * (fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715)))) - 0.5));
+      for (int i = 0; i < 16; i++) {
+        if (i >= N) break;
+        vec3 p = ro + rd * t;
+        float d = steamDens(p);
+        if (d > 0.002) {
+          float a = 1.0 - exp(-d * dt * 2.4);
+          acc += T * a * steamLight(p);
+          T *= 1.0 - a;
+        }
+        t += dt;
+      }
+    }
+  }
+  oBack = vec4(back, 1.0);
+  oFront = vec4(acc + fl * T, 1.0 - T);
+}`;
+
+/* ---------- GLSL: the scene ---------- */
+// One ray per pixel: the pot, the soup, its bubbles, the things, droplets and the spoon.
+const SCENE_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform vec3 uCam, uRight, uUp, uFwd;
+uniform float uFocal;
+uniform vec2 uPP, uRes;
+uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK;
+uniform vec3 uKeyDir, uKeyCol, uFireCol;
+uniform sampler2D uDye, uAux, uRip, uBack, uFront;
+uniform int uNB;
+uniform vec4 uB[${NB * 3}];
+uniform int uNBub;
+uniform vec4 uBub[${NBUB}];
+uniform int uND;
+uniform vec4 uDrop[${ND}];
+uniform vec4 uSpA, uSpB;
+uniform int uMarch;
+out vec4 o;
+${COMMON}
+${POT}
+${SDF}
+/* the soup surface */
+vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
+// The stir dips the middle and lifts the edge; the funnel deepens the centre.
+float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
+float surfH(vec2 xz) { return uLevel + dipAt(min(length(xz) / uRS, 1.0)) + texture(uRip, soupUV(xz)).x; }
+float soupT(vec3 ro, vec3 rd) {
+  float t = (uLevel - ro.y) / rd.y;
+  for (int i = 0; i < 3; i++) t = (surfH((ro + rd * t).xz) - ro.y) / rd.y;
+  return t;
+}
+vec3 soupCol(vec2 xz) { vec4 d = texture(uDye, soupUV(xz)); return max(lab2lin(d.rgb / max(d.a, 1e-3)), 0.0); }
+
+/* the things */
+float sdBody(int i, vec3 p, out float m) {
+  vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
+  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec2 d = sdKind(int(M.x), lp, 0.012 * clamp(M.y, 0.0, 1.0));
+  m = d.y;
+  return d.x * M.w;
+}
+// The things this pixel's ray can reach: a short list, so each step tests only those.
+const int NC = 8;
+int gCl[NC];
+int gNc = 0;
+float sdAll(vec3 p, out int id, out float m) {
+  float d = 1e9;
+  id = -1; m = 0.0;
+  for (int k = 0; k < NC; k++) {
+    if (k >= gNc) break;
+    int i = gCl[k];
+    float mm, di = sdBody(i, p, mm);
+    if (di < d) { d = di; id = i; m = mm; }
+  }
+  return d;
+}
+vec3 bodyN(int i, vec3 p) {
+  const vec2 e = vec2(1.0, -1.0) * 0.0012;
+  float m;
+  return normalize(e.xyy * sdBody(i, p + e.xyy, m) + e.yyx * sdBody(i, p + e.yyx, m) + e.yxy * sdBody(i, p + e.yxy, m) + e.xxx * sdBody(i, p + e.xxx, m));
+}
+
+/* light */
+// The lamp: a soft key from the upper back. The room: a dark sky, a warm haze low down.
+vec3 env(vec3 r, float rough) {
+  vec3 c = mix(vec3(0.04, 0.028, 0.03), vec3(0.008, 0.009, 0.02), smoothstep(-0.1, 0.6, r.y));
+  // Firelight on the smoke all round, low down; below the horizon, the fire.
+  c += uFireCol * uFlick * 0.1 * exp(-max(r.y, 0.0) * 4.0);
+  c = mix(c, uFireCol * uFlick * 0.15, smoothstep(0.0, -0.4, r.y));
+  // The lamp: a bright core in a wide glow.
+  float k = max(dot(r, uKeyDir), 0.0);
+  float sh = mix(400.0, 20.0, clamp(rough * 3.0, 0.0, 1.0));
+  c += uKeyCol * (pow(k, sh) * sh * 0.06 + pow(k, 16.0) * 0.04);
+  return c;
+}
+vec3 skyAmb(vec3 n) { return mix(vec3(0.03, 0.02, 0.014), vec3(0.025, 0.028, 0.04), n.y * 0.5 + 0.5); }
+vec3 litSurf(vec3 n, vec3 v, vec3 alb, float rough, float f0) {
+  vec3 h = normalize(uKeyDir + v);
+  float nl = max(dot(n, uKeyDir), 0.0), nh = max(dot(n, h), 0.0);
+  float sh = 2.0 / max(rough * rough * rough * rough, 1e-4) - 2.0;
+  float F = f0 + (1.0 - f0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+  vec3 col = alb * (uKeyCol * nl + skyAmb(n) * 3.0);
+  col += uKeyCol * pow(nh, sh) * (sh + 8.0) / 25.13 * F * nl;
+  float Fv = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+  return col + env(reflect(-v, n), rough) * Fv;
+}
+// Firelight from below, for the outside of the pot.
+vec3 fireOn(vec3 p, vec3 n, vec3 v, vec3 alb) {
+  vec3 fp = vec3(p.x * 0.4, GROUND - 0.2, p.z * 0.4 + 0.15);
+  vec3 L = fp - p;
+  float dist = length(L);
+  L /= dist;
+  // The flames are a wide source, so the light never peaks at one point.
+  dist = max(dist, 0.7);
+  vec3 fl = uFireCol * uFlick * 1.4 / (1.0 + dist * dist * 0.45);
+  float wrap = max(dot(n, L) * 0.75 + 0.25, 0.0);
+  vec3 h = normalize(L + v);
+  float graze = 0.25 + 0.75 * pow(1.0 - max(dot(n, v), 0.0), 2.0);
+  // The glint fades where the iron faces straight down, so the belly has no hot point.
+  return alb * fl * wrap * 5.0 + fl * pow(max(dot(n, h), 0.0), 20.0) * 0.16 * graze * smoothstep(-0.99, -0.8, n.y);
+}
+
+/* the pot */
+vec3 shadeIron(vec3 p, vec3 n, vec3 v, float inside) {
+  float soot = fbm2(p.xz * 3.0 + p.y * 2.3);
+  vec3 alb = vec3(0.022, 0.021, 0.024) * (0.65 + 0.7 * soot);
+  vec3 col = litSurf(n, v, alb, 0.38 + 0.22 * soot, 0.05);
+  if (inside < 0.5) col += fireOn(p, n, v, alb);
+  return col;
+}
+vec3 shadeWall(vec3 p, vec3 n, vec3 v) {
+  vec3 col = shadeIron(p, n, v, 1.0);
+  // The soup leaves a wet tide line on the iron.
+  float above = p.y - (uLevel + dipAt(1.0));
+  vec3 soup = soupCol(normalize(p.xz) * uRS * 0.97);
+  float wet = exp(-max(above, 0.0) / 0.035);
+  vec3 film = litSurf(n, v, soup * 0.35, 0.1, 0.03) + soup * uSoupK * 0.25;
+  col = mix(col, film, wet * 0.85);
+  // The soup's glow lights the wall low down.
+  col += soup * uSoupK * 0.08 * exp(-max(above, 0.0) / 0.15);
+  return col;
+}
+
+/* the soup */
+float glint(vec2 xz, float g, vec3 n, vec3 v) {
+  if (g < 0.01) return 0.0;
+  vec2 q = xz * 120.0, cell = floor(q), f = fract(q) - 0.5;
+  float h = hash12(cell);
+  if (h > g * 0.5) return 0.0;
+  vec3 fn = normalize(n + vec3(hash12(cell + 3.1) - 0.5, 0.0, hash12(cell + 7.7) - 0.5) * 1.6);
+  float s = pow(max(dot(reflect(-v, fn), uKeyDir), 0.0), 40.0);
+  return s * smoothstep(0.4, 0.0, length(f)) * (0.6 + 0.4 * sin(uTime * 5.0 + h * 50.0)) * 9.0;
+}
+vec3 shadeSoup(vec3 p, vec3 rd) {
+  vec2 uv = soupUV(p.xz);
+  vec4 dy = texture(uDye, uv), ax = texture(uAux, uv);
+  vec3 alb = max(lab2lin(dy.rgb / max(dy.a, 1e-3)), 0.0);
+  float T = clamp((dy.a - 1.0) * 0.3, 0.0, 1.0);
+  // The normal: the dip, the ripples and the bubbles' rings.
+  // Two ripple texels each way: smoother normals, no facets.
+  float e = uRS * uExt * 4.0 / 256.0;
+  float hx = surfH(p.xz + vec2(e, 0.0)) - surfH(p.xz - vec2(e, 0.0));
+  float hz = surfH(p.xz + vec2(0.0, e)) - surfH(p.xz - vec2(0.0, e));
+  vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
+  // Thick soup shows its swirls as low ridges.
+  float e2 = 1.5 / 512.0;
+  float wx = texture(uDye, uv + vec2(e2, 0.0)).a - texture(uDye, uv - vec2(e2, 0.0)).a;
+  float wz = texture(uDye, uv + vec2(0.0, e2)).a - texture(uDye, uv - vec2(0.0, e2)).a;
+  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T);
+  vec3 v = -rd;
+  float nv = max(dot(n, v), 0.0);
+  float F = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+  // The body: lit from above and warm from its own heat.
+  vec3 body = alb * (uKeyCol * 0.4 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42 + vec3(0.02, 0.022, 0.03));
+  // Things under the surface show through thin broth.
+  if (gNc > 0) {
+    vec3 rr = refract(rd, n, 0.75);
+    for (int s = 1; s <= 3; s++) {
+      float dep = float(s) * float(s) * 0.014;
+      int id; float m;
+      float d = sdAll(p + rr * dep, id, m);
+      if (d < 0.004) {
+        vec4 M = uB[id * 3 + 2];
+        vec3 c =int(M.x) == 4 ? lch(0.86, 0.16, 96.0) : int(M.x) == 7 ? lch(0.84, 0.15, 90.0) : alb * 1.4;
+        body = mix(body, c * alb * 2.0 * (uSoupK * 0.4 + 0.08), exp(-dep * mix(14.0, 60.0, T)) * 0.75);
+        break;
+      }
+    }
+  }
+  // The spoon's bowl under the surface.
+  if (uSpB.w > 0.0) {
+    vec3 rr = refract(rd, n, 0.75);
+    for (int s = 1; s <= 3; s++) {
+      float dep = float(s) * 0.03;
+      vec3 q = p + rr * dep - uSpA.xyz + vec3(0.0, 0.03, 0.0);
+      if (sdEll(q, vec3(0.13, 0.035, 0.1)) < 0.0) { body = mix(body, lch(0.5, 0.07, 65.0) * alb * 1.6 * (uSoupK * 0.4 + 0.08), exp(-dep * mix(12.0, 50.0, T)) * 0.7); break; }
+    }
+  }
+  vec3 col = body * (1.0 - F);
+  // Gloss: the lamp, the room and the fire's haze.
+  float fat = smoothstep(0.3, 0.42, ax.g);
+  float rough = mix(0.045, 0.09, T) * (1.0 - 0.45 * fat);
+  // The gloss reads a touch stronger than true Fresnel, so the surface looks wet.
+  col += env(reflect(rd, n), rough) * (F + 0.025);
+  // Fat floats in golden, glassy pools.
+  col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
+  // A dark ring hugs each floating thing, then a thin bright lip.
+  if (gNc > 0) {
+    int id; float m;
+    float d = max(sdAll(p, id, m), 0.0);
+    col *= 1.0 - 0.45 * exp(-d / 0.02);
+    col += env(reflect(rd, normalize(n + vec3(0.0, -0.6, 0.0))), 0.05) * 0.4 * exp(-d / 0.006);
+  }
+  // The meniscus at the iron wall.
+  float rw = length(p.xz) / uRS;
+  col *= 1.0 - 0.6 * smoothstep(0.9, 1.0, rw);
+  return col;
+}
+vec3 shadeBubble(vec3 p, vec3 n, vec3 rd, vec4 b) {
+  vec3 alb = soupCol(p.xz);
+  vec3 v = -rd;
+  float nv = max(dot(n, v), 0.0), F = 0.03 + 0.97 * pow(1.0 - nv, 4.0);
+  // The skin is soup, thinned and paler at the crown; round, so it catches the lamp.
+  float up = clamp((p.y - surfH(b.xy)) / max(b.w, 1e-3), 0.0, 1.0);
+  vec3 skin = mix(alb, alb * 1.25 + 0.03, up * up);
+  vec3 body = skin * (uKeyCol * 0.45 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42);
+  vec3 h = normalize(uKeyDir + v);
+  vec3 col = body * (1.0 - F) + env(reflect(rd, n), 0.03) * (F + 0.04);
+  col += uKeyCol * pow(max(dot(n, h), 0.0), 500.0) * 6.0;
+  // The base sits in a thin dark ring.
+  return col * (1.0 - 0.22 * smoothstep(0.25, 0.0, up));
+}
+
+/* the things */
+vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, out vec3 emit) {
+  rough = 0.3;
+  emit = vec3(0.0);
+  float wob = noise3(p * 40.0 + sd * 7.0);
+  vec3 c;
+  if (k == 0) {
+    c = m > 0.5 ? lch(0.52, 0.14, 135.0) : lch(0.66, 0.17, 48.0) * (0.86 + 0.14 * sin(p.x * 90.0)) * (0.9 + 0.2 * wob);
+    rough = m > 0.5 ? 0.5 : mix(0.3, 0.15, cook);
+  } else if (k == 1) {
+    // Papery copper skin with dark lengthwise veins.
+    float st = 0.5 + 0.5 * sin(atan(p.y, p.z) * 24.0 + wob * 3.0);
+    c = mix(lch(0.66, 0.12, 72.0), lch(0.52, 0.12, 52.0), smoothstep(0.6, 1.0, st) * 0.7);
+    c *= 0.88 + 0.24 * noise3(p * vec3(5.0, 26.0, 26.0));
+    c = mix(c, lch(0.86, 0.04, 95.0), smoothstep(0.25, 0.9, cook));
+    rough = mix(0.45, 0.14, cook);
+  } else if (k == 2) {
+    c = mix(lch(0.9, 0.012, 240.0), lch(0.44, 0.05, 235.0), smoothstep(-0.06, 0.08, p.z));
+    c *= 0.9 + 0.12 * sin(p.x * 120.0 + p.z * 60.0) * smoothstep(-0.03, 0.05, p.z);
+    c = mix(c, lch(0.7, 0.07, 200.0), exp(-abs(p.z - 0.01) * 90.0) * 0.6);
+    if (m > 0.5) c = lch(0.6, 0.04, 230.0);
+    float eye = length(vec2(p.x - 0.215, p.z - 0.03));
+    if (abs(p.y) > 0.018) { c = mix(c, lch(0.95, 0.02, 90.0), smoothstep(0.03, 0.026, eye)); c = mix(c, vec3(0.004), smoothstep(0.02, 0.016, eye)); }
+    c = mix(c, lch(0.86, 0.02, 80.0), smoothstep(0.4, 1.0, cook) * 0.7);
+    rough = 0.16;
+  } else if (k == 3) {
+    c = m > 0.5 ? lch(0.46, 0.17, 12.0) : lch(0.36, 0.16, 358.0) * (0.85 + 0.25 * wob);
+    if (m > 1.5) {
+      // A leaf: dark green, with a red midrib and paler veins.
+      vec3 q = p - vec3(0.1, 0.0, 0.0);
+      vec3 la = q - vec3(0.29, 0.05, 0.11); la.xz = rot2(0.35) * la.xz;
+      vec3 lb = q - vec3(0.27, 0.045, -0.12); lb.xz = rot2(-0.42) * lb.xz;
+      vec3 l = length(la) < length(lb) ? la : lb;
+      c = lch(0.4, 0.12, 142.0) * (0.85 + 0.3 * wob);
+      c = mix(c, lch(0.55, 0.1, 128.0), smoothstep(0.75, 0.95, sin(l.x * 70.0 + abs(l.z) * 90.0)) * 0.5);
+      c = mix(c, lch(0.48, 0.17, 12.0), smoothstep(0.008, 0.003, abs(l.z)));
+    }
+    rough = m > 1.5 ? 0.5 : 0.22;
+  } else if (k == 4) {
+    c = m > 0.5 ? lch(0.7, 0.18, 48.0) : lch(0.88, 0.17, 96.0);
+    vec3 ey = vec3(0.12, 0.19, 0.05);
+    float eye = min(length(p - ey), length(p - ey * vec3(1.0, 1.0, -1.0)));
+    c = mix(c, vec3(0.004), smoothstep(0.024, 0.019, eye));
+    rough = 0.22;
+  } else if (k == 5) {
+    c = mix(lch(0.7, 0.18, 135.0), lch(0.62, 0.12, 120.0), cook * 0.6) * (0.9 + 0.2 * wob);
+    rough = 0.18;
+  } else if (k == 6) {
+    c = lch(0.4, 0.06, 55.0) * (0.75 + 0.4 * noise3(p * 18.0 + sd));
+    if (p.z < -0.12) c = lch(0.2, 0.01, 50.0);
+    float lace = abs(fract((p.z + abs(p.y) * 0.8) * 22.0) - 0.5);
+    if (p.x > 0.0 && p.z > -0.03 && p.z < 0.2 && abs(p.y) < 0.05) c = mix(c, lch(0.8, 0.03, 85.0), smoothstep(0.14, 0.06, lace));
+    c = mix(c, c * 0.6, cook);
+    rough = mix(0.5, 0.32, cook);
+  } else if (k == 7) {
+    c = lch(0.86, 0.15, 92.0);
+    rough = 0.18;
+    emit = lch(0.85, 0.16, 85.0) * (0.3 + 0.6 * cook);
+  } else if (k == 8) {
+    c = m > 0.5 ? lch(0.5, 0.14, 138.0) : lch(0.57, 0.21, 30.0) * (0.92 + 0.12 * wob);
+    c *= 1.0 - 0.6 * cook * smoothstep(0.82, 0.92, noise3(p * 25.0));
+    rough = m > 0.5 ? 0.45 : 0.1;
+  } else if (k == 9) {
+    // The cap points along x: pale stem, brown cap, darker at its crown.
+    c = m > 0.5 ? lch(0.88, 0.025, 85.0) : mix(lch(0.6, 0.06, 66.0), lch(0.42, 0.055, 52.0), smoothstep(0.05, 0.12, p.x));
+    c *= 0.9 + 0.15 * wob;
+    rough = 0.42;
+  } else if (k == 10) {
+    c = mix(lch(0.8, 0.13, 64.0), lch(0.66, 0.17, 48.0), smoothstep(0.028, 0.045, length(p.xz)));
+    rough = 0.18;
+  } else if (k == 11) {
+    c = lch(0.9, 0.035, 95.0);
+    rough = 0.1;
+  } else if (k == 12) {
+    c = lch(0.9, 0.02, 85.0) * (0.85 + 0.2 * wob);
+    rough = 0.3;
+  } else if (k == 13) {
+    c = lch(0.38, 0.17, 0.0) * (0.9 + 0.2 * wob);
+    rough = 0.2;
+  } else if (k == 14) {
+    c = p.y > 0.012 ? mix(lch(0.63, 0.17, 35.0), lch(0.84, 0.12, 95.0), smoothstep(0.62, 0.78, noise3(p * 60.0))) : lch(0.57, 0.21, 30.0);
+    rough = 0.14;
+  } else {
+    c = mix(lch(0.84, 0.03, 80.0), lch(0.55, 0.06, 62.0), smoothstep(-0.014, -0.004, sliceShape(p.xz)));
+    rough = 0.3;
+  }
+  return c;
+}
+vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
+  vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
+  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec3 n = bodyN(i, p);
+  float rough;
+  vec3 emit;
+  float cook = clamp(M.y, 0.0, 1.0);
+  vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
+  // Cooking soaks the soup's colour into a thing.
+  vec3 soup = soupCol(p.xz);
+  alb = mix(alb, alb * soup * 2.4, cook * 0.35);
+  float hA = p.y - surfH(p.xz);
+  // Low parts sit in the soup's shade, and wet soup coats them.
+  float wet = exp(-max(hA, 0.0) / 0.03);
+  alb = mix(alb, soup * 0.8, wet * 0.35);
+  rough = mix(rough, 0.08, wet * 0.8);
+  vec3 v = -rd;
+  vec3 col = litSurf(n, v, alb, rough, 0.04) * (0.5 + 0.5 * smoothstep(-0.01, 0.1, hA));
+  col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
+  return col + emit;
+}
+vec3 shadeDrop(vec3 p, vec3 n, vec3 rd) {
+  vec3 alb = soupCol(p.xz);
+  vec3 v = -rd;
+  float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
+  vec3 h = normalize(uKeyDir + v);
+  vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + env(reflect(rd, n), 0.02) * F;
+  return col + uKeyCol * pow(max(dot(n, h), 0.0), 500.0) * 6.0;
+}
+// Ray against a capsule: the spoon's handle.
+float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
+  vec3 ba = pb - pa, oa = ro - pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
+  float h = b * b - a * c;
+  if (h >= 0.0) {
+    float t = (-b - sqrt(h)) / a;
+    float y = baoa + t * bard;
+    if (y > 0.0 && y < baba) return t;
+    vec3 oc = y <= 0.0 ? oa : ro - pb;
+    b = dot(rd, oc);
+    c = dot(oc, oc) - r * r;
+    h = b * b - c;
+    if (h > 0.0) return -b - sqrt(h);
+  }
+  return -1.0;
+}
+vec3 shadeSpoon(vec3 p, vec3 n, vec3 rd) {
+  vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
+  float s = dot(p - uSpA.xyz, ax);
+  // Wood with a long grain; the lower end is wet and stained by the soup.
+  vec3 alb = lch(0.6, 0.075, 68.0) * (0.8 + 0.3 * noise2(vec2(s * 6.0, atan(n.z, n.x) * 2.0)));
+  float wet = smoothstep(0.32, 0.12, s);
+  vec3 soup = soupCol(uSpA.xz);
+  alb = mix(alb, alb * 0.55 + soup * 0.25, wet);
+  return litSurf(n, -rd, alb, mix(0.5, 0.12, wet), 0.04);
+}
+
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec3 ro = uCam, rd = normalize(uFwd + uRight * ((fc.x - uPP.x) / uFocal) + uUp * ((fc.y - uPP.y) / uFocal));
+  vec2 su = fc / uRes;
+  vec3 col = texture(uBack, su).rgb;
+  float tHit = 1e9;
+  int mat = 0;
+  // The outer belly, below the rim.
+  vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
+  if (eo.x > 0.0 && ro.y + rd.y * eo.x < RY) { tHit = eo.x; mat = 1; }
+  float tr = traceRim(ro, rd, tHit);
+  if (tr > 0.0) { tHit = tr; mat = 2; }
+  // Three stubby legs stand the pot in the fire.
+  vec3 legA = vec3(0.0), legB = vec3(0.0);
+  for (int i = 0; i < 3; i++) {
+    float a = 0.5236 + float(i) * 2.0944;
+    vec3 dir = vec3(cos(a), 0.0, sin(a));
+    vec3 la = dir * 0.72 + vec3(0.0, -1.3, 0.0), lb = dir * 0.97 + vec3(0.0, GROUND + 0.04, 0.0);
+    float tl = iCapsule(ro, rd, la, lb, 0.075);
+    if (tl > 0.0 && tl < tHit) { tHit = tl; mat = 9; legA = la; legB = lb; }
+  }
+  // Through the opening: the soup, or the inner wall above it.
+  float tO = (RY - ro.y) / rd.y;
+  vec3 pO = ro + rd * tO;
+  if (tO > 0.0 && tO < tHit && dot(pO.xz, pO.xz) < RR * RR) {
+    float tS = soupT(ro, rd);
+    float tw = iEll(ro, rd, vec3(0.0, BCY, 0.0), RI).y;
+    if (tw > 0.0 && tw < tS) { if (tw < tHit) { tHit = tw; mat = 3; } }
+    else if (tS < tHit) { tHit = tS; mat = 4; }
+  }
+  // Bubbles: caps of spheres that stand on the surface.
+  vec3 bubN = vec3(0.0, 1.0, 0.0);
+  vec4 bub = vec4(0.0);
+  if (mat == 4) {
+    for (int i = 0; i < ${NBUB}; i++) {
+      if (i >= uNBub) break;
+      vec4 b = uBub[i];
+      float R = (b.z * b.z + b.w * b.w) / (2.0 * b.w);
+      float by = uLevel + dipAt(length(b.xy) / uRS);
+      vec3 c = vec3(b.x, by + b.w - R, b.y), oc = ro - c;
+      float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + R * R;
+      if (h > 0.0) {
+        float t = -bb - sqrt(h);
+        vec3 q = ro + rd * t;
+        if (t > 0.0 && t < tHit && q.y > by) { tHit = t; mat = 5; bubN = (q - c) / R; bub = b; }
+      }
+    }
+  }
+  // Things: a ray tests each bound sphere, then marches only those it passes.
+  float t0 = 1e9;
+  for (int i = 0; i < ${NB}; i++) {
+    if (i >= uNB) break;
+    vec4 A = uB[i * 3];
+    vec3 oc = ro - A.xyz;
+    float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + A.w * A.w;
+    if (h > 0.0) {
+      float ta = -bb - sqrt(h);
+      if (ta < tHit + 0.3 && gNc < NC) { gCl[gNc] = i; gNc++; t0 = min(t0, max(ta, 0.0)); }
+    }
+  }
+  int hitId = -1;
+  float hitM = 0.0;
+  if (gNc > 0) {
+    float t = t0;
+    for (int s = 0; s < 72; s++) {
+      if (s >= uMarch || t > tHit) break;
+      int id;
+      float m, d = sdAll(ro + rd * t, id, m);
+      if (d < 0.0004 * t) { tHit = t; mat = 6; hitId = id; hitM = m; break; }
+      t += d * 0.85;
+    }
+  }
+  // Droplets thrown up by a splash.
+  vec3 dropN = vec3(0.0, 1.0, 0.0);
+  for (int i = 0; i < ${ND}; i++) {
+    if (i >= uND) break;
+    vec4 dp = uDrop[i];
+    vec3 oc = ro - dp.xyz;
+    float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + dp.w * dp.w;
+    if (h > 0.0) {
+      float t = -bb - sqrt(h);
+      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; }
+    }
+  }
+  // The spoon's handle.
+  vec3 spN = vec3(0.0, 1.0, 0.0);
+  if (uSpB.w > 0.0) {
+    float t = iCapsule(ro, rd, uSpA.xyz, uSpB.xyz, uSpA.w);
+    if (t > 0.0 && t < tHit) {
+      vec3 q = ro + rd * t, ba = uSpB.xyz - uSpA.xyz;
+      float k = clamp(dot(q - uSpA.xyz, ba) / dot(ba, ba), 0.0, 1.0);
+      tHit = t; mat = 8; spN = normalize(q - uSpA.xyz - ba * k);
+    }
+    // The bowl, once it lifts out of the soup.
+    vec2 eb = iEll(ro, rd, uSpA.xyz - vec3(0.0, 0.03, 0.0), vec3(0.13, 0.035, 0.1));
+    if (eb.x > 0.0 && eb.x < tHit) { vec3 q = ro + rd * eb.x; tHit = eb.x; mat = 8; spN = normalize((q - uSpA.xyz + vec3(0.0, 0.03, 0.0)) / vec3(0.0169, 0.0012, 0.01)); }
+  }
+  vec3 p = ro + rd * tHit, v = -rd;
+  if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0);
+  else if (mat == 2) {
+    vec3 q = p - vec3(0.0, RY, 0.0);
+    col = shadeIron(p, normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy), v, 0.0);
+  }
+  else if (mat == 3) col = shadeWall(p, -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI)), v);
+  else if (mat == 4) col = shadeSoup(p, rd);
+  else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
+  else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
+  else if (mat == 7) col = shadeDrop(p, dropN, rd);
+  else if (mat == 8) col = shadeSpoon(p, spN, rd);
+  else if (mat == 9) {
+    vec3 ba = legB - legA;
+    float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
+    col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0);
+  }
+  vec4 fr = texture(uFront, su);
+  o = vec4(col * (1.0 - fr.a) + fr.rgb, 1.0);
+}`;
+
+/* ---------- GLSL: out to the screen ---------- */
+const OUT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExposure, uSeed;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c = gdGrade(c, uv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0012, 0.0008, 0.0006), 0.5, 0.42, 0.035);
+  o = vec4(ouFilm(c, uExposure, gl_FragCoord.xy), 1.0);
+}`;
+
+const dyeInitP = program(DYE_INIT_FS), dyeP = program(DYE_FS), ripP = program(RIP_FS);
+const layerP = program(LAYER_FS), sceneP = program(SCENE_FS), outP = program(OUT_FS);
+const bloom = bloomChain(gl, { max: 5 });
+
+/* ---------- the pot, on the CPU ---------- */
+// The same measures as the GLSL.
+const BCY = -0.48, RO = [1.154, 1.181], RI = [1.104, 1.131], RY = 0.13, RR = 1.01, RT = 0.08;
+// The soup's radius at a level: the inner wall's width there.
+const soupR = y => RI[0] * Math.sqrt(Math.max(0.01, 1 - ((y - BCY) / RI[1]) ** 2));
+
+/* ---------- camera ---------- */
+// A fixed eye, 50 degrees above the soup; the lens zooms to fit the stage.
+const EL = 50 * Math.PI / 180, DIST = 9, TGT = [0, -0.42, 0];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cam = { pos: [TGT[0], TGT[1] + DIST * Math.sin(EL), TGT[2] + DIST * Math.cos(EL)], focal: 1000, ppx: 0, ppy: 0 };
+cam.fwd = norm(sub(TGT, cam.pos));
+cam.right = [1, 0, 0];
+cam.up = [0, -cam.fwd[2], cam.fwd[1]];
+// A world point to stage CSS pixels.
+function project(p) {
+  const v = sub(p, cam.pos), z = dot(v, cam.fwd);
+  return [cam.ppx + cam.focal * dot(v, cam.right) / z, cam.ppy - cam.focal * dot(v, cam.up) / z, z];
+}
+// A stage point to a ray direction.
+function rayAt(x, y) {
+  const dx = (x - cam.ppx) / cam.focal, dy = (cam.ppy - y) / cam.focal;
+  return norm([cam.fwd[0] + cam.right[0] * dx + cam.up[0] * dy, cam.fwd[1] + cam.right[1] * dx + cam.up[1] * dy, cam.fwd[2] + cam.right[2] * dx + cam.up[2] * dy]);
+}
+// A stage point to the soup plane, in soup units (the soup's radius is 1).
+function soupAt(x, y) {
+  const d = rayAt(x, y), t = (level - cam.pos[1]) / d[1], rs = soupR(level);
+  return [(cam.pos[0] + d[0] * t) / rs, (cam.pos[2] + d[2] * t) / rs];
+}
+// The lens fits the rim and the belly; spare height splits between the steam and the fire.
+function fit(w, h) {
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  const P = (x, y, z) => {
+    const v = sub([x, y, z], cam.pos), zc = dot(v, cam.fwd), px = dot(v, cam.right) / zc, py = dot(v, cam.up) / zc;
+    x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+  };
+  // Tall stages show the whole pot and the fire; wide ones let the lower belly run off the edge.
+  const low = h / w > 1.2 ? -1.25 : w / h > 1.25 ? -0.5 : -0.92;
+  for (let i = 0; i < 48; i++) {
+    const a = i / 48 * TAU, c = Math.cos(a), s = Math.sin(a);
+    P((RR + RT) * c, RY, (RR + RT) * s);
+    P(RR * c, RY + RT, RR * s);
+    for (const y of [-0.2, BCY, low]) { const r = RO[0] * Math.sqrt(1 - ((y - BCY) / RO[1]) ** 2); P(r * c, y, r * s); }
+  }
+  // A wide stage keeps the pot clear of the corners, so its margins can shrink.
+  const wide = w / h > 1.6;
+  const top = wide ? Math.max(16, h * 0.07) : Math.max(52, h * 0.1), bot = wide ? Math.max(12, h * 0.03) : Math.max(54, h * 0.06), pad = 14;
+  const aw = w - 2 * pad, ah = h - top - bot;
+  const f = Math.min(aw / (x1 - x0), ah / (y1 - y0));
+  const extra = ah - f * (y1 - y0);
+  cam.focal = f;
+  cam.ppx = w / 2 - f * (x0 + x1) / 2;
+  cam.ppy = top + extra * 0.5 + f * y1;
+}
+
+/* ---------- targets and sizes ---------- */
+const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => resize() });
+const DN = [384, 512], RN = 256, FN = 64;
+let size = { w: 1, h: 1, dpr: 1, W: 1, H: 1, aw: 1, ah: 1 }, dyeN = 0;
+let hdr = null, layer = null;
+const dye = [null, null], rip = [null, null];
+let di = 0, ri = 0;
+function frameTargets() {
+  for (const t of [hdr, layer]) if (t) { gl.deleteFramebuffer(t.fb); t.tex.forEach(x => gl.deleteTexture(x)); }
+  const make = (w, h, n) => { const tex = Array.from({ length: n }, () => texture(w, h, gl.RGBA16F, gl.RGBA)); return { tex, fb: target(tex), w, h }; };
+  hdr = make(size.W, size.H, 1);
+  layer = make(size.aw, size.ah, 2);
+}
+// The dye map's size follows the detail level; a change keeps the colours.
+function dyeTargets() {
+  const n = DN[D.level > 0 ? 1 : 0];
+  if (n === dyeN) return;
+  const old = dye[di];
+  const made = [0, 1].map(() => { const tex = [texture(n, n, gl.RGBA16F, gl.RGBA), texture(n, n, gl.RGBA16F, gl.RGBA)]; return { tex, fb: target(tex) }; });
+  if (old) {
+    // Copy the old colours across with a plain advection step at rest.
+    runDye(0, old, made[0], n);
+    for (const t of dye) { gl.deleteFramebuffer(t.fb); t.tex.forEach(x => gl.deleteTexture(x)); }
+    dye[0] = made[0]; dye[1] = made[1]; di = 0;
+    dyeN = n;
+  } else {
+    dye[0] = made[0]; dye[1] = made[1]; di = 0;
+    dyeN = n;
+    fillBroth();
+  }
+}
+const ripT = [0, 1].map(() => { const tex = texture(RN, RN, gl.RG16F, gl.RG); return { tex, fb: target([tex]) }; });
+rip[0] = ripT[0]; rip[1] = ripT[1];
+const velTex = texture(FN, FN, gl.RG16F, gl.RG);
+const velData = new Float32Array(FN * FN * 2);
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  // The fire and steam layer runs at half the CSS size; a third on Low.
+  const k = D.level > 0 ? 0.5 : 0.36;
+  const aw = Math.max(1, Math.round(w * k)), ah = Math.max(1, Math.round(h * k));
+  const changed = !hdr || W !== size.W || H !== size.H || aw !== size.aw || ah !== size.ah;
+  size = { w, h, dpr, W, H, aw, ah };
+  fit(w, h);
+  if (changed) frameTargets();
+  dyeTargets();
+}
+
+/* ---------- colour ---------- */
+// OKLCH to OKLab, for the dye.
+const lab = ([L, C, h]) => [L, C * Math.cos(h * Math.PI / 180), C * Math.sin(h * Math.PI / 180)];
+const BROTH = lab([0.56, 0.1, 78]);
+// The mean of the pot: weighted Lab and weight, as the GLSL holds them.
+const mean = [0, 0, 0, 0];
+function resetMean() { mean[0] = BROTH[0]; mean[1] = BROTH[1]; mean[2] = BROTH[2]; mean[3] = 1; }
+resetMean();
+// The pot's thickness: 0 for broth, 1 for stew.
+const thick = () => clamp((mean[3] - 1) * 0.32);
+
+/* ---------- fluid: the soup's flow, 64 x 64 on the CPU ---------- */
+// Stable fluids on a collocated grid over the soup disc; the wall is solid.
+const FE = 1.04, FC = 2 * FE / FN, FA = FN * FN;
+const fu = new Float32Array(FA), fv = new Float32Array(FA), fu0 = new Float32Array(FA), fv0 = new Float32Array(FA);
+const fp = new Float32Array(FA), fdiv = new Float32Array(FA), fcurl = new Float32Array(FA);
+const fluid = new Uint8Array(FA), edge = new Uint8Array(FA);
+const cx = i => -FE + (i + 0.5) * FC;
+for (let j = 0; j < FN; j++) for (let i = 0; i < FN; i++) fluid[j * FN + i] = Math.hypot(cx(i), cx(j)) < 1 ? 1 : 0;
+for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+  const k = j * FN + i;
+  edge[k] = fluid[k] && (!fluid[k - 1] || !fluid[k + 1] || !fluid[k - FN] || !fluid[k + FN]) ? 1 : 0;
+}
+// Bilinear sample of a grid at soup point (x, z).
+function sampleF(a, x, z) {
+  const gx = (x + FE) / FC - 0.5, gz = (z + FE) / FC - 0.5;
+  let i = Math.floor(gx), j = Math.floor(gz);
+  const fx = gx - i, fz = gz - j;
+  if (i < 0 || j < 0 || i >= FN - 1 || j >= FN - 1) return 0;
+  const k = j * FN + i;
+  return (a[k] * (1 - fx) + a[k + 1] * fx) * (1 - fz) + (a[k + FN] * (1 - fx) + a[k + FN + 1] * fx) * fz;
+}
+let omega = 0, energy = 0, calm = true;
+function stepFluid(dt) {
+  const T = thick();
+  // Vorticity confinement keeps thin broth swirly; stew stays smooth.
+  const eps = 0.9 * (1 - 0.8 * T);
+  for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+    const k = j * FN + i;
+    fcurl[k] = fluid[k] ? ((fv[k + 1] - fv[k - 1]) - (fu[k + FN] - fu[k - FN])) / (2 * FC) : 0;
+  }
+  for (let j = 2; j < FN - 2; j++) for (let i = 2; i < FN - 2; i++) {
+    const k = j * FN + i;
+    if (!fluid[k] || edge[k]) continue;
+    const gx = (Math.abs(fcurl[k + 1]) - Math.abs(fcurl[k - 1])) / (2 * FC), gz = (Math.abs(fcurl[k + FN]) - Math.abs(fcurl[k - FN])) / (2 * FC);
+    const l = Math.hypot(gx, gz) + 1e-5, w = fcurl[k];
+    fu[k] += eps * FC * (gz / l) * w * dt;
+    fv[k] -= eps * FC * (gx / l) * w * dt;
+  }
+  // Advect the velocity by itself, midpoint rule.
+  fu0.set(fu); fv0.set(fv);
+  for (let j = 0; j < FN; j++) for (let i = 0; i < FN; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) { fu[k] = fv[k] = 0; continue; }
+    const x = cx(i), z = cx(j);
+    const mx = x - 0.5 * dt * fu0[k], mz = z - 0.5 * dt * fv0[k];
+    const sx = x - dt * sampleF(fu0, mx, mz), sz = z - dt * sampleF(fv0, mx, mz);
+    fu[k] = sampleF(fu0, sx, sz);
+    fv[k] = sampleF(fv0, sx, sz);
+  }
+  // Thick soup slows faster; the iron drags at the edge.
+  const damp = Math.exp(-dt * (0.07 + 0.55 * T)), dampEdge = Math.exp(-dt * (0.6 + 1.2 * T));
+  for (let k = 0; k < FA; k++) { const d = edge[k] ? dampEdge : damp; fu[k] *= d; fv[k] *= d; }
+  projectFlow(18);
+  // The pot's spin: angular momentum over inertia.
+  let L = 0, I = 0, E = 0, n = 0;
+  for (let j = 0; j < FN; j++) for (let i = 0; i < FN; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) continue;
+    const x = cx(i), z = cx(j);
+    L += z * fu[k] - x * fv[k];
+    I += x * x + z * z;
+    E += fu[k] * fu[k] + fv[k] * fv[k];
+    n++;
+  }
+  omega = L / I;
+  energy = E / n;
+}
+// Removes the divergence: Gauss-Seidel with over-relaxation; the wall reflects.
+function projectFlow(iters) {
+  const h = FC;
+  for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) continue;
+    fdiv[k] = -0.5 * h * ((fluid[k + 1] ? fu[k + 1] : 0) - (fluid[k - 1] ? fu[k - 1] : 0) + (fluid[k + FN] ? fv[k + FN] : 0) - (fluid[k - FN] ? fv[k - FN] : 0));
+  }
+  for (let it = 0; it < iters; it++) {
+    for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+      const k = j * FN + i;
+      if (!fluid[k]) continue;
+      let s = 0, c = 0;
+      if (fluid[k - 1]) { s += fp[k - 1]; c++; }
+      if (fluid[k + 1]) { s += fp[k + 1]; c++; }
+      if (fluid[k - FN]) { s += fp[k - FN]; c++; }
+      if (fluid[k + FN]) { s += fp[k + FN]; c++; }
+      if (c) fp[k] += 1.7 * ((fdiv[k] + s) / c - fp[k]);
+    }
+  }
+  for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) continue;
+    const p0 = fp[k];
+    fu[k] -= 0.5 * ((fluid[k + 1] ? fp[k + 1] : p0) - (fluid[k - 1] ? fp[k - 1] : p0)) / h;
+    fv[k] -= 0.5 * ((fluid[k + FN] ? fp[k + FN] : p0) - (fluid[k - FN] ? fp[k - FN] : p0)) / h;
+  }
+}
+// The spoon drags nearby soup toward its own speed; thick soup resists more.
+function stirForce(ax, az, bx, bz, vx, vz, dt) {
+  const R = 0.15, K = 9 / (1 + 1.2 * thick());
+  const i0 = Math.max(1, Math.floor((Math.min(ax, bx) - 2 * R + FE) / FC)), i1 = Math.min(FN - 2, Math.ceil((Math.max(ax, bx) + 2 * R + FE) / FC));
+  const j0 = Math.max(1, Math.floor((Math.min(az, bz) - 2 * R + FE) / FC)), j1 = Math.min(FN - 2, Math.ceil((Math.max(az, bz) + 2 * R + FE) / FC));
+  const abx = bx - ax, abz = bz - az, ab2 = Math.max(abx * abx + abz * abz, 1e-8);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) continue;
+    const x = cx(i), z = cx(j);
+    const t = clamp(((x - ax) * abx + (z - az) * abz) / ab2);
+    const dx = x - ax - abx * t, dz = z - az - abz * t;
+    const a = 1 - Math.exp(-dt * K * Math.exp(-(dx * dx + dz * dz) / (R * R)));
+    fu[k] += (vx - fu[k]) * a;
+    fv[k] += (vz - fv[k]) * a;
+  }
+}
+// Spin about the vertical axis at a soup point: half the curl, with omega's sign.
+function spinAt(x, z) {
+  const e = FC;
+  return 0.5 * ((sampleF(fu, x, z + e) - sampleF(fu, x, z - e)) - (sampleF(fv, x + e, z) - sampleF(fv, x - e, z))) / (2 * e);
+}
+function clearFlow() { fu.fill(0); fv.fill(0); fp.fill(0); omega = energy = 0; }
+
+/* ---------- the surface ---------- */
+// The soup level, its dip under the stir and its funnel, in world units.
+let level = 0, dip = 0, funnel = 0;
+const G = 22;
+function surfY(x, z) {
+  const r = Math.min(1, Math.hypot(x, z));
+  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19);
+}
+
+/* ---------- things ---------- */
+// bound: its sphere at scale 1; float: its centre above the soup; lag: how slowly it follows the flow (s);
+// L and W: its half-length and half-width on the soup, for the wall;
+// cook: seconds to cook at full heat; tint and mass: the colour it gives and how much; into: what it breaks into.
+const KINDS = {
+  carrot: { k: 0, bound: 0.42, float: 0.012, lag: 0.45, cook: 18, tint: [0.62, 0.16, 52], mass: 0.7, into: 'coin', n: 5, sq: 0.3, L: 0.5, W: 0.12 },
+  onion: { k: 1, bound: 0.27, float: 0.03, lag: 0.4, cook: 15, tint: [0.76, 0.085, 90], mass: 0.45, into: 'ring', n: 3, sq: 0.3, L: 0.24, W: 0.15 },
+  fish: { k: 2, bound: 0.46, float: 0.022, lag: 0.55, cook: 20, tint: [0.78, 0.025, 220], mass: 0.4, into: 'bones', n: 1, sq: 0.6, L: 0.44, W: 0.13 },
+  beet: { k: 3, bound: 0.5, float: 0.025, lag: 0.5, cook: 17, tint: [0.42, 0.19, 358], mass: 1.5, into: 'cube', n: 5, sq: 0.4, L: 0.46, W: 0.16 },
+  duck: { k: 4, bound: 0.27, float: 0.05, lag: 0.3, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.25, L: 0.23, W: 0.13 },
+  pea: { k: 5, bound: 0.045, float: 0.012, lag: 0.22, cook: 28, tint: [0.64, 0.15, 138], mass: 0.08, into: 'melt', n: 0, sq: 0.06, L: 0.04, W: 0.04 },
+  boot: { k: 6, bound: 0.34, float: 0.025, lag: 0.9, cook: 45, tint: [0.34, 0.05, 60], mass: 0.5, into: null, n: 0, sq: 0.7, L: 0.28, W: 0.22 },
+  star: { k: 7, bound: 0.23, float: 0.02, lag: 0.3, cook: 12, tint: [0.82, 0.13, 92], mass: 0.3, into: 'star', n: 5, sq: 0.2, L: 0.2, W: 0.2 },
+  tomato: { k: 8, bound: 0.19, float: 0.03, lag: 0.35, cook: 11, tint: [0.56, 0.19, 32], mass: 0.9, into: 'chunk', n: 4, sq: 0.35, L: 0.14, W: 0.14 },
+  mushroom: { k: 9, bound: 0.22, float: 0.004, lag: 0.35, cook: 13, tint: [0.47, 0.045, 62], mass: 0.5, into: 'slice', n: 4, sq: 0.25, L: 0.17, W: 0.17 },
+  coin: { k: 10, bound: 0.09, float: 0.008, lag: 0.25, cook: 26, tint: [0.62, 0.16, 52], mass: 0.06, into: 'melt', n: 0, sq: 0.05, L: 0.08, W: 0.08 },
+  ring: { k: 11, bound: 0.12, float: 0.006, lag: 0.25, cook: 30, tint: [0.76, 0.085, 90], mass: 0.06, into: 'melt', n: 0, sq: 0.05, L: 0.12, W: 0.12 },
+  bones: { k: 12, bound: 0.42, float: 0.012, lag: 0.5, cook: 60, tint: [0.8, 0.02, 85], mass: 0.1, into: 'melt', n: 0, sq: 0.2, L: 0.4, W: 0.11 },
+  cube: { k: 13, bound: 0.065, float: 0.012, lag: 0.25, cook: 24, tint: [0.42, 0.19, 358], mass: 0.12, into: 'melt', n: 0, sq: 0.06, L: 0.06, W: 0.06 },
+  chunk: { k: 14, bound: 0.08, float: 0.02, lag: 0.25, cook: 13, tint: [0.56, 0.19, 32], mass: 0.12, into: 'melt', n: 0, sq: 0.06, L: 0.075, W: 0.075 },
+  slice: { k: 15, bound: 0.15, float: 0.008, lag: 0.3, cook: 22, tint: [0.47, 0.045, 62], mass: 0.06, into: 'melt', n: 0, sq: 0.06, L: 0.12, W: 0.12 },
+};
+// The throw order; the pot starts with a carrot and an onion.
+const ORDER = ['fish', 'beet', 'duck', 'pea', 'boot', 'star', 'tomato', 'mushroom', 'carrot', 'onion'];
+let next = 0;
+const bodies = [];
+// Quaternions: x, y, z, w.
+const qmul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+const qaxis = (x, y, z, a) => { const s = Math.sin(a / 2); return [x * s, y * s, z * s, Math.cos(a / 2)]; };
+// A body in soup units (x, z) and world height y.
+function makeBody(kind, x, z, o = {}) {
+  const K = KINDS[kind];
+  return {
+    kind, K, x, z, y: surfY(x * soupR(level), z * soupR(level)), vx: 0, vz: 0, vy: 0, bob: 0,
+    yaw: rand(0, TAU), yawV: 0, pitch: 0, pitchV: 0, roll: 0, rollV: 0,
+    scale: o.scale ?? 1, cook: o.cook ?? 0, seed: rand(0, 50), pend: 0, gone: 0, sink: 0,
+    rad: K.W * (o.scale ?? 1), fly: null, age: 0,
+  };
+}
+// One throw: from above the near rim, in an arc, into the soup at (x, z).
+function throwIn(kind, x, z, delay = 0) {
+  const b = makeBody(kind, x, z);
+  const rs = soupR(level);
+  const end = [x * rs, surfY(x * rs, z * rs) + KINDS[kind].float, z * rs];
+  const start = [x * rs * 0.4 + rand(-0.4, 0.4), 2.4, 1.9 + rand(-0.2, 0.2)];
+  const ax = norm([rand(-1, 1), rand(-1, 1), rand(-1, 1)]);
+  b.fly = { t: -delay / 0.72, dur: 0.72, start, end, ax, spin: rand(5, 9) * (Math.random() < 0.5 ? -1 : 1) };
+  b.y = start[1];
+  bodies.push(b);
+  trim();
+  wake();
+  return b;
+}
+// The pot holds 24 things; the oldest piece melts away to make room.
+function trim() {
+  let live = bodies.filter(b => !b.gone);
+  while (live.length > NB) {
+    const old = live.find(b => b.K.into === 'melt') || live.find(b => !b.fly) || live[0];
+    old.gone = 1e-3;
+    live = bodies.filter(b => !b.gone);
+  }
+}
+// What lands where the thrown thing lands: a crater, droplets, a puff and a plop.
+function splash(b) {
+  const rs = soupR(level), K = b.K;
+  const wx = b.x * rs, wz = b.z * rs;
+  const big = clamp(K.sq + 0.1);
+  imps.push([b.x, b.z, 0.07 + 0.12 * big, -(0.025 + 0.06 * big)]);
+  b.vy = -(1.1 + 1.6 * big);
+  const n = Math.round(5 + 12 * big);
+  for (let i = 0; i < n && !reduced(); i++) {
+    const a = rand(0, TAU), sp = rand(0.4, 1.2) * (1 + big);
+    addDrop(wx + Math.cos(a) * 0.08, surfY(wx, wz) + 0.02, wz + Math.sin(a) * 0.08, Math.cos(a) * sp * 0.5, rand(1.6, 3.2) * (0.7 + big), Math.sin(a) * sp * 0.5, rand(0.012, 0.026) * (0.8 + big));
+  }
+  addPuff(b.x, b.z, 0.25 + 0.35 * big);
+  // A first wash of colour leaves the thing as it hits.
+  if (K.tint) emit(b.x, b.z, 0.14, K.mass * 0.12, K.tint, 0);
+  splashAt = time;
+  plopSound(b);
+}
+
+/* ---------- emitters: what tints the soup ---------- */
+// Tint arrives in lumps, so half floats hold it.
+// type 0 tint, 1 fat, 2 glitter.
+const emits = [];
+function emit(x, z, r, mass, tint, type) {
+  // A lump of mass m over radius r raises the pot's mean by m.
+  const amt = mass / (r * r);
+  if (type === 0) {
+    const c = lab(tint);
+    mean[0] += c[0] * mass; mean[1] += c[1] * mass; mean[2] += c[2] * mass; mean[3] += mass;
+    emits.push([x, z, r, amt, c[0], c[1], c[2], 0]);
+  } else emits.push([x, z, r, mass, 0, 0, 0, type]);
+}
+
+/* ---------- bubbles, droplets, puffs, sparks, ripples ---------- */
+const bubbles = [], drops = [], puffs = [], sparks = [], imps = [];
+function addDrop(x, y, z, vx, vy, vz, r) {
+  if (drops.length >= ND) drops.shift();
+  drops.push({ x, y, z, vx, vy, vz, r });
+}
+function addPuff(x, z, s) {
+  if (reduced()) return;
+  if (puffs.length >= NP) puffs.shift();
+  puffs.push({ x: x * soupR(level), z: z * soupR(level), age: 0, life: rand(2.6, 3.6), s: s * 0.5 });
+}
+// Hot spots under the pot: the boil rises at four slowly wandering plumes.
+const plumes = [0, 1, 2, 3].map(i => ({ a: i * 1.7 + 0.4, b: i * 2.3 + 1.1, sa: 0.05 + 0.02 * i, sb: 0.037 + 0.015 * i, x: 0, z: 0 }));
+function stepPlumes(t) {
+  for (const p of plumes) {
+    p.x = 0.5 * Math.cos(p.a + t * p.sa) * Math.cos(t * p.sb * 0.7);
+    p.z = 0.5 * Math.sin(p.b + t * p.sb);
+  }
+}
+let bubAcc = 0;
+function stepBubbles(dt) {
+  const T = thick(), heat = fire;
+  // Gentle simmer to rolling boil; thick soup bubbles less, but bigger.
+  const rate = heat < 0.04 ? 0 : (0.5 + 7 * heat * heat) * (1 - 0.45 * T) * (draining ? 0 : 1);
+  bubAcc += rate * dt;
+  while (bubAcc >= 1 && !reduced()) {
+    bubAcc -= 1;
+    if (bubbles.length >= NBUB) break;
+    const pl = plumes[Math.floor(Math.random() * plumes.length)];
+    let x = pl.x + rand(-0.22, 0.22), z = pl.z + rand(-0.22, 0.22);
+    if (Math.random() < 0.35) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.85; x = Math.cos(a) * r; z = Math.sin(a) * r; }
+    if (Math.hypot(x, z) > 0.88) continue;
+    const rMax = rand(0.025, 0.06) * (1 + 0.7 * T) * (0.8 + 0.3 * heat);
+    bubbles.push({ x, z, r: 0, h: 0, rMax, age: 0, life: rand(0.5, 1.1) * (1 + 1.6 * T) });
+  }
+  if (reduced()) bubAcc = 0;
+  for (let i = bubbles.length - 1; i >= 0; i--) {
+    const b = bubbles[i];
+    b.age += dt;
+    const s = b.age / b.life;
+    b.r = b.rMax * Math.sqrt(Math.min(1, s / 0.7));
+    b.h = b.r * (0.14 + 0.36 * smooth(0, 1, s));
+    b.x += sampleF(fu, b.x, b.z) * dt;
+    b.z += sampleF(fv, b.x, b.z) * dt;
+    if (s >= 1 || Math.hypot(b.x, b.z) > 0.95) { bubbles.splice(i, 1); pop(b); }
+  }
+}
+// A burst: a ring on the surface, a puff of steam, spatter if big, and a blop.
+function pop(b) {
+  imps.push([b.x, b.z, b.rMax * 0.7, -b.rMax * 0.12]);
+  if (Math.random() < 0.5) addPuff(b.x, b.z, 0.25 + b.rMax * 6);
+  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs;
+  if (b.rMax > 0.06 && !reduced()) for (let i = 0; i < 3; i++) {
+    const a = rand(0, TAU);
+    addDrop(wx, surfY(wx, wz) + 0.03, wz, Math.cos(a) * 0.4, rand(1.2, 2), Math.sin(a) * 0.4, rand(0.008, 0.014));
+  }
+  // Nearby things rock.
+  for (const t of bodies) {
+    if (t.fly) continue;
+    const d = Math.hypot(t.x - b.x, t.z - b.z);
+    if (d < 0.3) { const k = (0.3 - d) * b.rMax * 40; t.vy += k * 0.8; t.pitchV += rand(-1, 1) * k * 6; t.rollV += rand(-1, 1) * k * 6; }
+  }
+  // Fat rises with the boil.
+  if (Math.random() < 0.35) emit(b.x + rand(-0.05, 0.05), b.z + rand(-0.05, 0.05), rand(0.025, 0.05), rand(0.4, 0.75), null, 1);
+  popSound(b);
+}
+function stepDrops(dt) {
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.vy -= 9 * dt;
+    d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+    const rs = soupR(level);
+    if (d.vy < 0 && d.y < surfY(d.x, d.z)) {
+      drops.splice(i, 1);
+      // Back into the pot: a tiny ring; outside the rim it just goes.
+      if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (Math.random() < 0.35) dripSound(d); }
+    } else if (d.y < -2) drops.splice(i, 1);
+  }
+}
+function stepPuffs(dt) {
+  for (let i = puffs.length - 1; i >= 0; i--) { puffs[i].age += dt / puffs[i].life; if (puffs[i].age >= 1) puffs.splice(i, 1); }
+}
+let sparkAcc = 0;
+function stepSparks(dt) {
+  sparkAcc += (fire < 0.08 ? 0 : 1.5 + 9 * fire * fire) * dt;
+  while (sparkAcc >= 1 && !reduced()) {
+    sparkAcc -= 1;
+    if (sparks.length >= NS) break;
+    const a = rand(0, TAU), r = rand(1.2, 1.5);
+    sparks.push({ x: Math.cos(a) * r, y: -1.8 + rand(0, 0.3), z: Math.sin(a) * r * 0.8 + 0.25, vx: rand(-0.2, 0.2), vy: rand(0.7, 1.6), vz: rand(-0.1, 0.2), age: 0, life: rand(0.9, 2.2), b: rand(1.5, 4) });
+  }
+  if (reduced()) sparkAcc = 0;
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.age += dt;
+    s.vx += rand(-1.5, 1.5) * dt; s.vy += 0.2 * dt;
+    s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
+    if (s.age > s.life) sparks.splice(i, 1);
+  }
+}
+
+/* ---------- things: motion, cooking, breaking ---------- */
+function stepBodies(dt) {
+  const rs = soupR(level), heat = 0.25 + 0.95 * fire;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    const b = bodies[i], K = b.K;
+    b.age += dt;
+    // In flight: an arc that tumbles, then lands flat on the soup.
+    if (b.fly) {
+      const f = b.fly;
+      f.t += dt / f.dur;
+      if (f.t < 0) continue;
+      const t = Math.min(1, f.t);
+      const end = [b.x * rs, surfY(b.x * rs, b.z * rs) + K.float, b.z * rs];
+      b.wx = lerp(f.start[0], end[0], t);
+      b.wz = lerp(f.start[2], end[2], t);
+      b.y = lerp(f.start[1], end[1], t) + 1.1 * t * (1 - t);
+      b.tumble = qaxis(...f.ax, f.spin * (1 - t) * (1 - t));
+      if (t >= 1) { b.fly = null; b.tumble = null; splash(b); }
+      continue;
+    }
+    // Ride the flow; heavy things lag behind it.
+    const ux = sampleF(fu, b.x, b.z), uz = sampleF(fv, b.x, b.z);
+    const k = 1 - Math.exp(-dt / K.lag);
+    b.vx += (ux - b.vx) * k;
+    b.vz += (uz - b.vz) * k;
+    // The boil pushes things off the plumes.
+    for (const p of plumes) {
+      const dx = b.x - p.x, dz = b.z - p.z, d2 = dx * dx + dz * dz;
+      const push = 0.06 * fire * Math.exp(-d2 / 0.05);
+      b.vx += dx * push * dt * 10; b.vz += dz * push * dt * 10;
+    }
+    // Floating things are lighter than soup, so a spinning pot draws them in.
+    const rr = Math.hypot(b.x, b.z);
+    if (rr > 0.05) { const pull = 0.035 * omega * omega * rr; b.vx -= b.x / rr * pull * dt * 6; b.vz -= b.z / rr * pull * dt * 6; }
+    // A drain pulls everything to the middle.
+    if (draining) { const r = Math.hypot(b.x, b.z) + 1e-3; b.vx -= b.x / r * 0.9 * dt; b.vz -= b.z / r * 0.9 * dt; }
+    b.x += b.vx * dt;
+    b.z += b.vz * dt;
+    // The wall keeps things in; a long thing turns to lie along it.
+    const r = Math.hypot(b.x, b.z) + 1e-5, nx = b.x / r, nz = b.z / r;
+    const axx = Math.cos(b.yaw), axz = -Math.sin(b.yaw), cosA = axx * nx + axz * nz;
+    // The near rim hides the soup's front edge, so things keep a little off it there.
+    const ext = (K.W + (K.L - K.W) * Math.abs(cosA)) * b.scale / rs, lim = 0.97 - ext - 0.07 * Math.max(0, nz);
+    if (r > lim) {
+      b.x = nx * Math.max(lim, 0); b.z = nz * Math.max(lim, 0);
+      const vn = b.vx * nx + b.vz * nz;
+      if (vn > 0) { b.vx -= 1.4 * vn * nx; b.vz -= 1.4 * vn * nz; }
+      b.yawV += Math.sin(2 * Math.atan2(axx * nz - axz * nx, cosA)) * 8 * dt;
+    }
+    // Spin with the swirl.
+    const w = spinAt(b.x, b.z);
+    b.yawV += (w - b.yawV) * (1 - Math.exp(-dt / (K.lag * 1.3)));
+    b.yaw += b.yawV * dt;
+    // Bob: a spring to the surface; tilt: springs that rock back.
+    b.vy += (-b.bob * 46 - b.vy * 5.5) * dt;
+    b.bob += b.vy * dt;
+    b.pitchV += (-b.pitch * 30 - b.pitchV * 4) * dt;
+    b.rollV += (-b.roll * 30 - b.rollV * 4) * dt;
+    b.pitch += b.pitchV * dt;
+    b.roll += b.rollV * dt;
+    // A thing about to break shivers.
+    const shiver = K.into && K.into !== 'melt' && b.cook > 0.86 && b.cook < 1 && !reduced() ? (b.cook - 0.86) * 0.5 : 0;
+    if (shiver) { b.roll += rand(-1, 1) * shiver; b.pitch += rand(-1, 1) * shiver; }
+    b.wx = b.x * rs; b.wz = b.z * rs;
+    b.y = surfY(b.wx, b.wz) + K.float * b.scale + b.bob - b.sink;
+    // Cook, and give up colour as it goes.
+    if (K.cook > 0 && !b.gone) {
+      b.cook = Math.min(K.into ? 1.2 : 1, b.cook + dt * heat / K.cook);
+      if (K.tint) {
+        b.pend += K.mass * 1.2 * smooth(0.1, 0.6, b.cook) * heat / K.cook * dt;
+        if (b.pend > 0.012) { emit(b.x, b.z, 0.1 + 0.25 * b.rad, b.pend, K.tint, 0); b.pend = 0; }
+      }
+      if (K.k === 7 && Math.random() < dt * 3) emit(b.x + rand(-0.06, 0.06), b.z + rand(-0.06, 0.06), 0.06, 0.25, null, 2);
+      if (b.cook >= 1 && K.into) {
+        if (K.into === 'melt') b.gone = 1e-3;
+        else { breakUp(b); bodies.splice(i, 1); continue; }
+      }
+    }
+    // Melting: shrink and sink, and let the last colour go.
+    if (b.gone) {
+      b.gone += dt / 2.2;
+      b.sink += dt * 0.05;
+      if (K.tint && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
+      if (b.gone >= 1) { bodies.splice(i, 1); continue; }
+    }
+  }
+  // Things nudge each other apart.
+  for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    const a = bodies[i], b = bodies[j];
+    if (a.fly || b.fly) continue;
+    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) + 1e-4, min = (a.rad + b.rad) / rs * 0.85;
+    if (d < min) {
+      const push = (min - d) * 0.5, nx = dx / d, nz = dz / d;
+      a.x -= nx * push; a.z -= nz * push; b.x += nx * push; b.z += nz * push;
+      a.vx -= nx * push * 2; a.vz -= nz * push * 2; b.vx += nx * push * 2; b.vz += nz * push * 2;
+    }
+  }
+}
+// A cooked thing falls apart into its pieces, with a burst of colour.
+function breakUp(b) {
+  const K = b.K, rs = soupR(level);
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  if (K.tint) emit(b.x, b.z, 0.18, K.mass * 0.3, K.tint, 0);
+  if (K.k === 7) for (let i = 0; i < 6; i++) emit(b.x + rand(-0.12, 0.12), b.z + rand(-0.12, 0.12), 0.09, 1.2, null, 2);
+  imps.push([b.x, b.z, 0.12, -0.012]);
+  for (let i = 0; i < K.n; i++) {
+    // Pieces spread along the thing's length.
+    const u = K.n > 1 ? i / (K.n - 1) - 0.5 : 0;
+    const len = K.bound * 0.9;
+    const px = b.x + (c * u * len) / rs + rand(-0.03, 0.03), pz = b.z - (s * u * len) / rs + rand(-0.03, 0.03);
+    const kind = K.into === 'star' ? 'star' : K.into;
+    const scale = K.into === 'star' ? 0.36 : K.into === 'ring' ? [1.25, 0.95, 0.68][i] : 1;
+    const p = makeBody(kind, px, pz, { scale, cook: K.into === 'star' ? 0.55 : 0 });
+    if (K.into === 'star') p.K = { ...KINDS.star, into: 'melt', cook: 9, mass: 0.04 };
+    p.rad = p.K.W * scale;
+    p.vx = b.vx + rand(-0.15, 0.15); p.vz = b.vz + rand(-0.15, 0.15);
+    p.yaw = b.yaw + (K.into === 'bones' ? 0 : rand(-0.6, 0.6));
+    p.vy = rand(0.2, 0.6);
+    bodies.push(p);
+  }
+  trim();
+  breakSound(b);
+}
+
+/* ---------- spoon and pointer ---------- */
+// The spoon follows the hand through heavy soup, with a lag that grows with thickness.
+const spoon = { on: false, x: 0, z: 0, tx: 0, tz: 0, lift: 1, vx: 0, vz: 0, scrape: 0 };
+let ptr = null;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// A soup point clamped inside the wall.
+function inside(p, lim = 0.9) { const r = Math.hypot(p[0], p[1]); return r > lim ? [p[0] / r * lim, p[1] / r * lim] : p; }
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  ptr = { id: e.pointerId, x0: x, y0: y, mode: 'press' };
+  wake();
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const [x, y] = local(e);
+  if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 7) {
+    ptr.mode = 'stir';
+    const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0));
+    spoonDown(sx, sz);
+    stage.classList.add('is-stirring');
+  }
+  if (ptr.mode === 'stir') { const [sx, sz] = inside(soupAt(x, y)); spoon.tx = sx; spoon.tz = sz; wake(); }
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup';
+  if (tap) { const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.82); throwNext(sx, sz); }
+  if (ptr.mode === 'stir') spoonUp();
+  ptr = null;
+  stage.classList.remove('is-stirring');
+  wake();
+}
+function spoonDown(x, z) {
+  if (draining) return;
+  if (spoon.lift >= 1) { spoon.x = x; spoon.z = z; }
+  spoon.tx = x; spoon.tz = z;
+  spoon.on = true;
+  imps.push([x, z, 0.08, -0.012]);
+}
+function spoonUp() {
+  if (!spoon.on) return;
+  spoon.on = false;
+  // A lifted spoon drips.
+  const rs = soupR(level);
+  for (let i = 0; i < 3 && !reduced(); i++) addDrop(spoon.x * rs + rand(-0.04, 0.04), surfY(spoon.x * rs, spoon.z * rs) + 0.12 + i * 0.05, spoon.z * rs, 0, rand(-0.3, 0), 0, rand(0.01, 0.016));
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// Arrow keys stir: the spoon runs round the pot while one is held.
+const keyStir = { dir: 0, a: 0 };
+const typing = e => e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet');
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+  const d = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
+  if (!d) return;
+  e.preventDefault();
+  if (keyStir.dir === d) return;
+  if (!keyStir.dir) { keyStir.a = Math.atan2(spoon.on ? spoon.z : 0.55, spoon.on ? spoon.x : 0); spoonDown(0.55 * Math.cos(keyStir.a), 0.55 * Math.sin(keyStir.a)); }
+  keyStir.dir = d;
+  wake();
+});
+addEventListener('keyup', e => {
+  const d = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
+  if (d && keyStir.dir === d) { keyStir.dir = 0; if (!ptr) spoonUp(); wake(); }
+});
+addEventListener('blur', () => { if (keyStir.dir) { keyStir.dir = 0; spoonUp(); } });
+function stepSpoon(dt) {
+  if (keyStir.dir) {
+    // About one turn in 1.6 s.
+    keyStir.a += keyStir.dir * dt * TAU / 1.6;
+    spoon.tx = 0.55 * Math.cos(keyStir.a); spoon.tz = 0.55 * Math.sin(keyStir.a);
+  }
+  spoon.lift = clamp(spoon.lift + (spoon.on ? -dt / 0.18 : dt / 0.35));
+  if (!spoon.on && spoon.lift >= 1) { spoon.vx = spoon.vz = 0; return; }
+  const k = 1 - Math.exp(-dt / (0.05 + 0.1 * thick()));
+  const ox = spoon.x, oz = spoon.z;
+  spoon.x += (spoon.tx - spoon.x) * k;
+  spoon.z += (spoon.tz - spoon.z) * k;
+  const vx = (spoon.x - ox) / Math.max(dt, 1e-3), vz = (spoon.z - oz) / Math.max(dt, 1e-3);
+  spoon.vx = clamp(vx, -4, 4); spoon.vz = clamp(vz, -4, 4);
+  if (spoon.on) {
+    stirForce(ox, oz, spoon.x, spoon.z, spoon.vx, spoon.vz, dt);
+    const sp = Math.hypot(spoon.vx, spoon.vz);
+    // A wake: the bowl pushes a low bow wave.
+    if (sp > 0.05) imps.push([spoon.x, spoon.z, 0.07, -0.0035 * Math.min(sp, 3)]);
+    stirSound(sp, Math.hypot(spoon.x, spoon.z));
+    // Things in the spoon's way get shoved.
+    for (const b of bodies) {
+      if (b.fly) continue;
+      const d = Math.hypot(b.x - spoon.x, b.z - spoon.z);
+      if (d < 0.12 + b.rad) { const a = 1 - d / (0.12 + b.rad); b.vx += (spoon.vx - b.vx) * a * 0.4; b.vz += (spoon.vz - b.vz) * a * 0.4; }
+    }
+  }
+}
+// The spoon in the world: the bowl in the soup, the handle leaning out of the pot.
+function spoonWorld() {
+  const rs = soupR(level);
+  const x = spoon.x * rs, z = spoon.z * rs;
+  const lift = smooth(0, 1, spoon.lift);
+  const by = surfY(x, z) - 0.05 + lift * 0.9;
+  // The handle leans out and away, so it reads as a long stick.
+  const lean = norm([spoon.x * 0.7 + 0.22, 1, -0.32 - spoon.z * 0.25]);
+  return { a: [x, by, z], b: [x + lean[0] * 3, by + lean[1] * 3, z + lean[2] * 3], show: spoon.lift < 0.999 };
+}
+
+/* ---------- throwing ---------- */
+function throwNext(x, z) {
+  if (draining) return;
+  const kind = ORDER[next];
+  next = (next + 1) % ORDER.length;
+  if (kind === 'pea') {
+    // A handful: seven peas land in a small scatter.
+    for (let i = 0; i < 7; i++) throwIn('pea', x + rand(-0.12, 0.12), z + rand(-0.12, 0.12), i * 0.035);
+  } else throwIn(kind, x, z);
+  throwSound();
+}
+// A spot clear of other things.
+function freeSpot() {
+  let best = [0, 0], bestD = -1;
+  for (let i = 0; i < 8; i++) {
+    const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.7, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    let d = 9;
+    for (const b of bodies) d = Math.min(d, Math.hypot(b.x - x, b.z - z));
+    if (d > bestD) { bestD = d; best = [x, z]; }
+  }
+  return best;
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.6, sleepMs: 2500 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// The pan of a soup point.
+const panOf = x => clamp(x * 0.7, -1, 1);
+function burst(ac, at, { f, q = 1.2, dur, level: lv, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.1);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(lv * jit(0.2), at + 0.004);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * Math.max(0.01, kit.noise.duration - dur - 0.05), dur + 0.03);
+}
+// An air pocket rings and rises in pitch as it closes: the blop of soup.
+function blop(ac, at, { f, rise = 1.8, dur, level: lv, pan = 0, type = 'sine' }) {
+  const o = ac.createOscillator();
+  o.type = type;
+  const f0 = f * jit(0.1);
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f0 * rise, at + dur * 0.8);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(lv * jit(0.2), at + 0.006);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.03);
+}
+// The bed: a low bubbling simmer and the fire's rumble, always on while it plays.
+let bed = null;
+function bedVoice(ac) {
+  const mk = (type, f, q) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const simmer = ac.createGain(), rumble = ac.createGain(), slosh = ac.createGain(), scrape = ac.createGain();
+  simmer.gain.value = rumble.gain.value = slosh.gain.value = scrape.gain.value = 0;
+  src.connect(mk('lowpass', 520, 0.7)).connect(mk('peaking', 240, 1.2)).connect(simmer).connect(kit.out);
+  src.connect(mk('lowpass', 150, 0.8)).connect(rumble).connect(kit.out);
+  const sl = mk('lowpass', 500, 0.9);
+  src.connect(sl).connect(slosh).connect(kit.out);
+  const sc = mk('bandpass', 1300, 2.2);
+  const pn = ac.createStereoPanner();
+  src.connect(sc).connect(scrape).connect(pn).connect(kit.out);
+  src.start();
+  return { simmer, rumble, slosh, sl, scrape, sc, pn };
+}
+let bedT = 0;
+function bedSound(dt) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  bed ||= bedVoice(ac);
+  bedT -= dt;
+  const now = ac.currentTime;
+  // The simmer swells and falls at random; the fire grumbles under it.
+  if (bedT <= 0) {
+    bedT = rand(0.12, 0.35);
+    const on = ui.setting('simmer')?.value ?? true;
+    const lvl = !on ? 0 : reduced() ? 0.03 : (0.02 + 0.16 * fire) * rand(0.5, 1.2);
+    bed.simmer.gain.setTargetAtTime(lvl, now, 0.08);
+    bed.rumble.gain.setTargetAtTime(on ? 0.05 + 0.3 * fire * rand(0.7, 1.1) : 0, now, 0.2);
+  }
+  // A turning pot sloshes.
+  const sw = clamp(Math.abs(omega) / 3);
+  bed.slosh.gain.setTargetAtTime(0.25 * sw * sw, now, 0.15);
+  bed.sl.frequency.setTargetAtTime(300 + 600 * sw, now, 0.2);
+  // Fire crackle.
+  if (!reduced() && Math.random() < dt * (0.5 + 9 * fire * fire)) {
+    const at = now + Math.random() * 0.05;
+    burst(ac, at, { f: rand(1800, 5000), q: 2.5, dur: rand(0.004, 0.014), level: rand(0.1, 0.35) * (0.3 + fire), pan: rand(-0.6, 0.6) });
+    if (Math.random() < 0.3) burst(ac, at + 0.02, { f: rand(2500, 6000), q: 3, dur: 0.006, level: 0.12 * fire, pan: rand(-0.6, 0.6) });
+  }
+}
+// The stir: wood rasping on iron near the wall, louder with speed.
+let scrapeAt = 0;
+function stirSound(sp, r) {
+  const ac = kit.live();
+  if (!ac || !bed) return;
+  const now = ac.currentTime;
+  const wall = smooth(0.62, 0.9, r);
+  const lvl = clamp(sp / 2.5) * (0.06 + 0.5 * wall) * jit(0.25);
+  bed.scrape.gain.cancelScheduledValues(now);
+  bed.scrape.gain.setTargetAtTime(lvl, now, 0.02);
+  bed.scrape.gain.setTargetAtTime(0, now + 0.08, 0.06);
+  bed.sc.frequency.setTargetAtTime((900 + 900 * clamp(sp / 3)) * jit(0.08), now, 0.04);
+  bed.pn.pan.setTargetAtTime(panOf(spoon.x), now, 0.05);
+  // A knock as the spoon meets the wall.
+  if (wall > 0.8 && now - scrapeAt > 0.25 && sp > 0.8) {
+    scrapeAt = now;
+    blop(ac, now, { f: 190, rise: 0.8, dur: 0.07, level: 0.12, pan: panOf(spoon.x) });
+    burst(ac, now, { f: 2400, q: 1.5, dur: 0.03, level: 0.08, pan: panOf(spoon.x) });
+  }
+}
+function popSound(b) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const T = thick(), at = ac.currentTime + 0.003;
+  // Bigger bubbles ring lower; stew adds a wet skin snap.
+  const f = 3.2 / Math.max(b.rMax * 0.3, 0.005) * (1 - 0.25 * T);
+  blop(ac, at, { f: clamp(f, 90, 900), rise: 1.6 + 0.5 * Math.random(), dur: 0.06 + 0.1 * T + b.rMax, level: 0.05 + 0.6 * b.rMax + 0.04 * T, pan: panOf(b.x) });
+  if (T > 0.2 || b.rMax > 0.06) burst(ac, at, { f: 500 + 400 * Math.random(), type: 'lowpass', q: 0.7, dur: 0.05, level: 0.06 + 0.08 * T, pan: panOf(b.x) });
+}
+function plopSound(b) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.004, K = b.K, big = clamp(K.sq + 0.1), pan = panOf(b.x);
+  // A big wet bloop, the splash hiss, then the droplets landing.
+  blop(ac, at, { f: lerp(260, 80, big) * jit(0.1), rise: 2.2, dur: 0.12 + 0.2 * big, level: 0.18 + 0.3 * big, pan });
+  burst(ac, at + 0.01, { f: 1400 + 800 * Math.random(), q: 0.8, dur: 0.18 + 0.25 * big, level: 0.07 + 0.12 * big, pan });
+  for (let i = 0; i < 4 + 6 * big; i++) blop(ac, at + 0.12 + Math.random() * 0.4, { f: rand(500, 1300), rise: 1.8, dur: 0.035, level: 0.03, pan: clamp(pan + rand(-0.3, 0.3), -1, 1) });
+  // The duck squeaks; the star chimes.
+  if (K.k === 4) for (let i = 0; i < 2; i++) {
+    const t = at + 0.05 + i * 0.16, o = ac.createOscillator(), g = ac.createGain(), bp = ac.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(900 * jit(0.05), t);
+    o.frequency.linearRampToValueAtTime(1500 * jit(0.05), t + 0.06);
+    o.frequency.linearRampToValueAtTime(1150, t + 0.12);
+    bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 3;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.09, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(1e-4, t + 0.13);
+    o.connect(bp).connect(g).connect(kit.out);
+    o.start(t);
+    o.stop(t + 0.15);
+  }
+  if (K.k === 7) for (let i = 0; i < 6; i++) blop(ac, at + 0.05 + i * 0.07, { f: rand(1800, 3600), rise: 1.02, dur: 0.5, level: 0.035, pan: rand(-0.5, 0.5), type: 'triangle' });
+}
+// A soft whoosh as a thing leaves the hand.
+function throwSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  burst(ac, at, { f: 700, q: 0.6, dur: 0.3, level: 0.05 });
+}
+function breakSound(b) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.004, pan = panOf(b.x);
+  blop(ac, at, { f: 140, rise: 1.5, dur: 0.18, level: 0.16, pan });
+  burst(ac, at, { f: 600, type: 'lowpass', q: 0.7, dur: 0.12, level: 0.12, pan });
+  if (b.K.k === 7) for (let i = 0; i < 8; i++) blop(ac, at + i * 0.05, { f: rand(2200, 4200), rise: 1.01, dur: 0.4, level: 0.03, pan: rand(-0.6, 0.6), type: 'triangle' });
+}
+function dripSound(d) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  blop(ac, ac.currentTime + 0.002, { f: rand(700, 1500), rise: 1.9, dur: 0.035, level: 0.025, pan: panOf(d.x) });
+}
+// A quick roar or sigh as the fire is turned.
+let lastFire = FIRE0, fireAt = 0;
+function fireSound(v) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const now = ac.currentTime;
+  if (now - fireAt < 0.12) return;
+  const d = v - lastFire;
+  lastFire = v;
+  fireAt = now;
+  if (Math.abs(d) < 0.02) return;
+  burst(ac, now, { f: d > 0 ? 500 : 300, type: 'lowpass', q: 0.6, dur: 0.35, level: 0.1 * clamp(Math.abs(d) * 6) });
+}
+function drainSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  // Glugs that fall in pitch as the pot empties, then a last slurp.
+  for (let i = 0; i < 9; i++) blop(ac, at + i * 0.14 + Math.random() * 0.04, { f: 320 - i * 22, rise: 1.4, dur: 0.12, level: 0.16, pan: rand(-0.2, 0.2) });
+  burst(ac, at + 1.25, { f: 900, q: 1.5, dur: 0.35, level: 0.1 });
+}
+function fillSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1;
+  bp.frequency.setValueAtTime(500, at);
+  bp.frequency.exponentialRampToValueAtTime(1400, at + 1.1);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.12, at + 0.15);
+  g.gain.setValueAtTime(0.12, at + 0.8);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 1.15);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(at);
+  src.stop(at + 1.2);
+}
+
+/* ---------- clear and reset ---------- */
+// Clear drains the pot with a whirl, then fresh broth fills it.
+let draining = null;
+const LOW = -0.55;
+function startDrain() {
+  if (draining) return;
+  spoonUp();
+  draining = { t: 0, phase: 'down' };
+  // The drain whirls the soup.
+  for (let j = 0; j < FN; j++) for (let i = 0; i < FN; i++) {
+    const k = j * FN + i;
+    if (!fluid[k]) continue;
+    const x = cx(i), z = cx(j);
+    fu[k] += z * 2.2; fv[k] -= x * 2.2;
+  }
+  drainSound();
+  wake();
+}
+function stepDrain(dt) {
+  if (!draining) return;
+  const d = draining;
+  d.t += dt;
+  if (d.phase === 'down') {
+    const t = clamp(d.t / 1.4);
+    level = LOW * t * t * (3 - 2 * t);
+    for (const b of bodies) if (!b.fly) { b.sink += dt * 0.12 * t; b.gone = Math.max(b.gone, smooth(0.5, 1, t) * 0.99 + 1e-3); }
+    if (t >= 1) {
+      bodies.length = bubbles.length = 0;
+      fillBroth();
+      clearRipples();
+      clearFlow();
+      d.phase = 'up';
+      d.t = 0;
+      fillSound();
+    }
+  } else {
+    const t = clamp(d.t / 1.1);
+    level = LOW * (1 - t * t * (3 - 2 * t));
+    if (Math.random() < dt * 30) imps.push([rand(-0.3, 0.3), rand(-0.3, 0.3), 0.06, -0.006]);
+    if (t >= 1) { level = 0; draining = null; }
+  }
+}
+function fillBroth() {
+  resetMean();
+  for (const t of dye) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.viewport(0, 0, dyeN, dyeN);
+    gl.useProgram(dyeInitP);
+    gl.uniform3f(dyeInitP.u('uLab'), ...BROTH);
+    gl.uniform1f(dyeInitP.u('uExt'), FE);
+    gl.uniform1f(dyeInitP.u('uSeed'), rand(0, 40));
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+function clearRipples() {
+  for (const t of rip) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+}
+// The opening pot: broth with a carrot and an onion, simmering.
+function starter() {
+  bodies.length = bubbles.length = drops.length = puffs.length = 0;
+  const c = makeBody('carrot', -0.3, 0.12, { cook: 0.22 });
+  c.yaw = 0.5;
+  const o = makeBody('onion', 0.32, -0.22, { cook: 0.18 });
+  o.yaw = 2.4;
+  bodies.push(c, o);
+  // A first wash of their colour, as if they had sat a while.
+  emit(-0.3, 0.12, 0.3, 0.12, KINDS.carrot.tint, 0);
+  emit(0.32, -0.22, 0.3, 0.08, KINDS.onion.tint, 0);
+}
+
+/* ---------- render passes ---------- */
+// The dye pass: from the src pair to the dst pair.
+let relaxT = 0;
+function runDye(dt, src, dst, n = dyeN) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+  gl.viewport(0, 0, n, n);
+  gl.useProgram(dyeP);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, src.tex[1]);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, velTex);
+  gl.uniform1i(dyeP.u('uDye'), 0);
+  gl.uniform1i(dyeP.u('uAux'), 1);
+  gl.uniform1i(dyeP.u('uVel'), 2);
+  gl.uniform1f(dyeP.u('uDt'), dt);
+  gl.uniform1f(dyeP.u('uExt'), FE);
+  gl.uniform1f(dyeP.u('uTime'), time);
+  gl.uniform1f(dyeP.u('uConv'), reduced() ? 0 : fire * (draining ? 0 : 1));
+  // A slow stir from below evens the pot out, in steps half floats can hold.
+  let relax = 0;
+  relaxT += dt;
+  if (relaxT > 0.25) { relax = draining ? 0.25 : 0.0075; relaxT = 0; }
+  if (draining && draining.phase === 'down') relax = Math.max(relax, dt * 2.5);
+  gl.uniform1f(dyeP.u('uRelax'), relax);
+  const m = draining ? [BROTH[0], BROTH[1], BROTH[2], 1] : [mean[0], mean[1], mean[2], mean[3]];
+  gl.uniform4f(dyeP.u('uMean'), ...m);
+  const pl = new Float32Array(16);
+  plumes.forEach((p, i) => pl.set([p.x, p.z, 0.22 * fire, 0.32], i * 4));
+  gl.uniform4fv(dyeP.u('uPlume'), pl);
+  const n2 = Math.min(16, emits.length);
+  const e = new Float32Array(32 * 4);
+  for (let i = 0; i < n2; i++) e.set(emits[i], i * 8);
+  emits.splice(0, n2);
+  gl.uniform1i(dyeP.u('uNE'), n2);
+  gl.uniform4fv(dyeP.u('uE'), e);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function dyeStep(dt) {
+  velData.fill(0);
+  for (let k = 0; k < FA; k++) { velData[k * 2] = fu[k]; velData[k * 2 + 1] = fv[k]; }
+  gl.bindTexture(gl.TEXTURE_2D, velTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FN, FN, gl.RG, gl.FLOAT, velData);
+  runDye(dt, dye[di], dye[1 - di]);
+  di = 1 - di;
+}
+const impU = new Float32Array(16 * 4);
+function rippleStep(steps) {
+  gl.useProgram(ripP);
+  gl.viewport(0, 0, RN, RN);
+  gl.uniform2f(ripP.u('uTexel'), 1 / RN, 1 / RN);
+  gl.uniform1f(ripP.u('uExt'), FE);
+  gl.uniform1f(ripP.u('uDamp'), 0.98 - 0.012 * thick());
+  gl.uniform1i(ripP.u('uRip'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindVertexArray(vao);
+  for (let s = 0; s < steps; s++) {
+    const n = s === 0 ? Math.min(16, imps.length) : 0;
+    for (let i = 0; i < n; i++) impU.set(imps[i], i * 4);
+    if (s === 0) imps.splice(0, n);
+    gl.uniform1i(ripP.u('uNI'), n);
+    gl.uniform4fv(ripP.u('uImp'), impU);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rip[1 - ri].fb);
+    gl.bindTexture(gl.TEXTURE_2D, rip[ri].tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    ri = 1 - ri;
+  }
+}
+// Camera uniforms for a target k target pixels to each CSS pixel.
+function camU(p, k, H) {
+  gl.uniform3f(p.u('uCam'), ...cam.pos);
+  gl.uniform3f(p.u('uRight'), ...cam.right);
+  gl.uniform3f(p.u('uUp'), ...cam.up);
+  gl.uniform3f(p.u('uFwd'), ...cam.fwd);
+  gl.uniform1f(p.u('uFocal'), cam.focal * k);
+  gl.uniform2f(p.u('uPP'), cam.ppx * k, H - cam.ppy * k);
+}
+// The fire's colour and its flicker.
+let flick = 1, fireCol = [1, 0.4, 0.1];
+function stepFire(t) {
+  const n = reduced() ? 0 : 0.07 * Math.sin(t * 13.1) + 0.05 * Math.sin(t * 7.3 + 1) + 0.04 * Math.sin(t * 23.7 + 2);
+  flick = (0.35 + 1.1 * fire) * (1 + n);
+  fireCol = [1, 0.42, 0.12];
+}
+// The soup's own warm colour, for the steam's glow.
+function glowCol() {
+  const L = mean[0] / mean[3], a = mean[1] / mean[3], b = mean[2] / mean[3];
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b, m_ = L - 0.1055613458 * a - 0.0638541728 * b, s_ = L - 0.0894841775 * a - 1.291485548 * b;
+  const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
+  const c = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  return c.map(v => Math.max(0, v) * (0.25 + 0.35 * fire));
+}
+const puffU = new Float32Array(NP * 4), sparkU = new Float32Array(NS * 8);
+let swirl = 0;
+function layerPass() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, layer.fb);
+  gl.viewport(0, 0, layer.w, layer.h);
+  gl.useProgram(layerP);
+  const k = layer.w / size.w;
+  camU(layerP, k, layer.h);
+  gl.uniform1f(layerP.u('uTime'), time);
+  gl.uniform1f(layerP.u('uFire'), fire);
+  gl.uniform1f(layerP.u('uFlick'), flick);
+  gl.uniform1f(layerP.u('uLevel'), level);
+  gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.3 + 0.7 * fire);
+  gl.uniform1f(layerP.u('uSwirl'), swirl);
+  gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
+  gl.uniform3f(layerP.u('uFireCol'), ...fireCol);
+  gl.uniform3f(layerP.u('uGlowCol'), ...glowCol());
+  puffs.forEach((p, i) => puffU.set([p.x, p.z, p.age, p.s], i * 4));
+  gl.uniform1i(layerP.u('uNP'), puffs.length);
+  gl.uniform4fv(layerP.u('uPuff'), puffU);
+  sparks.forEach((s, i) => {
+    const a = project([s.x, s.y, s.z]), b = project([s.x - s.vx * 0.05, s.y - s.vy * 0.05, s.z - s.vz * 0.05]);
+    const fade = clamp(1 - s.age / s.life) * clamp(s.age * 6);
+    sparkU.set([a[0] * k, layer.h - a[1] * k, (b[0] - a[0]) * k, -(b[1] - a[1]) * k, s.b * fade, Math.max(0.6, 1.4 * k), 0, 0], i * 8);
+  });
+  gl.uniform1i(layerP.u('uNS'), sparks.length);
+  gl.uniform4fv(layerP.u('uSpark'), sparkU);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4);
+function scenePass() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, hdr.w, hdr.h);
+  gl.useProgram(sceneP);
+  camU(sceneP, size.dpr, hdr.h);
+  const rs = soupR(level);
+  gl.uniform2f(sceneP.u('uRes'), hdr.w, hdr.h);
+  gl.uniform1f(sceneP.u('uTime'), time);
+  gl.uniform1f(sceneP.u('uFire'), fire);
+  gl.uniform1f(sceneP.u('uFlick'), flick);
+  gl.uniform1f(sceneP.u('uLevel'), level);
+  gl.uniform1f(sceneP.u('uRS'), rs);
+  gl.uniform1f(sceneP.u('uDip'), dip);
+  gl.uniform1f(sceneP.u('uFunnel'), funnel);
+  gl.uniform1f(sceneP.u('uExt'), FE);
+  gl.uniform1f(sceneP.u('uSoupK'), 0.75 + 0.35 * fire);
+  gl.uniform3f(sceneP.u('uKeyDir'), ...KEY);
+  gl.uniform3f(sceneP.u('uKeyCol'), 1.2, 1.02, 0.82);
+  gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
+  gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
+  // Things: centre and bound, rotation, then kind, cook, seed and scale.
+  let n = 0;
+  for (const b of bodies) {
+    if (n >= NB) break;
+    if (b.fly && b.fly.t < 0) continue;
+    const shrink = b.gone ? 1 - smooth(0, 1, b.gone) : 1;
+    const sc = Math.max(0.02, b.scale * shrink);
+    let q = qaxis(0, 1, 0, b.yaw);
+    q = qmul(q, qaxis(1, 0, 0, b.roll));
+    q = qmul(q, qaxis(0, 0, 1, b.pitch));
+    if (b.tumble) q = qmul(b.tumble, q);
+    const wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
+    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], q[3], b.K.k, b.cook, b.seed, sc], n * 12);
+    n++;
+  }
+  gl.uniform1i(sceneP.u('uNB'), n);
+  gl.uniform4fv(sceneP.u('uB'), bodyU);
+  bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
+  gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
+  gl.uniform4fv(sceneP.u('uBub'), bubU);
+  drops.forEach((d, i) => dropU.set([d.x, d.y, d.z, d.r], i * 4));
+  gl.uniform1i(sceneP.u('uND'), drops.length);
+  gl.uniform4fv(sceneP.u('uDrop'), dropU);
+  const sw = spoonWorld();
+  gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
+  gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
+  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1]].forEach((t, i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+  });
+  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// The key lamp hangs high behind the pot, a little to the left.
+const KEY = norm([-0.12, 0.68, -0.72]);
+let seedN = 0;
+function outPass() {
+  const bl = bloom.render(hdr.tex[0], hdr.w, hdr.h, { threshold: 0.9, cap: 8, levels: glowDetail(D.level).levels });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(outP);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hdr.tex[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bl);
+  gl.uniform1i(outP.u('uHdr'), 0);
+  gl.uniform1i(outP.u('uBloom'), 1);
+  gl.uniform2f(outP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform1f(outP.u('uBloomK'), ui.setting('bloom')?.value ?? 0.55);
+  gl.uniform1f(outP.u('uExposure'), 1.15 * (ui.setting('exposure')?.value ?? 1));
+  gl.uniform1f(outP.u('uSeed'), reduced() ? 0 : (seedN = (seedN + 1) % 64));
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+}
+function draw() {
+  layerPass();
+  scenePass();
+  outPass();
+}
+
+/* ---------- frame loop ---------- */
+// Lively at full rate while a hand works the pot; a cheap 30 fps simmer otherwise.
+// Reduced motion keeps no simmer: the loop sleeps once things settle.
+let raf = 0, last = 0, time = 0, visible = !document.hidden, ready = false, rendered = 0, ripAcc = 0, wasLively = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// Only a hand's work counts: a stir, a throw and its splash, a drain, a spin still turning.
+// Bobbing and bubbles are the simmer, which 30 fps carries.
+let splashAt = -10;
+function busy() {
+  return !!ptr || spoon.on || spoon.lift < 1 || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
+    || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
+}
+function frame(now) {
+  raf = 0;
+  let again = true;
+  try {
+    const lively = busy();
+    // A hand at work draws at up to 60 fps; the simmer draws at 30.
+    if (now - rendered < (lively ? 1000 / 62 : 1000 / 31)) { again = visible; return; }
+    const gap = (now - (rendered || now - 16)) / 1000, dt = clamp(gap, 0, 0.05);
+    if (lively && wasLively && gap < 0.1) D.frame(gap);
+    wasLively = lively;
+    rendered = now;
+    time += dt;
+    stepPlumes(time);
+    stepFire(time);
+    stepDrain(dt);
+    stepSpoon(dt);
+    if (lively || energy > 1e-5) stepFluid(dt);
+    else { omega = 0; energy = 0; }
+    // The stir's dip: a paraboloid, and a funnel for a fast spin.
+    const w2 = omega * omega;
+    dip = clamp(w2 / (2 * G), 0, 0.2);
+    funnel = clamp(w2 * 0.006, 0, 0.1);
+    swirl += omega * dt * 0.5;
+    stepBodies(dt);
+    stepBubbles(dt);
+    stepDrops(dt);
+    stepPuffs(dt);
+    stepSparks(dt);
+    // Bodies and the bed sound.
+    bedSound(dt);
+    dyeStep(dt);
+    ripAcc += dt * 120;
+    const steps = Math.min(6, Math.floor(ripAcc));
+    ripAcc -= steps;
+    rippleStep(Math.max(steps, imps.length ? 1 : 0));
+    draw();
+    again = !reduced() || busy();
+  } finally {
+    last = now;
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf);
+  }
+}
+
+/* ---------- actions ---------- */
+act.add = () => { const [x, z] = freeSpot(); throwNext(x, z); };
+act.clear = () => startDrain();
+act.reset = () => {
+  draining = null;
+  level = 0;
+  clearFlow();
+  fillBroth();
+  clearRipples();
+  next = 0;
+  starter();
+  fire = FIRE0;
+  ui.slider.set(FIRE0);
+  wake();
+};
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders compile and the first frame draws.
+resize();
+starter();
+stepPlumes(0);
+stepFire(0);
+// A short warm-up lets the first colour wash and the steam settle in.
+for (let i = 0; i < 20; i++) { time += 1 / 30; stepBodies(1 / 30); dyeStep(1 / 30); }
+rippleStep(1);
+draw();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+onQuality(() => { resize(); if (ready) draw(); });
+onReducedChange(() => wake());
+// A hidden tab stops the loop, the clock and the sound.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+wake();
+</script>
+</body>
+</html>

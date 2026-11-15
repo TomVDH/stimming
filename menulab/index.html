@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Menu probe</title>
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+:root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.95 0.008 275); --muted: oklch(0.6 0.02 275); --mono: "Iosevka Term Slab", ui-monospace, monospace; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "Gabarito", system-ui, sans-serif; }
+/* The live menu runs in the frame and scrolls by itself, as the real page does. */
+body { display: flex; flex-direction: column; }
+iframe { display: block; width: 100%; border: 0; flex: 1; min-height: 0; }
+.bar { flex: none; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; padding: 12px 16px; }
+.bar span { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.bar button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--muted); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 9px 14px; cursor: pointer; }
+.bar button[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+.bar button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
+</style>
+<body>
+<div class="bar" role="group" aria-label="Menu concept"><span>Menu</span>
+  <button type="button" data-m="dozen">Dozen</button>
+  <button type="button" data-m="dealt">Dealt</button>
+  <button type="button" data-m="clock">Clock</button>
+  <button type="button" data-m="spot">Spotlight</button>
+  <button type="button" data-m="index">Index</button>
+  <button type="button" data-m="reel">Reel</button>
+  <button type="button" data-m="hive">Hive</button>
+  <button type="button" data-m="bento">Bento</button>
+  <button type="button" data-m="deck">Deck</button>
+  <button type="button" data-m="box">Toy box</button>
+  <button type="button" data-m="bands">Bands</button>
+  <button type="button" data-m="head">Headline</button>
+  <button type="button" data-m="trail">Trail</button>
+  <button type="button" data-m="slices">Slices</button>
+  <button type="button" data-m="swiss">Swiss</button>
+  <button type="button" data-m="marquee">Marquee</button>
+  <button type="button" data-m="ledger">Ledger</button>
+  <button type="button" data-m="register">Register</button>
+  <button type="button" data-m="dial">Dial</button>
+  <button type="button" data-m="drum">Drum</button>
+</div>
+<script type="module">
+// A probe: other ways to do the main menu. Each one shows twelve toys and a
+// Re-roll. The live menu runs in the frame, so every icon still plays.
+const SIZE = 12;
+const CSS = `
+/* The probe hides the parts it does not test. */
+.series-toggle { display: none !important; }
+.probe-stage > .shelf > li[data-out] { display: none !important; }
+/* A roll: the old dozen shrinks away, the new one comes in, one after the other. */
+.probe-stage > .shelf > li { transition: opacity 0.3s ease, scale 0.45s cubic-bezier(0.3, 1.5, 0.5, 1), rotate 0.45s cubic-bezier(0.3, 1.5, 0.5, 1), translate 0.45s cubic-bezier(0.3, 1.5, 0.5, 1); transition-delay: calc(var(--i, 0) * 30ms); }
+.probe-stage > .shelf.rolling > li { opacity: 0; scale: 0.7; transition-duration: 0.16s; transition-delay: 0s; }
+/* The controls: Re-roll, and a way to the whole shelf. */
+.probe-ui { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+.probe-ui .who { display: none; }
+.probe-ui :is(button, a) { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--fg) 28%, transparent); background: none; cursor: pointer; text-decoration: none; font-family: "Iosevka Term Slab", ui-monospace, monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg); transition: border-color 0.2s, background 0.2s; }
+.probe-ui a { border-color: transparent; color: var(--muted); }
+.probe-ui :is(button, a):hover { border-color: var(--fg); color: var(--fg); }
+.probe-ui button:active svg { rotate: 180deg; }
+.probe-ui svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.probe-ui svg circle { fill: currentColor; stroke: none; }
+.probe-stage { position: relative; width: 100%; display: grid; justify-items: center; gap: clamp(28px, 5vw, 48px); }
+
+/* Dozen: four by three, large. */
+html[data-m="dozen"] .probe-stage > .shelf, html[data-m="dealt"] .probe-stage > .shelf { grid-template-columns: repeat(4, clamp(96px, 19vw, 176px)); max-width: none; gap: clamp(22px, 3.4vw, 44px) clamp(14px, 3vw, 40px); }
+html:is([data-m="dozen"], [data-m="dealt"], [data-m="spot"]) .probe-stage > .shelf > li { width: auto; }
+/* Dealt: twelve cards thrown on the table; each lands askew. */
+html[data-m="dealt"] .probe-stage > .shelf > li { rotate: var(--r, 0deg); translate: var(--dx, 0) var(--dy, 0); }
+html[data-m="dealt"] .toy { padding: 12px 8px 14px; border-radius: 20px; background: oklch(0.205 0.014 275); border: 1px solid oklch(0.3 0.016 275); }
+html[data-m="dealt"] .probe-stage > .shelf > li:is(:hover, :focus-within) { rotate: 0deg; translate: 0 -6px; scale: 1.07; z-index: 2; transition-delay: 0s; }
+/* Clock: twelve toys on a dial; the name of the toy in hand shows in the middle. */
+html:is([data-m="clock"], [data-m="dial"]) .probe-stage > .shelf { display: block; position: relative; width: min(90vw, 660px); max-width: none; aspect-ratio: 1; margin: 0 auto; }
+html:is([data-m="clock"], [data-m="dial"]) .probe-stage > .shelf > li { position: absolute; width: 19%; left: calc(50% + var(--x, 0) * 40.5% - 9.5%); top: calc(50% + var(--y, 0) * 40.5% - 9.5%); }
+html:is([data-m="clock"], [data-m="dial"]) .toy .name { display: none; }
+html:is([data-m="clock"], [data-m="dial"]) .probe-stage > .shelf > li:is(:hover, :focus-within) { scale: 1.18; z-index: 2; transition-delay: 0s; }
+html:is([data-m="clock"], [data-m="dial"]) .probe-ui { position: absolute; left: 50%; top: 50%; translate: -50% -50%; flex-direction: column; width: 42%; pointer-events: none; }
+html:is([data-m="clock"], [data-m="dial"]) .probe-ui > * { pointer-events: auto; }
+html:is([data-m="clock"], [data-m="dial"]) .probe-ui .who { display: block; min-height: 2.1em; text-align: center; font: 800 clamp(18px, 4.4vw, 34px)/1.05 var(--sans); letter-spacing: -0.03em; color: var(--fg); pointer-events: none; }
+/* Spotlight: one toy large, eleven round it. */
+html[data-m="spot"] .probe-stage > .shelf { grid-template-columns: repeat(5, clamp(86px, 16vw, 160px)); max-width: none; gap: clamp(18px, 2.8vw, 34px) clamp(12px, 2.4vw, 30px); }
+html[data-m="spot"] .probe-stage > .shelf > li:first-child { grid-column: span 2; grid-row: span 2; }
+html[data-m="spot"] .probe-stage > .shelf > li:first-child .name { font-size: clamp(15px, 2vw, 20px); }
+/* Index: a list. The name is the big thing; the icon waits at the right. */
+html[data-m="index"] .probe-stage > .shelf { display: block; max-width: 900px; }
+html[data-m="index"] .probe-stage > .shelf > li { width: auto; border-top: 1px solid color-mix(in oklch, var(--fg) 16%, transparent); }
+html[data-m="index"] .probe-stage > .shelf { border-bottom: 1px solid color-mix(in oklch, var(--fg) 16%, transparent); }
+html[data-m="index"] .toy { grid-template-columns: minmax(0, 1fr) auto; align-items: center; justify-items: start; text-align: left; gap: 16px; padding: 8px 6px; border-radius: 0; }
+html[data-m="index"] .toy .name { order: -1; font: 800 clamp(28px, 6.4vw, 68px)/1 var(--sans); letter-spacing: -0.045em; text-transform: none; transition: translate 0.4s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s; }
+html[data-m="index"] .toy .name :is(.beta, .alpha) { font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; vertical-align: middle; }
+html[data-m="index"] .toy .obj { width: clamp(60px, 10vw, 104px); }
+html[data-m="index"] .toy:is(:hover, :focus-visible) .name { translate: 14px 0; }
+html[data-m="index"] .probe-stage > .shelf > li:not(:hover):not(:focus-within) .name { color: color-mix(in oklch, var(--fg) 72%, transparent); }
+/* Reel: three reels of four. A roll drops each reel in turn. */
+html:is([data-m="reel"], [data-m="drum"]) .probe-stage > .shelf { grid-template-columns: repeat(3, clamp(96px, 24vw, 196px)); width: fit-content; max-width: none; gap: clamp(8px, 1.6vw, 18px) clamp(24px, 5vw, 60px); padding: clamp(14px, 2.4vw, 24px) clamp(14px, 3vw, 32px); overflow: hidden; border-radius: 28px; border: 1px solid oklch(0.3 0.016 275); background: linear-gradient(90deg, transparent calc(33.33% - 0.5px), oklch(0.3 0.016 275) 0 calc(33.33% + 0.5px), transparent 0 calc(66.67% - 0.5px), oklch(0.3 0.016 275) 0 calc(66.67% + 0.5px), transparent 0), oklch(0.19 0.013 275); }
+html[data-m="reel"] .probe-stage > .shelf > li { width: auto; transition: translate 0.75s cubic-bezier(0.2, 1.35, 0.4, 1), opacity 0.2s; transition-delay: calc(var(--col, 0) * 190ms + var(--row, 0) * 55ms); }
+html[data-m="reel"] .probe-stage > .shelf.rolling > li { translate: 0 -280%; opacity: 0; scale: 1; transition-duration: 0.18s; transition-delay: 0s; }
+/* Hive: twelve hexagon cells in three rows; the name shows under the hive. */
+html[data-m="hive"] .probe-stage > .shelf { grid-template-columns: repeat(9, minmax(0, 1fr)); width: min(100%, 640px); max-width: none; gap: 0; }
+html[data-m="hive"] .probe-stage > .shelf > li { grid-column: span 2; width: auto; margin-top: -5.6%; }
+html[data-m="hive"] .probe-stage > .shelf > li:nth-child(-n+4) { margin-top: 0; }
+html[data-m="hive"] .probe-stage > .shelf > li:nth-child(5) { grid-column: 2 / span 2; }
+html[data-m="hive"] .toy { position: relative; isolation: isolate; aspect-ratio: 1 / 1.13; align-content: center; padding: 0; border-radius: 0; }
+html[data-m="hive"] .toy::before, html[data-m="hive"] .toy::after { content: ""; position: absolute; z-index: -1; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+html[data-m="hive"] .toy::before { inset: 3%; background: oklch(0.34 0.018 275); transition: background 0.2s; }
+html[data-m="hive"] .toy::after { inset: calc(3% + 1.5px); background: oklch(0.19 0.013 275); }
+html[data-m="hive"] .toy:is(:hover, :focus-visible)::before { background: var(--fg); }
+html[data-m="hive"] .toy .obj { width: 60%; margin: 0 auto; }
+html[data-m="hive"] .toy .name { display: none; }
+html:is([data-m="hive"]) .probe-ui .who { display: block; order: -1; flex-basis: 100%; min-height: 1.2em; text-align: center; font: 800 clamp(18px, 3vw, 26px)/1 var(--sans); letter-spacing: -0.03em; color: var(--fg); }
+/* Bento: panels of mixed size; the first toy takes the big one. */
+html[data-m="bento"] .probe-stage > .shelf { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(clamp(112px, 17vw, 172px), auto); grid-auto-flow: dense; width: min(100%, 980px); max-width: none; gap: clamp(8px, 1.4vw, 14px); }
+html[data-m="bento"] .probe-stage > .shelf > li { width: auto; }
+html[data-m="bento"] .probe-stage > .shelf > li:nth-child(1) { grid-column: span 2; grid-row: span 2; }
+html[data-m="bento"] .probe-stage > .shelf > li:is(:nth-child(4), :nth-child(9), :nth-child(12)) { grid-column: span 2; }
+html[data-m="bento"] .toy { box-sizing: border-box; height: 100%; align-content: center; padding: 12px 8px; border-radius: 22px; background: oklch(0.2 0.014 275); border: 1px solid oklch(0.28 0.016 275); transition: background 0.2s, border-color 0.2s; }
+html[data-m="bento"] .toy:is(:hover, :focus-visible) { background: oklch(0.24 0.016 275); border-color: oklch(0.42 0.02 275); }
+html[data-m="bento"] .toy .obj { width: clamp(56px, 9vw, 108px); margin: 0 auto; }
+html[data-m="bento"] .probe-stage > .shelf > li:nth-child(1) .obj { width: clamp(110px, 20vw, 236px); }
+/* Deck: one toy on top of the pile; the arrows turn to the next. */
+html[data-m="deck"] .probe-stage > .shelf { display: block; position: relative; width: min(72vw, 320px); aspect-ratio: 0.86; max-width: none; margin: 16px auto 30px; }
+html[data-m="deck"] .probe-stage > .shelf > li { position: absolute; inset: 0; width: auto; z-index: calc(20 - var(--k, 0)); translate: calc(min(var(--k, 0), 3) * var(--fan, 15px)) calc(min(var(--k, 0), 3) * var(--fan, 15px) * -0.6); rotate: calc(min(var(--k, 0), 3) * var(--lean, 3.2deg)); opacity: clamp(0, calc(3.4 - var(--k, 0)), 1); pointer-events: none; transition-delay: 0s; }
+html[data-m="deck"] .probe-stage > .shelf > li[data-top] { pointer-events: auto; }
+html[data-m="deck"] .toy { box-sizing: border-box; height: 100%; align-content: center; gap: 18px; border-radius: 26px; background: oklch(0.205 0.014 275); border: 1px solid oklch(0.32 0.016 275); }
+html[data-m="deck"] .toy .obj { width: 64%; margin: 0 auto; }
+html[data-m="deck"] .toy .name { font-size: 15px; }
+.probe-ui .nav { display: none; padding: 10px 14px; }
+html[data-m="deck"] .probe-ui .nav { display: inline-flex; }
+/* Toy box: the dozen lies where it fell. Drag a toy to move it. */
+html[data-m="box"] .probe-stage > .shelf { display: block; position: relative; box-sizing: border-box; width: min(100%, 900px); height: clamp(430px, 68vh, 640px); max-width: none; border-radius: 28px; border: 1px dashed oklch(0.32 0.016 275); touch-action: none; }
+html[data-m="box"] .probe-stage > .shelf > li { position: absolute; width: clamp(80px, 15vw, 128px); left: calc(var(--bx, 0) * 1%); top: calc(var(--by, 0) * 1%); rotate: var(--r, 0deg); translate: var(--tx, 0px) var(--ty, 0px); cursor: grab; }
+html[data-m="box"] .probe-stage > .shelf > li.drag { transition: none; z-index: 5; rotate: 0deg; scale: 1.1; cursor: grabbing; }
+html[data-m="box"] .toy { -webkit-user-drag: none; user-select: none; }
+/* Bands: a list in colour. Each row wears its toy's own accent. */
+html[data-m="bands"] .probe-stage > .shelf { display: block; max-width: 900px; }
+html[data-m="bands"] .probe-stage > .shelf > li { position: relative; isolation: isolate; overflow: hidden; width: auto; margin-bottom: 6px; border-radius: 16px; }
+html[data-m="bands"] .probe-stage > .shelf > li::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--accent, var(--muted)); opacity: 0.2; transition: opacity 0.25s; }
+html[data-m="bands"] .probe-stage > .shelf > li:is(:hover, :focus-within)::before { opacity: 0.55; }
+html[data-m="bands"] .toy { grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: start; text-align: left; gap: 18px; padding: 8px 18px; border-radius: 0; }
+html[data-m="bands"] .toy .obj { width: clamp(52px, 8vw, 78px); }
+html[data-m="bands"] .toy .name { font: 800 clamp(20px, 3.6vw, 34px)/1 var(--sans); letter-spacing: -0.03em; text-transform: none; }
+html[data-m="bands"] .toy .name :is(.beta, .alpha) { font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; vertical-align: middle; }
+/* The craft set: the four favourites, with composed motion. GSAP moves them, so the plain roll is off. */
+html:is([data-m="ledger"], [data-m="register"], [data-m="dial"], [data-m="drum"]) .probe-stage > .shelf > li { transition: none; }
+/* Ledger: the Index in two columns. Hairlines draw; names rise from their line. */
+html[data-m="ledger"] .probe-stage > .shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(6, auto); grid-auto-flow: column; width: 100%; max-width: 1100px; gap: 0 clamp(24px, 5vw, 72px); counter-reset: n; }
+html[data-m="ledger"] .probe-stage > .shelf > li { position: relative; width: auto; counter-increment: n; }
+html[data-m="ledger"] .probe-stage > .shelf > li::after { content: ""; position: absolute; inset: auto 0 0 0; height: 1px; background: oklch(0.36 0.016 275); transform-origin: 0 50%; scale: var(--ln, 1) 1; }
+html[data-m="ledger"] .probe-stage > .shelf > li::before { content: ""; position: absolute; inset: auto 0 0 0; z-index: 1; height: 2px; background: var(--accent, var(--fg)); transform-origin: 0 50%; scale: 0 1; transition: scale 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="ledger"] .probe-stage > .shelf > li:is(:hover, :focus-within)::before { scale: 1 1; }
+html[data-m="ledger"] .toy { grid-template-columns: 2.2em minmax(0, 1fr) auto; align-items: center; justify-items: start; gap: 8px; padding: 9px 2px; border-radius: 0; text-align: left; }
+html[data-m="ledger"] .toy::before { content: counter(n, decimal-leading-zero); font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; color: var(--muted); }
+html[data-m="ledger"] .toy .name { order: 1; font: 800 clamp(20px, 2.8vw, 36px)/1.15 var(--sans); letter-spacing: -0.04em; text-transform: none; transition: translate 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="ledger"] .toy .name :is(.beta, .alpha) { font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; vertical-align: middle; }
+html[data-m="ledger"] .toy .obj { order: 2; width: clamp(46px, 5.6vw, 72px); transition: scale 0.45s cubic-bezier(0.3, 1.5, 0.5, 1), rotate 0.45s cubic-bezier(0.3, 1.5, 0.5, 1); }
+html[data-m="ledger"] .toy:is(:hover, :focus-visible) .name { translate: 10px 0; }
+html[data-m="ledger"] .toy:is(:hover, :focus-visible) .obj { scale: 1.18; rotate: -5deg; }
+/* Register: the Dozen on a field of register marks. The marks of the toy in hand turn. */
+html[data-m="register"] .probe-stage > .shelf { grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; max-width: 1040px; gap: 0; counter-reset: n; --hc: oklch(0.44 0.016 275); }
+html[data-m="register"] .probe-stage > .shelf > li { position: relative; width: auto; counter-increment: n; }
+html[data-m="register"] .probe-stage > .shelf::before, html[data-m="register"] .probe-stage > .shelf::after, html[data-m="register"] .probe-stage > .shelf > li::before, html[data-m="register"] .probe-stage > .shelf > li::after { content: ""; position: absolute; z-index: 1; width: 13px; height: 13px; pointer-events: none; background: linear-gradient(var(--hc), var(--hc)) 50% 50% / 100% 1px no-repeat, linear-gradient(var(--hc), var(--hc)) 50% 50% / 1px 100% no-repeat; scale: var(--mk, 1); transition: rotate 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="register"] .probe-stage > .shelf > li::before { left: -6.5px; top: -6.5px; }
+html[data-m="register"] .probe-stage > .shelf > li::after { right: -6.5px; bottom: -6.5px; }
+html[data-m="register"] .probe-stage > .shelf::before { right: -6.5px; top: -6.5px; }
+html[data-m="register"] .probe-stage > .shelf::after { left: -6.5px; bottom: -6.5px; }
+html[data-m="register"] .probe-stage > .shelf > li:is(:hover, :focus-within) { --hc: var(--fg); }
+html[data-m="register"] .probe-stage > .shelf > li:is(:hover, :focus-within)::before, html[data-m="register"] .probe-stage > .shelf > li:is(:hover, :focus-within)::after { rotate: 45deg; }
+html[data-m="register"] .toy { position: relative; box-sizing: border-box; gap: 8px; padding: clamp(16px, 2.2vw, 26px) 8px clamp(12px, 1.6vw, 20px); border-radius: 0; }
+html[data-m="register"] .toy::before { content: counter(n, decimal-leading-zero); position: absolute; left: 12px; top: 12px; font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; color: var(--muted); }
+html[data-m="register"] .toy .obj { width: min(66%, 150px); transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1), scale 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="register"] .toy:is(:hover, :focus-visible) .obj { translate: 0 -6px; scale: 1.08; }
+html[data-m="register"] .toy .name::after { content: ""; display: block; height: 2px; margin-top: 5px; background: var(--accent, var(--fg)); transform-origin: 0 50%; scale: 0 1; transition: scale 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="register"] .toy:is(:hover, :focus-visible) .name::after { scale: 1 1; }
+/* Dial: the Clock with a ring of minute marks. A hand points at the toy in hand. */
+html[data-m="dial"] .probe-stage > .shelf::before { content: ""; position: absolute; inset: 21%; border-radius: 50%; border: 1px solid oklch(0.34 0.016 275); pointer-events: none; }
+html[data-m="dial"] .probe-stage > .shelf::after { content: ""; position: absolute; inset: 23%; border-radius: 50%; pointer-events: none; background: repeating-conic-gradient(from -0.5deg, oklch(0.52 0.016 275) 0 1deg, transparent 0 6deg); -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 8px), #000 calc(100% - 7px)); mask: radial-gradient(closest-side, transparent calc(100% - 8px), #000 calc(100% - 7px)); }
+.probe-hand { display: none; position: absolute; left: 50%; top: 50%; width: 2px; height: calc(min(90vw, 660px) * 0.262); border-radius: 2px; background: linear-gradient(to bottom, var(--fg) 0 22%, transparent 22%); pointer-events: none; }
+html[data-m="dial"] .probe-hand { display: block; }
+html[data-m="dial"] .probe-ui .who::before { content: attr(data-n); display: block; margin-bottom: 8px; font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; color: var(--muted); }
+html[data-m="dial"] .probe-stage > .shelf > li { transition: scale 0.45s cubic-bezier(0.3, 1.5, 0.5, 1); transition-delay: 0s; }
+html[data-m="dial"] .probe-stage > .shelf > li[data-held] { scale: 1.18; z-index: 2; }
+/* Drum: the Reel with a true spin. Each reel turns and stops in its turn. */
+html[data-m="drum"] .probe-stage > .shelf > li { width: auto; }
+@media (max-width: 620px) {
+  html[data-m="ledger"] .probe-stage > .shelf { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-flow: row; }
+  html[data-m="register"] .probe-stage > .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  html[data-m="register"] .toy::before { left: 6px; top: 8px; }
+  html[data-m="dial"] .probe-ui a { display: none; }
+}
+/* Headline: the name of the toy in hand fills the page. The dozen waits in one row. */
+html[data-m="head"] .probe-stage { display: flex; flex-direction: column; align-items: center; gap: clamp(16px, 2.6vw, 30px); }
+html[data-m="head"] .probe-ui { display: contents; }
+html[data-m="head"] .probe-ui .who { display: block; order: -1; box-sizing: border-box; width: 100%; min-height: 1.1em; overflow: hidden; white-space: nowrap; text-align: left; font-family: var(--sans); font-weight: 900; font-size: min(26vw, calc(185vw / var(--len, 8))); line-height: 1.1; letter-spacing: -0.06em; color: var(--fg); border-bottom: 1px solid color-mix(in oklch, var(--fg) 24%, transparent); }
+html[data-m="head"] .probe-stage > .shelf { grid-template-columns: repeat(12, minmax(0, 1fr)); width: 100%; max-width: none; gap: 0; counter-reset: n; }
+html[data-m="head"] .probe-stage > .shelf > li { width: auto; counter-increment: n; }
+html[data-m="head"] .toy { gap: 2px; border-radius: 0; }
+html[data-m="head"] .toy::before { content: counter(n, decimal-leading-zero); justify-self: start; font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; color: var(--muted); }
+html[data-m="head"] .toy .name { display: none; }
+html[data-m="head"] .toy .obj { opacity: 0.38; transition: opacity 0.3s, translate 0.5s cubic-bezier(0.16, 1, 0.3, 1), scale 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="head"] .probe-stage > .shelf > li[data-held] .obj { opacity: 1; translate: 0 -8px; scale: 1.18; }
+/* Trail: twelve names set as one paragraph. The toy rides the pointer. */
+html[data-m="trail"] .probe-stage > .shelf { display: block; max-width: 1180px; text-align: center; counter-reset: n; font-size: clamp(34px, 7.2vw, 100px); line-height: 1; }
+html[data-m="trail"] .probe-stage > .shelf > li { display: inline; width: auto; counter-increment: n; }
+html[data-m="trail"] .toy { display: inline; border-radius: 0; }
+html[data-m="trail"] .toy .name { font: 800 1em/1 var(--sans); letter-spacing: -0.05em; text-transform: none; transition: color 0.25s; }
+html[data-m="trail"] .toy .name::after { content: counter(n, decimal-leading-zero); margin: 0 1em 0 0.35em; vertical-align: top; font: 500 12px/1.6 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em; color: var(--muted); }
+html[data-m="trail"] .toy .name :is(.beta, .alpha) { display: none; }
+html[data-m="trail"] .probe-stage > .shelf:hover > li:not(:hover) .name { color: color-mix(in oklch, var(--fg) 22%, transparent); }
+html[data-m="trail"] .toy .obj { position: fixed; left: 0; top: 0; z-index: 5; width: clamp(150px, 20vw, 250px); pointer-events: none; opacity: 0; scale: 0.5; translate: calc(var(--px, 0) * 1px + 18px) calc(var(--py, 0) * 1px + 18px); transition: translate 0.45s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.25s, scale 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); }
+html[data-m="trail"] .probe-stage > .shelf > li:is(:hover, :focus-within) .obj { opacity: 1; scale: 1; }
+@media (hover: none) {
+  html[data-m="trail"] .toy .obj { position: static; display: inline-grid; width: 0.8em; margin-right: 0.1em; vertical-align: -0.1em; opacity: 1; scale: 1; translate: none; }
+}
+/* Slices: twelve slivers. The one in hand opens. */
+html[data-m="slices"] .probe-stage > .shelf { display: flex; gap: 3px; width: 100%; max-width: 1180px; height: clamp(360px, 62vh, 560px); container-type: inline-size; counter-reset: n; --thin: calc((100cqw - 33px) / 19); }
+html[data-m="slices"] .probe-stage > .shelf > li { position: relative; isolation: isolate; overflow: hidden; flex: 1 1 0; width: auto; min-width: 0; counter-increment: n; border-radius: 10px; transition: flex-grow 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s; transition-delay: 0s; }
+html[data-m="slices"] .probe-stage > .shelf > li::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--accent, var(--muted)); opacity: 0.14; transition: opacity 0.5s; }
+html[data-m="slices"] .probe-stage > .shelf > li:is(:hover, :focus-within), html[data-m="slices"] .probe-stage > .shelf:not(:hover):not(:focus-within) > li:first-child { flex-grow: 8; }
+html[data-m="slices"] .probe-stage > .shelf > li:is(:hover, :focus-within)::before, html[data-m="slices"] .probe-stage > .shelf:not(:hover):not(:focus-within) > li:first-child::before { opacity: 0.45; }
+html[data-m="slices"] .toy { display: block; position: relative; height: 100%; border-radius: 0; }
+html[data-m="slices"] .toy::before { content: counter(n, decimal-leading-zero); position: absolute; left: 0; top: 14px; width: var(--thin); text-align: center; font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em; color: var(--muted); }
+html[data-m="slices"] .toy .name { position: absolute; left: calc(var(--thin) / 2); bottom: 16px; writing-mode: vertical-rl; white-space: nowrap; translate: -50% 0; rotate: 180deg; }
+html[data-m="slices"] .toy .name :is(.beta, .alpha) { display: none; }
+html[data-m="slices"] .toy .obj { position: absolute; left: var(--thin); top: 0; bottom: 0; width: calc(var(--thin) * 7); max-width: none; aspect-ratio: auto; opacity: 0; scale: 0.8; transition: opacity 0.3s, scale 0.7s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="slices"] .toy .obj svg { width: min(72%, 250px); height: auto; aspect-ratio: 1; }
+html[data-m="slices"] .probe-stage > .shelf > li:is(:hover, :focus-within) .obj, html[data-m="slices"] .probe-stage > .shelf:not(:hover):not(:focus-within) > li:first-child .obj { opacity: 1; scale: 1; transition-delay: 0.12s; }
+/* Swiss: a hairline grid. The cell in hand floods with the toy's colour. */
+html[data-m="swiss"] .probe-stage > .shelf { grid-template-columns: repeat(4, minmax(0, 1fr)); box-sizing: border-box; width: 100%; max-width: 1180px; gap: 1px; background: oklch(0.34 0.016 275); border: 1px solid oklch(0.34 0.016 275); counter-reset: n; }
+html[data-m="swiss"] .probe-stage > .shelf > li { position: relative; isolation: isolate; overflow: hidden; width: auto; background: oklch(0.16 0.012 275); counter-increment: n; }
+html[data-m="swiss"] .probe-stage > .shelf > li::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--accent, var(--fg)); clip-path: inset(100% 0 0 0); transition: clip-path 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="swiss"] .probe-stage > .shelf > li:is(:hover, :focus-within)::before { clip-path: inset(0 0 0 0); }
+html[data-m="swiss"] .toy { box-sizing: border-box; grid-template-rows: auto minmax(0, 1fr) auto; justify-items: start; aspect-ratio: 1 / 1.05; gap: 0; padding: clamp(10px, 1.4vw, 18px); border-radius: 0; text-align: left; transition: color 0.3s; }
+html[data-m="swiss"] .toy::before { content: counter(n, decimal-leading-zero); font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.1em; opacity: 0.6; }
+html[data-m="swiss"] .toy .obj { width: 62%; justify-self: center; align-self: center; transition: scale 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="swiss"] .probe-stage > .shelf > li:is(:hover, :focus-within) .obj { scale: 1.14; }
+html[data-m="swiss"] .probe-stage > .shelf > li:is(:hover, :focus-within) .toy, html[data-m="swiss"] .probe-stage > .shelf > li:is(:hover, :focus-within) .name :is(.beta, .alpha) { color: oklch(0.16 0.012 275); }
+/* Marquee: three lines of large outline names. The pointer slides them. */
+html[data-m="marquee"] body { overflow-x: hidden; }
+html[data-m="marquee"] .probe-stage { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+html[data-m="marquee"] .probe-stage > .probe-ui { justify-self: center; }
+html[data-m="marquee"] .probe-stage > .shelf { display: block; width: 100vw; max-width: none; margin: 0 0 0 calc(50% - 50vw); padding: 0.08em 0; overflow: hidden; white-space: nowrap; font-size: clamp(54px, 10.5vw, 150px); line-height: 1.06; }
+html[data-m="marquee"] .probe-stage > .shelf > li { display: inline; width: auto; }
+html[data-m="marquee"] .probe-stage > .shelf > li:nth-child(4n)::after { content: "\\A"; white-space: pre; }
+html[data-m="marquee"] .toy { display: inline-flex; align-items: center; gap: 0.1em; margin-right: 0.28em; border-radius: 0; translate: calc(var(--mx, 0) * var(--dir, 1) * -20vw - 24vw) 0; transition: translate 1.4s cubic-bezier(0.16, 1, 0.3, 1); }
+html[data-m="marquee"] .probe-stage > .shelf > li:nth-child(n+5):nth-child(-n+8) .toy { --dir: -1; }
+html[data-m="marquee"] .toy .obj { flex: none; width: 0.86em; }
+html[data-m="marquee"] .toy .name { font: 800 1em/1 var(--sans); letter-spacing: -0.05em; text-transform: none; color: transparent; -webkit-text-stroke: 1.5px color-mix(in oklch, var(--fg) 62%, transparent); transition: color 0.3s; }
+html[data-m="marquee"] .toy .name :is(.beta, .alpha) { display: none; }
+html[data-m="marquee"] .toy:is(:hover, :focus-visible) .name { color: var(--fg); -webkit-text-stroke-color: var(--fg); }
+@media (hover: none) {
+  html[data-m="marquee"] .probe-stage > .shelf { overflow-x: auto; }
+  html[data-m="marquee"] .toy { translate: 16px 0; }
+}
+@media (max-width: 620px) {
+  html[data-m="head"] .probe-stage > .shelf { grid-template-columns: repeat(6, minmax(0, 1fr)); row-gap: 12px; }
+  html[data-m="swiss"] .probe-stage > .shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-m="swiss"] .toy { aspect-ratio: 1 / 0.86; }
+  html[data-m="slices"] .probe-stage > .shelf { flex-direction: column; height: auto; }
+  html[data-m="slices"] .probe-stage > .shelf > li { flex: none; }
+  html[data-m="slices"] .toy { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; justify-items: start; gap: 14px; padding: 6px 14px; }
+  html[data-m="slices"] .toy::before { position: static; width: auto; }
+  html[data-m="slices"] .toy .name { position: static; writing-mode: horizontal-tb; translate: none; rotate: none; }
+  html[data-m="slices"] .toy .obj { position: static; order: 3; width: 46px; aspect-ratio: 1; opacity: 1; scale: 1; }
+}
+@media (max-width: 620px) {
+  html[data-m="bento"] .probe-stage > .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  html[data-m="deck"] .probe-stage > .shelf { width: 64vw; --fan: 7px; --lean: 2deg; }
+  html:is([data-m="reel"], [data-m="drum"]) .probe-stage > .shelf { box-sizing: border-box; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 8px 20px; padding: 12px 10px; }
+  html:is([data-m="dozen"], [data-m="dealt"]) .probe-stage > .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  html[data-m="spot"] .probe-stage > .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) { .probe-stage > .shelf > li, .probe-ui svg { transition: none; } .probe-stage .toy, .probe-stage .toy .obj, .probe-stage > .shelf > li::before { transition: none !important; } }`;
+
+const frame = Object.assign(document.createElement('iframe'), { src: '../index.html', title: 'Menu' });
+document.body.append(frame);
+await new Promise(r => frame.addEventListener('load', r, { once: true }));
+const d = frame.contentDocument;
+// The menu may still sort its shelf; wait, then take the tiles back to one shelf.
+for (let i = 0; i < 40 && d.documentElement.dataset.sections; i++) await new Promise(r => setTimeout(r, 50));
+const shelf = d.querySelector('main > .shelf');
+// Only the main shelf's toys: the Lab keeps its own.
+shelf.append(...d.querySelectorAll('main > .sec > .shelf > li'));
+shelf.hidden = false;
+d.querySelectorAll('main > .sec').forEach(s => s.remove());
+d.head.append(Object.assign(d.createElement('style'), { textContent: CSS }));
+
+// The stage holds the shelf and the controls, so the Clock can put them in its middle.
+// The probe's styles name the shelf by this stage.
+const stage = Object.assign(d.createElement('div'), { className: 'probe-stage' });
+shelf.before(stage);
+const ui = Object.assign(d.createElement('div'), { className: 'probe-ui' });
+ui.innerHTML = `<span class="who" aria-live="polite"></span><button type="button" title="Re-roll (R)"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll</button><button type="button" class="nav" data-step="-1" aria-label="The toy before">&larr;</button><button type="button" class="nav" data-step="1" aria-label="The next toy">&rarr;</button><a href="../index.html" target="_top">All toys</a>`;
+stage.append(shelf, ui);
+
+// The pool is every toy, in a shuffled line. Each roll takes the next twelve,
+// so no toy comes back before the rest had a turn.
+const pool = [...shelf.children];
+let line = [];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// The Deck: `top` is the toy on the pile; each toy knows how deep it lies.
+let top = 0;
+// The Headline: `held` is the toy whose name fills the page.
+let held = null;
+function turn(step) {
+  const hand = pool.filter(li => !li.hasAttribute('data-out'));
+  if (!hand.length) return;
+  top = (top + step + hand.length) % hand.length;
+  [...shelf.children].slice(0, hand.length).forEach((li, i) => {
+    const k = (i - top + hand.length) % hand.length;
+    li.style.setProperty('--k', k);
+    li.toggleAttribute('data-top', k === 0);
+  });
+}
+function deal() {
+  const hand = [];
+  while (hand.length < SIZE) {
+    if (!line.length) line = shuffle(pool.filter(li => !hand.includes(li)));
+    hand.push(line.shift());
+  }
+  pool.forEach(li => li.setAttribute('data-out', ''));
+  // A narrow Toy box holds three toys across, not four.
+  const cols = d.defaultView.innerWidth < 620 ? 3 : 4;
+  hand.forEach((li, i) => {
+    li.removeAttribute('data-out');
+    li.style.setProperty('--i', i);
+    // The Clock places each toy on its hour; Dealt throws each card a little off.
+    li.style.setProperty('--x', Math.sin(i * Math.PI / 6).toFixed(4));
+    li.style.setProperty('--y', (-Math.cos(i * Math.PI / 6)).toFixed(4));
+    li.style.setProperty('--r', (Math.random() * 16 - 8).toFixed(1) + 'deg');
+    li.style.setProperty('--dx', (Math.random() * 16 - 8).toFixed(0) + 'px');
+    li.style.setProperty('--dy', (Math.random() * 16 - 8).toFixed(0) + 'px');
+    // The Reel needs each toy's column and row; the Toy box, a place to fall.
+    li.style.setProperty('--col', i % 3);
+    li.style.setProperty('--row', Math.floor(i / 3));
+    li.style.setProperty('--bx', ((i % cols) * (84 / cols) + Math.random() * 8).toFixed(1));
+    li.style.setProperty('--by', (Math.floor(i / cols) * (cols === 3 ? 20 : 27) + Math.random() * (cols === 3 ? 6 : 11)).toFixed(1));
+    li.style.setProperty('--tx', '0px');
+    li.style.setProperty('--ty', '0px');
+  });
+  // The hand goes first, so the first toy can be the large one.
+  shelf.prepend(...hand);
+  top = 0;
+  turn(0);
+  held = null;
+  name(null);
+}
+function roll() {
+  const m = d.documentElement.dataset.m;
+  if (CRAFT.includes(m)) {
+    if (calm()) { stop(); deal(); } else craftRoll(m);
+    return;
+  }
+  shelf.classList.add('rolling');
+  setTimeout(() => {
+    deal();
+    // A timer, not a frame: a hidden tab gets no frames and the dozen would stay away.
+    setTimeout(() => shelf.classList.remove('rolling'), 40);
+  }, 190);
+}
+ui.querySelector('button').addEventListener('click', roll);
+ui.querySelectorAll('.nav').forEach(b => b.addEventListener('click', () => turn(+b.dataset.step)));
+// Each row of the Bands takes its toy's accent from toys.json.
+fetch('../toys.json').then(r => r.json()).then(toys => pool.forEach(li => { const a = toys[li.querySelector('a.toy')?.id]?.accent; if (a) li.style.setProperty('--accent', a); })).catch(() => {});
+// The Toy box: drag a toy to move it. A drag does not open the toy.
+let drag = null;
+shelf.addEventListener('dragstart', e => e.preventDefault());
+shelf.addEventListener('pointerdown', e => {
+  const li = e.target.closest('li');
+  if (!li || d.documentElement.dataset.m !== 'box') return;
+  drag = { li, x: e.clientX, y: e.clientY, tx: parseFloat(li.style.getPropertyValue('--tx')) || 0, ty: parseFloat(li.style.getPropertyValue('--ty')) || 0, moved: false };
+});
+d.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+  drag.moved = true;
+  drag.li.classList.add('drag');
+  drag.li.style.setProperty('--tx', (drag.tx + dx) + 'px');
+  drag.li.style.setProperty('--ty', (drag.ty + dy) + 'px');
+});
+d.addEventListener('pointerup', () => {
+  if (!drag) return;
+  drag.li.classList.remove('drag');
+  // The click that ends a drag must not open the toy.
+  if (drag.moved) {
+    const eat = e => { e.preventDefault(); e.stopPropagation(); };
+    shelf.addEventListener('click', eat, { capture: true, once: true });
+    // A drag that ends off its toy makes no click; do not eat the next one.
+    setTimeout(() => shelf.removeEventListener('click', eat, { capture: true }), 60);
+  }
+  drag = null;
+});
+d.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key.toLowerCase() === 'r') roll();
+  if (d.documentElement.dataset.m === 'deck' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) turn(e.key === 'ArrowRight' ? 1 : -1);
+});
+// The Clock shows the name of the toy under the pointer or the focus.
+const who = ui.querySelector('.who');
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+function name(li) {
+  const m = d.documentElement.dataset.m, head = m === 'head' || m === 'dial';
+  // The Headline and the Dial keep their last toy on show; the others clear the name.
+  if (head) li = held = li || held || shelf.children[0];
+  shelf.querySelectorAll('[data-held]').forEach(o => o.removeAttribute('data-held'));
+  if (head) li.setAttribute('data-held', '');
+  if (m === 'dial') {
+    const i = dozen().indexOf(li);
+    who.dataset.n = String(i + 1).padStart(2, '0') + ' / ' + SIZE;
+    point(i);
+  }
+  const n = li?.querySelector('.name');
+  const text = n ? [...n.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim() : '';
+  if (text === who.textContent) return;
+  who.textContent = text;
+  who.style.setProperty('--len', Math.max(text.length, 4));
+  // The new headline rises into its line.
+  if (head && !still.matches) who.animate([{ clipPath: 'inset(0 0 100% 0)', translate: '0 28%' }, { clipPath: 'inset(0 0 0 0)', translate: '0 0' }], { duration: 520, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' });
+}
+// The craft set: GSAP comes from the menu in the frame.
+const gsap = d.defaultView.gsap;
+const CRAFT = ['ledger', 'register', 'dial', 'drum'];
+const dozen = () => [...shelf.children].slice(0, SIZE);
+const parts = () => { const lis = dozen(); return { lis, toys: lis.map(li => li.querySelector('.toy')), names: lis.map(li => li.querySelector('.name')), objs: lis.map(li => li.querySelector('.obj')) }; };
+// No motion with reduced motion, without GSAP, or in a hidden tab.
+const calm = () => !gsap || still.matches || d.visibilityState !== 'visible';
+// The Dial's hand turns about the middle of the stage.
+const needle = Object.assign(d.createElement('i'), { className: 'probe-hand' });
+needle.setAttribute('aria-hidden', 'true');
+stage.append(needle);
+if (gsap) gsap.set(needle, { xPercent: -50, yPercent: -100, transformOrigin: '50% 100%' });
+function point(i) {
+  if (!gsap || i < 0) return;
+  if (calm()) gsap.set(needle, { rotation: i * 30 });
+  else gsap.to(needle, { rotation: i * 30 + '_short', duration: 0.7, ease: 'expo.out', overwrite: true });
+}
+// The Drum: four toys turn through five places, so one place is the gap.
+const reels = p => [0, 1, 2].map(c => [0, 1, 2, 3].map(r => p.toys[r * 3 + c]));
+const pitch = p => p.lis[3].offsetTop - p.lis[0].offsetTop;
+const place = (tiles, t, h) => tiles.forEach((el, r) => gsap.set(el, { y: ((((r + t + 1) % 5) + 5) % 5 - 1 - r) * h }));
+const rise = stagger => [{ yPercent: 70, clipPath: 'inset(0% 0% 100% 0%)' }, { yPercent: 0, clipPath: 'inset(0% 0% 0% 0%)', duration: 0.6, ease: 'expo.out', stagger }];
+const INTRO = {
+  ledger(tl, p) {
+    tl.fromTo(p.lis, { '--ln': 0 }, { '--ln': 1, duration: 0.7, ease: 'expo.out', stagger: 0.03 }, 0)
+      .fromTo(p.names, ...rise(0.03), 0.06)
+      .fromTo(p.objs, { scale: 0.4, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.5, ease: 'back.out(1.6)', stagger: 0.03 }, 0.14);
+  },
+  register(tl, p) {
+    const cols = d.defaultView.getComputedStyle(shelf).gridTemplateColumns.split(' ').length;
+    const out = () => ({ each: 0.045, from: 'center', grid: [SIZE / cols, cols] });
+    tl.fromTo(p.lis, { '--mk': 0 }, { '--mk': 1, duration: 0.5, ease: 'back.out(2)', stagger: out() }, 0)
+      .fromTo(p.objs, { scale: 0.5, autoAlpha: 0, y: 16 }, { scale: 1, autoAlpha: 1, y: 0, duration: 0.6, ease: 'back.out(1.5)', stagger: out() }, 0.05)
+      .fromTo(p.names, ...rise(out()), 0.16);
+  },
+  dial(tl, p) {
+    tl.fromTo(p.objs, { scale: 0.2, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.55, ease: 'back.out(1.7)', stagger: 0.04 }, 0)
+      .fromTo(needle, { rotation: -360 }, { rotation: 0, duration: 1.1, ease: 'expo.inOut', overwrite: true }, 0);
+  },
+  drum(tl, p) {
+    const h = pitch(p);
+    reels(p).forEach((tiles, c) => {
+      const o = { t: -5 * (2 + c) };
+      place(tiles, o.t, h);
+      tl.to(o, { t: 0, duration: 1 + c * 0.32, ease: 'back.out(0.8)', onUpdate: () => place(tiles, o.t, h) }, 0);
+    });
+  },
+};
+const OUTRO = {
+  drum(tl, p) {
+    const h = pitch(p);
+    reels(p).forEach(tiles => { const o = { t: 0 }; tl.to(o, { t: 5, duration: 0.26, ease: 'power2.in', onUpdate: () => place(tiles, o.t, h) }, 0); });
+  },
+  plain(tl, p) { tl.to([...p.names, ...p.objs], { autoAlpha: 0, y: -12, duration: 0.16, ease: 'power2.in', stagger: 0.006 }, 0); },
+};
+let show = null;
+// A finished show leaves no inline style behind.
+function settle(p) {
+  gsap.set([...p.toys, ...p.names, ...p.objs], { clearProps: 'transform,opacity,visibility,clipPath' });
+  p.lis.forEach(li => { li.style.removeProperty('--ln'); li.style.removeProperty('--mk'); });
+}
+function stop() {
+  if (!gsap) return;
+  if (show) { show.kill(); show = null; }
+  settle(parts());
+}
+function enter(m) {
+  const p = parts();
+  show = gsap.timeline({ onComplete: () => settle(p) });
+  INTRO[m](show, p);
+}
+function craftRoll(m) {
+  stop();
+  const old = parts();
+  show = gsap.timeline();
+  (OUTRO[m] || OUTRO.plain)(show, old);
+  show.add(() => { settle(old); deal(); enter(m); });
+}
+// Trail and Marquee read the pointer's place from the shelf.
+d.addEventListener('pointermove', e => {
+  const m = d.documentElement.dataset.m;
+  if (m === 'trail') { shelf.style.setProperty('--px', e.clientX); shelf.style.setProperty('--py', e.clientY); }
+  else if (m === 'marquee') shelf.style.setProperty('--mx', (e.clientX / d.defaultView.innerWidth * 2 - 1).toFixed(3));
+});
+shelf.addEventListener('pointerover', e => name(e.target.closest('li')));
+shelf.addEventListener('focusin', e => name(e.target.closest('li')));
+shelf.addEventListener('pointerleave', () => name(null));
+deal();
+
+const KEY = 'stimming.menulab.concept', NAMES = ['dozen', 'dealt', 'clock', 'spot', 'index', 'reel', 'hive', 'bento', 'deck', 'box', 'bands', 'head', 'trail', 'slices', 'swiss', 'marquee', 'ledger', 'register', 'dial', 'drum'];
+const pick = m => {
+  stop();
+  d.documentElement.dataset.m = m;
+  name(null);
+  if (CRAFT.includes(m) && !calm()) enter(m);
+  document.querySelectorAll('.bar button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === m));
+  try { localStorage.setItem(KEY, m); } catch (e) {}
+};
+document.querySelectorAll('.bar button').forEach(b => b.addEventListener('click', () => pick(b.dataset.m)));
+let saved = 'dozen';
+try { saved = localStorage.getItem(KEY) || 'dozen'; } catch (e) {}
+const asked = new URLSearchParams(location.search).get('m');
+pick(NAMES.includes(asked) ? asked : NAMES.includes(saved) ? saved : 'dozen');
+</script>
+</body>
+</html>

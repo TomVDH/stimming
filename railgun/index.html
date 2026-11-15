@@ -142,11 +142,15 @@ let goMix = (() => {
     return localStorage.getItem(K) || 'penta';
   } catch { return 'penta'; }
 })();
+// The sun rays' gain; the Dev sheet's Sun rays row sets it.
+let shaftGain = 1.6;
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
+  // The seven cinematic views are parked (Tom, 2026-11-15): the wide eye only.
+  // poseOf keeps them; __qa.view still reaches them for stills.
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
@@ -182,6 +186,10 @@ const ui = initPage({ id: 'railgun', bar: {
     // Fast rock: the rock falls ten times faster; off is the normal speed.
     { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
     { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
+    // Sun bearing: the dusk sun's angle right of the look, in degrees.
+    { type: 'slider', id: 'sunaz', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
+    // Sun rays: the strength of the cloud shadows in the low air.
+    { type: 'slider', id: 'shafts', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'grainsize', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
@@ -247,7 +255,7 @@ stage.prepend(canvas);
 
 const scene = new THREE.Scene();
 // A 20 m near plane keeps depth precision on rocks 40 km out.
-const camera = new THREE.PerspectiveCamera(44, 1, 20, 300000);
+const camera = new THREE.PerspectiveCamera(44, 1, 20, 800000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
@@ -259,10 +267,10 @@ const RES_STEP = [1, 0.82, 0.68, 0.55];
 
 /* ---------- the gun's axis ---------- */
 // One unit is one metre. The trunnion sits 245 m over the origin.
-// LIFT: the plinth stands on a sloped berm, LIFT metres high.
+// LIFT: the plinth's height over the sand; 0 sets it on the sand.
 // The barrel climbs at 6 degrees toward negative z.
 // Station 0 is the trunnion; station 1 is the muzzle, 900 m on.
-const LIFT = 30, BERM_R = 660;
+const LIFT = 0, BERM_R = 660;
 // The barrel runs 1046 m from the trunnion.
 const ELEV = rad(6), L = 1046, TRUN_Y = 215 + LIFT;
 const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
@@ -322,6 +330,8 @@ const U = {
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
   uAstR: { value: 0.05 },
   uAstC: { value: new THREE.Vector3(...AMBER) },
+  // The rock's fiery fill of the sky, 0 far out to 1 at the end.
+  uFill: { value: 0 },
   // The rock as a light on the clouds: world position, strength; its reach in metres.
   uRockL: { value: new THREE.Vector4(0, 0, 0, 0) },
   uRockR: { value: 10000 },
@@ -385,9 +395,12 @@ const U = {
 U.uStarT = U.uTime;
 
 /* ---------- sun: late light over a dusty plain ---------- */
-// The sun sits low on the right, a little ahead of the eye.
-// It lights the near flank; shadows rake away to the left.
-const SUN_AZ = new THREE.Vector2(0.62, -0.78).normalize();
+// The low sun sits at the frame's right edge, ahead of the eye.
+// It backlights the gun; shadows rake toward the eye.
+// VIEW_AZ is the rest look's bearing.
+// sunSwing turns the low sun right of it, in degrees.
+const VIEW_AZ = rad(-155.6);
+let sunSwing = 36;
 const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
 const sstep = THREE.MathUtils.smoothstep;
 const lerp = THREE.MathUtils.lerp;
@@ -398,7 +411,7 @@ const MOON_C = [0.09, 0.11, 0.16];
 // Latitude thirty degrees: the equinox sun stands sixty degrees up at noon.
 // The sun rises ahead and right, crosses the sky ahead and left, sets behind.
 const PHI = rad(30);
-const SKY = { E: new THREE.Vector3(SUN_AZ.x, 0, SUN_AZ.y).normalize(), S: new THREE.Vector3(), P: new THREE.Vector3() };
+const SKY = { E: new THREE.Vector3(), S: new THREE.Vector3(), P: new THREE.Vector3() };
 const skyFrame = () => {
   SKY.S.crossVectors(yUp, SKY.E);
   SKY.P.copy(yUp).multiplyScalar(Math.sin(PHI)).addScaledVector(SKY.S, -Math.cos(PHI));
@@ -412,20 +425,25 @@ function skyDir(H, d, out) {
 }
 // The morning hour angle where the sun stands deg degrees up.
 const hourOf = deg => -Math.acos(clamp(Math.sin(rad(deg)) / Math.cos(PHI), -1, 1));
-// Turn the frame so the dusk sun lands on the first look's bearing.
-skyFrame();
-{
+// Turn the frame so the dusk sun lands sw degrees right of the look.
+function aimSky(sw = sunSwing) {
+  const az = VIEW_AZ - rad(sw);
+  SKY.E.set(Math.sin(az), 0, Math.cos(az));
+  skyFrame();
   const d = skyDir(hourOf(5.6), 0, new THREE.Vector3());
-  SKY.E.applyAxisAngle(yUp, Math.atan2(SKY.E.x, SKY.E.z) - Math.atan2(d.x, d.z));
+  SKY.E.applyAxisAngle(yUp, az - Math.atan2(d.x, d.z));
   skyFrame();
 }
+aimSky();
 // The moon runs six hours behind the sun, low in the south.
 // At night on the slider it stands high on the left.
 const MOON_H = rad(93.5), MOON_DEC = rad(-33.7);
 const skyRot = new THREE.Matrix4();
 U.uSkyRot = { value: new THREE.Matrix3() };
 let skyH = 0;
-function sun(deg) { skyAt(hourOf(deg)); }
+// The low sun swings toward the frame.
+// A high sun keeps the old bearing, 63 degrees right.
+function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
 function skyAt(H) {
   skyH = H;
   skyDir(H, 0, U.uSunD.value);
@@ -528,6 +546,7 @@ uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
 uniform vec3 uAstC;
+uniform float uFill;
 uniform vec4 uRockL;
 uniform float uRockR;
 uniform vec4 uBolt;
@@ -602,6 +621,9 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   push = n * smoothstep(Rh + wh, Rh - 2.0 * wh, r) * exp(-t / 22.0) * (1.0 - smoothstep(40.0, 68.0, t)) * (2000.0 + 0.06 * Rh);
   return L;
 }
+#ifdef CSHADE
+float shadeAt(vec3 P);
+#endif
 // Cirrus: long streaks on one wind line, gathered in patches.
 vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (dir.y < 0.008) return col;
@@ -633,7 +655,12 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   d = min(d * pack, 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
   if (d < 0.002) return col;
   // High ice still holds sunlight; it reads brighter than the dusty air.
-  vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
+  float shd = 0.0;
+#ifdef CSHADE
+  // The trail and the blast cloud shade the ice.
+  shd = shadeAt(Pc);
+#endif
+  vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) * (1.0 - 0.75 * shd) + uCloudAmb;
   // The passing bolt lights the ice round it, blue-white, for a few kilometres.
   if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
   // By day the bright sky drowns thin ice; denser, brighter streaks still read.
@@ -698,7 +725,15 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-vec3 k2skyS(vec3 dir, float sunK) { return k2skyB(dir, sunK) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
+// The nearing rock lights the sky round itself with fire.
+// The glow stays near the rock; the far sky only warms a little.
+vec3 rockFill(vec3 c, vec3 dir) {
+  if (uFill < 0.001) return c;
+  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), wide = pow(m, 10.0);
+  c = mix(c, c * vec3(1.25, 0.85, 0.6), 0.25 * uFill * wide);
+  return c + uAstC * uFill * (0.9 * near_ + 0.3 * wide + 0.01);
+}
+vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
 /* ---------- end K2 ---------- */
 
@@ -868,14 +903,196 @@ vec3 impSky(vec3 dir) {
 }
 `;
 
+/* ---------- sun rays: cloud shadows in the low air ---------- */
+// A low sun throws cloud and trail shadows through a dust layer.
+// Each shadow is its occluder pushed away from the sun.
+// The view ray's length in lit air sets the rays' light.
+const SHAFT_N = 72, SHAFT_TR = 7;
+const SHAFT_U = {
+  // Strength, the dust layer's top in metres, the ray's reach in metres.
+  // The veil stands taller than real air.
+  // The trail's high shadow then shows.
+  uShaft: { value: new THREE.Vector3(0, 30000, 160000) },
+  // Ellipsoids: centre and across radius; uOccV holds each upright radius.
+  uOcc: { value: Array.from({ length: SHAFT_N }, () => new THREE.Vector4()) }, uOccV: { value: new Float32Array(SHAFT_N) }, uOccN: { value: 0 },
+  // The trail as a chain: each point and its radius.
+  uTr: { value: Array.from({ length: SHAFT_TR }, () => new THREE.Vector4()) }, uTrN: { value: 0 },
+  // The cloud shade's gain: 0 at night.
+  uCShade: { value: 0 },
+};
+const SHAFT_GLSL = /* glsl */`
+uniform vec3 uShaft;
+uniform vec4 uOcc[${SHAFT_N}];
+uniform float uOccV[${SHAFT_N}];
+uniform int uOccN;
+uniform vec4 uTr[${SHAFT_TR}];
+uniform int uTrN;
+// The ray's length inside the dust layer, from t0 to t1.
+// The layer is even from the ground to uShaft.y.
+float shM(vec3 ro, vec3 rd, float t0, float t1) {
+  if (rd.y > 1e-5) t1 = min(t1, (uShaft.y - ro.y) / rd.y);
+  return max(t1 - t0, 0.0);
+}
+// Clip the span iv to the part where a + b t is below zero.
+vec2 shSide(vec2 iv, float a, float b) {
+  if (abs(b) < 1e-6) return a < 0.0 ? iv : vec2(1.0, 0.0);
+  float tz = -a / b;
+  return b > 0.0 ? vec2(iv.x, min(iv.y, tz)) : vec2(max(iv.x, tz), iv.y);
+}
+// Skylight fills a shadow far behind its caster.
+// x is the distance behind the caster, in metres.
+float shFade(float x) { return exp(-max(x, 0.0) / 110000.0); }
+uniform float uCShade;
+// How dark the occluders make a world point: 0 lit, 1 in full shade.
+// A point inside an occluder skips it: the cloud shades itself.
+float shadeAt(vec3 P) {
+  if (uCShade < 0.001) return 0.0;
+  vec3 s = uSunD;
+  float dark = 0.0;
+  for (int i = 0; i < ${SHAFT_N}; i++) {
+    if (i >= uOccN) break;
+    float q = uOcc[i].w / uOccV[i], r = uOcc[i].w;
+    vec3 o = P - uOcc[i].xyz, sq = s;
+    o.y *= q; sq.y *= q; sq = normalize(sq);
+    float along = dot(o, sq);
+    if (along >= 0.0 || length(o) < 1.1 * r) continue;
+    dark = max(dark, smoothstep(1.5 * r, 0.4 * r, length(o - sq * along)) * shFade(-along));
+  }
+  for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
+    if (i >= uTrN - 1) break;
+    vec3 a0 = uTr[i].xyz, a1 = uTr[i + 1].xyz, r = P - a0;
+    vec3 u = (a1 - a0) - s * dot(a1 - a0, s);
+    float len = length(u);
+    if (len < 1.0) continue;
+    u /= len;
+    vec3 rp = r - s * dot(r, s);
+    float ga = dot(rp, u), along = dot(P - 0.5 * (a0 + a1), s), rad = 0.5 * (uTr[i].w + uTr[i + 1].w);
+    if (ga < 0.0 || ga > len || along >= 0.0) continue;
+    dark = max(dark, smoothstep(1.5 * rad, 0.4 * rad, length(rp - u * ga)) * shFade(-along));
+  }
+  return dark * uCShade;
+}
+// It returns the ray's lit share, 0 to 1, and its layer depth.
+vec2 shafts(vec3 ro, vec3 rd, float L) {
+  vec3 s = uSunD;
+  float all_ = shM(ro, rd, 0.0, L), dark = 0.0;
+  for (int i = 0; i < ${SHAFT_N}; i++) {
+    if (i >= uOccN) break;
+    // Squash y so the ellipsoid turns into a sphere.
+    float q = uOcc[i].w / uOccV[i];
+    vec3 o = ro - uOcc[i].xyz, d = rd, sq = s;
+    o.y *= q; d.y *= q; sq.y *= q; sq = normalize(sq);
+    // Seen down the sunlight, the shadow is a disc.
+    // A wider disc with a soft edge stands in for the penumbra.
+    vec3 op = o - sq * dot(o, sq), dp = d - sq * dot(d, sq);
+    float r = uOcc[i].w, rs = 1.5 * r;
+    float A = dot(dp, dp), B = dot(op, dp), C = dot(op, op) - rs * rs, D = B * B - A * C;
+    if (D <= 0.0 || A < 1e-9) continue;
+    float w = smoothstep(rs, 0.4 * r, sqrt(max(dot(op, op) - B * B / A, 0.0)));
+    D = sqrt(D);
+    vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
+    // Only the side away from the sun lies in shadow.
+    iv = shSide(iv, dot(o, sq), dot(d, sq));
+    dark += shM(ro, rd, iv.x, iv.y) * w * shFade(-dot(o + d * 0.5 * (iv.x + iv.y), sq));
+  }
+  for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
+    if (i >= uTrN - 1) break;
+    // One piece of the trail cone, as a slab of its mean radius.
+    vec3 a0 = uTr[i].xyz, a1 = uTr[i + 1].xyz, r = ro - a0;
+    vec3 u = (a1 - a0) - s * dot(a1 - a0, s);
+    float len = length(u);
+    if (len < 1.0) continue;
+    u /= len;
+    vec3 rp = r - s * dot(r, s), dp = rd - s * dot(rd, s);
+    vec3 w0 = rp - u * dot(rp, u), w1 = dp - u * dot(dp, u);
+    float rad = 0.5 * (uTr[i].w + uTr[i + 1].w), rs = 1.5 * rad;
+    float A = dot(w1, w1), B = dot(w0, w1), C = dot(w0, w0) - rs * rs, D = B * B - A * C;
+    if (D <= 0.0 || A < 1e-9) continue;
+    float w = smoothstep(rs, 0.4 * rad, sqrt(max(dot(w0, w0) - B * B / A, 0.0)));
+    D = sqrt(D);
+    vec2 iv = vec2(max((-B - D) / A, 0.0), min((-B + D) / A, L));
+    // Keep to the piece's own stretch.
+    float ga = dot(rp, u), gb = dot(dp, u);
+    iv = shSide(iv, ga - len, gb);
+    iv = shSide(iv, -ga, -gb);
+    iv = shSide(iv, dot(r - 0.5 * (a1 - a0), s), dot(rd, s));
+    dark += shM(ro, rd, iv.x, iv.y) * w * shFade(-dot(r - 0.5 * (a1 - a0) + rd * 0.5 * (iv.x + iv.y), s));
+  }
+  return vec2(1.0 - min(dark / max(all_, 1.0), 1.0), all_);
+}
+// Shadow bands dim the sky; lit dust adds a sunward glow.
+vec3 shaftSky(vec3 c, vec3 rd, float L) {
+  if (uShaft.x < 0.001) return c;
+  vec2 sh = shafts(cameraPosition, rd, L);
+  float cs = dot(rd, uSunD), g = 0.62;
+  float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cs, 1.5) * 0.08 + 0.05;
+  // The bands stay off the horizon.
+  // The heaps' low shadows pile up there.
+  float dk = 1.1 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
+  // A long path through lit dust stops adding light.
+  float lit = 1.0 - exp(-sh.y * sh.x / 40000.0);
+  // Shade loses the warm sunlight first: it turns cool, then dim.
+  float k = min(dk * uShaft.x, 0.85);
+  return mix(c, c * vec3(0.5, 0.58, 0.74), k) + uGlowC * ph * lit * 0.4 * uShaft.x;
+}`;
+// Each cloud's world centre, as the cloud vertex shader drifts it.
+const hs1 = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+function shaftList(list) {
+  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0] }));
+}
+let shaftOcc = null;
+const shaftV = new THREE.Vector3();
+function updateShafts() {
+  const up = U.uSunD.value.y, u = SHAFT_U;
+  // The rays need a low sun: dawn and late day only.
+  const k = shaftGain * sstep(up, -0.06, 0.0) * (1 - sstep(up, 0.3, 0.55)) * (1 - U.uStars.value);
+  u.uShaft.value.x = reduced() ? 0.6 * k : k;
+  // The clouds take the shade at any sun height; not by night.
+  u.uCShade.value = 1 - U.uStars.value;
+  if (k < 0.001 && u.uCShade.value < 0.001) return;
+  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...shaftList(MIDS), ...shaftList(FARHEAPS)];
+  const t = CLOUD_U.uCloudC.value;
+  let n = 0;
+  for (const c of shaftOcc) {
+    if (n >= SHAFT_N) break;
+    const heap = c.kind === 0, ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1;
+    const a = (ph - 0.5) * rad(16) * (heap ? 1 : 0.2), life = heap ? sstep(Math.sin(Math.PI * ph), 0, 0.4) : 1;
+    if (life < 0.05) continue;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    // A heap is a squat dome; a tower is a tall column.
+    const R = (heap ? 0.75 : 0.4) * c.W * life, V = (heap ? 0.55 : 0.5) * c.H * life;
+    u.uOcc.value[n].set(c.p.x * ca - c.p.z * sa, c.base + (heap ? 0.4 : 0.5) * c.H, c.p.x * sa + c.p.z * ca, R);
+    u.uOccV.value[n++] = V;
+  }
+  // The soot ball shades the air behind it.
+  if (U.uSootK.value > 0.05 && n < SHAFT_N) { const S = U.uSootS.value; u.uOcc.value[n].set(S.x, S.y, S.z, S.w * 0.8); u.uOccV.value[n++] = S.w * 0.8; }
+  u.uOccN.value = n;
+  // The trail: a cone from the rock, out along its away line.
+  let m = 0;
+  if (PU.uTrail.value > 0.2 && astMesh.visible) {
+    for (let x = 0; m < SHAFT_TR; m++, x = x * 1.9 + 6000) {
+      shaftV.copy(ast.pos).add(PU.uDrift.value).addScaledVector(ast.away, x);
+      u.uTr.value[m].set(shaftV.x, shaftV.y, shaftV.z, 0.7 * (1.05 * ast.R + PU.uK.value * x) * Math.min(1, PU.uTrail.value));
+    }
+  }
+  u.uTrN.value = m;
+}
+
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...IMP_U }, side: THREE.BackSide, depthWrite: false,
+  uniforms: { ...U, ...IMP_U, ...SHAFT_U }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} ${IMP_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(k2sky(d) + impSky(d), 1.0); }`,
+  fragmentShader: /* glsl */`#define CSHADE
+  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(k2sky(d), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
 sky.renderOrder = -1;
 scene.add(sky);
+
+/* ---------- the planet: one curve for every view ---------- */
+// A small world, about Earth's size: the ground drops away d² / 2R from any eye.
+// The image moves; shading keeps the flat world's positions.
+const PLANET_R = 6.0e6;
+const CURVE = /* glsl */`vec3 curved(vec3 p) { vec2 d = p.xz - cameraPosition.xz; p.y -= dot(d, d) / ${(2 * 6.0e6).toFixed(1)}; return p; }`;
 
 /* ---------- ground: a dusty plain with low relief ---------- */
 const GROUND_C = linFit(0.52, 0.035, 65);
@@ -884,12 +1101,23 @@ const TERRAIN = /* glsl */`
 float terrH(vec2 p) {
   // Flat round the mount and round the eye, so the ground under the gun reads level.
   float k = smoothstep(900.0, 2400.0, length(p - vec2(0.0, 90.0))) * smoothstep(1500.0, 4000.0, length(p - vec2(1670.0, 1990.0)));
-  return 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021));
+  // The foreground rolls in low swells between the eyes and the gun.
+  // The two eyes (wide and portrait) and the plinth stay level.
+  float fg = smoothstep(600.0, 1300.0, length(p - vec2(0.0, 90.0))) * smoothstep(150.0, 650.0, length(p - vec2(1670.0, 1990.0))) * smoothstep(150.0, 650.0, length(p - vec2(800.0, 3000.0)));
+  // Every view's eye stands on level ground: no swell rises in front of it.
+  float dEye = length(p - cameraPosition.xz), eyeK = smoothstep(150.0, 650.0, dEye), eyeF = smoothstep(2000.0, 7000.0, dEye);
+  // Crests stay under the eye's line to the gun's foot.
+  float roll = fg * (8.0 * sin(p.x * 0.0033 + 1.4 * sin(p.y * 0.0019)) + 6.0 * sin(p.y * 0.0041 + 0.8 * sin(p.x * 0.0027)));
+  // Far out, long sweeping swells rise tens of metres.
+  float far_ = smoothstep(5000.0, 16000.0, length(p - vec2(1670.0, 1990.0)));
+  return eyeK * roll + 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021))
+    + eyeF * far_ * (45.0 * sin(p.x * 0.00031 + 1.7 * sin(p.y * 0.00022)) + 30.0 * sin(p.y * 0.00047 + p.x * 0.00012));
 }`;
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+// The plain reaches out to the ranges' feet: 240 km across.
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 480, 480).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
   uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
-  vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN}
-  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+  vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN} ${CURVE}
+  void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(curved(vP), 1.0); }`,
   fragmentShader: /* glsl */`
   varying vec3 vP;
   uniform vec3 uGroundC;
@@ -998,72 +1226,175 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
 }));
 scene.add(ground);
 
-/* ---------- far country: a few mesas on open flats ---------- */
+/* ---------- far country: crescent ranges on a curved planet, raymarched ---------- */
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
-function buildFar() {
-  // Its own seed keeps the country the same on every load.
-  let s = 7919;
-  const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-  const pos = [];
-  const tri = (a, b, c) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-  const quad = (a, b, c, d) => { tri(a, b, c); tri(a, c, d); };
-  // A mesa: a talus skirt, a cliff, a flat cap.
-  function mesa(th, d, h, w, dep, yaw) {
-    const c = polar(th, d), n = 26, foot = [], knee = [], rimR = [];
-    const ph = r() * 6.28, k1 = 0.08 + 0.1 * r(), k2 = 0.04 + 0.06 * r();
-    const top = v3(c.x, h, c.z);
-    for (let i = 0; i < n; i++) {
-      const a = i / n * Math.PI * 2;
-      const rr = 1 + k1 * Math.sin(a * 3 + ph) + k2 * Math.sin(a * 7 + ph * 2.3) + 0.12 * (r() - 0.5);
-      const ex = Math.cos(a) * w * 0.5 * rr, ez = Math.sin(a) * dep * 0.5 * rr, l = Math.hypot(ex, ez);
-      const at = (off, y) => {
-        const k = (l + off) / l, x = ex * k, z = ez * k;
-        return v3(c.x + x * Math.cos(yaw) - z * Math.sin(yaw), y, c.z + x * Math.sin(yaw) + z * Math.cos(yaw));
-      };
-      foot.push(at(h * (0.8 + 0.4 * r()), -10));
-      knee.push(at(h * 0.1, h * (0.3 + 0.14 * r())));
-      rimR.push(at(0, h * (0.97 + 0.05 * r())));
-    }
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      quad(foot[i], foot[j], knee[j], knee[i]);
-      quad(knee[i], knee[j], rimR[j], rimR[i]);
-      tri(rimR[i], rimR[j], top);
-    }
-  }
-  // Angle, range, height, width, depth, turn.
-  for (const m of [
-    [-2, 24000, 720, 3800, 2300, 0.3], [27, 14000, 300, 520, 440, 0.4], [28.6, 14800, 230, 340, 300, 1],
-    [50, 19500, 520, 3200, 2000, 0.2], [13, 31000, 640, 2400, 1600, 0.6],
-  ]) mesa(rad(m[0]), m[1], m[2], m[3], m[4], m[5]);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  return g;
+// Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
+// The last two stand behind the Profile and Horizon views.
+const RANGES = [
+  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 24000, 150, 200], [-12, 148000, 42000, 18500, 130, 60],
+  [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250], [0, 81000, 16000, 6400, 120, 300],
+  [100, 236000, 73000, 13600, 150, 155], [190, 189000, 78000, 14400, 150, 64],
+];
+const FAR_U = {
+  // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
+  uRg: { value: RANGES.map(m => { const c = polar(rad(m[0]), m[1]); return new THREE.Vector4(c.x, c.z, m[2], m[3]); }) },
+  uRa: { value: RANGES.map((m, i) => new THREE.Vector4(rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, 0)) },
+  uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
+  // March steps: High takes more, the ladder's rungs fewer.
+  uFarSteps: { value: 96 },
+  uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+};
+const FAR_GLSL = /* glsl */`
+uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
+// Three smooth octaves: rounded folds, no knife-edge crests.
+float fbm3(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * k2noise(p); p = p * 2.07 + vec2(17.1, 9.2); a *= 0.5; }
+  return s / 0.875;
 }
-const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
-  uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uRockC: { value: new THREE.Vector3(...linFit(0.5, 0.065, 52)) } },
-  side: THREE.DoubleSide,
-  vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
+// The ranges' height over the flat plain at p, in metres.
+// near is 1 inside any range's broad band, where the march must step short.
+float rangeH(vec2 p, out float near) {
+  float h = 0.0;
+  near = 0.0;
+  for (int i = 0; i < ${RANGES.length}; i++) {
+    vec2 q = p - uRg[i].xy;
+    float Rc = uRg[i].z, r = length(q), off = r - Rc;
+    if (abs(off) > 0.75 * Rc) continue;
+    float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
+    if (u > 1.0) continue;
+    near = 1.0;
+    // The range tapers to both ends; its crest rolls in peaks and saddles.
+    float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
+    // A power on the crest wave sharpens the peaks and widens the saddles.
+    float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
+    float hc = uRg[i].w * t * pow(cw, 1.7) * 1.35;
+    // Inner face: a steep scarp. Outer face: a long apron.
+    float v = abs(off) / (Rc * (off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
+    if (v >= 1.0) continue;
+    // A rounded profile: the crest swells, then falls away in long slopes.
+    float prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
+    // A line of foothills rolls along the outer apron.
+    if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
+    // Flows follow the crescent: parallel ridgelines wander along the arc,
+    // and soft folds run stretched along it, kilometres long.
+    float sv = sign(off) * v, arc = u * uRa[i].y * Rc;
+    float bands = 0.5 + 0.5 * sin(sv * 15.7 + 3.0 * fbm3(vec2(arc / 30000.0, sv * 1.5) + ph));
+    float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
+    // The folds take a gentle ridge: firm spurs, no knife edges.
+    folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
+    h = max(h, hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5)));
+  }
+  return h;
+}
+// Ridged erosion: sharp spurs and deep gullies, a few kilometres across.
+float ridged(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
+  return s;
+}
+float farHN(vec2 p, out float near) {
+  float h = rangeH(p, near);
+  return h > 1.0 ? h : 0.0;
+}
+float farH(vec2 p) { float n; return farHN(p, n); }`;
+const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U },
+  depthWrite: true, depthTest: true,
+  vertexShader: /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
   fragmentShader: /* glsl */`
-  varying vec3 vP;
-  uniform vec3 uGroundC, uRockC;
+  varying vec2 vN;
+  uniform mat4 uInvVP, uVP;
+  uniform int uFarSteps;
+  uniform vec3 uRockC, uGroundC;
   ${HEAD}
   ${AIR}
+  ${FAR_GLSL}
+  const float PLANET_R = ${PLANET_R.toFixed(1)};
+  // The curved ground's drop at p, below the eye's level plane.
+  float drop(vec3 p) { vec2 d = p.xz - cameraPosition.xz; return dot(d, d) / (2.0 * PLANET_R); }
   void main() {
-    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
-    float wall = smoothstep(0.8, 0.4, N.y);
-    // Level beds cross every cliff; gullies run down it.
-    float bed = k2noise(vec2(vP.y * 0.035, 1.5)) * 0.6 + k2noise(vec2(vP.y * 0.13, 7.5)) * 0.4;
-    float gully = k2noise(vec2((vP.x + vP.z) * 0.012, vP.y * 0.002));
-    vec3 alb = mix(uGroundC * 0.95, uRockC * (0.62 + 0.6 * bed) * (0.85 + 0.3 * gully), wall);
-    vec3 col = alb * (ambient(N) + uSunC * 1.6 * max(dot(N, uSun), 0.0) + keyLight(N));
-    // Mesas go blue and flat with distance.
-    gl_FragColor = vec4(air(col, vP), 1.0);
+    vec4 w = uInvVP * vec4(vN, 1.0, 1.0);
+    vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
+    // The march starts past the near plain's heart and ends past the far ranges.
+    float t = 25000.0, tp = t, hit = -1.0;
+    for (int i = 0; i < 380; i++) {
+      if (i >= uFarSteps) break;
+      vec3 p = ro + rd * t;
+      float nr, hh = farHN(p.xz, nr), dy = p.y - (hh - drop(p));
+      if (dy < 0.0) {
+        // The ray crossed the surface: halve the last step to find it.
+        float a = tp, b = t;
+        for (int k = 0; k < 7; k++) {
+          float m = 0.5 * (a + b);
+          vec3 q = ro + rd * m;
+          if (q.y - (farH(q.xz) - drop(q)) < 0.0) b = m; else a = m;
+        }
+        hit = b;
+        break;
+      }
+      // Rising past every crest: the ray leaves the country.
+      // The ceiling sits above the tallest crest: the crests reach about 45 km.
+      if (p.y > 50000.0 && rd.y > 0.0) break;
+      tp = t;
+      // Over open plain a stride of 3% keeps grazing rays inside the budget.
+      // Near any range the stride shrinks, so no crest or horn is skipped.
+      // In a band the stride is also capped, so it never leaps a thin crest.
+      // In a band the stride stays short: 0.5% near the surface, 1% high above it.
+      // A narrow summit can rise between two long strides.
+      t += nr > 0.5 ? clamp(0.3 * dy, 0.0015 * t, dy < 0.05 * t ? 0.005 * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
+      if (t > 650000.0) break;
+    }
+    if (hit < 0.0) discard;
+    vec3 p = ro + rd * hit;
+    // Bare ground in reach of the near plain: the plain draws it.
+    float h0 = farH(p.xz);
+    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
+    // Shade on the flat world: the curve only moves the image.
+    vec3 P = vec3(p.x, h0, p.z);
+    float e = max(60.0, 0.002 * hit);
+    vec3 N = normalize(vec3(farH(p.xz - vec2(e, 0.0)) - farH(p.xz + vec2(e, 0.0)), 2.0 * e, farH(p.xz - vec2(0.0, e)) - farH(p.xz + vec2(0.0, e))));
+    // A short march toward the light: the crests shade the valleys.
+    // Each pixel starts at its own offset, so the shadow never bands.
+    float sh = 1.0, sd = 300.0 * (1.0 + fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))));
+    for (int j = 0; j < 9; j++) {
+      vec3 q = P + uSun * sd;
+      sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
+      sd *= 1.7;
+    }
+    float wall = smoothstep(0.92, 0.5, N.y);
+    vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
+    alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
+    float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
+    vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
+    // The blast lights the faces turned to it, faintly at this range.
+    col += alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
+    // The nearing rock warms the faces turned to it.
+    col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
+    // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
+    vec3 Pa = vec3(p.x, P.y, p.z);
+    float hR = 8000.0, hM = 1600.0;
+    float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+    float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
+    float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
+    vec3 tau = (vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.3e-5) * aM) * hit;
+    vec3 T = exp(-tau);
+    // The air's own light: the horizon sky, and a warm glow toward the sun.
+    float mu = dot(rd, uSunD), g = 0.76;
+    float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
+    vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
+    col = col * T + inL * (1.0 - T);
+    gl_FragColor = vec4(col, 1.0);
+    vec4 cp = uVP * vec4(p, 1.0);
+    gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
   }`,
 }));
-far.frustumCulled = false;
-scene.add(far);
+farPass.frustumCulled = false;
+// After the sky dome, before everything nearer.
+farPass.renderOrder = -0.9;
+farPass.onBeforeRender = (r, sc, cam) => { const u = farPass.material.uniforms; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); };
+scene.add(farPass);
 
 /* ---------- clouds: low heaps far out, one storm tower beyond ---------- */
 // Each cloud is one card that turns about the vertical to face the eye.
@@ -1079,9 +1410,11 @@ varying vec3 vP, vR, vF;
 // An interpolated seed wobbles one ulp per pixel.
 // The sin hash turns that wobble into new turrets, and the tops flicker.
 flat varying vec4 vS;
+#define CSHADE
 ${HEAD}
 ${AIR}
 ${IMP_GLSL}
+${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
@@ -1215,6 +1548,8 @@ void main() {
   float sh = exp(-occ / (H * 0.35));
   // High tops keep the sun after it sets.
   vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+  // The trail, the blast cloud and the other clouds shade this one.
+  sunC *= 1.0 - 0.8 * shadeAt(P);
   float thin = 1.0 - smoothstep(0.0, soft * 10.0, F);
   vec3 V = normalize(P - cameraPosition);
   // Light through the cloud, as the comet tail takes it: Beer for the beam,
@@ -1269,6 +1604,7 @@ void main() {
 }`;
 const CLOUD_VS = /* glsl */`
 attribute vec4 aC, aS;
+${CURVE}
 uniform float uCloudC;
 varying vec2 vUv;
 varying vec3 vP, vR, vF;
@@ -1293,7 +1629,8 @@ void main() {
   vec3 P = C + R * uv.x * aC.w + vec3(0.0, uv.y * aS.x, 0.0);
   vUv = uv; vP = P; vR = R; vF = f;
   vS = vec4(aC.w, aS.x, aS.y, aS.z);
-  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+  // The clouds ride the planet's curve too.
+  gl_Position = projectionMatrix * viewMatrix * vec4(curved(P), 1.0);
 }`;
 // list: [angle in degrees, range m, base m, half width m, height m, kind].
 function cloudLayer(list, order) {
@@ -1311,7 +1648,7 @@ function cloudLayer(list, order) {
   g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
   g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
   g.instanceCount = s.length;
-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U, ...SHAFT_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
   m.frustumCulled = false;
   m.renderOrder = order;
   scene.add(m);
@@ -1319,7 +1656,7 @@ function cloudLayer(list, order) {
 }
 // Heaps stand in front of the rock's track: they draw after its smoke.
 // Clusters with open sky between; two small ones nearer.
-const heaps = cloudLayer([
+const HEAPS = [
   [-6, 37000, 1550, 3600, 2000, 0], [-1, 33000, 1450, 2000, 1300, 0], [3, 36500, 1600, 2400, 1500, 0],
   [9, 16000, 1250, 900, 650, 0],
   [17, 30000, 1500, 3000, 1900, 0], [21.5, 34000, 1600, 2200, 1500, 0],
@@ -1328,11 +1665,28 @@ const heaps = cloudLayer([
   // Nearer the eye, between the far clusters.
   [-13, 22000, 1400, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
   [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 1450, 2100, 1300, 0],
-], 2.2);
+];
+const heaps = cloudLayer(HEAPS, 2.2);
+// A far band of big heaps sits at the ranges' feet and between them.
+// Some stand round the side and reverse views.
+const FARHEAPS = [
+  [-18, 62000, 2200, 5000, 3200, 0], [8, 78000, 2500, 6500, 3800, 0], [36, 70000, 2400, 6000, 3600, 0], [60, 58000, 2200, 5200, 3000, 0],
+];
+const farHeaps = cloudLayer(FARHEAPS, 1.7);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
-const tower = cloudLayer([[-3, 96000, 1500, 9000, 10500, 1], [27, 74000, 1500, 15000, 15500, 1], [49, 88000, 1500, 10500, 12500, 1], [71, 104000, 1500, 7500, 9000, 1]], 1.5);
+// Storm towers stand among the far ranges, as tall as their peaks.
+const TOWERS = [[-22, 120000, 2000, 15000, 24000, 1], [5, 150000, 2200, 19000, 28000, 1], [30, 105000, 2000, 16000, 25000, 1], [52, 135000, 2200, 18000, 27000, 1], [76, 115000, 2000, 14000, 23000, 1]];
+const tower = cloudLayer(TOWERS, 1.5);
+// A middle deck: heaps four to six kilometres up fill the middle of the sky.
+const MIDS = [
+  [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
+  [38, 45000, 5200, 3800, 2000, 0], [48, 26000, 4600, 2200, 1200, 0], [57, 38000, 5000, 3400, 1800, 0], [66, 31000, 4300, 2600, 1400, 0],
+  // Farther out and round the other views.
+  [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0], [105, 40000, 5000, 4000, 2000, 0], [140, 60000, 5600, 5000, 2400, 0], [185, 45000, 5200, 4500, 2200, 0],
+];
+const mids = cloudLayer(MIDS, 2.15);
 
 /* ---------- the gun: one clean artillery piece ---------- */
 // Every piece is a straight block or drum; one merged mesh, one draw call.
@@ -1347,9 +1701,9 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
     a.set([v.dot(AX) / L, recoil, seed + 2 * fixed, tone], i * 4);
   }
   geo.setAttribute('aPart', new THREE.Float32BufferAttribute(a, 4));
-  // Normals come from screen derivatives.
+  // Each piece keeps its own normals: boxes stay crisp, drums and bevels shade smooth.
   geo.deleteAttribute('uv');
-  geo.deleteAttribute('normal');
+  if (!geo.attributes.normal) geo.computeVertexNormals();
   return geo;
 }
 // A block in the world frame; y is its centre.
@@ -1363,6 +1717,8 @@ function bslab(w, h, a0, a1, x = 0, u = 0, r = 4) {
   let g = new RoundedBoxGeometry(w, h, a1 - a0, 1, r);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
+  // Shared corners give the bevel a smooth roll of light.
+  g.computeVertexNormals();
   return toBarrel(g, a0, a1, x, u);
 }
 const tube = (r, a0, a1, x = 0, u = 0) => toBarrel(new THREE.CylinderGeometry(r, r, a1 - a0, 24, 1).rotateX(Math.PI / 2), a0, a1, x, u);
@@ -1391,9 +1747,9 @@ function buildGun() {
   // World-frame pieces rise with the berm; fixed 2 marks a piece on the ground.
   const add = (g, level = 0, tone = 0, fixed = 0) => pieces.push(part(level === 0 && fixed !== 2 ? g.translate(0, LIFT, 0) : g, level, tone, fixed));
   const drum = (r0, r1, h, y, n = 72) => new THREE.CylinderGeometry(r0, r1, h, n, 1).translate(0, y, 0);
-  // The fixed plinth: a sloped berm, an apron, a parapet, buttresses, a ramp.
-  // Tone 4 is sand: the berm takes the plain's own colour.
-  add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 4, 2);
+  // The fixed plinth: an apron, a parapet, buttresses, a ramp.
+  // A berm stands under it only while LIFT is above zero.
+  if (LIFT > 0) add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 4, 2);
   add(drum(440, 456, 22, 11), 0, 0, 1);
   for (let i = 0; i < 12; i++) add(new THREE.BoxGeometry(70, 30, 110).translate(0, 15, 470).rotateY(rad(i * 30 + 15)), 0, 0, 1);
   add(beam(v3(0, LIFT + 3, 470), v3(0, 3, 1460), 46, 6), 0, 0, 2);
@@ -1578,6 +1934,13 @@ vec3 aim(vec3 p, float f, float g) {
   p = mix(p, vec3(p.x, r.x + ${TRUN_Y.toFixed(1)}, r.y), e);
   vec3 t = vec3(p.x * uYaw.x + p.z * uYaw.y, p.y, p.z * uYaw.x - p.x * uYaw.y);
   return mix(p, t, g);
+}
+// A normal turns with its piece: the climb, then the mount's yaw; no slide.
+vec3 aimN(vec3 n, float f, float g) {
+  vec2 r = vec2(n.y * uDrop.x + n.z * uDrop.y, n.z * uDrop.x - n.y * uDrop.y);
+  n = mix(n, vec3(n.x, r.x, r.y), step(0.25, f));
+  vec3 t = vec3(n.x * uYaw.x + n.z * uYaw.y, n.y, n.z * uYaw.x - n.x * uYaw.y);
+  return mix(n, t, g);
 }`;
 // The gun and the ship share the panel seams.
 const SEAM = /* glsl */`
@@ -1592,11 +1955,12 @@ const gunMat = new THREE.ShaderMaterial({
   attribute vec4 aPart;
   ${AIM}
   uniform vec3 uAxisUp; uniform float uOver, uTime;
-  varying vec3 vP, vO; varying vec4 vPart;
+  varying vec3 vP, vO, vN; varying vec4 vPart;
   void main() {
     // vO holds still, so the seams ride with the barrel.
     vO = position;
     vP = aim(vO, aPart.y, 1.0 - step(1.5, aPart.z));
+    vN = aimN(normal, aPart.y, 1.0 - step(1.5, aPart.z));
     // Loose dark plates on the barrel rattle through the over-hold.
     float loose = step(1.5, aPart.w) * step(aPart.w, 2.5) * step(0.25, aPart.y);
     vP += uAxisUp * loose * uOver * 1.6 * sin(uTime * 53.0 + fract(aPart.z) * 91.0);
@@ -1604,14 +1968,17 @@ const gunMat = new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  varying vec3 vP, vO; varying vec4 vPart;
+  varying vec3 vP, vO, vN; varying vec4 vPart;
   uniform vec3 uShellC, uDarkC, uHullC, uBandC, uGroundC;
   uniform float uHeat, uHeatT;
   ${HEAD}
   ${SEAM}
   void main() {
-    // Exact flat faces from the screen derivatives.
-    vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
+    // The piece's own normal: crisp on boxes, smooth round drums and bevels.
+    // The flat face is the fallback where an interpolated normal turns away.
+    vec3 Nf = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 N = normalize(vN);
+    if (dot(N, Nf) < 0.2) N = Nf;
     float sand = step(3.5, vPart.w), yel = step(2.5, vPart.w) - sand, dark = step(1.5, vPart.w) - step(2.5, vPart.w), shell = 1.0 - dark, wall = step(abs(N.y), 0.5);
     vec3 alb = mix(mix(mix(uShellC, uHullC, vPart.y), uBandC, yel), uDarkC, dark) * (0.92 + 0.16 * vPart.z);
     // Age: broad stains, then rain streaks down the walls.
@@ -2630,6 +2997,12 @@ function makeTrain(pu) {
       vec4 g; float e;
       float d = trail(q, true, g, e);
       float x = g.x, rr = g.z;
+      // Chain pieces overlap at each joint.
+      // Their ends cross-fade there, so a joint shows no dark band.
+      if (uSeg > 0.0) {
+        float xl = x - uX0;
+        d *= (uX0 > 0.0 ? smoothstep(-0.03 * uSeg, 0.03 * uSeg, xl) : 1.0) * (1.0 - smoothstep(0.94 * uSeg, uSeg, xl));
+      }
       // A plasma sheath wraps the rock's leading face.
       float rq = length(q);
       if (uX0 == 0.0 && rq < 2.6 * R) {
@@ -3439,6 +3812,10 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       uVeil: { value: 0 }, uZoom: { value: 1 },
       // The muzzle flash's streak: screen place and strength.
       uLF2: { value: new THREE.Vector3(0.5, 0.5, 0) },
+      // The streak's colour: blue-white for the shot, fire for the falling rock.
+      uLF2C: { value: new THREE.Vector3(0.75, 0.86, 1.0) },
+      // The nearing rock's own flare: screen place and strength.
+      uLF3: { value: new THREE.Vector3(0.5, 0.5, 0) },
       // The flares' ghost gain: 0 keeps a flare one level streak.
       uGhost: { value: 1 },
       // Light shafts from the blast: its place on screen, strength, sky fill.
@@ -3459,7 +3836,7 @@ function makeGrade({ tint, vig, vigIn, grain }) {
     uniform vec2 uRes;
     uniform vec3 uTint;
     uniform float uVig, uVigIn, uGrain, uBox, uSeed, uRage, uFlash;
-    uniform vec3 uLF, uLF2, uGodC;
+    uniform vec3 uLF, uLF2, uLF2C, uLF3, uGodC;
     uniform float uGhost;
     uniform vec4 uGod;
     uniform float uSoft, uCon, uSat, uBri;
@@ -3575,7 +3952,9 @@ function makeGrade({ tint, vig, vigIn, grain }) {
       }
       vec3 c = c0 * (1.0 + 0.1 * uRage + uFlash) + uTint;
       // The muzzle flash: a long level blue-white streak.
-      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, vec3(0.75, 0.86, 1.0), 0.8, vec3(0.3, 1.8, 0.5 * uGhost)) * uLF2.z;
+      if (uLF2.z > 0.001) c += flFlare(vUv, uLF2.xy, uRes.x / uRes.y, uLF2C, 0.8, vec3(0.3, 1.8, 0.5 * uGhost)) * uLF2.z;
+      // The nearing rock: a fiery glow and a soft level streak.
+      if (uLF3.z > 0.001) c += flFlare(vUv, uLF3.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.5, 0.18), 0.6), 1.1, vec3(1.2, 0.9, 0.6 * uGhost)) * uLF3.z;
       // The impact flare: a wide orange glow like the fireball, a softer streak.
       if (uLF.z > 0.001) c += flFlare(vUv, uLF.xy, uRes.x / uRes.y, flWarm(vec3(1.0, 0.62, 0.3), 0.7), 1.25, vec3(1.7, 0.7, 0.9 * uGhost)) * uLF.z;
       float l0 = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -3860,20 +4239,115 @@ const look = { yaw: 0, pitch: 0 }, lookTo = { yaw: 0, pitch: 0 };
 const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0, swayE: 0 };
 const pushG = new THREE.Vector3(), pushR = new THREE.Vector3();
 let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
+/* ---------- views: the wide eye and four more angles ---------- */
+// A pose: eye, yaw, pitch and the lens's base angle in degrees.
+// The gun's rest frame: the bore runs down negative z; right is positive x.
+let view = 'wide', viewFrom = null, viewT0 = 0;
+const VIEW_EASE = 1.6;
+const poseD = new THREE.Vector3(), poseT = new THREE.Vector3();
+// Frame a target at screen place (sx, sy), each -1 to 1, for any aspect.
+// fov is the vertical angle in degrees.
+function frameAt(P, target, sx, sy, aspect) {
+  poseD.copy(target).sub(P.p);
+  const h = Math.hypot(poseD.x, poseD.z), tv = Math.tan(rad(P.fov / 2));
+  P.yaw = Math.atan2(-poseD.x, -poseD.z) + Math.atan(sx * tv * aspect);
+  P.pitch = Math.atan2(poseD.y, h) - Math.atan(sy * tv);
+  return P;
+}
+function poseOf(v, portrait, k) {
+  const P = { p: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 55 };
+  const asp = camera.aspect, tall = portrait ? 1.9 : 1;
+  if (v === 'monolith') {
+    // Dead centre, low and far behind the gun, on a long lens.
+    // The gun's back stands against the ranges; the rock hangs above.
+    P.p.set(0, 14, 7000);
+    P.fov = 15 * tall;
+    return frameAt(P, poseT.set(0, 230, 0), 0, -0.42, asp);
+  }
+  if (v === 'profile') {
+    // Side on from nine kilometres: the gun a silhouette under a vast sky.
+    P.p.set(9000, 10, -700);
+    P.fov = 13 * tall;
+    return frameAt(P, poseT.set(0, 200, -420), portrait ? 0 : -0.3, -0.62, asp);
+  }
+  if (v === 'horizon') {
+    // From far down range: the gun a speck on the horizon under a range.
+    P.p.set(1500, 8, -24000);
+    P.fov = 11 * tall;
+    return frameAt(P, poseT.set(0, 120, 0), portrait ? 0 : 0.18, -0.7, asp);
+  }
+  if (v === 'low') {
+    // A worm's eye under the barrel: it crosses the sky overhead.
+    P.p.set(650, 3, -650);
+    P.fov = 72 * (portrait ? 1.25 : 1);
+    return frameAt(P, barrelPt(760, 0, 0, poseT), portrait ? 0 : -0.1, 0.02, asp);
+  }
+  if (v === 'rock') {
+    // A long lens on the rock: it and its trail fill the frame.
+    // The lens holds still; only its aim follows the rock.
+    P.p.set(2600, 20, 5200);
+    P.fov = 7 * tall;
+    return frameAt(P, ast.pos, portrait ? 0 : 0.22, -0.1, asp);
+  }
+  if (v === 'beneath') {
+    // On the plain under the rock's fall, looking straight up at it.
+    P.p.set(-3500, 6, -33000);
+    P.fov = 62 * (portrait ? 1.25 : 1);
+    return frameAt(P, ast.pos, portrait ? 0 : -0.15, 0.25, asp);
+  }
+  if (v === 'distant') {
+    // Eighty kilometres off, square to the shot: the gun is lost.
+    // Its flash, the bolt and the rock still read.
+    P.p.set(79000, 40, -38000);
+    // A phone's narrow frame still spans the flash and the rock: 38 degrees across.
+    P.fov = Math.max(24, 2 * Math.atan(Math.tan(rad(19)) / asp) * 180 / Math.PI);
+    return frameAt(P, poseT.set(-4250, 6000, -21000), 0, 0.1, asp);
+  }
+  // The wide eye: a locked-off lens, a man's height over the dust.
+  // The horizon sits low: the gun and the sky own the frame.
+  P.fov = portrait ? 74 : 55;
+  if (portrait) P.p.set(800, 22, 3000); else P.p.set(1670, 30, 1990);
+  P.yaw = portrait ? rad(8.5) : rad(24.5);
+  P.pitch = Math.atan((2 * (portrait ? 0.80 : 0.84) - 1) * Math.tan(rad(P.fov * k / 2)));
+  return P;
+}
+// The last pose drawn: a new view eases out of it.
+const poseNow = { p: new THREE.Vector3(1670, 30, 1990), yaw: 0, pitch: 0, fov: 55 };
+// Pick a view; the lens eases there over VIEW_EASE seconds.
+// Reduced motion cuts at once.
+function setView(v) {
+  if (v === view) return;
+  viewFrom = reduced() ? null : { p: poseNow.p.clone(), yaw: poseNow.yaw, pitch: poseNow.pitch, fov: poseNow.fov };
+  viewT0 = simT;
+  view = v;
+  lookTo.yaw = lookTo.pitch = 0;
+  frame();
+  wake();
+}
 function frame() {
   const portrait = size.w < size.h;
-  // A locked-off lens from 1.5 km, a man's height over the dust.
-  const fov = portrait ? 74 : 55;
   camera.aspect = size.w / size.h;
   // The charge pushes the lens in a little.
   // A hold pushes the lens in, slow and heavy.
-  const pk = reduced() ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
-  camera.fov = fov * cam.zoom * (1 - 0.18 * pk);
-  // The horizon sits low: the gun and the sky own the frame.
-  const hf = portrait ? 0.80 : 0.84;
-  baseUp = Math.atan((2 * hf - 1) * Math.tan(rad(camera.fov / 2)));
-  if (portrait) camera.position.set(800, 22, 3000); else camera.position.set(1670, 30, 1990);
-  const yaw0 = portrait ? rad(8.5) : rad(24.5);
+  // The four cinematic angles stay locked off: no push, look or sway.
+  const still = view !== 'wide';
+  const pk = reduced() || still ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
+  const zk = cam.zoom * (1 - 0.18 * pk);
+  const P = poseOf(view, portrait, zk);
+  if (viewFrom) {
+    // An eased move: the eye glides, the lens swings the short way round.
+    const e = sstep(clamp((simT - viewT0) / VIEW_EASE, 0, 1), 0, 1);
+    let dy = P.yaw - viewFrom.yaw;
+    dy -= Math.PI * 2 * Math.round(dy / (Math.PI * 2));
+    P.p.lerpVectors(viewFrom.p, P.p, e);
+    P.yaw = viewFrom.yaw + dy * e; P.pitch = lerp(viewFrom.pitch, P.pitch, e); P.fov = lerp(viewFrom.fov, P.fov, e);
+    if (e >= 1) viewFrom = null;
+  }
+  poseNow.p.copy(P.p); poseNow.yaw = P.yaw; poseNow.pitch = P.pitch; poseNow.fov = P.fov;
+  camera.fov = P.fov * zk;
+  baseUp = P.pitch;
+  camera.position.copy(P.p);
+  const yaw0 = P.yaw;
   // A locked-off camera.
   // Only the hold and the recoil move it.
   const wk = reduced() ? 0 : 1.2 * chaos * chaos + 2.2 * cam.shake + 2.6 * rage * rage + 4 * over * over, t = simT;
@@ -3892,9 +4366,9 @@ function frame() {
     pp = (Math.asin(pushG.y) - baseUp) * 0.8 * pk;
   }
   // The sway leans into the cursor's motion; the bob is a slow breath.
-  const sb = cam.swayE, ts = simT;
+  const sb = still ? 0 : cam.swayE, ts = simT, lk = still ? 0 : 1;
   camera.position.y += sb * 1.4 * Math.sin(ts * 2.1 + 0.5);
-  camera.rotation.set(baseUp + pp + look.pitch + cam.kickP + wp + sb * 0.0012 * Math.sin(ts * 2.1), yaw0 + py + look.yaw + cam.kickY + wy, wr + sb * (0.003 * Math.sin(ts * 1.3) - 0.35 * lookV.yaw));
+  camera.rotation.set(baseUp + pp + lk * look.pitch + cam.kickP + wp + sb * 0.0012 * Math.sin(ts * 2.1), yaw0 + py + lk * look.yaw + cam.kickY + wy, wr + sb * (0.003 * Math.sin(ts * 1.3) - 0.35 * lk * lookV.yaw));
   // The sight is the gun's rangefinder: a fixed lens that looks down the bore.
   // It turns and climbs with the gun; it never follows the bolt.
   if (sight) {
@@ -3961,6 +4435,15 @@ function aimAst() {
   const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
+  // The sky round the rock fills with its fire over the last third of its fall.
+  // The strike drives rockGlowK up: the fill reaches full as it comes down.
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.pow(sstep(Math.min(ast.s, 1), 0.65, 1), 1.5) * Math.min(1, 0.7 + 0.3 * rockGlowK) : 0;
+  U.uFill.value = fk;
+  // The rock's own flare: faint far out, strong near the end; the strike has its own.
+  tmpA.copy(ast.pos).project(camera);
+  const fon = astMesh.visible && !strike && !sight && tmpA.z < 1 && Math.abs(tmpA.x) < 1.3 && Math.abs(tmpA.y) < 1.3;
+  grade.uniforms.uLF3.value.set(tmpA.x * 0.5 + 0.5, tmpA.y * 0.5 + 0.5, fon ? (reduced() ? 0.5 : 1) * 0.35 * U.uFill.value : 0);
+  grade.uniforms.uLF2C.value.set(0.75, 0.86, 1.0);
   PU.uAstRad.value = ast.R;
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * simT;
@@ -3990,6 +4473,8 @@ function resize() {
   // Rungs 2 and 3 march the trail in fewer steps.
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
+  // The far country's march: fewer steps on Standard and on the ladder's rungs.
+  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
@@ -4025,6 +4510,7 @@ function draw() {
   updateLaser();
   updateBeacon(1 / 30);
   CLOUD_U.uCloudC.value = simT;
+  updateShafts();
   // The thermal lens sees through smoke and dust.
   if (sight) plume.visible = chargeDust.visible = shotDust.visible = caseDustV.visible = muzzleSmoke.visible = false;
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
@@ -4355,7 +4841,8 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 /* ---------- the bow shock: a glowing arc of air in front of the rock ---------- */
 // A camera-facing card; the arc opens toward the rock's travel on screen.
 const bowMat = new THREE.ShaderMaterial({
-  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 },
+  // uAp: the rock's nearness, 0 far out to 1 at the end of its fall.
+  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 }, uAp: { value: 0 },
     uCos: { value: new THREE.Vector3(...linFit(0.8, 0.13, 290)) },
     uHot: { value: new THREE.Vector3(...linFit(0.97, 0.05, 85)) }, uRim: { value: new THREE.Vector3(...linFit(0.78, 0.17, 50)) } },
   transparent: true, depthWrite: false,
@@ -4369,7 +4856,7 @@ const bowMat = new THREE.ShaderMaterial({
     // The card spans six rock radii each way.
     gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
-  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
+  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand, uAp; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
   // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
@@ -4382,15 +4869,23 @@ const bowMat = new THREE.ShaderMaterial({
     vec2 q = vUv * 6.0;
     float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
     float px = length(fwidth(q));
-    // A thin crescent hugs the nose and wraps a little way down the flanks.
+    // A crescent hugs the nose and wraps down the flanks.
+    // Nearer the ground the air is thicker: the shock presses in, thickens and wraps farther.
     // It never thins below about a pixel, so it does not shimmer.
-    float d = shellD(along, across, 1.3, 0.5, 1.0);
-    float w = max(0.035, 0.7 * px);
-    float g = (exp(-d * d / (w * w)) + 0.15 * exp(-abs(d) / 0.2)) * exp(-across * across / 2.2) * smoothstep(-1.2, 0.6, along);
-    g *= 0.92 + 0.08 * sin(uTime * 23.0 + across * 7.0);
-    // Hot white at the nose, orange where it wraps.
+    float d = shellD(along, across, 1.3 - 0.18 * uAp, 0.5, 1.0 - 0.15 * uAp);
+    float w = max(0.035 + 0.06 * uAp, 0.7 * px);
+    // Plasma breaks the shell into racing filaments.
+    float fil = 0.72 + 0.28 * sin(across * 9.0 - uTime * 31.0 + 2.0 * sin(along * 5.0 + uTime * 7.0));
+    float wrap = exp(-across * across / (2.2 + 5.0 * uAp));
+    float g = (exp(-d * d / (w * w)) * fil + (0.15 + 0.4 * uAp) * exp(-abs(d) / (0.2 + 0.3 * uAp))) * wrap * smoothstep(-1.2 - 1.8 * uAp, 0.6, along);
+    // Compressed air glows ahead of the nose.
+    g += 0.3 * uAp * exp(-max(d, 0.0) / (0.5 + 0.9 * uAp)) * smoothstep(0.0, 0.8, along) * exp(-across * across / 1.5);
+    // Hot gas peels off the flanks in two streamers.
+    float side = abs(across) - (1.4 + 0.7 * uAp);
+    g += 0.55 * uAp * exp(-side * side / 0.06) * smoothstep(0.8, -2.5, along) * smoothstep(-5.5, -1.0, along) * (0.6 + 0.4 * sin(along * 3.0 + uTime * 9.0));
+    // White-hot at the nose, bluer as it nears; orange where it wraps.
     float k = smoothstep(0.0, 1.6, across);
-    vec3 c = mix(uHot * 3.0, uRim * 1.1, k);
+    vec3 c = mix(mix(uHot * 3.0, vec3(3.2, 3.4, 4.2), 0.5 * uAp), uRim * 1.2, k);
     vec3 col = c * g;
     // The strike: a second thin crescent, violet, a little farther out.
     if (uGrand > 0.01) {
@@ -4447,7 +4942,10 @@ function updateBow() {
   const tx = -ast.away.dot(bowR), ty = -ast.away.dot(bowU), tl = Math.hypot(tx, ty) || 1;
   bowMat.uniforms.uDir.value.set(tx / tl, ty / tl);
   bowMat.uniforms.uGrand.value = g;
-  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (1 + 1.5 * g);
+  // The shock brightens and grows as the rock comes down the last stretch.
+  const ap = Math.max(clamp((Math.min(ast.s, 1) - 0.25) / 0.75, 0, 1), g);
+  bowMat.uniforms.uAp.value = ap;
+  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (0.5 + 2.5 * ap * ap) * (1 + 1.5 * g);
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
@@ -4978,10 +5476,11 @@ const spike = makeFlare(linFit(0.95, 0.05, 230), /* glsl */`
 // Side jets blow out of the brake's ports, square to the barrel.
 const jets = Array.from({ length: BRAKE_PORTS.length * 2 }, () => makeGlint(linFit(0.92, 0.07, 230)));
 // A shell: a thin skin of condensed air, lit by the sun and by uEm.
-function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 4), new THREE.ShaderMaterial({
-  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() }, uSq: { value: new THREE.Vector4(0, 1, 0, 1) } },
-  transparent: true, depthWrite: false,
+// glob draws the whole sphere: a veil, Worley patches and a lit side.
+function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62, glob = false) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, glob ? 5 : 4), new THREE.ShaderMaterial({
+  uniforms: { ...U, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uGain: { value: 0 }, uSeed: { value: rnd() * 60 }, uEm: { value: new THREE.Vector3() }, uSq: { value: new THREE.Vector4(0, 1, 0, 1) }, uVol: { value: volRT.texture } },
+  transparent: true, depthWrite: false, side: glob ? THREE.DoubleSide : THREE.FrontSide,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`uniform vec3 uC; uniform float uR; uniform vec4 uSq; varying vec3 vP, vN;
@@ -4992,7 +5491,24 @@ function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62) {
     vP = uC + p * uR;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
-  fragmentShader: /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
+  fragmentShader: glob ? /* glsl */`precision highp sampler3D; uniform sampler3D uVol;
+  varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
+  void main() {
+    vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
+    float f = 1.0 - abs(dot(N, V));
+    // Condensation gathers in round Worley patches on the skin.
+    float w = textureLod(uVol, N * 0.9 + vec3(uSeed * 0.013), 0.0).b;
+    float w2 = textureLod(uVol, N * 2.3 + vec3(0.3, uSeed * 0.007, 0.6), 0.0).g;
+    float cells = smoothstep(${lo.toFixed(2)}, ${hi.toFixed(2)}, 0.7 * w + 0.3 * w2);
+    // The whole sphere shows faintly; its rim, seen edge on, thickens.
+    float a = (0.18 + 1.6 * pow(max(f, 0.0), ${sharp.toFixed(1)})) * (0.3 + 0.7 * cells) * uGain;
+    // The far side shows through the near side, dimmer.
+    if (!gl_FrontFacing) a *= 0.45;
+    // A soft terminator; the skin toward the sun glows through.
+    float lit = smoothstep(-0.35, 0.7, dot(N, uSun));
+    vec3 col = vec3(0.95) * (0.8 * ambient(N) + uSunC * (0.15 + 0.85 * lit)) + uSunC * 0.6 * pow(max(dot(-V, uSun), 0.0), 6.0) + uEm;
+    gl_FragColor = vec4(k2haze(col, vP) * a, a);
+  }` : /* glsl */`varying vec3 vP, vN; uniform float uGain, uSeed; uniform vec3 uEm; ${HEAD}
   void main() {
     vec3 V = normalize(cameraPosition - vP), N = normalize(vN);
     float f = 1.0 - abs(dot(N, V));
@@ -5964,7 +6480,10 @@ float dens(vec3 p, out vec3 em) {
   float pk = smoothstep(1.6, 3.2, age) * (1.0 - smoothstep(7.0, 11.0, age));
   vec3 nd = qf / max(length(qf), 1.0);
   float lobe = texture(uVol, nd * 0.55 + vec3(uFb.w, 0.12 * age, 0.31)).r - 0.5 + 0.6 * (texture(uVol, nd * 1.3 + vec3(0.2 * age, uFb.w, 0.7)).g - 0.5);
-  float rs = length(qf) / (Rf * (1.0 + pk * 0.45 * lobe)), fd = 0.0;
+  // Big heads bulge out of the ball from the first moment.
+  float head = texture(uVol, nd * 0.8 + vec3(0.41, uFb.w, 0.05 * age)).b - 0.45;
+  float eb = 0.35 * smoothstep(0.0, 0.8, age) * (1.0 - 0.5 * smoothstep(6.0, 12.0, age));
+  float rs = length(qf) / (Rf * (1.0 + pk * 0.45 * lobe + eb * head)), fd = 0.0, vd = 0.0;
   if (rs < 1.15 && age < 20.0) {
     float cool = smoothstep(1.5, 12.0, age);
     // The noise scales with the ball, so every cell runs outward with it.
@@ -5973,17 +6492,32 @@ float dens(vec3 p, out vec3 em) {
     // A round front with a turbulent skin.
     // Billows push the edge in and out.
     float ball = smoothstep(1.0, 0.8, rs + (0.6 - fn) * 0.45);
-    // The outer shell burns brightest while the ball grows.
-    float front = smoothstep(0.55, 0.95, rs) * exp(-age / 2.0);
+    // The shock heats the outer shell for the first second only.
+    float front = smoothstep(0.55, 0.95, rs) * exp(-age / 0.7);
+    // Later the core stays hot and the skin cools.
+    // That gives the ball a limb.
+    float core = mix(1.0, mix(1.25, 0.6, smoothstep(0.35, 1.0, rs)), smoothstep(0.4, 1.6, age));
     // As it cools, holes open and the fire breaks into pockets.
     float hold = smoothstep(0.3, 0.55, fn + 0.45 * (1.0 - cool) - 0.15 * cool);
     float fire = ball * hold * (1.0 - smoothstep(9.0, 20.0, age));
-    // Hot cells and cool cells: the ball is never one flat colour.
-    float T = fireEnv(age) * (0.6 + 0.8 * front) * (0.25 + 1.3 * fn * fn);
+    // Hot knots and cool cells: the ball is never one flat colour.
+    // Broad cells set the knots: the ball boils in lobes, not grain.
+    float kn = texture(uVol, u * 0.42 + vec3(0.5, uFb.w, age * 0.02)).b;
+    float knot = smoothstep(0.36, 0.7, 0.65 * kn + 0.35 * fn);
+    // The knots come in after 1 s and ease after 4 s.
+    float kk = smoothstep(0.6, 1.8, age) * (1.0 - 0.6 * smoothstep(4.0, 7.0, age));
+    float T = fireEnv(age) * (0.6 + 0.8 * front) * core * mix(0.25 + 1.3 * fn * fn, 0.1 + 2.1 * knot * knot, kk);
     // Cool fire is dim fire, not pink fire.
-    em = bbody(T) * fire * min(1.0, T * 2.5) * 5.0 / Rf * uFb.z;
-    // Soot stays in the cool cells, so dark veins run through the fire.
-    fd = fire * (1.0 - smoothstep(2.0, 9.0, age)) * smoothstep(0.35, 0.6, fn);
+    // The glow dips from 1 to 6 s.
+    // The hot knots then stay under the clip.
+    float dip = 1.0 - 0.45 * smoothstep(0.8, 2.2, age) * (1.0 - smoothstep(3.5, 6.0, age));
+    em = bbody(T) * fire * min(1.0, T * 2.5) * 5.0 * dip / Rf * uFb.z;
+    // The fire clears the outer soot; the veins are its own.
+    fd = fire * (1.0 - smoothstep(2.0, 9.0, age)) * max(knot, smoothstep(0.35, 0.6, fn));
+    // Dark soot veins fill the cool cells between the knots.
+    // The fire lights them from inside, so they read brown, not black.
+    float vein = ball * (1.0 - knot) * smoothstep(0.25, 1.4, age) * (1.0 - smoothstep(3.0, 5.5, age));
+    vd = vein * (0.6 + 0.9 * smoothstep(0.5, 1.0, rs)) * 3.2 / Rf;
   }
   // The cloud rises slowly as it cools.
   vec3 q = p - uBP - vec3(0.0, 25.0 * age, 0.0);
@@ -5992,40 +6526,48 @@ float dens(vec3 p, out vec3 em) {
   // The wind shears the top over; the cloud spreads sideways as it ages.
   q.x -= q.y * 0.3 * old;
   float r = length(q * vec3(1.0 / (1.0 + 0.25 * old), 1.0 + 0.3 * old, 1.0)) / Rb;
-  if (r > 1.45) return 0.0;
+  if (r > 1.45) return vd;
   // Big lobes swell and sink round the ball, slowly changing.
   float lob = texture(uVol, normalize(q) * 0.33 + vec3(uFb.w, age * 0.008, 0.0)).r;
   r *= 1.0 + 0.6 * (0.55 - lob) * (0.5 + 0.5 * smoothstep(0.5, 6.0, age));
-  if (r > 1.3) return 0.0;
+  if (r > 1.3) return vd;
   vec3 w = q / Rb + vec3(uFb.w, -age * 0.02, 0.0);
   // A slow curl warp turns the ball into torn billows.
   w += (texture(uVol, w * 0.6 + vec3(age * 0.006)).rgb - 0.5) * (0.25 + 0.4 * old);
   // Three octaves of billows push the surface in and out.
   // Large billows first: the octaves sit at a broad scale, so the ball rolls, not grains.
-  float n = 0.6 * texture(uVol, w * 0.26).r + 0.28 * texture(uVol, w * 0.6).r + 0.12 * texture(uVol, w * 1.4).r;
-  float shape = smoothstep(0.95, 0.75, r + (0.72 - n) * (1.3 + 0.6 * old)) * smoothstep(1.3, 1.15, r);
+  // Worley cells round each billow off, like a heap's turrets.
+  float n = 0.6 * texture(uVol, w * 0.26).b + 0.28 * texture(uVol, w * 0.6).b + 0.12 * texture(uVol, w * 1.4).r;
+  // The Worley cells run lower than the old billows: the mid point moves down.
+  float shape = smoothstep(0.95, 0.75, r + (0.48 - n) * (1.5 + 0.7 * old)) * smoothstep(1.3, 1.15, r);
   // Fine cells carve small lobes into each billow.
   float d = clamp(shape * (0.55 + 0.6 * texture(uVol, w * 2.6).g) - 0.12, 0.0, 1.0) * 1.4;
   // The fire clears its own soot for the first seconds.
   d *= 1.0 - 0.85 * fd;
   // The soot skin starts thin and thickens as the fire dies.
   d *= mix(0.4, 1.0, smoothstep(0.5, 7.0, age));
-  // The soot erodes from the rim and its thin parts, gone by 38 s.
-  float er = smoothstep(5.0, 28.0, age);
+  // The soot erodes from the rim and its thin parts, gone by 90 s.
+  float er = smoothstep(10.0, 70.0, age);
   // Large cells tear it into tufts, not grain.
   float e = 0.7 * texture(uVol, w * 0.5 + vec3(age * 0.008)).b + 0.3 * texture(uVol, w * 1.2).g;
   d = clamp((d - er * (0.1 + 0.8 * e + 0.35 * r)) / max(1.0 - 0.75 * er, 0.12), 0.0, 1.0);
   // It thins as it grows, so the sky shows through.
   // A denser core: the soot is thickest at the heart of the ball.
-  return d * 2.6 / Rb * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.85, r))) * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(26.0, 38.0, age));
+  return vd + d * 2.6 / Rb * (1.0 + 0.9 * (1.0 - smoothstep(0.0, 0.85, r))) * (1.0 - 0.5 * smoothstep(3.0, 16.0, age)) * (1.0 - smoothstep(65.0, 90.0, age));
 }
 // Soot turns to pale ash as it cools, like the comet trail.
 vec3 alb(vec3 p) { return mix(uSootC, uAshC, smoothstep(2.0, 12.0, uFb.x)); }
 // The fire's core and the falling pieces light the smoke from inside.
 vec3 vlight(vec3 p) {
   vec3 b = p - uBP;
-  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(26.0, 38.0, uFb.x));
-  vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0);
+  float R0 = rf() * 0.9, k = uFb.z * (1.2 * exp(-uFb.x / 1.5) + fireEnv(uFb.x)) * (1.0 - smoothstep(65.0, 90.0, uFb.x));
+  // Soot between the core and p swallows the fire's light.
+  // The outer billows then take the sun, not the fire.
+  float rr = length(b) / rb();
+  vec3 L = uAstC * k * R0 * R0 / (dot(b, b) + R0 * R0) * mix(1.0, exp(-2.2 * smoothstep(0.25, 1.0, rr)), smoothstep(1.0, 4.0, uFb.x));
+  // Deep inside, the sky's light is shut out: a cheap occlusion.
+  // VOLFX adds the sky light; this takes part of it back.
+  L -= mix(uHorC, uZenC, 0.5) * 0.3 * 0.7 * (1.0 - smoothstep(0.15, 0.8, rr));
   // At night the moon lights the soot faintly and silvers its far edge.
   vec3 nb = normalize(b);
   float edge = pow(1.0 - abs(dot(nb, normalize(cameraPosition - uBP))), 2.0);
@@ -6156,6 +6698,8 @@ function updateDomes() {
     L[d.i].set(d.P.x, d.P.y, d.P.z, impK === 2 ? 0 : f);
     const u = d.m.material.uniforms, Hd = d.S * (0.12 + 0.88 * (1 - Math.exp(-a / 7))), Rd = d.S * 0.7 * (0.3 + 0.7 * (1 - Math.exp(-a / 5))) * (1 + 0.35 * THREE.MathUtils.smoothstep(a, 10, 60));
     u.uDc.value.copy(d.P).addScaledVector(DOME_WIND, a);
+    // The dome stands on the curved ground.
+    u.uDc.value.y -= ((u.uDc.value.x - camera.position.x) ** 2 + (u.uDc.value.z - camera.position.z) ** 2) / (2 * PLANET_R);
     u.uDm.value.set(a, d.S, 0.37 * d.i + 0.11, f);
     // The bound holds the sheared dome and its skirt.
     u.uC.value.copy(u.uDc.value);
@@ -6284,29 +6828,10 @@ function drawVolumes() {
   renderer.setClearColor(volClear, ca);
   renderer.setRenderTarget(null);
 }
-// The impact's dark plume: the tail's own smoke shader, short and thick,
-// from the blast on ahead along the rock's path, where the debris flies.
-const plumeTrain = makeMini();
-plumeTrain.pu.uSoot.value.set(...linFit(0.32, 0.012, 50));
-const brHead = new THREE.Vector3(), brAway = new THREE.Vector3();
-function updateBridge(ha, R) {
-  const on = ha > 0.4 && ha < 46;
-  if (!on) { plumeTrain.m.visible = false; return; }
-  // The head hides in the blast; the smoke streams on ahead along the pieces' path.
-  brAway.copy(ast.away).negate();
-  // Its round head tucks a rock's radius back into the main tail, so the two merge.
-  brHead.copy(blastFx.P).addScaledVector(ast.away, R).setY(blastFx.P.y + R * ast.away.y + 18 * ha);
-  // It swells in, burns a while at its root, then thins and breaks up.
-  // It is gone by 24 s, before it breaks down to a lone knot.
-  const fade = THREE.MathUtils.smoothstep(ha, 0.4, 3) * (1 - THREE.MathUtils.smoothstep(ha, 14, 24));
-  aimMini(plumeTrain, brHead, brAway, R * (0.9 + 0.8 * (1 - Math.exp(-ha / 3))), R * 7, fade, 0.4 * Math.exp(-ha / 4));
-  plumeTrain.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(ha, 8, 24);
-  // One segment covers the whole plume, so its bound never clips the smoke.
-  plumeTrain.pu.uX0.value = 0; plumeTrain.pu.uSeg.value = R * 7 * 1.03;
-}
 // The soot draws before the trails, so they can lie in front of it.
 fireball.renderOrder = 1.9;
-const hitShellA = makeShell(3.0), hitShellB = makeShell(5.0);
+// The Wilson cloud and the shock front are whole spheres.
+const hitShellA = makeShell(3.0, 0.45, 0.75, true), hitShellB = makeShell(4.0, 0.35, 0.7, true);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
 const hitShellC = makeShell(7.0, -0.1, 0.45);
 // The live blast: start time, place, rock radius and power.
@@ -6324,29 +6849,30 @@ function updateVoid() {
 }
 function updateBlast() {
   updateVoid();
-  if (!blastFx) { plumeTrain.m.visible = false; fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
+  if (!blastFx) { fireball.visible = hitShellA.visible = hitShellB.visible = hitShellC.visible = false; warpH.strength = 0; U.uSootK.value = 0; for (const m of burstFlares) m.visible = false; return; }
   const ha = simT - blastFx.t0, R = blastFx.R, k = blastFx.k;
   // The void outlives the soot: the blast state holds until the sky heals.
-  if (ha > 70) { blastFx = null; updateBlast(); return; }
+  if (ha > 95) { blastFx = null; updateBlast(); return; }
   const u = fireball.material.uniforms;
   u.uBP.value.copy(blastFx.P);
   u.uFb.value.set(ha, R, reduced() ? 0.5 * k : k, blastFx.seed);
   const Rb = R * (1 + 11 * (1 - Math.exp(-ha / 4.5)));
   u.uC.value.copy(blastFx.P).y += 25 * ha;
   // The bound holds the soot and the faster fire sphere.
-  u.uR.value = Math.max(Rb * 1.6, R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * 1.2);
+  // The fire's heads bulge out to about 1.4 of its radius.
+  u.uR.value = Math.max(Rb * 1.6, R * (1 + 7 * (1 - Math.exp(-ha / 1.1))) * 1.45);
   // The soot ball others fade behind: thick early, thin as it erodes.
   U.uSootS.value.set(u.uC.value.x, u.uC.value.y, u.uC.value.z, Rb * 0.95);
   // The tail's eaten end grows with the cloud and keeps its last size.
   U.uEat.value.set(blastFx.P.x, blastFx.P.y, blastFx.P.z, Math.max(U.uEat.value.w, Rb * 0.08));
-  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 5, 28)) * (1 - THREE.MathUtils.smoothstep(ha, 26, 38));
+  U.uSootK.value = 1.2 * (1 - 0.6 * THREE.MathUtils.smoothstep(ha, 10, 70)) * (1 - THREE.MathUtils.smoothstep(ha, 65, 90));
   // Soot needs fewer steps than fire.
   // While the fire burns it needs full steps; soot alone needs fewer.
   const soot = ha > 12;
   // A deeper march toward the sun: the ball shades itself in billows, as the tail does.
   u.uVSteps.value = soot ? Math.max(8, Math.round(volSteps() * 0.6)) : volSteps(); u.uLSteps.value = soot ? 3 : 4; u.uLs.value = 0.1 * Rb;
-  // The soot is gone by 38 s; the blast state lives on for the void.
-  fireball.visible = ha < 39;
+  // The soot is gone by 90 s; the blast state lives on for the void.
+  fireball.visible = ha < 91;
   // The Wilson shell flashes round the fireball and burns off.
   const ga = reduced() ? 0.5 : 1, A = hitShellA.material.uniforms, B = hitShellB.material.uniforms;
   A.uC.value.copy(blastFx.P); A.uR.value = R * 1.4 + 20000 * (1 - Math.exp(-ha / 5));
@@ -6369,7 +6895,6 @@ function updateBlast() {
   // It stays until Reset.
   if (!voidFx) voidFx = { P: blastFx.P.clone(), R, k: Math.min(1, k), t0: blastFx.t0 };
   updateBursts(ha, R, k);
-  updateBridge(ha, R);
 }
 // Each burst: a warm flash through the soot, a spray of sparks, a flicker of light.
 const burstP = new THREE.Vector3();
@@ -6411,8 +6936,11 @@ function stepRain(dt) {
   for (; rainAcc >= 1; rainAcc--) {
     const th = rnd() * Math.PI * 2, r = Rf * Math.sqrt(rnd());
     bp.set(P.x + Math.cos(th) * r, P.y + 25 * ha - Rf * (0.2 + 0.5 * rnd()), P.z + Math.sin(th) * r);
-    bv.set((rnd() - 0.5) * 90, -(140 + 300 * rnd()), (rnd() - 0.5) * 90).multiplyScalar(sp);
-    writeStar(bp, simT, bv, 0.12 + 0.08 * rnd(), 2, 5 + 4 * rnd(), 0.8 + 0.7 * rnd(), 1.3 + 1.1 * rnd(), 3, 0.75, 0);
+    // A few big lumps fall slow and burn long among the crumbs.
+    const big = rnd() < 0.18;
+    // The crumbs leave slow and wide; the wind leans them one way.
+    bv.set((rnd() - 0.5) * 160 + 35, -(30 + 170 * rnd()), (rnd() - 0.5) * 160 + 12).multiplyScalar(sp);
+    writeStar(bp, simT, bv, big ? 0.3 + 0.1 * rnd() : 0.12 + 0.08 * rnd(), 2, big ? 9 + 5 * rnd() : 5 + 4 * rnd(), big ? 1.6 + rnd() : 0.8 + 0.7 * rnd(), big ? 2.6 + 1.4 * rnd() : 1.2 + 1.1 * rnd(), 3, big ? 0.95 : 0.7, 0);
   }
 }
 // The shards trail burning smoke while they are hot.
@@ -6445,10 +6973,11 @@ function shardAt(i, age, out, vel) {
 }
 // Chunk trails: smoke ribbons behind the biggest falling shards.
 // Each trail is a chain of short trains laid along the shard's own arc.
-const SEG = 4;
-// Three trailed pieces: scaled-down rocks, not slabs.
-const chunks = Array.from({ length: 3 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
-const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chQ = new THREE.Vector3(), chA = new THREE.Vector3();
+const SEG = 5;
+// Four trailed pieces: scaled-down rocks, not slabs.
+// uDebL and uPool hold one slot per piece.
+const chunks = Array.from({ length: 4 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
+const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chA = new THREE.Vector3();
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
 const chunkGlow = chunks.map(() => makeFlare(linFit(0.78, 0.13, 52)));
@@ -6467,6 +6996,9 @@ function stepChunks() {
     // A landed piece's trail lingers, then fades; nothing cuts.
     if (chP.y <= 15.5 && !ch.landAt) {
       ch.landAt = simT; ch.landP = chP.clone();
+      // A piece that still has its bulk lands with a flash and a dust dome.
+      // The rock mode leaves the ship's dome slots free.
+      if (tgtKind === 'rock' && shr > 0.3) shipDomes.push({ m: domeVols[ci], t0: simT, i: ci, P: new THREE.Vector3(chP.x, 0, chP.z), S: 2600 + 22 * r });
       // The landing throws a ring of dust.
       if (!reduced()) for (let n = 0; n < 24; n++) {
         const a = rnd() * Math.PI * 2, v = 10 + 25 * rnd();
@@ -6481,24 +7013,17 @@ function stepChunks() {
     flare(chunkGlow[ci], chP, r * (8 + 0.15 * age) * Math.max(shr, 0.3), on * (0.022 + 0.05 * Math.exp(-age / 6)));
     // Each piece's glow lights the smoke round it.
     U.uDebL.value[ci].set(chP.x, chP.y, chP.z, on * r * (0.35 + 0.8 * Math.exp(-age / 6)));
-    const flown = Math.hypot(chP.x - sPos.array[ch.i * 3], chP.y - sPos.array[ch.i * 3 + 1], chP.z - sPos.array[ch.i * 3 + 2]);
     // The train reaches all the way back to the burst, where the main trail ends.
     // So the main trail splits into the debris trains.
-    const len = flown + r, step = len / SEG;
-    // Walk back in time; mark a joint every step metres of arc.
+    // Each joint sits at a fixed share of the age, so no joint jumps.
+    // The square packs joints near the burst, where the piece flew fastest.
     chPts[0].copy(chP); chX[0] = 0;
-    let k = 1, s = 0, tb = age;
-    chQ.copy(chP);
-    const dt = Math.max(age, 0.05) / 60;
-    for (let n = 0; n < 60 && k <= SEG; n++) {
-      tb = Math.max(0, tb - dt);
-      shardAt(ch.i, tb, chA, chV);
-      s += chA.distanceTo(chQ); chQ.copy(chA);
-      while (k <= SEG && s >= k * step) { chPts[k].copy(chA); chX[k] = k * step; k++; }
-      if (tb <= 0) break;
+    for (let k = 1; k <= SEG; k++) {
+      const f = 1 - k / SEG;
+      shardAt(ch.i, age * f * f, chPts[k], chV);
+      chX[k] = chX[k - 1] + chPts[k].distanceTo(chPts[k - 1]);
     }
-    // A young trail reaches back to the burst point.
-    for (; k <= SEG; k++) { chPts[k].copy(chQ); chX[k] = k * step; }
+    const len = chX[SEG] + r;
     for (let j = 0; j < SEG; j++) {
       const t = ch.segs[j], seg = chPts[j].distanceTo(chPts[j + 1]);
       if (seg < 1) { t.m.visible = false; continue; }
@@ -6508,9 +7033,9 @@ function stepChunks() {
       // The far end stays full while the main trail does, and fades with it.
       t.pu.uJoin.value = Math.min(1, 3 * PU.uTrail.value);
       t.pu.uSteps.value = rung >= 2 ? 8 : 12;
-      // A debris trail widens a third as fast as the main tail, and frays as it ages.
-      t.pu.uK.value = 0.035;
-      t.pu.uBreak.value = 0.5 * THREE.MathUtils.smoothstep(age, 5, 28);
+      // A debris trail widens fast and billows; it frays only a little.
+      t.pu.uK.value = 0.06;
+      t.pu.uBreak.value = 0.25 * THREE.MathUtils.smoothstep(age, 10, 40);
     }
   }
 }
@@ -6840,13 +7365,25 @@ function shatter(c) {
     // The pieces carry on along the rock's own path, at nearly one speed.
     // The blast only fans them a little round that path and lifts them.
     // They fan out wide, each on its own lob and speed, so no two trails run parallel.
-    const a = j * Math.PI * 2 / 3 + 0.4 + (rnd() - 0.5) * 0.8, sp = (260 + 380 * c) * (R / 600) * (0.6 + 0.8 * rnd());
-    const go = (350 + 250 * c) * (R / 600) * (0.7 + 0.55 * rnd());
-    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.9).addScaledVector(up, (0.45 * Math.sin(a) + 0.1 + 0.35 * rnd()) * sp).addScaledVector(fw, go);
-    // Each is a small copy of the rock: a fifteenth to a seventh of its radius.
-    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.065 + 0.08 * rnd()), d[2], d[3]);
+    // Uneven angles: no claw of even spokes.
+    // A slower throw with more lift: each piece lobs up, slows and falls.
+    const a = j * Math.PI * 2 / chunks.length + 0.4 + (rnd() - 0.5) * 1.4, sp = (150 + 220 * c) * (R / 600) * (0.6 + 0.8 * rnd());
+    const go = (190 + 140 * c) * (R / 600) * (0.7 + 0.55 * rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.9).addScaledVector(up, (0.45 * Math.sin(a) + 0.5 + 0.6 * rnd()) * sp).addScaledVector(fw, go);
+    // Each is a small copy of the rock: a fifth to two fifths of its radius.
+    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.2 + 0.2 * Math.pow(rnd(), 1.5)), d[2], d[3]);
   });
-  shardGeo.instanceCount = keep.length;
+  // A crowd of big burning pieces lobs out round the trained ones.
+  // They smoke through the stars, not trains, so they cost little.
+  const crowd = reduced() ? 0 : Math.min(SHARD_MAX - keep.length, 24);
+  for (let j = keep.length; j < keep.length + crowd; j++) {
+    const a = rnd() * Math.PI * 2, sp = (110 + 200 * c) * (R / 600) * (0.5 + rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, (0.6 * Math.sin(a) + 0.4 + 0.6 * rnd()) * sp).addScaledVector(fw, (150 + 120 * c) * (R / 600) * (0.5 + 0.8 * rnd()));
+    bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.5 * R).add(P);
+    sPos.setXYZ(j, bp.x, bp.y, bp.z); sVel.setXYZW(j, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
+    sSeed.setXYZW(j, rnd() * 100, R * (0.18 + 0.27 * Math.pow(rnd(), 1.4)), simT, 14 + rnd() * 10);
+  }
+  shardGeo.instanceCount = keep.length + crowd;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
   chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; ch.burstAt = 0; ch.burstP = null; });
   // Embers: burning pieces fly out all round and arc down.
@@ -7808,6 +8345,8 @@ function updateStrike() {
   // No ghosts in the game over: the flare stays one level streak.
   grade.uniforms.uGhost.value = 0;
   // The level streak carries the flare; the warm veil sits under it.
+  // The streak burns the rock's colour, hotter toward contact.
+  grade.uniforms.uLF2C.value.set(1.0, lerp(0.5, 0.68, u), lerp(0.18, 0.36, u));
   grade.uniforms.uLF2.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 1.4 * lf : 0);
   grade.uniforms.uLF.value.set(strikeF.x * 0.5 + 0.5, strikeF.y * 0.5 + 0.5, onF ? rm * 0.5 * lf : 0);
   bq.copy(strikeP).project(camera);
@@ -7826,7 +8365,8 @@ function updateStrike() {
 const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
-const busy = () => !!sshot || shipBusy() || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+// A live landing dome and a view's move keep the loop awake.
+const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!viewFrom || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -9334,6 +9874,12 @@ window.__qa = {
   },
   // Set the bloom strength, as the Settings slider does.
   bloom(v) { gfx.bloom = v; setBloom(); },
+  // Set the sun rays' gain, as the Dev slider does.
+  shafts(v) { shaftGain = v; draw(); },
+  // Pick a view at once, with no move.
+  view(v) { setView(v); viewFrom = null; frame(); draw(); },
+  // Turn the dusk sun v degrees right of the look.
+  swing(v) { sunSwing = v; aimSky(); setSun(); },
   hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
   hulkSite: i => hulkSite(i, new THREE.Vector3()).toArray(),
   // The ground ease g at age a after the break.
@@ -9478,7 +10024,7 @@ setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
 // The stored graphics settings apply before the first frame.
-gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value;
+gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; shaftGain = ui.setting('shafts').value; sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
 gfx.mist = ui.setting('mist').value; gfx.hal = ui.setting('halation').value; gfx.vig = ui.setting('vignette').value; gfx.gsize = ui.setting('grainsize').value;

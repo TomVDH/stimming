@@ -25,6 +25,7 @@ const HEAD = /* glsl */ `
   varying vec3 vW, vN, vCol;
   varying vec2 vUv;
   uniform vec3 uSun, uSunCol, uT, uAlb, uAmbHi, uAmbLo; uniform float uB, uTau; uniform vec2 uSize;
+  uniform vec3 uT2, uAlb2; uniform float uShape, uPat, uPatS;
   vec3 faceN(out vec3 v) {
     v = normalize(cameraPosition - vW);
     vec3 n = normalize(vN);
@@ -42,29 +43,77 @@ const HEAD = /* glsl */ `
     float hem = 1.0 - step(0.035, min(e.x, e.y));
     float slub = 0.12 * (vn(m * 9.0) - 0.5) + 0.06 * (vn(vec2(m.x * 60.0, m.y * 3.0)) - 0.5);
     return 1.0 + hem + slub;
+  }
+  // The garment's outline on the grid: x runs across, y down from the pegs.
+  // 1 shirt, 2 trousers, 3 dress, 4 sock, 5 fringed towel; 0 keeps the whole sheet.
+  bool cut() {
+    vec2 u = vUv;
+    float sx = abs(u.x - 0.5);
+    if (uShape < 0.5) return false;
+    if (uShape < 1.5) {
+      // Pegged at the shoulders: a neck, sleeves cut on a slant, a narrower body.
+      if (u.y < 0.07 && sx < 0.1) return true;
+      return sx > 0.3 && u.y > 0.38 - (sx - 0.3) * 0.5;
+    }
+    if (uShape < 2.5) {
+      // Pegged at the waistband: two legs part below the seat.
+      if (u.y > 0.3 && sx < 0.03 + (u.y - 0.3) * 0.05) return true;
+      return u.y > 0.3 && sx > 0.5 - (u.y - 0.3) * 0.05;
+    }
+    if (uShape < 3.5) {
+      // Straps from the pegs down to a flared skirt.
+      if (u.y < 0.16) return abs(sx - (0.45 - u.y * 0.9)) > 0.06;
+      return sx > 0.27 + 0.22 * u.y;
+    }
+    if (uShape < 4.5) {
+      // A sock: the leg hangs from the cuff; the foot turns out at the bottom.
+      if (u.x < 0.6) return false;
+      if (u.y < 0.68) return true;
+      return length(vec2((u.x - 0.6) / 0.4, (u.y - 0.84) / 0.16)) > 1.0;
+    }
+    // A towel's fringe: thin strands below the bottom hem.
+    return u.y > 0.95 && fract(u.x * 46.0) > 0.45;
+  }
+  // The pattern's share of the second colour: 0 is the base, 1 the second.
+  // 1 stripes down, 2 stripes across, 3 check, 4 dots, 5 two bands; uPatS is the repeat in metres.
+  float band(float v) { float w = fwidth(v) * 1.5; return smoothstep(0.5 - w, 0.5 + w, abs(fract(v) - 0.5) * 2.0); }
+  float pat() {
+    if (uPat < 0.5) return 0.0;
+    vec2 m = vUv * uSize / uPatS;
+    if (uPat < 1.5) return band(m.x);
+    if (uPat < 2.5) return band(m.y);
+    if (uPat < 3.5) return 0.5 * (band(m.x) + band(m.y));
+    if (uPat < 4.5) { float d = length(fract(m) - 0.5), w = fwidth(d) * 1.5; return 1.0 - smoothstep(0.2 - w, 0.2 + w, d); }
+    float y = vUv.y;
+    return step(0.1, y) * step(y, 0.17) + step(0.8, y) * step(y, 0.87);
   }`;
 const PASS = {
   // The sun's light through the cloth; it brightens toward the sun's disc.
-  max: `void main() { vec3 v; vec3 n = faceN(v);
+  max: `void main() { if (cut()) discard; vec3 v; vec3 n = faceN(v);
     float through = 0.35 + 0.65 * max(dot(-n, uSun), 0.0);
     float fwd = 1.0 + 1.1 * pow(max(dot(-v, uSun), 0.0), 8.0);
     float k = layers();
     gl_FragColor = vec4(uSunCol * uB * uTau * 0.6 * through * fwd / k, 1.0); }`,
   // The tint deepens with the path length through the weave.
-  mul: `void main() { vec3 v; vec3 n = faceN(v);
+  mul: `void main() { if (cut()) discard; vec3 v; vec3 n = faceN(v);
     float c = max(abs(dot(n, v)), 0.3);
-    vec3 T = pow(uT * vCol, vec3(layers() / c));
+    vec3 T = pow(mix(uT, uT2, pat()) * vCol, vec3(layers() / c));
     gl_FragColor = vec4(mix(vec3(0.05), T, uB * uTau + (1.0 - uB) * 0.04), 1.0); }`,
-  add: `void main() { vec3 v; vec3 n = faceN(v);
+  add: `void main() { if (cut()) discard; vec3 v; vec3 n = faceN(v);
     float sun = max(dot(n, uSun), 0.0);
     vec3 amb = mix(uAmbLo, uAmbHi, 0.5 + 0.5 * n.y) * (0.75 - 0.45 * uB);
-    gl_FragColor = vec4(uAlb * vCol * (uSunCol * sun * 0.6 + amb), 1.0); }`,
+    gl_FragColor = vec4(mix(uAlb, uAlb2, pat()) * vCol * (uSunCol * sun * 0.6 + amb), 1.0); }`,
 };
 const ORDER = { max: 10, mul: 11, add: 12 };
 
-function clothMat(shared, kind, alb, tr, size, vcol) {
+// pal may add a second colour (alb2, tr2), a shape, a pattern and its repeat in metres.
+function clothMat(shared, kind, alb, tr, size, vcol, pal = {}) {
   const m = new THREE.ShaderMaterial({
-    uniforms: { ...shared, uAlb: { value: new THREE.Vector3(...alb) }, uT: { value: new THREE.Vector3(...tr) }, uSize: { value: new THREE.Vector2(...size) } },
+    uniforms: {
+      ...shared, uAlb: { value: new THREE.Vector3(...alb) }, uT: { value: new THREE.Vector3(...tr) }, uSize: { value: new THREE.Vector2(...size) },
+      uAlb2: { value: new THREE.Vector3(...(pal.alb2 || alb)) }, uT2: { value: new THREE.Vector3(...(pal.tr2 || tr)) },
+      uShape: { value: pal.shape || 0 }, uPat: { value: pal.pat || 0 }, uPatS: { value: pal.patS || 0.1 },
+    },
     vertexShader: VS, fragmentShader: HEAD + PASS[kind], vertexColors: vcol,
     side: THREE.DoubleSide, depthWrite: false, transparent: true, blending: THREE.CustomBlending,
   });
@@ -158,7 +207,7 @@ export function makeLook(scene, line, { cord, peg, amb }) {
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(new THREE.BufferAttribute(c.tris, 1));
     const meshes = ['max', 'mul', 'add'].map(kind => {
-      const m = new THREE.Mesh(g, clothMat(shared, kind, pal.alb, pal.tr, [c.w, c.h], false));
+      const m = new THREE.Mesh(g, clothMat(shared, kind, pal.alb, pal.tr, [c.w, c.h], false, pal));
       m.renderOrder = ORDER[kind];
       m.frustumCulled = false;
       group.add(m);

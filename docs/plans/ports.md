@@ -18,6 +18,18 @@ The decisions behind each column are in [code-health.md](../code-health.md).
 - Only approved modules: `audioKit()`, `oklchLinear`, `output.js`, `gl.js`, `detail()`, `fitRenderer`, `noise.js`. Rows marked "waits" need Tom first.
 - Tom sets the version after a port. Nothing raises it on its own.
 
+## Proved modules
+
+A toy adopts a module only after its reference port proves it ([modularize.md](modularize.md), Adoption order).
+
+| Module | Reference port | Proof |
+|---|---|---|
+| `audioKit()` | `eyes`, 2026-11-15 (`stimming-4u0b`) | The hand copy goes; first frame pixel-equal, same sound. SwiftShader only |
+| `oklchLinear` | `rain`, 2026-11-15 (`stimming-zaqb`) | Not bit-equal: the copies round the matrix to 10 digits. 2 to 31 pixels per frame move by 1/255. Real GPU and SwiftShader. Tom accepts this as the same frame (2026-11-15): ready for the toys below |
+| `output.js`: `ouAces` | `stone`, 2026-11-15 (`stimming-hmvj`) | Same text; 0 pixels differ in 25 frames, real GPU and SwiftShader. Ready for the toys below that copy `aces()` |
+| `gl.js` | `bismuth`, 2026-11-15 (`stimming-x1q5`) | Its copies go; 0 pixels differ in 35 canvas frames on the real GPU and on SwiftShader. A browser unit check covers what Bismuth does not use, with a lost and restored context. Ready for the family-A raw toys; B and C need the changes in modularize.md step 4 |
+| `output.js`: `ouSrgb`, `ouKnee`, `ouDither` | Not yet | Stone has none of them. `dijkstra` holds the exact `srgb()` text. The clamped `srgb()` copies (`kaleido`, `neon`, `rain`, `chladni`, `eyes`) keep their clamp |
+
 ## The list
 
 Key: **Type** is the stack type now, then the proposed one. **Map** means the importmap holds only the three.js entries; paste the standard text.
