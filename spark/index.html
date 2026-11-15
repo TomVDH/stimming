@@ -554,12 +554,18 @@ sparksGhost.frustumCulled = false;
 sparksGhost.renderOrder = 0;
 scene.add(sparks, sparksGhost);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
-// Write one segment into the next slot; the oldest slot gives way.
+// Write one segment into the next free slot.
+// A slot whose segment has not ended keeps it.
+// A full ring drops the new segment and returns false.
 function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain, tint = NO_TINT) {
-  const i = head;
-  head = (head + 1) % CAP;
-  if (dirtyFrom < 0) dirtyFrom = i;
-  dirtyN = Math.min(CAP, dirtyN + 1);
+  let i = head, skip = 0;
+  while (aA.array[i * 4 + 3] + aC.array[i * 4 + 1] > time) {
+    if (++skip > 64) return false;
+    i = (i + 1) % CAP;
+  }
+  head = (i + 1) % CAP;
+  // The upload range runs over the slots that stay.
+  if (dirtyFrom < 0) { dirtyFrom = i; dirtyN = 1; } else dirtyN = Math.min(CAP, dirtyN + skip + 1);
   aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, heat0, life, trail, size);
@@ -567,6 +573,7 @@ function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain, 
   aE.setXYZW(i, tint[0], tint[1], tint[2], tint[3]);
   sparkGeo.instanceCount = Math.max(sparkGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
+  return true;
 }
 // Upload only the slots written since the last render; a wrap gives two ranges.
 function commitSparks() {
@@ -676,7 +683,8 @@ function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
   const end = Math.min(life, hit, forkAt);
   const heatEnd = heat0 + (heat1 - heat0) * (end / life);
   const trail = o.trail ?? (fd ? 0.03 : 0.07);
-  writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1, tint);
+  // A dropped spark has no sound, no smoke and no children.
+  if (!writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1, tint)) return;
   // A comet lays thin smoke along its first flight.
   if (m.trailSmoke && act === 0 && fd === 0 && bd === 0) {
     for (let tt = 0.07; tt < end; tt += 0.07) wisp(t0 + tt, posAt(p0, v0, k, tt, tmpP), m.trailSmoke, 0.02, 0.1);
@@ -1320,6 +1328,8 @@ function aimVolume(yaw) {
 const wisps = [];
 function wisp(t, p, smoke, heat = 0, radius = 0.16) {
   if (!smokeOn || reduced() || wisps.length > 240) return;
+  // An empty puff does not wake the sim.
+  if (!(smoke > 0) && !(heat > 0)) return;
   const pos = boxOfWorld(p);
   // A puff outside the box does nothing.
   if (pos[0] < BOX.x0 || pos[0] > BOX.x1 || pos[1] < BOX.y0 || pos[1] > BOX.y1 || pos[2] < BOX.z0 || pos[2] > BOX.z1) return;
@@ -1372,7 +1382,9 @@ function smokeStep(dt) {
   const feed = Math.max(j, kicking ? 0.55 : 0);
   kick = Math.max(0, kick - dt);
   wisps.sort((a, b) => a.t - b.t);
-  if (feed > 0.02 || (wisps.length && wisps[0].t <= time)) smokeUntil = time + LINGER;
+  // A type with no smoke and no flame starts no sim.
+  const feeds = m.smoke > 0 || m.warm;
+  if ((feed > 0.02 && feeds) || (wisps.length && wisps[0].t <= time)) smokeUntil = time + LINGER;
   if (time >= smokeUntil) { if (smokeLive) clearSmoke(); return; }
   smokeLive = true;
   volBox.visible = true;

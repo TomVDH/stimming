@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T05:47:02Z
-updated_at: 2026-11-15T06:28:21Z
+updated_at: 2026-11-15T07:37:45Z
 parent: stimming-oh7b
 ---
 
@@ -43,3 +43,7 @@ Tom (2026-11-14): more spark types, slightly more detail on the roller, slightly
   - Confetti left the frame before it fluttered; shorter first flight, a loft of 3.
   - The count rule for sparse types now reads the type's own `n`, so reduced motion and the ladder's last rung do not turn a metal into a now-and-then type.
   - Left for later (minor): Confetti runs the smoke sim on nothing; a hard flick on Sparkler can overwrite live sparks; some code comments break the one-fact, twelve-word rule.
+
+- 2026-11-15, two review leftovers fixed, test set t9 (seen to fail first: Confetti started the smoke sim; a hot Sparkler grind with two flares overwrote 108 unfinished segments in 2 s). t1 to t6, t8 and t9 pass.
+  - A type with no smoke and no flame (Confetti) starts no smoke sim; smoke that already hangs keeps its life. An empty puff does not wake the sim.
+  - writeSpark() skips a slot whose segment has not ended, and drops the new spark when 64 slots in a row are live. A dropped spark has no sound, smoke or children.
