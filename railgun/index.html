@@ -601,6 +601,9 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
   push = n * smoothstep(Rh + wh, Rh - 2.0 * wh, r) * exp(-t / 22.0) * (1.0 - smoothstep(40.0, 68.0, t)) * (2000.0 + 0.06 * Rh);
   return L;
 }
+#ifdef CSHADE
+float shadeAt(vec3 P);
+#endif
 // Cirrus: long streaks on one wind line, gathered in patches.
 vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (dir.y < 0.008) return col;
@@ -632,7 +635,12 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   d = min(d * pack, 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
   if (d < 0.002) return col;
   // High ice still holds sunlight; it reads brighter than the dusty air.
-  vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) + uCloudAmb;
+  float shd = 0.0;
+#ifdef CSHADE
+  // The trail and the blast cloud shade the ice.
+  shd = shadeAt(Pc);
+#endif
+  vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) * (1.0 - 0.75 * shd) + uCloudAmb;
   // The passing bolt lights the ice round it, blue-white, for a few kilometres.
   if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
   // By day the bright sky drowns thin ice; denser, brighter streaks still read.
@@ -881,6 +889,8 @@ const SHAFT_U = {
   uOcc: { value: Array.from({ length: SHAFT_N }, () => new THREE.Vector4()) }, uOccV: { value: new Float32Array(SHAFT_N) }, uOccN: { value: 0 },
   // The trail as a chain: each point and its radius.
   uTr: { value: Array.from({ length: SHAFT_TR }, () => new THREE.Vector4()) }, uTrN: { value: 0 },
+  // The cloud shade's gain: 0 at night.
+  uCShade: { value: 0 },
 };
 const SHAFT_GLSL = /* glsl */`
 uniform vec3 uShaft;
@@ -904,6 +914,36 @@ vec2 shSide(vec2 iv, float a, float b) {
 // Skylight fills a shadow far behind its caster.
 // x is the distance behind the caster, in metres.
 float shFade(float x) { return exp(-max(x, 0.0) / 110000.0); }
+uniform float uCShade;
+// How dark the occluders make a world point: 0 lit, 1 in full shade.
+// A point inside an occluder skips it: the cloud shades itself.
+float shadeAt(vec3 P) {
+  if (uCShade < 0.001) return 0.0;
+  vec3 s = uSunD;
+  float dark = 0.0;
+  for (int i = 0; i < ${SHAFT_N}; i++) {
+    if (i >= uOccN) break;
+    float q = uOcc[i].w / uOccV[i], r = uOcc[i].w;
+    vec3 o = P - uOcc[i].xyz, sq = s;
+    o.y *= q; sq.y *= q; sq = normalize(sq);
+    float along = dot(o, sq);
+    if (along >= 0.0 || length(o) < 1.1 * r) continue;
+    dark = max(dark, smoothstep(1.5 * r, 0.4 * r, length(o - sq * along)) * shFade(-along));
+  }
+  for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
+    if (i >= uTrN - 1) break;
+    vec3 a0 = uTr[i].xyz, a1 = uTr[i + 1].xyz, r = P - a0;
+    vec3 u = (a1 - a0) - s * dot(a1 - a0, s);
+    float len = length(u);
+    if (len < 1.0) continue;
+    u /= len;
+    vec3 rp = r - s * dot(r, s);
+    float ga = dot(rp, u), along = dot(P - 0.5 * (a0 + a1), s), rad = 0.5 * (uTr[i].w + uTr[i + 1].w);
+    if (ga < 0.0 || ga > len || along >= 0.0) continue;
+    dark = max(dark, smoothstep(1.5 * rad, 0.4 * rad, length(rp - u * ga)) * shFade(-along));
+  }
+  return dark * uCShade;
+}
 // It returns the ray's lit share, 0 to 1, and its layer depth.
 vec2 shafts(vec3 ro, vec3 rd, float L) {
   vec3 s = uSunD;
@@ -979,7 +1019,9 @@ function updateShafts() {
   // The rays need a low sun: dawn and late day only.
   const k = shaftGain * sstep(up, -0.06, 0.0) * (1 - sstep(up, 0.3, 0.55)) * (1 - U.uStars.value);
   u.uShaft.value.x = reduced() ? 0.6 * k : k;
-  if (k < 0.001) return;
+  // The clouds take the shade at any sun height; not by night.
+  u.uCShade.value = 1 - U.uStars.value;
+  if (k < 0.001 && u.uCShade.value < 0.001) return;
   shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS)];
   const t = CLOUD_U.uCloudC.value;
   let n = 0;
@@ -1012,7 +1054,8 @@ function updateShafts() {
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
   uniforms: { ...U, ...IMP_U, ...SHAFT_U }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
-  fragmentShader: /* glsl */`varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(k2sky(d), d, uShaft.z) + impSky(d), 1.0); }`,
+  fragmentShader: /* glsl */`#define CSHADE
+  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(k2sky(d), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
 sky.renderOrder = -1;
 scene.add(sky);
@@ -1024,7 +1067,10 @@ const TERRAIN = /* glsl */`
 float terrH(vec2 p) {
   // Flat round the mount and round the eye, so the ground under the gun reads level.
   float k = smoothstep(900.0, 2400.0, length(p - vec2(0.0, 90.0))) * smoothstep(1500.0, 4000.0, length(p - vec2(1670.0, 1990.0)));
-  return 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021));
+  // Far out, long sweeping swells rise tens of metres.
+  float far_ = smoothstep(5000.0, 16000.0, length(p - vec2(1670.0, 1990.0)));
+  return 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021))
+    + far_ * (45.0 * sin(p.x * 0.00031 + 1.7 * sin(p.y * 0.00022)) + 30.0 * sin(p.y * 0.00047 + p.x * 0.00012));
 }`;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
   uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
@@ -1138,7 +1184,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(80000, 80000, 320, 320).ro
 }));
 scene.add(ground);
 
-/* ---------- far country: a few mesas on open flats ---------- */
+/* ---------- far country: crescent ridges and horns on open flats ---------- */
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
 function buildFar() {
@@ -1147,42 +1193,84 @@ function buildFar() {
   const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
   const pos = [];
   const tri = (a, b, c) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
-  const quad = (a, b, c, d) => { tri(a, b, c); tri(a, c, d); };
-  // A mesa: a talus skirt, a cliff, a flat cap.
-  function mesa(th, d, h, w, dep, yaw) {
-    const c = polar(th, d), n = 26, foot = [], knee = [], rimR = [];
-    const ph = r() * 6.28, k1 = 0.08 + 0.1 * r(), k2 = 0.04 + 0.06 * r();
-    const top = v3(c.x, h, c.z);
-    for (let i = 0; i < n; i++) {
-      const a = i / n * Math.PI * 2;
-      const rr = 1 + k1 * Math.sin(a * 3 + ph) + k2 * Math.sin(a * 7 + ph * 2.3) + 0.12 * (r() - 0.5);
-      const ex = Math.cos(a) * w * 0.5 * rr, ez = Math.sin(a) * dep * 0.5 * rr, l = Math.hypot(ex, ez);
-      const at = (off, y) => {
-        const k = (l + off) / l, x = ex * k, z = ez * k;
-        return v3(c.x + x * Math.cos(yaw) - z * Math.sin(yaw), y, c.z + x * Math.sin(yaw) + z * Math.cos(yaw));
-      };
-      foot.push(at(h * (0.8 + 0.4 * r()), -10));
-      knee.push(at(h * 0.1, h * (0.3 + 0.14 * r())));
-      rimR.push(at(0, h * (0.97 + 0.05 * r())));
+  // A crescent: a curved ridge whose horns taper to the plain.
+  // The inner face drops steep; the outer face runs out in a long apron.
+  // th, d: the centre. Rc: the arc's radius. H: the crest. span, open: the arc in degrees.
+  function crescent(th, d, Rc, H, span, open) {
+    const c = polar(th, d), NU = 96, NV = 10, grid = [];
+    const sp = rad(span), a0 = rad(open) + Math.PI - sp / 2;
+    // Spires: a few sharp peaks ride the crest.
+    const spikes = Array.from({ length: 3 + Math.floor(r() * 3) }, () => ({ u: 0.12 + 0.76 * r(), w: 0.015 + 0.03 * r(), h: 0.12 + 0.25 * r() }));
+    const ph = r() * 6.28;
+    for (let i = 0; i <= NU; i++) {
+      const u = i / NU, ang = a0 + sp * u;
+      // The horns taper: low, thin and sharp at both ends.
+      const t = Math.pow(Math.sin(Math.PI * u), 0.65);
+      let hc = H * t * (0.72 + 0.18 * Math.sin(u * 23 + ph) + 0.1 * Math.sin(u * 61 + 2 * ph));
+      for (const k of spikes) hc += H * k.h * t * Math.exp(-((u - k.u) ** 2) / (2 * k.w * k.w));
+      const row = [];
+      for (let j = 0; j <= NV; j++) {
+        const v = j / NV * 2 - 1;
+        // Inner face: steep. Outer face: a long apron.
+        const off = v < 0 ? v * 0.13 * Rc * (0.3 + t) : v * 0.42 * Rc * (0.3 + t);
+        const y = j === 0 || j === NV ? -30 : hc * Math.pow(1 - Math.abs(v), v < 0 ? 0.55 : 1.6) * (0.86 + 0.28 * r());
+        const rr = Rc + off + (r() - 0.5) * 0.02 * Rc;
+        row.push(v3(c.x + Math.cos(ang) * rr, y, c.z + Math.sin(ang) * rr));
+      }
+      grid.push(row);
     }
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      quad(foot[i], foot[j], knee[j], knee[i]);
-      quad(knee[i], knee[j], rimR[j], rimR[i]);
-      tri(rimR[i], rimR[j], top);
+    for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
+      const p00 = grid[i][j], p10 = grid[i + 1][j], p01 = grid[i][j + 1], p11 = grid[i + 1][j + 1];
+      tri(p00, p10, p11); tri(p00, p11, p01);
     }
   }
-  // Angle, range, height, width, depth, turn.
+  // Angle, range, arc radius, crest, span, opening.
   for (const m of [
-    [-2, 24000, 720, 3800, 2300, 0.3], [27, 14000, 300, 520, 440, 0.4], [28.6, 14800, 230, 340, 300, 1],
-    [50, 19500, 520, 3200, 2000, 0.2], [13, 31000, 640, 2400, 1600, 0.6],
-  ]) mesa(rad(m[0]), m[1], m[2], m[3], m[4], m[5]);
+    [-6, 30000, 7500, 2000, 150, 40], [12, 44000, 10000, 2700, 170, -20], [31, 21000, 3600, 1150, 140, 120],
+    [46, 35000, 6500, 2200, 160, 200], [60, 17000, 2600, 850, 125, 70], [4, 14000, 1900, 560, 130, 250],
+    [22, 58000, 12000, 3200, 120, 10],
+  ]) crescent(rad(m[0]), m[1], m[2], m[3], m[4], m[5]);
+  // A horn: a crescent stood on its edge.
+  // It roots in the plain, sweeps up and over, and hooks down to a sharp tip.
+  // Rc: the sweep's radius. W: the girth. lean: the tilt off upright. yaw: the sweep's bearing.
+  function horn(th, d, Rc, W, lean, yaw) {
+    const c = polar(th, d), NU = 64, NV = 9, rings = [];
+    const hz = v3(Math.cos(rad(yaw)), 0, Math.sin(rad(yaw))), side = v3(-hz.z, 0, hz.x);
+    const up = v3(0, 1, 0).multiplyScalar(Math.cos(rad(lean))).addScaledVector(side, Math.sin(rad(lean)));
+    const p = new THREE.Vector3(), tg = new THREE.Vector3(), nA = new THREE.Vector3(), nB = new THREE.Vector3();
+    for (let i = 0; i <= NU; i++) {
+      const u = i / NU, f = rad(-18 + 168 * u);
+      p.copy(c).addScaledVector(hz, Rc * Math.cos(f)).addScaledVector(up, Rc * Math.sin(f));
+      tg.copy(hz).multiplyScalar(-Math.sin(f)).addScaledVector(up, Math.cos(f)).normalize();
+      nA.copy(hz).multiplyScalar(Math.cos(f)).addScaledVector(up, Math.sin(f));
+      nB.crossVectors(tg, nA).normalize();
+      // Thick at the root, thickest past it, a needle at the tip.
+      const girth = W * Math.pow(Math.sin(Math.PI * (0.12 + 0.88 * u)), 0.75) * (1 - 0.15 * u);
+      const ring = [];
+      for (let j = 0; j < NV; j++) {
+        const a = j / NV * Math.PI * 2;
+        // Crags: each ring point sits at its own depth.
+        const k = girth * (0.8 + 0.4 * r()) * (j % 3 === 0 ? 1.15 : 1);
+        ring.push(p.clone().addScaledVector(nA, Math.cos(a) * k).addScaledVector(nB, Math.sin(a) * k * 0.7));
+      }
+      rings.push(ring);
+    }
+    for (let i = 0; i < NU; i++) for (let j = 0; j < NV; j++) {
+      const j2 = (j + 1) % NV, a = rings[i][j], b = rings[i + 1][j], cc = rings[i + 1][j2], dd = rings[i][j2];
+      tri(a, b, cc); tri(a, cc, dd);
+    }
+  }
+  // Angle, range, sweep radius, girth, lean, bearing.
+  for (const m of [
+    [3, 26000, 2600, 520, 12, 70], [19, 37000, 4200, 800, -18, 200], [37, 24000, 1900, 380, 25, 150],
+    [52, 41000, 3600, 700, -8, 20], [-8, 47000, 3000, 650, 30, 110],
+  ]) horn(rad(m[0]), m[1], m[2], m[3], m[4], m[5]);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   return g;
 }
 const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
-  uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uRockC: { value: new THREE.Vector3(...linFit(0.5, 0.065, 52)) } },
+  uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) } },
   side: THREE.DoubleSide,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`
@@ -1191,14 +1279,22 @@ const far = new THREE.Mesh(buildFar(), new THREE.ShaderMaterial({
   ${HEAD}
   ${AIR}
   void main() {
+    // Flat facets: each crag face catches the light on its own.
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
-    float wall = smoothstep(0.8, 0.4, N.y);
-    // Level beds cross every cliff; gullies run down it.
-    float bed = k2noise(vec2(vP.y * 0.035, 1.5)) * 0.6 + k2noise(vec2(vP.y * 0.13, 7.5)) * 0.4;
-    float gully = k2noise(vec2((vP.x + vP.z) * 0.012, vP.y * 0.002));
-    vec3 alb = mix(uGroundC * 0.95, uRockC * (0.62 + 0.6 * bed) * (0.85 + 0.3 * gully), wall);
-    vec3 col = alb * (ambient(N) + uSunC * 1.6 * max(dot(N, uSun), 0.0) + keyLight(N));
-    // Mesas go blue and flat with distance.
+    float wall = smoothstep(0.85, 0.35, N.y);
+    // Tilted beds sweep along each ridge; gullies run down it.
+    float bed = k2noise(vec2((vP.y + 0.08 * vP.x) * 0.02, 1.5)) * 0.6 + k2noise(vec2(vP.y * 0.09, 7.5)) * 0.4;
+    float gully = k2noise(vec2((vP.x + vP.z) * 0.006, vP.y * 0.002));
+    // The crests run darker: wind-scoured stone.
+    float crest = smoothstep(300.0, 2200.0, vP.y);
+    vec3 alb = mix(uGroundC * 0.9, uRockC * (0.6 + 0.6 * bed) * (0.8 + 0.4 * gully) * (1.0 - 0.35 * crest), wall);
+    // A wrap term keeps the shadow side from going flat black.
+    float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
+    vec3 col = alb * (ambient(N) + uSunC * (1.5 * nl + 0.15 * wr) + keyLight(N));
+    // Backlit crests take a thin rim of light.
+    vec3 V = normalize(cameraPosition - vP);
+    col += uSunC * 0.35 * pow(1.0 - max(dot(N, V), 0.0), 4.0) * max(dot(-V, uSun), 0.0) * (1.0 - nightK());
+    // The crags go blue and flat with distance.
     gl_FragColor = vec4(air(col, vP), 1.0);
   }`,
 }));
@@ -1219,9 +1315,11 @@ varying vec3 vP, vR, vF;
 // An interpolated seed wobbles one ulp per pixel.
 // The sin hash turns that wobble into new turrets, and the tops flicker.
 flat varying vec4 vS;
+#define CSHADE
 ${HEAD}
 ${AIR}
 ${IMP_GLSL}
+${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
@@ -1355,6 +1453,8 @@ void main() {
   float sh = exp(-occ / (H * 0.35));
   // High tops keep the sun after it sets.
   vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+  // The trail, the blast cloud and the other clouds shade this one.
+  sunC *= 1.0 - 0.8 * shadeAt(P);
   float thin = 1.0 - smoothstep(0.0, soft * 10.0, F);
   vec3 V = normalize(P - cameraPosition);
   // Light through the cloud, as the comet tail takes it: Beer for the beam,
@@ -1451,7 +1551,7 @@ function cloudLayer(list, order) {
   g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
   g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
   g.instanceCount = s.length;
-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
+  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U, ...SHAFT_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
   m.frustumCulled = false;
   m.renderOrder = order;
   scene.add(m);
