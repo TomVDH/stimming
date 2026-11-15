@@ -1,0 +1,1087 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.08 0.014 300); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mesh ball</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Mesh ball: a ball of goo in a soft net. A squeeze pushes goo out through the holes. */
+:root { --stage: oklch(0.08 0.014 300); }
+.stage--meshball canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--meshball canvas.on { opacity: 1; }
+.stage--meshball { cursor: grab; }
+.stage--meshball.is-held { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--meshball canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Mesh ball</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--meshball" id="stage" tabindex="0" role="application" aria-label="A soft ball of goo inside a net. Press and hold to squeeze it, and goo bubbles bulge out through the holes. Drag to move the squeeze. Hold Space to squeeze it from both sides.">
+      <p class="fail" hidden>Mesh ball needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Mesh ball</h1>
+    <div class="vignette">
+      <div>
+        <h2>Why the goo comes out through the holes</h2>
+        <p>Press a sealed bag of liquid in one place and the pressure rises everywhere inside it at once. Blaise Pascal described this in the 1600s. The goo cannot get smaller, so it must go somewhere. The net holds the skin flat under each strand, and the skin can stretch only in the holes.</p>
+        <p>A dome in a hole is hardest to push when it is a half sphere, as wide as the hole. With an even pull in the skin, a dome needs less pressure after that point, so a bubble that gets that far swells out fast. Large holes give way first. A fine net needs a firm squeeze.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 220 160" role="img" aria-label="A cut through the ball. A finger presses in at the left. The net strands sit as dots on the outline, and round bubbles of goo bulge out between them on the right.">
+          <path d="M80 30c22-12 52-6 66 6 9-6 22-4 27 6 10 1 18 10 15 21 9 6 10 20 1 26 3 11-6 21-17 20-4 10-17 14-27 7-16 14-46 18-66 6-14 6-30-4-28-18-10-8-11-22-1-30-4-14 2-26 13-28 2-12 12-18 17-16Z" fill="oklch(0.52 0.24 305)"/>
+          <path d="M96 38c18-6 40-4 54 6M168 52c10 6 16 16 16 28M172 98c-4 12-16 22-30 24M74 114c-14-4-24-14-26-26" fill="none" stroke="oklch(0.78 0.14 310)" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+          <g fill="oklch(0.94 0.01 90)">
+            <circle cx="146" cy="37" r="3.4"/><circle cx="173" cy="43" r="3.4"/><circle cx="188" cy="63" r="3.4"/><circle cx="189" cy="90" r="3.4"/>
+            <circle cx="172" cy="110" r="3.4"/><circle cx="145" cy="117" r="3.4"/><circle cx="80" cy="30" r="3.4"/><circle cx="56" cy="44" r="3.4"/>
+            <circle cx="56" cy="104" r="3.4"/><circle cx="80" cy="118" r="3.4"/><circle cx="46" cy="74" r="3.4"/>
+          </g>
+          <path d="M6 74h26" stroke="oklch(0.94 0.01 90)" stroke-width="3" stroke-linecap="round"/>
+          <path d="M26 66l10 8-10 8" fill="none" stroke="oklch(0.94 0.01 90)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <g fill="none" stroke="oklch(0.86 0.1 305)" stroke-width="2" stroke-linecap="round">
+            <path d="M196 76h14"/><path d="M182 32l8-8"/><path d="M182 122l8 8"/>
+          </g>
+        </svg>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { GRADE } from '../shared/grade.js';
+import { OUTPUT } from '../shared/output.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const mix = (a, b, t) => a + (b - a) * t;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- goo ---------- */
+// Each goo is its colour after one unit of gel, in OKLCH.
+// Glitter adds gold flakes. Rainbow bands five colours round the ball.
+const GOOS = {
+  grape: { label: 'Grape', lch: [0.5, 0.25, 318], key: '1' },
+  lime: { label: 'Lime', lch: [0.88, 0.24, 128], key: '2' },
+  mango: { label: 'Mango', lch: [0.74, 0.19, 52], key: '3' },
+  glitter: { label: 'Glitter', lch: [0.55, 0.19, 262], kind: 1, key: '4' },
+  rainbow: { label: 'Rainbow', lch: [0.66, 0.22, 330], kind: 2, key: '5' },
+};
+const RING = [[0.64, 0.25, 8], [0.8, 0.18, 66], [0.86, 0.22, 132], [0.64, 0.2, 238], [0.55, 0.26, 312]];
+const lch = c => `oklch(${c[0]} ${c[1]} ${c[2]})`;
+const dotOf = (k, g) => (k === 'rainbow' ? `linear-gradient(135deg, ${RING.map(lch).join(', ')})` : lch(g.lch));
+
+/* ---------- bar ---------- */
+let goo = 'grape', meshN = 5, wobble = 0.6;
+// The handlers bind once the GL state exists.
+const act = { goo() {}, mesh() {}, hug() {}, letGo() {}, reset() {} };
+const DEV = { bloom: 0.55, expo: 1.0, glow: 1.0, gloss: 1.0, bite: 1.0 };
+const devRow = (id, label, min, max, value) => ({ type: 'slider', id, label, min, max, step: 0.01, value, persist: true, onInput: v => { DEV[id] = v; act.wake?.(); } });
+const ui = initPage({ id: 'meshball', bar: {
+  choice: {
+    label: 'Goo', value: goo,
+    options: Object.entries(GOOS).map(([value, g]) => ({ value, label: g.label, dot: dotOf(value, g), key: g.key })),
+    onPick: v => { goo = v; act.goo(); },
+  },
+  actions: [{ verb: 'squeeze', hold: true, key: 'Space', onDown: () => act.hug(), onUp: () => act.letGo() }],
+  slider: { label: 'Mesh', min: 3, max: 8, step: 1, value: meshN, onInput: v => { meshN = v; act.mesh(); } },
+  settings: [
+    { type: 'slider', id: 'wobble', label: 'Wobble', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => { wobble = v; } },
+  ],
+  dev: [
+    devRow('bloom', 'Bloom', 0, 1.5, DEV.bloom),
+    devRow('expo', 'Exposure', 0.5, 2, DEV.expo),
+    devRow('glow', 'Glow', 0, 2, DEV.glow),
+    devRow('gloss', 'Gloss', 0, 2, DEV.gloss),
+    devRow('bite', 'Net bite', 0, 2, DEV.bite),
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['hold', 'squeeze'], ['drag', 'move the squeeze'], ['space', 'squeeze both sides']],
+} });
+wobble = ui.setting('wobble')?.value ?? 0.6;
+for (const k of Object.keys(DEV)) DEV[k] = ui.setting(k)?.value ?? DEV[k];
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Mesh ball needs WebGL 2.');
+}
+// Float targets keep the highlights above 1 for the bloom.
+const hdrOK = !!gl.getExtension('EXT_color_buffer_float');
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+const vao = gl.createVertexArray();
+
+/* ---------- GLSL: the ball ---------- */
+// The ball lives in its own frame; uRot turns world vectors into it.
+// The net is a cube sphere: six faces of N x N square holes.
+// Each hole holds one bubble, a sphere the CPU places each frame.
+const BALL_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform vec2 uRes, uCentre;
+uniform float uFocal, uCamD, uPix;
+uniform mat3 uRot;
+uniform int uN, uNP, uSteps, uKind;
+uniform float uHalf, uLift, uBound, uInner, uBite, uStrand;
+uniform highp sampler2D uCells;
+uniform vec4 uPress[3];
+uniform vec3 uWide;
+uniform vec3 uKey, uRim, uKeyW, uRimW;
+uniform vec3 uGoo, uNetCol, uBg, uHalo, uFlake;
+uniform vec3 uRing[5];
+uniform float uGlowK, uSpecK;
+out vec4 o;
+
+const float PI = 3.14159265;
+
+vec3 hash33(vec3 p) {
+  p = fract(p * vec3(0.1031, 0.103, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
+}
+float smin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+float smax(float a, float b, float k) { return -smin(-a, -b, k); }
+
+// The cube face of a direction, and its equal-angle face coordinates.
+vec2 faceUV(vec3 d, out int face) {
+  vec3 a = abs(d);
+  vec2 uv;
+  if (a.x >= a.y && a.x >= a.z) { face = d.x > 0.0 ? 0 : 1; uv = d.yz / a.x; }
+  else if (a.y >= a.z) { face = d.y > 0.0 ? 2 : 3; uv = d.zx / a.y; }
+  else { face = d.z > 0.0 ? 4 : 5; uv = d.xy / a.z; }
+  return atan(uv) * (4.0 / PI);
+}
+
+// A direction from face coordinates; w may run past the face edge.
+vec3 faceDir(int face, vec2 w) {
+  vec2 uv = tan(w * (PI / 4.0));
+  if (face == 0) return vec3(1.0, uv.x, uv.y);
+  if (face == 1) return vec3(-1.0, uv.x, uv.y);
+  if (face == 2) return vec3(uv.y, 1.0, uv.x);
+  if (face == 3) return vec3(uv.y, -1.0, uv.x);
+  if (face == 4) return vec3(uv.x, uv.y, 1.0);
+  return vec3(uv.x, uv.y, -1.0);
+}
+// The cell of a hole. A hole past the face edge lies on the next face.
+ivec2 cellTexel(int face, vec2 cc, float n) {
+  if (cc.x >= 0.0 && cc.y >= 0.0 && cc.x < n && cc.y < n) return ivec2(int(cc.x) + face * uN, int(cc.y));
+  int f2;
+  vec2 w2 = faceUV(normalize(faceDir(face, (cc + 0.5) / n * 2.0 - 1.0)), f2);
+  vec2 c2 = clamp(floor((w2 * 0.5 + 0.5) * n), 0.0, n - 1.0);
+  return ivec2(int(c2.x) + f2 * uN, int(c2.y));
+}
+
+// The net's radius in a direction.
+// Each press dents it; the sides spread to keep the volume.
+float baseR(vec3 d) {
+  float r = 1.0 + uLift;
+  for (int k = 0; k < 3; k++) {
+    if (k >= uNP) break;
+    float c = dot(d, uPress[k].xyz);
+    r += uPress[k].w * (0.24 * (1.0 - c * c) - exp((c - 1.0) / uWide[k]));
+  }
+  return r;
+}
+// How much a press covers this point, 0 to 1: a finger blocks the light.
+float pressCover(vec3 d) {
+  float s = 0.0;
+  for (int k = 0; k < 3; k++) {
+    if (k >= uNP) break;
+    s += clamp(uPress[k].w / 0.13, 0.0, 1.0) * exp((dot(d, uPress[k].xyz) - 1.0) / (uWide[k] * 0.8));
+  }
+  return clamp(s, 0.0, 1.0);
+}
+float pressShade(vec3 d) { return 1.0 - 0.15 * pressCover(d); }
+
+// One bubble: two texels per hole hold its sphere, then its height.
+// q is the point's place from the bubble's centre, in half cells.
+// A low bubble keeps a cap's curve over the net here,
+// so a pressed bubble follows the dent and leaves the strands clear.
+float bubbleAt(vec3 p, ivec2 t, float r, float B, vec2 q, out vec4 bb) {
+  vec4 s = texelFetch(uCells, ivec2(t.x * 2, t.y), 0);
+  float h = texelFetch(uCells, ivec2(t.x * 2 + 1, t.y), 0).y;
+  bb = vec4(s.xyz, h);
+  float top = mix(h * (1.06 - dot(q, q) / 0.8836), 10.0, smoothstep(0.5, 1.0, h / (0.94 * uHalf * B)));
+  return smax(length(p - s.xyz) - s.w, r - B - top, 0.012);
+}
+
+// Scene distance in the ball frame.
+// mat is 0 for goo, 1 for net.
+// bub: the nearest bubble's centre, then its height above the net.
+// cell: height above the net, arc to the nearest strand, step reach, net radius.
+float scene(vec3 p, out float mat, out vec4 bub, out vec4 cell) {
+  float r = length(p);
+  vec3 d = p / r;
+  int face;
+  vec2 w = faceUV(d, face);
+  float n = float(uN);
+  vec2 g = (w * 0.5 + 0.5) * n;
+  vec2 ci = clamp(floor(g), 0.0, n - 1.0);
+  vec2 f = (g - ci) * 2.0 - 1.0;
+  vec2 sg = vec2(f.x >= 0.0 ? 1.0 : -1.0, f.y >= 0.0 ? 1.0 : -1.0);
+  float B = baseR(d);
+  // This hole's bubble and its three nearest neighbours.
+  ivec2 t0 = ivec2(int(ci.x) + face * uN, int(ci.y));
+  ivec2 tx = cellTexel(face, ci + vec2(sg.x, 0.0), n), ty = cellTexel(face, ci + vec2(0.0, sg.y), n), tz = cellTexel(face, ci + sg, n);
+  vec4 b0, bx, by, bz;
+  float d0 = bubbleAt(p, t0, r, B, f, b0);
+  float dx = bubbleAt(p, tx, r, B, f - vec2(2.0 * sg.x, 0.0), bx), dy = bubbleAt(p, ty, r, B, f - vec2(0.0, 2.0 * sg.y), by);
+  // At a cube corner the diagonal is one of the side neighbours.
+  bz = by;
+  float dz = (tz == tx || tz == ty) ? 1e3 : bubbleAt(p, tz, r, B, f - 2.0 * sg, bz);
+  // Arc lengths to the strands on each side of the hole.
+  vec2 e = (1.0 - abs(f)) * uHalf * r;
+  // Bubbles push the strands out a little, so the net rides in the creases.
+  float lk = 0.35 * max(min(min(b0.w, bx.w), min(by.w, bz.w)), 0.0);
+  float lx = mix(lk, 0.35 * max(min(b0.w, bx.w), 0.0), smoothstep(0.0, 0.6, 1.0 - abs(f.y)));
+  float ly = mix(lk, 0.35 * max(min(b0.w, by.w), 0.0), smoothstep(0.0, 0.6, 1.0 - abs(f.x)));
+  // A strand is a round cord, half sunk in the goo; a knot sits at each corner.
+  float rs = B - uBite + uStrand * 0.55;
+  float sx = length(vec2(e.x, r - rs - lx)) - uStrand, sy = length(vec2(e.y, r - rs - ly)) - uStrand;
+  float dNet = smin(min(sx, sy), length(vec3(e, r - rs - lk)) - uStrand * 1.6, uStrand * 0.8);
+  // The goo sinks into a groove under each strand, and hugs the cord.
+  float edge = min(e.x, e.y);
+  float groove = 1.0 - smoothstep(0.0, uStrand * 3.2, edge);
+  float dBase = (r - B + uBite * groove) * 0.8;
+  // Neighbours merge into one mass of goo; the cords cut a channel in it.
+  float dBub = smin(smin(d0, dx, 0.06), smin(dy, dz, 0.06), 0.06);
+  float dGoo = smax(smin(dBase, dBub, 0.06), uStrand * 0.3 - min(sx, sy), uStrand * 0.6);
+  bub = b0;
+  float near = d0;
+  if (dx < near) { near = dx; bub = bx; }
+  if (dy < near) { near = dy; bub = by; }
+  if (dz < near) bub = bz;
+  mat = dNet < dGoo ? 1.0 : 0.0;
+  // Bubbles beyond the four reach a little past their own hole.
+  cell = vec4(r - B, edge, (0.7 + min(abs(f.x), abs(f.y))) * uHalf * r, B);
+  return min(dGoo, dNet);
+}
+float sdf(vec3 p) { float m; vec4 b, c; return scene(p, m, b, c); }
+vec3 normalAt(vec3 p) {
+  float e = uPix * 0.6;
+  vec2 k = vec2(1.0, -1.0);
+  return normalize(k.xyy * sdf(p + k.xyy * e) + k.yyx * sdf(p + k.yyx * e) + k.yxy * sdf(p + k.yxy * e) + k.xxx * sdf(p + k.xxx * e));
+}
+
+// A soft rectangle of light, seen in direction r.
+float softbox(vec3 r, vec3 dir, vec2 size) {
+  float k = dot(r, dir);
+  if (k <= 0.0) return 0.0;
+  vec3 ax = normalize(cross(vec3(0.0, 1.0, 0.0), dir));
+  vec3 ay = cross(dir, ax);
+  vec2 s = abs(vec2(dot(r, ax), dot(r, ay)) / k) - size;
+  float box = length(max(s, 0.0)) + min(max(s.x, s.y), 0.0);
+  return smoothstep(0.05, -0.03, box);
+}
+// The studio in the world frame: a key softbox, a rim strip, a dim ceiling.
+vec3 studio(vec3 r) {
+  vec3 c = vec3(0.012, 0.012, 0.016) * (0.3 + 0.7 * smoothstep(-0.2, 0.9, r.y));
+  c += vec3(1.0, 0.95, 0.88) * 60.0 * softbox(r, uKeyW, vec2(0.17, 0.12));
+  c += vec3(0.85, 0.92, 1.0) * 18.0 * softbox(r, uRimW, vec2(0.05, 0.45));
+  // A broad, faint glow round the key keeps a sheen on every bubble.
+  c += vec3(1.0, 0.95, 0.88) * 0.9 * pow(max(dot(r, uKeyW), 0.0), 6.0);
+  return c;
+}
+
+// The goo colour at a point of the ball.
+vec3 gooColour(vec3 d) {
+  if (uKind != 2) return uGoo;
+  // Rainbow: tie-dye bands wrap the ball.
+  float s = dot(d, vec3(0.45, 0.78, 0.43)) * 1.1 + 0.2 * sin(d.x * 4.0 + d.y * 2.5) + 0.14 * sin(d.z * 5.0 - d.x * 3.0);
+  float t = fract(s * 0.9 + 0.5) * 5.0;
+  int i = int(t);
+  return mix(uRing[i], uRing[(i + 1) % 5], smoothstep(0.2, 0.8, fract(t)));
+}
+
+// Gold flakes in the gel catch the key and the rim light.
+vec3 flakes(vec3 d, vec3 n, vec3 v) {
+  vec3 q = d * 34.0, iq = floor(q), h = hash33(iq);
+  float dist = length(fract(q) - 0.5 - (h - 0.5) * 0.5);
+  vec3 fn = normalize(hash33(iq + 17.0) - 0.5 + n * 1.1);
+  float g = pow(clamp(dot(reflect(-uKey, fn), v), 0.0, 1.0), 20.0) * 14.0 + pow(clamp(dot(reflect(-uRim, fn), v), 0.0, 1.0), 20.0) * 6.0;
+  // Each flake glints a little even off the light, so the gel twinkles.
+  return uFlake * (g + 0.12 + 0.3 * h.y * h.y) * step(0.3, h.x) * smoothstep(0.24, 0.1, dist);
+}
+
+const vec3 KEY = vec3(1.0, 0.95, 0.88) * 1.25;
+const vec3 RIMC = vec3(0.9, 0.95, 1.0);
+// The gel's absorption per unit path, from its colour.
+vec3 sig1(vec3 c) { return -log(clamp(c, 0.002, 0.999)); }
+
+vec3 shadeGoo(vec3 p, vec3 n, vec3 v, vec4 cell, vec4 bub) {
+  vec3 d = normalize(p);
+  vec3 sig = sig1(gooColour(d));
+  float NV = clamp(dot(n, v), 0.0, 1.0);
+  // A bubble stretches thin as it grows; the ball's body is thick.
+  float bubH = bub.w;
+  float tall = smoothstep(0.01, 0.16, bubH);
+  float up = clamp(cell.x / max(bubH, 0.012), 0.0, 1.0);
+  float thin = tall * (0.4 + 0.6 * up);
+  // The feet of tall bubbles and the strand grooves sit in shade.
+  float crease = smoothstep(0.02, 0.16, bubH) * (1.0 - smoothstep(0.0, 0.75 * bubH, cell.x));
+  float ao = (1.0 - 0.5 * crease) * (0.55 + 0.45 * smoothstep(0.0, uStrand * 3.0, cell.y));
+  float shade = ao * pressShade(d);
+  // Thick gel is deep and dark; thin, lit gel keeps a bright colour.
+  vec3 deep = exp(-sig * 2.0), mid = exp(-sig), lit = exp(-sig * 0.85);
+  float NL = dot(n, uKey);
+  // Thick goo takes the light like a soft solid, wrapped far round the form.
+  vec3 col = mix(deep, mid, 0.5 * thin) * (0.15 + 0.85 * clamp((NL + 0.8) / 1.8, 0.0, 1.0)) * KEY * (1.0 - 0.6 * thin);
+  // Through a bubble's middle the eye meets the deep body behind it.
+  col += mix(mid, deep, NV) * thin * 0.35 * KEY;
+  // A bubble's thin walls glow, most on the side away from the light.
+  float wall = smoothstep(0.95, 0.35, NV);
+  col += lit * wall * (0.35 + 1.5 * smoothstep(0.35, -0.85, NL)) * thin * 0.9 * uGlowK * KEY;
+  // The rim light shines through thin goo toward the eye.
+  float back = pow(clamp(dot(v, -normalize(uRim + n * 0.45)), 0.0, 1.0), 2.0);
+  col += lit * back * (0.2 + thin) * RIMC * 1.1 * uGlowK;
+  // A grazing look crosses more gel, so the edges go a little deeper.
+  col *= mix(0.78, 1.0, smoothstep(0.0, 0.6, NV)) * shade;
+  // Light seeps through the bubble walls, so the creases glow.
+  col += lit * crease * 0.45 * uGlowK * KEY * pressShade(d);
+  if (uKind == 1) col += flakes(d, n, v) * (0.4 + 0.6 * shade);
+  // A wet skin mirrors the studio.
+  vec3 R = reflect(-v, n) * uRot;
+  float F = 0.04 + 0.96 * pow(1.0 - NV, 5.0);
+  col += studio(R) * F * mix(0.25, 1.0, shade) * (1.0 - 0.5 * pressCover(d)) * uSpecK;
+  return col;
+}
+
+vec3 shadeNet(vec3 p, vec3 n, vec3 v, vec4 cell, vec4 bub) {
+  vec3 d = normalize(p);
+  float bubH = bub.w;
+  float NL = dot(n, uKey);
+  // Strands between fat bubbles sit deep in shade.
+  float occl = 1.0 - 0.55 * smoothstep(0.03, 0.2, bubH);
+  vec3 col = uNetCol * (max((NL + 0.45) / 1.45, 0.0) * KEY + 0.06) * occl * pressShade(d);
+  // The goo's light falls on the strands it presses round.
+  col += exp(-sig1(gooColour(d)) * 0.9) * (0.08 + 0.3 * smoothstep(0.02, 0.2, bubH)) * uGlowK;
+  vec3 R = reflect(-v, n) * uRot;
+  float F = 0.04 + 0.96 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 5.0);
+  col += studio(R) * F * 0.3 * occl;
+  return col;
+}
+
+vec3 background(vec2 px, float closest) {
+  vec3 c = uBg * (0.75 + 0.6 * smoothstep(-0.7, 0.7, px.y / uRes.y));
+  // The goo's light spills round the ball.
+  return c + uHalo * 0.08 * exp(-max(closest - 1.0, 0.0) * 2.6);
+}
+
+void main() {
+  vec2 px = gl_FragCoord.xy - uCentre;
+  vec3 ro = uRot * vec3(0.0, 0.0, uCamD);
+  vec3 rd = uRot * normalize(vec3(px / uFocal, -1.0));
+  float bq = dot(ro, rd), cq = dot(ro, ro);
+  vec3 col = background(px, sqrt(max(cq - bq * bq, 0.0)));
+  float disc = bq * bq - cq + uBound * uBound;
+  if (disc > 0.0) {
+    float sq = sqrt(disc), t = -bq - sq, t1 = -bq + sq;
+    float d = 1.0, mat = 0.0;
+    vec4 bub, cell;
+    bool hit = false;
+    for (int i = 0; i < 120; i++) {
+      if (i >= uSteps) break;
+      vec3 p = ro + rd * t;
+      d = scene(p, mat, bub, cell);
+      if (d < uPix * 0.35) { hit = true; break; }
+      // A step stays short of bubbles the scene did not look at.
+      t += min(d, cell.z);
+      if (t > t1 || length(p) < uInner) break;
+    }
+    if (!hit && d < uPix * 4.0) hit = true;
+    if (hit) {
+      vec3 p = ro + rd * t, n = normalAt(p), v = -rd;
+      scene(p, mat, bub, cell);
+      col = mat > 0.5 ? shadeNet(p, n, v, cell, bub) : shadeGoo(p, n, v, cell, bub);
+    }
+  }
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------- GLSL: the frame ---------- */
+// Bloom, the grade, then the film curve to the screen.
+const COMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExpo;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+// The film curve on brightness alone keeps the goo's colour strong.
+// Light that would clip falls back to the curve per channel, toward white.
+vec3 film(vec3 c) {
+  vec3 a = ouAces(c);
+  float l = gdLuma(c);
+  vec3 b = c * (ouAces(vec3(l)).x / max(l, 1e-5));
+  return mix(b, a, clamp((max(b.r, max(b.g, b.b)) - 0.85) / 0.6, 0.0, 1.0));
+}
+void main() {
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uBloomK;
+  c = gdGrade(c, vUv, uRes.x / uRes.y, gl_FragCoord.xy, vec3(0.0), 0.5, 0.5, 0.02);
+  o = vec4(ouDither(ouSrgb(clamp(film(c * uExpo), 0.0, 1.0)), gl_FragCoord.xy), 1.0);
+}`;
+
+const ballP = program(BALL_FS), compP = program(COMP_FS);
+const bloom = bloomChain(gl);
+
+/* ---------- targets ---------- */
+let hdr = null;
+function makeHdr(W, H) {
+  if (hdr) { gl.deleteFramebuffer(hdr.fb); gl.deleteTexture(hdr.tex); }
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  if (hdrOK) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, W, H, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  hdr = { tex, fb, w: W, h: H };
+}
+
+/* ---------- vectors ---------- */
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm3 = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// A rotation matrix from an axis-angle vector, as rows.
+function rotOf(v) {
+  const a = Math.hypot(v[0], v[1], v[2]);
+  if (a < 1e-9) return [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const [x, y, z] = [v[0] / a, v[1] / a, v[2] / a], c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [[t * x * x + c, t * x * y - s * z, t * x * z + s * y], [t * x * y + s * z, t * y * y + c, t * y * z - s * x], [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
+}
+const mulM = (A, B) => A.map(r => [0, 1, 2].map(j => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]));
+const apply = (M, v) => [dot3(M[0], v), dot3(M[1], v), dot3(M[2], v)];
+const transpose = M => [0, 1, 2].map(i => [M[0][i], M[1][i], M[2][i]]);
+
+/* ---------- the net: a cube sphere of square holes ---------- */
+// The centre of hole (gi, gj) on one face, as a unit vector.
+// It mirrors faceUV in the shader.
+function cellDir(face, gi, gj, N) {
+  const u = Math.tan((gi / N * 2 - 1) * Math.PI / 4), v = Math.tan((gj / N * 2 - 1) * Math.PI / 4);
+  const d = [[1, u, v], [-1, u, v], [v, 1, u], [v, -1, u], [u, v, 1], [u, v, -1]][face];
+  return norm3(d);
+}
+// A seeded random, so one mesh size looks the same on every load.
+function seeded(s) { return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// A hole's radius, as a part of the half cell.
+// A grape grows to the full half cell, so neighbours touch.
+const HOLE = 0.94, GRAPE = 1 / HOLE;
+let cells = [], cellBuf = null, cellTex = null, half = 0;
+function buildCells(N) {
+  const rnd = seeded(N * 7919);
+  cells = [];
+  for (let face = 0; face < 6; face++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const c = cellDir(face, i + 0.5, j + 0.5, N);
+    const mids = [[i, j + 0.5], [i + 1, j + 0.5], [i + 0.5, j], [i + 0.5, j + 1]].map(([a, b]) => cellDir(face, a, b, N));
+    const hc = Math.min(...mids.map(m => Math.acos(clamp(dot3(c, m), -1, 1))));
+    cells.push({
+      // Two texels per hole: the sphere, then its height.
+      c, h: hc * HOLE, slot: (j * 6 * N + face * N + i) * 8,
+      // g: how far this hole gives; tau: how fast goo flows into it.
+      g: 0.82 + 0.36 * rnd(), g2: 0.6 + 0.8 * rnd(), tau: 0.06 + 0.16 * rnd(),
+      b: 0, v: 0, te: 0, armed: true, sucked: true,
+    });
+  }
+  half = Math.PI / (4 * N);
+  cellBuf = new Float32Array(6 * N * N * 8);
+  if (!cellTex) cellTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, cellTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 12 * N, N, 0, gl.RGBA, gl.FLOAT, null);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+}
+
+/* ---------- squeeze model ---------- */
+// A press is a finger or a palm on the ball, with a springy depth.
+// Its direction is in the world; the dent follows it round the ball.
+const FINGER = { wide: 0.05, max: 0.13, theta: 0.33 };
+const PALM = { wide: 0.11, max: 0.17, theta: 0.56 };
+const presses = [];
+let P = 0, lift = 0;
+// The ball's base turn shows a cube corner, so the net looks irregular.
+const Q0 = mulM(rotOf([0.42, 0, 0]), rotOf([0, -0.66, 0]));
+let M = transpose(Q0);
+// The lean: a pressed ball rolls away a little, slowly.
+const lean = { x: [0, 0, 0], v: [0, 0, 0] };
+// The key light rests above left; the pointer moves it.
+const K0 = norm3([-0.5, 0.62, 0.6]);
+const key = { at: [...K0], to: [...K0] };
+const RIM = norm3([0.72, 0.42, -0.55]);
+
+// The base radius at a ball direction, as in the shader.
+function baseR(d, list) {
+  let r = 1 + lift;
+  for (const p of list) {
+    const c = dot3(d, p.db);
+    r += p.depth * (0.24 * (1 - c * c) - Math.exp((c - 1) / p.kind.wide));
+  }
+  return r;
+}
+
+// One bubble: b is its height in hole radii.
+// Below one radius it is a cap that fills the hole; above, a grape on a neck.
+function bubble(cell, Bc, out) {
+  const h = cell.h * Bc;
+  const b = Math.max(cell.b * h, 0.004);
+  const rb = b < h ? (h * h + b * b) / (2 * b) : h * (1 + (GRAPE - 1) * Math.min((b - h) / h, 1));
+  const rc = Bc + b - rb;
+  out[cell.slot] = cell.c[0] * rc;
+  out[cell.slot + 1] = cell.c[1] * rc;
+  out[cell.slot + 2] = cell.c[2] * rc;
+  out[cell.slot + 3] = rb;
+  out[cell.slot + 4] = Bc;
+  out[cell.slot + 5] = b;
+  return rc + rb;
+}
+
+// The resting bubble, and its target under pressure.
+const REST = 0.4;
+function targetOf(cell, active) {
+  let ring = 0, dent = 0;
+  for (const p of active) {
+    const th = Math.acos(clamp(dot3(cell.c, p.db), -1, 1));
+    const s = clamp(p.depth / p.kind.max, 0, 1.2);
+    const rc = p.kind.theta * (1.15 + 0.6 * p.hold), rw = 0.2 + 0.2 * p.hold;
+    ring = Math.max(ring, s * Math.exp(-(((th - rc) / rw) ** 2)));
+    dent = Math.max(dent, s * clamp((p.kind.theta * 1.05 - th) / (p.kind.theta * 0.5)));
+  }
+  const t = REST * cell.g + P * (0.24 * cell.g + 0.85 * ring * cell.g2);
+  return Math.min(t * (1 - 0.55 * dent), 1.25);
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// A noise burst through one filter, with a quick attack and a fall.
+function burst(ac, at, { f, f1 = f, q = 1, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.Q.value = q;
+  flt.frequency.setValueAtTime(f * jit(0.1), at);
+  flt.frequency.exponentialRampToValueAtTime(Math.max(20, f1 * jit(0.1)), at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.15), at + 0.006);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = clamp(pan, -1, 1);
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.05), dur + 0.03);
+}
+// A sine that slides in pitch: a gloop, a pop or a suck.
+function chirp(ac, at, { f0, f1, dur, level, pan = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.004);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = clamp(pan, -1, 1);
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// The press: a resonant low-pass sweeps down as the gel gives way.
+function squishSound(pan, amt = 1) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005;
+  burst(ac, at, { f: 1700, f1: 240, q: 7, dur: 0.3, level: 0.34 * amt, pan, type: 'lowpass' });
+  chirp(ac, at, { f0: 150 * jit(0.1), f1: 72, dur: 0.16, level: 0.22 * amt, pan });
+}
+// A bubble pushes through a hole: a short rising blip and a wet click.
+function popSound(pan, size, level = 1) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.003 + Math.random() * 0.02, f0 = (700 - 380 * size) * jit(0.12);
+  chirp(ac, at, { f0, f1: f0 * 1.9, dur: 0.06, level: 0.13 * level, pan });
+  burst(ac, at, { f: 2000, q: 2, dur: 0.012, level: 0.05 * level, pan });
+}
+// A bubble sucks back in: a short falling blip.
+function suckSound(pan, size) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.003 + Math.random() * 0.03, f0 = (900 - 400 * size) * jit(0.12);
+  chirp(ac, at, { f0, f1: f0 * 0.55, dur: 0.05, level: 0.07, pan });
+}
+// The release: a rising slurp and a low bloop as the dent springs back.
+function slurpSound(pan, amt) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005;
+  burst(ac, at, { f: 320, f1: 1500, q: 3, dur: 0.22, level: 0.26 * amt, pan });
+  chirp(ac, at + 0.03, { f0: 120 * jit(0.1), f1: 70, dur: 0.14, level: 0.2 * amt, pan });
+}
+// The squelch: wet noise through a wobbling band, while a press moves.
+let squelch = null;
+function squelchVoice(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 650;
+  bp.Q.value = 4;
+  // Slow noise shakes the band, so the gel gurgles.
+  const mod = ac.createBufferSource();
+  mod.buffer = kit.noise;
+  mod.loop = true;
+  mod.playbackRate.value = 0.02;
+  const modG = ac.createGain();
+  modG.gain.value = 380;
+  mod.connect(modG).connect(bp.frequency);
+  const g = ac.createGain(), pn = ac.createStereoPanner();
+  g.gain.value = 0;
+  src.connect(bp).connect(g).connect(pn).connect(kit.out);
+  src.start();
+  mod.start();
+  return { g, pn, bp };
+}
+function squelchSound(speed, pan) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  squelch ||= squelchVoice(ac);
+  const now = ac.currentTime, lvl = clamp(speed / 3) * 0.3;
+  squelch.g.gain.cancelScheduledValues(now);
+  squelch.g.gain.setTargetAtTime(lvl, now, 0.03);
+  squelch.g.gain.setTargetAtTime(0, now + 0.08, 0.06);
+  squelch.bp.frequency.setTargetAtTime(500 + 500 * clamp(speed / 3), now, 0.05);
+  squelch.pn.pan.setTargetAtTime(clamp(pan, -1, 1), now, 0.05);
+}
+
+/* ---------- colours ---------- */
+const gl3 = c => linFit(c[0], c[1], c[2]);
+let col = {};
+function applyGoo() {
+  const g = GOOS[goo];
+  const ring = RING.map(gl3);
+  col = {
+    kind: g.kind || 0,
+    goo: gl3(g.lch),
+    ring: ring.flat(),
+    // The halo and the stage take the goo's hue, very dark.
+    halo: g.kind === 2 ? ring.reduce((a, c) => a.map((v, i) => v + c[i] / 5), [0, 0, 0]) : gl3([0.6, g.lch[1], g.lch[2]]),
+    bg: gl3([0.13, 0.025, g.kind === 2 ? 300 : g.lch[2]]),
+    net: gl3([0.88, 0.012, 90]),
+    flake: gl3([0.88, 0.15, 82]).map(v => v * 1.3),
+  };
+}
+
+/* ---------- layout ---------- */
+// The camera sits on +z; the ball's radius is R CSS pixels on screen.
+const CAM = 7;
+let size = { w: 1, h: 1, dpr: 1 }, R = 100, centre = [0, 0];
+const D = detail({ maxDpr: 1.75, budget: 2.2e6, onChange: () => { resize(); if (ready) draw(); } });
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  makeHdr(canvas.width, canvas.height);
+  R = Math.min(w, h) * (w < 640 ? 0.36 : 0.33);
+  centre = [w / 2, h / 2];
+}
+// The focal length that shows the unit ball at R pixels.
+const focal = () => R * Math.sqrt(CAM * CAM - 1);
+// A stage point to a world direction on the ball.
+// A miss takes the nearest point of the outline.
+function pointDir(x, y) {
+  const f = focal();
+  const rd = norm3([(x - centre[0]) / f, -(y - centre[1]) / f, -1]);
+  const ro = [0, 0, CAM], b = dot3(ro, rd), c = CAM * CAM - 1, disc = b * b - c;
+  if (disc > 0) { const t = -b - Math.sqrt(disc); return norm3([ro[0] + rd[0] * t, ro[1] + rd[1] * t, ro[2] + rd[2] * t]); }
+  return norm3([rd[0] * -b, rd[1] * -b, CAM + rd[2] * -b]);
+}
+// The screen pan of a ball direction, from -1 to 1.
+const panOf = db => clamp(apply(transpose(M), db)[0] * 0.8, -1, 1);
+
+/* ---------- step ---------- */
+// One step of the model. It returns true while anything still moves.
+const DEPTH_K = 140, LEAN_K = 26, CELL_K = 210;
+let popAt = 0, suckAt = 0;
+function step(dt) {
+  const rm = reduced();
+  let busy = false;
+  // The light eases after the pointer.
+  const kk = 1 - Math.exp(-dt / 0.12);
+  for (let i = 0; i < 3; i++) key.at[i] += (key.to[i] - key.at[i]) * kk;
+  if (Math.hypot(key.to[0] - key.at[0], key.to[1] - key.at[1], key.to[2] - key.at[2]) > 1e-4) busy = true;
+  else key.at = [...key.to];
+
+  // Presses: the depth springs; a released dent springs back.
+  for (let i = presses.length - 1; i >= 0; i--) {
+    const p = presses[i];
+    const goal = p.held ? p.kind.max * (0.75 + 0.25 * p.hold) : 0;
+    const z = rm ? 1 : p.held ? 0.7 : 0.32;
+    for (let s = 0, n = Math.ceil(dt / 0.008); s < n; s++) {
+      const h = dt / n;
+      p.vel += (DEPTH_K * (goal - p.depth) - 2 * z * Math.sqrt(DEPTH_K) * p.vel) * h;
+      p.depth += p.vel * h;
+    }
+    if (p.held) p.hold = 1 - Math.exp(-(p.t += dt) / 1.3);
+    // The dent follows the finger in 40 ms.
+    const kd = 1 - Math.exp(-dt / 0.04);
+    p.dir = norm3(p.dir.map((v, j) => v + (p.to[j] - v) * kd));
+    if (!p.held && Math.abs(p.depth) < 2e-4 && Math.abs(p.vel) < 2e-3) presses.splice(i, 1);
+    else busy = true;
+  }
+
+  // The lean: each press rolls the ball away from it.
+  const lt = [0, 0, 0];
+  for (const p of presses) {
+    if (!p.held || rm) continue;
+    const a = cross3([0, 0, 1], p.dir), s = 0.16 * clamp(p.depth / p.kind.max, 0, 1);
+    for (let j = 0; j < 3; j++) lt[j] += a[j] * s;
+  }
+  for (let j = 0; j < 3; j++) {
+    lean.v[j] += (LEAN_K * (lt[j] - lean.x[j]) - 2 * 0.45 * Math.sqrt(LEAN_K) * lean.v[j]) * dt;
+    lean.x[j] += lean.v[j] * dt;
+  }
+  if (Math.hypot(...lean.v) > 1e-4 || Math.hypot(lt[0] - lean.x[0], lt[1] - lean.x[1], lt[2] - lean.x[2]) > 1e-4) busy = true;
+  M = transpose(mulM(rotOf(lean.x), Q0));
+  for (const p of presses) p.db = apply(M, p.dir);
+
+  // Pressure builds while a press holds, and drops at once on release.
+  let pt = 0;
+  for (const p of presses) if (p.held) pt += (0.4 + 0.6 * p.hold) * clamp(p.depth / p.kind.max, 0, 1);
+  pt = Math.min(pt, 1.3);
+  P += (pt - P) * (1 - Math.exp(-dt / (pt > P ? 0.2 : 0.07)));
+  if (Math.abs(pt - P) > 1e-4) busy = true;
+  lift = 0.03 * P;
+
+  // Each hole: goo flows in slowly and springs back fast.
+  const z = rm ? 1 : mix(0.6, 0.1, wobble), cz = 2 * z * Math.sqrt(CELL_K);
+  const n = Math.ceil(dt / 0.006), h = dt / n;
+  let pops = 0, sucks = 0;
+  for (const c of cells) {
+    const T = targetOf(c, presses);
+    c.te = T > c.te ? c.te + (T - c.te) * (1 - Math.exp(-dt / c.tau)) : T;
+    for (let s = 0; s < n; s++) {
+      c.v += (CELL_K * (c.te - c.b) - cz * c.v) * h;
+      c.b += c.v * h;
+    }
+    if (Math.abs(T - c.b) > 2e-4 || Math.abs(c.v) > 2e-3) busy = true;
+    else { c.b = T; c.v = 0; c.te = T; }
+    // A bubble that passes a half sphere pops out; one that drops back sucks in.
+    if (c.armed && c.b > 1 && c.v > 0.4) { c.armed = false; if (pops < 2 && performance.now() - popAt > 25) { pops++; popAt = performance.now(); popSound(panOf(c.c), c.h / half, clamp(c.v / 3, 0.4, 1)); } }
+    if (c.b < 0.7) c.armed = true;
+    if (c.sucked && c.b < 0.85 && c.v < -2) { c.sucked = false; if (sucks < 2 && performance.now() - suckAt > 30) { sucks++; suckAt = performance.now(); suckSound(panOf(c.c), c.h / half); } }
+    if (c.b > 1) c.sucked = true;
+  }
+  return busy;
+}
+
+// Places every bubble for the frame, and finds the bounds of the ball.
+let bound = 1.5, inner = 0.6;
+function placeBubbles() {
+  let top = 0;
+  for (const c of cells) top = Math.max(top, bubble(c, baseR(c.c, presses), cellBuf));
+  let spread = 0, dent = 0;
+  for (const p of presses) { spread += Math.max(p.depth, 0) * 0.24; dent += Math.abs(p.depth); }
+  bound = Math.max(top, 1 + lift + spread + 0.06) + 0.03;
+  inner = 1 + lift - dent - 0.12;
+  gl.bindTexture(gl.TEXTURE_2D, cellTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 12 * meshN, meshN, gl.RGBA, gl.FLOAT, cellBuf);
+}
+
+/* ---------- render ---------- */
+const STEPS = [44, 64, 84];
+const pressU = new Float32Array(12), ringU = new Float32Array(15);
+function draw() {
+  placeBubbles();
+  const W = canvas.width, H = canvas.height, d = size.dpr;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(ballP);
+  const u = ballP.u;
+  gl.uniform2f(u('uRes'), W, H);
+  gl.uniform2f(u('uCentre'), centre[0] * d, (size.h - centre[1]) * d);
+  gl.uniform1f(u('uFocal'), focal() * d);
+  gl.uniform1f(u('uCamD'), CAM);
+  gl.uniform1f(u('uPix'), 1 / (R * d));
+  // Rows in JS; the column-major upload makes the shader see the same matrix.
+  gl.uniformMatrix3fv(u('uRot'), false, transpose(M).flat());
+  gl.uniform1i(u('uN'), meshN);
+  gl.uniform1i(u('uSteps'), STEPS[D.level]);
+  gl.uniform1i(u('uKind'), col.kind);
+  gl.uniform1f(u('uHalf'), half);
+  gl.uniform1f(u('uLift'), lift);
+  gl.uniform1f(u('uBound'), bound);
+  gl.uniform1f(u('uInner'), inner);
+  const strand = half * 0.1;
+  gl.uniform1f(u('uStrand'), strand);
+  gl.uniform1f(u('uBite'), strand * 1.15 * DEV.bite);
+  pressU.fill(0);
+  const wide = [1, 1, 1];
+  presses.slice(0, 3).forEach((p, i) => { pressU.set([...p.db, p.depth], i * 4); wide[i] = p.kind.wide; });
+  gl.uniform1i(u('uNP'), Math.min(3, presses.length));
+  gl.uniform4fv(u('uPress'), pressU);
+  gl.uniform3f(u('uWide'), ...wide);
+  gl.uniform3f(u('uKey'), ...apply(M, norm3(key.at)));
+  gl.uniform3f(u('uRim'), ...apply(M, RIM));
+  gl.uniform3f(u('uKeyW'), ...norm3(key.at));
+  gl.uniform3f(u('uRimW'), ...RIM);
+  gl.uniform3f(u('uGoo'), ...col.goo);
+  ringU.set(col.ring);
+  gl.uniform3fv(u('uRing'), ringU);
+  gl.uniform3f(u('uNetCol'), ...col.net);
+  gl.uniform3f(u('uBg'), ...col.bg);
+  gl.uniform3f(u('uHalo'), ...col.halo);
+  gl.uniform3f(u('uFlake'), ...col.flake);
+  gl.uniform1f(u('uGlowK'), DEV.glow);
+  gl.uniform1f(u('uSpecK'), DEV.gloss);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, cellTex);
+  gl.uniform1i(u('uCells'), 0);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const bt = bloom.render(hdr.tex, W, H, { threshold: hdrOK ? 1.0 : 0.8, levels: glowDetail(D.level).levels });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(compP);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bt);
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  gl.uniform2f(compP.u('uRes'), W, H);
+  gl.uniform1f(compP.u('uBloomK'), DEV.bloom);
+  gl.uniform1f(compP.u('uExpo'), DEV.expo);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while anything moves, and sleeps when the ball settles.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+const held = () => presses.some(p => p.held);
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+act.wake = wake;
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = (now - last) / 1000;
+    last = now;
+    if (raw > 0 && raw < 0.25) D.frame(raw);
+    again = step(clamp(raw, 0, 0.05));
+    draw();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !held());
+  }
+}
+
+/* ---------- pointer ---------- */
+// Each pointer is one finger; three fingers at most.
+const fingers = new Map();
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function aim(x, y) {
+  if (reduced()) { key.to = [...K0]; return; }
+  const qx = clamp((x - centre[0]) / R, -1.6, 1.6), qy = clamp((centre[1] - y) / R, -1.6, 1.6);
+  key.to = norm3([K0[0] + 0.5 * qx, K0[1] + 0.4 * qy, K0[2]]);
+}
+function press(kind, dir, id) {
+  if (presses.filter(p => p.held).length >= 3) return null;
+  const p = { id, kind, held: true, dir: [...dir], to: [...dir], db: apply(M, dir), depth: 0, vel: 0, t: 0, hold: 0 };
+  // A free slot reuses the oldest released dent.
+  if (presses.length >= 3) presses.splice(presses.findIndex(q => !q.held), 1);
+  presses.push(p);
+  return p;
+}
+function down(e) {
+  if (e.button > 0 || fingers.has(e.pointerId)) return;
+  const [x, y] = local(e);
+  const p = press(FINGER, pointDir(x, y), e.pointerId);
+  if (!p) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  fingers.set(e.pointerId, { p, x, y, t: e.timeStamp });
+  stage.classList.add('is-held');
+  if (e.pointerType === 'mouse') aim(x, y);
+  squishSound(panOf(p.db));
+  wake();
+}
+function move(e) {
+  const [x, y] = local(e);
+  const f = fingers.get(e.pointerId);
+  if (!f) {
+    if (e.pointerType === 'mouse' && !fingers.size) { aim(x, y); wake(); }
+    return;
+  }
+  f.p.to = pointDir(x, y);
+  // Speed in ball radii a second drives the squelch.
+  const dt = Math.max(1e-3, (e.timeStamp - f.t) / 1000);
+  squelchSound(Math.hypot(x - f.x, y - f.y) / R / dt, panOf(f.p.db));
+  Object.assign(f, { x, y, t: e.timeStamp });
+  if (e.pointerType === 'mouse') aim(x, y);
+  wake();
+}
+function up(e) {
+  const f = fingers.get(e.pointerId);
+  if (!f) return;
+  fingers.delete(e.pointerId);
+  release([f.p]);
+  if (!fingers.size) stage.classList.remove('is-held');
+}
+// Letting go: the bubbles suck back in with a slurp.
+function release(list) {
+  let out = 0;
+  for (const c of cells) out += Math.max(0, c.b - REST * c.g);
+  for (const p of list) p.held = false;
+  slurpSound(list.length ? panOf(list[0].db) : 0, clamp(0.35 + out / cells.length * 1.2, 0.35, 1));
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !fingers.size) { key.to = [...K0]; wake(); } });
+// A long press on a touch screen must not open a menu.
+stage.addEventListener('contextmenu', e => e.preventDefault());
+// A press anywhere wakes the sound; with the loop asleep, it sleeps again.
+addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !held()); });
+
+/* ---------- actions ---------- */
+// Squeeze: two palms press the ball from the left and the right.
+let palms = [];
+act.hug = () => {
+  if (palms.length) return;
+  palms = [norm3([-1, 0.06, 0.32]), norm3([1, -0.04, 0.32])].map(d => press(PALM, d, 'palm')).filter(Boolean);
+  if (palms.length) { stage.classList.add('is-held'); squishSound(0, 1.2); }
+  wake();
+};
+act.letGo = () => {
+  if (!palms.length) return;
+  release(palms);
+  palms = [];
+  if (!fingers.size) stage.classList.remove('is-held');
+};
+// Every bubble gets a kick, so the ball jiggles on a change.
+function jiggle(k = 1) {
+  if (reduced()) return;
+  for (const c of cells) c.v += (1.2 + 1.6 * Math.random()) * k;
+}
+act.goo = () => { applyGoo(); jiggle(); squishSound(0, 0.6); wake(); };
+// A new mesh starts flat; the goo swells into the new holes.
+act.mesh = () => { buildCells(meshN); squishSound(0, 0.5); wake(); };
+act.reset = () => {
+  fingers.clear();
+  palms = [];
+  presses.length = 0;
+  P = 0;
+  goo = 'grape';
+  ui.choice.set(goo);
+  applyGoo();
+  meshN = 5;
+  ui.slider.set(meshN);
+  buildCells(meshN);
+  stage.classList.remove('is-held');
+  wake();
+};
+onReducedChange(() => { key.to = [...K0]; wake(); });
+
+/* ---------- ready ---------- */
+// The first frame shows the ball at rest, so the intro opens on a picture.
+applyGoo();
+buildCells(meshN);
+for (const c of cells) c.b = c.te = targetOf(c, presses);
+resize();
+draw();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+
+new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
+// A hidden tab stops the loop and the clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>
