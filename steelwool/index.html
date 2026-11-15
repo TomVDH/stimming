@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Steel wool: a pad of fine iron threads in the dark; a battery lights it. */
+/* Steel wool: fine iron threads in the dark, lit by a battery. */
 :root { --stage: oklch(0.075 0.006 60); }
 .stage--steelwool canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -186,7 +186,8 @@ const TOK = {
   amb: [0.55, 0.02, 265],
   oxide: [0.32, 0.008, 70],
   oxide2: [0.42, 0.025, 285],
-  // Temper colours, cool to hot: straw, bronze, purple, blue, slate, then oxide grey.
+  // Temper colours, from cool to hot.
+  // Straw, bronze, purple, blue, slate, then oxide grey.
   temper: [[0.8, 0.09, 88], [0.62, 0.1, 58], [0.5, 0.12, 330], [0.5, 0.12, 262], [0.4, 0.04, 255], [0.32, 0.008, 70]],
   // Hot iron, cool to hot: dull red to white yellow.
   ramp: [[0.42, 0.17, 27], [0.56, 0.21, 32], [0.68, 0.2, 45], [0.79, 0.17, 62], [0.88, 0.14, 78], [0.95, 0.09, 90]],
@@ -195,12 +196,13 @@ const lin = t => linFit(t[0], t[1], t[2]);
 const flat = list => new Float32Array(list.flatMap(lin));
 
 /* ---------- the pad: strands of wool ---------- */
-// Pad space runs from -PA to PA across and from -1 to 1 up.
+// Pad space: x spans -PA to PA; y spans -1 to 1.
 const PA = 1.36, DS = 0.0075, TEXW = 256;
 // The blob of wool: half-axes in pad units.
 const RX = 1.16, RY = 0.8;
 // Per grade: strand count, width, crimp, curl rate, then the burn.
-// v is the front speed in points a second; die and jump are per point.
+// v is the front speed, in points a second.
+// die and jump are chances per point.
 const GRADES = {
   fine: { strands: 900, width: 0.0019, crimp: 0.0015, curl: 0.03, v: 30, die: 0.012, jump: 0.006, rc: 0.0058, dz: 0.22, I: 1, spark: 1 },
   medium: { strands: 520, width: 0.0034, crimp: 0.0022, curl: 0.025, v: 22, die: 0.016, jump: 0.0066, rc: 0.0072, dz: 0.24, I: 0.94, spark: 0.75 },
@@ -465,7 +467,8 @@ float noise1(float x) {
   return mix(a, b, f * f * (3.0 - 2.0 * f));
 }
 `;
-// Hot iron colour and brightness at heat T: 1 is dull red, 2.4 is a burning thread.
+// Hot iron colour and brightness at heat T.
+// Heat 1 is dull red; 2.4 is a burning thread.
 const HEAT = `
 uniform vec3 uRamp[6];
 vec3 rampCol(float T) {
@@ -586,7 +589,8 @@ void main() {
   vec3 ox = mix(uOxide, uOxide2, step(0.82, hashU(uint(vS * 90.0) + uint(vRnd * 9999.0) * 2654435761u)));
   alb = mix(alb, ox, burnt);
   sc = mix(sc, vec3(0.4), burnt);
-  // Last frame's bloom lights the wire; the clamp and a small gain keep the loop stable.
+  // Last frame's bloom lights the wire.
+  // A clamp and a small gain keep that loop stable.
   vec3 fire = min(texture(uFire, gl_FragCoord.xy / uRes).rgb, vec3(3.0));
   vec3 col = alb * (uAmb + uKey * diff) * ao + uKey * sc * spec * ao + alb * fire * uFireK;
   // The glow, brighter under the breath; burning points flicker.
@@ -599,7 +603,8 @@ void main() {
   o = vec4(col * a + em * ew, a);
 }`;
 
-// Sparks: streaks from head to tail; kind 2 is a round contact flash.
+// Sparks are streaks from head to tail.
+// Kind 2 is a round contact flash.
 const SPARK_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aP;
@@ -679,7 +684,8 @@ const bloom = bloomChain(gl);
 const emptyVao = gl.createVertexArray();
 
 /* ---------- pad textures ---------- */
-// P0: x, y, and the normal times the miter. P1: depth, strand random, arc length, width.
+// P0 holds x, y, and the normal times the miter.
+// P1 holds depth, strand random, arc length and width.
 let tP0 = null, tP1 = null, tDyn = null, fibreVao = null, idxBuf = null, nIdx = 0;
 function uploadPad() {
   const { n, X, Y, Z, AL, W, RN, SA, SB } = pad;
@@ -740,7 +746,8 @@ function uploadDyn() {
 }
 
 /* ---------- heat memory ---------- */
-// A pad-space map of the hottest each spot got; it drives the temper colour.
+// A pad-space map holds the peak heat of each spot.
+// It drives the temper colour.
 const PKW = 680, PKH = 500, STAMP_R = 0.07;
 const tPK = texture(PKW, PKH, gl.R8, gl.RED, gl.UNSIGNED_BYTE, gl.LINEAR);
 const fbPK = target(tPK);
@@ -781,7 +788,8 @@ function flushStamps() {
 }
 
 /* ---------- sparks ---------- */
-// CSS pixels, y down. A spark cools as it flies; some burst into forks.
+// Sparks live in CSS pixels, y down.
+// A spark cools as it flies; some burst into forks.
 const MAXS = 1600;
 const sx = new Float32Array(MAXS), sy = new Float32Array(MAXS), svx = new Float32Array(MAXS), svy = new Float32Array(MAXS);
 const sT = new Float32Array(MAXS), sAge = new Float32Array(MAXS), sLife = new Float32Array(MAXS), sW = new Float32Array(MAXS);
@@ -893,7 +901,7 @@ function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
   upright = w / h < 0.9;
-  // The blob spans about 2.64 by 1.84 pad units with its loose ends.
+  // With loose ends, the blob spans about 2.64 by 1.84 units.
   S = upright ? Math.min(0.9 * w / 1.84, 0.78 * h / 2.64) : Math.min(0.8 * w / 2.64, 0.8 * h / 1.84);
   cx = w / 2;
   cy = h * (upright ? 0.46 : 0.47);
@@ -911,7 +919,8 @@ const toPad = (x, y) => (upright ? [(cy - y) / S, (cx - x) / S] : [(x - cx) / S,
 const toScreen = (px, py) => (upright ? [cx - py * S, cy - px * S] : [cx + px * S, cy - py * S]);
 
 /* ---------- light ---------- */
-// The key light rests above left; a mouse over the pad turns it.
+// The key light rests above left.
+// A mouse over the pad turns it.
 const L0 = [-0.42, 0.55];
 const lq = [...L0], tq = [...L0];
 const lightVec = q => { const z = 0.75; const n = Math.hypot(q[0], q[1], z); return [q[0] / n, q[1] / n, z / n]; };
@@ -1017,11 +1026,13 @@ function render() {
 const TEMPER = flat(TOK.temper), RAMP = flat(TOK.ramp);
 
 /* ---------- sound ---------- */
-// Raw Web Audio on the shared kit: muted by default, woken by a gesture.
+// Raw Web Audio on the shared kit.
+// It starts muted and wakes on a gesture.
 const kit = audioKit({ gain: 0.5 });
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 let bed = null;
-// The bed: a fizz for burning threads, a roar under the breath, the breath itself.
+// The bed: a fizz for burning threads.
+// Under breath, a low roar and the breath itself.
 function makeBed(ac) {
   const src = ac.createBufferSource();
   src.buffer = kit.noise;
@@ -1055,7 +1066,7 @@ function crackle(ac, at, level, pan, freq, dur = 0.004) {
   src.start(at, Math.random() * 0.9, dur + 0.01);
 }
 const panOf = x => clamp((x - size.w / 2) / (size.w / 2), -1, 1) * 0.75;
-// The battery touches: a dry snap, a short buzz and a few crackles.
+// The battery touches: a dry snap, a buzz, a few crackles.
 function zapSound(x) {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -1164,7 +1175,8 @@ function frame(t) {
 
 /* ---------- pointer ---------- */
 // A press touches the battery to the wool.
-// A drag scrapes it across; a still hold of 280 ms blows instead.
+// A drag scrapes it across.
+// A still hold of 280 ms blows instead.
 let holdTo = 0;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 function contact(x, y, big) {
