@@ -74,7 +74,7 @@ No local copies of shared code.
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 1266 | The page: CSS, markup, vignette, one module script |
+| `index.html` | 1300 | The page: CSS, markup, vignette, one module script |
 <!-- /gen:files -->
 
 ## Render pipeline
@@ -84,12 +84,12 @@ The burn runs on the CPU. The GPU draws the threads from point textures.
 | Pass | Target | Shader | Does |
 |---|---|---|---|
 | 1. Burn step | CPU | `makeBurn().step` | Fronts walk their strands; contacts light touching strands after a delay; breath revives glowing points |
-| 2. Upload | `tDyn` (RG32F, 256 wide) | `texSubImage2D` | Only the rows that changed: ignition time and peak heat per point |
-| 3. Heat stamps | `tPK` (R8, 680 x 500, pad space) | `STAMP_VS/FS`, MAX blend | Each ignition stamps a soft disc: the hottest each spot got |
+| 2. Upload | `tDyn` (RG32F, 256 wide) | `texSubImage2D` | Only the rows that changed, in runs: ignition time and peak heat per point |
+| 3. Heat stamps | `tPK` (R8, 680 x 500, pad space) | `STAMP_VS/FS`, MAX blend | Each ignition stamps a cone of radius 0.07 pad units: the peak heat of each spot |
 | 4. Threads | `hdr` (RGBA16F) | `FIBRE_VS/FS`, premultiplied over | One strip per strand, back to front; silver wire with glints, temper colour, oxide, the glow |
 | 5. Sparks | `hdr`, additive | `SPARK_VS/FS`, instanced | Streaks that cool and fall; forks; the two contact flashes |
-| 6. Bloom | Half size | `bloomChain` (`shared/glow.js`) | Threshold 0.8; its result also lights the threads in the next frame |
-| 7. Composite | Screen | `COMP_FS` | Bloom, `gdGrade` (tint, vignette, grain), `ouFilm` (ACES, sRGB, dither) |
+| 6. Bloom | Half size | `bloomChain` (`shared/glow.js`) | Threshold 1, 5 levels (3 at Low); the result also lights the wire in the next frame, clamped, at gain 0.12 |
+| 7. Composite | Screen | `COMP_FS` | Bloom through a soft knee, `gdGrade` (tint, vignette, grain), `ouFilm` (ACES, sRGB, dither) |
 
 ### The pad
 
@@ -105,18 +105,28 @@ The burn runs on the CPU. The GPU draws the threads from point textures.
 | `rc` | 0.0058 | 0.0072 | 0.0095 | Contact radius, pad units |
 | `dz` | 0.22 | 0.24 | 0.26 | Largest depth gap for a contact |
 
-Breath (0 to 1 at a point) multiplies speed by 1 + 1.6b, catching by 1 + 2.5b, and dying by 1 - 0.7b. A climbing front runs up to 1.4 times faster.
-A Node prototype (2026-11-15) measured the spread: one Fine tap burns about 5 % of the pad unblown, about 25 % with 3 s of breath.
+Breath (0 to 1 at a point) multiplies speed by 1 + 1.6b, catching by 1 + 2.5b, and dying by 1 - 0.7b. A climbing front runs up to 1.4 times faster. Breath on a still-glowing point can start a dead front again.
+A Node prototype (2026-11-15) measured the spread: one Fine tap burns about 5 % of the strand points unblown, about 25 % with 3 s of breath. The dark zone looks larger: unburnt wire within about 0.02 pad units of a burnt point turns oxide grey.
+
+### What the wire shows
+
+| State | Look |
+|---|---|
+| Unburnt | Silver, lit by a key light (Kajiya-Kay), with glints on the shaved facets; deep strands sit in shade |
+| Heated, not burnt | Temper colour by peak heat: straw, bronze, purple, blue, slate; at high heat, oxide grey |
+| Burning | Hot iron colour (dull red to pale yellow) with a soft skirt; breath makes it hotter |
+| Burnt | Dull oxide grey with a faint sheen; the strand thins and crumbles into gaps |
 
 ### Uniforms (the ones a person tunes)
 
 | Uniform | Type | Meaning | Range or default |
 |---|---|---|---|
 | `uTBurn`, `uTCool` | `float` | Burn time, then the cooling time | 0.22 s; 0.42 s times `Afterglow` |
-| `uTPeak` | `float` | Heat of a burning thread; 1 is dull red | 2.4 |
-| `uGlow` | `float` | Glow gain | 4 times `Glow` |
-| `uFireK` | `float` | How much the fire lights the wire | 1.4 |
-| `uBloomK`, `uExpo` | `float` | Bloom and exposure in the composite | 0.9, 1.05 |
+| `uTPeak` | `float` | Heat of a burning thread; 1 is dull red; the cap is 3.1 | 2.4 |
+| `uGlow` | `float` | Glow gain | 6 times `Glow` |
+| `uGlowW` | `float` | Width of the glow skirt round hot wire, device px | 1.3 times the pixel ratio |
+| `uFireK` | `float` | How much last frame's bloom lights the wire | 0.12 |
+| `uBloomK`, `uExpo` | `float` | Bloom and exposure in the composite | 1 times `Bloom`, 1.05 times `Exposure` |
 
 ## Sound
 
@@ -134,8 +144,9 @@ A Node prototype (2026-11-15) measured the spread: one Fine tap burns about 5 % 
 | Pixel ratio | `detail({ maxDpr: 2, budget: 2.6e6 })` |
 | Slow-frame step | `detail()`: Standard falls to ratio 1, High to Standard; bloom 3 levels at Low; spark cap 500, 1100, 1600 |
 | Idle | The loop stops when no front runs, no ignition waits, nothing glows, no spark flies, no breath blows and the light rests |
-| Reduced motion | No thread quiver, no flicker, a quarter of the sparks and no forks, the light stays put |
-| Measured | To measure |
+| Reduced motion | No thread quiver, no flicker, a quarter of the sparks and no forks, the light stays put (checked 2026-11-15 with a faked media query) |
+| Start-up | The pad builds, pre-burns 2.5 s on the CPU and draws its first frame in about 100 ms (2026-11-15, Mac, High) |
+| Measured | 2026-11-15, Mac in the browser pane, High: a big blown fire (3,165 burning points, 288 fronts, 540 sparks) costs about 1.4 ms of CPU a tick, and about 4.2 ms a frame with the GPU synced, at a 1738 x 1872 canvas. Not measured on a phone |
 
 ## State and storage
 
@@ -148,9 +159,12 @@ A Node prototype (2026-11-15) measured the spread: one Fine tap burns about 5 % 
 
 None in `tests/`. Checks for a change: a clean console, a tap and a hold on the pad, the three grades, Reset, sound after a gesture, and the bar at 1280 px, 375 x 812 and 812 x 375.
 
+QA on 2026-11-15 (browser pane, synthetic and real input): all of the above passed; the loop stops when the fire dies (no frames in 3 s). Sound was checked by its nodes and a running context, not by ear.
+
 ## Known issues
 
-None yet.
+- The sound has not been listened to; levels and the crackle rate are first guesses.
+- Phone frame rate is not measured. A Fine pad draws about 316,000 strip vertices a frame.
 
 ## Legacy build
 
