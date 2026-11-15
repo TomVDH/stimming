@@ -7,13 +7,13 @@ const lin = (r, g, b) => ({ value: new THREE.Vector3(r, g, b) });
 export const AIR_U = {
   uSun: lin(0, 0.5, -0.86),
   // The sun's light, and the glow it gives lit dust.
-  uSunC: lin(1.9, 1.8, 1.62), uGlowC: lin(0.3, 0.28, 0.24),
-  // The sky in three stops, in linear light: the rim, 20 degrees up, the top.
-  uSkyLow: lin(0.3, 0.55, 0.87), uSkyMid: lin(0.03, 0.17, 0.7), uSkyTop: lin(0.004, 0.022, 0.25),
+  uSunC: lin(1.6, 1.52, 1.38), uGlowC: lin(0.26, 0.25, 0.22),
+  // The sky in three stops, in linear light: the rim, cobalt, the navy top.
+  uSkyLow: lin(0.16, 0.4, 0.86), uSkyMid: lin(0.01, 0.085, 0.6), uSkyTop: lin(0.0015, 0.01, 0.17),
   // The smoke's fill light: from the horizon, from the zenith.
-  uHorC: lin(0.22, 0.42, 0.75), uZenC: lin(0.02, 0.1, 0.5),
+  uHorC: lin(0.16, 0.36, 0.75), uZenC: lin(0.012, 0.07, 0.42),
   // Haze per metre at the ground, and the height where it thins.
-  uHaze: { value: 1.4e-5 }, uHazeH: { value: 2600 },
+  uHaze: { value: 1.2e-5 }, uHazeH: { value: 2600 },
   uTime: { value: 0 },
 };
 
@@ -22,10 +22,11 @@ uniform vec3 uSun, uSunC, uGlowC, uSkyLow, uSkyMid, uSkyTop, uHorC, uZenC;
 uniform float uHaze, uHazeH, uTime;
 ${SKY}
 // The sky by direction, with no sun in it: the colour of lit air.
+// The cobalt band sits where the lens looks; navy closes the top.
 vec3 caAirC(vec3 d) {
   float y = max(d.y, 0.0);
-  vec3 c = mix(uSkyLow, uSkyMid, smoothstep(0.0, 0.36, y));
-  return mix(c, uSkyTop, smoothstep(0.3, 0.95, y));
+  vec3 c = mix(uSkyLow, uSkyMid, smoothstep(0.0, 0.66, y));
+  return mix(c, uSkyTop, smoothstep(0.66, 1.0, y));
 }
 // The sky with the sun's glow and corona, and no disc.
 vec3 caSky(vec3 d) {

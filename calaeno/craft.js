@@ -1,7 +1,7 @@
-// Calaeno and her escort: two airframes, one material.
+// Calaeno, her two sisters and their escort: one builder, one material.
 // One unit is one metre. x is the right wing, y is up, negative z is the nose.
-// Calaeno's plan follows Tom's top view (2026-11-15), at 2 metres per pixel:
-// tandem wings, three bodies, a dome, twelve pusher engines.
+// Calaeno's plan follows Tom's top view (2026-11-15), at 2 metres per pixel.
+// Alcyone and Merope are proposals in the same family.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AIR, AIR_U } from './air.js';
@@ -10,6 +10,7 @@ import { AIR, AIR_U } from './air.js';
 const flip = pts => pts.map(([x, z]) => [-x, z]);
 // A whole outline from its right half; points on the centre line stay single.
 const mirror = pts => [...pts, ...flip(pts).reverse().filter(([x]) => x !== 0)];
+const both = list => list.flatMap(([x, ...r]) => [[x, ...r], [-x, ...r]]);
 // A flat panel from a planform outline, t metres thick, centred on y.
 // The bevel thins the edges, as on a wing.
 function panel(pts, t, y = 0) {
@@ -46,6 +47,13 @@ function fin(pts, t, x, y, cant) {
   g.rotateZ(Math.PI / 2 - Math.sign(x) * cant);
   return at(g, x, y, 0);
 }
+// A dome that stands through a body: a disc above and below.
+function dome(z, r, h) {
+  const g = new THREE.SphereGeometry(1, 28, 14).toNonIndexed();
+  g.deleteAttribute('uv');
+  g.scale(r, h, r);
+  return at(g, 0, 0, z);
+}
 // The half width of a loft at z, for the shade test.
 function widthAt(st, z) {
   for (let i = 1; i < st.length; i++) if (z <= st[i][0]) {
@@ -63,52 +71,135 @@ function inside(poly, x, z) {
   return hit;
 }
 
-/* ---------- Calaeno: 3860 m across, 1100 m long ---------- */
-// The main wing: swept 21 degrees, with clipped tips.
-const MAIN = mirror([[0, -250], [300, -260], [1850, 330], [1930, 404], [1920, 460], [520, 180], [210, 275], [0, 250]]);
-// The front wing sweeps forward; each tip turns back into a winglet.
-const FRONT = [[120, -270], [896, -396], [960, -250], [940, -240], [908, -318], [200, -70]];
-const HULL = [[-530, 1, 1], [-500, 14, 12], [-420, 24, 20], [-330, 44, 28], [-250, 96, 40], [-100, 128, 46], [100, 118, 44], [200, 80, 36], [300, 44, 26], [480, 16, 12], [572, 1, 1]];
-// Two outrigger bodies run from the front wing to the tail.
-const RIG_X = 450;
-const RIG = [[-430, 1, 1], [-400, 20, 18], [-330, 22, 20], [-100, 26, 22], [250, 30, 24], [450, 16, 14], [582, 1, 1]];
-// Each pusher engine: x, then z at its propeller.
-const ENGINES = [[330, 30], [640, -110], [240, 350], [760, 304], [1076, 360], [1400, 410]].flatMap(([x, z]) => [[x, z], [-x, z]]);
+/* ---------- the three craft ---------- */
+// Each spec: panels (outline, thickness, y), bodies (stations, x), domes (z, radius, height),
+// engines (x, z at the propeller), lamps, and discs that cast the sun rays.
 const NACELLE = [[-190, 1, 1], [-160, 13, 12], [-30, 13, 12], [-4, 7, 7]];
-const TIP_X = 1620;
-const TIP_POD = [[110, 1, 1], [135, 9, 9], [380, 9, 9], [412, 1, 1]];
-// The dome stands through the hull: a disc above and below.
-const DOME = { z: -130, r: 126, h: 62 };
-// Six plume heads: each stands for a pair of engines.
-const HEADS = [[285, 360], [700, 312], [1240, 392]].flatMap(([x, z]) => [[x, z], [-x, z]]);
+const RED = [9, 0.5, 0.3], GREEN = [0.4, 8, 1.2], WHITE = [9, 9, 9];
+const strobe = (x, y, z, ph, c = WHITE, size = 6) => [x, y, z, size, ...c, 1.7, ph, 0.05];
+const tips = (x, z) => [[-x, 0, z, 5, ...RED, 1, 0, 1], [x, 0, z, 5, ...GREEN, 1, 0, 1]];
 
-function calaenoGeometry() {
-  const dome = new THREE.SphereGeometry(1, 28, 14).toNonIndexed();
-  dome.deleteAttribute('uv');
-  dome.scale(DOME.r, DOME.h, DOME.r);
-  const parts = [
-    panel(MAIN, 34), panel(FRONT, 22, 6), panel(flip(FRONT), 22, 6),
-    loft(HULL, 20), at(dome, 0, 0, DOME.z),
-    at(loft(RIG), RIG_X, 0, 0), at(loft(RIG), -RIG_X, 0, 0),
-    at(loft(TIP_POD, 10), TIP_X, 0, 0), at(loft(TIP_POD, 10), -TIP_X, 0, 0),
-  ];
-  // The nacelles hang under the wings.
-  for (const [x, z] of ENGINES) parts.push(at(loft(NACELLE, 10), x, -14, z));
-  return mergeGeometries(parts);
+// Calaeno: tandem wings, three bodies, a dome, twelve engines. 3860 m across.
+const C_FRONT = [[120, -270], [896, -396], [960, -250], [940, -240], [908, -318], [200, -70]];
+const C_RIG = [[-430, 1, 1], [-400, 20, 18], [-330, 22, 20], [-100, 26, 22], [250, 30, 24], [450, 16, 14], [582, 1, 1]];
+const C_POD = [[110, 1, 1], [135, 9, 9], [380, 9, 9], [412, 1, 1]];
+const CALAENO = {
+  span: 3860, spread: 1400,
+  panels: [
+    [mirror([[0, -250], [300, -260], [1850, 330], [1930, 404], [1920, 460], [520, 180], [210, 275], [0, 250]]), 34, 0],
+    [C_FRONT, 22, 6], [flip(C_FRONT), 22, 6],
+  ],
+  bodies: [
+    [[[-530, 1, 1], [-500, 14, 12], [-420, 24, 20], [-330, 44, 28], [-250, 96, 40], [-100, 128, 46], [100, 118, 44], [200, 80, 36], [300, 44, 26], [480, 16, 12], [572, 1, 1]], 0],
+    ...both([[450, C_RIG], [1620, C_POD]]).map(([x, st]) => [st, x]),
+  ],
+  domes: [[-130, 126, 62]],
+  engines: both([[330, 30], [640, -110], [240, 350], [760, 304], [1076, 360], [1400, 410]]),
+  lamps: [...tips(1925, 430), strobe(0, -6, 572, 0), strobe(-450, -6, 582, 0.12, WHITE, 5), strobe(450, -6, 582, 0.24, WHITE, 5), strobe(0, -62, -130, 0.6, RED)],
+  casters: [[0, 0, 0, 300, 60], ...both([[560, 0, 30, 300, 40], [1150, 0, 190, 300, 40], [1680, 0, 370, 220, 40], [520, 0, -260, 280, 40]])],
+};
+
+// Alcyone: a crescent wing on two hulls, with a bridge at each end. 3920 m across.
+const A_HULL = [[-720, 1, 1], [-680, 22, 18], [-560, 40, 30], [-200, 58, 40], [150, 56, 38], [420, 34, 24], [560, 10, 8], [582, 1, 1]];
+const ALCYONE = {
+  span: 3920, spread: 1650,
+  panels: [
+    [mirror([[0, -120], [520, -200], [1300, 60], [1900, 520], [1960, 640], [1880, 680], [1300, 330], [520, 150], [0, 200]]), 36, 0],
+    [[[-540, -540], [0, -600], [540, -540], [540, -450], [0, -505], [-540, -450]], 18, 4],
+    [[[-540, 440], [540, 440], [620, 540], [-620, 540]], 16, 8],
+  ],
+  bodies: [
+    ...both([[520, A_HULL]]).map(([x, st]) => [st, x]),
+    [[[-260, 1, 1], [-200, 40, 26], [60, 60, 34], [240, 30, 20], [300, 1, 1]], 0],
+  ],
+  domes: [[-20, 92, 46]],
+  engines: both([[200, 211], [820, 249], [1080, 309], [1340, 384], [1600, 541]]),
+  lamps: [...tips(1950, 650), strobe(-520, -6, 582, 0), strobe(520, -6, 582, 0.2), strobe(0, -46, -20, 0.6, RED)],
+  casters: [...both([[520, 0, -100, 260, 50], [300, 0, 40, 300, 40], [950, 0, 170, 330, 40], [1500, 0, 400, 300, 40]]), [0, 0, -520, 300, 30]],
+};
+
+// Merope: two wings joined at their tips round one long hull. 3100 m across.
+const M_FRONT = [[60, -480], [1500, 80], [1500, 180], [60, -330]];
+const M_REAR = [[60, 520], [1500, 110], [1500, 215], [60, 690]];
+const MEROPE = {
+  span: 3100, spread: 1250,
+  panels: [[M_FRONT, 28, 6], [flip(M_FRONT), 28, 6], [M_REAR, 28, -6], [flip(M_REAR), 28, -6]],
+  bodies: [
+    [[[-900, 1, 1], [-860, 18, 16], [-700, 46, 34], [-300, 70, 46], [300, 72, 46], [650, 44, 30], [820, 12, 10], [852, 1, 1]], 0],
+    ...both([[1500, [[-30, 1, 1], [10, 22, 18], [240, 22, 18], [300, 1, 1]]]]).map(([x, st]) => [st, x]),
+  ],
+  domes: [[60, 112, 58]],
+  engines: both([[300, 632], [600, 534], [900, 436], [1200, 338], [450, -162], [900, -3]]),
+  lamps: [...tips(1500, 300), strobe(0, -6, 852, 0), strobe(0, -58, 60, 0.6, RED), strobe(0, -10, -900, 0.3, WHITE, 5)],
+  casters: [[0, 0, -200, 260, 60], [0, 0, 400, 260, 60], ...both([[450, 0, -280, 260, 40], [1000, 0, -60, 280, 40], [450, 0, 520, 260, 40], [1000, 0, 320, 280, 40], [1500, 0, 150, 160, 40]])],
+};
+
+export const CRAFT = { calaeno: CALAENO, alcyone: ALCYONE, merope: MEROPE };
+
+/* ---------- the escort: a delta dart, 58 m long ---------- */
+const E_WING = mirror([[2.4, -9], [20, 15], [20, 19.5], [2.4, 18]]);
+const E_TAIL = mirror([[2, 19], [9.5, 27], [9.5, 30], [2, 26.5]]);
+const E_HULL = [[-30, 0.2, 0.2], [-24, 1.5, 1.3], [-8, 2.6, 2.2], [14, 2.9, 2.3], [26, 2.3, 1.9], [28, 0.3, 0.3]];
+const E_FIN = [[0, 14], [0, 26], [7.5, 29], [7.5, 23]];
+const escortGeometry = () => mergeGeometries([
+  panel(E_WING, 1.1), panel(E_TAIL, 0.7), loft(E_HULL, 12),
+  fin(E_FIN, 0.5, 2.4, 1, 0.42), fin(E_FIN, 0.5, -2.4, 1, 0.42),
+]);
+
+/* ---------- material ---------- */
+const VERT = /* glsl */`
+varying vec3 vWP, vWN, vL;
+void main() {
+  vL = position;
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWP = w.xyz;
+  vWN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const FRAG = /* glsl */`
+varying vec3 vWP, vWN, vL;
+uniform vec3 uPaint, uAccent;
+uniform float uMark;
+${AIR}
+void main() {
+  vec3 N = normalize(vWN), V = normalize(cameraPosition - vWP);
+  if (!gl_FrontFacing) N = -N;
+  // The escort has a hot nose; a big craft is one pale grey.
+  vec3 alb = uMark > 0.5 ? uPaint : mix(uPaint, uAccent, step(vL.z, -19.0));
+  // The belly sees the ground; the back sees the sky.
+  vec3 amb = mix(uHorC * 0.22, uZenC * 0.5 + uHorC * 0.5, smoothstep(-1.0, 1.0, N.y));
+  vec3 col = alb * (amb + uSunC * max(dot(N, uSun), 0.0));
+  // Against the sun, the edges catch a thin line of light.
+  float fr = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+  float back = pow(max(dot(-V, uSun), 0.0), 6.0);
+  col += uSunC * fr * (0.02 + 0.45 * back);
+  vec3 H = normalize(uSun + V);
+  col += uSunC * 0.3 * pow(max(dot(N, H), 0.0), 60.0);
+  gl_FragColor = vec4(caAir(col, vWP, 1.0), 1.0);
+}`;
+const lin = (r, g, b) => ({ value: new THREE.Vector3(r, g, b) });
+function craftMaterial(mark) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...AIR_U, uPaint: lin(0.4, 0.42, 0.45), uAccent: lin(0.85, 0.16, 0.03), uMark: { value: mark } },
+    vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
+    // Transparent for the draw order: the craft draws after the contrails.
+    transparent: true, depthWrite: true,
+  });
 }
+
+/* ---------- propellers: two rows that turn against each other ---------- */
 // Each propeller is one disc behind its nacelle; the shader draws its blades.
 // aHub holds the disc's centre and its turn: 1 or -1.
 const PROP_R = 62;
-function propGeometry() {
-  return mergeGeometries(ENGINES.map(([x, z], i) => {
-    const g = at(new THREE.CircleGeometry(PROP_R, 28), x, -14, z + 4);
+function propGeometry(engines) {
+  return mergeGeometries(engines.map(([x, z], i) => {
+    const g = at(new THREE.CircleGeometry(PROP_R, 32), x, -14, z + 4);
     const n = g.attributes.position.count, hub = new Float32Array(n * 3);
     for (let v = 0; v < n; v++) hub.set([x, -14, i % 2 ? -1 : 1], v * 3);
     g.setAttribute('aHub', new THREE.BufferAttribute(hub, 3));
     return g;
   }));
 }
-// Two rows of blades turn against each other, slowly enough to read.
 function propMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { ...AIR_U },
@@ -129,80 +220,45 @@ function propMaterial() {
     varying vec3 vWP, vHub;
     varying vec2 vQ;
     ${AIR}
-    // One row of n blades at angle a: 1 on a blade, 0 between.
-    float row(float a, float n, float r) {
-      float d = abs(fract(a * n / 6.2832) - 0.5);
-      float w = 0.5 - mix(0.2, 0.09, r);
-      return smoothstep(w - 0.03, w + 0.03, d);
+    // A scimitar blade's half chord at radius r, in disc radii.
+    // It is widest past mid span and rounds off at the tip.
+    float chord(float r) { return 0.058 * (0.45 + 1.7 * r * (1.25 - r)) * smoothstep(1.0, 0.86, r); }
+    // One row of six blades. turn is 1 or -1; a is the angle at this pixel.
+    // Six taps trail each blade with a short smear of motion.
+    float row(float a, float r, float turn, float t) {
+      // The blades curve back toward their tips.
+      float base = a - turn * (t + 0.75 * r * r);
+      float w = chord(r) * 6.0 / (6.2832 * max(r, 0.05));
+      float acc = 0.0;
+      for (int i = 0; i < 6; i++) {
+        float d = abs(fract((base + turn * float(i) * 0.03) * 6.0 / 6.2832) - 0.5);
+        acc += smoothstep(0.5 - w - 0.015, 0.5 - w + 0.015, d) * (1.0 - 0.16 * float(i));
+      }
+      return min(acc / 2.6, 1.0);
     }
     void main() {
       float r = length(vQ), a = atan(vQ.y, vQ.x);
       if (r > 1.0) discard;
-      float t = uTime * 1.9 * vHub.z + vHub.x * 0.013;
-      float span = smoothstep(1.0, 0.94, r) * smoothstep(0.1, 0.16, r);
-      float blade = max(row(a + t, 4.0, r), row(a - t * 0.83 + 0.4, 4.0, r)) * span;
-      // A faint disc of blur, the blades, and the hub.
-      float al = clamp(0.08 * smoothstep(1.0, 0.9, r) + 0.85 * blade + smoothstep(0.14, 0.1, r), 0.0, 1.0);
-      vec3 col = vec3(0.02, 0.022, 0.026) * (uHorC * 0.4 + uZenC * 0.3 + 0.05);
+      // Each engine starts at its own angle.
+      float t = uTime * 2.4 + vHub.x * 0.017;
+      float span = smoothstep(0.13, 0.17, r);
+      float front = row(a, r, vHub.z, t) * span, rear = row(a + 0.5, r, -vHub.z, t * 0.86) * span;
+      float hub = smoothstep(0.16, 0.13, r);
+      // A faint disc of blur, the rear row, the front row, then the spinner.
+      float al = 0.05 * smoothstep(1.0, 0.92, r);
+      al = al + (1.0 - al) * 0.8 * rear;
+      al = al + (1.0 - al) * 0.95 * front;
+      al = max(al, hub);
+      // Graphite blades with pale tips; the front row sits in more light.
+      vec3 paint = mix(vec3(0.03, 0.032, 0.038), vec3(0.5, 0.46, 0.3), smoothstep(0.86, 0.9, r) * (1.0 - hub));
+      paint *= mix(0.6, 1.0, front);
+      // The spinner is a pale cone with a soft glint.
+      paint = mix(paint, vec3(0.3, 0.31, 0.33) * (0.6 + 0.8 * smoothstep(0.14, 0.0, length(vQ - vec2(-0.04, 0.05)))), hub);
+      // Each blade flashes as it turns through the sun's side.
+      float glint = pow(max(cos(a - 2.2), 0.0), 10.0) * front;
+      vec3 col = paint * (uHorC * 0.5 + uZenC * 0.4 + uSunC * (0.05 + 0.5 * glint));
       gl_FragColor = vec4(caAir(col, vWP, 1.0) * al, al);
     }`,
-  });
-}
-
-/* ---------- the escort: a delta dart, 58 m long ---------- */
-const E_WING = mirror([[2.4, -9], [20, 15], [20, 19.5], [2.4, 18]]);
-const E_TAIL = mirror([[2, 19], [9.5, 27], [9.5, 30], [2, 26.5]]);
-const E_HULL = [[-30, 0.2, 0.2], [-24, 1.5, 1.3], [-8, 2.6, 2.2], [14, 2.9, 2.3], [26, 2.3, 1.9], [28, 0.3, 0.3]];
-const E_FIN = [[0, 14], [0, 26], [7.5, 29], [7.5, 23]];
-
-function escortGeometry() {
-  return mergeGeometries([
-    panel(E_WING, 1.1), panel(E_TAIL, 0.7), loft(E_HULL, 12),
-    fin(E_FIN, 0.5, 2.4, 1, 0.42), fin(E_FIN, 0.5, -2.4, 1, 0.42),
-  ]);
-}
-
-/* ---------- material ---------- */
-const VERT = /* glsl */`
-varying vec3 vWP, vWN, vL;
-void main() {
-  vL = position;
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vWP = w.xyz;
-  vWN = normalize(mat3(modelMatrix) * normal);
-  gl_Position = projectionMatrix * viewMatrix * w;
-}`;
-const FRAG = /* glsl */`
-varying vec3 vWP, vWN, vL;
-uniform vec3 uPaint, uAccent;
-uniform float uMark, uAlpha;
-${AIR}
-void main() {
-  vec3 N = normalize(vWN), V = normalize(cameraPosition - vWP);
-  if (!gl_FrontFacing) N = -N;
-  // The escort has a hot nose; Calaeno is one pale grey.
-  vec3 alb = uMark > 0.5 ? uPaint : mix(uPaint, uAccent, step(vL.z, -19.0));
-  // The belly sees the ground; the back sees the sky.
-  vec3 amb = mix(uHorC * 0.22, uZenC * 0.5 + uHorC * 0.5, smoothstep(-1.0, 1.0, N.y));
-  vec3 col = alb * (amb + uSunC * max(dot(N, uSun), 0.0));
-  // Against the sun, the edges catch a thin line of light.
-  float fr = pow(1.0 - max(dot(N, V), 0.0), 4.0);
-  float back = pow(max(dot(-V, uSun), 0.0), 6.0);
-  col += uSunC * fr * (0.02 + 0.45 * back);
-  vec3 H = normalize(uSun + V);
-  col += uSunC * 0.3 * pow(max(dot(N, H), 0.0), 60.0);
-  gl_FragColor = vec4(caAir(col, vWP, 1.0) * uAlpha, uAlpha);
-}`;
-
-const lin = (r, g, b) => ({ value: new THREE.Vector3(r, g, b) });
-// alpha below 1 makes a see-through part: a propeller's blur.
-function craftMaterial(mark, alpha = 1) {
-  return new THREE.ShaderMaterial({
-    uniforms: { ...AIR_U, uPaint: alpha < 1 ? lin(0.02, 0.022, 0.026) : lin(0.4, 0.42, 0.45), uAccent: lin(0.85, 0.16, 0.03), uMark: { value: mark }, uAlpha: { value: alpha } },
-    vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
-    // Transparent for the draw order: the craft draws after the plumes.
-    transparent: true, depthWrite: alpha >= 1,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   });
 }
 
@@ -240,50 +296,44 @@ function lamps(list, uPx) {
   return m;
 }
 
-const RED = [9, 0.5, 0.3], GREEN = [0.4, 8, 1.2], WHITE = [9, 9, 9];
-
-// Calaeno: the mesh, the propellers, the lamps, the plume heads, the shade tests.
-export function makeCalaeno(uPx) {
+// One big craft from its spec: the mesh, the propellers, the lamps.
+// heads holds each engine's propeller hub: a contrail starts there.
+export function makeCraft(spec, uPx) {
   const group = new THREE.Group();
-  const mesh = new THREE.Mesh(calaenoGeometry(), craftMaterial(1));
-  const props = new THREE.Mesh(propGeometry(), propMaterial());
+  const parts = [
+    ...spec.panels.map(([pts, t, y]) => panel(pts, t, y)),
+    ...spec.bodies.map(([st, x]) => at(loft(st, x === 0 ? 20 : 12), x, 0, 0)),
+    ...spec.domes.map(([z, r, h]) => dome(z, r, h)),
+    // The nacelles hang under the wings.
+    ...spec.engines.map(([x, z]) => at(loft(NACELLE, 10), x, -14, z)),
+  ];
+  const mesh = new THREE.Mesh(mergeGeometries(parts), craftMaterial(1));
+  const props = new THREE.Mesh(propGeometry(spec.engines), propMaterial());
   mesh.frustumCulled = props.frustumCulled = false;
-  const lights = lamps([
-    [-1925, 0, 430, 5, ...RED, 1, 0, 1], [1925, 0, 430, 5, ...GREEN, 1, 0, 1],
-    // Strobes: the three tails, the belly under the dome.
-    [0, -6, 572, 6, ...WHITE, 1.7, 0, 0.05], [-RIG_X, -6, 582, 5, ...WHITE, 1.7, 0.12, 0.05], [RIG_X, -6, 582, 5, ...WHITE, 1.7, 0.24, 0.05],
-    [0, -DOME.h, DOME.z, 6, ...RED, 1.7, 0.6, 0.08],
-  ], uPx);
+  const lights = lamps(spec.lamps, uPx);
   group.add(mesh, props, lights);
-  const frontL = flip(FRONT);
   return {
-    group, mesh, props, lights, span: 3860,
-    // The plume heads sit just behind the propellers.
-    heads: HEADS.map(([x, z]) => new THREE.Vector3(x, -14, z)),
+    group, mesh, props, lights, span: spec.span, spread: spec.spread, casters: spec.casters,
+    heads: spec.engines.map(([x, z]) => new THREE.Vector3(x, -14, z + 4)),
     // True where the craft blocks a ray through local x, z.
     shade(x, z) {
-      const ax = Math.abs(x);
-      if (ax < widthAt(HULL, z) || Math.abs(ax - RIG_X) < widthAt(RIG, z)) return true;
-      if (Math.hypot(x, z - DOME.z) < DOME.r) return true;
-      return inside(MAIN, x, z) || inside(FRONT, x, z) || inside(frontL, x, z);
+      if (spec.bodies.some(([st, bx]) => Math.abs(x - bx) < widthAt(st, z))) return true;
+      if (spec.domes.some(([dz, r]) => Math.hypot(x, z - dz) < r)) return true;
+      return spec.panels.some(([pts]) => inside(pts, x, z));
     },
-    // Shadow casters for the sun rays: x, y, z, across radius, upright radius.
-    casters: [
-      [0, 0, 0, 300, 60],
-      ...[[560, 30, 300], [1150, 190, 300], [1680, 370, 220], [520, -260, 280]].flatMap(([x, z, r]) => [[x, 0, z, r, 40], [-x, 0, z, r, 40]]),
-    ],
   };
 }
 
-// The escort: the mesh, the lamps and one plume head.
+// The escorts share one geometry and one material.
+let escGeo = null, escMat = null;
 export function makeEscort(uPx) {
   const group = new THREE.Group();
-  const mesh = new THREE.Mesh(escortGeometry(), craftMaterial(0));
+  const mesh = new THREE.Mesh(escGeo ??= escortGeometry(), escMat ??= craftMaterial(0));
   mesh.frustumCulled = false;
   const lights = lamps([
     [-20, 0, 19, 3, ...RED, 1, 0, 1], [20, 0, 19, 3, ...GREEN, 1, 0, 1],
     [0, -2.5, 4, 4, ...WHITE, 1.1, 0.4, 0.07],
   ], uPx);
   group.add(mesh, lights);
-  return { group, mesh, lights, heads: [new THREE.Vector3(0, 0, 30)] };
+  return { group, mesh, lights, head: new THREE.Vector3(0, 0, 30) };
 }

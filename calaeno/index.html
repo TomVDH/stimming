@@ -28,10 +28,9 @@
 :root { --stage: oklch(0.1 0.03 262); }
 .stage--calaeno canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
-  opacity: 0; transition: opacity 0.8s ease; cursor: grab; touch-action: none;
+  opacity: 0; transition: opacity 0.8s ease;
 }
 .stage--calaeno canvas.on { opacity: 1; }
-.stage--calaeno.held canvas { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--calaeno canvas { transition: none; } }
 </style>
 </head>
@@ -42,7 +41,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--calaeno" id="stage" tabindex="0" role="application" aria-label="A colossal aircraft high overhead, seen from the ground through a long lens. Six contrails stream from its propellers across the sun; one escort flies beside. Drag to look, scroll to zoom.">
+    <div class="stage stage--calaeno" id="stage" tabindex="0" role="img" aria-label="A colossal propeller aircraft high overhead, seen from the ground through a long lens. A contrail streams from each engine across the sun; six escorts fly beside it. Clouds drift in three layers.">
       <p class="fail" hidden>Calaeno needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -66,7 +65,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { AIR, AIR_U } from './air.js';
 import { bakeVol, makeTrail } from './trail.js';
-import { makeCalaeno, makeEscort } from './craft.js';
+import { CRAFT, makeCraft, makeEscort } from './craft.js';
 
 const rad = THREE.MathUtils.degToRad, deg = THREE.MathUtils.radToDeg, clamp = THREE.MathUtils.clamp, sstep = THREE.MathUtils.smoothstep;
 const q = new URLSearchParams(location.search);
@@ -76,31 +75,40 @@ const store = {
 };
 const SUN0 = 0.36;
 const sunStart = q.has('sun') ? +q.get('sun') : store.get('sun') !== null ? +store.get('sun') : SUN0;
+const craftStart = q.get('craft') ?? store.get('craft');
 const state = {
   sun: clamp(Number.isFinite(sunStart) ? sunStart : SUN0, 0, 1),
+  craft: craftStart in CRAFT ? craftStart : 'calaeno',
   // The view: the craft's height in the sky, its heading, the lens.
-  elev: 48, head: 20, lens: 15.8,
-  expo: 1, bloom: 1, flare: 1, rays: 1.6, wisps: 0.55, flow: 0.5,
+  elev: 56, head: 20, lens: 15,
+  expo: 1, bloom: 1, flare: 1, rays: 1.6, wisps: 0.55, heaps: 0.8, scud: 0.6, flow: 0.5,
 };
 
 /* ---------- bar ---------- */
+// The picture is fixed: no hand turns or zooms the camera.
 const ui = initPage({ id: 'calaeno', silent: true, bar: {
-  // Sun slides the sun out from behind the plumes into clear sky.
+  // Calaeno is Tom's craft; Alcyone and Merope are her sisters.
+  choice: {
+    label: 'Craft', value: state.craft, display: 'segments',
+    options: [{ value: 'calaeno', label: 'Calaeno' }, { value: 'alcyone', label: 'Alcyone' }, { value: 'merope', label: 'Merope' }],
+    onPick: v => { state.craft = v; store.set('craft', v); pick(); wake(); },
+  },
+  // Sun slides the sun out from behind the contrails into clear sky.
   slider: { label: 'Sun', min: 0, max: 1, step: 0.002, value: state.sun, onInput: v => { state.sun = v; store.set('sun', v); layout(); wake(); } },
-  actions: [{ verb: 'reset', key: 'R', onPress: () => reset() }],
   dev: [
-    { type: 'slider', id: 'elev', label: 'Elevation', min: 14, max: 80, step: 1, value: 48, onInput: v => { state.elev = v; layout(); wake(); } },
+    { type: 'slider', id: 'elev', label: 'Elevation', min: 14, max: 80, step: 1, value: 56, onInput: v => { state.elev = v; layout(); wake(); } },
     { type: 'slider', id: 'head', label: 'Heading', min: -70, max: 70, step: 1, value: 20, onInput: v => { state.head = v; layout(); wake(); } },
-    { type: 'slider', id: 'lens', label: 'Lens', min: 5, max: 50, step: 0.2, value: 15.8, onInput: v => { state.lens = v; wake(); } },
+    { type: 'slider', id: 'lens', label: 'Lens', min: 5, max: 50, step: 0.2, value: 15, onInput: v => { state.lens = v; wake(); } },
     { type: 'slider', id: 'rays', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, onInput: v => { state.rays = v; wake(); } },
-    { type: 'slider', id: 'wisps', label: 'Wisps', min: 0, max: 1, step: 0.02, value: 0.55, onInput: v => { state.wisps = v; wake(); } },
-    { type: 'slider', id: 'flow', label: 'Plume flow', min: 0, max: 2, step: 0.05, value: 0.5, onInput: v => { state.flow = v; wake(); } },
+    { type: 'slider', id: 'wisps', label: 'High wisps', min: 0, max: 1, step: 0.02, value: 0.55, onInput: v => { state.wisps = v; wake(); } },
+    { type: 'slider', id: 'heaps', label: 'Mid heaps', min: 0, max: 1, step: 0.02, value: 0.8, onInput: v => { state.heaps = v; wake(); } },
+    { type: 'slider', id: 'scud', label: 'Near scud', min: 0, max: 1, step: 0.02, value: 0.6, onInput: v => { state.scud = v; wake(); } },
+    { type: 'slider', id: 'flow', label: 'Contrail flow', min: 0, max: 2, step: 0.05, value: 0.5, onInput: v => { state.flow = v; wake(); } },
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.3, max: 3, step: 0.05, value: 1, onInput: v => { state.expo = v; wake(); } },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 3, step: 0.05, value: 1, onInput: v => { state.bloom = v; wake(); } },
     { type: 'slider', id: 'flare', label: 'Flare', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { state.flare = v; wake(); } },
   ],
   quality: true,
-  keys: [['drag', 'look'], ['scroll', 'zoom'], ['r', 'reset']],
 } });
 
 const stage = document.getElementById('stage');
@@ -121,13 +129,13 @@ const canvas = renderer.domElement;
 stage.prepend(canvas);
 
 const scene = new THREE.Scene();
-// The eye stands on the ground; the craft flies 12 km up.
-const camera = new THREE.PerspectiveCamera(16, 1, 40, 400000);
+// The eye stands on the ground; the craft flies 18 km up.
+const camera = new THREE.PerspectiveCamera(15, 1, 40, 400000);
 camera.rotation.order = 'YXZ';
 const EYE = new THREE.Vector3(0, 2, 0);
 camera.position.copy(EYE);
 
-/* ---------- sun rays: plume and craft shadows in the air ---------- */
+/* ---------- sun rays: contrail and craft shadows in the air ---------- */
 // Source: railgun/index.html, "sun rays: cloud shadows in the low air".
 // Each shadow is its caster pushed away from the sun.
 // The view ray's length in lit air sets the rays' light.
@@ -137,7 +145,7 @@ const SHAFT_U = {
   uShaft: { value: new THREE.Vector3(1.6, 30000, 160000) },
   // Ellipsoids: centre and across radius; uOccV holds each upright radius.
   uOcc: { value: Array.from({ length: SHAFT_N }, () => new THREE.Vector4()) }, uOccV: { value: new Float32Array(SHAFT_N) }, uOccN: { value: 0 },
-  // The plumes as one chain: each point and its radius.
+  // The contrails as one chain: each point and its radius.
   uTr: { value: Array.from({ length: SHAFT_TR }, () => new THREE.Vector4()) }, uTrN: { value: 0 },
 };
 const SHAFT_GLSL = /* glsl */`
@@ -185,7 +193,7 @@ vec2 shafts(vec3 ro, vec3 rd, float L) {
   }
   for (int i = 0; i < ${SHAFT_TR - 1}; i++) {
     if (i >= uTrN - 1) break;
-    // One piece of the plume cone, as a slab of its mean radius.
+    // One piece of the contrail cone, as a slab of its mean radius.
     vec3 a0 = uTr[i].xyz, a1 = uTr[i + 1].xyz, r = ro - a0;
     vec3 u = (a1 - a0) - s * dot(a1 - a0, s);
     float len = length(u);
@@ -222,45 +230,78 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
   return mix(c, c * vec3(0.5, 0.58, 0.74), k) + uGlowC * ph * lit * 0.4 * uShaft.x;
 }`;
 
-/* ---------- sky: one quad behind everything ---------- */
-const SKY_U = { ...AIR_U, ...SHAFT_U, uProjInv: { value: new THREE.Matrix4() }, uCamW: { value: new THREE.Matrix4() }, uWisps: { value: 0.55 }, uOct: { value: 5 }, uDrift: { value: new THREE.Vector2() } };
+/* ---------- sky: three cloud layers at three speeds ---------- */
+// The eye rides with the craft, so a nearer layer drifts faster.
+// High wisps and mid heaps lie behind the craft; near scud passes in front.
+const VIEW_U = { uProjInv: { value: new THREE.Matrix4() }, uCamW: { value: new THREE.Matrix4() } };
+const CLOUD_U = {
+  uWisps: { value: 0.55 }, uHeaps: { value: 0.8 }, uScud: { value: 0.6 }, uOct: { value: 5 },
+  uDriftA: { value: new THREE.Vector2() }, uDriftB: { value: new THREE.Vector2() }, uDriftC: { value: new THREE.Vector2() },
+};
+const VIEW_GLSL = /* glsl */`
+varying vec2 vUv;
+uniform mat4 uProjInv, uCamW;
+uniform float uWisps, uHeaps, uScud;
+uniform vec2 uDriftA, uDriftB, uDriftC;
+uniform int uOct;
+vec3 viewDir() {
+  vec4 h = uProjInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  return normalize((uCamW * vec4(h.xyz / h.w, 0.0)).xyz);
+}
+// A flat sheet's place along direction d; sc sets the cell size.
+vec2 sheet(vec3 d, float sc) { return d.xz / (d.y + 0.2) * sc; }`;
+const QUAD_VERT = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`;
+const SKY_U = { ...AIR_U, ...SHAFT_U, ...VIEW_U, ...CLOUD_U };
 const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: SKY_U, depthTest: false, depthWrite: false,
-  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`,
+  vertexShader: QUAD_VERT,
   fragmentShader: /* glsl */`
-  varying vec2 vUv;
-  uniform mat4 uProjInv, uCamW;
-  uniform float uWisps;
-  uniform vec2 uDrift;
-  uniform int uOct;
   ${AIR}
+  ${VIEW_GLSL}
   ${SHAFT_GLSL}
-  // High ice cloud: thin, combed wisps far above the craft.
-  vec4 wisps(vec3 d) {
+  // The highest layer: thin, combed ice wisps.
+  vec4 wisps(vec3 d, float sd) {
     if (d.y < 0.05 || uWisps <= 0.0) return vec4(0.0);
-    vec2 p = d.xz / (d.y + 0.2) * 2.6 + uDrift;
+    vec2 p = sheet(d, 14.0) + uDriftA;
     vec2 w = vec2(0.82, 0.57);
     // Long cells down the wind; a slow warp curls their ends.
     vec2 s = vec2(dot(p, w) * 0.5, dot(p, vec2(-w.y, w.x)) * 3.4);
-    s += 0.55 * vec2(skFbm(p * 1.3 + 3.1, 3), skFbm(p * 1.3 - 7.7, 3));
+    s += 0.55 * vec2(skFbm(p * 1.3 + 3.1 + uTime * 0.004, 3), skFbm(p * 1.3 - 7.7, 3));
     float n = skFbm(s, uOct);
-    // Patches: wisps gather in a few fields, with clear blue between.
-    float field = smoothstep(0.42, 0.68, skFbm(p * 0.35 + 11.0, 2));
+    // Wisps gather in a few fields, with clear blue between.
+    float field = smoothstep(0.3, 0.52, skFbm(p * 0.35 + 11.0, 2));
     float th = mix(0.74, 0.46, uWisps);
     float den = smoothstep(th, th + 0.28, n) * field * smoothstep(0.05, 0.3, d.y);
-    float sd = max(dot(d, uSun), 0.0);
     vec3 col = vec3(0.92, 0.95, 1.0) * (0.75 + uSunC * (0.05 + 0.25 * pow(sd, 12.0) + 0.6 * pow(sd, 120.0)));
-    return vec4(col, den * 0.75);
+    return vec4(col, den * 0.7);
+  }
+  // The middle layer: small heaps in loose fields, white toward the sun.
+  vec4 heaps(vec3 d, float sd) {
+    if (d.y < 0.05 || uHeaps <= 0.0) return vec4(0.0);
+    vec2 p = sheet(d, 28.0) + uDriftB;
+    // The heaps boil slowly as they pass.
+    vec2 s = p + 0.4 * vec2(skFbm(p * 0.7 + uTime * 0.012, 3), skFbm(p * 0.7 + 5.2 - uTime * 0.009, 3));
+    float n = skFbm(s, uOct);
+    float field = smoothstep(0.3, 0.5, skFbm(p * 0.2 + 31.0, 2));
+    float den = smoothstep(0.56, 0.63, n) * field * smoothstep(0.05, 0.3, d.y);
+    if (den <= 0.0) return vec4(0.0);
+    // Thinner cloud a short step toward the sun means this side is lit.
+    vec2 to = normalize(sheet(uSun, 28.0) - sheet(d, 28.0) + 1e-4);
+    float lit = clamp((n - skFbm(s + to * 0.14, 3)) * 5.0 + 0.5, 0.0, 1.0);
+    vec3 col = mix(vec3(0.2, 0.32, 0.7), vec3(1.12, 1.1, 1.06), lit) + uSunC * 0.5 * pow(sd, 60.0);
+    return vec4(col, den * uHeaps);
   }
   void main() {
-    vec4 h = uProjInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
-    vec3 d = normalize((uCamW * vec4(h.xyz / h.w, 0.0)).xyz);
+    vec3 d = viewDir();
+    float sd = max(dot(d, uSun), 0.0);
     vec3 c = caSky(d);
-    vec4 wi = wisps(d);
-    c = mix(c, wi.rgb, wi.a);
-    c = shaftSky(c, d, uShaft.z);
     // The disc: half a degree across.
     c += uSunC * 50.0 * (1.0 - smoothstep(0.0042, 0.0052, length(d - uSun)));
+    vec4 wi = wisps(d, sd);
+    c = mix(c, wi.rgb, wi.a);
+    vec4 he = heaps(d, sd);
+    c = mix(c, he.rgb, he.a);
+    c = shaftSky(c, d, uShaft.z);
     // A far ridge closes the bottom of the sky.
     float rim = 0.01 + 0.02 * skFbm(vec2(atan(d.x, -d.z) * 9.0, 3.0), 4);
     c = mix(vec3(0.004, 0.007, 0.014) + uSkyLow * 0.03, c, smoothstep(rim - 0.0012, rim + 0.0012, d.y));
@@ -270,25 +311,66 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
 sky.frustumCulled = false;
 sky.renderOrder = -1000;
 scene.add(sky);
+// The nearest layer: soft scud that slides across the craft.
+const scud = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { ...AIR_U, ...VIEW_U, ...CLOUD_U }, depthTest: false, depthWrite: false, transparent: true,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: QUAD_VERT,
+  fragmentShader: /* glsl */`
+  ${AIR}
+  ${VIEW_GLSL}
+  void main() {
+    vec3 d = viewDir();
+    if (d.y < 0.05 || uScud <= 0.0) discard;
+    vec2 p = sheet(d, 8.0) + uDriftC;
+    vec2 s = p + 0.6 * vec2(skFbm(p * 0.6 + uTime * 0.02, 3), skFbm(p * 0.6 + 9.1 - uTime * 0.016, 3));
+    // It stays thin: the craft shows through it.
+    float al = smoothstep(0.55, 0.9, skFbm(s, 4)) * 0.34 * uScud;
+    float sd = max(dot(d, uSun), 0.0);
+    vec3 col = vec3(0.9, 0.94, 1.0) * (0.7 + uSunC * (0.08 + 0.4 * pow(sd, 20.0)));
+    gl_FragColor = vec4(col * al, al);
+  }`,
+}));
+scud.frustumCulled = false;
+scud.renderOrder = 6;
+scene.add(scud);
 
-/* ---------- the craft and their plumes ---------- */
+/* ---------- the craft, the escorts and their contrails ---------- */
 // uPx scales every lamp with the canvas and the lens.
 const uPx = { value: 1 };
-const cal = makeCalaeno(uPx), esc = makeEscort(uPx);
-cal.group.rotation.order = esc.group.rotation.order = 'YXZ';
-cal.mesh.renderOrder = esc.mesh.renderOrder = 3;
-cal.props.renderOrder = 3.5;
-cal.lights.renderOrder = esc.lights.renderOrder = 4;
-scene.add(cal.group, esc.group);
+const fleet = Object.fromEntries(Object.entries(CRAFT).map(([id, spec]) => {
+  const c = makeCraft(spec, uPx);
+  c.group.rotation.order = 'YXZ';
+  c.mesh.renderOrder = 3; c.props.renderOrder = 3.5; c.lights.renderOrder = 4;
+  scene.add(c.group);
+  return [id, c];
+}));
+let craft = fleet[state.craft];
+// Six escorts in two echelons: across in spans, back and up in metres.
+const WING = [[-0.66, 300, -120], [-0.84, 780, -40], [-1.02, 1300, -210], [0.66, 300, -120], [0.84, 780, -40], [1.02, 1300, -210]];
+const escorts = WING.map(() => {
+  const e = makeEscort(uPx);
+  e.group.rotation.order = 'YXZ';
+  e.mesh.renderOrder = 3; e.lights.renderOrder = 4;
+  scene.add(e.group);
+  return e;
+});
 
 const vol = bakeVol(renderer);
-// Six plumes, one per pair of engines.
+// One contrail per engine: it starts at the propeller.
 // K is the cone's spread; the rock's own cone opens faster.
-const PLUME = { rad: 55, k: 0.05, len: 150000 };
-const trails = cal.heads.map(() => makeTrail(vol, PLUME));
-// The escort's train: one thin line beside the six.
-const escTrail = makeTrail(vol, { rad: 5, k: 0.03, len: 60000 });
-for (const t of [...trails, escTrail]) { t.mesh.renderOrder = 2; scene.add(t.mesh); }
+const TRAIL = { rad: 26, k: 0.05, len: 150000 };
+const MAX_ENGINES = Math.max(...Object.values(fleet).map(c => c.heads.length));
+const trails = Array.from({ length: MAX_ENGINES }, () => makeTrail(vol, TRAIL));
+// Each escort draws one thin line.
+const escTrails = escorts.map(() => makeTrail(vol, { rad: 4, k: 0.012, len: 40000 }));
+for (const t of [...trails, ...escTrails]) { t.mesh.renderOrder = 2; scene.add(t.mesh); }
+function pick() {
+  craft = fleet[state.craft];
+  for (const [id, c] of Object.entries(fleet)) c.group.visible = id === state.craft;
+  trails.forEach((t, i) => { t.mesh.visible = i < craft.heads.length; });
+  layout();
+}
 
 /* ---------- post ---------- */
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4 }));
@@ -311,7 +393,7 @@ composer.addPass(new ShaderPass({
     if (uSunVis > 0.0) c += flFlare(vUv, uSunUV, asp, uFlareC, 1.0, vec3(0.2, 0.55, 0.4)) * uSunVis;
     // A hard grade: deeper shade, richer blue.
     c = pow(max(c, 0.0), vec3(1.18)) * 1.12;
-    c = mix(vec3(gdLuma(c)), c, 1.14);
+    c = mix(vec3(gdLuma(c)), c, 1.2);
     c = gdGrade(c, vUv, asp, gl_FragCoord.xy + floor(uTime * 24.0) * vec2(37.0, 17.0), vec3(0.001, 0.001, 0.003), 0.42, 0.45, 0.03);
     gl_FragColor = vec4(c, 1.0);
   }`,
@@ -320,7 +402,8 @@ composer.addPass(new OutputPass());
 
 /* ---------- size and detail ---------- */
 // March steps and sun steps at Low, Standard and High.
-const STEPS = [[30, 2], [48, 3], [72, 4]];
+// A thin contrail needs fewer steps than the rock's train.
+const STEPS = [[20, 2], [30, 3], [40, 3]];
 const D = detail({ maxDpr: 2, budget: 1.6e6, onChange: () => resize() });
 let stageW = 1, stageH = 1, dprNow = 1;
 function resize() {
@@ -334,9 +417,8 @@ function resize() {
   FIN.uRes.value.set(stageW * dprNow, stageH * dprNow);
   const [steps, sunSteps] = STEPS[D.level];
   for (const t of trails) { t.u.uSteps.value = steps; t.u.uLSteps.value = sunSteps; }
-  // The thin train needs fewer steps.
-  escTrail.u.uSteps.value = Math.round(steps * 0.5); escTrail.u.uLSteps.value = 2;
-  SKY_U.uOct.value = D.level > 0 ? 5 : 3;
+  for (const t of escTrails) { t.u.uSteps.value = Math.round(steps * 0.5); t.u.uLSteps.value = 2; }
+  CLOUD_U.uOct.value = D.level > 0 ? 5 : 3;
   camera.aspect = stageW / stageH;
   camera.updateProjectionMatrix();
   wake();
@@ -346,7 +428,7 @@ new ResizeObserver(resize).observe(stage);
 /* ---------- layout: a still picture ---------- */
 // The craft hangs at one place in the sky; the picture does not travel.
 // It flies away from the eye, a little to the right.
-const ALT = 12000;
+const ALT = 18000;
 const pos = new THREE.Vector3(), DIR = new THREE.Vector3(), AWAY = new THREE.Vector3(), RIGHT = new THREE.Vector3();
 const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), inv = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0);
 const base = { yaw: 0, pitch: 0 };
@@ -356,80 +438,81 @@ function layout() {
   DIR.set(Math.sin(hd), 0, -Math.cos(hd));
   RIGHT.set(Math.cos(hd), 0, Math.sin(hd));
   AWAY.copy(DIR).negate();
-  cal.group.position.copy(pos);
-  // The view rests on the plumes, a little behind the craft.
-  tmp.copy(pos).addScaledVector(AWAY, 700).sub(EYE).normalize();
+  for (const c of Object.values(fleet)) c.group.position.copy(pos);
+  // The view rests on the contrails, a little behind the craft.
+  tmp.copy(pos).addScaledVector(AWAY, 900).sub(EYE).normalize();
   base.yaw = Math.atan2(-tmp.x, -tmp.z); base.pitch = Math.asin(tmp.y);
-  // The sun stands behind the plumes, 2.6 km down their line.
+  // The sun stands behind the contrails, 2.6 km down their line.
   // The slider moves it sideways, out into clear sky.
   tmp.copy(pos).addScaledVector(AWAY, 2600).sub(EYE).normalize();
   tmp2.crossVectors(tmp, UP).normalize();
-  AIR_U.uSun.value.copy(tmp).addScaledVector(tmp2, 0.17 * state.sun).normalize();
+  AIR_U.uSun.value.copy(tmp).addScaledVector(tmp2, 0.15 * state.sun).normalize();
   FIN.uFlareC.value.copy(AIR_U.uSunC.value).multiplyScalar(0.6);
 }
 
 function pose(t) {
+  const g = craft.group;
   // A slow, heavy roll.
-  cal.group.rotation.set(0, -rad(state.head), rad(3) + 0.012 * Math.sin(t * 0.11));
-  cal.group.updateMatrixWorld(true);
-  // The escort holds off the left wing and drifts on station.
-  esc.group.position.copy(pos)
-    .addScaledVector(RIGHT, -2650 + 40 * Math.sin(t * 0.21))
-    .addScaledVector(AWAY, 260 + 60 * Math.sin(t * 0.13 + 2));
-  esc.group.position.y += -160 + 26 * Math.sin(t * 0.17 + 1);
-  esc.group.rotation.set(0.02 * Math.sin(t * 0.23), -rad(state.head), 0.14 * Math.sin(t * 0.31));
-  esc.group.updateMatrixWorld(true);
-  // Each plume starts just behind its propellers.
-  trails.forEach((tr, i) => tr.lay(tmp.copy(cal.heads[i]).applyMatrix4(cal.group.matrixWorld).addScaledVector(AWAY, 0.8 * PLUME.rad), AWAY));
-  escTrail.lay(tmp.copy(esc.heads[0]).applyMatrix4(esc.group.matrixWorld), AWAY);
-  // The rays' casters: the craft as discs, the plumes as one chain.
+  g.rotation.set(0, -rad(state.head), rad(3) + 0.012 * Math.sin(t * 0.11));
+  g.updateMatrixWorld(true);
+  // Each contrail starts at its engine's propeller.
+  craft.heads.forEach((h, i) => trails[i].lay(tmp.copy(h).applyMatrix4(g.matrixWorld).addScaledVector(AWAY, 0.5 * TRAIL.rad), AWAY));
+  // The escorts hold station off both wings and drift a little.
+  escorts.forEach((e, i) => {
+    const [across, back, up] = WING[i], ph = i * 1.7;
+    e.group.position.copy(pos)
+      .addScaledVector(RIGHT, across * craft.span + 40 * Math.sin(t * 0.21 + ph))
+      .addScaledVector(AWAY, back + 60 * Math.sin(t * 0.13 + 2 + ph));
+    e.group.position.y += up + 26 * Math.sin(t * 0.17 + 1 + ph);
+    e.group.rotation.set(0.02 * Math.sin(t * 0.23 + ph), -rad(state.head), 0.14 * Math.sin(t * 0.31 + ph));
+    e.group.updateMatrixWorld(true);
+    escTrails[i].lay(tmp.copy(e.head).applyMatrix4(e.group.matrixWorld), AWAY);
+  });
+  // The rays' casters: the craft as discs, the contrails as one chain.
   const S = SHAFT_U;
-  cal.casters.forEach(([x, y, z, r, v], i) => {
-    tmp.set(x, y, z).applyMatrix4(cal.group.matrixWorld);
+  craft.casters.forEach(([x, y, z, r, v], i) => {
+    tmp.set(x, y, z).applyMatrix4(g.matrixWorld);
     S.uOcc.value[i].set(tmp.x, tmp.y, tmp.z, r); S.uOccV.value[i] = v;
   });
-  S.uOccN.value = cal.casters.length;
+  S.uOccN.value = craft.casters.length;
   let m = 0;
   for (let x = 300; m < SHAFT_TR; m++, x = x * 1.9 + 1500) {
     tmp.copy(pos).addScaledVector(AWAY, x);
-    S.uTr.value[m].set(tmp.x, tmp.y, tmp.z, 0.7 * (1300 + PLUME.k * x));
+    S.uTr.value[m].set(tmp.x, tmp.y, tmp.z, 0.7 * (craft.spread + TRAIL.k * x));
   }
   S.uTrN.value = m;
 }
 
-/* ---------- camera ---------- */
-const look = { yawOff: 0, pitchOff: 0, zoom: 1 };
+/* ---------- camera: fixed, with a gentle bob ---------- */
 function aim(t) {
-  // fov is across the frame's short side.
-  const short = clamp(state.lens * look.zoom, 3, 70);
+  // The lens is across the frame's short side.
+  const short = state.lens;
   const vfov = camera.aspect >= 1 ? short : deg(2 * Math.atan(Math.tan(rad(short) / 2) / camera.aspect));
   if (Math.abs(camera.fov - vfov) > 1e-3) { camera.fov = vfov; camera.updateProjectionMatrix(); }
-  // A gentle bob, as from a hand-held long lens.
+  // The bob of a long lens held by hand.
   const k = reduced() ? 0 : rad(short) * 0.011;
   const by = k * (Math.sin(t * 0.31 + 2) + 0.4 * Math.sin(t * 0.73)), bp = k * (Math.sin(t * 0.37) + 0.45 * Math.sin(t * 0.83 + 1));
-  // The far ridge stays at the frame's lower edge or under it.
-  const pitch = clamp(base.pitch + look.pitchOff, Math.min(base.pitch, rad(vfov) / 2 - 0.03), rad(89));
-  camera.rotation.set(pitch + bp, base.yaw + look.yawOff + by, k * 0.35 * Math.sin(t * 0.21 + 4));
+  camera.rotation.set(base.pitch + bp, base.yaw + by, k * 0.35 * Math.sin(t * 0.21 + 4));
   camera.updateMatrixWorld(true);
   uPx.value = dprNow * Math.min(stageW, stageH) / 640 * Math.sqrt(clamp(16 / short, 0.6, 4));
 }
 
-// How much of the sun the craft and the plumes hide, 0 to 1.
+// How much of the sun the craft and the contrails hide, 0 to 1.
 const fwd = new THREE.Vector3();
 function sunCover() {
   const sun = AIR_U.uSun.value;
-  inv.copy(cal.group.matrixWorld).invert();
+  inv.copy(craft.group.matrixWorld).invert();
   const o = tmp.copy(EYE).applyMatrix4(inv), d = tmp2.copy(sun).transformDirection(inv);
   let hull = 0;
   if (Math.abs(d.y) > 1e-4) {
     const t = -o.y / d.y, x = o.x + d.x * t, z = o.z + d.z * t;
     // Five rays across the disc soften the edge.
     const r = 0.0046 * t * 0.75;
-    if (t > 0) for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) hull += cal.shade(x + dx, z + dz) ? 0.2 : 0;
+    if (t > 0) for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) hull += craft.shade(x + dx, z + dz) ? 0.2 : 0;
   }
-  let smoke = 0;
-  for (const tr of trails) smoke = Math.max(smoke, tr.cover(EYE, sun));
-  return 1 - (1 - hull) * (1 - 0.96 * smoke);
+  let ice = 0;
+  for (let i = 0; i < craft.heads.length; i++) ice = Math.max(ice, trails[i].cover(EYE, sun));
+  return 1 - (1 - hull) * (1 - 0.96 * ice);
 }
 
 /* ---------- frame ---------- */
@@ -437,16 +520,18 @@ let simT = 40, vis = 0;
 function frame(dt) {
   simT += dt;
   AIR_U.uTime.value = simT;
-  // The billows flow out of the engines and down the plumes.
+  // The billows flow out of the engines and down the contrails.
   for (const t of trails) t.u.uFlow.value = simT * state.flow;
-  escTrail.u.uFlow.value = simT * state.flow * 1.6;
+  for (const t of escTrails) t.u.uFlow.value = simT * state.flow * 1.6;
   pose(simT);
   aim(simT);
-  SKY_U.uProjInv.value.copy(camera.projectionMatrixInverse);
-  SKY_U.uCamW.value.copy(camera.matrixWorld);
-  SKY_U.uWisps.value = state.wisps;
-  // The wisps drift back, against the craft's heading.
-  SKY_U.uDrift.value.set(AWAY.x, AWAY.z).multiplyScalar(simT * 0.0035);
+  VIEW_U.uProjInv.value.copy(camera.projectionMatrixInverse);
+  VIEW_U.uCamW.value.copy(camera.matrixWorld);
+  CLOUD_U.uWisps.value = state.wisps; CLOUD_U.uHeaps.value = state.heaps; CLOUD_U.uScud.value = state.scud;
+  // Each layer drifts back against the heading; nearer layers go faster and a little askew.
+  CLOUD_U.uDriftA.value.set(AWAY.x, AWAY.z).multiplyScalar(simT * 0.019);
+  CLOUD_U.uDriftB.value.set(AWAY.x * 0.94 - AWAY.z * 0.34, AWAY.z * 0.94 + AWAY.x * 0.34).multiplyScalar(simT * 0.08);
+  CLOUD_U.uDriftC.value.set(AWAY.x * 0.9 + AWAY.z * 0.44, AWAY.z * 0.9 - AWAY.x * 0.44).multiplyScalar(simT * 0.07);
   SHAFT_U.uShaft.value.x = state.rays;
   // The flare shows while the sun is in frame and clear.
   const sun = AIR_U.uSun.value;
@@ -468,62 +553,23 @@ function loop(now) {
   raf = 0;
   if (!visible) return;
   const run = !reduced();
-  const dt = run && last ? Math.min(0.1, (now - last) / 1000) : 0;
+  const raw = run && last ? (now - last) / 1000 : 0, dt = Math.min(0.1, raw);
   last = now;
-  if (run) D.frame(dt);
+  // The watch gets the true gap: it skips a throttled tab's long frames.
+  if (run) D.frame(raw);
   frame(dt);
-  // Reduced motion draws one still, then waits for the hand.
+  // Reduced motion draws one still, then waits for a control.
   if (run) raf = requestAnimationFrame(loop);
   else last = 0;
 }
 function wake() { if (!raf && visible) raf = requestAnimationFrame(loop); }
 whenVisible(stage, on => { visible = on; if (on) wake(); });
 onReducedChange(() => wake());
-function reset() {
-  look.yawOff = look.pitchOff = 0; look.zoom = 1;
-  state.sun = SUN0; store.set('sun', SUN0); ui.slider?.set(SUN0);
-  layout(); wake();
-}
-
-/* ---------- pointer ---------- */
-// A drag turns the view; two fingers or the wheel zoom the lens.
-const pts = new Map();
-let pinch = 0;
-canvas.addEventListener('pointerdown', e => {
-  canvas.setPointerCapture(e.pointerId);
-  pts.set(e.pointerId, [e.clientX, e.clientY]);
-  stage.classList.add('held');
-  if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
-});
-canvas.addEventListener('pointermove', e => {
-  const p = pts.get(e.pointerId);
-  if (!p) return;
-  const dx = e.clientX - p[0], dy = e.clientY - p[1];
-  p[0] = e.clientX; p[1] = e.clientY;
-  if (pts.size === 2) {
-    const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
-    if (pinch > 0 && d > 0) look.zoom = clamp(look.zoom * pinch / d, 0.25, 3.2);
-    pinch = d;
-  } else {
-    const k = rad(camera.fov) / stageH;
-    look.yawOff += dx * k;
-    look.pitchOff = clamp(look.pitchOff + dy * k, -base.pitch, rad(89) - base.pitch);
-  }
-  wake();
-});
-const lift = e => { pts.delete(e.pointerId); pinch = 0; if (!pts.size) stage.classList.remove('held'); };
-canvas.addEventListener('pointerup', lift);
-canvas.addEventListener('pointercancel', lift);
-canvas.addEventListener('wheel', e => {
-  e.preventDefault();
-  look.zoom = clamp(look.zoom * Math.exp(e.deltaY * 0.0012), 0.25, 3.2);
-  wake();
-}, { passive: false });
 
 /* ---------- ready ---------- */
-layout();
+pick();
 resize();
-if (q.has('debug')) window.__ca = { state, look, frame, layout, renderer, D };
+if (q.has('debug')) window.__ca = { state, frame, layout, pick, renderer, D };
 // The intro holds until shaders compile and the first frame draws.
 renderer.compileAsync(scene, camera).then(() => {
   frame(0);
