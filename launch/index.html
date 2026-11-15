@@ -1197,170 +1197,290 @@ body.visible = false;
 scene.add(body);
 const yUp = new THREE.Vector3(0, 1, 0);
 
-/* ---------- plume: exhaust and steam on a ring of billboards ---------- */
-// Each puff is written once at birth; the shader moves and lights it.
-// aQ: birth x, y, z, time. aR: velocity x, y, z, drag.
-// aS: real altitude (km), seed, full radius, kind (0 exhaust, 1 steam).
-const PCAP = 3200;
-const puffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
-const pslot = name => {
-  const a = new THREE.InstancedBufferAttribute(new Float32Array(PCAP * 4), 4);
-  a.setUsage(THREE.DynamicDrawUsage);
-  puffGeo.setAttribute(name, a);
-  return a;
-};
-const aQ = pslot('aQ'), aR = pslot('aR'), aS = pslot('aS'), aT = pslot('aT');
-puffGeo.instanceCount = 0;
-const PU = { uShear: { value: reduced() ? 0 : 1 }, uScale: { value: 2000 } };
-const puffs = new THREE.Mesh(puffGeo, new THREE.ShaderMaterial({
-  uniforms: { ...U, ...PU }, transparent: true, depthWrite: false,
-  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-  vertexShader: /* glsl */`
-  attribute vec4 aQ, aR, aS, aT;
-  uniform float uTime, uShear, uScale;
-  varying vec3 vC, vW;
-  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
-  void main() {
-    float age = uTime - aQ.w, life = aT.x;
-    if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-    float h = aS.x, k = aR.w;
-    vec3 P = aQ.xyz + aR.xyz * (1.0 - exp(-k * age)) / k;
-    // The upper wind turns with height, so the trail shears into a zigzag.
-    float wind = uScale * 0.00012 * (0.1 + h / 20.0);
-    P.x += wind * age * sin(h * 0.22 + 0.8) * uShear;
-    P.z += wind * age * 0.4 * cos(h * 0.17) * uShear;
-    // Steam rises once its push is spent.
-    P.y += aT.y * age;
-    float r = aS.z * (0.3 + 0.7 * (1.0 - exp(-age / aT.z)));
-    // The quad covers the sphere; the fragment marches through it.
-    vec3 V = normalize(cameraPosition - P);
-    vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), V));
-    vec3 up = cross(V, rt);
-    vec3 W = P + (rt * position.x + up * position.y) * r * 1.02 + V * r;
-    vC = P; vW = W; vR = r; vH = h; vSeed = aS.y; vKind = aS.w;
-    // The puff thins as it spreads; it fades in fast and out slowly.
-    vA = aT.w * smoothstep(0.0, 0.3, age) * (1.0 - smoothstep(life * 0.55, life, age)) * pow(aS.z * 0.3 / r, 0.6);
-    vNear = 1.0 - smoothstep(0.0, 6.0, age);
-    vAge = age;
-    vSpread = 1.0 - exp(-age / aT.z);
-    gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);
-  }`,
-  fragmentShader: /* glsl */`
-  uniform float uShadowH, uScale, uTime;
-  uniform vec3 uAmb, uGlowC;
-  varying vec3 vC, vW;
-  varying float vR, vA, vH, vSeed, vKind, vNear, vSpread, vAge;
-  ${HEAD}
-  float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-  float n3(vec3 p) {
-    vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), u.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), u.x), u.y),
-               mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), u.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), u.x), u.y), u.z);
-  }
-  // Billows: three octaves, the fine ones ride on the coarse.
-  float billow(vec3 p) { return 0.55 * n3(p) + 0.3 * n3(p * 2.13 + 3.1) + 0.15 * n3(p * 4.37 + 7.7); }
-  // Henyey-Greenstein: g above 0 throws light forward.
-  float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
-  // Puff density at a sphere-local point; the cheap form skips fine octaves.
-  float puffDens(vec3 q, float fq, vec3 drift, bool cheap) {
-    // Ground clouds squat: their spheres are flattened and cut at the ground.
-    vec3 qe = vKind > 0.5 ? vec3(q.x, q.y * 1.8, q.z) : q;
-    float r2 = dot(qe, qe);
-    if (r2 > 1.0) return 0.0;
-    vec3 w = vC + q * vR;
-    if (vKind > 0.5 && w.y < 0.0) return 0.0;
-    // Noise in world space: overlapping puffs share one billow field.
-    vec3 wp = w / (uScale * mix(0.014, 0.05, vKind)) + drift;
-    float n = cheap ? n3(wp) * 0.85 + 0.075 : billow(wp);
-    // Ground clouds: ridged noise piles them into hard cauliflower lumps.
-    // Big slow lumps carry small ridged ones, so no two look alike.
-    if (vKind > 0.5) n = n3(wp * 0.45 + 5.0) * 0.3 + n * 0.35 + 0.35 * (1.0 - abs(2.0 * (cheap ? n3(wp * 2.3 + 11.0) : n3(wp * 2.3 + 11.0) * 0.7 + n3(wp * 5.1 + 3.0) * 0.3) - 1.0));
-    // Ground clouds are densest low down, where they drag along the ground.
-    float env = exp(-r2 * mix(2.4, 3.2, vKind)) * (vKind > 0.5 ? 1.0 + 0.8 * clamp(-q.y * 2.0 + 0.3, 0.0, 1.0) : 1.0);
-    // A high cut and a steep slope give a defined edge, not fuzz.
-    if (vKind > 0.5) return smoothstep(0.42, 0.6, n * env * 1.25) * 1.4;
-    return clamp(env * (n * 1.7 - 0.35 + 0.3 * (1.0 - vSpread)), 0.0, 1.0);
-  }
-  void main() {
-    // March the view ray through this puff's sphere.
-    vec3 rd = normalize(vW - cameraPosition), oc = cameraPosition - vC;
-    float b = dot(oc, rd), c = dot(oc, oc) - vR * vR, disc = b * b - c;
-    if (disc < 0.0) discard;
-    disc = sqrt(disc);
-    float t0 = max(-b - disc, 0.0), t1 = -b + disc;
-    if (t1 <= t0) discard;
-    const int N = 10;
-    float dt = (t1 - t0) / float(N);
-    // Little jitter: a steady march keeps hard edges hard.
-    float jit = 0.3 + 0.4 * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    // Sunlight above the shadow line; below it, the dawn glow and the flame.
-    // The line is soft: the sun comes up over a third of the shadow height, and eases in.
-    float band = max(6.0, uShadowH * 0.35);
-    float sun = smoothstep(uShadowH - band * 0.3, uShadowH + band, vH) * (1.0 - vKind);
-    sun *= sun;
-    // The key light: the sun when sunlit, else the bright horizon toward the sun.
-    vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
-    vec3 Ld = normalize(mix(Lg, L, sun));
-    vec3 Fd = normalize(uFlame.xyz - vC + vec3(0.0, 1e-3, 0.0));
-    // Sunlit exhaust is silver with a faint warm core, pale blue at the edges.
-    vec3 gold = vec3(1.0, 0.86, 0.74), blue = vec3(0.62, 0.74, 1.0);
-    vec3 fdv = uFlame.xyz - vC;
-    float reach = uScale * (vKind > 0.5 ? 0.06 : 0.012);
-    // Ground clouds lose the flame's light as it climbs away.
-    vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * vNear * (1.0 - vKind)) * mix(1.0, uAir, vKind) * (1.0 + 2.0 * uNight);
-    // Little fill: smoke turned from the dawn stays a dark shape.
-    // Sky fill gives a cool grey body; smoke turned from the dawn stays dim.
-    vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
-    // Phase: light that passes the smoke toward the eye scatters most.
-    float pd = 0.75 * hg(dot(rd, Ld), 0.72) + 0.25 * hg(dot(rd, Ld), -0.2);
-    float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
-    // The dawn key is the horizon's own colour, soft, never a flat orange.
-    vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
-    vec3 keyC = mix(mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, mix(blue * 0.5, gold * 1.2, 0.55) * 1.15, sun);
-    vec3 drift = vec3(0.0, -uTime * 0.03, uTime * 0.01);
-    float fq = mix(1.6, 2.0, vKind);
-    float T = 1.0;
-    vec3 col = vec3(0.0);
-    for (int i = 0; i < N; i++) {
-      vec3 q = (cameraPosition + rd * (t0 + (float(i) + jit) * dt) - vC) / vR;
-      float dens = puffDens(q, fq, drift, false);
-      if (dens <= 0.0) continue;
-      float od = dens * (dt / vR) * 3.2 * vA;
-      // Two short steps toward each light give the self-shadow.
-      float sk = puffDens(q + Ld * 0.3, fq, drift, true) + puffDens(q + Ld * 0.65, fq, drift, true);
-      float sf = puffDens(q + Fd * 0.3, fq, drift, true) + puffDens(q + Fd * 0.65, fq, drift, true);
-      // Ground clouds shade softer, so their cores stay grey, not black holes.
-      float tk = exp(-sk * mix(2.6, 2.4, vKind) * vA), tf = exp(-sf * mix(2.0, 1.4, vKind) * vA);
-      // Powder: thin rims glow when backlit; thick cores stay dark.
-      float pw = 1.0 - exp(-dens * 4.0);
-      // Dense cores scatter gold in sunlight; thin rims scatter blue.
-      vec3 key = keyC * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, dot(q, q))), sun);
-      // Below the shadow line the key lights only thin edges: a rim, not a glow.
-      float thin = mix(1.0 - smoothstep(0.15, 0.6, dens), 1.0, sun);
-      // Ground clouds take an even fill, so no puff shows a dark core and a bright ring.
-      // Ground clouds: the sky lights their tops; their undersides fall into shadow.
-      float topLit = 0.5 + 0.5 * q.y;
-      vec3 Li = key * tk * pd * pw * mix(2.2 * thin, 1.2, vKind) + flame * tf * (0.1 + pf * 1.6) * pw + amb * mix(0.35 + 0.65 * tk, 0.1 + 1.5 * topLit * tk * tk, vKind);
-      float ab = 1.0 - exp(-od);
-      // Fire: exhaust just out of the nozzle still burns, hottest where densest.
-      // It lights a beat after birth, so the flame and its diamonds show first.
-      float burn = (1.0 - vKind) * min(uFlame.w, 1.0) * exp(-vAge / 1.6) * smoothstep(0.03, 0.4, dens) * smoothstep(0.12, 0.5, vAge);
-      vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-vAge / 0.5)) * burn * 22.0;
-      col += T * ab * (Li + fire);
-      T *= 1.0 - ab;
-      if (T < 0.02) break;
+/* ---------- vol: a tiled 3D billow noise, baked on the GPU ---------- */
+// Lifted from Railgun's smoke train.
+// R holds Perlin-Worley billows; G holds fine Worley for erosion.
+// One quad draws each slice of the volume, once, at load.
+const VOL_N = 96;
+const volRT = new THREE.WebGL3DRenderTarget(VOL_N, VOL_N, VOL_N, { depthBuffer: false });
+volRT.texture.minFilter = volRT.texture.magFilter = THREE.LinearFilter;
+volRT.texture.wrapS = volRT.texture.wrapT = volRT.texture.wrapR = THREE.RepeatWrapping;
+{
+  const bake = new THREE.ShaderMaterial({
+    uniforms: { uZ: { value: 0 } }, depthTest: false, depthWrite: false,
+    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: /* glsl */`varying vec2 vUv; uniform float uZ;
+    vec3 h3(vec3 p) {
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+      return fract(sin(p) * 43758.5453123);
     }
-    float a = 1.0 - T;
-    if (a < 0.003) discard;
-    col = vKind > 0.5 ? mix(col, k2hazeColor(rd) * a, 0.3 * k2hazeAmount(vC)) : col;
-    gl_FragColor = vec4(col, a);
-  }`,
-}));
-puffs.frustumCulled = false;
-puffs.renderOrder = 6;
-puffs.layers.enable(MIRROR);
-scene.add(puffs);
-let phead = 0, pdirtyFrom = -1, pdirtyN = 0;
+    // Inverted Worley noise; it tiles at f cells.
+    float worley(vec3 uv, float f) {
+      vec3 id = floor(uv * f), p = fract(uv * f);
+      float md = 9.0;
+      for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
+        vec3 o = vec3(float(x), float(y), float(z));
+        vec3 d = o + h3(mod(id + o, f)) * 0.8 + 0.1 - p;
+        md = min(md, dot(d, d));
+      }
+      return clamp(1.0 - sqrt(md), 0.0, 1.0);
+    }
+    float grad(vec3 i, vec3 w, vec3 o, float f) { return dot(h3(mod(i + o, f)) * 2.0 - 1.0, w - o); }
+    // Gradient noise; it tiles at f cells.
+    float perlin(vec3 uv, float f) {
+      vec3 p = uv * f, i = floor(p), w = fract(p);
+      vec3 u = w * w * w * (w * (w * 6.0 - 15.0) + 10.0);
+      return mix(mix(mix(grad(i, w, vec3(0, 0, 0), f), grad(i, w, vec3(1, 0, 0), f), u.x), mix(grad(i, w, vec3(0, 1, 0), f), grad(i, w, vec3(1, 1, 0), f), u.x), u.y),
+                 mix(mix(grad(i, w, vec3(0, 0, 1), f), grad(i, w, vec3(1, 0, 1), f), u.x), mix(grad(i, w, vec3(0, 1, 1), f), grad(i, w, vec3(1, 1, 1), f), u.x), u.y), u.z);
+    }
+    void main() {
+      vec3 p = vec3(vUv, uZ);
+      float pf = clamp(0.5 + 0.8 * (perlin(p, 4.0) + 0.5 * perlin(p, 8.0) + 0.25 * perlin(p, 16.0)), 0.0, 1.0);
+      float wf = worley(p, 4.0) * 0.625 + worley(p, 8.0) * 0.25 + worley(p, 16.0) * 0.125;
+      float fine = worley(p, 6.0) * 0.625 + worley(p, 12.0) * 0.25 + worley(p, 24.0) * 0.125;
+      gl_FragColor = vec4(wf + pf * (1.0 - wf), fine, wf, 1.0);
+    }`,
+  });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bake);
+  const flat = new THREE.Camera();
+  for (let z = 0; z < VOL_N; z++) {
+    bake.uniforms.uZ.value = (z + 0.5) / VOL_N;
+    renderer.setRenderTarget(volRT, z);
+    renderer.render(quad, flat);
+  }
+  renderer.setRenderTarget(null);
+  bake.dispose(); quad.geometry.dispose();
+}
+/* ---------- plume: one smoke train along the climb, as Railgun's tail ---------- */
+// Samples on the path carry the smoke's place, radius, age and density.
+// Each pair of samples is one segment: a cylinder proxy, marched in the fragment.
+// Joint planes split the train between segments, so no smoke counts twice.
+const PU = { uShear: { value: reduced() ? 0 : 1 }, uScale: { value: 2000 } };
+const TRAIN_N = 40;
+const TRAIN_GEO = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
+const TRAIN_VS = /* glsl */`
+uniform vec4 uA, uB; uniform vec3 uSide; uniform float uRc;
+varying vec3 vP;
+void main() {
+  vec3 d = uB.xyz - uA.xyz; float L = length(d); d /= max(L, 1e-4);
+  vec3 sd = normalize(uSide - d * dot(uSide, d)), up = cross(sd, d);
+  // The proxy covers the segment and its joint wedges.
+  vP = 0.5 * (uA.xyz + uB.xyz) + d * position.y * (L + 2.0 * uRc) + (sd * position.x + up * position.z) * uRc * 1.08;
+  gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+}`;
+const TRAIN_FS = /* glsl */`precision highp sampler3D;
+uniform sampler3D uVol;
+// A, B: the ends, w holds radii along. NA, NB: the joint planes.
+// uRad: radius and density at A and B. uAge: age and real altitude (km) at A and B.
+uniform vec4 uA, uB, uRad, uAge;
+uniform vec3 uNA, uNB, uSide, uAmb;
+uniform float uRc, uScale, uTime, uShadowH, uSteps;
+varying vec3 vP;
+${HEAD}
+float c01(float x) { return clamp(x, 0.0, 1.0); }
+float rmp(float x, float a, float b) { return c01((x - a) / (b - a)); }
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / (12.566 * pow(1.0 + g2 - 2.0 * g * c, 1.5)); }
+vec3 sD, sS, sU; float sL;
+// The smoke's density at P. g: share along, radius, age, radial place.
+float dens(vec3 P, bool fine, out vec4 g) {
+  vec3 q = P - uA.xyz;
+  float f = c01(dot(q, sD) / sL);
+  float rr = mix(uRad.x, uRad.y, f), al = mix(uRad.z, uRad.w, f), age = mix(uAge.x, uAge.y, f), u = mix(uA.w, uB.w, f);
+  vec2 v = vec2(dot(q, sS), dot(q, sU)) / rr;
+  // A little curl that grows as the smoke ages.
+  v -= smoothstep(1.0, 12.0, age) * 0.35 * vec2(0.26 * sin(u * 0.83 + 1.3) + 0.16 * sin(u * 0.31), 0.22 * sin(u * 0.61 + 4.0) + 0.14 * cos(u * 0.27 + 2.0));
+  float rv = length(v);
+  g = vec4(f, rr, age, rv);
+  if (rv > 1.0 || al < 0.002) return 0.0;
+  // Coverage: a full core, a ragged rim, thinner with age.
+  float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, age));
+  // A skew along u hides the tile repeat.
+  vec3 p = vec3(u, v.x + 0.37 * u, v.y + 0.19 * u) * 0.36;
+  float d = c01(rmp(textureLod(uVol, p, 0.0).r, 1.0 - cov, 1.0) * 3.0);
+  if (fine && d > 0.0) {
+    // Fine cells carve the rim into small lobes; old smoke frays into wisps.
+    float e = textureLod(uVol, p * 3.1 + vec3(uTime * 0.017, 0.0, 0.0), 0.0).g;
+    d = rmp(d, (1.0 - e) * mix(0.55, 0.85, smoothstep(8.0, 40.0, age)), 1.0);
+  }
+  return d * al;
+}
+void main() {
+  sD = uB.xyz - uA.xyz; sL = max(length(sD), 1e-3); sD /= sL;
+  sS = normalize(uSide - sD * dot(uSide, sD)); sU = cross(sS, sD);
+  vec3 ro = cameraPosition, rd = normalize(vP - ro), oc = ro - uA.xyz;
+  // The ray meets the cylinder round the axis.
+  float da = dot(rd, sD), oa = dot(oc, sD);
+  float qa = 1.0 - da * da, qb = dot(oc, rd) - oa * da, qc = dot(oc, oc) - oa * oa - uRc * uRc;
+  float t0 = 0.0, t1 = 1e9;
+  if (qa > 1e-6) {
+    float disc = qb * qb - qa * qc;
+    if (disc <= 0.0) discard;
+    float sq = sqrt(disc);
+    t0 = (-qb - sq) / qa; t1 = (-qb + sq) / qa;
+  } else if (qc > 0.0) discard;
+  // The joint planes clip the ray to this segment's slab.
+  float dn = dot(rd, uNA), s = -dot(oc, uNA) / dn;
+  if (abs(dn) < 1e-6) { if (dot(oc, uNA) < 0.0) discard; } else if (dn > 0.0) t0 = max(t0, s); else t1 = min(t1, s);
+  vec3 ob = ro - uB.xyz;
+  dn = dot(rd, uNB); s = -dot(ob, uNB) / dn;
+  if (abs(dn) < 1e-6) { if (dot(ob, uNB) > 0.0) discard; } else if (dn > 0.0) t1 = min(t1, s); else t0 = max(t0, s);
+  t0 = max(t0, 0.0);
+  if (t1 <= t0) discard;
+  float dt = (t1 - t0) / uSteps;
+  // Each pixel starts its march at its own offset.
+  float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  vec3 L = normalize(uSun), Lg = normalize(vec3(uSun.x, 0.06, uSun.z));
+  // Sunlit exhaust is silver with a faint warm core, pale blue at the edges.
+  vec3 gold = vec3(1.0, 0.86, 0.74), blue = vec3(0.62, 0.74, 1.0);
+  // The dawn key is the horizon's own colour, soft, never a flat orange.
+  vec3 horizonC = k2sky(normalize(vec3(Lg.x, 0.02, Lg.z)));
+  vec3 dawnC = mix(vec3(dot(horizonC, vec3(0.33))), horizonC, 0.55) * 2.2, sunC = mix(blue * 0.5, gold * 1.2, 0.55) * 1.15;
+  vec3 amb = mix(vec3(dot(uAmb, vec3(0.33))), uAmb, 0.6) * 0.9;
+  float band = max(6.0, uShadowH * 0.35), reach = uScale * 0.012;
+  float T = 1.0;
+  vec3 col = vec3(0.0);
+  for (int i = 0; i < 40; i++) {
+    if (float(i) >= uSteps || T < 0.02) break;
+    vec3 P = ro + rd * t;
+    vec4 g;
+    float d = dens(P, true, g);
+    if (d > 0.0) {
+      float rr = g.y, age = g.z;
+      // Sunlight above the shadow line; below it, the dawn glow and the flame.
+      float sun = smoothstep(uShadowH - band * 0.3, uShadowH + band, mix(uAge.z, uAge.w, g.x));
+      sun *= sun;
+      vec3 Ld = normalize(mix(Lg, L, sun));
+      // Old smoke is thinner than young smoke.
+      float kap = 7.0 * mix(1.0, 0.45, smoothstep(3.0, 22.0, age));
+      // A short march toward the key light finds the shadow.
+      float tl = 0.0, ls = 0.15 * rr;
+      vec3 ql = P;
+      for (int j = 0; j < 3; j++) {
+        ql += Ld * ls;
+        vec4 g2;
+        tl += dens(ql, false, g2) * kap / g2.y * ls;
+        ls *= 1.8;
+      }
+      // The second term stands in for light that scatters many times.
+      float tk = exp(-tl) * 0.8 + exp(-tl * 0.18) * 0.2;
+      float pd = 0.75 * hg(dot(rd, Ld), 0.72) + 0.25 * hg(dot(rd, Ld), -0.2);
+      // Dense cores scatter gold in sunlight; thin rims scatter blue.
+      vec3 key = mix(dawnC, sunC, sun) * mix(vec3(1.0), mix(blue * 0.7, gold * 1.2, smoothstep(0.95, 0.2, g.w * g.w)), sun);
+      // Below the shadow line the key lights only thin edges: a rim, not a glow.
+      float thin = mix(1.0 - smoothstep(0.15, 0.6, d), 1.0, sun);
+      float pw = 1.0 - exp(-d * 4.0);
+      // The flame lights the young smoke near it.
+      vec3 fdv = uFlame.xyz - P, Fd = normalize(fdv + vec3(0.0, 1e-3, 0.0));
+      float pf = 0.7 * hg(dot(rd, Fd), 0.6) + 0.3 * hg(dot(rd, Fd), -0.2);
+      vec3 flame = uFlameC * uFlame.w * (1.6 / (1.0 + dot(fdv, fdv) / (reach * reach)) + 0.5 * (1.0 - smoothstep(0.0, 6.0, age))) * (1.0 + 2.0 * uNight);
+      // The top of the column takes more sky than its underside.
+      float top = c01(0.5 + 0.5 * dot(P - (uA.xyz + sD * g.x * sL), vec3(0.0, 1.0, 0.0)) / rr);
+      vec3 Li = key * tk * pd * pw * 2.2 * thin + flame * (0.35 + 0.65 * exp(-2.0 * d)) * (0.1 + pf * 1.6) * pw + amb * (0.35 + 0.65 * tk) * (0.6 + 0.8 * top);
+      // Fire: exhaust just out of the nozzle still burns, hottest where densest.
+      float burn = min(uFlame.w, 1.0) * exp(-age / 1.6) * smoothstep(0.03, 0.4, d) * smoothstep(0.12, 0.5, age) * (1.0 - smoothstep(0.15, 0.95, g.w));
+      vec3 fire = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.72, 0.42), exp(-age / 0.5)) * burn * 22.0;
+      float a = 1.0 - exp(-d * kap / rr * dt);
+      col += T * a * (Li + fire);
+      T *= 1.0 - a;
+    }
+    t += dt;
+  }
+  float al = 1.0 - T;
+  if (al < 0.003) discard;
+  gl_FragColor = vec4(col, al);
+}`;
+const TU = { uVol: { value: volRT.texture }, uSteps: { value: 28 } };
+const train = Array.from({ length: TRAIN_N }, () => {
+  const m = new THREE.Mesh(TRAIN_GEO, new THREE.ShaderMaterial({
+    uniforms: {
+      ...U, ...PU, ...TU,
+      uA: { value: new THREE.Vector4() }, uB: { value: new THREE.Vector4() }, uRad: { value: new THREE.Vector4() }, uAge: { value: new THREE.Vector4() },
+      uNA: { value: new THREE.Vector3() }, uNB: { value: new THREE.Vector3() }, uSide: { value: new THREE.Vector3() }, uRc: { value: 1 },
+    },
+    vertexShader: TRAIN_VS, fragmentShader: TRAIN_FS, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  }));
+  m.frustumCulled = false;
+  m.visible = false;
+  m.renderOrder = 6;
+  m.layers.enable(MIRROR);
+  scene.add(m);
+  return m;
+});
+// The engine as the trail sees it: on from liftoff, off round staging and after SECO.
+const engineAt = te => THREE.MathUtils.smoothstep(te, 0, 0.2) * (1 - THREE.MathUtils.smoothstep(te, 40.1, 40.3) * (1 - THREE.MathUtils.smoothstep(te, 41.6, 41.8))) * (1 - THREE.MathUtils.smoothstep(te, 116, 116.8));
+// The full radius of smoke shed at flight time te.
+function trainR(f, te) {
+  const hi = THREE.MathUtils.smoothstep(altKm(te, f.k), 22, 75), q = quality() === 'high' ? 1 : 2.3;
+  return f.D * (0.009 + 0.014 * hi) * f.k.plume * Math.pow(q, 0.3) * (te > 41.2 ? 1.3 : 1);
+}
+// Radii along the path to te, from a table filled as the flight runs.
+// The noise rides on it, so the smoke holds still in the world.
+const UDT = 0.05;
+function trainU(f, te) {
+  const tab = f.U;
+  while ((tab.length - 1) * UDT < te) {
+    const i = tab.length, ta = (i - 1) * UDT, tb = i * UDT;
+    tab.push(tab[i - 1] + rocketAt(f, tb, tmpA).distanceTo(rocketAt(f, ta, tmpB)) / trainR(f, tb));
+  }
+  const x = Math.max(te, 0) / UDT, i = Math.min(Math.floor(x), tab.length - 2);
+  return tab[i] + (tab[i + 1] - tab[i]) * (x - i);
+}
+// One train sample: the smoke shed at te, seen at flight time t.
+const TS = Array.from({ length: TRAIN_N + 1 }, () => ({ p: new THREE.Vector3(), r: 0, a: 0, age: 0, h: 0, u: 0 }));
+function trainSample(f, te, t, s) {
+  const D = f.D, age = t - te, hh = altKm(te, f.k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
+  rocketAt(f, te, s.p);
+  const back = rocketAt(f, te - 0.05, tmpA).sub(s.p).normalize();
+  // The exhaust spends its push back along the path.
+  const dk = 1 - Math.exp(-0.25 * age);
+  s.p.addScaledVector(back, D * 0.004 * (1 + 2 * hi) * dk);
+  // The upper wind turns with height, so the trail shears into a zigzag.
+  const wind = D * 0.00012 * (0.1 + hh / 20) * age * PU.uShear.value;
+  s.p.x += wind * Math.sin(hh * 0.22 + 0.8);
+  s.p.z += wind * 0.4 * Math.cos(hh * 0.17);
+  const R = trainR(f, te), grow = 3 + hh * 0.08;
+  // High up the thin air lets the exhaust spread into a wide fan.
+  s.r = R * (0.3 + 0.7 * (1 - Math.exp(-age / grow))) + D * (0.0003 + 0.0025 * hi) * 6 * dk;
+  const life = THREE.MathUtils.clamp(END - PRE - te, 4, 60) * (te > 41.2 ? 0.5 : 1);
+  // The smoke thins as it spreads; it fades in fast and out slowly.
+  s.a = engineAt(te) * (0.9 - 0.45 * hi) * (te > 41.2 ? 0.3 : 1) * THREE.MathUtils.smoothstep(age, 0, 0.3) * (1 - THREE.MathUtils.smoothstep(age, life * 0.55, life)) * Math.pow(R * 0.3 / s.r, 0.6);
+  s.age = age; s.h = hh; s.u = trainU(f, te);
+}
+const dPrev = new THREE.Vector3(), dCur = new THREE.Vector3(), dNext = new THREE.Vector3(), side = new THREE.Vector3();
+// Lay the train from the head back to the oldest live smoke.
+function placeTrain(f, t) {
+  const head = Math.min(t, 116.8), tail = Math.max(0, t - 60);
+  if (head <= tail + 0.05) { trainOff(); return; }
+  for (let k = 0; k <= TRAIN_N; k++) trainSample(f, head - (head - tail) * Math.pow(k / TRAIN_N, 1.6), t, TS[k]);
+  const steps = rung >= 2 ? 16 : quality() === 'high' ? 32 : 24;
+  side.set(0, 0, 0);
+  for (let j = 0; j < TRAIN_N; j++) {
+    const A = TS[j], B = TS[j + 1], m = train[j], u = m.material.uniforms;
+    dCur.subVectors(B.p, A.p);
+    const len = dCur.length();
+    if (len < 1e-3 || A.a + B.a < 0.004) { m.visible = false; continue; }
+    dCur.divideScalar(len);
+    if (j + 1 < TRAIN_N) dNext.subVectors(TS[j + 2].p, B.p).normalize(); else dNext.copy(dCur);
+    if (j > 0) dPrev.subVectors(A.p, TS[j - 1].p);
+    if (j === 0 || dPrev.lengthSq() < 1e-6) dPrev.copy(dCur); else dPrev.normalize();
+    // The side vector rides down the train, so the noise frame never twists.
+    if (side.lengthSq() < 0.5) side.set(0, 0, 1).cross(dCur).normalize();
+    side.addScaledVector(dCur, -side.dot(dCur)).normalize();
+    m.visible = true;
+    m.position.copy(A.p).add(B.p).multiplyScalar(0.5);
+    u.uA.value.set(A.p.x, A.p.y, A.p.z, A.u);
+    u.uB.value.set(B.p.x, B.p.y, B.p.z, B.u);
+    u.uNA.value.copy(dPrev).add(dCur).normalize();
+    u.uNB.value.copy(dCur).add(dNext).normalize();
+    u.uSide.value.copy(side);
+    u.uRad.value.set(A.r, B.r, A.a, B.a);
+    u.uAge.value.set(A.age, B.age, A.h, B.h);
+    u.uRc.value = 1.4 * Math.max(A.r, B.r);
+  }
+  TU.uSteps.value = steps;
+}
+function trainOff() { train.forEach(m => { m.visible = false; }); }
 /* ---------- fluids: the ground cloud and the exhaust trail, side on ---------- */
 // Two 2D grid fluids, as Fire's K3 is but in two dimensions: the view is side on,
 // so one slab across the pad carries the ground cloud and one slab over the sky
@@ -1610,28 +1730,6 @@ function updateGround(dt) {
 
 }
 
-// Write one puff into the next slot; the oldest gives way.
-function writePuff(p, t0, v, k, h, radius, kind, life, rise, grow, alpha) {
-  const i = phead;
-  phead = (phead + 1) % PCAP;
-  if (pdirtyFrom < 0) pdirtyFrom = i;
-  pdirtyN = Math.min(PCAP, pdirtyN + 1);
-  aQ.setXYZW(i, p.x, p.y, p.z, t0);
-  aR.setXYZW(i, v.x, v.y, v.z, k);
-  aS.setXYZW(i, h, rnd(), radius, kind);
-  aT.setXYZW(i, life, rise, grow, alpha);
-  puffGeo.instanceCount = Math.max(puffGeo.instanceCount, i + 1);
-}
-function commitPuffs() {
-  if (pdirtyFrom < 0) return;
-  const a = pdirtyFrom, n = pdirtyN, run = Math.min(n, PCAP - a);
-  for (const at of [aQ, aR, aS, aT]) {
-    at.addUpdateRange(a * 4, run * 4);
-    if (n > run) at.addUpdateRange(0, (n - run) * 4);
-    at.needsUpdate = true;
-  }
-  pdirtyFrom = -1; pdirtyN = 0;
-}
 
 /* ---------- launch: one flight on the sim clock ---------- */
 // The ignition runs 3 s before liftoff; the plume is gone by T+80.
@@ -1641,7 +1739,7 @@ const rp = new THREE.Vector3(), rq = new THREE.Vector3(), rv = new THREE.Vector3
 // launch(kind) builds the flight and returns its paused GSAP timeline.
 function launch(kind, padX) {
   const D = PAD;
-  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, emitT: 0, acc: 0, steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1, done: false };
+  const f = { kind, k: KINDS[kind], D, x: padX, z: -D, start: simT, t: -PRE, flash: 0, engine: 0, U: [0], steam: 0, sparkT: 0, seps: false, shake: 0, roarOn: false, stage: 1, done: false };
   PU.uScale.value = D;
   for (const [k, r] of Object.entries(ROCKETS)) { r.root.visible = k === kind; r.setStage(0); }
   // Fresh fluids for every launch, centred on the pad.
@@ -1713,35 +1811,8 @@ function flyTo(f) {
   // A floor keeps the flame and its diamonds readable beside the wide trail.
   FU.uSize.value = Math.max(bl * sk * 0.32, D * 0.0075) * k.flame * (f.stage > 1 ? 0.55 : 1);
   FU.uSpread.value = THREE.MathUtils.smoothstep(h, 15, 70);
-  // Exhaust: walk the path since the last puff and drop one each spacing.
-  const q = quality() === 'high' ? 1 : 2.3;
-  if (t > 0 && eng > 0.05) {
-    let tt = f.emitT;
-    tmpB.copy(rocketAt(f, tt, tmpA));
-    while (tt < t) {
-      tt = Math.min(t, tt + 0.02);
-      rocketAt(f, tt, tmpA);
-      f.acc += tmpA.distanceTo(tmpB);
-      tmpB.copy(tmpA);
-      const hh = altKm(tt, k), hi = THREE.MathUtils.smoothstep(hh, 22, 75);
-      // One puff each part-radius: the trail stays one continuous column.
-      // The upper stage burns thin in vacuum: a faint, wide, sparse trail.
-      const R = D * (0.009 + 0.014 * hi) * k.plume * Math.pow(q, 0.3) * (f.stage > 1 ? 1.3 : 1);
-      if (f.acc < R * 0.2 * Math.sqrt(q)) continue;
-      f.acc = 0;
-      rocketAt(f, tt - 0.05, rq);
-      const back = rq.sub(tmpA).normalize();
-      {
-        rv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).addScaledVector(back, -rv.dot(back)).normalize();
-        // High up the thin air lets the exhaust spread into a wide glowing fan.
-        rv.multiplyScalar(D * (0.0003 + 0.0025 * hi) * (0.5 + 0.5 * rnd())).addScaledVector(back, D * 0.001 * (1 + hi * 2));
-        const r = R * (0.85 + 0.3 * rnd());
-        const life = Math.max(4, Math.min(60, END - PRE - tt - rnd() * 6)) * (f.stage > 1 ? 0.5 : 1);
-        writePuff(tmpA, f.start + PRE + tt, rv, 0.25, hh, r, 0, life, 0, 3 + hh * 0.08, (0.9 - 0.45 * hi) * (f.stage > 1 ? 0.3 : 1));
-      }
-    }
-    f.emitT = tt;
-  }
+  // Exhaust: one smoke train from the nozzle back down the path.
+  if (t > 0) placeTrain(f, t);
   // Sparks shed from the base for the first 4 s.
   if (t > -0.5 && t < 4) {
     const due = Math.floor((t + 0.5) * 50);
@@ -1758,6 +1829,7 @@ function flyTo(f) {
 }
 function endFlight() {
   flight.tl.kill();
+  trainOff();
   if (zoomed) snapZoom(false);
 
   body.visible = false;
@@ -2440,7 +2512,6 @@ function draw() {
   if (!visible || !compiled) return;
   drawN++;
   commitStars();
-  commitPuffs();
   updateGround(Math.min(0.1, simT - lastSimDraw));
   lastSimDraw = simT;
   renderMirror();
