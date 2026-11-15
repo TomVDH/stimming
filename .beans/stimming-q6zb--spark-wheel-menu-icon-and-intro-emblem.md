@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T06:58:02Z
-updated_at: 2026-11-15T08:58:37Z
+updated_at: 2026-11-15T09:00:41Z
 ---
 
 Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old flat wheel; the toy now has a holed roller on a fork, eight spark types and a rim that heats.
@@ -52,3 +52,5 @@ Tom (2026-11-14): "lets get an icon going too". The menu icon is still the old f
 - 2026-11-15, Tom: "Refine more" (no detail). Round 13 (icons/spike-spark-13.html), my read: the reflection is short and fades out below the floor; 34 crisper sparks with brighter cores and less haze; small embers glow where flights land on the floor. The intro logo follows. The sheet points at round 13.
 
 - 2026-11-15, Tom picked "the wheel" and "framing and colour" to refine. Round 14 (icons/spike-spark-14.html): a bigger plain steel wheel (brushed face, two faint lathe rings, a brass hub with a glint, the knurl running round the tread on hover) in place of the slotted cream face; the wheel sits further in from the left edge with a higher floor. Two rooms side by side: A deep teal, A2 night blue with a warm floor. The intro logo is a plain wheel with a hub. The sheet points at round 14 (it shows A only).
+
+- 2026-11-15, Tom on round 14: "no frame like that; so many other icons do not have that". Round 15 (icons/spike-spark-15.html): no tile, no room, no floor fill. The steel wheel, the flint post, the spray, its fading reflection, the embers and the warm glow float free on the menu ground, like Galaxy and Fire. The spray is held a little shorter so it stays inside the icon box. The sheet points at round 15.
