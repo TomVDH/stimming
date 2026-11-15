@@ -127,6 +127,7 @@ The repo has no draw-call budget. East Van sets one.
 Spec: `docs/superpowers/specs/2026-11-14-eastvan-progressive-design.md`. Plan: `docs/superpowers/plans/2026-11-14-eastvan-progressive.md`.
 
 - [x] Five modules on their own plinths: House, Yard, Lane, Run, Drive (keys 1 to 5). The Corner disc stays its own place (key 0).
+- [x] The Corner is off the walk for now (Tom, 2026-11-14). Only `?dev&at=corner` or key 0 with `?dev` opens it.
 - [x] The camera glides between modules; only near modules move, cast shadows and take pokes; a far click travels.
 - [x] Solo (S or the button) shows one module alone. The Lane in Solo is the separate alley.
 - [x] The Lane grew into the full alley; Run and Drive are new; the Drive slice comes from city data.

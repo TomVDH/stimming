@@ -14,6 +14,8 @@ export const R = 58;
 const KERB_W = -8.4, KERB_E = 8.9, LOT_W = -11.9, LOT_E = 12.4, MID = 0.25;
 const WEST_LEG = [-20.9, -1.4], EAST_LEG = [5.2, 17.3];
 const lerp = (a, b, t) => a + (b - a) * t;
+// The corner store's cut corner, in metres, at the north-west corner.
+const CH = 1.6, NW = [LOT_W, WEST_LEG[1]];
 const on = (dyn, hinge, parts) => parts.map(q => ({ ...q, dyn, hinge }));
 const slab = (p, s, rx, c) => ({ t: 'slab', p, s, rx, c, L: A });
 const poly = (ring, y, h, c, o = {}) => ({ t: 'poly', ring: ring.map(([e, n]) => [n, e]), y, h, c, L: A, ...o });
@@ -142,6 +144,70 @@ function sash(c, y, w, h, wall, out, alongX, lit, sw, trim = 'cream') {
     box(at(-w / 2 - 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A), box(at(w / 2 + 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A),
     box(at(0, y + h * 0.08, 0.05), sz(w, 0.06, 0.06), trim, A),
   ];
+}
+// Cuts the north-west corner off a ring of [e, n] pairs, or gives null.
+function chamfer(ring) {
+  const i = ring.findIndex(p => Math.hypot(p[0] - NW[0], p[1] - NW[1]) < 1);
+  if (i < 0) return null;
+  const v = ring[i], to = q => { const l = Math.hypot(q[0] - v[0], q[1] - v[1]); return [v[0] + (q[0] - v[0]) * CH / l, v[1] + (q[1] - v[1]) * CH / l]; };
+  return [...ring.slice(0, i), to(ring[(i - 1 + ring.length) % ring.length]), to(ring[(i + 1) % ring.length]), ...ring.slice(i + 1)];
+}
+// The corner store: the shop wraps from the Drive onto the avenue.
+// The ground floor is cut back under the upper floor; the door sits on the cut.
+// f is the Drive frontage; x1 ends the corner unit; u is its store record.
+// west is where the avenue wall ends, as e. fi names the upper windows.
+function cornerStore(i, f, x1, u, west, fi) {
+  const xs = f.x0, zf = f.zf, t = TRADE[u.cat] || TRADE['Service Commercial'], sw = 'shop' + i, lit = { k: 'pane', sw, on: true, gain: 1.15 };
+  const L = Math.max(3, Math.min(9, zf - CH - west - 1)), zc = zf - CH - L / 2, fascia = f.note?.fascia || 'roof', trim = f.note?.trim || 'cream';
+  const sign = (p, s, nrm) => (u.name ? [{ t: 'sign', kind: 'shop', text: /^vacant$/i.test(u.name) ? 'FOR LEASE' : u.name, style: u.cat, p, s, nrm, L: A }] : []);
+  const out = shop(i, xs + CH, x1, zf, u.cat, 1, u.name, f.era, f.note);
+  // The avenue side: base, glass, mullions, fascia, sign and canopy.
+  out.push(
+    box([xs - 0.04, 0.45, zc], [0.1, 0.6, L - 0.3], 'found', A), box([xs - 0.03, 1.95, zc], [0.06, 2.3, L - 0.5], 'glass', A, lit),
+    box([xs - 0.08, 3.62, zc], [0.14, 1.1, L - 0.3], fascia, A), ...sign([xs - 0.16, 3.62, zc], [L - 0.5, 0.86], [-1, 0]),
+    box([xs - 0.8, 3.08, zc], [1.6, 0.16, L - 0.1], f.note?.awning || t.stripes[0], A),
+  );
+  const m = Math.max(1, Math.round(L / 2.2));
+  for (let j = 1; j < m; j++) out.push(box([xs - 0.07, 1.95, zf - CH - L * j / m], [0.06, 2.3, 0.12], 'cream', A));
+  // The cut: glass doors, a fascia and a sign; a column holds the corner.
+  // poly takes [e, n]; o lifts a point off the cut toward the street.
+  const o = d => [-d / Math.SQRT2, d / Math.SQRT2], a = [xs + CH, zf], b = [xs, zf - CH];
+  const strip = (d0, d1, inset) => {
+    const u0 = inset / (CH * Math.SQRT2), pa = [lerp(a[0], b[0], u0), lerp(a[1], b[1], u0)], pb = [lerp(b[0], a[0], u0), lerp(b[1], a[1], u0)];
+    const [ox0, oz0] = o(d0), [ox1, oz1] = o(d1);
+    return [[pa[1] + oz0, pa[0] + ox0], [pb[1] + oz0, pb[0] + ox0], [pb[1] + oz1, pb[0] + ox1], [pa[1] + oz1, pa[0] + ox1]];
+  };
+  const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, [sx, sz] = o(0.16);
+  out.push(
+    poly(strip(0, 0.03, 0.12), 0.3, 2.7, 'glass', lit), poly(strip(0, 0.1, 0), 3.05, 1.15, fascia),
+    poly(strip(0, 0.08, 0), 0.16, 0.14, 'found'),
+    box([mx - 0.02, 1.65, mz + 0.02], [0.07, 2.7, 0.07], 'cream', A),
+    box([mx - 0.25, 1.4, mz - 0.18], [0.04, 0.5, 0.04], 'chrome', A), box([mx + 0.18, 1.4, mz + 0.25], [0.04, 0.5, 0.04], 'chrome', A),
+    box([a[0], 2.2, a[1]], [0.16, 4.1, 0.16], 'cream', A), box([b[0], 2.2, b[1]], [0.16, 4.1, 0.16], 'cream', A),
+    cyl([xs, 2.21, zf], 0.15, 4.1, 'cream', A),
+    ...sign([mx + sx, 3.62, mz + sz], [1.9, 0.6], [-1, 1]),
+  );
+  // The avenue wall: a ground floor band, a trim band, a ribbon per floor.
+  const len = zf - west - 0.6, zm = (zf + west) / 2;
+  if (f.note?.band) out.push(box([xs - 0.012, 2.2, zm - CH / 2], [0.02, 4.1, len - CH], f.note.band, A));
+  out.push(box([xs - 0.07, 4.3, zm], [0.14, 0.2, len], trim, A));
+  for (let y = 5.7; y < f.h - 1.2; y += 3) {
+    const n = Math.max(1, Math.round((len - 1) / 1.3)), pw = (len - 1) / n;
+    for (let j = 0; j < n; j++) {
+      const lt = isLit(fi + 7, j, y | 0), z = zf - 0.8 - pw * (j + 0.5);
+      out.push(box([xs - 0.015, y, z], [0.03, 1.1, pw - 0.08], lt ? 'glass' : 'glassDark', A, lt ? { k: 'pane', sw: 'up' + fi, on: true, gain: 1.05 } : {}), box([xs - 0.05, y, zf - 0.8 - pw * j], [0.06, 1.1, 0.06], trim, A));
+    }
+    out.push(box([xs - 0.08, y - 0.62, zm], [0.16, 0.12, len - 0.8], trim, A));
+  }
+  // A skateboard hangs off the Drive wall as a blade sign. A poke kickflips it.
+  const bx = xs + CH + 0.7, by = 4.75, bz = zf + 0.65;
+  out.push(beam([bx, 5.02, zf], [bx, 5.02, zf + 1.15], 0.05, 'crow', A), beam([bx, 5.02, bz - 0.3], [bx, by + 0.1, bz - 0.3], 0.015, 'chrome', A), beam([bx, 5.02, bz + 0.3], [bx, by + 0.1, bz + 0.3], 0.015, 'chrome', A));
+  out.push(...on('deck', [bx, by, bz], [
+    box([bx, by, bz], [0.04, 0.24, 0.62], 'crow', A), cyl([bx, by, bz - 0.31], 0.12, 0.04, 'crow', A, { ax: 'x' }), cyl([bx, by, bz + 0.31], 0.12, 0.04, 'crow', A, { ax: 'x' }),
+    box([bx - 0.022, by, bz], [0.006, 0.2, 0.6], 'tomato', A), box([bx - 0.024, by, bz], [0.006, 0.07, 0.6], 'mustard', A),
+    ...[-0.24, 0.24].flatMap(dz => [box([bx - 0.05, by, bz + dz], [0.05, 0.17, 0.05], 'chrome', A), ...[-0.08, 0.08].map(dy => cyl([bx - 0.08, by + dy, bz + dz], 0.035, 0.035, 'white', A, { ax: 'x' }))]),
+  ]));
+  return out;
 }
 // Two in five windows burn; which ones is fixed per building.
 const isLit = (a, b, c) => ((a * 7 + b * 13 + c * 5) % 5) < 2;
@@ -274,11 +340,16 @@ export function driveParts(d, clip, lidar = null) {
 
   /* ---------- buildings: real outlines and heights, cut to the disc ---------- */
   const fronts = [];
+  let cornerId = null;
   d.b.forEach((b, i) => {
     // The survey outlines take in awnings. A building stops at its lot line.
     const raw = b.ring.slice(0, -1), west = raw.reduce((s, p) => s + p[0], 0) < 0, whole = trim(raw, west ? LOT_W : LOT_E, !west), ring = cut(whole);
     if (ring.length < 3 || area(ring) < 6) return;
     const es = ring.map(p => p[0]), ns = ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), n0 = Math.min(...ns), n1 = Math.max(...ns);
+    // A ring with the north-west corner gets its ground floor cut back.
+    const low = chamfer(ring);
+    if (low) cornerId = b.id;
+    const walls = (h, c) => (low && h > 4.3 ? [poly(low, 0.16, 4.1, c), poly(ring, 4.26, h - 4.1, c)] : [poly(ring, 0.16, h, c)]);
     const cutOff = area(ring) < area(whole) - 0.5, pitched = b.roof !== 'Flat' && !cutOff && b.h > 4;
     // The lot under the building gives its build year; OpenStreetMap fills gaps.
     const mid0 = [(e0 + e1) / 2, (n0 + n1) / 2], lot = d.lots.find(l => inRing(mid0, l.ring));
@@ -298,9 +369,9 @@ export function driveParts(d, clip, lidar = null) {
       const side = sideOf;
       const c = b.roof === 'Flat' ? (side ? eraWall : 'garage') : HOUSE[b.id % HOUSE.length];
       // The walls stand on the true outline to the eave; the measured roof sits above.
-      add(poly(ring, 0.16, Math.max(0.5, eave - 0.3), c));
+      add(walls(Math.max(0.5, eave - 0.3), c));
       add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'tar' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
-      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year, note });
+      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? e1 : e0, c, era, year, note });
       return;
     }
     if (pitched) {
@@ -313,8 +384,8 @@ export function driveParts(d, clip, lidar = null) {
     }
     const side = sideOf, c = eraWall, h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
     // A flat roof gets a grey cap, so the wall colour stays on the walls.
-    add(poly(ring, 0.16, h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
-    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c, era, year, note });
+    add(walls(h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
+    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? e1 : e0, c, era, year, note });
   });
   // Neighbours of one height and one building make one frontage.
   const faces = [];
@@ -328,16 +399,23 @@ export function driveParts(d, clip, lidar = null) {
   }
 
   /* ---------- frontages: shops below, windows above, by era ---------- */
-  let shops = 0;
+  let shops = 0, hasDeck = false;
   const FACES = [];
   faces.forEach((f, fi) => {
     const w = f.x1 - f.x0, dir = f.side, z = o => f.zf + dir * o, mid = (f.x0 + f.x1) / 2;
     // The shop units geocoded to this frontage. Units at the rear are upstairs.
     const units = d.stores.filter(s => Math.sign(s.at[0]) === -dir && Math.abs(s.at[0]) < 38 && s.at[1] >= f.x0 - 1 && s.at[1] <= f.x1 + 1).sort((a, b) => +b.civic - +a.civic);
     const cats = (units.length ? units : [{ cat: 'Service Commercial', name: null }]).slice(0, Math.max(1, Math.floor(w / 3.6)));
+    // The frontage that starts at the north-west corner opens with the corner store.
+    const corner = dir === 1 && f.id === cornerId && Math.abs(f.x0 - NW[1]) < 1;
     cats.forEach((u, k) => {
       const x0 = f.x0 + w * k / cats.length, x1 = f.x0 + w * (k + 1) / cats.length;
-      add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era, f.note));
+      if (corner && k === 0) {
+        const west = Math.min(...d.b.filter(bb => bb.id === f.id).flatMap(bb => bb.ring.filter(p => Math.abs(p[1] - f.x0) < 0.5).map(p => p[0])));
+        add(cornerStore(shops, f, x1, u, Math.max(west, -clip.r), fi));
+        pokes.push({ id: 'deck', at: [f.x0 + CH + 0.7, 4.75, f.zf + 0.65], r: 0.8 });
+        hasDeck = true;
+      } else add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era, f.note));
       pokes.push({ id: 'shop' + shops, at: [(x0 + x1) / 2, 3.3, z(0.3)], r: 1.8 });
       acts['shop' + shops] = [['flip', 'shop' + shops, true]];
       shops++;
@@ -346,7 +424,9 @@ export function driveParts(d, clip, lidar = null) {
     const trim = f.note?.trim || 'cream';
     add(box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], trim, A));
     // A darker ground floor band, where the note gives one.
-    if (f.note?.band) add(box([mid, 2.2, z(0.02)], [w, 4.1, 0.05], f.note.band, A));
+    // The corner store's cut leaves the band's first metres open.
+    const cutW = corner ? CH : 0;
+    if (f.note?.band) add(box([mid + cutW / 2, 2.2, z(0.02)], [w - cutW, 4.1, 0.05], f.note.band, A));
     // Early: a cornice, tall windows with sills. Post-war: a ribbon of glass per floor.
     // Modern: a glass wall with thin mullions.
     if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], trim, A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], trim, A));
@@ -451,8 +531,10 @@ export function driveParts(d, clip, lidar = null) {
         g.position.x = x; g.visible = s > 0.01; g.scale.setScalar(Math.max(s, 0.01));
       },
       fruit: (g, k, h) => { g.position.y = h[1] + 0.5 * k; g.rotation.y = 0.6 * Math.sin(k * 9.4); },
+      // The deck pops up and turns once about its long side.
+      ...(hasDeck ? { deck: (g, k, h) => { g.position.y = h[1] + 0.45 * Math.sin(Math.PI * k); g.rotation.z = 2 * Math.PI * k; } } : {}),
     },
-    ACTS: { ...acts, signal: [['flip', 'sigR'], ['flip', 'sigG']], bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]] },
+    ACTS: { ...acts, signal: [['flip', 'sigR'], ['flip', 'sigG']], bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]], ...(hasDeck ? { deck: [['run', 'deck', 0.7]] } : {}) },
     LAMPS: near.slice(0, disc ? 3 : 2).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
     SUN: disc ? { target: [0, 3, 0], half: [clip.r + 10, clip.r + 10] } : { target: [STOP, 3, (B.e0 + B.e1) / 2], half: [20, 20] },
   };

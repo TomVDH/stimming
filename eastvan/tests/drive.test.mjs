@@ -109,3 +109,17 @@ test('the corner carries its details', () => {
   assert.ok(PARTS.some(q => q.k === 'banner'), 'the lamp poles carry banners');
   assert.ok(POKES.some(p => p.id === 'signal') && ACTS.signal, 'the signals take a poke');
 });
+
+test('the skate shop wraps the north-west corner', () => {
+  const { PARTS, POKES, ACTS, MOVES } = driveParts(data, { kind: 'disc', r: 58 }, lidar);
+  const signs = PARTS.filter(q => q.t === 'sign' && q.text === 'Drive Skate Shop');
+  // One sign on the Drive, one on the avenue, one over the cut corner.
+  assert.equal(signs.length, 3);
+  assert.ok(signs.some(s => s.nrm[0] === -1 && s.nrm[1] === 0), 'a sign faces the avenue');
+  assert.ok(signs.some(s => s.nrm[0] < 0 && s.nrm[1] > 0), 'a sign faces the corner');
+  // The ground floor stops short of the old corner point.
+  const low = PARTS.filter(q => q.t === 'poly' && q.y > 0.1 && q.h > 3 && q.h < 4.2);
+  const gap = ([x, z]) => Math.hypot(x + 1.3, z + 11.9);
+  assert.ok(low.some(q => q.ring.some(p => gap(p) < 2.5) && q.ring.every(p => gap(p) > 1)), 'the corner is cut');
+  assert.ok(POKES.some(p => p.id === 'deck') && ACTS.deck && MOVES.deck, 'the deck kickflips');
+});

@@ -262,7 +262,9 @@ function toggleSolo() {
 /* ---------- place buttons ---------- */
 const stopsEl = document.getElementById('stops'), soloBtn = document.getElementById('solo');
 soloBtn.addEventListener('click', toggleSolo);
-stopsEl.innerHTML = WALK.map(([, , label], i) => `<button type="button" data-v="${i}">${label}</button>`).join('') + '<button type="button" data-v="corner">Corner</button>';
+// The Corner is off the walk for now (Tom, 2026-11-14). Only ?dev reaches it.
+const DEV = new URLSearchParams(location.search).has('dev');
+stopsEl.innerHTML = WALK.map(([, , label], i) => `<button type="button" data-v="${i}">${label}</button>`).join('');
 stopsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) (b.dataset.v === 'corner' ? goCorner() : goTo(+b.dataset.v)); });
 
 function resize() {
@@ -346,7 +348,7 @@ addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const n = +e.key;
   if (e.key >= '1' && e.key <= '9' && n <= WALK.length) goTo(n - 1);
-  else if (e.key === '0') goCorner();
+  else if (e.key === '0' && DEV) goCorner();
   else if (e.key === 'ArrowRight') goTo(inCorner ? WALK.length - 1 : cur + 1);
   else if (e.key === 'ArrowLeft') goTo(inCorner ? WALK.length - 1 : cur - 1);
   else if (e.key.toLowerCase() === 's') toggleSolo();
@@ -387,10 +389,10 @@ whenVisible(canvas, on => { visible = on; if (on) wake(); });
 new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
 resize();
 // With ?dev the walk's state is open to the console.
-if (new URLSearchParams(location.search).has('dev')) window.eastvan = { built, PLACED, STOPS, goTo, pokeList, stage };
-// ?at=corner opens the Corner; ?at=2 opens module 2, counted from 1.
+if (new URLSearchParams(location.search).has('dev')) window.eastvan = { built, PLACED, STOPS, goTo, aimAt, pokeList, stage };
+// ?dev&at=corner opens the Corner; ?at=2 opens module 2, counted from 1.
 const at = new URLSearchParams(location.search).get('at');
-if (at === 'corner' || at === 'drive') goCorner(); else goTo(Math.max(0, (+at || 1) - 1), { snap: true });
+if (DEV && (at === 'corner' || at === 'drive')) goCorner(); else goTo(Math.max(0, (+at || 1) - 1), { snap: true });
 </script>
 </body>
 </html>
