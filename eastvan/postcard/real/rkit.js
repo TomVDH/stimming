@@ -196,7 +196,7 @@ export function start(stage, mods, { onScene = () => {} } = {}) {
     galv: std(col(0.7, 0.005, 250), { metalness: 0.85, roughness: 0.35 }), iron: std(col(0.14, 0.01, 260), { metalness: 0.6, roughness: 0.4 }),
     plastK: std(col(0.16, 0.006, 260), { roughness: 0.3 }), plastG: std(col(0.42, 0.13, 150), { roughness: 0.3 }), plastB: std(col(0.42, 0.14, 255), { roughness: 0.3 }), bagY: std(col(0.82, 0.15, 98), { roughness: 0.35 }),
     wood: std(col(0.45, 0.06, 70), { ...planks, roughness: 0.7, aoMap: null }), kale: std(col(0.36, 0.09, 150), { roughness: 0.5, flatShading: true }),
-    bush: std(col(0.28, 0.07, 150), { roughness: 0.6, flatShading: true }), fir: std(col(0.2, 0.05, 165), { roughness: 0.8, flatShading: true }),
+    bush: std(col(0.28, 0.07, 150), { roughness: 0.6 }), fir: std(col(0.2, 0.05, 165), { roughness: 0.8, flatShading: true }),
     couch: std(col(0.5, 0.1, 60), { bumpMap: grainTex, bumpScale: 1, roughness: 0.95 }),
     room: std(col(0.86, 0.04, 80), { roughness: 0.9 }), floor: std(col(0.45, 0.07, 60), { roughness: 0.5 }), dark: std(col(0.12, 0.01, 260), { roughness: 0.9 }),
     glass: std(col(0.1, 0.02, 250), { roughness: 0.04, transparent: true, opacity: 0.32, envMapIntensity: 3 }),
