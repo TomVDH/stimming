@@ -33,11 +33,27 @@ Read `README.md` for the toy list and the full rules.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
 - `icons/index.html` is an unlinked lab of old icon directions. The spheres are rejected.
 - Icon iteration happens per toy, in that toy's own chat. Tom starts those chats; do not iterate icons across toys here.
-  Tom's icon verdicts live in `icons/picks.json`; D and E stay as the iteration columns.
+  Tom's icon verdicts live in `icons/picks.json`.
+- Icon standard (Tom, 2026-11-15). A toy has at most three icons:
+
+  | Icon | What it is |
+  |---|---|
+  | Current | The icon on the menu today. |
+  | Shaded object | The toy's own object in full colour: glossy, in the toy's colours, with the menu's shared light (a rim and a soft top-left glint). It stands free on the menu ground. |
+  | Isometric block | The one alt style. The toy's object stands on a block, or is the block, in 30 degree isometric view: a light top, a mid left face, a dark right face, a rim highlight on the top edges. |
+
+  - Draw no other style: no Stencil cut-out, no Single-weight line, no Abstract mark.
+  - `icons/sheet.html` is the reference: one row per toy in `toys.json` order, with Current, Shaded object and Isometric block as Icon, Intro logo (the luminance emblem) or Both. An empty slot says `To draw` or `Cut`.
+  - Read the sheet before any icon work. Generate no icon until the sheet shows its slot; when the sheet is out of date, renew the sheet first.
+  - Tom marks a tile or an empty slot on the sheet with a click; `Copy marks` gives the list as JSON.
+  - A new round is one gallery, `icons/spike-<toy>-<n>.html`, with three cards: Current, A (Shaded object) and D (Isometric block). Then add the toy to the sheet's `GALLERY` table.
+  - Emblems go to `icons/spike/emblems/<toy>-a.svg` and `<toy>-d.svg`. The gallery also carries each emblem as a data URI, so it shows when the page opens as a file.
+  - Every icon reacts to the pointer, shows at 128 and 64, and fills 110 of the 128 box on its long side.
+  - Open the sheet over the local server (`icons/sheet.html`); a file link opens it without its data.
   Cut directions move to `icons/archive/` (list: `icons/archive/cut.json`, emblems: `icons/archive/emblems/`). Leave that folder out of context unless Tom asks.
   The spike galleries still hold cut directions' code for reference; the icons page hides them.
-  `icons/sheet.html` is the one icons page: every toy's directions (Current, A to E) as Icon, Transition (the luminance emblem) or Both; scrub and cut.
-  The galleries are `icons/spike-1.html` to `spike-11.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`.
+  `icons/sheet.html` is the one icons page (see the icon standard above).
+  The galleries are `icons/spike-<n>.html` and `icons/spike-<toy>-<n>.html`; emblems sit in `icons/spike/emblems/<id>-<a..e>.svg`. In every gallery A is the Shaded object and D the Isometric block. Older galleries keep their B, C and E cards for reference; the sheet does not show them.
 - `shared/stim.css` and `shared/stim.js` are the shared shell.
   `stim.js` exports `initPage({ id, bar })`, `sound`, `audioKit`, `choices`, `fitCanvas`, `whenVisible`, `reduced` and the OKLCH helpers.
   It also holds the site-wide graphics quality (`stimming.quality`): `quality()`, `setQuality()`, `onQuality()`, `pixelRatio()` and `qualitySetting(tray)`. High renders at the screen's own pixel ratio (up to 3) with no pixel budget; Standard keeps each toy's caps. `fitCanvas` follows it. On High, a toy's slow-frame step falls back to Standard, not to 1x; a new quality choice clears it.
