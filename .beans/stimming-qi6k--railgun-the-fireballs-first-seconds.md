@@ -1,10 +1,11 @@
 ---
 # stimming-qi6k
 title: 'Railgun: the fireball''s first seconds'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-15T06:14:33Z
-updated_at: 2026-11-15T06:14:33Z
+updated_at: 2026-11-15T06:44:08Z
 parent: stimming-f793
 ---
 
@@ -17,7 +18,7 @@ Tom (2026-11-14): the blast comes first in the visuals pass. At 3 s the fireball
 - [x] Fire: brightness held under the clip at 2 to 6 s; the flash stays
 - [x] Stills at 1, 3, 5, 8 s before and after; 1280 and 375 x 812
 - [x] Frame cost near the old one; clean console
-- [ ] Tom's verdict
+- [x] Tom's verdict (2026-11-14: yes, next area)
 
 ## Notes
 
@@ -33,3 +34,7 @@ Tom (2026-11-14): the blast comes first in the visuals pass. At 3 s the fireball
 - [x] More contrast: knots run hotter (0.1 + 2.1 k²), veins thicker (3.2 / Rf)
 - [x] A dark rind on the heads tried, then removed: it rounded the outline again
 - [x] Stills at 1, 2, 3, 5, 8 s; 375 x 812; clean console
+
+## Summary of Changes
+
+The fireball's first seconds: big heads from the first moment, hot knots, lit soot veins, a hot core and a cooler skin, a glow dip from 1 to 6 s. Fireball `dens()` and its bound only.
