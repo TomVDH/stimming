@@ -143,7 +143,7 @@ composer.addPass(new OutputPass());
 const skyU = {
   uInv: { value: new THREE.Matrix4() }, uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Vector3() },
   uZen: { value: new THREE.Vector3() }, uHor: { value: new THREE.Vector3() }, uB: { value: 0 },
-  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uWarm: { value: 1 },
+  uCloud: { value: 0 }, uDrift: { value: new THREE.Vector2() }, uWarm: { value: 1 }, uCurve: { value: 0.45 },
 };
 const sky = new THREE.Mesh(
   new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)),
@@ -151,7 +151,7 @@ const sky = new THREE.Mesh(
     vertexShader: /* glsl */ `varying vec2 vP; void main() { vP = position.xy; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */ `
       varying vec2 vP;
-      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud, uWarm; uniform vec2 uDrift;
+      uniform mat4 uInv; uniform vec3 uSun, uSunCol, uZen, uHor; uniform float uB, uCloud, uWarm, uCurve; uniform vec2 uDrift;
       float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float vn(vec2 p) {
         vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -162,7 +162,7 @@ const sky = new THREE.Mesh(
         vec4 w = uInv * vec4(vP, 1.0, 1.0);
         vec3 ray = normalize(w.xyz / w.w - cameraPosition);
         float e = max(ray.y, 0.0), cs = max(dot(ray, uSun), 0.0);
-        vec3 col = mix(uHor, uZen, pow(e, 0.45));
+        vec3 col = mix(uHor, uZen, pow(e, uCurve));
         // A low sun warms the sky around it and along the horizon.
         col = mix(col, col * vec3(1.12, 0.94, 0.78), uB * 0.6 * uWarm * (1.0 - e));
         col += uSunCol * uB * (0.06 * pow(cs, 4.0) + 0.22 * pow(cs, 40.0)) * (1.0 - 0.6 * e) * mix(0.35, 1.0, uWarm);
@@ -215,6 +215,8 @@ function buildPlace(id) {
   try { localStorage.setItem('stimming.washline.place', pl.id); } catch { /* storage can be blocked */ }
   skyU.uCloud.value = pl.sky.clouds || 0;
   skyU.uWarm.value = pl.sky.warm ?? 1;
+  // A lower curve brings the zenith colour nearer the horizon.
+  skyU.uCurve.value = pl.sky.curve ?? 0.45;
   P.sky = { zen: v3(lin(pl.sky.zen)), hor: v3(lin(pl.sky.hor)), haze: v3(lin(pl.sky.haze)) };
   skyU.uZen.value.copy(v3(lin(pl.sky.zen)));
   skyU.uHor.value.copy(v3(lin(pl.sky.hor)));

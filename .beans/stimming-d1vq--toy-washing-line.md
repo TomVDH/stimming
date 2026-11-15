@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-15T05:29:40Z
+updated_at: 2026-11-15T06:15:33Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -166,3 +166,11 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - Blue hour through a long lens: layered skylines stacked to the horizon, furballs far off, thin contrails, the first city lights.
 - Rare distant bursts: now and then a far hit with a flash, a smoke puff and debris trails.
 - Line on a tower roof from a stair bulkhead to an antenna mast.
+
+
+- Tom (2026-11-14): the city and the furball sit in the distance; sweeping, a scary-looking Strangereal city.
+
+- Tom (2026-11-14, later): furball way higher above the city; anime blues; deeper shading; a direct production-level effort.
+
+
+- [ ] East Van place: a very iconic East Vancouver scene (Tom, 2026-11-14), after Strangereal.
