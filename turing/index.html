@@ -87,9 +87,10 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- coats ---------- */
-// Each coat gives OKLCH colours: bare skin, belly, pigment rim, pigment core, warm scatter.
+// Each coat gives OKLCH colours for skin, belly, rim, core and scatter.
 // rough is the skin roughness; gloss scales the highlight.
-// fuzz adds a broad satin lobe; relief is the dome height in CSS px.
+// fuzz adds a broad satin lobe.
+// relief is the dome height in CSS px.
 // cut is the pigment value where the rim starts, then the core.
 // fur grows hair along the grain; rosette breaks the rim into arcs.
 const COATS = {
@@ -99,7 +100,7 @@ const COATS = {
   ember: { label: 'Ember', base: [0.2, 0.02, 300], belly: [0.25, 0.025, 305], rim: [0.66, 0.2, 40], core: [0.84, 0.17, 82], scat: [0.45, 0.18, 28], rough: 0.17, gloss: 1.2, fuzz: 0.1, relief: 4.5, cut: [0.13, 0.23], fur: 0, rosette: 0 },
 };
 const COAT_IDS = Object.keys(COATS);
-// The swatch dot shows the bare skin and the pigment, split corner to corner.
+// The swatch dot splits skin and pigment corner to corner.
 const swatch = c => `linear-gradient(135deg, ${css(c.base)} 50%, ${css(c.rim)} 50%)`;
 
 /* ---------- bar ---------- */
@@ -148,7 +149,8 @@ function fail(msg) {
 }
 if (!gl) fail('Turing skin needs WebGL 2.');
 
-// The state holds two values per cell: W = 1 - U (the used-up feed) and V.
+// The state holds W and V per cell.
+// W is 1 - U: the feed the reaction used up.
 // Float targets need an extension; two bytes per value always render.
 const hasF32 = !!gl.getExtension('EXT_color_buffer_float');
 const hasF16 = hasF32 || !!gl.getExtension('EXT_color_buffer_half_float');
@@ -176,7 +178,8 @@ function target(w, h, f, filter) {
   return { tex, fb, w, h };
 }
 function drop(t) { if (t) { gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); } }
-// A driver can list an extension and still refuse the target, so each one is tried.
+// A driver can list an extension and still refuse the target.
+// So the page tries each format.
 function renders(f) {
   if (!f.ok) return false;
   const t = target(4, 4, f);
@@ -185,7 +188,7 @@ function renders(f) {
   drop(t);
   return ok;
 }
-// The dev pin can force half floats or bytes, to test the fallbacks.
+// The dev pin forces half floats or bytes, to test the fallbacks.
 function pickFormat(pin) {
   const order = pin === 'byte' ? ['u8'] : pin === 'half' ? ['f16', 'u8'] : ['f32', 'f16', 'u8'];
   for (const id of order) for (const f of FORMATS) if (f.id === id && renders(f)) return f;
@@ -255,9 +258,9 @@ float segDist(int i, vec2 x, out vec2 ab) {
 }
 `;
 
-// One Gray-Scott step: W is the used-up feed, V the pigment that feeds on it.
+// One Gray-Scott step. V is the pigment; it feeds on U.
 // The 3 x 3 Laplacian weights sides 0.2 and corners 0.05.
-// The grain field makes the feed spread less along the grain, so stripes follow it.
+// The feed spreads less along the grain, so stripes follow it.
 const SIM_FS = p => `${head(p)}
 uniform sampler2D uS;
 uniform sampler2D uA;
@@ -274,14 +277,15 @@ void main() {
   vec4 ax = texelFetch(uA, p, 0);
   vec2 g = ax.gb * 2.0 - 1.0;
   float an = -0.3 * uP.z * (g.x * ((e.x + w.x) - (n.x + s.x)) + 0.5 * g.y * (ne.x + sw.x - nw.x - se.x));
-  // The body map nudges the feed, so spots run denser in some places.
+  // The body map nudges the feed, so spots vary in density.
   float F = uP.x + (ax.a - 0.5) * 0.004;
   float v = c.y, r = (1.0 - c.x) * v * v;
   vec2 d = vec2(lap.x + an + r - F * c.x, 0.5 * lap.y + r - (F + uP.y) * v);
   o = enc(clamp(c + uP.w * d, 0.0, 1.0));
 }`;
 
-// The brush on the state: grow blends to the seed mix, wash to bare skin.
+// Grow blends the state to the seed mix.
+// Wash blends it to bare skin.
 // Grain in the seed lets a line break up as it grows.
 const STAMP_FS = p => `${head(p)}
 uniform sampler2D uS;
@@ -294,7 +298,7 @@ void main() {
   for (int i = 0; i < 16; i++) {
     if (i >= uNSeg) break;
     vec4 q = uSegP[i];
-    // A firm disc with a short soft edge: a thinner seed dies out.
+    // The seed is a firm disc; a thinner seed dies out.
     float k = (1.0 - smoothstep(q.x - 1.0, q.x + 0.5, segDist(i, x, ab))) * q.z;
     if (k <= 0.0) continue;
     float g = hash(x * 1.37 + q.w) - 0.5;
@@ -304,9 +308,12 @@ void main() {
   o = enc(s);
 }`;
 
-// The aux map: R is wetness, G and B the grain as (cos 2a, sin 2a).
-// A grow line combs the grain along itself; every stroke leaves the skin wet.
-// Modes: 0 grow line, 1 wash, 2 bead. A bead does not comb.
+// The aux map: R is wetness.
+// G and B hold the grain as (cos 2a, sin 2a).
+// A grow line combs the grain along itself.
+// Every stroke leaves the skin wet.
+// Modes: 0 grow line, 1 wash, 2 bead.
+// A bead does not comb.
 const AUX_FS = p => `${head(p)}
 uniform sampler2D uA;
 uniform float uDry;
@@ -330,8 +337,8 @@ void main() {
   o = vec4(wet, g * 0.5 + 0.5, a.a);
 }`;
 
-// The first grain: slow curves, mostly upright, like the flank of a zebra.
-// Alpha is the body map: a slow wave of more or less feed.
+// The first grain bends slowly and stands mostly upright.
+// Alpha is the body map: slow waves of more or less feed.
 const FLOW_FS = p => `${head(p)}
 uniform ivec2 uN;
 uniform float uCell;
@@ -344,7 +351,8 @@ void main() {
   o = vec4(0.0, vec2(cos(2.0 * a), sin(2.0 * a)) * 0.5 + 0.5, body);
 }`;
 
-// A new grid reads the old one about the stage centre; new ground starts bare.
+// A new grid reads the old one about the stage centre.
+// New ground starts bare.
 const RES_S_FS = p => `${head(p)}
 uniform sampler2D uS;
 uniform ivec2 uN0, uN;
@@ -369,8 +377,10 @@ void main() {
   o = vec4(0.0, texture(uA, c / vec2(uN0)).gba);
 }`;
 
-// The probe: per block, the mean change of one sim step, on a log scale.
-// The CPU reads it back late, through a fence, so the GPU never waits.
+// The probe gives each block its mean change per step.
+// It writes the change on a log scale.
+// The CPU reads it back later, through a fence.
+// So the GPU never waits.
 const PROBE_FS = p => `${head(p)}
 uniform sampler2D uS;
 uniform sampler2D uS0;
@@ -388,7 +398,7 @@ void main() {
   o = vec4(clamp((log2(max(sum / 36.0, 1e-9)) + 26.0) / 22.0, 0.0, 1.0), cover / 36.0, 0.0, 1.0);
 }`;
 
-// The skin: pigment from the field, a dome of relief, one lamp and its sheen.
+// The skin pass: pigment, relief, fur, one lamp and its sheen.
 const SHADE_FS = p => `${head(p)}
 uniform sampler2D uS;
 uniform sampler2D uA;
@@ -405,7 +415,7 @@ uniform vec2 uFur;
 uniform vec2 uKnob;
 out vec4 o;
 float vAt(ivec2 q) { return dec(texelFetch(uS, (q + uN) % uN, 0)).y; }
-// A cubic B-spline gives the field and its slope, smooth at any zoom.
+// A cubic B-spline gives the field and its slope.
 vec3 field(vec2 x) {
   x -= 0.5;
   vec2 b = floor(x), t = x - b, t2 = t * t, t3 = t2 * t, s = 1.0 - t;
@@ -427,7 +437,8 @@ float vnoise(vec2 q) {
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
-// Broad folds: the skin wraps a body. The slope of a height in CSS px.
+// Broad folds make the skin wrap a body.
+// The function gives the slope of a height in CSS px.
 vec2 folds(vec2 q) {
   float a = q.y * 0.014 + 1.4 * sin(q.x * 0.0042 + 0.8);
   float b = q.x * 0.009 + 0.9 * sin(q.y * 0.0063 + 2.1);
@@ -450,14 +461,17 @@ void main() {
   // The grain is the fur's direction; every grow stroke combs it.
   vec2 gq = aux.gb * 2.0 - 1.0;
   float ga = 0.5 * atan(gq.y, gq.x);
-  // The grain has no head or tail, so every fur term is even in T.
+  // The grain has no head or tail.
+  // So every fur term keeps its value when T flips.
   vec2 T = vec2(cos(ga), sin(ga));
   float fur = uFur.x * smoothstep(0.1, 0.4, length(gq));
-  // Hair: fine noise smeared along the grain, so it bends with the comb.
+  // Hair is fine noise smeared along the grain.
+  // So the hair bends with the comb.
   float hair = 0.0;
   for (int k = -4; k <= 4; k++) hair += vnoise((pc + T * float(k) * 1.6) * 0.65);
   hair = clamp((hair / 9.0 - 0.5) * 3.2 + 0.5, 0.0, 1.0);
-  // Grain on the cut keeps the pigment edge organic; fur makes it hairy.
+  // Noise on the cut keeps the pigment edge organic.
+  // Fur makes the edge hairy.
   float gr = (vnoise(pc * 0.5) - 0.5) * 0.024 + (vnoise(pc * 0.12 + 7.3) - 0.5) * 0.03 + fur * (hair - 0.5) * 0.06;
   float aa = 0.7 * length(gv) / uPx.x + 0.003;
   float rim = smoothstep(uCut.x - aa, uCut.x + aa, v + gr);
@@ -469,7 +483,8 @@ void main() {
   // Rosettes: gaps break the dark rim into arcs around a darker centre.
   float gap = uFur.y * smoothstep(0.45, 0.6, vnoise(pc * 0.06 + 11.0));
   vec3 alb = mix(mix(skin, mix(uRim, uCore, gap), rim), uCore, core);
-  // Pigment bleeds a little past its edge, and the skin dips beside each dome.
+  // Pigment bleeds a little past its edge.
+  // The skin dips beside each dome.
   float bleed = smoothstep(0.02, uCut.x, v + gr) * (1.0 - rim);
   alb = mix(alb, uRim, 0.2 * bleed) * (1.0 - 0.12 * bleed);
   alb *= 1.0 + fur * (hair - 0.5) * 0.38;
@@ -490,13 +505,14 @@ void main() {
   float Fr = 0.035 + 0.965 * pow(1.0 - max(dot(H, vec3(0.0, 0.0, 1.0)), 0.0), 5.0);
   float gain = uMat.y * uKnob.y;
   float spec = (ggx(nh, rough) * (1.0 + 0.6 * wet) + uMat.z * ggx(nh, 0.8)) * Fr * 0.25 * max(ndl, 0.0) * gain;
-  // Fur sheen: a band across the hairs that slides as the lamp moves.
+  // Fur sheen: a band across the hairs follows the lamp.
   float th = dot(T, H.xy);
   spec += fur * 0.22 * gain * pow(sqrt(max(1.0 - th * th, 0.0)), 70.0) * (0.3 + 0.7 * hair) * max(ndl, 0.0);
   vec3 col = (diff + spec) * vec3(1.0, 0.95, 0.88) * 1.7 * fall;
   // A cool fill from above keeps the far skin from going black.
   col += alb * vec3(0.05, 0.055, 0.08) * (0.4 + 0.6 * N.z);
-  // Glossy coats mirror a soft ceiling, so the relief reads away from the lamp.
+  // Glossy coats mirror a soft ceiling.
+  // So the relief reads away from the lamp.
   vec3 R = reflect(vec3(0.0, 0.0, -1.0), N);
   float Fv = 0.035 + 0.965 * pow(1.0 - N.z, 5.0);
   col += vec3(0.16, 0.17, 0.2) * smoothstep(-0.2, 0.9, R.y) * Fv * gain * (1.0 - rough);
@@ -528,12 +544,15 @@ function bind(unit, tex) {
 }
 
 /* ---------- pattern ---------- */
-// The slider walks the feed from spots through mazes to stripes; the kill rate holds.
+// The slider walks the feed from spots through mazes to stripes.
+// The kill rate stays the same.
 // Past the maze, the grain pull rises, and the mazes line up.
-// Rows: slider, feed, grain pull. Tested offline from strokes and from full coats.
+// Rows: slider, feed, grain pull.
+// Offline tests grew each row from strokes and from full coats.
 const PATH = [[0, 0.033, 0], [0.3, 0.036, 0], [0.55, 0.046, 0], [0.75, 0.046, 0.25], [1, 0.042, 0.5]];
 const KILL = 0.062;
-// A jump along the walk kills a coat, so the sim trails the slider.
+// A jump along the walk kills a coat.
+// So the sim trails the slider.
 // The full walk takes WALK_STEPS steps, under three seconds.
 const WALK_STEPS = 2400;
 let walk = 0;
@@ -547,7 +566,8 @@ function params(s) {
 }
 
 /* ---------- field ---------- */
-// The grid covers the stage plus two cells a side; its centre is the stage centre.
+// The grid covers the stage plus two cells a side.
+// The grid centre is the stage centre.
 let S = null, A = null, si = 0, ai = 0, N = [0, 0], cellNow = 0;
 let size = { w: 1, h: 1, px: 1, py: 1 };
 const flow = [0.4, 1.1, Math.PI / 2];
@@ -594,22 +614,26 @@ function regrid(fresh = false) {
 }
 
 /* ---------- brush ---------- */
-// Radii in cells. In the spot regime a seeded line starves in its middle,
-// so a stroke there lays only beads, BEAD_GAP cells apart.
-// A bead is a short dash at a random angle, so it splits into a pair.
-// From a quarter of the walk on, a line lives and grows into worms and stripes.
+// Radii are in cells.
+// In the spot regime a seeded line starves in its middle.
+// So a stroke there lays only beads, BEAD_GAP cells apart.
+// A bead is a short dash at a random angle.
+// So each bead splits into a pair.
+// From a quarter of the walk on, a line lives.
+// It grows into worms, mazes and stripes.
 const LINE_R = 2.2, BEAD_R = 2.4, BEAD_LEN = 3, BEAD_GAP = 18, WASH_R = 5, WET_TIME = 2.6;
 const lineLives = () => walk >= 0.22;
 const segs = [];
 const segU = new Float32Array(64), segP = new Float32Array(64);
 let wetEnd = 0;
-// One brush segment from a to b, in cells. Mode 0 grows, mode 1 washes.
-// A seed strength of 0 still wets and combs, but adds no pigment.
+// Adds one brush segment from a to b, in cells.
+// A seed strength of 0 wets and combs but adds no pigment.
 function addSeg(a, b, mode, r = mode ? WASH_R : LINE_R, seed = 1) {
   segs.push([a[0], a[1], b[0], b[1], r, mode, seed, Math.random() * 100]);
   wetEnd = time + WET_TIME + 0.2;
 }
-// Continues a stroke to cell point c; run counts cells since the last bead.
+// Continues a stroke to cell point c.
+// run counts the cells since the last bead.
 function brushTo(st, c) {
   const d = Math.hypot(c[0] - st.last[0], c[1] - st.last[1]);
   if (st.mode === 'wash') addSeg(st.last, c, 1);
@@ -631,7 +655,8 @@ function loadSegs(prog, batch) {
   gl.uniform4fv(prog.u('uSegP'), segP);
   gl.uniform1i(prog.u('uNSeg'), batch.length);
 }
-// Applies queued strokes to the state, then combs and dries the aux map.
+// Applies queued strokes to the state.
+// Then it combs and dries the aux map.
 function applyBrush(dt) {
   const drying = time < wetEnd;
   if (!segs.length && !drying) return;
@@ -660,10 +685,12 @@ function applyBrush(dt) {
 const dab = (c, mode, r) => addSeg(c, [c[0] + 0.01, c[1]], mode, r);
 
 /* ---------- sim ---------- */
-// About 900 steps a second at full growth; slow frames cap the count.
+// The sim runs about 900 steps a second at full growth.
+// Slow frames cap the count.
 const RATE = 900, CAP = [8, 20, 28];
-// A block that changes faster than LIVELY a step still grows or heals.
-// Once no block is lively for QUIET s, the steps ease to zero over WIND s.
+// A block that changes faster than LIVELY a step still grows.
+// After QUIET s with no lively block, the steps ease off.
+// They reach zero after WIND s more.
 const LIVELY = 3e-4, QUIET = 3, WIND = 12;
 let time = 0, simOn = false, simUntil = 0, simFrom = 0, simAcc = 0, calm = 0, quietFrom = 0, pace = 0;
 function simStep(n) {
@@ -693,14 +720,16 @@ function simWake(hold = 90) {
   simUntil = Math.max(simUntil, time + hold);
   wake();
 }
-// The step rate: 1 while the skin is lively, then a cosine fall to 0.
+// The step rate is 1 while the skin is lively.
+// Then it falls to 0 along a cosine.
 function windDown() {
   const q = time - quietFrom - QUIET;
   return q <= 0 ? 1 : q >= WIND ? 0 : 0.5 + 0.5 * Math.cos((Math.PI * q) / WIND);
 }
 
 /* ---------- probe ---------- */
-// A 16 x 10 grid of blocks; each reports its change per step and its pigment cover.
+// The probe reads a grid of 16 x 10 blocks.
+// Each block reports its change per step and its pigment cover.
 const PB = [16, 10];
 const probeT = target(PB[0], PB[1], BYTES);
 const pbo = gl.createBuffer();
@@ -727,16 +756,17 @@ function probe() {
   gl.flush();
 }
 function dropProbe() { if (fence) { gl.deleteSync(fence); fence = null; } }
-// Reads a finished probe; returns false while the GPU still works on it.
+// Reads a finished probe.
+// It returns false while the GPU still works on it.
 function harvest() {
   if (!fence) return false;
   const st = gl.clientWaitSync(fence, 0, 0);
   if (st === gl.TIMEOUT_EXPIRED) return false;
-  dropProbe();
-  if (st === gl.WAIT_FAILED) return false;
+  if (st === gl.WAIT_FAILED) { dropProbe(); return false; }
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
   gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, probeBuf);
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  dropProbe();
   let max = 0, sum = 0, sx = 0;
   for (let j = 0; j < PB[1]; j++) for (let i = 0; i < PB[0]; i++) {
     const c = probeBuf[(j * PB[0] + i) * 4];
@@ -759,7 +789,7 @@ function harvest() {
 const kit = audioKit({ gain: 0.6 });
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 const panX = x => clamp((x / size.w) * 2 - 1, -1, 1) * 0.75;
-// The brush voice: a wet hiss through a band, and a soft body under it.
+// The brush voice: a banded wet hiss over a soft low body.
 let brushV = null;
 function brushVoice(ac) {
   const src = ac.createBufferSource();
@@ -787,7 +817,8 @@ function brushSound(x, speed, wash) {
   if (!ac || !kit.noise) return;
   brushV ||= brushVoice(ac);
   const now = ac.currentTime, lvl = clamp(speed / 900) * jit(0.1);
-  // Each event holds the voice for 90 ms; then it fades unless another comes.
+  // Each event holds the voice for 90 ms.
+  // Then the voice fades unless another event comes.
   const hold = (param, v) => {
     param.cancelScheduledValues(now);
     param.setTargetAtTime(v, now, 0.03);
@@ -813,7 +844,8 @@ function plip(ac, at, { f, level, pan = 0, dur = 0.04 }) {
   o.start(at);
   o.stop(at + dur + 0.02);
 }
-// The growth fizz: as many plips as the skin is busy, from where it is busy.
+// The growth fizz plays more plips when the skin is busier.
+// Each plip pans to the busy side.
 // Spots plip high; stripes plip lower.
 const STEPS = [0, 2, 4, 7, 9, 12, 14];
 let fizzAcc = 0;
@@ -893,7 +925,8 @@ function stepFade(dt) {
 }
 
 /* ---------- light ---------- */
-// The lamp eases after the pointer in 120 ms; it rests high on the left.
+// The lamp eases after the pointer in 120 ms.
+// It rests high on the left.
 const light = { x: 0, y: 0, tx: 0, ty: 0 };
 const lightRest = () => [size.w * 0.3, size.h * 0.28];
 function aimLight(p) {
@@ -904,7 +937,7 @@ function aimLight(p) {
 }
 
 /* ---------- layout ---------- */
-// Slow frames step the detail down: a lower pixel ratio and fewer steps.
+// Slow frames lower the pixel ratio and the steps a frame.
 const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => { resize(); draw(); } });
 function resize() {
   const r = stage.getBoundingClientRect();
@@ -948,8 +981,9 @@ function draw() {
 }
 
 /* ---------- frame loop ---------- */
-// Lively while the sim runs, the lamp eases, a coat fades or the skin dries.
-// Nothing runs under the intro, so the first stroke is still wet when it clears.
+// The loop runs while the sim, lamp, fade or wetness moves.
+// Nothing runs under the intro.
+// So the first stroke is still wet when the intro clears.
 let raf = 0, last = 0, visible = !document.hidden, ready = false, intro = true;
 function wake() {
   if (!raf && visible && ready && !intro) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -970,6 +1004,8 @@ function frame(now) {
     if (!easing) { light.x = light.tx; light.y = light.ty; }
     const fading = stepFade(dt);
     applyBrush(dt);
+    // Every probe in flight is read back; the GPU keeps its copy.
+    harvest();
     if (simOn) {
       // The skin stays lively until the walk catches the slider.
       if (walk !== stripes) quietFrom = time;
@@ -978,7 +1014,6 @@ function frame(now) {
       const n = Math.min(Math.floor(simAcc), CAP[D.level]);
       simAcc = Math.min(simAcc - n, 2);
       if (n > 0) simStep(n);
-      harvest();
       if (n > 0 && time >= probeAt) { probe(); probeAt = time + 0.25; }
       if (pace <= 0 || time > simUntil) simOn = false;
     }
@@ -987,7 +1022,7 @@ function frame(now) {
     again = simOn || easing || fading || time < wetEnd || segs.length > 0;
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
-    else { dropProbe(); kit.rest(() => !raf && !ptr); }
+    else kit.rest(() => !raf && !ptr);
   }
 }
 
@@ -1048,11 +1083,12 @@ canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') aimLight(null); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-// A press anywhere wakes the sound; with the loop asleep, it sleeps again.
+// A press anywhere wakes the sound.
+// With the loop asleep, the sound sleeps again.
 addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !ptr); });
 
 /* ---------- keys ---------- */
-// 1 to 4 pick a coat, with the same rules as the shell's keys.
+// Keys 1 to 4 pick a coat, with the shell's key rules.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
@@ -1074,7 +1110,8 @@ function strokeThrough(pts, mode = 'grow') {
   for (let i = 1; i < pts.length; i++) brushTo(st, toCell(...pts[i]));
 }
 // The opening: one S stroke across the middle and a few seeds.
-// It runs a short way, so the coat still grows when the intro clears.
+// It runs a short way.
+// So the coat still grows when the intro clears.
 function opening() {
   clearField();
   initFlow();
@@ -1102,7 +1139,8 @@ act.clear = () => {
   washSound();
   wake();
 };
-// Shuffle: a new coat, a new place on the walk, a new grain, and fresh seeds.
+// Shuffle picks a new coat, walk place and grain.
+// Then it sows fresh seeds.
 act.shuffle = () => {
   const others = COAT_IDS.filter(id => id !== coat);
   coat = others[Math.floor(Math.random() * others.length)];
@@ -1135,7 +1173,8 @@ act.reset = () => {
   simOn = false;
   simWake();
 };
-// The dev target pin rebuilds the state in the new format and starts over.
+// The dev target pin rebuilds the state in the new format.
+// Then the coat starts over.
 act.target = () => {
   dropProbe();
   buildPrograms();
@@ -1154,7 +1193,7 @@ gl.finish();
 canvas.classList.add('on');
 ready = true;
 mark('first-frame');
-// The coat grows live once the intro has gone, so the hand sees it.
+// The coat grows live once the intro has gone.
 const startLive = () => { intro = false; simWake(); };
 if (document.querySelector('.intro')) {
   const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); startLive(); } });
@@ -1166,7 +1205,7 @@ onReducedChange(() => aimLight(null));
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; dropProbe(); kit.rest(() => true); return; }
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>

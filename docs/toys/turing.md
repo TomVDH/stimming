@@ -22,7 +22,7 @@ The Stripes slider walks one reaction from leopard spots through mazes to zebra 
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v2 (`turing/index.html:109`).
 
 | Slot | Holds |
 |---|---|
@@ -55,6 +55,7 @@ The coat choice sits in Settings, not top left. With a top-left choice, phones m
 <!-- /gen:stack -->
 
 The picture is per-pixel maths on a ping-pong simulation, seen flat. `docs/stack.md` puts that in raw WebGL2.
+Key code: the walk `:534`, `SIM_FS` `:261`, `SHADE_FS` `:392`, the brush `brushTo` `:613`, the probe `harvest` `:731`, the loop `frame` `:957`, the opening `:1079`.
 
 ## Shared modules
 
@@ -73,7 +74,7 @@ No drift: sound goes through `audioKit`, the slow-frame step through `detail()`.
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 0 | The page: CSS, markup, the vignette figure, one module script |
+| `index.html` | 1175 | The page: CSS, markup, the vignette figure, one module script |
 <!-- /gen:files -->
 
 ## Render pipeline
@@ -170,7 +171,7 @@ The grain has no head or tail, so every fur term is even in its direction. An od
 | Slow-frame step | `detail()`: two seconds under 38 fps drop the level; the level caps the steps a frame at 8, 20 or 28 |
 | Idle | While any probe block changes faster than 3e-4 a step, the sim runs at full rate. After 3 s without that, the step rate falls to zero over 12 s (a cosine). Three calm probes (under 10^-5.4) stop it at once; 90 s after the last touch is a hard stop. The loop stops when the sim, the lamp, a coat fade and the wetness all rest |
 | Reduced motion | The lamp stays at rest; coats change at once; the opening coat grows in full before the first frame |
-| Measured | Not yet |
+| Measured | Mac GPU, 2026-11-15: one frame (brush, 15 sim steps, probe, shade) 2.5 ms at 906 x 1702 px; one sim step 0.016 ms on 118 x 217 cells |
 
 ## State and storage
 
@@ -187,9 +188,12 @@ The grain has no head or tail, so every fur term is even in its direction. An od
 
 None in `tests/`. Checks for a change: a clean console on load; a drag grows a coat on bare skin; the slider turns spots to stripes; the loop stops once the skin settles; 1280 px, 375 x 812 and 812 x 375 hold; the Byte target still grows a coat.
 
+QA of 2026-11-15 ran in the browser pane while it was hidden, so rAF did not run. A throwaway probe copy ran the same frame function by hand and sent canvas captures to a local sink. It checked: the opening, growth and the wind-down to idle (about 20 s); every walk between spots, worms, mazes and stripes, in all four coats; drag, click, right-drag and two-finger wash with synthetic pointer events; healing; S, C and 1 to 4; Float, Half and Byte targets; the sound graph (muted by default, live after the toggle). The real page loaded with a clean console; the corners showed no overlap at 1280 x 800, 375 x 812 (touch) and 812 x 375. Not seen: the live rAF loop on screen, and the sound by ear.
+
 ## Known issues
 
-None.
+- A probe fence does not signal while the pane is hidden. The sim then winds down on time alone, which still stops it.
+- Coats walked back toward spots keep some stripes when the wind-down stops them: a mixed coat, by design for now.
 
 ## Legacy build
 
