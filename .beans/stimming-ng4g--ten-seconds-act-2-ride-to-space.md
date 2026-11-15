@@ -1,11 +1,11 @@
 ---
 # stimming-ng4g
 title: 'Ten seconds Act 2: ride to space'
-status: in-progress
+status: draft
 type: feature
 priority: normal
 created_at: 2026-11-10T10:13:20Z
-updated_at: 2026-11-15T04:59:59Z
+updated_at: 2026-11-15T06:46:25Z
 ---
 
 Tom (2026-11-10): after liftoff, Ten seconds rides the rocket on hull cameras: max-q, out of the air, orbit, an escape burn until Earth is a mote among Moon, Sun and planets. Static cams, Dutch angles, anime framing. The flight plays itself; the viewer cuts cameras. Window seat gives shared sky and clouds and a porthole camera. Plan: ~/.claude/plans/one-other-big-three-atomic-cherny.md
@@ -33,3 +33,6 @@ Merged to main by PR #58: ascent/ plays at ?lab with its own tile. Work goes on 
 
 ## Plan (2026-11-14)
 docs/plans/ascent.md: clean-up, ten hero shots, the After dark link, one shared rocket (shared/rocket.js), Blue Marble for far shots, about 7 minutes.
+
+## On hold (Tom, 2026-11-14)
+Tom: "we'll make this a cinematic instead vs interactive maybe idk -- we may abandon this ultimately". Shot 1 is signed off on feature/stimming-ng4g (not merged). Shot 2 (stimming-x8bj) waits.

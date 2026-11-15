@@ -1,11 +1,11 @@
 ---
 # stimming-kau6
 title: 'Ascent shot 1: liftoff on the engine cam'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-15T05:51:41Z
-updated_at: 2026-11-15T06:35:39Z
+updated_at: 2026-11-15T06:46:10Z
 parent: stimming-ng4g
 ---
 
@@ -18,4 +18,7 @@ Phase 2, hero shot 1 of docs/plans/ascent.md: the engine cam at liftoff. The fli
 - [x] Steam and smoke rolling out: a raymarched volume (ascent/steam.js), lit by the flame with self-shadow; about 3 ms on High
 - [x] Light: flame on the ground and the cloud, dawn sky, exposure
 - [x] Polish (Tom, 2026-11-14): water near black with mirrored highlights, propellant spheres, water tower, lightning masts, sheds, sodium lamps, road lights
-- [ ] Stills to Tom; his sign-off
+- [x] Stills to Tom; signed off (Tom, 2026-11-14)
+
+## Summary of Changes
+Ascent starts on the pad at ignition. ascent/pad.js lays out the ground as in Ten seconds and adds the deck, trench, tower, floodlights, tanks, water tower, masts, sheds and lit road. ascent/steam.js raymarches the liftoff steam, lit by the flame with self-shadow. Signed off by Tom.
