@@ -1,0 +1,1276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.006 60); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Steel wool</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Steel wool: a pad of fine iron threads in the dark; a battery lights it. */
+:root { --stage: oklch(0.075 0.006 60); }
+.stage--steelwool canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--steelwool canvas.on { opacity: 1; }
+.stage--steelwool { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--steelwool canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Steel wool</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--steelwool" id="stage" tabindex="0" role="application" aria-label="A pad of steel wool in the dark. Click or tap to touch a battery to it, and a glow creeps through the threads. Drag to scrape the battery across it. Press and hold to blow on it. Enter touches the battery to a random spot.">
+      <p class="fail" hidden>Steel wool needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Steel wool</h1>
+    <div class="vignette">
+      <div>
+        <h2>A battery and a pad of iron</h2>
+        <p>Steel wool is iron shaved into threads finer than a hair. Touch both terminals of a 9-volt battery to it and current runs through the few threads that bridge them. They are so thin that the current heats them until they glow, and then the iron burns. Each burning thread heats the threads it touches, so the glow creeps on through the pad.</p>
+        <p>Blowing brings more oxygen, so the threads burn hotter and the glow runs faster. What is left is black iron oxide: brittle, and heavier than the wool was, because it now holds oxygen too. Threads that got hot but did not burn grow a thin skin of oxide. It shows as straw, bronze, purple and blue, the colours a smith reads as steel heats.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 320 140" role="img" aria-label="Five wavy threads run across. On the left they are silver, then straw, purple and blue. In the middle a yellow front glows, fading to orange and red behind it. On the right the threads are black.">
+          <defs>
+            <linearGradient id="steelwool-fig-heat" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="320" y2="0">
+              <stop offset="0" stop-color="oklch(0.78 0.01 250)"/>
+              <stop offset="0.3" stop-color="oklch(0.78 0.01 250)"/>
+              <stop offset="0.36" stop-color="oklch(0.82 0.1 88)"/>
+              <stop offset="0.41" stop-color="oklch(0.52 0.15 335)"/>
+              <stop offset="0.45" stop-color="oklch(0.55 0.16 268)"/>
+              <stop offset="0.49" stop-color="oklch(0.97 0.06 95)"/>
+              <stop offset="0.55" stop-color="oklch(0.82 0.16 65)"/>
+              <stop offset="0.64" stop-color="oklch(0.6 0.2 32)"/>
+              <stop offset="0.74" stop-color="oklch(0.27 0.03 300)"/>
+              <stop offset="1" stop-color="oklch(0.22 0.01 275)"/>
+            </linearGradient>
+          </defs>
+          <g fill="none" stroke="url(#steelwool-fig-heat)" stroke-width="2.2" stroke-linecap="round">
+            <path d="M8 30C40 14 62 48 96 34S150 12 182 32 246 54 312 26"/>
+            <path d="M8 52C34 66 70 40 104 56S158 72 196 52 262 40 312 58"/>
+            <path d="M8 76C44 62 76 90 112 74S170 58 204 80 270 92 312 72"/>
+            <path d="M8 98C38 110 66 86 100 100S160 116 196 96 256 86 312 104"/>
+            <path d="M8 122C42 108 72 132 108 118S166 104 202 124 264 132 312 114"/>
+          </g>
+        </svg>
+        <figcaption>Fresh wool, the glowing front, and the oxide it leaves.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, audioKit, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { detail } from '../shared/detail.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+let grade = 'fine', sparkAmt = 1;
+// The handlers bind once the GL state exists.
+const act = { grade() {}, blow() {}, reset() {} };
+const ui = initPage({ id: 'steelwool', bar: {
+  choice: { label: 'Grade', value: 'fine', options: [
+    { value: 'fine', label: 'Fine', key: '1' },
+    { value: 'medium', label: 'Medium', key: '2' },
+    { value: 'coarse', label: 'Coarse', key: '3' },
+  ], onPick: v => { grade = v; act.grade(); } },
+  actions: [
+    { verb: 'blow', key: 'Space', hold: true, onDown: () => act.blow(true), onUp: () => act.blow(false) },
+    { verb: 'reset', key: 'R', onPress: () => act.reset() },
+  ],
+  settings: [
+    { type: 'slider', id: 'sparks', label: 'Sparks', min: 0, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { sparkAmt = v; } },
+  ],
+  quality: true,
+  dev: [
+    { type: 'slider', id: 'speed', label: 'Front speed', min: 0.3, max: 3, step: 0.05, value: 1 },
+    { type: 'slider', id: 'branch', label: 'Branching', min: 0.3, max: 3, step: 0.05, value: 1 },
+    { type: 'slider', id: 'die', label: 'Dying', min: 0.2, max: 3, step: 0.05, value: 1 },
+    { type: 'slider', id: 'cool', label: 'Afterglow', min: 0.3, max: 3, step: 0.05, value: 1 },
+    { type: 'slider', id: 'glow', label: 'Glow', min: 0.2, max: 4, step: 0.05, value: 1 },
+    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2.5, step: 0.05, value: 1 },
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2.5, step: 0.05, value: 1 },
+  ],
+  keys: [['click', 'touch the battery'], ['drag', 'scrape'], ['hold', 'blow']],
+} });
+sparkAmt = ui.setting('sparks')?.value ?? 1;
+// Dev rows always exist; only ?dev shows their sheet.
+const dev = id => ui.setting(id)?.value ?? 1;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Steel wool needs WebGL 2 with float targets.');
+}
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, internal, format, type, filter, data = null) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(tex) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  return fb;
+}
+
+/* ---------- colour tokens ---------- */
+// Every colour is an OKLCH token; shaders take it as linear RGB.
+const TOK = {
+  bg: [0.075, 0.006, 60],
+  silver: [0.74, 0.008, 250],
+  key: [0.96, 0.012, 240],
+  amb: [0.55, 0.02, 265],
+  oxide: [0.32, 0.008, 70],
+  oxide2: [0.42, 0.025, 285],
+  // Temper colours, cool to hot: straw, bronze, purple, blue, slate, then oxide grey.
+  temper: [[0.8, 0.09, 88], [0.62, 0.1, 58], [0.5, 0.12, 330], [0.5, 0.12, 262], [0.4, 0.04, 255], [0.32, 0.008, 70]],
+  // Hot iron, cool to hot: dull red to white yellow.
+  ramp: [[0.42, 0.17, 27], [0.56, 0.21, 32], [0.68, 0.2, 45], [0.79, 0.17, 62], [0.88, 0.14, 78], [0.95, 0.09, 90]],
+};
+const lin = t => linFit(t[0], t[1], t[2]);
+const flat = list => new Float32Array(list.flatMap(lin));
+
+/* ---------- the pad: strands of wool ---------- */
+// Pad space runs from -PA to PA across and from -1 to 1 up.
+const PA = 1.36, DS = 0.0075, TEXW = 256;
+// The blob of wool: half-axes in pad units.
+const RX = 1.16, RY = 0.8;
+// Per grade: strand count, width, crimp, curl rate, then the burn.
+// v is the front speed in points a second; die and jump are per point.
+const GRADES = {
+  fine: { strands: 900, width: 0.0019, crimp: 0.0015, curl: 0.03, v: 30, die: 0.012, jump: 0.006, rc: 0.0058, dz: 0.22, I: 1, spark: 1 },
+  medium: { strands: 520, width: 0.0034, crimp: 0.0022, curl: 0.025, v: 22, die: 0.016, jump: 0.0066, rc: 0.0072, dz: 0.24, I: 0.94, spark: 0.75 },
+  coarse: { strands: 300, width: 0.0058, crimp: 0.0032, curl: 0.02, v: 14, die: 0.022, jump: 0.006, rc: 0.0095, dz: 0.26, I: 0.86, spark: 0.5 },
+};
+function mulberry32(a) {
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Value noise on a seeded lattice, 0 to 1.
+function valueNoise(R) {
+  const P = new Uint16Array(512), G = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { P[i] = i; G[i] = R(); }
+  for (let i = 255; i > 0; i--) { const j = Math.floor(R() * (i + 1)); const t = P[i]; P[i] = P[j]; P[j] = t; }
+  for (let i = 0; i < 256; i++) P[i + 256] = P[i];
+  return (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, X = xi & 255, Y = yi & 255;
+    const a = G[P[P[X] + Y]], b = G[P[P[X + 1] + Y]], c = G[P[P[X] + Y + 1]], d = G[P[P[X + 1] + Y + 1]];
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+}
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+const gauss = R => (R() + R() + R() + R() - 2) * 1.732;
+
+// One pad: strands walk a flow field inside a lumpy blob.
+// Back strands come first, so the point order is the draw order.
+function buildPad(gradeKey, seed) {
+  const g = GRADES[gradeKey];
+  const R = mulberry32(seed);
+  const nA = valueNoise(R), nB = valueNoise(R), nC = valueNoise(R);
+  const fbm = (n, x, y) => n(x, y) * 0.57 + n(x * 2.1 + 3.7, y * 2.1 - 1.3) * 0.29 + n(x * 4.3 - 2.1, y * 4.3 + 7.9) * 0.14;
+  const rim = th => 1 + 0.36 * (nC(Math.cos(th) * 1.1 + 4, Math.sin(th) * 1.1 + 4) - 0.5) + 0.16 * (nC(Math.cos(th) * 2.6 + 9, Math.sin(th) * 2.6 + 9) - 0.5);
+  const rho = (x, y) => Math.hypot(x / RX, y / RY) / rim(Math.atan2(y / RY, x / RX));
+  const dens = (x, y) => sstep(1.06, 0.45, rho(x, y)) * (0.6 + 0.4 * nB(x * 2.4 + 1.1, y * 2.4 - 0.7));
+  const flowBase = R() * Math.PI;
+  const flow = (x, y) => flowBase + (fbm(nA, x * 0.75, y * 0.75) - 0.5) * 4.4;
+  const strands = [];
+  let total = 0;
+  for (let k = 0; k < g.strands; k++) {
+    let x, y, tries = 0;
+    do { x = (R() * 2 - 1) * RX * 1.1; y = (R() * 2 - 1) * RY * 1.1; } while (R() > dens(x, y) && ++tries < 80);
+    let th = flow(x, y) + (R() < 0.5 ? 0 : Math.PI) + (R() - 0.5) * 0.9;
+    const np = Math.round((0.5 + R() * 1.6) / DS);
+    const zb = R(), wb = g.width * (0.75 + 0.5 * R()), rnd = R();
+    let kap = (R() - 0.5) * 8, sm = 0, s = 0;
+    const pts = [];
+    for (let i = 0; i < np; i++) {
+      // The fibre leans toward the local flow, either way along it.
+      const f = flow(x, y);
+      let d = angDiff(f, th);
+      if (Math.abs(d) > Math.PI / 2) d = angDiff(f + Math.PI, th);
+      // A curl is a sudden bend that relaxes.
+      if (R() < g.curl) kap = (R() < 0.5 ? -1 : 1) * (22 + 40 * R());
+      kap += gauss(R) * 9 - kap * 0.12;
+      th += (kap + 1.6 * d) * DS + gauss(R) * 0.05;
+      // The edge turns strands back in; a few fly loose.
+      const dd = dens(x, y);
+      if (dd < 0.2) th += angDiff(Math.atan2(-y, -x), th) * 0.35 * (1 - dd / 0.2);
+      if (dd < 0.015 && R() < 0.2) break;
+      x += Math.cos(th) * DS; y += Math.sin(th) * DS; s += DS;
+      // Crimp: a small kink across the fibre at each step.
+      sm = sm * 0.6 + (R() - 0.5) * 0.8;
+      const off = g.crimp * ((R() - 0.5) * 1.3 + sm);
+      pts.push(x - Math.sin(th) * off, y + Math.cos(th) * off, clamp(zb + 0.22 * (nB(x * 3 + 7, y * 3 - 5) - 0.5)), s);
+    }
+    if (pts.length >= 32) { strands.push({ pts, zb, wb, rnd }); total += pts.length / 4; }
+  }
+  strands.sort((a, b) => a.zb - b.zb);
+  const n = total;
+  const X = new Float32Array(n), Y = new Float32Array(n), Z = new Float32Array(n), AL = new Float32Array(n), W = new Float32Array(n), RN = new Float32Array(n);
+  const FID = new Int32Array(n), SA = new Int32Array(strands.length), SB = new Int32Array(strands.length);
+  let p = 0;
+  strands.forEach((st, k) => {
+    SA[k] = p;
+    for (let i = 0; i < st.pts.length; i += 4) {
+      X[p] = st.pts[i]; Y[p] = st.pts[i + 1]; Z[p] = st.pts[i + 2]; AL[p] = st.pts[i + 3];
+      W[p] = st.wb * (0.8 + 0.4 * nC(AL[p] * 40 + st.rnd * 100, 0.5));
+      RN[p] = st.rnd; FID[p] = k; p++;
+    }
+    SB[k] = p;
+  });
+  // The contact grid: cells a little wider than the largest contact.
+  const CG = 0.0095, GX = Math.ceil(2 * PA / CG), GY = Math.ceil(2 / CG);
+  const cell = (x, y) => clamp(Math.floor((x + PA) / CG), 0, GX - 1) + GX * clamp(Math.floor((y + 1) / CG), 0, GY - 1);
+  const cs = new Int32Array(GX * GY + 1), cp = new Int32Array(n);
+  for (let i = 0; i < n; i++) cs[cell(X[i], Y[i]) + 1]++;
+  for (let c = 0; c < GX * GY; c++) cs[c + 1] += cs[c];
+  const fill = cs.slice(0, GX * GY);
+  for (let i = 0; i < n; i++) cp[fill[cell(X[i], Y[i])]++] = i;
+  return { g, key: gradeKey, n, X, Y, Z, AL, W, RN, FID, SA, SB, strands: strands.length, grid: { CG, GX, GY, cs, cp }, dens };
+}
+// Visits every point within r of (x, y).
+function near(pad, x, y, r, fn) {
+  const { CG, GX, GY, cs, cp } = pad.grid;
+  const i0 = Math.max(0, Math.floor((x - r + PA) / CG)), i1 = Math.min(GX - 1, Math.floor((x + r + PA) / CG));
+  const j0 = Math.max(0, Math.floor((y - r + 1) / CG)), j1 = Math.min(GY - 1, Math.floor((y + r + 1) / CG));
+  const r2 = r * r, X = pad.X, Y = pad.Y;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const c = i + j * GX;
+    for (let k = cs[c]; k < cs[c + 1]; k++) {
+      const q = cp[k], dx = X[q] - x, dy = Y[q] - y, d2 = dx * dx + dy * dy;
+      if (d2 <= r2) fn(q, d2);
+    }
+  }
+}
+
+/* ---------- the burn: fronts along the threads ---------- */
+// A front walks along one strand and ignites each point it reaches.
+// Each ignition may light touching strands after a short delay.
+// Fronts die at random, at strand ends, or on burnt points.
+const TBURN = 0.22, TPEAK = 2.4, MAXF = 6000;
+const tCool = () => 0.42 * dev('cool');
+// The glow fades below sight after five cooling times.
+const tTail = () => TBURN + 5 * tCool();
+let pad = null, burn = null;
+// Screen up in pad space: (0, 1) wide, (1, 0) upright.
+const upV = [0, 1];
+// The breath: a centre in pad space, a radius and an amount.
+const blow = { x: 0, y: 0, r: 0.42, a: 0, target: 0, src: null };
+const blowF = (x, y) => {
+  if (blow.a < 0.002) return 0;
+  const dx = x - blow.x, dy = y - blow.y;
+  return blow.a * Math.exp(-(dx * dx + dy * dy) / (blow.r * blow.r));
+};
+function makeBurn(p, seed) {
+  const R = mulberry32(seed);
+  const { g, n, X, Y, Z, FID, SA, SB } = p;
+  const rows = Math.ceil(n / TEXW);
+  // Per point: ignition time and peak heat; 1e9 means unburnt.
+  const dyn = new Float32Array(rows * TEXW * 2);
+  for (let i = 0; i < dyn.length; i += 2) { dyn[i] = 1e9; dyn[i + 1] = 1; }
+  const fp = new Int32Array(MAXF), fd = new Int8Array(MAXF), fa = new Float32Array(MAXF);
+  // Ignitions in time order; the head drops points that are cold again.
+  const hot = new Int32Array(n);
+  const pend = [];
+  const stamps = [];
+  const B = { dyn, rows, hot, stamps, R, nf: 0, hn: 0, hh: 0, now: 0, burnt: 0, lo: 1e9, hi: -1, burning: 0, cx: 0, cy: 0, lastIgn: -1e9 };
+  const dirty = i => { if (i < B.lo) B.lo = i; if (i > B.hi) B.hi = i; };
+  function addFront(i, d) {
+    if (B.nf >= MAXF) return;
+    fp[B.nf] = i; fd[B.nf] = d; fa[B.nf] = 0; B.nf++;
+  }
+  function ignite(i, t, I) {
+    if (dyn[2 * i] < 1e8) return false;
+    dyn[2 * i] = t; dyn[2 * i + 1] = I;
+    dirty(i);
+    hot[B.hn++] = i;
+    stamps.push(X[i], Y[i]);
+    B.burnt++;
+    B.lastIgn = Math.max(B.lastIgn, t);
+    // Touching strands may catch; breath makes them catch more.
+    const b = blowF(X[i], Y[i]);
+    const pj = g.jump * dev('branch') * (1 + 2.5 * b), rc = g.rc, rc2 = rc * rc, zi = Z[i], fi = FID[i];
+    near(p, X[i], Y[i], rc, (j, d2) => {
+      if (dyn[2 * j] < 1e8) return;
+      if (FID[j] === fi && Math.abs(j - i) < 12) return;
+      if (Math.abs(Z[j] - zi) > g.dz) return;
+      if (R() < pj * (1 - d2 / rc2)) pend.push(j, t + (0.04 + 0.2 * R()) * (1 - 0.6 * b));
+    });
+    return true;
+  }
+  const heatAt = b => g.I * (1 + 0.35 * b) * (0.9 + 0.2 * R());
+  // The battery: every point under the contact ignites at once.
+  B.touch = (x, y, r, I) => {
+    let hit = 0;
+    near(p, x, y, r, j => { if (ignite(j, B.now, I * (0.9 + 0.2 * R()))) { addFront(j, 1); addFront(j, -1); hit++; } });
+    return hit;
+  };
+  B.step = dt => {
+    B.now += dt;
+    const now = B.now;
+    // Pending ignitions that are due.
+    for (let k = 0; k < pend.length;) {
+      if (pend[k + 1] <= now) {
+        const j = pend[k];
+        if (ignite(j, pend[k + 1], heatAt(blowF(X[j], Y[j])))) { addFront(j, 1); addFront(j, -1); }
+        pend[k] = pend[pend.length - 2]; pend[k + 1] = pend[pend.length - 1]; pend.length -= 2;
+      } else k += 2;
+    }
+    const sp0 = g.v * dev('speed'), die = g.die * dev('die');
+    for (let f = 0; f < B.nf;) {
+      let i = fp[f];
+      const dir = fd[f], b = blowF(X[i], Y[i]), k = FID[i], j0 = i + dir;
+      // Heat rises: a front that climbs runs faster.
+      let climb = 1;
+      if (j0 >= SA[k] && j0 < SB[k]) climb = clamp(1 + 0.35 * ((X[j0] - X[i]) * upV[0] + (Y[j0] - Y[i]) * upV[1]) / DS, 0.6, 1.4);
+      const sp = sp0 * (1 + 1.6 * b) * climb;
+      let dead = false;
+      fa[f] += sp * dt;
+      while (fa[f] >= 1) {
+        const j = i + dir;
+        if (j < SA[k] || j >= SB[k] || dyn[2 * j] < 1e8) { dead = true; break; }
+        fa[f] -= 1;
+        ignite(j, now - fa[f] / sp, heatAt(b));
+        i = j;
+        if (R() < die * (1 - 0.7 * b)) { dead = true; break; }
+      }
+      fp[f] = i;
+      if (dead) { B.nf--; fp[f] = fp[B.nf]; fd[f] = fd[B.nf]; fa[f] = fa[B.nf]; } else f++;
+    }
+    // Cold points leave the hot list.
+    const tail = tTail();
+    while (B.hh < B.hn && now - dyn[2 * hot[B.hh]] > tail) B.hh++;
+    // Breath on glowing points can start a dead front again.
+    if (blow.a > 0.05) {
+      const warm = TBURN + 2.5 * tCool();
+      for (let k = B.hh; k < B.hn; k++) {
+        const i = hot[k];
+        if (now - dyn[2 * i] > warm) continue;
+        const b = blowF(X[i], Y[i]);
+        if (b < 0.06 || R() > b * 2.2 * dt) continue;
+        const s = FID[i];
+        for (const d of [1, -1]) {
+          const j = i + d;
+          if (j >= SA[s] && j < SB[s] && ignite(j, now, heatAt(b))) addFront(j, d);
+        }
+      }
+    }
+    // The points that burn now: their count and centre.
+    let c = 0, sx = 0, sy = 0;
+    for (let k = B.hn - 1; k >= B.hh; k--) {
+      const i = hot[k];
+      if (now - dyn[2 * i] > TBURN) { if (now - dyn[2 * i] > TBURN + 0.3) break; continue; }
+      c++; sx += X[i]; sy += Y[i];
+    }
+    B.burning = c;
+    if (c) { B.cx = sx / c; B.cy = sy / c; }
+  };
+  // The fire lives while fronts run, ignitions wait, or points still glow.
+  B.alive = () => B.nf > 0 || pend.length > 0 || B.now - B.lastIgn < tTail();
+  // A random point that burns now, or -1.
+  B.burningPoint = () => {
+    if (!B.burning) return -1;
+    for (let tries = 0; tries < 6; tries++) {
+      const k = B.hn - 1 - Math.floor(R() * Math.min(B.hn - B.hh, B.burning * 1.5 + 4));
+      if (k < B.hh) continue;
+      const i = hot[k];
+      if (B.now - dyn[2 * i] <= TBURN) return i;
+    }
+    return -1;
+  };
+  return B;
+}
+
+/* ---------- shaders ---------- */
+const HASH = `
+float hashU(uint x) {
+  x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; x ^= x >> 16u;
+  return float(x) / 4294967295.0;
+}
+// Value noise along one axis.
+float noise1(float x) {
+  float i = floor(x), f = fract(x);
+  float a = hashU(uint(int(i) + 70000)), b = hashU(uint(int(i) + 70001));
+  return mix(a, b, f * f * (3.0 - 2.0 * f));
+}
+`;
+// Hot iron colour and brightness at heat T: 1 is dull red, 2.4 is a burning thread.
+const HEAT = `
+uniform vec3 uRamp[6];
+vec3 rampCol(float T) {
+  float x = clamp(T / 0.64, 0.0, 4.999);
+  int i = int(x);
+  return mix(uRamp[i], uRamp[i + 1], x - float(i));
+}
+float glowGain(float T) { return (T < 2.4 ? pow(max(T, 0.0) / 2.4, 2.0) : 1.0 + 0.5 * (T - 2.4) / 2.4) * smoothstep(0.06, 0.45, T); }
+`;
+// One full-screen triangle from the vertex id.
+const FULL_VS = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+// The threads: two vertices per point, read from the point textures.
+const FIBRE_VS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uP0, uP1, uDyn;
+uniform vec2 uRes, uC;
+uniform mat2 uRot;
+uniform float uScale, uNow, uTime, uJit, uTBurn, uTCool, uTPeak, uGlowW;
+uniform vec4 uBlow;
+out float vDist, vHalf, vCov, vAge, vI, vZ, vRnd, vS, vGlowW;
+out vec2 vPad, vTan;
+void main() {
+  int pid = gl_VertexID >> 1;
+  float side = (gl_VertexID & 1) == 0 ? -1.0 : 1.0;
+  ivec2 tc = ivec2(pid & ${TEXW - 1}, pid >> ${Math.log2(TEXW)});
+  vec4 a = texelFetch(uP0, tc, 0), b = texelFetch(uP1, tc, 0);
+  vec2 d = texelFetch(uDyn, tc, 0).xy;
+  float age = uNow - d.x;
+  // Burnt thread shrinks as it turns to oxide.
+  float burnt = age > 0.0 ? smoothstep(0.0, 1.5, age) : 0.0;
+  float wTrue = b.w * uScale * (1.0 - 0.3 * burnt);
+  float wEff = max(wTrue, 1.0);
+  // Hot wire glares: its strip grows a soft skirt for the glow.
+  float T = age < 0.0 ? 0.0 : uTPeak * d.y * (age < uTBurn ? 1.0 : exp(-(age - uTBurn) / uTCool));
+  float glowW = uGlowW * smoothstep(0.25, 1.8, T);
+  float half_ = 0.5 * wEff + 0.75 + 2.0 * glowW;
+  vec2 nrm = uRot * a.zw;
+  vec2 pos = uC + uRot * a.xy * uScale;
+  // Breath makes the threads quiver.
+  vec2 bd = a.xy - uBlow.xy;
+  float bf = uBlow.w * exp(-dot(bd, bd) / (uBlow.z * uBlow.z));
+  pos += nrm * (bf * uJit * sin(uTime * 23.0 + b.y * 40.0 + b.z * 90.0));
+  pos += nrm * side * half_;
+  gl_Position = vec4(pos / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vDist = side * half_;
+  vHalf = 0.5 * wEff;
+  vCov = min(wTrue, 1.0);
+  vGlowW = glowW;
+  vAge = age; vI = d.y; vZ = b.x; vRnd = b.y; vS = b.z;
+  vPad = a.xy;
+  vTan = normalize(vec2(nrm.y, -nrm.x) + 1e-6);
+}`;
+const FIBRE_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in float vDist, vHalf, vCov, vAge, vI, vZ, vRnd, vS, vGlowW;
+in vec2 vPad, vTan;
+uniform sampler2D uPK, uFire;
+uniform vec2 uRes, uExt;
+uniform vec3 uL, uSilver, uOxide, uOxide2, uKey, uAmb;
+uniform vec3 uTemper[6];
+uniform vec4 uBlow;
+uniform float uTBurn, uTCool, uTPeak, uGlow, uFireK, uTime, uFlick;
+out vec4 o;
+${HASH}
+${HEAT}
+vec3 temper(float k) {
+  float x = clamp((k - 0.1) / 0.12, 0.0, 4.999);
+  int i = int(x);
+  return mix(uTemper[i], uTemper[i + 1], x - float(i));
+}
+// Heat of a thread that caught fire age seconds ago.
+float heat(float age, float I) {
+  if (age < 0.0) return 0.0;
+  float rise = smoothstep(0.0, 0.035, age);
+  float fall = age < uTBurn ? 1.0 : exp(-(age - uTBurn) / uTCool);
+  return uTPeak * I * rise * fall;
+}
+void main() {
+  float core = clamp(vHalf - abs(vDist) + 0.5, 0.0, 1.0);
+  float a = core * vCov;
+  // The glow: the wire's core, and a soft skirt round hot wire.
+  float skirt = vGlowW > 0.01 ? exp(-pow(max(abs(vDist) - vHalf, 0.0) / vGlowW, 2.0) * 2.0) : 0.0;
+  float ew = max(core * max(vCov, 0.6), skirt * 0.5);
+  float burnt = step(0.0, vAge);
+  // Oxide crumbles: gaps open along a cold, burnt thread.
+  float crumb = smoothstep(0.4, 3.0, vAge) * burnt;
+  a *= 1.0 - crumb * 0.9 * (1.0 - smoothstep(0.24, 0.34, noise1(vS * 170.0 + vRnd * 911.0)));
+  if (a < 0.003 && ew < 0.003) discard;
+  float pk = texture(uPK, vPad / (2.0 * uExt) + 0.5).r;
+  // The wad: deep threads and the rim sit in shade.
+  vec2 e = vPad / vec2(1.16, 0.8);
+  float dome = clamp(1.0 - dot(e, e), 0.0, 1.0);
+  float ao = mix(0.12, 1.0, vZ * vZ) * (0.35 + 0.65 * sqrt(dome));
+  // Kajiya-Kay light on a thin wire; the tangent dips in and out.
+  vec3 T = normalize(vec3(vTan, (vRnd - 0.5) * 0.9 + 0.3 * sin(vS * 37.0 + vRnd * 9.0)));
+  vec3 H = normalize(uL + vec3(0.0, 0.0, 1.0));
+  float th = dot(T, H), tl = dot(T, uL);
+  float spec = pow(max(1.0 - th * th, 0.0), 36.0);
+  float diff = sqrt(max(1.0 - tl * tl, 0.0));
+  // Facets on the shaved wire glint in points.
+  float glit = hashU(uint(vS * 520.0) * 747796405u + uint(vRnd * 65535.0));
+  spec *= 0.3 + 4.0 * step(0.86, glit);
+  vec3 alb = uSilver * (0.78 + 0.44 * vRnd);
+  vec3 sc = vec3(1.0);
+  // Heat that did not burn leaves a temper colour.
+  float tint = smoothstep(0.06, 0.16, pk) * (1.0 - burnt) * mix(0.25 + 0.75 * fract(vRnd * 7.31), 1.0, smoothstep(0.55, 0.7, pk));
+  vec3 tc = temper(pk);
+  alb = mix(alb, tc * 0.85, tint);
+  sc = mix(sc, tc * 1.5, tint);
+  // Burnt: black oxide with a dull sheen.
+  vec3 ox = mix(uOxide, uOxide2, step(0.82, hashU(uint(vS * 90.0) + uint(vRnd * 9999.0) * 2654435761u)));
+  alb = mix(alb, ox, burnt);
+  sc = mix(sc, vec3(0.4), burnt);
+  // Last frame's bloom lights the wire; the clamp and a small gain keep the loop stable.
+  vec3 fire = min(texture(uFire, gl_FragCoord.xy / uRes).rgb, vec3(3.0));
+  vec3 col = alb * (uAmb + uKey * diff) * ao + uKey * sc * spec * ao + alb * fire * uFireK;
+  // The glow, brighter under the breath; burning points flicker.
+  float T0 = heat(vAge, vI);
+  vec2 bd = vPad - uBlow.xy;
+  float bf = uBlow.w * exp(-dot(bd, bd) / (uBlow.z * uBlow.z));
+  T0 = min(T0 * (1.0 + 0.3 * bf * step(0.05, T0)), 3.1);
+  T0 *= 1.0 + uFlick * (noise1(uTime * 14.0 + vS * 60.0 + vRnd * 300.0) - 0.5) * step(vAge, uTBurn * 2.0);
+  vec3 em = rampCol(T0) * glowGain(T0) * uGlow * (0.65 + 0.35 * vZ);
+  o = vec4(col * a + em * ew, a);
+}`;
+
+// Sparks: streaks from head to tail; kind 2 is a round contact flash.
+const SPARK_VS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aP;
+layout(location = 1) in vec2 aV;
+layout(location = 2) in vec4 aK;
+uniform vec2 uRes;
+uniform float uExp;
+out vec2 vQ;
+out float vLen, vW, vT, vF, vKind;
+void main() {
+  float u = float(gl_VertexID & 1), s = float(gl_VertexID >> 1) * 2.0 - 1.0;
+  float sp = length(aV);
+  vec2 dir = sp > 1e-3 ? aV / sp : vec2(0.0, 1.0);
+  vec2 nrm = vec2(-dir.y, dir.x);
+  float w = aK.y * (aK.w > 1.5 ? 2.5 : 0.5) + 1.0;
+  float len = aK.w > 1.5 ? 0.0 : sp * uExp;
+  float along = mix(-w, len + w, u);
+  vec2 p = aP - dir * along + nrm * s * w;
+  gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
+  vQ = vec2(along, s * w);
+  vLen = len; vW = aK.y * 0.5; vT = aK.x; vF = aK.z; vKind = aK.w;
+}`;
+const SPARK_FS = `#version 300 es
+precision highp float;
+in vec2 vQ;
+in float vLen, vW, vT, vF, vKind;
+uniform float uGain;
+out vec4 o;
+${HEAT}
+void main() {
+  float da = max(max(-vQ.x, vQ.x - vLen), 0.0);
+  float d = length(vec2(da, vQ.y));
+  float k = vLen > 0.0 ? 1.0 - 0.75 * clamp(vQ.x / vLen, 0.0, 1.0) : 1.0;
+  float shape = vKind > 1.5 ? exp(-d * d / (vW * vW * 2.0)) : clamp(vW - d + 0.6, 0.0, 1.0) * k;
+  o = vec4(rampCol(vT) * glowGain(vT) * uGain * shape * vF, 0.0);
+}`;
+
+// Heat memory: each ignition stamps a soft disc, kept as the max.
+const STAMP_VS = `#version 300 es
+layout(location = 0) in vec2 aPad;
+uniform vec2 uExt;
+uniform float uSize;
+void main() { gl_Position = vec4(aPad / uExt, 0.0, 1.0); gl_PointSize = uSize; }`;
+const STAMP_FS = `#version 300 es
+precision mediump float;
+out vec4 o;
+void main() {
+  float r = length(gl_PointCoord * 2.0 - 1.0);
+  if (r > 1.0) discard;
+  o = vec4(1.0 - r, 0.0, 0.0, 1.0);
+}`;
+
+// The composite: bloom, grade, film curve.
+const COMP_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform vec3 uTint;
+uniform float uBloomK, uExpo, uSeed;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c = gdGrade(c, uv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), uTint, 0.6, 0.45, 0.035);
+  o = vec4(ouFilm(c, uExpo, gl_FragCoord.xy), 1.0);
+}`;
+
+const fibreP = program(FIBRE_VS, FIBRE_FS), sparkP = program(SPARK_VS, SPARK_FS);
+const stampP = program(STAMP_VS, STAMP_FS), compP = program(FULL_VS, COMP_FS);
+const bloom = bloomChain(gl);
+const emptyVao = gl.createVertexArray();
+
+/* ---------- pad textures ---------- */
+// P0: x, y, and the normal times the miter. P1: depth, strand random, arc length, width.
+let tP0 = null, tP1 = null, tDyn = null, fibreVao = null, idxBuf = null, nIdx = 0;
+function uploadPad() {
+  const { n, X, Y, Z, AL, W, RN, SA, SB } = pad;
+  const rows = Math.ceil(n / TEXW);
+  const p0 = new Float32Array(rows * TEXW * 4), p1 = new Float32Array(rows * TEXW * 4);
+  for (let s = 0; s < pad.strands; s++) {
+    const a = SA[s], b = SB[s];
+    for (let i = a; i < b; i++) {
+      const ip = Math.max(a, i - 1), inx = Math.min(b - 1, i + 1);
+      let x0 = X[i] - X[ip], y0 = Y[i] - Y[ip], x1 = X[inx] - X[i], y1 = Y[inx] - Y[i];
+      let l0 = Math.hypot(x0, y0), l1 = Math.hypot(x1, y1);
+      if (l0 < 1e-9) { x0 = x1; y0 = y1; l0 = l1; }
+      if (l1 < 1e-9) { x1 = x0; y1 = y0; l1 = l0; }
+      x0 /= l0 || 1; y0 /= l0 || 1; x1 /= l1 || 1; y1 /= l1 || 1;
+      let tx = x0 + x1, ty = y0 + y1;
+      const tl = Math.hypot(tx, ty);
+      if (tl < 1e-6) { tx = x1; ty = y1; } else { tx /= tl; ty /= tl; }
+      // The miter keeps the width through a bend, capped at twice.
+      const m = 1 / Math.max(0.5, Math.abs(tx * x1 + ty * y1));
+      p0.set([X[i], Y[i], -ty * m, tx * m], i * 4);
+      p1.set([Z[i], RN[i], AL[i], W[i]], i * 4);
+    }
+  }
+  for (const t of [tP0, tP1, tDyn]) if (t) gl.deleteTexture(t);
+  tP0 = texture(TEXW, rows, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST, p0);
+  tP1 = texture(TEXW, rows, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST, p1);
+  tDyn = texture(TEXW, rows, gl.RG32F, gl.RG, gl.FLOAT, gl.NEAREST, burn.dyn);
+  // One strip per strand; the restart index splits them.
+  const idx = new Uint32Array(n * 2 + pad.strands);
+  let k = 0;
+  for (let s = 0; s < pad.strands; s++) {
+    for (let i = SA[s]; i < SB[s]; i++) { idx[k++] = 2 * i; idx[k++] = 2 * i + 1; }
+    idx[k++] = 0xFFFFFFFF;
+  }
+  nIdx = k;
+  if (!fibreVao) { fibreVao = gl.createVertexArray(); idxBuf = gl.createBuffer(); }
+  gl.bindVertexArray(fibreVao);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  burn.lo = 1e9; burn.hi = -1;
+}
+// Only the rows that changed go up each frame.
+function uploadDyn() {
+  if (burn.hi < 0) return;
+  const r0 = Math.floor(burn.lo / TEXW), r1 = Math.floor(burn.hi / TEXW);
+  gl.bindTexture(gl.TEXTURE_2D, tDyn);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, r0, TEXW, r1 - r0 + 1, gl.RG, gl.FLOAT, burn.dyn, r0 * TEXW * 2);
+  burn.lo = 1e9; burn.hi = -1;
+}
+
+/* ---------- heat memory ---------- */
+// A pad-space map of the hottest each spot got; it drives the temper colour.
+const PKW = 680, PKH = 500, STAMP_R = 0.07;
+const tPK = texture(PKW, PKH, gl.R8, gl.RED, gl.UNSIGNED_BYTE, gl.LINEAR);
+const fbPK = target(tPK);
+const stampVao = gl.createVertexArray(), stampBuf = gl.createBuffer();
+gl.bindVertexArray(stampVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, stampBuf);
+gl.bufferData(gl.ARRAY_BUFFER, 65536 * 8, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+function clearPK() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbPK);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function flushStamps() {
+  const st = burn.stamps;
+  if (!st.length) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbPK);
+  gl.viewport(0, 0, PKW, PKH);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.MAX);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(stampP);
+  gl.uniform2f(stampP.u('uExt'), PA, 1);
+  gl.uniform1f(stampP.u('uSize'), 2 * STAMP_R * PKH / 2);
+  gl.bindVertexArray(stampVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, stampBuf);
+  for (let k = 0; k < st.length; k += 65536 * 2) {
+    const part = new Float32Array(st.slice(k, k + 65536 * 2));
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, part);
+    gl.drawArrays(gl.POINTS, 0, part.length / 2);
+  }
+  st.length = 0;
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+}
+
+/* ---------- sparks ---------- */
+// CSS pixels, y down. A spark cools as it flies; some burst into forks.
+const MAXS = 1600;
+const sx = new Float32Array(MAXS), sy = new Float32Array(MAXS), svx = new Float32Array(MAXS), svy = new Float32Array(MAXS);
+const sT = new Float32Array(MAXS), sAge = new Float32Array(MAXS), sLife = new Float32Array(MAXS), sW = new Float32Array(MAXS);
+const sFork = new Float32Array(MAXS), sKind = new Uint8Array(MAXS);
+let ns = 0;
+const sparkData = new Float32Array(MAXS * 8);
+const sparkVao = gl.createVertexArray(), sparkBuf = gl.createBuffer();
+gl.bindVertexArray(sparkVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, sparkBuf);
+gl.bufferData(gl.ARRAY_BUFFER, sparkData.byteLength, gl.DYNAMIC_DRAW);
+[[0, 2, 0], [1, 2, 8], [2, 4, 16]].forEach(([l, n, off]) => {
+  gl.enableVertexAttribArray(l);
+  gl.vertexAttribPointer(l, n, gl.FLOAT, false, 32, off);
+  gl.vertexAttribDivisor(l, 1);
+});
+gl.bindVertexArray(null);
+const sparkCap = () => [500, 1100, MAXS][D.level];
+function addSpark(x, y, vx, vy, T, life, w, fork, kind = 0) {
+  if (ns >= Math.min(MAXS, sparkCap())) return;
+  sx[ns] = x; sy[ns] = y; svx[ns] = vx; svy[ns] = vy; sT[ns] = T; sAge[ns] = 0;
+  sLife[ns] = life; sW[ns] = w; sFork[ns] = fork; sKind[ns] = kind; ns++;
+}
+const rnd = Math.random;
+// The scale of the pad on screen, against a 300 px reference.
+const kS = () => S / 300;
+function burstAt(x, y, n, hot = 3.4) {
+  const k = kS(), rm = reduced();
+  if (rm) n = Math.ceil(n * 0.25);
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2, v = (120 + 360 * rnd()) * k;
+    addSpark(x, y, Math.cos(a) * v, Math.sin(a) * v - 120 * k, hot + 0.3 * rnd(), 0.2 + 0.5 * rnd(), 0.9 + 0.5 * rnd(), !rm && rnd() < 0.45 ? 0.25 + 0.5 * rnd() : -1);
+  }
+}
+function flashAt(x, y) {
+  // Two contacts: the battery's terminals, a few pixels apart.
+  const d = 7 * kS();
+  addSpark(x - d, y, 0, 0, 3.4, 0.12, 4.5 * kS(), -1, 2);
+  addSpark(x + d, y, 0, 0, 3.4, 0.12, 4.5 * kS(), -1, 2);
+}
+let forksThisFrame = 0;
+function stepSparks(dt) {
+  const k = kS(), g = 700 * k, drag = Math.exp(-1.5 * dt);
+  const [bx, by] = toScreen(blow.x, blow.y), br = blow.r * S;
+  forksThisFrame = 0;
+  for (let i = 0; i < ns;) {
+    sAge[i] += dt;
+    if (sAge[i] >= sLife[i] || sx[i] < -50 || sx[i] > size.w + 50 || sy[i] > size.h + 50) {
+      ns--;
+      sx[i] = sx[ns]; sy[i] = sy[ns]; svx[i] = svx[ns]; svy[i] = svy[ns]; sT[i] = sT[ns]; sAge[i] = sAge[ns];
+      sLife[i] = sLife[ns]; sW[i] = sW[ns]; sFork[i] = sFork[ns]; sKind[i] = sKind[ns];
+      continue;
+    }
+    if (sKind[i] !== 2) {
+      // The breath pushes sparks out from its centre and lifts them.
+      if (blow.a > 0.01) {
+        const dx = sx[i] - bx, dy = sy[i] - by, d = Math.hypot(dx, dy) + 1;
+        const f = blow.a * Math.exp(-(d * d) / (br * br * 2.2)) * 900 * k;
+        svx[i] += dx / d * f * dt;
+        svy[i] += (dy / d * f - 0.5 * f) * dt;
+      }
+      svy[i] += g * dt;
+      svx[i] *= drag; svy[i] *= drag;
+      sx[i] += svx[i] * dt; sy[i] += svy[i] * dt;
+      // Iron sparks burst: carbon in the drop boils off.
+      if (sFork[i] > 0 && sAge[i] >= sFork[i] * sLife[i]) {
+        sFork[i] = -1;
+        forksThisFrame++;
+        const m = 3 + Math.floor(rnd() * 4);
+        for (let j = 0; j < m; j++) {
+          const a = rnd() * Math.PI * 2, v = (90 + 160 * rnd()) * k;
+          addSpark(sx[i], sy[i], svx[i] * 0.3 + Math.cos(a) * v, svy[i] * 0.3 + Math.sin(a) * v, sT[i] + 0.15, 0.07 + 0.1 * rnd(), sW[i] * 0.7, -1, 1);
+        }
+        if (rnd() < 0.5) sAge[i] = sLife[i];
+      }
+    }
+    i++;
+  }
+}
+// New sparks rise from points that burn now.
+function spawnSparks(dt) {
+  const B = burn;
+  if (!B.burning || sparkAmt <= 0) return;
+  const rm = reduced();
+  const rate = B.burning * 0.08 * 6 * pad.g.spark * sparkAmt * (rm ? 0.2 : 1);
+  let n = Math.floor(rate * dt + rnd());
+  const k = kS();
+  while (n-- > 0) {
+    const i = B.burningPoint();
+    if (i < 0) break;
+    const b = blowF(pad.X[i], pad.Y[i]);
+    if (rnd() > (1 + 7 * b) / 8) continue;
+    const [x, y] = toScreen(pad.X[i], pad.Y[i]);
+    const a = rnd() * Math.PI * 2, v = (40 + 220 * rnd()) * k;
+    let vx = Math.cos(a) * v, vy = Math.sin(a) * v - 30 * k;
+    if (b > 0) {
+      const [bx, by] = toScreen(blow.x, blow.y), dx = x - bx, dy = y - by, d = Math.hypot(dx, dy) + 1;
+      vx += dx / d * 260 * b * k; vy += (dy / d * 260 - 220) * b * k;
+    }
+    addSpark(x, y, vx, vy, 2.8 + 0.6 * rnd() + 0.4 * b, 0.35 + 0.65 * rnd(), 0.8 + 0.5 * rnd(), !rm && rnd() < 0.3 ? 0.3 + 0.4 * rnd() : -1);
+  }
+}
+
+/* ---------- layout ---------- */
+// Wide stages lay the pad across; tall ones stand it upright.
+let size = { w: 1, h: 1, dpr: 1 }, S = 300, cx = 0, cy = 0, upright = false;
+let hdr = null, ready = false;
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => { resize(); if (ready) render(); } });
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  upright = w / h < 0.9;
+  // The blob spans about 2.64 by 1.84 pad units with its loose ends.
+  S = upright ? Math.min(0.9 * w / 1.84, 0.78 * h / 2.64) : Math.min(0.8 * w / 2.64, 0.8 * h / 1.84);
+  cx = w / 2;
+  cy = h * (upright ? 0.46 : 0.47);
+  if (upright) { upV[0] = 1; upV[1] = 0; } else { upV[0] = 0; upV[1] = 1; }
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  if (hdr) { gl.deleteFramebuffer(hdr.fb); gl.deleteTexture(hdr.tex); }
+  const tex = texture(canvas.width, canvas.height, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  hdr = { tex, fb: target(tex), w: canvas.width, h: canvas.height };
+}
+// Screen (CSS px, y down) to pad, and back.
+const toPad = (x, y) => (upright ? [(cy - y) / S, (cx - x) / S] : [(x - cx) / S, (cy - y) / S]);
+const toScreen = (px, py) => (upright ? [cx - py * S, cy - px * S] : [cx + px * S, cy - py * S]);
+
+/* ---------- light ---------- */
+// The key light rests above left; a mouse over the pad turns it.
+const L0 = [-0.42, 0.55];
+const lq = [...L0], tq = [...L0];
+const lightVec = q => { const z = 0.75; const n = Math.hypot(q[0], q[1], z); return [q[0] / n, q[1] / n, z / n]; };
+function aimLight(x, y) {
+  if (reduced()) return;
+  // The light swings toward the pointer, within a cone.
+  tq[0] = L0[0] + clamp((x - cx) / (size.w * 0.5), -1, 1) * 0.55;
+  tq[1] = L0[1] + clamp((cy - y) / (size.h * 0.5), -1, 1) * 0.4;
+  wake();
+}
+
+/* ---------- render ---------- */
+let fireTex = texture(1, 1, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR, new Uint16Array(4));
+let wall = 0, seedN = 0;
+const BG = lin(TOK.bg);
+function render() {
+  flushStamps();
+  uploadDyn();
+  const d = size.dpr;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, hdr.w, hdr.h);
+  gl.clearColor(BG[0], BG[1], BG[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  // The threads, back to front.
+  const p = fibreP;
+  gl.useProgram(p);
+  [[tP0, 'uP0'], [tP1, 'uP1'], [tDyn, 'uDyn'], [tPK, 'uPK'], [fireTex, 'uFire']].forEach(([t, name], i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.uniform1i(p.u(name), i);
+  });
+  gl.uniform2f(p.u('uRes'), hdr.w, hdr.h);
+  gl.uniform2f(p.u('uC'), cx * d, (size.h - cy) * d);
+  // Column-major: upright maps pad x to screen up.
+  gl.uniformMatrix2fv(p.u('uRot'), false, upright ? [0, 1, -1, 0] : [1, 0, 0, 1]);
+  gl.uniform1f(p.u('uScale'), S * d);
+  gl.uniform1f(p.u('uNow'), burn.now);
+  gl.uniform1f(p.u('uTime'), wall);
+  gl.uniform1f(p.u('uJit'), reduced() ? 0 : 1.2 * d);
+  gl.uniform4f(p.u('uBlow'), blow.x, blow.y, blow.r, blow.a);
+  gl.uniform2f(p.u('uExt'), PA, 1);
+  gl.uniform3f(p.u('uL'), ...lightVec(lq));
+  gl.uniform3f(p.u('uSilver'), ...lin(TOK.silver));
+  gl.uniform3f(p.u('uOxide'), ...lin(TOK.oxide));
+  gl.uniform3f(p.u('uOxide2'), ...lin(TOK.oxide2));
+  const key = lin(TOK.key), amb = lin(TOK.amb);
+  gl.uniform3f(p.u('uKey'), key[0] * 1.15, key[1] * 1.15, key[2] * 1.15);
+  gl.uniform3f(p.u('uAmb'), amb[0] * 0.09, amb[1] * 0.09, amb[2] * 0.09);
+  gl.uniform3fv(p.u('uTemper'), TEMPER);
+  gl.uniform3fv(p.u('uRamp'), RAMP);
+  gl.uniform1f(p.u('uTBurn'), TBURN);
+  gl.uniform1f(p.u('uTCool'), tCool());
+  gl.uniform1f(p.u('uTPeak'), TPEAK);
+  gl.uniform1f(p.u('uGlow'), 6 * dev('glow'));
+  gl.uniform1f(p.u('uGlowW'), 1.3 * d);
+  gl.uniform1f(p.u('uFireK'), 0.12);
+  gl.uniform1f(p.u('uFlick'), reduced() ? 0 : 0.22);
+  gl.bindVertexArray(fibreVao);
+  gl.drawElements(gl.TRIANGLE_STRIP, nIdx, gl.UNSIGNED_INT, 0);
+  // Sparks add light on top.
+  if (ns) {
+    for (let i = 0; i < ns; i++) {
+      const f = sKind[i] === 2 ? 1 - sAge[i] / sLife[i] : 1 - Math.pow(sAge[i] / sLife[i], 3);
+      // A spark cools as it flies.
+      const T = sKind[i] === 2 ? sT[i] : sT[i] * (1 - 0.55 * sAge[i] / sLife[i]);
+      sparkData.set([sx[i] * d, (size.h - sy[i]) * d, svx[i] * d, -svy[i] * d, T, sW[i] * d, f, sKind[i]], i * 8);
+    }
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(sparkP);
+    gl.uniform2f(sparkP.u('uRes'), hdr.w, hdr.h);
+    gl.uniform1f(sparkP.u('uExp'), 1 / 22);
+    gl.uniform1f(sparkP.u('uGain'), 5);
+    gl.uniform3fv(sparkP.u('uRamp'), RAMP);
+    gl.bindVertexArray(sparkVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, sparkBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, sparkData, 0, ns * 8);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, ns);
+  }
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+  fireTex = bloom.render(hdr.tex, hdr.w, hdr.h, { threshold: 1, cap: 16, levels: glowDetail(D.level).levels });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(compP);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, fireTex);
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  gl.uniform2f(compP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform3f(compP.u('uTint'), 0.0016, 0.0013, 0.001);
+  gl.uniform1f(compP.u('uBloomK'), 1.0 * dev('bloom'));
+  gl.uniform1f(compP.u('uExpo'), 1.05 * dev('expo'));
+  gl.uniform1f(compP.u('uSeed'), seedN);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.activeTexture(gl.TEXTURE0);
+}
+const TEMPER = flat(TOK.temper), RAMP = flat(TOK.ramp);
+
+/* ---------- sound ---------- */
+// Raw Web Audio on the shared kit: muted by default, woken by a gesture.
+const kit = audioKit({ gain: 0.5 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+let bed = null;
+// The bed: a fizz for burning threads, a roar under the breath, the breath itself.
+function makeBed(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const f = (type, freq, q = 0.7) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = freq; b.Q.value = q; return b; };
+  const gain = () => { const g = ac.createGain(); g.gain.value = 0; return g; };
+  const fizz = gain(), roar = gain(), breath = gain(), pan = ac.createStereoPanner();
+  src.connect(f('highpass', 2400)).connect(f('bandpass', 5200, 0.7)).connect(fizz).connect(pan);
+  src.connect(f('lowpass', 300)).connect(f('lowpass', 520)).connect(roar).connect(pan);
+  const bb = f('bandpass', 850, 0.5);
+  src.connect(bb).connect(f('lowpass', 2100)).connect(breath).connect(kit.out);
+  pan.connect(kit.out);
+  src.start();
+  return { fizz, roar, breath, pan, bb };
+}
+// One crackle: a few milliseconds of band-passed noise.
+function crackle(ac, at, level, pan, freq, dur = 0.004) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = 'bandpass';
+  flt.frequency.value = freq;
+  flt.Q.value = 1.3;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + 0.0008);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * 0.9, dur + 0.01);
+}
+const panOf = x => clamp((x - size.w / 2) / (size.w / 2), -1, 1) * 0.75;
+// The battery touches: a dry snap, a short buzz and a few crackles.
+function zapSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  crackle(ac, at, 0.55, pan, 3200 * jit(0.15), 0.03);
+  const o = ac.createOscillator(), hp = ac.createBiquadFilter(), g = ac.createGain(), pn = ac.createStereoPanner();
+  o.type = 'sawtooth';
+  o.frequency.value = 118 * jit(0.05);
+  hp.type = 'highpass';
+  hp.frequency.value = 900;
+  g.gain.setValueAtTime(0.13, at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 0.07);
+  pn.pan.value = pan;
+  o.connect(hp).connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + 0.09);
+  for (let i = 0; i < 4; i++) crackle(ac, at + 0.01 + Math.random() * 0.08, 0.25 * jit(0.4), pan, 2000 + 4000 * Math.random());
+}
+// A scrape: one small crackle per contact.
+function scrapeSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  crackle(ac, ac.currentTime + 0.003 + Math.random() * 0.01, 0.22 * jit(0.4), panOf(x), 2400 + 3600 * Math.random());
+}
+// A fresh pad lands: a soft thump and a rustle.
+function thumpSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(92, at);
+  o.frequency.exponentialRampToValueAtTime(52, at + 0.12);
+  g.gain.setValueAtTime(0.32, at);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 0.14);
+  o.connect(g).connect(kit.out);
+  o.start(at);
+  o.stop(at + 0.16);
+  crackle(ac, at, 0.2, 0, 500, 0.07);
+  crackle(ac, at + 0.02, 0.06, 0, 2200, 0.22);
+}
+// Once per frame: the bed follows the fire; crackles fall at random.
+function soundFrame(dt) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const B = burn.burning, b = blow.a, now = ac.currentTime;
+  if (!bed && (B || b > 0.01)) bed = makeBed(ac);
+  if (!bed) return;
+  const fizz = Math.min(0.12, 0.022 * Math.sqrt(B / 40)) * (1 + 0.6 * b);
+  bed.fizz.gain.setTargetAtTime(fizz, now, 0.06);
+  bed.roar.gain.setTargetAtTime(b * Math.min(1, B / 500) * 0.32, now, 0.08);
+  bed.breath.gain.setTargetAtTime(b * 0.2, now, 0.07);
+  bed.bb.frequency.setTargetAtTime(700 + 500 * b, now, 0.1);
+  const pan = B ? panOf(toScreen(burn.cx, burn.cy)[0]) : 0;
+  bed.pan.pan.setTargetAtTime(pan, now, 0.1);
+  if (!B) return;
+  const rate = Math.min(90, 5 + 3.2 * Math.sqrt(B)) * (1 + 0.5 * b);
+  let n = Math.floor(rate * dt + Math.random());
+  while (n-- > 0) crackle(ac, now + 0.02 + Math.random() * dt, 0.16 * jit(0.6), clamp(pan + (Math.random() - 0.5) * 0.4, -1, 1), 1600 + 5200 * Math.random());
+  // Forks pop high and short.
+  for (let k = Math.min(forksThisFrame, 2); k > 0; k--) crackle(ac, now + 0.02 + Math.random() * dt, 0.07, (Math.random() - 0.5) * 1.2, 6500, 0.002);
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while anything glows, flies, eases or blows.
+let raf = 0, last = 0, visible = !document.hidden, ptr = null;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function busy() {
+  const easing = Math.hypot(tq[0] - lq[0], tq[1] - lq[1]) > 1e-3;
+  return burn.alive() || ns > 0 || blow.a > 0.002 || blow.target > 0 || easing;
+}
+// One step of everything that moves.
+function tick(dt) {
+  wall += dt;
+  seedN = (seedN + 1) % 997;
+  // The breath swells fast and fades slower.
+  blow.a += (blow.target - blow.a) * (1 - Math.exp(-dt / (blow.target > blow.a ? 0.15 : 0.35)));
+  if (blow.a < 0.002 && !blow.target) blow.a = 0;
+  // The Blow key follows the fire.
+  if (blow.src === 'key' && burn.burning) { blow.x += (burn.cx - blow.x) * dt * 2; blow.y += (burn.cy - blow.y) * dt * 2; }
+  const k = 1 - Math.exp(-dt / 0.15);
+  lq[0] += (tq[0] - lq[0]) * k;
+  lq[1] += (tq[1] - lq[1]) * k;
+  burn.step(dt);
+  spawnSparks(dt);
+  stepSparks(dt);
+}
+function frame(t) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = (t - last) / 1000;
+    last = t;
+    D.frame(raw);
+    const dt = clamp(raw, 0, 0.05);
+    tick(dt);
+    soundFrame(dt);
+    render();
+    again = busy() || !!ptr;
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !ptr);
+  }
+}
+
+/* ---------- pointer ---------- */
+// A press touches the battery to the wool.
+// A drag scrapes it across; a still hold of 280 ms blows instead.
+let holdTo = 0;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function contact(x, y, big) {
+  const [px, py] = toPad(x, y);
+  const hit = burn.touch(px, py, big ? 0.03 : 0.017, big ? 1.2 : 1.1);
+  if (!hit) return false;
+  if (big) { burstAt(x, y, 26); flashAt(x, y); zapSound(x); } else { burstAt(x, y, 3, 3.1); scrapeSound(x); }
+  wake();
+  return true;
+}
+function startBlow(x, y, src) {
+  const [px, py] = src === 'key' ? (burn.burning ? [burn.cx, burn.cy] : [0, 0]) : toPad(x, y);
+  blow.x = px; blow.y = py;
+  blow.r = src === 'key' ? 0.95 : 0.42;
+  blow.target = 1;
+  blow.src = src;
+  wake();
+}
+function endBlow(src) {
+  if (blow.src !== src) return;
+  blow.target = 0;
+  blow.src = null;
+  wake();
+}
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  ptr = { id: e.pointerId, x0: x, y0: y, x, y, mode: 'press', touch: e.pointerType !== 'mouse' };
+  contact(x, y, true);
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press') { ptr.mode = 'blow'; startBlow(ptr.x, ptr.y, 'ptr'); } }, 280);
+  wake();
+}
+function move(e) {
+  const [x, y] = local(e);
+  if (!ptr) {
+    if (e.pointerType === 'mouse') aimLight(x, y);
+    return;
+  }
+  if (e.pointerId !== ptr.id) return;
+  if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 8) { clearTimeout(holdTo); ptr.mode = 'drag'; }
+  if (ptr.mode === 'drag') {
+    // Contacts every 6 px along the path.
+    const n = Math.floor(Math.hypot(x - ptr.x, y - ptr.y) / 6);
+    for (let i = 1; i <= n; i++) contact(ptr.x + (x - ptr.x) * i / n, ptr.y + (y - ptr.y) * i / n, false);
+    if (n) { ptr.x = x; ptr.y = y; }
+  } else {
+    ptr.x = x; ptr.y = y;
+    if (ptr.mode === 'blow') { [blow.x, blow.y] = toPad(x, y); wake(); }
+  }
+  if (!ptr.touch) aimLight(x, y);
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  if (ptr.mode === 'blow') endBlow('ptr');
+  ptr = null;
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') { tq[0] = L0[0]; tq[1] = L0[1]; wake(); } });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+// Enter on the stage touches the battery to a random dense spot.
+stage.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target !== stage) return;
+  e.preventDefault();
+  for (let tries = 0; tries < 40; tries++) {
+    const px = (Math.random() * 2 - 1) * 0.9, py = (Math.random() * 2 - 1) * 0.6;
+    if (pad.dens(px, py) > 0.5) { contact(...toScreen(px, py), true); break; }
+  }
+});
+
+/* ---------- actions ---------- */
+let padSeed = 4021;
+function newPad(seed, first = false) {
+  pad = buildPad(grade, seed);
+  burn = makeBurn(pad, seed + 1);
+  uploadPad();
+  clearPK();
+  ns = 0;
+  blow.a = blow.target = 0;
+  blow.src = null;
+  if (first) preburn();
+}
+// The first pad opens mid-burn, so its first frame shows every state.
+function preburn() {
+  const R = mulberry32(77);
+  let px = 0.32, py = -0.18;
+  for (let tries = 0; tries < 60 && pad.dens(px, py) < 0.6; tries++) { px = (R() * 2 - 1) * 0.5; py = (R() * 2 - 1) * 0.4; }
+  burn.touch(px, py, 0.03, 1.2);
+  for (let i = 0; i < 150; i++) burn.step(1 / 60);
+}
+act.grade = () => { padSeed = 1 + Math.floor(Math.random() * 2147483000); newPad(padSeed); thumpSound(); if (ready) render(); wake(); };
+act.reset = () => { padSeed = 1 + Math.floor(Math.random() * 2147483000); newPad(padSeed); thumpSound(); if (ready) render(); wake(); };
+act.blow = on => { if (on) startBlow(0, 0, 'key'); else endBlow('key'); };
+
+/* ---------- ready ---------- */
+// The intro holds until the first frame draws.
+resize();
+newPad(padSeed, true);
+render();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+wake();
+
+new ResizeObserver(() => { resize(); if (ready) render(); }).observe(stage);
+// A hidden tab stops the loop and the burn clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>
