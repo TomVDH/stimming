@@ -154,17 +154,18 @@ const failed = msg => {
 if (!gl || !gl.getExtension('EXT_color_buffer_float')) failed('Kintsugi needs WebGL 2 with float targets.');
 
 /* ---------- geometry ---------- */
-// The bowl is an ellipsoid shell cut by the rim plane, on a foot ring.
-// Scaled space divides y by KY, so both walls become spheres round C.
+// The bowl is an ellipsoid shell, cut flat at the rim.
+// A foot ring stands under it.
+// Scaled space divides y by KY: both walls become spheres round C.
 const RO = 1, RI = 0.945, KY = 1.12, CUT = -0.12;
 const RFO = 0.44, RFI = 0.37, HF = 0.12, YT = 0.14;
 const CY = HF + KY * Math.sqrt(RO * RO - RFO * RFO);
-// Shards in one break, the gold map half-width and size, nodes per seam.
+// Most shards per break, gold map extent and size, nodes per seam.
 const MAXS = 12, LR = 1.36, GOLD = 2048, NS = 32;
 const f = x => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
 /* ---------- GLSL ---------- */
-// The shared part: the cells of one break, its seams and its gold.
+// Shared GLSL: the cells, seams and gold of one break.
 const COMMON = `
 #define MAXS ${MAXS}
 #define PI 3.14159265
@@ -196,7 +197,8 @@ float vnoise(vec3 p) {
 vec3 warpD(vec3 d) {
   return normalize(d + uW0.w * sin(d.yzx * uW0.xyz + uW1.xyz) + uW2.w * sin(d.zxy * uW2.xyz + uW3.xyz));
 }
-// The lead of cell i over its strongest rival; positive inside the cell.
+// The lead of cell i over its strongest rival.
+// It is positive inside the cell.
 float marginOf(vec3 d, int i) {
   vec3 q = warpD(d);
   float si = -3.0, so = -3.0;
@@ -207,7 +209,7 @@ float marginOf(vec3 d, int i) {
   }
   return si - so;
 }
-// The cell, its nearest rival, and the leads of first over second and second over third.
+// The top cell, its rival, and the leads between the top three.
 void cells3(vec3 d, out int i, out int j, out float m12, out float m23) {
   vec3 q = warpD(d);
   float s1 = -3.0, s2 = -3.0, s3 = -3.0;
@@ -236,7 +238,8 @@ float pairDist(vec3 d, int i, int j, float m) {
   float m2 = dot(warpD(normalize(d + t2 * e)), sd) - m;
   return m * e / max(length(vec2(m1, m2)), 1e-6);
 }
-// When the gold reaches d on the seam between i and j, in radians of seam.
+// When gold reaches d on the seam between cells i and j.
+// The unit is radians of seam.
 // Each seam row holds its arc and 32 arrival samples.
 float seamArrival(vec3 d, int i, int j) {
   int row = min(i, j) * MAXS + max(i, j);
@@ -255,7 +258,7 @@ float veinHalf(vec3 d, float m23) {
   return uVein * (0.6 + 0.85 * n) * (1.0 + 0.6 * exp(-m23 / 0.012));
 }
 struct Seam { float cov; float hgt; float arr; float dist; };
-// The gold of one break at d: cover, ridge height, arrival, crack distance.
+// One break's gold at d: cover, ridge, arrival and crack distance.
 Seam roundAt(vec3 d, float aa) {
   int i, j;
   float m12, m23;
@@ -314,7 +317,8 @@ const float YIN0 = CY - KY * RI;
 const float YRIM = CY + CUT * KY;
 
 struct Hit { float t; int id; int kind; vec3 X; };
-// Kinds: 1 outside, 2 inside, 3 rim, 4 break, 5 foot wall, 6 foot inside, 7 foot sole, 8 foot top.
+// Kinds 1 to 4: outside, inside, rim, break face.
+// Kinds 5 to 8: foot wall, foot inside, foot sole, foot top.
 
 bool sphIv(vec3 O, vec3 V, float r, out vec2 iv) {
   float a = dot(V, V), b = dot(O, V), c = dot(O, O) - r * r, h = b * b - a * c;
@@ -335,7 +339,8 @@ bool cylIv(vec3 o, vec3 v, float r, out vec2 iv) {
   return true;
 }
 // One span of solid along the ray, entered through surface ka.
-// A shard owns only its cell; it finds the break face inside the span.
+// A shard owns only its cell.
+// It finds its break face inside the span.
 // cc is the stretch of ray inside the cell's widened cone.
 void span(vec3 O, vec3 V, float a, float b, int ka, int cell, vec2 cc, inout Hit h) {
   a = max(a, 1e-4);
@@ -359,7 +364,8 @@ void span(vec3 O, vec3 V, float a, float b, int ka, int cell, vec2 cc, inout Hit
     lo = t;
   }
 }
-// The stretch of ray inside a cell's cone, widened past the crack's bends.
+// The stretch of ray inside a cell's cone.
+// The cone is wide enough for the crack's bends.
 vec2 coneIv(vec3 O, vec3 V, int cell) {
   vec2 cc = vec2(-1e9, 1e9);
   if (cell < 0) return cc;
@@ -449,7 +455,8 @@ float sdScene(vec3 p, int m) {
   }
   return d;
 }
-// A soft shadow from the area light: the ray keeps its closest pass.
+// A soft shadow from the area light.
+// The ray keeps its closest pass by any shard.
 // Only shards whose bounds come near the ray take part.
 float shadowRay(vec3 p, vec3 L) {
   int m = 0;
@@ -506,7 +513,8 @@ float occlusion(vec3 p, vec3 n, bool cloth) {
 
 /* lighting */
 float spotAt(vec3 P) { vec2 q = P.xz - uSpot; return mix(0.16, 1.0, exp(-dot(q, q) / 5.0)); }
-// The dim room in the gloss: dark floor, warm ceiling, one far window.
+// The dim room in the gloss: dark floor, warm ceiling.
+// One far window shows as a cool strip.
 vec3 room(vec3 R, float a) {
   vec3 c = mix(vec3(0.005, 0.0047, 0.0045), vec3(0.075, 0.064, 0.052), smoothstep(-0.25, 0.85, R.y));
   // Warm walls catch some of the lamp's spill.
@@ -515,7 +523,8 @@ vec3 room(vec3 R, float a) {
   c += vec3(0.11, 0.115, 0.13) * smoothstep(0.9 - 0.6 * a, 0.98 - 0.3 * a, dot(R, w));
   return c;
 }
-// The room's bounce, with a little more from the side the viewer stands.
+// The room's bounce light.
+// A little more comes from the viewer's side.
 vec3 roomAmb(vec3 N) { return mix(vec3(0.02, 0.019, 0.018), vec3(0.13, 0.12, 0.107), N.y * 0.5 + 0.5) + vec3(0.1, 0.095, 0.09) * max(dot(N, normalize(vec3(0.35, 0.45, 0.82))), 0.0); }
 // GGX from the key light, widened by its size.
 vec3 keySpec(vec3 N, vec3 V, vec3 L, float rough, vec3 F0) {
@@ -563,7 +572,8 @@ float innerTau(vec3 pr, out float pool) {
   pool = 1.0 - smoothstep(0.78, 1.0, r);
   return t + pool * 0.7;
 }
-// Where the outside glaze stops, with drips that ran down in the kiln.
+// Where the outside glaze stops.
+// Drips ran down below it in the kiln.
 float glazeLine(vec3 pr) {
   vec2 n = normalize(pr.xz);
   float y = 0.3 + 0.035 * (vnoise(vec3(n * 2.5, 1.0)) - 0.5);
@@ -697,7 +707,8 @@ vec3 shadeBowl(vec3 ro, vec3 rd, Hit h) {
   if (h.kind == 2) tau = innerTau(pr, pool);
   else if (h.kind == 1) tau = outerTau(pr, flash);
   else if (h.kind == 3) {
-    // The glaze thins over the crest of the lip and shows the body.
+    // The glaze thins over the crest of the lip.
+    // There the body shows through.
     float ri = sqrt(RI * RI - CUT * CUT), rv = sqrt(RO * RO - CUT * CUT);
     tau = mix(0.6, 0.16, 1.0 - abs(2.0 * clamp((length(X.xz) - ri) / (rv - ri), 0.0, 1.0) - 1.0));
   }
@@ -713,7 +724,8 @@ vec3 shadeBowl(vec3 ro, vec3 rd, Hit h) {
   float rough = mix(0.85, uGP.x, gl);
   float glazeAmt = gl;
   if (h.kind == 4) {
-    // The break shows the wall in section: clay, with glass at both faces.
+    // The break shows the wall in section.
+    // Clay fills it; glass coats both faces.
     float s = (length(X) - RI) / (RO - RI), pIn, fl;
     float tIn = d.y <= CUT / RI ? innerTau(d * RI / SC + vec3(0.0, CY, 0.0), pIn) : 0.25;
     float tOut = outerTau(d * RO / SC + vec3(0.0, CY, 0.0), fl);
@@ -864,7 +876,8 @@ const vao = gl.createVertexArray();
 const draw3 = () => { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); };
 
 /* ---------- textures ---------- */
-// The gold map holds every past break: cover in red, ridge height in green.
+// The gold map holds every past break.
+// Red holds cover; green holds ridge height.
 const goldT = target(gl, GOLD, GOLD, { format: gl.RGBA8, clear: true });
 // Each seam row: its arc, then 32 arrival times along it.
 const SEAM_W = 2 + NS, SEAM_H = MAXS * MAXS;
@@ -960,7 +973,8 @@ function cellOf(d, sites, W) {
 }
 
 /* ---------- one break ---------- */
-// The blow sets the sites: a chip at the point, a ring of wedges, larger pieces beyond.
+// The blow sets the sites: a chip at the point.
+// A ring of wedges surrounds it; larger pieces lie beyond.
 function makeSites(p, rnd) {
   const e1 = norm(cross(p, Math.abs(p[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = cross(p, e1);
   const at = (rho, beta) => norm(add(mul(p, Math.cos(rho)), mul(add(mul(e1, Math.cos(beta)), mul(e2, Math.sin(beta))), Math.sin(rho))));
@@ -1116,7 +1130,7 @@ function shards(rd, rnd) {
     const rad = Math.max(...c.pts.map(p => len(sub(p, mid)))) + 0.04;
     const size = Math.sqrt(c.area / maxArea);
     const sh = { i, mid, rad, size, fixed: false, qf: QI, Tf: [0, 0, 0], toe: [0, 0, 0], toeF: [0, 0, 0], axis: [1, 0, 0], contact: [0, 0, 0] };
-    // A base piece that holds most of the foot stays where it stands.
+    // A base piece with most of the foot stays standing.
     if (c.ring > ringAll * 0.4 && n[1] < -0.75) { sh.fixed = true; return sh; }
     let hl = Math.hypot(n[0], n[2]), h;
     if (hl < 1e-3) { const a = rnd() * TAU; h = [Math.cos(a), 0, Math.sin(a)]; hl = 0; } else h = [n[0] / Math.hypot(n[0], n[2]), 0, n[2] / Math.hypot(n[0], n[2])];
@@ -1178,7 +1192,7 @@ function shards(rd, rnd) {
   rd.fallEnd = Math.max(fallEnd, 1.2);
 }
 const smoother = t => t * t * t * (t * (t * 6 - 15) + 10);
-// The pose of one shard at time t of the fall, or of the mend.
+// One shard's pose at time t of the fall or the mend.
 function pose(sh, phase, t) {
   if (sh.fixed) return [QI, [0, 0, 0]];
   if (phase === 'rest') return [sh.qf, sh.Tf];
@@ -1195,7 +1209,8 @@ function pose(sh, phase, t) {
     const qr = qAxis(sh.axis, a), q = qMul(qr, sh.qf);
     return [q, add(qRot(qr, sub(sh.Tf, sh.contact)), sh.contact)];
   }
-  // The mend lifts each piece clear of the cloth and turns it home.
+  // The mend lifts each piece clear of the cloth.
+  // It turns each piece back into place.
   const u = clamp((t - sh.mendAt) / (MEND_T - sh.mendAt)), e = smoother(u);
   const q = qSlerp(sh.qf, QI, e);
   const toe = add(add(mul(sh.toeF, 1 - e), mul(sh.toe, e)), [0, 0.28 * Math.sin(Math.PI * e) * (0.6 + 0.4 * sh.size), 0]);
@@ -1234,7 +1249,8 @@ function blip(ac, at, { f, dur, level, pan = 0, attack = 0.001 }) {
   o.start(at);
   o.stop(at + dur + 0.03);
 }
-// The blow: a sharp knock, the bowl's ring cut short, and the crack running.
+// The blow: a sharp knock and the bowl's ring, cut short.
+// Then quick ticks: the crack running.
 function breakSound(pan) {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -1244,7 +1260,8 @@ function breakSound(pan) {
   [[1, 0.2, 0.32], [2.32, 0.13, 0.2], [4.08, 0.08, 0.12], [6.3, 0.045, 0.07]].forEach(([r, l, d]) => blip(ac, at, { f: f0 * r, dur: d, level: l, pan }));
   for (let i = 0; i < 10; i++) burst(ac, at + 0.006 + i * 0.007 + Math.random() * 0.006, { f: 2600 + 3600 * Math.random(), q: 3, dur: 0.004 + 0.004 * Math.random(), level: 0.24 * (1 - i / 11), pan });
 }
-// A piece lands on the cloth: a soft thud with a small ceramic tick.
+// A piece lands on the cloth: a soft thud.
+// A small ceramic tick rides on it.
 function settleSound(size, lvl, pan) {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -1289,8 +1306,9 @@ function chime(f, level, pan) {
 }
 
 /* ---------- camera ---------- */
-// Two views: close on the whole bowl, and wide for the pieces on the cloth.
-// The camera eases between them, so it backs off as the bowl falls apart.
+// Two views: close on the whole bowl, wide for the pieces.
+// The camera eases between them.
+// It backs off as the bowl falls apart.
 let size = { w: 1, h: 1, dpr: 1 };
 const cam = { eye: [0, 3, 6], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tanF: 0.25, shift: [0, 0], back: [0, 0, 1], tgt: [0, 0.35, 0] };
 const views = { near: { D: 6, shift: [0, 0] }, wide: { D: 8, shift: [0, 0] } };
@@ -1302,7 +1320,8 @@ function project(p, eye = cam.eye, shift = cam.shift) {
   const v = sub(p, eye), z = dot(v, cam.F);
   return [dot(v, cam.R) / (z * cam.tanF * size.w / size.h) + shift[0], dot(v, cam.U) / (z * cam.tanF) + shift[1]];
 }
-// Fits one set of points in the stage, clear of the corner controls.
+// Fits a set of points in the stage.
+// The corner controls keep their margins.
 function fit(pts) {
   const sx = 1 - 2 * 14 / size.w, top = 1 - 2 * 52 / size.h, bot = -1 + 2 * 60 / size.h;
   const box = D => {
@@ -1341,7 +1360,8 @@ function rayAt(x, y) {
   const nx = (x / size.w) * 2 - 1 - cam.shift[0], ny = (1 - y / size.h) * 2 - 1 - cam.shift[1];
   return norm(add(cam.F, add(mul(cam.R, nx * cam.tanF * size.w / size.h), mul(cam.U, ny * cam.tanF))));
 }
-// The point of the blow, as a direction from C; a miss takes the nearest rim.
+// The point of the blow, as a direction from C.
+// A miss takes the nearest point of the rim.
 function blowAt(x, y) {
   const rd = rayAt(x, y), O = scaled(cam.eye), V = [rd[0], rd[1] / KY, rd[2]];
   const iv = r => {
@@ -1369,7 +1389,8 @@ function blowAt(x, y) {
 const panOf = p => clamp(project(p)[0], -1, 1) * 0.7;
 
 /* ---------- light ---------- */
-// The key light sits up and to the back left; the pointer swings it slowly.
+// The key light sits high, to the left and a little back.
+// The pointer swings it slowly.
 const L0 = { az: -1.75, el: 0.9 };
 const lq = { ...L0 }, tq = { ...L0 };
 const lightDir = q => [Math.cos(q.el) * Math.sin(q.az), Math.sin(q.el), Math.cos(q.el) * Math.cos(q.az)];
@@ -1384,7 +1405,8 @@ function aim(x, y) {
 }
 
 /* ---------- state ---------- */
-// A break runs crack, fall, rest, mend, flow, then the bowl is whole again.
+// A break runs: crack, fall, rest, mend, flow.
+// Then the bowl is whole again.
 const CRACK_V = 7, FLOW_V = 0.8, REST_T = 1.7, MEND_T = 2.3, SET_T = 1.2;
 let state = 'whole', st = 0, round = null, rounds = [];
 let glaze = glazeVals(glazeId), glazeFrom = glaze, glazeTo = glaze, glazeT = 1;
@@ -1463,7 +1485,8 @@ function resize() {
   frame();
   acc = 0;
 }
-// The shard poses for this moment, or none while the bowl is whole.
+// The shard poses for this moment.
+// A whole bowl draws as one piece.
 function shardUniforms() {
   const apart = round && (state === 'fall' || state === 'rest' || (state === 'mend' && st < MEND_T));
   if (!apart) return 0;
@@ -1509,7 +1532,8 @@ function draw(jitter = [0, 0]) {
   gl.uniform1i(u.uRound, round ? 1 : 0);
   const hair = !round ? 0 : state === 'crack' || state === 'pause' ? 1 : state === 'fall' ? clamp(1 - (st - 0.45) / 0.3) : state === 'mend' ? clamp((st - MEND_T * 0.86) / (MEND_T * 0.14)) : state === 'flow' ? 1 : 0;
   gl.uniform1f(u.uHair, hair);
-  gl.uniform1f(u.uCrackT, state === 'crack' ? st * CRACK_V : 1e3);
+  // Reduced motion shows the whole crack net at once.
+  gl.uniform1f(u.uCrackT, state === 'crack' && !reduced() ? st * CRACK_V : 1e3);
   gl.uniform1f(u.uFlowT, state === 'flow' ? (reduced() ? 1e3 : st * FLOW_V) : -1);
   gl.uniform1f(u.uLiveA, state === 'flow' && reduced() ? clamp(st / 1.2) : 1);
   gl.uniform1f(u.uWetW, 0.9);
@@ -1555,7 +1579,7 @@ function breakAt(dir) {
   breakSound(panOf(rest(dir)));
   wake();
 }
-// The sounds a piece makes as it lands, by the fall's own clock.
+// Landing sounds play by the fall's own clock.
 let evAt = 0, chimeAt = 0;
 function step(dt) {
   st += dt;
@@ -1606,7 +1630,8 @@ function mendNow() {
 }
 
 /* ---------- frame loop ---------- */
-// Lively while a break runs, the light eases or a still refines; asleep otherwise.
+// The loop runs while a break plays or the light eases.
+// It also runs while a still frame refines; then it sleeps.
 let raf = 0, last = 0, visible = !document.hidden, ready = false;
 const HALTON = [[0, 0], [0.5, -0.17], [-0.25, 0.33], [0.25, -0.39], [-0.375, 0.11], [0.125, 0.44], [-0.125, -0.28], [0.375, 0.22], [-0.44, -0.06]];
 function wake() {
@@ -1626,7 +1651,8 @@ function tick(now) {
     lq.el += (tq.el - lq.el) * k;
     let easing = Math.abs(tq.az - lq.az) + Math.abs(tq.el - lq.el) > 2e-4;
     if (!easing) { lq.az = tq.az; lq.el = tq.el; }
-    // The camera backs off while the pieces lie apart and comes in as they close.
+    // The camera backs off while the pieces lie apart.
+    // It comes back in as they close.
     wideTo = reduced() || !round ? 0 : state === 'fall' || state === 'rest' || (state === 'mend' && st < MEND_T * 0.45) ? 1 : 0;
     if (Math.abs(wideTo - wideK) > 1e-3) {
       wideK += (wideTo - wideK) * (1 - Math.exp(-dt / 0.45));
@@ -1657,7 +1683,8 @@ function sleepAudio() {
 }
 
 /* ---------- pointer ---------- */
-// A mouse breaks on press; a touch breaks on a tap and turns the light on a drag.
+// A mouse press breaks the bowl.
+// A touch tap breaks it; a touch drag turns the light.
 let down = null;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 function strike(x, y) {
@@ -1689,7 +1716,7 @@ canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
 canvas.addEventListener('pointerleave', e => { if (!down && e.pointerType === 'mouse') { tq.az = L0.az; tq.el = L0.el; wake(); } });
-// Space or Enter on the stage breaks the bowl at a point on its far wall.
+// Space or Enter breaks the bowl on its far wall.
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
   if (e.key !== ' ' && e.key !== 'Enter') return;
