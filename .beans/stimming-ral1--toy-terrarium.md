@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:29:55Z
+updated_at: 2026-11-16T20:54:59Z
 parent: stimming-oh7b
 ---
 
@@ -56,3 +56,8 @@ Tom: "make a higher quality apothecary jar". New profile: belly, round shoulder,
 - A tap near a fern swings it; it settles in about 2 s.
 - Mist fog peaks lower (0.65) and clears faster, so the wake shows through the beads.
 - Not yet: a drop falling from a poked frond, and the bugs.
+
+## Fill research (2026-11-16)
+
+Tom asked to max out the plants and fill, with online examples (moss as fur, plants, particles, volume). Findings and two build paths are in docs/plans/terrarium.md under "The fill, maxed out". Recommendation: A, a raster garden of instanced meshes read by the ray-marched jar.
+- [ ] Tom picks the fill build: A (raster garden) or B (ray march)

@@ -68,6 +68,47 @@ Tom wants a very richly shaded toy: "glass, fog on glass, droplets, geo-node lik
 
 The blockout's fronds are hand-placed arcs. Task 3 replaces them with a growth rule.
 
+## The fill, maxed out (research, 2026-11-16)
+
+Tom: "need further refining on plants and terrarium fill, procedural perhaps; let's max out; find online examples of plants, moss, particles or volume; fur for moss".
+Today every plant is a signed-distance shape in the one ray-march pass. That caps the detail: each frond costs a full evaluation per march step, so the jar holds about 18 fronds and the moss is a bumpy height field with a colour.
+
+### What the examples show
+
+| Example | Technique | What it gives the jar |
+|---|---|---|
+| [iMoss](https://github.com/ledhieu/imoss), a marimo moss ball in three.js | 125,000 to 500,000 instanced strands, 6-segment tapered blades, lit per strand | Moss that is really strands: the light lies in it, the pointer parts it. Licence CC BY-NC: read for the idea, copy no code. |
+| [Shell texturing](https://j-2k.github.io/shelltexture) (after Acerola's "How Do Games Render Fur?") | The surface drawn again in N shells; a hash per cell keeps or drops each shell, so strands taper; height gives fake AO | Cheap fur over a large carpet. Its weak spot is overdraw and steep views. |
+| [Fur shells and fins](https://developer.download.nvidia.com/SDK/10.5/direct3d/Source/Fur/doc/FurShellsAndFins.pdf) (NVIDIA) | Shells for the body, fins for the silhouette | Moss edges that read as fuzz, not a shell stack. |
+| [Instanced L-system forest](https://discourse.threejs.org/t/procedural-instanced-forest-high-performance-real-trees/88610) (three.js forum) | Per-instance attributes precomputed; LOD in the vertex shader | The model for fronds: one leaflet mesh, thousands of instances, placed by a rule. |
+| [Fern by positional information and phyllotaxis](https://www.algorithmicbotany.org/papers/sigcourse.2003/2-27-positional.pdf) (algorithmic botany) | A frond's shape as a function of position along the rachis | The growth rule for fronds, pinnae and pinnules. |
+| [Real-time translucency for leaves](https://www.cg.tuwien.ac.at/research/publications/2007/Habel_2007_RTT/Habel_2007_RTT-Preprint.pdf) (Habel et al.) | Light through a leaf from a thickness and a translucency colour | Backlit fronds that glow yellow-green against the grow light. |
+| [Terrarium layers](https://terrariumtribe.com/terrarium-layers/) and [woodland terrariums](https://terrariumtribe.com/woodland-terrarium/) | Drainage stones, charcoal, a mesh, substrate sloped from 5 to 8 cm at the back to 3 cm at the front, hardscape set first, pillow moss on mounds, sheet moss creeping over stone | A believable build: a cut face with real layers, a slope, a stone and a branch that moss climbs. |
+
+### Two ways to build it
+
+| | A. Raster garden in the glass (recommended) | B. Stay in the ray march |
+|---|---|---|
+| How | Plants, moss, stones and wood are instanced meshes, drawn first into a colour and depth buffer with the same camera. The ray-marched jar reads that buffer through its wall. | Moss becomes a volume band over the bed, marched in slices (shells inside the march). Fronds stay distance shapes, with more detail. |
+| Moss | 150,000 to 400,000 strands, two species, each with leaves and some with spore capsules on stalks | A fuzzy band; no single strands up close |
+| Ferns | Fronds of instanced pinnae (thousands of leaflets), fiddleheads that unroll in the vertex shader | About 20 fronds; leaflets stay a comb |
+| Light | A shadow map from the grow light; translucent leaves; per-strand AO | Soft fake shadows only |
+| Wake | Dry moss leaves fold flat against the stem; wet they spread open (true of real moss). Per-strand, in the vertex shader. | Colour and height only |
+| Cost | A rebuild of the contents (the glass stays). One small opt-in change to `shared/environment.js`: a scene texture can be a live buffer. | Smaller change; a lower ceiling |
+
+### Plan A, stage by stage (one look at a time, stills after each)
+
+1. **Raster pass.** The contents draw as meshes into a buffer the jar reads. Today's look first, as meshes, so nothing jumps.
+2. **The build.** Drainage stones (instanced, round, visible on the cut face), a charcoal band, a mesh line, substrate sloped back to front. Hardscape: one craggy stone and one branch.
+3. **Moss.** Instanced strands placed by a density map: cushion moss on mounds (dense, short, domed), sheet moss creeping over soil and stone. Some cushions carry spore capsules on red stalks. Dry: leaves fold, colour olive. Wet: leaves open, colour deep green, tiny water beads on tips. Growth spreads the density map.
+4. **Ferns.** Fronds grown by rule: rachis, then pinnae by position, then pinnules; fiddleheads unroll with the wake. Translucent, backlit by the grow light. Sori dots on old fronds' undersides.
+5. **Small life and air.** Lichen cups and a few tiny mushrooms on the branch. Humid air: slow motes in the lamp's light inside the jar. The bugs (springtails, a woodlouse) come after this, as their own task.
+6. **Light.** The grow light's shadow map over the whole garden; a soft green bounce from the moss onto the glass.
+
+### Budget
+
+Hold 30 fps on Tom's laptop at Standard. The strand count and shadow size follow the shared quality level (High, Standard, Low) and the slow-frame watch. Idle still sleeps: the garden redraws only while something moves.
+
 ## Tasks
 
 ### Task 1: Blockout (checkpoint)
