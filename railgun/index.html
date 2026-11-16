@@ -676,6 +676,20 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
 float shadeAt(vec3 P);
 #endif
 // Cirrus: long streaks on one wind line, gathered in patches.
+// The shared air for the cirrus, inline: the sky chunk comes before AIR.
+// The horizon sky stands in for the air's own light.
+vec3 cirrusAir(vec3 c, vec3 P) {
+  vec3 v = P - cameraPosition;
+  float hit = length(v);
+  vec3 rd = v / max(hit, 1.0);
+  float yc = max(cameraPosition.y, 0.0), yp = max(P.y, 0.0), dy = max(yp - yc, 1.0);
+  float aR = (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
+  float aM = (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
+  float mu = dot(rd, uSunD);
+  vec3 inL = mix(uHorC, uZenC, 0.17) * 0.92 + uGlowC * (0.4224 / pow(1.5776 - 1.52 * mu, 1.5) / 12.0) * aM / max(aM + aR, 1e-3);
+  return c * T + inL * (1.0 - T);
+}
 vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (dir.y < 0.008) return col;
   // A flat layer nine kilometres up; q.x runs along the wind.
@@ -722,6 +736,8 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   // The shock rim: a faint warm ripple, not a white wave.
   cloud += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
   // A thin veil: the sky shows through the densest streak (Tom).
+  // Far ice sinks into the same air as everything else.
+  cloud = cirrusAir(cloud, Pc);
   return mix(col, cloud, min(1.0, d * (0.45 + 0.2 * rim)));
 }
 vec3 astGlow(vec3 dir) {
@@ -1434,7 +1450,8 @@ const ground = new THREE.Mesh(groundGeo(1670, 1990), new THREE.ShaderMaterial({
       col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * S.w;
     }
     // Far plain goes blue and flat in the air.
-    gl_FragColor = vec4(air(col, vP), 1.0);
+    // The plain's own low dust, then the same air as the ranges and the clouds.
+    gl_FragColor = vec4(aerial(k2haze(col, vP), vP), 1.0);
   }`,
 }));
 scene.add(ground);
