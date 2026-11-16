@@ -66,9 +66,11 @@ void main() {
   // The face bulges a little, as a tube's glass does; the raster follows the bulge.
   vec2 pc = p * (1.0 + 0.09 * r * r);
   float g = uMix, k = uKick;
-  // The raster: one scan line each three CSS pixels.
+  // The raster: one scan line each three CSS pixels, snapped to whole device pixels.
+  // A line of a fraction of a pixel blurs and beats against the screen.
   vec2 pw = (pc * 0.5 + 0.5) * uRes;
-  float row = floor(pw.y / (3.0 * uPx));
+  float rowPx = max(3.0, floor(3.0 * uPx + 0.5));
+  float row = floor(pw.y / rowPx);
   // The warble of a weak hold. Each line sits a hair off, anew each field.
   float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0011;
   // A tracking band climbs the face about every twelve seconds; its lines lean and shiver.
@@ -105,13 +107,16 @@ void main() {
   light = mix(light, mix(neg, light * 0.08, bright), bandw * 0.9);
   light = mix(light, vec3(0.95), core);
   glow += core * 0.2;
-  // Aperture grille and scan lines; a bright line burns wider than a dim one.
+  // Aperture grille: a red, a green and a blue stripe side by side.
+  // Each stripe passes a little of the other colours, so white stays white.
+  // The division keeps the mean light at 1.
   float m = floor(mod(pw.x / max(1.0, floor(uPx + 0.5)), 3.0));
-  vec3 grille = mix(vec3(1.0), vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42, 0.18);
+  vec3 stripe = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.8 + 0.3;
+  vec3 grille = mix(vec3(1.0), stripe / 0.567, 0.38);
+  // Scan lines with dark gaps; a bright line burns wider and fills its gap.
   float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
-  float sy = fract(pw.y / (3.0 * uPx)) - 0.5, sw = mix(0.3, 0.62, sqrt(lum));
-  // The raster is quiet: the grain is the tube's main texture, as on the sight.
-  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.45, 0.42);
+  float sy = fract(pw.y / rowPx) - 0.5, sw = mix(0.26, 0.55, sqrt(lum));
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.5, 0.7);
   // Blemishes: a few dead spots, fixed in the screen.
   for (int i = 0; i < 6; i++) {
     vec2 at = vec2(hash(vec2(float(i), 3.0)), hash(vec2(float(i), 7.0))) * 1.3 - 0.65;
@@ -132,7 +137,8 @@ void main() {
   float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
   float lump = vn(p * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
   float heavy = (0.65 + 0.7 * lump) * (1.0 + 0.5 * r * r);
-  c *= 1.0 + n * 0.85 * heavy * lit;
+  // The grain stays under the raster, so the scan lines read.
+  c *= 1.0 + n * 0.55 * heavy * lit;
   c += n * (0.012 * heavy + 0.2 * k) * lit;
   // A rare spark flies.
   c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.5 * lit;
