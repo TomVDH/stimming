@@ -177,6 +177,7 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Wall foam | Above Fire 0.35 a pale foam line gathers at the wall in slow clumps, thicker in thick soup |
 | Rising bubbles | Small bubbles rise through thin broth over the hot spots: three depth slices, a rim and a glint, dimmed by the depth absorption; more with Fire |
 | Waterline | The soup climbs each thing in a thin film with a lit lip; a thing that bobbed up keeps a wet, soup-tinted band that dries down at 2 cm a second. The mark rides in the rotation's w slot; the shader rebuilds w from xyz |
+| Swept glints | While the soup moves, the normal averages five taps along the flow (14 cm span at full speed), so the lamp's glints sweep along the swirl; calm soup keeps its crisp ripples |
 | Film layers | Skin (aux b) sets on calm thick soup and cream, matte and wrinkled; wet broth; glassy fat with a faint oil-film rainbow |
 | Cooking | Things deepen, gloss and shrink a touch; a split thing clears in 0.45 s while its pieces grow in; melting pieces take on the soup's colour |
 | Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |

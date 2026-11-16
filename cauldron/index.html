@@ -1168,7 +1168,7 @@ uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uC
 uniform vec4 uPlumeS[4];
 uniform float uGlowK;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
-uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD;
+uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
 uniform int uNB;
 uniform vec4 uB[${NB * 3}];
@@ -1399,6 +1399,19 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   float e = uRS * uExt * 4.0 / 256.0;
   float hx = surfH(p.xz + vec2(e, 0.0)) - surfH(p.xz - vec2(e, 0.0));
   float hz = surfH(p.xz + vec2(0.0, e)) - surfH(p.xz - vec2(0.0, e));
+  // A moving soup smears its ripples along the flow, so glints streak.
+  vec2 fv = texture(uVel, uv).xy;
+  float sp = length(fv), st = smoothstep(0.05, 0.6, sp);
+  if (st > 0.01) {
+    vec2 o = fv / sp * 0.07 * st;
+    for (int k = -2; k <= 2; k++) {
+      if (k == 0) continue;
+      vec2 q = p.xz + o * float(k);
+      hx += surfH(q + vec2(e, 0.0)) - surfH(q - vec2(e, 0.0));
+      hz += surfH(q + vec2(0.0, e)) - surfH(q - vec2(0.0, e));
+    }
+    hx /= 5.0; hz /= 5.0;
+  }
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
   // Thick soup shows its swirls as low ridges.
   float e2 = 1.5 / 512.0;
@@ -3212,11 +3225,11 @@ function scenePass() {
   const sw = spoonWorld();
   gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
   gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
-  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex].forEach((t, i) => {
+  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex, velTex].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, t);
   });
-  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
+  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD', 'uVel'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
