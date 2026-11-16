@@ -20,7 +20,7 @@ Tom, 2026-11-16: the Clock from the menu probe (stimming-aiir) becomes the defau
 - [x] Concave warp, a wider TV shade, and a selection glow that fades between toys (Tom)
 - [x] Loop test: Fire plays a seamless 3 s loop in the tube while it is in hand
 - [ ] Tom decides: a loop for every toy, or stills only
-- [ ] One still per main-shelf toy in shared/stills/ (Tom chose captured stills)
+- [x] One still per main-shelf toy in shared/stills/ (Tom chose captured stills): 42 stills, 896 KB; tools/stills.mjs renews them
 - [x] Version 0.11 (Tom: keep the per-toy rule); AGENTS.md and README say what changed
 - [ ] Check 1280 px and 375 px; no-JS and a failed script keep the flat shelf
 - [ ] PR, Tom looks, merge
