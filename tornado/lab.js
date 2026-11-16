@@ -36,7 +36,8 @@ const at = (k, f) => {
 const zScale = rRef => 28 * Math.sqrt(Math.max(rRef, 8) / 20);
 let zsNow = 28;
 // Each layer's spin angle and climb, summed frame by frame: 0 is the core, 1 to 5 the sheaths.
-const phase = new Float32Array(12);
+const phase = new Float32Array(14);
+let dsNow = 20;
 function spinLayers(dt, f, spin) {
   const r0 = at('r0', f), vmax = at('vmax', f);
   // The radius at mid height sets every layer's rate.
@@ -49,6 +50,11 @@ function spinLayers(dt, f, spin) {
     phase[i * 2] = (phase[i * 2] + om * dt) % (Math.PI * 2);
     phase[i * 2 + 1] += up * dt;
   }
+  // The dust: one body at its own radius, faster than the funnel.
+  const rD = r0 * (2.2 + (1.18 - 2.2) * f / 5);
+  dsNow = Math.max(rD * 0.22, 5);
+  phase[12] = (phase[12] + vmax * 1.3 / Math.max(rD, 6) * spin * dt) % (Math.PI * 2);
+  phase[13] += vmax * 0.3 * spin * 0.55 / dsNow * dt;
 }
 
 /* ---------- shaders ---------- */
@@ -65,8 +71,10 @@ uniform int uSteps;
 uniform vec3 uSun, uSunCol, uAmb;
 // The tornado: see the table in lab.js.
 uniform float uH, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uMulti, uRain, uDark, uLean, uSway;
-// Spin angle and climb, per layer: 0 is the core, 1 to 5 the sheaths. lab.js integrates them each frame.
-uniform vec2 uPh[6];
+// Spin angle and climb, per layer: 0 the core, 1 to 5 the sheaths, 6 the dust. lab.js integrates them each frame.
+uniform vec2 uPh[7];
+// The dust's noise scale in metres: one value per tornado.
+uniform float uDs;
 // The bands' height scale in metres: one value for the whole funnel, never the local radius.
 uniform float uZs;
 const float CAMH = 1.7;
@@ -134,8 +142,11 @@ float debrisR(float h) { return uR0 * mix(2.2, 1.18, uFk) * (1.0 + 0.6 * h / uDu
 // Each sheath spins as one body at its own Rankine rate, so no texture winds up.
 // Inner sheaths turn and climb fastest; outer ones lag, so the layers shear past each other.
 const int SHEATHS = 5;
-// A sheath's radius, over the funnel radius R: 1.0 to 1.8, with gaps between.
-float sheathR(int k) { return 1.0 + 0.2 * float(k); }
+// A sheath's radius, over the funnel radius R: 1.0 to 1.8 when the funnel is large on screen, wider on a thin one.
+// Detail follows the screen: set per sample from the pixel's size where the ray is.
+// gSp: the gap between sheaths over R, at least about three pixels. gAng: the noise's scale round the funnel.
+float gSp = 0.2, gAng = 1.0;
+float sheathR(int k) { return 1.0 + gSp * float(k); }
 // One sheath's noise, spun as one body. fk: 0 for the inner sheath, 1 for the outer.
 // x is the radius over R: the noise varies through the sheath too, so no streak runs along a ray.
 // The spin and the climb come in as integrated phases, so a new F or spin only changes speed.
@@ -143,9 +154,12 @@ float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) 
   vec2 ph = uPh[idx];
   // Height over the local radius stalls in the flare and smears the bands; uZs does not.
   float zz = h / uZs - ph.y;
-  // The helix: the bands lean as they climb.
-  float a = ang - ph.x - zz * 0.9;
-  float rc = 1.4 + (x - rk) * 2.5;
+  // Features round the funnel keep about the shape of features up it, at any size.
+  float rb = clamp(0.73 * R / uZs, 0.6, 3.5);
+  // Fewer, larger features round a funnel that is thin on screen, so they stay a few pixels wide.
+  float rc = (rb + (x - rk) * 2.5 * 0.2 / gSp) * gAng;
+  // The helix: the bands lean as they climb, by arc, not by angle, so a wide funnel does not shear flat.
+  float a = ang - ph.x - zz * 0.9 * 1.1 / (rb * gAng);
   vec3 c = vec3(cos(a) * rc, zz * 1.1, sin(a) * rc) + float(idx) * 3.17;
   float n = fbm(c, oct);
   // Erosion: fine detail eats into the edges of each billow.
@@ -158,7 +172,7 @@ float funnelD(vec3 p, out float u, int oct) {
   u = h / uH;
   vec2 q = p.xz - axisAt(h);
   float r = length(q), R = radiusAt(h), x = r / R;
-  if (x > 2.0) return 0.0;
+  if (x > 1.25 + 4.0 * gSp) return 0.0;
   float ang = atan(q.y, q.x);
   // The core: the funnel body, its edge ragged by the inner sheath's noise.
   float nc = sheathN(ang, h, 0.8, R, 0.8, 0, oct);
@@ -168,7 +182,7 @@ float funnelD(vec3 p, out float u, int oct) {
   for (int k = 0; k < SHEATHS; k++) {
     float rk = sheathR(k), fk = float(k) / float(SHEATHS - 1);
     // Thin sheaths with clear air between them: the onion's layers.
-    float wk = exp(-pow((x - rk) / 0.085, 2.0));
+    float wk = exp(-pow((x - rk) / (0.42 * gSp), 2.0));
     if (wk < 0.03) continue;
     float n = sheathN(ang, h, x, R, rk, k + 1, oct);
     // Outer sheaths show only their densest noise, so the edge stays wispy.
@@ -195,9 +209,13 @@ void vol(vec3 p, out float d, out float w) {
   // Debris and dust: wider, faster, billowing, low.
   float Rd = debrisR(h);
   if (h < uDustH * 1.8 && r < Rd * 1.3) {
-    float nd = spinNoise(q, h, r, R, max(Rd * 0.22, 5.0), 5, 1.4, 7.3);
-    // Erosion and a tight threshold give the dust billows with edges.
-    nd -= (1.0 - nd) * N(vec3(q.x, h * 1.5, q.y) / max(Rd * 0.05, 2.0) + 5.0) * 0.35;
+    // The dust turns as one body: two crossfaded layers would double at this speed.
+    vec2 phd = uPh[6];
+    vec2 qd = mat2(cos(phd.x), sin(phd.x), -sin(phd.x), cos(phd.x)) * q;
+    vec3 cd = vec3(qd.x / uDs, h / uDs * 0.55 - phd.y, qd.y / uDs);
+    float nd = fbm(cd + 7.3, 5);
+    // Erosion turns with the dust, and a tight threshold gives the billows edges.
+    nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
     float puff = smoothstep(0.42, 0.55, nd);
     d = uDebris * smoothstep(Rd, Rd * 0.3, r * (0.7 + 0.6 * nd)) * (1.0 - smoothstep(uDustH * 0.25, uDustH * 1.4, h + (nd - 0.5) * uDustH * 1.2)) * puff * 2.0;
   }
@@ -221,7 +239,7 @@ float sunDepth(vec3 p, float R) {
     float Rs = radiusAt(s.y), rs = length(qs);
     // The layers' mean shape, no noise: the core, then each sheath as a ring at its mean cover.
     float xs = rs / Rs, m = smoothstep(0.95, 0.75, xs) * 1.6;
-    for (int j = 0; j < SHEATHS; j++) m += exp(-pow((xs - sheathR(j)) / 0.085, 2.0)) * mix(0.45, 0.12, float(j) / float(SHEATHS - 1));
+    for (int j = 0; j < SHEATHS; j++) m += exp(-pow((xs - sheathR(j)) / (0.42 * gSp), 2.0)) * mix(0.45, 0.12, float(j) / float(SHEATHS - 1));
     m *= step(uH * (1.0 - uCond), s.y) * step(s.y, uH + 100.0);
     float Rd = debrisR(s.y);
     float dd = uDebris * smoothstep(Rd, Rd * 0.3, rs) * 0.6 * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, s.y));
@@ -313,7 +331,12 @@ void main() {
       if (t > t1 || T < 0.01) break;
       vec3 p = ro + rd * t;
       vec2 q = p.xz - axisAt(p.y);
-      float r = length(q), R = radiusAt(p.y), Rout = R * 2.0 + 2.0;
+      float r = length(q), R = radiusAt(p.y);
+      // The pixel's size in metres where the ray is now.
+      float foot = t / (uRes.y * uFoc);
+      gSp = max(0.2, 3.5 * foot / R);
+      gAng = clamp(R * 0.06 / foot, 0.3, 1.0);
+      float Rout = R * (1.25 + 4.0 * gSp) + 2.0;
       // Fine steps inside the funnel, long ones outside it.
       float fine = clamp(R * 0.045, 0.3, dtv);
       float st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
@@ -490,13 +513,17 @@ function draw(now) {
   set(sc, 'uFoc', foc);
   set(sc, 'uHz', 0.381966);
   // The distance follows the lens: the base's edge sits near the top of the frame.
-  set(sc, 'uDist', (850 + 160) * foc / 0.47 * K.dist());
-  set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.12 : 0.22);
+  // The camera moves in on thin funnels; the Distance knob multiplies on top.
+  const frameK = 0.5 + 0.5 * Math.min(1, Math.max(0, fk / 3.5)) ** 1.5;
+  set(sc, 'uDist', (850 + 160) * foc / 0.47 * K.dist() * frameK);
+  // A light history: enough to calm the march's grain, too little to smear the spin.
+  set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55);
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
   spinLayers(moving ? dt : 0, fShown, K.spin());
   gl.uniform2fv(sc.u.uPh, phase);
   set(sc, 'uZs', zsNow);
+  set(sc, 'uDs', dsNow);
   set(sc, 'uAmp', K.amp());
   set(sc, 'uFk', fk / 5);
   gl.uniform1i(sc.u.uSteps, K.steps());

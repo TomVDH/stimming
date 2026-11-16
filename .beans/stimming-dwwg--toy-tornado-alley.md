@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:02:38Z
+updated_at: 2026-11-16T22:11:40Z
 parent: stimming-oh7b
 ---
 
@@ -71,3 +71,5 @@ Built; waits for the checkpoint with Tom.
 - Tornado lab, layering, light and smooth F (Tom: "ensure layering and shading light is a bit better", "smooth transition between fujita scales"): each layer's spin angle and climb are integrated per frame in lab.js (uPh), so F or Spin changes only change speed; the F table reads as a clamped Catmull-Rom curve; sheaths sit at 1.0 to 1.8 R with air between; shadow rays see each layer's mean ring, so outer sheaths shade inner ones; warm bounce from the wheat lights the lower funnel. Headless 60 fps at 0.6 resolution.
 
 - Fix (Tom: "you did a regression", "warped in the middle when switching", "fucked at low F levels"): the climb term divided height by the local radius; in the flare that ratio stalls, so the upper funnel smeared into vertical sheets. The bands now use one height scale per funnel (uZs, gentle with size). A slider jump eases over about 3 s.
+
+- Fix (Tom: "the onion layers blend together and smoothen the lower the F scale is", "properly fix all"): detail now follows the screen: sheath gaps stay three pixels or more (gSp) and the noise thins round a funnel that is thin on screen (gAng); the camera moves in on thin funnels; features round the funnel keep the shape of features up it at any size; the helix leans by arc, not angle (wide funnels had sheared flat); the dust spins as one body with integrated phases (the crossfade doubled at F4 and F5); lighter history (0.55), default resolution 0.75. Headless 60 fps at F1, F3, F5.
