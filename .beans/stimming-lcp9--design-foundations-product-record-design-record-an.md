@@ -13,5 +13,7 @@ Tom, 2026-11-16: the project lacks design implementation for the Stimming brand.
 - [x] Install intent, ui-ux-pro-max, taste-skill and impeccable (user level; impeccable without hooks)
 - [x] PRODUCT.md from AGENTS.md and Tom's answers (audience, content zone, authoring)
 - [ ] genjutsu: no marketplace source in adjudant; Tom names it
-- [ ] DESIGN.md: record the incumbent visual system from shared/stim.css, the menu and the intro
+- [x] DESIGN.md: record the incumbent visual system from shared/stim.css, the menu and the intro (with .impeccable/design.json)
+- [ ] Tom names the Creative North Star (DESIGN.md, Overview)
+- [ ] Tom rules on the 23 drift and gap rows in DESIGN.md: which to fix, which to keep
 - [ ] Tom decides on the impeccable design hook for this project
