@@ -12,85 +12,145 @@
 :root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 2; }
-h1 { font-size: 16px; margin: 0; }
+body { display: grid; grid-template-columns: minmax(0, 1fr) 290px; min-height: 100vh; }
+main { padding: 12px 16px 24px; display: grid; gap: 16px; align-content: start; min-width: 0; }
+aside { border-left: 1px solid var(--line); padding: 12px 14px 24px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+h1 { font-size: 16px; margin: 0 0 2px; }
 h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-label output { color: var(--ink); min-width: 2.5em; font-variant-numeric: tabular-nums; }
-input[type=range] { width: 110px; accent-color: var(--acc); }
+aside h2 { margin-top: 16px; }
+.row { display: grid; grid-template-columns: 92px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
+.row span { color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; }
+.check { display: flex; align-items: center; gap: 8px; color: var(--muted); margin: 4px 0; }
+input[type=range] { width: 100%; accent-color: var(--acc); }
 input[type=checkbox] { accent-color: var(--acc); }
+input[type=text] { font: inherit; color: var(--ink); background: oklch(0.18 0.01 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; width: 100%; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 button { font: inherit; color: var(--ink); background: oklch(0.2 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 button:hover { border-color: var(--acc); }
-#status { color: var(--muted); font-variant-numeric: tabular-nums; }
+button.on { border-color: var(--acc); color: var(--acc); }
+#status { color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 4px; }
 #status.err { color: oklch(0.7 0.17 25); white-space: pre-wrap; }
-main { padding: 12px 16px 24px; display: grid; gap: 16px; }
-.panel { position: relative; }
+p.note { color: var(--muted); margin: 4px 0; }
 .stack { position: relative; width: 100%; }
 .stack canvas { display: block; width: 100%; height: 100%; }
 .stack canvas.over { position: absolute; inset: 0; pointer-events: none; }
+#gun { aspect-ratio: 16 / 9; }
+#gun.phone { aspect-ratio: 9 / 19.5; max-height: 80vh; width: auto; margin: 0 auto; }
 #pano { aspect-ratio: 1000 / 260; }
-.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 #map { aspect-ratio: 1; }
-#eye { aspect-ratio: 16 / 9; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend { display: grid; gap: 2px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 #hover { color: var(--muted); margin-top: 4px; min-height: 1.4em; font-variant-numeric: tabular-nums; }
-@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+@media (max-width: 900px) { body { grid-template-columns: 1fr; } aside { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); } .pair { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Range lab</h1>
-  <label>Erosion <input id="ero" type="range" min="0" max="2" step="0.05" value="1"><output for="ero">1</output></label>
-  <label><input id="forms" type="checkbox" checked> Forms</label>
-  <label>Height x <input id="vex" type="range" min="1" max="8" step="0.5" value="4"><output for="vex">4</output></label>
-  <label>Sun <input id="sun" type="range" min="2" max="60" step="1" value="12"><output for="sun">12</output></label>
-  <label><input id="tint" type="checkbox" checked> Colour by range</label>
-  <button id="reload" type="button" title="Re-import ranges.js (R)">Reload ranges.js</button>
-  <span id="status">Loading</span>
-</header>
 <main>
-  <section class="panel">
-    <h2>Skyline from the eye: bearing left to right, elevation stretched by Height x</h2>
+  <section>
+    <div class="head"><h2>The gun's eye: true scale, the toy's lens, simple air</h2><div class="btns"><button id="phone" type="button">Phone lens</button></div></div>
+    <div class="stack" id="gun"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
+  </section>
+  <section>
+    <h2>Skyline: bearing left to right, elevation stretched by Height x</h2>
     <div class="stack" id="pano"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
     <div id="hover"></div>
   </section>
   <div class="pair">
-    <section class="panel">
-      <h2>Top down: height, 2 km contours, the eye and its views</h2>
+    <section>
+      <h2>Top down: 2 km contours, the eye and its views</h2>
       <div class="stack" id="map"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
     </section>
-    <section class="panel">
-      <h2>The landscape eye: lit, no air</h2>
-      <div class="stack" id="eye"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
+    <section>
+      <h2>Ranges</h2>
+      <div class="legend" id="legend"></div>
     </section>
   </div>
-  <div class="legend" id="legend"></div>
 </main>
+<aside>
+  <h1>Range lab</h1>
+  <div id="status">Loading</div>
+  <div class="btns"><button id="reload" type="button" title="Re-import ranges.js (R)">Reload ranges.js</button></div>
+  <h2>Table</h2>
+  <div class="row"><span>Seed</span><input id="seed" type="text" value="1" spellcheck="false"><span></span></div>
+  <div class="btns">
+    <button id="generate" type="button" title="A new table from the seed (G)">Generate</button>
+    <button id="next" type="button" title="The next seed, then Generate (N)">Next seed</button>
+    <button id="reset" type="button" title="The table in ranges.js">Reset</button>
+  </div>
+  <div class="btns">
+    <button id="copytable" type="button">Copy table</button>
+    <button id="copyland" type="button">Copy settings</button>
+  </div>
+  <p class="note" id="tablenote"></p>
+  <h2>View</h2>
+  <div class="row"><span>Erosion</span><input id="ero" type="range" min="0" max="2" step="0.05" value="1"><output for="ero">1</output></div>
+  <label class="check"><input id="forms" type="checkbox" checked> Forms</label>
+  <div class="row"><span>Height x</span><input id="vex" type="range" min="1" max="8" step="0.5" value="4"><output for="vex">4</output></div>
+  <div class="row"><span>Sun</span><input id="sun" type="range" min="1" max="60" step="1" value="10"><output for="sun">10</output></div>
+  <div class="row"><span>Haze</span><input id="haze" type="range" min="0" max="2" step="0.05" value="1"><output for="haze">1</output></div>
+  <label class="check"><input id="tint" type="checkbox"> Colour by range</label>
+  <div id="land"></div>
+</aside>
 <script type="module">
 import { program, linked, TRI_VS } from '../shared/gl.js';
 
-// The toy's eye: 30 m over the plain; the planet's radius.
-const EYE_Y = 30, PLANET_R = 6.0e6;
-// The panorama's bearings, left to right, and its elevations, in degrees.
+// The planet's radius, as in the toy.
+const PLANET_R = 6.0e6;
+// The toy's two lenses: eye, yaw, vertical field, horizon height on screen.
+const LENS = {
+  wide: { eye: [1670, 30, 1990], yaw: 24.5, fov: 55, horizon: 0.84 },
+  phone: { eye: [800, 22, 3000], yaw: 8.5, fov: 74, horizon: 0.8 },
+};
+// The panorama's bearings, left to right; its lowest elevation, in degrees.
 const B_LEFT = 75, B_RIGHT = -25, E_LOW = -0.6;
 // The views' bearing windows, left edge first.
 const VIEWS = [{ name: 'landscape', l: 67, r: -18, c: 'oklch(0.85 0.12 75)' }, { name: 'portrait', l: 29, r: -12, c: 'oklch(0.8 0.1 200)' }];
-// The landscape lens: yaw, vertical field, horizon height on screen.
-const YAW = 24.5, FOV = 55, HORIZON = 0.84;
+// The generator keeps every crest under this, after the height scale.
+const CREST_MAX = 46000;
+const FORMS = ['crescent', 'mesa', 'cone', 'knife', 'spires', 'slabs'];
+// A cone and a spire field are radial; the rest lie on an arc.
+const radialForm = f => f === 2 || f === 4;
 // One hue per range.
 const HUES = [25, 60, 95, 140, 185, 225, 265, 305, 340, 0, 120, 200];
 const col = i => { const h = HUES[i % HUES.length] * Math.PI / 180; return [0.62 + 0.3 * Math.cos(h), 0.62 + 0.3 * Math.cos(h - 2.1), 0.62 + 0.3 * Math.cos(h + 2.1)]; };
 const css = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
 const rad = d => d * Math.PI / 180;
 const $ = s => document.querySelector(s);
-const knob = { ero: 1, forms: 1, vex: 4, sun: 12, tint: 1 };
+const knob = { ero: 1, forms: 1, vex: 4, sun: 10, haze: 1, tint: 0 };
+let lens = 'wide';
+
+// OKLCH to linear sRGB, clamped: the toy's colour helpers do the same.
+function oklchLin([L, C, h]) {
+  const a = C * Math.cos(rad(h)), b = C * Math.sin(rad(h));
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(v => Math.max(0, v));
+}
+// The toy's rock and sand: slope, wall and the plain.
+const SLOPE = oklchLin([0.43, 0.035, 48]), WALL = oklchLin([0.37, 0.045, 32]), GROUND = oklchLin([0.52, 0.035, 65]);
+
+// The module, the table in use, and the GLSL arrays' size.
+let R = null, table = null, N = 0, version = 0, bounds = null, land = {};
+
+// uRg and uRa for any table: the module's own when it has one.
+function uniformsOf(t) {
+  if (R.rangeUniforms) return R.rangeUniforms(t);
+  const face = m => { const c = R.polar(rad(m[0]), m[1]); return Math.atan2(R.EYE[1] - c[1], R.EYE[0] - c[0]); };
+  return {
+    rg: t.map(m => { const c = R.polar(rad(m[0]), m[1]); return [c[0], c[1], m[2], m[3]]; }),
+    ra: t.map((m, i) => [radialForm(m[6]) ? face(m) : rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, m[6] || 0]),
+  };
+}
+// Pads a list of vec4s to the GLSL array size; empty slots carry crest 0.
+const pad = (a, n) => { const out = a.slice(0, n).map(v => Array.from(v)).flat(); while (out.length < n * 4) out.push(0); return out; };
 
 // The shared GLSL: the march on the curved planet, the normal, the range under a point.
-const COMMON = R => `
+const COMMON = () => `
 uniform vec3 uEye;
 uniform float uTint;
-uniform vec3 uCol[${R.RANGES.length}];
+uniform vec3 uCol[${N}];
 const float PLANET_R = ${PLANET_R.toFixed(1)};
 float drop(vec3 p) { vec2 d = p.xz - uEye.xz; return dot(d, d) / (2.0 * PLANET_R); }
 // The bake's own stride: fine, so thin teeth stay solid.
@@ -119,7 +179,8 @@ vec3 normalAt(vec2 p, float e) {
 int rangeAt(vec2 p) {
   int best = -1;
   float bs = 1e9;
-  for (int i = 0; i < ${R.RANGES.length}; i++) {
+  for (int i = 0; i < ${N}; i++) {
+    if (uRg[i].w < 1.0) continue;
     // A cone (2) and a spire field (4) are radial; they hide with the forms off.
     bool radial = abs(uRa[i].w - 2.0) < 0.5 || abs(uRa[i].w - 4.0) < 0.5;
     if (uForms < 0.5 && radial) continue;
@@ -138,20 +199,71 @@ int rangeAt(vec2 p) {
 vec3 tintAt(vec2 p) {
   int i = rangeAt(p);
   vec3 c = vec3(0.7);
-  for (int k = 0; k < ${R.RANGES.length}; k++) if (k == i) c = uCol[k];
-  return mix(vec3(0.72), c, uTint);
+  for (int k = 0; k < ${N}; k++) if (k == i) c = uCol[k];
+  return c;
+}
+// A short march toward the sun: the crests shade the valleys.
+float shadowAt(vec3 P, vec3 L) {
+  float sh = 1.0, sd = 300.0;
+  for (int j = 0; j < 9; j++) { vec3 q = P + L * sd; sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0)); sd *= 1.7; }
+  return sh;
 }`;
-
-// Each panel's fragment shader.
-const PANO_FS = R => `#version 300 es
+const HEAD = () => `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 o;
 ${R.K2_BASE}
 ${R.RANGE_GLSL}
-${COMMON(R)}
+${COMMON()}
+uniform vec3 uSun;`;
+
+// The gun's eye: the toy's lens, rock colours, a sand plain and simple air.
+const GUN_FS = () => `${HEAD()}
+uniform mat3 uRot;
+uniform vec2 uTan;
+uniform vec3 uSlope, uWall, uGround;
+uniform float uHaze;
+// The sky by direction: deep overhead, pale and warm toward a low sun.
+vec3 skyOf(vec3 rd, vec3 L, vec3 sunC) {
+  float up = clamp(rd.y, 0.0, 1.0), mu = max(dot(rd, L), 0.0);
+  vec3 zen = vec3(0.10, 0.20, 0.45), hor = mix(vec3(0.75, 0.62, 0.52), vec3(0.62, 0.70, 0.80), smoothstep(0.05, 0.4, L.y));
+  vec3 c = mix(hor, zen, pow(up, 0.45));
+  return c + sunC * (0.25 * pow(mu, 8.0) + 3.0 * pow(mu, 900.0));
+}
+// The air between the eye and a point: Rayleigh and a dusty Mie.
+vec3 airOf(vec3 c, vec3 ro, vec3 rd, float t, float y, vec3 inL) {
+  float hR = 8000.0, hM = 3000.0, yc = ro.y, dy = y - yc;
+  float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-y / hR)) * hR / dy;
+  float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-y / hM)) * hM / dy;
+  vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * t * uHaze);
+  return c * T + inL * (1.0 - T);
+}
+void main() {
+  vec3 rd = normalize(uRot * vec3((vUv.x * 2.0 - 1.0) * uTan.x, (vUv.y * 2.0 - 1.0) * uTan.y, -1.0));
+  vec3 L = uSun, sunC = mix(vec3(1.0, 0.5, 0.25), vec3(1.0, 0.94, 0.86), smoothstep(0.03, 0.4, L.y)) * 3.0;
+  vec3 hor = skyOf(normalize(vec3(rd.x, 0.0, rd.z)), L, sunC) * 0.95, amb = vec3(0.35, 0.42, 0.55);
+  float t = march(uEye, rd);
+  vec3 c;
+  if (t > 0.0) {
+    vec3 p = uEye + rd * t, P = vec3(p.x, farH(p.xz), p.z), N = normalAt(p.xz, max(60.0, 0.002 * t));
+    float wall = smoothstep(0.92, 0.5, N.y);
+    vec3 alb = mix(uSlope, uWall, wall);
+    alb = mix(uGround, alb, smoothstep(30.0, 900.0, P.y));
+    if (uTint > 0.5) alb = tintAt(p.xz) * 0.4;
+    c = alb * (sunC * max(dot(N, L), 0.0) * shadowAt(P, L) + amb * (0.55 + 0.45 * N.y));
+    c = airOf(c, uEye, rd, t, max(P.y, 0.0), hor);
+  } else if (rd.y < 0.0) {
+    // The sand plain, out to the curved horizon.
+    float tg = uEye.y / max(-rd.y, 1e-5);
+    c = uGround * (sunC * max(L.y, 0.0) + amb);
+    c = airOf(c, uEye, rd, min(tg, 400000.0), 0.0, hor);
+  } else c = skyOf(rd, L, sunC);
+  // A soft film curve, then sRGB.
+  c = 1.0 - exp(-c * 0.9);
+  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+}`;
+const PANO_FS = () => `${HEAD()}
 uniform vec4 uWin;
-uniform vec3 uSun;
 void main() {
   // Bearings turn left from negative z; the left edge is the highest bearing.
   float b = radians(mix(uWin.x, uWin.y, vUv.x)), e = radians(mix(uWin.z, uWin.w, vUv.y));
@@ -163,18 +275,10 @@ void main() {
   vec3 N = normalAt(p.xz, max(60.0, 0.002 * t));
   float l = 0.35 + 0.65 * max(dot(N, uSun), 0.0);
   // Far ground fades a little, so the layers part.
-  vec3 c = tintAt(p.xz) * l * mix(1.0, 0.6, smoothstep(40000.0, 260000.0, t));
-  o = vec4(c, t / 650000.0);
+  o = vec4(tintAt(p.xz) * l * mix(1.0, 0.6, smoothstep(40000.0, 260000.0, t)), 1.0);
 }`;
-const MAP_FS = R => `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 o;
-${R.K2_BASE}
-${R.RANGE_GLSL}
-${COMMON(R)}
+const MAP_FS = () => `${HEAD()}
 uniform vec4 uBox;
-uniform vec3 uSun;
 uniform float uPx;
 void main() {
   // Screen x is world x; screen up is negative z.
@@ -189,83 +293,86 @@ void main() {
   float line = 1.0 - smoothstep(0.0, 1.2 * w, min(fract(s), 1.0 - fract(s)));
   float bold = 1.0 - smoothstep(0.0, 1.6 * w, min(fract(s / 5.0), 1.0 - fract(s / 5.0)) * 5.0);
   c = mix(c, vec3(0.05), 0.45 * line);
-  c = mix(c, vec3(0.02), 0.6 * bold);
-  o = vec4(c, 1.0);
-}`;
-const EYE_FS = R => `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 o;
-${R.K2_BASE}
-${R.RANGE_GLSL}
-${COMMON(R)}
-uniform mat3 uRot;
-uniform vec2 uTan;
-uniform vec3 uSun;
-void main() {
-  vec3 rd = normalize(uRot * vec3((vUv.x * 2.0 - 1.0) * uTan.x, (vUv.y * 2.0 - 1.0) * uTan.y, -1.0));
-  vec3 sky = mix(vec3(0.2, 0.22, 0.28), vec3(0.08, 0.09, 0.13), clamp(rd.y * 3.0, 0.0, 1.0));
-  float t = march(uEye, rd);
-  // A miss below the horizon is the near plain.
-  if (t < 0.0) { o = vec4(rd.y < -0.002 ? vec3(0.16, 0.14, 0.12) : sky, 1.0); return; }
-  vec3 p = uEye + rd * t;
-  vec3 N = normalAt(p.xz, max(60.0, 0.002 * t));
-  // A short march toward the sun shades the valleys.
-  float sh = 1.0, sd = 300.0;
-  vec3 P = vec3(p.x, farH(p.xz), p.z);
-  for (int j = 0; j < 9; j++) { vec3 q = P + uSun * sd; sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0)); sd *= 1.7; }
-  float l = 0.25 + 0.75 * max(dot(N, uSun), 0.0) * sh;
-  o = vec4(tintAt(p.xz) * l, 1.0);
+  o = vec4(mix(c, vec3(0.02), 0.6 * bold), 1.0);
 }`;
 
 // A panel: its canvases, its context, its program.
 const panels = {};
-for (const id of ['pano', 'map', 'eye']) {
+for (const id of ['gun', 'pano', 'map']) {
   const box = $('#' + id), gl = box.querySelector('canvas.gl').getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
   panels[id] = { box, gl, over: box.querySelector('canvas.over'), vao: gl.createVertexArray(), prog: null };
 }
-let R = null, version = 0, bounds = null;
+const SHADERS = { gun: GUN_FS, pano: PANO_FS, map: MAP_FS };
+
+async function load() {
+  const v = ++version;
+  setStatus('Loading ranges.js');
+  try {
+    R = await import(`./ranges.js?v=${Date.now()}`);
+    N = R.RANGE_MAX || R.RANGES.length;
+    if (!table || table.src === 'module') useModuleTable();
+    buildLand();
+    for (const [id, fs] of Object.entries(SHADERS)) {
+      const P = panels[id];
+      if (P.prog) P.gl.deleteProgram(P.prog.p);
+      P.prog = program(P.gl, TRI_VS, fs());
+    }
+    await Promise.all(Object.values(panels).map(P => linked(P.gl, { a: P.prog })));
+    if (v !== version) return;
+    tableChanged();
+  } catch (err) {
+    setStatus(String(err.message || err), true);
+  }
+}
+function setStatus(t, err = false) { $('#status').className = err ? 'err' : ''; $('#status').textContent = t; }
+
+function useModuleTable() { table = R.RANGES.map(m => m.slice()); table.src = 'module'; }
 
 // The map's box: every range's band and the eye, square, with a margin.
 function mapBox() {
   let x0 = R.EYE[0], x1 = x0, z0 = R.EYE[1], z1 = z0;
-  R.rangeRg().forEach(([x, z, rc]) => { const e = 1.8 * rc; x0 = Math.min(x0, x - e); x1 = Math.max(x1, x + e); z0 = Math.min(z0, z - e); z1 = Math.max(z1, z + e); });
+  uniformsOf(table).rg.forEach(([x, z, rc]) => { const e = 1.8 * rc; x0 = Math.min(x0, x - e); x1 = Math.max(x1, x + e); z0 = Math.min(z0, z - e); z1 = Math.max(z1, z + e); });
   const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, half = Math.max(x1 - x0, z1 - z0) / 2 * 1.04;
   return [cx - half, cz - half, cx + half, cz + half];
 }
 
-// The panorama's elevation span follows the height stretch.
-function panoWin() {
-  const box = panels.pano.box.getBoundingClientRect();
-  const span = (B_LEFT - B_RIGHT) * box.height / box.width / knob.vex;
-  return [B_LEFT, B_RIGHT, E_LOW, E_LOW + span];
-}
-
-async function load() {
-  const v = ++version;
-  $('#status').className = ''; $('#status').textContent = 'Loading ranges.js';
-  try {
-    R = await import(`./ranges.js?v=${Date.now()}`);
-    for (const [id, fs] of [['pano', PANO_FS], ['map', MAP_FS], ['eye', EYE_FS]]) {
-      const P = panels[id];
-      if (P.prog) P.gl.deleteProgram(P.prog.p);
-      P.prog = program(P.gl, TRI_VS, fs(R));
-    }
-    await Promise.all(Object.values(panels).map(P => linked(P.gl, { a: P.prog })));
-    if (v !== version) return;
-    bounds = mapBox();
-    legend();
-    draw();
-  } catch (err) {
-    $('#status').className = 'err'; $('#status').textContent = String(err.message || err);
-  }
-}
-
-function legend() {
-  $('#legend').innerHTML = R.RANGES.map((m, i) => {
-    const form = ['crescent', 'mesa', 'cone', 'knife', 'spires', 'slabs'][m[6] || 0] ?? `form ${m[6]}`;
-    return `<span><i style="background:${css(col(i))}"></i>${i} ${form} · ${m[0]}° · ${(m[1] / 1000).toFixed(0)} km · crest ${(m[3] / 1000).toFixed(1)} km</span>`;
+function tableChanged() {
+  bounds = mapBox();
+  const hk = landHeight();
+  $('#legend').innerHTML = table.map((m, i) => {
+    const form = FORMS[m[6] || 0] ?? `form ${m[6]}`, top = m[3] * hk;
+    return `<span><i style="background:${css(col(i))}"></i>${i} ${form} · ${m[0].toFixed(1)}° · ${(m[1] / 1000).toFixed(0)} km · crest ${(top / 1000).toFixed(1)} km${top > CREST_MAX ? ' (over 46)' : ''}</span>`;
   }).join('');
+  $('#tablenote').textContent = table.src === 'module' ? `The table in ranges.js: ${table.length} ranges.` : `Generated from seed ${table.src}: ${table.length} ranges.`;
+  draw();
+}
+
+// The landscape parameters, when ranges.js has them.
+function buildLand() {
+  const box = $('#land');
+  if (!R.LAND) { box.innerHTML = '<h2>Landscape</h2><p class="note">ranges.js has no LAND table yet.</p>'; land = {}; return; }
+  const keys = R.LAND_KEYS || Object.keys(R.LAND), groups = {};
+  for (const k of keys) {
+    const d = R.LAND[k];
+    if (!(k in land)) land[k] = d.value;
+    (groups[d.group || 'Landscape'] ||= []).push(k);
+  }
+  for (const k of Object.keys(land)) if (!keys.includes(k)) delete land[k];
+  box.innerHTML = Object.entries(groups).map(([g, ks]) => `<h2>${g}</h2>` + ks.map(k => {
+    const d = R.LAND[k];
+    return `<div class="row"><span title="${k}">${d.label || k}</span><input data-land="${k}" type="range" min="${d.min}" max="${d.max}" step="${d.step}" value="${land[k]}"><output>${land[k]}</output></div>`;
+  }).join('')).join('') + '<div class="btns"><button id="landreset" type="button">Defaults</button></div>';
+  box.querySelectorAll('input[data-land]').forEach(el => el.addEventListener('input', () => {
+    land[el.dataset.land] = +el.value; el.nextElementSibling.textContent = el.value;
+    if (el.dataset.land === 'height') tableChanged(); else draw();
+  }));
+  $('#landreset').addEventListener('click', () => { land = {}; buildLand(); tableChanged(); });
+}
+const landHeight = () => ('height' in land ? land.height : 1);
+function landArray() {
+  if (!R.LAND) return null;
+  if (R.landValues) return R.landValues(land);
+  return new Float32Array((R.LAND_KEYS || Object.keys(R.LAND)).map(k => land[k] ?? R.LAND[k].value));
 }
 
 // Sizes a canvas to its box at the screen's density, two at most.
@@ -273,61 +380,77 @@ function fit(c) {
   const r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
   const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-  return d;
 }
 
-function common(gl, u) {
-  gl.uniform4fv(u.uRg, R.rangeRg().flat());
-  gl.uniform4fv(u.uRa, R.rangeRa().flat());
+function common(gl, u, eye) {
+  const { rg, ra } = uniformsOf(table);
+  gl.uniform4fv(u.uRg, pad(rg, N));
+  gl.uniform4fv(u.uRa, pad(ra, N));
   gl.uniform1f(u.uEro, knob.ero);
   gl.uniform1f(u.uForms, knob.forms);
   if (u.uBump) gl.uniform1f(u.uBump, 1);
+  const la = landArray();
+  if (la && u.uLand) gl.uniform1fv(u.uLand, la);
   gl.uniform1f(u.uTint, knob.tint);
-  gl.uniform3fv(u.uCol, R.RANGES.map((m, i) => col(i)).flat());
-  gl.uniform3f(u.uEye, R.EYE[0], EYE_Y, R.EYE[1]);
-  // The sun stands behind the eye's right shoulder.
-  const s = rad(knob.sun), a = rad(YAW - 40);
+  gl.uniform3fv(u.uCol, pad(table.map((m, i) => [...col(i), 0]), N).filter((v, i) => i % 4 < 3));
+  gl.uniform3f(u.uEye, ...eye);
+  // The sun stands right of the wide lens's look.
+  const s = rad(knob.sun), a = rad(LENS.wide.yaw - 36);
   gl.uniform3f(u.uSun, -Math.sin(a) * Math.cos(s), Math.sin(s), -Math.cos(a) * Math.cos(s));
 }
 
-function run(id, set) {
+function run(id, eye, set) {
   const P = panels[id], gl = P.gl, c = gl.canvas;
   fit(c); fit(P.over);
   gl.viewport(0, 0, c.width, c.height);
   gl.useProgram(P.prog.p);
-  common(gl, P.prog.u);
+  common(gl, P.prog.u, eye);
   set(gl, P.prog.u, c);
   gl.bindVertexArray(P.vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
+// The panorama's elevation span follows the height stretch.
+function panoWin() {
+  const box = panels.pano.box.getBoundingClientRect();
+  return [B_LEFT, B_RIGHT, E_LOW, E_LOW + (B_LEFT - B_RIGHT) * box.height / box.width / knob.vex];
+}
+
 let pending = 0;
 function draw() {
+  if (!R || !panels.gun.prog) return;
   cancelAnimationFrame(pending);
   pending = requestAnimationFrame(() => {
-    const t0 = performance.now();
-    const win = panoWin();
-    run('pano', (gl, u) => gl.uniform4f(u.uWin, ...win));
-    run('map', (gl, u, c) => { gl.uniform4f(u.uBox, ...bounds); gl.uniform1f(u.uPx, (bounds[2] - bounds[0]) / c.width); });
-    run('eye', (gl, u, c) => {
+    const t0 = performance.now(), win = panoWin(), L = LENS[lens], wide = [...LENS.wide.eye];
+    run('gun', L.eye, (gl, u, c) => {
       // Yaw, then pitch, as the toy's camera turns.
-      const ty = Math.tan(rad(FOV / 2)), pitch = Math.atan((2 * HORIZON - 1) * ty), y = rad(YAW);
+      const ty = Math.tan(rad(L.fov / 2)), pitch = Math.atan((2 * L.horizon - 1) * ty), y = rad(L.yaw);
       const cy = Math.cos(y), sy = Math.sin(y), cp = Math.cos(pitch), sp = Math.sin(pitch);
       gl.uniformMatrix3fv(u.uRot, false, [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
       gl.uniform2f(u.uTan, ty * c.width / c.height, ty);
+      gl.uniform3fv(u.uSlope, SLOPE); gl.uniform3fv(u.uWall, WALL); gl.uniform3fv(u.uGround, GROUND);
+      gl.uniform1f(u.uHaze, knob.haze);
     });
+    run('pano', wide, (gl, u) => gl.uniform4f(u.uWin, ...win));
+    run('map', wide, (gl, u, c) => { gl.uniform4f(u.uBox, ...bounds); gl.uniform1f(u.uPx, (bounds[2] - bounds[0]) / c.width); });
     Object.values(panels).forEach(P => P.gl.finish());
     overlays(win);
-    $('#status').textContent = `${R.RANGES.length} ranges · drawn in ${(performance.now() - t0).toFixed(0)} ms`;
+    setStatus(`${table.length} ranges · drawn in ${(performance.now() - t0).toFixed(0)} ms`);
   });
 }
 
 // Ticks, view windows and labels over the panels.
 function overlays(win) {
-  const ink = 'oklch(0.93 0.01 260 / 0.75)', faint = 'oklch(0.93 0.01 260 / 0.25)';
-  // Panorama: bearing ticks, elevation ticks, the view windows.
+  const ink = 'oklch(0.93 0.01 260 / 0.75)', faint = 'oklch(0.93 0.01 260 / 0.25)', d = Math.min(2, devicePixelRatio || 1);
   {
-    const c = panels.pano.over, g = c.getContext('2d'), d = Math.min(2, devicePixelRatio || 1);
+    const c = panels.gun.over, g = c.getContext('2d');
+    g.clearRect(0, 0, c.width, c.height);
+    g.font = `${11 * d}px Gabarito, sans-serif`; g.fillStyle = 'oklch(1 0 0 / 0.7)';
+    const L = LENS[lens];
+    g.fillText(`${lens === 'wide' ? 'Landscape' : 'Phone'} lens · eye ${L.eye.join(', ')} · yaw ${L.yaw}° · field ${L.fov}°`, 8 * d, 16 * d);
+  }
+  {
+    const c = panels.pano.over, g = c.getContext('2d');
     g.clearRect(0, 0, c.width, c.height);
     g.font = `${11 * d}px Gabarito, sans-serif`;
     const X = b => (win[0] - b) / (win[0] - win[1]) * c.width, Y = e => (1 - (e - win[2]) / (win[3] - win[2])) * c.height;
@@ -343,9 +466,8 @@ function overlays(win) {
       g.fillText(v.name, X(v.l) + 4 * d, y - 3 * d);
     });
   }
-  // Map: the eye, the view wedges, range numbers.
   {
-    const c = panels.map.over, g = c.getContext('2d'), d = Math.min(2, devicePixelRatio || 1), B = bounds;
+    const c = panels.map.over, g = c.getContext('2d'), B = bounds;
     g.clearRect(0, 0, c.width, c.height);
     const X = x => (x - B[0]) / (B[2] - B[0]) * c.width, Y = z => (z - B[1]) / (B[3] - B[1]) * c.height;
     const ex = X(R.EYE[0]), ey = Y(R.EYE[1]), far = 260000;
@@ -354,16 +476,15 @@ function overlays(win) {
       for (const b of [v.l, v.r]) { const [x, z] = R.polar(rad(b), far); g.beginPath(); g.moveTo(ex, ey); g.lineTo(X(x), Y(z)); g.stroke(); }
       g.globalAlpha = 1;
     });
-    // Rings every 50 km about the eye.
     g.strokeStyle = faint; g.lineWidth = d;
     for (let r = 50000; r <= 250000; r += 50000) { g.beginPath(); g.arc(ex, ey, r / (B[2] - B[0]) * c.width, 0, 2 * Math.PI); g.stroke(); }
     g.fillStyle = 'oklch(0.85 0.12 75)'; g.beginPath(); g.arc(ex, ey, 4 * d, 0, 2 * Math.PI); g.fill();
     g.font = `600 ${12 * d}px Gabarito, sans-serif`; g.textAlign = 'center';
-    R.rangeRg().forEach(([x, z, rc], i) => {
-      const m = R.RANGES[i];
+    uniformsOf(table).rg.forEach(([x, z, rc], i) => {
+      const m = table[i];
       // A band's label sits on its arc's middle; a radial form's on its centre.
       let lx = x, lz = z;
-      if (m[6] !== 2 && m[6] !== 4) { const a = rad(m[5]) + Math.PI; lx = x + rc * Math.cos(a); lz = z + rc * Math.sin(a); }
+      if (!radialForm(m[6])) { const a = rad(m[5]) + Math.PI; lx = x + rc * Math.cos(a); lz = z + rc * Math.sin(a); }
       g.fillStyle = 'oklch(0.13 0.01 260 / 0.7)'; g.beginPath(); g.arc(X(lx), Y(lz), 9 * d, 0, 2 * Math.PI); g.fill();
       g.fillStyle = css(col(i)); g.fillText(String(i), X(lx), Y(lz) + 4 * d);
     });
@@ -372,22 +493,92 @@ function overlays(win) {
   }
 }
 
-// Hover on the panorama: bearing and elevation under the pointer.
+/* ---------- the generator ---------- */
+// A small seeded random: the same seed gives the same table.
+function rng(seed) {
+  let a = 0;
+  for (const ch of String(seed)) a = Math.imul(a ^ ch.charCodeAt(0), 2654435761) >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// A table that fills the landscape window, with one low gap.
+function generate(seed) {
+  const r = rng(seed), lo = VIEWS[0].r, hi = VIEWS[0].l, between = (a, b) => a + (b - a) * r();
+  const n = Math.min(N, 6 + Math.floor(r() * 4));
+  const cap = CREST_MAX / landHeight();
+  // The gap: six to ten degrees, inside the window, kept low.
+  const gw = between(6, 10), gc = between(lo + 6 + gw / 2, hi - 6 - gw / 2);
+  // At most one of each special form; a mesa line goes in the gap.
+  const forms = [];
+  if (r() < 0.6) forms.push(1);
+  for (const f of [2, 4, 5, 3]) if (r() < 0.5) forms.push(f);
+  while (forms.length < n) forms.push(0);
+  forms.length = n;
+  // Bearings: one slot per range across the window, minus the gap.
+  const span = hi - lo - gw, out = [];
+  const slots = forms.filter(f => f !== 1).length;
+  let k = 0;
+  for (const f of forms) {
+    let b, d, crest, rc, sp = 0, op = 0;
+    if (f === 1) {
+      b = gc; d = between(70000, 95000);
+      crest = Math.min(d * Math.tan(rad(1.4)), between(2500, 4000));
+      rc = between(12000, 20000); sp = between(90, 120); op = 300;
+    } else {
+      let s = lo + (k + between(0.2, 0.8)) * span / slots;
+      if (s > gc - gw / 2) s += gw;
+      b = s; k++;
+      d = between(80000, 210000);
+      // Taller crests stand farther; none rises past about seven degrees.
+      crest = Math.min(cap, between(4000, 30000) * (0.5 + 0.5 * (d - 80000) / 130000), d * Math.tan(rad(6.5)));
+      crest = Math.max(4000, crest);
+      if (radialForm(f)) rc = crest * between(1.4, 2.2) * (f === 4 ? 1.2 : 1);
+      else { rc = d * between(0.15, 0.4); sp = between(90, 150); op = Math.round(between(0, 360)); }
+      // Nothing tall stands in front of the gap.
+      const half = Math.atan((rc * (radialForm(f) ? 1 : 1.3)) / d) * 180 / Math.PI;
+      if (Math.abs(b - gc) < half + gw / 2) crest = Math.min(crest, d * Math.tan(rad(1.5)));
+    }
+    const row = [+b.toFixed(1), Math.round(d / 1000) * 1000, Math.round(rc / 500) * 500, Math.round(crest / 100) * 100, Math.round(sp), op];
+    if (f) row.push(f);
+    out.push(row);
+  }
+  out.src = String(seed);
+  return out;
+}
+
+// The table as JS rows, ready to paste into ranges.js.
+function tableJs() {
+  return 'export const RANGES = [\n' + table.map(m => `  [${m.join(', ')}],${m[6] ? ` // ${FORMS[m[6]] ?? 'form ' + m[6]}` : ''}`).join('\n') + '\n];\n';
+}
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); flash(btn, 'Copied'); } catch { console.log(text); flash(btn, 'In the console'); }
+}
+function flash(btn, t) { const t0 = btn.textContent; btn.textContent = t; setTimeout(() => { btn.textContent = t0; }, 1200); }
+
+/* ---------- wiring ---------- */
 panels.pano.box.addEventListener('pointermove', ev => {
   const r = panels.pano.box.getBoundingClientRect(), win = panoWin();
   const b = win[0] + (win[1] - win[0]) * (ev.clientX - r.left) / r.width, e = win[3] + (win[2] - win[3]) * (ev.clientY - r.top) / r.height;
   $('#hover').textContent = `bearing ${b.toFixed(1)}° · elevation ${e.toFixed(2)}°`;
 });
-panels.pano.box.style.pointerEvents = 'auto';
-
-for (const id of ['ero', 'vex', 'sun']) $('#' + id).addEventListener('input', ev => { knob[id] = +ev.target.value; $(`output[for=${id}]`).textContent = ev.target.value; if (R) draw(); });
-$('#forms').addEventListener('change', ev => { knob.forms = ev.target.checked ? 1 : 0; if (R) draw(); });
-$('#tint').addEventListener('change', ev => { knob.tint = ev.target.checked ? 1 : 0; if (R) draw(); });
+for (const id of ['ero', 'vex', 'sun', 'haze']) $('#' + id).addEventListener('input', ev => { knob[id] = +ev.target.value; $(`output[for=${id}]`).textContent = ev.target.value; draw(); });
+$('#forms').addEventListener('change', ev => { knob.forms = ev.target.checked ? 1 : 0; draw(); });
+$('#tint').addEventListener('change', ev => { knob.tint = ev.target.checked ? 1 : 0; draw(); });
+$('#phone').addEventListener('click', ev => { lens = lens === 'wide' ? 'phone' : 'wide'; ev.target.classList.toggle('on', lens === 'phone'); $('#gun').classList.toggle('phone', lens === 'phone'); draw(); });
+const gen = () => { if (!R) return; table = generate($('#seed').value.trim() || '1'); tableChanged(); };
+$('#generate').addEventListener('click', gen);
+$('#next').addEventListener('click', () => { const s = $('#seed'); s.value = String((parseInt(s.value, 10) || 0) + 1); gen(); });
+$('#seed').addEventListener('keydown', ev => { if (ev.key === 'Enter') gen(); });
+$('#reset').addEventListener('click', () => { if (!R) return; useModuleTable(); tableChanged(); });
+$('#copytable').addEventListener('click', ev => copy(tableJs(), ev.target));
+$('#copyland').addEventListener('click', ev => copy(JSON.stringify(land, null, 2), ev.target));
 $('#reload').addEventListener('click', load);
-addEventListener('keydown', ev => { if (ev.key === 'r' && !ev.metaKey && !ev.ctrlKey && ev.target === document.body) load(); });
-new ResizeObserver(() => { if (R) draw(); }).observe(document.querySelector('main'));
-// QA: a hook to wait on, and the status line.
-window.__lab = { ready: () => !!R && !/Loading/.test($('#status').textContent), status: () => $('#status').textContent, load };
+addEventListener('keydown', ev => {
+  if (ev.metaKey || ev.ctrlKey || ev.target.tagName === 'INPUT' && ev.target.type === 'text') return;
+  if (ev.key === 'r') load(); else if (ev.key === 'g') gen(); else if (ev.key === 'n') $('#next').click();
+});
+new ResizeObserver(() => draw()).observe(document.querySelector('main'));
+// QA: a hook to wait on, the status line, and the generator.
+window.__lab = { ready: () => !!R && !/Loading/.test($('#status').textContent), status: () => $('#status').textContent, load, gen: s => { $('#seed').value = s; gen(); }, table: () => table, lens: l => { if (l !== lens) $('#phone').click(); } };
 load();
 </script>
 </body>
