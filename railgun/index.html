@@ -4845,6 +4845,16 @@ function sightSetup() {
           vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
           o = mix(o, far, clamp(k.r, 0.0, 1.0));
         }
+        // Blue, the burn: the phosphor is worn where the name sat for years.
+        // The picture dims inside the letters; its own grain shows through.
+        // An offset sample lights one edge and shades the other.
+        float b = clamp(k.b, 0.0, 1.0);
+        if (b > 0.002 || texture(tKey, vUv + uTexel * 2.0).b > 0.002) {
+          float e = texture(tKey, vUv + vec2(-1.5, 1.5) * uTexel).b - texture(tKey, vUv + vec2(1.5, -1.5) * uTexel).b;
+          float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          o *= 1.0 - 0.42 * b;
+          o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * (0.1 + 0.25 * L);
+        }
         outColor = vec4(o, 1.0);
       }`,
   });
@@ -4964,10 +4974,6 @@ function sightKey() {
       x.fillText(str, a + tr, b);
     };
     const { bore, W } = m;
-    // The gun's name, small and widely spaced, top centre.
-    // The bar's corners stay clear.
-    // On phones it sits under the bar's top row.
-    word(W / 2, (m.phone ? 74 : 30) * k, 'SCINFAXI', 11, 'center', 0.7, 500);
     // The gun's horizon: one hairline, open round the bore.
     lw(1);
     const gap = 48 * k;
@@ -5029,6 +5035,16 @@ function sightKey() {
     const w0 = { hold: 'HOLD', charging: `${Math.round(m.lvl * 100)}`, full: 'RELEASE', fired: (m.left ?? 0).toFixed(1), struck: 'STRUCK' }[m.state];
     word(bore.x, lo + mh + (big ? 34 : 28) * k, w0, big ? 22 : 12, 'center', big ? 0.12 : 0.6, big ? 400 : 500);
   }
+  // Blue, the burn: the gun's name is burnt into the tube's phosphor.
+  // It sits top centre, clear of the bar; on phones under its top row.
+  x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
+  x.filter = `blur(${0.8 * k}px)`;
+  x.globalCompositeOperation = 'lighter';
+  x.fillStyle = '#00f';
+  x.font = `600 ${26 * k}px Gabarito, sans-serif`;
+  x.letterSpacing = `${0.55 * 26 * k}px`;
+  x.textAlign = 'center';
+  x.fillText('SCINFAXI', m.W / 2 + 0.275 * 26 * k, (m.phone ? 92 : 50) * k);
   x.filter = 'none';
   x.globalCompositeOperation = 'source-over';
   f.keyTex.needsUpdate = true;
