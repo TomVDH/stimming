@@ -267,7 +267,31 @@ function start() {
     }
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
     // It starts after the intro, so its shader build does not stall the sweep.
-    setTimeout(() => import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e)), 2600);
+    // Three footer looks for Tom to pick from: ?foot names one; ?dev shows a switch.
+    const LOOKS = ['mesh', 'horizon', 'broadcast'], FOOT_KEY = 'stimming.clock.foot', ask = new URLSearchParams(location.search);
+    let kept = null;
+    try { kept = localStorage.getItem(FOOT_KEY); } catch (e) { /* no storage */ }
+    let look = LOOKS.includes(ask.get('foot')) ? ask.get('foot') : LOOKS.includes(kept) ? kept : LOOKS[0];
+    credit.dataset.foot = look;
+    setTimeout(() => import('./mesh.js').then(m => m.mesh(credit, look)).then(glow => {
+      if (!glow) return;
+      credit.setAttribute('data-mesh', '');
+      if (!ask.has('dev')) return;
+      const bar = Object.assign(document.createElement('div'), { className: 'clock-dev' });
+      bar.setAttribute('role', 'group');
+      bar.setAttribute('aria-label', 'Footer look');
+      bar.innerHTML = LOOKS.map(l => `<button type="button" data-foot="${l}" aria-pressed="${l === look}">${l}</button>`).join('');
+      document.body.append(bar);
+      bar.addEventListener('click', e => {
+        const b = /** @type {HTMLElement} */ (e.target).closest('button');
+        if (!b) return;
+        look = b.dataset.foot;
+        credit.dataset.foot = look;
+        glow.look(look);
+        bar.querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+        try { localStorage.setItem(FOOT_KEY, look); } catch (err) { /* no storage */ }
+      });
+    }).catch(e => console.warn('Clock mesh:', e)), 2600);
   }
 
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
