@@ -15,14 +15,14 @@ colors:
   sketch: "oklch(0.52 0.025 275)"
   focus: "oklch(0.84 0.13 205)"
   pick: "oklch(0.7 0.18 320 / 0.35)"
-  mark-1: "oklch(0.8 0.15 62)"
-  mark-2: "oklch(0.72 0.2 318)"
-  mark-3: "oklch(0.8 0.12 195)"
-  mark-4: "oklch(0.7 0.19 32)"
-  mark-5: "oklch(0.72 0.14 255)"
-  mark-6: "oklch(0.82 0.11 345)"
-  mark-7: "oklch(0.86 0.15 100)"
-  mark-8: "oklch(0.78 0.16 150)"
+  mark-1: "oklch(0.72 0.22 328)"
+  mark-2: "oklch(0.68 0.2 300)"
+  mark-3: "oklch(0.74 0.16 250)"
+  mark-4: "oklch(0.82 0.13 205)"
+  mark-5: "oklch(0.84 0.16 150)"
+  mark-6: "oklch(0.88 0.16 110)"
+  mark-7: "oklch(0.86 0.16 84)"
+  mark-8: "oklch(0.74 0.2 28)"
   series-vistas: "oklch(0.93 0.025 90)"
   series-eastvan: "oklch(0.8 0.12 165)"
   series-belgian: "oklch(0.8 0.15 72)"
@@ -197,14 +197,14 @@ Source: `MARK` in `shared/stim.js:46-50` and the menu title in `index.html:394`.
 
 | Letter | Token here | Value |
 |---|---|---|
-| S | `mark-1` | `oklch(0.8 0.15 62)` |
-| t | `mark-2` | `oklch(0.72 0.2 318)` |
-| i | `mark-3` | `oklch(0.8 0.12 195)` |
-| m | `mark-4` | `oklch(0.7 0.19 32)` |
-| m | `mark-5` | `oklch(0.72 0.14 255)` |
-| i | `mark-6` | `oklch(0.82 0.11 345)` |
-| n | `mark-7` | `oklch(0.86 0.15 100)` |
-| g | `mark-8` | `oklch(0.78 0.16 150)` |
+| S | `mark-1` | `oklch(0.72 0.22 328)` |
+| t | `mark-2` | `oklch(0.68 0.2 300)` |
+| i | `mark-3` | `oklch(0.74 0.16 250)` |
+| m | `mark-4` | `oklch(0.82 0.13 205)` |
+| m | `mark-5` | `oklch(0.84 0.16 150)` |
+| i | `mark-6` | `oklch(0.88 0.16 110)` |
+| n | `mark-7` | `oklch(0.86 0.16 84)` |
+| g | `mark-8` | `oklch(0.74 0.2 28)` |
 
 ### Tertiary
 
