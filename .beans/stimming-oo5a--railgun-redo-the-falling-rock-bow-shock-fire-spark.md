@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T18:16:28Z
-updated_at: 2026-11-16T18:49:32Z
+updated_at: 2026-11-16T18:49:55Z
 ---
 
 Tom: "redo smoke column sparks and firey smoke by the asteroid and the asteroid itself incl bow shock etc".
@@ -15,7 +15,7 @@ Scope: railgun/index.html, the rock (astMat), the bow shock (bowMat, haloMat), t
 - [x] Before stills: dusk, night, day, near, strike at 1280 and 375
 - [x] Tom picks a direction: a planet-scale fireball; right track (2026-11-16)
 - [x] Violent head: cut (Tom)
-- [x] Soft rocket crackle loop while the rock is up (Ten seconds' thrust.mp3; Dev: Rock roar)
+- [x] Soft rocket crackle loop while the rock is up (Ten seconds' thrust.mp3; Dev: Rock roar). Tom: "crackle is good" (2026-11-16)
 - [x] Rock: dark crust, boiling melt on the front
 - [x] Bow shock: a white-hot cap and shock layer that hide the rock's front
 - [x] Fire by the rock: a burning wake 11 radii long (the front glow stays)
