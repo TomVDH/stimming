@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T08:26:04Z
-updated_at: 2026-11-16T09:23:56Z
+updated_at: 2026-11-16T09:28:57Z
 ---
 
 Idea 311 (Group E, satisfying physics loops): "Pour honey from a height; the thread coils like rope."
@@ -18,9 +18,9 @@ Tier: raw WebGL2. A simulated thread (CPU chain) drawn as a lit ribbon; the pool
 - [x] Bean, plan, read the brief and the shell
 - [x] Blockout: plate, pool height field, falling thread, coil model, pointer pours
 - [x] Look: amber transmission, glossy thread with a bright core, coils that hold then melt, rounded spreading edge, trapped bubbles
-- [ ] Bar v2: Honey/Syrup/Treacle choice, Height slider, Settings, Dev rows, key strip
-- [ ] Sound: soft thick patter of the coil and a low hum, synthesized through audioKit
-- [ ] Idle: the loop stops when the pour stops and the pool settles; whenVisible; detail level; slow-frame step
+- [x] Bar v2: Honey/Syrup/Treacle choice, Height slider, Settings, Dev rows, key strip
+- [x] Sound: soft thick patter of the coil and a low hum, synthesized through audioKit
+- [x] Idle: the loop stops when the pour stops and the pool settles; whenVisible; detail level; slow-frame step
 - [ ] Reduced motion
 - [ ] Intro fallback text and vignette
 - [ ] QA: console, gestures, controls, sound, 1280, 375 x 812, 812 x 375
