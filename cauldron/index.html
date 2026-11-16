@@ -1414,19 +1414,22 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   }
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
   // Thick soup shows its swirls as low ridges.
-  float e2 = 1.5 / 512.0;
+  // A wide stencil keeps each step between two soups a soft slope.
+  float e2 = 4.0 / 512.0;
   vec4 dxp = texture(uDye, uv + vec2(e2, 0.0)), dxm = texture(uDye, uv - vec2(e2, 0.0));
   vec4 dzp = texture(uDye, uv + vec2(0.0, e2)), dzm = texture(uDye, uv - vec2(0.0, e2));
-  float wx = dxp.a - dxm.a, wz = dzp.a - dzm.a;
+  // The thickness, not the raw weight, so a heavy pour gives no cliff.
+  float wx = clamp((dxp.a - 1.0) * 0.3, 0.0, 1.0) - clamp((dxm.a - 1.0) * 0.3, 0.0, 1.0);
+  float wz = clamp((dzp.a - 1.0) * 0.3, 0.0, 1.0) - clamp((dzm.a - 1.0) * 0.3, 0.0, 1.0);
   // Where two colours meet, the seam stands up a little: marbling, not a flat wash.
   float lx = dxp.r / max(dxp.a, 1e-3) - dxm.r / max(dxm.a, 1e-3), lz = dzp.r / max(dzp.a, 1e-3) - dzm.r / max(dzm.a, 1e-3);
-  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T - vec3(lx, 0.0, lz) * (0.05 + 0.1 * T));
+  n = normalize(n - vec3(wx, 0.0, wz) * 0.05 - vec3(lx, 0.0, lz) * (0.03 + 0.05 * T));
   // The skin wrinkles as the soup under it moves.
   float skin = smoothstep(0.15, 0.6, ax.b);
   // A raft's torn edge stands up as a low lip.
   float sx = texture(uAux, uv + vec2(e2, 0.0)).b - texture(uAux, uv - vec2(e2, 0.0)).b;
   float sz = texture(uAux, uv + vec2(0.0, e2)).b - texture(uAux, uv - vec2(0.0, e2)).b;
-  n = normalize(n - vec3(sx, 0.0, sz) * 0.35);
+  n = normalize(n - vec3(sx, 0.0, sz) * 0.15);
   if (skin > 0.01) {
     vec2 wq = p.xz * 38.0;
     float w0 = noise2(wq), wxk = noise2(wq + vec2(0.3, 0.0)) - w0, wzk = noise2(wq + vec2(0.0, 0.3)) - w0;
