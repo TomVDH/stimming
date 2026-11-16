@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:12:37Z
+updated_at: 2026-11-16T20:18:44Z
 parent: stimming-oh7b
 ---
 
@@ -37,3 +37,8 @@ Very richly shaded: glass, fog on glass, droplets, plants that grow by rules (ge
 - Hold mists: a spray cone from the lid, fog on the glass, then beads (two sizes) and runs that clear tracks.
 - Drag wipes a stripe (a 256 x 96 map round the jar); the fog creeps back. Fog return sets the pace of the whole cycle.
 - The rest fog comes back from the lid; after one mist the loop sleeps at about 66 s. Reduced motion puts drops on at once with no frames after.
+
+## Jar shape (2026-11-16)
+
+Tom: "increase size and shape of jar". The jar is now any profile turned round its axis, and about 30% larger in the frame. Three shapes for Tom to pick: apothecary (the default), `?jar=globe`, `?jar=bell`. Each profile exists in GLSL and in JS (the wipe), and both must match.
+- [ ] Tom picks a jar shape

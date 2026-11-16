@@ -32,52 +32,126 @@ const ui = initPage({ id: 'terrarium', bar: {
 
 /* ---------- the scene ---------- */
 // One unit is about 20 cm. The jar stands on the floor at the origin.
-// JR: jar radius. JH: top of the straight wall. The dome lid sits on it.
-const JR = 0.5, JH = 1.2, JDC = 0.85, JDR = Math.hypot(JR, JH - JDC);
+// The jar is one profile, a radius over height, turned round the axis.
+// top: the glass's top. rmax: its widest. base: its radius at the floor.
+// knob: the stopper knob's centre. neck: where the spray starts.
+// seam: the lip or lid line. shoulder: where condensation gathers.
+// Each profile exists twice, in GLSL and in JS, and both must match.
+const SHAPES = {
+  // An apothecary jar: a wide belly, a round shoulder, a neck, a stopper.
+  apothecary: { top: 1.62, rmax: 0.62, base: 0.57, knob: 1.665, neck: 1.5, seam: 1.465, shoulder: 1.05,
+    glsl: `
+  float r = mix(0.62, 0.3, smoothstep(1.0, 1.34, y)) + 0.035 * smoothstep(1.43, 1.47, y);
+  if (y > 1.5) r = 0.335 * sqrt(max(1.0 - (y - 1.5) * (y - 1.5) / 0.0144, 0.0));`,
+    js: y => {
+      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      return y > 1.5 ? 0.335 * Math.sqrt(Math.max(1 - (y - 1.5) ** 2 / 0.0144, 0)) : 0.62 + (0.3 - 0.62) * ss(1.0, 1.34, y) + 0.035 * ss(1.43, 1.47, y);
+    } },
+  // A globe: a round belly on a small flat foot, a short neck, a lid.
+  globe: { top: 1.56, rmax: 0.72, base: 0.29, knob: 1.605, neck: 1.46, seam: 1.44, shoulder: 1.1,
+    glsl: `
+  float s = sqrt(max(0.5184 - (y - 0.66) * (y - 0.66), 0.0));
+  float h = max(0.14 - abs(s - 0.24), 0.0) / 0.14;
+  float r = y < 0.66 ? s : max(s, 0.24) + h * h * 0.035;
+  r += 0.03 * smoothstep(1.42, 1.46, y);
+  if (y > 1.46) r = 0.27 * sqrt(max(1.0 - (y - 1.46) * (y - 1.46) / 0.01, 0.0));`,
+    js: y => {
+      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      if (y > 1.46) return 0.27 * Math.sqrt(Math.max(1 - (y - 1.46) ** 2 / 0.01, 0));
+      const sp = Math.sqrt(Math.max(0.5184 - (y - 0.66) ** 2, 0)), h = Math.max(0.14 - Math.abs(sp - 0.24), 0) / 0.14;
+      return (y < 0.66 ? sp : Math.max(sp, 0.24) + h * h * 0.035) + 0.03 * ss(1.42, 1.46, y);
+    } },
+  // A bell jar: a tall straight wall under a round lid, wider than the first one.
+  bell: { top: 1.571, rmax: 0.6, base: 0.6, knob: 1.62, neck: 1.4, seam: 1.25, shoulder: 1.2,
+    glsl: `
+  float r = y < 1.25 ? 0.6 : sqrt(max(0.52 - (y - 0.85) * (y - 0.85), 0.0));`,
+    js: y => (y < 1.25 ? 0.6 : Math.sqrt(Math.max(0.52 - (y - 0.85) ** 2, 0))) },
+};
+// ?jar=globe or ?jar=bell picks another shape, for Tom to compare.
+const SHAPE = SHAPES[new URLSearchParams(location.search).get('jar')] || SHAPES.apothecary;
+// The jar's radius at a height, with the base corner rounded; -1 off the glass.
+const jarR = y => (y < 0 || y > SHAPE.top ? -1 : SHAPE.js(y) - 0.05 * (1 - Math.min(1, y / 0.09)) ** 2);
 // The grow light: a bar above and behind the jar.
-const LY = 2.2, LZ = -0.9, LW = 0.7;
+const LY = 1.95, LZ = -0.9, LW = 0.7;
 const FOC = 1.55;
+// The camera: its height, the point it looks at, and its distance.
+// A narrow frame steps the camera back, so the jar keeps its margin.
+const CAM_Y = 1.35, AIM_Y = 0.86, CAM_D = 3.45, CAM_ASP = 0.7;
 // Metres in one scene unit, and the top of the glass in units.
-const METRE = 0.2, GLASS_TOP = JDC + JDR;
+const METRE = 0.2, GLASS_TOP = SHAPE.top;
 const f = x => x.toFixed(4);
 
 // The camera, as statements. It needs uv and asp, and gives ro and rd.
-// A narrow frame steps the camera back, so the jar keeps its margin.
 const CAM = `
-  float camD = 3.6 * max(1.0, 0.75 / asp);
-  vec3 ro = vec3(0.0, 1.25, camD);
-  vec3 fw = normalize(vec3(0.0, 0.92, 0.0) - ro);
+  float camD = ${f(CAM_D)} * max(1.0, ${f(CAM_ASP)} / asp);
+  vec3 ro = vec3(0.0, ${f(CAM_Y)}, camD);
+  vec3 fw = normalize(vec3(0.0, ${f(AIM_Y)}, 0.0) - ro);
   vec3 rt = normalize(cross(fw, vec3(0.0, 1.0, 0.0)));
   vec3 up = cross(rt, fw);
   vec2 sp = (uv - 0.5) * vec2(asp, 1.0);
   vec3 rd = normalize(fw * ${f(FOC)} + rt * sp.x + up * sp.y);`;
 
+// The jar's skin as GLSL functions. Both passes paste it, so they agree to the pixel.
+const JAR_LIB = `
+float jarR(float y) {
+  if (y < 0.0 || y > ${f(SHAPE.top)}) return -1.0;
+  ${SHAPE.glsl}
+  float b = 1.0 - min(1.0, y / 0.09);
+  return r - 0.05 * b * b;
+}
+// Outside the glass this is positive; inside it is negative.
+float jarF(vec3 p) {
+  float r = jarR(p.y);
+  return r < 0.0 ? max(abs(p.y - ${f(SHAPE.top / 2)}) - ${f(SHAPE.top / 2)}, 0.004) : length(p.xz) - r;
+}
+vec3 jarN(vec3 p) {
+  float y0 = clamp(p.y - 0.003, 0.0, ${f(SHAPE.top)}), y1 = clamp(p.y + 0.003, 0.0, ${f(SHAPE.top)});
+  float dr = (jarR(y1) - jarR(y0)) / max(y1 - y0, 1e-4);
+  float rho = max(length(p.xz), 1e-4);
+  return normalize(vec3(p.x / rho, -dr, p.z / rho));
+}
+// The first point where a ray meets the glass from outside, or -1.
+float jarHit(vec3 ro, vec3 rd, out vec3 n) {
+  n = vec3(0.0, 1.0, 0.0);
+  float a = dot(rd.xz, rd.xz), b = dot(ro.xz, rd.xz), c = dot(ro.xz, ro.xz) - ${f(SHAPE.rmax * SHAPE.rmax)}, h = b * b - a * c;
+  if (h <= 0.0) return -1.0;
+  float sh = sqrt(h), t = max((-b - sh) / a, 0.0), t1 = (-b + sh) / a, tp = t;
+  bool hit = false;
+  for (int i = 0; i < 96; i++) {
+    float fv = jarF(ro + rd * t);
+    if (fv < 0.0) { hit = true; break; }
+    tp = t;
+    t += max(fv * 0.5, 0.002);
+    if (t > t1) break;
+  }
+  if (!hit) return -1.0;
+  for (int i = 0; i < 6; i++) { float tm = (tp + t) * 0.5; if (jarF(ro + rd * tm) < 0.0) t = tm; else tp = tm; }
+  n = jarN(ro + rd * t);
+  return t;
+}
+// Where a ray inside the jar leaves it again.
+float jarExit(vec3 ro, vec3 rd, float t) {
+  float tp = t;
+  for (int i = 0; i < 96; i++) {
+    float fv = jarF(ro + rd * t);
+    if (fv > 0.0) break;
+    tp = t;
+    t += max(-fv * 0.5, 0.002);
+  }
+  for (int i = 0; i < 6; i++) { float tm = (tp + t) * 0.5; if (jarF(ro + rd * tm) > 0.0) t = tm; else tp = tm; }
+  return t;
+}`;
+
 // The jar's outer skin, as statements. It gives jt (-1 for a miss) and jn.
-// The scene pass and the glass pass both run it, so they agree to the pixel.
 const JAR = `
-  float jt = -1.0;
-  vec3 jn = vec3(0.0);
-  {
-    float ja = dot(rd.xz, rd.xz), jb = dot(ro.xz, rd.xz), jc = dot(ro.xz, ro.xz) - ${f(JR * JR)};
-    float jh = jb * jb - ja * jc;
-    if (jh > 0.0) {
-      float t = (-jb - sqrt(jh)) / ja;
-      vec3 p = ro + rd * t;
-      if (t > 0.0 && p.y >= 0.0 && p.y <= ${f(JH)}) { jt = t; jn = normalize(vec3(p.x, 0.0, p.z)); }
-    }
-    vec3 oc = ro - vec3(0.0, ${f(JDC)}, 0.0);
-    float b = dot(oc, rd), h = b * b - dot(oc, oc) + ${f(JDR * JDR)};
-    if (h > 0.0) {
-      float t = -b - sqrt(h);
-      vec3 p = ro + rd * t;
-      if (t > 0.0 && p.y >= ${f(JH)} && (jt < 0.0 || t < jt)) { jt = t; jn = (p - vec3(0.0, ${f(JDC)}, 0.0)) / ${f(JDR)}; }
-    }
-  }`;
+  vec3 jn;
+  float jt = jarHit(ro, rd, jn);`;
 
 const SCENE = `
 uniform vec3 uLampC;
 uniform float uPlants, uSpray;
 const vec3 LP = vec3(0.0, ${f(LY)}, ${f(LZ)});
+${JAR_LIB}
 
 float teH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float teN(vec2 p) {
@@ -153,7 +227,7 @@ float tePitcher(vec3 p, vec3 base, float H) {
 // The jar's contents. x: distance; y: material.
 // 1 bed, 2 fern, 3 mushroom stem, 4 mushroom cap, 5 pitcher.
 vec2 teMap(vec3 p) {
-  vec2 r = vec2(max((p.y - teFloor(p.xz)) * 0.6, length(p.xz) - ${f(JR - 0.015)}), 1.0);
+  vec2 r = vec2(max((p.y - teFloor(p.xz)) * 0.6, length(p.xz) - (jarR(p.y) - 0.015)), 1.0);
   if (p.y > 0.15) {
     if (uPlants < 0.5) {
       float fe = min(teFern(p, vec3(-0.17, 0.27, -0.1), 5.0, 0.3, 0.22), teFern(p, vec3(0.17, 0.25, -0.2), 4.0, 1.2, 0.18));
@@ -202,8 +276,8 @@ vec3 teBack(vec3 o, vec3 d) {
     vec3 dl = LP - P;
     float tt = clamp(-dot(P.xz, dl.xz) / dot(dl.xz, dl.xz), 0.0, 1.0);
     float rr = length(P.xz + dl.xz * tt), yy = P.y + dl.y * tt;
-    float sh = (1.0 - smoothstep(0.38, 0.6, rr)) * (1.0 - smoothstep(1.3, 1.5, yy));
-    float contact = smoothstep(0.48, 0.75, length(P.xz));
+    float sh = (1.0 - smoothstep(${f(SHAPE.rmax * 0.75)}, ${f(SHAPE.rmax * 1.2)}, rr)) * (1.0 - smoothstep(${f(SHAPE.top - 0.2)}, ${f(SHAPE.top)}, yy));
+    float contact = smoothstep(${f(SHAPE.base - 0.02)}, ${f(SHAPE.base + 0.25)}, length(P.xz));
     vec3 base = vec3(0.016, 0.022, 0.017) * (0.8 + 0.4 * teN(P.xz * 3.0));
     c = base * (teLamp(P) * lit * mix(vec3(1.0), vec3(0.25, 0.55, 0.3), sh) + vec3(0.03, 0.045, 0.035)) * (0.35 + 0.65 * contact);
   } else if (tw < 1e8) {
@@ -236,7 +310,7 @@ vec3 teShade(vec3 p, vec3 rd, float m) {
   vec3 base;
   if (m < 1.5) {
     float r = length(p.xz), top = teFloor(p.xz);
-    if (r > ${f(JR - 0.03)} && p.y < top - 0.03) {
+    if (r > jarR(p.y) - 0.03 && p.y < top - 0.03) {
       // The cut face on the glass: pebbles under soil.
       float cell = teH(floor(vec2(atan(p.x, p.z) * 26.0, p.y * 34.0)));
       base = p.y < 0.075 ? vec3(0.09, 0.085, 0.08) * (0.5 + cell) : vec3(0.03, 0.019, 0.012) * (0.7 + 0.5 * cell);
@@ -269,25 +343,19 @@ vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
   ${CAM}
   // The glass knob on the lid.
-  vec3 ok = ro - vec3(0.0, 1.5, 0.0);
+  vec3 ok = ro - vec3(0.0, ${f(SHAPE.knob)}, 0.0);
   float kb = dot(ok, rd), kh = kb * kb - dot(ok, ok) + 0.0025;
   ${JAR}
   if (kh > 0.0 && (jt < 0.0 || -kb - sqrt(kh) < jt)) {
-    vec3 kp = ro + rd * (-kb - sqrt(kh)), kn = normalize(kp - vec3(0.0, 1.5, 0.0));
+    vec3 kp = ro + rd * (-kb - sqrt(kh)), kn = normalize(kp - vec3(0.0, ${f(SHAPE.knob)}, 0.0));
     return teBack(kp, reflect(rd, kn)) * 0.7 + uLampC * 0.08 * pow(1.0 - abs(dot(kn, rd)), 2.0);
   }
   if (jt < 0.0) return teBack(ro, rd);
   vec3 p = ro + rd * jt;
   float cv = max(dot(jn, -rd), 0.0);
   float F = 0.04 + 0.96 * pow(1.0 - cv, 5.0);
-  // The far wall of the jar: the cylinder's far root, or the dome's.
-  float ja = dot(rd.xz, rd.xz), jb = dot(ro.xz, rd.xz), jc = dot(ro.xz, ro.xz) - ${f(JR * JR)};
-  float tE = (-jb + sqrt(max(jb * jb - ja * jc, 0.0))) / ja;
-  if (ro.y + rd.y * tE > ${f(JH)}) {
-    vec3 oc = ro - vec3(0.0, ${f(JDC)}, 0.0);
-    float b = dot(oc, rd);
-    tE = -b + sqrt(max(b * b - dot(oc, oc) + ${f(JDR * JDR)}, 0.0));
-  }
+  // The far wall of the jar.
+  float tE = jarExit(ro, rd, jt + 0.004);
   // March the contents.
   float t = jt + 0.002, hitM = 0.0;
   for (int i = 0; i < 90; i++) {
@@ -300,7 +368,7 @@ vec3 envScene(vec2 uv) {
   if (hitM > 0.0) inside = teShade(ro + rd * t, rd, hitM);
   else {
     // Through the back wall to the room, with the wall's own faint sheen.
-    vec3 pb = ro + rd * tE, nb = -normalize(pb.y > ${f(JH)} ? pb - vec3(0.0, ${f(JDC)}, 0.0) : vec3(pb.x, 0.0, pb.z));
+    vec3 pb = ro + rd * tE, nb = -jarN(pb);
     inside = teBack(pb, rd) * 0.85 + uLampC * 0.03 * pow(1.0 - abs(dot(nb, rd)), 3.0);
     t = tE;
   }
@@ -309,7 +377,7 @@ vec3 envScene(vec2 uv) {
     float mist = 0.0, len = t - jt;
     for (int i = 0; i < 8; i++) {
       vec3 q = ro + rd * (jt + len * (float(i) + 0.5) / 8.0);
-      float drop = ${f(JH + 0.15)} - q.y, w = 0.03 + 0.22 * max(drop, 0.0);
+      float drop = ${f(SHAPE.neck)} - q.y, w = 0.03 + 0.22 * max(drop, 0.0);
       float grain = 0.6 + 0.8 * teN(vec2(length(q.xz) * 30.0, q.y * 12.0 + uTime * 6.0));
       mist += exp(-dot(q.xz, q.xz) / (w * w)) * smoothstep(-0.1, 0.1, drop) * smoothstep(1.3, 0.2, drop) * grain / (1.0 + 8.0 * w);
     }
@@ -322,7 +390,7 @@ vec3 envScene(vec2 uv) {
   // The grow light comes through the glass at its edges: a long bright rim.
   c += uLampC * 0.06 * pow(1.0 - cv, 3.0) * smoothstep(-0.2, 1.4, p.y);
   // The seam where the lid meets the wall, and the thick glass of the base.
-  float seam = smoothstep(0.016, 0.004, abs(p.y - ${f(JH)})), foot = smoothstep(0.05, 0.03, p.y);
+  float seam = smoothstep(0.016, 0.004, abs(p.y - ${f(SHAPE.seam)})), foot = smoothstep(0.05, 0.03, p.y);
   c = mix(c, vec3(0.02, 0.04, 0.03) + uLampC * 0.05, max(seam, foot) * 0.6);
   return c;
 }`;
@@ -331,7 +399,8 @@ vec3 envScene(vec2 uv) {
 // tWipe holds the finger's clear stripes, unrolled round the jar.
 const PANE_HEAD = `
 uniform sampler2D tWipe;
-uniform float uMistFog, uFront;`;
+uniform float uMistFog, uFront;
+${JAR_LIB}`;
 // jq unrolls the glass: arc length round the jar, then height, in metres.
 const GLASS = `
     ${CAM}
@@ -339,12 +408,12 @@ const GLASS = `
     if (jt > 0.0) {
       vec3 jp = ro + rd * jt;
       float jcos = max(dot(jn, -rd), 0.0), ang = atan(jp.x, jp.z);
-      vec2 jq = vec2(ang * ${f(JR)}, jp.y) * ${f(METRE)};
+      vec2 jq = vec2(ang * max(jarR(jp.y), 0.05), jp.y) * ${f(METRE)};
       float wipe = texture(tWipe, vec2(ang / 6.28318 + 0.5, jp.y / ${f(GLASS_TOP)})).r;
       // Rest fog comes back down from the lid; the mist fogs it all.
       float jfog = max(uMistFog, uFog * smoothstep(uFront - 0.06, uFront + 0.18, ${f(GLASS_TOP)} - jp.y));
       float jwet = uWet * (1.0 - wipe);
-      WgPane g = wgPane(jq, uZoom, uM, uFlow, jwet, uWind, 1.0, jfog * (1.0 - wipe), uPatch, (jp.y - 1.32) * 0.25);
+      WgPane g = wgPane(jq, uZoom, uM, uFlow, jwet, uWind, 1.0, jfog * (1.0 - wipe), uPatch, (jp.y - ${f(SHAPE.shoulder)}) * 0.25);
       // A second, finer layer of beads: condensation is mostly tiny drops.
       vec2 off2 = vec2(0.0);
       float r2 = 0.0, s2 = 0.0, c2 = 0.0;
@@ -375,8 +444,8 @@ const norm = a => { const l = Math.hypot(...a); return a.map(x => x / l); };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 // The camera of the CAM statements, in JS.
 function camera(asp) {
-  const ro = [0, 1.25, 3.6 * Math.max(1, 0.75 / asp)];
-  const fw = norm(sub([0, 0.92, 0], ro)), rt = norm(cross(fw, [0, 1, 0])), up = cross(rt, fw);
+  const ro = [0, CAM_Y, CAM_D * Math.max(1, CAM_ASP / asp)];
+  const fw = norm(sub([0, AIM_Y, 0], ro)), rt = norm(cross(fw, [0, 1, 0])), up = cross(rt, fw);
   return { ro, fw, rt, up };
 }
 // Where the lamp falls on the frame: the pane pass lights drops and fog near it.
@@ -390,11 +459,18 @@ function glassAt(cx, cy) {
   const { ro, fw, rt, up } = camera(asp);
   const sx = ((cx - r.left) / r.width - 0.5) * asp, sy = 0.5 - (cy - r.top) / r.height;
   const rd = norm(fw.map((x, i) => x * FOC + rt[i] * sx + up[i] * sy));
-  let t = -1;
-  const a = rd[0] * rd[0] + rd[2] * rd[2], b = ro[0] * rd[0] + ro[2] * rd[2], c = ro[0] * ro[0] + ro[2] * ro[2] - JR * JR, h = b * b - a * c;
-  if (h > 0) { const tc = (-b - Math.sqrt(h)) / a, y = ro[1] + rd[1] * tc; if (tc > 0 && y >= 0 && y <= JH) t = tc; }
-  const oc = sub(ro, [0, JDC, 0]), bd = dot(oc, rd), hd = bd * bd - dot(oc, oc) + JDR * JDR;
-  if (hd > 0) { const td = -bd - Math.sqrt(hd); if (td > 0 && ro[1] + rd[1] * td >= JH && (t < 0 || td < t)) t = td; }
+  // March to the glass, as jarHit does.
+  const F = p => { const r = jarR(p[1]); return r < 0 ? Math.max(Math.abs(p[1] - GLASS_TOP / 2) - GLASS_TOP / 2, 0.004) : Math.hypot(p[0], p[2]) - r; };
+  const at = t => ro.map((x, i) => x + rd[i] * t);
+  let t = 0, tp = 0, hit = false;
+  for (let i = 0; i < 200 && t < 12; i++) {
+    const v = F(at(t));
+    if (v < 0) { hit = true; break; }
+    tp = t;
+    t += Math.max(v * 0.5, 0.002);
+  }
+  if (!hit) t = -1;
+  else for (let i = 0; i < 8; i++) { const m = (tp + t) / 2; if (F(at(m)) < 0) t = m; else tp = m; }
   if (t < 0) return null;
   const p = ro.map((x, i) => x + rd[i] * t);
   return { u: Math.atan2(p[0], p[2]) / (2 * Math.PI) + 0.5, v: p[1] / GLASS_TOP };
