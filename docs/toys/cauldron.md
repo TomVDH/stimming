@@ -26,19 +26,20 @@ Bar: v2 (`cauldron/index.html:105`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | None |
+| Top left (choice) | `Add` tray: Mix (the old round), the ten things, and four liquids: cream, squid ink, chilli oil, saffron |
 | Bottom left (actions) | `+ Thing` (T), `Clear` (C) |
 | Bottom right (slider) | `Fire`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
 | Key strip | drag stir; click throw in; ← → stir |
 | Settings | Simmer sound (toggle); Quality; Reset in the footer |
-| Dev (`?dev`) | Exposure, Bloom |
+| Dev (`?dev`) | Exposure, Bloom; Camera height and Camera turn (near 0 is a side view); Fire X, Fire Z, Fire height, Fire size, Fire power, Fire spread. The camera and fire rows keep no value |
 <!-- /gen:bar -->
 
 | Gesture | Does |
 |---|---|
-| Click or tap | Throws the next thing at that point of the soup (`:1790`) |
+| Click or tap | Adds the tray's pick at that point: a thing is thrown, a liquid pours for 1.2 s |
 | Drag | Stirs with the spoon; the spoon pulls the soup toward its own speed (`:1426`) |
 | Keys | T throws, C clears; hold ← or → to stir round the pot (`:1839`) |
+| Hover | The eye swings a little round the pot (none under reduced motion) |
 | Wheel, pinch, tilt | None |
 
 Clear drains the pot with a whirl, then fresh broth fills it (`:2119`). Reset (Settings) returns to the opening pot: broth, a carrot, an onion, Fire at 0.5 (`:2449`).
@@ -89,10 +90,11 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 | 1. Velocity | `velTex`, RG16F, 64² | `texSubImage2D` | Uploads the stir field |
 | 2. Dye | Two RGBA16F maps (MRT), 512² (384² on Low) | `DYE_FS` (`:439`) | Carries the colour (OKLab times weight), fat and glitter; the plumes mix in the pot's mean; the things add their tint |
 | 3. Ripples | RG16F, 256² | `RIP_FS` (`:493`) | A wave field, two steps a frame at 60 fps; splashes, pops and the spoon push it |
-| 4. Layers | Two RGBA16F maps (MRT), half the CSS size (a third on Low) | `LAYER_FS` (`:520`) | Back: the night, the ground, the logs, the flames behind the pot. Front: the flames before it, sparks, and the steam, marched |
-| 5. Scene | RGBA16F, full size | `SCENE_FS` (`:712`) | Ray cast: belly, rim, legs, inner wall, the soup heightfield, bubble caps, the things (an SDF march over a short candidate list), droplets, the spoon |
-| 6. Bloom | Half size chain | `bloomChain` | Threshold 0.9 |
-| 7. Out | Canvas | `OUT_FS` (`:1191`) | `GRADE` (tint, vignette, grain), then `OUTPUT` (film curve, sRGB, dither) |
+| 4. Fire | Five RGBA16F atlases, 384 × 336: a 48 × 56 × 48 grid of 0.08 cells cut into z slices | `CURL_FS`, `VEL_FS`, `DIV_FS`, `JAC_FS` (12 sweeps), `PROJ_FS`, `FDYE_FS` | Fire's solver (`fire/index.html`), one or two steps a frame: buoyancy, curl-noise turbulence, vorticity confinement, a gas-expansion source, wind at high fire, a coal bed that feeds heat and smoke. The belly (up to the rim) and the legs are solids; hot gas clings to the iron and climbs it |
+| 5. Layers | Two RGBA16F maps (MRT), half the CSS size (a third on Low) | `LAYER_FS` | Back: the haze and the flagstone floor, lit through a bump normal and by the solver's heat. Front: Fire's volume, marched 24 steps (16 on Low) with Fire's wood ramp, emission and smoke light, sparks, and the steam with Fire's smoke light. The march stops at the belly, the rim and the far inner wall |
+| 6. Scene | RGBA16F, full size | `SCENE_FS` (`:712`) | Ray cast: belly, rim, legs, inner wall, the soup heightfield, bubble caps, the things (an SDF march over a short candidate list), droplets, the spoon |
+| 7. Bloom | Half size chain | `bloomChain` | Threshold 0.9 |
+| 8. Out | Canvas | `OUT_FS` (`:1191`) | `GRADE` (tint, vignette, grain), then `OUTPUT` (film curve, sRGB, dither) |
 
 ### Uniforms: `SCENE_FS` (`:718`)
 
@@ -138,6 +140,10 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean console, the stir, a throw of each kind, Clear, Reset, the Fire slider at 0 and 1, the arrow-key stir, sound start after a click, and the layout at 1280 × 720, 375 × 812 and 812 × 375.
 
 ## Known issues
+
+- The fire grid is coarse (0.08 cells); fine flame detail comes from Fire's simplex detail noise in the march.
+- Frame time after the fire solver and the PBR iron is not measured with the pane in view.
+- `probe-gpu.html` (noindex) runs Fire's own WebGPU engine under a matching pot, for comparison; it is not linked.
 
 - Things push each other as circles of their half-width, so two long things can overlap a little. The wall test uses each thing's true length.
 - The steam layer runs at half the CSS size; on a large High-quality screen it reads soft.

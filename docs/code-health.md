@@ -41,6 +41,7 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | 10 | Type check in CI | No. It runs locally only |
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
 | 12 | Same frame | A shift of 1/255 on a few pixels counts as the same frame (2026-11-15, from Rain's `oklchLinear` proof). A larger change needs Tom's look |
+| 13 | Fire and smoke | A key shared module (2026-11-16). Fire's flame and smoke (its K3 volume fluid, three.js WebGPU and TSL) become one module that other toys reuse. Ink copies it today. The design must say how Scene toys on WebGL take it |
 
 ## Stack types
 

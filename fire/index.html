@@ -63,6 +63,7 @@
 
 <script type="module">
 import { initPage, audioKit, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio, stage } from '../shared/stim.js';
+import { createFire } from '../shared/fire.js';
 stage('libs');
 // Adapted from the three.js webgpu_volume_fire example (MIT).
 const panel = document.getElementById('fire');
@@ -312,10 +313,8 @@ async function start() {
   ]);
   stage('build');
   const {
-    vec3, vec4, uvec3, float, Fn, uniform, texture3D, textureStore, instanceIndex,
-    screenCoordinate, pass, smoothstep, mix, min, max, floor, mx_noise_float, storage, storageTexture, If,
-    cameraPosition, Loop, positionWorld, positionLocal, interleavedGradientNoise, frameId, fract,
-    saturation, cos, sin, abs, vec2, uint, hash, select, uv, instancedArray,
+    vec3, vec4, float, Fn, uniform, texture3D, instanceIndex, pass, smoothstep, mix, min, max,
+    mx_noise_float, If, positionWorld, positionLocal, saturation, cos, sin, abs, vec2, uint, hash, select, uv, instancedArray,
   } = TSL;
 
   const renderer = new THREE.WebGPURenderer();
@@ -336,85 +335,34 @@ async function start() {
   const okColor = (L, C, h, c = new THREE.Color()) => c.setRGB(...oklchRgb(L, C, h), THREE.SRGBColorSpace);
 
   /* ---------- constants and uniforms ---------- */
-  const GRID_SIZE_X = 100;
-  const GRID_SIZE_Y = 100;
-  const GRID_SIZE_Z = 200;
-  const CELL_COUNT = GRID_SIZE_X * GRID_SIZE_Y * GRID_SIZE_Z;
-  // Jacobi iterations stay even, so pressure ends in A.
-  const PRESSURE_ITERATIONS = 2;
   const VOLUME_WORLD_SIZE_X = 12;
   const VOLUME_WORLD_SIZE_Y = 12;
   const VOLUME_WORLD_SIZE_Z = 24;
-  const VOLUME_WORLD_SIZE_DIAGONAL = Math.hypot(VOLUME_WORLD_SIZE_X, VOLUME_WORLD_SIZE_Y, VOLUME_WORLD_SIZE_Z);
-  const uVolumeWorldSize = uniform(new THREE.Vector3(VOLUME_WORLD_SIZE_X, VOLUME_WORLD_SIZE_Y, VOLUME_WORLD_SIZE_Z));
-  const TEXEL_X = 1 / GRID_SIZE_X;
-  const TEXEL_Y = 1 / GRID_SIZE_Y;
-  const TEXEL_Z = 1 / GRID_SIZE_Z;
-  // Cells are cubes, 0.12 world units on a side.
-  const CELL = VOLUME_WORLD_SIZE_X / GRID_SIZE_X;
-
-  // The example's GUI defaults, fixed.
-  const TURBULENCE = 3.2;
-  const SMOKE_LIFESPAN = 2.4;
-  const FIRE_LIFESPAN = 1.3;
   const SIM_SPEED = 1.2;
   // Full fuel: the example's emit temperature and density.
   const EMIT_T = 5.5, EMIT_D = 7.0;
-  // A drag through the air pushes wind inside this radius.
-  const WIND_RADIUS = 1.8;
 
-  const uDt = uniform(0.016);
-  const uTime = uniform(0);
-  const uBuoyancy = uniform(3.0);
-  const uWeight = uniform(0.15);
-  const uTurbulence = uniform(TURBULENCE);
-  const uTurbulenceDecay = uniform(0.1);
-  const uTurbFrequency = uniform(10.0);
-  const uVelDamping = uniform(0.25);
-  const uVorticity = uniform(3.0);
-  // Twister spins gas round the block; Gusts push it sideways.
-  const uSwirl = uniform(0.0);
-  const uWind = uniform(new THREE.Vector3());
-  const uCooling = uniform(1 / FIRE_LIFESPAN);
-  const uDissipation = uniform(1 / SMOKE_LIFESPAN);
-  const uEmitDensity = uniform(EMIT_D);
-  const uEmitTemperature = uniform(EMIT_T);
-  const uBlockMatrix = uniform(new THREE.Matrix4());
-  const uBlockSpeed = uniform(0.0);
-  const uMotionBoost = uniform(0.25);
-  const uBlockVelocity = uniform(new THREE.Vector3());
-  const uWindStrength = uniform(6.5);
-  const uBlockPosition = uniform(new THREE.Vector3());
-  const uAirPosition = uniform(new THREE.Vector3(0, -100, 0));
-  const uAirVelocity = uniform(new THREE.Vector3());
+  // The shared module holds the fluid, its emitters and the volume.
+  // Its default grid is 100 by 100 by 200 cells.
+  const fire = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, size: [VOLUME_WORLD_SIZE_X, VOLUME_WORLD_SIZE_Y, VOLUME_WORLD_SIZE_Z] });
+  const {
+    time: uTime, size: uVolumeWorldSize, buoyancy: uBuoyancy, turbulence: uTurbulence, vorticity: uVorticity,
+    swirl: uSwirl, wind: uWind, cooling: uCooling, dissipation: uDissipation,
+    emitDensity: uEmitDensity, emitTemperature: uEmitTemperature, emitGain: uEmitGain, emitCount: uEmitCount,
+    emitMatrix: uBlockMatrix, sourcePosition: uBlockPosition, sourceVelocity: uBlockVelocity, sourceSpeed: uBlockSpeed,
+    gustPosition: uAirPosition, gustVelocity: uAirVelocity, intensity: uFireIntensity, glowSpread: uFireGlowSpread,
+    startColor: uFireStartColor, midColor: uFireMidColor, endColor: uFireEndColor, smokeTint: uSmokeTint,
+    tintStart: uSaltStartColor, tintMid: uSaltMidColor, tintEnd: uSaltEndColor, tintFeed: uSaltFeed, tintSpot: uSaltSpot,
+  } = fire.u;
+  // Salt is the module's tint: a second ramp the flicked grains feed.
+  const { emitters: emitterBuffer, setEmitters, fireRamp, tintRamp: saltRamp } = fire;
 
-  const uFireIntensity = uniform(40.0);
   const uCoreIntensity = uniform(0.55);
-  const uFireGlowSpread = uniform(5.0);
-  const uShadowAbsorption = uniform(2.0);
-  const uShadowAmbient = uniform(0.5);
-  const uFireStartColor = uniform(new THREE.Color());
-  const uFireMidColor = uniform(new THREE.Color());
-  const uFireEndColor = uniform(new THREE.Color());
-  const uSmokeTint = uniform(new THREE.Color());
-  // Salt colours the flame wherever the dye carries it.
-  const uSaltStartColor = uniform(new THREE.Color());
-  const uSaltMidColor = uniform(new THREE.Color());
-  const uSaltEndColor = uniform(new THREE.Color());
-  // Feed is the salt the block gives off now, from 0 up.
-  const uSaltFeed = uniform(0.0);
-  // Spot is where the grains land, in block space.
-  const uSaltSpot = uniform(new THREE.Vector2());
-  // Salt burns off faster than smoke clears.
-  const uSaltFade = uniform(0.35);
   // Glow is the salt share of the fire light.
   const uSaltGlow = uniform(0.0);
   const uBlockAngle = uniform(0.0);
   // Rays is 1 for the slotted block and 0 for a word.
   const uRays = uniform(1.0);
-  const uAsymmetry = uniform(0.0);
-  const uPowderStrength = uniform(0.59);
-  const uMultiScattering = uniform(1.0);
   const uPointLightVolumeIntensity = uniform(2.0);
   const uPointLightSurfaceIntensity = uniform(10.0);
   const uLightNearIntensity = uniform(10.0);
@@ -430,34 +378,6 @@ async function start() {
   const uGlow = uniform(1.0);
   const denoiseStrength = uniform(0.75);
   const cpuNoise = new ImprovedNoise();
-
-  /* ---------- storage 3D textures ---------- */
-  // rgba16float is storage-writable and linearly filterable.
-  function createStorage3D(name) {
-    const texture = new THREE.Storage3DTexture(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z);
-    texture.name = name;
-    texture.format = THREE.RGBAFormat;
-    texture.type = THREE.HalfFloatType;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping;
-    return texture;
-  }
-  const velTexA = createStorage3D('velocity A');
-  const velTexB = createStorage3D('velocity B');
-  const dyeTexA = createStorage3D('dye A');
-  const dyeTexB = createStorage3D('dye B');
-  const divTex = createStorage3D('divergence');
-  const pressTexA = createStorage3D('pressure A');
-  const pressTexB = createStorage3D('pressure B');
-  const curlNoiseTex = createStorage3D('curl noise');
-  // Curl holds the vorticity vector in xyz and its length in w.
-  const curlTex = createStorage3D('curl');
-  curlNoiseTex.wrapS = curlNoiseTex.wrapT = curlNoiseTex.wrapR = THREE.RepeatWrapping;
-  // Dye holds density, temperature and age.
-  const dyeTexNode = texture3D(dyeTexA);
-  const dyeTexWriteNode = storageTexture(dyeTexB).toWriteOnly();
-  const curlNoiseTexNode = texture3D(curlNoiseTex);
 
   /* ---------- the block: a brut box with cut slots ---------- */
   // Width, height, wall, base and rim, in world units.
@@ -499,247 +419,7 @@ async function start() {
       for (let y = BH - 0.1; y <= BH + 0.36; y += STEP) blockPts.push(x, y, z);
     }
   }
-  // The buffer holds the block or a word; the count says how many.
-  const EMIT_MAX = 24000;
-  const emitterAttribute = new THREE.StorageBufferAttribute(new Float32Array(EMIT_MAX * 4), 4);
-  const emitterBuffer = storage(emitterAttribute, 'vec4', EMIT_MAX).toReadOnly();
-  const uEmitCount = uniform(0, 'uint');
-  // Thin letter strokes cover few cells, so a word emits harder.
-  const uEmitGain = uniform(1.0);
-  function setEmitters(flat) {
-    const a = emitterAttribute.array, n = Math.min(flat.length / 3, EMIT_MAX);
-    for (let i = 0; i < n; i++) { a[i * 4] = flat[i * 3]; a[i * 4 + 1] = flat[i * 3 + 1]; a[i * 4 + 2] = flat[i * 3 + 2]; }
-    emitterAttribute.needsUpdate = true;
-    uEmitCount.value = n;
-  }
   setEmitters(blockPts);
-
-  const getVoxelCoord = id => uvec3(id.mod(GRID_SIZE_X), id.div(GRID_SIZE_X).mod(GRID_SIZE_Y), id.div(GRID_SIZE_X * GRID_SIZE_Y));
-  const coordToUVW = coord => vec3(coord).add(0.5).div(vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z));
-
-  /* ---------- fluid simulation kernels ---------- */
-  // Curl noise is computed once into a 3D texture.
-  const computeCurlNoisePass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const freq = uTurbFrequency;
-    const e = float(0.1).div(freq);
-    const dx = vec3(e, 0.0, 0.0);
-    const dy = vec3(0.0, e, 0.0);
-    const dz = vec3(0.0, 0.0, e);
-    const p = uvw.mul(vec3(VOLUME_WORLD_SIZE_X / VOLUME_WORLD_SIZE_Y, 1.0, VOLUME_WORLD_SIZE_Z / VOLUME_WORLD_SIZE_Y));
-    const p_x0 = snoiseVec3(p.sub(dx).mul(freq));
-    const p_x1 = snoiseVec3(p.add(dx).mul(freq));
-    const p_y0 = snoiseVec3(p.sub(dy).mul(freq));
-    const p_y1 = snoiseVec3(p.add(dy).mul(freq));
-    const p_z0 = snoiseVec3(p.sub(dz).mul(freq));
-    const p_z1 = snoiseVec3(p.add(dz).mul(freq));
-    const x = p_y1.z.sub(p_y0.z).sub(p_z1.y).add(p_z0.y);
-    const y = p_z1.x.sub(p_z0.x).sub(p_x1.z).add(p_x0.z);
-    const z = p_x1.y.sub(p_x0.y).sub(p_y1.x).add(p_y0.x);
-    textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).mul(5.0), 0.0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Reset empties the velocity and both dye textures.
-  const clearPass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    textureStore(velTexA, coord, vec4(0)).toWriteOnly();
-    textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
-    textureStore(dyeTexB, coord, vec4(0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Vorticity is the curl of the projected velocity.
-  const curlPass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const vR = texture3D(velTexA, uvw.add(vec3(TEXEL_X, 0, 0)), 0).xyz;
-    const vL = texture3D(velTexA, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).xyz;
-    const vU = texture3D(velTexA, uvw.add(vec3(0, TEXEL_Y, 0)), 0).xyz;
-    const vD = texture3D(velTexA, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).xyz;
-    const vF = texture3D(velTexA, uvw.add(vec3(0, 0, TEXEL_Z)), 0).xyz;
-    const vB = texture3D(velTexA, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).xyz;
-    const w = vec3(
-      vU.z.sub(vD.z).sub(vF.y.sub(vB.y)),
-      vF.x.sub(vB.x).sub(vR.z.sub(vL.z)),
-      vR.y.sub(vL.y).sub(vU.x.sub(vD.x)),
-    ).div(2 * CELL);
-    textureStore(curlTex, coord, vec4(w, w.length())).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Advects velocity, then adds buoyancy, turbulence, block wind and air wind.
-  const advectVelocityPass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const vel = texture3D(velTexA, uvw, 0).xyz;
-    const prevPos = uvw.sub(vel.div(uVolumeWorldSize).mul(uDt));
-    const newVel = texture3D(velTexA, prevPos, 0).xyz.toVar();
-
-    const dye = dyeTexNode.sample(uvw).level(0);
-    const density = dye.r;
-    const temperature = dye.g;
-    const age = dye.b;
-
-    // Hot air rises, smoke weight pulls down.
-    const buoyancyForce = temperature.mul(uBuoyancy).sub(density.mul(uWeight)).mul(VOLUME_WORLD_SIZE_Y);
-    newVel.addAssign(vec3(0, buoyancyForce, 0).mul(uDt));
-
-    // Thermal turbulence follows heat and decays with age.
-    const thermalNoisePos = uvw.add(vec3(0, age.negate().mul(0.6), age.mul(0.13)).div(uTurbFrequency));
-    const decay = age.mul(uTurbulenceDecay.negate()).exp();
-    const thermalTurbulence = curlNoiseTexNode.sample(thermalNoisePos).level(0).xyz.mul(uTurbulence).mul(temperature).mul(decay);
-    // Ambient turbulence stirs cooled smoke over time.
-    const ambientNoisePos = uvw.mul(0.5).add(vec3(0, uTime.mul(0.25), uTime.mul(0.06)).div(uTurbFrequency));
-    const ambientTurbulence = curlNoiseTexNode.sample(ambientNoisePos).level(0).xyz.mul(uTurbulence.mul(0.2)).mul(density);
-    newVel.addAssign(thermalTurbulence.add(ambientTurbulence).mul(VOLUME_WORLD_SIZE_Y).mul(uDt));
-
-    newVel.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
-
-    // Vorticity confinement spins small curls back up into tongues.
-    // The force runs across the gradient of the curl length.
-    const wC = texture3D(curlTex, uvw, 0);
-    const eta = vec3(
-      texture3D(curlTex, uvw.add(vec3(TEXEL_X, 0, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).w),
-      texture3D(curlTex, uvw.add(vec3(0, TEXEL_Y, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).w),
-      texture3D(curlTex, uvw.add(vec3(0, 0, TEXEL_Z)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).w),
-    );
-    const N = eta.div(eta.length().add(1e-5));
-    // Hot gas and smoke take the force; empty air stays calm.
-    const where = temperature.add(density.mul(0.5)).clamp(0, 1);
-    newVel.addAssign(N.cross(wC.xyz).mul(uVorticity.mul(CELL)).mul(where).mul(uDt));
-
-    // A moving block pushes wind through a sphere around it.
-    const worldPos = uvw.sub(0.5).mul(uVolumeWorldSize).add(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0));
-    const dist = worldPos.distance(uBlockPosition);
-    const blockRadius = float(1.2);
-    If(dist.lessThan(blockRadius), () => {
-      const falloff = smoothstep(0.0, 1.0, float(1.0).sub(dist.div(blockRadius)));
-      const windNoisePos = uvw.add(vec3(0.0, uTime.mul(0.5), 0.0).div(uTurbFrequency));
-      const windTurbulence = curlNoiseTexNode.sample(windNoisePos).level(0).xyz.mul(uTurbulence).mul(uBlockSpeed);
-      newVel.addAssign(uBlockVelocity.mul(uWindStrength).add(windTurbulence).mul(uDt).mul(falloff));
-    });
-
-    // A drag through empty air blows a gust round the pointer.
-    const airDist = worldPos.distance(uAirPosition);
-    If(airDist.lessThan(WIND_RADIUS), () => {
-      const falloff = smoothstep(0.0, 1.0, float(1.0).sub(airDist.div(WIND_RADIUS)));
-      newVel.addAssign(uAirVelocity.mul(2.5).mul(uDt).mul(falloff));
-    });
-
-    // Twister spins hot gas round the block and draws it inward.
-    const rel = worldPos.xz.sub(uBlockPosition.xz);
-    const rl = rel.length().add(0.35);
-    const spin = vec3(rel.y.negate(), 0, rel.x).sub(vec3(rel.x, 0, rel.y).mul(0.45)).div(rl);
-    const hot = temperature.add(density.mul(0.3)).clamp(0, 1);
-    newVel.addAssign(spin.mul(uSwirl).mul(float(1.0).sub(smoothstep(0.5, 6.0, rl))).mul(hot).mul(uDt));
-    // Gusts push hot gas and smoke sideways.
-    newVel.addAssign(uWind.mul(temperature.add(density.mul(0.5)).clamp(0, 1)).mul(uDt));
-
-    // Velocity fades near the box walls.
-    const edge = min(uvw, vec3(1).sub(uvw));
-    newVel.mulAssign(smoothstep(0.0, 0.08, min(edge.x, min(edge.y, edge.z))));
-
-    textureStore(velTexB, coord, vec4(newVel, 0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  const divergencePass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const vR = texture3D(velTexB, uvw.add(vec3(TEXEL_X, 0, 0)), 0).x;
-    const vL = texture3D(velTexB, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).x;
-    const vU = texture3D(velTexB, uvw.add(vec3(0, TEXEL_Y, 0)), 0).y;
-    const vD = texture3D(velTexB, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).y;
-    const vF = texture3D(velTexB, uvw.add(vec3(0, 0, TEXEL_Z)), 0).z;
-    const vB = texture3D(velTexB, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).z;
-    const divergence = vR.sub(vL).add(vU.sub(vD)).add(vF.sub(vB)).mul(0.5);
-    textureStore(divTex, coord, vec4(divergence, 0, 0, 0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Jacobi pressure solve ping-pongs between A and B.
-  const jacobi = (pressRead, pressWrite) => Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const pR = texture3D(pressRead, uvw.add(vec3(TEXEL_X, 0, 0)), 0).x;
-    const pL = texture3D(pressRead, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).x;
-    const pU = texture3D(pressRead, uvw.add(vec3(0, TEXEL_Y, 0)), 0).x;
-    const pD = texture3D(pressRead, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).x;
-    const pF = texture3D(pressRead, uvw.add(vec3(0, 0, TEXEL_Z)), 0).x;
-    const pB = texture3D(pressRead, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).x;
-    const divergence = texture3D(divTex, uvw, 0).x;
-    const pressure = pR.add(pL).add(pU).add(pD).add(pF).add(pB).sub(divergence).div(6);
-    textureStore(pressWrite, coord, vec4(pressure, 0, 0, 0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-  const jacobiPassAB = jacobi(pressTexA, pressTexB);
-  const jacobiPassBA = jacobi(pressTexB, pressTexA);
-
-  // Subtracting the pressure gradient makes velocity divergence-free.
-  const projectPass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const pR = texture3D(pressTexA, uvw.add(vec3(TEXEL_X, 0, 0)), 0).x;
-    const pL = texture3D(pressTexA, uvw.sub(vec3(TEXEL_X, 0, 0)), 0).x;
-    const pU = texture3D(pressTexA, uvw.add(vec3(0, TEXEL_Y, 0)), 0).x;
-    const pD = texture3D(pressTexA, uvw.sub(vec3(0, TEXEL_Y, 0)), 0).x;
-    const pF = texture3D(pressTexA, uvw.add(vec3(0, 0, TEXEL_Z)), 0).x;
-    const pB = texture3D(pressTexA, uvw.sub(vec3(0, 0, TEXEL_Z)), 0).x;
-    const gradient = vec3(pR.sub(pL), pU.sub(pD), pF.sub(pB)).mul(0.5);
-    const vel = texture3D(velTexB, uvw, 0).xyz.sub(gradient);
-    textureStore(velTexA, coord, vec4(vel, 0)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Advects density and temperature; smoke dissipates, fire cools.
-  const advectDyePass = Fn(() => {
-    const coord = getVoxelCoord(instanceIndex);
-    const uvw = coordToUVW(coord);
-    const vel = texture3D(velTexA, uvw, 0).xyz;
-    const prevPos = uvw.sub(vel.div(uVolumeWorldSize).mul(uDt));
-    const dye = dyeTexNode.sample(prevPos).level(0);
-    const density = dye.r.mul(max(float(1).sub(uDissipation.mul(uDt)), 0)).toVar();
-    const temperature = dye.g.mul(max(float(1).sub(uCooling.mul(uDt)), 0)).toVar();
-    // Age uses a nearest lookup to avoid numerical diffusion.
-    const gridDims = vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z);
-    const nearestUVW = floor(prevPos.mul(gridDims)).add(0.5).div(gridDims);
-    const age = dyeTexNode.sample(nearestUVW).level(0).b.add(uDt).toVar();
-    temperature.assign(temperature.clamp(0, 12));
-    If(density.lessThanEqual(0.01), () => { age.assign(0.0); });
-    // Alpha carries salt; it clears with the smoke and burns off.
-    const saltDye = dye.a.mul(max(float(1).sub(uDissipation.add(uSaltFade).mul(uDt)), 0));
-    textureStore(dyeTexWriteNode, coord, vec4(density, temperature, age, saltDye)).toWriteOnly();
-  })().compute(CELL_COUNT);
-
-  // Emits density and heat from every emitter point.
-  const emitPass = Fn(() => {
-    const vertexPos = emitterBuffer.element(instanceIndex).xyz;
-    const worldPos = uBlockMatrix.mul(vec4(vertexPos, 1.0)).xyz;
-    const uvw = worldPos.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5);
-    // Points past the count stay silent.
-    If(instanceIndex.lessThan(uEmitCount).and(uvw.x.greaterThanEqual(0)).and(uvw.x.lessThanEqual(1))
-      .and(uvw.y.greaterThanEqual(0)).and(uvw.y.lessThanEqual(1))
-      .and(uvw.z.greaterThanEqual(0)).and(uvw.z.lessThanEqual(1)), () => {
-      const coord = uvec3(uvw.mul(vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z)));
-      const flicker = mx_noise_float(vertexPos.mul(9.0).add(vec3(0.0, uTime.negate().mul(2.5), uTime.mul(0.7)))).mul(0.5).add(0.5);
-      const baseEmission = uEmitTemperature.greaterThan(0.0).select(float(1.0), float(0.0));
-      // Moving the block boosts emission.
-      const emissionFactor = baseEmission.add(uBlockSpeed.mul(uMotionBoost)).mul(uEmitGain);
-      const densityVal = uEmitDensity.mul(float(1 / 120)).mul(flicker.mul(0.85).add(0.15)).mul(emissionFactor);
-      If(densityVal.greaterThan(0.0), () => {
-        const tempVal = uEmitTemperature.mul(float(1 / 120)).mul(flicker.mul(0.85).add(0.15)).mul(emissionFactor);
-        const currentDye = dyeTexNode.sample(uvw).level(0);
-        const newDensity = currentDye.r.add(densityVal);
-        const newTemp = currentDye.g.add(tempVal).clamp(0.0, 12.0);
-        const newAge = mix(currentDye.b, float(0.0), densityVal.div(max(newDensity, 0.001)));
-        // Salt rises in streaks, strongest near the landing spot.
-        const near = float(1.0).sub(smoothstep(0.1, 0.8, vertexPos.xz.distance(uSaltSpot)));
-        const streak = smoothstep(0.36, 0.62, mx_noise_float(vertexPos.mul(vec3(4.0, 1.5, 4.0)).add(vec3(uTime.mul(0.6), uTime.mul(-2.2), 0.0))).mul(0.5).add(0.5));
-        const saltVal = densityVal.mul(uSaltFeed).mul(near.mul(0.9).add(0.1)).mul(streak).mul(4.5);
-        textureStore(dyeTexWriteNode, coord, vec4(newDensity, newTemp, newAge, currentDye.a.add(saltVal))).toWriteOnly();
-      });
-    });
-  })().compute(EMIT_MAX);
-
-  const stepPasses = [curlPass, advectVelocityPass, divergencePass];
-  for (let i = 0; i < PRESSURE_ITERATIONS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
-  stepPasses.push(projectPass, advectDyePass, emitPass);
-
   /* ---------- scene ---------- */
   const scene = new THREE.Scene();
   // The backdrop is a dark ember tint, not pure black.
@@ -750,140 +430,9 @@ async function start() {
   camera.position.set(5.4, 4.7, -10.8);
   camera.lookAt(0, 3.5, 0);
 
-  // The volume raymarches the simulated dye texture.
-  const volumetricMaterial = new THREE.VolumeNodeMaterial();
-  volumetricMaterial.steps = QUALITY[quality].march;
-  volumetricMaterial.transparent = true;
-  volumetricMaterial.blending = THREE.AdditiveBlending;
-  volumetricMaterial.depthWrite = false;
-  // Dithering hides banding; the blur pass hides the dither.
-  volumetricMaterial.offsetNode = fract(interleavedGradientNoise(screenCoordinate).add(float(frameId).mul(0.618033988749895)));
-
-  // Blackbody-style ramp: end, mid, then start colour.
-  const fireRamp = Fn(([t]) => {
-    const color = vec3(0).toVar();
-    color.assign(mix(vec3(0.0, 0.0, 0.0), uFireEndColor, smoothstep(0.05, 0.35, t)));
-    color.assign(mix(color, uFireMidColor, smoothstep(0.35, 0.65, t)));
-    color.assign(mix(color, uFireStartColor, smoothstep(0.65, 1.0, t)));
-    return color;
-  });
-
-  // The salt ramp uses the same stops as the fire ramp.
-  const saltRamp = Fn(([t]) => {
-    const color = vec3(0).toVar();
-    color.assign(mix(vec3(0.0, 0.0, 0.0), uSaltEndColor, smoothstep(0.05, 0.35, t)));
-    color.assign(mix(color, uSaltMidColor, smoothstep(0.35, 0.65, t)));
-    color.assign(mix(color, uSaltStartColor, smoothstep(0.65, 1.0, t)));
-    return color;
-  });
-
-  const henyeyGreenstein = Fn(([cosTheta, g]) => {
-    const g2 = g.mul(g);
-    const denom = float(1.0).add(g2).sub(float(2.0).mul(g).mul(cosTheta));
-    return float(1.0).sub(g2).div(denom.pow(1.5)).mul(0.079577);
-  });
-
-  const getVolumeSample = ({ positionRay }) => {
-    const uvw = positionRay.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5).toVar();
-    // Velocity warps the lookup, so smoke turns wispy.
-    const noiseDistortion = texture3D(velTexA, uvw, 0).xyz.div(uVolumeWorldSize).mul(0.15);
-    const distortedUVW = uvw.add(noiseDistortion).clamp(0.0, 1.0).toVar();
-    const sample = dyeTexNode.sample(distortedUVW).level(0);
-    // Salt is a share of the smoke, so thin smoke keeps its colour.
-    const salt = sample.a.div(max(sample.r, 0.03)).clamp(0.0, 2.0).toVar();
-    const density = sample.r;
-    const age = sample.b;
-    const temperature = sample.g;
-    // Simplex noise adds fine detail.
-    const detailNoise = snoise(positionRay.mul(5.5).add(vec3(0, age.mul(0.8).negate(), 0)));
-    density.mulAssign(detailNoise.mul(0.35).add(0.85));
-    const edge = min(distortedUVW, vec3(1).sub(distortedUVW));
-    density.mulAssign(smoothstep(0.0, 0.06, min(edge.x, min(edge.y, edge.z))));
-    return { density, temperature, age, salt, distortedUVW };
-  };
-
-  // Smoke takes key light through a short self-shadow march.
-  volumetricMaterial.scatteringNode = Fn(({ positionRay }) => {
-    const { density } = getVolumeSample({ positionRay });
-    const lightDir = uKeyLightPos.sub(positionRay).normalize();
-    const shadowDensitySum = float(0.0).toVar();
-    const shadowStepSize = 0.35;
-    for (let i = 0; i < 2; i++) {
-      const shadowPos = positionRay.add(lightDir.mul((i + 0.5) * shadowStepSize));
-      const shadowUVW = shadowPos.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5);
-      const shadowEdge = min(shadowUVW, vec3(1).sub(shadowUVW));
-      const shadowFade = smoothstep(0.0, 0.06, min(shadowEdge.x, min(shadowEdge.y, shadowEdge.z)));
-      shadowDensitySum.addAssign(texture3D(dyeTexA, shadowUVW, 0).r.mul(shadowFade));
-    }
-    const tau = shadowDensitySum.mul(shadowStepSize).mul(uShadowAbsorption);
-    const beer = tau.negate().exp();
-    const multiScatter = tau.mul(0.25).negate().exp().mul(0.5);
-    const baseTransmittance = mix(beer, beer.add(multiScatter), uMultiScattering);
-    const powder = float(1.0).sub(tau.mul(2.0).negate().exp());
-    const finalTransmittance = mix(baseTransmittance, baseTransmittance.mul(powder), uPowderStrength);
-    const lightTransmittance = finalTransmittance.add(uShadowAmbient).clamp(0.0, 1.0);
-    const viewDir = cameraPosition.sub(positionRay).normalize();
-    const cosTheta = viewDir.dot(lightDir).clamp(-1.0, 1.0);
-    const phase = henyeyGreenstein(cosTheta, uAsymmetry);
-    return uSmokeTint.mul(density).mul(lightTransmittance).mul(phase.mul(12.56637));
-  });
-
-  // Fire is emission tinted by temperature.
-  volumetricMaterial.scatteringEmissiveNode = Fn(({ positionRay }) => {
-    const { density, temperature, salt } = getVolumeSample({ positionRay });
-    const firePower = float(6.0).sub(uFireGlowSpread);
-    const t = temperature.clamp(0, 1);
-    // The salt colour takes over the mantle; the hottest core stays pale.
-    const w = smoothstep(0.03, 0.4, salt).mul(float(1.0).sub(smoothstep(0.9, 1.0, t).mul(0.35)));
-    const fire = mix(fireRamp(t), saltRamp(t), w).mul(temperature.pow(firePower)).mul(uFireIntensity);
-    const distance = positionRay.sub(uKeyLightPos).length();
-    const attenuation = float(400.0).div(distance.pow(2.0));
-    return fire.mul(density.add(0.15)).mul(attenuation);
-  });
-
-  // The smoke casts a soft shadow onto the floor.
-  const volumeCastShadow = Fn(() => {
-    const startPos = positionWorld;
-    const lightDir = positionWorld.sub(cameraPosition).normalize();
-    const steps = uniform('int').onRenderUpdate(({ material, object }) => material.steps || (object && object.material && object.material.steps) || volumetricMaterial.steps);
-    const stepSize = float(VOLUME_WORLD_SIZE_DIAGONAL).div(steps).toVar();
-    const rayDir = lightDir.toVar();
-    const distTravelled = float(0.0).toVar();
-    const transmittance = float(1.0).toVar();
-    Loop(steps, () => {
-      const positionRay = startPos.add(rayDir.mul(distTravelled));
-      const { density } = getVolumeSample({ positionRay });
-      const absorption = density.mul(uShadowAbsorption).mul(0.01);
-      transmittance.mulAssign(absorption.negate().mul(stepSize).exp());
-      distTravelled.addAssign(stepSize);
-    });
-    transmittance.greaterThanEqual(0.99).discard();
-    return vec4(vec3(0), transmittance.oneMinus().mul(5));
-  });
-
-  const volumetricMesh = new THREE.Mesh(new THREE.BoxGeometry(VOLUME_WORLD_SIZE_X, VOLUME_WORLD_SIZE_Y, VOLUME_WORLD_SIZE_Z), volumetricMaterial);
-  volumetricMesh.position.y = VOLUME_WORLD_SIZE_Y / 2 + 0.4;
-  volumetricMesh.receiveShadow = true;
+  // The shared volume ray marches the dye; its twin casts the smoke shadow.
+  const { mesh: volumetricMesh, shadowMesh: volumetricShadowMesh, material: volumetricMaterial, shadowMaterial } = fire.volume({ steps: QUALITY[quality].march });
   scene.add(volumetricMesh);
-
-  const shadowMaterial = new THREE.VolumeNodeMaterial();
-  shadowMaterial.steps = volumetricMaterial.steps;
-  shadowMaterial.offsetNode = volumetricMaterial.offsetNode;
-  shadowMaterial.castShadowNode = volumeCastShadow();
-  shadowMaterial.shadowSide = THREE.FrontSide;
-  shadowMaterial.colorWrite = false;
-  shadowMaterial.depthWrite = false;
-  shadowMaterial.blending = THREE.CustomBlending;
-  shadowMaterial.blendEquation = THREE.AddEquation;
-  shadowMaterial.blendSrc = THREE.ZeroFactor;
-  shadowMaterial.blendDst = THREE.OneMinusSrcAlphaFactor;
-  shadowMaterial.blendEquationAlpha = THREE.AddEquation;
-  shadowMaterial.blendSrcAlpha = THREE.OneFactor;
-  shadowMaterial.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
-
-  const volumetricShadowMesh = new THREE.Mesh(new THREE.BoxGeometry(VOLUME_WORLD_SIZE_X, VOLUME_WORLD_SIZE_Y, VOLUME_WORLD_SIZE_Z), shadowMaterial);
-  volumetricShadowMesh.position.y = VOLUME_WORLD_SIZE_Y / 2 + 0.4;
-  volumetricShadowMesh.castShadow = true;
   scene.add(volumetricShadowMesh);
 
   const floorPlane = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: okColor(0.15, 0.02, 40), roughness: 0.85 }));
@@ -1002,7 +551,7 @@ async function start() {
   keyLight.shadow.autoUpdate = false;
   keyLight.target.position.set(1, 0, 0);
   scene.add(keyLight, keyLight.target);
-  const uKeyLightPos = uniform(keyLight.position);
+  fire.u.lightPos.value = keyLight.position;
 
   /* ---------- render pipeline ---------- */
   // The volume renders alone on layer 10 at half resolution.
@@ -1083,7 +632,7 @@ async function start() {
       });
     }).Else(() => {
       const uvw = p.xyz.sub(vec3(0, VOLUME_WORLD_SIZE_Y / 2, 0)).div(uVolumeWorldSize).add(0.5);
-      const flow = texture3D(velTexA, uvw.clamp(0.0, 1.0), 0).xyz;
+      const flow = texture3D(fire.vel, uvw.clamp(0.0, 1.0), 0).xyz;
       // Embers drift toward the flow and sink a little.
       const nv = mix(v.xyz, flow, float(1.0).sub(uSparkDt.mul(uSparkDrag).negate().exp())).add(vec3(0, -1.0, 0).mul(uSparkFall).mul(uSparkDt));
       const np = p.xyz.add(nv.mul(uSparkDt));
@@ -1325,8 +874,7 @@ async function start() {
 
   /* ---------- async warm-up ---------- */
   // Shaders compile off the critical path, so loading never freezes.
-  await renderer.compileComputeAsync([computeCurlNoisePass, clearPass, sparkPass, ...new Set(stepPasses)]);
-  renderer.compute(computeCurlNoisePass);
+  await fire.compile([sparkPass]);
   await scenePass.compileAsync(renderer);
   const cameraMask = camera.layers.mask;
   camera.layers.mask = volumetricLayer.mask;
@@ -1381,14 +929,9 @@ async function start() {
 
   // One fixed simulation step.
   function simulate(step) {
-    uDt.value = step;
     simulationTime += step;
     updateTemporalUniforms(simulationTime);
-    renderer.compute(stepPasses);
-    // Dye textures ping-pong each step.
-    const swap = dyeTexNode.value;
-    dyeTexNode.value = dyeTexWriteNode.value;
-    dyeTexWriteNode.value = swap;
+    fire.step(step);
   }
 
   // Without the frame loop, passes need a manual frame tick.
@@ -1763,7 +1306,7 @@ async function start() {
   sim.reset = () => {
     block.position.set(0, HOME_Y, 0);
     prevBlockPos.copy(block.position);
-    renderer.compute(clearPass);
+    fire.clear();
     simulationTime = 0; heat = 0; flare = 0; air.vel.set(0, 0, 0);
     saltFeed = 0; saltGlow = 0; burst = 0; grains.length = 0; grainMesh.count = 0; feeding = null;
     wake();
