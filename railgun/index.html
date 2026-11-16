@@ -6592,6 +6592,8 @@ const speckMat = new THREE.ShaderMaterial({
   uniforms: {
     uTime: U.uTime, uDpr: starMat.uniforms.uDpr, uSunC: U.uSunC, uSun: U.uSun, uStars: U.uStars,
     uPtr: { value: specks.ptr }, uVel: { value: specks.vel }, uStir: { value: 0 }, uAsp: { value: 1 }, uSteady: starMat.uniforms.uSteady,
+    // uSpan: the slab's half height per metre out; uSz: the speck size scale.
+    uSpan: { value: 0.6 }, uSz: { value: 1 },
     uDust: { value: new THREE.Vector3(...linFit(0.86, 0.05, 70)) },
   },
   transparent: true, depthWrite: false,
@@ -6599,7 +6601,7 @@ const speckMat = new THREE.ShaderMaterial({
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   vertexShader: /* glsl */`
   attribute vec4 aR;
-  uniform float uTime, uDpr, uStir, uAsp, uStars, uSteady;
+  uniform float uTime, uDpr, uStir, uAsp, uStars, uSteady, uSpan, uSz;
   uniform vec2 uPtr, uVel;
   uniform vec3 uSunC, uSun, uDust;
   varying vec3 vCol;
@@ -6609,7 +6611,7 @@ const speckMat = new THREE.ShaderMaterial({
     float t = uSteady > 0.5 ? 0.0 : uTime;
     float d = mix(25.0, 420.0, aR.z * aR.z);
     vec2 s = fract(aR.xy + vec2(0.006, 0.0015 * sin(t * 0.3 + aR.w * 9.0)) * t * (60.0 / d));
-    vec3 vp = vec3((s.x * 2.0 - 1.0) * d * 0.6 * uAsp, (s.y * 2.0 - 1.0) * d * 0.6, -d);
+    vec3 vp = vec3((s.x * 2.0 - 1.0) * d * uSpan * uAsp, (s.y * 2.0 - 1.0) * d * uSpan, -d);
     vec4 c = projectionMatrix * vec4(vp, 1.0);
     // The pointer's wake pushes specks aside and along its motion.
     vec2 q = c.xy / c.w, o = (q - uPtr) * vec2(uAsp, 1.0);
@@ -6617,7 +6619,7 @@ const speckMat = new THREE.ShaderMaterial({
     q += (normalize(o + 1e-4) * 0.12 + uVel * 0.6) * k * vec2(1.0 / uAsp, 1.0);
     gl_Position = vec4(q * c.w, c.zw);
     // Near specks are larger and dimmer: they sit out of focus.
-    gl_PointSize = uDpr * mix(5.0, 1.4, aR.z);
+    gl_PointSize = max(uDpr * uSz * mix(5.0, 1.4, aR.z), 1.0);
     // Dust glows toward the light: forward scatter from a low sun.
     // The view rotation's transpose turns the eye ray into world space.
     vec3 V = normalize(vp) * mat3(viewMatrix);
@@ -6651,7 +6653,13 @@ function stepSpecks(dt) {
   if (specks.stir < 0.002) specks.stir = 0;
   specks.vel.multiplyScalar(Math.exp(-dt / 0.9));
   speckMat.uniforms.uStir.value = reduced() ? 0 : specks.stir;
-  speckMat.uniforms.uAsp.value = size.w / size.h;
+  const u = speckMat.uniforms;
+  u.uAsp.value = size.w / size.h;
+  // The slab reaches past the lens's edges, so no speck wraps in view.
+  u.uSpan.value = Math.max(0.6, 1.1 * Math.tan(rad(camera.fov / 2)));
+  // A small screen gets fewer, smaller specks, or they read as snow.
+  u.uSz.value = clamp(Math.min(size.w, size.h) / 720, 0.75, 1);
+  speckGeo.setDrawRange(0, Math.round(SPECK_N * clamp(size.w * size.h / 921600, 0.3, 1)));
   speckPts.visible = !sight;
 }
 
