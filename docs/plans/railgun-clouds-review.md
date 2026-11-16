@@ -5,14 +5,14 @@
 
 ## The answer in one paragraph
 
-The clouds regress because the toy has no fixed target to hold them to and no check to catch a slip. Every note from Tom becomes a live push within minutes, from one of up to five sessions that edit the same 12,000-line file. The storm technique makes this worse: each storm's look depends on seven numbers in four places that must agree by hand, so a new shape is cut flat or square without an error. The layers also have no shared scale: the storms were scaled to ranges that had been replaced three minutes earlier. The fix is a process fix first (one owner, a still rig, a commit guard, a scale table), then a technique change (one storm field, baked, lit from one sun model). The plan in section 8 asks Tom for three decisions.
+The clouds regress because the toy has no fixed target to hold them to and no check to catch a slip. Every note from Tom becomes a live push within minutes, from one of up to five sessions that edit the same 12,000-line file. The storm technique makes this worse: each storm's look depends on seven numbers in four places that must agree by hand, so a new shape is cut flat or square without an error. The layers also have no shared scale: the storms were scaled to ranges that had been replaced three minutes earlier. The fix is a process fix first (one owner, a still rig, a commit guard, a scale table), then a technique change (Window seat's tower march at true scale, then one storm field, lit from one sun model). The plan in section 8 asks Tom for three decisions.
 
 ## 1. Ranked root causes
 
 | Rank | Cause | Kind | Evidence |
 |---|---|---|---|
 | 1 | Live pushes are the review loop, with no written target and no before/after gate | Process | 92 commits touched `railgun/index.html` from 12:00 to 16:00; 42 in the 13:00 hour. Same ask, two pushes a minute apart (a02130a6, 6767dd1c). A Tom fix undone seven minutes later (700162b0, 0a825d48). |
-| 2 | Hidden coupling in the storm code: bounds kept by hand in four places | Technique | A lobed anvil is cut flat and square by today's bounds (still 02). The card size uses the table's width `W`, which the shape no longer uses. |
+| 2 | Hidden coupling in the storm code: bounds kept by hand in four places | Technique | A lobed anvil is cut flat and square by today's bounds (still 02). The card is the cut (section 9): its size uses the table's width `W`, which the shape no longer uses. |
 | 3 | Many writers in one file; whole-file commits of stale copies | Ownership | 16 beans committed to `railgun/index.html` today. Three overwrites: bb4e4154, e9fc9c83, and the restore 3dd36acf, which dropped a64abcf2. |
 | 4 | No shared scale or layout table | Scale | 4a6113bb scaled storms to "ranges whose far crests reach 30 to 50 km", three minutes after e9fc9c83 cut the crests to 2.6 to 25 km. One storm is now hidden behind a range (stills 04, 05). |
 | 5 | A lab that is not the toy, and no repeatable stills | Verification | The lab has its own copy of the air, no card, no ranges, no grade. Its Width slider does nothing in the lab and sets the toy's card width. A repeatable still needed four patches. |
@@ -107,8 +107,9 @@ Light, measured:
 
 ### What should replace it, within three.js 0.170, 30 fps on Standard, no new library
 
+0. **Start from Window seat's tower march, at true scale.** Tom already likes Window seat's clouds, so they are the reference that exists today. Its march steps in kilometres (0.3 km on High, 0.5 on Standard, longer with distance), sizes its cylinder from the anvil, the foot and the billow size and moves it downwind, picks billow detail by distance (`lodAt`), frays the ice anvil and thins a dying column (`gDecay`). Port that march as it is, with storms 12 to 18 km tall, and take scale from placement (section 5). The steps below build on it.
 1. **One storm field, not storm objects.** A small top-down cell map built in JS from the storm table: each cell holds its place, radius, top, age and type. A height profile per type (cumulus, cumulonimbus with anvil, dying anvil) gives the vertical shape. The existing Perlin-Worley volume erodes it; shear with height bends it. A multicell, a flanking line or a squall line is a list of cells, not new GLSL. Mammatus is a bump field on the anvil base; a fibrous edge is stretched detail noise at low density. The bounds come from the same cell list, in one JS function. This is the approach of Schneider's Nubis clouds (SIGGRAPH 2015, 2017), cut down to far storms.
-2. **Bake, then light.** The camera is locked off; storms 85 to 200 km out do not move on screen. Bake the storm band into a buffer a little wider than the view, as the ranges already do (5e212ac4): 192 steps or more, an 8 to 16 tap light march, one joint march through all cells so storms shade and hide each other. Store colour, cover, first-hit depth and thickness. Rebake over several frames when the sun or time moves. Each frame then reads one texture, adds the shared air, the lightning (through the thickness) and the rock's fire. The slow boil: rebake in the background and cross-fade.
+2. **Bake, then light, if the cost needs it.** The camera is locked off; storms 85 to 200 km out do not move on screen. Bake the storm band into a buffer a little wider than the view, as the ranges already do (5e212ac4): 192 steps or more, an 8 to 16 tap light march, one joint march through all cells so storms shade and hide each other. Store colour, cover, first-hit depth and thickness. Rebake over several frames when the sun or time moves. Each frame then reads one texture, adds the shared air, the lightning (through the thickness) and the rock's fire. The slow boil: rebake in the background and cross-fade.
 3. **One sun model.** Sunlight per sample from the local sun height and altitude (a small transmittance table built in JS), in place of `uSunC` plus `litTop`. Storms, ranges, heaps and the deck then agree at dusk.
 4. **Place storms for the camera.** Each storm keeps its top above the range behind it, stands at least 30 degrees off the sun's path on the Time slider (or is meant to be backlit), and has its own wind, so anvils and lines meet the eye at different angles. Check the landscape and the phone frame: on a phone today only half of one storm shows (still 06).
 
@@ -183,7 +184,7 @@ Either way, one scale table holds every layer, and no layer changes scale on its
 flowchart LR
   F[0. Freeze cloud pushes] --> R[1. Rig, guard, owner]
   R --> S[2. Scale table and layout: Tom decides]
-  S --> L[3. Storm field and bake, in the lab on the toy's own host]
+  S --> L[3. Window seat's march at true scale, then cells, in the lab on the toy's own host]
   L --> T[4. Into the toy behind a Dev row, then default]
 ```
 
@@ -192,7 +193,7 @@ flowchart LR
 | 0. Freeze | All sessions | No cloud, storm, air or sky push until step 1 lands. |
 | 1. Rig, guard, owner | Sky owner, one tools session | Still mode, matrix, golden "before", the six checks, the `commit.sh` guard. The lobes test fails the bounds probe; today's towering cumulus fails visibility. |
 | 2. Scale and layout | Tom decides, owner builds | One scale table; storms placed by section 4 point 4; the rock's path per Tom's option. Tom approves wide and phone stills at three suns. |
-| 3. Field and bake | Owner, in the lab | The lab imports the toy's host code, not copies. Lab stills beside the references; Tom approves; cost on Standard holds 30 fps. |
+| 3. Window seat's march, then cells | Owner, in the lab | Window seat's tower march at true scale first; then the cell list for multicells and flanking lines; a bake only if Standard cannot hold 30 fps. The lab imports the toy's host code, not copies. Lab stills beside the references; Tom approves. |
 | 4. Into the toy | Owner | Behind a Dev row first, then the default after Tom's approval. |
 
 Decisions for Tom:
@@ -216,3 +217,40 @@ Decisions for Tom:
 | ![each storm](../qa/railgun-clouds-review/04-each-storm.jpg) | 04: each storm alone. The towering cumulus does not show; the squall line is end-on. |
 | ![tcu](../qa/railgun-clouds-review/05-tcu-without-ranges.jpg) | 05: the towering cumulus with the ranges removed: a small lump on the horizon. |
 | ![phone](../qa/railgun-clouds-review/06-phone.jpg) | 06: the phone frame shows half of one storm. |
+
+## 9. Addendum, 15:56: the march changed during the review; which bound clips
+
+**The code moved under the review.** 649313f3 (15:33, `stimming-626s`) landed while I captured: Window seat's tower light in the shared march, a shorter stride inside the cloud (`min(dt, 0.45 U)`, 96 steps at most) and a Storm softness knob. Stills 01 to 06 show 9310ec8e. At blue hour the slats are mostly gone on 649313f3 (still 07). This is root cause 1 in action: the target moved while it was being judged.
+
+**Which bound cuts a wider anvil.** The sky session reports that a wider `stormReach()` did not save its lobed anvils, and asks whether steps or the skip are to blame. On 649313f3, with the same lobed anvil at noon (still 08):
+
+| Bounds widened | Result |
+|---|---|
+| None (today) | Cut flat on top and square at the side |
+| Cylinder only (`stormReach() + 12`) | Still cut |
+| Top cut only (`sTop + 30`) | Still cut |
+| Card only (`STORM_VS`: 7 W, 2.6 H, from 0.8 H below the base) | Whole, except the far left lobes |
+| Card and cylinder | Whole |
+| Card, cylinder, top cut, then 192 steps in place of 48 | No visible change (0.6% of pixels) |
+
+The cap is the storm card in `index.html` (3 W wide, from 0.2 H below the base to 1.3 H above it), sized from the table's `W` and `H`, not from the shape. The cylinder clips the farthest lobes as well. Steps and the skip are not the cause.
+
+**The ambient session's lead on Window seat, checked in code.**
+
+| Claim | Verdict |
+|---|---|
+| Window seat steps in fixed kilometres that grow with distance | Confirmed: `uTowStep` 0.3 (High) or 0.5 (Standard), `uTowSteps` 64 or 40 (`window/index.html` 1729 to 1731); `st = uTowStep * clamp(t0 / 70, 0.75, 2.2)` (`window/shader.js` 2161). The railgun stepped about 1.7 km before 649313f3 and about 1 to 2 km inside cloud now. |
+| Railgun billows are in storm units, so lumps scale with storm height | Confirmed: `billow()` divides by `sTile`, in units of `H / 14`. |
+| Window seat marches deck, mids and towers in one pass with one light | Confirmed for the towers' loop; the railgun splits cirrus, deck, cards, heaps and storms into passes lit by different sessions. |
+| Window seat's cylinder is offset downwind and sized from anvil, foot and billows | Confirmed: `window/shader.js` 2145 to 2149. `stormReach()` is centred on the core with a fixed `+ 2.0`. |
+| Window seat picks detail by distance, frays the anvil, thins a dying column | Confirmed: `lodAt`, the `far` fray and `gDecay` (2172 to 2181). The railgun has none. |
+| Window seat towers are 12 to 15 km tall | Not checked. |
+
+I agree with its conclusion and moved it into the plan as step 0 of section 4: port Window seat's march as it is, at true kilometre scale, and take scale from placement.
+
+**A correction for the sky session's constraints.** Its note says the storm rows stand "against ranges of 30 to 50 km". Since e9fc9c83 the crests are 2.6 to 25.2 km (`railgun/ranges.js`). `storms.js` line 9 carries the same stale claim.
+
+| Still | Shows |
+|---|---|
+| ![blue hour now](../qa/railgun-clouds-review/07-bluehour-649313f3.jpg) | 07: blue hour on 9310ec8e and on 649313f3. |
+| ![which bound](../qa/railgun-clouds-review/08-which-bound-clips.jpg) | 08: the lobed anvil with each bound widened in turn. |
