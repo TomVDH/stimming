@@ -4910,8 +4910,22 @@ const ambA = new THREE.Vector3(), ambB = new THREE.Vector3();
 const ambFall = makeMeteor(linFit(0.95, 0.06, 80), linFit(0.62, 0.16, 40)), ambFallHead = makeFlare(linFit(0.9, 0.12, 62));
 // The satellite: a point of sunlight on a dark sky.
 const ambSat = makeFlare(linFit(0.95, 0.02, 90));
-// A far gun's slug and the faint line it leaves.
-const ambBolt = makeGlint(linFit(0.95, 0.06, 235)), ambBoltLine = makeGlint(linFit(0.8, 0.09, 240));
+// A far gun's round: the main shot's ribbon, ion line and contrail.
+// The parts share the main programs; the first far bolt builds them.
+let farGun = null;
+const farP = new THREE.Vector3(), farQ = new THREE.Vector3();
+function makeFarGun() {
+  const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() }, uK: { value: 1 } };
+  const g = {
+    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 5 }, uWide: { value: 110 } })),
+    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), own,
+  };
+  for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
+  return g;
+}
+// The far slug slows as the ion line assumes: fraction of its run at time t.
+const farReach = (e, t) => 1 - Math.pow(1 - clamp(t / e.T, 0, 1), 2.6);
+const farAt = (e, t, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, t));
 // Orbital flak: pinprick pops high in a dark sky.
 const ambFlak = Array.from({ length: 6 }, () => makeFlare(linFit(0.96, 0.03, 220)));
 // Embers where chunks lie on the plain.
@@ -5026,13 +5040,15 @@ function ambStart(kind) {
   }
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
-    // A far gun fires from behind the ranges.
-    // Its slug climbs steep and away; a faint line stays behind.
+    // A far gun fires from behind the ranges and misses.
+    // Its slug climbs steep and away, then dies out high up.
     const out = ambFlat((rnd() * 2 - 1) * 0.8, new THREE.Vector3());
-    const site = camera.position.clone().addScaledVector(out, 90000 + 60000 * rnd()).setY(0);
-    const side = new THREE.Vector3(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.35);
-    const dir = new THREE.Vector3(0, 1, 0).addScaledVector(out, 0.45).add(side).normalize();
-    amb.live.push({ kind, t0: simT, dur: 18, site, dir, v: 15000 });
+    const D = 85000 + 50000 * rnd(), site = camera.position.clone().addScaledVector(out, D).setY(0);
+    const side = new THREE.Vector3(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.5);
+    const dir = new THREE.Vector3(0, 1, 0).addScaledVector(out, 0.35).add(side).normalize();
+    amb.live.push({ kind, t0: simT, dur: 16, site, dir, D, L: 160000, T: 8 + 3 * rnd(), k: 0.8 + 0.4 * rnd() });
+    // The crack arrives late and faint; a long wait is cut to half a minute.
+    amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
     return;
   }
   if (kind === 'flak') {
@@ -5106,7 +5122,8 @@ function stepAmbient(dt) {
 }
 // The events write their light after the domes clear uImp.
 function drawAmbient() {
-  for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ambBolt, ambBoltLine, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
+  for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
+  if (farGun) farGun.bolt.visible = farGun.line.visible = farGun.puffs.visible = false;
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
@@ -5119,18 +5136,10 @@ function drawAmbient() {
       for (const o of e.offs) f += flashOf(a - o);
       slot.set(e.site.x, e.site.y, e.site.z, Math.min(2.5, f * e.k));
     } else if (e.kind === 'bolt') {
-      // The launch lights the horizon; the slug climbs for four seconds.
+      // The launch lights the horizon behind the ranges.
       const slot = [...L].reverse().find(v => v.w < 0.001);
       if (slot) slot.set(e.site.x, e.site.y, e.site.z, 0.9 * flashOf(a));
-      const fly = Math.min(a, 4), head = e.v * fly;
-      if (a < 4) {
-        ambB.copy(e.site).addScaledVector(e.dir, Math.max(0, head - 4000));
-        ambSeg(ambBolt, ambB, e.dir, Math.min(head, 4000), 80, 3 * ambClear(ambB));
-      }
-      // The line glows in behind the slug and fades over seven seconds.
-      const lk = 0.35 * Math.min(1, a / 0.3) * Math.exp(-Math.max(a - 4, 0) / 5);
-      ambB.copy(e.site).addScaledVector(e.dir, 0.5 * head);
-      ambSeg(ambBoltLine, e.site, e.dir, Math.max(1, head), 45, lk * ambClear(ambB));
+      drawFarBolt(e, a);
     } else if (e.kind === 'flak') {
       let n = 0;
       for (const q of e.pops) {
@@ -5162,6 +5171,36 @@ function drawAmbient() {
       meteor(e.m, ambB, ambA, 70, 3.2 * e.k * fade * U.uStars.value * ambClear(ambA));
     }
   }
+}
+// The far round: the ribbon at the head, the ion line, the contrail.
+// The trail scales with distance, so it reads like the main shot's.
+function drawFarBolt(e, a) {
+  const g = farGun ??= makeFarGun(), K = e.D / 6000;
+  // The ribbon: the main shot's streak and shock diamonds.
+  const tail = 0.55 + 0.03 * e.T, head = farReach(e, a);
+  const fade = (1 - THREE.MathUtils.smoothstep(head, 0.5, 0.85)) * ambClear(farAt(e, a, farP));
+  g.bolt.visible = fade > 0.002;
+  if (g.bolt.visible) {
+    g.bolt.material.uniforms.uWide.value = 40 * K;
+    const geo = g.bolt.geometry, p0 = geo.attributes.aP0, p1 = geo.attributes.aP1, kk = geo.attributes.aK;
+    for (let k = 0; k < BOLT_SEG; k++) {
+      const ta = a - tail * (1 - k / BOLT_SEG), tb = a - tail * (1 - (k + 1) / BOLT_SEG);
+      farAt(e, ta, farP); farAt(e, tb, farQ);
+      const lag = (a - tb) / tail;
+      const b = tb < 0 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade * e.k;
+      const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
+      for (let v = 0; v < 4; v++) {
+        const vi = k * 4 + v;
+        p0.setXYZ(vi, farP.x, farP.y, farP.z); p1.setXYZ(vi, farQ.x, farQ.y, farQ.z); kk.setXY(vi, b, taper);
+      }
+    }
+    p0.needsUpdate = p1.needsUpdate = kk.needsUpdate = true;
+  }
+  // The ion line glows behind the head and cools to a contrail.
+  const o = g.own;
+  o.uA.value.copy(e.site); o.uB.value.copy(e.site).addScaledVector(e.dir, e.L); o.uI.value.set(a, e.T, e.k); o.uK.value = K;
+  g.line.visible = a > 0 && a < e.T + 1.5;
+  g.puffs.visible = a > 0.15;
 }
 // A late landing: the fall, then the flash and the dome.
 function drawLanding(e, a) {
@@ -5740,6 +5779,8 @@ const ionMat = new THREE.ShaderMaterial({
   uniforms: {
     ...U, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr,
     uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() },
+    // uK scales the trail's widths and wind in metres; far bolts use more.
+    uK: { value: 1 },
     uIonC: { value: new THREE.Vector3(...linFit(0.88, 0.1, 230)) }, uConC: { value: new THREE.Vector3(...linFit(0.93, 0.008, 80)) },
   },
   transparent: true, depthWrite: false,
@@ -5749,7 +5790,7 @@ const ionMat = new THREE.ShaderMaterial({
   attribute vec2 aF;
   uniform vec3 uA, uB, uI;
   uniform vec2 uRes;
-  uniform float uDpr;
+  uniform float uDpr, uK;
   varying float vY, vLa, vF;
   varying vec3 vP, vSide;
   // The slug leaves fast and slows: it reaches fraction f at this time.
@@ -5760,7 +5801,7 @@ const ionMat = new THREE.ShaderMaterial({
     la = max(uI.x - reach(f), 0.0);
     vec3 p = mix(uA, uB, f);
     // Wind drifts the old line, wavers it and sways it in long slow bends.
-    p += vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
+    p += uK * (vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la);
     return p;
   }
   void main() {
@@ -5774,7 +5815,7 @@ const ionMat = new THREE.ShaderMaterial({
     float ppm = 0.5 * uRes.y * projectionMatrix[1][1] / max(c0.w, 1.0);
     // The trail swells and thins in puffs along its length.
     float puff = 0.65 + 0.35 * sin(aF.x * 173.0 + la * 0.15) * sin(aF.x * 67.0 - la * 0.09) + 0.25 * sin(aF.x * 431.0);
-    float W = clamp((10.0 + 25.0 * la) * puff * ppm, 1.6 * uDpr, 60.0 * uDpr);
+    float W = clamp(uK * (10.0 + 25.0 * la) * puff * ppm, 1.6 * uDpr, 60.0 * uDpr);
     // A short segment on screen gets a narrow ribbon, so it never fans.
     W = min(W, max(2.5 * length((c1.xy / c1.w - c0.xy / c0.w) * 0.5 * uRes), 1.6 * uDpr));
     c0.xy += vec2(-d.y, d.x) * position.y * W / (0.5 * uRes) * c0.w;
@@ -5825,7 +5866,7 @@ const ionPuffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeome
   ionPuffGeo.instanceCount = ION_PUFFS;
 }
 const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
-  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
+  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uK: ionMat.uniforms.uK, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -5833,7 +5874,7 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
   attribute vec2 aF;
   uniform vec3 uA, uB, uI;
   uniform vec2 uRes;
-  uniform float uDpr;
+  uniform float uDpr, uK;
   varying vec2 vUv;
   varying float vLa, vSeed, vFr;
   varying vec3 vP, vR, vU;
@@ -5842,9 +5883,9 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     float f = aF.x, la = uI.x - uI.y * (1.0 - pow(max(1.0 - f, 0.0), 1.0 / 2.6));
     if (la < 0.15) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
     // The wind takes the trail, gathers pace and sways it.
-    vec3 p = mix(uA, uB, f) + vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la;
+    vec3 p = mix(uA, uB, f) + uK * (vec3(12.0, 2.0, 3.5) * la + vec3(0.35, 0.05, 0.12) * la * la + vec3(sin(f * 23.0 + la * 0.3), 0.3 * sin(f * 41.0), cos(f * 17.0 - la * 0.2)) * 3.0 * la + vec3(sin(f * 9.0 + la * 0.8), 0.25 * sin(f * 14.0 - la * 0.6), cos(f * 7.0 + la * 0.7)) * 9.0 * la);
     // Each puff swells with age, some more than others.
-    float r = (8.0 + 14.0 * la) * (0.7 + 0.6 * fract(aF.y * 7.31));
+    float r = uK * (8.0 + 14.0 * la) * (0.7 + 0.6 * fract(aF.y * 7.31));
     // A cap in pixels keeps near puffs from flooding the screen.
     vec4 cc = projectionMatrix * viewMatrix * vec4(p, 1.0);
     float ppm = 0.5 * uRes.y * projectionMatrix[1][1] / max(cc.w, 1.0);

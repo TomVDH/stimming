@@ -378,7 +378,7 @@ The toy tells people that watching is fine. The scene carries itself:
   - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
   - `__qa.lens()` reads the push, the loom, the arc and the stir.
 - Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
-  - Far bolt: another gun's slug climbs from past the ranges for 4 s; a faint line stays and fades over about 8 s; the launch lights the horizon.
+  - Far bolt (rebuilt 2026-11-16, bean stimming-ut05; Tom: the old one was "not convincing"): another gun 85 to 135 km out fires from behind the ranges and misses. It draws with the main shot's own parts: the bolt ribbon with its shock diamonds, the ion line and the contrail puffs, copies that share the main programs. `uK` on the ion line and the puffs scales their widths and wind; the far round sets it to distance / 6 km. The slug slows as the ion line assumes (`farReach`) and dies out high up. The ranges hide its foot by depth. The launch lights the horizon; a faint crack follows, cut to 30 s.
   - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
   - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
   - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
