@@ -83,3 +83,25 @@ Tom: "camera pov is adjustable in a dev bar from now on -- under ?dev -- i want 
 - [x] Foam: cell size and density follow thickness; soft froth with few distinct bubbles; quieter frit band
 - [ ] Stills before and after, desktop and phone; three camera proofs; frame time
 - [ ] Toy doc and handoff (accent, menu icon) updated
+
+## Pass five (Tom, 2026-11-16): the place, the establishing shot, strange things
+
+Tom: "Let's make this a shady car wash somewhere in the nevada desert -- no one really knows where it came from or who owns it but we do know it's open 24/7 -- strange things do happen when you go through it sometimes." Then: "We'd want an establishment shot splash screen almost -- the sole action is to proceed -- and then the anim starts -- we'd want a shady desert 50s car wash essentially".
+
+- [x] Establishing shot: the lot at night from the road; wide and tall framings; Dev rows for its camera
+- [x] One action, Proceed: tap, Enter or Space; a dip to the driver's seat; the run plays by itself; back to the shot
+- [x] The 1950s place outside: road, poles, stucco building, glass blocks, canopy, booth, price board, sodium lamp with dust and bugs
+- [x] The pylon: CAR WASH, an arrow of bulbs, most dead; OPEN 24 HRS, the only neon, buzzing, one tube dead
+- [x] Sky: stars, the galaxy, far ranges, a town glow, silent heat lightning
+- [x] Worn interior: painted block, rust, pipe arches, old tubes and caged bulbs that flicker or are dead, motors and belts, small painted signs, the chain, drains, moths, mist in the light
+- [x] The car in its time: chrome strip, ornament, painted dash; low beams outside
+- [x] Suds: white froth in heaps, a few bubbles of many sizes, lace where it drains
+- [x] Blower: no light strips; warm caged lamps at the exit behind beaded glass
+- [x] Sound: wind, crickets, sign buzz, lamp hum; motors, belt, loose panel, drain; a duck bus
+- [x] Vignette: Open all night
+- [x] Stills: shot at desktop and phone, first frame after Proceed, every station; GPU time against v4
+- [ ] Strange events: a set, at most one per run, a fair chance of none; each with its own sound cue
+- [ ] Settings: Strange (Off, Sometimes, Often); Dev: force a named event
+- [ ] Reduced motion: events fade; no flicker over three a second
+- [ ] Stills per event
+- [ ] Handoff: accent and menu icon
