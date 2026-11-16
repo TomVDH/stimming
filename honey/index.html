@@ -106,7 +106,7 @@ mark('build');
 // Coil radius and lay speed run from a low pour to a high one.
 // Q is the flux; hold and melt are seconds; fold is the stack height in rope widths.
 const FLUIDS = {
-  syrup: { tone: 0, R: [0.06, 0.027], U: [0.3, 0.8], Q: 1.7e-4, hold: 0.9, melt: 2.4, fold: 5 },
+  syrup: { tone: 0, R: [0.06, 0.027], U: [0.3, 0.8], Q: 1.7e-4, hold: 0.5, melt: 1.8, fold: 4 },
   honey: { tone: 0.5, R: [0.075, 0.032], U: [0.24, 0.62], Q: 1.8e-4, hold: 1.6, melt: 4.5, fold: 7 },
   treacle: { tone: 1, R: [0.09, 0.04], U: [0.17, 0.45], Q: 2.2e-4, hold: 4.5, melt: 7.5, fold: 9 },
 };
@@ -263,7 +263,7 @@ const MAXP = 6000;
 const px = new Float32Array(MAXP), py = new Float32Array(MAXP), pz = new Float32Array(MAXP);
 const pr0 = new Float32Array(MAXP), pr = new Float32Array(MAXP), pt = new Float32Array(MAXP);
 const pborn = new Float64Array(MAXP), pgap = new Float32Array(MAXP), plen = new Float32Array(MAXP);
-const pm = new Float32Array(MAXP), phold = new Float32Array(MAXP), pmelt = new Float32Array(MAXP);
+const pm = new Float32Array(MAXP), phold = new Float32Array(MAXP), pmelt = new Float32Array(MAXP), pclk = new Float32Array(MAXP);
 const pprev = new Int32Array(MAXP);
 let tail = 0, head = 0;
 const at = k => k % MAXP;
@@ -308,7 +308,7 @@ function lay(th, x, y, r, seg) {
   const gap = 0.55 * (TAU * th.R) / th.U;
   const sup = support(x, y, r, sim.t - gap);
   px[i] = x; py[i] = y; pz[i] = Math.max(poolAt(x, y) + r * 0.8, sup);
-  pr0[i] = pr[i] = r; pt[i] = th.toneLow; pborn[i] = sim.t; pgap[i] = gap; plen[i] = seg; pm[i] = 0;
+  pr0[i] = pr[i] = r; pt[i] = th.toneLow; pborn[i] = sim.t; pgap[i] = gap; plen[i] = seg; pm[i] = 0; pclk[i] = 0;
   phold[i] = byTone(th.toneLow, f => f.hold); pmelt[i] = byTone(th.toneLow, f => f.melt);
   // A jump in the contact point starts a new strand.
   const q = th.last >= tail ? at(th.last) : -1;
@@ -317,12 +317,16 @@ function lay(th, x, y, r, seg) {
   return i;
 }
 // Melting moves each point's volume into the pool, after it holds its shape.
+// The weight of a tall stack squeezes its base, so the base melts sooner.
 function melt(dt) {
   const scale = dev.melt;
   for (let k = tail; k < head; k++) {
     const i = at(k);
     if (pr[i] <= 0) continue;
-    const age = sim.t - pborn[i], u = clamp((age - phold[i] * scale) / (pmelt[i] * scale));
+    const ci = clamp(Math.round((px[i] + EXT) / DX - 0.5), 0, G - 1), cj = clamp(Math.round((py[i] + EXT) / DX - 0.5), 0, G - 1);
+    const above = Math.max(0, ropeTop[cj * G + ci] - pz[i] - pr[i]) / (2 * pr0[i]);
+    pclk[i] += dt * (1 + Math.min(2.5, 0.3 * above));
+    const age = pclk[i], u = clamp((age - phold[i] * scale) / (pmelt[i] * scale));
     const m = u * u * (3 - 2 * u);
     if (m > pm[i]) {
       deposit(px[i], py[i], (m - pm[i]) * Math.PI * pr0[i] * pr0[i] * plen[i], pt[i]);
@@ -333,7 +337,7 @@ function melt(dt) {
   while (tail < head && pr[at(tail)] <= 0) tail++;
 }
 // Each frame the rope settles on what holds it up: the pool and older rope.
-const SLUMP = 0.35;
+const SLUMP = 0.12;
 function settle(dt) {
   hHead.fill(-1);
   let pend = tail;
@@ -344,7 +348,7 @@ function settle(dt) {
     const before = pborn[i] - pgap[i];
     while (pend < k && pborn[at(pend)] < before) { if (pr[at(pend)] > 0) hashAdd(pend); pend++; }
     // With age the rope sinks into the pool below it.
-    const sink = 0.55 - 0.75 * clamp((sim.t - pborn[i]) / ((phold[i] + 0.6 * pmelt[i]) * dev.melt));
+    const sink = 0.55 - 0.75 * clamp(pclk[i] / ((phold[i] + 0.6 * pmelt[i]) * dev.melt));
     const zt = Math.max(poolAt(px[i], py[i]) + pr[i] * sink, support(px[i], py[i], pr[i], before));
     if (pz[i] > zt) pz[i] = zt + (pz[i] - zt) * k0;
   }
@@ -368,52 +372,6 @@ function stamp() {
   }
 }
 
-/* ---------- topple: a tall stack bends over ---------- */
-// The stack curls over like a soft column, slowly, as heavy things do.
-let topple = null;
-function startTopple(th) {
-  const a = Math.random() * TAU, d = [Math.cos(a), Math.sin(a)];
-  const c = [th.Nc[0], th.Nc[1]], base = poolAt(c[0], c[1]);
-  const Hs = Math.max(th.zc - base, 0.04), ids = [], o = [];
-  // The lower third stays; above it the stack leans as one soft column.
-  const foot = base + Hs * 0.33;
-  for (let k = tail; k < head; k++) {
-    const i = at(k);
-    if (pr[i] <= 0 || pz[i] < foot) continue;
-    if (Math.hypot(px[i] - c[0], py[i] - c[1]) > th.R * 2.2) continue;
-    ids.push(i);
-    o.push(px[i], py[i], pz[i]);
-  }
-  if (!ids.length) return;
-  topple = { th, ids, o, d, c, base: foot, Hs: Hs * 0.67, t: 0, T: 2.6, ang: (24 + 16 * Math.random()) * Math.PI / 180, top: [0, 0] };
-}
-// A point at height h on a column bent by curvature k, in its bend plane.
-function bendAt(h, k) {
-  return k < 1e-5 ? [0, h, 0] : [(1 - Math.cos(k * h)) / k, Math.sin(k * h) / k, k * h];
-}
-function toppleStep(dt) {
-  if (!topple) return;
-  const tp = topple;
-  tp.t += dt;
-  const u = clamp(tp.t / tp.T), e = u * u * (3 - 2 * u), k = (tp.ang * e) / tp.Hs;
-  const [dx, dy] = tp.d;
-  tp.ids.forEach((i, n) => {
-    if (pr[i] <= 0) return;
-    const ox = tp.o[n * 3] - tp.c[0], oy = tp.o[n * 3 + 1] - tp.c[1], h = Math.max(tp.o[n * 3 + 2] - tp.base, 0);
-    // Across the bend the offset stays; along it, it turns with the column.
-    const od = ox * dx + oy * dy, op = -ox * dy + oy * dx;
-    const [s, z, a] = bendAt(h, k), ca = Math.cos(a), sa = Math.sin(a);
-    const along = s + od * ca;
-    px[i] = tp.c[0] + dx * along - dy * op;
-    py[i] = tp.c[1] + dy * along + dx * op;
-    pz[i] = Math.max(tp.base + z - od * sa, poolAt(px[i], py[i]) + pr[i] * 0.5);
-  });
-  // The coil rides the top of the lean and spills a little past it.
-  const [ts] = bendAt(tp.Hs, k), sp = ts + e * tp.th.R * 0.5;
-  tp.top = [dx * sp, dy * sp];
-  if (u >= 1) topple = null;
-}
-
 /* ---------- the thread ---------- */
 const sim = { t: 0 };
 // The pour follows the hand; the honey lags behind it by itself.
@@ -434,7 +392,7 @@ function newThread() {
     R: ph.R, U: ph.U, Q: ph.Q, r: Math.sqrt(ph.Q / (Math.PI * ph.U)),
     phi: Math.random() * TAU, hand: Math.random() < 0.5 ? 1 : -1,
     C: [...pour.N], dir: [1, 0], W: [0, 0], e: [1, 0], v: 0,
-    wander: [0, 0], wph: [0, 1, 2, 3].map(() => Math.random() * TAU), fold: [0, 0], foldH: 0, cool: 0,
+    wander: [0, 0], wph: [0, 1, 2, 3].map(() => Math.random() * TAU), fold: [0, 0], foldH: 0, stack: 0, lean: null,
     landT: 0, run: 0, last: -1, zc: 0, Ue: ph.U, pts: [], patter: 0, patAt: 0,
   };
 }
@@ -466,9 +424,13 @@ function generate(th, dt) {
   const wt = sim.t, wp = th.wph;
   th.wander[0] = R * 0.16 * (Math.sin(wt * 0.71 + wp[0]) + 0.5 * Math.sin(wt * 1.37 + wp[1]));
   th.wander[1] = R * 0.16 * (Math.sin(wt * 0.59 + wp[2]) + 0.5 * Math.sin(wt * 1.13 + wp[3]));
-  // A bending stack carries the coil with its top; after, the coil walks back.
-  if (topple && topple.th === th) { th.fold[0] = topple.top[0]; th.fold[1] = topple.top[1]; }
-  else { const kf = Math.exp(-dt / 0.7); th.fold[0] *= kf; th.fold[1] *= kf; }
+  // A tall stack sends the coil off its top: the stack leans, then spills.
+  const tall = clamp((th.stack - th.foldH * 0.55) / (th.foldH * 0.45));
+  if (tall > 0 && !th.lean) { const a = Math.random() * TAU; th.lean = [Math.cos(a), Math.sin(a)]; }
+  if (tall <= 0 && Math.hypot(th.fold[0], th.fold[1]) < R * 0.1) th.lean = null;
+  const lx = th.lean ? th.lean[0] * R * 1.1 * tall : 0, ly = th.lean ? th.lean[1] * R * 1.1 * tall : 0;
+  const kf = 1 - Math.exp(-dt / 1.4);
+  th.fold[0] += (lx - th.fold[0]) * kf; th.fold[1] += (ly - th.fold[1]) * kf;
   th.Nc[0] = th.N[0] + th.wander[0] + th.fold[0];
   th.Nc[1] = th.N[1] + th.wander[1] + th.fold[1];
   // Weights of the four patterns.
@@ -556,13 +518,8 @@ function threadStep(th, dt) {
   }
   const sup = support(th.C[0], th.C[1], r, sim.t - 0.55 * (TAU * th.R) / th.U);
   th.zc = Math.max(poolAt(th.C[0], th.C[1]) + r * 0.8, sup);
-  // A tall stack falls over and the coil folds aside.
-  const stack = (th.zc - poolAt(th.C[0], th.C[1])) / (2 * r);
-  if (!topple && th.src && stack > th.foldH && sim.t > th.cool) {
-    startTopple(th);
-    th.cool = sim.t + 4;
-    th.foldH = byTone(th.tone, f => f.fold) * (0.85 + 0.35 * Math.random());
-  }
+  // The stack height under the coil, in rope widths.
+  th.stack = (th.zc - poolAt(th.C[0], th.C[1])) / (2 * r);
   if (th.front >= 0 && th.front <= th.zc) { th.toneLow = th.tone; th.front = -1; }
   if (!th.src && th.zEnd <= th.zc + r) { th.state = 'done'; plop(th.C); }
   void top;
@@ -660,10 +617,11 @@ function bez(p0, p1, p2, p3, u) {
   const a = 1 - u, b0 = a * a * a, b1 = 3 * a * a * u, b2 = 3 * a * u * u, b3 = u * u * u;
   return [b0 * p0[0] + b1 * p1[0] + b2 * p2[0] + b3 * p3[0], b0 * p0[1] + b1 * p1[1] + b2 * p2[1] + b3 * p3[1], b0 * p0[2] + b1 * p1[2] + b2 * p2[2] + b3 * p3[2]];
 }
-// Free fall thins the thread: faster honey makes a thinner thread.
+// Free fall thins the thread: higher up it is slower, so wider.
+// A low pour tapers more, as its source is nearer.
 function rAt(th, z, zb) {
-  const u2 = th.U * th.U - 2 * 0.12 * (z - zb);
-  return Math.sqrt(th.Q / (Math.PI * Math.sqrt(Math.max(u2, 0.06 * 0.06))));
+  const rb = Math.sqrt(th.Q / (Math.PI * th.U)), k = 0.25 + 0.45 * (1 - height);
+  return rb * (1 + k * (1 - Math.exp(-Math.max(z - zb, 0) / 0.3)));
 }
 function threadPoints(th) {
   const pts = [];
@@ -1557,7 +1515,6 @@ function stepAll(dt) {
   for (const th of threads) threadStep(th, dt);
   for (let i = threads.length - 1; i >= 0; i--) if (threads[i].state === 'done') threads.splice(i, 1);
   for (const th of threads) th.pts = threadPoints(th);
-  toppleStep(dt);
   melt(dt);
   stepBubbles(dt);
   poolStep(dt);
@@ -1565,7 +1522,7 @@ function stepAll(dt) {
   srcDirty = true;
 }
 // Anything still moving keeps the loop awake.
-const busy = () => threads.length > 0 || head > tail || topple || poolStill <= 1.2 && bx1 >= bx0;
+const busy = () => threads.length > 0 || head > tail || poolStill <= 1.2 && bx1 >= bx0;
 
 /* ---------- sound ---------- */
 // Almost nothing: a low hum while honey flows, a soft thick patter as it lands.
@@ -1748,7 +1705,6 @@ act.clear = () => {
   if (head > tail || bx1 >= bx0) swipe();
   for (let k = tail; k < head; k++) pr[at(k)] = 0;
   tail = head;
-  topple = null;
   clearPool();
   bubbles.length = 0;
   for (const th of threads) th.last = -1;
