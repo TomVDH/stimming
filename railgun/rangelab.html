@@ -115,14 +115,17 @@ vec3 normalAt(vec2 p, float e) {
   return normalize(vec3(farH(p - vec2(e, 0.0)) - farH(p + vec2(e, 0.0)), 2.0 * e, farH(p - vec2(0.0, e)) - farH(p + vec2(0.0, e))));
 }
 // The range a point belongs to: the band it sits deepest in.
+// Ranges blend where they meet, so this is an estimate.
 int rangeAt(vec2 p) {
   int best = -1;
   float bs = 1e9;
   for (int i = 0; i < ${R.RANGES.length}; i++) {
-    if (uForms < 0.5 && uRa[i].w > 1.5 && uRa[i].w < 2.5) continue;
+    // A cone (2) and a spire field (4) are radial; they hide with the forms off.
+    bool radial = abs(uRa[i].w - 2.0) < 0.5 || abs(uRa[i].w - 4.0) < 0.5;
+    if (uForms < 0.5 && radial) continue;
     vec2 q = p - uRg[i].xy;
     float r = length(q), Rc = uRg[i].z, s;
-    if (uForms > 0.5 && uRa[i].w > 1.5 && uRa[i].w < 2.5) s = r / Rc;
+    if (radial) s = r / Rc;
     else {
       float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
       if (u > 1.0) continue;
@@ -260,7 +263,7 @@ async function load() {
 
 function legend() {
   $('#legend').innerHTML = R.RANGES.map((m, i) => {
-    const form = ['crescent', 'mesa', 'cone', 'knife'][m[6] || 0];
+    const form = ['crescent', 'mesa', 'cone', 'knife', 'spires', 'slabs'][m[6] || 0] ?? `form ${m[6]}`;
     return `<span><i style="background:${css(col(i))}"></i>${i} ${form} · ${m[0]}° · ${(m[1] / 1000).toFixed(0)} km · crest ${(m[3] / 1000).toFixed(1)} km</span>`;
   }).join('');
 }
@@ -358,9 +361,9 @@ function overlays(win) {
     g.font = `600 ${12 * d}px Gabarito, sans-serif`; g.textAlign = 'center';
     R.rangeRg().forEach(([x, z, rc], i) => {
       const m = R.RANGES[i];
-      // A crescent's label sits on its arc's middle; a cone's on its peak.
+      // A band's label sits on its arc's middle; a radial form's on its centre.
       let lx = x, lz = z;
-      if (m[6] !== 2) { const a = rad(m[5]) + Math.PI; lx = x + rc * Math.cos(a); lz = z + rc * Math.sin(a); }
+      if (m[6] !== 2 && m[6] !== 4) { const a = rad(m[5]) + Math.PI; lx = x + rc * Math.cos(a); lz = z + rc * Math.sin(a); }
       g.fillStyle = 'oklch(0.13 0.01 260 / 0.7)'; g.beginPath(); g.arc(X(lx), Y(lz), 9 * d, 0, 2 * Math.PI); g.fill();
       g.fillStyle = css(col(i)); g.fillText(String(i), X(lx), Y(lz) + 4 * d);
     });
