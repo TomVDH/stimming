@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T09:32:45Z
+updated_at: 2026-11-16T09:42:21Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -65,3 +65,10 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 ## Round 2 summary
 
 Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add tray with four liquids; marbled soup with film layers; neater cooking; steam pass. WebGPU fire parked behind ?fire=gpu. Next: a performance pass and an icon pass, then Tom promotes the toy to the main shelf.
+
+## Soup surface
+
+- [x] Depth absorption: light dies with depth, tinted by the soup's hue; thin broth shows sunk things and the spoon, thick soup, skin and fat close it up (Dev: Soup density)
+- [ ] Next change: Tom picks (fire glow from below, visible viscosity, fat beads, skin rafts, wall scum, bubble rings, boil by fire)
+- [ ] Merge origin/main before the PR
+- [ ] PR to main
