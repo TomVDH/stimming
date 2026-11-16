@@ -79,6 +79,31 @@ All four:
 - The toy's own corners fade in the first quarter of the travel.
 - Reduced motion: a plain scroll.
 
+### Tom's pick: H · Flash cut (2026-11-16)
+
+Two more directions came after the first four: G · Lead figure (the stage shrinks into the article's first picture) and H · Flash cut.
+Tom picked H and parked the rest. The lab opens on H; the parked directions stay on the switch.
+
+H · Flash cut:
+- The stage stays fixed and dims to 0.62. The zone rises over it as a dark sheet.
+- At rest the whole toy shows with 18 px round corners. The cue is one quiet hint in the middle under it: the word `About` and a small chevron, on a 34 px lip in the page's own colour. No line, no border (Tom, 2026-11-16: a hard border is ugly, in every direction).
+- The title block lands in the intro's beats at 30 fps: lead 3 frames, the big logo box 3, the logo box and the name box at size 11, then rest. Each small line then cuts in: hidden, two frames inverted, rest.
+- Down the page each part heading cuts in the same way.
+- The title block has the Signal intro's voice: the emblem in the toy's ink, Gabarito 800 for the name, B612 for the small lines.
+- Tom's ruling: the rhythm of the flashes and the size flashes belong here; a full white card on a dark site does not. The first build of H was a white panel in difference blend; it is gone.
+
+Title block layouts, `?v=a..e`, keys 1 to 5 (the markup is the same in all five):
+
+| | Layout |
+|---|---|
+| 1 · Stack | The logo box over the name at the left; the facts in a column at the right. |
+| 2 · Poster | The name runs the width of the page (up to 300 px). Logo box, Flemish name and motto sit in a row under it; the facts run as one strip. |
+| 3 · Ledger | One ruled sheet: logo cell, name cell, Flemish name and motto cells, four fact cells. The cells take the flash. |
+| 4 · Centre | The intro's own stack, held in the middle; the facts in a centred strip. |
+| 5 · Side | The logo box stands large at the left (up to 300 px); the names hang beside it. |
+
+Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
+
 ### The content kit
 
 One kit for every toy, in this order (Tom, 2026-11-16: making-of, idea, notes, attribution).

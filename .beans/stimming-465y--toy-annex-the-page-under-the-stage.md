@@ -46,8 +46,15 @@ Lab: annexlab/round2.html, in the shell's own look, on the live Glass toy. Detai
 - [x] F · Tide: the series Wave floods up over the stage
 - [x] One content kit: title block, idea, making of, notes, credits, also try
 - [x] Checked at 1280 x 720 and 375 x 812; no sideways scroll; clean console
-- [ ] Tom's pick, or a new deal (Lead figure, Flash cut, Mini-player, Tab stack)
+- [x] Two more: G · Lead figure and H · Flash cut
+- [x] Tom's pick: H · Flash cut (2026-11-16). The rest is parked. No full white card on the dark site: only the logo box and the name box flash, in the intro's beats
+- [x] Five title block layouts for Flash cut: Stack, Poster, Ledger, Centre, Side
+- [ ] Tom picks the title block layout
+- [ ] A border between toy and content that fits each toy (Tom, 2026-11-16)
+- [ ] The content, after the layout
 - [ ] Real stills for the picture blocks
+
+Branch (Tom, 2026-11-16): this work pushes to feature/stimming-465y, not main; MacBook work is incoming on main.
 
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)
