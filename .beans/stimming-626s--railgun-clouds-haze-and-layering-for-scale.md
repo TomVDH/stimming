@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T23:54:21Z
+updated_at: 2026-11-16T23:55:53Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -57,7 +57,7 @@ Tom picked option A of the cloud plan: "A: Earth-true weather". Storm tops 12 to
 
 - [x] railgun/stormcells.js: Window seat's storm cell at true km (setTower, towerShape, billows with mips, light taps, ice-anvil fray, decay), six kinds, own wind each; stormGeom() gives the card, the bound and the shape.
 - [x] railgun/celllab.html: the lab, over the ranges (option A or today), Window seat's noise3d.
-- [x] Placement per review section 10; lab stills sent to Tom.
+- [x] Placement: Tom kept today's ranges, so storms stand 44 to 88 km out, in front of the main range; anvils run across the view; narrower feet. Lab stills sent to Tom.
 - [ ] Tom's look verdict on the lab stills.
 - [ ] Port to the toy host (card from stormGeom), clouds-check or look-approved, push.
 - [ ] Fix storms.js line 9 (the wrong range heights).

@@ -9,12 +9,14 @@
 // wind: the anvil's bearing in degrees, in the same frame as at.
 // kind: 'cb' mature cumulonimbus, 'tcu' towering cumulus, 'multi' multicell cluster,
 //   'old' decaying cell, 'line' squall line, 'super' supercell.
+// Ranges keep today's crests: 9 to 10.6 km from 84 km out, 25 km far.
+// So each storm stands in front of the main range, nearer than 80 km or so.
 // v: anvil size (0 for none), lean, turret spread, decay; as Window seat's cellKind().
 export const STORMS = [
-  { name: 'Storm tower', kind: 'cb', at: -14, range: 85, r: 18, top: 14.5, base: 1.8, wind: 40, seed: 11.3, v: [1.3, 0.6, 1, 0] },
-  { name: 'Towering cumulus', kind: 'tcu', at: 8, range: 62, r: 9, top: 9, base: 1.6, wind: 30, seed: 47.1, v: [0, 0.3, 0.8, 0] },
-  { name: 'Squall line', kind: 'line', at: 28, range: 95, r: 20, top: 12.5, base: 1.5, wind: 75, seed: 23.9, v: [0.9, 0.5, 1.8, 0] },
-  { name: 'Supercell', kind: 'super', at: 52, range: 200, r: 34, top: 17, base: 1.5, wind: 20, seed: 71.7, v: [1.8, 0.5, 1, 0] },
+  { name: 'Storm tower', kind: 'cb', at: -14, range: 68, r: 18, top: 14.5, base: 1.8, wind: 45, seed: 11.3, v: [1.3, 0.6, 1, 0] },
+  { name: 'Towering cumulus', kind: 'tcu', at: 8, range: 44, r: 9, top: 9, base: 1.6, wind: 30, seed: 47.1, v: [0, 0.3, 0.8, 0] },
+  { name: 'Squall line', kind: 'line', at: 28, range: 74, r: 20, top: 12.5, base: 1.5, wind: 98, seed: 23.9, v: [0.9, 0.5, 1.8, 0] },
+  { name: 'Supercell', kind: 'super', at: 52, range: 88, r: 34, top: 17, base: 1.5, wind: 112, seed: 71.7, v: [1.2, 0.5, 1, 0] },
 ];
 export const KINDS = { cb: 'Storm tower', tcu: 'Towering cumulus', multi: 'Multicell', old: 'Dying storm', line: 'Squall line', super: 'Supercell' };
 // Each kind's starting numbers, for a new storm in the lab.
@@ -41,9 +43,10 @@ export function stormGeom(s) {
   const line = s.kind === 'line' ? rc * 2.6 : 0;
   const amp = rc * 0.4;
   // The bound: a cylinder round the core, the foot, the line and the whole anvil fan.
-  const foot = rc * 2.5 * Math.max(1, spread * 0.9) + line;
+  const foot = rc * 1.6 * Math.max(1, spread * 0.9) + line;
   const back = Math.max(r1 + line, foot) + lean, fwd = Math.max(len + r2 + line * 0.5, foot - lean);
-  const ax = [Math.cos(rad(s.wind)), Math.sin(rad(s.wind))];
+  // The anvil points toward bearing wind, as at points from the eye.
+  const ax = [-Math.sin(rad(s.wind)), -Math.cos(rad(s.wind))];
   const off = lean + 0.5 * (fwd - back);
   const R = 0.5 * (fwd + back) + amp * 0.5 + 0.8;
   const topY = s.top + rc * 0.6 + amp + 1.0;
@@ -132,7 +135,8 @@ float towerShape(vec3 p, out float aw) {
   // The foot: a broad, low swell; it narrows as it climbs.
   // Lobes break its outline from a circle.
   float lobe = 1.0 + 0.28 * sin(3.0 * atan(q.y, q.x) + gSeed.x) + 0.15 * sin(5.0 * atan(q.y, q.x) - gSeed.y);
-  float fr = gRc * mix(2.4, 0.9, smoothstep(gBase + 0.5, gBase + 4.5, y)) * lobe * mix(1.0, gSpread, 0.5);
+  // Narrower than Window seat's: the far ranges must show past it.
+  float fr = gRc * mix(1.5, 0.9, smoothstep(gBase + 0.5, gBase + 3.5, y)) * lobe * mix(1.0, gSpread, 0.5);
   vec2 across = vec2(-gAx.y, gAx.x);
   // A squall line's foot runs the length of the line.
   float fd = gLine > 0.0 ? length(vec2(dot(q, gAx), max(abs(dot(q, across)) - gLine, 0.0))) : length(q);
