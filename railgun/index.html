@@ -5676,11 +5676,22 @@ function makeFarGun() {
   // The puffs keep their own power and take the shared aerial perspective.
   const pOwn = { ...own, uI: { value: new THREE.Vector3() }, uAer: { value: 1 } };
   const g = {
-    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 5 }, uWide: { value: 110 } })),
+    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 8 }, uWide: { value: 110 } })),
     line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, pOwn)), own, pOwn,
   };
   for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
+  // A warm glow round the head, and the muzzle's glow in its notch.
+  // The ridges mask the muzzle's glow, so it shows only in the gap.
+  g.glow = makeFlare(FAR_WARM); g.flash = makeFlare(FAR_WARM);
+  g.flash.material.depthTest = true;
   return g;
+}
+// The far rounds' warm light: the muzzle, the glow and the clouds.
+const FAR_WARM = linFit(0.82, 0.13, 58);
+// A round draws in its launch's distance band, so nearer layers cover it.
+function farBand(g, e) {
+  const b = e.siteD > 100000 ? BAND.deep : BAND.far;
+  g.flash.renderOrder = b; g.puffs.renderOrder = b + 0.01; g.line.renderOrder = b + 0.02; g.bolt.renderOrder = b + 0.03; g.glow.renderOrder = b + 0.04;
 }
 // A far round keeps the main shot's clock and path.
 // It rides the rails 0.3 s, then crosses in T: fast out, slowing.
@@ -5689,25 +5700,91 @@ const farAt = (e, a, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farRe
 // Another gun fires at the falling rock from site and misses.
 // t0 is its rail start: the horizon flash is its muzzle.
 // c is its power: a weak round takes 11.5 s to cross, a full one 8.5.
-function farShot(site, D, t0, flash) {
+function farShot(q, t0, flash) {
   const c = 0.5 + 0.5 * rnd();
-  return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site, D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
+  return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site: q.site.clone(), notch: q.notch.clone(), D: q.D, siteD: q.D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
 }
-// Three far guns stand behind the ranges: screen x and distance.
-// Each fires one round per attempt.
+// The far guns stand in the gaps between the ranges (Tom: "come from between the mountains").
+// farGaps() reads the skyline from the ranges' geometry bake.
+// Without a bake, three fixed places stand in: screen x and distance.
 const FAR_PIECES = [{ sx: -0.8, D: 96000 }, { sx: -0.45, D: 80000 }, { sx: 0.74, D: 104000 }];
-// A piece's place on the plain, for the live lens.
-const farSite = q => camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
-// The piece farthest across the frame from the rock: its round crosses the sky.
+const farGapsAt = { bakes: -1, list: null };
+// The three deepest notches in the near skyline on screen.
+// Each gives a site 6 km behind the notch and the notch's crest point.
+function farGaps() {
+  const B = farBake, f = B.bufs[B.front];
+  if (!f.ok || !B.on) return null;
+  if (farGapsAt.bakes === B.bakes) return farGapsAt.list;
+  const w = f.g.width, h = f.g.height, px = new Uint16Array(w * h * 4);
+  renderer.readRenderTargetPixels(f.g, 0, 0, w, h, px);
+  const H = THREE.DataUtils.fromHalfFloat, v = new THREE.Vector4(), d = new THREE.Vector3(), cols = [];
+  // The near skyline: the top of the ranges within 150 km.
+  // The back ranges stand behind the gaps, so they do not count.
+  const near = (x, y) => { const j = (y * w + x) * 4, g = H(px[j]); return g >= 0 && (g + H(px[j + 1])) * 512 < 150000; };
+  for (let x = 2; x < w; x += 4) {
+    let y = h - 1;
+    while (y >= 0 && !near(x, y)) y--;
+    const yy = Math.max(y, 0), i = (yy * w + x) * 4;
+    v.set((x + 0.5) / w * 2 - 1, (yy + 0.5) / h * 2 - 1, 1, 1).applyMatrix4(f.inv);
+    d.set(v.x / v.w, v.y / v.w, v.z / v.w).normalize();
+    const sx = ambSP.copy(camera.position).addScaledVector(d, 1e5).project(camera).x;
+    // A column with no range is an open horizon: deepest of all.
+    const hit = y < 0 ? -1 : (H(px[i]) + H(px[i + 1])) * 512;
+    cols.push({ sx, el: y < 0 ? -0.05 : Math.asin(d.y), hit, d: d.clone() });
+  }
+  // Our own gun hides the notches behind it: skip its span on screen.
+  const box = new THREE.Box3().setFromObject(gun), cn = new THREE.Vector3();
+  let g0 = 9, g1 = -9;
+  for (let i = 0; i < 8; i++) {
+    cn.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+    g0 = Math.min(g0, cn.x); g1 = Math.max(g1, cn.x);
+  }
+  // A notch: the lowest crest with higher crests on both sides.
+  const gaps = [];
+  for (let k = 0; k < cols.length; k++) {
+    const c = cols[k];
+    if (Math.abs(c.sx) > 0.85 || (c.sx > g0 - 0.05 && c.sx < g1 + 0.05)) continue;
+    let l = -1, r = -1;
+    for (const o of cols) if (Math.abs(o.sx - c.sx) < 0.12) { if (o.sx < c.sx) l = Math.max(l, o.el); else if (o.sx > c.sx) r = Math.max(r, o.el); }
+    if (cols.some(o => Math.abs(o.sx - c.sx) < 0.03 && o.el < c.el)) continue;
+    const depth = Math.min(l, r) - c.el;
+    if (depth > 0.001) gaps.push({ c, depth });
+  }
+  gaps.sort((a, b) => b.depth - a.depth);
+  // Too few notches: the lowest stretches of skyline fill the three places.
+  const low = cols.filter(c => Math.abs(c.sx) <= 0.85 && !(c.sx > g0 - 0.05 && c.sx < g1 + 0.05)).sort((a, b) => a.el - b.el);
+  for (const c of low) gaps.push({ c, depth: 0 });
+  const list = [];
+  for (const g of gaps) {
+    if (list.length >= 3 || list.some(q => Math.abs(q.sx - g.c.sx) < 0.2)) continue;
+    const flat = ambA.set(g.c.d.x, 0, g.c.d.z).normalize(), D = (g.c.hit > 0 ? g.c.hit : 84000) + 6000;
+    const notch = g.c.hit > 0 ? f.eye.clone().addScaledVector(g.c.d, g.c.hit) : camera.position.clone().addScaledVector(flat, D).setY(0);
+    list.push({ sx: g.c.sx, D, site: camera.position.clone().addScaledVector(flat, D).setY(0), notch });
+  }
+  farGapsAt.bakes = B.bakes; farGapsAt.list = list.length ? list : null;
+  return farGapsAt.list;
+}
+// The far guns' places: the gaps, or the fixed stand-ins.
+function farPlaces() {
+  return farGaps() || FAR_PIECES.map(q => {
+    const site = camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
+    return { sx: q.sx, D: q.D, site, notch: site.clone() };
+  });
+}
+// The place farthest across the frame from the rock: its round crosses the sky.
 function farPiece() {
   const rx = ambSP.copy(ast.pos).project(camera).x;
-  return FAR_PIECES.reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
+  return farPlaces().reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
 }
 // The far rounds' light on the clouds: place and strength.
 const farLit = new THREE.Vector4();
+// The bolt light's own colour; far rounds light the clouds warm instead.
+const BOLT_C = U.uBoltC.value.clone(), FAR_C = new THREE.Vector3(...FAR_WARM);
 // The main round's light wins; a far round lights the clouds only without it.
 function farLight() {
-  if (U.uBolt.value.w < 0.001 && farLit.w > 0.001) U.uBolt.value.copy(farLit);
+  const far = U.uBolt.value.w < 0.001 && farLit.w > 0.001;
+  if (far) U.uBolt.value.copy(farLit);
+  U.uBoltC.value.copy(far ? FAR_C : BOLT_C);
 }
 // At its rail start the round leads the rock, as the main gun does.
 // The aim point sits beside the rock as the eye sees it: a near miss.
@@ -5819,12 +5896,12 @@ function ambLanding(t0) {
 // Start one event of this kind.
 function ambStart(kind) {
   if (kind === 'war') {
-    // The three far guns fire in turn, one round each; all miss.
+    // The far guns fire in turn, one round each; all miss.
     // Each muzzle flash lights the horizon.
-    const order = [...FAR_PIECES].sort(() => rnd() - 0.5);
+    const order = farPlaces().sort(() => rnd() - 0.5);
     let t = simT;
     for (const q of order) {
-      amb.live.push(farShot(farSite(q), q.D, t, 1.2 + 1.0 * rnd()));
+      amb.live.push(farShot(q, t, 1.2 + 1.0 * rnd()));
       t += 4 + 5 * rnd();
     }
     // The rumble comes late and low.
@@ -5843,8 +5920,8 @@ function ambStart(kind) {
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
     // One far gun fires from behind the ranges and misses the rock.
-    const q = farPiece(), site = farSite(q), D = q.D;
-    amb.live.push(farShot(site, D, simT, 0.9));
+    const q = farPiece(), D = q.D;
+    amb.live.push(farShot(q, simT, 0.9));
     // The crack arrives late and faint; a long wait is cut to half a minute.
     amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
     return;
@@ -5926,7 +6003,7 @@ function drawAmbient() {
   for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
   farLit.w = 0;
   // A set whose round has ended goes back to the pool.
-  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
+  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = g.glow.visible = g.flash.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
@@ -5975,8 +6052,11 @@ function drawFarBolt(e, a) {
   if (!e.aimed && !farAim(e)) { e.dur = 0; return false; }
   let g = farGuns.find(f => f.e === e) || farGuns.find(f => !f.e);
   if (!g) { if (farGuns.length >= 4) return true; g = makeFarGun(); farGuns.push(g); }
+  if (g.e !== e) farBand(g, e);
   g.e = e;
   const K = e.D / 6000;
+  // The muzzle's glow fills its notch; the air between dims it.
+  flare(g.flash, e.notch, 5000, 1.4 * e.flash * flashOf(a) * ambT(e.notch));
   // The ribbon: the main shot's streak and shock diamonds.
   // Its light dies away before it reaches the rock, as the main shot's does.
   const tail = 0.55 + 0.03 * e.T, land = 0.3 + e.T;
@@ -5984,9 +6064,12 @@ function drawFarBolt(e, a) {
   const T = ambT(farAt(e, a, farP));
   const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farP) * T;
   g.bolt.visible = fade > 0.002;
-  // The head lights the clouds near it, faintly; the brightest round wins.
-  const lw = a > 0.3 ? 0.05 * e.c * fade : 0;
-  if (lw > farLit.w) { farAt(e, a, farP); farLit.set(farP.x, farP.y, farP.z, lw); }
+  // The head lights the clouds near it, warm; the brightest round wins.
+  const lw = a > 0.3 ? 0.12 * e.c * fade : 0;
+  farAt(e, a, farP);
+  if (lw > farLit.w) farLit.set(farP.x, farP.y, farP.z, lw);
+  // A soft warm glow round the head: the lit air it passes.
+  flare(g.glow, farP, 4000, 0.6 * e.c * fade);
   if (g.bolt.visible) {
     g.bolt.material.uniforms.uWide.value = 40 * K;
     const geo = g.bolt.geometry, p0 = geo.attributes.aP0, p1 = geo.attributes.aP1, kk = geo.attributes.aK;
@@ -12103,6 +12186,8 @@ window.__qa = {
   lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span }),
   // Fire one ambient event; amb() reads the director.
   ambient(kind) { ambStart(kind); },
+  // The far guns' places: screen x, distance, and whether a bake found them.
+  farGaps: () => ({ baked: !!farGaps(), places: farPlaces().map(q => ({ sx: +q.sx.toFixed(2), D: Math.round(q.D), notchY: Math.round(q.notch.y) })) }),
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   // The far pass: the mode, and how often it baked and relit.
