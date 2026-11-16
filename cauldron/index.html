@@ -20,6 +20,8 @@
   opacity: 0; transition: opacity 0.8s ease; touch-action: none;
 }
 .stage--cauldron canvas.on { opacity: 1; }
+/* The WebGPU fire is light on black: screen adds it over the pot. */
+.stage--cauldron canvas.gpufire { mix-blend-mode: screen; pointer-events: none; }
 .stage--cauldron { cursor: grab; }
 .stage--cauldron.is-stirring { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--cauldron canvas { transition: none; } }
@@ -70,8 +72,11 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+    "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js",
     "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
     "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
     "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
@@ -145,6 +150,7 @@ const act = { add() {}, clear() {}, reset() {} };
 // The Dev rows exist without ?dev too, so the toy reads them everywhere.
 const devV = (id, d) => ui.setting(id)?.value ?? d;
 let refit = () => {};
+let setEngine = () => {};
 const ui = initPage({ id: 'cauldron', bar: {
   choice: { label: 'Add', display: 'tray', value: 'mix',
     options: PICKS.map(([value, label]) => ({ value, label, icon: pickIcon(value) })),
@@ -1897,6 +1903,7 @@ function resize() {
   size = { w, h, dpr, W, H, aw, ah };
   fit(w, h);
   if (changed) frameTargets();
+  gpu.fire?.resize(w, h, dpr);
   dyeTargets();
 }
 refit = () => { if (size) fit(size.w, size.h); wake(); };
@@ -2947,7 +2954,7 @@ function layerPass() {
   gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.3 + 0.7 * fire);
   gl.uniform1f(layerP.u('uSwirl'), swirl);
   gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
-  gl.uniform1f(layerP.u('uFSteps'), D.level > 0 ? 24 : 16);
+  gl.uniform1f(layerP.u('uFSteps'), gpu.on ? 0 : D.level > 0 ? 24 : 16);
   gl.uniform3f(layerP.u('uBedP'), ...bedP());
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, fsim.dye[fsim.di].tex);
@@ -3049,9 +3056,38 @@ function outPass() {
   gl.activeTexture(gl.TEXTURE0);
 }
 function draw() {
+  if (gpu.on) gpuFrame();
   layerPass();
   scenePass();
   outPass();
+}
+
+/* ---------- the WebGPU fire ---------- */
+// Loaded on first pick; the WebGL solver keeps running, so the iron stays lit by it.
+const gpu = { on: false, fire: null, loading: null, last: 0 };
+setEngine = async v => {
+  if (v !== 'gpu') { gpu.on = false; if (gpu.fire) gpu.fire.canvas.hidden = true; wake(); return; }
+  if (!gpu.fire) {
+    gpu.loading ??= import('./gpufire.js').then(m => m.createGpuFire({ ground: GROUND })).catch(() => null);
+    const f = await gpu.loading;
+    // No WebGPU here: the WebGL fire stays, and the pick is left as it is.
+    if (!f) { gpu.loading = null; return; }
+    gpu.fire = f;
+    f.canvas.classList.add('gpufire', 'on');
+    canvas.after(f.canvas);
+    f.resize(size.w, size.h, size.dpr);
+  }
+  gpu.fire.canvas.hidden = false;
+  gpu.on = true;
+  wake();
+};
+function gpuFrame() {
+  const f = gpu.fire, now = performance.now() / 1000;
+  const dt = gpu.last ? Math.min(now - gpu.last, 0.1) : 1 / 60;
+  gpu.last = now;
+  f.setCam(cam, size.w, size.h);
+  f.setFire(fire);
+  f.frame(dt);
 }
 
 /* ---------- frame loop ---------- */
@@ -3139,6 +3175,9 @@ act.reset = () => {
 // The intro holds until the shaders compile and the first frame draws.
 resize();
 starter();
+// A kept WebGPU pick loads after the first frame; the WebGL fire shows until then.
+// Parked: Fire's WebGPU engine runs only with ?fire=gpu; the toy ships the WebGL fire.
+if (new URLSearchParams(location.search).get('fire') === 'gpu') setTimeout(() => setEngine('gpu'), 0);
 stepPlumes(0);
 stepFire(0);
 // A short warm-up lets the first colour wash and the steam settle in.

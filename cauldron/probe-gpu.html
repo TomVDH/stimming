@@ -385,7 +385,8 @@ async function start() {
   const emitPass = Fn(() => {
     const vertexPos = emitterBuffer.element(instanceIndex).xyz;
     const uvw = toUVW(vertexPos);
-    If(uvw.x.greaterThanEqual(0).and(uvw.x.lessThanEqual(1))
+    // Threads past the last point stay silent; a dispatch rounds up to whole workgroups.
+    If(instanceIndex.lessThan(EMIT_COUNT).and(uvw.x.greaterThanEqual(0)).and(uvw.x.lessThanEqual(1))
       .and(uvw.y.greaterThanEqual(0)).and(uvw.y.lessThanEqual(1))
       .and(uvw.z.greaterThanEqual(0)).and(uvw.z.lessThanEqual(1)), () => {
       const coord = uvec3(uvw.mul(vec3(GRID_SIZE_X, GRID_SIZE_Y, GRID_SIZE_Z)));
