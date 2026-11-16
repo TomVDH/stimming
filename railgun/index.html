@@ -448,11 +448,21 @@ aimSky();
 const MOON_H = rad(93.5), MOON_DEC = rad(-33.7);
 const skyRot = new THREE.Matrix4();
 U.uSkyRot = { value: new THREE.Matrix3() };
+// A fast Time drag smears the stars into short arcs.
+// uSkyRot0 is the sky a moment ago; uTrailK is the arc's share.
+U.uSkyRot0 = { value: new THREE.Matrix3() };
+U.uTrailK = { value: 0 };
+// span: the sky angle swept lately, in radians; it decays fast.
+const TRAIL_MAX = 0.04;
+const skyTrail = { H: null, span: 0 };
+const skyRot0 = new THREE.Matrix4();
 let skyH = 0;
 // The low sun swings toward the frame.
 // A high sun keeps the old bearing, 63 degrees right.
 function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
 function skyAt(H) {
+  if (skyTrail.H !== null && !reduced()) skyTrail.span = clamp(skyTrail.span + H - skyTrail.H, -TRAIL_MAX, TRAIL_MAX);
+  skyTrail.H = H;
   skyH = H;
   skyDir(H, 0, U.uSunD.value);
   const deg = THREE.MathUtils.radToDeg(Math.asin(clamp(U.uSunD.value.y, -1, 1)));
@@ -548,8 +558,8 @@ const K2_SKY = /* glsl */`
 uniform vec3 uSunC, uZenC, uHorC;
 uniform float uSunE;
 uniform vec3 uSunD, uGlowC, uMoonD, uCloudSun, uCloudAmb;
-uniform float uMoonK, uStars, uStarT;
-uniform mat3 uSkyRot;
+uniform float uMoonK, uStars, uStarT, uTrailK;
+uniform mat3 uSkyRot, uSkyRot0;
 uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
@@ -712,15 +722,28 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5 && dir.y > 0.0) {
     // Stars: one in about seventy cells, a few twinkle.
     if (uStars > 0.01) {
-      vec3 g = (uSkyRot * dir) * 420.0, id = floor(g);
-      float h = k3hash(id);
-      if (h > 0.986) {
-        vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
-        float s = smoothstep(0.3, 0.0, length(fract(g) - 0.5 - o * 0.4));
-        float tw = 0.7 + 0.3 * sin(uStarT * (1.5 + 4.0 * h) + h * 400.0);
-        float m = pow((h - 0.986) / 0.014, 3.0) * 2.5 + 0.15;
-        col += vec3(0.75, 0.82, 1.0) * s * tw * m * uStars * smoothstep(0.0, 0.2, dir.y);
+      // A Time drag samples the star field along its recent turn.
+      // The samples blend into a short arc that fades toward its tail.
+      int n = uTrailK > 0.002 ? 32 : 1;
+      vec3 dA = uSkyRot * dir, dB = uSkyRot0 * dir, acc = vec3(0.0);
+      float wsum = 0.0;
+      for (int j = 0; j < 32; j++) {
+        if (j >= n) break;
+        float u = n > 1 ? float(j) / 31.0 : 0.0, wt = 1.0 - 0.75 * u;
+        wsum += wt;
+        vec3 g = normalize(mix(dA, dB, u)) * 420.0, id = floor(g);
+        float h = k3hash(id);
+        if (h > 0.986) {
+          vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
+          float s = smoothstep(0.3, 0.0, length(fract(g) - 0.5 - o * 0.4));
+          float tw = 0.7 + 0.3 * sin(uStarT * (1.5 + 4.0 * h) + h * 400.0);
+          float m = pow((h - 0.986) / 0.014, 3.0) * 2.5 + 0.15;
+          acc += s * tw * m * wt;
+        }
       }
+      // An arc spreads its light; a gain keeps it as bright as the dot.
+      acc *= n > 1 ? 7.0 / wsum : 1.0;
+      col += vec3(0.75, 0.82, 1.0) * acc * uStars * smoothstep(0.0, 0.2, dir.y);
     }
     // The moon: a small disc and a soft halo.
     if (uMoonK > 0.01) {
@@ -4241,7 +4264,8 @@ function sightKey() {
 // The rock hangs past the muzzle, low over the horizon.
 const look = { yaw: 0, pitch: 0 }, lookTo = { yaw: 0, pitch: 0 };
 // push: 0 wide, 1 fully pushed in on the gun and the rock.
-const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0, swayE: 0 };
+// loom: 0 to 1, a long watch drawing the lens in.
+const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0, swayE: 0, loom: 0 };
 const pushG = new THREE.Vector3(), pushR = new THREE.Vector3();
 let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
 function frame() {
@@ -4250,7 +4274,7 @@ function frame() {
   // The charge pushes the lens in a little.
   // A hold pushes the lens in, slow and heavy.
   const pk = reduced() ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
-  const zk = cam.zoom * (1 - 0.18 * pk);
+  const zk = cam.zoom * (1 - 0.18 * pk) * (1 - 0.07 * cam.loom);
   // The wide eye: a locked-off lens, a man's height over the dust.
   // The horizon sits low: the gun and the sky own the frame.
   const fov0 = portrait ? 74 : 55;
@@ -4312,6 +4336,16 @@ function easeLook(dt) {
   // The push builds over about twelve seconds of hold and eases out slower.
   const pt = charge ? clamp((simT - charge.t0) / 12, 0, 1) : 0;
   cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
+  // A long watch draws the lens in slowly as the rock nears.
+  // Any input lets it ease back.
+  const lt = !reduced() && performance.now() - lastInput > 20000 && tgtKind === 'rock' && tgtCanHit() ? clamp(ast.s, 0, 1) : 0;
+  cam.loom += (lt - cam.loom) * (1 - Math.exp(-dt / (lt > cam.loom ? 25 : 2.5)));
+  // The star arcs fade fast once the drag stops.
+  skyTrail.span *= Math.exp(-dt / 0.3);
+  if (Math.abs(skyTrail.span) < 1e-4) skyTrail.span = 0;
+  U.uTrailK.value = Math.abs(skyTrail.span) / TRAIL_MAX;
+  U.uSkyRot0.value.setFromMatrix4(skyRot0.makeRotationAxis(SKY.P, -(skyH - skyTrail.span)));
+  stepSpecks(dt);
   const W = 1.6;
   for (const k of ['yaw', 'pitch']) {
     lookV[k] += (W * W * (lookTo[k] - look[k]) - 2 * W * lookV[k]) * dt;
@@ -6034,6 +6068,85 @@ function updateRingVols(age, on) {
     u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 1; u.uLs.value = 20;
   });
 }
+/* ---------- air specks: sunlit dust near the lens ---------- */
+// A thin drift of dust hangs in the air between the eye and the gun.
+// The pointer's motion parts it; it settles back in a second or two.
+// The GPU moves every speck; the CPU sends only the pointer.
+const SPECK_N = 700;
+const specks = { stir: 0, vel: new THREE.Vector2(), ptr: new THREE.Vector2(9, 9), last: null };
+const speckGeo = new THREE.BufferGeometry();
+{
+  const a = new Float32Array(SPECK_N * 4);
+  for (let i = 0; i < SPECK_N; i++) a.set([rnd(), rnd(), rnd(), rnd()], i * 4);
+  speckGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPECK_N * 3), 3));
+  speckGeo.setAttribute('aR', new THREE.BufferAttribute(a, 4));
+}
+const speckMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: U.uTime, uDpr: starMat.uniforms.uDpr, uSunC: U.uSunC, uSun: U.uSun, uStars: U.uStars,
+    uPtr: { value: specks.ptr }, uVel: { value: specks.vel }, uStir: { value: 0 }, uAsp: { value: 1 }, uSteady: starMat.uniforms.uSteady,
+    uDust: { value: new THREE.Vector3(...linFit(0.86, 0.05, 70)) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aR;
+  uniform float uTime, uDpr, uStir, uAsp, uStars, uSteady;
+  uniform vec2 uPtr, uVel;
+  uniform vec3 uSunC, uSun, uDust;
+  varying vec3 vCol;
+  void main() {
+    // Each speck lives in a slab 25 to 420 m in front of the eye.
+    // The wind carries it sideways; it wraps round the slab.
+    float t = uSteady > 0.5 ? 0.0 : uTime;
+    float d = mix(25.0, 420.0, aR.z * aR.z);
+    vec2 s = fract(aR.xy + vec2(0.006, 0.0015 * sin(t * 0.3 + aR.w * 9.0)) * t * (60.0 / d));
+    vec3 vp = vec3((s.x * 2.0 - 1.0) * d * 0.6 * uAsp, (s.y * 2.0 - 1.0) * d * 0.6, -d);
+    vec4 c = projectionMatrix * vec4(vp, 1.0);
+    // The pointer's wake pushes specks aside and along its motion.
+    vec2 q = c.xy / c.w, o = (q - uPtr) * vec2(uAsp, 1.0);
+    float r2 = dot(o, o), k = uStir * exp(-r2 / 0.03);
+    q += (normalize(o + 1e-4) * 0.12 + uVel * 0.6) * k * vec2(1.0 / uAsp, 1.0);
+    gl_Position = vec4(q * c.w, c.zw);
+    // Near specks are larger and dimmer: they sit out of focus.
+    gl_PointSize = uDpr * mix(5.0, 1.4, aR.z);
+    // Dust glows toward the light: forward scatter from a low sun.
+    // The view rotation's transpose turns the eye ray into world space.
+    vec3 V = normalize(vp) * mat3(viewMatrix);
+    float sunF = 0.3 + 1.8 * pow(max(dot(V, uSun), 0.0), 3.0);
+    vCol = uDust * uSunC * sunF * (0.5 + 1.0 * aR.w) * mix(1.0, 0.15, aR.z) * (1.0 - 0.8 * uStars);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vCol;
+  void main() {
+    float d = length(gl_PointCoord - 0.5) * 2.0, a = max(1.0 - d, 0.0);
+    gl_FragColor = vec4(vCol * a * a, 0.0);
+  }`,
+});
+const speckPts = new THREE.Points(speckGeo, speckMat);
+speckPts.frustumCulled = false; speckPts.renderOrder = 5;
+scene.add(speckPts);
+// The pointer feeds the stir; it fades over about a second.
+function stirSpecks(nx, ny) {
+  const p = new THREE.Vector2(nx * 2, -ny * 2);
+  if (specks.last) {
+    const v = p.clone().sub(specks.last);
+    specks.vel.lerp(v.clampLength(0, 0.2), 0.5);
+    specks.stir = Math.min(1, specks.stir + v.length() * 6);
+  }
+  specks.last = p;
+  specks.ptr.copy(p);
+}
+function stepSpecks(dt) {
+  specks.stir *= Math.exp(-dt / 0.9);
+  if (specks.stir < 0.002) specks.stir = 0;
+  specks.vel.multiplyScalar(Math.exp(-dt / 0.9));
+  speckMat.uniforms.uStir.value = reduced() ? 0 : specks.stir;
+  speckMat.uniforms.uAsp.value = size.w / size.h;
+  speckPts.visible = !sight;
+}
+
 /* ---------- field motes: dust that falls into orbit round the barrel ---------- */
 // The charged barrel pulls like a line mass: a 1/r force toward its axis.
 // Each mote falls in on a precessing orbit, a little drag spirals it inward,
@@ -8515,7 +8628,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
 // A live landing dome and a view's move keep the loop awake.
-const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0 || specks.stir > 0.002;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -10086,9 +10199,10 @@ stage.addEventListener('pointermove', e => {
   const nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5;
   lookTo.yaw = -clamp(nx, -0.5, 0.5) * rad(1.4);
   lookTo.pitch = -clamp(ny, -0.5, 0.5) * rad(0.9);
+  stirSpecks(nx, ny);
   wake();
 });
-stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; wake(); });
+stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; specks.last = null; wake(); });
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
   press = null;
@@ -10337,6 +10451,8 @@ window.__qa = {
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
+  // The lens state: the hold's push, the watch's loom, the star arc.
+  lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span, stir: specks.stir }),
   // Fire one ambient event; amb() reads the director.
   ambient(kind) { ambStart(kind); },
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),

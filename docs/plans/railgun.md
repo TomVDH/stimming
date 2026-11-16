@@ -372,4 +372,9 @@ The toy tells people that watching is fine. The scene carries itself:
   - Late landings: one to three chunks land 55 to 155 s after the kill, 18 to 48 km out: a 2.5 s fall, a horizon flash, a dust dome in a free dome slot, a rumble at the speed of sound (cut to 30 s).
 - Flares and glints draw over the smoke; a screen test along the train dims the stars and the satellite behind it.
 - Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
-- Next on Tom's yes: far bolts, orbital flak, dust devils, embers on the plain, the rock sheds; then stirred motes, scrub trails and the looming.
+- Micro-interactions:
+  - Air specks: 700 sunlit dust specks drift 25 to 420 m in front of the lens, brightest toward the sun. The pointer's motion parts them; they settle in about a second. The GPU moves them; the CPU sends only the pointer.
+  - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
+  - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
+  - `__qa.lens()` reads the push, the loom, the arc and the stir.
+- Next on Tom's yes: far bolts, orbital flak, dust devils, embers on the plain, the rock sheds.
