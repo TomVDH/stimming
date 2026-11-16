@@ -202,10 +202,8 @@ function start() {
   }
   function arrive(first = false) {
     const lis = dozen();
-    // The wait ends: the CSS dot at twelve o'clock fades out as the comet fades in there.
-    root.dataset.clock = 'on';
     // With no motion the dozen simply shows.
-    if (calm()) { lis.forEach(li => hold(li, false)); return; }
+    if (calm()) { root.dataset.clock = 'on'; lis.forEach(li => hold(li, false)); return; }
     lis.forEach(li => hold(li, true));
     shy = true;
     // On a fresh page the set warms up to snow and switches off first; then the comet runs.
@@ -214,6 +212,9 @@ function start() {
       // The comet fades in where it starts, on the track at twelve o'clock.
       const head = { a: 0, fade: 0 }, paint = () => drawComet(head.a, head.fade);
       let came = 0;
+      // The wait ends here: the CSS dot at twelve fades out as the comet fades in.
+      // The dot waits through the TV's blink, so the comet's head never leaves.
+      root.dataset.clock = 'on';
       // The hold ends when the comet is gone.
       gsap.timeline({ onComplete() { drawComet(0, 0); release(); } })
         .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
@@ -323,6 +324,12 @@ function start() {
   // The intro waits for the tube, so its shader build does not stall the sweep. A timer, not a frame:
   // a hidden tab gets no frames. Until then the dozen is out of sight.
   if (!calm()) dozen().forEach(li => hold(li, true));
-  Promise.race([tubeReady, new Promise(r => setTimeout(r, 900))]).then(() => setTimeout(() => arrive(true), 40));
+  const after = ms => new Promise(r => setTimeout(r, ms));
+  // The wordmark drops in when its fonts are in; the TV comes in just after it, not with it.
+  const lettered = new Promise(r => {
+    if (root.dataset.fonts !== 'wait') return r();
+    new MutationObserver((_, o) => { if (root.dataset.fonts !== 'wait') { o.disconnect(); r(); } }).observe(root, { attributes: true, attributeFilter: ['data-fonts'] });
+  }).then(() => after(300));
+  Promise.all([Promise.race([tubeReady, after(900)]), lettered]).then(() => setTimeout(() => arrive(true), 40));
   wake();
 }

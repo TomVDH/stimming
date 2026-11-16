@@ -4335,7 +4335,11 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     letters.forEach((l, i) => gsap.delayedCall(i * 0.06, () => fidget(i)));
   });
   if (!reduce) {
-    gsap.from(letters, { y: -48, opacity: 0, duration: 1, ease: 'elastic.out(1, 0.5)', stagger: 0.05 });
+    // The letters drop in once their fonts are in, so the drop is the wordmark's first show.
+    const drop = () => gsap.from(letters, { y: -48, opacity: 0, duration: 1, ease: 'elastic.out(1, 0.5)', stagger: 0.05 });
+    const root = document.documentElement;
+    if (root.dataset.fonts !== 'wait') drop();
+    else new MutationObserver((_, o) => { if (root.dataset.fonts !== 'wait') { o.disconnect(); drop(); } }).observe(root, { attributes: true, attributeFilter: ['data-fonts'] });
     // Now and then one letter fidgets by itself.
     const idle = () => {
       if (!document.hidden) fidget(Math.floor(Math.random() * letters.length));
