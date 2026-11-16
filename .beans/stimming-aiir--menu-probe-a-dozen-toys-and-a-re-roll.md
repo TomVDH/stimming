@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-15T10:08:21Z
-updated_at: 2026-11-15T10:38:01Z
+updated_at: 2026-11-15T22:42:43Z
 ---
 
 Tom, 2026-11-15: a probe on completely different ways to do the main menu. Start with 12 toys; the user can re-roll.
@@ -15,4 +15,5 @@ Tom, 2026-11-15: a probe on completely different ways to do the main menu. Start
 - [x] Five Awwwards-style concepts (Tom: "more awwwards inspired"): Headline, Trail, Slices, Swiss, Marquee. Tom's verdict: "fun but not usable"
 - [x] Tom's favourites so far (2026-11-15): Reel, Index, Clock, Dozen
 - [x] The craft set (Tom: "again", after the Awwwards and GSAP skills): Ledger, Register, Dial, Drum. Each is one favourite (Index, Dozen, Clock, Reel) with a composed GSAP intro and re-roll
+- [x] Tom picked Drum to take further (2026-11-15): a smear at speed, a thud when a reel lands, one Spin button per reel (keys 1 to 3) that swaps only that reel's four toys
 - [ ] Tom picks a direction

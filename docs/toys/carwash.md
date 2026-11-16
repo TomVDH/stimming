@@ -54,6 +54,8 @@ Bar: v2.
 
 One full-screen pass per stage of the frame draws the whole view: a procedural tunnel seen through a simulated windscreen, so raw WebGL2 is the lightest tier that holds it.
 
+The windscreen is a bowed plane that leans back 31 degrees: its cowl edge is 1.15 m ahead of the eye and 0.34 m down, its header 0.4 m ahead and 0.12 m up. Every view ray meets it (`glassHit()`), which gives glass coordinates: `gx` across, `gh` up the rake, in metres. The glass map, the shared drops and runs, the lather and the wipers all work in those metres and reach the screen through the glass's own perspective (a 2 x 2 Jacobian per pixel), so drops grow toward the header and runs converge.
+
 ## Shared modules
 
 <!-- gen:shared -->
@@ -79,20 +81,21 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2007 | The page: shell, shaders, sim, timeline, sound, input |
+| `index.html` | 2148 | The page: shell, shaders, sim, timeline, sound, input |
 <!-- /gen:files -->
 
 ## Render pipeline
 
 | Pass | Target | Shader or material | Does |
 |---|---|---|---|
-| Glass | Two RGBA16F maps, ping-pong, about 280 x 210 | `SIM_FS` | Steps foam depth, sheet water, bead wetness, foam dye, the foam's own offset, haze and the wiper smear; advects them down (or up under the dryer); stations lay them in swept bands |
+| Glass | Two RGBA16F maps, ping-pong, 400 x 263 on Standard, over the glass in metres | `SIM_FS` | Foam depth, sheet water, bead wetness, foam dye, the foam's offset, the soap film it leaves, cloth and blade smear. Gravity runs down the rake; water runs in rivulet lanes, pools at the cowl and dams above parked blades; curtain lines climb the glass; blades push a bow wave; the dryer drives water up |
 | Scene | Full size, RGBA16F | `SCENE_FS` | Tunnel walls, floor and arches with LED bars and lit signs, the bonnet as a mirror, curtains, the foam fall, mitters, wrap and top brushes, the dryer's nozzle, the night street; spray streaks from `precip.js` |
 | Down | 1/4, 1/8, 1/32, 1/128 | `DOWN_FS` | Box steps; the two small ones light the foam |
-| Bokeh | Half or quarter size | `BOK_FS` (`bokeh.js`) | The disc gather for scattered light |
-| Pane | Full size | `PANE_FS` (`wetglass.js`) | Sheet-water bending, beads and runs, foam cells lit from outside, the dryer's air line, the wipers, the dash and the pillar |
-| Bloom | Half size chain | `bloomChain()` | Threshold 1.0, 5 levels (3 on Low) |
-| Final | Screen | `FINAL_FS` | `gdGrade()`, a fade for Go, then `ouFilm()` |
+| Lens | Two targets, half or quarter size | `BOK_FS` (`bokeh.js`) | The eye focuses on the glass: a depth-aware disc gather from the 1/4 frame, tight (wiped glass) and wide (wet glass). Dry glass at the door racks focus to the tunnel |
+| Pane | Full size | `PANE_FS` (`wetglass.js`) | `wgPane()` in glass metres, sheet bending, lather lit from outside with its hue tamed, the dryer's air line, the wipers, then the car: dash, pillar, side window, header, lining, mirror |
+| Knee | Half size | `KNEE_FS` | A soft knee picks the glow; halos lean a little toward white |
+| Bloom | The chain from the knee | `bloomChain()` | Threshold 0, 5 levels (3 on Low) |
+| Final | Screen | `FINAL_FS` | `gdGrade()`, a fade for Go, hot light toward white, `ouAces()`, `ouSrgb()`, a triangular dither |
 
 ### Uniforms
 
@@ -122,7 +125,7 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 | Slow-frame step | `detail()` (sim size, bokeh scale and bloom levels follow the level) |
 | Idle | The loop stops when the car is parked, or 12 s after it stops past the exit, and the wipers rest |
 | Reduced motion | No loop: each Go shows the next station as a still (the glass sim runs forward to it); a wipe clears its fan at once; no body shake |
-| Measured | 2026-11-15, 2496 x 1344 on High, one step and draw: 6 to 11.5 ms |
+| Measured | 2026-11-15, 2496 x 1344 on High, one step and draw: 13 to 18 ms (pass two: two lens gathers and the knee) |
 
 ## State and storage
 
@@ -138,8 +141,8 @@ None in `tests/`. Checked on 2026-11-15 in a probe tab (stills from the live sha
 
 ## Known issues
 
-- The foam fall reads more like ribbons than foam at a distance. `stimming-auj3`
-- Under the amber brush lights the cyan dye goes olive.
+- The bow wave ahead of a blade is faint where the lather is already thick. `stimming-auj3`
+- The passenger blade's arc is mostly out of frame on 16:9; only the driver's arc shows.
 
 ## Legacy build
 

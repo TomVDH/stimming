@@ -183,7 +183,19 @@ html[data-m="dial"] .probe-stage > .shelf > li { transition: scale 0.45s cubic-b
 html[data-m="dial"] .probe-stage > .shelf > li[data-held] { scale: 1.18; z-index: 2; }
 /* Drum: the Reel with a true spin. Each reel turns and stops in its turn. */
 html[data-m="drum"] .probe-stage > .shelf > li { width: auto; }
+/* A reel at speed smears along its path; its names step back. */
+html[data-m="drum"] .probe-stage > .shelf > li[data-spin] .obj { filter: url(#probe-vblur); }
+html[data-m="drum"] .probe-stage > .shelf > li[data-spin] .name { opacity: 0.2; }
+/* One button under each reel spins that reel alone. */
+.probe-reels { display: none; }
+html[data-m="drum"] .probe-reels { display: grid; box-sizing: border-box; grid-template-columns: repeat(3, clamp(96px, 24vw, 196px)); justify-items: center; width: fit-content; column-gap: clamp(24px, 5vw, 60px); padding: 0 calc(clamp(14px, 3vw, 32px) + 1px); margin-top: calc(14px - clamp(28px, 5vw, 48px)); }
+.probe-reels button { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 8px 13px; border-radius: 999px; border: 1px solid oklch(0.32 0.016 275); background: none; cursor: pointer; font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); transition: color 0.2s, border-color 0.2s; }
+.probe-reels button:is(:hover, :focus-visible) { color: var(--fg); border-color: var(--fg); }
+.probe-reels svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: rotate 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+.probe-reels button:active svg { rotate: 200deg; }
 @media (max-width: 620px) {
+  html[data-m="drum"] .probe-reels { grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; column-gap: 20px; padding: 0 11px; }
+  .probe-reels button { padding: 8px 9px; letter-spacing: 0.06em; }
   html[data-m="ledger"] .probe-stage > .shelf { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-flow: row; }
   html[data-m="register"] .probe-stage > .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   html[data-m="register"] .toy::before { left: 6px; top: 8px; }
@@ -320,9 +332,19 @@ function deal() {
     hand.push(line.shift());
   }
   pool.forEach(li => li.setAttribute('data-out', ''));
+  hand.forEach((li, i) => dress(li, i));
+  // The hand goes first, so the first toy can be the large one.
+  shelf.prepend(...hand);
+  top = 0;
+  turn(0);
+  held = null;
+  name(null);
+}
+// Each concept reads its own place for a toy from these values.
+function dress(li, i) {
   // A narrow Toy box holds three toys across, not four.
   const cols = d.defaultView.innerWidth < 620 ? 3 : 4;
-  hand.forEach((li, i) => {
+  {
     li.removeAttribute('data-out');
     li.style.setProperty('--i', i);
     // The Clock places each toy on its hour; Dealt throws each card a little off.
@@ -338,13 +360,18 @@ function deal() {
     li.style.setProperty('--by', (Math.floor(i / cols) * (cols === 3 ? 20 : 27) + Math.random() * (cols === 3 ? 6 : 11)).toFixed(1));
     li.style.setProperty('--tx', '0px');
     li.style.setProperty('--ty', '0px');
-  });
-  // The hand goes first, so the first toy can be the large one.
-  shelf.prepend(...hand);
-  top = 0;
-  turn(0);
-  held = null;
-  name(null);
+  }
+}
+// The next toys from the line that are not on show now.
+function draw(n, keep) {
+  const got = [], back = [];
+  while (got.length < n) {
+    if (!line.length) line = shuffle(pool.filter(li => !got.includes(li) && !keep.includes(li) && !back.includes(li)));
+    const li = line.shift();
+    (keep.includes(li) ? back : got).push(li);
+  }
+  line.push(...back);
+  return got;
 }
 function roll() {
   const m = d.documentElement.dataset.m;
@@ -395,6 +422,7 @@ d.addEventListener('pointerup', () => {
 d.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key.toLowerCase() === 'r') roll();
+  if ('123'.includes(e.key)) spinReel(+e.key - 1);
   if (d.documentElement.dataset.m === 'deck' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) turn(e.key === 'ArrowRight' ? 1 : -1);
 });
 // The Clock shows the name of the toy under the pointer or the focus.
@@ -423,7 +451,8 @@ function name(li) {
 const gsap = d.defaultView.gsap;
 const CRAFT = ['ledger', 'register', 'dial', 'drum'];
 const dozen = () => [...shelf.children].slice(0, SIZE);
-const parts = () => { const lis = dozen(); return { lis, toys: lis.map(li => li.querySelector('.toy')), names: lis.map(li => li.querySelector('.name')), objs: lis.map(li => li.querySelector('.obj')) }; };
+// A toy in a show skips the menu's own blur reveal.
+const parts = () => { const lis = dozen(); lis.forEach(li => li.querySelector('.toy').classList.add('is-in')); return { lis, toys: lis.map(li => li.querySelector('.toy')), names: lis.map(li => li.querySelector('.name')), objs: lis.map(li => li.querySelector('.obj')) }; };
 // No motion with reduced motion, without GSAP, or in a hidden tab.
 const calm = () => !gsap || still.matches || d.visibilityState !== 'visible';
 // The Dial's hand turns about the middle of the stage.
@@ -440,6 +469,19 @@ function point(i) {
 const reels = p => [0, 1, 2].map(c => [0, 1, 2, 3].map(r => p.toys[r * 3 + c]));
 const pitch = p => p.lis[3].offsetTop - p.lis[0].offsetTop;
 const place = (tiles, t, h) => tiles.forEach((el, r) => gsap.set(el, { y: ((((r + t + 1) % 5) + 5) % 5 - 1 - r) * h }));
+// One reel turns from place `from` to place `to`; it smears while it is fast.
+function turnReel(tl, tiles, h, from, to, vars) {
+  const o = { t: from, last: from };
+  place(tiles, from, h);
+  tl.to(o, { t: to, ...vars, onUpdate() {
+    place(tiles, o.t, h);
+    const quick = Math.abs(o.t - o.last) > 0.08;
+    o.last = o.t;
+    tiles.forEach(el => el.parentElement.toggleAttribute('data-spin', quick));
+  } }, 0);
+}
+// A reel that lands knocks the frame.
+const thud = () => gsap.fromTo(shelf, { y: 4 }, { y: 0, duration: 0.45, ease: 'elastic.out(1, 0.45)', overwrite: true, clearProps: 'transform' });
 const rise = stagger => [{ yPercent: 70, clipPath: 'inset(0% 0% 100% 0%)' }, { yPercent: 0, clipPath: 'inset(0% 0% 0% 0%)', duration: 0.6, ease: 'expo.out', stagger }];
 const INTRO = {
   ledger(tl, p) {
@@ -461,16 +503,16 @@ const INTRO = {
   drum(tl, p) {
     const h = pitch(p);
     reels(p).forEach((tiles, c) => {
-      const o = { t: -5 * (2 + c) };
-      place(tiles, o.t, h);
-      tl.to(o, { t: 0, duration: 1 + c * 0.32, ease: 'back.out(0.8)', onUpdate: () => place(tiles, o.t, h) }, 0);
+      const duration = 1 + c * 0.32;
+      turnReel(tl, tiles, h, -5 * (2 + c), 0, { duration, ease: 'back.out(0.8)' });
+      tl.call(thud, null, duration * 0.62);
     });
   },
 };
 const OUTRO = {
   drum(tl, p) {
     const h = pitch(p);
-    reels(p).forEach(tiles => { const o = { t: 0 }; tl.to(o, { t: 5, duration: 0.26, ease: 'power2.in', onUpdate: () => place(tiles, o.t, h) }, 0); });
+    reels(p).forEach(tiles => turnReel(tl, tiles, h, 0, 5, { duration: 0.26, ease: 'power2.in' }));
   },
   plain(tl, p) { tl.to([...p.names, ...p.objs], { autoAlpha: 0, y: -12, duration: 0.16, ease: 'power2.in', stagger: 0.006 }, 0); },
 };
@@ -478,7 +520,7 @@ let show = null;
 // A finished show leaves no inline style behind.
 function settle(p) {
   gsap.set([...p.toys, ...p.names, ...p.objs], { clearProps: 'transform,opacity,visibility,clipPath' });
-  p.lis.forEach(li => { li.style.removeProperty('--ln'); li.style.removeProperty('--mk'); });
+  p.lis.forEach(li => { li.style.removeProperty('--ln'); li.style.removeProperty('--mk'); li.removeAttribute('data-spin'); });
 }
 function stop() {
   if (!gsap) return;
@@ -497,6 +539,42 @@ function craftRoll(m) {
   (OUTRO[m] || OUTRO.plain)(show, old);
   show.add(() => { settle(old); deal(); enter(m); });
 }
+// The Drum: one reel spins alone and takes four new toys.
+function spinReel(c) {
+  if (d.documentElement.dataset.m !== 'drum') return;
+  stop();
+  const p = parts(), mine = [0, 1, 2, 3].map(r => p.lis[r * 3 + c]);
+  const swap = () => {
+    draw(4, p.lis).forEach((li, r) => {
+      dress(li, r * 3 + c);
+      mine[r].before(li);
+      mine[r].setAttribute('data-out', '');
+      shelf.append(mine[r]);
+    });
+    top = 0;
+    turn(0);
+    held = null;
+    name(null);
+  };
+  if (calm()) return swap();
+  const h = pitch(p);
+  show = gsap.timeline();
+  turnReel(show, reels(p)[c], h, 0, 5, { duration: 0.26, ease: 'power2.in' });
+  show.add(() => {
+    settle(p);
+    swap();
+    const q = parts();
+    show = gsap.timeline({ onComplete: () => settle(q) });
+    turnReel(show, reels(q)[c], h, -10, 0, { duration: 1.1, ease: 'back.out(0.8)' });
+    show.call(thud, null, 0.68);
+  });
+}
+const reelRow = Object.assign(d.createElement('div'), { className: 'probe-reels' });
+reelRow.innerHTML = [1, 2, 3].map(n => `<button type="button" data-reel="${n - 1}" title="Spin reel ${n} (key ${n})"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.3 2.2v3.3H10"/></svg>Spin 0${n}</button>`).join('');
+shelf.after(reelRow);
+reelRow.addEventListener('click', e => { const b = e.target.closest('button'); if (b) spinReel(+b.dataset.reel); });
+// The smear is a blur along the reel's path only.
+d.body.insertAdjacentHTML('beforeend', '<svg width="0" height="0" aria-hidden="true" style="position:absolute"><filter id="probe-vblur" x="-10%" y="-60%" width="120%" height="220%"><feGaussianBlur stdDeviation="0 7"/></filter></svg>');
 // Trail and Marquee read the pointer's place from the shelf.
 d.addEventListener('pointermove', e => {
   const m = d.documentElement.dataset.m;
