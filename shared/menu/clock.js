@@ -252,26 +252,25 @@ function start() {
   // The Re-roll stays away for the first five seconds.
   setTimeout(() => button.setAttribute('data-on', ''), 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
-  // The footer: two lines. The mark stands in the first in place of its own name,
-  // "yet another [mark] concoction"; the second is a small caption, "made with AI".
+  // The footer: a signature line, then a disclaimer. The chip is the line's seal: it leads
+  // "yet another onnøzelaer concoction", and the name stays written in full (Tom).
+  // "Made with AI" is an attribution, not a boast: it stays small and plain.
   const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
   const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
   if (credit && words0 && mark) {
-    const [before, after] = words0.textContent.split(/onn[\u00f8o]zelaer/i);
-    if (after !== undefined) {
-      const [noun, ...rest] = after.split('\u00b7');
-      const holder = Object.assign(document.createElement('span'), { className: 'clock-mark' });
-      holder.append(mark);
-      // The version stays the mark's next sibling: the menu's hover rule needs that.
-      if (version) holder.append(version);
-      words0.textContent = before.trim();
-      words0.className = 'clock-word';
-      const tail = Object.assign(document.createElement('span'), { className: 'clock-word', textContent: noun.trim() });
-      const note = Object.assign(document.createElement('span'), { className: 'clock-note', textContent: rest.join('\u00b7').trim() });
-      words0.after(holder, tail, note);
-      if (!note.textContent) note.remove();
-      credit.setAttribute('data-inline', '');
-    }
+    const [line, ...rest] = words0.textContent.split('\u00b7');
+    const note = rest.join('\u00b7').trim();
+    const sig = Object.assign(document.createElement('span'), { className: 'clock-sig' });
+    const seal = Object.assign(document.createElement('span'), { className: 'clock-mark' });
+    seal.append(mark);
+    // The version stays the mark's next sibling: the menu's hover rule needs that.
+    if (version) seal.append(version);
+    words0.textContent = line.trim();
+    words0.className = 'clock-word';
+    words0.before(sig);
+    sig.append(seal, words0);
+    if (note) sig.after(Object.assign(document.createElement('span'), { className: 'clock-note', textContent: note[0].toUpperCase() + note.slice(1) + '.' }));
+    credit.setAttribute('data-inline', '');
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
     // It starts after the intro, so its shader build does not stall the comet.
     setTimeout(() => import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e)), 2600);
