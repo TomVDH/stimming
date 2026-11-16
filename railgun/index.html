@@ -3493,6 +3493,7 @@ const frags = Array.from({ length: 16 }, () => {
   // glow: a split piece's own soft halo, so it stands apart from riders.
   return { m, glow: makeFlare(linFit(0.85, 0.14, 55)), trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0), splitS: -1, splitT: -1e9 };
 });
+const fragGlowP = new THREE.Vector3();
 // Seconds a split piece takes to drift out to its own track.
 const SPLIT_T = 30;
 // Offsets count main-rock radii, so a size change keeps the gaps.
@@ -3536,7 +3537,9 @@ function placeFrags() {
     // A split piece burns hotter: a longer fire tip and its own halo.
     if (f.splitS >= 0) {
       u.uLift.value.set(-1, 1, 2.6);
-      flare(f.glow, f.pos, f.k * ast.R * 4.5, 0.5 * Math.min(1, u.uOn.value) * (0.5 + 0.5 * astMat.uniforms.uBurn.value));
+      // The halo stands toward the eye, so the piece never hides it.
+      fragGlowP.subVectors(camera.position, f.pos).setLength(f.k * ast.R * 1.6).add(f.pos);
+      flare(f.glow, fragGlowP, f.k * ast.R * 4.5, 0.5 * Math.min(1, u.uOn.value) * (0.5 + 0.5 * astMat.uniforms.uBurn.value));
     }
   }
 }
@@ -5533,7 +5536,11 @@ const bowMat = new THREE.ShaderMaterial({
   }`,
 });
 const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
-bow.frustumCulled = false; bow.renderOrder = 4; bow.visible = false;
+// The rock's glows draw after its smoke and before the cloud heaps.
+// The heaps stand 8 to 38 km out, in front of the rock at 42 to 48 km.
+// Clouds write no depth, so draw order is what hides a glow behind them.
+const ROCK_GLOW_ORDER = 2.12;
+bow.frustumCulled = false; bow.renderOrder = ROCK_GLOW_ORDER; bow.visible = false;
 scene.add(bow);
 // A fiery haze hangs round the burning rock; night shows it most.
 // It shares the bow's card and draws over the smoke near the rock.
@@ -5559,7 +5566,7 @@ const haloMat = new THREE.ShaderMaterial({
   }`,
 });
 const halo = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), haloMat);
-halo.frustumCulled = false; halo.renderOrder = 4; halo.visible = false;
+halo.frustumCulled = false; halo.renderOrder = ROCK_GLOW_ORDER; halo.visible = false;
 scene.add(halo);
 const bowR = new THREE.Vector3(), bowU = new THREE.Vector3();
 function updateBow() {
@@ -5592,6 +5599,9 @@ const rockGlobe = makeFlare(linFit(0.88, 0.12, 55));
 // The hit's and the strike's glows sit in the world.
 // The gun, the plain and nearer clouds stand in front of them.
 for (const m of [hitFlare, hitGlow, rockGlobe]) m.material.depthTest = true;
+rockGlobe.renderOrder = ROCK_GLOW_ORDER;
+// Split pieces' halos: hills hide them, and so do clouds in front.
+for (const f of frags) { f.glow.material.depthTest = true; f.glow.renderOrder = ROCK_GLOW_ORDER; }
 // Late bursts inside the cloud, as big pieces break.
 const burstFlares = [0, 1, 2].map(() => makeFlare(linFit(0.88, 0.13, 58)));
 function flare(m, pos, size, gain) {
