@@ -47,7 +47,7 @@ const ui = initPage({ id: 'tornado', bar: {
 /* ---------- the scene ---------- */
 // The eye stands on the centre line of a two-lane road, 1.7 m up, and looks down it.
 // Ground units are metres; the storm's units are kilometres.
-// Golden lines: the horizon sits 0.382 up the frame; the road vanishes 0.618 across.
+// Golden lines: the horizon sits 0.382 up the frame.
 const GOLD = 0.381966;
 const horizon = () => GOLD;
 const SCENE = /* glsl */`
@@ -170,7 +170,7 @@ vec2 cylinder(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
 }
 
 /* ---------- the camera ---------- */
-// The eye turns left by uYaw, so the road's vanishing point sits on the right golden line.
+// The eye turns left by uYaw, so the road vanishes far right.
 // Ground, road, poles, farm and funnels live in world space; the storm lives in camera space.
 vec3 toWorld(vec3 c) { float s = sin(uYaw), k = cos(uYaw); return vec3(c.x * k + c.z * s, c.y, -c.x * s + c.z * k); }
 vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
@@ -192,8 +192,8 @@ vec2 bend(vec2 xz, float h, float g) {
 }
 
 /* ---------- the plain ---------- */
-// The road runs straight away from the eye, 11 m to its right.
-const float ROAD_X = 11.0, WHEAT_GAP = 8.6;
+// The road runs straight away from the eye, 14 m to its right.
+const float ROAD_X = 14.0, WHEAT_GAP = 8.6;
 // Coverage of a band of half width w round 0, at pixel footprint f.
 float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / f); }
 // The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
@@ -466,8 +466,10 @@ function setSun(hour) {
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens: a narrow frame takes a somewhat wider one and crops the storm's sides.
 const focal = () => 0.95 * Math.min(1, Math.sqrt(aspect() / 1.3));
-// The eye turns left until the road's vanishing point lies on the right golden line.
-const yaw = () => Math.atan((0.5 - GOLD) * aspect() / focal());
+// The road vanishes on the golden cut of the right section: 1 - 0.382 x 0.618.
+const ROAD_VP = 1 - GOLD * (1 - GOLD);
+// The eye turns left until the road's vanishing point lies there.
+const yaw = () => Math.atan((ROAD_VP - 0.5) * aspect() / focal());
 // Camera space to world space, and back, about the vertical axis.
 const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
 

@@ -6,6 +6,10 @@
 
 **Register (Tom, 2026-11-16):** very cinematic, flat and patient: a locked-off wide frame, a long straight road to the horizon, the land dwarfed by the sky. No film names in the toy, its copy or its code; describe it as "wide, still, deadpan framing".
 
+**Showcase (Tom, 2026-11-16):** "an impressive show case of weather effects, haze, layering, clouds and the tornado turbulence and cone dynamics". Every stage aims at that bar: the effects carry the toy.
+
+**Composition (Tom, 2026-11-16):** golden ratio. The horizon sits 0.382 up the frame. The road runs off to the right of the eye; its vanishing point sits on the golden cut of the right section (0.764 across), so the road enters only along the right edge. Wheat fills the foreground and answers the wind. The tornadoes stay far off, 8 to 30 km out.
+
 **Architecture:** One raw WebGL2 scene on the shared environment library, as Railgun is: `envScene` for the plains and far horizon, a ray-marched supercell (mesocyclone, wall cloud, anvil, rain curtain), and one volume per tornado (funnel, condensation, debris cloud, dust skirt) driven by a small set of per-tornado uniforms.
 
 **Tech stack:** raw WebGL2 on `shared/gl.js` and `shared/environment.js`; `shared/sky.js`, `shared/weather.js`, `shared/precip.js`, `shared/glow.js`, `shared/grade.js`, `shared/output.js`. The funnels and dust use the Railgun rock's smoke shading and the volume ideas in `shared/fire.js`. three.js only if a stage proves it needs it.
@@ -20,7 +24,7 @@
 
 ## The shot
 
-Eye height, a wide lens, the horizon low (a fifth of the frame). Flat wheat to the edge of the world, a straight two-lane road running to a vanishing point, telephone poles marching beside it.
+Eye height, a wide lens, the horizon on the lower golden line (see Composition). Flat wheat to the edge of the world, a straight two-lane road running to a vanishing point, telephone poles marching beside it.
 A lone farmhouse, a barn and a windmill sit a mile off. Mid-frame and far, the supercell: a dark rotating base, a lowered wall cloud, a sunlit anvil towering up and out.
 Behind the camera the sky is still clear, so warm low sun lights the wheat and the cloud's flank against the black-green core.
 
