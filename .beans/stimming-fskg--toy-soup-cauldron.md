@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T16:18:00Z
+updated_at: 2026-11-16T16:26:15Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -76,4 +76,4 @@ Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add t
 
 ## Performance pass
 
-- [ ] Performance pass: see stimming-mbpi (baseline measured; no code changed yet)
+- [x] Performance pass: see stimming-mbpi

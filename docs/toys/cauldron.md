@@ -90,8 +90,8 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 | 1. Velocity | `velTex`, RG16F, 64² | `texSubImage2D` | Uploads the stir field |
 | 2. Dye | Two RGBA16F maps (MRT), 512² (384² on Low) | `DYE_FS` (`:439`) | Carries the colour (OKLab times weight), fat and glitter; the plumes mix in the pot's mean; the things add their tint |
 | 3. Ripples | RG16F, 256² | `RIP_FS` (`:493`) | A wave field, two steps a frame at 60 fps; splashes, pops and the spoon push it |
-| 4. Fire | Five RGBA16F atlases, 384 × 336: a 48 × 56 × 48 grid of 0.08 cells cut into z slices | `CURL_FS`, `VEL_FS`, `DIV_FS`, `JAC_FS` (12 sweeps), `PROJ_FS`, `FDYE_FS` | Fire's solver (`fire/index.html`), one or two steps a frame: buoyancy, curl-noise turbulence, vorticity confinement, a gas-expansion source, wind at high fire, a coal bed that feeds heat and smoke. The belly (up to the rim) and the legs are solids; hot gas clings to the iron and climbs it |
-| 5. Layers | Two RGBA16F maps (MRT), half the CSS size (a third on Low) | `LAYER_FS` | Back: the haze and the flagstone floor, lit through a bump normal and by the solver's heat. Front: Fire's volume, marched 24 steps (16 on Low) with Fire's wood ramp, emission and smoke light, sparks, and the steam with Fire's smoke light. The march stops at the belly, the rim and the far inner wall |
+| 4. Fire | Five RGBA16F atlases, 384 × 336: a 48 × 56 × 48 grid of 0.08 cells cut into z slices | `SOLID_FS` (once), `CURL_FS`, `VEL_FS`, `DIV_FS`, `JAC_FS` (12 sweeps), `PROJ_FS`, `FDYE_FS` | Fire's solver (`fire/index.html`), one or two steps a frame: buoyancy, curl-noise turbulence, vorticity confinement, a gas-expansion source, wind at high fire, a coal bed that feeds heat and smoke. The belly (up to the rim) and the legs are solids, baked once into an R16F mask; hot gas clings to the iron and climbs it. After 20 s at Fire 0 the solver rests |
+| 5. Layers | Two RGBA16F maps (MRT), half the CSS size (a third on Low) | `LAYER_FS` | Back: the haze and the flagstone floor, lit through a bump normal (one Voronoi pass, an analytic slope) and by the solver's heat. Front: Fire's volume, marched 24 steps (16 on Low) with Fire's wood ramp, emission and smoke light, sparks, and the steam with Fire's smoke light; the steam skips its noise outside the column and the puffs. The march stops at the belly, the rim and the far inner wall |
 | 6. Scene | RGBA16F, full size | `SCENE_FS` (`:712`) | Ray cast: belly, rim, legs, inner wall, the soup heightfield, bubble caps, the things (an SDF march over a short candidate list), droplets, the spoon |
 | 7. Bloom | Half size chain | `bloomChain` | Threshold 0.9 |
 | 8. Out | Canvas | `OUT_FS` (`:1191`) | `GRADE` (tint, vignette, grain), then `OUTPUT` (film curve, sRGB, dither) |
@@ -122,9 +122,35 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 |---|---|
 | Pixel ratio | `detail({ maxDpr: 2, budget: 2.2e6 })` then `D.dpr()` (`:1268`) |
 | Slow-frame step | `detail()`; only frames a hand drives are fed to it |
-| Idle | A hand at work draws at up to 60 fps; the simmer draws at 30 fps; the CPU fluid sleeps when the soup is calm; a hidden pot stops (`whenVisible`, `:2481`) |
+| Idle | A hand at work draws at up to 60 fps; the simmer draws at 30 fps; the frame gate keeps 2 ms of slack for rAF jitter; the CPU fluid sleeps when the soup is calm; a hidden pot stops (`whenVisible`, `:2481`) |
 | Reduced motion | No simmer loop, no bubbles, sparks, droplets or steam puffs, no flicker, no boil currents, a fixed grain. A stir or a throw still moves, then the loop sleeps |
 | Measured | 2026-11-15, laptop, built-in browser pane, Quality High: first frame 91 ms after navigation. 14 things at Fire 1, 2.2 M pixels: about 14 ms a frame. Empty pot: the 30 fps simmer at 120 Hz with no long frames |
+
+### Performance pass (2026-11-16, `stimming-mbpi`)
+
+Apple M3 Pro laptop, Chrome, 1280 × 720 at device ratio 2, 22 things (peas count one by one), Fire 1.
+GPU time is the frame cost with a 1-pixel `readPixels` sync, 60 frames back to back, best of four rounds, in headless Chrome with the Metal GPU.
+Frame rate is real rAF in headed Chrome on the 120 Hz screen.
+
+| Measure | Before | After |
+|---|---|---|
+| GPU time, High (3.35 M px), stirring | 5.71 ms | 4.86 ms |
+| GPU time, Standard (2.20 M px), stirring | 4.70 ms | 3.85 ms |
+| Frame rate, High, simmer / stirring | 29.5 / 55.7 fps | 30.0 / 60.0 fps |
+| Frame rate, Standard, simmer / stirring | 29.4 / 57.2 fps | 30.0 / 60.0 fps |
+| Gap p95, High, simmer / stirring | 41.8 / 25.1 ms | 35.3 / 18.5 ms |
+
+| Change | Effect |
+|---|---|
+| Solid mask baked once (`SOLID_FS`) | 5.38 → 5.03 ms. The mask matches the inline test in all 11,450 solid cells |
+| Steam skips its noise outside the column and the puffs | 5.58 → 5.12 ms. Pixel-identical |
+| Floor bump from one Voronoi pass | No change on this GPU; a third of the floor's Voronoi work. Mean difference 0.08 of 255 |
+| Solver rests after 20 s at Fire 0 | Heat peaks at 0.007 by then, under the wood ramp's 0.05 threshold |
+| Frame gate with 2 ms slack | The gate dropped frames on rAF jitter; now 30.0 and 60.0 fps |
+| Tried and kept out | Jacobi 12 → 8 saves 0.1 ms; not worth a change to the flames |
+
+The fire is chaotic: a 0.01% nudge to the buoyancy moves the picture more (mean difference 10.2 of 255) than this whole pass (8.0). Soup, things, iron and floor match.
+
 
 ## State and storage
 

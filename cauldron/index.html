@@ -352,9 +352,10 @@ vec4 S3(sampler2D t, vec3 g) {
 }
 `;
 // The pot is a solid in the flow: the gas runs round its belly.
-const SOLID = `
+// SOLID_SHAPE draws the mask once; the solver passes read it with SOLID.
+const SOLID_SHAPE = `
 // The belly up to the rim's top, and the three legs.
-bool solidAt(ivec3 c) {
+bool solidShape(ivec3 c) {
   vec3 p = BMIN + (vec3(c) + 0.5) * CELL;
   if (p.y < 0.21 && length((p - vec3(0.0, BCY, 0.0)) / RO) < 1.0) return true;
   for (int i = 0; i < 3; i++) {
@@ -367,6 +368,14 @@ bool solidAt(ivec3 c) {
   return false;
 }
 `;
+// One fetch from the baked mask; no cell past the grid is solid.
+const SOLID = `
+uniform sampler2D uSolid;
+bool solidAt(ivec3 c) {
+  if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, GN))) return false;
+  return texelFetch(uSolid, at(c), 0).r > 0.5;
+}
+`;
 // The belly's measures, the same as in POT.
 const POT_DIMS = `const float BCY = -0.48;
 const vec3 RO = vec3(1.154, 1.181, 1.154);
@@ -376,6 +385,12 @@ precision highp float;
 precision highp sampler2D;
 out vec4 o;
 `;
+// The solid mask: 1 in the pot's cells, drawn once.
+const SOLID_FS = `${SIM_HEAD}
+${GRID}
+${POT_DIMS}
+${SOLID_SHAPE}
+void main() { o = vec4(solidShape(cellOf(ivec2(gl_FragCoord.xy))) ? 1.0 : 0.0, 0.0, 0.0, 0.0); }`;
 // Vorticity: the curl of the velocity, and its length.
 const CURL_FS = `${SIM_HEAD}
 uniform sampler2D uVel;
@@ -926,19 +941,26 @@ vec3 fireAt(vec3 p) {
   return vec3(max(D, 0.0), d.g, d.b);
 }
 // Flagstones: the height, and the stone's id; the joints sit at 0.
-vec3 stones(vec2 p) {
-  p *= 1.7;
-  vec2 c = floor(p), f = fract(p), id = c;
+// grad is the height's slope on the ground, from one Voronoi pass.
+vec3 stones(vec2 P, out vec2 grad) {
+  vec2 p = P * 1.7;
+  vec2 c = floor(p), f = fract(p), id = c, q1 = vec2(1.0), q2 = vec2(1.0);
   float d1 = 8.0, d2 = 8.0;
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec2 g = vec2(i, j), o = vec2(hash12(c + g), hash12(c + g + 17.3)) * 0.8 + 0.1;
     vec2 q = g + o - f;
     float d = dot(q, q);
-    if (d < d1) { d2 = d1; d1 = d; id = c + g; } else if (d < d2) d2 = d;
+    if (d < d1) { d2 = d1; q2 = q1; d1 = d; q1 = q; id = c + g; } else if (d < d2) { d2 = d; q2 = q; }
   }
-  float edge = sqrt(d2) - sqrt(d1);
+  float s1 = sqrt(d1), s2 = sqrt(d2), edge = s2 - s1;
+  // The slope of a distance to a seed points away from that seed.
+  vec2 ge = q1 / max(s1, 1e-5) - q2 / max(s2, 1e-5);
   // Rounded stone edges, a gentle dome, and a fine pitted grain.
-  float h = smoothstep(0.0, 0.22, edge) * (0.85 + 0.15 * noise2(id * 3.1)) + 0.08 * noise2(p * 9.0);
+  float x = clamp(edge / 0.22, 0.0, 1.0), dome = 0.85 + 0.15 * noise2(id * 3.1), g0 = 0.08 * noise2(p * 9.0);
+  float h = x * x * (3.0 - 2.0 * x) * dome + g0;
+  // The grain keeps a forward difference over 0.012 ground units.
+  vec2 gg = 0.08 * vec2(noise2((p + vec2(0.0204, 0.0)) * 9.0), noise2((p + vec2(0.0, 0.0204)) * 9.0)) - g0;
+  grad = (6.0 * x * (1.0 - x) / 0.22 * dome * ge * 1.7 + gg / 0.012) * 0.25;
   return vec3(h * 0.25, id);
 }
 float steamDens(vec3 p) {
@@ -948,6 +970,15 @@ float steamDens(vec3 p) {
   vec2 pxz = p.xz - uLean * hy * hy;
   float r = length(pxz), R = 0.8 + 0.22 * hy;
   float edge = 1.0 - smoothstep(R * 0.45, R, r);
+  // Outside the column and every puff, no steam shows: skip the noise.
+  bool near = edge * smoothstep(0.02, 0.45, hy) > 0.0;
+  for (int i = 0; i < ${NP}; i++) {
+    if (i >= uNP || near) break;
+    float rad = 0.1 + uPuff[i].z * 0.38;
+    vec3 dv = p - vec3(uPuff[i].x, uLevel + 0.05 + uPuff[i].z, uPuff[i].y);
+    near = dot(dv, dv) < rad * rad;
+  }
+  if (!near) return 0.0;
   // Steam rises where the boil breaks the surface: over the plumes.
   float src = 0.0;
   for (int i = 0; i < 4; i++) { vec2 dp = pxz - uPlumeW[i].xy; src += uPlumeW[i].z * exp(-dot(dp, dp) / (0.18 + 0.12 * hy)); }
@@ -1004,10 +1035,9 @@ void main() {
     vec3 P = ro + rd * tg;
     float r = length(P.xz);
     // Flagstones: one height field; a bump normal carries all the texture.
-    float e = 0.012;
-    vec3 st = stones(P.xz);
-    float hx = stones(P.xz + vec2(e, 0.0)).x, hz = stones(P.xz + vec2(0.0, e)).x;
-    vec3 n = normalize(vec3(-(hx - st.x) / e * 0.06, 1.0, -(hz - st.x) / e * 0.06));
+    vec2 sg;
+    vec3 st = stones(P.xz, sg);
+    vec3 n = normalize(vec3(-sg.x * 0.06, 1.0, -sg.y * 0.06));
     // Each stone has its own grey; ash fills the joints; soot rings the fire.
     vec3 alb = vec3(0.07, 0.064, 0.058) * (0.7 + 0.5 * hash12(st.yz));
     alb = mix(vec3(0.03, 0.027, 0.025), alb, smoothstep(0.02, 0.12, st.x));
@@ -1770,7 +1800,8 @@ const curlP = program(CURL_FS), fvelP = program(VEL_FS), divP = program(DIV_FS);
 const jacP = program(JAC_FS), projP = program(PROJ_FS), fdyeP = program(FDYE_FS);
 const fsim = (() => {
   const make = () => { const tex = texture(FG.w, FG.h, gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]) }; };
-  return { vel: [make(), make()], dye: [make(), make()], p: [make(), make()], curl: make(), div: make(), vi: 0, di: 0, pi: 0 };
+  const tex = texture(FG.w, FG.h, gl.R16F, gl.RED);
+  return { vel: [make(), make()], dye: [make(), make()], p: [make(), make()], curl: make(), div: make(), solid: { tex, fb: target([tex]) }, vi: 0, di: 0, pi: 0 };
 })();
 // The air gust from a drag past the pot: a world point, a radius and a velocity.
 const air = { pos: [0, -100, 0], r: 0.9, vel: [0, 0, 0] };
@@ -1806,9 +1837,11 @@ function simPass(p, dst, texs) {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
+// The pot never moves, so its solid mask draws once.
+simPass(program(SOLID_FS), fsim.solid, {});
 // One fixed step: curl, advect, divergence, pressure, project, dye with the coals.
 function fireStep(dt) {
-  const k = fireTune(), S = fsim;
+  const k = fireTune(), S = fsim, solid = S.solid;
   simPass(curlP, S.curl, { uVel: S.vel[S.vi] });
   gl.useProgram(fvelP);
   gl.uniform1f(fvelP.u('uDt'), dt);
@@ -1821,17 +1854,17 @@ function fireStep(dt) {
   gl.uniform4f(fvelP.u('uAir'), ...air.pos, air.r);
   gl.uniform4f(fvelP.u('uAirV'), ...air.vel, 0);
   gl.uniform3f(fvelP.u('uWind'), ...gust());
-  simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl });
+  simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl, uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(divP);
   gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
   simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
   // Jacobi sweeps ping-pong; the last pressure warms the next step.
   for (let i = 0; i < 12; i++) {
-    simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div });
+    simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div, uSolid: solid });
     S.pi = 1 - S.pi;
   }
-  simPass(projP, S.vel[1 - S.vi], { uP: S.p[S.pi], uVel: S.vel[S.vi] });
+  simPass(projP, S.vel[1 - S.vi], { uP: S.p[S.pi], uVel: S.vel[S.vi], uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(fdyeP);
   gl.uniform1f(fdyeP.u('uDt'), dt);
@@ -1844,12 +1877,15 @@ function fireStep(dt) {
   gl.uniform1f(fdyeP.u('uEmitT'), 5.5 / 120 * 14 * k.emit * pw);
   gl.uniform1f(fdyeP.u('uEmitD'), 7.0 / 120 * 8 * k.emit * pw);
   gl.uniform4f(fdyeP.u('uBed'), devV('fireX', 0), devV('fireZ', 0), devV('fireY', 0.04), devV('fireR', 0.62));
-  simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
+  simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uSolid: solid });
   S.di = 1 - S.di;
 }
 // Fire runs at 1.2 speed; steps here are up to 1/50 s, two at most a frame.
-let fireAcc = 0;
+let fireAcc = 0, coldT = 0;
 function fireSim(dt) {
+  // With no fire for twenty seconds, no heat shows: the solver rests.
+  coldT = fire < 0.02 ? coldT + dt : 0;
+  if (coldT > 20) { fireAcc = 0; return; }
   fireAcc += dt * 1.2;
   const n = Math.min(2, Math.ceil(fireAcc / 0.024 - 1e-6));
   if (n <= 0) return;
@@ -3224,7 +3260,8 @@ function frame(now) {
   try {
     const lively = busy();
     // A hand at work draws at up to 60 fps; the simmer draws at 30.
-    if (now - rendered < (lively ? 1000 / 62 : 1000 / 31)) { again = visible; return; }
+    // A 2 ms slack absorbs rAF timestamp jitter, so no frame is skipped.
+    if (now - rendered < (lively ? 1000 / 60 - 2 : 1000 / 30 - 2)) { again = visible; return; }
     const gap = (now - (rendered || now - 16)) / 1000, dt = clamp(gap, 0, 0.05);
     if (lively && wasLively && gap < 0.1) D.frame(gap);
     wasLively = lively;
