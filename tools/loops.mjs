@@ -74,6 +74,15 @@ const LOOPS = {
     ['stroke', [[0.31, 0.4], [0.23, 0.58]], 300], ['wait', 250],
     ['key', 'r'], ['wait', 2980],
   ] },
+  // A hand drags the pointer round the shape, stretches it and drops two blobs.
+  // The shape changes on its own every 2.8 s, so 9 s shows three changes.
+  // C clears the blobs before the loop ends.
+  morpher: { len: 9, pre: [['move', 0.74, 0.52], ['wait', 500]], live: [
+    ['glide', 0.74, 0.52, 0.62, 0.26, 650], ['glide', 0.62, 0.26, 0.36, 0.28, 800], ['glide', 0.36, 0.28, 0.27, 0.55, 600], ['wait', 250],
+    ['glide', 0.27, 0.55, 0.5, 0.5, 400], ['down', 0.5, 0.5], ['glide', 0.5, 0.5, 0.66, 0.66, 550], ['up'], ['wait', 700],
+    ['click', 0.66, 0.66], ['wait', 500], ['glide', 0.66, 0.66, 0.34, 0.72, 700], ['click', 0.34, 0.72], ['wait', 600],
+    ['glide', 0.34, 0.72, 0.74, 0.52, 1100], ['key', 'c'], ['wait', 2150],
+  ] },
   // S shuffles the board; every control moves to a new place.
   fidget: { live: [['key', 's'], ['wait', 1250]] },
   // R stands the tiles up; Space tips the first tile.
@@ -110,6 +119,8 @@ const LOOPS = {
   pendulum: { pre: [['key', 'Space'], ['wait', 4000]] },
   // A held finger smears one slow ring; the heat fades behind it.
   putty: { pre: [['down', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.22, 2 * TURN]] },
+  // T throws in two things; a held drag stirs the soup in a slow ring.
+  cauldron: { pre: [['key', 't'], ['wait', 900], ['key', 't'], ['wait', 900], ['down', 0.63, 0.42]], live: [['orbit', 0.5, 0.42, 0.13, 0.09, TURN]] },
   // Space blows a stream at each half turn of the wand.
   bubbles: { pre: [['move', 0.7, 0.5]], live: [
     ['key', 'Space'], ['orbit', 0.5, 0.5, 0.2, 0.2, TURN / 2, 0.5, 0],
@@ -138,9 +149,9 @@ const LOOPS = {
   dijkstra: { live: [['click', 0.45, 0.45], ['wait', TURN], ['click', 0.58, 0.56], ['wait', TURN]] },
   // Space sends a random shell up; a shell bursts three seconds later.
   fireworks: { pre: Array(5).fill([['key', 'Space'], ['wait', 625]]).flat(), live: [['key', 'Space'], ['wait', 625]] },
-  // A held press ranges the rock, then charges the gun.
-  // The release fires one shot, early in the clip.
-  railgun: { len: 8, pre: [['down', 0.5, 0.5], ['wait', 5200]], live: [['wait', 1300], ['up'], ['wait', 12000]] },
+  // A held press ranges the rock, then charges the gun; the release fires.
+  // The clip starts two seconds before the bolt strikes the rock.
+  railgun: { len: 9, pre: [['down', 0.5, 0.5], ['wait', 6500], ['up'], ['wait', 7300]] },
   // A drag on the grass reels the line out and back in.
   washline: { pre: [['down', 0.59, 0.82]], live: [['orbit', 0.5, 0.82, 0.09, 0, TURN]] },
 };

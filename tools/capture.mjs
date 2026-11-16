@@ -97,6 +97,11 @@ export const POKES = {
   ink: [['key', 'Space'], ['wait', 1500], ['key', 'Space'], ['wait', 7500]],
   // A click sets a source; the search floods out from it.
   dijkstra: [['click', 0.45, 0.45], ['wait', 2200]],
+  // A held press ranges and charges; the release fires.
+  // The bolt strikes the rock about ten seconds later; the shot shows the fireball.
+  railgun: [['down', 0.5, 0.5], ['wait', 6500], ['up'], ['wait', 11000]],
+  // T throws in two things.
+  cauldron: [['key', 't'], ['wait', 900], ['key', 't'], ['wait', 1500]],
   // Two clicks fire two rings.
   // The second ring crosses the laser sheet at the shot.
   vortex: [['click', 0.5, 0.4], ['wait', 700], ['click', 0.65, 0.5], ['wait', 300]],
@@ -120,12 +125,17 @@ export const POKES = {
 //   query  the address query, with its question mark
 //   store  localStorage entries; the page reads them when it loads
 //   seed   a number; the page's random numbers then repeat on each load
+//   css    a style sheet the page gets when it loads
 //   first  steps before the still's pokes and before the loop's recipe
 //   crop   the share of the stage's short side that the picture keeps (default: 1)
+//          Above 1 the crop takes in page round the stage; `css` must match its colour.
 //   at     the centre of the crop, in stage fractions (default: [0.5, 0.5])
 // The tube shows the middle circle only: CIRCLE of the width.
 // The subject and its action stay inside that circle.
 export const SETUP = {
+  // The shape scales with the stage, so the stage shrinks to zoom out.
+  // The page round it takes the stage's flat colour, so no edge shows.
+  morpher: { css: '.stage { transform: scale(0.72); border-radius: 0 !important; } html, body { background: var(--stage) !important; }', crop: 1 / 0.72 },
   // The bubble sheet is smaller than its stage.
   pop: { crop: 0.84, at: [0.5, 0.48] },
   // Key 5 picks the Coral bar; the default bar is random.
@@ -140,6 +150,9 @@ export const SETUP = {
   window: { query: '?hour=noon&peer=0.06,-0.1,-0.14', crop: 0.92, at: [0.43, 0.48] },
   // Dark field is the Light choice in Settings; the page stores it (Tom).
   ink: { store: { 'stimming.ink.light': 'dark' } },
+  // Night, so the impact lights the sky (Tom); the seed fixes the rock's path.
+  // The crop holds the rock's head, where the bolt strikes it.
+  railgun: { store: { 'stimming.railgun.time': '0.03' }, seed: 11, crop: 0.6, at: [0.67, 0.55] },
   // The page picks a city at random; the seed keeps one city for both pictures.
   dijkstra: { seed: 99 },
   // Noon by Lake Zurich (Tom): the ride starts past Au ZH, on the open shore.
@@ -260,6 +273,10 @@ export async function context(browser, id, video) {
   const store = SETUP[id]?.store;
   // The toy reads its stored choices when it loads.
   if (store) await made.addInitScript(all => { for (const [k, v] of all) localStorage.setItem(k, v); }, Object.entries(store));
+  // The toy's own style sheet goes in as the page loads.
+  if (SETUP[id]?.css) await made.addInitScript(css => {
+    addEventListener('DOMContentLoaded', () => document.head.append(Object.assign(document.createElement('style'), { textContent: css })));
+  }, SETUP[id].css);
   // A seeded generator stands in for Math.random, so a random pick repeats.
   if (SETUP[id]?.seed != null) await made.addInitScript(seed => {
     let a = seed >>> 0;
@@ -280,6 +297,9 @@ export function square(box, id) {
   const x0 = Math.max(0, box.x), y0 = Math.max(0, box.y);
   const w = Math.min(vw, box.x + box.width) - x0, h = Math.min(vh, box.y + box.height) - y0;
   const side = Math.floor(Math.min(w, h) * crop);
-  const fit = (lo, len, c) => Math.round(Math.min(Math.max(lo + len * c - side / 2, lo), lo + len - side));
-  return { x: fit(x0, w, at[0]), y: fit(y0, h, at[1]), width: side, height: side };
+  // A crop larger than the stage stays centred, inside the viewport.
+  const fit = (lo, len, c, view) => Math.round(side > len
+    ? Math.min(Math.max(lo + len * c - side / 2, 0), view - side)
+    : Math.min(Math.max(lo + len * c - side / 2, lo), lo + len - side));
+  return { x: fit(x0, w, at[0], vw), y: fit(y0, h, at[1], vh), width: side, height: side };
 }

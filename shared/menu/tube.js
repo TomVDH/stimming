@@ -6,7 +6,8 @@
 // The toy's name and motto are part of the picture: the shader draws them, so they shade and change with it.
 // A change of toy is quick: the new picture fades in from a little close up and settles, after a short flicker.
 // A toy with a loop plays it in place of the still while the toy is in hand.
-import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
+// The phosphor glows on for a moment: a moving part leaves a short trail.
+import { TRI_VS, program, linked, tri, target, free, bind, onContextLoss } from '../gl.js';
 
 // How bright the picture is at its middle, 0 to 1, in linear light.
 const LEVEL = 0.19;
@@ -19,6 +20,9 @@ const CHANGE = 0.42;
 // The cadence: the wordmark's own way with letters, each a little askew in its own weight.
 // Tom keeps it off for the toy's name; it may return, so it stays behind this switch.
 const CADENCE = false;
+// The phosphor's afterglow: the time each colour takes to fade to a third, in seconds.
+// Red fades last, so a dying trail warms a little.
+const GLOW = [0.09, 0.07, 0.055];
 // The caption is a square texture; it covers this share of the tube's width.
 const CAP = 0.5, CAP_PX = 1024;
 
@@ -66,9 +70,11 @@ void main() {
   // The face bulges a little, as a tube's glass does; the raster follows the bulge.
   vec2 pc = p * (1.0 + 0.09 * r * r);
   float g = uMix, k = uKick;
-  // The raster: one scan line each three CSS pixels.
+  // The raster: one scan line each three CSS pixels, snapped to whole device pixels.
+  // A line of a fraction of a pixel blurs and beats against the screen.
   vec2 pw = (pc * 0.5 + 0.5) * uRes;
-  float row = floor(pw.y / (3.0 * uPx));
+  float rowPx = max(3.0, floor(3.0 * uPx + 0.5));
+  float row = floor(pw.y / rowPx);
   // The warble of a weak hold. Each line sits a hair off, anew each field.
   float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0011;
   // A tracking band climbs the face about every twelve seconds; its lines lean and shiver.
@@ -105,13 +111,16 @@ void main() {
   light = mix(light, mix(neg, light * 0.08, bright), bandw * 0.9);
   light = mix(light, vec3(0.95), core);
   glow += core * 0.2;
-  // Aperture grille and scan lines; a bright line burns wider than a dim one.
+  // Aperture grille: a red, a green and a blue stripe side by side.
+  // Each stripe passes a little of the other colours, so white stays white.
+  // The division keeps the mean light at 1.
   float m = floor(mod(pw.x / max(1.0, floor(uPx + 0.5)), 3.0));
-  vec3 grille = mix(vec3(1.0), vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42, 0.18);
+  vec3 stripe = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.8 + 0.3;
+  vec3 grille = mix(vec3(1.0), stripe / 0.567, 0.38);
+  // Scan lines with dark gaps; a bright line burns wider and fills its gap.
   float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
-  float sy = fract(pw.y / (3.0 * uPx)) - 0.5, sw = mix(0.3, 0.62, sqrt(lum));
-  // The raster is quiet: the grain is the tube's main texture, as on the sight.
-  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.45, 0.42);
+  float sy = fract(pw.y / rowPx) - 0.5, sw = mix(0.26, 0.55, sqrt(lum));
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.5, 0.7);
   // Blemishes: a few dead spots, fixed in the screen.
   for (int i = 0; i < 6; i++) {
     vec2 at = vec2(hash(vec2(float(i), 3.0)), hash(vec2(float(i), 7.0))) * 1.3 - 0.65;
@@ -132,7 +141,8 @@ void main() {
   float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
   float lump = vn(p * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
   float heavy = (0.65 + 0.7 * lump) * (1.0 + 0.5 * r * r);
-  c *= 1.0 + n * 0.85 * heavy * lit;
+  // The grain stays under the raster, so the scan lines read.
+  c *= 1.0 + n * 0.55 * heavy * lit;
   c += n * (0.012 * heavy + 0.2 * k) * lit;
   // A rare spark flies.
   c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.5 * lit;
@@ -151,6 +161,20 @@ void main() {
   off = abs(atan(sin(off), cos(off)));
   a *= 1.0 - uCut * 0.96 * (1.0 - smoothstep(0.08, 0.56, off)) * smoothstep(0.2, 0.58, r);
   o = vec4(c * a, a * 0.45);
+}`;
+
+// The afterglow pass: each pixel keeps the brighter of this frame and the last, faded.
+// The tube's frame is premultiplied, so its alpha fades with its light.
+const AFTER = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uNow, uWas;
+uniform vec3 uKeep;
+void main() {
+  vec4 now = texture(uNow, vUv), was = texture(uWas, vUv);
+  vec3 c = max(now.rgb, was.rgb * uKeep);
+  o = vec4(c, max(now.a, was.a * uKeep.g));
 }`;
 
 /**
@@ -175,9 +199,15 @@ export async function tube(host, span) {
   const tick = () => new Promise(r => setTimeout(r, 16));
   // The words are drawn on a 2D canvas, then given to the shader as a texture.
   const pen = Object.assign(document.createElement('canvas'), { width: CAP_PX, height: CAP_PX }).getContext('2d');
-  let P, vao, pics, caps, has = [0, 0];
+  let P, A, vao, pics, caps, has = [0, 0];
+  // The afterglow's targets: this frame, and the last result and the next.
+  /** @type {any[]} */
+  let glow = [];
   async function build() {
-    P = (await linked(gl, { tube: program(gl, TRI_VS, FS) }, { limit: 500, wait: tick })).tube;
+    const progs = await linked(gl, { tube: program(gl, TRI_VS, FS), after: program(gl, TRI_VS, AFTER) }, { limit: 500, wait: tick });
+    P = progs.tube;
+    A = progs.after;
+    glow = [];
     vao = gl.createVertexArray();
     const blank = () => {
       const t = gl.createTexture();
@@ -300,6 +330,8 @@ export async function tube(host, span) {
   // The power: where it is and where it goes, 0 off to 1 on. Snow is a set with no picture.
   let powerTo = 0, snow = 0, /** @type {(() => void) | null} */ done = null;
   let mix = 0, power = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
+  // moved: when the picture last moved. fresh: the next frame drops the trail.
+  let moved = 0, fresh = true;
   /** @type {Words | null} */
   let said = null;
   /** @type {HTMLVideoElement | null} */
@@ -313,6 +345,12 @@ export async function tube(host, span) {
     // The picture is soft and the face is wide, so the canvas stays at 1.5x at most.
     const k = Math.min(devicePixelRatio || 1, 1.5), w = Math.max(1, Math.round(host.clientWidth * k)), h = w;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    // The afterglow's targets match the canvas; a new size drops the trail.
+    if (!glow.length || glow[0].w !== w || glow[0].h !== h) {
+      glow.forEach(t => free(gl, t));
+      glow = [0, 1, 2].map(() => target(gl, w, h, { format: gl.RGBA8 }));
+      fresh = true;
+    }
     gl.useProgram(P.p);
     [[pics[0], P.u.uA], [pics[1], P.u.uB], [caps[0], P.u.uTA], [caps[1], P.u.uTB]].forEach(([t, u], i) => {
       gl.activeTexture(gl.TEXTURE0 + i);
@@ -333,10 +371,27 @@ export async function tube(host, span) {
     gl.uniform1f(P.u.uAim, aimNow);
     gl.uniform1f(P.u.uCut, cut);
     gl.uniform1f(P.u.uSnow, snow);
+    const now = performance.now(), gap = Math.min((now - drawn) / 1000, 0.1);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glow[0].fb);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    tri(gl, null, vao);
-    drawn = performance.now();
+    tri(gl, glow[0], vao);
+    // The afterglow: the last result fades by the time since it was drawn.
+    // Reduced motion and a fresh start keep no trail.
+    const off = fresh || still.matches;
+    gl.useProgram(A.p);
+    bind(gl, A, 'uNow', 0, glow[0]);
+    bind(gl, A, 'uWas', 1, glow[1]);
+    gl.uniform3f(A.u.uKeep, ...GLOW.map(t => off ? 0 : Math.exp(-gap / t)));
+    tri(gl, glow[2], vao);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, glow[2].fb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // The new result is the last one for the next frame.
+    [glow[1], glow[2]] = [glow[2], glow[1]];
+    fresh = false;
+    drawn = now;
   }
   // The new picture is B; when its change ends it becomes A.
   const settle = () => { pics.reverse(); caps.reverse(); has = [1, 0]; mix = 0; };
@@ -364,10 +419,13 @@ export async function tube(host, span) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid);
       gl.generateMipmap(gl.TEXTURE_2D);
     }
+    if (rolling || opening || turning || playing) moved = now;
+    // A trail fades for a third of a second after the picture stops.
+    const fading = !still.matches && now - moved < 350;
     // The grain alone needs twenty pictures a second, not sixty.
-    if (rolling || opening || turning || playing || now - drawn > 48) draw();
+    if (rolling || opening || turning || playing || fading || now - drawn > 48) draw();
     if (rolling && mix >= 1) settle();
-    if (has[1] || power !== powerTo || snow || turning || (hot && !still.matches)) raf = requestAnimationFrame(frame);
+    if (has[1] || power !== powerTo || snow || turning || fading || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
   // Loads a still, then fades it in with its words.
@@ -443,6 +501,7 @@ export async function tube(host, span) {
     mix = 0;
     power = 0;
     powerTo = 0;
+    fresh = true;
     draw();
   }
   // The set warms up to snow, holds a moment, then switches off to a dot.

@@ -374,11 +374,12 @@ The toy tells people that watching is fine. The scene carries itself:
 - Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
 - Micro-interactions:
   - Air specks: 700 sunlit dust specks drift 25 to 420 m in front of the lens, brightest toward the sun. The pointer's motion parts them; they settle in about a second. The GPU moves them; the CPU sends only the pointer.
+    - Small screens (Tom, 2026-11-16: on a phone they read like snow): the count follows the stage's area (all 700 at 1280 x 720, a third at most on a phone), the size follows its short side (down to 0.75), and the slab reaches 1.1 times past the lens's edges, so no speck wraps in view on the 74 degree portrait lens.
   - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
   - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
   - `__qa.lens()` reads the push, the loom, the arc and the stir.
 - Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
-  - Far bolt: another gun's slug climbs from past the ranges for 4 s; a faint line stays and fades over about 8 s; the launch lights the horizon.
+  - Far bolt (rebuilt 2026-11-16, bean stimming-ut05; Tom: the old one was "not convincing"): another gun 85 to 135 km out fires from behind the ranges and misses. It draws with the main shot's own parts: the bolt ribbon with its shock diamonds, the ion line and the contrail puffs, copies that share the main programs. `uK` on the ion line and the puffs scales their widths and wind; the far round sets it to distance / 6 km. The slug slows as the ion line assumes (`farReach`) and dies out high up. The ranges hide its foot by depth. The launch lights the horizon; a faint crack follows, cut to 30 s.
   - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
   - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
   - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
@@ -398,3 +399,10 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 - The game-over contact and the ship's hits keep their own sounds.
 - `playFrom()` fades every sample in over 30 ms; `sampleHit()` plays one into a live handle.
 - Still synthetic, not hits: the over-hold crackle under a too-long charge, the noise beds and low rumbles.
+
+## Meteors, not glints (Tom, 2026-11-16: the streaks "look like shit")
+
+- The re-entry rain after a kill is gone; the debris hail fills that sky.
+- Shooting stars and the late-landing fall draw with `makeMeteor()` / `meteor()`: a round white-hot head and a tail that narrows, cools and fades toward its end. The old glint was a symmetric sliver with a hard spine.
+- Shooting stars are out of the rotation for now (Tom, 2026-11-16); the Dev test still plays one.
+- Stars: a 70 m head, 10 to 22 km runs in 0.6 to 1.1 s; the tail keeps a floor of most of a pixel.
