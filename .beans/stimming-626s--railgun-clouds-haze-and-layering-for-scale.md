@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T20:20:30Z
+updated_at: 2026-11-16T22:18:55Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -40,3 +40,11 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Lightning rumbles: bluer, brighter, clustered spots
 - [x] Storm probe: Window seat's storm volumes marched inside the cards, Dev toggle, off by default (+2.4 ms at 1280)
 - [ ] Tom: probe or cards? Then sign off the storms
+
+## Storm lab (2026-11-16)
+
+- [x] Clouds lit blue by the bolt: cloud bolt light is warm white; storm lightning is Window seat's FLASH_C, added after the air
+- [x] storms.js: the table, noise, shapes and march, shared by the toy and the lab
+- [x] Five forms: storm tower, towering cumulus, squall line, dying storm, supercell
+- [x] railgun/stormlab.html (noindex): gun or orbit view, time of day, look knobs, per-storm edits, Flash, Copy config
+- [ ] Tom tunes the storms in the lab and signs off

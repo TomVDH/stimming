@@ -88,6 +88,8 @@ import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues, LAND_KEYS } from './ranges.js';
+// The storms: the table, the noise, the shapes and the march; the storm lab shares them.
+import { STORMS, GIANT_RANGE, STORM_K, VOL_NOISE, STORM_GLSL, STORM_MARCH } from './storms.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
@@ -1972,7 +1974,7 @@ setFarMode(FAR_MODE === 'bake');
 // uCloudC: the clouds' own slow clock, in sim seconds.
 // uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1997,13 +1999,14 @@ uniform vec4 uFlR;
 // Lightning lights a storm from inside, after Window seat.
 // A hot core round the flash; a wide glow fills the tower.
 // Thick body glows deep in; thin edges let the light out.
+// Lightning's colour inside cloud, as Window seat's: a cold, slightly violet blue-white.
+#define FLASH_C vec3(0.64, 0.72, 1.0)
 vec3 flashIn(vec3 P, float F, float H) {
   vec3 L = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    // Inside a cloud the flash scatters to a plain white; the far air warms it.
-    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    L += FLASH_C * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   // A bright sky needs a stronger flash to show.
   return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
@@ -2295,11 +2298,11 @@ const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Storm towers stand among the far ranges, as tall as their peaks.
 // Three towers of different builds: fewer reads truer than a row.
 // Storm bases sit kilometres up: the columns float clear of the horizon.
-const TOWERS = [[-14, 125000, 6000, 15000, 24000, 1], [8, 150000, 6500, 12000, 17000, 1], [28, 105000, 5500, 16000, 21000, 1]];
+const TOWERS = STORMS.filter(c => c[1] <= GIANT_RANGE);
 const tower = cloudLayer(TOWERS, BAND.deep);
 // One giant: a colossal storm far beyond the ranges.
 // Beside it the gun and the towers look small.
-const GIANTS = [[52, 225000, 12000, 52000, 95000, 1]];
+const GIANTS = STORMS.filter(c => c[1] > GIANT_RANGE);
 const giants = cloudLayer(GIANTS, BAND.giants);
 
 /* ---------- storm probe: Window seat's towers, marched inside the cards ---------- */
@@ -2308,7 +2311,7 @@ const giants = cloudLayer(GIANTS, BAND.giants);
 // Units inside: one "km" is a fourteenth of the storm's height.
 const STORM_VS = CLOUD_VS
   .replace('flat varying vec4 vS;', 'flat varying vec4 vS;\nflat varying vec3 vC;')
-  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(2.6, 1.35);')
+  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(3.0, 1.35);')
   .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
 const STORM_FS = /* glsl */`precision highp sampler3D;
 // three.js sets it on every program; only the vertex stage declares it.
@@ -2323,171 +2326,60 @@ ${AIR}
 uniform float uCloudC;
 uniform vec4 uFl[4];
 uniform vec4 uFlR;
-float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
-float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
-float smin(float a, float b, float k) { return -smax(-a, -b, k); }
-// The storm, set once per pixel: core radius, top, anvil and turrets.
-float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed;
-vec2 sAx;
-vec4 sTur[4];
-void setStorm(float sd, float giant) {
-  sSeed = sd;
-  sRc = 3.4 * mix(0.8, 1.2, hsh(1.0, sd));
-  sTop = 13.0;
-  // A giant always has its anvil; about one tower in three has none yet.
-  sAnv = max(giant, step(0.33, hsh(2.0, sd)));
-  sLen = mix(0.3, mix(5.0, 10.0, hsh(3.0, sd)), sAnv);
-  sR1 = sRc * 1.25;
-  sR2 = clamp(sRc * 0.7 + sLen * 0.42, sR1 - sLen * 0.8, sR1 + sLen * 0.8);
-  // One wind for every storm: anvils run the same way.
-  sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
-  sLean = sRc * 0.18;
-  sOver = sRc * 0.45 * sAnv * (0.8 + 0.2 * sin(uCloudC * 0.05 + sd));
-  sTile = clamp(sRc * 1.6, 5.0, 11.0);
-  for (int j = 0; j < 4; j++) {
-    float fj = float(j);
-    float ang = hsh(fj + 7.0, sd) * 6.2832, off = j == 0 ? 0.0 : sRc * (0.4 + 0.4 * hsh(fj + 11.0, sd));
-    float rad = j == 0 ? sRc * 0.8 : sRc * (0.4 + 0.22 * hsh(fj + 13.0, sd));
-    float top = j == 0 ? sTop - 0.4 : mix(3.0, sTop - 3.2, 0.2 + 0.8 * hsh(fj + 17.0, sd));
-    sTur[j] = vec4(vec2(cos(ang), sin(ang)) * off, rad, top);
-  }
-}
-// The tower's shape without billows: about the depth inside.
-float shape(vec3 p, out float aw) {
-  float y = p.y, hk = clamp(y / sTop, 0.0, 1.0);
-  vec2 q = p.xz - sAx * sLean * hk * hk;
-  float col = -1e3;
-  for (int j = 0; j < 4; j++) {
-    vec4 tu = sTur[j];
-    float r = tu.z * (1.0 + 0.12 * (1.0 - hk));
-    float dy = y - clamp(y, -1.0, tu.w - r);
-    col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), sRc * 0.3);
-  }
-  // A broad foot that narrows as the column rises out of it.
-  float an_ = atan(q.y, q.x);
-  float lobe = 1.0 + 0.28 * sin(3.0 * an_ + sSeed) + 0.15 * sin(5.0 * an_ - sSeed * 1.3);
-  // The foot stays modest: past the horizon a wide skirt reads as a twister.
-  float fr = sRc * mix(1.5, 0.9, smoothstep(0.5, 4.5, y)) * mix(1.0, lobe, 0.6);
-  col = smax(col, min(fr - length(q), (4.5 - y) * 0.8), sRc * 0.5);
-  // The base is flat.
-  col = smin(col, y * 2.0, 0.3);
-  // The anvil: a fan that widens downwind, flat on top, thin at its rim.
-  vec2 a = p.xz - sAx * sLean;
-  vec2 uv = vec2(dot(a, vec2(-sAx.y, sAx.x)), dot(a, sAx));
-  float k = clamp(uv.y / sLen, 0.0, 1.0), ku = clamp(-uv.y / sR1, 0.0, 1.0);
-  float top = sTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
-  float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (1.0 - 0.85 * ku * ku);
-  float fan = min(mix(sR1, sR2, k) - abs(uv.x), min(uv.y + sR1, sLen + sR2 * 0.4 - uv.y));
-  float an = smin(fan, smin(top - y, y - bot, 0.3), 0.8) - (1.0 - sAnv) * 20.0;
-  // The overshooting top: a squat dome on the core's head.
-  float ov = sOver - length(vec3(q.x, (y - sTop + 0.4 + sOver * 0.2) * 1.35, q.y));
-  aw = smoothstep(-0.6, 0.6, an - col);
-  return smax(smax(col, an, 0.9), ov, 1.0);
-}
-// Cauliflower billows from the baked volume; the lumps rise slowly.
-float billow(vec3 p, float aw, bool fine) {
-  p.xz -= sAx * dot(p.xz, sAx) * 0.6 * aw;
-  vec3 r = vec3(p.x * 0.8 - p.z * 0.6, p.y - uCloudC * 0.006, p.x * 0.6 + p.z * 0.8) + sSeed * 0.37;
-  // Worley lumps, as Window seat's: round cauliflower heads, not smooth swells.
-  vec4 m = texture(uVol, r / sTile);
-  float b = m.b * 0.75 + m.g * 0.25 - 0.47;
-  if (fine) b = b * 0.72 + (texture(uVol, r / (sTile * 0.31) + 0.5).g - 0.5) * 0.28;
-  return b;
-}
-// gap: how far outside the billowed shell p lies, for empty-space skipping.
-float dens(vec3 p, bool fine, out float gap) {
-  float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw);
-  gap = -sh - A * 1.1 - 0.5;
-  if (gap > 0.0) return 0.0;
-  // A wide ramp feathers the outer billows into the sky.
-  return smoothstep(0.0, 0.6, sh + A * 2.2 * billow(p, aw, fine));
-}
-float densL(vec3 p) { float g; return dens(p, false, g); }
-vec3 flashAt(vec3 P) {
+uniform vec4 uStormK;
+${STORM_GLSL}
+// Lightning's colour inside cloud, as Window seat's.
+#define FLASH_C vec3(0.64, 0.72, 1.0)
+vec3 stormFlash(vec3 P) {
   vec3 L = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    L += FLASH_C * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   return L * mix(3.0, 1.0, uStars);
 }
+// The key light: the sun until it is well down, then the moon.
+vec3 Ls;
+// The sunlight at P: high tops keep the sun after the ground has lost it.
+// Their horizon dips by the planet's curve: about ten degrees at ninety kilometres.
+// The sun's height at P itself: points toward the sun see it higher.
+vec3 stormSun(vec3 P) {
+  float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+  float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
+  // Light that grazes the planet arrives deep red.
+  return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
+}
+// Sky light comes mostly from the bright horizon, warm at dusk.
+vec3 stormSky(float h) { return mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h) + uCloudAmb * 0.5; }
+// The rock's fire lights the storm: its glowing sky fills it warm,
+// and the side toward the rock glows when the rock is behind it.
+// Its own body shades that light, so the storm keeps its form.
+vec3 stormExtra(vec3 P, float powder, float Tl2) {
+  if (uFill + uRockL.w < 0.001) return vec3(0.0);
+  vec3 rb = uRockL.xyz - P;
+  float rf = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+  float back = pow(max(dot(normalize(P - cameraPosition), normalize(rb)), 0.0), 4.0);
+  return uAstC * (uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2) + uRockL.w * rf * (0.4 + 1.4 * powder * back));
+}
+${STORM_MARCH}
 void main() {
-  float H = vS.y, giant = step(60000.0, H), U = H / 14.0;
-  setStorm(vS.w, giant);
+  float H = vS.y;
+  setStorm(vS.w, vS.z);
   vec3 ro = cameraPosition, rd = normalize(vP - cameraPosition);
-  // The bounding cylinder round the storm, in metres.
-  float Rb = (max(sLen + sR2, sRc * 2.4) + 2.0) * U;
-  vec2 oc = ro.xz - vC.xz;
-  float A2 = dot(rd.xz, rd.xz), B = dot(oc, rd.xz), C2 = dot(oc, oc) - Rb * Rb, D = B * B - A2 * C2;
-  if (D <= 0.0) discard;
-  D = sqrt(D);
-  float t0 = max((-B - D) / A2, 0.0), t1 = (-B + D) / A2;
-  if (t1 <= t0) discard;
-  // Steps: short inside the cloud, long leaps through the empty bound.
-  float dt = (t1 - t0) / 48.0;
+  vec2 sp = stormSpan(ro, rd, vC, H);
+  if (sp.y <= sp.x) discard;
+  Ls = uSunD.y > -0.12 ? uSunD : uSun;
   float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
-  // The sun shapes the storm until it is well down; then the moon does.
-  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
-  float mu = dot(rd, Ls);
-  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
-  // A low sun rakes the towers: lit faces glow, the far side goes deep.
-  float low = 1.0 - smoothstep(0.05, 0.4, Ls.y);
-  vec3 col = vec3(0.0);
-  float Tc = 1.0, t = t0 + dt * jit;
-  vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
-  bool hit = false;
-  for (int i = 0; i < 64; i++) {
-    if (t > t1) break;
-    vec3 P = ro + rd * t;
-    vec3 p = (P - vC) / U;
-    if (p.y > sTop + 3.0 && rd.y > 0.0) break;
-    float gap, d = dens(p, true, gap);
-    if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
-    if (!hit) { Phit = P; hit = true; }
-    // One tap toward the light gives the self shadow.
-    float Tl = exp(-3.2 * densL(p + Ls * 1.2));
-    float h01 = clamp(p.y / sTop, 0.0, 1.0);
-    // A high top sees the sun after the ground has lost it.
-    // Its horizon dips by the planet's curve: about ten degrees at ninety kilometres.
-    // The sun's height at P itself: points toward the sun see it higher.
-    float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
-    float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
-    // Light that grazes the planet arrives deep red.
-    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
-    // Sky light comes mostly from the bright horizon, warm at dusk.
-    vec3 amb = mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h01) + uCloudAmb * 0.5;
-    // Powder: thin edges facing the sun catch the most light.
-    float powder = 1.0 - exp(-4.0 * d);
-    // A second, longer tap darkens the side away from the sun.
-    float Tl2 = exp(-1.6 * densL(p + Ls * 3.5));
-    // Light scattered many times fills the shaded side, so it never goes cold and flat.
-    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
-           + sunC * 0.32 * (0.35 + 0.65 * Tl2)
-           + amb * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
-    S *= mix(1.0, 0.45, uStars);
-    // The rock's fire lights the storm: its glowing sky fills it warm,
-    // and the side toward the rock glows when the rock is behind it.
-    if (uFill + uRockL.w > 0.001) {
-      vec3 rb = uRockL.xyz - P;
-      float rf = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
-      float back = pow(max(dot(normalize(P - cameraPosition), normalize(rb)), 0.0), 4.0);
-      // Its own body shades that light, so the storm keeps its form.
-      S += uAstC * (uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2) + uRockL.w * rf * (0.4 + 1.4 * powder * back));
-    }
-    S += flashAt(P) * (0.4 + 0.6 * d);
-    // Thick body: the column is opaque a few kilometres in.
-    float al = 1.0 - exp(-5.0 * d * dt / U);
-    col += Tc * S * al;
-    Tc *= 1.0 - al;
-    if (Tc < 0.03) break;
-    t += dt;
-  }
-  float a = 1.0 - Tc;
+  vec3 Phit, Flash;
+  vec4 m = marchStorm(ro, rd, vC, H, sp.x, sp.y, jit, Phit, Flash);
+  float a = m.a;
   if (a < 0.004) discard;
-  col /= a;
+  vec3 col = m.rgb;
   // The same air as the ranges and the cards.
   col = aerial(col, Phit);
+  // Far flashes punch through the haze, so distant storms still flicker blue-white.
+  col += Flash / a * 0.85;
   gl_FragColor = vec4(col, a);
   // The depth of the first cloud on the ray, on the planet's curve.
   // Then a range in front cuts the storm where the two really cross.
@@ -2509,7 +2401,7 @@ function setStormProbe(on) {
 // Brightness is log-normal: most flashes are dim, a few blaze.
 // Most sit mid-level in the core; a mature storm sends some through its anvil.
 // A storm recharges between bursts: one somewhere every 6 to 22 s.
-const STORMS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
+const STORM_SPOTS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
 // vol: the storm probe is on, so flashes sit inside its narrower towers.
 const stormFl = { rate: 1, next: 4, strokes: [], vol: false };
 const flV = new THREE.Vector3();
@@ -2532,7 +2424,7 @@ function stormSpot(c, P0, out) {
 // A burst rumbles through one storm: two to five spots light in turn.
 // Each spot fires one to four strokes; now and then a cell boils over.
 function stormBurst() {
-  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
+  const c = STORM_SPOTS[Math.floor(Math.random() * STORM_SPOTS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
   const boil = Math.random() < 0.15;
   const spots = boil ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 4);
   let t = simT;
@@ -3796,36 +3688,8 @@ CLOUD_U.uVol.value = volRT.texture;
     uniforms: { uZ: { value: 0 } }, depthTest: false, depthWrite: false,
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */`varying vec2 vUv; uniform float uZ;
-    vec3 h3(vec3 p) {
-      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
-      return fract(sin(p) * 43758.5453123);
-    }
-    // Inverted Worley noise; it tiles at f cells.
-    float worley(vec3 uv, float f) {
-      vec3 id = floor(uv * f), p = fract(uv * f);
-      float md = 9.0;
-      for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
-        vec3 o = vec3(float(x), float(y), float(z));
-        vec3 d = o + h3(mod(id + o, f)) * 0.8 + 0.1 - p;
-        md = min(md, dot(d, d));
-      }
-      return clamp(1.0 - sqrt(md), 0.0, 1.0);
-    }
-    float grad(vec3 i, vec3 w, vec3 o, float f) { return dot(h3(mod(i + o, f)) * 2.0 - 1.0, w - o); }
-    // Gradient noise; it tiles at f cells.
-    float perlin(vec3 uv, float f) {
-      vec3 p = uv * f, i = floor(p), w = fract(p);
-      vec3 u = w * w * w * (w * (w * 6.0 - 15.0) + 10.0);
-      return mix(mix(mix(grad(i, w, vec3(0, 0, 0), f), grad(i, w, vec3(1, 0, 0), f), u.x), mix(grad(i, w, vec3(0, 1, 0), f), grad(i, w, vec3(1, 1, 0), f), u.x), u.y),
-                 mix(mix(grad(i, w, vec3(0, 0, 1), f), grad(i, w, vec3(1, 0, 1), f), u.x), mix(grad(i, w, vec3(0, 1, 1), f), grad(i, w, vec3(1, 1, 1), f), u.x), u.y), u.z);
-    }
-    void main() {
-      vec3 p = vec3(vUv, uZ);
-      float pf = clamp(0.5 + 0.8 * (perlin(p, 4.0) + 0.5 * perlin(p, 8.0) + 0.25 * perlin(p, 16.0)), 0.0, 1.0);
-      float wf = worley(p, 4.0) * 0.625 + worley(p, 8.0) * 0.25 + worley(p, 16.0) * 0.125;
-      float fine = worley(p, 6.0) * 0.625 + worley(p, 12.0) * 0.25 + worley(p, 24.0) * 0.125;
-      gl_FragColor = vec4(wf + pf * (1.0 - wf), fine, wf, 1.0);
-    }`,
+    ${VOL_NOISE}
+    void main() { gl_FragColor = volAt(vec3(vUv, uZ)); }`,
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bake);
   const flat = new THREE.Camera();

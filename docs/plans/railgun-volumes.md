@@ -140,5 +140,19 @@ Re-entry rain, the ambient dust devil, the air specks, and the ember sprays off 
 
 ### Corrections to the tables above
 
-- **Giants**: `GIANTS` holds one storm today, 225 km out; the sky session is rebuilding the storms from Window Seat.
+- **Giants**: the Supercell, 225 km out, in `STORMS` in `railgun/storms.js` (see below).
 - **Hail ribbons** (`hailRibs`, the hail section) now run behind the pieces that land in front of and behind the ranges.
+
+## Storms and the storm lab
+
+`railgun/storms.js` holds the storm table (`STORMS`), the look knobs (`STORM_K`), the baked noise (`VOL_NOISE`), the shapes (`STORM_GLSL`) and the march (`STORM_MARCH`). The toy and `railgun/stormlab.html` (noindex) both import it, so the lab draws what the toy draws.
+
+| Form | What it is |
+|---|---|
+| 1 Storm tower | A cumulonimbus; about two in three carry an anvil. |
+| 2 Towering cumulus | Young, no anvil, a cauliflower crown. |
+| 3 Squall line | Cells in a row across the wind, one long anvil, a shelf cloud at the foot. |
+| 4 Dying storm | A thin, ragged column under a wide anvil that drifts on. |
+| 5 Supercell | One fat banded column, a big overshoot, a broad anvil. |
+
+Lightning inside the storms takes Window seat's `FLASH_C` (a cold, slightly violet blue-white) and is added after the air, so far flashes punch through the haze.
