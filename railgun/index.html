@@ -5534,9 +5534,11 @@ const farGuns = [];
 const farP = new THREE.Vector3(), farQ = new THREE.Vector3();
 function makeFarGun() {
   const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() }, uK: { value: 1 } };
+  // The puffs keep their own power and take the shared aerial perspective.
+  const pOwn = { ...own, uI: { value: new THREE.Vector3() }, uAer: { value: 1 } };
   const g = {
     bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 5 }, uWide: { value: 110 } })),
-    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), own,
+    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, pOwn)), own, pOwn,
   };
   for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
   return g;
@@ -5609,6 +5611,15 @@ function ambClear(p) {
 const ambMid = new THREE.Vector3();
 function ambSeg(m, A, dir, L, wid, gain) {
   glint(m, ambMid.copy(A).addScaledVector(dir, L / 2), dir, L / 2, wid, gain);
+}
+// The shared air's transmittance from the eye to P, as one grey value.
+// It follows aerialFrom() in the AIR chunk: Rayleigh and the dusty Mie.
+// Additive glows scale by it, so they fade with distance like the ranges.
+function ambT(P) {
+  const c = camera.position, hit = c.distanceTo(P), yc = Math.max(c.y, 0), yp = Math.max(P.y, 0), dy = yp - yc;
+  const avg = h => (Math.abs(dy) < 1 ? Math.exp(-yc / h) : (Math.exp(-yc / h) - Math.exp(-yp / h)) * h / dy);
+  const aR = avg(8000), aM = avg(3000) * (0.5 + 0.5 * U.uLayer.value.x), m = 1.1e-5 * aM;
+  return 0.2126 * Math.exp(-(5.8e-6 * aR + m) * hit) + 0.7152 * Math.exp(-(13.5e-6 * aR + m) * hit) + 0.0722 * Math.exp(-(33.1e-6 * aR + m) * hit);
 }
 // Metres per pixel at distance D, for the live lens.
 const ambPx = D => D * Math.tan(rad(camera.fov / 2)) / (size.h / 2);
@@ -5792,7 +5803,7 @@ function drawAmbient() {
         const pa = a - q.t;
         if (pa < 0 || pa > 0.6 || n >= ambFlak.length) continue;
         ambB.copy(e.c).add(q.off);
-        flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB));
+        flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB) * ambT(ambB));
       }
     } else if (e.kind === 'embers') {
       drawEmbers(e, a);
@@ -5807,14 +5818,14 @@ function drawAmbient() {
       ambB.copy(camera.position).addScaledVector(ambA, D);
       const lit = 1 - THREE.MathUtils.smoothstep(u, e.shade, e.shade + 0.05);
       const fade = THREE.MathUtils.smoothstep(u, 0, 0.04) * (1 - THREE.MathUtils.smoothstep(u, 0.96, 1));
-      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB));
+      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB) * ambT(ambB));
     } else if (e.kind === 'star') {
       // The head runs ahead; the tail thins behind it.
       const u = clamp(a / e.dur, 0, 1), head = e.run * u, tail = Math.max(0, head - 0.45 * e.run);
       ambB.copy(e.p0).addScaledVector(e.dir, tail);
       const fade = Math.sin(Math.PI * u) ** 0.7;
       ambA.copy(e.p0).addScaledVector(e.dir, head);
-      meteor(e.m, ambB, ambA, 70, 3.2 * e.k * fade * U.uStars.value * ambClear(ambA));
+      meteor(e.m, ambB, ambA, 70, 3.2 * e.k * fade * U.uStars.value * ambClear(ambA) * ambT(ambA));
     }
   }
 }
@@ -5830,7 +5841,9 @@ function drawFarBolt(e, a) {
   // The ribbon: the main shot's streak and shock diamonds.
   // Its light dies away before it reaches the rock, as the main shot's does.
   const tail = 0.55 + 0.03 * e.T, land = 0.3 + e.T;
-  const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farAt(e, a, farP));
+  // The air between the eye and the head dims the glow.
+  const T = ambT(farAt(e, a, farP));
+  const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farP) * T;
   g.bolt.visible = fade > 0.002;
   // The head lights the clouds near it, faintly; the brightest round wins.
   const lw = a > 0.3 ? 0.05 * e.c * fade : 0;
@@ -5855,7 +5868,10 @@ function drawFarBolt(e, a) {
   // The ion line glows behind the head and cools to a contrail.
   const o = g.own;
   const ia = a - 0.3;
-  o.uA.value.copy(e.site); o.uB.value.copy(e.site).addScaledVector(e.dir, e.L); o.uI.value.set(ia, e.T, e.c); o.uK.value = K;
+  o.uA.value.copy(e.site); o.uB.value.copy(e.site).addScaledVector(e.dir, e.L); o.uK.value = K;
+  // The ion glow's power k is 0.6 + 0.4 z; z here scales k by the air.
+  o.uI.value.set(ia, e.T, ((0.6 + 0.4 * e.c) * T - 0.6) / 0.4);
+  g.pOwn.uI.value.set(ia, e.T, e.c);
   g.line.visible = ia > 0 && ia < e.T + 1.5;
   g.puffs.visible = ia > 0.15;
   return true;
@@ -5867,8 +5883,9 @@ function drawLanding(e, a) {
     const u = a / FALL_T, run = 26000, head = run * (u - 1), tail = head - 9000;
     ambB.copy(e.site).addScaledVector(e.dir, tail);
     ambA.copy(e.site).addScaledVector(e.dir, head);
-    meteor(ambFall, ambB, ambA, 110, 2.0 * Math.min(1, u * 4));
-    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4));
+    const T = ambT(ambA);
+    meteor(ambFall, ambB, ambA, 110, 2.0 * Math.min(1, u * 4) * T);
+    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4) * T);
     return;
   }
   if (e.domed) return;
@@ -5907,7 +5924,7 @@ function drawEmbers(e) {
   e.sites.forEach((st, i) => {
     const age = simT - st.t, sd = st.seed * 40;
     const fl = 0.75 + 0.15 * Math.sin(simT * 3.1 + sd) + 0.1 * Math.sin(simT * 7.3 + 2 * sd);
-    const g = 0.6 * Math.exp(-age / 120) * Math.min(1, age / 2) * fl * night;
+    const g = 0.6 * Math.exp(-age / 120) * Math.min(1, age / 2) * fl * night * ambT(st.P);
     flare(ambEmbers[i], st.P, 5 * ambPx(st.P.distanceTo(camera.position)), g);
   });
 }
@@ -5916,9 +5933,9 @@ function drawShed(e, a) {
   if (!tgtCanHit() || !astMesh.visible) return;
   const R = ast.R, u = a / e.dur;
   ambB.copy(ast.pos).addScaledVector(e.side, R * (1.1 + 1.2 * a)).addScaledVector(ast.away, R * 0.3 * a * a);
-  const hot = e.k * (1 - u) * (1.2 + 2.5 * Math.exp(-a / 0.4));
+  const hot = e.k * (1 - u) * (1.2 + 2.5 * Math.exp(-a / 0.4)) * ambT(ambB);
   flare(ambShed, ambB, R * 0.9 * (1 - 0.5 * u), 1.5 * hot);
-  ambSeg(ambShedTail, ambB, ast.away, R * (0.6 + 0.5 * a), R * 0.12, 1.2 * e.k * (1 - u));
+  ambSeg(ambShedTail, ambB, ast.away, R * (0.6 + 0.5 * a), R * 0.12, 1.2 * e.k * (1 - u) * ambT(ambB));
 }
 
 /* ---------- the approach ---------- */
@@ -6542,7 +6559,7 @@ const ionPuffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeome
   ionPuffGeo.instanceCount = ION_PUFFS;
 }
 const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
-  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uK: ionMat.uniforms.uK, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
+  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uK: ionMat.uniforms.uK, uAer: { value: 0 }, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -6572,6 +6589,7 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(p + (vR * position.x + vU * position.y) * r, 1.0);
   }`,
   fragmentShader: /* glsl */`
+  uniform float uAer;
   uniform vec3 uI, uConC;
   varying vec2 vUv;
   varying float vLa, vSeed, vFr;
@@ -6594,7 +6612,8 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     vec3 lit = uConC * (ambient(N) * 0.9 + uSunC * 1.5 * (0.3 + 0.7 * max(dot(N, uSun), 0.0))) * (0.8 + 0.3 * n);
     vec3 b = uBlast.xyz - vP;
     lit += uAstC * uBlast.w * 2.0e7 / (dot(b, b) + 4.0e6);
-    gl_FragColor = vec4(mix(lit, air(lit, vP), 0.5) * a, a);
+    // uAer 1 takes the shared aerial perspective: far rounds use it.
+    gl_FragColor = vec4((uAer > 0.5 ? aerial(lit, vP) : mix(lit, air(lit, vP), 0.5)) * a, a);
   }`,
 }));
 ionPuffs.frustumCulled = false; ionPuffs.renderOrder = BAND.ionPuffs; ionPuffs.visible = false;
