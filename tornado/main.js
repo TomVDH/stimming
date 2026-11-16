@@ -98,7 +98,7 @@ float stormShape(vec3 p) {
   float tower = max(length(q) - rT, max(BASE + 0.1 - p.y, p.y - top));
   // The base: a broad flat shelf, its underside level.
   vec2 b = (p.xz - SHELF) / (SHELF_R * mix(0.4, 1.0, g));
-  float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.35)) - 0.35);
+  float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.6)) - 0.6);
   // The anvil: flat on top, thin at its edge, and streaming off to the right.
   vec3 a = p - vec3(TOWER.x + mix(2.0, 14.0, g), top - 0.5, TOWER.y - 2.0);
   float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
@@ -106,7 +106,7 @@ float stormShape(vec3 p) {
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
   // The wall cloud: a lowered block under the base, by the rotation.
-  float wall = max(length(p.xz - WALL) - mix(0.4, 1.8, g), abs(p.y - BASE + 0.3) - 0.45);
+  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.5, p.y)), abs(p.y - BASE + 0.35) - 0.5);
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -116,10 +116,17 @@ float stormShape(vec3 p) {
 float stormD(vec3 p) {
   float d = stormShape(p);
   if (d > 2.5) return d;
-  // Lumpy towers, smoother anvil, ragged base.
-  float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.35, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
+  // Lumpy towers, a smoother anvil.
+  float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
   vec3 n = p * 0.75 + vec3(0.0, -uT * 0.006, 0.0);
-  return d + (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp;
+  d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp;
+  // The base: stacked plates on its flank, turning round the updraft.
+  float flank = smoothstep(BASE, BASE + 0.3, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y));
+  float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
+  d += 0.16 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
+  // Ragged scud hangs under the base.
+  float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y);
+  return d + low * (vn3(p * 3.1 + vec3(uT * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
 }
 // The colour of one storm sample.
 vec3 stormLit(vec3 p, float d) {
@@ -131,11 +138,14 @@ vec3 stormLit(vec3 p, float d) {
   lit *= 1.0 - 0.9 * under;
   // Thick cloud overhead darkens the base and the core.
   float up = smoothstep(0.6, 9.0, p.y);
-  float core = (1.0 - smoothstep(2.5, 7.0, length(p.xz - TOWER - vec2(2.5, 1.0)))) * (1.0 - smoothstep(3.0, 8.0, p.y));
-  vec3 amb = uAmb * mix(0.1, 0.85, up) * (1.0 - 0.7 * under);
-  vec3 c = uSunCol * lit * lit * mix(0.3, 0.8, up) + amb;
+  // The core: between the updraft and the rain, low down.
+  vec2 cc = mix(TOWER, CORE, 0.55);
+  float core = (1.0 - smoothstep(3.0, 9.0, length(p.xz - cc))) * (1.0 - smoothstep(3.0, 8.0, p.y));
+  vec3 amb = uAmb * mix(0.08, 0.85, up) * (1.0 - 0.7 * under);
+  // The lower flank stays dark: the storm's own bulk shades it.
+  vec3 c = uSunCol * lit * lit * mix(0.14, 0.8, up * up) + amb;
   // The core goes black-green behind its rain.
-  return mix(c, c * vec3(0.32, 0.5, 0.46), core * 0.85);
+  return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
 }
 // Marches the storm. Returns colour and coverage; t is the hit distance in km.
 vec4 storm(vec3 rd, out float tHit) {
@@ -428,7 +438,7 @@ vec3 envScene(vec2 uv) {
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
     vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
-    vec3 gloom = uAmb * vec3(0.07, 0.09, 0.09);
+    vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
     c = mix(c, gloom, 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm));
     float streak = 0.6 + 0.4 * vn(vec2(atan(rc.x, -rc.z) * 900.0, 0.5));
     c = mix(c, gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01, (1.0 - exp(-rn.y * rn.y * 0.05 * uStorm * streak)) * smoothstep(0.0, 0.003, rd.y + 0.001));
