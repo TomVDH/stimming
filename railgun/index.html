@@ -3079,12 +3079,6 @@ function makeTrain(pu) {
         float xl = x - uX0;
         d *= (uX0 > 0.0 ? smoothstep(-0.03 * uSeg, 0.03 * uSeg, xl) : 1.0) * (1.0 - smoothstep(0.94 * uSeg, uSeg, xl));
       }
-      // A plasma sheath wraps the rock's leading face.
-      float rq = length(q);
-      if (uX0 == 0.0 && rq < 2.6 * R) {
-        float sh = exp(-max(rq - 0.94 * R, 0.0) / (0.14 * R)) * smoothstep(0.5, -0.6, x / R) * uBurn;
-        col += T * (uHot * 5.0 * sh * sh + uFireC * 3.0 * sh) * (dt / R) * 0.45;
-      }
       if (d > 0.0) {
         // Old smoke is thinner than young smoke.
         float kap = 11.0 * mix(1.0, 0.38, smoothstep(3.0, 22.0, g.y)) * uTrail;
@@ -3273,21 +3267,29 @@ function makeFragTrail(own = false) {
 }
 // Small rocks shimmer at a few pixels; they take no cracks and a steady burn.
 const fragMat = new THREE.ShaderMaterial({ uniforms: { ...astMat.uniforms, uCracks: { value: 0 }, uBurn: { value: 0.55 }, uCrater: { value: [new THREE.Vector4(0, 0, 0, -1), new THREE.Vector4(0, 0, 0, -1)] } }, vertexShader: astMat.vertexShader, fragmentShader: astMat.fragmentShader });
-// Up to seven companions ride with the main rock.
-const frags = Array.from({ length: 7 }, () => {
+// Up to sixteen companions ride with the main rock.
+const frags = Array.from({ length: 16 }, () => {
   const m = new THREE.Mesh(FRAG_GEO, fragMat);
   m.frustumCulled = false; m.visible = false;
   scene.add(m);
-  return { m, trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0) };
+  // splitS: the fall fraction where a piece breaks off; -1 rides from the start.
+  // splitT: when it broke off; its gap grows from the rock's flank.
+  return { m, trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0), splitS: -1, splitT: -1e9 };
 });
+// Seconds a split piece takes to drift out to its own track.
+const SPLIT_T = 30;
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  // Three to seven, scattered at random round the main rock.
-  const n = 3 + Math.floor(rnd() * 5);
+  // Six to nine spread wide across the sky; three to five split off later.
+  const n = 6 + Math.floor(rnd() * 4), ns = 3 + Math.floor(rnd() * 3);
   frags.forEach((f, i) => {
+    const split = i >= n && i < n + ns;
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    const th = (i / n) * Math.PI * 2 + rnd() * 1.4, gap = 2.8 + 5 * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = -6 + 16 * rnd();
+    f.splitS = split ? 0.3 + 0.6 * rnd() : -1; f.splitT = -1e9;
+    const th = (i / n) * Math.PI * 2 + rnd() * 1.4;
+    // Riders scatter from close by to far across the sky.
+    const gap = split ? 2.5 + 3 * rnd() : 2.8 + 22 * rnd() * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = split ? -1 + 4 * rnd() : -8 + 30 * rnd();
     f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
@@ -3298,13 +3300,34 @@ function seedFrags() {
   });
 }
 function placeFrags() {
+  const live = tgtKind === 'rock' && astMesh.visible && (ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike');
   for (const f of frags) {
+    // A pending piece breaks off once the rock passes its fall fraction.
+    if (!f.on && f.splitS >= 0 && f.broke < 0 && live && ast.s >= f.splitS) splitFrag(f);
     if (!f.on) continue;
-    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * ast.R).addScaledVector(ast.upv, f.oy * ast.R).addScaledVector(ast.away, f.oz * ast.R);
+    // A split piece leaves the rock's flank and eases out to its track.
+    const e = f.splitS < 0 ? 1 : 1 - Math.pow(1 - clamp((simT - f.splitT) / SPLIT_T, 0, 1), 2);
+    const g = THREE.MathUtils.lerp(1.1 / Math.max(Math.hypot(f.ox, f.oy), 1e-3), 1, e);
+    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * g * ast.R).addScaledVector(ast.upv, f.oy * g * ast.R).addScaledVector(ast.away, f.oz * e * ast.R);
     f.m.position.copy(f.pos);
     f.m.scale.setScalar(f.k * ast.R);
     const u = f.trail.material.uniforms;
     u.uP.value.copy(f.pos); u.uR.value = f.k * ast.R; u.uLen.value = f.k * ast.R * (f.k >= 0.18 ? 90 : 60);
+  }
+}
+// A piece breaks off the main rock with a puff of embers.
+// A rock already deep in its fall shows the piece already apart.
+function splitFrag(f) {
+  f.on = true; f.m.visible = true; f.trail.visible = true;
+  f.splitT = ast.s - f.splitS > 0.02 ? -1e9 : simT;
+  f.trail.material.uniforms.uOn.value = f.splitT < 0 ? 1 : 0;
+  if (f.splitT < 0 || reduced()) return;
+  shedU.crossVectors(ast.away, ast.side);
+  const th = Math.atan2(f.oy, f.ox);
+  shedP.copy(ast.pos).addScaledVector(ast.side, Math.cos(th) * 1.05 * ast.R).addScaledVector(shedU, Math.sin(th) * 1.05 * ast.R);
+  for (let i = 0; i < 24; i++) {
+    shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(80 + rnd() * 160).addScaledVector(ast.away, 300);
+    writeStar(shedP, simT, shedV, -0.02, 2, 6 + rnd() * 6, 0.8, 0.9 + rnd() * 0.6, 3, 0.15);
   }
 }
 // The shock front's radius, ha seconds after the hit.
@@ -10874,6 +10897,8 @@ window.__qa = {
       shellB: hitShellB.visible ? Math.round(hitShellB.material.uniforms.uR.value) : 0, rings: false, astW: U.uAst.value.w, hitFlash };
   },
   frags: () => frags.filter(f => f.on).map(f => ({ visible: f.m.visible, gap: +(f.pos.distanceTo(ast.pos) / ast.R).toFixed(2), r: Math.round(f.k * ast.R) })),
+  // Fall fractions where pending pieces break off.
+  splits: () => frags.filter(f => !f.on && f.splitS >= 0 && f.broke < 0).map(f => f.splitS),
   ablation: () => ablN,
   ion: () => ({ visible: tracers.some(t => t.line.visible || t.puffs.visible), glow: tracers[0].round ? Math.exp(-ionMat.uniforms.uI.value.x / 0.35) : 0 }),
   // Salvo: the rounds in flight, and a salvo of n rounds fired at once.

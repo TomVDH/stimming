@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T18:16:28Z
-updated_at: 2026-11-16T18:54:14Z
+updated_at: 2026-11-16T18:58:22Z
 ---
 
 Tom: "redo smoke column sparks and firey smoke by the asteroid and the asteroid itself incl bow shock etc".
@@ -23,3 +23,6 @@ Scope: railgun/index.html, the rock (astMat), the bow shock (bowMat, haloMat), t
 - [x] Smoke column: the fixed hatch is gone; it widens slowly with age (spread 0.11). The bulge, rim and soot pass was cut (Tom)
 - [ ] QA: clean console, strike and kill still work, 1280 and 375
 - [ ] Tom signs off
+
+- [x] The trail's plasma sheath goes: it drew a pale disc over the lumpy rock and a dark ragged rim round it (Tom: weird blending at night)
+- [x] Companions: up to 16; six to nine spread wide across the sky; three to five split off the main rock during the fall and drift out over 30 s
