@@ -206,6 +206,12 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
+    // The ranges' light: the sun and key, the sky, and the effects (blast, rock light).
+    { type: 'slider', id: 'rangesun', group: 'Land', label: 'Range sun', min: 0, max: 1.5, step: 0.05, value: 0.6, onInput: v => { FAR_U.uRangeL.value.x = v; draw(); } },
+    { type: 'slider', id: 'rangesky', group: 'Land', label: 'Range sky', min: 0, max: 1.5, step: 0.05, value: 0.85, onInput: v => { FAR_U.uRangeL.value.y = v; draw(); } },
+    { type: 'slider', id: 'rangefx', group: 'Land', label: 'Range effects', min: 0, max: 3, step: 0.05, value: 1, onInput: v => { FAR_U.uRangeL.value.z = v; draw(); } },
+    // The ranges' rock colour; none matches the sand plain.
+    { type: 'choice', id: 'rockcol', group: 'Land', label: 'Range rock', display: 'segments', value: 'umber', options: [{ value: 'umber', label: 'Umber' }, { value: 'slate', label: 'Slate' }, { value: 'rust', label: 'Rust' }], onPick: v => { setRockCol(v); draw(); } },
     // Carves gullies and crags; 0 is the smooth shape.
     { type: 'slider', id: 'erosion', group: 'Land', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
     // Bake marches once and relights; Live marches every frame.
@@ -1429,8 +1435,23 @@ const FAR_U = {
   uEro: { value: 1 },
   // Face bump: fine gullies and strata in the light only; 0 turns it off.
   uBump: { value: 1 },
-  uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+  uRockC: { value: new THREE.Vector3() }, uSlopeC: { value: new THREE.Vector3() }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+  // The ranges' light: sun and key, sky, and the effects (blast, rock light).
+  // The sun stays low by default, so the ranges read far and vast.
+  uRangeL: { value: new THREE.Vector3(0.6, 0.85, 1) },
 };
+// The ranges' rock: [slope, wall] in OKLCH; each differs from the sand plain.
+const ROCK_COLS = {
+  umber: [[0.43, 0.035, 48], [0.37, 0.045, 32]],
+  slate: [[0.42, 0.02, 250], [0.35, 0.025, 265]],
+  rust: [[0.44, 0.06, 40], [0.39, 0.08, 24]],
+};
+function setRockCol(k) {
+  const c = ROCK_COLS[k] || ROCK_COLS.umber;
+  FAR_U.uSlopeC.value.set(...linFit(...c[0]));
+  FAR_U.uRockC.value.set(...linFit(...c[1]));
+}
+setRockCol('umber');
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
 uniform float uEro, uBump;
@@ -1519,7 +1540,7 @@ float farH(vec2 p) { float n; return farHN(p, n); }`;
 const FAR_FN = /* glsl */`
   uniform mat4 uInvVP, uVP;
   uniform int uFarSteps;
-  uniform vec3 uRockC, uGroundC, uEye;
+  uniform vec3 uRockC, uSlopeC, uGroundC, uEye, uRangeL;
   ${HEAD}
   ${AIR}
   ${FAR_GLSL}
@@ -1605,17 +1626,19 @@ const FAR_FN = /* glsl */`
     // Shade on the flat world: the curve only moves the image.
     vec3 P = vec3(p.x, h0, p.z);
     float wall = smoothstep(0.92, 0.5, N.y);
-    vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
-    alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
+    // Slopes are scree in the rock's colour; walls are bare rock, darker.
+    vec3 alb = mix(uSlopeC, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
+    // Only the foot of a range blends into the sand plain.
+    alb = mix(uGroundC * 0.95, alb, smoothstep(20.0, 300.0, h0));
     // Gullies hold dark scree and shade; spurs catch the light.
     alb *= 0.25 + 1.5 * cav;
     N = farBump(P, N, hit, wall);
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
-    vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
+    vec3 col = alb * (uRangeL.y * ambient(N) * (0.55 + 0.45 * N.y) + uRangeL.x * (uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N)));
     // The blast lights the faces turned to it, faintly at this range.
-    col += alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
+    col += uRangeL.z * alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
     // The nearing rock warms the faces turned to it.
-    col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
+    col += uRangeL.z * alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
     // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
     float hR = 8000.0, hM = 1600.0;
     float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
@@ -11721,6 +11744,8 @@ window.__qa = {
   // The far pass: the mode, and how often it baked and relit.
   // Set the far ranges' face bump.
   bump(v) { FAR_U.uBump.value = v; draw(); },
+  // Set the ranges' light (sun, sky, effects) and rock colour.
+  rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {

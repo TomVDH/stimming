@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T19:54:32Z
-updated_at: 2026-11-16T20:04:32Z
+updated_at: 2026-11-16T20:08:47Z
 ---
 
 Tom, 2026-11-16: the far ranges need more detail, slightly cragged; a better spread across the scene, with one gentle flat gap; the sides and fronts take a bump, as the card clouds do.
@@ -21,3 +21,9 @@ Tom, 2026-11-16: the far ranges need more detail, slightly cragged; a better spr
 - Crags: the far-bake session (stimming-75xm) landed erosion in the height first, so this bean does not repeat it.
 - Face bump: `farBump` tilts the light normal on walls by a detail field (vertical flutes, faint strata), as the card clouds do. It works in Live and Bake. Dev row Face bump (0 to 2). Cost within noise (bake about +0.1 ms).
 - QA hook: `__qa.bump(v)`.
+
+## Follow-up: range light and rock colour (Tom, 2026-11-16)
+
+- Dev rows Range sun (0.6), Range sky (0.85), Range effects (1): the ranges sit dimmer by default for scale; the blast and rock light keep full strength.
+- The ranges have their own rock: slopes are scree, walls bare rock; only the foot blends into the sand. Dev row Range rock: Umber (default), Slate, Rust.
+- QA hook: `__qa.rangeLight(sun, sky, fx, rock)`.
