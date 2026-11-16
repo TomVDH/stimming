@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T09:42:21Z
+updated_at: 2026-11-16T09:47:09Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -69,6 +69,7 @@ Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add t
 ## Soup surface
 
 - [x] Depth absorption: light dies with depth, tinted by the soup's hue; thin broth shows sunk things and the spoon, thick soup, skin and fat close it up (Dev: Soup density)
-- [ ] Next change: Tom picks (fire glow from below, visible viscosity, fat beads, skin rafts, wall scum, bubble rings, boil by fire)
+- [ ] Tom reviews depth absorption, then PR (stimming-tao4)
+- [ ] Open ideas, one bean each: fire glow (p5hq), viscosity (hupj), fat beads (xce4), skin rafts (1gin), wall scum (z7ca), bubble rings (i0dx), boil by fire (ycif)
 - [ ] Merge origin/main before the PR
 - [ ] PR to main
