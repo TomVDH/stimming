@@ -1198,9 +1198,11 @@ float soupT(vec3 ro, vec3 rd) {
 vec3 soupCol(vec2 xz) { vec4 d = texture(uDye, soupUV(xz)); return max(lab2lin(d.rgb / max(d.a, 1e-3)), 0.0); }
 
 /* the things */
+// The rotation's w comes back from xyz; the w slot holds the wet mark.
+float qw(vec4 Q) { return sqrt(max(1.0 - dot(Q.xyz, Q.xyz), 0.0)); }
 float sdBody(int i, vec3 p, out float m) {
   vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
-  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
   vec2 d = sdKind(int(M.x), lp, 0.012 * clamp(M.y, 0.0, 1.0));
   m = d.y;
   return d.x * M.w;
@@ -1448,7 +1450,7 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
         else {
           vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
           float ro_; vec3 em;
-          uAlb = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, Q.w), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
+          uAlb = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
           uAlb = mix(uAlb, alb, smoothstep(1.0, 1.8, M.y));
         }
         break;
@@ -1606,7 +1608,7 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
 }
 vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
-  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
   vec3 n = bodyN(i, p);
   float rough;
   vec3 emit;
@@ -1627,10 +1629,18 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   float hA = p.y - surfH(p.xz);
   // Low parts sit in the soup's shade, and wet soup coats them.
   float wet = exp(-max(hA, 0.0) / 0.03);
-  alb = mix(alb, soup * 0.8, wet * 0.35);
-  rough = mix(rough, 0.08, wet * 0.8);
+  // The soup climbs the thing in a thin film at the waterline.
+  float climb = smoothstep(0.013, 0.004, hA) * smoothstep(-0.006, 0.0, hA);
+  // A thing that bobbed up keeps a wet band; it dries from the top down.
+  float mark = Q.w, band = mark > 0.001 ? smoothstep(mark + 0.004, mark - 0.004, hA) * step(0.0, hA) : 0.0;
+  float film = max(climb, band * 0.8);
+  alb = mix(alb, soup * 0.8, max(wet * 0.35, film * 0.6));
+  rough = mix(rough, 0.08, max(wet * 0.8, film));
   vec3 v = -rd;
   vec3 col = litSurf(n, v, alb, rough, 0.04) * (0.5 + 0.5 * smoothstep(-0.01, 0.1, hA));
+  // The film's curved top edge catches the light in a thin line.
+  float lip = exp(-pow((hA - 0.011) / 0.0025, 2.0));
+  col += env(reflect(rd, normalize(n + vec3(0.0, 0.6, 0.0))), 0.05) * 0.45 * lip;
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
   return col + emit;
 }
@@ -2498,6 +2508,8 @@ function stepBodies(dt) {
     // Bob: a spring to the surface; tilt: springs that rock back.
     b.vy += (-b.bob * 46 - b.vy * 5.5) * dt;
     b.bob += b.vy * dt;
+    // How deep it went lately; the mark dries down at 2 cm a second.
+    b.dunk = Math.max((b.dunk || 0) - dt * 0.02, -b.bob);
     b.pitchV += (-b.pitch * 30 - b.pitchV * 4) * dt;
     b.rollV += (-b.roll * 30 - b.rollV * 4) * dt;
     b.pitch += b.pitchV * dt;
@@ -3181,8 +3193,11 @@ function scenePass() {
     q = qmul(q, qaxis(1, 0, 0, b.roll));
     q = qmul(q, qaxis(0, 0, 1, b.pitch));
     if (b.tumble) q = qmul(b.tumble, q);
+    // Keep w positive so the shader can rebuild it.
+    if (q[3] < 0) q = q.map(x => -x);
+    const mark = b.fly ? 0 : clamp(b.bob + (b.dunk || 0), 0, 0.08);
     const wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
-    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], q[3], b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
+    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], mark, b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
     n++;
   }
   gl.uniform1i(sceneP.u('uNB'), n);
