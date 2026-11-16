@@ -25,38 +25,52 @@ addEventListener('keydown', () => { keyAt = performance.now(); }, true);
 addEventListener('pointerdown', () => { keyAt = -1e9; }, true);
 const byKey = () => performance.now() - keyAt < 400;
 
-// A spring carries the flash fill between options.
-// Response 0.34 s, damping 0.78: a short glide with a small settle.
-// The fill stretches with its speed; the frame loop stops at rest.
-function glide(el) {
-  const k = (2 * Math.PI / 0.34) ** 2, c = 4 * Math.PI * 0.78 / 0.34;
-  let x = 0, w = 0, vx = 0, vw = 0, tx = 0, tw = 0, raf = 0, last = 0, placed = false;
-  const draw = () => {
-    const extra = Math.min(Math.abs(vx) * 0.035, 22);
-    el.style.width = `${w + extra}px`;
-    el.style.transform = `translateX(${x - (vx < 0 ? extra : 0)}px)`;
-  };
-  const step = now => {
-    const dt = Math.min(0.032, (now - last) / 1000 || 0.016);
-    last = now;
-    vx += (k * (tx - x) - c * vx) * dt; x += vx * dt;
-    vw += (k * (tw - w) - c * vw) * dt; w += vw * dt;
-    const done = Math.abs(tx - x) < 0.3 && Math.abs(vx) < 4 && Math.abs(tw - w) < 0.3 && Math.abs(vw) < 4;
-    if (done) { x = tx; w = tw; vx = vw = 0; raf = 0; draw(); return; }
-    draw();
-    raf = requestAnimationFrame(step);
-  };
-  return (nx, nw) => {
-    if (nx === tx && nw === tw && placed) return;
-    tx = nx; tw = nw;
-    if (!placed || byKey() || REDUCED.matches) {
-      placed = true; x = tx; w = tw; vx = vw = 0;
-      cancelAnimationFrame(raf); raf = 0; draw();
-      return;
-    }
-    if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
-  };
-}
+// The wordmark's eight letter hues ink the controls, in order.
+const HUES = ['0.8 0.15 62', '0.72 0.2 318', '0.8 0.12 195', '0.7 0.19 32', '0.72 0.14 255', '0.82 0.11 345', '0.86 0.15 100', '0.78 0.16 150'];
+
+// A pick cuts in as the intro's flash box: oversize, then at size.
+// It steps at 30 fps, as the intro does; a key pick does not flash.
+const flash = el => {
+  if (byKey() || REDUCED.matches || !el.animate) return;
+  el.animate([
+    { transform: 'scale(1.16)', filter: 'brightness(1.6)' },
+    { transform: 'scale(0.98)', filter: 'none' },
+    { transform: 'scale(1)' },
+  ], { duration: 133, easing: 'steps(4, end)' });
+};
+
+// Each letter of a label rolls up; a fresh copy rolls in below it.
+// The label keeps its plain text as its accessible name.
+const roll = span => {
+  const word = span.textContent;
+  if (!word || span.dataset.rolled === word) return;
+  // A label that holds an icon keeps its markup.
+  if (span.children.length) return;
+  span.dataset.rolled = word;
+  span.setAttribute('aria-label', word);
+  span.classList.add('b-roll');
+  span.innerHTML = [...word].map((c, i) =>
+    `<i aria-hidden="true" style="--i:${i}">${c === ' ' ? '&nbsp;' : c.replace(/[<&]/g, m => m === '<' ? '&lt;' : '&amp;')}</i>`).join('');
+};
+
+// GSAP 3.13 from the site's own pinned URL; the bar works without it.
+let gsap = null;
+import('https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm').then(m => { gsap = m.gsap || m.default; }).catch(() => {});
+// A control leans to the mouse, and springs back on leave.
+const magnet = (el, pull = 0.28) => {
+  let to = null;
+  el.addEventListener('pointermove', e => {
+    if (!gsap || e.pointerType !== 'mouse' || REDUCED.matches) return;
+    to ??= { x: gsap.quickTo(el, 'x', { duration: 0.35, ease: 'power3.out' }), y: gsap.quickTo(el, 'y', { duration: 0.35, ease: 'power3.out' }) };
+    const r = el.getBoundingClientRect();
+    to.x((e.clientX - r.left - r.width / 2) * pull);
+    to.y((e.clientY - r.top - r.height / 2) * pull);
+  });
+  el.addEventListener('pointerleave', () => {
+    if (gsap) gsap.to(el, { x: 0, y: 0, duration: 0.6, ease: 'elastic.out(1, 0.45)', overwrite: true });
+    to = null;
+  });
+};
 
 const h = (tag, cls = '', html = null) => {
   const el = document.createElement(tag);
@@ -111,22 +125,11 @@ function mount(id, spec, ui) {
     el.setAttribute('role', 'group');
     const all = opts.map(o => {
       const b = btn('', optHTML(o));
-      b.addEventListener('click', () => { set(o.value); sync(); });
+      b.addEventListener('click', () => { const was = get(); set(o.value); sync(); if (was !== o.value) flash(b); });
       el.append(b);
       return [b, o];
     });
-    const thumb = h('i', 'b-thumb');
-    thumb.setAttribute('aria-hidden', 'true');
-    el.prepend(thumb);
-    const move = glide(thumb);
-    syncers.push(() => {
-      all.forEach(([b, o]) => b.setAttribute('aria-pressed', String(o.value === get())));
-      // The thumb takes the picked button's box; a hidden group keeps its last box.
-      const on = all.find(([, o]) => o.value === get())?.[0];
-      if (!on || !on.offsetWidth) return;
-      move(on.offsetLeft, on.offsetWidth);
-      el.classList.add('has-thumb');
-    });
+    syncers.push(() => all.forEach(([b, o]) => b.setAttribute('aria-pressed', String(o.value === get()))));
     return el;
   };
   // Every option as a tile, for a list or a drawer.
@@ -134,7 +137,7 @@ function mount(id, spec, ui) {
     const el = h('div', 'b-grid');
     const all = options.map(o => {
       const b = btn('b-opt', `${optHTML(o)}${o.key ? `<kbd>${o.key}</kbd>` : ''}`);
-      b.addEventListener('click', () => { pick(o.value); done?.(); });
+      b.addEventListener('click', () => { pick(o.value); flash(b); done?.(); });
       el.append(b);
       return [b, o];
     });
@@ -157,9 +160,16 @@ function mount(id, spec, ui) {
         el.classList.remove('is-leaving');
         if (on) {
           el.hidden = false;
-          // The sheet grows from its button.
-          const a = anchor.getBoundingClientRect(), r = el.getBoundingClientRect();
-          el.style.transformOrigin = `${a.left + a.width / 2 - r.left}px ${a.top + a.height / 2 - r.top}px`;
+          // The sheet wipes open from the edge next to its button.
+          // It steps, as the intro's boxes do.
+          if (!REDUCED.matches && el.animate) {
+            const up = el.classList.contains('b-pop--pick');
+            el.animate([{ clipPath: up ? 'inset(100% 0 0 0)' : 'inset(0 0 100% 0)' }, { clipPath: 'inset(0 0 0 0)' }],
+              { duration: 167, easing: 'steps(5, end)' });
+            [...el.querySelectorAll('.b-row, .b-opt, .b-ft')].forEach((r, i) =>
+              r.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }],
+                { duration: 100, delay: 90 + i * 33, easing: 'steps(3, end)', fill: 'backwards' }));
+          }
         } else if (!el.hidden) {
           // Exit runs faster than entry, then the sheet leaves the tree.
           el.classList.add('is-leaving');
@@ -271,7 +281,14 @@ function mount(id, spec, ui) {
       P.pick = btn(P.seg ? 'b-pick b-narrow' : 'b-pick', '', spec.choice.label);
       P.pickPop = popPart('b-pop--pick', spec.choice.label || 'Pick', P.pick);
       P.pickPop.el.append(gridPart(() => P.pickPop.open(false)));
-      syncers.push(() => { P.pick.innerHTML = optHTML(cur()) + (concept() === 'standard' ? CHEV_SVG : CARET); });
+      let shown = null;
+      syncers.push(() => {
+        // The label changes only with the pick, so its roll survives a sync.
+        if (shown === cur()) return;
+        shown = cur();
+        P.pick.innerHTML = optHTML(shown) + (concept() === 'standard' ? CHEV_SVG : CARET);
+        P.pick.querySelectorAll(':scope > span').forEach(roll);
+      });
     }
     const rows = !!(spec.settings?.length || spec.quality || spec.reset);
     if (rows || spec.slider) {
@@ -330,6 +347,11 @@ function mount(id, spec, ui) {
     const play = bar('s-play', P.seg, P.pick, P.acts);
     const tune = bar('s-tune', P.slider);
     layer.append(...[P.id, sys, hints, play, tune, P.pickPop?.el, P.setPop?.el, P.devPop?.el].filter(Boolean));
+    // Labels roll; each control takes the next wordmark hue.
+    layer.querySelectorAll('.b-btn > span:not(.b-tip), .b-slider > span').forEach(roll);
+    [...layer.querySelectorAll('.s-bar .b-btn, .s-bar .b-slider')].forEach((el, i) => el.style.setProperty('--hue', `oklch(${HUES[i % HUES.length]})`));
+    layer.querySelectorAll('.b-pop .b-btn, .b-pop .b-slider').forEach((el, i) => el.style.setProperty('--hue', `oklch(${HUES[(i + 3) % HUES.length]})`));
+    layer.querySelectorAll('.s-sys .b-ico, .s-play .b-act').forEach(el => magnet(el, el.classList.contains('b-ico') ? 0.32 : 0.18));
     // The shell measures: two bars that cannot share the row fold into one.
     relayout = () => {
       layer.classList.remove('is-narrow');
