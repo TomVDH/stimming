@@ -198,6 +198,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
     // Flash now fires one lightning burst in a storm, for a test.
     { type: 'button', id: 'stormnow', group: 'Sky', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
+    // Storm probe: the towers and the giant as Window seat's marched volumes.
+    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm probe', value: false, onToggle: on => { setStormProbe(on); draw(); } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
@@ -2258,6 +2260,167 @@ const tower = cloudLayer(TOWERS, BAND.deep);
 // Beside it the gun and the towers look small.
 const GIANTS = [[52, 225000, 0, 52000, 95000, 1]];
 const giants = cloudLayer(GIANTS, BAND.giants);
+
+/* ---------- storm probe: Window seat's towers, marched inside the cards ---------- */
+// A probe for Tom: each storm card becomes a window onto a 3D tower.
+// The shape, billows and light follow Window seat's storm cells.
+// Units inside: one "km" is a fourteenth of the storm's height.
+const STORM_VS = CLOUD_VS
+  .replace('flat varying vec4 vS;', 'flat varying vec4 vS;\nflat varying vec3 vC;')
+  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(2.6, 1.35);')
+  .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
+const STORM_FS = /* glsl */`precision highp sampler3D;
+uniform sampler3D uVol;
+varying vec2 vUv;
+varying vec3 vP, vR, vF;
+flat varying vec4 vS;
+flat varying vec3 vC;
+${HEAD}
+${AIR}
+uniform float uCloudC;
+uniform vec4 uFl[4];
+uniform vec4 uFlR;
+float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
+float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
+float smin(float a, float b, float k) { return -smax(-a, -b, k); }
+// The storm, set once per pixel: core radius, top, anvil and turrets.
+float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed;
+vec2 sAx;
+vec4 sTur[4];
+void setStorm(float sd, float giant) {
+  sSeed = sd;
+  sRc = 3.4 * mix(0.8, 1.2, hsh(1.0, sd));
+  sTop = 13.0;
+  // A giant always has its anvil; about one tower in three has none yet.
+  sAnv = max(giant, step(0.33, hsh(2.0, sd)));
+  sLen = mix(0.3, mix(5.0, 10.0, hsh(3.0, sd)), sAnv);
+  sR1 = sRc * 1.25;
+  sR2 = clamp(sRc * 0.7 + sLen * 0.42, sR1 - sLen * 0.8, sR1 + sLen * 0.8);
+  // One wind for every storm: anvils run the same way.
+  sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
+  sLean = sRc * 0.4;
+  sOver = sRc * 0.45 * sAnv * (0.8 + 0.2 * sin(uCloudC * 0.05 + sd));
+  sTile = clamp(sRc * 1.6, 5.0, 11.0);
+  for (int j = 0; j < 4; j++) {
+    float fj = float(j);
+    float ang = hsh(fj + 7.0, sd) * 6.2832, off = j == 0 ? 0.0 : sRc * (0.4 + 0.4 * hsh(fj + 11.0, sd));
+    float rad = j == 0 ? sRc * 0.8 : sRc * (0.4 + 0.22 * hsh(fj + 13.0, sd));
+    float top = j == 0 ? sTop - 0.4 : mix(3.0, sTop - 3.2, 0.2 + 0.8 * hsh(fj + 17.0, sd));
+    sTur[j] = vec4(vec2(cos(ang), sin(ang)) * off, rad, top);
+  }
+}
+// The tower's shape without billows: about the depth inside.
+float shape(vec3 p, out float aw) {
+  float y = p.y, hk = clamp(y / sTop, 0.0, 1.0);
+  vec2 q = p.xz - sAx * sLean * hk * hk;
+  float col = -1e3;
+  for (int j = 0; j < 4; j++) {
+    vec4 tu = sTur[j];
+    float r = tu.z * (1.0 + 0.12 * (1.0 - hk));
+    float dy = y - clamp(y, -1.0, tu.w - r);
+    col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), sRc * 0.3);
+  }
+  // A broad foot that narrows as the column rises out of it.
+  float an_ = atan(q.y, q.x);
+  float lobe = 1.0 + 0.28 * sin(3.0 * an_ + sSeed) + 0.15 * sin(5.0 * an_ - sSeed * 1.3);
+  float fr = sRc * mix(2.4, 0.9, smoothstep(0.5, 4.5, y)) * lobe;
+  col = smax(col, min(fr - length(q), (4.5 - y) * 0.8), sRc * 0.5);
+  // The base is flat.
+  col = smin(col, y * 2.0, 0.3);
+  // The anvil: a fan that widens downwind, flat on top, thin at its rim.
+  vec2 a = p.xz - sAx * sLean;
+  vec2 uv = vec2(dot(a, vec2(-sAx.y, sAx.x)), dot(a, sAx));
+  float k = clamp(uv.y / sLen, 0.0, 1.0), ku = clamp(-uv.y / sR1, 0.0, 1.0);
+  float top = sTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
+  float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (1.0 - 0.85 * ku * ku);
+  float fan = min(mix(sR1, sR2, k) - abs(uv.x), min(uv.y + sR1, sLen + sR2 * 0.4 - uv.y));
+  float an = smin(fan, smin(top - y, y - bot, 0.3), 0.8) - (1.0 - sAnv) * 20.0;
+  // The overshooting top: a squat dome on the core's head.
+  float ov = sOver - length(vec3(q.x, (y - sTop + 0.4 + sOver * 0.2) * 1.35, q.y));
+  aw = smoothstep(-0.6, 0.6, an - col);
+  return smax(smax(col, an, 0.9), ov, 1.0);
+}
+// Cauliflower billows from the baked volume; the lumps rise slowly.
+float billow(vec3 p, float aw, bool fine) {
+  p.xz -= sAx * dot(p.xz, sAx) * 0.6 * aw;
+  vec3 r = vec3(p.x * 0.8 - p.z * 0.6, p.y - uCloudC * 0.006, p.x * 0.6 + p.z * 0.8) + sSeed * 0.37;
+  float b = texture(uVol, r / sTile).r - 0.55;
+  if (fine) b = b * 0.7 + (texture(uVol, r / (sTile * 0.29) + 0.5).g - 0.5) * 0.3;
+  return b;
+}
+float dens(vec3 p, bool fine) {
+  float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw);
+  if (sh < -A * 0.7 - 0.5) return 0.0;
+  return smoothstep(0.0, 0.5, sh + A * 1.6 * billow(p, aw, fine));
+}
+vec3 flashAt(vec3 P) {
+  vec3 L = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    if (uFl[i].w < 0.001) continue;
+    float fd = length(P - uFl[i].xyz), r = uFlR[i];
+    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+  }
+  return L * mix(3.0, 1.0, uStars);
+}
+void main() {
+  float H = vS.y, giant = step(60000.0, H), U = H / 14.0;
+  setStorm(vS.w, giant);
+  vec3 ro = cameraPosition, rd = normalize(vP - cameraPosition);
+  // The bounding cylinder round the storm, in metres.
+  float Rb = (max(sLen + sR2, sRc * 2.4) + 2.0) * U;
+  vec2 oc = ro.xz - vC.xz;
+  float A2 = dot(rd.xz, rd.xz), B = dot(oc, rd.xz), C2 = dot(oc, oc) - Rb * Rb, D = B * B - A2 * C2;
+  if (D <= 0.0) discard;
+  D = sqrt(D);
+  float t0 = max((-B - D) / A2, 0.0), t1 = (-B + D) / A2;
+  if (t1 <= t0) discard;
+  const int N = 56;
+  float dt = (t1 - t0) / float(N), dk = dt / U;
+  float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  float mu = dot(rd, uSun);
+  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
+  vec3 sunL = normalize(vec3(uSun.x, uSun.y, uSun.z));
+  vec3 col = vec3(0.0);
+  float Tc = 1.0;
+  vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
+  bool hit = false;
+  for (int i = 0; i < N; i++) {
+    float t = t0 + dt * (float(i) + jit);
+    vec3 P = ro + rd * t;
+    vec3 p = vec3(P.x - vC.x, P.y - vC.y, P.z - vC.z) / U;
+    if (p.y < -0.5 || p.y > sTop + 3.0) continue;
+    float d = dens(p, true);
+    if (d < 0.003) continue;
+    if (!hit) { Phit = P; hit = true; }
+    // One tap toward the light gives the self shadow.
+    float Tl = exp(-2.9 * dens(p + sunL * 1.2, false));
+    float h01 = clamp(p.y / sTop, 0.0, 1.0);
+    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+    vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, h01) * 1.05 + uCloudAmb * 0.5;
+    vec3 S = sunC * Tl * ph * 1.4 + amb * (0.3 + 0.7 * h01) * (0.45 + 0.55 * Tl);
+    S *= mix(1.0, 0.45, uStars);
+    S += flashAt(P) * (0.4 + 0.6 * d);
+    float al = 1.0 - exp(-2.6 * d * dk);
+    col += Tc * S * al;
+    Tc *= 1.0 - al;
+    if (Tc < 0.03) break;
+  }
+  float a = 1.0 - Tc;
+  if (a < 0.004) discard;
+  col /= a;
+  // The air and the far haze, as on the cards.
+  col = air(col, Phit);
+  float cdk = length(Phit.xz - cameraPosition.xz);
+  col = mix(col, k2hazeColor(rd) * 1.04, uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.97, 0.6, smoothstep(0.0, 20000.0, Phit.y)));
+  gl_FragColor = vec4(col, a);
+}`;
+const stormCards = [tower, giants], cardMats = stormCards.map(m => m.material);
+let stormMats = null;
+// Storm probe on: the towers and the giant march Window seat's volume.
+function setStormProbe(on) {
+  stormMats ??= stormCards.map(m => new THREE.ShaderMaterial({ uniforms: m.material.uniforms, vertexShader: STORM_VS, fragmentShader: STORM_FS, transparent: true, depthWrite: false }));
+  stormCards.forEach((m, i) => { m.material = on ? stormMats[i] : cardMats[i]; });
+}
 
 /* ---------- storm lightning: flashes inside the towers and the giant ---------- */
 // After Window seat: a burst of one to five strokes, 50 to 220 ms apart.
@@ -11598,6 +11761,7 @@ function vilKey() {
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
+  stormProbe(on = true) { setStormProbe(on); draw(); },
   // Fire one lightning burst in a storm now; storms() lists the live strokes.
   stormFlash() { stormBurst(); },
   storms: () => stormFl.strokes.map(k => ({ age: simT - k.t0, L: k.L, P: k.P.toArray() })),

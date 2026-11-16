@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T20:10:09Z
+updated_at: 2026-11-16T20:20:30Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -37,4 +37,6 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Tall cards slanted at the frame edges: the cards now stand along the camera's up
 - [x] Tom: "not varied and realistic, too many": one Giant, three Towers, each tower its own build
 - [x] Storm lightning inside the Towers and the Giant, after Window seat; Dev row Storm lightning
-- [ ] Tom signs off the Giants, Towers and storm lightning
+- [x] Lightning rumbles: bluer, brighter, clustered spots
+- [x] Storm probe: Window seat's storm volumes marched inside the cards, Dev toggle, off by default (+2.4 ms at 1280)
+- [ ] Tom: probe or cards? Then sign off the storms

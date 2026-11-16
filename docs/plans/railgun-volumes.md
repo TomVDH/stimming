@@ -49,6 +49,7 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | **Towers** | `TOWERS` | Three storm towers 105 to 150 km out, each its own build (girth, lean, anvil reach); about one in three has no anvil yet. |
 | **Mids** | `MIDS` | Heaps 4 to 6 km up. Off while the Deck is on. |
 | **Giants** | `GIANTS` | One colossal storm 225 km out, 95 km tall, always with an anvil. Dev row Giants. |
+| **Storm probe** | `STORM_FS`, `setStormProbe()` | Probe, off by default: the Towers and the Giant marched as Window seat's storm volumes inside their cards. Dev row Storm probe. About 2.4 ms a frame at 1280. |
 | **Storm lightning** | `stormBurst()`, `flashIn()`, `uFl` | Flashes light the Towers and the Giant from inside, after Window seat: rumbles of two to five spots (six to twelve when a cell boils over), each one to four strokes; a rumble every 6 to 22 s. Dev rows Storm lightning and Storm flash. |
 
 ## Air
