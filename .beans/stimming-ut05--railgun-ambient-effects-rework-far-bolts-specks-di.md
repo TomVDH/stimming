@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T19:24:42Z
-updated_at: 2026-11-16T19:40:44Z
+updated_at: 2026-11-16T20:15:45Z
 parent: stimming-z267
 ---
 
@@ -13,6 +13,6 @@ Tom: the ambient effects: dust floating around, the far projectiles shooting up 
 
 - [x] Far bolts: the main shot's ribbon, ion line and contrail at distance
 - [ ] Tom signs off the far bolts
-- [x] Air specks: calmer on a phone frame; read as floating dust
+- [x] Air specks: deleted (Tom: get rid of the mouse responsive dust flakes)
 - [x] Distant impacts: the war is a battery's ripple of far bolts at the rock; all miss (Tom: no smoke columns)
 - [ ] Clean console, frame time held

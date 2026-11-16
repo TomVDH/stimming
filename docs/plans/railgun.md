@@ -373,8 +373,7 @@ The toy tells people that watching is fine. The scene carries itself:
 - Flares and glints draw over the smoke; a screen test along the train dims the stars and the satellite behind it.
 - Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
 - Micro-interactions:
-  - Air specks: 700 sunlit dust specks drift 25 to 420 m in front of the lens, brightest toward the sun. The pointer's motion parts them; they settle in about a second. The GPU moves them; the CPU sends only the pointer.
-    - Small screens (Tom, 2026-11-16: on a phone they read like snow): the count follows the stage's area (all 700 at 1280 x 720, a third at most on a phone), the size follows its short side (down to 0.75), and the slab reaches 1.1 times past the lens's edges, so no speck wraps in view on the 74 degree portrait lens.
+  - Air specks: deleted (Tom, 2026-11-16: "get rid of the mouse responsive dust flakes"). Do not bring them back.
   - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
   - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
   - `__qa.lens()` reads the push, the loom, the arc and the stir.
