@@ -60,7 +60,7 @@ The star sim runs as compute passes, which WebGL2 cannot run at this size. `docs
 <!-- gen:shared -->
 | Module | Imports |
 |---|---|
-| `shared/stim.js` | `initPage`, `sound`, `oklchLinear`, `onQuality`, `pixelRatio`, `stage`, `pageReady` |
+| `shared/stim.js` | `initPage`, `sound`, `oklchLinear`, `onQuality`, `pixelRatio`, `stage`, `pageReady`, `buildSteps` |
 | `shared/intro.js` | `intro` |
 <!-- /gen:shared -->
 
@@ -119,7 +119,7 @@ Drift (see `docs/plans/modularize.md`):
 | Idle | Runs only while the panel shows and the tab is visible |
 | Phones | 196,608 stars, 16,384 disk and 4,096 jet particles |
 | Reduced motion | Half-speed sim, no camera drift |
-| Start-up | Compute and render shaders compile behind the intro |
+| Start-up | Compute and render shaders compile behind the intro. The intro's load line counts the five libraries, then five build steps: the device, the compute compile, the draw compile, two frames |
 
 ## State and storage
 

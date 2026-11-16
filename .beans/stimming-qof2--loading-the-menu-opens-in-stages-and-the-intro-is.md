@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:32:41Z
+updated_at: 2026-11-16T19:38:55Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -17,9 +17,9 @@ Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has 
 - [x] Intro: one progress and ready API in shared/intro.js
 - [x] Shell: a default for every toy
 - [x] Real progress in three heavy toys (Window seat, Galaxy, Railgun)
-- [ ] Reduced motion, 375 x 812, clean console
-- [ ] Clips and stills in docs/qa/loading/
-- [ ] AGENTS.md and the toy-doc guidance
+- [x] Reduced motion, 375 x 812, clean console
+- [x] Clips and stills in docs/qa/loading/
+- [x] AGENTS.md and the toy-doc guidance
 - [ ] PR open (Tom merges)
 
 ## Measurements, 2026-11-16 (before)
@@ -90,3 +90,36 @@ Why:
 Tried and dropped: an early start. The main shelf ends 32 kB into the 162 kB page, so `clock.js` ran there, before the Lab and the icon script. The first toy came at 0.6 s on the slow link. But the icon script draws some icons (Fire, the TV tree, the Frietkot and more), so tiles were empty or changed after the comet. To gain that second, the Lab markup (58 kB gzip, 36% of the page) must leave `index.html`; that is a restructure of a file that other sessions edit daily. Not in this feature.
 
 Checked: no JS, a failed `clock.js`, a failed and a stalled `gsap.min.js`, reduced motion, `?all`, `?lab`.
+
+## The intro is the preloader
+
+- API: `progress(part)` in `shared/intro.js`. The shell's `stage(name, part)` and `buildSteps(n)` call it, so every toy has a default.
+- Before the script runs: a CSS hairline with a sheen waits where the foot of the flash box will be (after 0.5 s).
+- The load line: the same hairline at the foot of the flash box. It fills in the toy's ink and the emblem breathes. It shows only when the toy still loads 10 frames after the titles open.
+- Reduced motion: a still line and the word Loading at the foot.
+- Real progress: Window seat, Galaxy, Railgun.
+- Intro length on a fast load, main against the branch (ms): Galaxy 5297 and 5281, Window seat 3930 and 3981. No intro is longer.
+
+## Checks
+
+- Console clean: the menu (`./`, `?all`, `?lab`), Galaxy, Fire, Railgun, Window seat, Pop field, Zipper, Foghorn (no emblem), ShadyOS, TV tree, Glass.
+- `tests/bar-v2.html`: 102 of 102.
+- Reduced motion: the menu deals at once with a still dot while it waits; the intro shows the still line.
+- 375 x 812: the menu's wait dot sits on the track; the intro's line sits under the emblem.
+- The app's browser pane: the menu and Window seat load clean.
+- Headless runs here compile fast, so the load line shows only on a throttled link, in the lab's Slow load, or on a cold shader cache in a real browser.
+
+## After (ms)
+
+| | Main | Branch |
+|---|---|---|
+| Menu, fast, cold: first paint, first toy, last toy | 172, 265, 1529 | 164, 247, 1514 |
+| Menu, slow link (local server): first toy | 2039 | 1684; the wait dot from 0.5 s |
+| Menu, slow link: time with no sign of work | 1.5 s | 0 after the 0.4 s delay |
+
+## Follow-ups (not in this feature)
+
+- Move the Lab's markup out of `index.html` (58 kB of 162 kB gzip): the slow load gets a third shorter.
+- Fonts in the repo: Google Fonts' style sheet blocks the first paint of every page. An asset download needs Tom's yes.
+- A sign on the menu at the click: on a slow link the menu stays on screen 1.5 to 3.9 s before the toy's first paint.
+- Real progress in the other heavy toys (Fire first), each in its own chat.
