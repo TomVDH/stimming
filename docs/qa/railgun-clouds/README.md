@@ -47,6 +47,6 @@ npx -y -p playwright@1.63.0 node tools/clouds-check.mjs
 
 `tools/commit.sh` sources `tools/commit-guard.sh`:
 
-- **Drops.** It refuses a commit that drops 3 or more, and a quarter or more, of the lines that another bean added in the last 12 commits to a file. That is a stale copy: e9fc9c83 and bb4e4154 did it on 2026-11-16. Pull `--ff-only` or commit `--hunks`. To drop them on purpose, pass `--drop-ok` and say why.
+- **Drops.** It refuses a commit that drops 3 or more, and a quarter or more, of the lines that another bean added in the last 12 commits to a file. That is a stale copy, as a whole file or as hunks diffed against the wrong base: e9fc9c83 and bb4e4154 did it on 2026-11-16. The guard reads the commit's result, so it catches both. Pull `--ff-only` or commit `--hunks`. To drop them on purpose, pass `--drop-ok` and say why.
 - **Clouds.** It refuses a change to `railgun/storms.js`, `railgun/stormlab.html` or the cloud, air, sky, storm and band sections of `railgun/index.html`, unless the message holds `clouds-check: PASS` or `look-approved:` with Tom's words.
 - Test the guards on history: `tools/commit-guard.sh <commit>...`.
