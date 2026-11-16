@@ -2157,7 +2157,7 @@ void setStorm(float sd, float giant) {
   sR2 = clamp(sRc * 0.7 + sLen * 0.42, sR1 - sLen * 0.8, sR1 + sLen * 0.8);
   // One wind for every storm: anvils run the same way.
   sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
-  sLean = sRc * 0.4;
+  sLean = sRc * 0.18;
   sOver = sRc * 0.45 * sAnv * (0.8 + 0.2 * sin(uCloudC * 0.05 + sd));
   sTile = clamp(sRc * 1.6, 5.0, 11.0);
   for (int j = 0; j < 4; j++) {
@@ -2207,11 +2207,14 @@ float billow(vec3 p, float aw, bool fine) {
   if (fine) b = b * 0.7 + (texture(uVol, r / (sTile * 0.29) + 0.5).g - 0.5) * 0.3;
   return b;
 }
-float dens(vec3 p, bool fine) {
+// gap: how far outside the billowed shell p lies, for empty-space skipping.
+float dens(vec3 p, bool fine, out float gap) {
   float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw);
-  if (sh < -A * 0.7 - 0.5) return 0.0;
-  return smoothstep(0.0, 0.5, sh + A * 1.6 * billow(p, aw, fine));
+  gap = -sh - A * 1.1 - 0.5;
+  if (gap > 0.0) return 0.0;
+  return smoothstep(0.0, 0.45, sh + A * 2.2 * billow(p, aw, fine));
 }
+float densL(vec3 p) { float g; return dens(p, false, g); }
 vec3 flashAt(vec3 P) {
   vec3 L = vec3(0.0);
   for (int i = 0; i < 4; i++) {
@@ -2233,36 +2236,42 @@ void main() {
   D = sqrt(D);
   float t0 = max((-B - D) / A2, 0.0), t1 = (-B + D) / A2;
   if (t1 <= t0) discard;
-  const int N = 56;
-  float dt = (t1 - t0) / float(N), dk = dt / U;
+  // Steps: short inside the cloud, long leaps through the empty bound.
+  float dt = (t1 - t0) / 48.0;
   float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
   float mu = dot(rd, uSun);
   float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
-  vec3 sunL = normalize(vec3(uSun.x, uSun.y, uSun.z));
+  // A low sun rakes the towers: lit faces glow, the far side goes deep.
+  float low = 1.0 - smoothstep(0.05, 0.4, uSun.y);
   vec3 col = vec3(0.0);
-  float Tc = 1.0;
+  float Tc = 1.0, t = t0 + dt * jit;
   vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
   bool hit = false;
-  for (int i = 0; i < N; i++) {
-    float t = t0 + dt * (float(i) + jit);
+  for (int i = 0; i < 64; i++) {
+    if (t > t1) break;
     vec3 P = ro + rd * t;
-    vec3 p = vec3(P.x - vC.x, P.y - vC.y, P.z - vC.z) / U;
-    if (p.y < -0.5 || p.y > sTop + 3.0) continue;
-    float d = dens(p, true);
-    if (d < 0.003) continue;
+    vec3 p = (P - vC) / U;
+    if (p.y > sTop + 3.0 && rd.y > 0.0) break;
+    float gap, d = dens(p, true, gap);
+    if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
     if (!hit) { Phit = P; hit = true; }
     // One tap toward the light gives the self shadow.
-    float Tl = exp(-2.9 * dens(p + sunL * 1.2, false));
+    float Tl = exp(-3.2 * densL(p + uSun * 1.2));
     float h01 = clamp(p.y / sTop, 0.0, 1.0);
     vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
-    vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, h01) * 1.05 + uCloudAmb * 0.5;
-    vec3 S = sunC * Tl * ph * 1.4 + amb * (0.3 + 0.7 * h01) * (0.45 + 0.55 * Tl);
+    vec3 amb = mix(uHorC * 0.8, uZenC * 1.1, h01) + uCloudAmb * 0.5;
+    // Powder: thin edges facing the sun catch the most light.
+    float powder = 1.0 - exp(-4.0 * d);
+    // A second, longer tap darkens the side away from the sun.
+    float Tl2 = exp(-1.6 * densL(p + uSun * 3.5));
+    vec3 S = sunC * Tl * Tl2 * ph * mix(1.4, 2.6, low) * mix(1.0, powder, 0.5) + amb * (0.18 + 0.5 * h01) * (0.25 + 0.75 * Tl2);
     S *= mix(1.0, 0.45, uStars);
     S += flashAt(P) * (0.4 + 0.6 * d);
-    float al = 1.0 - exp(-2.6 * d * dk);
+    float al = 1.0 - exp(-2.8 * d * dt / U);
     col += Tc * S * al;
     Tc *= 1.0 - al;
     if (Tc < 0.03) break;
+    t += dt;
   }
   float a = 1.0 - Tc;
   if (a < 0.004) discard;
@@ -2279,6 +2288,7 @@ let stormMats = null;
 function setStormProbe(on) {
   stormMats ??= stormCards.map(m => new THREE.ShaderMaterial({ uniforms: m.material.uniforms, vertexShader: STORM_VS, fragmentShader: STORM_FS, transparent: true, depthWrite: false }));
   stormCards.forEach((m, i) => { m.material = on ? stormMats[i] : cardMats[i]; });
+  stormFl.vol = on;
 }
 
 /* ---------- storm lightning: flashes inside the towers and the giant ---------- */
@@ -2287,7 +2297,8 @@ function setStormProbe(on) {
 // Most sit mid-level in the core; a mature storm sends some through its anvil.
 // A storm recharges between bursts: one somewhere every 6 to 22 s.
 const STORMS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
-const stormFl = { rate: 1, next: 4, strokes: [] };
+// vol: the storm probe is on, so flashes sit inside its narrower towers.
+const stormFl = { rate: 1, next: 4, strokes: [], vol: false };
 const flV = new THREE.Vector3();
 // A storm's centre as the card shader drifts it, at the cloud clock t.
 function stormAt(c, t, out) {
@@ -2298,8 +2309,11 @@ function stormAt(c, t, out) {
 function stormSpot(c, P0, out) {
   const fx = P0.x - camera.position.x, fz = P0.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
   const anvil = Math.random() < 0.25;
-  const across = (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.5) * c.W;
-  out.set(P0.x + (-fz / fl) * across, c.base + c.H * (anvil ? 0.8 : 0.25 + 0.45 * Math.random()), P0.z + (fx / fl) * across);
+  // The probe's tower is narrower: its core spans about a quarter of its height.
+  const rc = 3.4 * c.H / 14, vol = stormFl.vol;
+  const across = vol ? (Math.random() - 0.5) * 1.2 * rc : (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.5) * c.W;
+  const up = vol ? (anvil ? 12.2 : 3 + 7 * Math.random()) / 14 : anvil ? 0.8 : 0.25 + 0.45 * Math.random();
+  out.set(P0.x + (-fz / fl) * across, c.base + c.H * up, P0.z + (fx / fl) * across);
   return out;
 }
 // A burst rumbles through one storm: two to five spots light in turn.
@@ -2312,7 +2326,7 @@ function stormBurst() {
   for (let j = 0; j < spots; j++) {
     const P = stormSpot(c, P0, new THREE.Vector3());
     // Log-normal light; a sheet flash is wide, a pulse is tight.
-    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8, r = c.W * (0.1 + 0.22 * Math.random());
+    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8, r = stormFl.vol ? (3.4 * c.H / 14) * (0.4 + 0.8 * Math.random()) : c.W * (0.1 + 0.22 * Math.random());
     const n = 1 + Math.floor(Math.random() * Math.random() * 4);
     let ts = t;
     for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: ts, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.1 * c.W, (Math.random() - 0.5) * 0.06 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); ts += 0.05 + 0.17 * Math.random(); }
