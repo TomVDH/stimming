@@ -200,6 +200,8 @@ function start() {
   }
   function arrive(first = false) {
     const lis = dozen();
+    // The wait ends: the CSS dot at twelve o'clock fades out as the comet fades in there.
+    root.dataset.clock = 'on';
     // With no motion the dozen simply shows.
     if (calm()) { lis.forEach(li => hold(li, false)); return; }
     // The comet fades in where it starts, on the track at twelve o'clock.
@@ -289,7 +291,8 @@ function start() {
   ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => addEventListener(type, wake, { passive: true }));
 
   deal();
-  root.dataset.clock = 'on';
+  // The dozen stands, out of sight; the wait goes on until the comet starts.
+  root.dataset.clock = 'wait';
   // The intro waits for the tube, so its shader build does not stall the sweep. A timer, not a frame:
   // a hidden tab gets no frames. Until then the dozen is out of sight.
   if (!calm()) dozen().forEach(li => hold(li, true));
