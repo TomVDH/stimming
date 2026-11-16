@@ -35,12 +35,12 @@ function start() {
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'clock-roll', title: 'Re-roll (R)' });
   button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
   face.after(button);
-  const ring = face.querySelector('.clock-ring'), rim = ring.querySelector('.rim'), marks = [...ring.querySelectorAll('line')];
+  const ring = face.querySelector('.clock-ring'), rim = /** @type {SVGElement} */ (ring.querySelector('.rim')), marks = /** @type {SVGElement[]} */ ([...ring.querySelectorAll('line')]);
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
   let bg = null;
-  import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')), () => face.clientWidth)).then(t => {
+  const tubeReady = import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')), () => face.clientWidth)).then(t => {
     bg = t;
     if (!bg) return;
     // The tube draws the words itself; the page's own words stay for screen readers.
@@ -151,23 +151,48 @@ function start() {
   });
   shelf.addEventListener('focusout', e => { if (!tile(e.relatedTarget)) rest(); });
 
-  // The dozen pops in round the dial. The outline draws in with it, then fades.
-  function arrive() {
-    if (calm()) return;
-    const icons = objs();
+  // The intro: a bright head runs once round the rim. The minute marks light behind it,
+  // and each toy arrives as the head passes its hour. Then the outline fades.
+  const sweep = Object.assign(document.createElement('div'), { className: 'clock-sweep' });
+  sweep.setAttribute('aria-hidden', 'true');
+  ring.after(sweep);
+  function arrive(first = false) {
+    // With no motion the dozen simply shows.
+    if (calm()) { if (gsap) gsap.set(objs(), { clearProps: 'opacity,visibility' }); return; }
+    const icons = objs(), head = { a: 0 };
+    let lit = 0, came = 0;
+    gsap.set(icons, { scale: 0.2, autoAlpha: 0, rotation: -24 });
+    gsap.set(marks, { opacity: 0 });
+    // The rim starts empty, so no full circle flashes before the head moves.
+    rim.style.strokeDashoffset = '1';
+    gsap.set([ring, sweep], { opacity: 1 });
     gsap.timeline({ onComplete: () => gsap.set(icons, { clearProps: 'transform,opacity,visibility' }) })
-      .fromTo(icons, { scale: 0.2, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.55, ease: 'back.out(1.7)', stagger: 0.04 }, 0)
-      .set(ring, { opacity: 1 }, 0)
-      .fromTo(rim, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 1, ease: 'expo.out' }, 0)
-      .fromTo(marks, { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.009 }, 0.05)
-      .to(ring, { opacity: 0, duration: 1.2, ease: 'power2.inOut' }, 1.3);
+      .to(head, { a: 1, duration: 1.5, ease: 'sine.inOut', onUpdate() {
+        rim.style.strokeDashoffset = String(1 - head.a);
+        sweep.style.setProperty('--a', (head.a * 360).toFixed(1) + 'deg');
+        const m = Math.min(60, Math.round(head.a * 60));
+        while (lit < m) marks[lit++].style.opacity = '1';
+        // Hour 0 comes at once; hour 11 just before the head ends its lap.
+        const h = Math.min(HOURS, Math.round(head.a * HOURS) + 1);
+        while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.55, ease: 'back.out(1.8)' });
+      } }, 0)
+      .to(sweep, { opacity: 0, duration: 0.5, ease: 'power1.out' }, 1.35)
+      .to(ring, { opacity: 0, duration: 1.2, ease: 'power2.inOut' }, 1.7)
+      // On a fresh page the set warms up to snow once, then switches off.
+      .add(() => { if (first) blink(); }, 1.45);
+  }
+  function blink() {
+    if (!bg || face.hasAttribute('data-live')) return;
+    face.setAttribute('data-blink', '');
+    bg.blink().then(() => face.removeAttribute('data-blink'));
   }
   function roll() {
     if (busy) return;
     if (calm()) return deal();
     busy = true;
     const old = objs();
-    gsap.to(old, { scale: 0.3, autoAlpha: 0, duration: 0.2, ease: 'power2.in', stagger: 0.012, onComplete() {
+    // The old dozen leaves in the head's order, so the face clears round the dial.
+    gsap.to(old, { scale: 0.3, autoAlpha: 0, rotation: 24, duration: 0.22, ease: 'power2.in', stagger: 0.035, onComplete() {
       gsap.set(old, { clearProps: 'transform,opacity,visibility' });
       deal();
       arrive();
@@ -193,7 +218,8 @@ function start() {
       credit.setAttribute('data-inline', '');
     }
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
-    import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e));
+    // It starts after the intro, so its shader build does not stall the sweep.
+    setTimeout(() => import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e)), 2600);
   }
 
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
@@ -230,6 +256,9 @@ function start() {
 
   deal();
   root.dataset.clock = 'on';
-  arrive();
+  // The intro waits for the tube, so its shader build does not stall the sweep. A timer, not a frame:
+  // a hidden tab gets no frames. Until then the dozen is out of sight.
+  if (!calm()) gsap.set(objs(), { autoAlpha: 0 });
+  Promise.race([tubeReady, new Promise(r => setTimeout(r, 900))]).then(() => setTimeout(() => arrive(true), 40));
   wake();
 }

@@ -12,6 +12,8 @@ import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 const LEVEL = 0.13;
 // The tube takes this long to open from a dot when the first toy comes, in seconds.
 const POWER = 0.5;
+// The tube switches off this fast: the raster shrinks to a line, then to a dot.
+const OFF = 0.38;
 // A change of toy takes this long, in seconds.
 const CHANGE = 0.42;
 // The cadence: the wordmark's own way with letters, each a little askew in its own weight.
@@ -26,7 +28,7 @@ in vec2 vUv;
 out vec4 o;
 uniform sampler2D uA, uB, uTA, uTB;
 uniform vec2 uRes;
-uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel, uAim, uCut;
+uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel, uAim, uCut, uSnow;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 // An integer hash: it shows no pattern, so the grain has no grid in it.
 uint pcg(uint v) { uint t = v * 747796405u + 2891336453u; uint w = ((t >> ((t >> 28u) + 4u)) ^ t) * 277803737u; return (w >> 22u) ^ w; }
@@ -132,6 +134,10 @@ void main() {
   c += n * (0.012 * heavy + 0.2 * k) * lit;
   // A rare spark flies.
   c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.5 * lit;
+  // Snow: the set has no picture yet, as it warms up or switches off.
+  c += uSnow * (0.03 + 0.2 * rnd(floor(gl_FragCoord.xy / (1.4 * uPx)), field + 11.0)) * lit;
+  // Switching off, the raster ends as a bright dot that fades.
+  c += uSnow * exp(-dot(p, p) * 900.0) * smoothstep(0.0, 0.04, uPower) * (1.0 - smoothstep(0.04, 0.3, uPower)) * 1.4;
   // The corners fall off; the whole face flickers a hair; a change is a touch bright.
   // The picture lies behind the clock: it is at its full strength in the middle only.
   c *= (1.0 - 0.68 * smoothstep(0.06, 0.62, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
@@ -153,7 +159,7 @@ void main() {
  * Builds the tube inside a host element; the canvas fills it.
  * @param {HTMLElement} host
  * @param {() => number} span  The width of the clock face, in CSS pixels.
- * @returns {Promise<{ show: (url: string, loop: string | null, words: Words) => void, caption: (words: Words) => void, live: (on: boolean) => void, aim: (deg: number, snap?: boolean) => void, clear: () => void } | null>}  Null without WebGL2.
+ * @returns {Promise<{ show: (url: string, loop: string | null, words: Words) => void, caption: (words: Words) => void, live: (on: boolean) => void, aim: (deg: number, snap?: boolean) => void, blink: (hold?: number) => Promise<void>, clear: () => void } | null>}  Null without WebGL2.
  */
 export async function tube(host, span) {
   const canvas = Object.assign(document.createElement('canvas'), { className: 'clock-tube' });
@@ -289,6 +295,8 @@ export async function tube(host, span) {
 
   // The wedge: where it points now and where it must point, in radians; and how open it is.
   let aimNow = 0, aimTo = 0, cut = 0;
+  // The power: where it is and where it goes, 0 off to 1 on. Snow is a set with no picture.
+  let powerTo = 0, snow = 0, /** @type {(() => void) | null} */ done = null;
   let mix = 0, power = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
   /** @type {Words | null} */
   let said = null;
@@ -322,6 +330,7 @@ export async function tube(host, span) {
     gl.uniform1f(P.u.uLevel, LEVEL);
     gl.uniform1f(P.u.uAim, aimNow);
     gl.uniform1f(P.u.uCut, cut);
+    gl.uniform1f(P.u.uSnow, snow);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     tri(gl, null, vao);
@@ -335,14 +344,16 @@ export async function tube(host, span) {
     const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
     last = now;
     if (rolling) mix = Math.min(1, mix + dt / CHANGE);
-    const opening = power < 1;
-    if (opening) power = Math.min(1, power + dt / POWER);
+    const opening = power !== powerTo;
+    if (opening) power = powerTo > power ? Math.min(powerTo, power + dt / POWER) : Math.max(powerTo, power - dt / OFF);
+    // A blink ends when the set is fully off.
+    if (snow && powerTo === 0 && power === 0) { snow = 0; done?.(); done = null; }
     // The wedge turns the short way and opens with a soft start and a soft stop.
     const gap = Math.atan2(Math.sin(aimTo - aimNow), Math.cos(aimTo - aimNow)), want = hot ? 1 : 0;
     const turning = Math.abs(gap) > 0.002 || Math.abs(want - cut) > 0.004;
     aimNow += gap * (1 - Math.exp(-dt * 9));
     cut += (want - cut) * (1 - Math.exp(-dt * 7));
-    if (hot && !still.matches) time += dt;
+    if ((hot || snow) && !still.matches) time += dt;
     // A loop in play puts its present frame in the newest picture.
     const playing = vid !== null && hot && vid.readyState >= 2;
     if (playing) {
@@ -354,7 +365,7 @@ export async function tube(host, span) {
     // The grain alone needs twenty pictures a second, not sixty.
     if (rolling || opening || turning || playing || now - drawn > 48) draw();
     if (rolling && mix >= 1) settle();
-    if (has[1] || power < 1 || turning || (hot && !still.matches)) raf = requestAnimationFrame(frame);
+    if (has[1] || power !== powerTo || snow || turning || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
   // Loads a still, then fades it in with its words.
@@ -375,7 +386,9 @@ export async function tube(host, span) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
       gl.generateMipmap(gl.TEXTURE_2D);
       // The first toy on an empty face powers the tube on.
-      if (!has[0] && !has[1]) power = still.matches ? 1 : 0;
+      if (!has[0] && !has[1]) { power = still.matches || snow ? Math.max(power, still.matches ? 1 : 0) : 0; powerTo = 1; }
+      // A picture ends a blink: the snow gives way to it.
+      if (snow) { snow = 0; done?.(); done = null; }
       write(words, 1);
       has[1] = 1;
       mix = 0;
@@ -427,7 +440,19 @@ export async function tube(host, span) {
     has = [0, 0];
     mix = 0;
     power = 0;
+    powerTo = 0;
     draw();
+  }
+  // The set warms up to snow, holds a moment, then switches off to a dot.
+  /** @returns {Promise<void>} */
+  function blink(hold = 600) {
+    if (still.matches || gone || has[0] || has[1]) return Promise.resolve();
+    snow = 1;
+    power = 0;
+    powerTo = 1;
+    wake();
+    setTimeout(() => { if (snow) { powerTo = 0; wake(); } }, POWER * 1000 + hold);
+    return new Promise(res => { done = () => res(); });
   }
 
   // A new size needs the words drawn again at that size.
@@ -442,5 +467,5 @@ export async function tube(host, span) {
       if (again) show(again, null, words);
     },
   });
-  return { show, caption, live, aim, clear };
+  return { show, caption, live, aim, blink, clear };
 }
