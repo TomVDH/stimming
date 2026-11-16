@@ -60,7 +60,10 @@ export function createGarden(canvas, gl, view) {
   renderer.shadowMap.autoUpdate = true;
   RectAreaLightUniformsLib.init();
   // The picture: linear light with alpha for cover, four samples for clean edges.
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  // Its depth goes to a texture too: the bugs test against it.
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1, THREE.UnsignedIntType) });
+  // The bugs' own picture, laid over the garden's.
+  const rtBugs = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(view.fov, 1, 0.05, 40);
@@ -712,6 +715,172 @@ export function createGarden(canvas, gl, view) {
   }
   scene.add(bog);
 
+  /* ---------- bugs: springtails, a woodlouse, a firefly ---------- */
+  // The bugs live in a small scene of their own, drawn over the garden's depth.
+  // Only they redraw while they move; the garden stays as it was drawn.
+  const bugScene = new THREE.Scene();
+  const bugSpot = new THREE.SpotLight(0xffffff, 9, 0, 0.95, 1, 2);
+  bugSpot.position.copy(LAMP);
+  bugSpot.target.position.set(0, 0.3, 0.05);
+  const bugFill = new THREE.DirectionalLight(0xdfe8d8, 0.35);
+  bugFill.position.set(0.3, 1.2, 3);
+  bugScene.add(bugSpot, bugSpot.target, bugFill, new THREE.HemisphereLight(0x2b4636, 0x040604, 0.9));
+  bugScene.environment = scene.environment;
+  // A bug's fragment behind the garden is dropped, so leaves and stones hide bugs.
+  const GD = { uGDepth: { value: rt.depthTexture }, uGSize: { value: new THREE.Vector2(1, 1) } };
+  const behind = m => {
+    m.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, GD);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uGDepth;\nuniform vec2 uGSize;')
+        .replace('#include <clipping_planes_fragment>', 'if (gl_FragCoord.z > texture2D(uGDepth, gl_FragCoord.xy / uGSize).r + 1e-6) discard;\n#include <clipping_planes_fragment>');
+    };
+    return m;
+  };
+  // Bugs keep clear of the glass and of the stone.
+  const free = (x, z) => x * x + z * z < 0.47 * 0.47 && (x - 0.2) ** 2 + (z + 0.24) ** 2 > 0.2 * 0.2;
+  // The top of the moss, where a small bug stands.
+  const mossTop = (x, z) => bedH(x, z) + 0.028 + 0.03 * cushion(x, z);
+
+  // Springtails: tiny pale bodies on the moss. Disturbed, they spring away in short hops.
+  const SPR = 36, spr = [];
+  const sprMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.35, 1, 3, 6).rotateZ(Math.PI / 2), behind(new THREE.MeshStandardMaterial({ color: 0xece6d4, roughness: 0.45 })), SPR);
+  while (spr.length < SPR) {
+    const x = (rnd() - 0.5) * 0.9, z = (rnd() - 0.5) * 0.9;
+    if (free(x, z)) spr.push({ x, z, yaw: rnd() * 6.28, hops: 0, wait: 0, t: 0, fx: x, fz: z, tx: x, tz: z, y: 0 });
+  }
+  function placeSpr() {
+    const o = new THREE.Object3D();
+    spr.forEach((b, i) => {
+      o.position.set(b.x, mossTop(b.x, b.z) + b.y, b.z);
+      o.rotation.set(0, b.yaw, 0);
+      o.scale.set(0.011, 0.0055, 0.0055);
+      o.updateMatrix();
+      sprMesh.setMatrixAt(i, o.matrix);
+    });
+    sprMesh.instanceMatrix.needsUpdate = true;
+  }
+  placeSpr();
+  bugScene.add(sprMesh);
+  // Sends springtails near a point (or all of them) off in two or three hops.
+  function startle(at = null, reach = 0.16) {
+    for (const b of spr) {
+      if (at && Math.hypot(b.x - at.x, b.z - at.z) > reach) continue;
+      b.hops = 2 + Math.floor(rnd() * 2);
+      b.wait = rnd() * 0.8;
+    }
+  }
+
+  // The woodlouse: seven grey plates, a head with feelers. Touched, it rolls into a ball.
+  const louse = new THREE.Group(), plates = [], WIDTH = [0.72, 0.9, 1, 1, 0.97, 0.85, 0.64];
+  const shell = behind(new THREE.MeshPhysicalMaterial({ color: 0x3a3f42, roughness: 0.4, clearcoat: 0.5, clearcoatRoughness: 0.3 }));
+  const plateG = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  for (let k = 0; k < 7; k++) { const m = new THREE.Mesh(plateG, shell); plates.push(m); louse.add(m); }
+  const head = new THREE.Group();
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.0032, 10, 8), shell));
+  for (const sd of [-1, 1]) {
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.0003, 0.0005, 0.011, 4).translate(0, 0.0055, 0), shell);
+    ant.rotation.set(sd * 0.5, 0, -1.1);
+    head.add(ant);
+  }
+  louse.add(head);
+  // About 1 cm long, as a real woodlouse is.
+  louse.scale.setScalar(1.6);
+  bugScene.add(louse);
+  // roll: 0 walking, 1 a ball. walk: seconds of walking left.
+  const lo = { x: -0.05, z: 0.3, head: 2.6, roll: 0, rollTo: 0, rollFor: 0, walk: 0, t: 0 };
+  function poseLouse() {
+    const r = lo.roll, R = 0.06 + (0.0085 - 0.06) * r, sp = 0.07 + (0.87 - 0.07) * r;
+    plates.forEach((m, k) => {
+      const a = (k - 3) * sp;
+      m.position.set(R * Math.sin(a), R * Math.cos(a) - R + r * 0.0085, 0);
+      m.rotation.set(0, 0, -a);
+      // Rolled, each plate stretches to close the ball.
+      m.scale.set(0.0042 + 0.0042 * r, 0.0045, 0.0105 * WIDTH[k] * (1 - 0.15 * r));
+    });
+    const front = plates[6];
+    head.position.copy(front.position).add(new THREE.Vector3(0.004 * Math.cos(-front.rotation.z), 0.001, 0));
+    head.scale.setScalar(Math.max(0.001, 1 - 1.4 * r));
+    // The feelers twitch as it walks.
+    head.children[1].rotation.z = -1.1 + 0.15 * Math.sin(lo.t * 9);
+    head.children[2].rotation.z = -1.1 + 0.15 * Math.sin(lo.t * 9 + 1.7);
+    louse.position.set(lo.x, mossTop(lo.x, lo.z) - 0.002 + 0.0004 * Math.sin(lo.t * 30) * (lo.walk > 0 ? 1 : 0), lo.z);
+    louse.rotation.set(0, -lo.head, 0);
+  }
+  poseLouse();
+
+  // The firefly: at dusk it drifts in the jar's air and blinks, two quick flashes at a time.
+  const flyMat = behind(new THREE.MeshBasicMaterial({ color: new THREE.Color(0, 0, 0) }));
+  const fly = new THREE.Mesh(new THREE.SphereGeometry(0.0065, 10, 8), flyMat);
+  fly.visible = false;
+  bugScene.add(fly);
+  const ff = { t: 0, left: 0 };
+
+  // Advances every bug. It returns true while any bug still moves.
+  let bugsDirty = true;
+  function update(dt) {
+    let busy = false;
+    // Springtails: each hop is a short arc to a nearby spot.
+    for (const b of spr) {
+      if (b.hops <= 0) continue;
+      busy = true;
+      if (b.wait > 0) { b.wait -= dt; continue; }
+      if (b.t === 0) {
+        let tx, tz, n = 0;
+        do { const a = rnd() * 6.28, d = 0.03 + 0.05 * rnd(); tx = b.x + Math.cos(a) * d; tz = b.z + Math.sin(a) * d; } while (!free(tx, tz) && ++n < 8);
+        Object.assign(b, { fx: b.x, fz: b.z, tx: free(tx, tz) ? tx : b.x, tz: free(tx, tz) ? tz : b.z, yaw: rnd() * 6.28 });
+      }
+      b.t = Math.min(1, b.t + dt / 0.35);
+      b.x = b.fx + (b.tx - b.fx) * b.t;
+      b.z = b.fz + (b.tz - b.fz) * b.t;
+      b.y = 4 * 0.03 * b.t * (1 - b.t);
+      if (b.t >= 1) { b.t = 0; b.y = 0; b.hops--; b.wait = 0.15 + 0.5 * rnd(); }
+    }
+    if (busy) placeSpr();
+    // The woodlouse rolls up, waits, unrolls, then walks on.
+    lo.t += dt;
+    if (lo.rollFor > 0) { lo.rollFor -= dt; if (lo.rollFor <= 0) lo.rollTo = 0; }
+    const rollWas = lo.roll;
+    lo.roll += (lo.rollTo - lo.roll) * (1 - Math.exp(-dt / 0.18));
+    if (Math.abs(lo.roll - lo.rollTo) < 0.002) lo.roll = lo.rollTo;
+    if (lo.roll !== rollWas || lo.rollFor > 0) busy = true;
+    if (lo.walk > 0 && lo.roll < 0.05) {
+      busy = true;
+      lo.walk -= dt;
+      lo.head += (vnoise(lo.t * 0.5, 3) - 0.5) * 2.4 * dt;
+      let nx = lo.x + Math.cos(lo.head) * 0.022 * dt, nz = lo.z + Math.sin(lo.head) * 0.022 * dt;
+      // At the glass or the stone it turns away.
+      if (!free(nx, nz)) { lo.head += 2.2 * dt * 3; nx = lo.x; nz = lo.z; }
+      lo.x = nx; lo.z = nz;
+    }
+    if (busy) poseLouse();
+    // The firefly flies only at dusk, for a while after a stir.
+    if (ff.left > 0 && fly.visible) {
+      busy = true;
+      ff.left -= dt;
+      ff.t += dt;
+      const t = ff.t;
+      fly.position.set(0.25 * Math.sin(t * 0.37) + 0.08 * Math.sin(t * 1.3), 0.7 + 0.18 * Math.sin(t * 0.29 + 1) + 0.05 * Math.sin(t * 1.7), 0.18 * Math.sin(t * 0.51 + 2));
+      const ph = t % 2.8, flash = Math.exp(-(((ph - 0.2) / 0.08) ** 2)) + 0.8 * Math.exp(-(((ph - 0.55) / 0.08) ** 2));
+      // Between flashes it keeps a faint glow, so the eye can follow it.
+      flyMat.color.setRGB(5 * flash + 0.35, 6 * flash + 0.45, 1.2 * flash + 0.08);
+      if (ff.left <= 0) flyMat.color.setRGB(0.02, 0.03, 0.005);
+    }
+    if (busy) bugsDirty = true;
+    return busy;
+  }
+  // Wakes the bugs: a mist sends them all; a tap only those near it.
+  function stir(kind, at = null) {
+    if (kind === 'mist') { startle(); lo.walk = Math.max(lo.walk, 20); ff.left = 30; }
+    if (kind === 'walk') lo.walk = Math.max(lo.walk, 15);
+    if (kind === 'dusk') ff.left = 30;
+    if (kind === 'tap' && at) {
+      startle(at);
+      // A tap on the woodlouse rolls it into a ball for a few seconds.
+      if (Math.hypot(at.x - lo.x, at.z - lo.z) < 0.06) { lo.rollTo = 1; lo.rollFor = 3.5; lo.walk = Math.max(lo.walk, 12); }
+    }
+    bugsDirty = true;
+  }
+
   /* ---------- state ---------- */
   // plants: 0 Fern, 1 Moss, 2 Bog. lamp: the grow light's linear colour.
   const st = { wake: 0, grow: 0, plants: 0, lamp: [1, 0.93, 0.86], sway: [0, 0, 0] };
@@ -729,10 +898,28 @@ export function createGarden(canvas, gl, view) {
   // Draws the garden into its picture if anything changed. Leaves the context clean.
   function render(W, H) {
     // The picture holds at most 2.2 million pixels; the glass and the fog hide the rest.
-    if (W !== w || H !== h) { w = W; h = H; const k = Math.min(1, Math.sqrt(2.2e6 / (w * h))); rt.setSize(Math.round(w * k), Math.round(h * k)); dirty = true; }
-    if (!dirty) return;
-    dirty = false;
+    if (W !== w || H !== h) {
+      w = W; h = H;
+      const k = Math.min(1, Math.sqrt(2.2e6 / (w * h))), rw = Math.round(w * k), rh = Math.round(h * k);
+      rt.setSize(rw, rh); rtBugs.setSize(rw, rh); GD.uGSize.value.set(rw, rh);
+      dirty = true;
+    }
+    if (!dirty && !bugsDirty) return;
     renderer.resetState();
+    if (dirty) drawGarden();
+    // The firefly shows only when the grow light is low.
+    fly.visible = Math.max(...st.lamp) < 0.95;
+    renderer.setRenderTarget(rtBugs);
+    renderer.render(bugScene, camera);
+    renderer.setRenderTarget(null);
+    bugsDirty = false;
+    renderer.resetState();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  }
+  function drawGarden() {
+    dirty = false;
     const asp = w / h;
     camera.aspect = asp;
     camera.position.set(...view.eye(asp));
@@ -762,21 +949,22 @@ export function createGarden(canvas, gl, view) {
     camera.updateMatrixWorld();
     lampDir.copy(LAMP).sub(new THREE.Vector3(0, 0.4, 0)).normalize().transformDirection(camera.matrixWorldInverse);
     U.uLampDirV.value.copy(lampDir);
+    // The bugs' lights follow the grow light.
+    bugSpot.color.copy(col); bugSpot.intensity = spot.intensity;
     renderer.setRenderTarget(rt);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
-    renderer.resetState();
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   }
   // The crowns on show, with the point a tap aims at.
   const crowns = () => SHOWN[st.plants].map(ci => { const [x, z, R] = CROWNS[ci]; return { i: ci, at: [x, bedH(x, z) + R * 1.1, z] }; });
   return {
-    set, render, crowns,
+    set, render, crowns, update, stir,
+    // Where the woodlouse is, for a tap.
+    louseAt: () => [lo.x, mossTop(lo.x, lo.z), lo.z],
     // QA reaches the materials and lights here.
-    debug: { frondMat, mossMat, spot, rect, U, redraw: () => { dirty = true; } },
+    debug: { frondMat, mossMat, spot, rect, U, renderer, rt, rtBugs, GD, louse, redraw: () => { dirty = true; } },
     texture: () => renderer.properties.get(rt.texture).__webglTexture || null,
+    bugs: () => renderer.properties.get(rtBugs.texture).__webglTexture || null,
     get busy() { return dirty; },
   };
 }

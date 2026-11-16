@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T23:04:23Z
+updated_at: 2026-11-16T23:17:36Z
 parent: stimming-oh7b
 ---
 
@@ -85,3 +85,10 @@ Tom: "do the stone". A smooth, merged mesh (about 47,000 triangles; the old one 
 ## The branch (2026-11-16)
 
 Tom: "do the branch". One rule grows it: a limb tapering from its base, two forks and a twig, each a tube with deep lengthwise bark ridges, a knot or two, and a cut end of pale heartwood. Colour: grey-brown driftwood bleached silver on top, dark in the grooves, a few lichen spots. PBR: fibre grain in the shader; wet, it darkens and shines, most in the grooves. Moss takes it in a few patches on top (about 1,400 shoots).
+
+## Bugs, a tighter shot, a bokeh room (2026-11-16)
+
+Tom: "add the bugs", then "a tighter shot with nice bokeh background behind the jar; it looks very flat".
+- Bugs live in their own small scene, drawn into their own picture with a depth test against the garden's depth texture; only that picture redraws while a bug moves. 36 springtails (pale specks on the moss tips; a mist or a tap near them sends them off in two or three hops). A woodlouse, about 1 cm, seven shiny plates and feelers; it walks for a while after a mist, a planting change or the page opening, and a tap on it rolls it into a ball for 3.5 s. A firefly drifts and blinks at dusk (Light under a quarter), for 30 s after a stir. The page still sleeps.
+- The camera is a longer lens from further back and a little lower (FOC 2.1, eye 1.15 high, 4.2 back): the jar fills the frame.
+- The far wall is an out-of-focus room: soft dark plant shapes and bokeh discs of warm, green and pale blue lights; the glass reflects it. The floor melts into it with no line; the side light panels show only in reflections.

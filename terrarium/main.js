@@ -71,10 +71,11 @@ function jarShape(y) {
 const jarR = y => (y < 0 || y > SHAPE.top ? -1 : jarShape(y) - 0.05 * (1 - Math.min(1, y / 0.09)) ** 2);
 // The grow light: a bar above and behind the jar.
 const LY = 1.95, LZ = -0.9, LW = 0.7;
-const FOC = 1.55;
+// A longer lens from further back: the jar fills the frame and the room behind goes soft.
+const FOC = 2.1;
 // The camera: its height, the point it looks at, and its distance.
 // A narrow frame steps the camera back, so the jar keeps its margin.
-const CAM_Y = 1.35, AIM_Y = 0.86, CAM_D = 3.45, CAM_ASP = 0.7;
+const CAM_Y = 1.15, AIM_Y = 0.8, CAM_D = 4.2, CAM_ASP = 0.7;
 // Metres in one scene unit, and the top of the glass in units.
 const METRE = 0.2, GLASS_TOP = SHAPE.top;
 const f = x => x.toFixed(4);
@@ -151,6 +152,8 @@ uniform vec3 uLampC;
 uniform float uSpray;
 // The garden, drawn by three.js from this same eye: linear light, alpha for cover.
 uniform sampler2D tGarden;
+// The bugs, drawn over the garden's depth: alpha where a bug is.
+uniform sampler2D tBugs;
 const vec3 LP = vec3(0.0, ${f(LY)}, ${f(LZ)});
 // Green glass: red and blue fade first, per unit of glass crossed.
 const vec3 GLASS_ABS = vec3(5.0, 1.4, 3.6);
@@ -167,6 +170,36 @@ vec3 teLamp(vec3 p) { vec3 d = LP - p; return uLampC * 3.0 / dot(d, d); }
 
 // Reflections see the bar wider and dimmer, so a thin highlight cannot alias.
 float gSoft = 0.0;
+// The room behind the jar, far out of focus: dark leaves, and lights as soft discs.
+// q is a point on the far wall, in units.
+vec3 teBokeh(vec2 q) {
+  vec3 acc = vec3(0.0);
+  for (int L = 0; L < 3; L++) {
+    float fl = float(L), cs = 0.62 - 0.15 * fl;
+    vec2 g = q / cs + fl * 7.3, id = floor(g), fp = fract(g);
+    float h = teH(id + fl * 13.1);
+    // About two cells in five hold a light; nearer layers hold fewer, larger ones.
+    if (h > 0.42 - 0.08 * fl) continue;
+    vec2 cn = 0.35 + 0.3 * vec2(teH(id + 3.1), teH(id + 8.7));
+    float rad = 0.2 + 0.13 * teH(id + 5.5), dd = length(fp - cn) / rad;
+    // A lens draws each light as a disc with a slightly brighter rim.
+    float disc = (1.0 - smoothstep(0.88, 1.0, dd)) * (0.78 + 0.22 * smoothstep(0.55, 0.97, dd));
+    float pick = teH(id + 9.9);
+    vec3 col = pick < 0.45 ? vec3(1.0, 0.62, 0.28) : pick < 0.8 ? vec3(0.45, 0.95, 0.4) : vec3(0.5, 0.8, 1.0);
+    acc += col * disc * (0.008 + 0.028 * teH(id + 2.2)) * (1.0 - 0.25 * fl);
+  }
+  return acc;
+}
+// bok 0 leaves out the leaves and lights, for the floor's far blend.
+vec3 teWall(vec2 q, float bok) {
+  vec2 g = q - vec2(0.0, ${f(LY)});
+  vec3 c = vec3(0.006, 0.016, 0.011) + uLampC * 0.022 * exp(-length(g * vec2(0.6, 1.0)) * 1.3);
+  // Out-of-focus plants on shelves behind: dark soft shapes, lit a little at their tops.
+  float leaf = smoothstep(0.58, 0.42, teN(q * 1.6 + 3.0) * 0.65 + teN(q * 4.1) * 0.35 + 0.18 * (q.y - 0.9));
+  c = mix(c, vec3(0.003, 0.008, 0.005) + uLampC * 0.004, leaf * 0.85 * bok);
+  // The lights thin out toward the floor, so the wall has no hard foot.
+  return bok > 0.0 ? c + teBokeh(q) * (1.0 - 0.6 * leaf) * smoothstep(0.05, 0.7, q.y) : c;
+}
 // The room: the floor, the far wall, and the grow light's bar.
 vec3 teBack(vec3 o, vec3 d) {
   float tg = d.y < -1e-4 ? -o.y / d.y : 1e9;
@@ -185,14 +218,16 @@ vec3 teBack(vec3 o, vec3 d) {
     float contact = smoothstep(${f(SHAPE.base - 0.02)}, ${f(SHAPE.base + 0.25)}, length(P.xz));
     vec3 base = vec3(0.016, 0.022, 0.017) * (0.8 + 0.4 * teN(P.xz * 3.0));
     c = base * (teLamp(P) * lit * mix(vec3(1.0), vec3(0.25, 0.55, 0.3), sh) + vec3(0.03, 0.045, 0.035)) * (0.35 + 0.65 * contact);
+    // Far back the floor is out of focus too: it melts into the wall, with no hard line.
+    c = mix(c, teWall(vec2(P.x, 0.05), 0.0), smoothstep(-1.2, -2.5, P.z));
   } else if (tw < 1e8) {
     vec3 P = o + d * tw;
-    vec2 g = P.xy - vec2(0.0, ${f(LY)});
-    c = vec3(0.006, 0.016, 0.011) + uLampC * 0.022 * exp(-length(g * vec2(0.6, 1.0)) * 1.3);
+    c = teWall(P.xy, 1.0);
   }
   // Two soft panels stand out of frame, left and right.
   // The glass reflects them as tall strips down the belly.
-  if (abs(d.x) > 1e-3) {
+  // Only reflections see them; the eye looking past the jar does not.
+  if (gSoft > 0.0 && abs(d.x) > 1e-3) {
     float tx = (sign(d.x) * 2.6 - o.x) / d.x;
     if (tx > 0.0 && tx < tHit) {
       vec3 P = o + d * tx;
@@ -240,7 +275,9 @@ vec3 envScene(vec2 uv) {
   vec3 refl = teBack(p, reflect(rd, jn));
   gSoft = 0.0;
   // The garden through the wall: the wall bends the view a hair.
-  vec4 gd = texture(tGarden, uv - vec2(dot(jn, rt) / asp, dot(jn, up)) * 0.004);
+  vec2 guv = uv - vec2(dot(jn, rt) / asp, dot(jn, up)) * 0.004;
+  vec4 gd = texture(tGarden, guv), bug = texture(tBugs, guv);
+  gd = vec4(mix(gd.rgb, bug.rgb, bug.a), max(gd.a, bug.a));
   if (p.y > ${f(SHAPE.lid)} || p.y < ${f(SHAPE.foot)}) return teSolid(p, rd, jn, cv, F, refl, gd);
   // The far wall of the jar, seen where the garden leaves the view clear.
   float tE = jarExit(ro, rd, jt + 0.004);
@@ -423,7 +460,7 @@ try {
       textures: { tWipe: () => wipeTexture() },
     },
     active: () => visible,
-    textures: { tGarden: () => garden?.texture() ?? null },
+    textures: { tGarden: () => garden?.texture() ?? null, tBugs: () => garden?.bugs() ?? null },
     // The garden draws first, on the same context, when it changed.
     before: (w, h) => garden?.render(w, h),
     uniforms: {
@@ -465,8 +502,10 @@ new ResizeObserver(relight).observe(canvas);
 // It runs while the glass changes, then stops.
 let tickRaf = 0, tickT = 0;
 const wakeWant = () => Math.min(1, G.dose * 1.4);
-const busy = () => G.held || G.spray > 0 || Math.abs(wakeWant() - G.wake) > 0.002 || sway.some(w => w[1] > 0) || G.dose > 0 || G.mistFog > 0.003 || G.front > 0 || wipeLive || S.wet > 0;
+let bugsMoving = false;
+const busy = () => bugsMoving || G.held || G.spray > 0 || Math.abs(wakeWant() - G.wake) > 0.002 || sway.some(w => w[1] > 0) || G.dose > 0 || G.mistFog > 0.003 || G.front > 0 || wipeLive || S.wet > 0;
 function step(dt) {
+  bugsMoving = garden.update(dt);
   // Fog return speeds the whole cycle up or slows it down.
   const pace = 0.4 + 1.6 * fogBack;
   if (G.held) {
@@ -526,7 +565,7 @@ function stillMist() {
   dryTimer = setTimeout(() => { Object.assign(G, { dose: 0, wake: 0 }); S.wet = 0; wipeK.fill(0); wipeLive = false; wipeDirty = true; feed(); env.touch(); }, 40000);
 }
 function holdMist(on) {
-  if (on) { grow = Math.min(1, grow + 0.05); saveGrow(); }
+  if (on) { grow = Math.min(1, grow + 0.05); saveGrow(); if (!reduced()) garden.stir('mist'); }
   if (reduced()) { if (on) stillMist(); return; }
   G.held = on;
   wake();
@@ -540,8 +579,9 @@ function mist() {
 }
 
 act.mist = mist;
-act.plants = v => { plants = PLANTS[v] ?? 0; feed(); env.touch(); };
-act.light = v => { light = v; relight(); };
+act.plants = v => { plants = PLANTS[v] ?? 0; feed(); if (!reduced()) garden.stir('walk'); wake(); env.touch(); };
+// At dusk the firefly comes out for a while.
+act.light = v => { const was = light; light = v; relight(); if (v < 0.25 && was >= 0.25 && !reduced()) { garden.stir('dusk'); wake(); } };
 act.fogBack = v => { fogBack = v; };
 fogBack = ui.setting('fogback')?.value ?? fogBack;
 
@@ -582,6 +622,10 @@ canvas.addEventListener('pointermove', e => {
 function poke(cx, cy) {
   const r = canvas.getBoundingClientRect(), asp = r.width / Math.max(1, r.height);
   const { ro, fw, rt, up } = camera(asp);
+  // The point on the moss under the tap: the ray meets the bed's mean height.
+  const sx = ((cx - r.left) / r.width - 0.5) * asp, sy = 0.5 - (cy - r.top) / r.height;
+  const rd = norm(fw.map((x, i) => x * FOC + rt[i] * sx + up[i] * sy)), tb = (0.28 - ro[1]) / rd[1];
+  if (tb > 0 && !reduced()) { garden.stir('tap', { x: ro[0] + rd[0] * tb, z: ro[2] + rd[2] * tb }); wake(); }
   let best = -1, bd = 1e9;
   for (const { i, at } of garden.crowns()) {
     const v = sub(at, ro), z = dot(v, fw);
@@ -605,6 +649,8 @@ for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.ad
 /* ---------- start ---------- */
 relight();
 env.draw();
+// The woodlouse takes a short walk when the page opens.
+if (!reduced()) { garden.stir('walk'); wake(); }
 canvas.classList.add('on');
 mark('first-frame');
 // A hidden tab stops every frame.
