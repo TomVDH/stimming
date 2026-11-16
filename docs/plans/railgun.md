@@ -366,5 +366,10 @@ The toy tells people that watching is fine. The scene carries itself:
 - The ambient director starts one event every 12 to 40 s, faster as the rock nears. It holds off under a charge, a shot, a blast, a strike and a reset.
   - Horizon war: an unseen battery past the ranges lights the horizon and the cloud bases in a ripple of two to four flashes. A low rumble follows 20 to 60 s later.
   - Shooting stars: dusk and night only, now and then a pair. Reduced motion shows none.
-- Dev rows: Ambient (on or off), Ambient rate, Ambient test and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
-- Next on Tom's yes: re-entry rain, late landings, a satellite pass, far bolts, orbital flak, dust devils, embers on the plain, the rock sheds; then stirred motes, scrub trails and the looming.
+  - Satellite pass: a dark sky only. A point of sunlight crosses the frame in 70 to 110 s; most fade into the planet's shadow partway.
+- A kill starts the aftermath. A strike or a Reset ends it, and the self-Reset waits for it.
+  - Re-entry rain: from 12 s after the kill, warm streaks come down round the kill for two and a half minutes, thinning; one in five burns bright and some burst.
+  - Late landings: one to three chunks land 55 to 155 s after the kill, 18 to 48 km out: a 2.5 s fall, a horizon flash, a dust dome in a free dome slot, a rumble at the speed of sound (cut to 30 s).
+- Flares and glints draw over the smoke; a screen test along the train dims the stars and the satellite behind it.
+- Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
+- Next on Tom's yes: far bolts, orbital flak, dust devils, embers on the plain, the rock sheds; then stirred motes, scrub trails and the looming.

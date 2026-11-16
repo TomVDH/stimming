@@ -188,7 +188,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Ambient: small events nobody fires, for a watcher.
     { type: 'toggle', id: 'ambient', label: 'Ambient', value: true, persist: true },
     { type: 'slider', id: 'ambrate', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
-    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'segments', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }] },
+    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'rain', label: 'Rain' }, { value: 'land', label: 'Landing' }] },
     { type: 'button', id: 'ambfire', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
     // Strike test: each rock starts at its hold and strikes after a short grace.
     // Fast rock: the rock falls ten times faster; off is the normal speed.
@@ -4497,11 +4497,36 @@ function updateWarp() {
 /* ---------- ambient: events nobody fires ---------- */
 // A watcher needs no input: the scene plays small events on its own.
 // The director holds off while the player charges or a shot flies.
-const AMB_KINDS = ['war', 'star'];
-const amb = { live: [], next: 20, deadSince: null, due: [] };
+const AMB_KINDS = ['war', 'star', 'sat'];
+const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6 };
 // Two star streaks: a pair can cross at once.
 const ambStars = [0, 1].map(() => makeGlint(linFit(0.93, 0.03, 250)));
 const ambA = new THREE.Vector3(), ambB = new THREE.Vector3();
+// Four re-entry streaks; a bright one carries a hot head.
+const ambRain = [0, 1, 2, 3].map(() => makeGlint(linFit(0.86, 0.12, 60)));
+const ambHeads = [0, 1, 2, 3].map(() => makeFlare(linFit(0.92, 0.1, 70)));
+// A late chunk's fall to the plain.
+const ambFall = makeGlint(linFit(0.88, 0.12, 58)), ambFallHead = makeFlare(linFit(0.9, 0.12, 62));
+// The satellite: a point of sunlight on a dark sky.
+const ambSat = makeFlare(linFit(0.95, 0.02, 90));
+// The smoke train hides what lies behind it.
+// It returns 1 in the clear sky, 0 behind the train.
+const ambS0 = new THREE.Vector3(), ambS1 = new THREE.Vector3(), ambSP = new THREE.Vector3();
+function ambClear(p) {
+  if (tgtKind !== 'rock') return 1;
+  ambSP.copy(p).project(camera);
+  ambS0.copy(ast.pos).project(camera);
+  // The train runs about nine falls long.
+  // Its far end may pass behind the eye; a shorter span then stands in.
+  for (const f of [9, 4, 1.5]) { ambS1.copy(ast.pos).addScaledVector(ast.away, FALL * f).project(camera); if (ambS1.z < 1) break; }
+  const hw = size.w / 2, hh = size.h / 2;
+  const ax = ambS0.x * hw, ay = ambS0.y * hh, bx = ambS1.x * hw - ax, by = ambS1.y * hh - ay;
+  const px = ambSP.x * hw - ax, py = ambSP.y * hh - ay;
+  const t = clamp((px * bx + py * by) / Math.max(bx * bx + by * by, 1), 0, 1);
+  return THREE.MathUtils.smoothstep(Math.hypot(px - t * bx, py - t * by), 45, 95);
+}
+// Metres per pixel at distance D, for the live lens.
+const ambPx = D => D * Math.tan(rad(camera.fov / 2)) / (size.h / 2);
 // A direction through screen point (sx, sy), each -1 to 1.
 function ambRay(sx, sy, out) {
   camera.updateMatrixWorld(true);
@@ -4511,7 +4536,32 @@ function ambRay(sx, sy, out) {
 const ambQuiet = () => !!press || !!charge || !!shot || rounds.length > 0 || !!spin || !!fill || !!strike || !!blastFx;
 // The kinds that suit this hour.
 function ambKinds() {
-  return AMB_KINDS.filter(k => k !== 'star' || (U.uStars.value > 0.15 && !reduced()));
+  return AMB_KINDS.filter(k => {
+    if (k === 'star') return U.uStars.value > 0.15;
+    // A satellite shows in a dark sky, alone.
+    if (k === 'sat') return U.uStars.value > 0.5 && !amb.live.some(e => e.kind === 'sat');
+    return true;
+  });
+}
+// After a kill: re-entry rain for two and a half minutes, then late landings.
+function ambAfter(t0) {
+  amb.live = amb.live.filter(e => !e.after);
+  amb.live.push({ kind: 'rain', after: true, t0: t0 + 12, dur: 150, acc: 0, bolts: [] });
+  const n = 1 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) amb.live.push(ambLanding(t0 + 55 + 100 * rnd()));
+}
+// One late chunk: a 2.5 s fall, a flash, a dust dome, a late rumble.
+function ambLanding(t0) {
+  for (let i = 0; i < 20; i++) {
+    ambRay((rnd() * 2 - 1) * 0.75, 0, ambA);
+    ambA.y = 0;
+    if (ambA.lengthSq() > 1e-6) break;
+  }
+  ambA.normalize();
+  const D = 18000 + 30000 * rnd(), site = camera.position.clone().addScaledVector(ambA, D).setY(0);
+  // It comes down steep, along the rock's old line.
+  const dir = ast.away.clone().negate().add(new THREE.Vector3(rnd() - 0.5, 0, rnd() - 0.5).multiplyScalar(0.4)).setY(-1.2).normalize();
+  return { kind: 'land', after: true, t0, dur: 2.5 + 62, site, dir, D, S: 3000 + 2500 * rnd(), domed: false };
 }
 // Start one event of this kind.
 function ambStart(kind) {
@@ -4534,6 +4584,17 @@ function ambStart(kind) {
     amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.15 * k });
     return;
   }
+  if (kind === 'sat') {
+    // A satellite crosses slowly, lit by a sun below the horizon.
+    // It fades as it runs into the planet's shadow.
+    const L = rnd() < 0.5 ? -1 : 1, y0 = 0.35 + 0.5 * rnd(), y1 = 0.35 + 0.5 * rnd();
+    const d0 = ambRay(-1.15 * L, y0, new THREE.Vector3()), d1 = ambRay(1.15 * L, y1, new THREE.Vector3());
+    const dur = 70 + 40 * rnd();
+    amb.live.push({ kind, t0: simT, dur, d0, d1, shade: rnd() < 0.6 ? 0.45 + 0.4 * rnd() : 2, k: 0.7 + 0.5 * rnd() });
+    return;
+  }
+  if (kind === 'rain') { ambAfter(simT - 12); return; }
+  if (kind === 'land') { amb.live.push(ambLanding(simT)); return; }
   if (kind === 'star') {
     // A short streak with a fading head, high in the sky.
     // Now and then a second one follows close behind.
@@ -4550,7 +4611,7 @@ function ambStart(kind) {
   }
 }
 // The director: one event every 12 to 40 s, busier as the rock nears.
-function stepAmbient() {
+function stepAmbient(dt) {
   const on = ui.setting('ambient')?.value !== false;
   const rate = +(ui.setting('ambrate')?.value ?? 1);
   for (let i = amb.live.length - 1; i >= 0; i--) if (simT - amb.live[i].t0 > amb.live[i].dur) amb.live.splice(i, 1);
@@ -4562,8 +4623,15 @@ function stepAmbient() {
     amb.due.splice(i, 1);
     if (late < 6 && ac && !spin && !fill) { const h = shipRumble(ac, r.k); if (h) shipRumbles.push(h); }
   }
+  // A kill starts the aftermath; a strike or a reset ends it.
+  const hw = U.uHitP.value.w;
+  if (blastFx && hw !== amb.hit && hw > simT - 1 && tgtKind === 'rock' && !strike && !spin && !fill) ambAfter(hw);
+  amb.hit = hw;
+  if (spin || fill || strike) amb.live = amb.live.filter(e => !e.after);
+  for (const e of amb.live) if (e.kind === 'rain' && !reduced()) stepRainAmb(e, dt);
   // A dead rock with nobody at the gun: the toy resets itself.
-  if (tgtKind === 'rock' && !tgtCanHit() && !spin && !fill && !strike) {
+  // It waits for the aftermath to end.
+  if (tgtKind === 'rock' && !tgtCanHit() && !spin && !fill && !strike && !amb.live.some(e => e.after)) {
     amb.deadSince ??= simT;
     if (simT - amb.deadSince > 75 && performance.now() - lastInput > 45000) { amb.deadSince = null; resetToy(true); }
   } else amb.deadSince = null;
@@ -4572,13 +4640,13 @@ function stepAmbient() {
   if (simT < amb.next) return;
   const near = tgtKind === 'rock' && tgtCanHit() ? clamp(ast.s, 0, 1) : 0.5;
   amb.next = simT + THREE.MathUtils.lerp(40, 12, near) * (0.7 + 0.6 * rnd()) / rate;
-  if (amb.live.length >= 2) return;
+  if (amb.live.filter(e => !e.after).length >= 2) return;
   const ks = ambKinds();
   if (ks.length) ambStart(ks[Math.floor(rnd() * ks.length)]);
 }
 // The events write their light after the domes clear uImp.
 function drawAmbient() {
-  for (const g of ambStars) g.visible = false;
+  for (const g of [...ambStars, ...ambRain, ...ambHeads, ambFall, ambFallHead, ambSat]) g.visible = false;
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
@@ -4590,14 +4658,77 @@ function drawAmbient() {
       let f = 0;
       for (const o of e.offs) f += flashOf(a - o);
       slot.set(e.site.x, e.site.y, e.site.z, Math.min(2.5, f * e.k));
+    } else if (e.kind === 'rain') {
+      drawRainAmb(e);
+    } else if (e.kind === 'land') {
+      drawLanding(e, a);
+    } else if (e.kind === 'sat') {
+      // The eye's lens never moves, so screen rays hold their place.
+      const u = a / e.dur, D = 400000;
+      ambA.lerpVectors(e.d0, e.d1, u).normalize();
+      ambB.copy(camera.position).addScaledVector(ambA, D);
+      const lit = 1 - THREE.MathUtils.smoothstep(u, e.shade, e.shade + 0.05);
+      const fade = THREE.MathUtils.smoothstep(u, 0, 0.04) * (1 - THREE.MathUtils.smoothstep(u, 0.96, 1));
+      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB));
     } else if (e.kind === 'star') {
       // The head runs ahead; the tail thins behind it.
       const u = clamp(a / e.dur, 0, 1), head = e.run * u, tail = Math.max(0, head - 0.45 * e.run);
       ambB.copy(e.p0).addScaledVector(e.dir, tail);
       const fade = Math.sin(Math.PI * u) ** 0.7;
-      glint(e.m, ambB, e.dir, Math.max(1, head - tail), 24, 2.2 * e.k * fade * U.uStars.value);
+      glint(e.m, ambB, e.dir, Math.max(1, head - tail), 24, 2.2 * e.k * fade * U.uStars.value * ambClear(ambB));
     }
   }
+}
+// Re-entry rain: streaks spawn at a decaying rate round the kill.
+function stepRainAmb(e, dt) {
+  const a = simT - e.t0;
+  if (a < 0) return;
+  const t = simT;
+  e.bolts = e.bolts.filter(b => t - b.t0 < b.dur);
+  // About one streak in two seconds at first, thinning over a minute.
+  e.acc += dt * 0.55 * Math.exp(-a / 55);
+  if (e.acc < 1 || e.bolts.length >= ambRain.length) return;
+  e.acc -= 1;
+  const H = U.uHitP.value, sky = new THREE.Vector3(H.x, Math.max(H.y, 15000), H.z);
+  const p0 = sky.add(new THREE.Vector3((rnd() - 0.5) * 50000, 6000 * rnd(), (rnd() - 0.5) * 50000));
+  const dir = ast.away.clone().negate().add(new THREE.Vector3(rnd() - 0.5, rnd() * 0.3, rnd() - 0.5).multiplyScalar(0.6)).normalize();
+  if (dir.y > -0.2) dir.y = -0.2;
+  dir.normalize();
+  const bright = rnd() < 0.2;
+  e.bolts.push({ t0: t, dur: 0.9 + 1.2 * rnd(), p0, dir, run: 5000 + 9000 * rnd(), k: bright ? 1.8 : 0.5 + 0.6 * rnd(), bright, split: bright && rnd() < 0.5 ? 0.4 + 0.3 * rnd() : 2 });
+}
+function drawRainAmb(e) {
+  // A day sky drowns faint streaks; they burn brighter for it.
+  const day = 1 + 1.5 * (1 - U.uStars.value);
+  e.bolts.forEach((b, i) => {
+    const u = clamp((simT - b.t0) / b.dur, 0, 1), head = b.run * u, tail = Math.max(0, head - 0.5 * b.run);
+    const fade = Math.sin(Math.PI * u) ** 0.6;
+    ambB.copy(b.p0).addScaledVector(b.dir, tail);
+    glint(ambRain[i], ambB, b.dir, Math.max(1, head - tail), 60, 1.6 * b.k * fade * day);
+    ambA.copy(b.p0).addScaledVector(b.dir, head);
+    // A bright one bursts once, partway down.
+    const burst = u > b.split ? Math.exp(-(u - b.split) * b.dur / 0.25) : 0;
+    if (b.bright) flare(ambHeads[i], ambA, 6 * ambPx(ambA.distanceTo(camera.position)) * (1 + 2 * burst), (0.5 + 2 * burst) * fade * day);
+  });
+}
+// A late landing: the fall, then the flash and the dome.
+function drawLanding(e, a) {
+  const FALL_T = 2.5;
+  if (a < FALL_T) {
+    const u = a / FALL_T, run = 26000, head = run * (u - 1), tail = head - 9000;
+    ambB.copy(e.site).addScaledVector(e.dir, tail);
+    glint(ambFall, ambB, e.dir, head - tail, 90, 2.2 * Math.min(1, u * 4));
+    ambA.copy(e.site).addScaledVector(e.dir, head);
+    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4));
+    return;
+  }
+  if (e.domed) return;
+  e.domed = true;
+  // A free dome slot: one no live dome holds.
+  const i = domeVols.findIndex((m, j) => !shipDomes.some(d => d.i === j && domeAlive(d)));
+  if (i >= 0) shipDomes.push({ m: domeVols[i], t0: simT, i, P: e.site.clone(), S: e.S });
+  // Sound runs at 343 m/s; a long wait is cut to half a minute.
+  amb.due.push({ at: simT + Math.min(30, e.D / 343), k: 0.6 });
 }
 
 /* ---------- the approach ---------- */
@@ -4620,7 +4751,7 @@ function stepAst(dt) {
   stepShards(dt);
   stepRain(dt);
   stepChunks();
-  stepAmbient();
+  stepAmbient(dt);
   const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
   // The hot face sheds glowing bits; they fall back into the smoke.
   if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
