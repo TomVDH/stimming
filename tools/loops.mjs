@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Captures one seamless video loop per main-shelf toy for the menu's hover circle.
-// Output: shared/loops/<id>.mp4, 256 x 256, 24 fps, 5 s, H.264, no sound.
+// Output: shared/loops/<id>.mp4, 256 x 256, 24 or 20 fps, 5 to 9 s, H.264, no sound.
 // Output: shared/loops/index.json, the ids that have a loop, in shelf order.
 //
 // Run from the repo root, with the dev server up (python3 -m http.server 8000):
@@ -13,7 +13,10 @@
 // tools/stills.mjs shares them.
 // ffmpeg must be on PATH (brew install ffmpeg).
 // The end of each clip cross-fades into its start, so the loop has no seam.
+// The framing of each toy is its SETUP entry in tools/capture.mjs.
 // Look at each new loop before a commit: LOOPS_STRIP=1 writes a frame strip.
+// Never run this script and tools/stills.mjs at one time.
+// Two pages of one WebGPU toy fail together and give a blank picture.
 //
 // Environment:
 //   LOOPS_BASE   page root (default: this checkout under http://localhost:8000)
@@ -25,42 +28,51 @@
 //   LOOPS_TRY    a JSON object of recipes that replace table entries, for a trial run
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { GPU, POKES, ROOT, SETTLE, VIEW, base, hideCss, open, playwright, poke, shelf, sleep, square } from './capture.mjs';
+import { GPU, POKES, ROOT, SETTLE, SETUP, base, context as openContext, hideCss, open, playwright, poke, shelf, sleep, square } from './capture.mjs';
 
 const OUT = process.env.LOOPS_OUT || join(ROOT, 'shared', 'loops');
 const TMP = process.env.LOOPS_TMP || join(tmpdir(), 'stimming-loops');
 const JOBS = Number(process.env.LOOPS_JOBS) || 3;
 const BASE = base(process.env.LOOPS_BASE);
-// The loop length and the cross-fade length, in seconds.
+// The usual loop length and the cross-fade length, in seconds.
+// A recipe sets its own length, 5 to 9 s, to fit the toy's cycle.
 const LEN = 5, FADE = 0.8;
 // The recording runs this much longer than the clip needs.
 const MARGIN = 0.7;
-const SIZE = 256, FPS = 24;
+// A loop that stays too large at CRF_MAX drops to FPS_LOW.
+const SIZE = 256, FPS = 24, FPS_LOW = 20;
 // The quality starts at CRF and steps to fit the size budget.
-const CRF = 30, CRF_FINE = [24, 20], CRF_MAX = 36, MIN_BYTES = 60 * 1024, MAX_BYTES = 250 * 1024;
+// The tube shows the loop dim and grainy, so a coarse quality is enough.
+const CRF = 32, CRF_FINE = [28, 24], CRF_MAX = 40, MIN_BYTES = 40 * 1024, MAX_BYTES = 110 * 1024;
 // Opacity hides the shell, so a recipe can still click a button.
 const HIDE = hideCss('opacity: 0');
 
 // Recipes: how each toy stays alive for the whole clip, keyed by toy id.
 //   pre    steps before the clip starts (default: the toy's POKES entry)
 //   live   steps that repeat until the clip ends (default: none)
+//   len    the loop length in seconds (default: LEN)
 //   skip   a reason; the toy gets no loop and stays out of index.json
 // A toy with no entry shows its own ambient motion after its POKES entry.
 // The verbs are the poke verbs in tools/capture.mjs.
-// Coordinates are fractions of the stage; the clip is its centre square.
-// A live cycle that divides 5 s puts the scene back at its start.
+// The toy's SETUP steps in tools/capture.mjs run before `pre`.
+// Coordinates are fractions of the stage; the clip is a square inside it.
+// A live cycle that divides the loop length puts the scene back at its start.
 const TURN = 2500;
 const LOOPS = {
-  // Three sweeps pop three rows.
+  // A hand pops in uneven strokes: each has its own length, place and pause.
+  // Two single taps sit between the strokes.
   // R fills the sheet again.
-  pop: { live: [
-    ['down', 0.2, 0.3], ['glide', 0.2, 0.3, 0.8, 0.3, 900], ['up'], ['wait', 250],
-    ['down', 0.8, 0.5], ['glide', 0.8, 0.5, 0.2, 0.5, 900], ['up'], ['wait', 250],
-    ['down', 0.2, 0.7], ['glide', 0.2, 0.7, 0.8, 0.7, 900], ['up'], ['wait', 300],
-    ['key', 'r'], ['wait', 1450],
+  pop: { len: 8, live: [
+    ['stroke', [[0.24, 0.3], [0.4, 0.25], [0.62, 0.33]], 620], ['wait', 340],
+    ['stroke', [[0.71, 0.5], [0.67, 0.66]], 260], ['wait', 520],
+    ['stroke', [[0.37, 0.72], [0.29, 0.56], [0.41, 0.44], [0.55, 0.5]], 900], ['wait', 180],
+    ['click', 0.76, 0.3], ['wait', 150], ['click', 0.71, 0.25], ['wait', 600],
+    ['stroke', [[0.55, 0.74], [0.76, 0.62]], 380], ['wait', 420],
+    ['stroke', [[0.31, 0.4], [0.23, 0.58]], 300], ['wait', 250],
+    ['key', 'r'], ['wait', 2980],
   ] },
   // S shuffles the board; every control moves to a new place.
   fidget: { live: [['key', 's'], ['wait', 1250]] },
@@ -69,22 +81,23 @@ const LOOPS = {
   // Shuffle presses a new shape into the pins.
   pins: { live: [['button', 'Shuffle'], ['wait', TURN]] },
   // The pointer holds the prism and carries it round a small ring.
-  prism: { pre: [['down', 0.5, 0.4], ['glide', 0.5, 0.4, 0.56, 0.4, 300]], live: [['orbit', 0.5, 0.4, 0.06, 0.08, TURN]] },
+  prism: { pre: [['down', 0.5, 0.46], ['glide', 0.5, 0.46, 0.56, 0.46, 300]], live: [['orbit', 0.5, 0.46, 0.06, 0.06, TURN]] },
   // A slow drag turns the tube: one turn in 20 s.
-  kaleido: { pre: [['down', 0.72, 0.5]], live: Array.from({ length: 8 }, (_, i) => ['orbit', 0.5, 0.5, 0.22, 0.26, TURN, 0.125, i / 8]) },
+  kaleido: { pre: [['down', 0.72, 0.5]], live: Array.from({ length: 8 }, (_, i) => ['orbit', 0.5, 0.5, 0.22, 0.22, TURN, 0.125, i / 8]) },
   // Space locks the full field.
   // The pointer carries the magnet round the dish.
-  ferro: { pre: [['move', 0.66, 0.68], ['key', 'Space']], live: [['orbit', 0.5, 0.68, 0.16, 0.1, TURN]] },
-  // Clicks switch a tube off and on: the N stutters, the O blinks.
+  ferro: { pre: [['move', 0.62, 0.5], ['key', 'Space']], live: [['orbit', 0.5, 0.5, 0.12, 0.07, TURN]] },
+  // Clicks switch a tube off and on: the N and the E stutter, the O blinks.
+  // Two fast clicks on one tube change its gas, so the stutter takes turns.
   neon: { live: [
-    ['click', 0.636, 0.49], ['wait', 120], ['click', 0.636, 0.49], ['wait', 260],
-    ['click', 0.636, 0.49], ['wait', 80], ['click', 0.636, 0.49], ['wait', 1100],
-    ['click', 0.275, 0.49], ['wait', 500], ['click', 0.275, 0.49], ['wait', 440],
+    ['click', 0.662, 0.464], ['wait', 120], ['click', 0.527, 0.44], ['wait', 140],
+    ['click', 0.662, 0.464], ['wait', 100], ['click', 0.527, 0.44], ['wait', 1040],
+    ['click', 0.243, 0.464], ['wait', 500], ['click', 0.243, 0.464], ['wait', 600],
   ] },
   // A held press raises a magnet; the balls follow it round.
-  magnet: { pre: [['down', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.26, TURN]] },
-  // Key 4 picks the Layers bar; Space makes one cut.
-  soap: { pre: [['key', '4'], ['wait', 600]], live: [['key', 'Space'], ['wait', 1250]] },
+  magnet: { pre: [['down', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.22, TURN]] },
+  // Space makes one cut; the Coral bar is in the toy's setup.
+  soap: { pre: [], live: [['key', 'Space'], ['wait', 1250]] },
   // Two taps crack the pane and a held press shatters it.
   // R rewinds the pane to whole.
   glass: { pre: [], live: [
@@ -96,14 +109,17 @@ const LOOPS = {
   // Space releases the row; the wave needs four seconds to spread.
   pendulum: { pre: [['key', 'Space'], ['wait', 4000]] },
   // A held finger smears one slow ring; the heat fades behind it.
-  putty: { pre: [['down', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.26, 2 * TURN]] },
+  putty: { pre: [['down', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.22, 2 * TURN]] },
   // Space blows a stream at each half turn of the wand.
-  bubbles: { pre: [['move', 0.72, 0.5]], live: [
-    ['key', 'Space'], ['orbit', 0.5, 0.5, 0.22, 0.26, TURN / 2, 0.5, 0],
-    ['key', 'Space'], ['orbit', 0.5, 0.5, 0.22, 0.26, TURN / 2, 0.5, 0.5],
+  bubbles: { pre: [['move', 0.7, 0.5]], live: [
+    ['key', 'Space'], ['orbit', 0.5, 0.5, 0.2, 0.2, TURN / 2, 0.5, 0],
+    ['key', 'Space'], ['orbit', 0.5, 0.5, 0.2, 0.2, TURN / 2, 0.5, 0.5],
   ] },
+  // Every set shows one picture about 8 s after the page opens.
+  // The clip starts after that show ends.
+  tvtree: { pre: [['wait', 12000]] },
   // The eyes follow the pointer round a ring.
-  eyes: { pre: [['move', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.26, TURN]] },
+  eyes: { pre: [['move', 0.72, 0.5]], live: [['orbit', 0.5, 0.5, 0.22, 0.22, TURN]] },
   // The boot text ends first.
   // P sends a ping.
   sonar: { pre: [['wait', 5000]], live: [['key', 'p'], ['wait', TURN]] },
@@ -111,11 +127,11 @@ const LOOPS = {
   trails: { pre: [['down', 0.5, 0.5]] },
   // The pointer drags the Notice window round a ring.
   // The window leaves its trail; the OS draws its own pointer.
-  shadyos: { pre: [['down', 0.556, 0.585], ['glide', 0.556, 0.585, 0.62, 0.55, 400]], live: [['orbit', 0.5, 0.55, 0.12, 0.14, TURN]] },
+  shadyos: { pre: [['down', 0.536, 0.567], ['glide', 0.536, 0.567, 0.62, 0.55, 400]], live: [['orbit', 0.5, 0.55, 0.12, 0.12, TURN]] },
   // Space starts a cosmic shower.
   chamber: { live: [['key', 'Space'], ['wait', TURN]] },
-  // Space adds two drops.
-  ink: { pre: [['key', 'Space'], ['wait', TURN], ['key', 'Space'], ['wait', TURN]], live: [['key', 'Space'], ['wait', TURN]] },
+  // Space adds two drops; the ink falls slowly, so the loop is long.
+  ink: { len: 8, pre: [['key', 'Space'], ['wait', 4000], ['key', 'Space'], ['wait', 4000]], live: [['key', 'Space'], ['wait', 4000]] },
   // Each click fires one smoke ring.
   vortex: { pre: [['click', 0.42, 0.45], ['wait', 1250]], live: [['click', 0.6, 0.5], ['wait', 1250], ['click', 0.42, 0.45], ['wait', 1250]] },
   // A click sets a new source; the search floods out from it.
@@ -124,60 +140,67 @@ const LOOPS = {
   fireworks: { pre: Array(5).fill([['key', 'Space'], ['wait', 625]]).flat(), live: [['key', 'Space'], ['wait', 625]] },
   // A held press ranges the rock, then charges the gun.
   // The release fires one shot, early in the clip.
-  railgun: { pre: [['down', 0.5, 0.5], ['wait', 5200]], live: [['wait', 1300], ['up'], ['wait', 9000]] },
+  railgun: { len: 8, pre: [['down', 0.5, 0.5], ['wait', 5200]], live: [['wait', 1300], ['up'], ['wait', 12000]] },
   // A drag on the grass reels the line out and back in.
-  washline: { pre: [['down', 0.59, 0.8]], live: [['orbit', 0.5, 0.8, 0.09, 0, TURN]] },
+  washline: { pre: [['down', 0.59, 0.82]], live: [['orbit', 0.5, 0.82, 0.09, 0, TURN]] },
 };
 
 if (process.env.LOOPS_TRY) Object.assign(LOOPS, JSON.parse(process.env.LOOPS_TRY));
 
 // Cuts the clip, crops the stage square and folds the end into the start.
-function cut(raw, mp4, start, clip, crf) {
+function cut(raw, mp4, start, clip, len, fps, crf) {
   const chain = [
-    `[0:v]trim=start=${start.toFixed(3)}:duration=${LEN + FADE + 0.2},setpts=PTS-STARTPTS`,
-    `crop=${clip.width}:${clip.height}:${clip.x}:${clip.y},scale=${SIZE}:${SIZE}:flags=lanczos,fps=${FPS},split=3[a][b][c]`,
+    `[0:v]trim=start=${start.toFixed(3)}:duration=${len + FADE + 0.2},setpts=PTS-STARTPTS`,
+    `crop=${clip.width}:${clip.height}:${clip.x}:${clip.y},scale=${SIZE}:${SIZE}:flags=lanczos,fps=${fps},split=3[a][b][c]`,
   ].join(',');
   const graph = [
     chain,
-    `[a]trim=${FADE}:${LEN},setpts=PTS-STARTPTS[mid]`,
-    `[b]trim=${LEN}:${LEN + FADE},setpts=PTS-STARTPTS[tail]`,
+    `[a]trim=${FADE}:${len},setpts=PTS-STARTPTS[mid]`,
+    `[b]trim=${len}:${len + FADE},setpts=PTS-STARTPTS[tail]`,
     `[c]trim=0:${FADE},setpts=PTS-STARTPTS[head]`,
     `[tail][head]xfade=transition=fade:duration=${FADE}:offset=0[fold]`,
     `[fold][mid]concat=n=2:v=1:a=0[out]`,
   ].join(';');
+  const frames = String(Math.round(len * fps));
   // One key frame per loop: a key frame each second makes still parts pulse.
+  // A scene cut must not add a key frame.
   execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', raw, '-filter_complex', graph, '-map', '[out]',
-    '-frames:v', String(LEN * FPS), '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', String(crf), '-preset', 'slow',
-    '-g', String(LEN * FPS), '-movflags', '+faststart', '-an', mp4]);
+    '-frames:v', frames, '-c:v', 'libx264', '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-crf', String(crf), '-preset', 'veryslow',
+    '-g', frames, '-keyint_min', frames, '-sc_threshold', '0', '-movflags', '+faststart', '-an', mp4]);
   return statSync(mp4).size;
 }
 
 // A busy loop steps the quality down until the file fits the budget.
+// A loop that is still too large loses frames instead.
 // A dark loop is small; it gets the fine quality against banding.
-function encode(raw, mp4, start, clip) {
-  let crf = CRF, bytes = cut(raw, mp4, start, clip, crf);
-  for (const fine of CRF_FINE) if (bytes < MIN_BYTES) bytes = cut(raw, mp4, start, clip, crf = fine);
-  while (bytes > MAX_BYTES && crf + 2 <= CRF_MAX) bytes = cut(raw, mp4, start, clip, crf += 2);
-  return crf;
+function encode(raw, mp4, start, clip, len) {
+  let fps = FPS, crf = CRF;
+  const run = () => cut(raw, mp4, start, clip, len, fps, crf);
+  let bytes = run();
+  for (const fine of CRF_FINE) if (bytes < MIN_BYTES) { crf = fine; bytes = run(); }
+  while (bytes > MAX_BYTES && crf + 2 <= CRF_MAX) { crf += 2; bytes = run(); }
+  if (bytes > MAX_BYTES) { fps = FPS_LOW; bytes = run(); }
+  return { crf, fps };
 }
 
 // Six frames of the loop in a row, for a look by eye.
-function strip(mp4, png) {
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', mp4, '-vf', `fps=6/${LEN},tile=6x1`, '-frames:v', '1', png]);
+function strip(mp4, png, len) {
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', mp4, '-vf', `fps=6/${len},tile=6x1`, '-frames:v', '1', png]);
 }
 
 async function record(browser, id) {
   const recipe = LOOPS[id] ?? {};
   const dir = join(TMP, id);
   rmSync(dir, { recursive: true, force: true });
-  const context = await browser.newContext({ viewport: VIEW, deviceScaleFactor: 1, colorScheme: 'dark', recordVideo: { dir, size: VIEW } });
+  const context = await openContext(browser, id, dir);
   // The recording starts with the page.
   const began = Date.now();
   const page = await context.newPage();
   const notes = [];
   page.on('pageerror', e => notes.push(`error: ${e.message.split('\n')[0]}`));
   let start = 0, clip = null, failure = null, size = '';
-  const pre = recipe.pre ?? POKES[id];
+  const pre = [...(SETUP[id]?.first ?? []), ...(recipe.pre ?? POKES[id] ?? [])];
+  const len = recipe.len ?? LEN;
   try {
     await open(page, id, BASE, notes);
     await sleep(SETTLE);
@@ -185,12 +208,12 @@ async function record(browser, id) {
     await stage.scrollIntoViewIfNeeded();
     const box = await stage.boundingBox();
     size = `${Math.round(box.width)}x${Math.round(box.height)}`;
-    if (pre?.length) await poke(page, box, pre);
+    if (pre.length) await poke(page, box, pre);
     await page.addStyleTag({ content: HIDE });
     clip = square(await stage.boundingBox(), id);
     // The shell fades out before the clip starts.
     const lead = 400;
-    const from = Date.now() + lead, until = from + (LEN + FADE + MARGIN) * 1000;
+    const from = Date.now() + lead, until = from + (len + FADE + MARGIN) * 1000;
     start = (from - began) / 1000;
     await sleep(lead);
     if (recipe.live) while (Date.now() < until) await poke(page, box, recipe.live, until);
@@ -205,11 +228,11 @@ async function record(browser, id) {
     if (failure) throw new Error(failure);
     const raw = join(dir, readdirSync(dir).find(f => f.endsWith('.webm')));
     const mp4 = join(OUT, `${id}.mp4`);
-    const crf = encode(raw, mp4, start, clip);
-    if (process.env.LOOPS_STRIP) strip(mp4, join(TMP, `${id}.png`));
+    const { crf, fps } = encode(raw, mp4, start, clip, len);
+    if (process.env.LOOPS_STRIP) strip(mp4, join(TMP, `${id}.png`), len);
     if (!process.env.LOOPS_KEEP) rmSync(dir, { recursive: true, force: true });
     const kb = (statSync(mp4).size / 1024).toFixed(1);
-    console.log(`${id.padEnd(10)} ${kb.padStart(6)} KB  crf${crf}  ${clip.width}px of ${size} at ${start.toFixed(1)} s  ${recipe.live ? 'live pokes' : pre?.length ? 'poked first' : 'ambient'}${notes.length ? '  ' + notes.join('; ') : ''}`);
+    console.log(`${id.padEnd(10)} ${kb.padStart(6)} KB  ${len} s  ${fps} fps  crf${crf}  ${clip.width}px of ${size} at ${start.toFixed(1)} s  ${recipe.live ? 'live pokes' : pre.length ? 'poked first' : 'ambient'}${notes.length ? '  ' + notes.join('; ') : ''}`);
     return true;
   } catch (e) {
     console.log(`${id.padEnd(10)} FAILED  ${String(e.message).split('\n')[0]}${notes.length ? '  ' + notes.join('; ') : ''}`);
@@ -238,6 +261,8 @@ await Promise.all(Array.from({ length: Math.min(JOBS, queue.length) }, async () 
 
 // The menu reads the list; a skipped toy keeps its still.
 const listed = all.filter(id => !LOOPS[id]?.skip && existsSync(join(OUT, `${id}.mp4`)));
-writeFileSync(join(OUT, 'index.json'), JSON.stringify(listed) + '\n');
+// The menu reads the list live; a rename swaps it in one step.
+writeFileSync(join(OUT, 'index.json.new'), JSON.stringify(listed) + '\n');
+renameSync(join(OUT, 'index.json.new'), join(OUT, 'index.json'));
 console.log(failed.length ? `Failed: ${failed.join(', ')}` : `Done: ${ids.length} loops in ${relative(process.cwd(), OUT) || OUT}; ${listed.length} listed`);
 process.exit(failed.length ? 1 : 0);
