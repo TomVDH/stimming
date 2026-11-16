@@ -740,7 +740,7 @@ const DYE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uDye, uAux, uVel;
-uniform float uDt, uExt, uTime, uConv, uRelax;
+uniform float uDt, uExt, uTime, uConv, uRelax, uStir;
 uniform vec4 uMean;
 uniform vec4 uPlume[4];
 uniform int uNE;
@@ -757,7 +757,26 @@ vec2 flow(vec2 p) {
   }
   vec2 q = p * 2.2 + vec2(uTime * 0.05, -uTime * 0.04);
   float e = 0.05, n0 = noise2(q), nx = noise2(q + vec2(e, 0.0)), ny = noise2(q + vec2(0.0, e));
-  return v + uConv * 0.05 * vec2(ny - n0, n0 - nx) / e;
+  v += uConv * 0.05 * vec2(ny - n0, n0 - nx) / e;
+  // A fine curl that wakes with the stir: it pulls colours into thin threads.
+  vec2 r = p * 7.0 + vec2(-uTime * 0.11, uTime * 0.09);
+  float m0 = noise2(r), mx = noise2(r + vec2(e, 0.0)), my = noise2(r + vec2(0.0, e));
+  return v + (0.012 + 0.05 * uStir) * vec2(my - m0, m0 - mx) / e;
+}
+// A sharp read: Catmull-Rom over the texels, clamped to the four nearest,
+// so the colours keep their edges instead of blurring each frame.
+vec4 sharp(sampler2D t, vec2 uv) {
+  vec2 sz = vec2(textureSize(t, 0)), pos = uv * sz, c = floor(pos - 0.5) + 0.5, f = pos - c;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, o12 = w2 / w12;
+  vec2 t0 = (c - 1.0) / sz, t3 = (c + 2.0) / sz, t12 = (c + o12) / sz;
+  vec4 r = texture(t, vec2(t12.x, t0.y)) * w12.x * w0.y + texture(t, vec2(t0.x, t12.y)) * w0.x * w12.y
+    + texture(t, t12) * w12.x * w12.y + texture(t, vec2(t3.x, t12.y)) * w3.x * w12.y + texture(t, vec2(t12.x, t3.y)) * w12.x * w3.y;
+  r /= w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+  ivec2 i = ivec2(c - 0.5);
+  vec4 a = texelFetch(t, i, 0), b = texelFetch(t, i + ivec2(1, 0), 0), d = texelFetch(t, i + ivec2(0, 1), 0), e = texelFetch(t, i + ivec2(1, 1), 0);
+  return clamp(r, min(min(a, b), min(d, e)), max(max(a, b), max(d, e)));
 }
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
@@ -767,18 +786,26 @@ void main() {
   float l = length(s);
   if (l > 0.995) s *= 0.995 / l;
   vec2 su = s / uExt * 0.5 + 0.5;
-  vec4 d = texture(uDye, su), a = texture(uAux, su);
-  // Upwelling plumes bring up the mixed pot from below.
+  vec4 d = sharp(uDye, su), a = texture(uAux, su);
+  // Upwelling plumes stir in the soup round them, not the pot's average,
+  // so neighbouring colours fold into each other; thick soup holds its streaks.
   float up = 0.0;
   for (int i = 0; i < 4; i++) { vec2 dd = p - uPlume[i].xy; up += exp(-dot(dd, dd) / (uPlume[i].w * uPlume[i].w * 0.4)); }
-  float k = clamp(uRelax + up * uConv * 0.5 * uDt, 0.0, 1.0);
-  d = mix(d, uMean, k);
+  float T = clamp((d.a - 1.0) * 0.3, 0.0, 1.0);
+  float k = clamp(up * uConv * 0.35 * uDt * mix(1.0, 0.4, T), 0.0, 1.0);
+  vec2 o = vec2(0.09 / uExt * 0.5, 0.0);
+  vec4 near = (texture(uDye, su + o) + texture(uDye, su - o) + texture(uDye, su + o.yx) + texture(uDye, su - o.yx)) * 0.25;
+  d = mix(d, near, k);
+  d = mix(d, uMean, uRelax);
   a.g *= 1.0 - 1.5 * k;
   a.r *= 1.0 - 0.3 * k;
   for (int i = 0; i < 16; i++) {
     if (i >= uNE) break;
     vec4 e0 = uE[i * 2], e1 = uE[i * 2 + 1];
-    vec2 dd = p - e0.xy;
+    // Tint lands as a ribbon, drawn out along the stir.
+    vec2 dd = p - e0.xy, sv = texture(uVel, e0.xy / uExt * 0.5 + 0.5).xy;
+    float sl = length(sv);
+    if (sl > 1e-3) { vec2 ax = sv / sl; float al = dot(dd, ax); dd = (dd - ax * al) + ax * al / (1.0 + 2.5 * min(sl, 1.0)); }
     float w = e0.w * exp(-dot(dd, dd) / (e0.z * e0.z));
     if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
     else if (e1.w < 1.5) a.g += w;
@@ -1269,9 +1296,12 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
   // Thick soup shows its swirls as low ridges.
   float e2 = 1.5 / 512.0;
-  float wx = texture(uDye, uv + vec2(e2, 0.0)).a - texture(uDye, uv - vec2(e2, 0.0)).a;
-  float wz = texture(uDye, uv + vec2(0.0, e2)).a - texture(uDye, uv - vec2(0.0, e2)).a;
-  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T);
+  vec4 dxp = texture(uDye, uv + vec2(e2, 0.0)), dxm = texture(uDye, uv - vec2(e2, 0.0));
+  vec4 dzp = texture(uDye, uv + vec2(0.0, e2)), dzm = texture(uDye, uv - vec2(0.0, e2));
+  float wx = dxp.a - dxm.a, wz = dzp.a - dzm.a;
+  // Where two colours meet, the seam stands up a little: marbling, not a flat wash.
+  float lx = dxp.r / max(dxp.a, 1e-3) - dxm.r / max(dxm.a, 1e-3), lz = dzp.r / max(dzp.a, 1e-3) - dzm.r / max(dzm.a, 1e-3);
+  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T - vec3(lx, 0.0, lz) * (0.05 + 0.1 * T));
   vec3 v = -rd;
   float nv = max(dot(n, v), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
@@ -2810,10 +2840,12 @@ function runDye(dt, src, dst, n = dyeN) {
   gl.uniform1f(dyeP.u('uExt'), FE);
   gl.uniform1f(dyeP.u('uTime'), time);
   gl.uniform1f(dyeP.u('uConv'), reduced() ? 0 : fire * (draining ? 0 : 1));
+  gl.uniform1f(dyeP.u('uStir'), clamp(Math.abs(omega) * 0.35 + (spoon.on ? 0.4 : 0)));
   // A slow stir from below evens the pot out, in steps half floats can hold.
   let relax = 0;
   relaxT += dt;
-  if (relaxT > 0.25) { relax = draining ? 0.25 : 0.0075; relaxT = 0; }
+  // The pot only drifts to its average very slowly, so streaks last.
+  if (relaxT > 0.25) { relax = draining ? 0.25 : 0.002; relaxT = 0; }
   if (draining && draining.phase === 'down') relax = Math.max(relax, dt * 2.5);
   gl.uniform1f(dyeP.u('uRelax'), relax);
   const m = draining ? [BROTH[0], BROTH[1], BROTH[2], 1] : [mean[0], mean[1], mean[2], mean[3]];
