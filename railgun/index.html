@@ -2017,7 +2017,8 @@ void main() {
   float powder = mix(1.0, 1.0 - exp(-6.0 * pd / H), 0.5 * (1.0 - max(mu, 0.0)));
   float wrap = max(dot(N, uSun) * 0.6 + 0.4, 0.0);
   // The side away from the light stays dark, as on the comet's smoke.
-  vec3 col = sunC * (Tl * 0.85 + Tm * 0.12) * ph * powder * (0.35 + 0.65 * wrap) * 1.6;
+  // Light scattered many times keeps the shaded side warm and soft.
+  vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5;
   // Backlit cloud glows through its whole body, its thin rim most.
   float back = max(dot(V, uSun), 0.0);
   col += sunC * (0.15 * back * back + 0.35 * thin * pow(back, 6.0));
@@ -2299,12 +2300,16 @@ void main() {
     float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
     // Light that grazes the planet arrives deep red.
     vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
-    vec3 amb = mix(uHorC * 0.8, uZenC * 1.1, h01) + uCloudAmb * 0.5;
+    // Sky light comes mostly from the bright horizon, warm at dusk.
+    vec3 amb = mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h01) + uCloudAmb * 0.5;
     // Powder: thin edges facing the sun catch the most light.
     float powder = 1.0 - exp(-4.0 * d);
     // A second, longer tap darkens the side away from the sun.
     float Tl2 = exp(-1.6 * densL(p + uSun * 3.5));
-    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(1.1, 1.7, low) * mix(1.0, powder, 0.35) + amb * (0.32 + 0.5 * h01) * (0.45 + 0.55 * Tl2);
+    // Light scattered many times fills the shaded side, so it never goes cold and flat.
+    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
+           + sunC * 0.32 * (0.35 + 0.65 * Tl2)
+           + amb * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
     S *= mix(1.0, 0.45, uStars);
     S += flashAt(P) * (0.4 + 0.6 * d);
     // Thick body: the column is opaque a few kilometres in.
