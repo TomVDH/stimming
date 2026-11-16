@@ -55,6 +55,19 @@ Mist: a soft pump hiss. Drops: small wet ticks on glass. The green waking: a fai
 
 Reduced motion: drops place at once and do not run; fronds open in one step. Idle: the loop sleeps after the fog cycle.
 
+## Tom's direction (2026-11-16, at the blockout)
+
+Tom wants a very richly shaded toy: "glass, fog on glass, droplets, geo-node like plant propagation, maybe some bugs".
+
+| Area | What it asks for | Where it lands |
+|---|---|---|
+| Glass | Real glass: refraction through the wall, a thick base, caustics on the floor | Task 2 |
+| Fog and drops | Fog on the curved glass, beads that merge and run, the wipe | Task 2 |
+| Plants | Plants that grow by rules, as geometry nodes do: fronds bud, branch and spread; moss creeps | Task 3, grown from one wetness value |
+| Bugs | A few small creatures: a springtail, a woodlouse, a firefly at dusk | New task, after Task 3 |
+
+The blockout's fronds are hand-placed arcs. Task 3 replaces them with a growth rule.
+
 ## Tasks
 
 ### Task 1: Blockout (checkpoint)

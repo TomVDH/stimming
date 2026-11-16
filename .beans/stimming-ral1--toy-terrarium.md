@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:01:24Z
+updated_at: 2026-11-16T20:03:21Z
 parent: stimming-oh7b
 ---
 
@@ -25,3 +25,7 @@ Build Terrarium from docs/plans/terrarium.md (idea 361, Tom's add). Size M. It s
 - Task 2 needs one change to environment.js: the pane pass takes no toy uniforms, so the wipe stripe has no way in yet.
 - Stubs: Mist and hold only fog the glass; drag and tap do nothing. Fog return works.
 - Menu tile is a low-fi icon with a toys.terrarium hook (mist, fog, fern sway).
+
+## Tom's direction (2026-11-16)
+
+Very richly shaded: glass, fog on glass, droplets, plants that grow by rules (geometry-node style), maybe some bugs. Recorded in docs/plans/terrarium.md under Tom's direction.
