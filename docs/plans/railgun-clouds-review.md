@@ -278,7 +278,7 @@ Tom picked option A at 16:38: "A: Earth-true weather". The preview below changes
 | Squall line, 28° | base 2.2 km, 26 km tall, 95 km out | base 1.5 km, 13 km tall, 95 km out | tops 10 to 15 km |
 | Supercell, 52° | base 3.5 km, 62 km tall, 200 km out | base 1.5 km, 18 km tall, 200 km out | tops 15 to 20 km with the overshoot |
 | Foothills | crests 2.6 to 3.1 km | unchanged | |
-| Main, high, far ranges | crests 9 to 10.6, 15.6 to 16.8, 21.6 to 25.2 km | 4.7 to 5.5, 6.8 to 7.3, 7.9 to 8.8 km | highest peak 8.8 km |
+| Main, high, far ranges | crests 9 to 10.6, 15.6 to 16.8, 21.6 to 25.2 km | unchanged: Tom kept the sierra ("lets go with original pls", after a still pair of capped and nearer layers) | highest peak 8.8 km |
 | Rock path | 17.7 km long; fall 15 to 4.4 km up, 47 to 42 km out; grows 17% | 150 km long (`FALL`); fall 81 to 4.4 km up; grows about 3 times | entry from about 100 km up |
 | Heaps, mids, deck, cirrus | 1 to 3 km, 4 to 6.5 km, 5.2 km, 9 km | unchanged: already Earth-true | |
 
@@ -286,14 +286,14 @@ What the preview shows (stills 09 and 10):
 
 1. **The rock works.** With the long path, a fresh rock enters small at the top left, 81 km up, crosses the sky above every cloud and grows about three times to the same end point. Today it hangs almost still. It is gameplay, not only look: the strike stretch past fall 1 shrinks, the gun climbs to about 40° to track a fresh rock, the bolt's flight time, the lead, the sight and the game-over timing all need retuning. That belongs to the gun and game session, with Tom's sign-off.
 2. **The storms need shapes, not only numbers.** At true heights the storms shrink to small mushrooms on the horizon. The shape code sets every length in storm units (`H / 14`), so a 15 km storm gets an anvil about 10 km long; a real anvil runs 50 to 150 km downwind and is far wider than the storm is tall. So option A for the storms is plan step 3: Window seat's tower march at true kilometre scale, anvil reach in kilometres, then placement. Renumbering `STORMS` alone would be one more regression.
-3. **The ranges flatten.** Capped at Earth heights, the far layers sit lower on the horizon. That reads as real distance, but it changes the sierra Tom picked at 15:20. The ranges session previews it and Tom judges it; bringing the far layers nearer keeps more of the layering.
+3. **The ranges stay.** Capped at Earth heights, the far layers sat lower on the horizon. Tom saw that pair and kept the sierra from 15:20 ("lets go with original pls"). Option A covers the weather and the rock, not the land. So a true-scale storm must stand in front of any range whose crests rise above its top on its bearing: the high range reaches 16.8 km at about 132 km, the far peaks 25 km. The visibility check holds this.
 
 Who builds what, each behind its own still and Tom's approval:
 
 | Work | Owner | Gate |
 |---|---|---|
 | Storms at true scale (step 3 brought forward) | Sky session, `stimming-626s`, in the storm lab first | `clouds-check: PASS` or `look-approved:` |
-| Range crests at Earth heights | Ranges session, `stimming-l7oo` | Tom's look approval on stills |
+| Range crests at Earth heights | Ranges session, `stimming-l7oo` | Dropped: Tom kept the sierra |
 | The long rock path and its gameplay retune | No live owner: the rock, game-over and gun sessions have finished. The top session asked Tom (16:45) to sign it off and whether one new session owns it. | Tom's sign-off; `docs/plans/railgun.md` game-over table |
 
 | Still | Shows |
