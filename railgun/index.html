@@ -152,6 +152,8 @@ let shaftGain = 1.6;
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
+// The far ranges' pass: the live march, or the bake with ?far=bake.
+const FAR_MODE = new URLSearchParams(location.search).get('far') === 'bake' ? 'bake' : 'live';
 const ui = initPage({ id: 'railgun', bar: {
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
@@ -232,6 +234,9 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'gunrough', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
     // Base wear: the stains, cracks and grease on the base.
     { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
+    // Far ranges: Bake marches once and relights; Live marches every frame.
+    // Live stays the default until Tom picks; ?far=bake opens on the bake.
+    { type: 'choice', id: 'farmode', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
@@ -1471,26 +1476,24 @@ float farHN(vec2 p, out float near) {
   return h > 1.0 ? h : 0.0;
 }
 float farH(vec2 p) { float n; return farHN(p, n); }`;
-const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FAR_U },
-  depthWrite: true, depthTest: true,
-  vertexShader: /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
-  fragmentShader: /* glsl */`
-  varying vec2 vN;
+// The far pass's parts: the march, the normal, the shadow and the light.
+// The live pass and the bake share them, so both draw the same country.
+const FAR_FN = /* glsl */`
   uniform mat4 uInvVP, uVP;
   uniform int uFarSteps;
-  uniform vec3 uRockC, uGroundC;
+  uniform vec3 uRockC, uGroundC, uEye;
   ${HEAD}
   ${AIR}
   ${FAR_GLSL}
   const float PLANET_R = ${PLANET_R.toFixed(1)};
   // The curved ground's drop at p, below the eye's level plane.
-  float drop(vec3 p) { vec2 d = p.xz - cameraPosition.xz; return dot(d, d) / (2.0 * PLANET_R); }
-  void main() {
-    vec4 w = uInvVP * vec4(vN, 1.0, 1.0);
-    vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
+  float drop(vec3 p) { vec2 d = p.xz - uEye.xz; return dot(d, d) / (2.0 * PLANET_R); }
+  // The view ray through clip point c of the inverse view-projection m.
+  vec3 rayOf(mat4 m, vec2 c, vec3 ro) { vec4 w = m * vec4(c, 1.0, 1.0); return normalize(w.xyz / w.w - ro); }
+  // The distance to the ranges along the ray, or -1 for a miss.
+  float farMarch(vec3 ro, vec3 rd) {
     // The march starts past the near plain's heart and ends past the far ranges.
-    float t = 25000.0, tp = t, hit = -1.0;
+    float t = 25000.0, tp = t;
     for (int i = 0; i < 380; i++) {
       if (i >= uFarSteps) break;
       vec3 p = ro + rd * t;
@@ -1503,38 +1506,41 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
           vec3 q = ro + rd * m;
           if (q.y - (farH(q.xz) - drop(q)) < 0.0) b = m; else a = m;
         }
-        hit = b;
-        break;
+        return b;
       }
-      // Rising past every crest: the ray leaves the country.
+      // Rising past every crest on the curved ground: the ray leaves the country.
       // The ceiling sits above the tallest crest: the crests reach about 45 km.
-      if (p.y > 50000.0 && rd.y > 0.0) break;
+      if (p.y + drop(p) > 50000.0 && rd.y + t * dot(rd.xz, rd.xz) / PLANET_R > 0.0) break;
       tp = t;
       // Over open plain a stride of 3% keeps grazing rays inside the budget.
       // Near any range the stride shrinks, so no crest or horn is skipped.
-      // In a band the stride is also capped, so it never leaps a thin crest.
       // In a band the stride stays short: 0.5% near the surface, 1% high above it.
       // A narrow summit can rise between two long strides.
       t += nr > 0.5 ? clamp(0.3 * dy, 0.0015 * t, dy < 0.05 * t ? 0.005 * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
       if (t > 650000.0) break;
     }
-    if (hit < 0.0) discard;
-    vec3 p = ro + rd * hit;
-    // Bare ground in reach of the near plain: the plain draws it.
-    float h0 = farH(p.xz);
-    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
-    // Shade on the flat world: the curve only moves the image.
-    vec3 P = vec3(p.x, h0, p.z);
+    return -1.0;
+  }
+  // The surface normal at p; the step grows with the distance.
+  vec3 farNormal(vec2 p, float hit) {
     float e = max(60.0, 0.002 * hit);
-    vec3 N = normalize(vec3(farH(p.xz - vec2(e, 0.0)) - farH(p.xz + vec2(e, 0.0)), 2.0 * e, farH(p.xz - vec2(0.0, e)) - farH(p.xz + vec2(0.0, e))));
-    // A short march toward the light: the crests shade the valleys.
-    // Each pixel starts at its own offset, so the shadow never bands.
+    return normalize(vec3(farH(p - vec2(e, 0.0)) - farH(p + vec2(e, 0.0)), 2.0 * e, farH(p - vec2(0.0, e)) - farH(p + vec2(0.0, e))));
+  }
+  // A short march toward the light: the crests shade the valleys.
+  // Each pixel starts at its own offset, so the shadow never bands.
+  float farShadow(vec3 P) {
     float sh = 1.0, sd = 300.0 * (1.0 + fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))));
     for (int j = 0; j < 9; j++) {
       vec3 q = P + uSun * sd;
       sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
       sd *= 1.7;
     }
+    return sh;
+  }
+  // The lit colour of surface point p at range hit, ground height h0, in the air.
+  vec3 farShade(vec3 ro, vec3 rd, vec3 p, float hit, float h0, vec3 N, float sh) {
+    // Shade on the flat world: the curve only moves the image.
+    vec3 P = vec3(p.x, h0, p.z);
     float wall = smoothstep(0.92, 0.5, N.y);
     vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
     alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
@@ -1545,7 +1551,6 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     // The nearing rock warms the faces turned to it.
     col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
     // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
-    vec3 Pa = vec3(p.x, P.y, p.z);
     float hR = 8000.0, hM = 1600.0;
     float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
     float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
@@ -1560,17 +1565,232 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
     // Fog pools in the far valleys: low ground goes pale, the crests stand clear.
     // Each range then stands apart from the one behind it.
     float vf = uLayer.y * smoothstep(30000.0, 120000.0, hit) * exp(-h0 / 1600.0);
-    col = mix(col, inL * 1.05, min(0.85 * vf, 1.0));
-    gl_FragColor = vec4(col, 1.0);
-    vec4 cp = uVP * vec4(p, 1.0);
-    gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
+    return mix(col, inL * 1.05, min(0.85 * vf, 1.0));
+  }
+  // The depth of world point p, for the near world to test against.
+  float farDepth(vec3 p) { vec4 cp = uVP * vec4(p, 1.0); return clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0); }`;
+const FAR_VS = /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
+// The live pass marches every pixel, every frame.
+const farLive = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, uEye: { value: new THREE.Vector3() } },
+  depthWrite: true, depthTest: true,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  ${FAR_FN}
+  void main() {
+    vec3 ro = uEye, rd = rayOf(uInvVP, vN, ro);
+    float hit = farMarch(ro, rd);
+    if (hit < 0.0) discard;
+    vec3 p = ro + rd * hit;
+    // Bare ground in reach of the near plain: the plain draws it.
+    float h0 = farH(p.xz);
+    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
+    vec3 N = farNormal(p.xz, hit);
+    gl_FragColor = vec4(farShade(ro, rd, p, hit, h0, N, farShadow(vec3(p.x, h0, p.z))), 1.0);
+    gl_FragDepth = farDepth(p);
   }`,
-}));
+});
+// The bake: the eye is locked off, so the ranges' shape holds still on screen.
+// One march fills a buffer a little wider than the view.
+// Each frame then only lights that buffer; the shadows rebake when the sun moves.
+// Two buffers: the pass reads the front one while the back one fills.
+const fbBuf = () => ({
+  g: new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }),
+  l: new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }),
+  // The window's rotation-only view-projection and its inverse; its lens and eye.
+  vp: new THREE.Matrix4(), inv: new THREE.Matrix4(), q: new THREE.Quaternion(), eye: new THREE.Vector3(), tb: 1, M: 1, aspect: 0, ok: false,
+});
+const farBake = {
+  on: true,
+  // The window's margin: the sight follows the gun, so its margin is wider.
+  M: 1.15, Msight: 1.3,
+  // The buffer's share of the screen's density.
+  res: 1,
+  bufs: [fbBuf(), fbBuf()], front: 0,
+  // A bake in progress: its buffer and the next row to fill.
+  job: null, rows: 6,
+  sun: new THREE.Vector3(), dirty: true, bakes: 0, hard: 0, lights: 0,
+};
+// The bake passes' inputs: the buffer under construction.
+const FB_U = { uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uBakeEye: { value: new THREE.Vector3() } };
+// The baked pass's inputs: the front buffer.
+const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uFarL: { value: null } };
+// The geometry bake: range and normal per texel.
+// The range splits in two halves, so the half floats keep a quarter metre.
+const farBakeG = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FB_U, uFarSteps: { value: 380 }, uEye: FB_U.uBakeEye },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefInv;
+  ${FAR_FN}
+  void main() {
+    vec3 ro = uEye, rd = rayOf(uRefInv, vN, vec3(0.0));
+    float hit = farMarch(ro, rd);
+    vec3 p = ro + rd * hit;
+    float h0 = farH(p.xz);
+    // A miss, or bare ground the near plain draws, marks the texel empty.
+    if (hit < 0.0 || (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0)) { gl_FragColor = vec4(-1.0, 0.0, 0.0, 0.0); return; }
+    vec3 N = farNormal(p.xz, hit);
+    float q = hit / 512.0;
+    gl_FragColor = vec4(floor(q), fract(q), N.x, N.z);
+  }`,
+});
+// The light bake: the sun's shadow per texel, from the geometry bake.
+const farBakeL = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FB_U, uEye: FB_U.uBakeEye },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefInv;
+  uniform sampler2D uFarG;
+  ${FAR_FN}
+  void main() {
+    vec4 g = texelFetch(uFarG, ivec2(gl_FragCoord.xy), 0);
+    if (g.x < 0.0) { gl_FragColor = vec4(1.0); return; }
+    vec3 p = uEye + rayOf(uRefInv, vN, vec3(0.0)) * (g.x + g.y) * 512.0;
+    gl_FragColor = vec4(farShadow(vec3(p.x, farH(p.xz), p.z)), 0.0, 0.0, 1.0);
+  }`,
+});
+// The baked pass: each pixel reads the four nearest texels and lights them.
+// Texels on the nearest surface weigh most, so a crest stays crisp on the range behind it.
+const farBaked = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FS_U, uEye: farLive.uniforms.uEye, uA2C: { value: 1 } },
+  depthWrite: true, depthTest: true, alphaToCoverage: true,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefVP;
+  uniform vec2 uBakeSize;
+  uniform sampler2D uFarG, uFarL;
+  uniform float uA2C;
+  ${FAR_FN}
+  void main() {
+    vec3 ro = uEye, rd = rayOf(uInvVP, vN, ro);
+    vec4 c = uRefVP * vec4(rd, 1.0);
+    if (c.w <= 0.0) discard;
+    vec2 f = (c.xy / c.w * 0.5 + 0.5) * uBakeSize - 0.5, fr = fract(f);
+    ivec2 i0 = ivec2(floor(f)), hi = ivec2(uBakeSize) - 1;
+    vec4 g[4];
+    float t[4], b[4], cov = 0.0, tmin = 1e9;
+    for (int k = 0; k < 4; k++) {
+      ivec2 o = ivec2(k & 1, k >> 1);
+      g[k] = texelFetch(uFarG, clamp(i0 + o, ivec2(0), hi), 0);
+      t[k] = (g[k].x + g[k].y) * 512.0;
+      b[k] = g[k].x < 0.0 ? 0.0 : (o.x == 1 ? fr.x : 1.0 - fr.x) * (o.y == 1 ? fr.y : 1.0 - fr.y);
+      cov += b[k];
+      if (g[k].x >= 0.0) tmin = min(tmin, t[k]);
+    }
+    // Without multisampling, a pixel shows only past half cover.
+    if (cov < (uA2C > 0.5 ? 0.02 : 0.5)) discard;
+    float W = 0.0, T = 0.0, sh = 0.0;
+    vec3 N = vec3(0.0);
+    for (int k = 0; k < 4; k++) {
+      float w = b[k] * exp(-abs(t[k] - tmin) / (0.01 * tmin)) + 1e-6 * step(0.0, g[k].x) * step(t[k], tmin);
+      W += w; T += w * t[k];
+      N += w * vec3(g[k].z, sqrt(max(1.0 - g[k].z * g[k].z - g[k].w * g[k].w, 0.0)), g[k].w);
+      sh += w * texelFetch(uFarL, clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), hi), 0).r;
+    }
+    T /= W; sh /= W; N = normalize(N);
+    vec3 p = ro + rd * T;
+    gl_FragColor = vec4(farShade(ro, rd, p, T, p.y + drop(p), N, sh), uA2C > 0.5 ? smoothstep(0.0, 1.0, cov) : 1.0);
+    gl_FragDepth = farDepth(p);
+  }`,
+});
+const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), farBaked);
 farPass.frustumCulled = false;
 // After the sky dome, before everything nearer.
 farPass.renderOrder = BAND.country;
-farPass.onBeforeRender = (r, sc, cam) => { const u = farPass.material.uniforms; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); };
+farPass.onBeforeRender = (r, sc, cam) => { const u = FAR_U; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); farLive.uniforms.uEye.value.copy(cam.position); };
 scene.add(farPass);
+// The bake's own quad and scene; the vertex shader ignores the camera.
+const fbScene = new THREE.Scene(), fbQuad = new THREE.Mesh(farPass.geometry, farBakeG), fbCam = new THREE.OrthographicCamera();
+fbQuad.frustumCulled = false;
+fbScene.add(fbQuad);
+const fbD = new THREE.Vector3(), fbF = new THREE.Vector3(), fbR = new THREE.Matrix4();
+// Pick the live march or the bake.
+function setFarMode(on) {
+  farBake.on = on && renderer.extensions.has('EXT_color_buffer_float');
+  farPass.material = farBake.on ? farBaked : farLive;
+  farBake.dirty = true;
+}
+// How far the view sits from buffer f's window: 1 is at its edge.
+// The eye's drift and the lens's zoom count too.
+function fbReach(f, c, building) {
+  if ((!f.ok && !building) || c.aspect !== f.aspect) return 9;
+  const tn = Math.tan(rad(c.fov / 2));
+  let r = Math.max(c.position.distanceTo(f.eye) / 25, f.tb / (tn * f.M * 1.15));
+  fbF.set(0, 0, -1).applyQuaternion(f.q);
+  for (let k = 0; k < 4; k++) {
+    fbD.set(k & 1 ? 1 : -1, k & 2 ? 1 : -1, 1).unproject(c).sub(c.position).normalize();
+    if (fbD.dot(fbF) <= 0) return 9;
+    fbD.applyMatrix4(f.vp);
+    r = Math.max(r, Math.abs(fbD.x), Math.abs(fbD.y));
+  }
+  return r;
+}
+// Start a bake of the back buffer around the view as it is now.
+function fbStart(c) {
+  const B = farBake, f = B.bufs[1 - B.front], M = sight ? B.Msight : B.M;
+  f.ok = false; f.aspect = c.aspect; f.M = M;
+  f.eye.copy(c.position); f.q.copy(c.quaternion);
+  f.tb = Math.tan(rad(c.fov / 2)) * M;
+  const cam = new THREE.PerspectiveCamera(THREE.MathUtils.radToDeg(2 * Math.atan(f.tb)), c.aspect, 1, 10);
+  f.vp.multiplyMatrices(cam.projectionMatrix, fbR.makeRotationFromQuaternion(c.quaternion).invert());
+  f.inv.copy(f.vp).invert();
+  const w = Math.max(1, Math.round(canvas.width * M * B.res)), h = Math.max(1, Math.round(canvas.height * M * B.res));
+  f.g.setSize(w, h); f.l.setSize(w, h);
+  B.job = { f, y: 0, h, w };
+}
+// Fill rows of the job's buffer; the last rows also light it, then it turns front.
+function fbStep(n) {
+  const B = farBake, j = B.job, f = j.f;
+  FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(j.w, j.h); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
+  const y1 = Math.min(j.h, j.y + n);
+  f.g.scissor.set(0, j.y, j.w, y1 - j.y); f.g.scissorTest = true;
+  fbQuad.material = farBakeG;
+  renderer.setRenderTarget(f.g);
+  renderer.render(fbScene, fbCam);
+  f.g.scissorTest = false;
+  j.y = y1;
+  if (j.y < j.h) return;
+  fbLight(f);
+  f.ok = true; B.job = null; B.bakes++;
+  B.front = B.bufs.indexOf(f);
+  FS_U.uRefVP.value.copy(f.vp); FS_U.uBakeSize.value.set(j.w, j.h); FS_U.uFarG.value = f.g.texture; FS_U.uFarL.value = f.l.texture;
+}
+// Light buffer f: the sun's shadow per texel.
+function fbLight(f) {
+  const B = farBake;
+  FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(f.g.width, f.g.height); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
+  B.sun.copy(U.uSun.value); B.lights++;
+  fbQuad.material = farBakeL;
+  renderer.setRenderTarget(f.l);
+  renderer.render(fbScene, fbCam);
+}
+// Each frame: past the window's edge, bake at once.
+// Near the edge, bake the back buffer a few rows a frame, then swap.
+// A tenth of a degree of sun moves the shadows: relight.
+function farBakeUpdate() {
+  const B = farBake, c = camera;
+  if (!B.on) return;
+  const rt = renderer.getRenderTarget(), f = B.bufs[B.front];
+  const r = B.dirty ? 9 : fbReach(f, c);
+  if (r > 1 || (B.job && fbReach(B.job.f, c, true) > 1)) {
+    B.dirty = false; B.hard++;
+    fbStart(c);
+    fbStep(1e9);
+  } else {
+    if (!B.job && r > 0.94) fbStart(c);
+    if (B.job) fbStep(Math.ceil(B.job.h / B.rows));
+    else if (B.sun.dot(U.uSun.value) < 0.9999985) fbLight(f);
+  }
+  renderer.setRenderTarget(rt);
+}
+setFarMode(FAR_MODE === 'bake');
 
 /* ---------- clouds: low heaps far out, one storm tower beyond ---------- */
 // Each cloud is one card that turns about the vertical to face the eye.
@@ -4744,7 +4964,10 @@ function resize() {
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // The far country's march: fewer steps on Standard and on the ladder's rungs.
-  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
+  FAR_U.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
+  // Rung 2 drops multisampling: the baked edge then cuts at half cover.
+  farBaked.uniforms.uA2C.value = rung >= 2 ? 0 : 1;
+  farBake.dirty = true;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
@@ -4807,6 +5030,7 @@ function draw() {
   drawGunDepth();
   drawVolumes();
   if (sight) sightKey();
+  farBakeUpdate();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
@@ -11367,6 +11591,30 @@ window.__qa = {
   ambient(kind) { ambStart(kind); },
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
+  // The far pass: the mode, and how often it baked and relit.
+  far(mode) { if (mode) setFarMode(mode === 'bake'); return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
+  // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
+  async gpuMs(what = 'far', n = 30) {
+    const gl = renderer.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!ext) return null;
+    const qs = [];
+    let q = null;
+    const on = () => { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }, off = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); qs.push(q); };
+    const b0 = farPass.onBeforeRender, a0 = farPass.onAfterRender;
+    if (what === 'far') { farPass.onBeforeRender = (...a) => { b0(...a); on(); }; farPass.onAfterRender = off; }
+    // 'bake' times a full rebake; 'light' times a relight alone.
+    if (what === 'bake' || what === 'light') { this.run(1 / 30); for (let i = 0; i < n; i++) { if (what === 'bake') farBake.dirty = true; else farBake.sun.set(0, 0, 0); on(); farBakeUpdate(); off(); } }
+    else for (let i = 0; i < n; i++) { if (what === 'all') on(); this.run(1 / 30); if (what === 'all') off(); }
+    farPass.onBeforeRender = b0; farPass.onAfterRender = a0;
+    const ms = [];
+    for (const x of qs) {
+      while (!gl.getQueryParameter(x, gl.QUERY_RESULT_AVAILABLE)) await new Promise(r => setTimeout(r, 5));
+      if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) ms.push(gl.getQueryParameter(x, gl.QUERY_RESULT) / 1e6);
+      gl.deleteQuery(x);
+    }
+    ms.sort((a, b) => a - b);
+    return { median: ms[ms.length >> 1], min: ms[0], n: ms.length };
+  },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepStrike(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx, canHit: shot.canHit, res: shot.res ?? null, target: shot.target.toArray(), muzzle: shot.muzzle.toArray(), bore: THREE.MathUtils.radToDeg(shot.ax.angleTo(bq.copy(shot.target).sub(shot.muzzle))) } : null),
   // End the live shot at once, so the next one can fire.
@@ -11430,7 +11678,12 @@ renderer.compileAsync(scene, camera).then(async () => {
   const hidden = [];
   scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
   // A failed warm-up falls through to the normal start; the first shot then warms itself.
-  try { await renderer.compileAsync(scene, camera); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  // The far bake's two passes link in parallel with the scene.
+  fbQuad.material = farBakeL;
+  const fbL = new THREE.Mesh(farPass.geometry, farBakeG);
+  fbL.frustumCulled = false; fbScene.add(fbL);
+  try { await Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(fbScene, fbCam)]); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  fbScene.remove(fbL);
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.
   later(() => Object.values(SAMPLES).forEach(f => fetch(f)));
