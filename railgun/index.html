@@ -3941,12 +3941,16 @@ const fragGlowP = new THREE.Vector3();
 const SPLIT_T = 40;
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  // Six to nine spread wide across the sky; three to five split off later.
-  const n = 6 + Math.floor(rnd() * 4), ns = 3 + Math.floor(rnd() * 3);
+  // Six to nine spread wide across the sky; four to six split off later.
+  const n = 6 + Math.floor(rnd() * 4), ns = 4 + Math.floor(rnd() * 3);
   frags.forEach((f, i) => {
     const split = i >= n && i < n + ns;
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    f.splitS = split ? 0.3 + 0.6 * rnd() : -1; f.splitT = -1e9;
+    // Splits come faster as the rock nears the ground, on even steps.
+    // A square root packs the steps toward the end of the fall.
+    // The last ones break off in the strike, past the horizon line.
+    const j = i - n, u = (j + 0.25 + 0.5 * rnd()) / ns;
+    f.splitS = split ? 0.3 + 0.9 * Math.sqrt(u) : -1; f.splitT = -1e9;
     const th = (i / n) * Math.PI * 2 + rnd() * 1.4;
     // Riders scatter from close by to far across the sky.
     // A split piece drags more than the rock: it falls back down the wake.
