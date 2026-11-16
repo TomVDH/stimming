@@ -285,12 +285,21 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 
 ## Layout
 
-**The menu** (`index.html:41-67`, `:123-126`, `:177-193`)
+**The menu: the Clock** (`shared/menu/clock.css`, `clock.js`, `tube.js`; the default view since 2026-11-16)
+- One centred column: wordmark, tagline, clock, `All toys` link, footer.
+- The clock is a square, `min(92vw, 660px)` wide. Twelve toys stand on its hours: each tile is 19% of the square, on a ring at 40.5% from the middle. Tiles show no label; the toy in hand grows to 1.18.
+- The middle holds the words of the toy in hand: its number (slab, 10 to 11 px), its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock.
+- Under the words lies the tube: the toy's still or loop, in colour, with a concave warp, scan lines and grain, dim and darker to the rim. It has no hard edge; it fades out at the ring of toys.
+- The selection glow is a soft oval in the toy's accent, under the toy in hand. It turns to the pointer and fades from one toy's colour to the next.
+- The outline (a rim and sixty minute marks) draws in with the dozen, then fades. It is never at rest on the page.
+- The Re-roll is a pill at the foot of the circle; it shows after 5 s. Under 440 px it is the die alone.
+
+**The menu: the whole shelf** (`?all`; `index.html:41-67`, `:123-126`, `:177-193`)
 - One centred column: wordmark, tagline, Series switch, shelf, footer. The wrap is 1240 px at most, with `clamp(36px, 6vw, 72px)` between blocks.
 - The shelf is a grid of square tiles, each `clamp(96px, 26vw, 150px)` wide, centred. The main shelf holds six a row at most; the Lab holds five. Gaps are `clamp(16px, 2.6vw, 28px)` by `clamp(12px, 2.4vw, 28px)`.
 - A tile is an icon, then its label 10 px below. The icon SVG takes 70% of the tile and may overflow it.
 - With the Series switch on, each series is its own grid under a Wave divider. Sections sit `clamp(20px, 3.4vw, 40px)` apart.
-- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link.
+- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link and a Clock link. The Clock view shows neither link.
 
 **A toy page** (`shared/stim.css:47`, `:134`, `:148-153`)
 - `.wrap` is a grid with `clamp(20px, 3.4vw, 40px)` gaps and 28 px above. Body gutters are 16 px or the safe-area inset, whichever is larger.
@@ -382,7 +391,7 @@ Keycap, then a verb in lower case: `[CLICK] place`. No backing. Verbs at 62% `--
 - **Bar v2:** the wordmark, unboxed, top left. Then `/ TOY NAME` in bold slab caps at 0.1em; the slash is `--muted` (`shared/stim.css:374-392`). Hover, focus or a tap waves the mark into colour and slides in a `‹`. A Lab toy adds a small boxed tag.
 - **v1 header:** a back arrow, the mark at 22 px, the sound button at the right (`shared/stim.css:84-98`).
 - **The wave:** each letter lifts, flashes its colour and settles, one letter every 33.333 ms, in held frames (`stim-wave`, `shared/stim.css:103-132`).
-- **Menu:** no nav bar. The footer holds a Lab link in slab caps.
+- **Menu:** no nav bar. The Clock has an `All toys` link in slab caps under the dial; the whole shelf (`?all`) holds a Lab link and a Clock link in its footer.
 
 ### Stage
 
