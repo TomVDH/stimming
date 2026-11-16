@@ -364,7 +364,7 @@ The toy tells people that watching is fine. The scene carries itself:
 - The loop keeps 30 fps while a target can be hit or an ambient event runs. A hidden tab still stops all work. A falling rock is not an idle page.
 - After a kill with no input for 45 s, the toy runs its own Reset 75 s after the kill.
 - The ambient director starts one event every 12 to 40 s, faster as the rock nears. It holds off under a charge, a shot, a blast, a strike and a reset.
-  - Horizon war: an unseen battery past the ranges lights the horizon and the cloud bases in a ripple of two to four flashes. A low rumble follows 20 to 60 s later.
+  - Horizon war (Tom, 2026-11-16: the far events are other railguns' attempts to bring the rock down; they all fail): a battery 110 to 170 km out, past the ranges, fires a ragged ripple of two to four far bolts at the rock. Each launch lights the horizon and the cloud bases. A low rumble follows 20 to 60 s later. No smoke columns.
   - Shooting stars: dusk and night only, now and then a pair. Reduced motion shows none.
   - Satellite pass: a dark sky only. A point of sunlight crosses the frame in 70 to 110 s; most fade into the planet's shadow partway.
 - A kill starts the aftermath. A strike or a Reset ends it, and the self-Reset waits for it.
@@ -379,7 +379,7 @@ The toy tells people that watching is fine. The scene carries itself:
   - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
   - `__qa.lens()` reads the push, the loom, the arc and the stir.
 - Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
-  - Far bolt (rebuilt 2026-11-16, bean stimming-ut05; Tom: the old one was "not convincing"): another gun 85 to 135 km out fires from behind the ranges and misses. It draws with the main shot's own parts: the bolt ribbon with its shock diamonds, the ion line and the contrail puffs, copies that share the main programs. `uK` on the ion line and the puffs scales their widths and wind; the far round sets it to distance / 6 km. The slug slows as the ion line assumes (`farReach`) and dies out high up. The ranges hide its foot by depth. The launch lights the horizon; a faint crack follows, cut to 30 s.
+  - Far bolt (rebuilt 2026-11-16, bean stimming-ut05; Tom: the old one was "not convincing"): another gun 85 to 135 km out fires from behind the ranges and misses. It draws with the main shot's own parts: the bolt ribbon with its shock diamonds, the ion line and the contrail puffs, copies that share the main programs. `uK` on the ion line and the puffs scales their widths and wind; the far round sets it to distance / 6 km. The slug slows as the ion line assumes (`farReach`) and dies out high up. The ranges hide its foot by depth. The launch lights the horizon; a faint crack follows, cut to 30 s. While a rock falls, every far bolt aims at it and misses: it passes 1.6 to 3.5 rock widths beside it as the eye sees it, at 60 percent of its run, and dies out soon after (`farShot`). With no rock it climbs steep and away. Four sets of parts at most (`farGuns`).
   - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
   - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
   - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.

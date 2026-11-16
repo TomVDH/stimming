@@ -4901,8 +4901,9 @@ const ambFall = makeMeteor(linFit(0.95, 0.06, 80), linFit(0.62, 0.16, 40)), ambF
 // The satellite: a point of sunlight on a dark sky.
 const ambSat = makeFlare(linFit(0.95, 0.02, 90));
 // A far gun's round: the main shot's ribbon, ion line and contrail.
-// The parts share the main programs; the first far bolt builds them.
-let farGun = null;
+// The parts share the main programs; a far bolt builds a set when none is free.
+// Four sets at most: a battery's ripple fires up to four rounds.
+const farGuns = [];
 const farP = new THREE.Vector3(), farQ = new THREE.Vector3();
 function makeFarGun() {
   const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() }, uK: { value: 1 } };
@@ -4916,6 +4917,30 @@ function makeFarGun() {
 // The far slug slows as the ion line assumes: fraction of its run at time t.
 const farReach = (e, t) => 1 - Math.pow(1 - clamp(t / e.T, 0, 1), 2.6);
 const farAt = (e, t, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, t));
+// Another gun fires at the falling rock from site and misses.
+// The round passes the rock a few widths off, near half its run.
+// With no rock to shoot, it climbs steep and away.
+function farShot(site, D, t0, flash) {
+  const e = { kind: 'bolt', t0, dur: 16, site, D, T: 10 + 3 * rnd(), k: 0.8 + 0.4 * rnd(), flash, dir: new THREE.Vector3(), L: 160000, die: 0.5 };
+  if (tgtKind === 'rock' && tgtCanHit() && astMesh.visible) {
+    // The aim point: beside the rock as the eye sees it, a near miss.
+    const to = ast.pos.clone().sub(site).normalize();
+    const off = new THREE.Vector3().crossVectors(to, ambB.copy(ast.pos).sub(camera.position)).normalize();
+    off.multiplyScalar((rnd() < 0.5 ? -1 : 1) * ast.R * (1.6 + 1.9 * rnd()));
+    const aim = ast.pos.clone().add(off).sub(site);
+    // The slug passes the aim point at 60 percent of its run.
+    // It dies out soon after, before it swings near the eye.
+    e.L = aim.length() / 0.6;
+    e.dir.copy(aim).normalize();
+    e.die = 0.65;
+    // The trail's scale follows the nearer of the gun and the rock.
+    e.D = Math.min(D, ast.pos.distanceTo(camera.position));
+  } else {
+    const out = ambA.copy(site).sub(camera.position).setY(0).normalize();
+    e.dir.set(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.5).addScaledVector(out, 0.35).add(ambB.set(0, 1, 0)).normalize();
+  }
+  return e;
+}
 // Orbital flak: pinprick pops high in a dark sky.
 const ambFlak = Array.from({ length: 6 }, () => makeFlare(linFit(0.96, 0.03, 220)));
 // Embers where chunks lie on the plain.
@@ -4961,6 +4986,8 @@ function ambKinds() {
     if (k === 'sat') return U.uStars.value > 0.5 && !amb.live.some(e => e.kind === 'sat');
     // Each of these runs alone.
     if (amb.live.some(e => e.kind === k)) return false;
+    // A battery's ripple and a lone far bolt share the far guns.
+    if (k === 'war' && amb.live.some(e => e.kind === 'bolt')) return false;
     if (k === 'flak') return U.uStars.value > 0.5;
     // Only a falling rock sheds.
     if (k === 'shed') return tgtKind === 'rock' && ast.state === 'approach' && astMesh.visible;
@@ -5001,8 +5028,8 @@ function ambLanding(t0) {
 // Start one event of this kind.
 function ambStart(kind) {
   if (kind === 'war') {
-    // An unseen battery fires far past the ranges.
-    // A ragged ripple of two to four flashes lights the horizon.
+    // A battery far past the ranges fires a ragged ripple at the rock.
+    // Two to four rounds; each launch lights the horizon.
     const site = new THREE.Vector3();
     for (let i = 0; i < 20; i++) {
       ambRay((rnd() * 2 - 1) * 0.8, 0, ambA);
@@ -5010,13 +5037,18 @@ function ambStart(kind) {
       if (ambA.lengthSq() > 1e-6) break;
     }
     ambA.normalize();
-    site.copy(camera.position).addScaledVector(ambA, 120000 + 80000 * rnd()).setY(0);
-    const n = 2 + Math.floor(rnd() * 3), offs = [0];
-    for (let i = 1; i < n; i++) offs.push(offs[i - 1] + 0.3 + 2.2 * rnd());
-    const k = 1.2 + 1.0 * rnd();
-    amb.live.push({ kind, t0: simT, dur: offs[n - 1] + 14, site, offs, k });
+    const D = 110000 + 60000 * rnd();
+    site.copy(camera.position).addScaledVector(ambA, D).setY(0);
+    // Each gun of the battery fires one round at the rock; all miss.
+    const n = 2 + Math.floor(rnd() * 3), side = new THREE.Vector3(-ambA.z, 0, ambA.x);
+    let t = simT;
+    for (let i = 0; i < n; i++) {
+      const at = site.clone().addScaledVector(side, (rnd() * 2 - 1) * 6000);
+      amb.live.push(farShot(at, D, t, 1.2 + 1.0 * rnd()));
+      t += 0.3 + 2.2 * rnd();
+    }
     // The rumble comes late and low.
-    amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.15 * k });
+    amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.25 });
     return;
   }
   if (kind === 'sat') {
@@ -5030,13 +5062,10 @@ function ambStart(kind) {
   }
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
-    // A far gun fires from behind the ranges and misses.
-    // Its slug climbs steep and away, then dies out high up.
+    // A far gun fires from behind the ranges and misses the rock.
     const out = ambFlat((rnd() * 2 - 1) * 0.8, new THREE.Vector3());
     const D = 85000 + 50000 * rnd(), site = camera.position.clone().addScaledVector(out, D).setY(0);
-    const side = new THREE.Vector3(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.5);
-    const dir = new THREE.Vector3(0, 1, 0).addScaledVector(out, 0.35).add(side).normalize();
-    amb.live.push({ kind, t0: simT, dur: 16, site, dir, D, L: 160000, T: 8 + 3 * rnd(), k: 0.8 + 0.4 * rnd() });
+    amb.live.push(farShot(site, D, simT, 0.9));
     // The crack arrives late and faint; a long wait is cut to half a minute.
     amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
     return;
@@ -5113,22 +5142,16 @@ function stepAmbient(dt) {
 // The events write their light after the domes clear uImp.
 function drawAmbient() {
   for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
-  if (farGun) farGun.bolt.visible = farGun.line.visible = farGun.puffs.visible = false;
+  // A set whose round has ended goes back to the pool.
+  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
     if (a < 0) continue;
-    if (e.kind === 'war') {
-      // The last free slot carries the ripple.
-      const slot = [...L].reverse().find(v => v.w < 0.001);
-      if (!slot) continue;
-      let f = 0;
-      for (const o of e.offs) f += flashOf(a - o);
-      slot.set(e.site.x, e.site.y, e.site.z, Math.min(2.5, f * e.k));
-    } else if (e.kind === 'bolt') {
+    if (e.kind === 'bolt') {
       // The launch lights the horizon behind the ranges.
       const slot = [...L].reverse().find(v => v.w < 0.001);
-      if (slot) slot.set(e.site.x, e.site.y, e.site.z, 0.9 * flashOf(a));
+      if (slot) slot.set(e.site.x, e.site.y, e.site.z, e.flash * flashOf(a));
       drawFarBolt(e, a);
     } else if (e.kind === 'flak') {
       let n = 0;
@@ -5165,10 +5188,13 @@ function drawAmbient() {
 // The far round: the ribbon at the head, the ion line, the contrail.
 // The trail scales with distance, so it reads like the main shot's.
 function drawFarBolt(e, a) {
-  const g = farGun ??= makeFarGun(), K = e.D / 6000;
+  let g = farGuns.find(f => f.e === e) || farGuns.find(f => !f.e);
+  if (!g) { if (farGuns.length >= 4) return; g = makeFarGun(); farGuns.push(g); }
+  g.e = e;
+  const K = e.D / 6000;
   // The ribbon: the main shot's streak and shock diamonds.
   const tail = 0.55 + 0.03 * e.T, head = farReach(e, a);
-  const fade = (1 - THREE.MathUtils.smoothstep(head, 0.5, 0.85)) * ambClear(farAt(e, a, farP));
+  const fade = (1 - THREE.MathUtils.smoothstep(head, e.die, e.die + 0.25)) * ambClear(farAt(e, a, farP));
   g.bolt.visible = fade > 0.002;
   if (g.bolt.visible) {
     g.bolt.material.uniforms.uWide.value = 40 * K;
