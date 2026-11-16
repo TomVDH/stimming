@@ -2013,13 +2013,17 @@ void main() {
   vec3 N = normalize(vR * (pd - px) / e + vec3(0.0, (pd - py) / e, 0.0) - vF * 1.2);
   vec3 P = vP - vF * pd * 0.3;
   // Three taps toward the key light give a self shadow.
-  vec2 l2 = vec2(dot(uSun, vR), uSun.y);
+  // The sun shapes the cloud until it is well down; then the moon does.
+  // At blue hour the key light is the moon, but the tops still see the sun.
+  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  vec2 l2 = vec2(dot(Ls, vR), Ls.y);
   l2 = length(l2) > 1e-3 ? normalize(l2) : vec2(0.0, 1.0);
   float occ = max(body(X + l2 * H * 0.12), 0.0) + max(body(X + l2 * H * 0.3), 0.0) + 0.5 * max(body(X + l2 * H * 0.6), 0.0);
   float sh = exp(-occ / (H * 0.35));
   // High tops keep the sun after it sets.
   // A high top sees the sun after the ground has lost it, as on the storms.
-  float sEl = asin(clamp(uSunD.y, -1.0, 1.0)), sDip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+  // The sun's height at the cloud: the planet's curve tilts its ground toward or away from the sun.
+  float sEl = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), sDip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
   float litTop = smoothstep(-sDip - 0.006, -sDip + 0.006, sEl) * (1.0 - smoothstep(-0.026, 0.026, sEl));
   vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
   // The trail, the blast cloud and the other clouds shade this one.
@@ -2028,16 +2032,16 @@ void main() {
   vec3 V = normalize(P - cameraPosition);
   // Light through the cloud, as the comet tail takes it: Beer for the beam,
   // a soft term for light scattered many times, a forward and a back lobe, powder edges.
-  float mu = dot(V, uSun);
+  float mu = dot(V, Ls);
   float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
   float od = occ / (H * 0.3), Tl = exp(-od), Tm = exp(-0.18 * od);
   float powder = mix(1.0, 1.0 - exp(-6.0 * pd / H), 0.5 * (1.0 - max(mu, 0.0)));
-  float wrap = max(dot(N, uSun) * 0.6 + 0.4, 0.0);
+  float wrap = max(dot(N, Ls) * 0.6 + 0.4, 0.0);
   // The side away from the light stays dark, as on the comet's smoke.
   // Light scattered many times keeps the shaded side warm and soft.
   vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5;
   // Backlit cloud glows through its whole body, its thin rim most.
-  float back = max(dot(V, uSun), 0.0);
+  float back = max(dot(V, Ls), 0.0);
   col += sunC * (0.15 * back * back + 0.35 * thin * pow(back, 6.0));
   // A soft sky term: noisy normals must not swing between horizon and zenith light.
   vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, 0.4 + 0.2 * N.y) * 1.05 + uCloudAmb * 0.5;
@@ -2292,10 +2296,12 @@ void main() {
   // Steps: short inside the cloud, long leaps through the empty bound.
   float dt = (t1 - t0) / 48.0;
   float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
-  float mu = dot(rd, uSun);
+  // The sun shapes the storm until it is well down; then the moon does.
+  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  float mu = dot(rd, Ls);
   float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
   // A low sun rakes the towers: lit faces glow, the far side goes deep.
-  float low = 1.0 - smoothstep(0.05, 0.4, uSun.y);
+  float low = 1.0 - smoothstep(0.05, 0.4, Ls.y);
   vec3 col = vec3(0.0);
   float Tc = 1.0, t = t0 + dt * jit;
   vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
@@ -2309,11 +2315,12 @@ void main() {
     if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
     if (!hit) { Phit = P; hit = true; }
     // One tap toward the light gives the self shadow.
-    float Tl = exp(-3.2 * densL(p + uSun * 1.2));
+    float Tl = exp(-3.2 * densL(p + Ls * 1.2));
     float h01 = clamp(p.y / sTop, 0.0, 1.0);
     // A high top sees the sun after the ground has lost it.
     // Its horizon dips by the planet's curve: about ten degrees at ninety kilometres.
-    float el = asin(clamp(uSunD.y, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+    // The sun's height at P itself: points toward the sun see it higher.
+    float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
     float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
     // Light that grazes the planet arrives deep red.
     vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
@@ -2322,7 +2329,7 @@ void main() {
     // Powder: thin edges facing the sun catch the most light.
     float powder = 1.0 - exp(-4.0 * d);
     // A second, longer tap darkens the side away from the sun.
-    float Tl2 = exp(-1.6 * densL(p + uSun * 3.5));
+    float Tl2 = exp(-1.6 * densL(p + Ls * 3.5));
     // Light scattered many times fills the shaded side, so it never goes cold and flat.
     vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
            + sunC * 0.32 * (0.35 + 0.65 * Tl2)
