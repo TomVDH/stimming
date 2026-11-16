@@ -864,6 +864,9 @@ uniform float uTime, uFire, uFlick, uLevel, uSteam, uSwirl, uSteps;
 uniform float uFrame, uFSteps, uFI, uSmoke;
 uniform sampler2D uFD;
 uniform vec3 uBedP;
+// The boil's plumes in world units, with their strength; the wind's lean.
+uniform vec4 uPlumeW[4];
+uniform vec2 uLean;
 uniform vec3 uFireCol, uGlowCol;
 uniform int uNP;
 uniform vec4 uPuff[${NP}];
@@ -911,17 +914,22 @@ vec3 stones(vec2 p) {
 float steamDens(vec3 p) {
   float hy = p.y - uLevel;
   if (hy < -0.02) return 0.0;
-  float r = length(p.xz), R = 0.8 + 0.22 * hy;
+  // The wind leans the column more the higher it climbs.
+  vec2 pxz = p.xz - uLean * hy * hy;
+  float r = length(pxz), R = 0.8 + 0.22 * hy;
   float edge = 1.0 - smoothstep(R * 0.45, R, r);
+  // Steam rises where the boil breaks the surface: over the plumes.
+  float src = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 dp = pxz - uPlumeW[i].xy; src += uPlumeW[i].z * exp(-dot(dp, dp) / (0.18 + 0.12 * hy)); }
   // The steam turns with the soup, most near the surface.
-  vec2 xz = rot2(uSwirl * exp(-hy * 1.4)) * p.xz;
+  vec2 xz = rot2(uSwirl * exp(-hy * 1.4)) * pxz;
   vec3 q = vec3(xz.x, hy, xz.y) * 1.35 + vec3(0.0, -uTime * 0.42, 0.0);
   q += 0.75 * vec3(noise3(q * 0.5 + 3.1), 0.0, noise3(q * 0.5 + 7.7));
   float n = fbm3(q);
   // Wisps: only the tops of the noise make steam.
   // Steam shows a little above the surface, where it cools, then thins out.
-  float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6);
-  float d = smoothstep(0.56 - 0.1 * uSteam, 0.82, n) * base * edge * 2.6;
+  float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6) * (0.35 + 0.9 * min(src, 1.2));
+  float d = smoothstep(0.6 - 0.06 * uSteam, 0.82, n) * base * edge * 1.9;
   // Puffs: a burst bubble sends up a round cloud.
   for (int i = 0; i < ${NP}; i++) {
     if (i >= uNP) break;
@@ -1069,12 +1077,13 @@ void main() {
         if (d > 0.002) {
           // Fire's fine detail: simplex wisps that rise with the steam.
           vec3 g;
-          d *= snoise(p * 5.5 - vec3(0.0, uTime * 1.1, 0.0), g) * 0.35 + 0.85;
+          // Eroded, not dimmed: the detail cuts the wisps into threads.
+          d *= smoothstep(-0.35, 0.55, snoise(p * 5.5 - vec3(0.0, uTime * 1.1, 0.0), g));
           // Fire's smoke light: one tap toward the lamp, then Beer, multi-scatter and powder.
           float tau = steamCheap(p + Ldir * 0.3) * 0.6 * 2.0;
           float beer = exp(-tau), ms = exp(-0.25 * tau) * 0.5;
           float lt = clamp(mix(beer, beer + ms, 0.6) * mix(1.0, 1.0 - exp(-2.0 * tau), 0.59) + 0.5, 0.0, 1.0);
-          float a = 1.0 - exp(-d * dt * 2.4);
+          float a = 1.0 - exp(-d * dt * 2.0);
           acc += T * a * steamLight(p, lt) * mix(vec3(1.0), smokeTint, 0.5);
           T *= 1.0 - a;
         }
@@ -2951,7 +2960,7 @@ function glowCol() {
   const c = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
   return c.map(v => Math.max(0, v) * (0.25 + 0.35 * fire));
 }
-const puffU = new Float32Array(NP * 4), sparkU = new Float32Array(NS * 8);
+const puffU = new Float32Array(NP * 4), sparkU = new Float32Array(NS * 8), plumeW = new Float32Array(16);
 let swirl = 0;
 function layerPass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, layer.fb);
@@ -2963,7 +2972,13 @@ function layerPass() {
   gl.uniform1f(layerP.u('uFire'), fire);
   gl.uniform1f(layerP.u('uFlick'), flick);
   gl.uniform1f(layerP.u('uLevel'), level);
-  gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.3 + 0.7 * fire);
+  // A high fire steams more, but never into a fog over the soup.
+  gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.35 + 0.5 * fire);
+  const prs = soupR(level);
+  plumes.forEach((p, i) => plumeW.set([p.x * prs, p.z * prs, 0.5 + 0.5 * fire, 0], i * 4));
+  gl.uniform4fv(layerP.u('uPlumeW'), plumeW);
+  const gw = gust();
+  gl.uniform2f(layerP.u('uLean'), gw[0] * 0.08, gw[2] * 0.08);
   gl.uniform1f(layerP.u('uSwirl'), swirl);
   gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
   gl.uniform1f(layerP.u('uFSteps'), gpu.on ? 0 : D.level > 0 ? 24 : 16);
