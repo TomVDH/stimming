@@ -3449,6 +3449,53 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
                     <span class="name">Honey coil</span>
                   </a>
                 </li>
+        <li>
+          <a class="toy" id="bowl" href="bowl/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+                <defs>
+                  <linearGradient id="bowl-body" gradientUnits="userSpaceOnUse" x1="0" y1="56" x2="0" y2="99">
+                    <stop offset="0" stop-color="oklch(0.84 0.13 82)"/>
+                    <stop offset="0.22" stop-color="oklch(0.46 0.1 58)"/>
+                    <stop offset="0.6" stop-color="oklch(0.64 0.13 68)"/>
+                    <stop offset="1" stop-color="oklch(0.25 0.06 45)"/>
+                  </linearGradient>
+                  <linearGradient id="bowl-in" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="oklch(0.9 0.13 86)"/>
+                    <stop offset="1" stop-color="oklch(0.56 0.12 66)"/>
+                  </linearGradient>
+                  <linearGradient id="bowl-water" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="oklch(0.56 0.06 232)"/>
+                    <stop offset="1" stop-color="oklch(0.3 0.06 58)"/>
+                  </linearGradient>
+                  <clipPath id="bowl-pool"><ellipse cx="64" cy="51" rx="37" ry="14"/></clipPath>
+                </defs>
+                <!-- A soft halo on the ground, then the bowl: wall, hollow, water. -->
+                <ellipse cx="64" cy="102" rx="42" ry="6" fill="oklch(0.05 0.01 60)" opacity="0.5"/>
+                <path d="M14 44C9 52 8 64 14 74C22 89 40 99 64 99C88 99 106 89 114 74C120 64 119 52 114 44A50 21 0 0 1 14 44Z" fill="url(#bowl-body)"/>
+                <path d="M14 44C9 52 8 64 14 74C22 89 40 99 64 99C88 99 106 89 114 74C120 64 119 52 114 44A50 21 0 0 1 14 44Z" fill="url(#lit)"/>
+                <ellipse cx="64" cy="44" rx="50" ry="21" fill="url(#bowl-in)"/>
+                <ellipse cx="64" cy="51" rx="37" ry="14" fill="url(#bowl-water)"/>
+                <!-- Rings fan out from the four busy points; the hover turns them with the pointer. -->
+                <g clip-path="url(#bowl-pool)" fill="none" stroke="oklch(0.95 0.035 90)" stroke-width="2.2">
+                  <g id="bowl-fan-0" transform="translate(90.2 60.9)"><ellipse rx="6" ry="2.6" opacity="0.9"/><ellipse rx="12" ry="5.2" opacity="0.65"/><ellipse rx="18" ry="7.8" opacity="0.4"/></g>
+                  <g id="bowl-fan-1" transform="translate(37.8 60.9)"><ellipse rx="6" ry="2.6" opacity="0.9"/><ellipse rx="12" ry="5.2" opacity="0.65"/><ellipse rx="18" ry="7.8" opacity="0.4"/></g>
+                  <g id="bowl-fan-2" transform="translate(37.8 41.1)"><ellipse rx="6" ry="2.6" opacity="0.9"/><ellipse rx="12" ry="5.2" opacity="0.65"/><ellipse rx="18" ry="7.8" opacity="0.4"/></g>
+                  <g id="bowl-fan-3" transform="translate(90.2 41.1)"><ellipse rx="6" ry="2.6" opacity="0.9"/><ellipse rx="12" ry="5.2" opacity="0.65"/><ellipse rx="18" ry="7.8" opacity="0.4"/></g>
+                </g>
+                <g fill="oklch(0.97 0.025 215)">
+                  <circle id="bowl-drop-0" cx="90.2" cy="48.9" r="3.2"/>
+                  <circle id="bowl-drop-1" cx="37.8" cy="53.9" r="3.2"/>
+                  <circle id="bowl-drop-2" cx="37.8" cy="32.1" r="3.2"/>
+                  <circle id="bowl-drop-3" cx="90.2" cy="28.1" r="3.2"/>
+                </g>
+                <ellipse cx="64" cy="44" rx="50" ry="21" fill="none" stroke="oklch(0.9 0.11 86)" stroke-width="3.2"/>
+                <path d="M14 44C9 52 8 64 14 74C22 89 40 99 64 99C88 99 106 89 114 74C120 64 119 52 114 44" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              </svg>
+            </span>
+            <span class="name">Singing bowl</span>
+          </a>
+        </li>
       </ul>
     </section>
   </main>
@@ -7261,6 +7308,56 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
       const x = Math.max(30, Math.min(98, v.x + ((e.clientX - r.left) / r.width) * v.width));
       gsap.to(S, { x, duration: 0.5, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
       gsap.to(stack, { x: (x - 64) * 0.12, duration: 0.9, ease: 'power2.out', overwrite: 'auto' });
+    });
+  }
+
+  // Singing bowl: hover sings it.
+  // Rings run out from the water's four busy points, and drops leap from them.
+  // The points turn with the pointer, as with a wand on the rim.
+  {
+    const tile = $('bowl'), svg = tile.querySelector('svg');
+    const fans = [0, 1, 2, 3].map(k => $(`bowl-fan-${k}`));
+    const drops = [0, 1, 2, 3].map(k => $(`bowl-drop-${k}`));
+    const rings = fans.map(f => [...f.children]);
+    // th: the first busy point's angle round the water.
+    // hop: each drop's height over its point.
+    const S = { th: Math.PI / 4 }, HOP = { 0: 12, 1: 7, 2: 9, 3: 13 }, hop = { ...HOP };
+    const FADE = [0.9, 0.65, 0.4];
+    const place = () => fans.forEach((f, k) => {
+      const a = S.th + (k * Math.PI) / 2, x = 64 + 37 * Math.cos(a), y = 51 + 14 * Math.sin(a);
+      gsap.set(f, { x, y });
+      drops[k].setAttribute('cx', x.toFixed(1));
+      drops[k].setAttribute('cy', (y - hop[k]).toFixed(1));
+    });
+    toys.bowl = {
+      play() {
+        const tl = gsap.timeline();
+        // Each ring runs out from its point and fades; the next one follows.
+        rings.forEach(rs => rs.forEach((r, i) => tl.fromTo(r, { scale: 0.3, opacity: 0.95 },
+          { scale: 1.25, opacity: 0, duration: 1.2, ease: 'none', transformOrigin: '50% 50%', repeat: -1 }, i * 0.4)));
+        // The drops leap and fall back, each in its own time.
+        drops.forEach((d, k) => tl.fromTo(hop, { [k]: 0 },
+          { [k]: 16 + 5 * (k % 2), duration: 0.32, ease: 'power2.out', yoyo: true, repeat: -1, repeatDelay: 0.08 * k, onUpdate: place }, 0.13 * k));
+        return tl;
+      },
+      rest() {
+        rings.forEach(rs => rs.forEach((r, i) => gsap.to(r, { scale: 1, opacity: FADE[i], duration: 0.4, overwrite: true })));
+        gsap.to(hop, { ...HOP, duration: 0.4, ease: 'power2.out', onUpdate: place, overwrite: true });
+        // The points settle on the nearest of their four rest places.
+        const q = Math.PI / 2, home = Math.PI / 4 + Math.round((S.th - Math.PI / 4) / q) * q;
+        gsap.to(S, { th: home, duration: 0.6, ease: 'power2.inOut', onUpdate: place, overwrite: true });
+      },
+    };
+    // The Lab calls only play and rest.
+    // So the busy points follow the pointer here.
+    if (!reduce) tile.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch') return;
+      const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      const x = v.x + ((e.clientX - r.left) / r.width) * v.width, y = v.y + ((e.clientY - r.top) / r.height) * v.height;
+      // The pointer is the wand: the busy points sit an eighth turn from it.
+      const a = Math.atan2((y - 51) / 0.38, x - 64) + Math.PI / 4, q = Math.PI / 2;
+      const d = a - S.th, to = S.th + d - q * Math.round(d / q);
+      gsap.to(S, { th: to, duration: 0.35, ease: 'power2.out', overwrite: 'auto', onUpdate: place });
     });
   }
 

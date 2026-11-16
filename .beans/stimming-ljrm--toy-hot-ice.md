@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T08:30:50Z
-updated_at: 2026-11-16T09:19:14Z
+updated_at: 2026-11-16T09:39:20Z
 ---
 
 New Lab toy (batch lab10, group A: school and uni lab experiments, idea 4).
@@ -34,3 +34,7 @@ Tier: raw WebGL2 (one dish, per-pixel shading, a growth field in ping-pong float
 - Reset melts the dish from the rim in, needles last. Sound: crackle that follows the front, ticks where fronts lock, touch, knock, settle and melt voices.
 - Idle once solid and still; whenVisible; detail() quality and slow-frame step; reduced motion reveals the crystal as a fade.
 - Toy doc `docs/toys/hotice.md`. Handoff files for the menu and toys.json in the batch scratchpad. Not seen in motion: the pane ran only background tabs.
+
+## Kept by Tom (2026-11-16)
+
+This toy's idea is on the Cut list in `docs/toy-ideas.md` (cut by Tom on 2026-11-15, before the build). The orchestrator proposed it without re-reading that list. Tom saw the finished toy and said: keep it.
