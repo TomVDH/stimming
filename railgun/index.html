@@ -2311,7 +2311,8 @@ const giants = cloudLayer(GIANTS, BAND.giants);
 // Units inside: one "km" is a fourteenth of the storm's height.
 const STORM_VS = CLOUD_VS
   .replace('flat varying vec4 vS;', 'flat varying vec4 vS;\nflat varying vec3 vC;')
-  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(3.0, 1.35);')
+  // The card reaches below the base, so the rain shafts under it draw.
+  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(3.0, 1.5) - vec2(0.0, 0.2);')
   .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
 const STORM_FS = /* glsl */`precision highp sampler3D;
 // three.js sets it on every program; only the vertex stage declares it.
@@ -2366,6 +2367,7 @@ ${STORM_MARCH}
 void main() {
   float H = vS.y;
   setStorm(vS.w, vS.z);
+  setGround(vC.y, H);
   vec3 ro = cameraPosition, rd = normalize(vP - cameraPosition);
   vec2 sp = stormSpan(ro, rd, vC, H);
   if (sp.y <= sp.x) discard;

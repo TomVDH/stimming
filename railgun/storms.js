@@ -5,11 +5,14 @@
 // Each storm: bearing in degrees, range, base height, half width, height, form.
 // Bearings turn left from negative z, about the landscape eye, as the ranges do.
 // Forms: 1 storm tower, 2 towering cumulus, 3 squall line, 4 dying storm, 5 supercell.
+// Bases sit two to four kilometres up, as storm bases do; rain falls to the plain.
+// Heights match this world's ranges, whose far crests reach 30 to 50 km.
+// The nearer storms stand in front of the ranges; the supercell's foot sinks behind the curve.
 export const STORMS = [
-  [-14, 125000, 6000, 15000, 24000, 1],
-  [8, 150000, 6500, 12000, 17000, 2],
-  [28, 105000, 5500, 16000, 21000, 3],
-  [52, 225000, 12000, 52000, 95000, 5],
+  [-14, 85000, 2500, 13000, 30000, 1],
+  [8, 135000, 2800, 10000, 22000, 2],
+  [28, 95000, 2200, 14000, 26000, 3],
+  [52, 200000, 3500, 36000, 62000, 5],
 ];
 export const FORMS = ['', 'Storm tower', 'Towering cumulus', 'Squall line', 'Dying storm', 'Supercell'];
 // A storm past this range draws in the Giants band, behind the towers.
@@ -61,7 +64,9 @@ float smin(float a, float b, float k) { return -smax(-a, -b, k); }
 // sLine: half the length of a squall line, across the wind; 0 for one cell.
 // sShelf: the shelf cloud at a squall line's foot. sBand: a supercell's banding.
 // sRag: how ragged the edges are. sAmp: billow size.
-float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed, sLine, sShelf, sBand, sRag, sAmp;
+// sGround: the ground under the storm, in storm units below its base (negative).
+// sRain: how hard it rains under the core.
+float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed, sLine, sShelf, sBand, sRag, sAmp, sGround, sRain;
 vec2 sAx;
 vec4 sTur[5];
 void setStorm(float sd, float form) {
@@ -70,20 +75,20 @@ void setStorm(float sd, float form) {
   sTop = 13.0;
   sAnv = step(0.33, hsh(2.0, sd));
   sLen = mix(5.0, 10.0, hsh(3.0, sd));
-  sLine = 0.0; sShelf = 0.0; sBand = 0.0; sRag = 0.25; sAmp = 1.0;
+  sLine = 0.0; sShelf = 0.0; sBand = 0.0; sRag = 0.25; sAmp = 1.0; sRain = mix(0.6, 1.0, hsh(8.0, sd));
   // One wind for every storm: anvils run the same way.
   sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
   sLean = sRc * 0.18;
   float turTop = 1.0, turSpread = 1.0, turR = 1.0;
   if (form > 1.5 && form < 2.5) {
     // Towering cumulus: young, no anvil, a cauliflower crown of tight turrets.
-    sAnv = 0.0; sTop = mix(8.5, 11.0, hsh(6.0, sd)); sAmp = 1.35; turSpread = 0.7; turTop = 1.1;
+    sAnv = 0.0; sTop = mix(8.5, 11.0, hsh(6.0, sd)); sAmp = 1.35; turSpread = 0.7; turTop = 1.1; sRain = 0.25;
   } else if (form > 2.5 && form < 3.5) {
     // Squall line: cells in a row across the wind, one long anvil, a shelf at the foot.
     sAnv = 1.0; sLine = sRc * mix(2.4, 3.4, hsh(7.0, sd)); sShelf = 1.0; sTop = 11.5; sLen = mix(4.0, 6.5, hsh(3.0, sd));
   } else if (form > 3.5 && form < 4.5) {
     // Dying storm: a thin, ragged column under a wide anvil that drifts on.
-    sAnv = 1.0; sLen = mix(9.0, 13.0, hsh(3.0, sd)); sRag = 1.0; turR = 0.62; turTop = 0.8; sLean = sRc * 0.5;
+    sAnv = 1.0; sLen = mix(9.0, 13.0, hsh(3.0, sd)); sRag = 1.0; turR = 0.62; turTop = 0.8; sLean = sRc * 0.5; sRain = 0.45;
   } else if (form > 4.5) {
     // Supercell: one fat banded column, a big overshoot, a broad anvil.
     sAnv = 1.0; sRc *= 1.25; sLen = mix(9.0, 12.0, hsh(3.0, sd)); sBand = 1.0; turSpread = 0.55; sAmp = 0.85;
@@ -162,10 +167,27 @@ float billow(vec3 p, float aw, bool fine) {
   if (fine) b = b * 0.72 + (texture(uVol, r / (sTile * 0.31) + 0.5).g - 0.5) * 0.28;
   return b;
 }
+// Rain: grey curtains from the base to the ground, under the core and the line.
+// Streaks run down: the noise stretches tall, so the shafts hang in strands.
+float rainAt(vec3 p) {
+  if (p.y > 0.4 || p.y < sGround || sRain < 0.01) return 0.0;
+  vec2 across = vec2(-sAx.y, sAx.x);
+  // The rain leans a little downwind as it falls.
+  vec2 q = p.xz - sAx * (p.y - 0.4) * 0.25;
+  float rr = sLine > 0.0 ? length(vec2(dot(q, sAx), max(abs(dot(q, across)) - sLine, 0.0))) : length(q - sAx * sRc * 0.25);
+  float core = smoothstep(sRc * 1.0, sRc * 0.35, rr);
+  if (core < 0.01) return 0.0;
+  vec3 r = vec3(q.x * 1.6, p.y * 0.18 - uCloudC * 0.02, q.y * 1.6) + sSeed * 0.11;
+  float str = texture(uVol, r / sTile).r;
+  // The curtain thins near the ground and fades at the base's edge.
+  return sRain * 0.35 * core * smoothstep(0.42, 0.7, str) * smoothstep(sGround, sGround + 1.5, p.y) * smoothstep(0.4, 0.0, p.y);
+}
 // gap: how far outside the billowed shell p lies, for empty-space skipping.
 float dens(vec3 p, bool fine, out float gap) {
   float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw) * sAmp;
   gap = -sh - A * 1.1 - 0.5 - sRag * A * 0.4;
+  // Under the base the march walks through the rain at a steady stride.
+  if (p.y < 0.4 && p.y > sGround) { float rn = rainAt(p); gap = min(gap, 0.0); if (gap < 0.0 && sh < -A * 1.1) return rn * uStormK.w; }
   if (gap > 0.0) return 0.0;
   float v = sh + A * 2.2 * billow(p, aw, fine);
   // Ragged edges: fine noise tears the outer shell into wisps.
@@ -178,7 +200,9 @@ float dens(vec3 p, bool fine, out float gap) {
 }
 float densL(vec3 p) { float g; return dens(p, false, g); }
 // The storm's reach from its centre, in storm units, for the bounding cylinder.
-float stormReach() { return max(sLen + sR2, sRc * 2.4 + sLine) + (sShelf > 0.0 ? sRc * 2.4 : 0.0) + 2.0; }`;
+float stormReach() { return max(sLen + sR2, sRc * 2.4 + sLine) + (sShelf > 0.0 ? sRc * 2.4 : 0.0) + 2.0; }
+// The host sets the ground under the base, in metres, with the storm's height.
+void setGround(float base, float H) { sGround = -base / (H / 14.0); }`;
 
 // The march through one storm; the host supplies the light.
 // The host defines, before this chunk:
@@ -223,6 +247,9 @@ vec4 marchStorm(vec3 ro, vec3 rd, vec3 C, float H, float t0, float t1, float jit
            + sunC * 0.32 * (0.35 + 0.65 * Tl2)
            + stormSky(h01) * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
     S *= mix(1.0, 0.45, uStars);
+    // The base is flat and dark: the whole storm stands between it and the sky.
+    // Rain under it is darker still, grey with little of the sky's hue.
+    S *= p.y < 0.0 ? 0.32 : mix(0.45, 1.0, smoothstep(0.0, 2.5, p.y));
     S += stormExtra(P, powder, Tl2);
     // Thick body: the column is opaque a few kilometres in.
     float al = 1.0 - exp(-5.0 * d * dt / U);
