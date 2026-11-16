@@ -1,6 +1,8 @@
 // The Clock: the menu's default view. Twelve toys stand on a dial.
 // A Re-roll deals twelve more. ?all shows the whole shelf instead.
 const HOURS = 12;
+// A test (Tom, 2026-11-16): these toys have a moving loop in shared/loops/.
+const LOOPS = new Set(['fire']);
 const root = document.documentElement;
 // On any failure the menu falls back to the whole shelf.
 const fail = () => { delete root.dataset.view; delete root.dataset.clock; };
@@ -43,7 +45,7 @@ function start() {
   let bg = null;
   import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')))).then(t => {
     bg = t;
-    if (shown) bg?.show(picture(shown));
+    if (shown) bg?.show(picture(shown), film(shown));
     bg?.live(face.hasAttribute('data-live'));
   }).catch(() => {});
   const live = on => { face.toggleAttribute('data-live', on); bg?.live(on); };
@@ -58,6 +60,7 @@ function start() {
   const dozen = () => [...shelf.children].slice(0, HOURS);
   const objs = () => dozen().map(li => li.querySelector('.obj'));
   const picture = li => `shared/stills/${li.querySelector('a.toy').id}.webp`;
+  const film = li => { const id = li.querySelector('a.toy').id; return LOOPS.has(id) ? `shared/loops/${id}.mp4` : null; };
   function deal() {
     const hand = [];
     while (hand.length < HOURS) {
@@ -94,7 +97,7 @@ function start() {
     tint(toy.accent || 'oklch(0.86 0.06 275)');
     if (li === shown) return;
     shown = li;
-    bg?.show(picture(li));
+    bg?.show(picture(li), film(li));
     // The new name rises into its line.
     if (!first && !still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
   }

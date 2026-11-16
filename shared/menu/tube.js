@@ -1,6 +1,7 @@
 // The tube: a dim still of the toy in hand, in the middle of the Clock.
 // It looks like a 1950s picture tube, seen from inside: a concave warp, scan lines and grain.
 // It has no hard edge: the picture fades out toward the toys.
+// A toy with a loop plays it in place of the still while the toy is in hand.
 // It draws on a change only; the grain moves while a toy is in hand.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
@@ -44,7 +45,7 @@ void main() {
 /**
  * Builds the tube inside a host element; the canvas fills it.
  * @param {HTMLElement} host
- * @returns {Promise<{ show: (url: string) => void, live: (on: boolean) => void } | null>}  Null without WebGL2.
+ * @returns {Promise<{ show: (url: string, loop?: string | null) => void, live: (on: boolean) => void } | null>}  Null without WebGL2.
  */
 export async function tube(host) {
   const canvas = Object.assign(document.createElement('canvas'), { className: 'clock-tube' });
@@ -76,6 +77,10 @@ export async function tube(host) {
   await build();
 
   let mix = 0, jolt = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
+  /** @type {HTMLVideoElement | null} */
+  let vid = null;
+  // A dropped loop frees its decoder.
+  const drop = () => { if (!vid) return; vid.pause(); vid.removeAttribute('src'); vid.load(); vid = null; };
   function draw() {
     if (gone) return;
     // The picture is soft, so the canvas stays at 2x at most.
@@ -106,15 +111,23 @@ export async function tube(host) {
     if (has[1]) mix = Math.min(1, mix + dt / 0.5);
     jolt = Math.max(0, jolt - dt / 0.35);
     if (hot && !still.matches) time += dt;
+    // A loop in play puts its present frame in the newest picture.
+    const playing = vid !== null && hot && vid.readyState >= 2;
+    if (playing) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, tex[has[1] ? 1 : 0]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid);
+    }
     // The grain alone needs twenty pictures a second, not sixty.
-    if (fading || now - drawn > 48) draw();
+    if (fading || playing || now - drawn > 48) draw();
     if (has[1] && mix >= 1) settle();
     if (has[1] || jolt > 0 || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
-  function show(url) {
+  function show(url, loop = null) {
     if (url === src) return;
     src = url;
+    drop();
     const im = new Image();
     im.onload = () => {
       // A newer toy or a lost context makes this still stale.
@@ -127,15 +140,34 @@ export async function tube(host) {
       has[1] = 1;
       mix = 0;
       if (still.matches) { mix = 1; draw(); settle(); }
-      else { jolt = 1; wake(); }
+      else { jolt = 1; wake(); if (loop) film(url, loop); }
     };
     im.src = url;
   }
-  const live = on => { hot = on; if (on) wake(); };
+  // The loop loads after the still, so the picture never waits for it.
+  function film(url, loop) {
+    const v = document.createElement('video');
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    v.addEventListener('loadeddata', () => {
+      if (url !== src || gone) return;
+      vid = v;
+      if (hot) { v.play().catch(() => {}); wake(); }
+    }, { once: true });
+    v.src = loop;
+  }
+  // A loop plays only while its toy is in hand; else it rests on one frame.
+  function live(on) {
+    hot = on;
+    if (vid) { if (on) vid.play().catch(() => {}); else vid.pause(); }
+    if (on) wake();
+  }
 
   new ResizeObserver(draw).observe(host);
   onContextLoss(canvas, {
-    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; drop(); },
     async restored() { await build(); gone = false; const again = src; src = ''; if (again) show(again); },
   });
   return { show, live };
