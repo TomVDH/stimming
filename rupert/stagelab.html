@@ -231,11 +231,11 @@ uniform mat3 uCamM;
 uniform float uFocal;
 // Body A runs from the head.
 // Piece B is the tip past the cut.
-uniform vec4 uA[18];
-uniform float uAs[18];
+uniform vec4 uA[24];
+uniform float uAs[24];
 uniform int uNA;
-uniform vec4 uB[18];
-uniform float uBs[18];
+uniform vec4 uB[24];
+uniform float uBs[24];
 uniform int uNB;
 uniform mat4 uBInv;
 uniform mat4 uBMat;
@@ -304,15 +304,15 @@ float smin(float a, float b, float k) {
   float h = max(k - abs(a - b), 0.0) / k;
   return min(a, b) - h * h * k * 0.25;
 }
-// The neck's cones join with a blend; this takes away its creases.
-// The tail's joints stay plain: a blend there swells each joint.
 float chain(vec3 p, int n, bool isA) {
   float d = 1e4;
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= n) break;
     vec4 a = isA ? uA[i] : uB[i], b = isA ? uA[i + 1] : uB[i + 1];
     float c = sdRC(p, a, b);
-    d = (isA && i < 3) ? smin(d, c, 0.45 * min(a.w, b.w)) : min(d, c);
+    // The sections are dense enough to need no blend.
+    // A blend at a joint shows as a rib.
+    d = min(d, c);
   }
   return d;
 }
@@ -323,8 +323,9 @@ float mapA(vec3 p) {
   float d = chain(p, uNA, true);
   // A real head is never a true sphere: soft lumps near its centre.
   vec3 h = p - uA[0].xyz;
-  float lump = sin(p.x * 2.3 + 0.7) * sin(p.y * 2.9 + 1.1) * sin(p.z * 2.1 + 0.3);
-  return d - 0.022 * lump * exp(-dot(h, h) * 0.7);
+  float lump = sin(p.x * 2.3 + 0.7) * sin(p.y * 2.9 + 1.1) * sin(p.z * 2.1 + 0.3)
+             + 0.5 * sin(p.x * 3.7 + p.z * 1.9) * sin(p.y * 4.3 + 2.0);
+  return d - 0.012 * lump * exp(-dot(h, h) * 0.8);
 }
 vec3 toB(vec3 p) { return (uBInv * vec4(p, 1.0)).xyz; }
 float mapB(vec3 p) {
@@ -428,7 +429,7 @@ struct Ax { float s; float r; vec3 a; vec3 t; };
 Ax axisA(vec3 p) {
   Ax o = Ax(1.0, 1.0, uA[0].xyz, vec3(1.0, 0.0, 0.0));
   float best = 1e9;
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNA) break;
     vec3 a = uA[i].xyz, ba = uA[i + 1].xyz - a;
     float l = length(ba);
@@ -466,7 +467,7 @@ Ax axisA(vec3 p) {
 Ax axisB(vec3 q) {
   Ax o = Ax(0.0, 0.05, uB[0].xyz, vec3(1.0, 0.0, 0.0));
   float best = 1e9;
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNB) break;
     vec3 a = uB[i].xyz, ba = uB[i + 1].xyz - a;
     float l = length(ba);
@@ -588,7 +589,8 @@ vec3 trace(vec3 ro, vec3 rd, int steps) {
   s = sph(ro, rd, uHamBnd); r = vec2(min(r.x, s.x), max(r.y, s.y));
   s = sph(ro, rd, uCutBnd); r = vec2(min(r.x, s.x), max(r.y, s.y));
   // Nothing shows below the wet floor.
-  if (rd.y < 0.0) r.y = min(r.y, -ro.y / rd.y);
+  // The march runs a little past it: grazing rays need the room.
+  if (rd.y < 0.0) r.y = min(r.y, -ro.y / rd.y + 0.3);
   float t = max(r.x, 0.0);
   if (r.y < t) return vec3(-1.0);
   for (int i = 0; i < 128; i++) {
@@ -614,10 +616,11 @@ float inside(vec3 q, vec3 d, int steps) {
 
 /* glass */
 // The bubbles in the rest pose: centre and radius.
+// They gather in the body, as in real drops.
 const vec4 BUB[7] = vec4[7](
-  vec4(-2.3, 1.2, 0.25, 0.045), vec4(-1.7, 0.8, -0.3, 0.03), vec4(-2.5, 0.75, -0.1, 0.022),
-  vec4(-1.2, 0.75, 0.15, 0.024), vec4(-0.5, 0.62, -0.05, 0.018), vec4(-2.0, 1.35, -0.35, 0.028),
-  vec4(0.3, 0.44, 0.05, 0.012));
+  vec4(-2.2, 0.75, 0.15, 0.05), vec4(-1.7, 0.66, -0.2, 0.04), vec4(-1.3, 0.62, 0.1, 0.06),
+  vec4(-1.0, 0.56, -0.05, 0.035), vec4(-2.6, 0.6, -0.1, 0.025), vec4(-0.6, 0.5, 0.08, 0.03),
+  vec4(-1.5, 0.8, -0.05, 0.02));
 vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   bool isA = body < 1.25;
   vec3 n = nGlass(p);
@@ -674,13 +677,14 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     }
     trans = sum / wsum;
   }
-  trans *= exp(-Lt * vec3(0.06, 0.015, 0.04));
+  // Soda-lime glass: a faint green in the thick head.
+  trans *= exp(-Lt * vec3(0.1, 0.022, 0.075));
   // Trapped bubbles: each shows as a small silver ring.
   // The ring is total reflection at the bubble's rim.
   if (isA && !cheap) {
     for (int k = 0; k < 7; k++) {
       vec4 b = BUB[k];
-      b.xyz += uA[0].xyz - vec3(-2.1, 1.0, 0.0);
+      b.xyz += uA[0].xyz - vec3(-2.4, 0.7, 0.0);
       float tb = clamp(dot(b.xyz - q, t1), 0.0, L);
       vec3 dv = q + t1 * tb - b.xyz;
       // Bubbles stretch along the drop, as the glass flowed.
@@ -688,9 +692,9 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
       float db = length(dv - AX * dot(dv, AX) * 0.45);
       float inner = smoothstep(b.w, b.w * 0.85, db);
       float rim = smoothstep(b.w * 0.6, b.w * 0.95, db) * inner;
-      // The upper rim catches the top box; the lower one stays dim.
-      float lit = 0.35 + 0.65 * smoothstep(-1.0, 1.0, dv.y / b.w);
-      trans = trans * (1.0 - 0.18 * inner) + uKeyC * rim * rim * 0.45 * lit;
+      // Only the upper rim catches the top box: a crescent, not a ring.
+      float lit = smoothstep(0.1, 0.9, dv.y / max(db, 1e-4));
+      trans = trans * (1.0 - 0.22 * rim) + uKeyC * rim * rim * 0.6 * lit;
     }
   }
   vec3 col = refl * F + trans * (1.0 - F);
@@ -822,7 +826,7 @@ vec2 rain(vec2 xz) {
 vec3 floorLight(vec3 p, out vec3 glow) {
   vec3 lit = vec3(1.0), caus = vec3(0.0);
   glow = vec3(0.0);
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNA) break;
     vec3 a = uA[i].xyz, b = uA[i + 1].xyz;
     vec2 a2 = a.xz - KEY.xz * (a.y / KEY.y), b2 = b.xz - KEY.xz * (b.y / KEY.y);
@@ -843,7 +847,7 @@ vec3 floorLight(vec3 p, out vec3 glow) {
     float hgt = max(min(a.y, b.y) - r, 0.0);
     glow = max(glow, vec3(exp(-dot(c, c) / (r * r * 4.0 + 0.4)) * r * exp(-hgt * 0.9)));
   }
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNB) break;
     vec3 a = (uBMat * vec4(uB[i].xyz, 1.0)).xyz, b = (uBMat * vec4(uB[i + 1].xyz, 1.0)).xyz;
     vec2 a2 = a.xz - KEY.xz * (a.y / KEY.y), b2 = b.xz - KEY.xz * (b.y / KEY.y);
@@ -1141,17 +1145,21 @@ const frameMat = (x, y, z, t) => new Float32Array([...x, 0, ...y, 0, ...z, 0, ..
 /* ---------- the drop ---------- */
 // The drop's control points, from the head to the tail tip.
 // Each holds a centre and a radius, in head radii.
-// The tail kinks once and ends in a thread.
+// A real drop is a long teardrop, three times longer than wide.
+// It lies on its belly; the thread tail rises and curls back.
 const CTRL = [
-  [-2.1, 1.0, 0.0, 1.0],
-  [-0.9, 0.66, 0.03, 0.42],
-  [0.25, 0.43, 0.07, 0.2],
-  [1.3, 0.34, 0.08, 0.11],
-  [2.25, 0.38, 0.04, 0.068],
-  [2.9, 0.56, -0.03, 0.046],
-  [3.25, 0.86, -0.06, 0.032],
-  [3.5, 1.12, -0.16, 0.022],
-  [3.62, 1.42, -0.2, 0.012],
+  [-2.4, 0.7, 0.0, 0.7],
+  [-1.9, 0.68, 0.02, 0.66],
+  [-1.35, 0.62, 0.03, 0.54],
+  [-0.8, 0.53, 0.04, 0.39],
+  [-0.25, 0.43, 0.05, 0.25],
+  [0.35, 0.34, 0.05, 0.14],
+  [1.0, 0.27, 0.04, 0.075],
+  [1.7, 0.24, 0.02, 0.045],
+  [2.4, 0.3, -0.02, 0.03],
+  [3.0, 0.55, -0.08, 0.024],
+  [3.4, 0.95, -0.15, 0.019],
+  [3.55, 1.4, -0.22, 0.015],
 ];
 // A smooth curve through them; the radius tapers on a log scale.
 // Each pair of points makes one round cone.
@@ -1165,10 +1173,12 @@ const REST = (() => {
   };
   const out = [CTRL[0], CTRL[1]];
   for (let i = 1; i < P.length - 1; i++) {
+    // The dense head spans need no extra points; the curl needs most.
     const n = i >= P.length - 3 ? 3 : 2;
     for (let j = 1; j <= n; j++) { const q = at(i, j / n); out.push([q[0], q[1], q[2], Math.exp(q[3])]); }
   }
-  return out;
+  // No section may sink into the floor; the head's lumps need room.
+  return out.map(p => [p[0], Math.max(p[1], p[3] + 0.015), p[2], p[3]]);
 })();
 const SEG = REST.slice(1).map((p, i) => len(sub(p, REST[i])));
 // The drop's arc length, from the head's back to the tip.
@@ -1360,7 +1370,7 @@ function makeDust(sCut, n) {
 }
 
 /* ---------- poses ---------- */
-const UA = new Float32Array(72), UAS = new Float32Array(18), UB = new Float32Array(72), UBS = new Float32Array(18);
+const UA = new Float32Array(96), UAS = new Float32Array(24), UB = new Float32Array(96), UBS = new Float32Array(24);
 const RIP = new Float32Array(32);
 let nA = 0, nB = 0, bndA = [0, 0, 0, 0], bndB = [0, 0, 0, 0], bInv = IDENT, bMat = IDENT;
 let hamInv = IDENT, hamBnd = [0, 0, 0, 0], cutInv = IDENT, cutBnd = [0, 0, 0, 0], cutOpen = 0.5;
@@ -1368,7 +1378,7 @@ let crack = 0, front = -1, gone = 0, heat = 0, steamK = 0, steamT = 0, rainK = 0
 let tipPose = null;
 
 function loadA(pts, ss) {
-  nA = Math.min(18, pts.length);
+  nA = Math.min(24, pts.length);
   for (let i = 0; i < nA; i++) { UA.set(pts[i], i * 4); UAS[i] = ss[i]; }
   bndA = nA >= 2 ? bound(pts) : [0, 0, 0, 0];
   if (nA < 2) nA = 0;
@@ -1378,7 +1388,7 @@ function loadA(pts, ss) {
 // The handle rises away from the camera.
 // The face meets the glass square on.
 const HX0 = norm([1, 0.5, -0.45]), HY0 = norm(sub([0, 1, 0], mul(HX0, HX0[1]))), HZ0 = cross(HX0, HY0);
-const HIT_AT = add(REST[0].slice(0, 3), HY0);
+const HIT_AT = add(REST[0].slice(0, 3), mul(HY0, REST[0][3]));
 const HC0 = add(HIT_AT, mul(HY0, 0.95));
 const WRIST = add(HC0, mul(HX0, 7.6));
 function hammerPose(lift, dy = 0) {
@@ -1430,7 +1440,7 @@ function pose() {
     const tr = sub(add(c, [0, -fallD, 0]), add(add(mul(rx, c[0]), mul(ry, c[1])), mul(rz, c[2])));
     bInv = invFrame(rx, ry, rz, tr);
     bMat = frameMat(rx, ry, rz, tr);
-    nB = Math.min(18, tipPose.pts.length);
+    nB = Math.min(24, tipPose.pts.length);
     for (let i = 0; i < nB; i++) { UB.set(tipPose.pts[i], i * 4); UBS[i] = tipPose.ss[i]; }
     const bc = add(add(add(mul(rx, tipPose.bnd[0]), mul(ry, tipPose.bnd[1])), mul(rz, tipPose.bnd[2])), tr);
     bndB = [...bc, tipPose.bnd[3]];
