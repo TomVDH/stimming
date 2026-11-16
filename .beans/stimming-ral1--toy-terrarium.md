@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:18:44Z
+updated_at: 2026-11-16T20:24:36Z
 parent: stimming-oh7b
 ---
 
@@ -41,4 +41,8 @@ Very richly shaded: glass, fog on glass, droplets, plants that grow by rules (ge
 ## Jar shape (2026-11-16)
 
 Tom: "increase size and shape of jar". The jar is now any profile turned round its axis, and about 30% larger in the frame. Three shapes for Tom to pick: apothecary (the default), `?jar=globe`, `?jar=bell`. Each profile exists in GLSL and in JS (the wipe), and both must match.
-- [ ] Tom picks a jar shape
+- [x] Tom picks a jar shape: apothecary (2026-11-16). Globe and bell are cut; git history keeps them (06e05aa5).
+
+## Apothecary jar, higher quality (2026-11-16)
+
+Tom: "make a higher quality apothecary jar". New profile: belly, round shoulder, neck, rolled lip, and a solid glass lid (flange, low dome, stem, ball knob). Green glass: the wall's tint follows the glass the light crosses, so the rim turns deep green. The lid, knob and the 1.4 cm base are solid glass that bends the view and glows at its edges. Two soft panels out of frame put tall reflection strips on the belly. Reflections see a softer lamp, so thin highlights do not alias. Round pebbles under the soil. Drops stay on the wall; the lid stays dry. Rest fog 0.14.

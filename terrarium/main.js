@@ -33,44 +33,41 @@ const ui = initPage({ id: 'terrarium', bar: {
 /* ---------- the scene ---------- */
 // One unit is about 20 cm. The jar stands on the floor at the origin.
 // The jar is one profile, a radius over height, turned round the axis.
-// top: the glass's top. rmax: its widest. base: its radius at the floor.
-// knob: the stopper knob's centre. neck: where the spray starts.
-// seam: the lip or lid line. shoulder: where condensation gathers.
-// Each profile exists twice, in GLSL and in JS, and both must match.
-const SHAPES = {
-  // An apothecary jar: a wide belly, a round shoulder, a neck, a stopper.
-  apothecary: { top: 1.62, rmax: 0.62, base: 0.57, knob: 1.665, neck: 1.5, seam: 1.465, shoulder: 1.05,
-    glsl: `
-  float r = mix(0.62, 0.3, smoothstep(1.0, 1.34, y)) + 0.035 * smoothstep(1.43, 1.47, y);
-  if (y > 1.5) r = 0.335 * sqrt(max(1.0 - (y - 1.5) * (y - 1.5) / 0.0144, 0.0));`,
-    js: y => {
-      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-      return y > 1.5 ? 0.335 * Math.sqrt(Math.max(1 - (y - 1.5) ** 2 / 0.0144, 0)) : 0.62 + (0.3 - 0.62) * ss(1.0, 1.34, y) + 0.035 * ss(1.43, 1.47, y);
-    } },
-  // A globe: a round belly on a small flat foot, a short neck, a lid.
-  globe: { top: 1.56, rmax: 0.72, base: 0.29, knob: 1.605, neck: 1.46, seam: 1.44, shoulder: 1.1,
-    glsl: `
-  float s = sqrt(max(0.5184 - (y - 0.66) * (y - 0.66), 0.0));
-  float h = max(0.14 - abs(s - 0.24), 0.0) / 0.14;
-  float r = y < 0.66 ? s : max(s, 0.24) + h * h * 0.035;
-  r += 0.03 * smoothstep(1.42, 1.46, y);
-  if (y > 1.46) r = 0.27 * sqrt(max(1.0 - (y - 1.46) * (y - 1.46) / 0.01, 0.0));`,
-    js: y => {
-      const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-      if (y > 1.46) return 0.27 * Math.sqrt(Math.max(1 - (y - 1.46) ** 2 / 0.01, 0));
-      const sp = Math.sqrt(Math.max(0.5184 - (y - 0.66) ** 2, 0)), h = Math.max(0.14 - Math.abs(sp - 0.24), 0) / 0.14;
-      return (y < 0.66 ? sp : Math.max(sp, 0.24) + h * h * 0.035) + 0.03 * ss(1.42, 1.46, y);
-    } },
-  // A bell jar: a tall straight wall under a round lid, wider than the first one.
-  bell: { top: 1.571, rmax: 0.6, base: 0.6, knob: 1.62, neck: 1.4, seam: 1.25, shoulder: 1.2,
-    glsl: `
-  float r = y < 1.25 ? 0.6 : sqrt(max(0.52 - (y - 0.85) * (y - 0.85), 0.0));`,
-    js: y => (y < 1.25 ? 0.6 : Math.sqrt(Math.max(0.52 - (y - 0.85) ** 2, 0))) },
-};
-// ?jar=globe or ?jar=bell picks another shape, for Tom to compare.
-const SHAPE = SHAPES[new URLSearchParams(location.search).get('jar')] || SHAPES.apothecary;
+// An apothecary jar: a belly, a round shoulder, a neck with a rolled lip,
+// and a lid of solid glass: a flange, a low dome, a stem and a ball knob.
+// The profile exists twice, in GLSL and in JS, and both must match.
+// top: the knob's top. rmax: the belly. base: the radius at the floor.
+// foot: the top of the solid base. lid: the bottom of the solid lid.
+// neck: where the spray starts. shoulder: where condensation gathers.
+const SHAPE = { top: 1.705, rmax: 0.62, base: 0.57, foot: 0.07, lid: 1.43, neck: 1.43, shoulder: 1.05 };
+const JAR_GLSL = `
+  float r = 0.34;
+  if (y < 1.0) r = 0.62;
+  else if (y < 1.3) { float e = (y - 1.0) / 0.3; r = 0.34 + 0.28 * sqrt(max(1.0 - e * e, 0.0)); }
+  float l = (y - 1.405) / 0.025;
+  if (abs(l) < 1.0) r = max(r, 0.34 + 0.03 * sqrt(1.0 - l * l));
+  if (y > 1.43) {
+    float fl = (y - 1.445) / 0.016, dm = (y - 1.46) / 0.1, kb = y - 1.65;
+    r = abs(fl) < 1.0 ? 0.37 + 0.02 * sqrt(1.0 - fl * fl) : 0.37 * sqrt(max(1.0 - dm * dm, 0.0));
+    r = max(r, y < 1.63 ? 0.035 : 0.0);
+    r = max(r, sqrt(max(0.003025 - kb * kb, 0.0)));
+  }`;
+function jarShape(y) {
+  let r = 0.34;
+  if (y < 1.0) r = 0.62;
+  else if (y < 1.3) { const e = (y - 1.0) / 0.3; r = 0.34 + 0.28 * Math.sqrt(Math.max(1 - e * e, 0)); }
+  const l = (y - 1.405) / 0.025;
+  if (Math.abs(l) < 1) r = Math.max(r, 0.34 + 0.03 * Math.sqrt(1 - l * l));
+  if (y > 1.43) {
+    const fl = (y - 1.445) / 0.016, dm = (y - 1.46) / 0.1, kb = y - 1.65;
+    r = Math.abs(fl) < 1 ? 0.37 + 0.02 * Math.sqrt(1 - fl * fl) : 0.37 * Math.sqrt(Math.max(1 - dm * dm, 0));
+    r = Math.max(r, y < 1.63 ? 0.035 : 0);
+    r = Math.max(r, Math.sqrt(Math.max(0.003025 - kb * kb, 0)));
+  }
+  return r;
+}
 // The jar's radius at a height, with the base corner rounded; -1 off the glass.
-const jarR = y => (y < 0 || y > SHAPE.top ? -1 : SHAPE.js(y) - 0.05 * (1 - Math.min(1, y / 0.09)) ** 2);
+const jarR = y => (y < 0 || y > SHAPE.top ? -1 : jarShape(y) - 0.05 * (1 - Math.min(1, y / 0.09)) ** 2);
 // The grow light: a bar above and behind the jar.
 const LY = 1.95, LZ = -0.9, LW = 0.7;
 const FOC = 1.55;
@@ -95,14 +92,16 @@ const CAM = `
 const JAR_LIB = `
 float jarR(float y) {
   if (y < 0.0 || y > ${f(SHAPE.top)}) return -1.0;
-  ${SHAPE.glsl}
+  ${JAR_GLSL}
   float b = 1.0 - min(1.0, y / 0.09);
   return r - 0.05 * b * b;
 }
 // Outside the glass this is positive; inside it is negative.
 float jarF(vec3 p) {
   float r = jarR(p.y);
-  return r < 0.0 ? max(abs(p.y - ${f(SHAPE.top / 2)}) - ${f(SHAPE.top / 2)}, 0.004) : length(p.xz) - r;
+  if (r < 0.0) return max(abs(p.y - ${f(SHAPE.top / 2)}) - ${f(SHAPE.top / 2)}, 0.004);
+  float s = (jarR(min(p.y + 0.004, ${f(SHAPE.top)})) - jarR(max(p.y - 0.004, 0.0))) / 0.008;
+  return (length(p.xz) - r) / min(sqrt(1.0 + s * s), 8.0);
 }
 vec3 jarN(vec3 p) {
   float y0 = clamp(p.y - 0.003, 0.0, ${f(SHAPE.top)}), y1 = clamp(p.y + 0.003, 0.0, ${f(SHAPE.top)});
@@ -151,6 +150,8 @@ const SCENE = `
 uniform vec3 uLampC;
 uniform float uPlants, uSpray;
 const vec3 LP = vec3(0.0, ${f(LY)}, ${f(LZ)});
+// Green glass: red and blue fade first, per unit of glass crossed.
+const vec3 GLASS_ABS = vec3(5.0, 1.4, 3.6);
 ${JAR_LIB}
 
 float teH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -262,6 +263,8 @@ vec3 teNormal(vec3 p) {
 // The grow light at a point: its colour over the square of the distance.
 vec3 teLamp(vec3 p) { vec3 d = LP - p; return uLampC * 3.0 / dot(d, d); }
 
+// Reflections see the bar wider and dimmer, so a thin highlight cannot alias.
+float gSoft = 0.0;
 // The room: the floor, the far wall, and the grow light's bar.
 vec3 teBack(vec3 o, vec3 d) {
   float tg = d.y < -1e-4 ? -o.y / d.y : 1e9;
@@ -285,6 +288,17 @@ vec3 teBack(vec3 o, vec3 d) {
     vec2 g = P.xy - vec2(0.0, ${f(LY)});
     c = vec3(0.006, 0.016, 0.011) + uLampC * 0.022 * exp(-length(g * vec2(0.6, 1.0)) * 1.3);
   }
+  // Two soft panels stand out of frame, left and right.
+  // The glass reflects them as tall strips down the belly.
+  if (abs(d.x) > 1e-3) {
+    float tx = (sign(d.x) * 2.6 - o.x) / d.x;
+    if (tx > 0.0 && tx < tHit) {
+      vec3 P = o + d * tx;
+      float k = smoothstep(0.0, 0.5, P.y - 0.1) * smoothstep(0.0, 0.5, 2.3 - P.y) * smoothstep(0.0, 0.6, P.z - 0.4) * smoothstep(0.0, 0.6, 3.2 - P.z);
+      c = mix(c, vec3(0.2, 0.21, 0.2), k);
+      tHit = tx;
+    }
+  }
   // The bar: a dark housing over a glowing strip, and a soft halo.
   if (d.z < -1e-4) {
     float tl = (${f(LZ)} - o.z) / d.z;
@@ -292,8 +306,9 @@ vec3 teBack(vec3 o, vec3 d) {
       vec3 P = o + d * tl;
       vec2 q = vec2(max(abs(P.x) - ${f(LW)}, 0.0), P.y - ${f(LY)});
       float dl = length(q);
-      if (dl < 0.02) c = uLampC * 5.0;
-      else if (q.x < 0.001 && q.y > 0.0 && q.y < 0.07) c = vec3(0.012, 0.013, 0.012);
+      if (q.x < 0.001 && q.y > 0.02 && q.y < 0.07) c = vec3(0.012, 0.013, 0.012);
+      // A soft edge on the strip keeps its reflections in the glass from breaking up.
+      c = mix(c, uLampC * 5.0 * 0.034 / (0.034 + gSoft), smoothstep(0.034 + gSoft, 0.012, dl));
       c += uLampC * 0.09 * exp(-dl * 10.0);
     }
   }
@@ -312,9 +327,14 @@ vec3 teShade(vec3 p, vec3 rd, float m) {
     float r = length(p.xz), top = teFloor(p.xz);
     if (r > jarR(p.y) - 0.03 && p.y < top - 0.03) {
       // The cut face on the glass: pebbles under soil.
-      float cell = teH(floor(vec2(atan(p.x, p.z) * 26.0, p.y * 34.0)));
-      base = p.y < 0.075 ? vec3(0.09, 0.085, 0.08) * (0.5 + cell) : vec3(0.03, 0.019, 0.012) * (0.7 + 0.5 * cell);
-      dif = 0.25;
+      // Round pebbles in two rough rows, then dark soil over them.
+      vec2 g = vec2(atan(p.x, p.z) * r * 30.0, p.y * 30.0), gi = floor(g), gf = fract(g) - 0.5;
+      vec2 o = (vec2(teH(gi), teH(gi + 7.3)) - 0.5) * 0.3;
+      float pd = length((gf - o) * vec2(1.0, 1.25)), cell = teH(gi + 3.1);
+      vec3 stone = mix(vec3(0.05, 0.048, 0.045), vec3(0.16, 0.15, 0.13), cell) * (1.15 - pd * 1.2);
+      vec3 soil = vec3(0.028, 0.018, 0.011) * (0.7 + 0.6 * teN(g * 3.0));
+      base = p.y < 0.15 ? mix(vec3(0.01, 0.008, 0.006), stone, smoothstep(0.48, 0.4, pd)) : soil;
+      dif = 0.3;
     } else {
       float t = teN(p.xz * 24.0) * 0.6 + teN(p.xz * 70.0) * 0.4;
       base = mix(vec3(0.02, 0.06, 0.01), vec3(0.09, 0.2, 0.025), t);
@@ -339,21 +359,29 @@ vec3 teShade(vec3 p, vec3 rd, float m) {
   return c;
 }
 
+// Solid glass: the lid, its knob and the base. The view bends hard through it.
+vec3 teSolid(vec3 p, vec3 rd, vec3 n, float cv, float F, vec3 refl) {
+  vec3 rr = refract(rd, n, 0.667);
+  vec3 through = teBack(p, normalize(rr * 1.6 - rd * 0.6));
+  // Through the base, the soil above darkens the view.
+  if (p.y < ${f(SHAPE.foot)}) through = mix(through, vec3(0.012, 0.01, 0.008), 0.6);
+  vec3 c = through * exp(-GLASS_ABS * (0.08 + 0.25 * (1.0 - cv))) * (1.0 - F) + refl * F;
+  // Light caught inside the glass glows along its edges.
+  return c + uLampC * vec3(0.6, 1.0, 0.75) * 0.05 * pow(1.0 - cv, 2.0);
+}
+
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
   ${CAM}
-  // The glass knob on the lid.
-  vec3 ok = ro - vec3(0.0, ${f(SHAPE.knob)}, 0.0);
-  float kb = dot(ok, rd), kh = kb * kb - dot(ok, ok) + 0.0025;
   ${JAR}
-  if (kh > 0.0 && (jt < 0.0 || -kb - sqrt(kh) < jt)) {
-    vec3 kp = ro + rd * (-kb - sqrt(kh)), kn = normalize(kp - vec3(0.0, ${f(SHAPE.knob)}, 0.0));
-    return teBack(kp, reflect(rd, kn)) * 0.7 + uLampC * 0.08 * pow(1.0 - abs(dot(kn, rd)), 2.0);
-  }
   if (jt < 0.0) return teBack(ro, rd);
   vec3 p = ro + rd * jt;
   float cv = max(dot(jn, -rd), 0.0);
   float F = 0.04 + 0.96 * pow(1.0 - cv, 5.0);
+  gSoft = 0.06;
+  vec3 refl = teBack(p, reflect(rd, jn));
+  gSoft = 0.0;
+  if (p.y > ${f(SHAPE.lid)} || p.y < ${f(SHAPE.foot)}) return teSolid(p, rd, jn, cv, F, refl);
   // The far wall of the jar.
   float tE = jarExit(ro, rd, jt + 0.004);
   // March the contents.
@@ -386,12 +414,14 @@ vec3 envScene(vec2 uv) {
   // Damp air in the jar softens what lies deep in it.
   vec3 damp = vec3(0.012, 0.024, 0.018) + uLampC * 0.012;
   inside = mix(inside, damp, 1.0 - exp(-(t - jt) * 0.35));
-  vec3 c = inside * (1.0 - F) * vec3(0.9, 0.97, 0.92) + teBack(p, reflect(rd, jn)) * F;
+  // The wall is 5 mm of glass. Near the edge the eye looks along it,
+  // so the light crosses far more glass and the rim turns deep green.
+  float r = max(jarR(p.y), 0.05), b = r * sqrt(1.0 - cv * cv), ri = r - 0.025;
+  float cross1 = sqrt(max(r * r - b * b, 0.0)) - sqrt(max(ri * ri - b * b, 0.0));
+  if (b > ri) cross1 = 2.0 * sqrt(max(r * r - b * b, 0.0));
+  vec3 c = inside * (1.0 - F) * exp(-GLASS_ABS * cross1 * 2.0) + refl * F;
   // The grow light comes through the glass at its edges: a long bright rim.
-  c += uLampC * 0.06 * pow(1.0 - cv, 3.0) * smoothstep(-0.2, 1.4, p.y);
-  // The seam where the lid meets the wall, and the thick glass of the base.
-  float seam = smoothstep(0.016, 0.004, abs(p.y - ${f(SHAPE.seam)})), foot = smoothstep(0.05, 0.03, p.y);
-  c = mix(c, vec3(0.02, 0.04, 0.03) + uLampC * 0.05, max(seam, foot) * 0.6);
+  c += uLampC * vec3(0.7, 1.0, 0.8) * 0.05 * pow(1.0 - cv, 4.0) * smoothstep(-0.2, 1.4, p.y);
   return c;
 }`;
 
@@ -425,13 +455,13 @@ const GLASS = `
       vec2 su = uv + g.off * ${f(FOC)} / (camD * ${f(METRE)}) / vec2(asp, 1.0);
       vec3 jveil = uLampCol * 0.008 + vec3(0.006, 0.014, 0.01);
       vec3 v = wgView(g, texture(tScene, su).rgb, texture(tBok, su).rgb, uScatter, vec3(1.0), jveil, glint);
-      float jm = smoothstep(0.0, 0.2, jcos);
+      float jm = smoothstep(0.0, 0.2, jcos) * smoothstep(${f(SHAPE.lid)}, ${f(SHAPE.lid - 0.03)}, jp.y) * smoothstep(${f(SHAPE.foot)}, ${f(SHAPE.foot + 0.03)}, jp.y);
       col = mix(col, v, jm);
       rim = g.rim * jm; cover = g.cover * jm; fog = g.fog * jm;
     }`;
 
 /* ---------- state ---------- */
-const REST_FOG = 0.2;
+const REST_FOG = 0.14;
 let plants = 0, light = 0.6, fogBack = 0.5, visible = true;
 // The grow light, from dusk amber to noon white.
 function lampColour() {
