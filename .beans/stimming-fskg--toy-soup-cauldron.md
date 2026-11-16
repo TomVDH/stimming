@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T08:49:17Z
+updated_at: 2026-11-16T08:51:22Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -53,3 +53,6 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - [x] Soupy marbled dye field: Catmull-Rom advection clamped to its texels, a fine stir curl, plumes fold in nearby soup, ribbons along the stir, seams where colours meet
 - [x] Tray picker (Mix, ten things, four liquids) and pours: cream, squid ink, chilli oil, saffron; the stream digs a dent, rings out and drops in its own colour
 - [x] Toy doc
+
+- [x] Soup film layers: a skin that sets on calm thick soup and cream (matte, wrinkled), wet broth, glassy fat with a faint oil-film rainbow
+- [ ] Fire engine choice: WebGL2 or WebGPU (Fire's engine, faster and scaled back)
