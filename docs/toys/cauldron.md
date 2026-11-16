@@ -139,6 +139,16 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 
 None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean console, the stir, a throw of each kind, Clear, Reset, the Fire slider at 0 and 1, the arrow-key stir, sound start after a click, and the layout at 1280 × 720, 375 × 812 and 812 × 375.
 
+## Look (round 2)
+
+| Part | Does |
+|---|---|
+| Soup | Marbled: Catmull-Rom advection clamped to its texels, a fine curl that wakes with the stir, plumes that fold in nearby soup, tints that land as ribbons, seams that stand up where colours meet. Only a drain evens the pot out |
+| Film layers | Skin (aux b) sets on calm thick soup and cream, matte and wrinkled; wet broth; glassy fat with a faint oil-film rainbow |
+| Cooking | Things deepen, gloss and shrink a touch; a split thing clears in 0.45 s while its pieces grow in; melting pieces take on the soup's colour |
+| Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |
+| Parked | `gpufire.js`: Fire's WebGPU engine over the pot, only with `?fire=gpu` |
+
 ## Known issues
 
 - The fire grid is coarse (0.08 cells); fine flame detail comes from Fire's simplex detail noise in the march.
