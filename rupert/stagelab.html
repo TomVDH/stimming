@@ -244,6 +244,10 @@ uniform vec4 uBndB;
 uniform float uLen;
 // Arc s runs from the tail tip (0) to the head (1).
 uniform float uFront;
+// The crack tree: two texels per segment, sorted by birth arc.
+// Texel 2i holds the start and its arc; texel 2i+1 the end and its arc.
+uniform sampler2D uCrk;
+uniform int uNCrk;
 uniform float uCrack;
 uniform float uGone;
 uniform float uPolar;
@@ -617,6 +621,56 @@ float inside(vec3 q, vec3 d, int steps) {
   return L;
 }
 
+/* cracks */
+// The least distance between segments p0-p1 and q0-q1.
+float segSeg(vec3 p0, vec3 p1, vec3 q0, vec3 q1) {
+  vec3 d1 = p1 - p0, d2 = q1 - q0, r = p0 - q0;
+  float a = dot(d1, d1), e = max(dot(d2, d2), 1e-8), f = dot(d2, r);
+  float c = dot(d1, r), b = dot(d1, d2), den = a * e - b * b;
+  float s = den > 1e-8 ? clamp((b * f - c * e) / den, 0.0, 1.0) : 0.0;
+  float t = (b * s + f) / e;
+  if (t < 0.0) { t = 0.0; s = clamp(-c / max(a, 1e-8), 0.0, 1.0); }
+  else if (t > 1.0) { t = 1.0; s = clamp((b - c) / max(a, 1e-8), 0.0, 1.0); }
+  return length(p0 + d1 * s - q0 - d2 * t);
+}
+// The least distance from point x to segment a-b.
+float segPt(vec3 a, vec3 b, vec3 x) {
+  vec3 ab = b - a;
+  return length(a + ab * clamp(dot(x - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0) - x);
+}
+// The cracks along a path through the glass, from q0 to q1.
+// x: crack lines, y: live tips, z: distance to the nearest crack.
+vec3 crackField(vec3 q0, vec3 q1) {
+  float lines = 0.0, tips = 0.0, near = 9.0;
+  for (int i = 0; i < 512; i++) {
+    if (i >= uNCrk) break;
+    vec4 a = texelFetch(uCrk, ivec2(2 * i, 0), 0);
+    // The tree is sorted by birth, so the first unborn crack ends the list.
+    if (a.w > uFront) break;
+    vec4 b = texelFetch(uCrk, ivec2(2 * i + 1, 0), 0);
+    float g = clamp((uFront - a.w) / max(b.w - a.w, 1e-5), 0.0, 1.0);
+    vec3 e = mix(a.xyz, b.xyz, g);
+    float d = segSeg(q0, q1, a.xyz, e);
+    near = min(near, d);
+    lines += exp(-d * d * 4000.0);
+    if (g < 1.0) { float dt = segPt(q0, q1, e); tips += exp(-dt * dt * 400.0); }
+  }
+  return vec3(lines, tips, near);
+}
+// Cells in 3D: the nearest and second distances, and the cell's seed.
+vec4 cells(vec3 x) {
+  vec3 i = floor(x), f = fract(x);
+  float F1 = 8.0, F2 = 8.0;
+  vec3 id = i;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int k = -1; k <= 1; k++) {
+    vec3 g = vec3(float(k), float(y), float(z));
+    vec3 r = g + hash33(i + g) - f;
+    float d = dot(r, r);
+    if (d < F1) { F2 = F1; F1 = d; id = i + g; } else if (d < F2) F2 = d;
+  }
+  return vec4(sqrt(F1), sqrt(F2), hash13(id), hash13(id + 7.1));
+}
+
 /* glass */
 // The bubbles in the rest pose: centre and radius.
 // They gather in the body, as in real drops.
@@ -727,25 +781,24 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     // Cracks lead in the stretched core and lag in the squeezed skin.
     float sCore = am.s + 0.6 * (1.0 - beta * beta) * am.r / uLen;
     float sSkin = axisA(p).s;
-    float dc = (sCore - uFront) * uLen, ds = (sSkin - uFront) * uLen;
-    frostA = clamp(0.55 * smoothstep(0.03, -0.03, dc) + 0.6 * smoothstep(0.03, -0.03, ds), 0.0, 1.0);
-    frontG = exp(-dc * dc * 110.0) + 0.6 * exp(-ds * ds * 160.0);
-    // Forks run just ahead of the front, along the drop.
-    vec3 side = normalize(cross(am.t, vec3(0.0, 1.0, 0.0)) + vec3(0.0, 0.0, 1e-3));
-    vec3 up = cross(side, am.t);
-    vec3 rel = mid - am.a;
-    float ang = atan(dot(rel, up), dot(rel, side));
-    float fk = vnoise(vec3(am.s * uLen * 2.5, ang * 2.2, 3.1)) + 0.5 * vnoise(vec3(am.s * uLen * 7.0, ang * 4.0, 9.7));
-    frontG += smoothstep(1.02, 1.3, fk) * smoothstep(0.9, 0.0, dc) * step(0.0, dc) * 1.4;
-    // Shattered glass: milky, full of glints, laced with cracks.
-    vec3 id = floor(p * 26.0);
-    vec3 rn = normalize((hash33(id) * 2.0 - 1.0) * 1.4 + nb);
+    float leadC = (uFront - sCore) * uLen, leadS = (uFront - sSkin) * uLen;
+    // The tree's cracks along this path through the glass.
+    vec3 ck = crackField(q, pe);
+    // Frost spreads out from each crack, so its edge runs in fingers.
+    // It lags the tips a little, so the bare cracks show first.
+    frostA = clamp(max(0.75 * smoothstep(0.0, 0.3, leadC - 0.3 - 2.2 * ck.z), smoothstep(0.1, 0.5, leadS - 0.45 - 1.6 * ck.z)), 0.0, 1.0);
+    frontG = min(ck.y, 1.5) * 0.7 + min(ck.x, 2.0) * 0.4 * (1.0 - 0.7 * frostA);
+    // Shattered glass: irregular cells, each face a small mirror.
+    vec4 c1 = cells(p * 11.0), c2 = cells(p * 29.0 + 3.0);
+    vec3 rn = normalize((vec3(c1.z, c1.w, c2.z) * 2.0 - 1.0) * 1.3 + nb);
     vec3 rr = reflect(rd, rn);
     float g1 = pow(max(dot(rr, KEY), 0.0), 40.0);
     float g2 = pow(max(dot(rr, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 30.0) + pow(max(dot(rr, normalize(vec3(0.8, 0.35, -0.55))), 0.0), 30.0);
-    float lines = smoothstep(0.035, 0.0, abs(vnoise(p * 9.0) - 0.5)) + smoothstep(0.03, 0.0, abs(vnoise(p * 21.0 + 4.0) - 0.5));
-    frostC = vec3(0.78, 0.8, 0.85) * (uKeyC * (0.12 + 0.3 * max(nb.y, 0.0)) + 0.035) * (1.0 - 0.45 * min(lines, 1.0));
-    frostC += uKeyC * g1 * 4.0 + uRimC * g2 * 2.5;
+    // Cell walls are crack faces: they scatter light and read pale.
+    float walls = smoothstep(0.05, 0.0, c1.y - c1.x) + 0.6 * smoothstep(0.04, 0.0, c2.y - c2.x);
+    frostC = vec3(0.8, 0.82, 0.86) * (uKeyC * (0.16 + 0.32 * max(nb.y, 0.0)) + 0.045) * (0.75 + 0.5 * c2.z);
+    frostC += vec3(0.85, 0.88, 0.95) * uKeyC * 0.12 * min(walls, 1.0);
+    frostC += uKeyC * g1 * 3.0 + uRimC * g2 * 2.0;
   }
   // Photoelastic stress: retardation across a tempered rod, in nm.
   float gam = sqrt(max(1.0 - beta * beta, 0.0));
@@ -1302,6 +1355,80 @@ function clock(t) {
 }
 const frontAt = t => cut.s + Math.max(0, t) / FRONT_T;
 
+/* ---------- crack tree ---------- */
+// One crack runs up the stretched core of the tail.
+// As the glass thickens it forks again and again.
+// In the head the forks fan out to the skin.
+const CRK_MAX = 512;
+const crkData = new Float32Array(CRK_MAX * 8);
+let crkN = 0;
+const crkTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, crkTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, CRK_MAX * 2, 1, 0, gl.RGBA, gl.FLOAT, null);
+// The axis at arc s: point, tangent toward the head, and radius.
+// Past the head's centre the radius closes as on a sphere.
+function axisAtS(s) {
+  if (s >= S[0]) {
+    const t = norm(sub(REST[0], REST[1])), x = (s - S[0]) * LEN, r0 = REST[0][3];
+    return { p: add(REST[0].slice(0, 3), mul(t, x)), t, r: Math.sqrt(Math.max(r0 * r0 - x * x, 0)) };
+  }
+  for (let i = 0; i + 1 < REST.length; i++) {
+    if (S[i] >= s && S[i + 1] <= s) {
+      const h = (S[i] - s) / (S[i] - S[i + 1]);
+      const q = lerp(REST[i], REST[i + 1], h);
+      return { p: q.slice(0, 3), t: norm(sub(REST[i], REST[i + 1])), r: q[3] };
+    }
+  }
+  const e = REST[REST.length - 1];
+  return { p: e.slice(0, 3), t: norm(sub(REST[REST.length - 2], e)), r: e[3] };
+}
+// A point at arc s, rho radii off the axis, at angle th round it.
+function crackPt(s, rho, th) {
+  const a = axisAtS(s);
+  const side = norm(cross(a.t, [0, 1, 0])), up = cross(side, a.t);
+  return add(a.p, mul(add(mul(side, Math.cos(th)), mul(up, Math.sin(th))), rho * a.r));
+}
+function growCracks(sCut) {
+  const segs = [];
+  let live = [{ s: sCut, rho: 0.05, th: rnd() * 6.283, dth: 0, out: 0 }];
+  while (live.length && segs.length < CRK_MAX) {
+    const next = [];
+    for (const b of live) {
+      const a = axisAtS(b.s);
+      // Steps scale with the glass: short in the tail, long in the head.
+      const step = Math.min(0.18, Math.max(0.08, 0.5 * a.r));
+      const s2 = Math.min(1, b.s + step / LEN);
+      // Forks drift out to the skin; the head pulls them out fastest.
+      const head = smooth((s2 - S_NECK) / (1 - S_NECK));
+      const rho = clamp(b.rho + b.out * step * (0.6 + 2.2 * head) + (rnd() - 0.5) * 0.12, 0, 0.92);
+      // Each crack wanders a little at every step, as real ones do.
+      const th = b.th + b.dth * step + (rnd() - 0.5) * 0.45;
+      segs.push([...crackPt(b.s, b.rho, b.th), b.s, ...crackPt(s2, rho, th), s2]);
+      if (s2 >= 1 || (rho >= 0.92 && head > 0.6)) continue;
+      const nb = { s: s2, rho, th, dth: b.dth, out: b.out };
+      // The thin tail seldom forks; thick glass forks at most steps.
+      const fork = a.r < 0.05 ? 0.03 : a.r < 0.15 ? 0.22 : 0.42;
+      if (rnd() < fork && live.length + next.length < 24) {
+        const spread = 0.5 + 0.7 * rnd();
+        // The two halves part at a narrow angle and seldom wrap round.
+        next.push({ ...nb, th: nb.th - spread * 0.3, dth: nb.dth * 0.5 - spread * 0.5, out: Math.max(nb.out, 0.25) + 0.2 * rnd() });
+        nb.th += spread * 0.3;
+        nb.dth = nb.dth * 0.5 + spread * 0.5;
+        nb.out = Math.max(nb.out, 0.25) + 0.2 * rnd();
+      }
+      next.push(nb);
+    }
+    live = next;
+  }
+  segs.sort((x, y) => x[3] - y[3]);
+  crkN = Math.min(CRK_MAX, segs.length);
+  for (let i = 0; i < crkN; i++) crkData.set(segs[i], i * 8);
+  gl.bindTexture(gl.TEXTURE_2D, crkTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, crkN * 2, 1, gl.RGBA, gl.FLOAT, crkData.subarray(0, crkN * 8));
+}
+
 /* ---------- dust ---------- */
 // Shards start inside the drop; the stored stress sets their speed.
 const DUST = [5000, 9000, 14000];
@@ -1614,6 +1741,10 @@ function draw() {
   gl.uniform1i(u('uSteps'), STEPS[lvl]);
   gl.uniform1i(u('uInSteps'), IN_STEPS[lvl]);
   gl.uniform1i(u('uRefSteps'), REF_STEPS[lvl]);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, crkTex);
+  gl.uniform1i(u('uCrk'), 0);
+  gl.uniform1i(u('uNCrk'), state === 'burst' ? crkN : 0);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -1891,6 +2022,8 @@ function stepSnip(dt) {
 }
 function startBurst() {
   sched = schedule(cut.s);
+  growCracks(cut.s);
+  window.__lab = { crkN, front: () => front, sample: () => Array.from(crkData.slice(0, 32)) };
   const tip = tipSide(REST, S, cut.s);
   const c = tip.pts.reduce((a, p) => add(a, mul(p, 1 / tip.pts.length)), [0, 0, 0, 0]).slice(0, 3);
   tipPose = { pts: tip.pts, ss: tip.ss, c, low: Math.min(...tip.pts.map(p => p[1] - p[3])), bnd: bound(tip.pts) };

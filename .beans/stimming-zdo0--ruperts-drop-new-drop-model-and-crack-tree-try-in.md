@@ -5,15 +5,15 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T23:05:56Z
-updated_at: 2026-11-16T23:16:39Z
+updated_at: 2026-11-16T23:23:05Z
 parent: stimming-2gnm
 ---
 
 Tom picked stage B and option 1 for both: refine the ray-marched model; a precomputed branching crack tree with frosted Voronoi cells. Tried in rupert/stagelab.html first.
 
 - [x] Model: smooth neck, lopsided head, stretched bubbles, kinked thread-thin tail
-- [ ] Tom reviews the model
-- [ ] Crack: CPU crack tree, fingered front, Voronoi frost, shards from the cells
+- [x] Tom reviews the model (OK, 2026-11-16)
+- [x] Crack: CPU crack tree, fingered front, Voronoi frost (shards from the cells still to do)
 - [ ] Tom reviews the crack
 - [ ] Design doc, then port to the toy
 
