@@ -917,7 +917,12 @@ void main() {
     float tO = (RY - ro.y) / rd.y;
     vec3 pO = ro + rd * tO;
     tEnd = dot(pO.xz, pO.xz) < RR * RR ? (uLevel - ro.y) / rd.y : eo.x;
+    // Through the opening, the far inner wall ends the march above the soup.
+    if (dot(pO.xz, pO.xz) < RR * RR) { float tw = iEll(ro, rd, vec3(0.0, BCY, 0.0), RI).y; if (tw > 0.0) tEnd = min(tEnd, tw); }
   }
+  // The rolled rim is solid too, so no flame shows through the lip.
+  float tRim = traceRim(ro, rd, min(tEnd, 1e3));
+  if (tRim > 0.0) tEnd = min(tEnd, tRim);
   // A frame-stepped dither hides the step bands; the upscale smooths it.
   float jit = fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715))) + uFrame * 0.618034);
   // Flames and smoke: march the fire's volume, Fire toy maths on an analytic field.
