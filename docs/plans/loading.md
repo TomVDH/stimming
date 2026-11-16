@@ -79,12 +79,12 @@ Tom: "make the intro flash parts the preloader as well".
 |---|---|
 | Before `intro.js` runs, after 0.5 s | A hairline with a sheen, where the foot of the flash box will be. CSS only |
 | The intro plays | As before: flash, titles, reading time |
-| The toy still loads 10 frames after the titles open | The load line at the foot of the flash box fills in the toy's ink; the emblem breathes |
+| The toy still loads 10 frames after the titles open | The load line at the foot of the flash box fills in the toy's ink. Nothing else moves: a breathing emblem was rejected (Tom, 2026-11-16) |
 | The toy is ready | The line fills in 6 frames, then the intro leaves |
 
 - API: `progress(part)` in `shared/intro.js`, 0 to 1, never back. The intro lifts on `ready`, as before.
 - Shell default: `stage()` puts `libs` at 0.3, `build` at 0.5, `first-frame` at 0.95; with no stage call the intro itself reports 0.12, then 0.4 at the load event.
-- The line creeps up to 0.14 past the last report. The sheen and the breath are `translate` and `opacity` only, so they run while the main thread compiles.
+- The line creeps up to 0.14 past the last report. The sheen is `translate` only, so it runs while the main thread compiles.
 - Reduced motion: a still line and the word Loading at the foot, after 1.2 s. No creep.
 - A toy that is ready in time never shows the line. Intro length, cold, main against the branch (ms): Galaxy 5297 and 5281, Window seat 3930 and 3981.
 - The failsafe that clears a dead overlay is 10 s, was 5 s.

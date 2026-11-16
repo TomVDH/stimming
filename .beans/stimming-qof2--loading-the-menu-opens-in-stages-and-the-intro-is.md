@@ -95,7 +95,7 @@ Checked: no JS, a failed `clock.js`, a failed and a stalled `gsap.min.js`, reduc
 
 - API: `progress(part)` in `shared/intro.js`. The shell's `stage(name, part)` and `buildSteps(n)` call it, so every toy has a default.
 - Before the script runs: a CSS hairline with a sheen waits where the foot of the flash box will be (after 0.5 s).
-- The load line: the same hairline at the foot of the flash box. It fills in the toy's ink and the emblem breathes. It shows only when the toy still loads 10 frames after the titles open.
+- The load line: the same hairline at the foot of the flash box. It fills in the toy's ink; the emblem stays still (Tom rejected a breathing emblem, 2026-11-16). It shows only when the toy still loads 10 frames after the titles open.
 - Reduced motion: a still line and the word Loading at the foot.
 - Real progress: Window seat, Galaxy, Railgun.
 - Intro length on a fast load, main against the branch (ms): Galaxy 5297 and 5281, Window seat 3930 and 3981. No intro is longer.
