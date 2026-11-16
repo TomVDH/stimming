@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T09:27:11Z
+updated_at: 2026-11-16T09:30:12Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -56,3 +56,5 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 
 - [x] Soup film layers: a skin that sets on calm thick soup and cream (matte, wrinkled), wet broth, glassy fat with a faint oil-film rainbow
 - [x] WebGPU fire parked (Tom, 2026-11-16): cauldron/gpufire.js runs Fire's engine over the pot only with ?fire=gpu; the toy ships the WebGL fire
+
+- [x] Neater cooking: things shrink a touch, darken and gloss as they cook; a split thing shrinks away while its pieces grow in and drift apart; melting pieces fade into the soup's colour; calmer skins, no speckle
