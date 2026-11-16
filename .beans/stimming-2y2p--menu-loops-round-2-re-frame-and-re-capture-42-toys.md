@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T09:48:53Z
-updated_at: 2026-11-16T16:41:58Z
+updated_at: 2026-11-16T18:39:36Z
 parent: stimming-1rv3
 blocked_by:
     - stimming-z7j5
@@ -58,3 +58,7 @@ npx -y -p playwright@1.63.0 node tools/loops.mjs [id ...]
 - Not framed as asked: lava (cap and base lie outside the circle; the page has no zoom), balloons and domino (a little of the subject lies outside the circle).
 - Route finder now uses a random seed, so its still and loop show one city.
 - TV tree's loop starts after the page's first all-sets show, so the sets differ as in the still.
+
+## Review sheet
+
+`shared/loops/sheet.html` (noindex) plays every loop in `index.json`, in shelf order. Views: Tube circle (the 80% circle, soft edge), Full square, Still. Only the loops on screen play.
