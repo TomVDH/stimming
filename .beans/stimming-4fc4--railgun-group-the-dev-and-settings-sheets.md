@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T20:01:36Z
-updated_at: 2026-11-16T20:07:33Z
+updated_at: 2026-11-16T20:10:19Z
 ---
 
 Railgun's Dev sheet is one flat list of about 38 rows from seven sessions. Add an optional group key to bar rows in the shell and sort railgun's Dev and Settings rows into labelled groups. No ids, values or defaults change.
@@ -23,3 +23,5 @@ Railgun's Dev sheet is one flat list of about 38 rows from seven sessions. Add a
 - tests/bar-v2.html: 105/108, the same three narrow-resize failures as on HEAD.
 
 Follow-up: dropped Requiem layers open (owner: Requiem signed off with the layers off; goOpen is now false) and the uncommitted Giant age row (owner reverted the storm cells).
+
+Follow-up (Tom: Requiem only): dropped the Game over sound row; goMix is the constant 'requiem'. The other takes stay in code.
