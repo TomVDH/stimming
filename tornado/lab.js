@@ -36,14 +36,15 @@ out vec4 outC;
 uniform sampler3D tNoise;
 uniform sampler2D tPrev;
 uniform vec2 uRes, uJit;
-uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk;
+uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
 uniform vec3 uSun, uSunCol, uAmb;
 // The tornado: see the table in lab.js.
 uniform float uH, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uMulti, uRain, uDark, uLean, uSway;
 const float CAMH = 1.7;
 
-float N(vec3 p) { return texture(tNoise, p).r; }
+// The volume holds 64 cells per unit: a sixteenth makes one unit four cells wide.
+float N(vec3 p) { return texture(tNoise, p * 0.0625).r; }
 const mat3 ROT = mat3(0.00, 0.80, 0.60, -0.80, 0.36, -0.48, -0.60, -0.48, 0.64);
 float fbm(vec3 p, int o) {
   float s = 0.0, a = 0.5, n = 0.0;
@@ -87,25 +88,37 @@ float spinNoise(vec2 q, float h, float r, float R, float sc, int oct, float vmul
   float n2 = fbm(vec3(q2.x, h - up * f2 * P, q2.y) * s + seed + 0.5, oct);
   return mix(n1, n2, w);
 }
-// The wall's noise: bands that wind round the funnel, long around and short in height.
-// Two spin layers on the same 3 s cycle as spinNoise, sampled on a circle so they tile round.
-float wallNoise(vec2 q, float h, float r, float R) {
+// The wall's shape and shade. x: the wall's offset in radii, out positive. y: a shade value, 0 to 1.
+// Lumps bend helical striation bands; fine fibres run along the bands.
+// Two spin layers on a 3 s cycle, as in spinNoise, so the texture never winds up.
+vec2 wallLayer(float ang, float h, float R, float seed) {
+  float z = h / max(R * 0.5, 5.0);
+  // About five lumps round the funnel, one every three half-radii up it.
+  vec3 cl = vec3(cos(ang) * 0.2, z * 0.08, sin(ang) * 0.2) + seed;
+  float lump = fbm(cl, 3);
+  // The helix: a band climbs about one step per radian it winds.
+  float hel = z * 1.1 + ang * 0.9 + (lump - 0.5) * 4.0;
+  // Many bands, of uneven depth.
+  float ridge = 1.0 - abs(sin(hel * 4.2));
+  ridge *= ridge * (0.5 + N(vec3(cos(ang) * 0.5, hel * 0.05, sin(ang) * 0.5) + 3.1));
+  // Fibres: fine streaks laid along the bands.
+  vec3 cf = vec3(cos(ang) * 4.0, hel * 0.35, sin(ang) * 4.0) + seed * 2.0;
+  float fib = N(cf) * 0.6 + N(cf * 2.3 + 1.7) * 0.4;
+  // Curds: small cloud lumps, so the wall reads as cloud.
+  float curd = fbm(vec3(cos(ang) * 1.4, z * 0.6, sin(ang) * 1.4) + seed * 3.0, 2);
+  // Fibres and curds tilt the normal hard: they shade more than they move the wall.
+  float disp = (lump - 0.5) * 1.3 + (ridge - 0.25) * 0.1 + (fib - 0.5) * 0.03 + (curd - 0.5) * 0.1;
+  return vec2(disp, clamp(0.3 + 0.4 * ridge + 0.6 * (fib - 0.5) + 0.5 * (lump - 0.5) + 0.5 * (curd - 0.5), 0.0, 1.0));
+}
+vec2 wallNoise(vec2 q, float h, float r, float R) {
   float om = uVmax / max(R, 4.0) * uSpin;
   float up = uVmax * 0.3 * uSpin;
   const float P = 3.0;
   float ph = uTime / P, f1 = fract(ph), f2 = fract(ph + 0.5), w = abs(1.0 - 2.0 * f1);
   float ang = atan(q.y, q.x);
-  // A helix: the bands climb as they wind.
-  float hz = h / max(R * 0.55, 6.0);
-  float a1 = ang - om * f1 * P + hz * 0.35, a2 = ang - om * f2 * P + hz * 0.35;
-  float rr = 1.3;
-  vec3 c1 = vec3(cos(a1) * rr, (h - up * f1 * P) / max(R * 0.55, 6.0), sin(a1) * rr);
-  vec3 c2 = vec3(cos(a2) * rr, (h - up * f2 * P) / max(R * 0.55, 6.0), sin(a2) * rr);
-  // Ten bands per funnel radius of height, three octaves, plus soft lumps across them.
-  vec3 s = vec3(1.0, 0.9, 1.0) * 0.16;
-  float n1 = fbm(c1 * s, 2) * 0.7 + N(c1 * vec3(0.5, 0.06, 0.5) + 4.0) * 0.3;
-  float n2 = fbm(c2 * s + vec3(0.37, 0.0, 0.21), 2) * 0.7 + N(c2 * vec3(0.5, 0.06, 0.5) + 4.7) * 0.3;
-  return mix(n1, n2, w);
+  vec2 l1 = wallLayer(ang - om * f1 * P, h - up * f1 * P, R, 0.0);
+  vec2 l2 = wallLayer(ang - om * f2 * P, h - up * f2 * P, R, 0.37);
+  return mix(l1, l2, w);
 }
 // The length a ray runs inside an upright cylinder round the origin; x is where it enters.
 vec2 cylinder(vec3 ro, vec3 rd, float r, float y0, float y1) {
@@ -129,10 +142,14 @@ float condS(vec3 p, out float n) {
   float r = length(q), R = radiusAt(h);
   n = 0.5;
   // Far from the wall, a cheap bound does.
-  if (r > R * 1.6 + 4.0) return r - R * 1.4;
-  n = wallNoise(q, h, r, R);
-  float S = r - R * (1.0 + uAmp * 0.8 * (n - 0.5));
+  // The wall moves at most about R out, so past 2.4 R a plain bound is safe.
+  if (r > R * 2.4 + 4.0) return r - R * 1.5;
   float hc = uH * (1.0 - uCond);
+  vec2 wn = wallNoise(q, h, r, R);
+  n = wn.y;
+  // The lower edge frays: the wall moves more there.
+  float fray = 1.0 - smoothstep(hc, hc + 0.3 * uH, h);
+  float S = r - R * (1.0 + uAmp * wn.x * (1.0 + 1.6 * fray));
   S = max(S, hc - (h + (n - 0.5) * 0.35 * uH));
   // The top runs up into the base.
   S = max(S, (h + (n - 0.5) * 90.0) - (uH + 180.0));
@@ -260,6 +277,10 @@ void main() {
     float t = t0 + dtv * hash(fc + fract(uTime * 7.31) * 113.0);
     float tPrev = t;
     vec3 amb0 = uAmb;
+    // The fringe gathers on its own: it shows on rays that miss the wall, the soft silhouette.
+    vec3 fAcc = vec3(0.0);
+    float fT = 1.0;
+    bool hit = false;
     for (int i = 0; i < 260; i++) {
       if (t > t1 || T < 0.015) break;
       vec3 p = ro + rd * t;
@@ -281,28 +302,37 @@ void main() {
         float R = radiusAt(p.y), Ls = max(R * 0.5, 6.0), od = 0.0;
         for (int k = 0; k < 4; k++) od += shadowDens(p + nrm * e * 2.0 + uSun * Ls * (float(k) + 0.5)) * Ls;
         float sunT = exp(-od);
-        float diff = clamp(dot(nrm, uSun) * 0.8 + 0.2, 0.0, 1.0) * sunT;
+        float diff = clamp(dot(nrm, uSun) * 0.9 + 0.1, 0.0, 1.0) * sunT;
         // Crevices between the bands stay dark.
-        float ao = 0.35 + 0.65 * smoothstep(0.25, 0.75, n);
+        // Cavity shade: how open the field is a little way out along the normal.
+        float d1 = max(radiusAt(p.y) * 0.12, 1.0);
+        float ao = clamp(condS(p + nrm * d1 * 2.0, nn) / (d1 * 2.0), 0.0, 1.0);
+        ao = mix(0.35, 1.0, ao) * (0.75 + 0.5 * n);
         vec3 alb = vec3(0.6, 0.62, 0.66) * mix(1.0, 0.07, uDark);
         alb = mix(alb, vec3(0.4, 0.32, 0.24) * mix(1.0, 0.5, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-        alb *= 0.85 + 0.3 * n;
+        alb *= 0.9 + 0.2 * n;
         // A violent tornado stands in its own rain and dirt: less sun reaches its wall.
-        vec3 col = alb * (uSunCol * diff * 0.75 * (1.0 - 0.75 * uDark) + amb0 * (0.25 + 0.35 * u) * (0.6 + 0.4 * nrm.y) * ao);
+        // Warm sun on the lit side, cool sky in the shade; crevices lose some of both.
+        vec3 col = alb * (uSunCol * diff * 0.8 * (1.0 - 0.6 * uDark) * mix(0.55, 1.0, ao) + amb0 * vec3(0.85, 0.95, 1.15) * (0.25 + 0.35 * u) * (0.6 + 0.4 * nrm.y) * ao);
+        if (uDbg > 0.5 && uDbg < 1.5) col = vec3(diff, sunT, 0.5 + 0.5 * nrm.x);
         acc += T * col;
         T = 0.0;
+        hit = true;
         break;
       }
       // The fringe: thin mist just outside the wall, so its edge is soft.
-      float fr = max(radiusAt(p.y) * 0.18, 2.0);
+      float fr = max(radiusAt(p.y) * 0.32, 3.0);
       if (S < fr) {
         // Thinner on a wide funnel, so the fringe stays a soft edge, not a shell.
         float m = smoothstep(fr, 0.0, S) * 0.012 * min(1.0, 40.0 / max(radiusAt(p.y), 1.0));
         float u = clamp(p.y / uH, 0.0, 1.0);
-        vec3 mc = vec3(0.6, 0.62, 0.66) * mix(1.0, 0.07, uDark) * (uSunCol * 0.35 + amb0 * (0.3 + 0.35 * u));
+        // The mist takes the light of the wall it hugs: bright on the sun side, cool on the far side.
+        vec2 qd = normalize(p.xz - axisAt(p.y) + vec2(1e-3));
+        float fd = clamp(dot(qd, normalize(uSun.xz)) * 0.9 + 0.1, 0.0, 1.0);
+        vec3 mc = vec3(0.6, 0.62, 0.66) * mix(1.0, 0.07, uDark) * (uSunCol * 0.7 * fd * (1.0 - 0.75 * uDark) + amb0 * vec3(0.85, 0.95, 1.15) * (0.3 + 0.35 * u));
         float am = 1.0 - exp(-m * min(dtv, max(S * 0.6, 0.3)));
-        acc += T * am * mc;
-        T *= 1.0 - am;
+        fAcc += fT * am * mc;
+        fT *= 1.0 - am;
       }
       // Dust and rain at this step.
       float d, w;
@@ -328,7 +358,12 @@ void main() {
       t += st;
     }
     // Air between the eye and the tornado.
-    acc = mix(acc, skyCol(vec3(rd.x, 0.0, rd.z)) * (1.0 - T), 1.0 - exp(-uDist / 20000.0));
+    // A ray that hit the wall keeps a trace of the fringe; one that missed keeps it all.
+    float keep = hit ? 0.12 : 1.0;
+    acc = fAcc * keep + mix(1.0, fT, keep) * acc;
+    T *= mix(1.0, fT, keep);
+    // Under the storm the air is dim: its haze darkens as much as it lifts.
+    acc = mix(acc, skyCol(vec3(rd.x, 0.0, rd.z)) * 0.45 * (1.0 - T), 1.0 - exp(-uDist / 30000.0));
   }
   vec3 col = bg * T + acc;
   // A short history blend: steady frames lose their march noise.
@@ -470,6 +505,7 @@ function draw(now) {
   // The distance follows the lens: the base's edge sits near the top of the frame.
   set(sc, 'uDist', (850 + 160) * foc / 0.47 * K.dist());
   set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.12 : 0.22);
+  set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
   set(sc, 'uAmp', K.amp());
   set(sc, 'uFk', fk / 5);

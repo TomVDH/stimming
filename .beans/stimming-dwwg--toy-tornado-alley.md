@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:55:24Z
+updated_at: 2026-11-16T21:04:26Z
 parent: stimming-oh7b
 ---
 
@@ -63,3 +63,5 @@ Built; waits for the checkpoint with Tom.
 - Stage 2, round 2 (Tom: "a little less far away from the action, 50 or 85mm lens", "the tornados will be the centre pieces"; then "50mm looks good"): Lens setting 50 mm (default) or 85 mm; the storm moves 17 km closer; tornadoes 5 to 14 km out; funnel tops follow the local base (lower under the wall cloud) and fade before the cut; finer storm edges near the eye; F5 dust narrower and thinner.
 
 - Hero tornado lab, first pass: tornado/lab.html + lab.js (noindex). F slider F0 to F5 morphs rope, cone, stovepipe, wedge; Morph, Pause, knobs (spin, turbulence, debris, distance, lens, sun, steps, resolution). Headless 44 to 60 fps at 0.6 resolution. Waits for Tom.
+
+- Tornado lab, funnel surface pass (Tom picked it): noise lookups were 16 times too fine (the speckle, sandy debris and grainy base); the wall is now lumps that bend helical striation bands, with fibres and curds as shade; cavity shade from the field; the fringe shows only on the silhouette, so the funnel models lit and shaded; the haze under the storm is dim. 60 fps headless at every F level.
