@@ -152,9 +152,6 @@ let shaftGain = 1.6;
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
-// The mount: a pylon over a recoil well, or two side towers.
-// The address picks it: ?mount=towers; the Dev row reloads with it.
-const MOUNT = new URLSearchParams(location.search).get('mount') === 'towers' ? 'towers' : 'well';
 const ui = initPage({ id: 'railgun', bar: {
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
@@ -233,8 +230,6 @@ const ui = initPage({ id: 'railgun', bar: {
     // Gun steel: the graphite parts' reflectance and roughness.
     { type: 'slider', id: 'gunmetal', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
     { type: 'slider', id: 'gunrough', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
-    // Mount: the pylon over a well, or two side towers; a pick reloads.
-    { type: 'choice', id: 'mount', label: 'Mount', display: 'segments', value: MOUNT, options: [{ value: 'well', label: 'Well' }, { value: 'towers', label: 'Towers' }], onPick: v => { if (v === MOUNT) return; const u = new URL(location.href); u.searchParams.set('mount', v); location.href = u.href; } },
     // Base wear: the stains, cracks and grease on the base.
     { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
@@ -300,7 +295,7 @@ const RES_STEP = [1, 0.82, 0.68, 0.55];
 const LIFT = 0, BERM_R = 660;
 // The barrel runs 1046 m from the trunnion.
 // RISE lifts the trunnion and the whole mount over the old 215 m.
-const RISE = MOUNT === 'towers' ? 80 : 20;
+const RISE = 20;
 const ELEV = rad(6), L = 1046, TRUN_Y = 215 + RISE + LIFT;
 const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
 const AX_UP = new THREE.Vector3(0, Math.cos(ELEV), Math.sin(ELEV));
@@ -1860,22 +1855,22 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
 }
 // A block in the world frame; y is its centre.
 const block = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-// The side pier: half depth at the foot and at the head.
-const PIER = { z: 150, head: 52, leg: 42 };
-// One pier: a side profile in z and y, pushed W metres out from x = sd * inner.
-// It stands plumb from the bearing to half height, then spreads like an A.
-function pier(sd, inner, W, crown, mid) {
-  const P = PIER.z, H = PIER.head, t = PIER.leg;
-  const sh = new THREE.Shape().moveTo(-P, 24).lineTo(P, 24).lineTo(H, mid).lineTo(H, crown).lineTo(-H, crown).lineTo(-H, mid).closePath();
-  // The A's opening: its sides run parallel to the legs, its head is pointed.
-  const outX = y => P - (P - H) * (y - 24) / (mid - 24);
-  const y0 = 48, y1 = mid - 34;
-  sh.holes.push(new THREE.Path().moveTo(-(outX(y0) - t), y0).lineTo(outX(y0) - t, y0).lineTo(outX(y1) - t, y1).lineTo(0, mid - 12).lineTo(-(outX(y1) - t), y1).closePath());
-  const g = new THREE.ExtrudeGeometry(sh, { depth: W, curveSegments: 12, bevelEnabled: true, bevelThickness: 3, bevelSize: 3, bevelSegments: 1 });
+// The central pylon: half widths at the shaft and the foot, leg width.
+const PYLON = { shaft: 95, foot: 250, leg: 70, d: 120, collar: 0.18 };
+// The pylon seen from the front: the yoke and a short collar stand plumb.
+// Below the collar the pylon spreads like an A.
+// Its profile lies in x and y; it runs d metres along z, centred on the pin.
+function aPylon(y0, top) {
+  const S = PYLON.shaft, F = PYLON.foot, t = PYLON.leg, mid = top - (top - y0) * PYLON.collar;
+  const sh = new THREE.Shape().moveTo(-F, y0).lineTo(F, y0).lineTo(S, mid).lineTo(S, top).lineTo(-S, top).lineTo(-S, mid).closePath();
+  // The A's opening: sides parallel to the legs, a pointed head.
+  const outX = y => F - (F - S) * (y - y0) / (mid - y0);
+  const h0 = y0 + 12, h1 = mid - 34;
+  sh.holes.push(new THREE.Path().moveTo(-(outX(h0) - t), h0).lineTo(outX(h0) - t, h0).lineTo(outX(h1) - t, h1).lineTo(0, mid - 8).lineTo(-(outX(h1) - t), h1).closePath());
+  const g = new THREE.ExtrudeGeometry(sh, { depth: PYLON.d, curveSegments: 8, bevelEnabled: true, bevelThickness: 3, bevelSize: 3, bevelSegments: 1 });
   // The merge needs an indexed piece, as every other piece is.
   g.deleteAttribute('uv'); g.clearGroups();
-  // Shape x is the world z; the extrusion runs out along x.
-  return mergeVertices(g).rotateY(sd > 0 ? Math.PI / 2 : -Math.PI / 2).translate(sd * inner, 0, 0);
+  return mergeVertices(g).translate(0, 0, -PYLON.d / 2);
 }
 // Narrow a box's top: kx across, kz along, then shift the top along z.
 function taper(g, kx, kz, dz = 0) {
@@ -1936,80 +1931,54 @@ function buildGun() {
   add(beam(v3(0, LIFT + 3, 470), v3(0, 3, 1460), 46, 6), 0, 0, 2);
   // The deck turns on a dark race ring.
   add(drum(404, 404, 4, 23, 64), 0, 2);
-  if (MOUNT === 'well') {
-    // The deck has a slot behind the pylon: the recoil well.
-    // The breech swings down into it as the gun climbs.
-    { const disc = (r, h, y) => {
-        const sh = new THREE.Shape().absarc(0, 0, r, 0, Math.PI * 2, false);
-        sh.holes.push(new THREE.Path().moveTo(-WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z1).lineTo(-WELL.x, -WELL.z1).closePath());
-        const g = new THREE.ExtrudeGeometry(sh, { depth: h, curveSegments: 64, bevelEnabled: false });
-        // The merge needs an indexed piece, as every other piece is.
-        g.deleteAttribute('uv'); g.clearGroups();
-        return mergeVertices(g).rotateX(-Math.PI / 2).translate(0, y, 0);
-      };
-      add(disc(396, 12, 18));
-      add(disc(384, 4, 30)); }
-    // The well's walls drop below the plain; its floor is dark.
-    for (const sd of [-1, 1]) add(block(6, 34 - WELL.floor, WELL.z1 - WELL.z0, sd * (WELL.x + 3), (34 + WELL.floor) / 2, (WELL.z0 + WELL.z1) / 2), 0, 2);
-    for (const z of [WELL.z0, WELL.z1]) add(block(2 * WELL.x + 12, 34 - WELL.floor, 6, 0, (34 + WELL.floor) / 2, z), 0, 2);
-    // A yellow lip marks the well's edge.
-    for (const sd of [-1, 1]) add(block(5, 3, WELL.z1 - WELL.z0, sd * (WELL.x + 3), 35.5, (WELL.z0 + WELL.z1) / 2), 0, 3);
-    // The bolts ring the deck; the well cuts none.
-    for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
-    // Mount: a footing, one thick pylon, a yoke for the pin.
-    // The footing stops at the well's front wall.
-    add(block(300, 12, 170, 0, 40, -25));
-    add(block(190, 126 + RISE, 120, 0, 77 + RISE / 2, 0));
-    add(block(214, 10, 136, 0, 138 + RISE, 0), 0, 2);
-    for (const sd of [-1, 1]) {
-      add(block(26, 132, 112, sd * 80, 189 + RISE, 0));
-      add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
-      // A braced strut climbs from the deck to the pylon's back.
-      // The struts stand wide, so the well runs between them.
-      add(beam(v3(sd * 112, 34, 330), v3(sd * 84, 124 + RISE, 66), 26, 20));
-      add(block(40, 10, 40, sd * 112, 39, 334));
-      add(block(14, 34, 14, sd * 106, 51, 230));
-      // A tie runs from each strut's foot to the pylon's foot.
-      add(beam(v3(sd * 112, 40, 320), v3(sd * 96, 40, 66), 10, 8), 0, 2);
-      // A pinion housing drives each quadrant.
-      add(block(30, 36, 50, sd * 110, 92 + RISE, 0), 0, 2);
-    }
-    // A short leg props the pylon's front.
-    add(beam(v3(0, 34, -236), v3(0, 116 + RISE, -56), 34, 18));
-    add(block(80, 8, 56, 0, 38, -240));
-    add(new THREE.CylinderGeometry(26, 26, 240, 24, 1).rotateZ(Math.PI / 2).translate(0, A0.y - LIFT, 0), 0, 2);
-    // A machinery house with louvres sits beside the far strut.
-    add(block(80, 40, 90, -190, 54, 170));
-    for (let z = 135; z <= 205; z += 12) add(block(83, 26, 3, -190, 56, z), 0, 2);
-    // A service tower stands on the near side; a catwalk joins the yoke.
-    add(block(16, 170 + RISE, 16, 170, 119 + RISE / 2, 40));
-    add(block(26, 14, 26, 170, 211 + RISE, 40), 0, 2);
-    add(block(72, 3, 8, 129, 200 + RISE, 40), 0, 2);
-    for (const y of [76, 118, 160]) add(block(20, 3, 20, 170, y, 40), 0, 2);
-  } else {
-    // Side piers: on each flank a pier carries a trunnion bearing.
-    // Each pier stands plumb under the bearing, then spreads like an A.
-    // The breech swings down between the piers.
-    add(drum(384, 396, 12, 24, 64));
-    add(drum(378, 384, 4, 32, 64));
-    for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
-    const IN = 118, W = 64, crown = A0.y - LIFT + 46, mid = 24 + (crown - 24) * 0.5;
-    for (const sd of [-1, 1]) {
-      add(pier(sd, IN, W, crown, mid));
-      // A yellow band rings the plumb shaft where the A spreads.
-      add(block(W + 12, 8, 2 * PIER.head + 12, sd * (IN + W / 2), mid + 6, 0), 0, 3);
-      // A footing takes the pier on the deck.
-      add(block(W + 40, 10, 2 * PIER.z + 30, sd * (IN + W / 2), 39, 0));
-      // The bearing: a dark drum through the pier's head.
-      add(new THREE.CylinderGeometry(46, 46, W + 16, 32, 1).rotateZ(Math.PI / 2).translate(sd * (IN + W / 2), A0.y - LIFT, 0), 0, 2);
-      add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
-      // The pinion that drives the quadrant sits on the pier's inner face.
-      add(block(18, 40, 54, sd * (IN - 6), A0.y - LIFT - 122, 0), 0, 2);
-    }
-    // A machinery house sits on the deck behind the far tower.
-    add(block(80, 40, 90, -190, 54, 200));
-    for (let z = 165; z <= 235; z += 12) add(block(83, 26, 3, -190, 56, z), 0, 2);
+  // The deck has a slot behind the pylon: the recoil well.
+  // The breech swings down into it as the gun climbs.
+  { const disc = (r, h, y) => {
+      const sh = new THREE.Shape().absarc(0, 0, r, 0, Math.PI * 2, false);
+      sh.holes.push(new THREE.Path().moveTo(-WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z1).lineTo(-WELL.x, -WELL.z1).closePath());
+      const g = new THREE.ExtrudeGeometry(sh, { depth: h, curveSegments: 64, bevelEnabled: false });
+      // The merge needs an indexed piece, as every other piece is.
+      g.deleteAttribute('uv'); g.clearGroups();
+      return mergeVertices(g).rotateX(-Math.PI / 2).translate(0, y, 0);
+    };
+    add(disc(396, 12, 18));
+    add(disc(384, 4, 30)); }
+  // The well's walls drop below the plain; its floor is dark.
+  for (const sd of [-1, 1]) add(block(6, 34 - WELL.floor, WELL.z1 - WELL.z0, sd * (WELL.x + 3), (34 + WELL.floor) / 2, (WELL.z0 + WELL.z1) / 2), 0, 2);
+  for (const z of [WELL.z0, WELL.z1]) add(block(2 * WELL.x + 12, 34 - WELL.floor, 6, 0, (34 + WELL.floor) / 2, z), 0, 2);
+  // A yellow lip marks the well's edge.
+  for (const sd of [-1, 1]) add(block(5, 3, WELL.z1 - WELL.z0, sd * (WELL.x + 3), 35.5, (WELL.z0 + WELL.z1) / 2), 0, 3);
+  // The bolts ring the deck; the well cuts none.
+  for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
+  // Mount: a footing, one thick pylon, a yoke for the pin.
+  // The footing stops at the well's front wall.
+  add(block(2 * PYLON.foot + 40, 12, 170, 0, 40, -25));
+  add(aPylon(46, 140 + RISE));
+  // A yellow band rings the shaft where the A spreads.
+  add(block(2 * PYLON.shaft + 10, 8, PYLON.d + 10, 0, 140 + RISE - (94 + RISE) * PYLON.collar, 0), 0, 3);
+  add(block(214, 10, 136, 0, 138 + RISE, 0), 0, 2);
+  for (const sd of [-1, 1]) {
+    add(block(26, 132, 112, sd * 80, 189 + RISE, 0));
+    add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
+    // A braced strut climbs from the deck to the pylon's back.
+    // The struts stand wide, so the well runs between them.
+    add(beam(v3(sd * 112, 34, 330), v3(sd * 84, 124 + RISE, 66), 26, 20));
+    add(block(40, 10, 40, sd * 112, 39, 334));
+    add(block(14, 34, 14, sd * 106, 51, 230));
+    // A tie runs from each strut's foot to the pylon's foot.
+    add(beam(v3(sd * 112, 40, 320), v3(sd * 190, 40, 66), 10, 8), 0, 2);
+    // A pinion housing drives each quadrant.
+    add(block(30, 36, 50, sd * 110, 92 + RISE, 0), 0, 2);
   }
+  add(new THREE.CylinderGeometry(26, 26, 240, 24, 1).rotateZ(Math.PI / 2).translate(0, A0.y - LIFT, 0), 0, 2);
+  // A machinery house with louvres sits beside the far strut.
+  add(block(80, 40, 90, -190, 54, 170));
+  for (let z = 135; z <= 205; z += 12) add(block(83, 26, 3, -190, 56, z), 0, 2);
+  // A service tower stands on the near side; a catwalk joins the yoke.
+  add(block(16, 170 + RISE, 16, 170, 119 + RISE / 2, 40));
+  add(block(26, 14, 26, 170, 211 + RISE, 40), 0, 2);
+  add(block(72, 3, 8, 129, 200 + RISE, 40), 0, 2);
+  for (const y of [76, 118, 160]) add(block(20, 3, 20, 170, y, 40), 0, 2);
   // Breech housing: one ribbed box behind the pin, a bank on its back.
   add(slab(120, 104, -250, 70, 0, 4), 0.5, 0);
   for (let a = -226; a < 60; a += 26) add(slab(128, 82, a - 3, a + 3, 0, 4), 0.5, 2);
@@ -8658,7 +8627,7 @@ const CW = { a: -368, u: -35, gap: 8 };
 function cwClear(s, se, ce) {
   const a = CW.a - 0.85 * s, z = -a * ce + CW.u * se, y = TRUN_Y + a * se + CW.u * ce - LIFT;
   // The base's height under z: well, deck, apron and teeth, then the plain.
-  const floor = MOUNT === 'well' && z < WELL.z1 - 6 ? WELL.floor : z < 396 ? 34 : z < 477 ? 30 : z < 529 ? 30 * (529 - z) / 52 : 4;
+  const floor = z < WELL.z1 - 6 ? WELL.floor : z < 396 ? 34 : z < 477 ? 30 : z < 529 ? 30 * (529 - z) / 52 : 4;
   return y >= floor + CW.gap;
 }
 function recoilRoom() {
