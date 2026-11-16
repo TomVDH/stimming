@@ -203,7 +203,7 @@ const TOK = {
   wall: [0.4, 0.014, 250],
   bench: [0.33, 0.008, 60],
   box: [0.36, 0.012, 255],
-  porcelain: [0.82, 0.03, 85],
+  porcelain: [0.74, 0.025, 85],
   copper: [0.8, 0.115, 52],
   temper: [0.52, 0.12, 295],
   soot: [0.3, 0.02, 45],
@@ -445,6 +445,7 @@ function strike() {
 function snap() {
   const a = arc;
   ghost.P.set(a.P); ghost.len = a.len; ghost.I = a.I; ghost.seed = a.seed; ghost.live = true;
+  share = 0;
   const [fout] = fades();
   ghost.rate = fout > 0 ? 1 / fout : Infinity;
   a.live = false;
@@ -551,7 +552,7 @@ function checkBreak(dt) {
   if (a.stuck[0] && a.stuck[1]) {
     if (!a.tipLen) a.tipLen = a.len;
     a.tipT += dt;
-    if (a.len > a.tipLen * 1.45 + 1 || a.tipT > 0.5) return true;
+    if (a.len > a.tipLen * 1.35 + 0.5 || a.tipT > 0.5) return true;
   }
   // A cooled arc needs more voltage, so it lets go sooner.
   return a.len > a.breakLen * (1 - 0.5 * a.cool) || a.age > 9;
@@ -561,7 +562,7 @@ function stepLife(dt) {
   if (ghost.live) {
     ghost.I -= dt * ghost.rate;
     // The dying column drifts up as it fades.
-    for (let i = 1; i < N - 1; i++) ghost.P[i * 3 + 1] += 6 * dt;
+    for (let i = 1; i < N - 1; i++) ghost.P[i * 3 + 1] += 4 * dt;
     if (ghost.I <= 0) { ghost.I = 0; ghost.live = false; }
   }
   if (!arc.live) {
@@ -603,26 +604,27 @@ function stepHeat(dt) {
 }
 
 /* ---------- the room light ---------- */
-// Seven light points along the arc light the room.
-// Positions follow in 0.1 s; power follows in 0.3 s, so the room never blinks.
-const LP = new Float32Array(7 * 4), LT = new Float32Array(7 * 3);
-const LW = [0.5, 1, 1, 1, 1, 1, 0.5].map(w => w / 6);
-let roomI = 1, lightsSet = false;
-function sampleChain(P, f, out, o) {
+// Four light points on the live arc and four on the last one light the room.
+// The light cross-fades from the old arc to the new; it never sweeps between them.
+// Power follows in 0.3 s, so the room never blinks.
+const LP = new Float32Array(8 * 4);
+const LW = [0.5, 1, 1, 0.5].map(w => w / 3);
+let roomI = 1, share = 1;
+function sampleChain(P, f, o) {
   const x = f * (N - 1), i = Math.min(N - 2, Math.floor(x)), t = x - i;
-  for (let c = 0; c < 3; c++) out[o + c] = P[i * 3 + c] + (P[i * 3 + 3 + c] - P[i * 3 + c]) * t;
+  for (let c = 0; c < 3; c++) LP[o + c] = P[i * 3 + c] + (P[i * 3 + 3 + c] - P[i * 3 + c]) * t;
 }
 function stepLights(dt) {
-  const src = arc.live ? arc : ghost;
-  for (let k = 0; k < 7; k++) sampleChain(src.P, k / 6, LT, k * 3);
-  const kp = lightsSet ? 1 - Math.exp(-dt / (flicker === 'off' || reduced() ? 0.16 : 0.1)) : 1;
-  for (let k = 0; k < 7; k++) {
-    for (let c = 0; c < 3; c++) LP[k * 4 + c] += (LT[k * 3 + c] - LP[k * 4 + c]) * kp;
-    LP[k * 4 + 3] = LW[k];
+  const tau = reduced() ? 0.3 : flicker === 'off' ? 0.18 : 0.1;
+  if (arc.live) share += (1 - share) * (1 - Math.exp(-dt / tau));
+  for (let k = 0; k < 4; k++) {
+    sampleChain(arc.P, k / 3, k * 4);
+    LP[k * 4 + 3] = LW[k] * share;
+    sampleChain(ghost.P, k / 3, (k + 4) * 4);
+    LP[(k + 4) * 4 + 3] = LW[k] * (1 - share);
   }
-  lightsSet = true;
   // A short gap between arcs does not dim the room.
-  const L = arc.live ? arc.len : ghost.len;
+  const L = mix(ghost.len, arc.len, share);
   const target = 0.82 + 0.3 * sstep(1, 14, L);
   roomI += (target - roomI) * (1 - Math.exp(-dt / 0.3));
 }
@@ -652,10 +654,11 @@ uniform vec3 uEye, uF, uR, uU;
 uniform float uTanH, uAsp;
 uniform vec3 uRA[6], uRB[6];
 uniform float uRodR;
+uniform vec3 uRodBox;
 uniform vec3 uBoxMin, uBoxMax;
 uniform vec4 uIns;
 uniform float uWallZ, uBenchZ;
-uniform vec4 uL[7];
+uniform vec4 uL[8];
 uniform vec3 uLcol, uFloor;
 uniform sampler2D uHeat;
 uniform vec3 uWallC, uBenchC, uBoxC, uPorC, uCuC, uTempC, uSootC;
@@ -791,17 +794,24 @@ vec3 shadeRoom(int m, vec3 P, vec3 N, vec3 V) {
     ao = mix(0.55, 1.0, smoothstep(uBoxMax.y, uBoxMax.y + 1.2, P.y));
   }
   vec3 diff = vec3(0.0), spec = vec3(0.0);
-  for (int k = 0; k < 7; k++) {
+  // The arc always burns above the box top, so its shadow only rings the box.
+  vec2 qb = abs(P.xz - (uBoxMin.xz + uBoxMax.xz) * 0.5) - (uBoxMax.xz - uBoxMin.xz) * 0.5;
+  bool boxSh = m == M_BENCH && max(qb.x, qb.y) < 9.0;
+  bool insSh = m == M_BOX && N.y > 0.5;
+  for (int k = 0; k < 8; k++) {
+    if (uL[k].w <= 0.0) continue;
     vec3 Lv = uL[k].xyz - P;
     float d2 = dot(Lv, Lv);
     vec3 L = Lv * inversesqrt(d2);
     float nl = dot(N, L);
     if (nl <= 0.0) continue;
     float sh = 1.0;
-    if (m == M_BENCH || m == M_WALL) sh = boxShade(P + N * 0.05, uL[k].xyz, 1.4);
-    else if (m == M_BOX && N.y > 0.5) sh = insShade(P + N * 0.05, uL[k].xyz, 1.4);
+    if (boxSh) sh = boxShade(P + N * 0.05, uL[k].xyz, 1.4);
+    else if (insSh) sh = insShade(P + N * 0.05, uL[k].xyz, 1.4);
     float e = uL[k].w * nl * sh / (d2 + 6.0);
     diff += vec3(e);
+    // The matte wall takes no highlight.
+    if (m == M_WALL) continue;
     vec3 H = normalize(L + V);
     float a = rough * rough, aw = min(1.0, a + 0.7 * inversesqrt(d2)), lh = max(dot(L, H), 0.2);
     spec += e * ggxD(max(dot(N, H), 0.0), aw) * (a * a) / (aw * aw) * fres(vec3(f0), max(dot(V, H), 0.0)) / (4.0 * lh * lh);
@@ -846,8 +856,10 @@ vec3 shadeRod(vec3 P, vec3 N, vec3 V, float hu, float side) {
   float rough = mix(0.24, 0.5, max(0.5 * tint, soot));
   vec3 R = reflect(-V, N);
   vec3 spec = vec3(0.0), diff = vec3(0.0);
-  for (int k = 0; k < 6; k++) {
+  // Three segments on each arc; the step from one arc to the other is skipped.
+  for (int k = 0; k < 7; k++) {
     float w = 0.5 * (uL[k].w + uL[k + 1].w);
+    if (k == 3 || w <= 0.0) continue;
     vec3 L0 = uL[k].xyz - P, L1 = uL[k + 1].xyz - P, Ld = L1 - L0;
     float rl = dot(R, Ld);
     float tt = clamp((dot(R, L0) * rl - dot(L0, Ld)) / max(dot(Ld, Ld) - rl * rl, 1e-4), 0.0, 1.0);
@@ -867,6 +879,10 @@ vec3 shadeRod(vec3 P, vec3 N, vec3 V, float hu, float side) {
 }
 // The rods over the room, with analytic edge coverage.
 float rods(vec3 ro, vec3 rd, float tMax, out vec3 col) {
+  col = vec3(0.0);
+  // Rays that cross the rods' plane far from the rods skip the tests.
+  vec2 pz = (ro + rd * (-ro.z / rd.z)).xy;
+  if (abs(pz.x) > uRodBox.x || pz.y < uRodBox.y || pz.y > uRodBox.z) return 0.0;
   float cov = 0.0, best = 1e9;
   int bi = -1;
   float bu = 0.0;
@@ -883,7 +899,6 @@ float rods(vec3 ro, vec3 rd, float tMax, out vec3 col) {
     float c = clamp((uRodR - d) / (s * pxK) + 0.5, 0.0, 1.0);
     if (c > 0.0 && s < best) { best = s; cov = c; bi = i; bu = u; }
   }
-  col = vec3(0.0);
   if (bi < 0) return 0.0;
   vec3 a = uRA[0], b = uRB[0];
   for (int i = 0; i < 6; i++) if (i == bi) { a = uRA[i]; b = uRB[i]; }
@@ -1235,6 +1250,8 @@ function render(dt) {
   gl.uniform3fv(p.u('uRA'), RA);
   gl.uniform3fv(p.u('uRB'), RB);
   gl.uniform1f(p.u('uRodR'), G.rodR);
+  // The rods' bounds on their plane, with room for the yaw.
+  gl.uniform3f(p.u('uRodBox'), G.gap0 + G.rodLen * Math.sin(theta) + 2.5, 9, G.gapY + G.rodLen + 1.5);
   gl.uniform3fv(p.u('uBoxMin'), G.boxMin);
   gl.uniform3fv(p.u('uBoxMax'), G.boxMax);
   gl.uniform4fv(p.u('uIns'), G.ins);
