@@ -115,6 +115,26 @@ No public three.js fern generator turned up. Fronds come from our own rule (Task
 
 **How the toy would sit on three.js.** One `WebGLRenderer` draws the garden (instanced moss, fronds, stones, wood, shadow map) into a render target with depth. The jar and the wet glass stay as they are, as full-screen `ShaderMaterial` passes on the same renderer: `wetglass.js`, `glassrain.js`, `bokeh.js`, `glow.js` and `output.js` already compile in a three.js `ShaderMaterial`. The toy then leaves `environment.js` and wires those bundles itself, as Fog horn's runner does.
 
+### Probe result (2026-11-16, bean `stimming-g266`)
+
+`terrarium/probe.html` (noindex) draws the fill on three.js 0.170.0 with the toy's camera and jar profile. Wake, Grow and Mist (M) sit in a small panel; `?orbit` frees the camera; `?moss=N` sets the strand count.
+
+| | Toy (ray march) | Probe (three.js) |
+|---|---|---|
+| Moss | A bumpy surface with colour | 120,000 instanced strands; cushions read as domes; dry strands fold and slump, wet ones open and green |
+| Ferns | About 18 arcs with a comb edge | Fronds of 900 instanced leaflets on rule-grown rachises; fiddleheads; light through the leaves |
+| Fill | Pebbles drawn on the cut face | 2,400 drainage stones, a charcoal band, a sloped bed, a craggy stone and a branch that moss climbs, red spore stalks |
+| Shadows | None | Soft grow-light shadows (variance shadow map, blur 14) |
+| Glass | Strong: tint by glass crossed, solid lid and base, wet glass | Weak: three.js transmission is a thin shell; a green edge term helps; ghost rings on the lid |
+| Frame, 1280 x 800, 1x | 10.5 ms median while misting | 31 ms with soft shadows (15 ms with hard ones) |
+| Frame, 1280 x 800, 2x | 23 ms | 54 ms (hard shadows) |
+
+Headless Chromium on Metal; Tom checks a real laptop. 6.8 M triangles a frame: the transmission pass draws the garden a second time, and the moss is 16 triangles a strand.
+
+**Verdict.** The fill gains a great deal from three.js: strands, leaflets, stones and soft shadows are out of reach in the ray march. The glass does not: ours is better. So the build is a hybrid: three.js draws the garden into a buffer once, and the toy's own jar and wet glass (its GLSL, as a full-screen `ShaderMaterial`) read it. That drops the transmission pass, about a third of the cost.
+
+**To reach 30 fps at 2x:** draw the garden once (no transmission pass); moss as one card a strand at Standard, two at High; fewer moss strands far from the front; the shadow map rebuilt only when the wake or growth changes; the loop sleeps when nothing moves, as today.
+
 ### Plan A, stage by stage (one look at a time, stills after each)
 
 1. **Raster pass.** The contents draw as meshes into a buffer the jar reads. Today's look first, as meshes, so nothing jumps.
