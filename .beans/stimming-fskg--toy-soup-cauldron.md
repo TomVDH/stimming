@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T08:45:41Z
+updated_at: 2026-11-16T08:46:02Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -52,4 +52,4 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - [x] Roughness noise per material: iron streaks, spoon grain, a fine noise on each thing's skin
 - [ ] Soupy marbled dye field
 - [x] Tray picker (Mix, ten things, four liquids) and pours: cream, squid ink, chilli oil, saffron; the stream digs a dent, rings out and drops in its own colour
-- [ ] Toy doc
+- [x] Toy doc
