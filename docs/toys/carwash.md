@@ -30,6 +30,26 @@ The toy opens on an establishing shot: the place from across the road at night, 
 | The car | Seen from outside in the shot: a long, low sedan with fins, chrome and lit tail lamps, in the Paint setting. From inside: a chrome strip down the bonnet, an ornament on the nose, a painted dash with a chrome trim. Low beams light the lot and the desert; the driver turns them off in the tunnel |
 | Suds | White, a touch warm or cool: soft heaped froth with a fine grain, a few clear bubbles of many sizes, lace where it drains. No coloured triple foam: that came decades later |
 
+## Strange (Tom, 2026-11-16: "strange things do happen when you go through it sometimes")
+
+Most runs are an ordinary wash. At Proceed the run may draw one moment: Sometimes gives a 30 % chance, Often 75 %, Off none; the moment is then one of eleven, equally likely (about 2.7 % each on Sometimes). Each moment has its own sound cue, and the world's sound ducks under it. Nothing rushes the glass; nothing flashes more than twice in a second.
+
+| Moment | Where | What happens | Cue |
+|---|---|---|---|
+| Lights out | Top brush | Every lamp in the tunnel dies for about 5 s; the cloth keeps turning in the dark; the lamps return with two flashes 0.45 s apart (a 1.5 s fade with reduced motion) | A relay's clunk and a falling hum; a ballast tick |
+| Hand | Full suds | A hand presses into the foam from outside, holds, then slides down and away, smearing it | A dull thump and a skin squeak; a long squeak |
+| Someone | Rolling out | A person stands in the desert at the far edge of the low beams. Back on the shot, someone stands under the lamp | A low swell, the world near silent |
+| Foam climbs | Suds | For three seconds the foam slides up the glass, then falls again | A slow rising creak |
+| Headlights | The whole run | Two headlights wait far behind in the mirror and never come closer; gone at the exit | A car idling, far off |
+| Extra station | Between wax and spot rinse | An arch that was not there, with a dim red bulb and a sign nobody can read | A low drone and a long hiss |
+| Two taps | Blower | The air stops and the chain holds; something taps the glass twice, and beads jump; the air starts again | The air dying; two knocks on glass; the air rising |
+| Snow | Rolling out | Snow on the ground and in the air, an overcast, no stars. Back on the shot it is still snowing | A muffled hush |
+| Noon | Rolling out | The exit opens on a bleached desert at noon. The shot is night again | Cicadas |
+| Lights on the hills | Rolling out | Four lights hang still over the far hills; one slowly fades and returns. They are still there on the shot | A soft low chord |
+| Exit is entrance | Rolling out | The exit opens on the entrance: the canopy, the door, the pylon | The sign's buzz |
+
+Cut, and why: the road gone (too small to notice at a 1.2 m eye height); the brushes parting on someone at the far end (foam and lens blur hide anyone in the tunnel; the figure moved to the desert); wipers that move on their own (not deniable).
+
 ## Controls
 
 <!-- gen:bar -->
@@ -41,8 +61,8 @@ Bar: v2.
 | Bottom left (actions) | Proceed (shown only while the establishing shot waits, or while reduced motion steps the run) |
 | Bottom right (slider) | None |
 | Key strip | `[CLICK] proceed`, `[DRAG] wipers` |
-| Settings | Paint (Black, Cherry, Pearl, Teal), site Quality, Reset |
-| Dev (`?dev`) | Jump (entry to desert), Pace (1 to 8); driver's seat: Eye height, Eye side, Seat distance, Pitch, Yaw, Field of view, View Reset; establishing shot: Shot side, Shot height, Shot depth, Shot pitch, Shot yaw, Shot width, Shot Reset; Exposure, Bloom, Grain |
+| Settings | Paint (Black, Cherry, Pearl, Teal), Strange (Off, Sometimes, Often), site Quality, Reset |
+| Dev (`?dev`) | Jump (entry to desert), Pace (1 to 8), Strange next (Random, None, or one moment by name); driver's seat: Eye height, Eye side, Seat distance, Pitch, Yaw, Field of view, View Reset; establishing shot: Shot side, Shot height, Shot depth, Shot pitch, Shot yaw, Shot width, Shot Reset; Exposure, Bloom, Grain |
 <!-- /gen:bar -->
 
 | Gesture | Does |
@@ -91,7 +111,7 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 3151 | The page: shell, shaders, sim, timeline, sound, input |
+| `index.html` | 3459 | The page: shell, shaders, sim, timeline, strange moments, sound, input |
 <!-- /gen:files -->
 
 ## Render pipeline
@@ -119,6 +139,9 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 | `uFlash` | vec2 | Heat lightning: level, bearing | Pulses at least 0.45 s apart |
 | `uMoth[25]` | vec3 | Two moths per arch lamp, bugs at the sodium head and the canopy bulbs | Placed each frame |
 | `uHead` | float | The low beams | 1 outside, 0 in the tunnel |
+| `uWorld` | vec4 | Strange: snow, noon, lights on the hills, the entrance past the exit | 0 to 1 |
+| `uFig`, `uExtra`, `uMirror` | vec4, float, float | Strange: a standing figure (x, z, level); the extra arch; the mirror's headlights | 0 to 1 |
+| `uHand`, `uTap`, `uGrav` | vec4, vec4, float | Strange, in the glass sim: a hand (x, y, press), a knock (x, y, strength), foam's gravity | Gravity 1, or -0.9 when the foam climbs |
 
 ## Sound
 
@@ -128,6 +151,7 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 | Engine | Raw Web Audio |
 | Outside | Desert wind in gusts, crickets, the sign's 120 Hz transformer buzz and crackle when its tubes drop out, the lamp's hum |
 | Inside | Two old motors out of step, the chain's knock, a gurgling drain, a loose panel that rattles under the brushes and the blower, a belt that squeals now and then; roof and glass drumming, spray hiss, cloth flutter and slaps, the blower's roar, curtain splashes |
+| Strange | Each moment ducks the world bus and plays its own cue straight to the kit's output |
 | Sleep | The beds fade when the loop stops; the kit sleeps 1.5 s later and when the page hides |
 
 ## Quality and performance
@@ -152,7 +176,7 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 
 ## Tests and QA
 
-None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live shaders, defaults read through an in-page stub so stored Dev values do not apply): the shot at 1280 x 720, 375 x 812 and 812 x 375; every station; the first frame after Proceed; the Proceed flow driven through `frame()` (shot, dip, run, the button hidden); a drag on the glass; the sound graph built and rendered on an offline context through every phase. Not checked: the look in motion with the pane in front, and sound by ear.
+None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live shaders, defaults read through an in-page stub so stored Dev values do not apply): the shot at 1280 x 720, 375 x 812 and 812 x 375; every station; the first frame after Proceed; the Proceed flow driven through `frame()` (shot, dip, run, the button hidden); a drag on the glass; the sound graph built and rendered on an offline context through every phase. Each strange moment forced from its Dev handler and shot as a still, with the shot on return after Snow and Someone. Reduced motion, stubbed in the probe: the shot is a still, Proceed steps through every stop with the button kept, and the desert returns to the shot. Not checked: the look in motion with the pane in front, sound by ear, and the cues' timing by ear.
 
 ## Known issues
 

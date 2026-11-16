@@ -109,8 +109,10 @@ const STOPS = { entry: -4.5, soak: 0.95, foam: 3.3, mitters: 4.9, brushes: 8.6, 
 const PAINTS = {
   black: [0.17, 0.006, 265], cherry: [0.3, 0.12, 22], pearl: [0.86, 0.015, 95], teal: [0.42, 0.075, 200],
 };
+// Strange moments: at most one per run; the names the Dev row can force.
+const STRANGE = [['lights', 'Lights out'], ['hand', 'Hand'], ['figure', 'Someone'], ['climb', 'Foam climbs'], ['mirror', 'Headlights'], ['extra', 'Extra station'], ['taps', 'Two taps'], ['snow', 'Snow'], ['noon', 'Noon'], ['hills', 'Lights on the hills'], ['loop', 'Exit is entrance']];
 // The handlers bind once the GL state exists.
-const act = { proceed() {}, reset() {}, jump() {}, paint() {}, view() {}, viewReset() {}, shotReset() {} };
+const act = { proceed() {}, force() {}, reset() {}, jump() {}, paint() {}, view() {}, viewReset() {}, shotReset() {} };
 const camRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.view() });
 const ui = initPage({ id: 'carwash', bar: {
   // One action: the establishing shot waits for it.
@@ -122,11 +124,18 @@ const ui = initPage({ id: 'carwash', bar: {
       { value: 'pearl', label: 'Pearl', dot: 'oklch(0.9 0.015 95)' },
       { value: 'teal', label: 'Teal', dot: 'oklch(0.55 0.09 200)' },
     ], onPick: v => act.paint(v) },
+    // How often a run holds something strange.
+    { type: 'choice', id: 'strange', label: 'Strange', value: 'sometimes', persist: true, options: [
+      { value: 'off', label: 'Off' }, { value: 'sometimes', label: 'Sometimes' }, { value: 'often', label: 'Often' },
+    ] },
   ],
   dev: [
     { type: 'choice', id: 'jump', label: 'Jump', value: 'entry', display: 'stepper',
       options: Object.keys(STOPS).map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) })), onPick: v => act.jump(v) },
     { type: 'slider', id: 'pace', label: 'Pace', min: 1, max: 8, step: 1, value: 1 },
+    // Forces a strange moment on the next run, and on this one from here.
+    { type: 'choice', id: 'force', label: 'Strange next', value: 'random', display: 'stepper',
+      options: [{ value: 'random', label: 'Random' }, { value: 'none', label: 'None' }, ...STRANGE.map(([value, label]) => ({ value, label }))], onPick: v => act.force(v) },
     // The driver's seat: the eye's place in the cabin, where it looks, and how wide.
     camRow('eyeY', 'Eye height', -0.12, 0.1, 0.005, 0),
     camRow('eyeX', 'Eye side', -0.15, 0.4, 0.005, 0),
@@ -325,10 +334,24 @@ uniform vec4 uMit;
 uniform vec4 uWip;
 // Spray reaching the glass: soak mist, rinse jets, wax mist, brush splash.
 uniform vec4 uMist;
+// Strange: a hand on the glass (x, y, press); a knock (x, y, strength); foam's gravity.
+uniform vec4 uHand, uTap;
+uniform float uGrav;
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 ${CONSTS}
 ${NOISE}
+// A hand pressed flat on the glass, as a distance in metres: palm, four fingers, a thumb.
+float segD(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+float handD(vec2 p) {
+  float d = length(max(abs(p - vec2(0.0, -0.02)) - vec2(0.036, 0.04), 0.0)) - 0.013;
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i) - 1.5;
+    vec2 a = vec2(fi * 0.021, 0.03);
+    d = min(d, segD(p, a, a + vec2(fi * 0.012, 0.056 + 0.012 * (1.0 - abs(fi) * 0.5))) - 0.0085);
+  }
+  return min(d, segD(p, vec2(-0.042, -0.02), vec2(-0.078, 0.024)) - 0.0105);
+}
 // True when x lies between a and b.
 bool between(float x, float a, float b) { return x >= min(a, b) - 0.002 && x <= max(a, b) + 0.002; }
 vec2 toMap(vec2 g) { return (g - GM.xy) / GM.zw; }
@@ -347,6 +370,8 @@ void main() {
   float fn = cwN(vec2(g.x * 18.0, g.y * 5.0 - uTime * 0.04));
   // Speeds down the rake in metres a second: a thick coat slips; a thin film clings.
   float vf = -(0.004 + 0.022 * clamp(c0.r, 0.0, 1.6) * (0.3 + 1.2 * fn)) - 0.05 * min(c0.g, 1.0);
+  // Strange: for a moment the foam may slide up the glass.
+  vf *= uGrav;
   float vs = -(0.08 + 0.6 * c0.g) * (0.4 + 1.2 * lane);
   // A heavy rinse carries the foam down with it.
   vf -= 0.5 * max(c0.g - 0.9, 0.0);
@@ -475,6 +500,19 @@ void main() {
       }
     }
   }
+  // Strange: a hand presses the foam away from outside, and drags it as it slides.
+  if (uHand.z > 0.0) {
+    float m = smoothstep(0.004, -0.003, handD((g - uHand.xy) / 0.85) * 0.85) * uHand.z;
+    foam *= 1.0 - m * min(1.0, uDt * 14.0);
+    smear = max(smear, m * 0.8);
+    sheet = max(sheet, m * 0.15);
+  }
+  // A knock from outside shakes the beads off in a ring.
+  if (uTap.z > 0.0) {
+    float r = length(g - uTap.xy), ring = exp(-pow((r - 0.02 - 0.05 * (1.0 - uTap.z)) / 0.012, 2.0)) * uTap.z;
+    beads *= 1.0 - 0.7 * ring;
+    sheet = max(sheet, ring * 0.35);
+  }
   // Foam that moves on leaves a soapy film; a heavy rinse washes the film off.
   film = clamp(film + max(c0.r - foam, 0.0) * 0.6, 0.0, 1.0) * exp(-uDt * 2.0 * max(sheet - 0.8, 0.0));
   o0 = vec4(min(foam, 2.5), min(sheet, 2.0), clamp(beads, 0.0, 1.0), hue);
@@ -530,6 +568,9 @@ uniform float uStars, uDay;
 uniform vec2 uFlash;
 // Moths: two per arch lamp, then bugs at the sodium lamp and the canopy bulbs.
 uniform vec3 uMoth[25];
+// Strange: the world past the exit (snow, day, hill lights, the entrance); a figure; an extra arch.
+uniform vec4 uWorld, uFig;
+uniform float uExtra;
 // The headlights' level.
 uniform float uHead;
 // Signals: the entry light, the exit light (0 red, 1 green).
@@ -633,6 +674,8 @@ vec3 lightAt(vec3 W, vec3 n) {
   }
   // Out past either door, the night and the car's lamps take over.
   float out_ = min(smoothstep(TL - 1.0, TL + 3.0, W.z) + smoothstep(0.5, -3.0, W.z), 1.0);
+  // Strange: the extra arch's dim red bulb.
+  if (uExtra > 0.0) { vec3 v = vec3(-1.45, 1.72, 14.83) - W; float d2 = dot(v, v); L += vec3(0.5, 0.035, 0.015) * uExtra * (0.2 + 0.8 * max(dot(n, v) * inversesqrt(d2 + 1e-4), 0.0)) * 0.12 / (0.3 + d2); }
   return L * (1.0 - out_ * 0.9) + headL(W, n) + uZen * 0.3 * out_;
 }
 
@@ -657,7 +700,17 @@ vec3 skyCol(vec3 D) {
   // The far towns glow low on one side.
   float az = atan(D.x, D.z);
   c += vec3(0.016, 0.0085, 0.0045) * exp(-up * 20.0) * exp(-pow((az - 0.25) * 2.0, 2.0)) * (1.0 - uDay);
-  return c;
+  // Strange: four lights hang still over the hills; one slowly fades and returns.
+  if (uWorld.z > 0.0) {
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      vec2 dd = vec2(az - (0.03 + 0.15 * fi + 0.05 * sin(fi * 5.3)), D.y - (0.06 + 0.016 * sin(fi * 2.9 + 1.0)));
+      float r2 = dot(dd, dd), lv = i == 3 ? 0.5 + 0.5 * cos(uTime * 0.3) : 1.0;
+      c += vec3(1.0, 0.85, 0.6) * (exp(-r2 / 1.2e-6) * 12.0 + exp(-sqrt(r2) * 160.0) * 0.08) * uWorld.z * lv;
+    }
+  }
+  // Strange: a low grey overcast, and no stars.
+  return mix(c, vec3(0.006, 0.006, 0.007) * (0.8 + 0.4 * cwN(D.xz / (D.y + 0.2) * 2.0)), uWorld.x * smoothstep(-0.02, 0.05, D.y));
 }
 // Heat lightning: a cloud bank behind the hills lights up, far off and silent.
 vec3 flashAt(vec3 D) {
@@ -692,7 +745,7 @@ vec3 farView(vec3 D) {
 // The lights that fall on a point P outside, with normal n.
 vec3 outLight(vec3 P, vec3 n) {
   // Starlight and the far towns' glow, or the day.
-  vec3 L = uZen * 1.4 + vec3(0.0012, 0.0012, 0.0016) + uDay * (uMid * 0.9 + vec3(0.9, 0.85, 0.75) * max(dot(n, uSunD), 0.0) * 1.6);
+  vec3 L = uZen * 1.4 + vec3(0.0012, 0.0012, 0.0016) + uDay * (uMid * 0.45 + vec3(0.9, 0.85, 0.75) * max(dot(n, uSunD), 0.0) * 0.75);
   // The sodium lamp throws a wide cone down on the lot.
   vec3 v = LAMP - P;
   L += pointL(P, n, LAMP, uSod * 6.0 * uOut.x) * smoothstep(0.1, 0.5, v.y * inversesqrt(dot(v, v) + 1e-6));
@@ -765,6 +818,8 @@ vec3 groundAt(vec3 G, vec3 D, float t) {
     alb = mix(alb, vec3(0.46, 0.44, 0.36), cl * 0.55);
     alb = mix(alb, vec3(0.36, 0.31, 0.25), smoothstep(0.7, 0.0, min(G.x - ROAD0, ROAD1 - G.x)) * 0.8);
   }
+  // Strange: snow lies on everything.
+  alb = mix(alb, vec3(0.8, 0.82, 0.86), uWorld.x * (0.85 - 0.3 * grit));
   vec3 c = alb * outLight(G, vec3(0.0, 1.0, 0.0));
   // Water runs out of the doors and lies in puddles that mirror the lights.
   float wet = step(abs(G.x), 2.4) * smoothstep(-7.0, -0.5, G.z) * step(G.z, 0.0) + pad * smoothstep(TL + 5.0, TL, G.z);
@@ -826,8 +881,11 @@ vec3 bulbAt(vec3 P, vec3 D, vec3 at, vec3 hot, inout float t, vec3 c) {
   t = tl;
   return mix(c, hot * smoothstep(rad, rad * 0.4, r) * (1.0 - 0.7 * min(wire, 1.0)) * (0.07 / rad), smoothstep(rad, rad * 0.8, r));
 }
+vec3 entranceLite(vec3 P, vec3 D, out float t);
 // The world past the exit door: no building, only the open desert.
 vec3 desertBeyond(vec3 P, vec3 D, out float t) {
+  // Strange: the exit opens onto the entrance.
+  if (uWorld.w > 0.5) return entranceLite(P - vec3(0.0, 0.0, TL + 18.0), D, t);
   t = 1e4;
   float tg = D.y < -1e-5 ? -P.y / D.y : 1e9;
   vec3 c = tg < t ? groundAt(P + D * tg, D, tg) : farView(D);
@@ -1266,6 +1324,63 @@ vec3 exterior(vec3 P, vec3 D, out float t) {
   if (uShot > 0.5) c = carBody(P, D, t, c);
   return c;
 }
+// The entrance again, with no way in: the door glows, but no ray enters it.
+vec3 entranceLite(vec3 P, vec3 D, out float t) {
+  t = 1e4;
+  vec3 c = vec3(0.0), n;
+  float tg = D.y < -1e-5 ? -P.y / D.y : 1e9;
+  if (tg < t) { t = tg; c = groundAt(P + D * tg, D, tg); }
+  vec2 bt = boxT(P, D, vec3(-2.65, 0.0, 0.0), vec3(2.65, 4.1, TL), n);
+  if (bt.x > 0.0 && bt.x < bt.y && bt.x < t) {
+    vec3 H = P + D * bt.x;
+    t = bt.x;
+    // The door shows only a lit haze and the first tubes, far inside.
+    c = n.z < -0.5 && abs(H.x) < DW && H.y < DH ? (uZone[0] * 0.16 + uArchC[0] * 0.02) * (0.4 + 0.6 * smoothstep(0.0, 2.6, H.y)) + uArchC[0] * 0.5 * exp(-pow((H.y - 2.75) / 0.03, 2.0)) * step(abs(H.x), 0.5) : buildingAt(H, n, D, bt.x);
+  }
+  vec2 ot = boxT(P, D, vec3(2.65, 0.0, 0.0), vec3(6.4, 3.4, 7.5), n);
+  if (ot.x > 0.0 && ot.x < ot.y && ot.x < t) { t = ot.x; c = officeAt(P + D * ot.x, n, D, ot.x); }
+  c = canopy(P, D, t, c);
+  c = booth(P, D, t, c);
+  c = lampPost(P, D, t, c);
+  c = pylon(P, D, t, c);
+  if (t >= 1e4) c = farView(D);
+  return phonePoles(P, D, t, c);
+}
+// A person, standing: a dark shape on a plane that faces the eye. base is the feet.
+vec3 figure(vec3 P, vec3 D, vec3 base, float k, inout float t, vec3 col) {
+  if (k <= 0.0) return col;
+  vec2 to = base.xz - P.xz, nr = normalize(to);
+  float den = dot(D.xz, nr);
+  if (den <= 1e-4) return col;
+  float tf = dot(to, nr) / den;
+  if (tf <= 0.0 || tf >= t) return col;
+  vec3 H = P + D * tf;
+  vec2 q = vec2(dot(H.xz - base.xz, vec2(-nr.y, nr.x)), H.y);
+  // A head, a coat to the knee, two legs.
+  float d = length(q - vec2(0.0, 1.62)) - 0.105;
+  d = min(d, length(max(abs(q - vec2(0.0, 1.0)) - vec2(0.17 - 0.06 * smoothstep(1.3, 1.47, q.y), 0.42), 0.0)) - 0.04);
+  d = min(d, length(max(abs(vec2(abs(q.x) - 0.075, q.y - 0.3)) - vec2(0.045, 0.3), 0.0)) - 0.01);
+  float w = max(0.006, tf * uPix), a = smoothstep(w, -w, d) * k;
+  if (a <= 0.0) return col;
+  if (a > 0.5) t = tf;
+  // Inside, a silhouette; outside, a dark coat in the lamp's or the car's light.
+  bool out_ = H.z < 0.0 || H.z > TL;
+  vec3 fn = out_ ? normalize(vec3(-nr.x * 0.6, 0.8, -nr.y * 0.6)) : vec3(-nr.x, 0.0, -nr.y);
+  return mix(col, vec3(0.0016, 0.0015, 0.0017) + (out_ ? outLight(H, fn) * 0.22 : lightAt(H, fn) * 0.02), a);
+}
+// Snow in the air: three layers of slow flakes, the near ones larger.
+float snowAt(vec2 uv, float asp, float t) {
+  float s = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i), sc = 14.0 + fi * 12.0;
+    vec2 p = vec2(uv.x * asp, uv.y) * sc + vec2(sin(t * 0.3 + fi) * 0.5, t * (0.6 + fi * 0.25));
+    vec2 c = floor(p), f = fract(p) - 0.5;
+    if (cwH(c + fi * 7.0) < 0.6) continue;
+    vec2 o = vec2(cwH(c + 3.0), cwH(c + 5.0)) - 0.5;
+    s += smoothstep(0.12 - fi * 0.03, 0.0, length(f - o * 0.6)) * (1.0 - fi * 0.25);
+  }
+  return s;
+}
 // Everything solid along a ray from the eye. t returns its distance.
 vec3 background(vec3 E, vec3 D, out float t) {
   if (E.z < 0.0) return exterior(E, D, t);
@@ -1340,6 +1455,21 @@ vec3 arches(vec3 E, vec3 D, float tG, inout float t, vec3 col) {
     }
     // Nozzles hang under the spray bar.
     if (spray) col *= 1.0 - 0.6 * step(abs(fract(X.x * 3.0) - 0.5), 0.06) * step(X.y, 2.655);
+  }
+  // Strange: a station that was not there last time, with a sign nobody can read.
+  if (uExtra > 0.0) {
+    float tk = (14.83 - E.z) / D.z;
+    if (tk > tG && tk < t) {
+      vec2 X = E.xy + D.xy * tk;
+      bool fr = (abs(X.y - 2.95) < 0.04 && abs(X.x) < 2.04) || (abs(abs(X.x) - 2.0) < 0.04 && X.y < 2.99);
+      bool board = X.x > -1.85 && X.x < -1.05 && X.y > 1.25 && X.y < 1.55;
+      float rb = length(X - vec2(-1.45, 1.72));
+      if (fr || board || rb < 0.05) {
+        t = tk;
+        vec3 L = lightAt(vec3(X, 14.83), vec3(0.0, 0.0, -1.0));
+        col = fr ? RUST * L * 0.2 : board ? mix(vec3(0.5, 0.47, 0.4), vec3(0.05), signAt(10, vec2((X.x + 1.85) / 0.8, (X.y - 1.25) / 0.3)) * 0.9) * L * 0.65 : vec3(1.0, 0.1, 0.04) * 3.0 * uExtra;
+      }
+    }
   }
   return col;
 }
@@ -1744,7 +1874,9 @@ void main() {
     float t;
     vec3 col = exterior(uShotP, D, t);
     col = arches(uShotP, D, 0.0, t, col);
+    col = figure(uShotP, D, vec3(uFig.x, 0.0, uFig.y), uFig.z, t, col);
     col = airGlow(uShotP, D, t, col);
+    if (uWorld.x > 0.0) col += vec3(0.05, 0.052, 0.058) * snowAt(uv, uAsp, uTime) * uWorld.x;
     outC = vec4(col, clamp(t, 0.3, 80.0));
     return;
   }
@@ -1759,6 +1891,7 @@ void main() {
   float t;
   vec3 col = background(E, D, t);
   col = arches(E, D, tG, t, col);
+  col = figure(E, D, vec3(uFig.x, 0.0, uFig.y), uFig.z, t, col);
   col = bonnet(d, D, t, col);
   col = blower(dw, tG, t, col);
   // See-through layers, far to near.
@@ -1779,6 +1912,7 @@ void main() {
   vec4 mg = mittersOnGlass(d, tG);
   col = mix(col, mg.rgb, mg.a);
   col = airGlow(E, D, depth, col);
+  if (uWorld.x > 0.0) col += vec3(0.05, 0.052, 0.058) * snowAt(uv, uAsp, uTime) * uWorld.x * smoothstep(TL - 1.0, TL + 2.0, uS);
   // Spray in the air just outside the glass, thickest near the nozzles overhead.
   float asp = uAsp;
   int nl = int(uAirN);
@@ -1842,7 +1976,7 @@ uniform vec2 uGlint;
 // The camera: the eye in the car's frame, and its turn.
 uniform vec3 uEye;
 uniform mat3 uRot;
-uniform float uCarS, uShot;
+uniform float uCarS, uShot, uMirror;
 ${CONSTS}
 ${NOISE}
 ${GLASS_GL}
@@ -2028,6 +2162,12 @@ void main() {
   float stem = max(abs(g.x) - 0.008, abs(g.y - GLEN + 0.035) - 0.035);
   float mirror = smoothstep(aa * 2.0, -aa, min(mir, stem));
   col = mix(col, room * 0.05 + vec3(0.003) + wide * 0.05 * smoothstep(aa * 3.0, 0.0, abs(mir)), mirror);
+  // Strange: two headlights wait far behind, in the mirror.
+  if (uMirror > 0.0) {
+    vec2 hp = vec2(g.x, g.y - GLEN + 0.087);
+    vec2 h1 = hp - vec2(-0.058, 0.0), h2 = hp - vec2(-0.032, 0.0);
+    col += vec3(1.0, 0.92, 0.75) * (exp(-dot(h1, h1) / 2e-5) + exp(-dot(h2, h2) / 2e-5)) * 3.0 * uMirror * mirror;
+  }
   // Beside the glass: the leaning pillar, then the side window.
   float side = abs(g.x) - hw;
   if (side > -0.01) {
@@ -2164,6 +2304,17 @@ function drawAtlas() {
   g.textBaseline = 'middle';
   g.fillStyle = '#f00';
   SIGN_WORDS.forEach((w, i) => paintWord(g, w, (i % 2) * 512 + 256, Math.floor(i / 2) * 128 + 68, 84, 440, 11 + i * 7));
+  // A sign nobody can read: strokes like letters that spell nothing.
+  g.strokeStyle = '#f00';
+  g.lineWidth = 11;
+  g.lineCap = 'round';
+  let q = 977;
+  const rq = () => ((q = (q * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 6; i++) {
+    g.beginPath();
+    for (let j = 0; j < 3; j++) { g.moveTo(80 + i * 62 + rq() * 36, 672 + rq() * 64); g.lineTo(80 + i * 62 + rq() * 36, 672 + rq() * 64); }
+    g.stroke();
+  }
   paintWord(g, 'CAR', 256, 834, 118, 420, 101);
   paintWord(g, 'WASH', 256, 958, 118, 460, 103);
   paintWord(g, 'WASH 1.25', 768, 838, 80, 440, 105);
@@ -2324,6 +2475,93 @@ function stepWipers(dt) {
   return Math.abs(wip.a - wip.prev) > 1e-5;
 }
 
+/* ---------- strange ---------- */
+// Most runs are an ordinary wash. Now and then one thing is off: quiet, slow, deniable.
+const ODDS = { off: 0, sometimes: 0.3, often: 0.75 };
+const odd = {
+  kind: null, t0: -1, done: {}, gone: false, cues: [],
+  // The world past the exit: snow, day, lights over the hills, the entrance.
+  world: new Float32Array(4),
+  // A hand on the glass, a knock on it, a figure; the extra arch, the mirror's lights.
+  hand: new Float32Array(4), tap: new Float32Array(4), fig: new Float32Array(4), extra: 0, mirror: 0,
+  // Foam's gravity, the lamps, the blower's air, the chain's hold, the world's sound.
+  grav: 1, light: 1, air: 1, hold: 0, duck: 1,
+};
+const ramp = (x, a, b) => clamp((x - a) / (b - a));
+function clearStrange() {
+  odd.kind = null; odd.t0 = -1; odd.done = {}; odd.gone = false;
+  for (const a of [odd.world, odd.hand, odd.tap, odd.fig]) a.fill(0);
+  odd.extra = odd.mirror = odd.hold = 0; odd.grav = odd.light = odd.air = odd.duck = 1;
+}
+// At Proceed: maybe one moment for this run. The Dev row can force one.
+function pickStrange() {
+  clearStrange();
+  const f = val('force', 'random'), p = ODDS[val('strange', 'sometimes')] ?? 0.3;
+  odd.kind = f === 'none' ? null : f !== 'random' ? f : Math.random() < p ? STRANGE[Math.floor(Math.random() * STRANGE.length)][0] : null;
+}
+// Back on the shot: snow and the hill lights stay; someone waits under the lamp.
+function endStrange() {
+  odd.world[1] = odd.world[3] = 0;
+  odd.fig.set(odd.kind === 'figure' ? [4.3, -7.6, 1, 0] : [0, 0, 0, 0]);
+  odd.extra = odd.mirror = odd.hold = 0; odd.grav = odd.light = odd.air = odd.duck = 1;
+  odd.hand.fill(0); odd.tap.fill(0);
+}
+// Where each moment starts, as the car's place in metres.
+const STRANGE_AT = { lights: 8.2, hand: 3.95, figure: 21.0, climb: 4.15, extra: 13.6, taps: 16.6, snow: 15.5, noon: 15.5, hills: 15.5, loop: 15.5 };
+function stepStrange() {
+  const s = car.s, k = odd.kind, calm = reduced();
+  odd.light = odd.grav = odd.air = odd.duck = 1;
+  odd.hold = odd.hand[2] = odd.tap[2] = odd.fig[2] = odd.extra = odd.mirror = 0;
+  if (!k) return;
+  const cue = (name, at) => { if (!odd.done[name] && e >= at) { odd.done[name] = true; odd.cues.push(name); } };
+  if (odd.t0 < 0 && STRANGE_AT[k] !== undefined && s >= STRANGE_AT[k]) odd.t0 = time;
+  const e = odd.t0 < 0 ? -1 : time - odd.t0;
+  if (k === 'mirror') {
+    // Two headlights wait far behind and never come closer.
+    odd.mirror = ramp(s, S0, S0 + 1.5) * (1 - ramp(s, A.end - 0.5, A.end + 1.5));
+    if (!odd.done.mirror) { odd.done.mirror = true; odd.cues.push('mirror'); }
+    return;
+  }
+  if (k === 'extra') odd.extra = 1;
+  if (e < 0) return;
+  cue(k, 0);
+  if (k === 'lights') {
+    // The lamps die, the dark holds, then they come back: two flashes, 0.45 s apart.
+    const back = calm ? ramp(e, 5.2, 6.8) : (e >= 5.2 && e < 5.32) || e >= 5.77 ? 1 : 0;
+    odd.light = e > 7 ? 1 : Math.max(1 - ramp(e, 0, calm ? 1.5 : 0.25), back);
+    odd.duck = e < 5.5 ? 0.25 : 1;
+    cue('lightson', 5.2);
+  } else if (k === 'hand') {
+    // A hand presses into the foam from outside, holds, then slides away.
+    const slide = smooth(2.3, 4.3, e);
+    odd.hand.set([-0.12 + 0.1 * slide, 0.62 - 0.24 * slide, ramp(e, 0, 0.8) * (1 - ramp(e, 4.3, 4.9)), 0]);
+    odd.duck = e < 5 ? 0.5 : 1;
+    cue('slide', 2.3);
+  } else if (k === 'figure') {
+    // Someone stands out in the desert, at the far edge of the low beams.
+    odd.fig.set([0.9, A.end + 25, calm ? 1 : ramp(e, 0, 2), 0]);
+    odd.duck = 0.12;
+  } else if (k === 'climb') {
+    // The foam runs up the glass for a moment, then falls again.
+    odd.grav = 1 - 1.9 * smooth(0, 0.7, e) * (1 - smooth(2.8, 3.8, e));
+    odd.duck = e < 3.8 ? 0.3 : 1;
+  } else if (k === 'extra') {
+    odd.duck = s < 15.4 ? 0.4 : 1;
+  } else if (k === 'taps') {
+    // The blower stops and the chain holds; two taps on the glass; then the air again.
+    odd.air = e > 4 ? 1 : 1 - ramp(e, 0, 0.4) + ramp(e, 3.4, 4);
+    odd.hold = e < 4 ? 1 : 0;
+    odd.duck = e > 0.2 && e < 3.4 ? 0.08 : 1;
+    for (const at of [1.6, 2.05]) if (e >= at && e < at + 0.5) odd.tap.set([0.24, 0.74, Math.exp(-(e - at) / 0.12), 0]);
+    cue('tap', 1.6); cue('tap2', 2.05); cue('airon', 3.4);
+  } else {
+    // The desert past the exit is not the same: snow, noon, lights on the hills, or the entrance.
+    const i = { snow: 0, noon: 1, hills: 2, loop: 3 }[k];
+    odd.world[i] = ramp(e, 0, 2.5);
+    odd.duck = 0.3;
+  }
+}
+
 /* ---------- each step ---------- */
 function stages(dt) {
   const s = car.s, ps = lastS;
@@ -2368,6 +2606,7 @@ function stages(dt) {
   // The air line on the glass, and how hard it blows.
   const kv0 = ghLine(A.blow - ps + 0.05), kv1 = ghLine(A.blow - s + 0.05);
   air = live ? smooth(3.0, 1.0, A.blow - s) * smooth(-1.6, -0.2, A.blow - s) : 0;
+  air *= odd.air;
   U.knife.set([kv0, kv1, kv1 > -0.1 && kv1 < WS.len + 0.1 ? air : 0, 0]);
   // The air pushes the beads up the rake as it goes.
   motion.shift += dt * air * 0.22;
@@ -2382,7 +2621,7 @@ function stages(dt) {
   // The low beams light the lot and the desert; in the tunnel the driver turns them off.
   head = clamp(smooth(0.6, -0.4, s) + smooth(A.end - 1.2, A.end + 0.6, s));
   // The floods' light on the car, for the foam.
-  U.amb.set(carLight(s));
+  U.amb.set(carLight(s).map(x => x * odd.light));
   // Glints point at the nearest arch's light: ahead and up, overhead, then behind.
   let nearA = A.foam, best = 1e9;
   for (const a of ARCHES) if (Math.abs(a - s - 0.5) < best) { best = Math.abs(a - s - 0.5); nearA = a; }
@@ -2493,6 +2732,7 @@ function simStep(dt) {
   gl.uniform1f(u('uDt'), dt); gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uInit'), initNext ? 1 : 0);
   gl.uniform4fv(u('uC1'), U.c1); gl.uniform4fv(u('uC2'), U.c2); gl.uniform4fv(u('uKnife'), U.knife);
   gl.uniform4fv(u('uBrush'), U.brush); gl.uniform4fv(u('uMit'), U.mit); gl.uniform4fv(u('uWip'), U.wip); gl.uniform4fv(u('uMist'), U.mist);
+  gl.uniform4fv(u('uHand'), odd.hand); gl.uniform4fv(u('uTap'), odd.tap); gl.uniform1f(u('uGrav'), odd.grav);
   run(simP, dst);
   si = 1 - si;
   initNext = false;
@@ -2565,6 +2805,8 @@ function stepLights() {
   lamps.neon[2] = calm ? 0 : (1 - hTube(time)) * 0.35;
   lamps.chase = calm ? 0 : time * 0.45;
   lamps.out[2] = 0.6 + 0.4 * lamps.arch[0];
+  // A strange dark takes every lamp in the tunnel.
+  if (odd.light < 1) { for (let k = 0; k < 9; k++) lamps.arch[k] *= odd.light; lamps.out[2] *= odd.light; }
   // Heat lightning, far off: one or two soft pulses every several seconds.
   if (calm) { lamps.flash = 0; return; }
   if (time >= lamps.nextFlash) {
@@ -2580,6 +2822,15 @@ let seed = 0, fade = 1, head = 1;
 // The desert's sky: a clear night at half past one, a little darker than the shared palette.
 const sky = skyAt(1.5);
 for (const k of ['zen', 'mid', 'band', 'anti']) sky[k] = sky[k].map(x => x * 1.0);
+const noon = skyAt(12.5);
+// The night eased toward noon by k.
+function skyMix(k) {
+  const o = {};
+  for (const key of ['zen', 'mid', 'band', 'anti', 'sun']) o[key] = sky[key].map((v, i) => mix(v, noon[key][i], k));
+  o.stars = mix(sky.stars, noon.stars, k);
+  o.day = mix(sky.day, noon.day, k);
+  return o;
+}
 function draw() {
   if (!sims[0].w) return;
   const shotOn = phase === 'shot';
@@ -2604,13 +2855,16 @@ function draw() {
   gl.uniform3fv(u('uPaint'), paint); gl.uniform1f(u('uGloss'), gloss);
   ARCH_C.forEach((c, i) => archU.set(scale(c, ARCH_K[i] * lamps.arch[i]), i * 3));
   gl.uniform3fv(u('uArchC'), archU); gl.uniform1fv(u('uArchM'), mistU);
-  gl.uniform3fv(u('uZone'), zoneU); gl.uniform3fv(u('uDye'), dyeU); gl.uniform3fv(u('uCloth'), clothU);
+  gl.uniform3fv(u('uZone'), odd.light < 1 ? zoneU.map(x => x * odd.light) : zoneU); gl.uniform3fv(u('uDye'), dyeU); gl.uniform3fv(u('uCloth'), clothU);
   gl.uniform3fv(u('uSod'), PAL.sod);
   gl.uniform4fv(u('uOut'), lamps.out); gl.uniform4fv(u('uNeon'), lamps.neon); gl.uniform1f(u('uChase'), lamps.chase);
-  gl.uniform3fv(u('uZen'), sky.zen); gl.uniform3fv(u('uMid'), sky.mid); gl.uniform3fv(u('uBand'), sky.band); gl.uniform3fv(u('uAnti'), sky.anti); gl.uniform3fv(u('uSunD'), sky.sun);
-  gl.uniform1f(u('uStars'), sky.stars); gl.uniform1f(u('uDay'), sky.day);
+  // Strange: past the exit it may be noon.
+  const sk = odd.world[1] > 0 ? skyMix(odd.world[1]) : sky;
+  gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
+  gl.uniform1f(u('uStars'), sk.stars); gl.uniform1f(u('uDay'), sk.day);
   gl.uniform2f(u('uFlash'), lamps.flash, lamps.flashAz);
   gl.uniform3fv(u('uMoth'), moths);
+  gl.uniform4fv(u('uWorld'), odd.world); gl.uniform4fv(u('uFig'), odd.fig); gl.uniform1f(u('uExtra'), shotOn ? 0 : odd.extra);
   gl.uniform1f(u('uHead'), shotOn ? 1 : head);
   gl.uniform2f(u('uSig'), car.mode === 'parked' ? 1 : 0, smooth(A.end - 8, A.end - 5, car.s));
   bindTex(7, signTex);
@@ -2653,7 +2907,7 @@ function draw() {
   bindTex(3, sims[si].texs[0]); bindTex(4, sims[si].texs[1]); bindTex(5, rt32.tex); bindTex(6, rt128.tex); bindTex(7, rtBokL.tex);
   gl.uniform1i(u('tScene'), 0); gl.uniform1i(u('tBokS'), 1); gl.uniform1i(u('tWide'), 2); gl.uniform1i(u('tS0'), 3); gl.uniform1i(u('tS1'), 4);
   gl.uniform1i(u('tFar'), 5); gl.uniform1i(u('tFar2'), 6); gl.uniform1i(u('tBokL'), 7);
-  gl.uniform1f(u('uShot'), shotOn ? 1 : 0);
+  gl.uniform1f(u('uShot'), shotOn ? 1 : 0); gl.uniform1f(u('uMirror'), shotOn ? 0 : odd.mirror);
   gl.uniform1f(u('uShift'), motion.shift); gl.uniform1f(u('uShiver'), air);
   gl.uniform2f(u('uRes'), W, H); gl.uniform2f(u('uSimRes'), simW, simH); gl.uniform2fv(u('uM'), motion.m);
   gl.uniform1f(u('uAsp'), asp); gl.uniform1f(u('uTime'), time); gl.uniform1f(u('uF'), F); gl.uniform1f(u('uHZ'), HZ);
@@ -2696,7 +2950,7 @@ function stepCar(dt) {
     car.t += dt;
     const pace = val('pace', 1);
     // The chain pulls at a steady pace; past the exit the driver rolls out and brakes.
-    const goal = (car.s < ROLLOFF ? SPEED : DRIVE * clamp((S1 - car.s) / 3 + 0.06)) * pace;
+    const goal = (car.s < ROLLOFF ? SPEED : DRIVE * clamp((S1 - car.s) / 3 + 0.06)) * pace * (1 - odd.hold);
     car.v += (goal - car.v) * (1 - Math.exp(-dt / (car.s < ROLLOFF ? 0.45 : 0.9)));
     car.s = Math.min(S1, car.s + car.v * dt);
     if (car.s >= S1 - 0.002) { car.mode = 'done'; car.v = 0; car.stopAt = time; }
@@ -2713,6 +2967,7 @@ function stepCar(dt) {
 // One step of everything: the car, the wipers, the stages, the glass.
 function advance(dt) {
   time += dt;
+  stepStrange();
   stepCar(dt);
   stepWipers(dt);
   stages(dt);
@@ -2803,6 +3058,8 @@ function startSound() {
     lamp: drone(ac, [[120, 'sine', 1], [240, 'sine', 0.4], [360, 'sine', 0.15]], [], outF),
     // The plant: two old motors, out of step with each other.
     motor: drone(ac, [[59, 'sawtooth', 1], [88.5, 'sawtooth', 0.6], [118, 'triangle', 0.3]], [filter(ac, 'lowpass', 300, 0.9)], cabin),
+    // Strange: a car idles far behind.
+    idle: drone(ac, [[27, 'sine', 1], [40.5, 'triangle', 0.4]], [filter(ac, 'lowpass', 110)], kit.out),
     last: { slap: 0, chunk: 0, wipe: 0, dir: 0, cricket: 0, drain: 0, rattle: 0, belt: 0, crackle: 0 },
   };
   // The cloth flutters at the rate strips hit the car.
@@ -2880,11 +3137,16 @@ function squeal(at) {
 }
 function soundStep(dt) {
   const ac = kit.live();
-  if (!ac) { AU.events.length = 0; return; }
+  if (!ac) { AU.events.length = 0; odd.cues.length = 0; return; }
   if (!snd) startSound();
   if (!snd) return;
   const now = ac.currentTime, L = snd.last;
   const set = (g, v, tc = 0.2) => g.gain.setTargetAtTime(v, now, tc);
+  // Strange moments: the world's sound falls away under each one's own cue.
+  snd.duck.gain.setTargetAtTime(odd.duck, now, odd.duck < 1 ? 0.35 : 0.8);
+  for (const c of odd.cues) strangeCue(c, now);
+  odd.cues.length = 0;
+  set(snd.idle, 0.02 * odd.mirror, 0.8);
   const shotOn = phase === 'shot', rolling = car.mode === 'rolling';
   // How far outside the car is: 1 on the lot or in the desert, 0 deep in the tunnel.
   const outside = shotOn ? 1 : clamp(smooth(1.5, -1.5, car.s) + smooth(A.end - 1, A.end + 2.5, car.s));
@@ -2937,6 +3199,50 @@ function soundStep(dt) {
     L.dir = dir;
   } else if (L.dir) { knock(now, { f: 300, dur: 0.07, level: 0.1, to: snd.duck }); L.dir = 0; }
 }
+// Each strange moment's own sound, played past the duck.
+function strangeCue(c, now) {
+  const ac = snd.ac, o = kit.out;
+  const tone = (f, f2, dur, level, type = 'sine') => {
+    const x = ac.createOscillator(), g = ac.createGain();
+    x.type = type;
+    x.frequency.setValueAtTime(f, now);
+    x.frequency.exponentialRampToValueAtTime(f2, now + dur);
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(level, now + Math.min(0.6, dur * 0.3));
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    x.connect(g).connect(o);
+    x.start(now);
+    x.stop(now + dur + 0.05);
+  };
+  const sweep = (f0, f1, dur, level, q = 4, am = 0) => {
+    const src = ac.createBufferSource(), b = filter(ac, 'bandpass', f0, q), g = ac.createGain(), m = ac.createGain();
+    src.buffer = kit.noise;
+    src.loop = true;
+    b.frequency.exponentialRampToValueAtTime(f1, now + dur);
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(level, now + dur * 0.3);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    // An optional fast wobble, for insects.
+    if (am) { const l = ac.createOscillator(), d = ac.createGain(); l.frequency.value = am; d.gain.value = 0.5; m.gain.value = 0.5; l.connect(d).connect(m.gain); l.start(now); l.stop(now + dur + 0.05); }
+    src.connect(b).connect(m).connect(g).connect(o);
+    src.start(now);
+    src.stop(now + dur + 0.05);
+  };
+  if (c === 'lights') { knock(now, { f: 55, dur: 0.6, level: 0.5, to: o, drop: 0.5 }); tone(120, 35, 1.4, 0.05); }
+  else if (c === 'lightson') { burst(now, { f: 4200, q: 2, dur: 0.03, level: 0.08, to: o }); tone(120, 118, 0.35, 0.03, 'sawtooth'); }
+  else if (c === 'hand') { knock(now, { f: 90, dur: 0.25, level: 0.3, to: o }); tone(950, 1300, 0.3, 0.012); }
+  else if (c === 'slide') tone(700, 1050, 1.8, 0.012);
+  else if (c === 'figure') { tone(41, 40, 4.5, 0.12); tone(61.5, 60, 4.5, 0.05); }
+  else if (c === 'climb') sweep(220, 900, 2.8, 0.05, 6);
+  else if (c === 'taps') sweep(1600, 180, 0.8, 0.12, 0.7);
+  else if (c === 'tap' || c === 'tap2') { knock(now, { f: 1500, dur: 0.05, level: 0.25, to: o, drop: 0.8 }); burst(now, { f: 3500, q: 2, dur: 0.03, level: 0.1, to: o, pan: 0.5 }); }
+  else if (c === 'airon') sweep(180, 1400, 0.9, 0.1, 0.7);
+  else if (c === 'extra') { tone(55, 52, 5, 0.08); sweep(2000, 1200, 5, 0.015, 1); }
+  else if (c === 'snow') sweep(300, 200, 7, 0.04, 0.6);
+  else if (c === 'noon') sweep(5200, 5000, 9, 0.05, 3, 38);
+  else if (c === 'hills') { tone(98, 98, 9, 0.02); tone(147, 147, 9, 0.014); tone(196, 196, 9, 0.01); }
+  else if (c === 'loop') tone(120, 120, 6, 0.012, 'sawtooth');
+}
 function soundGo() {
   const ac = kit.live();
   if (!ac) return;
@@ -2951,7 +3257,7 @@ function soundGo() {
 function soundRest() {
   if (!snd) return;
   const now = snd.ac.currentTime;
-  for (const g of [snd.hum, snd.roof, snd.glass, snd.hiss, snd.cloth, snd.roar, snd.wind, snd.buzz, snd.lamp, snd.motor, snd.outG]) g.gain.setTargetAtTime(0, now, 0.4);
+  for (const g of [snd.hum, snd.roof, snd.glass, snd.hiss, snd.cloth, snd.roar, snd.wind, snd.buzz, snd.lamp, snd.motor, snd.outG, snd.idle]) g.gain.setTargetAtTime(0, now, 0.4);
 }
 
 /* ---------- the loop ---------- */
@@ -3014,14 +3320,14 @@ function roll() {
 function proceed() {
   stillFor = 0;
   if (phase !== 'shot') { if (reduced()) stepStill(); return; }
-  if (reduced()) { phase = 'run'; toEntry(); stages(0); draw(); syncBar(); return; }
+  if (reduced()) { pickStrange(); phase = 'run'; toEntry(); stages(0); draw(); syncBar(); return; }
   if (fading) return;
-  fading = { t: 0, dur: 2.2, swapped: false, then() { phase = 'run'; toEntry(); roll(); syncBar(); } };
+  fading = { t: 0, dur: 2.2, swapped: false, then() { pickStrange(); phase = 'run'; toEntry(); roll(); syncBar(); } };
   wake();
 }
 // The end: the car waits in the desert, then the film cuts back to the shot.
 function cutToShot() {
-  fading = { t: 0, dur: 2.6, swapped: false, then() { phase = 'shot'; toEntry(); stages(0); syncBar(); } };
+  fading = { t: 0, dur: 2.6, swapped: false, then() { phase = 'shot'; endStrange(); toEntry(); stages(0); syncBar(); } };
 }
 // Proceed shows only while the shot waits, or while reduced motion steps the run.
 const proceedBtn = [...document.querySelectorAll('.s2-label')].find(s => s.textContent === 'Proceed')?.closest('button');
@@ -3035,7 +3341,7 @@ function syncBar() {
 const STOP_ORDER = Object.keys(STOPS);
 function stepStill() {
   const next = STOP_ORDER.find(k => STOPS[k] > car.s + 0.05);
-  if (!next) { phase = 'shot'; toEntry(); stages(0); draw(); syncBar(); return; }
+  if (!next) { phase = 'shot'; endStrange(); toEntry(); stages(0); draw(); syncBar(); return; }
   jumpTo(STOPS[next]);
 }
 // Runs the glass forward to car place s, step by step, with no drawing between.
@@ -3049,6 +3355,7 @@ function jumpTo(s) {
     lastS = car.s;
     car.v = SPEED;
     car.s = Math.min(s, car.s + SPEED * dt);
+    stepStrange();
     stepWipers(dt);
     stages(dt);
     simStep(dt);
@@ -3064,7 +3371,8 @@ function jumpTo(s) {
 }
 act.proceed = proceed;
 act.jump = k => { phase = 'run'; fading = null; fade = 1; syncBar(); jumpTo(STOPS[k]); stillFor = 0; wake(); };
-act.reset = () => { fading = null; fade = 1; phase = 'shot'; toEntry(); stages(0); syncBar(); draw(); wake(); };
+act.force = v => { if (v !== 'random') { clearStrange(); odd.kind = v === 'none' ? null : v; } };
+act.reset = () => { fading = null; fade = 1; phase = 'shot'; clearStrange(); toEntry(); stages(0); syncBar(); draw(); wake(); };
 act.paint = v => { paint = linFit(...PAINTS[v]); gloss = v === 'pearl' ? 0.7 : 1; draw(); };
 // A camera row moves the view at once; each Reset puts its camera's rows back.
 act.view = () => { lens(); draw(); };

@@ -78,11 +78,11 @@ Tom: "camera pov is adjustable in a dev bar from now on -- under ?dev -- i want 
 - [x] Dev rows: eye height, eye side, seat distance, pitch, yaw, field of view, Reset view; persisted; defaults keep today's view
 - [ ] Everything follows the camera: glass, frame, wipers, liquids, refraction, tunnel; ranges clamped where it breaks
 - [x] Tunnel light: cool white battens, warm work lamps, the signal; no glowing outlines; plain lit sign boxes
-- [ ] Materials: wet concrete with puddles, galvanised steel, hazard stripes, mist in the light
-- [ ] Bloom only on lamps, restrained; exposure dark but readable
+- [x] Materials: wet concrete with puddles, galvanised steel, hazard stripes, mist in the light (pass five)
+- [x] Bloom only on lamps, restrained; exposure dark but readable (pass five)
 - [x] Foam: cell size and density follow thickness; soft froth with few distinct bubbles; quieter frit band
-- [ ] Stills before and after, desktop and phone; three camera proofs; frame time
-- [ ] Toy doc and handoff (accent, menu icon) updated
+- [x] Stills before and after, desktop and phone; three camera proofs; frame time (pass five)
+- [x] Toy doc and handoff (accent, menu icon) updated (pass five)
 
 ## Pass five (Tom, 2026-11-16): the place, the establishing shot, strange things
 
@@ -100,8 +100,10 @@ Tom: "Let's make this a shady car wash somewhere in the nevada desert -- no one 
 - [x] Sound: wind, crickets, sign buzz, lamp hum; motors, belt, loose panel, drain; a duck bus
 - [x] Vignette: Open all night
 - [x] Stills: shot at desktop and phone, first frame after Proceed, every station; GPU time against v4
-- [ ] Strange events: a set, at most one per run, a fair chance of none; each with its own sound cue
-- [ ] Settings: Strange (Off, Sometimes, Often); Dev: force a named event
-- [ ] Reduced motion: events fade; no flicker over three a second
-- [ ] Stills per event
-- [ ] Handoff: accent and menu icon
+- [x] Strange events: a set, at most one per run, a fair chance of none; each with its own sound cue
+- [x] Settings: Strange (Off, Sometimes, Often); Dev: force a named event
+- [x] Reduced motion: events fade; no flicker over three a second
+- [x] Stills per event
+- [x] Handoff: accent and menu icon
+
+Pass five summary: the toy opens on an establishing shot of a 1950s desert car wash at night and waits for one action, Proceed. The wash then runs by itself and rolls out into the desert. Eleven strange moments, at most one per run (30 % on Sometimes), each with its own sound cue. Handoff files hold a new accent and a pylon icon. Not checked by ear or in motion with the pane in front.
