@@ -7463,7 +7463,9 @@ function stepChunks() {
       ch.landAt = simT; ch.landP = chP.clone();
       // A piece that still has its bulk lands with a flash and a dust dome.
       // The rock mode leaves the ship's dome slots free.
-      if (tgtKind === 'rock' && shr > 0.3) shipDomes.push({ m: domeVols[ci], t0: simT, i: ci, P: new THREE.Vector3(chP.x, 0, chP.z), S: 2600 + 22 * r });
+      // A near dome is smaller; a far one must read past the ranges.
+      const dk = THREE.MathUtils.clamp(Math.hypot(chP.x - camera.position.x, chP.z - camera.position.z) / 60000, 0.25, 1);
+      if (tgtKind === 'rock' && shr > 0.3) shipDomes.push({ m: domeVols[ci], t0: simT, i: ci, P: new THREE.Vector3(chP.x, 0, chP.z), S: (2600 + 22 * r) * dk });
       // The landing throws a ring of dust.
       if (!reduced()) for (let n = 0; n < 24; n++) {
         const a = rnd() * Math.PI * 2, v = 10 + 25 * rnd();
@@ -7519,8 +7521,9 @@ for (const m of hailCards) m.material.depthTest = true;
 const hails = [];
 let hailCard = 0;
 const hailP = new THREE.Vector3(), hailV = new THREE.Vector3();
-// The plain between the gun and the ranges: 16 to 34 km out.
-const HAIL_NEAR = 16000, HAIL_FAR = 34000;
+// Most pieces land on the plain in front of the ranges: 16 to 34 km out.
+// The rest land behind the first ranges: 95 to 125 km out.
+const HAIL_NEAR = 16000, HAIL_FAR = 34000, HAIL_BACK = [95000, 125000], HAIL_BACK_K = 0.4;
 // The shatter aims each piece's sideways throw at that band.
 // The fall's time stays; only the sideways speed changes.
 function aimHail(n) {
@@ -7534,7 +7537,7 @@ function aimHail(n) {
     let T = 58;
     if (yAt(58) < 15) { let lo = 0; for (let b = 0; b < 20; b++) { const m = 0.5 * (lo + T); if (yAt(m) < 15) T = m; else lo = m; } }
     // Big pieces land nearer the middle of the band; crumbs scatter wider.
-    const d = HAIL_NEAR + (HAIL_FAR - HAIL_NEAR) * rnd(), side = (rnd() - 0.5) * (0.35 + 0.25 * rnd()) * d;
+    const d = rnd() < HAIL_BACK_K ? HAIL_BACK[0] + (HAIL_BACK[1] - HAIL_BACK[0]) * rnd() : HAIL_NEAR + (HAIL_FAR - HAIL_NEAR) * rnd(), side = (rnd() - 0.5) * (0.35 + 0.25 * rnd()) * d;
     const tx = cx + ux * d - uz * side, tz = cz + uz * d + ux * side, e = (1 - Math.exp(-kh * T)) / kh;
     V[i * 4] = (tx - P[i * 3]) / e; V[i * 4 + 2] = (tz - P[i * 3 + 2]) / e;
   }
