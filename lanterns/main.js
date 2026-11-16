@@ -2,6 +2,7 @@
 import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
+import { createNoise2D } from 'simplex-noise';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -216,6 +217,72 @@ vec3 windows(vec3 o, vec3 d, float sx, float sy) {
   return c;
 }
 
+
+// The sky lanterns: two texels each in tLan, from the pool on the CPU.
+// Texel one: place in metres, then height. Texel two: glow, lean, phase, paper fill.
+uniform sampler2D tLan;
+uniform float uLanN, uFlick;
+// The lanterns along this pixel. q is the pixel on the frame; depth is the scene's distance.
+// mir 1 draws the mirror images; sy stretches them down the water.
+vec3 lanterns(vec2 q, float depth, float mir, float sy, float brk) {
+  vec3 acc = vec3(0.0);
+  int n = int(uLanN);
+  float px = 1.0 / uRes.y;
+  for (int i = 0; i < 160; i++) {
+    if (i >= n) break;
+    vec4 a = texelFetch(tLan, ivec2(2 * i, 0), 0);
+    vec3 P = a.xyz;
+    if (mir > 0.5) P.y = -P.y;
+    vec3 v = P - gCam;
+    float z = dot(v, gF);
+    if (z < 2.0) continue;
+    vec2 c = vec2(dot(v, gR), dot(v, gU)) / z * gFoc, dq = q - c;
+    float s = a.w / z * gFoc;
+    // Each glow fades to nothing well inside this reach, so no edge shows.
+    float reach = s * 3.0 + px * 12.0;
+    if (abs(dq.x) > reach || abs(dq.y) > reach + sy * 0.6 * mir) continue;
+    // A lantern behind the land is hidden.
+    float dist = length(v);
+    if (mir < 0.5 && dist > depth + 4.0) continue;
+    vec4 b = texelFetch(tLan, ivec2(2 * i + 1, 0), 0);
+    // Paper lit by a flame, about 2000 K, with a small flicker.
+    float fl = 1.0 + uFlick * (0.035 * sin(uTime * (20.0 + 15.0 * fract(b.z * 7.3)) + b.z * 40.0) + 0.025 * sin(uTime * 31.0 + b.z * 13.0));
+    vec3 paper = vec3(1.0, 0.48, 0.15) * b.x * fl;
+    // Far lanterns grow redder and dimmer through the haze.
+    float hz = max(skHaze(gCam, P, uMist * 0.08, 220.0), mistAt(gCam, P) * 0.6);
+    paper *= (1.0 - 0.65 * hz) * vec3(1.0, 1.0 - 0.25 * hz, 1.0 - 0.45 * hz);
+    if (mir > 0.5) {
+      // The mirror image: a soft streak, longer on rougher water, broken by ripples.
+      float sx = max(s * 0.3, px * 1.3), sv = max(s * 0.45, px * 1.3) + sy * 0.15;
+      acc += paper * exp(-dq.x * dq.x / (sx * sx) - dq.y * dq.y / (sv * sv)) * (max(s * 0.45, px * 1.3) / sv) * brk * 2.2;
+      continue;
+    }
+    float spx = s / px;
+    // Far off, a lantern is one warm point with a soft halo.
+    float orb = exp(-dot(dq, dq) / (px * px * 1.3)) * clamp(spx * spx * 0.09, 0.05, 0.6) * 3.5 + exp(-dot(dq, dq) / (px * px * 14.0)) * 0.05;
+    vec3 col = paper * orb;
+    if (spx > 2.0) {
+      // Near, it is a box of paper: wider at the top, a flame low inside.
+      float cl = cos(b.y), sl = sin(b.y);
+      vec2 l = vec2(cl * dq.x + sl * dq.y, -sl * dq.x + cl * dq.y) / s;
+      float w = 0.27 + 0.07 * (l.y + 0.5);
+      vec2 e = abs(l) - vec2(w, 0.5);
+      float sd = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - 0.04;
+      float cov = smoothstep(px / s, -px / s, sd);
+      float lum = mix(1.7, 0.55, clamp(l.y + 0.5, 0.0, 1.0));
+      lum *= 1.0 - 0.55 * smoothstep(0.32, 0.5, l.y);
+      lum *= 1.0 - 0.4 * pow(clamp(abs(l.x) / w, 0.0, 1.0), 4.0);
+      float flame = exp(-(l.x * l.x * 60.0 + (l.y + 0.36) * (l.y + 0.36) * 40.0));
+      vec3 box = paper * lum * (0.15 + 0.85 * b.w) * 1.5 + vec3(1.0, 0.7, 0.4) * b.x * flame * 3.0;
+      // A soft halo of light round the paper.
+      vec3 halo = paper * exp(-dot(dq, dq) / (s * s * 1.5)) * 0.32;
+      col = mix(col, box * cov + halo, smoothstep(2.0, 4.0, spx));
+    }
+    acc += col;
+  }
+  return acc;
+}
+
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
   gFoc = uView.z * min(1.0, sqrt(asp / 1.2));
@@ -264,10 +331,15 @@ vec3 envScene(vec2 uv) {
     vec3 refl = view(P, r, hr, skyCol(P, r), gPx + blur);
     // Each window smears into a tall streak; rougher water makes it longer.
     refl += windows(P, r, gPx * 1.5, gPx * 1.5 + 2.0 * rough);
+    // Each lantern burns twice: once in the air, once in the lake.
+    if (uLanN > 0.0) refl += lanterns(q, 0.0, 1.0, 2.0 * rough * gFoc, clamp(1.0 + slope.y * 9.0, 0.15, 1.7));
     base = mix(vec3(0.0015, 0.0025, 0.004) + uZen * 0.02, refl, F);
     base = mix(base, mistCol(d), mistAt(gCam, P));
   }
-  return view(gCam, d, h, base, gPx) + windows(gCam, d, gPx * 1.2, gPx * 1.2);
+  float depth = h.land ? h.t : d.y < 0.0 ? tw : 1e6;
+  vec3 c = view(gCam, d, h, base, gPx) + windows(gCam, d, gPx * 1.2, gPx * 1.2);
+  if (uLanN > 0.0) c += lanterns(q, depth, 0.0, 0.0, 1.0);
+  return c;
 }`;
 
 /* ---------- state ---------- */
@@ -275,6 +347,150 @@ let visible = true, awake = true, sleepAt = 0, target = HOURS[first];
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 const tall = () => tallOf(canvas.clientWidth / Math.max(1, canvas.clientHeight));
+
+/* ---------- the land, on the CPU ---------- */
+// These mirror the shader's wtH, wtNoised, coast and ground, so a tap finds the shore.
+const fract = x => x - Math.floor(x);
+function hash(x, y) {
+  let a = fract(x * 0.1031), b = fract(y * 0.1031), c = fract(x * 0.1031);
+  const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33);
+  a += d; b += d; c += d;
+  return fract((a + b) * c);
+}
+function noise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+function coast(x, z) {
+  return Math.hypot((x - 60) / 700, (z + 650) / 520) - 1 + 0.2 * (noise(x / 420, z / 420) - 0.5) + 0.08 * (noise(x / 130 + 9, z / 130 + 9) - 0.5);
+}
+function ground(x, z) {
+  const s = coast(x, z);
+  if (s < 0) return -2 + 40 * s;
+  return -2 + 110 * (1 - Math.exp(-2.5 * s)) + 70 * smooth(0.05, 0.8, s) * (noise(x / 640 + 3, z / 640 + 3) - 0.35) + 2 * smooth(0, 0.01, s);
+}
+// The camera, as the shader builds it.
+function camera() {
+  const cw = Math.max(1, canvas.clientWidth), ch = Math.max(1, canvas.clientHeight), asp = cw / ch;
+  const foc = CAM.foc * Math.min(1, Math.sqrt(asp / 1.2)), hz = horizon(asp, CAM.hz);
+  const pitch = CAM.fish > 0 ? (hz - 0.5) * CAM.fish : Math.atan((hz - 0.5) / foc);
+  const yaw = (CAM.yaw + 6 * tall()) * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return {
+    asp, foc, roll: CAM.roll * Math.PI / 180,
+    eye: [CAM.x, Math.max(ground(CAM.x, CAM.z), 0) + CAM.lift, CAM.z],
+    F: [sy * cp, -sp, -cy * cp], U: [sy * sp, cp, -cy * sp], R: [cy, 0, sy],
+  };
+}
+// The view ray through a point on the frame; u and v run 0 to 1 from the bottom left.
+function rayAt(u, v) {
+  const c = camera();
+  let qx = (u - 0.5) * c.asp, qy = v - 0.5;
+  [qx, qy] = [Math.cos(c.roll) * qx - Math.sin(c.roll) * qy, Math.sin(c.roll) * qx + Math.cos(c.roll) * qy];
+  let dc = [qx, qy, c.foc];
+  if (CAM.fish > 0) {
+    const r = Math.hypot(qx, qy) + 1e-6, th = Math.min(r * CAM.fish, 3.1);
+    dc = [qx / r * Math.sin(th), qy / r * Math.sin(th), Math.cos(th)];
+  }
+  const d = [0, 1, 2].map(k => c.R[k] * dc[0] + c.U[k] * dc[1] + c.F[k] * dc[2]), l = Math.hypot(...d);
+  return { eye: c.eye, d: d.map(x => x / l) };
+}
+// Where a lantern lifts from: the land or water under the tap.
+// A tap on the sky finds the far shore under that point.
+function launchAt(u, v) {
+  const { eye, d } = rayAt(u, v);
+  let t = 5;
+  for (let i = 0; i < 500 && t < 6000; i++) {
+    const x = eye[0] + d[0] * t, y = eye[1] + d[1] * t, z = eye[2] + d[2] * t, h = Math.max(ground(x, z), 0);
+    if (y < h) return [x, h, z];
+    t += Math.max((y - h) * 0.5, 0.01 * t + 0.3);
+  }
+  const l = Math.hypot(d[0], d[2]), ax = d[0] / l, az = d[2] / l;
+  let wet = false;
+  for (let r = 40; r < 4000; r += 8) {
+    const x = eye[0] + ax * r, z = eye[2] + az * r;
+    if (coast(x, z) < 0) wet = true;
+    else if (wet) return [x, Math.max(ground(x, z), 0), z];
+  }
+  return [eye[0] + ax * 1100, 0, eye[2] + az * 1100];
+}
+
+/* ---------- the lanterns, on the CPU ---------- */
+// A pool of sky lanterns. The cap follows the detail level.
+const CAPS = [64, 120, 160], MAXN = 160;
+/** @type {{ p: number[], v: number[], age: number, life: number, size: number, phase: number, lean: number, leanV: number }[]} */
+export const pool = [];
+const wind = createNoise2D();
+let simT = 0, windSpeed = 1.6;
+// One lantern lifts from the land or water under a point on the frame.
+export function release(u, v) {
+  if (pool.length >= (CAPS[env.detail.level] ?? MAXN)) pool.shift();
+  const at = launchAt(u, v), j = () => (Math.random() - 0.5) * 6;
+  pool.push({
+    // No two start in one place, so a held press never stacks them.
+    p: [at[0] + j(), at[1] + 0.9, at[2] + j()], v: [0, 0, 0],
+    age: 0, life: 60 + 40 * Math.random(),
+    // No two share a size, a flicker or a sway.
+    size: 1.4 * (0.85 + 0.3 * Math.random()), phase: Math.random() * 100, lean: 0, leanV: 0,
+  });
+  wake();
+  env.touch();
+}
+// The glow of one lantern: a flare as it catches, steady, then an ember that goes out.
+function glowOf(L) {
+  const flare = 1 + 1.4 * Math.exp(-L.age / 0.12);
+  const out = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / 6);
+  return flare * (0.08 + 0.92 * out * out) * (L.age < L.life + 6 ? 1 : Math.max(0, 1 - (L.age - L.life - 6) / 2));
+}
+export function stepLanterns(dt) {
+  const slow = reduced() ? 0.5 : 1;
+  dt *= slow;
+  simT += dt;
+  for (let i = pool.length - 1; i >= 0; i--) {
+    const L = pool[i];
+    L.age += dt;
+    if (L.age > L.life + 8) { pool.splice(i, 1); continue; }
+    // Lift: the flame's heat climbs to about 1.3 m/s; an ember barely rises.
+    const heat = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / 6);
+    const up = 0.15 + 1.15 * heat * Math.min(1, L.age / 4);
+    L.v[1] += (up - L.v[1]) * (1 - Math.exp(-dt / 2.5));
+    // Wind: the slider speed plus slow gusts, stronger with height.
+    const lift = 0.45 + 0.55 * Math.min(1, L.p[1] / 90);
+    const g = wind(simT * 0.04 + L.phase, L.p[1] * 0.01);
+    const wx = windSpeed * lift * (1 + 0.35 * g), wz = -windSpeed * lift * 0.35 * (1 + 0.5 * wind(L.phase, simT * 0.03));
+    const k = 1 - Math.exp(-dt / 5);
+    L.v[0] += (wx - L.v[0]) * k;
+    L.v[2] += (wz - L.v[2]) * k;
+    for (let a = 0; a < 3; a++) L.p[a] += L.v[a] * dt;
+    // Sway: the lean is a damped pendulum, pushed by the wind against the lift.
+    if (slow < 1) { L.lean = 0; continue; }
+    const want = Math.max(-0.3, Math.min(0.3, -(wx - L.v[0]) * 0.25 + 0.04 * Math.sin(simT * 0.8 + L.phase)));
+    L.leanV += ((want - L.lean) * 5 - L.leanV * 1.2) * dt;
+    L.lean += L.leanV * dt;
+  }
+}
+// The pool goes to the GPU as one small float texture each frame.
+const lanData = new Float32Array(MAXN * 8);
+let lanTex = null;
+function lanTexture() {
+  const gl = env.gl;
+  if (!lanTex) {
+    lanTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, lanTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, MAXN * 2, 1, 0, gl.RGBA, gl.FLOAT, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  }
+  pool.forEach((L, i) => {
+    const o = i * 8;
+    lanData[o] = L.p[0]; lanData[o + 1] = L.p[1]; lanData[o + 2] = L.p[2]; lanData[o + 3] = L.size;
+    lanData[o + 4] = glowOf(L); lanData[o + 5] = L.lean; lanData[o + 6] = L.phase; lanData[o + 7] = Math.min(1, L.age / 1.0);
+  });
+  gl.bindTexture(gl.TEXTURE_2D, lanTex);
+  if (pool.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, pool.length * 2, 1, gl.RGBA, gl.FLOAT, lanData);
+  return lanTex;
+}
 let env = null;
 try {
   env = environment(canvas, {
@@ -282,7 +498,10 @@ try {
     // The loop sleeps 60 s after the last input; the last frame stays.
     active: () => visible && awake,
     onFrame: raw => step(Math.min(raw, 0.05)),
+    textures: { tLan: lanTexture },
     uniforms: {
+      uLanN: () => pool.length,
+      uFlick: () => (reduced() ? 0 : 1),
       uMist: () => 0.003,
       uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz),
       uEye: () => [CAM.x, CAM.z, CAM.lift],
@@ -310,7 +529,9 @@ function step(dt) {
   const k = 1 - Math.exp(-dt / 0.6);
   S.hour += (target - S.hour) * k;
   S.expo += (expoTarget - S.expo) * k;
-  if (performance.now() > sleepAt) awake = false;
+  stepLanterns(dt);
+  // The loop sleeps once the sky is empty and no one has touched it for 60 s.
+  if (performance.now() > sleepAt && !pool.length) awake = false;
 }
 // Any input wakes the loop for another 60 s.
 function wake() {
@@ -326,9 +547,37 @@ act.time = v => {
   env.touch();
 };
 for (const ev of ['pointerdown', 'pointermove', 'keydown']) stage.addEventListener(ev, wake, { passive: true });
+// A tap sets one lantern free from under that point.
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const r = canvas.getBoundingClientRect();
+  release((e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height);
+  if (reduced()) still();
+});
+// With motion off the runner draws no loop, so the lanterns get their own.
+let stillOn = false;
+function still() {
+  if (stillOn) return;
+  stillOn = true;
+  let last = performance.now();
+  const tick = now => {
+    step(Math.min(0.05, (now - last) / 1000));
+    last = now;
+    env.draw();
+    if (pool.length && visible) requestAnimationFrame(tick);
+    else stillOn = false;
+  };
+  requestAnimationFrame(tick);
+}
 new ResizeObserver(wake).observe(stage);
 
 /* ---------- start ---------- */
+// QA: ?lan=10 starts with ten lanterns already in the air.
+const preset = Math.min(MAXN, +(qs.get('lan') || 0));
+for (let i = 0; i < preset; i++) {
+  release(0.15 + 0.7 * Math.random(), 0.2 + 0.25 * Math.random());
+  for (let k = 0; k < 40; k++) stepLanterns(0.1);
+}
 wake();
 env.draw();
 canvas.classList.add('on');

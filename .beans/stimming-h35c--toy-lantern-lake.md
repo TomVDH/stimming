@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:25:57Z
+updated_at: 2026-11-16T22:35:54Z
 parent: stimming-oh7b
 ---
 
@@ -43,3 +43,13 @@ Tom, 2026-11-16: no head-on view (Train ride, Ten seconds and Fireworks have one
 Tom, 2026-11-16: more angles to compare. `?cam=<name>` picks a trial camera: hill (the default), wide, fish, dutch, tele, scope (2.39 letterbox), shore, along, drone. The march now strides over open water, and the pine grid turns 31 degrees, so the far bank shows no fence.
 
 Tom picked `tele` as the camera (2026-11-16): the long lens on the far bank from the hill. A tall frame turns 6 degrees right, so the lit windows stay in it. The other trials stay behind `?cam=`.
+
+- [x] Task 2: sky lanterns and their reflections. Checkpoint stills: one tapped lantern, ten in the air (`?lan=10`), all three hours, 1280 and 375 px, console clean.
+
+Rulings in Task 2:
+- With the long lens no near shore shows, so a tap launches from the land or water under it; a tap on the sky finds the far shore under that point.
+- The pool and its float texture are `pool`, `release(u, v)`, `stepLanterns(dt)` and `tLan`. The runner calls the texture as a live picture, so each draw uploads the pool.
+- A lantern behind the land is hidden by a depth test against the scene's own hit.
+- The runner draws no loop with reduced motion, so the lanterns run their own while any is alive.
+- Lanterns use the straight lens only; the `fish` trial shows them in the wrong place.
+- Each glow fades out inside its cull box, so no square edge shows.
