@@ -143,7 +143,7 @@ function start() {
     live(true);
     // A pointer that only passes over a toy does not change the picture.
     clearTimeout(dwell);
-    if (fresh) show(li); else dwell = setTimeout(() => show(li), 110);
+    if (fresh) show(li); else dwell = setTimeout(() => show(li), 45);
   });
   shelf.addEventListener('pointermove', e => {
     if (!tile(e.target)) return;

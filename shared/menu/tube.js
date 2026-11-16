@@ -1,15 +1,15 @@
 // The tube: the toy in hand, as a picture in the middle of the Clock.
 // It looks like a 1950s picture tube, seen from inside: a concave warp, scan lines and grain.
 // It has no hard edge: the picture fades out toward the toys.
-// The toy's name and motto are part of the picture: the shader draws them, so they roll and shade with it.
-// A change of toy rolls the old picture down and the new one in, slowly, with a dark bar between them.
+// The toy's name and motto are part of the picture: the shader draws them, so they shade and change with it.
+// A change of toy is quick: the new picture fades in from a little close up and settles, after a short flicker.
 // A toy with a loop plays it in place of the still while the toy is in hand.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
 // How bright the picture is at its middle, 0 to 1.
 const LEVEL = 0.46;
-// A change of toy takes this long, in seconds. A waiting toy speeds it up.
-const ROLL = 0.9;
+// A change of toy takes this long, in seconds.
+const CHANGE = 0.42;
 // The caption is a square texture; it covers this share of the tube's width.
 const CAP = 0.62, CAP_PX = 1024;
 
@@ -18,7 +18,7 @@ precision mediump float;
 in vec2 vUv;
 out vec4 o;
 uniform sampler2D uA, uB, uTA, uTB;
-uniform float uPx, uRoll, uTime, uHasA, uHasB, uLevel;
+uniform float uPx, uMix, uKick, uTime, uHasA, uHasB, uLevel;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 // A still. Its colours part a little, as on a worn tube; f is how far.
 vec3 pic(sampler2D t, vec2 w, float f) {
@@ -40,27 +40,24 @@ void main() {
   // The caption has a milder warp, so the words stay easy to read.
   float cr = min(r / ${CAP.toFixed(2)}, 1.0);
   vec2 q = (p / ${CAP.toFixed(2)}) * (1.08 - 0.2 * cr * cr);
-  // The roll: at 0 picture A stands; at 1 picture B stands. Between them, both slide down.
-  float g = uRoll, swell = sin(3.14159 * g), edge = 1.0 - 2.0 * g;
-  // By the bar the lines shear a little.
-  float by = exp(-pow((w.y - edge) / 0.16, 2.0)) * swell;
-  float shear = by * 0.045 * sin(w.y * 38.0 + uTime * 9.0);
-  w.x += shear;
-  q.x += shear;
-  float f = 0.003 + 0.011 * swell;
-  vec2 wa = vec2(w.x, w.y + 2.0 * g), wb = vec2(w.x, w.y + 2.0 * g - 2.0);
-  vec3 c = pic(uA, wa, f) * step(abs(wa.y), 1.0) * uHasA + pic(uB, wb, f) * step(abs(wb.y), 1.0) * uHasB;
+  // The change: at 0 picture A stands; at 1 picture B stands.
+  float g = uMix, k = uKick;
+  // The flicker at the start of a change: a few lines slip sideways and the colours part.
+  float slip = k * 0.03 * (hash(vec2(floor(vUv.y * 46.0), floor(uTime * 30.0) + 5.0)) - 0.5);
+  w.x += slip;
+  q.x += slip;
+  float f = 0.003 + 0.012 * k;
+  // The new picture comes from a little close up and settles back.
+  float zoom = 1.0 - 0.06 * (1.0 - g);
+  vec3 c = mix(pic(uA, w, f) * uHasA, pic(uB, w * zoom, f) * uHasB, g);
   // The shade: a dim picture that goes darker toward the rim.
   c *= uLevel * (1.0 - 0.8 * smoothstep(0.1, 0.8, r));
-  // The words lie on the picture and roll with it.
-  vec4 t = words(uTA, vec2(q.x, q.y + 2.0 * g)) * uHasA + words(uTB, vec2(q.x, q.y + 2.0 * g - 2.0)) * uHasB;
+  // The words lie on the picture and change with it.
+  vec4 t = mix(words(uTA, q) * uHasA, words(uTB, q * zoom) * uHasB, g);
   c = c * (1.0 - t.a) + t.rgb * 0.94;
-  // The bar between the two pictures is dark, with a little static in it.
-  float bar = mix(1.0, smoothstep(0.0, 0.1, abs(w.y - edge)), step(0.001, g) * step(g, 0.999));
   float n = hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0);
-  c = c * bar + (1.0 - bar) * n * 0.07;
-  // The picture dips while it rolls.
-  c *= 1.0 - 0.35 * swell;
+  // The flicker is a touch bright, with a burst of grain.
+  c = c * (1.0 + 0.3 * k) + (n - 0.5) * 0.16 * k;
   // Scan lines: one line each three CSS pixels.
   float line = 0.5 + 0.5 * sin(gl_FragCoord.y / uPx * 2.0944);
   c *= 0.7 + 0.3 * line;
@@ -186,17 +183,15 @@ export async function tube(host, span) {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
-  let roll = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
-  /** @type {{ url: string, loop: string | null, words: Words } | null} */
-  let next = null;
+  let mix = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
   /** @type {Words | null} */
   let said = null;
   /** @type {HTMLVideoElement | null} */
   let vid = null;
   // A dropped loop frees its decoder.
   const drop = () => { if (!vid) return; vid.pause(); vid.removeAttribute('src'); vid.load(); vid = null; };
-  // The roll starts slow, runs, and lands slow: that gives the change its weight.
-  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  // The change starts at once and lands softly: that gives it its weight.
+  const ease = t => 1 - Math.pow(1 - t, 4);
   function draw() {
     if (gone) return;
     // The picture is soft and the face is wide, so the canvas stays at 1.5x at most.
@@ -209,7 +204,9 @@ export async function tube(host, span) {
       gl.uniform1i(u, i);
     });
     gl.uniform1f(P.u.uPx, k);
-    gl.uniform1f(P.u.uRoll, ease(roll));
+    gl.uniform1f(P.u.uMix, ease(mix));
+    // The flicker is over in the first third of the change.
+    gl.uniform1f(P.u.uKick, has[1] ? Math.pow(Math.max(0, 1 - mix / 0.36), 2) : 0);
     gl.uniform1f(P.u.uTime, time);
     gl.uniform1f(P.u.uHasA, has[0]);
     gl.uniform1f(P.u.uHasB, has[1]);
@@ -219,15 +216,14 @@ export async function tube(host, span) {
     tri(gl, null, vao);
     drawn = performance.now();
   }
-  // The new picture is B; when its roll ends it becomes A.
-  const settle = () => { pics.reverse(); caps.reverse(); has = [1, 0]; roll = 0; };
+  // The new picture is B; when its change ends it becomes A.
+  const settle = () => { pics.reverse(); caps.reverse(); has = [1, 0]; mix = 0; };
   const wake = () => { if (!raf && !gone) { last = performance.now(); raf = requestAnimationFrame(frame); } };
   function frame(now) {
     raf = 0;
     const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
     last = now;
-    // A waiting toy makes the present roll end sooner.
-    if (rolling) roll = Math.min(1, roll + dt / (next ? ROLL * 0.45 : ROLL));
+    if (rolling) mix = Math.min(1, mix + dt / CHANGE);
     if (hot && !still.matches) time += dt;
     // A loop in play puts its present frame in the newest picture.
     const playing = vid !== null && hot && vid.readyState >= 2;
@@ -238,16 +234,13 @@ export async function tube(host, span) {
     }
     // The grain alone needs twenty pictures a second, not sixty.
     if (rolling || playing || now - drawn > 48) draw();
-    if (rolling && roll >= 1) {
-      settle();
-      // The toy that waited now rolls in.
-      if (next) { const n = next; next = null; begin(n.url, n.loop, n.words); }
-    }
+    if (rolling && mix >= 1) settle();
     if (has[1] || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
-  // Loads a still, then rolls it in with its words.
-  function begin(url, loop, words) {
+  // Loads a still, then fades it in with its words.
+  function show(url, loop, words) {
+    if (url === src) return;
     src = url;
     said = words;
     drop();
@@ -256,23 +249,19 @@ export async function tube(host, span) {
       await fonts;
       // A newer toy or a lost context makes this still stale.
       if (url !== src || gone) return;
+      // A change past its middle ends at once, so the next one starts clean.
+      if (has[1] && ease(mix) > 0.5) settle();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, pics[1]);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
       write(words, 1);
       has[1] = 1;
-      roll = 0;
-      if (still.matches) { roll = 1; draw(); settle(); return; }
+      mix = 0;
+      if (still.matches) { mix = 1; draw(); settle(); return; }
       wake();
       if (loop) film(url, loop);
     };
     im.src = url;
-  }
-  function show(url, loop, words) {
-    if (url === src && !next) return;
-    // A toy that comes during a roll waits for the roll to end; the last one wins.
-    if (has[1]) { next = url === src ? null : { url, loop, words }; return; }
-    begin(url, loop, words);
   }
   // New words for the toy on show, for example when its motto arrives.
   function caption(words) {
@@ -301,14 +290,13 @@ export async function tube(host, span) {
     if (vid) { if (on) vid.play().catch(() => {}); else vid.pause(); }
     if (on) wake();
   }
-  // With no toy in hand the face is empty; the next toy rolls in over dark.
+  // With no toy in hand the face is empty; the next toy fades in over dark.
   function clear() {
     src = '';
-    next = null;
     said = null;
     drop();
     has = [0, 0];
-    roll = 0;
+    mix = 0;
     draw();
   }
 
@@ -321,8 +309,7 @@ export async function tube(host, span) {
       gone = false;
       const again = src, words = said;
       src = '';
-      next = null;
-      if (again) begin(again, null, words);
+      if (again) show(again, null, words);
     },
   });
   return { show, caption, live, clear };
