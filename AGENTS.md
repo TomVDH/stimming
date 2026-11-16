@@ -64,8 +64,8 @@ Read `README.md` for the toy list and the full rules.
       - A script that stalls for 8 s (a dead CDN) leaves the whole shelf, as a failed one does.
       - The Clock waits for the whole page: the icon script at the end draws some icons. An early start left empty tiles and was dropped. The Lab's markup is 36% of the page; moving it out is the next gain, in its own feature.
   - Stills: one 512 px WebP per main-shelf toy in `shared/stills/`. `tools/stills.mjs` captures them in headless Playwright; its header holds the run command and its table holds the poke each toy needs. Renew a toy's still when its look changes. A new main-shelf toy needs one.
-  - Main shelf (43): morpher, pop, fidget, domino, pins, galaxy, prism, kaleido, ferro, neon, magnet, soap, glass, chladni, pendulum, pool, putty, scope, walker, fire, rain, tvtree, balloons, bubbles, lava, eyes, sonar, trails, shadyos, window, chamber, ink, windmap, vortex, dijkstra, fireworks, launch, frietkot, railgun, trainride, foghorn, washline, cauldron.
-  - Lab (`section.lab`, 65 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. Only the whole shelf (`?all`) links to it; the Clock has no link to it.
+  - Main shelf (52): morpher, pop, fidget, domino, pins, galaxy, prism, kaleido, ferro, neon, magnet, soap, glass, chladni, pendulum, pool, putty, scope, walker, fire, rain, tvtree, balloons, bubbles, lava, eyes, sonar, trails, shadyos, window, chamber, ink, windmap, vortex, dijkstra, fireworks, launch, frietkot, railgun, trainride, foghorn, washline, cauldron, meshball, washer, spark, oilslick, ladder, windtunnel, schlieren, lichtenberg, steelwool.
+  - Lab (`section.lab`, 58 toys): all other toys. It shows only at `?lab`; `lab/` redirects there. Only the whole shelf (`?all`) links to it; the Clock has no link to it.
 - Menu icons are inline SVG: the toy's own object, drawn from its real frames, live under the pointer.
   Never a two-tone hard offset shadow: no dark copy or slab offset behind the shape (Tom, 2026-11-09). A soft halo is fine.
   A GSAP 3.13 timeline animates each icon on hover: `toys.<id> = { play, rest }`.
