@@ -210,6 +210,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // Cloud deck: the broken layer of cells five kilometres up.
     // Giants: the three colossal storms far beyond the ranges.
     { type: 'toggle', id: 'giants', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+    // Giant age pins every giant's life stage; Live lets each run its own.
+    { type: 'slider', id: 'giantage', label: 'Giant age', min: -0.05, max: 1, step: 0.01, value: -0.05, onInput: v => { CLOUD_U.uGiantAge.value = v < 0 ? -1 : v; draw(); } },
     { type: 'slider', id: 'deck', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'grainsize', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
@@ -1847,7 +1849,7 @@ setFarMode(FAR_MODE === 'bake');
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, ...IMP_U };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uGiantAge: { value: -1 }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1868,10 +1870,13 @@ ${SHAFT_GLSL}
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
 varying float vLife;
-float bt(float sd) { return uCloudT + uCloudC * 0.0012 * (0.6 + fract(sd * 0.73)); }
+// A giant boils at a third of the pace: its billows are kilometres wide.
+float bt(float sd) { return uCloudT + uCloudC * 0.0012 * (0.6 + fract(sd * 0.73)) * (vS.z > 1.5 ? 0.35 : 1.0); }
 float bil(vec2 p, float sd) { float t = bt(sd); return texture(uVol, vec3(p + vec2(t * 0.4, 0.0), sd * 0.37 + t * 0.06)).r; }
 float cell(vec2 p, float sd) { float t = bt(sd); return texture(uVol, vec3(p + vec2(t * 0.4, 0.0), sd * 0.61 + 0.5 + t * 0.06)).g; }
 float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
+// A smooth max: two shapes join with a fillet k metres wide.
+float gsmax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
 // The body: positive inside, in metres from the edge.
 float body(vec2 X) {
   float W = vS.x, H = vS.y, sd = vS.w;
@@ -1895,6 +1900,46 @@ float body(vec2 X) {
     F = min(F, W * 1.18 - abs(x));
     // A heap at the end of its cycle frays into wisps and goes.
     F -= (1.0 - smoothstep(0.0, 0.4, vLife)) * H * (0.9 - 0.4 * lump);
+  } else if (vS.z > 1.5) {
+    // A giant: a storm cell that grows, spreads its anvil, then decays.
+    // The recipe follows Window seat's towers, drawn on one card.
+    float s = vLife;
+    float grow = smoothstep(0.0, 0.4, s), anv = smoothstep(0.35, 0.75, s), dec = smoothstep(0.78, 1.0, s);
+    // The top climbs first; the anvil spreads once it meets the tropopause.
+    float Ht = H * mix(0.42, 0.86, grow);
+    // Distance blurs the billows: few, broad and soft.
+    float lump = bil(X / (W * 0.3), sd);
+    float fine = cell(X / (W * 0.1), sd);
+    float wide = mix(0.7, 1.0, grow) * (1.0 - 0.3 * dec);
+    // The core leans downwind as it climbs.
+    float cx = x - W * 0.1 * (y / H) * (y / H);
+    // The core turret feeds the anvil; three side turrets stand lower round it.
+    F = -1e6;
+    for (int i = 0; i < 4; i++) {
+      float fi = float(i);
+      float off = i == 0 ? 0.0 : W * (0.2 + 0.14 * hsh(fi, sd)) * (hsh(fi + 3.0, sd) > 0.5 ? 1.0 : -1.0);
+      float r = W * (i == 0 ? 0.27 : 0.15 + 0.07 * hsh(fi + 5.0, sd)) * wide;
+      float tp = i == 0 ? Ht : Ht * (0.45 + 0.3 * hsh(fi + 9.0, sd)) * mix(0.6, 1.0, grow);
+      float dy = y - clamp(y, 0.0, tp - r);
+      F = gsmax(F, r - length(vec2(cx - off, dy * 1.15)), W * 0.07);
+    }
+    // A broad foot swells into the haze.
+    F = gsmax(F, min(W * 0.55 * wide - abs(cx), H * 0.14 - y), W * 0.1);
+    // The anvil: flat on top, long downwind, thin at its rim.
+    float atop = H * 0.88;
+    float ax = cx + W * 0.06, reach = mix(W * 0.2, W * 0.95, anv), back = mix(W * 0.15, W * 0.38, anv);
+    float ak = ax > 0.0 ? ax / reach : -ax / back;
+    float thick = H * 0.12 * anv * (1.0 - 0.5 * dec) * sqrt(max(1.0 - ak * ak, 0.0));
+    float anvF = min(atop - y, y - (atop - 2.0 * thick)) + (lump - 0.5) * H * 0.02 * anv;
+    if (anv > 0.01) F = gsmax(F, anvF, W * 0.05);
+    // The overshooting top heaves slowly above the anvil.
+    float od = H * 0.06 * anv * (1.0 - dec) * (0.8 + 0.2 * sin(uCloudC * 0.01 + sd));
+    F = max(F, od - length(vec2(cx, (y - atop) * 1.3)));
+    // Billows break every outline; a dying cell frays.
+    F += (lump - 0.45) * W * mix(0.08, 0.16, smoothstep(0.2, 0.8, y / H)) + (fine - 0.5) * W * 0.03 - dec * W * 0.06 * (1.0 - lump);
+    // A new cell fades in out of the haze; a spent one fades out.
+    F -= (1.0 - smoothstep(0.0, 0.08, s) + smoothstep(0.93, 1.0, s)) * W * 0.35;
+    F = min(F, W * 1.15 - abs(x));
   } else {
     // A thunderhead: a broad, boiling column under a flat anvil.
     // The anvil runs downwind to the right and thins at its far end.
@@ -2025,7 +2070,9 @@ void main() {
   // Far cloud sinks into the air: its foot first, its crown last.
   // Near heaps stay crisp; far towers turn pale and flat.
   float cdk = length(P.xz - cameraPosition.xz);
-  col = mix(col, k2hazeColor(V) * 1.04, uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.97, 0.6, smoothstep(0.0, 20000.0, P.y)));
+  // Above the horizon the far cloud fades toward the sky right behind it.
+  vec3 behind = mix(k2hazeColor(V) * 1.04, k2skyB(V, 0.0), smoothstep(0.0, 0.2, V.y));
+  col = mix(col, behind, uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.97, 0.38, smoothstep(0.0, 30000.0, P.y)));
   // The blast: its light, thin parts brightest, and the shock rim.
   // It lands after the haze: the flash lights the air on the way too.
   // Faces turned to the hit take it; the far side stays in shadow.
@@ -2057,6 +2104,7 @@ void main() {
 }`;
 const CLOUD_VS = /* glsl */`
 attribute vec4 aC, aS;
+uniform float uGiantAge;
 ${CURVE}
 uniform float uCloudC;
 varying vec2 vUv;
@@ -2073,6 +2121,10 @@ void main() {
   float a = (ph - 0.5) * radians(16.0) * mix(0.2, 1.0, heap);
   vec3 C = vec3(aC.x * cos(a) - aC.z * sin(a), aC.y, aC.x * sin(a) + aC.z * cos(a));
   vLife = mix(1.0, sin(3.14159 * ph), heap);
+  // A giant runs one storm's life, 7 to 17 minutes, then a new cell grows.
+  float giant = step(1.5, aS.y);
+  // uGiantAge pins every giant to one age, for review; below 0 it runs live.
+  vLife = mix(vLife, uGiantAge >= 0.0 ? uGiantAge : fract(uCloudC * (0.6 + 0.8 * hs(sd)) / 600.0 + hs(sd + 2.0)), giant);
   vec3 f = C - cameraPosition;
   f.y = 0.0;
   f = normalize(f);
@@ -2131,7 +2183,7 @@ const tower = cloudLayer(TOWERS, BAND.deep);
 // Giants: three colossal storms 190 to 225 km out, among the far ranges.
 // The planet's curve hides their feet; the haze turns them pale.
 // Beside them the gun and the towers look small.
-const GIANTS = [[-12, 215000, 0, 46000, 90000, 1], [38, 225000, 0, 52000, 95000, 1], [62, 195000, 0, 38000, 75000, 1]];
+const GIANTS = [[-12, 215000, 0, 46000, 90000, 2], [38, 225000, 0, 52000, 95000, 2], [62, 195000, 0, 38000, 75000, 2]];
 const giants = cloudLayer(GIANTS, BAND.giants);
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
@@ -11473,6 +11525,8 @@ function vilKey() {
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
+  // Pin every giant to one life stage; below 0 runs live.
+  giantAge(v) { CLOUD_U.uGiantAge.value = v; draw(); },
   sun(v) { opts.sun = v; setSun(); },
   simT: () => simT,
   draws: () => drawN,
