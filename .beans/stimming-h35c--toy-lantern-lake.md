@@ -1,11 +1,11 @@
 ---
 # stimming-h35c
 title: 'Toy: Lantern lake'
-status: draft
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T21:52:07Z
+updated_at: 2026-11-16T21:58:26Z
 parent: stimming-oh7b
 ---
 
@@ -16,7 +16,7 @@ Tap to release paper lanterns over a still lake; they rise and reflect.
 Rough size: M (a guess; no plan yet).
 
 - [ ] Blockout, signed off by Tom
-- [x] Development plan in docs/plans/lanterns.md (decisions D1 to D3 open for Tom)
+- [x] Development plan in docs/plans/lanterns.md (Tom took the defaults for D1 to D3, 2026-11-16)
 - [ ] Build in the Lab
 - [ ] QA at 1280 px and 375 px
 - [ ] Tom's sign-off

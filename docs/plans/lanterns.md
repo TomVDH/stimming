@@ -14,11 +14,13 @@
 |---|---|
 | Size, estimate | M · $20 to $35 |
 | Kits | `shared/environment.js` for the frame, the sky, the water and bloom |
-| Before the build | D1 to D3 below |
+| Before the build | nothing |
 
-## Decisions for Tom
+## Decisions
 
-| | Question | Default in the plan |
+Tom took every default on 2026-11-16.
+
+| | Question | Answer |
 |---|---|---|
 | D1 | Floating lanterns too? A tap on the water sets a small lantern on it, which drifts and sways. | Yes. Sky lanterns stay the hero. |
 | D2 | What is on the far shore? | A low line of hills and pines in silhouette, with a few warm windows. No people. |
@@ -135,7 +137,7 @@ The lake holds the sky like a mirror, broken only by slow ripples. Nothing moves
 ### Task 3: Festival and floating lanterns
 
 - [ ] Festival, the wind channel, Clear, hold to release.
-- [ ] Floating lanterns, if Tom said yes to D1.
+- [ ] Floating lanterns (D1).
 - [ ] A screenshot of the river at Blue hour. Checkpoint with Tom.
 - [ ] Commit: `Lantern lake: festival and floating lanterns`.
 
