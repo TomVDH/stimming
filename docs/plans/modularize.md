@@ -60,7 +60,7 @@ Code that one toy owns and another imports or copies. Each is a question for Tom
 | Code | Owner | Used by | Note |
 |---|---|---|---|
 | `nvg/tube.js` (`Tube`, the image intensifier) | `nvg` | `railgun` imports it | The only cross-toy import. A move to `shared/` makes the dependency plain |
-| K3 volume fluid (`createK3`, `createStorage3D`) | `fire` | `ink` (copy, "Lifted from fire") | Both TSL. The shared GLSL rule does not reach them |
+| K3 volume fluid (`createK3`, `createStorage3D`) | `fire` | `ink` (copy, "Lifted from fire") | Both TSL. The shared GLSL rule does not reach them. Tom, 2026-11-16: fire and smoke are a key module to reuse; move them to `shared/` |
 | `spectral()` | `prism` | `flametest` (copy) | |
 | `smin`, `smax` | `window` | `frietkot/figures.js` | |
 | CRT screen and glass shader, `program/target/drop/clearAcc/quadPass` | `scope` | `sonar` (a fork) | Two oscilloscope-like toys; one module or one owner |
