@@ -8,147 +8,199 @@
 <title>Range lab</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..800&display=swap">
 <style>
-/* Range lab: the railgun's far ranges from ranges.js, without the toy. */
-:root { --bg: oklch(0.13 0.01 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.3 0.015 260); --acc: oklch(0.8 0.12 75); }
+/* Range lab: shape the railgun's far ranges, then copy the config into ranges.js. */
+:root { --bg: oklch(0.13 0.01 260); --panel: oklch(0.16 0.012 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.28 0.015 260); --acc: oklch(0.8 0.12 75); }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
-body { display: grid; grid-template-columns: minmax(0, 1fr) 290px; min-height: 100vh; }
-main { padding: 12px 16px 24px; display: grid; gap: 16px; align-content: start; min-width: 0; }
-aside { border-left: 1px solid var(--line); padding: 12px 14px 24px; position: sticky; top: 0; height: 100vh; overflow: auto; }
-h1 { font-size: 16px; margin: 0 0 2px; }
-h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
-aside h2 { margin-top: 16px; }
-.row { display: grid; grid-template-columns: 92px 1fr 40px; align-items: center; gap: 8px; margin: 4px 0; }
+body { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 100vh; }
+main { padding: 12px 16px 24px; display: grid; gap: 14px; align-content: start; min-width: 0; }
+aside { border-left: 1px solid var(--line); position: sticky; top: 0; height: 100vh; overflow: auto; background: var(--panel); }
+.top { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+h1 { font-size: 16px; margin: 0; }
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; font-weight: 600; }
+h3 { font-size: 11px; color: var(--muted); margin: 10px 0 2px; font-weight: 600; }
+details { border-bottom: 1px solid var(--line); padding: 8px 14px; }
+details > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+details > summary::after { content: '+'; color: var(--muted); }
+details[open] > summary::after { content: '\2212'; }
+details > summary::-webkit-details-marker { display: none; }
+.row { display: grid; grid-template-columns: 84px 1fr 52px; align-items: center; gap: 8px; margin: 3px 0; }
 .row span { color: var(--muted); }
 .row output { text-align: right; font-variant-numeric: tabular-nums; }
+.row.off { opacity: 0.4; }
 .check { display: flex; align-items: center; gap: 8px; color: var(--muted); margin: 4px 0; }
 input[type=range] { width: 100%; accent-color: var(--acc); }
 input[type=checkbox] { accent-color: var(--acc); }
-input[type=text] { font: inherit; color: var(--ink); background: oklch(0.18 0.01 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; width: 100%; }
+input[type=text], select { font: inherit; color: var(--ink); background: oklch(0.2 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; width: 100%; }
 .btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
-button { font: inherit; color: var(--ink); background: oklch(0.2 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-button:hover { border-color: var(--acc); }
+button { font: inherit; color: var(--ink); background: oklch(0.21 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--acc); }
+button:disabled { opacity: 0.4; cursor: default; }
 button.on { border-color: var(--acc); color: var(--acc); }
-#status { color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+#status { color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
 #status.err { color: oklch(0.7 0.17 25); white-space: pre-wrap; }
 p.note { color: var(--muted); margin: 4px 0; }
+.list { display: grid; gap: 1px; margin: 4px 0; }
+.list button { display: grid; grid-template-columns: 14px 1fr auto; gap: 6px; align-items: center; text-align: left; background: none; border: 1px solid transparent; padding: 3px 6px; font-variant-numeric: tabular-nums; }
+.list button.sel { border-color: var(--acc); background: oklch(0.21 0.012 260); }
+.list i { width: 10px; height: 10px; border-radius: 2px; }
+.list small { color: var(--muted); }
 .stack { position: relative; width: 100%; }
 .stack canvas { display: block; width: 100%; height: 100%; }
 .stack canvas.over { position: absolute; inset: 0; pointer-events: none; }
 #gun { aspect-ratio: 16 / 9; }
-#gun.phone { aspect-ratio: 9 / 19.5; max-height: 80vh; width: auto; margin: 0 auto; }
-#pano { aspect-ratio: 1000 / 260; }
-.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-#map { aspect-ratio: 1; }
-.legend { display: grid; gap: 2px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
-#hover { color: var(--muted); margin-top: 4px; min-height: 1.4em; font-variant-numeric: tabular-nums; }
-.head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-@media (max-width: 900px) { body { grid-template-columns: 1fr; } aside { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); } .pair { grid-template-columns: 1fr; } }
+#gun.phone { aspect-ratio: 9 / 19.5; max-height: 78vh; width: auto; margin: 0 auto; }
+#pano { aspect-ratio: 1000 / 220; }
+#map { aspect-ratio: 1; touch-action: none; cursor: default; }
+.pair { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.hint { color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+kbd { font: 11px Gabarito, sans-serif; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+@media (max-width: 960px) { body { grid-template-columns: 1fr; } aside { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); } .pair { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <main>
   <section>
-    <div class="head"><h2>The gun's eye: true scale, the toy's lens, simple air</h2><div class="btns"><button id="phone" type="button">Phone lens</button></div></div>
+    <div class="head"><h2>The gun's eye</h2><div class="seg" id="lens"><button type="button" data-lens="wide" class="on">Landscape</button><button type="button" data-lens="phone">Phone</button></div></div>
     <div class="stack" id="gun"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
-  </section>
-  <section>
-    <h2>Skyline: bearing left to right, elevation stretched by Height x</h2>
-    <div class="stack" id="pano"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
-    <div id="hover"></div>
   </section>
   <div class="pair">
     <section>
-      <h2>Top down: 2 km contours, the eye and its views</h2>
+      <div class="head"><h2>Map: drag to shape</h2></div>
       <div class="stack" id="map"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
+      <div class="hint" id="maphint"><kbd>drag</kbd> a dot to move · <kbd>drag</kbd> its ring to turn · <kbd>scroll</kbd> on a dot for height, <kbd>shift</kbd> for size</div>
     </section>
     <section>
-      <h2>Ranges</h2>
-      <div class="legend" id="legend"></div>
+      <div class="head"><h2>Skyline: elevation stretched</h2></div>
+      <div class="stack" id="pano"><canvas class="gl"></canvas><canvas class="over"></canvas></div>
+      <div class="hint" id="hover"></div>
     </section>
   </div>
 </main>
 <aside>
-  <h1>Range lab</h1>
-  <div id="status">Loading</div>
-  <div class="btns"><button id="reload" type="button" title="Re-import ranges.js (R)">Reload ranges.js</button></div>
-  <h2>Table</h2>
-  <div class="row"><span>Seed</span><input id="seed" type="text" value="1" spellcheck="false"><span></span></div>
-  <div class="btns">
-    <button id="generate" type="button" title="A new table from the seed (G)">Generate</button>
-    <button id="next" type="button" title="The next seed, then Generate (N)">Next seed</button>
-    <button id="reset" type="button" title="The table in ranges.js">Reset</button>
+  <div class="top">
+    <div class="head"><h1>Range lab</h1><div class="btns" style="margin:0"><button id="undo" type="button" title="Undo (Cmd Z)">Undo</button><button id="redo" type="button" title="Redo (Shift Cmd Z)">Redo</button></div></div>
+    <div id="status">Loading</div>
+    <div class="btns"><button id="copy" type="button" title="The ranges and the landscape knobs, as JS for ranges.js">Copy config</button><button id="reload" type="button" title="Re-import ranges.js (R)">Reload ranges.js</button></div>
   </div>
-  <div class="btns">
-    <button id="copytable" type="button">Copy table</button>
-    <button id="copyland" type="button">Copy settings</button>
-  </div>
-  <p class="note" id="tablenote"></p>
-  <h2>View</h2>
-  <div class="row"><span>Erosion</span><input id="ero" type="range" min="0" max="2" step="0.05" value="1"><output for="ero">1</output></div>
-  <label class="check"><input id="forms" type="checkbox" checked> Forms</label>
-  <div class="row"><span>Height x</span><input id="vex" type="range" min="1" max="8" step="0.5" value="4"><output for="vex">4</output></div>
-  <div class="row"><span>Sun</span><input id="sun" type="range" min="1" max="60" step="1" value="10"><output for="sun">10</output></div>
-  <div class="row"><span>Haze</span><input id="haze" type="range" min="0" max="2" step="0.05" value="1"><output for="haze">1</output></div>
-  <label class="check"><input id="tint" type="checkbox"> Colour by range</label>
+  <details open id="sec-ranges">
+    <summary><h2>Ranges</h2></summary>
+    <p class="note" id="source"></p>
+    <div class="list" id="list"></div>
+    <div class="row"><span>Add</span><select id="addform"></select><button id="add" type="button">Add</button></div>
+    <h3>Generate</h3>
+    <div class="row"><span>Seed</span><input id="seed" type="text" value="1" spellcheck="false"><button id="next" type="button" title="Next seed (N)">Next</button></div>
+    <div class="btns"><button id="generate" type="button" title="A new table from the seed (G)">Generate</button><button id="reset" type="button" title="The table and knobs in ranges.js">Reset to ranges.js</button></div>
+  </details>
+  <details open id="sec-sel">
+    <summary><h2 id="seltitle">Selected range</h2></summary>
+    <div id="sel"></div>
+  </details>
   <div id="land"></div>
+  <details id="sec-view">
+    <summary><h2>View</h2></summary>
+    <div class="row"><span>Sun</span><input data-view="sun" type="range" min="1" max="60" step="1" value="10"><output></output></div>
+    <div class="row"><span>Haze</span><input data-view="haze" type="range" min="0" max="2" step="0.05" value="1"><output></output></div>
+    <div class="row"><span>Skyline x</span><input data-view="vex" type="range" min="1" max="8" step="0.5" value="4"><output></output></div>
+    <label class="check"><input data-view="tint" type="checkbox"> Colour the gun's eye by range</label>
+    <h3>Toy Dev rows</h3>
+    <div class="row"><span>Erosion</span><input data-view="ero" type="range" min="0" max="2" step="0.05" value="1"><output></output></div>
+    <label class="check"><input data-view="forms" type="checkbox" checked> Forms (off: all crescents)</label>
+  </details>
 </aside>
 <script type="module">
 import { program, linked, TRI_VS } from '../shared/gl.js';
 
-// The planet's radius, as in the toy.
+/* ---------- constants ---------- */
 const PLANET_R = 6.0e6;
 // The toy's two lenses: eye, yaw, vertical field, horizon height on screen.
 const LENS = {
   wide: { eye: [1670, 30, 1990], yaw: 24.5, fov: 55, horizon: 0.84 },
   phone: { eye: [800, 22, 3000], yaw: 8.5, fov: 74, horizon: 0.8 },
 };
-// The panorama's bearings, left to right; its lowest elevation, in degrees.
+// The skyline's bearings, left to right; its lowest elevation, in degrees.
 const B_LEFT = 75, B_RIGHT = -25, E_LOW = -0.6;
 // The views' bearing windows, left edge first.
 const VIEWS = [{ name: 'landscape', l: 67, r: -18, c: 'oklch(0.85 0.12 75)' }, { name: 'portrait', l: 29, r: -12, c: 'oklch(0.8 0.1 200)' }];
-// The generator keeps every crest under this, after the height scale.
+// The march's ceiling: no crest may pass it after the height knob.
 const CREST_MAX = 46000;
 const FORMS = ['crescent', 'mesa', 'cone', 'knife', 'spires', 'slabs'];
-// A cone and a spire field are radial; the rest lie on an arc.
+// A cone and a spire field are round; the rest lie on an arc.
 const radialForm = f => f === 2 || f === 4;
-// One hue per range.
+// The map's fixed box about the eye, in metres: x left and right, z ahead and behind.
+const MAP_BOX = [-270000, -330000, 110000, 50000];
 const HUES = [25, 60, 95, 140, 185, 225, 265, 305, 340, 0, 120, 200];
 const col = i => { const h = HUES[i % HUES.length] * Math.PI / 180; return [0.62 + 0.3 * Math.cos(h), 0.62 + 0.3 * Math.cos(h - 2.1), 0.62 + 0.3 * Math.cos(h + 2.1)]; };
-const css = c => `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
-const rad = d => d * Math.PI / 180;
+const css = (c, a = 1) => `rgb(${c.map(v => Math.round(v * 255)).join(' ')} / ${a})`;
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// An angle in degrees, wrapped to -180 to 180.
+const wrap = d => ((d + 180) % 360 + 360) % 360 - 180;
 const $ = s => document.querySelector(s);
-const knob = { ero: 1, forms: 1, vex: 4, sun: 10, haze: 1, tint: 0 };
-let lens = 'wide';
+const STORE = 'stimming.rangelab';
 
-// OKLCH to linear sRGB, clamped: the toy's colour helpers do the same.
+// OKLCH to linear sRGB, clamped.
 function oklchLin([L, C, h]) {
   const a = C * Math.cos(rad(h)), b = C * Math.sin(rad(h));
   const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
   return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(v => Math.max(0, v));
 }
-// The toy's rock and sand: slope, wall and the plain.
 const SLOPE = oklchLin([0.43, 0.035, 48]), WALL = oklchLin([0.37, 0.045, 32]), GROUND = oklchLin([0.52, 0.035, 65]);
 
-// The module, the table in use, and the GLSL arrays' size.
-let R = null, table = null, N = 0, version = 0, bounds = null, land = {};
+/* ---------- state ---------- */
+// R: the module. ranges: the edit model, one object per range.
+// A range: form, the arc's middle (bearing mb, distance md), radius rc, crest, span, facing.
+// Facing 0 bulges the arc toward the gun; a round form ignores it.
+let R = null, N = 12, ranges = [], land = {}, sel = -1, version = 0;
+const view = { sun: 10, haze: 1, vex: 4, tint: 0, ero: 1, forms: 1, lens: 'wide', seed: '1' };
+const past = [], future = [];
 
-// uRg and uRa for any table: the module's own when it has one.
-function uniformsOf(t) {
-  if (R.rangeUniforms) return R.rangeUniforms(t);
-  const face = m => { const c = R.polar(rad(m[0]), m[1]); return Math.atan2(R.EYE[1] - c[1], R.EYE[0] - c[0]); };
-  return {
-    rg: t.map(m => { const c = R.polar(rad(m[0]), m[1]); return [c[0], c[1], m[2], m[3]]; }),
-    ra: t.map((m, i) => [radialForm(m[6]) ? face(m) : rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, m[6] || 0]),
-  };
+/* ---------- model <-> table ---------- */
+const EYE = () => R.EYE;
+const bearingOf = (x, z) => deg(Math.atan2(EYE()[0] - x, EYE()[1] - z));
+const distOf = (x, z) => Math.hypot(x - EYE()[0], z - EYE()[1]);
+// The arc's middle point, the direction from the centre to it, and the centre.
+function frame(g) {
+  const [mx, mz] = R.polar(rad(g.mb), g.md);
+  const toEye = Math.atan2(EYE()[1] - mz, EYE()[0] - mx), a = toEye + rad(g.face);
+  return { mx, mz, a, cx: radialForm(g.form) ? mx : mx - g.rc * Math.cos(a), cz: radialForm(g.form) ? mz : mz - g.rc * Math.sin(a) };
 }
-// Pads a list of vec4s to the GLSL array size; empty slots carry crest 0.
-const pad = (a, n) => { const out = a.slice(0, n).map(v => Array.from(v)).flat(); while (out.length < n * 4) out.push(0); return out; };
+function toRow(g) {
+  // A centre on the eye has no bearing; it reads 0.
+  const f = frame(g), cd = distOf(f.cx, f.cz), row = [cd < 1 ? 0 : bearingOf(f.cx, f.cz), cd, g.rc, g.crest, radialForm(g.form) ? 0 : g.span, radialForm(g.form) ? 0 : ((deg(f.a) - 180) % 360 + 360) % 360];
+  if (g.form) row.push(g.form);
+  return row;
+}
+function fromRow(m) {
+  const form = m[6] || 0, [cx, cz] = R.polar(rad(m[0]), m[1]);
+  if (radialForm(form)) return { form, mb: m[0], md: m[1], rc: m[2], crest: m[3], span: 120, face: 0 };
+  const a = rad(m[5] + 180), mx = cx + m[2] * Math.cos(a), mz = cz + m[2] * Math.sin(a);
+  const toEye = Math.atan2(EYE()[1] - mz, EYE()[0] - mx);
+  const face = ((deg(a - toEye) + 180) % 360 + 360) % 360 - 180;
+  return { form, mb: bearingOf(mx, mz), md: distOf(mx, mz), rc: m[2], crest: m[3], span: m[4], face };
+}
+const table = () => ranges.map(toRow);
 
-// The shared GLSL: the march on the curved planet, the normal, the range under a point.
+/* ---------- history and storage ---------- */
+const snap = () => JSON.stringify({ ranges, land });
+function commit() {
+  const s = snap();
+  if (past[past.length - 1] !== s) { past.push(s); if (past.length > 200) past.shift(); future.length = 0; }
+  save(); buttons();
+}
+function restore(s) { const o = JSON.parse(s); ranges = o.ranges; land = o.land; sel = Math.min(sel, ranges.length - 1); buildLand(); changed(); save(); buttons(); }
+function undo() { if (past.length < 2) return; future.push(past.pop()); restore(past[past.length - 1]); }
+function redo() { if (!future.length) return; const s = future.pop(); past.push(s); restore(s); }
+function buttons() { $('#undo').disabled = past.length < 2; $('#redo').disabled = !future.length; $('#add').disabled = ranges.length >= N; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify({ ranges, land, view })); } catch { /* storage is optional */ } }
+function loadSaved() { try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; } }
+
+/* ---------- GLSL ---------- */
 const COMMON = () => `
-uniform vec3 uEye;
+uniform vec3 uEye, uSun;
 uniform float uTint;
 uniform vec3 uCol[${N}];
 const float PLANET_R = ${PLANET_R.toFixed(1)};
@@ -174,14 +226,12 @@ float march(vec3 ro, vec3 rd) {
 vec3 normalAt(vec2 p, float e) {
   return normalize(vec3(farH(p - vec2(e, 0.0)) - farH(p + vec2(e, 0.0)), 2.0 * e, farH(p - vec2(0.0, e)) - farH(p + vec2(0.0, e))));
 }
-// The range a point belongs to: the band it sits deepest in.
-// Ranges blend where they meet, so this is an estimate.
+// The range a point belongs to: the band it sits deepest in; an estimate where ranges blend.
 int rangeAt(vec2 p) {
   int best = -1;
   float bs = 1e9;
   for (int i = 0; i < ${N}; i++) {
     if (uRg[i].w < 1.0) continue;
-    // A cone (2) and a spire field (4) are radial; they hide with the forms off.
     bool radial = abs(uRa[i].w - 2.0) < 0.5 || abs(uRa[i].w - 4.0) < 0.5;
     if (uForms < 0.5 && radial) continue;
     vec2 q = p - uRg[i].xy;
@@ -214,24 +264,20 @@ in vec2 vUv;
 out vec4 o;
 ${R.K2_BASE}
 ${R.RANGE_GLSL}
-${COMMON()}
-uniform vec3 uSun;`;
-
+${COMMON()}`;
 // The gun's eye: the toy's lens, rock colours, a sand plain and simple air.
 const GUN_FS = () => `${HEAD()}
 uniform mat3 uRot;
 uniform vec2 uTan;
 uniform vec3 uSlope, uWall, uGround;
 uniform float uHaze;
-// The sky by direction: deep overhead, pale and warm toward a low sun.
 vec3 skyOf(vec3 rd, vec3 L, vec3 sunC) {
   float up = clamp(rd.y, 0.0, 1.0), mu = max(dot(rd, L), 0.0);
   vec3 zen = vec3(0.10, 0.20, 0.45), hor = mix(vec3(0.75, 0.62, 0.52), vec3(0.62, 0.70, 0.80), smoothstep(0.05, 0.4, L.y));
-  vec3 c = mix(hor, zen, pow(up, 0.45));
-  return c + sunC * (0.25 * pow(mu, 8.0) + 3.0 * pow(mu, 900.0));
+  return mix(hor, zen, pow(up, 0.45)) + sunC * (0.25 * pow(mu, 8.0) + 3.0 * pow(mu, 900.0));
 }
 // The air between the eye and a point: Rayleigh and a dusty Mie.
-vec3 airOf(vec3 c, vec3 ro, vec3 rd, float t, float y, vec3 inL) {
+vec3 airOf(vec3 c, vec3 ro, float t, float y, vec3 inL) {
   float hR = 8000.0, hM = 3000.0, yc = ro.y, dy = y - yc;
   float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-y / hR)) * hR / dy;
   float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-y / hM)) * hM / dy;
@@ -246,33 +292,26 @@ void main() {
   vec3 c;
   if (t > 0.0) {
     vec3 p = uEye + rd * t, P = vec3(p.x, farH(p.xz), p.z), N = normalAt(p.xz, max(60.0, 0.002 * t));
-    float wall = smoothstep(0.92, 0.5, N.y);
-    vec3 alb = mix(uSlope, uWall, wall);
+    vec3 alb = mix(uSlope, uWall, smoothstep(0.92, 0.5, N.y));
     alb = mix(uGround, alb, smoothstep(30.0, 900.0, P.y));
     if (uTint > 0.5) alb = tintAt(p.xz) * 0.4;
     c = alb * (sunC * max(dot(N, L), 0.0) * shadowAt(P, L) + amb * (0.55 + 0.45 * N.y));
-    c = airOf(c, uEye, rd, t, max(P.y, 0.0), hor);
+    c = airOf(c, uEye, t, max(P.y, 0.0), hor);
   } else if (rd.y < 0.0) {
-    // The sand plain, out to the curved horizon.
-    float tg = uEye.y / max(-rd.y, 1e-5);
-    c = uGround * (sunC * max(L.y, 0.0) + amb);
-    c = airOf(c, uEye, rd, min(tg, 400000.0), 0.0, hor);
+    // The sand plain, out to the horizon.
+    c = airOf(uGround * (sunC * max(L.y, 0.0) + amb), uEye, min(uEye.y / max(-rd.y, 1e-5), 400000.0), 0.0, hor);
   } else c = skyOf(rd, L, sunC);
   // A soft film curve, then sRGB.
-  c = 1.0 - exp(-c * 0.9);
-  o = vec4(pow(c, vec3(1.0 / 2.2)), 1.0);
+  o = vec4(pow(1.0 - exp(-c * 0.9), vec3(1.0 / 2.2)), 1.0);
 }`;
 const PANO_FS = () => `${HEAD()}
 uniform vec4 uWin;
 void main() {
-  // Bearings turn left from negative z; the left edge is the highest bearing.
   float b = radians(mix(uWin.x, uWin.y, vUv.x)), e = radians(mix(uWin.z, uWin.w, vUv.y));
   vec3 rd = normalize(vec3(-sin(b) * cos(e), sin(e), -cos(b) * cos(e)));
   float t = march(uEye, rd);
-  vec3 sky = mix(vec3(0.16, 0.18, 0.23), vec3(0.09, 0.1, 0.14), vUv.y);
-  if (t < 0.0) { o = vec4(sky, 1.0); return; }
-  vec3 p = uEye + rd * t;
-  vec3 N = normalAt(p.xz, max(60.0, 0.002 * t));
+  if (t < 0.0) { o = vec4(mix(vec3(0.16, 0.18, 0.23), vec3(0.09, 0.1, 0.14), vUv.y), 1.0); return; }
+  vec3 p = uEye + rd * t, N = normalAt(p.xz, max(60.0, 0.002 * t));
   float l = 0.35 + 0.65 * max(dot(N, uSun), 0.0);
   // Far ground fades a little, so the layers part.
   o = vec4(tintAt(p.xz) * l * mix(1.0, 0.6, smoothstep(40000.0, 260000.0, t)), 1.0);
@@ -286,31 +325,392 @@ void main() {
   float h = farH(p);
   if (h < 1.0) { o = vec4(vec3(0.11, 0.12, 0.15), 1.0); return; }
   vec3 N = normalAt(p, max(60.0, uPx));
-  float l = 0.3 + 0.7 * max(dot(N, uSun), 0.0);
-  vec3 c = tintAt(p) * l * (0.55 + 0.45 * clamp(h / 30000.0, 0.0, 1.0));
+  vec3 c = tintAt(p) * (0.3 + 0.7 * max(dot(N, uSun), 0.0)) * (0.55 + 0.45 * clamp(h / 30000.0, 0.0, 1.0));
   // A contour every 2 km; every fifth is bold.
   float s = h / 2000.0, w = fwidth(s);
-  float line = 1.0 - smoothstep(0.0, 1.2 * w, min(fract(s), 1.0 - fract(s)));
-  float bold = 1.0 - smoothstep(0.0, 1.6 * w, min(fract(s / 5.0), 1.0 - fract(s / 5.0)) * 5.0);
-  c = mix(c, vec3(0.05), 0.45 * line);
-  o = vec4(mix(c, vec3(0.02), 0.6 * bold), 1.0);
+  c = mix(c, vec3(0.05), 0.45 * (1.0 - smoothstep(0.0, 1.2 * w, min(fract(s), 1.0 - fract(s)))));
+  c = mix(c, vec3(0.02), 0.6 * (1.0 - smoothstep(0.0, 1.6 * w, min(fract(s / 5.0), 1.0 - fract(s / 5.0)) * 5.0)));
+  o = vec4(c, 1.0);
 }`;
 
-// A panel: its canvases, its context, its program.
+/* ---------- panels ---------- */
 const panels = {};
 for (const id of ['gun', 'pano', 'map']) {
   const box = $('#' + id), gl = box.querySelector('canvas.gl').getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
   panels[id] = { box, gl, over: box.querySelector('canvas.over'), vao: gl.createVertexArray(), prog: null };
 }
 const SHADERS = { gun: GUN_FS, pano: PANO_FS, map: MAP_FS };
+const dpr = () => Math.min(2, devicePixelRatio || 1);
+function fit(c, k = 1) {
+  const r = c.getBoundingClientRect(), d = dpr() * k;
+  const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+}
+const pad = (a, n) => { const out = a.slice(0, n).map(v => Array.from(v)).flat(); while (out.length < n * 4) out.push(0); return out; };
+const sunDir = () => { const s = rad(view.sun), a = rad(LENS.wide.yaw - 36); return [-Math.sin(a) * Math.cos(s), Math.sin(s), -Math.cos(a) * Math.cos(s)]; };
+function run(id, eye, set) {
+  const P = panels[id], gl = P.gl, c = gl.canvas, u = P.prog.u;
+  gl.viewport(0, 0, c.width, c.height);
+  gl.useProgram(P.prog.p);
+  const { rg, ra } = R.rangeUniforms(table());
+  gl.uniform4fv(u.uRg, pad(rg, N));
+  gl.uniform4fv(u.uRa, pad(ra, N));
+  gl.uniform1fv(u.uLand, R.landValues(land));
+  gl.uniform1f(u.uEro, view.ero);
+  gl.uniform1f(u.uForms, view.forms);
+  if (u.uBump) gl.uniform1f(u.uBump, 1);
+  if (u.uTint) gl.uniform1f(u.uTint, view.tint);
+  if (u.uCol) gl.uniform3fv(u.uCol, pad(ranges.map((g, i) => [...col(i), 0]), N).filter((v, i) => i % 4 < 3));
+  gl.uniform3f(u.uEye, ...eye);
+  gl.uniform3f(u.uSun, ...sunDir());
+  set(gl, u, c);
+  gl.bindVertexArray(P.vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+const mapBox = () => { const [ex, ez] = EYE(); return [ex + MAP_BOX[0], ez + MAP_BOX[1], ex + MAP_BOX[2], ez + MAP_BOX[3]]; };
+const panoWin = () => { const b = panels.pano.box.getBoundingClientRect(); return [B_LEFT, B_RIGHT, E_LOW, E_LOW + (B_LEFT - B_RIGHT) * b.height / b.width / view.vex]; };
 
-async function load() {
+function drawMap(k = 1) {
+  const P = panels.map;
+  fit(P.gl.canvas, k); fit(P.over);
+  const B = mapBox();
+  run('map', [...LENS.wide.eye], (gl, u, c) => { gl.uniform4f(u.uBox, ...B); gl.uniform1f(u.uPx, (B[2] - B[0]) / c.width); });
+  mapOverlay();
+}
+function drawViews() {
+  const L = LENS[view.lens], win = panoWin();
+  fit(panels.gun.gl.canvas); fit(panels.gun.over); fit(panels.pano.gl.canvas); fit(panels.pano.over);
+  run('gun', L.eye, (gl, u, c) => {
+    // Yaw, then pitch, as the toy's camera turns.
+    const ty = Math.tan(rad(L.fov / 2)), pitch = Math.atan((2 * L.horizon - 1) * ty), y = rad(L.yaw);
+    const cy = Math.cos(y), sy = Math.sin(y), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    gl.uniformMatrix3fv(u.uRot, false, [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
+    gl.uniform2f(u.uTan, ty * c.width / c.height, ty);
+    gl.uniform3fv(u.uSlope, SLOPE); gl.uniform3fv(u.uWall, WALL); gl.uniform3fv(u.uGround, GROUND);
+    gl.uniform1f(u.uHaze, view.haze);
+  });
+  run('pano', [...LENS.wide.eye], (gl, u) => gl.uniform4f(u.uWin, ...win));
+  gunOverlay(); panoOverlay(win);
+}
+// The map redraws at once; the marched views wait for a pause.
+let rafMap = 0, viewTimer = 0;
+function draw({ fast = false } = {}) {
+  if (!R || !panels.map.prog) return;
+  cancelAnimationFrame(rafMap);
+  rafMap = requestAnimationFrame(() => drawMap(fast ? 0.5 : 1));
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(() => {
+    const t0 = performance.now();
+    drawMap(); drawViews();
+    Object.values(panels).forEach(P => P.gl.finish());
+    setStatus(`${ranges.length} of ${N} ranges · drawn in ${(performance.now() - t0).toFixed(0)} ms`);
+  }, fast ? 180 : 0);
+}
+
+/* ---------- overlays ---------- */
+const ink = 'oklch(0.93 0.01 260 / 0.75)', faint = 'oklch(0.93 0.01 260 / 0.22)';
+function gunOverlay() {
+  const c = panels.gun.over, g = c.getContext('2d'), d = dpr();
+  g.clearRect(0, 0, c.width, c.height);
+  g.font = `${11 * d}px Gabarito, sans-serif`; g.fillStyle = 'oklch(1 0 0 / 0.7)';
+  g.fillText(`${view.lens === 'wide' ? 'Landscape' : 'Phone'} lens · true scale`, 8 * d, 16 * d);
+}
+function panoOverlay(win) {
+  const c = panels.pano.over, g = c.getContext('2d'), d = dpr();
+  g.clearRect(0, 0, c.width, c.height);
+  g.font = `${10 * d}px Gabarito, sans-serif`;
+  const X = b => (win[0] - b) / (win[0] - win[1]) * c.width, Y = e => (1 - (e - win[2]) / (win[3] - win[2])) * c.height;
+  g.fillStyle = ink; g.strokeStyle = faint; g.lineWidth = d;
+  for (let b = -20; b <= 70; b += 10) { g.beginPath(); g.moveTo(X(b), c.height); g.lineTo(X(b), c.height - 6 * d); g.stroke(); g.fillText(`${b}°`, X(b) + 2 * d, c.height - 3 * d); }
+  const step = win[3] > 12 ? 4 : win[3] > 6 ? 2 : 1;
+  for (let e = step; e <= win[3]; e += step) { g.beginPath(); g.moveTo(0, Y(e)); g.lineTo(c.width, Y(e)); g.stroke(); g.fillText(`${e}°`, 3 * d, Y(e) - 2 * d); }
+  VIEWS.forEach((v, i) => {
+    g.strokeStyle = v.c; g.globalAlpha = 0.6; g.lineWidth = 1.5 * d;
+    const y = (6 + 10 * i) * d;
+    g.beginPath(); g.moveTo(X(v.l), y); g.lineTo(X(v.r), y); g.moveTo(X(v.l), y); g.lineTo(X(v.l), c.height); g.moveTo(X(v.r), y); g.lineTo(X(v.r), c.height); g.stroke();
+    g.globalAlpha = 1;
+  });
+  // The selected range's middle bearing.
+  if (sel >= 0 && ranges[sel]) { g.strokeStyle = 'oklch(1 0 0 / 0.6)'; g.setLineDash([3 * d, 3 * d]); g.beginPath(); g.moveTo(X(ranges[sel].mb), 0); g.lineTo(X(ranges[sel].mb), c.height); g.stroke(); g.setLineDash([]); }
+}
+// Map geometry in canvas pixels.
+function mapXY(x, z) { const c = panels.map.over, B = mapBox(); return [(x - B[0]) / (B[2] - B[0]) * c.width, (z - B[1]) / (B[3] - B[1]) * c.height]; }
+function mapWorld(px, py) { const c = panels.map.over, B = mapBox(); return [B[0] + px / c.width * (B[2] - B[0]), B[1] + py / c.height * (B[3] - B[1])]; }
+// Each range's handles: the dot on its middle, the ring that turns it.
+function handles(i) {
+  const g = ranges[i], f = frame(g), [x, y] = mapXY(f.mx, f.mz), d = dpr();
+  if (radialForm(g.form)) return { dot: [x, y], ring: null, f };
+  // The ring sits beyond the middle, away from the centre.
+  return { dot: [x, y], ring: [x + 28 * d * Math.cos(f.a), y + 28 * d * Math.sin(f.a)], f };
+}
+function mapOverlay() {
+  const c = panels.map.over, g = c.getContext('2d'), d = dpr();
+  g.clearRect(0, 0, c.width, c.height);
+  const [ex, ey] = mapXY(...EYE());
+  VIEWS.forEach(v => {
+    g.strokeStyle = v.c; g.lineWidth = 1.5 * d; g.globalAlpha = 0.7;
+    for (const b of [v.l, v.r]) { const [x, z] = R.polar(rad(b), 300000); g.beginPath(); g.moveTo(ex, ey); g.lineTo(...mapXY(x, z)); g.stroke(); }
+    g.globalAlpha = 1;
+  });
+  g.strokeStyle = faint; g.lineWidth = d;
+  const pxPerM = c.width / (MAP_BOX[2] - MAP_BOX[0]);
+  for (let r = 50000; r <= 300000; r += 50000) { g.beginPath(); g.arc(ex, ey, r * pxPerM, 0, 2 * Math.PI); g.stroke(); }
+  g.fillStyle = faint; g.font = `${10 * d}px Gabarito, sans-serif`;
+  for (let r = 100000; r <= 300000; r += 100000) g.fillText(`${r / 1000} km`, ex + 3 * d, ey - r * pxPerM - 3 * d);
+  g.fillStyle = 'oklch(0.85 0.12 75)'; g.beginPath(); g.arc(ex, ey, 4 * d, 0, 2 * Math.PI); g.fill();
+  ranges.forEach((r, i) => {
+    const h = handles(i), on = i === sel, cc = col(i);
+    // The selected range shows its arc and its turn ring.
+    g.strokeStyle = 'oklch(1 0 0 / 0.75)'; g.lineWidth = 1.5 * d;
+    if (on && !radialForm(r.form)) {
+      const f = h.f;
+      g.setLineDash([4 * d, 3 * d]); g.beginPath();
+      for (let j = 0; j <= 24; j++) { const t = f.a + rad(r.span) * (j / 24 - 0.5); const p = mapXY(f.cx + r.rc * Math.cos(t), f.cz + r.rc * Math.sin(t)); if (j) g.lineTo(...p); else g.moveTo(...p); }
+      g.stroke(); g.setLineDash([]);
+      g.beginPath(); g.moveTo(...h.dot); g.lineTo(...h.ring); g.stroke();
+      g.beginPath(); g.arc(...h.ring, 6 * d, 0, 2 * Math.PI); g.stroke();
+    }
+    if (on && radialForm(r.form)) { g.setLineDash([4 * d, 3 * d]); g.beginPath(); g.arc(...h.dot, r.rc * pxPerM, 0, 2 * Math.PI); g.stroke(); g.setLineDash([]); }
+    g.fillStyle = 'oklch(0.13 0.01 260 / 0.8)'; g.beginPath(); g.arc(...h.dot, (on ? 11 : 9) * d, 0, 2 * Math.PI); g.fill();
+    g.strokeStyle = on ? 'oklch(1 0 0)' : css(cc, 0.9); g.lineWidth = (on ? 2 : 1.5) * d; g.stroke();
+    g.fillStyle = css(cc); g.font = `600 ${11 * d}px Gabarito, sans-serif`; g.textAlign = 'center';
+    g.fillText(String(i), h.dot[0], h.dot[1] + 4 * d); g.textAlign = 'left';
+  });
+}
+
+/* ---------- map editing ---------- */
+let drag = null;
+function pick(px, py) {
+  const d = dpr();
+  if (sel >= 0 && ranges[sel]) { const h = handles(sel); if (h.ring && Math.hypot(px - h.ring[0], py - h.ring[1]) < 10 * d) return { i: sel, kind: 'ring' }; }
+  let best = null, bd = 14 * d;
+  ranges.forEach((r, i) => { const h = handles(i), q = Math.hypot(px - h.dot[0], py - h.dot[1]); if (q < bd) { bd = q; best = { i, kind: 'dot' }; } });
+  return best;
+}
+const local = ev => { const r = panels.map.box.getBoundingClientRect(), d = dpr(); return [(ev.clientX - r.left) * d, (ev.clientY - r.top) * d]; };
+panels.map.box.addEventListener('pointerdown', ev => {
+  const [px, py] = local(ev), hit = pick(px, py);
+  if (!hit) { select(-1); return; }
+  if (hit.i !== sel) select(hit.i);
+  drag = { ...hit };
+  panels.map.box.setPointerCapture(ev.pointerId);
+});
+panels.map.box.addEventListener('pointermove', ev => {
+  const [px, py] = local(ev);
+  if (!drag) { const h = pick(px, py); panels.map.box.style.cursor = h ? (h.kind === 'ring' ? 'crosshair' : 'grab') : 'default'; return; }
+  panels.map.box.style.cursor = 'grabbing';
+  const g = ranges[drag.i], [wx, wz] = mapWorld(px, py);
+  if (drag.kind === 'dot') { g.mb = clamp(bearingOf(wx, wz), -40, 90); g.md = clamp(distOf(wx, wz), 30000, 300000); }
+  else {
+    // The ring turns the arc about its middle.
+    const f = frame(g), toEye = Math.atan2(EYE()[1] - f.mz, EYE()[0] - f.mx);
+    g.face = ((deg(Math.atan2(wz - f.mz, wx - f.mx) - toEye) + 180) % 360 + 360) % 360 - 180;
+  }
+  changed({ fast: true });
+});
+const endDrag = () => { if (!drag) return; drag = null; commit(); changed(); };
+panels.map.box.addEventListener('pointerup', endDrag);
+panels.map.box.addEventListener('pointercancel', endDrag);
+// Scroll on a dot: crest; with shift, the size.
+let wheelTimer = 0;
+panels.map.box.addEventListener('wheel', ev => {
+  const [px, py] = local(ev), hit = pick(px, py);
+  if (!hit) return;
+  ev.preventDefault();
+  if (hit.i !== sel) select(hit.i);
+  const g = ranges[hit.i], k = Math.exp(-Math.sign(ev.deltaY || ev.deltaX) * 0.06);
+  if (ev.shiftKey) g.rc = clamp(g.rc * k, 4000, 140000);
+  else g.crest = clamp(g.crest * k, 500, CREST_MAX / landHeight());
+  changed({ fast: true });
+  clearTimeout(wheelTimer); wheelTimer = setTimeout(() => { commit(); changed(); }, 400);
+}, { passive: false });
+
+/* ---------- the sidebar ---------- */
+function setStatus(t, err = false) { $('#status').className = err ? 'err' : ''; $('#status').textContent = t; }
+const landHeight = () => land.height ?? 1;
+const fmt = (v, s) => (s >= 1 ? String(Math.round(v)) : v.toFixed(s >= 0.1 ? 1 : 2));
+// One slider row: label, range and value; it commits on release.
+function slider(label, v, min, max, step, onInput, unit = '') {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${v}"><output>${fmt(v, step)}${unit}</output>`;
+  const inp = row.querySelector('input'), out = row.querySelector('output');
+  inp.addEventListener('input', () => { out.textContent = fmt(+inp.value, step) + unit; onInput(+inp.value); });
+  inp.addEventListener('change', () => { commit(); changed(); });
+  return row;
+}
+function select(i) { sel = i; renderList(); renderSel(); if (R) { mapOverlay(); panoOverlay(panoWin()); } }
+// Whether the ranges on screen are the table in ranges.js or edits kept in this browser.
+function sameAsModule() {
+  if (!R || ranges.length !== R.RANGES.length || JSON.stringify(land) !== JSON.stringify(Object.fromEntries(R.LAND_KEYS.map(k => [k, R.LAND[k].value])))) return false;
+  const t = table();
+  return R.RANGES.every((m, i) => m.length === t[i].length && m.every((v, k) => Math.abs(v - t[i][k]) < 0.01 * Math.max(1, Math.abs(v)) || (k === 0 && t[i][1] < 1)));
+}
+function renderList() {
+  $('#source').textContent = sameAsModule() ? 'The table in ranges.js.' : 'Your edits, kept in this browser. Copy config to keep them; Reset to start from ranges.js.';
+  const box = $('#list');
+  box.innerHTML = '';
+  ranges.forEach((g, i) => {
+    const b = document.createElement('button'), top = g.crest * landHeight();
+    b.type = 'button'; if (i === sel) b.className = 'sel';
+    b.innerHTML = `<i style="background:${css(col(i))}"></i><span>${i} ${FORMS[g.form] ?? 'form ' + g.form}</span><small>${g.mb.toFixed(0)}° · ${(g.md / 1000).toFixed(0)} km · ${(top / 1000).toFixed(1)} km${top > CREST_MAX ? ' !' : ''}</small>`;
+    b.addEventListener('click', () => select(i === sel ? -1 : i));
+    box.append(b);
+  });
+  buttons();
+}
+// The selection's sliders, in a fixed order; syncSel reads the same keys.
+const SEL_KEYS = [['mb', 1, '°'], ['md', 1000, ' km'], ['crest', 1000, ' km'], ['rc', 1000, ' km'], ['span', 1, '°'], ['face', 1, '°']];
+function renderSel() {
+  const box = $('#sel');
+  box.innerHTML = '';
+  if (sel < 0 || !ranges[sel]) { $('#seltitle').textContent = 'Selected range'; box.innerHTML = '<p class="note">Pick a range on the map or in the list.</p>'; return; }
+  const g = ranges[sel], arc = !radialForm(g.form);
+  $('#seltitle').textContent = `Range ${sel}: ${FORMS[g.form]}`;
+  const form = document.createElement('div');
+  form.className = 'row';
+  form.innerHTML = `<span>Form</span><select>${FORMS.map((f, k) => `<option value="${k}"${k === g.form ? ' selected' : ''}>${f}</option>`).join('')}</select><span></span>`;
+  form.querySelector('select').addEventListener('change', ev => { g.form = +ev.target.value; commit(); buildLand(); changed(); });
+  box.append(form);
+  const set = (key, k) => v => { g[key] = v * k; changed({ fast: true }); };
+  box.append(slider('Bearing', g.mb, -40, 90, 0.5, set('mb', 1), '°'));
+  box.append(slider('Distance', g.md / 1000, 30, 300, 1, set('md', 1000), ' km'));
+  box.append(slider('Crest', g.crest / 1000, 0.5, +(CREST_MAX / landHeight() / 1000).toFixed(1), 0.1, set('crest', 1000), ' km'));
+  box.append(slider(arc ? 'Arc radius' : 'Radius', g.rc / 1000, 4, 140, 0.5, set('rc', 1000), ' km'));
+  if (arc) {
+    box.append(slider('Span', g.span, 20, 300, 1, set('span', 1), '°'));
+    box.append(slider('Facing', g.face, -180, 180, 1, set('face', 1), '°'));
+    const p = document.createElement('p'); p.className = 'note'; p.textContent = 'Facing 0 bulges the arc toward the gun; 180 hollows it toward the gun.'; box.append(p);
+  }
+  const b = document.createElement('div');
+  b.className = 'btns';
+  b.innerHTML = '<button type="button" data-a="dup">Duplicate</button><button type="button" data-a="del">Delete</button>';
+  b.querySelector('[data-a=dup]').disabled = ranges.length >= N;
+  b.addEventListener('click', ev => {
+    const a = ev.target.dataset.a;
+    if (a === 'dup' && ranges.length < N) { ranges.push({ ...g, mb: g.mb - 6 }); sel = ranges.length - 1; }
+    if (a === 'del') { ranges.splice(sel, 1); sel = -1; }
+    if (a) { commit(); buildLand(); changed(); }
+  });
+  box.append(b);
+}
+// While dragging, the selection's sliders follow without a rebuild.
+function syncSel() {
+  if (sel < 0 || !ranges[sel]) return;
+  const g = ranges[sel];
+  $('#sel').querySelectorAll('.row input[type=range]').forEach((inp, k) => {
+    const [key, s, unit] = SEL_KEYS[k];
+    if (document.activeElement === inp) return;
+    inp.value = g[key] / s; inp.nextElementSibling.textContent = fmt(g[key] / s, +inp.step) + unit;
+  });
+}
+// The landscape knobs, grouped as ranges.js groups them.
+// A group for a form no range uses shows dim.
+function buildLand() {
+  const host = $('#land'), keys = R.LAND_KEYS, groups = {};
+  const open = [...host.querySelectorAll('details[open]')].map(e => e.dataset.g);
+  for (const k of keys) { if (!(k in land)) land[k] = R.LAND[k].value; (groups[R.LAND[k].group] ||= []).push(k); }
+  for (const k of Object.keys(land)) if (!keys.includes(k)) delete land[k];
+  host.innerHTML = '';
+  const uses = { Spires: 4, Slabs: 5 };
+  for (const [name, ks] of Object.entries(groups)) {
+    const det = document.createElement('details');
+    det.dataset.g = name;
+    if (open.includes(name) || (!host.dataset.built && name === 'Shape')) det.open = true;
+    det.innerHTML = `<summary><h2>${name}</h2></summary>`;
+    const unused = uses[name] && !ranges.some(g => g.form === uses[name]);
+    if (unused) { const p = document.createElement('p'); p.className = 'note'; p.textContent = `No range is ${name.toLowerCase()} now: give one that form to see these.`; det.append(p); }
+    for (const k of ks) {
+      const d = R.LAND[k];
+      const row = slider(d.label, land[k], d.min, d.max, d.step, v => { land[k] = v; changed({ fast: true }); });
+      if (unused) row.classList.add('off');
+      det.append(row);
+    }
+    const reset = document.createElement('div');
+    reset.className = 'btns';
+    reset.innerHTML = '<button type="button">Defaults</button>';
+    reset.querySelector('button').addEventListener('click', () => { for (const k of ks) land[k] = R.LAND[k].value; commit(); buildLand(); changed(); });
+    det.append(reset);
+    host.append(det);
+  }
+  host.dataset.built = '1';
+}
+// Any edit: the list, the selection, and a redraw.
+// A fast edit (a drag, a slider, a scroll) keeps the sliders in place.
+function changed({ fast = false } = {}) {
+  renderList();
+  if (fast) syncSel(); else renderSel();
+  draw({ fast });
+}
+
+/* ---------- generate ---------- */
+function rng(seed) {
+  let a = 0;
+  for (const ch of String(seed)) a = Math.imul(a ^ ch.charCodeAt(0), 2654435761) >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// A set that fills the landscape window with one low gap.
+// Each arc's middle sits on its slot; its radius stays over twice its crest.
+function generate(seed) {
+  const r = rng(seed), lo = VIEWS[0].r, hi = VIEWS[0].l, between = (a, b) => a + (b - a) * r();
+  const n = Math.min(N, 6 + Math.floor(r() * 4)), cap = CREST_MAX / landHeight();
+  const gw = between(6, 10), gc = between(lo + 6 + gw / 2, hi - 6 - gw / 2);
+  const forms = [];
+  if (r() < 0.6) forms.push(1);
+  for (const f of [2, 4, 5, 3]) if (r() < 0.5) forms.push(f);
+  while (forms.length < n) forms.push(0);
+  forms.length = n;
+  const span = hi - lo - gw, slots = forms.filter(f => f !== 1).length, out = [];
+  let k = 0;
+  for (const form of forms) {
+    const g = { form, face: wrap(between(-30, 30) + (r() < 0.5 ? 0 : 180)), span: between(90, 150) };
+    if (form === 1) {
+      g.mb = gc; g.md = between(70000, 95000);
+      g.crest = Math.min(g.md * Math.tan(rad(1.4)), between(2500, 4000)); g.rc = between(12000, 20000);
+    } else {
+      let s = lo + (k + between(0.2, 0.8)) * span / slots;
+      if (s > gc - gw / 2) s += gw;
+      g.mb = s; k++;
+      g.md = 80000 + 130000 * r() ** 1.4;
+      g.crest = Math.max(4000, Math.min(cap, between(14000, 32000) * (0.6 + 0.4 * (g.md - 80000) / 130000), g.md * Math.tan(rad(7))));
+      const want = rad(1.5 * span / slots * between(0.8, 1.2));
+      g.rc = radialForm(form) ? g.crest * between(1.4, 2.2) * (form === 4 ? 1.2 : 1) : Math.min(0.45 * g.md, Math.max(0.1 * g.md, 2.3 * g.crest, want * g.md / (2 * Math.sin(rad(g.span) / 2))));
+      // Nothing tall stands in the gap: test the arc's middle half.
+      const f = frame(g);
+      const pts = radialForm(form) ? [-1, 0, 1].map(o => g.mb + o * deg(Math.atan(g.rc / g.md))) : Array.from({ length: 9 }, (_, j) => { const t = f.a + rad(g.span) * 0.5 * (j / 8 - 0.5); return bearingOf(f.cx + g.rc * Math.cos(t), f.cz + g.rc * Math.sin(t)); });
+      if (pts.some(b => Math.abs(b - gc) < gw / 2 + 1)) g.crest = Math.min(g.crest, g.md * Math.tan(rad(1.5)));
+    }
+    out.push(g);
+  }
+  return out;
+}
+
+/* ---------- copy ---------- */
+function configJs() {
+  const rows = table().map(m => `  [${[+m[0].toFixed(1), Math.round(m[1] / 1000) * 1000, Math.round(m[2] / 500) * 500, Math.round(m[3] / 100) * 100, Math.round(m[4]), Math.round(m[5]), ...(m[6] ? [m[6]] : [])].join(', ')}],${m[6] ? ` // ${FORMS[m[6]]}` : ''}`);
+  const knobs = R.LAND_KEYS.map(k => `  ${k}: ${land[k]},`).join('\n');
+  return `export const RANGES = [\n${rows.join('\n')}\n];\n\n// The LAND values, for each knob's value in ranges.js.\nconst LAND_VALUES = {\n${knobs}\n};\n`;
+}
+async function copy(btn) {
+  const text = configJs();
+  try { await navigator.clipboard.writeText(text); flash(btn, 'Copied'); } catch { console.log(text); flash(btn, 'In the console'); }
+}
+function flash(btn, t) { const t0 = btn.textContent; btn.textContent = t; setTimeout(() => { btn.textContent = t0; }, 1200); }
+
+/* ---------- load ---------- */
+async function load(first = false) {
   const v = ++version;
   setStatus('Loading ranges.js');
   try {
     R = await import(`./ranges.js?v=${Date.now()}`);
     N = R.RANGE_MAX || R.RANGES.length;
-    if (!table || table.src === 'module') useModuleTable();
+    if (first) {
+      const s = loadSaved();
+      if (s?.ranges?.length) { ranges = s.ranges.slice(0, N); land = s.land || {}; Object.assign(view, s.view || {}); }
+      else ranges = R.RANGES.map(fromRow);
+      $('#addform').innerHTML = FORMS.map((f, k) => `<option value="${k}">${f}</option>`).join('');
+      syncView();
+    }
     buildLand();
     for (const [id, fs] of Object.entries(SHADERS)) {
       const P = panels[id];
@@ -319,293 +719,73 @@ async function load() {
     }
     await Promise.all(Object.values(panels).map(P => linked(P.gl, { a: P.prog })));
     if (v !== version) return;
-    tableChanged();
+    if (!past.length) past.push(snap());
+    renderList(); renderSel(); buttons();
+    draw();
   } catch (err) {
     setStatus(String(err.message || err), true);
   }
 }
-function setStatus(t, err = false) { $('#status').className = err ? 'err' : ''; $('#status').textContent = t; }
-
-function useModuleTable() { table = R.RANGES.map(m => m.slice()); table.src = 'module'; }
-
-// The map's box: every range's band and the eye, square, with a margin.
-function mapBox() {
-  let x0 = R.EYE[0], x1 = x0, z0 = R.EYE[1], z1 = z0;
-  uniformsOf(table).rg.forEach(([x, z, rc]) => { const e = 1.8 * rc; x0 = Math.min(x0, x - e); x1 = Math.max(x1, x + e); z0 = Math.min(z0, z - e); z1 = Math.max(z1, z + e); });
-  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, half = Math.max(x1 - x0, z1 - z0) / 2 * 1.04;
-  return [cx - half, cz - half, cx + half, cz + half];
-}
-
-function tableChanged() {
-  bounds = mapBox();
-  const hk = landHeight();
-  $('#legend').innerHTML = table.map((m, i) => {
-    const form = FORMS[m[6] || 0] ?? `form ${m[6]}`, top = m[3] * hk;
-    return `<span><i style="background:${css(col(i))}"></i>${i} ${form} · ${m[0].toFixed(1)}° · ${(m[1] / 1000).toFixed(0)} km · crest ${(top / 1000).toFixed(1)} km${top > CREST_MAX ? ' (over 46)' : ''}</span>`;
-  }).join('');
-  $('#tablenote').textContent = table.src === 'module' ? `The table in ranges.js: ${table.length} ranges.` : `Generated from seed ${table.src}: ${table.length} ranges.`;
-  draw();
-}
-
-// The landscape parameters, when ranges.js has them.
-function buildLand() {
-  const box = $('#land');
-  if (!R.LAND) { box.innerHTML = '<h2>Landscape</h2><p class="note">ranges.js has no LAND table yet.</p>'; land = {}; return; }
-  const keys = R.LAND_KEYS || Object.keys(R.LAND), groups = {};
-  for (const k of keys) {
-    const d = R.LAND[k];
-    if (!(k in land)) land[k] = d.value;
-    (groups[d.group || 'Landscape'] ||= []).push(k);
-  }
-  for (const k of Object.keys(land)) if (!keys.includes(k)) delete land[k];
-  box.innerHTML = Object.entries(groups).map(([g, ks]) => `<h2>${g}</h2>` + ks.map(k => {
-    const d = R.LAND[k];
-    return `<div class="row"><span title="${k}">${d.label || k}</span><input data-land="${k}" type="range" min="${d.min}" max="${d.max}" step="${d.step}" value="${land[k]}"><output>${land[k]}</output></div>`;
-  }).join('')).join('') + '<div class="btns"><button id="landreset" type="button">Defaults</button></div>';
-  box.querySelectorAll('input[data-land]').forEach(el => el.addEventListener('input', () => {
-    land[el.dataset.land] = +el.value; el.nextElementSibling.textContent = el.value;
-    if (el.dataset.land === 'height') tableChanged(); else draw();
-  }));
-  $('#landreset').addEventListener('click', () => { land = {}; buildLand(); tableChanged(); });
-}
-const landHeight = () => ('height' in land ? land.height : 1);
-function landArray() {
-  if (!R.LAND) return null;
-  if (R.landValues) return R.landValues(land);
-  return new Float32Array((R.LAND_KEYS || Object.keys(R.LAND)).map(k => land[k] ?? R.LAND[k].value));
-}
-
-// Sizes a canvas to its box at the screen's density, two at most.
-function fit(c) {
-  const r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1);
-  const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
-  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-}
-
-function common(gl, u, eye) {
-  const { rg, ra } = uniformsOf(table);
-  gl.uniform4fv(u.uRg, pad(rg, N));
-  gl.uniform4fv(u.uRa, pad(ra, N));
-  gl.uniform1f(u.uEro, knob.ero);
-  gl.uniform1f(u.uForms, knob.forms);
-  if (u.uBump) gl.uniform1f(u.uBump, 1);
-  const la = landArray();
-  if (la && u.uLand) gl.uniform1fv(u.uLand, la);
-  gl.uniform1f(u.uTint, knob.tint);
-  gl.uniform3fv(u.uCol, pad(table.map((m, i) => [...col(i), 0]), N).filter((v, i) => i % 4 < 3));
-  gl.uniform3f(u.uEye, ...eye);
-  // The sun stands right of the wide lens's look.
-  const s = rad(knob.sun), a = rad(LENS.wide.yaw - 36);
-  gl.uniform3f(u.uSun, -Math.sin(a) * Math.cos(s), Math.sin(s), -Math.cos(a) * Math.cos(s));
-}
-
-function run(id, eye, set) {
-  const P = panels[id], gl = P.gl, c = gl.canvas;
-  fit(c); fit(P.over);
-  gl.viewport(0, 0, c.width, c.height);
-  gl.useProgram(P.prog.p);
-  common(gl, P.prog.u, eye);
-  set(gl, P.prog.u, c);
-  gl.bindVertexArray(P.vao);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-
-// The panorama's elevation span follows the height stretch.
-function panoWin() {
-  const box = panels.pano.box.getBoundingClientRect();
-  return [B_LEFT, B_RIGHT, E_LOW, E_LOW + (B_LEFT - B_RIGHT) * box.height / box.width / knob.vex];
-}
-
-let pending = 0;
-function draw() {
-  if (!R || !panels.gun.prog) return;
-  cancelAnimationFrame(pending);
-  pending = requestAnimationFrame(() => {
-    const t0 = performance.now(), win = panoWin(), L = LENS[lens], wide = [...LENS.wide.eye];
-    run('gun', L.eye, (gl, u, c) => {
-      // Yaw, then pitch, as the toy's camera turns.
-      const ty = Math.tan(rad(L.fov / 2)), pitch = Math.atan((2 * L.horizon - 1) * ty), y = rad(L.yaw);
-      const cy = Math.cos(y), sy = Math.sin(y), cp = Math.cos(pitch), sp = Math.sin(pitch);
-      gl.uniformMatrix3fv(u.uRot, false, [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
-      gl.uniform2f(u.uTan, ty * c.width / c.height, ty);
-      gl.uniform3fv(u.uSlope, SLOPE); gl.uniform3fv(u.uWall, WALL); gl.uniform3fv(u.uGround, GROUND);
-      gl.uniform1f(u.uHaze, knob.haze);
-    });
-    run('pano', wide, (gl, u) => gl.uniform4f(u.uWin, ...win));
-    run('map', wide, (gl, u, c) => { gl.uniform4f(u.uBox, ...bounds); gl.uniform1f(u.uPx, (bounds[2] - bounds[0]) / c.width); });
-    Object.values(panels).forEach(P => P.gl.finish());
-    overlays(win);
-    setStatus(`${table.length} ranges · drawn in ${(performance.now() - t0).toFixed(0)} ms`);
+// The View section mirrors the view state.
+function syncView() {
+  document.querySelectorAll('[data-view]').forEach(el => {
+    const k = el.dataset.view;
+    if (el.type === 'checkbox') el.checked = !!view[k]; else { el.value = view[k]; el.nextElementSibling.textContent = view[k]; }
   });
+  $('#seed').value = view.seed;
+  document.querySelectorAll('#lens button').forEach(b => b.classList.toggle('on', b.dataset.lens === view.lens));
+  $('#gun').classList.toggle('phone', view.lens === 'phone');
 }
-
-// Ticks, view windows and labels over the panels.
-function overlays(win) {
-  const ink = 'oklch(0.93 0.01 260 / 0.75)', faint = 'oklch(0.93 0.01 260 / 0.25)', d = Math.min(2, devicePixelRatio || 1);
-  {
-    const c = panels.gun.over, g = c.getContext('2d');
-    g.clearRect(0, 0, c.width, c.height);
-    g.font = `${11 * d}px Gabarito, sans-serif`; g.fillStyle = 'oklch(1 0 0 / 0.7)';
-    const L = LENS[lens];
-    g.fillText(`${lens === 'wide' ? 'Landscape' : 'Phone'} lens · eye ${L.eye.join(', ')} · yaw ${L.yaw}° · field ${L.fov}°`, 8 * d, 16 * d);
-  }
-  {
-    const c = panels.pano.over, g = c.getContext('2d');
-    g.clearRect(0, 0, c.width, c.height);
-    g.font = `${11 * d}px Gabarito, sans-serif`;
-    const X = b => (win[0] - b) / (win[0] - win[1]) * c.width, Y = e => (1 - (e - win[2]) / (win[3] - win[2])) * c.height;
-    g.fillStyle = ink; g.strokeStyle = faint; g.lineWidth = d;
-    for (let b = -20; b <= 70; b += 10) { g.beginPath(); g.moveTo(X(b), c.height); g.lineTo(X(b), c.height - 8 * d); g.stroke(); g.fillText(`${b}°`, X(b) + 3 * d, c.height - 4 * d); }
-    const step = win[3] > 12 ? 4 : win[3] > 6 ? 2 : 1;
-    for (let e = 0; e <= win[3]; e += step) { g.beginPath(); g.moveTo(0, Y(e)); g.lineTo(c.width, Y(e)); g.strokeStyle = e === 0 ? ink : faint; g.stroke(); g.fillText(`${e}°`, 4 * d, Y(e) - 3 * d); }
-    VIEWS.forEach((v, i) => {
-      g.strokeStyle = v.c; g.fillStyle = v.c; g.lineWidth = 2 * d;
-      const y = (10 + 14 * i) * d;
-      g.beginPath(); g.moveTo(X(v.l), y); g.lineTo(X(v.r), y); g.moveTo(X(v.l), y - 4 * d); g.lineTo(X(v.l), c.height); g.moveTo(X(v.r), y - 4 * d); g.lineTo(X(v.r), c.height);
-      g.globalAlpha = 0.6; g.stroke(); g.globalAlpha = 1;
-      g.fillText(v.name, X(v.l) + 4 * d, y - 3 * d);
-    });
-  }
-  {
-    const c = panels.map.over, g = c.getContext('2d'), B = bounds;
-    g.clearRect(0, 0, c.width, c.height);
-    const X = x => (x - B[0]) / (B[2] - B[0]) * c.width, Y = z => (z - B[1]) / (B[3] - B[1]) * c.height;
-    const ex = X(R.EYE[0]), ey = Y(R.EYE[1]), far = 260000;
-    VIEWS.forEach(v => {
-      g.strokeStyle = v.c; g.lineWidth = 1.5 * d; g.globalAlpha = 0.75;
-      for (const b of [v.l, v.r]) { const [x, z] = R.polar(rad(b), far); g.beginPath(); g.moveTo(ex, ey); g.lineTo(X(x), Y(z)); g.stroke(); }
-      g.globalAlpha = 1;
-    });
-    g.strokeStyle = faint; g.lineWidth = d;
-    for (let r = 50000; r <= 250000; r += 50000) { g.beginPath(); g.arc(ex, ey, r / (B[2] - B[0]) * c.width, 0, 2 * Math.PI); g.stroke(); }
-    g.fillStyle = 'oklch(0.85 0.12 75)'; g.beginPath(); g.arc(ex, ey, 4 * d, 0, 2 * Math.PI); g.fill();
-    g.font = `600 ${12 * d}px Gabarito, sans-serif`; g.textAlign = 'center';
-    uniformsOf(table).rg.forEach(([x, z, rc], i) => {
-      const m = table[i];
-      // A band's label sits on its arc's middle; a radial form's on its centre.
-      let lx = x, lz = z;
-      if (!radialForm(m[6])) { const a = rad(m[5]) + Math.PI; lx = x + rc * Math.cos(a); lz = z + rc * Math.sin(a); }
-      g.fillStyle = 'oklch(0.13 0.01 260 / 0.7)'; g.beginPath(); g.arc(X(lx), Y(lz), 9 * d, 0, 2 * Math.PI); g.fill();
-      g.fillStyle = css(col(i)); g.fillText(String(i), X(lx), Y(lz) + 4 * d);
-    });
-    g.textAlign = 'left'; g.fillStyle = ink; g.font = `${11 * d}px Gabarito, sans-serif`;
-    g.fillText('rings every 50 km · up is the view (negative z)', 6 * d, c.height - 6 * d);
-  }
-}
-
-/* ---------- the generator ---------- */
-// A small seeded random: the same seed gives the same table.
-function rng(seed) {
-  let a = 0;
-  for (const ch of String(seed)) a = Math.imul(a ^ ch.charCodeAt(0), 2654435761) >>> 0;
-  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
-// A table that fills the landscape window, with one low gap.
-function generate(seed) {
-  const r = rng(seed), lo = VIEWS[0].r, hi = VIEWS[0].l, between = (a, b) => a + (b - a) * r();
-  const n = Math.min(N, 6 + Math.floor(r() * 4));
-  const cap = CREST_MAX / landHeight();
-  // The gap: six to ten degrees, inside the window, kept low.
-  const gw = between(6, 10), gc = between(lo + 6 + gw / 2, hi - 6 - gw / 2);
-  // At most one of each special form; a mesa line goes in the gap.
-  const forms = [];
-  if (r() < 0.6) forms.push(1);
-  for (const f of [2, 4, 5, 3]) if (r() < 0.5) forms.push(f);
-  while (forms.length < n) forms.push(0);
-  forms.length = n;
-  // Bearings: one slot per range across the window, minus the gap.
-  const span = hi - lo - gw, out = [];
-  const slots = forms.filter(f => f !== 1).length;
-  let k = 0;
-  // The bearing of a world point from the eye, in degrees.
-  const bearing = (x, z) => Math.atan2(R.EYE[0] - x, R.EYE[1] - z) * 180 / Math.PI;
-  const inGap = th => Math.abs(th - gc) < gw / 2 + 1;
-  for (const f of forms) {
-    let b, d, crest, rc, sp = 0, a = 0, cx, cz;
-    if (f === 1) {
-      b = gc; d = between(70000, 95000);
-      crest = Math.min(d * Math.tan(rad(1.4)), between(2500, 4000));
-      rc = between(12000, 20000); sp = between(90, 120);
-    } else {
-      let s = lo + (k + between(0.2, 0.8)) * span / slots;
-      if (s > gc - gw / 2) s += gw;
-      b = s; k++;
-      // Distances lean near, so the front ranges carry the view.
-      d = 80000 + 130000 * r() ** 1.4;
-      // Taller crests stand farther; none rises past about seven degrees.
-      crest = Math.max(4000, Math.min(cap, between(14000, 32000) * (0.6 + 0.4 * (d - 80000) / 130000), d * Math.tan(rad(7))));
-      if (radialForm(f)) rc = crest * between(1.4, 2.2) * (f === 4 ? 1.2 : 1);
-      else {
-        // The arc spans about one and a half slots of bearing, so ranges overlap a little.
-        sp = between(90, 150);
-        const want = rad(1.5 * span / slots * between(0.8, 1.2));
-        // A range needs room to rise: the arc radius stays over twice its crest, as in ranges.js.
-        rc = Math.min(0.45 * d, Math.max(0.1 * d, 2.3 * crest, want * d / (2 * Math.sin(rad(sp) / 2))));
-      }
-    }
-    // The arc's middle sits at bearing b; the arc runs across the line of sight.
-    const [mx, mz] = R.polar(rad(b), d);
-    if (radialForm(f)) { cx = mx; cz = mz; }
-    else {
-      const ux = (R.EYE[0] - mx) / d, uz = (R.EYE[1] - mz) / d, tw = rad(between(-30, 30)), sg = r() < 0.5 ? 1 : -1;
-      const nx = sg * (ux * Math.cos(tw) - uz * Math.sin(tw)), nz = sg * (ux * Math.sin(tw) + uz * Math.cos(tw));
-      a = Math.atan2(nz, nx);
-      cx = mx - rc * nx; cz = mz - rc * nz;
-    }
-    // Nothing tall stands in the gap: test points along the crest.
-    if (f !== 1) {
-      let hit = false;
-      if (radialForm(f)) for (const o of [-1, 0, 1]) hit ||= inGap(b + o * Math.atan(rc / d) * 180 / Math.PI);
-      // An arc tapers to its ends, so only its middle half counts.
-      else for (let j = 0; j <= 8; j++) { const t = a + rad(sp) * 0.5 * (j / 8 - 0.5); hit ||= inGap(bearing(cx + rc * Math.cos(t), cz + rc * Math.sin(t))); }
-      if (hit) crest = Math.min(crest, d * Math.tan(rad(1.5)));
-    }
-    // The table holds the centre's bearing and range, and the opening.
-    const cb = bearing(cx, cz), cd = Math.hypot(cx - R.EYE[0], cz - R.EYE[1]);
-    const op = radialForm(f) ? 0 : Math.round(((a * 180 / Math.PI - 180) % 360 + 360) % 360);
-    const row = [+cb.toFixed(1), Math.round(cd / 1000) * 1000, Math.round(rc / 500) * 500, Math.round(crest / 100) * 100, Math.round(sp), op];
-    if (f) row.push(f);
-    out.push(row);
-  }
-  out.src = String(seed);
-  return out;
-}
-
-// The table as JS rows, ready to paste into ranges.js.
-function tableJs() {
-  return 'export const RANGES = [\n' + table.map(m => `  [${m.join(', ')}],${m[6] ? ` // ${FORMS[m[6]] ?? 'form ' + m[6]}` : ''}`).join('\n') + '\n];\n';
-}
-async function copy(text, btn) {
-  try { await navigator.clipboard.writeText(text); flash(btn, 'Copied'); } catch { console.log(text); flash(btn, 'In the console'); }
-}
-function flash(btn, t) { const t0 = btn.textContent; btn.textContent = t; setTimeout(() => { btn.textContent = t0; }, 1200); }
 
 /* ---------- wiring ---------- */
+document.querySelectorAll('[data-view]').forEach(el => el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+  const k = el.dataset.view;
+  view[k] = el.type === 'checkbox' ? (el.checked ? 1 : 0) : +el.value;
+  if (el.type !== 'checkbox') el.nextElementSibling.textContent = el.value;
+  save(); draw({ fast: el.type !== 'checkbox' });
+}));
+$('#lens').addEventListener('click', ev => { const l = ev.target.dataset.lens; if (!l) return; view.lens = l; syncView(); save(); draw(); });
 panels.pano.box.addEventListener('pointermove', ev => {
   const r = panels.pano.box.getBoundingClientRect(), win = panoWin();
   const b = win[0] + (win[1] - win[0]) * (ev.clientX - r.left) / r.width, e = win[3] + (win[2] - win[3]) * (ev.clientY - r.top) / r.height;
   $('#hover').textContent = `bearing ${b.toFixed(1)}° · elevation ${e.toFixed(2)}°`;
 });
-for (const id of ['ero', 'vex', 'sun', 'haze']) $('#' + id).addEventListener('input', ev => { knob[id] = +ev.target.value; $(`output[for=${id}]`).textContent = ev.target.value; draw(); });
-$('#forms').addEventListener('change', ev => { knob.forms = ev.target.checked ? 1 : 0; draw(); });
-$('#tint').addEventListener('change', ev => { knob.tint = ev.target.checked ? 1 : 0; draw(); });
-$('#phone').addEventListener('click', ev => { lens = lens === 'wide' ? 'phone' : 'wide'; ev.target.classList.toggle('on', lens === 'phone'); $('#gun').classList.toggle('phone', lens === 'phone'); draw(); });
-const gen = () => { if (!R) return; table = generate($('#seed').value.trim() || '1'); tableChanged(); };
+$('#add').addEventListener('click', () => {
+  if (ranges.length >= N) return;
+  const form = +$('#addform').value, crest = form === 1 ? 3000 : 12000;
+  ranges.push({ form, mb: 20, md: 140000, crest, rc: radialForm(form) ? crest * 1.8 : 2.6 * crest, span: 120, face: 0 });
+  sel = ranges.length - 1; commit(); buildLand(); changed();
+});
+const gen = () => { if (!R) return; view.seed = $('#seed').value.trim() || '1'; ranges = generate(view.seed); sel = -1; commit(); buildLand(); changed(); };
 $('#generate').addEventListener('click', gen);
 $('#next').addEventListener('click', () => { const s = $('#seed'); s.value = String((parseInt(s.value, 10) || 0) + 1); gen(); });
 $('#seed').addEventListener('keydown', ev => { if (ev.key === 'Enter') gen(); });
-$('#reset').addEventListener('click', () => { if (!R) return; useModuleTable(); tableChanged(); });
-$('#copytable').addEventListener('click', ev => copy(tableJs(), ev.target));
-$('#copyland').addEventListener('click', ev => copy(JSON.stringify(land, null, 2), ev.target));
-$('#reload').addEventListener('click', load);
+$('#reset').addEventListener('click', () => { if (!R) return; ranges = R.RANGES.map(fromRow); land = {}; sel = -1; buildLand(); commit(); changed(); });
+$('#copy').addEventListener('click', ev => copy(ev.target));
+$('#reload').addEventListener('click', () => load());
+$('#undo').addEventListener('click', undo);
+$('#redo').addEventListener('click', redo);
 addEventListener('keydown', ev => {
-  if (ev.metaKey || ev.ctrlKey || ev.target.tagName === 'INPUT' && ev.target.type === 'text') return;
+  const typing = (ev.target.tagName === 'INPUT' && ev.target.type === 'text') || ev.target.tagName === 'SELECT';
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); if (ev.shiftKey) redo(); else undo(); return; }
+  if (ev.metaKey || ev.ctrlKey || typing) return;
   if (ev.key === 'r') load(); else if (ev.key === 'g') gen(); else if (ev.key === 'n') $('#next').click();
+  else if ((ev.key === 'Delete' || ev.key === 'Backspace') && sel >= 0) { ranges.splice(sel, 1); sel = -1; commit(); buildLand(); changed(); }
+  else if (ev.key === 'Escape') select(-1);
 });
 new ResizeObserver(() => draw()).observe(document.querySelector('main'));
-// QA: a hook to wait on, the status line, and the generator.
-window.__lab = { ready: () => !!R && !/Loading/.test($('#status').textContent), status: () => $('#status').textContent, load, gen: s => { $('#seed').value = s; gen(); }, table: () => table, lens: l => { if (l !== lens) $('#phone').click(); } };
-load();
+// QA: wait on ready; read the status, the table and the knobs; drive a few edits.
+window.__lab = {
+  ready: () => !!R && /drawn/.test($('#status').textContent),
+  status: () => $('#status').textContent,
+  table, ranges: () => JSON.parse(JSON.stringify(ranges)), land: () => ({ ...land }), view: () => ({ ...view }),
+  gen: s => { $('#seed').value = s; gen(); }, select, undo, redo,
+  setLand: (k, v) => { land[k] = v; commit(); changed(); },
+  setView: (k, v) => { view[k] = v; syncView(); draw(); },
+  handle: i => { const h = handles(i), r = panels.map.box.getBoundingClientRect(), d = dpr(); return { dot: [r.left + h.dot[0] / d, r.top + h.dot[1] / d], ring: h.ring && [r.left + h.ring[0] / d, r.top + h.ring[1] / d] }; },
+  config: configJs,
+};
+load(true);
 </script>
 </body>
 </html>
