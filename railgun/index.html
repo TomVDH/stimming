@@ -199,8 +199,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
     // Flash now fires one lightning burst in a storm, for a test.
     { type: 'button', id: 'stormnow', group: 'Sky', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
-    // Storm probe: the towers and the giant as Window seat's marched volumes.
-    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm probe', value: false, onToggle: on => { setStormProbe(on); draw(); } },
+    // Storm volumes: the towers and the giant as Window seat's marched volumes; off shows the flat cards.
+    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: true, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
@@ -2234,7 +2234,7 @@ float dens(vec3 p, bool fine, out float gap) {
   gap = -sh - A * 1.1 - 0.5;
   if (gap > 0.0) return 0.0;
   // A wide ramp feathers the outer billows into the sky.
-  return smoothstep(0.0, 0.9, sh + A * 2.2 * billow(p, aw, fine));
+  return smoothstep(0.0, 0.6, sh + A * 2.2 * billow(p, aw, fine));
 }
 float densL(vec3 p) { float g; return dens(p, false, g); }
 vec3 flashAt(vec3 P) {
@@ -2289,7 +2289,8 @@ void main() {
     vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(1.1, 1.7, low) * mix(1.0, powder, 0.35) + amb * (0.32 + 0.5 * h01) * (0.45 + 0.55 * Tl2);
     S *= mix(1.0, 0.45, uStars);
     S += flashAt(P) * (0.4 + 0.6 * d);
-    float al = 1.0 - exp(-2.8 * d * dt / U);
+    // Thick body: the column is opaque a few kilometres in.
+    float al = 1.0 - exp(-5.0 * d * dt / U);
     col += Tc * S * al;
     Tc *= 1.0 - al;
     if (Tc < 0.03) break;
@@ -11972,6 +11973,7 @@ gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').valu
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
 setDeck(ui.setting('deck').value);
+setStormProbe(ui.setting('stormprobe').value);
 stormFl.rate = ui.setting('stormfl').value;
 giants.visible = ui.setting('giants').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
