@@ -82,7 +82,7 @@ Each stage is one or more sessions and ends with a checkpoint with Tom.
 
 ### Stage 2: One tornado
 - [x] Framing blockout (Tom, 2026-11-16: "we are just blocking out framing"): the 50 mm shot, stand-in funnel volumes with rotation, dust skirt, touchdown and rope-out, the F-scale table, the controls. The funnel look is a placeholder.
-- [ ] The tornado itself (Tom: "the next will be an impressive raymarched tornado slider"): one hero ray-marched tornado, built on its own with one continuous F-scale slider (F0 to F5) that morphs it through rope, cone, stovepipe and wedge. Turbulence, cone dynamics, condensation, debris and dust are the showcase. It replaces `tornado()` in the shot when Tom signs it off.
+- [ ] The tornado itself (Tom: "the next will be an impressive raymarched tornado slider"): one hero ray-marched tornado, built on its own with one continuous F-scale slider (F0 to F5) that morphs it through rope, cone, stovepipe and wedge. Turbulence, cone dynamics, condensation, debris and dust are the showcase. It replaces `tornado()` in the shot when Tom signs it off. Built in `tornado/lab.html` (`lab.js`, noindex): raw WebGL2 on `shared/gl.js`, a 64³ tiling noise volume, the funnel wall as a signed distance (turbulent bands that wind and climb, spun by two crossfading flow layers on a Rankine vortex) with a soft fringe, debris and rain as volumes, low-sun self-shadow, a lowered wall cloud; the F slider drives every value from one table in `lab.js`. Links: `?f=4.5`, `?morph`, `?t=12`, `?still`.
 
 ### Stage 3: Many tornadoes
 - [ ] Place, steer and scale several at once; life cycles; the frame-cost budget per tornado.
