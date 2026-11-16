@@ -1145,7 +1145,13 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
   vec3 deck(vec3 d, vec3 col) {
     if (uDeck < 0.01 || d.y < 0.003) return col;
     float t = 5200.0 / d.y;
-    vec2 xz = cameraPosition.xz + d.xz * t + vec2(uCloudC * 4.0, uCloudC * 1.5);
+    // The deck's point in the world, for the blast, the bolt and the rock.
+    vec3 Pc = cameraPosition + d * t;
+    float rim; vec3 push;
+    vec3 hl = cloudHit(Pc, 0.6, rim, push);
+    // The heave pushes the cells outward; the void clears a ring.
+    float pack, hole;
+    vec2 xz = voidWarp(Pc.xz - push.xz, pack, hole) + vec2(uCloudC * 4.0, uCloudC * 1.5);
     // Patches of cells with wide open sky between them.
     float cov = texture(uVol, vec3(xz / 60000.0, 0.31)).r;
     float cel = texture(uVol, vec3(xz / 7000.0, 0.63)).g;
@@ -1156,6 +1162,9 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     float dens = smoothstep(0.6, 0.84, raw + (cov - 0.7) * 1.2);
     // The deck thins out low down: the ranges stay clear.
     dens *= smoothstep(0.02, 0.12, d.y);
+    // The heave clears the air it pushes; packed cells thicken round the hole.
+    dens *= 1.0 - 0.55 * smoothstep(800.0, 5000.0, length(push));
+    dens = min(dens * pack, 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
     if (dens < 0.003) return col;
     // The side of a cell toward the sun goes darker.
     float cel2 = texture(uVol, vec3((xz + uSunD.xz * 600.0) / 7000.0, 0.63)).g;
@@ -1165,12 +1174,20 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     float ph = 0.6 + 1.6 * pow(max(cs, 0.0), 6.0);
     float low = 1.0 - smoothstep(0.05, 0.35, uSunD.y);
     vec3 amb = mix(uHorC, uZenC, 0.5) * 0.9 + uCloudAmb * 0.6;
-    vec3 c = amb * (0.55 + 0.25 * (1.0 - dens)) + uCloudSun * (0.18 + 0.5 * (1.0 - dens)) * ph * self * mix(1.0, 1.6, low);
+    // The trail and the soot ball shade the cells.
+    float shd = shadeAt(Pc);
+    vec3 c = amb * (0.55 + 0.25 * (1.0 - dens)) + uCloudSun * (0.18 + 0.5 * (1.0 - dens)) * ph * self * mix(1.0, 1.6, low) * (1.0 - 0.75 * shd);
     // At night the deck takes the moon dimly.
     c *= mix(1.0, 0.45, uStars);
+    // The passing bolt lights the cells round it, blue-white.
+    if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; c += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
+    // The burning rock warms the cells near it, the thin ones most.
+    if (uRockL.w > 0.001) { vec3 rb = uRockL.xyz - Pc; c += uAstC * uRockL.w * uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR) * (0.6 + 0.4 * (1.0 - dens)) * mix(1.0, 0.6, uStars); }
+    // The blast: its flash, its afterglow and the shock rim.
+    c += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
     // The air between fills the far deck with the horizon colour.
     c = mix(c, k2hazeColor(d), 1.0 - exp(-t / 60000.0));
-    return mix(col, c, dens * 0.75 * min(uDeck, 1.5));
+    return mix(col, c, min(1.0, dens * (0.75 + 0.2 * rim) * min(uDeck, 1.5)));
   }
   void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(deck(d, k2sky(d)), d, uShaft.z) + impSky(d), 1.0); }`,
 }));

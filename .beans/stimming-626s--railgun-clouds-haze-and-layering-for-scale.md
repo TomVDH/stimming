@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T19:16:35Z
+updated_at: 2026-11-16T19:19:41Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -16,6 +16,7 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Tom: see the mountains better, less hidden by clouds: far heaps lifted clear of the crests, the band at the ranges' feet removed, valley fog halved
 - [x] Tom signed off stage 1 (2026-11-16: "looks good now")
 - [x] Stage 2: the cell deck 5.2 km up, in the sky dome; it replaces the middle heaps; Dev row Cloud deck; frame cost within noise (28-29 ms headless at 1280 either way)
+- [x] The deck reacts: blast flash, shock rim, heave, void hole, bolt and rock light, trail and soot shade
 - [ ] Tom signs off stage 2
 - [ ] Stage 3: the giants and near heaps (C)
 - [ ] Build the picked direction
