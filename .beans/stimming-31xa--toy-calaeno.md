@@ -19,3 +19,12 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [ ] Screenshots to Tom
 - [ ] Tom's verdict on the view: elevation, heading, lens (Dev sliders)
 - [ ] Sound
+
+## Round 2 (Tom, 2026-11-15)
+
+- [x] One contrail per engine, starting at its propeller
+- [x] A better contra-rotating propeller (six scimitar blades per row, motion smear, spinner)
+- [x] Two sister craft, on a Craft choice (Alcyone, Merope: proposals)
+- [x] Six escorts
+- [x] Layered, moving sky (wisps, heaps, near scud); deeper blue
+- [x] No user camera; a wider frame on a narrow lens
