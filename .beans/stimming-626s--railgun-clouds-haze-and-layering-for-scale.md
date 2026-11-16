@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T22:18:55Z
+updated_at: 2026-11-16T23:40:26Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -48,3 +48,7 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Five forms: storm tower, towering cumulus, squall line, dying storm, supercell
 - [x] railgun/stormlab.html (noindex): gun or orbit view, time of day, look knobs, per-storm edits, Flash, Copy config
 - [ ] Tom tunes the storms in the lab and signs off
+
+## Scale decision (Tom, 2026-11-16 16:38)
+
+Tom picked option A of the cloud plan: "A: Earth-true weather". Storm tops 12 to 18 km, crests 3 to 9 km, and the rock first seen high and far, above the anvils. Plan: docs/plans/railgun-clouds-review.md, sections 5 and 8.

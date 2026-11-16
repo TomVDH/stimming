@@ -227,7 +227,8 @@ Decisions for Tom:
 - Tom approved the plan on 2026-11-16 at 15:58 ("Approve the plan"). The freeze on cloud pushes is on.
 - Step 1 is built (bean `stimming-1jza`): `__qa.still()` and `__qa.stormSolo()` in the toy, `tools/clouds-check.mjs`, the golden "before" set and the guards in `tools/commit.sh`. Rig and checks: `docs/qa/railgun-clouds/README.md`.
 - Exit tests: the lobed anvil fails the bounds check at all three suns (card edge); the towering cumulus fails visibility (about 670 pixels). Main fails only on that storm.
-- Open with Tom: decision 2 (scale A or B) and decision 3 (reference photos). Step 2 waits on decision 2.
+- Decision 2: Tom picked option A at 16:38 ("A: Earth-true weather"). Section 10 holds the scale table and a preview.
+- Open with Tom: decision 3 (reference photos).
 
 ## 9. Addendum, 15:56: the march changed during the review; which bound clips
 
@@ -265,3 +266,38 @@ I agree with its conclusion and moved it into the plan as step 0 of section 4: p
 |---|---|
 | ![blue hour now](../qa/railgun-clouds-review/07-bluehour-649313f3.jpg) | 07: blue hour on 9310ec8e and on 649313f3. |
 | ![which bound](../qa/railgun-clouds-review/08-which-bound-clips.jpg) | 08: the lobed anvil with each bound widened in turn. |
+
+## 10. Option A: the scale table and a preview, 16:45
+
+Tom picked option A at 16:38: "A: Earth-true weather". The preview below changes numbers only, in the served page; no file changed.
+
+| Layer | Today | Option A (preview) | Earth |
+|---|---|---|---|
+| Storm tower, -14° | base 2.5 km, 30 km tall, 85 km out | base 1.8 km, 15 km tall, 85 km out | tops 12 to 18 km |
+| Towering cumulus, 8° | base 2.8 km, 22 km tall, 135 km out (hidden) | base 1.6 km, 9 km tall, 62 km out | tops 6 to 10 km |
+| Squall line, 28° | base 2.2 km, 26 km tall, 95 km out | base 1.5 km, 13 km tall, 95 km out | tops 10 to 15 km |
+| Supercell, 52° | base 3.5 km, 62 km tall, 200 km out | base 1.5 km, 18 km tall, 200 km out | tops 15 to 20 km with the overshoot |
+| Foothills | crests 2.6 to 3.1 km | unchanged | |
+| Main, high, far ranges | crests 9 to 10.6, 15.6 to 16.8, 21.6 to 25.2 km | 4.7 to 5.5, 6.8 to 7.3, 7.9 to 8.8 km | highest peak 8.8 km |
+| Rock path | 17.7 km long; fall 15 to 4.4 km up, 47 to 42 km out; grows 17% | 150 km long (`FALL`); fall 81 to 4.4 km up; grows about 3 times | entry from about 100 km up |
+| Heaps, mids, deck, cirrus | 1 to 3 km, 4 to 6.5 km, 5.2 km, 9 km | unchanged: already Earth-true | |
+
+What the preview shows (stills 09 and 10):
+
+1. **The rock works.** With the long path, a fresh rock enters small at the top left, 81 km up, crosses the sky above every cloud and grows about three times to the same end point. Today it hangs almost still. It is gameplay, not only look: the strike stretch past fall 1 shrinks, the gun climbs to about 40° to track a fresh rock, the bolt's flight time, the lead, the sight and the game-over timing all need retuning. That belongs to the gun and game session, with Tom's sign-off.
+2. **The storms need shapes, not only numbers.** At true heights the storms shrink to small mushrooms on the horizon. The shape code sets every length in storm units (`H / 14`), so a 15 km storm gets an anvil about 10 km long; a real anvil runs 50 to 150 km downwind and is far wider than the storm is tall. So option A for the storms is plan step 3: Window seat's tower march at true kilometre scale, anvil reach in kilometres, then placement. Renumbering `STORMS` alone would be one more regression.
+3. **The ranges flatten.** Capped at Earth heights, the far layers sit lower on the horizon. That reads as real distance, but it changes the sierra Tom picked at 15:20. The ranges session previews it and Tom judges it; bringing the far layers nearer keeps more of the layering.
+
+Who builds what, each behind its own still and Tom's approval:
+
+| Work | Owner | Gate |
+|---|---|---|
+| Storms at true scale (step 3 brought forward) | Sky session, `stimming-626s`, in the storm lab first | `clouds-check: PASS` or `look-approved:` |
+| Range crests at Earth heights | Ranges session, `stimming-l7oo` | Tom's look approval on stills |
+| The long rock path and its gameplay retune | The gun and game session | Tom's sign-off; `docs/plans/railgun.md` game-over table |
+
+| Still | Shows |
+|---|---|
+| ![option A](../qa/railgun-clouds-review/09-option-a-preview.jpg) | 09: today, A for storms and ranges, A with the long rock path; first look, sunset and noon. |
+| ![rock fall](../qa/railgun-clouds-review/10-option-a-rock-fall.jpg) | 10: the rock at falls 0.25, 0.6, 0.85 and 1.0, today and with the long path. |
+
