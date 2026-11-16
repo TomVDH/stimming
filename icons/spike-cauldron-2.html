@@ -129,11 +129,12 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
         <ellipse cx="${cx + len / 2 - w * 0.36}" cy="${cy}" rx="${w * 0.32}" ry="${w * 0.42}" fill="oklch(0.74 0.09 68)"/></g>`;
   // Each blaze redraws from its tongues; the tile's own clock drives it.
   const fireDriver = (svg, P) => {
-    const gs = [...svg.querySelectorAll('.fire')];
+    const gs = [...svg.querySelectorAll('.fire')], warm = svg.querySelector('.warm');
     const draw = (t, amp, wind) => (P.fires || []).forEach((F, k) => {
       const [o, c] = fireD(F, t, amp, wind), g = gs[k];
       g.querySelector('.fo').setAttribute('d', o); g.querySelector('.fl').setAttribute('d', o); g.querySelector('.fr').setAttribute('d', o);
       g.querySelector('.fc').setAttribute('d', c);
+      warm?.setAttribute('opacity', f(1 - amp * 0.18 * (1 + Math.sin(t * 11.3) * Math.sin(t * 6.1))));
     });
     draw(0, 0, 0);
     // The fire licks while hovered and leans away from the pointer.
@@ -175,10 +176,12 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       <g class="flames">${P.back.map(fl => `<path d="${flame(fl)}" fill="url(#${u}fire)"/>`).join('')}</g>
       ${(P.fires || []).map((F, k) => (F.back ? fireMarkup(u, F, k) : '')).join('')}
       <path d="${P.belly}" fill="url(#${u}iron)"/>
+      ${P.warm ? `<g clip-path="url(#${u}bellyclip)"><ellipse class="warm" cx="${P.warm[0]}" cy="${P.warm[1]}" rx="${P.warm[2]}" ry="${P.warm[3]}" fill="url(#${u}warm)"/></g>` : ''}
       <path d="${P.belly}" fill="url(#${u}lit)" opacity="0.55"/>
       <path d="${P.belly}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
       <g class="flames">${P.front.map(fl => `<path d="${flame(fl)}" fill="url(#${u}fire)"/>`).join('')}</g>
       ${(P.fires || []).map((F, k) => (F.back ? '' : fireMarkup(u, F, k))).join('')}
+      ${P.ember ? `<ellipse class="ember" cx="${P.ember[0]}" cy="${P.ember[1]}" rx="${P.ember[2]}" ry="${P.ember[3]}" fill="oklch(0.94 0.12 88)" filter="url(#${u}soft)"/>` : ''}
       ${(P.logs || []).map(L => logMarkup(u, L)).join('')}
       ${P.bed ? `<ellipse cx="${P.bed[0]}" cy="${P.bed[1]}" rx="${P.bed[2]}" ry="${P.bed[3]}" fill="oklch(0.97 0.07 95)"/>` : ''}
       <path d="${ell(cx, cy, rx, ry)}${ell(cx, cy + 1, rx - t, ry - t * 0.8)}" fill="url(#${u}ring)" fill-rule="evenodd"/>
@@ -214,6 +217,8 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
       + lg(`${u}iron`, IRON) + lg(`${u}ring`, RIM) + (P.fire ? lg(`${u}fire`, FIRE, `gradientUnits="userSpaceOnUse" x1="0" y1="${P.fire[0]}" x2="0" y2="${P.fire[1]}"`) : '')
       + (P.fires || []).map((F, k) => lg(`${u}fire${k}`, FIRE2, `gradientUnits="userSpaceOnUse" x1="0" y1="${F.y}" x2="0" y2="${f(F.y - Math.max(...F.tg.map(g => g[1])) * 1.05)}"`)).join('')
       + lg(`${u}log`, LOG)
+      + rg(`${u}warm`, [[0, 'oklch(0.8 0.17 62)', 0.85], [0.55, 'oklch(0.66 0.2 42)', 0.4], [1, 'oklch(0.6 0.2 38)', 0]])
+      + `<clipPath id="${u}bellyclip"><path d="${P.belly}"/></clipPath>`
       + rg(`${u}soup`, SOUP, 'cx="0.4" cy="0.32" r="0.78"')
       + rg(`${u}glow`, [[0, 'oklch(0.74 0.19 52)', 0.62], [1, 'oklch(0.74 0.19 52)', 0]])
       + `<clipPath id="${u}clip"><path d="${ell(P.rim[0], P.rim[1] + 1, P.rx - P.t, P.ry - P.t * 0.8)}"/></clipPath>`;
@@ -384,7 +389,10 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
   /* ================= A3: Flick ================= */
 
   // Three tall tongues whose tips flick hard to the side.
-  const P3 = { ...POT, fx: 64, fires: [{ y: 122, L: 36, R: 92, tg: [[45, 24, -9], [62, 38, 7], [80, 26, 10]] }] };
+  const P3 = {
+    ...POT, fx: 64, glow: [64, 116, 44, 11], warm: [64, 108, 40, 18], ember: [64, 121, 22, 4],
+    fires: [{ y: 121, L: 38, R: 90, tg: [[46, 24, -10], [62, 36, 7], [80, 25, 10]] }],
+  };
   DIRS.push({
     l: 'A3', name: 'Flick',
     box: [11, 29, 106, 94],
