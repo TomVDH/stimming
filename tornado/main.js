@@ -211,8 +211,8 @@ vec2 bend(vec2 xz, float h, float g) {
 }
 
 /* ---------- the plain ---------- */
-// The road runs past the eye, 7.5 m to its right; its near end leaves the frame.
-const float ROAD_X = 7.5, WHEAT_GAP = 6.2;
+// The eye hangs over the road's left edge; the road centre runs 3.4 m to its right.
+const float ROAD_X = 3.4, WHEAT_GAP = 6.2;
 // Coverage of a band of half width w round 0, at pixel footprint f.
 float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / f); }
 // The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
@@ -225,7 +225,7 @@ vec3 wheatFar(vec2 xz, float fx) {
   return alb * (0.7 + 0.5 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
 // The near wheat: shells of ears, from the tallest ear down into the stalks.
-// Each shell adds soft coverage, front to back. a is 1 when the ray finds no wheat.
+// Each shell adds soft coverage, front to back. a is what still shows of the ground below.
 vec4 wheatNear(vec3 rd, float fx) {
   vec3 lit = uSunCol * 0.5 + uAmb * 0.55;
   vec3 acc = vec3(0.0);
@@ -236,7 +236,8 @@ vec4 wheatNear(vec3 rd, float fx) {
     float h = 1.1 - float(i) * 0.03;
     float t = (CAMH - h) / -rd.y;
     vec2 xz = rd.xz * t;
-    if (abs(xz.x - ROAD_X) < WHEAT_GAP) return vec4(0.0, 0.0, 0.0, 1.0);
+    // Over the road and its verges this shell holds no wheat.
+    if (abs(xz.x - ROAD_X) < WHEAT_GAP) continue;
     float g = gust(xz);
     // Undo the lean, to find the stalk that holds this point.
     vec2 b = xz - bend(xz, h, g);
@@ -257,18 +258,20 @@ vec4 wheatNear(vec3 rd, float fx) {
     float awn = e > -0.35 && e < 0.6 ? smoothstep(0.31 + aa, 0.2, d) * 0.35 : 0.0;
     k = max(k, awn);
     if (k > 0.0) {
-      // Lower in the stand the light fails; a gust tips the pale stalks into view.
+      // Lower in the stand the light fails a little; the low sun behind lights the field's face.
       float depth = clamp((h - 0.6) / 0.5, 0.0, 1.0);
       vec3 ear = mix(vec3(0.3, 0.2, 0.08), vec3(0.5, 0.36, 0.15), th(cell + 1.3));
       ear = mix(ear, vec3(0.52, 0.45, 0.28), g * 0.45);
-      acc += T * k * ear * lit * mix(0.55, 1.0, depth);
+      acc += T * k * ear * lit * mix(0.78, 1.0, depth);
       T *= 1.0 - k;
       if (T < 0.03) break;
     }
   }
   // Under the ears: stalks in their own shade.
-  acc += T * vec3(0.2, 0.13, 0.05) * lit * 0.55;
-  return vec4(acc, 0.0);
+  // Under the ears: shaded stalks, unless the ray ends on a verge or the road.
+  float gx = rd.x * CAMH / -rd.y;
+  if (abs(gx - ROAD_X) >= WHEAT_GAP) { acc += T * vec3(0.3, 0.21, 0.09) * lit * 0.8; T = 0.0; }
+  return vec4(acc, T);
 }
 vec3 ground(vec3 rd, float px) {
   float t = CAMH / -rd.y;
@@ -277,20 +280,22 @@ vec3 ground(vec3 rd, float px) {
   float fx = t * px / uFoc;
   float ax = abs(P.x - ROAD_X);
   vec3 col = wheatFar(P.xz, fx);
-  // Near the eye the wheat stands up in shells, faded out before it shimmers.
-  float nearK = 1.0 - smoothstep(0.01, 0.03, fx);
-  if (nearK > 0.0) {
-    vec4 w = wheatNear(rd, fx);
-    if (w.a < 0.5) col = mix(col, w.rgb, nearK);
-  }
   // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
   vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
-  col = mix(col, vec3(0.16, 0.17, 0.06) * lit, band(ax - 5.5, 0.7, fx));
-  col = mix(col, vec3(0.2, 0.18, 0.15) * lit, band(ax - 4.3, 0.5, fx));
+  float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
+  col = mix(col, vec3(0.13, 0.15, 0.05) * (0.6 + 0.8 * tuft) * lit, band(ax - 5.5, 0.7, fx));
+  float grit = mix(0.75, 1.2, vn(P.xz * 40.0) * clamp(1.0 - fx * 40.0, 0.0, 1.0) + 0.5 * clamp(fx * 40.0, 0.0, 1.0));
+  col = mix(col, vec3(0.2, 0.18, 0.15) * grit * lit, band(ax - 4.25, 0.57, fx));
   col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
   col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
   float dx = P.x - ROAD_X;
   col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
+  // Near the eye the wheat stands up in shells over the ground, faded out before it shimmers.
+  float nearK = 1.0 - smoothstep(0.01, 0.03, fx);
+  if (nearK > 0.0) {
+    vec4 w = wheatNear(rd, fx);
+    col = mix(col, w.rgb + w.a * col, nearK);
+  }
   // The storm shades the plain under its base.
   vec3 C = toCam(P) * 0.001;
   float under = 1.0 - smoothstep(0.6, 1.0, length((C.xz - SHELF) / SHELF_R));
