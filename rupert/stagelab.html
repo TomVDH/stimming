@@ -299,29 +299,39 @@ float sdRC(vec3 p, vec4 a, vec4 b) {
   if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - a.w;
   return (sqrt(x2 * a2 * il2) + y * rr) * il2 - a.w;
 }
+// A smooth minimum: the blend is k wide.
+float smin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+// The neck's cones join with a blend; this takes away its creases.
+// The tail's joints stay plain: a blend there swells each joint.
+float chain(vec3 p, int n, bool isA) {
+  float d = 1e4;
+  for (int i = 0; i < 17; i++) {
+    if (i + 1 >= n) break;
+    vec4 a = isA ? uA[i] : uB[i], b = isA ? uA[i + 1] : uB[i + 1];
+    float c = sdRC(p, a, b);
+    d = (isA && i < 3) ? smin(d, c, 0.45 * min(a.w, b.w)) : min(d, c);
+  }
+  return d;
+}
 float mapA(vec3 p) {
   if (uNA < 2) return 1e4;
   float bd = length(p - uBndA.xyz) - uBndA.w;
   if (bd > 0.4) return bd;
-  float d = 1e4;
-  for (int i = 0; i < 17; i++) {
-    if (i + 1 >= uNA) break;
-    d = min(d, sdRC(p, uA[i], uA[i + 1]));
-  }
-  return d;
+  float d = chain(p, uNA, true);
+  // A real head is never a true sphere: soft lumps near its centre.
+  vec3 h = p - uA[0].xyz;
+  float lump = sin(p.x * 2.3 + 0.7) * sin(p.y * 2.9 + 1.1) * sin(p.z * 2.1 + 0.3);
+  return d - 0.022 * lump * exp(-dot(h, h) * 0.7);
 }
 vec3 toB(vec3 p) { return (uBInv * vec4(p, 1.0)).xyz; }
 float mapB(vec3 p) {
   if (uNB < 2) return 1e4;
   float bd = length(p - uBndB.xyz) - uBndB.w;
   if (bd > 0.4) return bd;
-  vec3 q = toB(p);
-  float d = 1e4;
-  for (int i = 0; i < 17; i++) {
-    if (i + 1 >= uNB) break;
-    d = min(d, sdRC(q, uB[i], uB[i + 1]));
-  }
-  return d;
+  return chain(toB(p), uNB, false);
 }
 float mapGlass(vec3 p) { return min(mapA(p), mapB(p)); }
 
@@ -603,6 +613,11 @@ float inside(vec3 q, vec3 d, int steps) {
 }
 
 /* glass */
+// The bubbles in the rest pose: centre and radius.
+const vec4 BUB[7] = vec4[7](
+  vec4(-2.3, 1.2, 0.25, 0.045), vec4(-1.7, 0.8, -0.3, 0.03), vec4(-2.5, 0.75, -0.1, 0.022),
+  vec4(-1.2, 0.75, 0.15, 0.024), vec4(-0.5, 0.62, -0.05, 0.018), vec4(-2.0, 1.35, -0.35, 0.028),
+  vec4(0.3, 0.44, 0.05, 0.012));
 vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   bool isA = body < 1.25;
   vec3 n = nGlass(p);
@@ -660,6 +675,24 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     trans = sum / wsum;
   }
   trans *= exp(-Lt * vec3(0.06, 0.015, 0.04));
+  // Trapped bubbles: each shows as a small silver ring.
+  // The ring is total reflection at the bubble's rim.
+  if (isA && !cheap) {
+    for (int k = 0; k < 7; k++) {
+      vec4 b = BUB[k];
+      b.xyz += uA[0].xyz - vec3(-2.1, 1.0, 0.0);
+      float tb = clamp(dot(b.xyz - q, t1), 0.0, L);
+      vec3 dv = q + t1 * tb - b.xyz;
+      // Bubbles stretch along the drop, as the glass flowed.
+      const vec3 AX = vec3(0.966, -0.259, 0.0);
+      float db = length(dv - AX * dot(dv, AX) * 0.45);
+      float inner = smoothstep(b.w, b.w * 0.85, db);
+      float rim = smoothstep(b.w * 0.6, b.w * 0.95, db) * inner;
+      // The upper rim catches the top box; the lower one stays dim.
+      float lit = 0.35 + 0.65 * smoothstep(-1.0, 1.0, dv.y / b.w);
+      trans = trans * (1.0 - 0.18 * inner) + uKeyC * rim * rim * 0.45 * lit;
+    }
+  }
   vec3 col = refl * F + trans * (1.0 - F);
 
   // Stress, cracks and heat, from the middle of the path across.
@@ -1108,15 +1141,17 @@ const frameMat = (x, y, z, t) => new Float32Array([...x, 0, ...y, 0, ...z, 0, ..
 /* ---------- the drop ---------- */
 // The drop's control points, from the head to the tail tip.
 // Each holds a centre and a radius, in head radii.
+// The tail kinks once and ends in a thread.
 const CTRL = [
   [-2.1, 1.0, 0.0, 1.0],
-  [-0.84, 0.64, 0.02, 0.4],
-  [0.28, 0.42, 0.06, 0.19],
-  [1.32, 0.34, 0.08, 0.105],
-  [2.28, 0.4, 0.05, 0.066],
-  [2.98, 0.62, -0.02, 0.046],
-  [3.42, 0.98, -0.1, 0.034],
-  [3.56, 1.38, -0.17, 0.026],
+  [-0.9, 0.66, 0.03, 0.42],
+  [0.25, 0.43, 0.07, 0.2],
+  [1.3, 0.34, 0.08, 0.11],
+  [2.25, 0.38, 0.04, 0.068],
+  [2.9, 0.56, -0.03, 0.046],
+  [3.25, 0.86, -0.06, 0.032],
+  [3.5, 1.12, -0.16, 0.022],
+  [3.62, 1.42, -0.2, 0.012],
 ];
 // A smooth curve through them; the radius tapers on a log scale.
 // Each pair of points makes one round cone.
