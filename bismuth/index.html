@@ -57,7 +57,7 @@
 <script type="module">
 import { initPage, audioKit, whenVisible, fitCanvas, onQuality, quality, reduced } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { TRI_VS, program, linked, target, msTarget, free, bind, tri } from '../shared/gl.js';
+import { TRI_VS, program, linked, target, msTarget, free, bind, tri, onContextLoss } from '../shared/gl.js';
 
 const stage = document.getElementById('stage');
 const TAU = Math.PI * 2;
@@ -1055,7 +1055,8 @@ const asleep = (now = performance.now()) => now - lastInput > (reduced() ? 5000 
 function frame(now) {
   raf = 0;
   try {
-    if (now - lastDraw >= 31) {
+    // A lost context leaves no programs; the frame draws nothing.
+    if (P && now - lastDraw >= 31) {
       const dt = Math.min(0.05, (now - lastDraw) / 1000);
       lastDraw = now;
       time += dt;
@@ -1065,7 +1066,7 @@ function frame(now) {
       soundFrame();
     }
   } finally {
-    if (visible && !asleep(now)) raf = requestAnimationFrame(frame);
+    if (P && visible && !asleep(now)) raf = requestAnimationFrame(frame);
     else hush();
   }
 }
@@ -1304,6 +1305,31 @@ try {
 }
 markReady();
 wake();
+
+// A lost context stops the loop; a restored one rebuilds every GL object.
+// The crystals keep their state, so the scene goes on where it stopped.
+onContextLoss(canvas, {
+  lost() {
+    P = null;
+    cancelAnimationFrame(raf);
+    raf = 0;
+    hush();
+  },
+  async restored() {
+    // The old targets died with the old context, so free must skip them.
+    scene = msaa = refl = b1 = b1t = b2 = b2t = sp = spS = null;
+    await initGL();
+    instDirty = true;
+    layout();
+    render();
+    wake();
+  },
+  failed(err) {
+    console.error(err);
+    stage.querySelector('.fail').hidden = false;
+    ui.hideControls?.();
+  },
+});
 
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);

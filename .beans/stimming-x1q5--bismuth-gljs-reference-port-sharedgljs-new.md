@@ -22,6 +22,8 @@ Scope: the module and its proof only. Bismuth is a Lab toy: no version, no toy d
 - [x] Update modularize.md, ports.md, AGENTS.md
 - [x] Commit and push
 
+- [x] Wire onContextLoss into Bismuth (Tom, 2026-11-16)
+
 ## Summary of Changes
 
 - `shared/gl.js` (new): `program`, `linked` (the parallel-compile poll, the error log, the uniform map), `uniforms`, `TRI_VS`, `tri`, `to`, `target(gl, w, h, { format, filter, depth, mips, clear, check })`, `renderable`, `msTarget`, `free` (targets, pairs, multisampled), `bind` (a target or a bare texture), `nextFrame`, `onContextLoss`. JSDoc types; `npm run check` passes.
@@ -34,3 +36,9 @@ Scope: the module and its proof only. Bismuth is a Lab toy: no version, no toy d
 - A browser unit check of `gl.js` (GPU and SwiftShader) covers what Bismuth does not use: `onContextLoss` with lose, restore and rebuild, a throwing rebuild reaching `failed`, a failed link with its log, `check`, `renderable`, mips, pairs, `limit`. Finding: extensions die with the context too, so `restored` must get them again (in the JSDoc).
 - Found on the way: `stimming-f32n`, a held press queues one extra frame callback per frame.
 - Harness: `bismuth-qa.mjs` and `gl-unit.mjs` in the session notes folder.
+
+### Follow-up, 2026-11-16: Bismuth recovers from a lost context
+
+- Tom asked for it. `bismuth/index.html` calls `onContextLoss`: `lost` drops the programs and stops the loop; `restored` drops the dead targets, runs `initGL` again (extensions, programs, buffers, spectrum uniforms), then `layout`, `render` and `wake`. The crystals keep their state.
+- `frame()` skips the draw and the reschedule while no programs exist, so stray queued frames (`stimming-f32n`) do nothing during a loss.
+- Proof: every other frame is still bit-equal to the port (34 of 35, real GPU). The lost event is now default-prevented; restore succeeds and the scene draws again. Two losses in a row recover too, at 375x812, on the real GPU and SwiftShader, and a hold afterwards works. Clean console.
