@@ -1,0 +1,1811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.006 60); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Honey coil</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Honey coil: one thread of honey, poured onto a dark slate. */
+:root { --stage: oklch(0.07 0.006 60); }
+.stage--honey canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--honey canvas.on { opacity: 1; }
+.stage--honey { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--honey canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Honey coil</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--honey" id="stage" tabindex="0" role="application" aria-label="A thread of honey falls onto a dark slate and coils. Press and hold to pour. Drag to move the pour. Space pours, the arrow keys steer.">
+      <p class="fail" hidden>Honey coil needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Honey coil</h1>
+    <div class="vignette">
+      <div>
+        <h2>Why a falling thread coils</h2>
+        <p>Honey speeds up as it falls, so the thread gets thinner on the way down. At the plate it has to stop, and a liquid this thick cannot splash. The thread buckles instead, like a rope fed onto the floor, and the fold swings round and round. Each ring lands on the last one, and the stack grows. From low down the thread is fat and slow and the coils are wide. From higher up the thread is thinner and faster, and the coils are small and quick.</p>
+        <p>Move the pour and the coil turns into stitches. Slowly, the rings smear into a row of loops. A little faster, they come out as figures of eight, then as waves. Faster than the thread falls, it pulls straight. Physicists call this the fluid-mechanical sewing machine. Honey holds each shape for a moment, because it flows thousands of times more slowly than water. Then the stack sinks and spreads into the pool.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 300 150" role="img" aria-label="Left: a thread falls onto a plate and stacks into a coil of rings. Right: four traces of the pour seen from above, from a still pour to a fast one: a ring, a row of loops, a wave and a straight line.">
+          <path d="M60 8C60 40 60 70 60 92" fill="none" stroke="oklch(0.78 0.15 70)" stroke-width="3" stroke-linecap="round"/>
+          <g fill="oklch(0.66 0.16 58)" stroke="oklch(0.86 0.12 80)" stroke-width="1.2">
+            <rect x="38" y="122" width="44" height="9" rx="4.5"/>
+            <rect x="39" y="113" width="42" height="9" rx="4.5"/>
+            <rect x="40" y="104" width="40" height="9" rx="4.5"/>
+            <rect x="42" y="95" width="36" height="9" rx="4.5"/>
+          </g>
+          <path d="M60 92C60 98 70 99 76 99" fill="none" stroke="oklch(0.78 0.15 70)" stroke-width="3" stroke-linecap="round"/>
+          <path d="M14 136H106" stroke="oklch(0.5 0.01 250)" stroke-width="2" stroke-linecap="round"/>
+          <g fill="none" stroke="oklch(0.84 0.13 78)" stroke-width="2" stroke-linecap="round">
+            <circle cx="150" cy="20" r="10"/>
+            <path d="M136 56c8 0 10-12 4-12s-4 12 4 12 10-12 4-12-4 12 4 12 10-12 4-12-4 12 4 12 10-12 4-12-4 12 4 12h20"/>
+            <path d="M136 92c12 0 12-12 24-12s12 12 24 12 12-12 24-12 12 12 24 12 12-12 24-12"/>
+            <path d="M136 124H284"/>
+          </g>
+          <g fill="oklch(0.62 0.02 250)" font-family="Gabarito, sans-serif" font-size="10">
+            <text x="184" y="24">still</text>
+            <text x="250" y="60">slow</text>
+            <text x="252" y="104">fast</text>
+            <text x="246" y="140">faster</text>
+          </g>
+        </svg>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, onQuality, reduced, onReducedChange, audioKit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { TRI_VS, program, linked, target, free, bind, tri, onContextLoss } from '../shared/gl.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- fluids ---------- */
+// Coil radius and lay speed run from a low pour to a high one.
+// Q is the flux; hold and melt are seconds; fold is the stack height in rope widths.
+const FLUIDS = {
+  syrup: { tone: 0, R: [0.06, 0.027], U: [0.3, 0.8], Q: 1.7e-4, hold: 0.9, melt: 2.4, fold: 5 },
+  honey: { tone: 0.5, R: [0.075, 0.032], U: [0.24, 0.62], Q: 1.8e-4, hold: 1.6, melt: 4.5, fold: 7 },
+  treacle: { tone: 1, R: [0.09, 0.04], U: [0.17, 0.45], Q: 2.2e-4, hold: 4.5, melt: 7.5, fold: 9 },
+};
+const BY_TONE = [FLUIDS.syrup, FLUIDS.honey, FLUIDS.treacle];
+// Absorption per world unit, in linear red, green and blue, by tone.
+const SIGMA = [[3.0, 11, 38], [6.0, 24, 70], [34, 70, 130]];
+// Spread rate by tone: runny syrup spreads fast, treacle hardly at all.
+const SPREAD = [70, 26, 7];
+// A fluid property at a tone between syrup (0), honey (0.5) and treacle (1).
+const byTone = (t, f) => (t < 0.5 ? lerp(f(BY_TONE[0]), f(BY_TONE[1]), t * 2) : lerp(f(BY_TONE[1]), f(BY_TONE[2]), t * 2 - 1));
+
+/* ---------- bar ---------- */
+let fluid = 'honey', height = 0.4;
+// The handlers bind once the scene exists.
+const act = { pick() {}, clear() {}, down() {}, up() {} };
+const dev = { exposure: 1, bloom: 0.1, pitch: 0, yaw: 0, dist: 1, fov: 30, tempo: 1, melt: 1 };
+const devRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: v => { dev[id] = v; act.view?.(); } });
+const ui = initPage({ id: 'honey', bar: {
+  choice: { label: 'Fluid', value: 'honey', options: [
+    { value: 'honey', label: 'Honey', key: '1', dot: 'oklch(0.72 0.15 65)' },
+    { value: 'syrup', label: 'Syrup', key: '2', dot: 'oklch(0.86 0.12 90)' },
+    { value: 'treacle', label: 'Treacle', key: '3', dot: 'oklch(0.32 0.06 40)' },
+  ], onPick: v => { fluid = v; act.pick(); } },
+  actions: [
+    { verb: 'pour', hold: true, key: 'Space', onDown: () => act.down(), onUp: () => act.up() },
+    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+  ],
+  slider: { label: 'Height', min: 0, max: 1, step: 0.01, value: 0.4, onInput: v => { height = v; } },
+  quality: true,
+  dev: [
+    devRow('exposure', 'Exposure', 0.4, 2.5, 0.01, 1),
+    devRow('bloom', 'Bloom', 0, 0.5, 0.01, 0.1),
+    devRow('pitch', 'Pitch', -15, 25, 0.5, 0),
+    devRow('yaw', 'Yaw', -60, 60, 1, 0),
+    devRow('dist', 'Distance', 0.6, 1.8, 0.01, 1),
+    devRow('fov', 'Field of view', 18, 50, 0.5, 30),
+    devRow('tempo', 'Tempo', 0.4, 1.6, 0.01, 1),
+    devRow('melt', 'Melt time', 0.4, 2.5, 0.01, 1),
+  ],
+  keys: [['hold', 'pour'], ['drag', 'steer'], ['space', 'pour'], ['arrows', 'steer']],
+} });
+for (const k of Object.keys(dev)) dev[k] = ui.setting(k)?.value ?? dev[k];
+
+/* ---------- pool: a height field on the CPU ---------- */
+// The pool spreads as a thin viscous film: flux grows with the cube of the depth.
+const G = 160, EXT = 1.25, DX = (2 * EXT) / G;
+const pool = new Float32Array(G * G), mass = new Float32Array(G * G);
+const dh = new Float32Array(G * G), dm = new Float32Array(G * G);
+// A dry cell takes honey only from a neighbour this deep: the edge pins.
+const H_DRY = 0.0012, H_ADV = 0.009, CAP = 0.05;
+// The wet box: the sim skips the dry plate outside it.
+let bx0 = G, by0 = G, bx1 = -1, by1 = -1;
+let poolMoved = 0, poolStill = 0, poolDirty = true, poolFed = 0;
+const KLUT = new Float32Array(65);
+for (let i = 0; i <= 64; i++) {
+  const t = i / 64, l = t < 0.5 ? lerp(Math.log(SPREAD[0]), Math.log(SPREAD[1]), t * 2) : lerp(Math.log(SPREAD[1]), Math.log(SPREAD[2]), t * 2 - 1);
+  KLUT[i] = Math.exp(l);
+}
+function widen(i, j) {
+  if (i < bx0) bx0 = i; if (i > bx1) bx1 = i;
+  if (j < by0) by0 = j; if (j > by1) by1 = j;
+}
+// Spreads a volume over the four nearest cells.
+function deposit(x, y, vol, tone) {
+  const gx = (x + EXT) / DX - 0.5, gy = (y + EXT) / DX - 0.5;
+  const i = Math.floor(gx), j = Math.floor(gy);
+  if (i < 1 || j < 1 || i > G - 3 || j > G - 3) return;
+  const fx = gx - i, fy = gy - j, per = vol / (DX * DX);
+  const w = [(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy];
+  const c = [j * G + i, j * G + i + 1, (j + 1) * G + i, (j + 1) * G + i + 1];
+  for (let k = 0; k < 4; k++) { pool[c[k]] += per * w[k]; mass[c[k]] += per * w[k] * tone; }
+  widen(i, j); widen(i + 1, j + 1);
+  poolStill = 0;
+  poolFed = 0;
+  poolDirty = true;
+}
+function poolAt(x, y) {
+  const gx = clamp((x + EXT) / DX - 0.5, 0, G - 1.001), gy = clamp((y + EXT) / DX - 0.5, 0, G - 1.001);
+  const i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j, c = j * G + i;
+  return lerp(lerp(pool[c], pool[c + 1], fx), lerp(pool[c + G], pool[c + G + 1], fx), fy);
+}
+// The film's mean velocity at a point: downhill, with the square of the depth.
+function poolFlow(x, y) {
+  const e = DX, h = poolAt(x, y), k = 0.5 * KLUT[32];
+  return [-k * h * h * (poolAt(x + e, y) - poolAt(x - e, y)) / (2 * e), -k * h * h * (poolAt(x, y + e) - poolAt(x, y - e)) / (2 * e)];
+}
+// One face: the deeper side sends honey to the shallower side.
+function face(a, b, c) {
+  const ha = pool[a], hb = pool[b], d = ha - hb;
+  if (d > -1e-7 && d < 1e-7) return;
+  const up = d > 0 ? a : b, dn = d > 0 ? b : a, hu = d > 0 ? ha : hb, hd = d > 0 ? hb : ha;
+  if (hd < H_DRY && hu < H_ADV) return;
+  const tone = mass[up] / hu;
+  const hm = hu < CAP ? hu : CAP;
+  let f = KLUT[(tone * 64 + 0.5) | 0] * hm * hm * hm * Math.abs(d) * c;
+  const lim = 0.2 * Math.abs(d);
+  if (f > lim) f = lim;
+  dh[up] -= f; dh[dn] += f;
+  dm[up] -= f * tone; dm[dn] += f * tone;
+}
+function poolSubstep(dt) {
+  if (bx1 < bx0) return 0;
+  const i0 = Math.max(1, bx0 - 1), i1 = Math.min(G - 2, bx1 + 1), j0 = Math.max(1, by0 - 1), j1 = Math.min(G - 2, by1 + 1);
+  const c = dt / (DX * DX);
+  for (let j = j0 - 1; j <= j1 + 1; j++) { dh.fill(0, j * G + i0 - 1, j * G + i1 + 2); dm.fill(0, j * G + i0 - 1, j * G + i1 + 2); }
+  for (let j = j0; j <= j1; j++) {
+    const row = j * G;
+    for (let i = i0 - 1; i <= i1; i++) face(row + i, row + i + 1, c);
+  }
+  for (let j = j0 - 1; j <= j1; j++) {
+    const row = j * G;
+    for (let i = i0; i <= i1; i++) face(row + i, row + G + i, c);
+  }
+  let moved = 0, nx0 = G, ny0 = G, nx1 = -1, ny1 = -1;
+  for (let j = j0 - 1; j <= j1 + 1; j++) {
+    for (let i = i0 - 1; i <= i1 + 1; i++) {
+      const k = j * G + i;
+      const d = dh[k];
+      if (d !== 0) {
+        pool[k] += d; mass[k] += dm[k];
+        if (pool[k] < 1e-6) { pool[k] = 0; mass[k] = 0; }
+        if (d > moved) moved = d; else if (-d > moved) moved = -d;
+      }
+      if (pool[k] > 0) {
+        if (i < nx0) nx0 = i; if (i > nx1) nx1 = i;
+        if (j < ny0) ny0 = j; if (j > ny1) ny1 = j;
+      }
+    }
+  }
+  // The rim drains: honey that reaches the edge of the field is gone.
+  for (let k = 0; k < G; k++) { pool[k] = pool[(G - 1) * G + k] = pool[k * G] = pool[k * G + G - 1] = 0; }
+  bx0 = nx0; by0 = ny0; bx1 = nx1; by1 = ny1;
+  return moved;
+}
+// The film settles when no cell moves by a visible amount for a while.
+// Its last slow creep stops 18 s after the last honey lands.
+function poolStep(dt) {
+  if (bx1 < bx0 || poolStill > 1.2) return;
+  const n = 2, moved = poolSubstep(dt / n) + poolSubstep(dt / n);
+  poolMoved = moved / Math.max(dt, 1e-3);
+  poolFed += dt;
+  poolStill = poolMoved < 2.5e-3 || poolFed > 18 ? poolStill + dt : 0;
+  poolDirty = true;
+}
+function clearPool() {
+  pool.fill(0); mass.fill(0);
+  bx0 = by0 = G; bx1 = by1 = -1;
+  poolDirty = true;
+}
+
+/* ---------- rope: the coil the thread lays down ---------- */
+// A ring buffer of points in lay order; each holds a short length of rope.
+const MAXP = 6000;
+const px = new Float32Array(MAXP), py = new Float32Array(MAXP), pz = new Float32Array(MAXP);
+const pr0 = new Float32Array(MAXP), pr = new Float32Array(MAXP), pt = new Float32Array(MAXP);
+const pborn = new Float64Array(MAXP), pgap = new Float32Array(MAXP), plen = new Float32Array(MAXP);
+const pm = new Float32Array(MAXP), phold = new Float32Array(MAXP), pmelt = new Float32Array(MAXP);
+const pprev = new Int32Array(MAXP);
+let tail = 0, head = 0;
+const at = k => k % MAXP;
+const alive = k => k >= tail && k < head && pr[at(k)] > 0;
+
+// A bucket grid finds the rope under a point.
+const HC = 0.035, NH = Math.ceil((2 * EXT) / HC);
+const hHead = new Int32Array(NH * NH), hNext = new Int32Array(MAXP);
+const bucket = (x, y) => clamp(Math.floor((y + EXT) / HC), 0, NH - 1) * NH + clamp(Math.floor((x + EXT) / HC), 0, NH - 1);
+function hashAdd(k) {
+  const i = at(k), b = bucket(px[i], py[i]);
+  hNext[i] = hHead[b];
+  hHead[b] = i;
+}
+// The top of the older rope under a ball of radius r at (x, y).
+function support(x, y, r, before) {
+  const cx = clamp(Math.floor((x + EXT) / HC), 1, NH - 2), cy = clamp(Math.floor((y + EXT) / HC), 1, NH - 2);
+  let top = -1;
+  for (let j = cy - 1; j <= cy + 1; j++) {
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let q = hHead[j * NH + i]; q >= 0; q = hNext[q]) {
+        if (pborn[q] >= before) continue;
+        const dx = x - px[q], dy = y - py[q], s = r + pr[q], d2 = dx * dx + dy * dy;
+        if (d2 >= s * s) continue;
+        const z = pz[q] + Math.sqrt(s * s - d2);
+        if (z > top) top = z;
+      }
+    }
+  }
+  return top;
+}
+function dropTail() {
+  const i = at(tail);
+  if (pr[i] > 0) deposit(px[i], py[i], (1 - pm[i]) * Math.PI * pr0[i] * pr0[i] * plen[i], pt[i]);
+  pr[i] = 0;
+  tail++;
+}
+// Lays one point of rope; it rests on the pool or on older rope.
+function lay(th, x, y, r, seg) {
+  if (head - tail >= MAXP) dropTail();
+  const k = head++, i = at(k);
+  const gap = 0.55 * (TAU * th.R) / th.U;
+  const sup = support(x, y, r, sim.t - gap);
+  px[i] = x; py[i] = y; pz[i] = Math.max(poolAt(x, y) + r * 0.8, sup);
+  pr0[i] = pr[i] = r; pt[i] = th.toneLow; pborn[i] = sim.t; pgap[i] = gap; plen[i] = seg; pm[i] = 0;
+  phold[i] = byTone(th.toneLow, f => f.hold); pmelt[i] = byTone(th.toneLow, f => f.melt);
+  // A jump in the contact point starts a new strand.
+  const q = th.last >= tail ? at(th.last) : -1;
+  pprev[i] = q >= 0 && Math.hypot(px[q] - x, py[q] - y) < seg * 3 ? th.last : -1;
+  th.last = k;
+  return i;
+}
+// Melting moves each point's volume into the pool, after it holds its shape.
+function melt(dt) {
+  const scale = dev.melt;
+  for (let k = tail; k < head; k++) {
+    const i = at(k);
+    if (pr[i] <= 0) continue;
+    const age = sim.t - pborn[i], u = clamp((age - phold[i] * scale) / (pmelt[i] * scale));
+    const m = u * u * (3 - 2 * u);
+    if (m > pm[i]) {
+      deposit(px[i], py[i], (m - pm[i]) * Math.PI * pr0[i] * pr0[i] * plen[i], pt[i]);
+      pm[i] = m;
+      pr[i] = m >= 0.995 ? 0 : pr0[i] * Math.sqrt(1 - m);
+    }
+  }
+  while (tail < head && pr[at(tail)] <= 0) tail++;
+}
+// Each frame the rope settles on what holds it up: the pool and older rope.
+const SLUMP = 0.35;
+function settle(dt) {
+  hHead.fill(-1);
+  let pend = tail;
+  const k0 = Math.exp(-dt / SLUMP);
+  for (let k = tail; k < head; k++) {
+    const i = at(k);
+    if (pr[i] <= 0) continue;
+    const before = pborn[i] - pgap[i];
+    while (pend < k && pborn[at(pend)] < before) { if (pr[at(pend)] > 0) hashAdd(pend); pend++; }
+    // With age the rope sinks into the pool below it.
+    const sink = 0.55 - 0.75 * clamp((sim.t - pborn[i]) / ((phold[i] + 0.6 * pmelt[i]) * dev.melt));
+    const zt = Math.max(poolAt(px[i], py[i]) + pr[i] * sink, support(px[i], py[i], pr[i], before));
+    if (pz[i] > zt) pz[i] = zt + (pz[i] - zt) * k0;
+  }
+  while (pend < head) { if (pr[at(pend)] > 0) hashAdd(pend); pend++; }
+}
+// The stack top map tells the light where the coil stands.
+const ropeTop = new Float32Array(G * G), ropeTone = new Float32Array(G * G);
+function stamp() {
+  ropeTop.fill(0);
+  for (let k = tail; k < head; k++) {
+    const i = at(k);
+    if (pr[i] <= 0) continue;
+    const top = pz[i] + pr[i], ci = Math.round((px[i] + EXT) / DX - 0.5), cj = Math.round((py[i] + EXT) / DX - 0.5);
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      for (let q = ci - 1; q <= ci + 1; q++) {
+        if (q < 0 || j < 0 || q >= G || j >= G) continue;
+        const c = j * G + q;
+        if (top > ropeTop[c]) { ropeTop[c] = top; ropeTone[c] = pt[i]; }
+      }
+    }
+  }
+}
+
+/* ---------- topple: a tall stack bends over ---------- */
+// The stack curls over like a soft column, slowly, as heavy things do.
+let topple = null;
+function startTopple(th) {
+  const a = Math.random() * TAU, d = [Math.cos(a), Math.sin(a)];
+  const c = [th.Nc[0], th.Nc[1]], base = poolAt(c[0], c[1]);
+  const Hs = Math.max(th.zc - base, 0.04), ids = [], o = [];
+  // The lower third stays; above it the stack leans as one soft column.
+  const foot = base + Hs * 0.33;
+  for (let k = tail; k < head; k++) {
+    const i = at(k);
+    if (pr[i] <= 0 || pz[i] < foot) continue;
+    if (Math.hypot(px[i] - c[0], py[i] - c[1]) > th.R * 2.2) continue;
+    ids.push(i);
+    o.push(px[i], py[i], pz[i]);
+  }
+  if (!ids.length) return;
+  topple = { th, ids, o, d, c, base: foot, Hs: Hs * 0.67, t: 0, T: 2.6, ang: (24 + 16 * Math.random()) * Math.PI / 180, top: [0, 0] };
+}
+// A point at height h on a column bent by curvature k, in its bend plane.
+function bendAt(h, k) {
+  return k < 1e-5 ? [0, h, 0] : [(1 - Math.cos(k * h)) / k, Math.sin(k * h) / k, k * h];
+}
+function toppleStep(dt) {
+  if (!topple) return;
+  const tp = topple;
+  tp.t += dt;
+  const u = clamp(tp.t / tp.T), e = u * u * (3 - 2 * u), k = (tp.ang * e) / tp.Hs;
+  const [dx, dy] = tp.d;
+  tp.ids.forEach((i, n) => {
+    if (pr[i] <= 0) return;
+    const ox = tp.o[n * 3] - tp.c[0], oy = tp.o[n * 3 + 1] - tp.c[1], h = Math.max(tp.o[n * 3 + 2] - tp.base, 0);
+    // Across the bend the offset stays; along it, it turns with the column.
+    const od = ox * dx + oy * dy, op = -ox * dy + oy * dx;
+    const [s, z, a] = bendAt(h, k), ca = Math.cos(a), sa = Math.sin(a);
+    const along = s + od * ca;
+    px[i] = tp.c[0] + dx * along - dy * op;
+    py[i] = tp.c[1] + dy * along + dx * op;
+    pz[i] = Math.max(tp.base + z - od * sa, poolAt(px[i], py[i]) + pr[i] * 0.5);
+  });
+  // The coil rides the top of the lean and spills a little past it.
+  const [ts] = bendAt(tp.Hs, k), sp = ts + e * tp.th.R * 0.5;
+  tp.top = [dx * sp, dy * sp];
+  if (u >= 1) topple = null;
+}
+
+/* ---------- the thread ---------- */
+const sim = { t: 0 };
+// The pour follows the hand; the honey lags behind it by itself.
+const pour = { on: false, target: [0, 0.06], N: [0, 0.06], auto: 0 };
+const threads = [];
+// Coil radius, lay speed and rope radius for a fluid and a pour height.
+function physics(tone, h) {
+  const f = s => byTone(tone, s), k = Math.pow(h, 0.8);
+  const R = lerp(f(x => x.R[0]), f(x => x.R[1]), k), U = lerp(f(x => x.U[0]), f(x => x.U[1]), h);
+  return { R, U, Q: f(x => x.Q) };
+}
+function newThread() {
+  const tone = FLUIDS[fluid].tone, ph = physics(tone, height);
+  return {
+    state: 'fall', src: true, N: [...pour.N], Np: [...pour.N], Nc: [...pour.N],
+    zTip: topAt(pour.N), vTip: 0.5, zEnd: 0, vEnd: 0,
+    tone, toneLow: tone, front: -1,
+    R: ph.R, U: ph.U, Q: ph.Q, r: Math.sqrt(ph.Q / (Math.PI * ph.U)),
+    phi: Math.random() * TAU, hand: Math.random() < 0.5 ? 1 : -1,
+    C: [...pour.N], dir: [1, 0], W: [0, 0], e: [1, 0], v: 0,
+    wander: [0, 0], wph: [0, 1, 2, 3].map(() => Math.random() * TAU), fold: [0, 0], foldH: 0, cool: 0,
+    landT: 0, run: 0, last: -1, zc: 0, Ue: ph.U, pts: [], patter: 0, patAt: 0,
+  };
+}
+// The height where the line above a plate point leaves the top of the frame.
+function topAt(p) {
+  let lo = 0.05, hi = 8;
+  for (let i = 0; i < 18; i++) {
+    const m = 0.5 * (lo + hi), c = clipOf([p[0], p[1], m]);
+    // A point behind the eye is above the frame too.
+    if (c[3] <= 0 || c[1] / c[3] > 1.04) hi = m; else lo = m;
+  }
+  return hi + 0.05;
+}
+// The pattern the contact point traces, by drag speed: ring, eight, wave, line.
+function generate(th, dt) {
+  const U = th.U, R = th.R;
+  const wx = (th.N[0] - th.Np[0]) / dt, wy = (th.N[1] - th.Np[1]) / dt;
+  th.Np[0] = th.N[0]; th.Np[1] = th.N[1];
+  const kw = 1 - Math.exp(-dt / 0.15);
+  th.W[0] += (wx - th.W[0]) * kw; th.W[1] += (wy - th.W[1]) * kw;
+  const w = Math.hypot(th.W[0], th.W[1]);
+  if (w > 0.04 * U) {
+    const ke = 1 - Math.exp(-dt / 0.2), ex = lerp(th.e[0], th.W[0] / w, ke), ey = lerp(th.e[1], th.W[1] / w, ke), l = Math.hypot(ex, ey) || 1;
+    th.e[0] = ex / l; th.e[1] = ey / l;
+  }
+  th.v += (w / U - th.v) * (1 - Math.exp(-dt / 0.3));
+  const v = th.v;
+  // The coil centre wanders a little, on slow sines.
+  const wt = sim.t, wp = th.wph;
+  th.wander[0] = R * 0.16 * (Math.sin(wt * 0.71 + wp[0]) + 0.5 * Math.sin(wt * 1.37 + wp[1]));
+  th.wander[1] = R * 0.16 * (Math.sin(wt * 0.59 + wp[2]) + 0.5 * Math.sin(wt * 1.13 + wp[3]));
+  // A bending stack carries the coil with its top; after, the coil walks back.
+  if (topple && topple.th === th) { th.fold[0] = topple.top[0]; th.fold[1] = topple.top[1]; }
+  else { const kf = Math.exp(-dt / 0.7); th.fold[0] *= kf; th.fold[1] *= kf; }
+  th.Nc[0] = th.N[0] + th.wander[0] + th.fold[0];
+  th.Nc[1] = th.N[1] + th.wander[1] + th.fold[1];
+  // Weights of the four patterns.
+  const cW = 1 - smooth(0.3, 0.55, v);
+  const eW = smooth(0.3, 0.55, v) * (1 - smooth(0.7, 0.9, v));
+  const mW = smooth(0.7, 0.9, v) * (1 - smooth(1.05, 1.5, v));
+  const lag = R * 2.6 * smooth(0.12, 1.5, v);
+  // The coil opens from the landing point.
+  const Rg = R * (0.2 + 0.8 * smooth(0, 0.9, sim.t - th.landT));
+  const s = th.hand, phi = th.phi, c1 = Math.cos(phi), s1 = Math.sin(phi), c2 = Math.cos(2 * phi), s2 = Math.sin(2 * phi);
+  const [ex, ey] = th.e, nx = -ey, ny = ex;
+  const pe = Rg * eW * 0.7 * s2, pn = Rg * s * (eW + mW * 0.9) * s1;
+  const dpe = Rg * eW * 1.4 * c2, dpn = Rg * s * (eW + mW * 0.9) * c1;
+  const ox = Rg * cW * c1 + ex * (pe - lag) + nx * pn, oy = Rg * cW * s * s1 + ey * (pe - lag) + ny * pn;
+  const jx = -Rg * cW * s1 + ex * dpe + nx * dpn, jy = Rg * cW * s * c1 + ey * dpe + ny * dpn;
+  // The phase runs so the contact point crosses the plate at the lay speed.
+  const Ue = Math.max(U, w);
+  th.Ue = Ue;
+  const JJ = jx * jx + jy * jy, WJ = th.W[0] * jx + th.W[1] * jy, WW = w * w;
+  let dphi = JJ > 1e-9 ? (-WJ + Math.sqrt(Math.max(0, WJ * WJ - JJ * (WW - Ue * Ue)))) / JJ : U / R;
+  dphi = Math.min(dphi, (3 * Ue) / Math.max(Rg, 1e-3));
+  // Eights and waves run at an even rate; their mean speed is the lay speed.
+  const lat = Rg * Math.max(eW + mW * 0.9, 0.05);
+  const even = Math.sqrt(2 * Math.max(Ue * Ue - WW, (0.2 * Ue) ** 2)) / lat;
+  th.phi += lerp(even, dphi, cW) * dt;
+  // The contact point never jumps: the rope stays one piece.
+  const tx = th.Nc[0] + ox, ty = th.Nc[1] + oy, mx = tx - th.C[0], my = ty - th.C[1], ml = Math.hypot(mx, my), cap = 2.5 * Ue * dt + 1e-4;
+  const k = ml > cap ? cap / ml : 1;
+  th.C[0] += mx * k; th.C[1] += my * k;
+  if (ml > 1e-6) {
+    const kk = 1 - Math.exp(-dt / 0.05);
+    th.dir[0] = lerp(th.dir[0], mx / ml, kk); th.dir[1] = lerp(th.dir[1], my / ml, kk);
+    const l = Math.hypot(th.dir[0], th.dir[1]) || 1;
+    th.dir[0] /= l; th.dir[1] /= l;
+  }
+  return ml * k;
+}
+function threadStep(th, dt) {
+  const ph = physics(th.tone, height);
+  // Height changes ease in, so the coil changes without a jump.
+  const ke = 1 - Math.exp(-dt / 0.5);
+  th.R += (ph.R - th.R) * ke; th.U += (ph.U - th.U) * ke; th.Q += (ph.Q - th.Q) * ke;
+  if (th.src) { th.N[0] = pour.N[0]; th.N[1] = pour.N[1]; }
+  const top = topAt(th.N);
+  if (!th.src) { th.vEnd += 3.5 * dt; th.zEnd -= th.vEnd * dt; }
+  // A new fluid runs down the thread from the top.
+  if (th.front >= 0) { th.front -= (0.35 + th.U) * dt; }
+  if (th.state === 'fall') {
+    th.vTip += 3.5 * dt;
+    th.zTip -= th.vTip * dt;
+    const r = Math.sqrt(th.Q / (Math.PI * th.U));
+    const ground = Math.max(poolAt(th.N[0], th.N[1]) + r * 0.8, support(th.N[0], th.N[1], r, sim.t - 0.5));
+    if (th.zTip <= ground + r) {
+      th.state = 'pour';
+      th.landT = sim.t;
+      th.C = [th.N[0], th.N[1]];
+      th.Nc = [th.N[0], th.N[1]];
+      th.Np = [th.N[0], th.N[1]];
+      const a = Math.random() * TAU;
+      th.dir = [Math.cos(a), Math.sin(a)];
+      th.foldH = byTone(th.tone, f => f.fold) * (0.85 + 0.35 * Math.random());
+    }
+    return;
+  }
+  const c0 = th.C[0], c1 = th.C[1];
+  const moved = generate(th, dt);
+  // Rope stretched by a fast drag comes out thinner.
+  const r = Math.sqrt(th.Q / (Math.PI * th.Ue));
+  th.r = r;
+  const seg = Math.max(0.005, r * 0.5);
+  // Each point sits at its own place along the step.
+  let d = seg - th.run;
+  while (d <= moved) {
+    const u = moved > 1e-9 ? d / moved : 1;
+    lay(th, lerp(c0, th.C[0], u), lerp(c1, th.C[1], u), r, seg);
+    d += seg;
+  }
+  th.run = moved - (d - seg);
+  // The patter keeps time with the rope that lands, a few pats a turn.
+  th.patter -= moved;
+  if (th.patter <= 0 && sim.t - th.patAt > 0.07) {
+    th.patter = th.R * (0.8 + 0.9 * Math.random());
+    th.patAt = sim.t;
+    pat(th, th.zc - poolAt(th.C[0], th.C[1]) > th.r * 1.5 || poolAt(th.C[0], th.C[1]) > 0.004);
+  }
+  const sup = support(th.C[0], th.C[1], r, sim.t - 0.55 * (TAU * th.R) / th.U);
+  th.zc = Math.max(poolAt(th.C[0], th.C[1]) + r * 0.8, sup);
+  // A tall stack falls over and the coil folds aside.
+  const stack = (th.zc - poolAt(th.C[0], th.C[1])) / (2 * r);
+  if (!topple && th.src && stack > th.foldH && sim.t > th.cool) {
+    startTopple(th);
+    th.cool = sim.t + 4;
+    th.foldH = byTone(th.tone, f => f.fold) * (0.85 + 0.35 * Math.random());
+  }
+  if (th.front >= 0 && th.front <= th.zc) { th.toneLow = th.tone; th.front = -1; }
+  if (!th.src && th.zEnd <= th.zc + r) { th.state = 'done'; plop(th.C); }
+  void top;
+}
+// Starts a pour at the pour point.
+function startPour() {
+  if (pour.on) return;
+  pour.on = true;
+  threads.push(newThread());
+  if (threads.length > 3) threads.shift();
+  wake();
+}
+// Stops the pour: the thread breaks at the top and its tail falls.
+function stopPour() {
+  if (!pour.on) return;
+  pour.on = false;
+  for (const th of threads) {
+    if (!th.src) continue;
+    th.src = false;
+    th.zEnd = topAt(th.N);
+    th.vEnd = 0.2;
+  }
+}
+
+/* ---------- bubbles: air the honey carries down ---------- */
+// A bubble rides the thread, then a point of rope, then stays in the pool.
+const bubbles = [];
+const MAXB = 70;
+function spawnBubble(th) {
+  if (bubbles.length >= MAXB) bubbles.splice(bubbles.findIndex(b => b.kind === 2), 1);
+  const a = Math.random() * TAU, q = Math.sqrt(Math.random()) * 0.55;
+  bubbles.push({ kind: 0, th, s: 1, a, q, rr: 0.18 + 0.22 * Math.random(), k: -1, x: 0, y: 0, d: 0, ox: 0, oy: 0, oz: 0 });
+}
+// Arc lengths from the bottom of a thread, for placing a bubble on it.
+function arcOf(pts) {
+  const L = [0];
+  for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));
+  return L;
+}
+function stepBubbles(dt) {
+  for (const th of threads) {
+    th.arc = arcOf(th.pts);
+    if (th.state !== 'fall' && th.src && Math.random() < dt * 1.6) spawnBubble(th);
+  }
+  for (let n = bubbles.length - 1; n >= 0; n--) {
+    const b = bubbles[n];
+    if (b.kind === 0) {
+      // Down the thread at the flow speed, as a share of its length.
+      const th = b.th, L = th.arc ? th.arc[th.arc.length - 1] : 0;
+      if (!threads.includes(th) || L <= 0) { bubbles.splice(n, 1); continue; }
+      b.s -= (th.U * 0.9 * dt) / L;
+      if (b.s <= 0) {
+        if (th.last < tail) { bubbles.splice(n, 1); continue; }
+        const i = at(th.last);
+        b.kind = 1; b.k = th.last;
+        b.ox = Math.cos(b.a) * b.q * pr[i]; b.oy = Math.sin(b.a) * b.q * pr[i]; b.oz = (Math.random() - 0.5) * pr[i] * 0.5;
+      }
+    } else if (b.kind === 1) {
+      // When its rope melts, the bubble stays behind in the pool.
+      const i = at(b.k);
+      if (b.k < tail || pr[i] <= 0 || pm[i] > 0.7) {
+        b.kind = 2; b.x = px[i] + b.ox; b.y = py[i] + b.oy; b.d = 0.35 + 0.3 * Math.random();
+      }
+    } else {
+      // Trapped bubbles drift with the film and rise very slowly.
+      const [vx, vy] = poolFlow(b.x, b.y);
+      b.x += vx * dt; b.y += vy * dt;
+      b.d = Math.min(0.9, b.d + dt * 0.01);
+      if (poolAt(b.x, b.y) < 0.004) bubbles.splice(n, 1);
+    }
+  }
+}
+// A bubble's place now: on the thread, in the rope, or in the pool.
+function bubbleAt(b) {
+  if (b.kind === 0) {
+    const th = b.th, pts = th.pts, L = th.arc, s = b.s * L[L.length - 1];
+    let i = 1;
+    while (i < pts.length - 1 && L[i] < s) i++;
+    const u = clamp((s - L[i - 1]) / Math.max(L[i] - L[i - 1], 1e-6)), p = pts[i - 1], q = pts[i];
+    const r = lerp(p[3], q[3], u) * b.q;
+    return [lerp(p[0], q[0], u) + Math.cos(b.a) * r, lerp(p[1], q[1], u) + Math.sin(b.a) * r, lerp(p[2], q[2], u), b.rr * lerp(p[3], q[3], u), lerp(p[3], q[3], u)];
+  }
+  if (b.kind === 1) {
+    const i = at(b.k), f = pr[i] / pr0[i];
+    return [px[i] + b.ox * f, py[i] + b.oy * f, pz[i] + b.oz * f, b.rr * pr0[i], pr[i]];
+  }
+  const h = poolAt(b.x, b.y);
+  return [b.x, b.y, h * b.d, b.rr * 0.012, -h];
+}
+
+/* ---------- thread geometry ---------- */
+// Points from the bottom up: x, y, z, radius, tone.
+const SEGL = 22, SEGU = 18;
+function bez(p0, p1, p2, p3, u) {
+  const a = 1 - u, b0 = a * a * a, b1 = 3 * a * a * u, b2 = 3 * a * u * u, b3 = u * u * u;
+  return [b0 * p0[0] + b1 * p1[0] + b2 * p2[0] + b3 * p3[0], b0 * p0[1] + b1 * p1[1] + b2 * p2[1] + b3 * p3[1], b0 * p0[2] + b1 * p1[2] + b2 * p2[2] + b3 * p3[2]];
+}
+// Free fall thins the thread: faster honey makes a thinner thread.
+function rAt(th, z, zb) {
+  const u2 = th.U * th.U - 2 * 0.12 * (z - zb);
+  return Math.sqrt(th.Q / (Math.PI * Math.sqrt(Math.max(u2, 0.06 * 0.06))));
+}
+function threadPoints(th) {
+  const pts = [];
+  const top = th.src ? topAt(th.N) : th.zEnd;
+  if (th.state === 'fall') {
+    // A straight fall from the top to the tip.
+    const zb = th.zTip, n = 14;
+    for (let i = 0; i <= n; i++) {
+      const z = lerp(zb, Math.max(top, zb), i / n);
+      pts.push([th.N[0], th.N[1], z, rAt(th, z, zb) * (i === 0 ? 1.25 : 1)]);
+    }
+    return pts;
+  }
+  const R = th.R, C = [th.C[0], th.C[1], th.zc];
+  const off = Math.hypot(C[0] - th.Nc[0], C[1] - th.Nc[1]);
+  const hk = clamp(2.3 * R + 0.8 * off, 2 * R, 0.45);
+  // A dragged thread trails: its lower part leans toward the rope.
+  const drag = clamp(th.v / 1.2);
+  const K = [lerp(th.Nc[0], C[0], 0.22 + 0.3 * drag), lerp(th.Nc[1], C[1], 0.22 + 0.3 * drag), C[2] + hk];
+  const T = [th.N[0], th.N[1], Math.max(top, K[2] + 0.02)];
+  const lx = C[0] - T[0], ly = C[1] - T[1], lz = C[2] - T[2], ll = Math.hypot(lx, ly, lz) || 1;
+  const tk = norm([lx / ll * 0.7 * drag, ly / ll * 0.7 * drag, -1]);
+  // Leaving the plate, the thread runs ahead along the coil, then climbs.
+  const kx = K[0] - C[0], ky = K[1] - C[1], kl = Math.hypot(kx, ky) || 1;
+  const lead = R * 0.95 * (1 - 0.7 * Math.max(0, -(th.dir[0] * kx + th.dir[1] * ky) / kl));
+  const p1 = [C[0] + th.dir[0] * lead, C[1] + th.dir[1] * lead, C[2] + hk * 0.15];
+  const p2 = [K[0] + tk[0] * hk * 0.4, K[1] + tk[1] * hk * 0.4, K[2] + tk[2] * hk * 0.4];
+  for (let i = 0; i <= SEGL; i++) {
+    const p = bez(C, p1, p2, K, i / SEGL);
+    pts.push([p[0], p[1], p[2], 0]);
+  }
+  const d = (T[2] - K[2]) * 0.4, dk = Math.min(d, hk * 0.8);
+  const q1 = [K[0] - tk[0] * dk, K[1] - tk[1] * dk, K[2] - tk[2] * dk], q2 = [T[0], T[1], T[2] - d];
+  for (let i = 1; i <= SEGU; i++) {
+    const p = bez(K, q1, q2, T, i / SEGU);
+    pts.push([p[0], p[1], p[2], 0]);
+  }
+  // The bottom is the laid rope; above, free fall sets the width.
+  for (const p of pts) p[3] = Math.max(th.r, rAt(th, p[2], th.zc));
+  if (th.src) return pts;
+  // The tail: only the honey below the falling top end is left, and it tapers.
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (p[2] <= top) { out.push(p); continue; }
+    const q = pts[i - 1];
+    if (q && q[2] < top) {
+      const u = (top - q[2]) / (p[2] - q[2]);
+      out.push([lerp(q[0], p[0], u), lerp(q[1], p[1], u), top, q[3]]);
+    }
+    break;
+  }
+  let acc = 0;
+  for (let i = out.length - 1; i > 0; i--) {
+    out[i][3] *= smooth(0, 0.08, acc);
+    acc += Math.hypot(out[i][0] - out[i - 1][0], out[i][1] - out[i - 1][1], out[i][2] - out[i - 1][2]);
+  }
+  return out;
+}
+
+/* ---------- camera ---------- */
+const cam = { eye: [0, -1.5, 1], at: [0, 0.06, 0.1], fov: 30, vp: new Float32Array(16), right: [1, 0, 0], up: [0, 0, 1], fwd: [0, 1, 0] };
+let W = 1, H = 1, asp = 1, cssW = 1, cssH = 1;
+function perspective(fovy, a, n, f) {
+  const t = 1 / Math.tan(fovy / 2), nf = 1 / (n - f);
+  return [t / a, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) * nf, -1, 0, 0, 2 * f * n * nf, 0];
+}
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  return o;
+}
+const norm = v => { const l = Math.hypot(...v) || 1; return v.map(x => x / l); };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function aim() {
+  const portrait = asp < 0.9;
+  const el = ((portrait ? 44 : 31) + dev.pitch) * Math.PI / 180, yaw = dev.yaw * Math.PI / 180;
+  cam.fov = dev.fov + (portrait ? 6 : 0);
+  const tf = Math.tan((cam.fov * Math.PI) / 360);
+  // A wide stage frames a fixed height; a narrow one keeps the coil's width.
+  const d = Math.max(0.34 / tf, 0.3 / (tf * asp)) * dev.dist;
+  cam.at = [0, 0.06, portrait ? 0.16 : 0.13];
+  cam.eye = [cam.at[0] + d * Math.sin(yaw) * Math.cos(el), cam.at[1] - d * Math.cos(yaw) * Math.cos(el), cam.at[2] + d * Math.sin(el)];
+  const f = norm([cam.at[0] - cam.eye[0], cam.at[1] - cam.eye[1], cam.at[2] - cam.eye[2]]);
+  const r = norm(cross(f, [0, 0, 1])), u = cross(r, f);
+  cam.fwd = f; cam.right = r; cam.up = u;
+  const e = cam.eye;
+  const view = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, e), -dot(u, e), dot(f, e), 1];
+  cam.vp = mul(perspective((cam.fov * Math.PI) / 180, asp, 0.05, 40), view);
+}
+function clipOf(p) {
+  const m = cam.vp;
+  return [0, 1, 2, 3].map(r => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+}
+// A stage point to the plate: the ray from the eye meets the plane z = h.
+function pick(x, y, h = 0.02) {
+  const tf = Math.tan((cam.fov * Math.PI) / 360);
+  const nx = (2 * x) / cssW - 1, ny = 1 - (2 * y) / cssH;
+  const d = norm([0, 1, 2].map(i => cam.fwd[i] + cam.right[i] * nx * tf * asp + cam.up[i] * ny * tf));
+  if (d[2] > -0.02) d[2] = -0.02;
+  const t = (h - cam.eye[2]) / d[2];
+  const p = [cam.eye[0] + d[0] * t, cam.eye[1] + d[1] * t];
+  // The pour stays over the middle of the plate.
+  const l = Math.hypot(p[0], p[1]), lim = 0.95;
+  return l > lim ? [(p[0] / l) * lim, (p[1] / l) * lim] : p;
+}
+
+/* ---------- GLSL ---------- */
+// The studio: one warm key behind the plate, a dim cool fill in front.
+const LIGHT = `
+uniform vec3 uEye, uKey, uSigA, uSigB, uSigC;
+uniform float uKeyI, uExt;
+uniform sampler2D uSrc, uLA;
+uniform vec3 uLd, uLx, uLy;
+uniform vec4 uLbox;
+vec3 sigmaOf(float t) { return t < 0.5 ? mix(uSigA, uSigB, t * 2.0) : mix(uSigB, uSigC, t * 2.0 - 1.0); }
+vec2 fieldUv(vec2 p) { return p / (2.0 * uExt) + 0.5; }
+vec4 srcAt(vec2 p) { return texture(uSrc, fieldUv(p)); }
+const vec3 KEYC = vec3(1.0, 0.88, 0.72);
+const vec3 FILLD = vec3(0.55, -0.75, 0.38);
+const vec3 FILLC = vec3(0.010, 0.012, 0.016);
+// The room seen in a reflection: the key box, a dim ceiling, a dark floor.
+vec3 env(vec3 d) {
+  vec3 kd = normalize(uKey - vec3(0.0, 0.0, 0.1));
+  float a = dot(d, kd);
+  vec3 c = mix(vec3(0.003, 0.0026, 0.0022), vec3(0.008, 0.0085, 0.010), smoothstep(-0.15, 0.6, d.z));
+  // Below the horizon the slate glows where the key lights it.
+  float toward = dot(normalize(d.xy + 1e-5), normalize(kd.xy));
+  c += KEYC * uKeyI * 0.0035 * smoothstep(0.05, -0.5, d.z) * smoothstep(-0.2, 1.0, toward) * (1.0 + d.z);
+  c += KEYC * uKeyI * 0.32 * smoothstep(0.978, 0.992, a);
+  c += KEYC * uKeyI * 0.01 * pow(max(a, 0.0), 10.0);
+  c += FILLC * 8.0 * pow(max(dot(d, normalize(FILLD)), 0.0), 4.0);
+  c += vec3(0.85, 0.9, 1.0) * uKeyI * 0.045 * smoothstep(0.93, 0.975, dot(d, normalize(FILLD)));
+  return c;
+}
+// Henyey-Greenstein, without the four pi: forward scatter in honey.
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
+// Honey between p and the key, from the light map: thickness, tone, lens gain.
+vec3 honeyToKey(vec3 p) {
+  vec2 uv = (vec2(dot(p, uLx), dot(p, uLy)) - uLbox.xy) / uLbox.zw * 0.5 + 0.5;
+  if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec3(0.0, 0.5, 0.0);
+  vec4 a = texture(uLA, uv);
+  if (a.r < 1e-5) return vec3(0.0, 0.5, 0.0);
+  // Only the part of the honey nearer the key than p shades it.
+  float f = clamp(0.5 + (a.a / a.r - dot(p, uLd)) / max(a.r, 0.004), 0.0, 1.0);
+  return vec3(a.r * f, a.g / a.r, a.b * f);
+}
+// The key light on a point, through any honey on the way.
+vec3 keyAt(vec3 p, vec3 n, vec3 sig, float extra, out vec3 L) {
+  vec3 lv = uKey - p;
+  float d2 = dot(lv, lv);
+  L = lv * inversesqrt(d2);
+  float e = uKeyI * max(dot(n, L), 0.0) / (d2 + 0.5);
+  vec3 hk = honeyToKey(p);
+  return KEYC * e * exp(-sigmaOf(hk.y) * hk.x - sig * extra + hk.z);
+}
+`;
+
+// The field pass smooths the CPU pool and takes its slope and curvature.
+const FIELD_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uSize;
+uniform float uDx;
+out vec4 o;
+// A cubic B-spline from four bilinear taps.
+float bsp(vec2 uv) {
+  vec2 p = uv * uSize - 0.5, f = fract(p), i = p - f;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0, w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+  vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0, w3 = f3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - 0.5 + w1 / g0) / uSize, h1 = (i + 1.5 + w3 / g1) / uSize;
+  return g0.y * (g0.x * texture(uSrc, h0).r + g1.x * texture(uSrc, vec2(h1.x, h0.y)).r)
+       + g1.y * (g0.x * texture(uSrc, vec2(h0.x, h1.y)).r + g1.x * texture(uSrc, h1).r);
+}
+void main() {
+  vec2 e = vec2(0.5 / uSize.x, 0.0);
+  float c = bsp(vUv), l = bsp(vUv - e.xy), r = bsp(vUv + e.xy), b = bsp(vUv - e.yx), t = bsp(vUv + e.yx);
+  float w = uDx * 0.5;
+  o = vec4(c, (r - l) / (2.0 * w), (t - b) / (2.0 * w), (l + r + b + t - 4.0 * c) / (w * w));
+}`;
+
+// The plate and the pool: one mesh, lifted by the smoothed field.
+const POOL_VS = `#version 300 es
+uniform sampler2D uField;
+uniform mat4 uVP;
+uniform float uExt;
+uniform int uGM, uIn;
+out vec3 vPos;
+out vec2 vUv;
+// Inner vertices cover the field; outer ones reach far out across the slate.
+float coord(int g) {
+  float m = float(uGM - 1 - uIn) * 0.5, k = float(g) - m;
+  if (k >= 0.0 && k <= float(uIn)) return mix(-uExt, uExt, k / float(uIn));
+  float o = k < 0.0 ? -k : k - float(uIn);
+  float s = uExt * pow(1.28, o);
+  return k < 0.0 ? -s : s;
+}
+void main() {
+  int gx = gl_VertexID % uGM, gy = gl_VertexID / uGM;
+  vec2 p = vec2(coord(gx), coord(gy));
+  vec2 uv = p / (2.0 * uExt) + 0.5;
+  float h = (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) ? max(textureLod(uField, uv, 0.0).r, 0.0) : 0.0;
+  vPos = vec3(p, h);
+  vUv = uv;
+  gl_Position = uVP * vec4(vPos, 1.0);
+}`;
+
+const POOL_FS = `#version 300 es
+precision highp float;
+in vec3 vPos;
+in vec2 vUv;
+uniform sampler2D uField;
+uniform float uCaus, uScat;
+out vec4 o;
+${LIGHT}
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+// The slate: a dark warm grey with a faint, broad mottle.
+vec3 slate(vec2 p) {
+  float m = 0.7 * noise(p * 2.5) + 0.3 * noise(p * 7.0 + 3.0);
+  return vec3(0.019, 0.020, 0.023) * (0.88 + 0.24 * m);
+}
+void main() {
+  bool inF = vUv.x > 0.0 && vUv.x < 1.0 && vUv.y > 0.0 && vUv.y < 1.0;
+  vec4 f = inF ? texture(uField, vUv) : vec4(0.0);
+  vec4 s = srcAt(vPos.xy);
+  float h = max(f.r, 0.0);
+  vec3 n = normalize(vec3(-f.g, -f.b, 1.0));
+  vec3 sig = sigmaOf(clamp(s.g, 0.0, 1.0));
+  vec3 P = vec3(vPos.xy, h);
+  vec3 I = normalize(P - uEye), V = -I;
+  float wet = smoothstep(0.0012, 0.0042, h);
+  // Bare slate: the key with its falloff, a broad sheen, the fill.
+  vec3 L;
+  vec3 Ed = keyAt(vec3(P.xy, 0.0), vec3(0.0, 0.0, 1.0), sigmaOf(s.a), 0.0, L);
+  vec3 alb = slate(P.xy);
+  vec3 Rz = reflect(I, vec3(0.0, 0.0, 1.0));
+  vec3 dry = alb * (Ed + FILLC) + Ed * 0.022 * pow(max(dot(Rz, L), 0.0), 7.0);
+  // Honey: the view ray refracts down to the plate under it.
+  vec3 Tr = refract(I, n, 1.0 / 1.49);
+  float pv = h / max(-Tr.z, 0.25);
+  vec2 bxy = P.xy + Tr.xy * pv;
+  vec3 Lb;
+  vec3 Eb = keyAt(vec3(bxy, 0.0), vec3(0.0, 0.0, 1.0), sig, h / 0.8, Lb);
+  // A curved surface focuses the key on the plate below.
+  vec2 cuv = fieldUv(bxy - Lb.xy / max(Lb.z, 0.3) * h * 0.6);
+  float lap = inF ? texture(uField, cuv).a : 0.0;
+  // A thin lens: light gathers under a dome and spreads under a dip.
+  float caus = clamp(1.0 / max(1.0 + uCaus * lap * h, 0.25), 0.4, 3.0);
+  vec3 under = slate(bxy) * (Eb * caus + FILLC) * exp(-sig * pv);
+  // Light that scatters inside the honey toward the eye.
+  vec3 Lt;
+  vec3 Et = keyAt(P, vec3(0.0, 0.0, 1.0), sig, 0.0, Lt);
+  vec3 glow = uScat * Et * hg(dot(Lt, I), 0.5) * (1.0 - exp(-6.0 * pv)) * exp(-sig * (pv * 0.6 + h / max(Lt.z, 0.3) * 0.7));
+  // Backlit, the sloped edge facing the eye lets the key's light out.
+  float slope = length(f.gb);
+  vec2 away = -normalize(Lt.xy + 1e-5);
+  float rim = smoothstep(0.05, 0.6, slope) * max(dot(normalize(f.gb * -1.0 + 1e-6), away), 0.0);
+  vec3 edge = uScat * 0.35 * Et * rim * exp(-sig * (h * 1.5 + 0.004));
+  float NV = max(dot(n, V), 1e-3);
+  float F = 0.04 + 0.96 * pow(1.0 - NV, 5.0);
+  vec3 wetc = F * env(reflect(I, n)) + (1.0 - F) * (under + glow + edge);
+  vec3 col = mix(dry, wetc, wet);
+  // The slate fades into the dark far away.
+  col *= exp(-max(length(P.xy) - 1.6, 0.0) * 0.6);
+  o = vec4(col, 1.0);
+}`;
+
+const CAPSULE = `
+// Ray and capsule, after Inigo Quilez.
+float capHit(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
+  vec3 ba = pb - pa, oa = ro - pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  if (baba > 1e-10) {
+    float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
+    float h = b * b - a * c;
+    if (h >= 0.0 && a > 1e-12) {
+      float t = (-b - sqrt(h)) / a, y = baoa + t * bard;
+      if (y > 0.0 && y < baba) return t;
+    }
+  }
+  // Both end caps are tried; the nearer hit wins.
+  float best = -1.0;
+  for (int k = 0; k < 2; k++) {
+    vec3 cc = k == 0 ? oa : ro - pb;
+    float b2 = dot(rd, cc), c2 = dot(cc, cc) - r * r, h2 = b2 * b2 - c2;
+    if (h2 > 0.0) {
+      float t = -b2 - sqrt(h2);
+      if (t > 0.0 && (best < 0.0 || t < best)) best = t;
+    }
+  }
+  return best;
+}
+`;
+
+// Rope and thread: ray-traced capsules on camera-facing quads.
+const CAP_VS = `#version 300 es
+layout(location = 0) in vec4 aA;
+layout(location = 1) in vec4 aB;
+layout(location = 2) in vec4 aTa;
+layout(location = 3) in vec4 aTb;
+uniform mat4 uVP;
+uniform vec3 uEye;
+uniform float uPix;
+out vec3 vPos;
+flat out vec4 vA, vB;
+flat out vec3 vTa, vTb;
+void main() {
+  vec2 q = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+  vec3 a = aA.xyz, b = aB.xyz, m = 0.5 * (a + b);
+  float r = aA.w;
+  vec3 toCam = normalize(uEye - m), ax = b - a;
+  vec3 ap = ax - toCam * dot(ax, toCam);
+  float lp = length(ap);
+  vec3 e = lp > 1e-6 ? ap / lp : normalize(cross(toCam, vec3(0.31, 0.47, 0.83)));
+  vec3 s = normalize(cross(toCam, e));
+  float pad = r * 1.08 + uPix * 2.5 * length(uEye - m);
+  // The quad stands in front of the whole capsule, so its outline covers it.
+  float lift = abs(dot(ax, toCam)) * 0.5 + r;
+  vec3 p = m + toCam * lift + e * q.x * (0.5 * lp + pad) + s * q.y * pad;
+  vPos = p;
+  vA = aA; vB = aB;
+  vTa = aTa.xyz; vTb = aTb.xyz;
+  gl_Position = uVP * vec4(p, 1.0);
+}`;
+
+const CAP_FS = `#version 300 es
+precision highp float;
+in vec3 vPos;
+flat in vec4 vA, vB;
+flat in vec3 vTa, vTb;
+uniform mat4 uVP;
+uniform sampler2D uBack;
+uniform vec2 uRes;
+uniform vec3 uRight, uUp;
+uniform float uPix, uScat;
+uniform int uFringe;
+out vec4 o;
+${LIGHT}
+${CAPSULE}
+// Nearest approach of the ray to the segment: distance, ray depth, segment point.
+vec3 nearSeg(vec3 ro, vec3 rd, vec3 a, vec3 b, out vec3 q) {
+  vec3 ba = b - a, w = ro - a;
+  float B = dot(rd, ba), C = dot(ba, ba), D = dot(rd, w), E = dot(ba, w);
+  float den = C - B * B;
+  float sg = den > 1e-9 ? clamp((E - B * D) / den, 0.0, 1.0) : 0.0;
+  q = a + ba * sg;
+  float t = max(dot(q - ro, rd), 0.0);
+  return vec3(length(ro + rd * t - q), t, sg);
+}
+void main() {
+  vec3 a = vA.xyz, b = vB.xyz;
+  float r = vA.w, tone = vB.w;
+  vec3 rd = normalize(vPos - uEye);
+  float t = capHit(uEye, rd, a, b, r);
+  vec3 q;
+  vec3 ns = nearSeg(uEye, rd, a, b, q);
+  float pw = uPix * ns.y;
+  float alpha = 1.0;
+  vec3 P, N;
+  if (uFringe == 0) {
+    if (t <= 0.0) discard;
+    P = uEye + rd * t;
+    vec3 ba = b - a;
+    // The normal turns with the rope's smoothed direction, so joints never kink.
+    float hq = dot(ba, ba) > 1e-10 ? clamp(dot(P - a, ba) / dot(ba, ba), -0.35, 1.35) : 0.0;
+    vec3 w = P - (a + ba * hq);
+    vec3 T = normalize(mix(vTa, vTb, clamp(hq, 0.0, 1.0)) + 1e-6);
+    vec3 nn = w - T * dot(w, T);
+    N = normalize(dot(nn, nn) > 1e-12 ? nn : w);
+  } else {
+    // The fringe: a one-pixel blend just outside the outline.
+    if (t > 0.0 || ns.x > r + pw) discard;
+    alpha = 1.0 - (ns.x - r) / pw;
+    P = uEye + rd * ns.y;
+    N = normalize(P - q);
+  }
+  vec4 clip = uVP * vec4(P, 1.0);
+  gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+  vec3 sig = sigmaOf(tone);
+  vec3 V = -rd;
+  float NV = max(dot(N, V), 0.0);
+  float F = 0.04 + 0.96 * pow(1.0 - NV, 5.0);
+  vec3 refl = env(reflect(rd, N));
+  // Seen through the tube: the plate behind, bent and tinted.
+  float chord = 2.0 * r * NV;
+  // A rod of honey is a lens: it flips what lies behind it.
+  vec2 ns2 = vec2(dot(N, uRight), dot(N, uUp));
+  vec2 suv = clamp((gl_FragCoord.xy - ns2 * (r / max(pw, 1e-6)) * 1.1) / uRes, vec2(0.001), vec2(0.999));
+  vec3 back = texture(uBack, suv).rgb;
+  vec3 trans = back * exp(-sig * chord * 1.4);
+  // The key lights the honey from inside: light that crossed the rope and other honey.
+  vec3 lv = uKey - P;
+  float d2 = dot(lv, lv);
+  vec3 L = lv * inversesqrt(d2);
+  vec3 hk = honeyToKey(P + L * r * 1.05);
+  float self = 2.0 * r * clamp(0.5 - 0.5 * dot(N, L), 0.0, 1.0);
+  vec3 Ein = KEYC * uKeyI / (d2 + 0.5) * exp(-sigmaOf(hk.y) * hk.x - sig * self);
+  vec3 body = uScat * Ein * (0.25 + 0.75 * hg(dot(L, rd), 0.45)) * (1.0 - exp(-14.0 * chord)) * exp(-sig * (chord * 0.6 + r * 1.2));
+  float NVc = max(dot(N, V), 0.0);
+  vec3 core = uScat * Ein * 0.55 * pow(NVc, 6.0) * exp(-sig * chord * 0.35);
+  vec3 col = F * refl + (1.0 - F) * (trans + body + core);
+  o = vec4(col * alpha, alpha);
+}`;
+
+// The light map: capsules seen from the key, as an orthographic view.
+const LMAP_VS = `#version 300 es
+layout(location = 0) in vec4 aA;
+layout(location = 1) in vec4 aB;
+uniform vec3 uLd, uLx, uLy;
+uniform vec4 uLbox;
+out vec3 vPos;
+flat out vec4 vA, vB;
+void main() {
+  vec2 q = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+  vec3 a = aA.xyz, b = aB.xyz, m = 0.5 * (a + b), ax = b - a;
+  float r = aA.w;
+  vec3 ap = ax - uLd * dot(ax, uLd);
+  float lp = length(ap);
+  vec3 e = lp > 1e-6 ? ap / lp : uLx;
+  vec3 s = normalize(cross(uLd, e));
+  float pad = r * 1.05 + uLbox.z * 0.004;
+  vec3 p = m + e * q.x * (0.5 * lp + pad) + s * q.y * pad;
+  vPos = p;
+  vA = aA; vB = aB;
+  gl_Position = vec4((vec2(dot(p, uLx), dot(p, uLy)) - uLbox.xy) / uLbox.zw, 0.0, 1.0);
+}`;
+// Mode 0 sums the honey crossed; mode 1 keeps its near and far bounds.
+const LMAP_FS = `#version 300 es
+precision highp float;
+in vec3 vPos;
+flat in vec4 vA, vB;
+uniform vec3 uLd;
+out vec4 o;
+${CAPSULE}
+// The chord through the open cylinder between the two ends.
+// Joined segments then tile the rope with no double count.
+vec2 slab(vec3 ro, vec3 rd, vec3 a, vec3 b, float r, out float rho) {
+  rho = 1.0;
+  vec3 ba = b - a, oa = ro - a;
+  float L = length(ba);
+  if (L < 1e-6) return vec2(1.0, -1.0);
+  vec3 u = ba / L;
+  vec3 rp = rd - u * dot(rd, u), op = oa - u * dot(oa, u);
+  float A = dot(rp, rp), B = dot(rp, op), C = dot(op, op) - r * r, h = B * B - A * C;
+  if (h <= 0.0 || A < 1e-9) return vec2(1.0, -1.0);
+  rho = sqrt(max(C + r * r - B * B / A, 0.0)) / r;
+  h = sqrt(h);
+  vec2 t = vec2(-B - h, -B + h) / A;
+  // Cut the chord at the two end planes.
+  float ru = dot(rd, u), ou = dot(oa, u);
+  if (abs(ru) > 1e-6) {
+    vec2 c = vec2(-ou / ru, (L - ou) / ru);
+    t = vec2(max(t.x, min(c.x, c.y)), min(t.y, max(c.x, c.y)));
+  } else if (ou < 0.0 || ou > L) return vec2(1.0, -1.0);
+  return t;
+}
+void main() {
+  vec3 a = vA.xyz, b = vB.xyz;
+  float r = vA.w;
+  vec3 ro = vPos + uLd * 3.0;
+  {
+    // A lone point has no length: it counts as a ball.
+    float rho;
+    vec2 t = slab(ro, -uLd, a, b, r, rho);
+    float th = t.y - t.x;
+    if (distance(a, b) < 1e-6) { float t1 = capHit(ro, -uLd, a, b, r); if (t1 <= 0.0) discard; th = 2.0 * (3.0 - t1); rho = 1.0; t = vec2(t1, t1 + th); }
+    if (th <= 0.0) discard;
+    // A rod of honey is a lens: light gathers in the middle of its shadow.
+    float g = 1.0 + 1.3 * exp(-rho * rho / 0.16) - 0.6 * smoothstep(0.55, 1.0, rho);
+    // The fourth channel keeps the depth of the honey, weighted by its thickness.
+    float dm = dot(ro - uLd * (0.5 * (t.x + t.y)), uLd);
+    o = vec4(th, th * vB.w, log(g) * clamp(th / (2.0 * r), 0.0, 1.0), th * dm);
+  }
+}`;
+
+// Bubbles: small sprites, each pushed toward the eye to the honey's surface.
+const BUB_VS = `#version 300 es
+layout(location = 0) in vec4 aP;
+layout(location = 1) in vec4 aQ;
+uniform mat4 uVP;
+uniform vec3 uEye, uRight, uUp;
+out vec2 vQ;
+out float vCover;
+flat out float vR;
+void main() {
+  vec2 q = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+  vec3 toCam = normalize(uEye - aP.xyz);
+  // Rope bubbles sit inside a tube; pool bubbles sit under the surface.
+  vec3 c = aQ.x > 0.0 ? aP.xyz + toCam * aQ.x * 1.02 : vec3(aP.xy, -aQ.x + 0.0015);
+  vec3 p = c + (uRight * q.x + uUp * q.y) * aP.w * 1.6;
+  vQ = q * 1.6;
+  vR = aP.w;
+  vCover = aQ.x > 0.0 ? aQ.x : max(-aQ.x - aP.z, 0.0);
+  gl_Position = uVP * vec4(p, 1.0);
+  gl_Position.z -= 0.0004 * gl_Position.w;
+}`;
+const BUB_FS = `#version 300 es
+precision highp float;
+in vec2 vQ;
+in float vCover;
+flat in float vR;
+uniform vec3 uTint;
+uniform float uKeyI;
+out vec4 o;
+void main() {
+  float r = length(vQ);
+  if (r > 1.0) discard;
+  // A bright rim, a darker body and one glint toward the key.
+  float rim = smoothstep(0.62, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
+  float glint = exp(-dot(vQ - vec2(-0.32, 0.38), vQ - vec2(-0.32, 0.38)) * 40.0);
+  float body = 1.0 - smoothstep(0.0, 0.9, r);
+  vec3 cover = exp(-uTint * vCover * 1.3);
+  vec3 c = (vec3(1.0, 0.9, 0.7) * (rim * 0.09 + glint * 0.35) * uKeyI * 0.12) * cover;
+  float a = clamp(rim * 0.55 + glint * 0.6 + body * 0.12, 0.0, 1.0) * 0.8;
+  o = vec4(c, a * 0.35);
+}`;
+
+// The composite: bloom, exposure, vignette, grain, film curve.
+const COMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExp, uSeed;
+out vec4 o;
+${OUTPUT}
+${GRADE}
+void main() {
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uBloomK;
+  c *= gdVignette(vUv, uRes.x / uRes.y, 0.5, 0.42);
+  c *= gdGrain(gdHash(gl_FragCoord.xy + uSeed), gdLuma(c), 0.035, vec2(0.6, 1.0));
+  o = vec4(ouFilm(c, uExp, gl_FragCoord.xy), 1.0);
+}`;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, Pg = null, vao = null, poolVao = null, capVao = null, capBuf = null, srcTex = null, field = null, scene = null, back = null, bloom = null;
+let lightA = null, bubVao = null, bubBuf = null;
+const LMAP = 1024, bubInst = new Float32Array(MAXB * 8);
+const GM = 233, GIN = 200;
+let poolIdxN = 0;
+const MAXI = 8192, STRIDE = 16, inst = new Float32Array(MAXI * STRIDE);
+let nInst = 0, nThreadInst = 0;
+const srcBuf = new Float32Array(G * G * 4);
+async function initGL() {
+  gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('Honey coil needs WebGL 2.');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('Honey coil needs float targets.');
+  Pg = await linked(gl, {
+    field: program(gl, TRI_VS, FIELD_FS),
+    pool: program(gl, POOL_VS, POOL_FS),
+    cap: program(gl, CAP_VS, CAP_FS),
+    comp: program(gl, TRI_VS, COMP_FS),
+    lmap: program(gl, LMAP_VS, LMAP_FS),
+    bub: program(gl, BUB_VS, BUB_FS),
+  });
+  vao = gl.createVertexArray();
+  // The mesh needs only an index buffer: vertex ids give the grid.
+  poolVao = gl.createVertexArray();
+  gl.bindVertexArray(poolVao);
+  const idx = new Uint16Array((GM - 1) * (GM - 1) * 6);
+  let n = 0;
+  for (let j = 0; j < GM - 1; j++) {
+    for (let i = 0; i < GM - 1; i++) {
+      const a = j * GM + i;
+      idx.set([a, a + 1, a + GM, a + 1, a + GM + 1, a + GM], n);
+      n += 6;
+    }
+  }
+  poolIdxN = n;
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  // Capsules: two vec4 per instance, a quad from the vertex id.
+  capVao = gl.createVertexArray();
+  gl.bindVertexArray(capVao);
+  capBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, capBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  for (let i = 0; i < 4; i++) {
+    gl.enableVertexAttribArray(i);
+    gl.vertexAttribPointer(i, 4, gl.FLOAT, false, STRIDE * 4, i * 16);
+    gl.vertexAttribDivisor(i, 1);
+  }
+  gl.bindVertexArray(null);
+  bubVao = gl.createVertexArray();
+  gl.bindVertexArray(bubVao);
+  bubBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, bubInst.byteLength, gl.DYNAMIC_DRAW);
+  for (let i = 0; i < 2; i++) {
+    gl.enableVertexAttribArray(i);
+    gl.vertexAttribPointer(i, 4, gl.FLOAT, false, 32, i * 16);
+    gl.vertexAttribDivisor(i, 1);
+  }
+  gl.bindVertexArray(null);
+  srcTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, G, G);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  field = target(gl, G * 2, G * 2);
+  lightA = target(gl, LMAP, LMAP);
+  bloom = bloomChain(gl);
+  lightFrame();
+  for (const q of [Pg.pool, Pg.cap, Pg.lmap]) {
+    gl.useProgram(q.p);
+    gl.uniform3fv(q.u.uLd, LF.d);
+    gl.uniform3fv(q.u.uLx, LF.x);
+    gl.uniform3fv(q.u.uLy, LF.y);
+
+    gl.uniform3fv(q.u.uSigA, SIGMA[0]);
+    gl.uniform3fv(q.u.uSigB, SIGMA[1]);
+    gl.uniform3fv(q.u.uSigC, SIGMA[2]);
+    gl.uniform3f(q.u.uKey, ...KEY);
+    gl.uniform1f(q.u.uKeyI, KEY_I);
+    gl.uniform1f(q.u.uExt, EXT);
+  }
+  srcDirty = true;
+}
+const KEY = [-0.75, 1.95, 1.45], KEY_I = 6;
+// The key's frame: its direction from the plate and two axes across it.
+const LF = { d: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0], box: [0, 0, 1, 1] };
+function lightFrame() {
+  const d = norm([KEY[0], KEY[1], KEY[2] - 0.1]), x = norm(cross([0, 0, 1], d)), y = cross(d, x);
+  let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+  // The box holds the whole field, up to the height a stack can reach.
+  for (const cx of [-EXT, EXT]) for (const cy of [-EXT, EXT]) for (const cz of [0, 0.6]) {
+    const p = [cx, cy, cz], u = dot(p, x), v = dot(p, y);
+    u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+  }
+  LF.d = d; LF.x = x; LF.y = y;
+  LF.box = [(u0 + u1) / 2, (v0 + v1) / 2, (u1 - u0) / 2, (v1 - v0) / 2];
+}
+let srcDirty = true;
+
+/* ---------- layout ---------- */
+const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { layout(); still(); } });
+function layout() {
+  const r = stage.getBoundingClientRect();
+  cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
+  const dpr = D.dpr(cssW, cssH);
+  W = Math.max(1, Math.round(cssW * dpr)); H = Math.max(1, Math.round(cssH * dpr));
+  canvas.width = W; canvas.height = H;
+  asp = W / H;
+  aim();
+  if (!Pg) return;
+  free(gl, scene); free(gl, back);
+  scene = target(gl, W, H, { depth: true });
+  back = target(gl, W, H);
+}
+
+/* ---------- upload ---------- */
+function upload() {
+  if (!poolDirty && !srcDirty) return false;
+  for (let c = 0; c < G * G; c++) {
+    const h = pool[c];
+    srcBuf[c * 4] = h;
+    srcBuf[c * 4 + 1] = h > 1e-6 ? mass[c] / h : 0.5;
+    srcBuf[c * 4 + 2] = ropeTop[c];
+    srcBuf[c * 4 + 3] = ropeTone[c];
+  }
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, G, G, gl.RGBA, gl.FLOAT, srcBuf);
+  poolDirty = srcDirty = false;
+  return true;
+}
+// Capsules for the rope, then for each thread.
+// Each end carries the rope's smoothed direction, so the shading never kinks.
+const ptx = new Float32Array(MAXP), pty = new Float32Array(MAXP), ptz = new Float32Array(MAXP);
+function gather() {
+  nInst = 0;
+  const put = (ax, ay, az, r, bx, by, bz, tone, t0, t1) => {
+    if (nInst >= MAXI) return;
+    const o = nInst * STRIDE;
+    inst[o] = ax; inst[o + 1] = ay; inst[o + 2] = az; inst[o + 3] = r;
+    inst[o + 4] = bx; inst[o + 5] = by; inst[o + 6] = bz; inst[o + 7] = tone;
+    inst[o + 8] = t0[0]; inst[o + 9] = t0[1]; inst[o + 10] = t0[2];
+    inst[o + 12] = t1[0]; inst[o + 13] = t1[1]; inst[o + 14] = t1[2];
+    nInst++;
+  };
+  // Backward steps first; then each point averages with the next one.
+  for (let k = tail; k < head; k++) {
+    const i = at(k), p = pprev[i];
+    if (pr[i] <= 0) continue;
+    if (p >= tail && pr[at(p)] > 0) { const j = at(p); ptx[i] = px[i] - px[j]; pty[i] = py[i] - py[j]; ptz[i] = pz[i] - pz[j]; }
+    else { ptx[i] = 0; pty[i] = 0; ptz[i] = 0; }
+  }
+  const tan = (i, nx) => {
+    let x = ptx[i], y = pty[i], z = ptz[i];
+    if (nx >= 0) { x += ptx[nx]; y += pty[nx]; z += ptz[nx]; }
+    const l = Math.hypot(x, y, z);
+    return l > 1e-9 ? [x / l, y / l, z / l] : [1, 0, 0];
+  };
+  for (let k = tail; k < head; k++) {
+    const i = at(k);
+    if (pr[i] <= 0) continue;
+    const nx = k + 1 < head && pprev[at(k + 1)] === k && pr[at(k + 1)] > 0 ? at(k + 1) : -1;
+    const p = pprev[i];
+    if (p >= tail && pr[at(p)] > 0) {
+      const j = at(p);
+      put(px[j], py[j], pz[j], 0.5 * (pr[i] + pr[j]), px[i], py[i], pz[i], pt[i], tan(j, i), tan(i, nx));
+    } else put(px[i], py[i], pz[i], pr[i], px[i], py[i], pz[i], pt[i], [1, 0, 0], [1, 0, 0]);
+  }
+  for (const th of threads) {
+    const pts = th.pts, n = pts.length;
+    const dirAt = i => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const x = b[0] - a[0], y = b[1] - a[1], z = b[2] - a[2], l = Math.hypot(x, y, z) || 1;
+      return [x / l, y / l, z / l];
+    };
+    for (let i = 1; i < n; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const tone = th.front >= 0 && b[2] > th.front ? th.tone : th.toneLow;
+      const rr = 0.5 * (a[3] + b[3]);
+      if (rr > 0.0008) put(a[0], a[1], a[2], rr, b[0], b[1], b[2], tone, dirAt(i - 1), dirAt(i));
+    }
+  }
+}
+
+/* ---------- render ---------- */
+let frameN = 0;
+// One pass sums the honey the key light crosses.
+// The map's box fits the honey, so its texels stay small.
+function lightPass() {
+  gl.disable(gl.DEPTH_TEST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, lightA.fb);
+  gl.viewport(0, 0, LMAP, LMAP);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.clearColor(0, 0, 0, 1);
+  if (!nInst) return;
+  let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+  for (let n = 0; n < nInst; n++) {
+    const o = n * STRIDE, r = inst[o + 3];
+    for (const q of [o, o + 4]) {
+      const u = inst[q] * LF.x[0] + inst[q + 1] * LF.x[1] + inst[q + 2] * LF.x[2], v = inst[q] * LF.y[0] + inst[q + 1] * LF.y[1] + inst[q + 2] * LF.y[2];
+      if (u - r < u0) u0 = u - r; if (u + r > u1) u1 = u + r;
+      if (v - r < v0) v0 = v - r; if (v + r > v1) v1 = v + r;
+    }
+  }
+  // Steps of 0.05 keep the texel grid still while the coil grows.
+  const q = x => Math.ceil(x / 0.05) * 0.05, hu = q((u1 - u0) / 2 + 0.03), hv = q((v1 - v0) / 2 + 0.03);
+  const half = Math.max(hu, hv, 0.15);
+  LF.box = [Math.round((u0 + u1) / 0.1) * 0.05, Math.round((v0 + v1) / 0.1) * 0.05, half, half];
+  gl.bindBuffer(gl.ARRAY_BUFFER, capBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, nInst * STRIDE);
+  const lp = Pg.lmap;
+  gl.useProgram(lp.p);
+  gl.uniform4fv(lp.u.uLbox, LF.box);
+  gl.bindVertexArray(capVao);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
+  gl.disable(gl.BLEND);
+}
+function render() {
+  if (!Pg) return;
+  frameN++;
+  const lvl = D.level;
+  if (upload()) {
+    gl.disable(gl.BLEND);
+    gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(Pg.field.p);
+    bind(gl, Pg.field, 'uSrc', 0, srcTex);
+    gl.uniform2f(Pg.field.u.uSize, G, G);
+    gl.uniform1f(Pg.field.u.uDx, DX);
+    tri(gl, field, vao);
+  }
+  // The key's view of the honey: how much it crosses, and where.
+  gather();
+  lightPass();
+  // The plate and the pool.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LESS);
+  gl.depthMask(true);
+  const pp = Pg.pool;
+  gl.useProgram(pp.p);
+  gl.uniformMatrix4fv(pp.u.uVP, false, cam.vp);
+  gl.uniform3f(pp.u.uEye, ...cam.eye);
+  gl.uniform1i(pp.u.uGM, GM);
+  gl.uniform1i(pp.u.uIn, GIN);
+  gl.uniform1f(pp.u.uCaus, 0.9);
+  gl.uniform1f(pp.u.uScat, 0.9);
+  bind(gl, pp, 'uField', 0, field);
+  bind(gl, pp, 'uSrc', 1, srcTex);
+  bind(gl, pp, 'uLA', 2, lightA);
+  gl.uniform4fv(pp.u.uLbox, LF.box);
+  gl.bindVertexArray(poolVao);
+  gl.drawElements(gl.TRIANGLES, poolIdxN, gl.UNSIGNED_SHORT, 0);
+  // Rope and thread: the plate behind them shows through.
+  if (nInst) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, scene.fb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, back.fb);
+    gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+    const cp = Pg.cap;
+    gl.useProgram(cp.p);
+    gl.uniformMatrix4fv(cp.u.uVP, false, cam.vp);
+    gl.uniform3f(cp.u.uEye, ...cam.eye);
+    gl.uniform2f(cp.u.uRes, W, H);
+    gl.uniform3f(cp.u.uRight, ...cam.right);
+    gl.uniform3f(cp.u.uUp, ...cam.up);
+    gl.uniform1f(cp.u.uPix, (2 * Math.tan((cam.fov * Math.PI) / 360)) / H);
+    gl.uniform1f(cp.u.uScat, 0.7);
+    bind(gl, cp, 'uBack', 0, back);
+    bind(gl, cp, 'uSrc', 1, srcTex);
+    bind(gl, cp, 'uLA', 2, lightA);
+    gl.uniform4fv(cp.u.uLbox, LF.box);
+    gl.bindVertexArray(capVao);
+    gl.uniform1i(cp.u.uFringe, 0);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.uniform1i(cp.u.uFringe, 1);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nInst);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+  drawBubbles();
+  gl.disable(gl.DEPTH_TEST);
+  gl.bindVertexArray(null);
+  // Bloom only on the brightest glints.
+  const useBloom = lvl > 0 && dev.bloom > 0;
+  const bt = useBloom ? bloom.render(scene.tex, W, H, { threshold: 1.4, levels: lvl > 1 ? 5 : 4 }) : null;
+  const cq = Pg.comp;
+  gl.useProgram(cq.p);
+  gl.uniform2f(cq.u.uRes, W, H);
+  gl.uniform1f(cq.u.uBloomK, useBloom ? dev.bloom : 0);
+  gl.uniform1f(cq.u.uExp, dev.exposure * 1.6);
+  gl.uniform1f(cq.u.uSeed, (frameN % 64) * 7.0);
+  bind(gl, cq, 'uHdr', 0, scene);
+  bind(gl, cq, 'uBloom', 1, bt || scene.tex);
+  tri(gl, null, vao);
+}
+
+// Bubbles blend over the honey; the depth test hides those behind the coil.
+function drawBubbles() {
+  let n = 0;
+  for (const b of bubbles) {
+    const p = bubbleAt(b);
+    if (!(p[3] > 0)) continue;
+    bubInst.set([p[0], p[1], p[2], p[3], p[4], 0, 0, 0], n * 8);
+    n++;
+  }
+  if (!n) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, bubBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, bubInst, 0, n * 8);
+  const bp = Pg.bub;
+  gl.useProgram(bp.p);
+  gl.uniformMatrix4fv(bp.u.uVP, false, cam.vp);
+  gl.uniform3f(bp.u.uEye, ...cam.eye);
+  gl.uniform3f(bp.u.uRight, ...cam.right);
+  gl.uniform3f(bp.u.uUp, ...cam.up);
+  gl.uniform3fv(bp.u.uTint, SIGMA[1]);
+  gl.uniform1f(bp.u.uKeyI, KEY_I);
+  gl.bindVertexArray(bubVao);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(false);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+  gl.disable(gl.BLEND);
+  gl.depthMask(true);
+}
+
+/* ---------- step ---------- */
+function stepAll(dt) {
+  sim.t += dt;
+  // The pour point eases after the hand, as a heavy spoon would.
+  const kn = 1 - Math.exp(-dt / 0.08);
+  pour.N[0] += (pour.target[0] - pour.N[0]) * kn;
+  pour.N[1] += (pour.target[1] - pour.N[1]) * kn;
+  if (pour.auto && sim.t > pour.auto) { pour.auto = 0; stopPour(); }
+  settle(dt);
+  for (const th of threads) threadStep(th, dt);
+  for (let i = threads.length - 1; i >= 0; i--) if (threads[i].state === 'done') threads.splice(i, 1);
+  for (const th of threads) th.pts = threadPoints(th);
+  toppleStep(dt);
+  melt(dt);
+  stepBubbles(dt);
+  poolStep(dt);
+  stamp();
+  srcDirty = true;
+}
+// Anything still moving keeps the loop awake.
+const busy = () => threads.length > 0 || head > tail || topple || poolStill <= 1.2 && bx1 >= bx0;
+
+/* ---------- sound ---------- */
+// Almost nothing: a low hum while honey flows, a soft thick patter as it lands.
+const kit = audioKit({ gain: 0.5 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+let humV = null;
+function humVoice(ac) {
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator(), lp = ac.createBiquadFilter(), g = ac.createGain(), g2 = ac.createGain();
+  o1.type = 'sine';
+  o2.type = 'triangle';
+  lp.type = 'lowpass';
+  lp.frequency.value = 230;
+  lp.Q.value = 0.6;
+  g.gain.value = 0;
+  g2.gain.value = 0.3;
+  o1.connect(lp);
+  o2.connect(g2).connect(lp);
+  lp.connect(g).connect(kit.out);
+  o1.start();
+  o2.start();
+  return { o1, o2, g };
+}
+// A world point's pan, from its place across the frame.
+function panOf(p) {
+  const c = clipOf([p[0], p[1], 0.05]);
+  return c[3] > 0 ? clamp(c[0] / c[3], -1, 1) * 0.7 : 0;
+}
+// One pat: rope landing on honey is dull; on bare slate, a little tackier.
+function pat(th, onHoney) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const t0 = ac.currentTime + 0.004, tone = th.toneLow, thick = clamp(th.r / 0.016);
+  const lvl = (onHoney ? 0.06 : 0.1) * (0.6 + 0.6 * thick) * jit(0.3) * clamp(0.25 / Math.max(th.U / th.R / TAU, 0.25)) ** 0.5;
+  const pn = ac.createStereoPanner();
+  pn.pan.value = panOf(th.C);
+  pn.connect(kit.out);
+  const src = ac.createBufferSource(), lp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  lp.type = 'lowpass';
+  lp.frequency.value = (onHoney ? 360 : 620) * (1.3 - 0.6 * tone) * jit(0.2);
+  lp.Q.value = 0.8;
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(lvl, t0 + 0.006);
+  g.gain.exponentialRampToValueAtTime(1e-4, t0 + 0.07 + 0.06 * tone);
+  src.connect(lp).connect(g).connect(pn);
+  src.start(t0, Math.random() * 0.8, 0.18);
+  const o = ac.createOscillator(), og = ac.createGain();
+  o.frequency.setValueAtTime(135 * jit(0.1) * (1.2 - 0.4 * tone), t0);
+  o.frequency.exponentialRampToValueAtTime(68, t0 + 0.07);
+  og.gain.setValueAtTime(lvl * 0.8, t0);
+  og.gain.exponentialRampToValueAtTime(1e-4, t0 + 0.09);
+  o.connect(og).connect(pn);
+  o.start(t0);
+  o.stop(t0 + 0.12);
+}
+// The last of a thread lands with a soft, low plop.
+function plop(p) {
+  const ac = kit.live();
+  if (!ac) return;
+  const t0 = ac.currentTime + 0.01, o = ac.createOscillator(), g = ac.createGain(), pn = ac.createStereoPanner();
+  pn.pan.value = panOf(p);
+  o.frequency.setValueAtTime(190 * jit(0.08), t0);
+  o.frequency.exponentialRampToValueAtTime(80, t0 + 0.14);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(0.12, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(1e-4, t0 + 0.2);
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(t0);
+  o.stop(t0 + 0.22);
+}
+// Clear: one slow, soft swipe.
+function swipe() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const t0 = ac.currentTime + 0.01, src = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  src.loop = true;
+  bp.type = 'bandpass';
+  bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(700, t0);
+  bp.frequency.exponentialRampToValueAtTime(180, t0 + 0.55);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(0.09, t0 + 0.12);
+  g.gain.exponentialRampToValueAtTime(1e-4, t0 + 0.6);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(t0);
+  src.stop(t0 + 0.65);
+}
+// Each frame the hum follows the flow; it wavers once per turn of the coil.
+function soundFrame() {
+  const ac = kit.live();
+  if (!ac) return;
+  const th = threads.find(t => t.state !== 'fall');
+  humV ||= humVoice(ac);
+  const now = ac.currentTime;
+  if (th) {
+    const f = (48 + 26 * height) * (1.1 - 0.2 * th.toneLow);
+    humV.o1.frequency.setTargetAtTime(f, now, 0.2);
+    humV.o2.frequency.setTargetAtTime(f * 1.5, now, 0.2);
+    humV.g.gain.setTargetAtTime(0.05 * (0.75 + 0.25 * Math.sin(th.phi)), now, 0.08);
+  } else humV.g.gain.setTargetAtTime(0, now, 0.35);
+}
+
+/* ---------- frame loop ---------- */
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = (now - last) / 1000;
+    last = now;
+    if (raw > 0 && raw < 0.5) D.frame(raw);
+    const dt = clamp(raw, 0, 1 / 30) * dev.tempo;
+    if (dt > 0) stepAll(dt);
+    render();
+    soundFrame();
+    again = busy();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !ptr);
+  }
+}
+function still() { if (ready) render(); }
+
+/* ---------- pointer ---------- */
+let ptr = null;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  ptr = { id: e.pointerId };
+  pour.auto = 0;
+  pour.target = pick(...local(e));
+  // A fresh press starts the pour right under the hand.
+  if (!pour.on) pour.N = [...pour.target];
+  startPour();
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  pour.target = pick(...local(e));
+  wake();
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  ptr = null;
+  stopPour();
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// The arrow keys move the pour point.
+stage.addEventListener('keydown', e => {
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  const p = [pour.target[0] + d[0] * 0.06, pour.target[1] + d[1] * 0.06], l = Math.hypot(...p);
+  pour.target = l > 0.95 ? [p[0] / l * 0.95, p[1] / l * 0.95] : p;
+  wake();
+});
+
+/* ---------- actions ---------- */
+act.down = () => { pour.auto = 0; startPour(); };
+act.up = () => stopPour();
+// A new fluid pours for a moment, so the choice shows at once.
+act.pick = () => {
+  const tone = FLUIDS[fluid].tone;
+  const live = threads.find(t => t.src);
+  if (live) { if (live.tone !== tone) { live.toneLow = live.front >= 0 ? live.toneLow : live.tone; live.tone = tone; live.front = topAt(live.N); } return; }
+  if (reduced()) return;
+  startPour();
+  pour.auto = sim.t + 2.6;
+};
+act.clear = () => {
+  if (head > tail || bx1 >= bx0) swipe();
+  for (let k = tail; k < head; k++) pr[at(k)] = 0;
+  tail = head;
+  topple = null;
+  clearPool();
+  bubbles.length = 0;
+  for (const th of threads) th.last = -1;
+  srcDirty = true;
+  still();
+  wake();
+};
+act.view = () => { aim(); still(); };
+
+/* ---------- ready ---------- */
+// The first frame shows a coil already standing in its pool.
+function firstScene() {
+  pour.target = [0, 0.06];
+  pour.N = [0, 0.06];
+  startPour();
+  for (let i = 0; i < 150; i++) stepAll(1 / 60);
+  if (reduced()) {
+    stopPour();
+    for (let i = 0; i < 90; i++) stepAll(1 / 60);
+  } else pour.auto = sim.t + 6.5;
+}
+try {
+  await initGL();
+  layout();
+  firstScene();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw err;
+}
+ready = true;
+mark('first-frame');
+if (!reduced()) wake();
+
+new ResizeObserver(() => { layout(); still(); }).observe(stage);
+onQuality(() => { layout(); still(); });
+onReducedChange(() => still());
+onContextLoss(canvas, {
+  lost() { Pg = null; cancelAnimationFrame(raf); raf = 0; },
+  async restored() {
+    scene = back = field = lightA = null;
+    await initGL();
+    layout();
+    still();
+    wake();
+  },
+});
+// A hidden tab stops the loop and the sim clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>
