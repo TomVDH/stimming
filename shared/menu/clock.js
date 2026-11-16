@@ -160,8 +160,8 @@ function start() {
     pen.clearRect(0, 0, W, W);
     if (fade <= 0) return;
     const at = t => {
-      // The path is the toys' track (40.5% of the face from the middle). It swirls in to it at the start.
-      const into = Math.min(1, Math.max(0, t / 0.1)), r = W * (0.405 - 0.1 * (1 - into * into * (3 - 2 * into)) + 0.004 * Math.sin(t * 19)), ang = t * Math.PI * 2;
+      // The path is the toys' track, 40.5% of the face from the middle, from start to end.
+      const r = W * 0.405, ang = t * Math.PI * 2;
       return [W / 2 + Math.sin(ang) * r, W / 2 - Math.cos(ang) * r];
     };
     pen.globalCompositeOperation = 'lighter';
@@ -194,7 +194,8 @@ function start() {
   function arrive(first = false) {
     // With no motion the dozen simply shows.
     if (calm()) { if (gsap) gsap.set(objs(), { clearProps: 'opacity,visibility' }); return; }
-    const icons = objs(), head = { a: 0, fade: 1 };
+    // The comet fades in where it starts, on the track at twelve o'clock.
+    const icons = objs(), head = { a: 0, fade: 0 };
     let came = 0;
     gsap.set(icons, { scale: 0.2, autoAlpha: 0, rotation: -24 });
     const paint = () => drawComet(head.a, head.fade);
@@ -205,6 +206,7 @@ function start() {
         const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
         while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.5, ease: 'back.out(2.2)' });
       } }, 0)
+      .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
       // The comet runs on a little past twelve as it fades, so it does not stop dead.
       .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6)
       // On a fresh page the set warms up to snow once, then switches off.
