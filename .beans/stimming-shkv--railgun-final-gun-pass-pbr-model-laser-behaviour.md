@@ -1,11 +1,11 @@
 ---
 # stimming-shkv
 title: 'Railgun: final gun pass (PBR, model, laser, behaviour)'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T18:59:01Z
-updated_at: 2026-11-16T19:55:55Z
+updated_at: 2026-11-16T20:01:26Z
 parent: stimming-f793
 ---
 
@@ -25,5 +25,9 @@ Tom, 2026-11-16: "PBR and gun materials, final tweaks to the gun model and targe
 - [x] Part 3: ranging laser (stimming-48f4): pulse twice, paint, strobe on release, out at launch; the sight draws it
 - [x] Tom signs off Part 3
 - [x] Part 4: per-axis slew (ramp, cruise, brake; feed-forward on the moving rock), cradle sway, recoil run-out to battery with a thunk
-- [ ] Tom signs off Part 4
-- [ ] Clean console; charge, shot and recoil still work
+- [x] Tom signs off Part 4
+- [x] Clean console; charge, shot and recoil still work
+
+## Summary of Changes
+
+Tom signed off all four parts on 2026-11-16. PBR on the gun and the case (cfa81dbf); a tapered, weathered base; one central A pylon over a recoil well with variable recoil (a26243f0, ee4218f2); the IR ranging laser (415862f6, e90b1a60); heavy per-axis slew, cradle sway and a run-out to battery (4a3d6b62). The plan's "The gun, final pass" section holds the details.

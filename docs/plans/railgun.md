@@ -406,3 +406,14 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 - Shooting stars and the late-landing fall draw with `makeMeteor()` / `meteor()`: a round white-hot head and a tail that narrows, cools and fades toward its end. The old glint was a symmetric sliver with a hard spine.
 - Shooting stars are out of the rotation for now (Tom, 2026-11-16); the Dev test still plays one.
 - Stars: a 70 m head, 10 to 22 km runs in 0.6 to 1.1 s; the tail keeps a floor of most of a pixel.
+
+## The gun, final pass (Tom signed off 2026-11-16, stimming-shkv)
+
+- Materials: the gun and the spent case share one physically based light (`PBR`): GGX, Smith visibility, Schlick Fresnel, Lambert for the rest, the sky as image light (hemisphere irradiance, split-sum reflection). Graphite parts are blackened steel. Dev rows: Gun steel, Gun steel rough, Base wear.
+- Base: a two-tier apron, buttress teeth that lean in, a chamfered deck lip; tone patches, rain stains, cracks, a grease band at the race, sand at the foot.
+- Mount: one central pylon (Tom picked it over side towers and piers). The yoke and a short collar stand plumb; below them the pylon spreads like an A with a pointed opening. `RISE` lifts the trunnion 20 m over the old 215 m.
+- Recoil well: a slot in the turning deck behind the pylon; the breech swings down into it as the gun climbs. The struts stand wide on either side.
+- Variable recoil: `recoilRoom()` shortens the slide where the counterweight would strike the well floor, the deck, the apron or the teeth. Full slide to about 15 degrees.
+- Laser (Tom's pattern): a violet-white near-IR thread. Two pulses on the press, a faint paint through the charge, a 22 Hz strobe on the release, out as the slug leaves. The sight's key draws it to a spot on the rock. Ranging takes 1.0 s; the gun lays on the rock from the press.
+- Motion: each axis ramps, cruises and brakes (`SLEW`: traverse 3.2, elevation 2.4 degrees a second), with a feed-forward on the falling rock. Braking rocks the cradle (`sway`). After the shot the barrel holds 0.6 s, runs out over 4.2 s (`RUN`) and seats at battery with a clunk.
+- QA hooks: `eye`, `lay`, `eject`, `caseP`, `slide`; `aim()` reports the slew and the sway. Stills and a clip: `docs/qa/railgun-gun/`.
