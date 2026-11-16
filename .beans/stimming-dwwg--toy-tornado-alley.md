@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T21:04:26Z
+updated_at: 2026-11-16T21:11:53Z
 parent: stimming-oh7b
 ---
 
@@ -65,3 +65,5 @@ Built; waits for the checkpoint with Tom.
 - Hero tornado lab, first pass: tornado/lab.html + lab.js (noindex). F slider F0 to F5 morphs rope, cone, stovepipe, wedge; Morph, Pause, knobs (spin, turbulence, debris, distance, lens, sun, steps, resolution). Headless 44 to 60 fps at 0.6 resolution. Waits for Tom.
 
 - Tornado lab, funnel surface pass (Tom picked it): noise lookups were 16 times too fine (the speckle, sandy debris and grainy base); the wall is now lumps that bend helical striation bands, with fibres and curds as shade; cavity shade from the field; the fringe shows only on the silhouette, so the funnel models lit and shaded; the haze under the storm is dim. 60 fps headless at every F level.
+
+- Tornado lab, onion pass (Tom: "layers of swirling noise and raymarched volume like an onion", "production fidelity before we continue anything else"): the funnel is now a volume: a ragged dense core inside five thin sheaths, each spun as one body at its own Rankine rate and climb speed, noise helical, eroded and radial; multiple-scattering light with sun shadow rays and a two-lobe phase. Knobs read from the address (?lens=85&dist=0.5&res=1). Headless 53 to 60 fps at 0.6 resolution.

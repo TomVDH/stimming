@@ -88,38 +88,6 @@ float spinNoise(vec2 q, float h, float r, float R, float sc, int oct, float vmul
   float n2 = fbm(vec3(q2.x, h - up * f2 * P, q2.y) * s + seed + 0.5, oct);
   return mix(n1, n2, w);
 }
-// The wall's shape and shade. x: the wall's offset in radii, out positive. y: a shade value, 0 to 1.
-// Lumps bend helical striation bands; fine fibres run along the bands.
-// Two spin layers on a 3 s cycle, as in spinNoise, so the texture never winds up.
-vec2 wallLayer(float ang, float h, float R, float seed) {
-  float z = h / max(R * 0.5, 5.0);
-  // About five lumps round the funnel, one every three half-radii up it.
-  vec3 cl = vec3(cos(ang) * 0.2, z * 0.08, sin(ang) * 0.2) + seed;
-  float lump = fbm(cl, 3);
-  // The helix: a band climbs about one step per radian it winds.
-  float hel = z * 1.1 + ang * 0.9 + (lump - 0.5) * 4.0;
-  // Many bands, of uneven depth.
-  float ridge = 1.0 - abs(sin(hel * 4.2));
-  ridge *= ridge * (0.5 + N(vec3(cos(ang) * 0.5, hel * 0.05, sin(ang) * 0.5) + 3.1));
-  // Fibres: fine streaks laid along the bands.
-  vec3 cf = vec3(cos(ang) * 4.0, hel * 0.35, sin(ang) * 4.0) + seed * 2.0;
-  float fib = N(cf) * 0.6 + N(cf * 2.3 + 1.7) * 0.4;
-  // Curds: small cloud lumps, so the wall reads as cloud.
-  float curd = fbm(vec3(cos(ang) * 1.4, z * 0.6, sin(ang) * 1.4) + seed * 3.0, 2);
-  // Fibres and curds tilt the normal hard: they shade more than they move the wall.
-  float disp = (lump - 0.5) * 1.3 + (ridge - 0.25) * 0.1 + (fib - 0.5) * 0.03 + (curd - 0.5) * 0.1;
-  return vec2(disp, clamp(0.3 + 0.4 * ridge + 0.6 * (fib - 0.5) + 0.5 * (lump - 0.5) + 0.5 * (curd - 0.5), 0.0, 1.0));
-}
-vec2 wallNoise(vec2 q, float h, float r, float R) {
-  float om = uVmax / max(R, 4.0) * uSpin;
-  float up = uVmax * 0.3 * uSpin;
-  const float P = 3.0;
-  float ph = uTime / P, f1 = fract(ph), f2 = fract(ph + 0.5), w = abs(1.0 - 2.0 * f1);
-  float ang = atan(q.y, q.x);
-  vec2 l1 = wallLayer(ang - om * f1 * P, h - up * f1 * P, R, 0.0);
-  vec2 l2 = wallLayer(ang - om * f2 * P, h - up * f2 * P, R, 0.37);
-  return mix(l1, l2, w);
-}
 // The length a ray runs inside an upright cylinder round the origin; x is where it enters.
 vec2 cylinder(vec3 ro, vec3 rd, float r, float y0, float y1) {
   float A = dot(rd.xz, rd.xz), B = dot(ro.xz, rd.xz), C = dot(ro.xz, ro.xz) - r * r, D = B * B - A * C;
@@ -133,39 +101,60 @@ vec2 cylinder(vec3 ro, vec3 rd, float r, float y0, float y1) {
 // Debris cloud radius at a height.
 float debrisR(float h) { return uR0 * mix(2.2, 1.18, uFk) * (1.0 + 0.6 * h / uDustH) + 20.0; }
 
-// The condensation funnel as a signed distance in metres: negative inside.
-// A turbulent wall, a ragged lower edge, a top lost in the base, and satellite tubes.
-// n returns the wall's noise, for shading.
-float condS(vec3 p, out float n) {
-  float h = p.y, u = h / uH;
-  vec2 q = p.xz - axisAt(h);
-  float r = length(q), R = radiusAt(h);
-  n = 0.5;
-  // Far from the wall, a cheap bound does.
-  // The wall moves at most about R out, so past 2.4 R a plain bound is safe.
-  if (r > R * 2.4 + 4.0) return r - R * 1.5;
-  float hc = uH * (1.0 - uCond);
-  vec2 wn = wallNoise(q, h, r, R);
-  n = wn.y;
-  // The lower edge frays: the wall moves more there.
-  float fray = 1.0 - smoothstep(hc, hc + 0.3 * uH, h);
-  float S = r - R * (1.0 + uAmp * wn.x * (1.0 + 1.6 * fray));
-  S = max(S, hc - (h + (n - 0.5) * 0.35 * uH));
-  // The top runs up into the base.
-  S = max(S, (h + (n - 0.5) * 90.0) - (uH + 180.0));
-  // Satellite vortices: thin tubes that orbit inside the debris of a violent tornado.
-  if (uMulti > 0.01 && u < 0.55) {
-    float om = uVmax / max(R, 1.0) * 0.55 * uSpin;
-    for (int k = 0; k < 4; k++) {
-      float a = float(k) * 1.5708 + uTime * om + float(k) * 0.7;
-      vec2 cc = R * 0.62 * vec2(cos(a), sin(a));
-      float rt = R * 0.12 * (1.0 + 0.6 * u) * uMulti * (1.0 - smoothstep(0.3, 0.55, u));
-      float nk = N(vec3(q * 0.02, h * 0.01 - uTime * 0.6) + float(k));
-      S = min(S, length(q - cc) * (0.8 + 0.4 * nk) - rt);
-    }
-  }
-  return S;
+/* ---------- the funnel: an onion of spinning sheaths ---------- */
+// Five sheaths of noise round the axis, and a dense core inside them.
+// Each sheath spins as one body at its own Rankine rate, so no texture winds up.
+// Inner sheaths turn and climb fastest; outer ones lag, so the layers shear past each other.
+const int SHEATHS = 5;
+// A sheath's radius, over the funnel radius R: 0.85 to 1.65.
+float sheathR(int k) { return 0.85 + 0.2 * float(k); }
+// One sheath's noise, spun as one body. fk: 0 for the inner sheath, 1 for the outer.
+// x is the radius over R: the noise varies through the sheath too, so no streak runs along a ray.
+float sheathN(float ang, float h, float x, float R, float rk, float fk, float seed, int oct) {
+  float om = uVmax / max(R, 4.0) * (rk < 1.0 ? 1.0 : 1.0 / (rk * rk)) * uSpin * (1.0 + 0.1 * seed);
+  float up = uVmax * 0.35 * uSpin * (1.0 - 0.6 * fk);
+  float zz = (h - up * uTime) / max(R * 0.5, 4.0);
+  // The helix: the bands lean as they climb.
+  float a = ang - om * uTime - zz * 0.9;
+  float rc = 1.4 + (x - rk) * 2.5;
+  vec3 c = vec3(cos(a) * rc, zz * 1.1, sin(a) * rc) + seed * 3.17;
+  float n = fbm(c, oct);
+  // Erosion: fine detail eats into the edges of each billow.
+  return n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45;
 }
+// Condensation density at p, 0 to about 2. u returns the height over the base.
+float funnelD(vec3 p, out float u) {
+  float h = p.y;
+  u = h / uH;
+  vec2 q = p.xz - axisAt(h);
+  float r = length(q), R = radiusAt(h), x = r / R;
+  if (x > 1.9) return 0.0;
+  float ang = atan(q.y, q.x);
+  // The core: the funnel body, its edge ragged by the inner sheath's noise.
+  float nc = sheathN(ang, h, 0.8, R, 0.8, 0.0, 0.0, 4);
+  float edge = 0.9 + uAmp * 0.45 * (nc - 0.5);
+  float d = smoothstep(edge, edge - 0.1, x) * 1.6;
+  // The sheaths: thin layers of tattered cloud, each spinning at its own rate.
+  for (int k = 0; k < SHEATHS; k++) {
+    float rk = sheathR(k), fk = float(k) / float(SHEATHS - 1);
+    float wk = exp(-pow((x - rk) / 0.11, 2.0));
+    if (wk < 0.03) continue;
+    float n = sheathN(ang, h, x, R, rk, fk, float(k + 1), 4);
+    // Outer sheaths show only their densest noise, so the edge stays wispy.
+    float cov = mix(0.42, 0.6, fk);
+    d += wk * smoothstep(cov, cov + 0.07, n) * mix(0.9, 0.35, fk);
+  }
+  // The ragged lower edge, which climbs and falls round the funnel; the top runs into the base.
+  float hc = uH * (1.0 - uCond);
+  float edgeH = hc + (fbm(vec3(cos(ang) * 0.6, h * 0.002 - uTime * 0.05, sin(ang) * 0.6) + 11.0, 2) - 0.5) * 0.4 * uH;
+  d *= smoothstep(edgeH - 25.0, edgeH + 70.0, h) * (1.0 - smoothstep(uH * 0.96, uH + 170.0, h));
+  return d;
+}
+// Extinction per metre for a density: thin funnels get denser, so a rope still reads.
+float funnelSig(float d, float R) { return d * 7.0 / max(R, 5.0); }
+// Henyey-Greenstein phase, scaled so that isotropic is 1.
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
+
 // Debris and dust, and rain, as volumes.
 void vol(vec3 p, out float d, out float w) {
   float h = p.y, u = h / uH;
@@ -175,8 +164,10 @@ void vol(vec3 p, out float d, out float w) {
   // Debris and dust: wider, faster, billowing, low.
   float Rd = debrisR(h);
   if (h < uDustH * 1.8 && r < Rd * 1.3) {
-    float nd = spinNoise(q, h, r, R, max(Rd * 0.3, 6.0), 4, 1.4, 7.3);
-    float puff = smoothstep(0.42, 0.62, nd);
+    float nd = spinNoise(q, h, r, R, max(Rd * 0.22, 5.0), 5, 1.4, 7.3);
+    // Erosion and a tight threshold give the dust billows with edges.
+    nd -= (1.0 - nd) * N(vec3(q.x, h * 1.5, q.y) / max(Rd * 0.05, 2.0) + 5.0) * 0.35;
+    float puff = smoothstep(0.42, 0.55, nd);
     d = uDebris * smoothstep(Rd, Rd * 0.3, r * (0.7 + 0.6 * nd)) * (1.0 - smoothstep(uDustH * 0.25, uDustH * 1.4, h + (nd - 0.5) * uDustH * 1.2)) * puff * 2.0;
   }
   // Rain wrapped round a big tornado, in falling streaks.
@@ -190,15 +181,19 @@ void vol(vec3 p, out float d, out float w) {
     }
   }
 }
-// Condensation only, cheap: for the shadow rays.
-float shadowDens(vec3 p) {
-  vec2 q = p.xz - axisAt(p.y);
-  float r = length(q), R = radiusAt(p.y);
-  float c = smoothstep(R * 1.05, R * 0.9, r) * step(uH * (1.0 - uCond), p.y) * step(p.y, uH);
-  float Rd = debrisR(p.y);
-  // The dust's shade fades out with height, so no line shows on the wall.
-  float d = uDebris * smoothstep(Rd, Rd * 0.3, r) * 0.6 * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, p.y));
-  return c * 0.09 + d * 0.012;
+// Optical depth toward the sun: the funnel's mean shape and the dust, no noise.
+float sunDepth(vec3 p, float R) {
+  float Ls = max(R * 0.45, 4.0), od = 0.0;
+  for (int k = 0; k < 5; k++) {
+    vec3 s = p + uSun * Ls * (float(k) + 0.5);
+    vec2 qs = s.xz - axisAt(s.y);
+    float Rs = radiusAt(s.y), rs = length(qs);
+    float m = smoothstep(1.5, 0.45, rs / Rs) * step(uH * (1.0 - uCond), s.y) * step(s.y, uH + 100.0);
+    float Rd = debrisR(s.y);
+    float dd = uDebris * smoothstep(Rd, Rd * 0.3, rs) * 0.6 * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, s.y));
+    od += (funnelSig(m * 0.7, Rs) + dd * 0.012) * Ls;
+  }
+  return od;
 }
 
 /* ---------- the world round it ---------- */
@@ -225,7 +220,7 @@ vec3 baseCol(vec3 P, vec3 rd) {
   float ang = atan(q.y, q.x) + uTime * 0.05 * uSpin * (1.0 - smoothstep(600.0, 3000.0, r));
   vec2 qr = r * vec2(cos(ang), sin(ang));
   // Broad soft lumps; the fine octaves alias at this distance.
-  float n = fbm(vec3(qr.x, P.y * 2.0, qr.y) * 0.0006 + 3.0, 3);
+  float n = fbm(vec3(qr.x, P.y * 2.0, qr.y) * 0.0006 + 3.0, 5);
   float m = fbm(vec3(qr.x, 0.0, qr.y) * 0.0002 + 9.0, 2);
   vec3 c = uAmb * vec3(0.16, 0.165, 0.17) * (0.35 + 1.3 * n * (0.6 + 0.8 * m));
   // The low sun skims under the base and lights the lumps that face it.
@@ -266,102 +261,54 @@ void main() {
     vec3 P = ro + rd * t;
     bg = mix(baseCol(P, rd), skyCol(rd), 1.0 - exp(-t / 16000.0));
   }
-  // The tornado: march through dust and rain, step by the funnel's distance, stop on its wall.
-  float Rb = uR0 * max(uFlare * 1.6, 2.6) + uLean + uSway * 2.0 + 120.0;
+  // The tornado: one volume march through the sheaths, the core, the dust and the rain.
+  float Rb = uR0 * max(uFlare * 2.0, 2.6) + uLean + uSway * 2.0 + 140.0;
   vec2 cy = cylinder(ro, rd, Rb, 0.0, uH + 240.0);
   vec3 acc = vec3(0.0);
   float T = 1.0;
   if (cy.y > 0.0) {
     float t0 = cy.x, t1 = min(cy.x + cy.y, tMax);
     float dtv = (t1 - t0) / float(uSteps);
-    float t = t0 + dtv * hash(fc + fract(uTime * 7.31) * 113.0);
-    float tPrev = t;
-    vec3 amb0 = uAmb;
-    // The fringe gathers on its own: it shows on rays that miss the wall, the soft silhouette.
-    vec3 fAcc = vec3(0.0);
-    float fT = 1.0;
-    bool hit = false;
-    for (int i = 0; i < 260; i++) {
-      if (t > t1 || T < 0.015) break;
+    float jit = hash(fc + fract(uTime * 7.31) * 113.0);
+    float t = t0 + dtv * jit;
+    float cosT = dot(rd, uSun);
+    // Two lobes: some light bounces back toward the eye, most runs on.
+    float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
+    float ph1 = mix(hg(cosT, 0.3), hg(cosT, -0.1), 0.55);
+    for (int i = 0; i < 240; i++) {
+      if (t > t1 || T < 0.01) break;
       vec3 p = ro + rd * t;
-      float n;
-      float S = condS(p, n);
-      if (S < 0.0) {
-        // Refine the wall between the last two steps.
-        float ta = tPrev, tb = t, nn;
-        for (int k = 0; k < 4; k++) { float tm = 0.5 * (ta + tb); if (condS(ro + rd * tm, nn) < 0.0) tb = tm; else ta = tm; }
-        p = ro + rd * tb;
-        float S0 = condS(p, n);
-        // The normal from the field's slope.
-        float e = max(radiusAt(p.y) * 0.04, 0.6);
-        // Four taps on a tetrahedron give the slope.
-        const vec2 kk = vec2(1.0, -1.0);
-        vec3 nrm = normalize(kk.xyy * condS(p + kk.xyy * e, nn) + kk.yyx * condS(p + kk.yyx * e, nn) + kk.yxy * condS(p + kk.yxy * e, nn) + kk.xxx * condS(p + kk.xxx * e, nn));
-        float u = clamp(p.y / uH, 0.0, 1.0);
-        // Light from the low sun, through the funnel and its dust.
-        float R = radiusAt(p.y), Ls = max(R * 0.5, 6.0), od = 0.0;
-        for (int k = 0; k < 4; k++) od += shadowDens(p + nrm * e * 2.0 + uSun * Ls * (float(k) + 0.5)) * Ls;
-        float sunT = exp(-od);
-        float diff = clamp(dot(nrm, uSun) * 0.9 + 0.1, 0.0, 1.0) * sunT;
-        // Crevices between the bands stay dark.
-        // Cavity shade: how open the field is a little way out along the normal.
-        float d1 = max(radiusAt(p.y) * 0.12, 1.0);
-        float ao = clamp(condS(p + nrm * d1 * 2.0, nn) / (d1 * 2.0), 0.0, 1.0);
-        ao = mix(0.35, 1.0, ao) * (0.75 + 0.5 * n);
-        vec3 alb = vec3(0.6, 0.62, 0.66) * mix(1.0, 0.07, uDark);
-        alb = mix(alb, vec3(0.4, 0.32, 0.24) * mix(1.0, 0.5, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-        alb *= 0.9 + 0.2 * n;
-        // A violent tornado stands in its own rain and dirt: less sun reaches its wall.
-        // Warm sun on the lit side, cool sky in the shade; crevices lose some of both.
-        vec3 col = alb * (uSunCol * diff * 0.8 * (1.0 - 0.6 * uDark) * mix(0.55, 1.0, ao) + amb0 * vec3(0.85, 0.95, 1.15) * (0.25 + 0.35 * u) * (0.6 + 0.4 * nrm.y) * ao);
-        if (uDbg > 0.5 && uDbg < 1.5) col = vec3(diff, sunT, 0.5 + 0.5 * nrm.x);
-        acc += T * col;
-        T = 0.0;
-        hit = true;
-        break;
-      }
-      // The fringe: thin mist just outside the wall, so its edge is soft.
-      float fr = max(radiusAt(p.y) * 0.32, 3.0);
-      if (S < fr) {
-        // Thinner on a wide funnel, so the fringe stays a soft edge, not a shell.
-        float m = smoothstep(fr, 0.0, S) * 0.012 * min(1.0, 40.0 / max(radiusAt(p.y), 1.0));
-        float u = clamp(p.y / uH, 0.0, 1.0);
-        // The mist takes the light of the wall it hugs: bright on the sun side, cool on the far side.
-        vec2 qd = normalize(p.xz - axisAt(p.y) + vec2(1e-3));
-        float fd = clamp(dot(qd, normalize(uSun.xz)) * 0.9 + 0.1, 0.0, 1.0);
-        vec3 mc = vec3(0.6, 0.62, 0.66) * mix(1.0, 0.07, uDark) * (uSunCol * 0.7 * fd * (1.0 - 0.75 * uDark) + amb0 * vec3(0.85, 0.95, 1.15) * (0.3 + 0.35 * u));
-        float am = 1.0 - exp(-m * min(dtv, max(S * 0.6, 0.3)));
-        fAcc += fT * am * mc;
-        fT *= 1.0 - am;
-      }
-      // Dust and rain at this step.
+      vec2 q = p.xz - axisAt(p.y);
+      float r = length(q), R = radiusAt(p.y), Rout = R * 1.9 + 2.0;
+      // Fine steps inside the funnel, long ones outside it.
+      float fine = clamp(R * 0.045, 0.3, dtv);
+      float st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
+      float u;
+      float dc = r < Rout ? funnelD(p, u) : 0.0;
+      u = clamp(p.y / uH, 0.0, 1.0);
       float d, w;
       vol(p, d, w);
-      float sig = d * 0.014 + w * 0.0012;
-      // Near the wall, step by its distance; elsewhere by the volume step.
-      float st = min(dtv, max(S * 0.6, 0.3 + t * 0.0002));
-      if (sig > 1e-5) {
-        float u = clamp(p.y / uH, 0.0, 1.0);
-        float R = radiusAt(p.y), Ls = max(R * 0.6, 8.0), od = 0.0;
-        for (int k = 0; k < 3; k++) od += shadowDens(p + uSun * Ls * (float(k) + 0.5)) * Ls;
-        vec3 lit = uSunCol * exp(-od);
-        vec3 amb = amb0 * (0.25 + 0.35 * u);
-        // Dirt from a violent tornado is dark: soil, wood, rain.
-        vec3 dc = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (lit * 0.5 * (1.0 - 0.6 * uDark) + amb * 0.8);
-        vec3 wc = vec3(0.2, 0.22, 0.25) * (amb * 0.7 + lit * 0.05);
-        vec3 col = (dc * d * 0.014 + wc * w * 0.0012) / sig;
+      float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
+      float sig = sc + sd + sw;
+      if (sig > 1e-6) {
+        // Sunlight through the funnel and the dust, in three scattering octaves, each less shadowed.
+        float od = sunDepth(p, R);
+        vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.25 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+        // Sky light falls off with depth into the funnel.
+        float depth = max(0.0, 1.6 - r / R);
+        vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u) * exp(-depth * 1.6);
+        vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
+        alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
+        vec3 cc = alb * (sunL * 0.55 + ambL);
+        vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
+        vec3 wcol = vec3(0.2, 0.22, 0.25) * (uAmb * 0.7 + uSunCol * exp(-od) * 0.05);
+        vec3 col = (cc * sc + dcol * sd + wcol * sw) / sig;
         float a = 1.0 - exp(-sig * st);
         acc += T * a * col;
         T *= 1.0 - a;
       }
-      tPrev = t;
       t += st;
     }
-    // Air between the eye and the tornado.
-    // A ray that hit the wall keeps a trace of the fringe; one that missed keeps it all.
-    float keep = hit ? 0.12 : 1.0;
-    acc = fAcc * keep + mix(1.0, fT, keep) * acc;
-    T *= mix(1.0, fT, keep);
     // Under the storm the air is dim: its haze darkens as much as it lifts.
     acc = mix(acc, skyCol(vec3(rd.x, 0.0, rd.z)) * 0.45 * (1.0 - T), 1.0 - exp(-uDist / 30000.0));
   }
@@ -423,9 +370,11 @@ const P = await linked(gl, { scene: program(gl, TRI_VS, SCENE_FS), final: progra
 const vao = gl.createVertexArray();
 const noise = noiseVolume(gl);
 
-// The knobs. Each slider writes its value beside it.
+// The knobs. Each slider writes its value beside it; ?lens=85 and the like set one from the address.
 const knob = id => {
   const el = $(id), out = el.parentElement.querySelector('output');
+  const pre = new URLSearchParams(location.search).get(id);
+  if (pre !== null && pre !== '') el.value = pre;
   const show = () => { if (out) out.textContent = (+el.value).toFixed(el.step < 1 ? 2 : 0); };
   el.addEventListener('input', show);
   show();
