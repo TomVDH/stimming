@@ -135,6 +135,26 @@ Headless Chromium on Metal; Tom checks a real laptop. 6.8 M triangles a frame: t
 
 **To reach 30 fps at 2x:** draw the garden once (no transmission pass); moss as one card a strand at Standard, two at High; fewer moss strands far from the front; the shadow map rebuilt only when the wake or growth changes; the loop sleeps when nothing moves, as today.
 
+### Hybrid built (2026-11-16, bean `stimming-doqy`)
+
+Tom: "ok let's try hybrid". `terrarium/garden.js` draws the garden on three.js 0.170.0 into a half-float picture on the toy's own WebGL context. `shared/environment.js` gained two opt-in hooks: a scene texture can be live (a function), and `before(w, h)` runs before each frame's passes. The jar shader reads the picture through the wall; the old distance-field plants are gone.
+- The garden redraws only on a change: wake (in 0.02 steps), growth, planting, light, a poke. At rest it costs nothing.
+- Fern, Moss (one small fern, taller cushions) and Bog (pitcher plants, red-tipped sphagnum) are plantings of one garden.
+- Growth spreads the moss: each strand has a rank; strands under the cover grow.
+- Headless, 1280 x 800, misting: 2.7 ms median at 1x, 7.7 ms at 2x.
+
+### More public references (2026-11-16)
+
+| Link | What | Use |
+|---|---|---|
+| [Codrops: Procedural Leaf Growth with Three.js](https://tympanus.net/codrops/hub/author/nikolay_likomanov) (Aug 2025) | Leaves grown in GLSL | Leaflet shape and unfurl |
+| [Codrops: How to make the fluffiest grass](https://tympanus.net/codrops/2025/02/04/how-to-make-the-fluffiest-grass-with-three-js/) | Alpha-tested blades, fake AO | Moss tips and base shade |
+| [Codrops: Fractals to Forests](https://tympanus.net/codrops/2025/01/27/fractals-to-forests-creating-realistic-3d-trees-with-three-js/) | EZ-Tree's method, step by step | The branch, rule growth |
+| [Growing plants with code](https://portfolio-matiasngf.vercel.app/experiments/shaders-plants) | Plants that grow in a shader | Growth animation |
+| [Chiro Visuals ivy and fig generator](https://80.lv/articles/this-fully-procedural-ivy-and-fig-tree-generator-runs-in-your-browser) | Real-time vines and leaves in three.js | Ivy on the stone, later |
+| [Forest environment, three.js and WebGPU](https://discourse.threejs.org/t/forest-environment-built-with-three-js-and-webgpu/96126) | A custom grass system | Ground cover at scale |
+| [Tiny Garden](https://ibiblio.org/e-notes/webxr/garden/lathe/garden3gl.htm) | Lathed plants in WebGL and three.js | Pitchers and stems |
+
 ### Plan A, stage by stage (one look at a time, stills after each)
 
 1. **Raster pass.** The contents draw as meshes into a buffer the jar reads. Today's look first, as meshes, so nothing jumps.

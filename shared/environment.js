@@ -153,6 +153,7 @@ void main() {
 //   scene     GLSL with vec3 envScene(vec2 uv). Required.
 //   uniforms  the scene's own uniforms: { uName: () => number or array }.
 //   textures  the scene's own pictures: { tName: url }. sRGB in, linear out, with mips.
+//             A function in place of a url gives a live texture: () => WebGLTexture.
 //   animated  true when the scene moves with no bundle on. Default false.
 //   active    () => false stops the loop, for a page with other modes.
 //   onFrame   called with the frame time in seconds, each loop frame.
@@ -160,13 +161,16 @@ void main() {
 //   glass     other GLSL for the pane's glass step: for tests, or a curved pane.
 //   pane      the glass step's own parts: { head, uniforms, textures }.
 //             head is GLSL before main; textures is { tName: () => WebGLTexture }.
+//   before    called with (w, h) before each frame's passes, on the same context.
+//             It must leave the context in its default state.
 //   share     another runner: this one uses its state, clock, motion and detail.
 /**
  * The options for environment(); the list above gives each meaning.
  * @typedef {object} EnvOptions
  * @property {string} scene GLSL with vec3 envScene(vec2 uv).
  * @property {Record<string, () => number | number[]>} [uniforms]
- * @property {Record<string, string>} [textures] Uniform name to picture URL.
+ * @property {Record<string, string | (() => WebGLTexture | null)>} [textures] Uniform name to picture URL, or a live texture.
+ * @property {((w: number, h: number) => void) | null} [before]
  * @property {boolean} [animated]
  * @property {() => boolean} [active]
  * @property {((t: number) => void) | null} [onFrame]
@@ -182,7 +186,7 @@ void main() {
  * @param {HTMLCanvasElement} canvas
  * @param {EnvOptions} options
  */
-export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, pane = {}, share = null, maxDpr = 2, budget = 2.6e6 }) {
+export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, pane = {}, before = null, share = null, maxDpr = 2, budget = 2.6e6 }) {
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   function compile(fs) {
@@ -220,6 +224,8 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
   const bloom = bloomChain(gl);
   // The scene's own pictures. Each loads once; until then it is one clear pixel.
   const pics = Object.entries(textures).map(([name, src], i) => {
+    // Units 0 and 1 belong to the passes; the pictures start at 4.
+    if (typeof src === 'function') return { name, tex: null, live: src, unit: 4 + i };
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -235,8 +241,7 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
       touch();
     };
     img.src = src;
-    // Units 0 and 1 belong to the passes; the pictures start at 4.
-    return { name, tex, unit: 4 + i };
+    return { name, tex, live: null, unit: 4 + i };
   });
 
   const S = share ? share.state : { on: Object.fromEntries(ENV_PARTS.map(k => [k, true])), ...ENV_DEFAULTS, light: [0.32, 0.52], lightColor: null };
@@ -302,6 +307,8 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     // Size every target here: a resize binds its texture, which must not happen between passes.
     rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w * gq.bokehScale), Math.ceil(h * gq.bokehScale));
     rtPane.size(w, h);
+    // The toy's own pass, before the runner's passes.
+    before?.(w, h);
     // sky.js: the hour sets the palette, the sun and the daylight.
     const sk = skyAt(S.hour), day = S.on.sky ? sk.day : 0;
     // By day the key light is a pale sun, unless the toy sets its colour.
@@ -331,7 +338,7 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     setOwn(uniforms, u);
     for (const pic of pics) {
       gl.activeTexture(gl.TEXTURE0 + pic.unit);
-      gl.bindTexture(gl.TEXTURE_2D, pic.tex);
+      gl.bindTexture(gl.TEXTURE_2D, pic.live ? pic.live() : pic.tex);
       gl.uniform1i(u(pic.name), pic.unit);
     }
     gl.activeTexture(gl.TEXTURE0);

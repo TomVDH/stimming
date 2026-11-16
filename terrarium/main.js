@@ -1,8 +1,9 @@
 // Terrarium: the toy's module, loaded by index.html.
-// Blockout: the jar, its plants and the grow light, simply shaded.
+// The jar and its wet glass are ray-marched; garden.js draws the garden in three.js.
 import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
+import { createGarden } from './garden.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -77,10 +78,6 @@ const CAM_Y = 1.35, AIM_Y = 0.86, CAM_D = 3.45, CAM_ASP = 0.7;
 // Metres in one scene unit, and the top of the glass in units.
 const METRE = 0.2, GLASS_TOP = SHAPE.top;
 const f = x => x.toFixed(4);
-// The fern crowns: three in Fern, the fourth alone in Moss.
-const CROWN_AT = [[-0.17, 0.27, -0.1, 0.22], [0.17, 0.25, -0.2, 0.18], [-0.02, 0.24, 0.22, 0.12], [0.2, 0.28, -0.18, 0.13]];
-const CROWNS = CROWN_AT.map(c => `vec3(${f(c[0])}, ${f(c[1])}, ${f(c[2])})`);
-
 // The camera, as statements. It needs uv and asp, and gives ro and rd.
 const CAM = `
   float camD = ${f(CAM_D)} * max(1.0, ${f(CAM_ASP)} / asp);
@@ -151,11 +148,9 @@ const JAR = `
 
 const SCENE = `
 uniform vec3 uLampC;
-uniform float uPlants, uSpray;
-// uWake: 0 dull and curled, 1 freshly misted. uGrow: growth the jar keeps, 0 to 1.
-uniform float uWake, uGrow;
-// Each fern's sway after a poke, in radians.
-uniform vec3 uSway;
+uniform float uSpray;
+// The garden, drawn by three.js from this same eye: linear light, alpha for cover.
+uniform sampler2D tGarden;
 const vec3 LP = vec3(0.0, ${f(LY)}, ${f(LZ)});
 // Green glass: red and blue fade first, per unit of glass crossed.
 const vec3 GLASS_ABS = vec3(5.0, 1.4, 3.6);
@@ -167,117 +162,6 @@ float teN(vec2 p) {
   u = u * u * (3.0 - 2.0 * u);
   return mix(mix(teH(i), teH(i + vec2(1.0, 0.0)), u.x), mix(teH(i + vec2(0.0, 1.0)), teH(i + vec2(1.0, 1.0)), u.x), u.y);
 }
-float teBump(vec2 q, vec2 c, float k) { vec2 d = q - c; return exp(-dot(d, d) * k); }
-
-// The top of the bed: moss over soil, in low mounds.
-float teFloor(vec2 q) {
-  float moss = uPlants > 0.5 && uPlants < 1.5 ? 1.0 : 0.0;
-  float h = 0.23 + (0.05 + 0.05 * moss) * teBump(q, vec2(-0.14, -0.12), 14.0) + (0.035 + 0.04 * moss) * teBump(q, vec2(0.2, 0.04), 22.0);
-  h += moss * 0.045 * teBump(q, vec2(0.02, 0.24), 30.0);
-  h += 0.012 * teN(q * 18.0) + (0.006 + 0.006 * uWake) * teN(q * 47.0);
-  return h;
-}
-
-// One fern frond. q is relative to the crown; the frond arches out along yaw.
-// R sets its reach; lift stretches it upward and must stay at 1 or more.
-// curl 0 is open; curl 1 rolls the tip into a fiddlehead, as a young frond does.
-float teFrond(vec3 q, float yaw, float R, float lift, float curl) {
-  float c = cos(yaw), s = sin(yaw);
-  vec2 uw = vec2(c * q.x + s * q.z, c * q.z - s * q.x);
-  vec2 d = vec2(uw.x, q.y / lift) - vec2(R, 0.15 * R);
-  // The spine leaves the crown at th0 and turns through span; curling adds turn.
-  const float th0 = 3.29;
-  float span = mix(2.99, 5.7, curl);
-  float u = mod(th0 - atan(d.y, d.x), 6.28318);
-  float sN = u <= span ? u / span : (u - span < 6.28318 - u ? 1.0 : 0.0);
-  float ts = th0 - sN * span;
-  // A curl draws the spine in toward its centre: a spiral, not a circle.
-  float rad = R * (1.0 - 0.82 * curl * smoothstep(0.3, 1.0, sN));
-  float e = length(d - rad * vec2(cos(ts), sin(ts)));
-  // Leaflets stand out from the stem in a comb; curled ones fold in.
-  float wl = 0.55 * R * pow(max(sin(3.1416 * clamp((sN - 0.18) / 0.82, 0.0, 1.0)), 0.0), 0.8);
-  wl *= 1.0 - 0.75 * curl * smoothstep(0.25, 0.9, sN);
-  float k = fract(sN * 15.0 - abs(uw.y) / R * 1.4);
-  float pin = 0.25 + 0.75 * (1.0 - smoothstep(0.15, 0.45, abs(k - 0.5)));
-  float blade = max(e - 0.004, abs(uw.y) - wl * pin);
-  float stem = length(vec2(e, uw.y)) - 0.006 * (1.0 - 0.6 * sN);
-  return min(blade, stem);
-}
-// A fern grows by one rule: each new frond turns a golden angle from the last.
-// Older fronds are longer and lie lower; young ones stand up and stay curled.
-// n can be fractional: the newest frond is still coming up.
-float teFern(vec3 p, vec3 base, float n, float yaw0, float R, float sway) {
-  vec3 q = p - base;
-  // A poke sways the whole fern from its crown.
-  q.x -= sway * q.y;
-  float bs = length(q - vec3(0.0, R * 1.2, 0.0)) - R * 2.1;
-  if (bs > 0.05) return bs;
-  float d = 1e3;
-  for (int j = 0; j < 8; j++) {
-    float fj = float(j);
-    if (fj >= n) break;
-    float young = fj / max(n - 1.0, 1.0), grow = clamp(n - fj, 0.0, 1.0);
-    float Rj = R * (1.05 - 0.35 * young) * (0.85 + 0.2 * teH(vec2(fj, R))) * (0.35 + 0.65 * grow);
-    // Dry fronds curl; a mist opens them, the youngest last.
-    float curl = clamp(0.5 + 0.45 * young + 0.5 * (1.0 - grow) - 1.1 * uWake, 0.0, 1.0);
-    d = min(d, teFrond(q, yaw0 + fj * 2.39996, Rj, 1.25 + 0.5 * young + 0.2 * uWake, curl));
-  }
-  return d;
-}
-// One mushroom: a stem and a flat cap.
-float teShroom(vec3 p, vec3 base, float h, float rc, out float cap) {
-  vec3 q = p - base;
-  q.x -= q.y * 0.15;
-  float stem = length(vec2(length(q.xz), max(abs(q.y - h * 0.5) - h * 0.5, 0.0))) - rc * 0.22;
-  vec3 c = q - vec3(0.0, h, 0.0);
-  float dc = max((length(c * vec3(1.0, 1.9, 1.0)) - rc) / 1.9, -c.y - 0.003);
-  cap = dc < stem ? 1.0 : 0.0;
-  return min(stem, dc);
-}
-// One pitcher plant: an open tube that flares at the top.
-float tePitcher(vec3 p, vec3 base, float H) {
-  vec3 q = p - base;
-  q.xz -= vec2(0.08, 0.05) * q.y;
-  float y = clamp(q.y / H, 0.0, 1.0);
-  float r = mix(0.01, 0.04, pow(y, 1.5));
-  return max(abs(length(q.xz) - r) - 0.004, max(-q.y, q.y - H)) * 0.8;
-}
-
-// The jar's contents. x: distance; y: material.
-// 1 bed, 2 fern, 3 mushroom stem, 4 mushroom cap, 5 pitcher.
-vec2 teMap(vec3 p) {
-  vec2 r = vec2(max((p.y - teFloor(p.xz)) * 0.6, length(p.xz) - (jarR(p.y) - 0.015)), 1.0);
-  if (p.y > 0.15) {
-    if (uPlants < 0.5) {
-      float fe = min(teFern(p, ${CROWNS[0]}, 4.0 + 4.0 * uGrow, 0.3, 0.22, uSway.x), teFern(p, ${CROWNS[1]}, 3.0 + 3.0 * uGrow, 1.2, 0.18, uSway.y));
-      fe = min(fe, teFern(p, ${CROWNS[2]}, 2.0 + 3.0 * uGrow, 2.0, 0.12, uSway.z));
-      if (fe < r.x) r = vec2(fe, 2.0);
-    } else if (uPlants < 1.5) {
-      float fe = teFern(p, ${CROWNS[3]}, 2.0 + 3.0 * uGrow, 0.8, 0.13, uSway.x);
-      if (fe < r.x) r = vec2(fe, 2.0);
-    } else {
-      float pi = min(tePitcher(p, vec3(-0.12, 0.22, -0.08), 0.42), tePitcher(p, vec3(0.05, 0.22, -0.2), 0.36));
-      pi = min(pi, min(tePitcher(p, vec3(-0.22, 0.22, 0.12), 0.3), tePitcher(p, vec3(0.16, 0.22, 0.02), 0.26)));
-      if (pi < r.x) r = vec2(pi, 5.0);
-    }
-    if (uPlants < 1.5 && length(p - vec3(0.2, 0.3, 0.2)) < 0.22) {
-      float cap, cap2, cap3;
-      float m = teShroom(p, vec3(0.2, 0.24, 0.2), 0.1, 0.045, cap);
-      float m2 = teShroom(p, vec3(0.26, 0.24, 0.14), 0.07, 0.034, cap2);
-      float m3 = teShroom(p, vec3(0.14, 0.24, 0.25), 0.055, 0.028, cap3);
-      if (m2 < m) { m = m2; cap = cap2; }
-      if (m3 < m) { m = m3; cap = cap3; }
-      if (m < r.x) r = vec2(m, 3.0 + cap);
-    }
-  }
-  return r;
-}
-vec3 teNormal(vec3 p) {
-  const vec2 k = vec2(1.0, -1.0);
-  const float e = 0.0015;
-  return normalize(k.xyy * teMap(p + k.xyy * e).x + k.yyx * teMap(p + k.yyx * e).x + k.yxy * teMap(p + k.yxy * e).x + k.xxx * teMap(p + k.xxx * e).x);
-}
-
 // The grow light at a point: its colour over the square of the distance.
 vec3 teLamp(vec3 p) { vec3 d = LP - p; return uLampC * 3.0 / dot(d, d); }
 
@@ -333,65 +217,12 @@ vec3 teBack(vec3 o, vec3 d) {
   return c;
 }
 
-// The lit colour of a point in the jar.
-vec3 teShade(vec3 p, vec3 rd, float m) {
-  vec3 n = teNormal(p);
-  vec3 L = normalize(LP - p), lc = teLamp(p);
-  float ao = clamp(teMap(p + n * 0.035).x / 0.035, 0.25, 1.0);
-  vec3 amb = vec3(0.02, 0.035, 0.026);
-  float dif = max(dot(n, L), 0.0), leaf = 0.0;
-  vec3 base;
-  if (m < 1.5) {
-    float r = length(p.xz), top = teFloor(p.xz);
-    if (r > jarR(p.y) - 0.03 && p.y < top - 0.03) {
-      // The cut face on the glass: pebbles under soil.
-      // Round pebbles in two rough rows, then dark soil over them.
-      vec2 g = vec2(atan(p.x, p.z) * r * 30.0, p.y * 30.0), gi = floor(g), gf = fract(g) - 0.5;
-      vec2 o = (vec2(teH(gi), teH(gi + 7.3)) - 0.5) * 0.3;
-      float pd = length((gf - o) * vec2(1.0, 1.25)), cell = teH(gi + 3.1);
-      vec3 stone = mix(vec3(0.05, 0.048, 0.045), vec3(0.16, 0.15, 0.13), cell) * (1.15 - pd * 1.2);
-      vec3 soil = vec3(0.028, 0.018, 0.011) * (0.7 + 0.6 * teN(g * 3.0));
-      base = p.y < 0.15 ? mix(vec3(0.01, 0.008, 0.006), stone, smoothstep(0.48, 0.4, pd)) : soil;
-      dif = 0.3;
-    } else {
-      float t = teN(p.xz * 24.0) * 0.6 + teN(p.xz * 70.0) * 0.4;
-      // Dry moss is olive and dull; wet moss turns a deep, bright green.
-      base = mix(mix(vec3(0.03, 0.04, 0.012), vec3(0.07, 0.085, 0.025), t), mix(vec3(0.02, 0.07, 0.01), vec3(0.09, 0.22, 0.025), t), uWake);
-      // Moss creeps over bare soil as the jar grows.
-      float cover = smoothstep(0.5 - 0.4 * uGrow, 0.58 - 0.4 * uGrow, teN(p.xz * 5.0 + 4.0) * 0.7 + teN(p.xz * 19.0) * 0.3 + 0.12);
-      base = mix(vec3(0.03, 0.02, 0.012) * (0.7 + 0.6 * teN(p.xz * 60.0)), base, cover);
-      leaf = 0.3 * cover;
-      // Wet moss tips catch the light: small glints.
-      float tip = step(0.93, teH(floor(p.xz * 260.0))) * uWake * cover;
-      base += tip * lc * 0.02 * pow(max(dot(reflect(rd, n), L), 0.0), 6.0);
-    }
-  } else if (m < 2.5) {
-    base = mix(vec3(0.05, 0.1, 0.03), vec3(0.05, 0.19, 0.03), uWake);
-    dif = abs(dot(n, L));
-    leaf = 0.6 + 0.4 * uWake;
-  } else if (m < 3.5) base = vec3(0.4, 0.36, 0.3);
-  else if (m < 4.5) base = vec3(0.38, 0.2, 0.09);
-  else {
-    base = mix(vec3(0.07, 0.2, 0.04), vec3(0.32, 0.05, 0.06), smoothstep(0.32, 0.55, p.y));
-    dif = abs(dot(n, L));
-    leaf = 0.7;
-  }
-  vec3 c = base * (lc * dif + amb) * ao;
-  // Wet caps glisten.
-  if (m > 3.5 && m < 4.5) c += lc * pow(max(dot(reflect(rd, n), L), 0.0), 30.0) * (0.08 + 0.7 * uWake);
-  // Light through a leaf from behind, and a bright edge.
-  float back = pow(max(dot(rd, L) + 0.2, 0.0), 2.0);
-  c += base * lc * leaf * back * 1.4;
-  c += lc * base * leaf * 2.0 * pow(1.0 - abs(dot(n, rd)), 3.0) * back;
-  return c;
-}
-
 // Solid glass: the lid, its knob and the base. The view bends hard through it.
-vec3 teSolid(vec3 p, vec3 rd, vec3 n, float cv, float F, vec3 refl) {
+vec3 teSolid(vec3 p, vec3 rd, vec3 n, float cv, float F, vec3 refl, vec4 gd) {
   vec3 rr = refract(rd, n, 0.667);
   vec3 through = teBack(p, normalize(rr * 1.6 - rd * 0.6));
   // Through the base, the soil above darkens the view.
-  if (p.y < ${f(SHAPE.foot)}) through = mix(through, vec3(0.012, 0.01, 0.008), 0.6);
+  if (p.y < ${f(SHAPE.foot)}) through = mix(mix(through, vec3(0.012, 0.01, 0.008), 0.6), gd.rgb * 0.5, gd.a * 0.8);
   vec3 c = through * exp(-GLASS_ABS * (0.08 + 0.25 * (1.0 - cv))) * (1.0 - F) + refl * F;
   // Light caught inside the glass glows along its edges.
   return c + uLampC * vec3(0.6, 1.0, 0.75) * 0.05 * pow(1.0 - cv, 2.0);
@@ -408,25 +239,15 @@ vec3 envScene(vec2 uv) {
   gSoft = 0.06;
   vec3 refl = teBack(p, reflect(rd, jn));
   gSoft = 0.0;
-  if (p.y > ${f(SHAPE.lid)} || p.y < ${f(SHAPE.foot)}) return teSolid(p, rd, jn, cv, F, refl);
-  // The far wall of the jar.
+  // The garden through the wall: the wall bends the view a hair.
+  vec4 gd = texture(tGarden, uv - vec2(dot(jn, rt) / asp, dot(jn, up)) * 0.004);
+  if (p.y > ${f(SHAPE.lid)} || p.y < ${f(SHAPE.foot)}) return teSolid(p, rd, jn, cv, F, refl, gd);
+  // The far wall of the jar, seen where the garden leaves the view clear.
   float tE = jarExit(ro, rd, jt + 0.004);
-  // March the contents.
-  float t = jt + 0.002, hitM = 0.0;
-  for (int i = 0; i < 90; i++) {
-    vec2 h = teMap(ro + rd * t);
-    if (h.x < 0.0007 * t) { hitM = h.y; break; }
-    t += h.x * 0.75;
-    if (t > tE) break;
-  }
-  vec3 inside;
-  if (hitM > 0.0) inside = teShade(ro + rd * t, rd, hitM);
-  else {
-    // Through the back wall to the room, with the wall's own faint sheen.
-    vec3 pb = ro + rd * tE, nb = -jarN(pb);
-    inside = teBack(pb, rd) * 0.85 + uLampC * 0.03 * pow(1.0 - abs(dot(nb, rd)), 3.0);
-    t = tE;
-  }
+  vec3 pb = ro + rd * tE, nb = -jarN(pb);
+  vec3 inside = mix(teBack(pb, rd) * 0.85 + uLampC * 0.03 * pow(1.0 - abs(dot(nb, rd)), 3.0), gd.rgb, gd.a);
+  // The garden lies about halfway through the jar; damp air softens the back wall more.
+  float t = mix(tE, jt + 0.35 * (tE - jt), gd.a);
   // The spray: a fine cone of mist from the lid, lit by the grow light.
   if (uSpray > 0.002) {
     float mist = 0.0, len = t - jt;
@@ -590,6 +411,8 @@ const sway = [[0, 0], [0, 0], [0, 0]], swayNow = [0, 0, 0];
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 let env = null;
+/** @type {ReturnType<typeof createGarden> | null} */
+let garden = null;
 try {
   env = environment(canvas, {
     scene: SCENE,
@@ -600,13 +423,12 @@ try {
       textures: { tWipe: () => wipeTexture() },
     },
     active: () => visible,
+    textures: { tGarden: () => garden?.texture() ?? null },
+    // The garden draws first, on the same context, when it changed.
+    before: (w, h) => garden?.render(w, h),
     uniforms: {
       uLampC: () => lampColour(),
-      uPlants: () => plants,
       uSpray: () => G.spray,
-      uWake: () => G.wake,
-      uGrow: () => grow,
-      uSway: () => swayNow,
     },
   });
 } catch (err) {
@@ -616,11 +438,22 @@ try {
   throw err;
 }
 const S = env.state;
+// The garden shares the runner's context and its eye.
+garden = createGarden(canvas, env.gl, {
+  fov: 2 * Math.atan(0.5 / FOC) * 180 / Math.PI,
+  eye: asp => [0, CAM_Y, CAM_D * Math.max(1, CAM_ASP / asp)],
+  aim: [0, AIM_Y, 0],
+  lamp: [0, LY, LZ],
+});
+// Hands the garden what it shows; it redraws only on a change.
+// Wake goes in steps of 0.02, so a wake redraws the garden ten times a second, not sixty.
+const feed = () => garden.set({ wake: Math.round(G.wake * 50) / 50, grow, plants, lamp: lampColour(), sway: swayNow });
 // Only the glass, the glow, the grade and the output run here.
 Object.assign(S.on, { water: false, sky: false, air: false, flare: false });
 Object.assign(S, { wet: 0, wind: 0, fog: REST_FOG, patch: 0.15, defocus: 0, zoom: 0.9, bloom: 0.55, thr: 0.8, orbs: 0, vig: 0.55, grain: 0.035, expo: 1.2, flGain: 0, tintK: 0.3 });
 S.frame = false;
 function relight() {
+  feed();
   const c = lampColour(), m = Math.max(...c);
   S.lightColor = c.map(x => x / m * 0.6);
   S.light = lampOnFrame(canvas.clientWidth / Math.max(1, canvas.clientHeight));
@@ -671,6 +504,7 @@ function tick(t) {
   const dt = tickT ? Math.min(0.05, (t - tickT) / 1000) : 0.016;
   tickT = t;
   step(dt);
+  feed();
   env.touch();
   tickRaf = busy() && visible && !reduced() ? requestAnimationFrame(tick) : 0;
   if (!tickRaf) tickT = 0;
@@ -686,9 +520,10 @@ let dryTimer = 0;
 function stillMist() {
   Object.assign(G, { dose: 1, mistFog: 0, front: 0, wake: 1 });
   S.wet = 1;
+  feed();
   env.touch();
   clearTimeout(dryTimer);
-  dryTimer = setTimeout(() => { Object.assign(G, { dose: 0, wake: 0 }); S.wet = 0; wipeK.fill(0); wipeLive = false; wipeDirty = true; env.touch(); }, 40000);
+  dryTimer = setTimeout(() => { Object.assign(G, { dose: 0, wake: 0 }); S.wet = 0; wipeK.fill(0); wipeLive = false; wipeDirty = true; feed(); env.touch(); }, 40000);
 }
 function holdMist(on) {
   if (on) { grow = Math.min(1, grow + 0.05); saveGrow(); }
@@ -705,7 +540,7 @@ function mist() {
 }
 
 act.mist = mist;
-act.plants = v => { plants = PLANTS[v] ?? 0; env.touch(); };
+act.plants = v => { plants = PLANTS[v] ?? 0; feed(); env.touch(); };
 act.light = v => { light = v; relight(); };
 act.fogBack = v => { fogBack = v; };
 fogBack = ui.setting('fogback')?.value ?? fogBack;
@@ -747,17 +582,15 @@ canvas.addEventListener('pointermove', e => {
 function poke(cx, cy) {
   const r = canvas.getBoundingClientRect(), asp = r.width / Math.max(1, r.height);
   const { ro, fw, rt, up } = camera(asp);
-  const list = plants === 0 ? [0, 1, 2] : plants === 1 ? [3] : [];
   let best = -1, bd = 1e9;
-  for (const i of list) {
-    const c = CROWN_AT[i], v = sub([c[0], c[1] + c[3] * 1.1, c[2]], ro), z = dot(v, fw);
+  for (const { i, at } of garden.crowns()) {
+    const v = sub(at, ro), z = dot(v, fw);
     const x = r.left + (0.5 + dot(v, rt) / z * FOC / asp) * r.width, y = r.top + (0.5 - dot(v, up) / z * FOC) * r.height;
     const dd = Math.hypot(x - cx, y - cy);
     if (dd < bd) { bd = dd; best = i; }
   }
   if (best < 0 || bd > r.height * 0.14) return;
-  const k = best === 3 ? 0 : best;
-  sway[k] = [0, reduced() ? 0 : 0.12];
+  sway[best] = [0, reduced() ? 0 : 0.12];
   wake();
 }
 function endPress(e) {
@@ -780,4 +613,4 @@ whenVisible(stage, v => {
   if (v) wake();
 });
 // QA reads and drives the state here.
-Object.assign(window, { __terrarium: { env, S, G, sway, mist, holdMist, dab, poke, setPlants: act.plants, setLight: act.light, setGrow: v => { grow = v; env.touch(); } } });
+Object.assign(window, { __terrarium: { env, S, G, sway, mist, holdMist, dab, poke, setPlants: act.plants, setLight: act.light, setGrow: v => { grow = v; feed(); env.touch(); } } });
