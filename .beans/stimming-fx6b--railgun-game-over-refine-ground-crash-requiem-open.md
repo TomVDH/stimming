@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T18:22:13Z
-updated_at: 2026-11-16T19:48:01Z
+updated_at: 2026-11-16T19:54:57Z
 parent: stimming-f793
 ---
 
@@ -60,3 +60,5 @@ Tom: no silent cut; the climax holds from 3 s before impact to 3-5 s after, then
 - Timing: silent white holds 2.5 s (WHITE_T) after the climax, then the rewind.
 - QA: goBus and chargeBus; __qa.record('go' | 'charge') records one sound alone.
 - Tom signed off 2026-11-16.
+
+- Tail: the hall tail rings about 6 s (Tom: "Yes", 2026-11-16).
