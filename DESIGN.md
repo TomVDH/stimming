@@ -292,7 +292,8 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 - Under the words lies the tube: the toy's still or loop, in colour, with a concave warp, scan lines and grain, dim and darker to the rim. It has no hard edge; it fades out at the ring of toys.
 - The selection glow is a soft oval in the toy's accent, under the toy in hand. It turns to the pointer and fades from one toy's colour to the next.
 - The outline (a rim and sixty minute marks) draws in with the dozen, then fades. It is never at rest on the page.
-- The Re-roll is a pill at the foot of the circle; it shows after 5 s. Under 440 px it is the die alone.
+- The Re-roll is a pill under the clock; it shows after 5 s.
+- Left alone for 12 s, the clock runs by itself: each hour in turn shows its toy in the middle. Any input stops it.
 
 **The menu: the whole shelf** (`?all`; `index.html:41-67`, `:123-126`, `:177-193`)
 - One centred column: wordmark, tagline, Series switch, shelf, footer. The wrap is 1240 px at most, with `clamp(36px, 6vw, 72px)` between blocks.

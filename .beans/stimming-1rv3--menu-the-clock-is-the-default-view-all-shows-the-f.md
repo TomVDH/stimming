@@ -20,6 +20,7 @@ Tom, 2026-11-16: the Clock from the menu probe (stimming-aiir) becomes the defau
 - [x] Concave warp, a wider TV shade, and a selection glow that fades between toys (Tom)
 - [x] Loop test: Fire plays a seamless 3 s loop in the tube while it is in hand
 - [x] Tom: the middle is empty with no toy in hand; no counter; no All toys link; the glow has no hard edge; the tube is a little wider
+- [x] Tom: the Re-roll stands under the clock; left alone, the clock runs through its toys by itself
 - [ ] One at a time, with Tom: the layout inside the clock, the selection effect, the footer, the onnozelaer mark (a first batch of all four was rolled back as sloppy)
 - [ ] Tom decides: a loop for every toy, or stills only
 - [x] One still per main-shelf toy in shared/stills/ (Tom chose captured stills): 42 stills, 896 KB; tools/stills.mjs renews them

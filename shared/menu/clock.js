@@ -30,13 +30,15 @@ function start() {
   <div class="clock-plate" aria-hidden="true"></div>
   <p class="clock-name" aria-live="polite"></p>
   <p class="clock-tag"></p>
-  <button type="button" class="clock-roll" title="Re-roll (R)"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg><span>Re-roll</span></button>
 </div>`;
   shelf.after(face);
+  // The Re-roll stands under the clock.
+  const button = Object.assign(document.createElement('button'), { type: 'button', className: 'clock-roll', title: 'Re-roll (R)' });
+  button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
+  face.after(button);
   const ring = face.querySelector('.clock-ring'), rim = ring.querySelector('.rim'), marks = [...ring.querySelectorAll('line')];
   const glow = /** @type {HTMLElement} */ (face.querySelector('.clock-glow'));
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
-  const button = face.querySelector('.clock-roll');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
   let bg = null;
@@ -181,9 +183,42 @@ function start() {
   button.addEventListener('click', roll);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
   // The Re-roll stays away for the first five seconds.
-  setTimeout(() => face.setAttribute('data-roll', ''), 5000);
+  setTimeout(() => button.setAttribute('data-on', ''), 5000);
+
+  // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
+  // After two laps it stops, so an empty room burns no power.
+  const WAIT = 12000, BEAT = 3600, LAPS = 2;
+  let idle = 0, beat = 0, at = -1, beats = 0, solo = false;
+  function tick() {
+    if (document.visibilityState !== 'visible' || busy) return;
+    if (beats++ >= HOURS * LAPS) return sleep();
+    at = (at + 1) % HOURS;
+    aim(at * 30);
+    live(true);
+    show(dozen()[at]);
+  }
+  function sleep() {
+    clearInterval(beat);
+    if (solo) { solo = false; rest(); }
+  }
+  function alone() {
+    if (still.matches || face.hasAttribute('data-live')) return;
+    solo = true;
+    at = -1;
+    beats = 0;
+    tick();
+    beat = setInterval(tick, BEAT);
+  }
+  // Any sign of a visitor stops the show and starts the wait again.
+  function wake() {
+    clearTimeout(idle);
+    sleep();
+    idle = setTimeout(alone, WAIT);
+  }
+  ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => addEventListener(type, wake, { passive: true }));
 
   deal();
   root.dataset.clock = 'on';
   arrive();
+  wake();
 }
