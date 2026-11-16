@@ -59,7 +59,7 @@ Read `README.md` for the toy list and the full rules.
     - No JS, a failed load or an error leaves the whole shelf. Reduced motion or a hidden tab deals with no motion.
     - Loading (Tom, 2026-11-16: "loads gracefully, chunked or has a preloader"; bean `stimming-qof2`; numbers in `docs/plans/loading.md`). The menu opens in stages and never holds for a gate: a fast load is usable in 0.3 s.
       - First paint: the wordmark, the tagline and the labels wait for their fonts (`data-fonts="wait"` on the root, 1.2 s at most), then fade in once. No fallback face shows first.
-      - The wait: while the page still loads, the comet's head waits at twelve o'clock and breathes. It is CSS only (`main::before` in `clock.css`), comes in after 0.4 s and turns into the comet: `clock.js` sets `data-clock="wait"` at the deal and `"on"` as the comet starts. Reduced motion gets a still dot.
+      - The wait: while the page still loads, the comet's head waits at twelve o'clock and breathes. It is CSS only (`main::before` in `clock.css`), comes in after 0.4 s and turns into the comet: `clock.js` sets `data-clock="wait"` at the deal and `"on"` as the comet starts. Reduced motion gets a still dot. Tom saw it and kept the pulse (2026-11-16).
       - `clock.js`, `tube.js` and `gl.js` preload from the head. The credit line waits for `data-clock`, so its words never jump.
       - A script that stalls for 8 s (a dead CDN) leaves the whole shelf, as a failed one does.
       - The Clock waits for the whole page: the icon script at the end draws some icons. An early start left empty tiles and was dropped. The Lab's markup is 36% of the page; moving it out is the next gain, in its own feature.

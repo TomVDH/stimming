@@ -1,11 +1,11 @@
 ---
 # stimming-qof2
 title: 'Loading: the menu opens in stages and the intro is the preloader'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:40:10Z
+updated_at: 2026-11-16T21:53:55Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -123,3 +123,11 @@ Checked: no JS, a failed `clock.js`, a failed and a stalled `gsap.min.js`, reduc
 - Fonts in the repo: Google Fonts' style sheet blocks the first paint of every page. An asset download needs Tom's yes.
 - A sign on the menu at the click: on a slow link the menu stays on screen 1.5 to 3.9 s before the toy's first paint.
 - Real progress in the other heavy toys (Fire first), each in its own chat.
+
+## Summary of Changes
+
+- Menu: the fonts wait (1.2 s at most), a wait dot at twelve that turns into the comet, preloads for the Clock modules, an 8 s stall guard. Tom kept the dot with its pulse.
+- Intro: `progress(part)` in `shared/intro.js`; a load line with a sheen at the foot of the flash box, shown only on a slow load. Tom approved the line and cut the breathing emblem.
+- Shell: `stage(name, part)` and `buildSteps(n)` in `shared/stim.js`. Real progress in Window seat, Galaxy and Railgun.
+- Tools and docs: `tools/loadtime.mjs`, `docs/plans/loading.md`, clips in `docs/qa/loading/`.
+- Merged by PR 67 on 2026-11-16, on Tom's word.
