@@ -66,13 +66,14 @@ GPU particles with bloom over dark water.
 
 ## Tom's adds, 2026-11-14
 
-Three toys Tom asked for by name. The interactions are proposals.
+Toys Tom asked for by name. The interactions are proposals.
 
 | # | Toy | Group | Interaction |
 |---|---|---|---|
 | 361 | **Terrarium** | F | A sealed glass jar of moss and ferns. Mist it; drops run down the glass and the green wakes up. |
 | 362 | **Aquarium** | F | A planted tank. Drop food and the fish rise; tap the glass and they scatter. Close to Jellyfish tank (80). |
 | 363 | **Soup cauldron** | E | A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour. |
+| 364 | **Tornado alley** | C | A wide, still, deadpan vista of the Oklahoma plains under a supercell. Several tornadoes at once; set each one's F-scale, F0 to F5. Tom, 2026-11-16. |
 
 ## Built outside the pool
 
@@ -454,12 +455,12 @@ Close to a built toy: Snow crystal (Frost), Embers (Fire), Soft life (Slime), Bo
 
 ## Tool-approved
 
-Tom kept these 41 ideas on 2026-11-15 with `docs/swipe.html`. Each stays in its table above.
+Tom kept these 42 ideas on 2026-11-15 with `docs/swipe.html`. Each stays in its table above.
 The swipe page reads this list: it keeps these ideas out of the main queue and shows them under the Tool-approved filter.
 
 - **A.** BZ reaction (3), Stir vortex (85), Double slit (123), Chemical garden (124), Rupert's drop (127), Wave machine (128), Cloud in a bottle (129), Superconductor track (130), Glowing pickle (134)
 - **B.** Spectrogram (54), Sorting sounds (9), Epicycles (10), Desire paths (14), Pi walk (51), Contour map (52), Traffic wave (93)
-- **C.** Desert eclipse (17), Fjord aurora (18), Deep vent (19), Wheat storm (21), Calving (57), Observatory (58), Lantern lake (60), Lava coast (99), Spillway (101)
+- **C.** Desert eclipse (17), Fjord aurora (18), Deep vent (19), Wheat storm (21), Calving (57), Tornado alley (364), Observatory (58), Lantern lake (60), Lava coast (99), Spillway (101)
 - **D.** Pea pod (67), Geoboard (24), Velcro (62)
 - **E.** Water wheel (73), Soup cauldron (363), Wrecking ball (72), Tablecloth yank (112)
 - **F.** Terrarium (361), Aquarium (362), Chromatography (38), Dichroic glass (39), Glowing tide (40), Leaf shadows (76), Jellyfish tank (80), Opal turn (116), Moire veils (117)
