@@ -15,14 +15,14 @@ colors:
   sketch: "oklch(0.52 0.025 275)"
   focus: "oklch(0.84 0.13 205)"
   pick: "oklch(0.7 0.18 320 / 0.35)"
-  mark-1: "oklch(0.8 0.15 62)"
-  mark-2: "oklch(0.72 0.2 318)"
-  mark-3: "oklch(0.8 0.12 195)"
-  mark-4: "oklch(0.7 0.19 32)"
-  mark-5: "oklch(0.72 0.14 255)"
-  mark-6: "oklch(0.82 0.11 345)"
-  mark-7: "oklch(0.86 0.15 100)"
-  mark-8: "oklch(0.78 0.16 150)"
+  mark-1: "oklch(0.72 0.22 328)"
+  mark-2: "oklch(0.68 0.2 300)"
+  mark-3: "oklch(0.74 0.16 250)"
+  mark-4: "oklch(0.82 0.13 205)"
+  mark-5: "oklch(0.84 0.16 150)"
+  mark-6: "oklch(0.88 0.16 110)"
+  mark-7: "oklch(0.86 0.16 84)"
+  mark-8: "oklch(0.74 0.2 28)"
   series-vistas: "oklch(0.93 0.025 90)"
   series-eastvan: "oklch(0.8 0.12 165)"
   series-belgian: "oklch(0.8 0.15 72)"
@@ -197,14 +197,14 @@ Source: `MARK` in `shared/stim.js:46-50` and the menu title in `index.html:394`.
 
 | Letter | Token here | Value |
 |---|---|---|
-| S | `mark-1` | `oklch(0.8 0.15 62)` |
-| t | `mark-2` | `oklch(0.72 0.2 318)` |
-| i | `mark-3` | `oklch(0.8 0.12 195)` |
-| m | `mark-4` | `oklch(0.7 0.19 32)` |
-| m | `mark-5` | `oklch(0.72 0.14 255)` |
-| i | `mark-6` | `oklch(0.82 0.11 345)` |
-| n | `mark-7` | `oklch(0.86 0.15 100)` |
-| g | `mark-8` | `oklch(0.78 0.16 150)` |
+| S | `mark-1` | `oklch(0.72 0.22 328)` |
+| t | `mark-2` | `oklch(0.68 0.2 300)` |
+| i | `mark-3` | `oklch(0.74 0.16 250)` |
+| m | `mark-4` | `oklch(0.82 0.13 205)` |
+| m | `mark-5` | `oklch(0.84 0.16 150)` |
+| i | `mark-6` | `oklch(0.88 0.16 110)` |
+| n | `mark-7` | `oklch(0.86 0.16 84)` |
+| g | `mark-8` | `oklch(0.74 0.2 28)` |
 
 ### Tertiary
 
@@ -223,6 +223,7 @@ Colour that data files own.
 
 - **Toy accents** (`toys.json`, field `accent`): one per toy. A value is one OKLCH colour or a `linear-gradient(...)` of OKLCH stops, most at 100deg. Examples: Morpher `linear-gradient(100deg, oklch(0.84 0.17 340), oklch(0.84 0.14 250))`, Pop field `oklch(0.9 0.2 128)`. The Signal intro inks the logo with it (`shared/intro.js:344-345`). The frontmatter does not list them; `toys.json` is the source.
 - **Footer glow** (`index.html:114-121`): three radial glows under the menu's footer: `oklch(0.6 0.22 320 / 0.5)`, `oklch(0.74 0.14 200 / 0.42)`, `oklch(0.82 0.15 80 / 0.38)`.
+  In the Clock view the glow is a mesh of five lights mixed `in oklch` and added as light; it leans to the pointer and brightens near the onnozelaer mark, which sits in the credit line (`shared/menu/clock.css`).
 
 ### Neutral
 
@@ -285,12 +286,22 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 
 ## Layout
 
-**The menu** (`index.html:41-67`, `:123-126`, `:177-193`)
+**The menu: the Clock** (`shared/menu/clock.css`, `clock.js`, `tube.js`; the default view since 2026-11-16)
+- One centred column: wordmark, tagline, clock, footer.
+- The clock is a square that takes the window height left after the wordmark, the tagline and the Re-roll: at most 660 px and 92% of the width, at least 200 px. In the Clock view the wordmark, the tagline and the gaps also scale with the window's height, so the whole clock shows with no scroll. Twelve toys stand on its hours: each tile is 19% of the square, on a ring at 40.5% from the middle. Tiles show no label; the toy in hand grows to 1.18.
+- The middle holds the words of the toy in hand: its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock. With no toy in hand the middle is empty.
+- The words are part of the tube: the toy's still or loop, in colour, as a CRT with the grain of an image tube (a slight bulge, quiet scan lines, halation, fine uneven grain). The words burn in white with a soft band round each letter. The tube has no hard edge; it is wider than the clock and fades out past the ring of toys. A change of toy takes 0.42 s: the new picture fades in from a little close up and settles.
+- The selection is a soft wedge where the tube masks its picture away, from the middle out to the toy in hand; the icon stands on the clear page. It turns to the pointer.
+- The intro: a shaded comet runs once round the toys' track (1.6 s), its tail in the wordmark's hues, and drops each toy off at its hour. The clock has no rim and no minute marks. On a fresh page the tube first blinks (snow, then off to a dot), then the comet runs. A Re-roll runs the comet alone.
+- The Re-roll is a pill under the clock; it shows after 5 s.
+- Left alone for 12 s, the clock runs by itself: each hour in turn shows its toy in the middle. Any input stops it.
+
+**The menu: the whole shelf** (`?all`; `index.html:41-67`, `:123-126`, `:177-193`)
 - One centred column: wordmark, tagline, Series switch, shelf, footer. The wrap is 1240 px at most, with `clamp(36px, 6vw, 72px)` between blocks.
 - The shelf is a grid of square tiles, each `clamp(96px, 26vw, 150px)` wide, centred. The main shelf holds six a row at most; the Lab holds five. Gaps are `clamp(16px, 2.6vw, 28px)` by `clamp(12px, 2.4vw, 28px)`.
 - A tile is an icon, then its label 10 px below. The icon SVG takes 70% of the tile and may overflow it.
 - With the Series switch on, each series is its own grid under a Wave divider. Sections sit `clamp(20px, 3.4vw, 40px)` apart.
-- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link.
+- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link and a Clock link. The Clock view shows neither link.
 
 **A toy page** (`shared/stim.css:47`, `:134`, `:148-153`)
 - `.wrap` is a grid with `clamp(20px, 3.4vw, 40px)` gaps and 28 px above. Body gutters are 16 px or the safe-area inset, whichever is larger.
@@ -382,7 +393,7 @@ Keycap, then a verb in lower case: `[CLICK] place`. No backing. Verbs at 62% `--
 - **Bar v2:** the wordmark, unboxed, top left. Then `/ TOY NAME` in bold slab caps at 0.1em; the slash is `--muted` (`shared/stim.css:374-392`). Hover, focus or a tap waves the mark into colour and slides in a `‹`. A Lab toy adds a small boxed tag.
 - **v1 header:** a back arrow, the mark at 22 px, the sound button at the right (`shared/stim.css:84-98`).
 - **The wave:** each letter lifts, flashes its colour and settles, one letter every 33.333 ms, in held frames (`stim-wave`, `shared/stim.css:103-132`).
-- **Menu:** no nav bar. The footer holds a Lab link in slab caps.
+- **Menu:** no nav bar. The Clock has no links; the whole shelf (`?all`) holds a Lab link and a Clock link in its footer.
 
 ### Stage
 

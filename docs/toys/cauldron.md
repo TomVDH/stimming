@@ -185,6 +185,17 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |
 | Parked | `gpufire.js`: Fire's WebGPU engine over the pot, only with `?fire=gpu` |
 
+## Round 3 (2026-11-16)
+
+| Part | Does |
+|---|---|
+| Hands | Tap a thing to dunk it; drag a thing to pull it (it lifts, drips, leaves a wake); with a liquid picked, a drag pours along the path |
+| Things | 16 kinds: the ten, cleaner and chunkier, plus potato (cubes), leek (rings), garlic (cloves), chilli (sweats oil), bay leaf (never cooks through), noodles (melt) |
+| Tray | Mix, Things and Liquids groups (the shell's opt-in `group`), four across, larger icons with no plate |
+| Spoon | Rests on the rim at the back when let go; taps the iron as it settles; clinks on a hard stir |
+| Air | Heat shimmer above the flames (output pass); steam parts under a passing hand |
+| Floor | Cobbles tilt one by one, warm to cool, ash in the joints; a depth-of-field blur away from the pot (Dev: Background blur) |
+
 ## Known issues
 
 - The fire grid is coarse (0.08 cells); fine flame detail comes from Fire's simplex detail noise in the march.
