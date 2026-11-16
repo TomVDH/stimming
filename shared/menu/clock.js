@@ -3,6 +3,9 @@
 const HOURS = 12;
 // A test (Tom, 2026-11-16): these toys have a moving loop in shared/loops/.
 const LOOPS = new Set(['fire']);
+// The selection light has three kinds for Tom to pick from. ?dev shows the switch.
+const GLOWS = ['ring', 'beam', 'halo'];
+const GLOW_KEY = 'stimming.clock.glow';
 const root = document.documentElement;
 // On any failure the menu falls back to the whole shelf.
 const fail = () => { delete root.dataset.view; delete root.dataset.clock; };
@@ -117,7 +120,7 @@ function start() {
     if (lamps[lamp].dataset.c === colour) return;
     lamp ^= 1;
     lamps[lamp].dataset.c = colour;
-    lamps[lamp].style.background = colour;
+    lamps[lamp].style.setProperty('--c', colour);
     lamps[lamp].setAttribute('data-in', '');
     lamps[lamp ^ 1].removeAttribute('data-in');
   }
@@ -181,7 +184,31 @@ function start() {
     } });
   }
   button.addEventListener('click', roll);
-  addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
+  // The kind of selection light: ?glow names one; ?dev shows a switch (keys 1 to 3).
+  const query = new URLSearchParams(location.search);
+  let pills = [];
+  function light(kind, keep = false) {
+    face.dataset.glow = kind;
+    pills.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.glow === kind)));
+    if (keep) try { localStorage.setItem(GLOW_KEY, kind); } catch (e) { /* no storage */ }
+  }
+  if (query.has('dev')) {
+    const bar = Object.assign(document.createElement('div'), { className: 'clock-dev' });
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Selection light');
+    bar.innerHTML = GLOWS.map((g, i) => `<button type="button" data-glow="${g}" title="Key ${i + 1}">${g}</button>`).join('');
+    document.body.append(bar);
+    pills = /** @type {HTMLElement[]} */ ([...bar.children]);
+    bar.addEventListener('click', e => { const b = /** @type {HTMLElement} */ (e.target).closest('button'); if (b) light(b.dataset.glow, true); });
+  }
+  let kept = null;
+  try { kept = localStorage.getItem(GLOW_KEY); } catch (e) { /* no storage */ }
+  light(GLOWS.includes(query.get('glow')) ? query.get('glow') : GLOWS.includes(kept) ? kept : GLOWS[0]);
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key.toLowerCase() === 'r') roll();
+    if (pills.length && GLOWS[+e.key - 1]) light(GLOWS[+e.key - 1], true);
+  });
   // The Re-roll stays away for the first five seconds.
   setTimeout(() => button.setAttribute('data-on', ''), 5000);
 
