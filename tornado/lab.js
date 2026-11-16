@@ -277,6 +277,8 @@ const float BASE = 1.4;
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
 const float STORM = 0.85;
+// Storm km per lab km: the storm is seen as the shot sees it, from 8 km, whatever the lab's distance.
+uniform float uKs;
 // The shot's noise names, on the lab's volume: one cell per unit.
 // N has four cells per unit; a quarter gives the shot's one cell per unit.
 float vn3(vec3 p) { return N(p * 0.25); }
@@ -302,10 +304,20 @@ float stormShape(vec3 p) {
   // The wall cloud: a lowered block under the base; it hangs a little lower as F grows.
   float wl = BASE - 0.2 - 0.12 * uFk;
   float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), abs(p.y - wl) - 0.35);
+  // The neck: from the wall cloud's underside the cloud tapers down into the funnel's top.
+  // At F0 it is a short bulge; as the funnel forms it reaches down to meet it.
+  float wb = wl - 0.35, ft = BASE - 0.55;
+  float reach = mix(0.35, 1.0, smoothstep(0.0, 0.4, uCond));
+  float nb = mix(wb, ft - 0.02, reach);
+  float un = clamp((p.y - nb) / max(wb - nb, 1e-3), 0.0, 1.0);
+  float rTop = radiusAt(uH) * 0.001 * uKs;
+  float rn = mix(rTop * 1.1, mix(0.5, 2.4, g) * 0.55, pow(un, 1.6));
+  float neck = max(length(p.xz - WALL) - rn, max(nb - p.y, p.y - wb - 0.1));
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
   d = smin(d, wall, 0.6);
+  d = smin(d, neck, 0.25);
   return d;
 }
 float stormD(vec3 p) {
@@ -324,7 +336,9 @@ float stormD(vec3 p) {
   // Ragged scud hangs under the base, with Worley lumps in it.
   float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y);
   d += low * (vn3(p * 3.1 + vec3(uTime * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
-  return d - low * (W(p * 8.0) - 0.35) * 0.18;
+  // Rounded lumps hang from the underside, in two sizes.
+  float under = 1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y);
+  return d - under * ((W(p * 2.6 + 1.7) - 0.35) * 0.32 + (W(p * 8.0) - 0.35) * 0.16);
 }
 // The colour of one storm sample.
 vec3 stormLit(vec3 p, float d) {
@@ -344,6 +358,8 @@ vec3 stormLit(vec3 p, float d) {
   // The core goes black-green behind its rain.
   return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
 }
+// Declared here, defined with the merge below.
+float nearW(vec3 ps);
 // Marches the storm from ro, in km. Returns colour and cover; tHit is the first hit in km.
 vec4 storm(vec3 ro, vec3 rd, out float tHit) {
   float t = 0.05, T = 1.0;
@@ -355,9 +371,11 @@ vec4 storm(vec3 ro, vec3 rd, out float tHit) {
     float d = stormD(p);
     // The soft edge and the inner step grow with distance: crisp near, smooth far.
     float soft = max(0.025, t * 0.005);
+    // Round the tornado the main march draws the storm as volume: the shell fades out there.
+    float keep = 1.0 - nearW(p);
     if (d < soft) {
-      if (tHit > 119.0) tHit = t;
-      float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8;
+      if (tHit > 119.0 && keep > 0.5) tHit = t;
+      float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8 * keep;
       acc += T * a * stormLit(p, d);
       T *= 1.0 - a;
       t += 0.03 + 0.006 * t;
@@ -368,6 +386,56 @@ vec4 storm(vec3 ro, vec3 rd, out float tHit) {
 // A ray's length inside an upright cylinder at c, in storm km; x is where it enters.
 vec2 stormCyl(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
   return cylinder(ro - vec3(c.x, 0.0, c.y), rd, r, y0, y1);
+}
+/* ---------- the merge: near the tornado the storm is density in the funnel's own volume ---------- */
+// The funnel's top, without its sway: the storm hangs from it at every F.
+vec2 topXZ() { return vec2(uLean, -0.3 * uLean); }
+// Lab metres to storm km: the funnel's top meets the wall cloud's underside.
+vec3 toStorm(vec3 p) {
+  vec2 q = (p.xz - topXZ()) * 0.001 * uKs;
+  return vec3(WALL.x + q.x, BASE - 0.55 + (p.y - uH) * 0.001 * uKs, WALL.y + q.y);
+}
+// The near storm's reach round the wall cloud, in storm km.
+const float NEAR_R = 2.8, NEAR_TOP = BASE + 1.3;
+// 1 where the storm is volume near the tornado; 0 where the shell backdrop draws it.
+float nearW(vec3 ps) {
+  float r = length(ps.xz - WALL);
+  return (1.0 - smoothstep(NEAR_R * 0.7, NEAR_R, r)) * (1.0 - smoothstep(NEAR_TOP - 0.4, NEAR_TOP, ps.y));
+}
+// The near storm's density at a lab point, 0 to 1. ps and d return its storm point and distance.
+// It turns with the funnel's outer sheath round the axis, and holds still toward its edge.
+float nearCloud(vec3 p, out vec3 ps, out float d) {
+  vec2 q = p.xz - topXZ();
+  float k = 1.0 - smoothstep(NEAR_R * 0.25, NEAR_R * 0.65, length(q) * 0.001 * uKs);
+  float a = uPh[5].x;
+  vec2 qr = mix(q, mat2(cos(a), sin(a), -sin(a), cos(a)) * q, k);
+  ps = toStorm(vec3(qr.x + topXZ().x, p.y, qr.y + topXZ().y));
+  d = stormD(ps);
+  // A soft shell turns the distance into density.
+  return smoothstep(0.035, -0.035, d) * nearW(ps);
+}
+// The storm's tone at a storm point, from its shape alone: cheap, for the funnel's top.
+vec3 cloudTone(vec3 ps) {
+  float d = stormShape(ps), ds = stormShape(ps + uSun * 0.9);
+  float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
+  float under = clamp((d - stormShape(ps + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0);
+  lit *= 1.0 - 0.9 * under;
+  float up = smoothstep(0.6, 9.0, ps.y);
+  return uSunCol * lit * lit * mix(0.14, 0.8, up * up) + uAmb * mix(0.08, 0.85, up) * (1.0 - 0.7 * under);
+}
+// The storm's shade on a lab point: its shape along the sun ray.
+// Two steps near the point, then where the ray meets the base's height and a little past it:
+// a high sun is cut off by the storm overhead; a low one slips under the base.
+float cloudShade(vec3 p) {
+  float od = 0.0;
+  od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 80.0))) * 80.0;
+  od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 260.0))) * 180.0;
+  float L = (max(uH - p.y, 0.0) + 60.0) / max(uSun.y, 0.03);
+  if (L < 20000.0) {
+    od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * L))) * 300.0;
+    od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * (L + 400.0)))) * 300.0;
+  }
+  return od * 0.006;
 }
 vec3 groundCol(vec3 P, float t) {
   float n = fbm(vec3(P.x * 0.01, 0.0, P.z * 0.03), 3);
@@ -390,12 +458,12 @@ void main() {
   if (rd.y < 0.0) {
     tMax = CAMH / -rd.y;
     vec3 P = ro + rd * tMax;
-    bg = groundCol(P, tMax);
+    // The wheat lies in the storm's shadow where the sun cannot get under the base.
+    bg = groundCol(P, tMax) * mix(0.35, 1.0, exp(-cloudShade(P)));
     bg = mix(bg, skyCol(vec3(rd.x, 0.0, rd.z)), 1.0 - exp(-tMax / 14000.0));
   } else {
-    // The blockout storm; the funnel hides behind its first surface.
-    // The eye in storm space: the lab's axis stands under the wall cloud, at its true scale.
-    vec3 rk = vec3(WALL.x, ro.y * 0.001, WALL.y + ro.z * 0.001);
+    // The far storm: the blockout's shell, faded out round the tornado, where the volume takes over.
+    vec3 rk = toStorm(ro);
     bg = skyCol(rd);
     // The sky dims round the storm: its shadow and its outflow haze.
     float near = dot(rd, normalize(vec3(SHELF.x, 4.0, SHELF.y) - rk));
@@ -411,71 +479,113 @@ void main() {
     bg = mix(bg, gloom, 1.0 - exp(-gl.y * gl.y * 0.003 * STORM));
     float streak = 0.75 + 0.25 * N(vec3(atan(rd.x, -rd.z) * 60.0, 0.5, 0.0));
     bg = mix(bg, gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01, 1.0 - exp(-rn.y * rn.y * 0.05 * STORM * streak));
-    tMax = tHit * 1000.0;
+    tMax = tHit * 1000.0 / uKs;
   }
-  // The tornado: one volume march through the sheaths, the core, the dust and the rain.
+  // One volume march through two regions: A, the funnel's cylinder; C, the near storm round it.
+  vec3 o3 = vec3(topXZ().x, 0.0, topXZ().y);
   float Rb = uR0 * max(uFlare * 2.0, 2.6) + uLean + uSway * 2.0 + 140.0;
   vec2 cy = cylinder(ro, rd, Rb, 0.0, uH + 240.0);
+  float tA0 = cy.y > 0.0 ? cy.x : 1e9, tA1 = cy.y > 0.0 ? cy.x + cy.y : -1.0;
+  vec2 cc2 = cylinder(ro - o3, rd, NEAR_R * 1000.0 / uKs, uH - 200.0, uH + (NEAR_TOP - BASE + 0.55) * 1000.0 / uKs);
+  float tC0 = cc2.y > 0.0 ? cc2.x : 1e9, tC1 = cc2.y > 0.0 ? cc2.x + cc2.y : -1.0;
+  float tEnd = min(max(tA1, tC1), tMax);
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  if (cy.y > 0.0) {
-    float t0 = cy.x, t1 = min(cy.x + cy.y, tMax);
-    float dtv = (t1 - t0) / float(uSteps);
+  float t = min(tA0, tC0);
+  if (t < tEnd) {
+    float dtv = tA1 > tA0 ? (tA1 - tA0) / float(uSteps) : 50.0;
     float jit = hash(fc + fract(uTime * 7.31) * 113.0);
-    float t = t0 + dtv * jit;
+    t += min(dtv, 15.0) * jit;
     float cosT = dot(rd, uSun);
     // Two lobes: some light bounces back toward the eye, most runs on.
     float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
     float ph1 = mix(hg(cosT, 0.3), hg(cosT, -0.1), 0.55);
-    for (int i = 0; i < 240; i++) {
-      if (t > t1 || T < 0.01) break;
+    vec3 skyH = skyCol(vec3(rd.x, 0.0, rd.z));
+    for (int i = 0; i < 360; i++) {
+      if (t > tEnd || T < 0.01) break;
+      bool inA = t >= tA0 && t <= tA1, inC = t >= tC0 && t <= tC1;
+      if (!inA && !inC) {
+        // Jump to the next region.
+        float nx = 1e9;
+        if (tA0 > t) nx = min(nx, tA0);
+        if (tC0 > t) nx = min(nx, tC0);
+        if (nx > 1e8) break;
+        t = nx + 0.01;
+        continue;
+      }
       vec3 p = ro + rd * t;
-      vec2 q = p.xz - axisAt(p.y);
-      float r = length(q), R = radiusAt(p.y);
-      // The pixel's size in metres where the ray is now.
-      float foot = t / (uRes.y * uFoc);
-      gSp = max(0.2, 3.5 * foot / R);
-      gAng = clamp(R * 0.06 / foot, 0.3, 1.0);
-      float Rout = R * (1.25 + 4.0 * gSp) + 2.0;
-      // Fine steps inside the funnel, long ones outside it.
-      float fine = clamp(R * 0.045, 0.3, dtv);
-      float st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
-      float u;
-      float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
-      u = clamp(p.y / uH, 0.0, 1.0);
-      float d, w;
-      vol(p, d, w);
-      float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
-      float sig = sc + sd + sw;
+      float st = 1e9, sig = 0.0;
+      vec3 sum = vec3(0.0);
+      if (inA) {
+        vec2 q = p.xz - axisAt(p.y);
+        float r = length(q), R = radiusAt(p.y);
+        // The pixel's size in metres where the ray is now.
+        float foot = t / (uRes.y * uFoc);
+        gSp = max(0.2, 3.5 * foot / R);
+        gAng = clamp(R * 0.06 / foot, 0.3, 1.0);
+        float Rout = R * (1.25 + 4.0 * gSp) + 2.0;
+        // Fine steps inside the funnel, long ones outside it.
+        float fine = clamp(R * 0.045, 0.3, dtv);
+        st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
+        float u;
+        float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
+        u = clamp(p.y / uH, 0.0, 1.0);
+        float d, w;
+        vol(p, d, w);
+        float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
+        if (sc + sd + sw > 1e-6) {
+          // Sunlight through the funnel, the dust and, near the top, the storm above.
+          float topK = smoothstep(uH * 0.55, uH * 1.02, p.y);
+          float od = sunDepth(p, R) + cloudShade(p);
+          vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.25 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+          // Sky light falls off with depth into the funnel.
+          float depth = max(0.0, 1.6 - r / R);
+          vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u) * exp(-depth * 1.6);
+          // Bounce from the sunlit wheat warms the lower funnel from below.
+          ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
+          vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
+          alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
+          vec3 fc3 = alb * (sunL * 0.7 + ambL * 0.85);
+          // Near the top the funnel takes the storm's own tone: it darkens up into the wall cloud.
+          if (topK > 0.0) fc3 = mix(fc3, cloudTone(toStorm(p)) * 1.15, topK * 0.75);
+          vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
+          vec3 wcol = vec3(0.2, 0.22, 0.25) * (uAmb * 0.7 + uSunCol * exp(-od) * 0.05);
+          float hzF = 1.0 - exp(-t / 30000.0);
+          sum += mix(fc3, skyH * 0.45, hzF) * sc + mix(dcol, skyH * 0.45, hzF) * sd + mix(wcol, skyH * 0.45, hzF) * sw;
+          sig += sc + sd + sw;
+        }
+      }
+      if (inC) {
+        vec3 ps;
+        float dS;
+        float dn = nearCloud(p, ps, dS);
+        // Outside the cloud, step by its distance; inside, short steps.
+        // A ray that skims the underside keeps a floor on its step, scaled by distance.
+        float sC = dS > 0.035 ? max((dS - 0.035) * 1000.0 / uKs * 0.7, max(6.0, t * 0.003)) : clamp(t * 0.005, 6.0, 30.0);
+        st = min(st, sC);
+        if (dn > 0.003) {
+          // The backdrop's own light, so the two match where they meet.
+          vec3 ccl = stormLit(ps, dS);
+          float hzS = (1.0 - exp(-t * 0.001 * uKs / 70.0)) * 0.8;
+          float scl = dn * 0.01;
+          sum += mix(ccl, skyH, hzS) * scl;
+          sig += scl;
+        }
+      }
       if (sig > 1e-6) {
-        // Sunlight through the funnel and the dust, in three scattering octaves, each less shadowed.
-        float od = sunDepth(p, R);
-        vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.25 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
-        // Sky light falls off with depth into the funnel.
-        float depth = max(0.0, 1.6 - r / R);
-        vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u) * exp(-depth * 1.6);
-        // Bounce from the sunlit wheat warms the lower funnel from below.
-        ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
-        vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
-        alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-        vec3 cc = alb * (sunL * 0.7 + ambL * 0.85);
-        vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
-        vec3 wcol = vec3(0.2, 0.22, 0.25) * (uAmb * 0.7 + uSunCol * exp(-od) * 0.05);
-        vec3 col = (cc * sc + dcol * sd + wcol * sw) / sig;
         float a = 1.0 - exp(-sig * st);
-        acc += T * a * col;
+        acc += T * a * sum / sig;
         T *= 1.0 - a;
       }
       t += st;
     }
-    // Under the storm the air is dim: its haze darkens as much as it lifts.
-    acc = mix(acc, skyCol(vec3(rd.x, 0.0, rd.z)) * 0.45 * (1.0 - T), 1.0 - exp(-uDist / 30000.0));
   }
   vec3 col = bg * T + acc;
   // A short history blend: steady frames lose their march noise.
   vec3 prev = texture(tPrev, gl_FragCoord.xy / uRes).rgb;
   outC = vec4(mix(prev, col, uBlend), 1.0);
 }`;
+
 
 const FINAL_FS = /* glsl */`#version 300 es
 precision highp float;
@@ -550,12 +660,14 @@ const knob = id => {
   const el = $(id), out = el.parentElement.querySelector('output');
   const pre = new URLSearchParams(location.search).get(id);
   if (pre !== null && pre !== '') el.value = pre;
-  const show = () => { if (out) out.textContent = (+el.value).toFixed(el.step < 1 ? 2 : 0); };
+  // Time shows as a clock; the rest as numbers.
+  const clock = v => `${Math.floor(v)}:${String(Math.round((v % 1) * 60) % 60).padStart(2, '0')}`;
+  const show = () => { if (out) out.textContent = id === 'tod' ? clock(+el.value) : (+el.value).toFixed(el.step < 1 ? 2 : 0); };
   el.addEventListener('input', show);
   show();
   return () => +el.value;
 };
-const K = { spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), hour: knob('hour'), steps: knob('steps'), res: knob('res') };
+const K = { spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
 const fEl = $('f');
 let f = +fEl.value, fShown = f, morph = false, paused = false, simT = 0;
 const showF = () => {
@@ -573,14 +685,20 @@ if (qs.has('f')) { f = fShown = clamp(+qs.get('f'), 0, 5); fEl.value = String(f)
 if (qs.has('morph')) { morph = true; $('morph').setAttribute('aria-pressed', 'true'); }
 if (qs.has('t')) simT = +qs.get('t');
 
-// The sun: low behind the camera, a little to the left. Sun 0 is late afternoon, 1 is dusk.
-function light(k) {
-  // The sun swings well to the left, so the funnel shows a lit side and a shade side.
-  const el = (14 - 12 * k) * Math.PI / 180, az = 1.05;
-  const sun = [-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
-  const warm = 1 - 0.6 * k;
-  const sunCol = [2.4, 2.4 * (0.62 + 0.25 * warm), 2.4 * (0.3 + 0.45 * warm * warm)].map(v => v * (1 - 0.55 * k));
-  const amb = [0.2 + 0.1 * warm, 0.23 + 0.12 * warm, 0.3 + 0.12 * warm].map(v => v * (1 - 0.5 * k));
+// The sun by time of day and direction. hour: 12 to 21. azDeg: 0 behind the eye, 90 to its left, 180 ahead.
+function light(hour, azDeg) {
+  // Height: 62 degrees early in the afternoon, down to the horizon near 20:50, six below by 21:00.
+  const x = clamp((hour - 13) / 7.8);
+  const el = (62 * Math.cos(x * Math.PI / 2) - 6 * clamp((hour - 20.8) / 0.2)) * Math.PI / 180;
+  const az = azDeg * Math.PI / 180, sinEl = Math.sin(el);
+  const sun = [-Math.sin(az) * Math.cos(el), sinEl, Math.cos(az) * Math.cos(el)];
+  // Colour: light through more air reddens; Kasten's air mass, capped at the horizon.
+  const mass = 1 / (Math.max(sinEl, 0) + 0.15 * Math.pow(Math.max(el * 180 / Math.PI, 0) + 3.885, -1.253));
+  const up = clamp((sinEl + 0.02) / 0.05);
+  const sunCol = [0.08, 0.18, 0.42].map(k => 3 * Math.exp(-k * mass * 0.5) * up);
+  // Sky light: bright blue by day, dim and blue after the sun goes.
+  const day = sinEl < -0.12 ? 0 : sinEl > 0.6 ? 1 : ((sinEl + 0.12) / 0.72) ** 2 * (3 - 2 * (sinEl + 0.12) / 0.72);
+  const amb = [0.3, 0.35, 0.46].map(v => v * (0.55 + 0.7 * day));
   return { sun, sunCol, amb };
 }
 
@@ -616,7 +734,7 @@ function draw(now) {
   showF();
   size();
   const fk = fShown;
-  const L = light(K.hour());
+  const L = light(K.tod(), K.az());
   const sc = P.scene;
   gl.useProgram(sc.p);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_3D, noise); gl.uniform1i(sc.u.tNoise, 0);
@@ -629,8 +747,11 @@ function draw(now) {
   set(sc, 'uFoc', foc);
   set(sc, 'uHz', 0.381966);
   // The distance follows the lens: the base's edge sits near the top of the frame.
-  // Wide framing: the shot's own distance, 8 km to the wall cloud; the Distance knob multiplies.
-  set(sc, 'uDist', 8000 * K.dist());
+  // The camera moves in on thin funnels; the Distance knob multiplies on top.
+  const frameK = 0.5 + 0.5 * Math.min(1, Math.max(0, fk / 3.5)) ** 1.5;
+  const dist = (850 + 160) * foc / 0.47 * K.dist() * frameK;
+  set(sc, 'uDist', dist);
+  set(sc, 'uKs', 8000 / dist);
   // A light history: enough to calm the march's grain, too little to smear the spin.
   set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55);
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);

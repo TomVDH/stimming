@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:26:20Z
+updated_at: 2026-11-16T22:45:38Z
 parent: stimming-oh7b
 ---
 
@@ -77,3 +77,5 @@ Built; waits for the checkpoint with Tom.
 - Fix (Tom: "bottom of tornado looks weird and cut off with white"): the funnel ended in a flat, dense cap. It now tapers to a point over max(4 R, 80 m) at its lower edge, thins as it narrows, and tears along the wall's noise near the tip; the edge varies less once the condensation reaches the ground, where the tip sinks into its dust.
 
 - Lab storm (Tom: the blockout storm clouds were the better start; then "Lab, wide framing"): two rejected attempts (a Worley cloud slab, then the blockout scaled up close) were reverted unpushed. Now the lab carries the shot's blockout supercell (main.js shapes, plates, scud, light, gloom, rain curtain) at its true scale, seen from the shot's distance (8 km to the wall cloud, 50 mm; Distance knob multiplies). The wall cloud stands over the axis and lowers a little with F; the funnel hides behind the storm's first surface. F0 is storm only (no condensation, no dust); a funnel cloud lowers from F0.5 and reaches the ground near F2. The noise volume gains a Worley channel, used lightly in the scud.
+
+- Lab: storm and funnel merged (Tom: "merge them"), and a time-of-day control (Tom: "allow for a TOD setting in the lab"). The blockout storm hangs from the funnel's top in close framing (scaled from the shot, uKs). Round the tornado (2.8 storm km) the storm is density in the funnel's own march, turning with the outer sheath; the shell backdrop fades out there. The funnel takes the storm's shade (shadow rays to the base's height) and, near its top, its tone. Time 12:00 to 21:00 sets the sun's height, its colour by air mass and the sky light; Sun dir sets its bearing (0 behind, 180 backlit). Headless 20 to 60 fps; a performance pass is next.
