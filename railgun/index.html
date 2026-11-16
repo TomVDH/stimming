@@ -8642,9 +8642,12 @@ function sillyBoom(p) {
 // At contact the blast goes off there and the frame burns to white.
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
-const BURN_T = 3.4, WHITE_T = 1.4;
-// The chorus rings this many seconds past the white's arrival.
-const GO_HOLD = 3;
+// The chorus fades out over the held white; then the rewind starts.
+const BURN_T = 3.4, WHITE_T = 2.5;
+// The strike's light climbs over the last seconds before contact.
+const NEAR_T = 5;
+// The blink after the contact flash, in seconds.
+const BLINK_T = 0.5;
 // The chorus is complete this many seconds before contact.
 const GO_FULL = 4;
 // The ground point the rock strikes.
@@ -8701,6 +8704,10 @@ function strikeSoon() {
 }
 const strikeU = () => clamp((ast.s - 1) / Math.max(strike.s1 - 1, 1e-3), 0, 1);
 const burnT = () => (reduced() ? 1.6 : 1) * BURN_T;
+// The burn, 0 to 1: it starts after the blink and ends at burnT.
+const burnOf = tb => clamp((tb - BLINK_T) / (burnT() - BLINK_T), 0, 1);
+// The blink, 0 to 1: the dark beat after the contact flash.
+const blinkOf = tb => THREE.MathUtils.smoothstep(tb, 0.05, 0.18) * (1 - THREE.MathUtils.smoothstep(tb, 0.3, BLINK_T + 0.4));
 function stepStrike(dt) {
   if (!strike) return;
   // During the Reset's rewind the blast light dies away.
@@ -8708,17 +8715,19 @@ function stepStrike(dt) {
   const ac = kit.live();
   if (!strike.hit) {
     const u = strikeU();
+    const T0 = (strike.s1 - 1) * fallT(), el = u * T0, full = Math.min(GO_FULL, 0.3 * T0);
+    // L: the strike's light, 0 to 1; most of it comes in the last seconds.
+    const L = strike.L = 0.25 * Math.pow(u, 4) + 0.75 * Math.exp(-(T0 - el) / NEAR_T);
     // The face burns white as the air thickens.
     astMat.uniforms.uBurn.value = 1 + 2.5 * u * u * u;
     // The ground shakes under the lens as the rock comes down.
-    if (!reduced()) cam.shake = Math.max(cam.shake, 0.7 * Math.pow(u, 4));
+    if (!reduced()) cam.shake = Math.max(cam.shake, 0.8 * L * L);
     // The ground glow lights the world before contact.
-    hitFlash = 0.8 * Math.pow(u, 4);
+    hitFlash = 0.8 * L;
     // The rock lights the heaps and the tower harder as it comes down.
-    rockGlowK = 1 + 5 * u * u;
+    rockGlowK = 1 + 5 * L;
     // The orchestra builds as the rock nears; layers enter low to high.
     // The chorus is complete GO_FULL seconds before contact.
-    const T0 = (strike.s1 - 1) * fallT(), el = u * T0, full = Math.min(GO_FULL, 0.3 * T0);
     const choir = clamp(el / Math.max(T0 - full, 0.1), 0, 1);
     // The phrases breathe in slow swells; the swells settle near contact.
     const br = 1 + 0.3 * Math.sin(2 * Math.PI * el / 7) * (1 - choir);
@@ -8726,15 +8735,16 @@ function stepStrike(dt) {
     if (ast.s >= strike.s1) { strikeHit(); strikeBoom(ac); }
   } else {
     strike.tb += dt;
-    const tb = strike.tb, b = clamp(tb / burnT(), 0, 1);
+    const tb = strike.tb, b = burnOf(tb);
     // The blast light: a short flash, then it climbs with the burn.
-    hitFlash = 0.6 * Math.exp(-tb / 0.3) + 0.3 + 1.2 * b * b;
+    // The blink thins the haze, so the fireball and the skirt show.
+    hitFlash = (1.2 * Math.exp(-tb / 0.25) + 0.3 + 1.2 * b * b) * (1 - 0.6 * blinkOf(tb));
     // The chord resolves at contact and swells through the burn.
-    // It holds through the white and rings GO_HOLD seconds past it.
-    const gv = 1 + 0.15 * b;
-    gameOverSound(ac, { u: 1, vol: gv, over: 0, crush: 0, choir: 1, lock: true });
+    // It fades out over the held white, so the rewind starts quiet.
+    const w = THREE.MathUtils.smoothstep(tb, burnT(), burnT() + 0.9 * WHITE_T);
+    gameOverSound(ac, { u: 1, vol: (1 + 0.15 * b) * (1 - w), over: 0, crush: 0, choir: 1, lock: true });
     // The white holds, then the button's Reset rewinds and cuts to the start.
-    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; gameOverSound(ac, null, GO_HOLD - WHITE_T); resetToy(true); }
+    if (!strike.out && tb >= burnT() + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
   }
   U.uHit.value.w = hitFlash;
   if (blastFx) U.uBlast.value.w = hitFlash;
@@ -8748,10 +8758,10 @@ function strikeHit() {
   const R = ast.R, P = strikeP.clone().setY(strikeP.y + 0.3 * R);
   // Three late bursts break inside the fire.
   const bursts = [0, 1, 2].map(i => ({ t: 0.4 + 0.6 * i + 0.3 * rnd(), k: 0.7 + 0.3 * rnd(), done: false, off: new THREE.Vector3(rnd() - 0.5, 0.4 * rnd(), rnd() - 0.5).multiplyScalar(3 * R) }));
-  blastFx = { t0: simT, P, R, k: 0.6, seed: rnd() * 10, bursts };
+  blastFx = { t0: simT, P, R, k: 1, seed: rnd() * 10, bursts };
   U.uHit.value.set(U.uAst.value.x, U.uAst.value.y, U.uAst.value.z, 1);
   U.uHitP.value.set(P.x, P.y, P.z, simT); U.uHitR.value = R;
-  if (!reduced()) cam.shake += 1.5;
+  if (!reduced()) cam.shake += 2.4;
 }
 // The strike's light, each drawn frame, after the bolt and the blast.
 function updateStrike() {
@@ -8767,20 +8777,20 @@ function updateStrike() {
     return;
   }
   // The glow stops growing past the Moon: Aerosmith would white the frame early.
-  const u = strikeU(), tb = strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = strike.hit;
+  const u = strikeU(), L = strike.L ?? 0, tb = strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = strike.hit;
   const e = x => 1 - Math.exp(-Math.max(x, 0));
   // A bright globe of glow wraps the rock as it nears the ground.
-  if (!hit) flare(rockGlobe, ast.pos, Rg * (3 + 5 * u), 0.15 * u + 1.6 * Math.pow(u, 3)); else rockGlobe.visible = false;
+  if (!hit) flare(rockGlobe, ast.pos, Rg * (3 + 5 * u), 0.15 * L + 1.6 * Math.pow(L, 3)); else rockGlobe.visible = false;
   // The ground glows under the rock and swells after contact.
-  flare(hitGlow, strikeP, Rg * (hit ? 24 + 30 * e(tb / 0.8) : 8 + 16 * u), hit ? 0.7 + 0.8 * e(tb / 0.3) : 0.6 * u * u * u);
+  flare(hitGlow, strikeP, Rg * (hit ? 24 + 30 * e(tb / 0.8) : 8 + 16 * u), hit ? (0.7 + 0.8 * e(tb / 0.3)) * (1 - 0.6 * blinkOf(tb)) : 0.6 * L * L * L);
   // A white core grows in the last seconds; contact blows it up.
-  flare(hitFlare, strikeP, Rg * (hit ? 4 + 6 * e(tb / 0.4) : 1.5 + 2 * u), hit ? 14 * Math.exp(-tb / 0.3) + 4 : 6 * Math.pow(u, 6));
+  flare(hitFlare, strikeP, Rg * (hit ? 4 + 6 * e(tb / 0.4) : 1.5 + 2 * u), hit ? 14 * Math.exp(-tb / 0.3) + 4 : 6 * Math.pow(L, 6));
   // The anamorphic flare rides the rock's leading face down to the ground.
   // It starts at about a third of the way down and grows until contact.
   if (hit) strikeF.copy(strikeP); else strikeF.copy(ast.pos).setY(ast.pos.y - 0.5 * R);
   strikeF.project(camera);
   const rm = reduced() ? 0.5 : 1, onF = strikeF.z < 1 && Math.abs(strikeF.x) < 1.4 && Math.abs(strikeF.y) < 1.4 && !sight;
-  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(clamp((u - 0.3) / 0.7, 0, 1), 2.2);
+  const lf = hit ? 2.4 * Math.exp(-tb / 0.6) + 0.8 : 2.4 * Math.pow(L, 2.2);
   // No ghosts in the game over: the flare stays one level streak.
   grade.uniforms.uGhost.value = 0;
   // The level streak carries the flare; the warm veil sits under it.
@@ -8792,12 +8802,13 @@ function updateStrike() {
   bq.copy(strikeP).project(camera);
   const on = bq.z < 1 && Math.abs(bq.x) < 1.4 && Math.abs(bq.y) < 1.4 && !sight;
   // God rays rise from the glow and fill the sky at contact.
-  const gk = on ? (reduced() ? 0.4 : 1) * (hit ? 1 : u * u * u) : 0;
+  const gk = on ? (reduced() ? 0.4 : 1) * (hit ? 1 : L * L * L) : 0;
   grade.uniforms.uGod.value.set(bq.x * 0.5 + 0.5, bq.y * 0.5 + 0.5, gk, gk);
   if (!hit) return;
-  // The burn: the frame overexposes, then the white fill takes it.
-  const b = clamp(tb / burnT(), 0, 1);
-  flashNow += 10 * b * b * b + 0.3 * Math.exp(-tb / 0.14);
+  // Contact: a white flash, then a blink of dark, then the burn.
+  // The blink shows the fireball and the ground before the white takes them.
+  const b = burnOf(tb), rk = reduced() ? 0.3 : 1;
+  flashNow += 10 * b * b * b + rk * 2.4 * Math.exp(-tb / 0.07) - 0.45 * blinkOf(tb);
   if (!fill) fillEl.style.opacity = THREE.MathUtils.smoothstep(b, 0.35, 1).toFixed(3);
 }
 
@@ -9681,10 +9692,10 @@ function requiemUpdate(ac, h, d) {
   // The pedal grows from the horizon line; its lid opens with nearness.
   h.pg.gain.setTargetAtTime(GO_REQ.pedal * (0.15 + 0.85 * u), t, 0.1);
   h.plp.frequency.setTargetAtTime(150 * Math.pow(2, 4.3 * u), t, 0.1);
-  // The vowel opens from oo to ah; the forte sings ah.
-  const vo = lock ? 1 : ss(cu, 0.2, 0.9);
-  const F1 = lerp(lerp(VOWEL.oo[0], VOWEL.ah[0], vo), VOWEL.scream[0], ov), F2 = lerp(lerp(VOWEL.oo[1], VOWEL.ah[1], vo), VOWEL.scream[1], ov);
-  const B2 = lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * vo + 0.5 * ov);
+  // The voices hold one vowel, oo; they only fade in.
+  // Only the strain moves the vowel, toward a scream.
+  const F1 = lerp(VOWEL.oo[0], VOWEL.scream[0], ov), F2 = lerp(VOWEL.oo[1], VOWEL.scream[1], ov);
+  const B2 = lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * ov);
   for (const v of h.voices) {
     const k = ss(cu, v.enter, v.enter + 0.15);
     // A voice scoops up two semitones as it enters, and wanders until the lock.
@@ -10551,6 +10562,18 @@ window.__qa = {
   pendQ: () => [...pend].map(h => ({ left: h.end - (kit.ac?.currentTime ?? 0), n: h.nodes.length, ship: shipRumbles.includes(h) })),
   // Start the audio context as a gesture would.
   wakeAudio() { kit.wake(); },
+  // Record the sound output; stop() resolves to a data URL.
+  record() {
+    const ac = kit.live(), d = ac.createMediaStreamDestination();
+    kit.out.connect(d);
+    const r = new MediaRecorder(d.stream), parts = [];
+    r.ondataavailable = e => parts.push(e.data);
+    r.start();
+    return { stop: () => new Promise(res => {
+      r.onstop = () => { kit.out.disconnect(d); const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(new Blob(parts, { type: r.mimeType })); };
+      r.stop();
+    }) };
+  },
   // Draw the same frame with no impact, for the night check.
   // impOff(2) keeps the domes and drops only the flash light.
   // impOff(3) drops only the cloud light.
