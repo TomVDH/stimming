@@ -2984,6 +2984,8 @@ function makeTrain(pu) {
   ${AIR}
   float c01(float x) { return clamp(x, 0.0, 1.0); }
   float rmp(float x, float a, float b) { return c01((x - a) / (b - a)); }
+  // gFine: the share of fine lobes the march step can sample, 0 to 1.
+  float gFine = 1.0;
   // The smoke's density at q, a point measured from the rock.
   // g: metres along, radii along, local radius, radial place.
   float trail(vec3 q, bool fine, out vec4 g, out float e) {
@@ -3021,7 +3023,8 @@ function makeTrain(pu) {
       // Fine cells carve the rim into small lobes.
       e = texture(uVol, p * 3.1 + vec3(uTime * 0.017, 0.0, 0.0)).g;
       // Old smoke frays into wisps toward the tail's end.
-      d = rmp(d, (1.0 - e) * mix(0.55, 0.85, smoothstep(0.35, 1.0, x / uLen)), 1.0);
+      // Lobes finer than the step alias into a comb; they fade out.
+      d = rmp(d, (1.0 - e) * mix(0.55, 0.85, smoothstep(0.35, 1.0, x / uLen)) * gFine, 1.0);
     }
     return d;
   }
@@ -3053,7 +3056,8 @@ function makeTrain(pu) {
     if (t1 <= t0) discard;
     float dt = (t1 - t0) / float(uSteps);
     // Each pixel starts its march at its own offset.
-    float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    // The offset turns each frame, so the step pattern reads as grain.
+    float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
     float cs = dot(rd, uSun);
     float ph = 0.5 * hg(cs, 0.6) + 0.5 * hg(cs, -0.2);
     float T = 1.0, wsum = 0.0, tsum = 0.0;
@@ -3061,6 +3065,9 @@ function makeTrain(pu) {
     for (int i = 0; i < 96; i++) {
       if (i >= uSteps || T < 0.02) break;
       vec3 q = qo + rd * t;
+      // The step against the local smoke radius sets the fine detail.
+      float rrq = 1.05 * R + uK * max(dot(q, uAway) + uX0, 0.0);
+      gFine = c01(2.2 - dt / (0.035 * rrq));
       vec4 g; float e;
       float d = trail(q, true, g, e);
       float x = g.x, rr = g.z;
