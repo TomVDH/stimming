@@ -268,7 +268,7 @@ function start() {
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
     // It starts after the intro, so its shader build does not stall the sweep.
     // Three footer looks for Tom to pick from: ?foot names one; ?dev shows a switch.
-    const LOOKS = ['mesh', 'horizon', 'broadcast'], FOOT_KEY = 'stimming.clock.foot', ask = new URLSearchParams(location.search);
+    const LOOKS = ['mesh', 'ridges', 'waves'], FOOT_KEY = 'stimming.clock.foot', ask = new URLSearchParams(location.search);
     let kept = null;
     try { kept = localStorage.getItem(FOOT_KEY); } catch (e) { /* no storage */ }
     let look = LOOKS.includes(ask.get('foot')) ? ask.get('foot') : LOOKS.includes(kept) ? kept : LOOKS[0];
