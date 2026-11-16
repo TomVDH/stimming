@@ -642,7 +642,7 @@ float segPt(vec3 a, vec3 b, vec3 x) {
 // x: crack lines, y: live tips, z: distance to the nearest crack.
 vec3 crackField(vec3 q0, vec3 q1) {
   float lines = 0.0, tips = 0.0, near = 9.0;
-  for (int i = 0; i < 512; i++) {
+  for (int i = 0; i < 768; i++) {
     if (i >= uNCrk) break;
     vec4 a = texelFetch(uCrk, ivec2(2 * i, 0), 0);
     // The tree is sorted by birth, so the first unborn crack ends the list.
@@ -1342,9 +1342,11 @@ const ripples = [];
 /* ---------- burst schedule ---------- */
 // The front crosses the whole drop in FRONT_T seconds of show time.
 const FRONT_T = 1.9, LAG = 0.45, GONE = 0.22, HOLD = 2.5, RAMP = 1.2, FALL = 2.8, PRE = 0.3;
+// The drop holds fully white for a beat before the head bursts.
+const WHITE = 0.4;
 const K_DRAG = 1.8;
 function schedule(sCut) {
-  const burst = (1 - sCut) * FRONT_T, ramp = burst + HOLD;
+  const burst = (1 - sCut) * FRONT_T + WHITE, ramp = burst + HOLD;
   return { burst, ramp, end: ramp + RAMP * 0.5 + FALL, dust: ramp + 0.45 };
 }
 // The real clock under the slow motion: still, then up to speed.
@@ -1359,7 +1361,7 @@ const frontAt = t => cut.s + Math.max(0, t) / FRONT_T;
 // One crack runs up the stretched core of the tail.
 // As the glass thickens it forks again and again.
 // In the head the forks fan out to the skin.
-const CRK_MAX = 512;
+const CRK_MAX = 768;
 const crkData = new Float32Array(CRK_MAX * 8);
 let crkN = 0;
 const crkTex = gl.createTexture();
@@ -1390,37 +1392,60 @@ function crackPt(s, rho, th) {
   const side = norm(cross(a.t, [0, 1, 0])), up = cross(side, a.t);
   return add(a.p, mul(add(mul(side, Math.cos(th)), mul(up, Math.sin(th))), rho * a.r));
 }
+// All live cracks move in step, so they share one cross-section.
+// Their number follows that section's area: few in the tail, many in the head.
+// A fork aims into the widest empty angle; each crack keeps its own depth.
+// Cracks push apart; when two meet, one stops, as real cracks arrest.
+// No crack stops at the skin: they all run on to the head's front.
 function growCracks(sCut) {
   const segs = [];
-  let live = [{ s: sCut, rho: 0.05, th: rnd() * 6.283, dth: 0, out: 0 }];
-  while (live.length && segs.length < CRK_MAX) {
-    const next = [];
-    for (const b of live) {
-      const a = axisAtS(b.s);
-      // Steps scale with the glass: short in the tail, long in the head.
-      const step = Math.min(0.18, Math.max(0.08, 0.5 * a.r));
-      const s2 = Math.min(1, b.s + step / LEN);
-      // Forks drift out to the skin; the head pulls them out fastest.
-      const head = smooth((s2 - S_NECK) / (1 - S_NECK));
-      const rho = clamp(b.rho + b.out * step * (0.6 + 2.2 * head) + (rnd() - 0.5) * 0.12, 0, 0.92);
-      // Each crack wanders a little at every step, as real ones do.
-      const th = b.th + b.dth * step + (rnd() - 0.5) * 0.45;
-      segs.push([...crackPt(b.s, b.rho, b.th), b.s, ...crackPt(s2, rho, th), s2]);
-      if (s2 >= 1 || (rho >= 0.92 && head > 0.6)) continue;
-      const nb = { s: s2, rho, th, dth: b.dth, out: b.out };
-      // The thin tail seldom forks; thick glass forks at most steps.
-      const fork = a.r < 0.05 ? 0.03 : a.r < 0.15 ? 0.22 : 0.42;
-      if (rnd() < fork && live.length + next.length < 24) {
-        const spread = 0.5 + 0.7 * rnd();
-        // The two halves part at a narrow angle and seldom wrap round.
-        next.push({ ...nb, th: nb.th - spread * 0.3, dth: nb.dth * 0.5 - spread * 0.5, out: Math.max(nb.out, 0.25) + 0.2 * rnd() });
-        nb.th += spread * 0.3;
-        nb.dth = nb.dth * 0.5 + spread * 0.5;
-        nb.out = Math.max(nb.out, 0.25) + 0.2 * rnd();
+  const R_MAX = Math.max(...REST.map(p => p[3]));
+  const angGap = (th, others) => {
+    let g = Math.PI;
+    for (const o of others) { const d = Math.abs(((th - o.th) % 6.283 + 9.42) % 6.283 - 3.14); g = Math.min(g, d); }
+    return g;
+  };
+  let s = sCut;
+  let live = [{ rho: 0.05, th: rnd() * 6.283, aim: 0.1 }];
+  while (live.length && s < 1 && segs.length < CRK_MAX - live.length) {
+    const a = axisAtS(s);
+    const step = Math.min(0.22, Math.max(0.08, 0.5 * a.r));
+    const s2 = Math.min(1, s + step / LEN);
+    // Fork until the count matches the section's area.
+    const want = Math.round(1 + 23 * (a.r / R_MAX) ** 2);
+    if (a.r > 0.05) {
+      for (let k = 0; k < 3 && live.length < want; k++) {
+        // The crack with the most room round it forks.
+        let best = live[0], room = -1;
+        for (const c of live) { const g = angGap(c.th, live.filter(o => o !== c)); if (g > room) { room = g; best = c; } }
+        const half = Math.max(0.35, Math.min(room, 1.6)) * 0.5;
+        live.push({ rho: best.rho, th: best.th + half, aim: 0.2 + 0.72 * rnd() });
+        best.th -= half * 0.4;
       }
-      next.push(nb);
     }
-    live = next;
+    const next = [];
+    for (const c of live) {
+      // Each crack drifts toward its own depth and wanders a little.
+      const rho = clamp(c.rho + (c.aim - c.rho) * Math.min(1, step * 2.5) + (rnd() - 0.5) * 0.1, 0, 0.92);
+      const th = c.th + (rnd() - 0.5) * 0.35;
+      segs.push([...crackPt(s, c.rho, c.th), s, ...crackPt(s2, rho, th), s2]);
+      next.push({ rho, th, aim: c.aim });
+    }
+    // Neighbours in the section push apart; a crack that meets another stops.
+    const b = axisAtS(s2), xy = c => [c.rho * Math.cos(c.th) * b.r, c.rho * Math.sin(c.th) * b.r];
+    const keep = [];
+    for (const c of next) {
+      const p = xy(c);
+      let hit = false;
+      for (const o of keep) {
+        const q = xy(o), d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+        if (d < 0.025 + 0.06 * b.r) { hit = true; break; }
+        if (d < 0.35 * b.r) c.th += Math.sign(((c.th - o.th) % 6.283 + 9.42) % 6.283 - 3.14 || 1) * 0.12;
+      }
+      if (!hit) keep.push(c);
+    }
+    live = keep;
+    s = s2;
   }
   segs.sort((x, y) => x[3] - y[3]);
   crkN = Math.min(CRK_MAX, segs.length);
