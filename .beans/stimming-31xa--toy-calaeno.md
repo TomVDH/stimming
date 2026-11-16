@@ -35,4 +35,8 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Four fixed views on a View choice: Below, Flank, Head-on, Above
 - [x] Cloud layers are level sheets at set heights; a sea under the rim
 - [ ] Tom's verdict on the four views
-- [ ] Raymarched clouds
+- [x] Raymarched clouds, ported from Window seat's deck; frames average with a moving dither
+- [x] Craft stand tall: dihedral, fins, pylons, dishes on struts, an arch tail on Alcyone
+- [x] Time of day on the bar: day, gold, dusk, moonlit night with stars, lamps and windows
+- [x] The sky goes deeper when the key light is out of frame
+- [ ] Tom's verdict on the clouds, the craft and the hours
