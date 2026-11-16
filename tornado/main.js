@@ -57,12 +57,13 @@ uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
 uniform vec4 uTor0, uTor1, uTor2, uTor3;
 const float CAMH = 1.7;
 // The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
-const vec2 TOWER = vec2(-2.6, -32.0);
-const vec2 WALL = vec2(-4.6, -17.5);
-const vec2 CORE = vec2(7.5, -28.0);
+// The updraft and the wall cloud sit on the left golden line of a wide frame.
+const vec2 TOWER = vec2(-9.5, -40.0);
+const vec2 WALL = vec2(-6.0, -25.0);
+const vec2 CORE = vec2(3.0, -36.0);
 const float BASE = 1.35;
 // The base shelf: its centre and its two half widths.
-const vec2 SHELF = vec2(0.6, -23.0);
+const vec2 SHELF = vec2(-4.0, -31.0);
 const vec2 SHELF_R = vec2(17.0, 12.0);
 // The sun's direction in camera space, set once per pixel.
 vec3 gSunC;
@@ -100,7 +101,7 @@ float stormShape(vec3 p) {
   float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.35)) - 0.35);
   // The anvil: flat on top, thin at its edge, and streaming off to the right.
   vec3 a = p - vec3(TOWER.x + mix(2.0, 14.0, g), top - 0.5, TOWER.y - 2.0);
-  float anvil = max((length(a / vec3(mix(6.0, 34.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
+  float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
@@ -526,8 +527,8 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay far off: a near click puts one 8 km out, a sky click 30 km out.
-  const dist = sy < -1e-4 ? clamp(1.7 * Math.hypot(foc, sx) / -sy, 8000, 30000) : 30000;
+  // Funnels stay far off: a near click puts one 8 km out, a sky click 36 km out.
+  const dist = sy < -1e-4 ? clamp(1.7 * Math.hypot(foc, sx) / -sy, 8000, 36000) : 36000;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -573,7 +574,7 @@ act.f = v => {
 act.add = () => {
   // A new funnel drops under the wall cloud, a little off from the last one.
   const n = tors.length;
-  const [x, z] = toWorld(-4600 + (n % 2 ? 1 : -1) * 1100 * Math.ceil(n / 2) + (Math.random() - 0.5) * 400, -17500 + (Math.random() - 0.5) * 2000);
+  const [x, z] = toWorld(-6000 + (n % 2 ? 1 : -1) * 1300 * Math.ceil(n / 2) + (Math.random() - 0.5) * 400, -25000 + (Math.random() - 0.5) * 2500);
   touchDown(x, z);
 };
 act.clear = () => { tors.length = 0; packTors(); wake(); };
