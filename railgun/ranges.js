@@ -13,22 +13,18 @@ const rad = d => d * Math.PI / 180;
 // The Dev row Forms turns every form back into a crescent.
 // A cone's arc radius is its base radius; it takes no span or opening.
 export const RANGES = [
-  // Four layers run across the whole view, each at its own depth.
+  // Vast ranges: four layers run across the whole view, each taller than the last.
   // Each centre sits off to one side, so a layer nears the eye on that side.
   // Near foothills, about 60 km out: a ridge stands in front of every far gun.
-  [114.5, 12000, 64000, 3400, 125, 65.5],
+  [114.5, 12000, 64000, 4200, 125, 65.5],
   // The middle range, about 100 km out.
-  [-65.5, 15000, 100000, 9000, 125, 65.5],
+  [-65.5, 15000, 100000, 15000, 125, 65.5],
   // The high range, about 150 km out.
-  [114.5, 20000, 150000, 17000, 120, 65.5],
-  // Giant peaks far behind, about 200 km out.
-  [-65.5, 25000, 205000, 30000, 110, 65.5],
-  // A run of tilted slabs left of the middle, among the near layers.
-  [0, 0, 120000, 9000, 30, 38.0, 5],
+  [114.5, 20000, 150000, 32000, 120, 65.5],
+  // The great range, about 210 km out: its tallest peaks reach about 80 km.
+  [-65.5, 25000, 210000, 58000, 115, 65.5],
   // A field of spires right of the middle, among the middle layers.
   [3, 92000, 17000, 11000, 0, 0, 4],
-  // A lone volcano far off, over the high range.
-  [32, 190000, 22000, 17000, 0, 0, 2],
 ];
 // Each form's bearing from its centre to the landscape eye, for the cone's seam.
 const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(EYE[1] - c[1], EYE[0] - c[0]); };
@@ -36,6 +32,8 @@ const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(EYE
 export const rangeRg = () => RANGES.map(m => { const c = polar(rad(m[0]), m[1]); return [c[0], c[1], m[2], m[3]]; });
 // uRa per range: the arc's start, span and phase in radians, then the form.
 export const rangeRa = () => RANGES.map((m, i) => [m[6] === 2 ? rangeFace(m) : rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, m[6] || 0]);
+// The march's ceiling, in metres: every crest stays under it.
+export const RANGE_CEIL = 95000;
 // The table holds 12 ranges at most; the shader skips empty slots.
 export const RANGE_MAX = 12;
 // uRg and uRa for any table, in the same form as rangeRg and rangeRa.
@@ -46,7 +44,7 @@ export const rangeUniforms = (table = RANGES) => ({
 // The landscape's knobs: the shader reads them from uLand, in this order.
 // A change to any of them needs a new bake in the toy.
 export const LAND = {
-  // The tallest crest stays under the march's 46 km ceiling up to 1.1.
+  // The tallest crest stays under the march's ceiling (RANGE_CEIL) up to 1.1.
   height: { value: 1, min: 0.5, max: 1.1, step: 0.01, label: 'Height', group: 'Shape' },
   width: { value: 1, min: 0.6, max: 1.6, step: 0.01, label: 'Width', group: 'Shape' },
   blend: { value: 0.12, min: 0, max: 0.4, step: 0.01, label: 'Blend', group: 'Shape' },
