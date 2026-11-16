@@ -170,7 +170,7 @@ vec2 cylinder(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
 }
 
 /* ---------- the camera ---------- */
-// The eye turns left by uYaw, so the road vanishes far right.
+// The eye turns left by uYaw, so the road vanishes on the right golden line.
 // Ground, road, poles, farm and funnels live in world space; the storm lives in camera space.
 vec3 toWorld(vec3 c) { float s = sin(uYaw), k = cos(uYaw); return vec3(c.x * k + c.z * s, c.y, -c.x * s + c.z * k); }
 vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
@@ -192,8 +192,8 @@ vec2 bend(vec2 xz, float h, float g) {
 }
 
 /* ---------- the plain ---------- */
-// The road runs straight away from the eye, 14 m to its right.
-const float ROAD_X = 14.0, WHEAT_GAP = 8.6;
+// The road runs past the eye, 7.5 m to its right; its near end leaves the frame.
+const float ROAD_X = 7.5, WHEAT_GAP = 6.2;
 // Coverage of a band of half width w round 0, at pixel footprint f.
 float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / f); }
 // The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
@@ -266,8 +266,8 @@ vec3 ground(vec3 rd, float px) {
   }
   // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
   vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
-  col = mix(col, vec3(0.16, 0.17, 0.06) * lit, band(ax - 6.6, 2.0, fx));
-  col = mix(col, vec3(0.2, 0.18, 0.15) * lit, band(ax - 4.3, 0.6, fx));
+  col = mix(col, vec3(0.16, 0.17, 0.06) * lit, band(ax - 5.5, 0.7, fx));
+  col = mix(col, vec3(0.2, 0.18, 0.15) * lit, band(ax - 4.3, 0.5, fx));
   col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
   col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
   float dx = P.x - ROAD_X;
@@ -466,8 +466,8 @@ function setSun(hour) {
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens: a narrow frame takes a somewhat wider one and crops the storm's sides.
 const focal = () => 0.95 * Math.min(1, Math.sqrt(aspect() / 1.3));
-// The road vanishes on the golden cut of the right section: 1 - 0.382 x 0.618.
-const ROAD_VP = 1 - GOLD * (1 - GOLD);
+// The road vanishes on the right golden line.
+const ROAD_VP = 1 - GOLD;
 // The eye turns left until the road's vanishing point lies there.
 const yaw = () => Math.atan((ROAD_VP - 0.5) * aspect() / focal());
 // Camera space to world space, and back, about the vertical axis.

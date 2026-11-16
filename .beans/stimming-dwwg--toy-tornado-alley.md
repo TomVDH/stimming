@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:10:05Z
+updated_at: 2026-11-16T20:12:34Z
 parent: stimming-oh7b
 ---
 
@@ -41,3 +41,5 @@ Known gaps for later stages: the runner draws at the full frame rate while awake
 - Headless 60 fps at 1280 x 720, console clean.
 
 - Round 3 (Tom: the road "a bit more to the right", its golden cut "past the camera FOV"): the road vanishes at 0.764 across and runs 14 m right of the eye. The showcase goal and the composition are in docs/plans/tornado.md.
+
+- Round 4 (Tom: the road moves left, "it will partially go past camera fov"): the road vanishes at 0.618 and runs 7.5 m right of the eye; its near end leaves the frame at the bottom right.

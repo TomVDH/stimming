@@ -8,7 +8,7 @@
 
 **Showcase (Tom, 2026-11-16):** "an impressive show case of weather effects, haze, layering, clouds and the tornado turbulence and cone dynamics". Every stage aims at that bar: the effects carry the toy.
 
-**Composition (Tom, 2026-11-16):** golden ratio. The horizon sits 0.382 up the frame. The road runs off to the right of the eye; its vanishing point sits on the golden cut of the right section (0.764 across), so the road enters only along the right edge. Wheat fills the foreground and answers the wind. The tornadoes stay far off, 8 to 30 km out.
+**Composition (Tom, 2026-11-16):** golden ratio. The horizon sits 0.382 up the frame. The road runs 7.5 m right of the eye; it vanishes on the right golden line (0.618 across), and its near end runs out of the frame at the bottom right. Wheat fills the foreground and answers the wind. The tornadoes stay far off, 8 to 30 km out.
 
 **Architecture:** One raw WebGL2 scene on the shared environment library, as Railgun is: `envScene` for the plains and far horizon, a ray-marched supercell (mesocyclone, wall cloud, anvil, rain curtain), and one volume per tornado (funnel, condensation, debris cloud, dust skirt) driven by a small set of per-tornado uniforms.
 
