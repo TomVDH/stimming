@@ -174,10 +174,22 @@ float funnelD(vec3 p, out float u, int oct) {
   float r = length(q), R = radiusAt(h), x = r / R;
   if (x > 1.25 + 4.0 * gSp) return 0.0;
   float ang = atan(q.y, q.x);
-  // The core: the funnel body, its edge ragged by the inner sheath's noise.
   float nc = sheathN(ang, h, 0.8, R, 0.8, 0, oct);
+  // The lower edge climbs and falls round the funnel, and tears with the wall's noise.
+  // Reaching the ground, the funnel's tip hides in its dust, so the edge varies less.
+  float hc = uH * (1.0 - uCond);
+  float taperL = max(R * 4.0, 80.0);
+  float edgeH = hc + (fbm(vec3(cos(ang) * 0.6, h * 0.002 - uTime * 0.05, sin(ang) * 0.6) + 11.0, 2) - 0.5) * 0.4 * uH * mix(1.0, 0.3, uCond);
+  edgeH += (nc - 0.5) * taperL * 0.7;
+  // The taper: the funnel narrows to a point at its lower edge; no flat cap.
+  float tap = clamp((h - edgeH) / taperL, 0.0, 1.0);
+  x /= mix(0.12, 1.0, sqrt(tap));
+  // The core: the funnel body, its edge ragged by the inner sheath's noise.
   float edge = 0.9 + uAmp * 0.45 * (nc - 0.5);
   float d = smoothstep(edge, edge - 0.1, x) * 1.6;
+  // Near the tip the core tears: only the dense parts of the wall's noise hold together.
+  float tear = N(vec3(cos(ang) * 2.2, h / max(R * 0.6, 4.0) - uPh[0].y * 3.0, sin(ang) * 2.2) + 4.4);
+  d *= mix(smoothstep(0.45, 0.7, 0.6 * nc + 0.4 * tear), 1.0, smoothstep(0.35, 1.0, tap));
   // The sheaths: thin layers of tattered cloud, each spinning at its own rate.
   for (int k = 0; k < SHEATHS; k++) {
     float rk = sheathR(k), fk = float(k) / float(SHEATHS - 1);
@@ -189,10 +201,8 @@ float funnelD(vec3 p, out float u, int oct) {
     float cov = mix(0.42, 0.6, fk);
     d += wk * smoothstep(cov, cov + 0.07, n) * mix(0.9, 0.35, fk);
   }
-  // The ragged lower edge, which climbs and falls round the funnel; the top runs into the base.
-  float hc = uH * (1.0 - uCond);
-  float edgeH = hc + (fbm(vec3(cos(ang) * 0.6, h * 0.002 - uTime * 0.05, sin(ang) * 0.6) + 11.0, 2) - 0.5) * 0.4 * uH;
-  d *= smoothstep(edgeH - 25.0, edgeH + 70.0, h) * (1.0 - smoothstep(uH * 0.96, uH + 170.0, h));
+  // The tip thins as it narrows; the top runs into the base.
+  d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(uH * 0.96, uH + 170.0, h));
   return d;
 }
 // Extinction per metre for a density: thin funnels get denser, so a rope still reads.

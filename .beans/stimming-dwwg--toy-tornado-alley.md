@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:11:40Z
+updated_at: 2026-11-16T22:15:15Z
 parent: stimming-oh7b
 ---
 
@@ -73,3 +73,5 @@ Built; waits for the checkpoint with Tom.
 - Fix (Tom: "you did a regression", "warped in the middle when switching", "fucked at low F levels"): the climb term divided height by the local radius; in the flare that ratio stalls, so the upper funnel smeared into vertical sheets. The bands now use one height scale per funnel (uZs, gentle with size). A slider jump eases over about 3 s.
 
 - Fix (Tom: "the onion layers blend together and smoothen the lower the F scale is", "properly fix all"): detail now follows the screen: sheath gaps stay three pixels or more (gSp) and the noise thins round a funnel that is thin on screen (gAng); the camera moves in on thin funnels; features round the funnel keep the shape of features up it at any size; the helix leans by arc, not angle (wide funnels had sheared flat); the dust spins as one body with integrated phases (the crossfade doubled at F4 and F5); lighter history (0.55), default resolution 0.75. Headless 60 fps at F1, F3, F5.
+
+- Fix (Tom: "bottom of tornado looks weird and cut off with white"): the funnel ended in a flat, dense cap. It now tapers to a point over max(4 R, 80 m) at its lower edge, thins as it narrows, and tears along the wall's noise near the tip; the edge varies less once the condensation reaches the ground, where the tip sinks into its dust.
