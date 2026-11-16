@@ -45,10 +45,10 @@ The live pass also got a true ceiling test: a ray that rises past every crest on
 
 ## Next
 
-1. Tom picks: Bake as the default, or keep Live.
+1. Done: Tom made Bake the default (2026-11-16).
 2. Then richer shapes: ridged erosion in the height itself (spurs and gullies). The bake marches once, so the detail costs nothing per frame.
 
 ## Dev
 
-- Dev row `Far ranges`: Bake or Live. `?far=bake` opens on the bake.
+- Dev row `Far ranges`: Bake or Live. Bake is the default (Tom, 2026-11-16); `?far=live` opens on the live march.
 - `__qa.far(mode)` reads the bake counters; `__qa.gpuMs('far' | 'all' | 'bake' | 'light', n)` times them.
