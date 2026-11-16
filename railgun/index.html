@@ -972,6 +972,16 @@ vec3 aerialIn(vec3 rd) {
   return k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0 * 0.5;
 }
 vec3 aerial(vec3 col, vec3 P) { return aerialFrom(col, cameraPosition, P); }
+// The shared air's transmittance alone, for smoke and volumes that blend premultiplied.
+vec3 aerialT(vec3 P) {
+  vec3 ro = cameraPosition;
+  float hit = length(P - ro);
+  float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+  float aR = abs(dy) < 1.0 ? exp(-yc / 8000.0) : (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
+  float aM = abs(dy) < 1.0 ? exp(-yc / 3000.0) : (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  aM *= 0.5 + 0.5 * uLayer.x;
+  return exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
+}
 // Sunlight at height h crosses less air than at the ground.
 vec3 sunAt(float h) {
   float am = 1.0 / max(uSun.y, 0.08);
@@ -3142,8 +3152,8 @@ const astMat = new THREE.ShaderMaterial({
       float fis = smoothstep(0.5, 0.58, n) * (1.0 - smoothstep(0.64, 0.76, n));
       col += vec3(1.0, 0.18, 0.05) * fis * (0.6 + 0.4 * sin(uTime * 0.7 + n * 12.0)) * 3.5;
     }
-    // The plain's distance haze too, so a body this size sits deep in the air.
-    col = air(k2haze(col, vP), vP);
+    // The plain's low dust, then the shared air, so a body this size sits deep in the air.
+    col = aerial(k2haze(col, vP), vP);
     // Extra air on the rock: far out, blue scatters away and the sky fills in.
     // The rock reddens and pales with distance and sharpens as it nears.
     vec3 Tr = exp(-BETA_R * uAir * (uRockAir - 1.0) * airDepth(vP));
@@ -3394,7 +3404,7 @@ const shipMat = new THREE.ShaderMaterial({
     // A high sun's bright sky washes the ship toward a ghost.
     vec3 dir = normalize(vP - cameraPosition);
     float day = smoothstep(0.2, 0.8, uSunD.y);
-    col = mix(air(col, vP), k2skyB(dir, 0.0), 0.5 * day);
+    col = mix(aerial(col, vP), k2skyB(dir, 0.0), 0.5 * day);
     // The cirrus hangs nine kilometres up, in front of the ship.
     // Two blends give the ice's colour and cover.
     float cs = dot(dir, uSunD);
@@ -3913,8 +3923,9 @@ function makeTrain(pu) {
     if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
     // The air acts once, at the smoke's mean depth.
     vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + t1));
-    vec3 Ta = airT(Pm) * (1.0 - 0.45 * k2hazeAmount(Pm));
-    col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
+    // The shared air, as on the ranges and the clouds; the plain's low dust on top.
+    vec3 Ta = aerialT(Pm) * (1.0 - 0.45 * k2hazeAmount(Pm));
+    col = col * Ta + aerialIn(rd) * (1.0 - Ta) * al;
     // Smoke behind the soot ball hides in it.
     float sT = sootT(Pm);
     gl_FragColor = vec4(col * sT, al * sT);
@@ -4018,7 +4029,7 @@ function makeFragTrail(own = false) {
       vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8 + blastLight(vP));
       // A short hot tip; a long glow hides the piece.
       vec3 fire = uFireC * exp(-vF * 16.0) * edge * 0.8 * uOn * lift * mix(1.0, uLift.z, uLift.y);
-      gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
+      gl_FragColor = vec4(aerial(smoke, vP) * a + fire * aerialT(vP), a);
     }`,
   }));
   m.frustumCulled = false; m.renderOrder = BAND.ribbons; m.visible = false;
@@ -6612,8 +6623,8 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     vec3 lit = uConC * (ambient(N) * 0.9 + uSunC * 1.5 * (0.3 + 0.7 * max(dot(N, uSun), 0.0))) * (0.8 + 0.3 * n);
     vec3 b = uBlast.xyz - vP;
     lit += uAstC * uBlast.w * 2.0e7 / (dot(b, b) + 4.0e6);
-    // uAer 1 takes the shared aerial perspective: far rounds use it.
-    gl_FragColor = vec4((uAer > 0.5 ? aerial(lit, vP) : mix(lit, air(lit, vP), 0.5)) * a, a);
+    // uAer 1 takes the full shared aerial perspective: far rounds use it.
+    gl_FragColor = vec4((uAer > 0.5 ? aerial(lit, vP) : mix(lit, aerial(lit, vP), 0.5)) * a, a);
   }`,
 }));
 ionPuffs.frustumCulled = false; ionPuffs.renderOrder = BAND.ionPuffs; ionPuffs.visible = false;
@@ -6783,6 +6794,7 @@ void main() {
   if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
   // The air acts once, at the volume's mean depth.
   vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + h.y));
+  // The blast keeps its own thinner air: the shared air washes the fireball out.
   vec3 Ta = airT(Pm) * (1.0 - VHAZE * k2hazeAmount(Pm));
   col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
   gl_FragColor = vec4(col, al);
@@ -7856,7 +7868,7 @@ const shardMat = new THREE.ShaderMaterial({
     // Far shards go blue and flat in the air.
     // A shard behind the soot ball fades into it; one in front stays solid.
     // Far pieces near the plain drop behind the horizon.
-    gl_FragColor = vec4(air(col, vP), sootT(vP) * hzFade(vP));
+    gl_FragColor = vec4(aerial(col, vP), sootT(vP) * hzFade(vP));
   }`,
   depthWrite: false, transparent: true,
 });
