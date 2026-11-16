@@ -5320,6 +5320,7 @@ function draw() {
   updateDust();
   updateArcs();
   updateBolt();
+  farLight();
   updateIon();
   updateBlast();
   updateStrike();
@@ -5414,7 +5415,7 @@ function updateWarp() {
 // The director holds off while the player charges or a shot flies.
 // Shooting stars stay out for now (Tom, 2026-11-16); the Dev test still plays one.
 const AMB_KINDS = ['war', 'sat', 'bolt', 'flak', 'shed'];
-// farNext: the far guns wait 70 to 140 s between attempts.
+// farNext: the far guns wait 150 to 300 s between attempts.
 const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6, farNext: 0 };
 /* A meteor: a streak from its tail to a hot round head.
    The tail tapers, cools and fades; the head stays white-hot. */
@@ -5504,12 +5505,21 @@ function farShot(site, D, t0, flash) {
   const c = 0.5 + 0.5 * rnd();
   return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site, D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
 }
-// A far gun stands on the far side of the frame from the rock.
-// Its round then crosses the sky, not straight at the eye.
-function farSite(D) {
-  const rx = ambSP.copy(ast.pos).project(camera).x, sgn = rx > 0 ? -1 : 1;
-  const sx = clamp(rx + sgn * (0.6 + 0.5 * rnd()), -0.85, 0.85);
-  return camera.position.clone().addScaledVector(ambFlat(sx, ambA), D).setY(0);
+// Three far guns stand behind the ranges: screen x and distance.
+// Each fires one round per attempt.
+const FAR_PIECES = [{ sx: -0.8, D: 96000 }, { sx: -0.45, D: 80000 }, { sx: 0.74, D: 104000 }];
+// A piece's place on the plain, for the live lens.
+const farSite = q => camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
+// The piece farthest across the frame from the rock: its round crosses the sky.
+function farPiece() {
+  const rx = ambSP.copy(ast.pos).project(camera).x;
+  return FAR_PIECES.reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
+}
+// The far rounds' light on the clouds: place and strength.
+const farLit = new THREE.Vector4();
+// The main round's light wins; a far round lights the clouds only without it.
+function farLight() {
+  if (U.uBolt.value.w < 0.001 && farLit.w > 0.001) U.uBolt.value.copy(farLit);
 }
 // At its rail start the round leads the rock, as the main gun does.
 // The aim point sits beside the rock as the eye sees it: a near miss.
@@ -5612,16 +5622,13 @@ function ambLanding(t0) {
 // Start one event of this kind.
 function ambStart(kind) {
   if (kind === 'war') {
-    // A battery past the ranges fires a ragged ripple at the rock.
-    // Two to four rounds; each muzzle flash lights the horizon.
-    const D = 75000 + 35000 * rnd(), site = farSite(D);
-    // Each gun of the battery fires one round at the rock; all miss.
-    const n = 2 + Math.floor(rnd() * 3), side = new THREE.Vector3(-ambA.z, 0, ambA.x);
+    // The three far guns fire in turn, one round each; all miss.
+    // Each muzzle flash lights the horizon.
+    const order = [...FAR_PIECES].sort(() => rnd() - 0.5);
     let t = simT;
-    for (let i = 0; i < n; i++) {
-      const at = site.clone().addScaledVector(side, (rnd() * 2 - 1) * 6000);
-      amb.live.push(farShot(at, D, t, 1.2 + 1.0 * rnd()));
-      t += 0.3 + 2.2 * rnd();
+    for (const q of order) {
+      amb.live.push(farShot(farSite(q), q.D, t, 1.2 + 1.0 * rnd()));
+      t += 4 + 5 * rnd();
     }
     // The rumble comes late and low.
     amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.25 });
@@ -5638,8 +5645,8 @@ function ambStart(kind) {
   }
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
-    // A far gun fires from behind the ranges and misses the rock.
-    const D = 75000 + 35000 * rnd(), site = farSite(D);
+    // One far gun fires from behind the ranges and misses the rock.
+    const q = farPiece(), site = farSite(q), D = q.D;
     amb.live.push(farShot(site, D, simT, 0.9));
     // The crack arrives late and faint; a long wait is cut to half a minute.
     amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
@@ -5714,12 +5721,13 @@ function stepAmbient(dt) {
   const ks = ambKinds();
   if (!ks.length) return;
   const k = ks[Math.floor(rnd() * ks.length)];
-  if (k === 'war' || k === 'bolt') amb.farNext = simT + 70 + 70 * rnd();
+  if (k === 'war' || k === 'bolt') amb.farNext = simT + 150 + 150 * rnd();
   ambStart(k);
 }
 // The events write their light after the domes clear uImp.
 function drawAmbient() {
   for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
+  farLit.w = 0;
   // A set whose round has ended goes back to the pool.
   for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
   const L = IMP_U.uImp.value;
@@ -5777,6 +5785,9 @@ function drawFarBolt(e, a) {
   const tail = 0.55 + 0.03 * e.T, land = 0.3 + e.T;
   const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farAt(e, a, farP));
   g.bolt.visible = fade > 0.002;
+  // The head lights the clouds near it, faintly; the brightest round wins.
+  const lw = a > 0.3 ? 0.05 * e.c * fade : 0;
+  if (lw > farLit.w) { farAt(e, a, farP); farLit.set(farP.x, farP.y, farP.z, lw); }
   if (g.bolt.visible) {
     g.bolt.material.uniforms.uWide.value = 40 * K;
     const geo = g.bolt.geometry, p0 = geo.attributes.aP0, p1 = geo.attributes.aP1, kk = geo.attributes.aK;
