@@ -479,7 +479,20 @@ Recorded as found. Nothing here is fixed.
 | 17 | The v1 (i) button is 30 px and has no coarse-pointer rule. It is under the 34 px floor on touch. | `shared/stim.css:230-235` |
 | 18 | Dormant menu CSS: the series badge and Constellation rules stay while `SERIES_ON` is off. One 560 px media rule repeats the base size. | `index.html:122`, `:149-175` |
 | 19 | Proposals, not final: the toy accents (first set, 2026-11-09), eight of the eleven series shots, five Flemish series names. | `toys.json`; `shared/series/shots.js`; `series.json` |
-| 20 | The contrast of small control text is not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. | `shared/stim.css:392`, `:453` |
+| 20 | The contrast of small control text was not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. Measured 2026-11-16 on the default stage: sheet section labels about 3.8:1 and action keycaps (0.6 opacity) about 2.8:1, both under the rule. Chip text is 5.9:1; the Lab tag is 5.4:1. | `shared/stim.css:392`, `:432`, `:453` |
 | 21 | The Creative North Star has no name. The playbook asks the owner for it; Tom has not set one. Colours keep the code's token names. | this file |
 | 22 | The hard offset shadow has two rulings with two scopes: never on a menu icon, native on Bar v2 controls. Both are recorded above with their scopes. | `AGENTS.md`; `docs/plans/bar-v2.md` |
 | 23 | The tonal ramps in `.impeccable/design.json` are made for the panel. They are not project tokens. | `.impeccable/design.json` |
+
+### Rulings
+
+Tom's rulings on the rows above, by date. A row with no ruling is still open.
+
+| Date | Ruling | Rows |
+|---|---|---|
+| 2026-11-16 | Tom: "we're completely redoing the style and ux of the bars". | 1, 2, 6, 7, 17, 20, 22 |
+
+Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
+- The seven bar rows wait for the redo. No one fixes them on the present bars.
+- Rows 6, 17 and 20 become requirements of the redo: a keyboard focus mark, 34 px touch targets, 4.5:1 text.
+- No bar value (chip height, label sizes, the 2 px slab radius, corner insets) becomes a scale token before the redo.
