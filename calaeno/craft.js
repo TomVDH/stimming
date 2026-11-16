@@ -94,7 +94,8 @@ function inside(poly, x, z) {
 // lamps, outlines and bodies for the shade test, and discs that cast the sun rays.
 const NACELLE = [[-190, 1, 1], [-160, 14, 13], [-30, 14, 13], [-4, 7, 7]];
 const RED = [9, 0.5, 0.3], GREEN = [0.4, 8, 1.2], WHITE = [9, 9, 9];
-const strobe = (x, y, z, ph, c = WHITE, size = 6) => [x, y, z, size, ...c, 1.7, ph, 0.05];
+// Each strobe keeps its own period, so no two stay in step.
+const strobe = (x, y, z, ph, c = WHITE, size = 6) => [x, y, z, size, ...c, 1.7 + 1.9 * ((ph * 7.31 + 0.13) % 1), ph, 0.05];
 const tips = (x, y, z) => [[-x, y, z, 5, ...RED, 1, 0, 1], [x, y, z, 5, ...GREEN, 1, 0, 1]];
 // A pusher engine under a wing: a nacelle on a pylon, 34 m below the skin.
 function engine(parts, x, skin, z) {
@@ -373,13 +374,14 @@ function lamps(list, uPx) {
       vCol = aCol * on;
       gl_Position = projectionMatrix * viewMatrix * w;
       // By night a lamp reads larger.
-      gl_PointSize = aSize * uPx * (1.0 + 0.6 * uNight);
+      gl_PointSize = aSize * uPx * 2.2 * (1.0 + 0.6 * uNight);
     }`,
     fragmentShader: /* glsl */`
     varying vec3 vCol;
     void main() {
       float d = length(gl_PointCoord - 0.5) * 2.0;
-      gl_FragColor = vec4(vCol * exp(-d * d * 5.0) * smoothstep(1.0, 0.7, d), 1.0);
+      // A hard core in a wide, soft glow.
+      gl_FragColor = vec4(vCol * (exp(-d * d * 22.0) + 0.16 * exp(-d * 3.2)) * smoothstep(1.0, 0.6, d), 1.0);
     }`,
   }));
   m.frustumCulled = false;
@@ -399,6 +401,8 @@ export function makeCraft(build, uPx) {
   return {
     group, mesh, props, lights, span: spec.span, spread: spec.spread, casters: spec.casters,
     heads: spec.engines.map(([x, y, z]) => new THREE.Vector3(x, y, z + 4)),
+    // The strobes, for the lens flares: place, colour, period, phase, share lit.
+    strobes: spec.lamps.filter(l => l[9] < 1).map(l => ({ p: new THREE.Vector3(l[0], l[1], l[2]), col: l.slice(4, 7), period: l[7], phase: l[8], duty: l[9], size: 0.22 })),
     // True where the craft blocks a ray through local x, z.
     shade(x, z) {
       if (spec.bodies.some(([st, bx]) => Math.abs(x - bx) < widthAt(st, z))) return true;
@@ -410,14 +414,16 @@ export function makeCraft(build, uPx) {
 
 // The escorts share one geometry and one material.
 let escGeo = null, escMat = null;
-export function makeEscort(uPx) {
+// i sets each escort's own strobe clock.
+export function makeEscort(uPx, i = 0) {
   const group = new THREE.Group();
   const mesh = new THREE.Mesh(escGeo ??= escortGeometry(), escMat ??= craftMaterial(0));
   mesh.frustumCulled = false;
   const lights = lamps([
     [-20, 0, 19, 3, ...RED, 1, 0, 1], [20, 0, 19, 3, ...GREEN, 1, 0, 1],
-    [0, -2.5, 4, 4, ...WHITE, 1.1, 0.4, 0.07],
+    [0, -2.5, 4, 4, ...WHITE, 0.9 + 0.17 * i, (0.37 * i) % 1, 0.07],
   ], uPx);
   group.add(mesh, lights);
-  return { group, mesh, lights, head: new THREE.Vector3(0, 0, 30) };
+  const strobes = [{ p: new THREE.Vector3(0, -2.5, 4), col: WHITE, period: 0.9 + 0.17 * i, phase: (0.37 * i) % 1, duty: 0.07, size: 0.11 }];
+  return { group, mesh, lights, strobes, head: new THREE.Vector3(0, 0, 30) };
 }

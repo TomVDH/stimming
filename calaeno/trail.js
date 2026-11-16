@@ -84,7 +84,7 @@ const FRAG = /* glsl */`precision highp sampler3D;
 varying vec3 vP;
 uniform sampler3D uVol;
 uniform vec3 uHead, uAway, uSide, uUpv, uHot, uFireC, uEmberC, uSoot, uAsh;
-uniform float uRad, uLen, uK, uBurn, uTrail, uFlow;
+uniform float uRad, uLen, uK, uBurn, uTrail, uFlow, uTaper;
 uniform int uSteps, uLSteps;
 ${AIR}
 float c01(float x) { return clamp(x, 0.0, 1.0); }
@@ -159,7 +159,8 @@ void main() {
     float x = g.x, rr = g.z;
     if (d > 0.0) {
       // Old smoke is thinner than young smoke.
-      float kap = 11.0 * mix(1.0, 0.38, smoothstep(3.0, 22.0, g.y)) * uTrail;
+      // It also thins with distance: a contrail tapers to clear air.
+      float kap = 11.0 * mix(1.0, 0.38, smoothstep(3.0, 22.0, g.y)) * uTrail * exp(-max(x, 0.0) / uTaper);
       // A short march toward the sun finds the shadow.
       float tl = 0.0, ls = 0.13 * rr;
       vec3 ql = q;
@@ -196,14 +197,15 @@ void main() {
 
 // One train: rad at the head, k metres wider per metre, len metres long.
 // burn is the rock's core fire, 0 to 1; a propeller's contrail has none.
-export function makeTrail(vol, { rad, k, len, burn = 0 }) {
+// taper is the length, in metres, over which the smoke thins to a third.
+export function makeTrail(vol, { rad, k, len, burn = 0, taper = 1e9 }) {
   const u = {
     ...AIR_U,
     uVol: { value: vol },
     uHead: { value: new THREE.Vector3() }, uAway: { value: new THREE.Vector3(0, 0, 1) },
     uSide: { value: new THREE.Vector3(1, 0, 0) }, uUpv: { value: new THREE.Vector3(0, 1, 0) },
     uRad: { value: rad }, uK: { value: k }, uLen: { value: len },
-    uBurn: { value: burn }, uTrail: { value: 1 }, uFlow: { value: 0 },
+    uBurn: { value: burn }, uTrail: { value: 1 }, uFlow: { value: 0 }, uTaper: { value: taper },
     uSteps: { value: 72 }, uLSteps: { value: 4 },
     // The rock's own fire and ash; the fire stays off.
     uHot: { value: new THREE.Vector3(...linFit(0.95, 0.06, 80)) }, uFireC: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uEmberC: { value: new THREE.Vector3(...linFit(0.55, 0.18, 35)) },

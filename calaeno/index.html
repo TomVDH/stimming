@@ -58,7 +58,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { FLARE } from '../shared/flare.js';
+import { FLARE, flareSlots, flareAt } from '../shared/flare.js';
 import { GRADE } from '../shared/grade.js';
 import { initPage, whenVisible, reduced, onReducedChange } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
@@ -411,8 +411,8 @@ const fleet = Object.fromEntries(Object.entries(CRAFT).map(([id, spec]) => {
 let craft = fleet[state.craft];
 // Six escorts in two echelons: across in spans, back and up in metres.
 const WING = [[-0.66, 300, -120], [-0.84, 780, -40], [-1.02, 1300, -210], [0.66, 300, -120], [0.84, 780, -40], [1.02, 1300, -210]];
-const escorts = WING.map(() => {
-  const e = makeEscort(uPx);
+const escorts = WING.map((_, i) => {
+  const e = makeEscort(uPx, i);
   e.group.rotation.order = 'YXZ';
   e.mesh.renderOrder = 3; e.lights.renderOrder = 4;
   scene.add(e.group);
@@ -642,11 +642,12 @@ volQuad.frustumCulled = false;
 volScene.add(volQuad);
 // One contrail per engine: it starts at the propeller.
 // K is the cone's spread; the rock's own cone opens faster.
-const TRAIL = { rad: 26, k: 0.05, len: 150000 };
+// Each thins along its length and is gone 34 km back.
+const TRAIL = { rad: 26, k: 0.05, len: 34000, taper: 10000 };
 const MAX_ENGINES = Math.max(...Object.values(fleet).map(c => c.heads.length));
 const trails = Array.from({ length: MAX_ENGINES }, () => makeTrail(vol, TRAIL));
 // Each escort draws one thin line.
-const escTrails = escorts.map(() => makeTrail(vol, { rad: 4, k: 0.012, len: 40000 }));
+const escTrails = escorts.map(() => makeTrail(vol, { rad: 4, k: 0.012, len: 16000, taper: 5000 }));
 for (const t of [...trails, ...escTrails]) { t.mesh.renderOrder = 2; scene.add(t.mesh); }
 function pick() {
   craft = fleet[state.craft];
@@ -661,26 +662,37 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(4, 4), 0.3, 0.7, 1.6);
 composer.addPass(bloom);
 const FIN = { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: AIR_U.uTime, uSunUV: { value: new THREE.Vector2() }, uSunVis: { value: 0 }, uFlareC: { value: new THREE.Vector3() } };
-composer.addPass(new ShaderPass({
+// The pass takes a material, so it reads FIN itself and not a copy.
+composer.addPass(new ShaderPass(new THREE.ShaderMaterial({
   uniforms: FIN,
   vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
   uniform sampler2D tDiffuse; uniform vec2 uRes, uSunUV; uniform vec3 uFlareC; uniform float uTime, uSunVis;
+  uniform vec4 uFlP[12], uFlC[12];
   varying vec2 vUv;
   ${FLARE}
   ${GRADE}
   void main() {
     float asp = uRes.x / uRes.y;
     vec3 c = texture2D(tDiffuse, vUv).rgb;
-    if (uSunVis > 0.0) c += flFlare(vUv, uSunUV, asp, uFlareC, 1.0, vec3(0.2, 0.55, 0.4)) * uSunVis;
+    if (uSunVis > 0.0) c += flFlare(vUv, uSunUV, asp, uFlareC, 1.0, vec3(0.2, 0.0, 0.35)) * uSunVis;
+    // Each lit strobe throws a small flare: a soft veil and faint ghosts.
+    // No streak: Tom cut the anamorphic line (2026-11-16).
+    for (int i = 0; i < 12; i++) {
+      if (uFlP[i].z <= 0.0) continue;
+      c += flFlare(vUv, uFlP[i].xy, asp, uFlC[i].rgb, uFlP[i].w, vec3(0.3, 0.0, 0.12)) * uFlP[i].z;
+    }
     // A hard grade: deeper shade, richer blue.
     c = pow(max(c, 0.0), vec3(1.18)) * 1.12;
     c = mix(vec3(gdLuma(c)), c, 1.2);
     c = gdGrade(c, vUv, asp, gl_FragCoord.xy + floor(uTime * 24.0) * vec2(37.0, 17.0), vec3(0.001, 0.001, 0.003), 0.42, 0.45, 0.03);
     gl_FragColor = vec4(c, 1.0);
   }`,
-}));
+})));
 composer.addPass(new OutputPass());
+// Twelve flare slots for the strobes; the final pass reads them.
+const slots = flareSlots(12);
+FIN.uFlP = { value: slots.pos }; FIN.uFlC = { value: slots.col };
 
 /* ---------- size and detail ---------- */
 // March steps and sun steps at Low, Standard and High.
@@ -730,13 +742,32 @@ function layout() {
   tmp.addScaledVector(tmp2, 0.15 * (state.sun - SUN0)).normalize();
   // The hour sets the whole air from that place.
   hourExpo = setTime(state.time, tmp);
-  FIN.uFlareC.value.copy(AIR_U.uSunC.value).multiplyScalar(0.6);
+  FIN.uFlareC.value.copy(AIR_U.uSunC.value).multiplyScalar(0.16);
   CLOUD_U.uAlt.value.set(...v.alt);
   CLOUD_U.uFill.value = v.fill;
   VOLPIC_U.uVolOn.value = v.cloud ? 1 : 0;
   volFresh = true;
   // The top sets how far the towers lift over the domes; more fill lowers the cover threshold.
   if (v.cloud) VOL_U.uCl.value.set(v.cloud[0], Math.max(0, (v.cloud[1] - v.cloud[0]) / DECK_M - 2.1), 0.62 - 0.32 * v.cloud[2]);
+}
+
+// An escort's place at time t in the craft's frame: metres right, up and back.
+// It holds station with a wobble; now and then it flies one patrol loop.
+// It returns how hard it is turning, 0 to 1.
+const CRUISE = 250, eNow = [0, 0, 0], eOld = [0, 0, 0], eNew = [0, 0, 0];
+function escortAt(i, t, out) {
+  const [across, back, up] = WING[i], ph = i * 1.7, side = Math.sign(across);
+  out[0] = across * craft.span + 60 * Math.sin(t * 0.21 + ph) + 25 * Math.sin(t * 0.53 + 2 * ph);
+  out[1] = up + 40 * Math.sin(t * 0.17 + 1 + ph);
+  out[2] = back + 90 * Math.sin(t * 0.13 + 2 + ph);
+  // Each escort leaves on its own clock: out, ahead, round behind, and home.
+  const s = ((t + 19 * i) % (74 + 13 * i)) / 38;
+  if (s >= 1) return 0;
+  const e = s * s * (3 - 2 * s), a = 2 * Math.PI * e;
+  out[0] += side * 1500 * (1 - Math.cos(a)) / 2;
+  out[1] += 520 * Math.sin(Math.PI * e) ** 2;
+  out[2] -= 2200 * Math.sin(a);
+  return Math.sin(Math.PI * s);
 }
 
 function pose(t) {
@@ -748,11 +779,21 @@ function pose(t) {
   craft.heads.forEach((h, i) => trails[i].lay(tmp.copy(h).applyMatrix4(g.matrixWorld).addScaledVector(AWAY, 0.5 * TRAIL.rad), AWAY));
   // The escorts hold station off both wings and drift a little.
   escorts.forEach((e, i) => {
-    const [across, back, up] = WING[i], ph = i * 1.7;
-    place([across * craft.span + 40 * Math.sin(t * 0.21 + ph), up + 26 * Math.sin(t * 0.17 + 1 + ph), back + 60 * Math.sin(t * 0.13 + 2 + ph)], e.group.position);
-    e.group.rotation.set(0.02 * Math.sin(t * 0.23 + ph), 0, 0.14 * Math.sin(t * 0.31 + ph));
+    // Its speed and its turn come from its path: a step back and a step on.
+    const H = 0.25;
+    const busy = escortAt(i, t, eNow);
+    escortAt(i, t - H, eOld); escortAt(i, t + H, eNew);
+    const vr = (eNew[0] - eOld[0]) / (2 * H), vu = (eNew[1] - eOld[1]) / (2 * H), vb = (eNew[2] - eOld[2]) / (2 * H);
+    const ar = (eNew[0] - 2 * eNow[0] + eOld[0]) / (H * H);
+    place(eNow, e.group.position);
+    // The nose follows the path; the wings bank into each turn.
+    const yaw = Math.atan2(vr, CRUISE - vb), pitch = Math.atan2(vu, CRUISE);
+    const roll = clamp(-Math.atan(ar / 9.8) * 0.85, -1.25, 1.25) + 0.1 * Math.sin(t * 0.31 + i * 1.7);
+    e.group.rotation.set(pitch, -yaw, roll);
     e.group.updateMatrixWorld(true);
+    // Its trail streams straight back on the wind, and all but stops while it turns hard.
     escTrails[i].lay(tmp.copy(e.head).applyMatrix4(e.group.matrixWorld), AWAY);
+    escTrails[i].u.uTrail.value = 1 - 0.9 * Math.min(1, busy * 1.6);
   });
   // The rays' casters: the craft as discs, the contrails as one chain.
   const S = SHAFT_U;
@@ -784,7 +825,7 @@ function aim(t) {
 }
 
 // How much of the sun the craft and the contrails hide, 0 to 1.
-const fwd = new THREE.Vector3();
+const fwd = new THREE.Vector3(), vp = new THREE.Matrix4(), uv2 = [0, 0];
 function sunCover() {
   const sun = AIR_U.uSun.value, eye = camera.position;
   inv.copy(craft.group.matrixWorld).invert();
@@ -831,6 +872,18 @@ function frame(dt) {
   vis = dt ? vis + (want - vis) * Math.min(1, dt * 6) : want;
   FIN.uSunUV.value.set(sn.x * 0.5 + 0.5, sn.y * 0.5 + 0.5);
   FIN.uSunVis.value = vis * state.flare;
+  // Each strobe that is lit this frame takes a flare slot.
+  slots.clear();
+  vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  const lit = (list, m) => {
+    for (const st of list) {
+      if ((simT / st.period + st.phase) % 1 >= st.duty) continue;
+      tmp.copy(st.p).applyMatrix4(m);
+      if (flareAt(vp.elements, tmp.x, tmp.y, tmp.z, uv2)) slots.add(uv2[0], uv2[1], 0.26 * state.flare * (1 + 0.6 * AIR_U.uNight.value), st.size, st.col[0] / 9, st.col[1] / 9, st.col[2] / 9, 1);
+    }
+  };
+  lit(craft.strobes, craft.group.matrixWorld);
+  for (const e of escorts) lit(e.strobes, e.group.matrixWorld);
   bloom.strength = 0.3 * state.bloom;
   renderer.toneMappingExposure = state.expo * hourExpo;
   // The deck slides back as the craft flies on, slowly.

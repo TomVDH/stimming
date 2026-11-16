@@ -40,3 +40,10 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Time of day on the bar: day, gold, dusk, moonlit night with stars, lamps and windows
 - [x] The sky goes deeper when the key light is out of frame
 - [ ] Tom's verdict on the clouds, the craft and the hours
+
+## Round 4 (Tom, 2026-11-16)
+
+- [x] Contrails taper to clear air along their length
+- [x] Escorts wobble and fly patrol loops, banking; their trails thin on patrol
+- [x] Strobes keep their own clocks; each flash has a glow and a soft flare, no streak
+- [x] The final pass reads live values (sun flare, grain clock, frame shape)
