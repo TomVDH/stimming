@@ -770,6 +770,30 @@ vec3 hazeCol(vec3 d, vec3 P) {
 }
 `;
 
+/* PBR: one specular model for the train sides, the cabin and the buildings. */
+// V points from the surface to the eye. r is the perceptual roughness, f0 the reflectance at normal incidence.
+const PBRL = /* glsl */`
+// GGX with Smith-Schlick shadowing and Schlick Fresnel, times N.L.
+float ggxSpec(vec3 N, vec3 V, vec3 L, float r, float f0) {
+  vec3 H = normalize(L + V);
+  float NoL = max(dot(N, L), 0.0), NoV = max(dot(N, V), 1e-3), NoH = max(dot(N, H), 0.0), VoH = max(dot(V, H), 0.0);
+  float a = max(r * r, 0.002), a2 = a * a, d = NoH * NoH * (a2 - 1.0) + 1.0, k = a * 0.5;
+  float F = f0 + (1.0 - f0) * pow(1.0 - VoH, 5.0);
+  return a2 / (3.14159 * d * d) * 0.25 / ((NoL * (1.0 - k) + k) * (NoV * (1.0 - k) + k)) * F * NoL;
+}
+// Fresnel for the mirrored surroundings; a rough surface loses the grazing gain.
+float envF(vec3 N, vec3 V, float r, float f0) { return f0 + (max(1.0 - r, f0) - f0) * pow(1.0 - max(dot(N, V), 0.0), 5.0); }
+// Tilts N by the screen slope of a height h in metres; no tangents are needed.
+vec3 bumpN(vec3 N, vec3 P, float h) {
+  vec3 dpx = dFdx(P), dpy = dFdy(P), r1 = cross(dpy, N), r2 = cross(N, dpx);
+  float det = dot(dpx, r1);
+  vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+  return normalize(abs(det) * N - g);
+}
+// 1 while a feature of size w spans several pixels, 0 before it can shimmer.
+float bumpFade(vec3 P, float w) { return 1.0 - smoothstep(0.25, 0.7, length(fwidth(P)) / w); }
+`;
+
 /* Sky dome: stars and moonlit cloud by night, cumulus by day. */
 // The dome follows the camera, so a long ride never leaves it.
 const sky = (() => {
@@ -3907,37 +3931,211 @@ const curveAt = x => {
 let brK = 0, ovK = 0, cant = 0, sway = 0;
 
 /* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
+// The quad runs from the rails at -2.5 to 2.7 m, so the bogies and the roof gear fit on it.
+// The body is painted metal: GGX sun, the mirrored sky and our own train, panel seams in its height.
 // The windows look into a saloon: a ceiling light strip, seat backs and the far windows.
-// The glass mirrors the sky and catches the sun; the body curves, so its sheen changes with height.
 const TSIDE = /* glsl */`
 float tsCover(float d, float w, float s) { return clamp((w + s + 0.001 - abs(d) * 2.0) / (2.0 * s + 0.002), 0.0, 1.0) * min(1.0, w / (s + 0.001)); }
+float tsHash(float n) { return fract(sin(n * 91.345) * 47453.5453); }
+float tsNoise(float x) { float i = floor(x), f = fract(x); return mix(tsHash(i), tsHash(i + 1.0), f * f * (3.0 - 2.0 * f)); }
+// Each unit is half the train, split into cars of about 26 m.
+float tsCar(float len) { float h = len * 0.5; return h / max(1.0, floor(h / 26.0 + 0.5)); }
+// A rounded box: the signed distance from its edge, half size b, corner radius r.
+float tsBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+// Distance from a segment: the pantograph's arms.
+float tsSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+// The side window's box, relative to its centre: 1.8 by 0.8 m with round corners.
+float tsWin(float wd, float y) { return tsBox(vec2(wd, y - 0.15), vec2(0.9, 0.4), 0.14); }
+// Window centres repeat every 2.7 m from the car's middle; the doors keep the ends clear.
+float tsWd(float uc, float cl) { return mod(uc - cl * 0.5 + 1.35, 2.7) - 1.35; }
+bool tsWinOk(float uc, float wd, float cl) { float c = uc - wd; return c > 5.0 && c < cl - 5.0; }
+// Each car has a two-leaf door 3.4 m in from either end; dd is the distance from its middle.
+float tsDd(float uc, float cl) { return uc < cl * 0.5 ? uc - 3.4 : uc - (cl - 3.4); }
+// Height of the skin in metres: seams, rivets, gaskets, door recesses and the ribbed skirt.
+// s blurs it along the car; e is the pixel's size.
+float tsH(float u, float y, float cl, float s, float e) {
+  float uc = mod(u, cl), h = 0.0, g = 0.012 + e;
+  float wd = tsWd(uc, cl), dd = tsDd(uc, cl);
+  bool door = abs(dd) < 0.75 && y < 0.8;
+  // Panel joints under each window pillar, at the waist and at the cant rail.
+  if (!door && y > -1.7 && y < 1.3) h -= 0.004 * tsCover(1.35 - abs(wd), g, s);
+  h -= 0.004 * (tsCover(y + 0.33, g, e) + tsCover(y - 1.3, g, e));
+  // Rivets in a row above the cant rail.
+  h += 0.003 * tsCover(mod(uc, 0.12) - 0.06, 0.025 + e, s) * tsCover(y - 1.37, 0.025 + e, e);
+  // A raised rubber gasket rings each window.
+  if (tsWinOk(uc, wd, cl)) {
+    float sd = tsWin(wd, y);
+    h += 0.005 * mix(sqrt(clamp(1.0 - abs(sd - 0.016) / 0.02, 0.0, 1.0)), 0.3 * step(sd, 0.035), smoothstep(0.02, 0.2, s));
+  }
+  // The door leaves sit 15 mm in; a seam splits them.
+  if (abs(dd) < 0.78 && y < 0.83 && y > -1.78) {
+    h -= 0.015 * tsCover(dd, 1.4, s) * (1.0 - tsCover(y - 0.8, 0.05, e));
+    h -= 0.004 * tsCover(dd, g, s);
+  }
+  // The skirt is ribbed below the stripe.
+  if (y < -1.55 && y > -1.78) h += 0.002 * (0.5 + 0.5 * cos(y * 125.66)) * (1.0 - smoothstep(0.01, 0.025, e));
+  return h;
+}
+// Colour of our own carriage's side, about 1.1 m out from the eye; the trains beside us mirror it.
+// r widens the edges, so a rough surface shows it blurred.
+vec3 tsOurs(vec3 P, float r, float sunK) {
+  vec3 lit = mix(vec3(0.012) + vec3(1.0, 0.66, 0.36) * 0.04, skyA(0.0) * mix(0.6, 1.1, sunK) + sunC() * vec3(0.12, 0.11, 0.1) * sunK, uDay);
+  vec3 c = vec3(0.62) * lit;
+  c = mix(c, vec3(0.42, 0.07, 0.06) * lit, smoothstep(0.03 + r, -r, abs(P.y + 1.05) - 0.12));
+  c = mix(c, vec3(0.05) * lit, smoothstep(-1.75 + r, -1.85 - r, P.y));
+  // Our panes repeat every 2.4 m round the eye; by night they show our lit saloon.
+  float f = abs(fract((P.x - uCamX) / 2.4 + 0.5) - 0.5) * 2.4;
+  float pane = smoothstep(0.75 + r, 0.75 - r, f) * smoothstep(0.42 + r, 0.38 - r, abs(P.y - 0.1));
+  vec3 inside = mix(vec3(1.0, 0.8, 0.58) * 0.5, vec3(0.05, 0.05, 0.055) + skyA(0.0) * 0.08, uDay);
+  return mix(c, inside, pane);
+}
+// The surroundings mirrored along R: our train, the sky, or the dim ground below.
+vec3 tsEnv(vec3 W, vec3 R, float r, float sunK) {
+  vec3 sky = skyCol(R) * mix(0.15, 1.0, sunK);
+  vec3 c = mix(mix(vec3(0.004), skyA(0.0) * 0.3, uDay), sky, smoothstep(-0.12 - r, 0.04 + r, R.y));
+  if (R.z > 0.05) {
+    float t = (-1.1 - W.z) / R.z;
+    vec3 P = W + R * t;
+    float k = smoothstep(1.62 + r * t * 0.3, 1.5, P.y) * smoothstep(-2.5, -2.3, P.y) * smoothstep(120.0, 90.0, abs(P.x - uCamX));
+    c = mix(c, tsOurs(P, 0.01 + r * t * 0.25, sunK), k);
+  }
+  return c;
+}
 // u is metres from the front, len the train's length, s the motion smear in metres.
 // lit is 1 when the saloon lights are on; sunK is 0 under a roof.
 vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
   float y = W.y;
+  if (y < -2.48) return vec4(0.0);
   float nose = smoothstep(0.0, 2.5, u) * smoothstep(0.0, 2.5, len - u);
   float gap = 1.0 - tsCover(u - len * 0.5, 0.6, s) * 0.9;
   float top = 1.55 - (1.0 - nose) * 1.2;
-  if (y > top || nose * gap < 0.02) return vec4(0.0);
-  vec3 V = normalize(W - cameraPosition);
-  // The body curves in above the windows and below the floor.
-  vec3 Nb = normalize(vec3(0.0, clamp((y - 0.35) * 0.55, -0.35, 0.7), 1.0));
+  if (nose * gap < 0.02) return vec4(0.0);
+  vec3 V = normalize(W - cameraPosition), E = -V;
+  float cl = tsCar(len), uc = mod(u, cl), ue = min(uc, cl - uc);
+  float e = max(fwidth(u), 1e-4), ey = max(fwidth(y), 1e-4);
+  // Roof gear stands back 1.45 m on the roof's middle line: a pantograph per unit, a cooling box per car.
+  if (y > top) {
+    vec3 Q = W + V * (1.45 / max(-V.z, 0.05));
+    float qx = u + Q.x - W.x, ql = mod(qx, len * 0.5), qc = mod(qx, cl), ew = e * 1.3;
+    float box = tsBox(vec2(qc - cl * 0.5, Q.y - 1.95), vec2(2.4, 0.2), 0.12);
+    float pc = cl * (len * 0.5 > cl * 1.5 ? 1.5 : 0.5);
+    vec2 p = vec2(ql - pc, Q.y);
+    float arm = min(min(tsSeg(p, vec2(0.85, 1.98), vec2(-0.55, 2.55)), tsSeg(p, vec2(-0.55, 2.55), vec2(0.2, 3.05))), tsBox(p - vec2(0.2, 3.08), vec2(0.2, 0.03), 0.02));
+    arm = min(arm, tsBox(p - vec2(0.15, 1.92), vec2(1.1, 0.06), 0.02));
+    float ins = tsBox(vec2(abs(p.x - 0.15) - 0.95, p.y - 1.86), vec2(0.06, 0.1), 0.03);
+    float sm = s * 0.5 + ew;
+    float cov = max(max(clamp(0.5 - box / sm, 0.0, 1.0), clamp(0.5 - (arm - 0.025) / sm, 0.0, 1.0) * min(1.0, 0.05 / (s + 0.05))), clamp(0.5 - ins / sm, 0.0, 1.0));
+    cov *= step(Q.y, 3.2) * nose * gap * step(2.0, qx) * step(qx, len - 2.0);
+    // The roof curves up 0.35 m to its middle line; a low eye looks across it, a high one onto it.
+    float roof = 0.0, rd = 0.0;
+    for (int i = 1; i <= 6; i++) {
+      float d = float(i) * 0.2417;
+      if (roof < 0.5 && y + V.y * d / max(-V.z, 0.05) < 1.55 + 0.35 * sin(d / 1.45 * 1.5708)) { roof = 1.0; rd = d; }
+    }
+    roof *= nose * gap * step(1.5, top);
+    if (cov < 0.02 && roof < 0.5) return vec4(0.0);
+    if (cov < 0.02) {
+      // Grey roof paint, dulled by brake dust; it faces the sky.
+      vec3 Nr = normalize(vec3(0.0, 0.3 + rd, 1.0 - rd * 0.5));
+      vec3 rc = vec3(0.32, 0.31, 0.3) * mix(vec3(0.012), skyA(Nr.y) * mix(0.6, 1.2, sunK) + sunC() * sunK * max(dot(Nr, uSun), 0.0) * 0.6, uDay);
+      rc += sunC() * uDay * sunK * ggxSpec(Nr, E, uSun, 0.5, 0.04) * 0.4;
+      return vec4(rc, roof);
+    }
+    // Dark galvanised steel, lit from the sky above, a glint toward the sun.
+    vec3 Ng = normalize(vec3(0.0, 0.5, 1.0));
+    vec3 c = vec3(mix(0.1, 0.26, step(box, 0.0))) * mix(vec3(0.01), skyA(0.8) * mix(0.5, 1.0, sunK) + sunC() * sunK * max(dot(Ng, uSun), 0.0) * 0.4, uDay);
+    c += sunC() * uDay * sunK * ggxSpec(Ng, E, uSun, 0.35, 0.5) * 0.3;
+    // The insulators are pale brown glaze.
+    c = mix(c, vec3(0.5, 0.42, 0.32) * mix(vec3(0.02), skyA(0.8), uDay), step(ins, 0.0));
+    return vec4(c, cov);
+  }
+  // Below the body: bogies, boxes and the dark void, each set back, so they shift as the view moves.
+  if (y < -1.78) {
+    // The gap under the train shows the lit ballast beyond; the skirt shades its top.
+    vec3 amb = mix(vec3(0.012) + vec3(1.0, 0.66, 0.36) * trainLight(W) * 0.2, skyA(0.0) * mix(0.6, 1.2, sunK) + sunC() * vec3(0.12, 0.11, 0.1) * mix(0.3, 1.0, sunK), uDay);
+    vec3 c = amb * mix(0.03, 0.16, smoothstep(-1.85, -2.45, y));
+    vec3 B = W + V * (0.45 / max(-V.z, 0.05));
+    float bx = mod(u + B.x - W.x, cl), by = B.y;
+    float bb = bx < cl * 0.5 ? bx - 2.8 : bx - (cl - 2.8);
+    // Underframe boxes between the bogies.
+    float bxs = tsBox(vec2(bx - cl * 0.5, by + 1.98), vec2(cl * 0.5 - 5.0, 0.2), 0.04);
+    float eb = s * 0.5 + e;
+    c = mix(c, vec3(0.16) * amb * (0.6 + 0.4 * smoothstep(-1.85, -2.1, by)), clamp(0.5 - bxs / eb, 0.0, 1.0));
+    // Two wheels per bogie, 0.9 m across, on the rails at -2.5.
+    float wh = length(vec2(abs(bb) - 1.25, by + 2.05)) - 0.45;
+    float wcv = clamp(0.5 - wh / eb, 0.0, 1.0) * min(1.0, 0.45 / (s + 0.2));
+    vec3 Nw = normalize(vec3(0.0, clamp(-(by + 2.05) / 0.45, -1.0, 1.0) * 0.4, 1.0));
+    vec3 wc = vec3(0.3, 0.26, 0.22) * amb * (0.8 + 0.4 * Nw.y) + sunC() * uDay * sunK * ggxSpec(Nw, E, uSun, 0.4, 0.3) * 0.15;
+    // The hub and the bright tread at the rim.
+    wc += amb * 0.3 * smoothstep(0.04, 0.0, abs(wh + 0.025)) * (1.0 - smoothstep(0.1, 0.5, s));
+    wc *= 1.0 - 0.5 * smoothstep(0.12, 0.0, length(vec2(abs(bb) - 1.25, by + 2.05)));
+    c = mix(c, wc, wcv);
+    // The bogie's side frame across the top of the wheels.
+    float fr = tsBox(vec2(bb, by + 1.93), vec2(1.7, 0.09), 0.05);
+    float spr = tsBox(vec2(abs(bb) - 0.35, by + 2.05), vec2(0.12, 0.12), 0.05);
+    float fcv = clamp(0.5 - min(fr, spr) / eb, 0.0, 1.0);
+    c = mix(c, vec3(0.22, 0.22, 0.24) * amb * (0.7 + 0.5 * smoothstep(-2.0, -1.86, by)), fcv);
+    return vec4(c, nose * gap * step(-2.48, y));
+  }
+  float wd = tsWd(uc, cl), dd = tsDd(uc, cl);
+  // The skin's slope from its height: seams catch the light along their edges.
+  float du = max(e, 0.004), dy = max(ey, 0.004);
+  float h0 = tsH(u, y, cl, s, e);
+  vec2 gr = vec2(tsH(u + du, y, cl, s, e) - tsH(u - du, y, cl, s, e), tsH(u, y + dy, cl, s, e) - tsH(u, y - dy, cl, s, e)) / vec2(2.0 * du, 2.0 * dy);
+  // The body curves in above the windows, below the floor, and round each car end.
+  float endC = 1.0 - smoothstep(0.0, 0.35, ue);
+  vec3 Nb = normalize(vec3(sign(uc - cl * 0.5) * endC * 0.8, clamp((y - 0.35) * 0.55, -0.35, 0.7), 1.0));
+  vec3 N = normalize(Nb - vec3(gr, 0.0) * 1.5);
+  // Paint: pale grey with the red stripe, a darker band under the roof and an aluminium gutter.
   vec3 alb = vec3(0.66, 0.67, 0.68);
-  alb = mix(alb, vec3(0.07), smoothstep(-1.75, -1.85, y));
+  float rough = 0.24, f0 = 0.04;
   alb = mix(alb, vec3(0.45, 0.07, 0.06), smoothstep(0.03, 0.0, abs(y + 1.05) - 0.12));
   alb = mix(alb, alb * 0.75, smoothstep(1.25, 1.45, y));
-  vec3 day = sunC() * sunK * max(dot(Nb, uSun), 0.0) * 0.6 + skyA(Nb.y) * mix(0.6, 1.2, sunK) + sunC() * vec3(0.12, 0.11, 0.1) * mix(0.3, 1.0, sunK);
+  float gut = smoothstep(0.012 + ey, 0.0, abs(y - 1.47) - 0.04);
+  alb = mix(alb, vec3(0.55, 0.56, 0.58), gut);
+  rough = mix(rough, 0.3, gut);
+  f0 = mix(f0, 0.75, gut);
+  // Grime runs down from the window corners and gathers low on the body.
+  float gn = mix(tsNoise(uc * 9.0 + floor(u / cl) * 13.0), 0.5, smoothstep(0.02, 0.25, s));
+  float run = exp(-pow((abs(wd) - 0.82) / 0.07, 2.0)) * step(y, -0.25) * exp((y + 0.25) * 1.8) * float(tsWinOk(uc, wd, cl));
+  // Some windows leak more than others.
+  run *= mix(tsHash(floor((uc - wd) / 2.7) + floor(u / cl) * 7.0 + sign(wd)), 0.5, smoothstep(0.1, 1.0, s)) * 0.8;
+  float grime = clamp(run * (0.4 + 0.8 * gn) + smoothstep(-0.9, -1.75, y) * (0.25 + 0.35 * gn) + smoothstep(1.2, 1.5, y) * 0.3 * gn, 0.0, 1.0) * 0.7;
+  alb = mix(alb, alb * vec3(0.6, 0.56, 0.5), grime);
+  rough = min(rough + grime * 0.35, 0.9);
+  // The rubber: window gaskets, door edges and the gangway bellows.
+  float rub = 0.0;
+  if (tsWinOk(uc, wd, cl)) rub = smoothstep(0.006 + e, 0.0, abs(tsWin(wd, y) - 0.016) - 0.01) * 0.85;
+  bool door = abs(dd) < 0.78 && y < 0.83;
+  if (door) {
+    rub = max(rub, max(tsCover(abs(dd) - 0.72, 0.04, s) * step(y, 0.83), tsCover(y - 0.8, 0.04, ey) * tsCover(dd, 1.44, s)) * 0.8);
+    alb *= 0.95;
+  }
+  float bel = 1.0 - smoothstep(0.25, 0.25 + s * 0.5 + e, ue);
+  rub = max(rub, bel);
+  alb = mix(alb, vec3(0.07) * (bel > 0.5 ? 0.6 + 0.4 * tsCover(mod(uc, 0.07) - 0.035, 0.03, s) : 1.0), rub);
+  rough = mix(rough, 0.65, rub);
+  f0 = mix(f0, 0.03, rub);
+  // Rain wets the paint: darker, and a sharper mirror.
+  alb *= 1.0 - 0.12 * uWet;
+  rough = mix(rough, rough * 0.5, uWet);
+  // Light: the sun and sky by day; our panes, the lamps and the dark by night.
+  vec3 day = sunC() * sunK * max(dot(N, uSun), 0.0) * 0.6 + skyA(N.y) * mix(0.6, 1.2, sunK) + sunC() * vec3(0.12, 0.11, 0.1) * mix(0.3, 1.0, sunK);
   vec3 night = vec3(0.012) + vec3(1.0, 0.66, 0.36) * trainLight(W) * 0.25;
-  for (int i = 0; i < ${NL}; i++) { vec3 L = uLP[i].xyz - W; night += LAMPC * uLP[i].w * 2.5 / (dot(L, L) + 1.0); }
-  vec3 Rb = reflect(V, Nb);
-  vec3 body = alb * mix(night, day, uDay) + skyCol(Rb) * 0.06 * mix(0.4, 1.0, sunK) + sunC() * uDay * sunK * 0.25 * pow(max(dot(Rb, uSun), 0.0), 60.0);
-  // Windows every 2.7 m; doors every 26 m, each with a tall pane.
-  float win = tsCover(mod(u, 2.7) - 1.35, 1.8, s) * smoothstep(0.42, 0.38, abs(y - 0.15)) * step(3.0, u) * step(u, len - 3.0);
-  float dx = mod(u, 26.0) - 13.0;
-  float door = tsCover(dx, 1.4, s) * step(y, 0.75) * step(-1.7, y);
-  float dwin = tsCover(dx, 0.9, s) * smoothstep(0.32, 0.28, abs(y - 0.25));
-  body = mix(body, body * 0.55, door * (1.0 - dwin));
-  win = max(win * (1.0 - door), dwin);
+  vec3 spec = sunC() * uDay * sunK * ggxSpec(N, E, uSun, rough, f0) * 0.6;
+  for (int i = 0; i < ${NL}; i++) {
+    vec3 L = uLP[i].xyz - W;
+    float a = uLP[i].w * 2.5 / (dot(L, L) + 1.0);
+    night += LAMPC * a;
+    spec += LAMPC * a * ggxSpec(N, E, normalize(L), rough, f0) * 1.5;
+  }
+  float Fe = envF(N, E, rough, f0);
+  vec3 body = alb * mix(night, day, uDay) * (1.0 - Fe) + tsEnv(W, reflect(V, N), rough, sunK) * Fe + spec;
+  // Side windows; the door leaves each carry a tall pane.
+  float win = 0.0;
+  if (tsWinOk(uc, wd, cl)) win = clamp(0.5 - tsWin(wd, y) / (e + s * 0.6 + 0.004), 0.0, 1.0) * min(1.0, 1.8 / (s + 0.001));
+  float dwin = door ? tsCover(abs(dd) - 0.36, 0.5, s) * smoothstep(0.32, 0.28, abs(y - 0.25)) : 0.0;
+    win = max(win, dwin);
   // The saloon's warm light shows by day too, a little softer.
   vec3 roomLit = vec3(1.0, 0.86, 0.68) * mix(0.9, 0.55, uDay) * (0.12 + 0.88 * lit);
   vec3 inside;
@@ -3953,7 +4151,8 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
       inside = roomLit * 0.16;
     } else {
       // The far windows show the day beyond, or the dark.
-      float fw = tsCover(mod(u + h.x - W.x, 2.7) - 1.35, 1.8, s) * smoothstep(0.42, 0.38, abs(h.y - 0.15));
+      float fu = mod(u + h.x - W.x, cl);
+      float fw = clamp(0.5 - tsWin(tsWd(fu, cl), h.y) / (e * 2.0 + s * 0.6 + 0.01), 0.0, 1.0) * float(tsWinOk(fu, tsWd(fu, cl), cl));
       // Under a roof the far windows show the dim hall, not the sky.
       vec3 beyond = mix(vec3(0.02, 0.025, 0.035), mix(vec3(0.07, 0.07, 0.075), skyCol(vec3(0.0, 0.2, -1.0)) * 0.9, sunK), uDay);
       inside = mix(roomLit * 0.6, beyond, fw);
@@ -3965,11 +4164,11 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
     // At speed the saloon blurs to its average.
     inside = mix(inside, roomLit * 0.5, smoothstep(0.3, 2.0, s));
   }
-  // The glass: the saloon through a green tint; sky and sun mirrored on top.
+  // The glass: the saloon through a green tint; our train, the sky and the sun mirrored on top.
   vec3 Ng = normalize(vec3(0.0, 0.06, 1.0));
   vec3 Rg = reflect(V, Ng);
-  float F = max(0.05 + 0.95 * pow(1.0 - max(dot(-V, Ng), 0.0), 5.0), 0.1);
-  vec3 mirror = skyCol(Rg) * mix(0.2, 1.0, uDay) * mix(0.15, 1.0, sunK) + sunC() * uDay * sunK * 2.0 * pow(max(dot(Rg, uSun), 0.0), 400.0);
+  float F = max(0.05 + 0.95 * pow(1.0 - max(dot(E, Ng), 0.0), 5.0), 0.1);
+  vec3 mirror = tsEnv(W, Rg, 0.0, sunK) * mix(0.2, 1.0, uDay) + sunC() * uDay * sunK * 2.0 * pow(max(dot(Rg, uSun), 0.0), 400.0);
   vec3 glass = inside * vec3(0.72, 0.78, 0.76) * (1.0 - F) + mirror * F;
   return vec4(mix(body, glass, win), nose * gap);
 }`;
@@ -3978,7 +4177,7 @@ vec4 trainSide(vec3 W, float u, float len, float s, float lit, float sunK) {
 // oppMesh rolls with the track on curves.
 let oppMesh = null;
 {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 4.0).translate(0.5, -0.4, -4.95), new THREE.ShaderMaterial({
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 5.2).translate(0.5, 0.1, -4.95), new THREE.ShaderMaterial({
     uniforms: OUTU, transparent: true, depthWrite: true,
     vertexShader: /* glsl */`
     uniform vec4 uOpp;
@@ -4000,6 +4199,7 @@ let oppMesh = null;
     varying float vU;
     ${TRAIN}
     ${HAZE}
+    ${PBRL}
     ${TUNL}
     ${TSIDE}
     void main() {
@@ -4070,7 +4270,7 @@ const yard = (() => {
   // Trains stand in the yard beyond the hall, dark and empty; one unit shunts slowly on the near track.
   // Each is [track, metres from the hall's middle, length, saloon light, shunts].
   for (const [k, x0, len, lit, moves] of [[1, 300, 200, 0, 0], [1, 590, 150, 0, 0], [2, 380, 300, 0.12, 0], [3, 270, 100, 0, 0], [3, 480, 250, 0, 0], [4, 330, 400, 0, 0], [0, 430, 75, 0.7, 1]]) {
-    const t = new THREE.Mesh(new THREE.PlaneGeometry(len, 4.0).translate(x0 + len / 2, -0.4, YZ[k] + 1.45), new THREE.ShaderMaterial({
+    const t = new THREE.Mesh(new THREE.PlaneGeometry(len, 5.2).translate(x0 + len / 2, 0.1, YZ[k] + 1.45), new THREE.ShaderMaterial({
       uniforms: OUTU,
       vertexShader: /* glsl */`
       uniform float uTime;
@@ -4091,6 +4291,7 @@ const yard = (() => {
       varying float vU;
       ${TRAIN}
       ${HAZE}
+      ${PBRL}
       ${TSIDE}
       void main() {
         vec4 r = trainSide(vW, vU, ${len}.0, 0.0, ${lit.toFixed(2)}, 1.0);
@@ -4133,7 +4334,7 @@ hall.add(new THREE.Mesh(new THREE.BoxGeometry(420, 0.4, 70).translate(0, 7.6, -3
 }
 // Trains stand at two hall platforms: the shared side, lit saloons, under the roof.
 for (const [x0, len, zt] of [[-170, 260, -26], [-120, 150, -40]]) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(len, 4.0).translate(x0 + len / 2, -0.4, zt + 1.45), new THREE.ShaderMaterial({
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(len, 5.2).translate(x0 + len / 2, 0.1, zt + 1.45), new THREE.ShaderMaterial({
     uniforms: OUTU,
     vertexShader: /* glsl */`
     varying vec3 vW;
@@ -4150,6 +4351,7 @@ for (const [x0, len, zt] of [[-170, 260, -26], [-120, 150, -40]]) {
     varying float vU;
     ${TRAIN}
     ${HAZE}
+    ${PBRL}
     ${TSIDE}
     void main() {
       vec4 r = trainSide(vW, vU, ${len}.0, 0.0, 0.7, 0.0);
@@ -4936,7 +5138,8 @@ let drag = false;
 const JOINT = 25, KICK = [[0, 1], [2.6, 1], [16, 0.45], [18.6, 0.45]];
 // The oncoming train: front x, length, speed; it comes every one to two and a half minutes.
 // QA can call the first one sooner with ?opp=seconds.
-const opp = { on: false, x: 0, len: 210, v: 31, next: qs.has('opp') ? +qs.get('opp') : 25 + Math.random() * 40 };
+// QA can slow the oncoming train with ?oppv= to see its detail.
+const opp = { on: false, x: 0, len: 210, v: qs.has('oppv') ? +qs.get('oppv') : 31, next: qs.has('opp') ? +qs.get('opp') : 25 + Math.random() * 40 };
 function oncoming(dt) {
   if (!opp.on && time > opp.next && speed > 4) { opp.on = true; opp.x = camX + 1600; opp.len = Math.random() < 0.5 ? 150 : 210; }
   if (opp.on) {
