@@ -58,7 +58,14 @@ function start() {
   let line = [], busy = false;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const dozen = () => [...shelf.children].slice(0, HOURS);
-  const objs = () => dozen().map(li => li.querySelector('.obj'));
+  // A held toy waits in the menu's own grainy blur; it comes in when the hold ends.
+  // The hold is ours: the menu's reveal can mark a toy `is-in` at any time, so it cannot hold it.
+  const hold = (li, on, delay = 0) => {
+    const toy = /** @type {HTMLElement} */ (li.querySelector('.toy'));
+    toy.classList.add('is-in');
+    toy.style.setProperty('--d', delay.toFixed(2) + 's');
+    li.toggleAttribute('data-hold', on);
+  };
   const picture = li => `shared/stills/${li.querySelector('a.toy').id}.webp`;
   const film = li => { const id = li.querySelector('a.toy').id; return loops.has(id) ? `shared/loops/${id}.mp4` : null; };
   function deal() {
@@ -72,8 +79,8 @@ function start() {
       li.removeAttribute('data-out');
       li.style.setProperty('--x', Math.sin(i * Math.PI / 6).toFixed(4));
       li.style.setProperty('--y', (-Math.cos(i * Math.PI / 6)).toFixed(4));
-      // A dealt toy skips the shelf's own blur reveal.
-      li.querySelector('.toy').classList.add('is-in');
+      // A dealt toy is held from the start, so it never shows before the comet drops it off.
+      hold(li, !calm());
     });
     // The hand goes first, so the tab order follows the dial.
     shelf.prepend(...hand);
@@ -192,19 +199,20 @@ function start() {
     pen.fill();
   }
   function arrive(first = false) {
+    const lis = dozen();
     // With no motion the dozen simply shows.
-    if (calm()) { if (gsap) gsap.set(objs(), { clearProps: 'opacity,visibility' }); return; }
+    if (calm()) { lis.forEach(li => hold(li, false)); return; }
     // The comet fades in where it starts, on the track at twelve o'clock.
-    const icons = objs(), head = { a: 0, fade: 0 };
+    const head = { a: 0, fade: 0 };
     let came = 0;
-    gsap.set(icons, { scale: 0.2, autoAlpha: 0, rotation: -24 });
+    lis.forEach(li => hold(li, true));
     const paint = () => drawComet(head.a, head.fade);
-    gsap.timeline({ onComplete() { gsap.set(icons, { clearProps: 'transform,opacity,visibility' }); drawComet(0, 0); } })
+    gsap.timeline({ onComplete: () => drawComet(0, 0) })
       .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
         paint();
         // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
         const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
-        while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.5, ease: 'back.out(2.2)' });
+        while (came < h) hold(lis[came++], false);
       } }, 0)
       .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
       // The comet runs on a little past twelve as it fades, so it does not stop dead.
@@ -221,14 +229,9 @@ function start() {
     if (busy) return;
     if (calm()) return deal();
     busy = true;
-    const old = objs();
-    // The old dozen leaves in the head's order, so the face clears round the dial.
-    gsap.to(old, { scale: 0.3, autoAlpha: 0, rotation: 24, duration: 0.22, ease: 'power2.in', stagger: 0.035, onComplete() {
-      gsap.set(old, { clearProps: 'transform,opacity,visibility' });
-      deal();
-      arrive();
-      busy = false;
-    } });
+    // The old dozen goes back into its blur in the comet's order, so the face clears round the dial.
+    dozen().forEach((li, i) => hold(li, true, i * 0.03));
+    setTimeout(() => { deal(); arrive(); busy = false; }, HOURS * 30 + 420);
   }
   button.addEventListener('click', roll);
   // The Re-roll stays away for the first five seconds.
@@ -289,7 +292,7 @@ function start() {
   root.dataset.clock = 'on';
   // The intro waits for the tube, so its shader build does not stall the sweep. A timer, not a frame:
   // a hidden tab gets no frames. Until then the dozen is out of sight.
-  if (!calm()) gsap.set(objs(), { autoAlpha: 0 });
+  if (!calm()) dozen().forEach(li => hold(li, true));
   Promise.race([tubeReady, new Promise(r => setTimeout(r, 900))]).then(() => setTimeout(() => arrive(true), 40));
   wake();
 }
