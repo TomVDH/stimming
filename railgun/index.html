@@ -191,7 +191,20 @@ const ui = initPage({ id: 'railgun', bar: {
     // The strength of the cloud shadows in the low air.
     { type: 'slider', id: 'shafts', group: 'Sky', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
     // Far haze sinks far clouds into the air.
-    { type: 'slider', id: 'farhaze', group: 'Sky', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
+    // The air, as every far thing sees it.
+    // Air blue fade: Rayleigh scattering, how fast far things turn blue and pale.
+    { type: 'slider', id: 'airray', group: 'Sky', label: 'Air blue fade', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.x = v; U.uAir.value = 0.7 * v; draw(); } },
+    // Air dust: the dusty haze (Mie), how thick the far air is.
+    { type: 'slider', id: 'airdust', group: 'Sky', label: 'Air dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.y = v; draw(); } },
+    // Air dust height: how deep the dust stands, in metres; low dust leaves tall things clear.
+    { type: 'slider', id: 'airdusth', group: 'Sky', label: 'Air dust height', min: 500, max: 10000, step: 100, value: 3000, persist: true, onInput: v => { U.uAirK.value.z = v; draw(); } },
+    // Air sun glow: the dust's warm glow toward the sun.
+    { type: 'slider', id: 'airglow', group: 'Sky', label: 'Air sun glow', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.w = v; draw(); } },
+    // Near dust: the plain's own low dust, thick near the ground.
+    { type: 'slider', id: 'neardust', group: 'Sky', label: 'Near dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uHaze.value = 0.00013 * v; draw(); } },
+    { type: 'slider', id: 'neardusth', group: 'Sky', label: 'Near dust height', min: 100, max: 3000, step: 50, value: 700, persist: true, onInput: v => { U.uHazeH.value = v; draw(); } },
+    // Cloud far fade: far clouds sink further into the air, foot first.
+    { type: 'slider', id: 'farhaze', group: 'Sky', label: 'Cloud far fade', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
     // Valley fog pools in the far ranges.
     { type: 'slider', id: 'valfog', group: 'Sky', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
     // The broken layer of cells five kilometres up.
@@ -413,6 +426,9 @@ const U = {
   uShocks: { value: Array.from({ length: 5 }, () => new THREE.Vector4(0, 0, 0, 0)) },
   // The strength of the Rayleigh air.
   uAir: { value: 0.7 },
+  // The shared air's knobs: Rayleigh blue fade, dust amount, dust height in metres, sun glow.
+  // Dev rows Air blue fade, Air dust, Air dust height and Air sun glow set them.
+  uAirK: { value: new THREE.Vector4(1, 1, 3000, 1) },
   // Barrel heat, 0 cold to 1 white-hot.
   uHeat: { value: 0 },
   // A slow dull-red tail after each shot.
@@ -593,6 +609,8 @@ float k3fbm(vec3 p) {
 // New: the rock, the bolt and the hit light the air.
 const K2_SKY = /* glsl */`
 uniform vec3 uSunC, uZenC, uHorC;
+// The shared air's knobs: Rayleigh, dust amount, dust height in metres, sun glow.
+uniform vec4 uAirK;
 uniform float uSunE;
 uniform vec3 uSunD, uGlowC, uMoonD, uCloudSun, uCloudAmb;
 uniform float uMoonK, uStars, uStarT, uTrailK;
@@ -690,11 +708,12 @@ vec3 cirrusAir(vec3 c, vec3 P) {
   float hit = length(v);
   vec3 rd = v / max(hit, 1.0);
   float yc = max(cameraPosition.y, 0.0), yp = max(P.y, 0.0), dy = max(yp - yc, 1.0);
-  float aR = (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
-  float aM = (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  float hM = max(uAirK.z, 100.0);
+  float aR = (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy * uAirK.x;
+  float aM = (exp(-yc / hM) - exp(-yp / hM)) * hM / dy * uAirK.y;
   vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
   float mu = dot(rd, uSunD);
-  vec3 inL = mix(uHorC, uZenC, 0.17) * 0.92 + uGlowC * (0.4224 / pow(1.5776 - 1.52 * mu, 1.5) / 12.0) * aM / max(aM + aR, 1e-3);
+  vec3 inL = mix(uHorC, uZenC, 0.17) * 0.92 + uGlowC * (0.4224 / pow(1.5776 - 1.52 * mu, 1.5) / 12.0) * uAirK.w * aM / max(aM + aR, 1e-3);
   return c * T + inL * (1.0 - T);
 }
 vec3 wisps(vec3 dir, vec3 col, float cs) {
@@ -957,28 +976,28 @@ vec3 air(vec3 c, vec3 P) {
 // One aerial perspective for the ranges, the clouds and the storms.
 // Rayleigh and a dusty Mie along the ray from the eye to P.
 // The air's own light is the horizon sky, warmed toward the sun.
-// The Far haze knob thickens the dust: 1 is the ranges' own air.
+// uAirK sets it: Rayleigh blue fade, dust amount, dust height, sun glow.
 vec3 aerialFrom(vec3 col, vec3 ro, vec3 P) {
   vec3 v = P - ro;
   float hit = length(v);
   vec3 rd = v / max(hit, 1.0);
   // The dust stands about three kilometres deep, so cloud bases sit in it too.
-  // ambT() in the ambient section copies these numbers: change both together.
-  float hR = 8000.0, hM = 3000.0;
+  // ambT() in the ambient section reads the same knobs.
+  float hR = 8000.0, hM = max(uAirK.z, 100.0);
   float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
   float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
   float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
-  aM *= 0.5 + 0.5 * uLayer.x;
+  aR *= uAirK.x; aM *= uAirK.y;
   vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
   float mu = dot(rd, uSunD), g = 0.76;
   float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
-  vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
+  vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * uAirK.w * aM / max(aM + aR, 1e-3);
   return col * T + inL * (1.0 - T);
 }
 // The air's own light along a ray, for an extra fade toward it.
 vec3 aerialIn(vec3 rd) {
   float mu = dot(rd, uSunD), g = 0.76;
-  return k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0 * 0.5;
+  return k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0 * 0.5 * uAirK.w;
 }
 vec3 aerial(vec3 col, vec3 P) { return aerialFrom(col, cameraPosition, P); }
 // The shared air's transmittance alone, for smoke and volumes that blend premultiplied.
@@ -986,9 +1005,10 @@ vec3 aerialT(vec3 P) {
   vec3 ro = cameraPosition;
   float hit = length(P - ro);
   float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+  float hM = max(uAirK.z, 100.0);
   float aR = abs(dy) < 1.0 ? exp(-yc / 8000.0) : (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
-  float aM = abs(dy) < 1.0 ? exp(-yc / 3000.0) : (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
-  aM *= 0.5 + 0.5 * uLayer.x;
+  float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
+  aR *= uAirK.x; aM *= uAirK.y;
   return exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
 }
 // Sunlight at height h crosses less air than at the ground.
@@ -5700,7 +5720,7 @@ function ambSeg(m, A, dir, L, wid, gain) {
 function ambT(P) {
   const c = camera.position, hit = c.distanceTo(P), yc = Math.max(c.y, 0), yp = Math.max(P.y, 0), dy = yp - yc;
   const avg = h => (Math.abs(dy) < 1 ? Math.exp(-yc / h) : (Math.exp(-yc / h) - Math.exp(-yp / h)) * h / dy);
-  const aR = avg(8000), aM = avg(3000) * (0.5 + 0.5 * U.uLayer.value.x), m = 1.1e-5 * aM;
+  const k = U.uAirK.value, aR = avg(8000) * k.x, aM = avg(Math.max(k.z, 100)) * k.y, m = 1.1e-5 * aM;
   return 0.2126 * Math.exp(-(5.8e-6 * aR + m) * hit) + 0.7152 * Math.exp(-(13.5e-6 * aR + m) * hit) + 0.0722 * Math.exp(-(33.1e-6 * aR + m) * hit);
 }
 // Metres per pixel at distance D, for the live lens.
@@ -12163,6 +12183,9 @@ gunMat.uniforms.uMetalF0.value = ui.setting('gunmetal').value; gunMat.uniforms.u
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; shaftGain = ui.setting('shafts').value; sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
+U.uAirK.value.set(ui.setting('airray').value, ui.setting('airdust').value, ui.setting('airdusth').value, ui.setting('airglow').value);
+U.uAir.value = 0.7 * ui.setting('airray').value;
+U.uHaze.value = 0.00013 * ui.setting('neardust').value; U.uHazeH.value = ui.setting('neardusth').value;
 setDeck(ui.setting('deck').value);
 setStormProbe(ui.setting('stormprobe').value);
 stormFl.rate = ui.setting('stormfl').value;

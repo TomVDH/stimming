@@ -156,3 +156,19 @@ Re-entry rain, the ambient dust devil, the air specks, and the ember sprays off 
 | 5 Supercell | One fat banded column, a big overshoot, a broad anvil. |
 
 Lightning inside the storms takes Window seat's `FLASH_C` (a cold, slightly violet blue-white) and is added after the air, so far flashes punch through the haze.
+
+## Air controls (Dev, group Sky)
+
+| Row | Uniform | What it does |
+|---|---|---|
+| **Air blue fade** | `uAirK.x`, `uAir` | Rayleigh: how fast far things turn blue and pale. |
+| **Air dust** | `uAirK.y` | The dusty Mie haze: how thick the far air is. |
+| **Air dust height** | `uAirK.z` | How deep the dust stands, in metres; low dust leaves tall things clear. |
+| **Air sun glow** | `uAirK.w` | The dust's warm glow toward the sun. |
+| **Near dust** | `uHaze` | The plain's own low dust, thick near the ground. |
+| **Near dust height** | `uHazeH` | How high that low dust reaches. |
+| **Cloud far fade** | `uLayer.x` | Far clouds sink further into the air, foot first. |
+| **Valley fog** | `uLayer.y` | Fog pools in the far valleys. |
+| **Sun rays** | `shaftGain` | Cloud and trail shadows in the low air. |
+
+`aerialFrom()`, `aerialT()`, `aerialIn()`, `cirrusAir()` and the ambient section's `ambT()` all read `uAirK`, so one knob moves every far thing at once.
