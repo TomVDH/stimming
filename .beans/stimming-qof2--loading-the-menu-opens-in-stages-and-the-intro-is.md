@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:38:55Z
+updated_at: 2026-11-16T19:40:10Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -20,7 +20,7 @@ Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has 
 - [x] Reduced motion, 375 x 812, clean console
 - [x] Clips and stills in docs/qa/loading/
 - [x] AGENTS.md and the toy-doc guidance
-- [ ] PR open (Tom merges)
+- [x] PR open (Tom merges)
 
 ## Measurements, 2026-11-16 (before)
 
