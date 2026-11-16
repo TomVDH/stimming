@@ -100,6 +100,8 @@ const tips = (x, y, z) => [[-x, y, z, 5, ...RED, 1, 0, 1], [x, y, z, 5, ...GREEN
 // A pusher engine under a wing: a nacelle on a pylon, 34 m below the skin.
 function engine(parts, x, skin, z) {
   parts.push(at(loft(NACELLE, 10), x, skin - 34, z), block(8, 34, 96, x, skin - 15, z - 96));
+  // The spinner: a cone through the propeller's hub.
+  parts.push(at(loft([[-4, 7, 7], [12, 5.5, 5.5], [30, 0.5, 0.5]], 10), x, skin - 34, z));
   return [x, skin - 34, z];
 }
 
@@ -258,13 +260,6 @@ void main() {
   col += uSunC * fr * (0.02 + 0.45 * back);
   vec3 H = normalize(uSun + V);
   col += uSunC * 0.3 * pow(max(dot(N, H), 0.0), 60.0);
-  // By night, rows of lit windows run down the flanks of the bodies.
-  if (uMark > 0.5 && uNight > 0.0) {
-    float side = smoothstep(0.75, 0.35, abs(vLN.y)) * step(0.35, abs(vLN.x));
-    // One row, just over each body's waist; the fins stay dark.
-    float row = step(0.5, fract(vL.z / 18.0)) * step(abs(vL.y - 8.0), 3.5);
-    col += vec3(1.6, 1.05, 0.5) * uNight * side * row;
-  }
   gl_FragColor = vec4(caAir(col, vWP, 1.0), 1.0);
 }`;
 const lin = (r, g, b) => ({ value: new THREE.Vector3(r, g, b) });
@@ -320,24 +315,28 @@ function propMaterial() {
       float base = a - turn * (t + 0.75 * r * r);
       float w = chord(r) * 6.0 / (6.2832 * max(r, 0.05));
       float acc = 0.0;
-      for (int i = 0; i < 6; i++) {
-        float d = abs(fract((base + turn * float(i) * 0.03) * 6.0 / 6.2832) - 0.5);
-        acc += smoothstep(0.5 - w - 0.015, 0.5 - w + 0.015, d) * (1.0 - 0.16 * float(i));
+      // Nine taps smear each blade far back: a fast propeller is mostly blur.
+      for (int i = 0; i < 9; i++) {
+        float d = abs(fract((base + turn * float(i) * 0.05) * 6.0 / 6.2832) - 0.5);
+        acc += smoothstep(0.5 - w - 0.02, 0.5 - w + 0.02, d) * (1.0 - 0.1 * float(i));
       }
-      return min(acc / 2.6, 1.0);
+      return min(acc / 4.6, 1.0);
     }
     void main() {
       float r = length(vQ), a = atan(vQ.y, vQ.x);
       if (r > 1.0) discard;
       // Each engine starts at its own angle.
-      float t = uTime * 2.4 + vHub.x * 0.017;
+      float t = uTime * 9.0 + vHub.x * 0.017;
       float span = smoothstep(0.13, 0.17, r);
       float front = row(a, r, vHub.z, t) * span, rear = row(a + 0.5, r, -vHub.z, t * 0.86) * span;
       float hub = smoothstep(0.16, 0.13, r);
       // A faint disc of blur, the rear row, the front row, then the spinner.
-      float al = 0.05 * smoothstep(1.0, 0.92, r);
-      al = al + (1.0 - al) * 0.8 * rear;
-      al = al + (1.0 - al) * 0.95 * front;
+      // The blur is the blades' share of each ring: dense at the hub, thin at the tips.
+      float sol = clamp(2.0 * chord(r) * 12.0 / (6.2832 * max(r, 0.08)), 0.0, 0.9);
+      float al = 0.6 * sol * span;
+      // Ghost blades ride the blur, as the eye catches them.
+      al = al + (1.0 - al) * 0.42 * rear;
+      al = al + (1.0 - al) * 0.6 * front;
       al = max(al, hub);
       // Graphite blades with pale tips; the front row sits in more light.
       vec3 paint = mix(vec3(0.03, 0.032, 0.038), vec3(0.5, 0.46, 0.3), smoothstep(0.86, 0.9, r) * (1.0 - hub));

@@ -47,3 +47,11 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Escorts wobble and fly patrol loops, banking; their trails thin on patrol
 - [x] Strobes keep their own clocks; each flash has a glow and a soft flare, no streak
 - [x] The final pass reads live values (sun flare, grain clock, frame shape)
+
+## Round 5 (Tom, 2026-11-16)
+
+- [x] Escort trails are ribbons that hang along the path flown
+- [x] A clear gap between the propellers and the first smoke
+- [x] Propellers: a blur by blade share, ghost blades, spinners
+- [x] No window strips: these are not passenger craft
+- [x] Cloud cover gathers into fields; the Below view has raymarched cloud above the craft

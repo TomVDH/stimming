@@ -83,10 +83,12 @@ const store = {
 // alt holds the heights of the wisps, the heaps and the scud; 0 turns a layer off.
 // fill is how much of the heap layer is cloud.
 // cloud is the raymarched volume: its base, its tallest top, its share of cloud; null turns it off.
+// A fourth number sets one deck unit in metres: small for a narrow view from far below.
 // The volume draws behind the craft, so its top stays under every sight line.
 const VIEWS = {
   // From the ground, far below and behind: the contrails cross the sun.
-  below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [26000, 23000, 6000], fill: 0.2, cloud: null },
+  // Its cloud stands above the craft, so the craft stays in front of it.
+  below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [31000, 0, 6000], fill: 0, cloud: [21000, 24600, 0.5, 950] },
   // Level with the craft, off its left bow: it rides over cloud towers.
   flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [27000, 0, 0], fill: 0, cloud: [4500, 16000, 0.55] },
   // Ahead and well under: the craft comes on, the sun high behind it.
@@ -447,6 +449,7 @@ const VOL_U = {
   uFocal: { value: 1000 },
   // The frame's number: it moves the dither.
   uJit: { value: 0 },
+  uUnit: { value: DECK_M },
 };
 const volTarget = () => {
   const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -494,7 +497,9 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
   uniform float uFocal, uJit;
   ${AIR}
   ${VIEW_GLSL}
-  const float SIG = 9.0, DECK_M = ${DECK_M.toFixed(1)};
+  const float SIG = 9.0;
+  // One deck unit in metres: each view sets its own cloud size.
+  uniform float uUnit;
   // Light scattered many times leaves a thick cloud evenly in all directions.
   // So a side-lit top stays white; only the silver lining needs the forward lobe.
   const float CLOUD_MS = 1.5;
@@ -543,7 +548,9 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
   float dens(vec3 p, float lod, bool fine) {
     vec2 w = p.xz + uClDrift;
     // The cover map is tight: one long-lens frame holds cloud and gaps.
-    float cv = coverAt(w, 20.0, 0.13);
+    float cv = coverAt(w, 20.0, 0.13) * 0.58 + coverAt(w * 0.27 + 11.0, 20.0, 0.41) * 0.42;
+    // A wide weather map gathers the heaps into fields, with open sky between.
+    cv = (cv - 0.5) * 1.55 + 0.5;
     // A wider map picks the cells that rise as towers.
     float tw = smoothstep(0.52, 0.72, coverAt(w * 0.6 + 40.0, 20.0, 0.57));
     cv += 0.25 * tw;
@@ -582,10 +589,10 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
   void main() {
     vec3 d = viewDir();
     // The march runs in deck units, with the base at height 0.
-    vec3 ro = vec3(cameraPosition.x, cameraPosition.y - uCl.x, cameraPosition.z) / DECK_M;
+    vec3 ro = vec3(cameraPosition.x, cameraPosition.y - uCl.x, cameraPosition.z) / uUnit;
     float dy = abs(d.y) < 1e-4 ? 1e-4 : d.y;
     float ta = (-0.25 - ro.y) / dy, tb = (2.4 + uCl.y - ro.y) / dy;
-    float tFar = 125000.0 / DECK_M;
+    float tFar = 125000.0 / uUnit;
     float t0 = max(min(ta, tb), 0.0), t1 = min(max(ta, tb), tFar);
     if (t1 <= t0) { gl_FragColor = vec4(0.0); return; }
     int N = uClSteps;
@@ -626,7 +633,7 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
         // The shade is the hour's own sky colour.
         S += uShadeC * 0.8 * (0.3 + 0.7 * h01) * (0.3 + 0.9 * open);
         // Far cloud sinks into the haze at the rim.
-        S = mix(caAirC(vec3(d.x, 0.0, d.z)), S, exp(-ts * DECK_M / 95000.0));
+        S = mix(caAirC(vec3(d.x, 0.0, d.z)), S, exp(-ts * uUnit / 95000.0));
         float a = 1.0 - exp(-SIG * dn * ds);
         col += Tc * S * a;
         Tc *= 1.0 - a;
@@ -646,9 +653,53 @@ volScene.add(volQuad);
 const TRAIL = { rad: 26, k: 0.05, len: 34000, taper: 10000 };
 const MAX_ENGINES = Math.max(...Object.values(fleet).map(c => c.heads.length));
 const trails = Array.from({ length: MAX_ENGINES }, () => makeTrail(vol, TRAIL));
-// Each escort draws one thin line.
-const escTrails = escorts.map(() => makeTrail(vol, { rad: 4, k: 0.012, len: 16000, taper: 5000 }));
-for (const t of [...trails, ...escTrails]) { t.mesh.renderOrder = 2; scene.add(t.mesh); }
+for (const t of trails) { t.mesh.renderOrder = 2; scene.add(t.mesh); }
+
+/* ---------- escort trails: ribbons that hang where each escort flew ---------- */
+// A real trail stays in the air it was made in.
+// Each sample is where the escort was some seconds ago, carried back on the wind since.
+// So a patrol loop leaves a loop of trail behind it.
+const RIB_N = 60, RIB_T = 46, CRUISE = 250;
+const ribbonMat = new THREE.ShaderMaterial({
+  uniforms: { ...AIR_U }, side: THREE.DoubleSide, transparent: true, depthWrite: false, depthTest: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+  vertexShader: /* glsl */`
+  attribute vec2 aT;
+  varying vec2 vT;
+  varying vec3 vWP;
+  void main() { vT = aT; vWP = position; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+  varying vec2 vT;
+  varying vec3 vWP;
+  ${AIR}
+  void main() {
+    // vT: age 0 to 1 along the trail, and the place across it, -1 to 1.
+    float age = vT.x, s = vT.y;
+    float n = skFbm(vec2(age * 110.0, s * 1.4 + 3.0), 4);
+    // Soft sides, a clear gap behind the tail, puffs, and a long fade.
+    float al = pow(max(1.0 - s * s, 0.0), 1.3) * smoothstep(0.006, 0.03, age) * (1.0 - smoothstep(0.3, 1.0, age)) * (0.4 + 0.8 * n);
+    al = clamp(al, 0.0, 1.0);
+    float sd = max(dot(normalize(vWP - cameraPosition), uSun), 0.0);
+    vec3 col = vec3(0.95) * (uShadeC * 0.45 + uSunC * (0.5 + 0.7 * pow(sd, 6.0))) * (0.75 + 0.25 * n);
+    gl_FragColor = vec4(caAir(col, vWP, 1.0) * al, al);
+  }`,
+});
+const ribbons = escorts.map(() => {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(RIB_N * 6), aT = new Float32Array(RIB_N * 4), idx = [];
+  for (let k = 0; k < RIB_N; k++) {
+    aT.set([k / (RIB_N - 1), -1, k / (RIB_N - 1), 1], k * 4);
+    if (k < RIB_N - 1) idx.push(k * 2, k * 2 + 1, k * 2 + 2, k * 2 + 1, k * 2 + 3, k * 2 + 2);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aT', new THREE.BufferAttribute(aT, 2));
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, ribbonMat);
+  m.frustumCulled = false; m.renderOrder = 2.2;
+  scene.add(m);
+  return { g, pos };
+});
+const ribPts = Array.from({ length: RIB_N }, () => new THREE.Vector3());
 function pick() {
   craft = fleet[state.craft];
   for (const [id, c] of Object.entries(fleet)) c.group.visible = id === state.craft;
@@ -711,7 +762,6 @@ function resize() {
   FIN.uRes.value.set(stageW * dprNow, stageH * dprNow);
   const [steps, sunSteps] = STEPS[D.level];
   for (const t of trails) { t.u.uSteps.value = steps; t.u.uLSteps.value = sunSteps; }
-  for (const t of escTrails) { t.u.uSteps.value = Math.round(steps * 0.5); t.u.uLSteps.value = 2; }
   CLOUD_U.uOct.value = D.level > 0 ? 5 : 3;
   // The cloud volume: its share of the canvas size, its steps, its sun steps.
   const [share, cs, cl] = [[0.35, 28, 3], [0.5, 40, 4], [0.5, 56, 5]][D.level];
@@ -748,13 +798,17 @@ function layout() {
   VOLPIC_U.uVolOn.value = v.cloud ? 1 : 0;
   volFresh = true;
   // The top sets how far the towers lift over the domes; more fill lowers the cover threshold.
-  if (v.cloud) VOL_U.uCl.value.set(v.cloud[0], Math.max(0, (v.cloud[1] - v.cloud[0]) / DECK_M - 2.1), 0.62 - 0.32 * v.cloud[2]);
+  if (v.cloud) {
+    const unit = v.cloud[3] ?? DECK_M;
+    VOL_U.uUnit.value = unit;
+    VOL_U.uCl.value.set(v.cloud[0], Math.max(0, (v.cloud[1] - v.cloud[0]) / unit - 2.1), 0.62 - 0.32 * v.cloud[2]);
+  }
 }
 
 // An escort's place at time t in the craft's frame: metres right, up and back.
 // It holds station with a wobble; now and then it flies one patrol loop.
 // It returns how hard it is turning, 0 to 1.
-const CRUISE = 250, eNow = [0, 0, 0], eOld = [0, 0, 0], eNew = [0, 0, 0];
+const eNow = [0, 0, 0], eOld = [0, 0, 0], eNew = [0, 0, 0];
 function escortAt(i, t, out) {
   const [across, back, up] = WING[i], ph = i * 1.7, side = Math.sign(across);
   out[0] = across * craft.span + 60 * Math.sin(t * 0.21 + ph) + 25 * Math.sin(t * 0.53 + 2 * ph);
@@ -770,18 +824,40 @@ function escortAt(i, t, out) {
   return Math.sin(Math.PI * s);
 }
 
+// Lays escort i's ribbon: its past places, each carried back on the wind.
+function layRibbon(i, t) {
+  const { g, pos } = ribbons[i];
+  for (let k = 0; k < RIB_N; k++) {
+    // Samples crowd near the escort, where the path bends most on screen.
+    const age = (k / (RIB_N - 1)) ** 1.6 * RIB_T;
+    escortAt(i, t - age, eOld);
+    place(eOld, ribPts[k]).addScaledVector(AWAY, 30 + CRUISE * age);
+  }
+  for (let k = 0; k < RIB_N; k++) {
+    const p = ribPts[k], a = k / (RIB_N - 1);
+    // The ribbon faces the eye: its width lies across the path and the view.
+    tmp2.subVectors(ribPts[Math.min(k + 1, RIB_N - 1)], ribPts[Math.max(k - 1, 0)]);
+    tmp3.subVectors(p, camera.position);
+    tmp.crossVectors(tmp2, tmp3).normalize().multiplyScalar(5 + 190 * a ** 0.8);
+    pos[k * 6] = p.x - tmp.x; pos[k * 6 + 1] = p.y - tmp.y; pos[k * 6 + 2] = p.z - tmp.z;
+    pos[k * 6 + 3] = p.x + tmp.x; pos[k * 6 + 4] = p.y + tmp.y; pos[k * 6 + 5] = p.z + tmp.z;
+  }
+  g.attributes.position.needsUpdate = true;
+}
+
 function pose(t) {
   const g = craft.group;
   // A slow, heavy roll.
   g.rotation.set(0, 0, rad(3) + 0.012 * Math.sin(t * 0.11));
   g.updateMatrixWorld(true);
-  // Each contrail starts at its engine's propeller.
-  craft.heads.forEach((h, i) => trails[i].lay(tmp.copy(h).applyMatrix4(g.matrixWorld).addScaledVector(AWAY, 0.5 * TRAIL.rad), AWAY));
+  // Each contrail starts behind its engine's propeller.
+  // A stretch of clear air lies between the blades and the first smoke.
+  craft.heads.forEach((h, i) => trails[i].lay(tmp.copy(h).applyMatrix4(g.matrixWorld).addScaledVector(AWAY, 0.63 * TRAIL.rad + 85), AWAY));
   // The escorts hold station off both wings and drift a little.
   escorts.forEach((e, i) => {
     // Its speed and its turn come from its path: a step back and a step on.
     const H = 0.25;
-    const busy = escortAt(i, t, eNow);
+    escortAt(i, t, eNow);
     escortAt(i, t - H, eOld); escortAt(i, t + H, eNew);
     const vr = (eNew[0] - eOld[0]) / (2 * H), vu = (eNew[1] - eOld[1]) / (2 * H), vb = (eNew[2] - eOld[2]) / (2 * H);
     const ar = (eNew[0] - 2 * eNow[0] + eOld[0]) / (H * H);
@@ -791,9 +867,7 @@ function pose(t) {
     const roll = clamp(-Math.atan(ar / 9.8) * 0.85, -1.25, 1.25) + 0.1 * Math.sin(t * 0.31 + i * 1.7);
     e.group.rotation.set(pitch, -yaw, roll);
     e.group.updateMatrixWorld(true);
-    // Its trail streams straight back on the wind, and all but stops while it turns hard.
-    escTrails[i].lay(tmp.copy(e.head).applyMatrix4(e.group.matrixWorld), AWAY);
-    escTrails[i].u.uTrail.value = 1 - 0.9 * Math.min(1, busy * 1.6);
+    layRibbon(i, t);
   });
   // The rays' casters: the craft as discs, the contrails as one chain.
   const S = SHAFT_U;
@@ -849,7 +923,6 @@ function frame(dt) {
   AIR_U.uTime.value = simT;
   // The billows flow out of the engines and down the contrails.
   for (const t of trails) t.u.uFlow.value = simT * state.flow;
-  for (const t of escTrails) t.u.uFlow.value = simT * state.flow * 1.6;
   pose(simT);
   aim(simT);
   VIEW_U.uProjInv.value.copy(camera.projectionMatrixInverse);
