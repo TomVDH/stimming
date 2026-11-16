@@ -1,10 +1,11 @@
 ---
 # stimming-mbpi
 title: 'Soup cauldron: performance pass'
-status: todo
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-16T09:46:55Z
-updated_at: 2026-11-16T09:46:55Z
+updated_at: 2026-11-16T16:26:15Z
 parent: stimming-fskg
 ---
 
@@ -34,11 +35,16 @@ Notes for the measurer:
 ## Plan (safest first)
 
 - [x] Baseline measured (above)
-- [ ] Bake the solid mask once into an R8 atlas; `VEL_FS`, `JAC_FS`, `PROJ_FS`, `FDYE_FS` fetch it. Exact result: today each Jacobi sweep runs `solidAt` (ellipsoid + three leg capsules) six times a cell, twelve sweeps, two steps a frame. No cell past the grid is solid, so out-of-range cells return false.
-- [ ] Jacobi sweeps 12 to 8 (Fire's own toy uses 2); compare the flames on the belly
-- [ ] Iron bump: one `ironH` Voronoi with an analytic gradient instead of three finite-difference evaluations
-- [ ] Flagstone floor: one `stones()` with an analytic gradient, or bake it once into a world-space texture
-- [ ] Tie fire march steps, shadow taps and steam steps to `D.level`; let `D.frame` drop the layer size
-- [ ] Skip the fire solver when Fire is 0 and the volume is empty
-- [ ] Before and after screenshots at the same seeded state; keep the fire on the belly, the marbled soup, the PBR iron, the steam threads
-- [ ] Real rAF fps in the visible pane; numbers into the "Quality and performance" table in `docs/toys/cauldron.md`
+- [x] Bake the solid mask once into an R8 atlas; `VEL_FS`, `JAC_FS`, `PROJ_FS`, `FDYE_FS` fetch it. Exact result: today each Jacobi sweep runs `solidAt` (ellipsoid + three leg capsules) six times a cell, twelve sweeps, two steps a frame. No cell past the grid is solid, so out-of-range cells return false.
+- [x] Jacobi sweeps 12 to 8: tried; saves 0.1 ms, kept at 12
+- [x] Iron bump: measured at 0.1 ms; left alone
+- [x] Flagstone floor: one `stones()` with an analytic gradient
+- [x] Steam skips its noise outside the column and the puffs (march steps already follow `D.level`)
+- [x] The solver rests after 20 s at Fire 0
+- [x] Before and after screenshots at the same seeded state
+- [x] Real rAF fps (headed Chrome; the pane stayed hidden); numbers in `docs/toys/cauldron.md`
+- [x] Frame gate: 2 ms slack for rAF jitter
+
+## Summary of Changes
+
+GPU time a frame, stirring a full pot at Fire 1: High 5.71 to 4.86 ms, Standard 4.70 to 3.85 ms (M3 Pro). Real frame rate: 29.5 / 55.7 fps to 30.0 / 60.0 fps (simmer / stirring); the frame gate dropped frames on rAF jitter. Changes: a baked solid mask for the fire solver, a steam early exit, a one-Voronoi floor bump, the solver at rest after 20 s at Fire 0, 2 ms gate slack. The look holds: soup, things, iron and floor match; only the chaotic flames move. Table: docs/toys/cauldron.md.
