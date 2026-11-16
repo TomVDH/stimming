@@ -1165,8 +1165,8 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
   varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL}
   uniform sampler3D uVol;
   uniform float uCloudC, uDeck;
-  // A broken deck of small cells five kilometres up, seen from below.
-  // The cells shrink toward the horizon, so the eye reads the depth.
+  // A thin deck of wisps five kilometres up, seen from below.
+  // The wisps shrink toward the horizon, so the eye reads the depth.
   vec3 deck(vec3 d, vec3 col) {
     if (uDeck < 0.01 || d.y < 0.003) return col;
     float t = 5200.0 / d.y;
@@ -1178,15 +1178,19 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     // The deck takes a third of the cirrus's push, so its cells keep their shape.
     float pack, hole;
     vec2 xz = mix(Pc.xz, voidWarp(Pc.xz - 0.35 * push.xz, pack, hole), 0.4) + vec2(uCloudC * 4.0, uCloudC * 1.5);
-    // Patches of cells with wide open sky between them.
-    float cov = texture(uVol, vec3(xz / 60000.0, 0.31)).r;
-    float cel = texture(uVol, vec3(xz / 7000.0, 0.63)).g;
-    float fin = texture(uVol, vec3(xz / 2300.0, 0.17)).g;
+    // The wind combs the deck into wisps: the noise stretches along it.
+    vec2 w = vec2(0.966, -0.259);
+    vec2 q = vec2(dot(xz, w), dot(xz, vec2(-w.y, w.x)) * 3.0);
+    // Patches of wisps with wide open sky between them.
+    float cov = texture(uVol, vec3(q / 60000.0, 0.31)).r;
+    float cel = texture(uVol, vec3(q / 9000.0, 0.63)).g;
+    float fin = texture(uVol, vec3(q / 2300.0, 0.17)).g;
     // Far cells blur into their mean before they alias.
     float fd = smoothstep(25000.0, 110000.0, t);
-    float raw = mix(cel * 0.85 + fin * 0.15, 0.52, fd);
+    // Fine detail frays the edges into strands.
+    float raw = mix(cel * 0.7 + fin * 0.3, 0.52, fd);
     // A wide ramp feathers each cell's edge into the sky.
-    float dens = smoothstep(0.56, 0.92, raw + (cov - 0.7) * 1.2);
+    float dens = smoothstep(0.56, 0.94, raw + (cov - 0.62) * 1.2);
     // The deck thins out low down: the ranges stay clear.
     dens *= smoothstep(0.02, 0.12, d.y);
     // The heave clears the air it pushes; packed cells thicken round the hole.
@@ -1195,7 +1199,8 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     if (dens < 0.003) return col;
     // The side of a cell toward the sun goes darker.
     // A soft, wide shade keeps the cells round, not flat discs.
-    float cel2 = texture(uVol, vec3((xz + uSunD.xz * 1100.0) / 7000.0, 0.63)).g;
+    vec2 s2 = xz + uSunD.xz * 1100.0;
+    float cel2 = texture(uVol, vec3(vec2(dot(s2, w), dot(s2, vec2(-w.y, w.x)) * 3.0) / 9000.0, 0.63)).g;
     float self = 1.0 - 0.35 * smoothstep(-0.1, 0.3, cel2 - cel);
     float body = smoothstep(0.0, 1.0, dens);
     // A low sun lights the cells from below; thin edges pass the most light.
@@ -1218,7 +1223,8 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     // The blast lands after the haze: its flash lights the air on the way.
     // The deck takes it harder than the cirrus, thin edges most.
     c += hl * (1.6 + 0.8 * (1.0 - body)) + rim * (uCloudSun * 0.3 + uCloudAmb * 1.2 + hl * 1.2 + 0.02);
-    return mix(col, c, min(1.0, dens * (0.75 + 0.35 * rim) * min(uDeck, 1.5)));
+    // A thin veil: the sky shows through even the densest wisp.
+    return mix(col, c, min(1.0, dens * (0.6 + 0.35 * rim) * min(uDeck, 1.5)));
   }
   void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(deck(d, k2sky(d)), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
