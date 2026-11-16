@@ -5,14 +5,14 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:39:58Z
+updated_at: 2026-11-16T20:41:11Z
 parent: stimming-oh7b
 ---
 
 Build Tornado alley from docs/plans/tornado.md (idea 364, Tom's add 2026-11-16). Size XXXL. It starts in the Lab. A wide, still, deadpan cinematic vista of the Oklahoma plains under a huge supercell. Several tornadoes at once; each carries an F-scale (F0 to F5) to set and play with.
 
 - [x] Task 1: blockout of the shot: plains, wheat, farmhouse, road, supercell; checkpoint with Tom
-- [ ] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob
+- [ ] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob (framing blockout done; next: the hero ray-marched tornado with a continuous F-scale slider, per Tom)
 - [ ] Task 3: many tornadoes: place, set F-scale, paths, ropes out
 - [ ] Task 4: storm: wall cloud, rain curtain, hail, lightning, light and grade
 - [ ] Task 5: debris and damage: wheat flattens, fence and barn debris

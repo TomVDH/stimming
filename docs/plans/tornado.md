@@ -81,7 +81,8 @@ Each stage is one or more sessions and ends with a checkpoint with Tom.
 - [ ] `toys.json` entry and menu Lab entry with a low-fi icon.
 
 ### Stage 2: One tornado
-- [ ] One funnel volume with rotation, the dust skirt, touchdown and rope out, the F-scale table as uniforms.
+- [x] Framing blockout (Tom, 2026-11-16: "we are just blocking out framing"): the 50 mm shot, stand-in funnel volumes with rotation, dust skirt, touchdown and rope-out, the F-scale table, the controls. The funnel look is a placeholder.
+- [ ] The tornado itself (Tom: "the next will be an impressive raymarched tornado slider"): one hero ray-marched tornado, built on its own with one continuous F-scale slider (F0 to F5) that morphs it through rope, cone, stovepipe and wedge. Turbulence, cone dynamics, condensation, debris and dust are the showcase. It replaces `tornado()` in the shot when Tom signs it off.
 
 ### Stage 3: Many tornadoes
 - [ ] Place, steer and scale several at once; life cycles; the frame-cost budget per tornado.
