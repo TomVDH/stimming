@@ -489,9 +489,10 @@ const TRAIL_MAX = 0.04;
 const skyTrail = { H: null, span: 0 };
 const skyRot0 = new THREE.Matrix4();
 let skyH = 0;
-// The low sun swings toward the frame.
-// A high sun keeps the old bearing, 63 degrees right.
-function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
+// The sky frame stays put: no swing toward a high sun.
+// The sky frame stays fixed: the sun and the moon run true arcs.
+// Sun bearing alone turns the frame.
+function sun(deg) { aimSky(sunSwing); skyAt(hourOf(deg)); }
 function skyAt(H) {
   if (skyTrail.H !== null && !reduced()) skyTrail.span = clamp(skyTrail.span + H - skyTrail.H, -TRAIL_MAX, TRAIL_MAX);
   skyTrail.H = H;
@@ -2280,7 +2281,12 @@ void main() {
     // One tap toward the light gives the self shadow.
     float Tl = exp(-3.2 * densL(p + uSun * 1.2));
     float h01 = clamp(p.y / sTop, 0.0, 1.0);
-    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+    // A high top sees the sun after the ground has lost it.
+    // Its horizon dips by the planet's curve: about ten degrees at ninety kilometres.
+    float el = asin(clamp(uSunD.y, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+    float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
+    // Light that grazes the planet arrives deep red.
+    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
     vec3 amb = mix(uHorC * 0.8, uZenC * 1.1, h01) + uCloudAmb * 0.5;
     // Powder: thin edges facing the sun catch the most light.
     float powder = 1.0 - exp(-4.0 * d);
@@ -11677,6 +11683,8 @@ function vilKey() {
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
+  // The sun and the moon: elevation in degrees, screen place in NDC.
+  skyQ() { const f = d => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
   stormProbe(on = true) { setStormProbe(on); draw(); },
   // Fire one lightning burst in a storm now; storms() lists the live strokes.
   stormFlash() { stormBurst(); },
