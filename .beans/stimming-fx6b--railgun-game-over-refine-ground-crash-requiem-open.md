@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:22:13Z
-updated_at: 2026-11-16T19:05:47Z
+updated_at: 2026-11-16T19:45:07Z
 parent: stimming-f793
 ---
 
@@ -47,3 +47,8 @@ Tom: no silent cut; the climax holds from 3 s before impact to 3-5 s after, then
 - The stop at CLIMAX_T silences the dry take and the feedback echo; a smooth hall tail (hallIR, 3.5 s) rings on, not echo repeats.
 - Removed: the heartbeat and the synthetic contact boom (strikeBoom). Tom asked for no synthetic effects.
 - goBus: the take's outputs; __qa.record('go') records the take alone.
+
+## Round 5 (Tom, 2026-11-16)
+
+- No accent at the lock: the climax ramps in over about 2 s (time constant 0.7 s). Tom: "much better".
+- The climax holds CLIMAX_T 7.5 s (Tom: 2-3 s more than 5), then the hall tail; the silent white holds 2.5 s, then the rewind.
