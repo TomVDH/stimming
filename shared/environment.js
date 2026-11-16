@@ -95,7 +95,7 @@ const GLASS_MOD = `
     col = wgView(g, texture(tScene, su).rgb, texture(tBok, su).rgb, uScatter, vec3(0.8, 0.84, 0.81), veil, glint);
     rim = g.rim; cover = g.cover; fog = g.fog;`;
 // The pane pass: wet glass, then flare.
-const paneFS = glass => HEAD + `
+const paneFS = (glass, head = '') => HEAD + `
 uniform sampler2D tScene, tBok;
 uniform vec2 uRes, uM, uLamp;
 uniform vec3 uLampCol, uTint;
@@ -106,6 +106,7 @@ ${WET_GLASS}
 ${FLARE}
 ${GRADE}
 ${OUTPUT}
+${head}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y, day = uDay;
@@ -156,7 +157,9 @@ void main() {
 //   active    () => false stops the loop, for a page with other modes.
 //   onFrame   called with the frame time in seconds, each loop frame.
 //   onLevel   called when the detail level changes.
-//   glass     other GLSL for the pane's glass step: for tests.
+//   glass     other GLSL for the pane's glass step: for tests, or a curved pane.
+//   pane      the glass step's own parts: { head, uniforms, textures }.
+//             head is GLSL before main; textures is { tName: () => WebGLTexture }.
 //   share     another runner: this one uses its state, clock, motion and detail.
 /**
  * The options for environment(); the list above gives each meaning.
@@ -169,6 +172,7 @@ void main() {
  * @property {((t: number) => void) | null} [onFrame]
  * @property {(() => void) | null} [onLevel]
  * @property {string} [glass]
+ * @property {{ head?: string, uniforms?: Record<string, () => number | number[]>, textures?: Record<string, () => WebGLTexture | null> }} [pane]
  * @property {{ state: object, clock: object, motion: object, detail: object } | null} [share] Another runner.
  * @property {number} [maxDpr]
  * @property {number} [budget]
@@ -178,7 +182,7 @@ void main() {
  * @param {HTMLCanvasElement} canvas
  * @param {EnvOptions} options
  */
-export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, share = null, maxDpr = 2, budget = 2.6e6 }) {
+export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, pane = {}, share = null, maxDpr = 2, budget = 2.6e6 }) {
   const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   function compile(fs) {
@@ -212,7 +216,7 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     return t;
   }
   const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target(), rtPane = target();
-  const progScene = compile(sceneFS(scene)), progDown = compile(DOWN_FS), progBok = compile(BOK_FS), progPane = compile(paneFS(glass)), progFinal = compile(FINAL_FS);
+  const progScene = compile(sceneFS(scene)), progDown = compile(DOWN_FS), progBok = compile(BOK_FS), progPane = compile(paneFS(glass, pane.head)), progFinal = compile(FINAL_FS);
   const bloom = bloomChain(gl);
   // The scene's own pictures. Each loads once; until then it is one clear pixel.
   const pics = Object.entries(textures).map(([name, src], i) => {
@@ -275,6 +279,16 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
   document.addEventListener('visibilitychange', touch);
   new ResizeObserver(touch).observe(canvas);
 
+  // Sets a toy's own uniforms: a number, or an array of two to four.
+  function setOwn(list, u) {
+    for (const [name, get] of Object.entries(list)) {
+      const v = typeof get === 'function' ? get() : get, at = u(name);
+      if (typeof v === 'number') gl.uniform1f(at, v);
+      else if (v.length === 2) gl.uniform2fv(at, v);
+      else if (v.length === 3) gl.uniform3fv(at, v);
+      else gl.uniform4fv(at, v);
+    }
+  }
   // Draws one frame. fw and fh force a frame size, for a check or a still.
   function draw(fw, fh) {
     dirty = false;
@@ -314,13 +328,7 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     gl.uniform1f(u('uTime'), clock.time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
     gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
     // The scene's own uniforms: a number, or an array of two to four.
-    for (const [name, get] of Object.entries(uniforms)) {
-      const v = typeof get === 'function' ? get() : get, at = u(name);
-      if (typeof v === 'number') gl.uniform1f(at, v);
-      else if (v.length === 2) gl.uniform2fv(at, v);
-      else if (v.length === 3) gl.uniform3fv(at, v);
-      else gl.uniform4fv(at, v);
-    }
+    setOwn(uniforms, u);
     for (const pic of pics) {
       gl.activeTexture(gl.TEXTURE0 + pic.unit);
       gl.bindTexture(gl.TEXTURE_2D, pic.tex);
@@ -360,6 +368,14 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     for (const [name, k] of [['uWet', 'wet'], ['uZoom', 'zoom'], ['uFog', 'fog'], ['uPatch', 'patch'], ['uFlGain', 'flGain'], ['uFlSize', 'flSize'], ['uVig', 'vig'], ['uGrain', 'grain'], ['uExpo', 'expo']]) gl.uniform1f(u(name), S[k]);
     for (const [name, k] of [['uGlassOn', 'glass'], ['uFlareOn', 'flare']]) gl.uniform1f(u(name), S.on[k] ? 1 : 0);
     gl.uniform1f(u('uFrame'), S.frame === false ? 0 : 1);
+    // The toy's own pane parts. Units 0 and 1 hold the scene; these start at 2.
+    if (pane.uniforms) setOwn(pane.uniforms, u);
+    Object.entries(pane.textures || {}).forEach(([name, get], i) => {
+      gl.activeTexture(gl.TEXTURE2 + i);
+      gl.bindTexture(gl.TEXTURE_2D, get());
+      gl.uniform1i(u(name), 2 + i);
+    });
+    gl.activeTexture(gl.TEXTURE0);
     run(progPane, rtPane);
     // glow.js: the chain halves the frame down, then tents it back up.
     const glowTex = S.on.glow && S.bloom > 0 ? bloom.render(rtPane.tex, w, h, { threshold: S.thr, levels: glowDetail(D.level).levels }) : null;

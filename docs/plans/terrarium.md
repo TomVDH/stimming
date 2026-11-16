@@ -75,7 +75,7 @@ The blockout's fronds are hand-placed arcs. Task 3 replaces them with a growth r
 - [ ] `toys.json` entry and menu Lab entry with a low-fi icon. Commit shared files with `--hunks`.
 
 ### Task 2: Glass
-- [ ] Wire `shared/wetglass.js` to the jar's curved surface: fog, beads, runs, the wipe stripe.
+- [x] Wire `shared/wetglass.js` to the jar's curved surface: fog, beads, runs, the wipe stripe. Built 2026-11-16: a second, finer bead layer; the spray cone from the lid; the condensation cycle sleeps after about 66 s.
 
 ### Task 3: The green wakes
 - [ ] Moss lift and colour, fern unfurl, mushroom gloss, all driven by one wetness value.
