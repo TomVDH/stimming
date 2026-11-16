@@ -62,4 +62,19 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Cloud at every height: deck, a mid layer, cloud mountains past the craft; a clear corridor to the craft
 - [x] Escort trails wear the smoke look, with the noise pinned to the air
 - [x] The big craft's contrails fade sooner
-- [ ] Look at round 6 on screen: the pane was covered, so only compile and pixel probes ran
+- [x] Looked at round 6 on screen (2026-11-16)
+
+## Close-out (Tom, 2026-11-16): parked on this branch
+
+All work is on `feature/stimming-31xa`, pushed. `main` holds rounds 1 and 2 only (PRs 62, 63).
+Do not merge to `main` until Tom says it is clear: MacBook work lands there first.
+
+Open, in order of weight:
+
+- [ ] Cloud mountains: they stand at set places per view (`sites` in `VIEWS`). Flank shows one, but it reads as one smooth wall. Head-on shows none: its lens is narrow, so a site must sit within ten degrees of the view axis. Above is not rechecked.
+- [ ] The mid cloud layer is off: the march steps are too long for a thin sheet, and it shows as stipple. It needs its own sampling.
+- [ ] Escort trails comb where a patrol loop is seen end-on.
+- [ ] Propellers still read as dark stars at this size.
+- [ ] Megaplane exhaust: I read Tom as wanting a softer fade; he has not confirmed.
+- [ ] Not measured since round 3: frame rate, 375 x 812, 812 x 375.
+- [ ] Sound; a real menu icon (its own chat); Merope got only a light pass on height.

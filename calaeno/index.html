@@ -84,18 +84,20 @@ const store = {
 // fill is how much of the heap layer is cloud.
 // cloud is the raymarched volume: its base, its tallest top, its share of cloud; null turns it off.
 // A fourth number sets one deck unit in metres: small for a narrow view from far below.
-// mid is a thin middle layer: its base and top in metres.
+// mid is a thin middle layer: its base and top in metres. No view sets it yet:
+// the march's steps are too long for so thin a sheet, and it shows as stipple.
+// sites are the cloud mountains: metres right, metres back, reach, height share.
 // The volume draws behind the craft; a corridor in it keeps every sight line clear.
 const VIEWS = {
   // From the ground, far below and behind: the contrails cross the sun.
   // Its cloud stands above the craft, so the craft stays in front of it.
   below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [31000, 0, 6000], fill: 0, cloud: [21000, 22700, 0.5, 1000] },
   // Level with the craft, off its left bow: it rides over cloud towers.
-  flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [30000, 0, 0], fill: 0, cloud: [3000, 24000, 0.5], mid: [10500, 11400] },
+  flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [30000, 0, 0], fill: 0, cloud: [3000, 24000, 0.5], sites: [[40000, -8000, 21000, 1], [62000, 34000, 27000, 0.9], [26000, 44000, 15000, 0.7], [24000, -30000, 13000, 0.8]] },
   // Ahead and well under: the craft comes on, the sun high behind it.
-  sunward: { label: 'Head-on', eye: [1500, -4400, -12500], aim: [0, 300, 900], lens: 13, sun: [-3200, 5600, 24000], alt: [30000, 0, 0], fill: 0, cloud: [3000, 25000, 0.5], mid: [9800, 10600] },
+  sunward: { label: 'Head-on', eye: [1500, -4400, -12500], aim: [0, 300, 900], lens: 13, sun: [-3200, 5600, 24000], alt: [30000, 0, 0], fill: 0, cloud: [3000, 25000, 0.5], sites: [[-9500, 16000, 7500, 1], [10500, 20000, 6500, 1], [-3000, 70000, 30000, 0.9]] },
   // High behind the left wing: the craft and its contrails over the deck.
-  above: { label: 'Above', eye: [-3800, 5600, 7200], aim: [0, 0, 1200], lens: 26, sun: [9000, 16000, -20000], alt: [31000, 0, 0], fill: 0, cloud: [2500, 22500, 0.55], mid: [9500, 10300] },
+  above: { label: 'Above', eye: [-3800, 5600, 7200], aim: [0, 0, 1200], lens: 26, sun: [9000, 16000, -20000], alt: [31000, 0, 0], fill: 0, cloud: [2500, 22500, 0.55], sites: [[-16000, -28000, 13000, 1], [25000, -36000, 17000, 0.9], [-34000, 6000, 12000, 0.7]] },
 };
 const SUN0 = 0.36;
 // The hour: 0 is full day, 1 is night.
@@ -453,6 +455,8 @@ const VOL_U = {
   uUnit: { value: DECK_M },
   // The mid layer's span in deck units; the craft's place and its contrails' bearing, for the corridor.
   uMid: { value: new THREE.Vector2() }, uCraft: { value: new THREE.Vector3() }, uAwayXZ: { value: new THREE.Vector2(0, 1) },
+  // Up to four cloud mountains: x and z in deck units, reach, height share.
+  uSite: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
 };
 const volTarget = () => {
   const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -505,6 +509,7 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
   uniform float uUnit;
   uniform vec2 uMid, uAwayXZ;
   uniform vec3 uCraft;
+  uniform vec4 uSite[4];
   // Light scattered many times leaves a thick cloud evenly in all directions.
   // So a side-lit top stays white; only the silver lining needs the forward lobe.
   const float CLOUD_MS = 1.5;
@@ -553,20 +558,25 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
     vec4 m = cn(vec3(w.x * 0.6 + w.y * 0.8, y * 0.8 - uTime * 0.004, w.y * 0.6 - w.x * 0.8) + 21.3, 7.5, lod);
     return m.g * 0.6 + m.b * 0.4 - 0.48;
   }
+  // The largest folds of all: they shape a mountain's whole outline.
+  float billowHuge(vec2 w, float y) {
+    vec4 m = textureLod(uNoise, vec3(w.y * 0.5 + w.x * 0.86, y * 0.7, w.y * 0.86 - w.x * 0.5) / 17.0 + 0.37, 0.0);
+    return m.g * 0.7 + m.b * 0.3 - 0.45;
+  }
   // The mid layer: a thin sheet of small flat heaps between the deck and the craft.
   // uMid holds its base and top in deck units; an empty span turns it off.
   float midDens(vec3 p, float lod) {
     if (uMid.y <= uMid.x || p.y < uMid.x - 0.08 || p.y > uMid.y + 0.08) return 0.0;
     vec2 w = p.xz + uClDrift * 1.7 + 50.0;
-    float c = smoothstep(0.5, 0.7, coverAt(w, 14.0, 0.71));
+    float c = smoothstep(0.56, 0.78, coverAt(w, 14.0, 0.71));
     if (c <= 0.0) return 0.0;
-    float cell = cn(vec3(w.x, 9.3, w.y), 3.4, lod).r;
+    float cell = cn(vec3(w.x, 9.3, w.y), 8.5, lod).r;
     float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
     float sh = min(uMid.x + (uMid.y - uMid.x) * sqrt(loc) - p.y, (p.y - uMid.x) * 1.5);
     float fb = sh + 0.1 * billowFine(w, p.y, lod);
     if (fb <= 0.0) return 0.0;
     gSh = sh; gA = 0.1; gFb = fb;
-    return smoothstep(0.0, 0.05 + 0.06 * lod, fb) * 0.75;
+    return smoothstep(0.0, 0.16 + 0.06 * lod, fb) * 0.6;
   }
   // The corridor: no cloud stands on a sight line from the eye to the craft or its contrails.
   // P is in metres. It returns 0 inside the corridor and 1 clear of it.
@@ -592,10 +602,16 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
     float cv = coverAt(w, 20.0, 0.13) * 0.58 + coverAt(w * 0.27 + 11.0, 20.0, 0.41) * 0.42;
     // A wide weather map gathers the heaps into fields, with open sky between.
     cv = (cv - 0.5) * 1.55 + 0.5;
-    // A far wider map raises a few cloud mountains: broad, and many kilometres tall.
-    float tw = smoothstep(0.55, 0.78, coverAt(w * 0.3 + 40.0, 20.0, 0.57));
+    // Each view sets its own cloud mountains: a place, a reach and a height.
+    // A slow noise bends each footprint out of round.
+    float bend = 0.75 + 0.6 * coverAt(w * 0.5 + 7.0, 20.0, 0.9), tw = 0.0;
+    for (int i = 0; i < 4; i++) {
+      if (uSite[i].z <= 0.0) continue;
+      tw = max(tw, uSite[i].w * (1.0 - smoothstep(0.2, 1.0, length(p.xz - uSite[i].xy) / uSite[i].z * bend)));
+    }
     cv += 0.45 * tw;
-    float lift = uCl.y * pow(tw, 1.4);
+    // Steep flanks under a wide, level top: a tower, not a hill.
+    float lift = uCl.y * (1.0 - pow(1.0 - tw, 2.4));
     float c = smoothstep(uCl.z - 0.1, uCl.z + 0.14, cv);
     if (c <= 0.0) return 0.0;
     // The cell map sets each dome's height; more cover makes bigger, closer cells.
@@ -609,8 +625,9 @@ const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMa
     float sh = min(top - p.y, p.y * 1.5);
     float A = 0.2 + 0.42 * loc + 0.5 * lift / (lift + 1.0);
     // Even the biggest lump cannot reach this point.
-    if (sh < -(A * 0.75 + 0.3 * tw)) return 0.0;
-    float fb = sh + A * 1.25 * billow(w, p.y, lod) + tw * 0.5 * billowBig(w, p.y, lod);
+    if (sh < -(A * 0.75 + 1.3 * tw)) return 0.0;
+    // On a mountain the folds are kilometres across.
+    float fb = sh + A * 1.25 * billow(w, p.y, lod) + tw * (1.5 * billowBig(w, p.y, lod) + 2.0 * billowHuge(w, p.y));
     if (fine) fb += A * (0.55 * billowFine(w, p.y, lod) + 0.2 * billowTiny(w, p.y, lod));
     gSh = sh; gA = A; gFb = fb;
     // The edge is crisp near; far off it softens with the footprint.
@@ -771,7 +788,7 @@ const ribbons = escorts.map(() => {
   scene.add(m);
   return { g, pos, side, emit };
 });
-const ribPts = Array.from({ length: RIB_N }, () => new THREE.Vector3());
+const ribPts = Array.from({ length: RIB_N }, () => new THREE.Vector3()), ribSide = new THREE.Vector3();
 function pick() {
   craft = fleet[state.craft];
   for (const [id, c] of Object.entries(fleet)) c.group.visible = id === state.craft;
@@ -878,6 +895,12 @@ function layout() {
     else VOL_U.uMid.value.set(0, 0);
     VOL_U.uCraft.value.copy(POS);
     VOL_U.uAwayXZ.value.set(AWAY.x, AWAY.z);
+    VOL_U.uSite.value.forEach((u, i) => {
+      const st = v.sites?.[i];
+      if (!st) return u.set(0, 0, 0, 0);
+      place([st[0], 0, st[1]], tmp);
+      u.set(tmp.x / unit, tmp.z / unit, st[2] / unit, st[3]);
+    });
   }
 }
 
@@ -917,6 +940,9 @@ function layRibbon(i, t) {
     tmp2.subVectors(ribPts[Math.min(k + 1, RIB_N - 1)], ribPts[Math.max(k - 1, 0)]);
     tmp3.subVectors(p, camera.position);
     tmp.crossVectors(tmp2, tmp3).normalize();
+    // The width keeps its side from sample to sample, so a loop never combs.
+    if (k > 0) { if (tmp.dot(ribSide) < 0) tmp.negate(); tmp.lerp(ribSide, 0.6).normalize(); }
+    ribSide.copy(tmp);
     side[k * 6] = side[k * 6 + 3] = tmp.x; side[k * 6 + 1] = side[k * 6 + 4] = tmp.y; side[k * 6 + 2] = side[k * 6 + 5] = tmp.z;
     tmp.multiplyScalar(5 + 190 * a ** 0.8);
     pos[k * 6] = p.x - tmp.x; pos[k * 6 + 1] = p.y - tmp.y; pos[k * 6 + 2] = p.z - tmp.z;
