@@ -222,6 +222,13 @@ Decisions for Tom:
 | ![tcu](../qa/railgun-clouds-review/05-tcu-without-ranges.jpg) | 05: the towering cumulus with the ranges removed: a small lump on the horizon. |
 | ![phone](../qa/railgun-clouds-review/06-phone.jpg) | 06: the phone frame shows half of one storm. |
 
+## Status
+
+- Tom approved the plan on 2026-11-16 at 15:58 ("Approve the plan"). The freeze on cloud pushes is on.
+- Step 1 is built (bean `stimming-1jza`): `__qa.still()` and `__qa.stormSolo()` in the toy, `tools/clouds-check.mjs`, the golden "before" set and the guards in `tools/commit.sh`. Rig and checks: `docs/qa/railgun-clouds/README.md`.
+- Exit tests: the lobed anvil fails the bounds check at all three suns (card edge); the towering cumulus fails visibility (about 670 pixels). Main fails only on that storm.
+- Open with Tom: decision 2 (scale A or B) and decision 3 (reference photos). Step 2 waits on decision 2.
+
 ## 9. Addendum, 15:56: the march changed during the review; which bound clips
 
 **The code moved under the review.** 649313f3 (15:33, `stimming-626s`) landed while I captured: Window seat's tower light in the shared march, a shorter stride inside the cloud (`min(dt, 0.45 U)`, 96 steps at most) and a Storm softness knob. Stills 01 to 06 show 9310ec8e. At blue hour the slats are mostly gone on 649313f3 (still 07). This is root cause 1 in action: the target moved while it was being judged.

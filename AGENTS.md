@@ -234,6 +234,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 - Commit and push after every change, one logical commit at a time.
 - Toy chats can share one checkout and one git index. Never `git add -A`, `git commit -a` or a whole-file `git add index.html`.
   Commit only through `tools/commit.sh -m "msg" [--hunks <patch>] -- <paths>`; it commits and pushes. For shared files, pass your hunks: `git diff HEAD -- index.html`, trimmed to yours.
+  `commit.sh` refuses a commit that drops lines another bean added recently (a stale copy; `--drop-ok` with a reason overrides). It also refuses a railgun cloud change unless the message holds `clouds-check: PASS` (from `tools/clouds-check.mjs`) or `look-approved:` with Tom's words (Tom, 2026-11-16). Rig: `docs/qa/railgun-clouds/README.md`.
   Check the menu script parses before you push. Never revert another toy's changes.
 - QA in headless Playwright with GPU flags: `--enable-gpu --ignore-gpu-blocklist --use-angle=metal --enable-unsafe-webgpu`.
   Check syntax, a clean console, the interactions, and screenshots at 1280px and 375px.

@@ -312,6 +312,8 @@ const camera = new THREE.PerspectiveCamera(44, 1, 20, 800000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = +new URLSearchParams(location.search).get('rung') || 0;
+// A QA still pins the rung, so slow frames never change its size.
+let rungPin = false;
 // Graphics settings: resolution share, smoke step factor, bloom gain, FXAA mode.
 const DETAIL = { low: 0.6, mid: 1, high: 1.4 };
 const gfx = { res: 1, detail: 1, bloom: 1, fxaa: 'auto', tone: 'aces', exp: 0.55, bri: 0.78, con: 0.24, sat: 1.06, pal: 'auto', pull: 0.55, lift: 0.5, mist: 0, hal: 1, vig: 1, gsize: 1 };
@@ -10215,7 +10217,7 @@ function watch(now, lively) {
   watchN++; watchSum += gap;
   if (watchN < 2 || now - watchFrom < 6000) return;
   // Frames come every 33 ms by design; past 48 is slow.
-  if (watchSum / watchN > (lively ? 48 : 70) && rung < 3) { rung++; resize(); }
+  if (watchSum / watchN > (lively ? 48 : 70) && rung < 3 && !rungPin) { rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
 whenVisible(stage, vis => {
@@ -11860,6 +11862,37 @@ window.__qa = {
   // The sun and the moon: elevation in degrees, screen place in NDC.
   skyQ() { const f = d => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
   stormProbe(on = true) { setStormProbe(on); draw(); },
+  // One repeatable still for tools/clouds-check.mjs.
+  // It freezes the clocks, stops random events and pins the rung.
+  // o: sun (the Time slider), fall (the rock's place), t (the sim clock), rung.
+  still(o = {}) {
+    qaFreeze = true; visible = true; rungPin = true;
+    stormFl.rate = 0; stormFl.strokes = []; CLOUD_U.uFl.value.forEach(v => { v.w = 0; });
+    amb.next = 1e9;
+    // The cirrus takes a random offset at load; the still fixes it.
+    U.uWisp.value.set(80, 120, 0.8);
+    const r = o.rung ?? 0;
+    if (rung !== r) { rung = r; resize(); }
+    simT = o.t ?? 15; U.uTime.value = simT;
+    if (o.sun !== undefined) { opts.sun = o.sun; setSun(); }
+    ast.s = o.fall ?? 0.45; placeAst(); astSize();
+    frame(); draw();
+    return { rung, simT, sun: opts.sun };
+  },
+  // Each storm's base centre as drawn now, its height and its half width, in metres.
+  // Shows one storm (its index in stormsQ), none (-1) or all (null).
+  // A hidden storm's card gets zero width; the march never runs there.
+  stormSolo(k = null) {
+    let j = 0;
+    for (const m of [tower, giants]) {
+      const a = m.geometry.getAttribute('aC');
+      a.qaW0 ??= Array.from({ length: a.count }, (_, i) => a.getW(i));
+      for (let i = 0; i < a.count; i++, j++) a.setW(i, k === null || k === j ? a.qaW0[i] : 0);
+      a.needsUpdate = true;
+    }
+    draw();
+  },
+  stormsQ: () => STORM_SPOTS.map(c => { const P = stormAt(c, simT, new THREE.Vector3()); return { P: [P.x, c.base, P.z], H: c.H, W: c.W, kind: c.kind }; }),
   // Fire one lightning burst in a storm now; storms() lists the live strokes.
   stormFlash() { stormBurst(); },
   storms: () => stormFl.strokes.map(k => ({ age: simT - k.t0, L: k.L, P: k.P.toArray() })),
