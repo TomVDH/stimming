@@ -3913,7 +3913,7 @@ const frags = Array.from({ length: 16 }, () => {
 });
 const fragGlowP = new THREE.Vector3();
 // Seconds a split piece takes to drift out to its own track.
-const SPLIT_T = 30;
+const SPLIT_T = 40;
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
   // Six to nine spread wide across the sky; three to five split off later.
@@ -3924,8 +3924,10 @@ function seedFrags() {
     f.splitS = split ? 0.3 + 0.6 * rnd() : -1; f.splitT = -1e9;
     const th = (i / n) * Math.PI * 2 + rnd() * 1.4;
     // Riders scatter from close by to far across the sky.
-    const gap = split ? 2.5 + 3 * rnd() : 2.8 + 22 * rnd() * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = split ? -1 + 4 * rnd() : -8 + 30 * rnd();
+    // A split piece drags more than the rock: it falls back down the wake.
+    // It drifts only a little aside, to the edge of the smoke, never ahead.
+    const gap = split ? 1.6 + 1.2 * rnd() : 2.8 + 22 * rnd() * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = split ? 5 + 10 * rnd() : -8 + 30 * rnd();
     f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
@@ -3945,9 +3947,12 @@ function placeFrags() {
     if (!f.on && f.splitS >= 0 && f.broke < 0 && live && ast.s >= f.splitS) splitFrag(f);
     if (!f.on) continue;
     // A split piece leaves the rock's flank and eases out to its track.
-    const e = f.splitS < 0 ? 1 : 1 - Math.pow(1 - clamp((simT - f.splitT) / SPLIT_T, 0, 1), 2);
+    const st = clamp((simT - f.splitT) / SPLIT_T, 0, 1);
+    const e = f.splitS < 0 ? 1 : 1 - Math.pow(1 - st, 2);
+    // Drag slows it gently at first, so it falls back on an ease-in.
+    const eb = f.splitS < 0 ? 1 : st * st * (3 - 2 * st);
     const g = THREE.MathUtils.lerp(1.1 / Math.max(Math.hypot(f.ox, f.oy), 1e-3), 1, e);
-    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * g * ast.R).addScaledVector(ast.upv, f.oy * g * ast.R).addScaledVector(ast.away, f.oz * e * ast.R);
+    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * g * ast.R).addScaledVector(ast.upv, f.oy * g * ast.R).addScaledVector(ast.away, f.oz * eb * ast.R);
     f.m.position.copy(f.pos);
     f.m.scale.setScalar(f.k * ast.R);
     const u = f.trail.material.uniforms;
