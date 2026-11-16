@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T09:32:45Z
+updated_at: 2026-11-16T09:47:12Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -65,3 +65,7 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 ## Round 2 summary
 
 Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add tray with four liquids; marbled soup with film layers; neater cooking; steam pass. WebGPU fire parked behind ?fire=gpu. Next: a performance pass and an icon pass, then Tom promotes the toy to the main shelf.
+
+## Performance pass
+
+- [ ] Performance pass: see stimming-mbpi (baseline measured; no code changed yet)
