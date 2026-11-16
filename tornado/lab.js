@@ -25,7 +25,27 @@ const TABLE = {
   sway: [90, 60, 35, 20, 10, 5],
 };
 const NAMES = ['rope', 'narrow', 'cone', 'wide cone', 'stovepipe', 'wedge'];
-const at = (k, f) => { const t = TABLE[k], i = Math.min(4, Math.floor(f)), u = clamp(f - i); return t[i] + (t[i + 1] - t[i]) * u; };
+// A smooth curve through the table (Catmull-Rom), held inside each step's two values so it never overshoots.
+const at = (k, f) => {
+  const t = TABLE[k], i = Math.min(4, Math.floor(f)), u = clamp(f - i);
+  const p0 = t[Math.max(0, i - 1)], p1 = t[i], p2 = t[i + 1], p3 = t[Math.min(5, i + 2)];
+  const v = 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u * u * u);
+  return Math.min(Math.max(p1, p2), Math.max(Math.min(p1, p2), v));
+};
+// Each layer's spin angle and climb, summed frame by frame: 0 is the core, 1 to 5 the sheaths.
+const phase = new Float32Array(12);
+function spinLayers(dt, f, spin) {
+  const r0 = at('r0', f), vmax = at('vmax', f);
+  // The radius at mid height sets every layer's rate.
+  const rRef = Math.max(4, r0 * (1 + (at('flare', f) - 1) * Math.pow(0.5, at('prof', f))));
+  for (let i = 0; i < 6; i++) {
+    const rk = i === 0 ? 0.8 : 1 + 0.2 * (i - 1), fk = i === 0 ? 0 : (i - 1) / 4;
+    const om = vmax / rRef * (rk < 1 ? 1 : 1 / (rk * rk)) * spin * (1 + 0.1 * i);
+    const up = vmax * 0.35 * spin * (1 - 0.6 * fk) / Math.max(rRef * 0.5, 4);
+    phase[i * 2] = (phase[i * 2] + om * dt) % (Math.PI * 2);
+    phase[i * 2 + 1] += up * dt;
+  }
+}
 
 /* ---------- shaders ---------- */
 const SCENE_FS = /* glsl */`#version 300 es
@@ -41,6 +61,8 @@ uniform int uSteps;
 uniform vec3 uSun, uSunCol, uAmb;
 // The tornado: see the table in lab.js.
 uniform float uH, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uMulti, uRain, uDark, uLean, uSway;
+// Spin angle and climb, per layer: 0 is the core, 1 to 5 the sheaths. lab.js integrates them each frame.
+uniform vec2 uPh[6];
 const float CAMH = 1.7;
 
 // The volume holds 64 cells per unit: a sixteenth makes one unit four cells wide.
@@ -106,40 +128,42 @@ float debrisR(float h) { return uR0 * mix(2.2, 1.18, uFk) * (1.0 + 0.6 * h / uDu
 // Each sheath spins as one body at its own Rankine rate, so no texture winds up.
 // Inner sheaths turn and climb fastest; outer ones lag, so the layers shear past each other.
 const int SHEATHS = 5;
-// A sheath's radius, over the funnel radius R: 0.85 to 1.65.
-float sheathR(int k) { return 0.85 + 0.2 * float(k); }
+// A sheath's radius, over the funnel radius R: 1.0 to 1.8, with gaps between.
+float sheathR(int k) { return 1.0 + 0.2 * float(k); }
 // One sheath's noise, spun as one body. fk: 0 for the inner sheath, 1 for the outer.
 // x is the radius over R: the noise varies through the sheath too, so no streak runs along a ray.
-float sheathN(float ang, float h, float x, float R, float rk, float fk, float seed, int oct) {
-  float om = uVmax / max(R, 4.0) * (rk < 1.0 ? 1.0 : 1.0 / (rk * rk)) * uSpin * (1.0 + 0.1 * seed);
-  float up = uVmax * 0.35 * uSpin * (1.0 - 0.6 * fk);
-  float zz = (h - up * uTime) / max(R * 0.5, 4.0);
+// The spin and the climb come in as integrated phases, so a new F or spin only changes speed.
+float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) {
+  vec2 ph = uPh[idx];
+  float zz = h / max(R * 0.5, 4.0) - ph.y;
   // The helix: the bands lean as they climb.
-  float a = ang - om * uTime - zz * 0.9;
+  float a = ang - ph.x - zz * 0.9;
   float rc = 1.4 + (x - rk) * 2.5;
-  vec3 c = vec3(cos(a) * rc, zz * 1.1, sin(a) * rc) + seed * 3.17;
+  vec3 c = vec3(cos(a) * rc, zz * 1.1, sin(a) * rc) + float(idx) * 3.17;
   float n = fbm(c, oct);
   // Erosion: fine detail eats into the edges of each billow.
-  return n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45;
+  return oct > 2 ? n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45 : n;
 }
 // Condensation density at p, 0 to about 2. u returns the height over the base.
-float funnelD(vec3 p, out float u) {
+// oct sets the noise detail: 4 for the view, 2 for the shadow rays.
+float funnelD(vec3 p, out float u, int oct) {
   float h = p.y;
   u = h / uH;
   vec2 q = p.xz - axisAt(h);
   float r = length(q), R = radiusAt(h), x = r / R;
-  if (x > 1.9) return 0.0;
+  if (x > 2.0) return 0.0;
   float ang = atan(q.y, q.x);
   // The core: the funnel body, its edge ragged by the inner sheath's noise.
-  float nc = sheathN(ang, h, 0.8, R, 0.8, 0.0, 0.0, 4);
+  float nc = sheathN(ang, h, 0.8, R, 0.8, 0, oct);
   float edge = 0.9 + uAmp * 0.45 * (nc - 0.5);
   float d = smoothstep(edge, edge - 0.1, x) * 1.6;
   // The sheaths: thin layers of tattered cloud, each spinning at its own rate.
   for (int k = 0; k < SHEATHS; k++) {
     float rk = sheathR(k), fk = float(k) / float(SHEATHS - 1);
-    float wk = exp(-pow((x - rk) / 0.11, 2.0));
+    // Thin sheaths with clear air between them: the onion's layers.
+    float wk = exp(-pow((x - rk) / 0.085, 2.0));
     if (wk < 0.03) continue;
-    float n = sheathN(ang, h, x, R, rk, fk, float(k + 1), 4);
+    float n = sheathN(ang, h, x, R, rk, k + 1, oct);
     // Outer sheaths show only their densest noise, so the edge stays wispy.
     float cov = mix(0.42, 0.6, fk);
     d += wk * smoothstep(cov, cov + 0.07, n) * mix(0.9, 0.35, fk);
@@ -184,14 +208,17 @@ void vol(vec3 p, out float d, out float w) {
 // Optical depth toward the sun: the funnel's mean shape and the dust, no noise.
 float sunDepth(vec3 p, float R) {
   float Ls = max(R * 0.45, 4.0), od = 0.0;
-  for (int k = 0; k < 5; k++) {
+  for (int k = 0; k < 4; k++) {
     vec3 s = p + uSun * Ls * (float(k) + 0.5);
     vec2 qs = s.xz - axisAt(s.y);
     float Rs = radiusAt(s.y), rs = length(qs);
-    float m = smoothstep(1.5, 0.45, rs / Rs) * step(uH * (1.0 - uCond), s.y) * step(s.y, uH + 100.0);
+    // The layers' mean shape, no noise: the core, then each sheath as a ring at its mean cover.
+    float xs = rs / Rs, m = smoothstep(0.95, 0.75, xs) * 1.6;
+    for (int j = 0; j < SHEATHS; j++) m += exp(-pow((xs - sheathR(j)) / 0.085, 2.0)) * mix(0.45, 0.12, float(j) / float(SHEATHS - 1));
+    m *= step(uH * (1.0 - uCond), s.y) * step(s.y, uH + 100.0);
     float Rd = debrisR(s.y);
     float dd = uDebris * smoothstep(Rd, Rd * 0.3, rs) * 0.6 * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, s.y));
-    od += (funnelSig(m * 0.7, Rs) + dd * 0.012) * Ls;
+    od += (funnelSig(m, Rs) + dd * 0.012) * Ls;
   }
   return od;
 }
@@ -279,12 +306,12 @@ void main() {
       if (t > t1 || T < 0.01) break;
       vec3 p = ro + rd * t;
       vec2 q = p.xz - axisAt(p.y);
-      float r = length(q), R = radiusAt(p.y), Rout = R * 1.9 + 2.0;
+      float r = length(q), R = radiusAt(p.y), Rout = R * 2.0 + 2.0;
       // Fine steps inside the funnel, long ones outside it.
       float fine = clamp(R * 0.045, 0.3, dtv);
       float st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
       float u;
-      float dc = r < Rout ? funnelD(p, u) : 0.0;
+      float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
       u = clamp(p.y / uH, 0.0, 1.0);
       float d, w;
       vol(p, d, w);
@@ -297,9 +324,11 @@ void main() {
         // Sky light falls off with depth into the funnel.
         float depth = max(0.0, 1.6 - r / R);
         vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u) * exp(-depth * 1.6);
+        // Bounce from the sunlit wheat warms the lower funnel from below.
+        ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
         vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
         alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-        vec3 cc = alb * (sunL * 0.55 + ambL);
+        vec3 cc = alb * (sunL * 0.7 + ambL * 0.85);
         vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
         vec3 wcol = vec3(0.2, 0.22, 0.25) * (uAmb * 0.7 + uSunCol * exp(-od) * 0.05);
         vec3 col = (cc * sc + dcol * sd + wcol * sw) / sig;
@@ -432,7 +461,8 @@ const set = (prog, name, v) => {
 function draw(now) {
   const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016;
   last = now;
-  if (!paused && !matchMedia('(prefers-reduced-motion: reduce)').matches) simT += dt;
+  const moving = !paused && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (moving) simT += dt;
   // Morph runs F0 to F5 and back over 40 s.
   if (morph && !paused) { f = 2.5 - 2.5 * Math.cos(simT * Math.PI / 20); fEl.value = String(f); }
   fShown += (f - fShown) * (1 - Math.exp(-dt / 0.35));
@@ -456,6 +486,8 @@ function draw(now) {
   set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.12 : 0.22);
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
+  spinLayers(moving ? dt : 0, fShown, K.spin());
+  gl.uniform2fv(sc.u.uPh, phase);
   set(sc, 'uAmp', K.amp());
   set(sc, 'uFk', fk / 5);
   gl.uniform1i(sc.u.uSteps, K.steps());
