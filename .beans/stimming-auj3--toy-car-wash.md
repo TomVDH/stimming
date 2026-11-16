@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:43:25Z
-updated_at: 2026-11-16T07:05:20Z
+updated_at: 2026-11-16T07:37:11Z
 ---
 
 Idea 234 (Group C, cinematic dioramas): "Seen from the seat: foam, brushes, water curtain, coloured light."
@@ -70,3 +70,16 @@ Tom: "the wind shield isnt angled and this should be a surface against which the
 - [x] Wipers: a ridge in thick lather, a clean wet arc with a soapy edge
 - [x] Stills checked lossless; real-loop frame time measured or said plainly
 - [x] Toy doc updated
+
+## Pass four (Tom, 2026-11-16): camera rows, less neon, better graphics
+
+Tom: "camera pov is adjustable in a dev bar from now on -- under ?dev -- i want better graphics and less obnoxious neon everywhere lmfao".
+
+- [x] Dev rows: eye height, eye side, seat distance, pitch, yaw, field of view, Reset view; persisted; defaults keep today's view
+- [ ] Everything follows the camera: glass, frame, wipers, liquids, refraction, tunnel; ranges clamped where it breaks
+- [x] Tunnel light: cool white battens, warm work lamps, the signal; no glowing outlines; plain lit sign boxes
+- [ ] Materials: wet concrete with puddles, galvanised steel, hazard stripes, mist in the light
+- [ ] Bloom only on lamps, restrained; exposure dark but readable
+- [x] Foam: cell size and density follow thickness; soft froth with few distinct bubbles; quieter frit band
+- [ ] Stills before and after, desktop and phone; three camera proofs; frame time
+- [ ] Toy doc and handoff (accent, menu icon) updated

@@ -110,7 +110,7 @@ const PAINTS = {
   black: [0.17, 0.006, 265], cherry: [0.3, 0.12, 22], pearl: [0.86, 0.015, 95], teal: [0.42, 0.075, 200],
 };
 // The handlers bind once the GL state exists.
-const act = { go() {}, wipeDown() {}, wipeUp() {}, reset() {}, jump() {}, paint() {} };
+const act = { go() {}, wipeDown() {}, wipeUp() {}, reset() {}, jump() {}, paint() {}, view() {}, viewReset() {} };
 const ui = initPage({ id: 'carwash', bar: {
   actions: [
     { verb: 'go', label: 'Go', key: 'G', onPress: () => act.go() },
@@ -128,8 +128,16 @@ const ui = initPage({ id: 'carwash', bar: {
     { type: 'choice', id: 'jump', label: 'Jump', value: 'entry', display: 'stepper',
       options: Object.keys(STOPS).map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) })), onPick: v => act.jump(v) },
     { type: 'slider', id: 'pace', label: 'Pace', min: 1, max: 8, step: 1, value: 1 },
+    // The camera: the eye's place in the cabin, where it looks, and how wide.
+    { type: 'slider', id: 'eyeY', label: 'Eye height', min: -0.12, max: 0.1, step: 0.005, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'eyeX', label: 'Eye side', min: -0.15, max: 0.4, step: 0.005, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'eyeZ', label: 'Seat distance', min: -0.18, max: 0.25, step: 0.005, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'pitch', label: 'Pitch', min: -10, max: 10, step: 0.5, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'yaw', label: 'Yaw', min: -20, max: 20, step: 0.5, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'fov', label: 'Field of view', min: 0.75, max: 1.4, step: 0.01, value: 1, persist: true, onInput: () => act.view() },
+    { type: 'button', id: 'viewReset', label: 'View', text: 'Reset', onClick: () => act.viewReset() },
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.5, max: 3, step: 0.01, value: 1.1, persist: true },
-    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.4, persist: true },
+    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.3, persist: true },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 0.12, step: 0.005, value: 0.04, persist: true },
   ],
   reset: () => act.reset(),
@@ -246,12 +254,13 @@ float glassHW(float gh) { return mix(0.72, 0.62, clamp(gh / GLEN, 0.0, 1.0)); }
 // The glass bows forward a little in the middle.
 float glassBow(float gx) { return GBOW * (1.0 - min(gx * gx / 0.56, 1.0)); }
 // A view ray from the eye meets the windscreen: returns t, then gx across and gh up the rake.
-vec3 glassHit(vec3 d) {
+// o is the eye in the car's frame; d is the ray, already turned by the camera.
+vec3 glassHit(vec3 o, vec3 d) {
   float dn = dot(d, GN);
   if (dn <= 1e-4) return vec3(-1.0, 0.0, -9.0);
-  float c = dot(G0, GN);
-  float t = (c + glassBow(d.x * (c / dn) - CX)) / dn;
-  vec3 P = d * t;
+  float c = dot(G0 - o, GN);
+  float t = (c + glassBow(o.x + d.x * (c / dn) - CX)) / dn;
+  vec3 P = o + d * t;
   return vec3(t, P.x - CX, dot(P - G0, GR));
 }
 `;
@@ -442,6 +451,9 @@ uniform vec2 uRes;
 uniform float uTime, uS, uF, uHZ, uAsp, uPix, uRun, uLevel, uAirN;
 // The car's own motion: pitch in radians, heave in metres.
 uniform vec2 uBob;
+// The camera: the eye in the car's frame, and its turn.
+uniform vec3 uEye;
+uniform mat3 uRot;
 // Top brush: axis u and y, the spin angle, on.
 uniform vec4 uTop;
 // Wrap brushes: tunnel x of the left and right brush, the spin, on.
@@ -501,7 +513,7 @@ vec3 lightAt(vec3 W, vec3 n) {
     vec2 sp = vec2(i < 2 ? -HW + 0.03 : HW - 0.03, (i & 1) == 0 ? 0.55 : 2.35);
     vec2 v = sp - W.xy;
     float d2 = dot(v, v);
-    L += (0.15 + 0.85 * max(dot(n.xy, v) * inversesqrt(d2 + 1e-4), 0.0)) * 0.05 / (0.02 + d2);
+    L += (0.15 + 0.85 * max(dot(n.xy, v) * inversesqrt(d2 + 1e-4), 0.0)) * 0.012 / (0.3 + d2);
   }
   L *= zoneCol(W.z);
   for (int k = 0; k < 9; k++) {
@@ -622,8 +634,6 @@ vec3 emitRay(vec3 P, vec3 D, float wid) {
   vec3 H = P + D * t;
   if (t == tx) {
     float w = 0.025 + wid * t;
-    float s1 = (H.y - 0.55) / w, s2 = (H.y - 2.35) / w;
-    c += zoneCol(H.z) * (exp(-s1 * s1) + exp(-s2 * s2)) * 4.0 * 0.025 / w;
     c += lightAt(H, vec3(-sign(D.x), 0.0, 0.0)) * 0.1;
   } else if (t == ta) {
     if (D.z > 0.0 && abs(H.x) < DW && H.y < DH) { float to; c += outdoor(H, D, to); }
@@ -634,8 +644,8 @@ vec3 emitRay(vec3 P, vec3 D, float wid) {
     if (tk <= 0.0 || tk >= t) continue;
     vec2 X = P.xy + D.xy * tk;
     float w = 0.02 + wid * tk;
-    float bar = (X.y - 2.94) / w, pil = (abs(X.x) - 1.98) / w;
-    c += uArchC[k] * (exp(-bar * bar) * step(abs(X.x), 1.95) + exp(-pil * pil) * step(X.y, 2.85) * step(0.3, X.y)) * 5.0 * 0.02 / w;
+    float bar = (X.y - 2.86) / w;
+    c += uArchC[k] * exp(-bar * bar) * smoothstep(0.95, 0.8, abs(X.x)) * 6.0 * 0.02 / w;
   }
   return c;
 }
@@ -651,9 +661,8 @@ vec3 wall(vec3 H, vec3 D, float s, float t) {
   // Water runs down the panels in thin sheets.
   c *= 0.85 + 0.25 * cwN(vec2(H.z * 14.0, H.y * 0.5 + uTime * 0.3));
   vec3 zc = zoneCol(H.z);
-  float w = max(0.018, t * uPix * 1.2);
-  float s1 = abs(H.y - 0.55), s2 = abs(H.y - 2.35);
-  c += zc * (smoothstep(w, w * 0.4, s1) + smoothstep(w, w * 0.4, s2)) * 4.0 * (0.018 / w);
+  // A black rubber skirt runs along the foot of each wall.
+  c *= 1.0 - 0.75 * smoothstep(0.42, 0.38, H.y);
   // Wet panels mirror the far wall and the arches at a glance.
   vec3 R = vec3(-D.x, D.y, D.z);
   float F = 0.04 + 0.96 * pow(1.0 - abs(D.x), 5.0);
@@ -684,7 +693,7 @@ vec3 endWall(vec3 H) {
   vec3 c = lightAt(H, vec3(0.0, 0.0, -1.0)) * 0.12;
   if (abs(H.x) < 0.6 && H.y > 3.2 && H.y < 3.5) {
     float w = signAt(8, vec2((H.x + 0.6) / 1.2, (H.y - 3.2) / 0.3));
-    return vec3(0.0015) + mix(vec3(1.0, 0.1, 0.05), vec3(0.1, 1.0, 0.4), uSig.y) * w * 2.0;
+    return mix(vec3(0.62, 0.64, 0.66), mix(vec3(0.5, 0.03, 0.02), vec3(0.02, 0.45, 0.15), uSig.y), w);
   }
   bool hit = false;
   vec3 sg = signal(H.xy, vec2(-2.22, 1.75), uSig.y, hit);
@@ -698,7 +707,7 @@ vec3 facade(vec3 H) {
   if (abs(H.x) < 1.75 && H.y > 3.5 && H.y < 4.3) {
     float w = signAt(9, vec2((H.x + 1.75) / 3.5, (H.y - 3.5) / 0.8));
     float flick = 0.92 + 0.08 * step(0.5, fract(uTime * 0.37));
-    c += mix(uZone[0], uZone[1], step(0.0, H.x)) * w * 3.0 * flick + mix(uZone[0], uZone[1], 0.5) * 0.02;
+    c = mix(vec3(0.6, 0.62, 0.64) * flick, vec3(0.015), w);
   }
   bool hit = false;
   vec3 sg = signal(H.xy, vec2(-2.42, 1.65), uSig.x, hit);
@@ -762,12 +771,17 @@ vec3 arches(vec3 E, vec3 D, float tG, inout float t, vec3 col) {
     float pw = max(0.006, tk * uPix);
     if (board && !beam && !pil) {
       float w = signAt(k < 3 ? k : k - 1, vec2((X.x + 0.88) / 1.76, (X.y - 2.4) / 0.4));
-      col = vec3(0.0015) + uArchC[k] * w * 2.6;
+      col = mix(vec3(0.62, 0.64, 0.66), vec3(0.015), w);
       continue;
     }
-    float led = beam ? smoothstep(pw * 1.5, 0.0, abs(X.y - 2.94) - 0.025) * step(abs(X.x), 1.92)
-                     : smoothstep(pw * 1.5, 0.0, abs(abs(X.x) - 1.97) - 0.018) * step(0.3, X.y) * step(X.y, 2.8);
-    col += uArchC[k] * led * (beam ? 5.0 : 2.4);
+    // Galvanised steel: dull, mottled, a soft sheen from the lamps.
+    col *= 0.8 + 0.4 * cwN(X * vec2(9.0, 3.0) + float(k));
+    col += lightAt(W, vec3(0.0, 0.0, -1.0)) * 0.05 * smoothstep(0.6, 1.0, cwN(vec2(X.x * 2.0, X.y * 20.0)));
+    // The batten: a lamp box under the middle of the beam.
+    float led = beam ? smoothstep(pw * 1.5, 0.0, abs(X.y - 2.86) - 0.02) * smoothstep(0.92, 0.88, abs(X.x)) : 0.0;
+    col += uArchC[k] * led * 6.0;
+    // Hazard paint at the foot of each pillar.
+    if (pil && X.y < 0.9) col = mix(col, (step(0.5, fract((X.y + abs(X.x)) * 4.0)) > 0.5 ? vec3(0.55, 0.42, 0.03) : vec3(0.02)) * (lightAt(W, vec3(0.0, 0.0, -1.0)) * 1.5 + 0.004), 0.85);
     // Nozzles hang under the beam.
     if (beam) col *= 1.0 - 0.6 * step(abs(fract(X.x * 2.0) - 0.5), 0.06) * step(X.y, 2.88);
   }
@@ -777,8 +791,8 @@ vec3 arches(vec3 E, vec3 D, float tG, inout float t, vec3 col) {
 vec3 bonnet(vec3 d, vec3 Dw, inout float t, vec3 col) {
   float den = d.y - BK * d.z;
   if (den >= -1e-5) return col;
-  float tb = BC / den;
-  vec3 B = d * tb;
+  float tb = (BC - uEye.y + BK * uEye.z) / den;
+  vec3 B = uEye + d * tb;
   float u = -B.z, x = B.x - CX;
   float k = clamp((u - CU) / (BN - CU), 0.0, 1.0);
   float hw = mix(0.8, 0.7, k);
@@ -842,7 +856,7 @@ vec4 cloth(float x, float a, float rr, float seed, vec3 light, vec3 back) {
 // The top brush: a drum of cloth across the tunnel, rolling over the car.
 vec4 topBrush(vec3 d, float tG, float t) {
   if (uTop.w < 0.5) return vec4(0.0);
-  vec2 c = vec2(uTop.y, -uTop.x);
+  vec2 cc = vec2(uTop.y, -uTop.x), c = cc - uEye.yz;
   const float R = 0.5;
   vec2 to = vec2(-1.0);
   vec2 dd = d.yz;
@@ -862,10 +876,10 @@ vec4 topBrush(vec3 d, float tG, float t) {
     ti = max(ti, tG);
     float to2 = (b + sqrt(hh)) / a;
     if (ti >= t || ti > to2) continue;
-    vec3 P = d * ti;
+    vec3 P = uEye + d * ti;
     float X = P.x + EX;
     if (abs(X) > 1.95) continue;
-    vec2 rel = P.yz - c;
+    vec2 rel = P.yz - cc;
     float ang = atan(rel.y, rel.x) - uTop.z;
     vec3 n = normalize(vec3(0.0, rel.x, -rel.y));
     vec3 W = vec3(X, P.y + EY, uS - P.z);
@@ -886,7 +900,7 @@ vec4 wrapBrushes(vec3 d, float tG, float t) {
   vec4 acc = vec4(0.0);
   float best = 1e9;
   for (int j = 0; j < 2; j++) {
-    vec2 c = vec2((j == 0 ? uWrap.x : uWrap.y) - EX, -(A_WRAP + (j == 0 ? 0.0 : 0.55) - uS));
+    vec2 cc = vec2((j == 0 ? uWrap.x : uWrap.y) - EX, -(A_WRAP + (j == 0 ? 0.0 : 0.55) - uS)), c = cc - uEye.xz;
     const float R = 0.45;
     vec2 dd = d.xz;
     float a = dot(dd, dd), b = dot(dd, c), h = b * b - a * (dot(c, c) - R * R);
@@ -901,10 +915,10 @@ vec4 wrapBrushes(vec3 d, float tG, float t) {
       if (hh < 0.0) continue;
       float ti = (b - sqrt(hh)) / a;
       if (ti >= t || ti <= tG) continue;
-      vec3 P = d * ti;
+      vec3 P = uEye + d * ti;
       float Y = P.y + EY;
       if (Y < 0.12 || Y > 2.25) continue;
-      vec2 rel = P.xz - c;
+      vec2 rel = P.xz - cc;
       float ang = atan(rel.y, rel.x) * (j == 0 ? 1.0 : -1.0) - uWrap.z;
       vec3 n = normalize(vec3(rel.x, 0.0, -rel.y));
       vec3 W = vec3(P.x + EX, Y, uS - P.z);
@@ -923,9 +937,9 @@ vec4 mitters(vec3 d, float tG, float t) {
   if (uMit.z < 0.5) return vec4(0.0);
   float um = uMit.x;
   if (um < 0.05) return vec4(0.0);
-  float tm = um / -d.z;
+  float tm = (-um - uEye.z) / d.z;
   if (tm <= tG || tm >= t) return vec4(0.0);
-  vec3 P = d * tm;
+  vec3 P = uEye + d * tm;
   float X = P.x + EX, Y = P.y + EY;
   if (abs(X) > 1.95 || Y > 2.75 || P.y < carTop(um) || Y < 0.05) return vec4(0.0);
   // Each strip sways on its own.
@@ -947,7 +961,7 @@ vec4 mitters(vec3 d, float tG, float t) {
 // The strips that lie on the glass itself, below the curtain's line.
 vec4 mittersOnGlass(vec3 d, float tG) {
   if (uMit.z < 0.5) return vec4(0.0);
-  vec3 g = d * tG;
+  vec3 g = uEye + d * tG;
   float ug = -g.z;
   if (ug < uMit.x || ug > uMit.x + 0.42) return vec4(0.0);
   float X = g.x + EX;
@@ -965,13 +979,13 @@ vec4 mittersOnGlass(vec3 d, float tG) {
 vec3 blower(vec3 d, float tG, inout float t, vec3 col) {
   if (uBlow.z < 0.5) return col;
   // The top nozzle: a box in the y-z plane, along the tunnel's width.
-  vec2 lo = vec2(uBlow.y - 0.11, -(uBlow.x + 0.22)), hi = vec2(uBlow.y + 0.16, -(uBlow.x - 0.22));
+  vec2 lo = vec2(uBlow.y - 0.11, -(uBlow.x + 0.22)) - uEye.yz, hi = vec2(uBlow.y + 0.16, -(uBlow.x - 0.22)) - uEye.yz;
   vec2 inv = 1.0 / d.yz;
   vec2 ta = (lo - vec2(0.0)) * inv, tb = (hi - vec2(0.0)) * inv;
   vec2 tn = min(ta, tb), tf = max(ta, tb);
   float t0 = max(max(tn.x, tn.y), tG), t1 = min(tf.x, tf.y);
   if (t0 < t1 && t0 < t) {
-    vec3 P = d * t0;
+    vec3 P = uEye + d * t0;
     float X = P.x + EX;
     if (abs(X) < 1.8) {
       t = t0;
@@ -988,9 +1002,9 @@ vec3 blower(vec3 d, float tG, inout float t, vec3 col) {
   // The side towers.
   for (int j = 0; j < 2; j++) {
     float sx = j == 0 ? -1.45 : 1.45;
-    float tz = (A_BLOW - 0.18 - uS) / -d.z;
+    float tz = (-(A_BLOW - 0.18 - uS) - uEye.z) / d.z;
     if (tz <= tG || tz >= t) continue;
-    vec3 P = d * tz;
+    vec3 P = uEye + d * tz;
     float X = P.x + EX, Y = P.y + EY;
     if (abs(X - sx) > 0.22 || Y > 2.3 || Y < 0.1) continue;
     t = tz;
@@ -1084,12 +1098,12 @@ vec3 waxMist(vec3 E, vec3 D, float tG, float t, vec3 col) {
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   // The car's ray, then the world's: the car pitches and heaves on the conveyor.
-  vec3 d = normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
+  vec3 d = uRot * normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
   float cp = cos(uBob.x), sp = sin(uBob.x);
   vec3 dw = vec3(d.x, d.y * cp - d.z * sp, d.y * sp + d.z * cp);
-  vec3 gH = glassHit(d);
+  vec3 gH = glassHit(uEye, d);
   float tG = max(gH.x, 0.0);
-  vec3 E = vec3(EX, EY + uBob.y, uS);
+  vec3 E = vec3(EX + uEye.x, EY + uEye.y + uBob.y, uS - uEye.z);
   vec3 D = vec3(dw.x, dw.y, -dw.z);
   float t;
   vec3 col = background(E, D, t);
@@ -1126,7 +1140,14 @@ void main() {
   // The air knife throws a fine spray up off the glass.
   if (uSpray.w > 0.0) col += uArchC[8] * 0.12 * high * ppRain(uv, asp, uTime * 1.4, uSpray.w * 0.5, vec2(0.0, 1.0), nl);
   // Damp air hazes the far tunnel in its own light.
-  col += zoneCol(uS + 4.0) * 0.012 * (1.0 - exp(-t * 0.12)) * step(uS, TL);
+  col += zoneCol(uS + 4.0) * 0.02 * (1.0 - exp(-t * 0.12)) * step(uS, TL);
+  // Mist glows where a ray passes close under a lamp.
+  for (int k = 0; k < 9; k++) {
+    vec3 Lp = vec3(0.0, 2.75, AK[k]) - E;
+    float tl = clamp(dot(Lp, D), 0.0, t);
+    vec3 off = Lp - D * tl;
+    col += uArchC[k] * 0.035 * exp(-dot(off, off) * 1.6) * step(uS, TL + 2.0);
+  }
   outC = vec4(col, clamp(depth, 0.3, 80.0));
 }`;
 
@@ -1175,13 +1196,16 @@ uniform vec3 uDash;
 uniform vec3 uAmb;
 // The key light's direction on the glass, for glints; the car's place, for the sliding highlight.
 uniform vec2 uGlint;
+// The camera: the eye in the car's frame, and its turn.
+uniform vec3 uEye;
+uniform mat3 uRot;
 uniform float uCarS;
 ${CONSTS}
 ${NOISE}
 ${GLASS_GL}
 ${GLASS_RAIN}
 ${WET_GLASS}
-vec2 toScreen(vec3 P) { return vec2(0.5 + P.x / -P.z * uF / uAsp, uHZ + P.y / -P.z * uF); }
+vec2 toScreen(vec3 P) { vec3 Q = transpose(uRot) * (P - uEye); return vec2(0.5 + Q.x / -Q.z * uF / uAsp, uHZ + Q.y / -Q.z * uF); }
 // Foam cells: distance to the nearest cell wall, distance to the cell's middle, and its hash.
 vec3 cells(vec2 p, out vec2 rel) {
   vec2 n = floor(p), f = fract(p);
@@ -1204,10 +1228,10 @@ vec3 dyeOf(float h) {
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 d = normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
-  vec3 H = glassHit(d);
+  vec3 d = uRot * normalize(vec3((uv.x - 0.5) * uAsp, uv.y - uHZ, -uF));
+  vec3 H = glassHit(uEye, d);
   vec2 g = H.yz;
-  vec3 P = d * max(H.x, 0.05);
+  vec3 P = uEye + d * max(H.x, 0.05);
   // Screen motion per metre of glass, across and up the rake: the glass's own perspective.
   mat2 J = mat2(toScreen(P + vec3(0.003, 0.0, 0.0)) - uv, toScreen(P + GR * 0.003) - uv) / 0.003;
   vec2 su = (g - GM.xy) / GM.zw;
@@ -1291,9 +1315,12 @@ void main() {
     vec3 tint = mix(vec3(1.0), dyeOf(s0.a), 0.72);
     // The body: slopes that face the floods read light, the others shade.
     float relief = clamp(-dot(fg, vec2(0.25, 1.0)) * 4.0, -0.45, 0.45);
-    // Each bubble is a small dome: bright inside, darker at its wall.
-    float dome = (1.0 - 0.3 * smoothstep(0.1, 0.62, cm.y)) * (1.0 - 0.15 * smoothstep(0.1, 0.62, cf.y));
-    float face = (0.86 + 0.24 * cm.z) * dome * (1.0 - 0.2 * wallM * solid) * (1.0 - 0.08 * wallF * solid);
+    // Deep lather is soft froth in clumps; bubbles stand out only where it thins.
+    float clump = cwFbm(mq * 7.0 + 4.0);
+    float distinct = clamp(1.0 - 0.85 * smoothstep(0.45, 1.3, th) * (0.4 + 0.9 * clump), 0.1, 1.0);
+    float dome = (1.0 - 0.3 * distinct * smoothstep(0.1, 0.62, cm.y)) * (1.0 - 0.15 * distinct * smoothstep(0.1, 0.62, cf.y));
+    float face = (0.86 + 0.24 * cm.z * distinct) * dome * (1.0 - 0.2 * distinct * wallM * solid) * (1.0 - 0.08 * distinct * wallF * solid);
+    face *= 0.9 + 0.2 * clump;
     // Thin foam lets light through brightly; deep foam scatters it and reads darker inside.
     vec3 glow = Lf * tint * face * (1.0 + relief) * (1.25 - 0.55 * smoothstep(0.4, 1.8, th));
     // Where thick foam ends it rounds over: a bright lip that light passes through.
@@ -1316,7 +1343,7 @@ void main() {
       }
     }
     // Small glints on the medium bubbles turn as the lights pass over the car.
-    glow += vec3(1.0, 0.96, 0.9) * 0.35 * exp(-dot(-rm - uGlint * 0.3, -rm - uGlint * 0.3) * 90.0) * (1.0 - wallM) * solid;
+    glow += vec3(1.0, 0.96, 0.9) * 0.35 * exp(-dot(-rm - uGlint * 0.3, -rm - uGlint * 0.3) * 90.0) * (1.0 - wallM) * solid * distinct;
     float T = exp(-(0.3 + 1.7 * th));
     vec3 lather = mix(col, far, 0.6) * T + glow;
     // As it thins, lather turns to a soap film that shimmers, then to clear wet glass.
@@ -1351,8 +1378,8 @@ void main() {
   float topD = GLEN - g.y;
   col *= mix(vec3(1.0), vec3(0.55, 0.72, 0.8), smoothstep(0.2, 0.07, topD) * 0.55);
   vec2 fp = fract(g * vec2(170.0, 170.0)) - 0.5;
-  float frit = max(step(topD, 0.025), step(length(fp), mix(0.55, 0.0, smoothstep(0.025, 0.07, topD))));
-  col = mix(col, vec3(0.0025) + room * 0.02, frit * step(0.0, topD) * smoothstep(0.08, 0.065, topD));
+  float frit = max(step(topD, 0.022), step(length(fp), mix(0.45, 0.0, smoothstep(0.022, 0.055, topD))));
+  col = mix(col, vec3(0.0025) + room * 0.02, frit * step(0.0, topD) * smoothstep(0.06, 0.045, topD) * mix(1.0, 0.55, step(0.022, topD)));
   float aa = max(fwidth(g.y), 1e-4);
   // The rear-view mirror hangs from the header in the middle of the car.
   vec2 mq0 = vec2(abs(g.x), g.y - GLEN + 0.085);
@@ -1485,10 +1512,13 @@ const PAL = {
 };
 const scale = (c, k) => c.map(x => x * k);
 // Each arch's light bar: soak, foam, mitters, wrap, top, rinse, wax, spot, blower.
-const ARCH_C = [PAL.cya, PAL.mag, PAL.vio, mix3(PAL.wht, PAL.amb, 0.45), mix3(PAL.wht, PAL.amb, 0.45), PAL.cya, PAL.mag, PAL.wht, PAL.amb];
-const ARCH_K = [1, 1.2, 0.9, 1.4, 1.6, 1, 1.1, 0.8, 1.2];
+// Cool white LED battens on the gantries; warm work lamps at the brushes and the dryer.
+const BATTEN = linFit(0.93, 0.025, 235), WORK = linFit(0.82, 0.11, 70);
+const ARCH_C = [BATTEN, BATTEN, BATTEN, WORK, WORK, BATTEN, BATTEN, BATTEN, WORK];
+const ARCH_K = [0.9, 1.0, 0.8, 1.2, 1.4, 1.0, 0.9, 0.8, 1.1];
 const archU = new Float32Array(27);
-const zoneU = new Float32Array([...PAL.cya, ...PAL.mag, ...PAL.amb, ...PAL.vio, ...mix3(PAL.amb, PAL.wht, 0.5)]);
+// The tunnel's own fill: no coloured strips, only a dim neutral wash.
+const zoneU = new Float32Array([...BATTEN, ...BATTEN, ...WORK, ...BATTEN, ...WORK].map(x => x * 0.6));
 const dyeU = new Float32Array([...linFit(0.7, 0.24, 350), ...linFit(0.82, 0.13, 215), ...linFit(0.84, 0.15, 75)]);
 function mix3(a, b, k) { return a.map((v, i) => v + (b[i] - v) * k); }
 let paint = linFit(...PAINTS.black), gloss = 1;
@@ -1506,8 +1536,16 @@ function lens() {
   asp = canvas.width / Math.max(1, canvas.height);
   const tall = smooth(1.3, 0.7, asp);
   const lo = mix(18.5, 18, tall) * D2R, hi = mix(20, 21, tall) * D2R;
-  F = 1 / (Math.tan(hi) + Math.tan(lo));
-  HZ = Math.tan(lo) * F;
+  F = 1 / (Math.tan(hi) + Math.tan(lo)) / val('fov', 1);
+  HZ = Math.tan(lo) * F * val('fov', 1);
+}
+// The camera from the Dev rows: the eye in the car's frame, and a turn, pitch then yaw.
+const cam = { eye: new Float32Array(3), rot: new Float32Array(9) };
+function camera() {
+  cam.eye.set([val('eyeX', 0), val('eyeY', 0), val('eyeZ', 0)]);
+  const p = val('pitch', 0) * D2R, y = val('yaw', 0) * D2R, cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y);
+  // Column-major: yaw about y after pitch about x.
+  cam.rot.set([cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
 }
 // How far up the rake a plane u metres ahead cuts the glass: -1 short of it, 3 past it.
 function ghLine(u) {
@@ -1572,12 +1610,7 @@ function bokehAt(s) {
 }
 // The wall strips' colour along the tunnel, as the scene shader has it.
 function zoneAt(a) {
-  let c = PAL.cya;
-  c = mix3(c, PAL.mag, smooth(1.9, 3.2, a));
-  c = mix3(c, PAL.amb, smooth(6.6, 8.2, a));
-  c = mix3(c, PAL.cya, smooth(10.9, 11.9, a));
-  c = mix3(c, PAL.vio, smooth(13.2, 14.0, a));
-  return mix3(c, mix3(PAL.amb, PAL.wht, 0.5), smooth(15.9, 16.8, a));
+  return mix3(BATTEN, WORK, smooth(6.6, 8.2, a) * smooth(11.9, 10.9, a) + smooth(15.9, 16.8, a)).map(x => x * 0.6);
 }
 // The glass motion: runs fall at rest; the blower turns them up the glass.
 const motion = { flow: 0, m: [0, -1], wind: 0, sheetT: 0, shift: 0 };
@@ -1793,6 +1826,8 @@ function draw() {
   gl.uniform1f(u('uAsp'), asp); gl.uniform1f(u('uPix'), 1 / (F * H)); gl.uniform1f(u('uRun'), car.mode === 'rolling' ? 1 : 0);
   gl.uniform1f(u('uLevel'), D.level); gl.uniform1f(u('uAirN'), precipDetail(D.level).rain);
   gl.uniform2f(u('uBob'), bob.p, bob.h);
+  camera();
+  gl.uniform3fv(u('uEye'), cam.eye); gl.uniformMatrix3fv(u('uRot'), false, cam.rot);
   gl.uniform4fv(u('uTop'), U.top); gl.uniform4fv(u('uWrap'), U.wrapU); gl.uniform4fv(u('uMit'), U.mitS);
   gl.uniform4fv(u('uBlow'), U.blow); gl.uniform4fv(u('uSpray'), U.spray);
   gl.uniform4fv(u('uOn'), U.on); gl.uniform1f(u('uOnSpot'), U.onSpot);
@@ -1849,6 +1884,7 @@ function draw() {
   gl.uniform3f(u('uDash'), 0.004, 0.0035, 0.004);
   gl.uniform3fv(u('uAmb'), U.amb);
   gl.uniform2fv(u('uGlint'), U.glint); gl.uniform1f(u('uCarS'), car.s);
+  gl.uniform3fv(u('uEye'), cam.eye); gl.uniformMatrix3fv(u('uRot'), false, cam.rot);
   run(paneP, rtPane);
   // A soft knee picks the glow at half size; glow.js spreads it, with no threshold of its own.
   gl.useProgram(kneeP);
@@ -1856,7 +1892,7 @@ function draw() {
   bindTex(0, rtPane.tex);
   gl.uniform1i(u('tSrc'), 0);
   gl.uniform2f(u('uTx'), 1 / W, 1 / H); gl.uniform2f(u('uDst'), rtKnee.w, rtKnee.h);
-  gl.uniform1f(u('uThr'), 1.1); gl.uniform1f(u('uKnee'), 0.6);
+  gl.uniform1f(u('uThr'), 1.7); gl.uniform1f(u('uKnee'), 0.5);
   run(kneeP, rtKnee);
   const glow = bloom.render(rtKnee.tex, rtKnee.w, rtKnee.h, { threshold: 0, levels: glowDetail(D.level).levels });
   gl.useProgram(finalP);
@@ -1865,7 +1901,7 @@ function draw() {
   gl.uniform1i(u('tPane'), 0); gl.uniform1i(u('tBloom'), 1);
   gl.uniform2f(u('uRes'), W, H);
   gl.uniform3f(u('uTint'), 0.0006, 0.0005, 0.0011);
-  gl.uniform1f(u('uBloomK'), val('bloom', 0.4)); gl.uniform1f(u('uVig'), 0.55); gl.uniform1f(u('uGrain'), val('grain', 0.04));
+  gl.uniform1f(u('uBloomK'), val('bloom', 0.3)); gl.uniform1f(u('uVig'), 0.55); gl.uniform1f(u('uGrain'), val('grain', 0.04));
   gl.uniform1f(u('uSeed'), seed); gl.uniform1f(u('uExpo'), val('expo', 1.1)); gl.uniform1f(u('uFade'), fade);
   gl.bindVertexArray(vao);
   run(finalP, null, W, H);
@@ -2142,6 +2178,12 @@ act.go = go;
 act.jump = k => { jumpTo(STOPS[k]); stillFor = 0; wake(); };
 act.reset = () => { fading = null; fade = 1; toEntry(); stages(0); draw(); };
 act.paint = v => { paint = linFit(...PAINTS[v]); gloss = v === 'pearl' ? 0.7 : 1; draw(); };
+// A camera row moves the view at once; Reset puts every camera row back.
+act.view = () => { lens(); draw(); };
+act.viewReset = () => {
+  for (const [id, v] of [['eyeY', 0], ['eyeX', 0], ['eyeZ', 0], ['pitch', 0], ['yaw', 0], ['fov', 1]]) ui.setting(id)?.set(v);
+  act.view();
+};
 // With motion reduced, a wipe clears its fan in one step and the blades rest again.
 function instantWipe() {
   wip.prev = PARK; wip.a = TOPA;
@@ -2167,11 +2209,12 @@ let ptr = null;
 const paneAt = e => {
   const r = stage.getBoundingClientRect();
   const u = (e.clientX - r.left) / r.width, v = 1 - (e.clientY - r.top) / r.height;
-  const d = [(u - 0.5) * asp, v - HZ, -F];
-  const dn = d[1] * WS.ru - d[2] * WS.ry, c = WS.cy * WS.ru + WS.cu * WS.ry;
+  const s0 = [(u - 0.5) * asp, v - HZ, -F], R = cam.rot, o = cam.eye;
+  const d = [0, 1, 2].map(i => R[i] * s0[0] + R[3 + i] * s0[1] + R[6 + i] * s0[2]);
+  const dn = d[1] * WS.ru - d[2] * WS.ry, c = (WS.cy - o[1]) * WS.ru + (WS.cu + o[2]) * WS.ry;
   if (dn <= 1e-4) return [0, 0];
-  const t = c / dn;
-  return [d[0] * t - 0.36, (d[1] * t - WS.cy) * WS.ry + (d[2] * t + WS.cu) * WS.ru];
+  const t = c / dn, P = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+  return [P[0] - 0.36, (P[1] - WS.cy) * WS.ry + (P[2] + WS.cu) * WS.ru];
 };
 // The blade angle that points at glass point p, round the driver's pivot.
 const angleAt = p => clamp(Math.atan2(p[1] - 0.012, p[0] + 0.4), PARK, TOPA);

@@ -32,7 +32,7 @@ Bar: v2.
 | Bottom right (slider) | None |
 | Key strip | `[CLICK] go`, `[DRAG] sweep the wipers`, `[W] wipers` |
 | Settings | Paint (Black, Cherry, Pearl, Teal), site Quality, Reset |
-| Dev (`?dev`) | Jump (to a station), Pace (1 to 8), Exposure, Bloom, Grain |
+| Dev (`?dev`) | Jump (to a station), Pace (1 to 8), camera: Eye height (-0.12 to 0.1 m), Eye side (-0.15 to 0.4 m), Seat distance (-0.18 to 0.25 m), Pitch (-10 to 10 deg), Yaw (-20 to 20 deg), Field of view (0.75 to 1.4), View Reset; Exposure, Bloom, Grain |
 <!-- /gen:bar -->
 
 | Gesture | Does |
@@ -138,6 +138,12 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 ## Tests and QA
 
 None in `tests/`. Checked on 2026-11-15 in a probe tab (stills from the live shaders): every station at 1280 x 720, 375 x 812 and 812 x 375; the bar's corners do not overlap; no sideways scroll; sound levels measured per station with an analyser. Not checked: the look in motion at full speed with the pane in front, and sound by ear.
+
+## Setting (Tom, 2026-11-16)
+
+A shady car wash somewhere in the Nevada desert, open all night, owner unknown; now and then something strange happens on a run.
+Built so far: practical light only (cool white battens, warm work lamps at the brushes and dryer, the entry signal), plain lit sign boxes, galvanised steel, hazard paint, lamp mist; the camera Dev rows.
+Not built yet: the desert outside (road, sodium lamp, block building, stars, mountains), the OPEN 24 HRS sign, worn interior (flicker, rust), the Strange setting row and its events, the desert sound beds, the new vignette text.
 
 ## Known issues
 
