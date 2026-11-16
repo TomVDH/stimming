@@ -180,7 +180,7 @@ None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live sha
 
 ## Known issues
 
-- The stored Dev values in the shared browser profile (bloom 1.07, grain 0.12, eye at its lowest and farthest back) change the look a lot from the defaults. `stimming-auj3`
+- Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height, seat distance and grain sit at the end of their ranges. The stills above predate this change. `stimming-auj3`
 - The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9.
 

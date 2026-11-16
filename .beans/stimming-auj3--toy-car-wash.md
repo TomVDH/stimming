@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:43:25Z
-updated_at: 2026-11-16T07:37:11Z
+updated_at: 2026-11-16T08:57:03Z
 ---
 
 Idea 234 (Group C, cinematic dioramas): "Seen from the seat: foam, brushes, water curtain, coloured light."
@@ -107,3 +107,7 @@ Tom: "Let's make this a shady car wash somewhere in the nevada desert -- no one 
 - [x] Handoff: accent and menu icon
 
 Pass five summary: the toy opens on an establishing shot of a 1950s desert car wash at night and waits for one action, Proceed. The wash then runs by itself and rolls out into the desert. Eleven strange moments, at most one per run (30 % on Sometimes), each with its own sound cue. Handoff files hold a new accent and a pylon icon. Not checked by ear or in motion with the pane in front.
+
+## Defaults from Tom's Dev values (2026-11-16)
+
+Tom said yes to making the view he tuned under `?dev` the default. The page now holds them as `VIEW` and `LOOK`: eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. View Reset returns to these.

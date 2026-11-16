@@ -113,6 +113,9 @@ const PAINTS = {
 const STRANGE = [['lights', 'Lights out'], ['hand', 'Hand'], ['figure', 'Someone'], ['climb', 'Foam climbs'], ['mirror', 'Headlights'], ['extra', 'Extra station'], ['taps', 'Two taps'], ['snow', 'Snow'], ['noon', 'Noon'], ['hills', 'Lights on the hills'], ['loop', 'Exit is entrance']];
 // The handlers bind once the GL state exists.
 const act = { proceed() {}, force() {}, reset() {}, jump() {}, paint() {}, view() {}, viewReset() {}, shotReset() {} };
+// Tom's own framing and grade from the Dev sheet (2026-11-16) are the defaults.
+const VIEW = { eyeY: -0.12, eyeX: -0.01, eyeZ: 0.25, pitch: -0.5, yaw: 0, fov: 1 };
+const LOOK = { expo: 1.12, bloom: 1.07, grain: 0.12 };
 const camRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.view() });
 const ui = initPage({ id: 'carwash', bar: {
   // One action: the establishing shot waits for it.
@@ -137,12 +140,12 @@ const ui = initPage({ id: 'carwash', bar: {
     { type: 'choice', id: 'force', label: 'Strange next', value: 'random', display: 'stepper',
       options: [{ value: 'random', label: 'Random' }, { value: 'none', label: 'None' }, ...STRANGE.map(([value, label]) => ({ value, label }))], onPick: v => act.force(v) },
     // The driver's seat: the eye's place in the cabin, where it looks, and how wide.
-    camRow('eyeY', 'Eye height', -0.12, 0.1, 0.005, 0),
-    camRow('eyeX', 'Eye side', -0.15, 0.4, 0.005, 0),
-    camRow('eyeZ', 'Seat distance', -0.18, 0.25, 0.005, 0),
-    camRow('pitch', 'Pitch', -10, 10, 0.5, 0),
-    camRow('yaw', 'Yaw', -20, 20, 0.5, 0),
-    camRow('fov', 'Field of view', 0.75, 1.4, 0.01, 1),
+    camRow('eyeY', 'Eye height', -0.12, 0.1, 0.005, VIEW.eyeY),
+    camRow('eyeX', 'Eye side', -0.15, 0.4, 0.005, VIEW.eyeX),
+    camRow('eyeZ', 'Seat distance', -0.18, 0.25, 0.005, VIEW.eyeZ),
+    camRow('pitch', 'Pitch', -10, 10, 0.5, VIEW.pitch),
+    camRow('yaw', 'Yaw', -20, 20, 0.5, VIEW.yaw),
+    camRow('fov', 'Field of view', 0.75, 1.4, 0.01, VIEW.fov),
     { type: 'button', id: 'viewReset', label: 'View', text: 'Reset', onClick: () => act.viewReset() },
     // The establishing shot: the camera's place on the lot, its aim and its width.
     camRow('shotX', 'Shot side', -10, 10, 0.1, 0),
@@ -152,9 +155,9 @@ const ui = initPage({ id: 'carwash', bar: {
     camRow('shotYaw', 'Shot yaw', -40, 40, 0.5, 0),
     camRow('shotFov', 'Shot width', 0.5, 1.6, 0.01, 1),
     { type: 'button', id: 'shotReset', label: 'Shot', text: 'Reset', onClick: () => act.shotReset() },
-    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.5, max: 3, step: 0.01, value: 1.1, persist: true },
-    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.3, persist: true },
-    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 0.12, step: 0.005, value: 0.04, persist: true },
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.5, max: 3, step: 0.01, value: LOOK.expo, persist: true },
+    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: LOOK.bloom, persist: true },
+    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 0.12, step: 0.005, value: LOOK.grain, persist: true },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -2368,14 +2371,14 @@ function lens() {
   asp = canvas.width / Math.max(1, canvas.height);
   const tall = smooth(1.3, 0.7, asp);
   const lo = mix(18.5, 18, tall) * D2R, hi = mix(20, 21, tall) * D2R;
-  F = 1 / (Math.tan(hi) + Math.tan(lo)) / val('fov', 1);
-  HZ = Math.tan(lo) * F * val('fov', 1);
+  F = 1 / (Math.tan(hi) + Math.tan(lo)) / val('fov', VIEW.fov);
+  HZ = Math.tan(lo) * F * val('fov', VIEW.fov);
 }
 // The camera from the Dev rows: the eye in the car's frame, and a turn, pitch then yaw.
 const cam = { eye: new Float32Array(3), rot: new Float32Array(9) };
 function camera() {
-  cam.eye.set([val('eyeX', 0), val('eyeY', 0), val('eyeZ', 0)]);
-  const p = val('pitch', 0) * D2R, y = val('yaw', 0) * D2R, cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y);
+  cam.eye.set([val('eyeX', VIEW.eyeX), val('eyeY', VIEW.eyeY), val('eyeZ', VIEW.eyeZ)]);
+  const p = val('pitch', VIEW.pitch) * D2R, y = val('yaw', VIEW.yaw) * D2R, cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y);
   // Column-major: yaw about y after pitch about x.
   cam.rot.set([cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
 }
@@ -2937,8 +2940,8 @@ function draw() {
   gl.uniform1i(u('tPane'), 0); gl.uniform1i(u('tBloom'), 1);
   gl.uniform2f(u('uRes'), W, H);
   gl.uniform3f(u('uTint'), 0.0006, 0.0005, 0.0011);
-  gl.uniform1f(u('uBloomK'), val('bloom', 0.3)); gl.uniform1f(u('uVig'), 0.55); gl.uniform1f(u('uGrain'), val('grain', 0.04));
-  gl.uniform1f(u('uSeed'), seed); gl.uniform1f(u('uExpo'), val('expo', 1.1)); gl.uniform1f(u('uFade'), fade);
+  gl.uniform1f(u('uBloomK'), val('bloom', LOOK.bloom)); gl.uniform1f(u('uVig'), 0.55); gl.uniform1f(u('uGrain'), val('grain', LOOK.grain));
+  gl.uniform1f(u('uSeed'), seed); gl.uniform1f(u('uExpo'), val('expo', LOOK.expo)); gl.uniform1f(u('uFade'), fade);
   gl.bindVertexArray(vao);
   run(finalP, null, W, H);
 }
@@ -3377,7 +3380,7 @@ act.paint = v => { paint = linFit(...PAINTS[v]); gloss = v === 'pearl' ? 0.7 : 1
 // A camera row moves the view at once; each Reset puts its camera's rows back.
 act.view = () => { lens(); draw(); };
 const resetRows = rows => { for (const [id, v] of rows) ui.setting(id)?.set(v); act.view(); };
-act.viewReset = () => resetRows([['eyeY', 0], ['eyeX', 0], ['eyeZ', 0], ['pitch', 0], ['yaw', 0], ['fov', 1]]);
+act.viewReset = () => resetRows(Object.entries(VIEW));
 act.shotReset = () => resetRows([['shotX', 0], ['shotY', 0], ['shotZ', 0], ['shotPitch', 0], ['shotYaw', 0], ['shotFov', 1]]);
 // With motion reduced, a wipe clears its fan in one step and the blades rest again.
 function instantWipe() {
