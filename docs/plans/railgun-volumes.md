@@ -97,3 +97,48 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | **Shock rings** | `makeRing()` | Thin discs of compressed air. |
 | **Ion line** | `ionMat` | The bolt's path stays in the sky. |
 | **Arcs** | `arcMat` | Lightning over the barrel during the charge. |
+
+## Added since the first pass (2026-11-16, bean `stimming-z267`)
+
+Tom asked for every volume and glow by name. These came in after the inventory frames were taken.
+
+### Rock glows
+
+| Name | Code | Notes |
+|---|---|---|
+| **Fire globe** | `rockFill()`, `uFill` | The nearing rock wraps the sky round it in fire: a hot core, an orange globe, a soft halo. From halfway down; full near the ground; each split swells it (`fillPopT`). |
+| **Fire light** | `uFill` in `STORM_FS` and the card cloud shader | The globe lights the Storm volumes and the cards, warm, strongest toward the rock. |
+| **Rock globe** | `rockGlobe` | A glow card round the rock in the strike. |
+| **Bow halo** | `haloMat` | The wide glow ahead of the Bow shock. |
+| **Hit flare** | `hitFlare`, `hitGlow` | The flash and glow at the hit. |
+| **Ember pools** | `uPool` in the ground shader | Hot spots on the plain where Debris lands; they cool in about 20 s. |
+
+### Far guns and distant events (the ambient section, session `railgun-ambient`)
+
+| Name | Code | Notes |
+|---|---|---|
+| **Far rounds** | `kind: 'bolt'`, `farAt()`, `farBand()`, `FAR_WARM` | Other railguns fire from between the ranges and miss: the main shot's ribbon, Ion line and contrail puffs at lower detail, in their launch's distance band, lighting the clouds warm. Off unless `?dev` (Tom). |
+| **Horizon war** | `kind: 'war'`, a free `IMP_U.uImp` slot | Flashes past the ranges on the horizon and the cloud bases; a late rumble. |
+| **Late landings** | `kind: 'land'`, `ambFall` (a Meteor), `domeVols` | Chunks fall far out minutes after a kill: a streak, a flash, a Dust dome. |
+| **Embers** | `kind: 'embers'`, `ambEmbers`, Dust puffs | Red points where pieces lie after a kill, each under a thread of smoke. |
+| **Satellite** | `kind: 'sat'`, `ambSat` | A point of sunlight crossing a dark sky; dims behind the Smoke trail. |
+| **Orbital flak** | `kind: 'flak'`, `ambFlak` | Pinprick pops in one patch of night sky. |
+| **Rock shed** | `kind: 'shed'`, `ambShed`, `ambShedTail` | A hot lump peels off the falling rock. |
+| **Meteor** | `makeMeteor()`, `meteor()` | The streak shape: a round hot head and a tapering, cooling tail. Shooting stars use it and are off (Tom). |
+
+### Near the gun
+
+| Name | Code | Notes |
+|---|---|---|
+| **Field motes** | `moteMat` | Dust that falls into orbit round the barrel during the charge. |
+| **Contrail puffs** | `ionPuffs` | The puffs along the Ion line; Far rounds have their own. |
+| **Lens dirt** | the grade pass | Smudges and specks that light up in bright bloom. |
+
+### Gone, on Tom's word
+
+Re-entry rain, the ambient dust devil, the air specks, and the ember sprays off the rock, its splits and its fragments.
+
+### Corrections to the tables above
+
+- **Giants**: `GIANTS` holds one storm today, 225 km out; the sky session is rebuilding the storms from Window Seat.
+- **Hail ribbons** (`hailRibs`, the hail section) now run behind the pieces that land in front of and behind the ranges.
