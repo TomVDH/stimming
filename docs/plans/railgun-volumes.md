@@ -172,3 +172,19 @@ Lightning inside the storms takes Window seat's `FLASH_C` (a cold, slightly viol
 | **Sun rays** | `shaftGain` | Cloud and trail shadows in the low air. |
 
 `aerialFrom()`, `aerialT()`, `aerialIn()`, `cirrusAir()` and the ambient section's `ambT()` all read `uAirK`, so one knob moves every far thing at once.
+
+## Ray-marched clouds: the names
+
+Only one family of sky cloud is ray-marched: the **Storm volumes** (`STORM_FS`, `railgun/storms.js`). Every other sky cloud is painted flat (Deck, Cirrus) or drawn on a card (Heaps, Mids).
+
+| Name | Form | Where today |
+|---|---|---|
+| **Storm tower** | 1 | Right of the gun, 85 km |
+| **Towering cumulus** | 2 | Right of centre, 135 km |
+| **Squall line** | 3 | Behind the gun, 95 km, the long anvil |
+| **Dying storm** | 4 | Not placed; the lab can add one |
+| **Supercell** (the Giant) | 5 | Left, 200 km |
+
+Other ray-marched volumes are not sky clouds: the **Smoke trail** and **Debris trails** (trains), and the blast volumes (**Fireball**, **Muzzle flash**, **Shot dust**, **Charge dust**).
+
+Storm look knobs: Billows, Ragged, Anvil reach, Density (`STORM_K`) and **Storm softness** (`STORM_SOFT`, Dev row and lab).

@@ -19,6 +19,8 @@ export const FORMS = ['', 'Storm tower', 'Towering cumulus', 'Squall line', 'Dyi
 export const GIANT_RANGE = 180000;
 // The look knobs: billow size, ragged edges, anvil reach, body density.
 export const STORM_K = [1, 1, 1, 1];
+// Softness: 1 is crisp, 2 to 3 is fuzzy, as far storms read through the air.
+export const STORM_SOFT = 2.2;
 
 // The baked noise: R Perlin-Worley, G fine Worley, B Worley; it tiles.
 // volAt returns one texel of the volume at p in [0, 1]^3.
@@ -54,7 +56,7 @@ vec4 volAt(vec3 p) {
 }`;
 
 // The storm's shape and density, in storm units: a fourteenth of its height.
-// The host declares: sampler3D uVol, float uCloudC, vec4 uStormK.
+// The host declares: sampler3D uVol, float uCloudC, vec4 uStormK, float uStormSoft.
 export const STORM_GLSL = /* glsl */`
 float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
 float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
@@ -182,9 +184,12 @@ float rainAt(vec3 p) {
   // The curtain thins near the ground and fades at the base's edge.
   return sRain * 0.35 * core * smoothstep(0.42, 0.7, str) * smoothstep(sGround, sGround + 1.5, p.y) * smoothstep(0.4, 0.0, p.y);
 }
+// The last fine sample's shape depth, billow size and billowed depth, for the sky light.
+float gSh, gA, gFb;
 // gap: how far outside the billowed shell p lies, for empty-space skipping.
 float dens(vec3 p, bool fine, out float gap) {
   float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw) * sAmp;
+  gSh = sh; gA = A; gFb = sh;
   gap = -sh - A * 1.1 - 0.5 - sRag * A * 0.4;
   // Under the base the march walks through the rain at a steady stride.
   if (p.y < 0.4 && p.y > sGround) { float rn = rainAt(p); gap = min(gap, 0.0); if (gap < 0.0 && sh < -A * 1.1) return rn * uStormK.w; }
@@ -195,9 +200,12 @@ float dens(vec3 p, bool fine, out float gap) {
     vec3 r = vec3(p.x * 0.6 + p.z * 0.8, p.y * 1.4 - uCloudC * 0.01, p.z * 0.6 - p.x * 0.8) - sSeed * 0.21;
     v -= sRag * A * 0.9 * texture(uVol, r / (sTile * 0.18)).g * (1.0 - smoothstep(0.0, A * 1.5, v));
   }
-  // A wide ramp feathers the outer billows into the sky.
-  return smoothstep(0.0, 0.6, v) * uStormK.w;
+  gFb = v;
+  // A wide ramp feathers the outer billows into the sky; Softness widens it.
+  return smoothstep(0.0, 0.6 * uStormSoft, v) * uStormK.w;
 }
+// The bare shape toward the light, smooth: Window seat's far light tap.
+float shapeTap(vec3 p) { float aw; return smoothstep(-0.3, 0.6, shape(p, aw)); }
 float densL(vec3 p) { float g; return dens(p, false, g); }
 // The storm's reach from its centre, in storm units, for the bounding cylinder.
 float stormReach() { return max(sLen + sR2, sRc * 2.4 + sLine) + (sShelf > 0.0 ? sRc * 2.4 : 0.0) + 2.0; }
@@ -207,57 +215,73 @@ void setGround(float base, float H) { sGround = -base / (H / 14.0); }`;
 // The march through one storm; the host supplies the light.
 // The host defines, before this chunk:
 //   vec3 stormSun(vec3 P)  the sunlight at world point P;
-//   vec3 stormSky(float h) the sky light at height share h;
+//   vec3 stormSky(float h) the sky light at height share h (Window seat's dome);
+//   vec3 stormTwi() the sky's glow on the sun's side, low down;
 //   vec3 stormFlash(vec3 P) the in-cloud lightning at P, in Window seat's FLASH_C;
 //   vec3 stormExtra(vec3 P, float powder, float Tl2) any other light, such as the rock's fire;
 //   vec3 Ls, the key light's direction; float uStars, 0 day to 1 night.
 // It returns the colour and, in alpha, the cover; Phit is the first cloud.
 // Flash holds the lightning apart: the host adds it after the air, as Window seat does.
 export const STORM_MARCH = /* glsl */`
+// Two Henyey-Greenstein lobes, as Window seat's: a strong forward one, a soft back one.
+float stormHg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
+float stormPhase(float mu) { return mix(stormHg(mu, 0.72), stormHg(mu, -0.2), 0.35); }
+// The light follows Window seat's storm towers, step for step.
 vec4 marchStorm(vec3 ro, vec3 rd, vec3 C, float H, float t0, float t1, float jit, out vec3 Phit, out vec3 Flash) {
   float U = H / 14.0;
   // Steps: short inside the cloud, long leaps through the empty bound.
   float dt = (t1 - t0) / 48.0;
-  float mu = dot(rd, Ls);
-  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
-  // A low sun rakes the towers: lit faces glow, the far side goes deep.
-  float low = 1.0 - smoothstep(0.05, 0.4, Ls.y);
+  float mu = dot(rd, Ls), phase = stormPhase(mu);
+  // Far flashes punch through the haze, so distant storms still flicker.
+  float fBoost = 1.0 + clamp(t0 / 120000.0, 0.0, 1.5);
+  vec3 twi = stormTwi();
   vec3 col = vec3(0.0);
   Flash = vec3(0.0);
   float Tc = 1.0, t = t0 + dt * jit;
   Phit = C + vec3(0.0, 0.5 * H, 0.0);
   bool hit = false;
-  for (int i = 0; i < 64; i++) {
+  // Inside the cloud the stride shortens, so no slice bands show on flat anvils.
+  float di = min(dt, U * 0.45), si = di / U;
+  for (int i = 0; i < 96; i++) {
     if (t > t1) break;
     vec3 P = ro + rd * t;
     vec3 p = (P - C) / U;
     if (p.y > sTop + 3.0 && rd.y > 0.0) break;
     float gap, d = dens(p, true, gap);
     if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
+    float sh = gSh, A = gA, fb = gFb;
     if (!hit) { Phit = P; hit = true; }
-    // One tap toward the light gives the self shadow; a longer one darkens the far side.
-    float Tl = exp(-3.2 * densL(p + Ls * 1.2));
-    float Tl2 = exp(-1.6 * densL(p + Ls * 3.5));
     float h01 = clamp(p.y / sTop, 0.0, 1.0);
-    vec3 sunC = stormSun(P);
-    // Powder: thin edges facing the sun catch the most light.
-    float powder = 1.0 - exp(-4.0 * d);
-    // Light scattered many times fills the shaded side, so it never goes cold and flat.
-    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
-           + sunC * 0.32 * (0.35 + 0.65 * Tl2)
-           + stormSky(h01) * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
+    // Light toward the sun: a lumpy tap near, a smooth tap far.
+    float od = densL(p + Ls * 0.5) * 0.8 + shapeTap(p + Ls * 2.2) * 1.8;
+    // Beer's law for the direct beam; light scattered many times spreads evenly.
+    float Tl = exp(-3.0 * od), Tm = 0.3 * exp(-0.6 * od);
+    // Powder: thin edges that face away from the light stay dark.
+    float powder = mix(1.0, 1.0 - exp(-5.0 * d), 0.5 * (1.0 - max(mu, 0.0)));
+    vec3 S = stormSun(P) * (Tl * phase + Tm * 0.7) * powder;
+    // Sky light falls from above; folds and the base see little.
+    // Creases sit deep in the base shape; lump crowns stand out of it.
+    float crease = clamp(0.7 - 1.4 * sh / max(A, 0.1), 0.15, 1.2);
+    float open = exp(-0.45 * max(fb, 0.0)) * crease;
+    // A tap outward and up finds a lump in the way, so folds stay dim.
+    vec2 rad = normalize(p.xz - sAx * sLean * h01 * h01 + 1e-4);
+    open *= 1.0 - 0.75 * densL(p + vec3(rad.x * 0.4, 0.3, rad.y * 0.4));
+    float sky = (0.2 + 0.8 * h01) * (0.25 + 0.75 * open);
+    S += stormSky(h01) * 1.5 * sky;
+    // The glow round the sun lights the side that faces it.
+    S += twi * 0.3 * Tl * (0.3 + 0.25 * phase) * open;
     S *= mix(1.0, 0.45, uStars);
-    // The base is flat and dark: the whole storm stands between it and the sky.
-    // Rain under it is darker still, grey with little of the sky's hue.
-    S *= p.y < 0.0 ? 0.32 : mix(0.45, 1.0, smoothstep(0.0, 2.5, p.y));
-    S += stormExtra(P, powder, Tl2);
-    // Thick body: the column is opaque a few kilometres in.
-    float al = 1.0 - exp(-5.0 * d * dt / U);
+    // The base is flat and dark; rain under it is darker still.
+    S *= p.y < 0.0 ? 0.32 : mix(0.55, 1.0, smoothstep(0.0, 2.5, p.y));
+    S += stormExtra(P, 1.0 - exp(-5.0 * d), exp(-0.6 * od));
+    // A soft storm is thinner at its rim: the light seeps further in.
+    float al = 1.0 - exp(-7.0 * d * si / mix(1.0, uStormSoft, 0.5));
     col += Tc * S * al;
-    Flash += Tc * stormFlash(P) * (0.4 + 0.6 * d) * al;
+    // The flash is a soft ball of light inside the cloud, brightest deep in.
+    Flash += Tc * stormFlash(P) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost * al;
     Tc *= 1.0 - al;
     if (Tc < 0.03) break;
-    t += dt;
+    t += di * (0.75 + 0.5 * fract(jit + float(i) * 0.618));
   }
   float a = 1.0 - Tc;
   return vec4(a > 0.004 ? col / a : vec3(0.0), a);

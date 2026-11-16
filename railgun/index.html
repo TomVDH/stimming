@@ -89,7 +89,7 @@ import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, rangeUniforms, landValues, LAND_KEYS } from './ranges.js';
 // The storms: the table, the noise, the shapes and the march; the storm lab shares them.
-import { STORMS, GIANT_RANGE, STORM_K, VOL_NOISE, STORM_GLSL, STORM_MARCH } from './storms.js';
+import { STORMS, GIANT_RANGE, STORM_K, STORM_SOFT, VOL_NOISE, STORM_GLSL, STORM_MARCH } from './storms.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
@@ -215,6 +215,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // Flash now fires one lightning burst in a storm, for a test.
     { type: 'button', id: 'stormnow', group: 'Sky', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
     // Storm volumes: the towers and the giant as Window seat's marched volumes; off shows the flat cards.
+    // Storm softness: how fuzzy the storm volumes are, crisp at 1.
+    { type: 'slider', id: 'stormsoft', group: 'Sky', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
     { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: true, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
@@ -1994,7 +1996,7 @@ setFarMode(FAR_MODE === 'bake');
 // uCloudC: the clouds' own slow clock, in sim seconds.
 // uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uStormSoft: { value: STORM_SOFT }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -2348,6 +2350,7 @@ uniform float uCloudC;
 uniform vec4 uFl[4];
 uniform vec4 uFlR;
 uniform vec4 uStormK;
+uniform float uStormSoft;
 ${STORM_GLSL}
 // Lightning's colour inside cloud, as Window seat's.
 #define FLASH_C vec3(0.64, 0.72, 1.0)
@@ -2372,7 +2375,10 @@ vec3 stormSun(vec3 P) {
   return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
 }
 // Sky light comes mostly from the bright horizon, warm at dusk.
-vec3 stormSky(float h) { return mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h) + uCloudAmb * 0.5; }
+// Window seat's dome: the zenith, the sun-side glow and the far side, mixed.
+vec3 stormSky(float h) { return uZenC * 0.5 + uHorC * 0.5 + uCloudAmb * 0.5; }
+// The sky's glow low on the sun's side.
+vec3 stormTwi() { return k2skyB(normalize(vec3(uSunD.x, 0.06, uSunD.z)), 0.0); }
 // The rock's fire lights the storm: its glowing sky fills it warm,
 // and the side toward the rock glows when the rock is behind it.
 // Its own body shades that light, so the storm keeps its form.
@@ -12188,6 +12194,7 @@ U.uAir.value = 0.7 * ui.setting('airray').value;
 U.uHaze.value = 0.00013 * ui.setting('neardust').value; U.uHazeH.value = ui.setting('neardusth').value;
 setDeck(ui.setting('deck').value);
 setStormProbe(ui.setting('stormprobe').value);
+CLOUD_U.uStormSoft.value = ui.setting('stormsoft').value;
 stormFl.rate = ui.setting('stormfl').value;
 giants.visible = ui.setting('giants').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;

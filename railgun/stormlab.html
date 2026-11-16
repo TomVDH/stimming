@@ -63,6 +63,7 @@ canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; bo
     <div class="row"><span>Ragged</span><input id="k1" type="range" min="0" max="3" step="0.05"><output></output></div>
     <div class="row"><span>Anvil reach</span><input id="k2" type="range" min="0" max="2" step="0.05"><output></output></div>
     <div class="row"><span>Density</span><input id="k3" type="range" min="0.2" max="2" step="0.05"><output></output></div>
+    <div class="row"><span>Softness</span><input id="soft" type="range" min="1" max="4" step="0.05"><output></output></div>
   </section>
   <section>
     <h2>Storms</h2>
@@ -92,7 +93,7 @@ const STORE = 'stimming.stormlab';
 const $ = q => document.querySelector(q);
 
 /* ---------- state: the module's table, or edits kept in this browser ---------- */
-const fresh = () => ({ storms: S.STORMS.map(s => [...s]), k: [...S.STORM_K] });
+const fresh = () => ({ storms: S.STORMS.map(s => [...s]), k: [...S.STORM_K], soft: S.STORM_SOFT });
 let st = fresh();
 try { const j = JSON.parse(localStorage.getItem(STORE)); if (j && Array.isArray(j.storms)) st = j; } catch { /* storage off */ }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(st)); } catch { /* storage off */ } };
@@ -152,6 +153,7 @@ uniform vec2 uTan;
 uniform vec3 uEye, uSunD, uSunC, uZenC, uHorC, uGlowC, uCloudSun;
 uniform float uCloudAmb, uStars, uCloudC, uFarHaze, uExp;
 uniform vec4 uStormK;
+uniform float uStormSoft;
 uniform sampler3D uVol;
 uniform int uN;
 uniform vec4 uSt[${MAXS}], uSs[${MAXS}];
@@ -187,7 +189,10 @@ vec3 stormSun(vec3 P) {
   float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
   return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
 }
-vec3 stormSky(float h) { return mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h) + uCloudAmb * 0.5; }
+// Window seat's dome: the zenith, the sun-side glow and the far side, mixed.
+vec3 stormSky(float h) { return uZenC * 0.5 + uHorC * 0.5 + uCloudAmb * 0.5; }
+// The sky's glow low on the sun's side.
+vec3 stormTwi() { return skyB(normalize(vec3(uSunD.x, 0.06, uSunD.z))); }
 // The lab has no rock: no other light.
 vec3 stormExtra(vec3 P, float powder, float Tl2) { return vec3(0.0); }
 #define FLASH_C vec3(0.64, 0.72, 1.0)
@@ -321,6 +326,7 @@ function draw() {
   gl.uniform1f(u.uCloudAmb, pal.amb); gl.uniform1f(u.uStars, pal.stars); gl.uniform1f(u.uCloudC, clock);
   gl.uniform1f(u.uFarHaze, +$('#farhaze').value); gl.uniform1f(u.uExp, pal.exp);
   gl.uniform4fv(u.uStormK, st.k);
+  gl.uniform1f(u.uStormSoft, st.soft ?? S.STORM_SOFT);
   // Far storms first.
   const order = ps.map(q => ({ q, d: Math.hypot(q.C[0] - eye[0], q.C[2] - eye[2]) })).sort((a, b) => b.d - a.d).slice(0, MAXS);
   const sT = new Float32Array(MAXS * 4), sS = new Float32Array(MAXS * 4);
@@ -361,13 +367,15 @@ function refresh() {
     for (let k = 0; k < 5; k++) { const el = $('#s' + k); el.value = KM[k] ? s[k] / 1000 : s[k]; }
   }
   for (let k = 0; k < 4; k++) $('#k' + k).value = st.k[k];
+  $('#soft').value = st.soft ?? S.STORM_SOFT;
   document.querySelectorAll('.row').forEach(r => { const i = r.querySelector('input'), o = r.querySelector('output'); if (i && o) o.textContent = (+i.value).toFixed(i.step < 0.1 ? 2 : i.step < 1 ? 1 : 0); });
-  const same = JSON.stringify({ storms: st.storms, k: st.k }) === JSON.stringify(fresh());
+  const same = JSON.stringify({ storms: st.storms, k: st.k, soft: st.soft ?? S.STORM_SOFT }) === JSON.stringify(fresh());
   $('#source').textContent = same ? 'The table in storms.js.' : 'Your edits, kept in this browser. Copy config to keep them; Reset to start from storms.js.';
   loop();
 }
 for (let k = 0; k < 5; k++) $('#s' + k).addEventListener('input', e => { const s = st.storms[sel]; if (!s) return; s[k] = KM[k] ? Math.round(+e.target.value * 1000) : +e.target.value; save(); refresh(); });
 for (let k = 0; k < 4; k++) $('#k' + k).addEventListener('input', e => { st.k[k] = +e.target.value; save(); refresh(); });
+$('#soft').addEventListener('input', e => { st.soft = +e.target.value; save(); refresh(); });
 $('#form').addEventListener('change', e => { const s = st.storms[sel]; if (s) { s[5] = +e.target.value; save(); refresh(); } });
 for (const id of ['time', 'sunaz', 'clock', 'farhaze', 'oyaw', 'opitch', 'odist']) $('#' + id).addEventListener('input', refresh);
 $('#vGun').addEventListener('click', () => { orbit = false; $('#vGun').classList.add('on'); $('#vOrbit').classList.remove('on'); loop(); });
@@ -378,7 +386,7 @@ $('#del').addEventListener('click', () => { if (st.storms.length > 1) { st.storm
 $('#flash').addEventListener('click', flash);
 $('#reset').addEventListener('click', () => { st = fresh(); save(); refresh(); });
 $('#copy').addEventListener('click', async () => {
-  const txt = `export const STORMS = [\n${st.storms.map(s => `  [${s.join(', ')}],`).join('\n')}\n];\nexport const STORM_K = [${st.k.join(', ')}];\n`;
+  const txt = `export const STORMS = [\n${st.storms.map(s => `  [${s.join(', ')}],`).join('\n')}\n];\nexport const STORM_K = [${st.k.join(', ')}];\nexport const STORM_SOFT = ${st.soft ?? S.STORM_SOFT};\n`;
   try { await navigator.clipboard.writeText(txt); status('Copied. Paste over STORMS and STORM_K in railgun/storms.js.'); } catch { status(txt); }
 });
 addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F') flash(); });
