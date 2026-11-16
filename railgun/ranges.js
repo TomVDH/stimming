@@ -13,17 +13,16 @@ const rad = d => d * Math.PI / 180;
 // The Dev row Forms turns every form back into a crescent.
 // A cone's arc radius is its base radius; it takes no span or opening.
 export const RANGES = [
-  // Vast ranges: four layers run across the whole view, each taller than the last.
-  // Each centre sits off to one side, so a layer nears the eye on that side.
+  // Tom's default (2026-11-16), set in the range lab.
   // Near foothills, about 60 km out: a ridge stands in front of every far gun.
-  [114.5, 12000, 64000, 4200, 125, 65.5],
+  [114.5, 12000, 64000, 4200, 125, 66],
   // The middle range, about 100 km out.
-  [-65.5, 15000, 100000, 15000, 125, 65.5],
+  [-9.5, 82000, 100000, 15000, 137, 6],
   // The high range, about 150 km out.
-  [114.5, 20000, 150000, 32000, 120, 65.5],
-  // The great range, about 210 km out: its tallest peaks reach about 80 km.
-  [-65.5, 25000, 210000, 58000, 115, 65.5],
-  // A field of spires right of the middle, among the middle layers.
+  [87.9, 22000, 140000, 32000, 120, 66],
+  // The great range, far behind.
+  [37, 124000, 140000, 49300, 115, 38],
+  // A field of spires right of the middle.
   [3, 92000, 17000, 11000, 0, 0, 4],
 ];
 // Each form's bearing from its centre to the landscape eye, for the cone's seam.
@@ -45,7 +44,7 @@ export const rangeUniforms = (table = RANGES) => ({
 // A change to any of them needs a new bake in the toy.
 export const LAND = {
   // The tallest crest stays under the march's ceiling (RANGE_CEIL) up to 1.1.
-  height: { value: 1, min: 0.5, max: 1.1, step: 0.01, label: 'Height', group: 'Shape' },
+  height: { value: 0.74, min: 0.5, max: 1.1, step: 0.01, label: 'Height', group: 'Shape' },
   width: { value: 1, min: 0.6, max: 1.6, step: 0.01, label: 'Width', group: 'Shape' },
   blend: { value: 0.12, min: 0, max: 0.4, step: 0.01, label: 'Blend', group: 'Shape' },
   round: { value: 0.08, min: 0, max: 0.3, step: 0.01, label: 'Crest round', group: 'Shape' },
