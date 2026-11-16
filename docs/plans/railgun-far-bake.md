@@ -57,6 +57,22 @@ The live pass also got a true ceiling test: a ray that rises past every crest on
 - Cost (1280, GPU ms): a full bake 20 to 39, spread over six frames; a relight 6 to 10; the per-frame pass unchanged at about 4. The live march rises from 32 to 45; it is only the fallback for GPUs with no float targets.
 - Dev slider `Erosion`, 0 to 2; 0 is the old smooth shape.
 
+## Forms
+
+Tom, 2026-11-16: yes to more varied forms. A seventh value on a range in `RANGES` picks its form.
+
+| Form | Where | Shape |
+|---|---|---|
+| Mesa line (1) | The low range in the gap right of the middle | Level tops, a sheer cliff, a talus skirt; gaps break it into buttes; hard beds step the cliff in benches |
+| Lone cone (2) | New, 175 km out, over the mesas | Concave flanks, a small crater, lobes on the skirt, gullies running out from the top |
+| Knife ridge (3) | The big range right of the middle | Hollow flanks meet in a thin edge; the crest saws in close teeth |
+
+- A form needs sky behind it: a form against a hazy range of the same colour does not read.
+- The bake marches with a finer stride (0.05% to 0.3% of the range, 640 steps), so thin teeth do not slip between steps.
+- Cost (1280, GPU ms): a full bake 31 to 50, spread over six frames; the per-frame pass unchanged at 3 to 4.
+- Dev row `Forms`: Crescents turns every form back into a crescent and hides the cone.
+- Open: pale speckles on the crest of the round range right of the cone show with erosion and forms off, in Live too; they look like a cloud card's edge, not the ranges.
+
 ## Dev
 
 - Dev row `Far ranges`: Bake or Live. Bake is the default (Tom, 2026-11-16); `?far=live` opens on the live march.

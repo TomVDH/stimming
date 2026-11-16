@@ -206,14 +206,10 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
-    // The ranges' light: the sun and key, the sky, and the effects (blast, rock light).
-    { type: 'slider', id: 'rangesun', group: 'Land', label: 'Range sun', min: 0, max: 1.5, step: 0.05, value: 0.6, onInput: v => { FAR_U.uRangeL.value.x = v; draw(); } },
-    { type: 'slider', id: 'rangesky', group: 'Land', label: 'Range sky', min: 0, max: 1.5, step: 0.05, value: 0.85, onInput: v => { FAR_U.uRangeL.value.y = v; draw(); } },
-    { type: 'slider', id: 'rangefx', group: 'Land', label: 'Range effects', min: 0, max: 3, step: 0.05, value: 1, onInput: v => { FAR_U.uRangeL.value.z = v; draw(); } },
-    // The ranges' rock colour; none matches the sand plain.
-    { type: 'choice', id: 'rockcol', group: 'Land', label: 'Range rock', display: 'segments', value: 'umber', options: [{ value: 'umber', label: 'Umber' }, { value: 'slate', label: 'Slate' }, { value: 'rust', label: 'Rust' }], onPick: v => { setRockCol(v); draw(); } },
     // Carves gullies and crags; 0 is the smooth shape.
     { type: 'slider', id: 'erosion', group: 'Land', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
+    // Forms: every range a crescent, or with a mesa line, a lone cone and a knife ridge.
+    { type: 'choice', id: 'forms', group: 'Land', label: 'Forms', display: 'segments', value: 'mixed', options: [{ value: 'crescents', label: 'Crescents' }, { value: 'mixed', label: 'Mixed' }], onPick: v => { FAR_U.uForms.value = v === 'mixed' ? 1 : 0; farBake.dirty = true; draw(); } },
     // Bake marches once and relights; Live marches every frame.
     // Bake is the default (Tom, 2026-11-16); ?far=live opens on Live.
     { type: 'choice', id: 'farmode', group: 'Land', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
@@ -1416,55 +1412,52 @@ scene.add(ground);
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
 // Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
+// An optional seventh value is its form: 1 a mesa line, 2 a lone cone, 3 a knife ridge.
+// The Dev row Forms turns every form back into a crescent.
+// A cone's arc radius is its base radius; it takes no span or opening.
 const RANGES = [
-  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 28000, 150, 200], [-12, 148000, 42000, 18500, 130, 60],
+  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 28000, 150, 200], [-12, 148000, 42000, 18500, 130, 60, 3],
   [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250],
-  // Low foothills leave one gentle gap right of the middle.
-  [3, 81000, 16000, 3200, 110, 300],
+  // Low mesas leave one gentle gap right of the middle.
+  [3, 81000, 16000, 3600, 110, 300, 1],
   // This range holds the right edge of the view.
   [-20, 110000, 24000, 7500, 140, 300],
+  // A lone volcano rises far off in the gap, over the mesas.
+  [1.5, 175000, 22000, 16000, 0, 0, 2],
 ];
+// Each form's bearing from its centre to the landscape eye, for the cone's seam.
+const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(1990 - c.z, 1670 - c.x); };
 const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
   uRg: { value: RANGES.map(m => { const c = polar(rad(m[0]), m[1]); return new THREE.Vector4(c.x, c.z, m[2], m[3]); }) },
-  uRa: { value: RANGES.map((m, i) => new THREE.Vector4(rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, 0)) },
+  uRa: { value: RANGES.map((m, i) => new THREE.Vector4(m[6] === 2 ? rangeFace(m) : rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, m[6] || 0)) },
+  // Forms: 0 draws every range as a crescent and hides the cone.
+  uForms: { value: 1 },
   uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
   // March steps: High takes more, the ladder's rungs fewer.
   uFarSteps: { value: 96 },
+  uFarStride: { value: new THREE.Vector2(0.0015, 0.005) },
   // Erosion: the depth of the gullies and crags; 0 leaves the smooth ranges.
   uEro: { value: 1 },
   // Face bump: fine gullies and strata in the light only; 0 turns it off.
   uBump: { value: 1 },
-  uRockC: { value: new THREE.Vector3() }, uSlopeC: { value: new THREE.Vector3() }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
-  // The ranges' light: sun and key, sky, and the effects (blast, rock light).
-  // The sun stays low by default, so the ranges read far and vast.
-  uRangeL: { value: new THREE.Vector3(0.6, 0.85, 1) },
+  uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
 };
-// The ranges' rock: [slope, wall] in OKLCH; each differs from the sand plain.
-const ROCK_COLS = {
-  umber: [[0.43, 0.035, 48], [0.37, 0.045, 32]],
-  slate: [[0.42, 0.02, 250], [0.35, 0.025, 265]],
-  rust: [[0.44, 0.06, 40], [0.39, 0.08, 24]],
-};
-function setRockCol(k) {
-  const c = ROCK_COLS[k] || ROCK_COLS.umber;
-  FAR_U.uSlopeC.value.set(...linFit(...c[0]));
-  FAR_U.uRockC.value.set(...linFit(...c[1]));
-}
-setRockCol('umber');
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
-uniform float uEro, uBump;
+uniform float uEro, uBump, uForms;
 // Sharp ridges in [0, 1]: lines of 1 with a narrow V between.
-float ridge2(vec2 p) {
+// n octaves, three at most; fewer keep the march from missing fine teeth.
+float ridge2(vec2 p, int n) {
   float s = 0.0, a = 0.5, w = 1.0;
   for (int i = 0; i < 3; i++) {
+    if (i >= n) break;
     float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0);
     // Each octave is strongest high on the ridge above it.
     s += a * n * n * w; w = clamp(n * 1.6, 0.0, 1.0);
     p = p * 2.11 + vec2(13.7, 5.3); a *= 0.5;
   }
-  return s / 0.875;
+  return s / (n >= 3 ? 0.875 : n == 2 ? 0.75 : 0.5);
 }
 // Three smooth octaves: rounded folds, no knife-edge crests.
 float fbm3(vec2 p) {
@@ -1478,47 +1471,90 @@ float rangeH(vec2 p, out float near) {
   float h = 0.0;
   near = 0.0;
   for (int i = 0; i < ${RANGES.length}; i++) {
+    // With the forms off, the cone hides and every range is a crescent.
+    float kind = uForms < 0.5 ? 0.0 : uRa[i].w;
+    if (uForms < 0.5 && uRa[i].w > 1.5 && uRa[i].w < 2.5) continue;
     vec2 q = p - uRg[i].xy;
-    float Rc = uRg[i].z, r = length(q), off = r - Rc;
-    if (abs(off) > 0.75 * Rc) continue;
-    float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
-    if (u > 1.0) continue;
-    near = 1.0;
-    // The range tapers to both ends; its crest rolls in peaks and saddles.
-    float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
-    // A power on the crest wave sharpens the peaks and widens the saddles.
-    float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
-    float hc = uRg[i].w * t * pow(cw, 1.7) * 1.35;
-    // Inner face: a steep scarp. Outer face: a long apron.
-    float v = abs(off) / (Rc * (off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
-    if (v >= 1.0) continue;
-    // A rounded profile: the crest swells, then falls away in long slopes.
-    float prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
-    // A line of foothills rolls along the outer apron.
-    if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
-    // Flows follow the crescent: parallel ridgelines wander along the arc,
-    // and soft folds run stretched along it, kilometres long.
-    float sv = sign(off) * v, arc = u * uRa[i].y * Rc;
-    float bands = 0.5 + 0.5 * sin(sv * 15.7 + 3.0 * fbm3(vec2(arc / 30000.0, sv * 1.5) + ph));
-    float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
-    // The folds take a gentle ridge: firm spurs, no knife edges.
-    folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
-    float hr = hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5));
-    if (uEro > 0.0 && hr > 0.02 * hc) {
+    float Rc = uRg[i].z, r = length(q), off = r - Rc, ph = uRa[i].z, hr, v, arc, mid, crest;
+    if (kind > 1.5 && kind < 2.5) {
+      // A lone cone: concave flanks, a blunt top and a crater.
+      v = r / Rc;
+      if (v >= 1.0) continue;
+      near = 1.0;
+      float prof = min(pow(1.0 - v, 2.1), 0.93);
+      prof -= 0.1 * smoothstep(0.035, 0.012, v);
+      // Old flows leave lobes on the skirt.
+      prof *= 0.88 + 0.24 * fbm3(q / (0.35 * Rc) + ph);
+      hr = uRg[i].w * prof;
+      // The angle turns from the eye, so the noise's seam lies behind the cone.
+      float a = mod(atan(q.y, q.x) - uRa[i].x + 3.14159265, 6.2831853) - 3.14159265;
+      arc = a * 0.5 * Rc; off = r;
+      mid = smoothstep(0.1, 0.3, v) * (1.0 - smoothstep(0.75, 1.0, v));
+      crest = 0.0;
+    } else {
+      if (abs(off) > 0.75 * Rc) continue;
+      float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
+      if (u > 1.0) continue;
+      bool mesa = kind > 0.5 && kind < 1.5, knife = kind > 2.5;
+      // The range tapers to both ends; its crest rolls in peaks and saddles.
+      // A mesa line keeps its tops level to near its ends.
+      float t = pow(sin(3.14159265 * u), mesa ? 0.25 : 0.8);
+      // A power on the crest wave sharpens the peaks and widens the saddles.
+      float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
+      float hc = uRg[i].w * t * (mesa ? 1.0 : pow(cw, 1.7) * 1.35);
+      // Inner face: a steep scarp. Outer face: a long apron.
+      // A mesa and a knife stand narrow on both sides.
+      v = abs(off) / (Rc * (mesa ? 0.16 : knife ? 0.15 : off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
+      if (v >= 1.0) continue;
+      near = 1.0;
+      arc = u * uRa[i].y * Rc;
+      float prof;
+      if (mesa) {
+        // A level top, a sheer cliff, then a talus skirt.
+        prof = 1.0 - 0.75 * smoothstep(0.42, 0.56, v) - 0.25 * smoothstep(0.56, 1.0, v);
+        // Gaps cut the line into buttes.
+        prof *= smoothstep(0.47, 0.53, fbm3(vec2(arc / (3.0 * uRg[i].w), 0.5) + ph));
+      } else if (knife) {
+        // Hollow flanks meet in a thin edge.
+        prof = pow(1.0 - v, 1.6);
+      } else {
+        // A rounded profile: the crest swells, then falls away in long slopes.
+        prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
+        // A line of foothills rolls along the outer apron.
+        if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
+      }
+      // Flows follow the crescent: parallel ridgelines wander along the arc,
+      // and soft folds run stretched along it, kilometres long.
+      float sv = sign(off) * v;
+      float bands = 0.5 + 0.5 * sin(sv * 15.7 + 3.0 * fbm3(vec2(arc / 30000.0, sv * 1.5) + ph));
+      float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
+      // The folds take a gentle ridge: firm spurs, no knife edges.
+      folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
+      hr = hc * prof * (mesa ? 1.0 : 0.78 + 0.18 * bands + 0.36 * (folds - 0.5));
+      if (mesa) {
+        // Hard beds weather into ledges: the cliff steps down in benches.
+        float st = hr / (0.22 * uRg[i].w);
+        hr = mix(hr, 0.22 * uRg[i].w * (floor(st) + smoothstep(0.55, 1.0, fract(st))), 0.7);
+      }
+      mid = smoothstep(0.02, 0.3, v) * (1.0 - smoothstep(0.75, 1.0, v));
+      // A knife's crest saws hardest; a mesa's top stays level.
+      crest = (1.0 - smoothstep(0.0, 0.25, v)) * (mesa ? 0.0 : knife ? 0.2 : 0.1);
+    }
+    if (uEro > 0.0 && hr > 0.02 * uRg[i].w) {
       // Erosion: spurs run down each face, gullies cut between them.
       // The noise stretches along the fall line, so every cut runs downhill.
       // The spacing follows the crest: big ranges carve wide gullies.
-      float sc = 0.16 * uRg[i].w;
+      float sc = 0.16 * uRg[i].w * (kind > 0.5 && kind < 1.5 ? 2.0 : 1.0);
       vec2 eq = vec2(arc, off * 0.3) / sc + ph * 7.0;
       // A slow warp bends the cuts and lets them branch.
       eq += 0.7 * vec2(k2noise(eq * 0.35), k2noise(eq * 0.35 + 9.1)) - 0.35;
-      float sp = ridge2(eq);
-      // The carving is deepest on the mid slopes, light at the crest and the toe.
-      float mid = smoothstep(0.02, 0.3, v) * (1.0 - smoothstep(0.75, 1.0, v));
-      // Crags break the crest line into teeth and notches.
-      float cr = ridge2(vec2(arc / (0.3 * uRg[i].w), off / (0.8 * uRg[i].w)) + ph * 3.0);
+      float sp = ridge2(eq, 3);
+      // Crags break the crest line into teeth and notches; a knife's teeth sit close.
+      float cs = kind > 2.5 ? 0.18 : 0.3;
+      float cr = crest > 0.0 ? ridge2(vec2(arc / (cs * uRg[i].w), off / (0.8 * uRg[i].w)) + ph * 3.0, 2) : 0.0;
       // The noise's narrow lines are the cuts; the broad ground between stands as spurs.
-      hr *= 1.0 - uEro * (0.42 * mid * sp + 0.1 * (1.0 - smoothstep(0.0, 0.25, v)) * cr);
+      // The carving is deepest on the mid slopes, light at the crest and the toe.
+      hr *= 1.0 - uEro * (0.42 * mid * sp + crest * cr);
     }
     h = max(h, hr);
   }
@@ -1540,7 +1576,9 @@ float farH(vec2 p) { float n; return farHN(p, n); }`;
 const FAR_FN = /* glsl */`
   uniform mat4 uInvVP, uVP;
   uniform int uFarSteps;
-  uniform vec3 uRockC, uSlopeC, uGroundC, uEye, uRangeL;
+  // The stride's floor and cap near a range, as shares of the range.
+  uniform vec2 uFarStride;
+  uniform vec3 uRockC, uGroundC, uEye;
   ${HEAD}
   ${AIR}
   ${FAR_GLSL}
@@ -1553,7 +1591,7 @@ const FAR_FN = /* glsl */`
   float farMarch(vec3 ro, vec3 rd) {
     // The march starts past the near plain's heart and ends past the far ranges.
     float t = 25000.0, tp = t;
-    for (int i = 0; i < 380; i++) {
+    for (int i = 0; i < 700; i++) {
       if (i >= uFarSteps) break;
       vec3 p = ro + rd * t;
       float nr, hh = farHN(p.xz, nr), dy = p.y - (hh - drop(p));
@@ -1575,7 +1613,7 @@ const FAR_FN = /* glsl */`
       // Near any range the stride shrinks, so no crest or horn is skipped.
       // In a band the stride stays short: 0.5% near the surface, 1% high above it.
       // A narrow summit can rise between two long strides.
-      t += nr > 0.5 ? clamp(0.3 * dy, 0.0015 * t, dy < 0.05 * t ? 0.005 * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
+      t += nr > 0.5 ? clamp(0.3 * dy, uFarStride.x * t, dy < 0.05 * t ? uFarStride.y * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
       if (t > 650000.0) break;
     }
     return -1.0;
@@ -1609,7 +1647,7 @@ const FAR_FN = /* glsl */`
     vec2 q = P.xz / 2500.0;
     q += 0.6 * vec2(k2noise(q * 0.3), k2noise(q * 0.3 + 7.7)) - 0.3;
     float st = k2noise(vec2(P.y / 260.0 + 2.0 * k2noise(q * 0.5), dot(P.xz, vec2(0.6, 0.8)) / 9000.0));
-    return ridge2(q) + 0.12 * st;
+    return ridge2(q, 3) + 0.12 * st;
   }
   // As the card clouds do, the face's normal tilts with the detail's slope.
   // The taps run across the face and up it; only walls take the tilt.
@@ -1626,19 +1664,17 @@ const FAR_FN = /* glsl */`
     // Shade on the flat world: the curve only moves the image.
     vec3 P = vec3(p.x, h0, p.z);
     float wall = smoothstep(0.92, 0.5, N.y);
-    // Slopes are scree in the rock's colour; walls are bare rock, darker.
-    vec3 alb = mix(uSlopeC, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
-    // Only the foot of a range blends into the sand plain.
-    alb = mix(uGroundC * 0.95, alb, smoothstep(20.0, 300.0, h0));
+    vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
+    alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
     // Gullies hold dark scree and shade; spurs catch the light.
     alb *= 0.25 + 1.5 * cav;
     N = farBump(P, N, hit, wall);
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
-    vec3 col = alb * (uRangeL.y * ambient(N) * (0.55 + 0.45 * N.y) + uRangeL.x * (uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N)));
+    vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
     // The blast lights the faces turned to it, faintly at this range.
-    col += uRangeL.z * alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
+    col += alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
     // The nearing rock warms the faces turned to it.
-    col += uRangeL.z * alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
+    col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
     // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
     float hR = 8000.0, hM = 1600.0;
     float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
@@ -1708,7 +1744,7 @@ const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new T
 // The geometry bake: range and normal per texel.
 // The range splits in two halves, so the half floats keep a quarter metre.
 const farBakeG = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FAR_U, ...FB_U, uFarSteps: { value: 380 }, uEye: FB_U.uBakeEye },
+  uniforms: { ...U, ...FAR_U, ...FB_U, uFarSteps: { value: 640 }, uFarStride: { value: new THREE.Vector2(0.0005, 0.003) }, uEye: FB_U.uBakeEye },
   depthWrite: false, depthTest: false,
   vertexShader: FAR_VS,
   fragmentShader: /* glsl */`
@@ -11744,9 +11780,7 @@ window.__qa = {
   // The far pass: the mode, and how often it baked and relit.
   // Set the far ranges' face bump.
   bump(v) { FAR_U.uBump.value = v; draw(); },
-  // Set the ranges' light (sun, sky, effects) and rock colour.
-  rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
-  far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
+  far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
     const gl = renderer.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
