@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ---------- small tools ---------- */
 // A seeded random, so every load grows the same garden.
@@ -17,6 +18,17 @@ function vnoise(x, y) {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 const fbm = (x, y) => vnoise(x, y) * 0.5 + vnoise(x * 2.03 + 5, y * 2.03) * 0.3 + vnoise(x * 4.1 + 9, y * 4.1) * 0.2;
+// Value noise in 3D, for the stone's surface.
+const hash3 = (x, y, z) => { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return s - Math.floor(s); };
+function vnoise3(x, y, z) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
+  const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+  const l = (a, b, t) => a + (b - a) * t, h = (a, b, c) => hash3(ix + a, iy + b, iz + c);
+  return l(l(l(h(0, 0, 0), h(1, 0, 0), u), l(h(0, 1, 0), h(1, 1, 0), u), v), l(l(h(0, 0, 1), h(1, 0, 1), u), l(h(0, 1, 1), h(1, 1, 1), u), v), w);
+}
+const fbm3 = (x, y, z) => vnoise3(x, y, z) * 0.5 + vnoise3(x * 2.03 + 5, y * 2.03, z * 2.03) * 0.3 + vnoise3(x * 4.1 + 9, y * 4.1, z * 4.1) * 0.2;
+// Ridged noise: sharp crests where the noise crosses its middle.
+const ridged = (x, y, z) => { const a = 1 - Math.abs(vnoise3(x, y, z) * 2 - 1), b = 1 - Math.abs(vnoise3(x * 2.1 + 3, y * 2.1, z * 2.1) * 2 - 1); return a * a * 0.65 + b * b * 0.35; };
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /* ---------- the bed: sloped back to front, with two mounds ---------- */
@@ -140,21 +152,68 @@ export function createGarden(canvas, gl, view) {
   scene.add(soil, new THREE.Mesh(wallG, new THREE.MeshStandardMaterial({ color: 0x150c06, roughness: 1 })));
 
   /* ---------- hardscape: a craggy stone and a branch ---------- */
-  const rockG = new THREE.IcosahedronGeometry(1, 5);
-  {
-    const p = rockG.attributes.position, v = new THREE.Vector3();
-    for (let i = 0; i < p.count; i++) {
+  // A craggy stone: a lumpy body, sharp ridges and grooves, soft strata, a flat foot.
+  // aCrev marks the crevices: water gathers there, and moss finds them.
+  const rockG = (() => {
+    const g = mergeVertices(new THREE.IcosahedronGeometry(1, 48));
+    const p = g.attributes.position, n = p.count, v = new THREE.Vector3(), crev = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
       v.fromBufferAttribute(p, i);
-      v.multiplyScalar(1 + 0.28 * (fbm(v.x * 2.2 + v.y, v.z * 2.2 - v.y) - 0.5) + 0.1 * (vnoise(v.x * 9 + v.z, v.y * 9) - 0.5));
-      // Flat strata planes make the stone craggy.
-      v.y = Math.round(v.y * 7) / 7 * 0.35 + v.y * 0.65;
+      const r = ridged(v.x * 2.6 + 1, v.y * 2.6, v.z * 2.6);
+      // Upright grooves, as rain cuts into a real stone.
+      const groove = Math.sin(Math.atan2(v.z, v.x) * 7 + fbm3(v.x * 2, v.y * 2, v.z * 2) * 5) * 0.5 + 0.5;
+      const d = 1 + 0.3 * (fbm3(v.x * 1.4, v.y * 1.4, v.z * 1.4) - 0.5) + 0.26 * r - 0.08 * groove * (1 - Math.abs(v.y)) + 0.035 * (fbm3(v.x * 9, v.y * 9, v.z * 9) - 0.5);
+      v.multiplyScalar(d);
+      // Soft strata, and a flat foot where the stone sits in the soil.
+      v.y = v.y * 0.7 + Math.round(v.y * 6) / 6 * 0.3;
+      if (v.y < -0.45) v.y = -0.45 + (v.y + 0.45) * 0.2;
       p.setXYZ(i, v.x, v.y, v.z);
+      crev[i] = Math.min(1, Math.max(0, (0.55 - r) * 1.6 + groove * 0.25));
     }
-    rockG.computeVertexNormals();
-  }
-  const rock = new THREE.Mesh(rockG, new THREE.MeshStandardMaterial({ color: 0x4a4d48, roughness: 0.9 }));
-  rock.scale.set(0.15, 0.13, 0.12);
-  rock.position.set(0.2, bedH(0.2, -0.24) + 0.05, -0.24);
+    g.computeVertexNormals();
+    // Colour per vertex: blue-grey stone, pale veins, dark crevices, lichen on the tops.
+    const col = new Float32Array(n * 3), nr = g.attributes.normal, c = new THREE.Color(), weight = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(p, i);
+      const ny = nr.getY(i), cv = crev[i];
+      c.setHSL(0.56 + 0.04 * vnoise3(v.x * 3, v.y * 3, v.z * 3), 0.08, 0.15 + 0.07 * fbm3(v.x * 6, v.y * 6, v.z * 6));
+      // Calcite veins: thin pale lines where a noise crosses its middle.
+      const vein = Math.exp(-((Math.abs(vnoise3(v.x * 3.5 + 7, v.y * 5, v.z * 3.5) - 0.5) / 0.02) ** 2));
+      c.lerp(new THREE.Color(0.32, 0.33, 0.32), vein * 0.5);
+      c.multiplyScalar(1 - 0.55 * cv);
+      // Lichen: pale grey-green rosettes on faces that look up.
+      const li = ss(0.64, 0.7, fbm3(v.x * 5 + 2, v.y * 5, v.z * 5)) * ss(0.3, 0.7, ny);
+      c.lerp(new THREE.Color(0.25, 0.29, 0.17), li * 0.8);
+      col.set([c.r, c.g, c.b], i * 3);
+      // Moss settles in the crevices and on the tops.
+      weight[i] = 0.01 + cv * cv * 0.8 + Math.max(0, ny) ** 3 * 0.1 * (1 - li);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute('aCrev', new THREE.Float32BufferAttribute(crev, 1));
+    g.setAttribute('aMossW', new THREE.Float32BufferAttribute(weight, 1));
+    return g;
+  })();
+  // PBR stone: rough and dry; wet, it darkens and shines, most where water gathers.
+  const rockMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.88, envMapIntensity: 0.2, clearcoat: 0.02, clearcoatRoughness: 0.2 });
+  rockMat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;\nvarying vec3 vRock;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCrev = aCrev;\nvRock = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform float uWake;
+        varying float vCrev;
+        varying vec3 vRock;
+        float rkH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        // Fine grain: each tiny cell of the stone is a shade lighter or darker.
+        diffuseColor.rgb *= 0.88 + 0.24 * rkH(floor(vRock * 160.0));
+        float wetHere = uWake * (0.45 + 0.55 * vCrev);
+        diffuseColor.rgb *= 1.0 - 0.5 * wetHere;`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.18, wetHere);');
+  };
+  const rock = new THREE.Mesh(rockG, rockMat);
+  rock.scale.set(0.16, 0.15, 0.13);
+  rock.position.set(0.2, bedH(0.2, -0.24) + 0.055, -0.24);
   rock.rotation.y = 0.6;
   rock.castShadow = rock.receiveShadow = true;
   const branchCurve = new THREE.CatmullRomCurve3([[-0.56, 0, 0.12], [-0.42, 0.04, 0.08], [-0.28, 0.1, 0.0], [-0.16, 0.17, -0.06], [-0.08, 0.2, -0.04]].map(([x, dy, z]) => new THREE.Vector3(x, bedH(x, z) + dy - 0.01, z)));
@@ -271,10 +330,10 @@ export function createGarden(canvas, gl, view) {
     const rank = new Float32Array(MOSS_N * 2);
     const pos = new THREE.Vector3(), nrm = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion();
     const sources = [
-      { mesh: soil, share: 0.86, test: () => true },
-      { mesh: rock, share: 0.1, test: (p, n) => n.y > 0.45 },
+      { mesh: soil, share: 0.915, test: () => true },
+      { mesh: rock, share: 0.045, test: (p, n) => n.y > -0.1, weight: 'aMossW' },
       { mesh: branch, share: 0.04, test: (p, n) => n.y > 0.6 },
-    ].map(s => ({ ...s, sampler: new MeshSurfaceSampler(s.mesh).build(), nm: new THREE.Matrix3().getNormalMatrix(s.mesh.matrixWorld) }));
+    ].map(s => ({ ...s, sampler: (s.weight ? new MeshSurfaceSampler(s.mesh).setWeightAttribute(s.weight) : new MeshSurfaceSampler(s.mesh)).build(), nm: new THREE.Matrix3().getNormalMatrix(s.mesh.matrixWorld) }));
     let i = 0, tries = 0;
     while (i < MOSS_N && tries < MOSS_N * 20) {
       tries++;
@@ -605,6 +664,7 @@ export function createGarden(canvas, gl, view) {
     rect.color.copy(col); rect.intensity = 12 * k;
     U.uLampCol.value.copy(col).multiplyScalar(0.8 * k);
     capMat.clearcoat = 0.05 + 0.95 * wake;
+    rockMat.clearcoat = 0.02 + 0.6 * wake;
     frondMat.clearcoat = 0.05 + 0.12 * wake;
     mossMat.clearcoat = 0.03 + 0.12 * wake;
     mossMat.sheen = 0.6 - 0.2 * wake;

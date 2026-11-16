@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:55:29Z
+updated_at: 2026-11-16T23:00:36Z
 parent: stimming-oh7b
 ---
 
@@ -77,3 +77,7 @@ Tom: "tune moss and fern".
 - The front of the bed was dark: the grow light is behind. A soft fill from the viewer's side, a wider spot cone and more ambient light it. Wet moss is a fifth brighter.
 - Frond stems are green-brown with a little sheen; each frond has its own green.
 - garden.debug (materials, lights, redraw) is open to QA through window.__terrarium.garden.
+
+## The stone (2026-11-16)
+
+Tom: "do the stone". A smooth, merged mesh (about 47,000 triangles; the old one was 720 flat faces): a lumpy body, sharp ridges from ridged noise, upright grooves, stepped strata and a flat foot. Per-vertex colour: blue-grey stone, faint calcite veins, dark crevices, lichen on the upward faces. PBR: shader grain; wet, it darkens and turns glossy, most in the crevices where water gathers. Moss now sits in the cracks (a sampler weight), about 5,000 shoots, no longer a cap.
