@@ -21,10 +21,9 @@ function start() {
   // No motion with reduced motion, without GSAP, or in a hidden tab.
   const calm = () => !gsap || still.matches || document.visibilityState !== 'visible';
 
-  // The face lies under the toys: the outline and the middle.
-  const ticks = Array.from({ length: 60 }, (_, i) => `<line x1="100" y1="44.5" x2="100" y2="${i % 5 ? 47.5 : 49.5}" transform="rotate(${i * 6} 100 100)"/>`).join('');
+  // The face lies under the toys: the comet and the middle.
   const face = Object.assign(document.createElement('div'), { className: 'clock-face' });
-  face.innerHTML = `<svg class="clock-ring" viewBox="0 0 200 200" aria-hidden="true"><circle class="rim" cx="100" cy="100" r="58" pathLength="1" transform="rotate(-90 100 100)"/><g class="ticks">${ticks}</g></svg>
+  face.innerHTML = `<canvas class="clock-comet" aria-hidden="true"></canvas>
 <div class="clock-mid">
   <div class="clock-plate" aria-hidden="true"></div>
   <p class="clock-name" aria-live="polite"></p>
@@ -35,7 +34,6 @@ function start() {
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'clock-roll', title: 'Re-roll (R)' });
   button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
   face.after(button);
-  const ring = face.querySelector('.clock-ring'), rim = /** @type {SVGElement} */ (ring.querySelector('.rim')), marks = /** @type {SVGElement[]} */ ([...ring.querySelectorAll('line')]);
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
@@ -151,35 +149,66 @@ function start() {
   });
   shelf.addEventListener('focusout', e => { if (!tile(e.relatedTarget)) rest(); });
 
-  // The intro: a bright head runs once round the rim. The minute marks light behind it,
-  // and each toy arrives as the head passes its hour. Then the outline fades.
-  const sweep = Object.assign(document.createElement('div'), { className: 'clock-sweep' });
-  sweep.setAttribute('aria-hidden', 'true');
-  ring.after(sweep);
+  // The intro: a comet swirls once round the face, from twelve o'clock, spiralling out a little.
+  // Each toy arrives as the comet passes its hour. Its tail takes the wordmark's hues as it goes.
+  const comet = /** @type {HTMLCanvasElement} */ (face.querySelector('.clock-comet')), pen = comet.getContext('2d');
+  // The tail covers this share of a lap, in this many shaded steps.
+  const TAIL = 0.26, STEPS = 56;
+  function drawComet(a, fade) {
+    const k = Math.min(devicePixelRatio || 1, 2), W = Math.round(comet.clientWidth * k);
+    if (comet.width !== W) { comet.width = W; comet.height = W; }
+    pen.clearRect(0, 0, W, W);
+    if (fade <= 0) return;
+    const at = t => {
+      // The path swirls out from near the middle to just inside the toys, with a small wobble.
+      const r = W * (0.15 + 0.15 * t * (2 - t) + 0.006 * Math.sin(t * 19)), ang = t * Math.PI * 2;
+      return [W / 2 + Math.sin(ang) * r, W / 2 - Math.cos(ang) * r];
+    };
+    pen.globalCompositeOperation = 'lighter';
+    // The tail: dots from the oldest to the newest, wider, brighter and whiter toward the head.
+    for (let i = STEPS; i >= 1; i--) {
+      const t = a - TAIL * i / STEPS;
+      if (t < 0) continue;
+      const near = 1 - i / STEPS, [x, y] = at(t);
+      const size = W * (0.003 + 0.017 * Math.pow(near, 1.5)), hue = 328 - 300 * t;
+      const g = pen.createRadialGradient(x, y, 0, x, y, size * 2.4);
+      g.addColorStop(0, `oklch(${(0.78 + 0.18 * near).toFixed(3)} ${(0.2 * (1 - near * 0.6)).toFixed(3)} ${hue.toFixed(1)} / ${(0.32 * near * near * fade).toFixed(3)})`);
+      g.addColorStop(1, `oklch(0.7 0.2 ${hue.toFixed(1)} / 0)`);
+      pen.fillStyle = g;
+      pen.beginPath();
+      pen.arc(x, y, size * 2.4, 0, Math.PI * 2);
+      pen.fill();
+    }
+    // The head: a white core in a wide soft halo of the hue it is passing.
+    const [x, y] = at(a), hue = 328 - 300 * a, R = W * 0.085;
+    const g = pen.createRadialGradient(x, y, 0, x, y, R);
+    g.addColorStop(0, `oklch(0.99 0.01 ${hue.toFixed(1)} / ${(0.95 * fade).toFixed(3)})`);
+    g.addColorStop(0.08, `oklch(0.95 0.06 ${hue.toFixed(1)} / ${(0.7 * fade).toFixed(3)})`);
+    g.addColorStop(0.3, `oklch(0.8 0.17 ${hue.toFixed(1)} / ${(0.22 * fade).toFixed(3)})`);
+    g.addColorStop(1, `oklch(0.7 0.2 ${hue.toFixed(1)} / 0)`);
+    pen.fillStyle = g;
+    pen.beginPath();
+    pen.arc(x, y, R, 0, Math.PI * 2);
+    pen.fill();
+  }
   function arrive(first = false) {
     // With no motion the dozen simply shows.
     if (calm()) { if (gsap) gsap.set(objs(), { clearProps: 'opacity,visibility' }); return; }
-    const icons = objs(), head = { a: 0 };
-    let lit = 0, came = 0;
+    const icons = objs(), head = { a: 0, fade: 1 };
+    let came = 0;
     gsap.set(icons, { scale: 0.2, autoAlpha: 0, rotation: -24 });
-    gsap.set(marks, { opacity: 0 });
-    // The rim starts empty, so no full circle flashes before the head moves.
-    rim.style.strokeDashoffset = '1';
-    gsap.set([ring, sweep], { opacity: 1 });
-    gsap.timeline({ onComplete: () => gsap.set(icons, { clearProps: 'transform,opacity,visibility' }) })
-      .to(head, { a: 1, duration: 1.5, ease: 'sine.inOut', onUpdate() {
-        rim.style.strokeDashoffset = String(1 - head.a);
-        sweep.style.setProperty('--a', (head.a * 360).toFixed(1) + 'deg');
-        const m = Math.min(60, Math.round(head.a * 60));
-        while (lit < m) marks[lit++].style.opacity = '1';
-        // Hour 0 comes at once; hour 11 just before the head ends its lap.
+    const paint = () => drawComet(head.a, head.fade);
+    gsap.timeline({ onComplete() { gsap.set(icons, { clearProps: 'transform,opacity,visibility' }); drawComet(0, 0); } })
+      .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
+        paint();
+        // Hour 0 comes at once; hour 11 just before the comet ends its lap.
         const h = Math.min(HOURS, Math.round(head.a * HOURS) + 1);
         while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.55, ease: 'back.out(1.8)' });
       } }, 0)
-      .to(sweep, { opacity: 0, duration: 0.5, ease: 'power1.out' }, 1.35)
-      .to(ring, { opacity: 0, duration: 1.2, ease: 'power2.inOut' }, 1.7)
+      // The comet runs on a little past twelve as it fades, so it does not stop dead.
+      .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6)
       // On a fresh page the set warms up to snow once, then switches off.
-      .add(() => { if (first) blink(); }, 1.45);
+      .add(() => { if (first) blink(); }, 1.5);
   }
   function blink() {
     if (!bg || face.hasAttribute('data-live')) return;
