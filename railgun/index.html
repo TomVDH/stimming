@@ -1942,9 +1942,9 @@ setFarMode(FAR_MODE === 'bake');
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
-// uFl: two lightning flashes in the storms: world place, light level.
+// uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector2(4000, 4000) }, ...IMP_U };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1964,17 +1964,18 @@ ${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
-uniform vec4 uFl[2];
-uniform vec2 uFlR;
+uniform vec4 uFl[4];
+uniform vec4 uFlR;
 // Lightning lights a storm from inside, after Window seat.
 // A hot core round the flash; a wide glow fills the tower.
 // Thick body glows deep in; thin edges let the light out.
 vec3 flashIn(vec3 P, float F, float H) {
   vec3 L = vec3(0.0);
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
-    float fd = length(P - uFl[i].xyz), r = i == 0 ? uFlR.x : uFlR.y;
-    L += vec3(0.64, 0.72, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    float fd = length(P - uFl[i].xyz), r = uFlR[i];
+    // A cold, violet-blue white.
+    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   // A bright sky needs a stronger flash to show.
   return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
@@ -2271,19 +2272,31 @@ function stormAt(c, t, out) {
   const ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * 0.2;
   return out.set(c.p.x * Math.cos(a) - c.p.z * Math.sin(a), 0, c.p.x * Math.sin(a) + c.p.z * Math.cos(a));
 }
-function stormBurst() {
-  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P = stormAt(c, simT, new THREE.Vector3());
-  // Across the card: the eye's right, flat on the plain.
-  const fx = P.x - camera.position.x, fz = P.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
+// One spot in a storm: across the card at the eye's right, at a height.
+function stormSpot(c, P0, out) {
+  const fx = P0.x - camera.position.x, fz = P0.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
   const anvil = Math.random() < 0.25;
-  const across = (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.4) * c.W;
-  P.x += (-fz / fl) * across; P.z += (fx / fl) * across;
-  P.y = c.base + c.H * (anvil ? 0.8 : 0.3 + 0.35 * Math.random());
-  const n = 1 + Math.floor(Math.random() * Math.random() * 5);
-  // Log-normal light; a sheet flash is wide, a pulse is tight.
-  const L = Math.exp(-0.6 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 1.6, r = c.W * (0.12 + 0.25 * Math.random());
+  const across = (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.5) * c.W;
+  out.set(P0.x + (-fz / fl) * across, c.base + c.H * (anvil ? 0.8 : 0.25 + 0.45 * Math.random()), P0.z + (fx / fl) * across);
+  return out;
+}
+// A burst rumbles through one storm: two to five spots light in turn.
+// Each spot fires one to four strokes; now and then a cell boils over.
+function stormBurst() {
+  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
+  const boil = Math.random() < 0.15;
+  const spots = boil ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 4);
   let t = simT;
-  for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: t, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.15 * c.W, (Math.random() - 0.5) * 0.08 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); t += 0.05 + 0.17 * Math.random(); }
+  for (let j = 0; j < spots; j++) {
+    const P = stormSpot(c, P0, new THREE.Vector3());
+    // Log-normal light; a sheet flash is wide, a pulse is tight.
+    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8, r = c.W * (0.1 + 0.22 * Math.random());
+    const n = 1 + Math.floor(Math.random() * Math.random() * 4);
+    let ts = t;
+    for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: ts, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.1 * c.W, (Math.random() - 0.5) * 0.06 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); ts += 0.05 + 0.17 * Math.random(); }
+    // The next spot answers 0.1 to 0.9 s later; a boiling cell fires faster.
+    t += (boil ? 0.08 : 0.15) + (boil ? 0.3 : 0.75) * Math.random();
+  }
 }
 function stepStorms() {
   const u = CLOUD_U.uFl.value;
@@ -2294,7 +2307,7 @@ function stepStorms() {
   // Each stroke snaps on, then dies in a tenth of a second with a flicker.
   stormFl.strokes = stormFl.strokes.filter(s => simT - s.t0 < 0.6);
   const live = stormFl.strokes.filter(s => simT >= s.t0).map(s => { const a = simT - s.t0; return { s, v: s.L * Math.exp(-a / 0.07) * (0.75 + 0.25 * Math.sin(a * 140)) }; }).sort((a, b) => b.v - a.v);
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 4; i++) {
     const e = live[i];
     if (e) { u[i].set(e.s.P.x, e.s.P.y, e.s.P.z, e.v); CLOUD_U.uFlR.value.setComponent(i, e.s.r); } else u[i].w = 0;
   }
