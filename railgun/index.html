@@ -203,6 +203,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // The broken layer of cells five kilometres up.
     { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
     // The colossal storms far beyond the ranges.
+    // Storm lightning: how often flashes light the storms from inside.
+    { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
@@ -1924,7 +1926,9 @@ setFarMode(FAR_MODE === 'bake');
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, ...IMP_U };
+// uFl: two lightning flashes in the storms: world place, light level.
+// uFlR: each flash's reach in metres.
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector2(4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1944,6 +1948,21 @@ ${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
+uniform vec4 uFl[2];
+uniform vec2 uFlR;
+// Lightning lights a storm from inside, after Window seat.
+// A hot core round the flash; a wide glow fills the tower.
+// Thick body glows deep in; thin edges let the light out.
+vec3 flashIn(vec3 P, float F, float H) {
+  vec3 L = vec3(0.0);
+  for (int i = 0; i < 2; i++) {
+    if (uFl[i].w < 0.001) continue;
+    float fd = length(P - uFl[i].xyz), r = i == 0 ? uFlR.x : uFlR.y;
+    L += vec3(0.64, 0.72, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+  }
+  // A bright sky needs a stronger flash to show.
+  return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
+}
 varying float vLife;
 float bt(float sd) { return uCloudT + uCloudC * 0.0012 * (0.6 + fract(sd * 0.73)); }
 float bil(vec2 p, float sd) { float t = bt(sd); return texture(uVol, vec3(p + vec2(t * 0.4, 0.0), sd * 0.37 + t * 0.06)).r; }
@@ -2133,6 +2152,8 @@ void main() {
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
+  // Lightning inside the storms punches through the haze.
+  if (vS.z > 0.5) col += flashIn(P, F, H);
   // The ship's impacts light the cloud bases from beyond the horizon.
   col += impCloud(P, N, V, X, F) * uImpCK;
   // Towers are tall and catch the blast hardest.
@@ -2220,6 +2241,48 @@ const tower = cloudLayer(TOWERS, BAND.deep);
 // Beside it the gun and the towers look small.
 const GIANTS = [[52, 225000, 0, 52000, 95000, 1]];
 const giants = cloudLayer(GIANTS, BAND.giants);
+
+/* ---------- storm lightning: flashes inside the towers and the giant ---------- */
+// After Window seat: a burst of one to five strokes, 50 to 220 ms apart.
+// Brightness is log-normal: most flashes are dim, a few blaze.
+// Most sit mid-level in the core; a mature storm sends some through its anvil.
+// A storm recharges between bursts: one somewhere every 6 to 22 s.
+const STORMS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
+const stormFl = { rate: 1, next: 4, strokes: [] };
+const flV = new THREE.Vector3();
+// A storm's centre as the card shader drifts it, at the cloud clock t.
+function stormAt(c, t, out) {
+  const ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * 0.2;
+  return out.set(c.p.x * Math.cos(a) - c.p.z * Math.sin(a), 0, c.p.x * Math.sin(a) + c.p.z * Math.cos(a));
+}
+function stormBurst() {
+  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P = stormAt(c, simT, new THREE.Vector3());
+  // Across the card: the eye's right, flat on the plain.
+  const fx = P.x - camera.position.x, fz = P.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
+  const anvil = Math.random() < 0.25;
+  const across = (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.4) * c.W;
+  P.x += (-fz / fl) * across; P.z += (fx / fl) * across;
+  P.y = c.base + c.H * (anvil ? 0.8 : 0.3 + 0.35 * Math.random());
+  const n = 1 + Math.floor(Math.random() * Math.random() * 5);
+  // Log-normal light; a sheet flash is wide, a pulse is tight.
+  const L = Math.exp(-0.6 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 1.6, r = c.W * (0.12 + 0.25 * Math.random());
+  let t = simT;
+  for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: t, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.15 * c.W, (Math.random() - 0.5) * 0.08 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); t += 0.05 + 0.17 * Math.random(); }
+}
+function stepStorms() {
+  const u = CLOUD_U.uFl.value;
+  if (stormFl.rate > 0.01 && !reduced() && simT >= stormFl.next) {
+    stormBurst();
+    stormFl.next = simT + (6 + 16 * Math.random()) / stormFl.rate;
+  }
+  // Each stroke snaps on, then dies in a tenth of a second with a flicker.
+  stormFl.strokes = stormFl.strokes.filter(s => simT - s.t0 < 0.6);
+  const live = stormFl.strokes.filter(s => simT >= s.t0).map(s => { const a = simT - s.t0; return { s, v: s.L * Math.exp(-a / 0.07) * (0.75 + 0.25 * Math.sin(a * 140)) }; }).sort((a, b) => b.v - a.v);
+  for (let i = 0; i < 2; i++) {
+    const e = live[i];
+    if (e) { u[i].set(e.s.P.x, e.s.P.y, e.s.P.z, e.v); CLOUD_U.uFlR.value.setComponent(i, e.s.r); } else u[i].w = 0;
+  }
+}
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
   [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
@@ -5147,6 +5210,7 @@ function draw() {
   updateBeacon(1 / 30);
   CLOUD_U.uCloudC.value = simT;
   updateShafts();
+  stepStorms();
   // The thermal lens sees through smoke and dust.
   if (sight) plume.visible = chargeDust.visible = shotDust.visible = caseDustV.visible = muzzleSmoke.visible = false;
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
@@ -11560,6 +11624,9 @@ function vilKey() {
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
+  // Fire one lightning burst in a storm now; storms() lists the live strokes.
+  stormFlash() { stormBurst(); },
+  storms: () => stormFl.strokes.map(k => ({ age: simT - k.t0, L: k.L, P: k.P.toArray() })),
   sun(v) { opts.sun = v; setSun(); },
   simT: () => simT,
   draws: () => drawN,
@@ -11861,6 +11928,7 @@ gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').valu
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
 setDeck(ui.setting('deck').value);
+stormFl.rate = ui.setting('stormfl').value;
 giants.visible = ui.setting('giants').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
