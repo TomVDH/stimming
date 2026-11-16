@@ -9357,6 +9357,13 @@ function plainVerb(ac) {
   verb = { ac, in: inG, ir };
   return inG;
 }
+// The charge bus: the charge sound's every output goes through it.
+// QA records it alone, with no other sound.
+let chargeBusN = null;
+function chargeBus(ac) {
+  if (!chargeBusN || chargeBusN.context !== ac) { chargeBusN = ac.createGain(); chargeBusN.connect(kit.out); }
+  return chargeBusN;
+}
 let hum = null;
 function humStart(ac) {
   if (hum) return;
@@ -9364,14 +9371,14 @@ function humStart(ac) {
   if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
   if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
-  if (P.stack) { hum = stackStart(ac, P); return; }
+  if (P.stack) { hum = stackStart(ac, P, chargeBus(ac)); return; }
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
   // A soft clip glues the stack and growls under drive.
   const curve = new Float32Array(257);
   for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2.5 * (i / 128 - 1));
   shape.curve = curve; shape.oversample = '2x';
   pre.gain.value = 0.5; trem.gain.value = 1; g.gain.value = 0;
-  lp.connect(pre).connect(shape).connect(trem).connect(g).connect(kit.out);
+  lp.connect(pre).connect(shape).connect(trem).connect(g).connect(chargeBus(ac));
   const src = [], layers = [];
   PARTIALS.forEach(([ratio, type, enter, level], i) => {
     const lg = ac.createGain(), pan = ac.createStereoPanner(), os = [];
@@ -9388,22 +9395,22 @@ function humStart(ac) {
   });
   const sub = ac.createOscillator(), sg = ac.createGain();
   sub.frequency.value = 27.5; sg.gain.value = 0;
-  sub.connect(sg).connect(kit.out); sub.start(); src.push(sub);
+  sub.connect(sg).connect(chargeBus(ac)); sub.start(); src.push(sub);
   const lfo = ac.createOscillator(), lg = ac.createGain();
   lfo.frequency.value = 0.5; lg.gain.value = 0.5;
   lfo.connect(lg).connect(trem.gain); lfo.start(); src.push(lfo);
   // Air tears round the barrel at rage.
   const nz = ac.createBufferSource(), nb = filt(ac, 'bandpass', 1200, 0.8), ng = ac.createGain();
   nz.buffer = kit.noise; nz.loop = true; ng.gain.value = 0;
-  nz.connect(nb).connect(ng).connect(kit.out); nz.start(); src.push(nz);
+  nz.connect(nb).connect(ng).connect(chargeBus(ac)); nz.start(); src.push(nz);
   // The choir runs through its own soft clip; the over-hold drives it.
   const cpre = ac.createGain(), cshape = ac.createWaveShaper(), cg = ac.createGain();
   cshape.curve = curve; cshape.oversample = '2x';
   cpre.gain.value = 0.6; cg.gain.value = 0;
   // Bloom: a closed lowpass holds the choir dark until the lock.
   const bloom = P.bloom ? filt(ac, 'lowpass', 380, 0.9) : null;
-  if (bloom) cpre.connect(cshape).connect(bloom).connect(cg).connect(kit.out);
-  else cpre.connect(cshape).connect(cg).connect(kit.out);
+  if (bloom) cpre.connect(cshape).connect(bloom).connect(cg).connect(chargeBus(ac));
+  else cpre.connect(cshape).connect(cg).connect(chargeBus(ac));
   // Each voice: [target, start semitones, arrival curve, sour sign, pan, bass].
   const list = VOICES.map(([tgt, harm, k, sour, pn]) => [tgt, 12 * Math.log2(harm), k, sour, pn, false]);
   // Bass voices rise a fifth into place.
@@ -9439,7 +9446,7 @@ function humStart(ac) {
   hum = { P, layers, src, lp, pre, g, sub, sg, lfo, lg, nb, ng, voices, cpre, cg, bloom, vs, vlev: dual ? 0.5 * Math.sqrt(18 / n) * 0.7 : 0.5, locked: false, lockAt: -1e9, sour: 0 };
   // A blend runs a surge swarm on top of the hum.
   if (P.surge) {
-    const s = stackStart(ac, { ...P, stack: P.surge, verb: 0 });
+    const s = stackStart(ac, { ...P, stack: P.surge, verb: 0 }, chargeBus(ac));
     hum.surge = s; src.push(...s.src);
     if (vs) s.g.connect(vs);
   }
@@ -9573,7 +9580,7 @@ const SURGE = {
 };
 // Per register: [entry charge, start low Hz, start high Hz, voice level].
 const REG = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
-function stackStart(ac, P) {
+function stackStart(ac, P, dest = kit.out) {
   const src = [], S = SURGE[P.stack], R = 55 * Math.pow(2, S.root / 12), has = l => S.mech.includes(l);
   const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
   const gain = (to, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
@@ -9583,7 +9590,7 @@ function stackStart(ac, P) {
   const curve = new Float32Array(257);
   for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
   shape.curve = curve; shape.oversample = '2x'; cg.gain.value = 0.8; g.gain.value = 0;
-  cg.connect(shape).connect(g).connect(kit.out);
+  cg.connect(shape).connect(g).connect(dest);
   const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 };
   // The mains: a transformer hum, saw and square on the root.
   if (has('mains')) {
@@ -9602,7 +9609,7 @@ function stackStart(ac, P) {
     h.gb = gb;
   }
   // The sub: the root and the octave under it; a blend leaves it to the hum.
-  h.sg = gain(kit.out);
+  h.sg = gain(dest);
   if (S.sub !== false) { osc('sine', R / 2, h.sg); osc('sine', R, gain(h.sg, 0.5)); }
   // The turbine: a saw and a band of noise throb faster and faster.
   // Its gain doubles as the rage noise the stop and the vent fade.
@@ -10832,9 +10839,9 @@ window.__qa = {
   // Start the audio context as a gesture would.
   wakeAudio() { kit.wake(); },
   // Record the sound output; stop() resolves to a data URL.
-  // tap 'go': only the game-over take, with no other sound.
+  // tap 'go' or 'charge': that sound alone, with no other sound.
   record(tap) {
-    const ac = kit.live(), d = ac.createMediaStreamDestination(), src = tap === 'go' ? goBus(ac) : kit.out;
+    const ac = kit.live(), d = ac.createMediaStreamDestination(), src = tap === 'go' ? goBus(ac) : tap === 'charge' ? chargeBus(ac) : kit.out;
     src.connect(d);
     const r = new MediaRecorder(d.stream), parts = [];
     r.ondataavailable = e => parts.push(e.data);
