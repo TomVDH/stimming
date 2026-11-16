@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:35:54Z
+updated_at: 2026-11-16T22:45:20Z
 parent: stimming-oh7b
 ---
 
@@ -53,3 +53,13 @@ Rulings in Task 2:
 - The runner draws no loop with reduced motion, so the lanterns run their own while any is alive.
 - Lanterns use the straight lens only; the `fish` trial shows them in the wrong place.
 - Each glow fades out inside its cull box, so no square edge shows.
+
+- [x] Task 3: Festival and floating lanterns. Checkpoint: the river at Blue hour (`?fest=60`), floating lanterns at Night (`?float=10`), hold, Clear and Space checked live; 1280 and 375 px, console clean.
+
+Rulings in Task 3:
+- A tap on the water sets a floating lantern there (D1). Any other tap lifts a sky lantern from the far shore's water's edge under that point, so it shows at once in front of the trees.
+- The festival's river: each lantern climbs at its own rate (0.7 to 1.3) and keeps its own lane in a band that leans right as it climbs and runs off into the haze.
+- Clear gives each lantern a random start in the next 1 s and a 0.5 s fade.
+- Drag pans 12 degrees and tilts the horizon 0.2 of the frame at most.
+- A lantern on the water skips the depth test; the water under it hid its base.
+- Festival and Clear are on the bar now; Space sends up a festival. The rest of the bar waits for Task 5.

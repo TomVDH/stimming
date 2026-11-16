@@ -2,6 +2,7 @@
 import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
+import { swellHeight } from '../shared/water.js';
 import { createNoise2D } from 'simplex-noise';
 mark('libs');
 
@@ -15,8 +16,8 @@ mark('build');
 export const HOURS = { dusk: 19.8, blue: 20.6, night: 22.5 };
 // Exposure for each hour: the night needs more light to read.
 const EXPO = { dusk: 1.0, blue: 1.25, night: 1.7 };
-/** @type {{ time: (v: string) => void }} */
-const act = { time() {} };
+/** @type {{ time: (v: string) => void, festival: () => void, clear: () => void }} */
+const act = { time() {}, festival() {}, clear() {} };
 const qs = new URLSearchParams(location.search);
 // QA can open on an hour: ?t=blue.
 const first = qs.get('t') in HOURS ? qs.get('t') : 'dusk';
@@ -26,7 +27,12 @@ const ui = initPage({ id: 'lanterns', bar: {
     { value: 'blue', label: 'Blue hour', key: '2' },
     { value: 'night', label: 'Night', key: '3' },
   ], onPick: v => act.time(v) },
+  actions: [
+    { verb: 'festival', onPress: () => act.festival() },
+    { verb: 'clear', onPress: () => act.clear() },
+  ],
   quality: true,
+  keys: [['click', 'release'], ['hold', 'many'], ['drag', 'look'], ['space', 'festival']],
 } });
 
 /* ---------- the scene ---------- */
@@ -243,7 +249,8 @@ vec3 lanterns(vec2 q, float depth, float mir, float sy, float brk) {
     if (abs(dq.x) > reach || abs(dq.y) > reach + sy * 0.6 * mir) continue;
     // A lantern behind the land is hidden.
     float dist = length(v);
-    if (mir < 0.5 && dist > depth + 4.0) continue;
+    // A lantern on the water skips the test: the water under it would hide its base.
+    if (mir < 0.5 && dist > depth + 4.0 && a.y > 1.5) continue;
     vec4 b = texelFetch(tLan, ivec2(2 * i + 1, 0), 0);
     // Paper lit by a flame, about 2000 K, with a small flicker.
     float fl = 1.0 + uFlick * (0.035 * sin(uTime * (20.0 + 15.0 * fract(b.z * 7.3)) + b.z * 40.0) + 0.025 * sin(uTime * 31.0 + b.z * 13.0));
@@ -347,6 +354,8 @@ let visible = true, awake = true, sleepAt = 0, target = HOURS[first];
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 const tall = () => tallOf(canvas.clientWidth / Math.max(1, canvas.clientHeight));
+// The drag's look: yaw in degrees, tilt as a shift of the horizon.
+const look = { yaw: 0, tilt: 0 };
 
 /* ---------- the land, on the CPU ---------- */
 // These mirror the shader's wtH, wtNoised, coast and ground, so a tap finds the shore.
@@ -375,9 +384,9 @@ function ground(x, z) {
 // The camera, as the shader builds it.
 function camera() {
   const cw = Math.max(1, canvas.clientWidth), ch = Math.max(1, canvas.clientHeight), asp = cw / ch;
-  const foc = CAM.foc * Math.min(1, Math.sqrt(asp / 1.2)), hz = horizon(asp, CAM.hz);
+  const foc = CAM.foc * Math.min(1, Math.sqrt(asp / 1.2)), hz = horizon(asp, CAM.hz) + look.tilt;
   const pitch = CAM.fish > 0 ? (hz - 0.5) * CAM.fish : Math.atan((hz - 0.5) / foc);
-  const yaw = (CAM.yaw + 6 * tall()) * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const yaw = (CAM.yaw + 6 * tall() + look.yaw) * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   return {
     asp, foc, roll: CAM.roll * Math.PI / 180,
     eye: [CAM.x, Math.max(ground(CAM.x, CAM.z), 0) + CAM.lift, CAM.z],
@@ -407,6 +416,10 @@ function launchAt(u, v) {
     if (y < h) return [x, h, z];
     t += Math.max((y - h) * 0.5, 0.01 * t + 0.3);
   }
+  return shoreUnder(eye, d);
+}
+// The far shore under a view ray: the first land past open water, along the ray's bearing.
+function shoreUnder(eye, d) {
   const l = Math.hypot(d[0], d[2]), ax = d[0] / l, az = d[2] / l;
   let wet = false;
   for (let r = 40; r < 4000; r += 8) {
@@ -418,48 +431,113 @@ function launchAt(u, v) {
 }
 
 /* ---------- the lanterns, on the CPU ---------- */
-// A pool of sky lanterns. The cap follows the detail level.
+// A pool of lanterns, in the air and on the water. The cap follows the detail level.
 const CAPS = [64, 120, 160], MAXN = 160;
-/** @type {{ p: number[], v: number[], age: number, life: number, size: number, phase: number, lean: number, leanV: number }[]} */
+/**
+ * One lantern. fade is how long it takes to go out; float marks one on the water.
+ * @typedef {{ p: number[], v: number[], age: number, life: number, fade: number, size: number, phase: number, lean: number, leanV: number, rate: number, float: boolean, fest: boolean }} Lantern
+ */
+/** @type {Lantern[]} */
 export const pool = [];
 const wind = createNoise2D();
 let simT = 0, windSpeed = 1.6;
-// One lantern lifts from the land or water under a point on the frame.
-export function release(u, v) {
+// The festival: how long it has run, how many it has let go, and its river's line.
+const FEST_N = 80, FEST_T = 6;
+let fest = null;
+/** @param {number[]} at @param {boolean} float @param {boolean} [inFest] */
+function add(at, float, inFest = false) {
   if (pool.length >= (CAPS[env.detail.level] ?? MAXN)) pool.shift();
-  const at = launchAt(u, v), j = () => (Math.random() - 0.5) * 6;
+  // No two start in one place, so a held press never stacks them.
+  const j = () => (Math.random() - 0.5) * (float ? 3 : 6);
   pool.push({
-    // No two start in one place, so a held press never stacks them.
-    p: [at[0] + j(), at[1] + 0.9, at[2] + j()], v: [0, 0, 0],
-    age: 0, life: 60 + 40 * Math.random(),
+    p: [at[0] + j(), float ? 0.3 : at[1] + 0.9, at[2] + j()], v: [0, 0, 0],
+    age: 0, life: float ? 90 + 50 * Math.random() : 60 + 40 * Math.random(), fade: 6,
     // No two share a size, a flicker or a sway.
-    size: 1.4 * (0.85 + 0.3 * Math.random()), phase: Math.random() * 100, lean: 0, leanV: 0,
+    size: (float ? 0.7 : 1.4) * (0.85 + 0.3 * Math.random()), phase: Math.random() * 100, lean: 0, leanV: 0,
+    // Each flame lifts its paper at its own rate, so a crowd strings out.
+    rate: 0.7 + 0.6 * Math.random(),
+    float, fest: inFest,
   });
+}
+// A tap on the water sets a lantern afloat there; anywhere else one lifts into the air.
+// kind 'sky' always lifts one, from the shore under the point if the point is on the water.
+export function release(u, v, kind = 'auto') {
+  const at = launchAt(u, v), wet = at[1] <= 0 && coast(at[0], at[2]) < 0;
+  if (wet && kind === 'auto') add(at, true);
+  // A sky lantern lifts from the water's edge, in front of the trees, so it shows at once.
+  else { const { eye, d } = rayAt(u, v); add(shoreUnder(eye, d), false); }
   wake();
   env.touch();
+}
+// Festival: eighty lanterns lift along the far shore over 6 s.
+export function festival() {
+  // The river's line: the shore under the middle of the frame.
+  const r0 = rayAt(0.5, 0.5), mid = shoreUnder(r0.eye, r0.d);
+  fest = { t: 0, n: 0, x: mid[0], z: mid[2] };
+  wake();
+  env.touch();
+}
+// Clear: every lantern goes out within 1.5 s, in no fixed order.
+export function clearAll() {
+  fest = null;
+  for (const L of pool) {
+    const at = L.age + Math.random();
+    if (at < L.life || L.fade > 0.5) { L.life = Math.min(L.life, at); L.fade = 0.5; }
+  }
+  wake();
 }
 // The glow of one lantern: a flare as it catches, steady, then an ember that goes out.
 function glowOf(L) {
   const flare = 1 + 1.4 * Math.exp(-L.age / 0.12);
-  const out = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / 6);
-  return flare * (0.08 + 0.92 * out * out) * (L.age < L.life + 6 ? 1 : Math.max(0, 1 - (L.age - L.life - 6) / 2));
+  if (L.age < L.life) return flare;
+  const out = Math.max(0, 1 - (L.age - L.life) / L.fade);
+  // A cleared lantern goes straight out; a spent one keeps an ember for 2 s.
+  if (L.fade < 6) return out * out;
+  return (0.08 + 0.92 * out * out) * (L.age < L.life + L.fade ? 1 : Math.max(0, 1 - (L.age - L.life - L.fade) / 2));
 }
 export function stepLanterns(dt) {
   const slow = reduced() ? 0.5 : 1;
   dt *= slow;
   simT += dt;
+  if (fest) {
+    // The festival lets its lanterns go along the shore, a few at a time.
+    fest.t += dt;
+    const due = Math.min(FEST_N, Math.floor(fest.t / FEST_T * FEST_N));
+    for (; fest.n < due; fest.n++) { const r = rayAt(0.04 + 0.92 * Math.random(), 0.5); add(shoreUnder(r.eye, r.d), false, true); }
+    if (fest.n >= FEST_N && fest.t > FEST_T + 120) fest = null;
+  }
   for (let i = pool.length - 1; i >= 0; i--) {
     const L = pool[i];
     L.age += dt;
-    if (L.age > L.life + 8) { pool.splice(i, 1); continue; }
+    if (L.age > L.life + L.fade + (L.fade < 6 ? 0 : 2)) { pool.splice(i, 1); continue; }
+    const g = wind(simT * 0.04 + L.phase, L.p[1] * 0.01);
+    if (L.float) {
+      // On the water: the wind pushes at 5 %, and the swell lifts it.
+      const k = 1 - Math.exp(-dt / 8);
+      L.v[0] += (windSpeed * 0.05 * (1 + 0.5 * g) - L.v[0]) * k;
+      L.v[2] += (-windSpeed * 0.02 - L.v[2]) * k;
+      L.p[0] += L.v[0] * dt;
+      L.p[2] += L.v[2] * dt;
+      L.p[1] = 0.3 + swellHeight(L.p[0], L.p[2], env.clock.time, S.swell) * 6;
+      L.lean = slow < 1 ? 0 : 0.05 * Math.sin(simT * 1.1 + L.phase);
+      continue;
+    }
     // Lift: the flame's heat climbs to about 1.3 m/s; an ember barely rises.
-    const heat = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / 6);
-    const up = 0.15 + 1.15 * heat * Math.min(1, L.age / 4);
+    const heat = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / L.fade);
+    const up = 0.15 + 1.15 * L.rate * heat * Math.min(1, L.age / 4);
     L.v[1] += (up - L.v[1]) * (1 - Math.exp(-dt / 2.5));
     // Wind: the slider speed plus slow gusts, stronger with height.
     const lift = 0.45 + 0.55 * Math.min(1, L.p[1] / 90);
-    const g = wind(simT * 0.04 + L.phase, L.p[1] * 0.01);
-    const wx = windSpeed * lift * (1 + 0.35 * g), wz = -windSpeed * lift * 0.35 * (1 + 0.5 * wind(L.phase, simT * 0.03));
+    let wx = windSpeed * lift * (1 + 0.35 * g), wz = -windSpeed * lift * 0.35 * (1 + 0.5 * wind(L.phase, simT * 0.03));
+    if (L.fest && fest) {
+      // The festival's wind has a slow channel: it gathers its lanterns into one band.
+      // The band leans with the wind as it climbs, and runs off into the haze.
+      const pull = Math.min(1, L.age / 8);
+      // Each keeps its own lane in the band, so the river stays wide.
+      const lane = (fract(L.phase) - 0.5) * 30;
+      wx += (fest.x + lane + L.p[1] * 1.3 - L.p[0]) * 0.05 * pull;
+      wz -= windSpeed * (0.4 + 0.9 * L.rate) * pull;
+    }
     const k = 1 - Math.exp(-dt / 5);
     L.v[0] += (wx - L.v[0]) * k;
     L.v[2] += (wz - L.v[2]) * k;
@@ -503,10 +581,10 @@ try {
       uLanN: () => pool.length,
       uFlick: () => (reduced() ? 0 : 1),
       uMist: () => 0.003,
-      uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz),
+      uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz) + look.tilt,
       uEye: () => [CAM.x, CAM.z, CAM.lift],
       // A tall frame turns a little right, so the lit windows stay in it.
-      uView: () => [(CAM.yaw + 6 * tall()) * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
+      uView: () => [(CAM.yaw + 6 * tall() + look.yaw) * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
       uBars: () => CAM.bars,
     },
   });
@@ -530,14 +608,21 @@ function step(dt) {
   S.hour += (target - S.hour) * k;
   S.expo += (expoTarget - S.expo) * k;
   stepLanterns(dt);
+  // A held press lets a lantern go every 0.25 s.
+  if (press?.mode === 'hold') {
+    holdAcc += dt;
+    for (; holdAcc >= 0.25; holdAcc -= 0.25) release(press.u, press.v);
+  }
   // The loop sleeps once the sky is empty and no one has touched it for 60 s.
-  if (performance.now() > sleepAt && !pool.length) awake = false;
+  if (performance.now() > sleepAt && !pool.length && !fest) awake = false;
 }
 // Any input wakes the loop for another 60 s.
 function wake() {
   sleepAt = performance.now() + 60000;
   if (!awake) { awake = true; env.touch(); }
 }
+act.festival = () => { festival(); if (reduced()) still(); };
+act.clear = () => clearAll();
 act.time = v => {
   target = HOURS[v];
   expoTarget = EXPO[v];
@@ -547,12 +632,58 @@ act.time = v => {
   env.touch();
 };
 for (const ev of ['pointerdown', 'pointermove', 'keydown']) stage.addEventListener(ev, wake, { passive: true });
-// A tap sets one lantern free from under that point.
+// The pointer: a press turns into a drag after 8 px, or a hold after 260 ms.
+// A release that is neither is a tap.
+/** @type {{ id: number, x: number, y: number, u: number, v: number, mode: string, timer: number } | null} */
+let press = null, holdAcc = 0;
+const uvOf = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height]; };
 canvas.addEventListener('pointerdown', e => {
-  if (e.button !== 0) return;
-  const r = canvas.getBoundingClientRect();
-  release((e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height);
-  if (reduced()) still();
+  if (e.button !== 0 || press) return;
+  canvas.setPointerCapture(e.pointerId);
+  const [u, v] = uvOf(e);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, u, v, mode: 'press', timer: 0 };
+  press.timer = window.setTimeout(() => {
+    if (press?.mode !== 'press') return;
+    // Hold: one lantern each 0.25 s from under the pointer.
+    press.mode = 'hold';
+    holdAcc = 0;
+    release(press.u, press.v);
+    if (reduced()) still();
+  }, 260);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const [u, v] = uvOf(e);
+  if (press.mode === 'press' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) {
+    clearTimeout(press.timer);
+    press.mode = 'drag';
+  }
+  if (press.mode === 'drag') {
+    // Drag: a small pan and tilt, so the eye can follow the river.
+    look.yaw = Math.max(-12, Math.min(12, look.yaw - (u - press.u) * 14));
+    look.tilt = Math.max(-0.2, Math.min(0.2, look.tilt + (v - press.v) * 0.5));
+    env.touch();
+  }
+  press.u = u;
+  press.v = v;
+});
+function endPress(e, tap) {
+  if (!press || e.pointerId !== press.id) return;
+  clearTimeout(press.timer);
+  if (tap && press.mode === 'press') {
+    release(press.u, press.v);
+    if (reduced()) still();
+  }
+  press = null;
+}
+canvas.addEventListener('pointerup', e => endPress(e, true));
+canvas.addEventListener('pointercancel', e => endPress(e, false));
+canvas.addEventListener('lostpointercapture', e => endPress(e, false));
+// Space sends up a festival.
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage || e.key !== ' ') return;
+  e.preventDefault();
+  act.festival();
 });
 // With motion off the runner draws no loop, so the lanterns get their own.
 let stillOn = false;
@@ -564,7 +695,7 @@ function still() {
     step(Math.min(0.05, (now - last) / 1000));
     last = now;
     env.draw();
-    if (pool.length && visible) requestAnimationFrame(tick);
+    if ((pool.length || fest || press) && visible) requestAnimationFrame(tick);
     else stillOn = false;
   };
   requestAnimationFrame(tick);
@@ -572,11 +703,17 @@ function still() {
 new ResizeObserver(wake).observe(stage);
 
 /* ---------- start ---------- */
-// QA: ?lan=10 starts with ten lanterns already in the air.
+// QA: ?lan=10 starts with ten lanterns in the air, ?float=8 with eight on the water.
+// ?fest=25 starts 25 s into a festival.
 const preset = Math.min(MAXN, +(qs.get('lan') || 0));
 for (let i = 0; i < preset; i++) {
-  release(0.15 + 0.7 * Math.random(), 0.2 + 0.25 * Math.random());
+  release(0.15 + 0.7 * Math.random(), 0.2 + 0.25 * Math.random(), 'sky');
   for (let k = 0; k < 40; k++) stepLanterns(0.1);
+}
+for (let i = 0; i < Math.min(MAXN, +(qs.get('float') || 0)); i++) release(0.1 + 0.8 * Math.random(), 0.05 + 0.3 * Math.random());
+if (qs.has('fest')) {
+  festival();
+  for (let k = 0; k < +qs.get('fest') * 10; k++) stepLanterns(0.1);
 }
 wake();
 env.draw();
