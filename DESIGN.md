@@ -292,7 +292,7 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 - The middle holds the words of the toy in hand: its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock. With no toy in hand the middle is empty.
 - The words are part of the tube: the toy's still or loop, in colour, as a CRT with the grain of an image tube (a slight bulge, quiet scan lines, halation, fine uneven grain). The words burn in white with a soft band round each letter. The tube has no hard edge; it is wider than the clock and fades out past the ring of toys. A change of toy takes 0.42 s: the new picture fades in from a little close up and settles.
 - The selection is a soft wedge where the tube masks its picture away, from the middle out to the toy in hand; the icon stands on the clear page. It turns to the pointer.
-- The intro: a shaded comet swirls once round the face (1.6 s), its tail in the wordmark's hues; each toy arrives as it passes its hour. The clock has no rim and no minute marks. On a fresh page the tube then blinks: snow, then off to a dot. A Re-roll runs the same comet.
+- The intro: a shaded comet runs once round the toys' track (1.6 s), its tail in the wordmark's hues, and drops each toy off at its hour. The clock has no rim and no minute marks. On a fresh page the tube then blinks: snow, then off to a dot. A Re-roll runs the same comet.
 - The Re-roll is a pill under the clock; it shows after 5 s.
 - Left alone for 12 s, the clock runs by itself: each hour in turn shows its toy in the middle. Any input stops it.
 

@@ -149,8 +149,8 @@ function start() {
   });
   shelf.addEventListener('focusout', e => { if (!tile(e.relatedTarget)) rest(); });
 
-  // The intro: a comet swirls once round the face, from twelve o'clock, spiralling out a little.
-  // Each toy arrives as the comet passes its hour. Its tail takes the wordmark's hues as it goes.
+  // The intro: a comet runs once round the toys' own track, from twelve o'clock.
+  // It drops each toy off at its hour as it passes. Its tail takes the wordmark's hues as it goes.
   const comet = /** @type {HTMLCanvasElement} */ (face.querySelector('.clock-comet')), pen = comet.getContext('2d');
   // The tail covers this share of a lap, in this many shaded steps.
   const TAIL = 0.26, STEPS = 56;
@@ -160,8 +160,8 @@ function start() {
     pen.clearRect(0, 0, W, W);
     if (fade <= 0) return;
     const at = t => {
-      // The path swirls out from near the middle to just inside the toys, with a small wobble.
-      const r = W * (0.15 + 0.15 * t * (2 - t) + 0.006 * Math.sin(t * 19)), ang = t * Math.PI * 2;
+      // The path is the toys' track (40.5% of the face from the middle). It swirls in to it at the start.
+      const into = Math.min(1, Math.max(0, t / 0.1)), r = W * (0.405 - 0.1 * (1 - into * into * (3 - 2 * into)) + 0.004 * Math.sin(t * 19)), ang = t * Math.PI * 2;
       return [W / 2 + Math.sin(ang) * r, W / 2 - Math.cos(ang) * r];
     };
     pen.globalCompositeOperation = 'lighter';
@@ -201,9 +201,9 @@ function start() {
     gsap.timeline({ onComplete() { gsap.set(icons, { clearProps: 'transform,opacity,visibility' }); drawComet(0, 0); } })
       .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
         paint();
-        // Hour 0 comes at once; hour 11 just before the comet ends its lap.
-        const h = Math.min(HOURS, Math.round(head.a * HOURS) + 1);
-        while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.55, ease: 'back.out(1.8)' });
+        // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
+        const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
+        while (came < h) gsap.to(icons[came++], { scale: 1, autoAlpha: 1, rotation: 0, duration: 0.5, ease: 'back.out(2.2)' });
       } }, 0)
       // The comet runs on a little past twelve as it fades, so it does not stop dead.
       .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6)
