@@ -87,7 +87,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues } from './ranges.js';
+import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues, LAND_KEYS } from './ranges.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
@@ -1715,7 +1715,7 @@ const farBake = {
   sun: new THREE.Vector3(), dirty: true, bakes: 0, hard: 0, lights: 0,
 };
 // The bake passes' inputs: the buffer under construction.
-const FB_U = { uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uBakeEye: { value: new THREE.Vector3() } };
+const FB_U = { uPhase: { value: new THREE.Vector2(1, 0) }, uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uBakeEye: { value: new THREE.Vector3() } };
 // The baked pass's inputs: the front buffer.
 const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uFarL: { value: null } };
 // The geometry bake: range and normal per texel.
@@ -1727,8 +1727,12 @@ const farBakeG = new THREE.ShaderMaterial({
   fragmentShader: /* glsl */`
   varying vec2 vN;
   uniform mat4 uRefInv;
+  // The pass: x passes in all, this one is y.
+  // It fills bands of 8 rows, every x-th band: the GPU shades rows in blocks.
+  uniform vec2 uPhase;
   ${FAR_FN}
   void main() {
+    if (mod(floor(gl_FragCoord.y / 8.0), uPhase.x) != uPhase.y) discard;
     vec3 ro = uEye, rd = rayOf(uRefInv, vN, vec3(0.0));
     float hit = farMarch(ro, rd);
     vec3 p = ro + rd * hit;
@@ -1850,6 +1854,10 @@ function farGridUpdate() {
   const u = FAR_U, key = [u.uRg.value.map(v => v.toArray()), u.uRa.value.map(v => v.toArray()), Array.from(u.uLand.value), u.uEro.value, u.uForms.value].join();
   if (key === farGrid.key) return false;
   farGrid.key = key; farGrid.builds++;
+  // The grid reaches past every range's band: centre, plus 1.42 radii at the current width, plus 15 km.
+  const wk = u.uLand.value[LAND_KEYS.indexOf('width')] ?? 1;
+  farGrid.half = u.uRg.value.reduce((m, g) => (g.w > 0 ? Math.max(m, Math.hypot(g.x - 1670, g.y - 1990) + 1.42 * g.z * wk + 15000) : m), 200000);
+  GRID_U.uGrid.value.set(1670 - farGrid.half, 1990 - farGrid.half, 2 * farGrid.half / farGrid.n, farGrid.n);
   const rt = renderer.getRenderTarget();
   fbQuad.material = farGridF;
   renderer.setRenderTarget(farGrid.f);
@@ -1883,7 +1891,8 @@ function fbReach(f, c, building) {
   return r;
 }
 // Start a bake of the back buffer around the view as it is now.
-function fbStart(c) {
+// k scales the buffer: a quick bake runs at a quarter of the size.
+function fbStart(c, k = 1) {
   const B = farBake, f = B.bufs[1 - B.front], M = sight ? B.Msight : B.M;
   f.ok = false; f.aspect = c.aspect; f.M = M;
   f.eye.copy(c.position); f.q.copy(c.quaternion);
@@ -1891,22 +1900,28 @@ function fbStart(c) {
   const cam = new THREE.PerspectiveCamera(THREE.MathUtils.radToDeg(2 * Math.atan(f.tb)), c.aspect, 1, 10);
   f.vp.multiplyMatrices(cam.projectionMatrix, fbR.makeRotationFromQuaternion(c.quaternion).invert());
   f.inv.copy(f.vp).invert();
-  const w = Math.max(1, Math.round(canvas.width * M * B.res)), h = Math.max(1, Math.round(canvas.height * M * B.res));
+  const w = Math.max(1, Math.round(canvas.width * M * B.res * k)), h = Math.max(1, Math.round(canvas.height * M * B.res * k));
   f.g.setSize(w, h); f.l.setSize(w, h);
-  B.job = { f, y: 0, h, w };
+  B.job = { f, pass: 0, lit: false, h, w };
 }
-// Fill rows of the job's buffer; the last rows also light it, then it turns front.
-function fbStep(n) {
-  const B = farBake, j = B.job, f = j.f;
-  FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(j.w, j.h); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
-  const y1 = Math.min(j.h, j.y + n);
-  f.g.scissor.set(0, j.y, j.w, y1 - j.y); f.g.scissorTest = true;
-  fbQuad.material = farBakeG;
-  renderer.setRenderTarget(f.g);
-  renderer.render(fbScene, fbCam);
-  f.g.scissorTest = false;
-  j.y = y1;
-  if (j.y < j.h) return;
+// One step of the job: a pass over every B.rows-th band of rows, so each pass costs about the same.
+// After the last pass, one frame lights the buffer; then it turns front.
+// all runs the whole job at once.
+function fbStep(all = false) {
+  const B = farBake, j = B.job, f = j.f, n = all ? 1 : B.rows;
+  if (j.pass < n) {
+    FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(j.w, j.h); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
+    FB_U.uPhase.value.set(n, j.pass);
+    fbQuad.material = farBakeG;
+    renderer.setRenderTarget(f.g);
+    // Only the first pass clears: the later passes add their bands to it.
+    const ac = renderer.autoClear;
+    renderer.autoClear = j.pass === 0;
+    renderer.render(fbScene, fbCam);
+    renderer.autoClear = ac;
+    j.pass = all ? n : j.pass + 1;
+    if (!all) return;
+  }
   fbLight(f);
   f.ok = true; B.job = null; B.bakes++;
   B.front = B.bufs.indexOf(f);
@@ -1922,7 +1937,7 @@ function fbLight(f) {
   renderer.render(fbScene, fbCam);
 }
 // Each frame: past the window's edge, bake at once.
-// Near the edge, bake the back buffer a few rows a frame, then swap.
+// Near the edge, bake the back buffer one row pass a frame, then swap.
 // A tenth of a degree of sun moves the shadows: relight.
 function farBakeUpdate() {
   const B = farBake, c = camera;
@@ -1931,12 +1946,15 @@ function farBakeUpdate() {
   const rt = renderer.getRenderTarget(), f = B.bufs[B.front];
   const r = B.dirty ? 9 : fbReach(f, c);
   if (r > 1 || (B.job && fbReach(B.job.f, c, true) > 1)) {
+    // A quarter-size bake shows at once, at a sixteenth of the cost.
+    // The full bake then fills over the next frames and swaps in.
     B.dirty = false; B.hard++;
+    fbStart(c, 0.25);
+    fbStep(true);
     fbStart(c);
-    fbStep(1e9);
   } else {
     if (!B.job && r > 0.94) fbStart(c);
-    if (B.job) fbStep(Math.ceil(B.job.h / B.rows));
+    if (B.job) fbStep();
     else if (B.sun.dot(U.uSun.value) < 0.9999985) fbLight(f);
   }
   renderer.setRenderTarget(rt);
@@ -12078,6 +12096,7 @@ window.__qa = {
   // Set the ranges' light (sun, sky, effects) and rock colour.
   rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
   farSkip(on) { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; },
+  grid: () => ({ half: farGrid.half, cell: GRID_U.uGrid.value.z, builds: farGrid.builds }),
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
@@ -12088,18 +12107,27 @@ window.__qa = {
     const on = () => { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }, off = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); qs.push(q); };
     const b0 = farPass.onBeforeRender, a0 = farPass.onAfterRender;
     if (what === 'far') { farPass.onBeforeRender = (...a) => { b0(...a); on(); }; farPass.onAfterRender = off; }
+    // 'farup' times the bake's own work in each frame.
+    const u0 = farBakeUpdate;
+    if (what === 'farup') farBakeUpdate = () => { on(); u0(); off(); };
     // 'bake' times a full rebake; 'light' times a relight alone.
-    if (what === 'bake' || what === 'light') { this.run(1 / 30); for (let i = 0; i < n; i++) { if (what === 'bake') farBake.dirty = true; else farBake.sun.set(0, 0, 0); on(); farBakeUpdate(); off(); } }
+    // 'full' times a whole bake in one go, for reference.
+    // 'grid' times a rebuild of the height grid.
+    if (what === 'grid') { this.run(1 / 30); for (let i = 0; i < n; i++) { farGrid.key = ''; on(); farGridUpdate(); off(); } farBake.dirty = false; }
+    else if (what === 'full') { this.run(1 / 30); for (let i = 0; i < n; i++) { on(); fbStart(camera); fbStep(true); off(); } }
+    else if (what === 'bake' || what === 'light') { this.run(1 / 30); for (let i = 0; i < n; i++) { if (what === 'bake') farBake.dirty = true; else farBake.sun.set(0, 0, 0); on(); farBakeUpdate(); off(); } }
     else for (let i = 0; i < n; i++) { if (what === 'all') on(); this.run(1 / 30); if (what === 'all') off(); }
     farPass.onBeforeRender = b0; farPass.onAfterRender = a0;
+    farBakeUpdate = u0;
     const ms = [];
     for (const x of qs) {
       while (!gl.getQueryParameter(x, gl.QUERY_RESULT_AVAILABLE)) await new Promise(r => setTimeout(r, 5));
       if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) ms.push(gl.getQueryParameter(x, gl.QUERY_RESULT) / 1e6);
       gl.deleteQuery(x);
     }
+    const seq = ms.map(v => +v.toFixed(1));
     ms.sort((a, b) => a - b);
-    return { median: ms[ms.length >> 1], min: ms[0], n: ms.length };
+    return { median: ms[ms.length >> 1], min: ms[0], max: ms[ms.length - 1], n: ms.length, seq };
   },
   // Rock parts off the camera's layer, so a frame time shows what they cost.
   // partsOff([]) puts every part back.
