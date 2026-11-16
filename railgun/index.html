@@ -188,7 +188,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Ambient: small events nobody fires, for a watcher.
     { type: 'toggle', id: 'ambient', label: 'Ambient', value: true, persist: true },
     { type: 'slider', id: 'ambrate', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
-    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'rain', label: 'Rain' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'devil', label: 'Dust devil' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
+    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'rain', label: 'Rain' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
     { type: 'button', id: 'ambfire', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
     // Strike test: each rock starts at its hold and strikes after a short grace.
     // Fast rock: the rock falls ten times faster; off is the normal speed.
@@ -4567,7 +4567,6 @@ function updateWarp() {
 /* ---------- ambient: events nobody fires ---------- */
 // A watcher needs no input: the scene plays small events on its own.
 // The director holds off while the player charges or a shot flies.
-// Dust devils stay off the rotation; the Dev test still plays one.
 const AMB_KINDS = ['war', 'star', 'sat', 'bolt', 'flak', 'shed'];
 const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6 };
 // Two star streaks: a pair can cross at once.
@@ -4628,8 +4627,6 @@ function ambKinds() {
     // Each of these runs alone.
     if (amb.live.some(e => e.kind === k)) return false;
     if (k === 'flak') return U.uStars.value > 0.5;
-    // Dust devils need the sun well up.
-    if (k === 'devil') return U.uSunE.value > rad(6);
     // Only a falling rock sheds.
     if (k === 'shed') return tgtKind === 'rock' && ast.state === 'approach' && astMesh.visible;
     return true;
@@ -4717,15 +4714,6 @@ function ambStart(kind) {
     amb.live.push({ kind, t0: simT, dur: 5, c, pops });
     return;
   }
-  if (kind === 'devil') {
-    // A dust devil walks across the plain, then thins away.
-    // It keeps right of the gun, clear of the gun's shadow.
-    const out = ambFlat(0.15 + 0.7 * rnd(), new THREE.Vector3());
-    const site = camera.position.clone().addScaledVector(out, 1500 + 2000 * rnd()).setY(0);
-    const vel = DOME_WIND.clone().normalize().multiplyScalar(4 + 3 * rnd());
-    amb.live.push({ kind, t0: simT, dur: 22 + 8 * rnd(), site, vel, acc: 0, h: 250 + 200 * rnd() });
-    return;
-  }
   if (kind === 'shed') {
     // A lump breaks off the hot face and peels away.
     const side = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5);
@@ -4770,7 +4758,6 @@ function stepAmbient(dt) {
   for (const e of amb.live) {
     if (reduced()) break;
     if (e.kind === 'rain') stepRainAmb(e, dt);
-    else if (e.kind === 'devil') stepDevil(e, dt);
     else if (e.kind === 'embers') stepEmbers(e, dt);
   }
   // A dead rock with nobody at the gun: the toy resets itself.
@@ -4898,22 +4885,6 @@ function drawLanding(e, a) {
   if (i >= 0) shipDomes.push({ m: domeVols[i], t0: simT, i, P: e.site.clone(), S: e.S });
   // Sound runs at 343 m/s; a long wait is cut to half a minute.
   amb.due.push({ at: simT + Math.min(30, e.D / 343), k: 0.6 });
-}
-// A dust devil: puffs spin up a thin column as it walks.
-function stepDevil(e, dt) {
-  const a = simT - e.t0, u = a / e.dur;
-  if (a < 0 || u > 1) return;
-  // Thirty puffs a second at its peak; it grows in and thins away.
-  e.acc += dt * 30 * Math.sin(Math.PI * u);
-  for (; e.acc >= 1; e.acc--) {
-    const base = ambA.copy(e.site).addScaledVector(e.vel, a);
-    // Puffs fill the whole column; it widens toward the top and leans downwind.
-    const y = e.h * Math.pow(rnd(), 1.4), th = rnd() * Math.PI * 2, r = 5 + 0.1 * y;
-    dustP.set(base.x + Math.cos(th) * r + 0.15 * y, y, base.z + Math.sin(th) * r + 0.05 * y);
-    dustV.set(-Math.sin(th) * 6 + e.vel.x, 4 + 4 * rnd(), Math.cos(th) * 6 + e.vel.z);
-    // The steam flag lights it from the sun, as backlit dust glows.
-    puff(dustP, dustV, 4 + 3 * rnd(), 7 + 0.04 * y + 5 * rnd(), true);
-  }
 }
 // The sites: the landed chunks, the late landings, or a test spot.
 function emberSites(e) {

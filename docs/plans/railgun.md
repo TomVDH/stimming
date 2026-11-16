@@ -377,10 +377,9 @@ The toy tells people that watching is fine. The scene carries itself:
   - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
   - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
   - `__qa.lens()` reads the push, the loom, the arc and the stir.
-- Five more ambient events (each runs alone):
+- Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
   - Far bolt: another gun's slug climbs from past the ranges for 4 s; a faint line stays and fades over about 8 s; the launch lights the horizon.
   - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
-  - Dust devil: the sun 6 degrees up or more; a pale backlit column walks across the plain 1.5 to 3.5 km out, right of the gun, for 22 to 30 s.
   - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
   - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
 - `glint()` centres its streak on its point; `ambSeg()` draws a streak from a start point.
@@ -390,4 +389,3 @@ The toy tells people that watching is fine. The scene carries itself:
 - The ground grid packs its 480 by 480 vertices round the eye: about 3 m apart there, about 3 km at the rim. The wide and portrait eyes each get their own grid. The vertex count is unchanged.
 - Gentle sand swells, 180 to 300 m apart and up to about 4 m high, roll from 40 m past the eye out to about 4 km. The ground round the mount and under the eye stays level, and the gun's foot stays in view.
 - The fragment shader takes the swells' slope with a 6 m step near the eye, and adds soft hummocks about 30 m across as a bump only, filtered out with distance.
-- Dust devils are off the random rotation (Tom: they look odd); the Dev test still plays one.
