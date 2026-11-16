@@ -225,6 +225,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // Gun steel: the graphite parts' reflectance and roughness.
     { type: 'slider', id: 'gunmetal', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
     { type: 'slider', id: 'gunrough', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
+    // Base wear: the stains, cracks and grease on the base.
+    { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
@@ -287,7 +289,7 @@ const RES_STEP = [1, 0.82, 0.68, 0.55];
 // Station 0 is the trunnion; station 1 is the muzzle, 900 m on.
 const LIFT = 0, BERM_R = 660;
 // The barrel runs 1046 m from the trunnion.
-const ELEV = rad(6), L = 1046, TRUN_Y = 215 + LIFT;
+const ELEV = rad(6), L = 1046, TRUN_Y = 290 + LIFT;
 const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
 const AX_UP = new THREE.Vector3(0, Math.cos(ELEV), Math.sin(ELEV));
 const A0 = new THREE.Vector3(0, TRUN_Y, 0);
@@ -1775,6 +1777,13 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
 }
 // A block in the world frame; y is its centre.
 const block = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+// Narrow a box's top: kx across, kz along, then shift the top along z.
+function taper(g, kx, kz, dz = 0) {
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) p.setXYZ(i, p.getX(i) * kx, p.getY(i), p.getZ(i) * kz + dz);
+  g.computeVertexNormals();
+  return g;
+}
 // The barrel frame: a along the axis, x across, u above it.
 const toBarrel = (g, a0, a1, x, u) => g.translate(x, u, -(a0 + a1) / 2).rotateX(ELEV).translate(A0.x, A0.y, A0.z);
 const slab = (w, h, a0, a1, x = 0, u = 0) => toBarrel(new THREE.BoxGeometry(w, h, a1 - a0), a0, a1, x, u);
@@ -1817,41 +1826,45 @@ function buildGun() {
   // The fixed plinth: an apron, a parapet, buttresses, a ramp.
   // A berm stands under it only while LIFT is above zero.
   if (LIFT > 0) add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 4, 2);
-  add(drum(440, 456, 22, 11), 0, 0, 1);
-  for (let i = 0; i < 12; i++) add(new THREE.BoxGeometry(70, 30, 110).translate(0, 15, 470).rotateY(rad(i * 30 + 15)), 0, 0, 1);
+  // The apron steps down in two battered tiers.
+  add(drum(446, 478, 10, 5), 0, 0, 1);
+  add(drum(432, 446, 14, 17), 0, 0, 1);
+  // Each buttress tooth leans in: a narrow top, a long sloped back.
+  for (let i = 0; i < 12; i++) add(taper(new THREE.BoxGeometry(70, 30, 110), 0.62, 0.45, -24).translate(0, 15, 474).rotateY(rad(i * 30 + 15)), 0, 0, 1);
   add(beam(v3(0, LIFT + 3, 470), v3(0, 3, 1460), 46, 6), 0, 0, 2);
   // The deck turns on a dark race ring.
   add(drum(404, 404, 4, 23, 64), 0, 2);
-  add(drum(390, 396, 16, 26, 64));
+  add(drum(384, 396, 12, 24, 64));
+  add(drum(378, 384, 4, 32, 64));
   for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
   // Mount: a footing, one thick pylon, a yoke for the pin.
   add(block(300, 12, 260, 0, 40, 20));
-  add(block(190, 126, 120, 0, 77, 0));
-  add(block(214, 10, 136, 0, 138, 0), 0, 2);
+  add(block(190, 201, 120, 0, 114.5, 0));
+  add(block(214, 10, 136, 0, 213, 0), 0, 2);
   for (const sd of [-1, 1]) {
-    add(block(26, 132, 112, sd * 80, 189, 0));
+    add(block(26, 132, 112, sd * 80, 264, 0));
     add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
     // A braced strut climbs from the deck behind the pylon.
-    add(beam(v3(sd * 62, 34, 330), v3(sd * 62, 124, 66), 26, 20));
+    add(beam(v3(sd * 62, 34, 330), v3(sd * 62, 199, 66), 26, 20));
     add(block(40, 10, 40, sd * 62, 39, 334));
     add(block(14, 34, 14, sd * 62, 51, 230));
     // A pinion housing drives each quadrant.
-    add(block(30, 36, 50, sd * 110, 92, 0), 0, 2);
+    add(block(30, 36, 50, sd * 110, 167, 0), 0, 2);
   }
-  for (const f of [0.25, 0.5, 0.75]) add(block(124, 8, 10, 0, 34 + 90 * f, 330 - 264 * f), 0, 2);
+  for (const f of [0.25, 0.5, 0.75]) add(block(124, 8, 10, 0, 34 + 165 * f, 330 - 264 * f), 0, 2);
   add(block(170, 10, 60, 0, 39, 334));
   // A short leg props the pylon's front.
-  add(beam(v3(0, 34, -236), v3(0, 116, -56), 34, 18));
+  add(beam(v3(0, 34, -236), v3(0, 191, -56), 34, 18));
   add(block(80, 8, 56, 0, 38, -240));
   add(new THREE.CylinderGeometry(26, 26, 240, 24, 1).rotateZ(Math.PI / 2).translate(0, A0.y - LIFT, 0), 0, 2);
   // A machinery house with louvres sits between the struts.
   add(block(90, 40, 80, 0, 54, 150));
   for (let z = 120; z <= 180; z += 12) add(block(93, 26, 3, 0, 56, z), 0, 2);
   // A service tower stands on the near side; a catwalk joins the yoke.
-  add(block(16, 170, 16, 170, 119, 40));
-  add(block(26, 14, 26, 170, 211, 40), 0, 2);
-  add(block(72, 3, 8, 129, 200, 40), 0, 2);
-  for (const y of [76, 118, 160]) add(block(20, 3, 20, 170, y, 40), 0, 2);
+  add(block(16, 245, 16, 170, 156.5, 40));
+  add(block(26, 14, 26, 170, 286, 40), 0, 2);
+  add(block(72, 3, 8, 129, 275, 40), 0, 2);
+  for (const y of [76, 118, 160, 202, 244]) add(block(20, 3, 20, 170, y, 40), 0, 2);
   // Breech housing: one ribbed box behind the pin, a bank on its back.
   add(slab(120, 104, -250, 70, 0, 4), 0.5, 0);
   for (let a = -226; a < 60; a += 26) add(slab(128, 82, a - 3, a + 3, 0, 4), 0.5, 2);
@@ -1862,8 +1875,8 @@ function buildGun() {
   add(tube(38, -300, 68, 0, 4), 0.8, 0);
   for (const a of [-286, -232, -178, -124, -70, -16]) add(tube(39.5, a, a + 5, 0, 4), 0.8, 2);
   add(tube(39.5, -150, -136, 0, 4), 0.8, 3);
-  // Two slide rods run back from the housing; the back block rides out along them on the shot.
-  for (const sd of [-1, 1]) add(tube(6, -430, -250, sd * 30, -30), 0.5, 2);
+  // Two slide rods ride the back block; on the shot they draw out of the housing.
+  for (const sd of [-1, 1]) add(tube(6, -300, 40, sd * 30, -30), 0.8, 2);
   // The back block rides 0.85 of the recoil (level 0.8): on the shot it slides out of the housing.
   add(slab(100, 54, -302, -250, 0, -14), 0.8, 0);
   add(slab(84, 30, -296, -254, 0, 28), 0.8, 0);
@@ -1881,11 +1894,11 @@ function buildGun() {
     add(tube(3.5, -266, -244, sd * 63, 0), 0.8, 2);
   }
   // The counterweight: one armoured mass with an end cap; only it is chamfered.
-  add(bslab(88, 58, -352, -302, 0, -16, 10), 0.8, 0);
-  add(bslab(70, 42, -368, -352, 0, -20, 8), 0.8, 2);
+  add(bslab(88, 58, -352, -302, 0, -6, 10), 0.8, 0);
+  add(bslab(70, 42, -368, -352, 0, -10, 8), 0.8, 2);
   // A yellow band marks the joint; two lugs stand on top for the crane.
-  add(slab(90, 60, -306, -303, 0, -16), 0.8, 3);
-  for (const sd of [-1, 1]) add(bslab(10, 12, -338, -326, sd * 24, 18, 2), 0.8, 2);
+  add(slab(90, 60, -306, -303, 0, -6), 0.8, 3);
+  for (const sd of [-1, 1]) add(bslab(10, 12, -338, -326, sd * 24, 28, 2), 0.8, 2);
   // Coolant fins stand on the top bank.
   for (let a = -206; a < -24; a += 9) add(slab(70, 12, a, a + 3, 0, 90), 0.5, 2);
   for (const sd of [-1, 1]) {
@@ -2062,7 +2075,7 @@ vec3 pbrSky(vec3 alb, float metal, float rough, vec3 F0, vec3 N, vec3 V, float a
   return alb * (1.0 - metal) * (1.0 - Fss) * iblIrr(N) * ao + iblRad(reflect(-V, N), rough) * Fss * so;
 }`;
 const gunMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, uShellC: { value: new THREE.Vector3(...SHELL_C) }, uDarkC: { value: new THREE.Vector3(...DARK_C) }, uHullC: { value: new THREE.Vector3(...HULL_C) }, uBandC: { value: new THREE.Vector3(...BAND_C) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uMetalF0: { value: 0.12 }, uMetalR: { value: 0.45 } },
+  uniforms: { ...U, uShellC: { value: new THREE.Vector3(...SHELL_C) }, uDarkC: { value: new THREE.Vector3(...DARK_C) }, uHullC: { value: new THREE.Vector3(...HULL_C) }, uBandC: { value: new THREE.Vector3(...BAND_C) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) }, uMetalF0: { value: 0.12 }, uMetalR: { value: 0.45 }, uWear: { value: 1 } },
   vertexShader: /* glsl */`
   attribute vec4 aPart;
   ${AIM}
@@ -2082,7 +2095,7 @@ const gunMat = new THREE.ShaderMaterial({
   fragmentShader: /* glsl */`
   varying vec3 vP, vO, vN; varying vec4 vPart;
   uniform vec3 uShellC, uDarkC, uHullC, uBandC;
-  uniform float uHeat, uHeatT, uMetalF0, uMetalR;
+  uniform float uHeat, uHeatT, uMetalF0, uMetalR, uWear;
   ${HEAD}
   ${SEAM}
   ${PBR}
@@ -2109,6 +2122,23 @@ const gunMat = new THREE.ShaderMaterial({
     alb *= mix(1.0, 0.5, vPart.y * smoothstep(0.94, 1.0, vPart.x));
     // Dust buries the feet and lies on every ledge.
     float dust = 0.7 * smoothstep(70.0, 0.0, vO.y) + 0.3 * smoothstep(0.6, 1.0, N.y);
+    // The base: the deck, the race and the apron, below the pylon.
+    float base = (1.0 - vPart.y) * (1.0 - sand) * smoothstep(42.0, 30.0, vO.y) * uWear;
+    // Broad tone patches from sun and rain.
+    alb *= mix(1.0, 0.7 + 0.55 * k3fbm(vO * 0.008 + 3.0), base);
+    // Rain stains run down the battered walls from each top edge.
+    float stain = smoothstep(0.4, 0.85, k3noise(vec3(vO.x * 0.06, vO.y * 0.02, vO.z * 0.06))) * smoothstep(0.85, 0.3, abs(N.y));
+    alb *= 1.0 - 0.55 * base * stain;
+    // Hairline cracks wander over the concrete.
+    float cr = abs(k3noise(vO * 0.018 + 11.0) - 0.5) + 0.35 * abs(k3noise(vO * 0.06) - 0.5);
+    float crack = 1.0 - smoothstep(0.0, 0.02 + fwidth(cr), cr);
+    // Old grease darkens a band round the race ring.
+    float race = smoothstep(26.0, 4.0, abs(length(vO.xz) - 402.0)) * smoothstep(0.5, 0.9, N.y) * (0.5 + 0.6 * k3fbm(vO * 0.03));
+    alb *= 1.0 - base * (0.55 * crack + 0.5 * race);
+    // Sand banks up at the foot and lies in patches on the tops.
+    float drift = smoothstep(5.0 + 12.0 * k3noise(vO * 0.025), 0.0, vO.y);
+    float lie = smoothstep(0.6, 1.0, N.y) * smoothstep(0.42, 0.75, k3fbm(vO * 0.012 + 5.0)) * (1.0 - race);
+    dust = mix(dust, max(drift, 0.8 * lie), min(base, 1.0));
     alb = mix(alb, uGroundC, min(dust, 0.85));
     // The berm is the plain's sand, with its broad tone patches.
     alb = mix(alb, uGroundC * (0.94 + 0.12 * k3fbm(vO * 0.0002)) * (1.0 - 0.28 * nightK()), sand);
@@ -8398,6 +8428,19 @@ function stepSand(dt) {
     }
   }
 }
+// Variable recoil: the slide shortens as the gun climbs.
+// The counterweight's low back corner keeps 12 m over the deck.
+const CW = { a: -368, u: -35, clear: 46 + LIFT };
+function recoilRoom() {
+  const e = aimNow.elev + kick.p, se = Math.sin(e);
+  if (se < 0.01) return 1e9;
+  return Math.max(0, (TRUN_Y + CW.a * se + CW.u * Math.cos(e) - CW.clear) / (0.85 * se));
+}
+// A soft knee eases the slide into the buffer.
+function capRecoil(v) {
+  const r = recoilRoom(), k = 0.8 * r;
+  return v <= k ? v : k + (r - k) * (1 - Math.exp(-(v - k) / Math.max(r - k, 1e-3)));
+}
 function stepShot(dt) {
   stepRounds();
   stepSand(dt);
@@ -8474,6 +8517,7 @@ function stepShot(dt) {
   if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
   else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
   U.uRecoil.value = Math.max(U.uRecoil.value, shot.slide0 * Math.exp(-age / 0.6));
+  U.uRecoil.value = capRecoil(U.uRecoil.value);
   shadowDirty = true;
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
@@ -10814,7 +10858,7 @@ window.__qa = {
   mode(m) { ui.setting('firemode').set(m); },
   fireMode: () => fireMode,
   bank: () => charge?.bank ?? 0,
-  recoil: () => ({ slide: U.uRecoil.value, pitch: THREE.MathUtils.radToDeg(kick.p) }),
+  recoil: () => ({ slide: U.uRecoil.value, room: recoilRoom(), pitch: THREE.MathUtils.radToDeg(kick.p) }),
   heat: () => U.uHeat.value,
   rockKind: () => astMesh.geometry.userData.kind,
   spin: () => (spin ? { t: spin.t } : null),
@@ -10954,6 +10998,8 @@ window.__qa = {
   // Throw the spent case now, for stills.
   eject() { ejectCase(); },
   caseP: () => (spent ? spent.p.toArray() : null),
+  // Lay the gun by degrees for clearance stills: yaw left, elevation up.
+  lay(y, e) { setAim(rad(y), rad(e)); shadowDirty = true; frame(); draw(); },
   // Pose a close eye on the gun for stills: place, target, field of view.
   eye(p, t, fov = 30) { camera.position.set(...p); camera.fov = fov; camera.updateProjectionMatrix(); camera.lookAt(...t); camera.updateMatrixWorld(); draw(); },
   cap: () => SALVO_CAP,
@@ -11049,7 +11095,7 @@ setBox(ui.setting('letterbox').value);
 // A stored Free aim takes the gun from where it parks.
 setAimMode(ui.setting('aim').value);
 // The stored graphics settings apply before the first frame.
-gunMat.uniforms.uMetalF0.value = ui.setting('gunmetal').value; gunMat.uniforms.uMetalR.value = ui.setting('gunrough').value;
+gunMat.uniforms.uMetalF0.value = ui.setting('gunmetal').value; gunMat.uniforms.uMetalR.value = ui.setting('gunrough').value; gunMat.uniforms.uWear.value = ui.setting('basewear').value;
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; shaftGain = ui.setting('shafts').value; sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
