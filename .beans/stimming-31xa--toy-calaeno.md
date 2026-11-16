@@ -55,3 +55,11 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Propellers: a blur by blade share, ghost blades, spinners
 - [x] No window strips: these are not passenger craft
 - [x] Cloud cover gathers into fields; the Below view has raymarched cloud above the craft
+
+## Round 6 (Tom, 2026-11-16)
+
+- [x] Cloud heaps broader than tall
+- [x] Cloud at every height: deck, a mid layer, cloud mountains past the craft; a clear corridor to the craft
+- [x] Escort trails wear the smoke look, with the noise pinned to the air
+- [x] The big craft's contrails fade sooner
+- [ ] Look at round 6 on screen: the pane was covered, so only compile and pixel probes ran
