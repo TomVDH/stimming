@@ -11,7 +11,7 @@ const LEVEL = 0.46;
 // A change of toy takes this long, in seconds.
 const CHANGE = 0.42;
 // The caption is a square texture; it covers this share of the tube's width.
-const CAP = 0.62, CAP_PX = 1024;
+const CAP = 0.5, CAP_PX = 1024;
 
 const FS = `#version 300 es
 precision mediump float;
@@ -42,6 +42,13 @@ void main() {
   vec2 q = (p / ${CAP.toFixed(2)}) * (1.08 - 0.2 * cr * cr);
   // The change: at 0 picture A stands; at 1 picture B stands.
   float g = uMix, k = uKick;
+  // The warble: the lines sway sideways in two slow waves, as on a tube with a weak hold.
+  // It runs only while a toy is in hand, and swells in a change.
+  float sway = (0.007 * sin(w.y * 9.0 + uTime * 2.6) + 0.004 * sin(w.y * 31.0 - uTime * 6.1)) * (1.0 + 3.0 * k);
+  w.x += sway;
+  q.x += sway * 1.4;
+  // A hum bar: a faint band of light climbs the picture.
+  float hum = 0.05 * smoothstep(0.3, 0.0, abs(fract(vUv.y * 0.9 - uTime * 0.11) - 0.5));
   // The flicker at the start of a change: a few lines slip sideways and the colours part.
   float slip = k * 0.03 * (hash(vec2(floor(vUv.y * 46.0), floor(uTime * 30.0) + 5.0)) - 0.5);
   w.x += slip;
@@ -51,20 +58,20 @@ void main() {
   float zoom = 1.0 - 0.06 * (1.0 - g);
   vec3 c = mix(pic(uA, w, f) * uHasA, pic(uB, w * zoom, f) * uHasB, g);
   // The shade: a dim picture that goes darker toward the rim.
-  c *= uLevel * (1.0 - 0.8 * smoothstep(0.1, 0.8, r));
+  c *= uLevel * (1.0 - 0.78 * smoothstep(0.12, 0.86, r));
   // The words lie on the picture and change with it.
   vec4 t = mix(words(uTA, q) * uHasA, words(uTB, q * zoom) * uHasB, g);
   c = c * (1.0 - t.a) + t.rgb * 0.94;
   float n = hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0);
   // The flicker is a touch bright, with a burst of grain.
-  c = c * (1.0 + 0.3 * k) + (n - 0.5) * 0.16 * k;
+  c = c * (1.0 + 0.3 * k + hum) + (n - 0.5) * 0.16 * k;
   // Scan lines: one line each three CSS pixels.
   float line = 0.5 + 0.5 * sin(gl_FragCoord.y / uPx * 2.0944);
   c *= 0.7 + 0.3 * line;
   // Grain lies on the whole face, also where the picture is dark.
   c += n * 0.035;
   // No hard edge: the face fades out at the ring of toys.
-  float a = pow(1.0 - smoothstep(0.3, 1.0, r), 1.3);
+  float a = pow(1.0 - smoothstep(0.38, 1.0, r), 1.2);
   // The dark lines and the grain reach wider than the picture.
   o = vec4(max(c, 0.0) * a, a * (0.26 + 0.3 * (1.0 - line)));
 }`;
@@ -135,6 +142,25 @@ export async function tube(host, span) {
     }
     return rows;
   }
+  // The name's letters stand askew in mixed weights, as the wordmark's do. The same name always falls the same way.
+  const WEIGHTS = [800, 600, 900, 700, 800, 900];
+  const font = (weight, size) => `${weight} ${size}px Gabarito, "Avenir Next", system-ui, sans-serif`;
+  /** @param {string} row @param {number} size @param {number} seed */
+  function letters(row, size, seed) {
+    let h = seed >>> 0;
+    // A small fixed shuffle: no Math.random, so a redraw gives the same letters.
+    const rand = () => { h = Math.imul(h ^ (h >>> 15), 2246822507) + 0x9e3779b9 >>> 0; return (h >>> 8) / 16777216; };
+    const out = [];
+    let width = 0;
+    for (const ch of row) {
+      const weight = WEIGHTS[Math.floor(rand() * WEIGHTS.length)], turn = (rand() - 0.5) * 0.2, lift = (rand() - 0.5) * 0.1 * size;
+      pen.font = font(weight, size);
+      const w = pen.measureText(ch).width - 0.03 * size;
+      out.push({ ch, weight, turn: ch === ' ' ? 0 : turn, lift, w, x: width });
+      width += w;
+    }
+    return { out, width };
+  }
   // Draws the name, a hairline and the motto, then puts them in a caption texture.
   /** @param {Words | null} words @param {number} slot */
   function write(words, slot) {
@@ -144,13 +170,16 @@ export async function tube(host, span) {
     if (words && words.name) {
       pen.textAlign = 'center';
       pen.textBaseline = 'alphabetic';
-      pen.font = `800 ${nameSize}px Gabarito, "Avenir Next", system-ui, sans-serif`;
-      if ('letterSpacing' in pen) pen.letterSpacing = `${-0.035 * nameSize}px`;
+      pen.font = font(800, nameSize);
+      if ('letterSpacing' in pen) pen.letterSpacing = '0px';
       const names = wrap(words.name, face * 0.44 * k);
+      let seed = 7;
+      for (const ch of words.name) seed = Math.imul(seed, 31) + ch.codePointAt(0) | 0;
+      const rows = names.map((row, i) => letters(row, nameSize, seed + i * 101));
       pen.font = `500 ${tagSize}px "Iosevka Term Slab", ui-monospace, monospace`;
       if ('letterSpacing' in pen) pen.letterSpacing = `${0.02 * tagSize}px`;
       const tags = words.tag ? wrap(words.tag, face * 0.38 * k) : [];
-      const nameStep = nameSize * 1.02, tagStep = tagSize * 1.45, gap = tags.length ? tagSize * 2.1 : 0;
+      const nameStep = nameSize * 1.1, tagStep = tagSize * 1.45, gap = tags.length ? tagSize * 2.1 : 0;
       const tall = names.length * nameStep + gap + tags.length * tagStep;
       // Two passes: a dark shade keeps the words clear, then a soft white glow.
       /** @type {[string, number][]} */
@@ -160,9 +189,18 @@ export async function tube(host, span) {
         pen.shadowColor = shade;
         pen.shadowBlur = blur;
         pen.fillStyle = '#fff';
-        pen.font = `800 ${nameSize}px Gabarito, "Avenir Next", system-ui, sans-serif`;
-        if ('letterSpacing' in pen) pen.letterSpacing = `${-0.035 * nameSize}px`;
-        for (const row of names) { y += nameStep; pen.fillText(row, mid, y - nameSize * 0.2); }
+        if ('letterSpacing' in pen) pen.letterSpacing = '0px';
+        for (const row of rows) {
+          y += nameStep;
+          for (const l of row.out) {
+            pen.save();
+            pen.translate(mid - row.width / 2 + l.x + l.w / 2, y - nameSize * 0.2 + l.lift);
+            pen.rotate(l.turn);
+            pen.font = font(l.weight, nameSize);
+            pen.fillText(l.ch, 0, 0);
+            pen.restore();
+          }
+        }
         if (tags.length) {
           // A short hairline parts the name from the motto.
           pen.fillStyle = 'rgb(255 255 255 / 0.45)';
