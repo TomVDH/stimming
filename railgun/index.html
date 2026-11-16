@@ -1195,7 +1195,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`#define CSHADE
   precision highp sampler3D;
-  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL}
+  varying vec3 vP; ${HEAD} ${AIR} ${IMP_GLSL} ${SHAFT_GLSL}
   uniform sampler3D uVol;
   uniform float uCloudC, uDeck;
   // A thin deck of wisps five kilometres up, seen from below.
@@ -1251,8 +1251,8 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     // The burning rock warms the cells near it, the thin ones most.
     if (uRockL.w > 0.001) { vec3 rb = uRockL.xyz - Pc; c += uAstC * uRockL.w * uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR) * (0.6 + 0.4 * (1.0 - dens)) * mix(1.0, 0.6, uStars); }
     // The blast: its flash, its afterglow and the shock rim.
-    // The air between fills the far deck with the horizon colour.
-    c = mix(c, k2hazeColor(d), 1.0 - exp(-t / 60000.0));
+    // The shared air fills the far deck, as it fills the ranges.
+    c = aerial(c, Pc);
     // The blast lands after the haze: its flash lights the air on the way.
     // The deck takes it harder than the cirrus, thin edges most.
     c += hl * (1.6 + 0.8 * (1.0 - body)) + rim * (uCloudSun * 0.3 + uCloudAmb * 1.2 + hl * 1.2 + 0.02);
@@ -1584,7 +1584,10 @@ const FAR_FN = /* glsl */`
     // Fog pools in the far valleys: low ground goes pale, the crests stand clear.
     // Each range then stands apart from the one behind it.
     float vf = uLayer.y * smoothstep(30000.0, 120000.0, hit) * exp(-h0 / 1600.0);
-    return mix(col, inL * 1.05, min(0.85 * vf, 1.0));
+    col = mix(col, inL * 1.05, min(0.85 * vf, 1.0));
+    // The very foot of a range melts into the plain's own haze at the horizon.
+    // So no dark seam shows where the ranges meet the sand.
+    return mix(col, k2hazeColor(rd), 0.85 * exp(-h0 / 350.0) * smoothstep(30000.0, 90000.0, hit));
   }
   // The depth of world point p, for the near world to test against.
   float farDepth(vec3 p) { vec4 cp = uVP * vec4(p, 1.0); return clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0); }`;
