@@ -1,11 +1,11 @@
 ---
 # stimming-bq7g
 title: 'Ten seconds: a more compelling rocket'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-10T08:49:58Z
-updated_at: 2026-11-10T09:03:09Z
+updated_at: 2026-11-15T05:13:06Z
 parent: stimming-4wu3
 ---
 
@@ -14,9 +14,11 @@ Tom (2026-11-10): the rocket itself needs to be more compelling. Today the body 
 ## Checklist
 - [x] Tom picks a direction: Flame first (2026-11-10); the flare is the shared anamorphic streak, used sparingly
 - [x] Flame: shock diamonds, eddies, a breathing tail, a size floor, a later exhaust burn; the streak at ignition and faint in flight
-- [ ] Build it in launch/index.html
-- [ ] Check in the pane at 1280 and 375 px, zoomed and wide
-- [ ] Commit and push through tools/commit.sh
+- [x] Rocket body moves to shared/rocket.js (Tom, 2026-11-14): the Ascent session builds it; no new body in launch/index.html
+- [x] Needs list for the shared rocket: docs/plans/ascent-launch.md
+- [x] Adopt shared/rocket.js in launch/index.html: far body via the rocketLight hook, makeFlame on Ten seconds' uniforms, setStage at T+18 and staging
+- [x] Before/after stills at 1280 px, zoomed and wide, Dawn 0.4 and 1: only the body differs; Tom said yes (2026-11-14)
+- [x] Commit and push through tools/commit.sh
 
 - [x] Thrust sound: Tom's recorded booster roar (launch/thrust.mp3) replaces the noise band in the roar; the sub stays; the synth crackle drops to an edge
 
@@ -24,3 +26,9 @@ Tom (2026-11-10): the rocket itself needs to be more compelling. Today the body 
 
 - [x] Far roar deeper and bassier (Tom): slower recording, a low shelf, a low-pass from 1.5 kHz, crackle as low thumps
 - [x] Square outline on the exhaust (Tom): the flame quad fades at every edge; the tail is narrower
+
+## Summary of Changes
+
+- Flame: shock diamonds, eddies, a breathing tail, a size floor, the shared streak at ignition.
+- Thrust sound: Tom's recorded roar, deeper and bassier far away.
+- Rocket body: Ten seconds flies shared/rocket.js (far detail), lit by its own shader; flame quad from makeFlame. Needs list: docs/plans/ascent-launch.md.

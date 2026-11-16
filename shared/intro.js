@@ -314,15 +314,31 @@ export function fitIntro(root, T) {
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
+/**
+ * The options for intro(); pages pass ready and leave the rest out.
+ * @typedef {object} IntroOptions
+ * @property {Promise<any>} [ready] The intro holds until this settles.
+ * @property {number} [min] The shortest hold in ms; the default is the variety's hold.
+ * @property {Record<string, number>} [timing] Overrides beats of the variety's table.
+ * @property {string} [id] The toy id; the default comes from the address.
+ * @property {(phase: string) => any} [gate] Awaited as each phase shows.
+ * @property {typeof SOUND_NOTE} [soundNote]
+ * @property {string} [variety]
+ * @property {boolean} [nameFlash]
+ * @property {boolean} [textFlash]
+ * @property {boolean} [classic]
+ * @property {Record<string, string> | null} [fill] Lines the lab fills in Static mode.
+ */
+/** @param {IntroOptions} [options] */
 export async function intro({ ready = Promise.resolve(), min, timing = {}, id, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, textFlash = false, classic = false, fill = null } = {}) {
-  const root = document.querySelector('.intro');
+  const root = /** @type {HTMLElement | null} */ (document.querySelector('.intro'));
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
   const T = { ...tableOf(variety), ...timing };
   root.classList.add('is-live');
   if (V.look) root.dataset.look = V.look;
   if (V.layout) root.dataset.layout = V.layout;
-  const text = root.querySelector('.intro-text');
+  const text = /** @type {HTMLElement} */ (root.querySelector('.intro-text'));
   const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
   // The toy's accent inks the logo; without one it stays white.
@@ -336,7 +352,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     if (subEl && info.sub) subEl.textContent = info.sub;
     // A numbered toy shows its number in the flash box, not in a subtitle.
     if (subEl && !info.sub) { subEl.remove(); subEl = null; }
-    let emb = text.querySelector('.intro-emblem');
+    let emb = /** @type {HTMLElement | null} */ (text.querySelector('.intro-emblem'));
     if (info.emblem && !emb) {
       emb = document.createElement('span');
       emb.className = 'intro-emblem';
@@ -372,8 +388,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     return;
   }
 
-  const emblem = text.querySelector('.intro-emblem'), name = text.querySelector('.intro-name');
-  const sub = text.querySelector('.intro-sub');
+  const emblem = text.querySelector('.intro-emblem'), name = /** @type {HTMLElement} */ (text.querySelector('.intro-name'));
+  const sub = /** @type {HTMLElement | null} */ (text.querySelector('.intro-sub'));
   // The number stays off unless a page asks for it: box, subtitles or foot.
   const numAt = root.dataset.numAt || 'none';
   let num = null;
@@ -416,7 +432,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     text.querySelector('.intro-tag:not(.intro-tag--nl)'), text.querySelector('.intro-tag--nl'), snd, numAt === 'bottom' ? num : null];
   const lags = [0, T.clsLag, T.nlLag, T.nlLag, T.subLag, T.tagLag, T.tagNlLag, T.sndLag, T.sndLag];
   const R = REVEAL[V.reveal] || REVEAL.unfurl;
-  lines.forEach(el => { if (el) Object.assign(el.style, R.shut); });
+  lines.forEach(el => { if (el) Object.assign(/** @type {HTMLElement} */ (el).style, R.shut); });
   // Each line can sit higher or lower than its place in the column.
   [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
     .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}cqh`; });
@@ -426,7 +442,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
   const box = on => {
-    if (badge) { badge.classList.toggle('is-flash', on); badge.style.setProperty('--box', on ? 1 : 0); } else name.classList.toggle('is-flash', on);
+    if (badge) { badge.classList.toggle('is-flash', on); badge.style.setProperty('--box', on ? '1' : '0'); } else name.classList.toggle('is-flash', on);
     if (both) { name.classList.toggle('is-flash', on); name.style.clipPath = on ? 'none' : R.shut.clipPath; }
   };
   const blow = both ? text : big;
@@ -437,10 +453,10 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   await wait(T.lead - 2 * blinks);
   await gate('glass');
   if (blinks) {
-    for (let k = 0; k < blinks; k++) { box(true); text.style.opacity = 1; await wait(1); box(false); await wait(1); }
+    for (let k = 0; k < blinks; k++) { box(true); text.style.opacity = '1'; await wait(1); box(false); await wait(1); }
   }
   box(true);
-  text.style.opacity = 1;
+  text.style.opacity = '1';
   if (V.flash === 'rings' && badge) {
     // Rings: three outlines close in on the box; the box shows at size.
     for (const s of [1.5, 2.2, 3]) {
@@ -479,11 +495,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (V.cut === 'split' && badge) {
     // Split: the box parts down the middle and its halves slide out.
     badge.classList.remove('is-flash');
-    play(badge, p => ({ '--split': pct(0.5 * p) }), 200, accel).then(() => { badge.style.setProperty('--box', 0); badge.style.setProperty('--split', '0%'); });
+    play(badge, p => ({ '--split': pct(0.5 * p) }), 200, accel).then(() => { badge.style.setProperty('--box', '0'); badge.style.setProperty('--split', '0%'); });
   } else if (V.cut === 'bar' && badge) {
     // Bar: the box drops to a thin bar along its foot, then goes.
     badge.classList.remove('is-flash');
-    play(badge, p => ({ '--box-y': (1 - 0.95 * p).toFixed(3) }), 160, accel).then(() => wait(2)).then(() => { badge.style.setProperty('--box', 0); badge.style.setProperty('--box-y', 1); });
+    play(badge, p => ({ '--box-y': (1 - 0.95 * p).toFixed(3) }), 160, accel).then(() => wait(2)).then(() => { badge.style.setProperty('--box', '0'); badge.style.setProperty('--box-y', '1'); });
   } else box(false);
   if (both) box(false);
   // After a text flash the title drops its box as the logo drops its box.
@@ -520,7 +536,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (exit === 'drop') await each(el => play(el, p => ({ clipPath: `inset(${pct(p)} 0 0 0)`, transform: `translateY(${(0.6 * p).toFixed(3)}em)` }), T.wipe, accel));
   if (exit === 'fold') await each(el => play(el, p => ({ transformOrigin: '50% 0', transform: `perspective(30em) rotateX(${(90 * p).toFixed(2)}deg)` }), T.wipe, accel));
   // The cut takes one frame; the rest of the exit beat stays dark.
-  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = 0; await wait(frames(T.wipe) - 1); }
+  if (exit === 'cut') { box(true); await wait(1); text.style.opacity = '0'; await wait(frames(T.wipe) - 1); }
   if (exit === 'crt') {
     // The column collapses to a line, then the line shrinks to a dot.
     text.style.transformOrigin = '50% 50%';

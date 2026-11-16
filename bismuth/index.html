@@ -57,6 +57,7 @@
 <script type="module">
 import { initPage, audioKit, whenVisible, fitCanvas, onQuality, quality, reduced } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
+import { TRI_VS, program, linked, target, msTarget, free, bind, tri, onContextLoss } from '../shared/gl.js';
 
 const stage = document.getElementById('stage');
 const TAU = Math.PI * 2;
@@ -231,14 +232,6 @@ float vnoise(vec2 p) {
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 `;
-
-const TRI_VS = HEAD + `
-out vec2 vUv;
-void main() {
-  vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
-  vUv = p * 0.5 + 0.5;
-  gl_Position = vec4(p, 0.0, 1.0);
-}`;
 
 // One box per terrace edge; the pose array places each crystal.
 const CRYSTAL_VS = HEAD + `
@@ -546,29 +539,6 @@ const inst = new Float32Array(MAXI * STRIDE);
 let nInst = 0, instDirty = true;
 const poses = new Float32Array(MAXP * 16);
 
-function compile(vs, fs) {
-  const sh = (type, src) => {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    return s;
-  };
-  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
-  gl.attachShader(p, v);
-  gl.attachShader(p, f);
-  gl.linkProgram(p);
-  return { p, v, f, u: {} };
-}
-// Every active uniform gets its location, arrays by their first element.
-function locate(prog) {
-  const n = gl.getProgramParameter(prog.p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) {
-    const name = gl.getActiveUniform(prog.p, i).name;
-    prog.u[name.replace(/\[0\]$/, '')] = gl.getUniformLocation(prog.p, name);
-  }
-}
-const nextFrame = () => new Promise(r => requestAnimationFrame(r));
-
 // The unit cube: 36 vertices with flat face normals.
 function cube() {
   const v = [];
@@ -591,19 +561,10 @@ async function initGL() {
   if (!gl) throw new Error('WebGL 2 unavailable');
   if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('float targets unavailable');
   gl.getExtension('OES_texture_float_linear');
-  const par = gl.getExtension('KHR_parallel_shader_compile');
-  const progs = {
-    crystal: compile(CRYSTAL_VS, CRYSTAL_FS), pool: compile(TRI_VS, POOL_FS),
-    bright: compile(TRI_VS, BRIGHT_FS), blur: compile(TRI_VS, BLUR_FS), star: compile(TRI_VS, STAR_FS), final: compile(TRI_VS, FINAL_FS),
-  };
-  // Polling lets the driver link off the main thread.
-  const all = Object.values(progs);
-  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
-  for (const q of all) {
-    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
-    locate(q);
-  }
-  P = progs;
+  P = await linked(gl, {
+    crystal: program(gl, CRYSTAL_VS, CRYSTAL_FS), pool: program(gl, TRI_VS, POOL_FS),
+    bright: program(gl, TRI_VS, BRIGHT_FS), blur: program(gl, TRI_VS, BLUR_FS), star: program(gl, TRI_VS, STAR_FS), final: program(gl, TRI_VS, FINAL_FS),
+  });
   triVao = gl.createVertexArray();
   // The cube mesh and the instance buffer share one vertex array.
   cubeVao = gl.createVertexArray();
@@ -631,60 +592,6 @@ async function initGL() {
     gl.uniform2fv(q.u.uR, R23);
     gl.uniform1fv(q.u.uLam, LAMBDA);
   }
-}
-
-// A colour target, with an optional depth buffer.
-function target(w, h, depth = false) {
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, w, h);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  const fb = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  let rb = null;
-  if (depth) {
-    rb = gl.createRenderbuffer();
-    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
-    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
-  }
-  return { tex, fb, rb, w, h };
-}
-// A multisampled colour and depth pair; it resolves into the scene target.
-function msTarget(w, h, samples) {
-  const fb = gl.createFramebuffer(), c = gl.createRenderbuffer(), d = gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER, c);
-  gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA16F, w, h);
-  gl.bindRenderbuffer(gl.RENDERBUFFER, d);
-  gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, c);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, d);
-  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
-  return { fb, c, d, w, h, ok };
-}
-function free(t) {
-  if (!t) return;
-  if (t.tex) gl.deleteTexture(t.tex);
-  if (t.rb) gl.deleteRenderbuffer(t.rb);
-  if (t.c) gl.deleteRenderbuffer(t.c);
-  if (t.d) gl.deleteRenderbuffer(t.d);
-  gl.deleteFramebuffer(t.fb);
-}
-function bind(prog, name, unit, t) {
-  gl.activeTexture(gl.TEXTURE0 + unit);
-  gl.bindTexture(gl.TEXTURE_2D, t.tex);
-  gl.uniform1i(prog.u[name], unit);
-}
-function full(dst) {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
-  gl.viewport(0, 0, dst ? dst.w : canvas.width, dst ? dst.h : canvas.height);
-  gl.bindVertexArray(triVao);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 /* ---------- camera and layout ---------- */
@@ -719,22 +626,22 @@ function layout() {
   portrait = asp < 0.9;
   aim();
   if (!P) return;
-  [scene, msaa, refl, b1, b1t, b2, b2t, sp, spS].forEach(free);
-  scene = target(W, H, true);
+  [scene, msaa, refl, b1, b1t, b2, b2t, sp, spS].forEach(t => free(gl, t));
+  scene = target(gl, W, H, { depth: true });
   const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
-  msaa = samples > 1 ? msTarget(W, H, samples) : null;
-  if (msaa && !msaa.ok) { free(msaa); msaa = null; }
+  msaa = samples > 1 ? msTarget(gl, W, H, samples) : null;
+  if (msaa && !msaa.ok) { free(gl, msaa); msaa = null; }
   const hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1);
   // High quality mirrors the crystals at full size; Standard at half.
-  refl = quality() === 'high' && !rung ? target(W, H, true) : target(hw, hh, true);
-  sp = target(hw, hh);
-  spS = target(hw, hh);
+  refl = quality() === 'high' && !rung ? target(gl, W, H, { depth: true }) : target(gl, hw, hh, { depth: true });
+  sp = target(gl, hw, hh);
+  spS = target(gl, hw, hh);
   // A narrow stage runs its bloom at quarter size.
   const bs = portrait ? 2 : 1;
-  b1 = target(Math.max(1, hw >> (bs - 1)), Math.max(1, hh >> (bs - 1)));
-  b1t = target(b1.w, b1.h);
-  b2 = target(Math.max(1, b1.w >> 1), Math.max(1, b1.h >> 1));
-  b2t = target(b2.w, b2.h);
+  b1 = target(gl, Math.max(1, hw >> (bs - 1)), Math.max(1, hh >> (bs - 1)));
+  b1t = target(gl, b1.w, b1.h);
+  b2 = target(gl, Math.max(1, b1.w >> 1), Math.max(1, b1.h >> 1));
+  b2t = target(gl, b2.w, b2.h);
 }
 
 /* ---------- crystals ---------- */
@@ -1090,7 +997,7 @@ function render() {
   gl.uniform4fv(p.u.uFoot, footData());
   gl.uniform1fv(p.u.uWet, wetBuf);
   gl.uniform2f(p.u.uScreen, W, H);
-  bind(p, 'uRefl', 0, refl);
+  bind(gl, p, 'uRefl', 0, refl);
   gl.bindVertexArray(triVao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   drawCrystals(false);
@@ -1102,38 +1009,38 @@ function render() {
   // 3. Bloom: a bright pass, then two blur levels.
   const br = P.bright, bl = P.blur;
   gl.useProgram(br.p);
-  bind(br, 'uSrc', 0, scene);
+  bind(gl, br, 'uSrc', 0, scene);
   gl.uniform2f(br.u.uTexel, 1 / W, 1 / H);
   gl.uniform1f(br.u.uKnee, 0.9);
-  full(b1);
+  tri(gl, b1, triVao);
   // Only the hottest glints feed the star.
   gl.uniform1f(br.u.uKnee, 1.8);
-  full(sp);
+  tri(gl, sp, triVao);
   const st = P.star;
   gl.useProgram(st.p);
-  bind(st, 'uSrc', 0, sp);
+  bind(gl, st, 'uSrc', 0, sp);
   gl.uniform2f(st.u.uTexel, 1 / sp.w, 1 / sp.h);
-  full(spS);
+  tri(gl, spS, triVao);
   gl.useProgram(bl.p);
   const blur = (a, t) => {
-    bind(bl, 'uSrc', 0, a); gl.uniform2f(bl.u.uDir, 1 / a.w, 0); full(t);
-    bind(bl, 'uSrc', 0, t); gl.uniform2f(bl.u.uDir, 0, 1 / a.h); full(a);
+    bind(gl, bl, 'uSrc', 0, a); gl.uniform2f(bl.u.uDir, 1 / a.w, 0); tri(gl, t, triVao);
+    bind(gl, bl, 'uSrc', 0, t); gl.uniform2f(bl.u.uDir, 0, 1 / a.h); tri(gl, a, triVao);
   };
   blur(b1, b1t);
   // The second level blurs down from the first at half its size.
-  bind(bl, 'uSrc', 0, b1); gl.uniform2f(bl.u.uDir, 1 / b1.w, 0); full(b2t);
-  bind(bl, 'uSrc', 0, b2t); gl.uniform2f(bl.u.uDir, 0, 1 / b2t.h); full(b2);
+  bind(gl, bl, 'uSrc', 0, b1); gl.uniform2f(bl.u.uDir, 1 / b1.w, 0); tri(gl, b2t, triVao);
+  bind(gl, bl, 'uSrc', 0, b2t); gl.uniform2f(bl.u.uDir, 0, 1 / b2t.h); tri(gl, b2, triVao);
   blur(b2, b2t);
   // 4. The grade, to the screen.
   const fi = P.final;
   gl.useProgram(fi.p);
-  bind(fi, 'uScene', 0, scene);
-  bind(fi, 'uB1', 1, b1);
-  bind(fi, 'uB2', 2, b2);
-  bind(fi, 'uStar', 3, spS);
+  bind(gl, fi, 'uScene', 0, scene);
+  bind(gl, fi, 'uB1', 1, b1);
+  bind(gl, fi, 'uB2', 2, b2);
+  bind(gl, fi, 'uStar', 3, spS);
   gl.uniform1f(fi.u.uTime, time);
   gl.uniform2f(fi.u.uRes, W, H);
-  full(null);
+  tri(gl, null, triVao);
 }
 
 /* ---------- frame loop ---------- */
@@ -1148,7 +1055,8 @@ const asleep = (now = performance.now()) => now - lastInput > (reduced() ? 5000 
 function frame(now) {
   raf = 0;
   try {
-    if (now - lastDraw >= 31) {
+    // A lost context leaves no programs; the frame draws nothing.
+    if (P && now - lastDraw >= 31) {
       const dt = Math.min(0.05, (now - lastDraw) / 1000);
       lastDraw = now;
       time += dt;
@@ -1158,7 +1066,7 @@ function frame(now) {
       soundFrame();
     }
   } finally {
-    if (visible && !asleep(now)) raf = requestAnimationFrame(frame);
+    if (P && visible && !asleep(now)) raf = requestAnimationFrame(frame);
     else hush();
   }
 }
@@ -1397,6 +1305,31 @@ try {
 }
 markReady();
 wake();
+
+// A lost context stops the loop; a restored one rebuilds every GL object.
+// The crystals keep their state, so the scene goes on where it stopped.
+onContextLoss(canvas, {
+  lost() {
+    P = null;
+    cancelAnimationFrame(raf);
+    raf = 0;
+    hush();
+  },
+  async restored() {
+    // The old targets died with the old context, so free must skip them.
+    scene = msaa = refl = b1 = b1t = b2 = b2t = sp = spS = null;
+    await initGL();
+    instDirty = true;
+    layout();
+    render();
+    wake();
+  },
+  failed(err) {
+    console.error(err);
+    stage.querySelector('.fail').hidden = false;
+    ui.hideControls?.();
+  },
+});
 
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);

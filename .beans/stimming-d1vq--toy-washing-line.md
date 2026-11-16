@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T07:39:22Z
-updated_at: 2026-11-10T16:21:20Z
+updated_at: 2026-11-15T10:26:47Z
 ---
 
 Build Washing line from docs/plans/washline.md. It starts in the Lab, on Bar v2. Plain sheets snap in the wind on one line against the sky; with the sun behind them they glow like stained glass. Unclip the pegs until a sheet flies away. K4 rope is lifted from balloons/ (no chain/ yet); this page adds cloth to K4.
@@ -120,8 +120,8 @@ Tom asked for a full redo. The checklists above are superseded; the old pages st
 - [x] R1: core (K4 rope, cloth, pulley, pegs) plus Alley blockout; old pages archived; checkpoint with Tom
 - [x] R2: hands on: reel, + Piece, unclip and fly, cloth drag, Release
 - [x] R3: backlit glow; Alley sign-off (Tom, 2026-11-10)
-- [ ] R4: Garden; sign-off
-- [ ] R5: Beach; sign-off
+- [x] R4: Garden; sign-off (Tom, 2026-11-14)
+- [x] R5: Beach; sign-off (Tom, 2026-11-14)
 - [ ] R6: Strangereal (fully new, jet furball); sign-off
 - [ ] R7: sound: reel, peg click, whoosh, place ambience
 - [ ] R8: Bar v2 Settings, persistence, QA (1280, 375 × 812, 812 × 375; tests/bar-v2.html)
@@ -145,3 +145,72 @@ The Alley is a street in Valldemossa, Mallorca: washing lines, plus bunting and 
 - The sun sets in a valley notch at the end of the street, beside the bell tower; the slider starts there (0.95).
 - A low sun warms the sky; bloom and exposure follow it.
 - Open: Tom's Alley sign-off.
+
+
+### Garden is a Flemish back garden (Tom, 2026-11-14)
+
+- Brick row-house backs with kitchen extensions, roll shutters and bluestone sills.
+- The pulley runs from an upstairs window to a pole by the shed.
+- Plots side by side behind walls, fences and hedges; sheds, a rotary dryer, a trampoline.
+- A church tower and poplars on the horizon under a big cumulus sky; the sun sets at the end of the row.
+
+
+### Beach is a Greek island cove (Tom, 2026-11-14)
+
+- Whitewashed fisherman's hut with a blue door to a weathered post on the pebbles; caique on the beach, rocky headlands, turquoise water, the sun low over the sea.
+- Tom: do not forget an epic Strangereal (R6).
+
+
+### Strangereal, epic (Tom, 2026-11-14)
+
+- Blue hour through a long lens: layered skylines stacked to the horizon, furballs far off, thin contrails, the first city lights.
+- Rare distant bursts: now and then a far hit with a flash, a smoke puff and debris trails.
+- Line on a tower roof from a stair bulkhead to an antenna mast.
+
+
+- Tom (2026-11-14): the city and the furball sit in the distance; sweeping, a scary-looking Strangereal city.
+
+- Tom (2026-11-14, later): furball way higher above the city; anime blues; deeper shading; a direct production-level effort.
+
+
+- [ ] East Van place: a very iconic East Vancouver scene (Tom, 2026-11-14), after Strangereal.
+
+- Tom (2026-11-14): the anime and supertall passes looked unrealistic; back to the blue-hour version (R6 commit c0684177).
+
+- Tom (2026-11-14): harsh lines and poor blending; no Rayleigh. Plan: physical scattering for sky and aerial perspective, MSAA.
+
+
+### East Van place (Tom, 2026-11-15)
+
+- A Grandview back lane: the line runs from a back porch to a wooden power pole over the gravel lane; garages, Vancouver Specials and old Edwardian houses, tangled wires, crows, the North Shore mountains behind; the lit East Van Cross and downtown seen far off between the houses.
+
+
+### East Van canned; one scene next (Tom, 2026-11-15)
+
+- Tom canned East Van and the multi-place iteration: come up with one incredibly high-quality scene; Tom reviews the proposal before any build.
+
+- Tom approved the cliff-top fog spec and CC0 Poly Haven textures (2026-11-15). Step 1: grey blockout.
+
+- Cliff blockout (2026-11-15): eye at 1.3 m, under the line, so the washing stands against the sky. Phone eye 17 m back, fov 64. Headlands lower and flatter. The wall recedes left from the near post.
+
+- Cliff step 2 (2026-11-15): physical dawn sky with high cirrus lit past the Earth's shadow; fog sea raymarched in each surface's shader (swells, billows, sun shadow, sky light); aerial perspective on all set pieces; lighthouse beam turns before dawn and fades at sunrise; a place light hook sets sun, sky fill, exposure and bloom.
+
+- Cliff step 3 (2026-11-15): Poly Haven CC0 textures in washline/tex (credits in washline/CREDITS.md); turf and cliff rock split by slope; coursed dry-stone wall with coping (instanced stones); split-wood posts with pulley arms; five-bar gate; 130k wind-blown grass blades with backlight glow; thrift clumps; flat-topped heightfield headlands; lighthouse with gallery, cap and cottage.
+
+- Cliff props tune (Tom, 2026-11-15): short green sea turf with root shade and upright normals; sawn square near post with a tin cap; pulley blocks (wheel, cheeks, strap); ragged sheer headlands, sea stacks, nearer lighthouse with gallery rail and black band; a two-jet flyby (lead and wingman, wingtip lights, vapour trails) every 60 to 140 s, a Strangereal nod. Fixed: MSAA made a grass varying negative and sqrt gave NaN (black blocks through bloom).
+
+- Cliff grass rebuild (Tom, 2026-11-15): cliff-grass.js after the Ghost of Tsushima talk: bezier blades bent by a drifting gust field, rounded normals, Voronoi clumps (facing, lean, tint, tall tussocks), dark roots, light through the blades toward the sun, far blades widened, 6-segment near and 3-segment far meshes.
+
+- Cliff step 4 (2026-11-15): grade pass from shared/grade.js (vignette, grain) for places that ask; shared/detail.js drives the pixel ratio and a place level hook (grass density 35/70/100 percent, phones 50/75); baked contact shade at the wall foot and posts (turf vertex colour, grass tint, low wall courses); a thin wide sun-shadow box for the low sun. GTAO skipped: its normal pass cannot run the bezier grass shader.
+
+- Step 5 (Tom, 2026-11-15): Alley, Garden, Beach and Strangereal retired; git keeps them. The page builds the cliff only; the Place choice is gone; sr-atmo.js is now atmo.js (ATMO only).
+
+- Shell fix (2026-11-15): the Bar v2 fit now also watches the two top corners, so a pointer or font change that grows the header refits it. Seen as the Washing line title under Settings on phones. tests/bar-v2.html 108/108.
+
+- Icon round 1 (2026-11-15): icons/spike-washline-1.html: Current, A Shaded object (low sun follows the pointer, pieces glow as it passes behind, quick moves gust), D Isometric block (turf block, line corner to corner, pointer reels the washing, wheels turn). Emblems in icons/spike/emblems/washline-a.svg and -d.svg; on the sheet's GALLERY table.
+
+- Menu icon (Tom, 2026-11-15): A of spike washline-1 without the sun. The washing leans away from the pointer; a quick stroke is a gust; the clock stops once every hem rests. Emblem shared/emblems/washline.svg (posts, line, three pieces); picks.json records it.
+
+- Tom's feedback (2026-11-15): wide shot by default (eye 14 m back, fov 46; phone 22 m, fov 66); grass rolls in gust bands about 7 m apart with a paler sheen where it bends; cloth heavier (damp cotton 0.42 kg/m2 by default, weight and stiffness per piece); varied wash: shirt, trousers, dress, sock and fringed towel outlines, with stripes, check, dots and bands; + Piece draws from a 15-garment wardrobe and a 12-colour palette; up to 8 pieces.
+
+- Main shelf (Tom, 2026-11-15, "promote to main"): Washing line is number 43, version 1.5, after Fog horn; the menu icon takes the main shelf's enter, move and leave hooks.

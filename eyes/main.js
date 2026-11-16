@@ -1,0 +1,1330 @@
+// Googly eyes: the toy's module, loaded by index.html.
+// npm run check type-checks this file.
+import { initPage, sound, audioKit, onQuality, pixelRatio, stage, idle, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+stage('libs');
+// The intro holds until the page, its font and the first frame are in.
+const introDone = playIntro({ ready: pageReady() });
+const ui = initPage({ id: 'eyes', bar: {
+  actions: [
+    { verb: 'shuffle', onPress: () => reshuffle() },
+    { verb: 'shake', onPress: () => shake() },
+    { verb: 'blink', key: 'B', onPress: () => blinkAll() },
+  ],
+  quality: true,
+  keys: [['click', 'blink'], ['drag', 'move an eye'], ['drag round', 'dizzy'], ['space', 'shake']],
+} });
+const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+let reduce = RM.matches;
+RM.addEventListener?.('change', e => { reduce = e.matches; plan(); });
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const clock = () => performance.now() / 1000;
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const rng = s => () => {
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+/* ---------- colour: OKLCH in, linear sRGB out ---------- */
+function lin(L, C, h) {
+  const a = C * Math.cos(h * D2R), b = C * Math.sin(h * D2R);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+// Chroma shrinks until the colour fits sRGB.
+function linear(L, C, h) {
+  let c = lin(L, C, h);
+  for (let i = 0; i < 24 && (Math.min(...c) < -1e-4 || Math.max(...c) > 1.0001); i++) c = lin(L, (C *= 0.9), h);
+  return c.map(v => clamp(v));
+}
+// Series hues: pink, orange, yellow, lime, teal, blue, violet, coral.
+const HUES = [[0.7, 0.22, 355], [0.76, 0.17, 52], [0.88, 0.17, 96], [0.84, 0.2, 138], [0.78, 0.13, 192], [0.64, 0.19, 258], [0.62, 0.23, 302], [0.67, 0.2, 25]].map(c => linear(...c));
+const LOOK = {
+  uBgIn: linear(0.25, 0.06, 292), uBgOut: linear(0.12, 0.03, 284),
+  uGlowA: linear(0.36, 0.13, 342), uGlowB: linear(0.34, 0.09, 205),
+};
+const SKIN = {
+  uWhite: linear(0.965, 0.012, 95), uPupil: linear(0.17, 0.015, 280), uCaus: linear(0.98, 0.035, 85),
+  uEnvA: linear(0.68, 0.22, 345), uEnvB: linear(0.78, 0.13, 195), uEnvTop: linear(0.44, 0.035, 270), uEnvLow: linear(0.14, 0.025, 285),
+};
+// The ring matches the page's --focus token.
+const SHADE = linear(0.09, 0.035, 290), FOCUS = linear(0.84, 0.13, 205);
+
+/* ---------- sound: synthesised, started by the first gesture ---------- */
+const MAXV = 24, LEAD = 0.004;
+let voices = 0, clickGate = 0, pipGate = 0;
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// Busy moments soften each voice; the compressor catches the rest.
+const level = () => 1 / (1 + 0.07 * voices);
+
+// The shared kit: mute by default, gesture start, sleep when idle.
+// Only these keys count as a gesture.
+const kit = audioKit({ keys: new Set(['b', 'B', 'd', 'D', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Enter']) });
+const live = kit.live;
+/** @param {AudioScheduledSourceNode} src @param {...AudioNode} tails */
+function track(src, ...tails) {
+  voices++;
+  src.onended = () => { voices--; tails.forEach(n => n.disconnect()); };
+}
+// Once the eyes settle, the context sleeps until the next gesture.
+const rest = () => kit.rest(() => !raf && !ptr);
+
+// Each voice pans with its place on the stage.
+/** @param {BaseAudioContext} a @param {number} x */
+function bus(a, x) {
+  const p = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
+  if ('pan' in p) p.pan.value = clamp(x, -1, 1) * 0.6;
+  p.connect(kit.out);
+  return p;
+}
+// A noise burst through one filter; it tidies itself up.
+function burst(a, dst, t, type, f, q, g, tau, len) {
+  const src = a.createBufferSource(), fl = a.createBiquadFilter(), ng = a.createGain();
+  src.buffer = kit.noise;
+  fl.type = type;
+  fl.frequency.value = f;
+  fl.Q.value = q;
+  ng.gain.setValueAtTime(0, t);
+  ng.gain.linearRampToValueAtTime(g, t + 0.0005);
+  ng.gain.setTargetAtTime(0, t + 0.0005, tau);
+  src.connect(fl).connect(ng).connect(dst);
+  src.onended = () => ng.disconnect();
+  src.start(t, Math.random() * 0.8, len);
+}
+// A pupil hitting its dome makes a dry plastic tick.
+// Small eyes tick higher.
+// Hits in one frame queue a few milliseconds apart.
+function tick(e, s, roll, off) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD + off, t = Math.max(t0, clickGate);
+  if (t - t0 > 0.03 || t < e.tickNext) return;
+  e.tickNext = t + (roll ? 0.045 : 0.028);
+  clickGate = t + 0.005;
+  const sz = clamp(e.R / (58 * S), 0.35, 1.9), g = level() * (roll ? 0.16 : 0.12 + 0.88 * s) * jit(0.18);
+  const f = (3600 / Math.sqrt(sz)) * jit(0.08), d = bus(a, (e.x / W) * 2 - 1);
+  burst(a, d, t, 'bandpass', f, 5, 0.75 * g, 0.004, 0.03);
+  burst(a, d, t, 'highpass', 7000, 0.7, 0.3 * g, 0.0008, 0.012);
+  const o = a.createOscillator(), og = a.createGain();
+  o.type = 'triangle';
+  o.frequency.value = f * 0.36;
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.14 * g, t + 0.0008);
+  og.gain.setTargetAtTime(0, t + 0.0008, 0.006);
+  o.connect(og).connect(d);
+  o.start(t);
+  o.stop(t + 0.05);
+  track(o, og, d);
+}
+// A blink: a soft rising pip on a pentatonic scale.
+// Big eyes pip lower than small eyes.
+const SCALE = [0, 2, 4, 7, 9];
+function pip(e) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t0 = a.currentTime + LEAD, t = Math.max(t0, pipGate);
+  if (t - t0 > 0.1) return;
+  pipGate = t + 0.024;
+  const n = Math.round(clamp(1.9 - e.R / (40 * S), -0.6, 1.6) * 5 + 4);
+  const f = 392 * 2 ** ((12 * Math.floor(n / 5) + SCALE[n % 5]) / 12) * jit(0.004);
+  const d = bus(a, (e.x / W) * 2 - 1), o = a.createOscillator(), og = a.createGain();
+  o.frequency.setValueAtTime(f * 0.9, t);
+  o.frequency.exponentialRampToValueAtTime(f * 1.06, t + 0.04);
+  og.gain.setValueAtTime(0, t);
+  og.gain.linearRampToValueAtTime(0.085 * level() * jit(0.1), t + 0.005);
+  og.gain.setTargetAtTime(0, t + 0.035, 0.03);
+  o.connect(og).connect(d);
+  o.start(t);
+  o.stop(t + 0.25);
+  track(o, og, d);
+}
+
+/* ---------- the eyes: a packed cluster in CSS pixels, y down ---------- */
+// Accelerations are in pixels per second squared at stage scale one.
+const GRAV = 1700, PULL = 7800, WHIRL = 5200, JMAX = 4000, AMAX = 40000;
+const REST = 0.42, MU = 0.3, ROLL = 1.6, ZETA = 0.17, CLICK_V = 70, BOUNCE_V = 40;
+const COH = 5, BW = 32, BZ = 0.3, WW = 24, WZ = 0.22, QW = 26, QZ = 0.3, SUB = 1 / 240, FILL = 0.6, STRIDE = 20;
+let eyes = [], W = 0, H = 0, S = 1, pr = 1, tall = false;
+let seed = (Math.random() * 2 ** 31) | 0;
+const board = { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 };
+
+function setSize(e) {
+  e.m = e.R * e.R;
+  e.L = (e.dome - e.pr) * e.R * 0.985;
+  e.c = 2 * ZETA * Math.sqrt((PULL * S) / e.L);
+}
+function buildEyes() {
+  const R = rng(seed);
+  const n = Math.round(clamp((W * H) / 23500, 22, 34));
+  const us = [];
+  for (let i = 0; i < n; i++) us.push(i < 2 ? 1 : i < 5 ? 0.68 + 0.2 * R() : 0.28 + 0.55 * R() ** 1.5);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(R() * (i + 1));
+    [us[i], us[j]] = [us[j], us[i]];
+  }
+  const k = Math.sqrt((FILL * W * H) / (Math.PI * us.reduce((s, u) => s + u * u, 0)));
+  let prev = -1;
+  eyes = us.map((u, i) => {
+    // Seeds sit on a sunflower spiral, then the pack settles them.
+    const t = Math.sqrt((i + 0.5) / n), a = i * 2.39996323;
+    let hue = Math.floor(R() * HUES.length);
+    if (hue === prev) hue = (hue + 3) % HUES.length;
+    prev = hue;
+    const rimmed = R() < 0.5, sleepy = R() < 0.26, dome = rimmed ? 0.77 + 0.05 * R() : 0.88 + 0.03 * R();
+    const e = {
+      x: W / 2 + Math.cos(a) * t * W * 0.4, y: H / 2 + Math.sin(a) * t * H * 0.4, vx: 0, vy: 0, ox: 0, oy: 0, bax: 0, bay: 0,
+      R: u * k, dome, pr: dome * (0.4 + 0.22 * R()),
+      rim: rimmed ? HUES[hue] : null, lidCol: HUES[rimmed ? hue : (hue + 2) % HUES.length],
+      lidRest: sleepy ? 0.16 + 0.22 * R() : 0, tilt: (R() - 0.5) * (sleepy ? 0.6 : 0.2),
+      px: 0, py: 0, pvx: 0, pvy: 0, tx: 0, ty: 0, att: 0, hit: 0, hitAt: 0, roll: 0, tickNext: 0, spin: 1,
+      wx: 0, wy: 0, wvx: 0, wvy: 0, sx: 0, sy: 0, q: 0, qv: 0, lift: 0, held: false, hx: 0, hy: 0,
+      lid: 0, blink: -1, blinkAt: 0, blinkDur: 0.26, blinks: 0, hold: 0,
+      bored: false, lazy: false, lookQ: [], partner: null, phase: R() * TAU, seed: R(),
+    };
+    return e;
+  });
+  for (const e of eyes) {
+    setSize(e);
+    e.px = (R() - 0.5) * e.L;
+    e.py = -e.L * 0.5;
+  }
+  pack(500);
+  partners();
+}
+// Pulls to the middle and pushes apart until the eyes nest.
+function pack(iters) {
+  const cx = W / 2, cy = H / 2, ax = W / 2, ay = H / 2, lr = Math.sqrt(ax * ay);
+  const kx = (lr / ax) ** 2, ky = (lr / ay) ** 2;
+  for (let it = 0; it < iters; it++) {
+    const pull = it < iters * 0.7 ? 0.03 : 0.01;
+    for (const e of eyes) {
+      if (e.held) continue;
+      e.x -= (e.x - cx) * kx * pull;
+      e.y -= (e.y - cy) * ky * pull;
+    }
+    separate();
+    walls();
+  }
+}
+// Overlapping eyes push apart.
+// A held eye does not give way.
+function separate() {
+  const gap = 1.5 * S, n = eyes.length;
+  for (let i = 0; i < n; i++) {
+    const a = eyes[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = eyes[j], dx = b.x - a.x, dy = b.y - a.y, min = a.R + b.R + gap, d2 = dx * dx + dy * dy;
+      if (d2 >= min * min) continue;
+      const d = Math.sqrt(d2) || 0.01, push = (min - d) / d;
+      const wa = a.held ? 0 : b.held ? 1 : b.m / (a.m + b.m), wb = b.held ? 0 : 1 - wa;
+      a.x -= dx * push * wa;
+      a.y -= dy * push * wa;
+      b.x += dx * push * wb;
+      b.y += dy * push * wb;
+    }
+  }
+}
+function walls() {
+  const m = 4 * S;
+  for (const e of eyes) {
+    e.x = clamp(e.x, e.R + m, Math.max(e.R + m, W - e.R - m));
+    e.y = clamp(e.y, e.R + m, Math.max(e.R + m, H - e.R - m));
+    if (!e.held) for (const c of corners) clearCorner(e, c);
+  }
+}
+// The shell's corner rows, in stage pixels.
+let corners = [];
+// An eye's centre stays out of a corner row, so half of it always shows.
+// The eye leaves by the row's inner edge, the one nearest its centre.
+function clearCorner(e, c) {
+  const g = e.R * 0.5, x0 = c.x0 - g, x1 = c.x1 + g, y0 = c.y0 - g, y1 = c.y1 + g;
+  if (e.x <= x0 || e.x >= x1 || e.y <= y0 || e.y >= y1) return;
+  const out = [c.x0 > 1 ? e.x - x0 : Infinity, c.x1 < W - 1 ? x1 - e.x : Infinity, c.y0 > 1 ? e.y - y0 : Infinity, c.y1 < H - 1 ? y1 - e.y : Infinity];
+  const k = out.indexOf(Math.min(...out));
+  if (k === 0) e.x = x0; else if (k === 1) e.x = x1; else if (k === 2) e.y = y0; else if (k === 3) e.y = y1;
+}
+// Offsets ignore the corners' slide-in transform.
+function measureCorners() {
+  const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
+  if (!layer || !W) return;
+  const lr = layer.getBoundingClientRect(), pr0 = panel.getBoundingClientRect(), ox = lr.left - pr0.left, oy = lr.top - pr0.top;
+  corners = [.../** @type {NodeListOf<HTMLElement>} */ (layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)'))]
+    .filter(el => el.offsetWidth && el.offsetHeight)
+    .map(el => ({ x0: ox + el.offsetLeft, y0: oy + el.offsetTop, x1: ox + el.offsetLeft + el.offsetWidth, y1: oy + el.offsetTop + el.offsetHeight }));
+  if (ready) wake();
+}
+// Close neighbours pair up, so partners always face each other.
+function partners() {
+  const pairs = [];
+  for (let i = 0; i < eyes.length; i++) {
+    for (let j = i + 1; j < eyes.length; j++) {
+      const a = eyes[i], b = eyes[j];
+      pairs.push([Math.hypot(b.x - a.x, b.y - a.y) - a.R - b.R, a, b]);
+    }
+  }
+  pairs.sort((p, q) => p[0] - q[0]);
+  for (const e of eyes) e.partner = null;
+  for (const [, a, b] of pairs) if (!a.partner && !b.partner) { a.partner = b; b.partner = a; }
+  // The odd one out looks at its nearest neighbour.
+  for (const [, a, b] of pairs) {
+    if (!a.partner) a.partner = b;
+    if (!b.partner) b.partner = a;
+  }
+}
+function layout(w, h) {
+  const oW = W, oH = H;
+  W = w;
+  H = h;
+  S = clamp(Math.sqrt(w * h) / 870, 0.45, 1.35);
+  const t = h > w;
+  if (!eyes.length || t !== tall) {
+    tall = t;
+    buildEyes();
+    return;
+  }
+  // Same shape: everything scales in place, then settles.
+  const k = Math.sqrt((w * h) / (oW * oH));
+  for (const e of eyes) {
+    e.x *= w / oW;
+    e.y *= h / oH;
+    e.R *= k;
+    e.px *= k;
+    e.py *= k;
+    e.hx *= w / oW;
+    e.hy *= h / oH;
+    setSize(e);
+  }
+  pack(60);
+  partners();
+}
+
+/* ---------- gaze, blinks and moods ---------- */
+let gaze = null, gazeUntil = Infinity, lastMove = -1e9, lastInput = -1e9, kbd = false;
+let spinAcc = 0, lastHead = null, spinCool = 0, whirl = 0, dz = null, woozy = 0, cross = 0, startled = -1e9;
+const mark = { x: 0, y: 0 }, kicks = [];
+
+function look(x, y) {
+  gaze = { x, y };
+  gazeUntil = Infinity;
+  lastMove = lastInput = clock();
+  for (const e of eyes) e.bored = false;
+}
+// The eyes keep watching the last spot for a moment.
+function loseGaze(after) {
+  gazeUntil = clock() + after;
+  setTimeout(wake, after * 1000 + 30);
+}
+// Sets one eye's pupil target and its interest in it.
+function aim(e, t, dt) {
+  while (e.lookQ.length && t > e.lookQ[0].until) e.lookQ.shift();
+  const cx = e.x + board.x + e.wx, cy = e.y + board.y + e.wy, lk = e.lookQ[0];
+  let att = 0, vx = 0, vy = 0, reach = 1;
+  if (cross > 0 && e.partner) {
+    const w = 0.5 * Math.sin(t * 7 + e.phase), c = Math.cos(w), s = Math.sin(w);
+    const dx = e.partner.x - e.x, dy = e.partner.y - e.y;
+    vx = dx * c - dy * s;
+    vy = dx * s + dy * c;
+    att = cross;
+  } else if (lk) {
+    vx = lk.eye ? lk.eye.x - e.x : lk.x;
+    vy = lk.eye ? lk.eye.y - e.y : lk.y;
+    reach = lk.reach ?? 1;
+    att = 1;
+  } else if (gaze && !e.bored) {
+    vx = gaze.x - cx;
+    vy = gaze.y - cy;
+    reach = clamp(Math.hypot(vx, vy) / (e.R * 0.9));
+    att = 1;
+  }
+  const D = Math.hypot(vx, vy) || 1;
+  e.tx = (vx / D) * e.L * reach;
+  e.ty = (vy / D) * e.L * reach;
+  att *= 1 - 0.85 * whirl;
+  e.att += (att - e.att) * (1 - Math.exp(-dt * (att > e.att ? 16 : 4)));
+  return Math.abs(att - e.att) > 0.01 || e.lookQ.length > 0;
+}
+// One blink: a quick shut, a beat, then a springy open.
+function lidCurve(k) {
+  if (k < 0.34) { const u = k / 0.34; return u * u * (3 - 2 * u); }
+  if (k < 0.46) return 1;
+  const v = (k - 0.46) / 0.54 - 1;
+  return -(2.70158 * v * v * v + 1.70158 * v * v);
+}
+function startBlink(e, times = 1) {
+  e.blink = 0;
+  e.hold = 0;
+  e.blinks = times - 1;
+  e.blinkDur = reduce ? 0.18 : e.lazy ? 0.62 : rand(0.24, 0.3);
+  e.lazy = false;
+  e.qv += 3.2;
+  e.pvy += 90 * S;
+  pip(e);
+}
+// A wave of blinks spreads out from one point.
+function wave(x, y) {
+  const t = clock(), v = 1200 * S;
+  for (const e of eyes) e.blinkAt = t + 0.01 + Math.hypot(e.x - x, e.y - y) / v;
+  lastInput = t;
+  wake();
+}
+function glance(e, t) {
+  e.lookQ = [];
+  let at = t;
+  for (let i = 0, n = 2 + ((Math.random() * 2) | 0); i < n; i++) {
+    const a = rand(0, TAU);
+    at += rand(0.35, 0.7);
+    e.lookQ.push({ x: Math.cos(a), y: Math.sin(a), until: at });
+  }
+}
+function stare(a, b, t) {
+  if (!b) return;
+  const until = t + rand(1.2, 2);
+  a.lookQ = [{ eye: b, until }];
+  b.lookQ = [{ eye: a, until: until - 0.1 }];
+  if (Math.random() < 0.5) b.blinkAt = t + 0.6;
+}
+// Circling turns the pointer's heading.
+// Enough turns make the eyes dizzy.
+function spinFeed(vx, vy) {
+  if (Math.hypot(vx, vy) < 420 * S) { lastHead = null; return; }
+  const h = Math.atan2(vy, vx);
+  if (lastHead !== null) {
+    let d = h - lastHead;
+    d -= TAU * Math.round(d / TAU);
+    if (Math.abs(d) < 1.2) spinAcc += d;
+  }
+  lastHead = h;
+}
+function goDizzy(dir) {
+  if (dz || !eyes.length) return;
+  const t = clock();
+  dz = { t0: t, dir };
+  for (const e of eyes) e.spin = (Math.random() < 0.7 ? dir : -dir) * rand(0.75, 1.25);
+  spinAcc = 0;
+  spinCool = t + 3.5;
+  lastInput = t;
+  wake();
+}
+function stepMood(dt, t) {
+  spinAcc *= Math.exp(-dt / 0.9);
+  let drive = clamp((Math.abs(spinAcc) - 1.1 * Math.PI) / (1.5 * Math.PI));
+  if (!dz && drive > 0) for (const e of eyes) e.spin = Math.sign(spinAcc) * (0.8 + 0.4 * e.seed);
+  if (!dz && Math.abs(spinAcc) > 2.6 * Math.PI && t > spinCool) goDizzy(Math.sign(spinAcc));
+  cross = woozy = 0;
+  if (dz) {
+    const k = (t - dz.t0) / (reduce ? 0.6 : 1);
+    drive = Math.max(drive, k < 1.4 ? 1 - (0.75 * k) / 1.4 : 0);
+    cross = sstep(1, 1.4, k) * (1 - sstep(2.5, 2.8, k));
+    woozy = sstep(0, 0.35, k) * (1 - sstep(2.6, 3, k));
+    // They shake it off with a quick blink.
+    if (k > 3) {
+      dz = null;
+      for (const e of eyes) e.blinkAt = t + 0.02 + Math.random() * 0.15;
+    }
+  }
+  whirl = drive;
+  const amp = reduce ? 0 : woozy * 2.6 * S;
+  for (const e of eyes) {
+    e.sx = amp * Math.cos(t * 5.5 + e.phase);
+    e.sy = amp * 0.7 * Math.sin(t * 5.5 + e.phase);
+  }
+  return !!dz || drive > 0.001 || Math.abs(spinAcc) > 0.3;
+}
+
+/* ---------- physics ---------- */
+// Bodies move by position: a pull inward, then pushes apart.
+function stepBodies(dt) {
+  const cx = W / 2, cy = H / 2, ax = W / 2, ay = H / 2, lr = Math.sqrt(ax * ay);
+  const kx = COH * (lr / ax) ** 2, ky = COH * (lr / ay) ** 2, damp = Math.exp(-dt * 8);
+  let moving = false;
+  for (const e of eyes) {
+    e.ox = e.x;
+    e.oy = e.y;
+    e.ovx = e.vx;
+    e.ovy = e.vy;
+    if (e.held) {
+      const f = 1 - Math.exp(-dt * 38);
+      e.x += (e.hx - e.x) * f;
+      e.y += (e.hy - e.y) * f;
+      moving = true;
+      continue;
+    }
+    e.vx = e.vx * damp - (e.x - cx) * kx * dt;
+    e.vy = e.vy * damp - (e.y - cy) * ky * dt;
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
+  }
+  for (let k = 0; k < 3; k++) {
+    separate();
+    walls();
+  }
+  const amax = AMAX * S;
+  for (const e of eyes) {
+    e.vx = (e.x - e.ox) / dt;
+    e.vy = (e.y - e.oy) / dt;
+    e.bax = clamp((e.vx - e.ovx) / dt, -amax, amax);
+    e.bay = clamp((e.vy - e.ovy) / dt, -amax, amax);
+    if (Math.abs(e.vx) + Math.abs(e.vy) > 2) moving = true;
+  }
+  return moving;
+}
+// The pupils: free discs in their domes, stepped at 240 Hz.
+const jolt = { x: 0, y: 0 };
+function stepPupils(dt) {
+  const n = Math.max(1, Math.round(dt / SUB)), h = dt / n;
+  const G = GRAV * S, A0 = PULL * S, AW = WHIRL * S, bounceV = BOUNCE_V * S, rollV = 200 * S;
+  let moving = false;
+  for (let k = 0; k < n; k++) {
+    // The board springs back to rest under everything.
+    const bax = -BW * BW * (board.x - board.tx) - 2 * BZ * BW * board.vx;
+    const bay = -BW * BW * (board.y - board.ty) - 2 * BZ * BW * board.vy;
+    board.vx += bax * h;
+    board.vy += bay * h;
+    board.x += board.vx * h;
+    board.y += board.vy * h;
+    for (const e of eyes) {
+      // Each eye also jiggles on its own spring.
+      const wax = -WW * WW * e.wx - 2 * WZ * WW * e.wvx, way = -WW * WW * e.wy - 2 * WZ * WW * e.wvy;
+      e.wvx += wax * h;
+      e.wvy += way * h;
+      e.wx += e.wvx * h;
+      e.wy += e.wvy * h;
+      // The pupil feels gravity, and the eye's motion backwards.
+      let ax = jolt.x - bax - wax - e.bax, ay = G + jolt.y - bay - way - e.bay;
+      if (e.att > 0.001) {
+        const kp = (A0 * e.att) / e.L;
+        ax += kp * (e.tx - e.px);
+        ay += kp * (e.ty - e.py);
+      }
+      ax -= e.c * e.pvx;
+      ay -= e.c * e.pvy;
+      if (whirl > 0.001) {
+        const d = Math.hypot(e.px, e.py) || 1e-3, ux = e.px / d, uy = e.py / d, sp = whirl * AW;
+        ax += sp * (-uy * e.spin + 0.35 * ux);
+        ay += sp * (ux * e.spin + 0.35 * uy);
+      }
+      e.pvx += ax * h;
+      e.pvy += ay * h;
+      e.px += e.pvx * h;
+      e.py += e.pvy * h;
+      const L = e.L, d2 = e.px * e.px + e.py * e.py;
+      if (d2 <= L * L) continue;
+      // The rim stops the pupil: a bounce, then friction along the rim.
+      const d = Math.sqrt(d2), nx = e.px / d, ny = e.py / d, tx = -ny, ty = nx;
+      e.px = nx * L;
+      e.py = ny * L;
+      const vn = e.pvx * nx + e.pvy * ny;
+      if (vn > 0) {
+        const b = vn > bounceV ? REST : 0, vt = e.pvx * tx + e.pvy * ty;
+        const jt = Math.min(Math.abs(vt), MU * (1 + b) * vn) * Math.sign(vt);
+        e.pvx -= (1 + b) * vn * nx + jt * tx;
+        e.pvy -= (1 + b) * vn * ny + jt * ty;
+        if (vn > e.hit) { e.hit = vn; e.hitAt = k * h; }
+      }
+      const vt = e.pvx * tx + e.pvy * ty, keep = 1 - Math.exp(-ROLL * h);
+      e.pvx -= vt * keep * tx;
+      e.pvy -= vt * keep * ty;
+      if (Math.abs(vt) > rollV) e.roll += Math.abs(vt) * h;
+    }
+  }
+  const cv = CLICK_V * S;
+  for (const e of eyes) {
+    if (e.hit > cv) tick(e, clamp((e.hit - cv) / (900 * S)), false, e.hitAt);
+    else if (e.roll > 26 * S) tick(e, 0, true, Math.random() * dt);
+    if (e.roll > 26 * S) e.roll = 0;
+    e.hit = 0;
+    if (Math.abs(e.pvx) + Math.abs(e.pvy) > 1.5 || Math.abs(e.wvx) + Math.abs(e.wvy) > 1 || Math.abs(e.wx) + Math.abs(e.wy) > 0.05) moving = true;
+  }
+  return moving || Math.abs(board.x - board.tx) + Math.abs(board.y - board.ty) > 0.05 || Math.abs(board.vx) + Math.abs(board.vy) > 1;
+}
+function stepLids(dt, t) {
+  const wide = sstep(0, 0.5, t - startled);
+  let busy = wide < 1;
+  for (const e of eyes) {
+    if (e.blinkAt && t >= e.blinkAt) {
+      e.blinkAt = 0;
+      startBlink(e, 1);
+    }
+    let c = 0;
+    if (e.blink >= 0) {
+      if (t >= e.hold) e.blink += dt / e.blinkDur;
+      if (e.blink >= 1) {
+        if (e.blinks > 0) { e.blinks--; e.blink = 0; pip(e); }
+        else e.blink = -1;
+      }
+      if (e.blink >= 0) c = lidCurve(e.blink);
+    }
+    const rest = clamp(e.lidRest * wide + woozy * (0.3 + 0.1 * Math.sin(t * 4.2 + e.phase)) * (1 - e.lidRest));
+    e.lid = clamp(rest + (1 - rest) * c);
+    // A blink squashes the eye, which springs back.
+    const qa = -QW * QW * e.q - 2 * QZ * QW * e.qv;
+    e.qv += qa * dt;
+    e.q += e.qv * dt;
+    e.lift += ((e.held ? 1 : 0) - e.lift) * (1 - Math.exp(-dt * 18));
+    // A lid held shut for the intro does no per-frame work.
+    if ((e.blink >= 0 && e.hold !== Infinity) || e.blinkAt || Math.abs(e.q) + Math.abs(e.qv) > 0.002 || Math.abs((e.held ? 1 : 0) - e.lift) > 0.004) busy = true;
+  }
+  return busy;
+}
+// A shake: the board takes a few hard kicks, side to side.
+function shake() {
+  if (!eyes.length) return;
+  const t = clock(), a = rand(-0.45, 0.45) + (Math.random() < 0.5 ? 0 : Math.PI);
+  const ux = Math.cos(a), uy = Math.sin(a);
+  [1, -1.7, 1.4, -0.8].forEach((k, i) => kicks.push({ at: t + i * 0.085, x: ux * k, y: uy * k }));
+  lastInput = t;
+  wake();
+}
+function kick(kx, ky, v) {
+  board.vx += kx * v;
+  board.vy += ky * v;
+  // Sleepy eyes pop wide open for a moment.
+  startled = clock() + 0.7;
+  for (const e of eyes) {
+    const jx = kx * v * rand(-0.35, 0.35), jy = ky * v * rand(-0.35, 0.35);
+    e.wvx += jx;
+    e.wvy += jy;
+    e.pvx -= kx * v + jx;
+    e.pvy -= ky * v + jy;
+  }
+}
+function step(dt) {
+  const t = clock();
+  let busy = !!ptr || kicks.length > 0;
+  if (gaze && t > gazeUntil) gaze = null;
+  // Fast pointer moves startle the pupils.
+  if (performance.now() - pv.t > 60) { pv.vx *= Math.exp(-dt * 20); pv.vy *= Math.exp(-dt * 20); lastHead = null; }
+  pv.ax *= Math.exp(-dt * 14);
+  pv.ay *= Math.exp(-dt * 14);
+  const jm = JMAX * S;
+  jolt.x = clamp(-0.05 * pv.ax, -jm, jm);
+  jolt.y = clamp(-0.05 * pv.ay, -jm, jm);
+  if (Math.abs(jolt.x) + Math.abs(jolt.y) > 30 * S) busy = true;
+  // Dragging empty space yanks the board along with the pointer.
+  if (ptr && ptr.mode === 'board') {
+    const lim = 0.035 * Math.min(W, H);
+    board.tx = clamp(pv.vx * 0.012, -lim, lim);
+    board.ty = clamp(pv.vy * 0.012, -lim, lim);
+  } else board.tx = board.ty = 0;
+  if (kgrab && t > kgrabUntil) { kgrab.held = false; kgrab = null; partners(); }
+  while (kicks.length && t >= kicks[0].at) {
+    const k = kicks.shift();
+    kick(k.x, k.y, 520 * S);
+  }
+  if (stepMood(dt, t)) busy = true;
+  for (const e of eyes) if (aim(e, t, dt)) busy = true;
+  if (stepBodies(dt)) busy = true;
+  if (stepPupils(dt)) busy = true;
+  if (stepLids(dt, t)) busy = true;
+  return busy;
+}
+
+/* ---------- idle life ---------- */
+let idleT = 0;
+function plan() {
+  clearTimeout(idleT);
+  if (reduce) return;
+  idleT = setTimeout(idleTick, rand(2.2, 5.5) * 1000);
+}
+function idleTick() {
+  plan();
+  if (!ready || !onScreen || document.hidden || dz || ptr || !eyes.length || shutAll) return;
+  const t = clock();
+  let act = false;
+  // A still pointer bores the eyes one or two at a time.
+  if (gaze && t - lastMove > 6) {
+    const keen = eyes.filter(e => !e.bored);
+    for (let k = Math.min(keen.length, 1 + ((Math.random() * 4) | 0)); k > 0; k--) {
+      keen.splice((Math.random() * keen.length) | 0, 1)[0].bored = true;
+      act = true;
+    }
+  }
+  if (t - lastInput > 2.5 && Math.random() < 0.8) {
+    const e = eyes[(Math.random() * eyes.length) | 0];
+    const r = Math.random();
+    if (r < 0.45) glance(e, t);
+    else if (r < 0.8) stare(e, e.partner, t);
+    else { e.lazy = true; e.blinkAt = t; }
+    act = true;
+  }
+  if (act) wake();
+}
+
+/* ---------- WebGL ---------- */
+const TRI = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const COMMON = `
+float hash(vec2 p) {
+  vec3 q = fract(p.xyx * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+vec3 knee(vec3 c) { return mix(c, 0.82 + 0.18 * (1.0 - exp(-(c - 0.82) * 5.5)), step(0.82, c)); }
+vec3 srgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}`;
+// The stage: a dusky gradient with two coloured pools of light.
+const BG_FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes;
+uniform vec3 uBgIn, uBgOut, uGlowA, uGlowB;
+out vec4 o;
+${COMMON}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float a = uRes.x / uRes.y;
+  vec2 p = (uv - 0.5) * vec2(a, 1.0);
+  vec3 col = mix(uBgIn, uBgOut, smoothstep(0.0, 0.95, length(p * vec2(0.75, 1.0))));
+  vec2 ga = p - vec2(-0.3 * a, 0.26), gb = p - vec2(0.3 * a, -0.28);
+  col += uGlowA * exp(-dot(ga, ga) * 3.2) + uGlowB * exp(-dot(gb, gb) * 3.6);
+  o = vec4(srgb(col) + (hash(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+const EYE_VS = `#version 300 es
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec4 aA;
+layout(location = 2) in vec4 aP;
+layout(location = 3) in vec4 aRim;
+layout(location = 4) in vec4 aLid;
+layout(location = 5) in vec4 aX;
+uniform vec2 uRes;
+uniform float uExt, uLift;
+out vec2 vQ;
+flat out vec4 vA;
+flat out vec4 vP;
+flat out vec4 vRim;
+flat out vec4 vLid;
+flat out vec4 vX;
+void main() {
+  float ext = uExt + uLift * aA.w + 2.0 / aA.z;
+  vec2 p = aA.xy + aCorner * ext * aA.z * aX.yz;
+  gl_Position = vec4(p.x / uRes.x * 2.0 - 1.0, 1.0 - p.y / uRes.y * 2.0, 0.0, 1.0);
+  vQ = vec2(aCorner.x, -aCorner.y) * ext;
+  vA = aA;
+  vP = aP;
+  vRim = aRim;
+  vLid = aLid;
+  vX = aX;
+}`;
+// Each eye casts a soft shadow away from the key light.
+const SHADOW_FS = `#version 300 es
+precision highp float;
+uniform vec3 uShade;
+in vec2 vQ;
+flat in vec4 vA;
+out vec4 o;
+void main() {
+  float lift = vA.w;
+  vec2 c = vec2(0.07, -0.11) + vec2(0.2, -0.3) * lift;
+  float b = 0.14 + 0.26 * lift;
+  float soft = (1.0 - smoothstep(1.0 - b, 1.0 + b, length(vQ - c))) * (0.62 - 0.12 * lift);
+  float tight = (1.0 - smoothstep(0.93, 1.06, length(vQ - vec2(0.015, -0.03)))) * 0.55 * (1.0 - lift);
+  float a = 1.0 - (1.0 - soft) * (1.0 - tight);
+  o = vec4(uShade * a, a);
+}`;
+// One eye: a clear dome over a white disc and a pupil.
+// Units are eye radii with y up.
+// The key light sits up and to the left.
+const EYE_FS = `#version 300 es
+precision highp float;
+uniform vec3 uWhite, uPupil, uCaus, uEnvA, uEnvB, uEnvTop, uEnvLow;
+in vec2 vQ;
+flat in vec4 vA;
+flat in vec4 vP;
+flat in vec4 vRim;
+flat in vec4 vLid;
+flat in vec4 vX;
+out vec4 o;
+${COMMON}
+const vec3 KEY = vec3(-0.5, 0.64, 0.58);
+float sdBox(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+// The studio has dim walls, a magenta lamp and a teal lamp.
+vec3 env(vec3 r) {
+  vec3 c = mix(uEnvLow, uEnvTop, smoothstep(-0.6, 0.8, r.y));
+  // Only grazing slopes catch the side lamps.
+  float side = smoothstep(0.15, -0.35, r.z);
+  c += uEnvA * side * smoothstep(0.1, 0.6, -r.x) * smoothstep(-0.8, 0.1, r.y);
+  c += uEnvB * side * smoothstep(0.1, 0.6, r.x) * smoothstep(0.6, -0.3, r.y);
+  return c;
+}
+// The key light reflects as a soft window.
+float window(vec3 r) {
+  return 1.0 - smoothstep(-0.02, 0.05, sdBox(r.xy - vec2(-0.47, 0.6), vec2(0.24, 0.16), 0.1));
+}
+float glint(vec3 r) {
+  vec2 v = r.xy - vec2(0.36, 0.5);
+  return exp(-dot(v, v) * 600.0);
+}
+float fres(float c) {
+  float k = 1.0 - clamp(c, 0.0, 1.0);
+  return 0.04 + 0.96 * k * k * k;
+}
+// Glossy coloured plastic.
+vec3 plastic(vec3 alb, vec3 n, vec3 L) {
+  vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
+  float F = fres(n.z);
+  vec3 c = alb * (0.3 + 0.8 * max(dot(n, L), 0.0)) * (1.0 - F);
+  return c + env(r) * F * 1.4 + window(r) * (0.1 + F) * 2.6 + glint(r) * 1.5;
+}
+void main() {
+  float R = vA.z, px = 1.0 / R;
+  vec2 q = vQ;
+  float d = length(q);
+  float cover = 1.0 - smoothstep(1.0 - px, 1.0 + px * 0.5, d);
+  if (cover <= 0.0) discard;
+  vec3 L = normalize(KEY);
+  vec2 rad = q / max(d, 1e-4), away = -normalize(L.xy);
+  float dr = vP.w;
+
+  // The rim: a coloured ring, or the white flange under clear plastic.
+  float t = clamp((d - dr) / (1.0 - dr), 0.0, 1.0);
+  vec3 col;
+  if (vRim.w > 0.5) {
+    col = plastic(vRim.rgb, normalize(vec3(rad * (t - 0.42) * 2.2, 1.0)), L);
+    col *= 0.55 + 0.45 * smoothstep(0.0, 0.2, t);
+  } else {
+    float bev = smoothstep(0.45, 1.0, t);
+    vec3 n = normalize(vec3(rad * bev * 1.1, 1.0)), r = reflect(vec3(0.0, 0.0, -1.0), n);
+    col = uWhite * (0.62 + 0.4 * max(dot(n, L), 0.0)) * (1.0 - 0.1 * bev);
+    col += env(r) * fres(n.z) + window(r) * 0.35 * bev;
+  }
+
+  // The dome: the backing and pupil seen through clear plastic.
+  if (d < dr + px) {
+    vec2 s = q / dr;
+    float ds = min(length(s), 1.0);
+    const float HC = 0.62, RS = (1.0 + HC * HC) / (2.0 * HC);
+    vec3 n = normalize(vec3(s, sqrt(max(RS * RS - ds * ds, 0.0))));
+    vec3 r = reflect(vec3(0.0, 0.0, -1.0), n);
+    float F = fres(n.z);
+    // The dome magnifies its middle a little and squeezes its wall.
+    vec2 u = s * (0.93 + 0.07 * ds * ds), pc = vP.xy / dr;
+    float pr = vP.z / dr, e = px / dr;
+    float pup = 1.0 - smoothstep(pr - e, pr + e, length(u - pc));
+    float du = length(u);
+    float sh = 1.0 - smoothstep(pr - 0.05, pr + 0.07, length(u - pc - away * 0.045));
+    float caus = smoothstep(0.5, 0.88, du) * smoothstep(1.0, 0.86, du) * pow(max(dot(u / max(du, 1e-4), away), 0.0), 1.6);
+    vec3 back = uWhite * (1.0 - 0.2 * smoothstep(0.62, 1.0, du)) * (1.0 - 0.42 * sh) + uCaus * caus * 0.4;
+    vec2 pl = u - pc;
+    float pd = length(pl);
+    float bevel = smoothstep(pr - 0.09, pr - 0.015, pd) * max(dot(pl / max(pd, 1e-4), -away), 0.0);
+    vec3 ink = uPupil * (1.0 + 2.5 * bevel) + uCaus * caus * 0.06;
+    vec3 under = mix(back, ink, pup);
+    // The shell's wall, seen edge on.
+    under *= 1.0 - 0.3 * smoothstep(0.84, 1.0, ds);
+    float line = smoothstep(0.955, 0.985, ds) * (1.0 - smoothstep(0.99, 1.0, ds));
+    under = mix(under, under * 0.45 + uCaus * 0.5 * max(dot(rad, away), 0.0), line);
+    vec3 dome = under * (1.0 - F) + env(r) * F * 1.6 + window(r) * (0.22 + F) * 3.2 + glint(r) * 2.2;
+    col = mix(dome, col, smoothstep(dr - px, dr + px, d));
+  }
+
+  // The lid: a coloured cap that sweeps down from the top.
+  float a = vLid.w;
+  if (a > 0.001) {
+    float cs = cos(vX.x), sn = sin(vX.x);
+    vec2 lq = vec2(cs * q.x - sn * q.y, sn * q.x + cs * q.y);
+    float x = clamp(lq.x, -1.0, 1.0);
+    float edge = mix(1.1, -1.1, a) - 0.24 * sin(3.14159 * clamp(a, 0.0, 1.0)) * (1.0 - x * x);
+    float above = lq.y - edge, inLid = smoothstep(-px, px, above);
+    col *= 1.0 - 0.5 * (1.0 - inLid) * smoothstep(-0.2, 0.0, above);
+    vec3 lid = plastic(vLid.rgb, normalize(vec3(q * 0.95, sqrt(max(1.15 - d * d, 0.05)))), L);
+    lid *= 1.0 - 0.55 * (1.0 - smoothstep(0.0, 0.06, above));
+    lid += vLid.rgb * 0.35 * smoothstep(0.03, 0.08, above) * (1.0 - smoothstep(0.08, 0.16, above));
+    col = mix(col, lid, inLid);
+  }
+  o = vec4(srgb(knee(col)) * cover, cover);
+}`;
+// The keyboard's gaze mark: a small ring in the focus colour.
+const RING_VS = `#version 300 es
+uniform vec2 uRes, uC;
+uniform float uR;
+out vec2 vQ;
+void main() {
+  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
+  vec2 p = uC + c * uR;
+  gl_Position = vec4(p.x / uRes.x * 2.0 - 1.0, 1.0 - p.y / uRes.y * 2.0, 0.0, 1.0);
+  vQ = c * uR;
+}`;
+const RING_FS = `#version 300 es
+precision highp float;
+uniform float uR;
+uniform vec3 uCol;
+in vec2 vQ;
+out vec4 o;
+${COMMON}
+void main() {
+  float a = 1.0 - smoothstep(uR * 0.06, uR * 0.06 + 1.5, abs(length(vQ) - uR * 0.72));
+  o = vec4(srgb(uCol) * a, a);
+}`;
+
+let gl = null, P = null, emptyVao = null, eyeVao = null, quadBuf = null, instBuf = null, ready = false;
+const inst = new Float32Array(STRIDE * 48);
+function compile(vs, fs) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  };
+  const p = gl.createProgram(), v = sh(gl.VERTEX_SHADER, vs), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p, v);
+  gl.attachShader(p, f);
+  gl.linkProgram(p);
+  return { p, v, f, u: {} };
+}
+function uni(prog, names) {
+  for (const n of names) prog.u[n] = gl.getUniformLocation(prog.p, n);
+}
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const progs = { bg: compile(TRI, BG_FS), shadow: compile(EYE_VS, SHADOW_FS), eye: compile(EYE_VS, EYE_FS), ring: compile(RING_VS, RING_FS) };
+  // Polling lets the driver link off the main thread.
+  const all = Object.values(progs);
+  if (par) while (!gl.isContextLost() && !all.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await nextFrame();
+  for (const q of all) {
+    if (!gl.getProgramParameter(q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(q.f) || gl.getShaderInfoLog(q.v) || gl.getProgramInfoLog(q.p) || 'link failed');
+  }
+  P = progs;
+  uni(P.bg, ['uRes', ...Object.keys(LOOK)]);
+  uni(P.shadow, ['uRes', 'uExt', 'uLift', 'uShade']);
+  uni(P.eye, ['uRes', 'uExt', 'uLift', ...Object.keys(SKIN)]);
+  uni(P.ring, ['uRes', 'uC', 'uR', 'uCol']);
+  gl.useProgram(P.bg.p);
+  for (const k in LOOK) gl.uniform3fv(P.bg.u[k], LOOK[k]);
+  gl.useProgram(P.eye.p);
+  for (const k in SKIN) gl.uniform3fv(P.eye.u[k], SKIN[k]);
+  gl.useProgram(P.shadow.p);
+  gl.uniform3fv(P.shadow.u.uShade, SHADE);
+  gl.useProgram(P.ring.p);
+  gl.uniform3fv(P.ring.u.uCol, FOCUS);
+
+  emptyVao = gl.createVertexArray();
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  eyeVao = gl.createVertexArray();
+  gl.bindVertexArray(eyeVao);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  for (let k = 1; k <= 5; k++) {
+    gl.enableVertexAttribArray(k);
+    gl.vertexAttribDivisor(k, 1);
+  }
+  bindInst(0);
+  gl.bindVertexArray(null);
+}
+// Points the instance attributes at one eye onwards.
+function bindInst(base) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  for (let k = 1; k <= 5; k++) gl.vertexAttribPointer(k, 4, gl.FLOAT, false, STRIDE * 4, (base * STRIDE + (k - 1) * 4) * 4);
+}
+// Packs every eye into the instance buffer; a held eye goes last.
+function writeInst() {
+  const vis = reduce ? 0.3 : 1;
+  let o = 0, top = null;
+  const put = e => {
+    const sc = (1 + 0.11 * e.lift) * pr, rim = e.rim || SKIN.uWhite;
+    inst[o] = (e.x + (board.x + e.wx) * vis + e.sx) * pr;
+    inst[o + 1] = (e.y + (board.y + e.wy) * vis + e.sy) * pr;
+    inst[o + 2] = e.R * sc;
+    inst[o + 3] = e.lift;
+    inst[o + 4] = e.px / e.R;
+    inst[o + 5] = -e.py / e.R;
+    inst[o + 6] = e.pr;
+    inst[o + 7] = e.dome;
+    inst[o + 8] = rim[0];
+    inst[o + 9] = rim[1];
+    inst[o + 10] = rim[2];
+    inst[o + 11] = e.rim ? 1 : 0;
+    inst[o + 12] = e.lidCol[0];
+    inst[o + 13] = e.lidCol[1];
+    inst[o + 14] = e.lidCol[2];
+    inst[o + 15] = e.lid;
+    inst[o + 16] = e.tilt;
+    inst[o + 17] = 1 + 0.5 * e.q;
+    inst[o + 18] = 1 - 0.7 * e.q;
+    inst[o + 19] = e.seed;
+    o += STRIDE;
+  };
+  for (const e of eyes) {
+    if (e.held && !top) top = e;
+    else put(e);
+  }
+  if (top) put(top);
+  return top ? 1 : 0;
+}
+function draw() {
+  if (!ready || !eyes.length) return;
+  const cw = canvas.width, ch = canvas.height, n = Math.min(eyes.length, 48), top = writeInst(), base = n - top;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.bg.p);
+  gl.uniform2f(P.bg.u.uRes, cw, ch);
+  gl.bindVertexArray(emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst, 0, n * STRIDE);
+  gl.bindVertexArray(eyeVao);
+  const pass = (prog, ext, from, count) => {
+    gl.useProgram(prog.p);
+    gl.uniform2f(prog.u.uRes, cw, ch);
+    gl.uniform1f(prog.u.uExt, ext);
+    gl.uniform1f(prog.u.uLift, prog === P.shadow ? 0.55 : 0);
+    bindInst(from);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+  };
+  pass(P.shadow, 1.3, 0, base);
+  pass(P.eye, 1, 0, base);
+  // A lifted eye shades the eyes beneath it.
+  if (top) {
+    pass(P.shadow, 1.3, base, 1);
+    pass(P.eye, 1, base, 1);
+  }
+  if (kbd) {
+    gl.useProgram(P.ring.p);
+    gl.uniform2f(P.ring.u.uRes, cw, ch);
+    gl.uniform2f(P.ring.u.uC, mark.x * pr, mark.y * pr);
+    gl.uniform1f(P.ring.u.uR, 22 * pr);
+    gl.bindVertexArray(emptyVao);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  gl.bindVertexArray(null);
+}
+function fit() {
+  const w = panel.clientWidth, h = panel.clientHeight;
+  if (!w || !h) return;
+  rect = null;
+  const p = pixelRatio(w, h, { maxDpr: 2, budget: 1.4e6, low: lowDpr });
+  const cw = Math.round(w * p), ch = Math.round(h * p);
+  if (w !== W || h !== H) layout(w, h);
+  pr = cw / w;
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  // A resized canvas is blank until drawn, so draw now.
+  if (ready) {
+    draw();
+    wake();
+  }
+}
+
+/* ---------- one loop, only while something moves ---------- */
+let raf = 0, last = 0, onScreen = true, quiet = 0, slow = 0, lowDpr = false;
+function wake() {
+  if (!raf && ready && onScreen && !document.hidden) {
+    last = performance.now();
+    quiet = 0;
+    raf = requestAnimationFrame(frame);
+  }
+}
+function frame(ms) {
+  // A wake() call during the frame finds raf set and does nothing.
+  raf = -1;
+  const raw = Math.max(0, (ms - last) / 1000), dt = clamp(raw, 1 / 240, 1 / 30);
+  last = ms;
+  // Sustained slow frames drop the pixel ratio one quality step.
+  if (!lowDpr) {
+    slow = raw > 0.03 ? slow + 1 : Math.max(0, slow - 1);
+    if (slow > 24) { lowDpr = true; fit(); }
+  }
+  const busy = step(dt);
+  draw();
+  quiet = busy ? 0 : quiet + 1;
+  raf = 0;
+  if (quiet < 12 && ready && onScreen && !document.hidden) raf = requestAnimationFrame(frame);
+  else rest();
+}
+
+/* ---------- input ---------- */
+let rect = null, ptr = null, kgrab = null, kgrabUntil = 0;
+const pv = { x: 0, y: 0, vx: 0, vy: 0, ax: 0, ay: 0, t: 0 };
+addEventListener('scroll', () => { rect = null; }, { passive: true });
+function local(e) {
+  const r = rect || (rect = panel.getBoundingClientRect());
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+// Tracks the pointer's velocity and acceleration, smoothed over ~25 ms.
+function feel(x, y, ts) {
+  const dtm = (ts - pv.t) / 1000;
+  if (pv.t && dtm > 0.0005 && dtm < 0.1) {
+    const k = clamp(dtm / 0.025), vx = lerp(pv.vx, (x - pv.x) / dtm, k), vy = lerp(pv.vy, (y - pv.y) / dtm, k);
+    pv.ax = lerp(pv.ax, (vx - pv.vx) / dtm, k);
+    pv.ay = lerp(pv.ay, (vy - pv.vy) / dtm, k);
+    pv.vx = vx;
+    pv.vy = vy;
+    spinFeed(vx, vy);
+  } else if (!pv.t || dtm >= 0.1) {
+    pv.vx = pv.vy = pv.ax = pv.ay = 0;
+    lastHead = null;
+  }
+  pv.x = x;
+  pv.y = y;
+  pv.t = ts;
+}
+// The eye under a point, using where it is drawn.
+function pick(x, y, wide) {
+  const vis = reduce ? 0.3 : 1;
+  let best = null, bd = wide ? 1.12 : 1;
+  for (const e of eyes) {
+    const d = Math.hypot(x - (e.x + (board.x + e.wx) * vis + e.sx), y - (e.y + (board.y + e.wy) * vis + e.sy)) / e.R;
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function nearest(x, y) {
+  let best = null, bd = Infinity;
+  for (const e of eyes) {
+    const d = Math.hypot(x - e.x, y - e.y) - e.R;
+    if (d < bd) { bd = d; best = e; }
+  }
+  return best;
+}
+function grab(e) {
+  e.held = true;
+  e.hx = e.x;
+  e.hy = e.y;
+}
+function drop(e) {
+  e.held = false;
+  e.qv -= 2.4;
+  partners();
+}
+function blinkOne(e) {
+  e.blinkAt = 0;
+  startBlink(e, Math.random() < 0.2 ? 2 : 1);
+  // Now and then its partner copies it.
+  if (e.partner && Math.random() < 0.3) e.partner.blinkAt = clock() + 0.16;
+  lastInput = clock();
+  wake();
+}
+panel.addEventListener('pointerdown', e => {
+  if (!ready || ptr || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const [x, y] = local(e), touch = e.pointerType !== 'mouse';
+  try { panel.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
+  kbd = false;
+  const eye = pick(x, y, touch);
+  ptr = { id: e.pointerId, touch, x0: x, y0: y, eye, mode: 'press', dx: eye ? x - eye.x : 0, dy: eye ? y - eye.y : 0 };
+  pv.t = 0;
+  feel(x, y, e.timeStamp);
+  look(x, y);
+  wake();
+});
+panel.addEventListener('pointermove', e => {
+  const mine = ptr && e.pointerId === ptr.id;
+  if (!ready || (!mine && (ptr || e.pointerType !== 'mouse'))) return;
+  const list = e.getCoalescedEvents?.() || [];
+  let x = 0, y = 0;
+  for (const c of list.length ? list : [e]) {
+    [x, y] = local(c);
+    feel(x, y, c.timeStamp);
+  }
+  if (mine) {
+    if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > (ptr.touch ? 10 : 5)) {
+      ptr.mode = ptr.eye ? 'eye' : 'board';
+      if (ptr.eye) grab(ptr.eye);
+    }
+    if (ptr.mode === 'eye') {
+      ptr.eye.hx = x - ptr.dx;
+      ptr.eye.hy = y - ptr.dy;
+    }
+  }
+  kbd = false;
+  look(x, y);
+  // Hover rattles need sound too, so a sleeping context wakes.
+  if (sound.on && kit.ac && kit.ac.state === 'suspended' && navigator.userActivation?.hasBeenActive !== false) kit.wake();
+  wake();
+});
+function release(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const p = ptr;
+  ptr = null;
+  if (p.mode === 'press' && e.type === 'pointerup') {
+    if (p.eye) blinkOne(p.eye);
+    else wave(p.x0, p.y0);
+  }
+  if (p.eye && p.eye.held) drop(p.eye);
+  if (p.touch) loseGaze(2.2);
+  wake();
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, release));
+panel.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !ptr) loseGaze(1); });
+panel.addEventListener('contextmenu', e => e.preventDefault());
+
+// Arrow keys move the gaze mark.
+// Shift with an arrow drags the eye nearest the mark.
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+function blinkAll() {
+  if (kbd) wave(mark.x, mark.y);
+  else if (gaze) wave(gaze.x, gaze.y);
+  else wave(W / 2, H / 2);
+}
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented || !ready) return;
+  // Keys inside a shell sheet belong to the sheet.
+  const tgt = /** @type {Element} */ (e.target);
+  if (tgt.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  const k = e.key;
+  if (k === ' ') {
+    // Buttons and links keep Space for themselves.
+    if (tgt.closest?.('button, a')) return;
+    e.preventDefault();
+    if (!e.repeat) shake();
+  } else if (k === 'd' || k === 'D') {
+    if (!e.repeat) goDizzy(Math.random() < 0.5 ? 1 : -1);
+  } else if (k === 'Enter' && e.target === panel) {
+    e.preventDefault();
+    if (e.repeat) return;
+    const eye = kbd ? pick(mark.x, mark.y, true) : null;
+    if (eye) blinkOne(eye);
+    else blinkAll();
+  } else if (ARROWS[k]) {
+    e.preventDefault();
+    const [dx, dy] = ARROWS[k], st = Math.max(W, H) * 0.045;
+    if (!kbd) {
+      kbd = true;
+      mark.x = gaze ? gaze.x : W / 2;
+      mark.y = gaze ? gaze.y : H / 2;
+    }
+    if (e.shiftKey) {
+      const eye = kgrab || nearest(mark.x, mark.y);
+      if (eye) {
+        if (!kgrab) { kgrab = eye; grab(eye); }
+        eye.hx = clamp(eye.hx + dx * st, eye.R, W - eye.R);
+        eye.hy = clamp(eye.hy + dy * st, eye.R, H - eye.R);
+        kgrabUntil = clock() + 0.6;
+        mark.x = eye.hx;
+        mark.y = eye.hy;
+      }
+    } else {
+      mark.x = clamp(mark.x + dx * st, 0, W);
+      mark.y = clamp(mark.y + dy * st, 0, H);
+    }
+    look(mark.x, mark.y);
+    wake();
+  }
+});
+addEventListener('keyup', e => {
+  if (e.key === 'Shift' && kgrab) { kgrabUntil = 0; wake(); }
+});
+panel.addEventListener('blur', () => { if (kbd) { kbd = false; loseGaze(1); if (ready) draw(); } });
+
+/* ---------- start ---------- */
+function failed() {
+  ready = false;
+  canvas.hidden = true;
+  /** @type {HTMLElement} */ (panel.querySelector('.fail')).hidden = false;
+  for (const v of ['shuffle', 'shake', 'blink']) ui.action(v).disabled = true;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; cancelAnimationFrame(raf); raf = 0; });
+canvas.addEventListener('webglcontextrestored', async () => {
+  try {
+    await initGL();
+    ready = true;
+    draw();
+    wake();
+  } catch (err) { console.error(err); failed(); }
+});
+// Every lid shuts and holds until opening() lets go.
+let shutAll = false;
+function shut() {
+  shutAll = true;
+  for (const e of eyes) {
+    e.blink = 0.46;
+    e.blinkDur = 0.3;
+    e.blinks = 0;
+    e.blinkAt = 0;
+    e.hold = Infinity;
+  }
+}
+// The eyes open in a ripple from the middle, then stare.
+function opening() {
+  const t = clock();
+  shutAll = false;
+  for (const e of eyes) {
+    if (e.hold !== Infinity) continue;
+    e.hold = t + 0.35 + Math.hypot(e.x - W / 2, e.y - H / 2) / (700 * S);
+    e.lookQ = [{ x: 0, y: -1, reach: 0, until: e.hold + rand(1.1, 1.8) }];
+  }
+  wake();
+}
+// Shuffle deals a new cluster, which opens in a ripple.
+function reshuffle() {
+  if (!ready || !W) return;
+  if (ptr?.eye) ptr = null;
+  kgrab = null;
+  dz = null;
+  seed = (Math.random() * 2 ** 31) | 0;
+  buildEyes();
+  lastInput = clock();
+  if (!reduce) { shut(); opening(); }
+  stepLids(0, clock());
+  draw();
+  wake();
+}
+async function boot() {
+  stage('build');
+  await idle();
+  fit();
+  if (!W) {
+    layout(1160, 652);
+    canvas.width = 1160;
+    canvas.height = 652;
+    pr = 1;
+  }
+  try { await initGL(); } catch (err) { console.error(err); failed(); return; }
+  ready = true;
+  // The ripple plays once the intro has gone, so it is seen.
+  if (!reduce) {
+    shut();
+    Promise.race([introDone, new Promise(r => setTimeout(r, 9000))]).then(opening);
+  }
+  stepLids(0, clock());
+  draw();
+  requestAnimationFrame(() => { canvas.classList.add('on'); stage('first-frame'); });
+  new ResizeObserver(fit).observe(panel);
+  // Corner rows that move or resize push the eyes out again.
+  const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
+  if (layer) {
+    const ro = new ResizeObserver(measureCorners);
+    layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)').forEach(el => ro.observe(el));
+    ro.observe(layer);
+    new MutationObserver(measureCorners).observe(panel.parentElement, { attributes: true, subtree: true, attributeFilter: ['data-narrow', 'data-stack', 'data-wait'] });
+  }
+  measureCorners();
+  new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
+  // A new quality choice clears the slow-frame step and refits.
+  onQuality(() => { lowDpr = false; slow = 0; fit(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+  wake();
+  plan();
+}
+if (document.readyState === 'complete') boot();
+else addEventListener('load', boot, { once: true });

@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script>
+// No WebGPU: the classic build serves this browser.
+// A visit from the classic page stays here and reads one line.
+if (!navigator.gpu && !/\/legacy\.html$/.test(new URL(document.referrer || location.href).pathname)) location.replace('legacy.html' + location.search);
+</script>
 <meta name="color-scheme" content="dark">
 <style>html { background: oklch(0.07 0.008 250); }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,7 +17,23 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
-<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js"
+} }
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/environments/RoomEnvironment.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/GaussianBlurNode.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/math/curlNoise.js">
 <style>
 /* Spark wheel: a knurled wheel on a flint, close up, in the dark. */
 :root { --stage: oklch(0.07 0.008 250); }
@@ -24,6 +45,7 @@
 .stage--spark { cursor: grab; }
 .stage--spark.drag { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--spark canvas { transition: none; } }
+.stage--spark .fail a { color: inherit; }
 </style>
 </head>
 <body>
@@ -33,8 +55,8 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--spark" id="stage" tabindex="0" role="application" aria-label="A knurled steel wheel on a flint, close up. Drag down to flick the wheel and throw sparks. Click to strike. Hold Space to grind.">
-      <p class="fail" hidden>Spark wheel needs WebGL 2, which this browser has turned off.</p>
+    <div class="stage stage--spark" id="stage" tabindex="0" role="application" aria-label="A knurled steel wheel on a flint, close up. Drag down to flick the wheel and throw sparks. Click to strike. Hold Space to grind. Keys 1 to 8 pick the kind of spark.">
+      <p class="fail" hidden><span>Spark wheel needs WebGPU, which this browser doesn't have. <a href="legacy.html">Open the classic build</a>.</span></p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -43,28 +65,9 @@
   </section>
 </div>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
-    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
-    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
-    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
-  }
-}
-</script>
 <script type="module">
 import { initPage, whenVisible, pixelRatio, onQuality, quality, reduced, onReducedChange, linFit, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const stage = document.getElementById('stage');
 const TAU = Math.PI * 2;
@@ -72,8 +75,8 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const col = (L, C, h) => new THREE.Color().setRGB(...linFit(L, C, h), THREE.LinearSRGBColorSpace);
 
 /* ---------- the wheel ---------- */
-// Units: the wheel radius is 1. The floor lies below the flint.
-const R = 1, WIDTH = 0.55, TEETH = 36, FLOOR = -2.35;
+// Units: the wheel radius is 1. The mount's foot stands on the floor.
+const R = 1, WIDTH = 0.55, TEETH = 36, FLOOR = -1.65;
 // Friction stops a free wheel in about a second.
 const FRICTION = 0.35, GRIND = 30, MAXW = 60;
 const wheel = { angle: 0, omega: 0 };
@@ -82,15 +85,20 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- bar ---------- */
-let metal = 'ferro', grinding = false;
+let pick = 'ferro', grinding = false;
 // The handlers bind once the scene exists.
 const act = { reset() {} };
 const ui = initPage({ id: 'spark', bar: {
-  choice: { label: 'Metal', value: 'ferro', options: [
+  choice: { label: 'Sparks', value: 'ferro', options: [
     { value: 'ferro', label: 'Ferro', key: '1' },
     { value: 'steel', label: 'Steel', key: '2' },
     { value: 'titanium', label: 'Titanium', key: '3' },
-  ], onPick: v => { metal = v; } },
+    { value: 'sparkler', label: 'Sparkler', key: '4' },
+    { value: 'comet', label: 'Comet', key: '5' },
+    { value: 'ice', label: 'Ice', key: '6' },
+    { value: 'confetti', label: 'Confetti', key: '7' },
+    { value: 'popcorn', label: 'Popcorn', key: '8' },
+  ], onPick: v => { pick = v; } },
   actions: [{ verb: 'grind', key: 'Space', hold: true,
     onDown: () => { grinding = true; live(); }, onUp: () => { grinding = false; live(); } }],
   settings: [
@@ -108,35 +116,67 @@ let trails = ui.setting('trails')?.value ?? 0.5;
 let smokeOn = ui.setting('smoke')?.value ?? true;
 
 /* ---------- renderer ---------- */
-let renderer;
-try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-} catch (err) {
+// This build needs WebGPU; three.js loads only when the browser has it.
+// The line below shows only to a visitor who came from the classic build.
+function fail() {
   stage.querySelector('.fail').hidden = false;
   ui.hideControls?.();
   mark('first-frame');
-  throw err;
 }
+// No WebGPU here: go to the classic build, unless the visit came from it.
+function noGpu() {
+  if (/\/legacy\.html$/.test(new URL(document.referrer || location.href).pathname)) fail();
+  else location.replace('legacy.html' + location.search);
+  throw new Error('Spark wheel: no WebGPU');
+}
+// A browser can list WebGPU and still give no adapter.
+if (!navigator.gpu || !(await navigator.gpu.requestAdapter().catch(() => null))) noGpu();
+const [THREE, TSL, { bloom }, { RoomEnvironment }, { gaussianBlur }, { snoiseVec3 }] = await Promise.all([
+  import('three/webgpu'),
+  import('three/tsl'),
+  import('three/addons/tsl/display/BloomNode.js'),
+  import('three/addons/environments/RoomEnvironment.js'),
+  import('three/addons/tsl/display/GaussianBlurNode.js'),
+  import('three/addons/tsl/math/curlNoise.js'),
+]);
+// TSL's floor and clamp stay on the namespace; the page has its own.
+const {
+  vec2, vec3, vec4, float, Fn, uniform, attribute, varying, mix, smoothstep, min, max, exp, pow, fract, sin, step,
+  cameraProjectionMatrix, cameraViewMatrix, positionGeometry, pass, screenUV, screenCoordinate, hash, uv,
+  uvec3, texture3D, textureStore, storageTexture, storage, instanceIndex, Loop, If, Break,
+  mx_noise_float, interleavedGradientNoise, cameraPosition, positionWorld,
+} = TSL;
+const renderer = new THREE.WebGPURenderer({ powerPreference: 'high-performance' });
+await renderer.init();
+// WebGPURenderer can fall back to WebGL 2; this build does not.
+if (!renderer.backend.isWebGPUBackend) { renderer.dispose(); noGpu(); }
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 const canvas = renderer.domElement;
 stage.prepend(canvas);
+// Every spark and ember shader reads these.
+const uTime = uniform(0), uRes = uniform(new THREE.Vector2(1, 1));
 
-const BG = col(0.075, 0.008, 250);
+// The room is a dark teal, not a workshop black.
+const BG = col(0.085, 0.022, 205);
 const scene = new THREE.Scene();
 scene.background = BG;
-scene.fog = new THREE.Fog(BG, 9, 26);
+scene.fog = new THREE.Fog(BG, 6, 24);
 // Faint room reflections let bare steel read as metal.
 const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.1;
+// This renderer bakes the room mirrored left to right.
+// The flipped room, a little brighter, matches the classic build's sheen.
+const room = new RoomEnvironment();
+room.scale.x = -1;
+scene.environment = pmrem.fromScene(room, 0.04).texture;
+scene.environmentIntensity = 0.15;
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
 // The performance ladder's rung; slow frames raise it, never lower it.
 let rung = 0;
 
 /* ---------- knurl ---------- */
 // A diamond knurl: two groove sets at 45 degrees round the rim.
-// The map holds tangent-space normals from a pyramid height field.
+// One map holds tangent-space normals from a pyramid height field; one shapes the hot glow.
 function knurlMap() {
   const W = 1152, H = 64;
   const across = (WIDTH / (TAU * R / TEETH));
@@ -144,7 +184,7 @@ function knurlMap() {
     const a = (u * TEETH + v * across) % 1, b = (((u * TEETH - v * across) % 1) + 1) % 1;
     return 1 - Math.max(Math.abs(a - 0.5), Math.abs(b - 0.5)) * 2;
   };
-  const data = new Uint8Array(W * H * 4);
+  const data = new Uint8Array(W * H * 4), ridge = new Uint8Array(W * H * 4);
   const du = 1 / W, dv = 1 / H, k = 0.035;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
@@ -157,74 +197,216 @@ function knurlMap() {
       data[i + 1] = (-sy / l * 0.5 + 0.5) * 255;
       data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
       data[i + 3] = 255;
+      // The glow map: ridges glow, grooves stay darker.
+      ridge[i] = ridge[i + 1] = ridge[i + 2] = 255 * (0.35 + 0.65 * hgt(u, v) ** 1.5);
+      ridge[i + 3] = 255;
     }
   }
-  const t = new THREE.DataTexture(data, W, H);
+  const tex = d => {
+    const t = new THREE.DataTexture(d, W, H);
+    t.wrapS = THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.generateMipmaps = true;
+    t.anisotropy = renderer.getMaxAnisotropy();
+    t.needsUpdate = true;
+    return t;
+  };
+  return { normal: tex(data), glow: tex(ridge) };
+}
+/* ---------- scene ---------- */
+// The rim is an open tube of bright knurled steel.
+// Its inner wall shows through the slots, so it has two sides.
+const knurl = knurlMap();
+const rimMat = new THREE.MeshStandardMaterial({ color: col(0.74, 0.006, 250), metalness: 1, roughness: 0.25, normalMap: knurl.normal, normalScale: new THREE.Vector2(1, 1), emissiveMap: knurl.glow, side: THREE.DoubleSide, envMap: scene.environment, envMapIntensity: 0.2 });
+// The faces are cream enamel under a clear coat.
+const faceMat = new THREE.MeshPhysicalMaterial({ color: col(0.84, 0.045, 92), metalness: 0, roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.08, envMap: scene.environment, envMapIntensity: 0.45 });
+const rimGeo = new THREE.CylinderGeometry(R, R, WIDTH, 160, 1, true);
+// Each face is a plate with five swept slots, so the spin shows.
+const SLOTS = 5, PLATE = 0.04, BEVEL = 0.03;
+// A slot runs out from the hub and trails the spin, as a turbine blade does.
+function bladeSlot(a0) {
+  const left = [], right = [], dr = 0.37, da = -0.95;
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20, r = 0.37 + dr * t, a = a0 + da * t, w = 0.04 + 0.075 * Math.sin(Math.PI * t) ** 0.7;
+    // The two sides sit across the slot's centre line.
+    const tx = dr * Math.cos(a) - r * da * Math.sin(a), ty = dr * Math.sin(a) + r * da * Math.cos(a), l = Math.hypot(tx, ty);
+    const cx = r * Math.cos(a), cy = r * Math.sin(a);
+    left.push(new THREE.Vector2(cx - (ty / l) * w, cy + (tx / l) * w));
+    right.push(new THREE.Vector2(cx + (ty / l) * w, cy - (tx / l) * w));
+  }
+  return new THREE.Path([...left, ...right.reverse()]);
+}
+const plateShape = new THREE.Shape();
+plateShape.absarc(0, 0, R - BEVEL, 0, TAU, false);
+for (let i = 0; i < SLOTS; i++) plateShape.holes.push(bladeSlot(Math.PI / 2 + (i * TAU) / SLOTS));
+const plateGeo = new THREE.ExtrudeGeometry(plateShape, { depth: PLATE, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 2, curveSegments: 48 });
+// The plate's full width ends at the rim's edge; its bevel is the chamfer beyond.
+plateGeo.translate(0, 0, WIDTH / 2 - PLATE);
+// The far face is the near one mirrored through the wheel, so the slots line up.
+const farGeo = plateGeo.clone().scale(1, 1, -1);
+// A mirror turns each triangle over; two swapped corners turn it back.
+for (const at of Object.values(farGeo.attributes)) {
+  const a = at.array, n = at.itemSize;
+  for (let i = 0; i < a.length; i += 3 * n) for (let k = 0; k < n; k++) [a[i + n + k], a[i + 2 * n + k]] = [a[i + 2 * n + k], a[i + n + k]];
+}
+const hubGeo = new THREE.CylinderGeometry(0.2, 0.2, WIDTH - 0.1, 32, 1);
+
+/* ---------- the lighter ---------- */
+// The mount is a table lighter in the space-age manner.
+// One swept enamel body holds the axle; a fluted brass column holds the flint.
+// Each part takes its own share of the room's reflection.
+// A material's own map does not use the scene's dim setting.
+const shine = (m, k) => { m.envMap = scene.environment; m.envMapIntensity = k; return m; };
+const chrome = shine(new THREE.MeshStandardMaterial({ color: col(0.9, 0.004, 250), metalness: 1, roughness: 0.2 }), 0.75);
+const brass = shine(new THREE.MeshStandardMaterial({ color: col(0.8, 0.105, 86), metalness: 1, roughness: 0.26 }), 0.85);
+// The body is turquoise enamel under a clear coat.
+const shell = shine(new THREE.MeshPhysicalMaterial({ color: col(0.6, 0.095, 195), metalness: 0, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.08 }), 0.5);
+// The collar glows with the rim; the other brass stays cold.
+const tubeMat = brass.clone();
+// Flutes round the column, as a tangent-space normal map.
+function fluteMap(n) {
+  const W = 512, d = new Uint8Array(W * 4);
+  for (let x = 0; x < W; x++) {
+    // A flute is a round groove; its slope runs from edge to edge.
+    const sl = (((x / W) * n) % 1 - 0.5) * 1.7, l = Math.hypot(sl, 1), i = x * 4;
+    d[i] = (sl / l * 0.5 + 0.5) * 255;
+    d[i + 1] = 128;
+    d[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+    d[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(d, W, 1);
   t.wrapS = THREE.RepeatWrapping;
   t.magFilter = THREE.LinearFilter;
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true;
-  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   t.needsUpdate = true;
   return t;
 }
-// The face: fine lathe rings, a darker axle hole in the centre.
-function faceMaps() {
-  const S = 256, c = new Uint8Array(S * S * 4), r = new Uint8Array(S * S * 4);
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const d = Math.hypot(x / S - 0.5, y / S - 0.5) * 2, i = (y * S + x) * 4;
-      const ring = 0.5 + 0.5 * Math.sin(d * 260);
-      const hole = d < 0.2 ? 0.08 : d < 0.24 ? 0.5 : 1;
-      c[i] = c[i + 1] = c[i + 2] = 255 * hole;
-      r[i + 1] = 255 * (0.18 + 0.14 * ring);
-      c[i + 3] = r[i + 3] = 255;
+const shaftMat = brass.clone();
+shaftMat.normalMap = fluteMap(16);
+shaftMat.normalScale = new THREE.Vector2(1.3, 1.3);
+// The flint is a ferro rod: dark metal with fine drawn lines.
+function scoreMap() {
+  const S = 64, d = new Uint8Array(S * S * 4);
+  for (let x = 0; x < S; x++) {
+    const line = 0.36 + 0.3 * Math.random();
+    for (let y = 0; y < S; y++) {
+      const i = (y * S + x) * 4;
+      d[i + 1] = 255 * Math.min(1, line + 0.08 * Math.random());
+      d[i + 3] = 255;
     }
   }
-  const tex = d => { const t = new THREE.DataTexture(d, S, S); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
-  const map = tex(c);
-  map.colorSpace = THREE.SRGBColorSpace;
-  return { map, rough: tex(r) };
+  const t = new THREE.DataTexture(d, S, S);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }
-
-/* ---------- scene ---------- */
-const steel = col(0.68, 0.008, 250);
-const rimMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 0.3, normalMap: knurlMap(), normalScale: new THREE.Vector2(1, 1) });
-const fm = faceMaps();
-const faceMat = new THREE.MeshStandardMaterial({ color: steel, metalness: 1, roughness: 1, map: fm.map, roughnessMap: fm.rough });
-const wheelGeo = new THREE.CylinderGeometry(R, R, WIDTH, 160, 1);
-const flintMat = new THREE.MeshStandardMaterial({ color: col(0.36, 0.006, 70), metalness: 0.1, roughness: 0.92 });
-const flintGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 40, 1);
+const flintMat = shine(new THREE.MeshStandardMaterial({ color: col(0.5, 0.012, 70), metalness: 0.9, roughness: 1, roughnessMap: scoreMap() }), 0.4);
+// The body is one swept form in the space-age manner.
+// A low foot runs under the wheel, curves up at the back and sweeps over to the axle.
+const FOOT_TOP = -1.535, BODY_Z = WIDTH / 2 + 0.08, BODY_DEEP = 0.07;
+const V2 = (x, y) => new THREE.Vector2(x, y);
+// The side view of one cheek: the foot, the back sweep, the boss at the axle.
+const cheek = new THREE.Shape();
+cheek.moveTo(0.62, FLOOR);
+cheek.lineTo(-0.85, FLOOR);
+cheek.splineThru([V2(-1.3, -1.53), V2(-1.53, -1.1), V2(-1.5, -0.55), V2(-1.2, -0.05), V2(-0.7, 0.22), V2(-0.076, 0.163)]);
+cheek.absarc(0, 0, 0.18, 2.007, -2.53, true);
+cheek.splineThru([V2(-0.55, -0.04), V2(-1.0, -0.27), V2(-1.25, -0.7), V2(-1.22, -1.1), V2(-1.0, -1.38), V2(-0.6, -1.5)]);
+cheek.lineTo(0.45, -1.56);
+cheek.quadraticCurveTo(0.66, -1.57, 0.62, FLOOR);
+const cheekGeo = new THREE.ExtrudeGeometry(cheek, { depth: BODY_DEEP, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.01, bevelSegments: 2, curveSegments: 20 });
+cheekGeo.translate(0, 0, -BODY_DEEP / 2);
+// The foot between the cheeks: the same low profile, full width.
+const sole = new THREE.Shape();
+sole.moveTo(0.62, FLOOR);
+sole.lineTo(-1.0, FLOOR);
+sole.quadraticCurveTo(-1.12, -1.6, -1.0, -1.44);
+sole.lineTo(-0.6, -1.5);
+sole.lineTo(0.45, -1.56);
+sole.quadraticCurveTo(0.66, -1.57, 0.62, FLOOR);
+const soleGeo = new THREE.ExtrudeGeometry(sole, { depth: 2 * BODY_Z, bevelEnabled: false, curveSegments: 12 });
+soleGeo.translate(0, 0, -BODY_Z);
+// The column, from the foot up: a ring, the fluted shaft, two collars, the flint.
+const ring = (r, h) => new THREE.CylinderGeometry(r, r, h, 48, 1);
+const COLUMN = [[ring(0.19, 0.03), brass], [new THREE.CylinderGeometry(0.15, 0.15, -1.17 - FOOT_TOP, 48, 1, true), shaftMat], [ring(0.17, 0.03), tubeMat], [ring(0.135, 0.025), tubeMat]];
+const flintGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.12, 32, 1);
+// A brass ball caps each end of the axle.
+const capGeo = new THREE.SphereGeometry(0.11, 32, 20);
+const pinGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.9, 32, 1);
+// Two brass rings lie in each face of the roller.
+const inlayGeo = [new THREE.RingGeometry(0.84, 0.885, 96), new THREE.RingGeometry(0.255, 0.3, 64)];
 
 // The yaw shows the knurled rim band three-quarter on.
+// The pivot's x axis is the spray direction; the mount turns with it.
 function makeWheel() {
   const pivot = new THREE.Group();
-  pivot.rotation.y = -0.75;
-  const mesh = new THREE.Mesh(wheelGeo, [rimMat, faceMat, faceMat]);
-  mesh.rotation.x = Math.PI / 2;
-  pivot.add(mesh);
+  pivot.rotation.y = 0.6;
+  // The spin group's z axis is the axle.
+  const spin = new THREE.Group();
+  const rimTube = new THREE.Mesh(rimGeo, rimMat);
+  rimTube.rotation.x = Math.PI / 2;
+  const near = new THREE.Mesh(plateGeo, faceMat), far = new THREE.Mesh(farGeo, faceMat);
+  const hub = new THREE.Mesh(hubGeo, chrome);
+  hub.rotation.x = Math.PI / 2;
+  spin.add(rimTube, near, far, hub);
+  for (const side of [1, -1]) {
+    for (const g of inlayGeo) {
+      const inlay = new THREE.Mesh(g, brass);
+      // The ring lies a hair over the plate, so it does not flicker.
+      inlay.position.z = side * (WIDTH / 2 + BEVEL + 0.0015);
+      if (side < 0) inlay.rotation.y = Math.PI;
+      spin.add(inlay);
+    }
+  }
+  pivot.add(spin);
+  // The body: a cheek each side of the wheel, and the foot between them.
+  for (const side of [1, -1]) {
+    const part = new THREE.Mesh(cheekGeo, shell);
+    part.position.z = side * BODY_Z;
+    const cap = new THREE.Mesh(capGeo, brass);
+    cap.position.z = side * (BODY_Z + BODY_DEEP / 2 + 0.03);
+    pivot.add(part, cap);
+  }
+  pivot.add(new THREE.Mesh(soleGeo, shell));
+  let y = FOOT_TOP;
+  // The column rises under the rim's lowest point.
+  for (const [geo, mat] of COLUMN) {
+    const part = new THREE.Mesh(geo, mat);
+    part.position.y = y + geo.parameters.height / 2;
+    y += geo.parameters.height;
+    pivot.add(part);
+  }
   const flint = new THREE.Mesh(flintGeo, flintMat);
-  flint.position.y = -R - 0.4;
-  return { pivot, mesh, flint };
+  flint.position.y = -R + 0.01 - 0.06;
+  const pin = new THREE.Mesh(pinGeo, chrome);
+  pin.rotation.x = Math.PI / 2;
+  pivot.add(flint, pin);
+  return { pivot, spin };
 }
 const real = makeWheel();
-scene.add(real.pivot, real.flint);
+scene.add(real.pivot);
 
 /* ---------- lights ---------- */
-// A cool rim light from behind on the right picks out the knurl.
-const rim = new THREE.DirectionalLight(col(0.9, 0.03, 240), 2.4);
-rim.position.set(4, 5, -4);
-// A weak fill from the front left shows the face.
+// A cream rim light from behind on the left picks out the knurl.
+const rim = new THREE.DirectionalLight(col(0.93, 0.03, 95), 2.4);
+rim.position.set(-4, 5, -4);
+// A weak fill from the front right shows the face.
 const fill = new THREE.DirectionalLight(col(0.8, 0.02, 80), 0.35);
-fill.position.set(-4, 2, 6);
+fill.position.set(4, 2, 6);
 // The contact light flashes warm with the spray.
+// It rides the pivot, below the flint on the camera side.
+// From there it washes the face, the mount and the floor.
 const contact = new THREE.PointLight(col(0.82, 0.16, 62), 0, 7, 2);
-contact.position.set(0.35, -R + 0.2, 0.7);
-scene.add(rim, fill, contact);
+contact.position.set(0.1, -R - 0.25, 0.9);
+real.pivot.add(contact);
+scene.add(rim, fill);
 
 /* ---------- floor ---------- */
 // A wet floor: a dark, glossy sheet over a mirrored copy of the scene.
-const floorMat = new THREE.MeshStandardMaterial({ color: col(0.1, 0.006, 250), metalness: 0, roughness: 0.28, transparent: true, opacity: 0.88 });
+const floorMat = new THREE.MeshStandardMaterial({ color: col(0.15, 0.045, 195), metalness: 0, roughness: 0.28, transparent: true, opacity: 0.88 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), floorMat);
 floor.rotation.x = -Math.PI / 2;
 floor.position.y = FLOOR;
@@ -234,7 +416,7 @@ const mirror = new THREE.Group();
 mirror.scale.y = -1;
 mirror.position.y = 2 * FLOOR;
 const ghost = makeWheel();
-mirror.add(ghost.pivot, ghost.flint);
+mirror.add(ghost.pivot);
 scene.add(mirror);
 function setFloor(v) {
   mirror.visible = v === 'wet';
@@ -248,18 +430,13 @@ setFloor(ui.setting('floor')?.value ?? 'wet');
 /* ---------- haze ---------- */
 // A far backdrop: a faint cool glow up and right, behind the wheel.
 // The wet floor mirrors it, so the floor reads as wet.
-const hazeMat = new THREE.ShaderMaterial({
-  uniforms: { uCol: { value: col(0.3, 0.03, 245) }, uBg: { value: BG } },
-  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`
-    uniform vec3 uCol, uBg;
-    varying vec2 vUv;
-    void main() {
-      vec2 d = (vUv - vec2(0.56, 0.6)) * vec2(1.0, 2.4);
-      gl_FragColor = vec4(uBg + uCol * exp(-dot(d, d) * 12.0), 1.0);
-    }`,
-  depthWrite: false, fog: false,
-});
+const hazeMat = new THREE.MeshBasicNodeMaterial({ depthWrite: false, fog: false });
+{
+  const d = uv().sub(vec2(0.56, 0.6)).mul(vec2(1, 2.4));
+  // The glow dies out toward the horizon, so the floor's far edge shows no line.
+  const lift = smoothstep(0.53, 0.64, uv().y);
+  hazeMat.colorNode = vec4(uniform(BG).add(uniform(col(0.36, 0.07, 195)).mul(exp(d.dot(d).mul(-12))).mul(lift)), 1);
+}
 const hazeGeo = new THREE.PlaneGeometry(120, 60);
 const haze = new THREE.Mesh(hazeGeo, hazeMat);
 haze.position.set(4, 2, -14);
@@ -270,78 +447,96 @@ mirror.add(ghostHaze);
 
 /* ---------- embers ---------- */
 // Each ember cools from its start temperature; the colour follows a blackbody ramp.
-const EMBERS = 512;
-const emberGeo = new THREE.BufferGeometry();
+// An ember is one instanced quad, sized in pixels in the vertex stage.
+const EMBERS = 2048;
+const emberGeo = new THREE.InstancedBufferGeometry();
+emberGeo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0], 3));
+emberGeo.setIndex([0, 1, 2, 2, 1, 3]);
 const ePos = new Float32Array(EMBERS * 3), eAttr = new Float32Array(EMBERS * 3);
-emberGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
+const ePosAt = new THREE.InstancedBufferAttribute(ePos, 3);
 // x: birth time, y: cooling time, z: start temperature as 0 to 1.
-emberGeo.setAttribute('aE', new THREE.BufferAttribute(eAttr, 3));
-const BODY = /* glsl */`
-vec3 body(float t) {
-  vec3 c = mix(vec3(0.35, 0.015, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.0, 0.45, t));
+const eAt = new THREE.InstancedBufferAttribute(eAttr, 3);
+// rgb: the ember's own colour. a: 0 keeps the heat ramp, 1 is that colour alone.
+const eTint = new Float32Array(EMBERS * 4);
+const eTintAt = new THREE.InstancedBufferAttribute(eTint, 4);
+for (const a of [ePosAt, eAt, eTintAt]) a.setUsage(THREE.DynamicDrawUsage);
+emberGeo.setAttribute('aP', ePosAt);
+emberGeo.setAttribute('aE', eAt);
+emberGeo.setAttribute('aC', eTintAt);
+emberGeo.instanceCount = 0;
+const body = t => {
+  let c = mix(vec3(0.35, 0.015, 0.0), vec3(1.0, 0.32, 0.04), smoothstep(0.0, 0.45, t));
   c = mix(c, vec3(1.0, 0.78, 0.5), smoothstep(0.45, 0.85, t));
   return mix(c, vec3(1.0, 0.95, 0.88), smoothstep(0.85, 1.0, t));
+};
+// Additive: a shader adds its colour and leaves alpha alone.
+function additive(m) {
+  m.transparent = true; m.depthWrite = false; m.fog = false;
+  m.blending = THREE.CustomBlending; m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneFactor;
+  m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
+  return m;
 }
-`;
-const emberMat = new THREE.ShaderMaterial({
-  uniforms: { uTime: { value: 0 }, uDpr: { value: 1 } },
-  vertexShader: /* glsl */`
-    attribute vec3 aE;
-    uniform float uTime, uDpr;
-    varying float vT;
-    void main() {
-      float age = uTime - aE.x;
-      vT = age < 0.0 ? 0.0 : aE.z * exp(-age / aE.y);
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mv;
-      gl_PointSize = (4.0 + 10.0 * vT) * uDpr * 16.0 / -mv.z;
-    }`,
-  fragmentShader: /* glsl */`
-    varying float vT;
-    ${BODY}
-    void main() {
-      float r = length(gl_PointCoord - 0.5) * 2.0;
-      // A hot core inside a soft glow.
-      float a = exp(-r * r * 9.0) + 0.25 * exp(-r * r * 2.5) * smoothstep(1.0, 0.6, r);
-      // Radiance rises steeply with temperature.
-      float e = pow(vT, 3.0) * 9.0;
-      gl_FragColor = vec4(body(vT) * e * a, 1.0);
-    }`,
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-});
-const embers = new THREE.Points(emberGeo, emberMat);
+const clipOf = p => cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(p, 1));
+const uEmberDpr = uniform(1);
+// The mirror copy flips about the floor in the shader.
+function emberMat(mirrored) {
+  const P0 = attribute('aP', 'vec3'), E = attribute('aE', 'vec3');
+  const age = uTime.sub(E.x);
+  const temp = E.z.mul(exp(age.negate().div(max(E.y, 1e-3)))).mul(step(0, age));
+  const c = clipOf(mirrored ? vec3(P0.x, float(2 * FLOOR).sub(P0.y), P0.z) : P0);
+  // Half the point size in pixels; it shrinks with distance.
+  const half = temp.mul(10).add(4).mul(uEmberDpr).mul(8).div(c.w);
+  const vT = varying(temp), vQ = varying(positionGeometry.xy), vTint = varying(attribute('aC', 'vec4'));
+  const m = additive(new THREE.NodeMaterial());
+  m.vertexNode = vec4(c.xy.add(positionGeometry.xy.mul(half).div(uRes.mul(0.5)).mul(c.w)), c.z, c.w);
+  m.fragmentNode = Fn(() => {
+    const r2 = vQ.dot(vQ);
+    // A hot core inside a soft glow.
+    const a = exp(r2.mul(-9)).add(exp(r2.mul(-2.5)).mul(0.25).mul(smoothstep(0.6, 1.0, r2.sqrt()).oneMinus()));
+    // Radiance rises steeply with temperature; a tinted bit fades evenly.
+    const glow = mix(pow(vT, 3).mul(9), vT.mul(2.2), vTint.a);
+    return vec4(mix(body(vT), vTint.rgb, vTint.a).mul(glow).mul(a), 0);
+  })();
+  return m;
+}
+const embers = new THREE.Mesh(emberGeo, emberMat(false));
 embers.frustumCulled = false;
-const ghostEmbers = new THREE.Points(emberGeo, emberMat);
+const ghostEmbers = new THREE.Mesh(emberGeo, emberMat(true));
 ghostEmbers.frustumCulled = false;
 // Embers draw after the wet floor; their mirror draws under it.
 embers.renderOrder = 2;
-scene.add(embers);
-mirror.add(ghostEmbers);
+scene.add(embers, ghostEmbers);
 
 // Seeded random keeps the first frame the same on every load.
 let seed = 1031;
 const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 let emberHead = 0, emberN = 0, emberEnd = 0;
 // Embers fill a ring; the oldest gives way.
-function addEmber(x, z, born, tau, t0) {
+const NO_TINT = [1, 1, 1, 0];
+function addEmber(x, z, born, tau, t0, tint = NO_TINT) {
   const i = emberHead;
   emberHead = (emberHead + 1) % EMBERS;
   emberN = Math.max(emberN, emberHead || EMBERS);
   ePos.set([x, FLOOR + 0.02, z], i * 3);
   eAttr.set([born, tau, t0], i * 3);
-  emberGeo.setDrawRange(0, emberN);
-  emberGeo.attributes.position.needsUpdate = true;
-  emberGeo.attributes.aE.needsUpdate = true;
+  eTint.set(tint, i * 4);
+  eTintAt.needsUpdate = true;
+  emberGeo.instanceCount = emberN;
+  ePosAt.needsUpdate = true;
+  eAt.needsUpdate = true;
   emberEnd = Math.max(emberEnd, born + 4 * tau);
 }
 // Clear the ring. The first frame then holds six embers that cool over 8 s.
 function seedEmbers(t) {
   eAttr.fill(0);
+  eAt.needsUpdate = true;
+  emberGeo.instanceCount = 0;
   emberHead = emberN = 0;
   emberEnd = 0;
+  // They lie down the jet, where sparks land.
   for (let i = 0; i < 6; i++) {
-    const [x, z] = narrow ? [0.4 + rnd() * 1.8, -1 + rnd() * 3.6] : [0.8 + rnd() * 3.6, -1.6 + rnd() * 4.2];
-    addEmber(x, z, t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25);
+    const d = narrow ? 0.9 + rnd() * 3 : 1.2 + rnd() * 4.2, s = (rnd() - 0.5) * (narrow ? 1.6 : 2.4);
+    addEmber(TANGENT.x * d + AXIS.x * s, TANGENT.z * d + AXIS.z * s, t - rnd() * 0.6, 2.4 + rnd() * 1.8, 0.62 + rnd() * 0.25);
   }
 }
 
@@ -364,88 +559,74 @@ const slot = name => {
   return a;
 };
 // aA: start point, start time. aB: start velocity, drag. aC: start heat, life, trail, size. aD: kind, seed, end heat, gain.
-const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD');
+// aE: the spark's own colour, and how far it replaces the heat ramp.
+const aA = slot('aA'), aB = slot('aB'), aC = slot('aC'), aD = slot('aD'), aE = slot('aE');
 sparkGeo.instanceCount = 0;
+const uDpr = uniform(1), uTrail = uniform(1), uG = uniform(G);
 function sparkMat(mirrored) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uDpr: { value: 1 },
-      uG: { value: G }, uFloor: { value: FLOOR }, uMirror: { value: mirrored ? 1 : 0 }, uTrail: { value: 1 },
-      // The wet floor mirrors the sparks at half strength.
-      uGain: { value: mirrored ? 0.5 : 1 },
-    },
-    transparent: true, depthWrite: false,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-    vertexShader: /* glsl */`
-    attribute vec4 aA, aB, aC, aD;
-    uniform float uTime, uDpr, uFloor, uMirror, uTrail, uGain;
-    uniform vec2 uRes;
-    uniform vec3 uG;
-    varying vec3 vCol, vColT, vLWH;
-    varying float vS, vY, vSpark, vSeed;
-    ${BODY}
-    // Linear drag, a = G - k v, in closed form: no stored state.
-    vec3 path(float t) {
-      vec3 vt = uG / aB.w;
-      vec3 p = aA.xyz + vt * t + (aB.xyz - vt) * (1.0 - exp(-aB.w * t)) / aB.w;
-      // The mirror copy flips about the floor.
-      if (uMirror > 0.5) p.y = 2.0 * uFloor - p.y;
-      return p;
-    }
-    // Screen position in pixels, and the clip position for output.
-    vec2 scr(vec3 p, out vec4 clip) { clip = projectionMatrix * viewMatrix * vec4(p, 1.0); return clip.xy / clip.w * 0.5 * uRes; }
-    void main() {
-      float age = uTime - aA.w, life = aC.y;
-      if (age < 0.0 || age > life) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-      float f = age / life, tr = min(aC.z * uTrail, age);
-      // Three points on the true path, so the trail follows the fall.
-      vec4 c0, c1, c2;
-      vec2 s0 = scr(path(age - tr), c0), s1 = scr(path(age - tr * 0.5), c1), s2 = scr(path(age), c2);
-      float L01 = length(s1 - s0), len = L01 + length(s2 - s1);
-      // The core is w wide; the quad is wider to hold the head's halo.
-      float w = aC.w * uDpr * (1.0 - 0.4 * f), W = w * 2.4;
-      int col = int(position.x + 0.5);
-      vec4 c = col == 0 ? c0 : col == 1 ? c1 : c2;
-      vec2 dir = col == 0 ? s1 - s0 : col == 1 ? s2 - s0 : s2 - s1;
-      dir = length(dir) > 1e-3 ? normalize(dir) : vec2(0.0, 1.0);
-      float s = col == 0 ? -W : col == 1 ? L01 : len + W;
-      vec2 off = vec2(-dir.y, dir.x) * position.y * W + dir * (col == 0 ? -W : col == 2 ? W : 0.0);
-      c.xy += off / (0.5 * uRes) * c.w;
-      gl_Position = c;
-      vS = s; vY = position.y * W; vLWH = vec3(len, w, W); vSeed = aD.y;
-      // Heat falls along the segment; radiance rises steeply with heat.
-      float heat = mix(aC.x, aD.z, f);
-      float e = pow(heat, 2.5) * 5.0 * aD.w * uGain * (1.0 - smoothstep(0.85, 1.0, f) * 0.6);
-      vCol = body(heat) * e;
-      // The tail is cooler and redder than the head.
-      vColT = body(heat * 0.7) * e * 0.5;
-      vSpark = aD.x > 0.5 ? 0.9 : 0.3;
-    }`,
-    fragmentShader: /* glsl */`
-    varying vec3 vCol, vColT, vLWH;
-    varying float vS, vY, vSpark, vSeed;
-    void main() {
-      float len = vLWH.x, W = vLWH.z;
-      // A core thinner than a pixel aliases; widen it and dim it to match.
-      float w = max(vLWH.y, 0.8), dim = min(vLWH.y / 0.8, 1.0);
-      // Distance from the tail-to-head path: a capsule with round ends.
-      float out_ = vS < 0.0 ? -vS : max(vS - len, 0.0);
-      float d2 = (out_ * out_ + vY * vY) / (w * w);
-      float core = max(exp(-d2 * 1.8) - 0.01, 0.0);
-      // Brightness falls off exponentially from the head down the trail.
-      float u = clamp(vS / max(len, 1.0), 0.0, 1.0);
-      float trail = 0.05 + 0.95 * exp(-3.0 * (1.0 - u));
-      // Glints every few pixels along the tail.
-      float g = step(0.55, fract(sin(floor(vS / 3.0) * 12.9898 + vSeed) * 43758.5453));
-      float sp = mix(1.0, 0.4 + 1.4 * g, vSpark * (1.0 - u));
-      // The head carries a soft halo, wider than the core.
-      float dh2 = ((vS - len) * (vS - len) + vY * vY) / (W * W);
-      float halo = 0.22 * exp(-dh2 * 3.0);
-      vec3 c = mix(vColT, vCol, u) * core * trail * sp + vCol * halo;
-      gl_FragColor = vec4(c * dim, 0.0);
-    }`,
-  });
+  const A = attribute('aA', 'vec4'), B = attribute('aB', 'vec4'), C = attribute('aC', 'vec4'), D = attribute('aD', 'vec4'), E = attribute('aE', 'vec4');
+  const tinted = h => mix(body(h), E.rgb, E.a);
+  // The wet floor mirrors the sparks at half strength.
+  const gain = mirrored ? 0.5 : 1;
+  const age = uTime.sub(A.w), life = C.y;
+  const f = age.div(max(life, 1e-4)), tr = min(C.z.mul(uTrail), age);
+  // An empty slot has no drag; the floor value keeps the maths finite.
+  const k = max(B.w, 1e-3), vt = uG.div(k);
+  // Linear drag, a = G - k v, in closed form: no stored state.
+  const path = t => {
+    const p = A.xyz.add(vt.mul(t)).add(B.xyz.sub(vt).mul(exp(k.negate().mul(t)).oneMinus()).div(k));
+    // The mirror copy flips about the floor.
+    return mirrored ? vec3(p.x, float(2 * FLOOR).sub(p.y), p.z) : p;
+  };
+  // Three points on the true path, so the trail follows the fall.
+  const c0 = clipOf(path(age.sub(tr))), c1 = clipOf(path(age.sub(tr.mul(0.5)))), c2 = clipOf(path(age));
+  // Screen positions in pixels.
+  const scr = c => c.xy.div(c.w).mul(0.5).mul(uRes);
+  const s0 = scr(c0), s1 = scr(c1), s2 = scr(c2);
+  const L01 = s1.sub(s0).length(), len = L01.add(s2.sub(s1).length());
+  // The core is w wide; the quad is wider to hold the head's halo.
+  const w = C.w.mul(uDpr).mul(f.mul(0.4).oneMinus()), W = w.mul(2.4);
+  const px = positionGeometry.x, py = positionGeometry.y;
+  // Column masks pick tail, middle or head.
+  // A TSL select() would compute a branch's maths for that branch alone.
+  const m0 = step(px, 0.5), m2 = step(1.5, px), m1 = m0.add(m2).oneMinus();
+  const c = c0.mul(m0).add(c1.mul(m1)).add(c2.mul(m2));
+  const dRaw = s1.sub(s0).mul(m0).add(s2.sub(s0).mul(m1)).add(s2.sub(s1).mul(m2));
+  const dLen = dRaw.length();
+  const dir = mix(vec2(0, 1), dRaw.div(max(dLen, 1e-3)), step(1e-3, dLen));
+  const s = W.negate().mul(m0).add(L01.mul(m1)).add(len.add(W).mul(m2));
+  const off = vec2(dir.y.negate(), dir.x).mul(py).mul(W).add(dir.mul(W.mul(m2.sub(m0))));
+  const xy = c.xy.add(off.div(uRes.mul(0.5)).mul(c.w));
+  const alive = step(0, age).mul(step(age, life));
+  // Heat falls along the segment; radiance rises steeply with heat.
+  const heat = mix(C.x, D.z, f);
+  const e = pow(max(heat, 0), 2.5).mul(5).mul(D.w).mul(gain).mul(smoothstep(0.85, 1.0, f).mul(0.6).oneMinus());
+  // The tail is cooler and redder than the head.
+  const vCol = varying(tinted(heat).mul(e)), vColT = varying(tinted(heat.mul(0.7)).mul(e).mul(0.5));
+  const vS = varying(s), vY = varying(py.mul(W)), vLen = varying(len), vw = varying(w), vW = varying(W);
+  const vSeed = varying(D.y), vSpark = varying(mix(float(0.3), float(0.9), step(0.5, D.x)));
+  const m = additive(new THREE.NodeMaterial());
+  // A dead or waiting slot leaves the clip volume.
+  m.vertexNode = mix(vec4(2, 2, 2, 1), vec4(xy, c.z, c.w), alive);
+  m.fragmentNode = Fn(() => {
+    // A core thinner than a pixel aliases; widen it and dim it to match.
+    const wc = max(vw, 0.8), dim = min(vw.div(0.8), 1.0);
+    // Distance from the tail-to-head path: a capsule with round ends.
+    const out = max(max(vS.negate(), vS.sub(vLen)), 0.0);
+    const d2 = out.mul(out).add(vY.mul(vY)).div(wc.mul(wc));
+    const core = max(exp(d2.mul(-1.8)).sub(0.01), 0.0);
+    // Brightness falls off exponentially from the head down the trail.
+    const u = TSL.clamp(vS.div(max(vLen, 1.0)), 0.0, 1.0);
+    const trail = exp(u.oneMinus().mul(-3.0)).mul(0.95).add(0.05);
+    // Glints every few pixels along the tail.
+    const g = step(0.55, fract(sin(TSL.floor(vS.div(3.0)).mul(12.9898).add(vSeed)).mul(43758.5453)));
+    const sp = mix(float(1.0), g.mul(1.4).add(0.4), vSpark.mul(u.oneMinus()));
+    // The head carries a soft halo, wider than the core.
+    const dh = vS.sub(vLen);
+    const halo = exp(dh.mul(dh).add(vY.mul(vY)).div(vW.mul(vW)).mul(-3.0)).mul(0.22);
+    return vec4(mix(vColT, vCol, u).mul(core).mul(trail).mul(sp).add(vCol.mul(halo)).mul(dim), 0.0);
+  })();
+  return m;
 }
 const sparks = new THREE.Mesh(sparkGeo, sparkMat(false));
 sparks.frustumCulled = false;
@@ -455,24 +636,32 @@ sparksGhost.frustumCulled = false;
 sparksGhost.renderOrder = 0;
 scene.add(sparks, sparksGhost);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
-// Write one segment into the next slot; the oldest slot gives way.
-function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain) {
-  const i = head;
-  head = (head + 1) % CAP;
-  if (dirtyFrom < 0) dirtyFrom = i;
-  dirtyN = Math.min(CAP, dirtyN + 1);
+// Write one segment into the next free slot.
+// A slot whose segment has not ended keeps it.
+// A full ring drops the new segment and returns false.
+function writeSpark(p0, t0, v0, k, heat0, life, trail, size, kind, heat1, gain, tint = NO_TINT) {
+  let i = head, skip = 0;
+  while (aA.array[i * 4 + 3] + aC.array[i * 4 + 1] > time) {
+    if (++skip > 64) return false;
+    i = (i + 1) % CAP;
+  }
+  head = (i + 1) % CAP;
+  // The upload range runs over the slots that stay.
+  if (dirtyFrom < 0) { dirtyFrom = i; dirtyN = 1; } else dirtyN = Math.min(CAP, dirtyN + skip + 1);
   aA.setXYZW(i, p0.x, p0.y, p0.z, t0);
   aB.setXYZW(i, v0.x, v0.y, v0.z, k);
   aC.setXYZW(i, heat0, life, trail, size);
   aD.setXYZW(i, kind, rnd() * 100, heat1, gain);
+  aE.setXYZW(i, tint[0], tint[1], tint[2], tint[3]);
   sparkGeo.instanceCount = Math.max(sparkGeo.instanceCount, i + 1);
   lastDeath = Math.max(lastDeath, t0 + life);
+  return true;
 }
 // Upload only the slots written since the last render; a wrap gives two ranges.
 function commitSparks() {
   if (dirtyFrom < 0) return;
   const a = dirtyFrom, n = dirtyN, run = Math.min(n, CAP - a);
-  for (const at of [aA, aB, aC, aD]) {
+  for (const at of [aA, aB, aC, aD, aE]) {
     at.addUpdateRange(a * 4, run * 4);
     if (n > run) at.addUpdateRange(0, (n - run) * 4);
     at.needsUpdate = true;
@@ -505,59 +694,160 @@ function floorHit(p0, v0, k, life) {
 }
 /* ---------- end K6 ---------- */
 
-/* ---------- metals ---------- */
-// Spark tests read a metal by its sparks.
+/* ---------- spark types ---------- */
+// Spark tests read a metal by its sparks; the other types each have a trick.
 // n: sparks per tooth. life: burn time. heat: start and end, 0 to 1.
-// k: drag. fork: chance to burst, and children. split: chance to split on the floor.
-const METALS = {
-  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, kids: [3, 8], split: 0.5, size: 1.6 },
-  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, kids: [4, 9], split: 0.2, size: 1.4 },
-  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, kids: [2, 4], split: 0.15, size: 1.9 },
+// k: drag. fork: chance to burst. depth: fork levels. kids: children of a burst.
+// split: chance to split on the floor. speed: scale of the launch speed.
+// spark: the spark's own colour and mix, NO_TINT for the heat ramp, or 'hue' for a random hue.
+// trail: tail length in seconds. shards: the most pieces of a floor split. loft: upward launch speed.
+// flutter: Confetti's slow second fall. pop: Popcorn's wait and jump. bits: seconds a floor bit lies.
+// smoke: amount. fog: the smoke's colour. flame: gain, then the ramp from hot to cool. Colours are OKLCH.
+// lift: how the smoke rises; under zero it sinks. warm: the type burns, so it heats, flames and hisses.
+// trailSmoke: smoke a comet lays along its path. steam: smoke of one pop.
+// glow: the rim's colour at low, middle and full heat, or 'cycle'. light: the spark light's colour.
+// flare: what a full heat throws, and flareN how many. flareFork and flareSize change its sparks.
+const TYPES = {
+  ferro: { n: 2, life: [0.35, 0.9], heat: [0.95, 0.5], k: [3, 5], fork: 0.45, depth: 1, kids: [3, 8], split: 0.5, size: 1.6, speed: 1, spark: NO_TINT,
+    smoke: 1, fog: [0.62, 0.01, 80], flame: 1, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 220, flareFork: 1 },
+  steel: { n: 1.5, life: [0.6, 1.3], heat: [0.72, 0.45], k: [2.2, 3.5], fork: 0.7, depth: 1, kids: [4, 9], split: 0.2, size: 1.4, speed: 1, spark: NO_TINT,
+    smoke: 0.6, fog: [0.45, 0.005, 250], flame: 0.5, ramp: [[0.85, 0.14, 70], [0.68, 0.19, 50], [0.42, 0.17, 32]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 160 },
+  titanium: { n: 1, life: [0.9, 1.7], heat: [1, 0.7], k: [1.4, 2.4], fork: 0.08, depth: 1, kids: [2, 4], split: 0.15, size: 1.9, speed: 1, spark: NO_TINT,
+    smoke: 0.35, fog: [0.8, 0.005, 250], flame: 0.8, ramp: [[0.99, 0.015, 250], [0.93, 0.05, 95], [0.75, 0.12, 70]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'fan', flareN: 140, flareSize: 1.5 },
+  sparkler: { n: 1.4, life: [0.3, 0.6], heat: [0.9, 0.55], k: [3.5, 5], fork: 1, depth: 2, kids: [3, 5], split: 0, size: 1.3, speed: 1, spark: NO_TINT,
+    smoke: 0.35, fog: [0.7, 0.03, 85], flame: 0.6, ramp: [[0.97, 0.06, 95], [0.85, 0.15, 85], [0.6, 0.17, 60]], lift: 1.4, warm: true,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'star', flareN: 60 },
+  comet: { n: 0.04, life: [1.6, 2.4], heat: [1, 0.75], k: [0.5, 0.9], fork: 0, depth: 0, kids: [0, 0], split: 1, shards: 3, trail: 0.22, loft: 4.5, size: 3.4, speed: 0.6, spark: NO_TINT,
+    smoke: 0, fog: [0.6, 0.01, 80], flame: 0.3, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.2, warm: true, trailSmoke: 0.3,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'salvo', flareN: 12 },
+  ice: { n: 2, life: [0.5, 1.0], heat: [0.9, 0.6], k: [3, 5], fork: 0.25, depth: 1, kids: [2, 4], split: 0.3, size: 1.4, speed: 1, spark: [0.62, 0.85, 1.0, 0.85],
+    smoke: 1.6, fog: [0.86, 0.03, 230], flame: 0, ramp: [[0.97, 0.02, 230], [0.8, 0.08, 225], [0.5, 0.1, 250]], lift: -3.2, warm: false,
+    glow: [[0.3, 0.12, 260], [0.6, 0.12, 225], [0.9, 0.06, 225]], light: [0.86, 0.07, 230], flare: 'frost', flareN: 180 },
+  confetti: { n: 1.6, life: [0.2, 0.4], heat: [0.8, 0.8], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, loft: 3, size: 2.0, speed: 0.9, spark: 'hue',
+    flutter: { life: [1.2, 2.2], k: [7, 10], drift: 0.8 }, bits: 6,
+    smoke: 0, fog: [0.6, 0, 0], flame: 0, ramp: [[0.97, 0.05, 95], [0.82, 0.16, 75], [0.55, 0.19, 45]], lift: 1.4, warm: false,
+    glow: 'cycle', light: 'cycle', flare: 'cannon', flareN: 320 },
+  popcorn: { n: 0.6, life: [0.5, 0.9], heat: [0.45, 0.35], k: [2.5, 4], fork: 0, depth: 0, kids: [0, 0], split: 0, size: 1.8, speed: 0.8, spark: [1.0, 0.78, 0.3, 0.6],
+    pop: { wait: [0.25, 0.9], up: [4, 7], size: 3, tint: [1, 0.95, 0.8, 1] }, bits: 6,
+    smoke: 0.15, fog: [0.8, 0.01, 90], flame: 0.5, ramp: [[0.97, 0.06, 95], [0.86, 0.14, 88], [0.6, 0.16, 65]], lift: 1.6, warm: true, steam: 0.08,
+    glow: [[0.45, 0.2, 30], [0.62, 0.2, 50], [0.9, 0.1, 90]], light: [0.82, 0.16, 62], flare: 'popAll', flareN: 60 },
 };
+// The colour a new spark of this type carries.
+function tintOf(m) {
+  if (m.spark !== 'hue') return m.spark;
+  const c = col(0.8, 0.19, rnd() * 360);
+  return [c.r, c.g, c.b, 1];
+}
 const span = ([a, b]) => a + (b - a) * rnd();
 const P = new THREE.Vector3(), V = new THREE.Vector3(), Q = new THREE.Vector3();
+// The most fork children one frame may write; the spark ring holds 8000.
+// A flare may write this many more.
+const FORK_CAP = 600, FLARE_FORKS = 1800;
+let forks = 0;
+// Popcorn kernels that wait on the floor: where, and when each pops.
+const corn = [];
 // One spark: write its flight, then schedule what ends it.
-// fd counts fork depth; bd counts floor bounces.
-function launch(p0, v0, t0, life, heat0, heat1, k, size, fd = 0, bd = 0) {
-  const m = METALS[metal];
+// o.fd counts fork depth; o.bd counts floor bounces; o.act marks a second act.
+// Act 1 is Confetti's flutter; act 2 is a popped corn.
+function launch(p0, v0, t0, life, heat0, heat1, k, size, o = {}) {
+  const { fd = 0, bd = 0, tint = NO_TINT, act = 0 } = o;
+  const m = TYPES[pick];
   const hit = floorHit(p0, v0, k, life);
   // A burst comes late in the flight, before the spark lands.
-  const forkAt = fd === 0 && bd === 0 && rnd() < m.fork ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
+  // Reduced motion allows one fork level at most.
+  // A flare may set its own fork depth and fork chance.
+  const depth = Math.min(o.depth ?? m.depth, reduced() ? 1 : 9);
+  const canFork = act === 0 && bd === 0 && fd < depth && forks < FORK_CAP;
+  const forkAt = canFork && rnd() < (o.fork ?? m.fork) ? Math.min(life, hit) * (0.45 + 0.45 * rnd()) : Infinity;
   const end = Math.min(life, hit, forkAt);
   const heatEnd = heat0 + (heat1 - heat0) * (end / life);
-  const trail = fd ? 0.03 : 0.07;
-  writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1);
+  const trail = o.trail ?? (fd ? 0.03 : 0.07);
+  // A dropped spark has no sound, no smoke and no children.
+  if (!writeSpark(p0, t0, v0, k, heat0, end, trail, size, fd ? 1 : 0, heatEnd, 1, tint)) return;
+  // A comet lays thin smoke along its first flight.
+  if (m.trailSmoke && act === 0 && fd === 0 && bd === 0) {
+    for (let tt = 0.07; tt < end; tt += 0.07) wisp(t0 + tt, posAt(p0, v0, k, tt, tmpP), m.trailSmoke, 0.02, 0.1);
+  }
   if (end === forkAt) {
-    // A burst: three to eight short stars in a sphere.
+    // A burst: short stars in a sphere. Each level halves the count and the life.
     const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
-    const n = Math.round(span(m.kids));
+    const n = Math.max(1, Math.round(span(m.kids) / (1 << fd)));
+    forks += n;
     for (let i = 0; i < n; i++) {
       Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(3 + 4 * rnd());
       const cv = v.clone().multiplyScalar(0.5).add(Q);
-      const kid = span([0.1, 0.28]);
-      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, fd + 1, bd);
+      const kid = span([0.1, 0.28]) / (1 << fd);
+      launch(p, cv, t0 + end, kid, Math.min(1, heatEnd + 0.25), heatEnd * 0.6, k * 2, size * 0.6, { fd: fd + 1, bd, tint, depth: o.depth, fork: o.fork });
     }
     cue(t0 + end, 'pop', p, heatEnd);
-  } else if (end === hit) {
-    const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
-    p.y = FLOOR + 0.001;
-    // The floor takes most of the fall and some of the slide.
-    const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
-    const rest = life - end;
-    // Hot sparks hiss on the wet floor.
-    if (heatEnd > 0.55 && mirror.visible) cue(t0 + end, 'hiss', p, heatEnd);
-    if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
-      const hot = heatEnd > 0.6 && rnd() < m.split;
-      const parts = hot ? 2 : 1;
-      for (let i = 0; i < parts; i++) {
-        const pv = bv.clone();
-        if (hot) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i ? 1 : -1) * (0.3 + 0.4 * rnd()));
-        launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (hot ? 0.75 : 0.9), fd, bd + 1);
-      }
-    } else if (heatEnd > 0.3) {
-      // A slow, hot spark comes to rest as an ember.
-      addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85));
+    wisp(t0 + end, p, FEED.pop * m.smoke);
+    return;
+  }
+  if (end !== hit) {
+    // Confetti that burns out in the air goes on as a slow, drifting fall.
+    if (act === 0 && m.flutter) {
+      const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+      const turn = rnd() * TAU;
+      v.multiplyScalar(0.25).add(Q.set(Math.cos(turn), 0, Math.sin(turn)).multiplyScalar(m.flutter.drift));
+      launch(p, v, t0 + end, span(m.flutter.life), heatEnd, heatEnd, span(m.flutter.k), size, { act: 1, fd: 9, tint, trail: 0.03, bits: m.bits });
     }
+    return;
+  }
+  const p = posAt(p0, v0, k, end, new THREE.Vector3()), v = velAt(v0, k, end, new THREE.Vector3());
+  p.y = FLOOR + 0.001;
+  // The floor takes most of the fall and some of the slide.
+  const bv = new THREE.Vector3(v.x * 0.55, -v.y * 0.35, v.z * 0.55);
+  const rest = life - end;
+  // A popped corn bounces once, then lies as a pale bit.
+  if (act === 2) {
+    if (bd < 1 && rest > 0.05) launch(p, bv, t0 + end, rest, heatEnd, heat1, k, size * 0.9, { act: 2, fd: 9, bd: bd + 1, tint, bits: o.bits });
+    else addEmber(p.x, p.z, t0 + end, o.bits / 4, 0.7, tint);
+    return;
+  }
+  // Confetti lies where it lands, in its own colour.
+  if (act === 1 || m.flutter) {
+    addEmber(p.x, p.z, t0 + end, (o.bits ?? m.bits) / 4, 0.7, tint);
+    return;
+  }
+  // A kernel lies on the floor and waits for its pop.
+  if (m.pop) {
+    addEmber(p.x, p.z, t0 + end, 0.4, 0.5, tint);
+    corn.push({ p, tPop: t0 + end + span(m.pop.wait), pop: m.pop, bits: m.bits, steam: m.steam });
+    return;
+  }
+  // Hot sparks hiss on the wet floor; a cold type's sparks do not.
+  if (m.warm && heatEnd > 0.55 && mirror.visible) {
+    cue(t0 + end, 'hiss', p, heatEnd);
+    // A hot spark on the wet floor lifts a wisp of steam.
+    wisp(t0 + end, p, FEED.steam);
+  }
+  if (bd < 2 && bv.length() > 1.2 && rest > 0.05) {
+    const splits = heatEnd > 0.6 && rnd() < m.split;
+    const parts = splits ? (m.shards === 3 && rnd() < 0.5 ? 3 : 2) : 1;
+    for (let i = 0; i < parts; i++) {
+      const pv = bv.clone();
+      if (splits) pv.applyAxisAngle(THREE.Object3D.DEFAULT_UP, (i === 2 ? 0 : i ? 1 : -1) * (0.3 + 0.4 * rnd()));
+      launch(p, pv, t0 + end, rest * 0.8, heatEnd, heat1, k * 1.4, size * (splits ? 0.75 : 0.9), { fd, bd: bd + 1, tint });
+    }
+  } else if (heatEnd > 0.3) {
+    // A slow, hot spark comes to rest as an ember.
+    addEmber(p.x, p.z, t0 + end, 0.5 + 1.2 * rnd(), Math.min(0.7, heatEnd * 0.85), tint);
+  }
+}
+// Each waiting kernel jumps up white when its time comes.
+function popCorn() {
+  for (let i = corn.length - 1; i >= 0; i--) {
+    const c = corn[i];
+    if (c.tPop > time) continue;
+    corn.splice(i, 1);
+    const turn = rnd() * TAU;
+    V.set(Math.cos(turn) * 1.5 * rnd(), span(c.pop.up), Math.sin(turn) * 1.5 * rnd());
+    launch(c.p, V.clone(), c.tPop, 0.9, 0.9, 0.7, 2, c.pop.size, { act: 2, fd: 9, tint: c.pop.tint, bits: c.bits });
+    cue(c.tPop, 'pop', c.p, 0.8);
+    if (c.steam) wisp(c.tPop, c.p, c.steam);
   }
 }
 // The contact point and the rim's direction of travel there.
@@ -569,16 +859,29 @@ function setYaw(yaw) {
   TANGENT.crossVectors(AXIS, new THREE.Vector3(0, -1, 0)).normalize();
   SIDE.crossVectors(TANGENT, AXIS).normalize();
 }
-setYaw(-0.75);
+setYaw(0.6);
 const CONE = Math.tan(12 * Math.PI / 180);
 let toothAcc = 0, rate = 0;
+// A strike owes one spark, so a sparse type never gives a dead click.
+let owed = false;
+// Sparks for one tooth. A hot wheel throws more.
+// A type with under one spark a tooth throws one now and then.
+function toothCount(m, lite) {
+  const more = m.n * lite * (1 + 0.8 * hot);
+  return m.n < 1 ? (rnd() < more ? 1 : 0) : Math.floor(more * 2 * rnd() + 0.5 * rnd());
+}
+// How hard the sparks drive the light, the smoke and the flame, 0 to 1.
+// A sparse type goes by the wheel's speed; its spark rate says too little.
+const drive = () => (TYPES[pick].n < 1 ? clamp(wheel.omega / GRIND) : clamp(rate / 250));
 // Each passing tooth scrapes 0 to 3 particles off the flint.
 function emit(dt) {
+  forks = 0;
+  popCorn();
   if (wheel.omega <= 0) { toothAcc = 0; return 0; }
   const teethRate = wheel.omega * TEETH / TAU;
   if (teethRate < 4) return 0;
   toothAcc += teethRate * dt;
-  const m = METALS[metal], rim = wheel.omega * R;
+  const m = TYPES[pick], rim = wheel.omega * R;
   let n = 0;
   // Reduced motion and the ladder's last rung each halve the count; so does a tall stage.
   const lite = (reduced() ? 0.5 : 1) * (rung >= 3 ? 0.5 : 1) * (narrow ? 0.6 : 1);
@@ -588,217 +891,771 @@ function emit(dt) {
     const t0 = time - dt * (toothAcc / Math.max(1, teethRate * dt));
     // Single ticks while the teeth are slow; the rasp takes over above 25 a second.
     if (teethRate < 26) cue(t0, 'tick', P.set(0, -R, 0), 1 - clamp((teethRate - 14) / 12));
-    const count = Math.floor(m.n * lite * 2 * rnd() + 0.5 * rnd());
+    let count = toothCount(m, lite);
+    if (owed && count === 0) count = 1;
+    if (count) owed = false;
     for (let i = 0; i < count; i++) {
       P.set(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
       V.copy(TANGENT).addScaledVector(SIDE, (rnd() * 2 - 1) * CONE).addScaledVector(AXIS, (rnd() * 2 - 1) * CONE).normalize()
-        .multiplyScalar(2 + Math.min(16, rim * (0.45 + 0.45 * rnd())));
-      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()), reduced() ? 9 : 0);
+        .multiplyScalar((2 + Math.min(16, rim * (0.45 + 0.45 * rnd()))) * m.speed);
+      // A lofted type leaves in an arc.
+      if (m.loft) V.y += m.loft * (0.7 + 0.6 * rnd());
+      launch(P.clone(), V.clone(), t0, span(m.life) * (reduced() ? 0.6 : 1), m.heat[0] - 0.08 * rnd(), m.heat[1], span(m.k), m.size * (0.7 + 0.6 * rnd()) * (1 + 0.4 * hot), { fd: reduced() && m.depth < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail });
       n++;
     }
   }
   return n;
 }
 
-/* ---------- smoke ---------- */
-// A thin wisp rises from the flint and fades within seconds.
-const smokeMat = new THREE.ShaderMaterial({
-  uniforms: { uTime: { value: 0 }, uAmt: { value: 0 } },
-  vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: /* glsl */`
-    uniform float uTime, uAmt;
-    varying vec2 vUv;
-    float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-    float noise(vec2 p) {
-      vec2 i = floor(p), f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+/* ---------- heat ---------- */
+// The wheel heats while it turns fast, and cools when it stops.
+// rise and fall are shares of the full range a second.
+const HEAT = { rise: 1 / 6, fall: 1 / 5, after: 0.35, strike: 0.04 };
+let hot = 0;
+// The flare's light: 1 at the flare, gone a quarter second later.
+let flash = 0;
+function heatStep(dt) {
+  // Heat follows the wheel's speed, so a type with few sparks heats as well.
+  const j = clamp(wheel.omega / GRIND);
+  hot = clamp(hot + (j > 0.1 ? HEAT.rise * j : -HEAT.fall) * dt);
+  flash = Math.max(0, flash - dt / 0.25);
+  if (hot >= 1) flare();
+}
+// A puff into the fluid from outside the smoke step.
+function blast(o) {
+  if (!smokeOn || reduced()) return;
+  puff(o);
+  smokeUntil = Math.max(smokeUntil, time + LINGER);
+}
+// A full heat sheds in one flare; each type has its own.
+// Reduced motion halves the count and drops the flash.
+function flare() {
+  const m = TYPES[pick], n = Math.round(m.flareN * (reduced() ? 0.5 : 1));
+  const UP = THREE.Object3D.DEFAULT_UP;
+  // The flare forks on its own budget, so every spark of it can be a star.
+  forks = FORK_CAP - FLARE_FORKS;
+  const from = () => new THREE.Vector3(0, -R + 0.02, 0).addScaledVector(AXIS, (rnd() - 0.5) * WIDTH * 0.8);
+  // A direction round the jet: a turn inside the fan, then some lift.
+  const aim = (fan, lift) => new THREE.Vector3().copy(TANGENT).applyAxisAngle(UP, (rnd() - 0.5) * fan * Math.PI / 180).setY(lift).normalize();
+  // Reduced motion: shorter lives, and no forks for a type that forks once.
+  const still = reduced();
+  const shoot = (v, o = {}, lifeK = 1) => launch(from(), v, time, span(m.life) * lifeK * (still ? 0.6 : 1), m.heat[0], m.heat[1], span(m.k),
+    m.size * (0.8 + 0.6 * rnd()) * (m.flareSize ?? 1), { fd: still && (o.depth ?? m.depth) < 2 ? 9 : 0, tint: tintOf(m), trail: m.trail, ...o });
+  if (m.flare === 'fan') {
+    // A wide fan of the type's own sparks.
+    for (let i = 0; i < n; i++) shoot(aim(70, 0.05 + 0.5 * rnd()).multiplyScalar(6 + 12 * rnd()), m.flareFork ? { fork: m.flareFork } : {}, 1.2);
+  } else if (m.flare === 'star') {
+    // One huge star: sparks in a sphere that fork three levels deep.
+    for (let i = 0; i < n; i++) shoot(new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.15 - 0.15, rnd() * 2 - 1).normalize().multiplyScalar(4 + 5 * rnd()), { depth: 3 }, 1.3);
+  } else if (m.flare === 'salvo') {
+    // A salvo of comets in a fan, each in its own arc.
+    for (let i = 0; i < n; i++) {
+      const v = aim(90, 0).multiplyScalar(4 + 4 * rnd());
+      v.y += m.loft * (0.8 + 0.6 * rnd());
+      shoot(v);
     }
-    float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * noise(p); p = p * 2.1 + 7.3; a *= 0.5; } return s; }
-    void main() {
-      float y = vUv.y, t = uTime;
-      // The wisp's centre line sways more as it rises.
-      float cx = 0.5 + (fbm(vec2(y * 2.0 - t * 0.25, 3.1)) - 0.5) * 0.9 * y;
-      float w = 0.02 + 0.12 * y;
-      float d = abs(vUv.x - cx) / w;
-      float body = exp(-d * d * 1.8) * fbm(vec2(vUv.x * 5.0, y * 3.0 - t * 0.6));
-      // Holes in the noise break the column into threads.
-      float breakup = smoothstep(0.35, 0.7, fbm(vec2(vUv.x * 3.0, y * 5.0 - t * 0.9)));
-      float a = body * breakup * smoothstep(0.0, 0.06, y) * (1.0 - smoothstep(0.25, 0.7, y)) * uAmt;
-      gl_FragColor = vec4(vec3(0.16, 0.17, 0.19), a * 0.45);
-    }`,
-  transparent: true, depthWrite: false,
-});
-const smoke = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 3.4), smokeMat);
-smoke.position.set(0.25, -R + 1.6, 0.9);
-smoke.renderOrder = 2;
-scene.add(smoke);
-let smokeAmt = 0.7;
-
-/* ---------- K2: bloom ---------- */
-// Bloom on a float target; only bright sources cross the threshold.
-// Lifted from Fireworks; the size scale knob is gone.
-function makeBloom(strength, radius, threshold) {
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
-  const full = bloom.setSize.bind(bloom);
-  // Full size on High, 0.7 on Standard, half on the ladder's rung 2.
-  bloom.setSize = (w, h) => { const m = rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7; full(Math.max(1, w * m), Math.max(1, h * m)); };
-  // The stock blur has sigma equal to its radius: a near box, so bright stars bloom square.
-  // A sigma of radius / 2.5 gives each layer a round falloff.
-  for (const m of bloom.separableBlurMaterials) {
-    const r = m.defines.KERNEL_RADIUS, sg = r / 2.5;
-    m.uniforms.gaussianCoefficients.value = Array.from({ length: r }, (_, i) => Math.exp(-0.5 * i * i / (sg * sg)));
+  } else if (m.flare === 'frost') {
+    // A low fan of ice, and a fog bank that rolls out down the jet.
+    for (let i = 0; i < n; i++) shoot(aim(120, 0.02 + 0.15 * rnd()).multiplyScalar(5 + 9 * rnd()));
+    for (const x of [0.5, 1.3, 2.1]) blast({ pos: [x, FLOOR + 0.45, 0], radius: 0.6, vel: [2, -0.3, 0], grip: 0.5, smoke: 1.2 });
+  } else if (m.flare === 'cannon') {
+    // A tall cone of confetti, aimed up and down the jet.
+    const axis = new THREE.Vector3().copy(TANGENT).multiplyScalar(0.6).setY(0.8).normalize(), wide = Math.tan(17.5 * Math.PI / 180);
+    for (let i = 0; i < n; i++) {
+      Q.set(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize().multiplyScalar(wide * rnd());
+      shoot(new THREE.Vector3().copy(axis).add(Q).normalize().multiplyScalar(7 + 8 * rnd()));
+    }
+  } else if (m.flare === 'popAll') {
+    // Every kernel on the floor pops now, and new kernels fly.
+    for (const c of corn) c.tPop = time + 0.25 * rnd();
+    for (let i = 0; i < n; i++) {
+      const v = aim(70, 0).multiplyScalar(3 + 6 * rnd());
+      v.y += 2 + 3 * rnd();
+      shoot(v);
+    }
   }
-  // Bilinear upsampling of the small mips draws square feathers.
-  // A cubic B-spline read of each mip keeps the glow round.
-  const cm = bloom.compositeMaterial;
-  cm.fragmentShader = cm.fragmentShader
-    .replace('void main() {', /* glsl */`vec4 bsw(float v) {
-      vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v, s = n * n * n;
-      float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;
-      return vec4(x, y, z, 6.0 - x - y - z) / 6.0;
-    }
-    vec4 bic(sampler2D t, vec2 uv) {
-      vec2 ts = vec2(textureSize(t, 0)), p = uv * ts - 0.5, fp = fract(p);
-      p -= fp;
-      vec4 xc = bsw(fp.x), yc = bsw(fp.y);
-      vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy, w = vec4(xc.xz + xc.yw, yc.xz + yc.yw);
-      vec4 o = (c + vec4(xc.yw, yc.yw) / w) / ts.xxyy;
-      float sx = w.x / (w.x + w.y), sy = w.z / (w.z + w.w);
-      return mix(mix(texture2D(t, o.yw), texture2D(t, o.xw), sx), mix(texture2D(t, o.yz), texture2D(t, o.xz), sx), sy);
-    }
-    void main() {`)
-    .replace(/texture2D\(blurTexture([1-5]), vUv\)/g, 'bic(blurTexture$1, vUv)');
-  cm.needsUpdate = true;
-  return bloom;
+  // A burning type sends up a fireball.
+  // Heat draws only where smoke is, so the fireball carries some.
+  if (m.warm) blast({ pos: [0.25, -R + 0.1, 0], radius: 0.55, vel: [0, 2.5, 0], grip: 0.6, smoke: 1.2 * Math.max(m.smoke, 0.25), heat: 1.5 });
+  flash = reduced() ? 0 : 1;
+  // The thump plays at once; the cue queue may be full of the flare's pops.
+  const ac = kit.live();
+  if (ac && kit.noise) play(ac, ac.currentTime + 0.02, { kind: 'thump', x: 0, y: -R, z: 0, level: 1 });
+  hot = HEAT.after;
 }
-/* ---------- end K2 ---------- */
 
-/* ---------- K2: grade ---------- */
-// Linear grade before tone mapping: haze lift, vignette, fixed grain.
-function makeGrade({ tint, vig, vigIn, grain }) {
-  return new ShaderPass({
-    uniforms: {
-      tDiffuse: { value: null },
-      uRes: { value: new THREE.Vector2(1, 1) },
-      uTint: { value: new THREE.Vector3(...tint) },
-      uVig: { value: vig },
-      uVigIn: { value: vigIn },
-      uGrain: { value: grain },
+/* ---------- K3: volume fluid ---------- */
+// Lifted from ink/index.html and retuned for smoke: hot dye rises and thins.
+// The box rides the wheel's pivot frame: x runs down the jet, z along the axle.
+// Dye r holds smoke density; dye g holds heat.
+const BOX = { x0: -1.4, x1: 3.4, y0: FLOOR, y1: FLOOR + 6, z0: -1.2, z1: 1.2 };
+const BOX_MIN = vec3(BOX.x0, BOX.y0, BOX.z0);
+const BOX_SIZE = vec3(BOX.x1 - BOX.x0, BOX.y1 - BOX.y0, BOX.z1 - BOX.z0);
+// Cells are cubes: 0.06 on a side on Standard, 0.05 on High, 0.075 on the ladder's last rung.
+const GRIDS = { low: [64, 80, 32], standard: [80, 100, 40], high: [96, 120, 48] };
+const SIM_STEP = 1 / 60;
+// Jacobi sweeps stay even, so pressure ends in A.
+const PRESSURE_SWEEPS = 6;
+// At most eight emitters act in one step; each takes three vec4.
+const EMIT_MAX = 8;
+const uDt = uniform(SIM_STEP);
+// Heat lifts the smoke hard; the smoke itself keeps a slow rise.
+const uBuoyancy = uniform(5), uLift = uniform(1.4);
+const uVorticity = uniform(5), uVelDamping = uniform(0.6), uViscosity = uniform(0.15), uTurbulence = uniform(0.9);
+// Each step keeps this share: smoke thins over seconds, heat in a quarter second.
+const THIN = Math.exp(-SIM_STEP / 3.2), FADE = Math.exp(-SIM_STEP / 0.4);
+const uThin = uniform(THIN), uCool = uniform(Math.exp(-SIM_STEP / 0.25));
+// The wheel's spin, so the rim drags the air.
+const uOmega = uniform(0);
+// Each emitter: position and radius, velocity and grip, then smoke and heat.
+const emitAttr = new THREE.StorageBufferAttribute(new Float32Array(EMIT_MAX * 3 * 4), 4);
+const emitBuf = storage(emitAttr, 'vec4', EMIT_MAX * 3).toReadOnly();
+const uEmitCount = uniform(0, 'int');
+// Emitters past eight wait for the next step.
+const pending = [];
+
+function createK3(grid) {
+  const [GX, GY, GZ] = grid;
+  const CELLS = GX * GY * GZ;
+  const CELL = (BOX.y1 - BOX.y0) / GY;
+  const DIMS = vec3(GX, GY, GZ);
+  const TX = 1 / GX, TY = 1 / GY, TZ = 1 / GZ;
+
+  // rgba16float is storage-writable and linearly filterable.
+  const textures = [];
+  function createStorage3D(name) {
+    const texture = new THREE.Storage3DTexture(GX, GY, GZ);
+    texture.name = name;
+    texture.format = THREE.RGBAFormat;
+    texture.type = THREE.HalfFloatType;
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping;
+    textures.push(texture);
+    return texture;
+  }
+  const velTexA = createStorage3D('velocity A');
+  const velTexB = createStorage3D('velocity B');
+  // Dye A is the current field, B the forward pass, C the corrected result.
+  const dyeTexA = createStorage3D('dye A');
+  const dyeTexB = createStorage3D('dye B');
+  const dyeTexC = createStorage3D('dye C');
+  const divTex = createStorage3D('divergence');
+  const pressTexA = createStorage3D('pressure A');
+  const pressTexB = createStorage3D('pressure B');
+  const curlNoiseTex = createStorage3D('curl noise');
+  curlNoiseTex.wrapS = curlNoiseTex.wrapT = curlNoiseTex.wrapR = THREE.RepeatWrapping;
+  // Curl holds the vorticity vector in xyz and its length in w.
+  const curlTex = createStorage3D('curl');
+  // A and C swap each step through these two nodes.
+  const dyeRead = texture3D(dyeTexA);
+  const dyeWrite = storageTexture(dyeTexC).toWriteOnly();
+  const curlNoiseNode = texture3D(curlNoiseTex);
+
+  const voxel = id => uvec3(id.mod(GX), id.div(GX).mod(GY), id.div(GX * GY));
+  const uvwOf = coord => vec3(coord).add(0.5).div(DIMS);
+  const boxOf = uvw => uvw.mul(BOX_SIZE).add(BOX_MIN);
+  // 1 inside the wheel's body, 0 outside; the wheel sits at the frame's origin.
+  const inWheel = p => smoothstep(0.94, 1.02, p.xy.length()).oneMinus().mul(step(p.z.abs(), 0.33));
+  // 1 in a thin shell of air round the rim.
+  const atRim = p => smoothstep(0.94, 1.02, p.xy.length()).mul(smoothstep(1.06, 1.2, p.xy.length()).oneMinus()).mul(step(p.z.abs(), 0.33));
+
+  // Curl noise is computed once into a 3D texture.
+  const curlNoisePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const p = uvwOf(coord).mul(vec3(GX / GY, 1, GZ / GY)).mul(6);
+    const e = float(0.02);
+    const dx = vec3(e, 0, 0), dy = vec3(0, e, 0), dz = vec3(0, 0, e);
+    const x0 = snoiseVec3(p.sub(dx)), x1 = snoiseVec3(p.add(dx));
+    const y0 = snoiseVec3(p.sub(dy)), y1 = snoiseVec3(p.add(dy));
+    const z0 = snoiseVec3(p.sub(dz)), z1 = snoiseVec3(p.add(dz));
+    const x = y1.z.sub(y0.z).sub(z1.y).add(z0.y);
+    const y = z1.x.sub(z0.x).sub(x1.z).add(x0.z);
+    const z = x1.y.sub(x0.y).sub(y1.x).add(y0.x);
+    textureStore(curlNoiseTex, coord, vec4(vec3(x, y, z).div(e.mul(2)), 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Clear empties velocity, pressure and both dye fields.
+  const clearPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    textureStore(velTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(pressTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexA, coord, vec4(0)).toWriteOnly();
+    textureStore(dyeTexC, coord, vec4(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Vorticity is the curl of the projected velocity.
+  const curlPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexA, uvw.add(vec3(TX, 0, 0)), 0).xyz;
+    const vL = texture3D(velTexA, uvw.sub(vec3(TX, 0, 0)), 0).xyz;
+    const vU = texture3D(velTexA, uvw.add(vec3(0, TY, 0)), 0).xyz;
+    const vD = texture3D(velTexA, uvw.sub(vec3(0, TY, 0)), 0).xyz;
+    const vF = texture3D(velTexA, uvw.add(vec3(0, 0, TZ)), 0).xyz;
+    const vB = texture3D(velTexA, uvw.sub(vec3(0, 0, TZ)), 0).xyz;
+    const w = vec3(
+      vU.z.sub(vD.z).sub(vF.y.sub(vB.y)),
+      vF.x.sub(vB.x).sub(vR.z.sub(vL.z)),
+      vR.y.sub(vL.y).sub(vU.x.sub(vD.x)),
+    ).div(2 * CELL);
+    textureStore(curlTex, coord, vec4(w, w.length())).toWriteOnly();
+  })().compute(CELLS);
+
+  // A sphere test for emitter i: 1 at the centre, 0 at the rim.
+  const emitWeight = (p, i) => {
+    const e0 = emitBuf.element(i.mul(3));
+    return smoothstep(0, 1, p.distance(e0.xyz).div(e0.w).oneMinus().mul(1.6));
+  };
+
+  // Advects velocity, then adds buoyancy, curl noise, the rim's drag and emitters.
+  const advectVelocityPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(BOX_SIZE).mul(uDt));
+    const v = texture3D(velTexA, prevPos, 0).xyz.toVar();
+    // A light viscous blend damps the odd-even stripes of the pressure solve.
+    const near = texture3D(velTexA, prevPos.add(vec3(TX, 0, 0)), 0).xyz
+      .add(texture3D(velTexA, prevPos.sub(vec3(TX, 0, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.add(vec3(0, TY, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.sub(vec3(0, TY, 0)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.add(vec3(0, 0, TZ)), 0).xyz)
+      .add(texture3D(velTexA, prevPos.sub(vec3(0, 0, TZ)), 0).xyz);
+    v.assign(mix(v, near.div(6), uViscosity));
+    const dye = dyeRead.sample(uvw).level(0);
+    const smoky = dye.r.mul(2).clamp(0, 1);
+
+    // Hot smoke rises.
+    v.addAssign(vec3(0, dye.g.mul(uBuoyancy).add(dye.r.mul(uLift)), 0).mul(uDt));
+    const noisePos = uvw.mul(0.8).add(vec3(0, uTime.mul(-0.03), uTime.mul(0.012)));
+    v.addAssign(curlNoiseNode.sample(noisePos).level(0).xyz.mul(uTurbulence.mul(smoky)).mul(uDt));
+    v.mulAssign(max(float(1).sub(uVelDamping.mul(uDt)), 0));
+
+    // Vorticity confinement keeps the fine curls; smoke weights it.
+    const wC = texture3D(curlTex, uvw, 0);
+    const eta = vec3(
+      texture3D(curlTex, uvw.add(vec3(TX, 0, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(TX, 0, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, TY, 0)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, TY, 0)), 0).w),
+      texture3D(curlTex, uvw.add(vec3(0, 0, TZ)), 0).w.sub(texture3D(curlTex, uvw.sub(vec3(0, 0, TZ)), 0).w),
+    );
+    const N = eta.div(eta.length().add(1e-5));
+    v.addAssign(N.cross(wC.xyz).mul(uVorticity.mul(CELL)).mul(smoky.mul(0.8).add(0.2)).mul(uDt));
+
+    // Emitters pull velocity toward their own inside their spheres.
+    // A var: a value first used inside a loop is undefined when the loop runs no pass.
+    const p = boxOf(uvw).toVar();
+    Loop(uEmitCount, ({ i }) => {
+      const e1 = emitBuf.element(i.mul(3).add(1));
+      v.assign(mix(v, e1.xyz, emitWeight(p, i).mul(e1.w)));
+    });
+
+    // The spinning rim drags a thin shell of air; the wheel's body holds none.
+    v.assign(mix(v, vec3(p.y.negate(), p.x, 0).mul(uOmega).mul(0.06), atRim(p).mul(0.5)));
+    v.mulAssign(inWheel(p).oneMinus());
+
+    // Velocity fades near the box walls.
+    const edge = min(uvw, vec3(1).sub(uvw));
+    v.mulAssign(smoothstep(0.0, 0.035, min(edge.x, min(edge.y, edge.z))));
+    textureStore(velTexB, coord, vec4(v, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  const divergencePass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vR = texture3D(velTexB, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const vL = texture3D(velTexB, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const vU = texture3D(velTexB, uvw.add(vec3(0, TY, 0)), 0).y;
+    const vD = texture3D(velTexB, uvw.sub(vec3(0, TY, 0)), 0).y;
+    const vF = texture3D(velTexB, uvw.add(vec3(0, 0, TZ)), 0).z;
+    const vB = texture3D(velTexB, uvw.sub(vec3(0, 0, TZ)), 0).z;
+    const divergence = vR.sub(vL).add(vU.sub(vD)).add(vF.sub(vB)).mul(0.5);
+    textureStore(divTex, coord, vec4(divergence, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // Jacobi pressure solve ping-pongs between A and B.
+  const jacobi = (pressRead, pressWrite) => Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressRead, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressRead, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressRead, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressRead, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressRead, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressRead, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const divergence = texture3D(divTex, uvw, 0).x;
+    const pressure = pR.add(pL).add(pU).add(pD).add(pF).add(pB).sub(divergence).div(6);
+    textureStore(pressWrite, coord, vec4(pressure, 0, 0, 0)).toWriteOnly();
+  })().compute(CELLS);
+  const jacobiPassAB = jacobi(pressTexA, pressTexB);
+  const jacobiPassBA = jacobi(pressTexB, pressTexA);
+
+  // Subtracting the pressure gradient makes velocity divergence-free.
+  const projectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const pR = texture3D(pressTexA, uvw.add(vec3(TX, 0, 0)), 0).x;
+    const pL = texture3D(pressTexA, uvw.sub(vec3(TX, 0, 0)), 0).x;
+    const pU = texture3D(pressTexA, uvw.add(vec3(0, TY, 0)), 0).x;
+    const pD = texture3D(pressTexA, uvw.sub(vec3(0, TY, 0)), 0).x;
+    const pF = texture3D(pressTexA, uvw.add(vec3(0, 0, TZ)), 0).x;
+    const pB = texture3D(pressTexA, uvw.sub(vec3(0, 0, TZ)), 0).x;
+    const gradient = vec3(pR.sub(pL), pU.sub(pD), pF.sub(pB)).mul(0.5);
+    const vel = texture3D(velTexB, uvw, 0).xyz.sub(gradient);
+    textureStore(velTexA, coord, vec4(vel, 0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 1: a plain semi-Lagrangian pass into B.
+  const dyeForwardPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const vel = texture3D(velTexA, uvw, 0).xyz;
+    const prevPos = uvw.sub(vel.div(BOX_SIZE).mul(uDt));
+    textureStore(dyeTexB, coord, dyeRead.sample(prevPos).level(0)).toWriteOnly();
+  })().compute(CELLS);
+
+  // MacCormack, step 2: trace B back and correct by half the error.
+  // The result stays inside the neighbours' range, so it never rings.
+  // Smoke thins, heat cools and emitters add both here.
+  const dyeCorrectPass = Fn(() => {
+    const coord = voxel(instanceIndex);
+    const uvw = uvwOf(coord);
+    const shift = texture3D(velTexA, uvw, 0).xyz.div(BOX_SIZE).mul(uDt);
+    const prevPos = uvw.sub(shift);
+    const forward = texture3D(dyeTexB, uvw, 0);
+    const back = texture3D(dyeTexB, uvw.add(shift), 0);
+    const now = dyeRead.sample(uvw).level(0);
+    const dye = forward.add(now.sub(back).mul(0.5)).toVar();
+    const base = TSL.floor(prevPos.mul(DIMS).sub(0.5));
+    const lo = vec4(1e4).toVar(), hi = vec4(-1e4).toVar();
+    for (const o of [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]]) {
+      const near = dyeRead.sample(base.add(vec3(...o)).add(0.5).div(DIMS)).level(0);
+      lo.assign(min(lo, near));
+      hi.assign(max(hi, near));
+    }
+    dye.assign(min(max(dye, lo), hi).mul(vec4(uThin, uCool, 1, 1)));
+
+    // Emitters add smoke and heat; fine noise makes each puff uneven.
+    // A var: a value first used inside a loop is undefined when the loop runs no pass.
+    const p = boxOf(uvw).toVar();
+    Loop(uEmitCount, ({ i }) => {
+      const e2 = emitBuf.element(i.mul(3).add(2));
+      const lumpy = mx_noise_float(p.mul(9).add(e2.xyz.mul(7))).mul(0.45).add(0.8);
+      dye.addAssign(e2.mul(emitWeight(p, i)).mul(lumpy));
+    });
+    // The wheel's body holds no smoke; the box's top lets it out.
+    dye.mulAssign(inWheel(p).oneMinus().mul(smoothstep(0.0, 0.1, uvw.y.oneMinus())));
+    // The sides thin the smoke out, so low fog shows no flat edge. The floor holds it.
+    const side = min(min(uvw.x, uvw.x.oneMinus()), min(uvw.z, uvw.z.oneMinus()));
+    dye.mulAssign(smoothstep(0.0, 0.08, side).mul(0.06).add(0.94));
+    textureStore(dyeWrite, coord, max(dye, vec4(0))).toWriteOnly();
+  })().compute(CELLS);
+
+  const stepPasses = [curlPass, advectVelocityPass, divergencePass];
+  for (let i = 0; i < PRESSURE_SWEEPS; i++) stepPasses.push(i % 2 === 0 ? jacobiPassAB : jacobiPassBA);
+  stepPasses.push(projectPass, dyeForwardPass, dyeCorrectPass);
+
+  return {
+    grid,
+    get dye() { return dyeRead.value; },
+    async compile() {
+      await renderer.compileComputeAsync([curlNoisePass, clearPass, ...new Set(stepPasses)]);
+      renderer.compute(curlNoisePass);
+      renderer.compute(clearPass);
     },
-    vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse;
-    uniform vec2 uRes;
-    uniform vec3 uTint;
-    uniform float uVig, uVigIn, uGrain;
-    varying vec2 vUv;
-    // An integer hash per pixel; float hashes draw faint stripes here.
-    float h(vec2 p) {
-      uvec2 q = uvec2(p);
-      uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
-      n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
-      return float(n) / 4294967295.0;
-    }
-    void main() {
-      vec3 c = texture2D(tDiffuse, vUv).rgb + uTint;
-      vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-      c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
-      float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c *= 1.0 + (h(gl_FragCoord.xy) - 0.5) * uGrain * (0.6 + 0.4 * smoothstep(0.0, 0.3, lum)) * 2.0;
-      gl_FragColor = vec4(max(c, 0.0), 1.0);
-    }`,
-  });
+    step() {
+      renderer.compute(stepPasses);
+      const swap = dyeRead.value;
+      dyeRead.value = dyeWrite.value;
+      dyeWrite.value = swap;
+    },
+    clear() { renderer.compute(clearPass); },
+    dispose() { textures.forEach(t => t.dispose()); },
+  };
 }
-/* ---------- end K2 ---------- */
 
-/* ---------- post chain ---------- */
-const POST = { bloom: [0.8, 0.45, 0.85], tint: [0.0008, 0.0009, 0.0013], vig: 0.55, vigIn: 0.35, grain: 0.035 };
-const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
-const composer = new EffectComposer(renderer, rt);
-composer.addPass(new RenderPass(scene, camera));
-const bloomPass = makeBloom(...POST.bloom);
-composer.addPass(bloomPass);
-const grade = makeGrade(POST);
-composer.addPass(grade);
-composer.addPass(new OutputPass());
+// Queues one emitter for a coming step; positions are in the box frame.
+function puff({ pos, radius, vel = [0, 0, 0], grip = 0, smoke = 0, heat = 0 }) {
+  pending.push([pos, radius, vel, grip, smoke, heat]);
+}
+function loadEmitters() {
+  const a = emitAttr.array;
+  const batch = pending.splice(0, EMIT_MAX);
+  batch.forEach(([pos, radius, vel, grip, smoke, heat], i) => {
+    a.set([...pos, radius, ...vel, grip, smoke, heat, 0, 0], i * 12);
+  });
+  emitAttr.needsUpdate = true;
+  uEmitCount.value = batch.length;
+}
+/* ---------- end K3 ---------- */
+
+// High takes the large grid until a slow frame; the ladder's last rung takes the small one.
+const gridNow = () => GRIDS[rung >= 3 ? 'low' : quality() === 'high' && rung === 0 ? 'high' : 'standard'];
+let sim = createK3(gridNow());
+
+/* ---------- smoke ---------- */
+// The volume draws in its own scene, at half size, then blends over the picture.
+// Its box turns with the wheel's yaw; the march runs in the box frame.
+const uCy = uniform(1), uSy = uniform(0);
+const toBox = v => vec3(v.x.mul(uCy).sub(v.z.mul(uSy)), v.y, v.x.mul(uSy).add(v.z.mul(uCy)));
+let boxCos = 1, boxSin = 0;
+const boxOfWorld = p => [p.x * boxCos - p.z * boxSin, p.y, p.x * boxSin + p.z * boxCos];
+// The ladder sets the step count; the shader takes it as a loop bound.
+const uSteps = uniform(28, 'int');
+// The ladder's last rung drops the smoke's own shadow.
+const uShadow = uniform(1);
+// The cool rim light, as a direction in the box frame.
+const uRimDir = uniform(new THREE.Vector3(0, 1, 0));
+const uRimCol = uniform(rim.color.clone().multiplyScalar(1.3));
+// A little cool fill, so thin smoke still reads in the dark.
+const uFill = uniform(new THREE.Vector3(0.03, 0.034, 0.045));
+// The warm contact light; its strength follows the spark rate.
+const uContactPos = uniform(contact.position.clone()), uContactCol = uniform(contact.color.clone()), uContactI = uniform(0);
+// The spark jet lights the smoke along its first stretch.
+const uJet = uniform(0), uJetCol = uniform(col(0.82, 0.16, 62));
+const JET_A = vec3(0.1, -R, 0), JET_AB = vec3(2.4, -0.35, 0);
+// The type sets the smoke's colour and the flame's ramp; both glide on a change.
+const tones = {};
+for (const [id, m] of Object.entries(TYPES)) {
+  tones[id] = { fog: col(...m.fog), ramp: m.ramp.map(c => col(...c)),
+    glow: m.glow === 'cycle' ? 'cycle' : m.glow.map(c => col(...c)), light: m.light === 'cycle' ? 'cycle' : col(...m.light) };
+}
+// The rim's glow now, and the colour it glides to.
+const glowNow = new THREE.Color(0, 0, 0), glowTo = new THREE.Color(0, 0, 0);
+const uTint = uniform(tones.ferro.fog.clone());
+const uRamp = tones.ferro.ramp.map(c => uniform(c.clone()));
+const uFlame = uniform(1);
+const dyeShow = texture3D(sim.dye);
+const dyeAt = p => dyeShow.sample(p.sub(BOX_MIN).div(BOX_SIZE)).level(0);
+// Extinction per unit of smoke and length.
+const SIGMA = 2.4;
+const volMat = new THREE.NodeMaterial();
+volMat.side = THREE.BackSide;
+volMat.depthTest = false;
+volMat.depthWrite = false;
+volMat.blending = THREE.NoBlending;
+volMat.fragmentNode = Fn(() => {
+  const ro = toBox(cameraPosition).toVar(), rd = toBox(positionWorld.sub(cameraPosition)).normalize().toVar();
+  const t0 = BOX_MIN.sub(ro).div(rd), t1 = BOX_MIN.add(BOX_SIZE).sub(ro).div(rd);
+  const tmin = min(t0, t1), tmax = max(t0, t1);
+  const tNear = max(max(tmin.x, tmin.y), max(tmin.z, 0)).toVar();
+  const tFar = min(min(tmax.x, tmax.y), tmax.z).toVar();
+  // The wheel hides the smoke behind it: a ray stops at the wheel's cylinder.
+  const qa = rd.x.mul(rd.x).add(rd.y.mul(rd.y)).max(1e-6);
+  const qb = ro.x.mul(rd.x).add(ro.y.mul(rd.y));
+  const qh = qb.mul(qb).sub(qa.mul(ro.x.mul(ro.x).add(ro.y.mul(ro.y)).sub(R * R))).toVar();
+  const root = qh.max(0).sqrt();
+  const za = float(-WIDTH / 2).sub(ro.z).div(rd.z), zb = float(WIDTH / 2).sub(ro.z).div(rd.z);
+  const tin = max(qb.negate().sub(root).div(qa), min(za, zb)).toVar();
+  const tout = min(qb.negate().add(root).div(qa), max(za, zb)).toVar();
+  If(qh.greaterThan(0).and(tin.lessThan(tout)).and(tout.greaterThan(0)), () => { tFar.assign(min(tFar, max(tin, 0))); });
+  const ds = tFar.sub(tNear).max(0).div(uSteps.toFloat()).toVar();
+  // A jittered start hides the step bands.
+  const t = tNear.add(ds.mul(interleavedGradientNoise(screenCoordinate))).toVar();
+  const T = float(1).toVar(), L = vec3(0).toVar();
+  // Looking toward the rim light, the smoke scatters forward and glows at its edge.
+  const cosT = rd.dot(uRimDir);
+  const phase = float(1 - 0.45 * 0.45).div(float(1 + 0.45 * 0.45).sub(cosT.mul(0.9)).pow(1.5));
+  Loop(uSteps, () => {
+    const p = ro.add(rd.mul(t)).toVar();
+    const dye = dyeAt(p).toVar();
+    If(dye.r.greaterThan(0.003), () => {
+      // Fine noise breaks up the grid cells in thin smoke.
+      const dens = dye.r.mul(mx_noise_float(p.mul(5).sub(vec3(0, uTime.mul(0.35), 0))).mul(0.3).add(0.85)).toVar();
+      // Two samples toward the rim light give the smoke its own shadow.
+      const shade = float(1).toVar();
+      If(uShadow.greaterThan(0.5), () => {
+        shade.assign(exp(dyeAt(p.add(uRimDir.mul(0.14))).r.add(dyeAt(p.add(uRimDir.mul(0.36))).r).mul(-SIGMA * 0.22)));
+      });
+      const lit = uRimCol.mul(shade).mul(phase).add(uFill).toVar();
+      const toC = uContactPos.sub(p);
+      lit.addAssign(uContactCol.mul(uContactI.mul(0.16)).div(toC.dot(toC).add(0.2)));
+      // The jet lights the smoke as a short warm line.
+      const pa = p.sub(JET_A);
+      const along = pa.dot(JET_AB).div(JET_AB.dot(JET_AB)).clamp(0, 1);
+      const off = pa.sub(JET_AB.mul(along));
+      lit.addAssign(uJetCol.mul(uJet.mul(0.5)).div(off.dot(off).add(0.14)));
+      const a = exp(dens.mul(ds).mul(-SIGMA)).oneMinus();
+      // Heat glows: the flame is the hot core of the smoke.
+      const heat = dye.g.clamp(0, 1);
+      const flame = mix(mix(uRamp[2], uRamp[1], smoothstep(0.0, 0.5, heat)), uRamp[0], smoothstep(0.5, 1.0, heat))
+        .mul(heat.pow(1.6)).mul(uFlame).mul(26);
+      L.addAssign(T.mul(lit.mul(uTint).mul(a).add(flame.mul(ds))));
+      T.mulAssign(a.oneMinus());
+    });
+    t.addAssign(ds);
+    // An opaque ray stops; later steps add nothing visible.
+    If(T.lessThan(0.01), () => { Break(); });
+  });
+  // rgb: light from the smoke. a: its opacity, so an empty pixel keeps the picture.
+  return vec4(L, T.oneMinus());
+})();
+const volGeo = new THREE.BoxGeometry(BOX.x1 - BOX.x0, BOX.y1 - BOX.y0, BOX.z1 - BOX.z0);
+volGeo.translate((BOX.x0 + BOX.x1) / 2, (BOX.y0 + BOX.y1) / 2, (BOX.z0 + BOX.z1) / 2);
+const volBox = new THREE.Mesh(volGeo, volMat);
+volBox.frustumCulled = false;
+volBox.visible = false;
+const volPivot = new THREE.Group();
+volPivot.add(volBox);
+const volScene = new THREE.Scene();
+volScene.add(volPivot);
+// The box and its lights turn with the wheel.
+function aimVolume(yaw) {
+  volPivot.rotation.y = yaw;
+  boxCos = Math.cos(yaw); boxSin = Math.sin(yaw);
+  uCy.value = boxCos; uSy.value = boxSin;
+  uRimDir.value.set(...boxOfWorld(rim.position.clone().normalize()));
+}
+
+// Puffs from bursts and floor hits wait here until their time comes.
+const wisps = [];
+function wisp(t, p, smoke, heat = 0, radius = 0.16) {
+  if (!smokeOn || reduced() || wisps.length > 240) return;
+  // An empty puff does not wake the sim.
+  if (!(smoke > 0) && !(heat > 0)) return;
+  const pos = boxOfWorld(p);
+  // A puff outside the box does nothing.
+  if (pos[0] < BOX.x0 || pos[0] > BOX.x1 || pos[1] < BOX.y0 || pos[1] > BOX.y1 || pos[2] < BOX.z0 || pos[2] > BOX.z1) return;
+  wisps.push({ t, pos, smoke, heat, radius });
+}
+// What each source adds in one step: the flint's smoke and heat, a burst, a hiss of steam.
+const FEED = { smoke: 0.22, heat: 0.2, pop: 0.06, steam: 0.05 };
+// Smoke lives for a while after the last puff, then fades and clears.
+const LINGER = 9, FADE_FOR = 1.5, KICK = 0.9;
+let simAcc = 0, smokeUntil = 0, smokeLive = false, kick = 0;
+function clearSmoke() {
+  sim.clear();
+  dyeShow.value = sim.dye;
+  pending.length = 0;
+  wisps.length = 0;
+  smokeLive = false;
+  smokeUntil = 0;
+  volBox.visible = false;
+}
+// A new grid starts empty; the old one runs until the new one compiles.
+let building = false;
+async function fitGrid() {
+  if (building || gridNow() === sim.grid) return;
+  building = true;
+  try {
+    const next = createK3(gridNow());
+    await next.compile();
+    const old = sim;
+    sim = next;
+    clearSmoke();
+    old.dispose();
+  } finally {
+    building = false;
+  }
+  // The ladder may have moved during the build.
+  fitGrid();
+}
+function smokeStep(dt) {
+  // With Smoke off, or reduced motion, nothing new rises; a live plume fades out.
+  const allowed = smokeOn && !reduced();
+  if (!allowed) {
+    kick = 0;
+    wisps.length = 0;
+    if (!smokeLive) return;
+    smokeUntil = Math.min(smokeUntil, time + FADE_FOR);
+  }
+  const m = TYPES[pick], j = allowed ? drive() : 0;
+  // A short kick after a reset stands one thin wisp over the flint.
+  const kicking = kick > 0;
+  const feed = Math.max(j, kicking ? 0.55 : 0);
+  kick = Math.max(0, kick - dt);
+  wisps.sort((a, b) => a.t - b.t);
+  // A type with no smoke and no flame starts no sim.
+  const feeds = m.smoke > 0 || m.warm;
+  if ((feed > 0.02 && feeds) || (wisps.length && wisps[0].t <= time)) smokeUntil = time + LINGER;
+  if (time >= smokeUntil) { if (smokeLive) clearSmoke(); return; }
+  smokeLive = true;
+  volBox.visible = true;
+  uThin.value = smokeUntil - time < FADE_FOR ? FADE : THIN;
+  uOmega.value = Math.min(wheel.omega, 40);
+  simAcc = Math.min(simAcc + dt, 2 * SIM_STEP);
+  while (simAcc >= SIM_STEP) {
+    simAcc -= SIM_STEP;
+    if (feed > 0.02) {
+      // The contact puff: smoke and heat leave the flint down the jet.
+      // Cold fog leaves downward.
+      puff({ pos: [0.12, -R + 0.02, 0], radius: 0.2, vel: [0.6 * j, m.lift < 0 ? -0.4 : 0.9, 0], grip: 0.3 * feed, smoke: FEED.smoke * feed * m.smoke * (1 + 1.5 * hot) });
+      // The flame lick: heat a little down the jet, where it clears the rim.
+      if (j > 0.02 && m.warm) puff({ pos: [0.42, -R - 0.04, 0.05], radius: 0.24, vel: [1.6 * j, 0.5, 0], grip: 0.2 * j, smoke: 0.02 * j * Math.max(m.smoke, 0.25), heat: FEED.heat * j * m.flame * (1 + 2 * hot) });
+      // The jet drags the air along its first stretch.
+      if (j > 0.02) {
+        const speed = 2 + Math.min(16, wheel.omega * R * 0.675);
+        puff({ pos: [0.7, -R - 0.15, 0], radius: 0.32, vel: [0.3 * speed, -0.2, 0], grip: 0.22 * j, smoke: 0.012 * j * m.smoke });
+        puff({ pos: [1.6, -R - 0.38, 0], radius: 0.42, vel: [0.18 * speed, -0.2, 0], grip: 0.14 * j, smoke: 0.006 * j * m.smoke });
+      }
+    }
+    // The kick's wisp starts clear of the rim, a little warm, so it shows and rises.
+    if (kicking) puff({ pos: [0.45, -R + 0.1, 0.2], radius: 0.18, vel: [0.15, 0.7, 0], grip: 0.25, smoke: 0.1 * m.smoke, heat: m.warm ? 0.05 : 0 });
+    // At most four join a step; the rest wait.
+    for (let n = 0; n < 4 && wisps.length && wisps[0].t <= time; n++) {
+      const b = wisps.shift();
+      puff({ pos: b.pos, radius: b.radius, vel: [0, 0.6, 0], grip: 0.3, smoke: b.smoke, heat: b.heat });
+    }
+    loadEmitters();
+    sim.step();
+  }
+  dyeShow.value = sim.dye;
+}
+
+/* ---------- post ---------- */
+// Scene, then smoke, then bloom, then a linear grade; the pipeline tone-maps last.
+// The stock blur spreads wider than the classic build's; more strength keeps the glow.
+const POST = { bloom: [1.2, 0.45, 0.85], tint: [0.0008, 0.0009, 0.0013], vig: 0.55, vigIn: 0.35, grain: 0.035 };
+const pipeline = new THREE.RenderPipeline(renderer);
+const scenePass = pass(scene, camera, { samples: 2 });
+const volPass = pass(volScene, camera);
+volPass.setResolutionScale(0.5);
+// A light blur hides the half-size pixels and the jitter.
+const vol = gaussianBlur(volPass, 0.75, 1);
+const withSmoke = vec4(scenePass.rgb.mul(vol.a.oneMinus()).add(vol.rgb), 1);
+const bloomPass = bloom(withSmoke, ...POST.bloom);
+// Half size on High, 0.35 on Standard, a quarter on the ladder's rung 2.
+const bloomScale = () => 0.5 * (rung >= 2 ? 0.5 : quality() === 'high' ? 1 : 0.7);
+const uAsp = uniform(1);
+// The grade: haze lift, vignette, fixed grain.
+pipeline.outputNode = Fn(() => {
+  const c = withSmoke.rgb.add(bloomPass.rgb).add(vec3(...POST.tint)).toVar();
+  const q = screenUV.sub(0.5).mul(vec2(uAsp, 1));
+  c.mulAssign(smoothstep(POST.vigIn, 1.1, q.length()).mul(POST.vig).oneMinus());
+  const lum = c.dot(vec3(0.2126, 0.7152, 0.0722));
+  // An integer hash per pixel; float hashes draw faint stripes here.
+  const n = hash(screenCoordinate.x.toUint().add(screenCoordinate.y.toUint().mul(8192))).sub(0.5);
+  c.mulAssign(n.mul(POST.grain * 2).mul(smoothstep(0.0, 0.3, lum).mul(0.4).add(0.6)).add(1));
+  return vec4(max(c, 0), 1);
+})();
 
 /* ---------- layout ---------- */
-// Wide stages hold the wheel at the left third; tall ones at the top centre.
+// The wheel stands low on the left; the spray runs right, away from the camera.
 let size = { w: 1, h: 1, dpr: 1 }, rPx = 100, narrow = false;
 const centre = new THREE.Vector2();
-function frameShot() {
-  const asp = size.w / size.h;
-  camera.aspect = asp;
-  narrow = asp < 0.9;
-  // Tall stages turn the wheel toward the camera, so the spray stays in frame.
-  setYaw(narrow ? -1.3 : -0.75);
-  if (!narrow) {
-    camera.fov = 30;
-    camera.position.set(2.6, 0.9, 13);
-    camera.lookAt(2.6, -1.1, 0);
-  } else {
-    camera.fov = 34;
-    camera.position.set(0.8, 1.2, 18.5);
-    camera.lookAt(0.8, -2.9, 0);
-  }
-  camera.updateProjectionMatrix();
+// The camera looks straight down -z from (x, cy, cz) at height ly.
+// It slides sideways until the hub sits at the screen fraction fx.
+function aim(fov, cy, cz, ly, fx) {
+  camera.fov = fov;
+  const depth = (cy * (cy - ly) + cz * cz) / Math.hypot(cy - ly, cz);
+  const x = (1 - 2 * fx) * camera.aspect * Math.tan(fov * Math.PI / 360) * depth;
+  camera.position.set(x, cy, cz);
+  camX = x;
+  lookY = ly;
+}
+// The camera swings a little to the side with the pointer: a parallax wobble.
+// It still looks at the same point, so the wheel turns a little in view.
+const SWAY = 1.2;
+let sway = 0, swayTo = 0, camX = 0, lookY = 0;
+function swayCamera() {
+  camera.position.x = camX + SWAY * sway;
+  camera.lookAt(camX, lookY, 0);
   camera.updateMatrixWorld();
   // The wheel's screen centre and radius map a drag to spin.
   const c = new THREE.Vector3(0, 0, 0).project(camera), e = new THREE.Vector3(0, R, 0).project(camera);
   centre.set((c.x * 0.5 + 0.5) * size.w, (0.5 - c.y * 0.5) * size.h);
   rPx = Math.max(20, Math.abs(e.y - c.y) * 0.5 * size.h);
 }
+function frameShot() {
+  const asp = size.w / size.h;
+  camera.aspect = asp;
+  narrow = asp < 0.9;
+  // Tall stages turn the spray further from the camera, so it stays in frame.
+  setYaw(narrow ? 1.15 : 0.6);
+  aimVolume(narrow ? 1.15 : 0.6);
+  // The camera sits low, near the floor: the wheel stands tall and the jet runs across.
+  // The hub sits far enough in for the body's back sweep.
+  if (!narrow) aim(30, -0.4, 11.8, 0.05, 0.31);
+  else aim(34, 0.9, 16.3, 0.75, 0.43);
+  camera.updateProjectionMatrix();
+  swayCamera();
+}
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom.
+  // Rung 1 of the ladder drops the pixel ratio; rung 2 shrinks the bloom and the smoke pass.
   size = { w, h, dpr: pixelRatio(w, h, { maxDpr: 2, budget: 2e6, low: rung >= 1 }) };
   frameShot();
   renderer.setPixelRatio(size.dpr);
   renderer.setSize(w, h, false);
-  composer.setSize(w, h);
-  grade.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
-  emberMat.uniforms.uDpr.value = size.dpr * h / 800;
-  for (const m of [sparks.material, sparksGhost.material]) {
-    m.uniforms.uRes.value.set(w * size.dpr, h * size.dpr);
-    m.uniforms.uDpr.value = size.dpr * (narrow ? 0.75 : Math.max(0.7, h / 800));
-  }
+  bloomPass.setResolutionScale(bloomScale());
+  // The ladder trims the smoke: fewer steps, then a smaller pass, then no shadow and a small grid.
+  uSteps.value = rung >= 3 ? 16 : rung >= 2 ? 20 : quality() === 'high' && rung === 0 ? 40 : 28;
+  uShadow.value = rung >= 3 ? 0 : 1;
+  volPass.setResolutionScale(rung >= 2 ? 0.35 : 0.5);
+  fitGrid();
+  uRes.value.set(w * size.dpr, h * size.dpr);
+  uAsp.value = w / h;
+  uEmberDpr.value = size.dpr * h / 800;
+  uDpr.value = size.dpr * (narrow ? 0.75 : Math.max(0.7, h / 800));
 }
 
 /* ---------- render ---------- */
 let time = 0;
 function draw() {
-  for (const w of [real, ghost]) w.mesh.rotation.y = wheel.angle;
-  emberMat.uniforms.uTime.value = time;
-  smokeMat.uniforms.uTime.value = time;
-  smokeMat.uniforms.uAmt.value = smokeOn && !reduced() ? smokeAmt : 0;
-  for (const m of [sparks.material, sparksGhost.material]) {
-    m.uniforms.uTime.value = time;
-    m.uniforms.uTrail.value = 0.25 + 1.75 * trails;
-  }
-  sparksGhost.material.uniforms.uMirror.value = 1;
-  sparksGhost.visible = mirror.visible;
+  // Without the frame loop, a still draw needs a manual frame tick.
+  if (!running) frameLoop.nodes.nodeFrame.update();
+  for (const w of [real, ghost]) w.spin.rotation.z = wheel.angle;
+  uTime.value = time;
+  uTrail.value = 0.25 + 1.75 * trails;
+  // The smoke takes the type's colour and flame; both glide.
+  const tone = tones[pick];
+  uTint.value.lerp(tone.fog, 0.08);
+  uRamp.forEach((u, i) => u.value.lerp(tone.ramp[i], 0.08));
+  uFlame.value += (TYPES[pick].flame - uFlame.value) * 0.08;
+  uLift.value += (TYPES[pick].lift - uLift.value) * 0.08;
+  // The rim's glow runs through the type's three colours as the heat rises.
+  // Confetti's glow turns through the hues once in 1.5 s.
+  if (tone.glow === 'cycle') glowTo.copy(col(0.75, 0.16, (time / 1.5 * 360) % 360));
+  else glowTo.copy(tone.glow[0]).lerp(tone.glow[1], clamp(hot * 2)).lerp(tone.glow[2], clamp(hot * 2 - 1));
+  glowNow.lerp(glowTo, tone.glow === 'cycle' ? 0.5 : 0.12);
+  rimMat.emissive.copy(glowNow);
+  rimMat.emissiveIntensity = 2.2 * hot * hot;
+  tubeMat.emissive.copy(glowNow);
+  tubeMat.emissiveIntensity = 1.3 * hot * hot;
+  // The spark light takes the type's colour; the smoke is lit by the same.
+  contact.color.lerp(tone.light === 'cycle' ? glowTo : tone.light, 0.12);
+  uContactCol.value.copy(contact.color);
+  uJetCol.value.copy(contact.color);
+  uJet.value = drive();
+  sparksGhost.visible = ghostEmbers.visible = mirror.visible;
   commitSparks();
   // The contact light follows the spark rate, so the knurl flashes warm.
-  contact.intensity = reduced() ? 1.5 * clamp(rate / 300) : 6 * clamp(rate / 250);
-  composer.render();
+  contact.intensity = reduced() ? 1.5 * drive() : (6 + 3 * hot) * drive() + 12 * flash;
+  uContactI.value = contact.intensity;
+  pipeline.render();
 }
 
 /* ---------- frame loop ---------- */
-// Lively while the wheel turns, embers glow or smoke rises.
-let raf = 0, last = 0, visible = !document.hidden, dragging = false;
+// Lively while the wheel turns, embers glow or smoke hangs.
+// The renderer's own frame loop runs only while the page is lively.
+const frameLoop = renderer._animation;
+frameLoop.stop();
+let running = false, last = 0, visible = !document.hidden, dragging = false, odd = false;
 const live = () => wake();
 function wake() {
-  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  if (running || !visible || !ready) return;
+  running = true;
+  last = performance.now();
+  renderer.setAnimationLoop(frame);
+  if (frameLoop._requestId === null) frameLoop.start();
 }
-const lively = () => dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || (smokeOn && smokeAmt > 0.01);
-function frame(now) {
-  raf = 0;
+function halt() {
+  running = false;
+  renderer.setAnimationLoop(null);
+  frameLoop.stop();
+}
+const lively = () => sway !== swayTo || dragging || grinding || wheel.omega > 0.02 || time < lastDeath || time < emberEnd || time < smokeUntil || corn.length > 0 || hot > 0.04 || flash > 0;
+function frame() {
+  // The loop makes its first call at once, with no time stamp.
+  const now = performance.now();
+  // Drift: only embers and smoke still move. Every other frame is enough for them.
+  const drift = !dragging && !grinding && wheel.omega <= 0.02 && time >= lastDeath && sway === swayTo;
+  if (drift && (odd = !odd)) return;
   let again = true;
   try {
     const raw = (now - last) / 1000;
-    if (raw < 0.1) watchdog(raw);
+    // Drift frames come at half rate on purpose; the ladder ignores them.
+    if (raw < 0.1 && !drift) watchdog(raw);
     const dt = Math.min(0.05, raw);
     last = now;
     time += dt;
@@ -809,20 +1666,26 @@ function frame(now) {
     // The spark rate eases over 60 ms, so the light flashes, not flickers.
     const n = emit(dt);
     rate += (n / Math.max(dt, 1e-3) - rate) * (1 - Math.exp(-dt / 0.06));
+    heatStep(dt);
     audioStep();
-    // Smoke fades over 3 s; a fast wheel feeds it.
-    smokeAmt = clamp(smokeAmt * Math.exp(-dt / 3) + dt * clamp(wheel.omega / 20) * 1.5);
+    smokeStep(dt);
+    // The wobble eases to its target; a drag holds it still.
+    if (!dragging && sway !== swayTo) {
+      sway += (swayTo - sway) * (1 - Math.exp(-dt / 0.22));
+      if (Math.abs(swayTo - sway) < 0.002) sway = swayTo;
+      swayCamera();
+    }
     draw();
     again = lively();
   } finally {
-    if (again && visible) raf = requestAnimationFrame(frame);
-    else kit.rest(() => !raf && !grinding);
+    if (!(again && visible)) { halt(); kit.rest(() => !running && !grinding); }
   }
 }
 
 /* ---------- performance ladder ---------- */
 // After 4 s of frames, an average above 1/38 s for 2 s steps down one rung.
-// Rungs: pixel ratio down, then a half-size bloom, then half the sparks.
+// Rungs: pixel ratio down; then a half-size bloom and a thinner smoke pass;
+// then half the sparks, a small smoke grid and no smoke shadow.
 let runFor = 0, slowFor = 0, avgDt = 1 / 60;
 function watchdog(raw) {
   runFor += raw;
@@ -846,12 +1709,23 @@ const tmpV = new THREE.Vector3();
 const panAt = p => clamp(tmpV.copy(p).project(camera).x * 0.85, -1, 1);
 // Spark events wait here until the sim clock reaches them.
 const queue = [];
-const nextAt = { tick: 0, pop: 0, hiss: 0, pawl: 0 };
-const GAP = { tick: 1 / 26, pop: 1 / 40, hiss: 1 / 30, pawl: 1 / 22 };
+const nextAt = { tick: 0, pop: 0, hiss: 0, pawl: 0, thump: 0 };
+const GAP = { tick: 1 / 26, pop: 1 / 40, hiss: 1 / 30, pawl: 1 / 22, thump: 1 / 2 };
 let rasp = null;
 function cue(t, kind, p, level) {
   if (!kit.live() || queue.length > 600) return;
   queue.push({ t, kind, x: p.x, y: p.y, z: p.z, level });
+}
+// Every sound passes one gain; Tom asked for much quieter effects.
+const LEVEL = 0.3;
+let quiet = null;
+function mixOut(ac) {
+  if (!quiet || quiet.context !== ac) {
+    quiet = ac.createGain();
+    quiet.gain.value = LEVEL;
+    quiet.connect(kit.out);
+  }
+  return quiet;
 }
 // A short noise burst through a filter, with a fast attack and an exponential fall.
 function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
@@ -867,7 +1741,7 @@ function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
   g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
   const pn = ac.createStereoPanner();
   pn.pan.value = pan;
-  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.connect(flt).connect(g).connect(pn).connect(mixOut(ac));
   src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
 }
 // A short decaying sine: the body of a knock or a click.
@@ -879,7 +1753,7 @@ function blip(ac, at, { f, dur, level, pan = 0 }) {
   g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
   const pn = ac.createStereoPanner();
   pn.pan.value = pan;
-  o.connect(g).connect(pn).connect(kit.out);
+  o.connect(g).connect(pn).connect(mixOut(ac));
   o.start(at);
   o.stop(at + dur + 0.02);
 }
@@ -903,7 +1777,7 @@ function raspChain(ac) {
   const out = ac.createGain();
   out.gain.value = 0;
   const pn = ac.createStereoPanner();
-  src.connect(flt).connect(am).connect(out).connect(pn).connect(kit.out);
+  src.connect(flt).connect(am).connect(out).connect(pn).connect(mixOut(ac));
   src.start();
   lfo.start();
   return { out, lfo, pn };
@@ -923,6 +1797,10 @@ function play(ac, at, e) {
   } else if (e.kind === 'pawl') {
     burst(ac, at, { f: 2200, q: 3, dur: 0.012, level: 0.18, pan });
     blip(ac, at, { f: 900, dur: 0.02, level: 0.06, pan });
+  } else if (e.kind === 'thump') {
+    // The flare: a low thump under a short rush of noise.
+    blip(ac, at, { f: 70, dur: 0.35, level: 0.5, pan });
+    burst(ac, at, { f: 900, q: 0.8, dur: 0.5, level: 0.22, pan });
   }
 }
 // Each frame steers the rasp and plays the events now due.
@@ -964,7 +1842,8 @@ function spinFrom(dx, dy, dt) {
   // The thumb drives the wheel up to its own rim speed, never brakes it.
   if (fwd > 0) {
     const was = wheel.omega;
-    wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / rPx));
+    // The wheel is large on screen; the gain keeps a short flick lively.
+    wheel.omega = Math.min(MAXW, Math.max(wheel.omega, fwd / (rPx * 0.8)));
     if (was < 3 && wheel.omega >= 4) scrape();
     return;
   }
@@ -1009,6 +1888,8 @@ function up(e) {
 function strike() {
   if (wheel.omega < 3) scrape();
   wheel.omega = Math.max(wheel.omega, (Math.PI / 2) / FRICTION);
+  hot = clamp(hot + HEAT.strike);
+  owed = true;
   live();
 }
 act.reset = () => {
@@ -1021,7 +1902,12 @@ act.reset = () => {
   head = 0; dirtyFrom = -1; dirtyN = 0; lastDeath = 0;
   for (const at of [aA, aC]) at.needsUpdate = true;
   seedEmbers(time);
-  smokeAmt = 0.7;
+  hot = 0;
+  flash = 0;
+  owed = false;
+  corn.length = 0;
+  clearSmoke();
+  kick = KICK;
   live();
 };
 
@@ -1030,7 +1916,8 @@ act.reset = () => {
 let ready = false;
 resize();
 seedEmbers(0);
-renderer.compileAsync(scene, camera).then(() => {
+Promise.all([renderer.compileAsync(scene, camera), sim.compile()]).then(() => {
+  kick = KICK;
   draw();
   canvas.classList.add('on');
   ready = true;
@@ -1053,6 +1940,14 @@ canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
+// The pointer's place across the stage sets the wobble; touch has no hover.
+canvas.addEventListener('pointermove', e => {
+  if (reduced() || e.pointerType === 'touch') return;
+  const r = canvas.getBoundingClientRect();
+  swayTo = Math.max(-1, Math.min(1, ((e.clientX - r.left) / r.width) * 2 - 1));
+  live();
+});
+canvas.addEventListener('pointerleave', () => { swayTo = 0; live(); });
 canvas.addEventListener('lostpointercapture', up);
 
 new ResizeObserver(() => { resize(); if (ready) draw(); }).observe(stage);
@@ -1061,7 +1956,7 @@ onReducedChange(() => { if (ready) draw(); wake(); });
 // A hidden tab stops the loop and the sim clock with it.
 whenVisible(stage, v => {
   visible = v;
-  if (!v) { cancelAnimationFrame(raf); raf = 0; queue.length = 0; kit.rest(() => true); return; }
+  if (!v) { halt(); queue.length = 0; kit.rest(() => true); return; }
   wake();
 });
 </script>

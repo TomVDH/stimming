@@ -13,7 +13,7 @@
 | | |
 |---|---|
 | Size, estimate | S · $10 to $15 |
-| Kits | none; shares a host scaffold with Collatz coral |
+| Kits | none |
 | Before the build | nothing. D6 (digits) defaults off. |
 
 ## The shot
@@ -156,4 +156,4 @@ The CPU finds the primes the beam crosses from a per-frame list of visible prime
 
 ## Kit handoff
 
-None. If Collatz coral is built first, copy its host scaffold (orthographic camera, pan and zoom, bloom).
+None.

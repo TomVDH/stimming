@@ -9,7 +9,97 @@ import { COL } from './lot.js';
 import { lin, lift, lerp, paint, PAINT, glowMat, beamGeo } from './kit.js';
 
 
+/* ---------- signs: real names, painted into one texture ---------- */
+// Ink and board colours for each kind of trade.
+const SIGN = {
+  'Food & Beverage': ['#ffd27a', '#3a1f1a'], 'Convenience Goods': ['#c9f2a8', '#16301f'],
+  'Comparison Goods': ['#ffb3d6', '#2c1830'], 'Service Commercial': ['#a8ecf0', '#122a33'],
+  'Automotive Goods & Services': ['#ffe9a8', '#2b2b2b'], Vacant: ['#e8e2d6', '#3a3a3a'], plate: ['#efe3c4', '#1d3a2c'],
+};
+const FONT = '"Gabarito", system-ui, sans-serif';
+// All signs of a module as one mesh: one canvas, one draw call.
+function signMesh(signs) {
+  const ROW = 96, W = 2048, cells = [];
+  let x = 0, y = 0;
+  for (const q of signs) {
+    const w = Math.min(W, Math.max(ROW * 2, Math.round(ROW * q.s[0] / q.s[1])));
+    if (x + w > W) { x = 0; y += ROW; }
+    cells.push({ q, x, y, w }); x += w;
+  }
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = Math.max(ROW, 2 ** Math.ceil(Math.log2(y + ROW)));
+  const g = cv.getContext('2d');
+  for (const { q, x: cx, y: cy, w } of cells) {
+    const [ink, board] = SIGN[q.text === 'FOR LEASE' ? 'Vacant' : q.style] || SIGN['Service Commercial'];
+    g.fillStyle = board; g.fillRect(cx, cy, w, ROW);
+    g.strokeStyle = ink; g.globalAlpha = 0.5; g.lineWidth = 3; g.strokeRect(cx + 5, cy + 5, w - 10, ROW - 10); g.globalAlpha = 1;
+    // The name shrinks until it fits the board.
+    let size = ROW * 0.56;
+    g.font = `700 ${size}px ${FONT}`;
+    while (g.measureText(q.text).width > w - 28 && size > 14) { size -= 2; g.font = `700 ${size}px ${FONT}`; }
+    g.fillStyle = ink; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = ink; g.shadowBlur = q.kind === 'plate' ? 0 : 10;
+    g.fillText(q.text, cx + w / 2, cy + ROW / 2 + 2);
+    g.shadowBlur = 0;
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const geos = cells.map(({ q, x: cx, y: cy, w }) => {
+    const geo = new THREE.PlaneGeometry(q.s[0], q.s[1]), uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (cx + uv.getX(i) * w) / cv.width, 1 - (cy + (1 - uv.getY(i)) * ROW) / cv.height);
+    // The plane faces along nrm: [x, z] in the module's frame.
+    geo.rotateY(Math.atan2(q.nrm[0], q.nrm[1]));
+    return geo.translate(...q.p);
+  });
+  // The signs glow a little: the alpha is the lens's glow mask.
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.8, blending: THREE.NoBlending });
+  return new THREE.Mesh(mergeGeometries(geos), mat);
+}
+// Signs wait for the page font, so the names draw in Gabarito.
+export const signsReady = document.fonts ? document.fonts.load(`700 40px ${FONT}`).catch(() => {}) : Promise.resolve();
+
 /* ---------- geometry from parts ---------- */
+// A measured roof: a height grid of [x, z, h] cells.
+// The top is a smooth surface through the cell corners; the walls drop
+// from each open edge to the ground. Both come back painted.
+function roofGrid(q) {
+  const s = q.cell, H = new Map(), key = (a, b) => a * 100003 + b;
+  for (const [x, z, h] of q.cells) H.set(key(Math.round(x / s), Math.round(z / s)), h);
+  // A corner's height is the mean of the cells round it.
+  const corner = (a, b) => {
+    let t = 0, n = 0;
+    for (const [da, db] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) { const h = H.get(key(a + da, b + db)); if (h !== undefined) { t += h; n++; } }
+    return q.y + t / n;
+  };
+  // The walls drop to base, where the outline's own walls stop.
+  const top = [], wall = [], y0 = q.y + (q.base ?? 0);
+  const P = (a, b, y) => [(a - 0.5) * s, y, (b - 0.5) * s];
+  const tri = (out, p, r, t) => out.push(...p, ...r, ...t);
+  for (const k of H.keys()) {
+    const i = Math.round(k / 100003), j = k - i * 100003;
+    const c00 = P(i, j, corner(i, j)), c10 = P(i + 1, j, corner(i + 1, j)), c01 = P(i, j + 1, corner(i, j + 1)), c11 = P(i + 1, j + 1, corner(i + 1, j + 1));
+    tri(top, c00, c01, c10); tri(top, c10, c01, c11);
+    // Each open side gets a wall, wound to face outward.
+    const quad = (a, b, flip) => {
+      const A = [a[0], y0, a[2]], B = [b[0], y0, b[2]];
+      if (flip) { tri(wall, A, b, B); tri(wall, A, a, b); } else { tri(wall, A, B, b); tri(wall, A, b, a); }
+    };
+    if (!H.has(key(i - 1, j))) quad(c00, c01, false);
+    if (!H.has(key(i + 1, j))) quad(c10, c11, true);
+    if (!H.has(key(i, j - 1))) quad(c00, c10, true);
+    if (!H.has(key(i, j + 1))) quad(c01, c11, false);
+  }
+  // Merged parts must share attributes, so the grid carries an empty uv.
+  const geo = arr => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(arr.length / 3 * 2), 2));
+    g.computeVertexNormals();
+    return g;
+  };
+  return [paint(geo(top), COL[q.top]), paint(geo(wall), COL[q.c])];
+}
+
 const roofEave = q => { const hw = q.s[0] / 2 + q.over, slope = q.s[1] / (q.s[0] / 2); return { hw, slope, y: q.p[1] + q.s[1] - slope * hw }; };
 function geomsOf(q) {
   const out = [];
@@ -24,6 +114,7 @@ function geomsOf(q) {
     const g = new THREE.TorusGeometry(q.r, q.tube, 6, 20);
     add(q.ax === 'z' ? g : g.rotateX(Math.PI / 2), ...q.p);
   } else if (q.t === 'slab') add(new THREE.BoxGeometry(...q.s).rotateX(q.rx), ...q.p);
+  else if (q.t === 'roofgrid') return roofGrid(q);
   else if (q.t === 'poly') {
     // A ground outline [x, z], pushed up to a height.
     const sh = new THREE.Shape(q.ring.map(([x, z]) => new THREE.Vector2(x, -z)));
@@ -68,28 +159,55 @@ function geomsOf(q) {
 // A switch that is off shows its colour through this dark tint.
 const OFF = new THREE.Color(0.11, 0.16, 0.5);
 
-// zones: plain data files, front to back. life: adds the creatures, or null.
-export function buildTown(skyTexture, zones, life = null) {
-  const all = key => zones.flatMap(z => z[key] || []);
-  const PARTS = all('PARTS'), WIRES = all('WIRES'), POKES = all('POKES'), LAMPS = all('LAMPS');
-  const MOVES = Object.assign({}, ...zones.map(z => z.MOVES)), ACTS = Object.assign({}, ...zones.map(z => z.ACTS));
+// The plinth under a module: three strata, sized by SIZE.
+function plinthGeos(mod) {
+  const [w, d] = mod.SIZE, [x, , z] = mod.ORIGIN;
+  return [
+    paint(new THREE.BoxGeometry(w, 0.35, d).translate(x, -0.225, z), COL.soil),
+    paint(new THREE.BoxGeometry(w - 0.1, 0.6, d - 0.1).translate(x, -0.7, z), COL.earth),
+    paint(new THREE.BoxGeometry(w, 0.35, d).translate(x, -1.175, z), COL.rock),
+  ];
+}
+
+// The stage holds what every module shares: the sky, the sun, the sky light.
+export function buildStage(skyTexture) {
   const scene = new THREE.Scene();
   scene.background = skyTexture;
   const hemi = new THREE.HemisphereLight(lin([0.74, 0.08, 285]), lin([0.62, 0.07, 60]), 2.5);
   const sun = new THREE.DirectionalLight(lin([0.93, 0.09, 62]), 3.3);
-  // The sun keeps one direction. Each diorama says how wide its shadow is.
-  const S = zones.find(z => z.SUN)?.SUN || { target: [0, 2, -10], half: [24, 20] }, reach = Math.max(...S.half) * 1.2;
-  sun.target.position.set(...S.target);
-  sun.position.copy(sun.target.position).add(new THREE.Vector3(-15, 9, 22).normalize().multiplyScalar(reach));
-  // The shadow covers the whole plinth, so High doubles the map.
+  // High doubles the shadow map, as before the split.
   const size = quality() === 'high' ? 4096 : 2048;
   sun.castShadow = true; sun.shadow.mapSize.set(size, size);
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
-  Object.assign(sun.shadow.camera, { left: -S.half[0], right: S.half[0], top: S.half[1], bottom: -S.half[1], near: 1, far: reach * 2.6 });
   scene.add(hemi, sun, sun.target);
+  const dir = new THREE.Vector3(-15, 9, 22).normalize();
+  // The sun keeps one direction. Its shadow box covers the area in view.
+  function fitSun(centre, half) {
+    const reach = Math.max(...half) * 1.2;
+    sun.target.position.copy(centre);
+    sun.position.copy(centre).addScaledVector(dir, reach);
+    Object.assign(sun.shadow.camera, { left: -half[0], right: half[0], top: half[1], bottom: -half[1], near: 1, far: reach * 2.6 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.target.updateMatrixWorld();
+  }
+  return { scene, sun, fitSun };
+}
+
+// One module as a group. Its parts keep their authored numbers inside it.
+// placed comes from layWalk: the group's offset and yaw in the world.
+// life is (group, crown, pokes) => { noInk, update }, or null.
+export function buildModule(mod, placed = { offset: [0, 0, 0], yaw: 0 }, life = null) {
+  const PARTS = mod.PARTS, WIRES = mod.WIRES || [], POKES = mod.POKES || [], LAMPS = mod.LAMPS || [];
+  const MOVES = mod.MOVES || {}, ACTS = mod.ACTS || {};
+  // group holds the lamps; body holds everything else, so Solo hides
+  // the module's meshes and never takes a light out of the scene.
+  const group = new THREE.Group(), body = new THREE.Group();
+  group.position.set(...placed.offset); group.rotation.y = placed.yaw || 0;
+  group.add(body);
+  group.updateMatrixWorld();
 
   // Sort the parts: static paint, ground, crown, flowers, glow, switches, movers.
-  const bins = { paint: [], ground: [], crown: [], flower: [], glow: [] }, sw = {}, mv = {};
+  const bins = { paint: [], ground: mod.SIZE ? plinthGeos(mod) : [], crown: [], flower: [], glow: [] }, sw = {}, mv = {};
   for (const q of PARTS) {
     const geos = geomsOf(q);
     if (q.dyn) {
@@ -114,10 +232,12 @@ export function buildTown(skyTexture, zones, life = null) {
     bins.paint.push(paint(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.024, 5), COL.wire));
   }
   // An empty bin makes no mesh.
+  const casters = [];
   const mesh = (geos, mat, cast, receive = true) => {
     if (!geos.length) return null;
     const m = new THREE.Mesh(mergeGeometries(geos), mat);
     m.castShadow = cast; m.receiveShadow = receive;
+    if (cast) casters.push(m);
     return m;
   };
   const glow = glowMat();
@@ -125,24 +245,26 @@ export function buildTown(skyTexture, zones, life = null) {
   // The crown turns about its pivot: the foot of the trunk.
   const crown = mesh(bins.crown, PAINT, true), pivot = PARTS.find(q => q.k === 'crown')?.pivot;
   if (crown && pivot) { crown.geometry.translate(-pivot[0], -pivot[1], -pivot[2]); crown.position.set(...pivot); }
-  for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) scene.add(m);
+  for (const m of [mesh(bins.paint, PAINT, true), mesh(bins.ground, PAINT, false), mesh(bins.glow, glow, false, false), crown, flowers]) if (m) body.add(m);
+  const signs = PARTS.filter(q => q.t === 'sign');
+  if (signs.length) body.add(signMesh(signs));
   for (const s of Object.values(sw)) s.mat = glowMat(s.gain);
-  for (const id in sw) if (sw[id].geos.length) scene.add(mesh(sw[id].geos, sw[id].mat, false, false));
+  for (const id in sw) if (sw[id].geos.length) body.add(mesh(sw[id].geos, sw[id].mat, false, false));
   for (const id in mv) {
     const m = mv[id], g = m.group = new THREE.Group();
     g.position.set(...m.hinge); m.k = 0; m.open = false;
     if (m.paint.length) g.add(mesh(m.paint, PAINT, true));
     if (m.glow.length) g.add(mesh(m.glow, glow, false, false));
     for (const s in m.sw) g.add(mesh(m.sw[s], sw[s].mat, false, false));
-    scene.add(g);
+    body.add(g);
   }
 
   // Lamps that light the scene: each follows a switch or a mover.
   const lamps = LAMPS.map(l => {
     const light = l.to ? new THREE.SpotLight(lin(l.col), 0, l.range, 1.05, 0.8, 2) : new THREE.PointLight(lin(l.col), 0, l.range, 2);
     light.position.set(...l.at);
-    if (l.to) { light.target.position.set(...l.to); scene.add(light.target); }
-    scene.add(light);
+    if (l.to) { light.target.position.set(...l.to); group.add(light.target); }
+    group.add(light);
     const [kind, id] = l.of.split(':'), src = kind === 'sw' ? sw[id] : mv[id];
     return { light, power: l.power, src };
   });
@@ -176,18 +298,37 @@ export function buildTown(skyTexture, zones, life = null) {
   };
   // A poke runs its steps from ACTS. With none, it flips its own switch.
   const step = ([kind, id, ...rest]) => (kind === 'flip' ? flip(id, rest[0]) : kind === 'swing' ? swing(id, ...rest) : kind === 'run' ? run(id, ...rest) : pulse(id, ...rest));
+  // A poke holds its point in the module's frame and reports it in the world.
+  const world = new THREE.Vector3();
+  const pokeOf = (id, local, r, fire) => ({ id, r, fire, get pos() { return world.copy(local).applyMatrix4(group.matrixWorld); } });
   const pokes = POKES.filter(q => ACTS[q.id] || sw[q.id]).map(q => {
     const steps = (ACTS[q.id] || [['flip', q.id]]).map(step);
-    return { id: q.id, pos: new THREE.Vector3(...q.at), r: q.r, fire: () => { for (const f of steps) f(); } };
+    return pokeOf(q.id, new THREE.Vector3(...q.at), q.r, () => { for (const f of steps) f(); });
   });
-  const alive = life ? life(scene, crown, pokes) : { noInk: [], update() {} };
+  // Life registers pokes on a list of its own; each takes the world getter.
+  const lifePokes = [];
+  const alive = life ? life(body, crown, lifePokes) : { noInk: [], update() {} };
+  for (const q of lifePokes) pokes.push(pokeOf(q.id, q.pos, q.r, q.fire));
 
   const on = new THREE.Color();
-  return {
-    scene, pokes,
+  let active = true, shown = true;
+  const self = {
+    id: mod.ID, group, pokes,
     // The lens leaves these out of the ink line.
     noInk: [flowers, ...alive.noInk].filter(Boolean),
+    get active() { return active; },
+    get shown() { return shown; },
+    // Solo hides a module's meshes but keeps its lamps in the scene:
+    // a change in the light count would recompile every material.
+    setShown(v) { shown = v; body.visible = v; },
+    // A far module stands still: no updates, no shadows, lamps dark.
+    setActive(v) {
+      active = v;
+      for (const m of casters) m.castShadow = v;
+      if (!v) for (const l of lamps) l.light.intensity = 0;
+    },
     update(t, dt) {
+      if (!active) return;
       for (const s of Object.values(sw)) {
         s.mat.color.lerpColors(OFF, on.setScalar(s.gain), s.k);
         // The glow mask follows the switch: off is no glow.
@@ -198,4 +339,23 @@ export function buildTown(skyTexture, zones, life = null) {
       alive.update(t, dt);
     },
   };
+  // One pass puts every mover and switch in its first state,
+  // so a module built out of view never shows its authored pose.
+  self.update(0, 0);
+  return self;
+}
+
+// One whole diorama on its own stage: the Corner uses this.
+export function buildTown(skyTexture, zones, life = null) {
+  const stage = buildStage(skyTexture);
+  const all = key => zones.flatMap(z => z[key] || []);
+  const mod = {
+    PARTS: all('PARTS'), WIRES: all('WIRES'), POKES: all('POKES'), LAMPS: all('LAMPS'),
+    MOVES: Object.assign({}, ...zones.map(z => z.MOVES)), ACTS: Object.assign({}, ...zones.map(z => z.ACTS)),
+  };
+  const S = zones.find(z => z.SUN)?.SUN || { target: [0, 2, -10], half: [24, 20] };
+  stage.fitSun(new THREE.Vector3(...S.target), S.half);
+  const m = buildModule(mod, undefined, life);
+  stage.scene.add(m.group);
+  return { scene: stage.scene, pokes: m.pokes, noInk: m.noInk, update: m.update };
 }

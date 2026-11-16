@@ -1,4 +1,6 @@
-// East Van: the Drive. A disc of city, cut round the corner of Commercial Drive and East 4th Avenue.
+// East Van: the Drive, from city data, cut to a shape.
+// The Corner is a disc round Commercial Drive and East 4th Avenue.
+// The walk's Drive module is a square slice at the lane's mouth.
 // Lots, building outlines and heights, shop units, trees and poles come from city data:
 // data/drive.json, baked by bake/drive.py from the City of Vancouver Open Data Portal.
 // Shop names are not used. Each shop shows a neon icon for its kind of trade.
@@ -12,17 +14,19 @@ export const R = 58;
 const KERB_W = -8.4, KERB_E = 8.9, LOT_W = -11.9, LOT_E = 12.4, MID = 0.25;
 const WEST_LEG = [-20.9, -1.4], EAST_LEG = [5.2, 17.3];
 const lerp = (a, b, t) => a + (b - a) * t;
+// The corner store's cut corner, in metres, at the north-west corner.
+const CH = 1.6, NW = [LOT_W, WEST_LEG[1]];
 const on = (dyn, hinge, parts) => parts.map(q => ({ ...q, dyn, hinge }));
 const slab = (p, s, rx, c) => ({ t: 'slab', p, s, rx, c, L: A });
 const poly = (ring, y, h, c, o = {}) => ({ t: 'poly', ring: ring.map(([e, n]) => [n, e]), y, h, c, L: A, ...o });
 const area = r => Math.abs(r.reduce((s, p, i) => s + p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1], 0)) / 2;
 
-// The disc as a 64-sided ring. A shape is cut to it one side at a time.
-const DISC = Array.from({ length: 64 }, (_, i) => [Math.cos(i / 64 * 2 * Math.PI) * R, Math.sin(i / 64 * 2 * Math.PI) * R]);
-function cut(ring) {
+// Cuts a ring to a convex shape, one side at a time.
+// The shape's corners run anticlockwise, as [e, n] pairs.
+function clipTo(ring, shape) {
   let out = ring;
-  for (let i = 0; i < DISC.length && out.length; i++) {
-    const a = DISC[i], b = DISC[(i + 1) % DISC.length], side = p => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]), next = [];
+  for (let i = 0; i < shape.length && out.length; i++) {
+    const a = shape[i], b = shape[(i + 1) % shape.length], side = p => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]), next = [];
     for (let j = 0; j < out.length; j++) {
       const p = out[j], q = out[(j + 1) % out.length], sp = side(p), sq = side(q);
       if (sp >= 0) next.push(p);
@@ -32,7 +36,6 @@ function cut(ring) {
   }
   return out;
 }
-const rect = (e0, n0, e1, n1) => cut([[e0, n0], [e1, n0], [e1, n1], [e0, n1]]);
 // Trims a ring at one north-south line. more keeps the east side of it.
 function trim(ring, limit, more) {
   const out = [], inside = p => (more ? p[0] >= limit : p[0] <= limit);
@@ -51,34 +54,66 @@ const TRADE = {
   'Comparison Goods': { stripes: ['binBlue', 'cream'], icon: (x, y, z) => [{ t: 'ring', p: [x, y, z], r: 0.42, tube: 0.07, c: 'bulbPink', L: A, ax: 'z' }, cyl([x, y, z], 0.14, 0.04, 'bulbPink', A, { ax: 'z' })] },
   'Service Commercial': { stripes: ['mustard', 'cream'], icon: (x, y, z) => [box([x - 0.45, y, z], [0.24, 0.8, 0.04], 'bulbPink', A), box([x, y, z], [0.24, 0.8, 0.04], 'white', A), box([x + 0.45, y, z], [0.24, 0.8, 0.04], 'bulbTeal', A)] },
 };
+// Hand notes on the corner's frontages, taken by eye from street-level
+// reference (2024). side 1 is the Drive's west side, -1 its east side;
+// n0 to n1 is the stretch of the Drive the note covers, in data metres.
+const NOTES = [
+  { side: 1, n0: -2, n1: 17, wall: 'stucco', era: 'postwar', band: 'greyBand', fascia: 'greyBand' },
+  { side: 1, n0: 17, n1: 28.2, wall: 'stucco', era: 'early' },
+  { side: 1, n0: 28.2, n1: 37, wall: 'stucco', era: 'early', bays: true, fascia: 'crow' },
+  { side: 1, n0: -60, n1: -20.5, wall: 'tan', trim: 'sage', era: 'modern' },
+  { side: -1, n0: -16, n1: 7, wall: 'cream', era: 'postwar', fascia: 'navy' },
+  { side: -1, n0: 16.5, n1: 33.4, wall: 'brickDark', trim: 'cream', era: 'early' },
+  { side: -1, n0: 33.4, n1: 41.6, wall: 'lilac', era: 'early' },
+  { side: -1, n0: 41.6, n1: 51, wall: 'cream', era: 'postwar', awning: 'awnYellow' },
+];
+const noteFor = (side, n) => NOTES.find(x => x.side === side && n >= x.n0 && n <= x.n1);
+// A frontage's era from its build year. With none, a low shop row reads early.
+const eraOf = y => (!y ? null : y < 1940 ? 'early' : y < 1980 ? 'postwar' : 'modern');
+const ERA_WALL = { early: ['brick', 'mustard', 'teal', 'tomatoDark', 'cream'], postwar: ['cream', 'blossom2', 'hydrangea', 'verge'], modern: ['garage', 'binBlue', 'found'] };
 const TREE = [[/CHERRY/, 'blossom'], [/MAPLE/, 'mapleRed'], [/LINDEN/, 'linden'], [/./, 'oak']];
 const WALL = ['brick', 'teal', 'mustard', 'hydrangea', 'cream', 'tomatoDark', 'garage'], HOUSE = ['teal', 'mustard', 'blossom2', 'hydrangea', 'cream', 'binBlue', 'tomato'];
 
 // One shop bay: glass, a door, a sign board with its icon, a striped awning.
 // zf is the wall. dir is 1 where the shop faces east, -1 where it faces west.
-function shop(i, x0, x1, zf, cat, dir) {
+// name: the shop's name on record, or null. era: early, postwar or modern.
+// note: the reference note for this frontage, or null.
+function shop(i, x0, x1, zf, cat, dir, name = null, era = 'early', note = null) {
   const w = x1 - x0, cx = (x0 + x1) / 2, t = TRADE[cat] || TRADE['Service Commercial'], sw = 'shop' + i, n = Math.max(1, Math.round(w / 4.2)), z = d => zf + dir * d;
   const lit = { k: 'pane', sw, on: true, gain: 1.15 }, out = [
     box([cx, 0.45, z(0.04)], [w - 0.3, 0.6, 0.1], 'found', A),
     box([cx, 1.95, z(0.03)], [w - 0.5, 2.3, 0.06], 'glass', A, lit),
     box([cx, 1.3, z(0.07)], [1, 2.3, 0.06], t.stripes[0], A), box([cx, 2.05, z(0.1)], [0.6, 0.6, 0.03], 'glass', A, lit),
-    box([cx, 3.62, z(0.08)], [w - 0.3, 1.1, 0.14], 'roof', A),
-    // The sign shares the shop's switch and burns brighter than the glass.
-    ...t.icon(cx, 3.62, z(0.17)).map(q => ({ ...q, sw, on: true, boost: 1.9 })),
+    box([cx, 3.62, z(0.08)], [w - 0.3, 1.1, 0.14], note?.fascia || 'roof', A),
+    // A named shop shows its name; an unnamed one shows its trade's icon.
+    ...(name
+      ? [{ t: 'sign', kind: 'shop', text: /^vacant$/i.test(name) ? 'FOR LEASE' : name, style: cat, p: [cx, 3.62, z(0.16)], s: [w - 0.5, 0.86], nrm: [0, dir], L: A }]
+      : t.icon(cx, 3.62, z(0.17)).map(q => ({ ...q, sw, on: true, boost: 1.9 }))),
   ];
   for (let j = 1; j < n; j++) out.push(box([x0 + w * j / n, 1.95, z(0.07)], [0.12, 2.3, 0.06], 'cream', A));
-  const strips = Math.max(1, Math.round((w - 0.4) / 0.6)), sw0 = (w - 0.4) / strips;
-  for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, t.stripes[j % 2]));
+  // Early shops wear striped awnings, post-war a flat canopy, modern a thin glass one.
+  if (era === 'early') {
+    const strips = Math.max(1, Math.round((w - 0.4) / 0.6)), sw0 = (w - 0.4) / strips;
+    const stripes = note?.awning ? [note.awning, 'cream'] : t.stripes;
+    for (let j = 0; j < strips; j++) out.push(slab([x0 + 0.2 + sw0 * (j + 0.5), 2.95, z(0.72)], [sw0, 0.06, 1.5], dir * 0.33, stripes[j % 2]));
+    out.push(box([x0 + 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A), box([x1 - 0.08, 1.95, z(0.12)], [0.16, 3.4, 0.24], 'cream', A));
+  } else if (era === 'postwar') out.push(box([cx, 3.08, z(0.8)], [w - 0.1, 0.16, 1.6], note?.awning || t.stripes[0], A));
+  else out.push(box([cx, 3.1, z(0.7)], [w - 0.1, 0.06, 1.4], 'glass', A), box([cx, 3.14, z(1.38)], [w - 0.1, 0.12, 0.05], 'chrome', A));
   return out;
 }
 
 // A street tree from its record: height, trunk size and kind.
-function tree(x, z, h, d, name) {
-  const c = TREE.find(([re]) => re.test(name || ''))[1], r = Math.max(0.9, h * 0.2), y = h * 0.66;
+// A measured canopy (from LiDAR) sets the height and the spread.
+function tree(x, z, h, d, name, canopy = null) {
+  if (canopy) h = canopy.h;
+  const c = TREE.find(([re]) => re.test(name || ''))[1], y = h * 0.66;
+  // A canopy's spread can take in its neighbour's, so it stays near the tree's own size.
+  const r = canopy ? Math.max(0.9, Math.min(canopy.r * 0.55, h * 0.32)) : Math.max(0.9, h * 0.2);
+  const k = canopy ? { k: 'canopy' } : {};
   return [
     cyl([x, 0.15 + h * 0.24, z], Math.max(0.1, (d || 20) / 200), h * 0.48, 'trunk', A),
-    blob([x, y, z], r, c, A), blob([x - r * 0.7, y - r * 0.35, z + r * 0.2], r * 0.72, c, A),
-    blob([x + r * 0.65, y - r * 0.3, z - r * 0.25], r * 0.75, c, A), blob([x + r * 0.1, y + r * 0.7, z], r * 0.65, c, A),
+    blob([x, y, z], r, c, A, k), blob([x - r * 0.7, y - r * 0.35, z + r * 0.2], r * 0.72, c, A, k),
+    blob([x + r * 0.65, y - r * 0.3, z - r * 0.25], r * 0.75, c, A, k), blob([x + r * 0.1, y + r * 0.7, z], r * 0.65, c, A, k),
   ];
 }
 // A parked car: two boxes and four wheels.
@@ -92,11 +127,110 @@ const pole = (x, z, side) => [
   box([x, 9.15, z + side * 2.7], [0.3, 0.12, 0.7], 'can', A),
   box([x, 9.08, z + side * 2.7], [0.22, 0.04, 0.5], 'lamp', A, { k: 'lens', sw: 'lamps', on: true, gain: 2.4 }),
   box([x + 0.16, 6.3, z - 0.2], [0.04, 0.9, 0.2], 'binGreen', A), box([x + 0.16, 6.3, z], [0.04, 0.9, 0.2], 'white', A), box([x + 0.16, 6.3, z + 0.2], [0.04, 0.9, 0.2], 'tomato', A),
+  // Two banners hang from short arms, purple over the road, white over the walk.
+  beam([x, 7.75, z], [x, 7.75, z + side * 0.75], 0.04, 'can', A), beam([x, 7.75, z], [x, 7.75, z - side * 0.75], 0.04, 'can', A),
+  box([x, 7.05, z + side * 0.45], [0.04, 1.35, 0.55], 'hydrangea', A, { k: 'banner' }), box([x, 7.05, z - side * 0.45], [0.04, 1.35, 0.55], 'white', A, { k: 'banner' }),
 ];
+// A sash window. The glass sits back in the wall; the frame, a sash bar
+// and a sill stand proud. alongX: the window spans x and faces z; else the reverse.
+// wall is the wall's plane, out is +1 or -1 toward the street.
+function sash(c, y, w, h, wall, out, alongX, lit, sw, trim = 'cream') {
+  const at = (u, yy, d) => (alongX ? [c + u, yy, wall + out * d] : [wall + out * d, yy, c + u]);
+  const sz = (a, b, depth) => (alongX ? [a, b, depth] : [depth, b, a]);
+  const glass = lit ? { k: 'pane', sw, on: true, gain: 1.05 } : {};
+  return [
+    box(at(0, y, 0.015), sz(w, h, 0.03), lit ? 'glass' : 'glassDark', A, glass),
+    box(at(0, y + h / 2 + 0.05, 0.06), sz(w + 0.2, 0.1, 0.1), trim, A), box(at(0, y - h / 2 - 0.04, 0.08), sz(w + 0.3, 0.08, 0.16), trim, A),
+    box(at(-w / 2 - 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A), box(at(w / 2 + 0.05, y, 0.06), sz(0.1, h, 0.1), trim, A),
+    box(at(0, y + h * 0.08, 0.05), sz(w, 0.06, 0.06), trim, A),
+  ];
+}
+// Cuts the north-west corner off a ring of [e, n] pairs, or gives null.
+function chamfer(ring) {
+  const i = ring.findIndex(p => Math.hypot(p[0] - NW[0], p[1] - NW[1]) < 1);
+  if (i < 0) return null;
+  const v = ring[i], to = q => { const l = Math.hypot(q[0] - v[0], q[1] - v[1]); return [v[0] + (q[0] - v[0]) * CH / l, v[1] + (q[1] - v[1]) * CH / l]; };
+  return [...ring.slice(0, i), to(ring[(i - 1 + ring.length) % ring.length]), to(ring[(i + 1) % ring.length]), ...ring.slice(i + 1)];
+}
+// The corner store: the shop wraps from the Drive onto the avenue.
+// The ground floor is cut back under the upper floor; the door sits on the cut.
+// f is the Drive frontage; x1 ends the corner unit; u is its store record.
+// west is where the avenue wall ends, as e. fi names the upper windows.
+function cornerStore(i, f, x1, u, west, fi) {
+  const xs = f.x0, zf = f.zf, t = TRADE[u.cat] || TRADE['Service Commercial'], sw = 'shop' + i, lit = { k: 'pane', sw, on: true, gain: 1.15 };
+  const L = Math.max(3, Math.min(9, zf - CH - west - 1)), zc = zf - CH - L / 2, fascia = f.note?.fascia || 'roof', trim = f.note?.trim || 'cream';
+  const sign = (p, s, nrm) => (u.name ? [{ t: 'sign', kind: 'shop', text: /^vacant$/i.test(u.name) ? 'FOR LEASE' : u.name, style: u.cat, p, s, nrm, L: A }] : []);
+  const out = shop(i, xs + CH, x1, zf, u.cat, 1, u.name, f.era, f.note);
+  // The avenue side: base, glass, mullions, fascia, sign and canopy.
+  out.push(
+    box([xs - 0.04, 0.45, zc], [0.1, 0.6, L - 0.3], 'found', A), box([xs - 0.03, 1.95, zc], [0.06, 2.3, L - 0.5], 'glass', A, lit),
+    box([xs - 0.08, 3.62, zc], [0.14, 1.1, L - 0.3], fascia, A), ...sign([xs - 0.16, 3.62, zc], [L - 0.5, 0.86], [-1, 0]),
+    box([xs - 0.8, 3.08, zc], [1.6, 0.16, L - 0.1], f.note?.awning || t.stripes[0], A),
+  );
+  const m = Math.max(1, Math.round(L / 2.2));
+  for (let j = 1; j < m; j++) out.push(box([xs - 0.07, 1.95, zf - CH - L * j / m], [0.06, 2.3, 0.12], 'cream', A));
+  // The cut: glass doors, a fascia and a sign; a column holds the corner.
+  // poly takes [e, n]; o lifts a point off the cut toward the street.
+  const o = d => [-d / Math.SQRT2, d / Math.SQRT2], a = [xs + CH, zf], b = [xs, zf - CH];
+  const strip = (d0, d1, inset) => {
+    const u0 = inset / (CH * Math.SQRT2), pa = [lerp(a[0], b[0], u0), lerp(a[1], b[1], u0)], pb = [lerp(b[0], a[0], u0), lerp(b[1], a[1], u0)];
+    const [ox0, oz0] = o(d0), [ox1, oz1] = o(d1);
+    return [[pa[1] + oz0, pa[0] + ox0], [pb[1] + oz0, pb[0] + ox0], [pb[1] + oz1, pb[0] + ox1], [pa[1] + oz1, pa[0] + ox1]];
+  };
+  const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, [sx, sz] = o(0.16);
+  out.push(
+    poly(strip(0, 0.03, 0.12), 0.3, 2.7, 'glass', lit), poly(strip(0, 0.1, 0), 3.05, 1.15, fascia),
+    poly(strip(0, 0.08, 0), 0.16, 0.14, 'found'),
+    box([mx - 0.02, 1.65, mz + 0.02], [0.07, 2.7, 0.07], 'cream', A),
+    box([mx - 0.25, 1.4, mz - 0.18], [0.04, 0.5, 0.04], 'chrome', A), box([mx + 0.18, 1.4, mz + 0.25], [0.04, 0.5, 0.04], 'chrome', A),
+    box([a[0], 2.2, a[1]], [0.16, 4.1, 0.16], 'cream', A), box([b[0], 2.2, b[1]], [0.16, 4.1, 0.16], 'cream', A),
+    cyl([xs, 2.21, zf], 0.15, 4.1, 'cream', A),
+    ...sign([mx + sx, 3.62, mz + sz], [1.9, 0.6], [-1, 1]),
+  );
+  // The avenue wall: a ground floor band, a trim band, a ribbon per floor.
+  const len = zf - west - 0.6, zm = (zf + west) / 2;
+  if (f.note?.band) out.push(box([xs - 0.012, 2.2, zm - CH / 2], [0.02, 4.1, len - CH], f.note.band, A));
+  out.push(box([xs - 0.07, 4.3, zm], [0.14, 0.2, len], trim, A));
+  for (let y = 5.7; y < f.h - 1.2; y += 3) {
+    const n = Math.max(1, Math.round((len - 1) / 1.3)), pw = (len - 1) / n;
+    for (let j = 0; j < n; j++) {
+      const lt = isLit(fi + 7, j, y | 0), z = zf - 0.8 - pw * (j + 0.5);
+      out.push(box([xs - 0.015, y, z], [0.03, 1.1, pw - 0.08], lt ? 'glass' : 'glassDark', A, lt ? { k: 'pane', sw: 'up' + fi, on: true, gain: 1.05 } : {}), box([xs - 0.05, y, zf - 0.8 - pw * j], [0.06, 1.1, 0.06], trim, A));
+    }
+    out.push(box([xs - 0.08, y - 0.62, zm], [0.16, 0.12, len - 0.8], trim, A));
+  }
+  // A skateboard hangs off the Drive wall as a blade sign. A poke kickflips it.
+  const bx = xs + CH + 0.7, by = 4.75, bz = zf + 0.65;
+  out.push(beam([bx, 5.02, zf], [bx, 5.02, zf + 1.15], 0.05, 'crow', A), beam([bx, 5.02, bz - 0.3], [bx, by + 0.1, bz - 0.3], 0.015, 'chrome', A), beam([bx, 5.02, bz + 0.3], [bx, by + 0.1, bz + 0.3], 0.015, 'chrome', A));
+  out.push(...on('deck', [bx, by, bz], [
+    box([bx, by, bz], [0.04, 0.24, 0.62], 'crow', A), cyl([bx, by, bz - 0.31], 0.12, 0.04, 'crow', A, { ax: 'x' }), cyl([bx, by, bz + 0.31], 0.12, 0.04, 'crow', A, { ax: 'x' }),
+    box([bx - 0.022, by, bz], [0.006, 0.2, 0.6], 'tomato', A), box([bx - 0.024, by, bz], [0.006, 0.07, 0.6], 'mustard', A),
+    ...[-0.24, 0.24].flatMap(dz => [box([bx - 0.05, by, bz + dz], [0.05, 0.17, 0.05], 'chrome', A), ...[-0.08, 0.08].map(dy => cyl([bx - 0.08, by + dy, bz + dz], 0.035, 0.035, 'white', A, { ax: 'x' }))]),
+  ]));
+  return out;
+}
+// Two in five windows burn; which ones is fixed per building.
+const isLit = (a, b, c) => ((a * 7 + b * 13 + c * 5) % 5) < 2;
+// A signal on a mast arm. The arm reaches from the corner at z0 to z1;
+// the head hangs at its tip and faces along face (+1 north, -1 south).
+const signal = (x, z0, z1, face) => [
+  cyl([x, 3.2, z0], 0.12, 6.4, 'can', A), beam([x, 6.1, z0], [x, 6.1, z1], 0.1, 'can', A),
+  box([x, 5.45, z1], [0.32, 1.1, 0.36], 'awnYellow', A), box([x + face * 0.17, 5.45, z1], [0.02, 1.0, 0.3], 'crow', A),
+  blob([x + face * 0.2, 5.8, z1], 0.11, 'red', A, { sw: 'sigR', on: false, gain: 2.4 }),
+  blob([x + face * 0.2, 5.45, z1], 0.11, 'glassDark', A),
+  blob([x + face * 0.2, 5.1, z1], 0.11, 'binGreen', A, { sw: 'sigG', on: true, gain: 2.4 }),
+];
+// The Highland's fire escape: a platform, a rail and a stair at each floor.
+// x is just south of the wall; z is the middle of the run.
+const fireEscape = (x, z, floors) => floors.flatMap((y, i) => [
+  box([x, y, z], [1, 0.06, 3], 'crow', A, { k: 'fireEscape' }),
+  box([x - 0.48, y + 0.5, z], [0.04, 0.9, 3], 'crow', A, { k: 'fireEscape' }),
+  ...(i < floors.length - 1 ? [beam([x, y, z + (i % 2 ? 1.3 : -1.3)], [x, floors[i + 1], z + (i % 2 ? -1.3 : 1.3)], 0.08, 'crow', A)] : []),
+]);
 
-const STOP = 30, LANE = -4.3;
-// The trolley bus, built on the origin of its lane. Its front faces south.
-const bus = z => on('bus', [0, 0, z], [
+const LANE = -4.3;
+// The trolley bus, built at x on its lane. Its front faces south.
+const bus = (x, z) => on('bus', [x, 0, z], [
   box([0, 1.95, z], [12, 2.3, 2.5], 'white', A), box([0, 0.95, z], [12.02, 1.1, 2.52], 'binBlue', A),
   box([0, 2.3, z + 1.26], [10.6, 0.9, 0.03], 'glassDark', A), box([0, 2.3, z - 1.26], [10.6, 0.9, 0.03], 'glassDark', A),
   box([-6.01, 2.2, z], [0.03, 1.1, 2.2], 'glassDark', A), box([2, 3.2, z], [5, 0.2, 1.6], 'can', A),
@@ -105,46 +239,141 @@ const bus = z => on('bus', [0, 0, z], [
   box([6.01, 0.9, z + 0.9], [0.03, 0.2, 0.25], 'red', A), box([6.01, 0.9, z - 0.9], [0.03, 0.2, 0.25], 'red', A),
   ...[-3.9, 3.9].flatMap(dx => [-1.1, 1.1].map(dz => cyl([dx, 0.5, z + dz], 0.5, 0.3, 'tyre', A, { ax: 'z' }))),
   beam([4, 3.3, z - 0.3], [9.6, 5.68, z - 0.3], 0.06, 'crow', A), beam([4, 3.3, z + 0.3], [9.6, 5.68, z + 0.3], 0.06, 'crow', A),
-]);
+].map(q => ({ ...q, ...(q.p ? { p: [q.p[0] + x, q.p[1], q.p[2]] } : {}), ...(q.a ? { a: [q.a[0] + x, q.a[1], q.a[2]], b: [q.b[0] + x, q.b[1], q.b[2]] } : {}) })));
 
+// The Corner: the whole disc. It reads the baked city data.
 export async function loadDrive() {
   const d = await (await fetch(new URL('./data/drive.json', import.meta.url))).json();
+  // The LiDAR bake is optional: without it the roofs are guessed.
+  const lidar = await fetch(new URL('./data/lidar.json', import.meta.url)).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  return driveParts(d, { kind: 'disc', r: R }, lidar);
+}
+// Calms a roof grid. Each cell first takes the median of a 5 x 5 patch.
+// A flat roof then snaps to its main levels (at most three),
+// so rooftop units and scan noise fold into plain terraces.
+// A pitched roof keeps its slope, rounded to 10 cm.
+function smooth(cells, s, flat) {
+  const H = new Map(cells.map(([e, n, h]) => [`${Math.round(e / s)},${Math.round(n / s)}`, h]));
+  const calm = cells.map(([e, n]) => {
+    const i = Math.round(e / s), j = Math.round(n / s), near = [];
+    for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) { const v = H.get(`${i + di},${j + dj}`); if (v !== undefined) near.push(v); }
+    near.sort((a, c) => a - c);
+    return [e, n, near[near.length >> 1]];
+  });
+  if (!flat) return calm.map(([e, n, h]) => [e, n, Math.round(h * 10) / 10]);
+  // The main levels: half-metre bins that hold at least 12% of the roof.
+  const bins = new Map();
+  for (const [, , h] of calm) { const b = Math.round(h * 2) / 2; bins.set(b, (bins.get(b) || 0) + 1); }
+  // A level counts only when it stands a metre or more from a bigger one.
+  const levels = [];
+  for (const [b, n] of [...bins].sort((a, c) => c[1] - a[1])) {
+    if (levels.length && (n < calm.length * 0.12 || levels.length >= 3)) break;
+    if (levels.every(l => Math.abs(l - b) >= 1)) levels.push(b);
+  }
+  return calm.map(([e, n, h]) => [e, n, levels.reduce((a, c) => (Math.abs(c - h) < Math.abs(a - h) ? c : a))]);
+}
+// A point in a ring of [e, n] pairs.
+function inRing([x, y], ring) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
+}
+
+// The Drive's parts from city data, cut to clip:
+// { kind: 'disc', r } or { kind: 'rect', e0, n0, e1, n1 }.
+// lidar: the LiDAR bake, or null. It gives real roofs and canopies.
+export function driveParts(d, clip, lidar = null) {
+  const roofCells = new Map(), canopies = new Map();
+  for (const b of lidar ? lidar.b : []) roofCells.set(b.id, [...(roofCells.get(b.id) || []), ...b.cells]);
+  for (const t of lidar ? lidar.trees : []) canopies.set(t.at.join(), t);
+  const disc = clip.kind === 'disc';
+  const SHAPE = disc
+    ? Array.from({ length: 64 }, (_, i) => [Math.cos(i / 64 * 2 * Math.PI) * clip.r, Math.sin(i / 64 * 2 * Math.PI) * clip.r])
+    : [[clip.e0, clip.n0], [clip.e1, clip.n0], [clip.e1, clip.n1], [clip.e0, clip.n1]];
+  const B = disc ? { e0: -clip.r, e1: clip.r, n0: -clip.r, n1: clip.r } : clip;
+  // A point is inside when it stands m metres in from the edge.
+  const inside = (e, n, m = 0) => (disc ? Math.hypot(e, n) < clip.r - m : e > B.e0 + m && e < B.e1 - m && n > B.n0 + m && n < B.n1 - m);
+  const cut = ring => clipTo(ring, SHAPE), rect = (e0, n0, e1, n1) => cut([[e0, n0], [e1, n0], [e1, n1], [e0, n1]]);
+  const BIG = 500, STOP = disc ? 30 : (B.n0 + B.n1) / 2;
   const P = [], W = [], pokes = [], acts = {};
   const add = (...q) => P.push(...q.flat());
   const flat = { k: 'ground' };
 
   /* ---------- ground: a disc of asphalt, the lots on it, the walks ---------- */
-  add(cyl([0, -0.225, 0], R, 0.35, 'soil', A, { k: 'plinth', seg: 64 }), cyl([0, -0.7, 0], R - 0.05, 0.6, 'earth', A, { k: 'plinth', seg: 64 }), cyl([0, -1.175, 0], R, 0.35, 'rock', A, { k: 'plinth', seg: 64 }));
-  add(cyl([0, -0.025, 0], R, 0.05, 'asphalt', A, { k: 'ground', seg: 64 }));
+  // The disc carries its own plinth. The walk gives a slice its plinth.
+  if (disc) {
+    const r = clip.r;
+    add(cyl([0, -0.225, 0], r, 0.35, 'soil', A, { k: 'plinth', seg: 64 }), cyl([0, -0.7, 0], r - 0.05, 0.6, 'earth', A, { k: 'plinth', seg: 64 }), cyl([0, -1.175, 0], r, 0.35, 'rock', A, { k: 'plinth', seg: 64 }));
+    add(cyl([0, -0.025, 0], r, 0.05, 'asphalt', A, { k: 'ground', seg: 64 }));
+  } else add(box([(B.n0 + B.n1) / 2, -0.025, (B.e0 + B.e1) / 2], [B.n1 - B.n0, 0.05, B.e1 - B.e0], 'asphalt', A, { k: 'ground' }));
   // Each lot is a low slab. What the lots leave bare is street and lane.
   d.lots.forEach((l, i) => {
     const ring = cut(l.ring.slice(0, -1));
     if (ring.length >= 3 && area(ring) > 2) add(poly(ring, 0, 0.16, /COMMERCIAL/.test(l.street || '') ? 'lane' : i % 2 ? 'grass' : 'verge', flat));
   });
   const walk = (e0, n0, e1, n1) => { const r = rect(e0, n0, e1, n1); if (r.length >= 3) add(poly(r, 0, 0.15, 'concrete', flat)); };
-  walk(LOT_W, -R, KERB_W, WEST_LEG[0]); walk(LOT_W, WEST_LEG[1], KERB_W, R);
-  walk(KERB_E, -R, LOT_E, EAST_LEG[0]); walk(KERB_E, EAST_LEG[1], LOT_E, R);
-  walk(-R, WEST_LEG[0], KERB_W, WEST_LEG[0] + 3); walk(-R, WEST_LEG[1] - 3, KERB_W, WEST_LEG[1]);
-  walk(KERB_E, EAST_LEG[0], R, EAST_LEG[0] + 1.5); walk(KERB_E, EAST_LEG[1] - 1.5, R, EAST_LEG[1]);
+  walk(LOT_W, -BIG, KERB_W, WEST_LEG[0]); walk(LOT_W, WEST_LEG[1], KERB_W, BIG);
+  walk(KERB_E, -BIG, LOT_E, EAST_LEG[0]); walk(KERB_E, EAST_LEG[1], LOT_E, BIG);
+  walk(-BIG, WEST_LEG[0], KERB_W, WEST_LEG[0] + 3); walk(-BIG, WEST_LEG[1] - 3, KERB_W, WEST_LEG[1]);
+  walk(KERB_E, EAST_LEG[0], BIG, EAST_LEG[0] + 1.5); walk(KERB_E, EAST_LEG[1] - 1.5, BIG, EAST_LEG[1]);
   // Road paint is too thin for an ink line.
   const mark = (p, s, c) => box(p, s, c, A, { k: 'ground', noInk: true });
-  for (const [x0, x1] of [[-R + 3, WEST_LEG[0] - 2], [EAST_LEG[1] + 2, R - 3]]) {
+  for (const [a, b] of [[-BIG, WEST_LEG[0] - 2], [EAST_LEG[1] + 2, BIG]]) {
+    // Each run of paint stops short of the edge.
+    const x0 = Math.max(a, B.n0 + 3), x1 = Math.min(b, B.n1 - 3);
+    if (x1 - x0 < 2) continue;
     add(mark([(x0 + x1) / 2, 0.005, MID - 0.15], [x1 - x0, 0.01, 0.1], 'mustard'), mark([(x0 + x1) / 2, 0.005, MID + 0.15], [x1 - x0, 0.01, 0.1], 'mustard'));
     for (let x = x0 + 2; x < x1 - 2; x += 6) add(mark([x, 0.005, MID - 3.25], [3, 0.01, 0.12], 'white'), mark([x, 0.005, MID + 3.25], [3, 0.01, 0.12], 'white'));
   }
-  // Zebra crossings: three over the Drive, one over each leg of the avenue.
-  for (const x of [WEST_LEG[0] + 1.5, WEST_LEG[1] - 1.5, EAST_LEG[1] - 0.75]) for (let z = KERB_W + 0.7; z < KERB_E - 0.4; z += 1) add(mark([x, 0.005, z], [2.4, 0.01, 0.5], 'white'));
-  for (let x = WEST_LEG[0] + 3.5; x < WEST_LEG[1] - 3; x += 1) add(mark([x, 0.005, LOT_W + 1.4], [0.5, 0.01, 2.4], 'white'));
-  for (let x = EAST_LEG[0] + 2; x < EAST_LEG[1] - 1.5; x += 1) add(mark([x, 0.005, LOT_E - 1.4], [0.5, 0.01, 2.4], 'white'));
+  // Crossings: three over the Drive, one over each leg of the avenue,
+  // painted red, white and green as the street paints them.
+  const TRI = ['tomato', 'white', 'binGreen'], bar = (p, sz, i) => box(p, sz, TRI[i % 3], A, { k: 'crossing', noInk: true });
+  for (const x of [WEST_LEG[0] + 1.5, WEST_LEG[1] - 1.5, EAST_LEG[1] - 0.75]) { let i = 0; for (let z = KERB_W + 0.7; z < KERB_E - 0.4; z += 1) add(bar([x, 0.005, z], [2.4, 0.01, 0.5], i++)); }
+  { let i = 0; for (let x = WEST_LEG[0] + 3.5; x < WEST_LEG[1] - 3; x += 1) add(bar([x, 0.005, LOT_W + 1.4], [0.5, 0.01, 2.4], i++)); }
+  { let i = 0; for (let x = EAST_LEG[0] + 2; x < EAST_LEG[1] - 1.5; x += 1) add(bar([x, 0.005, LOT_E - 1.4], [0.5, 0.01, 2.4], i++)); }
+  // Signals hang over the Drive from the north-west and south-east corners.
+  add(signal(WEST_LEG[1] + 0.6, KERB_W - 0.6, -3.2, -1), signal(EAST_LEG[0] - 0.6, KERB_E + 0.6, 3.6, 1));
+  pokes.push({ id: 'signal', at: [WEST_LEG[1] + 0.6, 5.45, -3.2], r: 1.2 }, { id: 'signal', at: [EAST_LEG[0] - 0.6, 5.45, 3.6], r: 1.2 });
 
   /* ---------- buildings: real outlines and heights, cut to the disc ---------- */
   const fronts = [];
+  let cornerId = null;
   d.b.forEach((b, i) => {
     // The survey outlines take in awnings. A building stops at its lot line.
     const raw = b.ring.slice(0, -1), west = raw.reduce((s, p) => s + p[0], 0) < 0, whole = trim(raw, west ? LOT_W : LOT_E, !west), ring = cut(whole);
     if (ring.length < 3 || area(ring) < 6) return;
     const es = ring.map(p => p[0]), ns = ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), n0 = Math.min(...ns), n1 = Math.max(...ns);
+    // A ring with the north-west corner gets its ground floor cut back.
+    const low = chamfer(ring);
+    if (low) cornerId = b.id;
+    const walls = (h, c) => (low && h > 4.3 ? [poly(low, 0.16, 4.1, c), poly(ring, 4.26, h - 4.1, c)] : [poly(ring, 0.16, h, c)]);
     const cutOff = area(ring) < area(whole) - 0.5, pitched = b.roof !== 'Flat' && !cutOff && b.h > 4;
+    // The lot under the building gives its build year; OpenStreetMap fills gaps.
+    const mid0 = [(e0 + e1) / 2, (n0 + n1) / 2], lot = d.lots.find(l => inRing(mid0, l.ring));
+    const year = (lot && lot.year) || (b.start ? parseInt(b.start, 10) : null);
+    let era = eraOf(year) || ((+b.levels || 2) >= 4 ? 'postwar' : 'early');
+    let eraWall = ERA_WALL[era][i % ERA_WALL[era].length];
+    // A reference note on this stretch of the Drive wins over the guess.
+    const sideOf = e1 < 0 && e1 > LOT_W - 1.6 ? 1 : e0 > 0 && e0 < LOT_E + 1.6 ? -1 : 0, note = sideOf ? noteFor(sideOf, (n0 + n1) / 2) : null;
+    if (note) { era = note.era; eraWall = note.wall; }
+    // Measured roof cells inside this outline replace the guessed shape.
+    // Cells under a metre are ground the scan took for roof.
+    const own = (roofCells.get(b.id) || []).filter(p => p[2] > 1 && inRing(p, ring) && inside(p[0], p[1], 0.3));
+    if (own.length >= 12) {
+      const cells = smooth(own, lidar.cell, b.roof === 'Flat');
+      const hs = cells.map(p => p[2]).sort((a, c) => a - c), top = hs[Math.floor(hs.length * 0.85)], eave = hs[Math.floor(hs.length * 0.1)];
+      // A frontage stands within 1.6 m of the lot line.
+      const side = sideOf;
+      const c = b.roof === 'Flat' ? (side ? eraWall : 'garage') : HOUSE[b.id % HOUSE.length];
+      // The walls stand on the true outline to the eave; the measured roof sits above.
+      add(walls(Math.max(0.5, eave - 0.3), c));
+      add({ t: 'roofgrid', cells: cells.map(([e, n, h]) => [n, e, h]), cell: lidar.cell, y: 0.16, base: eave - 0.3, c, top: b.roof === 'Flat' ? 'tar' : 'roof', L: A, p: [(n0 + n1) / 2, top, (e0 + e1) / 2] });
+      if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h: top, side, n0, n1, zf: side > 0 ? e1 : e0, c, era, year, note });
+      return;
+    }
     if (pitched) {
       // A house: walls to the eave, then a gable roof along its long side.
       const alongX = n1 - n0 > e1 - e0, span = alongX ? e1 - e0 : n1 - n0, long = alongX ? n1 - n0 : e1 - e0;
@@ -153,10 +382,10 @@ export async function loadDrive() {
         { t: 'roof', p: [at[0], at[1], at[2]], s: [span, rise, long + 0.5], over: 0.35, th: 0.16, courses: 4, c: 'roof', L: A, ax: alongX ? 'x' : 'z' });
       return;
     }
-    const side = e1 < 0 && e1 > LOT_W - 1 ? 1 : e0 > 0 && e0 < LOT_E + 1 ? -1 : 0, c = WALL[i % WALL.length], h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
+    const side = sideOf, c = eraWall, h = cutOff && b.roof !== 'Flat' ? b.h * 0.8 : b.h;
     // A flat roof gets a grey cap, so the wall colour stays on the walls.
-    add(poly(ring, 0.16, h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
-    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? LOT_W : LOT_E, c });
+    add(walls(h, side ? c : 'garage'), poly(ring, 0.16 + h, 0.1, 'found'));
+    if (side && n1 - n0 > 3.5) fronts.push({ id: b.id, h, side, n0, n1, zf: side > 0 ? e1 : e0, c, era, year, note });
   });
   // Neighbours of one height and one building make one frontage.
   const faces = [];
@@ -169,37 +398,96 @@ export async function loadDrive() {
     }
   }
 
-  /* ---------- frontages: shops below, windows above, a cornice ---------- */
-  let shops = 0;
+  /* ---------- frontages: shops below, windows above, by era ---------- */
+  let shops = 0, hasDeck = false;
+  const FACES = [];
   faces.forEach((f, fi) => {
     const w = f.x1 - f.x0, dir = f.side, z = o => f.zf + dir * o, mid = (f.x0 + f.x1) / 2;
     // The shop units geocoded to this frontage. Units at the rear are upstairs.
     const units = d.stores.filter(s => Math.sign(s.at[0]) === -dir && Math.abs(s.at[0]) < 38 && s.at[1] >= f.x0 - 1 && s.at[1] <= f.x1 + 1).sort((a, b) => +b.civic - +a.civic);
-    const cats = (units.length ? units.map(u => u.cat) : ['Service Commercial']).slice(0, Math.max(1, Math.floor(w / 3.6)));
-    cats.forEach((cat, k) => {
+    const cats = (units.length ? units : [{ cat: 'Service Commercial', name: null }]).slice(0, Math.max(1, Math.floor(w / 3.6)));
+    // The frontage that starts at the north-west corner opens with the corner store.
+    const corner = dir === 1 && f.id === cornerId && Math.abs(f.x0 - NW[1]) < 1;
+    cats.forEach((u, k) => {
       const x0 = f.x0 + w * k / cats.length, x1 = f.x0 + w * (k + 1) / cats.length;
-      add(shop(shops, x0, x1, f.zf, cat, dir));
+      if (corner && k === 0) {
+        const west = Math.min(...d.b.filter(bb => bb.id === f.id).flatMap(bb => bb.ring.filter(p => Math.abs(p[1] - f.x0) < 0.5).map(p => p[0])));
+        add(cornerStore(shops, f, x1, u, Math.max(west, -clip.r), fi));
+        pokes.push({ id: 'deck', at: [f.x0 + CH + 0.7, 4.75, f.zf + 0.65], r: 0.8 });
+        hasDeck = true;
+      } else add(shop(shops, x0, x1, f.zf, u.cat, dir, u.name, f.era, f.note));
       pokes.push({ id: 'shop' + shops, at: [(x0 + x1) / 2, 3.3, z(0.3)], r: 1.8 });
       acts['shop' + shops] = [['flip', 'shop' + shops, true]];
       shops++;
     });
-    add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], 'cream', A), box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], 'cream', A));
-    // Upper windows: a row for each floor that fits.
-    const cols = Math.max(1, Math.round(w / 2.7));
+    FACES.push({ x0: f.x0, x1: f.x1, side: dir, era: f.era, year: f.year, wall: f.c, fascia: f.note?.fascia, noted: !!f.note });
+    const trim = f.note?.trim || 'cream';
+    add(box([mid, 4.3, z(0.06)], [w, 0.2, 0.14], trim, A));
+    // A darker ground floor band, where the note gives one.
+    // The corner store's cut leaves the band's first metres open.
+    const cutW = corner ? CH : 0;
+    if (f.note?.band) add(box([mid + cutW / 2, 2.2, z(0.02)], [w - cutW, 4.1, 0.05], f.note.band, A));
+    // Early: a cornice, tall windows with sills. Post-war: a ribbon of glass per floor.
+    // Modern: a glass wall with thin mullions.
+    if (f.era === 'early') add(box([mid, 0.16 + f.h - 0.1, z(0.1)], [w + 0.2, 0.45, 0.35], trim, A), box([mid, 0.16 + f.h - 0.42, z(0.06)], [w, 0.16, 0.2], trim, A));
+    // Bay windows stand out at both ends of the upper floors.
+    if (f.note?.bays) for (const x of [f.x0 + 1.1, f.x1 - 1.1]) for (let y = 5.9; y < f.h - 1; y += 3) add(box([x, y, z(0.45)], [1.7, 2.5, 0.9], f.c, A), sash(x, y, 1, 1.6, z(0.9), dir, true, isLit(fi, x | 0, y | 0), 'up' + fi, trim));
+    const cols = Math.max(1, Math.round(w / (f.era === 'modern' ? 1.6 : 2.7)));
     let any = false;
-    for (let y = 5.7; y < f.h - 1.2; y += 3) for (let j = 0; j < cols; j++) {
-      const x = f.x0 + w * (j + 0.5) / cols, lit = (j * 7 + Math.round(y) + fi) % 3 !== 0;
-      any ||= lit;
-      add(box([x, y, z(0.03)], [1.36, 1.76, 0.06], 'cream', A), box([x, y, z(0.06)], [1.1, 1.5, 0.05], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true } : {}));
+    for (let y = 5.7; y < f.h - 1.2; y += 3) {
+      if (f.era === 'postwar') {
+        // A ribbon: panes set back between thin mullions, a sill below.
+        const n = Math.max(1, Math.round((w - 1) / 1.3)), pw = (w - 1) / n;
+        for (let j = 0; j < n; j++) {
+          const lit = isLit(fi, j, y | 0), x = f.x0 + 0.5 + pw * (j + 0.5);
+          any ||= lit;
+          add(box([x, y, z(0.015)], [pw - 0.08, 1.1, 0.03], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true, gain: 1.05 } : {}), box([f.x0 + 0.5 + pw * j, y, z(0.05)], [0.06, 1.1, 0.06], trim, A));
+        }
+        add(box([mid, y - 0.62, z(0.08)], [w - 0.8, 0.12, 0.16], trim, A), box([mid, y + 0.6, z(0.05)], [w - 0.9, 0.08, 0.06], trim, A));
+        continue;
+      }
+      for (let j = 0; j < cols; j++) {
+        const x = f.x0 + w * (j + 0.5) / cols, lit = isLit(fi, j, y | 0);
+        any ||= lit;
+        // Modern: dark glass set back, chrome mullions proud. Early: sash windows.
+        if (f.era === 'modern') add(box([x, y, z(0.015)], [w / cols - 0.06, 2.5, 0.03], lit ? 'glass' : 'glassDark', A, lit ? { k: 'pane', sw: 'up' + fi, on: true, gain: 0.9 } : {}), box([f.x0 + w * j / cols, y, z(0.05)], [0.06, 2.6, 0.08], 'chrome', A));
+        else add(sash(x, y, 0.95, 1.7, f.zf, dir, true, lit, 'up' + fi, trim));
+      }
     }
+    if (f.era === 'modern') for (let y = 4.4; y < f.h; y += 3) add(box([mid, y, z(0.09)], [w, 0.1, 0.1], 'chrome', A));
     if (any) pokes.push({ id: 'up' + fi, at: [mid, 5.7, z(0.2)], r: 2.2 });
   });
 
+  /* ---------- The Highland: a fire escape, paired windows, floor bands ---------- */
+  const hl = d.b.find(bb => bb.name && /highland/i.test(bb.name));
+  if (hl && inside(hl.ring[0][0], hl.ring[0][1])) {
+    const es = hl.ring.map(p => p[0]), ns = hl.ring.map(p => p[1]), e0 = Math.min(...es), e1 = Math.max(...es), x = Math.min(...ns), zm = (e0 + e1) / 2;
+    add(fireEscape(x - 0.55, zm, [4.4, 7.3, 10.2]));
+    for (const y of [4.25, 7.15]) add(box([x - 0.05, y, zm], [0.12, 0.18, e1 - e0], 'cream', A));
+    // Sash windows each side of the fire escape, on the upper floors.
+    for (const y of [5.75, 8.65]) for (let z = e0 + 1.4; z < e1 - 1; z += 1.8) {
+      if (Math.abs(z - zm) < 2) continue;
+      add(sash(z, y, 0.9, 1.6, x, -1, false, isLit(3, z | 0, y | 0), 'highland'));
+    }
+  }
+
+  /* ---------- heritage: a nameplate on each listed building ---------- */
+  for (const hsite of d.heritage || []) {
+    const [he, hn] = hsite.at;
+    if (!inside(he, hn, 2)) continue;
+    const bld = d.b.find(bb => inRing([he, hn], bb.ring)) || d.b.find(bb => bb.name && /highland/i.test(bb.name));
+    if (!bld) continue;
+    const r0 = bld.ring, ns = r0.map(p => p[1]), es = r0.map(p => p[0]), nMin = Math.min(...ns);
+    const yr = bld.start || (d.lots.find(l => inRing([he, hn], l.ring)) || {}).year || '';
+    // The plate faces south, toward the avenue, at the middle of the wall.
+    add({ t: 'sign', kind: 'plate', text: `${(hsite.name || bld.name || '').toUpperCase()} ${yr}`.trim(), style: 'plate', p: [nMin - 0.08, 3.2, (Math.min(...es) + Math.max(...es)) / 2], s: [3.4, 0.6], nrm: [-1, 0], L: A });
+  }
+
   /* ---------- street: trees and poles from the records ---------- */
-  for (const t of d.trees) if (Math.hypot(...t.at) < R - 2.5 && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name));
+  for (const t of d.trees) if (inside(t.at[0], t.at[1], 2.5) && t.h) add(tree(t.at[1], t.at[0], Math.min(t.h, 15), t.d, t.name, canopies.get(t.at.join())));
   const lights = [];
   for (const [e, n] of d.poles) {
-    if (Math.hypot(e, n) > R - 3 || Math.abs(e) > 12.5 || Math.abs(e) < 6) continue;
+    if (!inside(e, n, 3) || Math.abs(e) > 12.5 || Math.abs(e) < 6) continue;
     const side = e < 0 ? 1 : -1;
     // Two poles can stand two metres apart: one lamp arm is enough.
     if (lights.some(l => Math.abs(l[0] - n) < 6 && l[2] === side)) continue;
@@ -208,38 +496,47 @@ export async function loadDrive() {
     if (side > 0) W.push({ a: [n, 6.1, e], b: [n, 6.1, KERB_E + 0.4], sag: 0.15, clip: 999 });
   }
   // Two pairs of trolley wires: one pair for each way.
-  for (const z of [LANE - 0.3, LANE + 0.3, MID + 4.2, MID + 4.8]) W.push({ a: [-R - 2, 5.7, z], b: [R + 2, 5.7, z], sag: 0.1, clip: Math.sqrt(R * R - z * z) - 0.3 });
+  for (const z of [LANE - 0.3, LANE + 0.3, MID + 4.2, MID + 4.8]) {
+    if (disc) W.push({ a: [-clip.r - 2, 5.7, z], b: [clip.r + 2, 5.7, z], sag: 0.1, clip: Math.sqrt(clip.r * clip.r - z * z) - 0.3 });
+    else W.push({ a: [B.n0 + 0.3, 5.7, z], b: [B.n1 - 0.3, 5.7, z], sag: 0.1, clip: 999 });
+  }
 
   /* ---------- life on the street ---------- */
-  add(bus(LANE), car(-34, KERB_W + 1.3, 'tomato'), car(12, KERB_W + 1.3, 'mustard'), car(46, KERB_W + 1.3, 'binBlue'), car(-9, KERB_E - 1.3, 'hydrangea'), car(26, KERB_E - 1.3, 'cream'), car(-40, KERB_E - 1.3, 'binGreen'));
+  add(bus(STOP, LANE), car(-34, KERB_W + 1.3, 'tomato'), car(12, KERB_W + 1.3, 'mustard'), car(46, KERB_W + 1.3, 'binBlue'), car(-9, KERB_E - 1.3, 'hydrangea'), car(26, KERB_E - 1.3, 'cream'), car(-40, KERB_E - 1.3, 'binGreen'));
   // Paper boxes and a bench at the north-west corner, a fruit stand at the grocer.
   add([['binBlue', 0], ['tomato', 0.7], ['mustard', 1.4]].map(([c, dx]) => box([WEST_LEG[1] + 1.4 + dx, 0.7, KERB_W - 0.8], [0.5, 1.1, 0.45], c, A)));
   add(box([WEST_LEG[1] + 6, 0.6, KERB_W - 0.9], [1.8, 0.1, 0.5], 'cedar', A), box([WEST_LEG[1] + 5.3, 0.38, KERB_W - 0.9], [0.1, 0.45, 0.5], 'can', A), box([WEST_LEG[1] + 6.7, 0.38, KERB_W - 0.9], [0.1, 0.45, 0.5], 'can', A));
-  const grocer = d.stores.find(s => s.cat === 'Convenience Goods' && s.at[0] < 0 && s.at[0] > -38 && Math.hypot(...s.at) < R - 8 && s.at[1] > 0);
+  const grocer = d.stores.find(s => s.cat === 'Convenience Goods' && s.at[0] < 0 && s.at[0] > -38 && inside(s.at[0], s.at[1], 8) && s.at[1] > 0);
   if (grocer) {
     const gx = grocer.at[1] - 1, gz = LOT_W + 0.6;
     add([0, 1, 2].map(i => box([gx + i * 1.1, 0.55, gz], [1, 0.5, 0.7], 'cedar', A)));
     add(on('fruit', [gx + 1.1, 0.8, gz], [0, 1, 2].flatMap(i => [0, 1, 2, 3, 4, 5].map(j => blob([gx + i * 1.1 - 0.3 + (j % 3) * 0.3, 0.88, gz - 0.15 + Math.floor(j / 3) * 0.3], 0.14, ['tomato', 'mustard', 'binGreen'][i], A)))));
     pokes.push({ id: 'fruit', at: [gx + 1.1, 0.9, gz], r: 1.6 });
   }
-  const near = lights.slice().sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+  // The lamps nearest the middle light the scene: three on the disc, two on a slice.
+  const mid = disc ? 0 : STOP, near = lights.slice().sort((a, b) => Math.abs(a[0] - mid) - Math.abs(b[0] - mid));
   pokes.push({ id: 'bus', at: [STOP, 2, LANE], r: 3.5 }, { id: 'lamps', at: near[0] ? [near[0][0], 9.1, near[0][1] + near[0][2] * 2.7] : [0, 9, 0], r: 1.3 });
 
+  // A part whose centre falls off the shape goes.
+  const keep = q => { const c = q.p || q.a || q.at; return !c || inside(c[2], c[0], -0.6); };
+  const lo = B.n0 - 8, hi = B.n1 + 8;
   return {
-    PARTS: P, WIRES: W, POKES: pokes,
+    PARTS: P.filter(keep), WIRES: W, POKES: pokes.filter(keep), FACES,
     MOVES: {
       // The bus leaves south, then comes back in from the north edge.
-      bus: (g, k) => {
-        const far = R + 8, u = k < 0.5 ? k / 0.5 : (k - 0.5) / 0.5, x = k < 0.5 ? STOP - (far + STOP) * u * u : far - (far - STOP) * (1 - (1 - u) * (1 - u));
-        // It pops out of sight where the disc ends.
-        const s = Math.min(1, Math.max(0, (R - 5 - Math.abs(x)) / 4));
+      bus: (g, k, h) => {
+        const u = k < 0.5 ? k / 0.5 : (k - 0.5) / 0.5, x = k < 0.5 ? STOP - (STOP - lo) * u * u : hi - (hi - STOP) * (1 - (1 - u) * (1 - u));
+        // It pops out of sight where the shape ends.
+        const s = Math.min(1, Math.max(0, (Math.min(x - B.n0, B.n1 - x) - 5) / 4));
         g.position.x = x; g.visible = s > 0.01; g.scale.setScalar(Math.max(s, 0.01));
       },
       fruit: (g, k, h) => { g.position.y = h[1] + 0.5 * k; g.rotation.y = 0.6 * Math.sin(k * 9.4); },
+      // The deck pops up and turns once about its long side.
+      ...(hasDeck ? { deck: (g, k, h) => { g.position.y = h[1] + 0.45 * Math.sin(Math.PI * k); g.rotation.z = 2 * Math.PI * k; } } : {}),
     },
-    ACTS: { ...acts, bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]] },
-    LAMPS: near.slice(0, 3).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
-    SUN: { target: [0, 3, 0], half: [R + 10, R + 10] },
+    ACTS: { ...acts, signal: [['flip', 'sigR'], ['flip', 'sigG']], bus: [['run', 'bus', 14]], fruit: [['pulse', 'fruit', 0.15, 0, 0.7, 'bounce.out']], lamps: [['flip', 'lamps', true]], ...(hasDeck ? { deck: [['run', 'deck', 0.7]] } : {}) },
+    LAMPS: near.slice(0, disc ? 3 : 2).map(([x, z, side]) => ({ col: [0.86, 0.14, 65], at: [x, 9, z + side * 2.7], to: [x, 0, z + side * 2], power: 700, range: 26, of: 'sw:lamps' })),
+    SUN: disc ? { target: [0, 3, 0], half: [clip.r + 10, clip.r + 10] } : { target: [STOP, 3, (B.e0 + B.e1) / 2], half: [20, 20] },
   };
 }
 

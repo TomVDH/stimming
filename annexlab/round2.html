@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en" data-dir="a">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Annex lab · round 2</title>
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+/* Annex lab, round 2: the content zone under a toy, in the shell's own look.
+   One driver value, --p, runs from 0 (the toy) to 1 (the content zone). */
+:root {
+  --p: 0; --sy: 0;
+  --ax-accent: oklch(0.9 0.07 200);
+  --ax-series: oklch(0.88 0.1 200);
+  --ax-ink: oklch(0.16 0.012 275);
+  --ax-read: oklch(0.87 0.01 275);
+  --ax-slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --ax-gutter: clamp(20px, 5vw, 64px);
+  --ax-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --lip: 14px;
+  scrollbar-color: var(--line) var(--bg);
+}
+html { overflow-x: clip; }
+body { padding: 0; }
+::selection { background: var(--ax-accent); color: var(--ax-ink); }
+
+/* ---------- the player ---------- */
+.ax-scene { position: relative; height: 100svh; }
+.ax-stage { position: absolute; inset: 0 0 var(--lip) 0; overflow: hidden; background: var(--stage); transform-origin: 50% 50%; }
+.ax-stage iframe { display: block; width: 100%; height: 100%; border: 0; }
+/* The shade dims the toy as the content zone comes up. */
+.ax-shade { position: absolute; inset: 0; pointer-events: none; background: oklch(0.1 0.012 275); opacity: calc(var(--p) * var(--dim, 0.7)); }
+html.read .ax-stage { visibility: hidden; }
+
+/* ---------- the content zone ---------- */
+.ax-annex { position: relative; z-index: 2; margin-top: calc(var(--lip) * -1); }
+.ax-lip {
+  position: relative; z-index: 4; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: var(--lip); padding: 0; border: 0; background: var(--bg); color: var(--muted); cursor: pointer;
+  font: 500 12px/1 var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.ax-lip svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ax-lip > * { display: none; }
+.ax-body { position: relative; background: var(--bg); min-height: 100svh; padding: clamp(48px, 8vw, 96px) var(--ax-gutter) 0; }
+.ax-body, .ax-body * { -webkit-user-select: text !important; user-select: text !important; }
+.ax-col { max-width: 1120px; margin: 0 auto; }
+.ax-annex :focus-visible, .ax-back:focus-visible, .lab :focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus); border-radius: 4px; }
+
+/* Title block: the names left, the facts right. It rises as the zone arrives. */
+.ax-title { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 32px 64px; align-items: end; transform: translateY(calc((1 - var(--p)) * 40px)); }
+.ax-title h1 { margin: 0; font-size: clamp(56px, 11vw, 96px); font-weight: 700; letter-spacing: -0.04em; line-height: 0.9; }
+.ax-nl { margin: 18px 0 0; font-size: clamp(20px, 2.6vw, 28px); font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; }
+.ax-nl span { font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.ax-tag { margin: 28px 0 0; font-size: 18px; line-height: 1.4; }
+.ax-tag span { display: block; color: var(--muted); }
+.ax-facts { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 20px; }
+.ax-facts > div { display: contents; }
+.ax-facts dt, .ax-facts dd { margin: 0; padding: 9px 0; border-top: 1px solid var(--line); }
+.ax-facts dt { font: 500 12px/20px var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.ax-facts dd { font-size: 15px; line-height: 20px; display: flex; align-items: center; gap: 8px; }
+.ax-facts dd svg { width: 20px; height: 20px; flex: none; }
+.ax-body a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--ax-accent); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+.ax-body a:hover { color: var(--ax-accent); }
+
+/* The in-flow index of the four parts. */
+.ax-index { display: flex; flex-wrap: wrap; gap: 6px 28px; margin: clamp(40px, 6vw, 72px) 0 0; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.ax-index a, .ax-nav a { font: 500 12px/20px var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; color: var(--muted); }
+.ax-index a:hover { color: var(--ax-accent); }
+
+/* A part: its heading in the left rail, its matter in the reading column. */
+.ax-sec { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 20px 64px; padding: clamp(56px, 8vw, 104px) 0 0; scroll-margin-top: 56px; }
+.ax-sec h2 { margin: 0; font-size: clamp(26px, 3.2vw, 38px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.05; text-wrap: balance; }
+.ax-sec h2 + p { margin: 10px 0 0; font-size: 15px; line-height: 1.5; color: var(--muted); max-width: 30ch; }
+.ax-prose p { margin: 0; max-width: 66ch; font-size: 17px; line-height: 1.65; color: var(--ax-read); text-wrap: pretty; }
+.ax-prose p + p { margin-top: 16px; }
+.ax-matter > * + * { margin-top: 36px; }
+.ax-fig { margin: 0; }
+.ax-fig img, .ax-fig svg { display: block; width: 100%; height: auto; border-radius: 10px; background: var(--surface); }
+.ax-fig figcaption { margin-top: 10px; font-size: 13px; line-height: 1.45; color: var(--muted); max-width: 60ch; }
+/* A picture slot with no picture yet: the lab shows the block, not a fake still. */
+.ax-slot { display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); }
+.ax-slot span { font: 500 12px/1 var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.ax-fig--wide { grid-column: 1 / -1; }
+.ax-fig--pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ax-fig--pair figcaption { grid-column: 1 / -1; margin-top: -6px; }
+.ax-fig--draw svg { max-width: 460px; background: none; border-radius: 0; }
+.ax-table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.45; }
+.ax-table th, .ax-table td { padding: 10px 16px 10px 0; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
+.ax-table thead th { border-top: 0; padding-top: 0; font: 500 12px/20px var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.ax-table td:first-child { white-space: nowrap; font-weight: 600; }
+.ax-table td { color: var(--ax-read); }
+
+/* Notes: a dated log, newest first. */
+.ax-log { margin: 0; padding: 0; list-style: none; }
+.ax-log li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 4px 20px; padding: 14px 0; border-top: 1px solid var(--line); }
+.ax-log time { font: 500 12px/24px var(--ax-slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ax-log p { margin: 0; font-size: 16px; line-height: 1.5; color: var(--ax-read); max-width: 60ch; }
+.ax-log li[hidden] { display: none; }
+.ax-more { margin-top: 14px; height: 34px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg); cursor: pointer; font: 600 13px/1 var(--sans); transition: border-color 0.2s ease, color 0.2s ease; }
+.ax-more:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
+
+/* Also try: three toys, by emblem. */
+.ax-try { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.ax-body .ax-try a { display: flex; align-items: center; gap: 16px; padding: 20px 20px 20px 0; text-decoration: none; border-bottom: 1px solid var(--line); }
+.ax-try i { flex: none; width: 44px; height: 44px; background: var(--muted); -webkit-mask: var(--e) center / contain no-repeat; mask: var(--e) center / contain no-repeat; transition: background-color 0.2s ease, transform 0.4s var(--ax-out); }
+.ax-try a:hover i { background: var(--ax-accent); transform: rotate(-8deg) scale(1.08); }
+.ax-try b { display: block; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.ax-try span span { display: block; font-size: 14px; color: var(--muted); }
+.ax-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: clamp(56px, 8vw, 104px); padding: 20px 0 max(28px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); font-size: 14px; }
+.ax-foot span { flex: 1; }
+.ax-play { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 10px; border: 0; border-radius: 999px; background: var(--ax-accent); color: var(--ax-ink); cursor: pointer; font: 700 13px/1 var(--sans); }
+.ax-play svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* The way back: a chip, top left, once the visitor reads. */
+.ax-back {
+  position: fixed; z-index: 30; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left));
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: oklch(0.2 0.014 275 / 0.92); color: var(--fg); cursor: pointer;
+  font: 700 13px/1 var(--sans);
+  opacity: 0; transform: translateY(-8px); pointer-events: none; transition: opacity 0.3s ease, transform 0.5s var(--ax-out);
+}
+.ax-back svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+html.read .ax-back { opacity: 1; transform: none; pointer-events: auto; }
+.ax-back:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
+
+/* ---------- A · Recede: the stage sinks back; the zone rises as a sheet ---------- */
+html[data-dir="a"] { --dim: 0.68; }
+html[data-dir="a"]:not(.rm) .ax-stage { position: fixed; transform: scale(calc(1 - var(--p) * 0.14)); border-radius: calc(var(--p) * 24px); }
+html[data-dir="a"] .ax-lip { border-radius: 18px 18px 0 0; border-top: 1px solid var(--line); }
+html[data-dir="a"] .ax-lip .lip-handle { display: block; width: 44px; height: 4px; border-radius: 2px; background: var(--line); transition: background-color 0.2s ease; }
+html[data-dir="a"] .ax-lip:hover .lip-handle { background: var(--ax-accent); }
+
+/* ---------- D · Drum: the toy and the zone are two faces of one drum ---------- */
+html[data-dir="d"] { --dim: 0.82; --lip: 18px; }
+html[data-dir="d"]:not(.rm) .ax-page { perspective: 1500px; perspective-origin: 50% calc(var(--sy) * 1px + 50svh); }
+html[data-dir="d"]:not(.rm) .ax-scene { transform-origin: 50% calc(100% - var(--lip)); transform: rotateX(calc(var(--p) * -66deg)); }
+html[data-dir="d"]:not(.rm):not(.read) .ax-annex { transform-origin: 50% 0; transform: rotateX(calc((1 - var(--p)) * 66deg)); }
+html[data-dir="d"] .ax-lip { background: var(--surface); border-top: 1px solid oklch(0.42 0.02 275); color: var(--fg); }
+html[data-dir="d"] .ax-lip .lip-chev { display: block; width: 16px; height: 16px; }
+html[data-dir="d"] .ax-lip:hover { color: var(--ax-accent); }
+/* The veil keeps the far face in shadow until it turns to the visitor. */
+.ax-veil { display: none; position: absolute; z-index: 3; inset: 0 0 auto 0; height: 130svh; pointer-events: none; background: oklch(0.1 0.012 275); opacity: calc((1 - var(--p)) * 0.6); }
+html[data-dir="d"]:not(.rm):not(.read) .ax-veil { display: block; }
+
+/* ---------- E · Placard: the toy's label rides up and docks as the header ---------- */
+html[data-dir="e"] { --dim: 0.78; --lip: 46px; }
+html[data-dir="e"]:not(.rm) .ax-scene { overflow: clip; }
+html[data-dir="e"]:not(.rm) .ax-stage { transform: translateY(calc(var(--p) * 24svh)); }
+html[data-dir="e"] .ax-lip {
+  position: sticky; top: 0; z-index: 6; justify-content: flex-start; gap: 14px; padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  background: var(--ax-accent); color: var(--ax-ink); cursor: default;
+  transition: background-color 0.35s ease, color 0.35s ease, box-shadow 0.35s ease;
+}
+html[data-dir="e"] .ax-lip > :is(.pl-no, .pl-name, .pl-nl, .pl-gap, .pl-read) { display: inline-flex; }
+.pl-no { font-weight: 700; }
+.pl-name { font: 800 17px/1 var(--sans); letter-spacing: 0.02em; }
+.pl-nl { font: 500 14px/1 var(--sans); letter-spacing: 0; text-transform: none; }
+html[data-dir="e"].stuck .pl-nl { color: var(--muted); }
+.pl-gap { flex: 1; }
+.pl-read, .pl-play { align-items: center; gap: 8px; height: 30px; padding: 0 4px; border: 0; background: none; color: inherit; cursor: pointer; font: 700 12px/1 var(--ax-slab); letter-spacing: 0.12em; text-transform: uppercase; }
+.pl-read svg, .pl-play svg { width: 14px; height: 14px; }
+.ax-nav { align-items: center; gap: 22px; }
+.ax-nav a { color: var(--muted); transition: color 0.2s ease; }
+.ax-nav a:hover, .ax-nav a[aria-current="true"] { color: var(--ax-accent); }
+/* Docked, the flash settles: dark ground, the accent as ink. */
+html[data-dir="e"].stuck .ax-lip { background: var(--bg); color: var(--ax-accent); box-shadow: 0 1px 0 var(--line); }
+html[data-dir="e"].stuck .ax-lip > .pl-read { display: none; }
+html[data-dir="e"].stuck .ax-lip > :is(.ax-nav, .pl-play) { display: inline-flex; }
+html[data-dir="e"] :is(.ax-back, .ax-index) { display: none; }
+html[data-dir="e"] .ax-sec { scroll-margin-top: 70px; }
+
+/* ---------- F · Tide: the series wave floods up over the toy ---------- */
+html[data-dir="f"] { --dim: 0.8; --lip: 30px; }
+html[data-dir="f"]:not(.rm) .ax-stage { position: fixed; transform: scale(calc(1 - var(--p) * 0.05)); }
+html[data-dir="f"] .ax-lip { background: none; color: var(--ax-series); }
+html[data-dir="f"] .ax-lip .tide { display: block; position: absolute; left: 0; top: -47px; width: 100%; height: 100px; overflow: visible; pointer-events: none; }
+.tide .tide-fill { fill: var(--bg); stroke: none; }
+.tide .tide-line { fill: none; stroke: var(--ax-series); stroke-width: 1.6; }
+html[data-dir="f"] .ax-lip .lip-label { display: inline-flex; position: relative; align-items: center; gap: 8px; height: 26px; padding: 0 12px; border-radius: 999px; background: var(--bg); transition: color 0.2s ease; }
+.lip-label svg { width: 20px; height: 20px; stroke: none; }
+html[data-dir="f"] .ax-lip:hover .lip-label { color: var(--fg); }
+
+/* ---------- reduced motion: a plain scroll ---------- */
+html.rm .ax-title { transform: none; }
+html.rm .ax-shade { opacity: 0; }
+html.rm.read .ax-stage { visibility: visible; }
+html.rm * { transition: none !important; }
+
+/* ---------- narrow ---------- */
+@media (max-width: 899px) {
+  .ax-title { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .ax-sec { grid-template-columns: minmax(0, 1fr); }
+  .ax-sec h2 + p { max-width: 60ch; }
+  .ax-try { grid-template-columns: minmax(0, 1fr); }
+  .ax-nav { display: none !important; }
+}
+@media (max-width: 639px) {
+  .ax-fig--pair { grid-template-columns: minmax(0, 1fr); }
+  .ax-fig--pair figcaption { margin-top: 0; }
+  .ax-log li { grid-template-columns: minmax(0, 1fr); }
+  .ax-log time { line-height: 16px; }
+  .pl-nl { display: none !important; }
+  .ax-prose p { font-size: 16px; }
+}
+
+/* ---------- lab panel: chrome, never part of the proposal ---------- */
+.lab { position: fixed; right: 0; top: 50%; translate: 0 -50%; z-index: 40; display: flex; align-items: center; font: 500 12px/16px var(--ax-slab); color: var(--fg); }
+.lab button { font: inherit; color: inherit; cursor: pointer; }
+.lab-tab { writing-mode: vertical-rl; min-width: 34px; min-height: 34px; padding: 12px 8px; background: var(--surface); border: 1px solid var(--line); border-right: 0; border-radius: 6px 0 0 6px; letter-spacing: 0.12em; text-transform: uppercase; }
+.lab-body { display: none; width: 244px; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-right: 0; }
+.lab[data-open="true"] .lab-body { display: grid; gap: 10px; }
+.lab-h { margin: 0; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
+.lab-seg { display: grid; gap: 4px; }
+.lab-seg button { text-align: left; min-height: 34px; padding: 0 10px; background: none; border: 1px solid var(--line); border-radius: 4px; }
+.lab-seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.lab label { display: flex; align-items: center; gap: 8px; min-height: 28px; cursor: pointer; }
+.lab p { margin: 0; color: var(--muted); }
+.lab a { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<div class="ax-page">
+  <!-- The player: the live toy in a frame. The shell build has no frame. -->
+  <div class="ax-scene" id="scene">
+    <div class="ax-stage" id="stage">
+      <iframe id="toy" src="../glass/" title="Glass, the toy"></iframe>
+      <div class="ax-shade"></div>
+    </div>
+  </div>
+
+  <main class="ax-annex" id="annex" aria-labelledby="ax-name">
+    <!-- The lip: the cue under the stage. Each direction shows its own parts. -->
+    <div class="ax-lip" id="lip" role="button" tabindex="0" aria-label="Read about Glass">
+      <span class="lip-handle"></span>
+      <svg class="lip-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
+      <svg class="tide" id="tide" aria-hidden="true"><path class="tide-fill"/><path class="tide-line"/></svg>
+      <span class="lip-label"><span id="lip-icon"></span>About Glass</span>
+      <span class="pl-no" data-f="no">No. 13</span>
+      <span class="pl-name" data-f="name">Glass</span>
+      <span class="pl-nl" data-f="nl">Ruitenbreker</span>
+      <span class="pl-gap"></span>
+      <nav class="ax-nav" aria-label="Parts">
+        <a href="#idea">Idea</a><a href="#making">Making of</a><a href="#notes">Notes</a><a href="#credits">Credits</a>
+      </nav>
+      <button class="pl-read" type="button" data-read>Read<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3.5 8.5L8 13l4.5-4.5"/></svg></button>
+      <button class="pl-play" type="button" data-top hidden>Play<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg></button>
+    </div>
+    <div class="ax-veil"></div>
+
+    <div class="ax-body">
+      <div class="ax-col">
+        <header class="ax-title">
+          <div>
+            <h1 id="ax-name" data-f="name">Glass</h1>
+            <p class="ax-nl"><span data-f="nl" style="font-weight: 600; color: var(--fg)">Ruitenbreker</span> <span>/<span data-f="ipa">ˈrœytəˌbreːkər</span>/</span></p>
+            <p class="ax-tag"><span data-f="tag" style="color: var(--fg)">Shards bring luck, supposedly</span><span data-f="tagNl">Scherven brengen geluk, zeggen ze</span></p>
+          </div>
+          <dl class="ax-facts">
+            <div><dt>No.</dt><dd data-f="number">13</dd></div>
+            <div><dt>Series</dt><dd><span id="fact-icon"></span><span data-f="series">Light &amp; glass</span></dd></div>
+            <div><dt>Build</dt><dd>Fresh · <a href="../glass/legacy.html">Classic</a></dd></div>
+            <div><dt>Sound</dt><dd>Off until you ask</dd></div>
+          </dl>
+        </header>
+
+        <nav class="ax-index" aria-label="Parts">
+          <a href="#idea">The idea</a><a href="#making">Making of</a><a href="#notes">Notes</a><a href="#credits">Credits</a>
+        </nav>
+
+        <section class="ax-sec" id="idea">
+          <div>
+            <h2>Why glass breaks in stars</h2>
+          </div>
+          <div class="ax-matter">
+            <div class="ax-prose">
+              <p>A hit bends the pane away from the blow. The far side stretches, and glass is weak when it stretches. Cracks start there and run out from the hit like spokes.</p>
+              <p>The spokes leave long wedges that still bend. Each wedge snaps across, and those breaks join into rings around the hit. A hammer and a brick draw the same star at different sizes. A bullet is so fast that it punches a small cone before the star starts.</p>
+            </div>
+            <figure class="ax-fig ax-fig--draw">
+              <svg viewBox="0 0 460 300" role="img" aria-label="A pane with cracks that run out from one hit, joined by two rings.">
+                <rect x="1" y="1" width="458" height="298" rx="10" fill="none" stroke="var(--line)" stroke-width="2"/>
+                <g fill="none" stroke="var(--fg)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M186 132L204 62 196 2M186 132L262 96 336 76 458 30M186 132L276 150 372 148 458 172M186 132L248 204 300 298M186 132L176 214 196 298M186 132L112 196 44 298M186 132L96 138 2 112M186 132L122 74 62 2"/>
+                </g>
+                <g fill="none" stroke="var(--ax-accent)" stroke-width="1.6" stroke-linejoin="round">
+                  <path d="M199 84L232 110 236 142 214 166 182 172 152 160 140 135 156 104Z"/>
+                  <path d="M204 40L300 86 322 150 268 232 180 258 86 218 58 136 100 54Z"/>
+                </g>
+                <circle cx="186" cy="132" r="4.5" fill="var(--ax-accent)"/>
+              </svg>
+              <figcaption>The spokes come first. The rings join them after.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="ax-sec" id="making">
+          <div>
+            <h2>Making of</h2>
+            <p>One pane, a night city and three passes.</p>
+          </div>
+          <div class="ax-matter">
+            <div class="ax-prose">
+              <p>Glass is a three.js scene: one pane in a rounded frame, a room map for the reflections and a night city behind it. There are nine kinds of glass, from Window to Rainbow, and three tools: a hammer, a gun and a brick.</p>
+              <p>The shot is a Tone.js sound in a small room. It stays silent until you turn the sound on.</p>
+            </div>
+            <table class="ax-table">
+              <thead><tr><th scope="col">Pass</th><th scope="col">What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Scene</td><td>Draws the pane, the frame and the city.</td></tr>
+                <tr><td>Bloom</td><td>Lifts the brightest lights into a soft glow.</td></tr>
+                <tr><td>Output</td><td>Sets tone and colour for the screen.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="ax-fig ax-fig--wide">
+            <div class="ax-slot" style="aspect-ratio: 21 / 9"><span>Wide still · to shoot</span></div>
+            <figcaption>The wide block: one picture across both columns.</figcaption>
+          </figure>
+          <div></div>
+          <figure class="ax-fig ax-fig--pair">
+            <div class="ax-slot" style="aspect-ratio: 4 / 3"><span>Still · to shoot</span></div>
+            <div class="ax-slot" style="aspect-ratio: 4 / 3"><span>Still · to shoot</span></div>
+            <figcaption>The pair block: two pictures in the reading column.</figcaption>
+          </figure>
+        </section>
+
+        <section class="ax-sec" id="notes">
+          <div>
+            <h2>Notes</h2>
+            <p>What changed, newest first.</p>
+          </div>
+          <div>
+            <ol class="ax-log" id="log">
+              <li><time datetime="2026-11-09">9 Nov 2026</time><p>Glass moves to the corners bar. The first shot no longer stalls.</p></li>
+              <li><time datetime="2026-11-09">9 Nov 2026</time><p>The frame fits between the corner rows at every size.</p></li>
+              <li><time datetime="2026-11-04">4 Nov 2026</time><p>Settings gets a Quality choice. High renders at the full resolution of the screen.</p></li>
+              <li hidden><time datetime="2026-11-04">4 Nov 2026</time><p>The stepper arrows hide on phones, so the bar keeps two rows.</p></li>
+              <li hidden><time datetime="2026-11-03">3 Nov 2026</time><p>The muzzle flash is a small blown-out globe in the corner with six faint spikes.</p></li>
+              <li hidden><time datetime="2026-11-03">3 Nov 2026</time><p>Two glasses get plain names: Reeded reads Ribbed, Dichroic reads Rainbow.</p></li>
+              <li hidden><time datetime="2026-11-03">3 Nov 2026</time><p>Glass moves to the shared library set, with a Tone.js shot and room.</p></li>
+            </ol>
+            <button class="ax-more" type="button" id="more">Show all 7 notes</button>
+          </div>
+        </section>
+
+        <section class="ax-sec" id="credits">
+          <div>
+            <h2>Credits</h2>
+            <p>What Glass stands on.</p>
+          </div>
+          <div class="ax-matter">
+            <table class="ax-table">
+              <thead><tr><th scope="col">Part</th><th scope="col">Source</th><th scope="col">Licence</th></tr></thead>
+              <tbody>
+                <tr><td>3D</td><td><a href="https://threejs.org/">three.js</a> 0.170.0</td><td>MIT</td></tr>
+                <tr><td>Sound</td><td><a href="https://tonejs.github.io/">Tone.js</a> 15.0.4, synthesized</td><td>MIT</td></tr>
+                <tr><td>Colour</td><td><a href="https://culorijs.org/">culori</a> 4.0.1</td><td>MIT</td></tr>
+                <tr><td>Type</td><td>Gabarito, Iosevka Term Slab</td><td>SIL Open Font Licence</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="ax-sec" id="try">
+          <div>
+            <h2>Also try</h2>
+          </div>
+          <div class="ax-try" id="try-list">
+            <a href="../rain/"><i style="--e: url(../shared/emblems/rain.svg)"></i><span><b>Rain</b><span></span></span></a>
+            <a href="../bubbles/"><i style="--e: url(../shared/emblems/bubbles.svg)"></i><span><b>Bubbles</b><span></span></span></a>
+            <a href="../prism/"><i style="--e: url(../shared/emblems/prism.svg)"></i><span><b>Prism</b><span>Prisma</span></span></a>
+          </div>
+        </section>
+
+        <footer class="ax-foot">
+          <a href="../">All toys</a>
+          <a href="../glass/legacy.html">Classic build</a>
+          <span></span>
+          <button class="ax-play" type="button" data-top><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>Back to Glass</button>
+        </footer>
+      </div>
+    </div>
+  </main>
+</div>
+
+<button class="ax-back" type="button" data-top><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>Glass</button>
+
+<!-- Lab panel (chrome) -->
+<aside class="lab" id="lab" data-open="false" aria-label="Annex lab">
+  <button class="lab-tab" id="lab-tab" aria-expanded="false" aria-controls="lab-body">Lab · A</button>
+  <div class="lab-body" id="lab-body">
+    <p class="lab-h">Annex lab · round 2</p>
+    <div class="lab-seg" role="group" aria-label="Direction">
+      <button data-d="a" aria-pressed="true">A · Recede</button>
+      <button data-d="d" aria-pressed="false">D · Drum</button>
+      <button data-d="e" aria-pressed="false">E · Placard</button>
+      <button data-d="f" aria-pressed="false">F · Tide</button>
+    </div>
+    <label><input type="checkbox" id="opt-rm"> Reduced motion</label>
+    <p>Keys 1 to 4 switch. The copy is a draft. In this lab the toy runs on under the sheet; the shell build stops it.</p>
+    <p><a href="./">Round 1: wireframes</a></p>
+  </div>
+</aside>
+
+<script type="module">
+// Annex lab, round 2: the direction switch and the scroll driver.
+const html = document.documentElement;
+const q = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const scene = $('scene'), toy = $('toy'), lip = $('lip'), lab = $('lab'), tab = $('lab-tab'), optRm = $('opt-rm');
+const tide = $('tide'), tideFill = tide.querySelector('.tide-fill'), tideLine = tide.querySelector('.tide-line');
+const osReduced = matchMedia('(prefers-reduced-motion: reduce)');
+const DIRS = ['a', 'd', 'e', 'f'];
+
+// URL keys: d direction, rm reduced motion, y scroll in stage heights, lab panel.
+const state = {
+  dir: DIRS.includes(q.get('d')) ? q.get('d') : 'a',
+  rm: q.has('rm') ? q.get('rm') === '1' : osReduced.matches,
+};
+
+// The travel: the stage height less the lip.
+let travel = 1;
+function measure() {
+  const lipPx = parseFloat(getComputedStyle(html).getPropertyValue('--lip')) || 0;
+  travel = Math.max(1, scene.offsetHeight - lipPx);
+}
+
+// The Tide edge: the menu's small wave on a swell that peaks mid-way.
+function drawTide(p) {
+  const w = tide.clientWidth || innerWidth, base = 62;
+  const swell = state.rm ? 0 : 38 * Math.sin(Math.PI * p);
+  const long = Math.max(420, w / 2.2), ph = scrollY * 0.012;
+  const at = x => base + swell * (Math.sin(x / long * 6.2832 + ph) + 0.4 * Math.sin(x / (long * 0.37) * 6.2832 - 1.7 * ph)) / 1.4;
+  let d = `M0 ${at(0).toFixed(1)}`;
+  for (let x = 0, up = true; x < w + 12; x += 12, up = !up) {
+    d += `Q${x + 6} ${(at(x + 6) + (up ? -5 : 5)).toFixed(1)} ${x + 12} ${at(x + 12).toFixed(1)}`;
+  }
+  tideLine.setAttribute('d', d);
+  tideFill.setAttribute('d', `${d}V100H0Z`);
+}
+
+// The toy's own corners fade in the first quarter of the travel.
+function fadeCorners(p) {
+  let doc = null;
+  try { doc = toy.contentDocument; } catch { return; }
+  const ui = doc && doc.querySelector('.stim-ui');
+  if (ui) ui.style.opacity = state.rm ? '' : String(Math.max(0, 1 - p * 4));
+}
+
+let ticking = false, lastP = -1;
+function drive() {
+  ticking = false;
+  const p = Math.min(1, Math.max(0, scrollY / travel));
+  html.style.setProperty('--p', p.toFixed(4));
+  html.style.setProperty('--sy', scrollY.toFixed(1));
+  html.classList.toggle('read', p >= 1);
+  html.classList.toggle('stuck', scrollY >= travel - 0.5);
+  if (state.dir === 'f') drawTide(p);
+  if (p !== lastP) { fadeCorners(p); lastP = p; }
+}
+addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(drive); } }, { passive: true });
+addEventListener('resize', () => { measure(); drive(); });
+
+function apply() {
+  html.dataset.dir = state.dir;
+  html.classList.toggle('rm', state.rm);
+  optRm.checked = state.rm;
+  tab.textContent = 'Lab · ' + state.dir.toUpperCase();
+  lab.querySelectorAll('[data-d]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.d === state.dir)));
+  // The placard holds its own buttons; elsewhere the whole lip is the button.
+  const placard = state.dir === 'e';
+  lip.setAttribute('role', placard ? 'group' : 'button');
+  lip.tabIndex = placard ? -1 : 0;
+  lip.querySelector('.pl-play').hidden = !placard;
+  const u = new URL(location.href);
+  u.searchParams.set('d', state.dir);
+  state.rm !== osReduced.matches ? u.searchParams.set('rm', state.rm ? '1' : '0') : u.searchParams.delete('rm');
+  u.searchParams.delete('y');
+  history.replaceState(null, '', u);
+  measure();
+  lastP = -1;
+  drive();
+}
+
+// Into the content zone, and back to the toy.
+const go = top => scrollTo({ top, behavior: state.rm ? 'auto' : 'smooth' });
+lip.addEventListener('click', e => {
+  if (e.target.closest('a, [data-top]')) return;
+  if (state.dir !== 'e' || e.target.closest('[data-read]')) go(travel);
+});
+lip.addEventListener('keydown', e => {
+  if (e.target === lip && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(travel); }
+});
+document.querySelectorAll('[data-top]').forEach(b => b.addEventListener('click', () => go(0)));
+
+// Notes: the last three show; the button opens the rest.
+$('more').addEventListener('click', e => {
+  $('log').querySelectorAll('li[hidden]').forEach(li => { li.hidden = false; });
+  e.currentTarget.remove();
+});
+
+// The placard marks the part in view.
+const links = [...document.querySelectorAll('.ax-nav a')];
+const spy = new IntersectionObserver(es => es.forEach(en => {
+  if (!en.isIntersecting) return;
+  links.forEach(a => a.setAttribute('aria-current', String(a.hash === '#' + en.target.id)));
+}), { rootMargin: '-20% 0px -70% 0px' });
+['idea', 'making', 'notes', 'credits'].forEach(id => spy.observe($(id)));
+
+// Lab panel.
+tab.addEventListener('click', () => {
+  const open = lab.dataset.open !== 'true';
+  lab.dataset.open = String(open);
+  tab.setAttribute('aria-expanded', String(open));
+});
+lab.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { state.dir = b.dataset.d; apply(); }));
+optRm.addEventListener('change', () => { state.rm = optRm.checked; apply(); });
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const d = DIRS[Number(e.key) - 1];
+  if (d) { state.dir = d; apply(); }
+});
+osReduced.addEventListener('change', () => { if (!q.has('rm')) { state.rm = osReduced.matches; apply(); } });
+toy.addEventListener('load', () => { lastP = -1; drive(); });
+
+// A reload starts at the toy, or at ?y.
+history.scrollRestoration = 'manual';
+if (q.get('lab') === '1') tab.click();
+apply();
+const y = parseFloat(q.get('y'));
+if (!Number.isNaN(y)) { scrollTo(0, y * travel); drive(); }
+
+// The title block and the facts read toys.json and series.json; the markup is the fallback.
+try {
+  const [toys, series] = await Promise.all(['../toys.json', '../series.json'].map(u => fetch(u).then(r => r.json())));
+  const t = toys.glass, s = t && series[t.series];
+  if (t) {
+    const fill = { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, number: t.number, no: 'No. ' + t.number, series: s && s.name };
+    document.querySelectorAll('[data-f]').forEach(el => { if (fill[el.dataset.f] != null) el.textContent = fill[el.dataset.f]; });
+    if (t.accent && !t.accent.includes('gradient')) html.style.setProperty('--ax-accent', t.accent);
+    if (s) {
+      html.style.setProperty('--ax-series', s.color);
+      const { shotIcon } = await import('../shared/series/shots.js');
+      const icon = shotIcon(t.series, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color });
+      $('lip-icon').innerHTML = icon;
+      $('fact-icon').innerHTML = icon;
+    }
+    $('try-list').querySelectorAll('a').forEach(a => {
+      const o = toys[a.getAttribute('href').replace(/\W/g, '')];
+      if (!o) return;
+      a.querySelector('b').textContent = o.name;
+      a.querySelector('span span').textContent = o.nl || '';
+    });
+  }
+} catch { /* The static markup stands. */ }
+</script>
+</body>
+</html>

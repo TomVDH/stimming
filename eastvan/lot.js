@@ -1,4 +1,4 @@
-// East Van: the house lot as plain data. alley.js holds the zone behind it.
+// East Van: the house lot as plain data. modules/house.js builds on it.
 // Units are metres. x runs right, y runs up, z runs to the street.
 // town.js builds the 3D scene from the zone files.
 // A zone exports PARTS, WIRES, POKES, MOVES, ACTS and LAMPS.
@@ -18,6 +18,9 @@ export const COL = {
   garage: [0.74, 0.035, 150], cedar: [0.5, 0.075, 52], lane: [0.45, 0.014, 80], kale: [0.5, 0.09, 168], puddle: [0.52, 0.06, 252],
   raccoon: [0.56, 0.012, 270], ball: [0.66, 0.17, 50], white: [0.93, 0.01, 100],
   mapleRed: [0.64, 0.17, 42], linden: [0.74, 0.14, 112], oak: [0.55, 0.12, 140],
+  tar: [0.6, 0.018, 255],
+  brickDark: [0.4, 0.07, 38], stucco: [0.91, 0.012, 95], greyBand: [0.42, 0.012, 260], navy: [0.32, 0.08, 265],
+  tan: [0.72, 0.07, 72], sage: [0.6, 0.04, 165], lilac: [0.74, 0.05, 335], awnYellow: [0.82, 0.15, 92],
   binGreen: [0.5, 0.12, 150], binGrey: [0.34, 0.012, 260], binBlue: [0.52, 0.14, 255], crow: [0.17, 0.02, 280],
 };
 
@@ -84,10 +87,6 @@ function van(x, z) {
 export const PARTS = [
   // Ground. The paper theatre draws each slab as a band under its flat.
   // under is the height where a second band starts on the paper.
-  // The plinth runs from the far side of the lane to the road.
-  box([0, -0.225, -9.25], [14, 0.35, 38.5], 'soil', HOUSE, { k: 'plinth' }),
-  box([0, -0.7, -9.25], [13.9, 0.6, 38.4], 'earth', HOUSE, { k: 'plinth' }),
-  box([0, -1.175, -9.25], [14, 0.35, 38.5], 'rock', HOUSE, { k: 'plinth' }),
   box([0, 0.1, -3.5], [14, 0.2, 15], 'grass', HOUSE, { k: 'ground' }),
   ...[-6, -4, -2, 0, 2, 4, 6].map(x => box([x, 0.075, 4.7], [1.96, 0.15, 1.4], 'concrete', STREET, { k: 'ground' })),
   box([0, 0.075, 6.1], [14, 0.15, 1.4], 'verge', STREET, { k: 'ground', under: -0.4 }),

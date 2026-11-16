@@ -23,7 +23,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 | Phones | **Corners stay.** All controls stay on the stage. |
 | Toy API | **One spec object** passed to `initPage`. The shell builds all controls. |
 | Pilot | **Galaxy.** Tom then picks the next toys. |
-| After the pilot | One session builds ten new Lab toys on Bar v2 (see Rollout). |
+| After the pilot | One session builds seven new Lab toys on Bar v2 (see Rollout). |
 
 ## 1. Slots
 
@@ -228,7 +228,7 @@ A page without `bar` renders exactly as today. v1 is removed only after the last
 1. **Shell.** Build v2 in `shared/stim.js` and `shared/stim.css`. Only pages that pass `bar` change.
 2. **Pilot: Galaxy.** Replace Galaxy's header, bar, Add tray and Settings markup with the spec above. Delete its local tray CSS and `popover()` wiring. Tom signs off at 1280 px and 375 px.
 3. **`AGENTS.md`.** Replace "Control bar standard" and "Controls" with this spec's slot table and a link here. Close bean `stimming-848s` as superseded.
-4. **Ten new toys.** After Tom signs off the pilot, one session builds these into the Lab on Bar v2, each with a low-fi menu icon and a `toys.json` entry: Sunbeam dust, Wind map, Collatz coral, Ulam spiral, Pull chain, Washing line, Dry ice fog, Bench, Marsh launch, Canal at dusk. Each follows its plan in `docs/plans/`.
+4. **Seven new toys.** After Tom signs off the pilot, one session builds these into the Lab on Bar v2, each with a low-fi menu icon and a `toys.json` entry: Sunbeam dust, Wind map, Ulam spiral, Washing line, Bench, Marsh launch, Canal at dusk. Each follows its plan in `docs/plans/`.
 5. **Migration.** Tom picks the next toys. Each toy moves in its own session, one commit per toy.
 
 ## 6. Checks

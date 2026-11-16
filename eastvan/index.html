@@ -24,11 +24,18 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
   text-shadow: 0 1px 6px oklch(0.1 0.02 280 / 0.7);
 }
 .read { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.credit { position: fixed; right: 14px; top: calc(16px + env(safe-area-inset-top, 0px)); max-width: 46vw; text-align: right; font-size: 11px; line-height: 1.3; color: inherit; opacity: 0.6; }
+/* The credit sits under the place buttons, so the two never overlap. */
+.credit { position: fixed; right: 14px; top: calc(64px + env(safe-area-inset-top, 0px)); max-width: 46vw; text-align: right; font-size: 11px; line-height: 1.3; color: inherit; opacity: 0.6; }
 .credit:hover, .credit:focus-visible { opacity: 1; }
 [hidden] { display: none !important; }
 .keys kbd { font: inherit; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: oklch(0.2 0.02 280 / 0.7); margin-left: 8px; }
-@media (max-width: 640px) { .keys { display: none; } }
+@media (max-width: 640px) {
+  .keys { display: none; }
+  .top .name { display: none; }
+  .seg button { padding: 9px 8px; font-size: 12px; }
+  /* On a phone the credit sits above the readout, clear of the buttons. */
+  .credit { top: auto; bottom: calc(34px + env(safe-area-inset-bottom, 0px)); left: 14px; right: 14px; max-width: none; text-align: left; }
+}
 </style>
 <script type="importmap">
 {
@@ -47,26 +54,29 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 <canvas id="c" aria-label="East Van house lot"></canvas>
 <div class="top">
   <a class="name" href="../index.html?lab" aria-label="Back to the Lab">East Van</a>
-  <div class="seg" id="stops" role="group" aria-label="Place">
-    <button type="button" data-v="house">House</button>
-    <button type="button" data-v="alley">Alley</button>
-    <button type="button" data-v="drive">Drive</button>
-  </div>
+  <div class="seg" id="stops" role="group" aria-label="Place"></div>
+  <div class="seg"><button type="button" id="solo" aria-pressed="false">Solo</button></div>
 </div>
-<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver</a>
+<a class="credit" id="credit" href="https://opendata.vancouver.ca/pages/licence/" target="_blank" rel="noopener" hidden>Contains information licensed under the Open Government Licence – Vancouver · Building tags and places © OpenStreetMap contributors (ODbL)</a>
 <div class="foot">
   <span class="read" id="read"></span>
-  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1 2 3</kbd> place</span>
+  <span class="keys"><kbd>CLICK</kbd> poke <kbd>DRAG</kbd> turn <kbd>SCROLL</kbd> zoom <kbd>1–5</kbd> place <kbd>S</kbd> solo</span>
 </div>
 <script type="module">
 // East Van: the Toy-town house lot. town.js builds it; lens.js draws it.
 // This page owns the camera, the pointer and the frame loop.
 import * as THREE from 'three';
-import { pixelRatio, whenVisible, css } from '../shared/stim.js';
-import { buildTown } from './town.js';
-import * as lot from './lot.js';
-import * as alley from './alley.js';
-import { buildLife } from './life.js';
+import { gsap } from 'gsap';
+import { pixelRatio, whenVisible, css, reduced, idle } from '../shared/stim.js';
+import { buildTown, buildStage, buildModule, signsReady } from './town.js';
+import { wireY } from './lot.js';
+import * as house from './modules/house.js';
+import * as yard from './modules/yard.js';
+import * as lane from './modules/lane.js';
+import * as run from './modules/run.js';
+import * as drive from './modules/drive.js';
+import { houseLife, laneLife, runLife, buildCrow } from './life.js';
+import { layWalk, near, stopWorld, fitDistance, sunBox } from './walk.js';
 import { createLens } from './lens.js';
 
 const canvas = document.getElementById('c'), read = document.getElementById('read');
@@ -95,53 +105,168 @@ function skyTexture(v0, v1) {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-// Two dioramas: the house lot with its alley, and the Drive.
-// The Drive loads on the first visit: it reads the baked city data.
 const sky = skyTexture(0.2, 0.8), lens = createLens(renderer);
-const PLACES = {
-  home: () => buildTown(sky, [lot, alley], buildLife),
-  drive: async () => buildTown(sky, [await (await import('./drive.js')).loadDrive()]),
-};
-const towns = {};
-let town = null, place = '', stop = null;
 const cam = new THREE.PerspectiveCamera(22, 1, 5, 160);
-const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50 };
-// A stop is a place the camera rests on: a target and a side to look from.
-// w and h are the metres the frame must hold. band and range set the depth blur.
-const STOPS = {
-  // tall is the width to hold on an upright screen.
-  house: { place: 'home', at: [0, 2.6, 0], yaw: 0.5, w: 27, tall: 19, h: 19, band: 5, range: 14 },
-  alley: { place: 'home', at: [0, 2.2, -20.5], yaw: Math.PI + 0.55, w: 27, tall: 19, h: 19, band: 5, range: 14 },
-  // The Drive is a disc 116 m across. The view runs up the street from the south.
-  drive: { place: 'drive', at: [0, 4, 0], yaw: -Math.PI / 2 + 0.38, pitch: 0.72, w: 130, tall: 122, h: 78, band: 24, range: 64 },
-};
-const TARGET = new THREE.Vector3(0, 2.6, 0), goal = new THREE.Vector3(0, 2.6, 0);
-function refit() {
-  if (!stop) return;
-  const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight), t = Math.tan(cam.fov * Math.PI / 360);
-  view.fit = Math.max(stop.h / (2 * t), (w < h ? stop.tall : stop.w) / (2 * t * (w / h)));
+const still = () => reduced();
+
+/* ---------- the walk: modules in order, built when the camera comes near ---------- */
+// Each entry: the module file, its life, and its label on the place buttons.
+const WALK = [[house, houseLife, 'House'], [yard, null, 'Yard'], [lane, laneLife, 'Lane'], [run, runLife, 'Run'], [drive, null, 'Drive']];
+const PLACED = layWalk(WALK.map(([m]) => m), [0, house.ORIGIN[2]]);
+const STOPS = WALK.map(([m], i) => stopWorld(m.STOP, PLACED[i]));
+const stage = buildStage(sky), built = [], building = [];
+// The crow flies from the street wire at the house to the lane wire.
+const laneTop = lane.WIRES[1], awayX = 1.5, awayLocal = [awayX, wireY(laneTop, awayX), laneTop.a[2]];
+const awayWorld = new THREE.Vector3(...awayLocal).add(new THREE.Vector3(...PLACED[2].offset));
+const crow = buildCrow(stage.scene, house.CROW.home, awayWorld.toArray());
+// Builds a module once. A second call waits on the first.
+function build(i) {
+  if (built[i]) return Promise.resolve(built[i]);
+  return (building[i] ||= Promise.resolve().then(async () => {
+    // A module with load() reads its parts on the first visit.
+    const [m, life] = WALK[i], data = m.load ? { ...m, ...(await m.load()) } : m;
+    // Shop signs draw their names in the page font.
+    if (m.load) await signsReady;
+    const mod = buildModule(data, PLACED[i], life);
+    stage.scene.add(mod.group);
+    built[i] = mod;
+    place(i);
+    return mod;
+  }).catch(err => {
+    // A failed load can try again on the next visit.
+    building[i] = null;
+    throw err;
+  }));
 }
-async function setStop(name, snap) {
-  const s = STOPS[name];
-  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(b.dataset.v === name));
-  if (s.place !== place) {
-    // Another diorama: build it once, then open on it with no travel.
-    towns[s.place] ||= await PLACES[s.place]();
-    town = towns[s.place]; place = s.place; snap = true;
-  }
-  stop = s;
-  // The Drive is built from city data: its licence asks for this credit.
-  document.getElementById('credit').hidden = s.place !== 'drive';
-  refit();
-  lens.uniforms.lens.uBand.value = s.band; lens.uniforms.lens.uRange.value = s.range;
-  goal.set(...s.at);
+// A module takes its state from where the camera is now.
+// A module that lands after its goTo was overtaken still gets its state.
+function place(i) {
+  const m = built[i];
+  if (!m) return;
+  const show = !solo || i === cur;
+  m.setShown(show);
+  m.setActive(show && near(cur, WALK.length).includes(i));
+  boundsZoom();
+  setCredit();
+}
+// The Drive is built from city data: its licence asks for this credit
+// whenever any of that data is on screen.
+function setCredit() {
+  const d = built[WALK.findIndex(([m]) => m.ID === 'drive')];
+  document.getElementById('credit').hidden = !(inCorner || (d && d.shown));
+}
+
+/* ---------- the Corner: the disc round Commercial and East 4th ---------- */
+// It is a place of its own, outside the walk. It loads on the first visit.
+const CORNER = { at: [0, 4, 0], yaw: -Math.PI / 2 + 0.38, pitch: 0.72, w: 130, tall: 122, h: 78, band: 24, range: 64 };
+let corner = null, inCorner = false;
+
+/* ---------- camera state ---------- */
+const view = { yaw: 0.5, pitch: 0.3, zoom: 1, ty: 0.5, tp: 0.3, tz: 1, fit: 50, zmax: 1.9 };
+const TARGET = new THREE.Vector3(0, 2.6, 0), goal = new THREE.Vector3(0, 2.6, 0);
+let cur = 0, stop = STOPS[0], solo = false, gliding = null, wantGo = 0;
+function fitFor(st) {
+  return fitDistance(st, Math.max(2, canvas.clientWidth || innerWidth), Math.max(2, canvas.clientHeight || innerHeight), cam.fov);
+}
+function refit() { if (stop) view.fit = fitFor(stop); boundsZoom(); }
+// The bounds of every built module, in the world.
+const bounds = { c: new THREE.Vector3(), w: 14, d: 14 };
+// fit: the stop's own framing; the target fit while a glide runs.
+function boundsZoom(fit = stop ? fitFor(stop) : view.fit) {
+  const ps = built.map((m, i) => m && m.shown && PLACED[i]).filter(Boolean);
+  if (!ps.length || inCorner) { view.zmax = 1.9; return; }
+  const x0 = Math.min(...ps.map(p => p.centre[0] - p.size[0] / 2)), x1 = Math.max(...ps.map(p => p.centre[0] + p.size[0] / 2));
+  const z0 = Math.min(...ps.map(p => p.centre[2] - p.size[1] / 2)), z1 = Math.max(...ps.map(p => p.centre[2] + p.size[1] / 2));
+  bounds.c.set((x0 + x1) / 2, 2, (z0 + z1) / 2); bounds.w = x1 - x0; bounds.d = z1 - z0;
+  // Scrolled fully out, the frame holds the whole built walk.
+  const span = Math.hypot(bounds.w, bounds.d) + 4;
+  view.zmax = Math.max(1.9, fitFor({ w: span * 0.8, tall: span * 0.8, h: span * 0.55 }) / fit);
+}
+// The shadow box covers the active set, measured along the light's axes.
+function fitSunTo(idx) {
+  const box = sunBox(idx.map(i => PLACED[i]), [-15, 9, 22]);
+  stage.fitSun(new THREE.Vector3(...box.centre), box.half);
+}
+// Only the module in view and its neighbours move, cast shadows and take pokes.
+function activate(i) {
+  built.forEach((m, j) => place(j));
+  fitSunTo(solo ? [i] : near(i, WALK.length));
+  setCredit();
+}
+function setButtons() {
+  for (const b of document.getElementById('stops').children) b.setAttribute('aria-pressed', String(inCorner ? b.dataset.v === 'corner' : +b.dataset.v === cur));
+}
+function aimAt(st, snap) {
+  stop = st;
+  const fit = fitFor(st);
+  lens.uniforms.lens.uBand.value = st.band; lens.uniforms.lens.uRange.value = st.range;
   // Turn the short way round to the stop's side.
-  view.ty += Math.atan2(Math.sin(s.yaw - view.ty), Math.cos(s.yaw - view.ty));
-  view.tp = s.pitch ?? 0.3; view.tz = 1;
-  // The first stop has no travel: the page opens on it.
-  if (snap) { view.yaw = view.ty; view.pitch = view.tp; TARGET.copy(goal); }
+  const yaw = view.ty + Math.atan2(Math.sin(st.yaw - view.ty), Math.cos(st.yaw - view.ty)), pitch = st.pitch ?? 0.3;
+  gliding?.kill(); gliding = null;
+  if (snap || still()) {
+    goal.set(...st.at); TARGET.copy(goal); view.ty = view.yaw = yaw; view.tp = view.pitch = pitch; view.fit = fit; view.tz = view.zoom = 1;
+  } else {
+    // The glide moves the target, the turn and the framing together.
+    const g = { x: TARGET.x, y: TARGET.y, z: TARGET.z, yaw: view.yaw, pitch: view.pitch, fit: view.fit, zoom: view.zoom };
+    gliding = gsap.to(g, {
+      x: st.at[0], y: st.at[1], z: st.at[2], yaw, pitch, fit, zoom: 1, duration: 1.1, ease: 'power2.inOut',
+      onUpdate() { goal.set(g.x, g.y, g.z); TARGET.copy(goal); view.ty = view.yaw = g.yaw; view.tp = view.pitch = g.pitch; view.fit = g.fit; view.tz = view.zoom = g.zoom; wake(); },
+      onComplete() { gliding = null; boundsZoom(); buildAhead(); },
+    });
+  }
+  boundsZoom(fit);
+  if (!gliding) buildAhead();
   wake();
 }
+// The next modules along build in idle time, once the camera rests.
+function buildAhead() {
+  if (inCorner) return;
+  for (const j of [cur + 1, cur - 1, cur + 2, cur - 2]) if (j >= 0 && j < WALK.length && !built[j]) idle().then(() => build(j).catch(() => {}));
+}
+// Goes to module i of the walk: builds it and its neighbours first.
+// The camera goes as soon as module i stands; its neighbours follow.
+async function goTo(i, { snap = false } = {}) {
+  i = Math.max(0, Math.min(WALK.length - 1, i));
+  const ticket = ++wantGo;
+  try { await build(i); } catch { return; }
+  // A later key press wins.
+  if (ticket !== wantGo) return;
+  inCorner = false; cur = i;
+  soloBtn.disabled = false;
+  activate(i);
+  setButtons();
+  aimAt(STOPS[i], snap);
+}
+async function goCorner() {
+  const ticket = ++wantGo;
+  const parts = await (await import('./drive.js')).loadDrive();
+  await signsReady;
+  corner ||= buildTown(sky, [parts]);
+  if (ticket !== wantGo) return;
+  inCorner = true;
+  setCredit();
+  setButtons();
+  soloBtn.disabled = true;
+  aimAt(CORNER, true);
+}
+// Solo shows one module alone. It does nothing on the Corner.
+function toggleSolo() {
+  if (inCorner) return;
+  solo = !solo;
+  soloBtn.setAttribute('aria-pressed', String(solo));
+  activate(cur);
+  boundsZoom();
+  wake();
+}
+
+/* ---------- place buttons ---------- */
+const stopsEl = document.getElementById('stops'), soloBtn = document.getElementById('solo');
+soloBtn.addEventListener('click', toggleSolo);
+// The Corner is off the walk for now (Tom, 2026-11-14). Only ?dev reaches it.
+const DEV = new URLSearchParams(location.search).has('dev');
+stopsEl.innerHTML = WALK.map(([, , label], i) => `<button type="button" data-v="${i}">${label}</button>`).join('');
+stopsEl.addEventListener('click', e => { const b = e.target.closest('button'); if (b) (b.dataset.v === 'corner' ? goCorner() : goTo(+b.dataset.v)); });
+
 function resize() {
   const w = Math.max(2, canvas.clientWidth || innerWidth), h = Math.max(2, canvas.clientHeight || innerHeight);
   renderer.setPixelRatio(pixelRatio(w, h, { maxDpr: 2 }));
@@ -151,13 +276,19 @@ function resize() {
   cam.aspect = w / h;
   refit();
 }
+const look = new THREE.Vector3();
 function aim() {
-  view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
-  TARGET.lerp(goal, 0.1);
+  if (!gliding) {
+    view.yaw = lerp(view.yaw, view.ty, 0.18); view.pitch = lerp(view.pitch, view.tp, 0.18); view.zoom = lerp(view.zoom, view.tz, 0.18);
+    TARGET.lerp(goal, 0.1);
+  }
+  // Past the stop's own framing, the view drifts to the middle of the walk.
+  const out = inCorner ? 0 : clamp((view.zoom - 1) / Math.max(0.01, view.zmax - 1), 0, 1);
+  look.copy(TARGET).lerp(bounds.c, out * out);
   const d = view.fit * view.zoom, cp = Math.cos(view.pitch);
-  cam.position.set(TARGET.x + Math.sin(view.yaw) * cp * d, TARGET.y + Math.sin(view.pitch) * d, TARGET.z + Math.cos(view.yaw) * cp * d);
-  cam.lookAt(TARGET);
-  const span = stop ? stop.w * 0.9 : 24;
+  cam.position.set(look.x + Math.sin(view.yaw) * cp * d, look.y + Math.sin(view.pitch) * d, look.z + Math.cos(view.yaw) * cp * d);
+  cam.lookAt(look);
+  const span = (stop ? stop.w * 0.9 : 24) + out * (bounds.w + bounds.d);
   cam.near = Math.max(3, d - span - 20); cam.far = d + span + 40;
   cam.updateProjectionMatrix();
   cam.updateMatrixWorld();
@@ -165,18 +296,31 @@ function aim() {
 }
 
 /* ---------- pokes: the nearest target under the pointer ---------- */
+// Every built module's pokes, and the crow's. Each knows its module.
+function pokeList() {
+  if (inCorner) return corner ? corner.pokes.map(q => ({ q, i: -1 })) : [];
+  const list = built[0] && built[0].shown && built[2] ? [{ q: crow.poke, i: -1 }] : [];
+  built.forEach((m, i) => { if (m && m.shown) for (const q of m.pokes) list.push({ q, i }); });
+  return list;
+}
 const v = new THREE.Vector3();
 function pokeAt(x, y) {
   const r = canvas.getBoundingClientRect();
   let best = null, bestD = Infinity;
-  for (const q of town ? town.pokes : []) {
-    v.copy(q.pos).applyMatrix4(cam.matrixWorldInverse);
-    const reach = q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
+  for (const it of pokeList()) {
+    v.copy(it.q.pos).applyMatrix4(cam.matrixWorldInverse);
+    if (v.z > -0.1) continue;
+    const reach = it.q.r * r.height / (2 * Math.tan(cam.fov * Math.PI / 360) * -v.z);
     v.applyMatrix4(cam.projectionMatrix);
     const d = Math.hypot((v.x * 0.5 + 0.5) * r.width - (x - r.left), (0.5 - v.y * 0.5) * r.height - (y - r.top));
-    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = q; bestD = d; }
+    if (d < Math.max(reach, 18) * 1.25 && d < bestD) { best = it; bestD = d; }
   }
   return best;
+}
+// A poke on a module far from the view travels there instead of firing.
+function press(it) {
+  if (it.i >= 0 && !(built[it.i].active && built[it.i].shown)) goTo(it.i);
+  else it.q.fire();
 }
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
@@ -190,20 +334,24 @@ canvas.addEventListener('pointermove', e => {
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY;
   if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
-  if (!drag.moved) return;
+  if (!drag.moved || gliding) return;
   view.ty -= dx * 0.006;
   view.tp = clamp(view.tp + dy * 0.005, 0.06, 0.95);
 });
 canvas.addEventListener('pointerup', e => {
-  if (drag && !drag.moved && performance.now() - drag.t < 500) { const q = pokeAt(e.clientX, e.clientY); if (q) q.fire(); }
+  if (drag && !drag.moved && performance.now() - drag.t < 500) { const it = pokeAt(e.clientX, e.clientY); if (it) press(it); }
   drag = null;
 });
 canvas.addEventListener('pointercancel', () => { drag = null; });
-canvas.addEventListener('wheel', e => { e.preventDefault(); view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, 1.9); wake(); }, { passive: false });
-document.getElementById('stops').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setStop(b.dataset.v); });
+canvas.addEventListener('wheel', e => { e.preventDefault(); if (gliding) return; view.tz = clamp(view.tz * Math.exp(e.deltaY * 0.0012), 0.45, view.zmax); wake(); }, { passive: false });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === '1') setStop('house'); else if (e.key === '2') setStop('alley'); else if (e.key === '3') setStop('drive');
+  const n = +e.key;
+  if (e.key >= '1' && e.key <= '9' && n <= WALK.length) goTo(n - 1);
+  else if (e.key === '0' && DEV) goCorner();
+  else if (e.key === 'ArrowRight') goTo(inCorner ? WALK.length - 1 : cur + 1);
+  else if (e.key === 'ArrowLeft') goTo(inCorner ? WALK.length - 1 : cur - 1);
+  else if (e.key.toLowerCase() === 's') toggleSolo();
 });
 
 /* ---------- frame loop ---------- */
@@ -215,9 +363,15 @@ function frame(now) {
   last = now;
   fps = lerp(fps, 1 / dt, 0.08);
   const d = aim();
-  if (town) {
-    town.update(now / 1000, dt);
-    lens.render(town.scene, cam, d, town.noInk);
+  if (inCorner && corner) {
+    corner.update(now / 1000, dt);
+    lens.render(corner.scene, cam, d, corner.noInk);
+  } else if (built.some(Boolean)) {
+    for (const m of built) m?.update(now / 1000, dt);
+    // The crow lives on the house's wire, so it shows with the house.
+    crow.visible(!!built[0] && built[0].shown);
+    crow.update(now / 1000);
+    lens.render(stage.scene, cam, d, built.flatMap(m => (m ? m.noInk : [])));
   }
   if (now - readAt > 300) {
     readAt = now;
@@ -234,7 +388,11 @@ whenVisible(canvas, on => { visible = on; if (on) wake(); });
 // The pane can open at zero size, so the canvas itself reports its size.
 new ResizeObserver(() => { resize(); wake(); }).observe(canvas);
 resize();
-setStop(STOPS[new URLSearchParams(location.search).get('at')] ? new URLSearchParams(location.search).get('at') : 'house', true);
+// With ?dev the walk's state is open to the console.
+if (new URLSearchParams(location.search).has('dev')) window.eastvan = { built, PLACED, STOPS, goTo, aimAt, pokeList, stage };
+// ?dev&at=corner opens the Corner; ?at=2 opens module 2, counted from 1.
+const at = new URLSearchParams(location.search).get('at');
+if (DEV && (at === 'corner' || at === 'drive')) goCorner(); else goTo(Math.max(0, (+at || 1) - 1), { snap: true });
 </script>
 </body>
 </html>

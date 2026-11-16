@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Spark wheel 3</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Spark wheel 3</h1>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const RAD = Math.PI / 180, TAU = Math.PI * 2;
+  const BG = 'oklch(0.16 0.012 275)';
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => `<linearGradient id="${u}rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.62"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient><radialGradient id="${u}lit" cx="0.32" cy="0.26" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>`;
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c]) => `<stop offset="${o}" style="stop-color: ${c}"/>`).join('')}</linearGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+
+  // The toy's sparks: white at the head, gold, amber, then ember red.
+  const WHITE = 'oklch(0.99 0.03 95)', GOLD = 'oklch(0.94 0.11 92)', AMBER = 'oklch(0.86 0.15 75)', EMBER = 'oklch(0.72 0.19 45)';
+  const SPARKS = [WHITE, GOLD, AMBER, EMBER];
+  // A spark that forks: a four-point star.
+  const STAR = 'M0 -1L0.2 -0.2L1 0L0.2 0.2L0 1L-0.2 0.2L-1 0L-0.2 -0.2Z';
+  const star = (x, y, r, fill) => `<path d="${STAR}" transform="translate(${x} ${y}) scale(${r})" fill="${fill}" stroke="none"/>`;
+  // A frozen streak: amber body, white head.
+  const streaks = L => L.map(([x1, y1, x2, y2, w]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${AMBER}" stroke-width="${w}"/><line x1="${f(lerp(x1, x2, 0.55))}" y1="${f(lerp(y1, y2, 0.55))}" x2="${x2}" y2="${y2}" stroke="${WHITE}" stroke-width="${w}"/>`).join('');
+  // Five holes on a circle, turned by a.
+  const holesAt = (a, r) => [0, 1, 2, 3, 4].map(i => { const t = -a + (i * 72 - 90) * RAD; return [f(r * Math.cos(t)), f(r * Math.sin(t))]; });
+  const HEX = r => [0, 1, 2, 3, 4, 5].map(i => `${f(r * Math.cos(i * 60 * RAD))},${f(r * Math.sin(i * 60 * RAD))}`).join(' ');
+  // The rim's glow: deep red, orange, white.
+  const HEAT = [[0.5, 0.2, 28], [0.74, 0.19, 52], [0.98, 0.07, 95]];
+  const heatCol = h => {
+    const t = clamp(h) * 2, i = t < 1 ? 0 : 1, k = t - i, A = HEAT[i], B = HEAT[i + 1];
+    return `oklch(${f(lerp(A[0], B[0], k))} ${f(lerp(A[1], B[1], k))} ${f(lerp(A[2], B[2], k))})`;
+  };
+
+  // Sparks: a pool of streak lines, each on its own flight.
+  // O: at, a (degrees), v, g, floor (a number or a function of x), life, w, tail, cols.
+  const jet = (parent, n, O) => {
+    const ps = Array.from({ length: n }, () => ({ el: el('line', { opacity: 0 }, parent), age: 1, life: 0 }));
+    let next = 0;
+    return {
+      emit(o = {}) {
+        const p = ps[next];
+        next = (next + 1) % n;
+        const sp = rnd(O.v[0], O.v[1]) * (o.speed ?? 1), a = (rnd(O.a[0], O.a[1]) + (o.turn ?? 0)) * RAD;
+        Object.assign(p, { x: O.at[0], y: O.at[1], vx: sp * Math.cos(a), vy: sp * Math.sin(a), age: 0, life: rnd(O.life[0], O.life[1]) * (o.life ?? 1) });
+        if (O.cols) p.el.setAttribute('stroke', O.cols[(Math.random() * O.cols.length) | 0]);
+        p.el.setAttribute('stroke-width', f(rnd(O.w[0], O.w[1]) * (O.even ? 1 : o.size ?? 1)));
+      },
+      step(dt) {
+        let live = 0;
+        for (const p of ps) {
+          if (p.age >= p.life) continue;
+          p.age += dt;
+          if (p.age >= p.life) { p.el.setAttribute('opacity', 0); continue; }
+          live++;
+          p.vy += O.g * dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          // A spark skips on the floor.
+          const fl = typeof O.floor === 'function' ? O.floor(p.x) : O.floor;
+          if (fl != null && p.y > fl && p.vy > 0) { p.y = fl; p.vy *= -0.35; p.vx *= 0.7; }
+          const ty = p.y - p.vy * O.tail, e = p.el;
+          e.setAttribute('x1', f(p.x));
+          e.setAttribute('y1', f(p.y));
+          e.setAttribute('x2', f(p.x - p.vx * O.tail));
+          e.setAttribute('y2', f(fl != null ? Math.min(fl, ty) : ty));
+          e.setAttribute('opacity', f(1 - (p.age / p.life) ** 2));
+        }
+        return live;
+      },
+    };
+  };
+
+  // The gesture: pointer travel flicks the wheel.
+  // Spin throws sparks and heats the rim; a full heat flares.
+  const GRIND = 16;
+  const drive = (T, J, still) => {
+    const st = { w: 0, a: 0, hot: 0, on: false, demo: false, last: null, owe: 0, run: false };
+    const stop = () => {
+      st.run = false;
+      gsap.ticker.remove(tick);
+      gsap.to(still, { opacity: 1, duration: 0.5, overwrite: true });
+    };
+    function tick() {
+      const dt = Math.min(0.05, gsap.ticker.deltaRatio(60) / 60);
+      // A hover holds a slow turn; keyboard focus holds a full grind.
+      const hold = st.demo ? GRIND : st.on ? 5 : 0;
+      st.w = Math.max(hold, st.w - (1.2 * st.w + 2) * dt);
+      st.a += st.w * dt;
+      const j = clamp(st.w / GRIND);
+      st.hot = clamp(st.hot + (j > 0.45 ? 0.4 * j : -0.3) * dt);
+      st.owe += j * 40 * (1 + 0.6 * st.hot) * dt;
+      while (st.owe >= 1) { st.owe--; J.emit({ speed: 0.55 + 0.6 * j }); }
+      if (st.hot >= 1) {
+        for (let i = 0; i < 16; i++) J.emit({ speed: 1.5, turn: rnd(-45, 25), life: 1.5, size: 1.5 });
+        st.hot = 0.35;
+        T.flash();
+      }
+      const live = J.step(dt);
+      T.set(st.a, st.hot, j);
+      if (!st.on && st.w === 0 && !live && st.hot === 0) stop();
+    }
+    T.set(0, 0, 0);
+    return {
+      enter(p) {
+        Object.assign(st, { on: true, last: p, demo: !p, w: Math.max(st.w, 11) });
+        if (st.run) return;
+        st.run = true;
+        gsap.ticker.add(tick);
+        gsap.to(still, { opacity: 0, duration: 0.2, overwrite: true });
+      },
+      move(p) {
+        if (!p) return;
+        if (st.last) st.w = Math.min(26, st.w + Math.hypot(p[0] - st.last[0], p[1] - st.last[1]) * 0.22);
+        st.last = p;
+        st.demo = false;
+      },
+      leave() { st.on = false; st.demo = false; st.last = null; },
+    };
+  };
+  const pulse = (node, at) => gsap.fromTo(node, { opacity: 0.9, scale: 0.8, svgOrigin: at }, { opacity: 0, scale: 1.4, svgOrigin: at, duration: 0.5, ease: 'power2.out' });
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `
+        <rect x="44" y="72" width="9" height="24" fill="oklch(0.42 0.008 70)"/>
+        <circle cx="48" cy="48" r="25" fill="oklch(0.5 0.01 250)"/>
+        <circle class="kn" cx="48" cy="48" r="22.5" fill="none" stroke="oklch(0.86 0.01 250)" stroke-width="5" stroke-dasharray="2.6 2.3"/>
+        <circle cx="48" cy="48" r="15" fill="oklch(0.36 0.01 250)"/>
+        <circle cx="48" cy="48" r="4" fill="oklch(0.12 0.01 250)"/>
+        <g class="fly" stroke-linecap="round" stroke-width="2.4" opacity="0">
+          <line x1="54" y1="73" x2="66" y2="74" stroke="oklch(0.95 0.08 90)"/>
+          <line x1="54" y1="73" x2="64" y2="78" stroke="oklch(0.85 0.15 70)"/>
+          <line x1="54" y1="73" x2="67" y2="70" stroke="oklch(0.95 0.08 90)"/>
+          <line x1="54" y1="73" x2="63" y2="81" stroke="oklch(0.75 0.17 50)"/>
+          <line x1="54" y1="73" x2="65" y2="76" stroke="oklch(0.85 0.15 70)"/>
+        </g>
+        <g fill="oklch(0.72 0.17 45)"><circle cx="82" cy="106" r="1.8"/><circle cx="96" cy="103" r="1.4"/><circle cx="104" cy="108" r="1.6"/></g>`;
+      const knurl = svg.querySelector('.kn'), fly = svg.querySelector('.fly'), lines = [...fly.children];
+      let tl = null;
+      return {
+        enter() {
+          if (tl) return;
+          gsap.set(fly, { opacity: 1 });
+          tl = gsap.timeline({ repeat: -1, repeatDelay: 0.15 });
+          tl.fromTo(knurl, { rotation: 0, svgOrigin: '48 48' }, { rotation: 140, svgOrigin: '48 48', duration: 0.7, ease: 'power2.out' }, 0);
+          lines.forEach((e, i) => tl.fromTo(e, { x: 0, y: 0, opacity: 1, scale: 0.4, svgOrigin: '54 73' }, { x: 30 + i * 6, y: 14 + i * 5, opacity: 0, scale: 1.2, svgOrigin: '54 73', duration: 0.55, ease: 'power1.in' }, i * 0.05));
+        },
+        move() {},
+        leave() {
+          tl?.kill();
+          tl = null;
+          gsap.to(fly, { opacity: 0, duration: 0.25, overwrite: true });
+          gsap.to(knurl, { rotation: 0, svgOrigin: '48 48', duration: 0.4, overwrite: true });
+        },
+      };
+    },
+  });
+
+  // The look of the toy now: a swept turquoise body, a cream roller with swept slots, brass.
+  const TEAL_D = 'oklch(0.3 0.06 202)', SLOT = 'oklch(0.2 0.035 205)', BRASS = 'oklch(0.82 0.13 86)';
+  // A swept slot in a face of radius rf: it runs out from the hub and trails the spin.
+  const blade = rf => {
+    const L = [], B = [];
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12, q = 0.37 + 0.37 * t, a = -0.95 * t, w = rf * (0.05 + 0.07 * Math.sin(Math.PI * t) ** 0.7);
+      const tx = 0.37 * Math.cos(a) + q * 0.95 * Math.sin(a), ty = 0.37 * Math.sin(a) - q * 0.95 * Math.cos(a), l = Math.hypot(tx, ty);
+      const cx = rf * q * Math.cos(a), cy = rf * q * Math.sin(a);
+      L.push([cx - (ty / l) * w, cy + (tx / l) * w]);
+      B.unshift([cx + (ty / l) * w, cy - (tx / l) * w]);
+    }
+    return poly([...L, ...B]);
+  };
+  const slots = rf => [0, 1, 2, 3, 4].map(i => `<path d="${blade(rf)}" transform="rotate(${i * 72 - 90})"/>`).join('');
+
+  /* ================= A · Shaded object ================= */
+
+  // A: the roller in its swept enamel body, a brass flint column, a fan of forked sparks.
+  {
+    const CX = 60, CY = 52, RX = 24, RY = 29, BX = CX - 13, SQ = f(RX / RY);
+    const BAND = `M${CX} ${CY - RY}H${BX}A${RX} ${RY} 0 0 0 ${BX} ${CY + RY}H${CX}Z`;
+    // One cheek of the body in side view: the foot, the back sweep, the axle.
+    const CHEEK = `M80 104.5H44C18 104.5 6.5 90 7 72C7.5 52 22 38 42 38C52 38 57.5 44.5 ${CX} ${CY}`;
+    const SOLE = 'M82 107.5H46L33 102.5H69Z';
+    const FAN = [[63, 83.5, 76, 80.5, 2.2], [64, 86, 80, 89, 2], [66, 81, 90, 73.5, 1.8], [70, 89.5, 88, 98, 1.8], [80, 84.5, 103, 84, 1.6], [92, 92, 105, 99.5, 1.5]];
+    const STARS = [[108, 71, 5.6], [111, 86.5, 4], [100, 103, 3.2]];
+    const STEEL_D = 'oklch(0.3 0.02 258)';
+    DIRS.push({
+      l: 'A', name: 'Shaded object',
+      box: [1, 14, 114, 98],
+      art(svg, u) {
+        svg.innerHTML = `
+          <defs>${light(u)}
+            ${lg(`${u}r`, [[0, 'oklch(0.96 0.008 250)'], [0.16, 'oklch(0.78 0.015 250)'], [0.62, 'oklch(0.54 0.02 255)'], [1, 'oklch(0.36 0.02 258)']])}
+            ${lg(`${u}f`, [[0, 'oklch(0.95 0.03 95)'], [1, 'oklch(0.76 0.055 85)']], 'x1="0.1" y1="0" x2="0.9" y2="1"')}
+            ${lg(`${u}t`, [[0, 'oklch(0.8 0.1 192)'], [1, 'oklch(0.52 0.095 200)']], 'x1="0" y1="0" x2="1" y2="1"')}
+            ${lg(`${u}b`, [[0, 'oklch(0.93 0.12 90)'], [1, 'oklch(0.66 0.15 62)']], 'x1="0" y1="0" x2="1" y2="0"')}
+            <pattern id="${u}k" patternUnits="userSpaceOnUse" width="4.4" height="4.4"><path d="M-1 -1L5.4 5.4M5.4 -1L-1 5.4" stroke="oklch(0.22 0.02 258)" stroke-width="0.75" opacity="0.6"/></pattern>
+            ${blur(`${u}s`, 0.9)}${blur(`${u}g`, 5)}
+          </defs>
+          <ellipse class="halo" cx="${CX - 6}" cy="${CY}" rx="38" ry="40" filter="url(#${u}g)" opacity="0"/>
+          <ellipse class="fl" cx="${CX - 4}" cy="${CY + 8}" rx="40" ry="42" fill="${WHITE}" filter="url(#${u}g)" opacity="0"/>
+          <path d="${SOLE}" fill="oklch(0.44 0.085 200)"/>
+          <rect x="49.5" y="80" width="9" height="22" rx="1.2" fill="url(#${u}b)"/>
+          <g stroke="oklch(0.5 0.12 62)" stroke-width="0.7" opacity="0.7"><path d="M52 83V101M54 83V101M56 83V101"/></g>
+          <rect x="48.6" y="79" width="10.8" height="3" rx="1" fill="${BRASS}"/>
+          <rect class="tube" x="48.6" y="79" width="10.8" height="6" rx="1" opacity="0"/>
+          <circle class="tip" cx="58" cy="83" r="8" fill="${AMBER}" filter="url(#${u}g)"/>
+          <path d="${BAND}" fill="url(#${u}r)"/>
+          <path class="glow" d="${BAND}" opacity="0"/>
+          <path d="${BAND}" fill="url(#${u}k)"/>
+          <ellipse cx="${BX - 7}" cy="${CY - RY + 6}" rx="8" ry="2.6" fill="#fff" filter="url(#${u}s)" opacity="0.85" transform="rotate(-24 ${BX - 7} ${CY - RY + 6})"/>
+          <ellipse cx="${CX}" cy="${CY}" rx="${RX}" ry="${RY}" fill="url(#${u}f)"/>
+          <ellipse cx="${CX}" cy="${CY}" rx="${RX}" ry="${RY}" fill="url(#${u}lit)"/>
+          <g transform="translate(${CX} ${CY}) scale(${SQ} 1)">
+            <g fill="none" stroke="${BRASS}"><circle r="25.2" stroke-width="1.3"/><circle r="8.6" stroke-width="1.1"/></g>
+            <g class="spin" fill="${SLOT}">${slots(29)}</g>
+          </g>
+          <ellipse cx="${CX}" cy="${CY}" rx="${RX - 0.4}" ry="${RY - 0.4}" fill="none" stroke="${STEEL_D}" stroke-width="0.8"/>
+          <ellipse cx="${CX}" cy="${CY}" rx="${RX - 1.5}" ry="${RY - 1.5}" fill="none" stroke="url(#${u}rim)" stroke-width="1.3"/>
+          <ellipse class="edge" cx="${CX}" cy="${CY}" rx="${RX - 0.7}" ry="${RY - 0.7}" fill="none" stroke-width="1.8" opacity="0"/>
+          <g fill="none" stroke-linecap="round">
+            <path d="${CHEEK}" stroke="${TEAL_D}" stroke-width="9.8"/>
+            <path d="${CHEEK}" stroke="url(#${u}t)" stroke-width="8.2"/>
+            <path d="${CHEEK}" stroke="#fff" stroke-opacity="0.5" stroke-width="1.3" transform="translate(-1.8 -1.4)"/>
+          </g>
+          <circle cx="${CX}" cy="${CY}" r="4.6" fill="url(#${u}b)" stroke="oklch(0.42 0.1 62)" stroke-width="0.7"/>
+          <circle cx="${CX - 1.4}" cy="${CY - 1.6}" r="1.3" fill="#fff" opacity="0.85"/>
+          <g class="still" stroke-linecap="round">${streaks(FAN)}${STARS.map(([x, y, r]) => star(x, y, r, WHITE)).join('')}</g>
+          <g class="jet" stroke-linecap="round"></g>`;
+        const q = s => svg.querySelector(s);
+        const kn = q('pattern'), spin = q('.spin'), glow = q('.glow'), edge = q('.edge'), halo = q('.halo'), tube = q('.tube'), tip = q('.tip'), fl = q('.fl');
+        const J = jet(q('.jet'), 26, { at: [59, 83], a: [-30, 8], v: [80, 175], g: 170, floor: 104, life: [0.4, 0.8], w: [1.1, 2.1], tail: 0.085, cols: SPARKS });
+        return drive({
+          set(a, hot, j) {
+            spin.setAttribute('transform', `rotate(${f((-a / RAD) % 360)})`);
+            kn.setAttribute('patternTransform', `translate(0 ${f((a * RY) % 4.4)})`);
+            const c = heatCol(hot), k = clamp(hot * 1.5);
+            glow.setAttribute('fill', c);
+            glow.setAttribute('opacity', f(0.9 * k));
+            edge.setAttribute('stroke', c);
+            edge.setAttribute('opacity', f(0.9 * k));
+            halo.setAttribute('fill', c);
+            halo.setAttribute('opacity', f(0.45 * hot));
+            tube.setAttribute('fill', heatCol(0.5 + 0.5 * hot));
+            tube.setAttribute('opacity', f(clamp(0.6 * j + hot)));
+            tip.setAttribute('opacity', f(clamp(0.4 + 0.4 * j + 0.3 * hot)));
+          },
+          flash() { pulse(fl, `${CX - 4} ${CY + 8}`); },
+        }, J, q('.still'));
+      },
+      emblem: `${EMB_HEAD}<path d="${SOLE}" fill="#777"/><rect x="49.5" y="80" width="9" height="22" rx="1.2" fill="#fff"/><path d="${BAND}" fill="#999"/><ellipse cx="${CX}" cy="${CY}" rx="${RX}" ry="${RY}" fill="#fff"/><g transform="translate(${CX} ${CY}) scale(${SQ} 1)" fill="#000">${slots(29)}</g><g fill="none" stroke-linecap="round"><path d="${CHEEK}" stroke="#000" stroke-width="11.6"/><path d="${CHEEK}" stroke="#fff" stroke-width="8"/></g><circle cx="${CX}" cy="${CY}" r="4.4" fill="#000"/><g stroke="#fff" stroke-linecap="round">${FAN.map(([x1, y1, x2, y2, w]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${f(w * 1.7)}"/>`).join('')}</g>${STARS.map(([x, y, r]) => star(x, y, f(r * 1.25), '#fff')).join('')}</svg>`,
+    });
+  }
+
+  /* ================= D · Isometric block ================= */
+
+  // D: the roller and its swept arm stand on an enamel block and grind a glowing groove.
+  {
+    const HW = 25 * Math.sqrt(3), HH = 25, DEP = 12, M = [64, 86];
+    const T = [64, M[1] - HH], UR = [64 + HW, M[1]], C0 = [64, M[1] + HH], UL = [64 - HW, M[1]];
+    const LR = [UR[0], UR[1] + DEP], BB = [64, C0[1] + DEP], LL = [UL[0], UL[1] + DEP];
+    const TOP = poly([T, UR, C0, UL]);
+    // The wheel stands in the plane of the left face.
+    const C = [64.4, 53], R = 23, TH = 3.5, IX = [0.866, 0.5], IY = [-0.866, 0.5];
+    const CF = [C[0] + IY[0] * TH, C[1] + IY[1] * TH], CB = [C[0] - IY[0] * TH, C[1] - IY[1] * TH];
+    const VERT = p => `matrix(0.866 0.5 0 1 ${f(p[0])} ${f(p[1])})`;
+    const inPlane = (p, x, y) => [p[0] + 0.866 * x, p[1] + 0.5 * x + y];
+    // The groove runs from under the wheel to the block's right edge.
+    const along = s => [C[0] + IX[0] * s, C[1] + R + IX[1] * s], G0 = along(-2), G1 = along(34.75), W = [IY[0] * 3.5, IY[1] * 3.5];
+    const GROOVE = poly([[G0[0] + W[0], G0[1] + W[1]], [G1[0] + W[0], G1[1] + W[1]], [G1[0] - W[0], G1[1] - W[1]], [G0[0] - W[0], G0[1] - W[1]]]);
+    const NOTCH = poly([[G1[0] + W[0], G1[1] + W[1]], [G1[0] - W[0], G1[1] - W[1]], [G1[0] - W[0], G1[1] - W[1] + 4], [G1[0] + W[0], G1[1] + W[1] + 4]]);
+    const floor = x => (x < G1[0] ? C[1] + R + (x - C[0]) * 0.577 : null);
+    const NT = 22;
+    const tickAt = (a, i) => { const t = -a + (i * TAU) / NT, p = inPlane(CF, R * Math.cos(t), R * Math.sin(t)); return [p[0], p[1], p[0] + CB[0] - CF[0], p[1] + CB[1] - CF[1]]; };
+    const sweep = Array.from({ length: 6 }, (_, k) => `<circle r="${R}" transform="${VERT([lerp(CB[0], CF[0], k / 5), lerp(CB[1], CF[1], k / 5)])}"/>`).join('');
+    // The arm in the wheel's plane: from the block, round the back, to the axle.
+    const ARM = `M${f(-0.58 * R)} ${R}C${f(-1.75 * R)} ${f(0.92 * R)} ${f(-1.6 * R)} ${f(-0.78 * R)} 0 0`;
+    const AF = [CF[0] + IY[0] * 1.6, CF[1] + IY[1] * 1.6], AB = [CB[0] - IY[0] * 1.6, CB[1] - IY[1] * 1.6];
+    const FAN = [[71.4, 78, 83.4, 83.5, 2], [73.4, 74, 89.4, 70, 1.8], [81.4, 86, 94, 93, 1.8], [90, 82, 105, 83, 1.6]];
+    const STARS = [[108, 66, 5.2], [110, 89, 3.6]];
+    const STEEL_D = 'oklch(0.28 0.02 260)';
+    DIRS.push({
+      l: 'D', name: 'Isometric block',
+      box: [18, 16, 96, 108],
+      art(svg, u) {
+        svg.innerHTML = `
+          <defs>${light(u)}
+            ${lg(`${u}f`, [[0, 'oklch(0.95 0.03 95)'], [1, 'oklch(0.78 0.055 85)']], 'x1="0" y1="0" x2="1" y2="1"')}
+            <linearGradient id="${u}g" gradientUnits="userSpaceOnUse" x1="${f(G0[0])}" y1="${f(G0[1])}" x2="${f(G1[0])}" y2="${f(G1[1])}"><stop offset="0" style="stop-color: oklch(0.96 0.09 92)"/><stop offset="0.35" style="stop-color: ${AMBER}"/><stop offset="1" style="stop-color: oklch(0.62 0.19 42)"/></linearGradient>
+            ${blur(`${u}b`, 5)}
+          </defs>
+          <circle class="fl" cx="${C[0]}" cy="${C[1] + 8}" r="40" fill="${WHITE}" filter="url(#${u}b)" opacity="0"/>
+          <path d="${poly([UL, C0, BB, LL])}" fill="oklch(0.5 0.09 198)"/>
+          <path d="${poly([C0, UR, LR, BB])}" fill="oklch(0.37 0.075 202)"/>
+          <path d="${TOP}" fill="oklch(0.66 0.1 194)"/>
+          <path d="${TOP}" fill="url(#${u}lit)"/>
+          <path d="${NOTCH}" fill="oklch(0.6 0.19 42)"/>
+          <path d="${GROOVE}" fill="url(#${u}g)"/>
+          <path class="gh" d="${GROOVE}" fill="#fff" opacity="0"/>
+          <circle class="tip" cx="${C[0] + 3}" cy="${C[1] + R + 1}" r="9" fill="${AMBER}" filter="url(#${u}b)"/>
+          <path d="${TOP}" fill="none" stroke="url(#${u}rim)" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M${f(C0[0])} ${f(C0[1])}V${f(BB[1])}" stroke="oklch(0.95 0.03 195 / 0.35)" stroke-width="1.2"/>
+          <path d="${ARM}" transform="${VERT(AB)}" fill="none" stroke="oklch(0.4 0.075 200)" stroke-width="5" stroke-linecap="round"/>
+          <g fill="oklch(0.62 0.02 255)">${sweep}</g>
+          <g class="glow" opacity="0">${sweep}</g>
+          <g class="tk" stroke="${STEEL_D}" stroke-width="0.9" opacity="0.7">${Array.from({ length: NT }, () => '<line/>').join('')}</g>
+          <g transform="${VERT(CF)}">
+            <circle r="${R}" fill="url(#${u}f)"/>
+            <circle r="${R}" fill="url(#${u}lit)"/>
+            <circle r="${f(R * 0.87)}" fill="none" stroke="${BRASS}" stroke-width="1.1"/>
+            <g class="spin" fill="${SLOT}">${slots(R)}</g>
+            <circle r="${R - 0.4}" fill="none" stroke="${STEEL_D}" stroke-width="0.8"/>
+            <circle r="${R - 1.5}" fill="none" stroke="url(#${u}rim)" stroke-width="1.3"/>
+            <circle class="edge" r="${R - 0.7}" fill="none" stroke-width="1.8" opacity="0"/>
+          </g>
+          <g transform="${VERT(AF)}" fill="none" stroke-linecap="round">
+            <path d="${ARM}" stroke="${TEAL_D}" stroke-width="7.4"/>
+            <path d="${ARM}" stroke="oklch(0.72 0.1 193)" stroke-width="5.8"/>
+            <path d="${ARM}" stroke="#fff" stroke-opacity="0.5" stroke-width="1.1" transform="translate(-1.3 -1.1)"/>
+          </g>
+          <circle cx="${f(AF[0])}" cy="${f(AF[1])}" r="3.4" fill="${BRASS}" stroke="oklch(0.42 0.1 62)" stroke-width="0.7"/>
+          <circle cx="${f(AF[0] - 1)}" cy="${f(AF[1] - 1.1)}" r="1" fill="#fff" opacity="0.85"/>
+          <g class="still" stroke-linecap="round">${streaks(FAN)}${STARS.map(([x, y, r]) => star(x, y, r, WHITE)).join('')}</g>
+          <g class="jet" stroke-linecap="round"></g>`;
+        const q = s => svg.querySelector(s), tk = [...q('.tk').children];
+        const spin = q('.spin'), glow = q('.glow'), edge = q('.edge'), gh = q('.gh'), tip = q('.tip'), fl = q('.fl');
+        const J = jet(q('.jet'), 24, { at: [C[0] + 4, C[1] + R], a: [-22, 30], v: [65, 140], g: 150, floor, life: [0.4, 0.8], w: [1.1, 2.1], tail: 0.085, cols: SPARKS });
+        return drive({
+          set(a, hot, j) {
+            spin.setAttribute('transform', `rotate(${f((-a / RAD) % 360)})`);
+            tk.forEach((l, i) => { const [x1, y1, x2, y2] = tickAt(a, i); l.setAttribute('x1', f(x1)); l.setAttribute('y1', f(y1)); l.setAttribute('x2', f(x2)); l.setAttribute('y2', f(y2)); });
+            const c = heatCol(hot), k = clamp(hot * 1.5);
+            glow.setAttribute('fill', c);
+            glow.setAttribute('opacity', f(0.9 * k));
+            edge.setAttribute('stroke', c);
+            edge.setAttribute('opacity', f(0.9 * k));
+            gh.setAttribute('opacity', f(clamp(0.3 * j + 0.6 * k)));
+            tip.setAttribute('opacity', f(clamp(0.45 + 0.4 * j + 0.3 * hot)));
+          },
+          flash() { pulse(fl, `${C[0]} ${C[1] + 8}`); },
+        }, J, q('.still'));
+      },
+      emblem: `${EMB_HEAD}<path d="${poly([T, UR, LR, BB, LL, UL])}" fill="#fff"/><path d="M${f(C0[0])} ${f(C0[1])}V${f(BB[1])}M${f(UL[0])} ${f(UL[1])}L${f(C0[0])} ${f(C0[1])}L${f(UR[0])} ${f(UR[1])}" fill="none" stroke="#000" stroke-width="2.6"/><path d="${GROOVE}" fill="#000"/><circle r="${R}" transform="${VERT(CB)}" fill="#fff" stroke="#000" stroke-width="2.6"/><g transform="${VERT(CF)}"><circle r="${R}" fill="#fff" stroke="#000" stroke-width="2.6"/><g fill="#000">${slots(R)}</g></g><g transform="${VERT(AF)}" fill="none" stroke-linecap="round"><path d="${ARM}" stroke="#000" stroke-width="9"/><path d="${ARM}" stroke="#fff" stroke-width="5.6"/></g><circle cx="${f(AF[0])}" cy="${f(AF[1])}" r="3.2" fill="#000"/><g stroke="#fff" stroke-width="3.2" stroke-linecap="round"><line x1="92" y1="64" x2="106" y2="60"/><line x1="96" y1="74" x2="110" y2="76"/></g>${star(112, 52, 7, '#fff')}</svg>`,
+    });
+  }
+
+  /* ================= Gallery ================= */
+  const NAME = 'Spark wheel';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-spark';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `spark-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+})();
+</script>
+</body>
+</html>

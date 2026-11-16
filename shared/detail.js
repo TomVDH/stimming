@@ -15,6 +15,12 @@ import { quality, onQuality, pixelRatio } from './stim.js';
 
 export const LEVELS = ['Low', 'Standard', 'High'];
 
+/**
+ * @param {object} [options]
+ * @param {number} [options.maxDpr] The Standard cap on the pixel ratio.
+ * @param {number} [options.budget] The Standard cap on the pixel count.
+ * @param {((level: number) => void) | null} [options.onChange] Hears each new level: 0, 1 or 2.
+ */
 export function detail({ maxDpr = 2, budget = 1.4e6, onChange = null } = {}) {
   let rung = 0, runT = 0, avg = 1 / 60, slowT = 0;
   const clear = () => { rung = 0; runT = 0; avg = 1 / 60; slowT = 0; };

@@ -1,0 +1,1460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.075 0.012 300); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Purr</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Purr: one furry creature, seen from above, under one key light. */
+:root { --stage: oklch(0.075 0.012 300); }
+.stage--purr canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--purr canvas.on { opacity: 1; }
+.stage--purr { cursor: grab; }
+.stage--purr.is-stroking { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--purr canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Purr</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--purr" id="stage" tabindex="0" role="application" aria-label="A furry creature, seen from above. Drag on it to stroke the fur; the fur keeps the track. Stroke it steadily and it purrs. Click to poke it. Leave it alone and it falls asleep.">
+      <p class="fail" hidden>Purr needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Purr</h1>
+    <div class="vignette">
+      <div>
+        <h2>Why the fur keeps your stroke</h2>
+        <p>Each hair of a pelt grows at a slant. A stroke lays a band of hairs in one direction, and they stay there until something moves them. Hairs that lie away from the light show their long sides and shine. Hairs that lie toward it, or stand up, show their tips and the dark gaps between them. That is why a hand leaves a light or a dark track on velvet.</p>
+        <p>A cat purrs at about 25 beats a second. Muscles in its larynx open and close the vocal folds, and the air buzzes on the in-breath and on the out-breath. Here the purr is the same kind of buzz: a pulse of breath noise about 25 times a second, louder as your strokes keep a steady rhythm.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 220 120" role="img" aria-label="A patch of fur seen from above. On the left, the hairs lie away from a lamp and shine. On the right, a stroke lays them the other way, and they go dark.">
+          <defs>
+            <clipPath id="purr-v-patch"><rect x="10" y="22" width="200" height="86" rx="8"/></clipPath>
+          </defs>
+          <rect x="10" y="22" width="200" height="86" rx="8" fill="oklch(0.16 0.05 330)"/>
+          <g clip-path="url(#purr-v-patch)" stroke-linecap="round" stroke-width="2.4">
+            <g stroke="oklch(0.74 0.16 338)">
+              <path d="M14 30l12 8M30 28l12 8M46 30l12 8M62 28l12 8M78 30l12 8M94 28l12 8"/>
+              <path d="M14 48l12 8M30 46l12 8M46 48l12 8M62 46l12 8M78 48l12 8M94 46l12 8"/>
+              <path d="M14 66l12 8M30 64l12 8M46 66l12 8M62 64l12 8M78 66l12 8M94 64l12 8"/>
+              <path d="M14 84l12 8M30 82l12 8M46 84l12 8M62 82l12 8M78 84l12 8M94 82l12 8"/>
+            </g>
+            <g stroke="oklch(0.34 0.11 330)">
+              <path d="M124 38l-12 -8M140 36l-12 -8M156 38l-12 -8M172 36l-12 -8M188 38l-12 -8M204 36l-12 -8"/>
+              <path d="M124 56l-12 -8M140 54l-12 -8M156 56l-12 -8M172 54l-12 -8M188 56l-12 -8M204 54l-12 -8"/>
+              <path d="M124 74l-12 -8M140 72l-12 -8M156 74l-12 -8M172 72l-12 -8M188 74l-12 -8M204 72l-12 -8"/>
+              <path d="M124 92l-12 -8M140 90l-12 -8M156 92l-12 -8M172 90l-12 -8M188 92l-12 -8M204 90l-12 -8"/>
+            </g>
+          </g>
+          <circle cx="16" cy="10" r="5" fill="oklch(0.95 0.06 85)"/>
+          <path d="M150 116h44m-8-5 8 5-8 5" fill="none" stroke="oklch(0.9 0.01 300)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <figcaption>The same fur, laid two ways under one lamp.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const mix = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// An exponential ease: the share of the gap that closes in dt.
+const ease = (dt, tau) => 1 - Math.exp(-dt / tau);
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- pelts ---------- */
+// Each pelt sets the fur's length, density and how flat it lies.
+// Colours are OKLCH: root, tip, undercoat, sheen, rim, eyes and glow.
+const PELTS = {
+  velvet: {
+    L: 0.05, cells: 165, lie: [0.3, 0.93], clump: 0, wave: 0.3, curl: 0.15,
+    root: [0.15, 0.06, 322], tip: [0.4, 0.16, 334], under: [0.64, 0.11, 340],
+    sheen: [0.88, 0.1, 345], sheen2: 1.1, spec: [110, 26], rim: [0.6, 0.16, 312], ao: 0.08,
+    iris: [0.75, 0.14, 85], glow: null, glint: 0, f0: 25, dot: 'oklch(0.5 0.18 338)',
+  },
+  shag: {
+    L: 0.15, cells: 90, lie: [0.25, 0.82], clump: 0.42, wave: 0.8, curl: 0.35,
+    root: [0.34, 0.07, 45], tip: [0.85, 0.09, 78], under: [0.56, 0.09, 50],
+    sheen: [0.97, 0.03, 85], sheen2: 0.6, spec: [70, 18], rim: [0.86, 0.11, 72], ao: 0.15,
+    iris: [0.58, 0.11, 200], glow: null, glint: 0, f0: 22, dot: 'oklch(0.76 0.11 70)',
+  },
+  frost: {
+    L: 0.11, cells: 124, lie: [0.3, 0.88], clump: 0.25, wave: 0.45, curl: 0.25,
+    root: [0.42, 0.07, 258], tip: [0.95, 0.02, 235], under: [0.74, 0.08, 250],
+    sheen: [1, 0.01, 230], sheen2: 0.5, spec: [130, 32], rim: [0.86, 0.08, 230], ao: 0.13,
+    iris: [0.72, 0.13, 230], glow: null, glint: 1, f0: 27, dot: 'oklch(0.9 0.03 235)',
+  },
+  ember: {
+    L: 0.085, cells: 118, lie: [0.3, 0.9], clump: 0.35, wave: 0.5, curl: 0.25,
+    root: [0.08, 0.005, 40], tip: [0.17, 0.012, 40], under: [0.5, 0.19, 35],
+    sheen: [0.55, 0.02, 60], sheen2: 0.3, spec: [95, 24], rim: [0.55, 0.19, 38], ao: 0.12,
+    iris: [0.85, 0.17, 80], glow: [0.75, 0.19, 55], glint: 0, f0: 24, dot: 'oklch(0.66 0.2 45)',
+  },
+};
+// Linear colours for the shaders, once per pelt.
+for (const p of Object.values(PELTS)) {
+  p.lin = {};
+  for (const k of ['root', 'tip', 'under', 'sheen', 'rim', 'iris', 'glow']) p.lin[k] = p[k] ? linFit(...p[k]) : [0, 0, 0];
+}
+
+/* ---------- bar ---------- */
+let peltId = 'velvet', handK = 1;
+// The handlers bind once the GL state exists.
+const act = { pelt() {}, shake() {}, reset() {} };
+const ui = initPage({ id: 'purr', bar: {
+  choice: {
+    label: 'Pelt', value: 'velvet',
+    options: Object.entries(PELTS).map(([value, p], i) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1), key: String(i + 1), dot: p.dot })),
+    onPick: v => act.pelt(v),
+  },
+  actions: [{ verb: 'shake', key: 'S', onPress: () => act.shake() }],
+  settings: [
+    { type: 'slider', id: 'hand', label: 'Hand', min: 0.6, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { handK = v; } },
+  ],
+  dev: [
+    { type: 'slider', id: 'sheen', label: 'Sheen', min: 0, max: 2.5, step: 0.05, value: 1 },
+    { type: 'slider', id: 'rim', label: 'Rim', min: 0, max: 2.5, step: 0.05, value: 1 },
+    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.4, max: 2.5, step: 0.05, value: 1 },
+    { type: 'slider', id: 'shells', label: 'Shells', min: 0.5, max: 2, step: 0.1, value: 1 },
+  ],
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'stroke'], ['click', 'poke'], ['hold', 'rest a hand'], ['s', 'shake']],
+} });
+handK = ui.setting('hand')?.value ?? 1;
+const dev = id => ui.setting(id)?.value ?? 1;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error('Purr needs WebGL 2 with float targets.');
+}
+
+function shader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+// One full-screen triangle; the vertex shader makes it from the vertex id.
+const VS = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  // Uniform locations are looked up once, on first use.
+  const loc = {};
+  p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
+  return p;
+}
+function texture(w, h, internal = gl.RGBA16F, format = gl.RGBA, type = gl.HALF_FLOAT) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function target(texs) {
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  return fb;
+}
+const vao = gl.createVertexArray();
+const tri = () => { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+
+/* ---------- GLSL ---------- */
+const NOISE = `
+float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash2(vec2 p) { return vec2(hash(p), hash(p + 19.19)); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+`;
+// Blob space: x right, y up, in units of the creature's half-height.
+// Every map covers the box of half-size uExt round the blob centre.
+const COMMON = `
+uniform vec4 uShape;
+uniform vec2 uExt;
+uniform vec2 uCrown;
+vec2 uvOf(vec2 p) { return p / uExt * 0.5 + 0.5; }
+vec2 blobOf(vec2 uv) { return (uv * 2.0 - 1.0) * uExt; }
+// 0 at the centre, 1 on the skin's edge.
+// The egg term narrows the head.
+float shapeR(vec2 p) {
+  float a = atan(p.y, p.x + 1e-7);
+  float w = 1.0 + 0.016 * sin(3.0 * a + 0.9) + 0.012 * sin(5.0 * a + 2.4) + 0.006 * sin(7.0 * a + 0.3);
+  float ax = uShape.x * (1.0 - uShape.w * p.y / uShape.y);
+  return length(vec2(p.x / ax, p.y / uShape.y)) / w;
+}
+// The natural grain whorls on the crown.
+// Away from the crown, it flows down the back.
+vec2 grain(vec2 p) {
+  vec2 d = p - uCrown;
+  float r = length(d) + 1e-4;
+  vec2 rad = d / r;
+  vec2 g = rad + vec2(-rad.y, rad.x) * 0.9 * exp(-r * r / 0.12) + vec2(0.0, -0.45) * smoothstep(0.15, 0.9, r);
+  return normalize(g);
+}
+// The comb at rest.
+// Fur on the crown stands up, so the whorl has no hole.
+vec4 natural(vec2 p) {
+  float r = length(p - uCrown);
+  return vec4(grain(p) * 0.55 * smoothstep(0.0, 0.16, r), 0.0, 0.0);
+}
+`;
+
+/* ---------- comb map ---------- */
+// The comb map holds how the fur lies, in blob space.
+// xy: lie direction times how flat it lies. z: bristle. w: muss.
+const COMB_INIT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+${COMMON}
+void main() { o = natural(blobOf(vUv)); }`;
+
+// A stamp strokes from uA to uB or pokes at uA.
+// Mode 2 blends the map back to the grain.
+const COMB_STAMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uPrev;
+uniform vec2 uA, uB;
+uniform float uR, uAmt;
+uniform int uMode;
+out vec4 o;
+${COMMON}
+void main() {
+  vec2 p = blobOf(vUv);
+  vec4 c = texture(uPrev, vUv);
+  if (uMode == 2) { o = mix(c, natural(p), uAmt); return; }
+  vec2 ab = uB - uA;
+  float t = clamp(dot(p - uA, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+  vec2 d = p - uA - ab * t;
+  // The hand: a soft disc with a firm middle.
+  float w = smoothstep(1.0, 0.3, length(d) / uR) * uAmt;
+  if (w < 1e-3) { o = c; return; }
+  if (uMode == 1) {
+    // A poke: the fur stands up round the finger, then settles back.
+    c.z = min(1.0, c.z + w);
+    c.w = min(1.0, c.w + w * 0.5);
+    o = c;
+    return;
+  }
+  vec2 dir = normalize(ab + 1e-7);
+  // With or across the grain, the fur lies flat.
+  // Against the grain, it rises.
+  // Mode 3 lays the fur flat whatever the grain.
+  float lay = uMode == 3 ? 1.0 : smoothstep(-0.5, -0.12, dot(dir, grain(p)));
+  c.xy = mix(c.xy, dir * mix(0.42, 1.0, lay), w);
+  c.z = clamp(c.z + w * ((1.0 - lay) * 0.8 - lay * 0.7 * c.z), 0.0, 1.0);
+  c.w = clamp(c.w + w * ((1.0 - lay) * 0.45 - lay * 0.5 * c.w), 0.0, 1.0);
+  o = c;
+}`;
+// Bristle and muss settle.
+// The lie direction stays, as velvet keeps a track.
+const COMB_RELAX_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uPrev;
+uniform vec2 uKeep;
+out vec4 o;
+void main() { vec4 c = texture(uPrev, vUv); o = vec4(c.xy, c.z * uKeep.x, c.w * uKeep.y); }`;
+
+/* ---------- fur and body maps, each frame ---------- */
+// Map 0: the strand vector (length times direction) and the root flag.
+// The flag is 0 where no hair grows.
+// Elsewhere it is 1 plus the bristle.
+// Map 1: skin height, normal x and y, and the skin mask.
+const PARAMS_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uComb;
+uniform vec4 uHand;
+uniform vec4 uDent[3];
+uniform vec4 uFurA;
+uniform vec4 uFurB;
+uniform vec4 uEyes;
+uniform vec4 uEyeA;
+uniform vec2 uEyeB;
+layout(location = 0) out vec4 oFur;
+layout(location = 1) out vec4 oBody;
+${NOISE}
+${COMMON}
+float heightAt(vec2 p) {
+  float r = shapeR(p);
+  float z = uShape.z * sqrt(max(1.0 - r * r, 0.0));
+  // The body rises into a resting hand.
+  vec2 dh = p - uHand.xy;
+  z += uHand.z * exp(-dot(dh, dh) / 0.12) * smoothstep(1.0, 0.6, r);
+  // A poke leaves a dent that springs back.
+  for (int i = 0; i < 3; i++) {
+    vec2 dd = p - uDent[i].xy;
+    z -= uDent[i].z * exp(-dot(dd, dd) / 0.02);
+  }
+  return z;
+}
+// The offset to the nearest clump centre, in cell units.
+vec2 clumpVec(vec2 p) {
+  vec2 g = p * 15.0, n = floor(g), best = vec2(0.0);
+  float bd = 9.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 c = n + vec2(i, j) + hash2(n + vec2(i, j));
+    float d = dot(c - g, c - g);
+    if (d < bd) { bd = d; best = c - g; }
+  }
+  return best;
+}
+// An eye opens as a slit that widens into an oval.
+float eyeK(vec2 p, vec2 c) {
+  vec2 rr = uEyeA.zw * vec2(0.62 + 0.38 * uEyes.x, max(uEyes.x, 0.001));
+  return length((p - c) / rr);
+}
+void main() {
+  vec2 p = blobOf(vUv);
+  float r = shapeR(p);
+  const float e = 0.008;
+  float z = heightAt(p);
+  vec3 nH = normalize(vec3(-(heightAt(p + vec2(e, 0.0)) - heightAt(p - vec2(e, 0.0))) / (2.0 * e),
+                           -(heightAt(p + vec2(0.0, e)) - heightAt(p - vec2(0.0, e))) / (2.0 * e), 1.0));
+  // Past the rim, the normal lies flat and points out.
+  vec2 gr = vec2(shapeR(p + vec2(e, 0.0)) - shapeR(p - vec2(e, 0.0)), shapeR(p + vec2(0.0, e)) - shapeR(p - vec2(0.0, e)));
+  vec3 nR = normalize(vec3(normalize(gr + 1e-7), 0.18));
+  vec3 n = normalize(mix(nH, nR, smoothstep(0.86, 0.99, r)));
+
+  vec4 cm = texture(uComb, vUv);
+  float lie = clamp(length(cm.xy), 0.0, 1.0);
+  vec2 cd = lie > 1e-3 ? cm.xy / lie : grain(p);
+  float br = clamp(cm.z + uFurB.z, 0.0, 1.0);
+  // Clumps: strands lean together toward clump centres.
+  cd = normalize(cd + clumpVec(p) * uFurA.w + 1e-6);
+  // Waves, and the muss of rough strokes, turn the comb.
+  float ang = (noise(p * 3.3 + 11.0) - 0.5) * uFurB.x;
+  ang += (noise(p * 34.0 + 5.0) - 0.5) * 2.2 * clamp(cm.w + 0.6 * br, 0.0, 1.0);
+  // A purr makes the tips tremble.
+  ang += uFurB.y * sin(uFurB.w * 29.0 + noise(p * 40.0) * 6.283);
+  cd = vec2(cd.x * cos(ang) - cd.y * sin(ang), cd.x * sin(ang) + cd.y * cos(ang));
+  // An open eye parts the fur round it.
+  float k1 = eyeK(p, uEyeA.xy), k2 = eyeK(p, uEyeB);
+  vec2 a1 = normalize(p - uEyeA.xy + 1e-6), a2 = normalize(p - uEyeB + 1e-6);
+  cd = normalize(mix(cd, a1, uEyes.x * smoothstep(2.6, 1.0, k1)) + 1e-6);
+  cd = normalize(mix(cd, a2, uEyes.x * smoothstep(2.6, 1.0, k2)) + 1e-6);
+
+  float lieE = mix(uFurA.y, uFurA.z, lie) * (1.0 - 0.85 * br);
+  vec3 t3 = vec3(cd, 0.0);
+  t3 = normalize(t3 - n * dot(t3, n) + vec3(0.0, 0.0, 1e-5));
+  // A pressing hand lays the fur flat and squashes it.
+  vec2 dh = p - uHand.xy;
+  float press = uHand.w * exp(-dot(dh, dh) / 0.045);
+  vec3 D = normalize(mix(n, t3, clamp(lieE + press * 0.5, 0.0, 0.97)));
+  float L = uFurA.x * (1.0 + 0.32 * br) * (1.0 - 0.35 * press);
+  bool root = r < 1.0 && k1 > 1.0 && k2 > 1.0;
+  oFur = vec4(D * L, root ? 1.0 + br : 0.0);
+  oBody = vec4(z, n.xy, 1.0 - smoothstep(0.985, 1.0, r));
+}`;
+
+/* ---------- the fur ---------- */
+// A shell march per pixel: from the tips down to the skin.
+// Shell t finds the root that reaches this pixel at height t.
+// Each root cell holds one strand.
+// Each shell tests one piece of that strand.
+const FUR_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uFur, uBody;
+uniform vec2 uCentre, uShift;
+uniform float uScale, uPx, uCell, uReach;
+uniform mat2 uInv;
+uniform int uK;
+uniform vec3 uL;
+uniform vec2 uRimDir;
+uniform vec3 uRoot, uTip, uUnder, uSheen, uRimC, uIris, uGlowC, uBg;
+uniform vec4 uLook;
+uniform vec4 uMood;
+uniform vec4 uTune;
+uniform vec4 uEyes;
+uniform vec4 uEyeA;
+uniform vec2 uEyeB;
+out vec4 o;
+${COMMON}
+const vec3 KEY = vec3(1.0, 0.95, 0.88) * 2.4;
+const vec3 AMB = vec3(0.06, 0.065, 0.095);
+uvec2 pcg2d(uvec2 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * 1664525u; v.y += v.x * 1664525u;
+  v ^= v >> 16u;
+  v.x += v.y * 1664525u; v.y += v.x * 1664525u;
+  v ^= v >> 16u;
+  return v;
+}
+// The table: a dark sheet, a key pool and the shadow.
+vec3 ground(vec2 u, vec2 q, float rho) {
+  vec2 c = u - vec2(-0.35, 0.25);
+  vec3 col = uBg * (0.3 + 2.4 * exp(-dot(c, c) * 0.26));
+  float sh = smoothstep(1.55, 0.85, shapeR(q + uL.xy * 0.3));
+  float ao = smoothstep(1.25, 0.98, rho);
+  return col * (1.0 - 0.8 * sh) * (1.0 - 0.65 * ao);
+}
+// One strand piece: Kajiya-Kay light, two sheens, a rim, a glow.
+vec3 strand(vec3 F, float tn, float t, vec4 rn, float br, vec3 n, float nl, vec3 H, bool guard, bool bare) {
+  vec3 D = normalize(F);
+  // The root rises along the skin normal; each strand twists a little.
+  vec3 T = normalize(D + n * (1.0 - tn) * uTune.z + cross(D, n) * (rn.x - 0.5) * 0.4);
+  vec3 alb = mix(uRoot, uTip, smoothstep(0.05, 0.95, tn)) * (0.72 + 0.56 * rn.y) * (guard ? 0.8 : 1.0);
+  // Bristle shows the undercoat.
+  alb = mix(alb, uUnder, clamp(br, 0.0, 1.0) * (1.0 - 0.5 * tn) * 0.75);
+  // Deep fur sits in its own shade.
+  float ao = mix(uLook.w, 1.0, pow(smoothstep(0.0, 0.95, t), 1.4));
+  // The body's form: lit on the key side, dark beyond.
+  float form = smoothstep(-0.4, 0.95, nl);
+  float TL = dot(T, uL);
+  float kd = sqrt(max(1.0 - TL * TL, 0.0));
+  vec3 col = alb * (kd * form * form * KEY + AMB * (0.4 + 0.6 * n.z)) * ao;
+  // A pale sheen toward the tip, a tinted one toward the root.
+  vec3 T1 = normalize(T + n * 0.1), T2 = normalize(T - n * 0.16);
+  float h1 = dot(T1, H), h2 = dot(T2, H);
+  float s1 = pow(sqrt(max(1.0 - h1 * h1, 0.0)), uLook.y);
+  float s2 = pow(sqrt(max(1.0 - h2 * h2, 0.0)), uLook.z);
+  float lit = form * ao * (0.55 + 0.9 * rn.x);
+  col += (uSheen * s1 * 0.4 + alb * s2 * uLook.x) * KEY * lit * uTune.x;
+  // Frost: a few strands glint.
+  if (rn.z > 0.975) col += uSheen * pow(s1, 6.0) * 4.0 * uMood.z * lit;
+  // The rim: thin tips glow where the body turns away.
+  float edge = pow(clamp(1.0 - n.z, 0.0, 1.0), 1.4);
+  float side = 0.25 + 0.75 * clamp(dot(normalize(n.xy + 1e-5), uRimDir), 0.0, 1.0);
+  col += uRimC * edge * side * smoothstep(0.25, 1.0, tn) * (bare ? 1.6 : 1.0) * uTune.y;
+  // Ember: the tips glow, brighter as it purrs; each one flickers.
+  float hot = pow(rn.w * rn.y, 1.5);
+  float flick = 0.7 + 0.3 * sin(uMood.w * (1.5 + 2.0 * rn.z) + rn.x * 40.0);
+  col += uGlowC * smoothstep(0.7, 1.0, tn) * uMood.y * (0.25 + 3.0 * hot) * flick;
+  return col;
+}
+// An eye: a glossy bead under a slit in the fur.
+vec3 eye(vec2 q, vec2 c, vec3 under) {
+  float op = uEyes.x;
+  if (op < 0.01) return under;
+  vec2 d = q - c;
+  float k = length(d / (uEyeA.zw * vec2(0.62 + 0.38 * op, max(op, 0.001))));
+  if (k > 1.2) return under;
+  vec2 e = d / uEyeA.zw;
+  vec3 nb = normalize(vec3(e * 0.9, sqrt(max(1.0 - min(dot(e, e), 1.0), 0.0))));
+  float di = length(e - uEyes.yz * 0.3);
+  vec3 col = vec3(0.004, 0.003, 0.006) + uIris * 0.22 * smoothstep(0.56, 0.44, di) * smoothstep(0.2, 0.27, di);
+  vec3 R = reflect(vec3(0.0, 0.0, -1.0), nb);
+  col += vec3(1.0, 0.97, 0.92) * pow(max(dot(R, uL), 0.0), 140.0) * 9.0;
+  col += vec3(0.05, 0.055, 0.08) * smoothstep(0.2, 1.0, R.z) * 0.5;
+  // The fur lids shade the rim of the bead.
+  col *= smoothstep(1.05, 0.55, k);
+  return mix(under, col, smoothstep(1.1, 0.92, k));
+}
+void main() {
+  vec2 u = (gl_FragCoord.xy - uCentre) / uScale;
+  vec2 q = uInv * (u - uShift);
+  float rho = shapeR(q);
+  vec3 bg = ground(u, q, rho);
+  if (rho > uReach) { o = vec4(bg, 1.0); return; }
+  vec4 body = textureLod(uBody, uvOf(q), 0.0);
+  vec3 n = vec3(body.yz, sqrt(max(1.0 - dot(body.yz, body.yz), 0.0)));
+  float nl = dot(n, uL);
+  vec3 H = normalize(uL + vec3(0.0, 0.0, 1.0));
+  bool bare = body.w < 0.5;
+  vec3 acc = vec3(0.0);
+  float al = 0.0;
+  vec2 off = textureLod(uFur, uvOf(q), 0.0).xy;
+  float dt = 1.0 / float(uK);
+  for (int k = 0; k < 96; k++) {
+    if (k >= uK) break;
+    float t = 1.0 - (float(k) + 0.5) * dt;
+    vec2 r = q - off * t;
+    vec4 f = textureLod(uFur, uvOf(r), 0.0);
+    off = f.xy;
+    if (f.w < 0.5) continue;
+    // The root cell; each row shifts by its own random amount.
+    vec2 g = r * uCell;
+    float row = floor(g.y);
+    float sh = float(pcg2d(uvec2(uint(int(row) + 40000), 7u)).x & 1023u) / 1023.0;
+    vec2 cell = vec2(floor(g.x + sh), row);
+    uvec2 hh = pcg2d(uvec2(ivec2(cell) + 40000));
+    vec4 rn = vec4(float(hh.x & 65535u), float(hh.x >> 16u), float(hh.y & 65535u), float(hh.y >> 16u)) / 65535.0;
+    // Long guard hairs over a shorter undercoat.
+    bool guard = rn.w > 0.72;
+    float len = guard ? 0.88 + 0.2 * rn.z : 0.42 + 0.42 * rn.z;
+    if (t > len) continue;
+    vec2 root = (vec2(cell.x - sh, cell.y) + 0.5 + (rn.xy - 0.5) * 0.56) / uCell;
+    float t1 = min(t + dt, len);
+    vec2 a = root + off * t, ab = off * (t1 - t);
+    float s = clamp(dot(q - a, ab) / max(dot(ab, ab), 1e-12), 0.0, 1.0);
+    float dist = length(q - a - ab * s);
+    float tn = mix(t, t1, s) / len;
+    // Strands taper; one too thin for a pixel fades instead.
+    float rad = (guard ? 0.24 : 0.19) * (1.0 - 0.7 * tn) / uCell;
+    float radE = max(rad, 0.6 * uPx);
+    float cov = smoothstep(radE + 0.75 * uPx, radE - 0.75 * uPx, dist) * (rad / radE);
+    if (cov < 0.003) continue;
+    vec3 c = strand(f.xyz, tn, t, rn, f.w - 1.0, n, nl, H, guard, bare);
+    acc += (1.0 - al) * cov * c;
+    al += (1.0 - al) * cov;
+    if (al > 0.985) break;
+  }
+  // Under the fur: dark skin, and the eyes when they open.
+  vec3 under = bg;
+  if (body.w > 0.001) {
+    vec3 skin = uUnder * 0.05 * (0.3 + 0.7 * clamp(nl, 0.0, 1.0));
+    under = mix(bg, skin, body.w);
+    under = eye(q, uEyeA.xy, under);
+    under = eye(q, uEyeB, under);
+  }
+  o = vec4(acc + (1.0 - al) * under, 1.0);
+}`;
+
+/* ---------- post ---------- */
+// Bloom, the grade, the film curve and dither.
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExposure, uSeed;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c *= gdVignette(uv, uRes.x / uRes.y, 0.55, 0.3);
+  c *= gdGrain(gdHash(gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0)), gdLuma(c), 0.035, vec2(0.6, 1.0));
+  o = vec4(ouFilm(max(c, 0.0), uExposure, gl_FragCoord.xy), 1.0);
+}`;
+// Asleep: the last frame, scaled about the body for each slow breath.
+const SLEEP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uCache;
+uniform vec2 uRes, uC;
+uniform vec2 uS;
+out vec4 o;
+void main() {
+  vec2 px = gl_FragCoord.xy;
+  o = vec4(texture(uCache, (uC + (px - uC) / uS) / uRes).rgb, 1.0);
+}`;
+
+const combInitP = program(COMB_INIT_FS), stampP = program(COMB_STAMP_FS), relaxP = program(COMB_RELAX_FS);
+const paramsP = program(PARAMS_FS), furP = program(FUR_FS), compP = program(COMP_FS), sleepP = program(SLEEP_FS);
+const bloom = bloomChain(gl);
+
+/* ---------- maps ---------- */
+// The blob-space box: half-size of every map.
+const EXT = [1.64, 1.52];
+const COMB = [400, 370], PAR = [640, 592];
+const comb = [texture(...COMB), texture(...COMB)];
+const combFb = comb.map(t => target([t]));
+let ci = 0;
+const furTex = texture(...PAR), bodyTex = texture(...PAR);
+const parFb = target([furTex, bodyTex]);
+let hdr = null, cache = null;
+function frameTargets(W, H) {
+  for (const t of [hdr, cache]) if (t) { gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); }
+  const make = (internal, format, type) => { const tex = texture(W, H, internal, format, type); return { tex, fb: target([tex]) }; };
+  hdr = make(gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+  cache = make(gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  cache.valid = false;
+}
+
+/* ---------- the creature ---------- */
+// Shape: half-width A, half-height B, dome height, and the egg term.
+const shape = { A: 1.3, B: 1, H: 0.62, egg: 0.08 };
+const CROWN = [0.12, 0.8];
+// The eyes sit high on the head; radii are the bead's.
+const EYE = { y: 0.6, x: 0.27, r: [0.085, 0.075] };
+// The JS twins of the shader's shape and grain.
+function shapeR(x, y) {
+  const a = Math.atan2(y, x + 1e-7);
+  const w = 1 + 0.016 * Math.sin(3 * a + 0.9) + 0.012 * Math.sin(5 * a + 2.4) + 0.006 * Math.sin(7 * a + 0.3);
+  const ax = shape.A * (1 - shape.egg * y / shape.B);
+  return Math.hypot(x / ax, y / shape.B) / w;
+}
+function grain(x, y) {
+  const dx = x - CROWN[0], dy = y - CROWN[1], r = Math.hypot(dx, dy) + 1e-4;
+  const rx = dx / r, ry = dy / r, sw = 0.9 * Math.exp(-r * r / 0.12), down = 0.45 * smooth(0.15, 0.9, r);
+  const gx = rx - ry * sw, gy = ry + rx * sw - down, n = Math.hypot(gx, gy) || 1;
+  return [gx / n, gy / n];
+}
+const eyeAt = side => [side * EYE.x * shape.A / 1.3, EYE.y * shape.B];
+
+// Mood and motion. Content builds the purr; irritation puffs the fur.
+const S = {
+  state: 'awake', idle: 0, content: 0, irr: 0, purr: 0,
+  ph: 0.3, rate: 0.27, amp: 0.011, sigh: -1,
+  // It opens on you with sleepy eyes, then shuts them.
+  eyes: 0.55, eyesGoal: 0.55, eyesHold: 6, blink: 4, look: [0.2, -0.5], lookGoal: [0.2, -0.5],
+  fluff: 0, fluffGoal: 0, fluffHold: 0, shakeT: -1, shakeSwap: null,
+  jig: 0, jigV: 0, dents: [],
+  lean: [0, 0], leanGoal: [0, 0], bump: 0, press: 0, melt: 0,
+  hand: [0, 0], rhythm: 0, lastStart: 0, lastGap: 0, lastGood: -9, puffCool: 0,
+  fuzz: 0, time: 0,
+};
+// The breath: a shorter in-breath, a longer out-breath; 0 to 1.
+const breathAt = ph => (ph < 0.4 ? smooth(0, 0.4, ph) : 1 - smooth(0.4, 1, ph));
+// A sigh: one deep breath in, then a long breath out.
+const sighAt = t => (t < 0 ? 0 : t < 0.7 ? smooth(0, 0.7, t) : 1 - smooth(0.7, 2.4, t));
+
+/* ---------- layout ---------- */
+// The blob sits a little low.
+// The scale keeps the blob and its fur on the stage.
+let size = { w: 1, h: 1, dpr: 1 }, scale = 100, centre = [0, 0];
+// The body transform: lean shift (screen units), turn and scale.
+const X = { shift: [0, 0], ang: 0, sx: 1, sy: 1, hk: 1, inv: [1, 0, 0, 1] };
+const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { resize(); wake(); } });
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  frameTargets(canvas.width, canvas.height);
+  // Wide stages get a wide loaf; tall ones a taller blob.
+  const k = smooth(0.55, 1.25, w / h);
+  shape.A = mix(1.0, 1.3, k);
+  shape.B = mix(1.38, 1.0, k);
+  scale = Math.min(0.92 * w / (2 * (shape.A + 0.2)), 0.86 * h / (2 * (shape.B + 0.2)));
+  centre = [w / 2, h * 0.52];
+}
+// A stage point (CSS px) in blob space, through the body transform.
+function toBlob(x, y) {
+  const u0 = (x - centre[0]) / scale - X.shift[0], u1 = (centre[1] - y) / scale - X.shift[1];
+  const [a, b, c, d] = X.inv;
+  return [a * u0 + c * u1, b * u0 + d * u1];
+}
+const onSkin = p => shapeR(p[0], p[1]) < 1.04;
+
+/* ---------- pelt uniforms ---------- */
+let pelt = PELTS[peltId];
+// A strand cell never drops below two device pixels.
+// Small stages then stay crisp.
+const cells = () => Math.min(pelt.cells, scale * size.dpr / 2);
+// Enough shells that one step never skips half a strand cell.
+const shells = () => Math.round(clamp(2.4 * pelt.L * 1.35 * cells() * dev('shells'), 12, 96));
+
+/* ---------- comb stamps ---------- */
+const stamps = [];
+function stamp(mode, a, b, r, amt) { stamps.push({ mode, a, b, r, amt }); }
+function combPass(prog, setup) {
+  gl.useProgram(prog);
+  gl.uniform2f(prog.u('uExt'), ...EXT);
+  gl.uniform2f(prog.u('uCrown'), ...CROWN);
+  gl.uniform4f(prog.u('uShape'), shape.A, shape.B, shape.H, shape.egg);
+  gl.uniform1i(prog.u('uPrev'), 0);
+  setup?.();
+  gl.viewport(0, 0, ...COMB);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, combFb[1 - ci]);
+  gl.bindTexture(gl.TEXTURE_2D, comb[ci]);
+  tri();
+  ci = 1 - ci;
+}
+function applyStamps() {
+  for (const s of stamps) combPass(stampP, () => {
+    gl.uniform1i(stampP.u('uMode'), s.mode);
+    gl.uniform2f(stampP.u('uA'), ...s.a);
+    gl.uniform2f(stampP.u('uB'), ...s.b);
+    gl.uniform1f(stampP.u('uR'), s.r);
+    gl.uniform1f(stampP.u('uAmt'), s.amt);
+  });
+  stamps.length = 0;
+}
+// Bristle settles in seconds, faster as the creature dozes off.
+function relax(dt) {
+  if (S.fuzz < 0.004) return;
+  const quick = S.state !== 'awake';
+  const kb = Math.exp(-dt / (quick ? 1.4 : 4.5)), km = Math.exp(-dt / (quick ? 2.5 : 8));
+  S.fuzz *= kb;
+  combPass(relaxP, () => gl.uniform2f(relaxP.u('uKeep'), kb, km));
+}
+function combInit() {
+  gl.useProgram(combInitP);
+  gl.uniform2f(combInitP.u('uExt'), ...EXT);
+  gl.uniform2f(combInitP.u('uCrown'), ...CROWN);
+  gl.viewport(0, 0, ...COMB);
+  for (const fb of combFb) { gl.bindFramebuffer(gl.FRAMEBUFFER, fb); tri(); }
+  stamps.length = 0;
+  S.fuzz = 0;
+}
+// The first frame carries one stroke down the right flank.
+function firstStroke() {
+  let prev = null;
+  for (let i = 0; i <= 28; i++) {
+    const t = i / 28;
+    const p = [(0.66 - 0.62 * t + 0.3 * Math.sin(t * Math.PI)) * shape.A / 1.3, mix(0.5, -0.72, t)];
+    if (prev) stamp(3, prev, p, 0.15, 1);
+    prev = p;
+  }
+}
+
+/* ---------- render ---------- */
+function params() {
+  gl.useProgram(paramsP);
+  const p = paramsP;
+  gl.uniform2f(p.u('uExt'), ...EXT);
+  gl.uniform2f(p.u('uCrown'), ...CROWN);
+  gl.uniform4f(p.u('uShape'), shape.A, shape.B, shape.H * X.hk, shape.egg);
+  gl.uniform4f(p.u('uHand'), ...S.hand, S.bump, S.press);
+  const dn = new Float32Array(12);
+  S.dents.forEach((d, i) => { if (i < 3) dn.set([d.x, d.y, d.depth, 0], i * 4); });
+  gl.uniform4fv(p.u('uDent'), dn);
+  const still = reduced();
+  gl.uniform4f(p.u('uFurA'), pelt.L, pelt.lie[0], pelt.lie[1], pelt.clump);
+  gl.uniform4f(p.u('uFurB'), pelt.wave, still ? 0 : 0.05 * S.purr, S.fluff, S.time);
+  setEyes(p);
+  gl.uniform1i(p.u('uComb'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, comb[ci]);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, parFb);
+  gl.viewport(0, 0, ...PAR);
+  tri();
+}
+function setEyes(p) {
+  const [l, r] = [eyeAt(-1), eyeAt(1)];
+  gl.uniform4f(p.u('uEyes'), S.eyes, S.look[0], S.look[1], 0);
+  gl.uniform4f(p.u('uEyeA'), ...l, ...EYE.r);
+  gl.uniform2f(p.u('uEyeB'), ...r);
+}
+// The key light comes from the upper left.
+// The rim light comes from behind, lower right.
+const LIGHT = (() => { const v = [-0.5, 0.56, 0.66], n = Math.hypot(...v); return v.map(c => c / n); })();
+function fur() {
+  const p = furP, d = size.dpr;
+  gl.useProgram(p);
+  gl.uniform2f(p.u('uExt'), ...EXT);
+  gl.uniform2f(p.u('uCrown'), ...CROWN);
+  gl.uniform4f(p.u('uShape'), shape.A, shape.B, shape.H * X.hk, shape.egg);
+  gl.uniform2f(p.u('uCentre'), centre[0] * d, (size.h - centre[1]) * d);
+  gl.uniform1f(p.u('uScale'), scale * d);
+  gl.uniform2f(p.u('uShift'), ...X.shift);
+  gl.uniformMatrix2fv(p.u('uInv'), false, X.inv);
+  gl.uniform1f(p.u('uPx'), 1 / (scale * d * Math.min(X.sx, X.sy)));
+  gl.uniform1f(p.u('uCell'), cells());
+  gl.uniform1i(p.u('uK'), shells());
+  gl.uniform1f(p.u('uReach'), 1 + (pelt.L * 1.7 + 0.03) / Math.min(shape.A, shape.B));
+  // The light turns with the body, so it stays fixed on screen.
+  const c = Math.cos(-X.ang), s = Math.sin(-X.ang);
+  gl.uniform3f(p.u('uL'), c * LIGHT[0] - s * LIGHT[1], s * LIGHT[0] + c * LIGHT[1], LIGHT[2]);
+  const rd = [0.62, -0.78];
+  gl.uniform2f(p.u('uRimDir'), c * rd[0] - s * rd[1], s * rd[0] + c * rd[1]);
+  const L = pelt.lin;
+  gl.uniform3f(p.u('uRoot'), ...L.root);
+  gl.uniform3f(p.u('uTip'), ...L.tip);
+  gl.uniform3f(p.u('uUnder'), ...L.under);
+  gl.uniform3f(p.u('uSheen'), ...L.sheen);
+  gl.uniform3f(p.u('uRimC'), ...L.rim);
+  gl.uniform3f(p.u('uIris'), ...L.iris);
+  gl.uniform3f(p.u('uGlowC'), ...L.glow);
+  gl.uniform3f(p.u('uBg'), ...BG);
+  gl.uniform4f(p.u('uLook'), pelt.sheen2, pelt.spec[0], pelt.spec[1], pelt.ao);
+  // Ember tips smoulder at rest and blaze as it purrs or puffs.
+  const glow = pelt.glow ? 0.045 + 1.1 * S.purr + 0.7 * S.fluff : 0;
+  gl.uniform4f(p.u('uMood'), S.purr, glow, pelt.glint, reduced() ? 0 : S.time);
+  gl.uniform4f(p.u('uTune'), dev('sheen'), dev('rim'), pelt.curl, 0);
+  setEyes(p);
+  gl.uniform1i(p.u('uFur'), 0);
+  gl.uniform1i(p.u('uBody'), 1);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, furTex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bodyTex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  tri();
+  gl.activeTexture(gl.TEXTURE0);
+}
+const BG = linFit(0.25, 0.02, 300);
+let seed = 0;
+function composite(fb) {
+  const W = canvas.width, Hh = canvas.height;
+  const bl = bloom.render(hdr.tex, W, Hh, { threshold: 0.85, levels: glowDetail(D.level).levels });
+  gl.useProgram(compP);
+  gl.uniform2f(compP.u('uRes'), W, Hh);
+  gl.uniform1f(compP.u('uBloomK'), 0.45);
+  gl.uniform1f(compP.u('uExposure'), 1.05 * dev('exposure'));
+  gl.uniform1f(compP.u('uSeed'), (seed = (seed + 1) % 61));
+  gl.uniform1i(compP.u('uHdr'), 0);
+  gl.uniform1i(compP.u('uBloom'), 1);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bl);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.viewport(0, 0, W, Hh);
+  tri();
+  gl.activeTexture(gl.TEXTURE0);
+}
+function render(toCache = false) {
+  applyStamps();
+  params();
+  fur();
+  composite(toCache ? cache.fb : null);
+}
+// Asleep, the cached frame breathes by scale alone.
+function sleepBlit() {
+  const d = size.dpr;
+  gl.useProgram(sleepP);
+  gl.uniform2f(sleepP.u('uRes'), canvas.width, canvas.height);
+  gl.uniform2f(sleepP.u('uC'), (centre[0] + X.shift[0] * scale) * d, (size.h - centre[1] + X.shift[1] * scale) * d);
+  gl.uniform2f(sleepP.u('uS'), X.sx / cache.sx, X.sy / cache.sy);
+  gl.uniform1i(sleepP.u('uCache'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, cache.tex);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  tri();
+}
+
+/* ---------- motion ---------- */
+// The body transform from breath, poke jiggle, shake and lean.
+function bodyTransform() {
+  const still = reduced();
+  const b = (breathAt(S.ph) - 0.5) + 1.4 * sighAt(S.sigh);
+  const amp = still ? 0 : S.amp, jig = still ? 0 : S.jig, m = S.melt;
+  // Asleep, it slumps: lower and a little wider.
+  X.sx = (1 + amp * b + 0.03 * jig) * (1 + 0.025 * m);
+  X.sy = (1 + amp * 0.75 * b - 0.035 * jig) * (1 - 0.012 * m);
+  X.hk = (1 + 2.4 * amp * b - 0.05 * jig) * (1 - 0.14 * m);
+  const st = S.shakeT;
+  X.ang = !still && st >= 0 ? 0.05 * Math.sin(st * Math.PI * 2 * 5.5) * (1 - smooth(0, 1, st)) ** 2 : 0;
+  // A loud purr buzzes the whole body.
+  const buzz = still ? 0 : 0.0028 * S.purr * S.purr;
+  X.shift = still ? [0, 0] : [S.lean[0] + buzz * (Math.random() - 0.5), S.lean[1] + buzz * (Math.random() - 0.5)];
+  const c = Math.cos(X.ang), s = Math.sin(X.ang);
+  // Column-major inverse of rotate(ang) * scale(sx, sy).
+  X.inv = [c / X.sx, -s / X.sy, s / X.sx, c / X.sy];
+}
+function step(dt) {
+  S.time += dt;
+  S.idle += dt;
+  const content = S.content > 0.45;
+  // Breath: slower and deeper as it relaxes and sleeps.
+  const want = S.state === 'asleep' ? [0.14, 0.02] : S.state === 'settling' ? [0.18, 0.016] : content ? [0.21, 0.015] : [0.27, 0.011];
+  S.rate = mix(S.rate, want[0], ease(dt, 2));
+  S.amp = mix(S.amp, want[1], ease(dt, 2));
+  S.ph = (S.ph + dt * S.rate) % 1;
+  if (S.sigh >= 0) { S.sigh += dt; if (S.sigh > 2.6) S.sigh = -1; }
+  // Mood: content fades unless the strokes go on; irritation fades fast.
+  if (S.time - S.lastGood > 1.6) S.content *= Math.exp(-dt / (S.state === 'awake' ? 14 : 4));
+  if (S.press > 0.5) S.content = Math.min(0.55, S.content + dt * 0.05);
+  S.irr *= Math.exp(-dt / 2.8);
+  S.puffCool = Math.max(0, S.puffCool - dt);
+  const purrGoal = S.state === 'asleep' ? 0 : smooth(0.08, 0.85, S.content) * (S.state === 'settling' ? 0.6 : 1);
+  S.purr = mix(S.purr, purrGoal, ease(dt, 0.6));
+  // Fluff: the whole coat puffs up fast and settles slowly.
+  if (S.fluffHold > 0) S.fluffHold -= dt; else S.fluffGoal = 0;
+  S.fluff = mix(S.fluff, S.fluffGoal, ease(dt, S.fluffGoal > S.fluff ? 0.08 : 0.7));
+  // Shake: the body wobbles; the comb resets at the fluff's peak.
+  if (S.shakeT >= 0) {
+    S.shakeT += dt;
+    if (S.shakeSwap && S.shakeT > 0.28) { S.shakeSwap(); S.shakeSwap = null; }
+    if (S.shakeT > 1.1) S.shakeT = -1;
+  }
+  // Poke jiggle: a damped spring, about 2.6 wobbles a second.
+  const w = Math.PI * 2 * 2.6;
+  S.jigV += (-w * w * S.jig - 2 * 0.24 * w * S.jigV) * dt;
+  S.jig += S.jigV * dt;
+  for (const d of S.dents) { d.t += dt; d.depth = 0.075 * Math.exp(-d.t / 0.22) * Math.cos(d.t * Math.PI * 2 * 3.4); }
+  S.dents = S.dents.filter(d => d.t < 1.2);
+  // The body leans toward a hand on it, slowly.
+  const handOn = ptr && ptr.on && ptr.mode !== 'press';
+  S.leanGoal = handOn ? [(ptr.ux ?? 0) * 0.05, (ptr.uy ?? 0) * 0.05] : [0, 0];
+  S.lean = S.lean.map((v, i) => mix(v, S.leanGoal[i], ease(dt, handOn ? 0.45 : 0.9)));
+  S.bump = mix(S.bump, handOn ? 0.1 : 0, ease(dt, 0.35));
+  S.melt = mix(S.melt, S.state === 'awake' ? 0 : 1, ease(dt, S.state === 'awake' ? 0.25 : 1.6));
+  S.press = mix(S.press, ptr?.mode === 'hold' && ptr.on ? 1 : 0, ease(dt, 0.25));
+  // Eyes open on a poke and half open while it watches.
+  // They shut in bliss.
+  if (S.eyesHold > 0) S.eyesHold -= dt;
+  else S.eyesGoal = S.state !== 'awake' || S.content > 0.4 || S.press > 0.5 ? 0 : (S.time - S.lastTouch < 3 ? 0.45 : 0);
+  S.blink -= dt;
+  let goal = S.eyesGoal;
+  if (S.blink < 0.14 && goal > 0.3) goal = 0.05;
+  if (S.blink < 0) S.blink = 2.5 + Math.random() * 4;
+  S.eyes = mix(S.eyes, goal, ease(dt, goal > S.eyes ? 0.07 : 0.22));
+  S.look = S.look.map((v, i) => mix(v, S.lookGoal[i], ease(dt, 0.12)));
+  // Sleep: it settles with a sigh, then dozes off.
+  if (S.state === 'awake' && S.idle > 8 && !ptr) { S.state = 'settling'; S.sigh = 0; sighSound(); }
+  if (S.state === 'settling' && S.idle > 13 && !ptr && S.fuzz < 0.06 && S.shakeT < 0 && Math.abs(S.jig) < 0.01 && S.fluff < 0.02) goSleep();
+  bodyTransform();
+  relax(dt);
+  purrTick();
+}
+
+/* ---------- touch and mood ---------- */
+// Any touch wakes it and holds sleep off.
+function touch() {
+  S.idle = 0;
+  S.lastTouch = S.time;
+  if (S.state === 'asleep') {
+    S.state = 'awake';
+    cache.valid = false;
+    clearTimeout(timer);
+    timer = 0;
+    S.jigV -= 6;
+    wakeSound();
+  } else if (S.state === 'settling') S.state = 'awake';
+  wake();
+}
+S.lastTouch = -9;
+// One stroke segment from a to b in blob space.
+// It takes dt seconds.
+function strokeSeg(a, b, dt) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+  if (len < 1e-4) return;
+  const r = 0.135 * handK;
+  stamp(0, a, b, r, 1 - Math.exp(-len / (0.3 * r)));
+  S.fuzz = Math.max(S.fuzz, 0.9);
+  const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const on = shapeR(...mid) < 1;
+  const v = len / Math.max(dt, 1e-3);
+  const g = grain(...mid), al = (dx * g[0] + dy * g[1]) / len;
+  rustle(mid, v, al);
+  if (!on) return;
+  // A calm stroke with the grain pleases it.
+  // A stroke against the grain, or a scrub, annoys it.
+  const calm = Math.exp(-((Math.log(Math.max(v, 1e-3) / 1.4)) ** 2) / (2 * 0.8 ** 2));
+  const good = calm * smooth(-0.15, 0.6, al);
+  const bad = smooth(-0.2, -0.65, al) + 0.7 * smooth(5, 9, v);
+  if (good > 0.15) S.lastGood = S.time;
+  S.content = clamp(S.content + good * len * 0.13 * (1 + 0.7 * S.rhythm) - bad * len * 0.12);
+  S.irr = clamp(S.irr + bad * len * 0.32);
+  if (S.irr > 0.6 && S.puffCool <= 0) puff();
+}
+// A new stroke: a steady rhythm of strokes deepens the purr.
+function strokeStart() {
+  const gap = S.time - S.lastStart;
+  if (gap > 0.35 && gap < 4.5 && S.lastGap > 0) {
+    const reg = Math.exp(-Math.abs(Math.log(gap / S.lastGap)) * 2.5);
+    S.rhythm = mix(S.rhythm, reg, 0.45);
+  } else if (gap >= 4.5) S.rhythm *= 0.5;
+  S.lastGap = gap < 4.5 ? gap : 0;
+  S.lastStart = S.time;
+}
+// The whole coat puffs up, and it grumbles.
+function puff() {
+  S.fluffGoal = 0.75;
+  S.fluffHold = 0.55;
+  S.puffCool = 2.2;
+  S.irr *= 0.4;
+  S.content = Math.max(0, S.content - 0.3);
+  S.eyesGoal = 1;
+  S.eyesHold = 1.4;
+  grumbleSound();
+}
+function poke(p) {
+  stamp(1, p, p, 0.17, 1);
+  S.fuzz = Math.max(S.fuzz, 0.9);
+  S.dents.push({ x: p[0], y: p[1], t: 0, depth: 0 });
+  if (S.dents.length > 3) S.dents.shift();
+  S.jigV += 16;
+  S.eyesGoal = 1;
+  S.eyesHold = 1.8;
+  S.content = Math.max(0, S.content - 0.08);
+  S.irr = clamp(S.irr + 0.24);
+  const grumpy = S.irr > 0.45;
+  chirpSound(p, grumpy);
+  if (S.irr > 0.6 && S.puffCool <= 0) puff();
+}
+function shake(swap = null) {
+  touch();
+  S.shakeT = 0;
+  S.fluffGoal = 0.85;
+  S.fluffHold = 0.3;
+  S.shakeSwap = () => { swap?.(); combInit(); };
+  shakeSound();
+}
+function goSleep() {
+  S.state = 'asleep';
+  S.content = S.purr = S.eyes = 0;
+  hush();
+  cache.valid = false;
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.7 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+const panOf = p => clamp(p[0] / (shape.A + 0.2), -1, 1) * 0.6;
+// The purr: breath noise chopped by a pulse train.
+// A soft buzz runs under it.
+let purrV = null;
+function purrVoice(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 280;
+  bp.Q.value = 0.8;
+  // The chop gain sits at a floor.
+  // The pulse train adds to it.
+  const chop = ac.createGain();
+  chop.gain.value = 0.12;
+  const lfo = ac.createOscillator();
+  lfo.frequency.value = 25;
+  const shaper = ac.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < curve.length; i++) { const x = i / 511.5 - 1; curve[i] = Math.max(0, x) ** 2.6; }
+  shaper.curve = curve;
+  const depth = ac.createGain();
+  depth.gain.value = 0.9;
+  lfo.connect(shaper).connect(depth).connect(chop.gain);
+  // The buzz: a saw on the same rate, through a low formant.
+  const saw = ac.createOscillator();
+  saw.type = 'sawtooth';
+  saw.frequency.value = 25;
+  const bz = ac.createBiquadFilter();
+  bz.type = 'bandpass';
+  bz.frequency.value = 150;
+  bz.Q.value = 1.1;
+  const bzG = ac.createGain();
+  bzG.gain.value = 0.5;
+  const body = ac.createBiquadFilter();
+  body.type = 'lowpass';
+  body.frequency.value = 1100;
+  body.Q.value = 0.4;
+  const level = ac.createGain();
+  level.gain.value = 0;
+  src.connect(bp).connect(chop).connect(body);
+  saw.connect(bz).connect(bzG).connect(chop);
+  body.connect(level).connect(kit.out);
+  src.start();
+  lfo.start();
+  saw.start();
+  return { level, lfo, saw, bp, bzG };
+}
+// Each frame, the purr follows the breath.
+// The in-breath is brighter and quicker.
+function purrTick() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  if (!purrV && S.purr < 0.01) return;
+  purrV ||= purrVoice(ac);
+  const now = ac.currentTime, ph = S.ph;
+  const inh = ph < 0.4 ? 1 : 0;
+  // A short dip where the breath turns over.
+  const turn = Math.min(Math.abs(ph - 0.4), ph, 1 - ph);
+  const dip = 1 - 0.6 * Math.exp(-((turn / 0.035) ** 2));
+  const f0 = pelt.f0 * (1 + 0.07 * inh) + 2.5 * S.purr;
+  purrV.lfo.frequency.setTargetAtTime(f0, now, 0.05);
+  purrV.saw.frequency.setTargetAtTime(f0, now, 0.05);
+  purrV.bp.frequency.setTargetAtTime(230 + 110 * inh + 140 * S.purr, now, 0.08);
+  purrV.bzG.gain.setTargetAtTime(0.35 + 0.35 * S.purr, now, 0.1);
+  purrV.level.gain.setTargetAtTime(S.purr * (0.72 + 0.28 * inh) * dip * 1.6, now, 0.05);
+}
+// Sleep or a hidden tab fades the purr and the rustle.
+function hush() {
+  const ac = kit.ac;
+  if (!ac) return;
+  for (const g of [purrV?.level.gain, rustleV?.g.gain]) if (g) { g.cancelScheduledValues(ac.currentTime); g.setTargetAtTime(0, ac.currentTime, 0.08); }
+}
+// The fur rustle: each stroke event holds a soft hiss.
+// A stroke against the grain crackles with static.
+let rustleV = null;
+function rustleVoice(ac) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const hp = ac.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 900;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 2600;
+  bp.Q.value = 0.6;
+  const g = ac.createGain();
+  g.gain.value = 0;
+  const pan = ac.createStereoPanner();
+  src.connect(hp).connect(bp).connect(g).connect(pan).connect(kit.out);
+  src.start();
+  return { g, bp, pan };
+}
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+function rustle(p, v, al) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  rustleV ||= rustleVoice(ac);
+  const now = ac.currentTime, lvl = clamp(v / 3) * jit(0.1), pan = panOf(p);
+  const hold = (param, val) => {
+    param.cancelScheduledValues(now);
+    param.setTargetAtTime(val, now, 0.03);
+    param.setTargetAtTime(0, now + 0.09, 0.06);
+  };
+  hold(rustleV.g.gain, lvl * 0.16 * (0.6 + 0.4 * pelt.L / 0.1));
+  rustleV.bp.frequency.setTargetAtTime((1800 + 1600 * lvl) * (pelt.L > 0.12 ? 0.75 : 1), now, 0.05);
+  rustleV.pan.pan.setTargetAtTime(pan, now, 0.05);
+  // Static: fur rubbed the wrong way crackles.
+  const against = smooth(-0.15, -0.7, al);
+  if (Math.random() < against * lvl * 0.9) burst(ac, now + Math.random() * 0.03, { f: 3500 + 4000 * Math.random(), q: 3, type: 'bandpass', dur: 0.003 + 0.006 * Math.random(), level: 0.22, pan });
+}
+// A voice: a saw through two formants, with a rolled trill.
+function voice(ac, at, { f0, f1, f2, dur, level, trill = 32, depthT = 0.45, pan = 0, form = [900, 2300] }) {
+  const o = ac.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, at);
+  o.frequency.exponentialRampToValueAtTime(f1, at + dur * 0.45);
+  o.frequency.exponentialRampToValueAtTime(f2, at + dur);
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0, at);
+  env.gain.linearRampToValueAtTime(level, at + 0.02);
+  env.gain.setValueAtTime(level, at + dur * 0.6);
+  env.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const am = ac.createGain();
+  am.gain.value = 1 - depthT;
+  const tr = ac.createOscillator();
+  tr.frequency.value = trill;
+  const trG = ac.createGain();
+  trG.gain.value = depthT;
+  tr.connect(trG).connect(am.gain);
+  const a = ac.createBiquadFilter(), b = ac.createBiquadFilter();
+  a.type = b.type = 'bandpass';
+  a.frequency.value = form[0];
+  a.Q.value = 3;
+  b.frequency.value = form[1];
+  b.Q.value = 5;
+  const bG = ac.createGain();
+  bG.gain.value = 0.5;
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(env).connect(am);
+  am.connect(a).connect(pn);
+  am.connect(b).connect(bG).connect(pn);
+  pn.connect(kit.out);
+  o.start(at);
+  tr.start(at);
+  o.stop(at + dur + 0.05);
+  tr.stop(at + dur + 0.05);
+}
+// A poke gets a curious "mrrp?".
+// Once it is cross, it gives a grumpy "mrrh".
+function chirpSound(p, grumpy) {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime + 0.01, f = (grumpy ? 260 : 400) * jit(0.08) * (25 / pelt.f0);
+  if (grumpy) voice(ac, at, { f0: f, f1: f * 0.92, f2: f * 0.68, dur: 0.32, level: 0.32, trill: 26, depthT: 0.55, pan: panOf(p), form: [700, 1900] });
+  else voice(ac, at, { f0: f * 0.85, f1: f * 1.45, f2: f * 1.25, dur: 0.22, level: 0.28, trill: 34, pan: panOf(p) });
+}
+// A wake-up "mm?": short, soft and rising.
+function wakeSound() {
+  const ac = kit.live();
+  if (!ac) return;
+  const f = 330 * (25 / pelt.f0);
+  voice(ac, ac.currentTime + 0.02, { f0: f, f1: f * 1.18, f2: f * 1.3, dur: 0.26, level: 0.14, trill: 20, depthT: 0.2, form: [650, 1800] });
+}
+// A grumble and a puff of air.
+function grumbleSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, f = 120 * (25 / pelt.f0);
+  voice(ac, at, { f0: f, f1: f * 0.9, f2: f * 0.7, dur: 0.6, level: 0.4, trill: 23, depthT: 0.6, form: [480, 1300] });
+  burst(ac, at, { f: 2800, type: 'highpass', q: 0.7, dur: 0.28, level: 0.12 });
+}
+// A sigh: a breath in, then a long breath out.
+// A soft hum runs under it.
+function sighSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.02;
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(1300, at);
+  bp.frequency.linearRampToValueAtTime(900, at + 0.7);
+  bp.frequency.exponentialRampToValueAtTime(380, at + 2.4);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.07, at + 0.6);
+  g.gain.linearRampToValueAtTime(0.03, at + 0.72);
+  g.gain.linearRampToValueAtTime(0.16, at + 0.95);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 2.5);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(at);
+  src.stop(at + 2.6);
+  voice(ac, at + 0.75, { f0: 210, f1: 190, f2: 150, dur: 1.4, level: 0.05, trill: 18, depthT: 0.3, form: [500, 1400] });
+}
+// A shake: a fast "brrr" of flapping fur that slows down.
+function shakeSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, dur = 1.0;
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 800;
+  bp.Q.value = 0.7;
+  const g = ac.createGain();
+  g.gain.value = 0;
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0, at);
+  env.gain.linearRampToValueAtTime(0.38, at + 0.05);
+  env.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const lfo = ac.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.setValueAtTime(15, at);
+  lfo.frequency.exponentialRampToValueAtTime(6, at + dur);
+  const lg = ac.createGain();
+  lg.gain.value = 0.5;
+  const base = ac.createConstantSource();
+  base.offset.value = 0.5;
+  lfo.connect(lg).connect(g.gain);
+  base.connect(g.gain);
+  src.connect(bp).connect(g).connect(env).connect(kit.out);
+  src.start(at);
+  lfo.start(at);
+  base.start(at);
+  for (const n of [src, lfo, base]) n.stop(at + dur + 0.05);
+  voice(ac, at + 0.05, { f0: 150, f1: 140, f2: 110, dur: 0.7, level: 0.12, trill: 15, depthT: 0.7, form: [600, 1500] });
+}
+
+/* ---------- frame loop ---------- */
+// Awake, the loop runs: the body breathes.
+// The purr follows the breath.
+// Asleep, a cached frame breathes at about 20 frames a second.
+// With reduced motion, it holds still.
+let raf = 0, timer = 0, last = 0, visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && !timer && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+function frame(now) {
+  raf = 0;
+  const raw = Math.max(0, (now - last) / 1000);
+  last = now;
+  const dt = Math.min(raw, 0.05);
+  if (S.state === 'asleep') { sleepFrame(dt); return; }
+  step(dt);
+  render();
+  if (raw > 0 && raw < 0.5) D.frame(raw);
+  if (visible && S.state !== 'asleep') raf = requestAnimationFrame(frame);
+  else if (visible) sleepFrame(0);
+}
+function sleepFrame(dt) {
+  S.time += dt;
+  S.ph = (S.ph + dt * S.rate) % 1;
+  bodyTransform();
+  if (!cache.valid) {
+    render(true);
+    cache.valid = true;
+    cache.sx = X.sx;
+    cache.sy = X.sy;
+    kit.rest(() => S.state === 'asleep' && !ptr);
+  }
+  sleepBlit();
+  clearTimeout(timer);
+  timer = 0;
+  if (reduced() || !visible) return;
+  timer = setTimeout(() => { timer = 0; if (visible) { last = performance.now() - 50; raf = requestAnimationFrame(frame); } }, 45);
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a stroke after 6 px.
+// A press held 320 ms becomes a resting hand.
+// A release that is neither is a poke.
+let ptr = null, holdTo = 0;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// The pointer in screen units round the centre, for the lean.
+const screenUnits = (x, y) => [(x - centre[0]) / scale, (centre[1] - y) / scale];
+function aimEyes(p) {
+  const e = eyeAt(p[0] < 0 ? -1 : 1);
+  const dx = p[0] - e[0], dy = p[1] - e[1], m = Math.hypot(dx, dy);
+  const k = Math.min(1, m / 0.5) / (m || 1);
+  S.lookGoal = [dx * k, dy * k];
+}
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e), p = toBlob(x, y), [ux, uy] = screenUnits(x, y);
+  ptr = { id: e.pointerId, x0: x, y0: y, t: e.timeStamp, mode: 'press', on: onSkin(p), last: p, ux, uy, touch: e.pointerType !== 'mouse' };
+  S.hand = p;
+  aimEyes(p);
+  holdTo = setTimeout(() => { if (ptr?.mode === 'press' && ptr.on) { ptr.mode = 'hold'; touch(); } }, 320);
+  touch();
+}
+function move(e) {
+  const [x, y] = local(e), p = toBlob(x, y);
+  aimEyes(p);
+  if (!ptr || e.pointerId !== ptr.id) return;
+  [ptr.ux, ptr.uy] = screenUnits(x, y);
+  if (ptr.mode !== 'stroke' && Math.hypot(x - ptr.x0, y - ptr.y0) > 6) {
+    clearTimeout(holdTo);
+    ptr.mode = 'stroke';
+    ptr.on = true;
+    stage.classList.add('is-stroking');
+    strokeStart();
+  }
+  if (ptr.mode === 'stroke') {
+    ptr.on = onSkin(p);
+    strokeSeg(ptr.last, p, (e.timeStamp - ptr.t) / 1000);
+    ptr.last = p;
+    ptr.t = e.timeStamp;
+    S.hand = p;
+    touch();
+  }
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup' && ptr.on;
+  const at = ptr.last;
+  ptr = null;
+  stage.classList.remove('is-stroking');
+  if (tap) poke(at);
+  touch();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- keys on the stage ---------- */
+// With the stage focused, an arrow key strokes the back.
+// Enter or Space pokes.
+function keyStroke(dx, dy) {
+  touch();
+  strokeStart();
+  const len = 0.9, n = 12;
+  let prev = [-dx * len / 2 + (Math.random() - 0.5) * 0.3, -dy * len / 2 - 0.1 + (Math.random() - 0.5) * 0.3];
+  for (let i = 1; i <= n; i++) {
+    const p = [prev[0] + dx * len / n, prev[1] + dy * len / n];
+    strokeSeg(prev, p, 0.07);
+    prev = p;
+  }
+}
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage || e.metaKey || e.ctrlKey || e.altKey) return;
+  const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+  if (dir) { e.preventDefault(); keyStroke(...dir); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { e.preventDefault(); touch(); poke([0, -0.1]); }
+});
+
+/* ---------- actions ---------- */
+// A new pelt: the creature shakes.
+// The new coat settles out of the puff.
+act.pelt = v => { if (v === peltId && S.shakeT < 0) return; shake(() => { peltId = v; pelt = PELTS[v]; }); };
+act.shake = () => shake();
+act.reset = () => { combInit(); S.content = S.irr = S.purr = S.fluff = 0; S.eyes = 0; S.dents = []; touch(); };
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders compile and the first frame draws.
+resize();
+combInit();
+firstStroke();
+bodyTransform();
+render();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+wake();
+// The first look and the sleep clock wait for the intro.
+function afterIntro(fn) {
+  if (!document.querySelector('.intro')) { fn(); return; }
+  const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); fn(); } });
+  mo.observe(document.body, { childList: true, subtree: true });
+}
+afterIntro(() => { S.idle = 0; S.eyesHold = 2.6; S.blink = 1.3; });
+
+// A resize redraws at once.
+// Asleep, the slow breath restarts from a new cache.
+new ResizeObserver(() => {
+  resize();
+  if (!ready) return;
+  if (S.state !== 'asleep') { render(); return; }
+  cancelAnimationFrame(raf);
+  raf = 0;
+  sleepFrame(0);
+}).observe(stage);
+onReducedChange(() => { bodyTransform(); wake(); });
+// A hidden tab stops the loop and the sound with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; hush(); kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>

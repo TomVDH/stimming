@@ -34,6 +34,21 @@ Bar v2 rule 4 amended (Tom, 2026-11-09): the page scrolls past the stage only in
 
 Notes carry change and version only; sign-offs stay off the page (Tom, 2026-11-09).
 
+## Round 2 (2026-11-16)
+
+Tom: "another stab", "a couple more iterations", an Awwwards-inspired transition; the zone holds the making-of, the idea, notes and attribution; Claude drafts, Tom edits.
+
+Lab: annexlab/round2.html, in the shell's own look, on the live Glass toy. Detail: docs/plans/annex.md.
+
+- [x] A · Recede as the baseline, restyled
+- [x] D · Drum: the stage and the zone as two faces of a drum
+- [x] E · Placard: the accent label rides up and docks as the header
+- [x] F · Tide: the series Wave floods up over the stage
+- [x] One content kit: title block, idea, making of, notes, credits, also try
+- [x] Checked at 1280 x 720 and 375 x 812; no sideways scroll; clean console
+- [ ] Tom's pick, or a new deal (Lead figure, Flash cut, Mini-player, Tab stack)
+- [ ] Real stills for the picture blocks
+
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)
 - [ ] annex.json loader and shared/credits.json
