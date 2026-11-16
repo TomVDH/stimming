@@ -811,15 +811,14 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-// The nearing rock fills the sky with a great globe of fire.
-// A hot core sits round the rock; a wide orange globe spreads past it.
-// Low sky and the whole dome warm as it comes down.
+// The nearing rock wraps itself in a great globe of fire.
+// A hot core, an orange globe round it, a soft halo that fades out.
+// The far sky keeps its own colour: no wash over the whole dome.
 vec3 rockFill(vec3 c, vec3 dir) {
   if (uFill < 0.001) return c;
-  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), globe = pow(m, 4.0), wide = pow(m, 1.5);
-  float low = exp(-max(dir.y, 0.0) * 3.0);
-  c = mix(c, c * vec3(1.3, 0.82, 0.55), 0.55 * uFill * wide);
-  return c + uAstC * uFill * (0.8 * near_ + 0.45 * globe + 0.12 * wide + 0.08 * low);
+  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 60.0), globe = pow(m, 9.0), halo = pow(m, 3.0);
+  c = mix(c, c * vec3(1.25, 0.85, 0.6), 0.3 * uFill * halo);
+  return c + uAstC * uFill * (0.6 * near_ + 0.32 * globe + 0.07 * halo);
 }
 vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
@@ -2207,6 +2206,11 @@ void main() {
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
+  // The rock's glowing sky fills the cloud warm; thin parts toward it glow.
+  if (uFill > 0.001) {
+    float bk = pow(max(dot(V, normalize(uRockL.xyz - P)), 0.0), 4.0);
+    col += uAstC * uFill * (0.12 + 0.45 * bk * (0.4 + 0.6 * thin));
+  }
   // Lightning inside the storms punches through the haze.
   if (vS.z > 0.5) col += flashIn(P, F, H);
   // The ship's impacts light the cloud bases from beyond the horizon.
@@ -2462,6 +2466,15 @@ void main() {
            + sunC * 0.32 * (0.35 + 0.65 * Tl2)
            + amb * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
     S *= mix(1.0, 0.45, uStars);
+    // The rock's fire lights the storm: its glowing sky fills it warm,
+    // and the side toward the rock glows when the rock is behind it.
+    if (uFill + uRockL.w > 0.001) {
+      vec3 rb = uRockL.xyz - P;
+      float rf = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+      float back = pow(max(dot(normalize(P - cameraPosition), normalize(rb)), 0.0), 4.0);
+      // Its own body shades that light, so the storm keeps its form.
+      S += uAstC * (uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2) + uRockL.w * rf * (0.4 + 1.4 * powder * back));
+    }
     S += flashAt(P) * (0.4 + 0.6 * d);
     // Thick body: the column is opaque a few kilometres in.
     float al = 1.0 - exp(-5.0 * d * dt / U);
@@ -5429,7 +5442,7 @@ function aimAst() {
   // The strike drives rockGlowK up: the fill reaches full as it comes down.
   // Each split swells it for a few seconds.
   const pop = 0.35 * Math.exp(-Math.max(simT - fillPopT, 0) / 2.5) * sstep(Math.min(ast.s, 1), 0.2, 0.6);
-  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.min(1.4, Math.pow(sstep(Math.min(ast.s, 1), 0.45, 1), 1.3) * Math.min(1.3, 0.7 + 0.3 * rockGlowK) + pop) : 0;
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.min(1.15, Math.pow(sstep(Math.min(ast.s, 1), 0.45, 1), 1.3) * Math.min(1.15, 0.7 + 0.3 * rockGlowK) + pop) : 0;
   U.uFill.value = fk;
   // The rock's own flare: faint far out, strong near the end; the strike has its own.
   tmpA.copy(ast.pos).project(camera);

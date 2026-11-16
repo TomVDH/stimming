@@ -424,3 +424,5 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 
 - Tom: "NO RAIN OR ENTRY" and "small yellow wisps fly out". The rock sheds no ember sparks while it falls, a split piece throws none, and a broken fragment throws none. `prewarmEmbers()` does nothing.
 - Tom: "a globular orange glow filling the sky ... as we near the surface, and as the bits start popping off". `rockFill()` adds a wide orange globe round the rock and warms the low sky and the whole dome. `uFill` starts halfway down, grows to the ground, and the strike drives it higher. Each split swells it for a few seconds (`fillPopT`).
+- The fill is a globe, not a wash (Tom: "does not look good"): a hot core, an orange globe and a soft halo round the rock; the far sky keeps its own colour. `uFill` tops out at 1.15.
+- The clouds take the fire (Tom: "look at the clouds, how dark they are"). The marched storms (`STORM_FS`) and the card clouds add `uAstC * uFill`: a warm fill, stronger on the side toward the rock and in thin parts. The storm's own density shades it, so the storm keeps its form.
