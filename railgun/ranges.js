@@ -7,16 +7,21 @@ export const EYE = [1670, 1990];
 export const polar = (th, d) => [EYE[0] - Math.sin(th) * d, EYE[1] - Math.cos(th) * d];
 const rad = d => d * Math.PI / 180;
 // Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
-// An optional seventh value is its form: 1 a mesa line, 2 a lone cone, 3 a knife ridge.
+// An optional seventh value is its form: 1 a mesa line, 2 a lone cone, 3 a knife ridge,
+// 4 a spire field, 5 a line of tilted slabs.
+// A spire field's arc radius is its radius; it takes no span or opening.
 // The Dev row Forms turns every form back into a crescent.
 // A cone's arc radius is its base radius; it takes no span or opening.
 export const RANGES = [
   [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 28000, 150, 200], [-12, 148000, 42000, 18500, 130, 60, 3],
-  [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250],
+  [27, 115000, 29000, 12800, 150, 150],
+  // Tilted slabs hold the left edge: long dip slopes, sheer scarps.
+  [57, 94000, 21000, 9300, 135, 250, 5],
   // Low mesas leave one gentle gap right of the middle.
   [3, 81000, 16000, 3600, 110, 300, 1],
   // This range holds the right edge of the view.
-  [-20, 110000, 24000, 7500, 140, 300],
+  // A field of spires holds the right edge, against the sun.
+  [-12, 118000, 19000, 13000, 0, 0, 4],
   // A lone volcano rises far off in the gap, over the mesas.
   [1.5, 175000, 22000, 16000, 0, 0, 2],
 ];
@@ -57,6 +62,37 @@ float fbm3(vec2 p) {
   for (int i = 0; i < 3; i++) { s += a * k2noise(p); p = p * 2.07 + vec2(17.1, 9.2); a *= 0.5; }
   return s / 0.875;
 }
+// A smooth max: two ranges that overlap fill the saddle between them.
+float smax(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / max(k, 1e-3);
+  return max(a, b) + 0.25 * h * h * k;
+}
+// A spire field: tall tapered needles on a low mound.
+// v is the distance from the centre over the field's radius.
+float spires(vec2 q, float R, float H, float ph, float v) {
+  // The massif: a rocky swell the needles rise out of.
+  float h = 0.24 * H * pow(1.0 - v, 1.6) * (0.8 + 0.4 * k2noise(q / (0.2 * R) + ph));
+  float g = 0.28 * R;
+  vec2 c0 = floor(q / g);
+  for (int j = 0; j < 9; j++) {
+    vec2 c = c0 + vec2(float(j % 3) - 1.0, float(j / 3) - 1.0);
+    float k1 = k2hash(c + ph), k2 = k2hash(c + ph + 17.3), k3 = k2hash(c + ph + 41.9);
+    // About two cells in three hold a needle.
+    if (k3 < 0.33) continue;
+    vec2 at = (c + 0.2 + 0.6 * vec2(k1, k2)) * g;
+    float fall = clamp(1.0 - length(at) / R, 0.0, 1.0);
+    if (fall <= 0.0) continue;
+    float rr = g * mix(0.2, 0.42, k1);
+    // A rounded tip keeps the needle smooth.
+    float d = sqrt(dot(q - at, q - at) + 0.0025 * rr * rr) / rr;
+    if (d >= 1.0) continue;
+    float hh = H * mix(0.3, 1.0, (k3 - 0.33) / 0.67) * sqrt(fall);
+    // A slim shaft on a flared foot.
+    float sh = 0.7 * pow(1.0 - d, 1.9) + 0.3 * pow(1.0 - d, 0.7);
+    h = smax(h, hh * sh, 0.2 * hh);
+  }
+  return h;
+}
 // The ranges' height over the flat plain at p, in metres.
 // near is 1 inside any range's broad band, where the march must step short.
 float rangeH(vec2 p, out float near) {
@@ -68,7 +104,15 @@ float rangeH(vec2 p, out float near) {
     if (uForms < 0.5 && uRa[i].w > 1.5 && uRa[i].w < 2.5) continue;
     vec2 q = p - uRg[i].xy;
     float Rc = uRg[i].z, r = length(q), off = r - Rc, ph = uRa[i].z, hr, v, arc, mid, crest;
-    if (kind > 1.5 && kind < 2.5) {
+    if (kind > 3.5 && kind < 4.5) {
+      v = r / Rc;
+      if (v >= 1.0) continue;
+      near = 1.0;
+      hr = spires(q, Rc, uRg[i].w, ph, v);
+      arc = atan(q.y, q.x) * 0.5 * Rc; off = r;
+      // Erosion only scores the needles lightly.
+      mid = 0.3; crest = 0.0;
+    } else if (kind > 1.5 && kind < 2.5) {
       // A lone cone: concave flanks, a blunt top and a crater.
       v = r / Rc;
       if (v >= 1.0) continue;
@@ -87,31 +131,48 @@ float rangeH(vec2 p, out float near) {
       if (abs(off) > 0.75 * Rc) continue;
       float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
       if (u > 1.0) continue;
-      bool mesa = kind > 0.5 && kind < 1.5, knife = kind > 2.5;
+      bool mesa = kind > 0.5 && kind < 1.5, knife = kind > 2.5 && kind < 3.5, slab = kind > 4.5;
+      bool isMain = !mesa && !knife && !slab;
       // The range tapers to both ends; its crest rolls in peaks and saddles.
       // A mesa line keeps its tops level to near its ends.
       float t = pow(sin(3.14159265 * u), mesa ? 0.25 : 0.8);
       // A power on the crest wave sharpens the peaks and widens the saddles.
       float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
-      float hc = uRg[i].w * t * (mesa ? 1.0 : pow(cw, 1.7) * 1.35);
+      float arc0 = u * uRa[i].y * Rc;
+      if (isMain) {
+        // Real ranges: peaks of uneven height at uneven spacing, not a regular wave.
+        // The spacing is a few kilometres plus a share of the crest's height.
+        float pk = smoothstep(0.25, 0.85, fbm3(vec2(arc0 / (0.55 * uRg[i].w + 6000.0), ph * 1.3)));
+        cw = mix(cw, 0.3 + 0.7 * pk, 0.75);
+        // The spine wanders across the band, so the crest line is not a true arc.
+        off += Rc * 0.05 * (fbm3(vec2(arc0 / 40000.0, ph)) - 0.5);
+      }
+      float hc = uRg[i].w * t * (mesa || slab ? 1.0 : pow(cw, 1.7) * 1.35);
       // Inner face: a steep scarp. Outer face: a long apron.
       // A mesa and a knife stand narrow on both sides.
-      v = abs(off) / (Rc * (mesa ? 0.16 : knife ? 0.15 : off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
+      v = abs(off) / (Rc * (mesa ? 0.16 : knife ? 0.15 : slab ? 0.22 : off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
       if (v >= 1.0) continue;
       near = 1.0;
-      arc = u * uRa[i].y * Rc;
+      arc = arc0;
       float prof;
       if (mesa) {
         // A level top, a sheer cliff, then a talus skirt.
         prof = 1.0 - 0.75 * smoothstep(0.42, 0.56, v) - 0.25 * smoothstep(0.56, 1.0, v);
         // Gaps cut the line into buttes.
         prof *= smoothstep(0.47, 0.53, fbm3(vec2(arc / (3.0 * uRg[i].w), 0.5) + ph));
+      } else if (slab) {
+        // Tilted beds: each slab climbs a long dip slope, then drops at a sheer scarp.
+        float s = fract(arc / (1.3 * uRg[i].w) + 0.35 * fbm3(vec2(arc / 20000.0, ph)));
+        float plate = smoothstep(0.0, 0.82, s) * (1.0 - smoothstep(0.84, 0.98, s));
+        prof = (0.3 + 0.7 * plate) * (1.0 - smoothstep(0.35, 1.0, v));
       } else if (knife) {
         // Hollow flanks meet in a thin edge.
         prof = pow(1.0 - v, 1.6);
       } else {
         // A rounded profile: the crest swells, then falls away in long slopes.
-        prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
+        // The crest rounds over, so it reads smooth, not as a crease.
+        float rv = (sqrt(v * v + 0.0064) - 0.08) / (sqrt(1.0064) - 0.08);
+        prof = off < 0.0 ? 1.0 - pow(rv, 1.25) : pow(1.0 - rv, 1.5) * (1.0 + 0.4 * rv);
         // A line of foothills rolls along the outer apron.
         if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
       }
@@ -122,7 +183,7 @@ float rangeH(vec2 p, out float near) {
       float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
       // The folds take a gentle ridge: firm spurs, no knife edges.
       folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
-      hr = hc * prof * (mesa ? 1.0 : 0.78 + 0.18 * bands + 0.36 * (folds - 0.5));
+      hr = hc * prof * (mesa || slab ? 1.0 : 0.78 + 0.18 * bands + 0.36 * (folds - 0.5));
       if (mesa) {
         // Hard beds weather into ledges: the cliff steps down in benches.
         float st = hr / (0.22 * uRg[i].w);
@@ -130,7 +191,7 @@ float rangeH(vec2 p, out float near) {
       }
       mid = smoothstep(0.02, 0.3, v) * (1.0 - smoothstep(0.75, 1.0, v));
       // A knife's crest saws hardest; a mesa's top stays level.
-      crest = (1.0 - smoothstep(0.0, 0.25, v)) * (mesa ? 0.0 : knife ? 0.2 : 0.1);
+      crest = (1.0 - smoothstep(0.0, 0.25, v)) * (mesa || slab ? 0.0 : knife ? 0.2 : 0.1);
     }
     if (uEro > 0.0 && hr > 0.02 * uRg[i].w) {
       // Erosion: spurs run down each face, gullies cut between them.
@@ -148,7 +209,7 @@ float rangeH(vec2 p, out float near) {
       // The carving is deepest on the mid slopes, light at the crest and the toe.
       hr *= 1.0 - uEro * (0.42 * mid * sp + crest * cr);
     }
-    h = max(h, hr);
+    h = smax(h, hr, 0.12 * max(h, hr));
   }
   return h;
 }
