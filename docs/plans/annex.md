@@ -86,7 +86,8 @@ Tom picked H and parked the rest. The lab opens on H; the parked directions stay
 
 H · Flash cut:
 - The stage stays fixed and dims to 0.62. The zone rises over it as a dark sheet.
-- At rest the whole toy shows with 18 px round corners. The cue is one quiet hint in the middle under it: the word `About` and a small chevron, on a 34 px lip in the page's own colour. No line, no border (Tom, 2026-11-16: a hard border is ugly, in every direction).
+- At rest the toy fills the whole screen, with 18 px round corners (Tom, 2026-11-16: the full toy). The cue takes no room: one quiet hint floats on the toy, bottom centre, the word `About` and a small chevron. It fades in the first fifth of the travel. No line, no border, no lip (Tom, 2026-11-16: a hard border is ugly, in every direction).
+- The toy's key strip rises 22 px, so the hint has the bottom edge to itself. The shell build must measure this collision.
 - The title block lands in the intro's beats at 30 fps: lead 3 frames, the big logo box 3, the logo box and the name box at size 11, then rest. Each small line then cuts in: hidden, two frames inverted, rest.
 - Down the page each part heading cuts in the same way.
 - The title block has the Signal intro's voice: the emblem in the toy's ink, Gabarito 800 for the name, B612 for the small lines.

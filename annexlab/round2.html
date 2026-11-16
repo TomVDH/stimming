@@ -205,14 +205,21 @@ html[data-dir="g"]:not(.rm) .ax-lead { display: block; }
 html[data-dir="g"]:not(.rm) .ax-title { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-areas: "names lead" "facts lead"; align-items: start; transform: none; }
 
 /* ---------- H · Flash cut: the intro's flash box wipes over the toy, then settles ---------- */
-html[data-dir="h"] { --dim: 0.62; --lip: 34px; }
+html[data-dir="h"] { --dim: 0.62; --lip: 0px; }
 html[data-dir="h"]:not(.rm) .ax-stage { position: fixed; }
 html[data-dir="h"] .ax-title { transform: none; }
-/* At rest: the whole toy with round corners, and one quiet hint in the middle under it.
-   No line and no border: the sheet has the page's own colour. */
+/* At rest: the toy fills the whole screen, with round corners.
+   One quiet hint floats on it, bottom centre. It takes no room, and it has no line and no border. */
 html[data-dir="h"] .ax-stage { border-radius: 18px; }
-html[data-dir="h"] .ax-lip { gap: 8px; font-size: 11px; transition: color 0.2s ease; }
-html[data-dir="h"] .ax-lip:hover { color: var(--fg); }
+html[data-dir="h"] .ax-lip {
+  position: absolute; left: 50%; bottom: 100%; width: auto; height: 34px; padding: 0 16px; translate: -50% 0;
+  gap: 8px; background: none; color: var(--fg); font-size: 11px;
+  text-shadow: 0 0 2px oklch(0.1 0.012 275), 0 0 8px oklch(0.1 0.012 275);
+  opacity: calc(0.78 - var(--p) * 5); transition: opacity 0.2s ease;
+}
+html[data-dir="h"] .ax-lip:hover { opacity: 1; }
+html[data-dir="h"].read .ax-lip { visibility: hidden; }
+html[data-dir="h"] .ax-body { border-radius: 18px 18px 0 0; }
 html[data-dir="h"] .ax-lip .lip-word { display: inline; }
 html[data-dir="h"]:not(.rm) .ax-lip .lip-chev { animation: lip-nod 2.4s ease-in-out 1.2s 3; }
 @keyframes lip-nod { 0%, 100% { transform: none; } 50% { transform: translateY(3px); } }
@@ -722,7 +729,19 @@ addEventListener('keydown', e => {
   else if (e.key === 'r' || e.key === 'R') replay();
 });
 osReduced.addEventListener('change', () => { if (!q.has('rm')) { state.rm = osReduced.matches; apply(); } });
-toy.addEventListener('load', () => { lastP = -1; drive(); });
+// The toy's key strip rises a little, so the hint has the bottom edge to itself.
+function liftKeys() {
+  try {
+    const doc = toy.contentDocument;
+    if (!doc || !doc.head || doc.getElementById('ax-lift')) return;
+    const css = doc.createElement('style');
+    css.id = 'ax-lift';
+    css.textContent = '.stim-ui > .s2-keys { translate: 0 -22px; }';
+    doc.head.append(css);
+  } catch { /* A toy on another origin keeps its strip. */ }
+}
+toy.addEventListener('load', () => { liftKeys(); lastP = -1; drive(); });
+liftKeys();
 
 // A reload starts at the toy, or at ?y.
 history.scrollRestoration = 'manual';
