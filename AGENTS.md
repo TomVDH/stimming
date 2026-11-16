@@ -16,7 +16,7 @@ Read `README.md` for the toy list and the full rules.
 | | |
 |---|---|
 | Working tree | (this folder) |
-| Remote | `git@github.com:TomVDH/stimming.git` (private), branch `main` |
+| Remote | `git@github.com:TomVDH/stimming.git` (public; Tom kept it public, 2026-11-16), branch `main` |
 | Site | <https://tomvdh.github.io/stimming/> (GitHub Pages; the claude.ai Artifact is retired) |
 | Canonical context | [[stimming/brief]] |
 | Decisions | [[stimming/decisions]] |

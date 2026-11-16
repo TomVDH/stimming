@@ -4,7 +4,7 @@ Small interactive desk toys for the office. One folder per toy, one self-contain
 
 The site is hosted on GitHub Pages: <https://tomvdh.github.io/stimming/>. Every push to `main` deploys it. The menu is the main page and every toy is a page under it. The old claude.ai Artifact is retired.
 
-Source: <https://github.com/TomVDH/stimming> (private).
+Source: <https://github.com/TomVDH/stimming> (public).
 
 | Toy | Folder | Status |
 |---|---|---|
