@@ -1,56 +1,54 @@
-// The tube: a faint still of the toy in hand, behind the whole Clock page.
-// It looks like a 1950s picture tube: a bulge, scan lines and grain.
+// The tube: a dim still of the toy in hand, in the middle of the Clock.
+// It looks like a 1950s picture tube: a strong bulge, scan lines and grain.
+// It has no hard edge: the picture fades out toward the toys.
 // It draws on a change only; the grain moves while a toy is in hand.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
-// How strong the picture is over the page, 0 to 1.
-const LEVEL = 0.42;
+// How bright the picture is at its middle, 0 to 1.
+const LEVEL = 0.46;
 
 const FS = `#version 300 es
 precision mediump float;
 in vec2 vUv;
 out vec4 o;
 uniform sampler2D uA, uB;
-uniform vec2 uRes;
 uniform float uPx, uMix, uTime, uJolt, uHasA, uHasB, uLevel;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-// The still is square; it covers the screen.
-vec3 pic(sampler2D t, vec2 p, float a) {
-  vec2 q = a > 1.0 ? vec2(p.x, p.y / a) : vec2(p.x * a, p.y);
-  return texture(t, q * 0.5 + 0.5).rgb;
-}
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
-  float a = uRes.x / uRes.y;
-  // The bulge: the picture swells toward the middle of the glass.
-  vec2 w = p * (0.84 + 0.11 * dot(p, p));
+  float r = length(p);
+  // The bulge: the middle of the picture swells, as on a round tube face.
+  vec2 w = p * (0.5 + 0.44 * r * r);
   // A change of toy rolls the picture and tears a few lines.
-  float row = floor(vUv.y * 70.0);
-  w.y += uJolt * 0.14;
-  w.x += uJolt * 0.06 * (hash(vec2(row, floor(uTime * 24.0) + 3.0)) - 0.5);
+  float row = floor(vUv.y * 48.0);
+  w.y += uJolt * 0.16;
+  w.x += uJolt * 0.07 * (hash(vec2(row, floor(uTime * 24.0) + 3.0)) - 0.5);
   // The first texture row is the top of the still.
-  vec2 s = vec2(w.x, -w.y);
-  vec3 c = mix(pic(uA, s, a) * uHasA, pic(uB, s, a) * uHasB, uMix);
+  vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
+  vec3 c = mix(texture(uA, s).rgb * uHasA, texture(uB, s).rgb * uHasB, uMix);
+  // The shade: a dim picture that goes darker toward the rim.
+  c *= uLevel * (1.0 - 0.78 * smoothstep(0.1, 0.92, r));
   // Scan lines: one line each three CSS pixels.
-  c *= 0.76 + 0.24 * sin(gl_FragCoord.y / uPx * 2.0944);
+  c *= 0.7 + 0.3 * sin(gl_FragCoord.y / uPx * 2.0944);
   // Grain; a change of toy adds a burst of it.
-  c += (hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0) - 0.5) * (0.06 + 0.3 * uJolt);
-  // The glass: a rounded face that falls to dark at its edge.
-  float d = pow(abs(p.x), 3.0) + pow(abs(p.y), 3.0);
-  float alpha = (1.0 - smoothstep(0.4, 1.0, d)) * uLevel * mix(uHasA, uHasB, uMix);
-  o = vec4(max(c, 0.0) * alpha, alpha);
+  c += (hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0) - 0.5) * (0.035 + 0.25 * uJolt) * mix(uHasA, uHasB, uMix);
+  // No hard edge: the face fades out toward the toys.
+  float a = 1.0 - smoothstep(0.45, 0.98, r);
+  a *= a;
+  o = vec4(max(c, 0.0) * a, a * 0.4);
 }`;
 
 /**
- * Builds the tube behind the page.
+ * Builds the tube inside a host element; the canvas fills it.
+ * @param {HTMLElement} host
  * @returns {Promise<{ show: (url: string) => void, live: (on: boolean) => void } | null>}  Null without WebGL2.
  */
-export async function tube() {
+export async function tube(host) {
   const canvas = Object.assign(document.createElement('canvas'), { className: 'clock-tube' });
   canvas.setAttribute('aria-hidden', 'true');
   const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
   if (!gl) return null;
-  document.body.prepend(canvas);
+  host.append(canvas);
 
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   // A timer, not a frame: a hidden tab gets no frames.
@@ -77,13 +75,12 @@ export async function tube() {
   let mix = 0, jolt = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
   function draw() {
     if (gone) return;
-    // The picture is soft, so the canvas stays at 1.5x at most.
-    const k = Math.min(devicePixelRatio || 1, 1.5), w = Math.round(innerWidth * k), h = Math.round(innerHeight * k);
+    // The picture is soft, so the canvas stays at 2x at most.
+    const k = Math.min(devicePixelRatio || 1, 2), w = Math.max(1, Math.round(host.clientWidth * k)), h = w;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     gl.useProgram(P.p);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex[0]); gl.uniform1i(P.u.uA, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex[1]); gl.uniform1i(P.u.uB, 1);
-    gl.uniform2f(P.u.uRes, w, h);
     gl.uniform1f(P.u.uPx, k);
     gl.uniform1f(P.u.uMix, mix);
     gl.uniform1f(P.u.uTime, time);
@@ -133,7 +130,7 @@ export async function tube() {
   }
   const live = on => { hot = on; if (on) wake(); };
 
-  addEventListener('resize', draw);
+  new ResizeObserver(draw).observe(host);
   onContextLoss(canvas, {
     lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
     async restored() { await build(); gone = false; const again = src; src = ''; if (again) show(again); },

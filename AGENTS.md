@@ -35,8 +35,9 @@ Read `README.md` for the toy list and the full rules.
     | `./?lab` | `lab` | The Lab shelf. |
 
   - The Clock is `shared/menu/clock.css`, `shared/menu/clock.js` and `shared/menu/tube.js`; `index.html` only links the first two. It deals twelve toys from a shuffled line, so no toy comes back before the rest had a turn.
-    - Middle of the dial: a dark plate with the number, the name and the motto (`tag` in `toys.json`) of the toy in hand. With no toy in hand it keeps the last one.
-    - The tube (Tom, 2026-11-16): a faint still of the toy in hand (`shared/stills/<id>.webp`) fills the page behind the clock, shaded as a 1950s picture tube: a bulge, scan lines, grain, a rounded glass edge. It stays in colour; in the Clock only the words are white (Tom). `tube.js` draws it in raw WebGL2 on `shared/gl.js`, on a change only; a change of toy rolls and tears the picture for a moment. The grain moves only while a toy is in hand. `LEVEL` in `tube.js` sets its strength. Without WebGL2 the page has no tube.
+    - Middle of the dial: the number, the name and the motto (`tag` in `toys.json`) of the toy in hand. With no toy in hand it keeps the last one.
+    - The tube (Tom, 2026-11-16): a still of the toy in hand (`shared/stills/<id>.webp`) lies under the words, shaded as a 1950s picture tube: a strong bulge, scan lines, grain, dim and darker toward the rim. It stays in colour; in the Clock only the words are white (Tom). The middle has no hard edge: the plate and the picture fade out toward the toys (Tom: a plain disc is "an awkward circular background"). `tube.js` draws it in raw WebGL2 on `shared/gl.js`, on a change only; a change of toy rolls and tears the picture for a moment. The grain moves only while a toy is in hand. `LEVEL` in `tube.js` sets its brightness. Without WebGL2 the middle is the soft dark plate alone.
+    - Tom tried the tube as a faint full-page background first and moved it back into the circle "for now"; commit `f99f825c` holds the full-page build.
     - The Dial's outline (a rim and sixty minute marks) draws in as the dozen pops in, then fades away.
     - A soft glow in the toy's `accent` sits on the rim and turns to the pointer while a toy is in hand. It takes the place of the Dial's hand.
     - The Re-roll (key R) shows after 5 s, at the foot of the circle. A quiet `All toys` link under the clock leads to `?all`.

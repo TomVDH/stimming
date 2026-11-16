@@ -39,9 +39,9 @@ function start() {
   const count = face.querySelector('.clock-count'), title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
   const button = face.querySelector('.clock-roll');
 
-  // The tube shows the toy's still behind the page; the Clock works without it.
+  // The tube shows the toy's still in the middle; the Clock works without it.
   let bg = null;
-  import('./tube.js').then(m => m.tube()).then(t => {
+  import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')))).then(t => {
     bg = t;
     if (shown) bg?.show(picture(shown));
     bg?.live(face.hasAttribute('data-live'));

@@ -55,7 +55,7 @@ Source: <https://github.com/TomVDH/stimming> (private).
 ## The menu
 
 The menu opens on the Clock: twelve toys on a dial, with a Re-roll for twelve more (key R).
-The toy under the pointer shows its name and motto in the middle, and its still as a faint picture-tube background.
+The toy under the pointer shows its name and motto in the middle, over its still: a dim, warped picture with a picture-tube look.
 
 | Address | View |
 |---|---|
