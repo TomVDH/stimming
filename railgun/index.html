@@ -134,16 +134,16 @@ let chargeMix = (() => {
 // The shot's sound: Tom's report sample. Mesa, Coil and Thump stay in code.
 const shotMix = 'report';
 // The game-over sound: a surge mix from MIX, a take from GO_TAKES, or 'hum'.
-// Surge is the default (Tom, 2026-11-12); every stored pick moves to it once.
+// Requiem, clear, is the default (Tom, 2026-11-16); stored picks move to it once.
 let goMix = (() => {
   try {
     const K = 'stimming.railgun.gomix';
-    if (!localStorage.getItem(K + '.v2')) { localStorage.setItem(K, 'penta'); localStorage.setItem(K + '.v2', '1'); }
-    return localStorage.getItem(K) || 'penta';
-  } catch { return 'penta'; }
+    if (!localStorage.getItem(K + '.v3')) { localStorage.setItem(K, 'requiem'); localStorage.setItem('stimming.railgun.golayers', '0'); localStorage.setItem(K + '.v3', '1'); }
+    return localStorage.getItem(K) || 'requiem';
+  } catch { return 'requiem'; }
 })();
 // Requiem: each layer enters muffled and clears as the next blends in.
-let goOpen = store.get('golayers') !== '0';
+let goOpen = store.get('golayers') === '1';
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
@@ -172,9 +172,9 @@ const ui = initPage({ id: 'railgun', bar: {
     // The game over: the surge that plays as an unshot rock comes down.
     // Ascent, Requiem and Undertow are takes of their own, not surge mixes.
     // A pick takes effect at the next strike; Strike test brings one on.
-    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'penta', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
+    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'requiem', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
     // Requiem's layers open from muffled to clear as the next ones enter.
-    { type: 'toggle', id: 'golayers', label: 'Requiem layers open', value: true, persist: true, onToggle: on => { goOpen = on; } },
+    { type: 'toggle', id: 'golayers', label: 'Requiem layers open', value: false, persist: true, onToggle: on => { goOpen = on; } },
     // Dev: pin the rock's size; Random rolls a new one per rock.
     { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // Target picks the rock or the capital ship.

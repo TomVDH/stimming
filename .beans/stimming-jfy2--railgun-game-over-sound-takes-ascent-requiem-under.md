@@ -1,10 +1,10 @@
 ---
 # stimming-jfy2
 title: 'Railgun: game-over sound takes (Ascent, Requiem, Undertow)'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-15T05:57:04Z
-updated_at: 2026-11-15T07:45:00Z
+updated_at: 2026-11-16T08:40:00Z
 parent: stimming-f793
 ---
 
@@ -23,7 +23,7 @@ Tom (2026-11-14) wants options for the game-over hum and choir. Three new takes 
 - [x] Round 3 (Tom: the chorus lasts 3 s longer; no rewind whoosh after the game over)
 - [x] Round 3 arc (Tom): low layers filter in slowly; layers come on as the rock nears, with natural dynamics; the chorus is complete in the last 3 to 5 s; at contact a forte with higher layers, then an echoed stop
 - [x] Requiem (Tom's favourite so far): each layer enters muffled and opens as the next blends in, on the Dev toggle Requiem layers open
-- [ ] Tom picks a take
+- [x] Tom picks a take: Requiem, clear (layers open off), 2026-11-16. It is the default; a one-time `.v3` flag moves every stored pick to it.
 
 ## Round 3
 
@@ -90,4 +90,5 @@ Round 2 clips, after the compressor: no peak over -0.2 dB; burn clicks down from
 ## Summary of Changes
 
 - railgun/index.html: surgeOver builds a take from GO_TAKES or a machine-free stack (goStack, goStackUpdate; the old code, split out). New: shepard and shepardStep (a Shepard hum), goAscent, goUndertow (SURGE.undertow, a bend and a sinking sub), goRequiem with requiemUpdate and heartbeat. Level knobs: GO_SHEP, GO_REQ.
-- The Dev row Game over sound lists Ascent, Requiem and Undertow after Surge. Surge stays the default.
+- The Dev row Game over sound lists Ascent, Requiem and Undertow after Surge.
+- Requiem, clear, is the game-over sound by default (Tom's pick); the Dev toggle Requiem layers open stays, off.
