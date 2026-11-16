@@ -28,17 +28,14 @@ function start() {
 <div class="clock-glow" aria-hidden="true"><i></i><i></i></div>
 <div class="clock-mid">
   <div class="clock-plate" aria-hidden="true"></div>
-  <p class="clock-count" aria-hidden="true"></p>
   <p class="clock-name" aria-live="polite"></p>
   <p class="clock-tag"></p>
   <button type="button" class="clock-roll" title="Re-roll (R)"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg><span>Re-roll</span></button>
 </div>`;
   shelf.after(face);
-  const all = Object.assign(document.createElement('a'), { className: 'clock-all', href: './?all', textContent: 'All toys' });
-  face.after(all);
   const ring = face.querySelector('.clock-ring'), rim = ring.querySelector('.rim'), marks = [...ring.querySelectorAll('line')];
   const glow = /** @type {HTMLElement} */ (face.querySelector('.clock-glow'));
-  const count = face.querySelector('.clock-count'), title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
+  const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
   const button = face.querySelector('.clock-roll');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
@@ -51,11 +48,11 @@ function start() {
   const live = on => { face.toggleAttribute('data-live', on); bg?.live(on); };
   // toys.json holds each toy's motto and accent; the Clock works without it.
   let toys = {};
-  fetch('toys.json').then(r => r.json()).then(t => { toys = t; show(null, true); }).catch(() => {});
+  fetch('toys.json').then(r => r.json()).then(t => { toys = t; if (shown) write(shown); }).catch(() => {});
 
   // The pool is every toy, in a shuffled line. Each roll takes the next twelve,
   // so no toy comes back before the rest had a turn.
-  let line = [], held = null, busy = false;
+  let line = [], busy = false;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const dozen = () => [...shelf.children].slice(0, HOURS);
   const objs = () => dozen().map(li => li.querySelector('.obj'));
@@ -77,29 +74,38 @@ function start() {
     });
     // The hand goes first, so the tab order follows the dial.
     shelf.prepend(...hand);
-    held = null;
-    show(null);
+    rest(true);
     // The stills of this dozen load while the browser is idle.
     (window.requestIdleCallback || setTimeout)(() => hand.forEach(li => { new Image().src = picture(li); }));
   }
 
-  // The middle shows the toy in hand; with none, it keeps the last one.
-  let shown = null;
-  function show(li, again = false) {
-    li = held = li || held || shelf.children[0];
-    shelf.querySelector('[data-held]')?.removeAttribute('data-held');
-    li.setAttribute('data-held', '');
-    count.textContent = String(dozen().indexOf(li) + 1).padStart(2, '0') + ' / ' + HOURS;
-    if (li === shown && !again) return;
-    const first = shown === null, id = li.querySelector('a.toy').id, toy = toys[id] || {}, label = li.querySelector('.name');
+  // The middle shows the toy in hand. With no toy in hand it shows nothing.
+  let shown = null, wipe = 0;
+  function write(li) {
+    const toy = toys[li.querySelector('a.toy').id] || {}, label = li.querySelector('.name');
     title.textContent = toy.name || [...label.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim();
     tag.textContent = toy.tag || '';
     tint(toy.accent || 'oklch(0.86 0.06 275)');
+  }
+  function show(li) {
+    clearTimeout(wipe);
+    shelf.querySelector('[data-held]')?.removeAttribute('data-held');
+    li.setAttribute('data-held', '');
     if (li === shown) return;
     shown = li;
+    write(li);
     bg?.show(picture(li), film(li));
-    // The new name rises into its line.
-    if (!first && !still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
+    // The new words rise into their lines.
+    if (!still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
+  }
+  // The middle empties when the toy leaves the hand.
+  function rest(now = false) {
+    live(false);
+    shelf.querySelector('[data-held]')?.removeAttribute('data-held');
+    clearTimeout(wipe);
+    const empty = () => { if (face.hasAttribute('data-live')) return; shown = null; bg?.clear(); };
+    // The picture goes only after its fade, so no edge shows.
+    if (now) empty(); else wipe = setTimeout(empty, 650);
   }
 
   // Two lamps take turns, so one toy's colour fades into the next.
@@ -139,7 +145,7 @@ function start() {
     const r = face.getBoundingClientRect();
     aim(Math.atan2(e.clientX - (r.left + r.width / 2), (r.top + r.height / 2) - e.clientY) * 180 / Math.PI);
   });
-  shelf.addEventListener('pointerout', e => { if (!tile(e.relatedTarget)) live(false); });
+  shelf.addEventListener('pointerout', e => { if (!tile(e.relatedTarget)) rest(); });
   shelf.addEventListener('focusin', e => {
     const li = tile(e.target);
     if (!li) return;
@@ -147,11 +153,10 @@ function start() {
     live(true);
     show(li);
   });
-  shelf.addEventListener('focusout', e => { if (!tile(e.relatedTarget)) live(false); });
+  shelf.addEventListener('focusout', e => { if (!tile(e.relatedTarget)) rest(); });
 
   // The dozen pops in round the dial. The outline draws in with it, then fades.
   function arrive() {
-    face.setAttribute('data-on', '');
     if (calm()) return;
     const icons = objs();
     gsap.timeline({ onComplete: () => gsap.set(icons, { clearProps: 'transform,opacity,visibility' }) })

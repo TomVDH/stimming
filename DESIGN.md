@@ -286,9 +286,9 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 ## Layout
 
 **The menu: the Clock** (`shared/menu/clock.css`, `clock.js`, `tube.js`; the default view since 2026-11-16)
-- One centred column: wordmark, tagline, clock, `All toys` link, footer.
+- One centred column: wordmark, tagline, clock, footer.
 - The clock is a square, `min(92vw, 660px)` wide. Twelve toys stand on its hours: each tile is 19% of the square, on a ring at 40.5% from the middle. Tiles show no label; the toy in hand grows to 1.18.
-- The middle holds the words of the toy in hand: its number (slab, 10 to 11 px), its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock.
+- The middle holds the words of the toy in hand: its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock. With no toy in hand the middle is empty.
 - Under the words lies the tube: the toy's still or loop, in colour, with a concave warp, scan lines and grain, dim and darker to the rim. It has no hard edge; it fades out at the ring of toys.
 - The selection glow is a soft oval in the toy's accent, under the toy in hand. It turns to the pointer and fades from one toy's colour to the next.
 - The outline (a rim and sixty minute marks) draws in with the dozen, then fades. It is never at rest on the page.
@@ -391,7 +391,7 @@ Keycap, then a verb in lower case: `[CLICK] place`. No backing. Verbs at 62% `--
 - **Bar v2:** the wordmark, unboxed, top left. Then `/ TOY NAME` in bold slab caps at 0.1em; the slash is `--muted` (`shared/stim.css:374-392`). Hover, focus or a tap waves the mark into colour and slides in a `‹`. A Lab toy adds a small boxed tag.
 - **v1 header:** a back arrow, the mark at 22 px, the sound button at the right (`shared/stim.css:84-98`).
 - **The wave:** each letter lifts, flashes its colour and settles, one letter every 33.333 ms, in held frames (`stim-wave`, `shared/stim.css:103-132`).
-- **Menu:** no nav bar. The Clock has an `All toys` link in slab caps under the dial; the whole shelf (`?all`) holds a Lab link and a Clock link in its footer.
+- **Menu:** no nav bar. The Clock has no links; the whole shelf (`?all`) holds a Lab link and a Clock link in its footer.
 
 ### Stage
 

@@ -45,7 +45,7 @@ void main() {
 /**
  * Builds the tube inside a host element; the canvas fills it.
  * @param {HTMLElement} host
- * @returns {Promise<{ show: (url: string, loop?: string | null) => void, live: (on: boolean) => void } | null>}  Null without WebGL2.
+ * @returns {Promise<{ show: (url: string, loop?: string | null) => void, live: (on: boolean) => void, clear: () => void } | null>}  Null without WebGL2.
  */
 export async function tube(host) {
   const canvas = Object.assign(document.createElement('canvas'), { className: 'clock-tube' });
@@ -165,10 +165,19 @@ export async function tube(host) {
     if (on) wake();
   }
 
+  // With no toy in hand the face is empty; the next still fades in from dark.
+  function clear() {
+    src = '';
+    drop();
+    has = [0, 0];
+    mix = 0;
+    jolt = 0;
+    draw();
+  }
   new ResizeObserver(draw).observe(host);
   onContextLoss(canvas, {
     lost() { gone = true; cancelAnimationFrame(raf); raf = 0; drop(); },
     async restored() { await build(); gone = false; const again = src; src = ''; if (again) show(again); },
   });
-  return { show, live };
+  return { show, live, clear };
 }
