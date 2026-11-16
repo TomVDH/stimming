@@ -384,3 +384,10 @@ The toy tells people that watching is fine. The scene carries itself:
   - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
   - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
 - `glint()` centres its streak on its point; `ambSeg()` draws a streak from a start point.
+
+## Foreground terrain (stimming-z267)
+
+- The ground grid packs its 480 by 480 vertices round the eye: about 3 m apart there, about 3 km at the rim. The wide and portrait eyes each get their own grid. The vertex count is unchanged.
+- Gentle sand swells, 180 to 300 m apart and up to about 4 m high, roll from 40 m past the eye out to about 4 km. The ground round the mount and under the eye stays level, and the gun's foot stays in view.
+- The fragment shader takes the swells' slope with a 6 m step near the eye, and adds soft hummocks about 30 m across as a bump only, filtered out with distance.
+- Dust devils are off the random rotation (Tom: they look odd); the Dev test still plays one.
