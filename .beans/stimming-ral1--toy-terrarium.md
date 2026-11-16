@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:54:59Z
+updated_at: 2026-11-16T22:46:38Z
 parent: stimming-oh7b
 ---
 
@@ -61,3 +61,10 @@ Tom: "make a higher quality apothecary jar". New profile: belly, round shoulder,
 
 Tom asked to max out the plants and fill, with online examples (moss as fur, plants, particles, volume). Findings and two build paths are in docs/plans/terrarium.md under "The fill, maxed out". Recommendation: A, a raster garden of instanced meshes read by the ray-marched jar.
 - [ ] Tom picks the fill build: A (raster garden) or B (ray march)
+
+## Moss and fern, procedural PBR (2026-11-16)
+
+Tom: "start with moss and the fern", then "PBR the plants".
+- Moss: each strand is a shoot with nine leaves in a golden-angle spiral; dry leaves press to the stem, wet ones spread. Physical material: sheen for the velvet, a clearcoat water film that grows with the wake. Sub-pixel leaves have a light ceiling, so they cannot flare.
+- Fern: leaflets split into nine pinnules a side. Generated PBR maps (colour, normal, roughness): raised midrib, side veins, domed lobes, paler rim. The underside is paler and rougher; old fronds carry spore dots there. Light through the leaf dims along the veins.
+- The garden picture holds at most 2.2 MP. Misting, headless: 2.7 ms at 1x, 21 ms at 2x (57 ms on garden redraws).

@@ -22,9 +22,9 @@ const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
 /* ---------- the bed: sloped back to front, with two mounds ---------- */
 const BED_R = 0.585, SLAB = 0.07, DRAIN = 0.15, CHAR = 0.175;
 // Height of the soil top. The back stands higher than the front, as in a built terrarium.
-export const bedH = (x, z) => 0.26 - 0.09 * (z / 0.55) + 0.06 * Math.exp(-((x + 0.22) ** 2 + (z + 0.12) ** 2) * 14) + 0.045 * Math.exp(-((x - 0.26) ** 2 + (z - 0.12) ** 2) * 20) + 0.01 * (fbm(x * 9, z * 9) - 0.5);
+export const bedH = (x, z) => 0.26 - 0.09 * (z / 0.55) + 0.06 * Math.exp(-(((x + 0.22) ** 2 + (z + 0.12) ** 2)) * 14) + 0.045 * Math.exp(-(((x - 0.26) ** 2 + (z - 0.12) ** 2)) * 20) + 0.01 * (fbm(x * 9, z * 9) - 0.5);
 // Cushion moss sits on the two mounds.
-const cushion = (x, z) => Math.max(Math.exp(-((x + 0.22) ** 2 + (z + 0.12) ** 2) * 18), Math.exp(-((x - 0.26) ** 2 + (z - 0.12) ** 2) * 26));
+const cushion = (x, z) => Math.max(Math.exp(-(((x + 0.22) ** 2 + (z + 0.12) ** 2)) * 18), Math.exp(-(((x - 0.26) ** 2 + (z - 0.12) ** 2)) * 26));
 // Fern crowns: [x, z, reach, base fronds, extra fronds with growth, start yaw].
 const CROWNS = [[-0.12, -0.12, 0.24, 4, 4, 0.3], [0.0, -0.33, 0.2, 3, 3, 1.4], [-0.32, 0.22, 0.13, 2, 3, 2.2]];
 // Which crowns each planting shows: Fern, Moss, Bog.
@@ -163,48 +163,100 @@ export function createGarden(canvas, gl, view) {
   // uLift raises the cushions; uBog turns the moss to red-gold sphagnum.
   // uCover is the share of strands that grow: moss creeps as the jar grows.
   const U = { uWake: { value: 0 }, uLift: { value: 0 }, uBog: { value: 0 }, uCover: { value: 0.6 }, uLampCol: { value: new THREE.Color(1.2, 1.1, 1.0) }, uLampDirV: { value: new THREE.Vector3() } };
-  // One strand: two crossed, tapered cards, base at 0 and tip at 1.
+  // One moss shoot, height 1: a thin stem and nine small leaves round it in a spiral.
+  // A leaf's place comes from its attributes, so the shader can fold it.
+  // aShoot: kind (0 stem, 1 leaf), height on the stem, turn round it, length.
+  // aLeaf: place along the leaf (0 base, 1 tip), then side (-1 to 1).
   const strandG = (() => {
-    const pos = [], idx = [], rows = 5;
+    const pos = [], shoot = [], leaf = [], idx = [];
+    const vert = (x, y, z, k, h, phi, L, l, sd) => { pos.push(x, y, z); shoot.push(k, h, phi, L); leaf.push(l, sd); return pos.length / 3 - 1; };
+    // The stem: two crossed thin cards.
     for (const plane of [0, 1]) {
-      const base = pos.length / 3;
-      for (let i = 0; i < rows; i++) {
-        const t = i / (rows - 1), w = 0.5 * (1 - 0.75 * t);
-        if (plane === 0) pos.push(-w, t, 0, w, t, 0); else pos.push(0, t, -w, 0, t, w);
+      const v = [];
+      for (let r = 0; r < 3; r++) {
+        const t = r / 2, w = 0.06 * (1 - 0.5 * t);
+        v.push(plane ? vert(-w, t, 0, 0, t, 0, 0, t, 0) : vert(0, t, -w, 0, t, 0, 0, t, 0));
+        v.push(plane ? vert(w, t, 0, 0, t, 0, 0, t, 0) : vert(0, t, w, 0, t, 0, 0, t, 0));
       }
-      for (let i = 0; i < rows - 1; i++) { const a = base + i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      for (let r = 0; r < 2; r++) { const a = v[r * 2], b = v[r * 2 + 1], c = v[r * 2 + 2], d = v[r * 2 + 3]; idx.push(a, b, c, b, d, c); }
+    }
+    // The leaves: a diamond each, longest low on the stem, small at the tip.
+    const N = 9;
+    for (let i = 0; i < N; i++) {
+      const h = 0.12 + 0.86 * i / (N - 1), phi = i * 2.39996, L = 0.62 * (1 - 0.55 * h);
+      const a = vert(0, h, 0, 1, h, phi, L, 0, 0), b = vert(0, h, 0, 1, h, phi, L, 0.45, -1);
+      const c = vert(0, h, 0, 1, h, phi, L, 1, 0), d = vert(0, h, 0, 1, h, phi, L, 0.45, 1);
+      idx.push(a, b, c, a, c, d);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    // Every strand faces up, so the carpet lights as one soft surface.
     g.setAttribute('normal', new THREE.Float32BufferAttribute(pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setAttribute('aShoot', new THREE.Float32BufferAttribute(shoot, 4));
+    g.setAttribute('aLeaf', new THREE.Float32BufferAttribute(leaf, 2));
     g.setIndex(idx);
     return g;
   })();
-  const mossMat = new THREE.MeshStandardMaterial({ roughness: 0.75, side: THREE.DoubleSide });
+  // PBR moss: sheen gives the velvet glow at grazing angles; clearcoat is the wet film.
+  const mossMat = new THREE.MeshPhysicalMaterial({
+    roughness: 0.75, side: THREE.DoubleSide, envMapIntensity: 0.1,
+    sheen: 0.6, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.16, 0.34, 0.06), clearcoat: 0.03, clearcoatRoughness: 0.4,
+  });
   mossMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWake, uLift, uCover;\nattribute vec2 aMoss;\nvarying float vT;')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        float t = position.y, hs = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
-        // A strand ranked past the cover has not grown yet.
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+        uniform float uWake, uLift, uCover;
+        attribute vec2 aMoss, aLeaf;
+        attribute vec4 aShoot;
+        varying float vT, vTip, vLeaf;`)
+      .replace('#include <beginnormal_vertex>', `
+        // Dry moss presses its leaves to the stem; wet moss spreads them wide.
+        float mh = aShoot.y, phi = aShoot.z, mL = aShoot.w;
+        vec3 md = vec3(cos(phi), 0.0, sin(phi)), mw = vec3(-sin(phi), 0.0, cos(phi));
+        float th = mix(0.2, 1.05, uWake) * (1.0 - 0.3 * mh);
+        vec3 lv = vec3(0.0, cos(th), 0.0) + md * sin(th);
+        vec3 mossPos = aShoot.x < 0.5 ? position : vec3(0.0, mh, 0.0) + lv * mL * aLeaf.x + mw * aLeaf.y * 0.2 * mL * mix(0.55, 1.0, uWake);
+        vec3 ln = normalize(cross(mw, lv));
+        if (ln.y < 0.0) ln = -ln;
+        // Leaves keep some of the carpet's soft upward light.
+        vec3 objectNormal = aShoot.x < 0.5 ? vec3(0.0, 1.0, 0.0) : normalize(mix(vec3(0.0, 1.0, 0.0), ln, 0.3));
+        #ifdef USE_TANGENT
+          vec3 objectTangent = vec3(tangent.xyz);
+        #endif`)
+      .replace('#include <begin_vertex>', `
+        vec3 transformed = mossPos;
+        float t = mossPos.y, hs = fract(sin(float(gl_InstanceID) * 12.9898) * 43758.5453);
+        // A shoot ranked past the cover has not grown yet.
         transformed *= step(aMoss.x, uCover);
-        // Cushion strands stand taller in the Moss planting.
+        // Cushion shoots stand taller in the Moss planting.
         transformed.y *= 1.0 + uLift * aMoss.y;
-        // Dry moss folds its leaves to the stem and slumps; wet moss opens.
-        transformed.xz *= mix(1.0, mix(0.4, 1.0, uWake), smoothstep(0.1, 1.0, t));
-        transformed.y *= mix(0.82, 1.0, uWake);
+        // Dry shoots slump a little; each leans its own way.
+        transformed.y *= mix(0.85, 1.0, uWake);
         transformed.x += (hs - 0.5) * 2.4 * t * t * (1.3 - 0.4 * uWake);
-        vT = t;`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uWake, uBog;\nvarying float vT;')
+        vT = t;
+        vTip = aShoot.x * aLeaf.x;
+        vLeaf = aShoot.x;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform float uWake, uBog;
+        uniform vec3 uLampCol, uLampDirV;
+        varying float vT, vTip, vLeaf;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        // Leaf tips are paler and fresher; the stem is darker and warmer.
+        diffuseColor.rgb *= mix(vec3(0.55, 0.45, 0.3), vec3(1.0 + 0.2 * vTip), vLeaf);
         // Sphagnum: green at the heart, flushed red and pink at the tips.
         diffuseColor.rgb = mix(diffuseColor.rgb, mix(diffuseColor.ggg * vec3(0.6, 0.9, 0.35), diffuseColor.ggg * vec3(1.5, 0.45, 0.4), smoothstep(0.3, 0.9, vT)), uBog);
         float lum = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
         diffuseColor.rgb = mix(mix(vec3(lum), diffuseColor.rgb, 0.5) * vec3(0.9, 0.85, 0.42), diffuseColor.rgb, uWake);
-        // The strand's base sits in the shade of its neighbours.
-        diffuseColor.rgb *= mix(0.3, 1.0, vT);`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.85, 0.3, uWake * vT);');
+        // The shoot's base sits in the shade of its neighbours.
+        diffuseColor.rgb *= mix(0.25, 1.0, vT);`)
+      // Wet leaf tips hold a film of water and shine.
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.85, 0.4, uWake * vTip);')
+      .replace('#include <opaque_fragment>', `
+        // The grow light glows through the thin leaves from behind.
+        float mb = pow(max(dot(normalize(-vViewPosition), uLampDirV), 0.0), 3.0);
+        outgoingLight += diffuseColor.rgb * vec3(1.0, 1.2, 0.5) * uLampCol * mb * vLeaf * vT * (0.25 + 0.4 * uWake);
+        // A leaf smaller than a pixel must not flare: its light has a ceiling.
+        outgoingLight = min(outgoingLight, vec3(0.9));
+        #include <opaque_fragment>`);
   };
   const MOSS_N = 120000;
   const moss = (() => {
@@ -289,25 +341,107 @@ export function createGarden(canvas, gl, view) {
 
   /* ---------- ferns: fronds of instanced leaflets on rule-grown rachises ---------- */
   // A leaflet: a lobed blade along +X, lying in the XY plane.
+  // A leaflet split into pinnules: lobes along a midrib, longest near the base.
+  // u runs base to tip; v runs across, 0.5 on the midrib.
+  const LOBES = 9;
+  const halfW = x => 0.2 * Math.sin(Math.PI * Math.min(1, x * 1.1)) * (1 - 0.35 * x) + 0.015;
+  const lobeAt = i => { const x0 = 0.04 + 0.9 * i / LOBES; return { x0, xt: x0 + 0.62 / LOBES, w: halfW(x0 + 0.3 / LOBES) }; };
   const pinnaG = (() => {
-    const s = new THREE.Shape(), n = 7, half = x => 0.2 * Math.sin(Math.PI * Math.min(1, x * 1.15)) * (1 - 0.3 * x);
+    const s = new THREE.Shape(), top = [];
+    for (let i = 0; i < LOBES; i++) {
+      const { x0, xt, w } = lobeAt(i);
+      // Each lobe: in to the sinus near the midrib, out round its blunt tip.
+      top.push([x0, w * 0.32], [x0 + 0.18 / LOBES, w * 0.85], [xt - 0.1 / LOBES, w * 1.02], [xt, w * 0.78], [xt + 0.12 / LOBES, w * 0.4]);
+    }
+    top.push([0.99, 0.012], [1, 0]);
     s.moveTo(0, 0);
-    for (let i = 0; i <= n; i++) s.lineTo(i / n, half(i / n) * (i % 2 ? 0.7 : 1));
-    for (let i = n; i >= 0; i--) s.lineTo(i / n, -half(i / n) * (i % 2 ? 0.7 : 1));
-    return new THREE.ShapeGeometry(s, 3);
+    for (const [x, y] of top) s.lineTo(x, y);
+    for (let k = top.length - 2; k >= 0; k--) s.lineTo(top[k][0], -top[k][1]);
+    const g = new THREE.ShapeGeometry(s, 4);
+    // UVs: u along the leaflet, v across it.
+    const p = g.attributes.position, uv = g.attributes.uv;
+    for (let k = 0; k < p.count; k++) uv.setXY(k, p.getX(k), p.getY(k) / 0.46 + 0.5);
+    return g;
   })();
-  const frondMat = new THREE.MeshStandardMaterial({ roughness: 0.55, side: THREE.DoubleSide });
-  // Light through a leaf from the lamp behind it.
+  // The leaflet's surface maps, drawn once: colour, normal and roughness.
+  // The roughness map's red holds the veins; its blue holds the spore dots.
+  const pinnaMaps = (() => {
+    const W = 512, H = 256, height = new Float32Array(W * H), vein = new Float32Array(W * H), sori = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const u = x / W, v = y / H, dy = (v - 0.5) * 0.46, ay = Math.abs(dy), k = y * W + x;
+      // The midrib: a raised ridge down the middle.
+      const mid = Math.exp(-((ay / 0.006) ** 2));
+      let lat = 0, dome = 0, dot = 0;
+      for (let i = 0; i < LOBES; i++) {
+        const { x0, xt, w } = lobeAt(i);
+        // A side vein runs from the midrib out to its lobe's tip.
+        const ax = x0 + 0.05 / LOBES, bx = xt - 0.06 / LOBES, by = w * 0.9;
+        const t = Math.min(1, Math.max(0, ((u - ax) * (bx - ax) + ay * by) / ((bx - ax) ** 2 + by * by)));
+        const dd = Math.hypot(u - ax - (bx - ax) * t, ay - by * t);
+        lat = Math.max(lat, Math.exp(-((dd / 0.0035) ** 2)) * (1 - 0.6 * t));
+        dome = Math.max(dome, Math.exp(-((dd / (0.03 + 0.02 * w * 5)) ** 2)));
+        // Spore dots sit in two rows, either side of each side vein.
+        for (const f of [0.35, 0.6]) {
+          const sx = ax + (bx - ax) * f, sy = by * f;
+          for (const o of [-1, 1]) dot = Math.max(dot, Math.exp(-((Math.hypot(u - sx - o * 0.008, ay - sy + o * 0.006) / 0.006) ** 2)));
+        }
+      }
+      vein[k] = Math.max(mid, lat);
+      height[k] = 0.6 * mid - 0.5 * lat + 0.5 * dome;
+      sori[k] = dot;
+    }
+    const canvas = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+    const albedo = canvas(), normal = canvas(), rough = canvas();
+    const ia = albedo.getContext('2d').createImageData(W, H), inn = normal.getContext('2d').createImageData(W, H), ir = rough.getContext('2d').createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const k = y * W + x, o = k * 4, v = y / H, edge = Math.abs(v - 0.5) * 2;
+      // Colour: deep green, paler along the veins, a little yellow toward the rim.
+      const ve = vein[k], n = vnoise(x * 0.09, y * 0.09) * 0.08;
+      ia.data[o] = 255 * Math.min(1, 0.09 + 0.1 * ve + 0.05 * edge + n * 0.3);
+      ia.data[o + 1] = 255 * Math.min(1, 0.26 + 0.16 * ve + 0.03 * edge + n);
+      ia.data[o + 2] = 255 * Math.min(1, 0.05 + 0.05 * ve);
+      ia.data[o + 3] = 255;
+      // Normal from the height field's slope, in tangent space.
+      const hx = height[y * W + Math.min(W - 1, x + 1)] - height[y * W + Math.max(0, x - 1)];
+      const hy = height[Math.min(H - 1, y + 1) * W + x] - height[Math.max(0, y - 1) * W + x];
+      const nx = -hx * 3, ny = -hy * 3, l = Math.hypot(nx, ny, 1);
+      inn.data[o] = 127.5 * (nx / l + 1); inn.data[o + 1] = 127.5 * (ny / l + 1); inn.data[o + 2] = 127.5 * (1 / l + 1); inn.data[o + 3] = 255;
+      // Roughness: the waxy blade is smooth; the veins are rougher.
+      ir.data[o] = 255 * ve; ir.data[o + 1] = 255 * (0.52 + 0.2 * ve); ir.data[o + 2] = 255 * sori[k]; ir.data[o + 3] = 255;
+    }
+    albedo.getContext('2d').putImageData(ia, 0, 0); normal.getContext('2d').putImageData(inn, 0, 0); rough.getContext('2d').putImageData(ir, 0, 0);
+    const tex = (c, srgb) => { const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 4; return t; };
+    return { map: tex(albedo, true), normalMap: tex(normal, false), roughnessMap: tex(rough, false) };
+  })();
+  // PBR: colour, normal and roughness maps, a faint sheen of leaf hairs,
+  // and a clearcoat that thickens into a water film when wet.
+  const frondMat = new THREE.MeshPhysicalMaterial({
+    ...pinnaMaps, roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8), side: THREE.DoubleSide,
+    sheen: 0.12, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.3, 0.45, 0.22), clearcoat: 0.05, clearcoatRoughness: 0.35, envMapIntensity: 0.25,
+  });
   frondMat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uLampCol, uLampDirV;\nuniform float uWake;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aOld;\nvarying float vOld;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOld = aOld;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uLampCol, uLampDirV;\nuniform float uWake;\nvarying float vOld;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        vec3 leafMarks = texture2D(roughnessMap, vRoughnessMapUv).rgb;
+        // The underside is paler; old fronds carry brown spore dots there.
+        if (!gl_FrontFacing) {
+          diffuseColor.rgb *= vec3(1.25, 1.3, 1.1);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.22, 0.11, 0.04), leafMarks.b * smoothstep(0.4, 0.8, vOld));
+        }`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nif (!gl_FrontFacing) roughnessFactor = min(1.0, roughnessFactor + 0.3);')
       .replace('#include <opaque_fragment>', `
+        // Light through the leaf from the lamp behind; the veins block some.
         float back = pow(max(dot(normalize(-vViewPosition), uLampDirV), 0.0), 3.0);
-        outgoingLight += diffuseColor.rgb * vec3(1.1, 1.25, 0.6) * uLampCol * back * (0.5 + 0.7 * uWake);
+        outgoingLight += diffuseColor.rgb * vec3(1.1, 1.25, 0.6) * uLampCol * back * (0.3 + 0.35 * uWake) * (1.0 - 0.55 * leafMarks.r);
         #include <opaque_fragment>`);
   };
   const MAXF = CROWNS.reduce((a, c) => a + c[3] + c[4], 0);
   const pinnae = new THREE.InstancedMesh(pinnaG, frondMat, MAXF * PAIRS * 2);
+  const pinnaOld = new THREE.InstancedBufferAttribute(new Float32Array(MAXF * PAIRS * 2), 1);
+  pinnaG.setAttribute('aOld', pinnaOld);
   const rachis = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 5, 1).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x3b4a1c, roughness: 0.6 }), MAXF * SEGS);
   pinnae.castShadow = rachis.castShadow = pinnae.receiveShadow = true;
   pinnae.frustumCulled = rachis.frustumCulled = false;
@@ -361,14 +495,17 @@ export function createGarden(canvas, gl, view) {
             m.setPosition(P);
             pinnae.setMatrixAt(pi, m);
             // Old fronds are deep green; young ones paler; dry ones dull.
-            c.setHSL(0.27 + 0.03 * young, 0.55 + 0.25 * wake, 0.1 + 0.06 * young + 0.05 * wake);
+            // The maps carry the green; this tints it. Dry fronds dull, young ones pale.
+            c.setRGB(0.8 + 0.2 * wake + 0.15 * young, 0.75 + 0.25 * wake + 0.12 * young, 0.55 + 0.35 * wake);
             pinnae.setColorAt(pi, c);
+            pinnaOld.setX(pi, 1 - young);
             pi++;
           }
         }
       }
     }
     pinnae.count = pi;
+    pinnaOld.needsUpdate = true;
     rachis.count = ri;
     pinnae.instanceMatrix.needsUpdate = rachis.instanceMatrix.needsUpdate = true;
     if (pinnae.instanceColor) pinnae.instanceColor.needsUpdate = true;
@@ -429,7 +566,8 @@ export function createGarden(canvas, gl, view) {
   const lampDir = new THREE.Vector3();
   // Draws the garden into its picture if anything changed. Leaves the context clean.
   function render(W, H) {
-    if (W !== w || H !== h) { w = W; h = H; rt.setSize(w, h); dirty = true; }
+    // The picture holds at most 2.2 million pixels; the glass and the fog hide the rest.
+    if (W !== w || H !== h) { w = W; h = H; const k = Math.min(1, Math.sqrt(2.2e6 / (w * h))); rt.setSize(Math.round(w * k), Math.round(h * k)); dirty = true; }
     if (!dirty) return;
     dirty = false;
     renderer.resetState();
@@ -452,7 +590,10 @@ export function createGarden(canvas, gl, view) {
     spot.color.copy(col); spot.intensity = 9 * k;
     rect.color.copy(col); rect.intensity = 12 * k;
     U.uLampCol.value.copy(col).multiplyScalar(0.8 * k);
-    capMat.clearcoat = wake;
+    capMat.clearcoat = 0.05 + 0.95 * wake;
+    frondMat.clearcoat = 0.05 + 0.25 * wake;
+    mossMat.clearcoat = 0.03 + 0.12 * wake;
+    mossMat.sheen = 0.6 - 0.2 * wake;
     capMat.roughness = 0.55 - 0.35 * wake;
     camera.updateMatrixWorld();
     lampDir.copy(LAMP).sub(new THREE.Vector3(0, 0.4, 0)).normalize().transformDirection(camera.matrixWorldInverse);
