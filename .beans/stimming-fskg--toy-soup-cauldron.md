@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-15T10:36:27Z
+updated_at: 2026-11-16T08:32:07Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -39,3 +39,17 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - Sound through audioKit, muted by default: simmer bed, fire rumble and crackle, slosh, spoon scrape, bubble pops, plops, a duck squeak, a star chime, drain glugs.
 - Performance: detail level and slow-frame step, up to 60 fps while a hand works, a 30 fps simmer otherwise, stops when hidden; reduced motion stops the simmer.
 - `docs/toys/cauldron.md`: the toy doc. Handoff files in the lab10 scratchpad: toys-entry.json, menu-li.html, menu-icon.js.
+
+## Round 2 (2026-11-16)
+
+- [x] Fire's solver in WebGL2: a 48x56x48 grid in a 2D atlas, curl, advect, buoyancy, turbulence, confinement, Jacobi, project, dye with a coal bed
+- [x] The belly and legs are solids; hot gas clings to the iron and climbs it
+- [x] Fire volume march: Fire's wood ramp, emission and smoke light; steam takes Fire's smoke light
+- [x] Iron lit by the solver's heat; flagstone floor lit through a bump normal; logs removed
+- [x] Wind gusts at high fire; cursor wobble; Dev rows for camera and fire bed
+- [ ] WebGPU probe of Fire's own engine (cauldron/probe-gpu.html)
+- [ ] PBR and bump on the iron
+- [ ] Roughness noise per material
+- [ ] Soupy marbled dye field
+- [ ] Tray picker and four liquids
+- [ ] Toy doc
