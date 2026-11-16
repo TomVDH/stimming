@@ -8868,9 +8868,11 @@ function setAim(yaw, elev) {
   aimNow.yaw = yaw; aimNow.elev = elev;
   applyAim();
 }
-// The drawn aim adds the kick to the commanded aim.
+// The cradle rocks on its trunnions as the gun brakes: p and y, rates vp and vy.
+const sway = { p: 0, y: 0, vp: 0, vy: 0 };
+// The drawn aim adds the kick and the sway to the commanded aim.
 function applyAim() {
-  const yaw = aimNow.yaw + kick.y, elev = aimNow.elev + kick.p;
+  const yaw = aimNow.yaw + kick.y + sway.y, elev = aimNow.elev + kick.p + sway.p;
   SE = Math.sin(elev); CE = Math.cos(elev); SY = Math.sin(yaw); CY = Math.cos(yaw);
   AX.set(-SY * CE, SE, -CY * CE);
   AX_UP.set(SY * SE, CE, CY * SE);
@@ -8944,17 +8946,45 @@ function stepAim(dt, snap = false) {
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
   // The gun's swing home: its first error, for the breech's half-way cue.
   if (parking && shot.parkErr0 == null) shot.parkErr0 = aimNow.err;
-  if (snap) { aimNow.vy = aimNow.ve = 0; setAim(aimNow.yaw + dy, aimNow.elev + de); return; }
-  if (aimNow.err < 1e-6 && Math.abs(aimNow.vy) + Math.abs(aimNow.ve) < 1e-6) return;
-  // Hydraulics: a damped spring overshoots a little, then settles.
-  const W = 0.9, Z = 0.62;
-  aimNow.vy += (W * W * dy - 2 * Z * W * aimNow.vy) * dt;
-  aimNow.ve += (W * W * de - 2 * Z * W * aimNow.ve) * dt;
-  // The mount turns at 3.2 degrees a second at most; by hand, at 7.
-  // Auto aim stays slow and steady at 3.2 degrees a second; by hand, up to 16.
-  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(manual.on ? 16 : 3.2);
-  if (sp > top) { aimNow.vy *= top / sp; aimNow.ve *= top / sp; }
+  // The target's own turn rate, for the feed-forward.
+  const ty = aimNow.yaw + dy, te = aimNow.elev + de;
+  if (snap) { aimNow.vy = aimNow.ve = 0; aimNow.ty = ty; aimNow.te = te; setAim(ty, te); return; }
+  if (dt <= 0) return;
+  // A low-pass keeps a target switch from jolting the feed-forward.
+  const fy = aimNow.ty == null ? 0 : clamp(wrapPi(ty - aimNow.ty) / dt, -SLEW.yaw.v, SLEW.yaw.v), fe = aimNow.te == null ? 0 : clamp((te - aimNow.te) / dt, -SLEW.elev.v, SLEW.elev.v);
+  const lp = Math.min(1, dt / 0.4);
+  aimNow.fy = (aimNow.fy || 0) + (fy - (aimNow.fy || 0)) * lp; aimNow.fe = (aimNow.fe || 0) + (fe - (aimNow.fe || 0)) * lp;
+  aimNow.ty = ty; aimNow.te = te;
+  const settled = aimNow.err < 1e-5 && Math.abs(aimNow.vy) + Math.abs(aimNow.ve) < 1e-5;
+  if (settled && Math.abs(sway.p) + Math.abs(sway.y) < 1e-6) return;
+  // Each axis ramps up, cruises and brakes onto the target.
+  // By hand the gun turns faster and harder.
+  const M = manual.on ? SLEW.hand : SLEW;
+  const vy0 = aimNow.vy, ve0 = aimNow.ve;
+  aimNow.vy = slewAxis(dy, aimNow.vy, aimNow.fy, M.yaw, dt);
+  aimNow.ve = slewAxis(de, aimNow.ve, aimNow.fe, M.elev, dt);
+  // The braking rocks the cradle; the sway rings down in a few seconds.
+  stepSway((aimNow.vy - vy0) / dt, (aimNow.ve - ve0) / dt, dt);
   setAim(aimNow.yaw + aimNow.vy * dt, aimNow.elev + aimNow.ve * dt);
+}
+const wrapPi = a => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+// Slew limits per axis: top speed v and acceleration a, in radians.
+// The mount traverses faster than the cradle climbs.
+const SLEW = { yaw: { v: rad(3.2), a: rad(2) }, elev: { v: rad(2.4), a: rad(1.5) }, hand: { yaw: { v: rad(16), a: rad(10) }, elev: { v: rad(7), a: rad(6) } } };
+// One axis: the speed that stops on the target, plus the target's own rate.
+// The square-root ramp brakes at the axis's own acceleration.
+function slewAxis(d, v, rate, L, dt) {
+  const a = Math.abs(d), want = Math.sign(d) * Math.min(L.v, Math.sqrt(2 * L.a * a * 0.9), 3 * a);
+  const vd = clamp(want + clamp(rate, -L.v, L.v), -1.2 * L.v, 1.2 * L.v);
+  return v + clamp(vd - v, -L.a * dt, L.a * dt);
+}
+// The sway: a damped spring at 0.8 Hz that the slew's acceleration drives.
+function stepSway(ay, ae, dt) {
+  if (reduced()) { sway.p = sway.y = sway.vp = sway.vy = 0; return; }
+  const W = 2 * Math.PI * 0.8, Z = 0.22, K = 0.9;
+  sway.vy += (-W * W * sway.y - 2 * Z * W * sway.vy - K * ay) * dt;
+  sway.vp += (-W * W * sway.p - 2 * Z * W * sway.vp - K * ae) * dt;
+  sway.y += sway.vy * dt; sway.p += sway.vp * dt;
 }
 // Sand streams: each pours small puffs straight down from a ledge.
 const sandStreams = [];
@@ -8989,6 +9019,13 @@ function recoilRoom() {
 function capRecoil(v) {
   const r = recoilRoom(), k = 0.8 * r;
   return v <= k ? v : k + (r - k) * (1 - Math.exp(-(v - k) / Math.max(r - k, 1e-3)));
+}
+// The run-out: the barrel holds back, then the recuperator draws it home.
+// It speeds up, then the buffer eases it onto battery.
+const RUN = { hold: 0.6, t: 4.2 };
+function runOut(ra) {
+  const u = clamp((ra - RUN.hold) / RUN.t, 0, 1);
+  return 1 - u * u * u * (u * (6 * u - 15) + 10);
 }
 function stepShot(dt) {
   stepRounds();
@@ -9064,10 +9101,17 @@ function stepShot(dt) {
   // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
   // A salvo kicks harder round by round, up to the clearance point.
   if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
-  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * runOut(ra);
   U.uRecoil.value = Math.max(U.uRecoil.value, shot.slide0 * Math.exp(-age / 0.6));
   U.uRecoil.value = capRecoil(U.uRecoil.value);
   shadowDirty = true;
+  // The barrel seats at battery: a thunk, a jolt, a nod of the cradle.
+  if (!shot.salvo && !shot.battery && ra > RUN.hold + RUN.t) {
+    shot.battery = true;
+    if (!reduced()) { cam.shake += 0.3 * gp; sway.vp -= rad(0.12) * gp; }
+    const ac = kit.live();
+    if (ac) clunk(ac, 1.2 * gp);
+  }
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
     kick.p = ra > 0 ? rad(0.5) * gp * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
@@ -9675,7 +9719,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
 // A live landing dome and a view's move keep the loop awake.
-const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0 || specks.stir > 0.002;
+const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(sway.p) + Math.abs(sway.y) > 1e-5 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0 || specks.stir > 0.002;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -11562,7 +11606,7 @@ window.__qa = {
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
   salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n, true); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
-  aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
+  aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev, yaw: aimNow.yaw, vy: aimNow.vy, ve: aimNow.ve, sp: sway.p, sy: sway.y }),
   release() { act.release('pointer'); },
   // Jump the clock by t seconds.
   // The rock and the charge catch up.

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:59:01Z
-updated_at: 2026-11-16T19:46:12Z
+updated_at: 2026-11-16T19:55:55Z
 parent: stimming-f793
 ---
 
@@ -23,6 +23,7 @@ Tom, 2026-11-16: "PBR and gun materials, final tweaks to the gun model and targe
 - [x] Central pylon as an A: plumb yoke and collar, then an A to the deck with a pointed opening; the front prop goes
 - [x] Tom signs off Part 2
 - [x] Part 3: ranging laser (stimming-48f4): pulse twice, paint, strobe on release, out at launch; the sight draws it
-- [ ] Tom signs off Part 3
-- [ ] Part 4: aim, slew, settle, recoil and return
+- [x] Tom signs off Part 3
+- [x] Part 4: per-axis slew (ramp, cruise, brake; feed-forward on the moving rock), cradle sway, recoil run-out to battery with a thunk
+- [ ] Tom signs off Part 4
 - [ ] Clean console; charge, shot and recoil still work
