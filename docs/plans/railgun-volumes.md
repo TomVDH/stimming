@@ -48,7 +48,7 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | **Heaps** | `HEAPS` | Cumulus, 8 to 38 km out. The far clusters float clear of the crests. |
 | **Towers** | `TOWERS` | Storm towers with anvils, 105 to 150 km out, among the ranges. |
 | **Mids** | `MIDS` | Heaps 4 to 6 km up. Off while the Deck is on. |
-| **Giants** | `GIANTS` (kind 2) | Three storm cells 195 to 225 km out, 75 to 95 km tall. Each lives 7 to 17 min: the top climbs, the anvil spreads, the cell frays, a new one grows. Dev rows Giants and Giant age. |
+| **Giants** | `GIANTS` | Three colossal storms 195 to 225 km out, 75 to 95 km tall. Dev row Giants. |
 
 ## Air
 
