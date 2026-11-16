@@ -1289,30 +1289,26 @@ function chime(f, level, pan) {
 }
 
 /* ---------- camera ---------- */
-// The view fits the bowl and the ring of cloth its pieces can reach.
+// Two views: close on the whole bowl, and wide for the pieces on the cloth.
+// The camera eases between them, so it backs off as the bowl falls apart.
 let size = { w: 1, h: 1, dpr: 1 };
-const cam = { eye: [0, 3, 6], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tanF: 0.25, shift: [0, 0] };
-const FIT = [];
-for (let k = 0; k < 32; k++) { const a = k / 32 * TAU; FIT.push([1.95 * Math.cos(a), 0, 1.95 * Math.sin(a)], [Math.cos(a), 1.0, Math.sin(a)]); }
-function project(p, eye = cam.eye) {
+const cam = { eye: [0, 3, 6], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tanF: 0.25, shift: [0, 0], back: [0, 0, 1], tgt: [0, 0.35, 0] };
+const views = { near: { D: 6, shift: [0, 0] }, wide: { D: 8, shift: [0, 0] } };
+let wideK = 0, wideTo = 0;
+const ring = (r, y, n = 32) => Array.from({ length: n }, (_, k) => [r * Math.cos(k / n * TAU), y, r * Math.sin(k / n * TAU)]);
+const FIT_WIDE = [...ring(1.95, 0), ...ring(1, 1)];
+const FIT_NEAR = [...ring(1.3, 0), ...ring(1, 1)];
+function project(p, eye = cam.eye, shift = cam.shift) {
   const v = sub(p, eye), z = dot(v, cam.F);
-  return [dot(v, cam.R) / (z * cam.tanF * size.w / size.h) + cam.shift[0], dot(v, cam.U) / (z * cam.tanF) + cam.shift[1]];
+  return [dot(v, cam.R) / (z * cam.tanF * size.w / size.h) + shift[0], dot(v, cam.U) / (z * cam.tanF) + shift[1]];
 }
-function frame() {
-  const pitch = dev('pitch') * Math.PI / 180, yaw = dev('yaw') * Math.PI / 180;
-  cam.tanF = Math.tan(dev('fov') * Math.PI / 360);
-  const back = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
-  cam.F = mul(back, -1);
-  cam.R = norm(cross(cam.F, [0, 1, 0]));
-  cam.U = cross(cam.R, cam.F);
-  cam.shift = [0, 0];
-  const tgt = [0, 0.35, 0];
-  // Room for the corners: the top row, the bottom row and a side gutter.
+// Fits one set of points in the stage, clear of the corner controls.
+function fit(pts) {
   const sx = 1 - 2 * 14 / size.w, top = 1 - 2 * 52 / size.h, bot = -1 + 2 * 60 / size.h;
   const box = D => {
-    const e = add(tgt, mul(back, D));
+    const e = add(cam.tgt, mul(cam.back, D));
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (const p of FIT) { const [x, y] = project(p, e); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    for (const p of pts) { const [x, y] = project(p, e, [0, 0]); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     return { x0, x1, y0, y1 };
   };
   let lo = 2, hi = 60;
@@ -1321,8 +1317,24 @@ function frame() {
     if (b.x1 - b.x0 > 2 * sx || b.y1 - b.y0 > top - bot) lo = D; else hi = D;
   }
   const D = hi * dev('eye'), b = box(D);
-  cam.eye = add(tgt, mul(back, D));
-  cam.shift = [-(b.x0 + b.x1) / 2, (top + bot) / 2 - (b.y0 + b.y1) / 2];
+  return { D, shift: [-(b.x0 + b.x1) / 2, (top + bot) / 2 - (b.y0 + b.y1) / 2] };
+}
+function frame() {
+  const pitch = dev('pitch') * Math.PI / 180, yaw = dev('yaw') * Math.PI / 180;
+  cam.tanF = Math.tan(dev('fov') * Math.PI / 360);
+  cam.back = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  cam.F = mul(cam.back, -1);
+  cam.R = norm(cross(cam.F, [0, 1, 0]));
+  cam.U = cross(cam.R, cam.F);
+  views.near = fit(FIT_NEAR);
+  views.wide = fit(FIT_WIDE);
+  place();
+}
+// The camera between the two views, by wideK.
+function place() {
+  const e = wideK * wideK * (3 - 2 * wideK), n = views.near, w = views.wide;
+  cam.eye = add(cam.tgt, mul(cam.back, n.D + (w.D - n.D) * e));
+  cam.shift = [n.shift[0] + (w.shift[0] - n.shift[0]) * e, n.shift[1] + (w.shift[1] - n.shift[1]) * e];
 }
 // A CSS point on the stage as a world ray.
 function rayAt(x, y) {
@@ -1495,7 +1507,7 @@ function draw(jitter = [0, 0]) {
   }
   gl.uniform1i(u.uQ, D.level);
   gl.uniform1i(u.uRound, round ? 1 : 0);
-  const hair = !round ? 0 : state === 'crack' || state === 'pause' ? 1 : state === 'fall' ? clamp(1 - st / 0.15) : state === 'mend' ? clamp((st - MEND_T * 0.86) / (MEND_T * 0.14)) : state === 'flow' ? 1 : 0;
+  const hair = !round ? 0 : state === 'crack' || state === 'pause' ? 1 : state === 'fall' ? clamp(1 - (st - 0.45) / 0.3) : state === 'mend' ? clamp((st - MEND_T * 0.86) / (MEND_T * 0.14)) : state === 'flow' ? 1 : 0;
   gl.uniform1f(u.uHair, hair);
   gl.uniform1f(u.uCrackT, state === 'crack' ? st * CRACK_V : 1e3);
   gl.uniform1f(u.uFlowT, state === 'flow' ? (reduced() ? 1e3 : st * FLOW_V) : -1);
@@ -1612,8 +1624,15 @@ function tick(now) {
     const k = 1 - Math.exp(-dt / 0.55);
     lq.az += (tq.az - lq.az) * k;
     lq.el += (tq.el - lq.el) * k;
-    const easing = Math.abs(tq.az - lq.az) + Math.abs(tq.el - lq.el) > 2e-4;
+    let easing = Math.abs(tq.az - lq.az) + Math.abs(tq.el - lq.el) > 2e-4;
     if (!easing) { lq.az = tq.az; lq.el = tq.el; }
+    // The camera backs off while the pieces lie apart and comes in as they close.
+    wideTo = reduced() || !round ? 0 : state === 'fall' || state === 'rest' || (state === 'mend' && st < MEND_T * 0.45) ? 1 : 0;
+    if (Math.abs(wideTo - wideK) > 1e-3) {
+      wideK += (wideTo - wideK) * (1 - Math.exp(-dt / 0.45));
+      place();
+      easing = true;
+    } else if (wideK !== wideTo) { wideK = wideTo; place(); }
     if (glazeT < 1) {
       glazeT = Math.min(1, glazeT + dt / 0.6);
       const e = smoother(glazeT);
