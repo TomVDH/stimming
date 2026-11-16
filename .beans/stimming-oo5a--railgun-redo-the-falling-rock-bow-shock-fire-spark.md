@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T18:16:28Z
-updated_at: 2026-11-16T18:49:55Z
+updated_at: 2026-11-16T18:54:14Z
 ---
 
 Tom: "redo smoke column sparks and firey smoke by the asteroid and the asteroid itself incl bow shock etc".
@@ -19,7 +19,7 @@ Scope: railgun/index.html, the rock (astMat), the bow shock (bowMat, haloMat), t
 - [x] Rock: dark crust, boiling melt on the front
 - [x] Bow shock: a white-hot cap and shock layer that hide the rock's front
 - [x] Fire by the rock: a burning wake 11 radii long (the front glow stays)
-- [ ] Sparks: original sparks for now; the chunk and spray pass read as comical (Tom)
+- [x] Sparks: fewer (3/s), dimmer, smaller, close to the smoke, cooling orange to red; Tom likes the lesser sparks
 - [x] Smoke column: the fixed hatch is gone; it widens slowly with age (spread 0.11). The bulge, rim and soot pass was cut (Tom)
 - [ ] QA: clean console, strike and kill still work, 1280 and 375
 - [ ] Tom signs off
