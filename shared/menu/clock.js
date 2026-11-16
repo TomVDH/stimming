@@ -188,6 +188,34 @@ function start() {
   // The Re-roll stays away for the first five seconds.
   setTimeout(() => button.setAttribute('data-on', ''), 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
+  // The footer: the mark sits in the credit line, in place of its own name.
+  const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
+  const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
+  if (credit && words0 && mark) {
+    const [before, after] = words0.textContent.split(/onn[\u00f8o]zelaer/i);
+    if (after !== undefined) {
+      const holder = Object.assign(document.createElement('span'), { className: 'clock-mark' });
+      holder.append(mark);
+      // The version stays the mark's next sibling: the menu's hover rule needs that.
+      if (version) holder.append(version);
+      words0.textContent = before.trim();
+      words0.after(holder, Object.assign(document.createElement('span'), { textContent: after.trim() }));
+      credit.setAttribute('data-inline', '');
+    }
+    // The glow leans to the pointer and brightens near the mark. One style write a frame at most.
+    if (!still.matches && matchMedia('(hover: hover)').matches) {
+      const clamp = (v, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
+      let where = null, due = 0;
+      const lean = () => {
+        due = 0;
+        const r = mark.getBoundingClientRect();
+        credit.style.setProperty('--fx', clamp(where.clientX / innerWidth * 2 - 1).toFixed(3));
+        credit.style.setProperty('--near', clamp(1 - Math.hypot(where.clientX - (r.left + r.width / 2), where.clientY - (r.top + r.height / 2)) / 460, 0, 1).toFixed(3));
+      };
+      addEventListener('pointermove', e => { where = e; if (!due) due = requestAnimationFrame(lean); }, { passive: true });
+    }
+  }
+
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
   // After two laps it stops, so an empty room burns no power.
   const WAIT = 12000, BEAT = 3600, LAPS = 2;

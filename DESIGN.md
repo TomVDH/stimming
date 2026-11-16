@@ -223,6 +223,7 @@ Colour that data files own.
 
 - **Toy accents** (`toys.json`, field `accent`): one per toy. A value is one OKLCH colour or a `linear-gradient(...)` of OKLCH stops, most at 100deg. Examples: Morpher `linear-gradient(100deg, oklch(0.84 0.17 340), oklch(0.84 0.14 250))`, Pop field `oklch(0.9 0.2 128)`. The Signal intro inks the logo with it (`shared/intro.js:344-345`). The frontmatter does not list them; `toys.json` is the source.
 - **Footer glow** (`index.html:114-121`): three radial glows under the menu's footer: `oklch(0.6 0.22 320 / 0.5)`, `oklch(0.74 0.14 200 / 0.42)`, `oklch(0.82 0.15 80 / 0.38)`.
+  In the Clock view the glow is a mesh of five lights mixed `in oklch` and added as light; it leans to the pointer and brightens near the onnozelaer mark, which sits in the credit line (`shared/menu/clock.css`).
 
 ### Neutral
 
