@@ -182,7 +182,7 @@ const ui = initPage({ id: 'cauldron', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['drag', 'stir'], ['click', 'throw in'], ['← →', 'stir']],
+  keys: [['drag', 'stir or pour'], ['drag a thing', 'pull'], ['click', 'add or dunk'], ['← →', 'stir']],
 } });
 
 /* ---------- GL ---------- */
@@ -2209,11 +2209,13 @@ const LIQ = {
   saffron: { tint: [0.82, 0.17, 84], mass: 0.45, r: 0.06, fat: 0, glit: 0.6 },
 };
 const pours = [];
-function pour(kind, x, z) {
-  pours.push({ kind, x, z, t: 0, dur: 1.2, acc: 0, col: lchLin(LIQ[kind].tint) });
+function pour(kind, x, z, held = null) {
+  const p = { kind, x, z, t: 0, dur: held ? Infinity : 1.2, acc: 0, col: lchLin(LIQ[kind].tint), held, sounded: 0 };
+  pours.push(p);
   pourSound(kind, x);
   splashAt = time;
   wake();
+  return p;
 }
 // The stream lands in lumps, about 30 a second, and drifts with the stir.
 function stepPours(dt) {
@@ -2221,8 +2223,15 @@ function stepPours(dt) {
   for (let i = pours.length - 1; i >= 0; i--) {
     const p = pours[i], L = LIQ[p.kind];
     p.t += dt;
-    p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
-    p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    if (p.held) {
+      // A held pour follows the hand, so it can draw a spiral.
+      const kp = 1 - Math.exp(-dt * 14);
+      p.x += (p.held.tx - p.x) * kp; p.z += (p.held.tz - p.z) * kp;
+      if (p.t - p.sounded > 1.1) { p.sounded = p.t; pourSound(p.kind, p.x); }
+    } else {
+      p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
+      p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    }
     [p.x, p.z] = inside([p.x, p.z], 0.9);
     p.acc += dt * 30;
     while (p.acc >= 1 && p.t < p.dur) {
@@ -2373,11 +2382,22 @@ function stepBodies(dt) {
       if (t >= 1) { b.fly = null; b.tumble = null; splash(b); }
       continue;
     }
-    // Ride the flow; heavy things lag behind it.
-    const ux = sampleF(fu, b.x, b.z), uz = sampleF(fv, b.x, b.z);
-    const k = 1 - Math.exp(-dt / K.lag);
-    b.vx += (ux - b.vx) * k;
-    b.vz += (uz - b.vz) * k;
+    // A held thing follows the hand, lifted a little; otherwise it rides the flow.
+    if (b.held) {
+      const kh = 1 - Math.exp(-dt * 10);
+      b.vx += ((b.held.tx - b.x) * 9 - b.vx) * kh;
+      b.vz += ((b.held.tz - b.z) * 9 - b.vz) * kh;
+      b.pitchV += b.vx * 2.5 * dt * 10; b.rollV -= b.vz * 2.5 * dt * 10;
+      // It drips and leaves a small wake.
+      if (Math.random() < dt * 6 && !reduced()) addDrop(b.x * rs, b.y - 0.02, b.z * rs, b.vx * 0.3, -0.2, b.vz * 0.3, rand(0.01, 0.016));
+      if (Math.hypot(b.vx, b.vz) > 0.15 && Math.random() < dt * 20) imps.push([b.x, b.z, 0.05, -0.006]);
+    } else {
+      const ux = sampleF(fu, b.x, b.z), uz = sampleF(fv, b.x, b.z);
+      const k = 1 - Math.exp(-dt / K.lag);
+      b.vx += (ux - b.vx) * k;
+      b.vz += (uz - b.vz) * k;
+    }
+    b.liftH = (b.liftH || 0) + ((b.held ? 0.07 : 0) - (b.liftH || 0)) * (1 - Math.exp(-dt * (b.held ? 6 : 9)));
     // The boil pushes things off the plumes.
     for (const p of plumes) {
       const dx = b.x - p.x, dz = b.z - p.z, d2 = dx * dx + dz * dz;
@@ -2417,7 +2437,7 @@ function stepBodies(dt) {
     const shiver = K.into && K.into !== 'melt' && b.cook > 0.86 && b.cook < 1 && !reduced() ? (b.cook - 0.86) * 0.5 : 0;
     if (shiver) { b.roll += rand(-1, 1) * shiver; b.pitch += rand(-1, 1) * shiver; }
     b.wx = b.x * rs; b.wz = b.z * rs;
-    b.y = surfY(b.wx, b.wz) + K.float * b.scale + b.bob - b.sink;
+    b.y = surfY(b.wx, b.wz) + K.float * b.scale + b.bob - b.sink + (b.liftH || 0);
     // Cook, and give up colour as it goes.
     if (K.cook > 0 && !b.gone) {
       b.cook = Math.min(K.into ? 1.2 : 1, b.cook + dt * heat / K.cook);
@@ -2488,29 +2508,80 @@ let ptr = null;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 // A soup point clamped inside the wall.
 function inside(p, lim = 0.9) { const r = Math.hypot(p[0], p[1]); return r > lim ? [p[0] / r * lim, p[1] / r * lim] : p; }
+// The thing under a soup point: the nearest one whose outline holds it.
+function thingAt(sx, sz) {
+  const rs = soupR(level);
+  let best = null, bd = 1e9;
+  for (const b of bodies) {
+    if (b.fly || b.gone) continue;
+    const d = Math.hypot(b.x - sx, b.z - sz) * rs;
+    if (d < Math.max(b.rad, 0.07) * 1.2 && d < bd) { bd = d; best = b; }
+  }
+  return best;
+}
+// A tap on a thing dunks it: it bobs under, splashes and rocks.
+function dunk(b) {
+  b.vy -= 0.9 + 0.8 * clamp(b.K.sq + 0.1);
+  b.pitchV += rand(-6, 6); b.rollV += rand(-6, 6);
+  imps.push([b.x, b.z, 0.06 + b.rad / soupR(level) * 0.5, -0.02]);
+  const rs = soupR(level);
+  for (let i = 0; i < 5 && !reduced(); i++) {
+    const a = rand(0, TAU);
+    addDrop(b.x * rs + Math.cos(a) * 0.05, b.y, b.z * rs + Math.sin(a) * 0.05, Math.cos(a) * 0.5, rand(1.2, 2), Math.sin(a) * 0.5, rand(0.01, 0.018));
+  }
+  splashAt = time;
+  plopSound(b);
+}
 function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   const [x, y] = local(e);
-  ptr = { id: e.pointerId, x0: x, y0: y, mode: 'press' };
+  const [sx, sz] = soupAt(x, y);
+  ptr = { id: e.pointerId, x0: x, y0: y, mode: 'press', thing: draining ? null : thingAt(sx, sz) };
   wake();
 }
 function move(e) {
   if (!ptr || e.pointerId !== ptr.id) return;
   const [x, y] = local(e);
   if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 7) {
-    ptr.mode = 'stir';
-    const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0));
-    spoonDown(sx, sz);
+    const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.85);
+    if (ptr.thing) {
+      // Drag on a thing: pick it up and pull it through the soup.
+      ptr.mode = 'grab';
+      ptr.thing.held = { tx: sx, tz: sz };
+    } else if (LIQ[pick] && !draining) {
+      // Drag with a liquid picked: the stream follows the hand.
+      ptr.mode = 'pour';
+      ptr.pour = pour(pick, sx, sz, { tx: sx, tz: sz });
+    } else {
+      ptr.mode = 'stir';
+      spoonDown(sx, sz);
+    }
     stage.classList.add('is-stirring');
   }
-  if (ptr.mode === 'stir') { const [sx, sz] = inside(soupAt(x, y)); spoon.tx = sx; spoon.tz = sz; wake(); }
+  const [sx, sz] = inside(soupAt(x, y), 0.85);
+  if (ptr.mode === 'stir') { spoon.tx = sx; spoon.tz = sz; wake(); }
+  else if (ptr.mode === 'grab' && ptr.thing.held) { ptr.thing.held.tx = sx; ptr.thing.held.tz = sz; wake(); }
+  else if (ptr.mode === 'pour') { ptr.pour.held.tx = sx; ptr.pour.held.tz = sz; wake(); }
 }
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
   const tap = ptr.mode === 'press' && e?.type === 'pointerup';
-  if (tap) { const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.82); throwNext(sx, sz); }
+  if (tap) {
+    if (ptr.thing && !ptr.thing.gone) dunk(ptr.thing);
+    else { const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.82); throwNext(sx, sz); }
+  }
   if (ptr.mode === 'stir') spoonUp();
+  if (ptr.mode === 'grab') {
+    // Let go: it drops back in with a small splash.
+    const b = ptr.thing;
+    b.held = null;
+    b.vy -= 0.5;
+    imps.push([b.x, b.z, 0.07, -0.014]);
+    splashAt = time;
+  }
+  // A drawn pour runs on a moment after the hand lifts.
+  if (ptr.mode === 'pour') { const p = ptr.pour; p.held = null; p.dur = Math.max(p.t + 0.3, 0.9); }
   ptr = null;
   stage.classList.remove('is-stirring');
   wake();
