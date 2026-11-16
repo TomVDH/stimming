@@ -604,6 +604,9 @@ uniform vec4 uRockL;
 uniform float uRockR;
 uniform vec4 uBolt;
 uniform vec3 uBoltC;
+// The bolt's light as a cloud scatters it: warm white, not the plasma's blue.
+// Cloud drops spread every colour alike; the bolt's hue lives in its core.
+vec3 cloudBoltC() { return vec3(dot(uBoltC, vec3(0.3, 0.5, 0.2))) * vec3(1.08, 0.97, 0.86); }
 uniform vec4 uHit;
 uniform vec4 uVoid;
 uniform float uVoidK, uVoidT;
@@ -729,7 +732,7 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
 #endif
   vec3 cloud = uCloudSun * (0.62 + 0.3 * pow(max(cs, 0.0), 2.0)) * (1.0 - 0.75 * shd) + uCloudAmb;
   // The passing bolt lights the ice round it, blue-white, for a few kilometres.
-  if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
+  if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; cloud += cloudBoltC() * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
   // By day the bright sky drowns thin ice; denser, brighter streaks still read.
   float dayW = smoothstep(0.08, 0.45, uSunD.y);
   cloud *= 1.0 + 0.15 * dayW;
@@ -1282,7 +1285,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     // At night the deck takes the moon dimly.
     c *= mix(1.0, 0.45, uStars);
     // The passing bolt lights the cells round it, blue-white.
-    if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; c += uBoltC * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
+    if (uBolt.w > 0.001) { vec3 bd = Pc - uBolt.xyz; c += cloudBoltC() * uBolt.w * 0.45 / (1.0 + dot(bd, bd) / 2.0e7); }
     // The burning rock warms the cells near it, the thin ones most.
     if (uRockL.w > 0.001) { vec3 rb = uRockL.xyz - Pc; c += uAstC * uRockL.w * uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR) * (0.6 + 0.4 * (1.0 - dens)) * mix(1.0, 0.6, uStars); }
     // The blast: its flash, its afterglow and the shock rim.
@@ -1998,8 +2001,8 @@ vec3 flashIn(vec3 P, float F, float H) {
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    // A cold, violet-blue white.
-    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    // Inside a cloud the flash scatters to a plain white; the far air warms it.
+    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   // A bright sky needs a stronger flash to show.
   return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
@@ -2189,7 +2192,7 @@ void main() {
   float occH = max(body(X + h2 * H * 0.15), 0.0) + max(body(X + h2 * H * 0.4), 0.0);
   float shH = exp(-occH / (H * 0.3));
   // The passing bolt lights the cloud faces near its path.
-  if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += uBoltC * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
+  if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; col += cloudBoltC() * uBolt.w * 0.35 * (0.3 + 0.7 * max(dot(N, -normalize(bd)), 0.0)) / (1.0 + dot(bd, bd) / 4.0e7); }
   // The burning rock lights the faces turned to it, the nearest most.
   // Thin edges between the eye and the rock glow through.
   if (uRockL.w > 0.001) {
@@ -2399,7 +2402,7 @@ vec3 flashAt(vec3 P) {
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   return L * mix(3.0, 1.0, uStars);
 }
