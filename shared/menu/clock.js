@@ -256,19 +256,28 @@ function start() {
   // "yet another onnøzelaer concoction", and the name stays written in full (Tom).
   // "Made with AI" is an attribution, not a boast: it stays small and plain.
   const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
-  const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
+  const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = /** @type {HTMLElement | null} */ (credit?.querySelector('.ver'));
   if (credit && words0 && mark) {
     const [line, ...rest] = words0.textContent.split('\u00b7');
     const note = rest.join('\u00b7').trim();
     const sig = Object.assign(document.createElement('span'), { className: 'clock-sig' });
     const seal = Object.assign(document.createElement('span'), { className: 'clock-mark' });
     seal.append(mark);
-    // The version stays the mark's next sibling: the menu's hover rule needs that.
-    if (version) seal.append(version);
     words0.textContent = line.trim();
     words0.className = 'clock-word';
     words0.before(sig);
     sig.append(seal, words0);
+    // The version: a fine pill that wipes in beside the line on hover or focus, with its codename.
+    if (version) {
+      const code = /codename (\S+)/.exec(version.title)?.[1] || '';
+      const pill = Object.assign(document.createElement('span'), { className: 'clock-ver', title: version.title });
+      pill.append(Object.assign(document.createElement('b'), { textContent: version.textContent.trim() }));
+      if (code) pill.append(Object.assign(document.createElement('i'), { textContent: code }));
+      version.remove();
+      sig.append(pill);
+      // A tap or the keyboard can show it too.
+      sig.tabIndex = 0;
+    }
     if (note) sig.after(Object.assign(document.createElement('span'), { className: 'clock-note', textContent: note[0].toUpperCase() + note.slice(1) + '.' }));
     credit.setAttribute('data-inline', '');
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
