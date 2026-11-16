@@ -1,0 +1,233 @@
+/* Bar lab: four directions for the toy bars.
+   shim.js adds this sheet to the toy page inside the lab's frame.
+   Every direction holds three floors: a keyboard focus mark, 44 px touch targets, 4.5:1 text. */
+
+/* A direction hides the shell's own layer; Today shows it. */
+.bl-on .stim-ui { display: none; }
+.bl-ui {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none;
+  /* The layer clips to the stage, so a closed drawer hides below it. */
+  overflow: hidden; border-radius: 18px;
+  --ink: oklch(0.05 0.01 275);
+  --sheet: oklch(0.12 0.012 275 / 0.98);
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --h: 36px; --pad: 12px; --track: oklch(0.94 0.008 275 / 0.3);
+  font: 700 12px/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg);
+}
+.bl-ui[data-concept="today"] { display: none; }
+.bl-ui > * { pointer-events: auto; }
+/* The lab's Phone sizes stand in for a touch screen. */
+.bl-touch .bl-ui { --h: 44px; font-size: 13px; }
+@media (pointer: coarse) { .bl-ui { --h: 44px; font-size: 13px; } }
+
+/* ---------- shared parts ---------- */
+.b-btn {
+  appearance: none; box-sizing: border-box; position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--h); min-width: var(--h); margin: 0; padding: 0 12px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; white-space: nowrap; text-decoration: none;
+  color: inherit; background: none; border: 0; border-radius: 0; cursor: pointer;
+}
+.b-btn svg { flex: none; width: 16px; height: 16px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.b-btn svg .solid { fill: currentColor; stroke: none; }
+.b-btn > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.b-ico { padding: 0; width: var(--h); text-transform: none; }
+.b-snd[aria-pressed="true"] .off, .b-snd[aria-pressed="false"] .on { display: none; }
+.b-btn kbd, .b-hints kbd { font: 700 10px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 5px; border: 1px solid currentColor; }
+.b-btn kbd { opacity: 0.85; }
+.bl-touch .b-btn kbd { display: none; }
+@media (hover: none), (pointer: coarse) { .b-btn kbd { display: none; } }
+.b-caret { width: 0; height: 0; border: 4px solid transparent; border-bottom-color: currentColor; border-top: 0; }
+/* The focus mark: a bar under the control, never a ring. */
+.bl-ui :is(.b-btn, a):focus-visible, .bl-ui .b-slider:has(input:focus-visible) { box-shadow: inset 0 -3px 0 currentColor; }
+
+/* The logo and the name stay unboxed and without shadow. */
+.b-id { position: absolute; top: var(--pad); left: var(--pad); display: flex; align-items: center; gap: 8px; height: var(--h); max-width: calc(100% - 2 * var(--pad)); }
+/* shim.js measures the top row; a name with no room leaves whole. */
+.b-id.is-tight .b-name { display: none; }
+.b-id .s2-back { height: var(--h); flex: none; }
+.b-id .s2-back .mark { font-size: 22px; }
+.b-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.1em; }
+.b-name::before { content: "/"; margin-right: 8px; color: var(--muted); font-weight: 500; }
+@container stim (width < 300px) { .b-name { display: none; } }
+
+.b-slider { box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px; height: var(--h); padding: 0 12px; white-space: nowrap; }
+.b-slider input {
+  -webkit-appearance: none; appearance: none; width: 110px; height: var(--h); margin: 0; cursor: pointer; background:
+    linear-gradient(currentColor, currentColor) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(var(--track), var(--track)) 0 50% / 100% 2px no-repeat;
+}
+.b-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 18px; background: currentColor; border: 0; border-radius: 0; }
+.b-slider input::-moz-range-thumb { width: 8px; height: 18px; background: currentColor; border: 0; border-radius: 0; }
+
+.b-seg { display: inline-flex; border: 1px solid var(--line); }
+.b-seg .b-btn { height: calc(var(--h) - 8px); min-width: 36px; padding: 0 10px; font-weight: 500; }
+.b-seg .b-btn + .b-btn { border-left: 1px solid var(--line); }
+.b-seg .b-btn[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+
+/* The key strip: keycap, then verb. Each word carries its own dark edge. */
+.b-hints {
+  position: absolute; left: 50%; bottom: calc(var(--pad) + var(--h) + 12px); transform: translateX(-50%); z-index: 1;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin: 0; width: max-content; max-width: calc(100% - 24px);
+  font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: none; pointer-events: none; transition: opacity 0.6s ease;
+}
+.b-hints > div { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.b-hints span { -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.b-hints kbd { background: var(--sheet); border-color: oklch(0.94 0.008 275 / 0.45); }
+.b-hints.is-faded { opacity: 0; }
+.b-hints--list { position: static; transform: none; justify-content: flex-start; width: auto; max-width: none; pointer-events: auto; }
+.b-hints--list span { -webkit-text-stroke: 0; }
+
+/* Sheets: the option list and Settings. */
+.b-pop {
+  position: absolute; z-index: 3; box-sizing: border-box; width: min(320px, calc(100% - 2 * var(--pad)));
+  max-height: calc(100% - 2 * var(--pad) - var(--h) - 16px); overflow-y: auto; overscroll-behavior: contain;
+  color: var(--fg); background: var(--sheet); border: 1px solid var(--fg);
+}
+.b-pop[hidden] { display: none; }
+.b-pop-hd { display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 12px; border-bottom: 1px solid var(--line); letter-spacing: 0.14em; }
+.b-x { color: var(--muted); }
+.b-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 2px; padding: 8px; }
+.b-opt { justify-content: flex-start; width: 100%; min-width: 0; padding: 0 10px; font-weight: 500; letter-spacing: 0.04em; }
+.b-opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.b-opt kbd { margin-left: auto; }
+.b-opt[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+.b-rows { display: grid; gap: 2px; padding: 6px 12px 10px; }
+.b-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--h); height: auto; padding: 0; font-weight: 500; letter-spacing: 0.06em; }
+.b-row input { width: 120px; }
+/* The main slider's Settings row shows only on a narrow stage. */
+.b-row--main { display: none; }
+.b-edge { height: calc(var(--h) - 6px); border: 1px solid var(--line); font-weight: 500; }
+.b-ft { display: flex; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.b-ft .b-btn { flex: 1; }
+@media (hover: hover) {
+  .b-pop .b-btn:not([aria-pressed="true"]):hover, .b-body .b-btn:not([aria-pressed="true"]):hover { background: oklch(0.94 0.008 275 / 0.1); }
+}
+
+/* A narrow stage: the row of options folds into its list; the slider joins Settings. */
+.b-narrow { display: none; }
+@container stim (width < 640px) {
+  .b-wide, .b-main { display: none; }
+  .b-narrow { display: inline-flex; }
+  .b-row--main { display: flex; }
+}
+
+/* ---------- Dock: one bar at the bottom centre ---------- */
+[data-concept="dock"] { --h: 44px; }
+.b-dock {
+  /* Both insets and auto margins centre the bar and leave it the full width. */
+  position: absolute; left: var(--pad); right: var(--pad); bottom: var(--pad); z-index: 2;
+  width: fit-content; margin-inline: auto; box-sizing: border-box;
+  display: flex; align-items: stretch; max-width: calc(100% - 2 * var(--pad));
+  background: var(--sheet); border: 1px solid oklch(0.94 0.008 275 / 0.2);
+}
+.b-dock .b-group { display: flex; align-items: center; min-width: 0; }
+.b-dock .b-sys { border-left: 1px solid var(--line); }
+.b-dock > .b-group > .b-btn, .b-dock .b-slider { color: oklch(0.82 0.012 275); transition: color 0.15s ease, background-color 0.15s ease; }
+.b-dock .b-play > * + * { border-left: 1px solid oklch(0.29 0.016 275 / 0.6); }
+.b-dock .b-seg { border: 0; align-self: stretch; }
+.b-dock .b-seg .b-btn { height: 100%; padding: 0 12px; color: oklch(0.82 0.012 275); }
+@media (hover: hover) { .b-dock .b-btn:hover { color: var(--fg); background: oklch(0.94 0.008 275 / 0.1); } }
+.b-dock .b-btn:active { background: oklch(0.94 0.008 275 / 0.2); }
+.b-dock .b-btn[aria-expanded="true"], .b-dock .b-btn.is-on, .b-dock .b-seg .b-btn[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+[data-concept="dock"] .b-pop { left: 50%; transform: translateX(-50%); bottom: calc(var(--pad) + var(--h) + 10px); }
+/* On a narrow stage the system buttons form a second, small dock top right. */
+[data-concept="dock"] .b-tr { background: var(--sheet); border: 1px solid oklch(0.94 0.008 275 / 0.2); }
+[data-concept="dock"] .b-tr .b-btn { color: oklch(0.82 0.012 275); }
+[data-concept="dock"] .b-tr .b-btn[aria-expanded="true"] { color: var(--bg); background: var(--fg); }
+@container stim (width < 640px) {
+  .b-dock { flex-wrap: wrap; justify-content: center; }
+  .b-dock .b-play { flex-wrap: wrap; justify-content: center; }
+}
+
+/* ---------- corners, for Bare and Askew ---------- */
+.b-tr, .b-bl, .b-br { position: absolute; display: flex; align-items: center; }
+.b-tr { top: var(--pad); right: var(--pad); }
+.b-bl { bottom: var(--pad); left: var(--pad); }
+.b-br { bottom: var(--pad); right: var(--pad); }
+:is([data-concept="bare"], [data-concept="askew"]) .b-pop--pick { left: var(--pad); bottom: calc(var(--pad) + var(--h) + 10px); }
+:is([data-concept="bare"], [data-concept="askew"]) .b-pop--set { right: var(--pad); top: calc(var(--pad) + var(--h) + 10px); }
+
+/* ---------- Bare: no boxes; a pick flashes white ---------- */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) { gap: 2px; }
+/* Each word carries a dark edge, so it reads on any scene. */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn > span, .b-slider > span, .b-info) { -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn svg { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn kbd { background: var(--sheet); }
+/* The flash box opens from the middle, as the intro's box does. */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn::before {
+  content: ""; position: absolute; inset: 5px 2px; z-index: -1; background: var(--fg);
+  transform: scaleX(0); transition: transform 0.2s steps(6, end);
+}
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible) { color: var(--bg); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible)::before { transform: scaleX(1); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible) :is(span, svg) { -webkit-text-stroke: 0; filter: none; }
+@media (hover: hover) {
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover { color: var(--bg); }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover::before { transform: scaleX(1); }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover :is(span, svg) { -webkit-text-stroke: 0; filter: none; }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn.b-info:hover { -webkit-text-stroke: 0; }
+}
+[data-concept="bare"] .b-seg { border: 0; }
+[data-concept="bare"] .b-seg .b-btn { height: var(--h); border: 0; font-weight: 700; background: none; }
+/* The bare slider is a line with a dark casing. */
+[data-concept="bare"] .b-main input {
+  background:
+    linear-gradient(currentColor, currentColor) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.45), oklch(0.94 0.008 275 / 0.45)) 0 50% / 100% 2px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 6px no-repeat;
+}
+[data-concept="bare"] .b-main input::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--ink); }
+[data-concept="bare"] .b-main input::-moz-range-thumb { box-shadow: 0 0 0 2px var(--ink); }
+
+/* ---------- Askew: blocks in the toy's colour, each at its own tilt ---------- */
+[data-concept="askew"] :is(.b-tr, .b-bl, .b-br) { gap: 8px; }
+[data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > * {
+  color: var(--bg); background: var(--acc); rotate: var(--tilt, 0deg);
+  transition: rotate 0.2s steps(4, end), translate 0.2s steps(4, end);
+}
+[data-concept="askew"] .b-tr > * { color: var(--acc-ink); background: var(--bg); }
+[data-concept="askew"] .b-seg { border: 0; }
+[data-concept="askew"] .b-seg .b-btn { height: var(--h); border-color: oklch(0.16 0.012 275 / 0.35); font-weight: 700; }
+[data-concept="askew"] .b-seg .b-btn[aria-pressed="true"] { color: var(--fg); background: var(--bg); }
+[data-concept="askew"] .b-main { --track: oklch(0.16 0.012 275 / 0.35); }
+[data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > :is(.b-btn[aria-expanded="true"], .b-btn.is-on) { color: var(--bg); background: var(--fg); rotate: 0deg; }
+[data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > :is(.b-btn:focus-visible, .b-slider:has(input:focus-visible)) { rotate: 0deg; translate: 0 -3px; }
+[data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > .b-btn:active { scale: 0.95; }
+@media (hover: hover) {
+  [data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > :hover { rotate: 0deg; translate: 0 -3px; }
+  [data-concept="askew"] :is(.b-tr, .b-bl, .b-br) > .b-btn:hover { color: var(--bg); background: var(--fg); }
+}
+[data-concept="askew"] .b-hints kbd { color: var(--bg); background: var(--acc); border: 0; padding: 4px 6px; }
+[data-concept="askew"] .b-pop { border: 0; border-top: 4px solid var(--acc-ink); }
+[data-concept="askew"] :is(.b-opt, .b-seg .b-btn)[aria-pressed="true"] { color: var(--bg); background: var(--acc); }
+[data-concept="askew"] .b-pop .b-seg .b-btn[aria-pressed="true"] { color: var(--bg); }
+
+/* ---------- Tuck: one tab; the drawer holds every control ---------- */
+[data-concept="tuck"] .b-hints { bottom: calc(var(--h) + 14px); }
+.b-drawer {
+  position: absolute; left: 50%; bottom: 0; z-index: 2; box-sizing: border-box; display: flex; flex-direction: column;
+  width: min(560px, 100%); max-height: calc(100% - var(--pad) - var(--h) - 12px);
+  transform: translate(-50%, calc(100% - var(--h))); transition: transform 0.25s steps(8, end);
+}
+[data-open] > .b-drawer { transform: translate(-50%, 0); }
+.b-tab {
+  align-self: center; flex: none; padding: 0 16px; color: var(--fg);
+  background: var(--sheet); border: 1px solid oklch(0.94 0.008 275 / 0.3); border-bottom: 0;
+}
+.b-tab[aria-expanded="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+.b-tab[aria-expanded="true"] .b-caret { rotate: 180deg; }
+@media (hover: hover) { .b-tab:hover { border-color: var(--fg); } }
+.b-body { overflow-y: auto; overscroll-behavior: contain; background: var(--sheet); border: 1px solid var(--fg); border-bottom: 0; }
+.b-sec { display: grid; gap: 4px; padding: 10px 12px; }
+.b-sec + .b-sec { border-top: 1px solid var(--line); }
+.b-sec > .b-grid, .b-sec > .b-rows { padding: 0; }
+.b-lab { font-size: 11px; font-weight: 500; letter-spacing: 0.14em; color: var(--muted); }
+.b-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.b-acts .b-btn { border: 1px solid var(--line); }
+.b-acts .b-btn.is-on { color: var(--bg); background: var(--fg); }
+[data-concept="tuck"] .b-row--main { display: flex; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-ui *, .bl-ui *::before { transition: none !important; }
+}
