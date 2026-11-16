@@ -1192,7 +1192,18 @@ export function stage(name, part = 0) {
   }
   const from = STAGE_AT[name], to = STAGE_AT[STAGE_NEXT[name]] ?? from;
   if (from !== undefined) progress(from + (to - from) * Math.min(1, Math.max(0, part)));
-  if (name === 'first-frame') shown();
+  if (name === 'first-frame') { framed = true; shown(); }
+}
+let framed = false;
+/**
+ * A build in n steps, for the intro's load line. Call the returned function once per finished step.
+ * It returns its argument, so it fits a promise chain: bake().then(step).
+ * @param {number} n The steps from stage('build') to the first frame.
+ */
+export function buildSteps(n) {
+  let k = 0;
+  // A step that ends after the first frame reports nothing.
+  return value => { if (!framed) stage('build', Math.min(1, ++k / n)); return value; };
 }
 // Resolves when the main thread is free, so a build step cannot stall the intro.
 export const idle = (timeout = 800) => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout }) : setTimeout(r, 50)));

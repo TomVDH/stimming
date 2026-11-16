@@ -89,7 +89,7 @@ import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
 import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE, VACUUM, KILL as SHIP_KILL } from './ship.js';
@@ -11020,6 +11020,9 @@ window.__qa = {
 window.__models = () => ({ gun, flapMesh, portMesh, frameMesh });
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
+// Its load line: the scene stands, the scene compiles, the hidden pieces compile, the first frame draws.
+const built = buildSteps(4);
+built();
 sun(sunDeg(opts.sun));
 seedFrags();
 placeAst();
@@ -11043,12 +11046,13 @@ setBloom(); setTone(); setLens();
 setGrain();
 resize();
 renderer.compileAsync(scene, camera).then(async () => {
+  built();
   // Warm every hidden piece once behind the intro.
   // The first charge, shot and hit then link no programs and upload no buffers.
   const hidden = [];
   scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
   // A failed warm-up falls through to the normal start; the first shot then warms itself.
-  try { await renderer.compileAsync(scene, camera); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  try { await renderer.compileAsync(scene, camera); built(); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.
   later(() => Object.values(SAMPLES).forEach(f => fetch(f)));

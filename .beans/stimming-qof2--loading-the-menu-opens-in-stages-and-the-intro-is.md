@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:29:43Z
+updated_at: 2026-11-16T19:32:41Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -16,7 +16,7 @@ Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has 
 - [x] Menu: pick the approach from the numbers and build it
 - [x] Intro: one progress and ready API in shared/intro.js
 - [x] Shell: a default for every toy
-- [ ] Real progress in three heavy toys
+- [x] Real progress in three heavy toys (Window seat, Galaxy, Railgun)
 - [ ] Reduced motion, 375 x 812, clean console
 - [ ] Clips and stills in docs/qa/loading/
 - [ ] AGENTS.md and the toy-doc guidance
