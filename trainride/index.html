@@ -4552,6 +4552,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
   // The carriage wall is 13 cm deep, so the sun's slant shows on the reveal.
   const float REVEAL = 0.13, SEAL = 0.004, BAR = 0.0095;
   ${NOISE}
+  ${PBRL}
   float sdRR(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
   ${GLASS_RAIN}
   // Fine scratches on the pane, after Window seat. p is in pane units.
@@ -4608,6 +4609,33 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
     // Thin cloud drifts over the sun now and then.
     return k * s * (0.8 + 0.2 * sin(uTime * 0.13) * sin(uTime * 0.071 + 1.0));
   }
+  // Metres per wall unit: p is in units of the view's height at the wall.
+  float wu() { return 2.0 * uTan.y; }
+  // The screen point that looks out along direction D; the outside is far, so the head's place drops out.
+  vec2 viewPx(vec3 D) {
+    float cy = cos(uYaw), sy = sin(uYaw);
+    vec3 d = vec3(cy * D.x - sy * D.z, D.y, sy * D.x + cy * D.z);
+    return d.xy / max(-d.z, 0.05) / uTan * 0.5 + 0.5;
+  }
+  // What a glossy face at P (metres) mirrors along R: the view through the opening, or the far reveal.
+  // r spreads the image; T is the brush line, so brushed metal smears along it.
+  // an is the spread across T against along it: 1 for laminate, small for brushed metal.
+  vec3 seeOut(vec3 P, vec3 R, float r, vec3 T, float an, vec3 lining) {
+    float t = (-REVEAL - P.z) / min(R.z, -1e-3);
+    float open = smoothstep(0.004, -0.004, sdRR((P.xy + R.xy * t) / wu() - uC0, uHalf, uRad));
+    vec2 c = viewPx(R), a = viewPx(normalize(R + T * r)) - c, b = viewPx(normalize(R + cross(T, R) * r * an)) - c;
+    vec3 v = vec3(0.0);
+    // Eight taps on a rotated grid: a soft disc stretched along the brush.
+    for (int i = 0; i < 8; i++) {
+      float ang = float(i) * 2.3998, rad = sqrt((float(i) + 0.5) / 8.0);
+      v += texture2D(tOut, clamp(c + (a * cos(ang) + b * sin(ang)) * rad, 0.001, 0.999)).rgb;
+    }
+    v *= 5.0 / 8.0;
+    // The pane's green tint and its loss sit between the face and the view.
+    return mix(lining, v * 0.2 * vec3(0.8, 0.84, 0.81), open);
+  }
+  // Height of the wall's laminate: a fine orange peel, in metres.
+  float peel(vec2 m) { return (gnoise(m * 260.0) + 0.5 * gnoise(m * 610.0 + 3.1)) * 0.00004; }
   void main() {
     vec2 px = gl_FragCoord.xy / uRes;
     if (uTop > 0.5) { gl_FragColor = vec4(texture2D(tOut, px).rgb, 1.0); return; }
@@ -4670,6 +4698,14 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // A soft shade falls across its middle, deepest at its centre line.
       col *= 1.0 - 0.35 * uDay * (1.0 - wrapE);
       col += alb * STNC * uStnK * 0.25;
+      {
+        // Its face is rounded: the normal tips up and down across it.
+        vec3 Vb = normalize(dir), Nb = normalize(vec3(0.0, clamp(by, -1.0, 1.0) * 0.7, 1.0));
+        vec3 Rb = reflect(Vb, Nb);
+        Rb = vec3(Rb.xy, -Rb.z);
+        vec3 cab = (textureLod(tRoom, Rb + vec3(0.12, 0.0, 0.0), 4.0).rgb + textureLod(tRoom, Rb, 4.0).rgb + textureLod(tRoom, Rb - vec3(0.12, 0.0, 0.0), 4.0).rgb) / 3.0;
+        col += cab * alb * envF(Nb, -Vb, 0.32, 0.7) * 0.35 * (1.0 - edge);
+      }
       for (int i = 0; i < 3; i++) col += vec3(1.0, 0.82, 0.6) * uLamp[i].z * 0.25 * exp(-length(uLamp[i].xy - pg) * 8.0);
       col = mix(col, col * 0.35, edge);
     } else if (dW < 0.0 && d < -SEAL) {
@@ -4708,6 +4744,11 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       vec3 R = vec3(V.xy, -V.z);
       // The top hopper pane tilts in a little, so its reflection shifts.
       if (q.y > yb) R = normalize(R + vec3(0.0, 0.035, 0.0));
+      // Float glass is not quite flat: long, low waves from the draw bend the mirrored cabin.
+      vec2 pm = pg * wu();
+      R = normalize(R + vec3(gnoise(pm * vec2(1.6, 7.0)), gnoise(pm * vec2(1.6, 7.0) + 5.3), 0.0) * 0.012);
+      // Smudges and wipe marks make the glass rougher in patches; a hand's height gets the most.
+      float smudge = smoothstep(0.5, 0.8, fbm(pm * 9.0 + 11.0)) * (0.5 + 0.5 * smoothstep(0.2, -0.3, pm.y)) + smoothstep(0.62, 0.85, fbm(pm * 30.0)) * 0.35;
       float F = 0.04 + 0.96 * pow(1.0 - max(-V.z, 0.0), 5.0);
       // The mirror ray starts at the pane and ends on the cabin's walls.
       // That end point aims the cube map, so the cabin shifts as the head moves.
@@ -4718,7 +4759,7 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       // Near its edges the pane mirrors the reveal, not the cabin.
       float rv = smoothstep(0.0, 0.006, sdRR(q + Rs.xy / max(Rs.z, 0.05) * REVEAL / (2.0 * uTan.y), uHalf, uRad));
       // The cabin shows only faintly and out of focus; the reveal's image stays sharp and always lies over it.
-      vec3 room = textureLod(tRoom, R, 3.2).rgb * 0.06 * (1.0 - rv);
+      vec3 room = textureLod(tRoom, R, mix(2.6, 5.0, smudge)).rgb * 0.06 * (1.0 - rv);
       // Fog scatters the room light, so its reflection blurs and grows.
       vec3 roomSoft = textureLod(tRoom, R, 5.5).rgb * (1.0 - rv);
       vec3 veil = warm * 0.02 * roomG * (1.0 - uDay) + roomSoft * 0.12 + blur * 1.1 + vec3(0.006, 0.007, 0.009);
@@ -4747,8 +4788,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       float grime = smoothstep(0.52, 0.8, fbm(vec2(dot(p, vec2(-m0.y, m0.x)) * 70.0, dot(p, m0) * 3.0)));
       grime = max(grime * 0.7, smoothstep(0.62, 0.9, fbm(p * 22.0 + 4.0)) * 0.5);
       col += warm * 0.003 * grime * roomG * (1.0 - uDay);
-      // By day the outside light backlights the grime.
-      col += blur * grime * 0.06 * uDay;
+      // By day the outside light backlights the grime and the smudges.
+      col += blur * (grime * 0.06 + smudge * 0.025) * uDay;
+      col += warm * 0.002 * smudge * roomG * (1.0 - uDay);
       // Scratches, after Window seat: short hairlines that glint across the line to a light.
       vec3 scr = scratches(p, roomG, warm);
       col += scr;
@@ -4782,7 +4824,9 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
       if (d < 0.0) {
         // The rubber seal: near black, with a soft sheen on its round edge.
         float r = 1.0 - abs(d / SEAL * 2.0 + 1.0);
-        col = mix(vec3(0.014), vec3(0.04), uDay) + mix(warm * 0.02 * roomG, vec3(0.06), uDay) * r * r;
+        // A fine grain breaks its sheen.
+        float grain = 0.75 + 0.5 * (gnoise(pg * wu() * 900.0) + 0.5) * (1.0 - smoothstep(0.0006, 0.0015, length(fwidth(pg * wu()))));
+        col = mix(vec3(0.014), vec3(0.04), uDay) + mix(warm * 0.02 * roomG, vec3(0.06), uDay) * r * r * grain;
       } else {
         // The ray strikes the reveal between the wall face and the glass.
         float a = 0.0, b = 1.0;
@@ -4822,6 +4866,34 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         col += alb * mix(CABN * 0.05, vec3(0.12), uDay) * smoothstep(0.05, 0.0, f) * (0.5 + 0.5 * max(n2.y, 0.0));
         // The frame's lower rail catches the ceiling light as a bright line.
         col += al * mix(warm * 0.05, vec3(0.5), uDay) * pow(max(n2.y, 0.0), 6.0) * smoothstep(0.8, 0.95, f);
+        {
+          // The face in metres; its normal lies in the wall plane.
+          vec3 P = vec3((h2 + uC0) * wu(), -f * REVEAL), N = vec3(n2, 0.0), T = vec3(-n2.y, n2.x, 0.0);
+          vec3 V = normalize(vec3(uEye.xy, uEye.z) - P);
+          float sill = smoothstep(0.6, 0.8, n2.y) * (1.0 - al);
+          // The sill: smoother laminate, polished where a hand rests, dulled by fingerprints.
+          float wear = sill * smoothstep(0.35, 0.05, f) * exp(-pow(h2.x * 1.6, 2.0));
+          float prints = sill * smoothstep(0.58, 0.78, fbm(h2 * 70.0 + 2.0));
+          float rough = mix(mix(0.6, 0.38, sill) - 0.18 * wear + 0.25 * prints, 0.32, al);
+          // Brushed lines on the frame: fine grooves along each member.
+          vec2 hb = h2 * wu();
+          float brush = al * (gnoise(vec2(dot(hb, T.xy) * 8.0, dot(hb, n2) * 3000.0)) * 0.5);
+          rough = clamp(rough + brush * 0.12, 0.1, 0.9);
+          float f0 = mix(0.04, 0.7, al);
+          vec3 R = reflect(-V, N);
+          vec3 lining = alb * mix(CABN * 0.08, vec3(0.06), uDay);
+          vec3 env = seeOut(P, R, rough * rough * 1.4, T, mix(1.0, 0.15, al), lining);
+          // At night the dark view mirrors dimmer; the cabin's warm light lifts it a little.
+          env = mix(env * 0.5 + CABN * 0.012, env, uDay);
+          float Fe = envF(N, V, rough, f0);
+          // Metal tints its image and loses its own shade; the laminate keeps its colour under a faint mirror.
+          col = col * (1.0 - Fe * 0.6 * al) + env * Fe * mix(vec3(0.45), alb * 1.3, al) * (1.0 + brush * 0.6);
+          // The sun's highlight where it reaches the face.
+          col += uSunTint * vec3(1.0, 0.94, 0.86) * 2.6 * uDay * through * sunAt(h2.x + uC0.x) * ggxSpec(N, V, normalize(uSunW), rough, f0) * mix(vec3(1.0), alb, al);
+          // The night lamp above the window glints on the sill and the frame's lower rail.
+          vec3 Ll = vec3(uC0.x * wu(), (uC0.y + uHalf.y) * wu() + 0.3, 0.4) - P;
+          col += CABN * (1.0 - uDay) * 0.25 * ggxSpec(N, V, normalize(Ll), rough, f0) / (1.0 + dot(Ll, Ll) * 2.0) * mix(vec3(1.0), alb, al);
+        }
         col += alb * STNC * uStnK * 0.25 * (0.4 + 0.6 * f);
         col += alb * vec3(1.0, 0.86, 0.68) * uOppL * 0.2 * (0.4 + 0.6 * f);
         for (int i = 0; i < 3; i++) {
@@ -4856,6 +4928,20 @@ const glass = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMate
         // The wall takes only bounced sun, so no post shadow crosses it.
         float sk = sunK();
         col += alb * uSunTint * vec3(1.0, 0.88, 0.7) * uDay * sk * (0.55 * faceW * exp(-max(dW, 0.0) * 4.5) + 0.09 * (1.0 - up));
+      }
+      {
+        // The laminate's sheen: the peel tilts the normal; it fades before it can shimmer.
+        vec2 m = p * wu();
+        float hd = 0.0006, fade = 1.0 - smoothstep(0.0008, 0.002, length(fwidth(m)));
+        vec2 gr = vec2(peel(m + vec2(hd, 0.0)) - peel(m - vec2(hd, 0.0)), peel(m + vec2(0.0, hd)) - peel(m - vec2(0.0, hd))) / (2.0 * hd);
+        vec3 N = normalize(vec3(-gr * 6.0 * fade, 1.0));
+        vec3 P = vec3(m, 0.0), V = normalize(vec3(uEye.xy, uEye.z) - P);
+        // The night lamp hangs above the window, a little out from the wall.
+        vec3 Ll = vec3(uC0.x * wu(), (uC0.y + uHalf.y) * wu() + 0.3, 0.4) - P;
+        float sp = ggxSpec(N, V, normalize(Ll), 0.42, 0.04) / (1.0 + dot(Ll, Ll) * 2.0);
+        // By day the ceiling and the far windows light it from above and in front.
+        float sd = ggxSpec(N, V, normalize(vec3(0.0, 0.7, 1.0)), 0.5, 0.04);
+        col += mix(CABN * 0.06 * sp, vec3(1.0, 0.98, 0.95) * 0.012 * sd + uSunTint * vec3(1.0, 0.88, 0.7) * sunK() * 0.02 * sd, uDay);
       }
       col += alb * STNC * uStnK * 0.06 * exp(-max(dW, 0.0) * 6.0);
       // A passing train's lit saloon washes the wall round the window.
