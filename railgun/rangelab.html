@@ -517,27 +517,53 @@ function generate(seed) {
   const span = hi - lo - gw, out = [];
   const slots = forms.filter(f => f !== 1).length;
   let k = 0;
+  // The bearing of a world point from the eye, in degrees.
+  const bearing = (x, z) => Math.atan2(R.EYE[0] - x, R.EYE[1] - z) * 180 / Math.PI;
+  const inGap = th => Math.abs(th - gc) < gw / 2 + 1;
   for (const f of forms) {
-    let b, d, crest, rc, sp = 0, op = 0;
+    let b, d, crest, rc, sp = 0, a = 0, cx, cz;
     if (f === 1) {
       b = gc; d = between(70000, 95000);
       crest = Math.min(d * Math.tan(rad(1.4)), between(2500, 4000));
-      rc = between(12000, 20000); sp = between(90, 120); op = 300;
+      rc = between(12000, 20000); sp = between(90, 120);
     } else {
       let s = lo + (k + between(0.2, 0.8)) * span / slots;
       if (s > gc - gw / 2) s += gw;
       b = s; k++;
-      d = between(80000, 210000);
+      // Distances lean near, so the front ranges carry the view.
+      d = 80000 + 130000 * r() ** 1.4;
       // Taller crests stand farther; none rises past about seven degrees.
-      crest = Math.min(cap, between(4000, 30000) * (0.5 + 0.5 * (d - 80000) / 130000), d * Math.tan(rad(6.5)));
-      crest = Math.max(4000, crest);
+      crest = Math.max(4000, Math.min(cap, between(14000, 32000) * (0.6 + 0.4 * (d - 80000) / 130000), d * Math.tan(rad(7))));
       if (radialForm(f)) rc = crest * between(1.4, 2.2) * (f === 4 ? 1.2 : 1);
-      else { rc = d * between(0.15, 0.4); sp = between(90, 150); op = Math.round(between(0, 360)); }
-      // Nothing tall stands in front of the gap.
-      const half = Math.atan((rc * (radialForm(f) ? 1 : 1.3)) / d) * 180 / Math.PI;
-      if (Math.abs(b - gc) < half + gw / 2) crest = Math.min(crest, d * Math.tan(rad(1.5)));
+      else {
+        // The arc spans about one and a half slots of bearing, so ranges overlap a little.
+        sp = between(90, 150);
+        const want = rad(1.5 * span / slots * between(0.8, 1.2));
+        // A range needs room to rise: the arc radius stays over twice its crest, as in ranges.js.
+        rc = Math.min(0.45 * d, Math.max(0.1 * d, 2.3 * crest, want * d / (2 * Math.sin(rad(sp) / 2))));
+      }
     }
-    const row = [+b.toFixed(1), Math.round(d / 1000) * 1000, Math.round(rc / 500) * 500, Math.round(crest / 100) * 100, Math.round(sp), op];
+    // The arc's middle sits at bearing b; the arc runs across the line of sight.
+    const [mx, mz] = R.polar(rad(b), d);
+    if (radialForm(f)) { cx = mx; cz = mz; }
+    else {
+      const ux = (R.EYE[0] - mx) / d, uz = (R.EYE[1] - mz) / d, tw = rad(between(-30, 30)), sg = r() < 0.5 ? 1 : -1;
+      const nx = sg * (ux * Math.cos(tw) - uz * Math.sin(tw)), nz = sg * (ux * Math.sin(tw) + uz * Math.cos(tw));
+      a = Math.atan2(nz, nx);
+      cx = mx - rc * nx; cz = mz - rc * nz;
+    }
+    // Nothing tall stands in the gap: test points along the crest.
+    if (f !== 1) {
+      let hit = false;
+      if (radialForm(f)) for (const o of [-1, 0, 1]) hit ||= inGap(b + o * Math.atan(rc / d) * 180 / Math.PI);
+      // An arc tapers to its ends, so only its middle half counts.
+      else for (let j = 0; j <= 8; j++) { const t = a + rad(sp) * 0.5 * (j / 8 - 0.5); hit ||= inGap(bearing(cx + rc * Math.cos(t), cz + rc * Math.sin(t))); }
+      if (hit) crest = Math.min(crest, d * Math.tan(rad(1.5)));
+    }
+    // The table holds the centre's bearing and range, and the opening.
+    const cb = bearing(cx, cz), cd = Math.hypot(cx - R.EYE[0], cz - R.EYE[1]);
+    const op = radialForm(f) ? 0 : Math.round(((a * 180 / Math.PI - 180) % 360 + 360) % 360);
+    const row = [+cb.toFixed(1), Math.round(cd / 1000) * 1000, Math.round(rc / 500) * 500, Math.round(crest / 100) * 100, Math.round(sp), op];
     if (f) row.push(f);
     out.push(row);
   }
