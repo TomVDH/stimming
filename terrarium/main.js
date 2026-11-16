@@ -613,4 +613,4 @@ whenVisible(stage, v => {
   if (v) wake();
 });
 // QA reads and drives the state here.
-Object.assign(window, { __terrarium: { env, S, G, sway, mist, holdMist, dab, poke, setPlants: act.plants, setLight: act.light, setGrow: v => { grow = v; feed(); env.touch(); } } });
+Object.assign(window, { __terrarium: { env, S, G, garden, sway, mist, holdMist, dab, poke, setPlants: act.plants, setLight: act.light, setGrow: v => { grow = v; feed(); env.touch(); } } });

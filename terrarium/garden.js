@@ -53,7 +53,8 @@ export function createGarden(canvas, gl, view) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(view.fov, 1, 0.05, 40);
   const LAMP = new THREE.Vector3(...view.lamp);
-  const spot = new THREE.SpotLight(0xffffff, 14, 0, 0.75, 1, 2);
+  // The cone reaches the front of the bed; its edge falls on the glass.
+  const spot = new THREE.SpotLight(0xffffff, 14, 0, 0.95, 1, 2);
   spot.position.copy(LAMP);
   spot.target.position.set(0, 0.3, 0.05);
   spot.castShadow = true;
@@ -65,7 +66,10 @@ export function createGarden(canvas, gl, view) {
   const rect = new THREE.RectAreaLight(0xffffff, 18, 1.4, 0.08);
   rect.position.copy(LAMP);
   rect.lookAt(0, 0.3, 0);
-  scene.add(spot, spot.target, rect, new THREE.HemisphereLight(0x2b4636, 0x040604, 0.5));
+  // The room's soft light from the viewer's side keeps the front of the bed readable.
+  const fill = new THREE.DirectionalLight(0xdfe8d8, 0.35);
+  fill.position.set(0.3, 1.2, 3);
+  scene.add(spot, spot.target, rect, fill, new THREE.HemisphereLight(0x2b4636, 0x040604, 0.9));
 
   // Wet caps and leaves reflect a small dark room: the lamp bar and two soft panels.
   {
@@ -247,7 +251,9 @@ export function createGarden(canvas, gl, view) {
         float lum = dot(diffuseColor.rgb, vec3(0.3, 0.6, 0.1));
         diffuseColor.rgb = mix(mix(vec3(lum), diffuseColor.rgb, 0.5) * vec3(0.9, 0.85, 0.42), diffuseColor.rgb, uWake);
         // The shoot's base sits in the shade of its neighbours.
-        diffuseColor.rgb *= mix(0.25, 1.0, vT);`)
+        diffuseColor.rgb *= mix(0.25, 1.0, vT);
+        // Wet moss is fuller and brighter.
+        diffuseColor.rgb *= 1.0 + 0.2 * uWake;`)
       // Wet leaf tips hold a film of water and shine.
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.85, 0.4, uWake * vTip);')
       .replace('#include <opaque_fragment>', `
@@ -281,7 +287,9 @@ export function createGarden(canvas, gl, view) {
       // Moss keeps to its patches: a noise map decides where it grows.
       const patch = fbm(pos.x * 5 + 4, pos.z * 5) * 0.7 + vnoise(pos.x * 19, pos.z * 19) * 0.3;
       if (s.mesh === soil && patch < 0.34 - cu * 0.8 && rnd() > 0.04) continue;
-      const h = cu > 0.35 ? 0.03 + 0.012 * rnd() + 0.015 * cu : 0.014 + 0.012 * rnd();
+      // Moss grows in tufts: a small noise lifts some shoots and sinks the hollows between.
+      const tuft = fbm(pos.x * 34 + 7, pos.z * 34), patchC = fbm(pos.x * 7 + 2, pos.z * 7 + 9);
+      const h = (cu > 0.35 ? 0.03 + 0.006 * rnd() + 0.015 * cu : 0.014 + 0.006 * rnd()) * (0.6 + 0.8 * tuft);
       const w = 0.0075 + 0.003 * rnd();
       // Cushion strands fan out from the mound's centre, so the cushion reads as a dome.
       if (cu > 0.35) { const cx = pos.x < 0 ? -0.22 : 0.26, cz = pos.x < 0 ? -0.12 : 0.12; nrm.add(new THREE.Vector3((pos.x - cx) * 4, 0.6, (pos.z - cz) * 4)).normalize(); }
@@ -293,8 +301,10 @@ export function createGarden(canvas, gl, view) {
       o.updateMatrix();
       m.setMatrixAt(i, o.matrix);
       // Two kinds: cushion moss bright and yellow-green, sheet moss darker.
-      if (cu > 0.35) c.setHSL(0.23 + 0.03 * rnd(), 0.7, 0.26 + 0.12 * rnd());
-      else c.setHSL(0.28 + 0.04 * rnd(), 0.6, 0.15 + 0.1 * rnd());
+      // Colour comes in patches: fresh yellow-green on the tufts, deep green in the hollows.
+      // Each shoot varies only a little, so the carpet reads as a surface, not as grain.
+      if (cu > 0.35) c.setHSL(0.215 + 0.04 * patchC + 0.01 * rnd(), 0.72, 0.24 + 0.2 * tuft + 0.03 * rnd());
+      else c.setHSL(0.25 + 0.06 * patchC + 0.01 * rnd(), 0.62, 0.15 + 0.16 * tuft + 0.03 * rnd());
       m.setColorAt(i, c);
       // Cushions grow first; sheet moss creeps out from the patches' hearts.
       rank[i * 2] = Math.min(0.999, rnd() * 0.6 + (1 - patch) * 0.4 - cu * 0.5);
@@ -417,6 +427,8 @@ export function createGarden(canvas, gl, view) {
   // and a clearcoat that thickens into a water film when wet.
   const frondMat = new THREE.MeshPhysicalMaterial({
     ...pinnaMaps, roughness: 1, normalScale: new THREE.Vector2(0.8, 0.8), side: THREE.DoubleSide,
+    // A leaf reflects far less than the default; full strength turns the lamp's glint white.
+    specularIntensity: 0.06, specularColor: new THREE.Color(0.85, 1.0, 0.8),
     sheen: 0.12, sheenRoughness: 0.6, sheenColor: new THREE.Color(0.3, 0.45, 0.22), clearcoat: 0.05, clearcoatRoughness: 0.35, envMapIntensity: 0.25,
   });
   frondMat.onBeforeCompile = sh => {
@@ -442,7 +454,7 @@ export function createGarden(canvas, gl, view) {
   const pinnae = new THREE.InstancedMesh(pinnaG, frondMat, MAXF * PAIRS * 2);
   const pinnaOld = new THREE.InstancedBufferAttribute(new Float32Array(MAXF * PAIRS * 2), 1);
   pinnaG.setAttribute('aOld', pinnaOld);
-  const rachis = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 5, 1).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x3b4a1c, roughness: 0.6 }), MAXF * SEGS);
+  const rachis = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 5, 1).translate(0, 0.5, 0), new THREE.MeshPhysicalMaterial({ color: 0x5a6e2c, roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color(0.5, 0.6, 0.3) }), MAXF * SEGS);
   pinnae.castShadow = rachis.castShadow = pinnae.receiveShadow = true;
   pinnae.frustumCulled = rachis.frustumCulled = false;
   pinnae.setColorAt(0, new THREE.Color());
@@ -496,7 +508,9 @@ export function createGarden(canvas, gl, view) {
             pinnae.setMatrixAt(pi, m);
             // Old fronds are deep green; young ones paler; dry ones dull.
             // The maps carry the green; this tints it. Dry fronds dull, young ones pale.
-            c.setRGB(0.8 + 0.2 * wake + 0.15 * young, 0.75 + 0.25 * wake + 0.12 * young, 0.55 + 0.35 * wake);
+            // Each frond has its own green, a little bluer or yellower than its neighbours.
+            const tint = hash2(j + 3, ci + 11) - 0.5;
+            c.setRGB((0.8 + 0.2 * wake + 0.15 * young) * (1 + 0.25 * tint), 0.75 + 0.25 * wake + 0.12 * young, (0.55 + 0.35 * wake) * (1 - 0.3 * tint));
             pinnae.setColorAt(pi, c);
             pinnaOld.setX(pi, 1 - young);
             pi++;
@@ -591,7 +605,7 @@ export function createGarden(canvas, gl, view) {
     rect.color.copy(col); rect.intensity = 12 * k;
     U.uLampCol.value.copy(col).multiplyScalar(0.8 * k);
     capMat.clearcoat = 0.05 + 0.95 * wake;
-    frondMat.clearcoat = 0.05 + 0.25 * wake;
+    frondMat.clearcoat = 0.05 + 0.12 * wake;
     mossMat.clearcoat = 0.03 + 0.12 * wake;
     mossMat.sheen = 0.6 - 0.2 * wake;
     capMat.roughness = 0.55 - 0.35 * wake;
@@ -610,6 +624,8 @@ export function createGarden(canvas, gl, view) {
   const crowns = () => SHOWN[st.plants].map(ci => { const [x, z, R] = CROWNS[ci]; return { i: ci, at: [x, bedH(x, z) + R * 1.1, z] }; });
   return {
     set, render, crowns,
+    // QA reaches the materials and lights here.
+    debug: { frondMat, mossMat, spot, rect, U, redraw: () => { dirty = true; } },
     texture: () => renderer.properties.get(rt.texture).__webglTexture || null,
     get busy() { return dirty; },
   };
