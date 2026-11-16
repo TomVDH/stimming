@@ -11,7 +11,7 @@ The clouds regress because the toy has no fixed target to hold them to and no ch
 
 | Rank | Cause | Kind | Evidence |
 |---|---|---|---|
-| 1 | Live pushes are the review loop, with no written target and no before/after gate | Process | 92 commits touched `railgun/index.html` from 12:00 to 16:00; 42 in the 13:00 hour. Same ask, two pushes a minute apart (a02130a6, 6767dd1c). A Tom fix undone seven minutes later (700162b0, 0a825d48). |
+| 1 | Live pushes are the review loop, with no written target and no before/after gate; Tom's notes reach the owner second-hand | Process | Tom's 13:45 placement note was relayed as a lighting fix only (132992f8); the storms were not re-placed. His 15:24 shape note was never passed on (the ambient session's own account). 92 commits touched `railgun/index.html` from 12:00 to 16:00; 42 in the 13:00 hour. Same ask, two pushes a minute apart (a02130a6, 6767dd1c). A Tom fix undone seven minutes later (700162b0, 0a825d48). |
 | 2 | Hidden coupling in the storm code: bounds kept by hand in four places | Technique | A lobed anvil is cut flat and square by today's bounds (still 02). The card is the cut (section 9): its size uses the table's width `W`, which the shape no longer uses. |
 | 3 | Many writers in one file; whole-file commits of stale copies | Ownership | 16 beans committed to `railgun/index.html` today. Three overwrites: bb4e4154, e9fc9c83, and the restore 3dd36acf, which dropped a64abcf2. |
 | 4 | No shared scale or layout table | Scale | 4a6113bb scaled storms to "ranges whose far crests reach 30 to 50 km", three minutes after e9fc9c83 cut the crests to 2.6 to 25 km. One storm is now hidden behind a range (stills 04, 05). |
@@ -26,6 +26,7 @@ The clouds regress because the toy has no fixed target to hold them to and no ch
 | 13:20 to 13:36 | 94382571, 0963c308, b0b4891b, e19c5e3e, ecca3c41 | The storm probe went from a Dev trial to the default in 16 minutes, with four look changes between. | No look gate. |
 | 13:28, then 15:23 | e19c5e3e, then 4a6113bb | Bases 5.5 to 6.5 km (giant 12 km) "clear of the horizon"; then bases 2 to 4 km with rain shafts. | Tom's asks changed ("too low", then "sense of scale"). Nobody held a reference to settle them. |
 | 12:10 to 15:27 | 7b032fa6, 8c281d60, a02130a6, 9310ec8e | The clouds' haze: own haze, then one shared air, then a second fade put back for the cards only ("Far haze", now "Cloud far fade"). | A card and a storm at one distance now take different air: `CLOUD_FS` fades twice (line 2208), `STORM_FS` once (line 2402). |
+| 13:45, then 15:24 | 132992f8; none | Tom: "put those clouds on the proper realistic positioning so they interact with light properly ... assess the world space". The relay passed on placement and light as one key-light fix; no storm moved. Tom: "more diverse and realistic shapes": not relayed to the sky session at all. | Notes go through a relaying session that paraphrases; nothing records what reached the owner. |
 | 13:43 to 13:44 | a02130a6, 6767dd1c | "Colour crushed", then "crushed and way too harsh": two pushes in one minute. | Each note answered by a push, not a still. |
 | 15:11, then 15:18 | 700162b0, then 0a825d48 | Tom: cloud light reads "blue like". 700162b0 made storm flashes plain white. 0a825d48, from the same bean, put the blue-white `FLASH_C` back and adds it after the air, so it is never warmed. | No record of Tom's ask that the next commit had to respect. |
 | 15:20 to 15:21 | e9fc9c83, 5e41299f | The ranges session committed a stale `index.html` and wiped the rock fire globe, the far guns and the storm lab host. Restored one minute later. | `tools/commit.sh` in path mode takes the whole file with no staleness check. |
@@ -39,6 +40,7 @@ The clouds regress because the toy has no fixed target to hold them to and no ch
 ### Process
 
 - A note from Tom goes to a session, the session pushes in minutes, Tom sees the live site, Tom sends the next note. The site is the review tool.
+- Many of Tom's cloud notes reach the sky owner through the camera or ambient session, as a paraphrase. A paraphrase can narrow an ask (placement became a key-light fix) or drop it (the shape ask). Tom then sees no result and repeats the ask, angrier.
 - No note becomes a written target. Conflicting notes (low bases or high bases; warm light or blue flashes) are settled by the last push, not by a reference.
 - The plan already has a gate for the smoke train ("A change there needs a before/after still for Tom first", `docs/plans/railgun.md` line 199). The clouds have no gate.
 
@@ -101,6 +103,7 @@ Light, measured:
 - It comes from the fill terms (`0.32 sunC` plus a sky term of 0.4 to 0.85) and from 85 to 200 km of air (blue transmittance about 0.2 at 95 km).
 - The sun's colour at a storm is the camera's palette (`uSunC`, `uCloudSun`) plus a narrow `litTop` band for the earth's shadow. It does not follow the sun's real path through the air to that point, so dusk light on a storm 200 km off is a guess.
 - At blue hour the 48-step march cuts the lit anvil into slats (still 03).
+- Tom's 13:45 note ("the far right cloud has the top of the column lit whereas the one on the left doesn't") can be right in nature: a storm toward the sun sees it higher, so its top stays lit longer. The toy cannot show it convincingly, because each storm's sun colour is the camera's palette plus a narrow band, not the sun's path to that storm.
 - Backlight: at the first look the sun sits at x 0.86 on screen, beside the nearest storm (bearing -14). That storm shows its shadow side as a flat grey sheet with a bright rim (still 04, top left).
 
 **Verdict.** The card march can draw one good cumulonimbus. It cannot be the base for diverse forms: every form is new primitive code with its own bounds, and storms cannot shade or hide each other.
@@ -177,6 +180,7 @@ Either way, one scale table holds every layer, and no layer changes scale on its
 3. `tools/commit.sh` refuses a whole-file commit when the caller's copy of that file is behind the branch tip, and points to `--hunks`. That alone stops the three overwrites of today.
 4. A look change goes live only after Tom approves a before/after pair from the rig, as the smoke train's rule already says.
 5. Each Tom note becomes one row in the plan before any code: the ask in his words, the reference photo, the view and sun that judge it.
+6. A session that relays a cloud note to the owner sends Tom's exact words with the time, never a paraphrase, and the owner answers Tom with a still. The row in rule 5 records that it arrived.
 
 ## 8. Recommended plan
 
