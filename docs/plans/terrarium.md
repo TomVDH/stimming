@@ -96,6 +96,25 @@ Today every plant is a signed-distance shape in the one ray-march pass. That cap
 | Wake | Dry moss leaves fold flat against the stem; wet they spread open (true of real moss). Per-strand, in the vertex shader. | Colour and height only |
 | Cost | A rebuild of the contents (the glass stays). One small opt-in change to `shared/environment.js`: a scene texture can be a live buffer. | Smaller change; a lower ceiling |
 
+### three.js: public implementations (checked 2026-11-16)
+
+The toy is raw WebGL2 today, on `shared/environment.js`; it uses no three.js. Plan A is a real 3D scene (instancing, shadow maps), the case `docs/stack.md` gives to three.js 0.170.0, which the importmap already carries.
+Only MIT code may be copied. A repo with no licence is all rights reserved: read it for the idea only.
+
+| Repo | What it is | Licence | Use |
+|---|---|---|---|
+| [CK42BB/procedural-grass-threejs](https://github.com/CK42BB/procedural-grass-threejs) | Instanced blades with Bezier profiles, layered wind, a subsurface term, distance LOD, interactive push | MIT | Base for moss strands: shorter, denser, clumped |
+| [dgreenheck/ez-tree](https://github.com/dgreenheck/ez-tree) | Procedural tree generator, dozens of parameters, a library on npm | MIT | Branch and leaf placement code for the branch and frond rachis |
+| [piellardj/fur-threejs](https://piellardj.github.io/fur-threejs/) | Shells and fins fur in three.js, adapted for WebGL with no geometry shader | none | Idea only: a fuzz carpet over the soil, fins at the silhouette |
+| [mate-h/shell-texturing](https://shell-texturing.vercel.app) | Shell texturing demo in three.js | none | Idea only |
+| [al-ro grass](https://al-ro.github.io/projects/grass) | Classic instanced grass in three.js (`InstancedBufferGeometry`) | none | Idea only |
+| [ledhieu/imoss](https://github.com/ledhieu/imoss) | 125,000 to 500,000 instanced moss strands on a ball | CC BY-NC | Idea only |
+| [spacejack/terra](https://github.com/spacejack/terra) | Large instanced grass field, wind, terrain | unclear | Idea only |
+
+No public three.js fern generator turned up. Fronds come from our own rule (Task 3), built as instanced pinnae.
+
+**How the toy would sit on three.js.** One `WebGLRenderer` draws the garden (instanced moss, fronds, stones, wood, shadow map) into a render target with depth. The jar and the wet glass stay as they are, as full-screen `ShaderMaterial` passes on the same renderer: `wetglass.js`, `glassrain.js`, `bokeh.js`, `glow.js` and `output.js` already compile in a three.js `ShaderMaterial`. The toy then leaves `environment.js` and wires those bundles itself, as Fog horn's runner does.
+
 ### Plan A, stage by stage (one look at a time, stills after each)
 
 1. **Raster pass.** The contents draw as meshes into a buffer the jar reads. Today's look first, as meshes, so nothing jumps.
