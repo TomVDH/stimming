@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:34:20Z
+updated_at: 2026-11-16T20:39:58Z
 parent: stimming-oh7b
 ---
 
@@ -59,3 +59,5 @@ Built; waits for the checkpoint with Tom.
 - [x] Tornadoes stay under the base: 17 to 36 km out; the shelf reaches to 15 km
 - [x] QA flags ?near, ?age, ?rope, ?qa; headless 60 fps with four tornadoes; console clean
 - [ ] Checkpoint with Tom
+
+- Stage 2, round 2 (Tom: "a little less far away from the action, 50 or 85mm lens", "the tornados will be the centre pieces"; then "50mm looks good"): Lens setting 50 mm (default) or 85 mm; the storm moves 17 km closer; tornadoes 5 to 14 km out; funnel tops follow the local base (lower under the wall cloud) and fade before the cut; finer storm edges near the eye; F5 dust narrower and thinner.

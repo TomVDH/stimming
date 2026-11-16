@@ -26,8 +26,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, expo: (v: number) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, expo() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -41,6 +41,10 @@ const ui = initPage({ id: 'tornado', bar: {
       { value: 'golden', label: 'Golden hour' },
       { value: 'dusk', label: 'Dusk' },
     ], onPick: v => act.time(v) },
+    { type: 'choice', id: 'lens', label: 'Lens', value: '50', persist: true, options: [
+      { value: '50', label: '50 mm' },
+      { value: '85', label: '85 mm' },
+    ], onPick: v => act.lens(v) },
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
@@ -63,14 +67,14 @@ uniform vec4 uTor0, uTor1, uTor2, uTor3, uTorB0, uTorB1, uTorB2, uTorB3;
 // The eye crouches just over the ears, 1.25 m up.
 const float CAMH = 1.25;
 // The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
-// The updraft and the wall cloud sit on the left golden line of a wide frame.
-const vec2 TOWER = vec2(-9.5, -40.0);
-const vec2 WALL = vec2(-6.0, -25.0);
-const vec2 CORE = vec2(3.0, -36.0);
+// The wall cloud sits 8 km out on the left golden line; the base fills the sky above.
+const vec2 TOWER = vec2(-4.3, -23.0);
+const vec2 WALL = vec2(-0.9, -8.0);
+const vec2 CORE = vec2(6.5, -19.0);
 const float BASE = 1.35;
 // The base shelf: its centre and its two half widths.
-const vec2 SHELF = vec2(-4.0, -29.0);
-const vec2 SHELF_R = vec2(17.0, 14.0);
+const vec2 SHELF = vec2(1.0, -13.0);
+const vec2 SHELF_R = vec2(15.0, 9.0);
 // The sun's direction in camera space, and the pixel size; set once per pixel.
 vec3 gSunC;
 float gPx;
@@ -120,7 +124,7 @@ float stormShape(vec3 p) {
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
   // The wall cloud: a lowered block under the base, by the rotation.
-  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.5, p.y)), abs(p.y - BASE + 0.35) - 0.5);
+  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), abs(p.y - BASE + 0.2) - 0.35);
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -137,7 +141,9 @@ float stormD(vec3 p) {
   // The base: stacked plates on its flank, turning round the updraft.
   float flank = smoothstep(BASE, BASE + 0.3, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y));
   float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
-  d += 0.16 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
+  d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
+  // Fine lumps, for the near base.
+  d += (vn3(p * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y));
   // Ragged scud hangs under the base.
   float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y);
   return d + low * (vn3(p * 3.1 + vec3(uT * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
@@ -171,12 +177,14 @@ vec4 storm(vec3 rd, out float tHit) {
     vec3 p = ro + rd * t;
     if (p.y > 16.0 || p.y < -0.01 || t > 110.0 || T < 0.03) break;
     float d = stormD(p);
-    if (d < 0.12) {
+    // The soft edge and the inner step grow with distance: crisp near, smooth far.
+    float soft = max(0.025, t * 0.005);
+    if (d < soft) {
       if (tHit > 119.0) tHit = t;
-      float a = clamp(0.5 - d / 0.12, 0.0, 1.0) * 0.8;
+      float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8;
       acc += T * a * stormLit(p, d);
       T *= 1.0 - a;
-      t += 0.12 + 0.006 * t;
+      t += 0.03 + 0.006 * t;
     } else t += d * 0.75 + 0.01 * t;
   }
   return vec4(acc, 1.0 - T);
@@ -412,8 +420,8 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
 // One tornado in two vectors.
 // A: its foot (x, z in metres), the eased F level, 1 when live.
 // B: condensation (0 in the cloud, 1 down to the ground), dust, rope-out (0 to 2), a seed.
-// The funnel rises to here, in metres, and merges into the wall cloud.
-const float TOR_TOP = 1150.0;
+// The funnel rises to the local cloud base, in metres; tornado() sets it per tornado.
+float TOR_TOP = 1150.0;
 // The F-scale table: ground width in metres, F0 to F5.
 float fWidth(float f) {
   if (f < 1.0) return mix(25.0, 70.0, f);
@@ -439,12 +447,15 @@ float torRadius(float h, vec4 A, vec4 B) {
   // Roping out, the funnel narrows to a rope about 35 m across.
   float r0 = mix(0.5 * fWidth(f), min(0.5 * fWidth(f), 18.0), clamp(B.z, 0.0, 1.0));
   // The last stretch spreads out into the wall cloud.
-  return r0 * mix(1.0, fFlare(f), pow(u, mix(2.6, 1.3, f / 5.0))) * (1.0 + 1.6 * smoothstep(0.82, 1.0, u));
+  return r0 * mix(1.0, fFlare(f), pow(u, mix(2.6, 1.3, f / 5.0))) * (1.0 + 0.6 * smoothstep(0.8, 1.0, u));
 }
 // Marches one tornado. Returns its colour, premultiplied, and its cover.
 vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
   if (A.w < 0.5) return vec4(0.0);
   vec3 G = vec3(A.x, 0.0, A.y);
+  // Under the wall cloud the base hangs lower, so the funnel is shorter there.
+  float wallK = 1.0 - smoothstep(1.2, 2.8, length(toCam(G).xz * 0.001 - WALL));
+  TOR_TOP = mix(BASE * 1000.0, (BASE - 0.5) * 1000.0, wallK);
   float f = A.z, fk = f / 5.0, rope = B.z;
   float w = fWidth(f);
   // The F-scale sets the spin, the dust skirt's height and the debris.
@@ -461,7 +472,8 @@ vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
   // The pixel's footprint there: a thin rope stays at least about a pixel wide.
   float foot = tc * gPx / uFoc;
   float Rl = max(torRadius(hc0, A, B), foot) * 1.9 + 30.0;
-  if (hs < skirtH * 1.6) Rl = max(Rl, 0.5 * w * 2.2 * 2.3 + 40.0);
+  // The dust reaches about 1.7 skirt heights with its billows; keep it in the window.
+  if (hs < skirtH * 2.0) Rl = max(Rl, 0.5 * w * mix(2.2, 1.4, fk) * 2.0 + 60.0);
   if (length(miss) > Rl) return vec4(0.0);
   float t0 = max(tc - Rl / kl, 0.0), t1 = min(tc + Rl / kl, tMax);
   if (t1 <= t0) return vec4(0.0);
@@ -488,25 +500,26 @@ vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
     float om = min(vt / max(R, 8.0), 3.0);
     float a1 = ang - om * uT + h / (R * 3.0 + 30.0);
     vec3 nc = vec3(cos(a1) * 1.6, sin(a1) * 1.6, h / (R * 2.2 + 40.0) - uT * 0.05) + B.w * 13.0;
-    float n = fbm3(nc);
+    float n = fbm3(nc) + 0.12 * (vn3(nc * 7.3) - 0.5);
     // The condensation funnel: a ragged wall and a ragged lower edge.
     float edge = R * (1.0 + mix(0.55, 0.85, fk) * (n - 0.45));
     float cond = smoothstep(edge, edge * 0.55, r) * smoothstep(hc - 50.0, hc + 50.0, h + (n - 0.5) * 0.25 * TOR_TOP);
     // Rope-out tears the funnel into pieces.
     if (rope > 0.4) cond *= smoothstep(0.0, 0.25, vn(vec2(h * 0.006 + uT * 0.05, B.w * 9.0)) - (rope - 0.4) * 0.55);
     // The top thins into the cloud base, so no hard rim shows.
-    cond *= fade * thinK * (1.0 - smoothstep(TOR_TOP * 0.86, TOR_TOP + 40.0, h + (n - 0.5) * 120.0));
+    // The fade ends before the march's top cut, so no straight rim shows.
+    cond *= fade * thinK * (1.0 - smoothstep(TOR_TOP * 0.62, TOR_TOP - 60.0, h + (n - 0.5) * 160.0));
     // The dust skirt: wider than the funnel, spinning faster, low and turbulent.
     float dust = 0.0;
-    if (skirtH > 1.0 && h < skirtH * 1.6) {
+    if (skirtH > 1.0 && h < skirtH * 2.0) {
       float a2 = ang - om * 1.6 * uT;
       float nd = fbm3(vec3(cos(a2) * 2.2, sin(a2) * 2.2, h / (skirtH * 0.5) - uT * 0.3) + B.w * 5.0);
-      float Rd = 0.5 * w * mix(2.2, 1.7, fk) * (1.0 + 0.9 * h / skirtH);
+      float Rd = 0.5 * w * mix(2.2, 1.4, fk) * (1.0 + 0.5 * h / skirtH);
       // Billows: only the dense half of the noise holds dust.
       float puff = smoothstep(0.38, 0.7, nd);
       dust = smoothstep(Rd, Rd * 0.25, r * (0.75 + 0.6 * nd)) * (1.0 - smoothstep(skirtH * 0.3, skirtH * 1.3, h + (nd - 0.5) * skirtH * 1.4)) * puff * 2.2 * fade;
     }
-    float sig = cond * 0.05 + dust * mix(0.012, 0.03, fk);
+    float sig = cond * 0.05 + dust * mix(0.012, 0.016, fk);
     if (sig <= 1e-4) continue;
     float a = 1.0 - exp(-sig * dt);
     // The low sun behind the eye lights the near face; the far side and the core fall dark.
@@ -514,7 +527,7 @@ vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
     float lit = (0.3 + 0.7 * ndl) * smoothstep(0.0, 1.0, r / max(R, 1e-3));
     // Helical bands and lumps in the wall catch the light unevenly.
     float band = 0.5 + 0.5 * sin(a1 * 5.0 + h / (R * 0.7 + 10.0) + n * 4.0);
-    lit *= (0.55 + 0.9 * n) * (0.75 + 0.45 * band);
+    lit *= (0.45 + 1.1 * n) * (0.88 + 0.22 * band);
     // Strong tornadoes are dark with dirt and rain: grey at F2, near black at F5.
     float dark = mix(1.0, 0.38, smoothstep(1.5, 5.0, f));
     vec3 cc = (uAmb * 0.17 + uSunCol * 0.1 * lit) * dark;
@@ -523,7 +536,7 @@ vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
     // Dirt drawn up into the foot of a strong funnel.
     cc = mix(cc, cc * vec3(0.72, 0.6, 0.48), (1.0 - smoothstep(0.0, 0.35 * TOR_TOP, h)) * fk);
     vec3 dc = (uAmb * 0.12 + uSunCol * 0.08 * (0.4 + 0.6 * ndl)) * vec3(0.78, 0.62, 0.46);
-    vec3 col = (cc * cond * 0.05 + dc * dust * mix(0.012, 0.03, fk)) / sig;
+    vec3 col = (cc * cond * 0.05 + dc * dust * mix(0.012, 0.016, fk)) / sig;
     acc += T * a * col;
     T *= 1.0 - a;
     if (T < 0.02) break;
@@ -624,7 +637,7 @@ vec3 envScene(vec2 uv) {
     vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
     vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
     c = mix(c, gloom, 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm));
-    float streak = 0.6 + 0.4 * vn(vec2(atan(rc.x, -rc.z) * 900.0, 0.5));
+    float streak = 0.75 + 0.25 * vn(vec2(atan(rc.x, -rc.z) * 260.0, 0.5));
     c = mix(c, gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01, (1.0 - exp(-rn.y * rn.y * 0.05 * uStorm * streak)) * smoothstep(0.0, 0.003, rd.y + 0.001));
   }
   // The thin band where ground meets sky takes the haze.
@@ -661,8 +674,10 @@ function setSun(hour) {
   amb[0] = 0.18 + 0.2 * k; amb[1] = 0.22 + 0.24 * k; amb[2] = 0.32 + 0.3 * k;
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
-// The lens: a narrow frame takes a somewhat wider one and crops the storm's sides.
-const focal = () => 0.95 * Math.min(1, Math.sqrt(aspect() / 1.3));
+// The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
+let lensMM = 50;
+// A narrow frame takes a somewhat wider lens and crops the storm's sides.
+const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3));
 // The road vanishes on the right golden line.
 const ROAD_VP = 1 - GOLD;
 // The eye turns left until the road's vanishing point lies there.
@@ -746,8 +761,8 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay far off, under the base: 17 km out at the nearest, 36 km at the most.
-  const dist = sy < -1e-4 ? clamp(1.25 * Math.hypot(foc, sx) / -sy, 17000, 36000) : 36000;
+  // Funnels stay under the base: 5 km out at the nearest, 14 km at the most.
+  const dist = sy < -1e-4 ? clamp(1.25 * Math.hypot(foc, sx) / -sy, 5000, 14000) : 14000;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -827,7 +842,7 @@ act.f = v => {
 act.add = () => {
   // A new funnel drops under the wall cloud, a little off from the last one.
   const n = tors.length;
-  const [x, z] = toWorld(-6000 + (n % 2 ? 1 : -1) * 1300 * Math.ceil(n / 2) + (Math.random() - 0.5) * 400, -25000 + (Math.random() - 0.5) * 2500);
+  const [x, z] = toWorld(-900 + (n % 2 ? 1 : -1) * 900 * Math.ceil(n / 2) + (Math.random() - 0.5) * 300, -8000 + (Math.random() - 0.5) * 1500);
   touchDown(x, z);
 };
 // Clear ropes every tornado out; a second Clear takes them away at once.
@@ -839,17 +854,21 @@ act.clear = () => {
 };
 act.storm = v => { storm = v; wake(); };
 act.time = v => { S.hour = HOURS[v] ?? HOURS.golden; setSun(S.hour); wake(); };
+act.lens = v => { lensMM = +v || 50; wake(); };
 act.expo = v => { S.expo = v; wake(); };
 
 /* ---------- start ---------- */
+// QA: ?lens=85 picks the lens for one load.
+const qs0 = new URLSearchParams(location.search);
 storm = ui.slider?.value ?? storm;
 act.time(ui.setting('time')?.value ?? 'golden');
+lensMM = +(qs0.get('lens') || ui.setting('lens')?.value || 50);
 S.expo = ui.setting('expo')?.value ?? 1;
 // QA can start with funnels down: ?tor=F3,F5 places them under the wall cloud.
 const qs = new URLSearchParams(location.search);
 if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(+f.replace(/\D/g, '') || 0, 0, 5); act.add(); }
 // QA: ?near=8 puts the newest tornado 8 km out; ?age=20 runs every tornado 20 s on.
-if (qs.has('near') && tors.length) { const [x, z] = toWorld(-1800, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
+if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
 const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); } packTors(); };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
