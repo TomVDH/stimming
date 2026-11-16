@@ -1860,16 +1860,22 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
 }
 // A block in the world frame; y is its centre.
 const block = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-// A tower: plumb inner face at x = sd * inner, outer face leaning in.
-// w0 and w1: base and top widths; d0 and d1: base and top depths.
-function towerBlock(inner, w0, w1, d0, d1, y0, y1, sd) {
-  const g = new THREE.BoxGeometry(1, y1 - y0, 1), p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {
-    const t = p.getY(i) > 0, w = t ? w1 : w0, d = t ? d1 : d0;
-    p.setXYZ(i, sd * (inner + (p.getX(i) + 0.5) * w), p.getY(i) + (y0 + y1) / 2, p.getZ(i) * d);
-  }
-  g.computeVertexNormals();
-  return g;
+// The side pier: half depth at the foot and at the head.
+const PIER = { z: 150, head: 52, leg: 42 };
+// One pier: a side profile in z and y, pushed W metres out from x = sd * inner.
+// It stands plumb from the bearing to half height, then spreads like an A.
+function pier(sd, inner, W, crown, mid) {
+  const P = PIER.z, H = PIER.head, t = PIER.leg;
+  const sh = new THREE.Shape().moveTo(-P, 24).lineTo(P, 24).lineTo(H, mid).lineTo(H, crown).lineTo(-H, crown).lineTo(-H, mid).closePath();
+  // The A's opening: its sides run parallel to the legs, its head is pointed.
+  const outX = y => P - (P - H) * (y - 24) / (mid - 24);
+  const y0 = 48, y1 = mid - 34;
+  sh.holes.push(new THREE.Path().moveTo(-(outX(y0) - t), y0).lineTo(outX(y0) - t, y0).lineTo(outX(y1) - t, y1).lineTo(0, mid - 12).lineTo(-(outX(y1) - t), y1).closePath());
+  const g = new THREE.ExtrudeGeometry(sh, { depth: W, curveSegments: 12, bevelEnabled: true, bevelThickness: 3, bevelSize: 3, bevelSegments: 1 });
+  // The merge needs an indexed piece, as every other piece is.
+  g.deleteAttribute('uv'); g.clearGroups();
+  // Shape x is the world z; the extrusion runs out along x.
+  return mergeVertices(g).rotateY(sd > 0 ? Math.PI / 2 : -Math.PI / 2).translate(sd * inner, 0, 0);
 }
 // Narrow a box's top: kx across, kz along, then shift the top along z.
 function taper(g, kx, kz, dz = 0) {
@@ -1981,38 +1987,25 @@ function buildGun() {
     add(block(72, 3, 8, 129, 200 + RISE, 40), 0, 2);
     for (const y of [76, 118, 160]) add(block(20, 3, 20, 170, y, 40), 0, 2);
   } else {
-    // Side towers: two battered concrete towers hold the trunnion bearings.
-    // The space between them is open, so the breech swings down through it.
+    // Side piers: on each flank a pier carries a trunnion bearing.
+    // Each pier stands plumb under the bearing, then spreads like an A.
+    // The breech swings down between the piers.
     add(drum(384, 396, 12, 24, 64));
     add(drum(378, 384, 4, 32, 64));
     for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
-    const top = TRUN_Y - LIFT + 34, IN = 118;
+    const IN = 118, W = 64, crown = A0.y - LIFT + 46, mid = 24 + (crown - 24) * 0.5;
     for (const sd of [-1, 1]) {
-      // The inner face stands plumb; the outer face leans in.
-      add(towerBlock(IN, 112, 50, 220, 140, 34, top, sd));
-      // A footing spreads the tower's load on the deck.
-      add(block(130, 12, 236, sd * (IN + 62), 40, 0));
-      // Two buttress fins brace the outer face, fore and aft.
-      for (const z of [-86, 86]) add(beam(v3(sd * (IN + 150), 40, z), v3(sd * (IN + 52), top - 30, z), 18, 22));
-      // A yellow band rings the tower under the bearing.
-      add(block(54, 6, 144, sd * (IN + 27), top - 58, 0), 0, 3);
-      // The bearing: a dark drum through the tower's head.
-      add(new THREE.CylinderGeometry(46, 46, 60, 32, 1).rotateZ(Math.PI / 2).translate(sd * (IN + 24), A0.y - LIFT, 0), 0, 2);
+      add(pier(sd, IN, W, crown, mid));
+      // A yellow band rings the plumb shaft where the A spreads.
+      add(block(W + 12, 8, 2 * PIER.head + 12, sd * (IN + W / 2), mid + 6, 0), 0, 3);
+      // A footing takes the pier on the deck.
+      add(block(W + 40, 10, 2 * PIER.z + 30, sd * (IN + W / 2), 39, 0));
+      // The bearing: a dark drum through the pier's head.
+      add(new THREE.CylinderGeometry(46, 46, W + 16, 32, 1).rotateZ(Math.PI / 2).translate(sd * (IN + W / 2), A0.y - LIFT, 0), 0, 2);
       add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
-      // A pinion housing on the inner face drives each quadrant.
+      // The pinion that drives the quadrant sits on the pier's inner face.
       add(block(18, 40, 54, sd * (IN - 6), A0.y - LIFT - 122, 0), 0, 2);
-      // A cap slab and a lifting eye crown the tower.
-      add(block(60, 8, 146, sd * (IN + 30), top + 4, 0), 0, 2);
     }
-    // A low girder ties the towers' feet in front of the pin.
-    add(block(2 * IN, 26, 34, 0, 47, -100));
-    add(block(2 * IN, 4, 36, 0, 62, -100), 0, 2);
-    // A ladder cage climbs the near tower's outer face to a landing.
-    const lx = IN + 112 + 6;
-    add(block(4, top - 40, 4, lx + 14, (top + 40) / 2 - 6, -40), 0, 2);
-    add(block(4, top - 40, 4, lx + 14, (top + 40) / 2 - 6, -12), 0, 2);
-    for (let y = 70; y < top - 10; y += 42) add(block(18, 3, 32, lx + 6, y, -26), 0, 2);
-    add(block(40, 3, 60, IN + 72, top + 9.5, -26), 0, 2);
     // A machinery house sits on the deck behind the far tower.
     add(block(80, 40, 90, -190, 54, 200));
     for (let z = 165; z <= 235; z += 12) add(block(83, 26, 3, -190, 56, z), 0, 2);
