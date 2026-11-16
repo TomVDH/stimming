@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T19:39:27Z
+updated_at: 2026-11-16T19:44:15Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -29,4 +29,5 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Names: docs/plans/railgun-volumes.md
 - [x] BAND table replaces every bare renderOrder; Mids past 48 km draw in the Far band, behind the rock
 - [ ] Split sparks into near and rock; flares by distance (other sessions own them)
-- [ ] Deck tweaks: less swirl after a hit, softer cells, stronger hit light
+- [x] Deck tweaks: less swirl after a hit, softer cells, stronger hit light
+- [ ] Tom signs off the deck tweaks
