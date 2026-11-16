@@ -8830,9 +8830,11 @@ function sillyBoom(p) {
 // At contact the blast goes off there and the frame burns to white.
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
-// The climax holds CLIMAX_T seconds, then cuts to silence.
-// The silent white holds WHITE_T seconds; then the rewind starts.
-const BURN_T = 4, CLIMAX_T = 4, WHITE_T = 2.5;
+// The climax starts LOCK_T seconds before contact.
+// It holds CLIMAX_T seconds past contact; a forte pump of PUMP_T ends it.
+// The orchestra then stops dead; only its echo rings.
+// The white holds WHITE_T seconds under the echo; then the rewind starts.
+const BURN_T = 4, LOCK_T = 3, CLIMAX_T = 4, PUMP_T = 0.3, WHITE_T = 2.5;
 // The game over's white is warm: a white-yellow glow.
 const FILL_WARM = '#fff1cf', FILL_COOL = '#fffaf3';
 // The strike's light climbs over the last seconds before contact.
@@ -8887,7 +8889,7 @@ function gameOverSound(ac, d, hold = 0) {
   const ch = Math.pow(d.u, 0.8);
   humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(d.u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: d.over, vol: d.vol });
 }
-// The climax's end: the take cuts to silence in a few milliseconds.
+// The climax's end: the dry take stops dead; its echo rings on.
 function gameOverCut(ac) {
   if (goMix === 'hum' || typeof surgeOverStop !== 'function') { gameOverSound(ac, null); return; }
   surgeOverStop(false, 0, true);
@@ -8927,7 +8929,8 @@ function stepStrike(dt) {
     const choir = clamp(el / Math.max(T0 - full, 0.1), 0, 1);
     // The phrases breathe in slow swells; the swells settle near contact.
     const br = 1 + 0.3 * Math.sin(2 * Math.PI * el / 7) * (1 - choir);
-    gameOverSound(ac, { u: Math.pow(u, 1.6), vol: br * THREE.MathUtils.smoothstep(u, 0, 0.1), over: 0, crush: 0, choir, lock: false });
+    const lock = T0 - el <= LOCK_T;
+    gameOverSound(ac, { u: lock ? 1 : Math.pow(u, 1.6), vol: br * THREE.MathUtils.smoothstep(u, 0, 0.1), over: 0, crush: 0, choir: lock ? 1 : choir, lock });
     if (ast.s >= strike.s1) { strikeHit(); strikeBoom(ac); }
   } else {
     strike.tb += dt;
@@ -8936,8 +8939,9 @@ function stepStrike(dt) {
     // The blink thins the haze, so the fireball and the skirt show.
     hitFlash = (1.2 * Math.exp(-tb / 0.25) + 0.3 + 1.2 * b * b) * (1 - 0.6 * blinkOf(tb));
     // The chord resolves at contact and holds as the climax.
-    // At CLIMAX_T the sound cuts to silence.
-    if (!strike.cut) gameOverSound(ac, { u: 1, vol: 1, over: 0, crush: 0, choir: 1, lock: true });
+    // At CLIMAX_T the orchestra stops dead after the pump.
+    const pump = tb >= CLIMAX_T - PUMP_T ? 1 : 0;
+    if (!strike.cut) gameOverSound(ac, { u: 1, vol: 1, over: 0, crush: 0, choir: 1, lock: true, pump });
     if (!strike.cut && tb >= CLIMAX_T) { strike.cut = true; gameOverCut(ac); }
     // The silent white holds, then the button's Reset rewinds to the start.
     if (!strike.out && tb >= Math.max(burnT(), CLIMAX_T) + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
@@ -9716,7 +9720,8 @@ function surgeOverStop(now = false, hold = 0, cut = false) {
   goSurge = null;
   if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
   if (cut) {
-    for (const n of [h.g, h.sg, h.eo, h.vs, h.ro]) if (n) { n.gain.cancelScheduledValues(t); n.gain.setTargetAtTime(0, t, 0.006); }
+    // The dry sound stops dead; the echo and the reverb ring on.
+    for (const n of [h.g, h.sg]) { n.gain.cancelScheduledValues(t); n.gain.setTargetAtTime(0, t, 0.006); }
     for (const n of h.src) n.stop(t + 0.1);
     track(t + 0.2, ...h.src);
     return;
@@ -9921,12 +9926,14 @@ function requiemUpdate(ac, h, d) {
   // The choir swells over the pedal as its voices fill in.
   // At contact the climax swells in over a second and holds flat.
   // Its level follows nearness, so the build keeps climbing to contact.
-  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.6 : 1), t, lock ? 0.35 : 0.08);
-  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte : 0, t, 0.35);
-  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo : 0, t, 0.35);
+  // The pump: a last forte push into the echo, just before the stop.
+  const pump = d.pump ?? 0;
+  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.6 : 1) * (1 + 0.9 * pump), t, pump ? 0.04 : lock ? 0.35 : 0.08);
+  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte * (1 + 3 * pump) : 0, t, pump ? 0.04 : 0.35);
+  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo * (1 + 0.8 * pump) : 0, t, pump ? 0.04 : 0.35);
   // A light drive keeps the chord clean.
   h.drive.gain.setTargetAtTime(0.3 + 0.3 * u, t, 0.1);
-  h.g.gain.setTargetAtTime(GO_REQ.out * vol, t, 0.08);
+  h.g.gain.setTargetAtTime(GO_REQ.out * vol * (1 + 0.6 * pump), t, pump ? 0.04 : 0.08);
   h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (lock ? 1.3 : 1) * vol, t, lock ? 0.35 : 0.1);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.

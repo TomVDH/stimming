@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:22:13Z
-updated_at: 2026-11-16T18:51:36Z
+updated_at: 2026-11-16T18:57:53Z
 parent: stimming-f793
 ---
 
@@ -33,3 +33,10 @@ Tom: the climax opened suddenly and ended at once; it must hold 3-5 s, then pop 
 - Then WHITE_T 2.5 s of silent white, then the rewind.
 - The wash is 4 s and its white is warm (FILL_WARM #fff1cf), after Tom's white-yellow note.
 - Meter (headless): climax -9 to -12 dB RMS for 4 s, then -55 dB within 0.25 s.
+
+## Round 3 (Tom, 2026-11-16)
+
+Tom: no silent cut; the climax holds from 3 s before impact to 3-5 s after, then the orchestra stops dead on a forte pump with an echo; no oo to ah.
+- The lock starts LOCK_T 3 s before contact.
+- PUMP_T 0.3 s forte push, then the dry take stops; the echo and the reverb copy ring on.
+- Meter: climax -8 to -9 dB RMS from about -2.5 s to +4 s, then the echo tail falls to -54 dB over about 3.5 s.
