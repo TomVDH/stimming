@@ -294,7 +294,7 @@ Who builds what, each behind its own still and Tom's approval:
 |---|---|---|
 | Storms at true scale (step 3 brought forward) | Sky session, `stimming-626s`, in the storm lab first | `clouds-check: PASS` or `look-approved:` |
 | Range crests at Earth heights | Ranges session, `stimming-l7oo` | Tom's look approval on stills |
-| The long rock path and its gameplay retune | The gun and game session | Tom's sign-off; `docs/plans/railgun.md` game-over table |
+| The long rock path and its gameplay retune | No live owner: the rock, game-over and gun sessions have finished. The top session asked Tom (16:45) to sign it off and whether one new session owns it. | Tom's sign-off; `docs/plans/railgun.md` game-over table |
 
 | Still | Shows |
 |---|---|
