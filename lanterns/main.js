@@ -1,5 +1,5 @@
 // Lantern lake: the toy's module, loaded by index.html.
-import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, audioKit, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { swellHeight } from '../shared/water.js';
@@ -466,6 +466,7 @@ export function release(u, v, kind = 'auto') {
   if (wet && kind === 'auto') add(at, true);
   // A sky lantern lifts from the water's edge, in front of the trees, so it shows at once.
   else { const { eye, d } = rayAt(u, v); add(shoreUnder(eye, d), false); }
+  releaseSound(u, wet && kind === 'auto', false);
   wake();
   env.touch();
 }
@@ -503,7 +504,12 @@ export function stepLanterns(dt) {
     // The festival lets its lanterns go along the shore, a few at a time.
     fest.t += dt;
     const due = Math.min(FEST_N, Math.floor(fest.t / FEST_T * FEST_N));
-    for (; fest.n < due; fest.n++) { const r = rayAt(0.04 + 0.92 * Math.random(), 0.5); add(shoreUnder(r.eye, r.d), false, true); }
+    for (; fest.n < due; fest.n++) {
+      const u = 0.04 + 0.92 * Math.random(), r = rayAt(u, 0.5);
+      add(shoreUnder(r.eye, r.d), false, true);
+      // One in four rustles, softly; the drone carries the rest.
+      if (Math.random() < 0.25) releaseSound(u, false, true);
+    }
     if (fest.n >= FEST_N && fest.t > FEST_T + 120) fest = null;
   }
   for (let i = pool.length - 1; i >= 0; i--) {
@@ -614,7 +620,8 @@ function step(dt) {
     for (; holdAcc >= 0.25; holdAcc -= 0.25) release(press.u, press.v);
   }
   // The loop sleeps once the sky is empty and no one has touched it for 60 s.
-  if (performance.now() > sleepAt && !pool.length && !fest) awake = false;
+  soundTick(dt);
+  if (performance.now() > sleepAt && !pool.length && !fest) { awake = false; soundRest(); }
 }
 // Any input wakes the loop for another 60 s.
 function wake() {
@@ -702,6 +709,190 @@ function still() {
 }
 new ResizeObserver(wake).observe(stage);
 
+/* ---------- sound ---------- */
+// Web Audio on the shared kit: muted by default, it starts on a gesture and sleeps when idle.
+const kit = audioKit({ keys: new Set([' ', 'Enter']), noiseSeconds: 2 });
+const jit = (a, b) => a + (b - a) * Math.random();
+/** @type {{ src: AudioBufferSourceNode, lfo: OscillatorNode, lapBp: BiquadFilterNode, lapG: GainNode, lapPan: StereoPannerNode, night: GainNode } | null} */
+let bed = null;
+/** @type {{ oscs: OscillatorNode[], g: GainNode, quietFor: number } | null} */
+let drone = null;
+let nextLap = 0, nextChirp = 0, nextFrog = 2;
+// The lake bed: low noise that swells slowly, and soft laps at the shore.
+function startBed() {
+  const ac = kit.live();
+  if (!ac || bed || !kit.noise) return;
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+  bp.type = 'bandpass';
+  bp.frequency.value = 340;
+  bp.Q.value = 0.7;
+  g.gain.value = 0.04;
+  lfo.frequency.value = 0.08;
+  depth.gain.value = 0.025;
+  lfo.connect(depth).connect(g.gain);
+  src.connect(bp).connect(g).connect(kit.out);
+  // Each lap is a short swell of brighter noise, never two alike.
+  const lapBp = ac.createBiquadFilter(), lapG = ac.createGain(), lapPan = ac.createStereoPanner();
+  lapBp.type = 'bandpass';
+  lapBp.Q.value = 1.4;
+  lapG.gain.value = 0;
+  src.connect(lapBp).connect(lapG).connect(lapPan).connect(kit.out);
+  // The night's voices share one gain, so they fade in and out with the hour.
+  const night = ac.createGain();
+  night.gain.value = 0;
+  night.connect(kit.out);
+  src.start();
+  lfo.start();
+  bed = { src, lfo, lapBp, lapG, lapPan, night };
+}
+function stopAll() {
+  if (bed) { try { bed.src.stop(); bed.lfo.stop(); } catch (err) { /* The context closed first. */ } bed = null; }
+  if (drone) { try { drone.oscs.forEach(o => o.stop()); } catch (err) { /* The context closed first. */ } drone = null; }
+}
+// Release: a dry paper rustle, then a breathy whoosh as the flame catches.
+// A floating lantern lands with a soft plop instead.
+function releaseSound(u, float, quiet) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const t = ac.currentTime + 0.01, k = quiet ? 0.35 : 1;
+  const pan = ac.createStereoPanner();
+  pan.pan.value = Math.max(-0.8, Math.min(0.8, (u - 0.5) * 1.5));
+  pan.connect(kit.out);
+  const burst = (at, dur, type, f, q, peak) => {
+    const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = kit.noise;
+    bp.type = type;
+    bp.frequency.value = f;
+    bp.Q.value = q;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(peak, at + Math.min(0.02, dur * 0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    s.connect(bp).connect(g).connect(pan);
+    s.start(at, Math.random() * 1.5, dur + 0.05);
+    return bp;
+  };
+  // The rustle: a few crinkles of high noise in a quarter second.
+  for (let i = 0, n = 3 + Math.floor(Math.random() * 3); i < n; i++) burst(t + jit(0, 0.22), jit(0.03, 0.07), 'highpass', jit(2600, 4200), 0.7, jit(0.05, 0.1) * k);
+  if (float) {
+    // The plop: a short falling tone, and a little splash.
+    const o = ac.createOscillator(), g = ac.createGain(), at = t + 0.25;
+    o.frequency.setValueAtTime(jit(190, 240), at);
+    o.frequency.exponentialRampToValueAtTime(jit(80, 100), at + 0.14);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.12 * k, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.18);
+    o.connect(g).connect(pan);
+    o.start(at);
+    o.stop(at + 0.2);
+    burst(at, 0.12, 'bandpass', jit(1200, 1800), 1.2, 0.04 * k);
+    return;
+  }
+  // The whoosh: a band of noise that rises as the flame catches.
+  const bp = burst(t + jit(0.1, 0.16), jit(0.35, 0.5), 'bandpass', jit(260, 340), 1.1, jit(0.12, 0.16) * k);
+  bp.frequency.exponentialRampToValueAtTime(jit(800, 1100), t + 0.5);
+}
+// One cricket: three or four quick pulses, high and far.
+function chirp(ac, at) {
+  const o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner();
+  o.frequency.value = jit(4100, 4800);
+  p.pan.value = jit(-0.7, 0.7);
+  g.gain.value = 0;
+  const peak = jit(0.006, 0.014);
+  for (let i = 0, n = 3 + Math.floor(Math.random() * 2); i < n; i++) {
+    const s = at + i * jit(0.045, 0.055);
+    g.gain.setValueAtTime(0, s);
+    g.gain.linearRampToValueAtTime(peak, s + 0.008);
+    g.gain.linearRampToValueAtTime(0, s + 0.03);
+  }
+  o.connect(g).connect(p).connect(bed.night);
+  o.start(at);
+  o.stop(at + 0.3);
+}
+// One frog: a low, buzzing croak across the water.
+function croak(ac, at) {
+  const o = ac.createOscillator(), am = ac.createOscillator(), amG = ac.createGain(), bp = ac.createBiquadFilter(), g = ac.createGain(), p = ac.createStereoPanner();
+  const dur = jit(0.18, 0.35);
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(jit(110, 170), at);
+  o.frequency.linearRampToValueAtTime(jit(90, 120), at + dur);
+  am.frequency.value = jit(22, 32);
+  amG.gain.value = 0.5;
+  bp.type = 'bandpass';
+  bp.frequency.value = jit(500, 800);
+  bp.Q.value = 2;
+  p.pan.value = jit(-0.8, 0.8);
+  const peak = jit(0.015, 0.03);
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(peak, at + 0.03);
+  g.gain.setValueAtTime(peak, at + dur - 0.05);
+  g.gain.linearRampToValueAtTime(0, at + dur);
+  am.connect(amG).connect(g.gain);
+  o.connect(bp).connect(g).connect(p).connect(bed.night);
+  o.start(at); am.start(at);
+  o.stop(at + dur + 0.05); am.stop(at + dur + 0.05);
+}
+// The festival drone: a low, warm chord that swells with the lanterns in the air.
+function startDrone(ac) {
+  const g = ac.createGain(), lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 340;
+  lp.Q.value = 0.5;
+  g.gain.value = 0;
+  lp.connect(g).connect(kit.out);
+  const oscs = [[55, 'sawtooth', -6], [55, 'sawtooth', 7], [82.4, 'triangle', 0], [110, 'triangle', 4]].map(([f, type, det]) => {
+    const o = ac.createOscillator();
+    o.type = /** @type {OscillatorType} */ (type);
+    o.frequency.value = f;
+    o.detune.value = det;
+    o.connect(lp);
+    o.start();
+    return o;
+  });
+  drone = { oscs, g, quietFor: 0 };
+}
+// Each frame: laps, the night's voices and the drone, on the audio clock.
+function soundTick(dt) {
+  const ac = kit.live();
+  if (!ac) return;
+  if (!bed) startBed();
+  if (!bed) return;
+  const t = ac.currentTime;
+  if ((nextLap -= dt) <= 0) {
+    nextLap = jit(1.2, 4.2);
+    bed.lapBp.frequency.setValueAtTime(jit(650, 1300), t);
+    bed.lapPan.pan.setValueAtTime(jit(-0.5, 0.5), t);
+    bed.lapG.gain.cancelScheduledValues(t);
+    bed.lapG.gain.setValueAtTime(0, t);
+    bed.lapG.gain.linearRampToValueAtTime(jit(0.02, 0.05), t + jit(0.06, 0.12));
+    bed.lapG.gain.exponentialRampToValueAtTime(0.0001, t + jit(0.5, 0.9));
+  }
+  // Frogs and crickets: only at Night, far and quiet.
+  const night = S.hour > 21.6 ? 1 : 0;
+  bed.night.gain.setTargetAtTime(night, t, 1.5);
+  if (night) {
+    if ((nextChirp -= dt) <= 0) { nextChirp = jit(0.35, 1.4); chirp(ac, t + 0.02); }
+    if ((nextFrog -= dt) <= 0) { nextFrog = jit(2.5, 7); croak(ac, t + 0.02); }
+  }
+  // The drone follows the festival lanterns still burning.
+  let n = 0;
+  for (const L of pool) if (L.fest && L.age < L.life) n++;
+  const want = 0.09 * Math.sqrt(n / FEST_N);
+  if (want > 0.001 && !drone) startDrone(ac);
+  if (drone) {
+    drone.g.gain.setTargetAtTime(want, t, n ? 1.2 : 2.5);
+    drone.quietFor = want > 0.001 ? 0 : drone.quietFor + dt;
+    if (drone.quietFor > 10) { drone.oscs.forEach(o => o.stop()); drone = null; }
+  }
+}
+// The loop sleeps, or the tab hides: every voice stops and the context sleeps.
+function soundRest() {
+  stopAll();
+  kit.rest(() => !awake || !visible);
+}
+
 /* ---------- start ---------- */
 // QA: ?lan=10 starts with ten lanterns in the air, ?float=8 with eight on the water.
 // ?fest=25 starts 25 s into a festival.
@@ -723,4 +914,5 @@ mark('first-frame');
 whenVisible(stage, v => {
   visible = v;
   if (v) env.touch();
+  else soundRest();
 });

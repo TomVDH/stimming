@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:45:20Z
+updated_at: 2026-11-16T22:51:19Z
 parent: stimming-oh7b
 ---
 
@@ -63,3 +63,9 @@ Rulings in Task 3:
 - Drag pans 12 degrees and tilts the horizon 0.2 of the frame at most.
 - A lantern on the water skips the depth test; the water under it hid its base.
 - Festival and Clear are on the bar now; Space sends up a festival. The rest of the bar waits for Task 5.
+
+- [x] Task 4: sound, plain Web Audio on `kit.out` (no Tone.js needed). Lake bed (low noise with a slow swell, and soft laps), release (a paper rustle, then a whoosh as the flame catches; a plop for a floating lantern), Night only (crickets and frogs, far and quiet), and the festival drone (a low chord that follows the festival lanterns still burning). Q9 passed headless: the context runs after the first gesture and is suspended once the page settles. Nobody has listened yet: Tom checks it by ear.
+
+Rulings in Task 4:
+- In a festival, one release in four rustles, softly; the drone carries the rest.
+- Each release pans with its place on the frame, and its pitch, timing and level vary every time.
