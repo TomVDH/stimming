@@ -1,0 +1,112 @@
+/* The Clock: the menu's default view. Twelve toys stand on a dial.
+   ?all shows the whole shelf; ?lab shows the Lab. */
+
+/* The tube is wider than a narrow screen. The menu's own rule (body: overflow-x clip) hands the clip
+   to the window, so nothing scrolls sideways. Do not clip on the root: the body would then clip at its
+   8 px margin and box the footer's glow. */
+/* The shelf and the face share one grid cell, so the face lies under the toys. */
+:root[data-view="clock"] main > .shelf {
+  grid-area: 1 / 1; z-index: 1; display: block; position: relative;
+  /* No auto margin: the grid centres the shelf, also where it is wider than its column. */
+  width: min(92vw, 660px); max-width: none; aspect-ratio: 1; margin: 0;
+  /* Only the toys take the pointer; the Re-roll lies under the shelf's box. */
+  pointer-events: none;
+}
+/* The shelf waits out of sight until the script deals the first dozen. */
+:root[data-view="clock"]:not([data-clock]) main > .shelf { visibility: hidden; }
+:root[data-view="clock"] main > .shelf > li {
+  position: absolute; width: 19%; pointer-events: auto;
+  left: calc(50% + var(--x, 0) * 40.5% - 9.5%); top: calc(50% + var(--y, 0) * 40.5% - 9.5%);
+  transition: scale 0.45s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+:root[data-view="clock"] main > .shelf > li[data-out] { display: none; }
+/* A held toy waits in the menu's grainy blur until the comet drops it off. Its grain shows too. */
+:root[data-view="clock"].js-reveal main > .shelf > li[data-hold] .toy { opacity: 0; filter: blur(14px); }
+:root[data-view="clock"].js-reveal main > .shelf > li[data-hold] .toy .obj::after { opacity: 0.55; }
+/* The name shows in the middle; the link keeps it for screen readers. */
+:root[data-view="clock"] main > .shelf .name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:root[data-view="clock"] main > .shelf > li:is(:hover, :focus-within, [data-held]) { scale: 1.18; z-index: 2; }
+/* The Clock shows no Series switch and no Lab link. */
+:root[data-view="clock"] :is(.series-toggle, .lab-link) { display: none; }
+/* The way back to the Clock shows on the whole shelf only. */
+.clock-link { display: none; }
+:root[data-view="all"] .clock-link { display: inline; }
+
+.clock-face { display: none; }
+:root[data-view="clock"] .clock-face {
+  display: block; grid-area: 1 / 1; position: relative; width: min(92vw, 660px); aspect-ratio: 1;
+  /* The face does not clip: a clipped glow shows a hard box edge. The body clips the page's width. */
+  container-type: inline-size; pointer-events: none;
+  /* The face is one layer under the toys: the dark spot must multiply the tube, never an icon. */
+  isolation: isolate; z-index: 0;
+}
+
+/* The comet: it swirls once round the face as the dozen arrives. clock.js draws it. */
+.clock-comet { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* The middle: the toy's number, name and motto, over a soft dark plate. */
+.clock-mid {
+  position: absolute; inset: 22%; box-sizing: border-box; isolation: isolate; border-radius: 50%;
+  display: grid; place-content: center; justify-items: center; gap: 1.3cqw;
+  text-align: center;
+  /* The words stay clear over a bright still. */
+  text-shadow: 0 1px 14px oklch(0.1 0.012 275 / 0.9), 0 0 3px oklch(0.1 0.012 275 / 0.7);
+}
+/* The plate has no hard edge: its shade fades out toward the toys. */
+.clock-plate {
+  /* The plate is wider than the clock, so the TV shade spreads past the ring of toys. */
+  position: absolute; inset: -61%; z-index: -1; border-radius: 50%;
+  background: radial-gradient(closest-side, oklch(0.12 0.012 275 / 0.9) 0 25%, oklch(0.12 0.012 275 / 0.5) 38%, oklch(0.12 0.012 275 / 0) 74%);
+}
+/* The tube lies on the plate: the toy's still, warped and dim. tube.js draws it. */
+.clock-tube { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.clock-name, .clock-tag { margin: 0; }
+/* With no toy in hand the middle is empty: no plate, no picture, no words. */
+.clock-plate, .clock-name, .clock-tag { opacity: 0; transition: opacity 0.5s ease; }
+.clock-face[data-live] :is(.clock-plate, .clock-name, .clock-tag) { opacity: 1; }
+/* The plate also shows while the set blinks on at the end of the intro. */
+.clock-face[data-blink] .clock-plate { opacity: 1; }
+/* The tube draws the words in its picture; the page's own words stay for screen readers only. */
+.clock-face[data-tube] :is(.clock-name, .clock-tag) { opacity: 0; }
+.clock-name { max-width: 44cqw; font: 800 clamp(17px, 5cqw, 32px)/1.02 var(--sans); letter-spacing: -0.035em; text-wrap: balance; }
+.clock-tag { max-width: 38cqw; font: 500 clamp(10.5px, 1.9cqw, 12.5px)/1.45 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.02em; color: color-mix(in oklch, var(--fg) 76%, transparent); text-wrap: balance; }
+.clock-tag:empty { display: none; }
+/* A short hairline parts the name from the motto. */
+.clock-tag::before { content: ""; display: block; width: 22px; height: 1px; margin: 0.4cqw auto 1.5cqw; background: color-mix(in oklch, var(--fg) 40%, transparent); }
+
+/* The Re-roll waits five seconds, then shows under the clock. */
+.clock-roll { display: none; }
+:root[data-view="clock"] .clock-roll {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 9px 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in oklch, var(--fg) 26%, transparent); background: none; color: var(--fg);
+  font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase;
+  opacity: 0; pointer-events: none; transition: opacity 0.9s ease, border-color 0.2s ease;
+}
+/* The rule above is strong; this one must name the view too, or the button never shows. */
+:root[data-view="clock"] .clock-roll[data-on] { opacity: 1; pointer-events: auto; }
+.clock-roll:is(:hover, :focus-visible) { border-color: var(--fg); }
+.clock-roll svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.clock-roll svg circle { fill: currentColor; stroke: none; }
+.clock-roll:active svg { rotate: 180deg; }
+
+/* The footer of the Clock. The mark sits in the credit line, in place of its own name. */
+:root[data-view="clock"] .credit[data-inline] { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 0.75em; }
+.clock-mark { position: relative; display: inline-flex; }
+:root[data-view="clock"] .clock-mark .onno svg { height: 30px; transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1), scale 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); }
+:root[data-view="clock"] .clock-mark .onno:hover svg { translate: 0 -2px; scale: 1.08; }
+/* The version stands over the mark. */
+:root[data-view="clock"] .clock-mark .ver { left: 50%; bottom: calc(100% + 8px); translate: -50% 0; }
+/* The glow is a shader (mesh.js): light that rises from below the edge and flows. It replaces the CSS glow. */
+.clock-mesh { position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: min(38vh, 340px); translate: -50% 0; pointer-events: none; }
+/* The credit line stands on the light, so it is brighter here and has a soft shade. */
+:root[data-view="clock"] .credit[data-mesh] { color: color-mix(in oklch, var(--fg) 86%, transparent); text-shadow: 0 1px 10px oklch(0.14 0.02 275 / 0.7); }
+:root[data-view="clock"] .credit[data-mesh]::before { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-view="clock"] main > .shelf > li, .clock-plate, .clock-name, .clock-tag, .clock-roll { transition: none; }
+}
+
+/* A trial (Tom, 2026-11-16): every heading in B612, the wordmark's face.
+   Delete this block to end the trial; tube.js names the same font for the toy's name. */
+:is(h2, h3, .sec-hd, .clock-name) { font-family: "B612", var(--sans) !important; }

@@ -52,6 +52,20 @@ Source: <https://github.com/TomVDH/stimming> (private).
 | Orbits | [orbits/](orbits/) | live, with sound |
 | Star trails | [trails/](trails/) | done; signed off by Tom. Raw WebGL2 long exposure: hold to open the shutter |
 
+## The menu
+
+The menu opens on the Clock: twelve toys on a dial, with a Re-roll for twelve more (key R).
+The toy under the pointer shows its name and motto in the middle, over its still: a dim, warped picture with a picture-tube look.
+
+| Address | View |
+|---|---|
+| `./` | The Clock (the default) |
+| `./?all` | The whole main shelf, with the Series switch and the Lab link |
+| `./?lab` | The Lab |
+
+The Clock lives in `shared/menu/`. Each main-shelf toy has one still in `shared/stills/`; `tools/stills.mjs` renews them (its header holds the command).
+The footer shows the site version on hover; it is 0.11 now. `AGENTS.md` holds the version rule.
+
 ## Run locally
 
 Each toy is a full HTML page; the menu is a body fragment, which browsers render as is. Serve the folder so the modules and fonts load:
