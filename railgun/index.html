@@ -2341,7 +2341,7 @@ const astMat = new THREE.ShaderMaterial({
     float sl = max(dot(N, uSun) * 0.88 + 0.12, 0.0);
     vec3 col = alb * (ambient(N) + sunAt(vP.y) * sl);
     // The front boils: melt cells stream back over the face.
-    float boil = k3fbm(vO * 9.0 - uToPlanet * uTime * 1.4);
+    float boil = k3fbm(vO * 4.0 - uToPlanet * uTime * 0.8);
     float melt = smoothstep(0.62, 0.82, boil + 0.3 * lead);
     col += mix(uEmber * 0.12, uAstC * 3.5, melt) * hot * (0.3 + 0.8 * n);
     col += uWhite * pow(max(lead, 0.0), 8.0) * uBurn * melt * 4.0;
@@ -2951,7 +2951,7 @@ const PU = {
   // The blast shoves the head of the trail aside: direction, amount.
   uSwipe: { value: new THREE.Vector3() },
   uHot: { value: new THREE.Vector3(...WHITE) }, uFireC: { value: new THREE.Vector3(...linFit(0.7, 0.18, 45)) }, uEmberC: { value: new THREE.Vector3(...EMBER) },
-  uSoot: { value: new THREE.Vector3(...linFit(0.26, 0.02, 50)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
+  uSoot: { value: new THREE.Vector3(...linFit(0.34, 0.025, 45)) }, uAsh: { value: new THREE.Vector3(...linFit(0.93, 0.012, 80)) },
 };
 // One train per uniform set: the rock's own, and smaller ones for debris.
 const TRAIN_GEO = new THREE.CylinderGeometry(1, 1, 1, 20, 1);
@@ -3007,7 +3007,8 @@ function makeTrain(pu) {
     g = vec4(x, u, rr, rv); e = 0.0;
     if (rv > 1.0 || u < -0.7) return 0.0;
     // Coverage: a full core, a ragged rim, thinner with age.
-    float cov = (1.0 - smoothstep(0.3, 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * mix(1.0 - smoothstep(0.55, 1.0, x / uLen), 1.0, uJoin);
+    // The rim softens as the smoke ages and spreads.
+    float cov = (1.0 - smoothstep(0.3 - 0.22 * smoothstep(2.0, 14.0, u), 1.0, rv)) * mix(1.0, 0.62, smoothstep(2.0, 16.0, u)) * smoothstep(-0.6, 0.8, u) * mix(1.0 - smoothstep(0.55, 1.0, x / uLen), 1.0, uJoin);
     // After the hit: the tail goes from its tip back, the head end softens.
     cov *= 1.0 - smoothstep(uCut - 0.25 * uLen, uCut, x);
     cov *= mix(1.0, smoothstep(uLift.x, uLift.x + 0.25 * uLen, x), uLift.y);
@@ -3016,10 +3017,13 @@ function makeTrain(pu) {
     cov *= mix(1.0, smoothstep(-0.5, 4.0, u), min(uBreak * 20.0, 1.0));
     // Smoke that sinks far out goes over the horizon into the haze.
     cov *= hzFade(uAstP + q);
+    // The column bulges and pinches in slow lobes along its length.
+    cov *= 0.72 + 0.5 * texture(uVol, vec3(u * 0.07 - uFlow * 0.2, 0.31, 0.67)).r * smoothstep(0.5, 3.0, u);
     if (cov < 0.002) return 0.0;
     // A skew along u hides the tile repeat.
     vec3 p = vec3(u - uFlow, v.x + 0.37 * u, v.y + 0.19 * u) * 0.36;
-    float d = c01(rmp(texture(uVol, p).r, 1.0 - cov, 1.0) * 3.0);
+    // A soft edge: long march steps across a hard edge show as a hatch.
+    float d = c01(rmp(texture(uVol, p).r, 1.0 - cov, 1.0) * 2.2);
     if (uBreak > 0.0) d = c01(rmp(d, uBreak * 0.85, 1.0));
     if (fine && d > 0.0) {
       // Fine cells carve the rim into small lobes.
@@ -3057,7 +3061,8 @@ function makeTrain(pu) {
     if (t1 <= t0) discard;
     float dt = (t1 - t0) / float(uSteps);
     // Each pixel starts its march at its own offset.
-    float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    // The offset turns each frame, so the step pattern reads as grain.
+    float t = t0 + dt * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
     float cs = dot(rd, uSun);
     float ph = 0.5 * hg(cs, 0.6) + 0.5 * hg(cs, -0.2);
     float T = 1.0, wsum = 0.0, tsum = 0.0;
@@ -3173,8 +3178,7 @@ scene.add(smoke);
 function setRockLook() {
   const v = rockLook === 'violent';
   const u = smoke.material.uniforms;
-  u.uHead.value = v ? 1.5 : 1; u.uWake.value = v ? 18 : 11; u.uFireK.value = v ? 1.4 : 1; u.uK.value = v ? 0.11 : 0.085;
-  if (typeof bowMat !== 'undefined') bowMat.uniforms.uBig.value = v ? 1 : 0;
+  u.uHead.value = v ? 1.5 : 1; u.uWake.value = v ? 18 : 11; u.uFireK.value = v ? 1.4 : 1; u.uK.value = v ? 0.15 : 0.12;
 }
 
 /* ---------- fragments: small rocks on their own tracks ---------- */
@@ -3352,17 +3356,29 @@ const shedU = new THREE.Vector3();
 // A null src sheds from the rock.
 function shedSpark(age = 0, src = null) {
   if (src) { shedHulk(src); return; }
-  const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
-  // They leave from anywhere across the rock's back, not from one spot.
-  const th = rnd() * Math.PI * 2, rr = 1.05 * R * Math.sqrt(rnd());
+  const R = ast.R, big = rockLook === 'violent' ? 1.3 : 1;
+  // Chunks tear off the cap's edge, round the flanks, not off the back.
+  const th = rnd() * Math.PI * 2, rr = (1.0 + 0.45 * rnd()) * R * big;
   shedU.crossVectors(ast.away, ast.side);
-  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / fallT() * age + 0.45 * R).addScaledVector(ast.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr).addScaledVector(tp, 0.15 * R);
-  // Big burning pieces drift slowly back up the smoke train.
-  // They carry no weight, so they never arc off; they go 12 to 25 km.
-  // They fan out wide off the back; small, crisp, dim.
-  shedV.copy(ast.away).multiplyScalar(350 + rnd() * 300).addScaledVector(ast.side, (rnd() - 0.5) * 260).addScaledVector(shedU, (rnd() - 0.5) * 260);
-  writeStar(shedP, simT - age, shedV, -0.008, 2, 38 + rnd() * 14, 1.2, 1.2 + rnd() * 0.8, 3, 0.22);
+  const cx = Math.cos(th), cy = Math.sin(th);
+  shedP.copy(ast.pos).addScaledVector(ast.away, FALL / fallT() * age + 0.3 * R).addScaledVector(ast.side, cx * rr).addScaledVector(shedU, cy * rr);
+  // They fly back down the wake and out from it; drag slows them.
+  const out = (40 + rnd() * 150) * big;
+  shedV.copy(ast.away).multiplyScalar(350 + rnd() * 450).addScaledVector(ast.side, cx * out).addScaledVector(shedU, cy * out);
+  // White hot at first, then orange, then a dull red ember.
+  writeStar(shedP, simT - age, shedV, -0.01, 1, 26 + rnd() * 16, 2.6 + rnd() * 1.6, (1.8 + rnd() * 1.4) * big, 3, 0.32, 2);
   ablN++;
+}
+// A spray of molten droplets off the cap: fast, short and bright.
+function shedSpray() {
+  const R = ast.R, big = rockLook === 'violent' ? 1.3 : 1;
+  const th = rnd() * Math.PI * 2, rr = (0.9 + 0.3 * rnd()) * R * big;
+  shedU.crossVectors(ast.away, ast.side);
+  const cx = Math.cos(th), cy = Math.sin(th);
+  shedP.copy(ast.pos).addScaledVector(ast.away, -0.2 * R).addScaledVector(ast.side, cx * rr).addScaledVector(shedU, cy * rr);
+  const out = (60 + rnd() * 200) * big;
+  shedV.copy(ast.away).multiplyScalar(1200 + rnd() * 1400).addScaledVector(ast.side, cx * out).addScaledVector(shedU, cy * out);
+  writeStar(shedP, simT, shedV, -0.3, 1, 1.6 + rnd() * 1.8, 0.3, 0.4 + rnd() * 0.35, 2, 0.45, 2);
 }
 // A burning piece leaves a hulk's back in the air.
 // Drag stops it.
@@ -3376,7 +3392,7 @@ function shedHulk(src) {
   shedN++;
 }
 // A rock already in flight already has its trail of embers.
-function prewarmEmbers() { if (!reduced()) for (let i = 0; i < 150; i++) shedSpark(rnd() * 50); }
+function prewarmEmbers() { if (!reduced()) for (let i = 0; i < 110; i++) shedSpark(rnd() * 40); }
 
 
 /* ---------- dust: puffs that lift off the plain ---------- */
@@ -4975,7 +4991,10 @@ function stepAst(dt) {
   stepAmbient(dt);
   const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
   // The hot face sheds glowing bits; they fall back into the smoke.
-  if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
+  if (falling && !reduced() && astMesh.visible) {
+    for (let n = Math.floor(dt * 3.5 + rnd()); n > 0; n--) shedSpark();
+    for (let n = Math.floor(dt * (rockLook === 'violent' ? 30 : 18) + rnd()); n > 0; n--) shedSpray();
+  }
   // A crater's shove eases back onto the path over a second and a half.
   if (ast.jolt.lengthSq() > 1) { ast.jolt.multiplyScalar(Math.exp(-dt / 1.5)); if (ast.state === 'hold') placeAst(); } else ast.jolt.set(0, 0, 0);
   if (falling) {
@@ -5212,27 +5231,21 @@ const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));
 // A camera-facing card; the arc opens toward the rock's travel on screen.
 const bowMat = new THREE.ShaderMaterial({
   // uAp: the rock's nearness, 0 far out to 1 at the end of its fall.
-  // uBig: 0 for the Fire head, 1 for the Violent head.
-  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 }, uAp: { value: 0 }, uBig: { value: 0 },
+  uniforms: { uF: { value: new THREE.Vector4() }, uDir: { value: new THREE.Vector2(1, 0) }, uGain: { value: 0 }, uTime: U.uTime, uGrand: { value: 0 }, uAp: { value: 0 },
     uCos: { value: new THREE.Vector3(...linFit(0.8, 0.13, 290)) },
     uHot: { value: new THREE.Vector3(...linFit(0.97, 0.05, 85)) }, uRim: { value: new THREE.Vector3(...linFit(0.78, 0.17, 50)) } },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`uniform vec4 uF; uniform float uBig; varying vec2 vUv;
+  vertexShader: /* glsl */`uniform vec4 uF; varying vec2 vUv;
   void main() {
     vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-    // The Violent head's card spans half as far again.
-    vUv = position.xy * (1.0 + 0.5 * uBig);
-    // The card stands 1.2 radii toward the eye, so the glare covers the rock.
-    // Nearer hills and clouds still hide it.
-    vec3 C = uF.xyz + normalize(cameraPosition - uF.xyz) * uF.w * 1.2;
+    vUv = position.xy;
     // The card spans six rock radii each way.
-    gl_Position = projectionMatrix * viewMatrix * vec4(C + (right * vUv.x + up * vUv.y) * uF.w * 6.0, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * vec4(uF.xyz + (right * position.x + up * position.y) * uF.w * 6.0, 1.0);
   }`,
-  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand, uAp, uBig; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
-  ${K2_NOISE}
+  fragmentShader: /* glsl */`uniform vec2 uDir; uniform float uGain, uTime, uGrand, uAp; uniform vec3 uHot, uRim, uCos; varying vec2 vUv;
   // One shock shell: a hyperbola round the nose.
   // n: nose standoff, c: nose roundness, m: cone slope; all in rock radii.
   float shellD(float along, float across, float n, float c, float m) {
@@ -5240,47 +5253,29 @@ const bowMat = new THREE.ShaderMaterial({
     float slope = m * m * across / r;
     return (along - (n + c - r)) / sqrt(1.0 + slope * slope);
   }
-  // Heat to colour: deep red, orange, yellow, then white.
-  vec3 heatC(float h) {
-    vec3 c = mix(vec3(0.5, 0.05, 0.01), uRim * 1.4, smoothstep(0.0, 0.35, h));
-    c = mix(c, vec3(2.4, 1.5, 0.55), smoothstep(0.3, 0.65, h));
-    return mix(c, vec3(4.0, 3.8, 3.5), smoothstep(0.6, 1.0, h));
-  }
   void main() {
     // Rock radii from the rock's centre.
     vec2 q = vUv * 6.0;
     float along = dot(q, uDir), across = abs(dot(q, vec2(-uDir.y, uDir.x)));
     float px = length(fwidth(q));
-    // The shock stands close off the nose; thick air presses it closer.
-    float d = shellD(along, across, 1.3 + 0.35 * uBig - 0.08 * uAp, 0.7 + 0.4 * uBig, 0.62 - 0.08 * uAp);
-    // The gas streams back from the nose; the noise flows with it.
-    vec2 fq = vec2(along * 1.3 + uTime * (2.6 + 1.8 * uBig), across * 2.2);
-    float tur = k3fbm(vec3(fq, uTime * 0.4));
-    float fine = k3noise(vec3(fq * 3.1, uTime * 1.3));
-    // Heat: white at the nose, cooling down the flanks and into the wake.
-    float h = clamp(0.25 + 0.75 * smoothstep(-2.6, 1.0, along) * exp(-across * across / 3.0), 0.0, 1.0);
-    h *= 0.8 + 0.35 * tur;
-    // The shock layer: hot air packed between the shock and the rock.
-    // Behind the nose it narrows to the wake's width and fades out.
-    float wakeW = 1.2 + 0.5 * uBig + (0.12 + 0.2 * uBig) * max(-along, 0.0);
-    float layer = smoothstep(0.06 + px, -0.1, d) * smoothstep(wakeW, wakeW - 0.35, across) * smoothstep(-4.0 - 2.5 * uBig, -0.2, along);
-    // Down the flanks the layer thins to a ragged sheath.
-    layer *= mix(1.0, smoothstep(0.25, 0.75, tur + 0.25 * fine), smoothstep(0.6, -2.0, along));
-    // The shock front glows hardest, never thinner than a pixel.
-    float w = max(0.12 + 0.06 * uAp, 0.8 * px);
-    float front = exp(-d * d / (w * w)) * smoothstep(-1.2, 0.9, along) * smoothstep(2.4, 1.2, across) * (0.75 + 0.25 * fine);
-    // Wide light in the air ahead and round the cap.
-    float bloom = exp(-max(d, 0.0) / ((0.35 + 0.4 * uAp) * (1.0 + 1.2 * uBig))) * exp(-across * across / (4.5 + 2.5 * uBig));
-    // The fireball: white glare over the rock's front half.
-    vec2 nose = q - uDir * (0.8 - 0.2 * uBig);
-    float ball = exp(-dot(nose, nose) / ((0.42 + 0.3 * uAp) * (1.0 + 1.6 * uBig))) * (0.75 + 0.25 * tur);
-    // Violent: ragged tongues of fire tear off the flanks and stream back.
-    float tongue = uBig * smoothstep(0.66, 0.82, tur + 0.3 * fine) * smoothstep(wakeW + 1.0, wakeW - 0.2, across) * smoothstep(1.0, -0.5, along) * smoothstep(-6.5, -1.0, along);
-    layer = max(layer, tongue);
-    // A tongue burns hot: it never shows as dim red haze.
-    h = max(h, 0.55 * tongue);
-    float g = 1.1 * layer + 0.35 * front + (1.4 + 1.4 * uBig) * ball + (0.25 + 0.3 * uAp) * bloom;
-    vec3 col = heatC(max(h, ball)) * g;
+    // A crescent hugs the nose and wraps down the flanks.
+    // Nearer the ground the air is thicker: the shock presses in, thickens and wraps farther.
+    // It never thins below about a pixel, so it does not shimmer.
+    float d = shellD(along, across, 1.3 - 0.18 * uAp, 0.5, 1.0 - 0.15 * uAp);
+    float w = max(0.035 + 0.06 * uAp, 0.7 * px);
+    // Plasma breaks the shell into racing filaments.
+    float fil = 0.72 + 0.28 * sin(across * 9.0 - uTime * 31.0 + 2.0 * sin(along * 5.0 + uTime * 7.0));
+    float wrap = exp(-across * across / (2.2 + 5.0 * uAp));
+    float g = (exp(-d * d / (w * w)) * fil + (0.15 + 0.4 * uAp) * exp(-abs(d) / (0.2 + 0.3 * uAp))) * wrap * smoothstep(-1.2 - 1.8 * uAp, 0.6, along);
+    // Compressed air glows ahead of the nose.
+    g += 0.3 * uAp * exp(-max(d, 0.0) / (0.5 + 0.9 * uAp)) * smoothstep(0.0, 0.8, along) * exp(-across * across / 1.5);
+    // Hot gas peels off the flanks in two streamers.
+    float side = abs(across) - (1.4 + 0.7 * uAp);
+    g += 0.55 * uAp * exp(-side * side / 0.06) * smoothstep(0.8, -2.5, along) * smoothstep(-5.5, -1.0, along) * (0.6 + 0.4 * sin(along * 3.0 + uTime * 9.0));
+    // White-hot at the nose, bluer as it nears; orange where it wraps.
+    float k = smoothstep(0.0, 1.6, across);
+    vec3 c = mix(mix(uHot * 3.0, vec3(3.2, 3.4, 4.2), 0.5 * uAp), uRim * 1.2, k);
+    vec3 col = c * g;
     // The strike: a second thin crescent, violet, a little farther out.
     if (uGrand > 0.01) {
       float d3 = shellD(along, across, 1.8 + 0.25 * uGrand, 0.65, 0.9);
@@ -5289,8 +5284,6 @@ const bowMat = new THREE.ShaderMaterial({
       v *= 0.8 + 0.2 * sin(across * 5.0 - uTime * 2.5);
       col += uCos * 1.6 * v * uGrand;
     }
-    // The card fades out before its edge.
-    col *= 1.0 - smoothstep(3.6, 5.4, length(q) / (1.0 + 0.5 * uBig));
     gl_FragColor = vec4(col * uGain, 0.0);
   }`,
 });
@@ -5300,7 +5293,7 @@ scene.add(bow);
 // A fiery haze hangs round the burning rock; night shows it most.
 // It shares the bow's card and draws over the smoke near the rock.
 const haloMat = new THREE.ShaderMaterial({
-  uniforms: { uF: bowMat.uniforms.uF, uBig: bowMat.uniforms.uBig, uGain: { value: 0 }, uTime: U.uTime, uC: U.uAstC, uHot: bowMat.uniforms.uHot },
+  uniforms: { uF: bowMat.uniforms.uF, uGain: { value: 0 }, uTime: U.uTime, uC: U.uAstC, uHot: bowMat.uniforms.uHot },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -5342,7 +5335,9 @@ function updateBow() {
   // The shock brightens and grows as the rock comes down the last stretch.
   const ap = Math.max(clamp((Math.min(ast.s, 1) - 0.25) / 0.75, 0, 1), g);
   bowMat.uniforms.uAp.value = ap;
-  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * (0.5 + 0.9 * ap * ap) * (1 + 1.2 * g);
+  // The shock comes in slowly, only as the rock nears the ground (Tom).
+  const bk = THREE.MathUtils.smoothstep(ap, 0.35, 1);
+  bowMat.uniforms.uGain.value = 0.9 * astMat.uniforms.uBurn.value * 3 * bk * bk * (1 + 1.5 * g);
 }
 const headFlare = makeFlare(linFit(0.97, 0.03, 220));
 const hitFlare = makeFlare(linFit(0.97, 0.06, 70));
