@@ -21,6 +21,18 @@ Tier: raw WebGL2 (analytic ray cast of the bowl, the water, the drops and the wa
 - [x] Water: standing ripples from the busy points, passing rings from strikes and drops, crispation at full voice
 - [x] Sound: doublet partials with beats, rasp, strike, drips, room
 - [x] Performance: detail level, slow-frame step, idle when quiet, reduced motion
-- [ ] QA: console, gestures, controls, 1280, 375 x 812, 812 x 375
-- [ ] Toy doc docs/toys/bowl.md
-- [ ] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
+- [x] QA: console, gestures, controls, 1280, 375 x 812, 812 x 375
+- [x] Toy doc docs/toys/bowl.md
+- [x] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
+
+## Summary of Changes
+
+- `bowl/index.html`: the toy on Bar v2. Raw WebGL2: a ray cast of the bowl (two ellipsoids cut by the rim, the foot and a flat floor), the water, the drops and the wand, under a warm lamp and a window pane. Hammered outer wall, turned inner wall, half-round lip, three alloys.
+- The bowl state: two signed amplitudes per mode (modes 2 to 6). Circling the rim drives mode 2 toward a level set by the speed; the pattern turns with the wand; an unsteady circle wobbles the level and the pitch. A tap strikes all modes at its angle; a held press damps; Hush stops it.
+- The water: a height map once a frame from eight sources on the waterline (the rim's busy and still points), so four fans of ripples meet in a standing lattice; a wave map adds the strike ring and the drops' dents; caustics on the floor and on the wall; drops leap from the four points at full voice.
+- Sound (raw Web Audio through `audioKit()`): ten partial tones into two ears, so strikes beat and the beat swings between the ears; a rasp that ducks once the tone catches; strike extras, plips, fizz, hush and a room. Checked by offline renders and spectrograms.
+- Idle: the loop sleeps when the ripples fall below sight; the sound fades on by itself.
+- `docs/toys/bowl.md`: the toy doc.
+- Handoff files for the menu tile, the icon block and the toys.json entry went to the orchestrator.
+
+Not verified: the sound by ear, the live frame rate, frame times on a phone.

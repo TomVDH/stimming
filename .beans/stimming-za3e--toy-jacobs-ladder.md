@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T08:32:06Z
-updated_at: 2026-11-16T09:18:08Z
+updated_at: 2026-11-16T09:39:20Z
 ---
 
 Idea 7 (Group A, school and uni lab experiments): "An arc climbs two rods, snaps and starts again. Blow on it to bend it."
@@ -37,3 +37,7 @@ Tier: raw WebGL2. A small analytic 3D room (bench, wall, box, insulators, rods) 
 - `docs/toys/ladder.md`: the toy doc.
 - Handoff for the menu (in the batch scratchpad): `toys-entry.json`, `menu-li.html`, `menu-icon.js`.
 - Open: the sound is not checked by ear; motion and frame rate were not watched live (background pane); the phone frame rate is not measured.
+
+## Kept by Tom (2026-11-16)
+
+This toy's idea is on the Cut list in `docs/toy-ideas.md` (cut by Tom on 2026-11-15, before the build). The orchestrator proposed it without re-reading that list. Tom saw the finished toy and said: keep it.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T09:47:09Z
+updated_at: 2026-11-16T09:47:12Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -73,3 +73,7 @@ Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add t
 - [ ] Open ideas, one bean each: fire glow (p5hq), viscosity (hupj), fat beads (xce4), skin rafts (1gin), wall scum (z7ca), bubble rings (i0dx), boil by fire (ycif)
 - [ ] Merge origin/main before the PR
 - [ ] PR to main
+
+## Performance pass
+
+- [ ] Performance pass: see stimming-mbpi (baseline measured; no code changed yet)
