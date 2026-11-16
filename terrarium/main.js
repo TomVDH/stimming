@@ -77,6 +77,9 @@ const CAM_Y = 1.35, AIM_Y = 0.86, CAM_D = 3.45, CAM_ASP = 0.7;
 // Metres in one scene unit, and the top of the glass in units.
 const METRE = 0.2, GLASS_TOP = SHAPE.top;
 const f = x => x.toFixed(4);
+// The fern crowns: three in Fern, the fourth alone in Moss.
+const CROWN_AT = [[-0.17, 0.27, -0.1, 0.22], [0.17, 0.25, -0.2, 0.18], [-0.02, 0.24, 0.22, 0.12], [0.2, 0.28, -0.18, 0.13]];
+const CROWNS = CROWN_AT.map(c => `vec3(${f(c[0])}, ${f(c[1])}, ${f(c[2])})`);
 
 // The camera, as statements. It needs uv and asp, and gives ro and rd.
 const CAM = `
@@ -149,6 +152,10 @@ const JAR = `
 const SCENE = `
 uniform vec3 uLampC;
 uniform float uPlants, uSpray;
+// uWake: 0 dull and curled, 1 freshly misted. uGrow: growth the jar keeps, 0 to 1.
+uniform float uWake, uGrow;
+// Each fern's sway after a poke, in radians.
+uniform vec3 uSway;
 const vec3 LP = vec3(0.0, ${f(LY)}, ${f(LZ)});
 // Green glass: red and blue fade first, per unit of glass crossed.
 const vec3 GLASS_ABS = vec3(5.0, 1.4, 3.6);
@@ -167,42 +174,53 @@ float teFloor(vec2 q) {
   float moss = uPlants > 0.5 && uPlants < 1.5 ? 1.0 : 0.0;
   float h = 0.23 + (0.05 + 0.05 * moss) * teBump(q, vec2(-0.14, -0.12), 14.0) + (0.035 + 0.04 * moss) * teBump(q, vec2(0.2, 0.04), 22.0);
   h += moss * 0.045 * teBump(q, vec2(0.02, 0.24), 30.0);
-  h += 0.012 * teN(q * 18.0) + 0.006 * teN(q * 47.0);
+  h += 0.012 * teN(q * 18.0) + (0.006 + 0.006 * uWake) * teN(q * 47.0);
   return h;
 }
 
 // One fern frond. q is relative to the crown; the frond arches out along yaw.
-// R sets its reach; lift stretches it upward. lift must stay at 1 or more.
-float teFrond(vec3 q, float yaw, float R, float lift) {
+// R sets its reach; lift stretches it upward and must stay at 1 or more.
+// curl 0 is open; curl 1 rolls the tip into a fiddlehead, as a young frond does.
+float teFrond(vec3 q, float yaw, float R, float lift, float curl) {
   float c = cos(yaw), s = sin(yaw);
   vec2 uw = vec2(c * q.x + s * q.z, c * q.z - s * q.x);
-  vec2 a = vec2(uw.x, q.y / lift);
-  vec2 cc = vec2(R, 0.15 * R);
-  const float th0 = 3.29, th1 = 0.3;
-  vec2 d = a - cc;
-  float th = atan(d.y, d.x);
-  if (th < th1 - 0.8) th += 6.28318;
-  float sN = clamp((th0 - th) / (th0 - th1), 0.0, 1.0);
-  float ts = th0 - sN * (th0 - th1);
-  float e = length(a - cc - R * vec2(cos(ts), sin(ts)));
-  // Leaflets stand out from the stem, in a comb that sweeps toward the tip.
+  vec2 d = vec2(uw.x, q.y / lift) - vec2(R, 0.15 * R);
+  // The spine leaves the crown at th0 and turns through span; curling adds turn.
+  const float th0 = 3.29;
+  float span = mix(2.99, 5.7, curl);
+  float u = mod(th0 - atan(d.y, d.x), 6.28318);
+  float sN = u <= span ? u / span : (u - span < 6.28318 - u ? 1.0 : 0.0);
+  float ts = th0 - sN * span;
+  // A curl draws the spine in toward its centre: a spiral, not a circle.
+  float rad = R * (1.0 - 0.82 * curl * smoothstep(0.3, 1.0, sN));
+  float e = length(d - rad * vec2(cos(ts), sin(ts)));
+  // Leaflets stand out from the stem in a comb; curled ones fold in.
   float wl = 0.55 * R * pow(max(sin(3.1416 * clamp((sN - 0.18) / 0.82, 0.0, 1.0)), 0.0), 0.8);
+  wl *= 1.0 - 0.75 * curl * smoothstep(0.25, 0.9, sN);
   float k = fract(sN * 15.0 - abs(uw.y) / R * 1.4);
   float pin = 0.25 + 0.75 * (1.0 - smoothstep(0.15, 0.45, abs(k - 0.5)));
   float blade = max(e - 0.004, abs(uw.y) - wl * pin);
   float stem = length(vec2(e, uw.y)) - 0.006 * (1.0 - 0.6 * sN);
   return min(blade, stem);
 }
-// A fern: n fronds round one crown, inside a cheap bounding sphere.
-float teFern(vec3 p, vec3 base, float n, float yaw0, float R) {
+// A fern grows by one rule: each new frond turns a golden angle from the last.
+// Older fronds are longer and lie lower; young ones stand up and stay curled.
+// n can be fractional: the newest frond is still coming up.
+float teFern(vec3 p, vec3 base, float n, float yaw0, float R, float sway) {
   vec3 q = p - base;
+  // A poke sways the whole fern from its crown.
+  q.x -= sway * q.y;
   float bs = length(q - vec3(0.0, R * 1.2, 0.0)) - R * 2.1;
   if (bs > 0.05) return bs;
   float d = 1e3;
-  for (int j = 0; j < 5; j++) {
-    if (float(j) >= n) break;
+  for (int j = 0; j < 8; j++) {
     float fj = float(j);
-    d = min(d, teFrond(q, yaw0 + fj * 6.28318 / n + 0.4 * sin(fj * 2.3), R * (0.85 + 0.25 * teH(vec2(fj, R))), 1.5));
+    if (fj >= n) break;
+    float young = fj / max(n - 1.0, 1.0), grow = clamp(n - fj, 0.0, 1.0);
+    float Rj = R * (1.05 - 0.35 * young) * (0.85 + 0.2 * teH(vec2(fj, R))) * (0.35 + 0.65 * grow);
+    // Dry fronds curl; a mist opens them, the youngest last.
+    float curl = clamp(0.5 + 0.45 * young + 0.5 * (1.0 - grow) - 1.1 * uWake, 0.0, 1.0);
+    d = min(d, teFrond(q, yaw0 + fj * 2.39996, Rj, 1.25 + 0.5 * young + 0.2 * uWake, curl));
   }
   return d;
 }
@@ -231,11 +249,11 @@ vec2 teMap(vec3 p) {
   vec2 r = vec2(max((p.y - teFloor(p.xz)) * 0.6, length(p.xz) - (jarR(p.y) - 0.015)), 1.0);
   if (p.y > 0.15) {
     if (uPlants < 0.5) {
-      float fe = min(teFern(p, vec3(-0.17, 0.27, -0.1), 5.0, 0.3, 0.22), teFern(p, vec3(0.17, 0.25, -0.2), 4.0, 1.2, 0.18));
-      fe = min(fe, teFern(p, vec3(-0.02, 0.24, 0.22), 3.0, 2.0, 0.12));
+      float fe = min(teFern(p, ${CROWNS[0]}, 4.0 + 4.0 * uGrow, 0.3, 0.22, uSway.x), teFern(p, ${CROWNS[1]}, 3.0 + 3.0 * uGrow, 1.2, 0.18, uSway.y));
+      fe = min(fe, teFern(p, ${CROWNS[2]}, 2.0 + 3.0 * uGrow, 2.0, 0.12, uSway.z));
       if (fe < r.x) r = vec2(fe, 2.0);
     } else if (uPlants < 1.5) {
-      float fe = teFern(p, vec3(0.2, 0.28, -0.18), 3.0, 0.8, 0.13);
+      float fe = teFern(p, ${CROWNS[3]}, 2.0 + 3.0 * uGrow, 0.8, 0.13, uSway.x);
       if (fe < r.x) r = vec2(fe, 2.0);
     } else {
       float pi = min(tePitcher(p, vec3(-0.12, 0.22, -0.08), 0.42), tePitcher(p, vec3(0.05, 0.22, -0.2), 0.36));
@@ -337,13 +355,20 @@ vec3 teShade(vec3 p, vec3 rd, float m) {
       dif = 0.3;
     } else {
       float t = teN(p.xz * 24.0) * 0.6 + teN(p.xz * 70.0) * 0.4;
-      base = mix(vec3(0.02, 0.06, 0.01), vec3(0.09, 0.2, 0.025), t);
-      leaf = 0.3;
+      // Dry moss is olive and dull; wet moss turns a deep, bright green.
+      base = mix(mix(vec3(0.03, 0.04, 0.012), vec3(0.07, 0.085, 0.025), t), mix(vec3(0.02, 0.07, 0.01), vec3(0.09, 0.22, 0.025), t), uWake);
+      // Moss creeps over bare soil as the jar grows.
+      float cover = smoothstep(0.5 - 0.4 * uGrow, 0.58 - 0.4 * uGrow, teN(p.xz * 5.0 + 4.0) * 0.7 + teN(p.xz * 19.0) * 0.3 + 0.12);
+      base = mix(vec3(0.03, 0.02, 0.012) * (0.7 + 0.6 * teN(p.xz * 60.0)), base, cover);
+      leaf = 0.3 * cover;
+      // Wet moss tips catch the light: small glints.
+      float tip = step(0.93, teH(floor(p.xz * 260.0))) * uWake * cover;
+      base += tip * lc * 0.02 * pow(max(dot(reflect(rd, n), L), 0.0), 6.0);
     }
   } else if (m < 2.5) {
-    base = vec3(0.05, 0.17, 0.03);
+    base = mix(vec3(0.05, 0.1, 0.03), vec3(0.05, 0.19, 0.03), uWake);
     dif = abs(dot(n, L));
-    leaf = 1.0;
+    leaf = 0.6 + 0.4 * uWake;
   } else if (m < 3.5) base = vec3(0.4, 0.36, 0.3);
   else if (m < 4.5) base = vec3(0.38, 0.2, 0.09);
   else {
@@ -352,6 +377,8 @@ vec3 teShade(vec3 p, vec3 rd, float m) {
     leaf = 0.7;
   }
   vec3 c = base * (lc * dif + amb) * ao;
+  // Wet caps glisten.
+  if (m > 3.5 && m < 4.5) c += lc * pow(max(dot(reflect(rd, n), L), 0.0), 30.0) * (0.08 + 0.7 * uWake);
   // Light through a leaf from behind, and a bright edge.
   float back = pow(max(dot(rd, L) + 0.2, 0.0), 2.0);
   c += base * lc * leaf * back * 1.4;
@@ -551,7 +578,14 @@ function healWipe(dt) {
 // dose: the water a mist put in the jar; it dries over about a minute.
 // mistFog: the fog a mist lays on the glass; it condenses into beads.
 // front: how far down from the lid the rest fog is still missing, in units.
-const G = { held: false, dose: 0, mistFog: 0, front: 0, spray: 0 };
+const G = { held: false, dose: 0, mistFog: 0, front: 0, spray: 0, wake: 0 };
+// grow: what the jar keeps between visits. Each mist adds a little.
+const GROW_KEY = 'stimming.terrarium.grow';
+let grow = 0;
+try { grow = Math.min(1, Math.max(0, +localStorage.getItem(GROW_KEY) || 0)); } catch (err) { /* Storage is off. */ }
+function saveGrow() { try { localStorage.setItem(GROW_KEY, grow.toFixed(3)); } catch (err) { /* Storage is off. */ } }
+// A poke sets a fern swinging: each value is [phase time, strength].
+const sway = [[0, 0], [0, 0], [0, 0]], swayNow = [0, 0, 0];
 
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
@@ -570,6 +604,9 @@ try {
       uLampC: () => lampColour(),
       uPlants: () => plants,
       uSpray: () => G.spray,
+      uWake: () => G.wake,
+      uGrow: () => grow,
+      uSway: () => swayNow,
     },
   });
 } catch (err) {
@@ -594,16 +631,17 @@ new ResizeObserver(relight).observe(canvas);
 /* ---------- the tick ---------- */
 // It runs while the glass changes, then stops.
 let tickRaf = 0, tickT = 0;
-const busy = () => G.held || G.spray > 0 || G.dose > 0 || G.mistFog > 0.003 || G.front > 0 || wipeLive || S.wet > 0;
+const wakeWant = () => Math.min(1, G.dose * 1.4);
+const busy = () => G.held || G.spray > 0 || Math.abs(wakeWant() - G.wake) > 0.002 || sway.some(w => w[1] > 0) || G.dose > 0 || G.mistFog > 0.003 || G.front > 0 || wipeLive || S.wet > 0;
 function step(dt) {
   // Fog return speeds the whole cycle up or slows it down.
   const pace = 0.4 + 1.6 * fogBack;
   if (G.held) {
     G.dose = Math.min(1, G.dose + dt * 0.45);
-    G.mistFog += (0.85 - G.mistFog) * (1 - Math.exp(-dt / 0.35));
+    G.mistFog += (0.65 - G.mistFog) * (1 - Math.exp(-dt / 0.35));
     G.front = GLASS_TOP;
   } else {
-    G.mistFog = G.mistFog > 0.003 ? G.mistFog * Math.exp(-dt * pace / 14) : 0;
+    G.mistFog = G.mistFog > 0.003 ? G.mistFog * Math.exp(-dt * pace / 8) : 0;
     G.dose = Math.max(0, G.dose - dt * pace / 60);
     // The rest fog comes back from the lid once the drops thin out.
     if (G.dose < 0.5) G.front = Math.max(0, G.front - dt * pace * GLASS_TOP / 40);
@@ -616,6 +654,18 @@ function step(dt) {
   S.wet += (want - S.wet) * (1 - Math.exp(-dt / (G.held ? 1.4 : 0.8)));
   if (want === 0 && S.wet < 0.003) S.wet = 0;
   if (wipeLive) healWipe(dt);
+  // The green wakes in about five seconds, and dozes off slowly as the jar dries.
+  const ww = wakeWant();
+  G.wake += (ww - G.wake) * (1 - Math.exp(-dt / (ww > G.wake ? 1.6 : 12)));
+  if (Math.abs(ww - G.wake) <= 0.002) G.wake = ww;
+  // A poked fern swings and settles.
+  sway.forEach((w, i) => {
+    if (w[1] <= 0) { swayNow[i] = 0; return; }
+    w[0] += dt;
+    w[1] = w[1] * Math.exp(-dt / 0.7);
+    if (w[1] < 0.004) w[1] = 0;
+    swayNow[i] = w[1] * Math.sin(w[0] * 16);
+  });
 }
 function tick(t) {
   const dt = tickT ? Math.min(0.05, (t - tickT) / 1000) : 0.016;
@@ -634,13 +684,14 @@ function wake() {
 // Reduced motion puts the drops on at once; they dry in one step later.
 let dryTimer = 0;
 function stillMist() {
-  Object.assign(G, { dose: 1, mistFog: 0, front: 0 });
+  Object.assign(G, { dose: 1, mistFog: 0, front: 0, wake: 1 });
   S.wet = 1;
   env.touch();
   clearTimeout(dryTimer);
-  dryTimer = setTimeout(() => { Object.assign(G, { dose: 0 }); S.wet = 0; wipeK.fill(0); wipeLive = false; wipeDirty = true; env.touch(); }, 40000);
+  dryTimer = setTimeout(() => { Object.assign(G, { dose: 0, wake: 0 }); S.wet = 0; wipeK.fill(0); wipeLive = false; wipeDirty = true; env.touch(); }, 40000);
 }
 function holdMist(on) {
+  if (on) { grow = Math.min(1, grow + 0.05); saveGrow(); }
   if (reduced()) { if (on) stillMist(); return; }
   G.held = on;
   wake();
@@ -692,11 +743,28 @@ canvas.addEventListener('pointermove', e => {
   }
   if (press.kind === 'drag') wipeTo(e.clientX, e.clientY);
 });
-function endPress() {
+// The fern nearest a tap swings, if the tap lands within reach of it.
+function poke(cx, cy) {
+  const r = canvas.getBoundingClientRect(), asp = r.width / Math.max(1, r.height);
+  const { ro, fw, rt, up } = camera(asp);
+  const list = plants === 0 ? [0, 1, 2] : plants === 1 ? [3] : [];
+  let best = -1, bd = 1e9;
+  for (const i of list) {
+    const c = CROWN_AT[i], v = sub([c[0], c[1] + c[3] * 1.1, c[2]], ro), z = dot(v, fw);
+    const x = r.left + (0.5 + dot(v, rt) / z * FOC / asp) * r.width, y = r.top + (0.5 - dot(v, up) / z * FOC) * r.height;
+    const dd = Math.hypot(x - cx, y - cy);
+    if (dd < bd) { bd = dd; best = i; }
+  }
+  if (best < 0 || bd > r.height * 0.14) return;
+  const k = best === 3 ? 0 : best;
+  sway[k] = [0, reduced() ? 0 : 0.12];
+  wake();
+}
+function endPress(e) {
   if (!press) return;
   clearTimeout(press.timer);
   if (press.kind === 'hold') holdMist(false);
-  // Task 3 makes a tap poke a frond.
+  if (press.kind === 'press' && e?.type === 'pointerup') poke(e.clientX, e.clientY);
   press = null;
 }
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(ev, endPress);
@@ -712,4 +780,4 @@ whenVisible(stage, v => {
   if (v) wake();
 });
 // QA reads and drives the state here.
-Object.assign(window, { __terrarium: { env, S, G, mist, holdMist, dab, setPlants: act.plants, setLight: act.light } });
+Object.assign(window, { __terrarium: { env, S, G, sway, mist, holdMist, dab, poke, setPlants: act.plants, setLight: act.light, setGrow: v => { grow = v; env.touch(); } } });

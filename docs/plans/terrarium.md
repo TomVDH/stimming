@@ -78,7 +78,7 @@ The blockout's fronds are hand-placed arcs. Task 3 replaces them with a growth r
 - [x] Wire `shared/wetglass.js` to the jar's curved surface: fog, beads, runs, the wipe stripe. Built 2026-11-16: a second, finer bead layer; the spray cone from the lid; the condensation cycle sleeps after about 66 s.
 
 ### Task 3: The green wakes
-- [ ] Moss lift and colour, fern unfurl, mushroom gloss, all driven by one wetness value.
+- [x] Moss lift and colour, fern unfurl, mushroom gloss, all driven by one wetness value. Built 2026-11-16: fronds grow by a golden-angle rule and curl into fiddleheads when dry; each mist adds lasting growth (new fronds, creeping moss), saved in `stimming.terrarium.grow`; a tap swings the nearest fern.
 
 ### Task 4: Finish and QA
 - [ ] Sound, Settings, persistence, performance ladder. QA in the browser pane. Tick the bean, record the cost.
