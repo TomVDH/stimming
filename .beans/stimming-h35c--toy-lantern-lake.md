@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T23:23:47Z
+updated_at: 2026-11-16T23:40:01Z
 parent: stimming-oh7b
 ---
 
@@ -102,8 +102,8 @@ Final review (fresh reviewer, 2026-11-16). Three Important findings, each fixed:
 - The frog's buzz modulated the envelope's own gain by plus or minus 0.5, about 20 times its peak, and clicked. The buzz now has its own gain stage ahead of the envelope. Checked by reading, not by a test.
 - Space needed focus on the stage; on a focused button it pressed that button. Festival now takes Space through the shell's key binder (document-wide, no repeats). Check: Space with no focus, and after Clear, starts a festival (failed first, passes now).
 
-Deferred minors:
-- Clear cuts a lantern already in its ember off in one frame; it should fade from its current glow.
-- After the tab comes back, the lake bed and drone stay silent until the next click or key; `kit.wake()` on return would fix it.
+Minors, fixed on Tom's word (2026-11-16):
+- Clear fades a lantern already in its ember from its own glow, over 0.5 s. Check failed first, passes now.
+- Back in view, the sound wakes with no new gesture, unless it is muted. Checks for both failed or held as expected, and pass now.
 
 `?qa` shows the pool to a test as `window.__lanterns`.

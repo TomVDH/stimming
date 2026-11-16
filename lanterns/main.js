@@ -1,5 +1,5 @@
 // Lantern lake: the toy's module, loaded by index.html.
-import { initPage, whenVisible, reduced, audioKit, oklchLinear, onQuality, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, audioKit, sound, oklchLinear, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { swellHeight } from '../shared/water.js';
@@ -462,7 +462,7 @@ function shoreUnder(eye, d) {
 const CAPS = [64, 120, 160], MAXN = 160;
 /**
  * One lantern. fade is how long it takes to go out; float marks one on the water.
- * @typedef {{ p: number[], v: number[], age: number, life: number, fade: number, size: number, phase: number, lean: number, leanV: number, rate: number, float: boolean, fest: boolean }} Lantern
+ * @typedef {{ p: number[], v: number[], age: number, life: number, fade: number, size: number, phase: number, lean: number, leanV: number, rate: number, float: boolean, fest: boolean, from?: number }} Lantern
  */
 /** @type {Lantern[]} */
 export const pool = [];
@@ -518,8 +518,12 @@ export function festival() {
 export function clearAll() {
   fest = null;
   for (const L of pool) {
-    const at = L.age + Math.random();
-    if (at < L.life || L.fade > 0.5) { L.life = Math.min(L.life, at); L.fade = 0.5; }
+    if (L.fade <= 0.5) continue;
+    // A burning lantern starts out within 1 s; an ember fades from its own glow now.
+    const from = glowOf(L);
+    if (L.age < L.life) L.life = Math.min(L.life, L.age + Math.random());
+    else { L.life = L.age; L.from = from; }
+    L.fade = 0.5;
   }
   wake();
 }
@@ -528,8 +532,8 @@ function glowOf(L) {
   const flare = 1 + 1.4 * Math.exp(-L.age / 0.12);
   if (L.age < L.life) return flare;
   const out = Math.max(0, 1 - (L.age - L.life) / L.fade);
-  // A cleared lantern goes straight out; a spent one keeps an ember for 2 s.
-  if (L.fade < 6) return out * out;
+  // A cleared lantern goes straight out from its glow; a spent one keeps an ember for 2 s.
+  if (L.fade < 6) return (L.from ?? 1) * out * out;
   return (0.08 + 0.92 * out * out) * (L.age < L.life + L.fade ? 1 : Math.max(0, 1 - (L.age - L.life - L.fade) / 2));
 }
 export function stepLanterns(dt) {
@@ -962,7 +966,7 @@ function soundRest() {
 
 /* ---------- start ---------- */
 // QA: ?qa shows the pool to a test as window.__lanterns.
-if (qs.has('qa')) Object.assign(window, { __lanterns: { pool } });
+if (qs.has('qa')) Object.assign(window, { __lanterns: { pool, glowOf, clearAll, kit } });
 // QA: ?lan=10 starts with ten lanterns in the air, ?float=8 with eight on the water.
 // ?fest=25 starts 25 s into a festival.
 const preset = Math.min(MAXN, +(qs.get('lan') || 0));
@@ -982,6 +986,7 @@ mark('first-frame');
 // A hidden tab stops the loop and the clock.
 whenVisible(stage, v => {
   visible = v;
-  if (v) kick();
+  // Back in view, the sound wakes with no new gesture, unless it is muted.
+  if (v) { if (kit.ac && sound.on) kit.wake(); kick(); }
   else soundRest();
 });
