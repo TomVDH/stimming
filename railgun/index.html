@@ -2893,7 +2893,7 @@ function rockAway() {
   smoke.visible = false;
   PU.uTrail.value = 0;
   astMat.uniforms.uBurn.value = 0;
-  for (const f of frags) { f.on = false; f.m.visible = false; f.trail.visible = false; f.mini.m.visible = false; }
+  for (const f of frags) { f.on = false; f.m.visible = false; f.trail.visible = false; f.mini.m.visible = false; f.glow.visible = false; }
 }
 
 /* ---------- vol: a tiled 3D billow noise, baked on the GPU ---------- */
@@ -3308,7 +3308,8 @@ const frags = Array.from({ length: 16 }, () => {
   scene.add(m);
   // splitS: the fall fraction where a piece breaks off; -1 rides from the start.
   // splitT: when it broke off; its gap grows from the rock's flank.
-  return { m, trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0), splitS: -1, splitT: -1e9 };
+  // glow: a split piece's own soft halo, so it stands apart from riders.
+  return { m, glow: makeFlare(linFit(0.85, 0.14, 55)), trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0), splitS: -1, splitT: -1e9 };
 });
 // Seconds a split piece takes to drift out to its own track.
 const SPLIT_T = 30;
@@ -3327,6 +3328,9 @@ function seedFrags() {
     f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
+    // A split piece is bigger than a rider, so it reads as torn off.
+    if (split) f.k = 0.17 + 0.08 * rnd();
+    f.glow.visible = false;
     f.spin.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
     f.m.quaternion.random();
     f.m.visible = f.on; f.trail.visible = f.on; f.mini.m.visible = false;
@@ -3347,6 +3351,11 @@ function placeFrags() {
     f.m.scale.setScalar(f.k * ast.R);
     const u = f.trail.material.uniforms;
     u.uP.value.copy(f.pos); u.uR.value = f.k * ast.R; u.uLen.value = f.k * ast.R * (f.k >= 0.18 ? 90 : 60);
+    // A split piece burns hotter: a longer fire tip and its own halo.
+    if (f.splitS >= 0) {
+      u.uLift.value.set(-1, 1, 2.6);
+      flare(f.glow, f.pos, f.k * ast.R * 4.5, 0.5 * Math.min(1, u.uOn.value) * (0.5 + 0.5 * astMat.uniforms.uBurn.value));
+    }
   }
 }
 // A piece breaks off the main rock with a puff of embers.
@@ -3391,7 +3400,7 @@ function stepFrags() {
 }
 // A fragment bursts into embers.
 function breakFrag(f) {
-  f.broke = simT; f.m.visible = false;
+  f.broke = simT; f.m.visible = false; f.glow.visible = false;
   const r = f.k * ast.R, sp = r / 120;
   for (let i = 0; i < 90; i++) {
     bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((60 + rnd() * 220) * sp);
