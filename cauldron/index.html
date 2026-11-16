@@ -199,6 +199,8 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'boil', label: 'Boil', min: 0, max: 3, step: 0.01, value: 1 },
     { type: 'slider', id: 'soupGlow', label: 'Soup glow', min: 0, max: 3, step: 0.01, value: 1 },
     // Skin look: 0 is today's skin, 1 a yellowed matte layer with torn edges.
+    // Stirrer proposal: 0 spoon, 1 carved spoon, 2 iron ladle, 3 paddle.
+    { type: 'slider', id: 'tool', label: 'Stirrer', min: 0, max: 3, step: 1, value: 0 },
     { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
   ],
   reset: () => act.reset(),
@@ -1273,6 +1275,8 @@ uniform vec4 uDrop[${ND}];
 // A drop's own colour, linear; alpha 0 takes the soup's colour.
 uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
+// The stirrer: 0 today's spoon, 1 carved spoon, 2 iron ladle, 3 paddle.
+uniform int uTool;
 uniform int uMarch;
 // The background blur's widest disc, in back-layer texels.
 uniform float uDof;
@@ -1465,6 +1469,7 @@ float glint(vec2 xz, float g, vec3 n, vec3 v) {
   return s * smoothstep(0.4, 0.0, length(f)) * (0.6 + 0.4 * sin(uTime * 5.0 + h * 50.0)) * 9.0;
 }
 vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, out vec3 emit);
+float sdTool(vec3 p, out float part);
 // Small bubbles rise through thin broth: three depth slices, one bubble a cell.
 vec3 risers(vec3 p, vec3 rr, vec3 sig, float heat) {
   vec3 acc = vec3(0.0);
@@ -1557,7 +1562,7 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
       vec3 q = p + rr * t;
       int id = -1; float m = 0.0, d = 1e9;
       if (gNc > 0) d = sdAll(q, id, m);
-      float ds = uSpB.w > 0.0 ? sdEll(q - uSpA.xyz + vec3(0.0, 0.03, 0.0), vec3(0.13, 0.035, 0.1)) : 1e9;
+      float tp, ds = uSpB.w > 0.0 ? (uTool > 0 ? sdTool(q, tp) : sdEll(q - uSpA.xyz + vec3(0.0, 0.03, 0.0), vec3(0.13, 0.035, 0.1))) : 1e9;
       if (min(d, ds) < 0.002) {
         tu = t;
         if (ds < d) uAlb = lch(0.5, 0.07, 65.0);
@@ -1825,6 +1830,71 @@ float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
   }
   return -1.0;
 }
+/* the stirrer, as a signed distance */
+// u runs up the handle; h is the bowl's long axis, level; s runs across.
+void toolFrame(out vec3 u, out vec3 h, out vec3 s) {
+  u = normalize(uSpB.xyz - uSpA.xyz);
+  h = normalize(vec3(u.x, 0.0, u.z) + vec3(1e-4, 0.0, 0.0));
+  s = normalize(cross(vec3(0.0, 1.0, 0.0), h));
+}
+// part: 0 handle, 1 wooden bowl or blade, 2 iron.
+float sdTool(vec3 p, out float part) {
+  vec3 u, h, s;
+  toolFrame(u, h, s);
+  vec3 q = p - uSpA.xyz, l = vec3(dot(q, h), q.y, dot(q, s));
+  part = 0.0;
+  if (uTool == 2) {
+    // A deep round cup on a long thin handle.
+    vec3 c = vec3(0.0, 0.05, 0.0);
+    float cup = max(abs(length(l - c) - 0.088) - 0.005, l.y - c.y - 0.012);
+    vec3 r0 = uSpA.xyz + c.y * vec3(0.0, 1.0, 0.0) + h * 0.09 + vec3(0.0, 0.012, 0.0);
+    float han = sdCap(p, r0, r0 + u * 3.0, 0.011);
+    part = 2.0;
+    return smin(cup, han, 0.012);
+  }
+  if (uTool == 3) {
+    // A flat blade along the handle, then a thick round shaft.
+    vec3 f = normalize(cross(u, s));
+    vec3 b = q - u * 0.07;
+    float blade = sdRBox(vec3(dot(b, s), dot(b, u), dot(b, f)), vec3(0.07, 0.17, 0.011), 0.01);
+    float han = sdCap(p, uSpA.xyz + u * 0.22, uSpA.xyz + u * 3.0, 0.026);
+    part = blade < han ? 1.0 : 0.0;
+    return smin(blade, han, 0.04);
+  }
+  // A carved spoon: a dished bowl, a neck and a tapered handle.
+  float bowl = max(sdEll(l - vec3(0.0, -0.02, 0.0), vec3(0.12, 0.042, 0.085)), -sdEll(l - vec3(0.0, 0.006, 0.0), vec3(0.106, 0.035, 0.072)));
+  bowl = max(bowl, l.y);
+  vec3 n0 = uSpA.xyz + h * 0.1;
+  float han = sdRCone(p, n0, n0 + u * 3.0, 0.014, 0.034);
+  part = bowl < han ? 1.0 : 0.0;
+  return smin(bowl, han, 0.025);
+}
+vec3 toolN(vec3 p) {
+  const vec2 e = vec2(1.0, -1.0) * 0.0015;
+  float m;
+  return normalize(e.xyy * sdTool(p + e.xyy, m) + e.yyx * sdTool(p + e.yyx, m) + e.yxy * sdTool(p + e.yxy, m) + e.xxx * sdTool(p + e.xxx, m));
+}
+vec3 shadeTool(vec3 p, vec3 n, vec3 rd, float part) {
+  vec3 v = -rd;
+  vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
+  float sAx = dot(p - uSpA.xyz, ax);
+  vec3 soup = soupCol(uSpA.xz);
+  float wet = smoothstep(0.3, 0.1, sAx);
+  if (uTool == 2) {
+    // Iron: dark, worn, with a soup film low down.
+    vec3 alb = vec3(0.05, 0.048, 0.046);
+    vec3 col = litPBR(n, v, alb, mix(0.32, 0.12, wet), mix(vec3(0.42, 0.41, 0.4), soup * 0.3 + 0.04, wet * 0.7), 1.0 - 0.7 * wet);
+    return col + fireOn(p, n, v, alb, 0.3, vec3(0.42)) * 0.15;
+  }
+  // Wood: long grain along the handle, darker and stained where it meets the soup.
+  float around = dot(n, cross(ax, vec3(0.0, 1.0, 0.0)));
+  float grain = noise2(vec2(sAx * 6.0, around * 3.0)), fine = noise2(vec2(sAx * 40.0, around * 12.0));
+  vec3 alb = lch(0.62, 0.075, 68.0) * (0.8 + 0.3 * grain);
+  if (uTool == 3) alb = mix(alb, vec3(0.03, 0.025, 0.02), smoothstep(0.02, -0.1, sAx) * 0.9 * part);
+  alb = mix(alb, alb * 0.5 + soup * 0.28, wet);
+  float rough = clamp(0.45 + 0.22 * (fine - 0.5) + 0.12 * (grain - 0.5), 0.25, 0.75);
+  return litSurf(n, v, alb, mix(rough, 0.12, wet), 0.04);
+}
 vec3 shadeSpoon(vec3 p, vec3 n, vec3 rd) {
   vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
   float s = dot(p - uSpA.xyz, ax);
@@ -1941,7 +2011,21 @@ void main() {
   }
   // The spoon's handle.
   vec3 spN = vec3(0.0, 1.0, 0.0);
-  if (uSpB.w > 0.0) {
+  float toolPart = -1.0;
+  if (uSpB.w > 0.0 && uTool > 0) {
+    // March the stirrer inside a capsule that bounds it.
+    vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
+    float tb = iCapsule(ro, rd, uSpA.xyz - ax * 0.2, uSpB.xyz, 0.17);
+    if (tb > 0.0 && tb < tHit) {
+      float t = tb;
+      for (int i = 0; i < 64; i++) {
+        float pt, d = sdTool(ro + rd * t, pt);
+        if (d < 0.0006 * t) { tHit = t; mat = 8; toolPart = pt; spN = toolN(ro + rd * t); break; }
+        t += d * 0.9;
+        if (t > tHit) break;
+      }
+    }
+  } else if (uSpB.w > 0.0) {
     float t = iCapsule(ro, rd, uSpA.xyz, uSpB.xyz, uSpA.w);
     if (t > 0.0 && t < tHit) {
       vec3 q = ro + rd * t, ba = uSpB.xyz - uSpA.xyz;
@@ -1963,7 +2047,7 @@ void main() {
   else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
   else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
   else if (mat == 7) col = shadeDrop(p, dropN, rd, uDropC[dropI]);
-  else if (mat == 8) col = shadeSpoon(p, spN, rd);
+  else if (mat == 8) col = toolPart >= 0.0 ? shadeTool(p, spN, rd, toolPart) : shadeSpoon(p, spN, rd);
   else if (mat == 9) {
     vec3 ba = legB - legA;
     float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
@@ -3505,6 +3589,7 @@ function scenePass() {
   const sw = spoonWorld();
   gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
   gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
+  gl.uniform1i(sceneP.u('uTool'), Math.round(devV('tool', 0)));
   [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex, velTex].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, t);
