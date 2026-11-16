@@ -204,31 +204,32 @@ function start() {
     const lis = dozen();
     // With no motion the dozen simply shows.
     if (calm()) { lis.forEach(li => hold(li, false)); return; }
-    // The comet fades in where it starts, on the track at twelve o'clock.
-    const head = { a: 0, fade: 0 };
-    let came = 0;
     lis.forEach(li => hold(li, true));
-    const paint = () => drawComet(head.a, head.fade);
     shy = true;
-    // The hold ends when the comet is gone and, on a fresh page, the tube's blink is over.
-    gsap.timeline({ onComplete() { drawComet(0, 0); blinking.then(release); } })
-      .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
-        paint();
-        // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
-        const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
-        while (came < h) hold(lis[came++], false);
-      } }, 0)
-      .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
-      // The comet runs on a little past twelve as it fades, so it does not stop dead.
-      .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6)
-      // On a fresh page the set warms up to snow once, then switches off.
-      .add(() => { if (first) blink(); }, 1.5);
+    // On a fresh page the set warms up to snow and switches off first; then the comet runs.
+    if (first) blink().then(spin); else spin();
+    function spin() {
+      // The comet fades in where it starts, on the track at twelve o'clock.
+      const head = { a: 0, fade: 0 }, paint = () => drawComet(head.a, head.fade);
+      let came = 0;
+      // The hold ends when the comet is gone.
+      gsap.timeline({ onComplete() { drawComet(0, 0); release(); } })
+        .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
+          paint();
+          // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
+          const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
+          while (came < h) hold(lis[came++], false);
+        } }, 0)
+        .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
+        // The comet runs on a little past twelve as it fades, so it does not stop dead.
+        .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6);
+    }
   }
-  let blinking = Promise.resolve();
+  // The set warms up to snow, holds a moment, then switches off to a dot. Without the tube it ends at once.
   function blink() {
-    if (!bg || face.hasAttribute('data-live')) return;
+    if (!bg || face.hasAttribute('data-live')) return Promise.resolve();
     face.setAttribute('data-blink', '');
-    blinking = bg.blink().then(() => face.removeAttribute('data-blink'));
+    return bg.blink(350).then(() => face.removeAttribute('data-blink'));
   }
   // The intro is over: a toy that is already under the pointer or in focus shows at once.
   function release() {
@@ -251,47 +252,29 @@ function start() {
   // The Re-roll stays away for the first five seconds.
   setTimeout(() => button.setAttribute('data-on', ''), 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
-  // The footer: the mark sits in the credit line, in place of its own name.
+  // The footer: two lines. The mark stands in the first in place of its own name,
+  // "yet another [mark] concoction"; the second is a small caption, "made with AI".
   const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
   const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
   if (credit && words0 && mark) {
     const [before, after] = words0.textContent.split(/onn[\u00f8o]zelaer/i);
     if (after !== undefined) {
+      const [noun, ...rest] = after.split('\u00b7');
       const holder = Object.assign(document.createElement('span'), { className: 'clock-mark' });
       holder.append(mark);
       // The version stays the mark's next sibling: the menu's hover rule needs that.
       if (version) holder.append(version);
       words0.textContent = before.trim();
-      words0.after(holder, Object.assign(document.createElement('span'), { textContent: after.trim() }));
+      words0.className = 'clock-word';
+      const tail = Object.assign(document.createElement('span'), { className: 'clock-word', textContent: noun.trim() });
+      const note = Object.assign(document.createElement('span'), { className: 'clock-note', textContent: rest.join('\u00b7').trim() });
+      words0.after(holder, tail, note);
+      if (!note.textContent) note.remove();
       credit.setAttribute('data-inline', '');
     }
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
-    // It starts after the intro, so its shader build does not stall the sweep.
-    // Three footer looks for Tom to pick from: ?foot names one; ?dev shows a switch.
-    const LOOKS = ['mesh', 'ridges', 'waves'], FOOT_KEY = 'stimming.clock.foot', ask = new URLSearchParams(location.search);
-    let kept = null;
-    try { kept = localStorage.getItem(FOOT_KEY); } catch (e) { /* no storage */ }
-    let look = LOOKS.includes(ask.get('foot')) ? ask.get('foot') : LOOKS.includes(kept) ? kept : LOOKS[0];
-    credit.dataset.foot = look;
-    setTimeout(() => import('./mesh.js').then(m => m.mesh(credit, look)).then(glow => {
-      if (!glow) return;
-      credit.setAttribute('data-mesh', '');
-      if (!ask.has('dev')) return;
-      const bar = Object.assign(document.createElement('div'), { className: 'clock-dev' });
-      bar.setAttribute('role', 'group');
-      bar.setAttribute('aria-label', 'Footer look');
-      bar.innerHTML = LOOKS.map(l => `<button type="button" data-foot="${l}" aria-pressed="${l === look}">${l}</button>`).join('');
-      document.body.append(bar);
-      bar.addEventListener('click', e => {
-        const b = /** @type {HTMLElement} */ (e.target).closest('button');
-        if (!b) return;
-        look = b.dataset.foot;
-        credit.dataset.foot = look;
-        glow.look(look);
-        bar.querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
-        try { localStorage.setItem(FOOT_KEY, look); } catch (err) { /* no storage */ }
-      });
-    }).catch(e => console.warn('Clock mesh:', e)), 2600);
+    // It starts after the intro, so its shader build does not stall the comet.
+    setTimeout(() => import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e)), 2600);
   }
 
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
