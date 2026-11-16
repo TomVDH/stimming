@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T19:47:02Z
+updated_at: 2026-11-16T19:48:19Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -31,4 +31,5 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [ ] Split sparks into near and rock; flares by distance (other sessions own them)
 - [x] Deck tweaks: less swirl after a hit, softer cells, stronger hit light
 - [x] Tom: fainter, wispier, "not so much sheep clouds": the wind combs the Deck into wisps three times longer than wide; it is a thinner veil
-- [ ] Tom signs off the Deck
+- [x] Tom: fainter, softer; then the Giants (Deck accepted)
+- [ ] Stage 3: the Giants
