@@ -13,17 +13,23 @@ const rad = d => d * Math.PI / 180;
 // The Dev row Forms turns every form back into a crescent.
 // A cone's arc radius is its base radius; it takes no span or opening.
 export const RANGES = [
-  // Tom's default (2026-11-16), set in the range lab.
-  // Near foothills, about 60 km out: a ridge stands in front of every far gun.
-  [114.5, 12000, 64000, 4200, 125, 66],
-  // The middle range, about 100 km out.
-  [-9.5, 82000, 100000, 15000, 137, 6],
-  // The high range, about 150 km out.
-  [87.9, 22000, 140000, 32000, 120, 66],
-  // The great range, far behind.
-  [37, 124000, 140000, 49300, 115, 38],
-  // A field of spires right of the middle.
-  [3, 92000, 17000, 11000, 0, 0, 4],
+  // Tom's pick, layered sierra (2026-11-16): four even layers, low and realistic.
+  // Each layer is three arcs; each range is about six times as wide as tall.
+  // Foothills, about 50 km out: a ridge stands in front of every far gun.
+  [47.3, 98000, 46000, 3100, 167, 228],
+  [29.5, 98000, 50000, 2600, 165, 233],
+  [-10.2, 97000, 42000, 2900, 156, 283],
+  // The main range, about 90 km out.
+  [48, 157000, 65500, 10100, 185, 222],
+  [6.1, 153000, 69000, 9100, 191, 275],
+  [-10.2, 151000, 57500, 10600, 172, 274],
+  // The high range, about 130 km out.
+  [37.9, 206000, 77000, 15600, 201, 229],
+  [-3.6, 213000, 80500, 16800, 191, 283],
+  // Far peaks, about 180 km out, deep in the haze.
+  [55, 269000, 88500, 22800, 187, 215],
+  [23.4, 282000, 96000, 25200, 195, 240],
+  [-15.3, 258000, 84500, 21600, 156, 292],
 ];
 // Each form's bearing from its centre to the landscape eye, for the cone's seam.
 const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(EYE[1] - c[1], EYE[0] - c[0]); };
@@ -44,15 +50,15 @@ export const rangeUniforms = (table = RANGES) => ({
 // A change to any of them needs a new bake in the toy.
 export const LAND = {
   // The tallest crest stays under the march's ceiling (RANGE_CEIL) up to 1.1.
-  height: { value: 0.74, min: 0.5, max: 1.1, step: 0.01, label: 'Height', group: 'Shape' },
+  height: { value: 1, min: 0.5, max: 1.1, step: 0.01, label: 'Height', group: 'Shape' },
   width: { value: 1, min: 0.6, max: 1.6, step: 0.01, label: 'Width', group: 'Shape' },
-  blend: { value: 0.12, min: 0, max: 0.4, step: 0.01, label: 'Blend', group: 'Shape' },
-  round: { value: 0.08, min: 0, max: 0.3, step: 0.01, label: 'Crest round', group: 'Shape' },
-  wander: { value: 0.05, min: 0, max: 0.2, step: 0.005, label: 'Spine wander', group: 'Shape' },
+  blend: { value: 0.18, min: 0, max: 0.4, step: 0.01, label: 'Blend', group: 'Shape' },
+  round: { value: 0.1, min: 0, max: 0.3, step: 0.01, label: 'Crest round', group: 'Shape' },
+  wander: { value: 0.08, min: 0, max: 0.2, step: 0.005, label: 'Spine wander', group: 'Shape' },
   peakScale: { value: 1, min: 0.3, max: 3, step: 0.05, label: 'Peak spacing', group: 'Peaks' },
-  peakContrast: { value: 0.75, min: 0, max: 1, step: 0.01, label: 'Peak contrast', group: 'Peaks' },
-  folds: { value: 0.36, min: 0, max: 1, step: 0.01, label: 'Folds', group: 'Peaks' },
-  bands: { value: 0.18, min: 0, max: 0.6, step: 0.01, label: 'Ridge bands', group: 'Peaks' },
+  peakContrast: { value: 0.6, min: 0, max: 1, step: 0.01, label: 'Peak contrast', group: 'Peaks' },
+  folds: { value: 0.4, min: 0, max: 1, step: 0.01, label: 'Folds', group: 'Peaks' },
+  bands: { value: 0.16, min: 0, max: 0.6, step: 0.01, label: 'Ridge bands', group: 'Peaks' },
   spireDensity: { value: 0.67, min: 0.1, max: 1, step: 0.01, label: 'Density', group: 'Spires' },
   spireWidth: { value: 1, min: 0.4, max: 2, step: 0.05, label: 'Girth', group: 'Spires' },
   spireHeight: { value: 1, min: 0.3, max: 1.6, step: 0.05, label: 'Height', group: 'Spires' },

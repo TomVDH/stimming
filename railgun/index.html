@@ -87,9 +87,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues, LAND_KEYS } from './ranges.js';
-// The storms: the table, the noise, the shapes and the march; the storm lab shares them.
-import { STORMS, GIANT_RANGE, STORM_K, VOL_NOISE, STORM_GLSL, STORM_MARCH } from './storms.js';
+import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, rangeUniforms, landValues, LAND_KEYS } from './ranges.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
@@ -813,14 +811,15 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-// The nearing rock wraps itself in a great globe of fire.
-// A hot core, an orange globe round it, a soft halo that fades out.
-// The far sky keeps its own colour: no wash over the whole dome.
+// The nearing rock fills the sky with a great globe of fire.
+// A hot core sits round the rock; a wide orange globe spreads past it.
+// Low sky and the whole dome warm as it comes down.
 vec3 rockFill(vec3 c, vec3 dir) {
   if (uFill < 0.001) return c;
-  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 60.0), globe = pow(m, 9.0), halo = pow(m, 3.0);
-  c = mix(c, c * vec3(1.25, 0.85, 0.6), 0.3 * uFill * halo);
-  return c + uAstC * uFill * (0.6 * near_ + 0.32 * globe + 0.07 * halo);
+  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), globe = pow(m, 4.0), wide = pow(m, 1.5);
+  float low = exp(-max(dir.y, 0.0) * 3.0);
+  c = mix(c, c * vec3(1.3, 0.82, 0.55), 0.55 * uFill * wide);
+  return c + uAstC * uFill * (0.8 * near_ + 0.45 * globe + 0.12 * wide + 0.08 * low);
 }
 vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
@@ -1974,7 +1973,7 @@ setFarMode(FAR_MODE === 'bake');
 // uCloudC: the clouds' own slow clock, in sim seconds.
 // uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1999,14 +1998,13 @@ uniform vec4 uFlR;
 // Lightning lights a storm from inside, after Window seat.
 // A hot core round the flash; a wide glow fills the tower.
 // Thick body glows deep in; thin edges let the light out.
-// Lightning's colour inside cloud, as Window seat's: a cold, slightly violet blue-white.
-#define FLASH_C vec3(0.64, 0.72, 1.0)
 vec3 flashIn(vec3 P, float F, float H) {
   vec3 L = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    L += FLASH_C * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    // Inside a cloud the flash scatters to a plain white; the far air warms it.
+    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   // A bright sky needs a stronger flash to show.
   return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
@@ -2209,11 +2207,6 @@ void main() {
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
-  // The rock's glowing sky fills the cloud warm; thin parts toward it glow.
-  if (uFill > 0.001) {
-    float bk = pow(max(dot(V, normalize(uRockL.xyz - P)), 0.0), 4.0);
-    col += uAstC * uFill * (0.12 + 0.45 * bk * (0.4 + 0.6 * thin));
-  }
   // Lightning inside the storms punches through the haze.
   if (vS.z > 0.5) col += flashIn(P, F, H);
   // The ship's impacts light the cloud bases from beyond the horizon.
@@ -2298,11 +2291,11 @@ const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Storm towers stand among the far ranges, as tall as their peaks.
 // Three towers of different builds: fewer reads truer than a row.
 // Storm bases sit kilometres up: the columns float clear of the horizon.
-const TOWERS = STORMS.filter(c => c[1] <= GIANT_RANGE);
+const TOWERS = [[-14, 125000, 6000, 15000, 24000, 1], [8, 150000, 6500, 12000, 17000, 1], [28, 105000, 5500, 16000, 21000, 1]];
 const tower = cloudLayer(TOWERS, BAND.deep);
 // One giant: a colossal storm far beyond the ranges.
 // Beside it the gun and the towers look small.
-const GIANTS = STORMS.filter(c => c[1] > GIANT_RANGE);
+const GIANTS = [[52, 225000, 12000, 52000, 95000, 1]];
 const giants = cloudLayer(GIANTS, BAND.giants);
 
 /* ---------- storm probe: Window seat's towers, marched inside the cards ---------- */
@@ -2311,7 +2304,7 @@ const giants = cloudLayer(GIANTS, BAND.giants);
 // Units inside: one "km" is a fourteenth of the storm's height.
 const STORM_VS = CLOUD_VS
   .replace('flat varying vec4 vS;', 'flat varying vec4 vS;\nflat varying vec3 vC;')
-  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(3.0, 1.35);')
+  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(2.6, 1.35);')
   .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
 const STORM_FS = /* glsl */`precision highp sampler3D;
 // three.js sets it on every program; only the vertex stage declares it.
@@ -2326,60 +2319,162 @@ ${AIR}
 uniform float uCloudC;
 uniform vec4 uFl[4];
 uniform vec4 uFlR;
-uniform vec4 uStormK;
-${STORM_GLSL}
-// Lightning's colour inside cloud, as Window seat's.
-#define FLASH_C vec3(0.64, 0.72, 1.0)
-vec3 stormFlash(vec3 P) {
+float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
+float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
+float smin(float a, float b, float k) { return -smax(-a, -b, k); }
+// The storm, set once per pixel: core radius, top, anvil and turrets.
+float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed;
+vec2 sAx;
+vec4 sTur[4];
+void setStorm(float sd, float giant) {
+  sSeed = sd;
+  sRc = 3.4 * mix(0.8, 1.2, hsh(1.0, sd));
+  sTop = 13.0;
+  // A giant always has its anvil; about one tower in three has none yet.
+  sAnv = max(giant, step(0.33, hsh(2.0, sd)));
+  sLen = mix(0.3, mix(5.0, 10.0, hsh(3.0, sd)), sAnv);
+  sR1 = sRc * 1.25;
+  sR2 = clamp(sRc * 0.7 + sLen * 0.42, sR1 - sLen * 0.8, sR1 + sLen * 0.8);
+  // One wind for every storm: anvils run the same way.
+  sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
+  sLean = sRc * 0.18;
+  sOver = sRc * 0.45 * sAnv * (0.8 + 0.2 * sin(uCloudC * 0.05 + sd));
+  sTile = clamp(sRc * 1.6, 5.0, 11.0);
+  for (int j = 0; j < 4; j++) {
+    float fj = float(j);
+    float ang = hsh(fj + 7.0, sd) * 6.2832, off = j == 0 ? 0.0 : sRc * (0.4 + 0.4 * hsh(fj + 11.0, sd));
+    float rad = j == 0 ? sRc * 0.8 : sRc * (0.4 + 0.22 * hsh(fj + 13.0, sd));
+    float top = j == 0 ? sTop - 0.4 : mix(3.0, sTop - 3.2, 0.2 + 0.8 * hsh(fj + 17.0, sd));
+    sTur[j] = vec4(vec2(cos(ang), sin(ang)) * off, rad, top);
+  }
+}
+// The tower's shape without billows: about the depth inside.
+float shape(vec3 p, out float aw) {
+  float y = p.y, hk = clamp(y / sTop, 0.0, 1.0);
+  vec2 q = p.xz - sAx * sLean * hk * hk;
+  float col = -1e3;
+  for (int j = 0; j < 4; j++) {
+    vec4 tu = sTur[j];
+    float r = tu.z * (1.0 + 0.12 * (1.0 - hk));
+    float dy = y - clamp(y, -1.0, tu.w - r);
+    col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), sRc * 0.3);
+  }
+  // A broad foot that narrows as the column rises out of it.
+  float an_ = atan(q.y, q.x);
+  float lobe = 1.0 + 0.28 * sin(3.0 * an_ + sSeed) + 0.15 * sin(5.0 * an_ - sSeed * 1.3);
+  // The foot stays modest: past the horizon a wide skirt reads as a twister.
+  float fr = sRc * mix(1.5, 0.9, smoothstep(0.5, 4.5, y)) * mix(1.0, lobe, 0.6);
+  col = smax(col, min(fr - length(q), (4.5 - y) * 0.8), sRc * 0.5);
+  // The base is flat.
+  col = smin(col, y * 2.0, 0.3);
+  // The anvil: a fan that widens downwind, flat on top, thin at its rim.
+  vec2 a = p.xz - sAx * sLean;
+  vec2 uv = vec2(dot(a, vec2(-sAx.y, sAx.x)), dot(a, sAx));
+  float k = clamp(uv.y / sLen, 0.0, 1.0), ku = clamp(-uv.y / sR1, 0.0, 1.0);
+  float top = sTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
+  float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (1.0 - 0.85 * ku * ku);
+  float fan = min(mix(sR1, sR2, k) - abs(uv.x), min(uv.y + sR1, sLen + sR2 * 0.4 - uv.y));
+  float an = smin(fan, smin(top - y, y - bot, 0.3), 0.8) - (1.0 - sAnv) * 20.0;
+  // The overshooting top: a squat dome on the core's head.
+  float ov = sOver - length(vec3(q.x, (y - sTop + 0.4 + sOver * 0.2) * 1.35, q.y));
+  aw = smoothstep(-0.6, 0.6, an - col);
+  return smax(smax(col, an, 0.9), ov, 1.0);
+}
+// Cauliflower billows from the baked volume; the lumps rise slowly.
+float billow(vec3 p, float aw, bool fine) {
+  p.xz -= sAx * dot(p.xz, sAx) * 0.6 * aw;
+  vec3 r = vec3(p.x * 0.8 - p.z * 0.6, p.y - uCloudC * 0.006, p.x * 0.6 + p.z * 0.8) + sSeed * 0.37;
+  // Worley lumps, as Window seat's: round cauliflower heads, not smooth swells.
+  vec4 m = texture(uVol, r / sTile);
+  float b = m.b * 0.75 + m.g * 0.25 - 0.47;
+  if (fine) b = b * 0.72 + (texture(uVol, r / (sTile * 0.31) + 0.5).g - 0.5) * 0.28;
+  return b;
+}
+// gap: how far outside the billowed shell p lies, for empty-space skipping.
+float dens(vec3 p, bool fine, out float gap) {
+  float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw);
+  gap = -sh - A * 1.1 - 0.5;
+  if (gap > 0.0) return 0.0;
+  // A wide ramp feathers the outer billows into the sky.
+  return smoothstep(0.0, 0.6, sh + A * 2.2 * billow(p, aw, fine));
+}
+float densL(vec3 p) { float g; return dens(p, false, g); }
+vec3 flashAt(vec3 P) {
   vec3 L = vec3(0.0);
   for (int i = 0; i < 4; i++) {
     if (uFl[i].w < 0.001) continue;
     float fd = length(P - uFl[i].xyz), r = uFlR[i];
-    L += FLASH_C * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+    L += vec3(0.97, 0.96, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
   }
   return L * mix(3.0, 1.0, uStars);
 }
-// The key light: the sun until it is well down, then the moon.
-vec3 Ls;
-// The sunlight at P: high tops keep the sun after the ground has lost it.
-// Their horizon dips by the planet's curve: about ten degrees at ninety kilometres.
-// The sun's height at P itself: points toward the sun see it higher.
-vec3 stormSun(vec3 P) {
-  float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
-  float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
-  // Light that grazes the planet arrives deep red.
-  return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
-}
-// Sky light comes mostly from the bright horizon, warm at dusk.
-vec3 stormSky(float h) { return mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h) + uCloudAmb * 0.5; }
-// The rock's fire lights the storm: its glowing sky fills it warm,
-// and the side toward the rock glows when the rock is behind it.
-// Its own body shades that light, so the storm keeps its form.
-vec3 stormExtra(vec3 P, float powder, float Tl2) {
-  if (uFill + uRockL.w < 0.001) return vec3(0.0);
-  vec3 rb = uRockL.xyz - P;
-  float rf = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
-  float back = pow(max(dot(normalize(P - cameraPosition), normalize(rb)), 0.0), 4.0);
-  return uAstC * (uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2) + uRockL.w * rf * (0.4 + 1.4 * powder * back));
-}
-${STORM_MARCH}
 void main() {
-  float H = vS.y;
-  setStorm(vS.w, vS.z);
+  float H = vS.y, giant = step(60000.0, H), U = H / 14.0;
+  setStorm(vS.w, giant);
   vec3 ro = cameraPosition, rd = normalize(vP - cameraPosition);
-  vec2 sp = stormSpan(ro, rd, vC, H);
-  if (sp.y <= sp.x) discard;
-  Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  // The bounding cylinder round the storm, in metres.
+  float Rb = (max(sLen + sR2, sRc * 2.4) + 2.0) * U;
+  vec2 oc = ro.xz - vC.xz;
+  float A2 = dot(rd.xz, rd.xz), B = dot(oc, rd.xz), C2 = dot(oc, oc) - Rb * Rb, D = B * B - A2 * C2;
+  if (D <= 0.0) discard;
+  D = sqrt(D);
+  float t0 = max((-B - D) / A2, 0.0), t1 = (-B + D) / A2;
+  if (t1 <= t0) discard;
+  // Steps: short inside the cloud, long leaps through the empty bound.
+  float dt = (t1 - t0) / 48.0;
   float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
-  vec3 Phit, Flash;
-  vec4 m = marchStorm(ro, rd, vC, H, sp.x, sp.y, jit, Phit, Flash);
-  float a = m.a;
+  // The sun shapes the storm until it is well down; then the moon does.
+  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  float mu = dot(rd, Ls);
+  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
+  // A low sun rakes the towers: lit faces glow, the far side goes deep.
+  float low = 1.0 - smoothstep(0.05, 0.4, Ls.y);
+  vec3 col = vec3(0.0);
+  float Tc = 1.0, t = t0 + dt * jit;
+  vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
+  bool hit = false;
+  for (int i = 0; i < 64; i++) {
+    if (t > t1) break;
+    vec3 P = ro + rd * t;
+    vec3 p = (P - vC) / U;
+    if (p.y > sTop + 3.0 && rd.y > 0.0) break;
+    float gap, d = dens(p, true, gap);
+    if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
+    if (!hit) { Phit = P; hit = true; }
+    // One tap toward the light gives the self shadow.
+    float Tl = exp(-3.2 * densL(p + Ls * 1.2));
+    float h01 = clamp(p.y / sTop, 0.0, 1.0);
+    // A high top sees the sun after the ground has lost it.
+    // Its horizon dips by the planet's curve: about ten degrees at ninety kilometres.
+    // The sun's height at P itself: points toward the sun see it higher.
+    float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+    float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
+    // Light that grazes the planet arrives deep red.
+    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
+    // Sky light comes mostly from the bright horizon, warm at dusk.
+    vec3 amb = mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h01) + uCloudAmb * 0.5;
+    // Powder: thin edges facing the sun catch the most light.
+    float powder = 1.0 - exp(-4.0 * d);
+    // A second, longer tap darkens the side away from the sun.
+    float Tl2 = exp(-1.6 * densL(p + Ls * 3.5));
+    // Light scattered many times fills the shaded side, so it never goes cold and flat.
+    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
+           + sunC * 0.32 * (0.35 + 0.65 * Tl2)
+           + amb * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
+    S *= mix(1.0, 0.45, uStars);
+    S += flashAt(P) * (0.4 + 0.6 * d);
+    // Thick body: the column is opaque a few kilometres in.
+    float al = 1.0 - exp(-5.0 * d * dt / U);
+    col += Tc * S * al;
+    Tc *= 1.0 - al;
+    if (Tc < 0.03) break;
+    t += dt;
+  }
+  float a = 1.0 - Tc;
   if (a < 0.004) discard;
-  vec3 col = m.rgb;
+  col /= a;
   // The same air as the ranges and the cards.
   col = aerial(col, Phit);
-  // Far flashes punch through the haze, so distant storms still flicker blue-white.
-  col += Flash / a * 0.85;
   gl_FragColor = vec4(col, a);
   // The depth of the first cloud on the ray, on the planet's curve.
   // Then a range in front cuts the storm where the two really cross.
@@ -2401,7 +2496,7 @@ function setStormProbe(on) {
 // Brightness is log-normal: most flashes are dim, a few blaze.
 // Most sit mid-level in the core; a mature storm sends some through its anvil.
 // A storm recharges between bursts: one somewhere every 6 to 22 s.
-const STORM_SPOTS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
+const STORMS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
 // vol: the storm probe is on, so flashes sit inside its narrower towers.
 const stormFl = { rate: 1, next: 4, strokes: [], vol: false };
 const flV = new THREE.Vector3();
@@ -2424,7 +2519,7 @@ function stormSpot(c, P0, out) {
 // A burst rumbles through one storm: two to five spots light in turn.
 // Each spot fires one to four strokes; now and then a cell boils over.
 function stormBurst() {
-  const c = STORM_SPOTS[Math.floor(Math.random() * STORM_SPOTS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
+  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
   const boil = Math.random() < 0.15;
   const spots = boil ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 4);
   let t = simT;
@@ -3688,8 +3783,36 @@ CLOUD_U.uVol.value = volRT.texture;
     uniforms: { uZ: { value: 0 } }, depthTest: false, depthWrite: false,
     vertexShader: /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: /* glsl */`varying vec2 vUv; uniform float uZ;
-    ${VOL_NOISE}
-    void main() { gl_FragColor = volAt(vec3(vUv, uZ)); }`,
+    vec3 h3(vec3 p) {
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
+      return fract(sin(p) * 43758.5453123);
+    }
+    // Inverted Worley noise; it tiles at f cells.
+    float worley(vec3 uv, float f) {
+      vec3 id = floor(uv * f), p = fract(uv * f);
+      float md = 9.0;
+      for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++) {
+        vec3 o = vec3(float(x), float(y), float(z));
+        vec3 d = o + h3(mod(id + o, f)) * 0.8 + 0.1 - p;
+        md = min(md, dot(d, d));
+      }
+      return clamp(1.0 - sqrt(md), 0.0, 1.0);
+    }
+    float grad(vec3 i, vec3 w, vec3 o, float f) { return dot(h3(mod(i + o, f)) * 2.0 - 1.0, w - o); }
+    // Gradient noise; it tiles at f cells.
+    float perlin(vec3 uv, float f) {
+      vec3 p = uv * f, i = floor(p), w = fract(p);
+      vec3 u = w * w * w * (w * (w * 6.0 - 15.0) + 10.0);
+      return mix(mix(mix(grad(i, w, vec3(0, 0, 0), f), grad(i, w, vec3(1, 0, 0), f), u.x), mix(grad(i, w, vec3(0, 1, 0), f), grad(i, w, vec3(1, 1, 0), f), u.x), u.y),
+                 mix(mix(grad(i, w, vec3(0, 0, 1), f), grad(i, w, vec3(1, 0, 1), f), u.x), mix(grad(i, w, vec3(0, 1, 1), f), grad(i, w, vec3(1, 1, 1), f), u.x), u.y), u.z);
+    }
+    void main() {
+      vec3 p = vec3(vUv, uZ);
+      float pf = clamp(0.5 + 0.8 * (perlin(p, 4.0) + 0.5 * perlin(p, 8.0) + 0.25 * perlin(p, 16.0)), 0.0, 1.0);
+      float wf = worley(p, 4.0) * 0.625 + worley(p, 8.0) * 0.25 + worley(p, 16.0) * 0.125;
+      float fine = worley(p, 6.0) * 0.625 + worley(p, 12.0) * 0.25 + worley(p, 24.0) * 0.125;
+      gl_FragColor = vec4(wf + pf * (1.0 - wf), fine, wf, 1.0);
+    }`,
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bake);
   const flat = new THREE.Camera();
@@ -5306,7 +5429,7 @@ function aimAst() {
   // The strike drives rockGlowK up: the fill reaches full as it comes down.
   // Each split swells it for a few seconds.
   const pop = 0.35 * Math.exp(-Math.max(simT - fillPopT, 0) / 2.5) * sstep(Math.min(ast.s, 1), 0.2, 0.6);
-  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.min(1.15, Math.pow(sstep(Math.min(ast.s, 1), 0.45, 1), 1.3) * Math.min(1.15, 0.7 + 0.3 * rockGlowK) + pop) : 0;
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.min(1.4, Math.pow(sstep(Math.min(ast.s, 1), 0.45, 1), 1.3) * Math.min(1.3, 0.7 + 0.3 * rockGlowK) + pop) : 0;
   U.uFill.value = fk;
   // The rock's own flare: faint far out, strong near the end; the strike has its own.
   tmpA.copy(ast.pos).project(camera);
@@ -5540,22 +5663,11 @@ function makeFarGun() {
   // The puffs keep their own power and take the shared aerial perspective.
   const pOwn = { ...own, uI: { value: new THREE.Vector3() }, uAer: { value: 1 } };
   const g = {
-    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 8 }, uWide: { value: 110 } })),
+    bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 5 }, uWide: { value: 110 } })),
     line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, pOwn)), own, pOwn,
   };
   for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
-  // A warm glow round the head, and the muzzle's glow in its notch.
-  // The ridges mask the muzzle's glow, so it shows only in the gap.
-  g.glow = makeFlare(FAR_WARM); g.flash = makeFlare(FAR_WARM);
-  g.flash.material.depthTest = true;
   return g;
-}
-// The far rounds' warm light: the muzzle, the glow and the clouds.
-const FAR_WARM = linFit(0.82, 0.13, 58);
-// A round draws in its launch's distance band, so nearer layers cover it.
-function farBand(g, e) {
-  const b = e.siteD > 100000 ? BAND.deep : BAND.far;
-  g.flash.renderOrder = b; g.puffs.renderOrder = b + 0.01; g.line.renderOrder = b + 0.02; g.bolt.renderOrder = b + 0.03; g.glow.renderOrder = b + 0.04;
 }
 // A far round keeps the main shot's clock and path.
 // It rides the rails 0.3 s, then crosses in T: fast out, slowing.
@@ -5564,91 +5676,25 @@ const farAt = (e, a, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farRe
 // Another gun fires at the falling rock from site and misses.
 // t0 is its rail start: the horizon flash is its muzzle.
 // c is its power: a weak round takes 11.5 s to cross, a full one 8.5.
-function farShot(q, t0, flash) {
+function farShot(site, D, t0, flash) {
   const c = 0.5 + 0.5 * rnd();
-  return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site: q.site.clone(), notch: q.notch.clone(), D: q.D, siteD: q.D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
+  return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site, D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
 }
-// The far guns stand in the gaps between the ranges (Tom: "come from between the mountains").
-// farGaps() reads the skyline from the ranges' geometry bake.
-// Without a bake, three fixed places stand in: screen x and distance.
+// Three far guns stand behind the ranges: screen x and distance.
+// Each fires one round per attempt.
 const FAR_PIECES = [{ sx: -0.8, D: 96000 }, { sx: -0.45, D: 80000 }, { sx: 0.74, D: 104000 }];
-const farGapsAt = { bakes: -1, list: null };
-// The three deepest notches in the near skyline on screen.
-// Each gives a site 6 km behind the notch and the notch's crest point.
-function farGaps() {
-  const B = farBake, f = B.bufs[B.front];
-  if (!f.ok || !B.on) return null;
-  if (farGapsAt.bakes === B.bakes) return farGapsAt.list;
-  const w = f.g.width, h = f.g.height, px = new Uint16Array(w * h * 4);
-  renderer.readRenderTargetPixels(f.g, 0, 0, w, h, px);
-  const H = THREE.DataUtils.fromHalfFloat, v = new THREE.Vector4(), d = new THREE.Vector3(), cols = [];
-  // The near skyline: the top of the ranges within 150 km.
-  // The back ranges stand behind the gaps, so they do not count.
-  const near = (x, y) => { const j = (y * w + x) * 4, g = H(px[j]); return g >= 0 && (g + H(px[j + 1])) * 512 < 150000; };
-  for (let x = 2; x < w; x += 4) {
-    let y = h - 1;
-    while (y >= 0 && !near(x, y)) y--;
-    const yy = Math.max(y, 0), i = (yy * w + x) * 4;
-    v.set((x + 0.5) / w * 2 - 1, (yy + 0.5) / h * 2 - 1, 1, 1).applyMatrix4(f.inv);
-    d.set(v.x / v.w, v.y / v.w, v.z / v.w).normalize();
-    const sx = ambSP.copy(camera.position).addScaledVector(d, 1e5).project(camera).x;
-    // A column with no range is an open horizon: deepest of all.
-    const hit = y < 0 ? -1 : (H(px[i]) + H(px[i + 1])) * 512;
-    cols.push({ sx, el: y < 0 ? -0.05 : Math.asin(d.y), hit, d: d.clone() });
-  }
-  // Our own gun hides the notches behind it: skip its span on screen.
-  const box = new THREE.Box3().setFromObject(gun), cn = new THREE.Vector3();
-  let g0 = 9, g1 = -9;
-  for (let i = 0; i < 8; i++) {
-    cn.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
-    g0 = Math.min(g0, cn.x); g1 = Math.max(g1, cn.x);
-  }
-  // A notch: the lowest crest with higher crests on both sides.
-  const gaps = [];
-  for (let k = 0; k < cols.length; k++) {
-    const c = cols[k];
-    if (Math.abs(c.sx) > 0.85 || (c.sx > g0 - 0.05 && c.sx < g1 + 0.05)) continue;
-    let l = -1, r = -1;
-    for (const o of cols) if (Math.abs(o.sx - c.sx) < 0.12) { if (o.sx < c.sx) l = Math.max(l, o.el); else if (o.sx > c.sx) r = Math.max(r, o.el); }
-    if (cols.some(o => Math.abs(o.sx - c.sx) < 0.03 && o.el < c.el)) continue;
-    const depth = Math.min(l, r) - c.el;
-    if (depth > 0.001) gaps.push({ c, depth });
-  }
-  gaps.sort((a, b) => b.depth - a.depth);
-  // Too few notches: the lowest stretches of skyline fill the three places.
-  const low = cols.filter(c => Math.abs(c.sx) <= 0.85 && !(c.sx > g0 - 0.05 && c.sx < g1 + 0.05)).sort((a, b) => a.el - b.el);
-  for (const c of low) gaps.push({ c, depth: 0 });
-  const list = [];
-  for (const g of gaps) {
-    if (list.length >= 3 || list.some(q => Math.abs(q.sx - g.c.sx) < 0.2)) continue;
-    const flat = ambA.set(g.c.d.x, 0, g.c.d.z).normalize(), D = (g.c.hit > 0 ? g.c.hit : 84000) + 6000;
-    const notch = g.c.hit > 0 ? f.eye.clone().addScaledVector(g.c.d, g.c.hit) : camera.position.clone().addScaledVector(flat, D).setY(0);
-    list.push({ sx: g.c.sx, D, site: camera.position.clone().addScaledVector(flat, D).setY(0), notch });
-  }
-  farGapsAt.bakes = B.bakes; farGapsAt.list = list.length ? list : null;
-  return farGapsAt.list;
-}
-// The far guns' places: the gaps, or the fixed stand-ins.
-function farPlaces() {
-  return farGaps() || FAR_PIECES.map(q => {
-    const site = camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
-    return { sx: q.sx, D: q.D, site, notch: site.clone() };
-  });
-}
-// The place farthest across the frame from the rock: its round crosses the sky.
+// A piece's place on the plain, for the live lens.
+const farSite = q => camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
+// The piece farthest across the frame from the rock: its round crosses the sky.
 function farPiece() {
   const rx = ambSP.copy(ast.pos).project(camera).x;
-  return farPlaces().reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
+  return FAR_PIECES.reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
 }
 // The far rounds' light on the clouds: place and strength.
 const farLit = new THREE.Vector4();
-// The bolt light's own colour; far rounds light the clouds warm instead.
-const BOLT_C = U.uBoltC.value.clone(), FAR_C = new THREE.Vector3(...FAR_WARM);
 // The main round's light wins; a far round lights the clouds only without it.
 function farLight() {
-  const far = U.uBolt.value.w < 0.001 && farLit.w > 0.001;
-  if (far) U.uBolt.value.copy(farLit);
-  U.uBoltC.value.copy(far ? FAR_C : BOLT_C);
+  if (U.uBolt.value.w < 0.001 && farLit.w > 0.001) U.uBolt.value.copy(farLit);
 }
 // At its rail start the round leads the rock, as the main gun does.
 // The aim point sits beside the rock as the eye sees it: a near miss.
@@ -5760,12 +5806,12 @@ function ambLanding(t0) {
 // Start one event of this kind.
 function ambStart(kind) {
   if (kind === 'war') {
-    // The far guns fire in turn, one round each; all miss.
+    // The three far guns fire in turn, one round each; all miss.
     // Each muzzle flash lights the horizon.
-    const order = farPlaces().sort(() => rnd() - 0.5);
+    const order = [...FAR_PIECES].sort(() => rnd() - 0.5);
     let t = simT;
     for (const q of order) {
-      amb.live.push(farShot(q, t, 1.2 + 1.0 * rnd()));
+      amb.live.push(farShot(farSite(q), q.D, t, 1.2 + 1.0 * rnd()));
       t += 4 + 5 * rnd();
     }
     // The rumble comes late and low.
@@ -5784,8 +5830,8 @@ function ambStart(kind) {
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
     // One far gun fires from behind the ranges and misses the rock.
-    const q = farPiece(), D = q.D;
-    amb.live.push(farShot(q, simT, 0.9));
+    const q = farPiece(), site = farSite(q), D = q.D;
+    amb.live.push(farShot(site, D, simT, 0.9));
     // The crack arrives late and faint; a long wait is cut to half a minute.
     amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
     return;
@@ -5867,7 +5913,7 @@ function drawAmbient() {
   for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
   farLit.w = 0;
   // A set whose round has ended goes back to the pool.
-  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = g.glow.visible = g.flash.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
+  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
@@ -5916,11 +5962,8 @@ function drawFarBolt(e, a) {
   if (!e.aimed && !farAim(e)) { e.dur = 0; return false; }
   let g = farGuns.find(f => f.e === e) || farGuns.find(f => !f.e);
   if (!g) { if (farGuns.length >= 4) return true; g = makeFarGun(); farGuns.push(g); }
-  if (g.e !== e) farBand(g, e);
   g.e = e;
   const K = e.D / 6000;
-  // The muzzle's glow fills its notch; the air between dims it.
-  flare(g.flash, e.notch, 5000, 1.4 * e.flash * flashOf(a) * ambT(e.notch));
   // The ribbon: the main shot's streak and shock diamonds.
   // Its light dies away before it reaches the rock, as the main shot's does.
   const tail = 0.55 + 0.03 * e.T, land = 0.3 + e.T;
@@ -5928,12 +5971,9 @@ function drawFarBolt(e, a) {
   const T = ambT(farAt(e, a, farP));
   const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farP) * T;
   g.bolt.visible = fade > 0.002;
-  // The head lights the clouds near it, warm; the brightest round wins.
-  const lw = a > 0.3 ? 0.12 * e.c * fade : 0;
-  farAt(e, a, farP);
-  if (lw > farLit.w) farLit.set(farP.x, farP.y, farP.z, lw);
-  // A soft warm glow round the head: the lit air it passes.
-  flare(g.glow, farP, 4000, 0.6 * e.c * fade);
+  // The head lights the clouds near it, faintly; the brightest round wins.
+  const lw = a > 0.3 ? 0.05 * e.c * fade : 0;
+  if (lw > farLit.w) { farAt(e, a, farP); farLit.set(farP.x, farP.y, farP.z, lw); }
   if (g.bolt.visible) {
     g.bolt.material.uniforms.uWide.value = 40 * K;
     const geo = g.bolt.geometry, p0 = geo.attributes.aP0, p1 = geo.attributes.aP1, kk = geo.attributes.aK;
@@ -12050,8 +12090,6 @@ window.__qa = {
   lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span }),
   // Fire one ambient event; amb() reads the director.
   ambient(kind) { ambStart(kind); },
-  // The far guns' places: screen x, distance, and whether a bake found them.
-  farGaps: () => ({ baked: !!farGaps(), places: farPlaces().map(q => ({ sx: +q.sx.toFixed(2), D: Math.round(q.D), notchY: Math.round(q.notch.y) })) }),
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   // The far pass: the mode, and how often it baked and relit.
@@ -12059,6 +12097,14 @@ window.__qa = {
   bump(v) { FAR_U.uBump.value = v; draw(); },
   // Set the ranges' light (sun, sky, effects) and rock colour.
   rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
+  // Try a range table and landscape knobs live; the grid and the bake follow.
+  ranges(table, land) {
+    const { rg, ra } = rangeUniforms(table);
+    FAR_U.uRg.value.forEach((v, i) => v.set(...(rg[i] || [0, 0, 0, 0])));
+    FAR_U.uRa.value.forEach((v, i) => v.set(...(ra[i] || [0, 0, 0, 0])));
+    if (land) FAR_U.uLand.value = landValues(land);
+    farBake.dirty = true;
+  },
   farSkip(on) { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; },
   grid: () => ({ half: farGrid.half, cell: GRID_U.uGrid.value.z, builds: farGrid.builds }),
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
