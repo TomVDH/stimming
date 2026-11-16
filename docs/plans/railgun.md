@@ -356,3 +356,15 @@ All code stays in `railgun/index.html`. A test here is a probe in the browser pa
 
 The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS` with its cirrus, the far-country builder, the dust ring buffer, `makeRing` and `makeGlint`, marked. Any daylight diorama can copy them.
 The `vol` and `trail` blocks are liftable as a pair; Tom may take the trail shading to another toy ("ten seconds").
+
+## Watch mode (stimming-z267)
+
+The toy tells people that watching is fine. The scene carries itself:
+- The parked cinematic views are gone. The wide eye and Sight stay.
+- The loop keeps 30 fps while a target can be hit or an ambient event runs. A hidden tab still stops all work. A falling rock is not an idle page.
+- After a kill with no input for 45 s, the toy runs its own Reset 75 s after the kill.
+- The ambient director starts one event every 12 to 40 s, faster as the rock nears. It holds off under a charge, a shot, a blast, a strike and a reset.
+  - Horizon war: an unseen battery past the ranges lights the horizon and the cloud bases in a ripple of two to four flashes. A low rumble follows 20 to 60 s later.
+  - Shooting stars: dusk and night only, now and then a pair. Reduced motion shows none.
+- Dev rows: Ambient (on or off), Ambient rate, Ambient test and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
+- Next on Tom's yes: re-entry rain, late landings, a satellite pass, far bolts, orbital flak, dust devils, embers on the plain, the rock sheds; then stirred motes, scrub trails and the looming.
