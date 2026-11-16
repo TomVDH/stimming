@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Jacob's ladder 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Jacob's ladder 1</h1>
+<p class="lede">Jacob's ladder, round 1. A: the whole set, rods on porcelain on a transformer box; the arc rides at the pointer's height and snaps at the top. D: the transformer is the block; the arc climbs by itself, bends away from the pointer and lights the block's top.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The arc's blur spans the whole box, so a flat arc never clips square.
+  const wideBlur = (id, s) => `<filter id="${id}" filterUnits="userSpaceOnUse" x="-20" y="-20" width="168" height="168"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+
+  // The toy's tokens: copper, porcelain, the dark box and the violet arc.
+  const COPPER = [[0, 'oklch(0.86 0.1 64)'], [0.5, 'oklch(0.68 0.14 48)'], [1, 'oklch(0.5 0.12 36)']];
+  const PORCELAIN = [[0, 'oklch(0.96 0.02 88)'], [0.55, 'oklch(0.8 0.025 85)'], [1, 'oklch(0.58 0.025 80)']];
+  const HALO = 'oklch(0.6 0.23 300)', SHEATH = 'oklch(0.76 0.16 302)', CORE = 'oklch(0.99 0.02 300)';
+  const SPOT = 'oklch(0.86 0.13 68)', PLATE = 'oklch(0.82 0.15 80)', BOLT = 'oklch(0.26 0.03 60)';
+
+  // A thick polyline as one closed outline with round ends.
+  const thick = (pts, w) => {
+    const r = w / 2, n = pts.length, L = [], R = [];
+    const nrm = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy); return [-dy / l, dx / l]; };
+    for (let i = 0; i < n; i++) {
+      const n0 = i > 0 ? nrm(pts[i - 1], pts[i]) : null, n1 = i < n - 1 ? nrm(pts[i], pts[i + 1]) : null;
+      let m = n0 && n1 ? [n0[0] + n1[0], n0[1] + n1[1]] : (n0 || n1);
+      const ml = Math.hypot(m[0], m[1]);
+      // The miter grows as the joint turns, so the width stays even.
+      const k = n0 && n1 ? r / ((m[0] * n1[0] + m[1] * n1[1]) / ml) : r;
+      m = [m[0] / ml * k, m[1] / ml * k];
+      L.push([pts[i][0] + m[0], pts[i][1] + m[1]]); R.push([pts[i][0] - m[0], pts[i][1] - m[1]]);
+    }
+    const p = q => `${f(q[0])} ${f(q[1])}`;
+    return `M${L.map(p).join('L')}A${r} ${r} 0 0 0 ${p(R[n - 1])}L${R.slice().reverse().map(p).join('L')}A${r} ${r} 0 0 0 ${p(L[0])}Z`;
+  };
+  const mirror = pts => pts.map(([x, y]) => [128 - x, y]);
+  // A porcelain insulator: three sheds on a waist, from foot y0 up to top y1.
+  const insulator = (cx, y0, y1, w) => {
+    const h = y0 - y1, s = w / 2, k = s * 0.72, pts = [];
+    const sheds = [[0, 0.3, s], [0.36, 0.62, s * 0.94], [0.68, 1, s * 0.86]];
+    sheds.forEach(([a, b, ww], i) => {
+      if (i) pts.push([cx - k, y0 - h * (a - 0.06)]);
+      pts.push([cx - ww, y0 - h * a], [cx - ww, y0 - h * b]);
+    });
+    const left = pts, right = left.slice().reverse().map(([x, y]) => [2 * cx - x, y]);
+    return poly([...left, ...right]);
+  };
+
+  // The arc between two rods: a list of points from left root to right root.
+  // h is height up the V, lean bends it, t drives the writhe.
+  const arcPath = (xl, xr, y0, h, lean, t, scale = 1) => {
+    const n = 9, bow = (4 + 12 * h) * scale, amp = (1.4 + 2.8 * h) * scale;
+    let d = '';
+    for (let i = 0; i < n; i++) {
+      const k = i / (n - 1), s = Math.sin(Math.PI * k), inner = i > 0 && i < n - 1;
+      const jx = inner ? 0.7 * amp * Math.sin(t * 5.3 + i * 4.1) : 0;
+      const jy = inner ? amp * Math.sin(t * 7.1 + i * 2.39) * Math.sin(t * 3.1 + i * 1.7) : 0;
+      d += `${i ? 'L' : 'M'}${f(xl + (xr - xl) * k + lean * 10 * scale * s + jx)} ${f(y0 - bow * s + jy)}`;
+    }
+    return d;
+  };
+  // The arc's markup: a blurred violet halo, a sheath and a white-hot core.
+  const arcMarkup = (u, w) => `<g class="arc" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path class="ap" stroke="${HALO}" stroke-width="${w[0]}" filter="url(#${u}ab)"/>
+      <path class="ap" stroke="${SHEATH}" stroke-width="${w[1]}"/>
+      <path class="ap" stroke="${CORE}" stroke-width="${w[2]}"/>
+    </g>
+    <g class="spots" fill="${SPOT}"><circle class="sp" r="${f(w[2] * 0.9)}"/><circle class="sp" r="${f(w[2] * 0.9)}"/></g>`;
+  // A rod's centre x at height y, on its arm from foot to top.
+  const rodX = (foot, top, y) => foot[0] + (top[0] - foot[0]) * (foot[1] - y) / (foot[1] - top[1]);
+  // The point on a straight rod at height y.
+  const footAt = (rod, y) => [rodX(rod[0], rod[1], y), y];
+  // One drawer for the arc on any tile: it reads h, lean and t from st.
+  const arcDrawer = (svg, geo) => {
+    const ap = [...svg.querySelectorAll('.ap')], sp = [...svg.querySelectorAll('.sp')], g = svg.querySelector('.arc');
+    return st => {
+      const y0 = lerp(geo.foot[1], geo.top[1], st.h), xl = rodX(geo.foot, geo.top, y0) + geo.edge, xr = 128 - xl;
+      const d = arcPath(xl, xr, y0, st.h, st.lean, st.t, geo.scale);
+      ap.forEach(p => p.setAttribute('d', d));
+      sp[0].setAttribute('cx', f(xl)); sp[1].setAttribute('cx', f(xr));
+      sp.forEach(s => s.setAttribute('cy', f(y0)));
+      g.style.opacity = st.on; sp.forEach(s => s.style.opacity = st.on);
+    };
+  };
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg, u) {
+      const L = 'M62.8 111.4L26.3 10.4A4.6 4.6 0 0 0 17.7 13.6L54.2 114.6A4.6 4.6 0 0 0 62.8 111.4Z';
+      const R = 'M73.8 114.6L110.3 13.6A4.6 4.6 0 0 0 101.7 10.4L65.2 111.4A4.6 4.6 0 0 0 73.8 114.6Z';
+      svg.innerHTML = `<defs>${light(u)}
+          <linearGradient id="${u}cu" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.86 0.1 64)"/><stop offset="0.5" stop-color="oklch(0.68 0.14 48)"/><stop offset="1" stop-color="oklch(0.5 0.12 36)"/></linearGradient>
+          <filter id="${u}blur" filterUnits="userSpaceOnUse" x="0" y="0" width="128" height="128"><feGaussianBlur stdDeviation="3.6"/></filter></defs>
+        <path d="${L}" fill="url(#${u}cu)"/><path d="${L}" fill="url(#${u}lit)"/><path d="${L}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        <path d="${R}" fill="url(#${u}cu)"/><path d="${R}" fill="url(#${u}lit)"/><path d="${R}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        <g class="arc" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path stroke="oklch(0.6 0.23 300)" stroke-width="14" filter="url(#${u}blur)"/>
+          <path stroke="oklch(0.76 0.16 302)" stroke-width="7.5"/>
+          <path stroke="oklch(0.99 0.02 300)" stroke-width="3.4"/>
+        </g>`;
+      const arcG = svg.querySelector('.arc'), parts = [...arcG.children];
+      const P = { h: 0.5, lean: 0, t: 0.6 };
+      const rx = y => 58.5 + (22 - 58.5) * (113 - y) / 101;
+      const draw = () => {
+        const y0 = 103 - 82 * P.h, xl = rx(y0) + 3.6, xr = 128 - xl;
+        parts.forEach(p => p.setAttribute('d', arcPath(xl, xr, y0, P.h, P.lean, P.t)));
+      };
+      draw();
+      let tl = null;
+      return {
+        enter() {
+          tl?.kill();
+          const climb = gsap.timeline({ repeat: -1, repeatDelay: 0.08 })
+            .set(arcG, { opacity: 1 })
+            .fromTo(P, { h: 0.02 }, { h: 1, duration: 1.6, ease: 'sine.in' })
+            .to(arcG, { opacity: 0, duration: 0.05, ease: 'none' });
+          tl = gsap.timeline().add(climb, 0).add(gsap.to(P, { t: '+=40', duration: 40, ease: 'none', repeat: -1, onUpdate: draw }), 0);
+        },
+        move(p) {
+          if (!p) return;
+          gsap.to(P, { lean: clamp((64 - p[0]) / 40, -1, 1), duration: 0.4, ease: 'power2.out', overwrite: 'auto', onUpdate: draw });
+        },
+        leave() {
+          tl?.kill(); tl = null;
+          gsap.to(arcG, { opacity: 1, duration: 0.2, overwrite: true });
+          gsap.to(P, { h: 0.5, lean: 0, t: 0.6, duration: 0.5, ease: 'power2.inOut', overwrite: true, onUpdate: draw });
+        },
+      };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The set from the front: box, two insulators, a copper V.
+  // Each rod rises straight from its insulator; the V is narrow at the foot.
+  const A_ROD = [[57, 84], [24, 11]];
+  const A_GEO = { foot: footAt(A_ROD, 72), top: A_ROD[1], edge: 4.3, scale: 1 };
+  const A_BOX = 'M24 95H104Q109 95 109 100V111Q109 116 104 116H24Q19 116 19 111V100Q19 95 24 95Z';
+  const A_INS = [insulator(57, 96, 77, 13), insulator(71, 96, 77, 13)];
+  // A plate on the box: amber with a bolt.
+  const A_PLATE = 'M57 99.5H71Q73 99.5 73 101.5V109.5Q73 111.5 71 111.5H57Q55 111.5 55 109.5V101.5Q55 99.5 57 99.5Z';
+  const A_BOLT = 'M65.6 100.6L59.4 106.4H63.6L62 110.6L68.6 104.4H64.4Z';
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [19, 9, 90, 107],
+    idea: 'The whole set as the toy shows it: a slate transformer box with an amber plate, two porcelain insulators, the copper V and the violet arc. The arc rides at the pointer\'s height, climbing after it; at the top it snaps and strikes again at the foot. The pointer\'s side bends it away, as a breath.',
+    art(svg, u) {
+      const rodL = thick(A_ROD, 8), rodR = thick(mirror(A_ROD), 8);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.4)}${wideBlur(`${u}ab`, 3.6)}
+          ${lg(`${u}cu`, COPPER, 'x1="0" y1="0" x2="1" y2="1"')}
+          ${lg(`${u}pc`, PORCELAIN, 'x1="0" y1="0" x2="1" y2="0"')}
+          ${lg(`${u}box`, [[0, 'oklch(0.5 0.016 255)'], [1, 'oklch(0.27 0.014 255)']])}
+          ${rg(`${u}glow`, [[0, HALO, 0.55], [1, HALO, 0]])}</defs>
+        <ellipse cx="64" cy="117" rx="48" ry="3.4" fill="oklch(0.05 0.01 260)" opacity="0.6" filter="url(#${u}b)"/>
+        <ellipse class="pool" cx="64" cy="60" rx="44" ry="40" fill="url(#${u}glow)" opacity="0"/>
+        ${body(A_BOX, u, 'box')}
+        <path d="${A_PLATE}" fill="${PLATE}"/><path d="${A_BOLT}" fill="${BOLT}"/>
+        ${body(rodL, u, 'cu')}${body(rodR, u, 'cu')}
+        ${A_INS.map(d => body(d, u, 'pc')).join('')}
+        ${arcMarkup(u, [14, 7.5, 3.4])}`;
+      const pool = svg.querySelector('.pool');
+      const drawArc = arcDrawer(svg, A_GEO);
+      const st = { h: 0.5, lean: 0, t: 0.6, on: 1, target: 0.5, leanTo: 0, live: false, snap: 0 };
+      const draw = time => {
+        if (st.live) {
+          st.t = time;
+          // The arc climbs after the pointer, slowly; it drops back fast.
+          const dh = st.target - st.h;
+          st.h += dh > 0 ? Math.min(dh, 0.03) : dh * 0.3;
+          // At the top it lets go, then strikes again at the foot.
+          if (st.h > 0.97 && !st.snap) {
+            st.snap = 1; st.on = 0;
+            gsap.delayedCall(0.12, () => { st.h = 0.02; st.on = 1; st.snap = 0; });
+          }
+        }
+        st.lean += (st.leanTo - st.lean) * 0.2;
+        drawArc(st);
+        pool.setAttribute('cy', f(lerp(A_GEO.foot[1], A_GEO.top[1], st.h)));
+        pool.setAttribute('opacity', f(st.live ? st.on * 0.7 : 0));
+      };
+      const loop = clock(draw);
+      draw(0);
+      let demo = null;
+      // The pointer's height on the V, from 0 at the foot to 1 at the top.
+      const height = y => clamp((A_GEO.foot[1] + 6 - y) / (A_GEO.foot[1] - A_GEO.top[1]) * 1.08, 0.02, 1);
+      return {
+        enter(p) {
+          st.live = true; loop.start(); demo?.kill();
+          // With no pointer, the arc climbs the whole way by itself.
+          if (!p) { st.target = 1; return; }
+          this.move(p);
+        },
+        move(p) {
+          if (!p) return;
+          st.target = height(p[1]);
+          st.leanTo = clamp((64 - p[0]) / 40, -1, 1);
+        },
+        leave() {
+          st.live = false; st.leanTo = 0; st.on = 1;
+          demo = gsap.to(st, { h: 0.5, t: 0.6, duration: 0.5, ease: 'power2.inOut', overwrite: true, onComplete: () => { draw(0); loop.stop(); } });
+        },
+      };
+    },
+    emblem: (() => {
+      const rods = thick(A_ROD, 8) + thick(mirror(A_ROD), 8);
+      const xl = rodX(A_GEO.foot, A_GEO.top, 40) + A_GEO.edge;
+      const arc = arcPath(xl, 128 - xl, 40, 0.5, 0, 0.6);
+      return `${EMB_HEAD}<path d="${A_BOX}" fill="#fff"/><path d="${A_PLATE}" fill="#000"/><path d="${A_BOLT}" fill="#fff"/><path d="${rods}${A_INS.join('')}" fill="#fff"/><path d="${arc}" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    })(),
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The transformer is the block, in a 30 degree view.
+  // The V stands across the block, so it reads face on.
+  const CY = 78, HALF = 22, T = 17;
+  const iso = (gx, gy, h = 0) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5 - h];
+  const D_TOP = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]].map(([x, y]) => iso(x, y));
+  const down = p => [p[0], p[1] + T];
+  // Insulators stand on the top, left and right of the middle.
+  const D_INS_X = [54.5, 73.5], D_INS = D_INS_X.map(x => insulator(x, CY + 2, CY - 15, 12));
+  const D_ROD = [[54.5, CY - 12], [24, 10]];
+  const D_GEO = { foot: footAt(D_ROD, CY - 22), top: D_ROD[1], edge: 3.6, scale: 0.9 };
+  // A point on the left face: u runs along it, v runs down it.
+  const [N, E, S, W] = D_TOP;
+  const onLeft = (u, v) => [lerp(W[0], S[0], u), lerp(W[1], S[1], u) + T * v];
+  const D_PLATE = poly([onLeft(0.36, 0.2), onLeft(0.66, 0.2), onLeft(0.66, 0.82), onLeft(0.36, 0.82)]);
+  const D_BOLT = poly([[0.55, 0.26], [0.42, 0.55], [0.51, 0.55], [0.47, 0.76], [0.6, 0.47], [0.51, 0.47]].map(([a, b]) => onLeft(a, b)));
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [21, 8, 86, 112],
+    idea: 'The transformer is the block: a slate top, a mid left face with the amber plate, a dark right face, a rim on the top edges. Porcelain and the copper V stand on it. Hover and the arc climbs by itself and snaps, as in the toy; it bends away from the pointer and pools violet light on the block\'s top, brightest when it is low.',
+    art(svg, u) {
+      const rodL = thick(D_ROD, 6.5), rodR = thick(mirror(D_ROD), 6.5);
+      const top = poly(D_TOP);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}${wideBlur(`${u}ab`, 3.2)}
+          ${lg(`${u}cu`, COPPER, 'x1="0" y1="0" x2="1" y2="1"')}
+          ${lg(`${u}pc`, PORCELAIN, 'x1="0" y1="0" x2="1" y2="0"')}
+          ${lg(`${u}top`, [[0, 'oklch(0.58 0.016 255)'], [1, 'oklch(0.46 0.016 255)']], 'x1="0" y1="0" x2="0.4" y2="1"')}
+          ${rg(`${u}glow`, [[0, HALO, 0.8], [1, HALO, 0]])}
+          <clipPath id="${u}tc"><path d="${top}"/></clipPath></defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 260)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 4)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="oklch(0.38 0.014 255)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="oklch(0.25 0.012 255)"/>
+        <path d="${D_PLATE}" fill="${PLATE}"/><path d="${D_BOLT}" fill="${BOLT}"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <ellipse class="pool" cx="64" cy="${CY}" rx="36" ry="21" fill="url(#${u}glow)" opacity="0" clip-path="url(#${u}tc)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${body(rodL, u, 'cu')}${body(rodR, u, 'cu')}
+        ${D_INS.map(d => body(d, u, 'pc')).join('')}
+        ${D_INS_X.map(x => `<ellipse cx="${x}" cy="${CY - 15}" rx="3.6" ry="2" fill="oklch(0.98 0.015 88)"/>`).join('')}
+        ${arcMarkup(u, [12, 6.5, 3])}`;
+      const pool = svg.querySelector('.pool');
+      const drawArc = arcDrawer(svg, D_GEO);
+      const st = { h: 0.5, lean: 0, t: 0.6, on: 1, glow: 0 };
+      const draw = () => {
+        drawArc(st);
+        // The pool is brightest while the arc is low and near the block.
+        pool.setAttribute('opacity', f(st.glow * st.on * (1 - st.h * 0.65)));
+      };
+      draw();
+      let tl = null;
+      return {
+        enter(p) {
+          tl?.kill();
+          // The arc strikes at the foot, climbs, and snaps at the top.
+          const climb = gsap.timeline({ repeat: -1, repeatDelay: 0.1 })
+            .set(st, { on: 1 })
+            .fromTo(st, { h: 0.02 }, { h: 1, duration: 1.6, ease: 'sine.in' })
+            .set(st, { on: 0 });
+          tl = gsap.timeline({ onUpdate: draw })
+            .add(climb, 0)
+            .to(st, { glow: 1, duration: 0.3 }, 0)
+            .add(gsap.to(st, { t: '+=40', duration: 40, ease: 'none', repeat: -1 }), 0);
+          if (p) this.move(p);
+        },
+        move(p) {
+          if (!p) return;
+          // The breath from the pointer bends the arc away from it.
+          gsap.to(st, { lean: clamp((64 - p[0]) / 36, -1, 1), duration: 0.4, ease: 'power2.out', overwrite: 'auto' });
+        },
+        leave() {
+          tl?.kill(); tl = null;
+          gsap.to(st, { h: 0.5, lean: 0, t: 0.6, on: 1, glow: 0, duration: 0.5, ease: 'power2.inOut', overwrite: true, onUpdate: draw });
+        },
+      };
+    },
+    emblem: (() => {
+      const rods = thick(D_ROD, 6.5) + thick(mirror(D_ROD), 6.5);
+      const xl = rodX(D_GEO.foot, D_GEO.top, 30) + D_GEO.edge;
+      const arc = arcPath(xl, 128 - xl, 30, 0.5, 0, 0.6, 0.9);
+      return `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly(D_TOP)}" fill="#8a8a8a"/><path d="${rods}${D_INS.join('')}" fill="#fff"/><path d="${arc}" fill="none" stroke="#fff" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    })(),
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Jacob\'s ladder';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-ladder';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `ladder-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
