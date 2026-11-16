@@ -60,7 +60,7 @@ Code that one toy owns and another imports or copies. Each is a question for Tom
 | Code | Owner | Used by | Note |
 |---|---|---|---|
 | `nvg/tube.js` (`Tube`, the image intensifier) | `nvg` | `railgun` imports it | The only cross-toy import. A move to `shared/` makes the dependency plain |
-| K3 volume fluid (`createK3`, `createStorage3D`) | `fire` | `ink` (copy, "Lifted from fire") | Both TSL. The shared GLSL rule does not reach them. Tom, 2026-11-16: fire and smoke are a key module to reuse; move them to `shared/` |
+| K3 volume fluid, now `shared/fire.js` (`createFire`, `volume`) | `fire` (reference port, 2026-11-16, `stimming-oeym`) | `ink` (a fork, not a copy: MacCormack dye, mass buoyancy, sphere emitters, its own grid; it does not adopt yet) | TSL on three.js 0.186 WebGPU. Tom, 2026-11-16: fire and smoke are a key module. The module imports nothing: the toy passes `THREE`, `TSL` and the curl noise addon. The WebGL toys and the reach: `docs/plans/fire-smoke.md` |
 | `spectral()` | `prism` | `flametest` (copy) | |
 | `smin`, `smax` | `window` | `frietkot/figures.js` | |
 | CRT screen and glass shader, `program/target/drop/clearAcc/quadPass` | `scope` | `sonar` (a fork) | Two oscilloscope-like toys; one module or one owner |
