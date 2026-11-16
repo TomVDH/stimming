@@ -20,7 +20,22 @@ Tom (2026-11-14) wants options for the game-over hum and choir. Three new takes 
 - [x] QA: clean console, levels against Surge, a fast strike to the white with each take
 - [x] Note for Tom on how to compare the takes
 - [x] Round 2 (Tom: "way too crackly and filtered"; the build too slow, the peak in the wrong place, the ending off): no crush, no crackle bursts, open filters, a build across the fall, the hit at contact, a cut at the white
+- [x] Round 3 (Tom: the chorus lasts 3 s longer; no rewind whoosh after the game over)
+- [x] Round 3 arc (Tom): low layers filter in slowly; layers come on as the rock nears, with natural dynamics; the chorus is complete in the last 3 to 5 s; at contact a forte with higher layers, then an echoed stop
+- [x] Requiem (Tom's favourite so far): each layer enters muffled and opens as the next blends in, on the Dev toggle Requiem layers open
 - [ ] Tom picks a take
+
+## Round 3
+
+| Beat | Now |
+|---|---|
+| Build | Layers enter low to high by elapsed time; the chorus is complete GO_FULL (4 s) before contact (30 percent of the fall on a fast rock) |
+| Dynamics | Slow 7 s swells (plus or minus 30 percent) that settle as the chorus fills; level and filter follow nearness^1.6 |
+| Requiem pedal | Its lid opens from 150 Hz |
+| Requiem layers | Each voice's lid opens from 250 Hz to 12 kHz as the next voices enter (Dev toggle; off keeps every voice clear) |
+| Contact | Forte: the choir bus at 1.4x, sung ah, a high saw layer an octave over the upper chord, the boom; the heart stops |
+| Stop | The chorus holds GO_HOLD (3 s) past the white's arrival, then cuts in 0.2 s; a 0.42 s feedback echo rings it out (Requiem) |
+| Rewind | The game over's rewind has no whoosh; the Reset button keeps its whoosh |
 
 ## Round 2 timing (every take, Surge too)
 
