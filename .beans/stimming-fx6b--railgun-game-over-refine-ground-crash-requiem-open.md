@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:22:13Z
-updated_at: 2026-11-16T18:45:11Z
+updated_at: 2026-11-16T18:51:36Z
 parent: stimming-f793
 ---
 
@@ -24,3 +24,12 @@ Tom (2026-11-16): refine the game-over ground crash; the Requiem (clear) loses i
 - Requiem: the voices hold oo; the oo-to-ah vowel opening is gone, so voices only fade in, low to high.
 - Timing: white full at +3.4 s after contact, held 2.5 s (WHITE_T), the chord fades over the held white, then the rewind runs.
 - __qa.record(): taps kit.out for headless before/after clips.
+
+## Round 2 (Tom, 2026-11-16)
+
+Tom: the climax opened suddenly and ended at once; it must hold 3-5 s, then pop to a sudden silence, then the rewind. Cause: the Requiem's lock accent swelled the chord about 6 dB and decayed over 1.2 s.
+- The accent is gone; the climax swells in (0.35 s time constant) and holds flat.
+- CLIMAX_T 4 s after contact, the take cuts to silence in about 10 ms: chord, heart, echo and its own copy of the plain reverb (gameOverCut, surgeOverStop cut).
+- Then WHITE_T 2.5 s of silent white, then the rewind.
+- The wash is 4 s and its white is warm (FILL_WARM #fff1cf), after Tom's white-yellow note.
+- Meter (headless): climax -9 to -12 dB RMS for 4 s, then -55 dB within 0.25 s.
