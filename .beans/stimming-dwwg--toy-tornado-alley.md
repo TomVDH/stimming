@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:12:34Z
+updated_at: 2026-11-16T20:18:56Z
 parent: stimming-oh7b
 ---
 
@@ -43,3 +43,5 @@ Known gaps for later stages: the runner draws at the full frame rate while awake
 - Round 3 (Tom: the road "a bit more to the right", its golden cut "past the camera FOV"): the road vanishes at 0.764 across and runs 14 m right of the eye. The showcase goal and the composition are in docs/plans/tornado.md.
 
 - Round 4 (Tom: the road moves left, "it will partially go past camera fov"): the road vanishes at 0.618 and runs 7.5 m right of the eye; its near end leaves the frame at the bottom right.
+
+- Round 5 (Tom picked all four: storm base, sky and light, near wheat, storm placement), one commit each: the updraft and wall cloud on the left golden line with open sky above; a striated, ragged base with a lowered wall cloud and a greener core; a dusty sky with a warm horizon band that dims round the storm; the eye drops to 1.25 m and a foreground of 56 soft-focus ears sways with the gusts.

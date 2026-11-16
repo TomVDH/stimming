@@ -45,7 +45,7 @@ const ui = initPage({ id: 'tornado', bar: {
 } });
 
 /* ---------- the scene ---------- */
-// The eye stands on the centre line of a two-lane road, 1.7 m up, and looks down it.
+// The eye crouches in the wheat beside a two-lane road and looks along it.
 // Ground units are metres; the storm's units are kilometres.
 // Golden lines: the horizon sits 0.382 up the frame.
 const GOLD = 0.381966;
@@ -55,7 +55,8 @@ uniform vec3 uSun, uSunCol, uAmb;
 uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
 // Placeholder funnels: x, z in metres, ground width, then 1 when live.
 uniform vec4 uTor0, uTor1, uTor2, uTor3;
-const float CAMH = 1.7;
+// The eye crouches just over the ears, 1.25 m up.
+const float CAMH = 1.25;
 // The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
 // The updraft and the wall cloud sit on the left golden line of a wide frame.
 const vec2 TOWER = vec2(-9.5, -40.0);
@@ -425,6 +426,61 @@ void funnel(inout vec3 c, vec2 s, vec3 rd, float px, vec4 tor) {
   over(c, hazed(uAmb * 0.08 + uSunCol * vec3(0.06, 0.04, 0.025), rd, z), dust * 0.6);
 }
 
+// The foreground: large ears a metre or two off, soft with defocus, swaying in the gusts.
+// They live in camera space; far ones draw first, so near ones cover them.
+float segD(vec2 p, vec2 a, vec2 b, out float u) {
+  vec2 ab = b - a;
+  u = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+  return length(p - a - ab * u);
+}
+void nearEars(inout vec3 c, vec2 s, float px, float asp) {
+  // The tallest ear, with its tuft, stays below this line.
+  if (s.y > 0.0) return;
+  vec3 lit = uSunCol * 0.5 + uAmb * 0.55;
+  const int N = 56;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i);
+    float z = 4.0 - fi * (3.3 / float(N));
+    float hw = 0.5 * asp / uFoc * z;
+    float x = (th(vec2(fi, 4.2)) - 0.5) * 2.2 * hw;
+    float top = 0.98 + 0.12 * th(vec2(fi, 9.1));
+    // The gust at this ear, from its place in the world.
+    vec3 W = toWorld(vec3(x, 0.0, -z));
+    // No ears on the road or its verges.
+    if (abs(W.x - ROAD_X) < WHEAT_GAP) continue;
+    float g = gust(W.xz);
+    vec2 lean = bend(W.xz, 1.0, g);
+    // The lean in camera space, as screen units at this depth.
+    float lx = (lean.x * cos(uYaw) - lean.y * sin(uYaw)) / z * uFoc;
+    vec2 tip = vec2(x / z * uFoc + lx, (top - CAMH) / z * uFoc);
+    vec2 base = vec2(x / z * uFoc + lx * 0.55, (top - 0.11 - CAMH) / z * uFoc);
+    if (s.y > tip.y + 0.1 / z) continue;
+    float w = 0.011 / z * uFoc;
+    // Defocus: the nearer the ear, the softer its edge.
+    float bl = 0.009 / z * uFoc + px;
+    float u;
+    float d = segD(s, base, tip, u);
+    // Kernel rows bead the ear's edge.
+    float ww = w * (0.55 + 0.45 * sin(3.14159 * sqrt(u))) * (0.88 + 0.12 * sin(u * 30.0));
+    float k = smoothstep(ww + bl, ww - bl, d);
+    // The stalk: thin, down out of the frame.
+    float us;
+    vec2 foot = vec2(x / z * uFoc, -1.0);
+    float ds = segD(s, foot, base, us);
+    float ws = 0.0022 / z * uFoc;
+    k = max(k, smoothstep(ws + bl, ws - bl, ds) * 0.9);
+    // The awns: a pale tuft past the tip.
+    float ua;
+    float da = segD(s, tip, tip + (tip - base) * 0.75, ua);
+    k = max(k, smoothstep(w * 1.1 + bl, 0.0, da) * 0.35 * (1.0 - ua));
+    if (k <= 0.0) continue;
+    vec3 ear = mix(vec3(0.42, 0.29, 0.11), vec3(0.6, 0.45, 0.2), th(vec2(fi, 2.7)));
+    // Lit face toward the eye, darker at the rim.
+    float rim = clamp(d / max(ww, 1e-4), 0.0, 1.0);
+    c = mix(c, ear * lit * (1.05 - 0.4 * rim * rim), clamp(k, 0.0, 1.0));
+  }
+}
+
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -461,6 +517,7 @@ vec3 envScene(vec2 uv) {
   funnel(c, s, rd, px, uTor3);
   farm(c, s, rd, px);
   poles(c, s, rd, px);
+  nearEars(c, s, px, asp);
   return c;
 }
 `;
@@ -548,7 +605,7 @@ function groundAt(clientX, clientY) {
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
   // Funnels stay far off: a near click puts one 8 km out, a sky click 36 km out.
-  const dist = sy < -1e-4 ? clamp(1.7 * Math.hypot(foc, sx) / -sy, 8000, 36000) : 36000;
+  const dist = sy < -1e-4 ? clamp(1.25 * Math.hypot(foc, sx) / -sy, 8000, 36000) : 36000;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
