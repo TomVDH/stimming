@@ -97,6 +97,46 @@ const TAU = Math.PI * 2;
 playIntro({ ready: pageReady(9000) });
 mark('build');
 
+/* ---------- the tray: what a tap adds ---------- */
+// Mix keeps the old round; the rest pick one thing or one liquid.
+const PICKS = [['mix', 'Mix'], ['carrot', 'Carrot'], ['onion', 'Onion'], ['fish', 'Fish'], ['beet', 'Beetroot'], ['duck', 'Duck'],
+  ['pea', 'Peas'], ['boot', 'Boot'], ['star', 'Star'], ['tomato', 'Tomato'], ['mushroom', 'Mushroom'],
+  ['cream', 'Cream'], ['ink', 'Squid ink'], ['chilli', 'Chilli oil'], ['saffron', 'Saffron']];
+let pick = 'mix';
+// Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
+const ok = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
+const circ = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
+const DROP = 'M0-12C6-4 9 1 9 5A9 9 0 0 1-9 5C-9 1-6-4 0-12z';
+const ART = {
+  mix: [['M-12-1h24a12 11 0 0 1-24 0z', [0.4, 0.02, 60], [0.2, 0.01, 60]], ['M-11-1a11 3 0 0 0 22 0a11 3 0 0 0-22 0z', [0.8, 0.13, 75], [0.62, 0.15, 55]],
+    [circ(-4, -2, 2.4), [0.75, 0.17, 50], [0.6, 0.18, 40]], [circ(3, -2.5, 2), [0.78, 0.17, 140], [0.6, 0.17, 140]]],
+  carrot: [['M-11 9L5-7c3-3 7 1 4 4z', [0.78, 0.17, 55], [0.6, 0.19, 42]], ['M6-6l2-8l2 7l5-3l-4 6z', [0.75, 0.17, 140], [0.55, 0.16, 140]]],
+  onion: [['M0-13c2 4 10 7 10 14a10 10 0 0 1-20 0c0-7 8-10 10-14z', [0.88, 0.07, 85], [0.66, 0.09, 70]]],
+  fish: [['M-12 0c5-8 15-8 19 0c-4 8-14 8-19 0z', [0.85, 0.03, 230], [0.58, 0.05, 240]], ['M6 0l8-6v12z', [0.76, 0.04, 230], [0.55, 0.05, 240]], [circ(-6, -1.5, 1.6), [0.2, 0, 0], [0.1, 0, 0]]],
+  beet: [[circ(0, 3, 9.5), [0.52, 0.2, 358], [0.32, 0.16, 355]], ['M0-6c-2-5-6-8-9-8c1 4 4 7 9 8zM0-6c2-5 6-8 9-8c-1 4-4 7-9 8z', [0.72, 0.16, 145], [0.5, 0.14, 150]]],
+  duck: [['M-12 3c0-5 6-6 10-5c0-6 3-9 7-9s6 3 6 6c0 2-1 4-3 5c3 1 5 3 4 7c-1 5-8 6-14 6c-7 0-10-4-10-10z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
+    ['M11-6l6 1l-6 2z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(7, -7, 1.3), [0.2, 0, 0], [0.1, 0, 0]]],
+  pea: [[circ(-6, 3, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(5, 4, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(0, -5, 5.5), [0.84, 0.17, 135], [0.62, 0.17, 140]]],
+  boot: [['M-8-13h9v14c6 0 12 2 12 7v3h-21z', [0.48, 0.06, 55], [0.28, 0.04, 50]], ['M-8 9h21v3h-21z', [0.24, 0.02, 50], [0.16, 0.01, 50]]],
+  star: [['M0-13l3.8 8.2l9 1l-6.7 6.2l1.9 8.8l-8-4.6l-8 4.6l1.9-8.8l-6.7-6.2l9-1z', [0.95, 0.15, 98], [0.8, 0.16, 82]]],
+  tomato: [[circ(0, 2, 10.5), [0.68, 0.2, 32], [0.48, 0.19, 28]], ['M0-9l2 3l4-1l-2 3l3 2h-4l-3 2l-1-3h-4l3-2l-2-3l4 1z', [0.72, 0.16, 140], [0.5, 0.15, 145]]],
+  mushroom: [['M-13 0c0-8 6-12 13-12s13 4 13 12z', [0.62, 0.07, 55], [0.42, 0.06, 50]], ['M-4 0h8l1 11h-10z', [0.92, 0.03, 85], [0.76, 0.04, 80]]],
+  cream: [[DROP, [0.98, 0.015, 90], [0.84, 0.03, 80]]],
+  ink: [[DROP, [0.32, 0.05, 290], [0.12, 0.03, 290]]],
+  chilli: [[DROP, [0.68, 0.2, 38], [0.48, 0.2, 28]]],
+  saffron: [[DROP, [0.88, 0.17, 88], [0.7, 0.17, 72]], ['M-3-2l1 9M1-3l0 10M4-1l-1 8', [0.6, 0.18, 35], [0.5, 0.18, 30]]],
+};
+// One bold object: a gradient body, the shared top-left light and a pale rim.
+function pickIcon(id) {
+  const parts = ART[id];
+  const defs = parts.map(([, a, b], i) => `<linearGradient id="cp-${id}-${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${ok(a)}"/><stop offset="1" stop-color="${ok(b)}"/></linearGradient>`).join('');
+  const lit = `<radialGradient id="cp-${id}-lit" cx="0.32" cy="0.22" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>`;
+  const body = parts.map(([d], i) => id === 'saffron' && i === 1
+    ? `<path d="${d}" fill="none" stroke="url(#cp-${id}-${i})" stroke-width="2" stroke-linecap="round"/>`
+    : `<path d="${d}" fill="url(#cp-${id}-${i})"/><path d="${d}" fill="url(#cp-${id}-lit)"/><path d="${d}" fill="none" stroke="oklch(1 0 0 / 0.22)" stroke-width="1"/>`).join('');
+  return `<svg viewBox="-17 -17 34 34" aria-hidden="true"><defs>${defs}${lit}</defs><circle r="16.5" fill="oklch(0.16 0.02 50)" stroke="oklch(1 0 0 / 0.08)"/>${body}</svg>`;
+}
+
 /* ---------- bar ---------- */
 const FIRE0 = 0.5;
 let fire = FIRE0;
@@ -106,6 +146,9 @@ const act = { add() {}, clear() {}, reset() {} };
 const devV = (id, d) => ui.setting(id)?.value ?? d;
 let refit = () => {};
 const ui = initPage({ id: 'cauldron', bar: {
+  choice: { label: 'Add', display: 'tray', value: 'mix',
+    options: PICKS.map(([value, label]) => ({ value, label, icon: pickIcon(value) })),
+    onPick: v => { pick = v; stage.focus?.({ preventScroll: true }); } },
   actions: [
     { verb: 'add', noun: 'Thing', key: 'T', onPress: () => act.add() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
@@ -1023,6 +1066,8 @@ uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
 uniform vec4 uDrop[${ND}];
+// A drop's own colour, linear; alpha 0 takes the soup's colour.
+uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
 uniform int uMarch;
 out vec4 o;
@@ -1403,8 +1448,8 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
   return col + emit;
 }
-vec3 shadeDrop(vec3 p, vec3 n, vec3 rd) {
-  vec3 alb = soupCol(p.xz);
+vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
+  vec3 alb = mix(soupCol(p.xz), own.rgb, own.a);
   vec3 v = -rd;
   float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
   vec3 h = normalize(uKeyDir + v);
@@ -1518,6 +1563,7 @@ void main() {
   }
   // Droplets thrown up by a splash.
   vec3 dropN = vec3(0.0, 1.0, 0.0);
+  int dropI = 0;
   for (int i = 0; i < ${ND}; i++) {
     if (i >= uND) break;
     vec4 dp = uDrop[i];
@@ -1525,7 +1571,7 @@ void main() {
     float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + dp.w * dp.w;
     if (h > 0.0) {
       float t = -bb - sqrt(h);
-      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; }
+      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; dropI = i; }
     }
   }
   // The spoon's handle.
@@ -1551,7 +1597,7 @@ void main() {
   else if (mat == 4) col = shadeSoup(p, rd);
   else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
   else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
-  else if (mat == 7) col = shadeDrop(p, dropN, rd);
+  else if (mat == 7) col = shadeDrop(p, dropN, rd, uDropC[dropI]);
   else if (mat == 8) col = shadeSpoon(p, spN, rd);
   else if (mat == 9) {
     vec3 ba = legB - legA;
@@ -2049,11 +2095,59 @@ function emit(x, z, r, mass, tint, type) {
   } else emits.push([x, z, r, mass, 0, 0, 0, type]);
 }
 
+/* ---------- liquids: poured, not thrown ---------- */
+// Each liquid tints the soup; some add fat that floats, or glitter.
+// r is the size of each lump in the stream; mass is the whole pour's colour.
+const LIQ = {
+  cream: { tint: [0.95, 0.02, 88], mass: 0.9, r: 0.07, fat: 0.7, glit: 0 },
+  ink: { tint: [0.16, 0.03, 290], mass: 0.85, r: 0.05, fat: 0, glit: 0 },
+  chilli: { tint: [0.55, 0.2, 33], mass: 0.35, r: 0.045, fat: 1, glit: 0 },
+  saffron: { tint: [0.82, 0.17, 84], mass: 0.45, r: 0.06, fat: 0, glit: 0.6 },
+};
+const pours = [];
+function pour(kind, x, z) {
+  pours.push({ kind, x, z, t: 0, dur: 1.2, acc: 0, col: lchLin(LIQ[kind].tint) });
+  pourSound(kind, x);
+  splashAt = time;
+  wake();
+}
+// The stream lands in lumps, about 30 a second, and drifts with the stir.
+function stepPours(dt) {
+  const rs = soupR(level);
+  for (let i = pours.length - 1; i >= 0; i--) {
+    const p = pours[i], L = LIQ[p.kind];
+    p.t += dt;
+    p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
+    p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    [p.x, p.z] = inside([p.x, p.z], 0.9);
+    p.acc += dt * 30;
+    while (p.acc >= 1 && p.t < p.dur) {
+      p.acc -= 1;
+      const x = p.x + rand(-0.03, 0.03), z = p.z + rand(-0.03, 0.03);
+      emit(x, z, L.r * rand(0.7, 1.3), L.mass / 36, L.tint, 0);
+      if (L.fat && Math.random() < 0.5) emit(x + rand(-0.06, 0.06), z + rand(-0.06, 0.06), rand(0.02, 0.045), rand(0.5, 0.9) * L.fat, null, 1);
+      if (L.glit && Math.random() < 0.5) emit(x, z, rand(0.04, 0.08), rand(0.4, 0.8) * L.glit, null, 2);
+      // The stream digs a small dent and sends out rings.
+      imps.push([x, z, 0.05, -0.014]);
+      if (Math.random() < 0.15) imps.push([x, z, 0.1, -0.02]);
+      // A thin stream of drops from above, in the liquid's own colour.
+      if (!reduced()) addDrop(x * rs, surfY(x * rs, z * rs) + rand(0.4, 1.0), z * rs, 0, -2.8, 0, rand(0.013, 0.022), p.col);
+    }
+    if (p.t >= p.dur) pours.splice(i, 1);
+  }
+}
+
 /* ---------- bubbles, droplets, puffs, sparks, ripples ---------- */
 const bubbles = [], drops = [], puffs = [], sparks = [], imps = [];
-function addDrop(x, y, z, vx, vy, vz, r) {
+function addDrop(x, y, z, vx, vy, vz, r, c = null) {
   if (drops.length >= ND) drops.shift();
-  drops.push({ x, y, z, vx, vy, vz, r });
+  drops.push({ x, y, z, vx, vy, vz, r, c });
+}
+// OKLCH to linear sRGB, for a drop's own colour.
+function lchLin(t) {
+  const [L, a, b] = lab(t);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(v => Math.max(0, v));
 }
 function addPuff(x, z, s) {
   if (reduced()) return;
@@ -2124,7 +2218,7 @@ function stepDrops(dt) {
     if (d.vy < 0 && d.y < surfY(d.x, d.z)) {
       drops.splice(i, 1);
       // Back into the pot: a tiny ring; outside the rim it just goes.
-      if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (Math.random() < 0.35) dripSound(d); }
+      if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (!d.c && Math.random() < 0.35) dripSound(d); }
     } else if (d.y < -2) drops.splice(i, 1);
   }
 }
@@ -2398,8 +2492,9 @@ function spoonWorld() {
 /* ---------- throwing ---------- */
 function throwNext(x, z) {
   if (draining) return;
-  const kind = ORDER[next];
-  next = (next + 1) % ORDER.length;
+  if (LIQ[pick]) { pour(pick, x, z); return; }
+  const kind = pick === 'mix' ? ORDER[next] : pick;
+  if (pick === 'mix') next = (next + 1) % ORDER.length;
   if (kind === 'pea') {
     // A handful: seven peas land in a small scatter.
     for (let i = 0; i < 7; i++) throwIn('pea', x + rand(-0.12, 0.12), z + rand(-0.12, 0.12), i * 0.035);
@@ -2561,6 +2656,16 @@ function throwSound() {
   if (!ac || !kit.noise) return;
   const at = ac.currentTime + 0.01;
   burst(ac, at, { f: 700, q: 0.6, dur: 0.3, level: 0.05 });
+}
+// A pour: a run of low glugs over a thin drizzle.
+function pourSound(kind, x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, pan = panOf(x);
+  // Oil and cream glug lower and slower than ink.
+  const low = kind === 'ink' || kind === 'saffron' ? 1.25 : 1;
+  for (let i = 0; i < 6; i++) blop(ac, at + i * 0.18 * jit(0.2), { f: 170 * low, rise: 1.7, dur: 0.13, level: 0.05, pan });
+  burst(ac, at, { f: 2800, q: 0.7, dur: 1.15, level: 0.018, pan });
 }
 function breakSound(b) {
   const ac = kit.live();
@@ -2818,7 +2923,7 @@ function layerPass() {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4);
+const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4);
 function scenePass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
   gl.viewport(0, 0, hdr.w, hdr.h);
@@ -2860,7 +2965,8 @@ function scenePass() {
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
   gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
   gl.uniform4fv(sceneP.u('uBub'), bubU);
-  drops.forEach((d, i) => dropU.set([d.x, d.y, d.z, d.r], i * 4));
+  drops.forEach((d, i) => { dropU.set([d.x, d.y, d.z, d.r], i * 4); dropCU.set(d.c ? [...d.c, 1] : [0, 0, 0, 0], i * 4); });
+  gl.uniform4fv(sceneP.u('uDropC'), dropCU);
   gl.uniform1i(sceneP.u('uND'), drops.length);
   gl.uniform4fv(sceneP.u('uDrop'), dropU);
   const sw = spoonWorld();
@@ -2912,7 +3018,7 @@ function wake() {
 let splashAt = -10;
 function busy() {
   return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || spoon.lift < 1 || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
-    || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
+    || pours.length > 0 || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
   frameNo++;
@@ -2940,6 +3046,7 @@ function frame(now) {
     funnel = clamp(w2 * 0.006, 0, 0.1);
     swirl += omega * dt * 0.5;
     stepBodies(dt);
+    stepPours(dt);
     stepBubbles(dt);
     stepDrops(dt);
     stepPuffs(dt);
@@ -2971,6 +3078,9 @@ act.reset = () => {
   fillBroth();
   clearRipples();
   next = 0;
+  pick = 'mix';
+  ui.choice?.set('mix');
+  pours.length = 0;
   starter();
   fire = FIRE0;
   ui.slider.set(FIRE0);
