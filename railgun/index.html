@@ -1899,27 +1899,34 @@ float body(vec2 X) {
     // A thunderhead: a broad, boiling column under a flat anvil.
     // The anvil runs downwind to the right and thins at its far end.
     float k = y / H;
-    float lean = W * 0.08 * k;
+    // Each storm has its own build: girth, lean, anvil reach and age.
+    // About one in three is still a towering cumulus, with no anvil yet.
+    float vGirth = mix(0.65, 1.25, hsh(21.0, sd)), vReach = mix(0.45, 1.15, hsh(22.0, sd));
+    // A giant is always a mature storm.
+    float vAnv = max(step(0.33, hsh(23.0, sd)), step(60000.0, H)), vTop = mix(0.72, 0.9, hsh(24.0, sd));
+    float lean = W * mix(-0.04, 0.16, hsh(25.0, sd)) * k * k;
     float cx = x - lean;
     float lump = bil(X / (W * 0.5), sd);
     float fine = cell(X / (W * 0.22), sd);
     // The column widens as it climbs; its sides boil in turrets.
-    float colHalf = W * mix(0.17, 0.36, smoothstep(0.0, 0.7, k));
-    float colF = min(colHalf - abs(cx), H * 0.84 - y);
+    float colHalf = W * mix(0.17, 0.36, smoothstep(0.0, 0.7, k)) * vGirth;
+    // A young tower ends in a big boiling dome; a mature one feeds its anvil.
+    float colTop = mix(H * vTop, H * 0.84, vAnv);
+    float colF = min(colHalf - abs(cx), colTop - y);
     colF = min(colF, y + 150.0) + (lump - 0.45) * W * 0.26 + (fine - 0.5) * W * 0.06;
     // The overshooting top: a dome above the column's core.
     float od = (cx + W * 0.04) / (W * 0.24);
-    float domeF = H * (0.8 + 0.2 * sqrt(max(1.0 - od * od, 0.0))) - y + (lump - 0.5) * H * 0.06;
-    domeF = min(min(domeF, y - H * 0.6), W * 0.24 - abs(cx + W * 0.04));
+    float domeF = colTop - H * 0.04 + H * 0.2 * sqrt(max(1.0 - od * od, 0.0)) - y + (lump - 0.5) * H * 0.06;
+    domeF = min(min(domeF, y - colTop * 0.7), W * 0.24 * vGirth - abs(cx + W * 0.04));
     // The anvil: a lens under the tropopause, long downwind.
     // It is thickest over the column and thins toward both ends.
-    float ax = (cx - W * 0.3) / (W * 0.68);
+    float ax = (cx - W * 0.3 * vReach) / (W * 0.68 * vReach);
     float far_ = smoothstep(0.0, W, cx);
     float envA = sqrt(max(1.0 - ax * ax, 0.0));
-    float thick = H * 0.085 * envA * (1.0 - 0.45 * far_);
+    float thick = H * 0.085 * envA * (1.0 - 0.45 * far_) * vAnv;
     float mid = H * (0.83 + 0.03 * far_);
     // The noise only works inside the lens.
-    float anvF = thick - abs(y - mid) + ((lump - 0.5) * H * 0.07 + (fine - 0.5) * H * 0.025) * envA - (1.0 - envA) * H * 0.05;
+    float anvF = thick - abs(y - mid) + ((lump - 0.5) * H * 0.07 + (fine - 0.5) * H * 0.025) * envA - (1.0 - envA) * H * 0.05 - (1.0 - vAnv) * H;
     F = max(max(colF, anvF), domeF);
     // Keep the whole shape inside the card.
     F = min(F, W * 0.99 - abs(x));
@@ -2129,12 +2136,12 @@ const heaps = cloudLayer(HEAPS, BAND.heaps);
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
 // Storm towers stand among the far ranges, as tall as their peaks.
-const TOWERS = [[-22, 120000, 2000, 15000, 24000, 1], [5, 150000, 2200, 19000, 28000, 1], [30, 105000, 2000, 16000, 25000, 1], [52, 135000, 2200, 18000, 27000, 1], [76, 115000, 2000, 14000, 23000, 1]];
+// Three towers of different builds: fewer reads truer than a row.
+const TOWERS = [[-14, 125000, 2000, 15000, 24000, 1], [8, 150000, 2200, 12000, 17000, 1], [28, 105000, 2000, 16000, 21000, 1]];
 const tower = cloudLayer(TOWERS, BAND.deep);
-// Giants: three colossal storms 190 to 225 km out, among the far ranges.
-// The planet's curve hides their feet; the haze turns them pale.
-// Beside them the gun and the towers look small.
-const GIANTS = [[-12, 215000, 0, 46000, 90000, 1], [38, 225000, 0, 52000, 95000, 1], [62, 195000, 0, 38000, 75000, 1]];
+// One giant: a colossal storm far beyond the ranges.
+// Beside it the gun and the towers look small.
+const GIANTS = [[52, 225000, 0, 52000, 95000, 1]];
 const giants = cloudLayer(GIANTS, BAND.giants);
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [

@@ -46,9 +46,9 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | Name | Code | Notes |
 |---|---|---|
 | **Heaps** | `HEAPS` | Cumulus, 8 to 38 km out. The far clusters float clear of the crests. |
-| **Towers** | `TOWERS` | Storm towers with anvils, 105 to 150 km out, among the ranges. |
+| **Towers** | `TOWERS` | Three storm towers 105 to 150 km out, each its own build (girth, lean, anvil reach); about one in three has no anvil yet. |
 | **Mids** | `MIDS` | Heaps 4 to 6 km up. Off while the Deck is on. |
-| **Giants** | `GIANTS` | Three colossal storms 195 to 225 km out, 75 to 95 km tall. Dev row Giants. |
+| **Giants** | `GIANTS` | One colossal storm 225 km out, 95 km tall, always with an anvil. Dev row Giants. |
 
 ## Air
 
