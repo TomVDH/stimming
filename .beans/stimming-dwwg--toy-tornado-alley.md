@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T23:08:00Z
+updated_at: 2026-11-16T23:38:08Z
 parent: stimming-oh7b
 ---
 
@@ -83,3 +83,5 @@ Built; waits for the checkpoint with Tom.
 - Junction (Tom: "the smooth merge / connection between storm layer and the actual funnel is not quite there yet"): a collar (bell) now flares out of the funnel's top quarter up into the wall cloud, in the funnel's own volume and light, its edge torn by the outer sheath's noise; the funnel's top fades inside it; the wall cloud's underside is an upturned bowl, and clears a wide envelope round the bell so its rough underside no longer cuts across the funnel. ?dbg=3 hides the bell, ?dbg=4 the near storm. Headless 13 to 50 fps on a shared GPU; a performance pass is due.
 
 - Blend and refinement (Tom: "a gap between cloud deck and the funnel exists", "better refinement in the funnel across all F scales", "neatly colour blend from storm deck to top of bell to funnel"): the bell fades into the deck while the deck fades in over it (no void); the deck's edge softens near the bell; the bell's top width grows with F; one colour chain: the funnel turns to the storm's smooth tone up the bell (topKAt), and the deck by the bell takes that same tone before its own textured light (TONE_K matches their means). Funnel: round billows in each layer's own spinning frame (no more hair streaks), softer outer sheaths, rounder dust, less fill light.
+
+- Taper and bands (Tom, 2026-11-16: "ensure smooth and realistic taper of clouds down to funnel", "i see bands of colour"). One horn joins the funnel to the deck: a quarter-ellipse outline (hornR), upright where it leaves the funnel, level where it meets the wall cloud's flat underside at uH. The funnel's own layers widen along it, so funnel and horn share one outline and no lip shows; a solid takes over up high and fades inside the wall cloud. The neck SDF, the bowl under the wall and the F lowering are gone. Bands removed: the far storm's plates stay on its flank (they striped the base's underside), the horn takes the deck's own light (stormLit at the underside just above it; cloudTone ran three times too dark), the sky under the base keeps one hue (the navy strip is gone), the rain shaft reaches the lab's ground as a soft grey veil (it floated as a green box), the funnel's shade takes the warm horizon light (it went navy), and the march's first steps carry a full step of jitter (wood grain). The wall cloud is always wider than the funnel's top, and the near region grows on a wide lens. The camera keeps the horn in frame at low F (frameK floor 0.76). Checked F0 to F5 at 24, 35, 50 and 85 mm, and at noon backlit; console clean.
