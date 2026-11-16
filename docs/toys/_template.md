@@ -110,6 +110,7 @@ One table per shader that a person tunes. Leave out the frame-size and time unif
 | Slow-frame step | `detail()` \| own watch (rule) \| None |
 | Idle | The loop stops when: ... \| Never (say why) |
 | Reduced motion | What changes |
+| Start-up | What builds behind the intro, and the steps the load line counts (`buildSteps(n)`) \| Shell default |
 | Measured | First frame, steady fps at 1280 px and on a phone, with the date |
 
 ## State and storage

@@ -61,7 +61,7 @@ A WebGPU spike (`stimming-gxfd`) kept Railgun on WebGL2; its proof sits in `lab/
 <!-- gen:shared -->
 | Module | Imports |
 |---|---|
-| `shared/stim.js` | `initPage`, `whenVisible`, `pixelRatio`, `onQuality`, `linFit`, `reduced`, `onReducedChange`, `quality`, `audioKit`, `sound`, `stage`, `pageReady`, `later` |
+| `shared/stim.js` | `initPage`, `whenVisible`, `pixelRatio`, `onQuality`, `linFit`, `reduced`, `onReducedChange`, `quality`, `audioKit`, `sound`, `stage`, `pageReady`, `later`, `buildSteps` |
 | `shared/intro.js` | `intro` |
 | `shared/flare.js` | `FLARE` |
 | `nvg/tube.js` | `Tube`: another toy's module, not in `shared/` |
@@ -131,6 +131,7 @@ Grade pass: `uRage`, `uFlash`, `uSoft`, `uSeed`, `uCon`, `uSat`, `uBri`, `uGrain
 | Idle | Sleeps after 60 s with no input (`?sleep=`); `whenVisible` pauses it off screen |
 | Reduced motion | About 60 checks: no shake, no sparks, no flaps or arcs, half gains |
 | QA hook | `window.__qa` exposes draws, rung and info |
+| Start-up | The scene builds in one task, then compiles twice behind the intro (visible meshes, then hidden ones). The intro's load line counts four steps: scene, compile, warm compile, first frame |
 
 ## State and storage
 

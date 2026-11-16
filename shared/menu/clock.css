@@ -61,6 +61,28 @@
 /* The comet: it swirls once round the face as the dozen arrives. clock.js draws it. */
 .clock-comet { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 
+/* The wait: until the dozen can arrive, the comet's head waits at twelve o'clock and breathes.
+   It is CSS only, so it shows with the first paint, before any script runs.
+   It comes in after 0.4 s: a fast load never shows it. */
+:root[data-view="clock"] main { position: relative; }
+:root[data-view="clock"] main::before {
+  content: ""; position: absolute; z-index: 2; pointer-events: none;
+  /* The comet's own start: on the toys' track, 40.5% of the face above the middle. */
+  left: 50%; top: calc(var(--clk) * 0.095); width: calc(var(--clk) * 0.17); aspect-ratio: 1; translate: -50% -50%;
+  border-radius: 50%;
+  /* The head as clock.js draws it at twelve: a white core in a soft magenta halo. */
+  background: radial-gradient(closest-side, oklch(0.99 0.01 328 / 0.95), oklch(0.95 0.06 328 / 0.7) 8%, oklch(0.8 0.17 328 / 0.22) 30%, oklch(0.7 0.2 328 / 0));
+  /* It fades out as the real comet fades in at the same point. */
+  opacity: 0; transition: opacity 0.3s ease-out;
+}
+/* The fade-in waits 0.4 s. The breath is scale and filter only, so opacity stays free for the two fades. */
+:root[data-view="clock"]:not([data-clock="on"]) main::before {
+  opacity: 1; transition: opacity 0.5s ease-out 0.4s;
+  animation: clock-wait 1.8s ease-in-out 0.4s infinite backwards;
+}
+@starting-style { :root[data-view="clock"]:not([data-clock="on"]) main::before { opacity: 0; } }
+@keyframes clock-wait { 0%, 100% { scale: 0.62; filter: opacity(0.5); } 50% { scale: 1; filter: opacity(1); } }
+
 /* The middle: the toy's number, name and motto, over a soft dark plate. */
 .clock-mid {
   position: absolute; inset: 22%; box-sizing: border-box; isolation: isolate; border-radius: 50%;
@@ -108,6 +130,8 @@
 .clock-roll:active svg { rotate: 180deg; }
 
 /* The footer of the Clock: the chip alone in the middle, the name under it on hover, then the disclaimer. */
+/* The credit waits until clock.js builds the footer, so nothing jumps. The glow stays. */
+:root[data-view="clock"]:not([data-clock]) .credit > * { visibility: hidden; }
 :root[data-view="clock"] .credit[data-inline] { flex-direction: column; align-items: center; gap: 6px; padding-bottom: 24px; }
 .clock-sig { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; cursor: default; }
 .clock-sig:focus-visible { outline: none; }
@@ -141,6 +165,9 @@
 @media (prefers-reduced-motion: reduce) {
   .clock-label span { transition: none; }
   :root[data-view="clock"] main > .shelf > li, .clock-plate, .clock-name, .clock-tag, .clock-roll { transition: none; }
+  /* The wait is a still dot. */
+  :root[data-view="clock"]:not([data-clock="on"]) main::before { animation: none; scale: 0.8; transition: opacity 0.01s linear 0.4s; }
+  :root[data-view="clock"] main::before { transition: none; }
 }
 
 /* A trial (Tom, 2026-11-16): every heading in B612, the wordmark's face.

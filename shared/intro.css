@@ -26,10 +26,60 @@
   --glass: blur(calc(var(--blur, 36) * 1px)) brightness(var(--dim, 0.45));
   backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
   pointer-events: none;
-  /* The overlay clears itself if the script never runs. */
-  animation: intro-failsafe 0.6s ease 5s forwards;
+  /* The overlay clears itself if the script never runs. A slow link gets 10 s. */
+  animation: intro-failsafe 0.6s ease 10s forwards;
 }
 .intro.is-live { animation: none; }
+
+/* ---------- The preloader ---------- */
+/* Before the script runs: a hairline waits where the foot of the flash box will be.
+   It is CSS only and comes in after 0.5 s, so a fast load never shows it. */
+.intro:not(.is-live)::before, .intro:not(.is-live)::after {
+  content: ""; position: absolute; left: calc(50% - var(--logo-box) / 2); top: calc(var(--origin) + var(--logo-box) / 2 - var(--load-h));
+  width: var(--logo-box); height: var(--load-h); background: oklch(1 0 0 / 0.16);
+  opacity: 0; animation: intro-load-in 0.4s steps(12, end) 0.5s forwards;
+}
+/* A sheen crosses it. It moves by translate and opacity only, so a busy main thread cannot stop it. */
+.intro:not(.is-live)::after {
+  width: calc(var(--logo-box) * 0.34); background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.7), transparent);
+  animation: intro-wait 1.5s steps(45, end) 0.5s infinite;
+}
+@keyframes intro-load-in { to { opacity: 1; } }
+@keyframes intro-wait { 0% { translate: 0 0; opacity: 0; } 20%, 80% { opacity: 1; } 100% { translate: calc(var(--logo-box) * 0.66) 0; opacity: 0; } }
+/* The load line: the same hairline, at the foot of the flash box. It fills with the toy's progress.
+   intro.js shows it only when the toy still loads after the titles open. */
+.intro { --load-h: max(2px, calc(var(--logo) * 0.016)); }
+.intro-load {
+  position: absolute; left: 0; right: 0; bottom: 0; height: var(--load-h); overflow: hidden; pointer-events: none;
+  background: oklch(1 0 0 / 0.16); opacity: 0; transition: opacity 0.2s steps(6, end);
+}
+.intro[data-loading] .intro-load { opacity: 1; }
+/* The fill takes the toy's ink; the clip keeps a gradient whole across the line. */
+.intro-load::before { content: ""; position: absolute; inset: 0; background: var(--ink, #fff); clip-path: inset(0 calc(100% - var(--load, 0) * 100%) 0 0); }
+/* A sheen crosses the line, so a long step never looks frozen. */
+.intro[data-loading] .intro-load::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 34%;
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.7), transparent);
+  animation: intro-sheen 1.5s steps(45, end) infinite;
+}
+@keyframes intro-sheen { from { translate: -100% 0; } to { translate: 295% 0; } }
+/* The emblem and the titles stay still while the line shows (Tom, 2026-11-16: a breathing emblem
+   is in conflict with the flash sequence). */
+/* Without an emblem the line hangs under the name. */
+.intro-name > .intro-load { bottom: -0.3em; }
+/* Reduced motion: a still line and one word at the foot of the screen. Nothing moves. */
+.intro-wait {
+  position: absolute; left: 50%; bottom: max(24px, 6cqh); translate: -50% 0; width: var(--logo-box); padding-bottom: 0.9em; text-align: center;
+  font-family: var(--intro-display, "B612", sans-serif); font-size: clamp(11px, 1.5cqh, 13px); font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: #fff;
+  opacity: 0;
+}
+.intro[data-loading] .intro-wait { opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) {
+  .intro:not(.is-live)::before { animation: intro-load-in 0.01s linear 0.5s forwards; background: oklch(1 0 0 / 0.3); }
+  .intro:not(.is-live)::after { display: none; }
+  .intro[data-loading] .intro-load::after { display: none; }
+  .intro-load { transition: none; }
+}
 
 /* Registered so the intro can animate them frame by frame. */
 @property --emblem-k { syntax: "<number>"; inherits: false; initial-value: 1; }

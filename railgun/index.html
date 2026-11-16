@@ -90,7 +90,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues, LAND_KEYS } from './ranges.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
-import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
+import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { FLARE } from '../shared/flare.js';
 import { HULL, makeShip, stepShip, hitShip, jointOrder, driftDeg, sunlit, hulkAt, SHIP_ALT, ARRIVE, VACUUM, KILL as SHIP_KILL } from './ship.js';
@@ -12168,6 +12168,9 @@ window.__qa = {
 window.__models = () => ({ gun, flapMesh, portMesh, frameMesh });
 /* ---------- ready ---------- */
 // The intro holds until shaders compile and the first frame draws.
+// Its load line: the scene stands, the scene compiles, the hidden pieces compile, the first frame draws.
+const built = buildSteps(4);
+built();
 sun(sunDeg(opts.sun));
 seedFrags();
 placeAst();
@@ -12197,6 +12200,7 @@ setBloom(); setTone(); setLens();
 setGrain();
 resize();
 renderer.compileAsync(scene, camera).then(async () => {
+  built();
   // Warm every hidden piece once behind the intro.
   // The first charge, shot and hit then link no programs and upload no buffers.
   const hidden = [];
@@ -12208,7 +12212,7 @@ renderer.compileAsync(scene, camera).then(async () => {
   fbL.frustumCulled = false; fbScene.add(fbL);
   // The height grid's two passes link with them.
   const fbW = [farGridF, farGridC].map(m => { const q = new THREE.Mesh(farPass.geometry, m); q.frustumCulled = false; fbScene.add(q); return q; });
-  try { await Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(fbScene, fbCam)]); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  try { await Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(fbScene, fbCam)]); built(); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
   fbScene.remove(fbL, ...fbW);
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.

@@ -1,4 +1,5 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
+// It is also the preloader: a toy that loads for longer gets a load line at the foot of the flash box.
 // Toy pages import it as '../shared/intro.js'. No dependencies.
 // The root toys.json holds each toy's name, subtitle, emblem, accent and Dutch name.
 // The page's own intro text stays when toys.json cannot load.
@@ -58,6 +59,64 @@ const keys = (el, list) => {
   return el.animate(list.map((k, i) => ({ ...k, offset: i / n })), { duration: (n * 1000) / FPS, easing: `steps(${n}, jump-end)`, fill: 'forwards' }).finished;
 };
 const pct = v => `${(100 * v).toFixed(2)}%`;
+
+/* ---------- load progress ---------- */
+// How far the toy's load is, 0 to 1. It never goes back.
+let loadAt = 0;
+/**
+ * A toy reports its load here; the intro shows it while it holds for `ready`.
+ * The shell's stage() calls it for every toy, so most toys never call it themselves.
+ * @param {number} part 0 at the start, 1 when the toy is ready.
+ */
+export function progress(part) {
+  loadAt = Math.min(1, Math.max(loadAt, Number(part) || 0));
+}
+// The titles open, then the toy gets this many frames more before the load line shows.
+const LOAD_GRACE = 10;
+// The line creeps this far past the last report, so a long step still moves.
+const LOAD_CREEP = 0.14;
+
+// The load line: a hairline that fills with the toy's progress.
+// still: reduced motion; the line then shows reports only and never creeps.
+function loadLine(root, host, still = false) {
+  const el = document.createElement('i');
+  el.className = 'intro-load';
+  el.setAttribute('role', 'progressbar');
+  el.setAttribute('aria-label', 'Loading');
+  el.setAttribute('aria-valuemin', '0');
+  el.setAttribute('aria-valuemax', '100');
+  host.append(el);
+  let at = 0, timer = 0;
+  const set = v => {
+    at = v;
+    el.style.setProperty('--load', v.toFixed(4));
+    el.setAttribute('aria-valuenow', String(Math.round(100 * v)));
+  };
+  const tick = () => {
+    if (still) return set(loadAt);
+    // The line runs to the reported point, then creeps on, slower and slower.
+    const far = Math.min(0.97, loadAt + LOAD_CREEP);
+    set(at < loadAt ? at + Math.max(0.004, (loadAt - at) * 0.22) : at + Math.max(0, far - at) * 0.006);
+  };
+  return {
+    show() {
+      root.dataset.loading = '';
+      tick();
+      timer = setInterval(tick, 1000 / FPS);
+    },
+    // The line fills, holds a few frames, then goes with the titles.
+    async fill() {
+      clearInterval(timer);
+      if (!still) {
+        const from = at;
+        for (let k = 1; k <= 6; k++) { set(from + (1 - from) * settle(k / 6)); await wait(1); }
+        await wait(4);
+      }
+      set(1);
+      delete root.dataset.loading;
+    },
+  };
+}
 
 // The lines, in order: classic notice, main title, translation, subtitle, subtitle translation, audio notice.
 // Lab toys also carry a lab tag under the translation.
@@ -317,7 +376,7 @@ export function fitIntro(root, T) {
 /**
  * The options for intro(); pages pass ready and leave the rest out.
  * @typedef {object} IntroOptions
- * @property {Promise<any>} [ready] The intro holds until this settles.
+ * @property {Promise<any>} [ready] The intro holds until this settles. progress() feeds the load line meanwhile.
  * @property {number} [min] The shortest hold in ms; the default is the variety's hold.
  * @property {Record<string, number>} [timing] Overrides beats of the variety's table.
  * @property {string} [id] The toy id; the default comes from the address.
@@ -339,7 +398,22 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (V.look) root.dataset.look = V.look;
   if (V.layout) root.dataset.layout = V.layout;
   const text = /** @type {HTMLElement} */ (root.querySelector('.intro-text'));
-  const held = Promise.all([ready, wait(frames(min ?? T.hold))]);
+  // A toy whose ready fails must not hold the intro for good.
+  let isReady = false;
+  const loaded = Promise.resolve(ready).catch(() => {}).then(() => { isReady = true; });
+  const held = Promise.all([loaded, wait(frames(min ?? T.hold))]);
+  // The page itself counts for a part of the load: this script runs, then the page's own files land.
+  progress(0.12);
+  if (document.readyState === 'complete') progress(0.4); else addEventListener('load', () => progress(0.4), { once: true });
+  // After the titles open, a toy that still loads shows the load line until it is ready.
+  // grace: frames the toy gets first. A toy that is ready in time never shows the line.
+  const loadHold = async (line, grace) => {
+    await Promise.race([loaded, wait(grace)]);
+    if (isReady) return;
+    line.show();
+    await loaded;
+    await line.fill();
+  };
   const info = await entry(id), nameEl = text.querySelector('.intro-name');
   // The toy's accent inks the logo; without one it stays white.
   if (V.ink && info?.accent) root.style.setProperty('--ink', info.accent);
@@ -382,9 +456,13 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   if (RM.matches) {
     // Reduced motion: no flash, the name fades in and out.
     await play(text, p => ({ opacity: p }), 300);
-    await held;
+    // A slow load shows a still line and one word at the foot; nothing moves.
+    const foot = Object.assign(document.createElement('span'), { className: 'intro-wait', textContent: 'Loading' });
+    root.append(foot);
+    await Promise.all([held, loadHold(loadLine(root, foot, true), frames(1200))]);
     await play(root, p => ({ opacity: 1 - p }), 300);
     root.remove();
+    loadAt = 0;
     return;
   }
 
@@ -416,6 +494,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     text.append(snd);
   }
   const big = badge || name;
+  // The load line sits at the foot of the flash box; it shows only for a slow load.
+  const line = loadLine(root, big);
   // The subtitles and the notes sit at the foot, away from the logo.
   if (!V.layout) {
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
@@ -518,8 +598,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   // Most varieties hold for reading time; a fixed-hold variety holds to T.hold.
   if (V.read) {
     const chars = [info?.tag, info?.tagNl].join('').length;
-    await Promise.all([ready, wait(frames(Math.min(T.readCap, T.readBase + T.readPer * chars)))]);
-  } else await held;
+    await Promise.all([loadHold(line, LOAD_GRACE), wait(frames(Math.min(T.readCap, T.readBase + T.readPer * chars)))]);
+  } else await Promise.all([held, loadHold(line, LOAD_GRACE)]);
   await gate('hold');
 
   // Each variety leaves its own way, then the glass fades away whole.
@@ -571,4 +651,6 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     setTimeout(() => spk.classList.remove('is-nudge'), 2400);
   }
   root.remove();
+  // The intro lab plays many intros on one page; each starts from nothing.
+  loadAt = 0;
 }
