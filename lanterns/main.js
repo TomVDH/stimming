@@ -1,5 +1,5 @@
 // Lantern lake: the toy's module, loaded by index.html.
-import { initPage, whenVisible, reduced, audioKit, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, audioKit, oklchLinear, onQuality, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { swellHeight } from '../shared/water.js';
@@ -16,11 +16,17 @@ mark('build');
 export const HOURS = { dusk: 19.8, blue: 20.6, night: 22.5 };
 // Exposure for each hour: the night needs more light to read.
 const EXPO = { dusk: 1.0, blue: 1.25, night: 1.7 };
-/** @type {{ time: (v: string) => void, festival: () => void, clear: () => void }} */
-const act = { time() {}, festival() {}, clear() {} };
+// The mist's density on the water, per metre at the surface.
+const MIST = { off: 0.0004, light: 0.003, thick: 0.007 };
+/** @type {{ time: (v: string) => void, festival: () => void, clear: () => void, wind: (v: number) => void, redraw: () => void }} */
+const act = { time() {}, festival() {}, clear() {}, wind() {}, redraw() {} };
 const qs = new URLSearchParams(location.search);
+// The hour and the wind persist; storage may be off, so each read is guarded.
+const saved = (k, d) => { try { return localStorage.getItem(`stimming.lanterns.${k}`) ?? d; } catch (err) { return d; } };
+const save = (k, v) => { try { localStorage.setItem(`stimming.lanterns.${k}`, String(v)); } catch (err) { /* Storage is off. */ } };
 // QA can open on an hour: ?t=blue.
-const first = qs.get('t') in HOURS ? qs.get('t') : 'dusk';
+const firstSaved = saved('time', 'dusk');
+const first = qs.get('t') in HOURS ? qs.get('t') : firstSaved in HOURS ? firstSaved : 'dusk';
 const ui = initPage({ id: 'lanterns', bar: {
   choice: { label: 'Time', value: first, options: [
     { value: 'dusk', label: 'Dusk', key: '1' },
@@ -31,9 +37,28 @@ const ui = initPage({ id: 'lanterns', bar: {
     { verb: 'festival', onPress: () => act.festival() },
     { verb: 'clear', onPress: () => act.clear() },
   ],
+  // Calm: they rise nearly straight. Breezy: they lean and run sideways.
+  slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: +saved('wind', 0.4), onInput: v => act.wind(v) },
+  settings: [
+    { type: 'choice', id: 'mist', label: 'Mist', value: 'light', persist: true, options: [
+      { value: 'off', label: 'Off' }, { value: 'light', label: 'Light' }, { value: 'thick', label: 'Thick' },
+    ], onPick: () => act.redraw() },
+    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: () => act.redraw() },
+  ],
+  // Tuning for the people who build the toy; the Dev button shows with ?dev.
+  dev: [
+    { type: 'slider', id: 'hue', label: 'Paper hue', min: 30, max: 80, step: 1, value: 55, persist: true, onInput: () => act.redraw() },
+    { type: 'slider', id: 'flicker', label: 'Flicker', min: 0, max: 3, step: 0.05, value: 1, persist: true },
+    { type: 'slider', id: 'rise', label: 'Rise speed', min: 0.3, max: 2.5, step: 0.05, value: 1, persist: true },
+    { type: 'slider', id: 'burn', label: 'Burn time', min: 20, max: 160, step: 5, value: 60, persist: true },
+    { type: 'slider', id: 'cap', label: 'Lantern cap', min: 8, max: 160, step: 1, value: 160, persist: true },
+  ],
   quality: true,
   keys: [['click', 'release'], ['hold', 'many'], ['drag', 'look'], ['space', 'festival']],
 } });
+
+// A row's value: its stored or default value, from Settings or Dev.
+const row = (id, d) => ui.setting?.(id)?.value ?? d;
 
 /* ---------- the scene ---------- */
 // The eye stands on a wooded hill, 5 m over the ground, and looks down on the lake.
@@ -228,6 +253,8 @@ vec3 windows(vec3 o, vec3 d, float sx, float sy) {
 // Texel one: place in metres, then height. Texel two: glow, lean, phase, paper fill.
 uniform sampler2D tLan;
 uniform float uLanN, uFlick;
+// The paper's colour, lit from inside: linear light from the Dev hue.
+uniform vec3 uPaper;
 // The lanterns along this pixel. q is the pixel on the frame; depth is the scene's distance.
 // mir 1 draws the mirror images; sy stretches them down the water.
 vec3 lanterns(vec2 q, float depth, float mir, float sy, float brk) {
@@ -254,7 +281,7 @@ vec3 lanterns(vec2 q, float depth, float mir, float sy, float brk) {
     vec4 b = texelFetch(tLan, ivec2(2 * i + 1, 0), 0);
     // Paper lit by a flame, about 2000 K, with a small flicker.
     float fl = 1.0 + uFlick * (0.035 * sin(uTime * (20.0 + 15.0 * fract(b.z * 7.3)) + b.z * 40.0) + 0.025 * sin(uTime * 31.0 + b.z * 13.0));
-    vec3 paper = vec3(1.0, 0.48, 0.15) * b.x * fl;
+    vec3 paper = uPaper * b.x * fl;
     // Far lanterns grow redder and dimmer through the haze.
     float hz = max(skHaze(gCam, P, uMist * 0.08, 220.0), mistAt(gCam, P) * 0.6);
     paper *= (1.0 - 0.65 * hz) * vec3(1.0, 1.0 - 0.25 * hz, 1.0 - 0.45 * hz);
@@ -350,7 +377,7 @@ vec3 envScene(vec2 uv) {
 }`;
 
 /* ---------- state ---------- */
-let visible = true, awake = true, sleepAt = 0, target = HOURS[first];
+let visible = true, sleepAt = 0, target = HOURS[first];
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 const tall = () => tallOf(canvas.clientWidth / Math.max(1, canvas.clientHeight));
@@ -440,18 +467,21 @@ const CAPS = [64, 120, 160], MAXN = 160;
 /** @type {Lantern[]} */
 export const pool = [];
 const wind = createNoise2D();
-let simT = 0, windSpeed = 1.6;
+// The Wind slider: 0 is calm, 1 is about 4 m/s.
+const windOf = v => 0.15 + 3.85 * v * v;
+let simT = 0, windSpeed = windOf(+saved('wind', 0.4));
 // The festival: how long it has run, how many it has let go, and its river's line.
 const FEST_N = 80, FEST_T = 6;
 let fest = null;
 /** @param {number[]} at @param {boolean} float @param {boolean} [inFest] */
 function add(at, float, inFest = false) {
-  if (pool.length >= (CAPS[env.detail.level] ?? MAXN)) pool.shift();
+  while (pool.length >= Math.min(CAPS[env.detail.level] ?? MAXN, row('cap', MAXN))) pool.shift();
   // No two start in one place, so a held press never stacks them.
-  const j = () => (Math.random() - 0.5) * (float ? 3 : 6);
+  // A sky lantern starts within 12 m of the spot: about 40 px at the far shore.
+  const j = () => (Math.random() - 0.5) * (float ? 3 : 24);
   pool.push({
     p: [at[0] + j(), float ? 0.3 : at[1] + 0.9, at[2] + j()], v: [0, 0, 0],
-    age: 0, life: float ? 90 + 50 * Math.random() : 60 + 40 * Math.random(), fade: 6,
+    age: 0, life: row('burn', 60) * (float ? 1.5 + 0.8 * Math.random() : 1 + 0.66 * Math.random()), fade: 6,
     // No two share a size, a flicker or a sway.
     size: (float ? 0.7 : 1.4) * (0.85 + 0.3 * Math.random()), phase: Math.random() * 100, lean: 0, leanV: 0,
     // Each flame lifts its paper at its own rate, so a crowd strings out.
@@ -468,7 +498,6 @@ export function release(u, v, kind = 'auto') {
   else { const { eye, d } = rayAt(u, v); add(shoreUnder(eye, d), false); }
   releaseSound(u, wet && kind === 'auto', false);
   wake();
-  env.touch();
 }
 // Festival: eighty lanterns lift along the far shore over 6 s.
 export function festival() {
@@ -476,7 +505,6 @@ export function festival() {
   const r0 = rayAt(0.5, 0.5), mid = shoreUnder(r0.eye, r0.d);
   fest = { t: 0, n: 0, x: mid[0], z: mid[2] };
   wake();
-  env.touch();
 }
 // Clear: every lantern goes out within 1.5 s, in no fixed order.
 export function clearAll() {
@@ -530,7 +558,7 @@ export function stepLanterns(dt) {
     }
     // Lift: the flame's heat climbs to about 1.3 m/s; an ember barely rises.
     const heat = L.age < L.life ? 1 : Math.max(0, 1 - (L.age - L.life) / L.fade);
-    const up = 0.15 + 1.15 * L.rate * heat * Math.min(1, L.age / 4);
+    const up = (0.15 + 1.15 * L.rate * heat * Math.min(1, L.age / 4)) * row('rise', 1);
     L.v[1] += (up - L.v[1]) * (1 - Math.exp(-dt / 2.5));
     // Wind: the slider speed plus slow gusts, stronger with height.
     const lift = 0.45 + 0.55 * Math.min(1, L.p[1] / 90);
@@ -579,19 +607,19 @@ let env = null;
 try {
   env = environment(canvas, {
     scene: SCENE,
-    // The loop sleeps 60 s after the last input; the last frame stays.
-    active: () => visible && awake,
-    onFrame: raw => step(Math.min(raw, 0.05)),
+    // The toy runs its own loop (see frame()), so the runner never loops.
+    active: () => false,
     textures: { tLan: lanTexture },
     uniforms: {
       uLanN: () => pool.length,
-      uFlick: () => (reduced() ? 0 : 1),
-      uMist: () => 0.003,
+      uFlick: () => (reduced() ? 0 : row('flicker', 1)),
+      uPaper: () => paperCol(),
+      uMist: () => MIST[row('mist', 'light')] ?? MIST.light,
       uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz) + look.tilt,
       uEye: () => [CAM.x, CAM.z, CAM.lift],
       // A tall frame turns a little right, so the lit windows stay in it.
       uView: () => [(CAM.yaw + 6 * tall() + look.yaw) * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
-      uBars: () => CAM.bars,
+      uBars: () => (CAM.bars || row('letterbox', false) ? 1 : 0),
     },
   });
 } catch (err) {
@@ -607,6 +635,17 @@ Object.assign(S.on, { glass: false, air: false, flare: false });
 S.lightColor = [0, 0, 0];
 S.frame = false;
 let expoTarget = EXPO[first];
+// The paper: about 2000 K at hue 55, warmer or yellower from Dev.
+let paperHue = -1, paperRGB = [1, 0.48, 0.15];
+function paperCol() {
+  const h = row('hue', 55);
+  if (h !== paperHue) {
+    paperHue = h;
+    const c = oklchLinear(0.8, 0.17, h), m = Math.max(...c);
+    paperRGB = c.map(x => Math.max(0, x / m));
+  }
+  return paperRGB;
+}
 
 function step(dt) {
   // The sky and the exposure ease to the chosen hour.
@@ -619,24 +658,64 @@ function step(dt) {
     holdAcc += dt;
     for (; holdAcc >= 0.25; holdAcc -= 0.25) release(press.u, press.v);
   }
-  // The loop sleeps once the sky is empty and no one has touched it for 60 s.
   soundTick(dt);
-  if (performance.now() > sleepAt && !pool.length && !fest) { awake = false; soundRest(); }
+}
+/* ---------- the frame loop ---------- */
+// Lively (lanterns, a press, a change in flight): every frame.
+// Drifting (the water alone): 30 fps. Asleep 60 s after the last input, with the sky empty.
+// Hidden: no frames, and the clock stops. Reduced motion: the water holds still.
+let running = false, lastT = 0, lastDraw = 0;
+const lively = () => pool.length > 0 || !!fest || !!press || Math.abs(target - S.hour) > 0.004 || Math.abs(expoTarget - S.expo) > 0.004;
+function kick() {
+  if (!visible) return;
+  if (!running) { running = true; lastT = 0; requestAnimationFrame(frame); }
+}
+function frame(now) {
+  try {
+    const live = lively(), drift = !reduced() && now < sleepAt;
+    if (!visible || (!live && !drift)) {
+      running = false;
+      // The last frame stays on screen; a hidden page draws nothing.
+      if (visible) env.draw();
+      if (!live) soundRest();
+      return;
+    }
+    const raw = lastT ? (now - lastT) / 1000 : 0.016, dt = Math.min(0.05, raw);
+    lastT = now;
+    // Only full-rate frames feed the slow-frame watch.
+    if (live && raw < 0.2) env.detail.frame(raw);
+    if (!reduced()) {
+      env.clock.time += dt;
+      if (++env.clock.frame & 1) env.clock.seed = env.clock.seed % 997 + 1;
+    }
+    step(dt);
+    env.draw();
+    lastDraw = now;
+  } finally {
+    if (running) {
+      // A drifting lake asks for its next frame only after 31 ms.
+      if (lively()) requestAnimationFrame(frame);
+      else setTimeout(() => requestAnimationFrame(frame), Math.max(0, 31 - (performance.now() - lastDraw)));
+    }
+  }
 }
 // Any input wakes the loop for another 60 s.
 function wake() {
   sleepAt = performance.now() + 60000;
-  if (!awake) { awake = true; env.touch(); }
+  kick();
 }
-act.festival = () => { festival(); if (reduced()) still(); };
+act.redraw = () => kick();
+onQuality(() => kick());
+act.wind = v => { windSpeed = windOf(v); save('wind', v); wake(); };
+act.festival = () => festival();
 act.clear = () => clearAll();
 act.time = v => {
   target = HOURS[v];
   expoTarget = EXPO[v];
+  save('time', v);
   // With motion off, the sky changes at once.
   if (reduced()) { S.hour = target; S.expo = expoTarget; }
   wake();
-  env.touch();
 };
 for (const ev of ['pointerdown', 'pointermove', 'keydown']) stage.addEventListener(ev, wake, { passive: true });
 // The pointer: a press turns into a drag after 8 px, or a hold after 260 ms.
@@ -655,7 +734,6 @@ canvas.addEventListener('pointerdown', e => {
     press.mode = 'hold';
     holdAcc = 0;
     release(press.u, press.v);
-    if (reduced()) still();
   }, 260);
 });
 canvas.addEventListener('pointermove', e => {
@@ -669,7 +747,7 @@ canvas.addEventListener('pointermove', e => {
     // Drag: a small pan and tilt, so the eye can follow the river.
     look.yaw = Math.max(-12, Math.min(12, look.yaw - (u - press.u) * 14));
     look.tilt = Math.max(-0.2, Math.min(0.2, look.tilt + (v - press.v) * 0.5));
-    env.touch();
+    kick();
   }
   press.u = u;
   press.v = v;
@@ -679,7 +757,6 @@ function endPress(e, tap) {
   clearTimeout(press.timer);
   if (tap && press.mode === 'press') {
     release(press.u, press.v);
-    if (reduced()) still();
   }
   press = null;
 }
@@ -692,21 +769,6 @@ stage.addEventListener('keydown', e => {
   e.preventDefault();
   act.festival();
 });
-// With motion off the runner draws no loop, so the lanterns get their own.
-let stillOn = false;
-function still() {
-  if (stillOn) return;
-  stillOn = true;
-  let last = performance.now();
-  const tick = now => {
-    step(Math.min(0.05, (now - last) / 1000));
-    last = now;
-    env.draw();
-    if ((pool.length || fest || press) && visible) requestAnimationFrame(tick);
-    else stillOn = false;
-  };
-  requestAnimationFrame(tick);
-}
 new ResizeObserver(wake).observe(stage);
 
 /* ---------- sound ---------- */
@@ -890,7 +952,7 @@ function soundTick(dt) {
 // The loop sleeps, or the tab hides: every voice stops and the context sleeps.
 function soundRest() {
   stopAll();
-  kit.rest(() => !awake || !visible);
+  kit.rest(() => !running || !visible);
 }
 
 /* ---------- start ---------- */
@@ -913,6 +975,6 @@ mark('first-frame');
 // A hidden tab stops the loop and the clock.
 whenVisible(stage, v => {
   visible = v;
-  if (v) env.touch();
+  if (v) kick();
   else soundRest();
 });

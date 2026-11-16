@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:51:19Z
+updated_at: 2026-11-16T23:12:21Z
 parent: stimming-oh7b
 ---
 
@@ -18,7 +18,7 @@ Rough size: M (a guess; no plan yet).
 - [ ] Blockout, signed off by Tom
 - [x] Development plan in docs/plans/lanterns.md (Tom took the defaults for D1 to D3, 2026-11-16)
 - [ ] Build in the Lab
-- [ ] QA at 1280 px and 375 px
+- [x] QA at 1280 px and 375 px
 - [ ] Tom's sign-off
 
 ## Progress
@@ -69,3 +69,30 @@ Rulings in Task 3:
 Rulings in Task 4:
 - In a festival, one release in four rustles, softly; the drone carries the rest.
 - Each release pans with its place on the frame, and its pitch, timing and level vary every time.
+
+- [x] Task 5: bar, menu and QA.
+  - Bar v2: Dusk, Blue hour, Night; Festival and Clear; the Wind slider; keys for click, hold, drag and Space. Settings: Mist (Off, Light, Thick), Letterbox, the shared Quality. Dev rows (`?dev`): paper hue, flicker, rise speed, burn time, lantern cap. The hour, the wind and every row persist under `stimming.lanterns.*`.
+  - The toy runs its own frame loop: every frame while lanterns burn, 30 fps or less while only the water moves, asleep 60 s after the last input with the sky empty. Only full-rate frames feed the slow-frame watch.
+  - `toys.json`: Lab, series `vistas`, draft Dutch name Lantaarnmeer (lɑnˈtaːrnˌmeːr) for Tom. The menu has a Lab entry at the top of the Lab, with a placeholder icon and its GSAP hook.
+
+QA, headless, 2026-11-16:
+
+| Check | Result |
+|---|---|
+| Q1 node --check, toy and five menu scripts | pass |
+| Q2 every control and key, ?dev | console clean |
+| Q3 1280, 375 x 812, 812 x 375 | shots taken |
+| Q4 drifting / asleep | 12 rAF/s; no frames once asleep |
+| Q5 hidden | 0 rAF in 2 s |
+| Q6 reduced motion | clean; lanterns show and rise |
+| Q7 bar | 4 controls (choice, slider, 2 actions); 4 key rows |
+| Q8 keys 1 2 3, Space | each works |
+| Q9 sound | runs after a gesture; suspended once settled |
+| Q10 160 lanterns, 1280 | Standard 38 fps, High 37 fps (headless at 1x; High at 2x not measured) |
+| RF3 20 s hold | stacked at first; starts now spread 12 m, each lantern shows |
+| RF4 hour change, 80 up | eases, nothing pops |
+| RF5 Clear | out within 1.5 s, in no fixed order |
+| tests/bar-v2.html | 102 pass, 0 fail, 6 pane-only skips |
+
+- Cost: the app shows plan limits only (Ultra), not a cost per session. Tom records it.
+- Seen in passing, not fixed: the menu's hover warm-up fetches `shared/emblems/<id>.svg` for every toy, so each Lab toy with no emblem logs a 404 (Tornado and Fog horn too).
