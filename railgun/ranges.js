@@ -13,17 +13,22 @@ const rad = d => d * Math.PI / 180;
 // The Dev row Forms turns every form back into a crescent.
 // A cone's arc radius is its base radius; it takes no span or opening.
 export const RANGES = [
-  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 28000, 150, 200], [-12, 148000, 42000, 18500, 130, 60, 3],
-  [27, 115000, 29000, 12800, 150, 150],
-  // Tilted slabs hold the left edge: long dip slopes, sheer scarps.
-  [57, 94000, 21000, 9300, 135, 250, 5],
-  // Low mesas leave one gentle gap right of the middle.
-  [3, 81000, 16000, 3600, 110, 300, 1],
-  // This range holds the right edge of the view.
-  // A field of spires holds the right edge, against the sun.
-  [-12, 118000, 19000, 13000, 0, 0, 4],
-  // A lone volcano rises far off in the gap, over the mesas.
-  [1.5, 175000, 22000, 16000, 0, 0, 2],
+  // Four layers run across the whole view, each at its own depth.
+  // Each centre sits off to one side, so a layer nears the eye on that side.
+  // Near foothills, about 60 km out: a ridge stands in front of every far gun.
+  [114.5, 12000, 64000, 3400, 125, 65.5],
+  // The middle range, about 100 km out.
+  [-65.5, 15000, 100000, 9000, 125, 65.5],
+  // The high range, about 150 km out.
+  [114.5, 20000, 150000, 17000, 120, 65.5],
+  // Giant peaks far behind, about 200 km out.
+  [-65.5, 25000, 205000, 30000, 110, 65.5],
+  // A run of tilted slabs left of the middle, among the near layers.
+  [0, 0, 120000, 9000, 30, 38.0, 5],
+  // A field of spires right of the middle, among the middle layers.
+  [3, 92000, 17000, 11000, 0, 0, 4],
+  // A lone volcano far off, over the high range.
+  [32, 190000, 22000, 17000, 0, 0, 2],
 ];
 // Each form's bearing from its centre to the landscape eye, for the cone's seam.
 const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(EYE[1] - c[1], EYE[0] - c[0]); };
