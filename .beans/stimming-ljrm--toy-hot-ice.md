@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T08:30:50Z
-updated_at: 2026-11-16T09:06:02Z
+updated_at: 2026-11-16T09:16:52Z
 ---
 
 New Lab toy (batch lab10, group A: school and uni lab experiments, idea 4).
@@ -20,8 +20,8 @@ Tier: raw WebGL2 (one dish, per-pixel shading, a growth field in ping-pong float
 - [x] Growth field: arrival time, needle angle, streaks, grain id
 - [x] Look: dish, bench, clear liquid that refracts, white needle crystal, front, sheen, sparkle, vapour
 - [x] Remelt on Reset
-- [ ] Sound: dry crackle on the front, tick where fronts meet, touch, remelt
-- [ ] Idle when solid and still; whenVisible; quality and slow-frame step; reduced motion
+- [x] Sound: dry crackle on the front, tick where fronts meet, touch, remelt
+- [x] Idle when solid and still; whenVisible; quality and slow-frame step; reduced motion
 - [ ] QA in the browser pane: console, gesture, controls, sound, 1280, 375 x 812, 812 x 375
 - [ ] Toy doc docs/toys/hotice.md
 - [ ] Handoff files: toys-entry.json, menu-li.html, menu-icon.js

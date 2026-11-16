@@ -47,7 +47,7 @@
         <svg viewBox="0 0 320 150" role="img" aria-label="A temperature curve. The liquid cools past 58 degrees and stays liquid down to room temperature. At the touch the temperature jumps to about 54 degrees, holds, then slowly falls.">
           <path d="M22 132H302M22 132V18" fill="none" stroke="oklch(0.5 0.01 260)" stroke-width="1.5"/>
           <path d="M22 62H302" fill="none" stroke="oklch(0.62 0.02 250)" stroke-width="1" stroke-dasharray="4 5"/>
-          <text x="28" y="56" font-size="11" fill="oklch(0.72 0.02 250)">58 °C</text>
+          <text x="266" y="56" font-size="11" fill="oklch(0.72 0.02 250)">58 °C</text>
           <path d="M24 26C64 64 98 106 168 120" fill="none" stroke="oklch(0.78 0.08 225)" stroke-width="3" stroke-linecap="round"/>
           <path d="M168 120L177 70C214 66 252 72 300 96" fill="none" stroke="oklch(0.8 0.13 70)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="168" cy="120" r="5" fill="oklch(0.95 0.02 230)"/>
@@ -93,12 +93,16 @@ mark('build');
 // Cold sets the next seed: colder grows faster, with finer needles.
 let cold = 0.55;
 // The handlers bind once the GL state exists.
-const act = { melt() {}, view() {}, viewReset() {}, look() {} };
+const act = { melt() {}, view() {}, viewReset() {}, look() {}, follow() {} };
 const camRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.view() });
 const lookRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.look() });
 const ui = initPage({ id: 'hotice', bar: {
   actions: [{ verb: 'reset', key: 'R', onPress: () => act.melt() }],
   slider: { label: 'Cold', min: 0, max: 1, step: 0.01, value: cold, onInput: v => { cold = v; } },
+  settings: [
+    // Off keeps the lamp still, for a calmer view.
+    { type: 'toggle', id: 'follow', label: 'Lamp follows pointer', value: true, persist: true, onToggle: () => act.follow() },
+  ],
   quality: true,
   dev: [
     // The camera: tilt, turn, distance and width, over the fitted view.
@@ -205,7 +209,7 @@ uniform highp sampler2D uA;
 uniform vec2 uC;
 uniform float uRt, uNow;
 uniform float uV[${MAXS}], uBr[${MAXS}], uAl[${MAXS}];
-uniform float uSide, uK, uJit, uBeta;
+uniform float uSide, uJit, uBeta;
 out vec4 o;
 ${GEOM}
 ${NOISE}
@@ -232,7 +236,8 @@ void main() {
   ivec2 ip = ivec2(gl_FragCoord.xy);
   vec4 me = texelFetch(uA, ip, 0);
   vec2 p = vec2(ip) + 0.5;
-  if (length(p - uC) > uRt) { o = me; return; }
+  // Cells outside the dish, and cells settled well behind the front, stay as they are.
+  if (length(p - uC) > uRt || me.r < uNow - 0.45) { o = me; return; }
   // Slow lobes and a fine jitter in the growth speed.
   float F = (0.8 + 0.4 * vn(p * 0.03)) * (0.94 + 0.12 * rnd(ip, 3u));
   float best = me.r;
@@ -246,7 +251,7 @@ void main() {
     e /= len;
     float c = dot(vec2(cos(q.g), sin(q.g)), e);
     // Fast along the needle, slow across it, slower still backwards.
-    float an = c > 0.0 ? mix(uSide, 1.0, pow(c, uK)) : uSide * (1.0 + 0.6 * c);
+    float an = c > 0.0 ? mix(uSide, 1.0, c * c) : uSide * (1.0 + 0.6 * c);
     int g = int(q.a + 0.5) - 1;
     float t = q.r + len / (uV[g] * an * F);
     if (t < best - 1e-5) { best = t; par = q; moved = true; }
@@ -839,14 +844,28 @@ function relax(iters) {
   gl.uniform1f(p.u.uRt, rt);
   gl.uniform1f(p.u.uNow, simT);
   gl.uniform1f(p.u.uSide, 0.36);
-  gl.uniform1f(p.u.uK, 2.2);
   gl.uniform1f(p.u.uJit, 0.02);
   gl.uniform1f(p.u.uBeta, 0.55);
+  // Only a box round the seeds can change, so the passes skip the rest.
+  // Outside it both targets hold the same cells, so the swap stays true.
+  let x0 = N, y0 = N, x1 = 0, y1 = 0;
+  for (const s of seeds) {
+    const r = (simT - s.t0) * s.v * rt * 2.6 + 12;
+    const [cx, cy] = toTex(s.x, s.y);
+    x0 = Math.min(x0, cx - r); y0 = Math.min(y0, cy - r);
+    x1 = Math.max(x1, cx + r); y1 = Math.max(y1, cy + r);
+  }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+  x1 = Math.min(N, Math.ceil(x1)); y1 = Math.min(N, Math.ceil(y1));
+  if (x1 <= x0 || y1 <= y0) return;
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x0, y0, x1 - x0, y1 - y0);
   for (let i = 0; i < iters; i++) {
     bind(gl, p, 'uA', 0, st.r);
     tri(gl, st.w, vao);
     swap();
   }
+  gl.disable(gl.SCISSOR_TEST);
 }
 // The clock the picture shows: real time, or the far future once a still reveal is done.
 const showT = () => (reduced() && phase !== 'liquid' ? 1e4 : simT);
@@ -935,7 +954,9 @@ function fitCamera() {
     ring.push([Math.cos(a) * DISH.RO, Math.sin(a) * DISH.RO, DISH.HH], [Math.cos(a) * DISH.RO, Math.sin(a) * DISH.RO, 0]);
   }
   // The fill box leaves room for the corners of the bar.
-  const fillX = asp < 0.8 ? 0.9 : 0.8, top = 1 - Math.min(0.5, 120 / h), bot = -1 + Math.min(0.5, 130 / h);
+  // A short stage lets the dish rise between the top corners.
+  const topPx = h < 520 ? 22 : 60, botPx = h < 520 ? 58 : 65;
+  const fillX = asp < 0.8 ? 0.9 : 0.8, top = 1 - Math.min(0.5, (2 * topPx) / h), bot = -1 + Math.min(0.5, (2 * botPx) / h);
   let tgt = [0, 0, DISH.ZL], d = 5;
   for (let it = 0; it < 4; it++) {
     const eye = add(tgt, cam.fwd, -d);
@@ -989,6 +1010,7 @@ function restLamp() {
 }
 let lampHome = true;
 function aimLamp(x, y) {
+  if (ui.setting('follow')?.value === false) x = null;
   const t = reduced() || x == null ? restLamp() : lampFor(x, y);
   lampHome = x == null;
   ltgt[0] = t[0]; ltgt[1] = t[1]; ltgt[2] = t[2];
@@ -1263,7 +1285,9 @@ function step(dt) {
     const vmax = Math.max(...seeds.map(s => s.v)) * rt;
     relax(reduced() ? 24 : clamp(Math.ceil((vmax * dt * 2.2) / 1.7) + 1, 2, 16));
   }
-  if ((phase === 'growing' || phase === 'solid') && !sumBusy) pendingSpan = summarise();
+  // Summaries run while the crystal grows and while its heat fades.
+  const warm = phase === 'solid' && !reduced() && simT < solidAt + TAIL;
+  if ((phase === 'growing' || warm) && !sumBusy) pendingSpan = summarise();
   if (reduced() && phase === 'solid') reveal = clamp((performance.now() - revealAt) / 800);
 }
 function frame(now) {
@@ -1285,7 +1309,7 @@ function frame(now) {
     step(dt);
     draw();
     again = moving || rips.length > 0 || phase === 'growing' || phase === 'melting'
-      || (phase === 'solid' && (simT < solidAt + TAIL || reveal < 1 || sumBusy));
+      || (phase === 'solid' && ((!reduced() && simT < solidAt + TAIL) || reveal < 1 || sumBusy));
     if (phase === 'solid' && !again) crackleOff();
   } finally {
     if (again && visible) raf = requestAnimationFrame(frame);
@@ -1322,6 +1346,7 @@ act.viewReset = () => {
   act.view();
 };
 act.look = () => { if (ready && !raf) draw(); };
+act.follow = () => aimLamp();
 
 // The crystal at a dish point, read straight from the grid.
 const px = new Float32Array(4);
