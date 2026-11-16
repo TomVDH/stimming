@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:04:03Z
+updated_at: 2026-11-16T22:13:19Z
 parent: stimming-oh7b
 ---
 
@@ -31,3 +31,11 @@ Rulings in Task 1:
 - Chop is 0.05, not 0.08: 0.08 broke the mirror too much.
 - On a tall frame the lens widens by the square root of the aspect, and the horizon lifts only 0.04: a wider lens left half the frame black.
 - The loop sleeps 60 s after the last input. The 30 fps cap while drifting waits for Task 5.
+
+Tom, 2026-11-16: no head-on view (Train ride, Ten seconds and Fireworks have one). He picked the view from the hill above.
+- The eye stands 5 m over a wooded hill, about 60 m over the lake, and looks down.
+- The lake is a bowl about 1.4 km long. The land is a raymarched heightfield: low hills that level off near 110 m, slender tiered pines in stands, a smooth canopy far off.
+- A lane down the slope keeps the lake clear; pines frame it at the sides.
+- The mirror marches the same land, softened by the ripples. The windows are streaks in it.
+- The plan's flat `shore(x)` is gone; `coast(p)` and `ground(p)` take its place.
+- Open: the march is 128 steps a pixel. Task 5 checks the frame rate on High.
