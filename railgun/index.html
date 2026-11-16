@@ -239,6 +239,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // Far ranges: Bake marches once and relights; Live marches every frame.
     // Bake is the default (Tom, 2026-11-16); ?far=live opens on the live march.
     // Erosion carves gullies and crags into the far ranges; 0 is the smooth shape.
+    // Face bump: the gullies and strata in the light, as on the card clouds.
+    { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
     { type: 'slider', id: 'erosion', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
     { type: 'choice', id: 'farmode', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
@@ -1430,11 +1432,13 @@ const FAR_U = {
   uFarSteps: { value: 96 },
   // Erosion: the depth of the gullies and crags; 0 leaves the smooth ranges.
   uEro: { value: 1 },
+  // Face bump: fine gullies and strata in the light only; 0 turns it off.
+  uBump: { value: 1 },
   uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
 };
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
-uniform float uEro;
+uniform float uEro, uBump;
 // Sharp ridges in [0, 1]: lines of 1 with a narrow V between.
 float ridge2(vec2 p) {
   float s = 0.0, a = 0.5, w = 1.0;
@@ -1584,6 +1588,24 @@ const FAR_FN = /* glsl */`
     return clamp(0.5 + (h - a) / (0.5 * r), 0.0, 1.0);
   }
   // The lit colour of surface point p at range hit, ground height h0, in the air.
+  // The face bump's detail: vertical flutes on steep faces, faint strata across them.
+  float farDetail(vec3 P) {
+    vec2 q = P.xz / 2500.0;
+    q += 0.6 * vec2(k2noise(q * 0.3), k2noise(q * 0.3 + 7.7)) - 0.3;
+    float st = k2noise(vec2(P.y / 260.0 + 2.0 * k2noise(q * 0.5), dot(P.xz, vec2(0.6, 0.8)) / 9000.0));
+    return ridge2(q) + 0.12 * st;
+  }
+  // As the card clouds do, the face's normal tilts with the detail's slope.
+  // The taps run across the face and up it; only walls take the tilt.
+  vec3 farBump(vec3 P, vec3 N, float hit, float wall) {
+    // The bump fades out where one pixel spans a gully.
+    float k = uBump * wall * (1.0 - smoothstep(250.0, 900.0, 0.0015 * hit));
+    if (k < 0.01) return N;
+    vec3 T = normalize(cross(vec3(0.0, 1.0, 0.0), N) + vec3(1e-4, 0.0, 0.0)), B = cross(N, T);
+    float e = max(120.0, 0.0015 * hit), f0 = farDetail(P);
+    float dT = (farDetail(P + T * e) - f0) / e, dB = (farDetail(P + B * e) - f0) / e;
+    return normalize(N - 0.35 * k * 2500.0 * (dT * T + dB * B));
+  }
   vec3 farShade(vec3 ro, vec3 rd, vec3 p, float hit, float h0, vec3 N, float sh, float cav) {
     // Shade on the flat world: the curve only moves the image.
     vec3 P = vec3(p.x, h0, p.z);
@@ -1592,6 +1614,7 @@ const FAR_FN = /* glsl */`
     alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
     // Gullies hold dark scree and shade; spurs catch the light.
     alb *= 0.25 + 1.5 * cav;
+    N = farBump(P, N, hit, wall);
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
     vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
     // The blast lights the faces turned to it, faintly at this range.
@@ -11701,6 +11724,8 @@ window.__qa = {
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   // The far pass: the mode, and how often it baked and relit.
+  // Set the far ranges' face bump.
+  bump(v) { FAR_U.uBump.value = v; draw(); },
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
