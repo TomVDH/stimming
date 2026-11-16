@@ -10,6 +10,9 @@ import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 const LEVEL = 0.46;
 // A change of toy takes this long, in seconds.
 const CHANGE = 0.42;
+// The cadence: the wordmark's own way with letters, each a little askew in its own weight.
+// Tom keeps it off for the toy's name; it may return, so it stays behind this switch.
+const CADENCE = false;
 // The caption is a square texture; it covers this share of the tube's width.
 const CAP = 0.5, CAP_PX = 1024;
 
@@ -142,7 +145,7 @@ export async function tube(host, span) {
     }
     return rows;
   }
-  // The name's letters stand askew in mixed weights, as the wordmark's do. The same name always falls the same way.
+  // With the cadence on, the name's letters stand askew in mixed weights. The same name always falls the same way.
   // A trial (Tom, 2026-11-16): the name is in B612, the wordmark's face. B612 has two weights.
   const WEIGHTS = [700, 700, 400, 700];
   const font = (weight, size) => `${weight} ${size}px B612, Gabarito, system-ui, sans-serif`;
@@ -154,7 +157,7 @@ export async function tube(host, span) {
     const out = [];
     let width = 0;
     for (const ch of row) {
-      const weight = WEIGHTS[Math.floor(rand() * WEIGHTS.length)], turn = (rand() - 0.5) * 0.2, lift = (rand() - 0.5) * 0.1 * size;
+      const weight = CADENCE ? WEIGHTS[Math.floor(rand() * WEIGHTS.length)] : 700, turn = CADENCE ? (rand() - 0.5) * 0.2 : 0, lift = CADENCE ? (rand() - 0.5) * 0.1 * size : 0;
       pen.font = font(weight, size);
       const w = pen.measureText(ch).width - 0.03 * size;
       out.push({ ch, weight, turn: ch === ' ' ? 0 : turn, lift, w, x: width });
