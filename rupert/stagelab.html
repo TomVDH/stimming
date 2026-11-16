@@ -639,9 +639,11 @@ float segPt(vec3 a, vec3 b, vec3 x) {
   return length(a + ab * clamp(dot(x - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0) - x);
 }
 // The cracks along a path through the glass, from q0 to q1.
-// x: crack lines, y: live tips, z: distance to the nearest crack.
-vec3 crackField(vec3 q0, vec3 q1) {
-  float lines = 0.0, tips = 0.0, near = 9.0;
+// x: crack lines, y: glints, z: live tips, w: distance to the nearest crack.
+// Each crack is a narrow face along its line.
+// It flashes only where that face mirrors a light toward the eye.
+vec4 crackField(vec3 q0, vec3 q1, vec3 rd) {
+  float lines = 0.0, glint = 0.0, tips = 0.0, near = 9.0;
   for (int i = 0; i < 768; i++) {
     if (i >= uNCrk) break;
     vec4 a = texelFetch(uCrk, ivec2(2 * i, 0), 0);
@@ -652,10 +654,19 @@ vec3 crackField(vec3 q0, vec3 q1) {
     vec3 e = mix(a.xyz, b.xyz, g);
     float d = segSeg(q0, q1, a.xyz, e);
     near = min(near, d);
-    lines += exp(-d * d * 4000.0);
-    if (g < 1.0) { float dt = segPt(q0, q1, e); tips += exp(-dt * dt * 400.0); }
+    float on = exp(-d * d * 4000.0);
+    lines += on;
+    // The face holds the crack's own line; its tilt varies slowly in space.
+    // So a whole run of crack catches the light as one streak.
+    vec3 m = (a.xyz + b.xyz) * 1.4;
+    vec3 tw = sin(m.yzx * vec3(1.3, 1.7, 2.1) + m * vec3(0.9, 1.1, 0.7) + vec3(0.0, 2.1, 4.2));
+    vec3 fn = normalize(cross(b.xyz - a.xyz + 1e-5, tw) + 1e-5);
+    vec3 rr = reflect(rd, fn);
+    float sp = pow(max(dot(rr, KEY), 0.0), 24.0) + 0.6 * pow(max(dot(rr, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 24.0);
+    glint += on * sp * 0.6;
+    if (g < 1.0) { float dt = segPt(q0, q1, e); tips += exp(-dt * dt * 1600.0); }
   }
-  return vec3(lines, tips, near);
+  return vec4(lines, glint, tips, near);
 }
 // Cells in 3D: the nearest and second distances, and the cell's seed.
 vec4 cells(vec3 x) {
@@ -783,11 +794,13 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     float sSkin = axisA(p).s;
     float leadC = (uFront - sCore) * uLen, leadS = (uFront - sSkin) * uLen;
     // The tree's cracks along this path through the glass.
-    vec3 ck = crackField(q, pe);
+    vec4 ck = crackField(q, pe, rd);
     // Frost spreads out from each crack, so its edge runs in fingers.
     // It lags the tips a little, so the bare cracks show first.
-    frostA = clamp(max(0.75 * smoothstep(0.0, 0.3, leadC - 0.3 - 2.2 * ck.z), smoothstep(0.1, 0.5, leadS - 0.45 - 1.6 * ck.z)), 0.0, 1.0);
-    frontG = min(ck.y, 1.5) * 0.7 + min(ck.x, 2.0) * 0.4 * (1.0 - 0.7 * frostA);
+    frostA = clamp(max(0.75 * smoothstep(0.0, 0.3, leadC - 0.3 - 2.2 * ck.w), smoothstep(0.1, 0.5, leadS - 0.45 - 1.6 * ck.w)), 0.0, 1.0);
+    // A crack blocks some light: clear glass shows it as a dark line.
+    col *= 1.0 - 0.6 * min(ck.x, 1.0) * (1.0 - frostA);
+    frontG = min(ck.y, 2.0) * 1.4 + min(ck.z, 1.5) * 0.35;
     // Shattered glass: irregular cells, each face a small mirror.
     vec4 c1 = cells(p * 11.0), c2 = cells(p * 29.0 + 3.0);
     vec3 rn = normalize((vec3(c1.z, c1.w, c2.z) * 2.0 - 1.0) * 1.3 + nb);
@@ -796,9 +809,19 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     float g2 = pow(max(dot(rr, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 30.0) + pow(max(dot(rr, normalize(vec3(0.8, 0.35, -0.55))), 0.0), 30.0);
     // Cell walls are crack faces: they scatter light and read pale.
     float walls = smoothstep(0.05, 0.0, c1.y - c1.x) + 0.6 * smoothstep(0.04, 0.0, c2.y - c2.x);
-    frostC = vec3(0.8, 0.82, 0.86) * (uKeyC * (0.16 + 0.32 * max(nb.y, 0.0)) + 0.045) * (0.75 + 0.5 * c2.z);
-    frostC += vec3(0.85, 0.88, 0.95) * uKeyC * 0.12 * min(walls, 1.0);
-    frostC += uKeyC * g1 * 3.0 + uRimC * g2 * 2.0;
+    // The core holds the most cracks, so it reads densest and whitest.
+    // Near the skin the powder thins, and the dark glass shows through.
+    float core = 1.0 - beta * beta;
+    float lum = (0.12 + 0.3 * max(nb.y, 0.0)) * (0.6 + 0.75 * core) * (0.75 + 0.5 * c2.z);
+    frostC = vec3(0.8, 0.82, 0.86) * (uKeyC * lum + 0.035);
+    frostC += vec3(0.85, 0.88, 0.95) * uKeyC * 0.1 * min(walls, 1.0);
+    // The main cracks show through as faint sheets in the powder.
+    frostC += vec3(0.9, 0.93, 1.0) * uKeyC * 0.12 * min(ck.x, 1.5);
+    // Fine dust: many small facets, each a pin of light.
+    vec4 c3 = cells(p * 70.0 + 9.0);
+    vec3 r3 = reflect(rd, normalize((vec3(c3.z, c3.w, fract(c3.z * 7.3)) * 2.0 - 1.0) * 1.6 + nb));
+    float pin = pow(max(dot(r3, KEY), 0.0), 80.0) * step(0.55, c3.w);
+    frostC += uKeyC * (g1 * 3.0 + pin * 2.5) * (0.5 + 0.5 * (1.0 - core)) + uRimC * g2 * 2.0;
   }
   // Photoelastic stress: retardation across a tempered rod, in nm.
   float gam = sqrt(max(1.0 - beta * beta, 0.0));
@@ -1343,10 +1366,10 @@ const ripples = [];
 // The front crosses the whole drop in FRONT_T seconds of show time.
 const FRONT_T = 1.9, LAG = 0.45, GONE = 0.22, HOLD = 2.5, RAMP = 1.2, FALL = 2.8, PRE = 0.3;
 // The drop holds fully white for a beat before the head bursts.
-const WHITE = 0.4;
+const WHITE = 0.8;
 const K_DRAG = 1.8;
 function schedule(sCut) {
-  const burst = (1 - sCut) * FRONT_T + WHITE, ramp = burst + HOLD;
+  const burst = timeAt(1, sCut) + WHITE, ramp = burst + HOLD;
   return { burst, ramp, end: ramp + RAMP * 0.5 + FALL, dust: ramp + 0.45 };
 }
 // The real clock under the slow motion: still, then up to speed.
@@ -1355,7 +1378,17 @@ function clock(t) {
   const u = t - sched.ramp;
   return u < RAMP ? u * u / (2 * RAMP) : RAMP / 2 + (u - RAMP);
 }
-const frontAt = t => cut.s + Math.max(0, t) / FRONT_T;
+// The crack races up the thin tail, then slows as the glass thickens.
+const TAIL_K = 2.2;
+// Show time for the front to reach arc s from a cut at c.
+function timeAt(s, c) {
+  const n = Math.max(S_NECK, c);
+  return (Math.max(0, Math.min(s, n) - c) / TAIL_K + Math.max(0, s - n)) * FRONT_T;
+}
+function frontAt(t) {
+  const c = cut.s, n = Math.max(S_NECK, c), u = Math.max(0, t) / FRONT_T, tail = (n - c) / TAIL_K;
+  return u < tail ? c + u * TAIL_K : n + (u - tail);
+}
 
 /* ---------- crack tree ---------- */
 // One crack runs up the stretched core of the tail.
@@ -1514,7 +1547,7 @@ function makeDust(sCut, n) {
     const big = rnd() < 0.05;
     const size = (big ? 0.055 + 0.07 * rnd() : 0.012 + 0.03 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(ax.r, 1)));
     // Tail shards crumble behind the front; the head goes at once.
-    const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, (ax.s - sCut) * FRONT_T + LAG + 0.12 * rnd());
+    const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, timeAt(ax.s, sCut) + LAG + 0.12 * rnd());
     const o = k * 12;
     partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], o);
     k++;
@@ -1583,7 +1616,7 @@ function pose() {
   if (state === 'burst') {
     crack = 1;
     front = frontAt(tau);
-    const rel = Math.min(S_NECK, cut.s + Math.max(0, tau - LAG) / FRONT_T);
+    const rel = Math.min(S_NECK, frontAt(tau - LAG));
     gone = clamp((tau - sched.burst) / GONE);
     if (gone < 1) { const a = headSide(REST, S, Math.max(cut.s, rel)); loadA(a.pts, a.ss); } else nA = 0;
     // The tip falls on the real clock and tips as it lands.
