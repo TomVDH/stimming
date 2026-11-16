@@ -205,6 +205,8 @@ const ui = initPage({ id: 'railgun', bar: {
     // Far haze sinks far clouds into the air; Valley fog pools in the far ranges.
     { type: 'slider', id: 'farhaze', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
     { type: 'slider', id: 'valfog', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
+    // Cloud deck: the broken layer of cells five kilometres up.
+    { type: 'slider', id: 'deck', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
     { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
     { type: 'slider', id: 'grainsize', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
@@ -347,6 +349,8 @@ const U = {
   uHazeH: { value: 700 },
   // Layered air: x sinks far clouds into the haze; y pools fog in far valleys.
   uLayer: { value: new THREE.Vector2(1, 0.5) },
+  // The cell deck's strength: 0 off.
+  uDeck: { value: 1 },
   uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.6 + Math.random() * 0.4) },
   // The asteroid: direction from the eye, light strength; its angular radius.
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
@@ -1097,7 +1101,7 @@ function updateShafts() {
   // The clouds take the shade at any sun height; not by night.
   u.uCShade.value = 1 - U.uStars.value;
   if (k < 0.001 && u.uCShade.value < 0.001) return;
-  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...shaftList(MIDS)];
+  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS) : [])];
   const t = CLOUD_U.uCloudC.value;
   let n = 0;
   for (const c of shaftOcc) {
@@ -1127,10 +1131,46 @@ function updateShafts() {
 
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...IMP_U, ...SHAFT_U }, side: THREE.BackSide, depthWrite: false,
+  uniforms: { ...U, ...IMP_U, ...SHAFT_U, uVol: { value: null }, uCloudC: { value: 0 } }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`#define CSHADE
-  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL} void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(k2sky(d), d, uShaft.z) + impSky(d), 1.0); }`,
+  precision highp sampler3D;
+  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL}
+  uniform sampler3D uVol;
+  uniform float uCloudC, uDeck;
+  // A broken deck of small cells five kilometres up, seen from below.
+  // The cells shrink toward the horizon, so the eye reads the depth.
+  vec3 deck(vec3 d, vec3 col) {
+    if (uDeck < 0.01 || d.y < 0.003) return col;
+    float t = 5200.0 / d.y;
+    vec2 xz = cameraPosition.xz + d.xz * t + vec2(uCloudC * 4.0, uCloudC * 1.5);
+    // Patches of cells with wide open sky between them.
+    float cov = texture(uVol, vec3(xz / 60000.0, 0.31)).r;
+    float cel = texture(uVol, vec3(xz / 7000.0, 0.63)).g;
+    float fin = texture(uVol, vec3(xz / 2300.0, 0.17)).g;
+    // Far cells blur into their mean before they alias.
+    float fd = smoothstep(25000.0, 110000.0, t);
+    float raw = mix(cel * 0.75 + fin * 0.25, 0.52, fd);
+    float dens = smoothstep(0.6, 0.84, raw + (cov - 0.7) * 1.2);
+    // The deck thins out low down: the ranges stay clear.
+    dens *= smoothstep(0.02, 0.12, d.y);
+    if (dens < 0.003) return col;
+    // The side of a cell toward the sun goes darker.
+    float cel2 = texture(uVol, vec3((xz + uSunD.xz * 600.0) / 7000.0, 0.63)).g;
+    float self = 1.0 - 0.45 * smoothstep(0.0, 0.25, cel2 - cel);
+    // A low sun lights the cells from below; thin edges pass the most light.
+    float cs = dot(d, uSunD);
+    float ph = 0.6 + 1.6 * pow(max(cs, 0.0), 6.0);
+    float low = 1.0 - smoothstep(0.05, 0.35, uSunD.y);
+    vec3 amb = mix(uHorC, uZenC, 0.5) * 0.9 + uCloudAmb * 0.6;
+    vec3 c = amb * (0.55 + 0.25 * (1.0 - dens)) + uCloudSun * (0.18 + 0.5 * (1.0 - dens)) * ph * self * mix(1.0, 1.6, low);
+    // At night the deck takes the moon dimly.
+    c *= mix(1.0, 0.45, uStars);
+    // The air between fills the far deck with the horizon colour.
+    c = mix(c, k2hazeColor(d), 1.0 - exp(-t / 60000.0));
+    return mix(col, c, dens * 0.75 * min(uDeck, 1.5));
+  }
+  void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(deck(d, k2sky(d)), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
 sky.renderOrder = -1;
 scene.add(sky);
@@ -1482,6 +1522,9 @@ scene.add(farPass);
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
 const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, ...IMP_U };
+// The sky's deck shares the clouds' volume and clock.
+sky.material.uniforms.uVol = CLOUD_U.uVol;
+sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
 const CLOUD_FS = /* glsl */`precision highp sampler3D;
 uniform sampler3D uVol;
 varying vec2 vUv;
@@ -1766,6 +1809,12 @@ const MIDS = [
   [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0],
 ];
 const mids = cloudLayer(MIDS, 2.15);
+// The deck stands in for the middle heaps; they show only with the deck off.
+function setDeck(v) {
+  U.uDeck.value = v;
+  mids.visible = v < 0.01;
+  shaftOcc = null;
+}
 
 /* ---------- the gun: one clean artillery piece ---------- */
 // Every piece is a straight block or drum; one merged mesh, one draw call.
@@ -11128,6 +11177,7 @@ gunMat.uniforms.uMetalF0.value = ui.setting('gunmetal').value; gunMat.uniforms.u
 gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; shaftGain = ui.setting('shafts').value; sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
+setDeck(ui.setting('deck').value);
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
 gfx.mist = ui.setting('mist').value; gfx.hal = ui.setting('halation').value; gfx.vig = ui.setting('vignette').value; gfx.gsize = ui.setting('grainsize').value;
