@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:13:19Z
+updated_at: 2026-11-16T22:19:49Z
 parent: stimming-oh7b
 ---
 
@@ -39,3 +39,5 @@ Tom, 2026-11-16: no head-on view (Train ride, Ten seconds and Fireworks have one
 - The mirror marches the same land, softened by the ripples. The windows are streaks in it.
 - The plan's flat `shore(x)` is gone; `coast(p)` and `ground(p)` take its place.
 - Open: the march is 128 steps a pixel. Task 5 checks the frame rate on High.
+
+Tom, 2026-11-16: more angles to compare. `?cam=<name>` picks a trial camera: hill (the default), wide, fish, dutch, tele, scope (2.39 letterbox), shore, along, drone. The march now strides over open water, and the pine grid turns 31 degrees, so the far bank shows no fence.

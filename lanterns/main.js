@@ -33,10 +33,31 @@ const ui = initPage({ id: 'lanterns', bar: {
 // The lake is a bowl about 1.4 km long; low hills and pines ring it.
 // The horizon's place on the frame: a tall frame lifts it.
 // A tall frame lowers it, so the slope underfoot fills less of the frame.
-const horizon = asp => 0.72 - 0.1 * Math.min(1, Math.max(0, (1.2 - asp) / 0.7));
+const horizon = (asp, hz) => hz - 0.1 * Math.min(1, Math.max(0, (1.2 - asp) / 0.7));
+// Camera trials, Tom 2026-11-16: ?cam=<name> picks one.
+// x and z place the eye; lift is its height over the ground or the water.
+// hz is the horizon's place on the frame; it sets the pitch.
+// yaw turns right in degrees; roll tilts the frame (a dutch angle); foc is the lens.
+// fish bends the frame round: its value is the angle per frame height, in radians.
+// bars crops the frame to 2.39 to 1.
+export const CAMS = {
+  hill: { x: 0, z: 0, lift: 5, hz: 0.72, yaw: 0, roll: 0, foc: 1.5, fish: 0, bars: 0 },
+  wide: { foc: 0.7, hz: 0.66 },
+  fish: { fish: 2.4, hz: 0.66, lift: 7 },
+  dutch: { roll: -10, foc: 1.1, hz: 0.68 },
+  tele: { foc: 4.5, hz: 0.6, yaw: 6 },
+  scope: { foc: 1.25, hz: 0.66, bars: 1 },
+  shore: { x: 20, z: -165, lift: 1.6, hz: 0.3, foc: 1.1 },
+  along: { x: -760, z: -500, lift: 6, yaw: 66, hz: 0.66, foc: 1.1 },
+  drone: { lift: 140, hz: 1.0, foc: 1.1, yaw: 4 },
+};
+const camName = new URLSearchParams(location.search).get('cam');
+const CAM = { ...CAMS.hill, ...(CAMS[camName] || {}) };
 const SCENE = `
-uniform float uMist, uHz;
-const float FOC = 1.5;
+uniform float uMist, uHz, uBars;
+// The eye: x, z and lift. The view: yaw, roll, lens and fisheye, in radians where angles.
+uniform vec3 uEye;
+uniform vec4 uView;
 // The lake: its centre and its two radii, in metres. The eye stands at the origin.
 const vec2 LC = vec2(60.0, -650.0), LR = vec2(700.0, 520.0);
 // The camera: its place, then its frame. The pitch puts the horizon at uHz.
@@ -69,17 +90,21 @@ float pines(vec2 p, float s, float foot) {
   float stand = smoothstep(0.42, 0.6, n2(p / 220.0 + 31.0)) * smoothstep(0.012, 0.03, s);
   // The eye stands in a clearing.
   vec2 v = p - gCam.xz;
+  // The lane runs along the view.
+  v = vec2(cos(uView.x) * v.x + sin(uView.x) * v.y, -sin(uView.x) * v.x + cos(uView.x) * v.y);
   stand *= smoothstep(26.0, 40.0, length(v));
   // A lane down the slope keeps the lake clear; pines frame it at the sides.
   float lane = smoothstep(0.3 * gLane, 0.55 * gLane, abs(v.x) / max(-v.y, 1.0));
   stand *= mix(lane, 1.0, smoothstep(150.0, 220.0, length(v)));
   if (stand <= 0.0) return 0.0;
-  vec2 c = floor(p / 9.0);
+  // The grid turns 31 degrees, so no row lines up with the view.
+  vec2 g = mat2(0.857, -0.515, 0.515, 0.857) * p;
+  vec2 c = floor(g / 9.0);
   float hs = wtH(c + 3.0);
-  vec2 at = (c + 0.5 + 0.3 * (vec2(wtH(c + 7.0), wtH(c + 11.0)) - 0.5)) * 9.0;
+  vec2 at = (c + 0.5 + 0.5 * (vec2(wtH(c + 7.0), wtH(c + 11.0)) - 0.5)) * 9.0;
   float tall = (13.0 + 11.0 * hs) * stand * step(0.3, wtH(c + 5.0));
   // A slender pine in tiers: each whorl of boughs flares, then narrows.
-  float r = length(p - at), base = 2.3 + 0.8 * hs;
+  float r = length(g - at), base = 2.0 + 1.0 * hs;
   float y = tall * max(0.0, 1.0 - r / base), tier = tall * 0.12;
   float flare = 0.86 + 0.14 * fract((tall - y) / tier + hs);
   float tree = tall * max(0.0, 1.0 - r / (base * flare));
@@ -87,10 +112,11 @@ float pines(vec2 p, float s, float foot) {
   float canopy = stand * (4.0 + 3.0 * n2(p / 14.0) + 5.0 * n2(p / 5.0));
   return mix(tree, canopy, smoothstep(0.3, 1.5, foot));
 }
-float surf(vec2 p, float foot) {
-  float s, g = ground(p, s);
+float surf(vec2 p, float foot, out float s) {
+  float g = ground(p, s);
   return g + pines(p, s, foot);
 }
+float surf(vec2 p, float foot) { float s; return surf(p, foot, s); }
 
 // The mist's colour: the low sky that way.
 vec3 mistCol(vec3 d) { return skDusk(normalize(vec3(d.x, 0.03, d.z)), gSun, uZen, uMid, uBand, uAnti) * 0.85; }
@@ -128,13 +154,16 @@ Hit march(vec3 o, vec3 d, float tMax, float px, int steps) {
   for (int i = 0; i < 128; i++) {
     if (i >= steps || t > tMax) break;
     vec3 P = o + d * t;
-    float gap = P.y - surf(P.xz, t * px);
+    float s, gap = P.y - surf(P.xz, t * px, s);
     if (gap < 0.0) { h.land = true; break; }
     float m = gap / (t * px);
     if (m < h.mn) { h.mn = m; h.tm = t; }
     last = t;
     // Inside the canopy band the trees are steep, so the steps shrink.
-    t += gap < 26.0 ? max(gap * 0.12, 0.002 * t + 0.15) : max(gap * 0.45, 0.008 * t + 0.2);
+    float stride = gap < 26.0 ? max(gap * 0.12, 0.002 * t + 0.15) : max(gap * 0.45, 0.008 * t + 0.2);
+    // Over open water the coast is far: stride most of the way to it.
+    if (s < -0.02) stride = max(stride, -s * 300.0);
+    t += stride;
   }
   if (!h.land) return h;
   // Five halvings find the edge.
@@ -186,18 +215,31 @@ vec3 windows(vec3 o, vec3 d, float sx, float sy) {
 
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y;
-  gFoc = FOC * min(1.0, sqrt(asp / 1.2));
-  gPx = 1.0 / (gFoc * uRes.y);
+  gFoc = uView.z * min(1.0, sqrt(asp / 1.2));
+  float fish = uView.w;
+  gPx = fish > 0.0 ? fish / uRes.y : 1.0 / (gFoc * uRes.y);
+  // The letterbox: black bars above and below a 2.39 frame.
+  if (uBars > 0.5 && abs(uv.y - 0.5) * 2.0 > asp / 2.39) return vec3(0.0);
   gLane = clamp(asp / 1.6, 0.3, 1.0);
   gSun = normalize(vec3(0.35 * length(uSunD.xz), uSunD.y, -length(uSunD.xz)));
   float s;
-  gCam = vec3(0.0, max(ground(vec2(0.0), s), 0.0) + 5.0, 0.0);
-  float pitch = atan((uHz - 0.5) / gFoc);
-  gF = vec3(0.0, -sin(pitch), -cos(pitch));
-  gU = vec3(0.0, cos(pitch), -sin(pitch));
-  gR = vec3(1.0, 0.0, 0.0);
+  gCam = vec3(uEye.x, max(ground(uEye.xy, s), 0.0) + uEye.z, uEye.y);
+  float pitch = fish > 0.0 ? (uHz - 0.5) * fish : atan((uHz - 0.5) / gFoc);
+  float cy = cos(uView.x), sy = sin(uView.x);
+  gF = vec3(sy * cos(pitch), -sin(pitch), -cy * cos(pitch));
+  gU = vec3(sy * sin(pitch), cos(pitch), -cy * sin(pitch));
+  gR = vec3(cy, 0.0, sy);
   placeWindows();
-  vec3 d = normalize(gR * (uv.x - 0.5) * asp + gU * (uv.y - 0.5) + gF * gFoc);
+  // The roll turns the frame about its centre.
+  vec2 q = vec2((uv.x - 0.5) * asp, uv.y - 0.5);
+  q = vec2(cos(uView.y) * q.x - sin(uView.y) * q.y, sin(uView.y) * q.x + cos(uView.y) * q.y);
+  vec3 dc;
+  if (fish > 0.0) {
+    // An even fisheye: the angle off the axis grows with the distance from the centre.
+    float r = length(q) + 1e-6, th = min(r * fish, 3.1);
+    dc = vec3(q / r * sin(th), cos(th));
+  } else dc = vec3(q, gFoc);
+  vec3 d = normalize(gR * dc.x + gU * dc.y + gF * dc.z);
   float tw = d.y < 0.0 ? gCam.y / -d.y : 9000.0;
   Hit h = march(gCam, d, min(tw, 9000.0), gPx, 128);
   vec3 base;
@@ -238,7 +280,10 @@ try {
     onFrame: raw => step(Math.min(raw, 0.05)),
     uniforms: {
       uMist: () => 0.003,
-      uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight)),
+      uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz),
+      uEye: () => [CAM.x, CAM.z, CAM.lift],
+      uView: () => [CAM.yaw * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
+      uBars: () => CAM.bars,
     },
   });
 } catch (err) {
