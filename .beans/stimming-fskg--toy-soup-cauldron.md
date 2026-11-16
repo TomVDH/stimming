@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-15T10:36:27Z
+updated_at: 2026-11-16T08:51:22Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -39,3 +39,20 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - Sound through audioKit, muted by default: simmer bed, fire rumble and crackle, slosh, spoon scrape, bubble pops, plops, a duck squeak, a star chime, drain glugs.
 - Performance: detail level and slow-frame step, up to 60 fps while a hand works, a 30 fps simmer otherwise, stops when hidden; reduced motion stops the simmer.
 - `docs/toys/cauldron.md`: the toy doc. Handoff files in the lab10 scratchpad: toys-entry.json, menu-li.html, menu-icon.js.
+
+## Round 2 (2026-11-16)
+
+- [x] Fire's solver in WebGL2: a 48x56x48 grid in a 2D atlas, curl, advect, buoyancy, turbulence, confinement, Jacobi, project, dye with a coal bed
+- [x] The belly and legs are solids; hot gas clings to the iron and climbs it
+- [x] Fire volume march: Fire's wood ramp, emission and smoke light; steam takes Fire's smoke light
+- [x] Iron lit by the solver's heat; flagstone floor lit through a bump normal; logs removed
+- [x] Wind gusts at high fire; cursor wobble; Dev rows for camera and fire bed
+- [x] WebGPU probe of Fire's own engine (cauldron/probe-gpu.html); its expansion source moved into the WebGL2 solver
+- [x] PBR and bump on the iron: GGX, split-sum fit, hammered dimples that wrap the pot, grease streaks, worn rim
+- [x] Roughness noise per material: iron streaks, spoon grain, a fine noise on each thing's skin
+- [x] Soupy marbled dye field: Catmull-Rom advection clamped to its texels, a fine stir curl, plumes fold in nearby soup, ribbons along the stir, seams where colours meet
+- [x] Tray picker (Mix, ten things, four liquids) and pours: cream, squid ink, chilli oil, saffron; the stream digs a dent, rings out and drops in its own colour
+- [x] Toy doc
+
+- [x] Soup film layers: a skin that sets on calm thick soup and cream (matte, wrinkled), wet broth, glassy fat with a faint oil-film rainbow
+- [ ] Fire engine choice: WebGL2 or WebGPU (Fire's engine, faster and scaled back)

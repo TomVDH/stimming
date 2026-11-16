@@ -97,12 +97,58 @@ const TAU = Math.PI * 2;
 playIntro({ ready: pageReady(9000) });
 mark('build');
 
+/* ---------- the tray: what a tap adds ---------- */
+// Mix keeps the old round; the rest pick one thing or one liquid.
+const PICKS = [['mix', 'Mix'], ['carrot', 'Carrot'], ['onion', 'Onion'], ['fish', 'Fish'], ['beet', 'Beetroot'], ['duck', 'Duck'],
+  ['pea', 'Peas'], ['boot', 'Boot'], ['star', 'Star'], ['tomato', 'Tomato'], ['mushroom', 'Mushroom'],
+  ['cream', 'Cream'], ['ink', 'Squid ink'], ['chilli', 'Chilli oil'], ['saffron', 'Saffron']];
+let pick = 'mix';
+// Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
+const ok = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
+const circ = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
+const DROP = 'M0-12C6-4 9 1 9 5A9 9 0 0 1-9 5C-9 1-6-4 0-12z';
+const ART = {
+  mix: [['M-12-1h24a12 11 0 0 1-24 0z', [0.4, 0.02, 60], [0.2, 0.01, 60]], ['M-11-1a11 3 0 0 0 22 0a11 3 0 0 0-22 0z', [0.8, 0.13, 75], [0.62, 0.15, 55]],
+    [circ(-4, -2, 2.4), [0.75, 0.17, 50], [0.6, 0.18, 40]], [circ(3, -2.5, 2), [0.78, 0.17, 140], [0.6, 0.17, 140]]],
+  carrot: [['M-11 9L5-7c3-3 7 1 4 4z', [0.78, 0.17, 55], [0.6, 0.19, 42]], ['M6-6l2-8l2 7l5-3l-4 6z', [0.75, 0.17, 140], [0.55, 0.16, 140]]],
+  onion: [['M0-13c2 4 10 7 10 14a10 10 0 0 1-20 0c0-7 8-10 10-14z', [0.88, 0.07, 85], [0.66, 0.09, 70]]],
+  fish: [['M-12 0c5-8 15-8 19 0c-4 8-14 8-19 0z', [0.85, 0.03, 230], [0.58, 0.05, 240]], ['M6 0l8-6v12z', [0.76, 0.04, 230], [0.55, 0.05, 240]], [circ(-6, -1.5, 1.6), [0.2, 0, 0], [0.1, 0, 0]]],
+  beet: [[circ(0, 3, 9.5), [0.52, 0.2, 358], [0.32, 0.16, 355]], ['M0-6c-2-5-6-8-9-8c1 4 4 7 9 8zM0-6c2-5 6-8 9-8c-1 4-4 7-9 8z', [0.72, 0.16, 145], [0.5, 0.14, 150]]],
+  duck: [['M-12 3c0-5 6-6 10-5c0-6 3-9 7-9s6 3 6 6c0 2-1 4-3 5c3 1 5 3 4 7c-1 5-8 6-14 6c-7 0-10-4-10-10z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
+    ['M11-6l6 1l-6 2z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(7, -7, 1.3), [0.2, 0, 0], [0.1, 0, 0]]],
+  pea: [[circ(-6, 3, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(5, 4, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(0, -5, 5.5), [0.84, 0.17, 135], [0.62, 0.17, 140]]],
+  boot: [['M-8-13h9v14c6 0 12 2 12 7v3h-21z', [0.48, 0.06, 55], [0.28, 0.04, 50]], ['M-8 9h21v3h-21z', [0.24, 0.02, 50], [0.16, 0.01, 50]]],
+  star: [['M0-13l3.8 8.2l9 1l-6.7 6.2l1.9 8.8l-8-4.6l-8 4.6l1.9-8.8l-6.7-6.2l9-1z', [0.95, 0.15, 98], [0.8, 0.16, 82]]],
+  tomato: [[circ(0, 2, 10.5), [0.68, 0.2, 32], [0.48, 0.19, 28]], ['M0-9l2 3l4-1l-2 3l3 2h-4l-3 2l-1-3h-4l3-2l-2-3l4 1z', [0.72, 0.16, 140], [0.5, 0.15, 145]]],
+  mushroom: [['M-13 0c0-8 6-12 13-12s13 4 13 12z', [0.62, 0.07, 55], [0.42, 0.06, 50]], ['M-4 0h8l1 11h-10z', [0.92, 0.03, 85], [0.76, 0.04, 80]]],
+  cream: [[DROP, [0.98, 0.015, 90], [0.84, 0.03, 80]]],
+  ink: [[DROP, [0.32, 0.05, 290], [0.12, 0.03, 290]]],
+  chilli: [[DROP, [0.68, 0.2, 38], [0.48, 0.2, 28]]],
+  saffron: [[DROP, [0.88, 0.17, 88], [0.7, 0.17, 72]], ['M-3-2l1 9M1-3l0 10M4-1l-1 8', [0.6, 0.18, 35], [0.5, 0.18, 30]]],
+};
+// One bold object: a gradient body, the shared top-left light and a pale rim.
+function pickIcon(id) {
+  const parts = ART[id];
+  const defs = parts.map(([, a, b], i) => `<linearGradient id="cp-${id}-${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${ok(a)}"/><stop offset="1" stop-color="${ok(b)}"/></linearGradient>`).join('');
+  const lit = `<radialGradient id="cp-${id}-lit" cx="0.32" cy="0.22" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>`;
+  const body = parts.map(([d], i) => id === 'saffron' && i === 1
+    ? `<path d="${d}" fill="none" stroke="url(#cp-${id}-${i})" stroke-width="2" stroke-linecap="round"/>`
+    : `<path d="${d}" fill="url(#cp-${id}-${i})"/><path d="${d}" fill="url(#cp-${id}-lit)"/><path d="${d}" fill="none" stroke="oklch(1 0 0 / 0.22)" stroke-width="1"/>`).join('');
+  return `<svg viewBox="-17 -17 34 34" aria-hidden="true"><defs>${defs}${lit}</defs><circle r="16.5" fill="oklch(0.16 0.02 50)" stroke="oklch(1 0 0 / 0.08)"/>${body}</svg>`;
+}
+
 /* ---------- bar ---------- */
 const FIRE0 = 0.5;
 let fire = FIRE0;
 // The handlers bind once the GL state exists.
 const act = { add() {}, clear() {}, reset() {} };
+// The Dev rows exist without ?dev too, so the toy reads them everywhere.
+const devV = (id, d) => ui.setting(id)?.value ?? d;
+let refit = () => {};
 const ui = initPage({ id: 'cauldron', bar: {
+  choice: { label: 'Add', display: 'tray', value: 'mix',
+    options: PICKS.map(([value, label]) => ({ value, label, icon: pickIcon(value) })),
+    onPick: v => { pick = v; stage.focus?.({ preventScroll: true }); } },
   actions: [
     { verb: 'add', noun: 'Thing', key: 'T', onPress: () => act.add() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
@@ -115,6 +161,18 @@ const ui = initPage({ id: 'cauldron', bar: {
   dev: [
     { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
+    // The eye: 50 degrees is the toy's view; near 0 is a side view of the fire.
+    // These rows keep no value, so a reload brings the toy's own view back.
+    { type: 'slider', id: 'camEl', label: 'Camera height', min: 0, max: 80, step: 1, value: 50, onInput: () => refit() },
+    { type: 'slider', id: 'camTurn', label: 'Camera turn', min: -90, max: 90, step: 1, value: 0, onInput: () => refit() },
+    // The coal bed: where the core burns, how wide and how hard.
+    { type: 'slider', id: 'fireX', label: 'Fire X', min: -0.8, max: 0.8, step: 0.01, value: 0 },
+    { type: 'slider', id: 'fireZ', label: 'Fire Z', min: -0.8, max: 0.8, step: 0.01, value: 0 },
+    { type: 'slider', id: 'fireY', label: 'Fire height', min: 0, max: 0.5, step: 0.01, value: 0.04 },
+    { type: 'slider', id: 'fireR', label: 'Fire size', min: 0.2, max: 1, step: 0.01, value: 0.62 },
+    { type: 'slider', id: 'fireI', label: 'Fire power', min: 0, max: 3, step: 0.01, value: 1 },
+    // Spread: how hard burning gas expands, pushing flames out round the belly.
+    { type: 'slider', id: 'fireExp', label: 'Fire spread', min: 0, max: 3, step: 0.05, value: 0.45 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -222,6 +280,248 @@ vec3 qrot(vec4 q, vec3 v) { return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w 
 mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }
 `;
 
+// Simplex noise with its gradient (Ashima Arts and Stefan Gustavson, MIT).
+const SIMPLEX = `
+vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 10.0) * x); }
+float snoise(vec3 v, out vec3 grad) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  vec3 i = floor(v + dot(v, C.yyy)), x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz), l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy), i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx, x2 = x0 - i2 + C.yyy, x3 = x0 - 0.5;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  vec4 j = p - 49.0 * floor(p * (1.0 / 49.0));
+  vec4 x_ = floor(j * (1.0 / 7.0)), y_ = floor(j - 7.0 * x_);
+  vec4 x = (x_ * 2.0 + 0.5) / 7.0 - 1.0, y = (y_ * 2.0 + 0.5) / 7.0 - 1.0;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy), b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0, s1 = floor(b1) * 2.0 + 1.0, sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy, a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 g0 = normalize(vec3(a0.xy, h.x)), g1 = normalize(vec3(a0.zw, h.y));
+  vec3 g2 = normalize(vec3(a1.xy, h.z)), g3 = normalize(vec3(a1.zw, h.w));
+  vec4 m = max(0.5 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  vec4 m2 = m * m, m4 = m2 * m2;
+  vec4 px = vec4(dot(g0, x0), dot(g1, x1), dot(g2, x2), dot(g3, x3));
+  vec4 tmp = m2 * m * px;
+  grad = 105.0 * (-8.0 * (tmp.x * x0 + tmp.y * x1 + tmp.z * x2 + tmp.w * x3) + m4.x * g0 + m4.y * g1 + m4.z * g2 + m4.w * g3);
+  return 105.0 * dot(m4, px);
+}
+`;
+
+/* ---------- GLSL: the fire, Fire's solver on a small grid ---------- */
+// A 3D grid of cubes, cut into z slices and laid out in one 2D atlas.
+// Slices sit eight across and six down.
+const FG = { nx: 48, ny: 56, nz: 48, tc: 8, tr: 6, cell: 0.08, min: [-1.92, -2.36, -1.92] };
+FG.w = FG.nx * FG.tc; FG.h = FG.ny * FG.tr;
+const GRID = `
+const ivec3 GN = ivec3(${FG.nx}, ${FG.ny}, ${FG.nz});
+const int TC = ${FG.tc}, TR = ${FG.tr};
+const float CELL = ${FG.cell};
+const vec3 BMIN = vec3(${FG.min.join(', ')});
+const vec3 BMAX = BMIN + vec3(GN) * CELL;
+// A cell to its texel in the atlas; cells past the edge clamp.
+ivec2 at(ivec3 c) { c = clamp(c, ivec3(0), GN - 1); return ivec2(c.x + (c.z % TC) * GN.x, c.y + (c.z / TC) * GN.y); }
+// A texel in the atlas to its cell.
+ivec3 cellOf(ivec2 f) { int tx = f.x / GN.x, ty = f.y / GN.y; return ivec3(f.x - tx * GN.x, f.y - ty * GN.y, tx + ty * TC); }
+// A world point to grid units; cell centres sit at i + 0.5.
+vec3 gridOf(vec3 p) { return (p - BMIN) / CELL; }
+// A trilinear read: two bilinear taps in the slices on either side.
+vec4 S3(sampler2D t, vec3 g) {
+  g = clamp(g, vec3(0.5), vec3(GN) - 0.5);
+  float z = g.z - 0.5, z0 = floor(z);
+  int a = int(z0), b = min(a + 1, GN.z - 1);
+  vec2 inv = 1.0 / vec2(GN.xy * ivec2(TC, TR));
+  vec2 ua = (g.xy + vec2(float((a % TC) * GN.x), float((a / TC) * GN.y))) * inv;
+  vec2 ub = (g.xy + vec2(float((b % TC) * GN.x), float((b / TC) * GN.y))) * inv;
+  return mix(texture(t, ua), texture(t, ub), z - z0);
+}
+`;
+// The pot is a solid in the flow: the gas runs round its belly.
+const SOLID = `
+// The belly up to the rim's top, and the three legs.
+bool solidAt(ivec3 c) {
+  vec3 p = BMIN + (vec3(c) + 0.5) * CELL;
+  if (p.y < 0.21 && length((p - vec3(0.0, BCY, 0.0)) / RO) < 1.0) return true;
+  for (int i = 0; i < 3; i++) {
+    float a = float(i) * 2.0944 + 0.5236;
+    vec3 dir = vec3(cos(a), 0.0, sin(a));
+    vec3 la = dir * 0.72 + vec3(0.0, -1.3, 0.0), lb = dir * 0.97 + vec3(0.0, BMIN.y + 0.04, 0.0);
+    vec3 pa = p - la, ba = lb - la;
+    if (length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) < 0.07) return true;
+  }
+  return false;
+}
+`;
+// The belly's measures, the same as in POT.
+const POT_DIMS = `const float BCY = -0.48;
+const vec3 RO = vec3(1.154, 1.181, 1.154);
+`;
+const SIM_HEAD = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+out vec4 o;
+`;
+// Vorticity: the curl of the velocity, and its length.
+const CURL_FS = `${SIM_HEAD}
+uniform sampler2D uVel;
+${GRID}
+vec3 V(ivec3 c) { return texelFetch(uVel, at(c), 0).xyz; }
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  vec3 vR = V(c + ivec3(1, 0, 0)), vL = V(c - ivec3(1, 0, 0)), vU = V(c + ivec3(0, 1, 0));
+  vec3 vD = V(c - ivec3(0, 1, 0)), vF = V(c + ivec3(0, 0, 1)), vB = V(c - ivec3(0, 0, 1));
+  vec3 w = vec3(vU.z - vD.z - (vF.y - vB.y), vF.x - vB.x - (vR.z - vL.z), vR.y - vL.y - (vU.x - vD.x)) / (2.0 * CELL);
+  o = vec4(w, length(w));
+}`;
+// Advects the velocity, then adds buoyancy, turbulence, confinement and the air's push.
+const VEL_FS = `${SIM_HEAD}
+uniform sampler2D uVel, uDye, uCurl;
+uniform float uDt, uTime, uBuoy, uWeight, uTurb, uVort, uDamp;
+uniform vec4 uAir, uAirV;
+uniform vec3 uWind;
+${GRID}
+${POT_DIMS}
+${SOLID}
+${SIMPLEX}
+// Curl noise: two gradients cross into a flow with no divergence.
+vec3 curlN(vec3 p) { vec3 a, b; snoise(p, a); snoise(p + vec3(31.4, 17.2, 9.7), b); return cross(a, b) * 0.4; }
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  if (solidAt(c)) { o = vec4(0.0); return; }
+  vec3 g = vec3(c) + 0.5;
+  vec3 vel = texelFetch(uVel, at(c), 0).xyz;
+  vec3 nv = S3(uVel, g - vel / CELL * uDt).xyz;
+  vec4 dye = texelFetch(uDye, at(c), 0);
+  float D = dye.r, T = dye.g, age = dye.b;
+  float H = float(GN.y) * CELL;
+  // Hot air rises; smoke weight pulls down.
+  nv.y += (T * uBuoy - D * uWeight) * H * uDt;
+  vec3 uvw = g / vec3(GN), np = uvw * vec3(1.0, float(GN.y) / float(GN.x), 1.0) * 17.0;
+  // Thermal turbulence follows heat and fades with age.
+  vec3 turb = vec3(0.0);
+  if (T > 0.02) turb += curlN(np + vec3(0.0, -age * 0.6, age * 0.13)) * uTurb * T * exp(-age * 0.1);
+  // Ambient turbulence stirs the cooled smoke.
+  if (D > 0.02) turb += curlN(np * 0.5 + vec3(0.0, uTime * 0.25, uTime * 0.06)) * uTurb * 0.2 * D;
+  nv += turb * H * uDt;
+  // Gusts: a high fire leans and tears in the wind.
+  nv += uWind * clamp(T + D * 0.5, 0.0, 1.0) * uDt;
+  nv *= max(1.0 - uDamp * uDt, 0.0);
+  // Confinement spins small curls back up into tongues.
+  vec4 wC = texelFetch(uCurl, at(c), 0);
+  vec3 eta = vec3(texelFetch(uCurl, at(c + ivec3(1, 0, 0)), 0).w - texelFetch(uCurl, at(c - ivec3(1, 0, 0)), 0).w,
+    texelFetch(uCurl, at(c + ivec3(0, 1, 0)), 0).w - texelFetch(uCurl, at(c - ivec3(0, 1, 0)), 0).w,
+    texelFetch(uCurl, at(c + ivec3(0, 0, 1)), 0).w - texelFetch(uCurl, at(c - ivec3(0, 0, 1)), 0).w);
+  nv += cross(eta / (length(eta) + 1e-5), wC.xyz) * uVort * CELL * clamp(T + D * 0.5, 0.0, 1.0) * uDt;
+  // A drag through the air blows a gust round the pointer.
+  vec3 p = BMIN + g * CELL;
+  float ad = distance(p, uAir.xyz);
+  if (ad < uAir.w) nv += uAirV.xyz * 2.5 * uDt * smoothstep(0.0, 1.0, 1.0 - ad / uAir.w);
+  // The gas slides along the belly but never into it.
+  vec3 q = p - vec3(0.0, BCY, 0.0);
+  float e = length(q / RO);
+  if (e < 1.3 && p.y < 0.21) {
+    vec3 n = normalize(q / (RO * RO));
+    // Hot gas clings to the iron and runs up it, as flames lick a pot.
+    float near = smoothstep(0.45, 0.0, (e - 1.0) * 1.15) * clamp(T, 0.0, 1.0);
+    vec3 tu = vec3(0.0, 1.0, 0.0) - n * n.y;
+    float tl = length(tu);
+    if (tl > 1e-3) nv += (tu / tl * 9.0 - n * 9.0) * near * H * 0.25 * uDt;
+    // The gas slides along the belly but never into it.
+    if (e < 1.12) nv -= n * min(dot(nv, n), 0.0);
+  }
+  // The ground holds the flow; the sides and the top let it out.
+  nv *= smoothstep(0.0, 0.08, uvw.y);
+  o = vec4(nv, 0.0);
+}`;
+const DIV_FS = `${SIM_HEAD}
+uniform sampler2D uVel, uDye;
+uniform float uExpand;
+${GRID}
+float X(ivec3 c, int k) { return texelFetch(uVel, at(c), 0)[k]; }
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  float d = X(c + ivec3(1, 0, 0), 0) - X(c - ivec3(1, 0, 0), 0) + X(c + ivec3(0, 1, 0), 1) - X(c - ivec3(0, 1, 0), 1)
+    + X(c + ivec3(0, 0, 1), 2) - X(c - ivec3(0, 0, 1), 2);
+  // Burning gas expands: heat is a source the pressure solve must push out.
+  float T = texelFetch(uDye, at(c), 0).g;
+  o = vec4(0.5 * d - T * uExpand * CELL, 0.0, 0.0, 0.0);
+}`;
+// One Jacobi sweep; a solid neighbour gives back this cell's pressure.
+const JAC_FS = `${SIM_HEAD}
+uniform sampler2D uP, uDiv;
+${GRID}
+${POT_DIMS}
+${SOLID}
+float P(ivec3 c, float pc) { return solidAt(c) ? pc : texelFetch(uP, at(c), 0).x; }
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  float pc = texelFetch(uP, at(c), 0).x;
+  float s = P(c + ivec3(1, 0, 0), pc) + P(c - ivec3(1, 0, 0), pc) + P(c + ivec3(0, 1, 0), pc)
+    + P(c - ivec3(0, 1, 0), pc) + P(c + ivec3(0, 0, 1), pc) + P(c - ivec3(0, 0, 1), pc);
+  o = vec4((s - texelFetch(uDiv, at(c), 0).x) / 6.0, 0.0, 0.0, 0.0);
+}`;
+// The pressure gradient comes off; the velocity has no divergence after.
+const PROJ_FS = `${SIM_HEAD}
+uniform sampler2D uP, uVel;
+${GRID}
+${POT_DIMS}
+${SOLID}
+float P(ivec3 c, float pc) { return solidAt(c) ? pc : texelFetch(uP, at(c), 0).x; }
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  if (solidAt(c)) { o = vec4(0.0); return; }
+  float pc = texelFetch(uP, at(c), 0).x;
+  vec3 grad = vec3(P(c + ivec3(1, 0, 0), pc) - P(c - ivec3(1, 0, 0), pc), P(c + ivec3(0, 1, 0), pc) - P(c - ivec3(0, 1, 0), pc),
+    P(c + ivec3(0, 0, 1), pc) - P(c - ivec3(0, 0, 1), pc)) * 0.5;
+  o = vec4(texelFetch(uVel, at(c), 0).xyz - grad, 0.0);
+}`;
+// Advects smoke, heat and age; smoke clears, fire cools; the coals feed the core.
+const FDYE_FS = `${SIM_HEAD}
+uniform sampler2D uVel, uDye;
+uniform float uDt, uTime, uCool, uDiss, uEmitT, uEmitD;
+uniform vec4 uBed;
+${GRID}
+${POT_DIMS}
+${SOLID}
+${SIMPLEX}
+void main() {
+  ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
+  // Solid cells keep their own heat, so the cells beside the iron never read zeros.
+  if (solidAt(c)) { vec4 d = texelFetch(uDye, at(c), 0); o = vec4(d.r * 0.995, d.g * 0.995, d.b, 0.0); return; }
+  vec3 g = vec3(c) + 0.5;
+  vec3 vel = texelFetch(uVel, at(c), 0).xyz;
+  vec3 pg = g - vel / CELL * uDt;
+  vec4 dye = S3(uDye, pg);
+  // Hot iron keeps the gas that hugs it hot, so the flames climb the belly.
+  vec3 pw = BMIN + pg * CELL;
+  float hug = 1.0 - 0.8 * smoothstep(0.3, 0.0, (length((pw - vec3(0.0, BCY, 0.0)) / RO) - 1.0) * 1.15);
+  float D = dye.r * max(1.0 - uDiss * uDt, 0.0);
+  float T = clamp(dye.g * max(1.0 - uCool * hug * uDt, 0.0), 0.0, 12.0);
+  // Age takes the nearest cell, so it never smears.
+  float age = texelFetch(uDye, at(ivec3(floor(pg))), 0).b + uDt;
+  if (D <= 0.01) age = 0.0;
+  // The coals: a bed under the middle of the pot, its heat flickering.
+  vec3 p = BMIN + g * CELL;
+  // The bed: centre xz, height above the ground and radius come from uBed.
+  float r = length(p.xz - uBed.xy), hy = p.y - BMIN.y - uBed.z;
+  if (r < uBed.w && hy > 0.0 && hy < 0.38 && (uEmitT > 0.0 || uEmitD > 0.0)) {
+    vec3 gg;
+    float fl = snoise(p * 9.0 * 0.37 + vec3(0.0, -uTime * 2.5, uTime * 0.7), gg) * 0.5 + 0.5;
+    float k = (0.15 + 0.85 * fl) * smoothstep(uBed.w, uBed.w * 0.5, r);
+    float dv = uEmitD * k, tv = uEmitT * k;
+    D += dv;
+    T = clamp(T + tv, 0.0, 12.0);
+    age = mix(age, 0.0, dv / max(D, 0.001));
+  }
+  // Smoke fades out near the box walls, so nothing piles up there.
+  vec3 uvw = g / vec3(GN), edge = min(uvw, 1.0 - uvw);
+  float wall = smoothstep(0.0, 0.16, min(edge.x, min(edge.z, 1.0 - uvw.y)));
+  o = vec4(D * wall, T * wall, age, 0.0);
+}`;
+
 /* ---------- GLSL: the pot ---------- */
 // World units, y up; the soup rests at y = 0.
 // The belly is an ellipsoid; a torus rolls the rim.
@@ -230,7 +530,7 @@ const float BCY = -0.48;
 const vec3 RO = vec3(1.154, 1.181, 1.154);
 const vec3 RI = vec3(1.104, 1.131, 1.104);
 const float RY = 0.13, RR = 1.01, RT = 0.08;
-const float GROUND = -1.86;
+const float GROUND = -2.36;
 // Ray against an ellipsoid: near and far distance, or -1.
 vec2 iEll(vec3 ro, vec3 rd, vec3 c, vec3 r) {
   vec3 o = (ro - c) / r, d = rd / r;
@@ -440,7 +740,7 @@ const DYE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uDye, uAux, uVel;
-uniform float uDt, uExt, uTime, uConv, uRelax;
+uniform float uDt, uExt, uTime, uConv, uRelax, uStir;
 uniform vec4 uMean;
 uniform vec4 uPlume[4];
 uniform int uNE;
@@ -457,7 +757,26 @@ vec2 flow(vec2 p) {
   }
   vec2 q = p * 2.2 + vec2(uTime * 0.05, -uTime * 0.04);
   float e = 0.05, n0 = noise2(q), nx = noise2(q + vec2(e, 0.0)), ny = noise2(q + vec2(0.0, e));
-  return v + uConv * 0.05 * vec2(ny - n0, n0 - nx) / e;
+  v += uConv * 0.05 * vec2(ny - n0, n0 - nx) / e;
+  // A fine curl that wakes with the stir: it pulls colours into thin threads.
+  vec2 r = p * 7.0 + vec2(-uTime * 0.11, uTime * 0.09);
+  float m0 = noise2(r), mx = noise2(r + vec2(e, 0.0)), my = noise2(r + vec2(0.0, e));
+  return v + (0.012 + 0.05 * uStir) * vec2(my - m0, m0 - mx) / e;
+}
+// A sharp read: Catmull-Rom over the texels, clamped to the four nearest,
+// so the colours keep their edges instead of blurring each frame.
+vec4 sharp(sampler2D t, vec2 uv) {
+  vec2 sz = vec2(textureSize(t, 0)), pos = uv * sz, c = floor(pos - 0.5) + 0.5, f = pos - c;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, o12 = w2 / w12;
+  vec2 t0 = (c - 1.0) / sz, t3 = (c + 2.0) / sz, t12 = (c + o12) / sz;
+  vec4 r = texture(t, vec2(t12.x, t0.y)) * w12.x * w0.y + texture(t, vec2(t0.x, t12.y)) * w0.x * w12.y
+    + texture(t, t12) * w12.x * w12.y + texture(t, vec2(t3.x, t12.y)) * w3.x * w12.y + texture(t, vec2(t12.x, t3.y)) * w12.x * w3.y;
+  r /= w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+  ivec2 i = ivec2(c - 0.5);
+  vec4 a = texelFetch(t, i, 0), b = texelFetch(t, i + ivec2(1, 0), 0), d = texelFetch(t, i + ivec2(0, 1), 0), e = texelFetch(t, i + ivec2(1, 1), 0);
+  return clamp(r, min(min(a, b), min(d, e)), max(max(a, b), max(d, e)));
 }
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
@@ -467,22 +786,35 @@ void main() {
   float l = length(s);
   if (l > 0.995) s *= 0.995 / l;
   vec2 su = s / uExt * 0.5 + 0.5;
-  vec4 d = texture(uDye, su), a = texture(uAux, su);
-  // Upwelling plumes bring up the mixed pot from below.
+  vec4 d = sharp(uDye, su), a = texture(uAux, su);
+  // Upwelling plumes stir in the soup round them, not the pot's average,
+  // so neighbouring colours fold into each other; thick soup holds its streaks.
   float up = 0.0;
   for (int i = 0; i < 4; i++) { vec2 dd = p - uPlume[i].xy; up += exp(-dot(dd, dd) / (uPlume[i].w * uPlume[i].w * 0.4)); }
-  float k = clamp(uRelax + up * uConv * 0.5 * uDt, 0.0, 1.0);
-  d = mix(d, uMean, k);
+  float T = clamp((d.a - 1.0) * 0.3, 0.0, 1.0);
+  float k = clamp(up * uConv * 0.12 * uDt * mix(1.0, 0.4, T), 0.0, 1.0);
+  vec2 o = vec2(0.09 / uExt * 0.5, 0.0);
+  vec4 near = (texture(uDye, su + o) + texture(uDye, su - o) + texture(uDye, su + o.yx) + texture(uDye, su - o.yx)) * 0.25;
+  d = mix(d, near, k);
+  d = mix(d, uMean, uRelax);
   a.g *= 1.0 - 1.5 * k;
   a.r *= 1.0 - 0.3 * k;
+  // Skin: a thin film that sets on calm, thick soup; the stir and the boil tear it.
+  a.b += uDt * 0.04 * T * (1.0 - uStir) * (1.0 - clamp(up * uConv, 0.0, 1.0));
+  a.b *= max(1.0 - uDt * (0.9 * uStir + 1.2 * up * uConv), 0.0);
+  a.b = min(a.b, 1.0);
   for (int i = 0; i < 16; i++) {
     if (i >= uNE) break;
     vec4 e0 = uE[i * 2], e1 = uE[i * 2 + 1];
-    vec2 dd = p - e0.xy;
+    // Tint lands as a ribbon, drawn out along the stir.
+    vec2 dd = p - e0.xy, sv = texture(uVel, e0.xy / uExt * 0.5 + 0.5).xy;
+    float sl = length(sv);
+    if (sl > 1e-3) { vec2 ax = sv / sl; float al = dot(dd, ax); dd = (dd - ax * al) + ax * al / (1.0 + 2.5 * min(sl, 1.0)); }
     float w = e0.w * exp(-dot(dd, dd) / (e0.z * e0.z));
     if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
     else if (e1.w < 1.5) a.g += w;
-    else a.r += w;
+    else if (e1.w < 2.5) a.r += w;
+    else a.b += w;
   }
   oDye = d;
   oAux = max(a, 0.0);
@@ -523,6 +855,9 @@ uniform vec3 uCam, uRight, uUp, uFwd;
 uniform float uFocal;
 uniform vec2 uPP;
 uniform float uTime, uFire, uFlick, uLevel, uSteam, uSwirl, uSteps;
+uniform float uFrame, uFSteps, uFI, uSmoke;
+uniform sampler2D uFD;
+uniform vec3 uBedP;
 uniform vec3 uFireCol, uGlowCol;
 uniform int uNP;
 uniform vec4 uPuff[${NP}];
@@ -532,41 +867,40 @@ layout(location = 0) out vec4 oBack;
 layout(location = 1) out vec4 oFront;
 ${COMMON}
 ${POT}
-// Flame colour by heat: deep red, orange, yellow, then white.
-vec3 fireRamp(float x) {
-  vec3 c = mix(vec3(0.45, 0.04, 0.01), vec3(1.0, 0.3, 0.04), smoothstep(0.05, 0.45, x));
-  c = mix(c, vec3(1.0, 0.62, 0.2), smoothstep(0.45, 0.85, x));
-  c = mix(c, vec3(1.0, 0.9, 0.7), smoothstep(0.9, 1.3, x));
-  return c * (0.25 + 2.4 * x * x);
+${SIMPLEX}
+// The Fire toy's wood ramp: end, mid, then start colour.
+vec3 rampS, rampM, rampE, smokeTint;
+vec3 woodRamp(float t) {
+  vec3 c = rampE * smoothstep(0.05, 0.35, t);
+  c = mix(c, rampM, smoothstep(0.35, 0.65, t));
+  return mix(c, rampS, smoothstep(0.65, 1.0, t));
 }
-// Flame height in world units.
-float flameH() { return 0.3 + 1.1 * uFire; }
-// One tongue of flame on a card: x across, -1 to 1; y up, 0 to 1.
-float tongue(vec2 uv, float seed) {
-  if (uv.y < 0.0 || uv.y > 1.3 || abs(uv.x) > 1.3) return 0.0;
-  float y = uv.y;
-  float n = fbm2(vec2(uv.x * 1.3 + seed, y * 1.7 - uTime * 2.1));
-  float n2 = fbm2(vec2(uv.x * 5.0 - seed, y * 7.0 - uTime * 5.0));
-  // A teardrop that sways as it rises: wide at the root, a point at the tip.
-  float x = uv.x - (n - 0.5) * 1.4 * y * y;
-  float w = 0.62 * pow(max(1.0 - y, 0.0), 0.75) * (0.65 + 0.6 * n);
-  float d = 1.0 - abs(x) / max(w, 0.02);
-  // Fine noise frays the edge; the core stays bright.
-  d += (n2 - 0.5) * 0.9 * (0.25 + y);
-  return pow(clamp(d, 0.0, 1.0), 0.8) * pow(max(1.0 - y, 0.0), 0.35) * smoothstep(0.0, 0.1, y);
+${GRID}
+// One read of Fire's volume: smoke, heat and age, with Fire's fine detail.
+vec3 fireAt(vec3 p) {
+  vec4 d = S3(uFD, gridOf(p));
+  float D = d.r;
+  if (D > 0.01 || d.g > 0.01) {
+    vec3 g;
+    D *= snoise(p * 15.0 - vec3(0.0, d.b * 2.2, 0.0), g) * 0.35 + 0.85;
+  }
+  return vec3(max(D, 0.0), d.g, d.b);
 }
-// A log: a capsule test, returning the hit distance and the place along it.
-vec2 iLog(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
-  vec3 ba = pb - pa, oa = ro - pa;
-  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
-  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - r * r * baba;
-  float h = b * b - a * c;
-  if (h < 0.0) return vec2(-1.0);
-  float t = (-b - sqrt(h)) / a, y = baoa + t * bard;
-  if (y > 0.0 && y < baba) return vec2(t, y / baba);
-  vec3 oc = y <= 0.0 ? oa : ro - pb;
-  b = dot(rd, oc); c = dot(oc, oc) - r * r; h = b * b - c;
-  return h > 0.0 ? vec2(-b - sqrt(h), y <= 0.0 ? 0.0 : 1.0) : vec2(-1.0);
+// Flagstones: the height, and the stone's id; the joints sit at 0.
+vec3 stones(vec2 p) {
+  p *= 1.7;
+  vec2 c = floor(p), f = fract(p), id = c;
+  float d1 = 8.0, d2 = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), o = vec2(hash12(c + g), hash12(c + g + 17.3)) * 0.8 + 0.1;
+    vec2 q = g + o - f;
+    float d = dot(q, q);
+    if (d < d1) { d2 = d1; d1 = d; id = c + g; } else if (d < d2) d2 = d;
+  }
+  float edge = sqrt(d2) - sqrt(d1);
+  // Rounded stone edges, a gentle dome, and a fine pitted grain.
+  float h = smoothstep(0.0, 0.22, edge) * (0.85 + 0.15 * noise2(id * 3.1)) + 0.08 * noise2(p * 9.0);
+  return vec3(h * 0.25, id);
 }
 float steamDens(vec3 p) {
   float hy = p.y - uLevel;
@@ -596,92 +930,124 @@ float steamDens(vec3 p) {
   return d;
 }
 // Light in the steam: the hot soup below, the fire past the rim, the night.
-vec3 steamLight(vec3 p) {
+// The lamp's direction, the same as the scene's key light.
+const vec3 Ldir = vec3(-0.1196, 0.6781, -0.7180);
+// Steam density alone, cheap, for the self-shadow tap.
+float steamCheap(vec3 p) {
+  float hy = p.y - uLevel;
+  if (hy < 0.0) return 0.0;
+  float r = length(p.xz), R = 0.8 + 0.22 * hy;
+  vec3 q = vec3(p.x, hy, p.z) * 1.35 + vec3(0.0, -uTime * 0.42, 0.0);
+  return smoothstep(0.5, 0.8, noise3(q)) * uSteam * exp(-hy * 1.6) * (1.0 - smoothstep(R * 0.45, R, r)) * 2.6;
+}
+// lt is the lamp's share that reaches this point through the steam.
+vec3 steamLight(vec3 p, float lt) {
   float hy = max(p.y - uLevel, 0.0), r = length(p.xz);
   vec3 L = (uGlowCol * 0.7 + vec3(0.07, 0.065, 0.06)) * exp(-hy * 1.3);
   L += uFireCol * uFlick * 0.9 * smoothstep(0.6, 1.4, r) * exp(-hy * 0.9);
-  // The lamp above catches the tops of the clouds.
-  L += vec3(0.16, 0.145, 0.13) * smoothstep(0.0, 1.2, hy);
+  // The lamp above catches the tops of the clouds, less where steam shades them.
+  L += vec3(0.2, 0.18, 0.16) * smoothstep(0.0, 1.2, hy) * lt;
   return L + vec3(0.05, 0.05, 0.06);
 }
 void main() {
   vec2 fc = gl_FragCoord.xy;
   vec3 ro = uCam, rd = normalize(uFwd + uRight * ((fc.x - uPP.x) / uFocal) + uUp * ((fc.y - uPP.y) / uFocal));
-  // The night, warmer round the fire.
-  vec3 back = mix(vec3(0.014, 0.01, 0.016), vec3(0.004, 0.005, 0.011), smoothstep(-0.7, 0.1, rd.y));
-  vec3 fp = vec3(0.0, GROUND + 0.3, 0.3), oc = fp - ro;
-  float dl = length(oc - rd * dot(oc, rd));
-  back += uFireCol * uFlick * (0.05 / (1.0 + dl * dl * 1.4) + 0.12 * exp(-dl * dl * 2.0));
-  // The ground: dark ash, lit by the fire, with a bed of coals under the pot.
+  // The dark round the hearth, with a little firelit haze.
+  vec3 haze = uFireCol * uFlick * 0.012 + vec3(0.006, 0.005, 0.006);
+  vec3 back = haze * (0.4 + 0.6 * smoothstep(0.3, -0.6, rd.y));
   float tg = (GROUND - ro.y) / rd.y, tSolid = 1e9;
   if (tg > 0.0) {
     vec3 P = ro + rd * tg;
     float r = length(P.xz);
-    vec3 g = vec3(0.016, 0.013, 0.012) * (0.55 + 0.6 * noise2(P.xz * 3.0));
-    g += uFireCol * uFlick * (0.012 + 0.09 * exp(-r * r * 0.45));
-    float ember = fbm2(P.xz * 6.0 + vec2(0.0, uTime * 0.15));
-    float hot = smoothstep(0.5, 0.82, ember) * smoothstep(1.5, 0.7, r) * (0.3 + 0.9 * uFire);
-    back = g + fireRamp(hot * 0.8) * hot * 0.7;
+    // Flagstones: one height field; a bump normal carries all the texture.
+    float e = 0.012;
+    vec3 st = stones(P.xz);
+    float hx = stones(P.xz + vec2(e, 0.0)).x, hz = stones(P.xz + vec2(0.0, e)).x;
+    vec3 n = normalize(vec3(-(hx - st.x) / e * 0.06, 1.0, -(hz - st.x) / e * 0.06));
+    // Each stone has its own grey; ash fills the joints; soot rings the fire.
+    vec3 alb = vec3(0.07, 0.064, 0.058) * (0.7 + 0.5 * hash12(st.yz));
+    alb = mix(vec3(0.03, 0.027, 0.025), alb, smoothstep(0.02, 0.12, st.x));
+    alb *= mix(0.25, 1.0, smoothstep(0.5, 1.9, r));
+    // The fire's root lights the floor; the lamp gives a faint fill.
+    vec3 Lf = uBedP + vec3(0.0, 0.45, 0.0) - P;
+    float d2 = dot(Lf, Lf);
+    Lf *= inversesqrt(d2);
+    float nl = max(dot(n, Lf), 0.0);
+    vec3 v = -rd, hh = normalize(Lf + v);
+    vec3 fire = uFireCol * uFlick * 3.2 / (1.0 + d2 * 0.7);
+    vec3 g = alb * (fire * nl + vec3(0.05, 0.048, 0.046) * max(dot(n, Ldir), 0.0) + 0.012);
+    // Worn stone tops shine a little in the firelight.
+    g += fire * pow(max(dot(n, hh), 0.0), 24.0) * 0.05 * smoothstep(0.08, 0.2, st.x);
+    // Coals glow only where the solver's heat sits on the ground.
+    float Tg = S3(uFD, gridOf(P + vec3(0.0, 0.06, 0.0))).g;
+    g += woodRamp(clamp(Tg * 0.4, 0.0, 1.0)) * min(Tg, 3.0) * 0.07 * smoothstep(0.0, 0.1, st.x);
+    // Far stones fade into the haze.
+    back = mix(g, haze, 1.0 - exp(-max(r - 2.2, 0.0) * 0.35));
     tSolid = tg;
   }
-  // Four logs meet under the pot; their inner ends burn.
-  for (int i = 0; i < 4; i++) {
-    float a = 0.42 + float(i) * 1.5708;
-    vec3 dir = vec3(cos(a), 0.0, sin(a));
-    vec3 pa = dir * 0.42 + vec3(0.0, GROUND + 0.1, 0.0), pb = dir * 2.25 + vec3(0.0, GROUND + 0.13, 0.0);
-    vec2 hl = iLog(ro, rd, pa, pb, 0.115);
-    if (hl.x > 0.0 && hl.x < tSolid) {
-      tSolid = hl.x;
-      vec3 P = ro + rd * hl.x;
-      float s = hl.y, around = atan(P.y - GROUND - 0.1, dot(P.xz, vec2(-dir.z, dir.x)));
-      // Bark: dark rings and long cracks; the burnt end glows in its cracks.
-      vec3 wood = vec3(0.02, 0.014, 0.01) * (0.6 + 0.6 * noise2(vec2(s * 30.0, around * 2.0)));
-      float lit = 1.0 / (1.0 + dot(P.xz, P.xz) * 1.2);
-      wood += uFireCol * uFlick * 0.08 * lit * (0.6 + 0.4 * sin(around));
-      float crack = smoothstep(0.62, 0.8, noise2(vec2(s * 26.0, around * 3.0) + float(i) * 7.0));
-      float burn = smoothstep(0.45, 0.0, s) * (0.4 + uFire);
-      back = wood + fireRamp(0.45 + 0.3 * burn) * crack * burn * 0.3 + fireRamp(0.3) * burn * 0.06;
+  // The pot's front, or the soup inside the rim, ends every march.
+  vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
+  float tEnd = 1e9;
+  if (eo.x > 0.0) {
+    float tO = (RY - ro.y) / rd.y;
+    vec3 pO = ro + rd * tO;
+    tEnd = dot(pO.xz, pO.xz) < RR * RR ? (uLevel - ro.y) / rd.y : eo.x;
+    // Through the opening, the far inner wall ends the march above the soup.
+    if (dot(pO.xz, pO.xz) < RR * RR) { float tw = iEll(ro, rd, vec3(0.0, BCY, 0.0), RI).y; if (tw > 0.0) tEnd = min(tEnd, tw); }
+  }
+  // The rolled rim is solid too, so no flame shows through the lip.
+  float tRim = traceRim(ro, rd, min(tEnd, 1e3));
+  if (tRim > 0.0) tEnd = min(tEnd, tRim);
+  // A frame-stepped dither hides the step bands; the upscale smooths it.
+  float jit = fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715))) + uFrame * 0.618034);
+  // Flames and smoke: march the fire's volume, Fire toy maths on an analytic field.
+  rampS = lch(0.93, 0.11, 95.0); rampM = lch(0.72, 0.19, 52.0); rampE = lch(0.6, 0.24, 30.0); smokeTint = lch(0.8, 0.03, 50.0);
+  vec3 fl = vec3(0.0);
+  float Tf = 1.0;
+  // Fire's volume: march the box, emission by heat, smoke lit by the lamp.
+  vec3 ib = (BMIN - ro) / rd, ob = (BMAX - ro) / rd;
+  vec3 tn = min(ib, ob), tx = max(ib, ob);
+  float t0 = max(max(max(tn.x, tn.y), tn.z), 0.0), t1 = min(min(min(tx.x, tx.y), tx.z), min(tSolid, tEnd));
+  if (t1 > t0) {
+    int N = int(uFSteps);
+    float dt = (t1 - t0) / float(N);
+    float t = t0 + dt * jit;
+    // Fire's emission power: 6 minus the glow spread, at Temperature 1.
+    float pw = 6.0 - 5.4;
+    for (int i = 0; i < 40; i++) {
+      if (i >= N) break;
+      vec3 p = ro + rd * t;
+      vec3 f = fireAt(p);
+      if (f.x > 0.003 || f.y > 0.003) {
+        float Tc = clamp(f.y, 0.0, 1.0);
+        // A soft knee holds the core back, so thin tongues show beside it.
+        vec3 e = woodRamp(Tc) * pow(max(f.y, 0.0), pw) * (f.x + 0.15) * uFI / (1.0 + 0.1 * f.y * f.y);
+        // Smoke: two taps toward the lamp, then Beer, multi-scatter and powder.
+        float sum = f.x > 0.05 ? S3(uFD, gridOf(p + Ldir * 0.12)).r + S3(uFD, gridOf(p + Ldir * 0.36)).r : 0.0;
+        float tau = sum * 0.24 * 2.0;
+        float beer = exp(-tau), ms = exp(-0.25 * tau) * 0.5;
+        float lt = clamp(mix(beer, beer + ms, 1.0) * mix(1.0, 1.0 - exp(-2.0 * tau), 0.59) + 0.5, 0.0, 1.0);
+        vec3 sc = smokeTint * f.x * (vec3(0.16, 0.145, 0.13) * lt + uFireCol * uFlick * 0.25 * exp(-(p.y - GROUND) * 0.8));
+        fl += Tf * (e + sc * uSmoke) * dt;
+        Tf *= exp(-f.x * dt * 0.6 * uSmoke);
+      }
+      t += dt;
     }
   }
-  // Flames: tongues on cards round the foot of the pot, each card facing the eye.
-  // A card before the belly draws in front; one behind draws behind the pot.
-  vec3 fl = vec3(0.0), flb = vec3(0.0);
-  float H = flameH();
-  vec2 be = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
-  float tFront = be.x > 0.0 ? be.x : 1e9;
-  if (uFire > 0.01) for (int i = 0; i < 14; i++) {
-    float fi = float(i), h1 = hash12(vec2(fi, 3.7)), h2 = hash12(vec2(fi, 8.1)), h3 = hash12(vec2(fi, 1.3));
-    float a = fi / 14.0 * 6.2832 + h1 * 0.4;
-    vec3 c = vec3(cos(a) * (0.95 + 0.3 * h2), GROUND + 0.05, sin(a) * (0.95 + 0.3 * h2));
-    float tc = dot(c - ro, uFwd) / dot(rd, uFwd);
-    if (tc <= 0.0 || tc > tSolid + 0.5) continue;
-    vec3 q = ro + rd * tc - c;
-    float w = 0.24 + 0.16 * h3, hh = H * (0.7 + 0.5 * h1);
-    float f = tongue(vec2(dot(q, uRight) / w, dot(q, uUp) / hh), fi * 7.3);
-    if (f <= 0.0) continue;
-    vec3 e = fireRamp(f * (0.75 + 0.35 * h2)) * f * 0.5;
-    if (tc < tFront) fl += e; else flb += e;
-  }
-  back += flb;
-  // Sparks rise off the fire.
+  // Sparks rise off the fire: Fire's sprite falloff and its wood spark colour.
+  vec3 sparkC = lch(0.82, 0.17, 58.0);
   for (int i = 0; i < ${NS}; i++) {
     if (i >= uNS) break;
     vec4 s = uSpark[i * 2], s2 = uSpark[i * 2 + 1];
     vec2 pa = fc - s.xy, ba = s.zw;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-3), 0.0, 1.0);
-    float d = length(pa - ba * h);
-    fl += vec3(1.0, 0.5, 0.14) * s2.x * exp(-d * d / (s2.y * s2.y)) * (1.0 - 0.7 * h);
+    float d = length(pa - ba * h) / s2.y;
+    float f = max(1.0 - d, 0.0);
+    fl += sparkC * (s2.z * 7.0 + 1.0) * s2.x * 0.3 * f * f * (1.0 - 0.7 * h);
   }
   // Steam: march the column over the soup, up to the pot.
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  float tEnd = 1e9;
-  vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
-  if (eo.x > 0.0) {
-    float tO = (RY - ro.y) / rd.y;
-    vec3 pO = ro + rd * tO;
-    tEnd = dot(pO.xz, pO.xz) < RR * RR ? (uLevel - ro.y) / rd.y : eo.x;
-  }
   vec2 tc = iCyl(ro, rd, 2.0);
   if (tc.y > 0.0 && uSteam > 0.001) {
     float t0 = max(max(tc.x, 0.0), (uLevel + 2.8 - ro.y) / rd.y), t1 = min(min(tc.y, tEnd), (uLevel - 0.02 - ro.y) / rd.y);
@@ -689,14 +1055,21 @@ void main() {
       int N = int(uSteps);
       float dt = (t1 - t0) / float(N);
       // A soft per-pixel offset hides the step bands; the upscale smooths it.
-      float t = t0 + dt * (0.5 + 0.6 * (fract(52.9829189 * fract(dot(fc, vec2(0.06711056, 0.00583715)))) - 0.5));
+      float t = t0 + dt * jit;
       for (int i = 0; i < 16; i++) {
         if (i >= N) break;
         vec3 p = ro + rd * t;
         float d = steamDens(p);
         if (d > 0.002) {
+          // Fire's fine detail: simplex wisps that rise with the steam.
+          vec3 g;
+          d *= snoise(p * 5.5 - vec3(0.0, uTime * 1.1, 0.0), g) * 0.35 + 0.85;
+          // Fire's smoke light: one tap toward the lamp, then Beer, multi-scatter and powder.
+          float tau = steamCheap(p + Ldir * 0.3) * 0.6 * 2.0;
+          float beer = exp(-tau), ms = exp(-0.25 * tau) * 0.5;
+          float lt = clamp(mix(beer, beer + ms, 0.6) * mix(1.0, 1.0 - exp(-2.0 * tau), 0.59) + 0.5, 0.0, 1.0);
           float a = 1.0 - exp(-d * dt * 2.4);
-          acc += T * a * steamLight(p);
+          acc += T * a * steamLight(p, lt) * mix(vec3(1.0), smokeTint, 0.5);
           T *= 1.0 - a;
         }
         t += dt;
@@ -704,7 +1077,7 @@ void main() {
     }
   }
   oBack = vec4(back, 1.0);
-  oFront = vec4(acc + fl * T, 1.0 - T);
+  oFront = vec4(acc + fl * T, 1.0 - T * Tf);
 }`;
 
 /* ---------- GLSL: the scene ---------- */
@@ -717,18 +1090,22 @@ uniform float uFocal;
 uniform vec2 uPP, uRes;
 uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
-uniform sampler2D uDye, uAux, uRip, uBack, uFront;
+uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD;
+uniform vec3 uBedP;
 uniform int uNB;
 uniform vec4 uB[${NB * 3}];
 uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
 uniform vec4 uDrop[${ND}];
+// A drop's own colour, linear; alpha 0 takes the soup's colour.
+uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
 uniform int uMarch;
 out vec4 o;
 ${COMMON}
 ${POT}
+${GRID}
 ${SDF}
 /* the soup surface */
 vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
@@ -795,32 +1172,101 @@ vec3 litSurf(vec3 n, vec3 v, vec3 alb, float rough, float f0) {
   float Fv = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
   return col + env(reflect(-v, n), rough) * Fv;
 }
-// Firelight from below, for the outside of the pot.
-vec3 fireOn(vec3 p, vec3 n, vec3 v, vec3 alb) {
-  vec3 fp = vec3(p.x * 0.4, GROUND - 0.2, p.z * 0.4 + 0.15);
-  vec3 L = fp - p;
-  float dist = length(L);
-  L /= dist;
-  // The flames are a wide source, so the light never peaks at one point.
-  dist = max(dist, 0.7);
-  vec3 fl = uFireCol * uFlick * 1.4 / (1.0 + dist * dist * 0.45);
-  float wrap = max(dot(n, L) * 0.75 + 0.25, 0.0);
-  vec3 h = normalize(L + v);
-  float graze = 0.25 + 0.75 * pow(1.0 - max(dot(n, v), 0.0), 2.0);
-  // The glint fades where the iron faces straight down, so the belly has no hot point.
-  return alb * fl * wrap * 5.0 + fl * pow(max(dot(n, h), 0.0), 20.0) * 0.16 * graze * smoothstep(-0.99, -0.8, n.y);
+// GGX with Smith-Schlick shadowing and Schlick Fresnel; the result includes n.l.
+vec3 ggx(vec3 n, vec3 v, vec3 l, float rough, vec3 f0) {
+  vec3 h = normalize(l + v);
+  float nl = max(dot(n, l), 0.0), nv = max(dot(n, v), 1e-3), nh = max(dot(n, h), 0.0), vh = max(dot(v, h), 0.0);
+  float a = max(rough * rough, 0.002), a2 = a * a, d = nh * nh * (a2 - 1.0) + 1.0;
+  float k = (rough + 1.0) * (rough + 1.0) / 8.0;
+  float G = nl / (nl * (1.0 - k) + k) * nv / (nv * (1.0 - k) + k);
+  return a2 / (PI * d * d) * G * (f0 + (1.0 - f0) * pow(1.0 - vh, 5.0)) / (4.0 * nv);
 }
-
-/* the pot */
-vec3 shadeIron(vec3 p, vec3 n, vec3 v, float inside) {
+// The split-sum lookup, fitted (Karis): scale and bias on f0.
+vec3 envBRDF(vec3 f0, float rough, float nv) {
+  vec4 r = rough * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
+  float a = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+  vec2 ab = vec2(-1.04, 1.04) * a + r.zw;
+  return f0 * ab.x + ab.y;
+}
+// Lamp, sky and reflections on a metal-rough surface.
+vec3 litPBR(vec3 n, vec3 v, vec3 alb, float rough, vec3 f0, float metal) {
+  float nl = max(dot(n, uKeyDir), 0.0), nv = max(dot(n, v), 1e-3);
+  vec3 col = alb * (1.0 - metal) * (uKeyCol * nl + skyAmb(n) * 3.0);
+  col += uKeyCol * ggx(n, v, uKeyDir, rough, f0);
+  return col + env(reflect(-v, n), rough) * envBRDF(f0, rough, nv);
+}
+// Hammered iron: dimples on cells that wrap round the pot, and a casting grain.
+// part: 0 belly, 1 rim, 2 inner wall, 3 leg.
+float ironH(vec2 uv, float N) {
+  vec2 c = floor(uv), f = fract(uv);
+  float d1 = 9.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), cc = vec2(mod(c.x + g.x, N), c.y + g.y);
+    vec2 r = g + vec2(hash12(cc), hash12(cc + 19.7)) * 0.7 + 0.15 - f;
+    d1 = min(d1, dot(r, r));
+  }
+  float dim = 1.0 - smoothstep(0.0, 0.7, sqrt(d1));
+  return -dim * dim + 0.18 * noise2(uv * vec2(3.0, 5.0));
+}
+// The bumped normal, the height and the surface coordinates.
+vec3 ironBump(vec3 p, vec3 n, int part, out float hgt, out vec2 uv) {
+  float N = part == 1 ? 64.0 : 48.0;
+  uv = vec2(atan(p.z, p.x) / 6.2832 * N, p.y * (part == 1 ? 24.0 : 7.0));
+  if (part == 3) uv = vec2(p.x * 9.0 + p.z * 9.0, p.y * 9.0);
+  float e = 0.05;
+  hgt = ironH(uv, N);
+  float hu = ironH(uv + vec2(e, 0.0), N), hv = ironH(uv + vec2(0.0, e), N);
+  vec3 T = normalize(vec3(-p.z, 0.0, p.x) + 1e-5), B = normalize(vec3(0.0, 1.0, 0.0) - n * n.y + 1e-5);
+  // Dimples show on the belly and wall; the rim and legs keep a light grain.
+  float k = part == 1 ? 0.02 : part == 3 ? 0.015 : 0.04;
+  return normalize(n - (T * (hu - hgt) + B * (hv - hgt)) / e * k);
+}
+// Firelight from below, for the outside of the pot.
+vec3 fireOn(vec3 p, vec3 n, vec3 v, vec3 alb, float rough, vec3 f0) {
+  // The fire's root on the coals: a hot, wide source under the middle.
+  vec3 fp = uBedP + vec3(0.0, 0.55, 0.0);
+  vec3 L = fp - p;
+  float dist = max(length(L), 0.6);
+  L = normalize(L);
+  vec3 fl = uFireCol * uFlick * 2.2 / (1.0 + dist * dist * 0.35);
+  float wrap = max(dot(n, L) * 0.7 + 0.3, 0.0);
+  // The flames themselves: the solver's heat just off the iron lights it.
+  float Tn = S3(uFD, gridOf(p + n * 0.1)).g;
+  vec3 hot = mix(lch(0.6, 0.24, 30.0), lch(0.93, 0.11, 95.0), smoothstep(0.3, 2.0, Tn));
+  vec3 sheet = hot * min(Tn, 4.0) * 0.9;
+  vec3 col = alb * (fl * wrap + sheet) * 5.0;
+  // The flames are big sources: a wide lobe, so the glint never pins to a point.
+  col += (fl + sheet * 0.7) * ggx(n, v, L, max(rough, 0.35), f0) * 0.6;
+  col += sheet * envBRDF(f0, max(rough, 0.3), max(dot(n, v), 1e-3)) * 0.35;
+  // Hot iron: the foot glows a dull red over the core.
+  float foot = BCY - RO.y, onBelly = step(length((p - vec3(0.0, BCY, 0.0)) / RO), 1.02);
+  col += lch(0.42, 0.17, 32.0) * smoothstep(foot + 0.45, foot, p.y) * uFire * uFire * 0.35 * onBelly;
+  return col;
+}
+vec3 shadeIron(vec3 p, vec3 n, vec3 v, float inside, int part) {
+  float hgt;
+  vec2 uv;
+  n = ironBump(p, n, part, hgt, uv);
+  // Seasoned iron: a dark dielectric skin of baked oil and soot.
   float soot = fbm2(p.xz * 3.0 + p.y * 2.3);
   vec3 alb = vec3(0.022, 0.021, 0.024) * (0.65 + 0.7 * soot);
-  vec3 col = litSurf(n, v, alb, 0.38 + 0.22 * soot, 0.05);
-  if (inside < 0.5) col += fireOn(p, n, v, alb);
+  // Roughness: soot is dull, grease runs down from the rim in smoother streaks.
+  float streak = smoothstep(0.55, 0.85, noise2(vec2(atan(p.z, p.x) * 9.0, p.y * 0.8)));
+  float rough = clamp(0.42 + 0.25 * soot - 0.18 * streak - 0.08 * hgt, 0.18, 0.85);
+  // Bare metal where hands and the spoon rub: the rim's crown, the high spots up the belly.
+  float worn = 0.0;
+  if (part == 1) worn = smoothstep(0.5, 0.9, n.y) * smoothstep(0.55, 0.8, noise2(uv * 0.35)) * 0.7;
+  if (part == 0) worn = smoothstep(BCY + 0.35, BCY + 0.95, p.y) * smoothstep(-0.12, 0.05, hgt) * smoothstep(0.55, 0.8, noise2(uv * 0.2)) * 0.6;
+  if (part == 3) rough = clamp(rough + 0.15, 0.2, 0.9);
+  // Worn cast iron is a dull grey metal, never a mirror.
+  vec3 f0 = mix(vec3(0.04), vec3(0.2, 0.2, 0.21), worn);
+  rough = mix(rough, 0.34, worn);
+  vec3 col = litPBR(n, v, alb, rough, f0, worn);
+  if (inside < 0.5) col += fireOn(p, n, v, alb * (1.0 - worn), rough, f0);
   return col;
 }
 vec3 shadeWall(vec3 p, vec3 n, vec3 v) {
-  vec3 col = shadeIron(p, n, v, 1.0);
+  vec3 col = shadeIron(p, n, v, 1.0, 2);
   // The soup leaves a wet tide line on the iron.
   float above = p.y - (uLevel + dipAt(1.0));
   vec3 soup = soupCol(normalize(p.xz) * uRS * 0.97);
@@ -855,9 +1301,19 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
   // Thick soup shows its swirls as low ridges.
   float e2 = 1.5 / 512.0;
-  float wx = texture(uDye, uv + vec2(e2, 0.0)).a - texture(uDye, uv - vec2(e2, 0.0)).a;
-  float wz = texture(uDye, uv + vec2(0.0, e2)).a - texture(uDye, uv - vec2(0.0, e2)).a;
-  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T);
+  vec4 dxp = texture(uDye, uv + vec2(e2, 0.0)), dxm = texture(uDye, uv - vec2(e2, 0.0));
+  vec4 dzp = texture(uDye, uv + vec2(0.0, e2)), dzm = texture(uDye, uv - vec2(0.0, e2));
+  float wx = dxp.a - dxm.a, wz = dzp.a - dzm.a;
+  // Where two colours meet, the seam stands up a little: marbling, not a flat wash.
+  float lx = dxp.r / max(dxp.a, 1e-3) - dxm.r / max(dxm.a, 1e-3), lz = dzp.r / max(dzp.a, 1e-3) - dzm.r / max(dzm.a, 1e-3);
+  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T - vec3(lx, 0.0, lz) * (0.05 + 0.1 * T));
+  // The skin wrinkles as the soup under it moves.
+  float skin = smoothstep(0.15, 0.6, ax.b);
+  if (skin > 0.01) {
+    vec2 wq = p.xz * 38.0;
+    float w0 = noise2(wq), wxk = noise2(wq + vec2(0.3, 0.0)) - w0, wzk = noise2(wq + vec2(0.0, 0.3)) - w0;
+    n = normalize(n - vec3(wxk, 0.0, wzk) * 0.5 * skin);
+  }
   vec3 v = -rd;
   float nv = max(dot(n, v), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
@@ -887,14 +1343,17 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
       if (sdEll(q, vec3(0.13, 0.035, 0.1)) < 0.0) { body = mix(body, lch(0.5, 0.07, 65.0) * alb * 1.6 * (uSoupK * 0.4 + 0.08), exp(-dep * mix(12.0, 50.0, T)) * 0.7); break; }
     }
   }
+  // A set skin is paler and duller than the broth under it.
+  body = mix(body, body * 1.18 + alb * 0.03, skin * 0.6);
   vec3 col = body * (1.0 - F);
-  // Gloss: the lamp, the room and the fire's haze.
+  // Three films, three roughnesses: glassy fat, wet broth, a matte skin.
   float fat = smoothstep(0.3, 0.42, ax.g);
-  float rough = mix(0.045, 0.09, T) * (1.0 - 0.45 * fat);
+  float rough = mix(mix(0.045, 0.09, T) * (1.0 - 0.45 * fat), 0.34, skin * (1.0 - fat));
   // The gloss reads a touch stronger than true Fresnel, so the surface looks wet.
-  col += env(reflect(rd, n), rough) * (F + 0.025);
-  // Fat floats in golden, glassy pools.
-  col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  col += env(reflect(rd, n), rough) * (F + 0.025) * (1.0 - 0.5 * skin);
+  // Fat floats in golden, glassy pools; thin oil shows a faint rainbow at a glance.
+  vec3 film = 0.5 + 0.5 * cos(6.2832 * (ax.g * 2.2 + (1.0 - nv) * 1.4) + vec3(0.0, 2.1, 4.2));
+  col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
   col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
   // A dark ring hugs each floating thing, then a thin bright lip.
   if (gNc > 0) {
@@ -1019,6 +1478,8 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec3 emit;
   float cook = clamp(M.y, 0.0, 1.0);
   vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
+  // A fine noise varies each skin: waxy patches, dull pores, worn ridges.
+  rough = clamp(rough * (0.75 + 0.5 * noise3(lp * 34.0 + M.x * 7.0)), 0.05, 0.9);
   // Cooking soaks the soup's colour into a thing.
   vec3 soup = soupCol(p.xz);
   alb = mix(alb, alb * soup * 2.4, cook * 0.35);
@@ -1032,8 +1493,8 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
   return col + emit;
 }
-vec3 shadeDrop(vec3 p, vec3 n, vec3 rd) {
-  vec3 alb = soupCol(p.xz);
+vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
+  vec3 alb = mix(soupCol(p.xz), own.rgb, own.a);
   vec3 v = -rd;
   float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
   vec3 h = normalize(uKeyDir + v);
@@ -1062,11 +1523,15 @@ vec3 shadeSpoon(vec3 p, vec3 n, vec3 rd) {
   vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
   float s = dot(p - uSpA.xyz, ax);
   // Wood with a long grain; the lower end is wet and stained by the soup.
-  vec3 alb = lch(0.6, 0.075, 68.0) * (0.8 + 0.3 * noise2(vec2(s * 6.0, atan(n.z, n.x) * 2.0)));
+  float around = atan(n.z, n.x);
+  float grain = noise2(vec2(s * 6.0, around * 2.0)), fine = noise2(vec2(s * 40.0, around * 9.0));
+  vec3 alb = lch(0.6, 0.075, 68.0) * (0.8 + 0.3 * grain);
   float wet = smoothstep(0.32, 0.12, s);
   vec3 soup = soupCol(uSpA.xz);
   alb = mix(alb, alb * 0.55 + soup * 0.25, wet);
-  return litSurf(n, -rd, alb, mix(0.5, 0.12, wet), 0.04);
+  // Roughness follows the grain: the handle's waxed lines shine, the open grain stays dull.
+  float rough = clamp(0.42 + 0.22 * (fine - 0.5) + 0.12 * (grain - 0.5), 0.25, 0.7);
+  return litSurf(n, -rd, alb, mix(rough, 0.12, wet), 0.04);
 }
 
 void main() {
@@ -1143,6 +1608,7 @@ void main() {
   }
   // Droplets thrown up by a splash.
   vec3 dropN = vec3(0.0, 1.0, 0.0);
+  int dropI = 0;
   for (int i = 0; i < ${ND}; i++) {
     if (i >= uND) break;
     vec4 dp = uDrop[i];
@@ -1150,7 +1616,7 @@ void main() {
     float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + dp.w * dp.w;
     if (h > 0.0) {
       float t = -bb - sqrt(h);
-      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; }
+      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; dropI = i; }
     }
   }
   // The spoon's handle.
@@ -1167,23 +1633,26 @@ void main() {
     if (eb.x > 0.0 && eb.x < tHit) { vec3 q = ro + rd * eb.x; tHit = eb.x; mat = 8; spN = normalize((q - uSpA.xyz + vec3(0.0, 0.03, 0.0)) / vec3(0.0169, 0.0012, 0.01)); }
   }
   vec3 p = ro + rd * tHit, v = -rd;
-  if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0);
+  if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0, 0);
   else if (mat == 2) {
     vec3 q = p - vec3(0.0, RY, 0.0);
-    col = shadeIron(p, normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy), v, 0.0);
+    col = shadeIron(p, normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy), v, 0.0, 1);
   }
   else if (mat == 3) col = shadeWall(p, -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI)), v);
   else if (mat == 4) col = shadeSoup(p, rd);
   else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
   else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
-  else if (mat == 7) col = shadeDrop(p, dropN, rd);
+  else if (mat == 7) col = shadeDrop(p, dropN, rd, uDropC[dropI]);
   else if (mat == 8) col = shadeSpoon(p, spN, rd);
   else if (mat == 9) {
     vec3 ba = legB - legA;
     float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
-    col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0);
+    col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0, 3);
   }
-  vec4 fr = texture(uFront, su);
+  // A small tent blur softens the volume, as Fire blurs its own.
+  vec2 lt = 1.0 / vec2(textureSize(uFront, 0));
+  vec4 fr = texture(uFront, su) * 0.4 + (texture(uFront, su + vec2(lt.x, lt.y) * 0.9) + texture(uFront, su + vec2(-lt.x, lt.y) * 0.9)
+    + texture(uFront, su + vec2(lt.x, -lt.y) * 0.9) + texture(uFront, su - lt * 0.9)) * 0.15;
   o = vec4(col * (1.0 - fr.a) + fr.rgb, 1.0);
 }`;
 
@@ -1205,17 +1674,110 @@ void main() {
 
 const dyeInitP = program(DYE_INIT_FS), dyeP = program(DYE_FS), ripP = program(RIP_FS);
 const layerP = program(LAYER_FS), sceneP = program(SCENE_FS), outP = program(OUT_FS);
+
+/* ---------- the fire: Fire's solver on the GPU ---------- */
+const curlP = program(CURL_FS), fvelP = program(VEL_FS), divP = program(DIV_FS);
+const jacP = program(JAC_FS), projP = program(PROJ_FS), fdyeP = program(FDYE_FS);
+const fsim = (() => {
+  const make = () => { const tex = texture(FG.w, FG.h, gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]) }; };
+  return { vel: [make(), make()], dye: [make(), make()], p: [make(), make()], curl: make(), div: make(), vi: 0, di: 0, pi: 0 };
+})();
+// The air gust from a drag past the pot: a world point, a radius and a velocity.
+const air = { pos: [0, -100, 0], r: 0.9, vel: [0, 0, 0] };
+// Fire's tune() at Temperature 0.5 and Chaos 0.7; the Fire slider is its Intensity.
+function fireTune() {
+  const I = fire;
+  return {
+    buoy: 3.2 + 1.2 * I, weight: 0.15, damp: 0.25,
+    // The flames run further here than on Fire's block, so they live longer.
+    cool: 1 / ((1.35 + 0.4 * I) * 3.2), diss: 1 / 2.6,
+    // Finer noise and more spin: small tendrils, not big lobes.
+    turb: (1.8 + 3.4 * 0.7) / Math.sqrt(1.2) * 0.8, vort: (1 + 6 * 0.7) * 1.6,
+    emit: fire < 0.02 ? 0 : 0.4 + 0.75 * I,
+  };
+}
+// Wind rises with the fire past 0.6: slow swings and short gusts.
+function gust() {
+  const k = reduced() ? 0 : smooth(0.55, 1, fire) * 2.4;
+  const a = Math.sin(time * 0.31) * 1.3 + Math.sin(time * 0.77 + 2) * 0.6;
+  const g = Math.max(0, Math.sin(time * 1.9) * Math.sin(time * 0.53 + 1)) * 1.4;
+  return [k * Math.cos(a) * (0.6 + g), 0, k * Math.sin(a) * (0.6 + g) * 0.6];
+}
+// One pass over the whole grid into dst, reading the given textures.
+function simPass(p, dst, texs) {
+  gl.useProgram(p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+  gl.viewport(0, 0, FG.w, FG.h);
+  Object.entries(texs).forEach(([name, t], i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    gl.uniform1i(p.u(name), i);
+  });
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// One fixed step: curl, advect, divergence, pressure, project, dye with the coals.
+function fireStep(dt) {
+  const k = fireTune(), S = fsim;
+  simPass(curlP, S.curl, { uVel: S.vel[S.vi] });
+  gl.useProgram(fvelP);
+  gl.uniform1f(fvelP.u('uDt'), dt);
+  gl.uniform1f(fvelP.u('uTime'), time);
+  gl.uniform1f(fvelP.u('uBuoy'), k.buoy);
+  gl.uniform1f(fvelP.u('uWeight'), k.weight);
+  gl.uniform1f(fvelP.u('uTurb'), k.turb);
+  gl.uniform1f(fvelP.u('uVort'), k.vort);
+  gl.uniform1f(fvelP.u('uDamp'), k.damp);
+  gl.uniform4f(fvelP.u('uAir'), ...air.pos, air.r);
+  gl.uniform4f(fvelP.u('uAirV'), ...air.vel, 0);
+  gl.uniform3f(fvelP.u('uWind'), ...gust());
+  simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl });
+  S.vi = 1 - S.vi;
+  gl.useProgram(divP);
+  gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
+  simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
+  // Jacobi sweeps ping-pong; the last pressure warms the next step.
+  for (let i = 0; i < 12; i++) {
+    simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div });
+    S.pi = 1 - S.pi;
+  }
+  simPass(projP, S.vel[1 - S.vi], { uP: S.p[S.pi], uVel: S.vel[S.vi] });
+  S.vi = 1 - S.vi;
+  gl.useProgram(fdyeP);
+  gl.uniform1f(fdyeP.u('uDt'), dt);
+  gl.uniform1f(fdyeP.u('uTime'), time);
+  gl.uniform1f(fdyeP.u('uCool'), k.cool);
+  gl.uniform1f(fdyeP.u('uDiss'), k.diss);
+  // Fire's emit rates, per cell of this grid.
+  // Heat is per cell, so a cell takes what Fire's 0.12 cell takes: about eight points.
+  const pw = devV('fireI', 1);
+  gl.uniform1f(fdyeP.u('uEmitT'), 5.5 / 120 * 14 * k.emit * pw);
+  gl.uniform1f(fdyeP.u('uEmitD'), 7.0 / 120 * 8 * k.emit * pw);
+  gl.uniform4f(fdyeP.u('uBed'), devV('fireX', 0), devV('fireZ', 0), devV('fireY', 0.04), devV('fireR', 0.62));
+  simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
+  S.di = 1 - S.di;
+}
+// Fire runs at 1.2 speed; steps here are up to 1/50 s, two at most a frame.
+let fireAcc = 0;
+function fireSim(dt) {
+  fireAcc += dt * 1.2;
+  const n = Math.min(2, Math.ceil(fireAcc / 0.024 - 1e-6));
+  if (n <= 0) return;
+  const h = fireAcc / n;
+  for (let i = 0; i < n; i++) fireStep(h);
+  fireAcc = 0;
+}
 const bloom = bloomChain(gl, { max: 5 });
 
 /* ---------- the pot, on the CPU ---------- */
 // The same measures as the GLSL.
-const BCY = -0.48, RO = [1.154, 1.181], RI = [1.104, 1.131], RY = 0.13, RR = 1.01, RT = 0.08;
+const BCY = -0.48, RO = [1.154, 1.181], RI = [1.104, 1.131], RY = 0.13, RR = 1.01, RT = 0.08, GROUND = -2.36;
 // The soup's radius at a level: the inner wall's width there.
 const soupR = y => RI[0] * Math.sqrt(Math.max(0.01, 1 - ((y - BCY) / RI[1]) ** 2));
 
 /* ---------- camera ---------- */
 // A fixed eye, 50 degrees above the soup; the lens zooms to fit the stage.
-const EL = 50 * Math.PI / 180, DIST = 9, TGT = [0, -0.42, 0];
+const EL = 50 * Math.PI / 180, DIST = 9, TGT = [0, -0.62, 0];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
@@ -1223,6 +1785,23 @@ const cam = { pos: [TGT[0], TGT[1] + DIST * Math.sin(EL), TGT[2] + DIST * Math.c
 cam.fwd = norm(sub(TGT, cam.pos));
 cam.right = [1, 0, 0];
 cam.up = [0, -cam.fwd[2], cam.fwd[1]];
+// The eye swings a little round the pot as the cursor moves.
+const look = { x: 0, y: 0, tx: 0, ty: 0 };
+function aimCam(yaw, pitch) {
+  const el = devV('camEl', 50) * Math.PI / 180 + pitch;
+  yaw += devV('camTurn', 0) * Math.PI / 180;
+  cam.pos = [TGT[0] + DIST * Math.cos(el) * Math.sin(yaw), TGT[1] + DIST * Math.sin(el), TGT[2] + DIST * Math.cos(el) * Math.cos(yaw)];
+  cam.fwd = norm(sub(TGT, cam.pos));
+  cam.right = norm([-cam.fwd[2], 0, cam.fwd[0]]);
+  const r = cam.right, f = cam.fwd;
+  cam.up = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+}
+function stepLook(dt) {
+  if (reduced()) { look.tx = look.ty = 0; }
+  const k = 1 - Math.exp(-dt * 3);
+  look.x += (look.tx - look.x) * k; look.y += (look.ty - look.y) * k;
+  aimCam(look.x * 0.07, -look.y * 0.04);
+}
 // A world point to stage CSS pixels.
 function project(p) {
   const v = sub(p, cam.pos), z = dot(v, cam.fwd);
@@ -1240,13 +1819,16 @@ function soupAt(x, y) {
 }
 // The lens fits the rim and the belly; spare height splits between the steam and the fire.
 function fit(w, h) {
+  aimCam(0, 0);
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   const P = (x, y, z) => {
     const v = sub([x, y, z], cam.pos), zc = dot(v, cam.fwd), px = dot(v, cam.right) / zc, py = dot(v, cam.up) / zc;
     x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
   };
+  // A low eye takes the fire and the ground in too.
+  if (devV('camEl', 50) < 35) for (const x of [-1.6, 0, 1.6]) { P(x, GROUND, 0); P(0, GROUND, x); }
   // Tall stages show the whole pot and the fire; wide ones let the lower belly run off the edge.
-  const low = h / w > 1.2 ? -1.25 : w / h > 1.25 ? -0.5 : -0.92;
+  const low = h / w > 1.2 ? -1.45 : w / h > 1.25 ? -0.8 : -1.2;
   for (let i = 0; i < 48; i++) {
     const a = i / 48 * TAU, c = Math.cos(a), s = Math.sin(a);
     P((RR + RT) * c, RY, (RR + RT) * s);
@@ -1300,6 +1882,8 @@ rip[0] = ripT[0]; rip[1] = ripT[1];
 const velTex = texture(FN, FN, gl.RG16F, gl.RG);
 const velData = new Float32Array(FN * FN * 2);
 
+// The coal bed's centre on the ground, for the lights.
+const bedP = () => [devV('fireX', 0), GROUND + devV('fireY', 0.04), devV('fireZ', 0)];
 function resize() {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
@@ -1315,6 +1899,7 @@ function resize() {
   if (changed) frameTargets();
   dyeTargets();
 }
+refit = () => { if (size) fit(size.w, size.h); wake(); };
 
 /* ---------- colour ---------- */
 // OKLCH to OKLab, for the dye.
@@ -1543,7 +2128,7 @@ function splash(b) {
 
 /* ---------- emitters: what tints the soup ---------- */
 // Tint arrives in lumps, so half floats hold it.
-// type 0 tint, 1 fat, 2 glitter.
+// type 0 tint, 1 fat, 2 glitter, 3 skin.
 const emits = [];
 function emit(x, z, r, mass, tint, type) {
   // A lump of mass m over radius r raises the pot's mean by m.
@@ -1555,11 +2140,60 @@ function emit(x, z, r, mass, tint, type) {
   } else emits.push([x, z, r, mass, 0, 0, 0, type]);
 }
 
+/* ---------- liquids: poured, not thrown ---------- */
+// Each liquid tints the soup; some add fat that floats, or glitter.
+// r is the size of each lump in the stream; mass is the whole pour's colour.
+const LIQ = {
+  cream: { tint: [0.95, 0.02, 88], mass: 0.9, r: 0.07, fat: 0.7, glit: 0, skin: 0.5 },
+  ink: { tint: [0.16, 0.03, 290], mass: 0.85, r: 0.05, fat: 0, glit: 0 },
+  chilli: { tint: [0.55, 0.2, 33], mass: 0.35, r: 0.045, fat: 1, glit: 0 },
+  saffron: { tint: [0.82, 0.17, 84], mass: 0.45, r: 0.06, fat: 0, glit: 0.6 },
+};
+const pours = [];
+function pour(kind, x, z) {
+  pours.push({ kind, x, z, t: 0, dur: 1.2, acc: 0, col: lchLin(LIQ[kind].tint) });
+  pourSound(kind, x);
+  splashAt = time;
+  wake();
+}
+// The stream lands in lumps, about 30 a second, and drifts with the stir.
+function stepPours(dt) {
+  const rs = soupR(level);
+  for (let i = pours.length - 1; i >= 0; i--) {
+    const p = pours[i], L = LIQ[p.kind];
+    p.t += dt;
+    p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
+    p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    [p.x, p.z] = inside([p.x, p.z], 0.9);
+    p.acc += dt * 30;
+    while (p.acc >= 1 && p.t < p.dur) {
+      p.acc -= 1;
+      const x = p.x + rand(-0.03, 0.03), z = p.z + rand(-0.03, 0.03);
+      emit(x, z, L.r * rand(0.7, 1.3), L.mass / 36, L.tint, 0);
+      if (L.fat && Math.random() < 0.5) emit(x + rand(-0.06, 0.06), z + rand(-0.06, 0.06), rand(0.02, 0.045), rand(0.5, 0.9) * L.fat, null, 1);
+      if (L.glit && Math.random() < 0.5) emit(x, z, rand(0.04, 0.08), rand(0.4, 0.8) * L.glit, null, 2);
+      if (L.skin && Math.random() < 0.4) emit(x + rand(-0.05, 0.05), z + rand(-0.05, 0.05), rand(0.05, 0.1), rand(0.3, 0.6) * L.skin, null, 3);
+      // The stream digs a small dent and sends out rings.
+      imps.push([x, z, 0.05, -0.014]);
+      if (Math.random() < 0.15) imps.push([x, z, 0.1, -0.02]);
+      // A thin stream of drops from above, in the liquid's own colour.
+      if (!reduced()) addDrop(x * rs, surfY(x * rs, z * rs) + rand(0.4, 1.0), z * rs, 0, -2.8, 0, rand(0.013, 0.022), p.col);
+    }
+    if (p.t >= p.dur) pours.splice(i, 1);
+  }
+}
+
 /* ---------- bubbles, droplets, puffs, sparks, ripples ---------- */
 const bubbles = [], drops = [], puffs = [], sparks = [], imps = [];
-function addDrop(x, y, z, vx, vy, vz, r) {
+function addDrop(x, y, z, vx, vy, vz, r, c = null) {
   if (drops.length >= ND) drops.shift();
-  drops.push({ x, y, z, vx, vy, vz, r });
+  drops.push({ x, y, z, vx, vy, vz, r, c });
+}
+// OKLCH to linear sRGB, for a drop's own colour.
+function lchLin(t) {
+  const [L, a, b] = lab(t);
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s].map(v => Math.max(0, v));
 }
 function addPuff(x, z, s) {
   if (reduced()) return;
@@ -1630,7 +2264,7 @@ function stepDrops(dt) {
     if (d.vy < 0 && d.y < surfY(d.x, d.z)) {
       drops.splice(i, 1);
       // Back into the pot: a tiny ring; outside the rim it just goes.
-      if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (Math.random() < 0.35) dripSound(d); }
+      if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (!d.c && Math.random() < 0.35) dripSound(d); }
     } else if (d.y < -2) drops.splice(i, 1);
   }
 }
@@ -1643,14 +2277,17 @@ function stepSparks(dt) {
   while (sparkAcc >= 1 && !reduced()) {
     sparkAcc -= 1;
     if (sparks.length >= NS) break;
-    const a = rand(0, TAU), r = rand(1.2, 1.5);
-    sparks.push({ x: Math.cos(a) * r, y: -1.8 + rand(0, 0.3), z: Math.sin(a) * r * 0.8 + 0.25, vx: rand(-0.2, 0.2), vy: rand(0.7, 1.6), vz: rand(-0.1, 0.2), age: 0, life: rand(0.9, 2.2), b: rand(1.5, 4) });
+    const a = rand(0, TAU), r = rand(0.9, 1.3);
+    sparks.push({ x: Math.cos(a) * r, y: rand(-1.75, -1.3), z: Math.sin(a) * r * 0.8 + 0.25, vx: rand(-0.2, 0.2), vy: rand(0.7, 1.6), vz: rand(-0.1, 0.2), age: 0, life: rand(0.9, 2.2), b: rand(1.5, 4) });
   }
   if (reduced()) sparkAcc = 0;
   for (let i = sparks.length - 1; i >= 0; i--) {
     const s = sparks[i];
     s.age += dt;
-    s.vx += rand(-1.5, 1.5) * dt; s.vy += 0.2 * dt;
+    // Sparks ride a slow swirl, as Fire's embers follow the flow.
+    s.vx += (1.4 * Math.sin(s.y * 3.1 + time * 1.7 + s.z * 2) + rand(-0.6, 0.6)) * dt;
+    s.vz += 1.4 * Math.cos(s.y * 2.7 - time * 1.3 + s.x * 2) * dt;
+    s.vy += 0.2 * dt;
     s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
     if (s.age > s.life) sparks.splice(i, 1);
   }
@@ -1830,6 +2467,14 @@ function spoonUp() {
 }
 canvas.addEventListener('pointerdown', down);
 canvas.addEventListener('pointermove', move);
+// Hover moves the eye; leaving the stage brings it back.
+canvas.addEventListener('pointermove', e => {
+  const r = canvas.getBoundingClientRect();
+  look.tx = clamp((e.clientX - r.left) / r.width * 2 - 1, -1, 1);
+  look.ty = clamp((e.clientY - r.top) / r.height * 2 - 1, -1, 1);
+  wake();
+});
+canvas.addEventListener('pointerleave', () => { look.tx = look.ty = 0; wake(); });
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
@@ -1893,8 +2538,9 @@ function spoonWorld() {
 /* ---------- throwing ---------- */
 function throwNext(x, z) {
   if (draining) return;
-  const kind = ORDER[next];
-  next = (next + 1) % ORDER.length;
+  if (LIQ[pick]) { pour(pick, x, z); return; }
+  const kind = pick === 'mix' ? ORDER[next] : pick;
+  if (pick === 'mix') next = (next + 1) % ORDER.length;
   if (kind === 'pea') {
     // A handful: seven peas land in a small scatter.
     for (let i = 0; i < 7; i++) throwIn('pea', x + rand(-0.12, 0.12), z + rand(-0.12, 0.12), i * 0.035);
@@ -2057,6 +2703,16 @@ function throwSound() {
   const at = ac.currentTime + 0.01;
   burst(ac, at, { f: 700, q: 0.6, dur: 0.3, level: 0.05 });
 }
+// A pour: a run of low glugs over a thin drizzle.
+function pourSound(kind, x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.01, pan = panOf(x);
+  // Oil and cream glug lower and slower than ink.
+  const low = kind === 'ink' || kind === 'saffron' ? 1.25 : 1;
+  for (let i = 0; i < 6; i++) blop(ac, at + i * 0.18 * jit(0.2), { f: 170 * low, rise: 1.7, dur: 0.13, level: 0.05, pan });
+  burst(ac, at, { f: 2800, q: 0.7, dur: 1.15, level: 0.018, pan });
+}
 function breakSound(b) {
   const ac = kit.live();
   if (!ac || !kit.noise) return;
@@ -2200,10 +2856,12 @@ function runDye(dt, src, dst, n = dyeN) {
   gl.uniform1f(dyeP.u('uExt'), FE);
   gl.uniform1f(dyeP.u('uTime'), time);
   gl.uniform1f(dyeP.u('uConv'), reduced() ? 0 : fire * (draining ? 0 : 1));
+  gl.uniform1f(dyeP.u('uStir'), clamp(Math.abs(omega) * 0.35 + (spoon.on ? 0.4 : 0)));
   // A slow stir from below evens the pot out, in steps half floats can hold.
   let relax = 0;
   relaxT += dt;
-  if (relaxT > 0.25) { relax = draining ? 0.25 : 0.0075; relaxT = 0; }
+  // Only a drain evens the pot out; otherwise the streaks keep.
+  if (relaxT > 0.25) { relax = draining ? 0.25 : 0; relaxT = 0; }
   if (draining && draining.phase === 'down') relax = Math.max(relax, dt * 2.5);
   gl.uniform1f(dyeP.u('uRelax'), relax);
   const m = draining ? [BROTH[0], BROTH[1], BROTH[2], 1] : [mean[0], mean[1], mean[2], mean[3]];
@@ -2260,7 +2918,7 @@ function camU(p, k, H) {
   gl.uniform2f(p.u('uPP'), cam.ppx * k, H - cam.ppy * k);
 }
 // The fire's colour and its flicker.
-let flick = 1, fireCol = [1, 0.4, 0.1];
+let flick = 1, fireCol = [1, 0.4, 0.1], frameNo = 0;
 function stepFire(t) {
   const n = reduced() ? 0 : 0.07 * Math.sin(t * 13.1) + 0.05 * Math.sin(t * 7.3 + 1) + 0.04 * Math.sin(t * 23.7 + 2);
   flick = (0.35 + 1.1 * fire) * (1 + n);
@@ -2289,6 +2947,15 @@ function layerPass() {
   gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.3 + 0.7 * fire);
   gl.uniform1f(layerP.u('uSwirl'), swirl);
   gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
+  gl.uniform1f(layerP.u('uFSteps'), D.level > 0 ? 24 : 16);
+  gl.uniform3f(layerP.u('uBedP'), ...bedP());
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fsim.dye[fsim.di].tex);
+  gl.uniform1i(layerP.u('uFD'), 0);
+  gl.uniform1f(layerP.u('uFrame'), frameNo % 64);
+  // Intensity and smoke follow Fire's tune(): taller, hotter, smokier with the slider.
+  gl.uniform1f(layerP.u('uFI'), 4.5 * flick / (0.35 + 1.1 * fire));
+  gl.uniform1f(layerP.u('uSmoke'), 1.0);
   gl.uniform3f(layerP.u('uFireCol'), ...fireCol);
   gl.uniform3f(layerP.u('uGlowCol'), ...glowCol());
   puffs.forEach((p, i) => puffU.set([p.x, p.z, p.age, p.s], i * 4));
@@ -2297,14 +2964,14 @@ function layerPass() {
   sparks.forEach((s, i) => {
     const a = project([s.x, s.y, s.z]), b = project([s.x - s.vx * 0.05, s.y - s.vy * 0.05, s.z - s.vz * 0.05]);
     const fade = clamp(1 - s.age / s.life) * clamp(s.age * 6);
-    sparkU.set([a[0] * k, layer.h - a[1] * k, (b[0] - a[0]) * k, -(b[1] - a[1]) * k, s.b * fade, Math.max(0.6, 1.4 * k), 0, 0], i * 8);
+    sparkU.set([a[0] * k, layer.h - a[1] * k, (b[0] - a[0]) * k, -(b[1] - a[1]) * k, s.b * fade, Math.max(1.0, 2.2 * k), 1 - s.age / s.life, 0], i * 8);
   });
   gl.uniform1i(layerP.u('uNS'), sparks.length);
   gl.uniform4fv(layerP.u('uSpark'), sparkU);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4);
+const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4);
 function scenePass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
   gl.viewport(0, 0, hdr.w, hdr.h);
@@ -2317,6 +2984,7 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uFlick'), flick);
   gl.uniform1f(sceneP.u('uLevel'), level);
   gl.uniform1f(sceneP.u('uRS'), rs);
+  gl.uniform3f(sceneP.u('uBedP'), ...bedP());
   gl.uniform1f(sceneP.u('uDip'), dip);
   gl.uniform1f(sceneP.u('uFunnel'), funnel);
   gl.uniform1f(sceneP.u('uExt'), FE);
@@ -2345,17 +3013,18 @@ function scenePass() {
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
   gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
   gl.uniform4fv(sceneP.u('uBub'), bubU);
-  drops.forEach((d, i) => dropU.set([d.x, d.y, d.z, d.r], i * 4));
+  drops.forEach((d, i) => { dropU.set([d.x, d.y, d.z, d.r], i * 4); dropCU.set(d.c ? [...d.c, 1] : [0, 0, 0, 0], i * 4); });
+  gl.uniform4fv(sceneP.u('uDropC'), dropCU);
   gl.uniform1i(sceneP.u('uND'), drops.length);
   gl.uniform4fv(sceneP.u('uDrop'), dropU);
   const sw = spoonWorld();
   gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
   gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
-  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1]].forEach((t, i) => {
+  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, t);
   });
-  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
+  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
@@ -2396,10 +3065,11 @@ function wake() {
 // Bobbing and bubbles are the simmer, which 30 fps carries.
 let splashAt = -10;
 function busy() {
-  return !!ptr || spoon.on || spoon.lift < 1 || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
-    || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
+  return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || spoon.lift < 1 || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
+    || pours.length > 0 || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
+  frameNo++;
   raf = 0;
   let again = true;
   try {
@@ -2413,6 +3083,7 @@ function frame(now) {
     time += dt;
     stepPlumes(time);
     stepFire(time);
+    stepLook(dt);
     stepDrain(dt);
     stepSpoon(dt);
     if (lively || energy > 1e-5) stepFluid(dt);
@@ -2423,6 +3094,7 @@ function frame(now) {
     funnel = clamp(w2 * 0.006, 0, 0.1);
     swirl += omega * dt * 0.5;
     stepBodies(dt);
+    stepPours(dt);
     stepBubbles(dt);
     stepDrops(dt);
     stepPuffs(dt);
@@ -2430,6 +3102,7 @@ function frame(now) {
     // Bodies and the bed sound.
     bedSound(dt);
     dyeStep(dt);
+    fireSim(dt);
     ripAcc += dt * 120;
     const steps = Math.min(6, Math.floor(ripAcc));
     ripAcc -= steps;
@@ -2453,6 +3126,9 @@ act.reset = () => {
   fillBroth();
   clearRipples();
   next = 0;
+  pick = 'mix';
+  ui.choice?.set('mix');
+  pours.length = 0;
   starter();
   fire = FIRE0;
   ui.slider.set(FIRE0);
