@@ -446,21 +446,24 @@ Ax axisA(vec3 p) {
       if (i == 0 && hu < 0.0) o.s = min(1.0, uAs[0] - hu * l / uLen);
     }
   }
-  // At the steep neck, the first three cones blend their axis points.
-  // The blend fades out down the tail, where one cone always wins.
-  float nb = smoothstep(0.17, 0.3, o.r);
-  if (nb > 0.0 && uNA > 3) {
+  // Near each joint, the cones blend their axis points and arcs.
+  // Then the fringes run across the joints with no seam.
+  if (uNA > 3) {
     vec3 ac = vec3(0.0);
-    float ws = 0.0;
-    for (int i = 0; i < 3; i++) {
+    float ws = 0.0, sc = 0.0;
+    for (int i = 0; i < 23; i++) {
+      if (i + 1 >= uNA) break;
       vec3 a = uA[i].xyz, ba = uA[i + 1].xyz - a;
       float h = clamp(dot(p - a, ba) / dot(ba, ba), 0.0, 1.0);
       vec3 c = a + ba * h;
-      float w = exp(-(length(p - c) - mix(uA[i].w, uA[i + 1].w, h) - best) * 18.0);
+      float r = mix(uA[i].w, uA[i + 1].w, h);
+      float w = exp(-(length(p - c) - r - best) * 12.0 / max(r, 0.02));
       ac += c * w;
+      sc += mix(uAs[i], uAs[i + 1], h) * w;
       ws += w;
     }
-    o.a = mix(o.a, ac / ws, nb);
+    o.a = ac / ws;
+    if (o.s < uAs[0]) o.s = sc / ws;
   }
   return o;
 }
