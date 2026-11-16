@@ -57,8 +57,6 @@ function glide(el) {
     if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
   };
 }
-// Askew gives each block its own tilt, as the wordmark does for its letters.
-const TILTS = [-2, 1.5, -1, 2.5, -1.5, 1, -2.5, 2];
 
 const h = (tag, cls = '', html = null) => {
   const el = document.createElement(tag);
@@ -299,55 +297,6 @@ function mount(id, spec, ui) {
   };
 
   /* ---------- directions ---------- */
-  // Dock: one bar at the bottom centre holds every control.
-  const dock = P => {
-    const play = box('b-group b-play', P.seg, P.pick, P.acts, P.slider);
-    const sys = box('b-group b-sys', P.snd, P.set, P.info);
-    const bar = box('b-dock', play, sys);
-    layer.append(...[P.id, hints, bar, P.pickPop?.el, P.setPop?.el].filter(Boolean));
-    // On a narrow stage the dock keeps play; sound, Settings and (i) go top right.
-    relayout = () => {
-      const narrow = layer.clientWidth < 640;
-      sys.className = narrow ? 'b-tr b-sys' : 'b-group b-sys';
-      (narrow ? layer : bar).append(sys);
-    };
-    relayout();
-  };
-  // Bare and Askew: the name on top, play at the bottom, in every size.
-  const corners = P => {
-    const tr = box('b-tr', P.snd, P.set, P.info), bl = box('b-bl', P.seg, P.pick, P.acts), br = box('b-br', P.slider);
-    layer.append(...[P.id, tr, bl, br, hints, P.pickPop?.el, P.setPop?.el].filter(Boolean));
-    [...tr.children, ...bl.children, ...br.children].forEach((el, i) => el.style.setProperty('--tilt', `${TILTS[i % TILTS.length]}deg`));
-  };
-  // Tuck: one tab; the drawer behind it holds every control.
-  const tuck = P => {
-    const tab = btn('b-tab', '', 'Controls');
-    syncers.push(() => { tab.innerHTML = (hasChoice ? optHTML(cur()) : '<span>Controls</span>') + CARET; });
-    const body = h('div', 'b-body');
-    const api = {
-      get isOpen() { return layer.hasAttribute('data-open'); },
-      open(on) {
-        layer.toggleAttribute('data-open', on);
-        tab.setAttribute('aria-expanded', String(on));
-        body.inert = !on;
-        open = on ? api : null;
-        if (on) showHints(false);
-      },
-    };
-    const sec = (title, ...kids) => box('b-sec', text('span', 'b-lab', title), kids);
-    if (hasChoice) body.append(sec(spec.choice.label || 'Pick', gridPart(() => api.open(false))));
-    if (P.acts.length) body.append(sec('Do', box('b-acts', P.acts)));
-    const how = hintsPart(false);
-    if (how) body.append(sec('How', how));
-    const rows = rowsPart();
-    if (rows.children.length) body.append(sec('Settings', rows));
-    const ft = resetPart(() => api.open(false));
-    if (ft) body.append(ft);
-    tab.addEventListener('click', () => api.open(!api.isOpen));
-    api.open(false);
-    layer.append(...[P.id, box('b-tr', P.snd), hints, box('b-drawer', tab, body)].filter(Boolean));
-  };
-
   // Icon buttons name themselves after a pause.
   // Once one tip shows, its neighbours show at once.
   const tips = barEl => {
@@ -413,12 +362,9 @@ function mount(id, spec, ui) {
     layer.dataset.concept = c;
     document.documentElement.classList.toggle('bl-on', c !== 'today');
     document.documentElement.classList.toggle('bl-touch', touch());
-    // The toy's accent inks Askew; a gradient gives its first stop to line work.
-    layer.style.setProperty('--acc', toy.accent || 'var(--fg)');
-    layer.style.setProperty('--acc-ink', toy.accent?.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)');
     if (c === 'today') return;
     const P = build();
-    ({ tuck, dock, standard }[c] || corners)(P);
+    standard(P);
     sync();
     fitName();
     showHints(true);
