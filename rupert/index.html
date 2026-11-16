@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
-/* Rupert's drop: a glass tadpole on a wet black table. */
+/* Rupert's drop: a glass tadpole on black acrylic in a graphite studio. */
 /* The head takes a hammer; a snip at the tail bursts it. */
 :root { --stage: oklch(0.07 0.02 275); }
 .stage--rupert canvas {
@@ -224,11 +224,11 @@ uniform mat3 uCamM;
 uniform float uFocal;
 // Body A runs from the head.
 // Piece B is the tip past the cut.
-uniform vec4 uA[18];
-uniform float uAs[18];
+uniform vec4 uA[24];
+uniform float uAs[24];
 uniform int uNA;
-uniform vec4 uB[18];
-uniform float uBs[18];
+uniform vec4 uB[24];
+uniform float uBs[24];
 uniform int uNB;
 uniform mat4 uBInv;
 uniform mat4 uBMat;
@@ -237,6 +237,10 @@ uniform vec4 uBndB;
 uniform float uLen;
 // Arc s runs from the tail tip (0) to the head (1).
 uniform float uFront;
+// The crack tree: two texels per segment, sorted by birth arc.
+// Texel 2i holds the start and its arc; texel 2i+1 the end and its arc.
+uniform sampler2D uCrk;
+uniform int uNCrk;
 uniform float uCrack;
 uniform float uGone;
 uniform float uPolar;
@@ -290,29 +294,40 @@ float sdRC(vec3 p, vec4 a, vec4 b) {
   if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - a.w;
   return (sqrt(x2 * a2 * il2) + y * rr) * il2 - a.w;
 }
+// A smooth minimum: the blend is k wide.
+float smin(float a, float b, float k) {
+  float h = max(k - abs(a - b), 0.0) / k;
+  return min(a, b) - h * h * k * 0.25;
+}
+float chain(vec3 p, int n, bool isA) {
+  float d = 1e4;
+  for (int i = 0; i < 23; i++) {
+    if (i + 1 >= n) break;
+    vec4 a = isA ? uA[i] : uB[i], b = isA ? uA[i + 1] : uB[i + 1];
+    float c = sdRC(p, a, b);
+    // The sections are dense enough to need no blend.
+    // A blend at a joint shows as a rib.
+    d = min(d, c);
+  }
+  return d;
+}
 float mapA(vec3 p) {
   if (uNA < 2) return 1e4;
   float bd = length(p - uBndA.xyz) - uBndA.w;
   if (bd > 0.4) return bd;
-  float d = 1e4;
-  for (int i = 0; i < 17; i++) {
-    if (i + 1 >= uNA) break;
-    d = min(d, sdRC(p, uA[i], uA[i + 1]));
-  }
-  return d;
+  float d = chain(p, uNA, true);
+  // A real head is never a true sphere: soft lumps near its centre.
+  vec3 h = p - uA[0].xyz;
+  float lump = sin(p.x * 2.3 + 0.7) * sin(p.y * 2.9 + 1.1) * sin(p.z * 2.1 + 0.3)
+             + 0.5 * sin(p.x * 3.7 + p.z * 1.9) * sin(p.y * 4.3 + 2.0);
+  return d - 0.012 * lump * exp(-dot(h, h) * 0.8);
 }
 vec3 toB(vec3 p) { return (uBInv * vec4(p, 1.0)).xyz; }
 float mapB(vec3 p) {
   if (uNB < 2) return 1e4;
   float bd = length(p - uBndB.xyz) - uBndB.w;
   if (bd > 0.4) return bd;
-  vec3 q = toB(p);
-  float d = 1e4;
-  for (int i = 0; i < 17; i++) {
-    if (i + 1 >= uNB) break;
-    d = min(d, sdRC(q, uB[i], uB[i + 1]));
-  }
-  return d;
+  return chain(toB(p), uNB, false);
 }
 float mapGlass(vec3 p) { return min(mapA(p), mapB(p)); }
 
@@ -409,7 +424,7 @@ struct Ax { float s; float r; vec3 a; vec3 t; };
 Ax axisA(vec3 p) {
   Ax o = Ax(1.0, 1.0, uA[0].xyz, vec3(1.0, 0.0, 0.0));
   float best = 1e9;
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNA) break;
     vec3 a = uA[i].xyz, ba = uA[i + 1].xyz - a;
     float l = length(ba);
@@ -426,28 +441,31 @@ Ax axisA(vec3 p) {
       if (i == 0 && hu < 0.0) o.s = min(1.0, uAs[0] - hu * l / uLen);
     }
   }
-  // At the steep neck, the first three cones blend their axis points.
-  // The blend fades out down the tail, where one cone always wins.
-  float nb = smoothstep(0.17, 0.3, o.r);
-  if (nb > 0.0 && uNA > 3) {
+  // Near each joint, the cones blend their axis points and arcs.
+  // Then the fringes run across the joints with no seam.
+  if (uNA > 3) {
     vec3 ac = vec3(0.0);
-    float ws = 0.0;
-    for (int i = 0; i < 3; i++) {
+    float ws = 0.0, sc = 0.0;
+    for (int i = 0; i < 23; i++) {
+      if (i + 1 >= uNA) break;
       vec3 a = uA[i].xyz, ba = uA[i + 1].xyz - a;
       float h = clamp(dot(p - a, ba) / dot(ba, ba), 0.0, 1.0);
       vec3 c = a + ba * h;
-      float w = exp(-(length(p - c) - mix(uA[i].w, uA[i + 1].w, h) - best) * 18.0);
+      float r = mix(uA[i].w, uA[i + 1].w, h);
+      float w = exp(-(length(p - c) - r - best) * 12.0 / max(r, 0.02));
       ac += c * w;
+      sc += mix(uAs[i], uAs[i + 1], h) * w;
       ws += w;
     }
-    o.a = mix(o.a, ac / ws, nb);
+    o.a = ac / ws;
+    if (o.s < uAs[0]) o.s = sc / ws;
   }
   return o;
 }
 Ax axisB(vec3 q) {
   Ax o = Ax(0.0, 0.05, uB[0].xyz, vec3(1.0, 0.0, 0.0));
   float best = 1e9;
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNB) break;
     vec3 a = uB[i].xyz, ba = uB[i + 1].xyz - a;
     float l = length(ba);
@@ -461,48 +479,51 @@ Ax axisB(vec3 q) {
 }
 
 /* light */
-// The studio: a top box behind and above, and two rim strips.
-// A dim fill sits behind the camera.
-// The lights show only in the glass and the steel.
+// A soft box: 1 inside, a smooth falloff of width soft at the edge.
+float softBox(vec2 q, vec2 hw, float soft) {
+  vec2 d = abs(q) - hw;
+  return smoothstep(soft, -soft, max(d.x, d.y));
+}
+// The studio: a big top box, two tall strips behind, a broad fill in front.
+// Every box fades at its edges, so no hard frame shows in the glass.
 vec3 lights(vec3 ro, vec3 rd) {
   vec3 c = vec3(0.0);
   if (rd.y > 0.0) {
-    float t = (7.0 - ro.y) / rd.y;
-    vec3 p = ro + rd * t;
-    vec2 q = abs(p.xz - vec2(-0.8, -4.5)) - vec2(3.2, 1.8);
-    c += uKeyC * 2.6 * smoothstep(0.5, -0.5, max(q.x, q.y));
+    vec3 p = ro + rd * ((7.0 - ro.y) / rd.y);
+    vec2 q = p.xz - vec2(-0.8, -3.5);
+    // The diffuser is brightest in its middle.
+    vec2 e = q / vec2(4.0, 2.4);
+    c += uKeyC * (1.3 + 1.9 * exp(-dot(e, e))) * softBox(q, vec2(3.6, 2.2), 0.9);
   }
   if (rd.z < 0.0) {
-    float t = (-4.5 - ro.z) / rd.z;
-    vec3 p = ro + rd * t;
-    float yy = smoothstep(-0.3, 0.8, p.y) * smoothstep(7.5, 5.5, p.y);
-    float s = smoothstep(0.8, 0.45, abs(p.x + 5.6)) + smoothstep(0.8, 0.45, abs(p.x - 5.6));
-    c += uRimC * 5.0 * s * yy;
+    vec3 p = ro + rd * ((-4.5 - ro.z) / rd.z);
+    float yy = smoothstep(-0.5, 1.5, p.y) * smoothstep(8.0, 5.0, p.y);
+    float s = smoothstep(1.3, 0.5, abs(p.x + 5.4)) + smoothstep(1.3, 0.5, abs(p.x - 5.4));
+    c += uRimC * 3.2 * s * yy;
   }
   if (rd.z > 0.0) {
-    float t = (14.0 - ro.z) / rd.z;
-    vec3 p = ro + rd * t;
-    vec2 q = abs(p.xy - vec2(0.0, 3.0)) - vec2(6.5, 3.0);
-    c += uRimC * 0.3 * smoothstep(1.8, -1.8, max(q.x, q.y));
+    vec3 p = ro + rd * ((14.0 - ro.z) / rd.z);
+    c += uKeyC * 0.55 * softBox(p.xy - vec2(-4.0, 5.0), vec2(4.0, 3.0), 2.0);
   }
   return c;
 }
-// The back wall: a soft pool of light behind the drop.
+// The back wall: a graphite sweep, a little brighter behind the drop.
+// It has no seam and no glow at its foot.
 vec3 wall(vec3 ro, vec3 rd) {
-  if (rd.z >= -0.02) return uBack1 * 0.7;
-  float t = (-9.0 - ro.z) / rd.z;
-  vec3 p = ro + rd * t;
-  vec2 d = (p.xy - vec2(0.3, 2.0)) / vec2(7.0, 4.6);
-  vec3 c = mix(uBack1, uBack0, exp(-dot(d, d) * 1.8));
-  // A low glow runs along the foot of the wall.
-  return c + uBack0 * 1.6 * exp(-max(p.y, 0.0) / 1.1) * exp(-p.x * p.x / 60.0);
+  if (rd.z >= -0.02) return uBack1 * 0.5;
+  vec3 p = ro + rd * ((-9.0 - ro.z) / rd.z);
+  vec2 d = (p.xy - vec2(0.3, 2.4)) / vec2(9.0, 5.5);
+  vec3 c = mix(uBack1, uBack0, exp(-dot(d, d) * 2.2));
+  // A soft kicker behind the drop lights the glass from inside.
+  vec2 k = (p.xy - vec2(-0.6, 2.2)) / vec2(3.2, 2.4);
+  return c + uRimC * 0.45 * exp(-dot(k, k));
 }
 // Between crossed polarisers the lit studio goes almost black.
 const float DARK = 0.93;
 // The floor's mirror sees only the wall, never the lights.
 vec3 sky(vec3 ro, vec3 rd) { return wall(ro, rd) * (1.0 - DARK * uPolar); }
 // Light along a ray that leaves the glass or the steel.
-// It sees a plain wet floor or the studio.
+// It sees the floor or the studio.
 vec3 env(vec3 ro, vec3 rd) {
   if (rd.y < 0.0 && ro.y > 0.0) {
     vec3 p = ro + rd * (-ro.y / rd.y);
@@ -541,7 +562,8 @@ vec3 trace(vec3 ro, vec3 rd, int steps) {
   s = sph(ro, rd, uHamBnd); r = vec2(min(r.x, s.x), max(r.y, s.y));
   s = sph(ro, rd, uCutBnd); r = vec2(min(r.x, s.x), max(r.y, s.y));
   // Nothing shows below the wet floor.
-  if (rd.y < 0.0) r.y = min(r.y, -ro.y / rd.y);
+  // The march runs a little past it: grazing rays need the room.
+  if (rd.y < 0.0) r.y = min(r.y, -ro.y / rd.y + 0.3);
   float t = max(r.x, 0.0);
   if (r.y < t) return vec3(-1.0);
   for (int i = 0; i < 128; i++) {
@@ -565,7 +587,74 @@ float inside(vec3 q, vec3 d, int steps) {
   return L;
 }
 
+/* cracks */
+// The least distance between segments p0-p1 and q0-q1.
+float segSeg(vec3 p0, vec3 p1, vec3 q0, vec3 q1) {
+  vec3 d1 = p1 - p0, d2 = q1 - q0, r = p0 - q0;
+  float a = dot(d1, d1), e = max(dot(d2, d2), 1e-8), f = dot(d2, r);
+  float c = dot(d1, r), b = dot(d1, d2), den = a * e - b * b;
+  float s = den > 1e-8 ? clamp((b * f - c * e) / den, 0.0, 1.0) : 0.0;
+  float t = (b * s + f) / e;
+  if (t < 0.0) { t = 0.0; s = clamp(-c / max(a, 1e-8), 0.0, 1.0); }
+  else if (t > 1.0) { t = 1.0; s = clamp((b - c) / max(a, 1e-8), 0.0, 1.0); }
+  return length(p0 + d1 * s - q0 - d2 * t);
+}
+// The least distance from point x to segment a-b.
+float segPt(vec3 a, vec3 b, vec3 x) {
+  vec3 ab = b - a;
+  return length(a + ab * clamp(dot(x - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0) - x);
+}
+// The cracks along a path through the glass, from q0 to q1.
+// x: crack lines, y: glints, z: live tips, w: distance to the nearest crack.
+// Each crack is a narrow face along its line.
+// It flashes only where that face mirrors a light toward the eye.
+vec4 crackField(vec3 q0, vec3 q1, vec3 rd) {
+  float lines = 0.0, glint = 0.0, tips = 0.0, near = 9.0;
+  for (int i = 0; i < 768; i++) {
+    if (i >= uNCrk) break;
+    vec4 a = texelFetch(uCrk, ivec2(2 * i, 0), 0);
+    // The tree is sorted by birth, so the first unborn crack ends the list.
+    if (a.w > uFront) break;
+    vec4 b = texelFetch(uCrk, ivec2(2 * i + 1, 0), 0);
+    float g = clamp((uFront - a.w) / max(b.w - a.w, 1e-5), 0.0, 1.0);
+    vec3 e = mix(a.xyz, b.xyz, g);
+    float d = segSeg(q0, q1, a.xyz, e);
+    near = min(near, d);
+    float on = exp(-d * d * 4000.0);
+    lines += on;
+    // The face holds the crack's own line; its tilt varies slowly in space.
+    // So a whole run of crack catches the light as one streak.
+    vec3 m = (a.xyz + b.xyz) * 1.4;
+    vec3 tw = sin(m.yzx * vec3(1.3, 1.7, 2.1) + m * vec3(0.9, 1.1, 0.7) + vec3(0.0, 2.1, 4.2));
+    vec3 fn = normalize(cross(b.xyz - a.xyz + 1e-5, tw) + 1e-5);
+    vec3 rr = reflect(rd, fn);
+    float sp = pow(max(dot(rr, KEY), 0.0), 24.0) + 0.6 * pow(max(dot(rr, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 24.0);
+    glint += on * sp * 0.6;
+    if (g < 1.0) { float dt = segPt(q0, q1, e); tips += exp(-dt * dt * 1600.0); }
+  }
+  return vec4(lines, glint, tips, near);
+}
+// Cells in 3D: the nearest and second distances, and the cell's seed.
+vec4 cells(vec3 x) {
+  vec3 i = floor(x), f = fract(x);
+  float F1 = 8.0, F2 = 8.0;
+  vec3 id = i;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int k = -1; k <= 1; k++) {
+    vec3 g = vec3(float(k), float(y), float(z));
+    vec3 r = g + hash33(i + g) - f;
+    float d = dot(r, r);
+    if (d < F1) { F2 = F1; F1 = d; id = i + g; } else if (d < F2) F2 = d;
+  }
+  return vec4(sqrt(F1), sqrt(F2), hash13(id), hash13(id + 7.1));
+}
+
 /* glass */
+// The bubbles in the rest pose: centre and radius.
+// They gather in the body, as in real drops.
+const vec4 BUB[7] = vec4[7](
+  vec4(-2.2, 0.75, 0.15, 0.05), vec4(-1.7, 0.66, -0.2, 0.04), vec4(-1.3, 0.62, 0.1, 0.06),
+  vec4(-1.0, 0.56, -0.05, 0.035), vec4(-2.6, 0.6, -0.1, 0.025), vec4(-0.6, 0.5, 0.08, 0.03),
+  vec4(-1.5, 0.8, -0.05, 0.02));
 vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
   bool isA = body < 1.25;
   vec3 n = nGlass(p);
@@ -622,7 +711,26 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     }
     trans = sum / wsum;
   }
-  trans *= exp(-Lt * vec3(0.06, 0.015, 0.04));
+  // Soda-lime glass: a faint green in the thick head.
+  trans *= exp(-Lt * vec3(0.1, 0.022, 0.075));
+  // Trapped bubbles: each shows as a small silver ring.
+  // The ring is total reflection at the bubble's rim.
+  if (isA && !cheap) {
+    for (int k = 0; k < 7; k++) {
+      vec4 b = BUB[k];
+      b.xyz += uA[0].xyz - vec3(-2.4, 0.7, 0.0);
+      float tb = clamp(dot(b.xyz - q, t1), 0.0, L);
+      vec3 dv = q + t1 * tb - b.xyz;
+      // Bubbles stretch along the drop, as the glass flowed.
+      const vec3 AX = vec3(0.966, -0.259, 0.0);
+      float db = length(dv - AX * dot(dv, AX) * 0.45);
+      float inner = smoothstep(b.w, b.w * 0.85, db);
+      float rim = smoothstep(b.w * 0.6, b.w * 0.95, db) * inner;
+      // Only the upper rim catches the top box: a crescent, not a ring.
+      float lit = smoothstep(0.1, 0.9, dv.y / max(db, 1e-4));
+      trans = trans * (1.0 - 0.22 * rim) + uKeyC * rim * rim * 0.6 * lit;
+    }
+  }
   vec3 col = refl * F + trans * (1.0 - F);
 
   // Stress, cracks and heat, from the middle of the path across.
@@ -650,25 +758,36 @@ vec3 shadeGlass(vec3 rd, vec3 p, float body, bool cheap) {
     // Cracks lead in the stretched core and lag in the squeezed skin.
     float sCore = am.s + 0.6 * (1.0 - beta * beta) * am.r / uLen;
     float sSkin = axisA(p).s;
-    float dc = (sCore - uFront) * uLen, ds = (sSkin - uFront) * uLen;
-    frostA = clamp(0.55 * smoothstep(0.03, -0.03, dc) + 0.6 * smoothstep(0.03, -0.03, ds), 0.0, 1.0);
-    frontG = exp(-dc * dc * 110.0) + 0.6 * exp(-ds * ds * 160.0);
-    // Forks run just ahead of the front, along the drop.
-    vec3 side = normalize(cross(am.t, vec3(0.0, 1.0, 0.0)) + vec3(0.0, 0.0, 1e-3));
-    vec3 up = cross(side, am.t);
-    vec3 rel = mid - am.a;
-    float ang = atan(dot(rel, up), dot(rel, side));
-    float fk = vnoise(vec3(am.s * uLen * 2.5, ang * 2.2, 3.1)) + 0.5 * vnoise(vec3(am.s * uLen * 7.0, ang * 4.0, 9.7));
-    frontG += smoothstep(1.02, 1.3, fk) * smoothstep(0.9, 0.0, dc) * step(0.0, dc) * 1.4;
-    // Shattered glass: milky, full of glints, laced with cracks.
-    vec3 id = floor(p * 26.0);
-    vec3 rn = normalize((hash33(id) * 2.0 - 1.0) * 1.4 + nb);
+    float leadC = (uFront - sCore) * uLen, leadS = (uFront - sSkin) * uLen;
+    // The tree's cracks along this path through the glass.
+    vec4 ck = crackField(q, pe, rd);
+    // Frost spreads out from each crack, so its edge runs in fingers.
+    // It lags the tips a little, so the bare cracks show first.
+    frostA = clamp(max(0.75 * smoothstep(0.0, 0.3, leadC - 0.3 - 2.2 * ck.w), smoothstep(0.1, 0.5, leadS - 0.45 - 1.6 * ck.w)), 0.0, 1.0);
+    // A crack blocks some light: clear glass shows it as a dark line.
+    col *= 1.0 - 0.6 * min(ck.x, 1.0) * (1.0 - frostA);
+    frontG = min(ck.y, 2.0) * 1.4 + min(ck.z, 1.5) * 0.35;
+    // Shattered glass: irregular cells, each face a small mirror.
+    vec4 c1 = cells(p * 11.0), c2 = cells(p * 29.0 + 3.0);
+    vec3 rn = normalize((vec3(c1.z, c1.w, c2.z) * 2.0 - 1.0) * 1.3 + nb);
     vec3 rr = reflect(rd, rn);
     float g1 = pow(max(dot(rr, KEY), 0.0), 40.0);
     float g2 = pow(max(dot(rr, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 30.0) + pow(max(dot(rr, normalize(vec3(0.8, 0.35, -0.55))), 0.0), 30.0);
-    float lines = smoothstep(0.035, 0.0, abs(vnoise(p * 9.0) - 0.5)) + smoothstep(0.03, 0.0, abs(vnoise(p * 21.0 + 4.0) - 0.5));
-    frostC = vec3(0.78, 0.8, 0.85) * (uKeyC * (0.12 + 0.3 * max(nb.y, 0.0)) + 0.035) * (1.0 - 0.45 * min(lines, 1.0));
-    frostC += uKeyC * g1 * 4.0 + uRimC * g2 * 2.5;
+    // Cell walls are crack faces: they scatter light and read pale.
+    float walls = smoothstep(0.05, 0.0, c1.y - c1.x) + 0.6 * smoothstep(0.04, 0.0, c2.y - c2.x);
+    // The core holds the most cracks, so it reads densest and whitest.
+    // Near the skin the powder thins, and the dark glass shows through.
+    float core = 1.0 - beta * beta;
+    float lum = (0.12 + 0.3 * max(nb.y, 0.0)) * (0.6 + 0.75 * core) * (0.75 + 0.5 * c2.z);
+    frostC = vec3(0.8, 0.82, 0.86) * (uKeyC * lum + 0.035);
+    frostC += vec3(0.85, 0.88, 0.95) * uKeyC * 0.1 * min(walls, 1.0);
+    // The main cracks show through as faint sheets in the powder.
+    frostC += vec3(0.9, 0.93, 1.0) * uKeyC * 0.12 * min(ck.x, 1.5);
+    // Fine dust: many small facets, each a pin of light.
+    vec4 c3 = cells(p * 70.0 + 9.0);
+    vec3 r3 = reflect(rd, normalize((vec3(c3.z, c3.w, fract(c3.z * 7.3)) * 2.0 - 1.0) * 1.6 + nb));
+    float pin = pow(max(dot(r3, KEY), 0.0), 80.0) * step(0.55, c3.w);
+    frostC += uKeyC * (g1 * 3.0 + pin * 2.5) * (0.5 + 0.5 * (1.0 - core)) + uRimC * g2 * 2.0;
   }
   // Photoelastic stress: retardation across a tempered rod, in nm.
   float gam = sqrt(max(1.0 - beta * beta, 0.0));
@@ -752,7 +871,7 @@ vec2 rain(vec2 xz) {
 vec3 floorLight(vec3 p, out vec3 glow) {
   vec3 lit = vec3(1.0), caus = vec3(0.0);
   glow = vec3(0.0);
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNA) break;
     vec3 a = uA[i].xyz, b = uA[i + 1].xyz;
     vec2 a2 = a.xz - KEY.xz * (a.y / KEY.y), b2 = b.xz - KEY.xz * (b.y / KEY.y);
@@ -773,7 +892,7 @@ vec3 floorLight(vec3 p, out vec3 glow) {
     float hgt = max(min(a.y, b.y) - r, 0.0);
     glow = max(glow, vec3(exp(-dot(c, c) / (r * r * 4.0 + 0.4)) * r * exp(-hgt * 0.9)));
   }
-  for (int i = 0; i < 17; i++) {
+  for (int i = 0; i < 23; i++) {
     if (i + 1 >= uNB) break;
     vec3 a = (uBMat * vec4(uB[i].xyz, 1.0)).xyz, b = (uBMat * vec4(uB[i + 1].xyz, 1.0)).xyz;
     vec2 a2 = a.xz - KEY.xz * (a.y / KEY.y), b2 = b.xz - KEY.xz * (b.y / KEY.y);
@@ -790,6 +909,8 @@ vec3 floorLight(vec3 p, out vec3 glow) {
 }
 vec3 floorShade(vec3 ro, vec3 rd, vec3 p) {
   vec2 g = ripple(p.xz) + rain(p.xz);
+  // Faint smudges keep the acrylic from a perfect mirror.
+  g += (vec2(vnoise(vec3(p.xz * 2.3, 1.0)), vnoise(vec3(p.xz * 2.3, 7.0))) - 0.5) * 0.03;
   vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
   float cs = clamp(dot(-rd, n), 0.0, 1.0);
   float F = 0.045 + 0.955 * pow(1.0 - cs, 5.0);
@@ -799,10 +920,14 @@ vec3 floorShade(vec3 ro, vec3 rd, vec3 p) {
   if (h.z > 0.0) {
     vec3 q = p + n * 0.003 + r * h.x;
     refl = h.y < 1.75 ? shadeGlass(r, q, h.y, true) : shadeTool(r, q, h.y);
+    // The mirror image fades with height, as on real acrylic.
+    refl = mix(sky(p, r), refl, exp(-h.x * 0.45));
   } else refl = sky(p, r);
   vec3 glow;
   vec3 kl = floorLight(p, glow);
   vec3 base = uFloorC * uKeyC * 0.09 * kl;
+  // The top box leaves a soft pool of light on the floor.
+  base *= 1.0 + 3.0 * exp(-dot((p.xz - vec2(-0.6, -1.0)) / vec2(4.5, 2.5), (p.xz - vec2(-0.6, -1.0)) / vec2(4.5, 2.5)));
   base += hot(uHeat) * uHeat * uHeat * glow * 1.2;
   // The impact flash lights the floor round the head.
   if (uHit.w >= 0.0 && uHit.w < 0.3) base += vec3(1.0, 0.95, 0.9) * exp(-uHit.w * 22.0) * 0.3 * exp(-dot(p.xz - uHit.xz, p.xz - uHit.xz) * 0.8);
@@ -959,12 +1084,13 @@ uniform vec3 uRimC;
 out vec4 o;
 ${COMMON}
 void main() {
-  // A shard: three random edges cut a triangle out of the quad.
+  // A shard: five uneven edges cut a chip out of the quad.
   float a0 = vSeed * 6.2831;
   float d = -1.0;
-  for (int k = 0; k < 3; k++) {
-    float a = a0 + float(k) * 2.094 + (hash12(vec2(vSeed * 97.0, float(k))) - 0.5) * 0.9;
-    d = max(d, dot(vQ, vec2(cos(a), sin(a))) - 0.42);
+  for (int k = 0; k < 5; k++) {
+    float a = a0 + float(k) * 1.2566 + (hash12(vec2(vSeed * 97.0, float(k))) - 0.5) * 0.8;
+    float r = 0.38 + 0.22 * hash12(vec2(vSeed * 31.0, float(k) + 5.0));
+    d = max(d, dot(vQ, vec2(cos(a), sin(a))) - r);
   }
   float aa = 2.0 / vPx;
   float cov = vPx < 3.0 ? smoothstep(1.0, 0.25, length(vQ)) : smoothstep(aa, -aa, d);
@@ -979,12 +1105,13 @@ void main() {
   vec3 r = reflect(V, n);
   float g1 = pow(max(dot(r, KEY), 0.0), 36.0);
   float g2 = pow(max(dot(r, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 50.0) + pow(max(dot(r, normalize(vec3(0.8, 0.35, -0.55))), 0.0), 50.0);
-  vec3 base = vec3(0.8, 0.84, 0.92) * 0.045;
-  // Some shards split the light into a little rainbow.
+  // Crushed glass is the powder's white, lit from above.
+  vec3 base = vec3(0.82, 0.85, 0.9) * (uKeyC * (0.05 + 0.16 * abs(n.y)) + 0.012);
+  // A few chips split the light into a faint rainbow.
   float hue = fract(vSeed * 7.3 + dot(n, vec3(1.1, 1.7, 0.6)));
   vec3 rainbow = 0.5 + 0.5 * cos(6.2831 * (hue + vec3(0.0, 0.33, 0.67)));
-  vec3 tint = mix(vec3(1.0), rainbow, step(0.55, fract(vSeed * 13.7)) * 0.75);
-  vec3 col = base + (uKeyC * g1 * 7.0 + uRimC * g2 * 5.0) * tint;
+  vec3 tint = mix(vec3(1.0), rainbow, step(0.93, fract(vSeed * 13.7)) * 0.4);
+  vec3 col = base + (uKeyC * g1 * 4.5 + uRimC * g2 * 3.0) * tint;
   // Polarised: each glint takes a fringe colour.
   vec3 pc = base * 0.5 + fringe(250.0 + 1500.0 * fract(vSeed * 31.7)) * (g1 * 6.0 + g2 * 4.0 + 0.08);
   col = mix(col, pc, uPolar);
@@ -1021,8 +1148,8 @@ const bloom = bloomChain(gl, { max: 5 });
 const C = {
   key: linFit(0.97, 0.015, 85),
   rim: linFit(0.94, 0.03, 250),
-  back0: linFit(0.3, 0.07, 278),
-  back1: linFit(0.1, 0.025, 275),
+  back0: linFit(0.26, 0.012, 255),
+  back1: linFit(0.07, 0.006, 255),
   grip: linFit(0.68, 0.19, 42),
   floor: linFit(0.35, 0.01, 270),
 };
@@ -1059,15 +1186,21 @@ const frameMat = (x, y, z, t) => new Float32Array([...x, 0, ...y, 0, ...z, 0, ..
 /* ---------- the drop ---------- */
 // The drop's control points, from the head to the tail tip.
 // Each holds a centre and a radius, in head radii.
+// A real drop is a long teardrop, three times longer than wide.
+// It lies on its belly; the thread tail rises and curls back.
 const CTRL = [
-  [-2.1, 1.0, 0.0, 1.0],
-  [-0.84, 0.64, 0.02, 0.4],
-  [0.28, 0.42, 0.06, 0.19],
-  [1.32, 0.34, 0.08, 0.105],
-  [2.28, 0.4, 0.05, 0.066],
-  [2.98, 0.62, -0.02, 0.046],
-  [3.42, 0.98, -0.1, 0.034],
-  [3.56, 1.38, -0.17, 0.026],
+  [-2.4, 0.7, 0.0, 0.7],
+  [-1.9, 0.68, 0.02, 0.66],
+  [-1.35, 0.62, 0.03, 0.54],
+  [-0.8, 0.53, 0.04, 0.39],
+  [-0.25, 0.43, 0.05, 0.25],
+  [0.35, 0.34, 0.05, 0.14],
+  [1.0, 0.27, 0.04, 0.075],
+  [1.7, 0.24, 0.02, 0.045],
+  [2.4, 0.3, -0.02, 0.03],
+  [3.0, 0.55, -0.08, 0.024],
+  [3.4, 0.95, -0.15, 0.019],
+  [3.55, 1.4, -0.22, 0.015],
 ];
 // A smooth curve through them; the radius tapers on a log scale.
 // Each pair of points makes one round cone.
@@ -1081,10 +1214,12 @@ const REST = (() => {
   };
   const out = [CTRL[0], CTRL[1]];
   for (let i = 1; i < P.length - 1; i++) {
+    // The dense head spans need no extra points; the curl needs most.
     const n = i >= P.length - 3 ? 3 : 2;
     for (let j = 1; j <= n; j++) { const q = at(i, j / n); out.push([q[0], q[1], q[2], Math.exp(q[3])]); }
   }
-  return out;
+  // No section may sink into the floor; the head's lumps need room.
+  return out.map(p => [p[0], Math.max(p[1], p[3] + 0.015), p[2], p[3]]);
 })();
 const SEG = REST.slice(1).map((p, i) => len(sub(p, REST[i])));
 // The drop's arc length, from the head's back to the tip.
@@ -1192,9 +1327,11 @@ const ripples = [];
 /* ---------- burst schedule ---------- */
 // The front crosses the whole drop in FRONT_T seconds of show time.
 const FRONT_T = 1.9, LAG = 0.45, GONE = 0.22, HOLD = 2.5, RAMP = 1.2, FALL = 2.8, PRE = 0.3;
+// The drop holds fully white for a beat before the head bursts.
+const WHITE = 0.8;
 const K_DRAG = 1.8;
 function schedule(sCut) {
-  const burst = (1 - sCut) * FRONT_T, ramp = burst + HOLD;
+  const burst = timeAt(1, sCut) + WHITE, ramp = burst + HOLD;
   return { burst, ramp, end: ramp + RAMP * 0.5 + FALL, dust: ramp + 0.45 };
 }
 // The real clock under the slow motion: still, then up to speed.
@@ -1203,7 +1340,114 @@ function clock(t) {
   const u = t - sched.ramp;
   return u < RAMP ? u * u / (2 * RAMP) : RAMP / 2 + (u - RAMP);
 }
-const frontAt = t => cut.s + Math.max(0, t) / FRONT_T;
+// The crack races up the thin tail, then slows as the glass thickens.
+const TAIL_K = 2.2;
+// Show time for the front to reach arc s from a cut at c.
+function timeAt(s, c) {
+  const n = Math.max(S_NECK, c);
+  return (Math.max(0, Math.min(s, n) - c) / TAIL_K + Math.max(0, s - n)) * FRONT_T;
+}
+function frontAt(t) {
+  const c = cut.s, n = Math.max(S_NECK, c), u = Math.max(0, t) / FRONT_T, tail = (n - c) / TAIL_K;
+  return u < tail ? c + u * TAIL_K : n + (u - tail);
+}
+
+/* ---------- crack tree ---------- */
+// One crack runs up the stretched core of the tail.
+// As the glass thickens it forks again and again.
+// In the head the forks fan out to the skin.
+const CRK_MAX = 768;
+const crkData = new Float32Array(CRK_MAX * 8);
+let crkN = 0;
+const crkTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, crkTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, CRK_MAX * 2, 1, 0, gl.RGBA, gl.FLOAT, null);
+// The axis at arc s: point, tangent toward the head, and radius.
+// Past the head's centre the radius closes as on a sphere.
+function axisAtS(s) {
+  if (s >= S[0]) {
+    const t = norm(sub(REST[0], REST[1])), x = (s - S[0]) * LEN, r0 = REST[0][3];
+    return { p: add(REST[0].slice(0, 3), mul(t, x)), t, r: Math.sqrt(Math.max(r0 * r0 - x * x, 0)) };
+  }
+  for (let i = 0; i + 1 < REST.length; i++) {
+    if (S[i] >= s && S[i + 1] <= s) {
+      const h = (S[i] - s) / (S[i] - S[i + 1]);
+      const q = lerp(REST[i], REST[i + 1], h);
+      return { p: q.slice(0, 3), t: norm(sub(REST[i], REST[i + 1])), r: q[3] };
+    }
+  }
+  const e = REST[REST.length - 1];
+  return { p: e.slice(0, 3), t: norm(sub(REST[REST.length - 2], e)), r: e[3] };
+}
+// A point at arc s, rho radii off the axis, at angle th round it.
+function crackPt(s, rho, th) {
+  const a = axisAtS(s);
+  const side = norm(cross(a.t, [0, 1, 0])), up = cross(side, a.t);
+  return add(a.p, mul(add(mul(side, Math.cos(th)), mul(up, Math.sin(th))), rho * a.r));
+}
+// All live cracks move in step, so they share one cross-section.
+// Their number follows that section's area: few in the tail, many in the head.
+// A fork aims into the widest empty angle; each crack keeps its own depth.
+// Cracks push apart; when two meet, one stops, as real cracks arrest.
+// No crack stops at the skin: they all run on to the head's front.
+function growCracks(sCut) {
+  const segs = [];
+  const R_MAX = Math.max(...REST.map(p => p[3]));
+  const angGap = (th, others) => {
+    let g = Math.PI;
+    for (const o of others) { const d = Math.abs(((th - o.th) % 6.283 + 9.42) % 6.283 - 3.14); g = Math.min(g, d); }
+    return g;
+  };
+  let s = sCut;
+  let live = [{ rho: 0.05, th: rnd() * 6.283, aim: 0.1 }];
+  while (live.length && s < 1 && segs.length < CRK_MAX - live.length) {
+    const a = axisAtS(s);
+    const step = Math.min(0.22, Math.max(0.08, 0.5 * a.r));
+    const s2 = Math.min(1, s + step / LEN);
+    // Fork until the count matches the section's area.
+    const want = Math.round(1 + 23 * (a.r / R_MAX) ** 2);
+    if (a.r > 0.05) {
+      for (let k = 0; k < 3 && live.length < want; k++) {
+        // The crack with the most room round it forks.
+        let best = live[0], room = -1;
+        for (const c of live) { const g = angGap(c.th, live.filter(o => o !== c)); if (g > room) { room = g; best = c; } }
+        const half = Math.max(0.35, Math.min(room, 1.6)) * 0.5;
+        live.push({ rho: best.rho, th: best.th + half, aim: 0.2 + 0.72 * rnd() });
+        best.th -= half * 0.4;
+      }
+    }
+    const next = [];
+    for (const c of live) {
+      // Each crack drifts toward its own depth and wanders a little.
+      const rho = clamp(c.rho + (c.aim - c.rho) * Math.min(1, step * 2.5) + (rnd() - 0.5) * 0.1, 0, 0.92);
+      const th = c.th + (rnd() - 0.5) * 0.35;
+      segs.push([...crackPt(s, c.rho, c.th), s, ...crackPt(s2, rho, th), s2]);
+      next.push({ rho, th, aim: c.aim });
+    }
+    // Neighbours in the section push apart; a crack that meets another stops.
+    const b = axisAtS(s2), xy = c => [c.rho * Math.cos(c.th) * b.r, c.rho * Math.sin(c.th) * b.r];
+    const keep = [];
+    for (const c of next) {
+      const p = xy(c);
+      let hit = false;
+      for (const o of keep) {
+        const q = xy(o), d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+        if (d < 0.025 + 0.06 * b.r) { hit = true; break; }
+        if (d < 0.35 * b.r) c.th += Math.sign(((c.th - o.th) % 6.283 + 9.42) % 6.283 - 3.14 || 1) * 0.12;
+      }
+      if (!hit) keep.push(c);
+    }
+    live = keep;
+    s = s2;
+  }
+  segs.sort((x, y) => x[3] - y[3]);
+  crkN = Math.min(CRK_MAX, segs.length);
+  for (let i = 0; i < crkN; i++) crkData.set(segs[i], i * 8);
+  gl.bindTexture(gl.TEXTURE_2D, crkTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, crkN * 2, 1, gl.RGBA, gl.FLOAT, crkData.subarray(0, crkN * 8));
+}
 
 /* ---------- dust ---------- */
 // Shards start inside the drop; the stored stress sets their speed.
@@ -1230,28 +1474,24 @@ for (let i = 0; i < 3; i++) {
 }
 gl.bindVertexArray(null);
 
+// The shader's hash33, in float32 steps, so the cells match the frost.
+const fr = Math.fround, fract = v => v - Math.floor(v);
+function hash33(x, y, z) {
+  let p = [fr(fract(fr(x * 0.1031))), fr(fract(fr(y * 0.103))), fr(fract(fr(z * 0.0973)))];
+  const d = fr(p[0] * fr(p[1] + 33.33) + p[1] * fr(p[0] + 33.33) + p[2] * fr(p[2] + 33.33));
+  p = p.map(v => fr(v + d));
+  return [fract(fr(fr(p[0] + p[1]) * p[2])), fract(fr(fr(p[0] + p[0]) * p[1])), fract(fr(fr(p[1] + p[0]) * p[0]))];
+}
+// The frost's large cells: 11 per unit, as in the shader.
+const CELL = 11;
 function makeDust(sCut, n) {
   const { pts, ss } = headSide(REST, S, sCut);
-  // Thin parts get more shards than their volume, so the tail reads.
-  const w = [];
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const l = len(sub(pts[i + 1], pts[i])), r = (pts[i][3] + pts[i + 1][3]) / 2;
-    w.push(l * Math.pow(r, 1.35) + (i === 0 ? 1.2 : 0));
-  }
-  const wSum = w.reduce((a, b) => a + b, 0);
   const head = REST[0];
   let k = 0;
-  for (let tries = 0; k < n && tries < n * 30; tries++) {
-    let x = rnd() * wSum, i = 0;
-    while (i < w.length - 1 && x > w[i]) { x -= w[i]; i++; }
-    const a = pts[i], b = pts[i + 1];
-    const p = [0, 1, 2].map(j => {
-      const lo = Math.min(a[j] - a[3], b[j] - b[3]), hi = Math.max(a[j] + a[3], b[j] + b[3]);
-      return lo + rnd() * (hi - lo);
-    });
-    if (sdRC(p, a, b) > 0) continue;
+  // A shard starts at p; the stored stress sets its speed and its moment.
+  const launch = (p, size) => {
     const ax = axisOf(p, pts, ss);
-    if (!ax || ax.s < sCut) continue;
+    if (!ax || ax.s < sCut || k >= PART_MAX) return;
     let out = sub(p, ax.a);
     out = len(out) > 1e-4 ? norm(out) : norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]);
     const jit = norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]);
@@ -1262,13 +1502,38 @@ function makeDust(sCut, n) {
       v = mul(dir, 0.5 + 1.3 * rnd() * rnd());
     } else v = mul(norm(add(out, mul(jit, 0.5))), (0.15 + 0.5 * rnd()) * (0.6 + 2 * ax.r));
     v[1] += 0.35 * rnd();
-    const big = rnd() < 0.05;
-    const size = (big ? 0.055 + 0.07 * rnd() : 0.012 + 0.03 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(ax.r, 1)));
     // Tail shards crumble behind the front; the head goes at once.
-    const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, (ax.s - sCut) * FRONT_T + LAG + 0.12 * rnd());
-    const o = k * 12;
-    partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], o);
+    const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, timeAt(ax.s, sCut) + LAG + 0.12 * rnd());
+    partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], k * 12);
     k++;
+  };
+  // Each frost cell inside the glass becomes one shard, where the eye saw it.
+  // The scan covers the glass's own box, not its bounding sphere.
+  const lo = [0, 1, 2].map(j => Math.floor(Math.min(...pts.map(q => q[j] - q[3])) * CELL));
+  const hi = [0, 1, 2].map(j => Math.ceil(Math.max(...pts.map(q => q[j] + q[3])) * CELL));
+  for (let x = lo[0]; x <= hi[0]; x++) for (let y = Math.max(lo[1], -1); y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+    const h = hash33(x, y, z);
+    const c = [(x + h[0]) / CELL, (y + h[1]) / CELL, (z + h[2]) / CELL];
+    if (c[1] < 0.01 || sdChain(c, pts) > -0.01) continue;
+    launch(c, 0.026 + 0.022 * h[2]);
+  }
+  // The rest is fine dust; thin parts get more than their volume.
+  const w = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const l = len(sub(pts[i + 1], pts[i])), r = (pts[i][3] + pts[i + 1][3]) / 2;
+    w.push(l * Math.pow(r, 1.35) + (i === 0 ? 1.2 : 0));
+  }
+  const wSum = w.reduce((a, b) => a + b, 0);
+  for (let tries = 0; k < n && tries < n * 30; tries++) {
+    let x = rnd() * wSum, i = 0;
+    while (i < w.length - 1 && x > w[i]) { x -= w[i]; i++; }
+    const a = pts[i], b = pts[i + 1];
+    const p = [0, 1, 2].map(j => {
+      const lo = Math.min(a[j] - a[3], b[j] - b[3]), hi = Math.max(a[j] + a[3], b[j] + b[3]);
+      return lo + rnd() * (hi - lo);
+    });
+    if (sdRC(p, a, b) > 0) continue;
+    launch(p, (0.006 + 0.016 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(axisOf(p, pts, ss).r, 1))));
   }
   partN = k;
   gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
@@ -1276,7 +1541,7 @@ function makeDust(sCut, n) {
 }
 
 /* ---------- poses ---------- */
-const UA = new Float32Array(72), UAS = new Float32Array(18), UB = new Float32Array(72), UBS = new Float32Array(18);
+const UA = new Float32Array(96), UAS = new Float32Array(24), UB = new Float32Array(96), UBS = new Float32Array(24);
 const RIP = new Float32Array(32);
 let nA = 0, nB = 0, bndA = [0, 0, 0, 0], bndB = [0, 0, 0, 0], bInv = IDENT, bMat = IDENT;
 let hamInv = IDENT, hamBnd = [0, 0, 0, 0], cutInv = IDENT, cutBnd = [0, 0, 0, 0], cutOpen = 0.5;
@@ -1284,7 +1549,7 @@ let crack = 0, front = -1, gone = 0, heat = 0, steamK = 0, steamT = 0, rainK = 0
 let tipPose = null;
 
 function loadA(pts, ss) {
-  nA = Math.min(18, pts.length);
+  nA = Math.min(24, pts.length);
   for (let i = 0; i < nA; i++) { UA.set(pts[i], i * 4); UAS[i] = ss[i]; }
   bndA = nA >= 2 ? bound(pts) : [0, 0, 0, 0];
   if (nA < 2) nA = 0;
@@ -1294,7 +1559,7 @@ function loadA(pts, ss) {
 // The handle rises away from the camera.
 // The face meets the glass square on.
 const HX0 = norm([1, 0.5, -0.45]), HY0 = norm(sub([0, 1, 0], mul(HX0, HX0[1]))), HZ0 = cross(HX0, HY0);
-const HIT_AT = add(REST[0].slice(0, 3), HY0);
+const HIT_AT = add(REST[0].slice(0, 3), mul(HY0, REST[0][3]));
 const HC0 = add(HIT_AT, mul(HY0, 0.95));
 const WRIST = add(HC0, mul(HX0, 7.6));
 function hammerPose(lift, dy = 0) {
@@ -1334,7 +1599,7 @@ function pose() {
   if (state === 'burst') {
     crack = 1;
     front = frontAt(tau);
-    const rel = Math.min(S_NECK, cut.s + Math.max(0, tau - LAG) / FRONT_T);
+    const rel = Math.min(S_NECK, frontAt(tau - LAG));
     gone = clamp((tau - sched.burst) / GONE);
     if (gone < 1) { const a = headSide(REST, S, Math.max(cut.s, rel)); loadA(a.pts, a.ss); } else nA = 0;
     // The tip falls on the real clock and tips as it lands.
@@ -1346,7 +1611,7 @@ function pose() {
     const tr = sub(add(c, [0, -fallD, 0]), add(add(mul(rx, c[0]), mul(ry, c[1])), mul(rz, c[2])));
     bInv = invFrame(rx, ry, rz, tr);
     bMat = frameMat(rx, ry, rz, tr);
-    nB = Math.min(18, tipPose.pts.length);
+    nB = Math.min(24, tipPose.pts.length);
     for (let i = 0; i < nB; i++) { UB.set(tipPose.pts[i], i * 4); UBS[i] = tipPose.ss[i]; }
     const bc = add(add(add(mul(rx, tipPose.bnd[0]), mul(ry, tipPose.bnd[1])), mul(rz, tipPose.bnd[2])), tr);
     bndB = [...bc, tipPose.bnd[3]];
@@ -1383,6 +1648,8 @@ function formPose(t, dy) {
   // The thread up to the rod snaps as the gob lands.
   const thin = 0.026 * (1 - smooth((t - LAND) / 0.18));
   if (thin > 0.003) {
+    // The chain holds 24 points; the thread takes the last one's place.
+    if (pts.length >= 24) { pts.pop(); ss.pop(); }
     const tip = pts[pts.length - 1];
     pts.push([tip[0], tip[1] + 14, tip[2], thin]);
     ss.push(-0.2);
@@ -1516,6 +1783,10 @@ function draw() {
   gl.uniform1i(u('uSteps'), STEPS[lvl]);
   gl.uniform1i(u('uInSteps'), IN_STEPS[lvl]);
   gl.uniform1i(u('uRefSteps'), REF_STEPS[lvl]);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, crkTex);
+  gl.uniform1i(u('uCrk'), 0);
+  gl.uniform1i(u('uNCrk'), state === 'burst' ? crkN : 0);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -1793,6 +2064,7 @@ function stepSnip(dt) {
 }
 function startBurst() {
   sched = schedule(cut.s);
+  growCracks(cut.s);
   const tip = tipSide(REST, S, cut.s);
   const c = tip.pts.reduce((a, p) => add(a, mul(p, 1 / tip.pts.length)), [0, 0, 0, 0]).slice(0, 3);
   tipPose = { pts: tip.pts, ss: tip.ss, c, low: Math.min(...tip.pts.map(p => p[1] - p[3])), bnd: bound(tip.pts) };
