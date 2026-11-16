@@ -220,6 +220,32 @@ void main() {
   o = vec4(h, s.r, 0.0, 1.0);
 }`;
 
+// The water's height, once a frame: the ripples the rim drives plus the passing waves.
+// The scene then reads one map instead of summing the sources per pixel.
+const HEIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uWaves;
+uniform float uSpan;
+// The rim's eight sources on the waterline: x, y in water radii, amplitude, phase.
+uniform vec4 uSrc[8];
+// Reach in from the wall, wavenumber, phase; in water radii.
+uniform vec4 uWv;
+out vec4 o;
+// A fan of rings from each busy point on the waterline.
+// Fans from next-door points are out of step, so they meet in a standing lattice.
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0 * uSpan;
+  float h = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 s = uSrc[i];
+    float d = length(p - s.xy);
+    if (s.z == 0.0 || d > uWv.x * 5.0) continue;
+    h += s.z * cos(uWv.y * d - uWv.z + s.w) * exp(-d / uWv.x) * inversesqrt(d + 0.06);
+  }
+  o = vec4(h * 0.25 + texture(uWaves, vUv).r, 0.0, 0.0, 1.0);
+}`;
+
 // The scene, ray cast per pixel: bowl, water, drops, wand and table.
 // Bowl space: the widest radius is 1, the table is y = 0.
 const SCENE_FS = `#version 300 es
@@ -246,10 +272,6 @@ uniform sampler2D uSim;
 uniform vec4 uSimP;
 // crispation wavenumber, antinode angle, crispation, time
 uniform vec4 uWave;
-// The rim's eight sources on the waterline: x, y in water radii, amplitude, phase.
-uniform vec4 uSrc[8];
-// Reach in from the wall, wavenumber, phase, unused; in water radii.
-uniform vec4 uWv;
 uniform vec4 uDrop[MAXD];
 uniform vec4 uDropV[MAXD];
 uniform int uNDrop;
@@ -320,12 +342,13 @@ vec3 capN(vec3 p, vec3 a, vec3 b, float r) {
   return (pa - h * ba) / r;
 }
 // The share of a light in direction L that reaches p in the hollow.
-// It is lit when the ray leaves through the mouth.
-float mouth(vec3 p, vec3 L) {
+// It is lit when the ray leaves through the mouth; w softens the edge.
+float mouth(vec3 p, vec3 L, float w) {
   vec2 e = ellip(p, L, axI());
   vec3 q = p + L * max(e.y, 0.0);
-  return smoothstep(uOut.w - 0.035, uOut.w + 0.03, q.y);
+  return smoothstep(uOut.w - w, uOut.w + w * 0.85, q.y);
 }
+float mouth(vec3 p, vec3 L) { return mouth(p, L, 0.035); }
 // The bowl's soft shadow on the table.
 float bowlShadow(vec3 p, vec3 L, float soft) {
   vec3 oc = (p - cen()) / axO(), d = normalize(L / axO());
@@ -349,9 +372,10 @@ vec3 spec(vec3 N, vec3 V, vec3 L, float a, vec3 f0) {
   float nv = max(dot(N, V), 1e-3), nh = max(dot(N, H), 0.0);
   return ggxD(nh, a) * ggxV(nv, nl, a) * schlick(f0, max(dot(V, H), 0.0)) * nl;
 }
-// The window behind the bowl: a pane with a cross bar.
-// Rough metal spreads it wide and dim.
-float pane(vec3 r, float a) {
+// The window behind the bowl: a pane with a cross bar, dusk sky at the top.
+// Rough metal spreads it wide and dim. y: from the bottom of the pane to its top.
+float pane(vec3 r, float a, out float y) {
+  y = 0.0;
   float cw = dot(r, uWinD);
   if (cw <= 0.05) return 0.0;
   vec3 wr = normalize(cross(vec3(0.0, 1.0, 0.0), uWinD)), wu = cross(uWinD, wr);
@@ -361,6 +385,7 @@ float pane(vec3 r, float a) {
   float box = smoothstep(hw.x + s, hw.x - s, abs(q.x)) * smoothstep(hw.y + s, hw.y - s, abs(q.y));
   float spread = hw.x * hw.y / ((hw.x + s) * (hw.y + s));
   float bars = max(smoothstep(0.005 + s, 0.4 * s, abs(q.x)), smoothstep(0.005 + s, 0.4 * s, abs(q.y - 0.012)));
+  y = clamp(q.y / hw.y * 0.5 + 0.5, 0.0, 1.0);
   return box * (1.0 - 0.9 * bars * spread) * spread;
 }
 // The dark room seen in reflections: walls, the lamp's wash, the window and the table.
@@ -371,7 +396,11 @@ vec3 room(vec3 r, float a) {
   // The lamp's wash on the wall behind the viewer, low and soft.
   vec3 back = normalize(vec3(uEye.x, length(uEye.xz) * 0.36, uEye.z));
   c += vec3(0.034, 0.024, 0.016) * pow(max(dot(r, back), 0.0), 6.0);
-  c += uWinC * (30.0 * pane(r, a) + 0.05 * pow(max(dot(r, uWinD), 0.0), 3.0));
+  // The pane: a deep blue sky that warms to a glow at the sill.
+  float wy;
+  float pn = pane(r, a, wy);
+  c += pn * 26.0 * mix(vec3(0.13, 0.1, 0.09), uWinC * vec3(0.85, 0.95, 1.15), smoothstep(0.0, 0.8, wy));
+  c += uWinC * 0.05 * pow(max(dot(r, uWinD), 0.0), 3.0);
   if (r.y > 0.02) return c;
   // Below the horizon: the table, lit by the lamp's pool round the bowl.
   vec3 q = vec3(r.x, 0.0, r.z) * (0.35 / max(-r.y, 0.05));
@@ -388,20 +417,8 @@ vec3 lightMetal(vec3 p, vec3 N, vec3 V, vec3 f0, vec3 dif, float a, float shL, f
 }
 
 /* the water */
-// The ripples the rim drives: a fan of rings from each busy point on the waterline.
-// Fans from next-door points are out of step, so they meet in a standing lattice.
-float pattern(vec2 p) {
-  float h = 0.0;
-  for (int i = 0; i < 8; i++) {
-    vec4 s = uSrc[i];
-    if (s.z == 0.0) continue;
-    float d = length(p - s.xy);
-    h += s.z * cos(uWv.y * d - uWv.z + s.w) * exp(-d / uWv.x) * inversesqrt(d + 0.06);
-  }
-  return h * 0.25;
-}
-// The water height at xz: the standing ripples plus the passing waves.
-float wh(vec2 xz) { return (pattern(xz / uRad.z) + texture(uSim, xz / (2.0 * uSimP.y) + 0.5).r) * uSimP.z; }
+// The water height at xz, from the height map.
+float wh(vec2 xz) { return texture(uSim, xz / (2.0 * uSimP.y) + 0.5).r * uSimP.z; }
 void waterDiff(vec2 xz, out vec2 g, out float lap) {
   float e = 2.0 * uSimP.y * uSimP.x;
   float c = wh(xz), l = wh(xz - vec2(e, 0.0)), r = wh(xz + vec2(e, 0.0)), d = wh(xz - vec2(0.0, e)), u = wh(xz + vec2(0.0, e));
@@ -453,7 +470,7 @@ vec3 inside(vec3 p, vec3 R, float a) {
       vec3 n = -ellipN(q, axI());
       vec3 L;
       vec3 E = lampAt(q, L);
-      c = uF0 * (E * max(dot(n, L), 0.0) * mouth(q, L) * 0.2 + 0.008);
+      c = uF0 * (E * max(dot(n, L), 0.0) * mouth(q, L, 0.14) * 0.2 + 0.008);
     }
   }
   vec3 mean = uF0 * 0.03 + room(R, 1.0) * 0.5;
@@ -565,7 +582,8 @@ vec3 shadeInner(vec3 p, vec3 V, float fp) {
   float a = mix(uMat2.y * 1.3, 0.4, pat) * (1.0 - 0.5 * wet);
   vec3 L;
   lampAt(p, L);
-  vec3 col = lightMetal(p, N, V, f0, dif, a, mouth(p, L), mouth(p, uWinD), inside(p, reflect(-V, N), a));
+  // The mirrored bowl uses a calmer normal, so its edges do not streak.
+  vec3 col = lightMetal(p, N, V, f0, dif, a, mouth(p, L), mouth(p, uWinD), inside(p, reflect(-V, normalize(mix(n0, N, 0.35))), a));
   return col + wallCaustic(p, n0) * (f0 * 0.3 + dif);
 }
 vec3 shadeWater(vec3 p, vec3 V, float fp) {
@@ -614,7 +632,7 @@ vec3 shadeDrop(vec3 p, vec3 N, vec3 V) {
   vec3 E = lampAt(p, L);
   float sh = p.y < uOut.w ? mouth(p, L) : 1.0;
   vec3 col = spec(N, V, L, 0.09, vec3(0.02)) * E * sh * 3.0;
-  col += room(reflect(-V, N), 0.0) * (F + 0.05) * 2.0;
+  col += room(reflect(-V, N), 0.0) * (F + 0.05) * 2.0 + room(N, 0.6) * 0.6;
   // Through the drop: the lit bronze below, and the lamp focused on the far side.
   return col + (1.0 - F) * (uF0 * (E * sh * 0.12 + 0.02) + E * sh * 0.9 * pow(max(dot(-N, L) * 0.5 + 0.5, 0.0), 6.0));
 }
@@ -703,6 +721,7 @@ async function buildGL() {
   P = await linked(gl, {
     scene: program(gl, TRI_VS, SCENE_FS),
     sim: program(gl, TRI_VS, SIM_FS),
+    height: program(gl, TRI_VS, HEIGHT_FS),
     comp: program(gl, TRI_VS, COMP_FS),
   }, { wait: tick });
   vao = gl.createVertexArray();
@@ -715,7 +734,7 @@ async function buildGL() {
 // A warm lamp in front, high on the left; a dim window behind the bowl.
 const LAMP_P = [-2.4, 6.2, 2.0];
 const LAMP_C = [1, 0.7, 0.43].map(v => v * 38);
-const WIN_D = (() => { const az = 176 * DEG, el = 54 * DEG; return [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)]; })();
+const WIN_D = (() => { const az = 172 * DEG, el = 55 * DEG; return [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)]; })();
 const WIN_C = [0.5, 0.6, 0.76].map(v => v * 0.2);
 
 /* ---------- camera ---------- */
@@ -752,8 +771,11 @@ function fitCamera() {
     for (const p of pts) { const [x, y] = project(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     return { x0, x1, y0, y1 };
   };
+  // The bowl keeps clear of the top corners and of the bottom row with its key strip.
   const narrow = W < 640;
-  const fx = narrow ? 0.84 : 0.7, fy = narrow ? 0.62 : 0.7;
+  const fx = narrow ? 0.84 : 0.7;
+  const yT = Math.min(0.84, 1 - 2 * 64 / H), yB = Math.max(-0.84, -1 + 2 * 72 / H);
+  const fy = Math.min(narrow ? 0.62 : 0.7, (yT - yB) / 2 * 0.96), cy0 = (yT + yB) / 2;
   let tgt = [0, G.yRim * 0.42, 0], d = 6;
   for (let it = 0; it < 3; it++) {
     let lo = 0.5, hi = 80;
@@ -765,8 +787,8 @@ function fitCamera() {
     }
     d = hi;
     look(tgt, dir, d);
-    // Move the aim so the bowl sits a touch above the middle.
-    const b = box(), cy = (b.y0 + b.y1) / 2 - 0.03;
+    // Move the aim so the bowl sits in the clear band.
+    const b = box(), cy = (b.y0 + b.y1) / 2 - cy0;
     const z = dot(sub(tgt, cam.eye), cam.F);
     tgt = tgt.map((v, i) => v + cam.Uv[i] * cy * z * cam.tanY);
   }
@@ -796,7 +818,7 @@ const amp = i => Math.hypot(bowl.a[i], bowl.b[i]);
 const antinode = () => cur.alpha[0] + Math.atan2(bowl.b[0], bowl.a[0]) / 2;
 const maxAmp = () => { let m = 0; for (let i = 0; i < M; i++) m = Math.max(m, amp(i)); return m; };
 // Growth per second at full drive; a seed so a still bowl can start.
-const GROW = 1.7, SEED = 0.08, LOCK = 22;
+const GROW = 2, SEED = 0.08, LOCK = 22;
 function stepBowl(dt, dtAll) {
   // Free decay, exact for any step; a resting wand or a hush adds damping.
   for (let i = 0; i < M; i++) {
@@ -851,7 +873,7 @@ const contact = r => smooth(0.32, 0.62, r) * (1 - smooth(1.6, 2.3, r));
 // The wand grips best between a slow and a fast circle.
 const speedResp = w => smooth(0.6, 2.2, w) * (1 - 0.6 * smooth(14, 24, w));
 function stepWand(dt) {
-  if (keyRub) { wand.target += keyRub * 4.6 * dt; wand.cT = 1; }
+  if (keyRub) { wand.target += keyRub * 6 * dt; wand.cT = 1; }
   const prev = wand.theta;
   wand.theta += (wand.target - wand.theta) * (1 - Math.exp(-dt / 0.035));
   const om = dt > 0 ? (wand.theta - prev) / dt : 0;
@@ -886,7 +908,7 @@ function wandPose() {
 
 /* ---------- drops ---------- */
 const drops = [], impacts = [];
-const GRAV = 60;
+const GRAV = 48;
 let dropAcc = 0, ring = null;
 function spawnDrop(A) {
   if (drops.length >= MAXD) return;
@@ -901,7 +923,7 @@ function spawnDrop(A) {
 function stepDrops(dt) {
   const A = amp(0);
   if (!reduced() && A > 0.62) {
-    dropAcc += 45 * ((A - 0.62) / 0.38) ** 1.3 * dt;
+    dropAcc += 100 * ((A - 0.62) / 0.38) ** 1.3 * dt;
     while (dropAcc >= 1) { dropAcc -= 1; spawnDrop(A); }
   } else dropAcc = 0;
   for (let i = drops.length - 1; i >= 0; i--) {
@@ -913,7 +935,7 @@ function stepDrops(dt) {
     if (d.vy < 0 && d.y <= G.yW) {
       const rr = Math.hypot(d.x, d.z);
       if (rr < G.rW * 0.985) {
-        if (impacts.length < 8) impacts.push([d.x / G.rW, d.z / G.rW, 0.7 * d.r / 0.012, 0.016 + d.r * 0.5]);
+        if (impacts.length < 8) impacts.push([d.x / G.rW, d.z / G.rW, 0.3 * d.r / 0.012, 0.011 + d.r * 0.4]);
         plip(d);
       }
       drops.splice(i, 1);
@@ -926,12 +948,14 @@ function stepDrops(dt) {
 const SPAN = 1.04, VIS_HZ = 6.5;
 const simN = () => [256, 384, 512][D.level];
 let simRate = 120, simC2 = 0.3, simDamp = 0.01, simAcc = 0, simCalm = 99;
+// The wave pair, and the height map the scene reads.
 function makeSim() {
   const n = simN();
   if (sim?.n === n) return;
-  if (sim) sim.pair.forEach(t => free(gl, t));
+  if (sim) { sim.pair.forEach(t => free(gl, t)); free(gl, sim.height); }
   const format = F32 ? gl.RG32F : gl.RG16F;
-  sim = { n, i: 0, pair: [0, 1].map(() => target(gl, n, n, { format, clear: true })) };
+  sim = { n, i: 0, pair: [0, 1].map(() => target(gl, n, n, { format, clear: true })),
+    height: target(gl, n, n, { format: F32 ? gl.R32F : gl.R16F, clear: true }) };
   simCalm = 99;
   simTune();
 }
@@ -949,7 +973,7 @@ function simTune() {
 }
 function clearSim() {
   if (!sim) return;
-  for (const t of sim.pair) {
+  for (const t of [...sim.pair, sim.height]) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -1008,7 +1032,29 @@ function resize() {
   makeSim();
   fitCamera();
 }
+// The height map: the rim's ripples, from mode 2, plus the passing waves.
+// Eight points on the waterline are sources; each swings as the sum of the mode's two tones.
+// So the beat turns the fans.
+function heights() {
+  const Hp = P.height, A2 = flat ? 0 : amp(0);
+  const k2 = flat ? 0 : wallK(A2), thp = antinode(), al = cur.alpha[0];
+  const cp = Math.cos(bowl.psi[0]), sp = Math.sin(bowl.psi[0]);
+  for (let k = 0; k < 8; k++) {
+    const th = thp + k * Math.PI / 4, C = Math.cos(2 * (th - al)), Sn = Math.sin(2 * (th - al));
+    const re = bowl.a[0] * C + bowl.b[0] * Sn * cp, im = bowl.b[0] * Sn * sp;
+    const m = Math.hypot(re, im) * k2;
+    srcU.set([0.985 * Math.cos(th), 0.985 * Math.sin(th), m > 1e-4 ? m : 0, Math.atan2(im, re)], k * 4);
+  }
+  gl.useProgram(Hp.p);
+  gl.uniform4fv(U(Hp, 'uSrc'), srcU);
+  const hz = reduced() ? VIS_HZ * 0.5 : VIS_HZ;
+  gl.uniform4f(U(Hp, 'uWv'), 0.16 + 0.42 * A2 * A2, TAU * G.rW / cur.ripple, TAU * hz * simT, 0);
+  gl.uniform1f(U(Hp, 'uSpan'), SPAN);
+  bind(gl, Hp, 'uWaves', 0, sim.pair[sim.i]);
+  tri(gl, sim.height, vao);
+}
 function draw() {
+  heights();
   const S = P.scene, cw = canvas.width, ch = canvas.height;
   gl.useProgram(S.p);
   gl.uniform2f(U(S, 'uRes'), cw, ch);
@@ -1029,27 +1075,14 @@ function draw() {
   gl.uniform4f(U(S, 'uMat'), cur.out, cur.cells, cur.dent, cur.seed);
   gl.uniform4f(U(S, 'uMat2'), cur.inner, cur.rough, cur.cellsIn, 0);
   // Ripple slope at full voice: about a tenth, steeper where fans meet.
-  const hs = 0.0016 * dv('ripple') * cur.ripple / 0.052;
-  gl.uniform4f(U(S, 'uSimP'), 1 / sim.n, SPAN * G.rW, hs, 0.16);
-  const A2 = flat ? 0 : amp(0), A3 = flat ? 0 : amp(1);
+  const hs = 0.0019 * dv('ripple') * cur.ripple / 0.052;
+  gl.uniform4f(U(S, 'uSimP'), 1 / sim.n, SPAN * G.rW, hs, 0.2);
+  const A2 = flat ? 0 : amp(0);
   const crisp = reduced() ? 0 : smooth(0.78, 1, A2);
   gl.uniform4f(U(S, 'uWave'), 4 * Math.PI / cur.ripple, antinode(), crisp, simT);
-  // The ripples follow mode 2: eight points on the waterline, each a source.
-  // Each point's swing is the sum of the mode's two tones, so the beat turns the fans.
-  const k2 = flat ? 0 : wallK(A2), thp = antinode(), al = cur.alpha[0];
-  const cp = Math.cos(bowl.psi[0]), sp = Math.sin(bowl.psi[0]);
-  for (let k = 0; k < 8; k++) {
-    const th = thp + k * Math.PI / 4, C = Math.cos(2 * (th - al)), Sn = Math.sin(2 * (th - al));
-    const re = bowl.a[0] * C + bowl.b[0] * Sn * cp, im = bowl.b[0] * Sn * sp;
-    const m = Math.hypot(re, im) * k2;
-    srcU.set([0.985 * Math.cos(th), 0.985 * Math.sin(th), m > 1e-4 ? m : 0, Math.atan2(im, re)], k * 4);
-  }
-  gl.uniform4fv(U(S, 'uSrc'), srcU);
-  const hz = reduced() ? VIS_HZ * 0.5 : VIS_HZ;
-  gl.uniform4f(U(S, 'uWv'), 0.16 + 0.42 * A2 * A2, TAU * G.rW / cur.ripple, TAU * hz * simT, 0);
   const n = Math.min(drops.length, MAXD);
   for (let i = 0; i < n; i++) {
-    const d = drops[i], b = 1 / 90;
+    const d = drops[i], b = 1 / 160;
     dropU.set([d.x, d.y, d.z, d.r], i * 4);
     dropV.set([d.vx * b, d.vy * b, d.vz * b, 0], i * 4);
   }
@@ -1059,7 +1092,7 @@ function draw() {
   const wp = wandPose();
   gl.uniform4f(U(S, 'uWandA'), ...wp.tip, wand.vis);
   gl.uniform4f(U(S, 'uWandB'), ...wp.dir, cur.wand);
-  bind(gl, S, 'uSim', 0, sim.pair[sim.i]);
+  bind(gl, S, 'uSim', 0, sim.height);
   tri(gl, hdr, vao);
   const glow = bloom.render(hdr.tex, hdr.w, hdr.h, { threshold: 1.1, levels: glowDetail(D.level).levels });
   const C = P.comp;
@@ -1286,8 +1319,10 @@ let raf = 0, last = performance.now(), visible = !document.hidden, ready = false
 function wake() {
   if (!raf && visible && ready) raf = requestAnimationFrame(frame);
 }
+// Below about a tenth of full voice the ripples are too faint to see.
+// The loop then sleeps; the sound fades on by itself.
 function busy() {
-  return !!ptr || !!keyRub || wand.vis > 0.003 || maxAmp() > 0.035 || drops.length > 0 || simCalm <= 3.5;
+  return !!ptr || !!keyRub || wand.vis > 0.003 || maxAmp() > 0.09 || drops.length > 0 || simCalm <= 3.5;
 }
 function frame(now) {
   raf = 0;

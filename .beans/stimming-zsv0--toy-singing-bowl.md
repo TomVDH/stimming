@@ -16,11 +16,11 @@ Tier: raw WebGL2 (analytic ray cast of the bowl, the water, the drops and the wa
 ## Checklist
 
 - [x] Blockout: page on Bar v2, ray-cast bowl, water disc, rim gesture
-- [ ] Look: hammered bronze, lamp, water reflection and caustics, drops
-- [ ] Bowl physics: rub build-up, waver, strike, damp, long decay, pattern follows the wand
-- [ ] Water: standing ripples from the busy points, passing rings from strikes and drops, crispation at full voice
-- [ ] Sound: doublet partials with beats, rasp, strike, drips, room
-- [ ] Performance: detail level, slow-frame step, idle when quiet, reduced motion
+- [x] Look: hammered bronze, lamp, water reflection and caustics, drops
+- [x] Bowl physics: rub build-up, waver, strike, damp, long decay, pattern follows the wand
+- [x] Water: standing ripples from the busy points, passing rings from strikes and drops, crispation at full voice
+- [x] Sound: doublet partials with beats, rasp, strike, drips, room
+- [x] Performance: detail level, slow-frame step, idle when quiet, reduced motion
 - [ ] QA: console, gestures, controls, 1280, 375 x 812, 812 x 375
 - [ ] Toy doc docs/toys/bowl.md
 - [ ] Handoff files: toys-entry.json, menu-li.html, menu-icon.js
