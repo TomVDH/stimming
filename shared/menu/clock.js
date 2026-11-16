@@ -49,7 +49,8 @@ function start() {
     face.setAttribute('data-tube', '');
     if (shown) bg.show(picture(shown), film(shown), words(shown));
     bg.live(face.hasAttribute('data-live'));
-  }).catch(() => {});
+  // A tube that fails to build leaves the page's own words; the console says why.
+  }).catch(e => console.warn('Clock tube:', e));
   fetch('shared/loops/index.json').then(r => r.json()).then(ids => { if (Array.isArray(ids)) loops = new Set(ids); }).catch(() => {});
   const live = on => { face.toggleAttribute('data-live', on); bg?.live(on); };
   // toys.json holds each toy's motto and accent; the Clock works without it.
@@ -184,6 +185,8 @@ function start() {
     } });
   }
   button.addEventListener('click', roll);
+  // The Re-roll stays away for the first five seconds.
+  setTimeout(() => button.setAttribute('data-on', ''), 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
   // After two laps it stops, so an empty room burns no power.

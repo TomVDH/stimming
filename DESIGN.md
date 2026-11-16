@@ -289,8 +289,8 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 - One centred column: wordmark, tagline, clock, footer.
 - The clock is a square, `min(92vw, 660px)` wide. Twelve toys stand on its hours: each tile is 19% of the square, on a ring at 40.5% from the middle. Tiles show no label; the toy in hand grows to 1.18.
 - The middle holds the words of the toy in hand: its name (Gabarito 800, 17 to 32 px), a 22 px hairline, its motto (slab, 10.5 to 12.5 px). They are the only white in the clock. With no toy in hand the middle is empty.
-- The words are part of the tube: the toy's still or loop, in colour, with a concave warp, scan lines and grain, dim and darker to the rim. It has no hard edge; it fades out at the ring of toys. A change of toy takes 0.42 s: the new picture fades in from a little close up and settles.
-- The selection light is a wide, soft white halo under the toy in hand. It turns to the pointer. Its edge fades to nothing.
+- The words are part of the tube: the toy's still or loop, in colour, as a CRT with the grain of an image tube (a slight bulge, quiet scan lines, halation, fine uneven grain). The words burn in white with a soft band round each letter. The tube has no hard edge; it is wider than the clock and fades out past the ring of toys. A change of toy takes 0.42 s: the new picture fades in from a little close up and settles.
+- The selection is a soft dark spot that multiplies the tube under the toy in hand, so the icon stands clear of the picture. It turns to the pointer.
 - The outline (a rim and sixty minute marks) draws in with the dozen, then fades. It is never at rest on the page.
 - The Re-roll is a pill under the clock; it shows after 5 s.
 - Left alone for 12 s, the clock runs by itself: each hour in turn shows its toy in the middle. Any input stops it.

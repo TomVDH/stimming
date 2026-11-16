@@ -1,13 +1,17 @@
 // The tube: the toy in hand, as a picture in the middle of the Clock.
-// It looks like a 1950s picture tube, seen from inside: a concave warp, scan lines and grain.
+// It is a colour CRT: a slight bulge, an aperture grille, scan lines that burn wider where they are bright,
+// halation, a weak hold that warbles, and the fine grain of an image tube.
+// The oscilloscope's screen (scope/index.html) and the railgun sight's tube (nvg/tube.js) are its models.
 // It has no hard edge: the picture fades out toward the toys.
 // The toy's name and motto are part of the picture: the shader draws them, so they shade and change with it.
 // A change of toy is quick: the new picture fades in from a little close up and settles, after a short flicker.
 // A toy with a loop plays it in place of the still while the toy is in hand.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
-// How bright the picture is at its middle, 0 to 1.
-const LEVEL = 0.46;
+// How bright the picture is at its middle, 0 to 1, in linear light.
+const LEVEL = 0.2;
+// The tube takes this long to open from a dot when the first toy comes, in seconds.
+const POWER = 0.5;
 // A change of toy takes this long, in seconds.
 const CHANGE = 0.42;
 // The cadence: the wordmark's own way with letters, each a little askew in its own weight.
@@ -17,66 +21,120 @@ const CADENCE = false;
 const CAP = 0.5, CAP_PX = 1024;
 
 const FS = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 vUv;
 out vec4 o;
 uniform sampler2D uA, uB, uTA, uTB;
-uniform float uPx, uMix, uKick, uTime, uHasA, uHasB, uLevel;
+uniform vec2 uRes;
+uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-// A still. Its colours part a little, as on a worn tube; f is how far.
-vec3 pic(sampler2D t, vec2 w, float f) {
+// An integer hash: it shows no pattern, so the grain has no grid in it.
+uint pcg(uint v) { uint t = v * 747796405u + 2891336453u; uint w = ((t >> ((t >> 28u) + 4u)) ^ t) * 277803737u; return (w >> 22u) ^ w; }
+float rnd(vec2 p, float f) { uvec2 u = uvec2(ivec2(p)); return float(pcg(u.x + pcg(u.y + pcg(uint(f))))) / 4294967295.0; }
+// Smooth noise: soft blobs, not square cells.
+float vn(vec2 x, float f) {
+  vec2 i = floor(x), u = fract(x);
+  u = u * u * (3.0 - 2.0 * u);
+  return mix(mix(rnd(i, f), rnd(i + vec2(1.0, 0.0), f), u.x), mix(rnd(i + vec2(0.0, 1.0), f), rnd(i + vec2(1.0, 1.0), f), u.x), u.y);
+}
+// A still in linear light. Its three colours land a little apart; soft is the blur, in mip levels.
+vec3 pic(sampler2D t, vec2 w, vec2 ca, float soft) {
   // The first texture row is the top of the still.
   vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
-  return vec3(texture(t, s + vec2(f, 0.0)).r, texture(t, s).g, texture(t, s - vec2(f, 0.0)).b);
+  vec3 c = vec3(textureLod(t, s + ca, soft).r, textureLod(t, s, soft).g, textureLod(t, s - ca, soft).b);
+  return pow(c, vec3(2.2));
 }
-// A caption: white words with a dark shade round them, alpha premultiplied.
-vec4 words(sampler2D t, vec2 q) {
+// The wide glow round the bright parts of a still: two low mip levels.
+vec3 halo(sampler2D t, vec2 w) {
+  vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
+  return pow(textureLod(t, s, 4.5).rgb, vec3(2.2)) * 0.6 + pow(textureLod(t, s, 6.5).rgb, vec3(2.2)) * 0.4;
+}
+// A caption: how much of a letter lies here, 0 to 1. lod blurs it into a soft band.
+float words(sampler2D t, vec2 q, float lod) {
   vec2 s = vec2(q.x, -q.y) * 0.5 + 0.5;
-  return texture(t, s) * step(abs(q.x), 1.0) * step(abs(q.y), 1.0);
+  return textureLod(t, s, lod).a * step(abs(q.x), 1.0) * step(abs(q.y), 1.0);
 }
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
   float r = length(p);
-  // The warp is concave: the middle sinks back and the rim pulls outward.
-  // Past r = 0.84 the picture folds; the fade hides that part.
-  vec2 w = p * (1.7 - 0.8 * r * r);
-  // The caption has a milder warp, so the words stay easy to read.
-  float cr = min(r / ${CAP.toFixed(2)}, 1.0);
-  vec2 q = (p / ${CAP.toFixed(2)}) * (1.08 - 0.2 * cr * cr);
-  // The change: at 0 picture A stands; at 1 picture B stands.
+  // The face bulges a little, as a tube's glass does; the raster follows the bulge.
+  vec2 pc = p * (1.0 + 0.09 * r * r);
   float g = uMix, k = uKick;
-  // The warble: the lines sway sideways in two slow waves, as on a tube with a weak hold.
-  // It runs only while a toy is in hand, and swells in a change.
-  float sway = (0.007 * sin(w.y * 9.0 + uTime * 2.6) + 0.004 * sin(w.y * 31.0 - uTime * 6.1)) * (1.0 + 3.0 * k);
-  w.x += sway;
-  q.x += sway * 1.4;
-  // A hum bar: a faint band of light climbs the picture.
-  float hum = 0.05 * smoothstep(0.3, 0.0, abs(fract(vUv.y * 0.9 - uTime * 0.11) - 0.5));
-  // The flicker at the start of a change: a few lines slip sideways and the colours part.
-  float slip = k * 0.03 * (hash(vec2(floor(vUv.y * 46.0), floor(uTime * 30.0) + 5.0)) - 0.5);
-  w.x += slip;
-  q.x += slip;
-  float f = 0.003 + 0.012 * k;
+  // The raster: one scan line each three CSS pixels.
+  vec2 pw = (pc * 0.5 + 0.5) * uRes;
+  float row = floor(pw.y / (3.0 * uPx));
+  // The warble of a weak hold. Each line sits a hair off, anew each field.
+  float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0011;
+  // A tracking band climbs the face about every twelve seconds; its lines lean and shiver.
+  float away = (pc.y * 0.5 + 0.5) - fract(uTime * 0.085) * 1.3 + 0.15;
+  float band = exp(-away * away / 0.0016);
+  slip += band * (0.0045 + 0.002 * sin(uTime * 37.0 + row * 1.9));
+  // A change of toy shakes a few lines hard, for a moment.
+  slip += k * 0.022 * (hash(vec2(floor(row / 3.0), floor(uTime * 30.0) + 5.0)) - 0.5);
+  pc.x += slip;
+  // Power on: a dot opens to a line, then the raster opens to its full height.
+  vec2 open = vec2(max(0.004, smoothstep(0.0, 0.35, uPower)), max(0.004, smoothstep(0.25, 0.85, uPower)));
+  vec2 pr = pc / open;
+  float lit = step(abs(pr.x), 1.25) * step(abs(pr.y), 1.25);
+  // The picture and the caption each have their own scale on the face.
+  vec2 w = pr * 1.12, q = pr / ${CAP.toFixed(2)};
+  // Each colour lands a little apart, more so away from the middle; a change parts them further.
+  vec2 ca = pr * (0.0016 + 0.006 * k);
+  // The picture goes soft toward the rim, as through an eyepiece.
+  float soft = 2.4 * r * r * r + 1.5 * k;
   // The new picture comes from a little close up and settles back.
   float zoom = 1.0 - 0.06 * (1.0 - g);
-  vec3 c = mix(pic(uA, w, f) * uHasA, pic(uB, w * zoom, f) * uHasB, g);
-  // The shade: a dim picture that goes darker toward the rim.
-  c *= uLevel * (1.0 - 0.78 * smoothstep(0.12, 0.86, r));
-  // The words lie on the picture and change with it.
-  vec4 t = mix(words(uTA, q) * uHasA, words(uTB, q * zoom) * uHasB, g);
-  c = c * (1.0 - t.a) + t.rgb * 0.94;
-  float n = hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0);
-  // The flicker is a touch bright, with a burst of grain.
-  c = c * (1.0 + 0.3 * k + hum) + (n - 0.5) * 0.16 * k;
-  // Scan lines: one line each three CSS pixels.
-  float line = 0.5 + 0.5 * sin(gl_FragCoord.y / uPx * 2.0944);
-  c *= 0.7 + 0.3 * line;
-  // Grain lies on the whole face, also where the picture is dark.
-  c += n * 0.035;
-  // No hard edge: the face fades out at the ring of toys.
+  vec3 light = mix(pic(uA, w, ca, soft) * uHasA, pic(uB, w * zoom, ca, soft) * uHasB, g);
+  vec3 glow = mix(halo(uA, w) * uHasA, halo(uB, w * zoom) * uHasB, g);
+  light *= uLevel;
+  glow *= uLevel;
+  // The words burn in, after the railgun sight: a soft band round each letter works against the picture.
+  // On a dark picture the band is the picture's negative, a faint glow; on a bright one it is a deep shade.
+  // The core is always white, so the words never vanish and never change colour mid-line.
+  float core = mix(words(uTA, q, 0.0) * uHasA, words(uTB, q * zoom, 0.0) * uHasB, g);
+  float bandw = clamp(mix(words(uTA, q, 3.6) * uHasA, words(uTB, q * zoom, 3.6) * uHasB, g) * 2.1, 0.0, 1.0);
+  float bright = smoothstep(0.12, 0.5, dot(glow, vec3(0.3, 0.6, 0.1)) / uLevel);
+  vec3 neg = max(vec3(uLevel) - light, 0.0) * 0.55;
+  light = mix(light, mix(neg, light * 0.08, bright), bandw * 0.9);
+  light = mix(light, vec3(0.95), core);
+  glow += core * 0.2;
+  // Aperture grille and scan lines; a bright line burns wider than a dim one.
+  float m = floor(mod(pw.x / max(1.0, floor(uPx + 0.5)), 3.0));
+  vec3 grille = mix(vec3(1.0), vec3(m == 0.0, m == 1.0, m == 2.0) * 0.75 + 0.42, 0.18);
+  float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
+  float sy = fract(pw.y / (3.0 * uPx)) - 0.5, sw = mix(0.3, 0.62, sqrt(lum));
+  // The raster is quiet: the grain is the tube's main texture, as on the sight.
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.45, 0.42);
+  // Blemishes: a few dead spots, fixed in the screen.
+  for (int i = 0; i < 6; i++) {
+    vec2 at = vec2(hash(vec2(float(i), 3.0)), hash(vec2(float(i), 7.0))) * 1.3 - 0.65;
+    float rad = 0.006 + 0.012 * hash(vec2(float(i), 9.0));
+    light *= 1.0 - (0.5 + 0.4 * hash(vec2(float(i), 1.0))) * smoothstep(rad, rad * 0.35, length(p - at));
+  }
+  // Unlit phosphor is a dim grey with the grille just visible.
+  vec3 c = vec3(0.007, 0.008, 0.009) * grille;
+  // A faint band of light rolls down the raster.
+  float roll = exp(-pow((fract(vUv.y + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.05;
+  // Halation: the glass spreads the light of the bright parts.
+  c += (light + glow * 0.45) * (1.0 + roll + band * 0.25) * lit;
+  // Grain as in an image tube: fine, with no grid in it, and new each field.
+  // It is not even: its strength drifts across the face in slow patches, and it is a little heavier at the rim.
+  float field = floor(uTime * 24.0);
+  // Single pixels, softened a little by a grain that lies askew to the raster.
+  vec2 gp = mat2(0.89, 0.45, -0.45, 0.89) * gl_FragCoord.xy / uPx;
+  float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
+  float lump = vn(p * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
+  float heavy = (0.65 + 0.7 * lump) * (1.0 + 0.5 * r * r);
+  c *= 1.0 + n * 0.85 * heavy * lit;
+  c += n * (0.012 * heavy + 0.2 * k) * lit;
+  // A rare spark flies.
+  c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.5 * lit;
+  // The corners fall off; the whole face flickers a hair; a change is a touch bright.
+  c *= (1.0 - 0.4 * smoothstep(0.2, 1.0, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  // No hard edge: the face fades out past the ring of toys.
   float a = pow(1.0 - smoothstep(0.38, 1.0, r), 1.2);
-  // The dark lines and the grain reach wider than the picture.
-  o = vec4(max(c, 0.0) * a, a * (0.26 + 0.3 * (1.0 - line)));
+  o = vec4(c * a, a * 0.45);
 }`;
 
 /**
@@ -108,7 +166,8 @@ export async function tube(host, span) {
     const blank = () => {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      // The low mip levels give the halo and the soft rim.
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -186,12 +245,9 @@ export async function tube(host, span) {
       const nameStep = nameSize * 1.1, tagStep = tagSize * 1.45, gap = tags.length ? tagSize * 2.1 : 0;
       const tall = names.length * nameStep + gap + tags.length * tagStep;
       // Two passes: a dark shade keeps the words clear, then a soft white glow.
-      /** @type {[string, number][]} */
-      const passes = [['rgb(8 9 14 / 0.95)', 16 * k], ['rgb(255 255 255 / 0.3)', 5 * k]];
-      for (const [shade, blur] of passes) {
+      // Plain white letters: the shader makes their band and their core.
+      {
         let y = mid - tall / 2;
-        pen.shadowColor = shade;
-        pen.shadowBlur = blur;
         pen.fillStyle = '#fff';
         if ('letterSpacing' in pen) pen.letterSpacing = '0px';
         for (const row of rows) {
@@ -207,25 +263,23 @@ export async function tube(host, span) {
         }
         if (tags.length) {
           // A short hairline parts the name from the motto.
-          pen.fillStyle = 'rgb(255 255 255 / 0.45)';
-          pen.fillRect(mid - 11 * k, y + gap * 0.42, 22 * k, Math.max(1, k));
+          pen.fillRect(mid - 11 * k, y + gap * 0.42, 22 * k, Math.max(1.5, 1.5 * k));
           y += gap;
-          pen.fillStyle = 'rgb(255 255 255 / 0.82)';
           pen.font = `500 ${tagSize}px "Iosevka Term Slab", ui-monospace, monospace`;
           if ('letterSpacing' in pen) pen.letterSpacing = `${0.02 * tagSize}px`;
           for (const row of tags) { y += tagStep; pen.fillText(row, mid, y - tagSize * 0.45); }
         }
       }
-      pen.shadowBlur = 0;
     }
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, caps[slot]);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, pen.canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
-  let mix = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
+  let mix = 0, power = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
   /** @type {Words | null} */
   let said = null;
   /** @type {HTMLVideoElement | null} */
@@ -246,6 +300,9 @@ export async function tube(host, span) {
       gl.uniform1i(u, i);
     });
     gl.uniform1f(P.u.uPx, k);
+    gl.uniform2f(P.u.uRes, w, h);
+    // The tube opens fast, then eases to its full size.
+    gl.uniform1f(P.u.uPower, 1 - Math.pow(1 - power, 3));
     gl.uniform1f(P.u.uMix, ease(mix));
     // The flicker is over in the first third of the change.
     gl.uniform1f(P.u.uKick, has[1] ? Math.pow(Math.max(0, 1 - mix / 0.36), 2) : 0);
@@ -266,6 +323,8 @@ export async function tube(host, span) {
     const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
     last = now;
     if (rolling) mix = Math.min(1, mix + dt / CHANGE);
+    const opening = power < 1;
+    if (opening) power = Math.min(1, power + dt / POWER);
     if (hot && !still.matches) time += dt;
     // A loop in play puts its present frame in the newest picture.
     const playing = vid !== null && hot && vid.readyState >= 2;
@@ -273,11 +332,12 @@ export async function tube(host, span) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, pics[has[1] ? 1 : 0]);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid);
+      gl.generateMipmap(gl.TEXTURE_2D);
     }
     // The grain alone needs twenty pictures a second, not sixty.
-    if (rolling || playing || now - drawn > 48) draw();
+    if (rolling || opening || playing || now - drawn > 48) draw();
     if (rolling && mix >= 1) settle();
-    if (has[1] || (hot && !still.matches)) raf = requestAnimationFrame(frame);
+    if (has[1] || power < 1 || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
   // Loads a still, then fades it in with its words.
@@ -296,6 +356,9 @@ export async function tube(host, span) {
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, pics[1]);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      // The first toy on an empty face powers the tube on.
+      if (!has[0] && !has[1]) power = still.matches ? 1 : 0;
       write(words, 1);
       has[1] = 1;
       mix = 0;
@@ -339,6 +402,7 @@ export async function tube(host, span) {
     drop();
     has = [0, 0];
     mix = 0;
+    power = 0;
     draw();
   }
 

@@ -1,8 +1,9 @@
 /* The Clock: the menu's default view. Twelve toys stand on a dial.
    ?all shows the whole shelf; ?lab shows the Lab. */
 
-/* The tube is wider than a narrow screen; the page must not scroll sideways for it. */
-:root[data-view="clock"] { overflow-x: clip; }
+/* The tube is wider than a narrow screen. The menu's own rule (body: overflow-x clip) hands the clip
+   to the window, so nothing scrolls sideways. Do not clip on the root: the body would then clip at its
+   8 px margin and box the footer's glow. */
 /* The shelf and the face share one grid cell, so the face lies under the toys. */
 :root[data-view="clock"] main > .shelf {
   grid-area: 1 / 1; z-index: 1; display: block; position: relative;
@@ -33,6 +34,8 @@
   display: block; grid-area: 1 / 1; position: relative; width: min(92vw, 660px); aspect-ratio: 1;
   /* The face does not clip: a clipped glow shows a hard box edge. The body clips the page's width. */
   container-type: inline-size; pointer-events: none;
+  /* The face is one layer under the toys: the dark spot must multiply the tube, never an icon. */
+  isolation: isolate; z-index: 0;
 }
 
 /* The outline: a rim and sixty minute marks. It draws in, then fades away. */
@@ -40,15 +43,15 @@
 .clock-ring .rim { fill: none; stroke: oklch(0.56 0.016 275); stroke-width: 0.35; stroke-dasharray: 1; stroke-dashoffset: 0; }
 .clock-ring .ticks line { stroke: oklch(0.62 0.016 275); stroke-width: 0.35; }
 
-/* The selection light: a wide, soft white halo under the toy in hand (Tom's pick). It turns to the pointer.
-   Its edge fades to nothing: many stops, so no band and no box shows. */
-.clock-glow { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s ease; }
+/* The selection: the picture goes dark under the toy in hand, so the toy stands clear of it (Tom).
+   It is a soft dark spot that multiplies the tube; it turns to the pointer. Its edge fades to nothing. */
+.clock-glow { position: absolute; inset: 0; z-index: 1; opacity: 0; transition: opacity 0.6s ease; }
 .clock-face[data-live] .clock-glow { opacity: 1; }
 .clock-glow i {
-  position: absolute; left: 50%; top: -5%; width: 50%; height: 36%; translate: -50% 0; border-radius: 50%;
-  background: oklch(0.97 0.012 275); mix-blend-mode: screen;
-  -webkit-mask: radial-gradient(closest-side, rgb(0 0 0 / 0.3) 0, rgb(0 0 0 / 0.2) 22%, rgb(0 0 0 / 0.1) 44%, rgb(0 0 0 / 0.035) 66%, transparent 90%);
-  mask: radial-gradient(closest-side, rgb(0 0 0 / 0.3) 0, rgb(0 0 0 / 0.2) 22%, rgb(0 0 0 / 0.1) 44%, rgb(0 0 0 / 0.035) 66%, transparent 90%);
+  position: absolute; left: 50%; top: -9.5%; width: 38%; aspect-ratio: 1; translate: -50% 0; border-radius: 50%;
+  background: oklch(0.2 0.02 275); mix-blend-mode: multiply;
+  -webkit-mask: radial-gradient(closest-side, #000 0, rgb(0 0 0 / 0.92) 34%, rgb(0 0 0 / 0.6) 56%, rgb(0 0 0 / 0.22) 76%, transparent 96%);
+  mask: radial-gradient(closest-side, #000 0, rgb(0 0 0 / 0.92) 34%, rgb(0 0 0 / 0.6) 56%, rgb(0 0 0 / 0.22) 76%, transparent 96%);
 }
 
 /* The middle: the toy's number, name and motto, over a soft dark plate. */
@@ -88,7 +91,8 @@
   font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase;
   opacity: 0; pointer-events: none; transition: opacity 0.9s ease, border-color 0.2s ease;
 }
-.clock-roll[data-on] { opacity: 1; pointer-events: auto; }
+/* The rule above is strong; this one must name the view too, or the button never shows. */
+:root[data-view="clock"] .clock-roll[data-on] { opacity: 1; pointer-events: auto; }
 .clock-roll:is(:hover, :focus-visible) { border-color: var(--fg); }
 .clock-roll svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
 .clock-roll svg circle { fill: currentColor; stroke: none; }
