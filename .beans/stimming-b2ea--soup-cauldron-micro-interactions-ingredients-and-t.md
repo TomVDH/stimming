@@ -1,11 +1,11 @@
 ---
 # stimming-b2ea
 title: 'Soup cauldron: micro interactions, ingredients and tray rework'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T17:33:42Z
-updated_at: 2026-11-16T18:44:23Z
+updated_at: 2026-11-16T18:51:50Z
 parent: stimming-fskg
 ---
 
@@ -25,3 +25,8 @@ Tom, 2026-11-16: micro interactions (poke and grab things, a pour that follows t
 - [x] Steam parts under the hand as it passes over the pot
 - [x] The spoon rests on the rim at the back when let go, taps the iron as it settles, and clinks on a hard stir
 - [x] Tray four across: 4 rows of things, 1 row of liquids
+
+
+## Summary of Changes
+
+Micro interactions (dunk, grab, drawn pours), sixteen ingredients with cleaner models, a grouped four-across Add tray (shell gains an opt-in tray group), a resting spoon that clinks, heat shimmer, steam that parts under the hand, tilted cobbles and a background blur. Open elsewhere: the soup surface branch claude/cauldron-soup-0a7547 waits on Tom; Dutch name and IPA are Tom's.
