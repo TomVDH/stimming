@@ -843,6 +843,8 @@ void main() {
   float ck = uStir > 0.01 ? crack(p * 14.0 + vec2(uTime * 0.03, 0.0)) : 0.0;
   a.b *= max(1.0 - uDt * (0.9 * uStir * mix(0.15, 8.0, ck) + 1.2 * up * uConv), 0.0);
   a.b = min(a.b, 1.0);
+  // Freshness (aux a): a pour or a stir makes it 1; it fades over seconds.
+  a.a = max(a.a * exp(-uDt / 4.0), uStir * 0.8);
   for (int i = 0; i < 16; i++) {
     if (i >= uNE) break;
     vec4 e0 = uE[i * 2], e1 = uE[i * 2 + 1];
@@ -851,6 +853,7 @@ void main() {
     float sl = length(sv);
     if (sl > 1e-3) { vec2 ax = sv / sl; float al = dot(dd, ax); dd = (dd - ax * al) + ax * al / (1.0 + 2.5 * min(sl, 1.0)); }
     float w = e0.w * exp(-dot(dd, dd) / (e0.z * e0.z));
+    a.a = max(a.a, min(w * 3.0, 1.0));
     if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
     else if (e1.w < 1.5) a.g += w;
     else if (e1.w < 2.5) a.r += w;
@@ -1423,7 +1426,9 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   float wz = clamp((dzp.a - 1.0) * 0.3, 0.0, 1.0) - clamp((dzm.a - 1.0) * 0.3, 0.0, 1.0);
   // Where two colours meet, the seam stands up a little: marbling, not a flat wash.
   float lx = dxp.r / max(dxp.a, 1e-3) - dxm.r / max(dxm.a, 1e-3), lz = dzp.r / max(dzp.a, 1e-3) - dzm.r / max(dzm.a, 1e-3);
-  n = normalize(n - vec3(wx, 0.0, wz) * 0.05 - vec3(lx, 0.0, lz) * (0.03 + 0.05 * T));
+  // Fresh marbling stands up; it settles flat as it ages.
+  float relief = mix(0.1, 1.0, smoothstep(0.05, 0.5, ax.a));
+  n = normalize(n - (vec3(wx, 0.0, wz) * 0.05 + vec3(lx, 0.0, lz) * (0.03 + 0.05 * T)) * relief);
   // The skin wrinkles as the soup under it moves.
   float skin = smoothstep(0.15, 0.6, ax.b);
   // A raft's torn edge stands up as a low lip.
