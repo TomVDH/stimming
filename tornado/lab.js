@@ -32,16 +32,20 @@ const at = (k, f) => {
   const v = 0.5 * (2 * p1 + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u * u * u);
   return Math.min(Math.max(p1, p2), Math.max(Math.min(p1, p2), v));
 };
+// The bands' height scale: it grows gently with the funnel, so a change of F barely stretches them.
+const zScale = rRef => 28 * Math.sqrt(Math.max(rRef, 8) / 20);
+let zsNow = 28;
 // Each layer's spin angle and climb, summed frame by frame: 0 is the core, 1 to 5 the sheaths.
 const phase = new Float32Array(12);
 function spinLayers(dt, f, spin) {
   const r0 = at('r0', f), vmax = at('vmax', f);
   // The radius at mid height sets every layer's rate.
   const rRef = Math.max(4, r0 * (1 + (at('flare', f) - 1) * Math.pow(0.5, at('prof', f))));
+  zsNow = zScale(rRef);
   for (let i = 0; i < 6; i++) {
     const rk = i === 0 ? 0.8 : 1 + 0.2 * (i - 1), fk = i === 0 ? 0 : (i - 1) / 4;
     const om = vmax / rRef * (rk < 1 ? 1 : 1 / (rk * rk)) * spin * (1 + 0.1 * i);
-    const up = vmax * 0.35 * spin * (1 - 0.6 * fk) / Math.max(rRef * 0.5, 4);
+    const up = vmax * 0.35 * spin * (1 - 0.6 * fk) / zScale(rRef);
     phase[i * 2] = (phase[i * 2] + om * dt) % (Math.PI * 2);
     phase[i * 2 + 1] += up * dt;
   }
@@ -63,6 +67,8 @@ uniform vec3 uSun, uSunCol, uAmb;
 uniform float uH, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uMulti, uRain, uDark, uLean, uSway;
 // Spin angle and climb, per layer: 0 is the core, 1 to 5 the sheaths. lab.js integrates them each frame.
 uniform vec2 uPh[6];
+// The bands' height scale in metres: one value for the whole funnel, never the local radius.
+uniform float uZs;
 const float CAMH = 1.7;
 
 // The volume holds 64 cells per unit: a sixteenth makes one unit four cells wide.
@@ -135,7 +141,8 @@ float sheathR(int k) { return 1.0 + 0.2 * float(k); }
 // The spin and the climb come in as integrated phases, so a new F or spin only changes speed.
 float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) {
   vec2 ph = uPh[idx];
-  float zz = h / max(R * 0.5, 4.0) - ph.y;
+  // Height over the local radius stalls in the flare and smears the bands; uZs does not.
+  float zz = h / uZs - ph.y;
   // The helix: the bands lean as they climb.
   float a = ang - ph.x - zz * 0.9;
   float rc = 1.4 + (x - rk) * 2.5;
@@ -465,7 +472,8 @@ function draw(now) {
   if (moving) simT += dt;
   // Morph runs F0 to F5 and back over 40 s.
   if (morph && !paused) { f = 2.5 - 2.5 * Math.cos(simT * Math.PI / 20); fEl.value = String(f); }
-  fShown += (f - fShown) * (1 - Math.exp(-dt / 0.35));
+  // A slider jump eases over about three seconds, so it reads as a morph.
+  fShown += (f - fShown) * (1 - Math.exp(-dt / 1.0));
   showF();
   size();
   const fk = fShown;
@@ -488,6 +496,7 @@ function draw(now) {
   set(sc, 'uSpin', K.spin());
   spinLayers(moving ? dt : 0, fShown, K.spin());
   gl.uniform2fv(sc.u.uPh, phase);
+  set(sc, 'uZs', zsNow);
   set(sc, 'uAmp', K.amp());
   set(sc, 'uFk', fk / 5);
   gl.uniform1i(sc.u.uSteps, K.steps());
