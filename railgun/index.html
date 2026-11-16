@@ -87,7 +87,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RANGES, RANGE_GLSL, rangeRg, rangeRa } from './ranges.js';
+import { RANGE_GLSL, RANGE_MAX, rangeRg, rangeRa, landValues } from './ranges.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later } from '../shared/stim.js';
@@ -1439,8 +1439,11 @@ const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d)
 // RANGES and the height GLSL live in ranges.js.
 const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
-  uRg: { value: rangeRg().map(v => new THREE.Vector4(...v)) },
-  uRa: { value: rangeRa().map(v => new THREE.Vector4(...v)) },
+  // Both arrays fill all RANGE_MAX slots; an empty slot has no crest.
+  uRg: { value: Array.from({ length: RANGE_MAX }, (_, i) => new THREE.Vector4(...(rangeRg()[i] || [0, 0, 0, 0]))) },
+  uRa: { value: Array.from({ length: RANGE_MAX }, (_, i) => new THREE.Vector4(...(rangeRa()[i] || [0, 0, 0, 0]))) },
+  // The landscape's knobs, from ranges.js.
+  uLand: { value: landValues() },
   // Forms: 0 draws every range as a crescent and hides the cone.
   uForms: { value: 1 },
   uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
