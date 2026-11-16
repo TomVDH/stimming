@@ -356,3 +356,36 @@ All code stays in `railgun/index.html`. A test here is a probe in the browser pa
 
 The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS` with its cirrus, the far-country builder, the dust ring buffer, `makeRing` and `makeGlint`, marked. Any daylight diorama can copy them.
 The `vol` and `trail` blocks are liftable as a pair; Tom may take the trail shading to another toy ("ten seconds").
+
+## Watch mode (stimming-z267)
+
+The toy tells people that watching is fine. The scene carries itself:
+- The parked cinematic views are gone. The wide eye and Sight stay.
+- The loop keeps 30 fps while a target can be hit or an ambient event runs. A hidden tab still stops all work. A falling rock is not an idle page.
+- After a kill with no input for 45 s, the toy runs its own Reset 75 s after the kill.
+- The ambient director starts one event every 12 to 40 s, faster as the rock nears. It holds off under a charge, a shot, a blast, a strike and a reset.
+  - Horizon war: an unseen battery past the ranges lights the horizon and the cloud bases in a ripple of two to four flashes. A low rumble follows 20 to 60 s later.
+  - Shooting stars: dusk and night only, now and then a pair. Reduced motion shows none.
+  - Satellite pass: a dark sky only. A point of sunlight crosses the frame in 70 to 110 s; most fade into the planet's shadow partway.
+- A kill starts the aftermath. A strike or a Reset ends it, and the self-Reset waits for it.
+  - Re-entry rain: from 12 s after the kill, warm streaks come down round the kill for two and a half minutes, thinning; one in five burns bright and some burst.
+  - Late landings: one to three chunks land 55 to 155 s after the kill, 18 to 48 km out: a 2.5 s fall, a horizon flash, a dust dome in a free dome slot, a rumble at the speed of sound (cut to 30 s).
+- Flares and glints draw over the smoke; a screen test along the train dims the stars and the satellite behind it.
+- Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
+- Micro-interactions:
+  - Air specks: 700 sunlit dust specks drift 25 to 420 m in front of the lens, brightest toward the sun. The pointer's motion parts them; they settle in about a second. The GPU moves them; the CPU sends only the pointer.
+  - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
+  - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
+  - `__qa.lens()` reads the push, the loom, the arc and the stir.
+- Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
+  - Far bolt: another gun's slug climbs from past the ranges for 4 s; a faint line stays and fades over about 8 s; the launch lights the horizon.
+  - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
+  - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
+  - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
+- `glint()` centres its streak on its point; `ambSeg()` draws a streak from a start point.
+
+## Foreground terrain (stimming-z267)
+
+- The ground grid packs its 480 by 480 vertices round the eye: about 3 m apart there, about 3 km at the rim. The wide and portrait eyes each get their own grid. The vertex count is unchanged.
+- Gentle sand swells, 180 to 300 m apart and up to about 4 m high, roll from 40 m past the eye out to about 4 km. The ground round the mount and under the eye stays level, and the gun's foot stays in view.
+- The fragment shader takes the swells' slope with a 6 m step near the eye, and adds soft hummocks about 30 m across as a bump only, filtered out with distance.

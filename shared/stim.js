@@ -234,6 +234,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} [icon] SVG or text that leads the label.
  * @property {string} [dot] A CSS colour for a swatch dot.
  * @property {string} [key] A shortcut key that picks this option.
+ * @property {string} [group] A tray heading; a new value starts a new group.
  */
 /**
  * The top-left choice group.
@@ -449,7 +450,13 @@ function makeChoice(spec, display, state, pick, layer) {
     b.addEventListener('click', () => { sheet.open(false, true); pick(o.value, true, true); });
     return b;
   });
-  grid.append(...cells);
+  // An option's group, when it changes, puts a heading across the grid.
+  let group;
+  options.forEach((o, i) => {
+    if (o.group && o.group !== group) grid.append(make('div', 's2-group', o.group));
+    group = o.group;
+    grid.append(cells[i]);
+  });
   sheet.el.append(grid);
   return { el, sheet, sync() {
     el.textContent = `+ ${find(state.value)?.label ?? ''}`;

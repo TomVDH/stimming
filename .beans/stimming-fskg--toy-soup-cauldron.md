@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T08:51:22Z
+updated_at: 2026-11-16T16:26:15Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -55,4 +55,17 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - [x] Toy doc
 
 - [x] Soup film layers: a skin that sets on calm thick soup and cream (matte, wrinkled), wet broth, glassy fat with a faint oil-film rainbow
-- [ ] Fire engine choice: WebGL2 or WebGPU (Fire's engine, faster and scaled back)
+- [x] WebGPU fire parked (Tom, 2026-11-16): cauldron/gpufire.js runs Fire's engine over the pot only with ?fire=gpu; the toy ships the WebGL fire
+
+- [x] Neater cooking: things shrink a touch, darken and gloss as they cook; a split thing shrinks away while its pieces grow in and drift apart; melting pieces fade into the soup's colour; calmer skins, no speckle
+
+- [x] Steam pass: steam rises over the boil's plumes, Fire's detail erodes it into threads, it stays thin at high fire, and it leans with the wind
+
+
+## Round 2 summary
+
+Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add tray with four liquids; marbled soup with film layers; neater cooking; steam pass. WebGPU fire parked behind ?fire=gpu. Next: a performance pass and an icon pass, then Tom promotes the toy to the main shelf.
+
+## Performance pass
+
+- [x] Performance pass: see stimming-mbpi

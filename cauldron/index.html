@@ -20,6 +20,11 @@
   opacity: 0; transition: opacity 0.8s ease; touch-action: none;
 }
 .stage--cauldron canvas.on { opacity: 1; }
+/* The Add tray shows its things large enough to read at a glance. */
+.s2-grid { --chip: 44px; }
+.s2-grid .s2-chip svg { width: 32px; height: 32px; }
+/* The WebGPU fire is light on black: screen adds it over the pot. */
+.stage--cauldron canvas.gpufire { mix-blend-mode: screen; pointer-events: none; }
 .stage--cauldron { cursor: grab; }
 .stage--cauldron.is-stirring { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--cauldron canvas { transition: none; } }
@@ -70,8 +75,11 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.min.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+    "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.min.js",
     "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
     "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
     "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
@@ -98,43 +106,52 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- the tray: what a tap adds ---------- */
-// Mix keeps the old round; the rest pick one thing or one liquid.
-const PICKS = [['mix', 'Mix'], ['carrot', 'Carrot'], ['onion', 'Onion'], ['fish', 'Fish'], ['beet', 'Beetroot'], ['duck', 'Duck'],
-  ['pea', 'Peas'], ['boot', 'Boot'], ['star', 'Star'], ['tomato', 'Tomato'], ['mushroom', 'Mushroom'],
-  ['cream', 'Cream'], ['ink', 'Squid ink'], ['chilli', 'Chilli oil'], ['saffron', 'Saffron']];
+// Mix keeps the old round; the rest pick one thing or one liquid, in three groups.
+const PICKS = [['mix', 'Mix', 'Mix'],
+  ['carrot', 'Carrot', 'Things'], ['onion', 'Onion', 'Things'], ['potato', 'Potato', 'Things'], ['leek', 'Leek', 'Things'],
+  ['garlic', 'Garlic', 'Things'], ['chilli', 'Chilli', 'Things'], ['tomato', 'Tomato', 'Things'], ['mushroom', 'Mushroom', 'Things'],
+  ['beet', 'Beetroot', 'Things'], ['pea', 'Peas', 'Things'], ['bay', 'Bay leaf', 'Things'], ['noodles', 'Noodles', 'Things'],
+  ['fish', 'Fish', 'Things'], ['star', 'Star', 'Things'], ['duck', 'Duck', 'Things'], ['boot', 'Boot', 'Things'],
+  ['cream', 'Cream', 'Liquids'], ['ink', 'Squid ink', 'Liquids'], ['chillioil', 'Chilli oil', 'Liquids'], ['saffron', 'Saffron', 'Liquids']];
 let pick = 'mix';
 // Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
+// One bold object fills the box; no plate behind it.
 const ok = ([L, C, h]) => `oklch(${L} ${C} ${h})`;
 const circ = (x, y, r) => `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
-const DROP = 'M0-12C6-4 9 1 9 5A9 9 0 0 1-9 5C-9 1-6-4 0-12z';
+const DROP = 'M0-15C8-5 12 1 12 6A12 12 0 0 1-12 6C-12 1-8-5 0-15z';
+const GREEN = [[0.74, 0.17, 140], [0.52, 0.15, 145]];
 const ART = {
-  mix: [['M-12-1h24a12 11 0 0 1-24 0z', [0.4, 0.02, 60], [0.2, 0.01, 60]], ['M-11-1a11 3 0 0 0 22 0a11 3 0 0 0-22 0z', [0.8, 0.13, 75], [0.62, 0.15, 55]],
-    [circ(-4, -2, 2.4), [0.75, 0.17, 50], [0.6, 0.18, 40]], [circ(3, -2.5, 2), [0.78, 0.17, 140], [0.6, 0.17, 140]]],
-  carrot: [['M-11 9L5-7c3-3 7 1 4 4z', [0.78, 0.17, 55], [0.6, 0.19, 42]], ['M6-6l2-8l2 7l5-3l-4 6z', [0.75, 0.17, 140], [0.55, 0.16, 140]]],
-  onion: [['M0-13c2 4 10 7 10 14a10 10 0 0 1-20 0c0-7 8-10 10-14z', [0.88, 0.07, 85], [0.66, 0.09, 70]]],
-  fish: [['M-12 0c5-8 15-8 19 0c-4 8-14 8-19 0z', [0.85, 0.03, 230], [0.58, 0.05, 240]], ['M6 0l8-6v12z', [0.76, 0.04, 230], [0.55, 0.05, 240]], [circ(-6, -1.5, 1.6), [0.2, 0, 0], [0.1, 0, 0]]],
-  beet: [[circ(0, 3, 9.5), [0.52, 0.2, 358], [0.32, 0.16, 355]], ['M0-6c-2-5-6-8-9-8c1 4 4 7 9 8zM0-6c2-5 6-8 9-8c-1 4-4 7-9 8z', [0.72, 0.16, 145], [0.5, 0.14, 150]]],
-  duck: [['M-12 3c0-5 6-6 10-5c0-6 3-9 7-9s6 3 6 6c0 2-1 4-3 5c3 1 5 3 4 7c-1 5-8 6-14 6c-7 0-10-4-10-10z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
-    ['M11-6l6 1l-6 2z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(7, -7, 1.3), [0.2, 0, 0], [0.1, 0, 0]]],
-  pea: [[circ(-6, 3, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(5, 4, 5.5), [0.8, 0.18, 138], [0.58, 0.17, 140]], [circ(0, -5, 5.5), [0.84, 0.17, 135], [0.62, 0.17, 140]]],
-  boot: [['M-8-13h9v14c6 0 12 2 12 7v3h-21z', [0.48, 0.06, 55], [0.28, 0.04, 50]], ['M-8 9h21v3h-21z', [0.24, 0.02, 50], [0.16, 0.01, 50]]],
-  star: [['M0-13l3.8 8.2l9 1l-6.7 6.2l1.9 8.8l-8-4.6l-8 4.6l1.9-8.8l-6.7-6.2l9-1z', [0.95, 0.15, 98], [0.8, 0.16, 82]]],
-  tomato: [[circ(0, 2, 10.5), [0.68, 0.2, 32], [0.48, 0.19, 28]], ['M0-9l2 3l4-1l-2 3l3 2h-4l-3 2l-1-3h-4l3-2l-2-3l4 1z', [0.72, 0.16, 140], [0.5, 0.15, 145]]],
-  mushroom: [['M-13 0c0-8 6-12 13-12s13 4 13 12z', [0.62, 0.07, 55], [0.42, 0.06, 50]], ['M-4 0h8l1 11h-10z', [0.92, 0.03, 85], [0.76, 0.04, 80]]],
-  cream: [[DROP, [0.98, 0.015, 90], [0.84, 0.03, 80]]],
-  ink: [[DROP, [0.32, 0.05, 290], [0.12, 0.03, 290]]],
-  chilli: [[DROP, [0.68, 0.2, 38], [0.48, 0.2, 28]]],
-  saffron: [[DROP, [0.88, 0.17, 88], [0.7, 0.17, 72]], ['M-3-2l1 9M1-3l0 10M4-1l-1 8', [0.6, 0.18, 35], [0.5, 0.18, 30]]],
+  mix: [['M-15-1h30a15 13 0 0 1-30 0z', [0.42, 0.02, 60], [0.2, 0.01, 60]], ['M-14-1a14 3.6 0 0 0 28 0a14 3.6 0 0 0-28 0z', [0.8, 0.13, 75], [0.62, 0.15, 55]],
+    [circ(-5, -2.5, 3), [0.76, 0.17, 50], [0.6, 0.18, 40]], [circ(4, -3, 2.6), [0.8, 0.17, 140], [0.6, 0.17, 140]]],
+  carrot: [['M-14 13L6-7c3-3 8 1 5 5z', [0.78, 0.17, 55], [0.6, 0.19, 42]], ['M7-6c-3-7 0-11 4-6c1-6 7-5 5 0c6-2 8 3 1 5z', ...GREEN]],
+  onion: [['M0-15c2 5 12 8 12 16a12 12 0 0 1-24 0c0-8 10-11 12-16z', [0.86, 0.08, 80], [0.6, 0.1, 62]]],
+  potato: [['M-14 2c0-8 7-11 14-10s14 3 14 10-6 10-14 10S-14 9-14 2z', [0.74, 0.06, 78], [0.5, 0.06, 65]], [circ(-4, 0, 1.6), [0.45, 0.05, 60], [0.4, 0.05, 60]], [circ(5, 4, 1.4), [0.45, 0.05, 60], [0.4, 0.05, 60]]],
+  leek: [['M-14 10l14-14 5 5-14 14z', [0.95, 0.03, 105], [0.78, 0.1, 128]], ['M0-4c1-8 7-12 14-12c-2 7-6 12-9 16zM5 1c7-3 12-1 12-1c-4 5-9 7-13 6z', ...GREEN]],
+  garlic: [['M0-15c3 6 13 8 13 16a13 10 0 0 1-26 0c0-8 10-10 13-16z', [0.97, 0.02, 90], [0.8, 0.04, 320]]],
+  chilli: [['M-12-6c7 1 18 6 25 17c-10-4-22-8-26-13z', [0.66, 0.22, 30], [0.48, 0.21, 26]], ['M-15-9c2-3 6-3 7 1l-4 4z', ...GREEN]],
+  tomato: [[circ(0, 2, 13), [0.68, 0.2, 32], [0.48, 0.19, 28]], ['M0-11l2.5 3.5 5-1-2.5 3.5 4 2.5h-5l-4 2.5-1-3.5h-5l3.5-2.5-2.5-3.5 5 1z', ...GREEN]],
+  mushroom: [['M-15 1c0-9 7-14 15-14s15 5 15 14z', [0.64, 0.07, 55], [0.42, 0.06, 50]], ['M-5 1h10l1.5 13h-13z', [0.94, 0.03, 85], [0.78, 0.04, 80]]],
+  beet: [[circ(0, 4, 11), [0.52, 0.2, 358], [0.32, 0.16, 355]], ['M0-6c-3-6-9-9-12-8c1 5 6 8 12 8zM0-6c3-6 9-9 12-8c-1 5-6 8-12 8z', ...GREEN]],
+  pea: [[circ(-7, 4, 6.5), [0.82, 0.18, 138], [0.58, 0.17, 140]], [circ(6, 5, 6.5), [0.82, 0.18, 138], [0.58, 0.17, 140]], [circ(0, -6, 6.5), [0.86, 0.17, 135], [0.62, 0.17, 140]]],
+  bay: [['M-15 9C-7-6 6-11 15-13C9-2-2 9-15 9z', [0.68, 0.09, 122], [0.46, 0.08, 118]]],
+  noodles: [['M-13 1a13 10 0 1 0 26 0a13 10 0 1 0-26 0zM-6 1a6 4 0 1 1 12 0a6 4 0 1 1-12 0z', [0.92, 0.09, 90], [0.74, 0.1, 80]]],
+  fish: [['M-15 0c6-10 19-10 23 0c-4 10-17 10-23 0z', [0.85, 0.03, 230], [0.56, 0.05, 240]], ['M7 0l9-8v16z', [0.76, 0.04, 230], [0.55, 0.05, 240]], [circ(-8, -2, 1.8), [0.2, 0, 0], [0.1, 0, 0]]],
+  star: [['M0-15l4.4 9.4 10.3 1.2-7.6 7.1 2.1 10.1-9.2-5.2-9.2 5.2 2.1-10.1-7.6-7.1 10.3-1.2z', [0.95, 0.15, 98], [0.8, 0.16, 82]]],
+  duck: [['M-14 3c0-5 7-7 11-6c0-7 3-10 8-10s7 3 7 7c0 2-1 4-3 5c3 1 5 3 4 8c-1 5-9 7-15 7c-8 0-12-4-12-11z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
+    ['M12-7l7 1.2-7 2.4z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(8, -8, 1.5), [0.2, 0, 0], [0.1, 0, 0]]],
+  boot: [['M-10-15h10v16c7 0 14 2 14 8v3h-24z', [0.5, 0.06, 55], [0.3, 0.04, 50]], ['M-10 12h24v3.5h-24z', [0.26, 0.02, 50], [0.16, 0.01, 50]]],
+  cream: [[DROP, [0.99, 0.015, 90], [0.84, 0.03, 80]]],
+  ink: [[DROP, [0.34, 0.05, 290], [0.12, 0.03, 290]]],
+  chilli_oil: [[DROP, [0.7, 0.2, 38], [0.48, 0.2, 28]]],
+  saffron: [[DROP, [0.9, 0.17, 88], [0.7, 0.17, 72]]],
 };
-// One bold object: a gradient body, the shared top-left light and a pale rim.
+// The gradient body, the shared top-left light, then a pale rim.
 function pickIcon(id) {
   const parts = ART[id];
   const defs = parts.map(([, a, b], i) => `<linearGradient id="cp-${id}-${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${ok(a)}"/><stop offset="1" stop-color="${ok(b)}"/></linearGradient>`).join('');
   const lit = `<radialGradient id="cp-${id}-lit" cx="0.32" cy="0.22" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.5"/><stop offset="0.55" stop-color="#fff" stop-opacity="0"/></radialGradient>`;
-  const body = parts.map(([d], i) => id === 'saffron' && i === 1
-    ? `<path d="${d}" fill="none" stroke="url(#cp-${id}-${i})" stroke-width="2" stroke-linecap="round"/>`
-    : `<path d="${d}" fill="url(#cp-${id}-${i})"/><path d="${d}" fill="url(#cp-${id}-lit)"/><path d="${d}" fill="none" stroke="oklch(1 0 0 / 0.22)" stroke-width="1"/>`).join('');
-  return `<svg viewBox="-17 -17 34 34" aria-hidden="true"><defs>${defs}${lit}</defs><circle r="16.5" fill="oklch(0.16 0.02 50)" stroke="oklch(1 0 0 / 0.08)"/>${body}</svg>`;
+  const body = parts.map(([d], i) => `<path d="${d}" fill="url(#cp-${id}-${i})" fill-rule="evenodd"/><path d="${d}" fill="url(#cp-${id}-lit)" fill-rule="evenodd"/><path d="${d}" fill="none" stroke="oklch(1 0 0 / 0.24)" stroke-width="1"/>`).join('');
+  return `<svg viewBox="-17 -17 34 34" aria-hidden="true"><defs>${defs}${lit}</defs>${body}</svg>`;
 }
 
 /* ---------- bar ---------- */
@@ -145,9 +162,10 @@ const act = { add() {}, clear() {}, reset() {} };
 // The Dev rows exist without ?dev too, so the toy reads them everywhere.
 const devV = (id, d) => ui.setting(id)?.value ?? d;
 let refit = () => {};
+let setEngine = () => {};
 const ui = initPage({ id: 'cauldron', bar: {
   choice: { label: 'Add', display: 'tray', value: 'mix',
-    options: PICKS.map(([value, label]) => ({ value, label, icon: pickIcon(value) })),
+    options: PICKS.map(([value, label, group]) => ({ value, label, group, icon: pickIcon(value === 'chillioil' ? 'chilli_oil' : value) })),
     onPick: v => { pick = v; stage.focus?.({ preventScroll: true }); } },
   actions: [
     { verb: 'add', noun: 'Thing', key: 'T', onPress: () => act.add() },
@@ -176,7 +194,7 @@ const ui = initPage({ id: 'cauldron', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['drag', 'stir'], ['click', 'throw in'], ['← →', 'stir']],
+  keys: [['drag', 'stir or pour'], ['drag a thing', 'pull'], ['click', 'add or dunk'], ['← →', 'stir']],
 } });
 
 /* ---------- GL ---------- */
@@ -340,9 +358,10 @@ vec4 S3(sampler2D t, vec3 g) {
 }
 `;
 // The pot is a solid in the flow: the gas runs round its belly.
-const SOLID = `
+// SOLID_SHAPE draws the mask once; the solver passes read it with SOLID.
+const SOLID_SHAPE = `
 // The belly up to the rim's top, and the three legs.
-bool solidAt(ivec3 c) {
+bool solidShape(ivec3 c) {
   vec3 p = BMIN + (vec3(c) + 0.5) * CELL;
   if (p.y < 0.21 && length((p - vec3(0.0, BCY, 0.0)) / RO) < 1.0) return true;
   for (int i = 0; i < 3; i++) {
@@ -355,6 +374,14 @@ bool solidAt(ivec3 c) {
   return false;
 }
 `;
+// One fetch from the baked mask; no cell past the grid is solid.
+const SOLID = `
+uniform sampler2D uSolid;
+bool solidAt(ivec3 c) {
+  if (any(lessThan(c, ivec3(0))) || any(greaterThanEqual(c, GN))) return false;
+  return texelFetch(uSolid, at(c), 0).r > 0.5;
+}
+`;
 // The belly's measures, the same as in POT.
 const POT_DIMS = `const float BCY = -0.48;
 const vec3 RO = vec3(1.154, 1.181, 1.154);
@@ -364,6 +391,12 @@ precision highp float;
 precision highp sampler2D;
 out vec4 o;
 `;
+// The solid mask: 1 in the pot's cells, drawn once.
+const SOLID_FS = `${SIM_HEAD}
+${GRID}
+${POT_DIMS}
+${SOLID_SHAPE}
+void main() { o = vec4(solidShape(cellOf(ivec2(gl_FragCoord.xy))) ? 1.0 : 0.0, 0.0, 0.0, 0.0); }`;
 // Vorticity: the curl of the velocity, and its length.
 const CURL_FS = `${SIM_HEAD}
 uniform sampler2D uVel;
@@ -608,14 +641,15 @@ float sliceShape(vec2 q) {
 
 vec2 sdCarrot(vec3 p, float s) {
   float d = sdRCone(p, vec3(-0.27, 0.0, 0.0), vec3(0.3, 0.0, 0.0), 0.1 + s, 0.016 + 0.5 * s);
-  d += 0.0035 * sin(p.x * 90.0) * step(p.x, 0.27);
+  d += 0.002 * sin(p.x * 90.0) * step(p.x, 0.27);
   vec3 q = p - vec3(-0.28, 0.0, 0.0);
-  float l = sdCap(q, vec3(0.0), vec3(-0.2, 0.03, 0.0), 0.011);
-  l = min(l, sdCap(q, vec3(0.0), vec3(-0.16, 0.02, 0.1), 0.01));
-  l = min(l, sdCap(q, vec3(0.0), vec3(-0.16, 0.02, -0.1), 0.01));
-  l = min(l, sdEll(q - vec3(-0.23, 0.03, 0.0), vec3(0.065, 0.012, 0.04)));
-  l = min(l, sdEll(q - vec3(-0.19, 0.02, 0.12), vec3(0.055, 0.012, 0.035)));
-  l = min(l, sdEll(q - vec3(-0.19, 0.02, -0.12), vec3(0.055, 0.012, 0.035)));
+  // A chunky tuft: three stout stalks and three broad leaves, nothing hair-thin.
+  float l = sdCap(q, vec3(0.0), vec3(-0.17, 0.03, 0.0), 0.018);
+  l = min(l, sdCap(q, vec3(0.0), vec3(-0.14, 0.02, 0.085), 0.016));
+  l = min(l, sdCap(q, vec3(0.0), vec3(-0.14, 0.02, -0.085), 0.016));
+  l = smin(l, sdEll(q - vec3(-0.21, 0.03, 0.0), vec3(0.07, 0.02, 0.05)), 0.02);
+  l = smin(l, sdEll(q - vec3(-0.17, 0.02, 0.11), vec3(0.06, 0.02, 0.045)), 0.02);
+  l = smin(l, sdEll(q - vec3(-0.17, 0.02, -0.11), vec3(0.06, 0.02, 0.045)), 0.02);
   return d < l ? vec2(d * 0.9, 0.0) : vec2(l, 1.0);
 }
 vec2 sdOnion(vec3 p, float s) {
@@ -628,21 +662,21 @@ vec2 sdFish(vec3 p, float s) {
   float d = smin(sdEll(p - vec3(0.05, 0.0, 0.0), vec3(0.25, 0.055 + s, 0.115 + s)), sdEll(p - vec3(-0.19, 0.0, 0.0), vec3(0.13, 0.028, 0.055)), 0.07);
   vec3 va = p - vec3(-0.37, 0.0, 0.045); va.xz = rot2(0.6) * va.xz;
   vec3 vb = p - vec3(-0.37, 0.0, -0.045); vb.xz = rot2(-0.6) * vb.xz;
-  float fin = min(sdEll(va, vec3(0.08, 0.008, 0.032)), sdEll(vb, vec3(0.08, 0.008, 0.032)));
+  float fin = min(sdEll(va, vec3(0.08, 0.014, 0.034)), sdEll(vb, vec3(0.08, 0.014, 0.034)));
   vec3 vd = p - vec3(0.0, 0.0, 0.115); vd.xz = rot2(-0.2) * vd.xz;
-  fin = min(fin, sdEll(vd, vec3(0.11, 0.007, 0.04)));
+  fin = min(fin, sdEll(vd, vec3(0.11, 0.012, 0.04)));
   vec3 vp = p - vec3(0.1, 0.04, -0.035); vp.xz = rot2(-0.6) * vp.xz;
-  fin = min(fin, sdEll(vp, vec3(0.05, 0.007, 0.02)));
+  fin = min(fin, sdEll(vp, vec3(0.05, 0.012, 0.022)));
   return fin < d ? vec2(fin, 1.0) : vec2(d, 0.0);
 }
 vec2 sdBeet(vec3 p, float s) {
   float d = sdEll(p, vec3(0.13, 0.12, 0.125) + s);
   d = smin(d, sdRCone(p, vec3(-0.08, 0.0, 0.0), vec3(-0.3, 0.0, 0.03), 0.05, 0.004), 0.04);
   vec3 q = p - vec3(0.1, 0.0, 0.0);
-  float st = min(sdCap(q, vec3(0.0), vec3(0.2, 0.045, 0.07), 0.011), sdCap(q, vec3(0.0), vec3(0.18, 0.04, -0.08), 0.011));
+  float st = min(sdCap(q, vec3(0.0), vec3(0.2, 0.045, 0.07), 0.017), sdCap(q, vec3(0.0), vec3(0.18, 0.04, -0.08), 0.017));
   vec3 la = q - vec3(0.29, 0.05, 0.11); la.xz = rot2(0.35) * la.xz;
   vec3 lb = q - vec3(0.27, 0.045, -0.12); lb.xz = rot2(-0.42) * lb.xz;
-  float lf = min(sdEll(la, vec3(0.12, 0.012, 0.06)), sdEll(lb, vec3(0.11, 0.012, 0.055)));
+  float lf = min(sdEll(la, vec3(0.12, 0.018, 0.065)), sdEll(lb, vec3(0.11, 0.018, 0.06)));
   if (st < d && st < lf) return vec2(st, 1.0);
   return lf < d ? vec2(lf, 2.0) : vec2(d, 0.0);
 }
@@ -665,8 +699,8 @@ vec2 sdStar(vec3 p, float s) { return vec2(extrude(sdStar5(p.xz, 0.2, 0.48), p.y
 vec2 sdTomato(vec3 p, float s) {
   float a = atan(p.z, p.x);
   float d = (length(p * vec3(1.0, 1.12, 1.0)) - 0.128 * (1.0 + 0.03 * cos(5.0 * a)) - s) * 0.85;
-  float cal = max(sdStar5(p.xz, 0.075, 0.38), abs(p.y - 0.112) - 0.009) - 0.004;
-  cal = min(cal, sdCap(p, vec3(0.0, 0.1, 0.0), vec3(0.012, 0.155, 0.0), 0.011));
+  float cal = max(sdStar5(p.xz, 0.08, 0.42), abs(p.y - 0.112) - 0.012) - 0.005;
+  cal = min(cal, sdCap(p, vec3(0.0, 0.1, 0.0), vec3(0.012, 0.155, 0.0), 0.016));
   return cal < d ? vec2(cal, 1.0) : vec2(d, 0.0);
 }
 vec2 sdMush(vec3 p, float s) {
@@ -692,7 +726,56 @@ vec2 sdBones(vec3 p) {
   d = min(d, sdCap(t, vec3(0.0), vec3(-0.12, 0.0, 0.0), 0.005));
   return vec2(d, 0.0);
 }
+// A potato: a lumpy egg with shallow eyes.
+vec2 sdPotato(vec3 p, float s) {
+  float d = sdEll(p, vec3(0.15, 0.1, 0.11) + s) * 0.9;
+  d += 0.006 * (noise3(p * 13.0) - 0.5);
+  return vec2(d, 0.0);
+}
+// A leek: a white shaft that fans into two broad green leaves at +x.
+vec2 sdLeek(vec3 p, float s) {
+  float d = sdCap(p * vec3(1.0, 1.15, 1.0), vec3(-0.25, 0.0, 0.0), vec3(0.12, 0.0, 0.0), 0.055 + s);
+  vec3 a = p - vec3(0.22, 0.0, 0.035); a.xz = rot2(-0.25) * a.xz;
+  vec3 b = p - vec3(0.22, 0.0, -0.035); b.xz = rot2(0.25) * b.xz;
+  float l = min(sdEll(a, vec3(0.13, 0.022, 0.05)), sdEll(b, vec3(0.13, 0.022, 0.05)));
+  l = smin(l, d + 0.004, 0.04);
+  return l < d ? vec2(l, 1.0) : vec2(d, 0.0);
+}
+// A garlic bulb: a round base of cloves that tapers to a point at +x.
+vec2 sdGarlic(vec3 p, float s) {
+  float d = sdEll(p, vec3(0.1, 0.085, 0.095) + s);
+  d = smin(d, sdRCone(p, vec3(0.04, 0.0, 0.0), vec3(0.15, 0.0, 0.0), 0.045, 0.01), 0.04);
+  d += 0.006 * cos(6.0 * atan(p.z, p.y));
+  return vec2(d * 0.9, 0.0);
+}
+// A chilli: a curved red horn with a green cap at -x.
+vec2 sdChilli(vec3 p, float s) {
+  vec3 q = p; q.z += 1.2 * q.x * q.x - 0.03;
+  float d = sdRCone(q, vec3(-0.18, 0.0, 0.0), vec3(0.2, 0.0, 0.0), 0.045 + s, 0.01);
+  float c = smin(sdEll(p - vec3(-0.19, 0.0, 0.01), vec3(0.03, 0.04, 0.045)), sdCap(p, vec3(-0.2, 0.0, 0.01), vec3(-0.27, 0.02, 0.0), 0.014), 0.02);
+  return c < d * 0.8 ? vec2(c, 1.0) : vec2(d * 0.8, 0.0);
+}
+// A bay leaf: a long pointed blade, gently curled, with a raised midrib.
+vec2 sdBay(vec3 p, float s) {
+  vec3 q = p; q.y -= 1.2 * q.z * q.z - 0.004;
+  float w = 0.055 * (1.0 - pow(abs(q.x) / 0.17, 1.6));
+  float d2 = max(abs(q.z) - max(w, 0.0), abs(q.x) - 0.17);
+  float d = extrude(d2, q.y, 0.009 + s, 0.006);
+  d = min(d, sdCap(q, vec3(-0.2, 0.0, 0.0), vec3(0.15, 0.0, 0.0), 0.009));
+  return vec2(d, 0.0);
+}
+// A nest of noodles: two wavy loops of thick strand.
+vec2 sdNoodles(vec3 p, float s) {
+  float a = atan(p.z, p.x);
+  float d = sdTor(p - vec3(0.0, 0.01 * sin(a * 3.0), 0.0), 0.095 + 0.014 * sin(a * 7.0), 0.02 + s);
+  vec3 q = p; q.xy = rot2(0.5) * q.xy;
+  float b = atan(q.z, q.x);
+  d = min(d, sdTor(q - vec3(0.02, 0.012, 0.0), 0.075 + 0.012 * sin(b * 6.0 + 1.0), 0.019 + s));
+  return vec2(d, 0.0);
+}
 // Kinds: 0 carrot, 1 onion, 2 fish, 3 beetroot, 4 duck, 5 pea, 6 boot, 7 star, 8 tomato, 9 mushroom,
+// 16 potato, 17 leek, 18 garlic, 19 chilli, 20 bay leaf, 21 noodles,
+// pieces 22 potato cube, 23 leek ring, 24 garlic clove,
 // then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
 vec2 sdKind(int k, vec3 p, float s) {
   switch (k) {
@@ -711,6 +794,15 @@ vec2 sdKind(int k, vec3 p, float s) {
     case 12: return sdBones(p);
     case 13: return vec2(sdRBox(p, vec3(0.042), 0.012), 0.0);
     case 14: return vec2(max(length(p) - 0.07, p.y - 0.018), 0.0);
+    case 16: return sdPotato(p, s);
+    case 17: return sdLeek(p, s);
+    case 18: return sdGarlic(p, s);
+    case 19: return sdChilli(p, s);
+    case 20: return sdBay(p, s);
+    case 21: return sdNoodles(p, s);
+    case 22: return vec2(sdRBox(p, vec3(0.04), 0.014) - s, 0.0);
+    case 23: return vec2(sdTor(p, 0.052, 0.017), 0.0);
+    case 24: return vec2(smin(sdEll(p, vec3(0.05, 0.03, 0.034)), sdRCone(p, vec3(0.02, 0.0, 0.0), vec3(0.065, 0.0, 0.0), 0.02, 0.004), 0.02), 0.0);
   }
   return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
 }
@@ -858,6 +950,9 @@ uniform float uTime, uFire, uFlick, uLevel, uSteam, uSwirl, uSteps;
 uniform float uFrame, uFSteps, uFI, uSmoke;
 uniform sampler2D uFD;
 uniform vec3 uBedP;
+// The boil's plumes in world units, with their strength; the wind's lean.
+uniform vec4 uPlumeW[4];
+uniform vec2 uLean;
 uniform vec3 uFireCol, uGlowCol;
 uniform int uNP;
 uniform vec4 uPuff[${NP}];
@@ -887,35 +982,56 @@ vec3 fireAt(vec3 p) {
   return vec3(max(D, 0.0), d.g, d.b);
 }
 // Flagstones: the height, and the stone's id; the joints sit at 0.
-vec3 stones(vec2 p) {
-  p *= 1.7;
-  vec2 c = floor(p), f = fract(p), id = c;
+// grad is the height's slope on the ground, from one Voronoi pass.
+vec3 stones(vec2 P, out vec2 grad) {
+  vec2 p = P * 1.7;
+  vec2 c = floor(p), f = fract(p), id = c, q1 = vec2(1.0), q2 = vec2(1.0);
   float d1 = 8.0, d2 = 8.0;
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec2 g = vec2(i, j), o = vec2(hash12(c + g), hash12(c + g + 17.3)) * 0.8 + 0.1;
     vec2 q = g + o - f;
     float d = dot(q, q);
-    if (d < d1) { d2 = d1; d1 = d; id = c + g; } else if (d < d2) d2 = d;
+    if (d < d1) { d2 = d1; q2 = q1; d1 = d; q1 = q; id = c + g; } else if (d < d2) { d2 = d; q2 = q; }
   }
-  float edge = sqrt(d2) - sqrt(d1);
+  float s1 = sqrt(d1), s2 = sqrt(d2), edge = s2 - s1;
+  // The slope of a distance to a seed points away from that seed.
+  vec2 ge = q1 / max(s1, 1e-5) - q2 / max(s2, 1e-5);
   // Rounded stone edges, a gentle dome, and a fine pitted grain.
-  float h = smoothstep(0.0, 0.22, edge) * (0.85 + 0.15 * noise2(id * 3.1)) + 0.08 * noise2(p * 9.0);
+  float x = clamp(edge / 0.22, 0.0, 1.0), dome = 0.85 + 0.15 * noise2(id * 3.1), g0 = 0.08 * noise2(p * 9.0);
+  float h = x * x * (3.0 - 2.0 * x) * dome + g0;
+  // The grain keeps a forward difference over 0.012 ground units.
+  vec2 gg = 0.08 * vec2(noise2((p + vec2(0.0204, 0.0)) * 9.0), noise2((p + vec2(0.0, 0.0204)) * 9.0)) - g0;
+  grad = (6.0 * x * (1.0 - x) / 0.22 * dome * ge * 1.7 + gg / 0.012) * 0.25;
   return vec3(h * 0.25, id);
 }
 float steamDens(vec3 p) {
   float hy = p.y - uLevel;
   if (hy < -0.02) return 0.0;
-  float r = length(p.xz), R = 0.8 + 0.22 * hy;
+  // The wind leans the column more the higher it climbs.
+  vec2 pxz = p.xz - uLean * hy * hy;
+  float r = length(pxz), R = 0.8 + 0.22 * hy;
   float edge = 1.0 - smoothstep(R * 0.45, R, r);
+  // Outside the column and every puff, no steam shows: skip the noise.
+  bool near = edge * smoothstep(0.02, 0.45, hy) > 0.0;
+  for (int i = 0; i < ${NP}; i++) {
+    if (i >= uNP || near) break;
+    float rad = 0.1 + uPuff[i].z * 0.38;
+    vec3 dv = p - vec3(uPuff[i].x, uLevel + 0.05 + uPuff[i].z, uPuff[i].y);
+    near = dot(dv, dv) < rad * rad;
+  }
+  if (!near) return 0.0;
+  // Steam rises where the boil breaks the surface: over the plumes.
+  float src = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 dp = pxz - uPlumeW[i].xy; src += uPlumeW[i].z * exp(-dot(dp, dp) / (0.18 + 0.12 * hy)); }
   // The steam turns with the soup, most near the surface.
-  vec2 xz = rot2(uSwirl * exp(-hy * 1.4)) * p.xz;
+  vec2 xz = rot2(uSwirl * exp(-hy * 1.4)) * pxz;
   vec3 q = vec3(xz.x, hy, xz.y) * 1.35 + vec3(0.0, -uTime * 0.42, 0.0);
   q += 0.75 * vec3(noise3(q * 0.5 + 3.1), 0.0, noise3(q * 0.5 + 7.7));
   float n = fbm3(q);
   // Wisps: only the tops of the noise make steam.
   // Steam shows a little above the surface, where it cools, then thins out.
-  float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6);
-  float d = smoothstep(0.56 - 0.1 * uSteam, 0.82, n) * base * edge * 2.6;
+  float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6) * (0.35 + 0.9 * min(src, 1.2));
+  float d = smoothstep(0.6 - 0.06 * uSteam, 0.82, n) * base * edge * 1.9;
   // Puffs: a burst bubble sends up a round cloud.
   for (int i = 0; i < ${NP}; i++) {
     if (i >= uNP) break;
@@ -960,10 +1076,9 @@ void main() {
     vec3 P = ro + rd * tg;
     float r = length(P.xz);
     // Flagstones: one height field; a bump normal carries all the texture.
-    float e = 0.012;
-    vec3 st = stones(P.xz);
-    float hx = stones(P.xz + vec2(e, 0.0)).x, hz = stones(P.xz + vec2(0.0, e)).x;
-    vec3 n = normalize(vec3(-(hx - st.x) / e * 0.06, 1.0, -(hz - st.x) / e * 0.06));
+    vec2 sg;
+    vec3 st = stones(P.xz, sg);
+    vec3 n = normalize(vec3(-sg.x * 0.06, 1.0, -sg.y * 0.06));
     // Each stone has its own grey; ash fills the joints; soot rings the fire.
     vec3 alb = vec3(0.07, 0.064, 0.058) * (0.7 + 0.5 * hash12(st.yz));
     alb = mix(vec3(0.03, 0.027, 0.025), alb, smoothstep(0.02, 0.12, st.x));
@@ -1063,12 +1178,13 @@ void main() {
         if (d > 0.002) {
           // Fire's fine detail: simplex wisps that rise with the steam.
           vec3 g;
-          d *= snoise(p * 5.5 - vec3(0.0, uTime * 1.1, 0.0), g) * 0.35 + 0.85;
+          // Eroded, not dimmed: the detail cuts the wisps into threads.
+          d *= smoothstep(-0.35, 0.55, snoise(p * 5.5 - vec3(0.0, uTime * 1.1, 0.0), g));
           // Fire's smoke light: one tap toward the lamp, then Beer, multi-scatter and powder.
           float tau = steamCheap(p + Ldir * 0.3) * 0.6 * 2.0;
           float beer = exp(-tau), ms = exp(-0.25 * tau) * 0.5;
           float lt = clamp(mix(beer, beer + ms, 0.6) * mix(1.0, 1.0 - exp(-2.0 * tau), 0.59) + 0.5, 0.0, 1.0);
-          float a = 1.0 - exp(-d * dt * 2.4);
+          float a = 1.0 - exp(-d * dt * 2.0);
           acc += T * a * steamLight(p, lt) * mix(vec3(1.0), smokeTint, 0.5);
           T *= 1.0 - a;
         }
@@ -1389,18 +1505,18 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
   float wob = noise3(p * 40.0 + sd * 7.0);
   vec3 c;
   if (k == 0) {
-    c = m > 0.5 ? lch(0.52, 0.14, 135.0) : lch(0.66, 0.17, 48.0) * (0.86 + 0.14 * sin(p.x * 90.0)) * (0.9 + 0.2 * wob);
+    c = m > 0.5 ? lch(0.52, 0.14, 135.0) : lch(0.66, 0.17, 48.0) * (0.93 + 0.07 * sin(p.x * 90.0)) * (0.95 + 0.1 * wob);
     rough = m > 0.5 ? 0.5 : mix(0.3, 0.15, cook);
   } else if (k == 1) {
     // Papery copper skin with dark lengthwise veins.
     float st = 0.5 + 0.5 * sin(atan(p.y, p.z) * 24.0 + wob * 3.0);
     c = mix(lch(0.66, 0.12, 72.0), lch(0.52, 0.12, 52.0), smoothstep(0.6, 1.0, st) * 0.7);
-    c *= 0.88 + 0.24 * noise3(p * vec3(5.0, 26.0, 26.0));
+    c *= 0.93 + 0.14 * noise3(p * vec3(5.0, 26.0, 26.0));
     c = mix(c, lch(0.86, 0.04, 95.0), smoothstep(0.25, 0.9, cook));
     rough = mix(0.45, 0.14, cook);
   } else if (k == 2) {
     c = mix(lch(0.9, 0.012, 240.0), lch(0.44, 0.05, 235.0), smoothstep(-0.06, 0.08, p.z));
-    c *= 0.9 + 0.12 * sin(p.x * 120.0 + p.z * 60.0) * smoothstep(-0.03, 0.05, p.z);
+    c *= 0.95 + 0.06 * sin(p.x * 120.0 + p.z * 60.0) * smoothstep(-0.03, 0.05, p.z);
     c = mix(c, lch(0.7, 0.07, 200.0), exp(-abs(p.z - 0.01) * 90.0) * 0.6);
     if (m > 0.5) c = lch(0.6, 0.04, 230.0);
     float eye = length(vec2(p.x - 0.215, p.z - 0.03));
@@ -1408,7 +1524,7 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
     c = mix(c, lch(0.86, 0.02, 80.0), smoothstep(0.4, 1.0, cook) * 0.7);
     rough = 0.16;
   } else if (k == 3) {
-    c = m > 0.5 ? lch(0.46, 0.17, 12.0) : lch(0.36, 0.16, 358.0) * (0.85 + 0.25 * wob);
+    c = m > 0.5 ? lch(0.46, 0.17, 12.0) : lch(0.36, 0.16, 358.0) * (0.93 + 0.12 * wob);
     if (m > 1.5) {
       // A leaf: dark green, with a red midrib and paler veins.
       vec3 q = p - vec3(0.1, 0.0, 0.0);
@@ -1427,10 +1543,10 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
     c = mix(c, vec3(0.004), smoothstep(0.024, 0.019, eye));
     rough = 0.22;
   } else if (k == 5) {
-    c = mix(lch(0.7, 0.18, 135.0), lch(0.62, 0.12, 120.0), cook * 0.6) * (0.9 + 0.2 * wob);
+    c = mix(lch(0.7, 0.18, 135.0), lch(0.62, 0.12, 120.0), cook * 0.6) * (0.95 + 0.1 * wob);
     rough = 0.18;
   } else if (k == 6) {
-    c = lch(0.4, 0.06, 55.0) * (0.75 + 0.4 * noise3(p * 18.0 + sd));
+    c = lch(0.4, 0.06, 55.0) * (0.86 + 0.2 * noise3(p * 18.0 + sd));
     if (p.z < -0.12) c = lch(0.2, 0.01, 50.0);
     float lace = abs(fract((p.z + abs(p.y) * 0.8) * 22.0) - 0.5);
     if (p.x > 0.0 && p.z > -0.03 && p.z < 0.2 && abs(p.y) < 0.05) c = mix(c, lch(0.8, 0.03, 85.0), smoothstep(0.14, 0.06, lace));
@@ -1441,13 +1557,13 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
     rough = 0.18;
     emit = lch(0.85, 0.16, 85.0) * (0.3 + 0.6 * cook);
   } else if (k == 8) {
-    c = m > 0.5 ? lch(0.5, 0.14, 138.0) : lch(0.57, 0.21, 30.0) * (0.92 + 0.12 * wob);
+    c = m > 0.5 ? lch(0.5, 0.14, 138.0) : lch(0.57, 0.21, 30.0) * (0.96 + 0.06 * wob);
     c *= 1.0 - 0.6 * cook * smoothstep(0.82, 0.92, noise3(p * 25.0));
     rough = m > 0.5 ? 0.45 : 0.1;
   } else if (k == 9) {
     // The cap points along x: pale stem, brown cap, darker at its crown.
     c = m > 0.5 ? lch(0.88, 0.025, 85.0) : mix(lch(0.6, 0.06, 66.0), lch(0.42, 0.055, 52.0), smoothstep(0.05, 0.12, p.x));
-    c *= 0.9 + 0.15 * wob;
+    c *= 0.95 + 0.08 * wob;
     rough = 0.42;
   } else if (k == 10) {
     c = mix(lch(0.8, 0.13, 64.0), lch(0.66, 0.17, 48.0), smoothstep(0.028, 0.045, length(p.xz)));
@@ -1456,16 +1572,53 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
     c = lch(0.9, 0.035, 95.0);
     rough = 0.1;
   } else if (k == 12) {
-    c = lch(0.9, 0.02, 85.0) * (0.85 + 0.2 * wob);
+    c = lch(0.9, 0.02, 85.0) * (0.93 + 0.1 * wob);
     rough = 0.3;
   } else if (k == 13) {
-    c = lch(0.38, 0.17, 0.0) * (0.9 + 0.2 * wob);
+    c = lch(0.38, 0.17, 0.0) * (0.95 + 0.1 * wob);
     rough = 0.2;
   } else if (k == 14) {
     c = p.y > 0.012 ? mix(lch(0.63, 0.17, 35.0), lch(0.84, 0.12, 95.0), smoothstep(0.62, 0.78, noise3(p * 60.0))) : lch(0.57, 0.21, 30.0);
     rough = 0.14;
-  } else {
+  } else if (k == 15) {
     c = mix(lch(0.84, 0.03, 80.0), lch(0.55, 0.06, 62.0), smoothstep(-0.014, -0.004, sliceShape(p.xz)));
+    rough = 0.3;
+  } else if (k == 16) {
+    // Potato: dusty tan skin with darker eyes; cooked, it turns pale and floury.
+    c = lch(0.66, 0.06, 72.0) * (0.95 + 0.1 * wob) * (1.0 - 0.25 * smoothstep(0.62, 0.72, noise3(p * 13.0)));
+    c = mix(c, lch(0.84, 0.07, 88.0), smoothstep(0.3, 1.0, cook) * 0.6);
+    rough = 0.55;
+  } else if (k == 17) {
+    // Leek: white at the root, then green up the shaft and the leaves.
+    c = m > 0.5 ? lch(0.52, 0.12, 140.0) : mix(lch(0.92, 0.03, 105.0), lch(0.7, 0.12, 128.0), smoothstep(-0.05, 0.14, p.x));
+    c *= 0.95 + 0.06 * sin(atan(p.z, p.y) * 18.0);
+    rough = 0.3;
+  } else if (k == 18) {
+    // Garlic: papery white with faint violet streaks between the cloves.
+    c = mix(lch(0.93, 0.02, 90.0), lch(0.72, 0.06, 330.0), smoothstep(0.7, 1.0, cos(6.0 * atan(p.z, p.y))) * 0.5);
+    rough = 0.4;
+  } else if (k == 19) {
+    // Chilli: glossy red with a green cap.
+    c = m > 0.5 ? lch(0.5, 0.13, 138.0) : lch(0.54, 0.22, 28.0);
+    c = mix(c, c * 0.8, cook * 0.5);
+    rough = m > 0.5 ? 0.4 : 0.1;
+  } else if (k == 20) {
+    // Bay leaf: dull olive with a paler midrib.
+    c = mix(lch(0.56, 0.08, 122.0), lch(0.72, 0.06, 110.0), smoothstep(0.012, 0.0, abs(p.z)));
+    c = mix(c, lch(0.42, 0.06, 95.0), cook * 0.5);
+    rough = 0.5;
+  } else if (k == 21) {
+    // Noodles: pale yellow strands, glossy once soft.
+    c = lch(0.86, 0.08, 88.0) * (0.96 + 0.05 * sin(atan(p.z, p.x) * 40.0));
+    rough = mix(0.35, 0.15, cook);
+  } else if (k == 22) {
+    c = lch(0.86, 0.06, 88.0);
+    rough = 0.4;
+  } else if (k == 23) {
+    c = mix(lch(0.9, 0.05, 110.0), lch(0.68, 0.12, 132.0), smoothstep(0.044, 0.06, length(p.xz)));
+    rough = 0.2;
+  } else {
+    c = lch(0.92, 0.025, 92.0);
     rough = 0.3;
   }
   return c;
@@ -1476,13 +1629,20 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec3 n = bodyN(i, p);
   float rough;
   vec3 emit;
-  float cook = clamp(M.y, 0.0, 1.0);
+  // M.y runs 0 to 1 while a thing cooks, then 1 to 2 while it melts away.
+  float cook = clamp(M.y, 0.0, 1.0), melt = clamp(M.y - 1.0, 0.0, 1.0);
   vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
-  // A fine noise varies each skin: waxy patches, dull pores, worn ridges.
-  rough = clamp(rough * (0.75 + 0.5 * noise3(lp * 34.0 + M.x * 7.0)), 0.05, 0.9);
-  // Cooking soaks the soup's colour into a thing.
+  // A soft noise varies each skin: waxy patches and dull pores, never speckle.
+  rough = clamp(rough * (0.88 + 0.24 * noise3(lp * 16.0 + M.x * 7.0)), 0.05, 0.9);
+  // Cooking deepens and glosses a thing, and soaks the soup's colour into it.
   vec3 soup = soupCol(p.xz);
-  alb = mix(alb, alb * soup * 2.4, cook * 0.35);
+  float ck = smoothstep(0.0, 1.0, cook);
+  alb = mix(alb, alb * vec3(0.92, 0.84, 0.76), ck * 0.45);
+  alb = mix(alb, alb * soup * 2.4, ck * 0.35);
+  rough = mix(rough, rough * 0.7, ck);
+  // Melting, it loses its own colour to the soup's as it shrinks.
+  alb = mix(alb, soup * 0.85, smoothstep(0.0, 0.8, melt) * 0.85);
+  emit *= 1.0 - melt;
   float hA = p.y - surfH(p.xz);
   // Low parts sit in the soup's shade, and wet soup coats them.
   float wet = exp(-max(hA, 0.0) / 0.03);
@@ -1680,7 +1840,8 @@ const curlP = program(CURL_FS), fvelP = program(VEL_FS), divP = program(DIV_FS);
 const jacP = program(JAC_FS), projP = program(PROJ_FS), fdyeP = program(FDYE_FS);
 const fsim = (() => {
   const make = () => { const tex = texture(FG.w, FG.h, gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]) }; };
-  return { vel: [make(), make()], dye: [make(), make()], p: [make(), make()], curl: make(), div: make(), vi: 0, di: 0, pi: 0 };
+  const tex = texture(FG.w, FG.h, gl.R16F, gl.RED);
+  return { vel: [make(), make()], dye: [make(), make()], p: [make(), make()], curl: make(), div: make(), solid: { tex, fb: target([tex]) }, vi: 0, di: 0, pi: 0 };
 })();
 // The air gust from a drag past the pot: a world point, a radius and a velocity.
 const air = { pos: [0, -100, 0], r: 0.9, vel: [0, 0, 0] };
@@ -1716,9 +1877,11 @@ function simPass(p, dst, texs) {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
+// The pot never moves, so its solid mask draws once.
+simPass(program(SOLID_FS), fsim.solid, {});
 // One fixed step: curl, advect, divergence, pressure, project, dye with the coals.
 function fireStep(dt) {
-  const k = fireTune(), S = fsim;
+  const k = fireTune(), S = fsim, solid = S.solid;
   simPass(curlP, S.curl, { uVel: S.vel[S.vi] });
   gl.useProgram(fvelP);
   gl.uniform1f(fvelP.u('uDt'), dt);
@@ -1731,17 +1894,17 @@ function fireStep(dt) {
   gl.uniform4f(fvelP.u('uAir'), ...air.pos, air.r);
   gl.uniform4f(fvelP.u('uAirV'), ...air.vel, 0);
   gl.uniform3f(fvelP.u('uWind'), ...gust());
-  simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl });
+  simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl, uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(divP);
   gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
   simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
   // Jacobi sweeps ping-pong; the last pressure warms the next step.
   for (let i = 0; i < 12; i++) {
-    simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div });
+    simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div, uSolid: solid });
     S.pi = 1 - S.pi;
   }
-  simPass(projP, S.vel[1 - S.vi], { uP: S.p[S.pi], uVel: S.vel[S.vi] });
+  simPass(projP, S.vel[1 - S.vi], { uP: S.p[S.pi], uVel: S.vel[S.vi], uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(fdyeP);
   gl.uniform1f(fdyeP.u('uDt'), dt);
@@ -1754,12 +1917,15 @@ function fireStep(dt) {
   gl.uniform1f(fdyeP.u('uEmitT'), 5.5 / 120 * 14 * k.emit * pw);
   gl.uniform1f(fdyeP.u('uEmitD'), 7.0 / 120 * 8 * k.emit * pw);
   gl.uniform4f(fdyeP.u('uBed'), devV('fireX', 0), devV('fireZ', 0), devV('fireY', 0.04), devV('fireR', 0.62));
-  simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
+  simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uSolid: solid });
   S.di = 1 - S.di;
 }
 // Fire runs at 1.2 speed; steps here are up to 1/50 s, two at most a frame.
-let fireAcc = 0;
+let fireAcc = 0, coldT = 0;
 function fireSim(dt) {
+  // With no fire for twenty seconds, no heat shows: the solver rests.
+  coldT = fire < 0.02 ? coldT + dt : 0;
+  if (coldT > 20) { fireAcc = 0; return; }
   fireAcc += dt * 1.2;
   const n = Math.min(2, Math.ceil(fireAcc / 0.024 - 1e-6));
   if (n <= 0) return;
@@ -1897,6 +2063,7 @@ function resize() {
   size = { w, h, dpr, W, H, aw, ah };
   fit(w, h);
   if (changed) frameTargets();
+  gpu.fire?.resize(w, h, dpr);
   dyeTargets();
 }
 refit = () => { if (size) fit(size.w, size.h); wake(); };
@@ -2061,9 +2228,18 @@ const KINDS = {
   cube: { k: 13, bound: 0.065, float: 0.012, lag: 0.25, cook: 24, tint: [0.42, 0.19, 358], mass: 0.12, into: 'melt', n: 0, sq: 0.06, L: 0.06, W: 0.06 },
   chunk: { k: 14, bound: 0.08, float: 0.02, lag: 0.25, cook: 13, tint: [0.56, 0.19, 32], mass: 0.12, into: 'melt', n: 0, sq: 0.06, L: 0.075, W: 0.075 },
   slice: { k: 15, bound: 0.15, float: 0.008, lag: 0.3, cook: 22, tint: [0.47, 0.045, 62], mass: 0.06, into: 'melt', n: 0, sq: 0.06, L: 0.12, W: 0.12 },
+  potato: { k: 16, bound: 0.2, float: 0.01, lag: 0.5, cook: 20, tint: [0.8, 0.05, 85], mass: 0.6, into: 'pcube', n: 4, sq: 0.35, L: 0.15, W: 0.11 },
+  leek: { k: 17, bound: 0.42, float: 0.015, lag: 0.45, cook: 14, tint: [0.7, 0.1, 130], mass: 0.4, into: 'lring', n: 5, sq: 0.3, L: 0.36, W: 0.07 },
+  garlic: { k: 18, bound: 0.18, float: 0.02, lag: 0.3, cook: 12, tint: [0.88, 0.03, 90], mass: 0.25, into: 'clove', n: 4, sq: 0.2, L: 0.15, W: 0.1 },
+  chilli: { k: 19, bound: 0.32, float: 0.015, lag: 0.35, cook: 16, tint: [0.55, 0.2, 30], mass: 0.5, into: 'melt', n: 0, sq: 0.15, L: 0.27, W: 0.06 },
+  bay: { k: 20, bound: 0.2, float: 0.005, lag: 0.25, cook: 40, tint: [0.6, 0.07, 120], mass: 0.1, into: null, n: 0, sq: 0.08, L: 0.2, W: 0.06 },
+  noodles: { k: 21, bound: 0.16, float: 0.008, lag: 0.4, cook: 18, tint: [0.85, 0.06, 88], mass: 0.5, into: 'melt', n: 0, sq: 0.3, L: 0.12, W: 0.12 },
+  pcube: { k: 22, bound: 0.07, float: 0.012, lag: 0.25, cook: 24, tint: [0.85, 0.05, 88], mass: 0.1, into: 'melt', n: 0, sq: 0.06, L: 0.06, W: 0.06 },
+  lring: { k: 23, bound: 0.075, float: 0.006, lag: 0.25, cook: 22, tint: [0.75, 0.08, 125], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.07, W: 0.07 },
+  clove: { k: 24, bound: 0.075, float: 0.01, lag: 0.25, cook: 20, tint: [0.9, 0.02, 90], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.065, W: 0.04 },
 };
 // The throw order; the pot starts with a carrot and an onion.
-const ORDER = ['fish', 'beet', 'duck', 'pea', 'boot', 'star', 'tomato', 'mushroom', 'carrot', 'onion'];
+const ORDER = ['fish', 'potato', 'beet', 'leek', 'duck', 'pea', 'garlic', 'boot', 'chilli', 'star', 'tomato', 'noodles', 'mushroom', 'bay', 'carrot', 'onion'];
 let next = 0;
 const bodies = [];
 // Quaternions: x, y, z, w.
@@ -2146,15 +2322,17 @@ function emit(x, z, r, mass, tint, type) {
 const LIQ = {
   cream: { tint: [0.95, 0.02, 88], mass: 0.9, r: 0.07, fat: 0.7, glit: 0, skin: 0.5 },
   ink: { tint: [0.16, 0.03, 290], mass: 0.85, r: 0.05, fat: 0, glit: 0 },
-  chilli: { tint: [0.55, 0.2, 33], mass: 0.35, r: 0.045, fat: 1, glit: 0 },
+  chillioil: { tint: [0.55, 0.2, 33], mass: 0.35, r: 0.045, fat: 1, glit: 0 },
   saffron: { tint: [0.82, 0.17, 84], mass: 0.45, r: 0.06, fat: 0, glit: 0.6 },
 };
 const pours = [];
-function pour(kind, x, z) {
-  pours.push({ kind, x, z, t: 0, dur: 1.2, acc: 0, col: lchLin(LIQ[kind].tint) });
+function pour(kind, x, z, held = null) {
+  const p = { kind, x, z, t: 0, dur: held ? Infinity : 1.2, acc: 0, col: lchLin(LIQ[kind].tint), held, sounded: 0 };
+  pours.push(p);
   pourSound(kind, x);
   splashAt = time;
   wake();
+  return p;
 }
 // The stream lands in lumps, about 30 a second, and drifts with the stir.
 function stepPours(dt) {
@@ -2162,8 +2340,15 @@ function stepPours(dt) {
   for (let i = pours.length - 1; i >= 0; i--) {
     const p = pours[i], L = LIQ[p.kind];
     p.t += dt;
-    p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
-    p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    if (p.held) {
+      // A held pour follows the hand, so it can draw a spiral.
+      const kp = 1 - Math.exp(-dt * 14);
+      p.x += (p.held.tx - p.x) * kp; p.z += (p.held.tz - p.z) * kp;
+      if (p.t - p.sounded > 1.1) { p.sounded = p.t; pourSound(p.kind, p.x); }
+    } else {
+      p.x += sampleF(fu, p.x, p.z) * dt * 0.6;
+      p.z += sampleF(fv, p.x, p.z) * dt * 0.6;
+    }
     [p.x, p.z] = inside([p.x, p.z], 0.9);
     p.acc += dt * 30;
     while (p.acc >= 1 && p.t < p.dur) {
@@ -2299,6 +2484,7 @@ function stepBodies(dt) {
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i], K = b.K;
     b.age += dt;
+    if (b.grow !== undefined && b.grow < 1) b.grow = Math.min(1, b.grow + dt / 0.5);
     // In flight: an arc that tumbles, then lands flat on the soup.
     if (b.fly) {
       const f = b.fly;
@@ -2313,11 +2499,22 @@ function stepBodies(dt) {
       if (t >= 1) { b.fly = null; b.tumble = null; splash(b); }
       continue;
     }
-    // Ride the flow; heavy things lag behind it.
-    const ux = sampleF(fu, b.x, b.z), uz = sampleF(fv, b.x, b.z);
-    const k = 1 - Math.exp(-dt / K.lag);
-    b.vx += (ux - b.vx) * k;
-    b.vz += (uz - b.vz) * k;
+    // A held thing follows the hand, lifted a little; otherwise it rides the flow.
+    if (b.held) {
+      const kh = 1 - Math.exp(-dt * 10);
+      b.vx += ((b.held.tx - b.x) * 9 - b.vx) * kh;
+      b.vz += ((b.held.tz - b.z) * 9 - b.vz) * kh;
+      b.pitchV += b.vx * 2.5 * dt * 10; b.rollV -= b.vz * 2.5 * dt * 10;
+      // It drips and leaves a small wake.
+      if (Math.random() < dt * 6 && !reduced()) addDrop(b.x * rs, b.y - 0.02, b.z * rs, b.vx * 0.3, -0.2, b.vz * 0.3, rand(0.01, 0.016));
+      if (Math.hypot(b.vx, b.vz) > 0.15 && Math.random() < dt * 20) imps.push([b.x, b.z, 0.05, -0.006]);
+    } else {
+      const ux = sampleF(fu, b.x, b.z), uz = sampleF(fv, b.x, b.z);
+      const k = 1 - Math.exp(-dt / K.lag);
+      b.vx += (ux - b.vx) * k;
+      b.vz += (uz - b.vz) * k;
+    }
+    b.liftH = (b.liftH || 0) + ((b.held ? 0.07 : 0) - (b.liftH || 0)) * (1 - Math.exp(-dt * (b.held ? 6 : 9)));
     // The boil pushes things off the plumes.
     for (const p of plumes) {
       const dx = b.x - p.x, dz = b.z - p.z, d2 = dx * dx + dz * dz;
@@ -2357,7 +2554,7 @@ function stepBodies(dt) {
     const shiver = K.into && K.into !== 'melt' && b.cook > 0.86 && b.cook < 1 && !reduced() ? (b.cook - 0.86) * 0.5 : 0;
     if (shiver) { b.roll += rand(-1, 1) * shiver; b.pitch += rand(-1, 1) * shiver; }
     b.wx = b.x * rs; b.wz = b.z * rs;
-    b.y = surfY(b.wx, b.wz) + K.float * b.scale + b.bob - b.sink;
+    b.y = surfY(b.wx, b.wz) + K.float * b.scale + b.bob - b.sink + (b.liftH || 0);
     // Cook, and give up colour as it goes.
     if (K.cook > 0 && !b.gone) {
       b.cook = Math.min(K.into ? 1.2 : 1, b.cook + dt * heat / K.cook);
@@ -2366,23 +2563,27 @@ function stepBodies(dt) {
         if (b.pend > 0.012) { emit(b.x, b.z, 0.1 + 0.25 * b.rad, b.pend, K.tint, 0); b.pend = 0; }
       }
       if (K.k === 7 && Math.random() < dt * 3) emit(b.x + rand(-0.06, 0.06), b.z + rand(-0.06, 0.06), 0.06, 0.25, null, 2);
+      // A chilli sweats its oil as it cooks: fat beads float off it.
+      if (K.k === 19 && Math.random() < dt * 2.5) emit(b.x + rand(-0.05, 0.05), b.z + rand(-0.05, 0.05), rand(0.02, 0.04), rand(0.4, 0.7), null, 1);
       if (b.cook >= 1 && K.into) {
         if (K.into === 'melt') b.gone = 1e-3;
-        else { breakUp(b); bodies.splice(i, 1); continue; }
+        else { breakUp(b); b.gone = 1e-3; b.split = true; b.K = { ...K, into: null, cook: 0 }; }
       }
     }
     // Melting: shrink and sink, and let the last colour go.
     if (b.gone) {
-      b.gone += dt / 2.2;
+      // A thing that split clears fast, as its pieces grow in; a piece melts slowly.
+      b.gone += dt / (b.split ? 0.45 : 2.2);
       b.sink += dt * 0.05;
-      if (K.tint && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
+      if (K.tint && !b.split && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
       if (b.gone >= 1) { bodies.splice(i, 1); continue; }
     }
   }
   // Things nudge each other apart.
   for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
     const a = bodies[i], b = bodies[j];
-    if (a.fly || b.fly) continue;
+    // A thing that just split no longer pushes; its pieces take its place.
+    if (a.fly || b.fly || a.split || b.split) continue;
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) + 1e-4, min = (a.rad + b.rad) / rs * 0.85;
     if (d < min) {
       const push = (min - d) * 0.5, nx = dx / d, nz = dz / d;
@@ -2408,9 +2609,11 @@ function breakUp(b) {
     const p = makeBody(kind, px, pz, { scale, cook: K.into === 'star' ? 0.55 : 0 });
     if (K.into === 'star') p.K = { ...KINDS.star, into: 'melt', cook: 9, mass: 0.04 };
     p.rad = p.K.W * scale;
-    p.vx = b.vx + rand(-0.15, 0.15); p.vz = b.vz + rand(-0.15, 0.15);
-    p.yaw = b.yaw + (K.into === 'bones' ? 0 : rand(-0.6, 0.6));
-    p.vy = rand(0.2, 0.6);
+    // Pieces drift gently apart from where they sat in the whole.
+    p.vx = b.vx + (px - b.x) * 0.6 + rand(-0.04, 0.04); p.vz = b.vz + (pz - b.z) * 0.6 + rand(-0.04, 0.04);
+    p.yaw = b.yaw + (K.into === 'bones' ? 0 : rand(-0.25, 0.25));
+    p.vy = rand(0.05, 0.15);
+    p.grow = 0;
     bodies.push(p);
   }
   trim();
@@ -2424,29 +2627,80 @@ let ptr = null;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 // A soup point clamped inside the wall.
 function inside(p, lim = 0.9) { const r = Math.hypot(p[0], p[1]); return r > lim ? [p[0] / r * lim, p[1] / r * lim] : p; }
+// The thing under a soup point: the nearest one whose outline holds it.
+function thingAt(sx, sz) {
+  const rs = soupR(level);
+  let best = null, bd = 1e9;
+  for (const b of bodies) {
+    if (b.fly || b.gone) continue;
+    const d = Math.hypot(b.x - sx, b.z - sz) * rs;
+    if (d < Math.max(b.rad, 0.07) * 1.2 && d < bd) { bd = d; best = b; }
+  }
+  return best;
+}
+// A tap on a thing dunks it: it bobs under, splashes and rocks.
+function dunk(b) {
+  b.vy -= 0.9 + 0.8 * clamp(b.K.sq + 0.1);
+  b.pitchV += rand(-6, 6); b.rollV += rand(-6, 6);
+  imps.push([b.x, b.z, 0.06 + b.rad / soupR(level) * 0.5, -0.02]);
+  const rs = soupR(level);
+  for (let i = 0; i < 5 && !reduced(); i++) {
+    const a = rand(0, TAU);
+    addDrop(b.x * rs + Math.cos(a) * 0.05, b.y, b.z * rs + Math.sin(a) * 0.05, Math.cos(a) * 0.5, rand(1.2, 2), Math.sin(a) * 0.5, rand(0.01, 0.018));
+  }
+  splashAt = time;
+  plopSound(b);
+}
 function down(e) {
   if (ptr || e.button > 0) return;
   try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
   const [x, y] = local(e);
-  ptr = { id: e.pointerId, x0: x, y0: y, mode: 'press' };
+  const [sx, sz] = soupAt(x, y);
+  ptr = { id: e.pointerId, x0: x, y0: y, mode: 'press', thing: draining ? null : thingAt(sx, sz) };
   wake();
 }
 function move(e) {
   if (!ptr || e.pointerId !== ptr.id) return;
   const [x, y] = local(e);
   if (ptr.mode === 'press' && Math.hypot(x - ptr.x0, y - ptr.y0) > 7) {
-    ptr.mode = 'stir';
-    const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0));
-    spoonDown(sx, sz);
+    const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.85);
+    if (ptr.thing) {
+      // Drag on a thing: pick it up and pull it through the soup.
+      ptr.mode = 'grab';
+      ptr.thing.held = { tx: sx, tz: sz };
+    } else if (LIQ[pick] && !draining) {
+      // Drag with a liquid picked: the stream follows the hand.
+      ptr.mode = 'pour';
+      ptr.pour = pour(pick, sx, sz, { tx: sx, tz: sz });
+    } else {
+      ptr.mode = 'stir';
+      spoonDown(sx, sz);
+    }
     stage.classList.add('is-stirring');
   }
-  if (ptr.mode === 'stir') { const [sx, sz] = inside(soupAt(x, y)); spoon.tx = sx; spoon.tz = sz; wake(); }
+  const [sx, sz] = inside(soupAt(x, y), 0.85);
+  if (ptr.mode === 'stir') { spoon.tx = sx; spoon.tz = sz; wake(); }
+  else if (ptr.mode === 'grab' && ptr.thing.held) { ptr.thing.held.tx = sx; ptr.thing.held.tz = sz; wake(); }
+  else if (ptr.mode === 'pour') { ptr.pour.held.tx = sx; ptr.pour.held.tz = sz; wake(); }
 }
 function up(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
   const tap = ptr.mode === 'press' && e?.type === 'pointerup';
-  if (tap) { const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.82); throwNext(sx, sz); }
+  if (tap) {
+    if (ptr.thing && !ptr.thing.gone) dunk(ptr.thing);
+    else { const [sx, sz] = inside(soupAt(ptr.x0, ptr.y0), 0.82); throwNext(sx, sz); }
+  }
   if (ptr.mode === 'stir') spoonUp();
+  if (ptr.mode === 'grab') {
+    // Let go: it drops back in with a small splash.
+    const b = ptr.thing;
+    b.held = null;
+    b.vy -= 0.5;
+    imps.push([b.x, b.z, 0.07, -0.014]);
+    splashAt = time;
+  }
+  // A drawn pour runs on a moment after the hand lifts.
+  if (ptr.mode === 'pour') { const p = ptr.pour; p.held = null; p.dur = Math.max(p.t + 0.3, 0.9); }
   ptr = null;
   stage.classList.remove('is-stirring');
   wake();
@@ -2932,7 +3186,7 @@ function glowCol() {
   const c = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
   return c.map(v => Math.max(0, v) * (0.25 + 0.35 * fire));
 }
-const puffU = new Float32Array(NP * 4), sparkU = new Float32Array(NS * 8);
+const puffU = new Float32Array(NP * 4), sparkU = new Float32Array(NS * 8), plumeW = new Float32Array(16);
 let swirl = 0;
 function layerPass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, layer.fb);
@@ -2944,10 +3198,16 @@ function layerPass() {
   gl.uniform1f(layerP.u('uFire'), fire);
   gl.uniform1f(layerP.u('uFlick'), flick);
   gl.uniform1f(layerP.u('uLevel'), level);
-  gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.3 + 0.7 * fire);
+  // A high fire steams more, but never into a fog over the soup.
+  gl.uniform1f(layerP.u('uSteam'), reduced() ? 0.35 * (0.3 + fire) : 0.35 + 0.5 * fire);
+  const prs = soupR(level);
+  plumes.forEach((p, i) => plumeW.set([p.x * prs, p.z * prs, 0.5 + 0.5 * fire, 0], i * 4));
+  gl.uniform4fv(layerP.u('uPlumeW'), plumeW);
+  const gw = gust();
+  gl.uniform2f(layerP.u('uLean'), gw[0] * 0.08, gw[2] * 0.08);
   gl.uniform1f(layerP.u('uSwirl'), swirl);
   gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
-  gl.uniform1f(layerP.u('uFSteps'), D.level > 0 ? 24 : 16);
+  gl.uniform1f(layerP.u('uFSteps'), gpu.on ? 0 : D.level > 0 ? 24 : 16);
   gl.uniform3f(layerP.u('uBedP'), ...bedP());
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, fsim.dye[fsim.di].tex);
@@ -2998,14 +3258,16 @@ function scenePass() {
   for (const b of bodies) {
     if (n >= NB) break;
     if (b.fly && b.fly.t < 0) continue;
+    // Melting shrinks a thing away; a fresh piece grows in; cooking costs a little water.
     const shrink = b.gone ? 1 - smooth(0, 1, b.gone) : 1;
-    const sc = Math.max(0.02, b.scale * shrink);
+    const grow = b.grow === undefined ? 1 : 0.35 + 0.65 * smooth(0, 1, b.grow);
+    const sc = Math.max(0.02, b.scale * shrink * grow * (1 - 0.08 * Math.min(b.cook, 1)));
     let q = qaxis(0, 1, 0, b.yaw);
     q = qmul(q, qaxis(1, 0, 0, b.roll));
     q = qmul(q, qaxis(0, 0, 1, b.pitch));
     if (b.tumble) q = qmul(b.tumble, q);
     const wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
-    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], q[3], b.K.k, b.cook, b.seed, sc], n * 12);
+    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], q[3], b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
     n++;
   }
   gl.uniform1i(sceneP.u('uNB'), n);
@@ -3049,9 +3311,38 @@ function outPass() {
   gl.activeTexture(gl.TEXTURE0);
 }
 function draw() {
+  if (gpu.on) gpuFrame();
   layerPass();
   scenePass();
   outPass();
+}
+
+/* ---------- the WebGPU fire ---------- */
+// Loaded on first pick; the WebGL solver keeps running, so the iron stays lit by it.
+const gpu = { on: false, fire: null, loading: null, last: 0 };
+setEngine = async v => {
+  if (v !== 'gpu') { gpu.on = false; if (gpu.fire) gpu.fire.canvas.hidden = true; wake(); return; }
+  if (!gpu.fire) {
+    gpu.loading ??= import('./gpufire.js').then(m => m.createGpuFire({ ground: GROUND })).catch(() => null);
+    const f = await gpu.loading;
+    // No WebGPU here: the WebGL fire stays, and the pick is left as it is.
+    if (!f) { gpu.loading = null; return; }
+    gpu.fire = f;
+    f.canvas.classList.add('gpufire', 'on');
+    canvas.after(f.canvas);
+    f.resize(size.w, size.h, size.dpr);
+  }
+  gpu.fire.canvas.hidden = false;
+  gpu.on = true;
+  wake();
+};
+function gpuFrame() {
+  const f = gpu.fire, now = performance.now() / 1000;
+  const dt = gpu.last ? Math.min(now - gpu.last, 0.1) : 1 / 60;
+  gpu.last = now;
+  f.setCam(cam, size.w, size.h);
+  f.setFire(fire);
+  f.frame(dt);
 }
 
 /* ---------- frame loop ---------- */
@@ -3075,7 +3366,8 @@ function frame(now) {
   try {
     const lively = busy();
     // A hand at work draws at up to 60 fps; the simmer draws at 30.
-    if (now - rendered < (lively ? 1000 / 62 : 1000 / 31)) { again = visible; return; }
+    // A 2 ms slack absorbs rAF timestamp jitter, so no frame is skipped.
+    if (now - rendered < (lively ? 1000 / 60 - 2 : 1000 / 30 - 2)) { again = visible; return; }
     const gap = (now - (rendered || now - 16)) / 1000, dt = clamp(gap, 0, 0.05);
     if (lively && wasLively && gap < 0.1) D.frame(gap);
     wasLively = lively;
@@ -3139,6 +3431,9 @@ act.reset = () => {
 // The intro holds until the shaders compile and the first frame draws.
 resize();
 starter();
+// A kept WebGPU pick loads after the first frame; the WebGL fire shows until then.
+// Parked: Fire's WebGPU engine runs only with ?fire=gpu; the toy ships the WebGL fire.
+if (new URLSearchParams(location.search).get('fire') === 'gpu') setTimeout(() => setEngine('gpu'), 0);
 stepPlumes(0);
 stepFire(0);
 // A short warm-up lets the first colour wash and the steam settle in.

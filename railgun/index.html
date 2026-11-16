@@ -151,8 +151,6 @@ let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
 const ui = initPage({ id: 'railgun', bar: {
-  // The seven cinematic views are parked (Tom, 2026-11-15): the wide eye only.
-  // poseOf keeps them; __qa.view still reaches them for stills.
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
@@ -187,6 +185,11 @@ const ui = initPage({ id: 'railgun', bar: {
     // Ship fires sends a test round to the plain.
     // The button waits for a ship at station.
     { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    // Ambient: small events nobody fires, for a watcher.
+    { type: 'toggle', id: 'ambient', label: 'Ambient', value: true, persist: true },
+    { type: 'slider', id: 'ambrate', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
+    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'rain', label: 'Rain' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
+    { type: 'button', id: 'ambfire', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
     // Strike test: each rock starts at its hold and strikes after a short grace.
     // Fast rock: the rock falls ten times faster; off is the normal speed.
     { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
@@ -445,11 +448,21 @@ aimSky();
 const MOON_H = rad(93.5), MOON_DEC = rad(-33.7);
 const skyRot = new THREE.Matrix4();
 U.uSkyRot = { value: new THREE.Matrix3() };
+// A fast Time drag smears the stars into short arcs.
+// uSkyRot0 is the sky a moment ago; uTrailK is the arc's share.
+U.uSkyRot0 = { value: new THREE.Matrix3() };
+U.uTrailK = { value: 0 };
+// span: the sky angle swept lately, in radians; it decays fast.
+const TRAIL_MAX = 0.04;
+const skyTrail = { H: null, span: 0 };
+const skyRot0 = new THREE.Matrix4();
 let skyH = 0;
 // The low sun swings toward the frame.
 // A high sun keeps the old bearing, 63 degrees right.
 function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
 function skyAt(H) {
+  if (skyTrail.H !== null && !reduced()) skyTrail.span = clamp(skyTrail.span + H - skyTrail.H, -TRAIL_MAX, TRAIL_MAX);
+  skyTrail.H = H;
   skyH = H;
   skyDir(H, 0, U.uSunD.value);
   const deg = THREE.MathUtils.radToDeg(Math.asin(clamp(U.uSunD.value.y, -1, 1)));
@@ -545,8 +558,8 @@ const K2_SKY = /* glsl */`
 uniform vec3 uSunC, uZenC, uHorC;
 uniform float uSunE;
 uniform vec3 uSunD, uGlowC, uMoonD, uCloudSun, uCloudAmb;
-uniform float uMoonK, uStars, uStarT;
-uniform mat3 uSkyRot;
+uniform float uMoonK, uStars, uStarT, uTrailK;
+uniform mat3 uSkyRot, uSkyRot0;
 uniform vec3 uWisp;
 uniform vec4 uAst;
 uniform float uAstR;
@@ -709,15 +722,28 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5 && dir.y > 0.0) {
     // Stars: one in about seventy cells, a few twinkle.
     if (uStars > 0.01) {
-      vec3 g = (uSkyRot * dir) * 420.0, id = floor(g);
-      float h = k3hash(id);
-      if (h > 0.986) {
-        vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
-        float s = smoothstep(0.3, 0.0, length(fract(g) - 0.5 - o * 0.4));
-        float tw = 0.7 + 0.3 * sin(uStarT * (1.5 + 4.0 * h) + h * 400.0);
-        float m = pow((h - 0.986) / 0.014, 3.0) * 2.5 + 0.15;
-        col += vec3(0.75, 0.82, 1.0) * s * tw * m * uStars * smoothstep(0.0, 0.2, dir.y);
+      // A Time drag samples the star field along its recent turn.
+      // The samples blend into a short arc that fades toward its tail.
+      int n = uTrailK > 0.002 ? 32 : 1;
+      vec3 dA = uSkyRot * dir, dB = uSkyRot0 * dir, acc = vec3(0.0);
+      float wsum = 0.0;
+      for (int j = 0; j < 32; j++) {
+        if (j >= n) break;
+        float u = n > 1 ? float(j) / 31.0 : 0.0, wt = 1.0 - 0.75 * u;
+        wsum += wt;
+        vec3 g = normalize(mix(dA, dB, u)) * 420.0, id = floor(g);
+        float h = k3hash(id);
+        if (h > 0.986) {
+          vec3 o = vec3(k3hash(id + 1.7), k3hash(id + 3.1), k3hash(id + 5.3)) - 0.5;
+          float s = smoothstep(0.3, 0.0, length(fract(g) - 0.5 - o * 0.4));
+          float tw = 0.7 + 0.3 * sin(uStarT * (1.5 + 4.0 * h) + h * 400.0);
+          float m = pow((h - 0.986) / 0.014, 3.0) * 2.5 + 0.15;
+          acc += s * tw * m * wt;
+        }
       }
+      // An arc spreads its light; a gain keeps it as bright as the dot.
+      acc *= n > 1 ? 7.0 / wsum : 1.0;
+      col += vec3(0.75, 0.82, 1.0) * acc * uStars * smoothstep(0.0, 0.2, dir.y);
     }
     // The moon: a small disc and a soft halo.
     if (uMoonK > 0.01) {
@@ -1115,11 +1141,33 @@ float terrH(vec2 p) {
   float roll = fg * (8.0 * sin(p.x * 0.0033 + 1.4 * sin(p.y * 0.0019)) + 6.0 * sin(p.y * 0.0041 + 0.8 * sin(p.x * 0.0027)));
   // Far out, long sweeping swells rise tens of metres.
   float far_ = smoothstep(5000.0, 16000.0, length(p - vec2(1670.0, 1990.0)));
-  return eyeK * roll + 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021))
+  // Near the eye the sand rolls in gentle waves, one to three metres high.
+  // They stay low enough to keep the gun's foot in view.
+  // The ground under the eye and round the mount stays level.
+  float nk = smoothstep(40.0, 220.0, dEye) * (1.0 - smoothstep(2500.0, 4500.0, dEye)) * smoothstep(450.0, 900.0, length(p - vec2(0.0, 90.0)));
+  float amp = mix(0.55, 1.0, smoothstep(200.0, 1400.0, dEye));
+  // Long, bent swells, 180 to 300 m apart, so the sand never reads as sea.
+  float waves = nk * amp * (2.4 * sin(dot(p, vec2(0.8, 0.6)) * 0.021 + 2.6 * sin(p.y * 0.0047 + 0.9 * sin(p.x * 0.0031)))
+    + 1.4 * sin(dot(p, vec2(-0.45, 0.89)) * 0.034 + 2.0 * sin(p.x * 0.0083 + 0.6 * sin(p.y * 0.005))));
+  return waves + eyeK * roll + 0.5 * k * (7.0 * sin(p.x * 0.0009 + 1.3 * sin(p.y * 0.0006)) + 5.0 * sin(p.y * 0.0013 + 0.9 * sin(p.x * 0.0007)) + 2.5 * sin((p.x + p.y) * 0.0021))
     + eyeF * far_ * (45.0 * sin(p.x * 0.00031 + 1.7 * sin(p.y * 0.00022)) + 30.0 * sin(p.y * 0.00047 + p.x * 0.00012));
 }`;
 // The plain reaches out to the ranges' feet: 240 km across.
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 480, 480).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+// The grid packs its vertices round the eye: about 3 m apart there.
+// The spacing grows outward to about 3 km at the rim.
+// So the near waves displace, and the vertex count stays the same.
+function groundGeo(cx, cz) {
+  const N = 480, K = 7.07, A = 120000 / (Math.exp(K) - 1);
+  const f = u => Math.sign(u) * A * (Math.exp(K * Math.abs(u)) - 1);
+  const g = new THREE.PlaneGeometry(2, 2, N, N).rotateX(-Math.PI / 2);
+  const P = g.attributes.position;
+  for (let i = 0; i < P.count; i++) P.setXYZ(i, cx + f(P.getX(i)), 0, cz + f(P.getZ(i)));
+  g.computeBoundingSphere();
+  return g;
+}
+// The wide eye and the portrait eye each get their own grid.
+let groundTall = null;
+const ground = new THREE.Mesh(groundGeo(1670, 1990), new THREE.ShaderMaterial({
   uniforms: { ...U, uGroundC: { value: new THREE.Vector3(...GROUND_C) } },
   vertexShader: /* glsl */`varying vec3 vP; ${TERRAIN} ${CURVE}
   void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; vP.y += terrH(vP.xz); gl_Position = projectionMatrix * viewMatrix * vec4(curved(vP), 1.0); }`,
@@ -1163,8 +1211,17 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(240000, 240000, 480, 480).
     float A = 14.0 * fade;
     vec3 N = normalize(vec3(-(dune(vP.xz + vec2(e, 0.0), g) - h0) / e * A, 1.0, -(dune(vP.xz + vec2(0.0, e), g) - h0) / e * A));
     // The swells tilt the plain: their slope joins the dunes' normal.
-    float t0 = terrH(vP.xz);
-    N = normalize(N + vec3(-(terrH(vP.xz + vec2(40.0, 0.0)) - t0) / 40.0, 0.0, -(terrH(vP.xz + vec2(0.0, 40.0)) - t0) / 40.0));
+    // A short step near the eye resolves the gentle waves; far out it is long.
+    float ts = mix(6.0, 40.0, smoothstep(1500.0, 4000.0, dist)), t0 = terrH(vP.xz);
+    N = normalize(N + vec3(-(terrH(vP.xz + vec2(ts, 0.0)) - t0) / ts, 0.0, -(terrH(vP.xz + vec2(0.0, ts)) - t0) / ts));
+    // Hummocks: soft wind-blown mounds a few metres across, as a bump only.
+    // They fade out before a pixel spans one.
+    float hk = smoothstep(1200.0, 150.0, dist) * band(dx, dy, normalize(vec2(1.0, 0.3)), 0.035);
+    if (hk > 0.01) {
+      vec2 hp = vP.xz * 0.035;
+      float h00 = k2noise(hp), hx = k2noise(hp + vec2(0.035, 0.0)), hz = k2noise(hp + vec2(0.0, 0.035));
+      N = normalize(N + vec3(-(hx - h00), 0.0, -(hz - h00)) * 0.6 * hk);
+    }
     // Fine wind ripples near the eye, filtered like the dunes.
     float near = smoothstep(1600.0, 200.0, dist) * band(dx, dy, WIND, 0.38);
     float rp = cos(dot(vP.xz, WIND) * 0.38 + 5.0 * k2noise(vP.xz * 0.012)) * 0.05 * near;
@@ -1235,11 +1292,9 @@ scene.add(ground);
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
 // Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
-// The last two stand behind the Profile and Horizon views.
 const RANGES = [
   [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 24000, 150, 200], [-12, 148000, 42000, 18500, 130, 60],
   [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250], [0, 81000, 16000, 6400, 120, 300],
-  [100, 236000, 73000, 13600, 150, 155], [190, 189000, 78000, 14400, 150, 64],
 ];
 const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
@@ -1673,7 +1728,6 @@ const HEAPS = [
 ];
 const heaps = cloudLayer(HEAPS, 2.2);
 // A far band of big heaps sits at the ranges' feet and between them.
-// Some stand round the side and reverse views.
 const FARHEAPS = [
   [-18, 62000, 2200, 5000, 3200, 0], [8, 78000, 2500, 6500, 3800, 0], [36, 70000, 2400, 6000, 3600, 0], [60, 58000, 2200, 5200, 3000, 0],
 ];
@@ -1688,8 +1742,8 @@ const tower = cloudLayer(TOWERS, 1.5);
 const MIDS = [
   [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
   [38, 45000, 5200, 3800, 2000, 0], [48, 26000, 4600, 2200, 1200, 0], [57, 38000, 5000, 3400, 1800, 0], [66, 31000, 4300, 2600, 1400, 0],
-  // Farther out and round the other views.
-  [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0], [105, 40000, 5000, 4000, 2000, 0], [140, 60000, 5600, 5000, 2400, 0], [185, 45000, 5200, 4500, 2200, 0],
+  // Farther out.
+  [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0],
 ];
 const mids = cloudLayer(MIDS, 2.15);
 
@@ -4241,118 +4295,29 @@ function sightKey() {
 // The rock hangs past the muzzle, low over the horizon.
 const look = { yaw: 0, pitch: 0 }, lookTo = { yaw: 0, pitch: 0 };
 // push: 0 wide, 1 fully pushed in on the gun and the rock.
-const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0, swayE: 0 };
+// loom: 0 to 1, a long watch drawing the lens in.
+const cam = { zoom: 1, shake: 0, kickP: 0, kickY: 0, push: 0, swayE: 0, loom: 0 };
 const pushG = new THREE.Vector3(), pushR = new THREE.Vector3();
 let baseUp = 0, pace = reduced() ? 0 : 1, simT = 0;
-/* ---------- views: the wide eye and four more angles ---------- */
-// A pose: eye, yaw, pitch and the lens's base angle in degrees.
-// The gun's rest frame: the bore runs down negative z; right is positive x.
-let view = 'wide', viewFrom = null, viewT0 = 0;
-const VIEW_EASE = 1.6;
-const poseD = new THREE.Vector3(), poseT = new THREE.Vector3();
-// Frame a target at screen place (sx, sy), each -1 to 1, for any aspect.
-// fov is the vertical angle in degrees.
-function frameAt(P, target, sx, sy, aspect) {
-  poseD.copy(target).sub(P.p);
-  const h = Math.hypot(poseD.x, poseD.z), tv = Math.tan(rad(P.fov / 2));
-  P.yaw = Math.atan2(-poseD.x, -poseD.z) + Math.atan(sx * tv * aspect);
-  P.pitch = Math.atan2(poseD.y, h) - Math.atan(sy * tv);
-  return P;
-}
-function poseOf(v, portrait, k) {
-  const P = { p: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 55 };
-  const asp = camera.aspect, tall = portrait ? 1.9 : 1;
-  if (v === 'monolith') {
-    // Dead centre, low and far behind the gun, on a long lens.
-    // The gun's back stands against the ranges; the rock hangs above.
-    P.p.set(0, 14, 7000);
-    P.fov = 15 * tall;
-    return frameAt(P, poseT.set(0, 230, 0), 0, -0.42, asp);
-  }
-  if (v === 'profile') {
-    // Side on from nine kilometres: the gun a silhouette under a vast sky.
-    P.p.set(9000, 10, -700);
-    P.fov = 13 * tall;
-    return frameAt(P, poseT.set(0, 200, -420), portrait ? 0 : -0.3, -0.62, asp);
-  }
-  if (v === 'horizon') {
-    // From far down range: the gun a speck on the horizon under a range.
-    P.p.set(1500, 8, -24000);
-    P.fov = 11 * tall;
-    return frameAt(P, poseT.set(0, 120, 0), portrait ? 0 : 0.18, -0.7, asp);
-  }
-  if (v === 'low') {
-    // A worm's eye under the barrel: it crosses the sky overhead.
-    P.p.set(650, 3, -650);
-    P.fov = 72 * (portrait ? 1.25 : 1);
-    return frameAt(P, barrelPt(760, 0, 0, poseT), portrait ? 0 : -0.1, 0.02, asp);
-  }
-  if (v === 'rock') {
-    // A long lens on the rock: it and its trail fill the frame.
-    // The lens holds still; only its aim follows the rock.
-    P.p.set(2600, 20, 5200);
-    P.fov = 7 * tall;
-    return frameAt(P, ast.pos, portrait ? 0 : 0.22, -0.1, asp);
-  }
-  if (v === 'beneath') {
-    // On the plain under the rock's fall, looking straight up at it.
-    P.p.set(-3500, 6, -33000);
-    P.fov = 62 * (portrait ? 1.25 : 1);
-    return frameAt(P, ast.pos, portrait ? 0 : -0.15, 0.25, asp);
-  }
-  if (v === 'distant') {
-    // Eighty kilometres off, square to the shot: the gun is lost.
-    // Its flash, the bolt and the rock still read.
-    P.p.set(79000, 40, -38000);
-    // A phone's narrow frame still spans the flash and the rock: 38 degrees across.
-    P.fov = Math.max(24, 2 * Math.atan(Math.tan(rad(19)) / asp) * 180 / Math.PI);
-    return frameAt(P, poseT.set(-4250, 6000, -21000), 0, 0.1, asp);
-  }
-  // The wide eye: a locked-off lens, a man's height over the dust.
-  // The horizon sits low: the gun and the sky own the frame.
-  P.fov = portrait ? 74 : 55;
-  if (portrait) P.p.set(800, 22, 3000); else P.p.set(1670, 30, 1990);
-  P.yaw = portrait ? rad(8.5) : rad(24.5);
-  P.pitch = Math.atan((2 * (portrait ? 0.80 : 0.84) - 1) * Math.tan(rad(P.fov * k / 2)));
-  return P;
-}
-// The last pose drawn: a new view eases out of it.
-const poseNow = { p: new THREE.Vector3(1670, 30, 1990), yaw: 0, pitch: 0, fov: 55 };
-// Pick a view; the lens eases there over VIEW_EASE seconds.
-// Reduced motion cuts at once.
-function setView(v) {
-  if (v === view) return;
-  viewFrom = reduced() ? null : { p: poseNow.p.clone(), yaw: poseNow.yaw, pitch: poseNow.pitch, fov: poseNow.fov };
-  viewT0 = simT;
-  view = v;
-  lookTo.yaw = lookTo.pitch = 0;
-  frame();
-  wake();
-}
 function frame() {
   const portrait = size.w < size.h;
+  if (portrait !== groundTall) {
+    groundTall = portrait;
+    ground.geometry.dispose();
+    ground.geometry = portrait ? groundGeo(800, 3000) : groundGeo(1670, 1990);
+  }
   camera.aspect = size.w / size.h;
   // The charge pushes the lens in a little.
   // A hold pushes the lens in, slow and heavy.
-  // The four cinematic angles stay locked off: no push, look or sway.
-  const still = view !== 'wide';
-  const pk = reduced() || still ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
-  const zk = cam.zoom * (1 - 0.18 * pk);
-  const P = poseOf(view, portrait, zk);
-  if (viewFrom) {
-    // An eased move: the eye glides, the lens swings the short way round.
-    const e = sstep(clamp((simT - viewT0) / VIEW_EASE, 0, 1), 0, 1);
-    let dy = P.yaw - viewFrom.yaw;
-    dy -= Math.PI * 2 * Math.round(dy / (Math.PI * 2));
-    P.p.lerpVectors(viewFrom.p, P.p, e);
-    P.yaw = viewFrom.yaw + dy * e; P.pitch = lerp(viewFrom.pitch, P.pitch, e); P.fov = lerp(viewFrom.fov, P.fov, e);
-    if (e >= 1) viewFrom = null;
-  }
-  poseNow.p.copy(P.p); poseNow.yaw = P.yaw; poseNow.pitch = P.pitch; poseNow.fov = P.fov;
-  camera.fov = P.fov * zk;
-  baseUp = P.pitch;
-  camera.position.copy(P.p);
-  const yaw0 = P.yaw;
+  const pk = reduced() ? 0 : cam.push * cam.push * (3 - 2 * cam.push);
+  const zk = cam.zoom * (1 - 0.18 * pk) * (1 - 0.07 * cam.loom);
+  // The wide eye: a locked-off lens, a man's height over the dust.
+  // The horizon sits low: the gun and the sky own the frame.
+  const fov0 = portrait ? 74 : 55;
+  camera.fov = fov0 * zk;
+  baseUp = Math.atan((2 * (portrait ? 0.80 : 0.84) - 1) * Math.tan(rad(fov0 * zk / 2)));
+  if (portrait) camera.position.set(800, 22, 3000); else camera.position.set(1670, 30, 1990);
+  const yaw0 = portrait ? rad(8.5) : rad(24.5);
   // A locked-off camera.
   // Only the hold and the recoil move it.
   const wk = reduced() ? 0 : 1.2 * chaos * chaos + 2.2 * cam.shake + 2.6 * rage * rage + 4 * over * over, t = simT;
@@ -4371,9 +4336,9 @@ function frame() {
     pp = (Math.asin(pushG.y) - baseUp) * 0.8 * pk;
   }
   // The sway leans into the cursor's motion; the bob is a slow breath.
-  const sb = still ? 0 : cam.swayE, ts = simT, lk = still ? 0 : 1;
+  const sb = cam.swayE, ts = simT;
   camera.position.y += sb * 1.4 * Math.sin(ts * 2.1 + 0.5);
-  camera.rotation.set(baseUp + pp + lk * look.pitch + cam.kickP + wp + sb * 0.0012 * Math.sin(ts * 2.1), yaw0 + py + lk * look.yaw + cam.kickY + wy, wr + sb * (0.003 * Math.sin(ts * 1.3) - 0.35 * lk * lookV.yaw));
+  camera.rotation.set(baseUp + pp + look.pitch + cam.kickP + wp + sb * 0.0012 * Math.sin(ts * 2.1), yaw0 + py + look.yaw + cam.kickY + wy, wr + sb * (0.003 * Math.sin(ts * 1.3) - 0.35 * lookV.yaw));
   // The sight is the gun's rangefinder: a fixed lens that looks down the bore.
   // It turns and climbs with the gun; it never follows the bolt.
   if (sight) {
@@ -4407,6 +4372,16 @@ function easeLook(dt) {
   // The push builds over about twelve seconds of hold and eases out slower.
   const pt = charge ? clamp((simT - charge.t0) / 12, 0, 1) : 0;
   cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
+  // A long watch draws the lens in slowly as the rock nears.
+  // Any input lets it ease back.
+  const lt = !reduced() && performance.now() - lastInput > 20000 && tgtKind === 'rock' && tgtCanHit() ? clamp(ast.s, 0, 1) : 0;
+  cam.loom += (lt - cam.loom) * (1 - Math.exp(-dt / (lt > cam.loom ? 25 : 2.5)));
+  // The star arcs fade fast once the drag stops.
+  skyTrail.span *= Math.exp(-dt / 0.3);
+  if (Math.abs(skyTrail.span) < 1e-4) skyTrail.span = 0;
+  U.uTrailK.value = Math.abs(skyTrail.span) / TRAIL_MAX;
+  U.uSkyRot0.value.setFromMatrix4(skyRot0.makeRotationAxis(SKY.P, -(skyH - skyTrail.span)));
+  stepSpecks(dt);
   const W = 1.6;
   for (const k of ['yaw', 'pitch']) {
     lookV[k] += (W * W * (lookTo[k] - look[k]) - 2 * W * lookV[k]) * dt;
@@ -4497,6 +4472,7 @@ function draw() {
   // The ship follows the clock and the sun.
   if (tgtKind === 'ship') placeShip();
   updateDomes();
+  drawAmbient();
   commitStars();
   updateDust();
   updateArcs();
@@ -4588,6 +4564,370 @@ function updateWarp() {
 }
 
 
+/* ---------- ambient: events nobody fires ---------- */
+// A watcher needs no input: the scene plays small events on its own.
+// The director holds off while the player charges or a shot flies.
+const AMB_KINDS = ['war', 'star', 'sat', 'bolt', 'flak', 'shed'];
+const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6 };
+// Two star streaks: a pair can cross at once.
+const ambStars = [0, 1].map(() => makeGlint(linFit(0.93, 0.03, 250)));
+const ambA = new THREE.Vector3(), ambB = new THREE.Vector3();
+// Four re-entry streaks; a bright one carries a hot head.
+const ambRain = [0, 1, 2, 3].map(() => makeGlint(linFit(0.86, 0.12, 60)));
+const ambHeads = [0, 1, 2, 3].map(() => makeFlare(linFit(0.92, 0.1, 70)));
+// A late chunk's fall to the plain.
+const ambFall = makeGlint(linFit(0.88, 0.12, 58)), ambFallHead = makeFlare(linFit(0.9, 0.12, 62));
+// The satellite: a point of sunlight on a dark sky.
+const ambSat = makeFlare(linFit(0.95, 0.02, 90));
+// A far gun's slug and the faint line it leaves.
+const ambBolt = makeGlint(linFit(0.95, 0.06, 235)), ambBoltLine = makeGlint(linFit(0.8, 0.09, 240));
+// Orbital flak: pinprick pops high in a dark sky.
+const ambFlak = Array.from({ length: 6 }, () => makeFlare(linFit(0.96, 0.03, 220)));
+// Embers where chunks lie on the plain.
+const ambEmbers = Array.from({ length: 8 }, () => makeFlare(linFit(0.6, 0.17, 35)));
+// The shed lump: a hot head and a short glowing tail.
+const ambShed = makeFlare(linFit(0.88, 0.14, 55)), ambShedTail = makeGlint(linFit(0.8, 0.15, 50));
+// The smoke train hides what lies behind it.
+// It returns 1 in the clear sky, 0 behind the train.
+const ambS0 = new THREE.Vector3(), ambS1 = new THREE.Vector3(), ambSP = new THREE.Vector3();
+function ambClear(p) {
+  if (tgtKind !== 'rock') return 1;
+  ambSP.copy(p).project(camera);
+  ambS0.copy(ast.pos).project(camera);
+  // The train runs about nine falls long.
+  // Its far end may pass behind the eye; a shorter span then stands in.
+  for (const f of [9, 4, 1.5]) { ambS1.copy(ast.pos).addScaledVector(ast.away, FALL * f).project(camera); if (ambS1.z < 1) break; }
+  const hw = size.w / 2, hh = size.h / 2;
+  const ax = ambS0.x * hw, ay = ambS0.y * hh, bx = ambS1.x * hw - ax, by = ambS1.y * hh - ay;
+  const px = ambSP.x * hw - ax, py = ambSP.y * hh - ay;
+  const t = clamp((px * bx + py * by) / Math.max(bx * bx + by * by, 1), 0, 1);
+  return THREE.MathUtils.smoothstep(Math.hypot(px - t * bx, py - t * by), 45, 95);
+}
+// A streak from A along dir for L metres.
+// glint() centres its streak on its point, so this passes the midpoint.
+const ambMid = new THREE.Vector3();
+function ambSeg(m, A, dir, L, wid, gain) {
+  glint(m, ambMid.copy(A).addScaledVector(dir, L / 2), dir, L / 2, wid, gain);
+}
+// Metres per pixel at distance D, for the live lens.
+const ambPx = D => D * Math.tan(rad(camera.fov / 2)) / (size.h / 2);
+// A direction through screen point (sx, sy), each -1 to 1.
+function ambRay(sx, sy, out) {
+  camera.updateMatrixWorld(true);
+  return out.set(sx, sy, 0.5).unproject(camera).sub(camera.position).normalize();
+}
+// The hero moments stay clean: no event starts under them.
+const ambQuiet = () => !!press || !!charge || !!shot || rounds.length > 0 || !!spin || !!fill || !!strike || !!blastFx;
+// The kinds that suit this hour.
+function ambKinds() {
+  return AMB_KINDS.filter(k => {
+    if (k === 'star') return U.uStars.value > 0.15;
+    // A satellite shows in a dark sky, alone.
+    if (k === 'sat') return U.uStars.value > 0.5 && !amb.live.some(e => e.kind === 'sat');
+    // Each of these runs alone.
+    if (amb.live.some(e => e.kind === k)) return false;
+    if (k === 'flak') return U.uStars.value > 0.5;
+    // Only a falling rock sheds.
+    if (k === 'shed') return tgtKind === 'rock' && ast.state === 'approach' && astMesh.visible;
+    return true;
+  });
+}
+// After a kill: re-entry rain for two and a half minutes, then late landings.
+function ambAfter(t0) {
+  amb.live = amb.live.filter(e => !e.after);
+  amb.live.push({ kind: 'rain', after: true, t0: t0 + 12, dur: 150, acc: 0, bolts: [] });
+  const n = 1 + Math.floor(rnd() * 3);
+  for (let i = 0; i < n; i++) amb.live.push(ambLanding(t0 + 55 + 100 * rnd()));
+  // The chunks' landing sites smoulder for four minutes.
+  amb.live.push({ kind: 'embers', after: true, t0: t0 + 6, dur: 240, sites: [], acc: 0 });
+}
+// A horizontal direction through screen x, sx from -1 to 1.
+function ambFlat(sx, out) {
+  for (let i = 0; i < 20; i++) {
+    ambRay(sx, 0, out);
+    out.y = 0;
+    if (out.lengthSq() > 1e-6) break;
+  }
+  return out.normalize();
+}
+// One late chunk: a 2.5 s fall, a flash, a dust dome, a late rumble.
+function ambLanding(t0) {
+  for (let i = 0; i < 20; i++) {
+    ambRay((rnd() * 2 - 1) * 0.75, 0, ambA);
+    ambA.y = 0;
+    if (ambA.lengthSq() > 1e-6) break;
+  }
+  ambA.normalize();
+  const D = 18000 + 30000 * rnd(), site = camera.position.clone().addScaledVector(ambA, D).setY(0);
+  // It comes down steep, along the rock's old line.
+  const dir = ast.away.clone().negate().add(new THREE.Vector3(rnd() - 0.5, 0, rnd() - 0.5).multiplyScalar(0.4)).setY(-1.2).normalize();
+  return { kind: 'land', after: true, t0, dur: 2.5 + 62, site, dir, D, S: 3000 + 2500 * rnd(), domed: false };
+}
+// Start one event of this kind.
+function ambStart(kind) {
+  if (kind === 'war') {
+    // An unseen battery fires far past the ranges.
+    // A ragged ripple of two to four flashes lights the horizon.
+    const site = new THREE.Vector3();
+    for (let i = 0; i < 20; i++) {
+      ambRay((rnd() * 2 - 1) * 0.8, 0, ambA);
+      ambA.y = 0;
+      if (ambA.lengthSq() > 1e-6) break;
+    }
+    ambA.normalize();
+    site.copy(camera.position).addScaledVector(ambA, 120000 + 80000 * rnd()).setY(0);
+    const n = 2 + Math.floor(rnd() * 3), offs = [0];
+    for (let i = 1; i < n; i++) offs.push(offs[i - 1] + 0.3 + 2.2 * rnd());
+    const k = 1.2 + 1.0 * rnd();
+    amb.live.push({ kind, t0: simT, dur: offs[n - 1] + 14, site, offs, k });
+    // The rumble comes late and low.
+    amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.15 * k });
+    return;
+  }
+  if (kind === 'sat') {
+    // A satellite crosses slowly, lit by a sun below the horizon.
+    // It fades as it runs into the planet's shadow.
+    const L = rnd() < 0.5 ? -1 : 1, y0 = 0.35 + 0.5 * rnd(), y1 = 0.35 + 0.5 * rnd();
+    const d0 = ambRay(-1.15 * L, y0, new THREE.Vector3()), d1 = ambRay(1.15 * L, y1, new THREE.Vector3());
+    const dur = 70 + 40 * rnd();
+    amb.live.push({ kind, t0: simT, dur, d0, d1, shade: rnd() < 0.6 ? 0.45 + 0.4 * rnd() : 2, k: 0.7 + 0.5 * rnd() });
+    return;
+  }
+  if (kind === 'rain') { ambAfter(simT - 12); return; }
+  if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
+  if (kind === 'bolt') {
+    // A far gun fires from behind the ranges.
+    // Its slug climbs steep and away; a faint line stays behind.
+    const out = ambFlat((rnd() * 2 - 1) * 0.8, new THREE.Vector3());
+    const site = camera.position.clone().addScaledVector(out, 90000 + 60000 * rnd()).setY(0);
+    const side = new THREE.Vector3(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.35);
+    const dir = new THREE.Vector3(0, 1, 0).addScaledVector(out, 0.45).add(side).normalize();
+    amb.live.push({ kind, t0: simT, dur: 18, site, dir, v: 15000 });
+    return;
+  }
+  if (kind === 'flak') {
+    // A far fleet fights in orbit: five to nine pops in one patch of sky.
+    const c = camera.position.clone().addScaledVector(ambRay((rnd() * 2 - 1) * 0.7, 0.45 + 0.4 * rnd(), ambA), 300000);
+    const pops = Array.from({ length: 5 + Math.floor(rnd() * 5) }, () => ({
+      t: 4 * rnd(), k: 0.5 + 0.8 * rnd(), off: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(18000),
+    }));
+    amb.live.push({ kind, t0: simT, dur: 5, c, pops });
+    return;
+  }
+  if (kind === 'shed') {
+    // A lump breaks off the hot face and peels away.
+    const side = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5);
+    side.addScaledVector(ast.away, -side.dot(ast.away)).normalize();
+    amb.live.push({ kind, t0: simT, dur: 6, side, k: 0.7 + 0.5 * rnd() });
+    return;
+  }
+  if (kind === 'land') { amb.live.push(ambLanding(simT)); return; }
+  if (kind === 'star') {
+    // A short streak with a fading head, high in the sky.
+    // Now and then a second one follows close behind.
+    const pair = rnd() < 0.25;
+    for (let j = 0; j < (pair ? 2 : 1); j++) {
+      const m = ambStars.find(g => !amb.live.some(e => e.m === g));
+      if (!m) return;
+      const sx = (rnd() * 2 - 1) * 0.85, sy = 0.15 + 0.7 * rnd(), D = 90000;
+      const p0 = camera.position.clone().addScaledVector(ambRay(sx, sy, ambA), D);
+      // The streak falls at a slant, left or right.
+      const dir = new THREE.Vector3((rnd() < 0.5 ? -1 : 1) * (0.6 + 0.6 * rnd()), -(0.4 + 0.5 * rnd()), (rnd() * 2 - 1) * 0.4).normalize();
+      amb.live.push({ kind, m, t0: simT + j * (0.2 + 0.5 * rnd()), dur: 0.7 + 0.7 * rnd(), p0, dir, run: 6000 + 8000 * rnd(), k: 0.6 + 0.6 * rnd() });
+    }
+  }
+}
+// The director: one event every 12 to 40 s, busier as the rock nears.
+function stepAmbient(dt) {
+  const on = ui.setting('ambient')?.value !== false;
+  const rate = +(ui.setting('ambrate')?.value ?? 1);
+  for (let i = amb.live.length - 1; i >= 0; i--) if (simT - amb.live[i].t0 > amb.live[i].dur) amb.live.splice(i, 1);
+  // Late rumbles play only with sound on.
+  const ac = kit.live();
+  for (let i = amb.due.length - 1; i >= 0; i--) {
+    const r = amb.due[i], late = simT - r.at;
+    if (late < 0) continue;
+    amb.due.splice(i, 1);
+    if (late < 6 && ac && !spin && !fill) { const h = shipRumble(ac, r.k); if (h) shipRumbles.push(h); }
+  }
+  // A kill starts the aftermath; a strike or a reset ends it.
+  const hw = U.uHitP.value.w;
+  if (blastFx && hw !== amb.hit && hw > simT - 1 && tgtKind === 'rock' && !strike && !spin && !fill) ambAfter(hw);
+  amb.hit = hw;
+  if (spin || fill || strike) amb.live = amb.live.filter(e => !e.after);
+  for (const e of amb.live) {
+    if (reduced()) break;
+    if (e.kind === 'rain') stepRainAmb(e, dt);
+    else if (e.kind === 'embers') stepEmbers(e, dt);
+  }
+  // A dead rock with nobody at the gun: the toy resets itself.
+  // It waits for the aftermath to end.
+  if (tgtKind === 'rock' && !tgtCanHit() && !spin && !fill && !strike && !amb.live.some(e => e.after)) {
+    amb.deadSince ??= simT;
+    if (simT - amb.deadSince > 75 && performance.now() - lastInput > 45000) { amb.deadSince = null; resetToy(true); }
+  } else amb.deadSince = null;
+  if (!on || rate <= 0 || reduced()) return;
+  if (ambQuiet()) { amb.next = Math.max(amb.next, simT + 6); return; }
+  if (simT < amb.next) return;
+  const near = tgtKind === 'rock' && tgtCanHit() ? clamp(ast.s, 0, 1) : 0.5;
+  amb.next = simT + THREE.MathUtils.lerp(40, 12, near) * (0.7 + 0.6 * rnd()) / rate;
+  if (amb.live.filter(e => !e.after).length >= 2) return;
+  const ks = ambKinds();
+  if (ks.length) ambStart(ks[Math.floor(rnd() * ks.length)]);
+}
+// The events write their light after the domes clear uImp.
+function drawAmbient() {
+  for (const g of [...ambStars, ...ambRain, ...ambHeads, ambFall, ambFallHead, ambSat, ambBolt, ambBoltLine, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
+  const L = IMP_U.uImp.value;
+  for (const e of amb.live) {
+    const a = simT - e.t0;
+    if (a < 0) continue;
+    if (e.kind === 'war') {
+      // The last free slot carries the ripple.
+      const slot = [...L].reverse().find(v => v.w < 0.001);
+      if (!slot) continue;
+      let f = 0;
+      for (const o of e.offs) f += flashOf(a - o);
+      slot.set(e.site.x, e.site.y, e.site.z, Math.min(2.5, f * e.k));
+    } else if (e.kind === 'rain') {
+      drawRainAmb(e);
+    } else if (e.kind === 'bolt') {
+      // The launch lights the horizon; the slug climbs for four seconds.
+      const slot = [...L].reverse().find(v => v.w < 0.001);
+      if (slot) slot.set(e.site.x, e.site.y, e.site.z, 0.9 * flashOf(a));
+      const fly = Math.min(a, 4), head = e.v * fly;
+      if (a < 4) {
+        ambB.copy(e.site).addScaledVector(e.dir, Math.max(0, head - 4000));
+        ambSeg(ambBolt, ambB, e.dir, Math.min(head, 4000), 80, 3 * ambClear(ambB));
+      }
+      // The line glows in behind the slug and fades over seven seconds.
+      const lk = 0.35 * Math.min(1, a / 0.3) * Math.exp(-Math.max(a - 4, 0) / 5);
+      ambB.copy(e.site).addScaledVector(e.dir, 0.5 * head);
+      ambSeg(ambBoltLine, e.site, e.dir, Math.max(1, head), 45, lk * ambClear(ambB));
+    } else if (e.kind === 'flak') {
+      let n = 0;
+      for (const q of e.pops) {
+        const pa = a - q.t;
+        if (pa < 0 || pa > 0.6 || n >= ambFlak.length) continue;
+        ambB.copy(e.c).add(q.off);
+        flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB));
+      }
+    } else if (e.kind === 'embers') {
+      drawEmbers(e, a);
+    } else if (e.kind === 'shed') {
+      drawShed(e, a);
+    } else if (e.kind === 'land') {
+      drawLanding(e, a);
+    } else if (e.kind === 'sat') {
+      // The eye's lens never moves, so screen rays hold their place.
+      const u = a / e.dur, D = 400000;
+      ambA.lerpVectors(e.d0, e.d1, u).normalize();
+      ambB.copy(camera.position).addScaledVector(ambA, D);
+      const lit = 1 - THREE.MathUtils.smoothstep(u, e.shade, e.shade + 0.05);
+      const fade = THREE.MathUtils.smoothstep(u, 0, 0.04) * (1 - THREE.MathUtils.smoothstep(u, 0.96, 1));
+      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB));
+    } else if (e.kind === 'star') {
+      // The head runs ahead; the tail thins behind it.
+      const u = clamp(a / e.dur, 0, 1), head = e.run * u, tail = Math.max(0, head - 0.45 * e.run);
+      ambB.copy(e.p0).addScaledVector(e.dir, tail);
+      const fade = Math.sin(Math.PI * u) ** 0.7;
+      ambSeg(e.m, ambB, e.dir, Math.max(1, head - tail), 24, 2.2 * e.k * fade * U.uStars.value * ambClear(ambB));
+    }
+  }
+}
+// Re-entry rain: streaks spawn at a decaying rate round the kill.
+function stepRainAmb(e, dt) {
+  const a = simT - e.t0;
+  if (a < 0) return;
+  const t = simT;
+  e.bolts = e.bolts.filter(b => t - b.t0 < b.dur);
+  // About one streak in two seconds at first, thinning over a minute.
+  e.acc += dt * 0.55 * Math.exp(-a / 55);
+  if (e.acc < 1 || e.bolts.length >= ambRain.length) return;
+  e.acc -= 1;
+  const H = U.uHitP.value, sky = new THREE.Vector3(H.x, Math.max(H.y, 15000), H.z);
+  const p0 = sky.add(new THREE.Vector3((rnd() - 0.5) * 50000, 6000 * rnd(), (rnd() - 0.5) * 50000));
+  const dir = ast.away.clone().negate().add(new THREE.Vector3(rnd() - 0.5, rnd() * 0.3, rnd() - 0.5).multiplyScalar(0.6)).normalize();
+  if (dir.y > -0.2) dir.y = -0.2;
+  dir.normalize();
+  const bright = rnd() < 0.2;
+  e.bolts.push({ t0: t, dur: 0.9 + 1.2 * rnd(), p0, dir, run: 5000 + 9000 * rnd(), k: bright ? 1.8 : 0.5 + 0.6 * rnd(), bright, split: bright && rnd() < 0.5 ? 0.4 + 0.3 * rnd() : 2 });
+}
+function drawRainAmb(e) {
+  // A day sky drowns faint streaks; they burn brighter for it.
+  const day = 1 + 1.5 * (1 - U.uStars.value);
+  e.bolts.forEach((b, i) => {
+    const u = clamp((simT - b.t0) / b.dur, 0, 1), head = b.run * u, tail = Math.max(0, head - 0.5 * b.run);
+    const fade = Math.sin(Math.PI * u) ** 0.6;
+    ambB.copy(b.p0).addScaledVector(b.dir, tail);
+    ambSeg(ambRain[i], ambB, b.dir, Math.max(1, head - tail), 60, 1.6 * b.k * fade * day);
+    ambA.copy(b.p0).addScaledVector(b.dir, head);
+    // A bright one bursts once, partway down.
+    const burst = u > b.split ? Math.exp(-(u - b.split) * b.dur / 0.25) : 0;
+    if (b.bright) flare(ambHeads[i], ambA, 6 * ambPx(ambA.distanceTo(camera.position)) * (1 + 2 * burst), (0.5 + 2 * burst) * fade * day);
+  });
+}
+// A late landing: the fall, then the flash and the dome.
+function drawLanding(e, a) {
+  const FALL_T = 2.5;
+  if (a < FALL_T) {
+    const u = a / FALL_T, run = 26000, head = run * (u - 1), tail = head - 9000;
+    ambB.copy(e.site).addScaledVector(e.dir, tail);
+    ambSeg(ambFall, ambB, e.dir, head - tail, 90, 2.2 * Math.min(1, u * 4));
+    ambA.copy(e.site).addScaledVector(e.dir, head);
+    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4));
+    return;
+  }
+  if (e.domed) return;
+  e.domed = true;
+  // A free dome slot: one no live dome holds.
+  const i = domeVols.findIndex((m, j) => !shipDomes.some(d => d.i === j && domeAlive(d)));
+  if (i >= 0) shipDomes.push({ m: domeVols[i], t0: simT, i, P: e.site.clone(), S: e.S });
+  // Sound runs at 343 m/s; a long wait is cut to half a minute.
+  amb.due.push({ at: simT + Math.min(30, e.D / 343), k: 0.6 });
+}
+// The sites: the landed chunks, the late landings, or a test spot.
+function emberSites(e) {
+  for (const ch of chunks) if (ch.landP && !e.sites.some(s => s.ref === ch)) e.sites.push({ ref: ch, P: ch.landP.clone().setY(4), t: simT, seed: rnd() });
+  for (const l of amb.live) if (l.kind === 'land' && l.domed && !e.sites.some(s => s.ref === l)) e.sites.push({ ref: l, P: l.site.clone().setY(4), t: simT, seed: rnd() });
+  if (e.test && !e.sites.length) for (let i = 0; i < 4; i++) {
+    const P = camera.position.clone().addScaledVector(ambFlat((rnd() * 2 - 1) * 0.6, ambA), 4000 + 8000 * rnd()).setY(4);
+    e.sites.push({ ref: null, P, t: simT, seed: rnd() });
+  }
+  if (e.sites.length > ambEmbers.length) e.sites.length = ambEmbers.length;
+}
+// A thin thread of smoke rises from each ember.
+function stepEmbers(e, dt) {
+  if (simT < e.t0) return;
+  emberSites(e);
+  e.acc += dt / 1.5;
+  for (; e.acc >= 1; e.acc--) for (const st of e.sites) {
+    if (simT - st.t > 180) continue;
+    dustP.copy(st.P).setY(6);
+    dustV.set(1 + rnd(), 2.5 + rnd(), 0.4);
+    puff(dustP, dustV, 16, 6 + 4 * rnd());
+  }
+}
+// Each ember flickers and cools over two minutes; night shows it best.
+function drawEmbers(e) {
+  const night = 0.2 + 0.8 * U.uStars.value;
+  e.sites.forEach((st, i) => {
+    const age = simT - st.t, sd = st.seed * 40;
+    const fl = 0.75 + 0.15 * Math.sin(simT * 3.1 + sd) + 0.1 * Math.sin(simT * 7.3 + 2 * sd);
+    const g = 0.6 * Math.exp(-age / 120) * Math.min(1, age / 2) * fl * night;
+    flare(ambEmbers[i], st.P, 5 * ambPx(st.P.distanceTo(camera.position)), g);
+  });
+}
+// The lump peels off the side and lags back up the train.
+function drawShed(e, a) {
+  if (!tgtCanHit() || !astMesh.visible) return;
+  const R = ast.R, u = a / e.dur;
+  ambB.copy(ast.pos).addScaledVector(e.side, R * (1.1 + 1.2 * a)).addScaledVector(ast.away, R * 0.3 * a * a);
+  const hot = e.k * (1 - u) * (1.2 + 2.5 * Math.exp(-a / 0.4));
+  flare(ambShed, ambB, R * 0.9 * (1 - 0.5 * u), 1.5 * hot);
+  ambSeg(ambShedTail, ambB, ast.away, R * (0.6 + 0.5 * a), R * 0.12, 1.2 * e.k * (1 - u));
+}
+
 /* ---------- the approach ---------- */
 // The rock falls down its track.
 // Past the horizon line it strikes the planet, at the same speed.
@@ -4608,6 +4948,7 @@ function stepAst(dt) {
   stepShards(dt);
   stepRain(dt);
   stepChunks();
+  stepAmbient(dt);
   const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
   // The hot face sheds glowing bits; they fall back into the smoke.
   if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 5 + rnd()); n > 0; n--) shedSpark();
@@ -5890,6 +6231,86 @@ function updateRingVols(age, on) {
     u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 1; u.uLs.value = 20;
   });
 }
+/* ---------- air specks: sunlit dust near the lens ---------- */
+// A thin drift of dust hangs in the air between the eye and the gun.
+// The pointer's motion parts it; it settles back in a second or two.
+// The GPU moves every speck; the CPU sends only the pointer.
+const SPECK_N = 700;
+const specks = { stir: 0, vel: new THREE.Vector2(), ptr: new THREE.Vector2(9, 9), last: null };
+const speckGeo = new THREE.BufferGeometry();
+{
+  const a = new Float32Array(SPECK_N * 4);
+  for (let i = 0; i < SPECK_N; i++) a.set([rnd(), rnd(), rnd(), rnd()], i * 4);
+  speckGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPECK_N * 3), 3));
+  speckGeo.setAttribute('aR', new THREE.BufferAttribute(a, 4));
+}
+const speckMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: U.uTime, uDpr: starMat.uniforms.uDpr, uSunC: U.uSunC, uSun: U.uSun, uStars: U.uStars,
+    uPtr: { value: specks.ptr }, uVel: { value: specks.vel }, uStir: { value: 0 }, uAsp: { value: 1 }, uSteady: starMat.uniforms.uSteady,
+    uDust: { value: new THREE.Vector3(...linFit(0.86, 0.05, 70)) },
+  },
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  vertexShader: /* glsl */`
+  attribute vec4 aR;
+  uniform float uTime, uDpr, uStir, uAsp, uStars, uSteady;
+  uniform vec2 uPtr, uVel;
+  uniform vec3 uSunC, uSun, uDust;
+  varying vec3 vCol;
+  void main() {
+    // Each speck lives in a slab 25 to 420 m in front of the eye.
+    // The wind carries it sideways; it wraps round the slab.
+    float t = uSteady > 0.5 ? 0.0 : uTime;
+    float d = mix(25.0, 420.0, aR.z * aR.z);
+    vec2 s = fract(aR.xy + vec2(0.006, 0.0015 * sin(t * 0.3 + aR.w * 9.0)) * t * (60.0 / d));
+    vec3 vp = vec3((s.x * 2.0 - 1.0) * d * 0.6 * uAsp, (s.y * 2.0 - 1.0) * d * 0.6, -d);
+    vec4 c = projectionMatrix * vec4(vp, 1.0);
+    // The pointer's wake pushes specks aside and along its motion.
+    vec2 q = c.xy / c.w, o = (q - uPtr) * vec2(uAsp, 1.0);
+    float r2 = dot(o, o), k = uStir * exp(-r2 / 0.03);
+    q += (normalize(o + 1e-4) * 0.12 + uVel * 0.6) * k * vec2(1.0 / uAsp, 1.0);
+    gl_Position = vec4(q * c.w, c.zw);
+    // Near specks are larger and dimmer: they sit out of focus.
+    gl_PointSize = uDpr * mix(5.0, 1.4, aR.z);
+    // Dust glows toward the light: forward scatter from a low sun.
+    // The view rotation's transpose turns the eye ray into world space.
+    vec3 V = normalize(vp) * mat3(viewMatrix);
+    // Away from the sun the specks nearly vanish.
+    float sunF = 0.06 + 2.2 * pow(max(dot(V, uSun), 0.0), 4.0);
+    vCol = uDust * uSunC * sunF * (0.35 + 0.7 * aR.w) * mix(1.0, 0.15, aR.z) * (1.0 - 0.8 * uStars);
+  }`,
+  fragmentShader: /* glsl */`
+  varying vec3 vCol;
+  void main() {
+    float d = length(gl_PointCoord - 0.5) * 2.0, a = max(1.0 - d, 0.0);
+    gl_FragColor = vec4(vCol * a * a, 0.0);
+  }`,
+});
+const speckPts = new THREE.Points(speckGeo, speckMat);
+speckPts.frustumCulled = false; speckPts.renderOrder = 5;
+scene.add(speckPts);
+// The pointer feeds the stir; it fades over about a second.
+function stirSpecks(nx, ny) {
+  const p = new THREE.Vector2(nx * 2, -ny * 2);
+  if (specks.last) {
+    const v = p.clone().sub(specks.last);
+    specks.vel.lerp(v.clampLength(0, 0.2), 0.5);
+    specks.stir = Math.min(1, specks.stir + v.length() * 6);
+  }
+  specks.last = p;
+  specks.ptr.copy(p);
+}
+function stepSpecks(dt) {
+  specks.stir *= Math.exp(-dt / 0.9);
+  if (specks.stir < 0.002) specks.stir = 0;
+  specks.vel.multiplyScalar(Math.exp(-dt / 0.9));
+  speckMat.uniforms.uStir.value = reduced() ? 0 : specks.stir;
+  speckMat.uniforms.uAsp.value = size.w / size.h;
+  speckPts.visible = !sight;
+}
+
 /* ---------- field motes: dust that falls into orbit round the barrel ---------- */
 // The charged barrel pulls like a line mass: a 1/r force toward its axis.
 // Each mote falls in on a precessing orbit, a little drag spirals it inward,
@@ -8371,14 +8792,15 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
 // A live landing dome and a view's move keep the loop awake.
-const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!viewFrom || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4;
+const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0 || specks.stir > 0.002;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
   // A QA freeze holds the clock; stills land on exact times.
   const dt = lastT && !qaFreeze ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
-  const awake = !reduced() && now - lastInput < SLEEP;
+  // A falling rock or a live event keeps the scene running for a watcher.
+  const awake = !reduced() && (now - lastInput < SLEEP || tgtCanHit() || amb.live.length > 0);
   pace = awake ? Math.min(1, pace + dt / 2) : Math.max(0, pace - dt / 2);
   const lively = busy();
   try {
@@ -9941,9 +10363,10 @@ stage.addEventListener('pointermove', e => {
   const nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5;
   lookTo.yaw = -clamp(nx, -0.5, 0.5) * rad(1.4);
   lookTo.pitch = -clamp(ny, -0.5, 0.5) * rad(0.9);
+  stirSpecks(nx, ny);
   wake();
 });
-stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; wake(); });
+stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; specks.last = null; wake(); });
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
   press = null;
@@ -10093,7 +10516,6 @@ window.__qa = {
   // Set the sun rays' gain, as the Dev slider does.
   shafts(v) { shaftGain = v; draw(); },
   // Pick a view at once, with no move.
-  view(v) { setView(v); viewFrom = null; frame(); draw(); },
   // Turn the dusk sun v degrees right of the look.
   swing(v) { sunSwing = v; aimSky(); setSun(); },
   hulkPos: (i, t) => hulkPos(i, t, new THREE.Vector3()).toArray(),
@@ -10193,6 +10615,11 @@ window.__qa = {
   shoot(c) { fire(c); frame(); draw(); },
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
+  // The lens state: the hold's push, the watch's loom, the star arc.
+  lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span, stir: specks.stir }),
+  // Fire one ambient event; amb() reads the director.
+  ambient(kind) { ambStart(kind); },
+  amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepStrike(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx, canHit: shot.canHit, res: shot.res ?? null, target: shot.target.toArray(), muzzle: shot.muzzle.toArray(), bore: THREE.MathUtils.radToDeg(shot.ax.angleTo(bq.copy(shot.target).sub(shot.muzzle))) } : null),
