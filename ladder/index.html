@@ -224,7 +224,8 @@ const C = Object.fromEntries(Object.entries(TOK).filter(([k]) => k !== 'hot').ma
 const HOT = new Float32Array(TOK.hot.flatMap(lin));
 
 /* ---------- the room, in centimetres ---------- */
-// x runs right, y up, z toward the eye. The bench top is y = 0.
+// x runs right, y runs up, z runs toward the eye.
+// The bench top is y = 0.
 const G = {
   boxMin: [-10.5, 0, -4.8], boxMax: [10.5, 6.2, 4.8],
   // Insulators: x offset, bottom, top, radius.
@@ -243,7 +244,7 @@ function rodLong(side, out = [[0, 0, 0], [0, 0, 0]]) {
   out[1][0] = side * (G.gap0 + G.rodLen * Math.sin(theta)); out[1][1] = G.gapY + G.rodLen * Math.cos(theta); out[1][2] = 0;
   return out;
 }
-// Six capsules: the stub, the bend and the long rod on each side.
+// Six capsules: stub, bend and long rod on each side.
 const RA = new Float32Array(18), RB = new Float32Array(18);
 function rodSegs() {
   [-1, 1].forEach((s, k) => {
@@ -271,7 +272,7 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 function setCamera() {
   cam.tanH = Math.tan(dev('fov') * Math.PI / 360);
   cam.asp = canvas.width / canvas.height;
-  // The frame fits 59 cm of height and 31 cm of width round the rods.
+  // The frame fits 59 cm high and 31 cm wide.
   const d = Math.max(29.5 / cam.tanH, 15.5 / (cam.tanH * cam.asp)) * dev('dist');
   const p = dev('pitch') * Math.PI / 180, y = dev('yaw') * Math.PI / 180;
   const tgt = [0, 26.5 + dev('aim'), 0];
@@ -354,7 +355,8 @@ function windAt(x, y) {
     }
   }
   if (hover.on) {
-    // The hand nearby pushes the arc away and drags air as it moves.
+    // A near hand pushes the arc away.
+    // A moving hand drags the air with it.
     const dx = x - hover.x, dy = y - hover.y, r = Math.hypot(dx, dy) + 1e-3;
     const k = 16 * Math.exp(-r / 5.5) / r, d = 0.4 * Math.exp(-r / 5.5);
     wx += dx * k + hover.vx * d; wy += dy * k + hover.vy * d;
@@ -364,8 +366,9 @@ function windAt(x, y) {
 }
 
 /* ---------- the arc ---------- */
-// A chain of N nodes from the left root to the right root.
-// The column rises; the roots lag and skip up the rods; tension smooths it.
+// A chain of N nodes runs from root to root.
+// The column rises; the roots lag and skip up the rods.
+// Tension smooths the chain.
 const N = 44, V0 = 13, TENSION = 2.6, MIN_AGE = 0.38, MIN_CYCLE = 0.5;
 const newArc = () => ({ live: false, age: 0, P: new Float32Array(N * 3), len: 0, u: [0, 0], acc: [0, 0], jump: [0.4, 0.4],
   stuck: [false, false], breakLen: 17, tipT: 0, tipLen: 0, seed: 0, I: 0, fade: 0.05, over: 0, cool: 0 });
@@ -497,7 +500,7 @@ function stepArc(dt) {
   smoothChain(P, TENSION * dt / (ds * ds));
   a.len = resample(P, N, P);
 }
-// The arc shortcuts a loop that touches itself, or a rod below its root.
+// A loop that touches itself shorts out.
 function pinch() {
   const a = arc, P = a.P;
   if (a.len < 4) return false;
@@ -545,7 +548,8 @@ function shortcut() {
     }
   }
 }
-// Breaks: too long for the transformer, or at the tips for a while.
+// The arc breaks when it is too long for the transformer.
+// It also breaks after a short dwell at the tips.
 function checkBreak(dt) {
   const a = arc;
   if (a.age < MIN_AGE) return false;
@@ -580,7 +584,7 @@ function stepLife(dt) {
 }
 
 /* ---------- rod heat ---------- */
-// Heat along each long rod, from just below the gap to the tip.
+// Heat runs along each long rod, gap to tip.
 const HW = 128, HU0 = -0.15;
 const rodHeat = [new Float32Array(HW), new Float32Array(HW)];
 const heatBytes = new Uint8Array(HW * 2);
@@ -604,8 +608,10 @@ function stepHeat(dt) {
 }
 
 /* ---------- the room light ---------- */
-// Four light points on the live arc and four on the last one light the room.
-// The light cross-fades from the old arc to the new; it never sweeps between them.
+// Four points on the live arc light the room.
+// Four points on the last arc fade out.
+// The light cross-fades from the old arc to the new arc.
+// It never sweeps between them.
 // Power follows in 0.3 s, so the room never blinks.
 const LP = new Float32Array(8 * 4);
 const LW = [0.5, 1, 1, 0.5].map(w => w / 3);
@@ -645,8 +651,8 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-// The room: rays against the bench, the wall, the box, the insulators and the rods.
-// The arc lights it as seven points; the rods take the arc as a line.
+// The room: rays hit the bench, wall, box, insulators and rods.
+// Eight points light the room; the rods see each arc as lines.
 const SCENE_FS = `#version 300 es
 precision highp float;
 uniform vec2 uRes;
@@ -794,7 +800,8 @@ vec3 shadeRoom(int m, vec3 P, vec3 N, vec3 V) {
     ao = mix(0.55, 1.0, smoothstep(uBoxMax.y, uBoxMax.y + 1.2, P.y));
   }
   vec3 diff = vec3(0.0), spec = vec3(0.0);
-  // The arc always burns above the box top, so its shadow only rings the box.
+  // The arc always burns above the box top.
+  // So the box shadow only rings the box.
   vec2 qb = abs(P.xz - (uBoxMin.xz + uBoxMax.xz) * 0.5) - (uBoxMax.xz - uBoxMin.xz) * 0.5;
   bool boxSh = m == M_BENCH && max(qb.x, qb.y) < 9.0;
   bool insSh = m == M_BOX && N.y > 0.5;
@@ -848,7 +855,8 @@ vec3 hot(float h) {
   c = mix(c, uHot[3], smoothstep(0.7, 1.0, h));
   return c * uHotK * h * h * h;
 }
-// Copper: the arc as a line light, temper colour at the gap, soot at the tips.
+// Copper lit by the arc as a line light.
+// Temper colour shows at the gap; soot shows at the tips.
 vec3 shadeRod(vec3 P, vec3 N, vec3 V, float hu, float side) {
   float tint = (1.0 - smoothstep(0.03, 0.3, hu)) * smoothstep(uHU0 - 0.02, -0.02, hu);
   float soot = 0.45 * smoothstep(0.9, 1.0, hu) + 0.35 * (1.0 - smoothstep(0.0, 0.05, abs(hu)));
@@ -856,7 +864,8 @@ vec3 shadeRod(vec3 P, vec3 N, vec3 V, float hu, float side) {
   float rough = mix(0.24, 0.5, max(0.5 * tint, soot));
   vec3 R = reflect(-V, N);
   vec3 spec = vec3(0.0), diff = vec3(0.0);
-  // Three segments on each arc; the step from one arc to the other is skipped.
+  // Each arc has three segments.
+  // The step between the two arcs is skipped.
   for (int k = 0; k < 7; k++) {
     float w = 0.5 * (uL[k].w + uL[k + 1].w);
     if (k == 3 || w <= 0.0) continue;
@@ -880,7 +889,7 @@ vec3 shadeRod(vec3 P, vec3 N, vec3 V, float hu, float side) {
 // The rods over the room, with analytic edge coverage.
 float rods(vec3 ro, vec3 rd, float tMax, out vec3 col) {
   col = vec3(0.0);
-  // Rays that cross the rods' plane far from the rods skip the tests.
+  // A ray that misses the rods' region skips the tests.
   vec2 pz = (ro + rd * (-ro.z / rd.z)).xy;
   if (abs(pz.x) > uRodBox.x || pz.y < uRodBox.y || pz.y > uRodBox.z) return 0.0;
   float cov = 0.0, best = 1e9;
@@ -964,7 +973,7 @@ void main() {
   vec3 c = uCore * core * uCoreK + mix(uSheath, uVapour, clamp(vap, 0.0, 0.6)) * sh * uSheathK;
   o = vec4(c * vD.z, 1.0);
 }`;
-// The same strip, wide and soft, feeds the trail, the heat and the flame.
+// The same strip, wide and soft, feeds the air buffer.
 const INJ_FS = `#version 300 es
 precision highp float;
 in vec3 vD;
@@ -997,7 +1006,7 @@ void main() {
   float core = exp(-r * r / 1.8), halo = exp(-r * r / 22.0);
   o = vec4((uCore * core * 5.0 + uSpot * halo * 0.6) * vI, 1.0);
 }`;
-// The air: a trail that lingers, heat that rises, a flame that licks up.
+// The air: a lingering trail, rising heat, a licking flame.
 const ADV_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uPrev;
@@ -1029,7 +1038,7 @@ void main() {
   float b = texture(uPrev, (p - (w + tb * 1.6 + vec2(0.0, uRise.z)) * uPxCm * uDt) * px).b;
   o = vec4(vec3(r, g, b) * uKeep, 1.0);
 }`;
-// The frame: shimmer, the air's glow, bloom on the arc, the grade and the film curve.
+// The frame: shimmer, air glow, bloom, grade, film curve.
 const COMP_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uHdr, uSim, uBloom;
@@ -1181,7 +1190,7 @@ function resize() {
   size = { w, h, dpr };
   free(hdr);
   hdr = target(canvas.width, canvas.height);
-  // The air runs at about a fifth of the frame's pixels.
+  // The air buffer runs near half the CSS resolution.
   const k = D.level > 0 ? 2.3 : 3.2;
   const sw = Math.max(16, Math.round(w / k)), sh = Math.max(16, Math.round(h / k));
   if (!sim[0] || sim[0].w !== sw || sim[0].h !== sh) { free(sim[0]); free(sim[1]); sim = [target(sw, sh), target(sw, sh)]; si = 0; }
@@ -1306,7 +1315,8 @@ function render(dt) {
   }
   gl.disable(gl.BLEND);
   gl.bindVertexArray(null);
-  // Bloom only on the arc: the threshold sits far above the lit room.
+  // The bloom threshold sits far above the lit room.
+  // So only the arc blooms.
   const bt = bloom.render(hdr.tex, W, H, { threshold: 2.2, cap: 30, levels: Math.min(4, glowDetail(D.level).levels) });
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
@@ -1336,12 +1346,13 @@ function render(dt) {
 let seedN = 0;
 
 /* ---------- sound ---------- */
-// Raw Web Audio on the shared kit: muted by default, woken by a gesture.
+// Raw Web Audio on the shared kit.
+// It is muted by default and wakes on a gesture.
 const kit = audioKit({ gain: 0.5 });
 const jit = x => 1 + (Math.random() * 2 - 1) * x;
 const CLIP = new Float32Array(1024).map((_, i) => Math.tanh(((i / 1023) * 2 - 1) * 2.4));
 let voice = null;
-// The arc's voice: a clipped mains buzz, a gated sizzle, and the breath.
+// The voice: a clipped mains buzz, a gated sizzle, the breath.
 function makeVoice(ac) {
   const pan = ac.createStereoPanner();
   pan.connect(kit.out);
