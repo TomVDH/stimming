@@ -1,11 +1,11 @@
 ---
 # stimming-r6g1
 title: 'ShadyOS: overhaul, the sentient hybrid'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-16T08:17:15Z
-updated_at: 2026-11-16T09:18:09Z
+updated_at: 2026-11-16T09:18:34Z
 ---
 
 Follows stimming-shdy. One look: an evil, sentient, possessed hybrid of the glass-era Windows desktop and the brushed-aqua Mac desktop. Parody nods only (Tom, 2026-11-16). Every word lives in shadyos/content.yaml (js-yaml 4.1.0). Absorbs stimming-j1lw, stimming-yb20, stimming-balv.
@@ -29,3 +29,5 @@ Follows stimming-shdy. One look: an evil, sentient, possessed hybrid of the glas
 ## Summary of Changes
 
 ShadyOS is one sentient look: a hybrid of the glass-era and aqua-era desktops. The page split into modules (main, gl, paint, sound, eggs, savers, apps). It has 13 apps, a boot, a blue crash, a grey curtain, Shut Down, Safe Mode, Not Responding, Konami cheats and six screensavers. Every word lives in shadyos/content.yaml, read by js-yaml 4.1.0; defaults.js is the fallback, rebuilt by tools/shadyos-defaults.mjs. Settings: Haunt, Hum, Trail, Boot screen; Dev rows force each egg.
+
+PR: #66 https://github.com/TomVDH/stimming/pull/66
