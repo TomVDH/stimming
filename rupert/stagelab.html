@@ -1124,12 +1124,13 @@ uniform vec3 uRimC;
 out vec4 o;
 ${COMMON}
 void main() {
-  // A shard: three random edges cut a triangle out of the quad.
+  // A shard: five uneven edges cut a chip out of the quad.
   float a0 = vSeed * 6.2831;
   float d = -1.0;
-  for (int k = 0; k < 3; k++) {
-    float a = a0 + float(k) * 2.094 + (hash12(vec2(vSeed * 97.0, float(k))) - 0.5) * 0.9;
-    d = max(d, dot(vQ, vec2(cos(a), sin(a))) - 0.42);
+  for (int k = 0; k < 5; k++) {
+    float a = a0 + float(k) * 1.2566 + (hash12(vec2(vSeed * 97.0, float(k))) - 0.5) * 0.8;
+    float r = 0.38 + 0.22 * hash12(vec2(vSeed * 31.0, float(k) + 5.0));
+    d = max(d, dot(vQ, vec2(cos(a), sin(a))) - r);
   }
   float aa = 2.0 / vPx;
   float cov = vPx < 3.0 ? smoothstep(1.0, 0.25, length(vQ)) : smoothstep(aa, -aa, d);
@@ -1144,12 +1145,13 @@ void main() {
   vec3 r = reflect(V, n);
   float g1 = pow(max(dot(r, KEY), 0.0), 36.0);
   float g2 = pow(max(dot(r, normalize(vec3(-0.8, 0.35, -0.55))), 0.0), 50.0) + pow(max(dot(r, normalize(vec3(0.8, 0.35, -0.55))), 0.0), 50.0);
-  vec3 base = vec3(0.8, 0.84, 0.92) * 0.045;
-  // Some shards split the light into a little rainbow.
+  // Crushed glass is the powder's white, lit from above.
+  vec3 base = vec3(0.82, 0.85, 0.9) * (uKeyC * (0.05 + 0.16 * abs(n.y)) + 0.012);
+  // A few chips split the light into a faint rainbow.
   float hue = fract(vSeed * 7.3 + dot(n, vec3(1.1, 1.7, 0.6)));
   vec3 rainbow = 0.5 + 0.5 * cos(6.2831 * (hue + vec3(0.0, 0.33, 0.67)));
-  vec3 tint = mix(vec3(1.0), rainbow, step(0.55, fract(vSeed * 13.7)) * 0.75);
-  vec3 col = base + (uKeyC * g1 * 7.0 + uRimC * g2 * 5.0) * tint;
+  vec3 tint = mix(vec3(1.0), rainbow, step(0.93, fract(vSeed * 13.7)) * 0.4);
+  vec3 col = base + (uKeyC * g1 * 4.5 + uRimC * g2 * 3.0) * tint;
   // Polarised: each glint takes a fringe colour.
   vec3 pc = base * 0.5 + fringe(250.0 + 1500.0 * fract(vSeed * 31.7)) * (g1 * 6.0 + g2 * 4.0 + 0.08);
   col = mix(col, pc, uPolar);
@@ -1512,28 +1514,24 @@ for (let i = 0; i < 3; i++) {
 }
 gl.bindVertexArray(null);
 
+// The shader's hash33, in float32 steps, so the cells match the frost.
+const fr = Math.fround, fract = v => v - Math.floor(v);
+function hash33(x, y, z) {
+  let p = [fr(fract(fr(x * 0.1031))), fr(fract(fr(y * 0.103))), fr(fract(fr(z * 0.0973)))];
+  const d = fr(p[0] * fr(p[1] + 33.33) + p[1] * fr(p[0] + 33.33) + p[2] * fr(p[2] + 33.33));
+  p = p.map(v => fr(v + d));
+  return [fract(fr(fr(p[0] + p[1]) * p[2])), fract(fr(fr(p[0] + p[0]) * p[1])), fract(fr(fr(p[1] + p[0]) * p[0]))];
+}
+// The frost's large cells: 11 per unit, as in the shader.
+const CELL = 11;
 function makeDust(sCut, n) {
   const { pts, ss } = headSide(REST, S, sCut);
-  // Thin parts get more shards than their volume, so the tail reads.
-  const w = [];
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const l = len(sub(pts[i + 1], pts[i])), r = (pts[i][3] + pts[i + 1][3]) / 2;
-    w.push(l * Math.pow(r, 1.35) + (i === 0 ? 1.2 : 0));
-  }
-  const wSum = w.reduce((a, b) => a + b, 0);
   const head = REST[0];
   let k = 0;
-  for (let tries = 0; k < n && tries < n * 30; tries++) {
-    let x = rnd() * wSum, i = 0;
-    while (i < w.length - 1 && x > w[i]) { x -= w[i]; i++; }
-    const a = pts[i], b = pts[i + 1];
-    const p = [0, 1, 2].map(j => {
-      const lo = Math.min(a[j] - a[3], b[j] - b[3]), hi = Math.max(a[j] + a[3], b[j] + b[3]);
-      return lo + rnd() * (hi - lo);
-    });
-    if (sdRC(p, a, b) > 0) continue;
+  // A shard starts at p; the stored stress sets its speed and its moment.
+  const launch = (p, size) => {
     const ax = axisOf(p, pts, ss);
-    if (!ax || ax.s < sCut) continue;
+    if (!ax || ax.s < sCut || k >= PART_MAX) return;
     let out = sub(p, ax.a);
     out = len(out) > 1e-4 ? norm(out) : norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]);
     const jit = norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]);
@@ -1544,13 +1542,38 @@ function makeDust(sCut, n) {
       v = mul(dir, 0.5 + 1.3 * rnd() * rnd());
     } else v = mul(norm(add(out, mul(jit, 0.5))), (0.15 + 0.5 * rnd()) * (0.6 + 2 * ax.r));
     v[1] += 0.35 * rnd();
-    const big = rnd() < 0.05;
-    const size = (big ? 0.055 + 0.07 * rnd() : 0.012 + 0.03 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(ax.r, 1)));
     // Tail shards crumble behind the front; the head goes at once.
     const release = isHead ? sched.burst + 0.08 * rnd() : Math.min(sched.burst, timeAt(ax.s, sCut) + LAG + 0.12 * rnd());
-    const o = k * 12;
-    partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], o);
+    partData.set([p[0], p[1], p[2], ax.s, v[0], v[1], v[2], size, rnd(), (rnd() - 0.5) * 10, release, 1.6 + 16 * size + 0.3 * rnd()], k * 12);
     k++;
+  };
+  // Each frost cell inside the glass becomes one shard, where the eye saw it.
+  // The scan covers the glass's own box, not its bounding sphere.
+  const lo = [0, 1, 2].map(j => Math.floor(Math.min(...pts.map(q => q[j] - q[3])) * CELL));
+  const hi = [0, 1, 2].map(j => Math.ceil(Math.max(...pts.map(q => q[j] + q[3])) * CELL));
+  for (let x = lo[0]; x <= hi[0]; x++) for (let y = Math.max(lo[1], -1); y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+    const h = hash33(x, y, z);
+    const c = [(x + h[0]) / CELL, (y + h[1]) / CELL, (z + h[2]) / CELL];
+    if (c[1] < 0.01 || sdChain(c, pts) > -0.01) continue;
+    launch(c, 0.026 + 0.022 * h[2]);
+  }
+  // The rest is fine dust; thin parts get more than their volume.
+  const w = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const l = len(sub(pts[i + 1], pts[i])), r = (pts[i][3] + pts[i + 1][3]) / 2;
+    w.push(l * Math.pow(r, 1.35) + (i === 0 ? 1.2 : 0));
+  }
+  const wSum = w.reduce((a, b) => a + b, 0);
+  for (let tries = 0; k < n && tries < n * 30; tries++) {
+    let x = rnd() * wSum, i = 0;
+    while (i < w.length - 1 && x > w[i]) { x -= w[i]; i++; }
+    const a = pts[i], b = pts[i + 1];
+    const p = [0, 1, 2].map(j => {
+      const lo = Math.min(a[j] - a[3], b[j] - b[3]), hi = Math.max(a[j] + a[3], b[j] + b[3]);
+      return lo + rnd() * (hi - lo);
+    });
+    if (sdRC(p, a, b) > 0) continue;
+    launch(p, (0.006 + 0.016 * rnd() * rnd()) * (0.55 + 0.45 * Math.sqrt(Math.min(axisOf(p, pts, ss).r, 1))));
   }
   partN = k;
   gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
@@ -2081,11 +2104,13 @@ function stepSnip(dt) {
 function startBurst() {
   sched = schedule(cut.s);
   growCracks(cut.s);
-  window.__lab = { crkN, front: () => front, sample: () => Array.from(crkData.slice(0, 32)) };
+  window.__lab = { crkN, parts: () => partN, front: () => front, sample: () => Array.from(crkData.slice(0, 32)) };
   const tip = tipSide(REST, S, cut.s);
   const c = tip.pts.reduce((a, p) => add(a, mul(p, 1 / tip.pts.length)), [0, 0, 0, 0]).slice(0, 3);
   tipPose = { pts: tip.pts, ss: tip.ss, c, low: Math.min(...tip.pts.map(p => p[1] - p[3])), bnd: bound(tip.pts) };
+  const t0 = performance.now();
   makeDust(cut.s, DUST[D.level]);
+  window.__lab.dustMs = performance.now() - t0;
   state = 'burst';
   tau = 0;
   playing = true;

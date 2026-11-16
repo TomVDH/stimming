@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T23:05:56Z
-updated_at: 2026-11-16T23:23:05Z
+updated_at: 2026-11-16T23:51:16Z
 parent: stimming-2gnm
 ---
 
@@ -13,8 +13,9 @@ Tom picked stage B and option 1 for both: refine the ray-marched model; a precom
 
 - [x] Model: smooth neck, lopsided head, stretched bubbles, kinked thread-thin tail
 - [x] Tom reviews the model (OK, 2026-11-16)
-- [x] Crack: CPU crack tree, fingered front, Voronoi frost (shards from the cells still to do)
-- [ ] Tom reviews the crack
+- [x] Crack: CPU crack tree, fingered front, Voronoi frost, shards from the cells
+- [x] Tom reviews the crack (OK, 2026-11-16)
+- [ ] Tom reviews the shards
 - [ ] Design doc, then port to the toy
 
 ## Model notes (2026-11-16)
