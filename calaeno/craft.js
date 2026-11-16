@@ -167,7 +167,7 @@ void main() {
   // The escort has a hot nose; a big craft is one pale grey.
   vec3 alb = uMark > 0.5 ? uPaint : mix(uPaint, uAccent, step(vL.z, -19.0));
   // The belly sees the ground; the back sees the sky.
-  vec3 amb = mix(uHorC * 0.22, uZenC * 0.5 + uHorC * 0.5, smoothstep(-1.0, 1.0, N.y));
+  vec3 amb = mix(uHorC * 0.22, uZenC * 0.3 + uHorC * 0.3, smoothstep(-1.0, 1.0, N.y));
   vec3 col = alb * (amb + uSunC * max(dot(N, uSun), 0.0));
   // Against the sun, the edges catch a thin line of light.
   float fr = pow(1.0 - max(dot(N, V), 0.0), 4.0);

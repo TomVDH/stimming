@@ -28,3 +28,11 @@ New Lab toy. A huge original super plane crosses high overhead, seen from below 
 - [x] Six escorts
 - [x] Layered, moving sky (wisps, heaps, near scud); deeper blue
 - [x] No user camera; a wider frame on a narrow lens
+
+## Round 3 (Tom, 2026-11-16): sky angles, then raymarched clouds
+
+- [x] Alcyone is the default craft; Craft moves to Settings
+- [x] Four fixed views on a View choice: Below, Flank, Head-on, Above
+- [x] Cloud layers are level sheets at set heights; a sea under the rim
+- [ ] Tom's verdict on the four views
+- [ ] Raymarched clouds

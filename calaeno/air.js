@@ -25,8 +25,8 @@ ${SKY}
 // The cobalt band sits where the lens looks; navy closes the top.
 vec3 caAirC(vec3 d) {
   float y = max(d.y, 0.0);
-  vec3 c = mix(uSkyLow, uSkyMid, smoothstep(0.0, 0.66, y));
-  return mix(c, uSkyTop, smoothstep(0.66, 1.0, y));
+  vec3 c = mix(uSkyLow, uSkyMid, smoothstep(0.0, 0.4, y));
+  return mix(c, uSkyTop, smoothstep(0.55, 1.0, y));
 }
 // The sky with the sun's glow and corona, and no disc.
 vec3 caSky(vec3 d) {

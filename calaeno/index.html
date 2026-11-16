@@ -24,7 +24,7 @@
 }
 </script>
 <style>
-/* Calaeno: a colossal aircraft hangs against the sun, seen from far below. */
+/* Calaeno: a colossal aircraft and its escorts, in four fixed pictures. */
 :root { --stage: oklch(0.1 0.03 262); }
 .stage--calaeno canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -41,7 +41,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--calaeno" id="stage" tabindex="0" role="img" aria-label="A colossal propeller aircraft high overhead, seen from the ground through a long lens. A contrail streams from each engine across the sun; six escorts fly beside it. Clouds drift in three layers.">
+    <div class="stage stage--calaeno" id="stage" tabindex="0" role="img" aria-label="A colossal propeller aircraft high in a deep blue sky, seen through a long lens. A contrail streams from each engine; six escorts fly beside it. Clouds drift in layers. The View choice moves the camera between four fixed pictures.">
       <p class="fail" hidden>Calaeno needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -73,32 +73,50 @@ const store = {
   get(k) { try { return localStorage.getItem(`stimming.calaeno.${k}`); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(`stimming.calaeno.${k}`, String(v)); } catch { /* storage off */ } },
 };
+
+/* ---------- views: four fixed pictures ---------- */
+// Each place is in the craft's own frame: metres right, up and back.
+// eye is the camera; aim is where it looks; lens is degrees across the frame's short side.
+// sun is the point the sun stands behind, as the camera sees it.
+// alt holds the heights of the wisps, the heaps and the scud; 0 turns a layer off.
+// fill is how much of the heap layer is cloud.
+const VIEWS = {
+  // From the ground, far below and behind: the contrails cross the sun.
+  below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [26000, 23000, 6000], fill: 0.2 },
+  // Level with the craft, off its left bow: it rides over a cloud deck.
+  flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [27000, 11000, 0], fill: 0.75 },
+  // Ahead and well under: the craft comes on, the sun high behind it.
+  sunward: { label: 'Head-on', eye: [1500, -4400, -12500], aim: [0, 300, 900], lens: 13, sun: [-3200, 5600, 24000], alt: [27000, 10500, 0], fill: 0.7 },
+  // High behind the left wing: the craft and its contrails over the deck.
+  above: { label: 'Above', eye: [-3800, 5600, 7200], aim: [0, 0, 1200], lens: 26, sun: [9000, 16000, -20000], alt: [30000, 9000, 0], fill: 0.85 },
+};
 const SUN0 = 0.36;
 const sunStart = q.has('sun') ? +q.get('sun') : store.get('sun') !== null ? +store.get('sun') : SUN0;
-const craftStart = q.get('craft') ?? store.get('craft');
+const viewStart = q.get('view') ?? store.get('view');
 const state = {
   sun: clamp(Number.isFinite(sunStart) ? sunStart : SUN0, 0, 1),
-  craft: craftStart in CRAFT ? craftStart : 'alcyone',
-  // The view: the craft's height in the sky, its heading, the lens.
-  elev: 56, head: 20, lens: 15,
-  expo: 1, bloom: 1, flare: 1, rays: 1.6, wisps: 0.55, heaps: 0.8, scud: 0.6, flow: 0.5,
+  view: viewStart in VIEWS ? viewStart : 'below',
+  craft: 'alcyone',
+  lens: 1, expo: 1, bloom: 1, flare: 1, rays: 1.6, wisps: 0.55, heaps: 0.8, scud: 0.6, flow: 0.5,
 };
 
 /* ---------- bar ---------- */
-// The picture is fixed: no hand turns or zooms the camera.
+// The pictures are fixed: no hand turns or zooms the camera.
+const CRAFT_OPTIONS = [{ value: 'alcyone', label: 'Alcyone' }, { value: 'calaeno', label: 'Calaeno' }, { value: 'merope', label: 'Merope' }];
 const ui = initPage({ id: 'calaeno', silent: true, bar: {
-  // Alcyone leads (Tom, 2026-11-16); Calaeno follows Tom's top view.
   choice: {
-    label: 'Craft', value: state.craft, display: 'segments',
-    options: [{ value: 'alcyone', label: 'Alcyone' }, { value: 'calaeno', label: 'Calaeno' }, { value: 'merope', label: 'Merope' }],
-    onPick: v => { state.craft = v; store.set('craft', v); pick(); wake(); },
+    label: 'View', value: state.view, display: 'segments',
+    options: Object.entries(VIEWS).map(([value, v]) => ({ value, label: v.label })),
+    onPick: v => { state.view = v; store.set('view', v); layout(); wake(); },
   },
-  // Sun slides the sun out from behind the contrails into clear sky.
+  // Sun slides the sun sideways across the picture.
   slider: { label: 'Sun', min: 0, max: 1, step: 0.002, value: state.sun, onInput: v => { state.sun = v; store.set('sun', v); layout(); wake(); } },
+  settings: [
+    // Alcyone leads (Tom, 2026-11-16); Calaeno follows Tom's top view.
+    { type: 'choice', id: 'craft', label: 'Craft', display: 'segments', value: 'alcyone', persist: true, options: CRAFT_OPTIONS, onPick: v => { state.craft = v; pick(); wake(); } },
+  ],
   dev: [
-    { type: 'slider', id: 'elev', label: 'Elevation', min: 14, max: 80, step: 1, value: 56, onInput: v => { state.elev = v; layout(); wake(); } },
-    { type: 'slider', id: 'head', label: 'Heading', min: -70, max: 70, step: 1, value: 20, onInput: v => { state.head = v; layout(); wake(); } },
-    { type: 'slider', id: 'lens', label: 'Lens', min: 5, max: 50, step: 0.2, value: 15, onInput: v => { state.lens = v; wake(); } },
+    { type: 'slider', id: 'lens', label: 'Lens', min: 0.3, max: 3, step: 0.02, value: 1, onInput: v => { state.lens = v; wake(); } },
     { type: 'slider', id: 'rays', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, onInput: v => { state.rays = v; wake(); } },
     { type: 'slider', id: 'wisps', label: 'High wisps', min: 0, max: 1, step: 0.02, value: 0.55, onInput: v => { state.wisps = v; wake(); } },
     { type: 'slider', id: 'heaps', label: 'Mid heaps', min: 0, max: 1, step: 0.02, value: 0.8, onInput: v => { state.heaps = v; wake(); } },
@@ -110,6 +128,8 @@ const ui = initPage({ id: 'calaeno', silent: true, bar: {
   ],
   quality: true,
 } });
+const craftStart = q.get('craft') ?? ui.setting('craft')?.value;
+if (craftStart in CRAFT) state.craft = craftStart;
 
 const stage = document.getElementById('stage');
 let markReady;
@@ -129,11 +149,8 @@ const canvas = renderer.domElement;
 stage.prepend(canvas);
 
 const scene = new THREE.Scene();
-// The eye stands on the ground; the craft flies 18 km up.
-const camera = new THREE.PerspectiveCamera(15, 1, 40, 400000);
+const camera = new THREE.PerspectiveCamera(15, 1, 40, 500000);
 camera.rotation.order = 'YXZ';
-const EYE = new THREE.Vector3(0, 2, 0);
-camera.position.copy(EYE);
 
 /* ---------- sun rays: contrail and craft shadows in the air ---------- */
 // Source: railgun/index.html, "sun rays: cloud shadows in the low air".
@@ -222,7 +239,7 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
   vec2 sh = shafts(cameraPosition, rd, L);
   float cs = dot(rd, uSun), g = 0.62;
   float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cs, 1.5) * 0.08 + 0.05;
-  float dk = 1.1 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
+  float dk = 1.1 * (1.0 - sh.x);
   // A long path through lit dust stops adding light.
   float lit = 1.0 - exp(-sh.y * sh.x / 40000.0);
   // Shade loses the warm sunlight first: it turns cool, then dim.
@@ -230,26 +247,36 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
   return mix(c, c * vec3(0.5, 0.58, 0.74), k) + uGlowC * ph * lit * 0.4 * uShaft.x;
 }`;
 
-/* ---------- sky: three cloud layers at three speeds ---------- */
-// The eye rides with the craft, so a nearer layer drifts faster.
-// High wisps and mid heaps lie behind the craft; near scud passes in front.
+/* ---------- sky: flat cloud layers at set heights ---------- */
+// Each layer is a level sheet in the world, so every view sees it in true perspective.
+// The eye rides with the craft: a layer drifts back, and a nearer one drifts faster.
+// Wisps and heaps draw behind the craft; scud draws in front.
 const VIEW_U = { uProjInv: { value: new THREE.Matrix4() }, uCamW: { value: new THREE.Matrix4() } };
 const CLOUD_U = {
   uWisps: { value: 0.55 }, uHeaps: { value: 0.8 }, uScud: { value: 0.6 }, uOct: { value: 5 },
+  // The three heights, and the heap layer's share of cloud.
+  uAlt: { value: new THREE.Vector3(26000, 23000, 6000) }, uFill: { value: 0.2 },
   uDriftA: { value: new THREE.Vector2() }, uDriftB: { value: new THREE.Vector2() }, uDriftC: { value: new THREE.Vector2() },
 };
 const VIEW_GLSL = /* glsl */`
 varying vec2 vUv;
 uniform mat4 uProjInv, uCamW;
-uniform float uWisps, uHeaps, uScud;
+uniform float uWisps, uHeaps, uScud, uFill;
+uniform vec3 uAlt;
 uniform vec2 uDriftA, uDriftB, uDriftC;
 uniform int uOct;
 vec3 viewDir() {
   vec4 h = uProjInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   return normalize((uCamW * vec4(h.xyz / h.w, 0.0)).xyz);
 }
-// A flat sheet's place along direction d; sc sets the cell size.
-vec2 sheet(vec3 d, float sc) { return d.xz / (d.y + 0.2) * sc; }`;
+// Where the view ray meets a level sheet at height h, in metres.
+// w is the sheet's weight there: 0 when the ray misses it, less far away.
+vec2 sheet(vec3 d, float h, out float w) {
+  float dy = abs(d.y) < 1e-4 ? 1e-4 : d.y;
+  float t = (h - cameraPosition.y) / dy;
+  w = h > 0.0 && t > 0.0 ? exp(-t / 110000.0) : 0.0;
+  return cameraPosition.xz + d.xz * t;
+}`;
 const QUAD_VERT = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`;
 const SKY_U = { ...AIR_U, ...SHAFT_U, ...VIEW_U, ...CLOUD_U };
 const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -261,8 +288,9 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
   ${SHAFT_GLSL}
   // The highest layer: thin, combed ice wisps.
   vec4 wisps(vec3 d, float sd) {
-    if (d.y < 0.05 || uWisps <= 0.0) return vec4(0.0);
-    vec2 p = sheet(d, 14.0) + uDriftA;
+    float fade;
+    vec2 p = sheet(d, uAlt.x, fade) / 1900.0 + uDriftA;
+    if (fade <= 0.0 || uWisps <= 0.0) return vec4(0.0);
     vec2 w = vec2(0.82, 0.57);
     // Long cells down the wind; a slow warp curls their ends.
     vec2 s = vec2(dot(p, w) * 0.5, dot(p, vec2(-w.y, w.x)) * 3.4);
@@ -271,30 +299,39 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
     // Wisps gather in a few fields, with clear blue between.
     float field = smoothstep(0.3, 0.52, skFbm(p * 0.35 + 11.0, 2));
     float th = mix(0.74, 0.46, uWisps);
-    float den = smoothstep(th, th + 0.28, n) * field * smoothstep(0.05, 0.3, d.y);
+    float den = smoothstep(th, th + 0.28, n) * field * fade;
     vec3 col = vec3(0.92, 0.95, 1.0) * (0.75 + uSunC * (0.05 + 0.25 * pow(sd, 12.0) + 0.6 * pow(sd, 120.0)));
     return vec4(col, den * 0.7);
   }
-  // The middle layer: small heaps in loose fields, white toward the sun.
+  // The middle layer: small heaps, white toward the sun, blue in the shade.
   vec4 heaps(vec3 d, float sd) {
-    if (d.y < 0.05 || uHeaps <= 0.0) return vec4(0.0);
-    vec2 p = sheet(d, 28.0) + uDriftB;
+    float fade;
+    vec2 p = sheet(d, uAlt.y, fade) / 800.0 + uDriftB;
+    if (fade <= 0.0 || uHeaps <= 0.0) return vec4(0.0);
     // The heaps boil slowly as they pass.
     vec2 s = p + 0.4 * vec2(skFbm(p * 0.7 + uTime * 0.012, 3), skFbm(p * 0.7 + 5.2 - uTime * 0.009, 3));
     float n = skFbm(s, uOct);
-    float field = smoothstep(0.3, 0.5, skFbm(p * 0.2 + 31.0, 2));
-    float den = smoothstep(0.56, 0.63, n) * field * smoothstep(0.05, 0.3, d.y);
+    // uFill opens the fields from loose patches to a near-full deck.
+    float lo = 0.3 - 0.26 * uFill;
+    float field = smoothstep(lo, lo + 0.2, skFbm(p * 0.2 + 31.0, 2));
+    float den = smoothstep(0.56 - 0.1 * uFill, 0.63 - 0.1 * uFill, n) * field;
     if (den <= 0.0) return vec4(0.0);
     // Thinner cloud a short step toward the sun means this side is lit.
-    vec2 to = normalize(sheet(uSun, 28.0) - sheet(d, 28.0) + 1e-4);
+    vec2 to = normalize(uSun.xz + 1e-4);
     float lit = clamp((n - skFbm(s + to * 0.14, 3)) * 5.0 + 0.5, 0.0, 1.0);
     vec3 col = mix(vec3(0.2, 0.32, 0.7), vec3(1.12, 1.1, 1.06), lit) + uSunC * 0.5 * pow(sd, 60.0);
-    return vec4(col, den * uHeaps);
+    // Far heaps sink into the haze at the rim.
+    col = mix(uSkyLow, col, fade);
+    return vec4(col, den * uHeaps * smoothstep(0.0, 0.25, fade));
   }
   void main() {
     vec3 d = viewDir();
     float sd = max(dot(d, uSun), 0.0);
     vec3 c = caSky(d);
+    // Under the rim lies the sea, dark blue through haze.
+    if (d.y < 0.0) c = mix(uSkyLow * 0.85, vec3(0.006, 0.03, 0.11), smoothstep(0.0, -0.22, d.y));
+    // A pale band of haze marks the rim.
+    c = mix(c, uSkyLow * 1.05, 0.5 * exp(-abs(d.y) * 22.0));
     // The disc: half a degree across.
     c += uSunC * 50.0 * (1.0 - smoothstep(0.0042, 0.0052, length(d - uSun)));
     vec4 wi = wisps(d, sd);
@@ -302,9 +339,6 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
     vec4 he = heaps(d, sd);
     c = mix(c, he.rgb, he.a);
     c = shaftSky(c, d, uShaft.z);
-    // A far ridge closes the bottom of the sky.
-    float rim = 0.01 + 0.02 * skFbm(vec2(atan(d.x, -d.z) * 9.0, 3.0), 4);
-    c = mix(vec3(0.004, 0.007, 0.014) + uSkyLow * 0.03, c, smoothstep(rim - 0.0012, rim + 0.0012, d.y));
     gl_FragColor = vec4(c, 1.0);
   }`,
 }));
@@ -321,11 +355,12 @@ const scud = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMater
   ${VIEW_GLSL}
   void main() {
     vec3 d = viewDir();
-    if (d.y < 0.05 || uScud <= 0.0) discard;
-    vec2 p = sheet(d, 8.0) + uDriftC;
+    float fade;
+    vec2 p = sheet(d, uAlt.z, fade) / 750.0 + uDriftC;
+    if (fade <= 0.0 || uScud <= 0.0) discard;
     vec2 s = p + 0.6 * vec2(skFbm(p * 0.6 + uTime * 0.02, 3), skFbm(p * 0.6 + 9.1 - uTime * 0.016, 3));
     // It stays thin: the craft shows through it.
-    float al = smoothstep(0.55, 0.9, skFbm(s, 4)) * 0.34 * uScud;
+    float al = smoothstep(0.55, 0.9, skFbm(s, 4)) * 0.34 * uScud * fade;
     float sd = max(dot(d, uSun), 0.0);
     vec3 col = vec3(0.9, 0.94, 1.0) * (0.7 + uSunC * (0.08 + 0.4 * pow(sd, 20.0)));
     gl_FragColor = vec4(col * al, al);
@@ -336,11 +371,17 @@ scud.renderOrder = 6;
 scene.add(scud);
 
 /* ---------- the craft, the escorts and their contrails ---------- */
+// The craft hangs at one place: 18 km up, flying toward negative z.
+const POS = new THREE.Vector3(0, 18000, 0);
+const AWAY = new THREE.Vector3(0, 0, 1), RIGHT = new THREE.Vector3(1, 0, 0), UP = new THREE.Vector3(0, 1, 0);
+// A place in the craft's frame: metres right, up and back.
+const place = ([r, u, b], out) => out.copy(POS).addScaledVector(RIGHT, r).addScaledVector(UP, u).addScaledVector(AWAY, b);
 // uPx scales every lamp with the canvas and the lens.
 const uPx = { value: 1 };
 const fleet = Object.fromEntries(Object.entries(CRAFT).map(([id, spec]) => {
   const c = makeCraft(spec, uPx);
   c.group.rotation.order = 'YXZ';
+  c.group.position.copy(POS);
   c.mesh.renderOrder = 3; c.props.renderOrder = 3.5; c.lights.renderOrder = 4;
   scene.add(c.group);
   return [id, c];
@@ -369,7 +410,6 @@ function pick() {
   craft = fleet[state.craft];
   for (const [id, c] of Object.entries(fleet)) c.group.visible = id === state.craft;
   trails.forEach((t, i) => { t.mesh.visible = i < craft.heads.length; });
-  layout();
 }
 
 /* ---------- post ---------- */
@@ -425,46 +465,38 @@ function resize() {
 }
 new ResizeObserver(resize).observe(stage);
 
-/* ---------- layout: a still picture ---------- */
-// The craft hangs at one place in the sky; the picture does not travel.
-// It flies away from the eye, a little to the right.
-const ALT = 18000;
-const pos = new THREE.Vector3(), DIR = new THREE.Vector3(), AWAY = new THREE.Vector3(), RIGHT = new THREE.Vector3();
-const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), inv = new THREE.Matrix4(), UP = new THREE.Vector3(0, 1, 0);
-const base = { yaw: 0, pitch: 0 };
+/* ---------- layout: the chosen view ---------- */
+const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), tmp3 = new THREE.Vector3(), inv = new THREE.Matrix4();
+const base = { yaw: 0, pitch: 0, lens: 15 };
 function layout() {
-  const el = rad(state.elev), az = rad(3), hd = rad(state.head);
-  pos.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).multiplyScalar(ALT / Math.sin(el)).add(EYE);
-  DIR.set(Math.sin(hd), 0, -Math.cos(hd));
-  RIGHT.set(Math.cos(hd), 0, Math.sin(hd));
-  AWAY.copy(DIR).negate();
-  for (const c of Object.values(fleet)) c.group.position.copy(pos);
-  // The view rests on the contrails, a little behind the craft.
-  tmp.copy(pos).addScaledVector(AWAY, 900).sub(EYE).normalize();
-  base.yaw = Math.atan2(-tmp.x, -tmp.z); base.pitch = Math.asin(tmp.y);
-  // The sun stands behind the contrails, 2.6 km down their line.
-  // The slider moves it sideways, out into clear sky.
-  tmp.copy(pos).addScaledVector(AWAY, 2600).sub(EYE).normalize();
+  const v = VIEWS[state.view];
+  place(v.eye, camera.position);
+  // The camera looks at its aim point; the bob rides on top.
+  place(v.aim, tmp).sub(camera.position).normalize();
+  base.yaw = Math.atan2(-tmp.x, -tmp.z); base.pitch = Math.asin(tmp.y); base.lens = v.lens;
+  // The sun stands behind its anchor; the slider moves it sideways.
+  place(v.sun, tmp).sub(camera.position).normalize();
   tmp2.crossVectors(tmp, UP).normalize();
-  AIR_U.uSun.value.copy(tmp).addScaledVector(tmp2, 0.15 * state.sun).normalize();
+  AIR_U.uSun.value.copy(tmp).addScaledVector(tmp2, 0.15 * (state.sun - SUN0)).normalize();
+  // The sun never sinks under the rim.
+  if (AIR_U.uSun.value.y < 0.06) { AIR_U.uSun.value.y = 0.06; AIR_U.uSun.value.normalize(); }
   FIN.uFlareC.value.copy(AIR_U.uSunC.value).multiplyScalar(0.6);
+  CLOUD_U.uAlt.value.set(...v.alt);
+  CLOUD_U.uFill.value = v.fill;
 }
 
 function pose(t) {
   const g = craft.group;
   // A slow, heavy roll.
-  g.rotation.set(0, -rad(state.head), rad(3) + 0.012 * Math.sin(t * 0.11));
+  g.rotation.set(0, 0, rad(3) + 0.012 * Math.sin(t * 0.11));
   g.updateMatrixWorld(true);
   // Each contrail starts at its engine's propeller.
   craft.heads.forEach((h, i) => trails[i].lay(tmp.copy(h).applyMatrix4(g.matrixWorld).addScaledVector(AWAY, 0.5 * TRAIL.rad), AWAY));
   // The escorts hold station off both wings and drift a little.
   escorts.forEach((e, i) => {
     const [across, back, up] = WING[i], ph = i * 1.7;
-    e.group.position.copy(pos)
-      .addScaledVector(RIGHT, across * craft.span + 40 * Math.sin(t * 0.21 + ph))
-      .addScaledVector(AWAY, back + 60 * Math.sin(t * 0.13 + 2 + ph));
-    e.group.position.y += up + 26 * Math.sin(t * 0.17 + 1 + ph);
-    e.group.rotation.set(0.02 * Math.sin(t * 0.23 + ph), -rad(state.head), 0.14 * Math.sin(t * 0.31 + ph));
+    place([across * craft.span + 40 * Math.sin(t * 0.21 + ph), up + 26 * Math.sin(t * 0.17 + 1 + ph), back + 60 * Math.sin(t * 0.13 + 2 + ph)], e.group.position);
+    e.group.rotation.set(0.02 * Math.sin(t * 0.23 + ph), 0, 0.14 * Math.sin(t * 0.31 + ph));
     e.group.updateMatrixWorld(true);
     escTrails[i].lay(tmp.copy(e.head).applyMatrix4(e.group.matrixWorld), AWAY);
   });
@@ -477,7 +509,7 @@ function pose(t) {
   S.uOccN.value = craft.casters.length;
   let m = 0;
   for (let x = 300; m < SHAFT_TR; m++, x = x * 1.9 + 1500) {
-    tmp.copy(pos).addScaledVector(AWAY, x);
+    tmp.copy(POS).addScaledVector(AWAY, x);
     S.uTr.value[m].set(tmp.x, tmp.y, tmp.z, 0.7 * (craft.spread + TRAIL.k * x));
   }
   S.uTrN.value = m;
@@ -486,7 +518,7 @@ function pose(t) {
 /* ---------- camera: fixed, with a gentle bob ---------- */
 function aim(t) {
   // The lens is across the frame's short side.
-  const short = state.lens;
+  const short = clamp(base.lens * state.lens, 2, 80);
   const vfov = camera.aspect >= 1 ? short : deg(2 * Math.atan(Math.tan(rad(short) / 2) / camera.aspect));
   if (Math.abs(camera.fov - vfov) > 1e-3) { camera.fov = vfov; camera.updateProjectionMatrix(); }
   // The bob of a long lens held by hand.
@@ -500,9 +532,9 @@ function aim(t) {
 // How much of the sun the craft and the contrails hide, 0 to 1.
 const fwd = new THREE.Vector3();
 function sunCover() {
-  const sun = AIR_U.uSun.value;
+  const sun = AIR_U.uSun.value, eye = camera.position;
   inv.copy(craft.group.matrixWorld).invert();
-  const o = tmp.copy(EYE).applyMatrix4(inv), d = tmp2.copy(sun).transformDirection(inv);
+  const o = tmp.copy(eye).applyMatrix4(inv), d = tmp2.copy(sun).transformDirection(inv);
   let hull = 0;
   if (Math.abs(d.y) > 1e-4) {
     const t = -o.y / d.y, x = o.x + d.x * t, z = o.z + d.z * t;
@@ -511,7 +543,7 @@ function sunCover() {
     if (t > 0) for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) hull += craft.shade(x + dx, z + dz) ? 0.2 : 0;
   }
   let ice = 0;
-  for (let i = 0; i < craft.heads.length; i++) ice = Math.max(ice, trails[i].cover(EYE, sun));
+  for (let i = 0; i < craft.heads.length; i++) ice = Math.max(ice, trails[i].cover(eye, sun));
   return 1 - (1 - hull) * (1 - 0.96 * ice);
 }
 
@@ -535,7 +567,7 @@ function frame(dt) {
   SHAFT_U.uShaft.value.x = state.rays;
   // The flare shows while the sun is in frame and clear.
   const sun = AIR_U.uSun.value;
-  const sn = tmp3.copy(sun).multiplyScalar(1000).add(EYE).project(camera);
+  const sn = tmp3.copy(sun).multiplyScalar(1000).add(camera.position).project(camera);
   const front = sun.dot(camera.getWorldDirection(fwd)) > 0;
   const edge = Math.max(Math.abs(sn.x), Math.abs(sn.y));
   const want = front ? (1 - sstep(edge, 0.95, 1.2)) * (1 - sunCover()) : 0;
@@ -568,8 +600,9 @@ onReducedChange(() => wake());
 
 /* ---------- ready ---------- */
 pick();
+layout();
 resize();
-if (q.has('debug')) window.__ca = { state, frame, layout, pick, renderer, D };
+if (q.has('debug')) window.__ca = { state, VIEWS, frame, layout, pick, renderer, D };
 // The intro holds until shaders compile and the first frame draws.
 renderer.compileAsync(scene, camera).then(() => {
   frame(0);
