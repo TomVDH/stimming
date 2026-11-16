@@ -216,6 +216,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'choice', id: 'forms', group: 'Land', label: 'Forms', display: 'segments', value: 'mixed', options: [{ value: 'crescents', label: 'Crescents' }, { value: 'mixed', label: 'Mixed' }], onPick: v => { FAR_U.uForms.value = v === 'mixed' ? 1 : 0; farBake.dirty = true; draw(); } },
     // Bake marches once and relights; Live marches every frame.
     // Bake is the default (Tom, 2026-11-16); ?far=live opens on Live.
+    // Far skip: the march leaps empty air over a coarse height grid.
+    { type: 'toggle', id: 'farskip', group: 'Land', label: 'Far skip', value: true, onToggle: on => { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; draw(); } },
     { type: 'choice', id: 'farmode', group: 'Land', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
     // The graphite parts' reflectance and roughness.
     { type: 'slider', id: 'gunmetal', group: 'Gun', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
@@ -1508,6 +1510,16 @@ setRockCol('umber');
 const FAR_GLSL = RANGE_GLSL;
 // The far pass's parts: the march, the normal, the shadow and the light.
 // The live pass and the bake share them, so both draw the same country.
+// The height grid: a fine and a coarse level about the landscape eye.
+// It rebuilds only when the ranges' shape changes.
+const farGrid = { n: 256, half: 330000, key: '', builds: 0 };
+farGrid.f = new THREE.WebGLRenderTarget(farGrid.n, farGrid.n, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+farGrid.c = new THREE.WebGLRenderTarget(farGrid.n / 4, farGrid.n / 4, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+const GRID_U = {
+  uGridF: { value: farGrid.f.texture }, uGridC: { value: farGrid.c.texture },
+  uGrid: { value: new THREE.Vector4(1670 - farGrid.half, 1990 - farGrid.half, 2 * farGrid.half / farGrid.n, farGrid.n) },
+  uGridOn: { value: 1 },
+};
 const FAR_FN = /* glsl */`
   uniform mat4 uInvVP, uVP;
   uniform int uFarSteps;
@@ -1520,6 +1532,35 @@ const FAR_FN = /* glsl */`
   const float PLANET_R = ${PLANET_R.toFixed(1)};
   // The curved ground's drop at p, below the eye's level plane.
   float drop(vec3 p) { vec2 d = p.xz - uEye.xz; return dot(d, d) / (2.0 * PLANET_R); }
+  // The height grid: the most each cell's ground can rise, in kilometres.
+  // uGrid: the grid's corner x and z, the fine cell's size, the fine cell count.
+  // The coarse grid's cells are four fine cells wide.
+  uniform sampler2D uGridF, uGridC;
+  uniform vec4 uGrid;
+  uniform float uGridOn;
+  // The bound in the cell under xz, or -1 off the grid.
+  float gridMax(sampler2D t, vec2 xz, float c, float n) {
+    vec2 g = (xz - uGrid.xy) / c;
+    if (g.x < 0.0 || g.y < 0.0 || g.x >= n || g.y >= n) return -1.0;
+    return texelFetch(t, ivec2(g), 0).r * 1000.0;
+  }
+  // The distance along the ray to the walls of the cell under p.
+  float cellExit(vec3 p, vec3 rd, float c) {
+    vec2 g = floor((p.xz - uGrid.xy) / c), wall = uGrid.xy + (g + step(0.0, rd.xz)) * c;
+    vec2 r = vec2(abs(rd.x) < 1e-6 ? 1e-6 : rd.x, abs(rd.z) < 1e-6 ? 1e-6 : rd.z);
+    vec2 tt = (wall - p.xz) / r;
+    return min(tt.x, tt.y);
+  }
+  // A safe leap over empty air: to the cell's wall, or to where the ray could drop to the bound.
+  // up is the rate the ray rises over the curved ground; it only grows along the ray.
+  // 0 means no leap: the ray is not above the cell's bound.
+  float leap(vec3 p, vec3 rd, float above, float up) {
+    float c = uGrid.z, hc = gridMax(uGridC, p.xz, 4.0 * c, uGrid.w / 4.0);
+    if (hc >= 0.0 && above > hc) return min(cellExit(p, rd, 4.0 * c), up < 0.0 ? (above - hc) / -up : 1e9);
+    float hf = gridMax(uGridF, p.xz, c, uGrid.w);
+    if (hf >= 0.0 && above > hf) return min(cellExit(p, rd, c), up < 0.0 ? (above - hf) / -up : 1e9);
+    return 0.0;
+  }
   // The view ray through clip point c of the inverse view-projection m.
   vec3 rayOf(mat4 m, vec2 c, vec3 ro) { vec4 w = m * vec4(c, 1.0, 1.0); return normalize(w.xyz / w.w - ro); }
   // The distance to the ranges along the ray, or -1 for a miss.
@@ -1544,6 +1585,11 @@ const FAR_FN = /* glsl */`
       // The ceiling sits above the tallest crest (RANGE_CEIL in ranges.js).
       if (p.y + drop(p) > ${RANGE_CEIL.toFixed(1)} && rd.y + t * dot(rd.xz, rd.xz) / PLANET_R > 0.0) break;
       tp = t;
+      // Over a cell's highest ground the ray leaps to the cell's edge.
+      if (uGridOn > 0.5) {
+        float lp = leap(p, rd, p.y + drop(p), rd.y + t * dot(rd.xz, rd.xz) / PLANET_R);
+        if (lp > 0.0) { t += lp + 2.0; if (t > 650000.0) break; continue; }
+      }
       // Over open plain a stride of 3% keeps grazing rays inside the budget.
       // Near any range the stride shrinks, so no crest or horn is skipped.
       // In a band the stride stays short: 0.5% near the surface, 1% high above it.
@@ -1628,7 +1674,7 @@ const FAR_FN = /* glsl */`
 const FAR_VS = /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
 // The live pass marches every pixel, every frame.
 const farLive = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FAR_U, uEye: { value: new THREE.Vector3() } },
+  uniforms: { ...U, ...FAR_U, ...GRID_U, uEye: { value: new THREE.Vector3() } },
   depthWrite: true, depthTest: true,
   vertexShader: FAR_VS,
   fragmentShader: /* glsl */`
@@ -1665,7 +1711,7 @@ const farBake = {
   res: 1,
   bufs: [fbBuf(), fbBuf()], front: 0,
   // A bake in progress: its buffer and the next row to fill.
-  job: null, rows: 6,
+  job: null, rows: 8,
   sun: new THREE.Vector3(), dirty: true, bakes: 0, hard: 0, lights: 0,
 };
 // The bake passes' inputs: the buffer under construction.
@@ -1675,7 +1721,7 @@ const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new T
 // The geometry bake: range and normal per texel.
 // The range splits in two halves, so the half floats keep a quarter metre.
 const farBakeG = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FAR_U, ...FB_U, uFarSteps: { value: 640 }, uFarStride: { value: new THREE.Vector2(0.0005, 0.003) }, uEye: FB_U.uBakeEye },
+  uniforms: { ...U, ...FAR_U, ...FB_U, ...GRID_U, uFarSteps: { value: 640 }, uFarStride: { value: new THREE.Vector2(0.0005, 0.003) }, uEye: FB_U.uBakeEye },
   depthWrite: false, depthTest: false,
   vertexShader: FAR_VS,
   fragmentShader: /* glsl */`
@@ -1769,6 +1815,52 @@ const fbScene = new THREE.Scene(), fbQuad = new THREE.Mesh(farPass.geometry, far
 fbQuad.frustumCulled = false;
 fbScene.add(fbQuad);
 const fbD = new THREE.Vector3(), fbF = new THREE.Vector3(), fbR = new THREE.Matrix4();
+// The grid's fine pass: the highest of 7 x 7 samples over each cell and half a cell round it.
+// A margin covers the peaks between the samples.
+const farGridF = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...GRID_U, uEye: { value: new THREE.Vector3() } },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  ${FAR_FN}
+  void main() {
+    vec2 lo = uGrid.xy + floor(gl_FragCoord.xy) * uGrid.z;
+    float m = 0.0;
+    for (int j = 0; j < 7; j++) for (int i = 0; i < 7; i++) m = max(m, farH(lo + (vec2(i, j) / 3.0 - 0.5) * uGrid.z));
+    gl_FragColor = vec4(m < 1.0 ? 0.0 : (m * 1.06 + 400.0) / 1000.0, 0.0, 0.0, 1.0);
+  }`,
+});
+// The grid's coarse pass: the highest of each 4 x 4 block of fine cells.
+const farGridC = new THREE.ShaderMaterial({
+  uniforms: { uGridF: GRID_U.uGridF },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  uniform sampler2D uGridF;
+  void main() {
+    ivec2 b = ivec2(gl_FragCoord.xy) * 4;
+    float m = 0.0;
+    for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) m = max(m, texelFetch(uGridF, b + ivec2(i, j), 0).r);
+    gl_FragColor = vec4(m, 0.0, 0.0, 1.0);
+  }`,
+});
+// Rebuild the grid when the ranges' shape uniforms change; a new grid needs a new bake.
+function farGridUpdate() {
+  const u = FAR_U, key = [u.uRg.value.map(v => v.toArray()), u.uRa.value.map(v => v.toArray()), Array.from(u.uLand.value), u.uEro.value, u.uForms.value].join();
+  if (key === farGrid.key) return false;
+  farGrid.key = key; farGrid.builds++;
+  const rt = renderer.getRenderTarget();
+  fbQuad.material = farGridF;
+  renderer.setRenderTarget(farGrid.f);
+  renderer.render(fbScene, fbCam);
+  fbQuad.material = farGridC;
+  renderer.setRenderTarget(farGrid.c);
+  renderer.render(fbScene, fbCam);
+  renderer.setRenderTarget(rt);
+  farBake.dirty = true;
+  return true;
+}
 // Pick the live march or the bake.
 function setFarMode(on) {
   farBake.on = on && renderer.extensions.has('EXT_color_buffer_float');
@@ -1834,6 +1926,7 @@ function fbLight(f) {
 // A tenth of a degree of sun moves the shadows: relight.
 function farBakeUpdate() {
   const B = farBake, c = camera;
+  farGridUpdate();
   if (!B.on) return;
   const rt = renderer.getRenderTarget(), f = B.bufs[B.front];
   const r = B.dirty ? 9 : fbReach(f, c);
@@ -11984,6 +12077,7 @@ window.__qa = {
   bump(v) { FAR_U.uBump.value = v; draw(); },
   // Set the ranges' light (sun, sky, effects) and rock colour.
   rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
+  farSkip(on) { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; },
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
@@ -12084,8 +12178,10 @@ renderer.compileAsync(scene, camera).then(async () => {
   fbQuad.material = farBakeL;
   const fbL = new THREE.Mesh(farPass.geometry, farBakeG);
   fbL.frustumCulled = false; fbScene.add(fbL);
+  // The height grid's two passes link with them.
+  const fbW = [farGridF, farGridC].map(m => { const q = new THREE.Mesh(farPass.geometry, m); q.frustumCulled = false; fbScene.add(q); return q; });
   try { await Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(fbScene, fbCam)]); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
-  fbScene.remove(fbL);
+  fbScene.remove(fbL, ...fbW);
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.
   later(() => Object.values(SAMPLES).forEach(f => fetch(f)));
