@@ -83,7 +83,14 @@ float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * 
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
 
 // The sky in a direction: the shared dusk sky, turned away from the sun.
-vec3 skyCol(vec3 d) { return skDusk(d, uSun, uZen, uMid, uBand, uAnti); }
+vec3 skyCol(vec3 d) {
+  vec3 c = skDusk(d, uSun, uZen, uMid, uBand, uAnti);
+  // Storm air is dusty: a little grey in the blue.
+  c = mix(c, vec3(dot(c, vec3(0.3, 0.55, 0.15))), 0.3);
+  // Low sun lights the dust over the plain: a warm band at the horizon.
+  float low = exp(-max(d.y, 0.0) * 9.0);
+  return mix(c, uSunCol * vec3(0.16, 0.12, 0.09) + uAmb * 0.1, low * 0.6);
+}
 // The haze colour: the low sky that way.
 vec3 hazeCol(vec3 d) { return skyCol(normalize(vec3(d.x, 0.03, d.z))) * 0.95; }
 
@@ -429,6 +436,9 @@ vec3 envScene(vec2 uv) {
     c = ground(rd, px);
   } else {
     c = skyCol(rd);
+    // The sky dims round the storm: its shadow and its outflow haze.
+    float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
+    c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
     float tHit;
     vec4 st = storm(rc, tHit);
     // The far storm sinks into the haze.
