@@ -1131,6 +1131,31 @@ function updateShafts() {
   u.uTrN.value = m;
 }
 
+/* ---------- bands: draw order by distance ---------- */
+// Clouds and smoke write no depth, so draw order decides what covers what.
+// Each band holds one span of distance from the eye; far bands draw first.
+// Names follow docs/plans/railgun-volumes.md.
+const BAND = {
+  // Sky: the dome with the cirrus and the deck.
+  sky: -1,
+  // Country, 80 to 200 km: the ranges; they write depth.
+  country: -0.9,
+  // Deep, 100 to 300 km: towers and giants.
+  deep: 1.5,
+  // Far, 50 to 100 km: far mids and far dust domes.
+  far: 1.6,
+  // Rock, 40 to 50 km: the rock and all it sheds, back to front.
+  domes: 1.8, fireball: 1.9, shards: 1.95, smoke: 2, debris: 2.05, ribbons: 2.1, glows: 2.12,
+  // Mid, 5 to 40 km: heaps and near mids.
+  mids: 2.15, heaps: 2.2,
+  // Near, 0 to 5 km: the gun's volumes, dust and the ion line.
+  plume: 2.2, shell: 2.3, shockRing: 2.4, dust: 2.5, ionPuffs: 2.55, ion: 2.6,
+  // Sparks and lights over everything; then the lens.
+  sparks: 3, lights: 4, specks: 5,
+};
+// A card layer past this distance draws in the Far band, behind the rock.
+const ROCK_FAR = 48000;
+
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
   uniforms: { ...U, ...IMP_U, ...SHAFT_U, uVol: { value: null }, uCloudC: { value: 0 } }, side: THREE.BackSide, depthWrite: false,
@@ -1191,7 +1216,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
   }
   void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(deck(d, k2sky(d)), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
-sky.renderOrder = -1;
+sky.renderOrder = BAND.sky;
 scene.add(sky);
 
 /* ---------- the planet: one curve for every view ---------- */
@@ -1531,7 +1556,7 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
 }));
 farPass.frustumCulled = false;
 // After the sky dome, before everything nearer.
-farPass.renderOrder = -0.9;
+farPass.renderOrder = BAND.country;
 farPass.onBeforeRender = (r, sc, cam) => { const u = farPass.material.uniforms; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); };
 scene.add(farPass);
 
@@ -1779,17 +1804,18 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(curved(P), 1.0);
 }`;
 // list: [angle in degrees, range m, base m, half width m, height m, kind].
-function cloudLayer(list, order) {
+// pick keeps a subset; each card keeps the seed it has in the whole list.
+function cloudLayer(list, order, pick = () => true) {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   // Far cards draw first.
-  const s = [...list].sort((a, b) => b[1] - a[1]);
+  const s = [...list].sort((a, b) => b[1] - a[1]).map((c, i) => [c, 13.7 * i + c[0]]).filter(([c]) => pick(c));
   const aC = new Float32Array(s.length * 4), aS = new Float32Array(s.length * 4);
-  s.forEach((c, i) => {
+  s.forEach(([c, sd], i) => {
     const p = polar(rad(c[0]), c[1]);
     aC.set([p.x, c[2], p.z, c[3]], i * 4);
-    aS.set([c[4], c[5], 13.7 * i + c[0], 0], i * 4);
+    aS.set([c[4], c[5], sd, 0], i * 4);
   });
   g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
   g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
@@ -1813,13 +1839,13 @@ const HEAPS = [
   [-13, 22000, 3000, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
   [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 3050, 2100, 1300, 0],
 ];
-const heaps = cloudLayer(HEAPS, 2.2);
+const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
 // Storm towers stand among the far ranges, as tall as their peaks.
 const TOWERS = [[-22, 120000, 2000, 15000, 24000, 1], [5, 150000, 2200, 19000, 28000, 1], [30, 105000, 2000, 16000, 25000, 1], [52, 135000, 2200, 18000, 27000, 1], [76, 115000, 2000, 14000, 23000, 1]];
-const tower = cloudLayer(TOWERS, 1.5);
+const tower = cloudLayer(TOWERS, BAND.deep);
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
   [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
@@ -1827,11 +1853,13 @@ const MIDS = [
   // Farther out.
   [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0],
 ];
-const mids = cloudLayer(MIDS, 2.15);
+// Mids past the rock draw behind it; the rest draw in front.
+const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
+const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
 // The deck stands in for the middle heaps; they show only with the deck off.
 function setDeck(v) {
   U.uDeck.value = v;
-  mids.visible = v < 0.01;
+  mids.visible = farMids.visible = v < 0.01;
   shaftOcc = null;
 }
 
@@ -3330,7 +3358,7 @@ function makeMini() {
   };
   const m = makeTrain(pu);
   // Debris trains draw after the main trail: they fly nearer the eye.
-  m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.debris; m.visible = false;
   scene.add(m);
   return { m, pu };
 }
@@ -3344,7 +3372,7 @@ function aimMini(t, pos, away, R, len, on, burn) {
   t.m.visible = on > 0.01;
 }
 smoke.frustumCulled = false;
-smoke.renderOrder = 2;
+smoke.renderOrder = BAND.smoke;
 scene.add(smoke);
 
 /* ---------- fragments: small rocks on their own tracks ---------- */
@@ -3418,7 +3446,7 @@ function makeFragTrail(own = false) {
       gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.1; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.ribbons; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -3437,7 +3465,7 @@ function makeFragTrail(own = false) {
       uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: PU.uSoot, uAsh: PU.uAsh,
     };
     const m = makeTrain(pu);
-    m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
+    m.frustumCulled = false; m.renderOrder = BAND.debris; m.visible = false;
     scene.add(m);
     shipTrains.push({ m, pu, rib: sec.id === 'prow' || sec.id === 'tower' ? makeFragTrail(true) : null, cheap: false });
   }
@@ -3647,7 +3675,7 @@ const dust = new THREE.Mesh(dustGeo, new THREE.ShaderMaterial({
   }`,
 }));
 dust.frustumCulled = false;
-dust.renderOrder = 2.5;
+dust.renderOrder = BAND.dust;
 scene.add(dust);
 let dustHead = 0, dustEnd = 0, dustDirty = false;
 // Steam puffs carry a seed past 1000; they draw white and thin.
@@ -3791,7 +3819,7 @@ const starMat = new THREE.ShaderMaterial({
 });
 const stars = new THREE.Mesh(starGeo, starMat);
 stars.frustumCulled = false;
-stars.renderOrder = 3;
+stars.renderOrder = BAND.sparks;
 scene.add(stars);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
@@ -3887,7 +3915,7 @@ const arcMat = new THREE.ShaderMaterial({
 });
 const arcs = new THREE.Mesh(arcGeo, arcMat);
 arcs.frustumCulled = false;
-arcs.renderOrder = 3;
+arcs.renderOrder = BAND.sparks;
 scene.add(arcs);
 // Each live arc: two ends, birth, life, bow, seed.
 const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.Vector3(), b: new THREE.Vector3(), t0: 0, life: 0.1, bowV: new THREE.Vector3(), seed: 0, k: 1 }));
@@ -4854,7 +4882,7 @@ function makeMeteor(hot, cool) {
       gl_FragColor = vec4(col * a * uGain, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -5476,7 +5504,7 @@ function makeFlare(color, shape = '') {
       gl_FragColor = vec4(uC * uGain * a, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -5540,7 +5568,7 @@ const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
 // The rock's glows draw after its smoke and before the cloud heaps.
 // The heaps stand 8 to 38 km out, in front of the rock at 42 to 48 km.
 // Clouds write no depth, so draw order is what hides a glow behind them.
-const ROCK_GLOW_ORDER = 2.12;
+const ROCK_GLOW_ORDER = BAND.glows;
 bow.frustumCulled = false; bow.renderOrder = ROCK_GLOW_ORDER; bow.visible = false;
 scene.add(bow);
 // A fiery haze hangs round the burning rock; night shows it most.
@@ -5638,7 +5666,7 @@ function makeRing(color) {
       gl_FragColor = vec4(uCol * uGain * (exp(-x * x) * rag + fill), 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -5715,7 +5743,7 @@ const boltMat = new THREE.ShaderMaterial({
 });
 const bolt = new THREE.Mesh(boltGeo, boltMat);
 bolt.frustumCulled = false;
-bolt.renderOrder = 3;
+bolt.renderOrder = BAND.sparks;
 bolt.visible = false;
 scene.add(bolt);
 
@@ -5815,7 +5843,7 @@ const ionMat = new THREE.ShaderMaterial({
   }`,
 });
 const ionLine = new THREE.Mesh(ionGeo, ionMat);
-ionLine.frustumCulled = false; ionLine.renderOrder = 2.6; ionLine.visible = false;
+ionLine.frustumCulled = false; ionLine.renderOrder = BAND.ion; ionLine.visible = false;
 scene.add(ionLine);
 // The contrail: a chain of lit puffs, round from any angle.
 // Puffs crowd near the muzzle, where the line is closest.
@@ -5883,7 +5911,7 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     gl_FragColor = vec4(mix(lit, air(lit, vP), 0.5) * a, a);
   }`,
 }));
-ionPuffs.frustumCulled = false; ionPuffs.renderOrder = 2.55; ionPuffs.visible = false;
+ionPuffs.frustumCulled = false; ionPuffs.renderOrder = BAND.ionPuffs; ionPuffs.visible = false;
 scene.add(ionPuffs);
 // Tracers: one ribbon and one ion trail per round in flight.
 // Slot 0 is the first set; the copies share every uniform but their own.
@@ -5955,7 +5983,7 @@ function makeGlint(color) {
       gl_FragColor = vec4(mix(uC, vec3(1.0), 0.6 * spine) * uGain * a, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6086,7 +6114,7 @@ function makeVol(decl, extra) {
     ${decl}
     ${VOLFX}`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.2; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.plume; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6171,7 +6199,7 @@ function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62, glob = false) {
     gl_FragColor = vec4(k2haze(col, vP) * a, a);
   }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.3; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.shell; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6190,7 +6218,7 @@ const shockRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 6, 160), new 
     gl_FragColor = vec4(k2haze(vec3(0.92, 0.96, 1.0) * uGain * n, vP), 1.0);
   }`,
 }));
-shockRing.frustumCulled = false; shockRing.renderOrder = 2.4; shockRing.visible = false;
+shockRing.frustumCulled = false; shockRing.renderOrder = BAND.shockRing; shockRing.visible = false;
 scene.add(shockRing);
 const zAx = new THREE.Vector3(0, 0, 1);
 // Air distortion: world place and radius of each shock, and the strength.
@@ -6400,7 +6428,7 @@ vec3 alb(vec3 p) { return uDustC; }
 vec3 vlight(vec3 p) { return blastLight(p); }`, { uCd: { value: new THREE.Vector4() }, uDustC: chargeDust.material.uniforms.uDustC });
 // The case lands well in front of the gun, so its dust draws over it.
 caseDustV.material.depthTest = false;
-caseDustV.renderOrder = 3;
+caseDustV.renderOrder = BAND.sparks;
 let caseDust = null;
 function updateCaseDust() {
   const age = caseDust ? simT - caseDust.t0 : 99, on = age < 12;
@@ -6597,7 +6625,7 @@ const speckMat = new THREE.ShaderMaterial({
   }`,
 });
 const speckPts = new THREE.Points(speckGeo, speckMat);
-speckPts.frustumCulled = false; speckPts.renderOrder = 5;
+speckPts.frustumCulled = false; speckPts.renderOrder = BAND.specks;
 scene.add(speckPts);
 // The pointer feeds the stir; it fades over about a second.
 function stirSpecks(nx, ny) {
@@ -6674,7 +6702,7 @@ const moteMat = new THREE.ShaderMaterial({
   }`,
 });
 const motes = new THREE.Points(moteGeo, moteMat);
-motes.frustumCulled = false; motes.renderOrder = 3;
+motes.frustumCulled = false; motes.renderOrder = BAND.sparks;
 scene.add(motes);
 let moteHead = 0, moteEnd = 0, moteN = 0;
 const moteE = new THREE.Vector3(), moteF = new THREE.Vector3();
@@ -6941,7 +6969,7 @@ const laserMat = new THREE.ShaderMaterial({
   fragmentShader: 'uniform float uGain; uniform vec3 uC; varying float vK; void main() { gl_FragColor = vec4(uC * uGain * vK, 0.0); }',
 });
 const laser = new THREE.Line(laserGeo, laserMat);
-laser.frustumCulled = false; laser.renderOrder = 4; laser.visible = false;
+laser.frustumCulled = false; laser.renderOrder = BAND.lights; laser.visible = false;
 scene.add(laser);
 const laserDot = makeFlare(linFit(0.7, 0.2, 25));
 const lzA = new THREE.Vector3(), lzB = new THREE.Vector3(), lzD = new THREE.Vector3();
@@ -7194,7 +7222,7 @@ const shardMat = new THREE.ShaderMaterial({
 });
 const shards = new THREE.Mesh(shardGeo, shardMat);
 // The shards draw after the soot and take its cover by depth.
-shards.frustumCulled = false; shards.renderOrder = 1.95;
+shards.frustumCulled = false; shards.renderOrder = BAND.shards;
 scene.add(shards);
 let shardsEnd = 0;
 
@@ -7409,7 +7437,7 @@ for (const m of domeVols) {
   m.material.depthTest = true;
   // The far storm towers draw first.
   // The near heaps draw after.
-  m.renderOrder = 1.8;
+  m.renderOrder = BAND.domes;
 }
 // shipDomes: { m, t0, i, P, S } for each landed hulk.
 // shipRumbles: the audio handles of every started ship sound.
@@ -7466,7 +7494,7 @@ function updateDomes() {
     u.uC.value.x += 0.15 * Hd;
     u.uR.value = 1.25 * Math.hypot(1.75 * Rd, 0.8 * Hd);
     // A far dome draws before the storm towers in front of it.
-    d.m.renderOrder = d.P.distanceTo(camera.position) > 70000 ? 1.4 : 1.8;
+    d.m.renderOrder = d.P.distanceTo(camera.position) > 70000 ? BAND.far : BAND.domes;
     // The domes are small on screen.
     // More steps hide the grain at little cost.
     u.uVSteps.value = Math.min(48, Math.round(volSteps() * 1.5));
@@ -7560,9 +7588,9 @@ function lowRes(order, meshes, depthOf = null) {
   }
   volGroups.push({ layer, rt, quad, meshes, depthOf });
 }
-lowRes(1.9, [fireball], fireball);
-lowRes(2.2, [plume, chargeDust, shotDust, muzzleSmoke, ...ringVols, ventJets]);
-lowRes(3, [caseDustV]);
+lowRes(BAND.fireball, [fireball], fireball);
+lowRes(BAND.plume, [plume, chargeDust, shotDust, muzzleSmoke, ...ringVols, ventJets]);
+lowRes(BAND.sparks, [caseDustV]);
 // Runs after drawGunDepth: the volumes read the gun's depth by their own size.
 function drawVolumes() {
   const w = Math.max(1, Math.round(renderer.domElement.width * VOL_RES));
@@ -7590,7 +7618,7 @@ function drawVolumes() {
   renderer.setRenderTarget(null);
 }
 // The soot draws before the trails, so they can lie in front of it.
-fireball.renderOrder = 1.9;
+fireball.renderOrder = BAND.fireball;
 // The Wilson cloud and the shock front are whole spheres.
 const hitShellA = makeShell(3.0, 0.45, 0.75, true), hitShellB = makeShell(4.0, 0.35, 0.7, true);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
