@@ -75,6 +75,17 @@ Toys Tom asked for by name. The interactions are proposals.
 | 363 | **Soup cauldron** | E | A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour. |
 | 364 | **Tornado alley** | C | A wide, still, deadpan vista of the Oklahoma plains under a supercell. Several tornadoes at once; set each one's F-scale, F0 to F5. Tom, 2026-11-16. |
 
+## Tom's picks, 2026-11-16
+
+Four Tool-approved dioramas Tom wants next. Each has a draft bean. The sizes are guesses; no plan exists yet.
+
+| # | Toy | Group | Rough size |
+|---|---|---|---|
+| 101 | **Spillway** | C | L to XL |
+| 19 | **Deep vent** | C | M to L |
+| 58 | **Observatory** | C | L |
+| 60 | **Lantern lake** | C | M |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
