@@ -46,6 +46,8 @@ export const CAMS = {
   fish: { fish: 2.4, hz: 0.66, lift: 7 },
   dutch: { roll: -10, foc: 1.1, hz: 0.68 },
   tele: { foc: 4.5, hz: 0.6, yaw: 6 },
+  // The long lens with a slight tilt: Tom's two picks in one.
+  lean: { foc: 3.4, hz: 0.6, yaw: 6, roll: -6 },
   scope: { foc: 1.25, hz: 0.66, bars: 1 },
   shore: { x: 20, z: -165, lift: 1.6, hz: 0.3, foc: 1.1 },
   along: { x: -760, z: -500, lift: 6, yaw: 66, hz: 0.66, foc: 1.1 },
