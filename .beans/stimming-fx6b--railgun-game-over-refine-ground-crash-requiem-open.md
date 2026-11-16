@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:22:13Z
-updated_at: 2026-11-16T18:57:53Z
+updated_at: 2026-11-16T19:05:47Z
 parent: stimming-f793
 ---
 
@@ -40,3 +40,10 @@ Tom: no silent cut; the climax holds from 3 s before impact to 3-5 s after, then
 - The lock starts LOCK_T 3 s before contact.
 - PUMP_T 0.3 s forte push, then the dry take stops; the echo and the reverb copy ring on.
 - Meter: climax -8 to -9 dB RMS from about -2.5 s to +4 s, then the echo tail falls to -54 dB over about 3.5 s.
+
+## Round 4 (Tom, 2026-11-16)
+
+- The Requiem's code is the pre-day version again, with oo only (Tom: keep the new timing, fix the sound).
+- The stop at CLIMAX_T silences the dry take and the feedback echo; a smooth hall tail (hallIR, 3.5 s) rings on, not echo repeats.
+- Removed: the heartbeat and the synthetic contact boom (strikeBoom). Tom asked for no synthetic effects.
+- goBus: the take's outputs; __qa.record('go') records the take alone.

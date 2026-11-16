@@ -8887,11 +8887,11 @@ function sillyBoom(p) {
 // At contact the blast goes off there and the frame burns to white.
 // Under the white the toy cuts to a fresh start, as Reset does.
 // The burn to white and the held white, in seconds.
-// The climax starts LOCK_T seconds before contact.
-// It holds CLIMAX_T seconds past contact; a forte pump of PUMP_T ends it.
+// The chord resolves at contact and holds CLIMAX_T seconds.
+// Then the orchestra stops; only the hall tail rings on.
 // The orchestra then stops dead; only its echo rings.
 // The white holds WHITE_T seconds under the echo; then the rewind starts.
-const BURN_T = 4, LOCK_T = 3, CLIMAX_T = 4, PUMP_T = 0.3, WHITE_T = 2.5;
+const BURN_T = 4, CLIMAX_T = 4, WHITE_T = 2.5;
 // The game over's white is warm: a white-yellow glow.
 const FILL_WARM = '#fff1cf', FILL_COOL = '#fffaf3';
 // The strike's light climbs over the last seconds before contact.
@@ -8986,9 +8986,8 @@ function stepStrike(dt) {
     const choir = clamp(el / Math.max(T0 - full, 0.1), 0, 1);
     // The phrases breathe in slow swells; the swells settle near contact.
     const br = 1 + 0.3 * Math.sin(2 * Math.PI * el / 7) * (1 - choir);
-    const lock = T0 - el <= LOCK_T;
-    gameOverSound(ac, { u: lock ? 1 : Math.pow(u, 1.6), vol: br * THREE.MathUtils.smoothstep(u, 0, 0.1), over: 0, crush: 0, choir: lock ? 1 : choir, lock });
-    if (ast.s >= strike.s1) { strikeHit(); strikeBoom(ac); }
+    gameOverSound(ac, { u: Math.pow(u, 1.6), vol: br * THREE.MathUtils.smoothstep(u, 0, 0.1), over: 0, crush: 0, choir, lock: false });
+    if (ast.s >= strike.s1) strikeHit();
   } else {
     strike.tb += dt;
     const tb = strike.tb, b = burnOf(tb);
@@ -8996,9 +8995,8 @@ function stepStrike(dt) {
     // The blink thins the haze, so the fireball and the skirt show.
     hitFlash = (1.2 * Math.exp(-tb / 0.25) + 0.3 + 1.2 * b * b) * (1 - 0.6 * blinkOf(tb));
     // The chord resolves at contact and holds as the climax.
-    // At CLIMAX_T the orchestra stops dead after the pump.
-    const pump = tb >= CLIMAX_T - PUMP_T ? 1 : 0;
-    if (!strike.cut) gameOverSound(ac, { u: 1, vol: 1, over: 0, crush: 0, choir: 1, lock: true, pump });
+    // It swells through the burn, as before; at CLIMAX_T it stops.
+    if (!strike.cut) gameOverSound(ac, { u: 1, vol: 1 + 0.15 * b, over: 0, crush: 0, choir: 1, lock: true });
     if (!strike.cut && tb >= CLIMAX_T) { strike.cut = true; gameOverCut(ac); }
     // The silent white holds, then the button's Reset rewinds to the start.
     if (!strike.out && tb >= Math.max(burnT(), CLIMAX_T) + WHITE_T) { strike.out = true; gameOverSound(ac, null); resetToy(true); }
@@ -9777,31 +9775,21 @@ function surgeOverStop(now = false, hold = 0, cut = false) {
   goSurge = null;
   if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
   if (cut) {
-    // The dry sound stops dead; the echo and the reverb ring on.
-    for (const n of [h.g, h.sg]) { n.gain.cancelScheduledValues(t); n.gain.setTargetAtTime(0, t, 0.006); }
-    for (const n of h.src) n.stop(t + 0.1);
-    track(t + 0.2, ...h.src);
+    // The dry take and the echo stop; only the hall rings on.
+    for (const n of [h.g, h.sg, h.eo]) if (n) { n.gain.cancelScheduledValues(t); n.gain.setTargetAtTime(0, t, 0.05); }
+    for (const n of h.src) n.stop(t + 0.4);
+    track(t + 0.5, ...h.src);
     return;
   }
   for (const n of [h.g, h.sg]) n.gain.setTargetAtTime(0, t + hold, hold ? 0.07 : 0.5);
   for (const n of h.src) n.stop(t + hold + 2.5);
   track(t + hold + 2.6, ...h.src);
 }
-// The impact at contact: a deep drop and a dark blast of air.
-function strikeBoom(ac) {
-  if (!ac || goMix === 'hum') return;
-  const t = ac.currentTime;
-  track(t + 3,
-    blip(ac, kit.out, t, { f0: 80, f1: 26, glide: 1.4, peak: GO_HIT, a: 0.005, dur: 2.6 }),
-    burst(ac, kit.out, t, { dur: 1.6, rate: 0.6, type: 'lowpass', f: 2400, f1: 200, q: 0.5, peak: 0.6 * GO_HIT, a: 0.004 }).src);
-}
-// The impact's level.
-const GO_HIT = 0.32;
 /* ---------- game-over takes ---------- */
 // Three takes beside the surge mixes; the Dev row picks one.
 // Each take returns { src, g, sg, upd }; the stop fades g and sg.
 // Ascent: a Shepard hum climbs forever under the Surge choir.
-// Requiem: a sung minor chord over a racing heart; it turns major.
+// Requiem: a sung minor chord over a pedal; it turns major.
 // Undertow: a Shepard hum and a dark cluster sink, then open.
 const GO_TAKES = { ascent: goAscent, requiem: goRequiem, undertow: goUndertow };
 // A Shepard hum: octave-spaced tones under one fixed bell.
@@ -9888,8 +9876,8 @@ function goUndertow(ac) {
 // Requiem voices: [minor tone, lock tone], in semitones from A1.
 // The lock lifts each minor third to a major third.
 const REQ = [[0, 0], [7, 7], [12, 12], [15, 16], [19, 19], [24, 24], [27, 28], [31, 31], [36, 36], [39, 40], [43, 43]];
-// The Requiem's levels: voices, pedal, heart, forte layer, echo, whole take.
-const GO_REQ = { voice: 0.42, pedal: 0.25, heart: 0.5, forte: 0.05, echo: 0.45, out: 0.32 };
+// The Requiem's levels: voices, pedal, forte layer, echo, whole take.
+const GO_REQ = { voice: 0.42, pedal: 0.25, forte: 0.05, echo: 0.45, out: 0.32 };
 function goRequiem(ac) {
   const src = [], R = 55;
   const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
@@ -9899,7 +9887,7 @@ function goRequiem(ac) {
   for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
   shape.curve = curve; shape.oversample = '2x';
   drive.gain.value = 0.6; g.gain.value = 0; sg.gain.value = 0;
-  drive.connect(shape).connect(g).connect(kit.out); sg.connect(kit.out);
+  drive.connect(shape).connect(g).connect(goBus(ac)); sg.connect(goBus(ac));
   // The pedal: A0, A1 and a soft square on A2, under a low lid.
   const plp = filt(ac, 'lowpass', 500, 0.8), pg = ac.createGain(), sq = ac.createGain();
   pg.gain.value = 0; sq.gain.value = 0.3;
@@ -9926,45 +9914,53 @@ function goRequiem(ac) {
   // The plain's echoes take the whole take.
   const vs = ac.createGain(), dl = ac.createDelay(0.2), dk = filt(ac, 'lowpass', 9000, 0.5);
   vs.gain.value = 0; dl.delayTime.value = 0.06;
-  // The take has its own copy of the plain's echo, so a cut silences it.
-  plainVerb(ac);
+  // The take's hall: a smooth tail that rings on after the stop.
   const rc = ac.createConvolver(), ro = ac.createGain();
-  rc.normalize = true; rc.buffer = verb.ir; ro.gain.value = 0.8;
-  g.connect(vs).connect(dl).connect(dk).connect(rc).connect(ro).connect(kit.out);
+  rc.normalize = true; rc.buffer = hallIR(ac); ro.gain.value = 0.9;
+  g.connect(vs).connect(dl).connect(dk).connect(rc).connect(ro).connect(goBus(ac));
   // The echo: a feedback delay the forte opens; the stop rings through it.
   const es = ac.createGain(), edl = ac.createDelay(1), efb = ac.createGain(), elp = filt(ac, 'lowpass', 4000, 0.5);
-  // eo: the echo's output, so a cut silences the echo too.
-  const eo = ac.createGain();
   es.gain.value = 0; edl.delayTime.value = 0.42; efb.gain.value = 0.5;
+  // eo: the echo's output; the stop silences it, so no repeats ring on.
+  const eo = ac.createGain();
   g.connect(es).connect(edl).connect(elp).connect(efb).connect(edl);
-  elp.connect(eo).connect(kit.out);
-  return { src, g, sg, drive, plp, pg, cb, vib, voices, fg, vs, es, eo, ro, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
+  elp.connect(eo).connect(goBus(ac));
+  return { src, g, sg, drive, plp, pg, cb, vib, voices, fg, vs, es, eo, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
 }
-// One heartbeat: a low lub, then a softer dub gap seconds later.
-function heartbeat(ac, dest, t, gap, k) {
-  track(t + gap + 0.5,
-    blip(ac, dest, t, { f0: 58, f1: 36, glide: 0.18, peak: 0.55 * k, a: 0.008, dur: 0.3 }),
-    blip(ac, dest, t, { type: 'triangle', f0: 120, f1: 70, glide: 0.1, peak: 0.12 * k, a: 0.005, dur: 0.14 }),
-    blip(ac, dest, t + gap, { f0: 50, f1: 33, glide: 0.15, peak: 0.38 * k, a: 0.008, dur: 0.26 }),
-    blip(ac, dest, t + gap, { type: 'triangle', f0: 105, f1: 62, glide: 0.1, peak: 0.08 * k, a: 0.005, dur: 0.12 }));
+// A concert-hall tail: dense noise that darkens and dies over 3.5 s.
+let hallBuf = null;
+function hallIR(ac) {
+  if (hallBuf && hallBuf.sampleRate === ac.sampleRate) return hallBuf;
+  const sr = ac.sampleRate, len = Math.round(3.5 * sr), b = ac.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let y = 0;
+    for (let i = 0; i < len; i++) {
+      const x = i / sr, k = 0.5 - 0.42 * Math.min(1, x / 2.5);
+      // The lowpass closes with time, so the tail darkens as it dies.
+      y += k * (Math.random() * 2 - 1 - y);
+      d[i] = y * Math.exp(-6.9 * x / 3.5) * Math.min(1, x / 0.02);
+    }
+  }
+  return (hallBuf = b);
+}
+// The game-over bus: the take's every output goes through it.
+// QA records it alone, with no other sound.
+let goBusN = null;
+function goBus(ac) {
+  if (!goBusN || goBusN.context !== ac) { goBusN = ac.createGain(); goBusN.connect(kit.out); }
+  return goBusN;
 }
 function requiemUpdate(ac, h, d) {
   const t = ac.currentTime, ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp;
   const u = d.u, cu = d.choir ?? 1, lock = d.lock ?? u >= 0.999, ov = 0.5 * d.over, vol = d.vol * (charge ? 0.35 : 1);
   if (lock && !h.locked) h.lockAt = t;
   h.locked = lock;
-  // The heart races from 44 to 160 beats a minute; it stops at the lock.
-  if (!lock && u > 0.02) {
-    const per = 60 / (44 + 116 * Math.pow(u, 1.6));
-    if (h.next < t - 0.5) h.next = t + 0.05;
-    while (h.next < t + 0.2) { heartbeat(ac, h.sg, h.next, Math.min(0.3, 0.42 * per), 0.3 + 0.7 * u); h.next += per; }
-  }
-  h.sg.gain.setTargetAtTime(GO_REQ.heart * vol, t, 0.08);
+  const accent = 1 * Math.exp(-(t - h.lockAt) / 1.2);
   // The pedal grows from the horizon line; its lid opens with nearness.
   h.pg.gain.setTargetAtTime(GO_REQ.pedal * (0.15 + 0.85 * u), t, 0.1);
   h.plp.frequency.setTargetAtTime(150 * Math.pow(2, 4.3 * u), t, 0.1);
   // The voices hold one vowel, oo; they only fade in.
-  // Only the strain moves the vowel, toward a scream.
   const F1 = lerp(VOWEL.oo[0], VOWEL.scream[0], ov), F2 = lerp(VOWEL.oo[1], VOWEL.scream[1], ov);
   const B2 = lerp(VOWEL.uu[1], VOWEL.ah[1], 0.5 * ov);
   for (const v of h.voices) {
@@ -9981,17 +9977,15 @@ function requiemUpdate(ac, h, d) {
   }
   for (const l of h.vib) l.gain.setTargetAtTime(14 * cu, t, 0.2);
   // The choir swells over the pedal as its voices fill in.
-  // At contact the climax swells in over a second and holds flat.
+  // At contact the forte holds the chord loud, with the high layer on.
   // Its level follows nearness, so the build keeps climbing to contact.
-  // The pump: a last forte push into the echo, just before the stop.
-  const pump = d.pump ?? 0;
-  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.6 : 1) * (1 + 0.9 * pump), t, pump ? 0.04 : lock ? 0.35 : 0.08);
-  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte * (1 + 3 * pump) : 0, t, pump ? 0.04 : 0.35);
-  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo * (1 + 0.8 * pump) : 0, t, pump ? 0.04 : 0.35);
+  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.4 + 0.6 * accent : 1), t, 0.08);
+  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte : 0, t, lock ? 0.03 : 0.2);
+  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo : 0, t, 0.05);
   // A light drive keeps the chord clean.
   h.drive.gain.setTargetAtTime(0.3 + 0.3 * u, t, 0.1);
-  h.g.gain.setTargetAtTime(GO_REQ.out * vol * (1 + 0.6 * pump), t, pump ? 0.04 : 0.08);
-  h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (lock ? 1.3 : 1) * vol, t, lock ? 0.35 : 0.1);
+  h.g.gain.setTargetAtTime(GO_REQ.out * vol, t, 0.08);
+  h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (1 + accent) * vol, t, 0.1);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.
 function bell(ac, h, t, u) {
@@ -10838,14 +10832,15 @@ window.__qa = {
   // Start the audio context as a gesture would.
   wakeAudio() { kit.wake(); },
   // Record the sound output; stop() resolves to a data URL.
-  record() {
-    const ac = kit.live(), d = ac.createMediaStreamDestination();
-    kit.out.connect(d);
+  // tap 'go': only the game-over take, with no other sound.
+  record(tap) {
+    const ac = kit.live(), d = ac.createMediaStreamDestination(), src = tap === 'go' ? goBus(ac) : kit.out;
+    src.connect(d);
     const r = new MediaRecorder(d.stream), parts = [];
     r.ondataavailable = e => parts.push(e.data);
     r.start();
     return { stop: () => new Promise(res => {
-      r.onstop = () => { kit.out.disconnect(d); const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(new Blob(parts, { type: r.mimeType })); };
+      r.onstop = () => { src.disconnect(d); const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(new Blob(parts, { type: r.mimeType })); };
       r.stop();
     }) };
   },
