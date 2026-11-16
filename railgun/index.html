@@ -4858,15 +4858,17 @@ function sightSetup() {
           vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
           o = mix(o, far, clamp(k.r, 0.0, 1.0));
         }
-        // Blue, the burn: the phosphor is worn where the name sat for years.
-        // The picture dims inside the letters; its own grain shows through.
+        // Blue, the burn: the phosphor is worn where the marks sat for years.
+        // The picture dims inside them; its own grain shows through.
         // An offset sample lights one edge and shades the other.
         float b = clamp(k.b, 0.0, 1.0);
         if (b > 0.002 || texture(tKey, vUv + uTexel * 2.0).b > 0.002) {
           float e = texture(tKey, vUv + vec2(-1.5, 1.5) * uTexel).b - texture(tKey, vUv + vec2(1.5, -1.5) * uTexel).b;
           float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
-          o *= 1.0 - 0.42 * b;
-          o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * (0.1 + 0.25 * L);
+          // On a bright picture the burn dims; on a dark one it glows as a ghost.
+          vec3 dim = o * (1.0 - 0.5 * b), ghost = o + vec3(0.8, 0.86, 0.95) * 0.42 * b;
+          o = mix(dim, ghost, smoothstep(0.32, 0.08, L));
+          o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * (0.12 + 0.25 * L);
         }
         outColor = vec4(o, 1.0);
       }`,
@@ -4966,11 +4968,13 @@ function sightKey() {
   const ph = reduced() ? 0.5 : (Math.floor(simT * 10) / 10) % 1;
   x.setTransform(1, 0, 0, 1, 0, 0);
   x.clearRect(0, 0, f.kc.width, f.kc.height);
-  for (const band of [true, false]) {
+  // Every mark is burnt into the phosphor: one pass, in the blue channel.
+  // Only the laser stays live light, in the red core.
+  for (const band of [false]) {
     x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
-    x.filter = band ? `blur(${3.2 * k}px)` : 'none';
-    x.globalCompositeOperation = band ? 'source-over' : 'lighter';
-    const col = band ? '#0f0' : '#f00';
+    x.filter = `blur(${0.6 * k}px)`;
+    x.globalCompositeOperation = 'lighter';
+    const col = '#00f';
     x.strokeStyle = x.fillStyle = col;
     x.lineJoin = 'round';
     const lw = w => (x.lineWidth = band ? 5 : w * k);
@@ -5003,9 +5007,11 @@ function sightKey() {
     if (lg > 0 && m.rock) {
       const e = skScreen(skQ.lerpVectors(lzA, lzB, 0.0005));
       if (e.ok) {
+        x.strokeStyle = x.fillStyle = '#f00';
         lw(band ? 5 : 0.8 + 1.6 * lg);
         line([[e.x, e.y], [m.rock.x, m.rock.y]]);
         dot(m.rock.x, m.rock.y, band ? 6 + 4 * lg : (1.5 + 3.5 * lg) * k);
+        x.strokeStyle = x.fillStyle = col;
       }
     }
     if (m.rock) {

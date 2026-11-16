@@ -409,6 +409,7 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 ## The gun, final pass (Tom signed off 2026-11-16, stimming-shkv)
 
 - Name (Tom, 2026-11-16): the gun is **SCINFAXI** (Tom's spelling, over the Norse Skinfaxi). The sight burns it into its tube, top centre: the key's blue channel dims the picture in the letters and lights one edge.
+- Sight marks (Tom, 2026-11-16): every mark is burnt into the tube like the name, in the key's blue channel. On a bright picture the burn dims it; on a dark one it glows as a faint ghost. Only the ranging laser stays live light, in the red core.
 - Materials: the gun and the spent case share one physically based light (`PBR`): GGX, Smith visibility, Schlick Fresnel, Lambert for the rest, the sky as image light (hemisphere irradiance, split-sum reflection). Graphite parts are blackened steel. Dev rows: Gun steel, Gun steel rough, Base wear.
 - Base: a two-tier apron, buttress teeth that lean in, a chamfered deck lip; tone patches, rain stains, cracks, a grease band at the race, sand at the foot.
 - Mount: one central pylon (Tom picked it over side towers and piers). The yoke and a short collar stand plumb; below them the pylon spreads like an A with a pointed opening. `RISE` lifts the trunnion 20 m over the old 215 m.
