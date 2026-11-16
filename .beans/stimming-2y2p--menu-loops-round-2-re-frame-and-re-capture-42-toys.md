@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-16T09:48:53Z
-updated_at: 2026-11-16T18:39:36Z
+updated_at: 2026-11-16T19:02:30Z
 parent: stimming-1rv3
 blocked_by:
     - stimming-z7j5
@@ -62,3 +62,10 @@ npx -y -p playwright@1.63.0 node tools/loops.mjs [id ...]
 ## Review sheet
 
 `shared/loops/sheet.html` (noindex) plays every loop in `index.json`, in shelf order. Views: Tube circle (the 80% circle, soft edge), Full square, Still. Only the loops on screen play.
+
+## Round 3 (Tom, 2026-11-16)
+
+- railgun: night (`stimming.railgun.time` 0.03), close on the rock's head; 9 s from two seconds before the strike, through the fireball. The still shows the fireball.
+- morpher: zoomed out (the capture shrinks the stage to 72% over its flat colour; `SETUP.css`); 9 s with a dragging pointer, a stretch and two blobs; four shapes show.
+- cauldron: new on the main shelf; two things in, a held drag stirs. Its lens always fits the pot, so the rim runs past the circle.
+- `tools/capture.mjs`: `SETUP.css`, and a crop above 1 for a stage on a flat colour.
