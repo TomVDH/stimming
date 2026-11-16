@@ -7265,7 +7265,7 @@ const laserGeo = new THREE.BufferGeometry()
   .setAttribute('aS', new THREE.BufferAttribute(new Float32Array([-1, 1, -1, 1]), 1))
   .setIndex([0, 2, 1, 1, 2, 3]);
 const laserMat = new THREE.ShaderMaterial({
-  uniforms: { uGain: { value: 0 }, uTime: U.uTime, uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uW: { value: 1.4 }, uRes: { value: new THREE.Vector2(1, 1) }, uC: { value: new THREE.Vector3(...linFit(0.9, 0.05, 300)) } },
+  uniforms: { uGain: { value: 0 }, uTime: U.uTime, uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uW: { value: 2.2 }, uRes: { value: new THREE.Vector2(1, 1) }, uC: { value: new THREE.Vector3(...linFit(0.9, 0.05, 300)) } },
   transparent: true, depthWrite: false, side: THREE.DoubleSide,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -7282,11 +7282,11 @@ const laserMat = new THREE.ShaderMaterial({
   }`,
   fragmentShader: /* glsl */`uniform float uGain, uTime; uniform vec3 uC; varying float vK, vS;
   void main() {
-    // Only the hot air by the optic scatters the beam: it dies within kilometres.
-    float near_ = pow(vK, 14.0);
+    // The air scatters a thin thread all the way out; the hot air by the optic most.
+    float near_ = 0.3 + 0.7 * pow(vK, 8.0);
     // The heat haze makes it shimmer in moving knots.
-    float sh = 0.45 + 0.55 * sin(uTime * 31.0 + vK * 900.0) * sin(uTime * 17.0 - vK * 340.0);
-    float k = 0.5 * near_ * sh * (1.0 - vS * vS);
+    float sh = 0.7 + 0.3 * sin(uTime * 31.0 + vK * 900.0) * sin(uTime * 17.0 - vK * 340.0);
+    float k = near_ * sh * (1.0 - vS * vS);
     gl_FragColor = vec4(uC * uGain * k, 0.0);
   }`,
 });
@@ -7313,7 +7313,7 @@ function updateLaser() {
   u.uA.value.copy(lzA); u.uB.value.copy(lzB);
   u.uRes.value.set(size.w, size.h);
   // The eye sees no spot on the rock: it is too far out.
-  u.uGain.value = g * 1.1;
+  u.uGain.value = g * 3.0;
 }
 
 /* ---------- the antenna's beacon ---------- */
