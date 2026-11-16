@@ -392,9 +392,9 @@ The toy tells people that watching is fine. The scene carries itself:
 
 ## Hit sounds: samples only (Tom, 2026-11-16)
 
-Tom: no synthetic clicks or ticks in the impact and explosion sounds.
+Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; only those (Tom: "I am talking about the projectile impact and impact explosion only").
 - The rock hit plays Tom's impact sample alone: the noise crack and the knock tone are gone. The hush before the peak and the rise into it take 60 ms each, so the gain never clicks.
 - Salvo crater and hunt hits play the impact's tail, slowed and darkened, after the sound's delay. The noise tick, the thud and the crackle bursts are gone.
-- The game-over contact plays Tom's boom and the impact's tail. The ship's crack and joint thuds play the impact's tail too.
+- The game-over contact and the ship's hits keep their own sounds.
 - `playFrom()` fades every sample in over 30 ms; `sampleHit()` plays one into a live handle.
 - Still synthetic, not hits: the over-hold crackle under a too-long charge, the noise beds and low rumbles.
