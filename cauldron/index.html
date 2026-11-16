@@ -837,7 +837,7 @@ void main() {
 const RIP_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
-uniform sampler2D uRip;
+uniform sampler2D uRip, uDye;
 uniform vec2 uTexel;
 uniform float uExt, uDamp, uTime, uShiver, uBoil;
 uniform int uNI;
@@ -851,7 +851,10 @@ void main() {
   vec2 c = texture(uRip, vUv).xy;
   float l = texture(uRip, vUv - vec2(uTexel.x, 0.0)).x, r = texture(uRip, vUv + vec2(uTexel.x, 0.0)).x;
   float b = texture(uRip, vUv - vec2(0.0, uTexel.y)).x, t = texture(uRip, vUv + vec2(0.0, uTexel.y)).x;
-  float h = (2.0 * c.x - c.y + 0.42 * (l + r + b + t - 4.0 * c.x)) * uDamp;
+  // Thick soup is slow and heavy: waves crawl, ring less and dents hold.
+  float T = clamp((texture(uDye, vUv).a - 1.0) * 0.3, 0.0, 1.0);
+  float kv = mix(1.0, 0.82, T), c2 = 0.42 * mix(1.0, 0.3, T);
+  float h = (c.x + (c.x - c.y) * kv + c2 * (l + r + b + t - 4.0 * c.x)) * mix(uDamp, 0.996, T);
   // The heat drives the surface: a fine shiver everywhere, heaves over the plumes.
   float tk = floor(uTime * 12.0);
   h += uShiver * (hsh(floor(vUv * 90.0) + tk * 13.1) - 0.5);
@@ -2959,7 +2962,10 @@ function rippleStep(steps) {
   gl.viewport(0, 0, RN, RN);
   gl.uniform2f(ripP.u('uTexel'), 1 / RN, 1 / RN);
   gl.uniform1f(ripP.u('uExt'), FE);
-  gl.uniform1f(ripP.u('uDamp'), 0.98 - 0.012 * thick());
+  gl.uniform1f(ripP.u('uDamp'), 0.98);
+  gl.uniform1i(ripP.u('uDye'), 1);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, dye[di].tex[0]);
   // A calm shiver at low fire grows into a rolling boil at full fire.
   const heat = reduced() || draining ? 0 : fire;
   const bk = heat < 0.04 ? 0 : devV('boil', 1);
