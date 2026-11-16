@@ -28,6 +28,7 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
 <body>
 <div class="strip">
   <div role="group" aria-label="Bar direction" id="concepts"><span>Bar</span>
+    <button type="button" data-c="standard">Standard</button>
     <button type="button" data-c="today">Today</button>
     <button type="button" data-c="dock">Dock</button>
     <button type="button" data-c="bare">Bare</button>
@@ -40,6 +41,7 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
     <button type="button" data-t="fire">Fire</button>
     <button type="button" data-t="rain">Rain</button>
     <button type="button" data-t="eyes">Eyes</button>
+    <button type="button" data-t="railgun">Railgun</button>
   </div>
   <div role="group" aria-label="Size" id="sizes"><span>Size</span>
     <button type="button" data-s="full">Full</button>
@@ -53,6 +55,7 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
 // A probe: other ways to do the toy bars. It changes no shell file.
 // The frame runs a real toy; shim.js stands in for shared/stim.js there.
 const NOTES = {
+  standard: 'Standard: the name top left, the system bar top right, the toy\'s bars at the foot. One part set, one style.',
   today: 'Today: Bar v2. Controls in four corners, on dark glass.',
   dock: 'Dock: one bar at the bottom holds every control. The stage stays clear.',
   bare: 'Bare: no boxes. Words and icons sit on the stage; a pick flashes white.',
@@ -61,7 +64,9 @@ const NOTES = {
 };
 const q = new URLSearchParams(location.search);
 const state = {
-  c: NOTES[q.get('c')] ? q.get('c') : 'dock',
+  c: NOTES[q.get('c')] ? q.get('c') : 'standard',
+  // ?dev shows the Dev button, as on a real toy page.
+  dev: q.has('dev'),
   t: q.get('t') || 'galaxy',
   s: ['full', 'phone', 'wide'].includes(q.get('s')) ? q.get('s') : 'full',
 };
@@ -97,19 +102,20 @@ function fit() {
 }
 function show() {
   frame.dataset.concept = state.c;
+  frame.dataset.dev = state.dev ? '1' : '0';
   document.getElementById('note').textContent = NOTES[state.c];
   for (const b of document.querySelectorAll('[data-c]')) b.setAttribute('aria-pressed', String(b.dataset.c === state.c));
   for (const b of document.querySelectorAll('[data-t]')) b.setAttribute('aria-pressed', String(b.dataset.t === state.t));
   for (const b of document.querySelectorAll('[data-s]')) b.setAttribute('aria-pressed', String(b.dataset.s === state.s));
   fit();
   // The address keeps the view, so a link opens the same one.
-  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}`);
+  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}${state.dev ? '&dev' : ''}`);
   try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {}
 }
 document.getElementById('concepts').addEventListener('click', e => { const c = e.target.closest('[data-c]')?.dataset.c; if (c) { state.c = c; show(); } });
 document.getElementById('toys').addEventListener('click', e => { const t = e.target.closest('[data-t]')?.dataset.t; if (t && t !== state.t) { state.t = t; show(); load(t); } });
 document.getElementById('sizes').addEventListener('click', e => { const s = e.target.closest('[data-s]')?.dataset.s; if (s) { state.s = s; show(); } });
-// Keys 1 to 5 pick a direction.
+// Keys 1 to 6 pick a direction.
 addEventListener('keydown', e => {
   const c = Object.keys(NOTES)[Number(e.key) - 1];
   if (c && !e.metaKey && !e.ctrlKey && !e.altKey) { state.c = c; show(); }

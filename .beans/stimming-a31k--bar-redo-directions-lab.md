@@ -3,8 +3,9 @@
 title: 'Bar redo: directions lab'
 status: in-progress
 type: spike
+priority: normal
 created_at: 2026-11-16T09:53:39Z
-updated_at: 2026-11-16T09:53:39Z
+updated_at: 2026-11-16T17:40:33Z
 ---
 
 Tom, 2026-11-16: "we are completely redoing the style and ux of the bars". He gave no brief and said: just dive in.
@@ -22,6 +23,10 @@ Question: which direction does the bar redo take?
 - [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use from end to end
 - [x] Check 1280 px and 375 x 812; clean console
 - [ ] Tom picks a direction
+- [x] Standard (2026-11-16): Tom rejected Dock, Bare, Tuck and Askew as "sloppy" and gave the brief: logo and name top left; Settings, Info, Dev top right; toy controls in bottom bars; one reusable part set, one style, no gradients
+- [x] Standard: one part set (bar, button, icon button, segmented with a gliding thumb, picker, slider, sheet, key hints), drawn SVG icons, measured fold into one bar; Railgun added to the toy picker; ?dev shows Dev
+- [x] Standard checked at 1280, 375 x 812 and 812 x 375 on Galaxy, Pendulum, Rain and Railgun; clean console; detector shows advisories only (new bar colours and radii)
+- [ ] Tom judges Standard
 
 ## Notes
 

@@ -13,6 +13,11 @@ export function initPage(opts) {
 
 const COARSE = matchMedia('(pointer: coarse)');
 const CARET = '<i class="b-caret" aria-hidden="true"></i>';
+// Drawn icons replace text glyphs; one stroke weight for the set.
+const X_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25V11.5"/><circle class="solid" cx="8" cy="4.9" r="0.9"/></svg>';
+const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>';
+const CHEV_SVG = '<svg class="b-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 10 8 6.5l3.5 3.5"/></svg>';
 // Askew gives each block its own tilt, as the wordmark does for its letters.
 const TILTS = [-2, 1.5, -1, 2.5, -1.5, 1, -2.5, 2];
 
@@ -47,6 +52,7 @@ function mount(id, spec, ui) {
   frame.append(layer);
 
   let toy = { name: id, accent: null };
+  const concept = () => host?.dataset.concept || 'standard';
   // Each draw fills these; a redraw empties them.
   let syncers = [], open = null, hints = null, hintTimer = 0, gestures = 0, relayout = null;
   const sync = () => syncers.forEach(fn => fn());
@@ -72,7 +78,18 @@ function mount(id, spec, ui) {
       el.append(b);
       return [b, o];
     });
-    syncers.push(() => all.forEach(([b, o]) => b.setAttribute('aria-pressed', String(o.value === get()))));
+    const thumb = h('i', 'b-thumb');
+    thumb.setAttribute('aria-hidden', 'true');
+    el.prepend(thumb);
+    syncers.push(() => {
+      all.forEach(([b, o]) => b.setAttribute('aria-pressed', String(o.value === get())));
+      // The thumb takes the picked button's box; a hidden group keeps its last box.
+      const on = all.find(([, o]) => o.value === get())?.[0];
+      if (!on || !on.offsetWidth) return;
+      el.style.setProperty('--tx', `${on.offsetLeft}px`);
+      el.style.setProperty('--tw', `${on.offsetWidth}px`);
+      el.classList.add('has-thumb');
+    });
     return el;
   };
   // Every option as a tile, for a list or a drawer.
@@ -91,7 +108,7 @@ function mount(id, spec, ui) {
   const popPart = (cls, title, anchor) => {
     const el = h('div', `b-pop ${cls}`);
     el.hidden = true;
-    const x = btn('b-ico b-x', '✕', 'Close');
+    const x = btn('b-ico b-x', X_SVG, 'Close');
     el.append(box('b-pop-hd', text('span', '', title), x));
     const api = {
       el,
@@ -102,7 +119,7 @@ function mount(id, spec, ui) {
         anchor.setAttribute('aria-expanded', String(on));
         if (on) open = api; else if (open === api) open = null;
         // An open sheet takes the strip's place.
-        if (on) showHints(false);
+        if (on) { showHints(false); requestAnimationFrame(sync); }
       },
     };
     anchor.setAttribute('aria-expanded', 'false');
@@ -205,7 +222,7 @@ function mount(id, spec, ui) {
       P.pick = btn(P.seg ? 'b-pick b-narrow' : 'b-pick', '', spec.choice.label);
       P.pickPop = popPart('b-pop--pick', spec.choice.label || 'Pick', P.pick);
       P.pickPop.el.append(gridPart(() => P.pickPop.open(false)));
-      syncers.push(() => { P.pick.innerHTML = optHTML(cur()) + CARET; });
+      syncers.push(() => { P.pick.innerHTML = optHTML(cur()) + (concept() === 'standard' ? CHEV_SVG : CARET); });
     }
     const rows = !!(spec.settings?.length || spec.quality || spec.reset);
     if (rows || spec.slider) {
@@ -214,9 +231,17 @@ function mount(id, spec, ui) {
       P.setPop = popPart('b-pop--set', 'Settings', P.set);
       P.setPop.el.append(rowsPart(), resetPart(() => P.setPop.open(false)) || '');
     }
+    // The lab shows Dev only with ?dev on its own address, as the shell does.
+    if (spec.dev?.length && host?.dataset.dev === '1') {
+      P.dev = btn('b-ico b-dev', DEV_SVG, 'Dev');
+      P.devPop = popPart('b-pop--set', 'Dev', P.dev);
+      const rows = h('div', 'b-rows');
+      spec.dev.forEach(row => { const r = rowPart(row); if (r) rows.append(r); });
+      P.devPop.el.append(rows);
+    }
     hints = hintsPart();
     if (hints) {
-      P.info = btn('b-ico b-info', 'i', 'How to play');
+      P.info = btn('b-ico b-info', INFO_SVG, 'How to play');
       P.info.addEventListener('click', () => showHints(hints.classList.contains('is-faded')));
     }
     return P;
@@ -272,6 +297,28 @@ function mount(id, spec, ui) {
     layer.append(...[P.id, box('b-tr', P.snd), hints, box('b-drawer', tab, body)].filter(Boolean));
   };
 
+  // Standard: the name top left, system bar top right, play bars below.
+  // Every bar is the same part: one surface, one height, one radius.
+  const standard = P => {
+    const bar = (cls, ...kids) => {
+      const el = box(`s-bar ${cls}`, ...kids.flat());
+      return el.children.length ? el : null;
+    };
+    const sys = bar('s-sys', P.snd, P.set, P.dev, P.info);
+    const play = bar('s-play', P.seg, P.pick, P.acts);
+    const tune = bar('s-tune', P.slider);
+    layer.append(...[P.id, sys, hints, play, tune, P.pickPop?.el, P.setPop?.el, P.devPop?.el].filter(Boolean));
+    // The shell measures: two bars that cannot share the row fold into one.
+    relayout = () => {
+      layer.classList.remove('is-narrow');
+      const room = layer.clientWidth - 36;
+      const need = (play?.offsetWidth || 0) + (tune?.offsetWidth || 0) + (play && tune ? 24 : 0);
+      layer.classList.toggle('is-narrow', layer.clientWidth < 640 || need > room);
+      requestAnimationFrame(sync);
+    };
+    relayout();
+  };
+
   // The name shows whole or not at all; the top right corner sets its room.
   const fitName = () => {
     const idEl = layer.querySelector('.b-id'), tr = layer.querySelector('.b-tr');
@@ -281,7 +328,7 @@ function mount(id, spec, ui) {
     idEl.classList.toggle('is-tight', idEl.scrollWidth > room);
   };
   const draw = () => {
-    const c = host?.dataset.concept || 'dock';
+    const c = concept();
     clearTimeout(hintTimer);
     syncers = [];
     open = null;
@@ -289,6 +336,7 @@ function mount(id, spec, ui) {
     relayout = null;
     layer.replaceChildren();
     layer.removeAttribute('data-open');
+    layer.classList.remove('is-narrow');
     layer.dataset.concept = c;
     document.documentElement.classList.toggle('bl-on', c !== 'today');
     document.documentElement.classList.toggle('bl-touch', touch());
@@ -297,7 +345,7 @@ function mount(id, spec, ui) {
     layer.style.setProperty('--acc-ink', toy.accent?.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)');
     if (c === 'today') return;
     const P = build();
-    (c === 'tuck' ? tuck : c === 'dock' ? dock : corners)(P);
+    ({ tuck, dock, standard }[c] || corners)(P);
     sync();
     fitName();
     showHints(true);
