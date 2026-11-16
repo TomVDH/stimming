@@ -77,3 +77,25 @@ Tom, 2026-11-16: yes to more varied forms. A seventh value on a range in `RANGES
 
 - Dev row `Far ranges`: Bake or Live. Bake is the default (Tom, 2026-11-16); `?far=live` opens on the live march.
 - `__qa.far(mode)` reads the bake counters; `__qa.gpuMs('far' | 'all' | 'bake' | 'light', n)` times them.
+
+## Height grid (empty-space skipping)
+
+The vast ranges (a070f00a: peaks to about 80 km, RANGE_CEIL 95 km) made every ray march far longer.
+
+| Part | What it does |
+|---|---|
+| Fine grid | 256 x 256 cells of 2.6 km about the landscape eye. Each holds its highest ground from 7 x 7 samples over the cell and half a cell round it, plus 6% and 400 m. |
+| Coarse grid | 64 x 64 cells; each holds the highest of its 16 fine cells. |
+| Leap | Above a cell's bound, the ray leaps to the cell's wall, or to where it could drop to the bound. The ray's rise over the curved ground only grows, so the leap is safe. |
+| Rebuild | Only when the shape uniforms change (ranges, LAND, erosion, forms). |
+
+Cost with the vast table (GPU ms, min, shared GPU):
+
+| | Grid off | Grid on |
+|---|---|---|
+| Full bake, 1280 | 227 | 113 |
+| Full bake, 375 x 812 | 124 | 49 |
+| Live march, 1280 | 167 | 74 |
+| Live march, 375 x 812 | 87 | 40 |
+
+A soft rebake spreads over 8 frames: about 14 ms a frame at 1280. The stills match with the grid on and off. Dev toggle `Far skip`.
