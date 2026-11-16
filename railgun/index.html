@@ -294,7 +294,9 @@ const RES_STEP = [1, 0.82, 0.68, 0.55];
 // Station 0 is the trunnion; station 1 is the muzzle, 900 m on.
 const LIFT = 0, BERM_R = 660;
 // The barrel runs 1046 m from the trunnion.
-const ELEV = rad(6), L = 1046, TRUN_Y = 290 + LIFT;
+// RISE lifts the trunnion and the whole mount over the old 215 m.
+const RISE = 20;
+const ELEV = rad(6), L = 1046, TRUN_Y = 215 + RISE + LIFT;
 const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
 const AX_UP = new THREE.Vector3(0, Math.cos(ELEV), Math.sin(ELEV));
 const A0 = new THREE.Vector3(0, TRUN_Y, 0);
@@ -1868,6 +1870,8 @@ function beam(p, q, w, h) {
 const BRAKE_PORTS = [L - 66, L - 48, L - 30, L - 14];
 // The back block's side vents: station and height, in the barrel frame.
 const VENTS = [[-288, 22], [-278, 34], [-268, 22], [-258, 34]];
+// The recoil well in the deck: half width, front and back, floor.
+const WELL = { x: 72, z0: 62, z1: 370, floor: -40 };
 // The antenna's station and its tip's height, in the barrel frame.
 const ANT = { a: -264, u: 250 };
 // The viewfinder's station, and its optic's side offset and height.
@@ -1893,37 +1897,55 @@ function buildGun() {
   add(beam(v3(0, LIFT + 3, 470), v3(0, 3, 1460), 46, 6), 0, 0, 2);
   // The deck turns on a dark race ring.
   add(drum(404, 404, 4, 23, 64), 0, 2);
-  add(drum(384, 396, 12, 24, 64));
-  add(drum(378, 384, 4, 32, 64));
+  // The deck has a slot behind the pylon: the recoil well.
+  // The breech swings down into it as the gun climbs.
+  { const disc = (r, h, y) => {
+      const sh = new THREE.Shape().absarc(0, 0, r, 0, Math.PI * 2, false);
+      sh.holes.push(new THREE.Path().moveTo(-WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z1).lineTo(-WELL.x, -WELL.z1).closePath());
+      const g = new THREE.ExtrudeGeometry(sh, { depth: h, curveSegments: 64, bevelEnabled: false });
+      // The merge needs an indexed piece, as every other piece is.
+      g.deleteAttribute('uv'); g.clearGroups();
+      return mergeVertices(g).rotateX(-Math.PI / 2).translate(0, y, 0);
+    };
+    add(disc(396, 12, 18));
+    add(disc(384, 4, 30)); }
+  // The well's walls drop below the plain; its floor is dark.
+  for (const sd of [-1, 1]) add(block(6, 34 - WELL.floor, WELL.z1 - WELL.z0, sd * (WELL.x + 3), (34 + WELL.floor) / 2, (WELL.z0 + WELL.z1) / 2), 0, 2);
+  for (const z of [WELL.z0, WELL.z1]) add(block(2 * WELL.x + 12, 34 - WELL.floor, 6, 0, (34 + WELL.floor) / 2, z), 0, 2);
+  // A yellow lip marks the well's edge.
+  for (const sd of [-1, 1]) add(block(5, 3, WELL.z1 - WELL.z0, sd * (WELL.x + 3), 35.5, (WELL.z0 + WELL.z1) / 2), 0, 3);
+  // The bolts ring the deck; the well cuts none.
   for (let i = 0; i < 48; i++) add(new THREE.BoxGeometry(14, 5, 8).translate(0, 36.5, 378).rotateY(i * Math.PI / 24), 0, 2);
   // Mount: a footing, one thick pylon, a yoke for the pin.
-  add(block(300, 12, 260, 0, 40, 20));
-  add(block(190, 201, 120, 0, 114.5, 0));
-  add(block(214, 10, 136, 0, 213, 0), 0, 2);
+  // The footing stops at the well's front wall.
+  add(block(300, 12, 170, 0, 40, -25));
+  add(block(190, 126 + RISE, 120, 0, 77 + RISE / 2, 0));
+  add(block(214, 10, 136, 0, 138 + RISE, 0), 0, 2);
   for (const sd of [-1, 1]) {
-    add(block(26, 132, 112, sd * 80, 264, 0));
+    add(block(26, 132, 112, sd * 80, 189 + RISE, 0));
     add(new THREE.CylinderGeometry(40, 40, 8, 32, 1).rotateZ(Math.PI / 2).translate(sd * 96, A0.y - LIFT, 0), 0, 2);
-    // A braced strut climbs from the deck behind the pylon.
-    add(beam(v3(sd * 62, 34, 330), v3(sd * 62, 199, 66), 26, 20));
-    add(block(40, 10, 40, sd * 62, 39, 334));
-    add(block(14, 34, 14, sd * 62, 51, 230));
+    // A braced strut climbs from the deck to the pylon's back.
+    // The struts stand wide, so the well runs between them.
+    add(beam(v3(sd * 112, 34, 330), v3(sd * 84, 124 + RISE, 66), 26, 20));
+    add(block(40, 10, 40, sd * 112, 39, 334));
+    add(block(14, 34, 14, sd * 106, 51, 230));
+    // A tie runs from each strut's foot to the pylon's foot.
+    add(beam(v3(sd * 112, 40, 320), v3(sd * 96, 40, 66), 10, 8), 0, 2);
     // A pinion housing drives each quadrant.
-    add(block(30, 36, 50, sd * 110, 167, 0), 0, 2);
+    add(block(30, 36, 50, sd * 110, 92 + RISE, 0), 0, 2);
   }
-  for (const f of [0.25, 0.5, 0.75]) add(block(124, 8, 10, 0, 34 + 165 * f, 330 - 264 * f), 0, 2);
-  add(block(170, 10, 60, 0, 39, 334));
   // A short leg props the pylon's front.
-  add(beam(v3(0, 34, -236), v3(0, 191, -56), 34, 18));
+  add(beam(v3(0, 34, -236), v3(0, 116 + RISE, -56), 34, 18));
   add(block(80, 8, 56, 0, 38, -240));
   add(new THREE.CylinderGeometry(26, 26, 240, 24, 1).rotateZ(Math.PI / 2).translate(0, A0.y - LIFT, 0), 0, 2);
-  // A machinery house with louvres sits between the struts.
-  add(block(90, 40, 80, 0, 54, 150));
-  for (let z = 120; z <= 180; z += 12) add(block(93, 26, 3, 0, 56, z), 0, 2);
+  // A machinery house with louvres sits beside the far strut.
+  add(block(80, 40, 90, -190, 54, 170));
+  for (let z = 135; z <= 205; z += 12) add(block(83, 26, 3, -190, 56, z), 0, 2);
   // A service tower stands on the near side; a catwalk joins the yoke.
-  add(block(16, 245, 16, 170, 156.5, 40));
-  add(block(26, 14, 26, 170, 286, 40), 0, 2);
-  add(block(72, 3, 8, 129, 275, 40), 0, 2);
-  for (const y of [76, 118, 160, 202, 244]) add(block(20, 3, 20, 170, y, 40), 0, 2);
+  add(block(16, 170 + RISE, 16, 170, 119 + RISE / 2, 40));
+  add(block(26, 14, 26, 170, 211 + RISE, 40), 0, 2);
+  add(block(72, 3, 8, 129, 200 + RISE, 40), 0, 2);
+  for (const y of [76, 118, 160]) add(block(20, 3, 20, 170, y, 40), 0, 2);
   // Breech housing: one ribbed box behind the pin, a bank on its back.
   add(slab(120, 104, -250, 70, 0, 4), 0.5, 0);
   for (let a = -226; a < 60; a += 26) add(slab(128, 82, a - 3, a + 3, 0, 4), 0.5, 2);
@@ -8506,13 +8528,20 @@ function stepSand(dt) {
     }
   }
 }
-// Variable recoil: the slide shortens as the gun climbs.
-// The counterweight's low back corner keeps 12 m over the deck.
-const CW = { a: -368, u: -35, clear: 46 + LIFT };
+// Variable recoil: the slide shortens where the breech would strike.
+// Over the well the counterweight may drop to its floor.
+// Past the well it must clear the deck, then the apron and teeth.
+const CW = { a: -368, u: -35, gap: 8 };
+function cwClear(s, se, ce) {
+  const a = CW.a - 0.85 * s, z = -a * ce + CW.u * se, y = TRUN_Y + a * se + CW.u * ce - LIFT;
+  // The base's height under z: well, deck, apron and teeth, then the plain.
+  const floor = z < WELL.z1 - 6 ? WELL.floor : z < 396 ? 34 : z < 477 ? 30 : z < 529 ? 30 * (529 - z) / 52 : 4;
+  return y >= floor + CW.gap;
+}
 function recoilRoom() {
-  const e = aimNow.elev + kick.p, se = Math.sin(e);
-  if (se < 0.01) return 1e9;
-  return Math.max(0, (TRUN_Y + CW.a * se + CW.u * Math.cos(e) - CW.clear) / (0.85 * se));
+  const e = aimNow.elev + kick.p, se = Math.sin(e), ce = Math.cos(e);
+  for (let s = 0; s <= 420; s += 5) if (!cwClear(s, se, ce)) return Math.max(0, s - 5);
+  return 1e9;
 }
 // A soft knee eases the slide into the buffer.
 function capRecoil(v) {
