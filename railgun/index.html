@@ -950,6 +950,11 @@ vec3 aerialFrom(vec3 col, vec3 ro, vec3 P) {
   vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
   return col * T + inL * (1.0 - T);
 }
+// The air's own light along a ray, for an extra fade toward it.
+vec3 aerialIn(vec3 rd) {
+  float mu = dot(rd, uSunD), g = 0.76;
+  return k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0 * 0.5;
+}
 vec3 aerial(vec3 col, vec3 P) { return aerialFrom(col, cameraPosition, P); }
 // Sunlight at height h crosses less air than at the ground.
 vec3 sunAt(float h) {
@@ -1996,7 +2001,10 @@ void main() {
   float occ = max(body(X + l2 * H * 0.12), 0.0) + max(body(X + l2 * H * 0.3), 0.0) + 0.5 * max(body(X + l2 * H * 0.6), 0.0);
   float sh = exp(-occ / (H * 0.35));
   // High tops keep the sun after it sets.
-  vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+  // A high top sees the sun after the ground has lost it, as on the storms.
+  float sEl = asin(clamp(uSunD.y, -1.0, 1.0)), sDip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+  float litTop = smoothstep(-sDip - 0.006, -sDip + 0.006, sEl) * (1.0 - smoothstep(-0.026, 0.026, sEl));
+  vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
   // The trail, the blast cloud and the other clouds shade this one.
   sunC *= 1.0 - 0.8 * shadeAt(P);
   float thin = 1.0 - smoothstep(0.0, soft * 10.0, F);
@@ -2013,16 +2021,20 @@ void main() {
   // Backlit cloud glows through its whole body, its thin rim most.
   float back = max(dot(V, uSun), 0.0);
   col += sunC * (0.15 * back * back + 0.35 * thin * pow(back, 6.0));
-  vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, N.y * 0.5 + 0.5) * 1.05 + uCloudAmb * 0.5;
+  // A soft sky term: noisy normals must not swing between horizon and zenith light.
+  vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, 0.4 + 0.2 * N.y) * 1.05 + uCloudAmb * 0.5;
   col += amb * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y));
   // The tower keeps some body through seventy kilometres of air.
   // At night the heaps take the moon dimly; they never glow.
   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
   // Moonlit tops: the upper faces and thin crowns turn silver, like the tail's upper side.
-  col += uSunC * uStars * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
+  col += uSunC * uStars * uMoonK * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
   // The same air as the ranges: a cloud and a ridge at one distance share one tint.
-  // Near heaps stay crisp; far towers sink into the air, foot first.
   col = aerial(col, P);
+  // Far cloud sinks further into that air, foot first, crown last (Far haze).
+  // Near heaps stay crisp; far towers turn pale and flat.
+  float cdk = length(P.xz - cameraPosition.xz);
+  col = mix(col, aerialIn(V), uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.9, 0.5, smoothstep(0.0, 20000.0, P.y)));
   // The blast: its light, thin parts brightest, and the shock rim.
   // It lands after the haze: the flash lights the air on the way too.
   // Faces turned to the hit take it; the far side stays in shadow.
