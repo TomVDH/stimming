@@ -403,4 +403,5 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 
 - The re-entry rain after a kill is gone; the debris hail fills that sky.
 - Shooting stars and the late-landing fall draw with `makeMeteor()` / `meteor()`: a round white-hot head and a tail that narrows, cools and fades toward its end. The old glint was a symmetric sliver with a hard spine.
+- Shooting stars are out of the rotation for now (Tom, 2026-11-16); the Dev test still plays one.
 - Stars: a 70 m head, 10 to 22 km runs in 0.6 to 1.1 s; the tail keeps a floor of most of a pixel.
