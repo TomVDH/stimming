@@ -1,5 +1,5 @@
 // The tube: a dim still of the toy in hand, in the middle of the Clock.
-// It looks like a 1950s picture tube: a strong bulge, scan lines and grain.
+// It looks like a 1950s picture tube, seen from inside: a concave warp, scan lines and grain.
 // It has no hard edge: the picture fades out toward the toys.
 // It draws on a change only; the grain moves while a toy is in hand.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
@@ -17,8 +17,9 @@ float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32)
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
   float r = length(p);
-  // The bulge: the middle of the picture swells, as on a round tube face.
-  vec2 w = p * (0.5 + 0.44 * r * r);
+  // The warp is concave: the middle sinks back and the rim pulls outward.
+  // Past r = 0.84 the picture folds; the fade hides that part.
+  vec2 w = p * (1.7 - 0.8 * r * r);
   // A change of toy rolls the picture and tears a few lines.
   float row = floor(vUv.y * 48.0);
   w.y += uJolt * 0.16;
@@ -27,15 +28,17 @@ void main() {
   vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
   vec3 c = mix(texture(uA, s).rgb * uHasA, texture(uB, s).rgb * uHasB, uMix);
   // The shade: a dim picture that goes darker toward the rim.
-  c *= uLevel * (1.0 - 0.78 * smoothstep(0.1, 0.92, r));
+  c *= uLevel * (1.0 - 0.8 * smoothstep(0.08, 0.8, r));
   // Scan lines: one line each three CSS pixels.
-  c *= 0.7 + 0.3 * sin(gl_FragCoord.y / uPx * 2.0944);
-  // Grain; a change of toy adds a burst of it.
-  c += (hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0) - 0.5) * (0.035 + 0.25 * uJolt) * mix(uHasA, uHasB, uMix);
-  // No hard edge: the face fades out toward the toys.
-  float a = 1.0 - smoothstep(0.45, 0.98, r);
-  a *= a;
-  o = vec4(max(c, 0.0) * a, a * 0.4);
+  float line = 0.5 + 0.5 * sin(gl_FragCoord.y / uPx * 2.0944);
+  c *= 0.7 + 0.3 * line;
+  // Grain: it lies on the whole face, also where the picture is dark.
+  float g = hash(gl_FragCoord.xy + floor(uTime * 20.0) * 17.0);
+  c += (g - 0.5) * 0.25 * uJolt * mix(uHasA, uHasB, uMix) + g * 0.035;
+  // No hard edge: the face fades out past the ring of toys.
+  float a = pow(1.0 - smoothstep(0.2, 1.0, r), 1.4);
+  // The dark lines and the grain reach wider than the picture.
+  o = vec4(max(c, 0.0) * a, a * (0.26 + 0.3 * (1.0 - line)));
 }`;
 
 /**

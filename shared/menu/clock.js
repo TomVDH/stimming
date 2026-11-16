@@ -23,7 +23,7 @@ function start() {
   const ticks = Array.from({ length: 60 }, (_, i) => `<line x1="100" y1="44.5" x2="100" y2="${i % 5 ? 47.5 : 49.5}" transform="rotate(${i * 6} 100 100)"/>`).join('');
   const face = Object.assign(document.createElement('div'), { className: 'clock-face' });
   face.innerHTML = `<svg class="clock-ring" viewBox="0 0 200 200" aria-hidden="true"><circle class="rim" cx="100" cy="100" r="58" pathLength="1" transform="rotate(-90 100 100)"/><g class="ticks">${ticks}</g></svg>
-<div class="clock-glow" aria-hidden="true"><i></i></div>
+<div class="clock-glow" aria-hidden="true"><i></i><i></i></div>
 <div class="clock-mid">
   <div class="clock-plate" aria-hidden="true"></div>
   <p class="clock-count" aria-hidden="true"></p>
@@ -91,7 +91,7 @@ function start() {
     const first = shown === null, id = li.querySelector('a.toy').id, toy = toys[id] || {}, label = li.querySelector('.name');
     title.textContent = toy.name || [...label.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim();
     tag.textContent = toy.tag || '';
-    face.style.setProperty('--glow', toy.accent || 'oklch(0.86 0.06 275)');
+    tint(toy.accent || 'oklch(0.86 0.06 275)');
     if (li === shown) return;
     shown = li;
     bg?.show(picture(li));
@@ -99,6 +99,17 @@ function start() {
     if (!first && !still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
   }
 
+  // Two lamps take turns, so one toy's colour fades into the next.
+  const lamps = /** @type {HTMLElement[]} */ ([...glow.children]);
+  let lamp = 0;
+  function tint(colour) {
+    if (lamps[lamp].dataset.c === colour) return;
+    lamp ^= 1;
+    lamps[lamp].dataset.c = colour;
+    lamps[lamp].style.background = colour;
+    lamps[lamp].setAttribute('data-in', '');
+    lamps[lamp ^ 1].removeAttribute('data-in');
+  }
   // The glow turns the short way to the pointer's bearing from the middle.
   let bearing = 0, turns = 0;
   const turnTo = gsap ? gsap.quickTo(glow, 'rotation', { duration: 0.9, ease: 'power3.out' }) : null;
