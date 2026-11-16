@@ -9,7 +9,7 @@
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
 // How bright the picture is at its middle, 0 to 1, in linear light.
-const LEVEL = 0.2;
+const LEVEL = 0.13;
 // The tube takes this long to open from a dot when the first toy comes, in seconds.
 const POWER = 0.5;
 // A change of toy takes this long, in seconds.
@@ -26,7 +26,7 @@ in vec2 vUv;
 out vec4 o;
 uniform sampler2D uA, uB, uTA, uTB;
 uniform vec2 uRes;
-uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel;
+uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel, uAim, uCut;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 // An integer hash: it shows no pattern, so the grain has no grid in it.
 uint pcg(uint v) { uint t = v * 747796405u + 2891336453u; uint w = ((t >> ((t >> 28u) + 4u)) ^ t) * 277803737u; return (w >> 22u) ^ w; }
@@ -42,7 +42,9 @@ vec3 pic(sampler2D t, vec2 w, vec2 ca, float soft) {
   // The first texture row is the top of the still.
   vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
   vec3 c = vec3(textureLod(t, s + ca, soft).r, textureLod(t, s, soft).g, textureLod(t, s - ca, soft).b);
-  return pow(c, vec3(2.2));
+  // Deep colour: a steeper curve, then more of each hue.
+  c = pow(c, vec3(2.6));
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.45), 0.0);
 }
 // The wide glow round the bright parts of a still: two low mip levels.
 vec3 halo(sampler2D t, vec2 w) {
@@ -75,7 +77,8 @@ void main() {
   // Power on: a dot opens to a line, then the raster opens to its full height.
   vec2 open = vec2(max(0.004, smoothstep(0.0, 0.35, uPower)), max(0.004, smoothstep(0.25, 0.85, uPower)));
   vec2 pr = pc / open;
-  float lit = step(abs(pr.x), 1.25) * step(abs(pr.y), 1.25);
+  // The opening raster has a soft edge: no square shape shows, ever.
+  float lit = 1.0 - smoothstep(1.15, 1.7, length(pr));
   // The picture and the caption each have their own scale on the face.
   vec2 w = pr * 1.12, q = pr / ${CAP.toFixed(2)};
   // Each colour lands a little apart, more so away from the middle; a change parts them further.
@@ -130,10 +133,15 @@ void main() {
   // A rare spark flies.
   c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.5 * lit;
   // The corners fall off; the whole face flickers a hair; a change is a touch bright.
-  c *= (1.0 - 0.4 * smoothstep(0.2, 1.0, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
+  // The picture lies behind the clock: it is at its full strength in the middle only.
+  c *= (1.0 - 0.68 * smoothstep(0.06, 0.62, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
   // No hard edge: the face fades out past the ring of toys.
   float a = pow(1.0 - smoothstep(0.38, 1.0, r), 1.2);
+  // The selection: the picture is masked away in a soft wedge, from the middle out to the toy in hand.
+  float off = atan(p.x, p.y) - uAim;
+  off = abs(atan(sin(off), cos(off)));
+  a *= 1.0 - uCut * 0.96 * (1.0 - smoothstep(0.08, 0.56, off)) * smoothstep(0.2, 0.58, r);
   o = vec4(c * a, a * 0.45);
 }`;
 
@@ -145,7 +153,7 @@ void main() {
  * Builds the tube inside a host element; the canvas fills it.
  * @param {HTMLElement} host
  * @param {() => number} span  The width of the clock face, in CSS pixels.
- * @returns {Promise<{ show: (url: string, loop: string | null, words: Words) => void, caption: (words: Words) => void, live: (on: boolean) => void, clear: () => void } | null>}  Null without WebGL2.
+ * @returns {Promise<{ show: (url: string, loop: string | null, words: Words) => void, caption: (words: Words) => void, live: (on: boolean) => void, aim: (deg: number, snap?: boolean) => void, clear: () => void } | null>}  Null without WebGL2.
  */
 export async function tube(host, span) {
   const canvas = Object.assign(document.createElement('canvas'), { className: 'clock-tube' });
@@ -279,6 +287,8 @@ export async function tube(host, span) {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   }
 
+  // The wedge: where it points now and where it must point, in radians; and how open it is.
+  let aimNow = 0, aimTo = 0, cut = 0;
   let mix = 0, power = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
   /** @type {Words | null} */
   let said = null;
@@ -310,6 +320,8 @@ export async function tube(host, span) {
     gl.uniform1f(P.u.uHasA, has[0]);
     gl.uniform1f(P.u.uHasB, has[1]);
     gl.uniform1f(P.u.uLevel, LEVEL);
+    gl.uniform1f(P.u.uAim, aimNow);
+    gl.uniform1f(P.u.uCut, cut);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     tri(gl, null, vao);
@@ -325,6 +337,11 @@ export async function tube(host, span) {
     if (rolling) mix = Math.min(1, mix + dt / CHANGE);
     const opening = power < 1;
     if (opening) power = Math.min(1, power + dt / POWER);
+    // The wedge turns the short way and opens with a soft start and a soft stop.
+    const gap = Math.atan2(Math.sin(aimTo - aimNow), Math.cos(aimTo - aimNow)), want = hot ? 1 : 0;
+    const turning = Math.abs(gap) > 0.002 || Math.abs(want - cut) > 0.004;
+    aimNow += gap * (1 - Math.exp(-dt * 9));
+    cut += (want - cut) * (1 - Math.exp(-dt * 7));
     if (hot && !still.matches) time += dt;
     // A loop in play puts its present frame in the newest picture.
     const playing = vid !== null && hot && vid.readyState >= 2;
@@ -335,9 +352,9 @@ export async function tube(host, span) {
       gl.generateMipmap(gl.TEXTURE_2D);
     }
     // The grain alone needs twenty pictures a second, not sixty.
-    if (rolling || opening || playing || now - drawn > 48) draw();
+    if (rolling || opening || turning || playing || now - drawn > 48) draw();
     if (rolling && mix >= 1) settle();
-    if (has[1] || power < 1 || (hot && !still.matches)) raf = requestAnimationFrame(frame);
+    if (has[1] || power < 1 || turning || (hot && !still.matches)) raf = requestAnimationFrame(frame);
   }
 
   // Loads a still, then fades it in with its words.
@@ -393,7 +410,14 @@ export async function tube(host, span) {
   function live(on) {
     hot = on;
     if (vid) { if (on) vid.play().catch(() => {}); else vid.pause(); }
-    if (on) wake();
+    // The wedge closes too, so the loop runs on until it is shut.
+    wake();
+  }
+  // Points the wedge at a bearing: degrees clockwise from the top. snap puts it there at once.
+  function aim(deg, snap = false) {
+    aimTo = deg * Math.PI / 180;
+    if (snap || still.matches) aimNow = aimTo;
+    wake();
   }
   // With no toy in hand the face is empty; the next toy fades in over dark.
   function clear() {
@@ -418,5 +442,5 @@ export async function tube(host, span) {
       if (again) show(again, null, words);
     },
   });
-  return { show, caption, live, clear };
+  return { show, caption, live, aim, clear };
 }

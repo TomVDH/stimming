@@ -21,11 +21,10 @@ function start() {
   // No motion with reduced motion, without GSAP, or in a hidden tab.
   const calm = () => !gsap || still.matches || document.visibilityState !== 'visible';
 
-  // The face lies under the toys: outline, glow, and the middle.
+  // The face lies under the toys: the outline and the middle.
   const ticks = Array.from({ length: 60 }, (_, i) => `<line x1="100" y1="44.5" x2="100" y2="${i % 5 ? 47.5 : 49.5}" transform="rotate(${i * 6} 100 100)"/>`).join('');
   const face = Object.assign(document.createElement('div'), { className: 'clock-face' });
   face.innerHTML = `<svg class="clock-ring" viewBox="0 0 200 200" aria-hidden="true"><circle class="rim" cx="100" cy="100" r="58" pathLength="1" transform="rotate(-90 100 100)"/><g class="ticks">${ticks}</g></svg>
-<div class="clock-glow" aria-hidden="true"><i></i></div>
 <div class="clock-mid">
   <div class="clock-plate" aria-hidden="true"></div>
   <p class="clock-name" aria-live="polite"></p>
@@ -37,7 +36,6 @@ function start() {
   button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
   face.after(button);
   const ring = face.querySelector('.clock-ring'), rim = ring.querySelector('.rim'), marks = [...ring.querySelectorAll('line')];
-  const glow = /** @type {HTMLElement} */ (face.querySelector('.clock-glow'));
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
@@ -122,25 +120,17 @@ function start() {
     if (now) empty(); else wipe = setTimeout(empty, 650);
   }
 
-  // The glow turns the short way to the pointer's bearing from the middle.
-  let bearing = 0, turns = 0;
-  const turnTo = gsap ? gsap.quickTo(glow, 'rotation', { duration: 0.9, ease: 'power3.out' }) : null;
-  function aim(deg) {
-    turns += ((deg - bearing + 540) % 360) - 180;
-    bearing = deg;
-    if (!gsap) glow.style.rotate = turns + 'deg';
-    else if (calm()) gsap.set(glow, { rotation: turns });
-    else turnTo(turns);
-  }
+  // The tube masks its picture away in a soft wedge toward the pointer's bearing from the middle.
+  const aim = (deg, snap = false) => bg?.aim(deg, snap);
   const hour = li => dozen().indexOf(li) * 30;
   // The toy's list item under an event's target, or null.
   const tile = node => /** @type {Element | null} */ (node)?.closest?.('main > .shelf > li') ?? null;
   shelf.addEventListener('pointerover', e => {
     const li = tile(e.target);
     if (!li) return;
-    // The glow starts at the toy, so it does not sweep in from afar.
     const fresh = !face.hasAttribute('data-live');
-    if (fresh) { aim(hour(li)); if (gsap) gsap.set(glow, { rotation: turns }); }
+    // The wedge starts at the toy, so it does not sweep in from afar.
+    if (fresh) aim(hour(li), true);
     live(true);
     // A pointer that only passes over a toy does not change the picture.
     clearTimeout(dwell);
