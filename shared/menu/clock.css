@@ -4,11 +4,28 @@
 /* The tube is wider than a narrow screen. The menu's own rule (body: overflow-x clip) hands the clip
    to the window, so nothing scrolls sideways. Do not clip on the root: the body would then clip at its
    8 px margin and box the footer's glow. */
+/* The Clock fits the window: the wordmark, the tagline, the gaps and the clock all scale with its height,
+   so the whole clock and its Re-roll show with no scroll. The footer may lie below the fold. */
+:root[data-view="clock"] {
+  --pad: clamp(14px, 3svh, 44px);
+  --gap: clamp(10px, 2.4svh, 30px);
+  /* A phone has height to spare, so its wordmark may grow with the width. */
+  --title: clamp(32px, min(12vw, 8svh), 100px);
+  --tag: clamp(12px, min(1.6vw, 1.75svh), 17px);
+  /* The clock takes the height that is left: the window less the blocks above and below it.
+     Below 200 px the page scrolls instead. */
+  --clk: max(200px, min(92vw, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 34px - 20px)));
+}
+:root[data-view="clock"] .wrap { padding-block-start: var(--pad); gap: var(--gap); }
+:root[data-view="clock"] .title { font-size: var(--title); }
+:root[data-view="clock"] .tagline { font-size: var(--tag); margin-top: calc(-0.6 * var(--gap)); }
+:root[data-view="clock"] main { gap: var(--gap); }
+
 /* The shelf and the face share one grid cell, so the face lies under the toys. */
 :root[data-view="clock"] main > .shelf {
   grid-area: 1 / 1; z-index: 1; display: block; position: relative;
   /* No auto margin: the grid centres the shelf, also where it is wider than its column. */
-  width: min(92vw, 660px); max-width: none; aspect-ratio: 1; margin: 0;
+  width: var(--clk); max-width: none; aspect-ratio: 1; margin: 0;
   /* Only the toys take the pointer; the Re-roll lies under the shelf's box. */
   pointer-events: none;
 }
@@ -34,7 +51,7 @@
 
 .clock-face { display: none; }
 :root[data-view="clock"] .clock-face {
-  display: block; grid-area: 1 / 1; position: relative; width: min(92vw, 660px); aspect-ratio: 1;
+  display: block; grid-area: 1 / 1; position: relative; width: var(--clk); aspect-ratio: 1;
   /* The face does not clip: a clipped glow shows a hard box edge. The body clips the page's width. */
   container-type: inline-size; pointer-events: none;
   /* The face is one layer under the toys: the dark spot must multiply the tube, never an icon. */
