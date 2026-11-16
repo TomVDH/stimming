@@ -398,3 +398,9 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 - The game-over contact and the ship's hits keep their own sounds.
 - `playFrom()` fades every sample in over 30 ms; `sampleHit()` plays one into a live handle.
 - Still synthetic, not hits: the over-hold crackle under a too-long charge, the noise beds and low rumbles.
+
+## Meteors, not glints (Tom, 2026-11-16: the streaks "look like shit")
+
+- The re-entry rain after a kill is gone; the debris hail fills that sky.
+- Shooting stars and the late-landing fall draw with `makeMeteor()` / `meteor()`: a round white-hot head and a tail that narrows, cools and fades toward its end. The old glint was a symmetric sliver with a hard spine.
+- Stars: a 70 m head, 10 to 22 km runs in 0.6 to 1.1 s; the tail keeps a floor of most of a pixel.
