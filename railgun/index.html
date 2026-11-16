@@ -9174,7 +9174,7 @@ function sillyBoom(p) {
 // Then the orchestra stops; only the hall tail rings on.
 // The orchestra then stops dead; only its echo rings.
 // The white holds WHITE_T seconds under the echo; then the rewind starts.
-const BURN_T = 4, CLIMAX_T = 4, WHITE_T = 2.5;
+const BURN_T = 4, CLIMAX_T = 5, WHITE_T = 2.5;
 // The game over's white is warm: a white-yellow glow.
 const FILL_WARM = '#fff1cf', FILL_COOL = '#fffaf3';
 // The strike's light climbs over the last seconds before contact.
@@ -10246,7 +10246,6 @@ function requiemUpdate(ac, h, d) {
   const u = d.u, cu = d.choir ?? 1, lock = d.lock ?? u >= 0.999, ov = 0.5 * d.over, vol = d.vol * (charge ? 0.35 : 1);
   if (lock && !h.locked) h.lockAt = t;
   h.locked = lock;
-  const accent = 1 * Math.exp(-(t - h.lockAt) / 1.2);
   // The pedal grows from the horizon line; its lid opens with nearness.
   h.pg.gain.setTargetAtTime(GO_REQ.pedal * (0.15 + 0.85 * u), t, 0.1);
   h.plp.frequency.setTargetAtTime(150 * Math.pow(2, 4.3 * u), t, 0.1);
@@ -10267,15 +10266,16 @@ function requiemUpdate(ac, h, d) {
   }
   for (const l of h.vib) l.gain.setTargetAtTime(14 * cu, t, 0.2);
   // The choir swells over the pedal as its voices fill in.
-  // At contact the forte holds the chord loud, with the high layer on.
+  // At contact the climax ramps in over about two seconds, with no jump.
   // Its level follows nearness, so the build keeps climbing to contact.
-  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.4 + 0.6 * accent : 1), t, 0.08);
-  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte : 0, t, lock ? 0.03 : 0.2);
-  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo : 0, t, 0.05);
+  const ramp = lock ? 0.7 : 0.08;
+  h.cb.gain.setTargetAtTime(ss(cu, 0, 0.5) * (1 + cu) * (0.3 + 0.7 * u) * (lock ? 1.4 : 1), t, ramp);
+  h.fg.gain.setTargetAtTime(lock ? GO_REQ.forte : 0, t, lock ? 0.7 : 0.2);
+  h.es.gain.setTargetAtTime(lock ? GO_REQ.echo : 0, t, 0.7);
   // A light drive keeps the chord clean.
   h.drive.gain.setTargetAtTime(0.3 + 0.3 * u, t, 0.1);
   h.g.gain.setTargetAtTime(GO_REQ.out * vol, t, 0.08);
-  h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (1 + accent) * vol, t, 0.1);
+  h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (lock ? 1.3 : 1) * vol, t, lock ? 0.7 : 0.1);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.
 function bell(ac, h, t, u) {
