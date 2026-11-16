@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T19:19:41Z
+updated_at: 2026-11-16T20:20:30Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -22,3 +22,21 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [ ] Build the picked direction
 - [ ] Frame time held on Standard; clean console
 - [ ] After stills; Tom signs off
+
+## Distance bands and names (2026-11-16)
+
+- [x] Inventory with a screenshot per element: docs/qa/railgun-inventory/index.html
+- [x] Names: docs/plans/railgun-volumes.md
+- [x] BAND table replaces every bare renderOrder; Mids past 48 km draw in the Far band, behind the rock
+- [ ] Split sparks into near and rock; flares by distance (other sessions own them)
+- [x] Deck tweaks: less swirl after a hit, softer cells, stronger hit light
+- [x] Tom: fainter, wispier, "not so much sheep clouds": the wind combs the Deck into wisps three times longer than wide; it is a thinner veil
+- [x] Tom: fainter, softer; then the Giants (Deck accepted)
+- [x] Stage 3: the Giants, three colossal storms 195 to 225 km out, 75 to 95 km tall; BAND.giants; Dev row Giants
+- [x] Tom rejected the storm-cell Giants ("look awful", "our cards were better"): reverted to the tower cards (4b3ce769)
+- [x] Tall cards slanted at the frame edges: the cards now stand along the camera's up
+- [x] Tom: "not varied and realistic, too many": one Giant, three Towers, each tower its own build
+- [x] Storm lightning inside the Towers and the Giant, after Window seat; Dev row Storm lightning
+- [x] Lightning rumbles: bluer, brighter, clustered spots
+- [x] Storm probe: Window seat's storm volumes marched inside the cards, Dev toggle, off by default (+2.4 ms at 1280)
+- [ ] Tom: probe or cards? Then sign off the storms

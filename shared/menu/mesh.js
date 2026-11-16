@@ -4,7 +4,7 @@
 // It moves only for a few seconds after the pointer does; then it rests on one frame.
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
-// The canvas is this share of its CSS size: the light is soft, so few pixels are enough.
+// The canvas is this share of its CSS size: soft light needs few pixels; scan lines need all of them.
 const SCALE = 0.4;
 // The field runs on this long after the last pointer move, in seconds.
 const TAIL = 2.6;
@@ -34,6 +34,15 @@ vec3 lab2lin(vec3 c) {
 }
 // An OKLCH colour as OKLab: lightness, chroma, hue in degrees.
 vec3 lch(float l, float c, float h) { return vec3(l, c * cos(radians(h)), c * sin(radians(h))); }
+// The run of hues, left to right: magenta, violet, cyan, green, amber, red.
+vec3 hues(float x) {
+  vec3 lab = mix(lch(0.62, 0.23, 328.0), lch(0.56, 0.19, 292.0), smoothstep(0.0, 0.22, x));
+  lab = mix(lab, lch(0.78, 0.14, 205.0), smoothstep(0.2, 0.46, x));
+  lab = mix(lab, lch(0.8, 0.16, 150.0), smoothstep(0.44, 0.6, x) * 0.6);
+  lab = mix(lab, lch(0.84, 0.16, 84.0), smoothstep(0.58, 0.82, x));
+  lab = mix(lab, lch(0.7, 0.2, 28.0), smoothstep(0.82, 1.05, x));
+  return pow(max(lab2lin(lab), 0.0), vec3(1.0 / 2.2));
+}
 void main() {
   float wide = uRes.x / uRes.y;
   vec2 p = vec2(vUv.x * wide, vUv.y), at = vec2(uPtr.x * wide, uPtr.y);
@@ -44,14 +53,8 @@ void main() {
   float near = exp(-dot(p - at, p - at) * 2.2) * uStir;
   w += (p - at) * near * 0.6;
   float f = fbm(w * 1.3 + t), g = fbm(w * 0.7 - t * 0.8 + 9.1);
-  // The run of hues, left to right: magenta, violet, cyan, green, amber, red. The field shifts the place in it.
-  float x = vUv.x + (f - 0.5) * 0.7;
-  vec3 lab = mix(lch(0.62, 0.23, 328.0), lch(0.56, 0.19, 292.0), smoothstep(0.0, 0.22, x));
-  lab = mix(lab, lch(0.78, 0.14, 205.0), smoothstep(0.2, 0.46, x));
-  lab = mix(lab, lch(0.8, 0.16, 150.0), smoothstep(0.44, 0.6, x) * 0.6);
-  lab = mix(lab, lch(0.84, 0.16, 84.0), smoothstep(0.58, 0.82, x));
-  lab = mix(lab, lch(0.7, 0.2, 28.0), smoothstep(0.82, 1.05, x));
-  vec3 col = pow(max(lab2lin(lab), 0.0), vec3(1.0 / 2.2));
+  // The field shifts the place in the run of hues.
+  vec3 col = hues(vUv.x + (f - 0.5) * 0.7);
   // The light rises from below the edge; the field breaks its top into soft tongues. No edge is hard.
   float rise = smoothstep(0.0, 1.0, (1.0 - vUv.y) + (g - 0.5) * 0.5 - 0.08);
   float a = pow(rise, 2.4) * (0.5 + 0.5 * f) * (0.62 + 0.5 * near);

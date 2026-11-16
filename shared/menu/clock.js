@@ -130,9 +130,11 @@ function start() {
   const hour = li => dozen().indexOf(li) * 30;
   // The toy's list item under an event's target, or null.
   const tile = node => /** @type {Element | null} */ (node)?.closest?.('main > .shelf > li') ?? null;
+  // The toys take no hover and no focus while the intro plays (Tom); `shy` holds them.
+  let shy = false;
   shelf.addEventListener('pointerover', e => {
     const li = tile(e.target);
-    if (!li) return;
+    if (!li || shy) return;
     const fresh = !face.hasAttribute('data-live');
     // The wedge starts at the toy, so it does not sweep in from afar.
     if (fresh) aim(hour(li), true);
@@ -142,14 +144,14 @@ function start() {
     if (fresh) show(li); else dwell = setTimeout(() => show(li), 45);
   });
   shelf.addEventListener('pointermove', e => {
-    if (!tile(e.target)) return;
+    if (!tile(e.target) || shy) return;
     const r = face.getBoundingClientRect();
     aim(Math.atan2(e.clientX - (r.left + r.width / 2), (r.top + r.height / 2) - e.clientY) * 180 / Math.PI);
   });
   shelf.addEventListener('pointerout', e => { if (!tile(e.relatedTarget)) rest(); });
   shelf.addEventListener('focusin', e => {
     const li = tile(e.target);
-    if (!li) return;
+    if (!li || shy) return;
     aim(hour(li));
     live(true);
     show(li);
@@ -204,28 +206,41 @@ function start() {
     root.dataset.clock = 'on';
     // With no motion the dozen simply shows.
     if (calm()) { lis.forEach(li => hold(li, false)); return; }
-    // The comet fades in where it starts, on the track at twelve o'clock.
-    const head = { a: 0, fade: 0 };
-    let came = 0;
     lis.forEach(li => hold(li, true));
-    const paint = () => drawComet(head.a, head.fade);
-    gsap.timeline({ onComplete: () => drawComet(0, 0) })
-      .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
-        paint();
-        // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
-        const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
-        while (came < h) hold(lis[came++], false);
-      } }, 0)
-      .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
-      // The comet runs on a little past twelve as it fades, so it does not stop dead.
-      .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6)
-      // On a fresh page the set warms up to snow once, then switches off.
-      .add(() => { if (first) blink(); }, 1.5);
+    shy = true;
+    // On a fresh page the set warms up to snow and switches off first; then the comet runs.
+    if (first) blink().then(spin); else spin();
+    function spin() {
+      // The comet fades in where it starts, on the track at twelve o'clock.
+      const head = { a: 0, fade: 0 }, paint = () => drawComet(head.a, head.fade);
+      let came = 0;
+      // The hold ends when the comet is gone.
+      gsap.timeline({ onComplete() { drawComet(0, 0); release(); } })
+        .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
+          paint();
+          // A toy drops off as the comet reaches its hour: hour 0 at once, hour 11 at eleven o'clock.
+          const h = Math.min(HOURS, Math.floor(head.a * HOURS + 0.02) + 1);
+          while (came < h) hold(lis[came++], false);
+        } }, 0)
+        .to(head, { fade: 1, duration: 0.25, ease: 'power1.out' }, 0)
+        // The comet runs on a little past twelve as it fades, so it does not stop dead.
+        .to(head, { a: 1.12, fade: 0, duration: 0.6, ease: 'power1.out', onUpdate: paint }, 1.6);
+    }
   }
+  // The set warms up to snow, holds a moment, then switches off to a dot. Without the tube it ends at once.
   function blink() {
-    if (!bg || face.hasAttribute('data-live')) return;
+    if (!bg || face.hasAttribute('data-live')) return Promise.resolve();
     face.setAttribute('data-blink', '');
-    bg.blink().then(() => face.removeAttribute('data-blink'));
+    return bg.blink(350).then(() => face.removeAttribute('data-blink'));
+  }
+  // The intro is over: a toy that is already under the pointer or in focus shows at once.
+  function release() {
+    shy = false;
+    const li = shelf.querySelector(':scope > li:hover') || tile(document.activeElement);
+    if (!li || li.hasAttribute('data-out')) return;
+    aim(hour(li), true);
+    live(true);
+    show(li);
   }
   function roll() {
     if (busy) return;
@@ -239,22 +254,34 @@ function start() {
   // The Re-roll stays away for the first five seconds.
   setTimeout(() => button.setAttribute('data-on', ''), 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
-  // The footer: the mark sits in the credit line, in place of its own name.
+  // The footer: the chip alone in the middle (Tom). On hover or focus the name onnøzelaer
+  // appears under it, letter by letter. Under that, "Made with AI." is a plain disclaimer.
+  // The Clock shows no version.
   const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
   const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
   if (credit && words0 && mark) {
-    const [before, after] = words0.textContent.split(/onn[\u00f8o]zelaer/i);
-    if (after !== undefined) {
-      const holder = Object.assign(document.createElement('span'), { className: 'clock-mark' });
-      holder.append(mark);
-      // The version stays the mark's next sibling: the menu's hover rule needs that.
-      if (version) holder.append(version);
-      words0.textContent = before.trim();
-      words0.after(holder, Object.assign(document.createElement('span'), { textContent: after.trim() }));
-      credit.setAttribute('data-inline', '');
-    }
+    const [line, ...rest] = words0.textContent.split('\u00b7');
+    const note = rest.join('\u00b7').trim();
+    const name = /onn[\u00f8o]zelaer/i.exec(line)?.[0] || 'onn\u00f8zelaer';
+    const sig = Object.assign(document.createElement('span'), { className: 'clock-sig', tabIndex: 0 });
+    // The whole credit stays readable to a screen reader.
+    sig.setAttribute('aria-label', line.trim());
+    const seal = Object.assign(document.createElement('span'), { className: 'clock-mark' });
+    seal.append(mark);
+    const reveal = Object.assign(document.createElement('span'), { className: 'clock-label' });
+    reveal.setAttribute('aria-hidden', 'true');
+    [...name].forEach((ch, i) => {
+      const l = Object.assign(document.createElement('span'), { textContent: ch });
+      l.style.setProperty('--i', String(i));
+      reveal.append(l);
+    });
+    sig.append(seal, reveal);
+    words0.replaceWith(sig);
+    version?.remove();
+    if (note) sig.after(Object.assign(document.createElement('span'), { className: 'clock-note', textContent: note[0].toUpperCase() + note.slice(1) + '.' }));
+    credit.setAttribute('data-inline', '');
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
-    // It starts after the intro, so its shader build does not stall the sweep.
+    // It starts after the intro, so its shader build does not stall the comet.
     setTimeout(() => import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e)), 2600);
   }
 

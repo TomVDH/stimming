@@ -87,6 +87,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, landValues, LAND_KEYS } from './ranges.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createNoise3D } from 'simplex-noise';
 import { initPage, whenVisible, pixelRatio, onQuality, linFit, reduced, onReducedChange, quality, audioKit, sound, stage as mark, pageReady, later, buildSteps } from '../shared/stim.js';
@@ -135,104 +136,117 @@ let chargeMix = (() => {
 })();
 // The shot's sound: Tom's report sample. Mesa, Coil and Thump stay in code.
 const shotMix = 'report';
-// The game-over sound: a surge mix from MIX, a take from GO_TAKES, or 'hum'.
-// Requiem, clear, is the default (Tom, 2026-11-16); stored picks move to it once.
-let goMix = (() => {
-  try {
-    const K = 'stimming.railgun.gomix';
-    if (!localStorage.getItem(K + '.v3')) { localStorage.setItem(K, 'requiem'); localStorage.setItem('stimming.railgun.golayers', '0'); localStorage.setItem(K + '.v3', '1'); }
-    return localStorage.getItem(K) || 'requiem';
-  } catch { return 'requiem'; }
-})();
+// The game-over sound is Requiem (Tom, 2026-11-16).
+// The other takes stay in code; GO_TAKES and MIX name them.
+const goMix = 'requiem';
 // Requiem: each layer enters muffled and clears as the next blends in.
-let goOpen = store.get('golayers') === '1';
+let goOpen = false;
 // The sun rays' gain; the Dev sheet's Sun rays row sets it.
 let shaftGain = 1.6;
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
 const act = { press() {}, release() {} };
+// The far ranges' pass: the bake, or the live march with ?far=live.
+const FAR_MODE = new URLSearchParams(location.search).get('far') === 'live' ? 'live' : 'bake';
 const ui = initPage({ id: 'railgun', bar: {
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
   settings: [
-    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
-    // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
-    { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
-    // Fire: one rail shot, or a salvo of banked rounds.
+    // The gun tracks the rock, or the arrow keys lay it.
+    { type: 'choice', id: 'aim', group: 'Play', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // One rail shot, or a salvo of banked rounds.
     // This choice stands in until the HUD selector lands.
-    { type: 'choice', id: 'firemode', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
+    { type: 'choice', id: 'firemode', group: 'Play', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
+    { type: 'toggle', id: 'letterbox', group: 'View', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
-    { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
-    { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
+    { type: 'slider', id: 'res', group: 'Graphics', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
+    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
-    // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
-    // The frame rate cap: film, the toy's own 30, or a fast screen.
-    { type: 'choice', id: 'fps', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
-    // The game over: the surge that plays as an unshot rock comes down.
-    // Ascent, Requiem and Undertow are takes of their own, not surge mixes.
-    // A pick takes effect at the next strike; Strike test brings one on.
-    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'requiem', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
-    // Requiem's layers open from muffled to clear as the next ones enter.
-    { type: 'toggle', id: 'golayers', label: 'Requiem layers open', value: false, persist: true, onToggle: on => { goOpen = on; } },
-    // Dev: pin the rock's size; Random rolls a new one per rock.
-    { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
-    // Target picks the rock or the capital ship.
+    { type: 'choice', id: 'chargemix', group: 'Sound', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    // The soft crackle while a rock burns in the sky.
+    { type: 'slider', id: 'roar', group: 'Sound', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
+    // Random rolls a new size per rock.
+    { type: 'choice', id: 'devsize', group: 'Tests', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // The choice waits for Reset.
-    { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
-    // Ship fires sends a test round to the plain.
+    { type: 'choice', id: 'target', group: 'Tests', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
     // The button waits for a ship at station.
-    { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    { type: 'button', id: 'shipfire', group: 'Tests', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    // The rock falls ten times faster.
+    { type: 'toggle', id: 'fastrock', group: 'Tests', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
+    // Each rock starts at its hold and strikes after a grace.
+    { type: 'toggle', id: 'striketest', group: 'Tests', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
     // Ambient: small events nobody fires, for a watcher.
-    { type: 'toggle', id: 'ambient', label: 'Ambient', value: true, persist: true },
-    { type: 'slider', id: 'ambrate', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
-    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
-    { type: 'button', id: 'ambfire', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
-    // Strike test: each rock starts at its hold and strikes after a short grace.
-    // Fast rock: the rock falls ten times faster; off is the normal speed.
-    { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
-    { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
-    // Rock roar: the soft crackle while a rock burns in the sky.
-    { type: 'slider', id: 'roar', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
-    // Sun bearing: the dusk sun's angle right of the look, in degrees.
-    { type: 'slider', id: 'sunaz', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
-    // Sun rays: the strength of the cloud shadows in the low air.
-    { type: 'slider', id: 'shafts', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
-    // Far haze sinks far clouds into the air; Valley fog pools in the far ranges.
-    { type: 'slider', id: 'farhaze', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
-    { type: 'slider', id: 'valfog', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
-    // Cloud deck: the broken layer of cells five kilometres up.
-    { type: 'slider', id: 'deck', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
-    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
-    { type: 'slider', id: 'grainsize', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
-    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
-    // Mist: a diffusion filter; mid tones glow and the contrast falls.
-    { type: 'slider', id: 'mist', label: 'Mist', min: 0, max: 1, step: 0.02, value: 0, persist: true, onInput: v => { gfx.mist = v; setBloom(); } },
-    // Halation: the red bleed round bright light, as on film.
-    { type: 'slider', id: 'halation', label: 'Halation', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.hal = v; setBloom(); } },
-    { type: 'slider', id: 'vignette', label: 'Vignette', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gfx.vig = v; setLens(); } },
-    // Tone: the curve, then exposure, contrast and colour on top of the grade.
-    // Four curves are too wide for segments; a stepper holds them.
-    { type: 'choice', id: 'tone', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }, { value: 'villeneuve', label: 'Villeneuve' }], onPick: v => { gfx.tone = v; setTone(); } },
-    // Villeneuve only: the key hue, the pull toward it, the black floor.
+    { type: 'toggle', id: 'ambient', group: 'Ambient', label: 'Ambient', value: true, persist: true },
+    { type: 'slider', id: 'ambrate', group: 'Ambient', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
+    { type: 'choice', id: 'ambkind', group: 'Ambient', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
+    { type: 'button', id: 'ambfire', group: 'Ambient', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
+    // The dusk sun's angle right of the look, in degrees.
+    { type: 'slider', id: 'sunaz', group: 'Sky', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
+    // The strength of the cloud shadows in the low air.
+    { type: 'slider', id: 'shafts', group: 'Sky', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
+    // Far haze sinks far clouds into the air.
+    { type: 'slider', id: 'farhaze', group: 'Sky', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
+    // Valley fog pools in the far ranges.
+    { type: 'slider', id: 'valfog', group: 'Sky', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
+    // The broken layer of cells five kilometres up.
+    { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
+    // The colossal storms far beyond the ranges.
+    // Storm lightning: how often flashes light the storms from inside.
+    { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
+    // Flash now fires one lightning burst in a storm, for a test.
+    { type: 'button', id: 'stormnow', group: 'Sky', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
+    // Storm volumes: the towers and the giant as Window seat's marched volumes; off shows the flat cards.
+    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: true, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
+    { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+    // The gullies and strata in the light, as on the card clouds.
+    { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
+    // The ranges' light: the sun and key, the sky, and the effects (blast, rock light).
+    { type: 'slider', id: 'rangesun', group: 'Land', label: 'Range sun', min: 0, max: 1.5, step: 0.05, value: 0.6, onInput: v => { FAR_U.uRangeL.value.x = v; draw(); } },
+    { type: 'slider', id: 'rangesky', group: 'Land', label: 'Range sky', min: 0, max: 1.5, step: 0.05, value: 0.85, onInput: v => { FAR_U.uRangeL.value.y = v; draw(); } },
+    { type: 'slider', id: 'rangefx', group: 'Land', label: 'Range effects', min: 0, max: 3, step: 0.05, value: 1, onInput: v => { FAR_U.uRangeL.value.z = v; draw(); } },
+    // The ranges' rock colour; none matches the sand plain.
+    { type: 'choice', id: 'rockcol', group: 'Land', label: 'Range rock', display: 'segments', value: 'umber', options: [{ value: 'umber', label: 'Umber' }, { value: 'slate', label: 'Slate' }, { value: 'rust', label: 'Rust' }], onPick: v => { setRockCol(v); draw(); } },
+    // Carves gullies and crags; 0 is the smooth shape.
+    { type: 'slider', id: 'erosion', group: 'Land', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
+    // Forms: every range a crescent, or with a mesa line, a lone cone and a knife ridge.
+    { type: 'choice', id: 'forms', group: 'Land', label: 'Forms', display: 'segments', value: 'mixed', options: [{ value: 'crescents', label: 'Crescents' }, { value: 'mixed', label: 'Mixed' }], onPick: v => { FAR_U.uForms.value = v === 'mixed' ? 1 : 0; farBake.dirty = true; draw(); } },
+    // Bake marches once and relights; Live marches every frame.
+    // Bake is the default (Tom, 2026-11-16); ?far=live opens on Live.
+    // Far skip: the march leaps empty air over a coarse height grid.
+    { type: 'toggle', id: 'farskip', group: 'Land', label: 'Far skip', value: true, onToggle: on => { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; draw(); } },
+    { type: 'choice', id: 'farmode', group: 'Land', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
+    // The graphite parts' reflectance and roughness.
+    { type: 'slider', id: 'gunmetal', group: 'Gun', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
+    { type: 'slider', id: 'gunrough', group: 'Gun', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
+    // The stains, cracks and grease on the base.
+    { type: 'slider', id: 'basewear', group: 'Gun', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
+    { type: 'slider', id: 'bloom', group: 'Lens', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
+    // A diffusion filter; mid tones glow and the contrast falls.
+    { type: 'slider', id: 'mist', group: 'Lens', label: 'Mist', min: 0, max: 1, step: 0.02, value: 0, persist: true, onInput: v => { gfx.mist = v; setBloom(); } },
+    // The red bleed round bright light, as on film.
+    { type: 'slider', id: 'halation', group: 'Lens', label: 'Halation', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.hal = v; setBloom(); } },
+    { type: 'slider', id: 'vignette', group: 'Lens', label: 'Vignette', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gfx.vig = v; setLens(); } },
+    { type: 'slider', id: 'grain', group: 'Lens', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
+    { type: 'slider', id: 'grainsize', group: 'Lens', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
+    // Grade: the curve, then exposure, contrast and colour on top.
+    // Four curves are too wide for segments.
+    { type: 'choice', id: 'tone', group: 'Grade', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }, { value: 'villeneuve', label: 'Villeneuve' }], onPick: v => { gfx.tone = v; setTone(); } },
+    // Villeneuve only: the key hue, its pull, the black floor.
     // Auto takes sand by day and slate at night.
-    { type: 'choice', id: 'palette', label: 'Palette', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'sand', label: 'Sand' }, { value: 'slate', label: 'Slate' }], onPick: v => { gfx.pal = v; draw(); } },
-    { type: 'slider', id: 'pull', label: 'Palette pull', min: 0, max: 1, step: 0.02, value: 0.55, persist: true, onInput: v => { gfx.pull = v; setTone(); } },
-    { type: 'slider', id: 'lift', label: 'Black lift', min: 0, max: 1, step: 0.02, value: 0.5, persist: true, onInput: v => { gfx.lift = v; setTone(); } },
-    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 0.55, persist: true, onInput: v => { gfx.exp = v; draw(); } },
-    { type: 'slider', id: 'brightness', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 0.78, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
-    { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.24, persist: true, onInput: v => { gfx.con = v; setTone(); } },
-    { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 1.06, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
-    // Gun steel: the graphite parts' reflectance and roughness.
-    { type: 'slider', id: 'gunmetal', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
-    { type: 'slider', id: 'gunrough', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
-    // Base wear: the stains, cracks and grease on the base.
-    { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
-    { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
+    { type: 'choice', id: 'palette', group: 'Grade', label: 'Palette', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'sand', label: 'Sand' }, { value: 'slate', label: 'Slate' }], onPick: v => { gfx.pal = v; draw(); } },
+    { type: 'slider', id: 'pull', group: 'Grade', label: 'Palette pull', min: 0, max: 1, step: 0.02, value: 0.55, persist: true, onInput: v => { gfx.pull = v; setTone(); } },
+    { type: 'slider', id: 'lift', group: 'Grade', label: 'Black lift', min: 0, max: 1, step: 0.02, value: 0.5, persist: true, onInput: v => { gfx.lift = v; setTone(); } },
+    { type: 'slider', id: 'exposure', group: 'Grade', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 0.55, persist: true, onInput: v => { gfx.exp = v; draw(); } },
+    { type: 'slider', id: 'brightness', group: 'Grade', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 0.78, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
+    { type: 'slider', id: 'contrast', group: 'Grade', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.24, persist: true, onInput: v => { gfx.con = v; setTone(); } },
+    { type: 'slider', id: 'saturation', group: 'Grade', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 1.06, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
+    // Film, the toy's own 30, or a fast screen.
+    { type: 'choice', id: 'fps', group: 'Performance', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
+    { type: 'choice', id: 'fxaa', group: 'Performance', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
   // Reset waits right of Sight; it shows and glows after a kill.
@@ -477,9 +491,10 @@ const TRAIL_MAX = 0.04;
 const skyTrail = { H: null, span: 0 };
 const skyRot0 = new THREE.Matrix4();
 let skyH = 0;
-// The low sun swings toward the frame.
-// A high sun keeps the old bearing, 63 degrees right.
-function sun(deg) { aimSky(lerp(sunSwing, 63, sstep(deg, 8, 22))); skyAt(hourOf(deg)); }
+// The sky frame stays put: no swing toward a high sun.
+// The sky frame stays fixed: the sun and the moon run true arcs.
+// Sun bearing alone turns the frame.
+function sun(deg) { aimSky(sunSwing); skyAt(hourOf(deg)); }
 function skyAt(H) {
   if (skyTrail.H !== null && !reduced()) skyTrail.span = clamp(skyTrail.span + H - skyTrail.H, -TRAIL_MAX, TRAIL_MAX);
   skyTrail.H = H;
@@ -663,6 +678,20 @@ vec3 cloudHit(vec3 P, float thin, out float rim, out vec3 push) {
 float shadeAt(vec3 P);
 #endif
 // Cirrus: long streaks on one wind line, gathered in patches.
+// The shared air for the cirrus, inline: the sky chunk comes before AIR.
+// The horizon sky stands in for the air's own light.
+vec3 cirrusAir(vec3 c, vec3 P) {
+  vec3 v = P - cameraPosition;
+  float hit = length(v);
+  vec3 rd = v / max(hit, 1.0);
+  float yc = max(cameraPosition.y, 0.0), yp = max(P.y, 0.0), dy = max(yp - yc, 1.0);
+  float aR = (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
+  float aM = (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
+  float mu = dot(rd, uSunD);
+  vec3 inL = mix(uHorC, uZenC, 0.17) * 0.92 + uGlowC * (0.4224 / pow(1.5776 - 1.52 * mu, 1.5) / 12.0) * aM / max(aM + aR, 1e-3);
+  return c * T + inL * (1.0 - T);
+}
 vec3 wisps(vec3 dir, vec3 col, float cs) {
   if (dir.y < 0.008) return col;
   // A flat layer nine kilometres up; q.x runs along the wind.
@@ -709,6 +738,8 @@ vec3 wisps(vec3 dir, vec3 col, float cs) {
   // The shock rim: a faint warm ripple, not a white wave.
   cloud += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
   // A thin veil: the sky shows through the densest streak (Tom).
+  // Far ice sinks into the same air as everything else.
+  cloud = cirrusAir(cloud, Pc);
   return mix(col, cloud, min(1.0, d * (0.45 + 0.2 * rim)));
 }
 vec3 astGlow(vec3 dir) {
@@ -916,6 +947,43 @@ vec3 air(vec3 c, vec3 P) {
   c = mix(c, k2hazeColor(dir), k2hazeAmount(P));
   vec3 T = airT(P);
   return c * T + k2skyB(dir, 0.0) * (1.0 - T);
+}
+// One aerial perspective for the ranges, the clouds and the storms.
+// Rayleigh and a dusty Mie along the ray from the eye to P.
+// The air's own light is the horizon sky, warmed toward the sun.
+// The Far haze knob thickens the dust: 1 is the ranges' own air.
+vec3 aerialFrom(vec3 col, vec3 ro, vec3 P) {
+  vec3 v = P - ro;
+  float hit = length(v);
+  vec3 rd = v / max(hit, 1.0);
+  // The dust stands about three kilometres deep, so cloud bases sit in it too.
+  // ambT() in the ambient section copies these numbers: change both together.
+  float hR = 8000.0, hM = 3000.0;
+  float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+  float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
+  float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
+  aM *= 0.5 + 0.5 * uLayer.x;
+  vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
+  float mu = dot(rd, uSunD), g = 0.76;
+  float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
+  vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
+  return col * T + inL * (1.0 - T);
+}
+// The air's own light along a ray, for an extra fade toward it.
+vec3 aerialIn(vec3 rd) {
+  float mu = dot(rd, uSunD), g = 0.76;
+  return k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0 * 0.5;
+}
+vec3 aerial(vec3 col, vec3 P) { return aerialFrom(col, cameraPosition, P); }
+// The shared air's transmittance alone, for smoke and volumes that blend premultiplied.
+vec3 aerialT(vec3 P) {
+  vec3 ro = cameraPosition;
+  float hit = length(P - ro);
+  float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+  float aR = abs(dy) < 1.0 ? exp(-yc / 8000.0) : (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
+  float aM = abs(dy) < 1.0 ? exp(-yc / 3000.0) : (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  aM *= 0.5 + 0.5 * uLayer.x;
+  return exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
 }
 // Sunlight at height h crosses less air than at the ground.
 vec3 sunAt(float h) {
@@ -1131,17 +1199,42 @@ function updateShafts() {
   u.uTrN.value = m;
 }
 
+/* ---------- bands: draw order by distance ---------- */
+// Clouds and smoke write no depth, so draw order decides what covers what.
+// Each band holds one span of distance from the eye; far bands draw first.
+// Names follow docs/plans/railgun-volumes.md.
+const BAND = {
+  // Sky: the dome with the cirrus and the deck.
+  sky: -1,
+  // Country, 80 to 200 km: the ranges; they write depth.
+  country: -0.9,
+  // Deep, 100 to 300 km: giants, then towers.
+  giants: 1.45, deep: 1.5,
+  // Far, 50 to 100 km: far mids and far dust domes.
+  far: 1.6,
+  // Rock, 40 to 50 km: the rock and all it sheds, back to front.
+  domes: 1.8, fireball: 1.9, shards: 1.95, smoke: 2, debris: 2.05, ribbons: 2.1, glows: 2.12,
+  // Mid, 5 to 40 km: heaps and near mids.
+  mids: 2.15, heaps: 2.2,
+  // Near, 0 to 5 km: the gun's volumes, dust and the ion line.
+  plume: 2.2, shell: 2.3, shockRing: 2.4, dust: 2.5, ionPuffs: 2.55, ion: 2.6,
+  // Sparks and lights over everything; then the lens.
+  sparks: 3, lights: 4,
+};
+// A card layer past this distance draws in the Far band, behind the rock.
+const ROCK_FAR = 48000;
+
 /* ---------- sky dome ---------- */
 const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.ShaderMaterial({
   uniforms: { ...U, ...IMP_U, ...SHAFT_U, uVol: { value: null }, uCloudC: { value: 0 } }, side: THREE.BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`#define CSHADE
   precision highp sampler3D;
-  varying vec3 vP; ${HEAD} ${IMP_GLSL} ${SHAFT_GLSL}
+  varying vec3 vP; ${HEAD} ${AIR} ${IMP_GLSL} ${SHAFT_GLSL}
   uniform sampler3D uVol;
   uniform float uCloudC, uDeck;
-  // A broken deck of small cells five kilometres up, seen from below.
-  // The cells shrink toward the horizon, so the eye reads the depth.
+  // A thin deck of wisps five kilometres up, seen from below.
+  // The wisps shrink toward the horizon, so the eye reads the depth.
   vec3 deck(vec3 d, vec3 col) {
     if (uDeck < 0.01 || d.y < 0.003) return col;
     float t = 5200.0 / d.y;
@@ -1149,26 +1242,35 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     vec3 Pc = cameraPosition + d * t;
     float rim; vec3 push;
     vec3 hl = cloudHit(Pc, 0.6, rim, push);
-    // The heave pushes the cells outward; the void clears a ring.
+    // The heave nudges the cells outward; the void clears a ring.
+    // The deck takes a third of the cirrus's push, so its cells keep their shape.
     float pack, hole;
-    vec2 xz = voidWarp(Pc.xz - push.xz, pack, hole) + vec2(uCloudC * 4.0, uCloudC * 1.5);
-    // Patches of cells with wide open sky between them.
-    float cov = texture(uVol, vec3(xz / 60000.0, 0.31)).r;
-    float cel = texture(uVol, vec3(xz / 7000.0, 0.63)).g;
-    float fin = texture(uVol, vec3(xz / 2300.0, 0.17)).g;
+    vec2 xz = mix(Pc.xz, voidWarp(Pc.xz - 0.35 * push.xz, pack, hole), 0.4) + vec2(uCloudC * 4.0, uCloudC * 1.5);
+    // The wind combs the deck into wisps: the noise stretches along it.
+    vec2 w = vec2(0.966, -0.259);
+    vec2 q = vec2(dot(xz, w), dot(xz, vec2(-w.y, w.x)) * 3.0);
+    // Patches of wisps with wide open sky between them.
+    float cov = texture(uVol, vec3(q / 60000.0, 0.31)).r;
+    float cel = texture(uVol, vec3(q / 9000.0, 0.63)).g;
+    float fin = texture(uVol, vec3(q / 2300.0, 0.17)).g;
     // Far cells blur into their mean before they alias.
     float fd = smoothstep(25000.0, 110000.0, t);
-    float raw = mix(cel * 0.75 + fin * 0.25, 0.52, fd);
-    float dens = smoothstep(0.6, 0.84, raw + (cov - 0.7) * 1.2);
+    // Fine detail frays the edges into strands.
+    float raw = mix(cel * 0.8 + fin * 0.2, 0.52, fd);
+    // A wide ramp feathers each cell's edge into the sky.
+    float dens = smoothstep(0.5, 1.0, raw + (cov - 0.62) * 1.2);
     // The deck thins out low down: the ranges stay clear.
     dens *= smoothstep(0.02, 0.12, d.y);
     // The heave clears the air it pushes; packed cells thicken round the hole.
-    dens *= 1.0 - 0.55 * smoothstep(800.0, 5000.0, length(push));
-    dens = min(dens * pack, 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
+    dens *= 1.0 - 0.4 * smoothstep(800.0, 5000.0, length(push));
+    dens = min(dens * mix(1.0, pack, 0.5), 1.0) * (1.0 - hole) * (1.0 - 0.55 * smoothstep(4.0, 30.0, uVoidT) * smoothstep(1.0, 1.4, pack));
     if (dens < 0.003) return col;
     // The side of a cell toward the sun goes darker.
-    float cel2 = texture(uVol, vec3((xz + uSunD.xz * 600.0) / 7000.0, 0.63)).g;
-    float self = 1.0 - 0.45 * smoothstep(0.0, 0.25, cel2 - cel);
+    // A soft, wide shade keeps the cells round, not flat discs.
+    vec2 s2 = xz + uSunD.xz * 1100.0;
+    float cel2 = texture(uVol, vec3(vec2(dot(s2, w), dot(s2, vec2(-w.y, w.x)) * 3.0) / 9000.0, 0.63)).g;
+    float self = 1.0 - 0.35 * smoothstep(-0.1, 0.3, cel2 - cel);
+    float body = smoothstep(0.0, 1.0, dens);
     // A low sun lights the cells from below; thin edges pass the most light.
     float cs = dot(d, uSunD);
     float ph = 0.6 + 1.6 * pow(max(cs, 0.0), 6.0);
@@ -1176,7 +1278,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     vec3 amb = mix(uHorC, uZenC, 0.5) * 0.9 + uCloudAmb * 0.6;
     // The trail and the soot ball shade the cells.
     float shd = shadeAt(Pc);
-    vec3 c = amb * (0.55 + 0.25 * (1.0 - dens)) + uCloudSun * (0.18 + 0.5 * (1.0 - dens)) * ph * self * mix(1.0, 1.6, low) * (1.0 - 0.75 * shd);
+    vec3 c = amb * (0.62 + 0.18 * (1.0 - body)) + uCloudSun * (0.26 + 0.38 * (1.0 - body)) * ph * self * mix(1.0, 1.6, low) * (1.0 - 0.75 * shd);
     // At night the deck takes the moon dimly.
     c *= mix(1.0, 0.45, uStars);
     // The passing bolt lights the cells round it, blue-white.
@@ -1184,14 +1286,17 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(150000, 48, 24), new THREE.S
     // The burning rock warms the cells near it, the thin ones most.
     if (uRockL.w > 0.001) { vec3 rb = uRockL.xyz - Pc; c += uAstC * uRockL.w * uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR) * (0.6 + 0.4 * (1.0 - dens)) * mix(1.0, 0.6, uStars); }
     // The blast: its flash, its afterglow and the shock rim.
-    c += hl + rim * (uCloudSun * 0.15 + uCloudAmb * 0.8 + hl * 0.8 + 0.01);
-    // The air between fills the far deck with the horizon colour.
-    c = mix(c, k2hazeColor(d), 1.0 - exp(-t / 60000.0));
-    return mix(col, c, min(1.0, dens * (0.75 + 0.2 * rim) * min(uDeck, 1.5)));
+    // The shared air fills the far deck, as it fills the ranges.
+    c = aerial(c, Pc);
+    // The blast lands after the haze: its flash lights the air on the way.
+    // The deck takes it harder than the cirrus, thin edges most.
+    c += hl * (1.6 + 0.8 * (1.0 - body)) + rim * (uCloudSun * 0.3 + uCloudAmb * 1.2 + hl * 1.2 + 0.02);
+    // A thin veil: the sky shows through even the densest wisp.
+    return mix(col, c, min(1.0, dens * (0.45 + 0.35 * rim) * min(uDeck, 1.5)));
   }
   void main() { vec3 d = normalize(vP - cameraPosition); gl_FragColor = vec4(shaftSky(deck(d, k2sky(d)), d, uShaft.z) + impSky(d), 1.0); }`,
 }));
-sky.renderOrder = -1;
+sky.renderOrder = BAND.sky;
 scene.add(sky);
 
 /* ---------- the planet: one curve for every view ---------- */
@@ -1358,7 +1463,8 @@ const ground = new THREE.Mesh(groundGeo(1670, 1990), new THREE.ShaderMaterial({
       col += (ambient(N) + sunLight(vec3(0.0, 0.3, 0.0)) * 0.5) * uGroundC * 2.4 * shock * S.w;
     }
     // Far plain goes blue and flat in the air.
-    gl_FragColor = vec4(air(col, vP), 1.0);
+    // The plain's own low dust, then the same air as the ranges and the clouds.
+    gl_FragColor = vec4(aerial(k2haze(col, vP), vP), 1.0);
   }`,
 }));
 scene.add(ground);
@@ -1366,95 +1472,102 @@ scene.add(ground);
 /* ---------- far country: crescent ranges on a curved planet, raymarched ---------- */
 // Angles turn left from negative z, about the landscape eye.
 const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
-// Each range: angle, range, arc radius, crest, span and opening, in degrees and metres.
-const RANGES = [
-  [10, 202000, 81000, 30000, 140, 10], [42, 169000, 57000, 24000, 150, 200], [-12, 148000, 42000, 18500, 130, 60],
-  [27, 115000, 29000, 12800, 150, 150], [57, 94000, 21000, 9300, 135, 250], [0, 81000, 16000, 6400, 120, 300],
-];
+// RANGES and the height GLSL live in ranges.js.
 const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
-  uRg: { value: RANGES.map(m => { const c = polar(rad(m[0]), m[1]); return new THREE.Vector4(c.x, c.z, m[2], m[3]); }) },
-  uRa: { value: RANGES.map((m, i) => new THREE.Vector4(rad(m[5]) + Math.PI - rad(m[4]) / 2, rad(m[4]), 1.7 * i + 0.4, 0)) },
+  // Both arrays fill all RANGE_MAX slots; an empty slot has no crest.
+  uRg: { value: Array.from({ length: RANGE_MAX }, (_, i) => new THREE.Vector4(...(rangeRg()[i] || [0, 0, 0, 0]))) },
+  uRa: { value: Array.from({ length: RANGE_MAX }, (_, i) => new THREE.Vector4(...(rangeRa()[i] || [0, 0, 0, 0]))) },
+  // The landscape's knobs, from ranges.js.
+  uLand: { value: landValues() },
+  // Forms: 0 draws every range as a crescent and hides the cone.
+  uForms: { value: 1 },
   uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
   // March steps: High takes more, the ladder's rungs fewer.
   uFarSteps: { value: 96 },
-  uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+  uFarStride: { value: new THREE.Vector2(0.0015, 0.005) },
+  // Erosion: the depth of the gullies and crags; 0 leaves the smooth ranges.
+  uEro: { value: 1 },
+  // Face bump: fine gullies and strata in the light only; 0 turns it off.
+  uBump: { value: 1 },
+  uRockC: { value: new THREE.Vector3() }, uSlopeC: { value: new THREE.Vector3() }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
+  // The ranges' light: sun and key, sky, and the effects (blast, rock light).
+  // The sun stays low by default, so the ranges read far and vast.
+  uRangeL: { value: new THREE.Vector3(0.6, 0.85, 1) },
 };
-const FAR_GLSL = /* glsl */`
-uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
-// Three smooth octaves: rounded folds, no knife-edge crests.
-float fbm3(vec2 p) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 3; i++) { s += a * k2noise(p); p = p * 2.07 + vec2(17.1, 9.2); a *= 0.5; }
-  return s / 0.875;
+// The ranges' rock: [slope, wall] in OKLCH; each differs from the sand plain.
+const ROCK_COLS = {
+  umber: [[0.43, 0.035, 48], [0.37, 0.045, 32]],
+  slate: [[0.42, 0.02, 250], [0.35, 0.025, 265]],
+  rust: [[0.44, 0.06, 40], [0.39, 0.08, 24]],
+};
+function setRockCol(k) {
+  const c = ROCK_COLS[k] || ROCK_COLS.umber;
+  FAR_U.uSlopeC.value.set(...linFit(...c[0]));
+  FAR_U.uRockC.value.set(...linFit(...c[1]));
 }
-// The ranges' height over the flat plain at p, in metres.
-// near is 1 inside any range's broad band, where the march must step short.
-float rangeH(vec2 p, out float near) {
-  float h = 0.0;
-  near = 0.0;
-  for (int i = 0; i < ${RANGES.length}; i++) {
-    vec2 q = p - uRg[i].xy;
-    float Rc = uRg[i].z, r = length(q), off = r - Rc;
-    if (abs(off) > 0.75 * Rc) continue;
-    float u = mod(atan(q.y, q.x) - uRa[i].x, 6.2831853) / uRa[i].y;
-    if (u > 1.0) continue;
-    near = 1.0;
-    // The range tapers to both ends; its crest rolls in peaks and saddles.
-    float t = pow(sin(3.14159265 * u), 0.8), ph = uRa[i].z;
-    // A power on the crest wave sharpens the peaks and widens the saddles.
-    float cw = 0.6 + 0.22 * sin(u * 5.0 + ph) + 0.12 * sin(u * 11.0 + 2.0 * ph) + 0.06 * sin(u * 23.0 + 3.0 * ph);
-    float hc = uRg[i].w * t * pow(cw, 1.7) * 1.35;
-    // Inner face: a steep scarp. Outer face: a long apron.
-    float v = abs(off) / (Rc * (off < 0.0 ? 0.1 : 0.32) * (0.3 + t));
-    if (v >= 1.0) continue;
-    // A rounded profile: the crest swells, then falls away in long slopes.
-    float prof = off < 0.0 ? 1.0 - pow(v, 1.25) : pow(1.0 - v, 1.5) * (1.0 + 0.4 * v);
-    // A line of foothills rolls along the outer apron.
-    if (off > 0.0) prof += 0.28 * exp(-pow((v - 0.55) / 0.16, 2.0)) * (0.6 + 0.4 * sin(u * 41.0 + ph));
-    // Flows follow the crescent: parallel ridgelines wander along the arc,
-    // and soft folds run stretched along it, kilometres long.
-    float sv = sign(off) * v, arc = u * uRa[i].y * Rc;
-    float bands = 0.5 + 0.5 * sin(sv * 15.7 + 3.0 * fbm3(vec2(arc / 30000.0, sv * 1.5) + ph));
-    float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
-    // The folds take a gentle ridge: firm spurs, no knife edges.
-    folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
-    h = max(h, hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5)));
-  }
-  return h;
-}
-// Ridged erosion: sharp spurs and deep gullies, a few kilometres across.
-float ridged(vec2 p) {
-  float s = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.13 + vec2(13.7, 5.3); a *= 0.5; }
-  return s;
-}
-float farHN(vec2 p, out float near) {
-  float h = rangeH(p, near);
-  return h > 1.0 ? h : 0.0;
-}
-float farH(vec2 p) { float n; return farHN(p, n); }`;
-const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), new THREE.ShaderMaterial({
-  uniforms: { ...U, ...FAR_U },
-  depthWrite: true, depthTest: true,
-  vertexShader: /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
-  fragmentShader: /* glsl */`
-  varying vec2 vN;
+setRockCol('umber');
+const FAR_GLSL = RANGE_GLSL;
+// The far pass's parts: the march, the normal, the shadow and the light.
+// The live pass and the bake share them, so both draw the same country.
+// The height grid: a fine and a coarse level about the landscape eye.
+// It rebuilds only when the ranges' shape changes.
+const farGrid = { n: 256, half: 330000, key: '', builds: 0 };
+farGrid.f = new THREE.WebGLRenderTarget(farGrid.n, farGrid.n, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+farGrid.c = new THREE.WebGLRenderTarget(farGrid.n / 4, farGrid.n / 4, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
+const GRID_U = {
+  uGridF: { value: farGrid.f.texture }, uGridC: { value: farGrid.c.texture },
+  uGrid: { value: new THREE.Vector4(1670 - farGrid.half, 1990 - farGrid.half, 2 * farGrid.half / farGrid.n, farGrid.n) },
+  uGridOn: { value: 1 },
+};
+const FAR_FN = /* glsl */`
   uniform mat4 uInvVP, uVP;
   uniform int uFarSteps;
-  uniform vec3 uRockC, uGroundC;
+  // The stride's floor and cap near a range, as shares of the range.
+  uniform vec2 uFarStride;
+  uniform vec3 uRockC, uSlopeC, uGroundC, uEye, uRangeL;
   ${HEAD}
   ${AIR}
   ${FAR_GLSL}
   const float PLANET_R = ${PLANET_R.toFixed(1)};
   // The curved ground's drop at p, below the eye's level plane.
-  float drop(vec3 p) { vec2 d = p.xz - cameraPosition.xz; return dot(d, d) / (2.0 * PLANET_R); }
-  void main() {
-    vec4 w = uInvVP * vec4(vN, 1.0, 1.0);
-    vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
+  float drop(vec3 p) { vec2 d = p.xz - uEye.xz; return dot(d, d) / (2.0 * PLANET_R); }
+  // The height grid: the most each cell's ground can rise, in kilometres.
+  // uGrid: the grid's corner x and z, the fine cell's size, the fine cell count.
+  // The coarse grid's cells are four fine cells wide.
+  uniform sampler2D uGridF, uGridC;
+  uniform vec4 uGrid;
+  uniform float uGridOn;
+  // The bound in the cell under xz, or -1 off the grid.
+  float gridMax(sampler2D t, vec2 xz, float c, float n) {
+    vec2 g = (xz - uGrid.xy) / c;
+    if (g.x < 0.0 || g.y < 0.0 || g.x >= n || g.y >= n) return -1.0;
+    return texelFetch(t, ivec2(g), 0).r * 1000.0;
+  }
+  // The distance along the ray to the walls of the cell under p.
+  float cellExit(vec3 p, vec3 rd, float c) {
+    vec2 g = floor((p.xz - uGrid.xy) / c), wall = uGrid.xy + (g + step(0.0, rd.xz)) * c;
+    vec2 r = vec2(abs(rd.x) < 1e-6 ? 1e-6 : rd.x, abs(rd.z) < 1e-6 ? 1e-6 : rd.z);
+    vec2 tt = (wall - p.xz) / r;
+    return min(tt.x, tt.y);
+  }
+  // A safe leap over empty air: to the cell's wall, or to where the ray could drop to the bound.
+  // up is the rate the ray rises over the curved ground; it only grows along the ray.
+  // 0 means no leap: the ray is not above the cell's bound.
+  float leap(vec3 p, vec3 rd, float above, float up) {
+    float c = uGrid.z, hc = gridMax(uGridC, p.xz, 4.0 * c, uGrid.w / 4.0);
+    if (hc >= 0.0 && above > hc) return min(cellExit(p, rd, 4.0 * c), up < 0.0 ? (above - hc) / -up : 1e9);
+    float hf = gridMax(uGridF, p.xz, c, uGrid.w);
+    if (hf >= 0.0 && above > hf) return min(cellExit(p, rd, c), up < 0.0 ? (above - hf) / -up : 1e9);
+    return 0.0;
+  }
+  // The view ray through clip point c of the inverse view-projection m.
+  vec3 rayOf(mat4 m, vec2 c, vec3 ro) { vec4 w = m * vec4(c, 1.0, 1.0); return normalize(w.xyz / w.w - ro); }
+  // The distance to the ranges along the ray, or -1 for a miss.
+  float farMarch(vec3 ro, vec3 rd) {
     // The march starts past the near plain's heart and ends past the far ranges.
-    float t = 25000.0, tp = t, hit = -1.0;
-    for (int i = 0; i < 380; i++) {
+    float t = 25000.0, tp = t;
+    for (int i = 0; i < 700; i++) {
       if (i >= uFarSteps) break;
       vec3 p = ro + rd * t;
       float nr, hh = farHN(p.xz, nr), dy = p.y - (hh - drop(p));
@@ -1466,81 +1579,396 @@ const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position
           vec3 q = ro + rd * m;
           if (q.y - (farH(q.xz) - drop(q)) < 0.0) b = m; else a = m;
         }
-        hit = b;
-        break;
+        return b;
       }
-      // Rising past every crest: the ray leaves the country.
-      // The ceiling sits above the tallest crest: the crests reach about 45 km.
-      if (p.y > 50000.0 && rd.y > 0.0) break;
+      // Rising past every crest on the curved ground: the ray leaves the country.
+      // The ceiling sits above the tallest crest (RANGE_CEIL in ranges.js).
+      if (p.y + drop(p) > ${RANGE_CEIL.toFixed(1)} && rd.y + t * dot(rd.xz, rd.xz) / PLANET_R > 0.0) break;
       tp = t;
+      // Over a cell's highest ground the ray leaps to the cell's edge.
+      if (uGridOn > 0.5) {
+        float lp = leap(p, rd, p.y + drop(p), rd.y + t * dot(rd.xz, rd.xz) / PLANET_R);
+        if (lp > 0.0) { t += lp + 2.0; if (t > 650000.0) break; continue; }
+      }
       // Over open plain a stride of 3% keeps grazing rays inside the budget.
       // Near any range the stride shrinks, so no crest or horn is skipped.
-      // In a band the stride is also capped, so it never leaps a thin crest.
       // In a band the stride stays short: 0.5% near the surface, 1% high above it.
       // A narrow summit can rise between two long strides.
-      t += nr > 0.5 ? clamp(0.3 * dy, 0.0015 * t, dy < 0.05 * t ? 0.005 * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
+      t += nr > 0.5 ? clamp(0.3 * dy, uFarStride.x * t, dy < 0.05 * t ? uFarStride.y * t : 0.01 * t) : max(0.45 * dy, 0.03 * t);
       if (t > 650000.0) break;
     }
-    if (hit < 0.0) discard;
-    vec3 p = ro + rd * hit;
-    // Bare ground in reach of the near plain: the plain draws it.
-    float h0 = farH(p.xz);
-    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
-    // Shade on the flat world: the curve only moves the image.
-    vec3 P = vec3(p.x, h0, p.z);
+    return -1.0;
+  }
+  // The surface normal at p; the step grows with the distance.
+  vec3 farNormal(vec2 p, float hit) {
     float e = max(60.0, 0.002 * hit);
-    vec3 N = normalize(vec3(farH(p.xz - vec2(e, 0.0)) - farH(p.xz + vec2(e, 0.0)), 2.0 * e, farH(p.xz - vec2(0.0, e)) - farH(p.xz + vec2(0.0, e))));
-    // A short march toward the light: the crests shade the valleys.
-    // Each pixel starts at its own offset, so the shadow never bands.
+    return normalize(vec3(farH(p - vec2(e, 0.0)) - farH(p + vec2(e, 0.0)), 2.0 * e, farH(p - vec2(0.0, e)) - farH(p + vec2(0.0, e))));
+  }
+  // A short march toward the light: the crests shade the valleys.
+  // Each pixel starts at its own offset, so the shadow never bands.
+  float farShadow(vec3 P) {
     float sh = 1.0, sd = 300.0 * (1.0 + fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))));
     for (int j = 0; j < 9; j++) {
       vec3 q = P + uSun * sd;
       sh = min(sh, clamp(3.0 * (q.y - farH(q.xz)) / sd + 0.5, 0.0, 1.0));
       sd *= 1.7;
     }
+    return sh;
+  }
+  // Cavity: 0 deep in a gully, 0.5 on a plain slope, 1 on a spur.
+  // The ground's height against its mean in a small ring.
+  float farCavity(vec2 p, float hit) {
+    float r = max(500.0, 0.004 * hit), h = farH(p);
+    float a = 0.25 * (farH(p + vec2(r, 0.0)) + farH(p - vec2(r, 0.0)) + farH(p + vec2(0.0, r)) + farH(p - vec2(0.0, r)));
+    return clamp(0.5 + (h - a) / (0.5 * r), 0.0, 1.0);
+  }
+  // The lit colour of surface point p at range hit, ground height h0, in the air.
+  // The face bump's detail: vertical flutes on steep faces, faint strata across them.
+  float farDetail(vec3 P) {
+    vec2 q = P.xz / 2500.0;
+    q += 0.6 * vec2(k2noise(q * 0.3), k2noise(q * 0.3 + 7.7)) - 0.3;
+    float st = k2noise(vec2(P.y / 260.0 + 2.0 * k2noise(q * 0.5), dot(P.xz, vec2(0.6, 0.8)) / 9000.0));
+    return ridge2(q, 3) + 0.12 * st;
+  }
+  // As the card clouds do, the face's normal tilts with the detail's slope.
+  // The taps run across the face and up it; only walls take the tilt.
+  vec3 farBump(vec3 P, vec3 N, float hit, float wall) {
+    // The bump fades out where one pixel spans a gully.
+    float k = uBump * wall * (1.0 - smoothstep(250.0, 900.0, 0.0015 * hit));
+    if (k < 0.01) return N;
+    vec3 T = normalize(cross(vec3(0.0, 1.0, 0.0), N) + vec3(1e-4, 0.0, 0.0)), B = cross(N, T);
+    float e = max(120.0, 0.0015 * hit), f0 = farDetail(P);
+    float dT = (farDetail(P + T * e) - f0) / e, dB = (farDetail(P + B * e) - f0) / e;
+    return normalize(N - 0.35 * k * 2500.0 * (dT * T + dB * B));
+  }
+  vec3 farShade(vec3 ro, vec3 rd, vec3 p, float hit, float h0, vec3 N, float sh, float cav) {
+    // Shade on the flat world: the curve only moves the image.
+    vec3 P = vec3(p.x, h0, p.z);
     float wall = smoothstep(0.92, 0.5, N.y);
-    vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
-    alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
+    // Slopes are scree in the rock's colour; walls are bare rock, darker.
+    vec3 alb = mix(uSlopeC, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
+    // Only the foot of a range blends into the sand plain.
+    alb = mix(uGroundC * 0.95, alb, smoothstep(20.0, 300.0, h0));
+    // Gullies hold dark scree and shade; spurs catch the light.
+    alb *= 0.25 + 1.5 * cav;
+    N = farBump(P, N, hit, wall);
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
-    vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
+    vec3 col = alb * (uRangeL.y * ambient(N) * (0.55 + 0.45 * N.y) + uRangeL.x * (uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N)));
     // The blast lights the faces turned to it, faintly at this range.
-    col += alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
+    col += uRangeL.z * alb * blastLight(P) * 2.5 * (0.25 + 0.75 * max(dot(N, normalize(uBlast.xyz - P)), 0.0));
     // The nearing rock warms the faces turned to it.
-    col += alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
-    // Aerial perspective: the air along the ray, Rayleigh and a dusty Mie.
-    vec3 Pa = vec3(p.x, P.y, p.z);
-    float hR = 8000.0, hM = 1600.0;
-    float yc = max(ro.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
-    float aR = abs(dy) < 1.0 ? exp(-yc / hR) : (exp(-yc / hR) - exp(-yp / hR)) * hR / dy;
-    float aM = abs(dy) < 1.0 ? exp(-yc / hM) : (exp(-yc / hM) - exp(-yp / hM)) * hM / dy;
-    vec3 tau = (vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.3e-5) * aM) * hit;
-    vec3 T = exp(-tau);
-    // The air's own light: the horizon sky, and a warm glow toward the sun.
-    float mu = dot(rd, uSunD), g = 0.76;
-    float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
-    vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
-    col = col * T + inL * (1.0 - T);
+    col += uRangeL.z * alb * uAstC * uFill * 0.18 * (0.3 + 0.7 * max(dot(N, normalize(uRockL.xyz - P)), 0.0));
+    // Aerial perspective: the shared air, along the ray to the hit.
+    col = aerialFrom(col, ro, ro + rd * hit + vec3(0.0, P.y - (ro + rd * hit).y, 0.0));
+    vec3 inL = k2skyB(normalize(vec3(rd.x, 0.02, rd.z)), 0.0) * 0.95;
     // Fog pools in the far valleys: low ground goes pale, the crests stand clear.
     // Each range then stands apart from the one behind it.
     float vf = uLayer.y * smoothstep(30000.0, 120000.0, hit) * exp(-h0 / 1600.0);
     col = mix(col, inL * 1.05, min(0.85 * vf, 1.0));
-    gl_FragColor = vec4(col, 1.0);
-    vec4 cp = uVP * vec4(p, 1.0);
-    gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
+    // The very foot of a range melts into the plain's own haze at the horizon.
+    // So no dark seam shows where the ranges meet the sand.
+    return mix(col, k2hazeColor(rd), 0.85 * exp(-h0 / 350.0) * smoothstep(30000.0, 90000.0, hit));
+  }
+  // The depth of world point p, for the near world to test against.
+  float farDepth(vec3 p) { vec4 cp = uVP * vec4(p, 1.0); return clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0); }`;
+const FAR_VS = /* glsl */`varying vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`;
+// The live pass marches every pixel, every frame.
+const farLive = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...GRID_U, uEye: { value: new THREE.Vector3() } },
+  depthWrite: true, depthTest: true,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  ${FAR_FN}
+  void main() {
+    vec3 ro = uEye, rd = rayOf(uInvVP, vN, ro);
+    float hit = farMarch(ro, rd);
+    if (hit < 0.0) discard;
+    vec3 p = ro + rd * hit;
+    // Bare ground in reach of the near plain: the plain draws it.
+    float h0 = farH(p.xz);
+    if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
+    vec3 N = farNormal(p.xz, hit);
+    gl_FragColor = vec4(farShade(ro, rd, p, hit, h0, N, farShadow(vec3(p.x, h0, p.z)), farCavity(p.xz, hit)), 1.0);
+    gl_FragDepth = farDepth(p);
   }`,
-}));
+});
+// The bake: the eye is locked off, so the ranges' shape holds still on screen.
+// One march fills a buffer a little wider than the view.
+// Each frame then only lights that buffer; the shadows rebake when the sun moves.
+// Two buffers: the pass reads the front one while the back one fills.
+const fbBuf = () => ({
+  g: new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }),
+  l: new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }),
+  // The window's rotation-only view-projection and its inverse; its lens and eye.
+  vp: new THREE.Matrix4(), inv: new THREE.Matrix4(), q: new THREE.Quaternion(), eye: new THREE.Vector3(), tb: 1, M: 1, aspect: 0, ok: false,
+});
+const farBake = {
+  on: true,
+  // The window's margin: the sight follows the gun, so its margin is wider.
+  M: 1.15, Msight: 1.3,
+  // The buffer's share of the screen's density.
+  res: 1,
+  bufs: [fbBuf(), fbBuf()], front: 0,
+  // A bake in progress: its buffer and the next row to fill.
+  job: null, rows: 8,
+  sun: new THREE.Vector3(), dirty: true, bakes: 0, hard: 0, lights: 0,
+};
+// The bake passes' inputs: the buffer under construction.
+const FB_U = { uPhase: { value: new THREE.Vector2(1, 0) }, uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uBakeEye: { value: new THREE.Vector3() } };
+// The baked pass's inputs: the front buffer.
+const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uFarL: { value: null } };
+// The geometry bake: range and normal per texel.
+// The range splits in two halves, so the half floats keep a quarter metre.
+const farBakeG = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FB_U, ...GRID_U, uFarSteps: { value: 640 }, uFarStride: { value: new THREE.Vector2(0.0005, 0.003) }, uEye: FB_U.uBakeEye },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefInv;
+  // The pass: x passes in all, this one is y.
+  // It fills bands of 8 rows, every x-th band: the GPU shades rows in blocks.
+  uniform vec2 uPhase;
+  ${FAR_FN}
+  void main() {
+    if (mod(floor(gl_FragCoord.y / 8.0), uPhase.x) != uPhase.y) discard;
+    vec3 ro = uEye, rd = rayOf(uRefInv, vN, vec3(0.0));
+    float hit = farMarch(ro, rd);
+    vec3 p = ro + rd * hit;
+    float h0 = farH(p.xz);
+    // A miss, or bare ground the near plain draws, marks the texel empty.
+    if (hit < 0.0 || (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0)) { gl_FragColor = vec4(-1.0, 0.0, 0.0, 0.0); return; }
+    vec3 N = farNormal(p.xz, hit);
+    float q = hit / 512.0;
+    gl_FragColor = vec4(floor(q), fract(q), N.x, N.z);
+  }`,
+});
+// The light bake: the sun's shadow and the cavity per texel, from the geometry bake.
+const farBakeL = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FB_U, uEye: FB_U.uBakeEye },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefInv;
+  uniform sampler2D uFarG;
+  ${FAR_FN}
+  void main() {
+    vec4 g = texelFetch(uFarG, ivec2(gl_FragCoord.xy), 0);
+    if (g.x < 0.0) { gl_FragColor = vec4(1.0); return; }
+    float hit = (g.x + g.y) * 512.0;
+    vec3 p = uEye + rayOf(uRefInv, vN, vec3(0.0)) * hit;
+    gl_FragColor = vec4(farShadow(vec3(p.x, farH(p.xz), p.z)), farCavity(p.xz, hit), 0.0, 1.0);
+  }`,
+});
+// The baked pass: each pixel reads the four nearest texels and lights them.
+// Texels on the nearest surface weigh most, so a crest stays crisp on the range behind it.
+const farBaked = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...FS_U, uEye: farLive.uniforms.uEye, uA2C: { value: 1 } },
+  depthWrite: true, depthTest: true, alphaToCoverage: true,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  uniform mat4 uRefVP;
+  uniform vec2 uBakeSize;
+  uniform sampler2D uFarG, uFarL;
+  uniform float uA2C;
+  ${FAR_FN}
+  void main() {
+    vec3 ro = uEye, rd = rayOf(uInvVP, vN, ro);
+    vec4 c = uRefVP * vec4(rd, 1.0);
+    if (c.w <= 0.0) discard;
+    vec2 f = (c.xy / c.w * 0.5 + 0.5) * uBakeSize - 0.5, fr = fract(f);
+    ivec2 i0 = ivec2(floor(f)), hi = ivec2(uBakeSize) - 1;
+    vec4 g[4];
+    float t[4], b[4], cov = 0.0, tmin = 1e9;
+    for (int k = 0; k < 4; k++) {
+      ivec2 o = ivec2(k & 1, k >> 1);
+      g[k] = texelFetch(uFarG, clamp(i0 + o, ivec2(0), hi), 0);
+      t[k] = (g[k].x + g[k].y) * 512.0;
+      b[k] = g[k].x < 0.0 ? 0.0 : (o.x == 1 ? fr.x : 1.0 - fr.x) * (o.y == 1 ? fr.y : 1.0 - fr.y);
+      cov += b[k];
+      if (g[k].x >= 0.0) tmin = min(tmin, t[k]);
+    }
+    // Without multisampling, a pixel shows only past half cover.
+    if (cov < (uA2C > 0.5 ? 0.02 : 0.5)) discard;
+    float W = 0.0, T = 0.0, sh = 0.0, cav = 0.0;
+    vec3 N = vec3(0.0);
+    for (int k = 0; k < 4; k++) {
+      float w = b[k] * exp(-abs(t[k] - tmin) / (0.01 * tmin)) + 1e-6 * step(0.0, g[k].x) * step(t[k], tmin);
+      W += w; T += w * t[k];
+      N += w * vec3(g[k].z, sqrt(max(1.0 - g[k].z * g[k].z - g[k].w * g[k].w, 0.0)), g[k].w);
+      vec2 L = texelFetch(uFarL, clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), hi), 0).rg;
+      sh += w * L.x; cav += w * L.y;
+    }
+    T /= W; sh /= W; cav /= W; N = normalize(N);
+    vec3 p = ro + rd * T;
+    gl_FragColor = vec4(farShade(ro, rd, p, T, p.y + drop(p), N, sh, cav), uA2C > 0.5 ? smoothstep(0.0, 1.0, cov) : 1.0);
+    gl_FragDepth = farDepth(p);
+  }`,
+});
+const farPass = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), farBaked);
 farPass.frustumCulled = false;
 // After the sky dome, before everything nearer.
-farPass.renderOrder = -0.9;
-farPass.onBeforeRender = (r, sc, cam) => { const u = farPass.material.uniforms; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); };
+farPass.renderOrder = BAND.country;
+farPass.onBeforeRender = (r, sc, cam) => { const u = FAR_U; u.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); u.uInvVP.value.copy(u.uVP.value).invert(); farLive.uniforms.uEye.value.copy(cam.position); };
 scene.add(farPass);
+// The bake's own quad and scene; the vertex shader ignores the camera.
+const fbScene = new THREE.Scene(), fbQuad = new THREE.Mesh(farPass.geometry, farBakeG), fbCam = new THREE.OrthographicCamera();
+fbQuad.frustumCulled = false;
+fbScene.add(fbQuad);
+const fbD = new THREE.Vector3(), fbF = new THREE.Vector3(), fbR = new THREE.Matrix4();
+// The grid's fine pass: the highest of 7 x 7 samples over each cell and half a cell round it.
+// A margin covers the peaks between the samples.
+const farGridF = new THREE.ShaderMaterial({
+  uniforms: { ...U, ...FAR_U, ...GRID_U, uEye: { value: new THREE.Vector3() } },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  varying vec2 vN;
+  ${FAR_FN}
+  void main() {
+    vec2 lo = uGrid.xy + floor(gl_FragCoord.xy) * uGrid.z;
+    float m = 0.0;
+    for (int j = 0; j < 7; j++) for (int i = 0; i < 7; i++) m = max(m, farH(lo + (vec2(i, j) / 3.0 - 0.5) * uGrid.z));
+    gl_FragColor = vec4(m < 1.0 ? 0.0 : (m * 1.06 + 400.0) / 1000.0, 0.0, 0.0, 1.0);
+  }`,
+});
+// The grid's coarse pass: the highest of each 4 x 4 block of fine cells.
+const farGridC = new THREE.ShaderMaterial({
+  uniforms: { uGridF: GRID_U.uGridF },
+  depthWrite: false, depthTest: false,
+  vertexShader: FAR_VS,
+  fragmentShader: /* glsl */`
+  uniform sampler2D uGridF;
+  void main() {
+    ivec2 b = ivec2(gl_FragCoord.xy) * 4;
+    float m = 0.0;
+    for (int j = 0; j < 4; j++) for (int i = 0; i < 4; i++) m = max(m, texelFetch(uGridF, b + ivec2(i, j), 0).r);
+    gl_FragColor = vec4(m, 0.0, 0.0, 1.0);
+  }`,
+});
+// Rebuild the grid when the ranges' shape uniforms change; a new grid needs a new bake.
+function farGridUpdate() {
+  const u = FAR_U, key = [u.uRg.value.map(v => v.toArray()), u.uRa.value.map(v => v.toArray()), Array.from(u.uLand.value), u.uEro.value, u.uForms.value].join();
+  if (key === farGrid.key) return false;
+  farGrid.key = key; farGrid.builds++;
+  // The grid reaches past every range's band: centre, plus 1.42 radii at the current width, plus 15 km.
+  const wk = u.uLand.value[LAND_KEYS.indexOf('width')] ?? 1;
+  farGrid.half = u.uRg.value.reduce((m, g) => (g.w > 0 ? Math.max(m, Math.hypot(g.x - 1670, g.y - 1990) + 1.42 * g.z * wk + 15000) : m), 200000);
+  GRID_U.uGrid.value.set(1670 - farGrid.half, 1990 - farGrid.half, 2 * farGrid.half / farGrid.n, farGrid.n);
+  const rt = renderer.getRenderTarget();
+  fbQuad.material = farGridF;
+  renderer.setRenderTarget(farGrid.f);
+  renderer.render(fbScene, fbCam);
+  fbQuad.material = farGridC;
+  renderer.setRenderTarget(farGrid.c);
+  renderer.render(fbScene, fbCam);
+  renderer.setRenderTarget(rt);
+  farBake.dirty = true;
+  return true;
+}
+// Pick the live march or the bake.
+function setFarMode(on) {
+  farBake.on = on && renderer.extensions.has('EXT_color_buffer_float');
+  farPass.material = farBake.on ? farBaked : farLive;
+  farBake.dirty = true;
+}
+// How far the view sits from buffer f's window: 1 is at its edge.
+// The eye's drift and the lens's zoom count too.
+function fbReach(f, c, building) {
+  if ((!f.ok && !building) || c.aspect !== f.aspect) return 9;
+  const tn = Math.tan(rad(c.fov / 2));
+  let r = Math.max(c.position.distanceTo(f.eye) / 25, f.tb / (tn * f.M * 1.15));
+  fbF.set(0, 0, -1).applyQuaternion(f.q);
+  for (let k = 0; k < 4; k++) {
+    fbD.set(k & 1 ? 1 : -1, k & 2 ? 1 : -1, 1).unproject(c).sub(c.position).normalize();
+    if (fbD.dot(fbF) <= 0) return 9;
+    fbD.applyMatrix4(f.vp);
+    r = Math.max(r, Math.abs(fbD.x), Math.abs(fbD.y));
+  }
+  return r;
+}
+// Start a bake of the back buffer around the view as it is now.
+// k scales the buffer: a quick bake runs at a quarter of the size.
+function fbStart(c, k = 1) {
+  const B = farBake, f = B.bufs[1 - B.front], M = sight ? B.Msight : B.M;
+  f.ok = false; f.aspect = c.aspect; f.M = M;
+  f.eye.copy(c.position); f.q.copy(c.quaternion);
+  f.tb = Math.tan(rad(c.fov / 2)) * M;
+  const cam = new THREE.PerspectiveCamera(THREE.MathUtils.radToDeg(2 * Math.atan(f.tb)), c.aspect, 1, 10);
+  f.vp.multiplyMatrices(cam.projectionMatrix, fbR.makeRotationFromQuaternion(c.quaternion).invert());
+  f.inv.copy(f.vp).invert();
+  const w = Math.max(1, Math.round(canvas.width * M * B.res * k)), h = Math.max(1, Math.round(canvas.height * M * B.res * k));
+  f.g.setSize(w, h); f.l.setSize(w, h);
+  B.job = { f, pass: 0, lit: false, h, w };
+}
+// One step of the job: a pass over every B.rows-th band of rows, so each pass costs about the same.
+// After the last pass, one frame lights the buffer; then it turns front.
+// all runs the whole job at once.
+function fbStep(all = false) {
+  const B = farBake, j = B.job, f = j.f, n = all ? 1 : B.rows;
+  if (j.pass < n) {
+    FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(j.w, j.h); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
+    FB_U.uPhase.value.set(n, j.pass);
+    fbQuad.material = farBakeG;
+    renderer.setRenderTarget(f.g);
+    // Only the first pass clears: the later passes add their bands to it.
+    const ac = renderer.autoClear;
+    renderer.autoClear = j.pass === 0;
+    renderer.render(fbScene, fbCam);
+    renderer.autoClear = ac;
+    j.pass = all ? n : j.pass + 1;
+    if (!all) return;
+  }
+  fbLight(f);
+  f.ok = true; B.job = null; B.bakes++;
+  B.front = B.bufs.indexOf(f);
+  FS_U.uRefVP.value.copy(f.vp); FS_U.uBakeSize.value.set(j.w, j.h); FS_U.uFarG.value = f.g.texture; FS_U.uFarL.value = f.l.texture;
+}
+// Light buffer f: the sun's shadow per texel.
+function fbLight(f) {
+  const B = farBake;
+  FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(f.g.width, f.g.height); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
+  B.sun.copy(U.uSun.value); B.lights++;
+  fbQuad.material = farBakeL;
+  renderer.setRenderTarget(f.l);
+  renderer.render(fbScene, fbCam);
+}
+// Each frame: past the window's edge, bake at once.
+// Near the edge, bake the back buffer one row pass a frame, then swap.
+// A tenth of a degree of sun moves the shadows: relight.
+function farBakeUpdate() {
+  const B = farBake, c = camera;
+  farGridUpdate();
+  if (!B.on) return;
+  const rt = renderer.getRenderTarget(), f = B.bufs[B.front];
+  const r = B.dirty ? 9 : fbReach(f, c);
+  if (r > 1 || (B.job && fbReach(B.job.f, c, true) > 1)) {
+    // A quarter-size bake shows at once, at a sixteenth of the cost.
+    // The full bake then fills over the next frames and swaps in.
+    B.dirty = false; B.hard++;
+    fbStart(c, 0.25);
+    fbStep(true);
+    fbStart(c);
+  } else {
+    if (!B.job && r > 0.94) fbStart(c);
+    if (B.job) fbStep();
+    else if (B.sun.dot(U.uSun.value) < 0.9999985) fbLight(f);
+  }
+  renderer.setRenderTarget(rt);
+}
+setFarMode(FAR_MODE === 'bake');
 
 /* ---------- clouds: low heaps far out, one storm tower beyond ---------- */
 // Each cloud is one card that turns about the vertical to face the eye.
 // The shader shapes a lumpy body and fakes its normal from a pillow depth.
 // aC: base centre and half width. aS: height, kind (0 heap, 1 tower), seed.
 // uCloudC: the clouds' own slow clock, in sim seconds.
-const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, ...IMP_U };
+// uFl: four lightning flashes in the storms: world place, light level.
+// uFlR: each flash's reach in metres.
+const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -1560,6 +1988,22 @@ ${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
+uniform vec4 uFl[4];
+uniform vec4 uFlR;
+// Lightning lights a storm from inside, after Window seat.
+// A hot core round the flash; a wide glow fills the tower.
+// Thick body glows deep in; thin edges let the light out.
+vec3 flashIn(vec3 P, float F, float H) {
+  vec3 L = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    if (uFl[i].w < 0.001) continue;
+    float fd = length(P - uFl[i].xyz), r = uFlR[i];
+    // A cold, violet-blue white.
+    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+  }
+  // A bright sky needs a stronger flash to show.
+  return L * (0.35 + 0.65 * smoothstep(0.0, 0.25 * H, F)) * mix(3.0, 1.0, uStars);
+}
 varying float vLife;
 float bt(float sd) { return uCloudT + uCloudC * 0.0012 * (0.6 + fract(sd * 0.73)); }
 float bil(vec2 p, float sd) { float t = bt(sd); return texture(uVol, vec3(p + vec2(t * 0.4, 0.0), sd * 0.37 + t * 0.06)).r; }
@@ -1592,27 +2036,34 @@ float body(vec2 X) {
     // A thunderhead: a broad, boiling column under a flat anvil.
     // The anvil runs downwind to the right and thins at its far end.
     float k = y / H;
-    float lean = W * 0.08 * k;
+    // Each storm has its own build: girth, lean, anvil reach and age.
+    // About one in three is still a towering cumulus, with no anvil yet.
+    float vGirth = mix(0.65, 1.25, hsh(21.0, sd)), vReach = mix(0.45, 1.15, hsh(22.0, sd));
+    // A giant is always a mature storm.
+    float vAnv = max(step(0.33, hsh(23.0, sd)), step(60000.0, H)), vTop = mix(0.72, 0.9, hsh(24.0, sd));
+    float lean = W * mix(-0.04, 0.16, hsh(25.0, sd)) * k * k;
     float cx = x - lean;
     float lump = bil(X / (W * 0.5), sd);
     float fine = cell(X / (W * 0.22), sd);
     // The column widens as it climbs; its sides boil in turrets.
-    float colHalf = W * mix(0.17, 0.36, smoothstep(0.0, 0.7, k));
-    float colF = min(colHalf - abs(cx), H * 0.84 - y);
+    float colHalf = W * mix(0.17, 0.36, smoothstep(0.0, 0.7, k)) * vGirth;
+    // A young tower ends in a big boiling dome; a mature one feeds its anvil.
+    float colTop = mix(H * vTop, H * 0.84, vAnv);
+    float colF = min(colHalf - abs(cx), colTop - y);
     colF = min(colF, y + 150.0) + (lump - 0.45) * W * 0.26 + (fine - 0.5) * W * 0.06;
     // The overshooting top: a dome above the column's core.
     float od = (cx + W * 0.04) / (W * 0.24);
-    float domeF = H * (0.8 + 0.2 * sqrt(max(1.0 - od * od, 0.0))) - y + (lump - 0.5) * H * 0.06;
-    domeF = min(min(domeF, y - H * 0.6), W * 0.24 - abs(cx + W * 0.04));
+    float domeF = colTop - H * 0.04 + H * 0.2 * sqrt(max(1.0 - od * od, 0.0)) - y + (lump - 0.5) * H * 0.06;
+    domeF = min(min(domeF, y - colTop * 0.7), W * 0.24 * vGirth - abs(cx + W * 0.04));
     // The anvil: a lens under the tropopause, long downwind.
     // It is thickest over the column and thins toward both ends.
-    float ax = (cx - W * 0.3) / (W * 0.68);
+    float ax = (cx - W * 0.3 * vReach) / (W * 0.68 * vReach);
     float far_ = smoothstep(0.0, W, cx);
     float envA = sqrt(max(1.0 - ax * ax, 0.0));
-    float thick = H * 0.085 * envA * (1.0 - 0.45 * far_);
+    float thick = H * 0.085 * envA * (1.0 - 0.45 * far_) * vAnv;
     float mid = H * (0.83 + 0.03 * far_);
     // The noise only works inside the lens.
-    float anvF = thick - abs(y - mid) + ((lump - 0.5) * H * 0.07 + (fine - 0.5) * H * 0.025) * envA - (1.0 - envA) * H * 0.05;
+    float anvF = thick - abs(y - mid) + ((lump - 0.5) * H * 0.07 + (fine - 0.5) * H * 0.025) * envA - (1.0 - envA) * H * 0.05 - (1.0 - vAnv) * H;
     F = max(max(colF, anvF), domeF);
     // Keep the whole shape inside the card.
     F = min(F, W * 0.99 - abs(x));
@@ -1684,41 +2135,50 @@ void main() {
   vec3 N = normalize(vR * (pd - px) / e + vec3(0.0, (pd - py) / e, 0.0) - vF * 1.2);
   vec3 P = vP - vF * pd * 0.3;
   // Three taps toward the key light give a self shadow.
-  vec2 l2 = vec2(dot(uSun, vR), uSun.y);
+  // The sun shapes the cloud until it is well down; then the moon does.
+  // At blue hour the key light is the moon, but the tops still see the sun.
+  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  vec2 l2 = vec2(dot(Ls, vR), Ls.y);
   l2 = length(l2) > 1e-3 ? normalize(l2) : vec2(0.0, 1.0);
   float occ = max(body(X + l2 * H * 0.12), 0.0) + max(body(X + l2 * H * 0.3), 0.0) + 0.5 * max(body(X + l2 * H * 0.6), 0.0);
   float sh = exp(-occ / (H * 0.35));
   // High tops keep the sun after it sets.
-  vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y));
+  // A high top sees the sun after the ground has lost it, as on the storms.
+  // The sun's height at the cloud: the planet's curve tilts its ground toward or away from the sun.
+  float sEl = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), sDip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+  float litTop = smoothstep(-sDip - 0.006, -sDip + 0.006, sEl) * (1.0 - smoothstep(-0.026, 0.026, sEl));
+  vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
   // The trail, the blast cloud and the other clouds shade this one.
   sunC *= 1.0 - 0.8 * shadeAt(P);
   float thin = 1.0 - smoothstep(0.0, soft * 10.0, F);
   vec3 V = normalize(P - cameraPosition);
   // Light through the cloud, as the comet tail takes it: Beer for the beam,
   // a soft term for light scattered many times, a forward and a back lobe, powder edges.
-  float mu = dot(V, uSun);
+  float mu = dot(V, Ls);
   float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
   float od = occ / (H * 0.3), Tl = exp(-od), Tm = exp(-0.18 * od);
   float powder = mix(1.0, 1.0 - exp(-6.0 * pd / H), 0.5 * (1.0 - max(mu, 0.0)));
-  float wrap = max(dot(N, uSun) * 0.6 + 0.4, 0.0);
+  float wrap = max(dot(N, Ls) * 0.6 + 0.4, 0.0);
   // The side away from the light stays dark, as on the comet's smoke.
-  vec3 col = sunC * (Tl * 0.85 + Tm * 0.12) * ph * powder * (0.35 + 0.65 * wrap) * 1.6;
+  // Light scattered many times keeps the shaded side warm and soft.
+  vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5;
   // Backlit cloud glows through its whole body, its thin rim most.
-  float back = max(dot(V, uSun), 0.0);
+  float back = max(dot(V, Ls), 0.0);
   col += sunC * (0.15 * back * back + 0.35 * thin * pow(back, 6.0));
-  vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, N.y * 0.5 + 0.5) * 1.05 + uCloudAmb * 0.5;
+  // A soft sky term: noisy normals must not swing between horizon and zenith light.
+  vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, 0.4 + 0.2 * N.y) * 1.05 + uCloudAmb * 0.5;
   col += amb * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y));
   // The tower keeps some body through seventy kilometres of air.
   // At night the heaps take the moon dimly; they never glow.
   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
   // Moonlit tops: the upper faces and thin crowns turn silver, like the tail's upper side.
-  col += uSunC * uStars * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
-  // The air layers the heaps by distance: near ones crisp, far ones in the horizon colour.
-  col = air(col, P);
-  // Far cloud sinks into the air: its foot first, its crown last.
+  col += uSunC * uStars * uMoonK * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
+  // The same air as the ranges: a cloud and a ridge at one distance share one tint.
+  col = aerial(col, P);
+  // Far cloud sinks further into that air, foot first, crown last (Far haze).
   // Near heaps stay crisp; far towers turn pale and flat.
   float cdk = length(P.xz - cameraPosition.xz);
-  col = mix(col, k2hazeColor(V) * 1.04, uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.97, 0.6, smoothstep(0.0, 20000.0, P.y)));
+  col = mix(col, aerialIn(V), uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.9, 0.5, smoothstep(0.0, 20000.0, P.y)));
   // The blast: its light, thin parts brightest, and the shock rim.
   // It lands after the haze: the flash lights the air on the way too.
   // Faces turned to the hit take it; the far side stays in shadow.
@@ -1742,6 +2202,8 @@ void main() {
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
   }
+  // Lightning inside the storms punches through the haze.
+  if (vS.z > 0.5) col += flashIn(P, F, H);
   // The ship's impacts light the cloud bases from beyond the horizon.
   col += impCloud(P, N, V, X, F) * uImpCK;
   // Towers are tall and catch the blast hardest.
@@ -1772,24 +2234,28 @@ void main() {
   vec3 R = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
   // The card is wider and taller than the body, so nothing clips.
   vec2 uv = position.xy * vec2(1.2, 1.5);
-  vec3 P = C + R * uv.x * aC.w + vec3(0.0, uv.y * aS.x, 0.0);
+  // The card stands along the camera's own up, not the world's.
+  // Then a tall card stays upright on screen, even at the frame's edge.
+  vec3 camUp = normalize(vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]));
+  vec3 P = C + R * uv.x * aC.w + camUp * uv.y * aS.x;
   vUv = uv; vP = P; vR = R; vF = f;
   vS = vec4(aC.w, aS.x, aS.y, aS.z);
   // The clouds ride the planet's curve too.
   gl_Position = projectionMatrix * viewMatrix * vec4(curved(P), 1.0);
 }`;
 // list: [angle in degrees, range m, base m, half width m, height m, kind].
-function cloudLayer(list, order) {
+// pick keeps a subset; each card keeps the seed it has in the whole list.
+function cloudLayer(list, order, pick = () => true) {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   // Far cards draw first.
-  const s = [...list].sort((a, b) => b[1] - a[1]);
+  const s = [...list].sort((a, b) => b[1] - a[1]).map((c, i) => [c, 13.7 * i + c[0]]).filter(([c]) => pick(c));
   const aC = new Float32Array(s.length * 4), aS = new Float32Array(s.length * 4);
-  s.forEach((c, i) => {
+  s.forEach(([c, sd], i) => {
     const p = polar(rad(c[0]), c[1]);
     aC.set([p.x, c[2], p.z, c[3]], i * 4);
-    aS.set([c[4], c[5], 13.7 * i + c[0], 0], i * 4);
+    aS.set([c[4], c[5], sd, 0], i * 4);
   });
   g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
   g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
@@ -1813,13 +2279,270 @@ const HEAPS = [
   [-13, 22000, 3000, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
   [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 3050, 2100, 1300, 0],
 ];
-const heaps = cloudLayer(HEAPS, 2.2);
+const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
 // Storm towers stand among the far ranges, as tall as their peaks.
-const TOWERS = [[-22, 120000, 2000, 15000, 24000, 1], [5, 150000, 2200, 19000, 28000, 1], [30, 105000, 2000, 16000, 25000, 1], [52, 135000, 2200, 18000, 27000, 1], [76, 115000, 2000, 14000, 23000, 1]];
-const tower = cloudLayer(TOWERS, 1.5);
+// Three towers of different builds: fewer reads truer than a row.
+// Storm bases sit kilometres up: the columns float clear of the horizon.
+const TOWERS = [[-14, 125000, 6000, 15000, 24000, 1], [8, 150000, 6500, 12000, 17000, 1], [28, 105000, 5500, 16000, 21000, 1]];
+const tower = cloudLayer(TOWERS, BAND.deep);
+// One giant: a colossal storm far beyond the ranges.
+// Beside it the gun and the towers look small.
+const GIANTS = [[52, 225000, 12000, 52000, 95000, 1]];
+const giants = cloudLayer(GIANTS, BAND.giants);
+
+/* ---------- storm probe: Window seat's towers, marched inside the cards ---------- */
+// A probe for Tom: each storm card becomes a window onto a 3D tower.
+// The shape, billows and light follow Window seat's storm cells.
+// Units inside: one "km" is a fourteenth of the storm's height.
+const STORM_VS = CLOUD_VS
+  .replace('flat varying vec4 vS;', 'flat varying vec4 vS;\nflat varying vec3 vC;')
+  .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(2.6, 1.35);')
+  .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
+const STORM_FS = /* glsl */`precision highp sampler3D;
+// three.js sets it on every program; only the vertex stage declares it.
+uniform mat4 projectionMatrix;
+uniform sampler3D uVol;
+varying vec2 vUv;
+varying vec3 vP, vR, vF;
+flat varying vec4 vS;
+flat varying vec3 vC;
+${HEAD}
+${AIR}
+uniform float uCloudC;
+uniform vec4 uFl[4];
+uniform vec4 uFlR;
+float hsh(float n, float sd) { return fract(sin(n * 91.7 + sd * 13.13) * 43758.5453); }
+float smax(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
+float smin(float a, float b, float k) { return -smax(-a, -b, k); }
+// The storm, set once per pixel: core radius, top, anvil and turrets.
+float sRc, sTop, sLen, sR1, sR2, sLean, sOver, sAnv, sTile, sSeed;
+vec2 sAx;
+vec4 sTur[4];
+void setStorm(float sd, float giant) {
+  sSeed = sd;
+  sRc = 3.4 * mix(0.8, 1.2, hsh(1.0, sd));
+  sTop = 13.0;
+  // A giant always has its anvil; about one tower in three has none yet.
+  sAnv = max(giant, step(0.33, hsh(2.0, sd)));
+  sLen = mix(0.3, mix(5.0, 10.0, hsh(3.0, sd)), sAnv);
+  sR1 = sRc * 1.25;
+  sR2 = clamp(sRc * 0.7 + sLen * 0.42, sR1 - sLen * 0.8, sR1 + sLen * 0.8);
+  // One wind for every storm: anvils run the same way.
+  sAx = normalize(vec2(0.8, -0.6) + (vec2(hsh(4.0, sd), hsh(5.0, sd)) - 0.5) * 0.3);
+  sLean = sRc * 0.18;
+  sOver = sRc * 0.45 * sAnv * (0.8 + 0.2 * sin(uCloudC * 0.05 + sd));
+  sTile = clamp(sRc * 1.6, 5.0, 11.0);
+  for (int j = 0; j < 4; j++) {
+    float fj = float(j);
+    float ang = hsh(fj + 7.0, sd) * 6.2832, off = j == 0 ? 0.0 : sRc * (0.4 + 0.4 * hsh(fj + 11.0, sd));
+    float rad = j == 0 ? sRc * 0.8 : sRc * (0.4 + 0.22 * hsh(fj + 13.0, sd));
+    float top = j == 0 ? sTop - 0.4 : mix(3.0, sTop - 3.2, 0.2 + 0.8 * hsh(fj + 17.0, sd));
+    sTur[j] = vec4(vec2(cos(ang), sin(ang)) * off, rad, top);
+  }
+}
+// The tower's shape without billows: about the depth inside.
+float shape(vec3 p, out float aw) {
+  float y = p.y, hk = clamp(y / sTop, 0.0, 1.0);
+  vec2 q = p.xz - sAx * sLean * hk * hk;
+  float col = -1e3;
+  for (int j = 0; j < 4; j++) {
+    vec4 tu = sTur[j];
+    float r = tu.z * (1.0 + 0.12 * (1.0 - hk));
+    float dy = y - clamp(y, -1.0, tu.w - r);
+    col = smax(col, r - length(vec2(length(q - tu.xy), dy * 1.25)), sRc * 0.3);
+  }
+  // A broad foot that narrows as the column rises out of it.
+  float an_ = atan(q.y, q.x);
+  float lobe = 1.0 + 0.28 * sin(3.0 * an_ + sSeed) + 0.15 * sin(5.0 * an_ - sSeed * 1.3);
+  // The foot stays modest: past the horizon a wide skirt reads as a twister.
+  float fr = sRc * mix(1.5, 0.9, smoothstep(0.5, 4.5, y)) * mix(1.0, lobe, 0.6);
+  col = smax(col, min(fr - length(q), (4.5 - y) * 0.8), sRc * 0.5);
+  // The base is flat.
+  col = smin(col, y * 2.0, 0.3);
+  // The anvil: a fan that widens downwind, flat on top, thin at its rim.
+  vec2 a = p.xz - sAx * sLean;
+  vec2 uv = vec2(dot(a, vec2(-sAx.y, sAx.x)), dot(a, sAx));
+  float k = clamp(uv.y / sLen, 0.0, 1.0), ku = clamp(-uv.y / sR1, 0.0, 1.0);
+  float top = sTop + 0.2 - 0.5 * k * k - 0.8 * ku * ku;
+  float bot = top - mix(3.0, 0.25, pow(k, 0.7)) * (1.0 - 0.85 * ku * ku);
+  float fan = min(mix(sR1, sR2, k) - abs(uv.x), min(uv.y + sR1, sLen + sR2 * 0.4 - uv.y));
+  float an = smin(fan, smin(top - y, y - bot, 0.3), 0.8) - (1.0 - sAnv) * 20.0;
+  // The overshooting top: a squat dome on the core's head.
+  float ov = sOver - length(vec3(q.x, (y - sTop + 0.4 + sOver * 0.2) * 1.35, q.y));
+  aw = smoothstep(-0.6, 0.6, an - col);
+  return smax(smax(col, an, 0.9), ov, 1.0);
+}
+// Cauliflower billows from the baked volume; the lumps rise slowly.
+float billow(vec3 p, float aw, bool fine) {
+  p.xz -= sAx * dot(p.xz, sAx) * 0.6 * aw;
+  vec3 r = vec3(p.x * 0.8 - p.z * 0.6, p.y - uCloudC * 0.006, p.x * 0.6 + p.z * 0.8) + sSeed * 0.37;
+  // Worley lumps, as Window seat's: round cauliflower heads, not smooth swells.
+  vec4 m = texture(uVol, r / sTile);
+  float b = m.b * 0.75 + m.g * 0.25 - 0.47;
+  if (fine) b = b * 0.72 + (texture(uVol, r / (sTile * 0.31) + 0.5).g - 0.5) * 0.28;
+  return b;
+}
+// gap: how far outside the billowed shell p lies, for empty-space skipping.
+float dens(vec3 p, bool fine, out float gap) {
+  float aw, sh = shape(p, aw), A = sRc * 0.4 * mix(1.0, 0.35, aw);
+  gap = -sh - A * 1.1 - 0.5;
+  if (gap > 0.0) return 0.0;
+  // A wide ramp feathers the outer billows into the sky.
+  return smoothstep(0.0, 0.6, sh + A * 2.2 * billow(p, aw, fine));
+}
+float densL(vec3 p) { float g; return dens(p, false, g); }
+vec3 flashAt(vec3 P) {
+  vec3 L = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    if (uFl[i].w < 0.001) continue;
+    float fd = length(P - uFl[i].xyz), r = uFlR[i];
+    L += vec3(0.5, 0.62, 1.0) * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+  }
+  return L * mix(3.0, 1.0, uStars);
+}
+void main() {
+  float H = vS.y, giant = step(60000.0, H), U = H / 14.0;
+  setStorm(vS.w, giant);
+  vec3 ro = cameraPosition, rd = normalize(vP - cameraPosition);
+  // The bounding cylinder round the storm, in metres.
+  float Rb = (max(sLen + sR2, sRc * 2.4) + 2.0) * U;
+  vec2 oc = ro.xz - vC.xz;
+  float A2 = dot(rd.xz, rd.xz), B = dot(oc, rd.xz), C2 = dot(oc, oc) - Rb * Rb, D = B * B - A2 * C2;
+  if (D <= 0.0) discard;
+  D = sqrt(D);
+  float t0 = max((-B - D) / A2, 0.0), t1 = (-B + D) / A2;
+  if (t1 <= t0) discard;
+  // Steps: short inside the cloud, long leaps through the empty bound.
+  float dt = (t1 - t0) / 48.0;
+  float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  // The sun shapes the storm until it is well down; then the moon does.
+  vec3 Ls = uSunD.y > -0.12 ? uSunD : uSun;
+  float mu = dot(rd, Ls);
+  float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
+  // A low sun rakes the towers: lit faces glow, the far side goes deep.
+  float low = 1.0 - smoothstep(0.05, 0.4, Ls.y);
+  vec3 col = vec3(0.0);
+  float Tc = 1.0, t = t0 + dt * jit;
+  vec3 Phit = vC + vec3(0.0, 0.5 * H, 0.0);
+  bool hit = false;
+  for (int i = 0; i < 64; i++) {
+    if (t > t1) break;
+    vec3 P = ro + rd * t;
+    vec3 p = (P - vC) / U;
+    if (p.y > sTop + 3.0 && rd.y > 0.0) break;
+    float gap, d = dens(p, true, gap);
+    if (d < 0.003) { t += max(dt, gap * U * 0.8); continue; }
+    if (!hit) { Phit = P; hit = true; }
+    // One tap toward the light gives the self shadow.
+    float Tl = exp(-3.2 * densL(p + Ls * 1.2));
+    float h01 = clamp(p.y / sTop, 0.0, 1.0);
+    // A high top sees the sun after the ground has lost it.
+    // Its horizon dips by the planet's curve: about ten degrees at ninety kilometres.
+    // The sun's height at P itself: points toward the sun see it higher.
+    float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+    float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
+    // Light that grazes the planet arrives deep red.
+    vec3 sunC = mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
+    // Sky light comes mostly from the bright horizon, warm at dusk.
+    vec3 amb = mix(uHorC * 0.9, uZenC, 0.25 + 0.3 * h01) + uCloudAmb * 0.5;
+    // Powder: thin edges facing the sun catch the most light.
+    float powder = 1.0 - exp(-4.0 * d);
+    // A second, longer tap darkens the side away from the sun.
+    float Tl2 = exp(-1.6 * densL(p + Ls * 3.5));
+    // Light scattered many times fills the shaded side, so it never goes cold and flat.
+    vec3 S = sunC * Tl * Tl2 * min(ph, 1.6) * mix(0.95, 1.45, low) * mix(1.0, powder, 0.35)
+           + sunC * 0.32 * (0.35 + 0.65 * Tl2)
+           + amb * (0.4 + 0.45 * h01) * (0.6 + 0.4 * Tl2);
+    S *= mix(1.0, 0.45, uStars);
+    S += flashAt(P) * (0.4 + 0.6 * d);
+    // Thick body: the column is opaque a few kilometres in.
+    float al = 1.0 - exp(-5.0 * d * dt / U);
+    col += Tc * S * al;
+    Tc *= 1.0 - al;
+    if (Tc < 0.03) break;
+    t += dt;
+  }
+  float a = 1.0 - Tc;
+  if (a < 0.004) discard;
+  col /= a;
+  // The same air as the ranges and the cards.
+  col = aerial(col, Phit);
+  gl_FragColor = vec4(col, a);
+  // The depth of the first cloud on the ray, on the planet's curve.
+  // Then a range in front cuts the storm where the two really cross.
+  vec2 dc = Phit.xz - cameraPosition.xz;
+  vec4 cp = projectionMatrix * viewMatrix * vec4(Phit.x, Phit.y - dot(dc, dc) / ${(2 * PLANET_R).toFixed(1)}, Phit.z, 1.0);
+  gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
+}`;
+const stormCards = [tower, giants], cardMats = stormCards.map(m => m.material);
+let stormMats = null;
+// Storm probe on: the towers and the giant march Window seat's volume.
+function setStormProbe(on) {
+  stormMats ??= stormCards.map(m => new THREE.ShaderMaterial({ uniforms: m.material.uniforms, vertexShader: STORM_VS, fragmentShader: STORM_FS, transparent: true, depthWrite: false }));
+  stormCards.forEach((m, i) => { m.material = on ? stormMats[i] : cardMats[i]; });
+  stormFl.vol = on;
+}
+
+/* ---------- storm lightning: flashes inside the towers and the giant ---------- */
+// After Window seat: a burst of one to five strokes, 50 to 220 ms apart.
+// Brightness is log-normal: most flashes are dim, a few blaze.
+// Most sit mid-level in the core; a mature storm sends some through its anvil.
+// A storm recharges between bursts: one somewhere every 6 to 22 s.
+const STORMS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
+// vol: the storm probe is on, so flashes sit inside its narrower towers.
+const stormFl = { rate: 1, next: 4, strokes: [], vol: false };
+const flV = new THREE.Vector3();
+// A storm's centre as the card shader drifts it, at the cloud clock t.
+function stormAt(c, t, out) {
+  const ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * 0.2;
+  return out.set(c.p.x * Math.cos(a) - c.p.z * Math.sin(a), 0, c.p.x * Math.sin(a) + c.p.z * Math.cos(a));
+}
+// One spot in a storm: across the card at the eye's right, at a height.
+function stormSpot(c, P0, out) {
+  const fx = P0.x - camera.position.x, fz = P0.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
+  const anvil = Math.random() < 0.25;
+  // The probe's tower is narrower: its core spans about a quarter of its height.
+  const rc = 3.4 * c.H / 14, vol = stormFl.vol;
+  const across = vol ? (Math.random() - 0.5) * 1.2 * rc : (anvil ? 0.1 + 0.5 * Math.random() : (Math.random() - 0.5) * 0.5) * c.W;
+  const up = vol ? (anvil ? 12.2 : 3 + 7 * Math.random()) / 14 : anvil ? 0.8 : 0.25 + 0.45 * Math.random();
+  out.set(P0.x + (-fz / fl) * across, c.base + c.H * up, P0.z + (fx / fl) * across);
+  return out;
+}
+// A burst rumbles through one storm: two to five spots light in turn.
+// Each spot fires one to four strokes; now and then a cell boils over.
+function stormBurst() {
+  const c = STORMS[Math.floor(Math.random() * STORMS.length)], P0 = stormAt(c, simT, new THREE.Vector3());
+  const boil = Math.random() < 0.15;
+  const spots = boil ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 4);
+  let t = simT;
+  for (let j = 0; j < spots; j++) {
+    const P = stormSpot(c, P0, new THREE.Vector3());
+    // Log-normal light; a sheet flash is wide, a pulse is tight.
+    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8, r = stormFl.vol ? (3.4 * c.H / 14) * (0.4 + 0.8 * Math.random()) : c.W * (0.1 + 0.22 * Math.random());
+    const n = 1 + Math.floor(Math.random() * Math.random() * 4);
+    let ts = t;
+    for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: ts, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.1 * c.W, (Math.random() - 0.5) * 0.06 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); ts += 0.05 + 0.17 * Math.random(); }
+    // The next spot answers 0.1 to 0.9 s later; a boiling cell fires faster.
+    t += (boil ? 0.08 : 0.15) + (boil ? 0.3 : 0.75) * Math.random();
+  }
+}
+function stepStorms() {
+  const u = CLOUD_U.uFl.value;
+  if (stormFl.rate > 0.01 && !reduced() && simT >= stormFl.next) {
+    stormBurst();
+    stormFl.next = simT + (6 + 16 * Math.random()) / stormFl.rate;
+  }
+  // Each stroke snaps on, then dies in a tenth of a second with a flicker.
+  stormFl.strokes = stormFl.strokes.filter(s => simT - s.t0 < 0.6);
+  const live = stormFl.strokes.filter(s => simT >= s.t0).map(s => { const a = simT - s.t0; return { s, v: s.L * Math.exp(-a / 0.07) * (0.75 + 0.25 * Math.sin(a * 140)) }; }).sort((a, b) => b.v - a.v);
+  for (let i = 0; i < 4; i++) {
+    const e = live[i];
+    if (e) { u[i].set(e.s.P.x, e.s.P.y, e.s.P.z, e.v); CLOUD_U.uFlR.value.setComponent(i, e.s.r); } else u[i].w = 0;
+  }
+}
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
 const MIDS = [
   [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
@@ -1827,11 +2550,13 @@ const MIDS = [
   // Farther out.
   [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0],
 ];
-const mids = cloudLayer(MIDS, 2.15);
+// Mids past the rock draw behind it; the rest draw in front.
+const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
+const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
 // The deck stands in for the middle heaps; they show only with the deck off.
 function setDeck(v) {
   U.uDeck.value = v;
-  mids.visible = v < 0.01;
+  mids.visible = farMids.visible = v < 0.01;
   shaftOcc = null;
 }
 
@@ -2539,8 +3264,8 @@ const astMat = new THREE.ShaderMaterial({
       float fis = smoothstep(0.5, 0.58, n) * (1.0 - smoothstep(0.64, 0.76, n));
       col += vec3(1.0, 0.18, 0.05) * fis * (0.6 + 0.4 * sin(uTime * 0.7 + n * 12.0)) * 3.5;
     }
-    // The plain's distance haze too, so a body this size sits deep in the air.
-    col = air(k2haze(col, vP), vP);
+    // The plain's low dust, then the shared air, so a body this size sits deep in the air.
+    col = aerial(k2haze(col, vP), vP);
     // Extra air on the rock: far out, blue scatters away and the sky fills in.
     // The rock reddens and pales with distance and sharpens as it nears.
     vec3 Tr = exp(-BETA_R * uAir * (uRockAir - 1.0) * airDepth(vP));
@@ -2791,7 +3516,7 @@ const shipMat = new THREE.ShaderMaterial({
     // A high sun's bright sky washes the ship toward a ghost.
     vec3 dir = normalize(vP - cameraPosition);
     float day = smoothstep(0.2, 0.8, uSunD.y);
-    col = mix(air(col, vP), k2skyB(dir, 0.0), 0.5 * day);
+    col = mix(aerial(col, vP), k2skyB(dir, 0.0), 0.5 * day);
     // The cirrus hangs nine kilometres up, in front of the ship.
     // Two blends give the ice's colour and cover.
     float cs = dot(dir, uSunD);
@@ -3310,8 +4035,9 @@ function makeTrain(pu) {
     if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
     // The air acts once, at the smoke's mean depth.
     vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + t1));
-    vec3 Ta = airT(Pm) * (1.0 - 0.45 * k2hazeAmount(Pm));
-    col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
+    // The shared air, as on the ranges and the clouds; the plain's low dust on top.
+    vec3 Ta = aerialT(Pm) * (1.0 - 0.45 * k2hazeAmount(Pm));
+    col = col * Ta + aerialIn(rd) * (1.0 - Ta) * al;
     // Smoke behind the soot ball hides in it.
     float sT = sootT(Pm);
     gl_FragColor = vec4(col * sT, al * sT);
@@ -3330,7 +4056,7 @@ function makeMini() {
   };
   const m = makeTrain(pu);
   // Debris trains draw after the main trail: they fly nearer the eye.
-  m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.debris; m.visible = false;
   scene.add(m);
   return { m, pu };
 }
@@ -3344,7 +4070,7 @@ function aimMini(t, pos, away, R, len, on, burn) {
   t.m.visible = on > 0.01;
 }
 smoke.frustumCulled = false;
-smoke.renderOrder = 2;
+smoke.renderOrder = BAND.smoke;
 scene.add(smoke);
 
 /* ---------- fragments: small rocks on their own tracks ---------- */
@@ -3415,10 +4141,10 @@ function makeFragTrail(own = false) {
       vec3 smoke = mix(uSoot, uAsh, smoothstep(0.0, 0.6, vF)) * (ambient(vec3(0.0, 1.0, 0.0)) + uSunC * 0.8 + blastLight(vP));
       // A short hot tip; a long glow hides the piece.
       vec3 fire = uFireC * exp(-vF * 16.0) * edge * 0.8 * uOn * lift * mix(1.0, uLift.z, uLift.y);
-      gl_FragColor = vec4(air(smoke, vP) * a + fire, a);
+      gl_FragColor = vec4(aerial(smoke, vP) * a + fire * aerialT(vP), a);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.1; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.ribbons; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -3437,7 +4163,7 @@ function makeFragTrail(own = false) {
       uHot: PU.uHot, uFireC: PU.uFireC, uEmberC: PU.uEmberC, uSoot: PU.uSoot, uAsh: PU.uAsh,
     };
     const m = makeTrain(pu);
-    m.frustumCulled = false; m.renderOrder = 2.05; m.visible = false;
+    m.frustumCulled = false; m.renderOrder = BAND.debris; m.visible = false;
     scene.add(m);
     shipTrains.push({ m, pu, rib: sec.id === 'prow' || sec.id === 'tower' ? makeFragTrail(true) : null, cheap: false });
   }
@@ -3457,19 +4183,25 @@ const frags = Array.from({ length: 16 }, () => {
 });
 const fragGlowP = new THREE.Vector3();
 // Seconds a split piece takes to drift out to its own track.
-const SPLIT_T = 30;
+const SPLIT_T = 40;
 // Offsets count main-rock radii, so a size change keeps the gaps.
 function seedFrags() {
-  // Six to nine spread wide across the sky; three to five split off later.
-  const n = 6 + Math.floor(rnd() * 4), ns = 3 + Math.floor(rnd() * 3);
+  // Six to nine spread wide across the sky; four to six split off later.
+  const n = 6 + Math.floor(rnd() * 4), ns = 4 + Math.floor(rnd() * 3);
   frags.forEach((f, i) => {
     const split = i >= n && i < n + ns;
     f.on = i < n; f.broke = -1; f.breakT = 0;
-    f.splitS = split ? 0.3 + 0.6 * rnd() : -1; f.splitT = -1e9;
+    // Splits come faster as the rock nears the ground, on even steps.
+    // A square root packs the steps toward the end of the fall.
+    // The last ones break off in the strike, past the horizon line.
+    const j = i - n, u = (j + 0.25 + 0.5 * rnd()) / ns;
+    f.splitS = split ? 0.3 + 0.9 * Math.sqrt(u) : -1; f.splitT = -1e9;
     const th = (i / n) * Math.PI * 2 + rnd() * 1.4;
     // Riders scatter from close by to far across the sky.
-    const gap = split ? 2.5 + 3 * rnd() : 2.8 + 22 * rnd() * rnd();
-    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = split ? -1 + 4 * rnd() : -8 + 30 * rnd();
+    // A split piece drags more than the rock: it falls back down the wake.
+    // It drifts only a little aside, to the edge of the smoke, never ahead.
+    const gap = split ? 1.6 + 1.2 * rnd() : 2.8 + 22 * rnd() * rnd();
+    f.ox = Math.cos(th) * gap; f.oy = Math.sin(th) * gap; f.oz = split ? 5 + 10 * rnd() : -8 + 30 * rnd();
     f.k = 0.06 + 0.1 * rnd();
     // Medium pieces come a little bigger.
     if (f.k >= 0.18) f.k *= 1.25;
@@ -3489,9 +4221,12 @@ function placeFrags() {
     if (!f.on && f.splitS >= 0 && f.broke < 0 && live && ast.s >= f.splitS) splitFrag(f);
     if (!f.on) continue;
     // A split piece leaves the rock's flank and eases out to its track.
-    const e = f.splitS < 0 ? 1 : 1 - Math.pow(1 - clamp((simT - f.splitT) / SPLIT_T, 0, 1), 2);
+    const st = clamp((simT - f.splitT) / SPLIT_T, 0, 1);
+    const e = f.splitS < 0 ? 1 : 1 - Math.pow(1 - st, 2);
+    // Drag slows it gently at first, so it falls back on an ease-in.
+    const eb = f.splitS < 0 ? 1 : st * st * (3 - 2 * st);
     const g = THREE.MathUtils.lerp(1.1 / Math.max(Math.hypot(f.ox, f.oy), 1e-3), 1, e);
-    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * g * ast.R).addScaledVector(ast.upv, f.oy * g * ast.R).addScaledVector(ast.away, f.oz * e * ast.R);
+    f.pos.copy(ast.pos).addScaledVector(ast.side, f.ox * g * ast.R).addScaledVector(ast.upv, f.oy * g * ast.R).addScaledVector(ast.away, f.oz * eb * ast.R);
     f.m.position.copy(f.pos);
     f.m.scale.setScalar(f.k * ast.R);
     const u = f.trail.material.uniforms;
@@ -3647,7 +4382,7 @@ const dust = new THREE.Mesh(dustGeo, new THREE.ShaderMaterial({
   }`,
 }));
 dust.frustumCulled = false;
-dust.renderOrder = 2.5;
+dust.renderOrder = BAND.dust;
 scene.add(dust);
 let dustHead = 0, dustEnd = 0, dustDirty = false;
 // Steam puffs carry a seed past 1000; they draw white and thin.
@@ -3791,7 +4526,7 @@ const starMat = new THREE.ShaderMaterial({
 });
 const stars = new THREE.Mesh(starGeo, starMat);
 stars.frustumCulled = false;
-stars.renderOrder = 3;
+stars.renderOrder = BAND.sparks;
 scene.add(stars);
 let head = 0, dirtyFrom = -1, dirtyN = 0, lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
@@ -3887,7 +4622,7 @@ const arcMat = new THREE.ShaderMaterial({
 });
 const arcs = new THREE.Mesh(arcGeo, arcMat);
 arcs.frustumCulled = false;
-arcs.renderOrder = 3;
+arcs.renderOrder = BAND.sparks;
 scene.add(arcs);
 // Each live arc: two ends, birth, life, bow, seed.
 const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.Vector3(), b: new THREE.Vector3(), t0: 0, life: 0.1, bowV: new THREE.Vector3(), seed: 0, k: 1 }));
@@ -4355,6 +5090,18 @@ function sightSetup() {
           vec3 far = L < 0.5 ? vec3(0.93, 0.96, 1.0) : vec3(0.02);
           o = mix(o, far, clamp(k.r, 0.0, 1.0));
         }
+        // Blue, the burn: the phosphor is worn where the marks sat for years.
+        // The picture dims inside them; its own grain shows through.
+        // An offset sample lights one edge and shades the other.
+        float b = clamp(k.b, 0.0, 1.0);
+        if (b > 0.002 || texture(tKey, vUv + uTexel * 2.0).b > 0.002) {
+          float e = texture(tKey, vUv + vec2(-1.5, 1.5) * uTexel).b - texture(tKey, vUv + vec2(1.5, -1.5) * uTexel).b;
+          float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          // On a bright picture the burn dims; on a dark one it glows as a ghost.
+          vec3 dim = o * (1.0 - 0.5 * b), ghost = o + vec3(0.8, 0.86, 0.95) * 0.42 * b;
+          o = mix(dim, ghost, smoothstep(0.32, 0.08, L));
+          o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * (0.12 + 0.25 * L);
+        }
         outColor = vec4(o, 1.0);
       }`,
   });
@@ -4453,11 +5200,13 @@ function sightKey() {
   const ph = reduced() ? 0.5 : (Math.floor(simT * 10) / 10) % 1;
   x.setTransform(1, 0, 0, 1, 0, 0);
   x.clearRect(0, 0, f.kc.width, f.kc.height);
-  for (const band of [true, false]) {
+  // Every mark is burnt into the phosphor: one pass, in the blue channel.
+  // Only the laser stays live light, in the red core.
+  for (const band of [false]) {
     x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
-    x.filter = band ? `blur(${3.2 * k}px)` : 'none';
-    x.globalCompositeOperation = band ? 'source-over' : 'lighter';
-    const col = band ? '#0f0' : '#f00';
+    x.filter = `blur(${0.6 * k}px)`;
+    x.globalCompositeOperation = 'lighter';
+    const col = '#00f';
     x.strokeStyle = x.fillStyle = col;
     x.lineJoin = 'round';
     const lw = w => (x.lineWidth = band ? 5 : w * k);
@@ -4484,6 +5233,19 @@ function sightKey() {
     box(mx, up, mw, mh); box(mx, lo, mw, mh);
     if (m.lvl > 0) box(mx, lo + mh * (1 - m.lvl), mw, mh * m.lvl, true);
     if (m.state === 'full') box(mx, up, mw, mh, true);
+    // The ranging laser: the tube sees the IR beam and its spot on the rock.
+    // The beam enters from the emitter's side and ends on the rock.
+    const lg = laserGain();
+    if (lg > 0 && m.rock) {
+      const e = skScreen(skQ.lerpVectors(lzA, lzB, 0.0005));
+      if (e.ok) {
+        x.strokeStyle = x.fillStyle = '#f00';
+        lw(band ? 5 : 0.8 + 1.6 * lg);
+        line([[e.x, e.y], [m.rock.x, m.rock.y]]);
+        dot(m.rock.x, m.rock.y, band ? 6 + 4 * lg : (1.5 + 3.5 * lg) * k);
+        x.strokeStyle = x.fillStyle = col;
+      }
+    }
     if (m.rock) {
       const { rock } = m, hgt = rock.r * 1.25 + 12 * k;
       // Two obelisks either side of the rock, the height of its disc.
@@ -4524,6 +5286,16 @@ function sightKey() {
     const w0 = { hold: 'HOLD', charging: `${Math.round(m.lvl * 100)}`, full: 'RELEASE', fired: (m.left ?? 0).toFixed(1), struck: 'STRUCK' }[m.state];
     word(bore.x, lo + mh + (big ? 34 : 28) * k, w0, big ? 22 : 12, 'center', big ? 0.12 : 0.6, big ? 400 : 500);
   }
+  // Blue, the burn: the gun's name is burnt into the tube's phosphor.
+  // It sits top centre, clear of the bar; on phones under its top row.
+  x.setTransform(f.kd, 0, 0, f.kd, 0, 0);
+  x.filter = `blur(${0.8 * k}px)`;
+  x.globalCompositeOperation = 'lighter';
+  x.fillStyle = '#00f';
+  x.font = `600 ${26 * k}px Gabarito, sans-serif`;
+  x.letterSpacing = `${0.55 * 26 * k}px`;
+  x.textAlign = 'center';
+  x.fillText('SCINFAXI', m.W / 2 + 0.275 * 26 * k, (m.phone ? 92 : 50) * k);
   x.filter = 'none';
   x.globalCompositeOperation = 'source-over';
   f.keyTex.needsUpdate = true;
@@ -4620,7 +5392,6 @@ function easeLook(dt) {
   if (Math.abs(skyTrail.span) < 1e-4) skyTrail.span = 0;
   U.uTrailK.value = Math.abs(skyTrail.span) / TRAIL_MAX;
   U.uSkyRot0.value.setFromMatrix4(skyRot0.makeRotationAxis(SKY.P, -(skyH - skyTrail.span)));
-  stepSpecks(dt);
   const W = 1.6;
   for (const k of ['yaw', 'pitch']) {
     lookV[k] += (W * W * (lookTo[k] - look[k]) - 2 * W * lookV[k]) * dt;
@@ -4693,7 +5464,10 @@ function resize() {
   PU.uSteps.value = Math.min(96, Math.round((rung >= 3 ? 24 : rung >= 2 ? 40 : 72) * gfx.detail));
   PU.uLSteps.value = rung >= 2 ? 2 : 4;
   // The far country's march: fewer steps on Standard and on the ladder's rungs.
-  farPass.material.uniforms.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
+  FAR_U.uFarSteps.value = rung >= 2 ? 140 : quality() === 'high' ? 360 : 260;
+  // Rung 2 drops multisampling: the baked edge then cuts at half cover.
+  farBaked.uniforms.uA2C.value = rung >= 2 ? 0 : 1;
+  farBake.dirty = true;
   // Rung 3 drops the ember cracks.
   astMat.uniforms.uCracks.value = rung >= 3 ? 0 : 1;
   sightSize();
@@ -4716,6 +5490,7 @@ function draw() {
   updateDust();
   updateArcs();
   updateBolt();
+  farLight();
   updateIon();
   updateBlast();
   updateStrike();
@@ -4731,6 +5506,7 @@ function draw() {
   updateBeacon(1 / 30);
   CLOUD_U.uCloudC.value = simT;
   updateShafts();
+  stepStorms();
   // The thermal lens sees through smoke and dust.
   if (sight) plume.visible = chargeDust.visible = shotDust.visible = caseDustV.visible = muzzleSmoke.visible = false;
   grade.uniforms.uRage.value = reduced() ? 0 : (rage + 1.5 * over) * (0.5 + 0.5 * Math.random());
@@ -4756,6 +5532,7 @@ function draw() {
   drawGunDepth();
   drawVolumes();
   if (sight) sightKey();
+  farBakeUpdate();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
@@ -4808,7 +5585,8 @@ function updateWarp() {
 // The director holds off while the player charges or a shot flies.
 // Shooting stars stay out for now (Tom, 2026-11-16); the Dev test still plays one.
 const AMB_KINDS = ['war', 'sat', 'bolt', 'flak', 'shed'];
-const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6 };
+// farNext: the far guns wait 150 to 300 s between attempts.
+const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6, farNext: 0 };
 /* A meteor: a streak from its tail to a hot round head.
    The tail tapers, cools and fades; the head stays white-hot. */
 function makeMeteor(hot, cool) {
@@ -4854,7 +5632,7 @@ function makeMeteor(hot, cool) {
       gl_FragColor = vec4(col * a * uGain, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -4873,21 +5651,62 @@ const ambFall = makeMeteor(linFit(0.95, 0.06, 80), linFit(0.62, 0.16, 40)), ambF
 // The satellite: a point of sunlight on a dark sky.
 const ambSat = makeFlare(linFit(0.95, 0.02, 90));
 // A far gun's round: the main shot's ribbon, ion line and contrail.
-// The parts share the main programs; the first far bolt builds them.
-let farGun = null;
+// The parts share the main programs; a far bolt builds a set when none is free.
+// Four sets at most: a battery's ripple fires up to four rounds.
+const farGuns = [];
 const farP = new THREE.Vector3(), farQ = new THREE.Vector3();
 function makeFarGun() {
   const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() }, uK: { value: 1 } };
+  // The puffs keep their own power and take the shared aerial perspective.
+  const pOwn = { ...own, uI: { value: new THREE.Vector3() }, uAer: { value: 1 } };
   const g = {
     bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 5 }, uWide: { value: 110 } })),
-    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), own,
+    line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, pOwn)), own, pOwn,
   };
   for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
   return g;
 }
-// The far slug slows as the ion line assumes: fraction of its run at time t.
-const farReach = (e, t) => 1 - Math.pow(1 - clamp(t / e.T, 0, 1), 2.6);
-const farAt = (e, t, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, t));
+// A far round keeps the main shot's clock and path.
+// It rides the rails 0.3 s, then crosses in T: fast out, slowing.
+const farReach = (e, a) => 1 - Math.pow(1 - clamp((a - 0.3) / e.T, 0, 1), 2.6);
+const farAt = (e, a, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, a));
+// Another gun fires at the falling rock from site and misses.
+// t0 is its rail start: the horizon flash is its muzzle.
+// c is its power: a weak round takes 11.5 s to cross, a full one 8.5.
+function farShot(site, D, t0, flash) {
+  const c = 0.5 + 0.5 * rnd();
+  return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site, D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
+}
+// Three far guns stand behind the ranges: screen x and distance.
+// Each fires one round per attempt.
+const FAR_PIECES = [{ sx: -0.8, D: 96000 }, { sx: -0.45, D: 80000 }, { sx: 0.74, D: 104000 }];
+// A piece's place on the plain, for the live lens.
+const farSite = q => camera.position.clone().addScaledVector(ambFlat(q.sx, ambA), q.D).setY(0);
+// The piece farthest across the frame from the rock: its round crosses the sky.
+function farPiece() {
+  const rx = ambSP.copy(ast.pos).project(camera).x;
+  return FAR_PIECES.reduce((a, b) => (Math.abs(b.sx - rx) > Math.abs(a.sx - rx) ? b : a));
+}
+// The far rounds' light on the clouds: place and strength.
+const farLit = new THREE.Vector4();
+// The main round's light wins; a far round lights the clouds only without it.
+function farLight() {
+  if (U.uBolt.value.w < 0.001 && farLit.w > 0.001) U.uBolt.value.copy(farLit);
+}
+// At its rail start the round leads the rock, as the main gun does.
+// The aim point sits beside the rock as the eye sees it: a near miss.
+// It returns false when there is no rock to shoot.
+function farAim(e) {
+  if (!(tgtKind === 'rock' && tgtCanHit() && astMesh.visible)) return false;
+  const lead = tgtLead(e.T, new THREE.Vector3()), to = farP.copy(lead).sub(e.site).normalize();
+  const off = farQ.crossVectors(to, ambB.copy(lead).sub(camera.position)).normalize();
+  lead.addScaledVector(off, (rnd() < 0.5 ? -1 : 1) * ast.R * (1.6 + 1.9 * rnd())).sub(e.site);
+  e.L = lead.length();
+  e.dir.copy(lead).normalize();
+  // The trail's scale follows the nearer of the gun and the rock.
+  e.D = Math.min(e.D, ast.pos.distanceTo(camera.position));
+  return (e.aimed = true);
+}
 // Orbital flak: pinprick pops high in a dark sky.
 const ambFlak = Array.from({ length: 6 }, () => makeFlare(linFit(0.96, 0.03, 220)));
 // Embers where chunks lie on the plain.
@@ -4916,6 +5735,15 @@ const ambMid = new THREE.Vector3();
 function ambSeg(m, A, dir, L, wid, gain) {
   glint(m, ambMid.copy(A).addScaledVector(dir, L / 2), dir, L / 2, wid, gain);
 }
+// The shared air's transmittance from the eye to P, as one grey value.
+// It follows aerialFrom() in the AIR chunk: Rayleigh and the dusty Mie.
+// Additive glows scale by it, so they fade with distance like the ranges.
+function ambT(P) {
+  const c = camera.position, hit = c.distanceTo(P), yc = Math.max(c.y, 0), yp = Math.max(P.y, 0), dy = yp - yc;
+  const avg = h => (Math.abs(dy) < 1 ? Math.exp(-yc / h) : (Math.exp(-yc / h) - Math.exp(-yp / h)) * h / dy);
+  const aR = avg(8000), aM = avg(3000) * (0.5 + 0.5 * U.uLayer.value.x), m = 1.1e-5 * aM;
+  return 0.2126 * Math.exp(-(5.8e-6 * aR + m) * hit) + 0.7152 * Math.exp(-(13.5e-6 * aR + m) * hit) + 0.0722 * Math.exp(-(33.1e-6 * aR + m) * hit);
+}
 // Metres per pixel at distance D, for the live lens.
 const ambPx = D => D * Math.tan(rad(camera.fov / 2)) / (size.h / 2);
 // A direction through screen point (sx, sy), each -1 to 1.
@@ -4933,6 +5761,8 @@ function ambKinds() {
     if (k === 'sat') return U.uStars.value > 0.5 && !amb.live.some(e => e.kind === 'sat');
     // Each of these runs alone.
     if (amb.live.some(e => e.kind === k)) return false;
+    // The far guns shoot only at a falling rock, and seldom.
+    if (k === 'war' || k === 'bolt') return tgtKind === 'rock' && tgtCanHit() && astMesh.visible && simT > amb.farNext && !amb.live.some(e => e.kind === 'bolt');
     if (k === 'flak') return U.uStars.value > 0.5;
     // Only a falling rock sheds.
     if (k === 'shed') return tgtKind === 'rock' && ast.state === 'approach' && astMesh.visible;
@@ -4973,22 +5803,16 @@ function ambLanding(t0) {
 // Start one event of this kind.
 function ambStart(kind) {
   if (kind === 'war') {
-    // An unseen battery fires far past the ranges.
-    // A ragged ripple of two to four flashes lights the horizon.
-    const site = new THREE.Vector3();
-    for (let i = 0; i < 20; i++) {
-      ambRay((rnd() * 2 - 1) * 0.8, 0, ambA);
-      ambA.y = 0;
-      if (ambA.lengthSq() > 1e-6) break;
+    // The three far guns fire in turn, one round each; all miss.
+    // Each muzzle flash lights the horizon.
+    const order = [...FAR_PIECES].sort(() => rnd() - 0.5);
+    let t = simT;
+    for (const q of order) {
+      amb.live.push(farShot(farSite(q), q.D, t, 1.2 + 1.0 * rnd()));
+      t += 4 + 5 * rnd();
     }
-    ambA.normalize();
-    site.copy(camera.position).addScaledVector(ambA, 120000 + 80000 * rnd()).setY(0);
-    const n = 2 + Math.floor(rnd() * 3), offs = [0];
-    for (let i = 1; i < n; i++) offs.push(offs[i - 1] + 0.3 + 2.2 * rnd());
-    const k = 1.2 + 1.0 * rnd();
-    amb.live.push({ kind, t0: simT, dur: offs[n - 1] + 14, site, offs, k });
     // The rumble comes late and low.
-    amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.15 * k });
+    amb.due.push({ at: simT + 20 + 40 * rnd(), k: 0.25 });
     return;
   }
   if (kind === 'sat') {
@@ -5002,13 +5826,9 @@ function ambStart(kind) {
   }
   if (kind === 'embers') { amb.live.push({ kind, after: true, t0: simT, dur: 240, sites: [], acc: 0, test: true }); return; }
   if (kind === 'bolt') {
-    // A far gun fires from behind the ranges and misses.
-    // Its slug climbs steep and away, then dies out high up.
-    const out = ambFlat((rnd() * 2 - 1) * 0.8, new THREE.Vector3());
-    const D = 85000 + 50000 * rnd(), site = camera.position.clone().addScaledVector(out, D).setY(0);
-    const side = new THREE.Vector3(-out.z, 0, out.x).multiplyScalar((rnd() * 2 - 1) * 0.5);
-    const dir = new THREE.Vector3(0, 1, 0).addScaledVector(out, 0.35).add(side).normalize();
-    amb.live.push({ kind, t0: simT, dur: 16, site, dir, D, L: 160000, T: 8 + 3 * rnd(), k: 0.8 + 0.4 * rnd() });
+    // One far gun fires from behind the ranges and misses the rock.
+    const q = farPiece(), site = farSite(q), D = q.D;
+    amb.live.push(farShot(site, D, simT, 0.9));
     // The crack arrives late and faint; a long wait is cut to half a minute.
     amb.due.push({ at: simT + Math.min(30, D / 343), k: 0.1 });
     return;
@@ -5080,35 +5900,33 @@ function stepAmbient(dt) {
   amb.next = simT + THREE.MathUtils.lerp(40, 12, near) * (0.7 + 0.6 * rnd()) / rate;
   if (amb.live.filter(e => !e.after).length >= 2) return;
   const ks = ambKinds();
-  if (ks.length) ambStart(ks[Math.floor(rnd() * ks.length)]);
+  if (!ks.length) return;
+  const k = ks[Math.floor(rnd() * ks.length)];
+  if (k === 'war' || k === 'bolt') amb.farNext = simT + 150 + 150 * rnd();
+  ambStart(k);
 }
 // The events write their light after the domes clear uImp.
 function drawAmbient() {
   for (const g of [...ambStars, ambFall, ambFallHead, ambSat, ...ambFlak, ...ambEmbers, ambShed, ambShedTail]) g.visible = false;
-  if (farGun) farGun.bolt.visible = farGun.line.visible = farGun.puffs.visible = false;
+  farLit.w = 0;
+  // A set whose round has ended goes back to the pool.
+  for (const g of farGuns) { g.bolt.visible = g.line.visible = g.puffs.visible = false; if (g.e && !amb.live.includes(g.e)) g.e = null; }
   const L = IMP_U.uImp.value;
   for (const e of amb.live) {
     const a = simT - e.t0;
     if (a < 0) continue;
-    if (e.kind === 'war') {
-      // The last free slot carries the ripple.
+    if (e.kind === 'bolt') {
+      if (!drawFarBolt(e, a)) continue;
+      // The muzzle flash lights the horizon behind the ranges.
       const slot = [...L].reverse().find(v => v.w < 0.001);
-      if (!slot) continue;
-      let f = 0;
-      for (const o of e.offs) f += flashOf(a - o);
-      slot.set(e.site.x, e.site.y, e.site.z, Math.min(2.5, f * e.k));
-    } else if (e.kind === 'bolt') {
-      // The launch lights the horizon behind the ranges.
-      const slot = [...L].reverse().find(v => v.w < 0.001);
-      if (slot) slot.set(e.site.x, e.site.y, e.site.z, 0.9 * flashOf(a));
-      drawFarBolt(e, a);
+      if (slot) slot.set(e.site.x, e.site.y, e.site.z, e.flash * flashOf(a));
     } else if (e.kind === 'flak') {
       let n = 0;
       for (const q of e.pops) {
         const pa = a - q.t;
         if (pa < 0 || pa > 0.6 || n >= ambFlak.length) continue;
         ambB.copy(e.c).add(q.off);
-        flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB));
+        flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB) * ambT(ambB));
       }
     } else if (e.kind === 'embers') {
       drawEmbers(e, a);
@@ -5123,25 +5941,36 @@ function drawAmbient() {
       ambB.copy(camera.position).addScaledVector(ambA, D);
       const lit = 1 - THREE.MathUtils.smoothstep(u, e.shade, e.shade + 0.05);
       const fade = THREE.MathUtils.smoothstep(u, 0, 0.04) * (1 - THREE.MathUtils.smoothstep(u, 0.96, 1));
-      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB));
+      flare(ambSat, ambB, 5 * ambPx(D), 0.55 * e.k * lit * fade * U.uStars.value * ambClear(ambB) * ambT(ambB));
     } else if (e.kind === 'star') {
       // The head runs ahead; the tail thins behind it.
       const u = clamp(a / e.dur, 0, 1), head = e.run * u, tail = Math.max(0, head - 0.45 * e.run);
       ambB.copy(e.p0).addScaledVector(e.dir, tail);
       const fade = Math.sin(Math.PI * u) ** 0.7;
       ambA.copy(e.p0).addScaledVector(e.dir, head);
-      meteor(e.m, ambB, ambA, 70, 3.2 * e.k * fade * U.uStars.value * ambClear(ambA));
+      meteor(e.m, ambB, ambA, 70, 3.2 * e.k * fade * U.uStars.value * ambClear(ambA) * ambT(ambA));
     }
   }
 }
 // The far round: the ribbon at the head, the ion line, the contrail.
 // The trail scales with distance, so it reads like the main shot's.
 function drawFarBolt(e, a) {
-  const g = farGun ??= makeFarGun(), K = e.D / 6000;
+  // A round with no rock to shoot never fires.
+  if (!e.aimed && !farAim(e)) { e.dur = 0; return false; }
+  let g = farGuns.find(f => f.e === e) || farGuns.find(f => !f.e);
+  if (!g) { if (farGuns.length >= 4) return true; g = makeFarGun(); farGuns.push(g); }
+  g.e = e;
+  const K = e.D / 6000;
   // The ribbon: the main shot's streak and shock diamonds.
-  const tail = 0.55 + 0.03 * e.T, head = farReach(e, a);
-  const fade = (1 - THREE.MathUtils.smoothstep(head, 0.5, 0.85)) * ambClear(farAt(e, a, farP));
+  // Its light dies away before it reaches the rock, as the main shot's does.
+  const tail = 0.55 + 0.03 * e.T, land = 0.3 + e.T;
+  // The air between the eye and the head dims the glow.
+  const T = ambT(farAt(e, a, farP));
+  const fade = (1 - THREE.MathUtils.smoothstep(a, land, land + 0.3)) * (1 - THREE.MathUtils.smoothstep(farReach(e, a), 0.84, 0.97)) * ambClear(farP) * T;
   g.bolt.visible = fade > 0.002;
+  // The head lights the clouds near it, faintly; the brightest round wins.
+  const lw = a > 0.3 ? 0.05 * e.c * fade : 0;
+  if (lw > farLit.w) { farAt(e, a, farP); farLit.set(farP.x, farP.y, farP.z, lw); }
   if (g.bolt.visible) {
     g.bolt.material.uniforms.uWide.value = 40 * K;
     const geo = g.bolt.geometry, p0 = geo.attributes.aP0, p1 = geo.attributes.aP1, kk = geo.attributes.aK;
@@ -5149,7 +5978,8 @@ function drawFarBolt(e, a) {
       const ta = a - tail * (1 - k / BOLT_SEG), tb = a - tail * (1 - (k + 1) / BOLT_SEG);
       farAt(e, ta, farP); farAt(e, tb, farQ);
       const lag = (a - tb) / tail;
-      const b = tb < 0 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade * e.k;
+      // Inside the barrel the slug is hidden.
+      const b = tb < 0.3 ? 0 : Math.exp(-lag * 4.5) * (1 + 0.45 * Math.cos(lag * 44) * Math.exp(-lag * 3)) * 1.3 * fade;
       const taper = 0.12 + 0.88 * Math.exp(-lag * 2.6);
       for (let v = 0; v < 4; v++) {
         const vi = k * 4 + v;
@@ -5160,9 +5990,14 @@ function drawFarBolt(e, a) {
   }
   // The ion line glows behind the head and cools to a contrail.
   const o = g.own;
-  o.uA.value.copy(e.site); o.uB.value.copy(e.site).addScaledVector(e.dir, e.L); o.uI.value.set(a, e.T, e.k); o.uK.value = K;
-  g.line.visible = a > 0 && a < e.T + 1.5;
-  g.puffs.visible = a > 0.15;
+  const ia = a - 0.3;
+  o.uA.value.copy(e.site); o.uB.value.copy(e.site).addScaledVector(e.dir, e.L); o.uK.value = K;
+  // The ion glow's power k is 0.6 + 0.4 z; z here scales k by the air.
+  o.uI.value.set(ia, e.T, ((0.6 + 0.4 * e.c) * T - 0.6) / 0.4);
+  g.pOwn.uI.value.set(ia, e.T, e.c);
+  g.line.visible = ia > 0 && ia < e.T + 1.5;
+  g.puffs.visible = ia > 0.15;
+  return true;
 }
 // A late landing: the fall, then the flash and the dome.
 function drawLanding(e, a) {
@@ -5171,8 +6006,9 @@ function drawLanding(e, a) {
     const u = a / FALL_T, run = 26000, head = run * (u - 1), tail = head - 9000;
     ambB.copy(e.site).addScaledVector(e.dir, tail);
     ambA.copy(e.site).addScaledVector(e.dir, head);
-    meteor(ambFall, ambB, ambA, 110, 2.0 * Math.min(1, u * 4));
-    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4));
+    const T = ambT(ambA);
+    meteor(ambFall, ambB, ambA, 110, 2.0 * Math.min(1, u * 4) * T);
+    flare(ambFallHead, ambA, 8 * ambPx(e.D), 1.2 * Math.min(1, u * 4) * T);
     return;
   }
   if (e.domed) return;
@@ -5211,7 +6047,7 @@ function drawEmbers(e) {
   e.sites.forEach((st, i) => {
     const age = simT - st.t, sd = st.seed * 40;
     const fl = 0.75 + 0.15 * Math.sin(simT * 3.1 + sd) + 0.1 * Math.sin(simT * 7.3 + 2 * sd);
-    const g = 0.6 * Math.exp(-age / 120) * Math.min(1, age / 2) * fl * night;
+    const g = 0.6 * Math.exp(-age / 120) * Math.min(1, age / 2) * fl * night * ambT(st.P);
     flare(ambEmbers[i], st.P, 5 * ambPx(st.P.distanceTo(camera.position)), g);
   });
 }
@@ -5220,16 +6056,16 @@ function drawShed(e, a) {
   if (!tgtCanHit() || !astMesh.visible) return;
   const R = ast.R, u = a / e.dur;
   ambB.copy(ast.pos).addScaledVector(e.side, R * (1.1 + 1.2 * a)).addScaledVector(ast.away, R * 0.3 * a * a);
-  const hot = e.k * (1 - u) * (1.2 + 2.5 * Math.exp(-a / 0.4));
+  const hot = e.k * (1 - u) * (1.2 + 2.5 * Math.exp(-a / 0.4)) * ambT(ambB);
   flare(ambShed, ambB, R * 0.9 * (1 - 0.5 * u), 1.5 * hot);
-  ambSeg(ambShedTail, ambB, ast.away, R * (0.6 + 0.5 * a), R * 0.12, 1.2 * e.k * (1 - u));
+  ambSeg(ambShedTail, ambB, ast.away, R * (0.6 + 0.5 * a), R * 0.12, 1.2 * e.k * (1 - u) * ambT(ambB));
 }
 
 /* ---------- the approach ---------- */
 // The rock falls down its track.
 // Past the horizon line it strikes the planet, at the same speed.
 // The fair window: the whole fall, a few minutes, until contact.
-// A kill takes about 22 s: ranging 1.75, full charge 8.6, bolt 8.5 to 11.5.
+// A kill takes about 22 s: ranging 1.0, full charge 8.6, bolt 8.5 to 11.5.
 // The live strike, or null; the Strike test dev toggle.
 let strike = null, strikeTest = false;
 // Fast rock: a dev toggle that runs the fall ten times faster.
@@ -5292,10 +6128,10 @@ const chaosOf = held => 1 - Math.exp(-held / 8);
 let ventT = -1e9;
 // A hold belongs to the pointer or to Space.
 // Only its owner releases it.
-// A press first ranges the rock: one long laser pulse, two short blips.
+// A press first ranges the rock: two pulses, then the paint.
 // The charge starts once the range locks; a release before that cancels.
 // QA can skip the ranging.
-const RANGE_T = 1.75;
+const RANGE_T = 1.0;
 let ranging = null;
 function startCharge(by) {
   charge = { t0: simT, c: 0.12, chase: 0, dust: 0, by };
@@ -5379,10 +6215,28 @@ let armSound = () => {};
 let fire = () => {};
 const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
 const releaseHint = document.querySelector('.release-hint');
-// The laser: a long, faint aiming beam, then two short ranging flashes.
-const RANGE_AIM = [0, 1.2], RANGE_FLASH = [[1.35, 1.41], [1.55, 1.61]];
-const rangeFlash = t => RANGE_FLASH.some(([a, b]) => t >= a && t < b);
-const rangeOn = t => (t >= RANGE_AIM[0] && t < RANGE_AIM[1]) || rangeFlash(t);
+// The ranging laser's beats, in seconds from the press.
+// It pulses twice, then paints the target with a faint steady beam.
+// The paint holds through the charge.
+// On the release it strobes fast and goes out as the slug leaves.
+const RANGE = { pulses: [[0.1, 0.22], [0.42, 0.54]], paint: 0.75, hold: 0.4, hz: 22 };
+const inB = (t, [a, b]) => t >= a && t < b;
+// The laser's gain now: 0 is dark, 1 is a full pulse.
+function laserGain() {
+  if (ranging) {
+    const t = simT - ranging.t0;
+    if (RANGE.pulses.some(p => inB(t, p))) return 1;
+    return t >= RANGE.paint ? RANGE.hold * Math.min(1, (t - RANGE.paint) / 0.2) : 0;
+  }
+  if (charge) return RANGE.hold;
+  if (shot && !shot.hit) {
+    const a = simT - shot.t0;
+    // Reduced motion holds the paint and drops the strobe.
+    if (a < launchAt(1)) return reduced() ? RANGE.hold : fract(a * RANGE.hz) < 0.5 ? 0.9 : 0;
+  }
+  return 0;
+}
+const fract = x => x - Math.floor(x);
 function stepCharge(dt) {
   if (ranging) {
     const t = simT - ranging.t0;
@@ -5476,7 +6330,7 @@ function makeFlare(color, shape = '') {
       gl_FragColor = vec4(uC * uGain * a, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -5540,7 +6394,7 @@ const bow = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bowMat);
 // The rock's glows draw after its smoke and before the cloud heaps.
 // The heaps stand 8 to 38 km out, in front of the rock at 42 to 48 km.
 // Clouds write no depth, so draw order is what hides a glow behind them.
-const ROCK_GLOW_ORDER = 2.12;
+const ROCK_GLOW_ORDER = BAND.glows;
 bow.frustumCulled = false; bow.renderOrder = ROCK_GLOW_ORDER; bow.visible = false;
 scene.add(bow);
 // A fiery haze hangs round the burning rock; night shows it most.
@@ -5638,7 +6492,7 @@ function makeRing(color) {
       gl_FragColor = vec4(uCol * uGain * (exp(-x * x) * rag + fill), 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -5715,7 +6569,7 @@ const boltMat = new THREE.ShaderMaterial({
 });
 const bolt = new THREE.Mesh(boltGeo, boltMat);
 bolt.frustumCulled = false;
-bolt.renderOrder = 3;
+bolt.renderOrder = BAND.sparks;
 bolt.visible = false;
 scene.add(bolt);
 
@@ -5815,7 +6669,7 @@ const ionMat = new THREE.ShaderMaterial({
   }`,
 });
 const ionLine = new THREE.Mesh(ionGeo, ionMat);
-ionLine.frustumCulled = false; ionLine.renderOrder = 2.6; ionLine.visible = false;
+ionLine.frustumCulled = false; ionLine.renderOrder = BAND.ion; ionLine.visible = false;
 scene.add(ionLine);
 // The contrail: a chain of lit puffs, round from any angle.
 // Puffs crowd near the muzzle, where the line is closest.
@@ -5828,7 +6682,7 @@ const ionPuffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeome
   ionPuffGeo.instanceCount = ION_PUFFS;
 }
 const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
-  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uK: ionMat.uniforms.uK, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
+  uniforms: { ...U, uA: ionMat.uniforms.uA, uB: ionMat.uniforms.uB, uI: ionMat.uniforms.uI, uK: ionMat.uniforms.uK, uAer: { value: 0 }, uConC: ionMat.uniforms.uConC, uRes: starMat.uniforms.uRes, uDpr: starMat.uniforms.uDpr },
   transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
@@ -5858,6 +6712,7 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(p + (vR * position.x + vU * position.y) * r, 1.0);
   }`,
   fragmentShader: /* glsl */`
+  uniform float uAer;
   uniform vec3 uI, uConC;
   varying vec2 vUv;
   varying float vLa, vSeed, vFr;
@@ -5880,10 +6735,11 @@ const ionPuffs = new THREE.Mesh(ionPuffGeo, new THREE.ShaderMaterial({
     vec3 lit = uConC * (ambient(N) * 0.9 + uSunC * 1.5 * (0.3 + 0.7 * max(dot(N, uSun), 0.0))) * (0.8 + 0.3 * n);
     vec3 b = uBlast.xyz - vP;
     lit += uAstC * uBlast.w * 2.0e7 / (dot(b, b) + 4.0e6);
-    gl_FragColor = vec4(mix(lit, air(lit, vP), 0.5) * a, a);
+    // uAer 1 takes the full shared aerial perspective: far rounds use it.
+    gl_FragColor = vec4((uAer > 0.5 ? aerial(lit, vP) : mix(lit, aerial(lit, vP), 0.5)) * a, a);
   }`,
 }));
-ionPuffs.frustumCulled = false; ionPuffs.renderOrder = 2.55; ionPuffs.visible = false;
+ionPuffs.frustumCulled = false; ionPuffs.renderOrder = BAND.ionPuffs; ionPuffs.visible = false;
 scene.add(ionPuffs);
 // Tracers: one ribbon and one ion trail per round in flight.
 // Slot 0 is the first set; the copies share every uniform but their own.
@@ -5955,7 +6811,7 @@ function makeGlint(color) {
       gl_FragColor = vec4(mix(uC, vec3(1.0), 0.6 * spine) * uGain * a, 0.0);
     }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 4; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.lights; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6050,6 +6906,7 @@ void main() {
   if (al < 0.002 && max(col.r, col.b) < 0.002) discard;
   // The air acts once, at the volume's mean depth.
   vec3 Pm = cameraPosition + rd * (wsum > 0.0 ? tsum / wsum : 0.5 * (t0 + h.y));
+  // The blast keeps its own thinner air: the shared air washes the fireball out.
   vec3 Ta = airT(Pm) * (1.0 - VHAZE * k2hazeAmount(Pm));
   col = col * Ta + k2skyB(rd, 0.0) * (1.0 - Ta) * al;
   gl_FragColor = vec4(col, al);
@@ -6086,7 +6943,7 @@ function makeVol(decl, extra) {
     ${decl}
     ${VOLFX}`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.2; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.plume; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6171,7 +7028,7 @@ function makeShell(sharp = 3.5, lo = 0.32, hi = 0.62, glob = false) {
     gl_FragColor = vec4(k2haze(col, vP) * a, a);
   }`,
   }));
-  m.frustumCulled = false; m.renderOrder = 2.3; m.visible = false;
+  m.frustumCulled = false; m.renderOrder = BAND.shell; m.visible = false;
   scene.add(m);
   return m;
 }
@@ -6190,7 +7047,7 @@ const shockRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 6, 160), new 
     gl_FragColor = vec4(k2haze(vec3(0.92, 0.96, 1.0) * uGain * n, vP), 1.0);
   }`,
 }));
-shockRing.frustumCulled = false; shockRing.renderOrder = 2.4; shockRing.visible = false;
+shockRing.frustumCulled = false; shockRing.renderOrder = BAND.shockRing; shockRing.visible = false;
 scene.add(shockRing);
 const zAx = new THREE.Vector3(0, 0, 1);
 // Air distortion: world place and radius of each shock, and the strength.
@@ -6400,7 +7257,7 @@ vec3 alb(vec3 p) { return uDustC; }
 vec3 vlight(vec3 p) { return blastLight(p); }`, { uCd: { value: new THREE.Vector4() }, uDustC: chargeDust.material.uniforms.uDustC });
 // The case lands well in front of the gun, so its dust draws over it.
 caseDustV.material.depthTest = false;
-caseDustV.renderOrder = 3;
+caseDustV.renderOrder = BAND.sparks;
 let caseDust = null;
 function updateCaseDust() {
   const age = caseDust ? simT - caseDust.t0 : 99, on = age < 12;
@@ -6537,94 +7394,6 @@ function updateRingVols(age, on) {
     u.uVSteps.value = Math.max(8, Math.round(volSteps() * 0.6)); u.uLSteps.value = 1; u.uLs.value = 20;
   });
 }
-/* ---------- air specks: sunlit dust near the lens ---------- */
-// A thin drift of dust hangs in the air between the eye and the gun.
-// The pointer's motion parts it; it settles back in a second or two.
-// The GPU moves every speck; the CPU sends only the pointer.
-const SPECK_N = 700;
-const specks = { stir: 0, vel: new THREE.Vector2(), ptr: new THREE.Vector2(9, 9), last: null };
-const speckGeo = new THREE.BufferGeometry();
-{
-  const a = new Float32Array(SPECK_N * 4);
-  for (let i = 0; i < SPECK_N; i++) a.set([rnd(), rnd(), rnd(), rnd()], i * 4);
-  speckGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPECK_N * 3), 3));
-  speckGeo.setAttribute('aR', new THREE.BufferAttribute(a, 4));
-}
-const speckMat = new THREE.ShaderMaterial({
-  uniforms: {
-    uTime: U.uTime, uDpr: starMat.uniforms.uDpr, uSunC: U.uSunC, uSun: U.uSun, uStars: U.uStars,
-    uPtr: { value: specks.ptr }, uVel: { value: specks.vel }, uStir: { value: 0 }, uAsp: { value: 1 }, uSteady: starMat.uniforms.uSteady,
-    // uSpan: the slab's half height per metre out; uSz: the speck size scale.
-    uSpan: { value: 0.6 }, uSz: { value: 1 },
-    uDust: { value: new THREE.Vector3(...linFit(0.86, 0.05, 70)) },
-  },
-  transparent: true, depthWrite: false,
-  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: /* glsl */`
-  attribute vec4 aR;
-  uniform float uTime, uDpr, uStir, uAsp, uStars, uSteady, uSpan, uSz;
-  uniform vec2 uPtr, uVel;
-  uniform vec3 uSunC, uSun, uDust;
-  varying vec3 vCol;
-  void main() {
-    // Each speck lives in a slab 25 to 420 m in front of the eye.
-    // The wind carries it sideways; it wraps round the slab.
-    float t = uSteady > 0.5 ? 0.0 : uTime;
-    float d = mix(25.0, 420.0, aR.z * aR.z);
-    vec2 s = fract(aR.xy + vec2(0.006, 0.0015 * sin(t * 0.3 + aR.w * 9.0)) * t * (60.0 / d));
-    vec3 vp = vec3((s.x * 2.0 - 1.0) * d * uSpan * uAsp, (s.y * 2.0 - 1.0) * d * uSpan, -d);
-    vec4 c = projectionMatrix * vec4(vp, 1.0);
-    // The pointer's wake pushes specks aside and along its motion.
-    vec2 q = c.xy / c.w, o = (q - uPtr) * vec2(uAsp, 1.0);
-    float r2 = dot(o, o), k = uStir * exp(-r2 / 0.03);
-    q += (normalize(o + 1e-4) * 0.12 + uVel * 0.6) * k * vec2(1.0 / uAsp, 1.0);
-    gl_Position = vec4(q * c.w, c.zw);
-    // Near specks are larger and dimmer: they sit out of focus.
-    gl_PointSize = max(uDpr * uSz * mix(5.0, 1.4, aR.z), 1.0);
-    // Dust glows toward the light: forward scatter from a low sun.
-    // The view rotation's transpose turns the eye ray into world space.
-    vec3 V = normalize(vp) * mat3(viewMatrix);
-    // Away from the sun the specks nearly vanish.
-    float sunF = 0.06 + 2.2 * pow(max(dot(V, uSun), 0.0), 4.0);
-    vCol = uDust * uSunC * sunF * (0.35 + 0.7 * aR.w) * mix(1.0, 0.15, aR.z) * (1.0 - 0.8 * uStars);
-  }`,
-  fragmentShader: /* glsl */`
-  varying vec3 vCol;
-  void main() {
-    float d = length(gl_PointCoord - 0.5) * 2.0, a = max(1.0 - d, 0.0);
-    gl_FragColor = vec4(vCol * a * a, 0.0);
-  }`,
-});
-const speckPts = new THREE.Points(speckGeo, speckMat);
-speckPts.frustumCulled = false; speckPts.renderOrder = 5;
-scene.add(speckPts);
-// The pointer feeds the stir; it fades over about a second.
-function stirSpecks(nx, ny) {
-  const p = new THREE.Vector2(nx * 2, -ny * 2);
-  if (specks.last) {
-    const v = p.clone().sub(specks.last);
-    specks.vel.lerp(v.clampLength(0, 0.2), 0.5);
-    specks.stir = Math.min(1, specks.stir + v.length() * 6);
-  }
-  specks.last = p;
-  specks.ptr.copy(p);
-}
-function stepSpecks(dt) {
-  specks.stir *= Math.exp(-dt / 0.9);
-  if (specks.stir < 0.002) specks.stir = 0;
-  specks.vel.multiplyScalar(Math.exp(-dt / 0.9));
-  speckMat.uniforms.uStir.value = reduced() ? 0 : specks.stir;
-  const u = speckMat.uniforms;
-  u.uAsp.value = size.w / size.h;
-  // The slab reaches past the lens's edges, so no speck wraps in view.
-  u.uSpan.value = Math.max(0.6, 1.1 * Math.tan(rad(camera.fov / 2)));
-  // A small screen gets fewer, smaller specks, or they read as snow.
-  u.uSz.value = clamp(Math.min(size.w, size.h) / 720, 0.75, 1);
-  speckGeo.setDrawRange(0, Math.round(SPECK_N * clamp(size.w * size.h / 921600, 0.3, 1)));
-  speckPts.visible = !sight;
-}
-
 /* ---------- field motes: dust that falls into orbit round the barrel ---------- */
 // The charged barrel pulls like a line mass: a 1/r force toward its axis.
 // Each mote falls in on a precessing orbit, a little drag spirals it inward,
@@ -6674,7 +7443,7 @@ const moteMat = new THREE.ShaderMaterial({
   }`,
 });
 const motes = new THREE.Points(moteGeo, moteMat);
-motes.frustumCulled = false; motes.renderOrder = 3;
+motes.frustumCulled = false; motes.renderOrder = BAND.sparks;
 scene.add(motes);
 let moteHead = 0, moteEnd = 0, moteN = 0;
 const moteE = new THREE.Vector3(), moteF = new THREE.Vector3();
@@ -6929,27 +7698,53 @@ function updateFlap() {
 }
 
 /* ---------- the ranging laser: optic to rock ---------- */
-const laserGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-// The haze shows the beam near the optic; it thins out toward the rock.
-laserGeo.setAttribute('aK', new THREE.BufferAttribute(new Float32Array([1, 0.08]), 1));
+// A near-infrared rangefinder: the eye sees only a faint shimmer near the optic.
+// The sight's image tube sees the beam and its spot; sightKey draws them.
+// The beam is a ribbon a few pixels wide, built in screen space.
+// aE: 0 at the emitter, 1 at the rock. aS: the side, -1 or 1.
+const laserGeo = new THREE.BufferGeometry()
+  .setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3))
+  .setAttribute('aE', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 1]), 1))
+  .setAttribute('aS', new THREE.BufferAttribute(new Float32Array([-1, 1, -1, 1]), 1))
+  .setIndex([0, 2, 1, 1, 2, 3]);
 const laserMat = new THREE.ShaderMaterial({
-  uniforms: { uGain: { value: 0 }, uC: { value: new THREE.Vector3(...linFit(0.62, 0.22, 25)) } },
-  transparent: true, depthWrite: false,
+  uniforms: { uGain: { value: 0 }, uTime: U.uTime, uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uW: { value: 2.2 }, uRes: { value: new THREE.Vector2(1, 1) }, uC: { value: new THREE.Vector3(...linFit(0.9, 0.05, 300)) } },
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
   blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-  vertexShader: 'attribute float aK; varying float vK; void main() { vK = aK; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform float uGain; uniform vec3 uC; varying float vK; void main() { gl_FragColor = vec4(uC * uGain * vK, 0.0); }',
+  vertexShader: /* glsl */`attribute float aE, aS; uniform vec3 uA, uB; uniform float uW; uniform vec2 uRes;
+  varying float vK, vS;
+  void main() {
+    vec4 a = projectionMatrix * viewMatrix * vec4(uA, 1.0), b = projectionMatrix * viewMatrix * vec4(uB, 1.0);
+    vec2 d = normalize((b.xy / b.w - a.xy / a.w) * uRes);
+    vec4 p = mix(a, b, aE);
+    // The ribbon's width holds in pixels at any range.
+    p.xy += vec2(-d.y, d.x) * aS * uW / uRes * p.w;
+    vK = 1.0 - aE; vS = aS;
+    gl_Position = p;
+  }`,
+  fragmentShader: /* glsl */`uniform float uGain, uTime; uniform vec3 uC; varying float vK, vS;
+  void main() {
+    // The air scatters a thin thread all the way out; the hot air by the optic most.
+    float near_ = 0.3 + 0.7 * pow(vK, 8.0);
+    // The heat haze makes it shimmer in moving knots.
+    float sh = 0.7 + 0.3 * sin(uTime * 31.0 + vK * 900.0) * sin(uTime * 17.0 - vK * 340.0);
+    float k = near_ * sh * (1.0 - vS * vS);
+    gl_FragColor = vec4(uC * uGain * k, 0.0);
+  }`,
 });
-const laser = new THREE.Line(laserGeo, laserMat);
-laser.frustumCulled = false; laser.renderOrder = 4; laser.visible = false;
+const laser = new THREE.Mesh(laserGeo, laserMat);
+laser.frustumCulled = false; laser.renderOrder = BAND.lights; laser.visible = false;
 scene.add(laser);
-const laserDot = makeFlare(linFit(0.7, 0.2, 25));
 const lzA = new THREE.Vector3(), lzB = new THREE.Vector3(), lzD = new THREE.Vector3();
 function updateLaser() {
-  const t = ranging ? simT - ranging.t0 : -1, on = t >= 0 && rangeOn(t) && !sight;
-  laser.visible = on;
-  if (!on) { flare(laserDot, tgtPos(tgtP), 1, 0); return; }
-  barrelPt(VF.a + 30, VF.x, VF.u, lzA);
+  const g = laserGain();
+  // The sight draws the beam in its own key; the scene's beam stays dark there.
+  laser.visible = g > 0 && !sight;
+  if (g <= 0) return;
+  // The emitter sits on the optic's nose, left of and over the sight's lens.
+  // The offset lets the sight see the beam, not a point.
+  barrelPt(VF.a + 40, VF.x - 8, VF.u + 6, lzA);
   // A broken ship leaves an empty slot.
   // The beam runs down the bore.
   const live = tgtLive();
@@ -6957,14 +7752,11 @@ function updateLaser() {
   else barrelPt(60000, 0, 0, tgtP).sub(barrelPt(0, 0, 0, lzD)).add(lzA);
   if (live) lzB.copy(tgtP).addScaledVector(lzD.subVectors(lzA, tgtP).normalize(), tgtR() * 0.95);
   else lzB.copy(tgtP);
-  const a = laserGeo.attributes.position;
-  a.setXYZ(0, lzA.x, lzA.y, lzA.z); a.setXYZ(1, lzB.x, lzB.y, lzB.z); a.needsUpdate = true;
-  // The aiming beam: a faint, steady thread and a small, dim dot.
-  // A ranging flash: the whole beam and the dot flare for a few frames.
-  const fl = rangeFlash(t);
-  laserMat.uniforms.uGain.value = fl ? 1.6 : 0.35;
-  // The beam finds nothing to light without a target.
-  flare(laserDot, lzB, tgtR() * (fl ? 0.3 : 0.12), live ? (fl ? 3 : 0.7) : 0);
+  const u = laserMat.uniforms;
+  u.uA.value.copy(lzA); u.uB.value.copy(lzB);
+  u.uRes.value.set(size.w, size.h);
+  // The eye sees no spot on the rock: it is too far out.
+  u.uGain.value = g * 3.0;
 }
 
 /* ---------- the antenna's beacon ---------- */
@@ -7188,13 +7980,13 @@ const shardMat = new THREE.ShaderMaterial({
     // Far shards go blue and flat in the air.
     // A shard behind the soot ball fades into it; one in front stays solid.
     // Far pieces near the plain drop behind the horizon.
-    gl_FragColor = vec4(air(col, vP), sootT(vP) * hzFade(vP));
+    gl_FragColor = vec4(aerial(col, vP), sootT(vP) * hzFade(vP));
   }`,
   depthWrite: false, transparent: true,
 });
 const shards = new THREE.Mesh(shardGeo, shardMat);
 // The shards draw after the soot and take its cover by depth.
-shards.frustumCulled = false; shards.renderOrder = 1.95;
+shards.frustumCulled = false; shards.renderOrder = BAND.shards;
 scene.add(shards);
 let shardsEnd = 0;
 
@@ -7409,7 +8201,7 @@ for (const m of domeVols) {
   m.material.depthTest = true;
   // The far storm towers draw first.
   // The near heaps draw after.
-  m.renderOrder = 1.8;
+  m.renderOrder = BAND.domes;
 }
 // shipDomes: { m, t0, i, P, S } for each landed hulk.
 // shipRumbles: the audio handles of every started ship sound.
@@ -7466,7 +8258,7 @@ function updateDomes() {
     u.uC.value.x += 0.15 * Hd;
     u.uR.value = 1.25 * Math.hypot(1.75 * Rd, 0.8 * Hd);
     // A far dome draws before the storm towers in front of it.
-    d.m.renderOrder = d.P.distanceTo(camera.position) > 70000 ? 1.4 : 1.8;
+    d.m.renderOrder = d.P.distanceTo(camera.position) > 70000 ? BAND.far : BAND.domes;
     // The domes are small on screen.
     // More steps hide the grain at little cost.
     u.uVSteps.value = Math.min(48, Math.round(volSteps() * 1.5));
@@ -7560,9 +8352,9 @@ function lowRes(order, meshes, depthOf = null) {
   }
   volGroups.push({ layer, rt, quad, meshes, depthOf });
 }
-lowRes(1.9, [fireball], fireball);
-lowRes(2.2, [plume, chargeDust, shotDust, muzzleSmoke, ...ringVols, ventJets]);
-lowRes(3, [caseDustV]);
+lowRes(BAND.fireball, [fireball], fireball);
+lowRes(BAND.plume, [plume, chargeDust, shotDust, muzzleSmoke, ...ringVols, ventJets]);
+lowRes(BAND.sparks, [caseDustV]);
 // Runs after drawGunDepth: the volumes read the gun's depth by their own size.
 function drawVolumes() {
   const w = Math.max(1, Math.round(renderer.domElement.width * VOL_RES));
@@ -7590,7 +8382,7 @@ function drawVolumes() {
   renderer.setRenderTarget(null);
 }
 // The soot draws before the trails, so they can lie in front of it.
-fireball.renderOrder = 1.9;
+fireball.renderOrder = BAND.fireball;
 // The Wilson cloud and the shock front are whole spheres.
 const hitShellA = makeShell(3.0, 0.45, 0.75, true), hitShellB = makeShell(4.0, 0.35, 0.7, true);
 // The skirt: a thin, nearly whole skin that leaves the hit first.
@@ -8519,9 +9311,11 @@ function setAim(yaw, elev) {
   aimNow.yaw = yaw; aimNow.elev = elev;
   applyAim();
 }
-// The drawn aim adds the kick to the commanded aim.
+// The cradle rocks on its trunnions as the gun brakes: p and y, rates vp and vy.
+const sway = { p: 0, y: 0, vp: 0, vy: 0 };
+// The drawn aim adds the kick and the sway to the commanded aim.
 function applyAim() {
-  const yaw = aimNow.yaw + kick.y, elev = aimNow.elev + kick.p;
+  const yaw = aimNow.yaw + kick.y + sway.y, elev = aimNow.elev + kick.p + sway.p;
   SE = Math.sin(elev); CE = Math.cos(elev); SY = Math.sin(yaw); CY = Math.cos(yaw);
   AX.set(-SY * CE, SE, -CY * CE);
   AX_UP.set(SY * SE, CE, CY * SE);
@@ -8583,7 +9377,8 @@ function stepAim(dt, snap = false) {
   if (!manual.on && !snap && shot && shot.hit && simT - shot.t0 < shot.hitT + 2.5) return;
   const parking = !manual.on && !charge && shot && shot.hit;
   if (manual.on) aimP.set(-Math.sin(manual.yaw) * Math.cos(manual.elev), Math.sin(manual.elev), -Math.cos(manual.yaw) * Math.cos(manual.elev));
-  else if (charge && tgtKind === 'rock' && ast.state !== 'shatter') astAt(Math.min(contactS(), ast.s + 10 / fallT()), aimP).sub(A0);
+  // The gun starts to lay on the rock as the ranging starts.
+  else if ((charge || ranging) && tgtKind === 'rock' && ast.state !== 'shatter') astAt(Math.min(contactS(), ast.s + 10 / fallT()), aimP).sub(A0);
   // A ship at rest keeps the gun laid on it.
   else if (shipLaid()) tgtLead(9.7, aimP).sub(A0);
   else aimP.copy(PARK);
@@ -8594,17 +9389,45 @@ function stepAim(dt, snap = false) {
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
   // The gun's swing home: its first error, for the breech's half-way cue.
   if (parking && shot.parkErr0 == null) shot.parkErr0 = aimNow.err;
-  if (snap) { aimNow.vy = aimNow.ve = 0; setAim(aimNow.yaw + dy, aimNow.elev + de); return; }
-  if (aimNow.err < 1e-6 && Math.abs(aimNow.vy) + Math.abs(aimNow.ve) < 1e-6) return;
-  // Hydraulics: a damped spring overshoots a little, then settles.
-  const W = 0.9, Z = 0.62;
-  aimNow.vy += (W * W * dy - 2 * Z * W * aimNow.vy) * dt;
-  aimNow.ve += (W * W * de - 2 * Z * W * aimNow.ve) * dt;
-  // The mount turns at 3.2 degrees a second at most; by hand, at 7.
-  // Auto aim stays slow and steady at 3.2 degrees a second; by hand, up to 16.
-  const sp = Math.hypot(aimNow.vy, aimNow.ve), top = rad(manual.on ? 16 : 3.2);
-  if (sp > top) { aimNow.vy *= top / sp; aimNow.ve *= top / sp; }
+  // The target's own turn rate, for the feed-forward.
+  const ty = aimNow.yaw + dy, te = aimNow.elev + de;
+  if (snap) { aimNow.vy = aimNow.ve = 0; aimNow.ty = ty; aimNow.te = te; setAim(ty, te); return; }
+  if (dt <= 0) return;
+  // A low-pass keeps a target switch from jolting the feed-forward.
+  const fy = aimNow.ty == null ? 0 : clamp(wrapPi(ty - aimNow.ty) / dt, -SLEW.yaw.v, SLEW.yaw.v), fe = aimNow.te == null ? 0 : clamp((te - aimNow.te) / dt, -SLEW.elev.v, SLEW.elev.v);
+  const lp = Math.min(1, dt / 0.4);
+  aimNow.fy = (aimNow.fy || 0) + (fy - (aimNow.fy || 0)) * lp; aimNow.fe = (aimNow.fe || 0) + (fe - (aimNow.fe || 0)) * lp;
+  aimNow.ty = ty; aimNow.te = te;
+  const settled = aimNow.err < 1e-5 && Math.abs(aimNow.vy) + Math.abs(aimNow.ve) < 1e-5;
+  if (settled && Math.abs(sway.p) + Math.abs(sway.y) < 1e-6) return;
+  // Each axis ramps up, cruises and brakes onto the target.
+  // By hand the gun turns faster and harder.
+  const M = manual.on ? SLEW.hand : SLEW;
+  const vy0 = aimNow.vy, ve0 = aimNow.ve;
+  aimNow.vy = slewAxis(dy, aimNow.vy, aimNow.fy, M.yaw, dt);
+  aimNow.ve = slewAxis(de, aimNow.ve, aimNow.fe, M.elev, dt);
+  // The braking rocks the cradle; the sway rings down in a few seconds.
+  stepSway((aimNow.vy - vy0) / dt, (aimNow.ve - ve0) / dt, dt);
   setAim(aimNow.yaw + aimNow.vy * dt, aimNow.elev + aimNow.ve * dt);
+}
+const wrapPi = a => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+// Slew limits per axis: top speed v and acceleration a, in radians.
+// The mount traverses faster than the cradle climbs.
+const SLEW = { yaw: { v: rad(3.2), a: rad(2) }, elev: { v: rad(2.4), a: rad(1.5) }, hand: { yaw: { v: rad(16), a: rad(10) }, elev: { v: rad(7), a: rad(6) } } };
+// One axis: the speed that stops on the target, plus the target's own rate.
+// The square-root ramp brakes at the axis's own acceleration.
+function slewAxis(d, v, rate, L, dt) {
+  const a = Math.abs(d), want = Math.sign(d) * Math.min(L.v, Math.sqrt(2 * L.a * a * 0.9), 3 * a);
+  const vd = clamp(want + clamp(rate, -L.v, L.v), -1.2 * L.v, 1.2 * L.v);
+  return v + clamp(vd - v, -L.a * dt, L.a * dt);
+}
+// The sway: a damped spring at 0.8 Hz that the slew's acceleration drives.
+function stepSway(ay, ae, dt) {
+  if (reduced()) { sway.p = sway.y = sway.vp = sway.vy = 0; return; }
+  const W = 2 * Math.PI * 0.8, Z = 0.22, K = 0.9;
+  sway.vy += (-W * W * sway.y - 2 * Z * W * sway.vy - K * ay) * dt;
+  sway.vp += (-W * W * sway.p - 2 * Z * W * sway.vp - K * ae) * dt;
+  sway.y += sway.vy * dt; sway.p += sway.vp * dt;
 }
 // Sand streams: each pours small puffs straight down from a ledge.
 const sandStreams = [];
@@ -8639,6 +9462,13 @@ function recoilRoom() {
 function capRecoil(v) {
   const r = recoilRoom(), k = 0.8 * r;
   return v <= k ? v : k + (r - k) * (1 - Math.exp(-(v - k) / Math.max(r - k, 1e-3)));
+}
+// The run-out: the barrel holds back, then the recuperator draws it home.
+// It speeds up, then the buffer eases it onto battery.
+const RUN = { hold: 0.6, t: 4.2 };
+function runOut(ra) {
+  const u = clamp((ra - RUN.hold) / RUN.t, 0, 1);
+  return 1 - u * u * u * (u * (6 * u - 15) + 10);
 }
 function stepShot(dt) {
   stepRounds();
@@ -8714,10 +9544,17 @@ function stepShot(dt) {
   // Recoil starts once the slug has left the muzzle, 0.3 s after the release.
   // A salvo kicks harder round by round, up to the clearance point.
   if (shot.salvo) U.uRecoil.value = reduced() ? 0 : recoilAt(age, shot.n, SALVO_CAP);
-  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * Math.exp(-Math.max(0, ra - 0.6) / 3.5);
+  else U.uRecoil.value = reduced() || ra <= 0 ? 0 : 320 * Math.min(shot.c, 1.25) * (1 - Math.exp(-ra / 0.06)) * runOut(ra);
   U.uRecoil.value = Math.max(U.uRecoil.value, shot.slide0 * Math.exp(-age / 0.6));
   U.uRecoil.value = capRecoil(U.uRecoil.value);
   shadowDirty = true;
+  // The barrel seats at battery: a thunk, a jolt, a nod of the cradle.
+  if (!shot.salvo && !shot.battery && ra > RUN.hold + RUN.t) {
+    shot.battery = true;
+    if (!reduced()) { cam.shake += 0.3 * gp; sway.vp -= rad(0.12) * gp; }
+    const ac = kit.live();
+    if (ac) clunk(ac, 1.2 * gp);
+  }
   // The cradle kicks up 0.5 degrees and settles; the deck sways.
   if (!reduced()) {
     kick.p = ra > 0 ? rad(0.5) * gp * 1.55 * Math.exp(-ra / 0.6) * Math.sin(ra * Math.PI / 0.6) : 0;
@@ -9143,7 +9980,7 @@ function sillyBoom(p) {
 // Then the orchestra stops; only the hall tail rings on.
 // The orchestra then stops dead; only its echo rings.
 // The white holds WHITE_T seconds under the echo; then the rewind starts.
-const BURN_T = 4, CLIMAX_T = 5, WHITE_T = 2.5;
+const BURN_T = 4, CLIMAX_T = 7.5, WHITE_T = 2.5;
 // The game over's white is warm: a white-yellow glow.
 const FILL_WARM = '#fff1cf', FILL_COOL = '#fffaf3';
 // The strike's light climbs over the last seconds before contact.
@@ -9325,7 +10162,7 @@ const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
 let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 let qaFreeze = false;
 // A live landing dome and a view's move keep the loop awake.
-const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0 || specks.stir > 0.002;
+const busy = () => !!sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || simT < moteEnd || (spent && spent.bounce < 2) || (caseDust && simT - caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || cdust > 0.02 || (dustShot && simT - dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!strike || cutFlash > 0.01 || !!press || !!charge || !!shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && simT - c.w < 20) || !!blastFx || simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || simT < dustEnd || simT < lastDeath || simT < shardsEnd || hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(sway.p) + Math.abs(sway.y) > 1e-5 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0;
 function tick(now) {
   raf = 0;
   if (!visible || document.hidden) { lastT = 0; return; }
@@ -10186,19 +11023,19 @@ function goRequiem(ac) {
   elp.connect(eo).connect(goBus(ac));
   return { src, g, sg, drive, plp, pg, cb, vib, voices, fg, vs, es, eo, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
 }
-// A concert-hall tail: dense noise that darkens and dies over 3.5 s.
+// A concert-hall tail: dense noise that darkens and dies over 6 s.
 let hallBuf = null;
 function hallIR(ac) {
   if (hallBuf && hallBuf.sampleRate === ac.sampleRate) return hallBuf;
-  const sr = ac.sampleRate, len = Math.round(3.5 * sr), b = ac.createBuffer(2, len, sr);
+  const sr = ac.sampleRate, len = Math.round(6 * sr), b = ac.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) {
     const d = b.getChannelData(ch);
     let y = 0;
     for (let i = 0; i < len; i++) {
-      const x = i / sr, k = 0.5 - 0.42 * Math.min(1, x / 2.5);
+      const x = i / sr, k = 0.5 - 0.42 * Math.min(1, x / 4);
       // The lowpass closes with time, so the tail darkens as it dies.
       y += k * (Math.random() * 2 - 1 - y);
-      d[i] = y * Math.exp(-6.9 * x / 3.5) * Math.min(1, x / 0.02);
+      d[i] = y * Math.exp(-6.9 * x / 6) * Math.min(1, x / 0.02);
     }
   }
   return (hallBuf = b);
@@ -10961,10 +11798,9 @@ stage.addEventListener('pointermove', e => {
   const nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5;
   lookTo.yaw = -clamp(nx, -0.5, 0.5) * rad(1.4);
   lookTo.pitch = -clamp(ny, -0.5, 0.5) * rad(0.9);
-  stirSpecks(nx, ny);
   wake();
 });
-stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; specks.last = null; wake(); });
+stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; wake(); });
 const end = e => {
   if (!press || e.pointerId !== press.id) return;
   press = null;
@@ -11031,6 +11867,12 @@ function vilKey() {
 
 /* QA hooks: Dusk, the sim clock, draw count. Not for the UI. */
 window.__qa = {
+  // The sun and the moon: elevation in degrees, screen place in NDC.
+  skyQ() { const f = d => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
+  stormProbe(on = true) { setStormProbe(on); draw(); },
+  // Fire one lightning burst in a storm now; storms() lists the live strokes.
+  stormFlash() { stormBurst(); },
+  storms: () => stormFl.strokes.map(k => ({ age: simT - k.t0, L: k.L, P: k.P.toArray() })),
   sun(v) { opts.sun = v; setSun(); },
   simT: () => simT,
   draws: () => drawN,
@@ -11212,7 +12054,7 @@ window.__qa = {
   rounds: () => rounds.map(r => ({ j: r.j, age: simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
   salvo(n) { ui.setting('firemode').set('salvo'); fireMode = 'salvo'; fire(ROUND_C, n, true); frame(); draw(); },
   muzzle: () => ({ plume: plume.visible, jets: jets.some(j => j.visible), spike: spike.visible, rings: false, shell: shellMesh.visible ? shellMesh.material.uniforms.uR.value : 0 }),
-  aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev }),
+  aim: () => ({ dy: aimNow.dy, de: aimNow.de, err: aimNow.err, elev: aimNow.elev, yaw: aimNow.yaw, vy: aimNow.vy, ve: aimNow.ve, sp: sway.p, sy: sway.y }),
   release() { act.release('pointer'); },
   // Jump the clock by t seconds.
   // The rock and the charge catch up.
@@ -11243,11 +12085,57 @@ window.__qa = {
   // Freeze the clock, then run it t seconds in frame steps.
   // A frozen page draws even when hidden, for stills from a background tab.
   // The lens state: the hold's push, the watch's loom, the star arc.
-  lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span, stir: specks.stir }),
+  lens: () => ({ push: cam.push, loom: cam.loom, trail: skyTrail.span }),
   // Fire one ambient event; amb() reads the director.
   ambient(kind) { ambStart(kind); },
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
+  // The far pass: the mode, and how often it baked and relit.
+  // Set the far ranges' face bump.
+  bump(v) { FAR_U.uBump.value = v; draw(); },
+  // Set the ranges' light (sun, sky, effects) and rock colour.
+  rangeLight(x, y, z, rock) { FAR_U.uRangeL.value.set(x, y, z); if (rock) setRockCol(rock); draw(); },
+  farSkip(on) { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; },
+  grid: () => ({ half: farGrid.half, cell: GRID_U.uGrid.value.z, builds: farGrid.builds }),
+  far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
+  // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
+  async gpuMs(what = 'far', n = 30) {
+    const gl = renderer.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!ext) return null;
+    const qs = [];
+    let q = null;
+    const on = () => { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }, off = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); qs.push(q); };
+    const b0 = farPass.onBeforeRender, a0 = farPass.onAfterRender;
+    if (what === 'far') { farPass.onBeforeRender = (...a) => { b0(...a); on(); }; farPass.onAfterRender = off; }
+    // 'farup' times the bake's own work in each frame.
+    const u0 = farBakeUpdate;
+    if (what === 'farup') farBakeUpdate = () => { on(); u0(); off(); };
+    // 'bake' times a full rebake; 'light' times a relight alone.
+    // 'full' times a whole bake in one go, for reference.
+    // 'grid' times a rebuild of the height grid.
+    if (what === 'grid') { this.run(1 / 30); for (let i = 0; i < n; i++) { farGrid.key = ''; on(); farGridUpdate(); off(); } farBake.dirty = false; }
+    else if (what === 'full') { this.run(1 / 30); for (let i = 0; i < n; i++) { on(); fbStart(camera); fbStep(true); off(); } }
+    else if (what === 'bake' || what === 'light') { this.run(1 / 30); for (let i = 0; i < n; i++) { if (what === 'bake') farBake.dirty = true; else farBake.sun.set(0, 0, 0); on(); farBakeUpdate(); off(); } }
+    else for (let i = 0; i < n; i++) { if (what === 'all') on(); this.run(1 / 30); if (what === 'all') off(); }
+    farPass.onBeforeRender = b0; farPass.onAfterRender = a0;
+    farBakeUpdate = u0;
+    const ms = [];
+    for (const x of qs) {
+      while (!gl.getQueryParameter(x, gl.QUERY_RESULT_AVAILABLE)) await new Promise(r => setTimeout(r, 5));
+      if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) ms.push(gl.getQueryParameter(x, gl.QUERY_RESULT) / 1e6);
+      gl.deleteQuery(x);
+    }
+    const seq = ms.map(v => +v.toFixed(1));
+    ms.sort((a, b) => a - b);
+    return { median: ms[ms.length >> 1], min: ms[0], max: ms[ms.length - 1], n: ms.length, seq };
+  },
+  // Rock parts off the camera's layer, so a frame time shows what they cost.
+  // partsOff([]) puts every part back.
+  partsOff(names) {
+    const parts = { rock: [astMesh], smoke: [smoke], glows: [bow, halo], frags: frags.map(f => f.m), fragTrails: frags.map(f => f.trail), fragGlows: frags.map(f => f.glow), sparks: [stars] };
+    for (const [k, ms] of Object.entries(parts)) for (const m of ms) m.layers.set(names.includes(k) ? 31 : 0);
+    frame(); draw();
+  },
   run(t, dt = 1 / 30) { for (let k = 0; k < t - 1e-6; k += dt) { stepSpin(dt); const sdt = dt * spinSpeed(); simT += sdt; U.uTime.value = simT; stepAst(sdt); stepAim(sdt); stepCharge(sdt); stepShot(sdt); stepShipShot(sdt); stepStrike(sdt); stepCase(sdt); easeLook(dt); } frame(); draw(); },
   shot: () => (shot ? { age: simT - shot.t0, T: shot.T, hitT: shot.hitT, hit: shot.hit, arrive: shot.arrive, sfx: shot.sfx, canHit: shot.canHit, res: shot.res ?? null, target: shot.target.toArray(), muzzle: shot.muzzle.toArray(), bore: THREE.MathUtils.radToDeg(shot.ax.angleTo(bq.copy(shot.target).sub(shot.muzzle))) } : null),
   // End the live shot at once, so the next one can fire.
@@ -11302,6 +12190,9 @@ gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').valu
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
 setDeck(ui.setting('deck').value);
+setStormProbe(ui.setting('stormprobe').value);
+stormFl.rate = ui.setting('stormfl').value;
+giants.visible = ui.setting('giants').value;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
 gfx.mist = ui.setting('mist').value; gfx.hal = ui.setting('halation').value; gfx.vig = ui.setting('vignette').value; gfx.gsize = ui.setting('grainsize').value;
@@ -11315,7 +12206,14 @@ renderer.compileAsync(scene, camera).then(async () => {
   const hidden = [];
   scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
   // A failed warm-up falls through to the normal start; the first shot then warms itself.
-  try { await renderer.compileAsync(scene, camera); built(); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  // The far bake's two passes link in parallel with the scene.
+  fbQuad.material = farBakeL;
+  const fbL = new THREE.Mesh(farPass.geometry, farBakeG);
+  fbL.frustumCulled = false; fbScene.add(fbL);
+  // The height grid's two passes link with them.
+  const fbW = [farGridF, farGridC].map(m => { const q = new THREE.Mesh(farPass.geometry, m); q.frustumCulled = false; fbScene.add(q); return q; });
+  try { await Promise.all([renderer.compileAsync(scene, camera), renderer.compileAsync(fbScene, fbCam)]); built(); composer.render(); } catch (err) { console.warn('railgun warm-up', err); }
+  fbScene.remove(fbL, ...fbW);
   for (const o of hidden) o.visible = false;
   // The shot's sound files download now; they decode on first use.
   later(() => Object.values(SAMPLES).forEach(f => fetch(f)));

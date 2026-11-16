@@ -129,15 +129,33 @@
 .clock-roll svg circle { fill: currentColor; stroke: none; }
 .clock-roll:active svg { rotate: 180deg; }
 
-/* The footer of the Clock. The mark sits in the credit line, in place of its own name. */
-/* The credit waits until clock.js moves the mark into the line, so its words never jump. The glow stays. */
+/* The footer of the Clock: the chip alone in the middle, the name under it on hover, then the disclaimer. */
+/* The credit waits until clock.js builds the footer, so nothing jumps. The glow stays. */
 :root[data-view="clock"]:not([data-clock]) .credit > * { visibility: hidden; }
-:root[data-view="clock"] .credit[data-inline] { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 0.75em; }
-.clock-mark { position: relative; display: inline-flex; }
-:root[data-view="clock"] .clock-mark .onno svg { height: 30px; transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1), scale 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); }
-:root[data-view="clock"] .clock-mark .onno:hover svg { translate: 0 -2px; scale: 1.08; }
-/* The version stands over the mark. */
-:root[data-view="clock"] .clock-mark .ver { left: 50%; bottom: calc(100% + 8px); translate: -50% 0; }
+:root[data-view="clock"] .credit[data-inline] { flex-direction: column; align-items: center; gap: 6px; padding-bottom: 24px; }
+.clock-sig { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; cursor: default; }
+.clock-sig:focus-visible { outline: none; }
+.clock-mark { display: inline-flex; }
+:root[data-view="clock"] .clock-mark .onno svg { height: 34px; transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno svg { translate: 0 -2px; }
+/* Hover or focus lights the chip's bands, as its own hover does on the menu. */
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-capsule { fill: oklch(0.16 0.012 275); stroke: oklch(0.95 0.008 275); }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-band { stroke: none; }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(2) { fill: oklch(0.66 0.22 25); }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(3) { fill: oklch(0.86 0.17 90); }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(4) { fill: oklch(0.74 0.15 220); }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-fig { fill: oklch(0.95 0.008 275) !important; }
+:root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-grey { fill: #fff; }
+/* The name: its place is kept, so nothing moves. Its letters rise out of a blur, one after another, and sink back. */
+.clock-label { display: flex; height: 18px; font: 700 15px/18px var(--sans); letter-spacing: 0.01em; color: var(--fg); }
+.clock-label span {
+  display: inline-block; opacity: 0; translate: 0 6px; filter: blur(4px);
+  transition: opacity 0.3s ease, translate 0.45s cubic-bezier(0.16, 1, 0.3, 1), filter 0.35s ease;
+  transition-delay: calc((9 - var(--i)) * 14ms);
+}
+.clock-sig:is(:hover, :focus-visible, :focus) .clock-label span { opacity: 1; translate: 0 0; filter: none; transition-delay: calc(var(--i) * 28ms); }
+/* The disclaimer: an attribution, not a boast. Small, plain and quiet. */
+.clock-note { font: 400 11px/1.4 var(--sans); letter-spacing: 0.01em; color: color-mix(in oklch, var(--fg) 46%, transparent); }
 /* The glow is a shader (mesh.js): light that rises from below the edge and flows. It replaces the CSS glow. */
 .clock-mesh { position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: min(38vh, 340px); translate: -50% 0; pointer-events: none; }
 /* The credit line stands on the light, so it is brighter here and has a soft shade. */
@@ -145,6 +163,7 @@
 :root[data-view="clock"] .credit[data-mesh]::before { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
+  .clock-label span { transition: none; }
   :root[data-view="clock"] main > .shelf > li, .clock-plate, .clock-name, .clock-tag, .clock-roll { transition: none; }
   /* The wait is a still dot. */
   :root[data-view="clock"]:not([data-clock="on"]) main::before { animation: none; scale: 0.8; transition: opacity 0.01s linear 0.4s; }

@@ -15,6 +15,8 @@ Most of a build session's cost is re-reading the conversation every turn, so lon
 | S | One or two shaders, little scene | $10 to $15 |
 | M | A scene or a sim, some tuning | $20 to $30 |
 | L | A cinematic scene with many parts, heavy art tuning | $40 to $70 |
+| XL | A world in many parts, built over weeks (East Van) | weeks |
+| XXXL | A cinematic scene at Railgun scale: many shared modules, many sessions, a long art-tuning tail | $150 and up |
 
 These are estimates. Build the first toy, read the real cost (`/cost` in the CLI, or the usage page), then rescale this table.
 

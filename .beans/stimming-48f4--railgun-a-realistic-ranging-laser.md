@@ -1,10 +1,11 @@
 ---
 # stimming-48f4
 title: 'Railgun: a realistic ranging laser'
-status: draft
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-12T08:57:48Z
-updated_at: 2026-11-12T08:57:48Z
+updated_at: 2026-11-16T19:46:12Z
 parent: stimming-f793
 ---
 
@@ -37,3 +38,7 @@ Reduced motion: one steady line, no strobe. Keep the flash area small.
 - [ ] Beats: seek, range, strobe, lock; reduced-motion path
 - [ ] HUD range and closing-speed readout (with the sight session)
 - [ ] QA at 1280, 375 x 812, 812 x 375; clean console
+
+## Summary of Changes
+
+2026-11-16 (stimming-shkv). Tom changed the pattern: two pulses on the press, then the beam paints the target through the charge; on the release it strobes fast (22 Hz) and goes out as the slug leaves (0.3 s). A cool violet-white near-IR, faint: in the open view only a shimmer near the optic. The sight's key draws the beam from the emitter to a spot on the rock. Ranging takes 1.0 s; the gun starts to lay on the rock at the press. Reduced motion skips the ranging and holds the paint through the release. The beam is a screen-space ribbon; the emitter sits on the optic's nose. No rock dot in the open view.

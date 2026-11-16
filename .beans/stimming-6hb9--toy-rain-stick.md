@@ -1,10 +1,11 @@
 ---
 # stimming-6hb9
 title: 'Toy: Rain stick'
-status: draft
+status: todo
 type: feature
+priority: normal
 created_at: 2026-11-10T06:26:45Z
-updated_at: 2026-11-10T06:26:45Z
+updated_at: 2026-11-16T19:44:51Z
 parent: stimming-oh7b
 ---
 
