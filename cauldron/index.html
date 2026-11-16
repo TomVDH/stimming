@@ -182,6 +182,8 @@ const ui = initPage({ id: 'cauldron', bar: {
     // How fast light dies in the soup: low is clear broth, high is opaque.
     { type: 'slider', id: 'clarity', label: 'Soup density', min: 0.1, max: 3, step: 0.01, value: 1 },
     // How bright the fire glows up through thin soup.
+    // How hard the heat stirs the surface: shiver and boil.
+    { type: 'slider', id: 'boil', label: 'Boil', min: 0, max: 3, step: 0.01, value: 1 },
     { type: 'slider', id: 'soupGlow', label: 'Soup glow', min: 0, max: 3, step: 0.01, value: 1 },
   ],
   reset: () => act.reset(),
@@ -837,10 +839,12 @@ precision highp float;
 in vec2 vUv;
 uniform sampler2D uRip;
 uniform vec2 uTexel;
-uniform float uExt, uDamp;
+uniform float uExt, uDamp, uTime, uShiver, uBoil;
 uniform int uNI;
 uniform vec4 uImp[16];
+uniform vec4 uPl[4];
 out vec4 o;
+float hsh(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
   if (dot(p, p) > 0.99) { o = vec4(0.0); return; }
@@ -848,6 +852,12 @@ void main() {
   float l = texture(uRip, vUv - vec2(uTexel.x, 0.0)).x, r = texture(uRip, vUv + vec2(uTexel.x, 0.0)).x;
   float b = texture(uRip, vUv - vec2(0.0, uTexel.y)).x, t = texture(uRip, vUv + vec2(0.0, uTexel.y)).x;
   float h = (2.0 * c.x - c.y + 0.42 * (l + r + b + t - 4.0 * c.x)) * uDamp;
+  // The heat drives the surface: a fine shiver everywhere, heaves over the plumes.
+  float tk = floor(uTime * 12.0);
+  h += uShiver * (hsh(floor(vUv * 90.0) + tk * 13.1) - 0.5);
+  float up = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 d = p - uPl[i].xy; up += exp(-dot(d, d) / 0.04); }
+  h += uBoil * up * (hsh(floor(vUv * 20.0) + tk * 7.3) - 0.5);
   for (int i = 0; i < 16; i++) {
     if (i >= uNI) break;
     vec2 d = p - uImp[i].xy;
@@ -2943,13 +2953,20 @@ function dyeStep(dt) {
   runDye(dt, dye[di], dye[1 - di]);
   di = 1 - di;
 }
-const impU = new Float32Array(16 * 4);
+const impU = new Float32Array(16 * 4), plumeR = new Float32Array(16);
 function rippleStep(steps) {
   gl.useProgram(ripP);
   gl.viewport(0, 0, RN, RN);
   gl.uniform2f(ripP.u('uTexel'), 1 / RN, 1 / RN);
   gl.uniform1f(ripP.u('uExt'), FE);
   gl.uniform1f(ripP.u('uDamp'), 0.98 - 0.012 * thick());
+  // A calm shiver at low fire grows into a rolling boil at full fire.
+  const heat = reduced() || draining ? 0 : fire;
+  const bk = heat < 0.04 ? 0 : devV('boil', 1);
+  gl.uniform1f(ripP.u('uShiver'), 0.00003 * (0.4 + heat) * bk);
+  gl.uniform1f(ripP.u('uBoil'), 0.0005 * heat * heat * heat * bk);
+  plumes.forEach((p, i) => plumeR.set([p.x, p.z, 0, 0], i * 4));
+  gl.uniform4fv(ripP.u('uPl'), plumeR);
   gl.uniform1i(ripP.u('uRip'), 0);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindVertexArray(vao);
@@ -2957,6 +2974,7 @@ function rippleStep(steps) {
     const n = s === 0 ? Math.min(16, imps.length) : 0;
     for (let i = 0; i < n; i++) impU.set(imps[i], i * 4);
     if (s === 0) imps.splice(0, n);
+    gl.uniform1f(ripP.u('uTime'), time + s / 120);
     gl.uniform1i(ripP.u('uNI'), n);
     gl.uniform4fv(ripP.u('uImp'), impU);
     gl.bindFramebuffer(gl.FRAMEBUFFER, rip[1 - ri].fb);
