@@ -389,3 +389,12 @@ The toy tells people that watching is fine. The scene carries itself:
 - The ground grid packs its 480 by 480 vertices round the eye: about 3 m apart there, about 3 km at the rim. The wide and portrait eyes each get their own grid. The vertex count is unchanged.
 - Gentle sand swells, 180 to 300 m apart and up to about 4 m high, roll from 40 m past the eye out to about 4 km. The ground round the mount and under the eye stays level, and the gun's foot stays in view.
 - The fragment shader takes the swells' slope with a 6 m step near the eye, and adds soft hummocks about 30 m across as a bump only, filtered out with distance.
+
+## Hit sounds: samples only (Tom, 2026-11-16)
+
+Tom: no synthetic clicks or ticks in the impact and explosion sounds.
+- The rock hit plays Tom's impact sample alone: the noise crack and the knock tone are gone. The hush before the peak and the rise into it take 60 ms each, so the gain never clicks.
+- Salvo crater and hunt hits play the impact's tail, slowed and darkened, after the sound's delay. The noise tick, the thud and the crackle bursts are gone.
+- The game-over contact plays Tom's boom and the impact's tail. The ship's crack and joint thuds play the impact's tail too.
+- `playFrom()` fades every sample in over 30 ms; `sampleHit()` plays one into a live handle.
+- Still synthetic, not hits: the over-hold crackle under a too-long charge, the noise beds and low rumbles.

@@ -9456,10 +9456,10 @@ function surgeOverStop(now = false, hold = 0) {
 // The impact at contact: a deep drop and a dark blast of air.
 function strikeBoom(ac) {
   if (!ac || goMix === 'hum') return;
+  // Contact: Tom's boom and the impact's tail, no synthetic knock.
   const t = ac.currentTime;
-  track(t + 3,
-    blip(ac, kit.out, t, { f0: 80, f1: 26, glide: 1.4, peak: GO_HIT, a: 0.005, dur: 2.6 }),
-    burst(ac, kit.out, t, { dur: 1.6, rate: 0.6, type: 'lowpass', f: 2400, f1: 200, q: 0.5, peak: 0.6 * GO_HIT, a: 0.004 }).src);
+  sampleHit(ac, track(t + 3), t, 2.2 * GO_HIT, 0.7, 1800, kit.out, 0, 'boom');
+  sampleHit(ac, track(t + 2), t, 1.6 * GO_HIT, 0.85, 2400, kit.out);
 }
 // The impact's level.
 const GO_HIT = 0.32;
@@ -9740,6 +9740,27 @@ function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out
   src.start(when);
   (tag ? trackS : track)(when + buf.duration / rate + 0.1, src);
 }
+// A sample from off seconds in, faded in over 30 ms, so it never clicks.
+// dark: lowpass corner in hertz. Returns the source.
+function playFrom(ac, buf, when, off, gain, rate, dark, dest, wet = 0) {
+  const src = ac.createBufferSource(), g = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
+  src.buffer = buf; src.playbackRate.value = rate;
+  g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(gain, when + 0.03);
+  src.connect(lp).connect(g).connect(dest);
+  if (wet) echo(ac, g, wet, dark);
+  src.start(when, off);
+  return src;
+}
+// A sample-only hit into a live handle; the handle exists at once.
+// The tail of Tom's impact plays when the file is ready.
+function sampleHit(ac, h, t, gain, rate, dark, dest, wet = 0, name = 'impact') {
+  sample(ac, name).then(buf => {
+    if (!buf || !pend.has(h)) return;
+    const off = name === 'impact' ? IMPACT_AT - 0.02 : 0;
+    h.nodes.push(playFrom(ac, buf, Math.max(t, ac.currentTime), off, gain, rate, dark, dest, wet));
+    h.end = Math.max(h.end, t + (buf.duration - off) / rate + 0.2);
+  });
+}
 // The blast bus: the impact, the boom, the fire and the rumble.
 // One limiter holds the stacked layers under the master's knee.
 // Its peak output sits near -3 dBFS.
@@ -9952,7 +9973,8 @@ function impactSound(ac, buf, hit, k, tag = null) {
   // The swell climbs 18 dB up the whoosh; the filter opens with it.
   const lvl = 0.55 * k * jit(0.08);
   g.gain.setValueAtTime(lvl * 0.12, t); g.gain.exponentialRampToValueAtTime(lvl, hit - 0.1);
-  g.gain.linearRampToValueAtTime(lvl * 0.3, hit - 0.02); g.gain.linearRampToValueAtTime(lvl * 1.2, hit + 0.004);
+  // The hush and the rise take 60 ms each, so the gain never clicks.
+  g.gain.linearRampToValueAtTime(lvl * 0.3, hit - 0.06); g.gain.linearRampToValueAtTime(lvl * 1.2, hit + 0.06);
   lp.frequency.setValueAtTime(700, t); lp.frequency.exponentialRampToValueAtTime(14000, hit);
   src.connect(lp).connect(g).connect(bus);
   echo(ac, g, 0.3);
@@ -9966,10 +9988,8 @@ function impactSound(ac, buf, hit, k, tag = null) {
   o.frequency.setValueAtTime(30, r0); o.frequency.exponentialRampToValueAtTime(85, hit - 0.02);
   og.gain.setValueAtTime(0.0001, r0); og.gain.exponentialRampToValueAtTime(0.3 * k, hit - 0.06); og.gain.linearRampToValueAtTime(0.0001, hit - 0.015);
   o.connect(og).connect(bus); o.start(r0); o.stop(hit);
-  // The strike on the flash: a hard crack over a low knock.
-  (tag ? trackS : track)(hit + (buf.duration - IMPACT_AT) / rate + 0.1, src, n, o,
-    burst(ac, bus, hit, { dur: 0.08, rate: 1.4, type: 'highpass', f: 1600, peak: 0.5 * k, a: 0.001 }).src,
-    blip(ac, bus, hit, { f0: 95, f1: 34, glide: 0.5, peak: 0.6 * k, a: 0.003, dur: 0.8 }));
+  // The sample alone carries the strike: no synthetic crack or knock.
+  (tag ? trackS : track)(hit + (buf.duration - IMPACT_AT) / rate + 0.1, src, n, o);
 }
 // Salvo sound counts, for QA.
 const sfxN = { round: 0, crater: 0, hunt: 0 };
@@ -9995,30 +10015,14 @@ function roundSound(ac, r) {
     trackS(t0 + (last ? 20.1 : 2.6), src, o);
   });
 }
-// A far strike: a thin crack and a low thud, after the sound's delay.
-function farHit(ac, P, crackK, thudK, ring = 0) {
+// A far strike: the impact's tail, slowed and darkened, after the sound's delay.
+// It has no synthetic crack, tick or crackle.
+function farHit(ac, P, k, rate) {
   const t = ac.currentTime + camera.position.distanceTo(P) / 343 / 28;
-  const n = hiss(ac, t, 0.08, 1.4), bp = filt(ac, 'bandpass', 3000, 1.6), g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4 * crackK, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-  n.connect(bp).connect(g).connect(kit.out);
-  const o = ac.createOscillator(), og = ac.createGain();
-  o.frequency.setValueAtTime(60, t); o.frequency.exponentialRampToValueAtTime(35, t + 0.3);
-  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.6 * thudK, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-  o.connect(og).connect(kit.out); o.start(t); o.stop(t + 0.4);
-  echo(ac, og, 0.3, 400);
-  const nodes = [n, o];
-  // A burst in the air crackles as its embers fly.
-  for (let i = 0; i < ring; i++) {
-    const tc = t + 0.05 + 0.9 * Math.random(), d = 0.015 + 0.05 * Math.random(), c = hiss(ac, tc, d + 0.02, 1.5);
-    const cb = filt(ac, 'bandpass', 1800 + 4200 * Math.random(), 2.5), cg = ac.createGain();
-    cg.gain.setValueAtTime(0.0001, tc); cg.gain.exponentialRampToValueAtTime(0.12, tc + 0.003); cg.gain.exponentialRampToValueAtTime(0.0001, tc + d);
-    c.connect(cb).connect(cg).connect(kit.out);
-    nodes.push(c);
-  }
-  trackS(t + 1.2, ...nodes);
+  sampleHit(ac, trackS(t + 0.5), t, 0.55 * k, rate * jit(0.04), 1400, blastBus(ac), 0.3);
 }
-function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.8, 0.9); }
-function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 1.2, 0.5, 8); }
+function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.9, 0.8); }
+function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 0.6, 1.0); }
 // The impact's prelude lands on the flash.
 // The boom crosses the distance at sound speed, compressed 28 times.
 function hitSounds(ac, sh, alive = () => shot === sh) {
@@ -10157,28 +10161,16 @@ function stepRoar(ac, h, i) {
 // A second tick follows it.
 // The ship's voices feed the blast bus, as the rock's impact does.
 function shipCrack(ac, k) {
-  const t = ac.currentTime + 0.02, g = ac.createGain(), g2 = ac.createGain();
-  const n = hiss(ac, t, 0.5, 1.2), n2 = hiss(ac, t + 0.11, 0.4, 0.9);
-  const hp = filt(ac, 'highpass', 1500, 0.7), bp = filt(ac, 'bandpass', 2800, 1.1);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.7 * k, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-  g2.gain.setValueAtTime(0.0001, t + 0.11); g2.gain.exponentialRampToValueAtTime(0.18 * k, t + 0.115); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-  n.connect(g).connect(hp); n2.connect(g2).connect(hp);
-  hp.connect(bp).connect(blastBus(ac));
-  echo(ac, bp, 0.6, 5000);
-  return track(t + 0.7, n, n2, hp, bp, g, g2);
+  // The far crack: the impact's tail, bright, with a long echo.
+  const t = ac.currentTime + 0.02, h = track(t + 1.5);
+  sampleHit(ac, h, t, 0.8 * k, 1.05, 5000, blastBus(ac), 0.6);
+  return h;
 }
-// A low, muffled thud: a falling sine and a dull noise knock.
+// A low, muffled thud: the impact's tail, slowed and dark.
 function jointThud(ac, k) {
-  const t = ac.currentTime + 0.02, o = ac.createOscillator(), og = ac.createGain();
-  const n = hiss(ac, t, 0.6, 0.5), lp = filt(ac, 'lowpass', 150), ng = ac.createGain();
-  o.frequency.setValueAtTime(66 * jit(0.08), t); o.frequency.exponentialRampToValueAtTime(34, t + 0.4);
-  og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.42 * k, t + 0.012); og.gain.setTargetAtTime(0.0001, t + 0.05, 0.14);
-  ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.45 * k, t + 0.01); ng.gain.setTargetAtTime(0.0001, t + 0.04, 0.1);
-  const bus = blastBus(ac);
-  o.connect(og).connect(bus); n.connect(lp).connect(ng).connect(bus);
-  echo(ac, og, 0.3, 300);
-  o.start(t); o.stop(t + 1.2);
-  return track(t + 1.3, o, n, lp, og, ng);
+  const t = ac.currentTime + 0.02, h = track(t + 2);
+  sampleHit(ac, h, t, 0.7 * k, 0.55, 320, blastBus(ac), 0.3);
+  return h;
 }
 // A tearing groan: a sliding saw pair and creaking noise.
 function shipGroan(ac, i) {
