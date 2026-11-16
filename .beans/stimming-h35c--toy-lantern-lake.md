@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T23:12:21Z
+updated_at: 2026-11-16T23:23:47Z
 parent: stimming-oh7b
 ---
 
@@ -96,3 +96,14 @@ QA, headless, 2026-11-16:
 
 - Cost: the app shows plan limits only (Ultra), not a cost per session. Tom records it.
 - Seen in passing, not fixed: the menu's hover warm-up fetches `shared/emblems/<id>.svg` for every toy, so each Lab toy with no emblem logs a 404 (Tornado and Fog horn too).
+
+Final review (fresh reviewer, 2026-11-16). Three Important findings, each fixed:
+- At the cap, a burning lantern vanished in one frame (a Festival on Low, or two on Standard). The oldest burning one now fades out in 0.5 s; only past 160 does one go at once. Check: cap 8, ten taps leave 8 burning and 2 fading (failed first, passes now).
+- The frog's buzz modulated the envelope's own gain by plus or minus 0.5, about 20 times its peak, and clicked. The buzz now has its own gain stage ahead of the envelope. Checked by reading, not by a test.
+- Space needed focus on the stage; on a focused button it pressed that button. Festival now takes Space through the shell's key binder (document-wide, no repeats). Check: Space with no focus, and after Clear, starts a festival (failed first, passes now).
+
+Deferred minors:
+- Clear cuts a lantern already in its ember off in one frame; it should fade from its current glow.
+- After the tab comes back, the lake bed and drone stay silent until the next click or key; `kit.wake()` on return would fix it.
+
+`?qa` shows the pool to a test as `window.__lanterns`.

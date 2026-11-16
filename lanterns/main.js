@@ -34,7 +34,7 @@ const ui = initPage({ id: 'lanterns', bar: {
     { value: 'night', label: 'Night', key: '3' },
   ], onPick: v => act.time(v) },
   actions: [
-    { verb: 'festival', onPress: () => act.festival() },
+    { verb: 'festival', key: 'space', onPress: () => act.festival() },
     { verb: 'clear', onPress: () => act.clear() },
   ],
   // Calm: they rise nearly straight. Breezy: they lean and run sideways.
@@ -475,7 +475,15 @@ const FEST_N = 80, FEST_T = 6;
 let fest = null;
 /** @param {number[]} at @param {boolean} float @param {boolean} [inFest] */
 function add(at, float, inFest = false) {
-  while (pool.length >= Math.min(CAPS[env.detail.level] ?? MAXN, row('cap', MAXN))) pool.shift();
+  // At the cap the oldest burning lantern fades out in 0.5 s; none vanishes at once.
+  const cap = Math.min(CAPS[env.detail.level] ?? MAXN, row('cap', MAXN));
+  let burning = pool.reduce((n, L) => n + (L.age < L.life ? 1 : 0), 0);
+  for (const L of pool) {
+    if (burning < cap) break;
+    if (L.age < L.life) { L.life = L.age; L.fade = 0.5; burning--; }
+  }
+  // The texture holds MAXN; only past that does the oldest go at once.
+  while (pool.length >= MAXN) pool.shift();
   // No two start in one place, so a held press never stacks them.
   // A sky lantern starts within 12 m of the spot: about 40 px at the far shore.
   const j = () => (Math.random() - 0.5) * (float ? 3 : 24);
@@ -763,12 +771,6 @@ function endPress(e, tap) {
 canvas.addEventListener('pointerup', e => endPress(e, true));
 canvas.addEventListener('pointercancel', e => endPress(e, false));
 canvas.addEventListener('lostpointercapture', e => endPress(e, false));
-// Space sends up a festival.
-stage.addEventListener('keydown', e => {
-  if (e.target !== stage || e.key !== ' ') return;
-  e.preventDefault();
-  act.festival();
-});
 new ResizeObserver(wake).observe(stage);
 
 /* ---------- sound ---------- */
@@ -881,6 +883,9 @@ function croak(ac, at) {
   o.frequency.setValueAtTime(jit(110, 170), at);
   o.frequency.linearRampToValueAtTime(jit(90, 120), at + dur);
   am.frequency.value = jit(22, 32);
+  // The buzz: a gain that swings 0 to 1, ahead of the envelope.
+  const buzz = ac.createGain();
+  buzz.gain.value = 0.5;
   amG.gain.value = 0.5;
   bp.type = 'bandpass';
   bp.frequency.value = jit(500, 800);
@@ -891,10 +896,10 @@ function croak(ac, at) {
   g.gain.linearRampToValueAtTime(peak, at + 0.03);
   g.gain.setValueAtTime(peak, at + dur - 0.05);
   g.gain.linearRampToValueAtTime(0, at + dur);
-  am.connect(amG).connect(g.gain);
-  o.connect(bp).connect(g).connect(p).connect(bed.night);
+  am.connect(amG).connect(buzz.gain);
+  o.connect(bp).connect(buzz).connect(g).connect(p).connect(bed.night);
   o.start(at); am.start(at);
-  o.stop(at + dur + 0.05); am.stop(at + dur + 0.05);
+  o.stop(at + dur); am.stop(at + dur);
 }
 // The festival drone: a low, warm chord that swells with the lanterns in the air.
 function startDrone(ac) {
@@ -956,6 +961,8 @@ function soundRest() {
 }
 
 /* ---------- start ---------- */
+// QA: ?qa shows the pool to a test as window.__lanterns.
+if (qs.has('qa')) Object.assign(window, { __lanterns: { pool } });
 // QA: ?lan=10 starts with ten lanterns in the air, ?float=8 with eight on the water.
 // ?fest=25 starts 25 s into a festival.
 const preset = Math.min(MAXN, +(qs.get('lan') || 0));
