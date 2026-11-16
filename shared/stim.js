@@ -273,6 +273,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} id The storage key part: stimming.<toy>.<id>.
  * @property {string} label
  * @property {boolean} [persist] Stores the value and restores it on load.
+ * @property {string} [group] A sheet heading; a new value starts a new section.
  */
 /**
  * @typedef {RowBase & { type: 'slider', value: number, min?: number, max?: number, step?: number, onInput?: (value: number) => void }} SliderRow
@@ -781,6 +782,23 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
 
   /* the Settings sheet: toy rows, site rows, the build link, then Reset */
   const settings = new Map();
+  // Builds rows into sections; a new row.group opens a labelled section.
+  // Rows before the first group stay in the first section.
+  const grouped = (rows, first, host) => {
+    const secs = [first];
+    let sec = first, group;
+    rows.forEach(row => {
+      if (row.group && row.group !== group) {
+        sec = make('div', 's2-sec', `<span class="s2-lab">${row.group}</span>`);
+        secs.push(sec);
+      }
+      group = row.group;
+      const r = makeRow(row, `stimming.${id}.${row.id}`, host);
+      settings.set(row.id, r.handle);
+      sec.append(r.el);
+    });
+    return secs;
+  };
   let toyLab = null, toySec = null, sheet = null, ft = null;
   // The sheet builds on first need, so a late Classic link can join it.
   const ensureSheet = () => {
@@ -805,12 +823,8 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       const sec = toySec = make('div', 's2-sec');
       toyLab = make('span', 's2-lab', name.firstChild.textContent);
       sec.append(toyLab);
-      (spec.settings || []).forEach(row => {
-        const r = makeRow(row, `stimming.${id}.${row.id}`, layer);
-        settings.set(row.id, r.handle);
-        sec.append(r.el);
-      });
-      addSec(sec);
+      // Grouped rows go into their own sections after the toy's own.
+      grouped(spec.settings || [], sec, layer).forEach(addSec);
     }
     if (spec.quality) {
       const sec = make('div', 's2-sec', '<span class="s2-lab">Site</span>');
@@ -828,15 +842,11 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     const devOn = new URLSearchParams(location.search).has('dev');
     const sec = make('div', 's2-sec');
     const host = devOn ? layer : make('div', '');
-    spec.dev.forEach(row => {
-      const r = makeRow(row, `stimming.${id}.${row.id}`, host);
-      settings.set(row.id, r.handle);
-      sec.append(r.el);
-    });
+    const secs = grouped(spec.dev, sec, host);
     if (devOn) {
       const dev = iconButton('s2-set s2-dev', DEV_SVG, 'Dev');
       tr.append(dev);
-      makeSheet(layer, { title: 'Dev', anchor: dev }).el.append(sec);
+      makeSheet(layer, { title: 'Dev', anchor: dev }).el.append(...secs);
     }
   }
   let keys = null;

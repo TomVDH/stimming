@@ -159,91 +159,88 @@ const ui = initPage({ id: 'railgun', bar: {
   slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
   settings: [
-    { type: 'toggle', id: 'letterbox', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
-    // Aim: the gun tracks the rock, or the arrow keys lay it by hand.
-    { type: 'choice', id: 'aim', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
-    // Fire: one rail shot, or a salvo of banked rounds.
+    // The gun tracks the rock, or the arrow keys lay it.
+    { type: 'choice', id: 'aim', group: 'Play', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // One rail shot, or a salvo of banked rounds.
     // This choice stands in until the HUD selector lands.
-    { type: 'choice', id: 'firemode', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
+    { type: 'choice', id: 'firemode', group: 'Play', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
+    { type: 'toggle', id: 'letterbox', group: 'View', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
-    { type: 'slider', id: 'res', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
-    { type: 'choice', id: 'detail', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
+    { type: 'slider', id: 'res', group: 'Graphics', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
+    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
-    // The charge: the hum, the choir, blends, or a mechanical surge.
-    { type: 'choice', id: 'chargemix', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
-    // The frame rate cap: film, the toy's own 30, or a fast screen.
-    { type: 'choice', id: 'fps', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
-    // The game over: the surge that plays as an unshot rock comes down.
-    // Ascent, Requiem and Undertow are takes of their own, not surge mixes.
-    // A pick takes effect at the next strike; Strike test brings one on.
-    { type: 'choice', id: 'gomix', label: 'Game over sound', display: 'stepper', value: 'requiem', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
-    // Requiem's layers open from muffled to clear as the next ones enter.
-    { type: 'toggle', id: 'golayers', label: 'Requiem layers open', value: false, persist: true, onToggle: on => { goOpen = on; } },
-    // Dev: pin the rock's size; Random rolls a new one per rock.
-    { type: 'choice', id: 'devsize', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
-    // Target picks the rock or the capital ship.
+    { type: 'choice', id: 'chargemix', group: 'Sound', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    // Ascent, Requiem and Undertow are takes, not surge mixes.
+    // A pick takes effect at the next strike.
+    { type: 'choice', id: 'gomix', group: 'Sound', label: 'Game over sound', display: 'stepper', value: 'requiem', persist: true, options: [{ value: 'syl', label: 'Surge Syl' }, { value: 'penta', label: 'Surge' }, { value: 'ascent', label: 'Ascent' }, { value: 'requiem', label: 'Requiem' }, { value: 'undertow', label: 'Undertow' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'hum', label: 'Hum' }], onPick: v => { if (typeof surgeOverStop === 'function') surgeOverStop(true); goMix = v; } },
+    // Requiem's layers open from muffled to clear.
+    { type: 'toggle', id: 'golayers', group: 'Sound', label: 'Requiem layers open', value: false, persist: true, onToggle: on => { goOpen = on; } },
+    // The soft crackle while a rock burns in the sky.
+    { type: 'slider', id: 'roar', group: 'Sound', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
+    // Random rolls a new size per rock.
+    { type: 'choice', id: 'devsize', group: 'Tests', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
     // The choice waits for Reset.
-    { type: 'choice', id: 'target', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
-    // Ship fires sends a test round to the plain.
+    { type: 'choice', id: 'target', group: 'Tests', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
     // The button waits for a ship at station.
-    { type: 'button', id: 'shipfire', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    { type: 'button', id: 'shipfire', group: 'Tests', label: 'Ship fires', text: 'Fire', onClick: () => shipShot() },
+    // The rock falls ten times faster.
+    { type: 'toggle', id: 'fastrock', group: 'Tests', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
+    // Each rock starts at its hold and strikes after a grace.
+    { type: 'toggle', id: 'striketest', group: 'Tests', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
     // Ambient: small events nobody fires, for a watcher.
-    { type: 'toggle', id: 'ambient', label: 'Ambient', value: true, persist: true },
-    { type: 'slider', id: 'ambrate', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
-    { type: 'choice', id: 'ambkind', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
-    { type: 'button', id: 'ambfire', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
-    // Strike test: each rock starts at its hold and strikes after a short grace.
-    // Fast rock: the rock falls ten times faster; off is the normal speed.
-    { type: 'toggle', id: 'fastrock', label: 'Fast rock', value: false, onToggle: on => { fastRock = on; wake(); } },
-    { type: 'toggle', id: 'striketest', label: 'Strike test', value: false, onToggle: on => { strikeTest = on; if (on) strikeSoon(); } },
-    // Rock roar: the soft crackle while a rock burns in the sky.
-    { type: 'slider', id: 'roar', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
-    // Sun bearing: the dusk sun's angle right of the look, in degrees.
-    { type: 'slider', id: 'sunaz', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
-    // Sun rays: the strength of the cloud shadows in the low air.
-    { type: 'slider', id: 'shafts', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
-    // Far haze sinks far clouds into the air; Valley fog pools in the far ranges.
-    { type: 'slider', id: 'farhaze', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
-    { type: 'slider', id: 'valfog', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
-    // Cloud deck: the broken layer of cells five kilometres up.
-    // Giants: the three colossal storms far beyond the ranges.
-    { type: 'toggle', id: 'giants', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
-    { type: 'slider', id: 'deck', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
-    { type: 'slider', id: 'grain', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
-    { type: 'slider', id: 'grainsize', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
-    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
-    // Mist: a diffusion filter; mid tones glow and the contrast falls.
-    { type: 'slider', id: 'mist', label: 'Mist', min: 0, max: 1, step: 0.02, value: 0, persist: true, onInput: v => { gfx.mist = v; setBloom(); } },
-    // Halation: the red bleed round bright light, as on film.
-    { type: 'slider', id: 'halation', label: 'Halation', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.hal = v; setBloom(); } },
-    { type: 'slider', id: 'vignette', label: 'Vignette', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gfx.vig = v; setLens(); } },
-    // Tone: the curve, then exposure, contrast and colour on top of the grade.
-    // Four curves are too wide for segments; a stepper holds them.
-    { type: 'choice', id: 'tone', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }, { value: 'villeneuve', label: 'Villeneuve' }], onPick: v => { gfx.tone = v; setTone(); } },
-    // Villeneuve only: the key hue, the pull toward it, the black floor.
-    // Auto takes sand by day and slate at night.
-    { type: 'choice', id: 'palette', label: 'Palette', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'sand', label: 'Sand' }, { value: 'slate', label: 'Slate' }], onPick: v => { gfx.pal = v; draw(); } },
-    { type: 'slider', id: 'pull', label: 'Palette pull', min: 0, max: 1, step: 0.02, value: 0.55, persist: true, onInput: v => { gfx.pull = v; setTone(); } },
-    { type: 'slider', id: 'lift', label: 'Black lift', min: 0, max: 1, step: 0.02, value: 0.5, persist: true, onInput: v => { gfx.lift = v; setTone(); } },
-    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 0.55, persist: true, onInput: v => { gfx.exp = v; draw(); } },
-    { type: 'slider', id: 'brightness', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 0.78, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
-    { type: 'slider', id: 'contrast', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.24, persist: true, onInput: v => { gfx.con = v; setTone(); } },
-    { type: 'slider', id: 'saturation', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 1.06, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
-    // Gun steel: the graphite parts' reflectance and roughness.
-    { type: 'slider', id: 'gunmetal', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
-    { type: 'slider', id: 'gunrough', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
-    // Base wear: the stains, cracks and grease on the base.
-    { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
-    // Far ranges: Bake marches once and relights; Live marches every frame.
-    // Bake is the default (Tom, 2026-11-16); ?far=live opens on the live march.
-    // Erosion carves gullies and crags into the far ranges; 0 is the smooth shape.
-    // Face bump: the gullies and strata in the light, as on the card clouds.
+    { type: 'toggle', id: 'ambient', group: 'Ambient', label: 'Ambient', value: true, persist: true },
+    { type: 'slider', id: 'ambrate', group: 'Ambient', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
+    { type: 'choice', id: 'ambkind', group: 'Ambient', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
+    { type: 'button', id: 'ambfire', group: 'Ambient', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
+    // The dusk sun's angle right of the look, in degrees.
+    { type: 'slider', id: 'sunaz', group: 'Sky', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { sunSwing = v; aimSky(); setSun(); } },
+    // The strength of the cloud shadows in the low air.
+    { type: 'slider', id: 'shafts', group: 'Sky', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { shaftGain = v; draw(); } },
+    // Far haze sinks far clouds into the air.
+    { type: 'slider', id: 'farhaze', group: 'Sky', label: 'Far haze', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
+    // Valley fog pools in the far ranges.
+    { type: 'slider', id: 'valfog', group: 'Sky', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
+    // The broken layer of cells five kilometres up.
+    { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
+    // The colossal storms far beyond the ranges.
+    { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+    // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
-    { type: 'slider', id: 'erosion', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
-    { type: 'choice', id: 'farmode', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
-    { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
+    // Carves gullies and crags; 0 is the smooth shape.
+    { type: 'slider', id: 'erosion', group: 'Land', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
+    // Bake marches once and relights; Live marches every frame.
+    // Bake is the default (Tom, 2026-11-16); ?far=live opens on Live.
+    { type: 'choice', id: 'farmode', group: 'Land', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
+    // The graphite parts' reflectance and roughness.
+    { type: 'slider', id: 'gunmetal', group: 'Gun', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
+    { type: 'slider', id: 'gunrough', group: 'Gun', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
+    // The stains, cracks and grease on the base.
+    { type: 'slider', id: 'basewear', group: 'Gun', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
+    { type: 'slider', id: 'bloom', group: 'Lens', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
+    // A diffusion filter; mid tones glow and the contrast falls.
+    { type: 'slider', id: 'mist', group: 'Lens', label: 'Mist', min: 0, max: 1, step: 0.02, value: 0, persist: true, onInput: v => { gfx.mist = v; setBloom(); } },
+    // The red bleed round bright light, as on film.
+    { type: 'slider', id: 'halation', group: 'Lens', label: 'Halation', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.hal = v; setBloom(); } },
+    { type: 'slider', id: 'vignette', group: 'Lens', label: 'Vignette', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gfx.vig = v; setLens(); } },
+    { type: 'slider', id: 'grain', group: 'Lens', label: 'Grain', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => setGrain() },
+    { type: 'slider', id: 'grainsize', group: 'Lens', label: 'Grain size', min: 1, max: 4, step: 0.25, value: 1, persist: true, onInput: v => { gfx.gsize = v; setLens(); } },
+    // Grade: the curve, then exposure, contrast and colour on top.
+    // Four curves are too wide for segments.
+    { type: 'choice', id: 'tone', group: 'Grade', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }, { value: 'neutral', label: 'Neutral' }, { value: 'villeneuve', label: 'Villeneuve' }], onPick: v => { gfx.tone = v; setTone(); } },
+    // Villeneuve only: the key hue, its pull, the black floor.
+    // Auto takes sand by day and slate at night.
+    { type: 'choice', id: 'palette', group: 'Grade', label: 'Palette', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'sand', label: 'Sand' }, { value: 'slate', label: 'Slate' }], onPick: v => { gfx.pal = v; draw(); } },
+    { type: 'slider', id: 'pull', group: 'Grade', label: 'Palette pull', min: 0, max: 1, step: 0.02, value: 0.55, persist: true, onInput: v => { gfx.pull = v; setTone(); } },
+    { type: 'slider', id: 'lift', group: 'Grade', label: 'Black lift', min: 0, max: 1, step: 0.02, value: 0.5, persist: true, onInput: v => { gfx.lift = v; setTone(); } },
+    { type: 'slider', id: 'exposure', group: 'Grade', label: 'Exposure', min: 0.5, max: 2, step: 0.05, value: 0.55, persist: true, onInput: v => { gfx.exp = v; draw(); } },
+    { type: 'slider', id: 'brightness', group: 'Grade', label: 'Brightness', min: 0.6, max: 1.5, step: 0.02, value: 0.78, persist: true, onInput: v => { gfx.bri = v; setTone(); } },
+    { type: 'slider', id: 'contrast', group: 'Grade', label: 'Contrast', min: 0, max: 0.5, step: 0.01, value: 0.24, persist: true, onInput: v => { gfx.con = v; setTone(); } },
+    { type: 'slider', id: 'saturation', group: 'Grade', label: 'Saturation', min: 0.4, max: 1.4, step: 0.02, value: 1.06, persist: true, onInput: v => { gfx.sat = v; setTone(); } },
+    // Film, the toy's own 30, or a fast screen.
+    { type: 'choice', id: 'fps', group: 'Performance', label: 'FPS', display: 'segments', value: '30', persist: true, options: [{ value: '24', label: '24' }, { value: '30', label: '30' }, { value: '75', label: '75' }], onPick: v => { FRAME = 1000 / +v; } },
+    { type: 'choice', id: 'fxaa', group: 'Performance', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
   // Reset runs the days faster and faster, then cuts back to the start.
   // Reset waits right of Sight; it shows and glows after a kill.
