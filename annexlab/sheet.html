@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Annex sheet</title>
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<link rel="stylesheet" href="../shared/stim.css">
+<style>
+/* Annex sheet: every transition and title layout of round 2, live, in one place.
+   A frame loads when it comes into view and unloads when it leaves. */
+:root { --slab: "Iosevka Term Slab", ui-monospace, monospace; scrollbar-color: var(--line) var(--bg); }
+body { padding: clamp(20px, 4vw, 48px); }
+h1 { margin: 0; font-size: clamp(32px, 5vw, 56px); font-weight: 800; letter-spacing: -0.035em; line-height: 1; }
+.lede { margin: 12px 0 0; max-width: 70ch; font-size: 15px; line-height: 1.55; color: var(--muted); }
+h2 { margin: 56px 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+h2 + p { margin: 0 0 20px; max-width: 70ch; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 28px 24px; }
+.card h3 { margin: 0; display: flex; align-items: baseline; gap: 10px; font-size: 17px; font-weight: 700; }
+.card h3 em { font: 500 11px/1 var(--slab); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.card h3 em[data-k="pick"] { color: oklch(0.86 0.15 150); }
+.card h3 em[data-k="no"] { color: oklch(0.74 0.16 28); }
+.card p { margin: 6px 0 12px; min-height: 3em; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.frame { position: relative; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--surface); }
+.frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.bar button, .bar a {
+  height: 30px; padding: 0 12px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
+  background: none; color: var(--fg); cursor: pointer; text-decoration: none; font: 500 11px/1 var(--slab); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.bar button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.bar :is(button, a):hover { border-color: var(--fg); }
+.bar span { flex: 1; }
+:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus); }
+</style>
+</head>
+<body>
+<h1>Annex sheet</h1>
+<p class="lede">The content zone under a toy, round 2, on the live Glass toy. Each frame is the lab itself: scroll in it, or use Toy, Mid and Zone. Open gives the full page. Tom's verdicts are of 2026-11-16.</p>
+
+<h2>Transition</h2>
+<p>How the visitor gets from the toy to the content zone.</p>
+<div class="grid" id="dirs"></div>
+
+<h2>Flash cut: title block layouts</h2>
+<p>The block the flash lands on. Tom rejected the first set (Stack, Poster, Ledger, Centre, Side: gone from the lab) and this second set.</p>
+<div class="grid" id="lays"></div>
+
+<script>
+// One row per card: lab query, name, verdict kind, verdict, what it is.
+const DIRS = [
+  ['d=h&v=b', 'H · Flash cut', 'pick', "Tom's pick", "The dark sheet rises over the dimmed toy. The title lands in the intro's beats. At rest: the full toy, and one About hint bottom centre."],
+  ['d=a', 'A · Recede', '', 'Parked', 'The stage shrinks to 0.86 and dims; the zone rises as a sheet. The pick of round 1.'],
+  ['d=d', 'D · Drum', '', 'Parked', 'The toy and the zone are two faces of one drum; the stage tips back.'],
+  ['d=e', 'E · Placard', '', 'Parked', "A bar in the toy's accent rides up and docks as the header."],
+  ['d=f', 'F · Tide', '', 'Parked', "The menu's Wave divider floods up over the toy in the series colour."],
+  ['d=g', 'G · Lead figure', '', 'Parked', "The stage shrinks into the article's first picture and stays live."],
+];
+const LAYS = [
+  ['d=h&v=a', '1 · Window', 'no', 'Rejected: trite', 'The emblem is a hole in the sheet; the toy plays on behind it.'],
+  ['d=h&v=b', '2 · Giant', 'no', 'Rejected: trite', 'The emblem runs off the left edge and leans to the pointer.'],
+  ['d=h&v=c', '3 · Echo', 'no', 'Rejected: trite', 'The emblem repeats at falling sizes; the flash runs down the row.'],
+  ['d=h&v=d', '4 · Orbit', 'no', 'Rejected: trite', 'Both names run in a ring round the emblem; the ring turns with the scroll.'],
+];
+const STOPS = [['Toy', 0], ['Mid', 0.5], ['Zone', 1]];
+
+function card([query, name, kind, verdict, text], startAt) {
+  const el = document.createElement('article');
+  el.className = 'card';
+  el.innerHTML = `<h3>${name}<em data-k="${kind}">${verdict}</em></h3><p>${text}</p>
+    <div class="frame"><iframe title="${name}" data-q="${query}" data-y="${startAt}"></iframe></div>
+    <div class="bar">${STOPS.map(([w, y]) => `<button type="button" data-y="${y}" aria-pressed="${y === startAt}">${w}</button>`).join('')}<span></span><a href="round2.html?${query}" target="_blank" rel="noopener">Open</a></div>`;
+  const frame = el.querySelector('iframe');
+  el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    frame.dataset.y = b.dataset.y;
+    el.querySelectorAll('button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    if (frame.dataset.on) frame.src = url(frame);
+  }));
+  return el;
+}
+const url = f => `round2.html?${f.dataset.q}&y=${f.dataset.y}`;
+
+document.getElementById('dirs').append(...DIRS.map(r => card(r, 0.5)));
+document.getElementById('lays').append(...LAYS.map(r => card(r, 1)));
+
+// Each frame holds a live toy, so only the frames in view stay loaded.
+const live = new IntersectionObserver(es => es.forEach(en => {
+  const f = en.target;
+  if (en.isIntersecting && !f.dataset.on) { f.dataset.on = '1'; f.src = url(f); }
+  else if (!en.isIntersecting && f.dataset.on) { delete f.dataset.on; f.removeAttribute('src'); }
+}), { rootMargin: '10% 0px' });
+document.querySelectorAll('iframe').forEach(f => live.observe(f));
+</script>
+</body>
+</html>

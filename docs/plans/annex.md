@@ -93,15 +93,20 @@ H · Flash cut:
 - The title block has the Signal intro's voice: the emblem in the toy's ink, Gabarito 800 for the name, B612 for the small lines.
 - Tom's ruling: the rhythm of the flashes and the size flashes belong here; a full white card on a dark site does not. The first build of H was a white panel in difference blend; it is gone.
 
-Title block layouts, `?v=a..e`, keys 1 to 5 (the markup is the same in all five):
+Title block layouts, first set (Stack, Poster, Ledger, Centre, Side): Tom rejected all five on 2026-11-16. His reasons: too ordinary, and the wrong ingredients. His lead: the emblem.
+
+Second set, `?v=a..d`, keys 1 to 4. The emblem leads in each. The block holds the emblem, both names with IPA, and the motto; the facts (number, series, build, sound) sit with the credits.
 
 | | Layout |
 |---|---|
-| 1 · Stack | The logo box over the name at the left; the facts in a column at the right. |
-| 2 · Poster | The name runs the width of the page (up to 300 px). Logo box, Flemish name and motto sit in a row under it; the facts run as one strip. |
-| 3 · Ledger | One ruled sheet: logo cell, name cell, Flemish name and motto cells, four fact cells. The cells take the flash. |
-| 4 · Centre | The intro's own stack, held in the middle; the facts in a centred strip. |
-| 5 · Side | The logo box stands large at the left (up to 300 px); the names hang beside it. |
+| 1 · Window | The emblem is a hole in the sheet. The toy plays on behind it, and the hole moves over the toy as the page scrolls. The names sit under it. |
+| 2 · Giant | The emblem is up to 600 px and runs off the left edge. It leans to the pointer. The names stand at its lower right. |
+| 3 · Echo | The emblem repeats four times at falling sizes and strengths. On landing the flash runs down the row. |
+| 4 · Orbit | Both names run in a ring round the emblem, in the slab face. The ring turns with the scroll. All centred. |
+
+Tom rejected this set too (2026-11-16): "all are so trite". The title block is open. Bean `stimming-465y` holds the handoff: every ruling, every verdict and the advice for the next try.
+
+Test sheet: `annexlab/sheet.html` shows every transition and layout live, one card each, with Tom's verdict.
 
 Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
 
