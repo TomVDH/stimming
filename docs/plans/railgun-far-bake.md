@@ -46,7 +46,16 @@ The live pass also got a true ceiling test: a ray that rises past every crest on
 ## Next
 
 1. Done: Tom made Bake the default (2026-11-16).
-2. Then richer shapes: ridged erosion in the height itself (spurs and gullies). The bake marches once, so the detail costs nothing per frame.
+2. Done: erosion in the height (2026-11-16). See below.
+
+## Erosion
+
+- Gullies cut down each face along the fall line, with spurs between them; a slow warp bends and branches them. The spacing follows the crest height.
+- The carve is deepest on the mid slopes. Crags notch the crest line.
+- A cavity term (height against its mean in a small ring) darkens the cuts and lights the spurs. It lives in the light buffer, so it costs nothing per frame.
+- At 80 to 200 km the air hides most face detail, as real air does; the crests and silhouettes carry the change.
+- Cost (1280, GPU ms): a full bake 20 to 39, spread over six frames; a relight 6 to 10; the per-frame pass unchanged at about 4. The live march rises from 32 to 45; it is only the fallback for GPUs with no float targets.
+- Dev slider `Erosion`, 0 to 2; 0 is the old smooth shape.
 
 ## Dev
 

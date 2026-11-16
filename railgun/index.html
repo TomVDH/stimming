@@ -238,6 +238,8 @@ const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'basewear', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
     // Far ranges: Bake marches once and relights; Live marches every frame.
     // Bake is the default (Tom, 2026-11-16); ?far=live opens on the live march.
+    // Erosion carves gullies and crags into the far ranges; 0 is the smooth shape.
+    { type: 'slider', id: 'erosion', label: 'Erosion', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uEro.value = v; farBake.dirty = true; draw(); } },
     { type: 'choice', id: 'farmode', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
     { type: 'choice', id: 'fxaa', label: 'FXAA', value: 'auto', persist: true, options: [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], onPick: v => { gfx.fxaa = v; resize(); } },
   ],
@@ -1422,10 +1424,24 @@ const FAR_U = {
   uInvVP: { value: new THREE.Matrix4() }, uVP: { value: new THREE.Matrix4() },
   // March steps: High takes more, the ladder's rungs fewer.
   uFarSteps: { value: 96 },
+  // Erosion: the depth of the gullies and crags; 0 leaves the smooth ranges.
+  uEro: { value: 1 },
   uRockC: { value: new THREE.Vector3(...linFit(0.46, 0.06, 18)) }, uGroundC: { value: new THREE.Vector3(...GROUND_C) },
 };
 const FAR_GLSL = /* glsl */`
 uniform vec4 uRg[${RANGES.length}], uRa[${RANGES.length}];
+uniform float uEro;
+// Sharp ridges in [0, 1]: lines of 1 with a narrow V between.
+float ridge2(vec2 p) {
+  float s = 0.0, a = 0.5, w = 1.0;
+  for (int i = 0; i < 3; i++) {
+    float n = 1.0 - abs(k2noise(p) * 2.0 - 1.0);
+    // Each octave is strongest high on the ridge above it.
+    s += a * n * n * w; w = clamp(n * 1.6, 0.0, 1.0);
+    p = p * 2.11 + vec2(13.7, 5.3); a *= 0.5;
+  }
+  return s / 0.875;
+}
 // Three smooth octaves: rounded folds, no knife-edge crests.
 float fbm3(vec2 p) {
   float s = 0.0, a = 0.5;
@@ -1463,7 +1479,24 @@ float rangeH(vec2 p, out float near) {
     float folds = fbm3(vec2(arc / 9000.0, sv * 4.0) + ph * 3.1);
     // The folds take a gentle ridge: firm spurs, no knife edges.
     folds = mix(folds, 1.0 - abs(2.0 * folds - 1.0), 0.45);
-    h = max(h, hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5)));
+    float hr = hc * prof * (0.78 + 0.18 * bands + 0.36 * (folds - 0.5));
+    if (uEro > 0.0 && hr > 0.02 * hc) {
+      // Erosion: spurs run down each face, gullies cut between them.
+      // The noise stretches along the fall line, so every cut runs downhill.
+      // The spacing follows the crest: big ranges carve wide gullies.
+      float sc = 0.16 * uRg[i].w;
+      vec2 eq = vec2(arc, off * 0.3) / sc + ph * 7.0;
+      // A slow warp bends the cuts and lets them branch.
+      eq += 0.7 * vec2(k2noise(eq * 0.35), k2noise(eq * 0.35 + 9.1)) - 0.35;
+      float sp = ridge2(eq);
+      // The carving is deepest on the mid slopes, light at the crest and the toe.
+      float mid = smoothstep(0.02, 0.3, v) * (1.0 - smoothstep(0.75, 1.0, v));
+      // Crags break the crest line into teeth and notches.
+      float cr = ridge2(vec2(arc / (0.3 * uRg[i].w), off / (0.8 * uRg[i].w)) + ph * 3.0);
+      // The noise's narrow lines are the cuts; the broad ground between stands as spurs.
+      hr *= 1.0 - uEro * (0.42 * mid * sp + 0.1 * (1.0 - smoothstep(0.0, 0.25, v)) * cr);
+    }
+    h = max(h, hr);
   }
   return h;
 }
@@ -1539,13 +1572,22 @@ const FAR_FN = /* glsl */`
     }
     return sh;
   }
+  // Cavity: 0 deep in a gully, 0.5 on a plain slope, 1 on a spur.
+  // The ground's height against its mean in a small ring.
+  float farCavity(vec2 p, float hit) {
+    float r = max(500.0, 0.004 * hit), h = farH(p);
+    float a = 0.25 * (farH(p + vec2(r, 0.0)) + farH(p - vec2(r, 0.0)) + farH(p + vec2(0.0, r)) + farH(p - vec2(0.0, r)));
+    return clamp(0.5 + (h - a) / (0.5 * r), 0.0, 1.0);
+  }
   // The lit colour of surface point p at range hit, ground height h0, in the air.
-  vec3 farShade(vec3 ro, vec3 rd, vec3 p, float hit, float h0, vec3 N, float sh) {
+  vec3 farShade(vec3 ro, vec3 rd, vec3 p, float hit, float h0, vec3 N, float sh, float cav) {
     // Shade on the flat world: the curve only moves the image.
     vec3 P = vec3(p.x, h0, p.z);
     float wall = smoothstep(0.92, 0.5, N.y);
     vec3 alb = mix(uGroundC * 0.92, uRockC * (0.75 + 0.5 * ridged(P.xz / 2500.0)), wall);
     alb = mix(uGroundC * 0.95, alb, smoothstep(30.0, 900.0, h0));
+    // Gullies hold dark scree and shade; spurs catch the light.
+    alb *= 0.25 + 1.5 * cav;
     float nl = max(dot(N, uSun), 0.0), wr = max(dot(N, uSun) * 0.5 + 0.5, 0.0);
     vec3 col = alb * (ambient(N) * (0.55 + 0.45 * N.y) + uSunC * (1.5 * nl * sh + 0.12 * wr) + keyLight(N));
     // The blast lights the faces turned to it, faintly at this range.
@@ -1589,7 +1631,7 @@ const farLive = new THREE.ShaderMaterial({
     float h0 = farH(p.xz);
     if (h0 < 2.0 && length(p.xz - ro.xz) < 118000.0) discard;
     vec3 N = farNormal(p.xz, hit);
-    gl_FragColor = vec4(farShade(ro, rd, p, hit, h0, N, farShadow(vec3(p.x, h0, p.z))), 1.0);
+    gl_FragColor = vec4(farShade(ro, rd, p, hit, h0, N, farShadow(vec3(p.x, h0, p.z)), farCavity(p.xz, hit)), 1.0);
     gl_FragDepth = farDepth(p);
   }`,
 });
@@ -1640,7 +1682,7 @@ const farBakeG = new THREE.ShaderMaterial({
     gl_FragColor = vec4(floor(q), fract(q), N.x, N.z);
   }`,
 });
-// The light bake: the sun's shadow per texel, from the geometry bake.
+// The light bake: the sun's shadow and the cavity per texel, from the geometry bake.
 const farBakeL = new THREE.ShaderMaterial({
   uniforms: { ...U, ...FAR_U, ...FB_U, uEye: FB_U.uBakeEye },
   depthWrite: false, depthTest: false,
@@ -1653,8 +1695,9 @@ const farBakeL = new THREE.ShaderMaterial({
   void main() {
     vec4 g = texelFetch(uFarG, ivec2(gl_FragCoord.xy), 0);
     if (g.x < 0.0) { gl_FragColor = vec4(1.0); return; }
-    vec3 p = uEye + rayOf(uRefInv, vN, vec3(0.0)) * (g.x + g.y) * 512.0;
-    gl_FragColor = vec4(farShadow(vec3(p.x, farH(p.xz), p.z)), 0.0, 0.0, 1.0);
+    float hit = (g.x + g.y) * 512.0;
+    vec3 p = uEye + rayOf(uRefInv, vN, vec3(0.0)) * hit;
+    gl_FragColor = vec4(farShadow(vec3(p.x, farH(p.xz), p.z)), farCavity(p.xz, hit), 0.0, 1.0);
   }`,
 });
 // The baked pass: each pixel reads the four nearest texels and lights them.
@@ -1688,17 +1731,18 @@ const farBaked = new THREE.ShaderMaterial({
     }
     // Without multisampling, a pixel shows only past half cover.
     if (cov < (uA2C > 0.5 ? 0.02 : 0.5)) discard;
-    float W = 0.0, T = 0.0, sh = 0.0;
+    float W = 0.0, T = 0.0, sh = 0.0, cav = 0.0;
     vec3 N = vec3(0.0);
     for (int k = 0; k < 4; k++) {
       float w = b[k] * exp(-abs(t[k] - tmin) / (0.01 * tmin)) + 1e-6 * step(0.0, g[k].x) * step(t[k], tmin);
       W += w; T += w * t[k];
       N += w * vec3(g[k].z, sqrt(max(1.0 - g[k].z * g[k].z - g[k].w * g[k].w, 0.0)), g[k].w);
-      sh += w * texelFetch(uFarL, clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), hi), 0).r;
+      vec2 L = texelFetch(uFarL, clamp(i0 + ivec2(k & 1, k >> 1), ivec2(0), hi), 0).rg;
+      sh += w * L.x; cav += w * L.y;
     }
-    T /= W; sh /= W; N = normalize(N);
+    T /= W; sh /= W; cav /= W; N = normalize(N);
     vec3 p = ro + rd * T;
-    gl_FragColor = vec4(farShade(ro, rd, p, T, p.y + drop(p), N, sh), uA2C > 0.5 ? smoothstep(0.0, 1.0, cov) : 1.0);
+    gl_FragColor = vec4(farShade(ro, rd, p, T, p.y + drop(p), N, sh, cav), uA2C > 0.5 ? smoothstep(0.0, 1.0, cov) : 1.0);
     gl_FragDepth = farDepth(p);
   }`,
 });
@@ -11643,7 +11687,7 @@ window.__qa = {
   amb: () => ({ live: amb.live.map(e => ({ kind: e.kind, age: simT - e.t0, dur: e.dur })), next: amb.next - simT, due: amb.due.length, deadSince: amb.deadSince }),
   freeze(on = true) { qaFreeze = on; if (on) visible = true; },
   // The far pass: the mode, and how often it baked and relit.
-  far(mode) { if (mode) setFarMode(mode === 'bake'); return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
+  far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
     const gl = renderer.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
