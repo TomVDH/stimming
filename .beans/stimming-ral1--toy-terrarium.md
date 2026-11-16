@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T23:00:36Z
+updated_at: 2026-11-16T23:04:23Z
 parent: stimming-oh7b
 ---
 
@@ -81,3 +81,7 @@ Tom: "tune moss and fern".
 ## The stone (2026-11-16)
 
 Tom: "do the stone". A smooth, merged mesh (about 47,000 triangles; the old one was 720 flat faces): a lumpy body, sharp ridges from ridged noise, upright grooves, stepped strata and a flat foot. Per-vertex colour: blue-grey stone, faint calcite veins, dark crevices, lichen on the upward faces. PBR: shader grain; wet, it darkens and turns glossy, most in the crevices where water gathers. Moss now sits in the cracks (a sampler weight), about 5,000 shoots, no longer a cap.
+
+## The branch (2026-11-16)
+
+Tom: "do the branch". One rule grows it: a limb tapering from its base, two forks and a twig, each a tube with deep lengthwise bark ridges, a knot or two, and a cut end of pale heartwood. Colour: grey-brown driftwood bleached silver on top, dark in the grooves, a few lichen spots. PBR: fibre grain in the shader; wet, it darkens and shines, most in the grooves. Moss takes it in a few patches on top (about 1,400 shoots).

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ---------- small tools ---------- */
 // A seeded random, so every load grows the same garden.
@@ -216,8 +216,97 @@ export function createGarden(canvas, gl, view) {
   rock.position.set(0.2, bedH(0.2, -0.24) + 0.055, -0.24);
   rock.rotation.y = 0.6;
   rock.castShadow = rock.receiveShadow = true;
-  const branchCurve = new THREE.CatmullRomCurve3([[-0.56, 0, 0.12], [-0.42, 0.04, 0.08], [-0.28, 0.1, 0.0], [-0.16, 0.17, -0.06], [-0.08, 0.2, -0.04]].map(([x, dy, z]) => new THREE.Vector3(x, bedH(x, z) + dy - 0.01, z)));
-  const branch = new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 60, 0.018, 10), new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 }));
+  // The branch: a gnarled limb with two forks and a twig, grown from one rule.
+  // Each piece is a tube whose radius tapers, with bark ridges along it and a cut end.
+  // aCrev marks the bark's grooves: water and moss gather there.
+  function limb(pts, r0, r1, seed, capEnd) {
+    const curve = new THREE.CatmullRomCurve3(pts), SEG = 48, RAD = 16;
+    const fr = curve.computeFrenetFrames(SEG, false), pos = [], crev = [], cut = [], idx = [];
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG, P = curve.getPointAt(t), N = fr.normals[i], B = fr.binormals[i];
+      // A knot or two swells the limb; the bark twists a little along it.
+      const knot = Math.exp(-(((t - 0.3 - 0.4 * hash2(seed, 1)) / 0.05) ** 2)) * 0.35;
+      const r = (r0 + (r1 - r0) * Math.pow(t, 0.8)) * (1 + knot + 0.08 * (vnoise(t * 9 + seed, seed) - 0.5));
+      for (let k = 0; k <= RAD; k++) {
+        const a = k / RAD * Math.PI * 2;
+        // Deep ridges run the length of the bark.
+        const ridge = 0.5 + 0.5 * Math.sin(a * 7 + t * 3 + 3 * fbm(t * 4 + seed, seed * 0.7 + Math.cos(a)));
+        const g = (1 - ridge) ** 2, d = r * (1 - 0.18 * g);
+        pos.push(P.x + (N.x * Math.cos(a) + B.x * Math.sin(a)) * d, P.y + (N.y * Math.cos(a) + B.y * Math.sin(a)) * d, P.z + (N.z * Math.cos(a) + B.z * Math.sin(a)) * d);
+        crev.push(g); cut.push(0);
+      }
+    }
+    for (let i = 0; i < SEG; i++) for (let k = 0; k < RAD; k++) {
+      const a = i * (RAD + 1) + k, b = a + RAD + 1;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+    // The cut end: a flat face of pale heartwood.
+    if (capEnd) {
+      const c = pos.length / 3, P = curve.getPointAt(1);
+      pos.push(P.x, P.y, P.z); crev.push(0); cut.push(1);
+      for (let k = 0; k < RAD; k++) { const a = SEG * (RAD + 1) + k; idx.push(c, a + 1, a); cut[a] = 1; }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('aCrev', new THREE.Float32BufferAttribute(crev, 1));
+    geo.setAttribute('aCut', new THREE.Float32BufferAttribute(cut, 1));
+    geo.setIndex(idx);
+    return geo;
+  }
+  const onBed = (x, dy, z) => new THREE.Vector3(x, bedH(x, z) + dy, z);
+  const branchG = (() => {
+    const main = [onBed(-0.56, 0.0, 0.12), onBed(-0.43, 0.035, 0.08), onBed(-0.3, 0.09, 0.01), onBed(-0.18, 0.15, -0.05), onBed(-0.07, 0.19, -0.05)];
+    const mc = new THREE.CatmullRomCurve3(main), at = t => mc.getPointAt(t);
+    // Forks leave the limb upward and aside; the twig leaves the first fork.
+    const f1 = [at(0.42), at(0.42).add(new THREE.Vector3(-0.03, 0.07, -0.06)), at(0.42).add(new THREE.Vector3(-0.05, 0.13, -0.1))];
+    const f2 = [at(0.72), at(0.72).add(new THREE.Vector3(0.05, 0.04, 0.06)), at(0.72).add(new THREE.Vector3(0.09, 0.06, 0.11))];
+    const tw = new THREE.CatmullRomCurve3(f1).getPointAt(0.55);
+    const f3 = [tw, tw.clone().add(new THREE.Vector3(0.04, 0.05, 0.0)), tw.clone().add(new THREE.Vector3(0.06, 0.08, 0.02))];
+    const parts = [limb(main, 0.034, 0.016, 1, true), limb(f1, 0.016, 0.007, 2, true), limb(f2, 0.014, 0.006, 3, true), limb(f3, 0.007, 0.0035, 4, false)];
+    const g = mergeGeometries(parts);
+    g.computeVertexNormals();
+    // Colour: grey-brown driftwood, bleached silver on top, dark in the grooves.
+    const p = g.attributes.position, nr = g.attributes.normal, cv = g.attributes.aCrev, ct = g.attributes.aCut;
+    const col = new Float32Array(p.count * 3), weight = new Float32Array(p.count), c = new THREE.Color(), v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const ny = nr.getY(i), gr = cv.getX(i);
+      c.setHSL(0.075, 0.18, 0.18 + 0.06 * fbm(v.x * 40, v.z * 40 + v.y * 20));
+      c.lerp(new THREE.Color(0.27, 0.26, 0.23), ss(0.2, 0.9, ny) * 0.6);
+      c.multiplyScalar(1 - 0.5 * gr);
+      // Lichen spots on the top of the limb.
+      const li = ss(0.62, 0.68, fbm(v.x * 60 + 3, v.z * 60 + v.y * 30)) * ss(0.3, 0.8, ny);
+      c.lerp(new THREE.Color(0.22, 0.26, 0.15), li * 0.8);
+      // Heartwood on the cut ends: pale and warm.
+      c.lerp(new THREE.Color(0.32, 0.22, 0.12), ct.getX(i));
+      col.set([c.r, c.g, c.b], i * 3);
+      // Moss takes the branch in a few patches on its top, not all along it.
+      const patchB = ss(0.55, 0.7, fbm(v.x * 18 + 5, v.z * 18 + v.y * 9));
+      weight[i] = 0.002 + (Math.max(0, ny) ** 2 * 0.6 + gr * 0.2) * patchB * (1 - li) * (1 - ct.getX(i));
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute('aMossW', new THREE.Float32BufferAttribute(weight, 1));
+    return g;
+  })();
+  // PBR wood: dry and matte; wet, it darkens and shines, most in the grooves.
+  const woodMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.9, envMapIntensity: 0.2, clearcoat: 0.02, clearcoatRoughness: 0.25 });
+  woodMat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;\nvarying vec3 vWood;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCrev = aCrev;\nvWood = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform float uWake;
+        varying float vCrev;
+        varying vec3 vWood;
+        float wdH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        // Fine fibres in the bark: thin streaks of light and dark.
+        diffuseColor.rgb *= 0.86 + 0.28 * wdH(floor(vWood * vec3(220.0, 60.0, 220.0)));
+        float wetHere = uWake * (0.4 + 0.6 * vCrev);
+        diffuseColor.rgb *= 1.0 - 0.45 * wetHere;`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, wetHere);');
+  };
+  const branch = new THREE.Mesh(branchG, woodMat);
   branch.castShadow = branch.receiveShadow = true;
   scene.add(rock, branch);
   scene.updateMatrixWorld(true);
@@ -330,9 +419,9 @@ export function createGarden(canvas, gl, view) {
     const rank = new Float32Array(MOSS_N * 2);
     const pos = new THREE.Vector3(), nrm = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion();
     const sources = [
-      { mesh: soil, share: 0.915, test: () => true },
+      { mesh: soil, share: 0.943, test: () => true },
       { mesh: rock, share: 0.045, test: (p, n) => n.y > -0.1, weight: 'aMossW' },
-      { mesh: branch, share: 0.04, test: (p, n) => n.y > 0.6 },
+      { mesh: branch, share: 0.012, test: (p, n) => n.y > 0.2, weight: 'aMossW' },
     ].map(s => ({ ...s, sampler: (s.weight ? new MeshSurfaceSampler(s.mesh).setWeightAttribute(s.weight) : new MeshSurfaceSampler(s.mesh)).build(), nm: new THREE.Matrix3().getNormalMatrix(s.mesh.matrixWorld) }));
     let i = 0, tries = 0;
     while (i < MOSS_N && tries < MOSS_N * 20) {
@@ -665,6 +754,7 @@ export function createGarden(canvas, gl, view) {
     U.uLampCol.value.copy(col).multiplyScalar(0.8 * k);
     capMat.clearcoat = 0.05 + 0.95 * wake;
     rockMat.clearcoat = 0.02 + 0.6 * wake;
+    woodMat.clearcoat = 0.02 + 0.5 * wake;
     frondMat.clearcoat = 0.05 + 0.12 * wake;
     mossMat.clearcoat = 0.03 + 0.12 * wake;
     mossMat.sheen = 0.6 - 0.2 * wake;
