@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T19:59:37Z
+updated_at: 2026-11-16T20:09:06Z
 parent: stimming-oh7b
 ---
 
@@ -32,3 +32,10 @@ Blockout built; waits for the checkpoint with Tom.
 - [ ] Checkpoint with Tom
 
 Known gaps for later stages: the runner draws at the full frame rate while awake (no 30 fps drift step); the scene sleeps after 60 s with no input. The wheat shows faint row banding mid-distance. No sound yet.
+
+### Stage 1, round 2 (Tom, 2026-11-16: "the road is offset", wheat "responsive to the wind", "the tornado would be in the distance", "golden ratio")
+
+- Golden lines: the horizon sits 0.382 up the frame; the eye turns left so the road vanishes 0.618 across; the road runs 11 m right of the eye; the wall cloud lands near the left golden line.
+- Wheat: near shells of ears with awns lean with the wind; gust fronts roll downwind as a pale sheen; the Storm slider drives the wind; the windmill turns faster with it.
+- Distance: the storm sits about 30 per cent further out; a click places a funnel 8 to 30 km away.
+- Headless 60 fps at 1280 x 720, console clean.
