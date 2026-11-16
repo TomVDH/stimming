@@ -419,3 +419,8 @@ Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; 
 - Laser (Tom's pattern): a violet-white near-IR thread. Two pulses on the press, a faint paint through the charge, a 22 Hz strobe on the release, out as the slug leaves. The sight's key draws it to a spot on the rock. Ranging takes 1.0 s; the gun lays on the rock from the press.
 - Motion: each axis ramps, cruises and brakes (`SLEW`: traverse 3.2, elevation 2.4 degrees a second), with a feed-forward on the falling rock. Braking rocks the cradle (`sway`). After the shot the barrel holds 0.6 s, runs out over 4.2 s (`RUN`) and seats at battery with a clunk.
 - QA hooks: `eye`, `lay`, `eject`, `caseP`, `slide`; `aim()` reports the slew and the sway. Stills and a clip: `docs/qa/railgun-gun/`.
+
+## No ember sprays; the sky fills with fire (Tom, 2026-11-16)
+
+- Tom: "NO RAIN OR ENTRY" and "small yellow wisps fly out". The rock sheds no ember sparks while it falls, a split piece throws none, and a broken fragment throws none. `prewarmEmbers()` does nothing.
+- Tom: "a globular orange glow filling the sky ... as we near the surface, and as the bits start popping off". `rockFill()` adds a wide orange globe round the rock and warms the low sky and the whole dome. `uFill` starts halfway down, grows to the ground, and the strike drives it higher. Each split swells it for a few seconds (`fillPopT`).

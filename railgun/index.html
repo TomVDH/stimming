@@ -811,13 +811,15 @@ vec3 k2skyB(vec3 dir, float sunK) {
   if (sunK > 0.5) col = wisps(dir, col, cs);
   return col;
 }
-// The nearing rock lights the sky round itself with fire.
-// The glow stays near the rock; the far sky only warms a little.
+// The nearing rock fills the sky with a great globe of fire.
+// A hot core sits round the rock; a wide orange globe spreads past it.
+// Low sky and the whole dome warm as it comes down.
 vec3 rockFill(vec3 c, vec3 dir) {
   if (uFill < 0.001) return c;
-  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), wide = pow(m, 10.0);
-  c = mix(c, c * vec3(1.25, 0.85, 0.6), 0.25 * uFill * wide);
-  return c + uAstC * uFill * (0.9 * near_ + 0.3 * wide + 0.01);
+  float m = max(dot(dir, uAst.xyz), 0.0), near_ = pow(m, 40.0), globe = pow(m, 4.0), wide = pow(m, 1.5);
+  float low = exp(-max(dir.y, 0.0) * 3.0);
+  c = mix(c, c * vec3(1.3, 0.82, 0.55), 0.55 * uFill * wide);
+  return c + uAstC * uFill * (0.8 * near_ + 0.45 * globe + 0.12 * wide + 0.08 * low);
 }
 vec3 k2skyS(vec3 dir, float sunK) { return rockFill(k2skyB(dir, sunK), dir) + astGlow(dir) + boltGlow(dir) + hitGlow(dir); }
 vec3 k2sky(vec3 dir) { return k2skyS(dir, 1.0); }`;
@@ -4243,20 +4245,16 @@ function placeFrags() {
     }
   }
 }
-// A piece breaks off the main rock with a puff of embers.
+// The last split's time; it swells the sky's fiery glow.
+let fillPopT = -1e9;
+// A piece breaks off the main rock and swells the sky's glow.
 // A rock already deep in its fall shows the piece already apart.
 function splitFrag(f) {
   f.on = true; f.m.visible = true; f.trail.visible = true;
   f.splitT = ast.s - f.splitS > 0.02 ? -1e9 : simT;
   f.trail.material.uniforms.uOn.value = f.splitT < 0 ? 1 : 0;
-  if (f.splitT < 0 || reduced()) return;
-  shedU.crossVectors(ast.away, ast.side);
-  const th = Math.atan2(f.oy, f.ox);
-  shedP.copy(ast.pos).addScaledVector(ast.side, Math.cos(th) * 1.05 * ast.R).addScaledVector(shedU, Math.sin(th) * 1.05 * ast.R);
-  for (let i = 0; i < 24; i++) {
-    shedV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar(80 + rnd() * 160).addScaledVector(ast.away, 300);
-    writeStar(shedP, simT, shedV, -0.02, 2, 6 + rnd() * 6, 0.8, 0.9 + rnd() * 0.6, 3, 0.15);
-  }
+  // A split swells the sky's fiery glow; it throws no ember sparks.
+  if (f.splitT >= 0) fillPopT = simT;
 }
 // The shock front's radius, ha seconds after the hit.
 // It sweeps out slowly toward the eye: 36 km, over half a minute.
@@ -4287,10 +4285,8 @@ function stepFrags() {
 function breakFrag(f) {
   f.broke = simT; f.m.visible = false; f.glow.visible = false;
   const r = f.k * ast.R, sp = r / 120;
-  for (let i = 0; i < 90; i++) {
-    bv.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize().multiplyScalar((60 + rnd() * 220) * sp);
-    writeStar(f.pos, simT + rnd() * 0.05, bv, 0.3, rnd() < 0.5 ? 0 : 2, 2 + rnd() * 2, 0.5, 1.4 + rnd(), rnd() < 0.3 ? 2 : 0, 1.0);
-  }
+  // It throws no ember sparks (Tom: no small yellow wisps).
+  void sp;
 }
 // One glowing bit off the rock's hot face.
 let ablN = 0, shedN = 0;
@@ -4325,7 +4321,8 @@ function shedHulk(src) {
   shedN++;
 }
 // A rock already in flight already has its trail of embers.
-function prewarmEmbers() { if (!reduced()) for (let i = 0; i < 90; i++) shedSpark(rnd() * 50); }
+// The rock carries no ember trail (Tom, 2026-11-16).
+function prewarmEmbers() {}
 
 
 /* ---------- dust: puffs that lift off the plain ---------- */
@@ -5428,9 +5425,11 @@ function aimAst() {
   const lw = astMesh.visible ? astMat.uniforms.uBurn.value * (0.1 + 1.4 * Math.min(ast.s, 1) ** 2) * rockGlowK : 0;
   U.uRockL.value.set(ast.pos.x, ast.pos.y, ast.pos.z, lw);
   U.uRockR.value = 9000 + 4 * ast.R;
-  // The sky round the rock fills with its fire over the last third of its fall.
+  // The sky fills with the rock's fire from halfway down.
   // The strike drives rockGlowK up: the fill reaches full as it comes down.
-  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.pow(sstep(Math.min(ast.s, 1), 0.65, 1), 1.5) * Math.min(1, 0.7 + 0.3 * rockGlowK) : 0;
+  // Each split swells it for a few seconds.
+  const pop = 0.35 * Math.exp(-Math.max(simT - fillPopT, 0) / 2.5) * sstep(Math.min(ast.s, 1), 0.2, 0.6);
+  const fk = astMesh.visible && tgtKind === 'rock' ? astMat.uniforms.uBurn.value * Math.min(1.4, Math.pow(sstep(Math.min(ast.s, 1), 0.45, 1), 1.3) * Math.min(1.3, 0.7 + 0.3 * rockGlowK) + pop) : 0;
   U.uFill.value = fk;
   // The rock's own flare: faint far out, strong near the end; the strike has its own.
   tmpA.copy(ast.pos).project(camera);
@@ -6087,8 +6086,7 @@ function stepAst(dt) {
   stepChunks();
   stepAmbient(dt);
   const falling = ast.state === 'approach' || ast.state === 'hold' || ast.state === 'strike';
-  // The hot face sheds glowing bits; they fall back into the smoke.
-  if (falling && !reduced() && astMesh.visible) for (let n = Math.floor(dt * 3 + rnd()); n > 0; n--) shedSpark();
+  // The rock sheds no ember sparks (Tom: no small yellow wisps).
   // A crater's shove eases back onto the path over a second and a half.
   if (ast.jolt.lengthSq() > 1) { ast.jolt.multiplyScalar(Math.exp(-dt / 1.5)); if (ast.state === 'hold') placeAst(); } else ast.jolt.set(0, 0, 0);
   if (falling) {
