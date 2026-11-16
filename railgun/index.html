@@ -6825,8 +6825,8 @@ const shardMat = new THREE.ShaderMaterial({
   attribute vec3 aPos;
   attribute vec4 aVel, aSeed;
   uniform float uTime, uSpin;
-  varying vec3 vP, vN, vO;
-  varying float vHeat, vSeed;
+  varying vec3 vP, vN, vO, vV;
+  varying float vHeat, vSeed, vAir;
   mat3 rot(vec3 a, float t) {
     float c = cos(t), s = sin(t), k = 1.0 - c;
     return mat3(c + a.x * a.x * k, a.x * a.y * k + a.z * s, a.x * a.z * k - a.y * s,
@@ -6845,7 +6845,8 @@ const shardMat = new THREE.ShaderMaterial({
     vec3 k = vec3(0.035, 0.1, 0.035);
     // Each shard reaches its own fall speed in about five seconds.
     // The lob and the fall make one ballistic arc.
-    float vt = 420.0 + 220.0 * fract(aSeed.x * 3.7);
+    // Fall speeds spread wide, so the pieces land over half a minute.
+    float vt = 260.0 + 480.0 * fract(aSeed.x * 3.7);
     // A piece stops where it lands: the clock halts at the touchdown.
     // Bisection finds it; the fall is one-way after the apex.
     float tq = age;
@@ -6856,6 +6857,13 @@ const shardMat = new THREE.ShaderMaterial({
     }
     vec3 c = aPos + aVel.xyz * (1.0 - exp(-k * tq)) / k - vec3(0.0, vt * (tq - (1.0 - exp(-0.2 * tq)) / 0.2), 0.0);
     c.y = max(c.y, 15.0);
+    // The velocity at tq; a landed piece has none.
+    vec3 vel = vec3(aVel.x * exp(-k.x * tq), aVel.y * exp(-0.1 * tq) - vt * (1.0 - exp(-0.2 * tq)), aVel.z * exp(-k.z * tq));
+    if (tq < age) vel = vec3(0.0);
+    float spd = length(vel);
+    vV = spd > 1.0 ? vel / spd : vec3(0.0, -1.0, 0.0);
+    // Fast air burns the leading face; a landed piece only smoulders.
+    vAir = smoothstep(180.0, 520.0, spd) * (1.0 - smoothstep(40.0, 58.0, age));
     // Half the pieces burn away in the air; the rest fall all the way.
     float shr = fract(aSeed.x * 5.13) < 0.5 ? 1.0 - smoothstep(8.0, 22.0, age) : 1.0;
     float sc = aSeed.y * shr * (1.0 - smoothstep(55.0, 60.0, age));
@@ -6866,8 +6874,8 @@ const shardMat = new THREE.ShaderMaterial({
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
-  varying vec3 vP, vN, vO;
-  varying float vHeat, vSeed;
+  varying vec3 vP, vN, vO, vV;
+  varying float vHeat, vSeed, vAir;
   uniform vec3 uRock, uWhite, uEmber;
   ${HEAD}
   ${AIR}
@@ -6880,6 +6888,9 @@ const shardMat = new THREE.ShaderMaterial({
     float fresh = smoothstep(0.45, 0.6, n);
     // Mostly silhouettes: the embers stay faint.
     col += uEmber * fresh * vHeat * 1.4 + uWhite * fresh * vHeat * vHeat * 0.8;
+    // The face into the wind glows: orange at the rim, white at the nose.
+    float lead = max(dot(N, vV), 0.0);
+    col += (uEmber * 0.9 * pow(lead, 3.0) + uWhite * 0.5 * pow(lead, 14.0)) * vAir * (0.5 + 0.8 * n);
     // Far shards go blue and flat in the air.
     // A shard behind the soot ball fades into it; one in front stays solid.
     // Far pieces near the plain drop behind the horizon.
@@ -7159,6 +7170,8 @@ function updateDomes() {
     u.uVSteps.value = Math.min(48, Math.round(volSteps() * 1.5));
     d.m.visible = true;
   }
+  // Hail landings take the slots no dome holds.
+  if (impK && tgtKind === 'rock') hailLights(L);
 }
 function killVoice(r) {
   for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
@@ -7386,7 +7399,7 @@ function stepRain(dt) {
     const big = rnd() < 0.18;
     // The crumbs leave slow and wide; the wind leans them one way.
     bv.set((rnd() - 0.5) * 160 + 35, -(30 + 170 * rnd()), (rnd() - 0.5) * 160 + 12).multiplyScalar(sp);
-    writeStar(bp, simT, bv, big ? 0.3 + 0.1 * rnd() : 0.12 + 0.08 * rnd(), 2, big ? 9 + 5 * rnd() : 5 + 4 * rnd(), big ? 1.6 + rnd() : 0.8 + 0.7 * rnd(), big ? 2.6 + 1.4 * rnd() : 1.2 + 1.1 * rnd(), 3, big ? 0.95 : 0.7, 0);
+    writeStar(bp, simT, bv, big ? 0.3 + 0.1 * rnd() : 0.12 + 0.08 * rnd(), 2, big ? 9 + 5 * rnd() : 5 + 4 * rnd(), big ? 1.6 + rnd() : 0.8 + 0.7 * rnd(), big ? 2.2 + 1.2 * rnd() : 1.1 + 0.9 * rnd(), 3, big ? 0.45 : 0.3, 0);
   }
 }
 // The shards trail burning smoke while they are hot.
@@ -7398,18 +7411,22 @@ function stepShards(dt) {
   if (shardAcc < 1 / 12) return;
   shardAcc %= 1 / 12;
   const n = shardGeo.instanceCount, S = sSeed.array;
-  for (let i = 0; i < n; i += 2) {
+  for (let i = 0; i < n; i++) {
     const age = simT - S[i * 4 + 2];
     shardAt(i, age, bp, bv);
-    const heat = Math.max(Math.exp(-age / S[i * 4 + 3]), 1.3 * THREE.MathUtils.smoothstep(1600 - bp.y, 0, 1250));
+    // The fall's speed keeps a piece hot; it cools as it slows.
+    const fast = THREE.MathUtils.smoothstep(bv.length(), 180, 520);
+    const heat = Math.max(Math.exp(-age / S[i * 4 + 3]), fast, 1.3 * THREE.MathUtils.smoothstep(1600 - bp.y, 0, 1250));
     if (age < 0 || age > 58 || heat < 0.08 || bp.y < 150) continue;
+    // Small pieces shed a faint ember now and then; ribbons carry the rest.
+    if (S[i * 4 + 1] > 0.12 * ast.R || rnd() > 0.25) continue;
     bv.multiplyScalar(0.05);
-    writeStar(bp, simT, bv, 0.6, 2, 1.4 + rnd(), 0.7, 2.6, 0, 0.7 * Math.min(heat, 1.2), 0);
+    writeStar(bp, simT, bv, 0.6, 2, 0.8 + rnd() * 0.6, 0.3, 0.8, 3, 0.1 * Math.min(heat, 1), 0);
   }
 }
 // A shard's place and velocity at age, as the shard shader has them.
 function shardAt(i, age, out, vel) {
-  const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, kv = 0.1, vt = 420 + 220 * ((S[i * 4] * 3.7) % 1);
+  const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, kv = 0.1, vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
   // The clock halts at touchdown: a landed piece lies still.
   const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-kv * t)) / kv - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
   if (yAt(age) < 15) { let lo = 0, hi = age; for (let b = 0; b < 12; b++) { const m = 0.5 * (lo + hi); if (yAt(m) < 15) hi = m; else lo = m; } age = hi; }
@@ -7430,6 +7447,7 @@ const chunkGlow = chunks.map(() => makeFlare(linFit(0.78, 0.13, 52)));
 // A hunted chunk's burst flash.
 const huntFlares = chunks.map(() => makeFlare(linFit(0.9, 0.12, 60)));
 function stepChunks() {
+  stepHail();
   for (const [ci, ch] of chunks.entries()) {
     if (ch.i < 0 || simT > shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; huntFlares[ci].visible = false; continue; }
     // A hunted chunk stops where it burst; its trail holds, then fades.
@@ -7482,6 +7500,147 @@ function stepChunks() {
       // A debris trail widens fast and billows; it frays only a little.
       t.pu.uK.value = 0.06;
       t.pu.uBreak.value = 0.25 * THREE.MathUtils.smoothstep(age, 10, 40);
+    }
+  }
+}
+
+/* ---------- hail: the pieces land along the horizon ---------- */
+// Each piece that survives the fall lands with a flash.
+// It throws a splash of embers and a plume of dust.
+// Its light reaches the horizon sky and the cloud bases.
+// The pieces land 25 to 45 km out, just past the horizon.
+// hailT: each shard's landing age; zero for none.
+const hailT = new Float32Array(SHARD_MAX), hailDone = new Uint8Array(SHARD_MAX);
+// Eight flash cards serve the landings in turn.
+const hailCards = Array.from({ length: 8 }, () => makeFlare(linFit(0.86, 0.13, 58)));
+for (const m of hailCards) m.material.depthTest = true;
+// hails: { P, t0, r, card } for each landing, newest last.
+const hails = [];
+let hailCard = 0;
+const hailP = new THREE.Vector3(), hailV = new THREE.Vector3();
+// The plain between the gun and the ranges: 16 to 34 km out.
+const HAIL_NEAR = 16000, HAIL_FAR = 34000;
+// The shatter aims each piece's sideways throw at that band.
+// The fall's time stays; only the sideways speed changes.
+function aimHail(n) {
+  const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, cx = camera.position.x, cz = camera.position.z;
+  let ux = P[0] - cx, uz = P[2] - cz;
+  const ul = Math.hypot(ux, uz) || 1;
+  ux /= ul; uz /= ul;
+  for (let i = 0; i < n; i++) {
+    const vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
+    const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+    let T = 58;
+    if (yAt(58) < 15) { let lo = 0; for (let b = 0; b < 20; b++) { const m = 0.5 * (lo + T); if (yAt(m) < 15) T = m; else lo = m; } }
+    // Big pieces land nearer the middle of the band; crumbs scatter wider.
+    const d = HAIL_NEAR + (HAIL_FAR - HAIL_NEAR) * rnd(), side = (rnd() - 0.5) * (0.35 + 0.25 * rnd()) * d;
+    const tx = cx + ux * d - uz * side, tz = cz + uz * d + ux * side, e = (1 - Math.exp(-kh * T)) / kh;
+    V[i * 4] = (tx - P[i * 3]) / e; V[i * 4 + 2] = (tz - P[i * 3 + 2]) / e;
+  }
+  sVel.needsUpdate = true;
+}
+// Ribbons: the main rock's smoke, cheap, behind the biggest loose pieces.
+const hailRibs = Array.from({ length: 12 }, () => ({ m: makeFragTrail(true), i: -1 }));
+const ribV = new THREE.Vector3();
+function stepRibs() {
+  const S = sSeed.array, n = simT <= shardsEnd ? shardGeo.instanceCount : 0;
+  hailRibs.forEach(r => { r.m.visible = false; });
+  if (!n || reduced()) return;
+  // The biggest loose pieces take the ribbons, once per shatter.
+  if (hailRibs[0].i < 0) {
+    const ids = [];
+    for (let i = chunks.length; i < n; i++) ids.push(i);
+    ids.sort((a, b) => S[b * 4 + 1] - S[a * 4 + 1]);
+    hailRibs.forEach((r, j) => { r.i = j < ids.length ? ids[j] : -2; });
+  }
+  for (const r of hailRibs) {
+    if (r.i < 0) continue;
+    const age = simT - S[r.i * 4 + 2], rad = S[r.i * 4 + 1];
+    const shr = ((S[r.i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
+    shardAt(r.i, age, bp, ribV);
+    const landed = hailT[r.i] && age >= hailT[r.i];
+    const lAge = landed ? age - hailT[r.i] : 0;
+    // The ribbon fades as the piece slows, burns away or lands.
+    const on = Math.min(1, age / 1.5) * Math.max(shr, 0) * (landed ? Math.exp(-lAge / 3) : 1) * (1 - THREE.MathUtils.smoothstep(age, 50, 58));
+    if (on < 0.01) continue;
+    const u = r.m.material.uniforms;
+    u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
+    u.uP.value.copy(bp);
+    // The ribbon trails back along the path the piece just flew.
+    shardAt(r.i, Math.max(age - 6, 0), ribV, bv);
+    u.uAway.value.subVectors(ribV, bp);
+    u.uLen.value = Math.max(u.uAway.value.length(), 1);
+    u.uAway.value.divideScalar(u.uLen.value);
+    u.uSide.value.crossVectors(u.uAway.value, yUp).normalize();
+    u.uR.value = 0.6 * rad; u.uOn.value = on;
+    u.uLift.value.set(0, 0, 1);
+    r.m.visible = true;
+  }
+}
+// The shatter finds each piece's landing age by bisection.
+function armHail(n) {
+  hailRibs.forEach(r => { r.i = -1; });
+  const P = sPos.array, V = sVel.array, S = sSeed.array;
+  hailDone.fill(0); hailT.fill(0); hails.length = 0;
+  for (let i = 0; i < n; i++) {
+    const vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
+    const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+    if (yAt(58) >= 15) continue;
+    let lo = 0, hi = 58;
+    for (let b = 0; b < 20; b++) { const m = 0.5 * (lo + hi); if (yAt(m) < 15) hi = m; else lo = m; }
+    hailT[i] = hi;
+  }
+}
+// The plain drops away with the planet's curve.
+const curveY = p => -((p.x - camera.position.x) ** 2 + (p.z - camera.position.z) ** 2) / (2 * PLANET_R);
+function hailLand(i) {
+  const S = sSeed.array, age = hailT[i];
+  // A piece that burned away in the air lands as nothing.
+  const shr = ((S[i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
+  if (shr < 0.3) return;
+  shardAt(i, age, hailP, hailV);
+  hailP.y = curveY(hailP);
+  const r = S[i * 4 + 1] * shr, sp = r / 120;
+  const card = hailCards[hailCard++ % hailCards.length];
+  hails.push({ P: hailP.clone(), t0: simT, r, card });
+  if (hails.length > 24) hails.shift();
+  if (reduced()) return;
+  // A splash of embers leaps up and falls back.
+  for (let n = 0; n < 8 + Math.round(10 * sp); n++) {
+    const a = rnd() * Math.PI * 2, h = (25 + 70 * rnd()) * Math.min(sp, 3);
+    hailV.set(Math.cos(a) * h * 0.7, h * (0.8 + rnd()), Math.sin(a) * h * 0.7);
+    writeStar(hailP, simT + rnd() * 0.08, hailV, 0.25 + 0.2 * rnd(), 2, 1.6 + 1.6 * rnd(), 0.25, 1 + rnd(), 3, 0.5 + 0.4 * rnd());
+  }
+  // The dust plume: a tall lifted core and a low skirt.
+  for (let n = 0; n < 7; n++) {
+    const a = rnd() * Math.PI * 2, out = 4 + 10 * rnd();
+    puff(dustP.copy(hailP).setY(hailP.y + 0.3 * r), dustV.set(Math.cos(a) * out, 10 + 22 * rnd() * (n < 4 ? 1 : 0.3), Math.sin(a) * out), 10 + 6 * rnd(), r * (0.9 + 1.2 * rnd()));
+  }
+}
+// Each frame: land the due pieces, then drive their flashes.
+function stepHail() {
+  stepRibs();
+  if (simT <= shardsEnd) {
+    const n = shardGeo.instanceCount, S = sSeed.array;
+    // The four trained chunks land in stepChunks.
+    for (let i = chunks.length; i < n; i++) if (hailT[i] && !hailDone[i] && simT - S[i * 4 + 2] >= hailT[i]) { hailDone[i] = 1; hailLand(i); }
+  }
+  for (const m of hailCards) m.visible = false;
+  for (const h of hails) {
+    const a = simT - h.t0;
+    if (a < 0 || a > 6) continue;
+    // A white spike, then a red glow that sinks into the plain.
+    flare(h.card, h.P, h.r * (5 + 4 * (1 - Math.exp(-a / 0.4))), (Math.exp(-a / 0.12) * 2.2 + 0.5 * Math.exp(-a / 1.6)) * Math.min(1, h.r / 150));
+  }
+}
+// The newest landings light the horizon in the free impact slots.
+function hailLights(L) {
+  let k = hails.length - 1;
+  for (const v of L) {
+    if (v.w > 0) continue;
+    for (; k >= 0; k--) {
+      const h = hails[k], f = 0.35 * Math.min(1, h.r / 200) * flashOf(simT - h.t0);
+      if (f > 0.004) { v.set(h.P.x, h.P.y, h.P.z, f); k--; break; }
     }
   }
 }
@@ -7821,16 +7980,19 @@ function shatter(c) {
   });
   // A crowd of big burning pieces lobs out round the trained ones.
   // They smoke through the stars, not trains, so they cost little.
-  const crowd = reduced() ? 0 : Math.min(SHARD_MAX - keep.length, 24);
+  // Many small pieces and a few big ones: a hail, not a spray.
+  const crowd = reduced() ? 0 : Math.min(SHARD_MAX - keep.length, 56);
   for (let j = keep.length; j < keep.length + crowd; j++) {
-    const a = rnd() * Math.PI * 2, sp = (110 + 200 * c) * (R / 600) * (0.5 + rnd());
-    bv.copy(sd).multiplyScalar(Math.cos(a) * sp).addScaledVector(up, (0.6 * Math.sin(a) + 0.4 + 0.6 * rnd()) * sp).addScaledVector(fw, (150 + 120 * c) * (R / 600) * (0.5 + 0.8 * rnd()));
+    const a = rnd() * Math.PI * 2, sp = (110 + 200 * c) * (R / 600) * (0.5 + 1.6 * rnd());
+    bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 1.6).addScaledVector(up, (0.6 * Math.sin(a) + 0.4 + 0.6 * rnd()) * sp).addScaledVector(fw, (150 + 120 * c) * (R / 600) * (0.5 + 0.8 * rnd()));
     bp.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(1.5 * R).add(P);
     sPos.setXYZ(j, bp.x, bp.y, bp.z); sVel.setXYZW(j, bv.x, bv.y, bv.z, 0.2 + rnd() * 1.3);
-    sSeed.setXYZW(j, rnd() * 100, R * (0.18 + 0.27 * Math.pow(rnd(), 1.4)), simT, 14 + rnd() * 10);
+    sSeed.setXYZW(j, rnd() * 100, R * (0.07 + 0.33 * Math.pow(rnd(), 2.6)), simT, 14 + rnd() * 10);
   }
   shardGeo.instanceCount = keep.length + crowd;
   sPos.needsUpdate = sVel.needsUpdate = sSeed.needsUpdate = true;
+  aimHail(keep.length + crowd);
+  armHail(keep.length + crowd);
   chunks.forEach((ch, j) => { ch.i = j < keep.length ? j : -1; ch.landAt = 0; ch.landP = null; ch.burstAt = 0; ch.burstP = null; });
   // Embers: burning pieces fly out all round and arc down.
   const sp = R / 600;
@@ -8487,7 +8649,7 @@ function landReset() {
   if (sshot) { dustGeo.instanceCount = 0; dustHead = 0; dustEnd = 0; }
   sshot = null; sRound.visible = sRoundGlint.visible = sPop.visible = sPopGlow.visible = false;
   // The old blast, its debris and the bolt's line are gone.
-  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; clearHits(); for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; bolt.visible = false;
+  blastFx = null; voidFx = null; muzzleFx = null; sandStreams.length = 0; U.uHeatT.value = 0; U.uBk.value = 0; U.uEat.value.w = 0; rounds.length = 0; lit = null; clearHits(); for (const t of tracers) { t.round = null; t.bolt.visible = false; } dustShot = null; blow = null; devil = 0; for (const q of pulses) q.k = 0; caseDust = null; spent = null; caseMesh.visible = false; shardsEnd = 0; shardGeo.instanceCount = 0; hails.length = 0; bolt.visible = false;
   for (const ch of chunks) ch.i = -1;
   // Salvo sounds still to come stop with the old rock.
   for (const h of pend) {
@@ -10564,6 +10726,8 @@ window.__qa = {
     rumbles: shipRumbles.length, rise: simT - ship.t0, flash: IMP_U.uImp.value.map(v => v.w) }),
   // Each live dome: hulk, age, foot and distance from the eye.
   domesQ: () => shipDomes.filter(domeAlive).map(d => ({ i: d.i, age: simT - d.t0, S: d.S, P: d.P.toArray(), dist: d.P.distanceTo(camera.position), vis: d.m.visible })),
+  // Each hail landing: age, size and eye distance.
+  hailsQ: () => ({ due: [...hailT].filter(t => t > 0).sort((a, b) => a - b), landed: hails.map(h => ({ age: simT - h.t0, r: h.r, dist: h.P.distanceTo(camera.position) })) }),
   rumbleDelay: i => ship.hulks[i].rumbleDelay,
   // Each pending sound: seconds left and its source count.
   pendQ: () => [...pend].map(h => ({ left: h.end - (kit.ac?.currentTime ?? 0), n: h.nodes.length, ship: shipRumbles.includes(h) })),
