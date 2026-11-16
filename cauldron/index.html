@@ -179,6 +179,7 @@ const ui = initPage({ id: 'cauldron', bar: {
   dev: [
     { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
     { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
+    { type: 'slider', id: 'dof', label: 'Background blur', min: 0, max: 16, step: 0.5, value: 7 },
     // The eye: 50 degrees is the toy's view; near 0 is a side view of the fire.
     // These rows keep no value, so a reload brings the toy's own view back.
     { type: 'slider', id: 'camEl', label: 'Camera height', min: 0, max: 80, step: 1, value: 50, onInput: () => refit() },
@@ -1002,6 +1003,9 @@ vec3 stones(vec2 P, out vec2 grad) {
   // The grain keeps a forward difference over 0.012 ground units.
   vec2 gg = 0.08 * vec2(noise2((p + vec2(0.0204, 0.0)) * 9.0), noise2((p + vec2(0.0, 0.0204)) * 9.0)) - g0;
   grad = (6.0 * x * (1.0 - x) / 0.22 * dome * ge * 1.7 + gg / 0.012) * 0.25;
+  // Each stone sits at its own slight tilt, so the light picks them out one by one.
+  vec2 tilt = (vec2(hash12(id + 3.7), hash12(id + 9.1)) - 0.5) * 0.9;
+  grad += tilt * smoothstep(0.0, 0.6, x);
   return vec3(h * 0.25, id);
 }
 float steamDens(vec3 p) {
@@ -1071,7 +1075,7 @@ void main() {
   // The dark round the hearth, with a little firelit haze.
   vec3 haze = uFireCol * uFlick * 0.012 + vec3(0.006, 0.005, 0.006);
   vec3 back = haze * (0.4 + 0.6 * smoothstep(0.3, -0.6, rd.y));
-  float tg = (GROUND - ro.y) / rd.y, tSolid = 1e9;
+  float tg = (GROUND - ro.y) / rd.y, tSolid = 1e9, coc = 1.0;
   if (tg > 0.0) {
     vec3 P = ro + rd * tg;
     float r = length(P.xz);
@@ -1079,9 +1083,13 @@ void main() {
     vec2 sg;
     vec3 st = stones(P.xz, sg);
     vec3 n = normalize(vec3(-sg.x * 0.06, 1.0, -sg.y * 0.06));
-    // Each stone has its own grey; ash fills the joints; soot rings the fire.
-    vec3 alb = vec3(0.07, 0.064, 0.058) * (0.7 + 0.5 * hash12(st.yz));
-    alb = mix(vec3(0.03, 0.027, 0.025), alb, smoothstep(0.02, 0.12, st.x));
+    // Each stone has its own tone, warm brown to cool slate; dark grit fills the joints.
+    float hs = hash12(st.yz);
+    vec3 alb = mix(vec3(0.078, 0.066, 0.054), vec3(0.058, 0.062, 0.07), hash12(st.yz + 5.3)) * (0.72 + 0.5 * hs);
+    alb = mix(vec3(0.022, 0.02, 0.019), alb, smoothstep(0.02, 0.12, st.x));
+    // Pale ash drifts into the low ground between the stones.
+    float ashN = noise2(P.xz * 7.0) * 0.6 + noise2(P.xz * 23.0) * 0.4;
+    alb = mix(alb, vec3(0.11, 0.105, 0.1), smoothstep(0.55, 0.75, ashN) * (1.0 - smoothstep(0.03, 0.1, st.x)) * 0.8);
     alb *= mix(0.25, 1.0, smoothstep(0.5, 1.9, r));
     // The fire's root lights the floor; the lamp gives a faint fill.
     vec3 Lf = uBedP + vec3(0.0, 0.45, 0.0) - P;
@@ -1099,6 +1107,8 @@ void main() {
     // Far stones fade into the haze.
     back = mix(g, haze, 1.0 - exp(-max(r - 2.2, 0.0) * 0.35));
     tSolid = tg;
+    // The lens focuses on the pot; the floor softens with distance from it.
+    coc = smoothstep(0.6, 3.4, abs(tg - length(ro)));
   }
   // The pot's front, or the soup inside the rim, ends every march.
   vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
@@ -1192,7 +1202,7 @@ void main() {
       }
     }
   }
-  oBack = vec4(back, 1.0);
+  oBack = vec4(back, coc);
   oFront = vec4(acc + fl * T, 1.0 - T * Tf);
 }`;
 
@@ -1218,6 +1228,8 @@ uniform vec4 uDrop[${ND}];
 uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
 uniform int uMarch;
+// The background blur's widest disc, in back-layer texels.
+uniform float uDof;
 out vec4 o;
 ${COMMON}
 ${POT}
@@ -1698,7 +1710,21 @@ void main() {
   vec2 fc = gl_FragCoord.xy;
   vec3 ro = uCam, rd = normalize(uFwd + uRight * ((fc.x - uPP.x) / uFocal) + uUp * ((fc.y - uPP.y) / uFocal));
   vec2 su = fc / uRes;
-  vec3 col = texture(uBack, su).rgb;
+  // The background, blurred by its own depth: a disc that grows away from the pot.
+  vec4 bk = texture(uBack, su);
+  vec3 col = bk.rgb;
+  if (bk.a > 0.02) {
+    vec2 bt = uDof / vec2(textureSize(uBack, 0));
+    float wsum = 1.0;
+    for (int i = 0; i < 12; i++) {
+      float fi = float(i) + 0.5, ang = fi * 2.39996, rad = sqrt(fi / 12.0) * bk.a;
+      vec4 tp = texture(uBack, su + vec2(cos(ang), sin(ang)) * rad * bt);
+      // A sharp neighbour does not smear into a blurred one.
+      float w = smoothstep(0.0, 0.4, tp.a);
+      col += tp.rgb * w; wsum += w;
+    }
+    col /= wsum;
+  }
   float tHit = 1e9;
   int mat = 0;
   // The outer belly, below the rim.
@@ -3253,6 +3279,7 @@ function scenePass() {
   gl.uniform3f(sceneP.u('uKeyCol'), 1.2, 1.02, 0.82);
   gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
   gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
+  gl.uniform1f(sceneP.u('uDof'), devV('dof', 7));
   // Things: centre and bound, rotation, then kind, cook, seed and scale.
   let n = 0;
   for (const b of bodies) {
