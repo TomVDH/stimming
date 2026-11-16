@@ -13,7 +13,7 @@ Clouds, smoke and glows write no depth, so draw order decides what covers what.
 |---|---|---|---|
 | Sky | infinite | `sky` | Sky, Cirrus, Deck |
 | Country | 80 to 200 km | `country` | The ranges (they write depth) |
-| Deep | 100 to 300 km | `deep` | Towers, Giants |
+| Deep | 100 to 300 km | `giants`, `deep` | Giants, then Towers |
 | Far | 50 to 100 km | `far` | Mids past 48 km (`ROCK_FAR`), Dust domes past 70 km |
 | Rock | 40 to 50 km | `domes`, `fireball`, `shards`, `smoke`, `debris`, `ribbons`, `glows` | Dust domes, Fireball, Soot cloud, shards, Smoke trail, Debris and Hulk trails, Companion trails, Bow shock and the rock glows |
 | Mid | 5 to 40 km | `mids`, `heaps` | Mids within 48 km, Heaps |
@@ -48,7 +48,7 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | **Heaps** | `HEAPS` | Cumulus, 8 to 38 km out. The far clusters float clear of the crests. |
 | **Towers** | `TOWERS` | Storm towers with anvils, 105 to 150 km out, among the ranges. |
 | **Mids** | `MIDS` | Heaps 4 to 6 km up. Off while the Deck is on. |
-| **Giants** | not built | Stage 3: storms 250 to 300 km out, half under the curve. |
+| **Giants** | `GIANTS` | Three colossal storms 195 to 225 km out, 75 to 95 km tall. Dev row Giants. |
 
 ## Air
 
