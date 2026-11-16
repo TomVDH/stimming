@@ -21,8 +21,10 @@ Tom, 2026-11-16: the Clock from the menu probe (stimming-aiir) becomes the defau
 - [x] Loop test: Fire plays a seamless 3 s loop in the tube while it is in hand
 - [x] Tom: the middle is empty with no toy in hand; no counter; no All toys link; the glow has no hard edge; the tube is a little wider
 - [x] Tom: the Re-roll stands under the clock; left alone, the clock runs through its toys by itself
-- [ ] One at a time, with Tom: the layout inside the clock, the selection effect, the footer, the onnozelaer mark (a first batch of all four was rolled back as sloppy)
-- [ ] Tom decides: a loop for every toy, or stills only
+- [x] Selection light: Tom picked Halo, in soft white
+- [x] Tube: a wider radius, a slow rolling change between toys, and the words drawn in the picture
+- [ ] A 5 s loop for every toy (a capture agent runs)
+- [ ] One at a time, with Tom: the layout inside the clock, the footer, the onnozelaer mark (a first batch was rolled back as sloppy)
 - [x] One still per main-shelf toy in shared/stills/ (Tom chose captured stills): 42 stills, 896 KB; tools/stills.mjs renews them
 - [x] Version 0.11 (Tom: keep the per-toy rule); AGENTS.md and README say what changed
 - [ ] Check 1280 px and 375 px; no-JS and a failed script keep the flat shelf

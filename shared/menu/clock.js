@@ -1,11 +1,8 @@
 // The Clock: the menu's default view. Twelve toys stand on a dial.
 // A Re-roll deals twelve more. ?all shows the whole shelf instead.
 const HOURS = 12;
-// A test (Tom, 2026-11-16): these toys have a moving loop in shared/loops/.
-const LOOPS = new Set(['fire']);
-// The selection light has three kinds for Tom to pick from. ?dev shows the switch.
-const GLOWS = ['ring', 'beam', 'halo'];
-const GLOW_KEY = 'stimming.clock.glow';
+// The toys that have a moving loop in shared/loops/; index.json there names them.
+let loops = new Set(['fire']);
 const root = document.documentElement;
 // On any failure the menu falls back to the whole shelf.
 const fail = () => { delete root.dataset.view; delete root.dataset.clock; };
@@ -28,7 +25,7 @@ function start() {
   const ticks = Array.from({ length: 60 }, (_, i) => `<line x1="100" y1="44.5" x2="100" y2="${i % 5 ? 47.5 : 49.5}" transform="rotate(${i * 6} 100 100)"/>`).join('');
   const face = Object.assign(document.createElement('div'), { className: 'clock-face' });
   face.innerHTML = `<svg class="clock-ring" viewBox="0 0 200 200" aria-hidden="true"><circle class="rim" cx="100" cy="100" r="58" pathLength="1" transform="rotate(-90 100 100)"/><g class="ticks">${ticks}</g></svg>
-<div class="clock-glow" aria-hidden="true"><i></i><i></i></div>
+<div class="clock-glow" aria-hidden="true"><i></i></div>
 <div class="clock-mid">
   <div class="clock-plate" aria-hidden="true"></div>
   <p class="clock-name" aria-live="polite"></p>
@@ -45,11 +42,15 @@ function start() {
 
   // The tube shows the toy's still in the middle; the Clock works without it.
   let bg = null;
-  import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')))).then(t => {
+  import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')), () => face.clientWidth)).then(t => {
     bg = t;
-    if (shown) bg?.show(picture(shown), film(shown));
-    bg?.live(face.hasAttribute('data-live'));
+    if (!bg) return;
+    // The tube draws the words itself; the page's own words stay for screen readers.
+    face.setAttribute('data-tube', '');
+    if (shown) bg.show(picture(shown), film(shown), words(shown));
+    bg.live(face.hasAttribute('data-live'));
   }).catch(() => {});
+  fetch('shared/loops/index.json').then(r => r.json()).then(ids => { if (Array.isArray(ids)) loops = new Set(ids); }).catch(() => {});
   const live = on => { face.toggleAttribute('data-live', on); bg?.live(on); };
   // toys.json holds each toy's motto and accent; the Clock works without it.
   let toys = {};
@@ -62,7 +63,7 @@ function start() {
   const dozen = () => [...shelf.children].slice(0, HOURS);
   const objs = () => dozen().map(li => li.querySelector('.obj'));
   const picture = li => `shared/stills/${li.querySelector('a.toy').id}.webp`;
-  const film = li => { const id = li.querySelector('a.toy').id; return LOOPS.has(id) ? `shared/loops/${id}.mp4` : null; };
+  const film = li => { const id = li.querySelector('a.toy').id; return loops.has(id) ? `shared/loops/${id}.mp4` : null; };
   function deal() {
     const hand = [];
     while (hand.length < HOURS) {
@@ -85,12 +86,16 @@ function start() {
   }
 
   // The middle shows the toy in hand. With no toy in hand it shows nothing.
-  let shown = null, wipe = 0;
-  function write(li) {
+  let shown = null, wipe = 0, dwell = 0;
+  function words(li) {
     const toy = toys[li.querySelector('a.toy').id] || {}, label = li.querySelector('.name');
-    title.textContent = toy.name || [...label.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim();
-    tag.textContent = toy.tag || '';
-    tint(toy.accent || 'oklch(0.86 0.06 275)');
+    return { name: toy.name || [...label.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim(), tag: toy.tag || '' };
+  }
+  function write(li) {
+    const said = words(li);
+    title.textContent = said.name;
+    tag.textContent = said.tag;
+    bg?.caption(said);
   }
   function show(li) {
     clearTimeout(wipe);
@@ -98,13 +103,16 @@ function start() {
     li.setAttribute('data-held', '');
     if (li === shown) return;
     shown = li;
-    write(li);
-    bg?.show(picture(li), film(li));
-    // The new words rise into their lines.
-    if (!still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
+    const said = words(li);
+    title.textContent = said.name;
+    tag.textContent = said.tag;
+    bg?.show(picture(li), film(li), said);
+    // Without the tube, the page's own words rise into their lines.
+    if (!bg && !still.matches) [title, tag].forEach((el, i) => el.animate([{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], { duration: 420, delay: i * 60, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'backwards' }));
   }
   // The middle empties when the toy leaves the hand.
   function rest(now = false) {
+    clearTimeout(dwell);
     live(false);
     shelf.querySelector('[data-held]')?.removeAttribute('data-held');
     clearTimeout(wipe);
@@ -113,17 +121,6 @@ function start() {
     if (now) empty(); else wipe = setTimeout(empty, 650);
   }
 
-  // Two lamps take turns, so one toy's colour fades into the next.
-  const lamps = /** @type {HTMLElement[]} */ ([...glow.children]);
-  let lamp = 0;
-  function tint(colour) {
-    if (lamps[lamp].dataset.c === colour) return;
-    lamp ^= 1;
-    lamps[lamp].dataset.c = colour;
-    lamps[lamp].style.setProperty('--c', colour);
-    lamps[lamp].setAttribute('data-in', '');
-    lamps[lamp ^ 1].removeAttribute('data-in');
-  }
   // The glow turns the short way to the pointer's bearing from the middle.
   let bearing = 0, turns = 0;
   const turnTo = gsap ? gsap.quickTo(glow, 'rotation', { duration: 0.9, ease: 'power3.out' }) : null;
@@ -141,9 +138,12 @@ function start() {
     const li = tile(e.target);
     if (!li) return;
     // The glow starts at the toy, so it does not sweep in from afar.
-    if (!face.hasAttribute('data-live')) { aim(hour(li)); if (gsap) gsap.set(glow, { rotation: turns }); }
+    const fresh = !face.hasAttribute('data-live');
+    if (fresh) { aim(hour(li)); if (gsap) gsap.set(glow, { rotation: turns }); }
     live(true);
-    show(li);
+    // A pointer that only passes over a toy does not change the picture.
+    clearTimeout(dwell);
+    if (fresh) show(li); else dwell = setTimeout(() => show(li), 110);
   });
   shelf.addEventListener('pointermove', e => {
     if (!tile(e.target)) return;
@@ -184,34 +184,7 @@ function start() {
     } });
   }
   button.addEventListener('click', roll);
-  // The kind of selection light: ?glow names one; ?dev shows a switch (keys 1 to 3).
-  const query = new URLSearchParams(location.search);
-  let pills = [];
-  function light(kind, keep = false) {
-    face.dataset.glow = kind;
-    pills.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.glow === kind)));
-    if (keep) try { localStorage.setItem(GLOW_KEY, kind); } catch (e) { /* no storage */ }
-  }
-  if (query.has('dev')) {
-    const bar = Object.assign(document.createElement('div'), { className: 'clock-dev' });
-    bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'Selection light');
-    bar.innerHTML = GLOWS.map((g, i) => `<button type="button" data-glow="${g}" title="Key ${i + 1}">${g}</button>`).join('');
-    document.body.append(bar);
-    pills = /** @type {HTMLElement[]} */ ([...bar.children]);
-    bar.addEventListener('click', e => { const b = /** @type {HTMLElement} */ (e.target).closest('button'); if (b) light(b.dataset.glow, true); });
-  }
-  let kept = null;
-  try { kept = localStorage.getItem(GLOW_KEY); } catch (e) { /* no storage */ }
-  light(GLOWS.includes(query.get('glow')) ? query.get('glow') : GLOWS.includes(kept) ? kept : GLOWS[0]);
-  addEventListener('keydown', e => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key.toLowerCase() === 'r') roll();
-    if (pills.length && GLOWS[+e.key - 1]) light(GLOWS[+e.key - 1], true);
-  });
-  // The Re-roll stays away for the first five seconds.
-  setTimeout(() => button.setAttribute('data-on', ''), 5000);
-
+  addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
   // After two laps it stops, so an empty room burns no power.
   const WAIT = 12000, BEAT = 3600, LAPS = 2;
