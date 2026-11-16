@@ -128,6 +128,8 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'fireY', label: 'Fire height', min: 0, max: 0.5, step: 0.01, value: 0.04 },
     { type: 'slider', id: 'fireR', label: 'Fire size', min: 0.2, max: 1, step: 0.01, value: 0.62 },
     { type: 'slider', id: 'fireI', label: 'Fire power', min: 0, max: 3, step: 0.01, value: 1 },
+    // Spread: how hard burning gas expands, pushing flames out round the belly.
+    { type: 'slider', id: 'fireExp', label: 'Fire spread', min: 0, max: 3, step: 0.05, value: 0.45 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -392,14 +394,17 @@ void main() {
   o = vec4(nv, 0.0);
 }`;
 const DIV_FS = `${SIM_HEAD}
-uniform sampler2D uVel;
+uniform sampler2D uVel, uDye;
+uniform float uExpand;
 ${GRID}
 float X(ivec3 c, int k) { return texelFetch(uVel, at(c), 0)[k]; }
 void main() {
   ivec3 c = cellOf(ivec2(gl_FragCoord.xy));
   float d = X(c + ivec3(1, 0, 0), 0) - X(c - ivec3(1, 0, 0), 0) + X(c + ivec3(0, 1, 0), 1) - X(c - ivec3(0, 1, 0), 1)
     + X(c + ivec3(0, 0, 1), 2) - X(c - ivec3(0, 0, 1), 2);
-  o = vec4(0.5 * d, 0.0, 0.0, 0.0);
+  // Burning gas expands: heat is a source the pressure solve must push out.
+  float T = texelFetch(uDye, at(c), 0).g;
+  o = vec4(0.5 * d - T * uExpand * CELL, 0.0, 0.0, 0.0);
 }`;
 // One Jacobi sweep; a solid neighbour gives back this cell's pressure.
 const JAC_FS = `${SIM_HEAD}
@@ -1378,6 +1383,8 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec3 emit;
   float cook = clamp(M.y, 0.0, 1.0);
   vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
+  // A fine noise varies each skin: waxy patches, dull pores, worn ridges.
+  rough = clamp(rough * (0.75 + 0.5 * noise3(lp * 34.0 + M.x * 7.0)), 0.05, 0.9);
   // Cooking soaks the soup's colour into a thing.
   vec3 soup = soupCol(p.xz);
   alb = mix(alb, alb * soup * 2.4, cook * 0.35);
@@ -1421,11 +1428,15 @@ vec3 shadeSpoon(vec3 p, vec3 n, vec3 rd) {
   vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
   float s = dot(p - uSpA.xyz, ax);
   // Wood with a long grain; the lower end is wet and stained by the soup.
-  vec3 alb = lch(0.6, 0.075, 68.0) * (0.8 + 0.3 * noise2(vec2(s * 6.0, atan(n.z, n.x) * 2.0)));
+  float around = atan(n.z, n.x);
+  float grain = noise2(vec2(s * 6.0, around * 2.0)), fine = noise2(vec2(s * 40.0, around * 9.0));
+  vec3 alb = lch(0.6, 0.075, 68.0) * (0.8 + 0.3 * grain);
   float wet = smoothstep(0.32, 0.12, s);
   vec3 soup = soupCol(uSpA.xz);
   alb = mix(alb, alb * 0.55 + soup * 0.25, wet);
-  return litSurf(n, -rd, alb, mix(0.5, 0.12, wet), 0.04);
+  // Roughness follows the grain: the handle's waxed lines shine, the open grain stays dull.
+  float rough = clamp(0.42 + 0.22 * (fine - 0.5) + 0.12 * (grain - 0.5), 0.25, 0.7);
+  return litSurf(n, -rd, alb, mix(rough, 0.12, wet), 0.04);
 }
 
 void main() {
@@ -1626,7 +1637,9 @@ function fireStep(dt) {
   gl.uniform3f(fvelP.u('uWind'), ...gust());
   simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl });
   S.vi = 1 - S.vi;
-  simPass(divP, S.div, { uVel: S.vel[S.vi] });
+  gl.useProgram(divP);
+  gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
+  simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
   // Jacobi sweeps ping-pong; the last pressure warms the next step.
   for (let i = 0; i < 12; i++) {
     simPass(jacP, S.p[1 - S.pi], { uP: S.p[S.pi], uDiv: S.div });

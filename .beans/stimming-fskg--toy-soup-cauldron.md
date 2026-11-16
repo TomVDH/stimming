@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T08:35:10Z
+updated_at: 2026-11-16T08:38:34Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.
@@ -47,9 +47,9 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 - [x] Fire volume march: Fire's wood ramp, emission and smoke light; steam takes Fire's smoke light
 - [x] Iron lit by the solver's heat; flagstone floor lit through a bump normal; logs removed
 - [x] Wind gusts at high fire; cursor wobble; Dev rows for camera and fire bed
-- [ ] WebGPU probe of Fire's own engine (cauldron/probe-gpu.html)
+- [x] WebGPU probe of Fire's own engine (cauldron/probe-gpu.html); its expansion source moved into the WebGL2 solver
 - [x] PBR and bump on the iron: GGX, split-sum fit, hammered dimples that wrap the pot, grease streaks, worn rim
-- [ ] Roughness noise per material
+- [x] Roughness noise per material: iron streaks, spoon grain, a fine noise on each thing's skin
 - [ ] Soupy marbled dye field
 - [ ] Tray picker and four liquids
 - [ ] Toy doc
