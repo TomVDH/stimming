@@ -65,6 +65,8 @@ import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { AIR, AIR_U } from './air.js';
 import { bakeVol, makeTrail } from './trail.js';
+// The cloud noise is Window seat's own: its deck is ported below.
+import { bakeNoise } from '../window/noise3d.js';
 import { CRAFT, makeCraft, makeEscort } from './craft.js';
 
 const rad = THREE.MathUtils.degToRad, deg = THREE.MathUtils.radToDeg, clamp = THREE.MathUtils.clamp, sstep = THREE.MathUtils.smoothstep;
@@ -80,15 +82,17 @@ const store = {
 // sun is the point the sun stands behind, as the camera sees it.
 // alt holds the heights of the wisps, the heaps and the scud; 0 turns a layer off.
 // fill is how much of the heap layer is cloud.
+// cloud is the raymarched volume: its base, its tallest top, its share of cloud; null turns it off.
+// The volume draws behind the craft, so its top stays under every sight line.
 const VIEWS = {
   // From the ground, far below and behind: the contrails cross the sun.
-  below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [26000, 23000, 6000], fill: 0.2 },
-  // Level with the craft, off its left bow: it rides over a cloud deck.
-  flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [27000, 11000, 0], fill: 0.75 },
+  below: { label: 'Below', eye: [3545, -17998, 11606], aim: [0, 0, 900], lens: 15, sun: [1100, 0, 2900], alt: [26000, 23000, 6000], fill: 0.2, cloud: null },
+  // Level with the craft, off its left bow: it rides over cloud towers.
+  flank: { label: 'Flank', eye: [-9000, 700, -3800], aim: [0, -200, 1000], lens: 20, sun: [9000, 3400, 2500], alt: [27000, 0, 0], fill: 0, cloud: [4500, 16000, 0.55] },
   // Ahead and well under: the craft comes on, the sun high behind it.
-  sunward: { label: 'Head-on', eye: [1500, -4400, -12500], aim: [0, 300, 900], lens: 13, sun: [-3200, 5600, 24000], alt: [27000, 10500, 0], fill: 0.7 },
+  sunward: { label: 'Head-on', eye: [1500, -4400, -12500], aim: [0, 300, 900], lens: 13, sun: [-3200, 5600, 24000], alt: [27000, 0, 0], fill: 0, cloud: [4000, 14500, 0.5] },
   // High behind the left wing: the craft and its contrails over the deck.
-  above: { label: 'Above', eye: [-3800, 5600, 7200], aim: [0, 0, 1200], lens: 26, sun: [9000, 16000, -20000], alt: [30000, 9000, 0], fill: 0.85 },
+  above: { label: 'Above', eye: [-3800, 5600, 7200], aim: [0, 0, 1200], lens: 26, sun: [9000, 16000, -20000], alt: [30000, 0, 0], fill: 0, cloud: [3500, 14000, 0.6] },
 };
 const SUN0 = 0.36;
 const sunStart = q.has('sun') ? +q.get('sun') : store.get('sun') !== null ? +store.get('sun') : SUN0;
@@ -251,6 +255,7 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
 // Each layer is a level sheet in the world, so every view sees it in true perspective.
 // The eye rides with the craft: a layer drifts back, and a nearer one drifts faster.
 // Wisps and heaps draw behind the craft; scud draws in front.
+// The three high views trade the heaps for the raymarched volume below.
 const VIEW_U = { uProjInv: { value: new THREE.Matrix4() }, uCamW: { value: new THREE.Matrix4() } };
 const CLOUD_U = {
   uWisps: { value: 0.55 }, uHeaps: { value: 0.8 }, uScud: { value: 0.6 }, uOct: { value: 5 },
@@ -258,6 +263,8 @@ const CLOUD_U = {
   uAlt: { value: new THREE.Vector3(26000, 23000, 6000) }, uFill: { value: 0.2 },
   uDriftA: { value: new THREE.Vector2() }, uDriftB: { value: new THREE.Vector2() }, uDriftC: { value: new THREE.Vector2() },
 };
+// The cloud volume's picture, drawn at part size; uVolOn is 0 without it.
+const VOLPIC_U = { uVolPic: { value: null }, uVolOn: { value: 0 } };
 const VIEW_GLSL = /* glsl */`
 varying vec2 vUv;
 uniform mat4 uProjInv, uCamW;
@@ -278,7 +285,7 @@ vec2 sheet(vec3 d, float h, out float w) {
   return cameraPosition.xz + d.xz * t;
 }`;
 const QUAD_VERT = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.999, 1.0); }`;
-const SKY_U = { ...AIR_U, ...SHAFT_U, ...VIEW_U, ...CLOUD_U };
+const SKY_U = { ...AIR_U, ...SHAFT_U, ...VIEW_U, ...CLOUD_U, ...VOLPIC_U };
 const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
   uniforms: SKY_U, depthTest: false, depthWrite: false,
   vertexShader: QUAD_VERT,
@@ -286,6 +293,8 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
   ${AIR}
   ${VIEW_GLSL}
   ${SHAFT_GLSL}
+  uniform sampler2D uVolPic;
+  uniform float uVolOn;
   // The highest layer: thin, combed ice wisps.
   vec4 wisps(vec3 d, float sd) {
     float fade;
@@ -338,6 +347,8 @@ const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMateri
     c = mix(c, wi.rgb, wi.a);
     vec4 he = heaps(d, sd);
     c = mix(c, he.rgb, he.a);
+    // The cloud volume lies over the sea and the far sky.
+    if (uVolOn > 0.5) { vec4 cl = texture2D(uVolPic, vUv); c = c * (1.0 - cl.a) + cl.rgb; }
     c = shaftSky(c, d, uShaft.z);
     gl_FragColor = vec4(c, 1.0);
   }`,
@@ -398,6 +409,189 @@ const escorts = WING.map(() => {
 });
 
 const vol = bakeVol(renderer);
+
+/* ---------- clouds: a raymarched deck with towers ---------- */
+// Ported from Window seat's deck (window/shader.js, "The deck").
+// Each cell is a dome with a flat base; Worley billows break its surface.
+// The edge is crisp near and softens with the pixel's footprint.
+// Here the deck is three times the size, and a wide mask lifts some cells into towers.
+// It draws at part size into its own target; the sky lays it over the sea.
+// One deck unit is this many metres; Window seat's unit is one kilometre.
+const DECK_M = 3200;
+const noiseTex = new THREE.Data3DTexture(bakeNoise(64), 64, 64, 64);
+Object.assign(noiseTex, {
+  format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: true, unpackAlignment: 1,
+  minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+  wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, wrapR: THREE.RepeatWrapping, needsUpdate: true,
+});
+const VOL_U = {
+  ...AIR_U, ...VIEW_U, ...CLOUD_U,
+  uNoise: { value: noiseTex },
+  // The base in metres, the towers' lift in deck units, the cover threshold.
+  uCl: { value: new THREE.Vector3(4500, 1.5, 0.45) },
+  // The deck slides back under the craft, in deck units.
+  uClDrift: { value: new THREE.Vector2() },
+  uClSteps: { value: 40 }, uClSun: { value: 4 },
+  // The lens in pixels: it sets each sample's noise detail.
+  uFocal: { value: 1000 },
+};
+const volPic = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
+volPic.texture.minFilter = volPic.texture.magFilter = THREE.LinearFilter;
+VOLPIC_U.uVolPic.value = volPic.texture;
+const volScene = new THREE.Scene();
+const volQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: VOL_U, depthTest: false, depthWrite: false,
+  vertexShader: QUAD_VERT,
+  fragmentShader: /* glsl */`precision highp sampler3D;
+  uniform sampler3D uNoise;
+  uniform vec3 uCl;
+  uniform vec2 uClDrift;
+  uniform int uClSteps, uClSun;
+  uniform float uFocal;
+  ${AIR}
+  ${VIEW_GLSL}
+  const float SIG = 9.0, DECK_M = ${DECK_M.toFixed(1)};
+  // Light scattered many times leaves a thick cloud evenly in all directions.
+  // So a side-lit top stays white; only the silver lining needs the forward lobe.
+  const float CLOUD_MS = 1.5;
+  // Near, cubic weights between voxels hide the diamond steps of plain blending.
+  vec4 cnS(vec3 p, float tile) {
+    vec3 q = p / tile * 64.0 - 0.5, i = floor(q), f = fract(q);
+    f = f * f * (3.0 - 2.0 * f);
+    return textureLod(uNoise, (i + f + 0.5) / 64.0, 0.0);
+  }
+  vec4 cn(vec3 p, float tile, float lod) {
+    if (lod >= 1.0) return textureLod(uNoise, p / tile, lod);
+    return mix(cnS(p, tile), textureLod(uNoise, p / tile, lod), smoothstep(0.3, 1.0, lod));
+  }
+  // The mip level that matches one pixel's footprint at distance t.
+  float lodAt(float t, float tile) { return clamp(log2(t / uFocal / (tile / 64.0)) + 0.5, 0.0, 6.0); }
+  // Cover on the map from two slices of the volume, about 0.2 to 0.8.
+  // The slices turn at odd angles and odd scales, so the pattern never repeats.
+  float coverAt(vec2 w, float sc, float z) {
+    vec2 a = mat2(0.825, -0.565, 0.565, 0.825) * w / sc;
+    vec2 b = mat2(-0.32, -0.947, 0.947, -0.32) * w / (sc * 0.389);
+    return textureLod(uNoise, vec3(a, z), 0.0).r * 0.65 + textureLod(uNoise, vec3(b, z + 0.31), 0.0).r * 0.35;
+  }
+  // Two lobes: a strong forward one and a soft back one.
+  float hgc(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
+  float cloudPhase(float mu) { return mix(hgc(mu, 0.72), hgc(mu, -0.2), 0.35); }
+  // Billows: round lumps at three sizes. They rise slowly, so the tops boil.
+  float billow(vec2 w, float y, float lod) {
+    vec4 m = cn(vec3(w.x * 0.8 - w.y * 0.6, y - uTime * 0.008, w.x * 0.6 + w.y * 0.8), 2.6, lod);
+    return m.g * 0.55 + m.b * 0.3 + m.a * 0.15 - 0.48;
+  }
+  // Small lumps on the big ones, at an odd scale and angle.
+  float billowFine(vec2 w, float y, float lod) {
+    vec4 m = cn(vec3(w.x * 0.47 + w.y * 0.88, y * 1.1 - uTime * 0.014, w.y * 0.47 - w.x * 0.88) + 3.7, 0.8, lod);
+    return m.g * 0.6 + m.b * 0.4 - 0.48;
+  }
+  // The last main sample's shape terms, for the crease light.
+  // gSh: depth inside the smooth dome. gA: lump size. gFb: depth with lumps.
+  float gSh = 0.0, gA = 1.0, gFb = 0.0;
+  // Density at p, in deck units above the base, from 0 to 1.
+  // fine adds the small lumps; light taps go without them.
+  float dens(vec3 p, float lod, bool fine) {
+    vec2 w = p.xz + uClDrift;
+    // The cover map is tight: one long-lens frame holds cloud and gaps.
+    float cv = coverAt(w, 20.0, 0.13);
+    // A wider map picks the cells that rise as towers.
+    float tw = smoothstep(0.52, 0.72, coverAt(w * 0.6 + 40.0, 20.0, 0.57));
+    cv += 0.25 * tw;
+    float lift = uCl.y * tw * tw;
+    float c = smoothstep(uCl.z - 0.1, uCl.z + 0.14, cv);
+    if (c <= 0.0) return 0.0;
+    // The cell map sets each dome's height; more cover makes bigger, closer cells.
+    float cell = cn(vec3(w.x, 3.1, w.y), 7.0, lod).r;
+    float loc = clamp((cell - (1.0 - c)) / max(c, 0.05), 0.0, 1.0);
+    float top = -0.1 + (0.6 + 1.4 * c) * sqrt(loc) + lift * sqrt(loc);
+    // Depth inside: the dome above, the flat base below.
+    float sh = min(top - p.y, p.y * 1.5);
+    float A = 0.16 + 0.34 * loc + 0.4 * lift / (lift + 1.0);
+    // Even the biggest lump cannot reach this point.
+    if (sh < -A * 0.55) return 0.0;
+    float fb = sh + A * billow(w, p.y, lod);
+    if (fine) fb += A * 0.4 * billowFine(w, p.y, lod);
+    gSh = sh; gA = A; gFb = fb;
+    // The edge is crisp near; far off it softens with the footprint.
+    return smoothstep(0.0, 0.1 + 0.08 * lod, fb);
+  }
+  // Optical depth toward the light, in growing steps.
+  float sunDepth(vec3 p, float lod) {
+    float od = 0.0, st = 0.15;
+    for (int j = 0; j < 6; j++) {
+      if (j >= uClSun) break;
+      p += uSun * st;
+      od += dens(p, lod + 1.0, false) * st;
+      st *= 1.9;
+    }
+    return od;
+  }
+  float h12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+  void main() {
+    vec3 d = viewDir();
+    // The march runs in deck units, with the base at height 0.
+    vec3 ro = vec3(cameraPosition.x, cameraPosition.y - uCl.x, cameraPosition.z) / DECK_M;
+    float dy = abs(d.y) < 1e-4 ? 1e-4 : d.y;
+    float ta = (-0.25 - ro.y) / dy, tb = (2.4 + uCl.y - ro.y) / dy;
+    float t0 = max(min(ta, tb), 0.0), t1 = min(max(ta, tb), 170000.0 / DECK_M);
+    if (t1 <= t0) { gl_FragColor = vec4(0.0); return; }
+    int N = uClSteps;
+    // Steps start short and grow, so far cloud reaches the rim.
+    float len = t1 - t0;
+    float ds = min(len / float(N), 0.45);
+    float grow = clamp(pow(max(len / (ds * float(N)), 1.0), 1.7 / float(N)), 1.0, 1.3);
+    // Plain random jitter: structured jitter ripples on long grazing paths.
+    float t = t0 + ds * h12(gl_FragCoord.xy);
+    float phase = cloudPhase(dot(d, uSun)) + CLOUD_MS;
+    // A low sun reaches only the tops that face it.
+    float sunK = smoothstep(-0.05, 0.3, uSun.y + 0.1);
+    vec3 col = vec3(0.0), last = vec3(0.0);
+    float Tc = 1.0;
+    for (int i = 0; i < 64; i++) {
+      if (i >= N || t > t1) break;
+      vec3 p = ro + d * t;
+      float lod = lodAt(t, 7.0);
+      float dn = dens(p, lod, lod < 3.0);
+      // Light taps overwrite the shape terms, so keep this sample's.
+      float dSh = gSh, dA = gA, dFb = gFb;
+      if (dn > 0.002) {
+        float h01 = clamp(p.y / 2.0, 0.0, 1.0);
+        float od = sunDepth(p, lod);
+        // Beer's law, with a slower tail for light that scatters many times.
+        float Tl = max(exp(-SIG * od), 0.5 * exp(-SIG * od * 0.2));
+        // Powder: thin edges facing away from the light look dark.
+        float powder = 1.0 - exp(-SIG * dn * 0.6);
+        vec3 S = uSunC * 0.36 * sunK * Tl * phase * mix(1.0, powder, 0.55);
+        // Sky light from above; the base sees less of it.
+        // Lump crowns catch the sky; creases deep in the dome do not.
+        float crease = clamp(0.7 - 1.4 * dSh / max(dA, 0.05), 0.15, 1.2);
+        float open = exp(-3.0 * max(dFb, 0.0)) * crease;
+        // The shade is the sky's own blue.
+        S += vec3(0.26, 0.42, 0.95) * 0.8 * (0.3 + 0.7 * h01) * (0.3 + 0.9 * open);
+        // Far cloud sinks into the haze at the rim.
+        S = mix(uSkyLow, S, exp(-t * DECK_M / 95000.0));
+        float a = 1.0 - exp(-SIG * dn * ds);
+        col += Tc * S * a;
+        Tc *= 1.0 - a;
+        last = S;
+        if (Tc < 0.02) break;
+      }
+      t += ds;
+      ds *= grow;
+    }
+    // The rest of a long path takes a smooth, far-blurred density and the last light.
+    if (Tc >= 0.02 && t < t1) {
+      float far = dens(ro + d * 0.5 * (t + t1), 6.0, false);
+      float a = 1.0 - exp(-SIG * 0.35 * far * (t1 - t));
+      col += Tc * last * a;
+      Tc *= 1.0 - a;
+    }
+    gl_FragColor = vec4(col, 1.0 - Tc);
+  }`,
+}));
+volQuad.frustumCulled = false;
+volScene.add(volQuad);
 // One contrail per engine: it starts at the propeller.
 // K is the cone's spread; the rock's own cone opens faster.
 const TRAIL = { rad: 26, k: 0.05, len: 150000 };
@@ -459,6 +653,10 @@ function resize() {
   for (const t of trails) { t.u.uSteps.value = steps; t.u.uLSteps.value = sunSteps; }
   for (const t of escTrails) { t.u.uSteps.value = Math.round(steps * 0.5); t.u.uLSteps.value = 2; }
   CLOUD_U.uOct.value = D.level > 0 ? 5 : 3;
+  // The cloud volume: its share of the canvas size, its steps, its sun steps.
+  const [share, cs, cl] = [[0.35, 24, 3], [0.5, 34, 4], [0.5, 44, 5]][D.level];
+  volPic.setSize(Math.max(2, Math.round(stageW * dprNow * share)), Math.max(2, Math.round(stageH * dprNow * share)));
+  VOL_U.uClSteps.value = cs; VOL_U.uClSun.value = cl;
   camera.aspect = stageW / stageH;
   camera.updateProjectionMatrix();
   wake();
@@ -483,6 +681,9 @@ function layout() {
   FIN.uFlareC.value.copy(AIR_U.uSunC.value).multiplyScalar(0.6);
   CLOUD_U.uAlt.value.set(...v.alt);
   CLOUD_U.uFill.value = v.fill;
+  VOLPIC_U.uVolOn.value = v.cloud ? 1 : 0;
+  // The top sets how far the towers lift over the domes; more fill lowers the cover threshold.
+  if (v.cloud) VOL_U.uCl.value.set(v.cloud[0], Math.max(0, (v.cloud[1] - v.cloud[0]) / DECK_M - 2.1), 0.62 - 0.32 * v.cloud[2]);
 }
 
 function pose(t) {
@@ -576,6 +777,14 @@ function frame(dt) {
   FIN.uSunVis.value = vis * state.flare;
   bloom.strength = 0.3 * state.bloom;
   renderer.toneMappingExposure = state.expo;
+  // The deck slides back as the craft flies on, slowly.
+  VOL_U.uClDrift.value.set(-AWAY.x, -AWAY.z).multiplyScalar(simT * 0.012);
+  VOL_U.uFocal.value = volPic.height / (2 * Math.tan(rad(camera.fov) / 2));
+  if (VOLPIC_U.uVolOn.value > 0.5) {
+    renderer.setRenderTarget(volPic);
+    renderer.render(volScene, camera);
+    renderer.setRenderTarget(null);
+  }
   composer.render();
 }
 
@@ -602,7 +811,7 @@ onReducedChange(() => wake());
 pick();
 layout();
 resize();
-if (q.has('debug')) window.__ca = { state, VIEWS, frame, layout, pick, renderer, D };
+if (q.has('debug')) window.__ca = { state, VIEWS, VOL_U, frame, layout, pick, renderer, D };
 // The intro holds until shaders compile and the first frame draws.
 renderer.compileAsync(scene, camera).then(() => {
   frame(0);
