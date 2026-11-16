@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T18:16:28Z
-updated_at: 2026-11-16T18:58:22Z
+updated_at: 2026-11-16T19:02:52Z
 ---
 
 Tom: "redo smoke column sparks and firey smoke by the asteroid and the asteroid itself incl bow shock etc".
@@ -26,3 +26,5 @@ Scope: railgun/index.html, the rock (astMat), the bow shock (bowMat, haloMat), t
 
 - [x] The trail's plasma sheath goes: it drew a pale disc over the lumpy rock and a dark ragged rim round it (Tom: weird blending at night)
 - [x] Companions: up to 16; six to nine spread wide across the sky; three to five split off the main rock during the fall and drift out over 30 s
+
+- [x] The rock's original all-over glow is back; the sheath glow wraps every lump (Tom: no black blotches)

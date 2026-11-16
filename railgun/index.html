@@ -2364,20 +2364,16 @@ const astMat = new THREE.ShaderMaterial({
     float n = k3fbm(vO * 6.0);
     // The hot face leads the rock down its track.
     float lead = dot(N, uToPlanet);
-    float hot = smoothstep(0.05, 0.85, lead) * uBurn;
+    float hot = smoothstep(-0.25, 0.65, lead) * uBurn;
     // Soot coats the wake side.
-    vec3 alb = uRock * (0.35 + 1.0 * n) * mix(0.25, 1.0, smoothstep(-0.7, 0.1, lead));
+    vec3 alb = uRock * (0.35 + 1.0 * n) * mix(0.3, 1.0, smoothstep(-0.7, 0.1, lead));
     // The sun wraps a little past the terminator.
     float sl = max(dot(N, uSun) * 0.88 + 0.12, 0.0);
     vec3 col = alb * (ambient(N) + sunAt(vP.y) * sl);
-    // The front boils: melt cells stream back over the face.
-    float boil = k3fbm(vO * 4.0 - uToPlanet * uTime * 0.8);
-    float melt = smoothstep(0.62, 0.82, boil + 0.3 * lead);
-    col += mix(uEmber * 0.12, uAstC * 3.5, melt) * hot * (0.3 + 0.8 * n);
-    col += uWhite * pow(max(lead, 0.0), 8.0) * uBurn * melt * 4.0;
-    // The shock cap lights the flanks; the wake side stays dark.
-    float limb = pow(1.0 - abs(dot(N, V)), 2.5) * smoothstep(-0.5, 0.5, lead) * uBurn;
-    col += uAstC * limb * 2.2;
+    col += uAstC * hot * (0.35 + 0.9 * n) * 2.0;
+    col += uWhite * pow(max(lead, 0.0), 9.0) * uBurn * (0.5 + n) * 4.5;
+    float limb = pow(1.0 - abs(dot(N, V)), 3.0) * hot;
+    col += uWhite * limb * 1.5;
     // Ember cracks: a thin band of the noise, flickering.
     float cr = smoothstep(0.55, 0.62, n) * (1.0 - smoothstep(0.62, 0.70, n));
     float flick = 0.92 + 0.08 * sin(uTime * 3.0 + n * 40.0);
@@ -3110,6 +3106,12 @@ function makeTrain(pu) {
       if (uSeg > 0.0) {
         float xl = x - uX0;
         d *= (uX0 > 0.0 ? smoothstep(-0.03 * uSeg, 0.03 * uSeg, xl) : 1.0) * (1.0 - smoothstep(0.94 * uSeg, uSeg, xl));
+      }
+      // A plasma sheath wraps the whole rock, its lumps included.
+      float rq = length(q);
+      if (uX0 == 0.0 && rq < 2.6 * R) {
+        float sh = exp(-max(rq - 1.1 * R, 0.0) / (0.25 * R)) * smoothstep(0.5, -0.6, x / R) * uBurn;
+        col += T * (uHot * 5.0 * sh * sh + uFireC * 3.0 * sh) * (dt / R) * 0.45;
       }
       if (d > 0.0) {
         // Old smoke is thinner than young smoke.
