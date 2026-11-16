@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T17:33:42Z
-updated_at: 2026-11-16T18:41:04Z
+updated_at: 2026-11-16T18:44:23Z
 parent: stimming-fskg
 ---
 
@@ -20,3 +20,8 @@ Tom, 2026-11-16: micro interactions (poke and grab things, a pour that follows t
 
 - [x] Cobbles: each stone tilts a little, warm-to-cool tones, dark grit and pale ash in the joints
 - [x] Background blur: the floor softens with distance from the pot (Dev: Background blur)
+
+- [x] Heat shimmer above the flames (output pass, off under reduced motion)
+- [x] Steam parts under the hand as it passes over the pot
+- [x] The spoon rests on the rim at the back when let go, taps the iron as it settles, and clinks on a hard stir
+- [x] Tray four across: 4 rows of things, 1 row of liquids

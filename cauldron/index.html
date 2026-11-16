@@ -21,7 +21,7 @@
 }
 .stage--cauldron canvas.on { opacity: 1; }
 /* The Add tray shows its things large enough to read at a glance. */
-.s2-grid { --chip: 44px; }
+.s2-grid { --chip: 44px; grid-template-columns: repeat(4, var(--chip)); }
 .s2-grid .s2-chip svg { width: 32px; height: 32px; }
 /* The WebGPU fire is light on black: screen adds it over the pot. */
 .stage--cauldron canvas.gpufire { mix-blend-mode: screen; pointer-events: none; }
@@ -954,6 +954,8 @@ uniform vec3 uBedP;
 // The boil's plumes in world units, with their strength; the wind's lean.
 uniform vec4 uPlumeW[4];
 uniform vec2 uLean;
+// The hand over the pot: world xz, strength, reach squared.
+uniform vec4 uHand;
 uniform vec3 uFireCol, uGlowCol;
 uniform int uNP;
 uniform vec4 uPuff[${NP}];
@@ -1013,6 +1015,10 @@ float steamDens(vec3 p) {
   if (hy < -0.02) return 0.0;
   // The wind leans the column more the higher it climbs.
   vec2 pxz = p.xz - uLean * hy * hy;
+  // A hand passing over the pot pushes the steam aside, leaving a gap.
+  vec2 dh = pxz - uHand.xy;
+  float hand = uHand.z * exp(-dot(dh, dh) / uHand.w);
+  pxz += dh * hand * 0.9;
   float r = length(pxz), R = 0.8 + 0.22 * hy;
   float edge = 1.0 - smoothstep(R * 0.45, R, r);
   // Outside the column and every puff, no steam shows: skip the noise.
@@ -1035,7 +1041,7 @@ float steamDens(vec3 p) {
   // Wisps: only the tops of the noise make steam.
   // Steam shows a little above the surface, where it cools, then thins out.
   float base = uSteam * smoothstep(0.02, 0.45, hy) * exp(-hy * 1.6) * (0.35 + 0.9 * min(src, 1.2));
-  float d = smoothstep(0.6 - 0.06 * uSteam, 0.82, n) * base * edge * 1.9;
+  float d = smoothstep(0.6 - 0.06 * uSteam, 0.82, n) * base * edge * 1.9 * (1.0 - 0.85 * hand);
   // Puffs: a burst bubble sends up a round cloud.
   for (int i = 0; i < ${NP}; i++) {
     if (i >= uNP) break;
@@ -1845,14 +1851,19 @@ void main() {
 /* ---------- GLSL: out to the screen ---------- */
 const OUT_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uHdr, uBloom;
+uniform sampler2D uHdr, uBloom, uFront;
 uniform vec2 uRes;
-uniform float uBloomK, uExposure, uSeed;
+uniform float uBloomK, uExposure, uSeed, uTime, uShimmer;
 out vec4 o;
 ${GRADE}
 ${OUTPUT}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
+  // Heat shimmer: hot air above the flames bends what lies behind it.
+  vec3 hot = texture(uFront, uv - vec2(0.0, 0.035)).rgb + texture(uFront, uv - vec2(0.0, 0.08)).rgb * 0.6;
+  float heat = clamp(dot(hot, vec3(0.3, 0.5, 0.2)) * 0.9, 0.0, 1.0) * uShimmer;
+  vec2 wob = vec2(sin(uv.y * 90.0 - uTime * 7.0 + sin(uv.x * 37.0 + uTime)), cos(uv.x * 70.0 + uTime * 5.0 + sin(uv.y * 23.0)));
+  uv += wob * heat * 0.0018;
   vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
   c = gdGrade(c, uv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0012, 0.0008, 0.0006), 0.5, 0.42, 0.035);
   o = vec4(ouFilm(c, uExposure, gl_FragCoord.xy), 1.0);
@@ -2736,11 +2747,15 @@ function spoonDown(x, z) {
   if (spoon.lift >= 1) { spoon.x = x; spoon.z = z; }
   spoon.tx = x; spoon.tz = z;
   spoon.on = true;
+  spoon.rest = false;
   imps.push([x, z, 0.08, -0.012]);
 }
 function spoonUp() {
   if (!spoon.on) return;
   spoon.on = false;
+  // Let go, the spoon slides to the wall and leans on the rim, at the back.
+  const a = Math.atan2(Math.min(spoon.z, -0.2), spoon.x || 0.3);
+  spoon.rest = true; spoon.tx = Math.cos(a) * 0.82; spoon.tz = Math.sin(a) * 0.82; spoon.knock = true;
   // A lifted spoon drips.
   const rs = soupR(level);
   for (let i = 0; i < 3 && !reduced(); i++) addDrop(spoon.x * rs + rand(-0.04, 0.04), surfY(spoon.x * rs, spoon.z * rs) + 0.12 + i * 0.05, spoon.z * rs, 0, rand(-0.3, 0), 0, rand(0.01, 0.016));
@@ -2755,6 +2770,15 @@ canvas.addEventListener('pointermove', e => {
   wake();
 });
 canvas.addEventListener('pointerleave', () => { look.tx = look.ty = 0; wake(); });
+// The hand over the soup, in world units; its strength grows with its speed and fades.
+const hand = { x: 0, z: 0, s: 0, px: 0, pz: 0, t: 0 };
+canvas.addEventListener('pointermove', e => {
+  const [x, y] = local(e), rs = soupR(level), [sx, sz] = soupAt(x, y);
+  const wx = sx * rs, wz = sz * rs, now = performance.now() / 1000, dt = Math.max(now - hand.t, 1 / 120);
+  const v = Math.hypot(wx - hand.px, wz - hand.pz) / dt;
+  hand.x = wx; hand.z = wz; hand.px = wx; hand.pz = wz; hand.t = now;
+  if (Math.hypot(sx, sz) < 1.3) hand.s = Math.min(1, hand.s + clamp(v * 0.08) * 0.5);
+});
 canvas.addEventListener('pointerup', up);
 canvas.addEventListener('pointercancel', up);
 canvas.addEventListener('lostpointercapture', up);
@@ -2782,20 +2806,31 @@ function stepSpoon(dt) {
     keyStir.a += keyStir.dir * dt * TAU / 1.6;
     spoon.tx = 0.55 * Math.cos(keyStir.a); spoon.tz = 0.55 * Math.sin(keyStir.a);
   }
-  spoon.lift = clamp(spoon.lift + (spoon.on ? -dt / 0.18 : dt / 0.35));
+  spoon.lift = clamp(spoon.lift + (spoon.on || spoon.rest ? -dt / 0.18 : dt / 0.35));
   if (!spoon.on && spoon.lift >= 1) { spoon.vx = spoon.vz = 0; return; }
+  // Resting, it leans further out over the rim.
+  spoon.lean = (spoon.lean || 0) + ((spoon.rest ? 1 : 0) - (spoon.lean || 0)) * (1 - Math.exp(-dt * 5));
   const k = 1 - Math.exp(-dt / (0.05 + 0.1 * thick()));
   const ox = spoon.x, oz = spoon.z;
   spoon.x += (spoon.tx - spoon.x) * k;
   spoon.z += (spoon.tz - spoon.z) * k;
   const vx = (spoon.x - ox) / Math.max(dt, 1e-3), vz = (spoon.z - oz) / Math.max(dt, 1e-3);
   spoon.vx = clamp(vx, -4, 4); spoon.vz = clamp(vz, -4, 4);
+  // Coming to rest, it taps the iron once.
+  if (spoon.rest && spoon.knock && Math.hypot(spoon.tx - spoon.x, spoon.tz - spoon.z) < 0.02) { spoon.knock = false; clinkSound(0.5, spoon.x); }
   if (spoon.on) {
     stirForce(ox, oz, spoon.x, spoon.z, spoon.vx, spoon.vz, dt);
     const sp = Math.hypot(spoon.vx, spoon.vz);
     // A wake: the bowl pushes a low bow wave.
     if (sp > 0.05) imps.push([spoon.x, spoon.z, 0.07, -0.0035 * Math.min(sp, 3)]);
     stirSound(sp, Math.hypot(spoon.x, spoon.z));
+    // A hard stir knocks the spoon on the iron: a clink and a shiver of rings.
+    const rr = Math.hypot(spoon.x, spoon.z), out = (spoon.x * spoon.vx + spoon.z * spoon.vz) / Math.max(rr, 1e-3);
+    if (rr > 0.78 && out > 0.5 && time - (spoon.clinkAt || 0) > 0.25) {
+      spoon.clinkAt = time;
+      clinkSound(Math.min(out, 3), spoon.x);
+      imps.push([spoon.x, spoon.z, 0.12, -0.008]);
+    }
     // Things in the spoon's way get shoved.
     for (const b of bodies) {
       if (b.fly) continue;
@@ -2811,7 +2846,9 @@ function spoonWorld() {
   const lift = smooth(0, 1, spoon.lift);
   const by = surfY(x, z) - 0.05 + lift * 0.9;
   // The handle leans out and away, so it reads as a long stick.
-  const lean = norm([spoon.x * 0.7 + 0.22, 1, -0.32 - spoon.z * 0.25]);
+  const l0 = [spoon.x * 0.7 + 0.22, 1, -0.32 - spoon.z * 0.25], r0 = Math.hypot(spoon.x, spoon.z) || 1, k = spoon.lean || 0;
+  // At rest the handle leans out over the rim, away from the middle.
+  const lean = norm([lerp(l0[0], spoon.x / r0 * 1.1, k), lerp(1, 0.85, k), lerp(l0[2], spoon.z / r0 * 1.1, k)]);
   return { a: [x, by, z], b: [x + lean[0] * 3, by + lean[1] * 3, z + lean[2] * 3], show: spoon.lift < 0.999 };
 }
 
@@ -2992,6 +3029,14 @@ function pourSound(kind, x) {
   const low = kind === 'ink' || kind === 'saffron' ? 1.25 : 1;
   for (let i = 0; i < 6; i++) blop(ac, at + i * 0.18 * jit(0.2), { f: 170 * low, rise: 1.7, dur: 0.13, level: 0.05, pan });
   burst(ac, at, { f: 2800, q: 0.7, dur: 1.15, level: 0.018, pan });
+}
+// Wood on iron: a dry knock with a short ring.
+function clinkSound(force, x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.004, pan = panOf(x), lv = 0.03 + 0.03 * Math.min(force, 2);
+  burst(ac, at, { f: 1900 * jit(0.1), q: 5, dur: 0.07, level: lv, pan });
+  blop(ac, at, { f: 620 * jit(0.05), rise: 1.02, dur: 0.22, level: lv * 0.5, pan, type: 'triangle' });
 }
 function breakSound(b) {
   const ac = kit.live();
@@ -3231,6 +3276,7 @@ function layerPass() {
   gl.uniform4fv(layerP.u('uPlumeW'), plumeW);
   const gw = gust();
   gl.uniform2f(layerP.u('uLean'), gw[0] * 0.08, gw[2] * 0.08);
+  gl.uniform4f(layerP.u('uHand'), hand.x, hand.z, hand.s, 0.09);
   gl.uniform1f(layerP.u('uSwirl'), swirl);
   gl.uniform1f(layerP.u('uSteps'), D.level > 0 ? 11 : 7);
   gl.uniform1f(layerP.u('uFSteps'), gpu.on ? 0 : D.level > 0 ? 24 : 16);
@@ -3329,6 +3375,10 @@ function outPass() {
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, bl);
   gl.uniform1i(outP.u('uHdr'), 0);
   gl.uniform1i(outP.u('uBloom'), 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, layer.tex[1]);
+  gl.uniform1i(outP.u('uFront'), 2);
+  gl.uniform1f(outP.u('uTime'), time);
+  gl.uniform1f(outP.u('uShimmer'), reduced() ? 0 : 0.4 + 0.8 * fire);
   gl.uniform2f(outP.u('uRes'), canvas.width, canvas.height);
   gl.uniform1f(outP.u('uBloomK'), ui.setting('bloom')?.value ?? 0.55);
   gl.uniform1f(outP.u('uExposure'), 1.15 * (ui.setting('exposure')?.value ?? 1));
@@ -3383,7 +3433,7 @@ function wake() {
 // Bobbing and bubbles are the simmer, which 30 fps carries.
 let splashAt = -10;
 function busy() {
-  return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || spoon.lift < 1 || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
+  return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || (spoon.lift < 1 && !(spoon.rest && Math.hypot(spoon.tx - spoon.x, spoon.tz - spoon.z) < 0.01)) || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
     || pours.length > 0 || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
@@ -3403,6 +3453,7 @@ function frame(now) {
     stepPlumes(time);
     stepFire(time);
     stepLook(dt);
+    hand.s *= Math.exp(-dt * 1.5);
     stepDrain(dt);
     stepSpoon(dt);
     if (lively || energy > 1e-5) stepFluid(dt);
