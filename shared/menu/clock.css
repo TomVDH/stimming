@@ -87,42 +87,20 @@
 .clock-roll svg circle { fill: currentColor; stroke: none; }
 .clock-roll:active svg { rotate: 180deg; }
 
-/* The footer of the Clock. The pointer drives two numbers; they ease, so the glow never snaps. */
-@property --fx { syntax: "<number>"; inherits: true; initial-value: 0; }
-@property --near { syntax: "<number>"; inherits: true; initial-value: 0; }
-:root[data-view="clock"] .credit {
-  transition: --fx 1.4s cubic-bezier(0.16, 1, 0.3, 1), --near 0.9s ease;
-  /* The credit line lights up a little as the pointer comes near the mark. */
-  color: color-mix(in oklch, var(--fg) calc(52% + var(--near) * 30%), transparent);
-}
-/* The mark sits in the credit line, in place of its own name. */
+/* The footer of the Clock. The mark sits in the credit line, in place of its own name. */
 :root[data-view="clock"] .credit[data-inline] { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 0.75em; }
 .clock-mark { position: relative; display: inline-flex; }
 :root[data-view="clock"] .clock-mark .onno svg { height: 30px; transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1), scale 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); }
 :root[data-view="clock"] .clock-mark .onno:hover svg { translate: 0 -2px; scale: 1.08; }
 /* The version stands over the mark. */
 :root[data-view="clock"] .clock-mark .ver { left: 50%; bottom: calc(100% + 8px); translate: -50% 0; }
-/* The glow is a mesh: five lights below the edge, each one a run of hues, mixed in OKLCH and added as light.
-   They lean to the pointer and brighten near the mark. A browser with no OKLCH gradients keeps the old glow. */
-:root[data-view="clock"] .credit::before {
-  height: min(72vh, 640px);
-  background:
-    radial-gradient(48% 74% at calc(14% + var(--fx) * 6%) 112% in oklch, oklch(0.64 0.24 328 / calc(0.5 + var(--near) * 0.16)), oklch(0.56 0.2 300 / 0.26) 42%, oklch(0.5 0.16 280 / 0) 74%),
-    radial-gradient(54% 82% at calc(50% + var(--fx) * 10%) 118% in oklch, oklch(0.8 0.15 200 / calc(0.44 + var(--near) * 0.18)), oklch(0.66 0.14 235 / 0.22) 44%, oklch(0.56 0.12 262 / 0) 76%),
-    radial-gradient(48% 74% at calc(86% + var(--fx) * 6%) 112% in oklch, oklch(0.85 0.16 84 / calc(0.42 + var(--near) * 0.16)), oklch(0.74 0.17 48 / 0.22) 42%, oklch(0.62 0.16 22 / 0) 74%),
-    radial-gradient(30% 48% at calc(33% + var(--fx) * 14%) 108% in oklch, oklch(0.82 0.17 150 / 0.24), oklch(0.7 0.14 182 / 0) 70%),
-    radial-gradient(30% 48% at calc(68% + var(--fx) * 14%) 108% in oklch, oklch(0.74 0.2 20 / 0.22), oklch(0.66 0.2 350 / 0) 70%);
-  background-blend-mode: screen;
-}
-/* One more light follows the pointer along the edge; its hue turns with the pointer's place. */
-:root[data-view="clock"] .credit::after {
-  content: ""; position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: min(72vh, 640px); translate: -50% 0; pointer-events: none;
-  background: radial-gradient(24% 44% at calc(50% + var(--fx) * 44%) 104% in oklch, oklch(0.92 0.1 calc(200 + var(--fx) * 130) / calc(0.1 + var(--near) * 0.22)), oklch(0.8 0.1 calc(200 + var(--fx) * 130) / 0) 72%);
-  mix-blend-mode: screen;
-}
+/* The glow is a shader (mesh.js): light that rises from below the edge and flows. It replaces the CSS glow. */
+.clock-mesh { position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: min(64vh, 580px); translate: -50% 0; pointer-events: none; }
+/* The credit line stands on the light, so it is brighter here and has a soft shade. */
+:root[data-view="clock"] .credit[data-mesh] { color: color-mix(in oklch, var(--fg) 86%, transparent); text-shadow: 0 1px 10px oklch(0.14 0.02 275 / 0.7); }
+:root[data-view="clock"] .credit[data-mesh]::before { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-view="clock"] .credit { transition: none; }
   :root[data-view="clock"] main > .shelf > li, .clock-plate, .clock-name, .clock-tag, .clock-roll { transition: none; }
 }
 

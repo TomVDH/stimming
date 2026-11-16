@@ -192,18 +192,8 @@ function start() {
       words0.after(holder, Object.assign(document.createElement('span'), { textContent: after.trim() }));
       credit.setAttribute('data-inline', '');
     }
-    // The glow leans to the pointer and brightens near the mark. One style write a frame at most.
-    if (!still.matches && matchMedia('(hover: hover)').matches) {
-      const clamp = (v, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
-      let where = null, due = 0;
-      const lean = () => {
-        due = 0;
-        const r = mark.getBoundingClientRect();
-        credit.style.setProperty('--fx', clamp(where.clientX / innerWidth * 2 - 1).toFixed(3));
-        credit.style.setProperty('--near', clamp(1 - Math.hypot(where.clientX - (r.left + r.width / 2), where.clientY - (r.top + r.height / 2)) / 460, 0, 1).toFixed(3));
-      };
-      addEventListener('pointermove', e => { where = e; if (!due) due = requestAnimationFrame(lean); }, { passive: true });
-    }
+    // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
+    import('./mesh.js').then(m => m.mesh(credit)).then(ok => { if (ok) credit.setAttribute('data-mesh', ''); }).catch(e => console.warn('Clock mesh:', e));
   }
 
   // Left alone, the clock runs by itself: each hour puts its toy on the tube in turn.
