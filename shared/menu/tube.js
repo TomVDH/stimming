@@ -9,7 +9,7 @@
 import { TRI_VS, program, linked, tri, onContextLoss } from '../gl.js';
 
 // How bright the picture is at its middle, 0 to 1, in linear light.
-const LEVEL = 0.13;
+const LEVEL = 0.19;
 // The tube takes this long to open from a dot when the first toy comes, in seconds.
 const POWER = 0.5;
 // The tube switches off this fast: the raster shrinks to a line, then to a dot.
@@ -46,12 +46,14 @@ vec3 pic(sampler2D t, vec2 w, vec2 ca, float soft) {
   vec3 c = vec3(textureLod(t, s + ca, soft).r, textureLod(t, s, soft).g, textureLod(t, s - ca, soft).b);
   // Deep colour: a steeper curve, then more of each hue.
   c = pow(c, vec3(2.6));
-  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.45), 0.0);
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.85), 0.0);
 }
 // The wide glow round the bright parts of a still: two low mip levels.
 vec3 halo(sampler2D t, vec2 w) {
   vec2 s = vec2(w.x, -w.y) * 0.5 + 0.5;
-  return pow(textureLod(t, s, 4.5).rgb, vec3(2.2)) * 0.6 + pow(textureLod(t, s, 6.5).rgb, vec3(2.2)) * 0.4;
+  vec3 c = pow(textureLod(t, s, 4.5).rgb, vec3(2.2)) * 0.6 + pow(textureLod(t, s, 6.5).rgb, vec3(2.2)) * 0.4;
+  // The glow keeps the picture's hue, so it does not grey the colours.
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.6), 0.0);
 }
 // A caption: how much of a letter lies here, 0 to 1. lod blurs it into a soft band.
 float words(sampler2D t, vec2 q, float lod) {
@@ -140,7 +142,7 @@ void main() {
   c += uSnow * exp(-dot(p, p) * 900.0) * smoothstep(0.0, 0.04, uPower) * (1.0 - smoothstep(0.04, 0.3, uPower)) * 1.4;
   // The corners fall off; the whole face flickers a hair; a change is a touch bright.
   // The picture lies behind the clock: it is at its full strength in the middle only.
-  c *= (1.0 - 0.68 * smoothstep(0.06, 0.62, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
+  c *= (1.0 - 0.52 * smoothstep(0.06, 0.62, r * r)) * (1.0 + 0.012 * sin(uTime * 113.0)) * (1.0 + 0.3 * k);
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
   // No hard edge: the face fades out past the ring of toys.
   float a = pow(1.0 - smoothstep(0.38, 1.0, r), 1.2);
