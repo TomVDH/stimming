@@ -119,7 +119,7 @@ export async function tube(host, span) {
   }
   await build();
   // The words need their fonts; the menu loads both.
-  const fonts = Promise.all([document.fonts.load('800 32px Gabarito'), document.fonts.load('500 12px "Iosevka Term Slab"')]).catch(() => {});
+  const fonts = Promise.all([document.fonts.load('700 32px B612'), document.fonts.load('400 32px B612'), document.fonts.load('500 12px "Iosevka Term Slab"')]).catch(() => {});
 
   // Breaks a line of words to fit a width; the rows come out near one length.
   function wrap(text, width) {
@@ -143,8 +143,9 @@ export async function tube(host, span) {
     return rows;
   }
   // The name's letters stand askew in mixed weights, as the wordmark's do. The same name always falls the same way.
-  const WEIGHTS = [800, 600, 900, 700, 800, 900];
-  const font = (weight, size) => `${weight} ${size}px Gabarito, "Avenir Next", system-ui, sans-serif`;
+  // A trial (Tom, 2026-11-16): the name is in B612, the wordmark's face. B612 has two weights.
+  const WEIGHTS = [700, 700, 400, 700];
+  const font = (weight, size) => `${weight} ${size}px B612, Gabarito, system-ui, sans-serif`;
   /** @param {string} row @param {number} size @param {number} seed */
   function letters(row, size, seed) {
     let h = seed >>> 0;
@@ -170,7 +171,7 @@ export async function tube(host, span) {
     if (words && words.name) {
       pen.textAlign = 'center';
       pen.textBaseline = 'alphabetic';
-      pen.font = font(800, nameSize);
+      pen.font = font(700, nameSize);
       if ('letterSpacing' in pen) pen.letterSpacing = '0px';
       const names = wrap(words.name, face * 0.44 * k);
       let seed = 7;

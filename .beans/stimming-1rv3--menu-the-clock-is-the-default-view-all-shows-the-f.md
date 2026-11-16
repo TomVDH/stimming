@@ -23,6 +23,9 @@ Tom, 2026-11-16: the Clock from the menu probe (stimming-aiir) becomes the defau
 - [x] Tom: the Re-roll stands under the clock; left alone, the clock runs through its toys by itself
 - [x] Selection light: Tom picked Halo, in soft white
 - [x] Tube: a wider radius, a slow rolling change between toys, and the words drawn in the picture
+- [x] Tube: wider than the clock; a CRT warble; the name's letters askew; a quick cross-fade between toys (the top-down roll was rejected)
+- [ ] Font trial: every heading in B612. Tom decides before the merge: keep or end it
+- [ ] Tube in the NVG and railgun-sight look, in colour; redo the radial animation; redo the clock's intro
 - [ ] A 5 s loop for every toy (a capture agent runs)
 - [ ] One at a time, with Tom: the layout inside the clock, the footer, the onnozelaer mark (a first batch was rolled back as sloppy)
 - [x] One still per main-shelf toy in shared/stills/ (Tom chose captured stills): 42 stills, 896 KB; tools/stills.mjs renews them
