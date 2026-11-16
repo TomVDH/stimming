@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-15T09:43:25Z
-updated_at: 2026-11-15T22:58:14Z
+updated_at: 2026-11-16T07:05:20Z
 ---
 
 Idea 234 (Group C, cinematic dioramas): "Seen from the seat: foam, brushes, water curtain, coloured light."
@@ -56,4 +56,17 @@ Tom: "the wind shield isnt angled and this should be a surface against which the
 - [x] Bloom: soft knee, hot cores, smooth halos; dithered output
 - [x] Look: olive foam fixed, each station a distinct picture, the entry kept
 - [x] Stills before and after at every station, desktop and phone; frame time on Standard and High
+- [x] Toy doc updated
+
+## Pass three (Tom, 2026-11-15): foam and cloth
+
+- [x] Lather with body: thickness normals, a rounded lip, a contact shadow, light through thin and in thick foam
+- [x] Bubbles at three sizes; large ones pop and leave a ring; glints that move with the lights
+- [x] Thin foam turns to an iridescent soap film, then clear wet glass
+- [x] Three dye streams as soft marbled bands; foam slides faster where wet beneath
+- [x] Foam fall as strings and gobs
+- [x] Cloth: separate rounded strips, wet sheen, dark gaps, overlap, rim light, a fringe of tips
+- [x] Dry glass: dash reflection, frit band and tint strip, dried spots and dust, a sliding highlight
+- [x] Wipers: a ridge in thick lather, a clean wet arc with a soapy edge
+- [x] Stills checked lossless; real-loop frame time measured or said plainly
 - [x] Toy doc updated

@@ -298,7 +298,7 @@ void main() {
   float lane = cwN(vec2(g.x * 26.0, g.y * 1.5 - uTime * 0.2));
   float fn = cwN(vec2(g.x * 18.0, g.y * 5.0 - uTime * 0.04));
   // Speeds down the rake in metres a second: a thick coat slips; a thin film clings.
-  float vf = -(0.004 + 0.022 * clamp(c0.r, 0.0, 1.6) * (0.3 + 1.2 * fn));
+  float vf = -(0.004 + 0.022 * clamp(c0.r, 0.0, 1.6) * (0.3 + 1.2 * fn)) - 0.05 * min(c0.g, 1.0);
   float vs = -(0.08 + 0.6 * c0.g) * (0.4 + 1.2 * lane);
   // A heavy rinse carries the foam down with it.
   vf -= 0.5 * max(c0.g - 0.9, 0.0);
@@ -361,7 +361,9 @@ void main() {
     float lump = cwFbm(g * vec2(12.0, 18.0) + 11.0);
     float f = (0.85 + 0.65 * lump) * (0.8 + 0.2 * cwN(vec2(g.x * 14.0, 3.0)));
     if (f > foam) {
-      hue = clamp(cwFbm(g * 9.0 + 3.0) * 1.9 - 0.45 + g.x * 0.3, 0.0, 1.0);
+      // Three streams lay three bands across the glass; they marble where they meet.
+      float xw = g.x + 0.14 * (cwFbm(g * vec2(5.0, 9.0) + 2.0) - 0.5) + 0.04 * sin(g.y * 24.0 + cwN(g * 7.0) * 6.0);
+      hue = clamp(0.5 + (xw + 0.17) * 1.2, 0.0, 1.0);
       off = vec2(0.0);
       foam = f;
     }
@@ -413,13 +415,13 @@ void main() {
     float ang = atan(p.y, p.x);
     if (between(ang, a0, a1)) {
       // The rubber leaves a thin wet film and a trace of soap.
-      foam *= 0.03; sheet = 0.22; beads = 0.02; smear = 1.0;
+      foam *= 0.03; sheet = 0.22; beads = 0.02; smear = 1.0; film = max(film, 0.35);
     } else {
       float ahead = (ang - a1) * sign(da);
       if (ahead > 0.0 && ahead < 0.09) {
         vec4 sw = texture(tS0, toMap(piv + r * vec2(cos(0.5 * (a0 + a1)), sin(0.5 * (a0 + a1)))));
         float k = min(1.0, abs(da) / 0.09) * smoothstep(0.09, 0.0, ahead);
-        foam += sw.r * k;
+        foam += sw.r * k * 1.25;
         sheet += sw.g * k * 0.8;
         if (sw.r * k > 0.02) hue = mix(hue, sw.a, 0.5);
       }
@@ -812,21 +814,28 @@ vec3 bonnet(vec3 d, vec3 Dw, inout float t, vec3 col) {
   return c;
 }
 // One sample of brush cloth. x runs along the axis, a round it, rr is the share of the radius.
-// The spin smears each strip round the drum, so the pattern is fine across and long along the spin.
-vec4 cloth(float x, float a, float rr, float seed, vec3 light) {
-  // Sections along the axis, each a colour of its own.
-  float sec = floor(x / 0.2 + seed);
-  float h = cwH(vec2(sec, seed));
+// Strips 6 cm wide, rounded and wet; a second layer behind fills the gaps; tips fly out as a fringe.
+// back is the light behind the cloth, which rims its wet edges.
+vec4 cloth(float x, float a, float rr, float seed, vec3 light, vec3 back) {
+  float sx = x / 0.06 + seed, si = floor(sx), sf = fract(sx);
+  float sx2 = sx + 0.5, si2 = floor(sx2), sf2 = fract(sx2);
+  // Sections of five strips share a dye.
+  float h = cwH(vec2(floor(si / 5.0), seed)), h2 = cwH(vec2(floor(si2 / 5.0), seed + 1.0));
   vec3 dye = h < 0.333 ? uDye[0] : h < 0.666 ? uDye[1] : uDye[2];
-  // Fine strips: thin lines across, long along the spin.
-  float fine = cwN(vec2(x * 110.0, a * 0.9 + seed)) * 0.6 + cwN(vec2(x * 37.0, a * 0.5 - seed)) * 0.4;
-  // Clumps of strips flap round the drum.
-  float clump = cwN(vec2(x * 7.0 + h * 9.0, a * 1.6 - uTime * 1.5));
-  // Tips are ragged and let light through; the inner layers are dense.
-  float tip = smoothstep(0.45, 1.0, rr);
-  float cov = mix(1.0, smoothstep(0.3, 0.7, clump * 0.55 + fine * 0.45), tip);
-  vec3 c = dye * light * (0.3 + 0.75 * fine) * (0.65 + 0.6 * clump) + light * 0.05 * fine;
-  // Deep in the drum the strips shade each other.
+  vec3 dye2 = h2 < 0.333 ? uDye[0] : h2 < 0.666 ? uDye[1] : uDye[2];
+  float round1 = sin(sf * 3.1416), round2 = sin(sf2 * 3.1416);
+  // Each strip flaps on its own; the spin smears it round the drum.
+  float flap = cwN(vec2(si * 3.7, a * 1.2 - uTime * 2.0 + si));
+  float sheen = pow(round1, 10.0) * (0.3 + 0.9 * flap);
+  vec3 front = dye * light * (0.2 + 0.8 * round1) * (0.75 + 0.5 * flap) + light * 0.55 * sheen;
+  vec3 behind = dye2 * light * 0.4 * (0.3 + 0.7 * round2);
+  float gap = smoothstep(0.0, 0.12, sf) * smoothstep(1.0, 0.88, sf);
+  vec3 c = mix(behind, front, gap);
+  // The tips fly out to their own lengths: the drum's edge is a fringe of strips.
+  float tipLen = 0.8 + 0.2 * cwN(vec2(si * 5.3, uTime * 2.5 + a * 0.6));
+  float cov = rr > tipLen ? 0.0 : mix(1.0, 0.15 + 0.85 * gap, smoothstep(0.6, 0.95, rr));
+  // Light from behind catches the wet edges of the outer strips.
+  c += back * smoothstep(0.65, 1.0, rr) * (1.0 - 0.7 * round1) * 0.8;
   c *= mix(0.35, 1.0, rr);
   return vec4(c, cov);
 }
@@ -862,7 +871,7 @@ vec4 topBrush(vec3 d, float tG, float t) {
     vec3 W = vec3(X, P.y + EY, uS - P.z);
     // Work lights on the gantry rake the drum from above and in front.
     vec3 L = lightAt(W, n) + uArchC[4] * 0.32 * (0.35 + 0.65 * max(dot(n, vec3(0.0, 0.8, 0.6)), 0.0));
-    vec4 s = cloth(X, ang, rr, 3.0, L);
+    vec4 s = cloth(X, ang, rr, 3.0, L, lightAt(W, vec3(0.0, 0.3, -1.0)) * 1.5 + uArchC[5] * 0.04);
     // The core is solid.
     if (i == 4) s.a = 1.0;
     acc.rgb += (1.0 - acc.a) * s.rgb * s.a;
@@ -900,7 +909,7 @@ vec4 wrapBrushes(vec3 d, float tG, float t) {
       vec3 n = normalize(vec3(rel.x, 0.0, -rel.y));
       vec3 W = vec3(P.x + EX, Y, uS - P.z);
       vec3 L = lightAt(W, n) + uArchC[3] * 0.3 * (0.35 + 0.65 * max(dot(n, vec3(0.0, 0.0, 1.0)), 0.0));
-      vec4 s = cloth(Y, ang, rr, 7.0 + float(j) * 5.0, L);
+      vec4 s = cloth(Y, ang, rr, 7.0 + float(j) * 5.0, L, lightAt(W, vec3(0.0, 0.0, -1.0)) * 1.5);
       if (i == 3) s.a = 1.0;
       one.rgb += (1.0 - one.a) * s.rgb * s.a;
       one.a += (1.0 - one.a) * s.a;
@@ -924,13 +933,16 @@ vec4 mitters(vec3 d, float tG, float t) {
   float lf = fract((X + uMit.y + sw) / 0.15);
   float strip = smoothstep(0.0, 0.05, lf) * smoothstep(0.8, 0.74, lf);
   vec3 W = vec3(X, Y, uS + um);
-  vec3 L = lightAt(W, vec3(0.0, 0.0, -1.0));
-  // Wet felt in a deep blue; a soft sheen runs down each strip.
-  float fold = 0.65 + 0.35 * cos((lf - 0.37) * 8.0);
-  vec3 c = MITT_FELT * L * 1.8 * fold * (0.8 + 0.4 * cwN(vec2(X * 14.0, Y * 1.5)));
-  // Strip edges catch the light behind them.
-  c += L * 0.12 * (smoothstep(0.1, 0.0, lf) + smoothstep(0.66, 0.8, lf));
-  return vec4(c, strip * 0.97);
+  vec3 L = lightAt(W, vec3(0.0, 0.0, -1.0)), back = lightAt(W, vec3(0.0, 0.0, 1.0));
+  // Wet felt in a deep blue: each strip rounded across, a sheen down its middle.
+  float round1 = sin(clamp(lf / 0.77, 0.0, 1.0) * 3.1416);
+  vec3 c = MITT_FELT * L * 2.0 * (0.3 + 0.7 * round1) * (0.8 + 0.4 * cwN(vec2(X * 14.0, Y * 1.5)));
+  c += L * 0.35 * pow(round1, 14.0) * (0.6 + 0.6 * cwN(vec2(X * 9.0, Y * 3.0 - uTime)));
+  // The tunnel's light behind rims each strip's edges.
+  c += back * 0.5 * (1.0 - round1) * strip;
+  // In the gaps a second row of strips hangs behind, in shadow.
+  vec3 behindC = MITT_FELT * L * 0.6 * sin(fract((X + uMit.y + 0.075) / 0.15) * 3.1416);
+  return vec4(mix(behindC, c, strip), 0.97);
 }
 // The strips that lie on the glass itself, below the curtain's line.
 vec4 mittersOnGlass(vec3 d, float tG) {
@@ -1020,16 +1032,18 @@ vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
   float fy = drop - uTime * 2.4;
   // Nine nozzles along the slot; each pours its own stream, which wobbles and swells.
   float cov = 0.0, shade = 0.0, si = 0.0;
-  float base = floor((H.x + 1.9) / 0.42);
+  float base = floor((H.x + 1.9) / 0.3);
   for (int j = -1; j <= 1; j++) {
     float i = base + float(j);
-    if (i < 0.0 || i > 8.0) continue;
-    float cx = (i + 0.5) * 0.42 - 1.9 + (cwN(vec2(i * 3.7, fy * 0.6)) - 0.5) * 0.09 * (0.3 + drop);
-    float hw = (0.09 + 0.08 * cwH(vec2(i, 1.0))) * (0.5 + 0.5 * smoothstep(0.0, 1.0, drop) + 0.3 * drop) * (0.75 + 0.5 * cwN(vec2(i * 5.0, fy * 1.3)));
-    float dx = abs(H.x - cx) / hw + (cwN(vec2(H.x * 30.0, fy * 4.0)) - 0.5) * 0.35;
-    float b = smoothstep(1.0, 0.7, dx);
-    // Low down a stream breaks into falling blobs.
-    b *= mix(1.0, smoothstep(0.38, 0.52, cwN(vec2(i * 11.0, fy * 2.2))), smoothstep(0.5, 1.8, drop));
+    if (i < 0.0 || i > 12.0) continue;
+    float cx = (i + 0.5) * 0.3 - 1.9 + (cwN(vec2(i * 3.7, fy * 0.8)) - 0.5) * 0.07 * (0.3 + drop);
+    // A string of lather swells into gobs as it falls, and snaps between them lower down.
+    float gp = fract(fy * 2.6 + cwH(vec2(i, 9.0)));
+    float gob = smoothstep(0.5, 0.18, abs(gp - 0.45));
+    float hw = (0.022 + 0.06 * gob * smoothstep(0.1, 0.9, drop)) * (0.8 + 0.4 * cwH(vec2(i, 1.0)));
+    float dx = abs(H.x - cx) / hw + (cwN(vec2(H.x * 40.0, fy * 6.0)) - 0.5) * 0.25;
+    float b = smoothstep(1.0, 0.65, dx);
+    b *= mix(1.0, smoothstep(0.15, 0.35, gob), smoothstep(0.5, 1.5, drop));
     if (b > cov) { cov = b; si = i; shade = 0.7 + 0.3 * (1.0 - dx * dx); }
   }
   if (cov <= 0.0) return col;
@@ -1047,7 +1061,9 @@ vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
     bd = min(bd, dot(o, o));
   }
   shade *= 0.72 + 0.45 * smoothstep(0.5, 0.0, bd);
-  vec3 dye = uDye[int(mod(si, 3.0))];
+  float xw = H.x + 0.14 * (cwFbm(vec2(H.x * 1.5, fy * 0.3)) - 0.5);
+  float hb = clamp(0.5 + (xw + 0.17) * 1.2, 0.0, 1.0);
+  vec3 dye = hb < 0.5 ? mix(uDye[0], uDye[1], smoothstep(0.2, 0.35, hb)) : mix(uDye[1], uDye[2], smoothstep(0.65, 0.8, hb));
   vec3 L = lightAt(H, vec3(0.0, 0.0, -1.0));
   // Floods in the slot light the foam from above; it carries the light down inside itself.
   float flood = 0.35 + 0.65 * exp(-drop * 0.7);
@@ -1157,6 +1173,9 @@ uniform vec3 uKnife, uKnifeC;
 uniform vec3 uDash;
 // The floods' light on the car: it lights the lather from outside.
 uniform vec3 uAmb;
+// The key light's direction on the glass, for glints; the car's place, for the sliding highlight.
+uniform vec2 uGlint;
+uniform float uCarS;
 ${CONSTS}
 ${NOISE}
 ${GLASS_GL}
@@ -1164,14 +1183,15 @@ ${GLASS_RAIN}
 ${WET_GLASS}
 vec2 toScreen(vec3 P) { return vec2(0.5 + P.x / -P.z * uF / uAsp, uHZ + P.y / -P.z * uF); }
 // Foam cells: distance to the nearest cell wall, distance to the cell's middle, and its hash.
-vec3 cells(vec2 p) {
+vec3 cells(vec2 p, out vec2 rel) {
   vec2 n = floor(p), f = fract(p);
   float d1 = 8.0, d2 = 8.0, id = 0.0;
+  rel = vec2(0.0);
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec2 g = vec2(i, j), o = 0.15 + 0.7 * vec2(cwH(n + g), cwH(n + g + 19.19));
     vec2 r = g + o - f;
     float d = dot(r, r);
-    if (d < d1) { d2 = d1; d1 = d; id = cwH(n + g + 7.7); } else if (d < d2) d2 = d;
+    if (d < d1) { d2 = d1; d1 = d; id = cwH(n + g + 7.7); rel = r; } else if (d < d2) d2 = d;
   }
   return vec3(sqrt(d2) - sqrt(d1), sqrt(d1), id);
 }
@@ -1180,7 +1200,7 @@ float seg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(p
 // The foam dye along one value: magenta at 0, cyan at 0.5, amber at 1.
 vec3 dyeOf(float h) {
   vec3 m = vec3(1.0, 0.3, 0.72), c = vec3(0.32, 0.85, 1.0), a = vec3(1.0, 0.72, 0.3);
-  return h < 0.5 ? mix(m, c, smoothstep(0.3, 0.45, h)) : mix(c, a, smoothstep(0.55, 0.7, h));
+  return h < 0.5 ? mix(m, c, smoothstep(0.2, 0.35, h)) : mix(c, a, smoothstep(0.65, 0.8, h));
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -1232,34 +1252,78 @@ void main() {
   vec3 sheen = 0.5 + 0.5 * cos(6.2832 * (vec3(0.0, 0.33, 0.67) + cwN(g * 30.0) * 1.5));
   col = col * (1.0 - 0.15 * film) + (room * 0.05 + sheen * wide * 0.04) * film;
 
-  // Lather on the glass, lit from outside by the floods.
+  // The glass itself, where it is dry: dust and dried spots catch the light behind them.
+  float dry = (1.0 - clamp(s0.g * 2.0 + s0.b * 0.8 + s0.r * 3.0, 0.0, 1.0)) * smoothstep(0.0, 0.02, inside);
+  vec2 sp = g * 26.0, spi = floor(sp), spf = fract(sp);
+  float spot = 0.0;
+  if (cwH(spi + 77.0) > 0.84) {
+    float rr = length(spf - 0.3 - 0.4 * vec2(cwH(spi + 1.0), cwH(spi + 2.0))), rad = 0.07 + 0.1 * cwH(spi + 3.0);
+    spot = smoothstep(0.035, 0.0, abs(rr - rad)) * 0.8 + smoothstep(rad, 0.0, rr) * 0.12;
+  }
+  float dust = cwN(g * 240.0) * cwN(g * 31.0 + 3.0);
+  col += (wide * 0.7 + 0.0015) * (dust * 0.16 + spot * 0.55) * dry;
+  // The bowed glass carries a soft highlight that slides as the car moves.
+  float hb = g.y - (0.42 + 0.22 * sin(uCarS * 0.33));
+  col += vec3(0.55, 0.65, 0.85) * 0.01 * exp(-hb * hb / 0.003) * smoothstep(0.75, 0.1, abs(g.x - 0.1));
+
+  // Lather on the glass. Its thickness shapes it: a lit body, a rounded lip, a shadow beside it.
   float f = s0.r;
-  if (f > 0.01) {
+  vec2 fg = vec2(texture(tS0, su + vec2(tx.x * 2.0, 0.0)).r - texture(tS0, su - vec2(tx.x * 2.0, 0.0)).r,
+                 texture(tS0, su + vec2(0.0, tx.y * 2.0)).r - texture(tS0, su - vec2(0.0, tx.y * 2.0)).r);
+  // The floods are overhead: thick foam just up the rake shades the clear glass below it.
+  float upF = texture(tS0, su + vec2(0.0, tx.y * 7.0)).r;
+  col *= 1.0 - 0.4 * smoothstep(0.2, 0.9, upF) * (1.0 - smoothstep(0.03, 0.25, f));
+  if (f > 0.008) {
     vec2 mq = g + s1.rg;
-    vec3 cb = cells(mq * 105.0);
-    vec3 cs = cells(mq * 260.0 + 5.0);
     float lump = cwFbm(mq * vec2(16.0, 12.0));
-    float lumpU = cwFbm(mq * vec2(16.0, 12.0) + vec2(0.0, 0.12));
-    float th = f * (0.55 + 0.9 * lump);
-    // Thick foam covers the glass; thin foam keeps only its bubble walls, a lace.
-    float wallB = 1.0 - smoothstep(0.0, 0.09, cb.x), wallS = 1.0 - smoothstep(0.0, 0.12, cs.x);
-    float solid = smoothstep(0.22, 0.5, th);
-    float cov = max(solid, max(wallB, wallS * 0.8) * smoothstep(0.06, 0.2, th) * 0.55);
-    // Each bubble glows like a small dome; the walls bend light away.
-    float dome = (1.0 - 0.35 * smoothstep(0.1, 0.62, cb.y)) * (1.0 - 0.18 * smoothstep(0.1, 0.62, cs.y));
-    float face = (0.85 + 0.25 * cb.z) * dome * (1.0 - 0.17 * wallB * solid) * (1.0 - 0.08 * wallS * solid);
-    // The lather's body: folds catch the light from above and shade below.
-    face *= 0.85 + clamp((lumpU - lump) * 5.0, -0.3, 0.35);
-    // The floods' hue is tamed, so the dyes stay pink, cyan and amber under any light.
+    float th = f * (0.6 + 0.8 * lump);
+    // Three sizes of bubble: fine froth, medium bubbles, and a few large ones.
+    vec2 rm, rf;
+    vec3 cm = cells(mq * 95.0, rm);
+    vec3 cf = cells(mq * 260.0 + 5.0, rf);
+    float wallM = 1.0 - smoothstep(0.0, 0.1, cm.x), wallF = 1.0 - smoothstep(0.0, 0.14, cf.x);
+    float solid = smoothstep(0.16, 0.42, th);
+    float cov = max(solid, max(wallM, wallF * 0.8) * smoothstep(0.05, 0.18, th) * 0.6);
+    // The light outside, its hue tamed so the dyes stay pink, cyan and amber.
     vec3 farL = mix(texture(tFar, uv).rgb, texture(tFar2, uv).rgb, 0.6);
     vec3 Lf = uAmb * 1.5 + farL * 2.2 + 0.015;
     Lf = mix(vec3(dot(Lf, vec3(0.3, 0.55, 0.15))), Lf, 0.3);
     vec3 tint = mix(vec3(1.0), dyeOf(s0.a), 0.72);
-    vec3 glow = Lf * tint * face * (1.2 - 0.5 * smoothstep(0.5, 1.8, th));
-    // A thin edge lets light through and shines.
-    glow *= 1.0 + 0.5 * smoothstep(0.5, 0.2, th) * cov;
+    // The body: slopes that face the floods read light, the others shade.
+    float relief = clamp(-dot(fg, vec2(0.25, 1.0)) * 4.0, -0.45, 0.45);
+    // Each bubble is a small dome: bright inside, darker at its wall.
+    float dome = (1.0 - 0.3 * smoothstep(0.1, 0.62, cm.y)) * (1.0 - 0.15 * smoothstep(0.1, 0.62, cf.y));
+    float face = (0.86 + 0.24 * cm.z) * dome * (1.0 - 0.2 * wallM * solid) * (1.0 - 0.08 * wallF * solid);
+    // Thin foam lets light through brightly; deep foam scatters it and reads darker inside.
+    vec3 glow = Lf * tint * face * (1.0 + relief) * (1.25 - 0.55 * smoothstep(0.4, 1.8, th));
+    // Where thick foam ends it rounds over: a bright lip that light passes through.
+    float lip = smoothstep(0.04, 0.22, length(fg)) * smoothstep(0.12, 0.45, f) * (1.0 - smoothstep(0.8, 1.4, th));
+    glow += Lf * tint * lip * 0.4;
+    // A few large bubbles sit in the lather; each pops after a while and leaves a ring.
+    vec2 lg = mq * 30.0, li = floor(lg), lfr = fract(lg);
+    float lh = cwH(li + 31.0);
+    if (lh > 0.8 && th > 0.3) {
+      vec2 o = (lfr - 0.3 - 0.4 * vec2(cwH(li + 2.0), cwH(li + 7.0))) / (0.16 + 0.12 * cwH(li + 4.0));
+      float dd = length(o), life = fract(uTime * 0.06 + lh * 13.0);
+      if (life < 0.86) {
+        // A clear dome with a dark rim; the view shows through it.
+        float big = smoothstep(1.0, 0.9, dd);
+        glow = mix(glow, mix(col, far, 0.4) * 0.7 + glow * 0.45, big * 0.5) + Lf * tint * 0.7 * smoothstep(0.88, 1.0, dd) * smoothstep(1.08, 1.0, dd);
+        glow += vec3(1.0, 0.97, 0.9) * 0.6 * exp(-dot(o - uGlint * 0.45, o - uGlint * 0.45) * 40.0) * big;
+      } else {
+        float k = (life - 0.86) / 0.14;
+        glow += Lf * tint * 0.8 * smoothstep(0.1, 0.0, abs(dd - 1.0 - 0.5 * k)) * (1.0 - k);
+      }
+    }
+    // Small glints on the medium bubbles turn as the lights pass over the car.
+    glow += vec3(1.0, 0.96, 0.9) * 0.35 * exp(-dot(-rm - uGlint * 0.3, -rm - uGlint * 0.3) * 90.0) * (1.0 - wallM) * solid;
     float T = exp(-(0.3 + 1.7 * th));
-    col = mix(col, mix(col, far, 0.6) * T + glow, cov);
+    vec3 lather = mix(col, far, 0.6) * T + glow;
+    // As it thins, lather turns to a soap film that shimmers, then to clear wet glass.
+    float filmEdge = smoothstep(0.02, 0.1, f) * (1.0 - smoothstep(0.12, 0.3, th));
+    vec3 irid = 0.5 + 0.5 * cos(6.2832 * (vec3(0.0, 0.33, 0.67) + th * 6.0 + cwN(g * 45.0) * 0.6));
+    col += irid * (wide * 0.25 + Lf * 0.12) * filmEdge;
+    col = mix(col, lather, cov);
   }
 
   // The dryer's air line tears the water into a bright mist along the glass.
@@ -1281,8 +1345,14 @@ void main() {
     col = mix(col, vec3(0.002) + shine, max(blade, arm) * 0.96);
   }
 
-  // The car round the glass: the dash's glow in the glass, the dash, the pillars, the header and lining.
-  col += uDash * exp(-max(g.y, 0.0) * 14.0) * 0.4;
+  // The car round the glass. Low on the glass the dash and its vents are mirrored faintly.
+  col += (room * 0.1 + uDash * 2.0) * (0.55 + 0.45 * step(0.5, fract(g.x * 40.0))) * exp(-max(g.y, 0.0) * 9.0) * 0.5 * smoothstep(-0.01, 0.01, g.y);
+  // Along the header: a tint strip, then the black frit band breaking into dots.
+  float topD = GLEN - g.y;
+  col *= mix(vec3(1.0), vec3(0.55, 0.72, 0.8), smoothstep(0.2, 0.07, topD) * 0.55);
+  vec2 fp = fract(g * vec2(170.0, 170.0)) - 0.5;
+  float frit = max(step(topD, 0.025), step(length(fp), mix(0.55, 0.0, smoothstep(0.025, 0.07, topD))));
+  col = mix(col, vec3(0.0025) + room * 0.02, frit * step(0.0, topD) * smoothstep(0.08, 0.065, topD));
   float aa = max(fwidth(g.y), 1e-4);
   // The rear-view mirror hangs from the header in the middle of the car.
   vec2 mq0 = vec2(abs(g.x), g.y - GLEN + 0.085);
@@ -1475,7 +1545,7 @@ const U = {
   c1: new Float32Array(4), c2: new Float32Array(4), knife: new Float32Array(4), brush: new Float32Array(4),
   mit: new Float32Array(4), wip: new Float32Array(4), mist: new Float32Array(4),
   top: new Float32Array(4), wrapU: new Float32Array(4), mitS: new Float32Array(4), blow: new Float32Array(4), spray: new Float32Array(4),
-  on: new Float32Array(4), onSpot: 0, amb: new Float32Array(3),
+  on: new Float32Array(4), onSpot: 0, amb: new Float32Array(3), glint: new Float32Array(2),
 };
 // The light that falls on the glass from the arches and strips round the car.
 // It follows the scene shader's lightAt, gained up: foam gathers light from every side.
@@ -1594,6 +1664,11 @@ function stages(dt) {
   U.onSpot = station(A.spot);
   // The floods' light on the car, for the foam.
   U.amb.set(carLight(s));
+  // Glints point at the nearest arch's light: ahead and up, overhead, then behind.
+  let nearA = A.foam, best = 1e9;
+  for (const a of ARCHES) if (Math.abs(a - s - 0.5) < best) { best = Math.abs(a - s - 0.5); nearA = a; }
+  const ang = Math.atan2(1.75, nearA - s - 0.6);
+  U.glint.set([0.25 * Math.sin(s * 1.7), -Math.cos(ang) * 0.9]);
   // Spray reaching the glass, and in the air before it.
   const near = (a, r0, r1) => smooth(r0, r1, a - s) * smooth(-0.8, 0.2, a - s);
   const run = live;
@@ -1773,6 +1848,7 @@ function draw() {
   gl.uniform3fv(u('uKnifeC'), ARCH_C[8]);
   gl.uniform3f(u('uDash'), 0.004, 0.0035, 0.004);
   gl.uniform3fv(u('uAmb'), U.amb);
+  gl.uniform2fv(u('uGlint'), U.glint); gl.uniform1f(u('uCarS'), car.s);
   run(paneP, rtPane);
   // A soft knee picks the glow at half size; glow.js spreads it, with no threshold of its own.
   gl.useProgram(kneeP);

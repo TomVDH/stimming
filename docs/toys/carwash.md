@@ -81,7 +81,7 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2148 | The page: shell, shaders, sim, timeline, sound, input |
+| `index.html` | 2224 | The page: shell, shaders, sim, timeline, sound, input |
 <!-- /gen:files -->
 
 ## Render pipeline
@@ -92,7 +92,7 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 | Scene | Full size, RGBA16F | `SCENE_FS` | Tunnel walls, floor and arches with LED bars and lit signs, the bonnet as a mirror, curtains, the foam fall, mitters, wrap and top brushes, the dryer's nozzle, the night street; spray streaks from `precip.js` |
 | Down | 1/4, 1/8, 1/32, 1/128 | `DOWN_FS` | Box steps; the two small ones light the foam |
 | Lens | Two targets, half or quarter size | `BOK_FS` (`bokeh.js`) | The eye focuses on the glass: a depth-aware disc gather from the 1/4 frame, tight (wiped glass) and wide (wet glass). Dry glass at the door racks focus to the tunnel |
-| Pane | Full size | `PANE_FS` (`wetglass.js`) | `wgPane()` in glass metres, sheet bending, lather lit from outside with its hue tamed, the dryer's air line, the wipers, then the car: dash, pillar, side window, header, lining, mirror |
+| Pane | Full size | `PANE_FS` (`wetglass.js`) | `wgPane()` in glass metres, sheet bending; lather with body (thickness relief, a lit lip, a contact shadow, froth and medium bubbles, large bubbles that pop into rings, glints that follow the nearest arch light, an iridescent film where it thins); dry-glass dust, dried spots and a sliding highlight; the dryer's air line; the wipers; then the car: dash and vents mirrored low on the glass, frit band and tint strip, pillar, side window, header, lining, mirror |
 | Knee | Half size | `KNEE_FS` | A soft knee picks the glow; halos lean a little toward white |
 | Bloom | The chain from the knee | `bloomChain()` | Threshold 0, 5 levels (3 on Low) |
 | Final | Screen | `FINAL_FS` | `gdGrade()`, a fade for Go, hot light toward white, `ouAces()`, `ouSrgb()`, a triangular dither |
@@ -125,7 +125,7 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 | Slow-frame step | `detail()` (sim size, bokeh scale and bloom levels follow the level) |
 | Idle | The loop stops when the car is parked, or 12 s after it stops past the exit, and the wipers rest |
 | Reduced motion | No loop: each Go shows the next station as a still (the glass sim runs forward to it); a wipe clears its fan at once; no body shake |
-| Measured | 2026-11-15, 2496 x 1344 on High, one step and draw: 13 to 18 ms (pass two: two lens gathers and the knee) |
+| Measured | 2026-11-16, live page loop, pane shown, High at 2496 x 1344, roll-in: median 16.2 ms a frame (60 fps). Probe, one step and draw: 13 to 18 ms on High, 12 to 15 ms at Standard's 2.3 Mpx |
 
 ## State and storage
 
@@ -141,7 +141,7 @@ None in `tests/`. Checked on 2026-11-15 in a probe tab (stills from the live sha
 
 ## Known issues
 
-- The bow wave ahead of a blade is faint where the lather is already thick. `stimming-auj3`
+- The live frame time of the heavy stations (foam, brushes) was not measured in the real loop; only the probe's GPU time. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9; only the driver's arc shows.
 
 ## Legacy build
