@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T22:19:49Z
+updated_at: 2026-11-16T22:25:57Z
 parent: stimming-oh7b
 ---
 
@@ -41,3 +41,5 @@ Tom, 2026-11-16: no head-on view (Train ride, Ten seconds and Fireworks have one
 - Open: the march is 128 steps a pixel. Task 5 checks the frame rate on High.
 
 Tom, 2026-11-16: more angles to compare. `?cam=<name>` picks a trial camera: hill (the default), wide, fish, dutch, tele, scope (2.39 letterbox), shore, along, drone. The march now strides over open water, and the pine grid turns 31 degrees, so the far bank shows no fence.
+
+Tom picked `tele` as the camera (2026-11-16): the long lens on the far bank from the hill. A tall frame turns 6 degrees right, so the lit windows stay in it. The other trials stay behind `?cam=`.

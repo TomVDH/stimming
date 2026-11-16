@@ -33,8 +33,10 @@ const ui = initPage({ id: 'lanterns', bar: {
 // The lake is a bowl about 1.4 km long; low hills and pines ring it.
 // The horizon's place on the frame: a tall frame lifts it.
 // A tall frame lowers it, so the slope underfoot fills less of the frame.
-const horizon = (asp, hz) => hz - 0.1 * Math.min(1, Math.max(0, (1.2 - asp) / 0.7));
-// Camera trials, Tom 2026-11-16: ?cam=<name> picks one.
+// How tall the frame is: 0 at 1.2 to 1 and wider, 1 at 1 to 2 and taller.
+const tallOf = asp => Math.min(1, Math.max(0, (1.2 - asp) / 0.7));
+const horizon = (asp, hz) => hz - 0.1 * tallOf(asp);
+// Camera trials, Tom 2026-11-16: ?cam=<name> picks one; tele is the default.
 // x and z place the eye; lift is its height over the ground or the water.
 // hz is the horizon's place on the frame; it sets the pitch.
 // yaw turns right in degrees; roll tilts the frame (a dutch angle); foc is the lens.
@@ -52,7 +54,8 @@ export const CAMS = {
   drone: { lift: 140, hz: 1.0, foc: 1.1, yaw: 4 },
 };
 const camName = new URLSearchParams(location.search).get('cam');
-const CAM = { ...CAMS.hill, ...(CAMS[camName] || {}) };
+// Tom picked tele on 2026-11-16: the long lens on the far bank.
+const CAM = { ...CAMS.hill, ...(CAMS[camName] || CAMS.tele) };
 const SCENE = `
 uniform float uMist, uHz, uBars;
 // The eye: x, z and lift. The view: yaw, roll, lens and fisheye, in radians where angles.
@@ -271,6 +274,7 @@ vec3 envScene(vec2 uv) {
 let visible = true, awake = true, sleepAt = 0, target = HOURS[first];
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
+const tall = () => tallOf(canvas.clientWidth / Math.max(1, canvas.clientHeight));
 let env = null;
 try {
   env = environment(canvas, {
@@ -282,7 +286,8 @@ try {
       uMist: () => 0.003,
       uHz: () => horizon(canvas.clientWidth / Math.max(1, canvas.clientHeight), CAM.hz),
       uEye: () => [CAM.x, CAM.z, CAM.lift],
-      uView: () => [CAM.yaw * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
+      // A tall frame turns a little right, so the lit windows stay in it.
+      uView: () => [(CAM.yaw + 6 * tall()) * Math.PI / 180, CAM.roll * Math.PI / 180, CAM.foc, CAM.fish],
       uBars: () => CAM.bars,
     },
   });
