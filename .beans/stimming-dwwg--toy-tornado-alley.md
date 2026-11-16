@@ -5,13 +5,13 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:22:27Z
+updated_at: 2026-11-16T20:34:20Z
 parent: stimming-oh7b
 ---
 
 Build Tornado alley from docs/plans/tornado.md (idea 364, Tom's add 2026-11-16). Size XXXL. It starts in the Lab. A wide, still, deadpan cinematic vista of the Oklahoma plains under a huge supercell. Several tornadoes at once; each carries an F-scale (F0 to F5) to set and play with.
 
-- [ ] Task 1: blockout of the shot: plains, wheat, farmhouse, road, supercell; checkpoint with Tom
+- [x] Task 1: blockout of the shot: plains, wheat, farmhouse, road, supercell; checkpoint with Tom
 - [ ] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob
 - [ ] Task 3: many tornadoes: place, set F-scale, paths, ropes out
 - [ ] Task 4: storm: wall cloud, rain curtain, hail, lightning, light and grade
@@ -29,7 +29,7 @@ Blockout built; waits for the checkpoint with Tom.
 - [x] The shot: wheat, two-lane road to the vanishing point, poles and wires, farm (house, barn, windmill, shelterbelt), supercell (tower, overshooting top, anvil, base shelf, wall cloud, rain curtain), low sun behind the camera
 - [x] Stubs: click touches down a flat grey funnel at the F level, drag steers it, keys 0 to 5, + Tornado, Clear, Storm slider, Time in Settings, Exposure in Dev
 - [x] Headless QA: clean console on the toy, stills at 1280 and 375 x 812
-- [ ] Checkpoint with Tom
+- [x] Checkpoint with Tom (passed 2026-11-16)
 
 Known gaps for later stages: the runner draws at the full frame rate while awake (no 30 fps drift step); the scene sleeps after 60 s with no input. The wheat shows faint row banding mid-distance. No sound yet.
 
@@ -47,3 +47,15 @@ Known gaps for later stages: the runner draws at the full frame rate while awake
 - Round 5 (Tom picked all four: storm base, sky and light, near wheat, storm placement), one commit each: the updraft and wall cloud on the left golden line with open sky above; a striated, ragged base with a lowered wall cloud and a greener core; a dusty sky with a warm horizon band that dims round the storm; the eye drops to 1.25 m and a foreground of 56 soft-focus ears sways with the gusts.
 
 - Round 6 (Tom: "road to the left more, the camera partially hangs over it"): the road centre runs 3.4 m right of the eye, so the eye hangs over its left edge; wheat shells skip the verges, the verge and gravel have texture, the field's sunlit face is brighter.
+
+## Stage 2 status (2026-11-16)
+
+Built; waits for the checkpoint with Tom.
+
+- [x] Funnel volume per tornado, ray-marched only near its curved axis: F-scale width and flare, a sway and a lean, helical striations that spin at 45 to 120 m/s over the radius, a ragged condensation edge, a top that spreads into the base, darker with F (grey at F2, near black at F5)
+- [x] Dust skirt: wider than the funnel, spins faster, billowing, height by F
+- [x] Life cycle: dust first, then the condensation lowers (touchdown); drift with the storm by F; rope-out bends the axis into an S, narrows to a 35 m rope, breaks up and fades (14 s + 7 s); each tornado ropes out by itself after 55 to 130 s
+- [x] Controls: right click or double click ropes out, the wheel or [ ] steps a tornado's F level (eased over seconds), Clear ropes all out, a second Clear removes them
+- [x] Tornadoes stay under the base: 17 to 36 km out; the shelf reaches to 15 km
+- [x] QA flags ?near, ?age, ?rope, ?qa; headless 60 fps with four tornadoes; console clean
+- [ ] Checkpoint with Tom
