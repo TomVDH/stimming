@@ -1,0 +1,113 @@
+/* The Clock: the menu's default view. Twelve toys stand on a dial.
+   ?all shows the whole shelf; ?lab shows the Lab. */
+
+/* The shelf and the face share one grid cell, so the face lies under the toys. */
+:root[data-view="clock"] main > .shelf {
+  grid-area: 1 / 1; z-index: 1; display: block; position: relative;
+  /* No auto margin: the grid centres the shelf, also where it is wider than its column. */
+  width: min(92vw, 660px); max-width: none; aspect-ratio: 1; margin: 0;
+  /* Only the toys take the pointer; the Re-roll lies under the shelf's box. */
+  pointer-events: none;
+}
+/* The shelf waits out of sight until the script deals the first dozen. */
+:root[data-view="clock"]:not([data-clock]) main > .shelf { visibility: hidden; }
+:root[data-view="clock"] main > .shelf > li {
+  position: absolute; width: 19%; pointer-events: auto;
+  left: calc(50% + var(--x, 0) * 40.5% - 9.5%); top: calc(50% + var(--y, 0) * 40.5% - 9.5%);
+  transition: scale 0.45s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+:root[data-view="clock"] main > .shelf > li[data-out] { display: none; }
+/* The name shows in the middle; the link keeps it for screen readers. */
+:root[data-view="clock"] main > .shelf .name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:root[data-view="clock"] main > .shelf > li:is(:hover, :focus-within, [data-held]) { scale: 1.18; z-index: 2; }
+/* The Clock shows no Series switch and no Lab link. */
+:root[data-view="clock"] :is(.series-toggle, .lab-link) { display: none; }
+/* The way back to the Clock shows on the whole shelf only. */
+.clock-link { display: none; }
+:root[data-view="all"] .clock-link { display: inline; }
+
+.clock-face, .clock-all { display: none; }
+:root[data-view="clock"] .clock-face {
+  display: block; grid-area: 1 / 1; position: relative; width: min(92vw, 660px); aspect-ratio: 1;
+  container-type: inline-size; pointer-events: none;
+  /* The turning glow must not widen the page. */
+  overflow: clip;
+}
+
+/* The outline: a rim and sixty minute marks. It draws in, then fades away. */
+.clock-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; opacity: 0; }
+.clock-ring .rim { fill: none; stroke: oklch(0.56 0.016 275); stroke-width: 0.35; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.clock-ring .ticks line { stroke: oklch(0.62 0.016 275); stroke-width: 0.35; }
+
+/* The glow: a soft light on the rim, in the toy's own colour. It turns to the pointer. */
+.clock-glow { position: absolute; inset: 0; opacity: 0; transition: opacity 0.7s ease; }
+.clock-face[data-live] .clock-glow { opacity: 1; }
+.clock-glow i {
+  position: absolute; left: 50%; top: 4%; width: 34%; aspect-ratio: 1; translate: -50% 0; border-radius: 50%;
+  background: var(--glow, oklch(0.86 0.06 275)); opacity: 0.3;
+  -webkit-mask: radial-gradient(closest-side, #000, transparent); mask: radial-gradient(closest-side, #000, transparent);
+}
+
+/* The tube: the toy's still, faint, behind the whole page. tube.js draws it. */
+.clock-tube { display: none; }
+:root[data-view="clock"] .clock-tube { display: block; position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
+/* The page lies over the tube. */
+:root[data-view="clock"] .wrap { position: relative; z-index: 1; }
+
+/* The middle: a dark plate, then the toy's number, name and motto. */
+.clock-mid {
+  position: absolute; inset: 22%; box-sizing: border-box; isolation: isolate; border-radius: 50%;
+  display: grid; place-content: center; justify-items: center; gap: 1.3cqw; padding: 0 0 max(8cqw, 40px);
+  text-align: center; opacity: 0; transition: opacity 0.6s ease;
+}
+.clock-face[data-on] .clock-mid { opacity: 1; }
+/* The plate keeps the words clear of the tube. Scan lines and noise lie on it. */
+.clock-plate { position: absolute; inset: 0; z-index: -1; overflow: hidden; border-radius: 50%; background: oklch(0.13 0.012 275 / 0.86); }
+.clock-plate::after {
+  content: ""; position: absolute; inset: -18%; opacity: 0.42; mix-blend-mode: screen;
+  background:
+    repeating-linear-gradient(0deg, oklch(0 0 0 / 0.5) 0 1px, transparent 1px 3px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+/* The noise moves only with a toy in hand. */
+.clock-face[data-live] .clock-plate::after { animation: clock-tv 0.55s steps(5, end) infinite; }
+@keyframes clock-tv { to { translate: 7% -9%; } }
+
+.clock-count, .clock-name, .clock-tag { margin: 0; }
+.clock-count { font: 500 clamp(10px, 1.7cqw, 11px)/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.14em; color: var(--muted); }
+.clock-name { max-width: 44cqw; font: 800 clamp(17px, 5cqw, 32px)/1.02 var(--sans); letter-spacing: -0.035em; text-wrap: balance; }
+.clock-tag { max-width: 38cqw; font: 500 clamp(10.5px, 1.9cqw, 12.5px)/1.45 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.02em; color: color-mix(in oklch, var(--fg) 76%, transparent); text-wrap: balance; }
+.clock-tag:empty { display: none; }
+/* A short hairline parts the name from the motto. */
+.clock-tag::before { content: ""; display: block; width: 22px; height: 1px; margin: 0.4cqw auto 1.5cqw; background: color-mix(in oklch, var(--fg) 40%, transparent); }
+
+/* The Re-roll waits five seconds, then shows at the foot of the circle. */
+.clock-roll {
+  position: absolute; left: 50%; bottom: 3cqw; translate: -50% 0; display: inline-flex; align-items: center; gap: 7px;
+  min-height: 30px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in oklch, var(--fg) 26%, transparent); background: oklch(0.13 0.012 275 / 0.55); color: var(--fg);
+  font: 500 11px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase;
+  opacity: 0; pointer-events: none; transition: opacity 0.9s ease, border-color 0.2s ease;
+}
+.clock-face[data-roll] .clock-roll { opacity: 1; pointer-events: auto; }
+.clock-roll:is(:hover, :focus-visible) { border-color: var(--fg); }
+.clock-roll svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.clock-roll svg circle { fill: currentColor; stroke: none; }
+.clock-roll:active svg { rotate: 180deg; }
+/* A small clock keeps the die and drops the word. */
+@container (max-width: 440px) {
+  .clock-roll { padding: 7px; }
+  .clock-roll span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
+/* A quiet link under the clock leads to the whole shelf. */
+:root[data-view="clock"] .clock-all {
+  display: inline-block; font: 500 12px/16px "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em;
+  text-transform: uppercase; text-decoration: none; color: var(--muted); transition: color 0.2s ease;
+}
+.clock-all:is(:hover, :focus-visible) { color: var(--fg); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-view="clock"] main > .shelf > li, .clock-glow, .clock-mid, .clock-roll { transition: none; }
+  .clock-face[data-live] .clock-plate::after { animation: none; }
+}
