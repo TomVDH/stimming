@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:10:45Z
+updated_at: 2026-11-16T19:23:29Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -13,7 +13,7 @@ Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has 
 ## Checklist
 
 - [x] Measure the menu and three heavy toys, cold and warm
-- [ ] Menu: pick the approach from the numbers and build it
+- [x] Menu: pick the approach from the numbers and build it
 - [ ] Intro: one progress and ready API in shared/intro.js
 - [ ] Shell: a default for every toy
 - [ ] Real progress in three heavy toys
@@ -68,3 +68,25 @@ What the numbers say:
 - From the first paint to `intro live` the glass is empty: no mark, no word.
 - The intro's own length (about 4 s of beats and reading time) covers the first frame on the fast link. On the slow link Window seat's first frame comes at 6.0 s, past the reading time: the intro holds with every line still and no sign of work.
 - A cold shader compile on Direct3D, a slow phone or a slow link makes that hold longer. The intro then looks frozen.
+
+## The menu: the approach
+
+A staged start with a quiet sign of work, and no gate. The page never holds for a preloader.
+
+| Stage | When | What shows |
+|---|---|---|
+| First paint | With the first bytes | The ground colour; the wordmark and the tagline once their fonts are in (1.2 s at most), with one fade and no change of face |
+| Wait | From 0.4 s, only while the page still loads | The comet's head at twelve o'clock, CSS only; it breathes |
+| Comet | When the whole page and the tube stand (the tube gets 0.9 s) | The dot turns into the comet; it drops the dozen off |
+| After | 2.6 s later | The footer shader; after the load event, the shell prefetch |
+
+Why:
+
+- A fast load is usable at 0.3 s. A gate would only slow it. The wait sign has a 0.4 s delay, so a fast load never shows it.
+- A slow load had 2.4 s with no sign. The dot fills that gap, and it becomes the comet, so it is not a second thing on the page.
+- The Clock's modules preload from the head (`clock.js`, `tube.js`, `gl.js`). On the slow link the first toy comes at 1.7 s, was 2.0 s (local server, same link).
+- A script that stalls for 8 s (a dead CDN) now leaves the whole shelf. No JS and a failed `clock.js` leave the whole shelf as before.
+
+Tried and dropped: an early start. The main shelf ends 32 kB into the 162 kB page, so `clock.js` ran there, before the Lab and the icon script. The first toy came at 0.6 s on the slow link. But the icon script draws some icons (Fire, the TV tree, the Frietkot and more), so tiles were empty or changed after the comet. To gain that second, the Lab markup (58 kB gzip, 36% of the page) must leave `index.html`; that is a restructure of a file that other sessions edit daily. Not in this feature.
+
+Checked: no JS, a failed `clock.js`, a failed and a stalled `gsap.min.js`, reduced motion, `?all`, `?lab`.
