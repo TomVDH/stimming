@@ -75,6 +75,8 @@ uniform float uH, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uMulti, uRa
 uniform vec2 uPh[7];
 // The dust's noise scale in metres: one value per tornado.
 uniform float uDs;
+// Storm km per lab km: the storm is seen as the shot sees it, from 8 km, whatever the lab's distance.
+uniform float uKs;
 // The bands' height scale in metres: one value for the whole funnel, never the local radius.
 uniform float uZs;
 const float CAMH = 1.7;
@@ -166,6 +168,8 @@ float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) 
   return oct > 2 ? n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45 : n;
 }
 // Condensation density at p, 0 to about 2. u returns the height over the base.
+// The collar's height: where the funnel flares up into the wall cloud. A stub at F0, a quarter of the funnel once it forms.
+float collarLen() { return uH * mix(0.08, 0.28, smoothstep(0.0, 0.5, uCond)); }
 // oct sets the noise detail: 4 for the view, 2 for the shadow rays.
 float funnelD(vec3 p, out float u, int oct) {
   float h = p.y;
@@ -202,11 +206,32 @@ float funnelD(vec3 p, out float u, int oct) {
     d += wk * smoothstep(cov, cov + 0.07, n) * mix(0.9, 0.35, fk);
   }
   // The tip thins as it narrows; the top runs into the base.
-  d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(uH * 0.96, uH + 170.0, h));
+  // The top fades inside the collar, which carries it on up into the wall cloud.
+  d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(uH - collarLen() * 0.35, uH + 60.0, h));
   return d;
 }
 // Extinction per metre for a density: thin funnels get denser, so a rope still reads.
 float funnelSig(float d, float R) { return d * 7.0 / max(R, 5.0); }
+// The wall cloud's radius in lab metres: the storm's wall, 2.1 storm km, at the storm's scale.
+float wallRadLab() { return 2115.0 / uKs; }
+// The collar: from the funnel's upper part the cloud flares out and up into the wall cloud,
+// like a trumpet's bell. Its edge tears with the outer sheath's spinning noise.
+// s returns how far up the collar the point is, 0 to 1; Rc its radius there.
+float collarD(vec3 p, out float s, out float Rc) {
+  float Lc = collarLen(), h0 = uH - Lc, h1 = uH + 140.0;
+  s = (p.y - h0) / (h1 - h0);
+  Rc = 1.0;
+  if (s < 0.0 || s > 1.0) return 0.0;
+  vec2 q = p.xz - axisAt(p.y);
+  float r = length(q), Rf = radiusAt(p.y);
+  Rc = mix(Rf * 1.1, max(wallRadLab() * 0.75, Rf * 1.2), pow(s, 1.8));
+  if (r > Rc * 1.5) return 0.0;
+  float n = sheathN(atan(q.y, q.x), p.y, 1.0, Rc, 1.0, 5, 4);
+  float edge = Rc * (1.0 + 0.45 * (n - 0.5));
+  float d = smoothstep(edge, edge - Rc * 0.08, r);
+  // It grows out of the funnel from below, with the noise in its body too.
+  return d * smoothstep(0.0, 0.35, s) * (0.55 + 0.6 * n);
+}
 // Henyey-Greenstein phase, scaled so that isotropic is 1.
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
 
@@ -277,8 +302,6 @@ const float BASE = 1.4;
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
 const float STORM = 0.85;
-// Storm km per lab km: the storm is seen as the shot sees it, from 8 km, whatever the lab's distance.
-uniform float uKs;
 // The shot's noise names, on the lab's volume: one cell per unit.
 // N has four cells per unit; a quarter gives the shot's one cell per unit.
 float vn3(vec3 p) { return N(p * 0.25); }
@@ -303,7 +326,9 @@ float stormShape(vec3 p) {
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
   // The wall cloud: a lowered block under the base; it hangs a little lower as F grows.
   float wl = BASE - 0.2 - 0.12 * uFk;
-  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), abs(p.y - wl) - 0.35);
+  // Its underside is an upturned bowl: lowest over the funnel, rising to the rim, so no flat ring shows.
+  float rwl = mix(0.5, 2.4, g), rr = length(p.xz - WALL) / rwl;
+  float wall = max(length(p.xz - WALL) - rwl * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), max(wl - 0.35 + 0.3 * rr * rr - p.y, p.y - wl - 0.35));
   // The neck: from the wall cloud's underside the cloud tapers down into the funnel's top.
   // At F0 it is a short bulge; as the funnel forms it reaches down to meet it.
   float wb = wl - 0.35, ft = BASE - 0.55;
@@ -411,8 +436,13 @@ float nearCloud(vec3 p, out vec3 ps, out float d) {
   vec2 qr = mix(q, mat2(cos(a), sin(a), -sin(a), cos(a)) * q, k);
   ps = toStorm(vec3(qr.x + topXZ().x, p.y, qr.y + topXZ().y));
   d = stormD(ps);
+  // The bell's space belongs to the collar: the wall cloud starts at its outer surface.
+  float Lc = collarLen(), sb = (p.y - (uH - Lc)) / (Lc + 140.0);
+  float Rb = mix(radiusAt(p.y) * 1.1, max(wallRadLab() * 0.75, radiusAt(p.y) * 1.2), pow(clamp(sb, 0.0, 1.0), 1.8));
+  // A wide, tall clearance: the wall cloud's rough underside must not hang in front of the bell.
+  float bell = sb > -0.15 ? smoothstep(Rb * 1.65, Rb * 1.1, length(p.xz - axisAt(p.y))) * smoothstep(1.5, 1.0, sb) : 0.0;
   // A soft shell turns the distance into density.
-  return smoothstep(0.035, -0.035, d) * nearW(ps);
+  return smoothstep(0.035, -0.035, d) * nearW(ps) * (1.0 - bell);
 }
 // The storm's tone at a storm point, from its shape alone: cheap, for the funnel's top.
 vec3 cloudTone(vec3 ps) {
@@ -483,7 +513,7 @@ void main() {
   }
   // One volume march through two regions: A, the funnel's cylinder; C, the near storm round it.
   vec3 o3 = vec3(topXZ().x, 0.0, topXZ().y);
-  float Rb = uR0 * max(uFlare * 2.0, 2.6) + uLean + uSway * 2.0 + 140.0;
+  float Rb = max(uR0 * max(uFlare * 2.0, 2.6), wallRadLab() * 0.85) + uLean + uSway * 2.0 + 140.0;
   vec2 cy = cylinder(ro, rd, Rb, 0.0, uH + 240.0);
   float tA0 = cy.y > 0.0 ? cy.x : 1e9, tA1 = cy.y > 0.0 ? cy.x + cy.y : -1.0;
   vec2 cc2 = cylinder(ro - o3, rd, NEAR_R * 1000.0 / uKs, uH - 200.0, uH + (NEAR_TOP - BASE + 0.55) * 1000.0 / uKs);
@@ -529,13 +559,18 @@ void main() {
         st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
         float u;
         float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
+        float cs, Rc;
+        float dcol = uDbg > 2.5 && uDbg < 3.5 ? 0.0 : collarD(p, cs, Rc);
+        // In the bell, steps follow its own size.
+        if (dcol > 0.0) st = min(st, clamp(Rc * 0.04, 0.5, 20.0));
         u = clamp(p.y / uH, 0.0, 1.0);
         float d, w;
         vol(p, d, w);
-        float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
+        float sc = funnelSig(dc, R) + funnelSig(dcol, Rc) * 2.0, sd = d * 0.014, sw = w * 0.0012;
         if (sc + sd + sw > 1e-6) {
           // Sunlight through the funnel, the dust and, near the top, the storm above.
-          float topK = smoothstep(uH * 0.55, uH * 1.02, p.y);
+          // Up the collar the tone turns to the storm's own.
+          float topK = smoothstep(uH - collarLen() * 1.2, uH + 140.0, p.y);
           float od = sunDepth(p, R) + cloudShade(p);
           vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.25 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
           // Sky light falls off with depth into the funnel.
@@ -558,7 +593,7 @@ void main() {
       if (inC) {
         vec3 ps;
         float dS;
-        float dn = nearCloud(p, ps, dS);
+        float dn = uDbg > 3.5 ? 0.0 : nearCloud(p, ps, dS);
         // Outside the cloud, step by its distance; inside, short steps.
         // A ray that skims the underside keeps a floor on its step, scaled by distance.
         float sC = dS > 0.035 ? max((dS - 0.035) * 1000.0 / uKs * 0.7, max(6.0, t * 0.003)) : clamp(t * 0.005, 6.0, 30.0);
