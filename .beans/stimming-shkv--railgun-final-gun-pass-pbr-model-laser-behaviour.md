@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-16T18:59:01Z
-updated_at: 2026-11-16T19:17:49Z
+updated_at: 2026-11-16T19:21:26Z
 parent: stimming-f793
 ---
 
@@ -18,7 +18,8 @@ Tom, 2026-11-16: "PBR and gun materials, final tweaks to the gun model and targe
 - [x] Tom signs off Part 1
 - [x] Part 2: trunnion up 75 m, variable recoil, rods ride the block (stimming-4c0k); base tapered and weathered (Tom), Dev row Base wear
 - [x] Recoil well (Tom: the gun stood too tall): trunnion only 20 m over the old 215 m (RISE), a slot and lined well in the deck behind the pylon, struts set wide, cross bars out, machinery house moved aside; recoil room checks the well, deck, apron and teeth
-- [ ] Tom signs off Part 2
+- [x] Side-tower mount (Tom: a higher, believable mount): Dev row Mount (Well, Towers), ?mount=towers; trunnion 80 m up; two battered towers with bearings, buttresses, pinion housings, a ladder cage; full recoil to 20 degrees
+- [ ] Tom picks a mount and signs off Part 2
 - [ ] Part 3: ranging laser (stimming-48f4)
 - [ ] Part 4: aim, slew, settle, recoil and return
 - [ ] Clean console; charge, shot and recoil still work
