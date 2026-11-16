@@ -148,6 +148,7 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Fire glow | The fire glows up through thin soup over the boil's plumes and the hot base, tinted by the soup's hue, stronger with Fire. Dev row Soup glow scales it |
 | Boil | The heat drives the ripple field: a calm shiver everywhere at low fire, rolling heaves over the plumes near Fire 1 (heat cubed). Dev row Boil scales both |
 | Viscosity | The ripple field reads the local thickness: thick soup waves at a third of the speed, keeps less of each swing and holds a dent longer; thin broth rings as before |
+| Wall foam | Above Fire 0.35 a pale foam line gathers at the wall in slow clumps, thicker in thick soup |
 | Film layers | Skin (aux b) sets on calm thick soup and cream, matte and wrinkled; wet broth; glassy fat with a faint oil-film rainbow |
 | Cooking | Things deepen, gloss and shrink a touch; a split thing clears in 0.45 s while its pieces grow in; melting pieces take on the soup's colour |
 | Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |

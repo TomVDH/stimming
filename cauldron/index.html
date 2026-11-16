@@ -1439,6 +1439,15 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // The meniscus at the iron wall.
   float rw = length(p.xz) / uRS;
   col *= 1.0 - 0.6 * smoothstep(0.9, 1.0, rw);
+  // A high boil leaves a pale foam line at the wall, in clumps.
+  float fb = smoothstep(0.8, 0.95, rw) * (1.0 - smoothstep(0.99, 1.0, rw)) * smoothstep(0.35, 0.9, uFire);
+  if (fb > 0.0) {
+    float cells = noise2(p.xz * 40.0);
+    float clump = noise2(vec2(atan(p.z, p.x) * 9.0 + uTime * 0.05, rw * 24.0)) + 0.25 * cells;
+    float foam = fb * smoothstep(0.35, 0.75, clump) * mix(0.7, 1.2, T);
+    vec3 fc = (alb * 0.6 + vec3(0.3, 0.28, 0.25)) * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.35 + skyAmb(n) * 2.0);
+    col = mix(col, fc * (0.9 + 0.2 * cells), clamp(foam, 0.0, 1.0) * 0.9);
+  }
   return col;
 }
 vec3 shadeBubble(vec3 p, vec3 n, vec3 rd, vec4 b) {
