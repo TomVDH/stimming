@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=Gabarito:wght@400..900&display=swap">
 <link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js">
 <link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js">
+<link rel="preload" as="font" type="font/woff2" href="shared/fonts/IosevkaTermSlab-Medium.woff2" crossorigin>
 <link rel="modulepreload" href="shared/menu/clock.js">
 <link rel="modulepreload" href="shared/menu/tube.js">
 <link rel="modulepreload" href="shared/gl.js">
@@ -143,6 +144,10 @@ a.toy { cursor: pointer; }
 @font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
 /* The wordmark takes B612; the tagline takes Iosevka Term Slab. */
 .title { font-family: "B612", var(--sans, system-ui), sans-serif; }
+/* Words wait for their fonts, so no fallback face shows first and then changes.
+   After a wait that shows, they fade in. Without script nothing waits. */
+:root[data-fonts="wait"] :is(.title, .tagline, .name, .credit > span:first-child) { opacity: 0; }
+:root[data-fonts="in"] :is(.title, .tagline, .name, .credit > span:first-child) { transition: opacity 0.25s ease-out; }
 .tagline { font-family: "Iosevka Term Slab Nerd Font", "Iosevka Term Slab", ui-monospace, monospace; }
 .name { font-family: "Iosevka Term Slab", ui-monospace, monospace; font-size: 13px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
 /* A toy still in alpha or beta wears a quiet tag; its brackets fade further. */
@@ -394,6 +399,15 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
   {
     const q = new URLSearchParams(location.search);
     document.documentElement.dataset.view = q.has('lab') ? 'lab' : q.has('all') ? 'all' : 'clock';
+    // The words wait for their fonts, 1.2 s at most; then a late font changes them in view.
+    if (document.fonts && document.fonts.load) {
+      const d = document.documentElement.dataset, t0 = performance.now();
+      d.fonts = 'wait';
+      // A wait too short to see ends with no fade.
+      const show = () => { if (d.fonts !== 'wait') return; if (performance.now() - t0 > 120) { d.fonts = 'in'; setTimeout(() => delete d.fonts, 400); } else delete d.fonts; };
+      Promise.all(['700 1em B612', '400 1em B612', '500 1em "Iosevka Term Slab"', '500 1em Gabarito'].map(f => document.fonts.load(f))).then(show, show);
+      setTimeout(show, 1200);
+    }
     // A script that stalls leaves the whole shelf, as a failed one does.
     setTimeout(() => { const d = document.documentElement.dataset; if (d.view === 'clock' && !d.clock) delete d.view; }, 8000);
   }
