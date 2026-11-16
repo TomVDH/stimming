@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-16T09:53:39Z
-updated_at: 2026-11-16T17:40:33Z
+updated_at: 2026-11-16T18:06:47Z
 ---
 
 Tom, 2026-11-16: "we are completely redoing the style and ux of the bars". He gave no brief and said: just dive in.
@@ -26,7 +26,8 @@ Question: which direction does the bar redo take?
 - [x] Standard (2026-11-16): Tom rejected Dock, Bare, Tuck and Askew as "sloppy" and gave the brief: logo and name top left; Settings, Info, Dev top right; toy controls in bottom bars; one reusable part set, one style, no gradients
 - [x] Standard: one part set (bar, button, icon button, segmented with a gliding thumb, picker, slider, sheet, key hints), drawn SVG icons, measured fold into one bar; Railgun added to the toy picker; ?dev shows Dev
 - [x] Standard checked at 1280, 375 x 812 and 812 x 375 on Galaxy, Pendulum, Rain and Railgun; clean console; detector shows advisories only (new bar colours and radii)
-- [ ] Tom judges Standard
+- [x] Standard round 2 (2026-11-16, Tom: none were graceful): rebuilt from the emil-design-eng, apple-design and microinteractions skills. Dark glass with a lit top edge and nested radii; the pick fill glides on a spring (response 0.34 s, damping 0.78) and stretches with speed; keyboard picks jump; press scales to 0.97; held actions fill left to right; sheets grow from their button, exit faster; tooltips with a warm hand-off; sound icon crossfades; bars rise in by movement only, so a stalled frame still shows them
+- [ ] Tom judges Standard round 2
 
 ## Notes
 

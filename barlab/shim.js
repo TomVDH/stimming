@@ -18,6 +18,45 @@ const X_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 
 const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.25V11.5"/><circle class="solid" cx="8" cy="4.9" r="0.9"/></svg>';
 const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>';
 const CHEV_SVG = '<svg class="b-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 10 8 6.5l3.5 3.5"/></svg>';
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+// A keyboard pick never animates; the last key press marks it.
+let keyAt = -1e9;
+addEventListener('keydown', () => { keyAt = performance.now(); }, true);
+addEventListener('pointerdown', () => { keyAt = -1e9; }, true);
+const byKey = () => performance.now() - keyAt < 400;
+
+// A spring carries the flash fill between options.
+// Response 0.34 s, damping 0.78: a short glide with a small settle.
+// The fill stretches with its speed; the frame loop stops at rest.
+function glide(el) {
+  const k = (2 * Math.PI / 0.34) ** 2, c = 4 * Math.PI * 0.78 / 0.34;
+  let x = 0, w = 0, vx = 0, vw = 0, tx = 0, tw = 0, raf = 0, last = 0, placed = false;
+  const draw = () => {
+    const extra = Math.min(Math.abs(vx) * 0.035, 22);
+    el.style.width = `${w + extra}px`;
+    el.style.transform = `translateX(${x - (vx < 0 ? extra : 0)}px)`;
+  };
+  const step = now => {
+    const dt = Math.min(0.032, (now - last) / 1000 || 0.016);
+    last = now;
+    vx += (k * (tx - x) - c * vx) * dt; x += vx * dt;
+    vw += (k * (tw - w) - c * vw) * dt; w += vw * dt;
+    const done = Math.abs(tx - x) < 0.3 && Math.abs(vx) < 4 && Math.abs(tw - w) < 0.3 && Math.abs(vw) < 4;
+    if (done) { x = tx; w = tw; vx = vw = 0; raf = 0; draw(); return; }
+    draw();
+    raf = requestAnimationFrame(step);
+  };
+  return (nx, nw) => {
+    if (nx === tx && nw === tw && placed) return;
+    tx = nx; tw = nw;
+    if (!placed || byKey() || REDUCED.matches) {
+      placed = true; x = tx; w = tw; vx = vw = 0;
+      cancelAnimationFrame(raf); raf = 0; draw();
+      return;
+    }
+    if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
+  };
+}
 // Askew gives each block its own tilt, as the wordmark does for its letters.
 const TILTS = [-2, 1.5, -1, 2.5, -1.5, 1, -2.5, 2];
 
@@ -81,13 +120,13 @@ function mount(id, spec, ui) {
     const thumb = h('i', 'b-thumb');
     thumb.setAttribute('aria-hidden', 'true');
     el.prepend(thumb);
+    const move = glide(thumb);
     syncers.push(() => {
       all.forEach(([b, o]) => b.setAttribute('aria-pressed', String(o.value === get())));
       // The thumb takes the picked button's box; a hidden group keeps its last box.
       const on = all.find(([, o]) => o.value === get())?.[0];
       if (!on || !on.offsetWidth) return;
-      el.style.setProperty('--tx', `${on.offsetLeft}px`);
-      el.style.setProperty('--tw', `${on.offsetWidth}px`);
+      move(on.offsetLeft, on.offsetWidth);
       el.classList.add('has-thumb');
     });
     return el;
@@ -108,14 +147,26 @@ function mount(id, spec, ui) {
   const popPart = (cls, title, anchor) => {
     const el = h('div', `b-pop ${cls}`);
     el.hidden = true;
+    let leave = 0;
     const x = btn('b-ico b-x', X_SVG, 'Close');
     el.append(box('b-pop-hd', text('span', '', title), x));
     const api = {
       el,
-      get isOpen() { return !el.hidden; },
+      get isOpen() { return !el.hidden && !el.classList.contains('is-leaving'); },
       open(on) {
         if (on && open && open !== api) open.open(false);
-        el.hidden = !on;
+        clearTimeout(leave);
+        el.classList.remove('is-leaving');
+        if (on) {
+          el.hidden = false;
+          // The sheet grows from its button.
+          const a = anchor.getBoundingClientRect(), r = el.getBoundingClientRect();
+          el.style.transformOrigin = `${a.left + a.width / 2 - r.left}px ${a.top + a.height / 2 - r.top}px`;
+        } else if (!el.hidden) {
+          // Exit runs faster than entry, then the sheet leaves the tree.
+          el.classList.add('is-leaving');
+          leave = setTimeout(() => { el.hidden = true; el.classList.remove('is-leaving'); }, REDUCED.matches ? 0 : 150);
+        }
         anchor.setAttribute('aria-expanded', String(on));
         if (on) open = api; else if (open === api) open = null;
         // An open sheet takes the strip's place.
@@ -123,7 +174,7 @@ function mount(id, spec, ui) {
       },
     };
     anchor.setAttribute('aria-expanded', 'false');
-    anchor.addEventListener('click', () => api.open(el.hidden));
+    anchor.addEventListener('click', () => api.open(!api.isOpen));
     x.addEventListener('click', () => { api.open(false); anchor.focus(); });
     return api;
   };
@@ -297,6 +348,27 @@ function mount(id, spec, ui) {
     layer.append(...[P.id, box('b-tr', P.snd), hints, box('b-drawer', tab, body)].filter(Boolean));
   };
 
+  // Icon buttons name themselves after a pause.
+  // Once one tip shows, its neighbours show at once.
+  const tips = barEl => {
+    let warm = 0;
+    barEl.querySelectorAll('.b-ico').forEach(b => {
+      const t = text('span', 'b-tip', b.getAttribute('aria-label') || '');
+      t.setAttribute('aria-hidden', 'true');
+      b.append(t);
+      b.addEventListener('pointerenter', e => {
+        if (e.pointerType !== 'mouse') return;
+        b.classList.toggle('tip-now', !!barEl.dataset.warm);
+        clearTimeout(warm);
+        warm = setTimeout(() => { barEl.dataset.warm = '1'; }, 500);
+      });
+      b.addEventListener('pointerleave', () => {
+        clearTimeout(warm);
+        warm = setTimeout(() => { delete barEl.dataset.warm; }, 300);
+      });
+    });
+  };
+
   // Standard: the name top left, system bar top right, play bars below.
   // Every bar is the same part: one surface, one height, one radius.
   const standard = P => {
@@ -305,6 +377,7 @@ function mount(id, spec, ui) {
       return el.children.length ? el : null;
     };
     const sys = bar('s-sys', P.snd, P.set, P.dev, P.info);
+    if (sys) tips(sys);
     const play = bar('s-play', P.seg, P.pick, P.acts);
     const tune = bar('s-tune', P.slider);
     layer.append(...[P.id, sys, hints, play, tune, P.pickPop?.el, P.setPop?.el, P.devPop?.el].filter(Boolean));

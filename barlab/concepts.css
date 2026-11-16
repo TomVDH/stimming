@@ -232,133 +232,190 @@
 /* The thumb exists in every segmented group; only Standard draws it. */
 .b-thumb { display: none; }
 [data-concept="standard"] {
-  --h: 34px; --bar-pad: 4px; --r-bar: 12px; --r-btn: 8px;
-  --surf: oklch(0.14 0.012 275 / 0.78);
-  --surf-solid: oklch(0.14 0.012 275 / 0.96);
-  --edge: oklch(0.94 0.008 275 / 0.1);
-  --soft: oklch(0.94 0.008 275 / 0.08);
-  --dim: oklch(0.94 0.008 275 / 0.78);
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em;
+  /* Sizes: a 36 px control in a 44 px bar; radii nest by the padding. */
+  --h: 36px; --bar-pad: 4px; --r-bar: 14px; --r-btn: 10px;
+  /* The material: dark glass, a lit top edge, a soft drop. */
+  --glass: oklch(0.17 0.013 275 / 0.6);
+  --glass-solid: oklch(0.15 0.012 275 / 0.97);
+  --rim: oklch(0.94 0.008 275 / 0.09);
+  --lip: oklch(0.94 0.008 275 / 0.14);
+  --wash: oklch(0.94 0.008 275 / 0.07);
+  --ink2: oklch(0.94 0.008 275 / 0.84);
+  --lift: 0 1px 0 var(--lip) inset, 0 10px 30px -8px oklch(0.05 0.01 275 / 0.55), 0 2px 6px oklch(0.05 0.01 275 / 0.25);
+  /* Curves from the design-engineering set. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.075em;
 }
 .bl-touch [data-concept="standard"] { --h: 40px; font-size: 12.5px; }
 @media (pointer: coarse) { [data-concept="standard"] { --h: 40px; font-size: 12.5px; } }
 
-/* The bar: the one container for every control group. */
-/* The blur keeps labels legible over bright scenes. */
+/* The bar: one container for every control group. */
 .s-bar {
   position: absolute; box-sizing: border-box; display: flex; align-items: center; gap: 2px;
   padding: var(--bar-pad); border-radius: var(--r-bar);
-  background: var(--surf); border: 1px solid var(--edge);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
-  box-shadow: 0 6px 20px oklch(0.05 0.01 275 / 0.35);
+  background: var(--glass); border: 1px solid var(--rim); box-shadow: var(--lift);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  transition: transform 0.5s var(--ease-drawer);
 }
-.s-sys { top: var(--pad); right: var(--pad); }
-.s-play { bottom: var(--pad); left: var(--pad); max-width: calc(100% - 2 * var(--pad)); }
-.s-tune { bottom: var(--pad); right: var(--pad); }
+/* The bars rise in once, a beat apart. */
+/* Only movement: a stalled frame still shows every control. */
+@starting-style { .s-bar { transform: translateY(8px); } }
+.s-sys { top: var(--pad); right: var(--pad); transition-delay: 0.04s; }
+@starting-style { .s-sys { transform: translateY(-8px); } }
+.s-play { bottom: var(--pad); left: var(--pad); max-width: calc(100% - 2 * var(--pad)); transition-delay: 0.1s; }
+.s-tune { bottom: var(--pad); right: var(--pad); transition-delay: 0.16s; }
 [data-concept="standard"] .b-id { height: calc(var(--h) + 2 * var(--bar-pad) + 2px); }
-/* A divider sits between groups inside one bar. */
-.s-play > :is(.b-seg, .b-pick) + .b-act, .s-play > :is(.b-seg, .b-pick) + * { margin-left: 5px; }
-.s-play > :is(.b-seg, .b-pick):not(:last-child)::after {
-  content: ""; position: absolute; right: -4px; top: 8px; bottom: 8px; width: 1px; background: var(--edge);
-}
+/* A hairline parts the choice from the actions. */
 .s-play > :is(.b-seg, .b-pick) { position: relative; }
+.s-play > :is(.b-seg, .b-pick):not(:last-child) { margin-right: 9px; }
+.s-play > :is(.b-seg, .b-pick):not(:last-child)::after {
+  content: ""; position: absolute; right: -6px; top: 9px; bottom: 9px; width: 1px; background: var(--rim);
+}
 
 /* The button: text, icon or both, in every bar and sheet. */
 [data-concept="standard"] .b-btn {
-  height: var(--h); padding: 0 12px; border-radius: var(--r-btn); color: var(--dim);
-  transition: color 0.18s var(--ease), background-color 0.18s var(--ease), scale 0.18s var(--ease);
+  height: var(--h); padding: 0 13px; border-radius: var(--r-btn); color: var(--ink2);
+  transition: color 0.15s ease, background-color 0.15s ease, transform 0.16s var(--ease-out);
 }
 [data-concept="standard"] .b-ico { width: var(--h); padding: 0; }
 [data-concept="standard"] .b-btn svg { width: 16px; height: 16px; stroke-width: 1.6; }
-@media (hover: hover) {
-  [data-concept="standard"] .b-btn:hover { color: var(--fg); background: var(--soft); }
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .b-btn:hover { color: var(--fg); background-color: var(--wash); }
 }
-[data-concept="standard"] .b-btn:active { scale: 0.96; }
-/* A pick, an open sheet and a held action share the flash fill. */
-[data-concept="standard"] :is(.b-btn[aria-expanded="true"], .b-btn.is-on, .b-opt[aria-pressed="true"]) { color: var(--bg); background: var(--fg); }
-[data-concept="standard"] .b-snd[aria-pressed="true"] { color: var(--fg); }
+/* Every press answers at once. */
+[data-concept="standard"] .b-btn:active { transform: scale(0.97); }
+[data-concept="standard"] :is(.b-btn[aria-expanded="true"], .b-opt[aria-pressed="true"]) { color: var(--bg); background-color: var(--fg); }
 [data-concept="standard"] .b-btn kbd {
-  font-size: 9.5px; font-weight: 600; padding: 2px 4px; border: 1px solid oklch(0.94 0.008 275 / 0.22);
-  border-radius: 4px; color: var(--muted); opacity: 1;
+  font-size: 9.5px; font-weight: 600; padding: 2px 4px; border: 1px solid oklch(0.94 0.008 275 / 0.2);
+  border-radius: 4px; color: var(--muted); opacity: 1; transition: color 0.15s ease, border-color 0.15s ease;
 }
-[data-concept="standard"] :is(.b-btn[aria-expanded="true"], .b-btn.is-on) kbd { color: inherit; border-color: currentColor; }
-/* The focus mark: a short bar under the label. */
+[data-concept="standard"] .b-btn[aria-expanded="true"] kbd { color: inherit; border-color: currentColor; }
+/* The focus mark: a short bar under the label, never a ring. */
 [data-concept="standard"] :is(.b-btn, a):focus-visible { box-shadow: none; color: var(--fg); }
 [data-concept="standard"] :is(.b-btn, a):focus-visible::after {
   content: ""; position: absolute; left: 50%; bottom: 4px; width: 14px; height: 2px; margin-left: -7px;
   border-radius: 1px; background: currentColor;
 }
-.b-chev { transition: rotate 0.22s var(--ease); }
+.b-chev { transition: rotate 0.2s var(--ease-out); }
 [aria-expanded="true"] > .b-chev { rotate: 180deg; }
 
-/* The segmented choice: the flash fill glides to the pick. */
+/* The sound icon crossfades; the waves come into focus. */
+[data-concept="standard"] .b-snd[aria-pressed] :is(.on, .off) { display: inline; transition: opacity 0.18s ease, filter 0.18s ease; }
+[data-concept="standard"] .b-snd[aria-pressed="true"] .off, [data-concept="standard"] .b-snd[aria-pressed="false"] .on { opacity: 0; filter: blur(1.5px); }
+[data-concept="standard"] .b-snd[aria-pressed="true"] { color: var(--fg); }
+
+/* A held action fills left to right while held, and snaps back. */
+[data-concept="standard"] .b-act::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
+  background: oklch(1 0 0); mix-blend-mode: difference;
+  clip-path: inset(0 100% 0 0 round var(--r-btn)); transition: clip-path 0.2s var(--ease-out);
+}
+[data-concept="standard"] .b-act.is-on::before { clip-path: inset(0 0 0 0 round var(--r-btn)); transition: clip-path 0.9s linear; }
+[data-concept="standard"] .b-act.is-on { color: var(--fg); }
+
+/* The segmented choice: the flash fill springs to the pick. */
 [data-concept="standard"] .b-seg { position: relative; border: 0; gap: 2px; isolation: isolate; }
-[data-concept="standard"] .b-seg .b-btn { height: var(--h); min-width: var(--h); padding: 0 12px; font-weight: 600; background: none; }
+[data-concept="standard"] .b-seg .b-btn { height: var(--h); min-width: var(--h); padding: 0 13px; background: none; }
 [data-concept="standard"] .b-seg .b-btn + .b-btn { border-left: 0; }
-[data-concept="standard"] .b-seg .b-btn[aria-pressed="true"] { color: var(--bg); }
-@media (hover: hover) { [data-concept="standard"] .b-seg .b-btn[aria-pressed="true"]:hover { background: none; } }
+/* The picked label turns dark at once, so it reads in any frame. */
+[data-concept="standard"] .b-seg .b-btn[aria-pressed="true"] { color: var(--bg); transition: transform 0.16s var(--ease-out); }
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .b-seg .b-btn[aria-pressed="true"]:hover { color: var(--bg); background: none; }
+}
+/* shim.js drives the thumb's width and position on a spring. */
 [data-concept="standard"] .b-seg.has-thumb .b-thumb {
   display: block; position: absolute; z-index: -1; left: 0; top: 0; height: 100%;
-  width: var(--tw); translate: var(--tx) 0; border-radius: var(--r-btn); background: var(--fg);
-  transition: translate 0.32s var(--ease), width 0.32s var(--ease);
+  border-radius: var(--r-btn); background: var(--fg); will-change: transform;
 }
-/* Before the thumb has a box, the picked button holds the fill. */
 [data-concept="standard"] .b-seg:not(.has-thumb) .b-btn[aria-pressed="true"] { background: var(--fg); }
 
-/* The slider: a word, then the track. No number. */
-[data-concept="standard"] .b-slider { height: var(--h); padding: 0 12px 0 10px; gap: 12px; color: var(--dim); font-weight: 600; }
+/* The slider: a word, then the track. It answers the grab. */
+[data-concept="standard"] .b-slider { height: var(--h); padding: 0 14px 0 11px; gap: 14px; color: var(--ink2); font-weight: 600; transition: color 0.15s ease; }
+[data-concept="standard"] .b-slider:is(:hover, :active, :focus-within) { color: var(--fg); }
 [data-concept="standard"] .b-slider input {
-  width: 128px; height: var(--h);
+  width: 132px; height: var(--h);
   background:
-    linear-gradient(var(--fg), var(--fg)) 0 50% / var(--v, 0%) 3px no-repeat,
-    linear-gradient(oklch(0.94 0.008 275 / 0.18), oklch(0.94 0.008 275 / 0.18)) 0 50% / 100% 3px no-repeat;
+    linear-gradient(var(--fg), var(--fg)) 0 50% / var(--v, 0%) 4px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.16), oklch(0.94 0.008 275 / 0.16)) 0 50% / 100% 4px no-repeat;
+  border-radius: 2px;
 }
 [data-concept="standard"] .b-slider input::-webkit-slider-thumb {
-  width: 14px; height: 14px; border-radius: 50%; background: var(--fg);
-  box-shadow: 0 0 0 3px var(--surf-solid); transition: scale 0.18s var(--ease);
+  width: 16px; height: 16px; border-radius: 50%; background: var(--fg);
+  box-shadow: 0 0 0 4px var(--glass-solid), 0 2px 6px oklch(0.05 0.01 275 / 0.5);
+  transition: transform 0.16s var(--ease-out);
 }
 [data-concept="standard"] .b-slider input::-moz-range-thumb {
-  width: 14px; height: 14px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 3px var(--surf-solid);
+  width: 16px; height: 16px; border-radius: 50%; background: var(--fg); border: 0;
+  box-shadow: 0 0 0 4px var(--glass-solid), 0 2px 6px oklch(0.05 0.01 275 / 0.5);
 }
-[data-concept="standard"] .b-slider:hover input::-webkit-slider-thumb,
-[data-concept="standard"] .b-slider input:active::-webkit-slider-thumb { scale: 1.2; }
-[data-concept="standard"] .b-slider:has(input:focus-visible) > span { color: var(--fg); text-decoration: underline 2px; text-underline-offset: 5px; }
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .b-slider input:hover::-webkit-slider-thumb { transform: scale(1.12); }
+}
+[data-concept="standard"] .b-slider input:active::-webkit-slider-thumb { transform: scale(1.25); }
+[data-concept="standard"] .b-slider:has(input:focus-visible) > span { text-decoration: underline 2px; text-underline-offset: 5px; }
 
-/* The sheet: the bar's surface, opened from its button. */
+/* The tooltip: names an icon button after a pause. */
+.b-tip { display: none; }
+[data-concept="standard"] .b-ico .b-tip {
+  display: block; position: absolute; top: calc(100% + 10px); left: 50%; z-index: 4; pointer-events: none;
+  padding: 6px 8px; border-radius: 7px; white-space: nowrap; font-size: 10.5px; color: var(--fg);
+  background: var(--glass-solid); border: 1px solid var(--rim);
+  opacity: 0; transform: translateX(-50%) translateY(-3px) scale(0.97); transform-origin: top center;
+  transition: opacity 0.12s var(--ease-out), transform 0.12s var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .b-ico:hover .b-tip { opacity: 1; transform: translateX(-50%); transition-delay: 0.5s; }
+  [data-concept="standard"] .b-ico.tip-now:hover .b-tip { transition-delay: 0s; transition-duration: 0s; }
+}
+[data-concept="standard"] .b-ico[aria-expanded="true"] .b-tip { display: none; }
+/* The rightmost tip keeps inside the stage. */
+[data-concept="standard"] .s-sys > .b-ico:last-child .b-tip { left: auto; right: 0; transform: translateY(-3px) scale(0.97); transform-origin: top right; }
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .s-sys > .b-ico:last-child:hover .b-tip { transform: none; }
+}
+
+/* The sheet: the bar's material, grown from its button. */
 [data-concept="standard"] .b-pop {
   width: min(300px, calc(100% - 2 * var(--pad))); padding: 0 0 4px;
-  background: var(--surf-solid); border: 1px solid var(--edge); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  box-shadow: 0 12px 32px oklch(0.05 0.01 275 / 0.5);
-  animation: s-open 0.24s var(--ease);
+  background: var(--glass-solid); border: 1px solid var(--rim); border-radius: 16px; box-shadow: var(--lift);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out), filter 0.2s var(--ease-out);
 }
-@keyframes s-open { from { opacity: 0; translate: 0 6px; scale: 0.98; } }
-[data-concept="standard"] .b-pop-hd { height: calc(var(--h) + 10px); padding: 0 5px 0 14px; border-bottom: 1px solid var(--edge); color: var(--muted); letter-spacing: 0.12em; }
-[data-concept="standard"] .b-pop--set { top: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 10px); right: var(--pad); transform-origin: top right; }
-[data-concept="standard"] .b-pop--pick { bottom: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 10px); left: var(--pad); transform-origin: bottom left; }
-[data-concept="standard"] .b-rows { gap: 4px; padding: 8px 10px 6px 14px; }
-[data-concept="standard"] .b-row { color: var(--dim); font-weight: 600; }
-[data-concept="standard"] .b-rows .b-seg { padding: 3px; border-radius: 10px; background: oklch(0.94 0.008 275 / 0.06); }
-[data-concept="standard"] .b-rows .b-seg .b-btn { height: calc(var(--h) - 6px); padding: 0 10px; }
+@starting-style { [data-concept="standard"] .b-pop { opacity: 0; transform: scale(0.96); filter: blur(4px); } }
+[data-concept="standard"] .b-pop.is-leaving {
+  opacity: 0; transform: scale(0.97); filter: blur(2px); pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, filter 0.15s ease;
+}
+[data-concept="standard"] .b-pop-hd { height: calc(var(--h) + 10px); padding: 0 5px 0 15px; border-bottom: 1px solid var(--rim); color: var(--muted); letter-spacing: 0.12em; }
+[data-concept="standard"] .b-pop--set { top: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 10px); right: var(--pad); }
+[data-concept="standard"] .b-pop--pick { bottom: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 10px); left: var(--pad); }
+[data-concept="standard"] .b-rows { gap: 4px; padding: 8px 10px 6px 15px; }
+[data-concept="standard"] .b-row { color: var(--ink2); font-weight: 600; }
+/* A choice in a sheet sits in a recessed well. */
+[data-concept="standard"] .b-rows .b-seg { padding: 3px; border-radius: 12px; background: oklch(0.05 0.01 275 / 0.35); box-shadow: inset 0 1px 2px oklch(0.05 0.01 275 / 0.4); }
+[data-concept="standard"] .b-rows .b-seg .b-btn { height: calc(var(--h) - 6px); padding: 0 11px; border-radius: 9px; }
+[data-concept="standard"] .b-rows .b-seg .b-thumb { border-radius: 9px; }
+[data-concept="standard"] .b-rows .b-seg.has-thumb .b-thumb { top: 3px; height: calc(100% - 6px); }
 [data-concept="standard"] .b-rows .b-slider { padding: 0; }
-[data-concept="standard"] .b-rows .b-slider input { width: 132px; }
-[data-concept="standard"] .b-edge { height: calc(var(--h) - 4px); border: 1px solid var(--edge); }
-[data-concept="standard"] .b-ft { padding: 8px 10px 6px; border-top: 1px solid var(--edge); }
+[data-concept="standard"] .b-edge { height: calc(var(--h) - 4px); border: 1px solid var(--rim); }
+[data-concept="standard"] .b-ft { padding: 8px 10px 6px; border-top: 1px solid var(--rim); }
 [data-concept="standard"] .b-grid { gap: 2px; padding: 6px; }
 [data-concept="standard"] .b-opt { justify-content: flex-start; }
-@media (hover: hover) {
-  [data-concept="standard"] .b-pop .b-btn:not([aria-pressed="true"]):hover { background: var(--soft); }
+@media (hover: hover) and (pointer: fine) {
+  [data-concept="standard"] .b-pop .b-btn:not([aria-pressed="true"]):hover { background-color: var(--wash); }
 }
 
-/* The key strip floats above the play bar, small and quiet. */
+/* The key strip floats above the play bar, quiet and small. */
 [data-concept="standard"] .b-hints {
-  bottom: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 12px); gap: 6px 14px; padding: 5px 10px; border-radius: 10px;
-  font-weight: 600; letter-spacing: 0.04em; color: var(--dim);
-  background: oklch(0.14 0.012 275 / 0.62); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  bottom: calc(var(--pad) + var(--h) + 2 * var(--bar-pad) + 12px); gap: 6px 14px; padding: 6px 11px; border-radius: 11px;
+  font-weight: 600; letter-spacing: 0.04em; color: var(--ink2);
+  background: oklch(0.17 0.013 275 / 0.5); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
 }
+[data-concept="standard"] .b-hints.is-faded { transform: translateX(-50%) translateY(4px); transition-duration: 0.15s; }
 [data-concept="standard"] .b-hints span { -webkit-text-stroke: 0; }
-[data-concept="standard"] .b-hints kbd { border-radius: 4px; border-color: oklch(0.94 0.008 275 / 0.2); background: var(--surf-solid); color: var(--fg); }
+[data-concept="standard"] .b-hints kbd { border-radius: 4px; border-color: oklch(0.94 0.008 275 / 0.2); background: var(--glass-solid); color: var(--fg); }
 
 /* Folded: the shell measured no room for two bars. */
 /* The choice becomes its picker; the slider moves to Settings. */
@@ -366,8 +423,20 @@
 [data-concept="standard"].is-narrow .b-narrow { display: inline-flex; }
 [data-concept="standard"].is-narrow .b-row--main { display: flex; }
 [data-concept="standard"].is-narrow .s-play { left: 50%; translate: -50% 0; width: max-content; }
-[data-concept="standard"].is-narrow .b-pop--pick { left: 50%; translate: -50% 0; transform-origin: bottom center; }
+[data-concept="standard"].is-narrow .b-pop--pick { left: 50%; translate: -50% 0; }
+
+/* A request for less transparency gets solid surfaces. */
+@media (prefers-reduced-transparency: reduce) {
+  [data-concept="standard"] { --glass: var(--glass-solid); }
+  [data-concept="standard"] :is(.s-bar, .b-pop, .b-hints) { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+/* Less motion: fades stay, movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  @starting-style { [data-concept="standard"] :is(.s-bar, .b-pop) { transform: none; filter: none; } }
+  [data-concept="standard"] .b-btn:active { transform: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .bl-ui *, .bl-ui *::before { transition: none !important; animation: none !important; }
+  .bl-ui *, .bl-ui *::before { animation: none !important; }
+  .bl-ui :not(.s-bar, .b-pop, .b-hints, .b-tip) { transition: none !important; }
 }
