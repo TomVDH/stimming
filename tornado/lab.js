@@ -164,6 +164,10 @@ float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) 
   float a = ang - ph.x - zz * 0.9 * 1.1 / (rb * gAng);
   vec3 c = vec3(cos(a) * rc, zz * 1.1, sin(a) * rc) + float(idx) * 3.17;
   float n = fbm(c, oct);
+  // Billows: round noise in the layer's own frame, turning with it, so the bands read as cloud, not hair.
+  float a0 = ang - ph.x, rr = x * R / uZs;
+  float nb = fbm(vec3(cos(a0) * rr, zz, sin(a0) * rr) * 1.6 + float(idx) * 5.1, 2);
+  n = mix(n, nb, 0.4);
   // Erosion: fine detail eats into the edges of each billow.
   return oct > 2 ? n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45 : n;
 }
@@ -203,7 +207,7 @@ float funnelD(vec3 p, out float u, int oct) {
     float n = sheathN(ang, h, x, R, rk, k + 1, oct);
     // Outer sheaths show only their densest noise, so the edge stays wispy.
     float cov = mix(0.42, 0.6, fk);
-    d += wk * smoothstep(cov, cov + 0.07, n) * mix(0.9, 0.35, fk);
+    d += wk * smoothstep(cov, cov + 0.14, n) * (0.6 + 0.4 * n) * mix(0.9, 0.35, fk);
   }
   // The tip thins as it narrows; the top runs into the base.
   // The top fades inside the collar, which carries it on up into the wall cloud.
@@ -214,6 +218,8 @@ float funnelD(vec3 p, out float u, int oct) {
 float funnelSig(float d, float R) { return d * 7.0 / max(R, 5.0); }
 // The wall cloud's radius in lab metres: the storm's wall, 2.1 storm km, at the storm's scale.
 float wallRadLab() { return 2115.0 / uKs; }
+// How wide the bell opens at its top: narrow over a rope, three quarters of the wall cloud over a big tornado.
+float bellTop() { return wallRadLab() * mix(0.3, 0.75, smoothstep(0.1, 0.8, uFk)); }
 // The collar: from the funnel's upper part the cloud flares out and up into the wall cloud,
 // like a trumpet's bell. Its edge tears with the outer sheath's spinning noise.
 // s returns how far up the collar the point is, 0 to 1; Rc its radius there.
@@ -221,16 +227,17 @@ float collarD(vec3 p, out float s, out float Rc) {
   float Lc = collarLen(), h0 = uH - Lc, h1 = uH + 140.0;
   s = (p.y - h0) / (h1 - h0);
   Rc = 1.0;
-  if (s < 0.0 || s > 1.0) return 0.0;
+  if (s < 0.0 || s > 1.2) return 0.0;
   vec2 q = p.xz - axisAt(p.y);
   float r = length(q), Rf = radiusAt(p.y);
-  Rc = mix(Rf * 1.1, max(wallRadLab() * 0.75, Rf * 1.2), pow(s, 1.8));
+  Rc = mix(Rf * 1.1, max(bellTop(), Rf * 1.2), pow(min(s, 1.0), 1.8));
   if (r > Rc * 1.5) return 0.0;
   float n = sheathN(atan(q.y, q.x), p.y, 1.0, Rc, 1.0, 5, 4);
   float edge = Rc * (1.0 + 0.45 * (n - 0.5));
   float d = smoothstep(edge, edge - Rc * 0.08, r);
   // It grows out of the funnel from below, with the noise in its body too.
-  return d * smoothstep(0.0, 0.35, s) * (0.55 + 0.6 * n);
+  // It grows out of the funnel from below and fades into the wall cloud at its top.
+  return d * smoothstep(0.0, 0.35, s) * (1.0 - smoothstep(0.85, 1.2, s)) * (0.55 + 0.6 * n);
 }
 // Henyey-Greenstein phase, scaled so that isotropic is 1.
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
@@ -247,11 +254,11 @@ void vol(vec3 p, out float d, out float w) {
     // The dust turns as one body: two crossfaded layers would double at this speed.
     vec2 phd = uPh[6];
     vec2 qd = mat2(cos(phd.x), sin(phd.x), -sin(phd.x), cos(phd.x)) * q;
-    vec3 cd = vec3(qd.x / uDs, h / uDs * 0.55 - phd.y, qd.y / uDs);
+    vec3 cd = vec3(qd.x / uDs, h / uDs * 0.9 - phd.y, qd.y / uDs);
     float nd = fbm(cd + 7.3, 5);
     // Erosion turns with the dust, and a tight threshold gives the billows edges.
     nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
-    float puff = smoothstep(0.42, 0.55, nd);
+    float puff = smoothstep(0.4, 0.6, nd);
     d = uDebris * smoothstep(Rd, Rd * 0.3, r * (0.7 + 0.6 * nd)) * (1.0 - smoothstep(uDustH * 0.25, uDustH * 1.4, h + (nd - 0.5) * uDustH * 1.2)) * puff * 2.0;
   }
   // Rain wrapped round a big tornado, in falling streaks.
@@ -429,7 +436,8 @@ float nearW(vec3 ps) {
 }
 // The near storm's density at a lab point, 0 to 1. ps and d return its storm point and distance.
 // It turns with the funnel's outer sheath round the axis, and holds still toward its edge.
-float nearCloud(vec3 p, out vec3 ps, out float d) {
+// deck returns 0 by the bell, where the shared junction colour rules, and 1 out on the storm's own light.
+float nearCloud(vec3 p, out vec3 ps, out float d, out float deck) {
   vec2 q = p.xz - topXZ();
   float k = 1.0 - smoothstep(NEAR_R * 0.25, NEAR_R * 0.65, length(q) * 0.001 * uKs);
   float a = uPh[5].x;
@@ -438,11 +446,15 @@ float nearCloud(vec3 p, out vec3 ps, out float d) {
   d = stormD(ps);
   // The bell's space belongs to the collar: the wall cloud starts at its outer surface.
   float Lc = collarLen(), sb = (p.y - (uH - Lc)) / (Lc + 140.0);
-  float Rb = mix(radiusAt(p.y) * 1.1, max(wallRadLab() * 0.75, radiusAt(p.y) * 1.2), pow(clamp(sb, 0.0, 1.0), 1.8));
-  // A wide, tall clearance: the wall cloud's rough underside must not hang in front of the bell.
-  float bell = sb > -0.15 ? smoothstep(Rb * 1.65, Rb * 1.1, length(p.xz - axisAt(p.y))) * smoothstep(1.5, 1.0, sb) : 0.0;
+  float Rb = mix(radiusAt(p.y) * 1.1, max(bellTop(), radiusAt(p.y) * 1.2), pow(clamp(sb, 0.0, 1.0), 1.8));
+  // The wall cloud gives way inside the bell and returns as the bell fades, so the two overlap.
+  float rp = length(p.xz - axisAt(p.y));
+  float bell = sb > -0.15 ? smoothstep(Rb * 1.25, Rb * 0.95, rp) * smoothstep(1.0, 0.75, sb) : 0.0;
+  // Near the bell the wall cloud's edge goes soft, so it blends instead of cutting across.
+  float soft = mix(0.035, 0.11, smoothstep(Rb * 2.2, Rb * 1.0, rp) * smoothstep(1.7, 0.6, sb));
+  deck = 1.0 - smoothstep(Rb * 2.6, Rb * 1.2, rp) * smoothstep(2.2, 1.0, sb);
   // A soft shell turns the distance into density.
-  return smoothstep(0.035, -0.035, d) * nearW(ps) * (1.0 - bell);
+  return smoothstep(soft, -soft, d) * nearW(ps) * (1.0 - bell);
 }
 // The storm's tone at a storm point, from its shape alone: cheap, for the funnel's top.
 vec3 cloudTone(vec3 ps) {
@@ -466,6 +478,22 @@ float cloudShade(vec3 p) {
     od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * (L + 400.0)))) * 300.0;
   }
   return od * 0.006;
+}
+// The storm's smooth tone runs lighter than its textured light; this matches their means.
+const float TONE_K = 0.8;
+// How far up the join a height is: 0 on the funnel, 1 at the bell's top in the deck.
+float topKAt(float h) { return smoothstep(uH - collarLen() * 1.15, uH + 70.0, h); }
+// The funnel's light at a point, without its own self-shade: for the join.
+vec3 funnelTone(vec3 p, float ph0, float ph1) {
+  float od = cloudShade(p), u = clamp(p.y / uH, 0.0, 1.0);
+  vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+  vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u);
+  return vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark) * (sunL * 0.6 + ambL * 0.8);
+}
+// The junction colour: the funnel's light low on the join, the storm's tone high on it.
+// The bell and the deck by the bell both use it, so their colours meet.
+vec3 junction(vec3 p, float ph0, float ph1) {
+  return mix(funnelTone(p, ph0, ph1), cloudTone(toStorm(p)) * TONE_K, topKAt(p.y) * 0.92);
 }
 vec3 groundCol(vec3 P, float t) {
   float n = fbm(vec3(P.x * 0.01, 0.0, P.z * 0.03), 3);
@@ -570,9 +598,9 @@ void main() {
         if (sc + sd + sw > 1e-6) {
           // Sunlight through the funnel, the dust and, near the top, the storm above.
           // Up the collar the tone turns to the storm's own.
-          float topK = smoothstep(uH - collarLen() * 1.2, uH + 140.0, p.y);
+          float topK = topKAt(p.y);
           float od = sunDepth(p, R) + cloudShade(p);
-          vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.25 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+          vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
           // Sky light falls off with depth into the funnel.
           float depth = max(0.0, 1.6 - r / R);
           vec3 ambL = uAmb * vec3(0.85, 0.95, 1.15) * (0.3 + 0.55 * u) * exp(-depth * 1.6);
@@ -580,9 +608,9 @@ void main() {
           ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
           vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
           alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-          vec3 fc3 = alb * (sunL * 0.7 + ambL * 0.85);
+          vec3 fc3 = alb * (sunL * 0.6 + ambL * 0.8);
           // Near the top the funnel takes the storm's own tone: it darkens up into the wall cloud.
-          if (topK > 0.0) fc3 = mix(fc3, cloudTone(toStorm(p)) * 1.15, topK * 0.75);
+          if (topK > 0.0) fc3 = mix(fc3, cloudTone(toStorm(p)) * TONE_K, topK * 0.92);
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.2, 0.22, 0.25) * (uAmb * 0.7 + uSunCol * exp(-od) * 0.05);
           float hzF = 1.0 - exp(-t / 30000.0);
@@ -593,14 +621,15 @@ void main() {
       if (inC) {
         vec3 ps;
         float dS;
-        float dn = uDbg > 3.5 ? 0.0 : nearCloud(p, ps, dS);
+        float deck;
+        float dn = uDbg > 3.5 ? 0.0 : nearCloud(p, ps, dS, deck);
         // Outside the cloud, step by its distance; inside, short steps.
         // A ray that skims the underside keeps a floor on its step, scaled by distance.
         float sC = dS > 0.035 ? max((dS - 0.035) * 1000.0 / uKs * 0.7, max(6.0, t * 0.003)) : clamp(t * 0.005, 6.0, 30.0);
         st = min(st, sC);
         if (dn > 0.003) {
-          // The backdrop's own light, so the two match where they meet.
-          vec3 ccl = stormLit(ps, dS);
+          // By the bell the deck takes the storm's smooth tone, the same the bell turns to; further out, its own light.
+          vec3 ccl = deck > 0.999 ? stormLit(ps, dS) : mix(cloudTone(toStorm(p)) * TONE_K, stormLit(ps, dS), deck);
           float hzS = (1.0 - exp(-t * 0.001 * uKs / 70.0)) * 0.8;
           float scl = dn * 0.01;
           sum += mix(ccl, skyH, hzS) * scl;

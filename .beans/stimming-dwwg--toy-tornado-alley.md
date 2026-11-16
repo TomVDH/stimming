@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:56:09Z
+updated_at: 2026-11-16T23:08:00Z
 parent: stimming-oh7b
 ---
 
@@ -81,3 +81,5 @@ Built; waits for the checkpoint with Tom.
 - Lab: storm and funnel merged (Tom: "merge them"), and a time-of-day control (Tom: "allow for a TOD setting in the lab"). The blockout storm hangs from the funnel's top in close framing (scaled from the shot, uKs). Round the tornado (2.8 storm km) the storm is density in the funnel's own march, turning with the outer sheath; the shell backdrop fades out there. The funnel takes the storm's shade (shadow rays to the base's height) and, near its top, its tone. Time 12:00 to 21:00 sets the sun's height, its colour by air mass and the sky light; Sun dir sets its bearing (0 behind, 180 backlit). Headless 20 to 60 fps; a performance pass is next.
 
 - Junction (Tom: "the smooth merge / connection between storm layer and the actual funnel is not quite there yet"): a collar (bell) now flares out of the funnel's top quarter up into the wall cloud, in the funnel's own volume and light, its edge torn by the outer sheath's noise; the funnel's top fades inside it; the wall cloud's underside is an upturned bowl, and clears a wide envelope round the bell so its rough underside no longer cuts across the funnel. ?dbg=3 hides the bell, ?dbg=4 the near storm. Headless 13 to 50 fps on a shared GPU; a performance pass is due.
+
+- Blend and refinement (Tom: "a gap between cloud deck and the funnel exists", "better refinement in the funnel across all F scales", "neatly colour blend from storm deck to top of bell to funnel"): the bell fades into the deck while the deck fades in over it (no void); the deck's edge softens near the bell; the bell's top width grows with F; one colour chain: the funnel turns to the storm's smooth tone up the bell (topKAt), and the deck by the bell takes that same tone before its own textured light (TONE_K matches their means). Funnel: round billows in each layer's own spinning frame (no more hair streaks), softer outer sheaths, rounder dust, less fill light.
