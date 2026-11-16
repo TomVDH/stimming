@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T22:15:15Z
+updated_at: 2026-11-16T22:26:20Z
 parent: stimming-oh7b
 ---
 
@@ -75,3 +75,5 @@ Built; waits for the checkpoint with Tom.
 - Fix (Tom: "the onion layers blend together and smoothen the lower the F scale is", "properly fix all"): detail now follows the screen: sheath gaps stay three pixels or more (gSp) and the noise thins round a funnel that is thin on screen (gAng); the camera moves in on thin funnels; features round the funnel keep the shape of features up it at any size; the helix leans by arc, not angle (wide funnels had sheared flat); the dust spins as one body with integrated phases (the crossfade doubled at F4 and F5); lighter history (0.55), default resolution 0.75. Headless 60 fps at F1, F3, F5.
 
 - Fix (Tom: "bottom of tornado looks weird and cut off with white"): the funnel ended in a flat, dense cap. It now tapers to a point over max(4 R, 80 m) at its lower edge, thins as it narrows, and tears along the wall's noise near the tip; the edge varies less once the condensation reaches the ground, where the tip sinks into its dust.
+
+- Lab storm (Tom: the blockout storm clouds were the better start; then "Lab, wide framing"): two rejected attempts (a Worley cloud slab, then the blockout scaled up close) were reverted unpushed. Now the lab carries the shot's blockout supercell (main.js shapes, plates, scud, light, gloom, rain curtain) at its true scale, seen from the shot's distance (8 km to the wall cloud, 50 mm; Distance knob multiplies). The wall cloud stands over the axis and lowers a little with F; the funnel hides behind the storm's first surface. F0 is storm only (no condensation, no dust); a funnel cloud lowers from F0.5 and reaches the ground near F2. The noise volume gains a Worley channel, used lightly in the scud.

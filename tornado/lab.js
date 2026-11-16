@@ -15,8 +15,8 @@ const TABLE = {
   flare: [6.0, 4.4, 3.0, 1.85, 1.3, 1.1],  // radius at the base over radius at the ground
   prof: [3.0, 2.3, 1.5, 1.15, 1.0, 0.9],  // where the flare starts: high is late, low is early
   vmax: [32, 45, 62, 82, 105, 130],       // peak wind, m/s
-  cond: [0.55, 0.8, 1, 1, 1, 1],           // how far the condensation reaches down
-  debris: [0.15, 0.35, 0.6, 0.85, 1, 1],
+  cond: [0, 0.55, 0.85, 1, 1, 1],          // how far the condensation reaches down: none at F0
+  debris: [0, 0.3, 0.55, 0.85, 1, 1],
   dustH: [40, 90, 160, 260, 380, 480],     // debris cloud height, m
   multi: [0, 0, 0, 0.5, 1, 1],             // satellite vortices
   rain: [0, 0, 0, 0.15, 0.55, 0.8],        // rain wrapped round the funnel
@@ -24,7 +24,7 @@ const TABLE = {
   lean: [430, 260, 120, 60, 25, 10],       // top offset, m
   sway: [90, 60, 35, 20, 10, 5],
 };
-const NAMES = ['rope', 'narrow', 'cone', 'wide cone', 'stovepipe', 'wedge'];
+const NAMES = ['storm cloud', 'funnel cloud', 'cone', 'wide cone', 'stovepipe', 'wedge'];
 // A smooth curve through the table (Catmull-Rom), held inside each step's two values so it never overshoots.
 const at = (k, f) => {
   const t = TABLE[k], i = Math.min(4, Math.floor(f)), u = clamp(f - i);
@@ -259,15 +259,6 @@ float sunDepth(vec3 p, float R) {
 }
 
 /* ---------- the world round it ---------- */
-// The base: a dark ceiling, lowered into a wall cloud round the tornado.
-float baseAt(vec2 xz) {
-  float r = length(xz - axisAt(uH));
-  float wallR = max(900.0, uR0 * 3.2);
-  float hb = uH + 220.0 - 220.0 * (1.0 - smoothstep(wallR * 0.6, wallR * 1.5, r));
-  float ang = atan(xz.y, xz.x) + uTime * 0.04 * (1.0 - smoothstep(wallR, wallR * 3.0, r));
-  hb += (fbm(vec3(cos(ang) * r, 0.0, sin(ang) * r) * 0.0012 + 2.0, 3) - 0.5) * 120.0;
-  return hb;
-}
 vec3 skyCol(vec3 rd) {
   // Under the base: a bright strip of far clear air at the horizon, dark above.
   float up = max(rd.y, 0.0);
@@ -275,22 +266,108 @@ vec3 skyCol(vec3 rd) {
   vec3 high = uAmb * vec3(0.12, 0.13, 0.15);
   return mix(hor, high, smoothstep(0.0, 0.08, up));
 }
-vec3 baseCol(vec3 P, vec3 rd) {
-  vec2 q = P.xz - axisAt(uH);
-  float r = length(q);
-  // The base turns round the tornado: slowly far out, faster in the wall cloud.
-  float ang = atan(q.y, q.x) + uTime * 0.05 * uSpin * (1.0 - smoothstep(600.0, 3000.0, r));
-  vec2 qr = r * vec2(cos(ang), sin(ang));
-  // Broad soft lumps; the fine octaves alias at this distance.
-  float n = fbm(vec3(qr.x, P.y * 2.0, qr.y) * 0.0006 + 3.0, 5);
-  float m = fbm(vec3(qr.x, 0.0, qr.y) * 0.0002 + 9.0, 2);
-  vec3 c = uAmb * vec3(0.16, 0.165, 0.17) * (0.35 + 1.3 * n * (0.6 + 0.8 * m));
-  // The low sun skims under the base and lights the lumps that face it.
-  c += uSunCol * vec3(0.06, 0.045, 0.032) * smoothstep(0.45, 0.75, n);
-  // The wall cloud hangs darker round the funnel.
-  float wallR = max(900.0, uR0 * 3.2);
-  c *= mix(0.55, 1.0, smoothstep(wallR * 0.5, wallR * 1.5, r));
-  return c;
+/* ---------- the storm: the shot's blockout supercell ---------- */
+// Lifted from tornado/main.js: the same shapes, plates, scud and light, in km.
+// Storm space is the shot's camera space; the wall cloud sits over the lab's axis.
+const vec2 TOWER = vec2(-4.3, -23.0);
+const vec2 WALL = vec2(-0.9, -8.0);
+const vec2 CORE = vec2(6.5, -19.0);
+// The base, in km: the wall cloud's underside sits at the funnel's top, uH.
+const float BASE = 1.4;
+const vec2 SHELF = vec2(1.0, -13.0);
+const vec2 SHELF_R = vec2(15.0, 9.0);
+const float STORM = 0.85;
+// The shot's noise names, on the lab's volume: one cell per unit.
+// N has four cells per unit; a quarter gives the shot's one cell per unit.
+float vn3(vec3 p) { return N(p * 0.25); }
+float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * vn3(p * 4.1 + 3.7); }
+float W(vec3 p) { return texture(tNoise, p * 0.0625).g; }
+float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+float stormShape(vec3 p) {
+  float g = STORM;
+  float top = mix(8.0, 12.5, g);
+  // The updraft tower leans downshear as it climbs.
+  vec2 q = p.xz - TOWER - vec2(0.28, -0.12) * (p.y - BASE);
+  float rT = mix(3.5, 7.0, g) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
+  float tower = max(length(q) - rT, max(BASE + 0.1 - p.y, p.y - top));
+  // The base: a broad flat shelf, its underside level.
+  vec2 b = (p.xz - SHELF) / (SHELF_R * mix(0.4, 1.0, g));
+  float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.6)) - 0.6);
+  // The anvil: flat on top, thin at its edge, and streaming off to the right.
+  vec3 a = p - vec3(TOWER.x + mix(2.0, 14.0, g), top - 0.5, TOWER.y - 2.0);
+  float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
+  // The overshooting top domes above the anvil, over the updraft.
+  vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
+  float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
+  // The wall cloud: a lowered block under the base; it hangs a little lower as F grows.
+  float wl = BASE - 0.2 - 0.12 * uFk;
+  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), abs(p.y - wl) - 0.35);
+  float d = smin(tower, shelf, 1.4);
+  d = smin(d, dome, 1.2);
+  d = smin(d, anvil, 2.2);
+  d = smin(d, wall, 0.6);
+  return d;
+}
+float stormD(vec3 p) {
+  float d = stormShape(p);
+  if (d > 2.5) return d;
+  // Lumpy towers, a smoother anvil.
+  float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
+  vec3 n = p * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
+  d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp;
+  // The base: stacked plates on its flank, turning round the updraft.
+  float flank = smoothstep(BASE, BASE + 0.3, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y));
+  float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
+  d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
+  // Fine lumps, for the near base.
+  d += (vn3(p * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y));
+  // Ragged scud hangs under the base, with Worley lumps in it.
+  float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y);
+  d += low * (vn3(p * 3.1 + vec3(uTime * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
+  return d - low * (W(p * 8.0) - 0.35) * 0.18;
+}
+// The colour of one storm sample.
+vec3 stormLit(vec3 p, float d) {
+  // A step toward the sun: thinner cloud there means this side is lit.
+  float ds = stormD(p + uSun * 0.9);
+  float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
+  // A step up: deeper cloud above means an underside, out of the sun.
+  float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0);
+  lit *= 1.0 - 0.9 * under;
+  float up = smoothstep(0.6, 9.0, p.y);
+  // The core: between the updraft and the rain, low down.
+  vec2 cc = mix(TOWER, CORE, 0.55);
+  float core = (1.0 - smoothstep(3.0, 9.0, length(p.xz - cc))) * (1.0 - smoothstep(3.0, 8.0, p.y));
+  vec3 amb = uAmb * mix(0.08, 0.85, up) * (1.0 - 0.7 * under);
+  // The lower flank stays dark: the storm's own bulk shades it.
+  vec3 c = uSunCol * lit * lit * mix(0.14, 0.8, up * up) + amb;
+  // The core goes black-green behind its rain.
+  return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
+}
+// Marches the storm from ro, in km. Returns colour and cover; tHit is the first hit in km.
+vec4 storm(vec3 ro, vec3 rd, out float tHit) {
+  float t = 0.05, T = 1.0;
+  vec3 acc = vec3(0.0);
+  tHit = 120.0;
+  for (int i = 0; i < 120; i++) {
+    vec3 p = ro + rd * t;
+    if (p.y > 16.0 || (rd.y < 0.0 && p.y < -0.5) || t > 110.0 || T < 0.03) break;
+    float d = stormD(p);
+    // The soft edge and the inner step grow with distance: crisp near, smooth far.
+    float soft = max(0.025, t * 0.005);
+    if (d < soft) {
+      if (tHit > 119.0) tHit = t;
+      float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8;
+      acc += T * a * stormLit(p, d);
+      T *= 1.0 - a;
+      t += 0.03 + 0.006 * t;
+    } else t += d * 0.75 + 0.01 * t;
+  }
+  return vec4(acc, 1.0 - T);
+}
+// A ray's length inside an upright cylinder at c, in storm km; x is where it enters.
+vec2 stormCyl(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
+  return cylinder(ro - vec3(c.x, 0.0, c.y), rd, r, y0, y1);
 }
 vec3 groundCol(vec3 P, float t) {
   float n = fbm(vec3(P.x * 0.01, 0.0, P.z * 0.03), 3);
@@ -316,12 +393,25 @@ void main() {
     bg = groundCol(P, tMax);
     bg = mix(bg, skyCol(vec3(rd.x, 0.0, rd.z)), 1.0 - exp(-tMax / 14000.0));
   } else {
-    // The ceiling: refine the plane hit on the base height field.
-    float t = (uH + 160.0 - ro.y) / max(rd.y, 1e-4);
-    for (int i = 0; i < 4; i++) t = (baseAt((ro + rd * t).xz) - ro.y) / max(rd.y, 1e-4);
-    tMax = t;
-    vec3 P = ro + rd * t;
-    bg = mix(baseCol(P, rd), skyCol(rd), 1.0 - exp(-t / 16000.0));
+    // The blockout storm; the funnel hides behind its first surface.
+    // The eye in storm space: the lab's axis stands under the wall cloud, at its true scale.
+    vec3 rk = vec3(WALL.x, ro.y * 0.001, WALL.y + ro.z * 0.001);
+    bg = skyCol(rd);
+    // The sky dims round the storm: its shadow and its outflow haze.
+    float near = dot(rd, normalize(vec3(SHELF.x, 4.0, SHELF.y) - rk));
+    bg *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
+    float tHit;
+    vec4 st = storm(rk, rd, tHit);
+    float hz = 1.0 - exp(-tHit / 70.0);
+    bg = bg * (1.0 - st.a) + mix(st.rgb, skyCol(vec3(rd.x, 0.0, rd.z)) * st.a, hz * 0.8);
+    // Under the base: the gloom, and the rain curtain hanging out of the core.
+    vec2 gl = stormCyl(rk, rd, SHELF, SHELF_R.y * mix(0.4, 0.95, STORM), 0.0, BASE + 0.2);
+    vec2 rn = stormCyl(rk, rd, CORE, mix(1.3, 4.6, STORM), 0.0, BASE + 0.4);
+    vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
+    bg = mix(bg, gloom, 1.0 - exp(-gl.y * gl.y * 0.003 * STORM));
+    float streak = 0.75 + 0.25 * N(vec3(atan(rd.x, -rd.z) * 60.0, 0.5, 0.0));
+    bg = mix(bg, gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01, 1.0 - exp(-rn.y * rn.y * 0.05 * STORM * streak));
+    tMax = tHit * 1000.0;
   }
   // The tornado: one volume march through the sheaths, the core, the dust and the rain.
   float Rb = uR0 * max(uFlare * 2.0, 2.6) + uLean + uSway * 2.0 + 140.0;
@@ -403,7 +493,7 @@ void main() {
 }`;
 
 /* ---------- the noise volume ---------- */
-// A 64 cube of value noise that tiles, smoothed twice, so trilinear lookups read as soft noise.
+// A 64 cube that tiles. Red: value noise, smoothed twice, so trilinear lookups read as soft noise.
 function noiseVolume(gl) {
   const S = 64, n = S * S * S;
   let a = new Float32Array(n), b = new Float32Array(n);
@@ -420,11 +510,27 @@ function noiseVolume(gl) {
   // Stretch the smoothed values back to the full range.
   let lo = 1, hi = 0;
   for (let i = 0; i < n; i++) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); }
-  const bytes = new Uint8Array(n);
-  for (let i = 0; i < n; i++) bytes[i] = Math.round(255 * (a[i] - lo) / (hi - lo));
+  // Green: tiling Worley cells, eight voxels wide, one seed each; 1 at a seed, 0 far from all.
+  const G = 8, C = S / G, seeds = new Float32Array(C * C * C * 3);
+  for (let i = 0; i < C * C * C * 3; i++) { seed = (seed * 1664525 + 1013904223) >>> 0; seeds[i] = seed / 4294967296; }
+  const bytes = new Uint8Array(n * 2);
+  for (let z = 0; z < S; z++) for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const cx = Math.floor(x / G), cy = Math.floor(y / G), cz = Math.floor(z / G);
+    let best = 1e9;
+    for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx, ny = cy + dy, nz = cz + dz;
+      const k = ((((nz % C) + C) % C) * C + (((ny % C) + C) % C)) * C + (((nx % C) + C) % C);
+      const px = (nx + seeds[k * 3]) * G - x, py = (ny + seeds[k * 3 + 1]) * G - y, pz = (nz + seeds[k * 3 + 2]) * G - z;
+      best = Math.min(best, px * px + py * py + pz * pz);
+    }
+    const i = idx(x, y, z);
+    bytes[i * 2] = Math.round(255 * (a[i] - lo) / (hi - lo));
+    bytes[i * 2 + 1] = Math.round(255 * Math.max(0, 1 - Math.sqrt(best) / (G * 0.95)));
+  }
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_3D, tex);
-  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, S, S, S, 0, gl.RED, gl.UNSIGNED_BYTE, bytes);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, S, S, S, 0, gl.RG, gl.UNSIGNED_BYTE, bytes);
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.REPEAT], [gl.TEXTURE_WRAP_R, gl.REPEAT]]) gl.texParameteri(gl.TEXTURE_3D, k, v);
   return tex;
 }
@@ -523,9 +629,8 @@ function draw(now) {
   set(sc, 'uFoc', foc);
   set(sc, 'uHz', 0.381966);
   // The distance follows the lens: the base's edge sits near the top of the frame.
-  // The camera moves in on thin funnels; the Distance knob multiplies on top.
-  const frameK = 0.5 + 0.5 * Math.min(1, Math.max(0, fk / 3.5)) ** 1.5;
-  set(sc, 'uDist', (850 + 160) * foc / 0.47 * K.dist() * frameK);
+  // Wide framing: the shot's own distance, 8 km to the wall cloud; the Distance knob multiplies.
+  set(sc, 'uDist', 8000 * K.dist());
   // A light history: enough to calm the march's grain, too little to smear the spin.
   set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55);
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
