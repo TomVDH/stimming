@@ -70,6 +70,11 @@ await ctx.addInitScript(() => {
 });
 
 const page = await ctx.newPage();
+// DELAY="<glob>=<ms>" holds one request back, so a slow file can be shown.
+if (process.env.DELAY) {
+  const [glob, ms] = process.env.DELAY.split('=');
+  await page.route(glob, async route => { await new Promise(r => setTimeout(r, +ms)); await route.continue(); });
+}
 const cdp = await ctx.newCDPSession(page);
 if (NET) { await cdp.send('Network.enable'); await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: NET[0], downloadThroughput: NET[1], uploadThroughput: NET[2] }); }
 if (CPU > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU });

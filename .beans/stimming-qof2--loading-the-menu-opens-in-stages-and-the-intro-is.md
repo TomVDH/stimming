@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:02:02Z
-updated_at: 2026-11-16T19:23:29Z
+updated_at: 2026-11-16T19:29:43Z
 ---
 
 Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has a preloader before opening up -- spawn a subsession where we will make the intro flash parts the preloader as well -- we want graceful indicators of loading or chunked/staggered loading (for speed and stability) should an app need to load for longer".
@@ -14,8 +14,8 @@ Tom (2026-11-16): "ensure the main page either loads gracefully, chunked or has 
 
 - [x] Measure the menu and three heavy toys, cold and warm
 - [x] Menu: pick the approach from the numbers and build it
-- [ ] Intro: one progress and ready API in shared/intro.js
-- [ ] Shell: a default for every toy
+- [x] Intro: one progress and ready API in shared/intro.js
+- [x] Shell: a default for every toy
 - [ ] Real progress in three heavy toys
 - [ ] Reduced motion, 375 x 812, clean console
 - [ ] Clips and stills in docs/qa/loading/
