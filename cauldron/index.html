@@ -198,6 +198,8 @@ const ui = initPage({ id: 'cauldron', bar: {
     // How hard the heat stirs the surface: shiver and boil.
     { type: 'slider', id: 'boil', label: 'Boil', min: 0, max: 3, step: 0.01, value: 1 },
     { type: 'slider', id: 'soupGlow', label: 'Soup glow', min: 0, max: 3, step: 0.01, value: 1 },
+    // Skin look: 0 is today's skin, 1 a yellowed matte layer with torn edges.
+    { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -1257,6 +1259,8 @@ uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uC
 // The boil's plumes in world units, with their heat.
 uniform vec4 uPlumeS[4];
 uniform float uGlowK;
+// 0 keeps the skin close to the soup; 1 makes it its own layer.
+uniform float uSkinK;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
 uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
@@ -1519,15 +1523,15 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   float relief = mix(0.1, 1.0, smoothstep(0.05, 0.5, ax.a));
   n = normalize(n - (vec3(wx, 0.0, wz) * 0.05 + vec3(lx, 0.0, lz) * (0.03 + 0.05 * T)) * relief);
   // The skin wrinkles as the soup under it moves.
-  float skin = smoothstep(0.15, 0.6, ax.b);
+  float skin = smoothstep(mix(0.15, 0.3, uSkinK), mix(0.6, 0.42, uSkinK), ax.b);
   // A raft's torn edge stands up as a low lip.
   float sx = texture(uAux, uv + vec2(e2, 0.0)).b - texture(uAux, uv - vec2(e2, 0.0)).b;
   float sz = texture(uAux, uv + vec2(0.0, e2)).b - texture(uAux, uv - vec2(0.0, e2)).b;
-  n = normalize(n - vec3(sx, 0.0, sz) * 0.15);
+  n = normalize(n - vec3(sx, 0.0, sz) * mix(0.15, 0.5, uSkinK));
   if (skin > 0.01) {
     vec2 wq = p.xz * 38.0;
     float w0 = noise2(wq), wxk = noise2(wq + vec2(0.3, 0.0)) - w0, wzk = noise2(wq + vec2(0.0, 0.3)) - w0;
-    n = normalize(n - vec3(wxk, 0.0, wzk) * 0.5 * skin);
+    n = normalize(n - vec3(wxk, 0.0, wzk) * mix(0.5, 0.9, uSkinK) * skin);
   }
   vec3 v = -rd;
   float nv = max(dot(n, v), 0.0);
@@ -1582,12 +1586,16 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   if (uFire > 0.05) body += risers(p, rr, sig, min(hot * uFire, 1.0) * 0.6);
   // A set skin is paler and duller than the broth under it.
   body = mix(body, body * 1.18 + alb * 0.03, skin * 0.6);
+  // As its own layer, the skin is a yellowed, matte film lit from above.
+  vec3 skinC = mix(alb, lch(0.86, 0.07, 88.0), 0.55);
+  vec3 skinB = skinC * (uKeyCol * 0.55 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.85, 0.65) * 0.38 + skyAmb(n) * 2.0);
+  body = mix(body, skinB, skin * 0.9 * uSkinK);
   vec3 col = body * (1.0 - F);
   // Three films, three roughnesses: glassy fat, wet broth, a matte skin.
   float fat = smoothstep(0.3, 0.42, ax.g);
   float rough = mix(mix(0.045, 0.09, T) * (1.0 - 0.45 * fat), 0.34, skin * (1.0 - fat));
   // The gloss reads a touch stronger than true Fresnel, so the surface looks wet.
-  col += env(reflect(rd, n), rough) * (F + 0.025) * (1.0 - 0.5 * skin);
+  col += env(reflect(rd, n), rough) * (F + 0.025) * (1.0 - mix(0.5, 0.85, uSkinK) * skin);
   // Fat floats in golden, glassy pools; thin oil shows a faint rainbow at a glance.
   vec3 film = 0.5 + 0.5 * cos(6.2832 * (ax.g * 2.2 + (1.0 - nv) * 1.4) + vec3(0.0, 2.1, 4.2));
   col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
@@ -3456,6 +3464,7 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uExt'), FE);
   gl.uniform1f(sceneP.u('uSoupK'), 0.75 + 0.35 * fire);
   gl.uniform1f(sceneP.u('uClear'), devV('clarity', 1));
+  gl.uniform1f(sceneP.u('uSkinK'), devV('skinLook', 0));
   gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
   plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
   gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
