@@ -23,8 +23,11 @@ The joy is the heavy, slow machine that does what you ask, under a real sky.
 | The stars | A real catalog: HYG (Hipparcos, Yale, Gliese). The download needs Tom's yes with file and size. |
 | The eyepiece | Approved as proposed: the way in, the round view, the sparse data, the hand (see "Inside the telescope") |
 | The build | Approach A: TypeScript and three.js, the Railgun way |
-| The sky's time | Tonight's real sky: the real date and sidereal time, always drawn as night. At 14:00 you see the stars that are over the hill now. |
+| The sky's time | Tonight's real sky: the real date and sidereal time, drawn as night after the opening. At 14:00 you see the stars that are over the hill now. |
+| The opening | "We will start from a nice cinematic dusk and will slowly go into the night before play becomes possible". The approved reading is in "The opening: dusk into night". |
+| The far view | "we want faraway mountains -- distance haze -- clouds (railgun raymarched) in the distance -- then we will trial the first versions of the telescope ready cut etc etc -- we'll focus on getting all of this sorted before the actual telescope". The approved reading is in "The far view". |
 | The moon | None. A dark, moonless sky. |
+| The scene (blockout review) | "we want woods and a view of the complex around it". The approved reading is in "The outside view": woods on the hill, a complex of three domes, a stone building, a roll-off shed and a road; all three domes answer the laser. |
 
 ## Calls made by the designer
 
@@ -53,7 +56,7 @@ Tom can change any of these.
 
 - The moon, the planets, satellites or deep-sky objects.
 - Constellation lines, star labels on the sky, a search box. This is not a planetarium app.
-- Daytime. The toy is always night.
+- Daytime. The toy opens at dusk, then stays night.
 
 ## Anti-goals
 
@@ -77,22 +80,71 @@ Tom picked A: the 3D machine needs three.js, and the look comes from Railgun in 
 ## The outside view
 
 ```
-  ·        ·    ·         ·      ·        ·   ·        ·
-     ·        ·      ·        ·       ·  ✦     ·    ·
-  ·     ·        ·       ·        ·       ╲        ·
-      ·      ·       ·      ·      ·       ╲  laser    ·
-  ·      ·       ·      ·       ·      ·    ╲     ·
-  ░░░░░░░░░░░░░░░░░░░░░ haze ░░░░░░░░░░░░░░░░╲░░░░░░░░░░░░
-                                        ▁▄▆██▆▄▁
-  ▁▁▁▁▂▂▂▃▃▃▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▌▐█▄▄▄▄▃▃▂▂▁▁
-  ████████████████████ hill ████████████████████████████
+   ·    ·        ·     ·       ·    ✦      ·      ·     ·
+ ·   ·      ·       ·     ·      ·    ╲   ·    ·      ·
+      ·   ·     ·      ·      ·        ╲laser    ·   ·
+ ░░░░░░░░░░░░░░░░░░░░░ haze ░░░░░░░░░░░░╲░░░░░░░░░░░░░░░
+                         ▄▄    ▃▃    ▅██▅      ▂▂
+                ▲▲▲▲▲▲ ▐██▌ ▐▀▀▀▀▀▀▀▌▐████▌ ▐▀▀▌ ▲▲▲▲▲▲▲
+          ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+     ▲▲▲▲▲▲▲▲▲▲▲▲▲▲ woods ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 ```
 
-- **The shot.** Low, wide and locked off. The dome is small on the ridge, at about one third from the right. The sky fills about three quarters of the frame. A pointer move leans the lens a little, as in Railgun.
-- **The observatory.** A white dome on a stone drum, a warm lit door, a dark slit, the steel tube out of it. The icon (A of `icons/spike-observatory-1.html`) sets the shapes.
+- **The shot.** From a nearby rise, a little above the treetops, about 300 m from the complex. Locked off. The sky fills the upper 60% of the frame. A pointer move leans the lens a little, as in Railgun.
+- **The woods.** Dark conifer woods cover the hill. A clearing at the top holds the complex. A gravel road turns up through the woods to it.
+- **The complex.** The main dome (the big refractor; the laser comes out of it), two smaller domes, a long low stone building with a few lit windows, and a shed with a roll-off roof.
+- **The domes.** A white dome on a stone drum, a warm lit door, a dark slit, the steel tube out of it. The icon (A of `icons/spike-observatory-1.html`) sets the shapes.
+- **All three domes answer.** The two small domes turn to the same star a few seconds after the main dome, each at its own slow speed. Each stands at a different angle to the camera, so a slit faces the viewer for most aims.
 - **The laser.** A thin green beam from the dome top to the aim point. The haze shows it, so it looks solid near the dome and fades with height.
 - **The sky.** Tonight's real sky at 51° N, from the catalog, with no moon. It turns at sidereal speed. Railgun's haze and grade sit over it.
 - **Fast time.** The Time slider runs the sky faster. Above a set speed, the stars draw trails with the accumulate and decay pass from `trails/index.html`, ported into the three.js chain.
+
+## The opening: dusk into night
+
+Tom, 2026-11-17: "We will start from a nice cinematic dusk and will slowly go into the night before play becomes possible". Tom approved this reading ("Go"):
+
+1. **Start.** The page opens at dusk, just after sunset, in the same locked wide shot. The west is still warm; the sky runs from deep blue to slate. The domes, the drum and the treetops catch the last light.
+2. **Into the night.** About 45 s. The sky darkens to the night look of Task 7. The stars come out by magnitude, brightest first. The haze cools. The complex lights come on one by one as it gets dark.
+3. **Play.** The laser and picks stay off until full night. Then the laser comes on and the toy plays.
+4. **The sky stays real.** The light comes from tonight's real sunset direction at 51° N. The sky clock runs fast through the opening and eases to speed 1 at full night, so it ends on the real sky of now. Its speed stays under the trail speed.
+5. **Defaults (designer's calls, approved).** It plays on every visit. A tap or Esc skips to night in a short ease. Reduced motion opens at night. Sound stays muted.
+
+## The far view
+
+Tom, 2026-11-17: "we want faraway mountains -- distance haze -- clouds (railgun raymarched) in the distance -- then we will trial the first versions of the telescope ready cut etc etc -- we'll focus on getting all of this sorted before the actual telescope". Tom approved this reading ("Yes, go"):
+
+1. **Far mountains.** Two or three ridgelines on the southern horizon, about 10 to 40 km away, 1 to 3° above the horizon. They replace the hard horizon line. At dusk they are warm silhouettes toward the west; at night, dark shapes on the sky glow.
+2. **Distance haze.** Each ridge further back fades more into the sky. The valley haze runs out to the mountains.
+3. **Distant clouds.** Railgun's raymarched clouds, copied, as a low bank above the far ridges only. The sky over the hill stays clear for the stars. The clouds take the sunset at dusk and go dark at night.
+4. **A live trial of the pick sequence.** Tom plays the cuts in the browser.
+5. **Order.** One change at a time, each shown to Tom: mountains, haze, clouds, then the trial. The outside view, fast time (Task 8) included, is done before the inside of the telescope (Task 9).
+
+## Detail and trees
+
+Tom, 2026-11-17: "lets also up detail on the complex, telescope and the hill it sits on -- can we get some cheap but nice looking trees we can instance?" Tom then supplied the tree model: "Pine Tree - PS1 Low Poly" by Wersaus33 (Sketchfab), CC BY 4.0, a 124 KB GLB of about 1,180 triangles in alpha-cut branch cards with one 23 KB PNG.
+
+Four changes, one at a time, each shown to Tom:
+
+1. **Trees.** The woods use Tom's pine. Near trees (the clearing edge and what the close cuts see) are the real mesh, instanced. The rest are impostors baked from the same model at load: crossed cards, a few triangles each. The texture filters smoothly (no PS1 pixel crunch) to sit in the Villeneuve look. The woods keep the starlit tops, the dark bases, the haze layers and the per-tree variation. Credit in `CREDITS.md`.
+2. **The hill.** Uneven ground, rock outcrops, grass and bare earth, a gravel path from the road to the buildings, a road edge.
+3. **The complex.** Roof edge, window frames, a door canopy and a chimney on the building; panel seams and a catwalk rail on the domes; stone courses on the drums; rails on the roll-off shed; a fence along the road.
+4. **The telescope.** A real mount, a counterweight, a dew shield and a finder scope.
+
+## The pick sequence and the lights
+
+Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
+
+1. **At rest.** On load, the main dome's shut slit faces the camera.
+2. **On a pick: a cut sequence.** About 6 to 8 s, 3 or 4 cuts (about 9.5 s with the lens cut), each a close-up on a long zoom lens: tight, shallow depth, slow, clean.
+   1. The shutter starts to slide: tight on the slit edge.
+   2. The shutter opens further: a wider close-up of the whole slit.
+   3. The telescope rolls through the open slit, against the sky.
+   4. Optional: the dome's ring gear or rail turning.
+   5. The lens (Tom, 2026-11-17: "the final cut of the sequence is a close up of the lens of the telescope with starry reflections on the glass / mirror itself -- this will be filmic as fuck"). About 2 s, the last cut: tight on the objective glass of a refractor, very shallow focus, a slow push in. Tonight's real stars reflect in the glass, slightly curved, the target star brightest near the centre. The slit edge crosses the reflection as a dark band. A faint green and magenta coating sheen moves as the tube tilts. The tube settles onto the star, the reflections drift and stop, then the cut goes back wide. Reduced motion: a still frame inside the crossfade. Approved ("Yes, queue it").
+3. **Back to the wide shot.** The domes turn to the star; the tube hunts for it.
+4. **The lights.** While the telescope hunts, the complex lights dim (windows, door lamps, road lamps). When it locks on and the survey starts, they go off. "Survey" is tracking and the time inside the telescope. Back to aim: the lights come up again, slowly.
+
+Blockout v2 (woods, clearing, three domes, building, shed, road, the camera on the rise) is approved.
 
 ## The machine
 
