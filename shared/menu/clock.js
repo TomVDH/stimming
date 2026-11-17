@@ -132,9 +132,28 @@ function start() {
   const tile = node => /** @type {Element | null} */ (node)?.closest?.('main > .shelf > li') ?? null;
   // The toys take no hover and no focus while the intro plays (Tom); `shy` holds them.
   let shy = false;
+  // A touch has no hover. The first tap on a toy shows it; a second tap opens it.
+  // The tap gives the toy focus, so the focus path below shows it and plays its icon.
+  let poke = '', before = null;
+  addEventListener('pointerdown', e => {
+    poke = e.pointerType;
+    // Some browsers focus a link on the tap itself; the focus from before the tap counts.
+    before = document.activeElement;
+    // A tap away from the toys puts the toy in hand down.
+    const held = tile(document.activeElement);
+    if (poke === 'touch' && held && !tile(e.target)) /** @type {HTMLElement} */ (document.activeElement).blur();
+  }, true);
+  shelf.addEventListener('click', e => {
+    const li = tile(e.target);
+    if (!li || poke !== 'touch') return;
+    const link = /** @type {HTMLElement} */ (li.querySelector('a.toy'));
+    if (before === link) return;
+    e.preventDefault();
+    link.focus({ preventScroll: true });
+  });
   shelf.addEventListener('pointerover', e => {
     const li = tile(e.target);
-    if (!li || shy) return;
+    if (!li || shy || e.pointerType === 'touch') return;
     const fresh = !face.hasAttribute('data-live');
     // The wedge starts at the toy, so it does not sweep in from afar.
     if (fresh) aim(hour(li), true);
@@ -148,11 +167,12 @@ function start() {
     const r = face.getBoundingClientRect();
     aim(Math.atan2(e.clientX - (r.left + r.width / 2), (r.top + r.height / 2) - e.clientY) * 180 / Math.PI);
   });
-  shelf.addEventListener('pointerout', e => { if (!tile(e.relatedTarget)) rest(); });
+  shelf.addEventListener('pointerout', e => { if (e.pointerType !== 'touch' && !tile(e.relatedTarget)) rest(); });
   shelf.addEventListener('focusin', e => {
     const li = tile(e.target);
     if (!li || shy) return;
-    aim(hour(li));
+    // The wedge starts at the toy when the middle was empty.
+    aim(hour(li), !face.hasAttribute('data-live'));
     live(true);
     show(li);
   });
