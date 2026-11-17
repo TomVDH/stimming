@@ -796,6 +796,56 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
     put(hazed(col, toWorld(normalize(vec3(s, -uFoc))), zp), al, zp);
   }
 }
+// The water trail: in rain, the spray hangs in the air where the wheels threw it.
+// It is a soft tube from the rear back along the path: it climbs, widens, drifts downwind and thins.
+// Eight steps march the ray through the tube, so it reads from any side, end-on too.
+// rd is the pixel's own ray.
+void vTrail(vec3 rd, vec3 C, vec3 f, int kind, float spd, float age, float seed, float brake) {
+  float wet = uRain * smoothstep(5.0, 20.0, spd);
+  if (wet <= 0.0) return;
+  // The spray hangs about 1.6 s; a vehicle that has just set off has a shorter trail.
+  float La = spd * min(1.6, age);
+  if (La < 1.0) return;
+  vec3 eye = vec3(0.0, CAMH, 0.0), A = C - f * (-vRear(kind) + 0.3) + vec3(0.0, 0.45, 0.0);
+  vec3 ab = -f * La + vec3(0.0, 1.4, 0.0) + vec3(WDIR.x, 0.0, WDIR.y) * 3.0, ax = normalize(ab);
+  La = length(ab);
+  float r0 = vHW(kind) * 0.9, R = (r0 + 2.6) * 1.6;
+  // The ray's span inside a cylinder round the axis, between the trail's two ends.
+  vec3 oc = eye - A;
+  float rA = dot(rd, ax), oA = dot(oc, ax);
+  vec3 rp = rd - ax * rA, op = oc - ax * oA;
+  float qa = dot(rp, rp), qb = dot(op, rp), qc = dot(op, op) - R * R, t0 = -1e9, t1 = 1e9;
+  if (qa > 1e-7) {
+    float D = qb * qb - qa * qc;
+    if (D <= 0.0) return;
+    D = sqrt(D); t0 = (-qb - D) / qa; t1 = (-qb + D) / qa;
+  } else if (qc > 0.0) return;
+  if (abs(rA) > 1e-6) { float ta = -oA / rA, tb = (La - oA) / rA; t0 = max(t0, min(ta, tb)); t1 = min(t1, max(ta, tb)); }
+  else if (oA < 0.0 || oA > La) return;
+  t0 = max(t0, 0.5); t1 = min(t1, 600.0);
+  if (t1 <= t0) return;
+  float dt = (t1 - t0) / 8.0, j = th(gl_FragCoord.xy), tau = 0.0, tw = 0.0, red = 0.0;
+  for (int k = 0; k < 8; k++) {
+    float t = t0 + (float(k) + j) * dt;
+    vec3 P = eye + rd * t;
+    float u = clamp(dot(P - A, ax) / La, 0.0, 1.0), r = r0 + 2.6 * u;
+    float q = length(P - A - ab * u) / r;
+    if (q > 1.6) continue;
+    float n = vn(vec2(dot(P, f) * 0.3 + seed * 7.0, P.y * 1.1 + uT * 0.5)) * 0.65 + vn(vec2(dot(P, f) * 0.9 - uT * 0.8, P.y * 2.7 + seed * 3.0)) * 0.35;
+    // Thick by the wheels, thin where it has hung longest and spread widest.
+    // Mist within 3 m of the lens fades: it never lays a flat veil on the frame.
+    float dn = exp(-q * q * 2.2) * pow(1.0 - u, 1.4) * (r0 / r) * (0.45 + 0.9 * n) * smoothstep(0.5, 3.0, t);
+    tau += dn * dt; tw += dn * dt * t; red += dn * dt * exp(-u * 8.0);
+  }
+  float al = 1.0 - exp(-tau * wet * 0.55);
+  if (al <= 0.003) return;
+  float sun = 1.0 - sunCover(C * 0.001);
+  vec3 col = vec3(0.6, 0.62, 0.65) * (uAmb * 0.95 + uSunCol * 0.25 * sun);
+  // The tail lamps light the trail red near the vehicle; harder under the brakes.
+  col += vec3(0.9, 0.05, 0.02) * (0.05 + 0.4 * brake) * red / max(tau, 1e-4);
+  float zp = depthOf(eye + rd * (tw / max(tau, 1e-4)));
+  put(hazed(col, rd, zp), min(al, 0.7), zp);
+}
 // The panels are not flat: a shading normal gives them their curves.
 // The sides roll in at the shoulder and tuck under low down; a crease runs along the pickup's waist.
 // The hood and roof crown; the pickup hood's raised centre catches the light at its edges.
@@ -831,9 +881,10 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   float spd = abs(a.z), age = b.z, seed = b.y, brake = cV.x;
   vec3 C = vec3(a.x, 0.0, a.y);
   float z = depthOf(C + vec3(0.0, 1.0, 0.0));
-  if (z < 0.3) return;
   // The heading: f forward, rt to the right.
   vec3 f = vec3(sin(b.w), 0.0, cos(b.w)), rt = vec3(-f.z, 0.0, f.x);
+  // Past the eye, only its water trail still hangs in view.
+  if (z < 0.3) { if (near) vTrail(rd, C, f, kind, spd, age, seed, brake); return; }
   float fr = vFront(kind), rr = vRear(kind), hw = vHW(kind);
   // The lamps: headlights ahead, tail lamps behind; the chasers' amber bar too.
   // Their glow reaches past the vehicle's screen box, so they come first, once per frame.
@@ -890,11 +941,11 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   }
   // Layers stack in call order: spray nearer the eye than the body lays down after it.
   bool sprayFront = depthOf(C - f * 4.0) < depthOf(C);
-  if (!sprayFront) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
+  if (!sprayFront) { vTrail(rd, C, f, kind, spd, age, seed, brake); vSpray(s, C, f, rt, kind, spd, age, seed, brake); }
   // The screen box: nothing more to do outside it.
   vec2 c0 = proj(C + vec3(0.0, 1.4, 0.0));
   float R = (4.2 + spd * 0.02) / z * uFoc;
-  if (z > 2.0 && (abs(s.x - c0.x) > R || abs(s.y - c0.y) > R)) { if (sprayFront) vSpray(s, C, f, rt, kind, spd, age, seed, brake); return; }
+  if (z > 2.0 && (abs(s.x - c0.x) > R || abs(s.y - c0.y) > R)) { if (sprayFront) { vSpray(s, C, f, rt, kind, spd, age, seed, brake); vTrail(rd, C, f, kind, spd, age, seed, brake); } return; }
   // The body rolls and pitches on its springs: the road's small bumps, and the driver's braking and steering.
   float roll = 0.008 * sin(age * 2.3 + seed * 6.0) + 0.004 * sin(age * 5.1) + cV.z;
   float pitch = 0.004 * sin(age * 3.1 + seed * 3.0) + cV.y;
@@ -984,7 +1035,7 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     zHit = depthOf(P);
   }
   if (cov > 0.0) put(hazed(acc / cov, rd, zHit), cov / float(ns), zHit);
-  if (sprayFront) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
+  if (sprayFront) { vSpray(s, C, f, rt, kind, spd, age, seed, brake); vTrail(rd, C, f, kind, spd, age, seed, brake); }
 }
 // Every vehicle in one pass: far ones before the infrastructure, near ones after it.
 void traffic(vec2 s, vec3 rd, float px, bool near) {
