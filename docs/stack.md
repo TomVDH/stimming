@@ -36,7 +36,7 @@ Pick the lightest one that does the job. Move up a tier only for a feature the l
 2. Does it need a perspective camera moving through several objects, lights or shadows? Use **three.js**.
 3. Is it a few hundred moving shapes with no shading? Use **Canvas 2D**.
 4. Is it a handful of crisp objects or text? Use **DOM or SVG**.
-5. **Offer WebGPU wherever it helps performance** (Tom, 2026-11-09). three.js `WebGPURenderer` falls back to WebGL2 by itself, so a three.js toy can switch with one renderer change. Shader toys move where compute pays off: particles, fluids, cellular sims. Galaxy, Fire and Ink Water already run it. The short list lives in the epic bean `stimming-2s6y`.
+5. **Offer WebGPU wherever it helps performance** (Tom, 2026-11-09). three.js `WebGPURenderer` falls back to WebGL2 by itself, so a three.js toy can switch with one renderer change. Shader toys move where compute pays off: particles, fluids, cellular sims. Galaxy, Fire, Ink Water, Spark wheel and Cauldron already run it. The short list lives in the epic bean `stimming-2s6y`.
 
 ### Why it matters
 
@@ -76,7 +76,7 @@ Light 3D use; three.js may still earn its place. Check each before porting.
 |---|---|---|---|
 | Bubble wand | Main | Orthographic, six objects, shaders | Likely a 2D shader job; check the bubble meshes |
 | Prism | Main | Three objects, no camera class found | Check how it builds its view |
-| Window seat | Main | One mesh; the sky is one big shader | The wing spike (`window/spike-three.html`) tests three.js for the near aircraft |
+| Window seat | Main | One mesh; the sky is one big shader | Keep raw WebGL2 for the sky |
 | Infinity cube, Coil, Spinning top, Snow globe | Lab | One to four meshes, perspective | Real 3D, small scenes; keep unless start-up hurts |
 
 ### Stays on three.js
@@ -85,7 +85,7 @@ Real scenes with cameras, many meshes, lights or loaded geometry: Frietkot, Broo
 
 ## Rules for new toys
 
-1. Start from the lowest tier that can draw the idea. Write the tier in the toy's bean. The proposed stack types in `docs/plans/stack-types.md` turn each tier into a starter with its importmap, shared modules and budget.
+1. Start from the lowest tier that can draw the idea. Write the tier in the toy's bean. `tools/new-toy.mjs` (bean `stimming-wrxq`) writes the starter page for the stack type.
 2. Raw WebGL2 toys share one pattern: a full-screen triangle, `fitCanvas` from `shared/stim.js`, `whenVisible` to stop the loop off screen, and the site quality setting for the pixel ratio.
 3. A three.js toy imports only what it uses (`import { WebGLRenderer, ... } from 'three'`) and disposes its geometry, materials and renderer on leave.
 4. Every tier holds 30 fps or better, does no per-frame work when idle, and respects `prefers-reduced-motion`.

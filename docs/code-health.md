@@ -14,14 +14,14 @@ The detail lives in the plans; this page links them and does not repeat them.
 
 ## The site today
 
-88 toys in `toys.json`: 41 on the main shelf, 47 in the Lab.
+Counts from the 2026-11-14 audit. `toys.json` is the live list.
 
 | Renderer | Toys |
 |---|---|
 | three.js 0.170, WebGL | 42 |
 | Raw WebGL2 (GLSL) | 36 |
 | Canvas 2D | 6 |
-| three.js 0.186, WebGPU | 3 (Galaxy, Fire, Ink) |
+| three.js 0.186, WebGPU | 3 at the audit; now Galaxy, Fire, Ink, Spark wheel, Cauldron |
 | DOM / SVG | 1 |
 
 About 2,900 lines are copied word for word across three or more toys. Many more are near copies.
@@ -31,9 +31,9 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | # | Topic | Decision |
 |---|---|---|
 | 1 | Stack types | Keep five: Sketch, Shader, Environment, Scene, Compute |
-| 2 | Starters | The reference toys are the starters. No starter pages |
+| 2 | Starters | Replaced 2026-11-16: `tools/new-toy.mjs` writes a new toy's start page (bean `stimming-wrxq`) |
 | 3 | Flat three.js toys | Move all five to raw WebGL2, each after a same-frame check. Pop goes last |
-| 4 | WebGPU fallback | A Compute toy without WebGPU shows a still frame and one line |
+| 4 | WebGPU fallback | A Compute toy without WebGPU goes to its `legacy.html` when one exists; otherwise its still and one line (2026-11-16) |
 | 5 | Module order | Invisible steps first: audio kit, colour helper, tone curve |
 | 6 | New modules | `gl.js` and `noise.js` may exist. `voices.js`, `bloomPass` and `pointer.js` wait |
 | 7 | Toy docs | About ten main shelf docs by hand, then a generator for the factual sections |
