@@ -16,7 +16,19 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `core/sky.ts` | Pure sky maths: sidereal time, alt/az |
 | `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta, axis stepper |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
-| `main.ts` | The first draw and resize |
+| `world/hill.ts` | The ridge, the flat land, the key light; `hillHeight`, `SITE` |
+| `world/observatory.ts` | The drum, the door, the cupola with its slit and shutter, the tube on its fork |
+| `world/laser.ts` | The green aiming beam; `altAzDir` |
+| `sky/stars.ts` | Placeholder stars: random points on a far shell |
+| `view/camera.ts` | The locked-off shot: eye, pitch, yaw, fov for wide and tall frames |
+| `input.ts` | Pointer: aim with a move or a drag, a tap; alt and az from the camera ray |
+| `loop.ts` | The frame loop and sleep; the cupola turns after the beam; `window.__qa` |
+| `main.ts` | Resize and the first draw |
+
+## Axes
+
++Y is up, -Z is north, +X is east. Azimuth runs from north through east, as in `core/sky.ts`.
+The camera faces south (+Z).
 
 ## Types
 
