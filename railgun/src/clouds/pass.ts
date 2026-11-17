@@ -152,9 +152,13 @@ void main() {
   if (uFirm > 0.0 && c.a > 1e-4) { float a2 = mix(c.a, smoothstep(0.12, 0.55, c.a), uFirm); c *= a2 / c.a; }
   // Only solid cloud hides what lies behind it; thin edges let it show.
   if (c.a < ${depthOnly ? '0.5' : '0.004'}) discard;
+  // An edge texel without cloud reads depth 0, which puts its blurred colour at the eye.
+  // The farthest of the five taps keeps that edge behind the gun.
+  float dep = max(texture2D(tDep, vUv).r, max(max(texture2D(tDep, vUv + vec2(px.x, 0.0)).r, texture2D(tDep, vUv - vec2(px.x, 0.0)).r), max(texture2D(tDep, vUv + vec2(0.0, px.y)).r, texture2D(tDep, vUv - vec2(0.0, px.y)).r)));
+  if (dep <= 0.0) discard;
   vec4 w = uInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 rd = normalize(w.xyz / w.w - cameraPosition);
-  vec4 cp = uVPc * vec4(cameraPosition + rd * texture2D(tDep, vUv).r * 1000.0, 1.0);
+  vec4 cp = uVPc * vec4(cameraPosition + rd * dep * 1000.0, 1.0);
   gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
   gl_FragColor = c;
 }`;

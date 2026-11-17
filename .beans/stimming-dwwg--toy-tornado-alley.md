@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:36:44Z
+updated_at: 2026-11-17T07:55:08Z
 parent: stimming-oh7b
 ---
 
@@ -169,3 +169,13 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (an F2 far too fat; no taper, no colour blend): Width 1.0 by default; the bell spans the top fifth of the funnel, at most about 2× its top radius. The pale ring was the horn's sides taking the sun at the base: the bell keeps the deck's slate there and takes the sun only by degrees down the bell; the deck's tone grows up a bell's height. Cool slate shade side, real falloff on the lit side, Ambient 1.1; torn sheath edges take the deck's tone. The far bake's key holds the full projection and bakes again 30 frames on, so the deck reaches the horizon on every load.
 
 - 2026-11-17: the Cloud tube gets the shells' scale, bell and colour (shared code); its core is denser (2.1 to 3.2), so it reads as condensation; its bands' torn edges take the deck's tone.
+
+- 2026-11-17, Tom (the Storm slider did nothing; spawn squiggles; instant spawn): Storm now reaches the whole sky (low: a higher, thinner, broken deck in rafts with sky between, no pits; 0.85 and up: the heavy deck as before); any bake-key change bakes the far field whole that frame, so near and far follow a moving slider together (also fixes the Time lag). The empty first bake was a texture feedback loop on unit 0, now fixed. Spawn: each whirl's reach and twist stay fixed (their ramp slid the log-polar texture fast); touchdown runs about 38 s (whirl 20 s, pit and horn 10 s from 15 s, funnel 12 s from 23 s, dust 4 s before contact); F eases over 5 s; rope-out reverses slowly. ?age=45 shows a full funnel.
+
+- 2026-11-17, Tom (the rain at the right, awful): the core's rain cylinder drew a hard dark block (its cover had no softening). Its sides are now ragged (noise eats up to 2 km), its cover linear and capped at 0.65, thinner near the ground, mixed 30–70% into the far haze; only a faint soft haze remains (in bce8db66).
+
+- 2026-11-17, Tom (grain; tops too dark, not blending): the tube's fine noise and Worley fade to their mean below a pixel (the main grain cause: aliasing); gentler tone gain and band threshold; history 0.35 while running, four jittered sub-draws for a still; the edge rag halved (no comb hairs); the deck's soft edge 2 steps wide. Tops: the turn-to tone is read from the deck beside the bell; the bell takes half the sun at the base; the tube's density fades over the whole bell while the horn takes over through a softer join; Top darkening 0.6. Seen, not yet touched: vertical streaks in the deck near the whirls.
+
+- 2026-11-17: deck streaks near whirls came from blending overlapping whirls' noise points; the two strongest whirls now read their own deck noise and blend values. Layers hug the core with distance (gap 0.2 near to 0.08 by 12 km; sub-pixel layers fade into the core), ending the hoops; the far dust drops sub-pixel octaves and the rain ring is wider and softer (the dotted far funnel). Dev rows Bake from (6–40 km, default 16; the tornado clamp follows) and Deck reach (20–200 km, default 146). GPU, 3 × F4.5 tubes, minimum frame: 17.3 ms at 8 km, 22.5 at 16, 25.6 at 30.
+
+- 2026-11-17, Tom: Storm drives the funnels (default 0.85 unchanged): a young storm gives paler, cleaner funnels with more sky light and less haze and density; a full one gives darker, dirtier funnels the deck's tone runs further down, with more rain wrap.
