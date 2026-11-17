@@ -204,9 +204,14 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
     { type: 'slider', id: 'blend', label: 'Marble blend', min: 0, max: 20, step: 0.5, value: 5 },
     { type: 'slider', id: 'oilFilm', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
-    { type: 'slider', id: 'keyUp', label: 'Lamp height', min: 0.2, max: 1, step: 0.01, value: 0.45 },
-    { type: 'slider', id: 'keyI', label: 'Lamp strength', min: 0.3, max: 1.2, step: 0.05, value: 0.8 },
     { type: 'slider', id: 'stiff', label: 'Stiffness', min: 0, max: 1, step: 0.05, value: 1 },
+    // The light: the lamp over the pot, and the dim room round it.
+    { type: 'slider', id: 'keyUp', label: 'Lamp height', min: 0.1, max: 1, step: 0.01, value: 0.45 },
+    { type: 'slider', id: 'keyTurn', label: 'Lamp turn', min: -180, max: 180, step: 1, value: 0 },
+    { type: 'slider', id: 'keyI', label: 'Lamp strength', min: 0, max: 2, step: 0.05, value: 0.8 },
+    // Warmth: 0 is a cool white, 0.5 today's lamp, 1 a deep amber.
+    { type: 'slider', id: 'keyWarm', label: 'Lamp warmth', min: 0, max: 1, step: 0.01, value: 0.5 },
+    { type: 'slider', id: 'room', label: 'Room light', min: 0, max: 3, step: 0.05, value: 1 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -1285,7 +1290,7 @@ uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uC
 uniform vec4 uPlumeS[4];
 uniform float uGlowK;
 // 0 keeps the skin close to the soup; 1 makes it its own layer.
-uniform float uSkinK, uFilmK;
+uniform float uSkinK, uFilmK, uRoomK;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
 uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
@@ -1354,7 +1359,7 @@ vec3 bodyN(int i, vec3 p) {
 /* light */
 // The lamp: a soft key from the upper back. The room: a dark sky, a warm haze low down.
 vec3 env(vec3 r, float rough) {
-  vec3 c = mix(vec3(0.04, 0.028, 0.03), vec3(0.008, 0.009, 0.02), smoothstep(-0.1, 0.6, r.y));
+  vec3 c = mix(vec3(0.04, 0.028, 0.03), vec3(0.008, 0.009, 0.02), smoothstep(-0.1, 0.6, r.y)) * uRoomK;
   // Firelight on the smoke all round, low down; below the horizon, the fire.
   c += uFireCol * uFlick * 0.1 * exp(-max(r.y, 0.0) * 4.0);
   c = mix(c, uFireCol * uFlick * 0.15, smoothstep(0.0, -0.4, r.y));
@@ -1364,7 +1369,7 @@ vec3 env(vec3 r, float rough) {
   c += uKeyCol * (pow(k, sh) * sh * 0.06 + pow(k, 16.0) * 0.04);
   return c;
 }
-vec3 skyAmb(vec3 n) { return mix(vec3(0.03, 0.02, 0.014), vec3(0.025, 0.028, 0.04), n.y * 0.5 + 0.5); }
+vec3 skyAmb(vec3 n) { return mix(vec3(0.03, 0.02, 0.014), vec3(0.025, 0.028, 0.04), n.y * 0.5 + 0.5) * uRoomK; }
 vec3 litSurf(vec3 n, vec3 v, vec3 alb, float rough, float f0) {
   vec3 h = normalize(uKeyDir + v);
   float nl = max(dot(n, uKeyDir), 0.0), nh = max(dot(n, h), 0.0);
@@ -3602,9 +3607,13 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
   plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
   gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
-  gl.uniform3f(sceneP.u('uKeyDir'), ...norm([KEY[0], devV('keyUp', 0.45), KEY[2]]));
-  const ki = devV('keyI', 0.8);
-  gl.uniform3f(sceneP.u('uKeyCol'), 1.2 * ki, 1.02 * ki, 0.82 * ki);
+  const kt = devV('keyTurn', 0) * Math.PI / 180, kc = Math.cos(kt), ks = Math.sin(kt);
+  gl.uniform3f(sceneP.u('uKeyDir'), ...norm([KEY[0] * kc - KEY[2] * ks, devV('keyUp', 0.45), KEY[0] * ks + KEY[2] * kc]));
+  const ki = devV('keyI', 0.8), kw = devV('keyWarm', 0.5);
+  // Cool white, today's warm lamp, deep amber.
+  const kcol = kw < 0.5 ? [1.02, 1.02, 1.08].map((v, i) => lerp(v, [1.2, 1.02, 0.82][i], kw * 2)) : [1.2, 1.02, 0.82].map((v, i) => lerp(v, [1.3, 0.88, 0.5][i], kw * 2 - 1));
+  gl.uniform3f(sceneP.u('uKeyCol'), kcol[0] * ki, kcol[1] * ki, kcol[2] * ki);
+  gl.uniform1f(sceneP.u('uRoomK'), devV('room', 1));
   gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
   gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
   gl.uniform1f(sceneP.u('uDof'), devV('dof', 7));
