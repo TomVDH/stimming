@@ -50,13 +50,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true" data-done>
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pop.svg)"></span><span class="intro-name">Pop field</span><span class="intro-sub">Stimming No. 02</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pop.svg)"></span><span class="intro-name">Pop field</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
     <div class="stage stage--pop field" id="field">
-      <canvas tabindex="0" role="application" aria-label="Bubble wrap. Arrow keys choose a bubble; Space or Enter pops it. Hold Space on a big bubble to burst it."></canvas>
+      <canvas tabindex="0" role="application" aria-label="A sheet of bubble wrap. Popped bubbles fill again. Click a bubble to pop it. Drag to pop a line of bubbles. Hold a big bubble to burst it. Press the arrow keys to select a bubble. Press Space to pop it. Press Enter to pop it. Hold Space on a big bubble to burst it. Press S to shuffle the sheet. Press R to reset the toy."></canvas>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -85,17 +85,24 @@ stage('build');
 // Shuffle, Reset and the material pick bind once the sheet exists.
 const act = { roll() {}, reset() {}, mat() {} };
 const MAT_NAMES = ['gloss', 'rubber', 'foil', 'jelly', 'soap', 'toon', 'glass', 'candy', 'latex', 'pixel', 'lava', 'ice', 'holo', 'paper', 'gum', 'topo', 'popcorn', 'disco'];
-const ui = initPage({ id: 'pop', bar: {
+// Two materials show a whole word; their values stay short.
+const MAT_LABELS = { holo: 'Hologram', topo: 'Contours' };
+const ui = initPage({ id: 'pop', signal: true, bar: {
   // The material sets the light, the burst, the sound and the feel.
   choice: { label: 'Material', display: 'stepper', value: 'gloss',
-    options: MAT_NAMES.map(m => ({ value: m, label: m[0].toUpperCase() + m.slice(1) })),
+    options: MAT_NAMES.map(m => ({ value: m, label: MAT_LABELS[m] || m[0].toUpperCase() + m.slice(1) })),
     onPick: v => act.mat(v) },
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => act.roll() },
-    { verb: 'reset', key: 'R', onPress: () => act.reset() },
   ],
   quality: true,
-  keys: [['click', 'pop'], ['drag', 'sweep'], ['hold', 'burst a big one'], ['arrows + space', 'choose, pop']],
+  // Reset sits in Settings; the toy binds its R key.
+  reset: () => act.reset(),
+  keys: [['click', 'pop a bubble'], ['drag', 'pop a line of bubbles'], ['hold', 'burst a big bubble'], ['← → ↑ ↓', 'select a bubble']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Pop a bubble'], ['drag', 'Pop a line of bubbles'], ['hold', 'Burst a big bubble'], ['hold', 'Pop a bubble with more force'],
+    ['move', 'Move the light'], ['← → ↑ ↓', 'Select a bubble'], ['space', 'Pop the bubble'], ['enter', 'Pop the bubble'],
+    ['S', 'Shuffle the sheet'], ['R', 'Reset the toy']],
 } });
 
 const TAU = Math.PI * 2, PI = Math.PI, D2R = PI / 180, SQ3 = Math.sqrt(3);
@@ -759,16 +766,13 @@ function merge() {
   }
 }
 // Cells sit centred; colour follows the field's diagonal.
-// The sheet lies between the top and bottom rows of controls.
+// The sheet lies between the bar parts at the top and the foot.
 let bandT = 0, bandH = 0;
 function bands(h) {
-  const f = field.getBoundingClientRect(), layer = field.parentElement.querySelector('.stim-ui');
-  let t = 0, b = 0;
-  for (const el of layer?.querySelectorAll('.s2-tl, .s2-tr') || []) { const r = el.getBoundingClientRect(); if (r.height) t = Math.max(t, r.bottom - f.top); }
-  // The key strip counts too, so its words never sit on the bubbles.
-  for (const el of layer?.querySelectorAll('.s2-bl, .s2-br, .s2-keys') || []) { const r = el.getBoundingClientRect(); if (r.height) b = Math.max(b, f.bottom - r.top); }
-  bandT = t && t + 4;
-  bandH = Math.max(h * 0.5, h - bandT - (b && b + 4));
+  // The shell gives both strips, for either bar.
+  const c = ui.cover();
+  bandT = c.top && c.top + 4;
+  bandH = Math.max(h * 0.5, h - bandT - (c.bottom && c.bottom + 4));
 }
 function place() {
   const x0 = (W - SQ3 * R * (cols + 0.5)) / 2 + (SQ3 * R) / 2;
@@ -786,11 +790,14 @@ function centreCell() {
 // Force rebuilds the grid even at the same size.
 function layout(force) {
   const w = field.clientWidth, h = field.clientHeight, d = pixelRatio(w, h, { budget: Infinity });
-  if (!w || !h || (!force && w === W && h === H && d === dpr)) return;
+  if (!w || !h) return;
+  // A bar that moves or wraps changes the bands at the same size.
+  const bt = bandT, bh = bandH;
+  bands(h);
+  if (!force && w === W && h === H && d === dpr && bt === bandT && bh === bandH) return;
   W = w; H = h; dpr = d;
   cv.width = Math.round(w * d); cv.height = Math.round(h * d);
   glSize(w, h, d);
-  bands(h);
   // Cell size follows width; rows fill what height is left.
   // The recipe sets about how many cells span a wide sheet.
   const R0 = clamp(w / (SQ3 * rec.den * clamp(w / 1000, 0.45, 1.2)), 10, 60), pad = R0 * 0.22;
@@ -1470,7 +1477,7 @@ function drawBits() {
 }
 
 /* ---------- the die: a whole new sheet sweeps in from the control ---------- */
-// The Shuffle chip swaps the shell's die for one that rolls.
+// The Bar v2 Shuffle chip swaps the shell's die for one that rolls.
 const die = [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => b.getAttribute('aria-keyshortcuts') === 'S');
 die.querySelector('svg')?.remove();
 die.insertAdjacentHTML('afterbegin', '<svg class="die" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d=""/></svg>');
@@ -1532,10 +1539,12 @@ function newSheet(next, from) {
   wake();
   return true;
 }
+// Bar v3 hides the old parts; its Shuffle button gives the origin.
+const wipeFrom = old => [...document.querySelectorAll('.sg-bar .sg-act')].find(b => b.offsetWidth && b.textContent.trim() === 'Shuffle') || old;
 let matT = 0;
 act.roll = () => {
   clearTimeout(matT);
-  if (!newSheet(freshRecipe(rec), die)) return;
+  if (!newSheet(freshRecipe(rec), wipeFrom(die))) return;
   let n = face;
   while (n === face) n = (Math.random() * 6) | 0;
   showFace(n);
@@ -1548,7 +1557,7 @@ act.mat = m => {
   clearTimeout(matT);
   matT = setTimeout(() => {
     const step = document.querySelector('.stim-ui .s2-step');
-    if (m !== rec.mat && !newSheet({ ...rec, mat: m }, step || die)) ui.choice.set(rec.mat);
+    if (m !== rec.mat && !newSheet({ ...rec, mat: m }, wipeFrom(step || die))) ui.choice.set(rec.mat);
   }, 140);
 };
 
@@ -2040,6 +2049,12 @@ cv.addEventListener('keyup', e => {
   if ((e.key === ' ' || e.key === 'Enter') && kPress) { pop(kPress, nowS(), 0.6 + 0.9 * kPress.q); kPress = null; wake(); }
 });
 act.reset = () => { if (cells.length) refill(nowS()); };
+// Reset in Settings has no key of its own, so R binds here.
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); act.reset(); }
+});
 
 /* ---------- theme and size ---------- */
 function retheme() { tokens(); if (sR) buildSprites(); draw(); }
@@ -2047,6 +2062,8 @@ new MutationObserver(retheme).observe(document.documentElement, { attributes: tr
 tokens();
 layout();
 new ResizeObserver(layout).observe(field);
+// Bar v3 mounts after the first fit; the sheet then fits again.
+ui.onCover(() => layout());
 // A new quality changes the pixel ratio; the sheet stays.
 onQuality(() => layout());
 // Scrolling moves the field under a still mouse, so hover lets go.

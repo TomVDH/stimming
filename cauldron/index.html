@@ -29,13 +29,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Soup cauldron</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Soup cauldron</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--cauldron" id="stage" tabindex="0" role="application" aria-label="A big iron pot of soup over a fire. Drag on the soup in a circle to stir it. Click the soup to throw the next thing in. Hold the left or right arrow key to stir.">
-      <p class="fail" hidden>Soup cauldron needs WebGL 2 with float targets, which this browser has turned off.</p>
+    <div class="stage stage--cauldron" id="stage" tabindex="0" role="application" aria-label="A pot of soup on a fire. Drag the soup to stir it. Click the soup to add an ingredient. Hold the left or right arrow key to stir.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2 with float targets.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -103,12 +103,12 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- the tray: what a tap adds ---------- */
-// Mix keeps the old round; the rest pick one thing or one liquid, in three groups.
-const PICKS = [['mix', 'Mix', 'Mix'],
-  ['carrot', 'Carrot', 'Things'], ['onion', 'Onion', 'Things'], ['potato', 'Potato', 'Things'], ['leek', 'Leek', 'Things'],
-  ['garlic', 'Garlic', 'Things'], ['chilli', 'Chilli', 'Things'], ['tomato', 'Tomato', 'Things'], ['mushroom', 'Mushroom', 'Things'],
-  ['beet', 'Beetroot', 'Things'], ['pea', 'Peas', 'Things'], ['bay', 'Bay leaf', 'Things'], ['noodles', 'Noodles', 'Things'],
-  ['fish', 'Fish', 'Things'], ['star', 'Star', 'Things'], ['duck', 'Duck', 'Things'], ['boot', 'Boot', 'Things'],
+// Any keeps the old round; the rest pick one solid or one liquid, in two groups.
+const PICKS = [['mix', 'Any', ''],
+  ['carrot', 'Carrot', 'Solids'], ['onion', 'Onion', 'Solids'], ['potato', 'Potato', 'Solids'], ['leek', 'Leek', 'Solids'],
+  ['garlic', 'Garlic', 'Solids'], ['chilli', 'Chilli', 'Solids'], ['tomato', 'Tomato', 'Solids'], ['mushroom', 'Mushroom', 'Solids'],
+  ['beet', 'Beetroot', 'Solids'], ['pea', 'Peas', 'Solids'], ['bay', 'Bay leaf', 'Solids'], ['noodles', 'Noodles', 'Solids'],
+  ['fish', 'Fish', 'Solids'], ['star', 'Star', 'Solids'], ['duck', 'Duck', 'Solids'], ['boot', 'Boot', 'Solids'],
   ['cream', 'Cream', 'Liquids'], ['ink', 'Squid ink', 'Liquids'], ['chillioil', 'Chilli oil', 'Liquids'], ['saffron', 'Saffron', 'Liquids']];
 let pick = 'mix';
 // Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
@@ -160,39 +160,43 @@ const act = { add() {}, clear() {}, reset() {} };
 const devV = (id, d) => ui.setting(id)?.value ?? d;
 let refit = () => {};
 let setEngine = () => {};
-const ui = initPage({ id: 'cauldron', bar: {
-  choice: { label: 'Add', display: 'tray', value: 'mix',
+const ui = initPage({ id: 'cauldron', signal: true, bar: {
+  choice: { label: 'Ingredients', display: 'tray', value: 'mix',
     options: PICKS.map(([value, label, group]) => ({ value, label, group, icon: pickIcon(value === 'chillioil' ? 'chilli_oil' : value) })),
     onPick: v => { pick = v; stage.focus?.({ preventScroll: true }); } },
   actions: [
-    { verb: 'add', noun: 'Thing', key: 'T', onPress: () => act.add() },
-    { verb: 'clear', key: 'C', onPress: () => act.clear() },
+    // Tom's labels (2026-11-17): Ingredients for T, Throw out for C.
+    { verb: 'add', noun: 'Ingredients', key: 'T', onPress: () => act.add() },
+    { verb: 'clear', label: 'Throw out', key: 'C', onPress: () => act.clear() },
   ],
-  slider: { label: 'Fire', min: 0, max: 1, step: 0.01, value: FIRE0, onInput: v => { fire = v; fireSound(v); wake(); } },
+  slider: { label: 'Heat', min: 0, max: 1, step: 0.01, value: FIRE0, onInput: v => { fire = v; fireSound(v); wake(); } },
   // The steady simmer can be switched off; the plops and pops still play.
   settings: [
     { type: 'toggle', id: 'simmer', label: 'Simmer sound', value: true, persist: true },
   ],
   dev: [
-    { type: 'slider', id: 'exposure', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
-    { type: 'slider', id: 'bloom', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
-    { type: 'slider', id: 'dof', label: 'Background blur', min: 0, max: 16, step: 0.5, value: 7 },
+    { type: 'slider', id: 'exposure', group: 'Look', label: 'Exposure', min: 0.5, max: 2, step: 0.01, value: 1, persist: true },
+    { type: 'slider', id: 'bloom', group: 'Look', label: 'Bloom', min: 0, max: 1.5, step: 0.01, value: 0.55, persist: true },
+    { type: 'slider', id: 'dof', group: 'Look', label: 'Blur', min: 0, max: 16, step: 0.5, value: 7 },
     // The eye: 50 degrees is the toy's view; near 0 is a side view of the fire.
     // These rows keep no value, so a reload brings the toy's own view back.
-    { type: 'slider', id: 'camEl', label: 'Camera height', min: 0, max: 80, step: 1, value: 50, onInput: () => refit() },
-    { type: 'slider', id: 'camTurn', label: 'Camera turn', min: -90, max: 90, step: 1, value: 0, onInput: () => refit() },
+    { type: 'slider', id: 'camEl', group: 'Camera', label: 'Height', min: 0, max: 80, step: 1, value: 50, onInput: () => refit() },
+    { type: 'slider', id: 'camTurn', group: 'Camera', label: 'Turn', min: -90, max: 90, step: 1, value: 0, onInput: () => refit() },
     // The coal bed: where the core burns, how wide and how hard.
-    { type: 'slider', id: 'fireX', label: 'Fire X', min: -0.8, max: 0.8, step: 0.01, value: 0 },
-    { type: 'slider', id: 'fireZ', label: 'Fire Z', min: -0.8, max: 0.8, step: 0.01, value: 0 },
-    { type: 'slider', id: 'fireY', label: 'Fire height', min: 0, max: 0.5, step: 0.01, value: 0.04 },
-    { type: 'slider', id: 'fireR', label: 'Fire size', min: 0.2, max: 1, step: 0.01, value: 0.62 },
-    { type: 'slider', id: 'fireI', label: 'Fire power', min: 0, max: 3, step: 0.01, value: 1 },
+    { type: 'slider', id: 'fireX', group: 'Fire', label: 'X', min: -0.8, max: 0.8, step: 0.01, value: 0 },
+    { type: 'slider', id: 'fireZ', group: 'Fire', label: 'Z', min: -0.8, max: 0.8, step: 0.01, value: 0 },
+    { type: 'slider', id: 'fireY', group: 'Fire', label: 'Height', min: 0, max: 0.5, step: 0.01, value: 0.04 },
+    { type: 'slider', id: 'fireR', group: 'Fire', label: 'Size', min: 0.2, max: 1, step: 0.01, value: 0.62 },
+    { type: 'slider', id: 'fireI', group: 'Fire', label: 'Power', min: 0, max: 3, step: 0.01, value: 1 },
     // Spread: how hard burning gas expands, pushing flames out round the belly.
-    { type: 'slider', id: 'fireExp', label: 'Fire spread', min: 0, max: 3, step: 0.05, value: 0.45 },
+    { type: 'slider', id: 'fireExp', group: 'Fire', label: 'Spread', min: 0, max: 3, step: 0.05, value: 0.45 },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['drag', 'stir or pour'], ['drag a thing', 'pull'], ['click', 'add or dunk'], ['← →', 'stir']],
+  keys: [['drag', 'stir the soup'], ['drag an ingredient', 'move it'], ['click', 'add an ingredient'], ['← →', 'stir the soup']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add an ingredient'], ['click', 'Push an ingredient down'], ['drag', 'Stir the soup'], ['drag', 'Move an ingredient'],
+    ['drag', 'Pour the liquid'], ['← →', 'Stir the soup'], ['T', 'Add an ingredient'], ['C', 'Throw out the soup']],
 } });
 
 /* ---------- GL ---------- */

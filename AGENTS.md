@@ -47,7 +47,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | `shared/` | Shell (`stim.js`, `stim.css`), intro, WebGL2 kit, shader bundles, menu code, fonts, stills, loops |
 | `shared/daytime.js` | Time of day: hour presets, sun and moon, key light, lamps, an eased clock. Plan: `docs/plans/daytime.md` |
 | `icons/` | Icon workbench and the icon sheet |
-| `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
+| `barlab/`, `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
 | `tools/` | `commit.sh`, capture scripts, checks |
 | `tests/` | `bar-v2.html` and node tests |
 | `docs/` | Standards, menu, toy docs, plans, QA captures |

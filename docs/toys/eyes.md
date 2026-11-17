@@ -24,14 +24,15 @@ The eyes watch the pointer, blink, stare at a partner, get bored and get dizzy w
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`eyes/main.js:8`).
+Bar: v3, the Signal bar, over Bar v2 (`eyes/main.js:8`, `signal: true`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | None |
 | Bottom left (actions) | `Shuffle`, `Shake`, `Blink` (B) |
 | Bottom right (slider) | None |
-| Key strip | click blink; drag move an eye; drag round dizzy; space shake |
+| Key strip (Bar v2) | click blink an eye; drag move an eye; drag round make the eyes dizzy; space shake the eyes |
+| How to play (Bar v3) | Eleven rows, one instruction each: click, drag, circle, the arrows, Shift and the arrows, Enter, B, D, Space |
 | Settings | Quality only |
 | Dev (`?dev`) | None |
 <!-- /gen:bar -->

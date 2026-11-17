@@ -491,7 +491,43 @@ Recorded as found. Nothing here is fixed.
 | 17 | The v1 (i) button is 30 px and has no coarse-pointer rule. It is under the 34 px floor on touch. | `shared/stim.css:230-235` |
 | 18 | Dormant menu CSS: the series badge and Constellation rules stay while `SERIES_ON` is off. One 560 px media rule repeats the base size. | `index.html:122`, `:149-175` |
 | 19 | Proposals, not final: the toy accents (first set, 2026-11-09), eight of the eleven series shots, five Flemish series names. | `toys.json`; `shared/series/shots.js`; `series.json` |
-| 20 | The contrast of small control text is not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. | `shared/stim.css:392`, `:453` |
+| 20 | The contrast of small control text was not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. Measured 2026-11-16 on the default stage: sheet section labels about 3.8:1 and action keycaps (0.6 opacity) about 2.8:1, both under the rule. Chip text is 5.9:1; the Lab tag is 5.4:1. | `shared/stim.css:392`, `:432`, `:453` |
 | 21 | The Creative North Star has no name. The playbook asks the owner for it; Tom has not set one. Colours keep the code's token names. | this file |
 | 22 | Prism and Canal at dusk still draw their own hard shadows from `--hard` and `--lift`; each moves in its own chat. The stage logo and name still wear no halo; the rule is the shared halo (bean `stimming-jmnh`). | `AGENTS.md`; `docs/plans/bar-v2.md` |
 | 23 | The tonal ramps in `.impeccable/design.json` are made for the panel. They are not project tokens. | `.impeccable/design.json` |
+
+### Rulings
+
+Tom's rulings on the rows above, by date. A row with no ruling is still open.
+
+| Date | Ruling | Rows |
+|---|---|---|
+| 2026-11-16 | Tom: "we're completely redoing the style and ux of the bars". | 1, 2, 6, 7, 17, 20, 22 |
+| 2026-11-16 | Tom's ingredients for the bar redo, picked in a dialog: one bar (the Dock probe), no boxes (the Bare probe), built from the intro's flash beats, and controls that leave while you touch the stage and then return. Tuck and Askew are not picked. | 2, 22 |
+| 2026-11-16 | Tom on the Signal bar (one bar, no boxes, the intro's flash beats, leave then return): "i like signal a lot -- needs some iterations". Signal is the base of the bar redo. | 2, 22 |
+| 2026-11-16 | Tom's picks for Signal round 2, in a dialog: iterate the type and weight, the sheets, the motion beats and the toy's ink; the sheets keep the soft glass. Then: "we'll keep bare too". Bare stays beside Signal. | 2, 22 |
+| 2026-11-16 | Tom on Signal round 2: the layout is "great"; the flash reveals and the transitions into sheets are "perfect"; the button and control interactions get a redo with the skills. He asks for colour variations and accents, toys with diverse menus (Cauldron, Train ride), and no automatic fade: the bar leaves only after 8 s of inactivity. | 2, 6, 20, 22 |
+| 2026-11-17 | Tom's colour pick for Signal: Accent Toy, Ink Marks. The toy's own accent inks the icons, the slider fill and a held pick. Words stay white, and the flash stays white. | 2 |
+| 2026-11-17 | Tom asks for real hover interactions, a contrast check, and work on the info and keycap menus; and for a bean that vets every toy's controls and standardizes them where relevant (the epic "Vet every toy's controls"). | 2, 6, 20 |
+| 2026-11-17 | Tom's hover pick for Signal: the White box. The white flash box closes in from the sides when you point at a control. | 2 |
+| 2026-11-17 | Tom's pick for Signal's top left, in a dialog: the toy's own mark (its emblem in its ink, then its name), which shows the way back to Stimming when you point at it. It always stays; it does not leave with the bar. | 2 |
+| 2026-11-17 | Tom replaces that pick: "i want our glyph as a monogram in the top left corner instead". When you point at it, the Stimming logo plays and the return chevron shows. Built as the wordmark's S; it always stays. | 2 |
+| 2026-11-17 | Tom makes it exact: "the toy icon i mean". The monogram is the toy's own emblem in its ink. And: "the key caps only show with the info thing -- and they are gentle". Signal has no key strip; keycaps show only in the How to play sheet, as hairline boxes. | 2 |
+| 2026-11-17 | Tom: "white square fill monogram like intro". The monogram top left is a white square with the toy's emblem cut out dark, the intro's flash box at rest. Tom also asks for ten toys to take the new bar first, with a redo of their controls in the same pass (proposal in epic `stimming-a5rs`). | 2 |
+| 2026-11-17 | Tom confirms the ten: Cauldron, Train ride, Railgun, Galaxy, Window seat, Fire, Googly eyes, Prism, Bubbles, Frietkot. He also asks for a larger icon in the monogram; it fills 90% of the square. | 2 |
+| 2026-11-17 | Tom says yes to the shell port, and: "we will pull out bar v2 when we have signed off barv3 per toy". Signal is Bar v3 (`docs/plans/bar-v3.md`); a toy opts in, and Bar v2 stays until every toy is signed off. Cauldron is the first toy on it. | 1, 2 |
+| 2026-11-17 | Tom asks for an STE100-inspired rewrite of all copy, with "ultimate clarity and consistency -- esp with the controls", and for a redo of the mouse and keycap icons. Cauldron is first: its labels, help and other copy are rewritten; Tom sets two labels himself: "Ingredients for T -- Throw Out for C". How to play draws each input. | 2 |
+| 2026-11-17 | Tom on Train ride: "make it swiss red and white this one". Its accent is `oklch(0.52 0.21 29)`; its picks are white on red. | 19 |
+| 2026-11-17 | Tom on Railgun's copy: "Yes, apply". Time of day; Aim: Auto, Manual; Shot: Single, Salvo; Medium; one instruction per help row. Reset stays on the bar: the toy shows it only after a kill, and Bar v3 now follows that. | 19 |
+| 2026-11-17 | Tom on Galaxy's copy: "Yes, apply". Objects for the list; Black hole for Supermassive; Speed for Gravity; nine help rows, one instruction each. | 19 |
+| 2026-11-17 | Tom on Window seat's copy: "Yes, apply". Wing light; Clouds: Clear, Broken, Overcast; Towns: Few, Some, Many; Seat in whole words; Settings in three groups (Outside, Cabin, Sights); fourteen help rows. | 19 |
+| 2026-11-17 | Tom on Fire's copy: "Yes, apply". Size for Intensity; Fuel for Base; Reset moves from the bar into Settings; ten help rows; add salt, not flick. | 19 |
+| 2026-11-17 | Tom on Googly eyes' copy: "Yes, apply". Shuffle, Shake and Blink stay; eleven help rows; a circle drawing for the dizzy gesture. | 19 |
+| 2026-11-17 | Tom on Prism: "Yes, sheet + copy". The Pieces palette is a Bar v3 sheet: no box, the soft glass, tap or drag. Fifteen help rows. | 19 |
+| 2026-11-17 | Tom on Bubble wand's copy: "Go". Pop all for Clear; five help rows; a drawing for a pointer move. | 19 |
+| 2026-11-17 | Tom on Frietkot: "Yes, both". Weather goes on the bar as the toy's list (Changing, Dry, Drizzle, Rain, Fog); Neon colour; Settings in two groups (Place, Lens); two help rows. | 19 |
+
+Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
+- The seven bar rows wait for the redo. No one fixes them on the present bars.
+- Rows 6, 17 and 20 become requirements of the redo: a keyboard focus mark, 34 px touch targets, 4.5:1 text.
+- No bar value (chip height, label sizes, the 2 px slab radius, corner insets) becomes a scale token before the redo.
