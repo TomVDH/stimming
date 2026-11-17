@@ -19,7 +19,10 @@ First read of what to redo: The own verb Line. Time holds many values in one row
 - [x] List every control and what it does (from the spec, the code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (Tom, 2026-11-17: "Yes, apply"): Dry, Route, Time of day, Weather change, Rain on glass; one instruction per help row; the stage label, the fail line and the intro's fallback line. Checked on the real page at 1280 px; clean console
+- [ ] Not applied: the name "Train Ride" to "Train ride". It is on the menu, in the README and in other pages, so it needs its own yes (hard rule 3)
+- [ ] Not applied: a Reset. Tom has not answered
+- [ ] Not checked with the new copy: 375 x 812 and 812 x 375; a hands-on play session
 - [x] Switch the toy to the Signal bar: `signal: true` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
 - [ ] 1280 px, 375 x 812 and 812 x 375; clean console
 - [ ] The toy's doc in `docs/toys/` says what is true
@@ -52,7 +55,7 @@ Rules: one word for one thing; a label is a noun or one verb; a help line is one
 | Click | lean in or sit back | Lean to the glass |
 | Click again | (same line) | Sit back |
 | Drag | peer | Look along the valley |
-| Scroll (pinch on touch) | (not listed) | Lean to the glass |
+| Pinch, on touch only | (not listed) | Lean to the glass |
 | W | next weather | Change the weather |
 | T | (not listed; the key works) | Change the time of day |
 | E | express | Switch express on and off |

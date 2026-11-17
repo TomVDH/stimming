@@ -349,7 +349,9 @@ export function mountSignal(id, spec, ui) {
       };
       // A toy may give help rows: one instruction per row, as many as it needs.
       // Without them the key strip's entries and the action keys make the list.
-      (spec.help || spec.keys).forEach(([word, verb]) => { if (!(touch() && !onTouch(word))) row(word, verb); });
+      // A key row leaves on a touch screen; a touch-only gesture shows there alone.
+      const fits = word => (touch() ? onTouch(word) : !/^(pinch|tap|double-tap|long-press|two-finger|swipe)\b/i.test(word));
+      (spec.help || spec.keys).forEach(([word, verb]) => { if (fits(word)) row(word, verb); });
       if (!touch() && !spec.help) {
         (spec.actions || []).forEach(a => { if (a.key) row(String(a.key), actLabel(a).toLowerCase()); });
         options.forEach(o => { if (o.key) row(String(o.key), String(o.label).toLowerCase()); });

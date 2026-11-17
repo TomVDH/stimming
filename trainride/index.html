@@ -70,13 +70,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Train Ride</span><span class="intro-sub">Stimming No. 41</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Train Ride</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A mountain valley by night or by day, seen through a carriage window on a high viaduct. Rain runs back along the glass as the train goes. Drag to lean and peer along the valley; scroll or pinch to lean against the glass.">
-      <p class="fail" hidden>Train Ride needs WebGL2, which this browser has turned off.</p>
+    <div class="stage stage--trainride" id="stage" tabindex="0" role="application" aria-label="A valley, seen from a train window. Rain runs along the glass. Drag to look along the valley. Click to lean to the glass.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -6469,7 +6469,8 @@ stage.addEventListener('wheel', e => { e.preventDefault(); S.lean(Math.exp(-e.de
 
 /* ---------- bar ---------- */
 // Bar v2.5: the corners bar; annex.json holds the sheet under the stage.
-const WEATHER = [['clear', 'Clear'], ['drizzle', 'Drizzle'], ['rain', 'Rain'], ['downpour', 'Downpour'], ['mist', 'Mist'], ['fog', 'Fog']];
+// The first weather is Dry on the bar: Clear reads as the Clear action.
+const WEATHER = [['clear', 'Dry'], ['drizzle', 'Drizzle'], ['rain', 'Rain'], ['downpour', 'Downpour'], ['mist', 'Mist'], ['fog', 'Fog']];
 const setWeather = v => { opts.mode = v; S.setMode(v); driftAt = time0() + driftGap(); wake(); };
 const setTime = v => { opts.time = v; save('time', v); S.setTime(v); wake(); };
 const ui = initPage({
@@ -6483,17 +6484,20 @@ const ui = initPage({
     },
     slider: { label: 'Speed', min: 0, max: 1, step: 0.01, value: opts.speed, onInput: v => { opts.speed = v; save('speed', v); S.setSpeed(cruise(v)); wake(); } },
     settings: [
-      { type: 'choice', id: 'time', label: 'Time', value: opts.time, options: HOUR_KEYS.map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) })), onPick: setTime },
+      { type: 'choice', id: 'time', label: 'Time of day', value: opts.time, options: HOUR_KEYS.map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) })), onPick: setTime },
       // Drift lets the weather wander to a neighbour every few minutes.
-      { type: 'toggle', id: 'drift', label: 'Drift', value: opts.drift, onToggle: on => { opts.drift = on; save('drift', on ? '1' : '0'); } },
+      { type: 'toggle', id: 'drift', label: 'Weather change', value: opts.drift, onToggle: on => { opts.drift = on; save('drift', on ? '1' : '0'); } },
       // Express runs through every station without stopping.
       { type: 'toggle', id: 'express', label: 'Express', value: opts.express, onToggle: on => { opts.express = on; save('express', on ? '1' : '0'); S.setExpress(on); wake(); } },
-      { type: 'choice', id: 'wet', label: 'Wet glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
+      { type: 'choice', id: 'wet', label: 'Rain on glass', value: opts.wet, options: [{ value: '0.5', label: 'Less' }, { value: '1', label: 'Some' }, { value: '1.4', label: 'More' }], onPick: v => { opts.wet = v; save('wet', v); S.setWet(+v); wake(); } },
     ],
     // The line: a strip that shows where the train is and jumps along the route.
-    actions: [{ verb: 'line', label: 'Line', key: 'L', onPress: () => lineUI.toggle() }],
+    actions: [{ verb: 'line', label: 'Route', key: 'L', onPress: () => lineUI.toggle() }],
     quality: true,
-    keys: [['click', 'lean in or sit back'], ['drag', 'peer'], ['W', 'next weather'], ['E', 'express']],
+    keys: [['click', 'lean to the glass'], ['drag', 'look along the valley'], ['W', 'change the weather'], ['E', 'switch express on and off']],
+    // Bar v3 lists every input in How to play: one instruction per row.
+    help: [['click', 'Lean to the glass'], ['click again', 'Sit back'], ['pinch', 'Lean to the glass'], ['drag', 'Look along the valley'],
+      ['W', 'Change the weather'], ['T', 'Change the time of day'], ['E', 'Switch express on and off'], ['L', 'Show and hide the route']],
   },
 });
 onQuality(() => { rung = 0; resize(true); wake(); });
@@ -6526,13 +6530,13 @@ addEventListener('keydown', e => {
 });
 
 /* ---------- the line ---------- */
-// The Line button opens a strip: the route with a tick per station, and the train on it.
+// The Route button opens a strip: the route with a tick per station, and the train on it.
 // A drag along the strip moves the train; ?dev adds the top view to it.
 const lineUI = (() => {
   const L = S.length, el = document.createElement('div');
   el.className = 'tr-line';
   el.hidden = true;
-  el.innerHTML = '<div class="tr-line-top"><b data-s></b><span data-k></span></div><div class="tr-line-track" role="slider" aria-label="Place on the line" tabindex="0"></div>';
+  el.innerHTML = '<div class="tr-line-top"><b data-s></b><span data-k></span></div><div class="tr-line-track" role="slider" aria-label="Place on the route" tabindex="0"></div>';
   const track = el.querySelector('.tr-line-track'), name = el.querySelector('[data-s]'), km = el.querySelector('[data-k]');
   // Ticks: tall for the ends and the towns, short for the halts.
   for (const [n, sv] of S.stations) {
