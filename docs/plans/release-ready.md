@@ -470,3 +470,15 @@ Batch 8, 2026-11-16 (Tom):
 | bubbles.1 | Drop it | No auto puff on arrival; nothing moves until the visitor acts |
 | lava.1 | Drop them | The arrow-key turn goes |
 | lava.2 | No Reset | No Reset anywhere |
+
+Batch 9, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| eyes.1 | Bind Space | The Shake chip takes key Space; chip and strip agree |
+| eyes.2 | Show it | "d dizzy" goes on the key strip in place of one entry; Googly eyes' chat proposes which leaves |
+| sonar.1 | Move both to Dev | Afterglow and Scanlines become `dev` rows. Settings keeps Grid and Quality |
+| sonar.2 | Cut Sounder | The unreachable Sounder mode leaves the code |
+| trails.1 | Keep in Settings | Colour (True, Mono) stays a player setting |
+| trails.2 | Wake for meteors | A meteor wakes the loop for its flight, then the sky rests again |
+| shadyos.1 | Keep in Settings | Trail stays a player setting |
