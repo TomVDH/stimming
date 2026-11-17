@@ -65,7 +65,8 @@ const ui = initPage({ id: 'tornado', bar: {
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
     // The opening build-up's length: the storm grows from nothing over this many seconds.
-    { type: 'slider', id: 'buildUp', label: 'Build-up (s)', min: 20, max: 300, step: 5, value: 90, persist: true, onInput: v => act.buildUp(v) },
+    // Its key is new, so an old saved 90 s gives way to the 15 s default.
+    { type: 'slider', id: 'buildUpS', label: 'Build-up (s)', min: 5, max: 300, step: 1, value: 15, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -1107,7 +1108,8 @@ function bakeFar(u, rw, rh, n) {
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
-  const whole = !fun.farReady || fun.farHold || moved;
+  // The build-up moves Storm in small steps: it renews in strips, so no frame stalls on a whole bake.
+  const whole = !fun.farReady || fun.farHold || (moved && !build);
   // A running page renews the far field strip by strip, so its breaks drift with the deck.
   if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
@@ -1373,7 +1375,7 @@ act.clear = () => {
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
-act.buildUp = v => { if (build) build.dur = clamp(+v || 90, 20, 300); };
+act.buildUp = v => { if (build) build.dur = clamp(+v || 15, 5, 300); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
@@ -1444,10 +1446,11 @@ if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('ro
 // The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
 // Reduced motion starts at full storm with the first tornado formed.
 {
-  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUp')?.value ?? 90);
+  try { localStorage.removeItem('stimming.tornado.buildUp'); } catch { /* no storage */ }
+  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpS')?.value ?? 15);
   if (!qs.has('tor') && !qs.has('storm')) {
     if (reduced() || !(bu > 0)) heroDown();
-    else { build = { t: 0, dur: clamp(bu, 20, 300), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
+    else { build = { t: 0, dur: clamp(bu, 5, 300), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
   }
 }
 // QA: GPU time per frame, or of the funnel pass alone, from timer queries.
