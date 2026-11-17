@@ -272,55 +272,162 @@ vec2 wireAt(int i, int j, float u, float z) {
   float whip = sin(s * 0.35 - ts * 9.0) * wk;
   return vec2(E.x + whip * 1.6 + swayAt(i, j, u, z).x * 0.3, max(y + whip * 0.8, 0.0));
 }
+/* ---------- the line's materials ---------- */
+// The sky and ground a shiny part reflects in direction R, in world space.
+// Low down the bright horizon glows; higher up the deck's dark slate; below, the lit field.
+vec3 lineEnv(vec3 R) {
+  if (R.y >= 0.0) return mix(hazeCol(R) * 1.05, uAmb * 0.07, smoothstep(0.0, 0.18, R.y));
+  return vec3(0.26, 0.19, 0.09) * (uSunCol * 0.45 + uAmb * 0.5) * (0.6 + 0.4 * exp(R.y * 6.0));
+}
+// The GGX lobe at roughness r for a cosine nh between normal and half vector.
+float ggx(float nh, float r) { float a = r * r, a2 = a * a, d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (3.14159 * d * d); }
+// One conductor's colour: weathered stranded aluminium, a cylinder along T, seen along V.
+// A thin wire is sub-pixel: the pixel sees the mean over its visible half.
+// The sun's highlight is a line along the wire where the cylinder's best normal meets the half vector.
+vec3 wireShade(vec3 P, vec3 T, vec3 V) {
+  vec3 F0 = vec3(0.62, 0.63, 0.64);
+  float r = 0.42;
+  // The normal that faces the eye, and the side normal round the wire.
+  vec3 Nv = normalize(V - T * dot(V, T)), B = cross(T, Nv);
+  vec3 c = vec3(0.0);
+  // Four normals across the visible half, each with its reflection of the sky or field.
+  for (int k = 0; k < 4; k++) {
+    float a = (float(k) - 1.5) * 0.6;
+    vec3 N = Nv * cos(a) + B * sin(a);
+    float nv = max(dot(N, V), 0.05);
+    vec2 ab = envBRDF(r, nv);
+    c += lineEnv(reflect(-V, N)) * (F0 * ab.x + ab.y) * 0.25;
+  }
+  // The sun: the cylinder always holds a normal in the plane across T; its best one sets the highlight.
+  vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), H = normalize(L + V);
+  float th2 = dot(T, H);
+  float nh = sqrt(max(1.0 - th2 * th2, 0.0));
+  vec3 Nh = normalize(H - T * th2);
+  float nl = max(dot(Nh, L), 0.0), nv = max(dot(Nh, V), 0.05);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+  float sun = 1.0 - sunCover(P * 0.001);
+  // The cylinder's width spreads the lobe: the highlight is a thin line, not a dot.
+  c += uSunCol * sun * F * ggx(nh, r) * nl / (4.0 * nv + 0.4) * 0.35;
+  // Dust and oxide on the strands: a little diffuse grey.
+  return c + vec3(0.05) * (uSunCol * 0.3 * sun * max(dot(Nv, L), 0.0) + uAmb * 0.45);
+}
+// Weathered creosoted wood on a round post with axis A, at across-coordinate x (-1 to 1).
+// h is the height up the pole: the foot sits in the shade of the crop and the ditch.
+vec3 woodShade(vec3 P, vec3 A, vec3 V, float x, float h, float grain) {
+  vec3 Nv = normalize(V - A * dot(V, A)), B = normalize(cross(A, Nv));
+  vec3 N = Nv * sqrt(max(1.0 - x * x, 0.0)) + B * x;
+  vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), H = normalize(L + V);
+  float sun = 1.0 - sunCover(P * 0.001);
+  // Creosote dark brown, weathered grey where the grain stands up.
+  vec3 alb = mix(vec3(0.11, 0.08, 0.055), vec3(0.2, 0.18, 0.15), 0.35 + 0.4 * grain);
+  // The foot: the crop and the ditch hide sky and sun; it brightens toward the top.
+  float ao = mix(0.45, 1.0, smoothstep(0.3, 2.5, h));
+  float nl = max(dot(N, L), 0.0);
+  // A sky fill from above, stronger on the side toward the open sky.
+  vec3 diff = alb * (uSunCol * 1.1 * sun * nl * ao + uAmb * (0.5 + 0.15 * N.y) * ao);
+  vec3 spec = uSunCol * sun * 0.04 * ggx(max(dot(N, H), 0.0), 0.75) * nl + lineEnv(reflect(-V, N)) * 0.02;
+  return diff + spec;
+}
+// Coverage of a segment a to b of half width w at pixel size px; sx returns the signed side, -1 to 1.
+// A part thinner than a pixel covers only its share: no aliasing and no crawl.
+float segCover(vec2 s, vec2 a, vec2 b, float w, float px, out float sx, out float u) {
+  vec2 ab = b - a;
+  u = clamp(dot(s - a, ab) / max(dot(ab, ab), 1e-12), 0.0, 1.0);
+  vec2 q = s - a - ab * u;
+  float d = length(q);
+  sx = clamp(sign(ab.x * q.y - ab.y * q.x) * d / max(w, 1e-6), -1.0, 1.0);
+  float fw = max(w, px * 0.5);
+  return clamp((fw - d) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px);
+}
+
 // The wires: for each screen column, the place along the line where each wire crosses.
+// The wire's slope on screen sets its true distance from the pixel, so a slanted wire keeps its weight.
 void wires(vec2 s, vec3 rd, float px) {
-  vec3 wireC = uAmb * 0.05;
   float sn = sin(uYaw), cs = cos(uYaw), k = s.x / uFoc;
   float den = k * cs - sn;
   if (abs(den) < 1e-5) return;
   for (int j = 0; j < 3; j++) {
     float wx = POLE_X + float(j - 1) * 1.1, dx = 0.0;
     vec2 w = vec2(0.0);
-    float zz = 0.0;
+    float zz = 0.0, wz = 0.0, L = 0.0;
+    int i = 0;
     bool hit = true;
     // The plane at rest, then the plane moved by the sway found there.
     for (int it = 0; it < 2; it++) {
       float x = wx + dx;
-      float wz = -x * (cs + k * sn) / den;
+      wz = -x * (cs + k * sn) / den;
       zz = depthOf(vec3(x, 0.0, wz));
-      float L = -wz - POLE_Z0;
+      L = -wz - POLE_Z0;
       if (zz < 1.0 || L < 0.0 || L > POLE_GAP * float(POLES - 1)) { hit = false; break; }
-      int i = int(L / POLE_GAP);
+      i = int(L / POLE_GAP);
       w = wireAt(i, j, fract(L / POLE_GAP), wz);
       dx = w.x;
     }
     if (!hit || w.y < -50.0) continue;
     float sy = (w.y - CAMH) / zz * uFoc;
+    // The wire is 2 cm thick; its radius on screen.
+    float rad = 0.01 / zz * uFoc;
+    if (abs(s.y - sy) > 40.0 * px + rad * 6.0) continue;
+    // The wire's tangent from a step along it: its slope on screen and its direction in the world.
+    float du = 0.4 / POLE_GAP, u0 = fract(L / POLE_GAP), u1 = min(u0 + du, 0.999);
+    vec2 w1 = wireAt(i, j, u1, wz - (u1 - u0) * POLE_GAP);
+    if (w1.y < -50.0) w1 = w;
+    vec3 P0 = vec3(wx + w.x, w.y, wz), P1 = vec3(wx + w1.x, w1.y, wz - (u1 - u0) * POLE_GAP);
+    vec2 s0 = proj(P0), s1 = proj(P1);
+    vec2 sd = s1 - s0;
+    float m = abs(sd.x) > 1e-7 ? sd.y / sd.x : 1e3;
+    float dist = abs(s.y - sy) / sqrt(1.0 + m * m);
+    float a = clamp((max(rad, px * 0.5) - dist) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * rad / px);
     // A wire under the wheat's ears hides in the field.
-    float thick = 0.02 / zz * uFoc;
-    float a = clamp(1.0 - abs(s.y - sy) / (px * 0.8), 0.0, 1.0) * min(1.0, thick * 2.0 / px + 0.15) * smoothstep(0.7, 1.1, w.y);
-    put(hazed(wireC, rd, zz), a * 0.9, zz);
+    a *= smoothstep(0.7, 1.1, w.y);
+    if (a <= 0.0) continue;
+    vec3 T = normalize(P1 - P0), V = normalize(vec3(0.0, CAMH, 0.0) - P0);
+    put(hazed(wireShade(P0, T, V), rd, zz), a, zz);
   }
 }
-// The poles: each a leaning post with its cross-arm.
+// The poles: each a round wooden post with its cross-arm and three glass insulators.
 void linePoles(vec2 s, vec3 rd, float px) {
-  vec3 wood = uSunCol * vec3(0.16, 0.1, 0.06) + uAmb * 0.03;
   for (int i = 0; i < POLES; i++) {
     vec3 P = vec3(POLE_X, 0.0, -(POLE_Z0 + POLE_GAP * float(i)));
     float z = depthOf(P);
     vec2 b = proj(P);
     if (abs(s.x - b.x) > 12.0 / z * uFoc + px) continue;
     float l = poleLean(i), sl = sin(l), cl = cos(l);
-    // A lying pole sinks into the wheat: only its top shows over the ears.
-    vec2 tp = proj(P + vec3(10.0 * sl, 10.0 * cl, 0.0));
-    float u, w = 0.15 / z * uFoc;
-    float d = segD(s, b, tp, u);
-    float k = clamp((w - d) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px + 0.2);
-    // The cross-arm turns with the pole.
-    vec2 ca = proj(P + vec3(-1.2 * cl + 9.1 * sl, 9.1 * cl + 1.2 * sl, 0.0)), cb = proj(P + vec3(1.2 * cl + 9.25 * sl, 9.25 * cl - 1.2 * sl, 0.0));
-    float wa = 0.09 / z * uFoc;
-    k = max(k, clamp((wa - segD(s, ca, cb, u)) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * wa / px + 0.2));
-    put(hazed(wood * shadeK(sunCover(P * 0.001)), rd, z), k, z);
+    vec3 A = vec3(sl, cl, 0.0), X = vec3(cl, -sl, 0.0);
+    vec3 V = normalize(vec3(0.0, CAMH, 0.0) - (P + A * 5.0));
+    float m = uFoc / z;
+    // The post: it thins a little toward its top.
+    vec2 tp = proj(P + A * 10.0);
+    float u, sx;
+    float k = segCover(s, b, tp, 0.15 * m, px, sx, u);
+    if (k > 0.0) {
+      float grain = vn(vec2(sx * 3.0 + float(i) * 7.0, u * 40.0)) * (1.0 - smoothstep(0.003, 0.02, px / m));
+      put(hazed(woodShade(P + A * u * 10.0, A, V, sx, u * 10.0, grain), rd, z), k, z);
+    }
+    // The cross-arm: a sawn beam across the line, lit on its top and its face.
+    vec3 C0 = P + A * 9.15 - X * 1.25, C1 = P + A * 9.15 + X * 1.25;
+    float ka = segCover(s, proj(C0), proj(C1), 0.06 * m, px, sx, u);
+    if (ka > 0.0) {
+      put(hazed(woodShade(mix(C0, C1, u), X, V, sx * 0.6, 9.0, 0.5), rd, z), ka, z);
+    }
+    // The insulators: glazed porcelain bells under each wire, with a small glint where they catch the sky.
+    for (int j = 0; j < 3; j++) {
+      vec3 I = j == 1 ? P + A * 9.85 + X * 0.12 : P + A * 9.2 + X * (float(j - 1) * 1.1);
+      vec2 ic = proj(I);
+      float ir = 0.08 * m, ih = 0.1 * m;
+      vec2 q = (s - ic) / vec2(ir, ih);
+      float ki = clamp((1.0 - length(q)) * min(ir, ih) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * ir / px);
+      if (ki <= 0.0) continue;
+      // The bell's normal from its outline: the glaze reflects the sky up top and the field below.
+      vec3 N = normalize(V * sqrt(max(1.0 - dot(q, q), 0.0)) + X * q.x + A * q.y);
+      vec2 ab = envBRDF(0.08, max(dot(N, V), 0.05));
+      vec3 Lh = normalize(normalize(uSun + vec3(0.0, 1e-3, 0.0)) + V);
+      float sun = 1.0 - sunCover(I * 0.001);
+      vec3 Ls = normalize(uSun + vec3(0.0, 1e-3, 0.0));
+      vec3 glaze = vec3(0.4, 0.38, 0.35) * (uSunCol * 0.9 * sun * max(dot(N, Ls), 0.0) + uAmb * (0.45 + 0.2 * N.y));
+      glaze += lineEnv(reflect(-V, N)) * (0.04 * ab.x + ab.y) + uSunCol * sun * ggx(max(dot(N, Lh), 0.0), 0.12) * 0.002;
+      put(hazed(glaze, rd, z), ki, z);
+    }
   }
 }
 
