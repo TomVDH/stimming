@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:09:56Z
+updated_at: 2026-11-17T07:18:03Z
 parent: stimming-oh7b
 ---
 
@@ -155,3 +155,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: the far field is baked: past 16 km the deck is a half-size picture with no tornadoes; the live march stops at 16 km with a 14–16 km crossover. The bake renews on Time, Sun dir, Cloud base, Storm, Eye height, lens or size changes, in 8 strips on a running page. GPU, 3 × F4.5, 1828×984, 28 mm, minimum frame: 23.0 ms before, 16.2–17.1 ms after.
 
 - 2026-11-17: the far sky: a tight horizon glow, warmer toward the sun, under three thin ragged haze bands just over the horizon; only the strip under the deck's far edge shows, as a lit, layered glow.
+
+- 2026-11-17, Tom (the scene way too bright; the windmill out for now): the foreground windmill is out (its code is in a28e1e65); the sun's light 1.7× its colour curve (was 2.6), the sky fill about 20% lower, the wheat's albedo about 35% lower with softer gust sheen; the storm reads heavy and dark.

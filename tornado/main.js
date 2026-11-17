@@ -307,8 +307,8 @@ vec3 stormLit(vec3 p, float d) {
   vec3 amb = uAmb * mix(0.08, 0.85, up) * (1.0 - 0.7 * under);
   // The lower flank stays dark: the storm's own bulk shades it.
   vec3 c = uSunCol * lit * lit * mix(0.14, 0.8, up * up) + amb;
-  // The core goes black-green behind its rain.
-  return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
+  // The core goes dark slate behind its rain; its green comes only where light passes the rain.
+  return mix(c, c * vec3(0.3, 0.33, 0.37), core * 0.8);
 }
 // Marches the storm at full size, while the storm pass builds. Returns colour and coverage.
 // tHit is the hit distance in km. jit, 0 to 1 per pixel, offsets the steps: no contour bands.
@@ -392,10 +392,11 @@ float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0
 // The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
 vec3 wheatFar(vec2 xz, float fx) {
   float patchN = vn(xz * vec2(0.012, 0.004)) * 0.6 + vn(xz * vec2(0.05, 0.015)) * 0.4;
-  vec3 alb = mix(vec3(0.26, 0.17, 0.07), vec3(0.44, 0.32, 0.13), patchN);
+  // Ripe wheat in storm light: a dull gold, not a blown one.
+  vec3 alb = mix(vec3(0.17, 0.11, 0.045), vec3(0.3, 0.21, 0.085), patchN);
   // A bent stalk shows its pale side.
   float g = gust(xz);
-  alb = mix(alb, vec3(0.55, 0.47, 0.3), g * 0.6);
+  alb = mix(alb, vec3(0.38, 0.32, 0.2), g * 0.5);
   // Up close the field shows its make: drill rows along the road, clumps of ears with darker gaps,
   // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
   float near = 1.0 - smoothstep(0.08, 0.8, fx);
@@ -406,7 +407,7 @@ vec3 wheatFar(vec2 xz, float fx) {
     float rip = 0.5 + 0.5 * sin(dot(xz, WDIR) * 0.9 - uT * (2.0 + 4.0 * uWind) + vn(xz * 0.2) * 4.0);
     alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap) * (0.9 + 0.22 * rip * (0.3 + 0.7 * g)), near);
   }
-  return alb * (0.7 + 0.5 * g) * (uSunCol * 0.5 + uAmb * 0.55);
+  return alb * (0.75 + 0.35 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
 // The near wheat: shells of ears, from the tallest ear down into the stalks.
 // Each shell adds soft coverage, front to back. a is what still shows of the ground below.
@@ -444,7 +445,7 @@ vec4 wheatNear(vec3 rd, float fx) {
     if (k > 0.0) {
       // Lower in the stand the light fails a little; the low sun behind lights the field's face.
       float depth = clamp((h - 0.6) / 0.5, 0.0, 1.0);
-      vec3 ear = mix(vec3(0.3, 0.2, 0.08), vec3(0.5, 0.36, 0.15), th(cell + 1.3));
+      vec3 ear = mix(vec3(0.2, 0.135, 0.055), vec3(0.34, 0.24, 0.1), th(cell + 1.3));
       ear = mix(ear, vec3(0.52, 0.45, 0.28), g * 0.45);
       acc += T * k * ear * lit * mix(0.78, 1.0, depth);
       T *= 1.0 - k;
@@ -454,7 +455,7 @@ vec4 wheatNear(vec3 rd, float fx) {
   // Under the ears: stalks in their own shade.
   // Under the ears: shaded stalks, unless the ray ends on a verge or the road.
   float gx = rd.x * CAMH / -rd.y;
-  if (abs(gx - ROAD_X) >= WHEAT_GAP) { acc += T * vec3(0.3, 0.21, 0.09) * lit * 0.8; T = 0.0; }
+  if (abs(gx - ROAD_X) >= WHEAT_GAP) { acc += T * vec3(0.2, 0.14, 0.06) * lit * 0.8; T = 0.0; }
   return vec4(acc, T);
 }
 vec3 ground(vec3 rd, float px) {
@@ -645,72 +646,6 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   }
 }
 
-/* ---------- the windmill: an old water pump in the near wheat, a blockout ---------- */
-// Its foot in world metres: about 38 m out, left of where tornadoes touch down, in frame at 28 and 50 mm.
-const vec3 MILL = vec3(-18.1, 0.0, -36.3);
-// Screen point of a camera-space point.
-vec2 projC(vec3 c) { return vec2(c.x, c.y - CAMH) / -c.z * uFoc; }
-// Coverage of a bar from a to b in camera space, wid metres wide, at pixel size px.
-float bar(vec2 s, vec3 a, vec3 b, float wid, float px) {
-  float u;
-  float d = segD(s, projC(a), projC(b), u);
-  float w = 0.5 * wid / -mix(a.z, b.z, u) * uFoc;
-  return clamp((w - d) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px + 0.25);
-}
-void windmill(inout vec3 c, vec2 s, vec3 rc, vec3 rd, float px) {
-  vec3 m = toCam(MILL);
-  vec3 hub = m + vec3(0.0, 13.6, 0.0);
-  // The quick test: the mill's box on screen.
-  float reach = 3.2 / -m.z * uFoc;
-  if (abs(s.x - projC(m).x) > reach + px * 2.0 || s.y > projC(hub).y + reach || s.y < projC(m).y - px * 2.0) return;
-  float k = 0.0;
-  // Four legs taper from a 4 m square at the ground to under a metre at the top.
-  for (int i = 0; i < 4; i++) {
-    vec2 o = vec2(i == 0 || i == 3 ? 1.0 : -1.0, i < 2 ? 1.0 : -1.0);
-    k = max(k, bar(s, m + vec3(o.x * 2.0, 0.0, o.y * 2.0), m + vec3(o.x * 0.4, 13.0, o.y * 0.4), 0.14, px));
-  }
-  // Girts at four heights.
-  for (int j = 0; j < 4; j++) {
-    float h = 2.5 + float(j) * 2.8, hw = mix(2.0, 0.4, h / 13.0);
-    k = max(k, bar(s, m + vec3(-hw, h, -hw), m + vec3(hw, h, -hw), 0.08, px));
-    k = max(k, bar(s, m + vec3(-hw, h, hw), m + vec3(hw, h, hw), 0.08, px));
-    k = max(k, bar(s, m + vec3(-hw, h, -hw), m + vec3(-hw, h, hw), 0.08, px));
-    k = max(k, bar(s, m + vec3(hw, h, -hw), m + vec3(hw, h, hw), 0.08, px));
-  }
-  vec3 ro = vec3(0.0, CAMH, 0.0);
-  // The wheel faces into the wind; the vane trails downwind.
-  vec3 wd = normalize(toCam(vec3(WDIR.x, 0.0, WDIR.y)));
-  vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), wd));
-  // The wheel: an annulus of 18 blades, turning with the wind.
-  vec3 wc = hub - wd * 0.6;
-  float den = dot(rc, wd);
-  if (abs(den) > 1e-4) {
-    float t = dot(wc - ro, wd) / den;
-    vec3 q = ro + rc * t - wc;
-    vec2 l = vec2(dot(q, side), q.y);
-    float r = length(l), fp = t * px / uFoc;
-    float a = atan(l.y, l.x) + uT * (0.4 + 2.2 * uWind);
-    float gap = smoothstep(0.55, 0.8, abs(fract(a * 18.0 / 6.2832) - 0.5) * 2.0);
-    float ann = clamp((2.4 - r) / fp + 0.5, 0.0, 1.0) * clamp((r - 0.5) / fp + 0.5, 0.0, 1.0) * (1.0 - 0.85 * gap);
-    float rim = clamp((0.07 - abs(r - 2.35)) / fp + 0.5, 0.0, 1.0);
-    float hubK = clamp((0.3 - r) / fp + 0.5, 0.0, 1.0);
-    if (t > 0.0) k = max(k, max(ann, max(rim, hubK)));
-  }
-  // The tail: a boom and a plate in the upright plane along the wind.
-  float den2 = dot(rc, side);
-  if (abs(den2) > 1e-4) {
-    float t = dot(hub - ro, side) / den2;
-    vec3 q = ro + rc * t - hub;
-    float along = dot(q, wd), up = q.y, fp = t * px / uFoc;
-    float boom = clamp((0.05 - abs(up)) / fp + 0.5, 0.0, 1.0) * clamp(along / fp + 0.5, 0.0, 1.0) * clamp((2.6 - along) / fp + 0.5, 0.0, 1.0);
-    float hh = mix(0.3, 0.9, clamp((along - 1.6) / 1.6, 0.0, 1.0));
-    float plate = clamp((hh - abs(up - 0.1)) / fp + 0.5, 0.0, 1.0) * clamp((along - 1.6) / fp + 0.5, 0.0, 1.0) * clamp((3.2 - along) / fp + 0.5, 0.0, 1.0);
-    if (t > 0.0) k = max(k, max(boom, plate));
-  }
-  // Dark weathered steel in the scene's light, in the air at its distance.
-  vec3 steel = uAmb * 0.05 + uSunCol * 0.035;
-  c = mix(c, hazed(steel, rd, -m.z), clamp(k, 0.0, 1.0));
-}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -744,17 +679,19 @@ vec3 envScene(vec2 uv) {
       float fi = float(i), e = 0.004 + 0.008 * fi, w = 0.003 + 0.002 * fi;
       float rag = vn(vec2(az * (30.0 + 12.0 * fi) + fi * 17.0, fi * 3.1));
       float b = exp(-pow((el - e) / w, 2.0)) * (0.35 + 0.5 * rag);
-      c = mix(c, hazeCol(rd) * (1.0 - 0.12 * fi), b * 0.35);
+      // The bands are dust, warm in the low light, not the sky's own hue.
+      c = mix(c, mix(hazeCol(rd), uSunCol * vec3(0.3, 0.22, 0.15) + uAmb * 0.15, 0.5) * (1.0 - 0.12 * fi), b * 0.35);
     }
     // Under the base: the gloom, and the rain curtain hanging out of the core.
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
     vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
-    vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
+    // The gloom under the base is a cool slate, never green: green belongs only where light passes rain.
+    vec3 gloom = uAmb * vec3(0.06, 0.066, 0.078);
     float glK = 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm);
     float streak = 0.75 + 0.25 * vn(vec2(atan(rc.x, -rc.z) * 260.0, 0.5));
     float rnK = (1.0 - exp(-rn.y * rn.y * 0.05 * uStorm * streak)) * smoothstep(0.0, 0.003, rd.y + 0.001);
-    vec3 rainC = gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01;
+    vec3 rainC = gloom * vec3(0.95, 0.98, 1.0) + uSunCol * 0.008;
     if (uStormOn > 0.5) {
       // The sky behind takes the gloom and the rain; the storm pass carries its own gloom, sample by sample.
       // Laid over everything, the gloom drew a backlit funnel in the sky's own tone: it read as hollow.
@@ -775,7 +712,6 @@ vec3 envScene(vec2 uv) {
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
   farm(c, s, rd, px);
   poles(c, s, rd, px);
-  windmill(c, s, rc, rd, px);
   nearEars(c, s, px, asp);
   return c;
 }
@@ -809,8 +745,9 @@ function setSun(hour) {
   // Low light is warm and weak; the sky's fill turns blue and dim.
   const k = clamp(el / 0.44);
   const g = 0.5 + 0.5 * k;
-  sunCol[0] = 2.6 * (0.45 + 0.55 * g); sunCol[1] = 2.6 * (0.2 + 0.7 * g * g); sunCol[2] = 2.6 * (0.08 + 0.72 * k * k);
-  amb[0] = 0.18 + 0.2 * k; amb[1] = 0.22 + 0.24 * k; amb[2] = 0.32 + 0.3 * k;
+  // Under the storm the light is low and precious: the sun rakes in at about two thirds of open-sky strength.
+  sunCol[0] = 1.7 * (0.45 + 0.55 * g); sunCol[1] = 1.7 * (0.2 + 0.7 * g * g); sunCol[2] = 1.7 * (0.08 + 0.72 * k * k);
+  amb[0] = 0.14 + 0.16 * k; amb[1] = 0.17 + 0.19 * k; amb[2] = 0.25 + 0.24 * k;
   // Once the sun is down its light goes, and the sky's fill dims into twilight.
   const up = sstep(-0.035, 0.012, el), tw = 0.45 + 0.55 * sstep(-0.12, 0.0, el);
   for (let i = 0; i < 3; i++) { sunCol[i] *= up; amb[i] *= tw; }
