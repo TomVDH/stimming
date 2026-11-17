@@ -14,6 +14,7 @@ import { createSim, P as FLIGHT } from './flight.js';
 import { createInput } from './input.js';
 import { createRotorSound } from './sound.js';
 import { createFeed } from './feed.js';
+import { createWash } from './wash.js';
 
 mark('libs');
 const stageEl = document.getElementById('stage');
@@ -349,18 +350,9 @@ const S = sim.s;
 const START_YAW = Math.PI / 2;
 sim.reset(0, 0, START_YAW);
 
-// Rotor wash: a pale dust ring under the craft near the ground.
-const wash = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({
-  map: tex(256, (x, n) => {
-    const g = x.createRadialGradient(n / 2, n / 2, n * .1, n / 2, n / 2, n / 2);
-    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.45, 'rgba(255,255,255,.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = g; x.fillRect(0, 0, n, n);
-    for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(255,255,255,${rnd() * .3})`; x.fillRect(rnd() * n, rnd() * n, 2, 2); }
-  }),
-  color: '#d8c4a6', transparent: true, depthWrite: false, opacity: 0
-}));
-wash.rotation.x = -Math.PI / 2;
-scene.add(wash);
+// Downwash: dust and grass ripples under the craft near the ground.
+const wash = createWash(scene, reduced);
+const SOCK = { x: 9, z: 7 };
 
 /* ---------- input ---------- */
 const input = createInput(canvas, { cyc: document.getElementById('s-cyc'), col: document.getElementById('s-col') }, {
@@ -628,14 +620,15 @@ function look(dt, t) {
 
   const g = groundAt(S.p[0], S.p[2]), agl = S.p[1] - g;
   const m = sim.telemetry();
-  wash.position.set(S.p[0], g + .02, S.p[2]);
-  wash.scale.setScalar(1.4 + agl * .9);
-  wash.rotation.z += dt * .4;
-  wash.material.opacity = (S.armed ? clamp(m.load, 0, 1.4) : 0) * clamp(1 - agl / 4, 0, 1) * .3;
+  const I = wash.update(dt, t, { x: S.p[0], z: S.p[2], ground: g, agl, load: m.load, armed: S.armed, wind: S.wind });
 
   // The windsock points downwind and lifts with speed.
-  const w = S.wind, ws = Math.hypot(w[0], w[2]);
-  sock.rotation.set(0, Math.atan2(-w[2], w[0]), -(1 - clamp(ws / 6, 0, 1)) * 1.1 + (reduced() ? 0 : .04 * Math.sin(t * 7)));
+  // A craft close by blows it away from itself.
+  const dx = SOCK.x - S.p[0], dz = SOCK.z - S.p[2], dd = Math.hypot(dx, dz) || 1;
+  const push = 9 * I * clamp(1 - dd / 8, 0, 1) * clamp(1 - (S.p[1] - 5) / 6, 0, 1);
+  const w = [S.wind[0] + dx / dd * push, 0, S.wind[2] + dz / dd * push], ws = Math.hypot(w[0], w[2]);
+  const flap = reduced() ? 0 : (.04 + .05 * clamp(push / 6, 0, 1)) * Math.sin(t * (7 + push * 2));
+  sock.rotation.set(0, Math.atan2(-w[2], w[0]), -(1 - clamp(ws / 6, 0, 1)) * 1.1 + flap);
 
   sun.position.copy(craft.position).addScaledVector(sunDir, 70);
   sun.target.position.copy(craft.position);
@@ -687,7 +680,7 @@ function frame(now) {
   }
   if (first) { first = false; canvas.classList.add('on'); mark('first-frame'); }
   // Asleep: on the ground, disarmed and untouched for 30 s.
-  const busy = S.armed || !S.landed || input.busy() || rotorSound.on;
+  const busy = S.armed || !S.landed || input.busy() || rotorSound.on || wash.alive;
   idle = busy ? 0 : idle + dt;
   if (idle > 30) { running = false; return; }
   requestAnimationFrame(frame);

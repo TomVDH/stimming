@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T22:12:37Z
+updated_at: 2026-11-17T22:15:48Z
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -47,7 +47,8 @@ Tom's asks: motor sound, downwash, model and graphics, refine the scene, an obst
 - [x] Flight HUD: heading tape, horizon and ladder, velocity vector, speed and altitude tapes, burned in
 - [x] Telemetry panel, rotor map and stage text removed (Bar v3: nothing written on the stage)
 - [x] A crash returns to the pad after 3 s
-- [ ] Downwash: dust and grass flung out under the craft
+- [x] Downwash: dust and grass flung out under the craft, ripples in the grass, the windsock blown by a close craft
+- [x] HUD marks white, still engraved (Tom, 14:13)
 - [ ] Model and graphics, from the reference photos
 - [ ] Refine the dusk field
 - [ ] Obstacle course inside the field (design to Tom first)

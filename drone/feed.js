@@ -30,13 +30,21 @@ const KEY_FS = /* glsl */`
     // The picture dims inside the marks; its own grain shows through.
     // An offset sample lights one edge and shades the other.
     float b = clamp(k.b, 0.0, 1.0);
-    if (b > 0.002 || texture(tKey, vUv + uTexel * 2.0).b > 0.002) {
+    // A wider ring of samples: the soft rim round each mark.
+    float rim = 0.0;
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.7854;
+      rim += texture(tKey, vUv + vec2(cos(a), sin(a)) * uTexel * 3.0).b;
+    }
+    rim = clamp(rim / 8.0 * 1.6 - b, 0.0, 1.0);
+    if (b > 0.002 || rim > 0.002) {
       float e = texture(tKey, vUv + vec2(-1.5, 1.5) * uTexel).b - texture(tKey, vUv + vec2(1.5, -1.5) * uTexel).b;
-      float L = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      // On a bright picture the burn dims; on a dark one it glows as a ghost.
-      vec3 dim = o * (1.0 - 0.5 * b), ghost = o + vec3(0.8, 0.86, 0.95) * 0.42 * b;
-      o = mix(dim, ghost, smoothstep(0.32, 0.08, L));
-      o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * (0.12 + 0.25 * L);
+      // Tom: white marks, still engraved.
+      // A dark rim lets white read on a bright sky.
+      o *= 1.0 - 0.4 * rim;
+      o = mix(o, vec3(0.95, 0.97, 1.0), b * 0.92);
+      // The offset sample lights one edge and shades the other.
+      o += vec3(0.9, 0.95, 1.0) * clamp(e, -1.0, 1.0) * 0.3;
     }
     outColor = vec4(o, 1.0);
   }`;
