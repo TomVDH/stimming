@@ -57,12 +57,11 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // The ring beam's curve runs along the foot of the frame.
   // A portrait frame aims at the tube's middle.
   lift: { eye: [-0.55, -0.45, -0.42], look: [0.35, 0, 0.24], tall: [0.25, -0.05, 0.14], inside: true, aperture: 0.012 },
-  // d. Outside, high on the slit's right, a long lens.
-  // The riveted gores fill the left.
-  // The slit is a dark band.
-  // The dew shield rises while the cupola carries the slit round.
+  // d. Low and far on the slit's right, a narrow lens.
+  // The dome's plates fill the left and the middle.
+  // The open slit stands on the right, the tube rising inside it.
   // A portrait frame aims at the dew shield.
-  roll: { eye: [2.283, 0.742, 0.5], look: [0.74, 0.04, 0.25], tall: [0.74, -0.04, 0.27], aperture: 0.01 },
+  roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.4], tall: [0.72, 0, 0.3], aperture: 0.01 },
 };
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];

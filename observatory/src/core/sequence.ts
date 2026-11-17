@@ -21,7 +21,7 @@ export const CUTS: Cut[] = [
   { shot: 'edge', fov: 8, phase: 'open' },
   { shot: 'slit', fov: 10, phase: 'open' },
   { shot: 'lift', fov: 34, phase: 'slew' },
-  { shot: 'roll', fov: 11, phase: 'slew' },
+  { shot: 'roll', fov: 9, phase: 'slew' },
   { shot: 'glass', fov: 20, phase: 'slew' },
 ];
 export const cutOf = (shot: Shot): Cut => CUTS.find(c => c.shot === shot)!;
@@ -32,8 +32,9 @@ export const OPEN_CUT = SHUTTER_S / 2;
 // The lift shot holds this many seconds.
 // The slew starts from rest, so a shot needs time.
 export const LIFT_CUT = 2.5;
-// The roll holds this long at most.
-export const ROLL_MAX = 9;
+// The roll always plays.
+// It holds this long at least and this long at most.
+export const ROLL_MIN = 2.5, ROLL_MAX = 9;
 // The glass shot starts with this many degrees still to lift.
 // Then the glass enters from under the frame.
 export const GLASS_ENTER = 6;
@@ -44,7 +45,7 @@ export const GLASS_HOLD = 1.5;
 // Within this many degrees of its goal the tube looks still.
 // The hold starts there, not at the machine's last slow settle.
 export const SETTLE = 0.05;
-// A shot shows this long at least, or not at all.
+// No shot shows for less than this.
 export const MIN_SHOT = 1.2;
 // The glass shot ends after this many seconds anyway.
 export const GLASS_MAX = 16;
@@ -69,18 +70,15 @@ function dueIn(m: Lift): number {
 }
 
 // Enters a shot.
-// A lift or roll under MIN_SHOT long gives way to the glass.
-function enter(s: Seq, shot: Shot, m: Lift): Seq {
-  const next = (shot === 'lift' || shot === 'roll') && dueIn(m) < MIN_SHOT ? 'glass' : shot;
-  return { ...s, shot: next, t: 0, settled: 0 };
-}
+const enter = (s: Seq, shot: Shot): Seq => ({ ...s, shot, t: 0, settled: 0 });
 
 // The sequence at the pick.
 // A shut shutter opens first.
 // An open shutter starts the slew at once, with the lift shot.
 export function startSeq(phase: Phase, m: Lift): Seq {
   const s: Seq = { shot: 'edge', t: 0, total: 0, settled: 0, done: false };
-  return phase === 'open' ? s : enter(s, 'lift', m);
+  void m;
+  return phase === 'open' ? s : enter(s, 'lift');
 }
 
 // One frame of the sequence.
@@ -90,13 +88,13 @@ export function stepSeq(s: Seq, dt: number, m: Lift): Seq {
   if (s.done) return s;
   const n: Seq = { ...s, t: s.t + dt, total: s.total + dt };
   switch (s.shot) {
-    case 'edge': return n.t >= OPEN_CUT ? enter(n, 'slit', m) : n;
-    case 'slit': return n.t >= OPEN_CUT ? enter(n, 'lift', m) : n;
-    case 'lift':
-      if (dueIn(m) <= 0) return enter(n, 'glass', m);
-      return n.t >= LIFT_CUT ? enter(n, 'roll', m) : n;
+    case 'edge': return n.t >= OPEN_CUT ? enter(n, 'slit') : n;
+    case 'slit': return n.t >= OPEN_CUT ? enter(n, 'lift') : n;
+    case 'lift': return n.t >= LIFT_CUT ? enter(n, 'roll') : n;
     case 'roll':
-      if (dueIn(m) <= 0 || n.t >= ROLL_MAX) return enter(n, 'glass', m);
+      // The roll never gives way early.
+      // A short lift then gives the glass a smaller entry.
+      if ((n.t >= ROLL_MIN && dueIn(m) <= 0) || n.t >= ROLL_MAX) return enter(n, 'glass');
       return n;
     case 'glass': {
       const settled = m.altLeft <= SETTLE ? s.settled + dt : 0;
