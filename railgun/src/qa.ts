@@ -14,7 +14,7 @@ import { IMP_U } from './sky/impacts.ts';
 import { FAR_U, FS_U, GRID_U, farBake, farGrid, farGridUpdate, farPass, fbStart, fbStep, setFarMode, setRockCol } from './world/farcountry.ts';
 import { CLOUD_U, giants, tower } from './clouds/clouds.ts';
 import { setStormProbe } from './clouds/probe.ts';
-import { LAYER_U, setCloudPass } from './clouds/pass.ts';
+import { LAYER_U, setCloudPass, setPassLook } from './clouds/pass.ts';
 import { STORM_SPOTS, stormAt, stormBurst, stormFl } from './clouds/lightning.ts';
 import { gun } from './gun/gun.ts';
 import { caseMesh, ejectCase, stepCase } from './gun/case.ts';
@@ -75,6 +75,7 @@ interface QaHooks {
   skyQ(): unknown;
   stormProbe(on?: boolean): void;
   cloudPass(on?: boolean, cut?: number): void;
+  passLook(o: { res?: number; edge?: number; firm?: number; blur?: number; layer?: boolean }): void;
   still(o?: StillOpts): { rung: number; simT: number; sun: number };
   stormSolo(k?: number | null): void;
   stormsQ(): unknown;
@@ -221,6 +222,8 @@ window.__qa = {
   stormProbe(on = true) { setStormProbe(on); draw(); },
   // The cloud pass on or off; cut sets the cover threshold (higher is more open sky).
   cloudPass(on = true, cut) { setCloudPass(on); if (cut != null) LAYER_U.uLayerCut.value = cut; draw(); },
+  // The pass's silhouette knobs: res, edge, firm, blur.
+  passLook(o) { setPassLook(o); draw(); },
   // One repeatable still for tools/clouds-check.mjs.
   // It freezes the clocks, stops random events and pins the rung.
   // o: sun (the Time slider), fall (the rock's place), t (the sim clock), rung.

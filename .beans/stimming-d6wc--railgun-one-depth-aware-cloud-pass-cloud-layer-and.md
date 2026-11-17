@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T06:20:46Z
-updated_at: 2026-11-17T06:35:40Z
+updated_at: 2026-11-17T06:45:03Z
 parent: stimming-626s
 ---
 
@@ -20,3 +20,9 @@ Plan: docs/plans/railgun-cloud-layer.md
 - [ ] Step 4: drift for layer and storms
 - [ ] Step 5: blast, bolt, rock and lightning light
 - [ ] Step 6: Tom approves; cards retire
+
+## Hybrid (Tom, 23:36: "the cards worked because they are sharper -- middle ground / hybrid"; picked: card shapes, volume depth)
+
+- Heap and middle layers are crisp cards again, on a flat grid (cloudField), facing the view axis, ended by view depth; card rim light and dark backlit cores
+- The pass marches the storms only (uLayerOn 0; the marched heap layer stays as a knob)
+- Silhouette knobs for the march: __qa.passLook({ res, edge, firm, blur, layer }); surface bisect on entry

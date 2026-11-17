@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T05:35:18Z
-updated_at: 2026-11-17T06:28:03Z
+updated_at: 2026-11-17T06:31:04Z
 ---
 
 Tom asked for an assessment of the 15 newest Lab toys and the next 10 toys to build, and an icon rework for each of the 15.
@@ -21,6 +21,7 @@ Next 10: Spillway (stimming-xv1l), Deep vent (stimming-qlbm), Observatory (stimm
 - [ ] Icon galleries one toy at a time (icons/spike-<toy>-1.html), Tom's verdict after each
 - [ ] Record Tom's verdicts in icons/picks.json
 - [ ] Commit through tools/commit.sh with own files only
+- [ ] Concepts and purpose of the next ten in docs/plans/next-ten-concepts.md; Tom reads it, then decides 3D or flat per toy
 
 ## Assessment, 2026-11-16
 
@@ -77,3 +78,4 @@ Order: the 11 Lab toys, newest first. The four shelf toys (cauldron, washer, lad
 | Calving | icons/spike-calving-1.html (icon only, toy not built) | A (2026-11-16) |
 | Aquarium | icons/spike-aquarium-1.html (icon only, toy not built) | A (2026-11-16) |
 | Iodine clock | icons/spike-iodine-1.html (icon only, toy not built) | A (2026-11-16) |
+| Electrolysis | icons/spike-electrolysis-1.html (icon only, toy not built) | pending |

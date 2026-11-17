@@ -43,3 +43,16 @@ Worse with the tube:
 - The puffy billows of the shells go; the streaks lean toward hair.
 - The bands do not read at scene distance: they are a pixel or two wide.
 - At F4.5 the two modes look the same: a dark wedge in the dust and the deck.
+
+## Merged into main's scene (2026-11-17)
+
+The tube now lives in main's merged storm pass, so it takes the pits, the whirls, the spawn sequence, the wind bow, the colour terms, the gloom and the haze as the shells do.
+The Dev group Tube holds the choice `Funnel: Shells / Cloud tube` and three tube knobs: Bands (strength), Band count, Stretch.
+These shared knobs drive the tube too: Opacity, Sheaths (times Bands), Core edge, Rim blend, Light through, Turbulence, Spin, Width, Flare, Lean, Sway, Reach, the Colour group and the Dust group.
+
+Stills: `merged-f25-*` (`?tor=F2.5&age=20`), `merged-near-*` (`?tor=F3.5&near=5&age=25`), `merged-f45x3-*`. All at 1828 x 984, 28 mm, eye 8 m.
+
+GPU time at 3 x F4.5, 28 mm, 1828 x 984, minimum of 48 frames: Shells 17.4 ms, Tube 17.1 ms. Pass alone, minimum of 60: Shells 15.1 ms, Tube 12.0 ms.
+Both hold 30 fps with room. Medians (Shells 34.9, Tube 38.5) carry other work on the GPU.
+
+With main's denser Opacity the two modes read much closer than in the probe. The tube still shows streaks that wrap the funnel; the shells keep rounder puffs.

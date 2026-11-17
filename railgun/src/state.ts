@@ -153,6 +153,8 @@ export interface ShaftCloud {
   H: number;
   kind: number;
   sd: number;
+  // The range from the eye, in metres.
+  r: number;
 }
 
 // The QA audio meter: the peak level and its poll timer.
@@ -181,7 +183,7 @@ export interface State {
   CY: number;
   sunSwing: number;
   shaftOcc: ShaftCloud[] | null;
-  // The Dev row Cloud volumes: the cloud pass replaces the heap and middle cards.
+  // The Dev row Cloud volumes: the cloud pass marches the storms.
   cloudPass: boolean;
   // True for a portrait stage; null before the first frame.
   groundTall: boolean | null;

@@ -43,6 +43,7 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
 | 12 | Same frame | A shift of 1/255 on a few pixels counts as the same frame (2026-11-15, from Rain's `oklchLinear` proof). A larger change needs Tom's look |
 | 13 | Fire and smoke | A key shared module (2026-11-16). Fire's flame and smoke (its K3 volume fluid, three.js WebGPU and TSL) become one module that other toys reuse. Ink copies it today. WebGPU only for now (Tom, 2026-11-16): `shared/fire.js` serves Compute toys; WebGL toys keep their noise plumes. A WebGL2 twin, grown from `cauldron`, only on demand. Plan: `docs/plans/fire-smoke.md` |
+| 14 | Time of day | A shared module (Tom, 2026-11-16: "time of day should be a module too, seeing how often it returns; lots of toys use it."). `shared/daytime.js` sits beside `sky.js`, which does not change: hour presets, sun and moon, key light, lamps, an eased clock, the local clock. Plain numbers for raw WebGL2, three.js and Canvas 2D. Fog horn is the reference port. Plan: `docs/plans/daytime.md` |
 
 ## Stack types
 

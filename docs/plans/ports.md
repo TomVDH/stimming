@@ -17,7 +17,7 @@ The decisions behind each column are in [code-health.md](../code-health.md).
 
 - One toy at a time, in that toy's own chat, when Tom picks it.
 - A port must give the same frame and the same sound. Check it in headless Playwright at 1280 px and 375 px.
-- Only approved modules: `audioKit()`, `oklchLinear`, `output.js`, `gl.js`, `detail()`, `fitRenderer`, `noise.js`. Rows marked "waits" need Tom first.
+- Only approved modules: `audioKit()`, `oklchLinear`, `output.js`, `gl.js`, `detail()`, `fitRenderer`, `noise.js`, `daytime.js`. Rows marked "waits" need Tom first.
 - Tom sets the version after a port. Nothing raises it on its own.
 
 ## Proved modules
@@ -34,6 +34,7 @@ A toy adopts a module only after its reference port proves it ([modularize.md](m
 | `detail()` with `steps` | `subway`, 2026-11-16 (`stimming-01gd`) | Its watch goes; 0 pixels differ in 16 frames on the real GPU and on SwiftShader, at 1280 and 375 x 812. Each step falls on the same frame under hand-fed frame times. A new quality choice now restarts the watch; the old copy stepped down again at once. A browser unit check matches the 2- and 3-rung copies frame for frame (`steps`, `settle`). Ready for the 38 fps ladders in modularize.md step 5; the window rule and the frame counters keep their own |
 | `output.js`: `ouKnee`, `ouDither` | Not yet | Neither Stone nor Dijkstra has them. Dijkstra's dither steps by 0.012, not 1/255, so it stays by hand |
 | `fire.js` (fire and smoke, TSL) | `fire`, 2026-11-16 (`stimming-oeym`) | Not bit-stable: the emit pass races, so two runs of the old page differ on 43 to 99% of pixels. The 54 WGSL modules are the same text in the same order; one buffer name differs (a node id). Frame 3: 1/255 on 712 pixels (old against old: 624). Look metrics over four runs a side: 1 of 57 past p < 0.05, fewer than chance. Real GPU (WebGPU, D3D12), 1280 and 375 x 812, clean console. Fire loses 457 lines. Ready for `spark` (needs a grid per quality step); not for `ink` (a fork). WebGL toys: `docs/plans/fire-smoke.md` |
+| `daytime.js` (time of day) | `foghorn`, 2026-11-16 (`stimming-5dol`) | Its hours and its `1 - day` fog glow come from the module; `sky.js` does not change. 0 pixels differ in 36 frames on the real GPU (D3D11) and 36 on SwiftShader: dusk, night and dawn, with and without the ship, at 1280 and 375 x 812; clean console. `dayClock` matches Lanterns' ease bit for bit in `tests/daytime.test.mjs`. Ready for `lanterns`, `tornado`, `carwash`, `eastvan/postcard` (`docs/plans/daytime.md`) |
 
 ## The list
 
@@ -81,6 +82,6 @@ Key: **Type** is the stack type now, then the proposed one. **Map** means the im
 | 39 | `frietkot` | Scene | | `detail()`; `bloomPass` waits | |
 | 40 | `railgun` | Scene | | `bloomPass` waits | |
 | 41 | `trainride` | Scene | | `detail()`; `pointer.js` waits | |
-| 42 | `foghorn` | Environment | | | Type check done (the pilot) |
+| 42 | `foghorn` | Environment | | `daytime.js` | Type check done (the pilot). Reference port for `daytime.js` (2026-11-16, `stimming-5dol`) |
 
 No. 14 is free. The module names come from the rows in [modularize.md](modularize.md) that name each toy. A toy's own chat checks its row before it starts.

@@ -1,6 +1,6 @@
 // The heap layer: one raymarched shell of heaps, after Window seat's deck.
 // The ray finds each heap at its true distance, so size and perspective are true.
-// The host declares uVol, uCloudC, uLayerCut, uLayerWind, uSunD, layerSun(P, h) and layerSky().
+// The host declares uVol, uCloudC, uLayerCut, uLayerEdge, uLayerWind, uSunD, layerSun(P, h) and layerSky().
 
 // The shell, in metres over the curved ground.
 const float LY_LO = 1600.0, LY_HI = 3900.0;
@@ -50,7 +50,8 @@ float lyDens(vec3 p, float h, float lod, bool fine) {
   if (fine) fb += A * 0.35 * (texture(uVol, q / 0.7 + 3.7).g - 0.5);
   gLySh = sh; gLyA = A; gLyFb = fb;
   // The edge is crisp near; far off it softens with the footprint.
-  return smoothstep(0.0, 0.04 + 0.06 * lod, fb);
+  // uLayerEdge sets how hard the silhouette is, in km of shell depth.
+  return smoothstep(0.0, uLayerEdge * (1.0 + 1.5 * lod), fb);
 }
 // Optical depth toward the sun, in growing steps.
 float lyLight(vec3 ro, vec3 p, vec3 L, float lod) {
@@ -80,6 +81,7 @@ vec4 lyMarch(vec3 ro, vec3 rd, float tEnd) {
   float phase = lyPhase(dot(rd, L)) + 1.5;
   vec3 col = vec3(0.0), sky = layerSky();
   float Tc = 1.0;
+  bool inside = false;
   for (int i = 0; i < N; i++) {
     if (t > t1) break;
     vec3 p = ro + rd * t;
@@ -87,6 +89,19 @@ vec4 lyMarch(vec3 ro, vec3 rd, float tEnd) {
     // The footprint grows with distance; far cloud takes coarser detail.
     float lod = clamp(log2(t / 4000.0 + 1.0), 0.0, 4.0);
     float dn = lyDens(p, h, lod, lod < 2.0);
+    // On entering a cloud, bisect back to its surface.
+    // The silhouette is then exact, not dithered by the jitter.
+    if (dn > 0.002 && !inside) {
+      float a0 = max(t - ds, t0), b0 = t;
+      for (int k = 0; k < 5; k++) {
+        float m = 0.5 * (a0 + b0);
+        vec3 pm = ro + rd * m;
+        if (lyDens(pm, lyH(ro, pm), lod, lod < 2.0) > 0.002) b0 = m; else a0 = m;
+      }
+      t = b0; p = ro + rd * t; h = lyH(ro, p);
+      dn = lyDens(p, h, lod, lod < 2.0);
+    }
+    inside = dn > 0.002;
     float dSh = gLySh, dA = gLyA, dFb = gLyFb;
     if (dn > 0.002) {
       if (gLyT < 0.0) gLyT = t;
@@ -101,10 +116,14 @@ vec4 lyMarch(vec3 ro, vec3 rd, float tEnd) {
       float crease = clamp(0.7 - 1.4 * dSh / max(dA, 0.05), 0.15, 1.2);
       float open = exp(-3.0 * max(dFb, 0.0)) * crease;
       S += sky * 0.42 * (0.3 + 0.7 * h01) * (0.3 + 0.9 * open);
-      float a = 1.0 - exp(-LY_SIG * dn * ds);
+      // Inside the cloud the stride is short, so the light inside is smooth.
+      float di = min(ds, 90.0);
+      float a = 1.0 - exp(-LY_SIG * dn * di);
       col += Tc * S * a;
       Tc *= 1.0 - a;
       if (Tc < 0.02) break;
+      t += di;
+      continue;
     }
     t += ds;
     ds *= grow;
