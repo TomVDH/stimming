@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T03:12:31Z
+updated_at: 2026-11-17T03:19:02Z
 parent: stimming-oh7b
 ---
 
@@ -95,3 +95,5 @@ Built; waits for the checkpoint with Tom.
 - Shroud, the real cause (Tom, 2026-11-16: "that shroud over the funnel still appears", "innate blend", "gently undulate the main cloud layer"; he approved the side-by-side clip). The funnel's own flare ran up 45% of its height, darkened to the deck's tone, and hung in front of the far deck (6 km behind the tornado) as a cone round the bright lower funnel. Now the flare is short (collarLen: 0.6 of its width, at most 15% of the funnel's height), the colour turns only inside it, and the onion closes into one body up the flare. The deck swells: broad noise drifts under the base and breathes on a ten-second cycle. `?dbg=5` paints the funnel red and the deck blue. Lesson: judge in motion, at the default view, before showing Tom; stills at t=40 missed this twice.
 
 - 2026-11-16: the lab opens at a lower quality (Tom: step down, go from there): Resolution 0.5, Steps 60. M3 Pro, pane at 762×984: 47 fps (was 26 at 0.75 / 80).
+
+- 2026-11-16: the Claude app stalled while the lab ran (Tom). The lab now draws 30 fps at most, draws nothing in a hidden pane, and rests once paused and settled; any input wakes it.

@@ -869,9 +869,26 @@ function draw(now) {
   frame++;
   fpsN++;
   if (now - fpsT > 1000) { document.getElementById('fps').textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} fps · ${w}×${h}`; fpsT = now; fpsN = 0; }
-  if (!document.hidden) requestAnimationFrame(draw);
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { last = 0; requestAnimationFrame(draw); } });
+// The app's own window shares the GPU, so the lab draws 30 frames a second at most.
+const FRAME_MS = 1000 / 30;
+let raf = 0, lastDraw = -1e9, still = 0;
+function loop(now) {
+  raf = 0;
+  if (document.hidden) return;
+  // A hidden pane gives the canvas no size: draw nothing.
+  if (canvas.clientWidth && canvas.clientHeight && now - lastDraw >= FRAME_MS - 2) {
+    lastDraw = now;
+    draw(now);
+    still = paused && Math.abs(f - fShown) < 1e-3 ? still + 1 : 0;
+  }
+  // A paused lab rests once its history settles.
+  if (still <= 45) raf = requestAnimationFrame(loop);
+}
+// Any input wakes a resting lab.
+const wake = () => { still = 0; if (!raf && !document.hidden) { last = 0; raf = requestAnimationFrame(loop); } };
+for (const ev of ['visibilitychange', 'input', 'click', 'keydown']) document.addEventListener(ev, wake);
+addEventListener('resize', wake);
 for (const id of ['res']) $(id).addEventListener('input', () => size());
-requestAnimationFrame(draw);
+raf = requestAnimationFrame(loop);
 window.__lab = { get f() { return fShown; }, set f(v) { f = fShown = v; } };
