@@ -398,18 +398,50 @@ ${SHARED}
 // Dev's Wind sets its bearing and strength (uWind).
 uniform vec2 uWDir;
 #define WDIR uWDir
-// Gust fronts: broad patches that roll downwind over the wheat, 0 calm to 1 full gust.
-float gust(vec2 xz) {
-  vec2 q = xz - WDIR * uT * (3.0 + 6.0 * uWind);
-  float g = vn(q * vec2(0.022, 0.04)) * 0.65 + vn(q * 0.1 + 4.0) * 0.35;
-  return smoothstep(0.4, 0.78, g);
+// The field's wind, 0 to 1: Wind times the storm's growth, more near a working tornado.
+uniform float uGust;
+// Each tornado's foot in world metres, its pull on the field, 0 to 1, and its reach in metres.
+uniform vec4 uTorF[${MAX_TOR}];
+// The wind over the wheat at a point, for a pixel footprint of fx metres.
+// xy: the lean of a stalk's tip per metre of height squared. z: the sheen, -1 dark to 1 pale.
+// w: the gust, 0 calm to 1 full.
+vec4 gust(vec2 xz, float fx) {
+  float K = uGust;
+  // Wind frame: x runs downwind, y across. The pattern rides downwind at the gusts' speed.
+  vec2 w = vec2(dot(xz, WDIR), dot(xz, vec2(-WDIR.y, WDIR.x)));
+  w.x -= (1.5 + 8.5 * K) * uT;
+  // Gust patches: short along the wind, long across it; they grow and die as they go.
+  float n = N(vec3(w.x * 0.007, w.y * 0.0025, uT * 0.04)) * 0.6 + N(vec3(w.x * 0.022, w.y * 0.008, uT * 0.09 + 5.0)) * 0.4;
+  float g = smoothstep(0.55 - 0.08 * K, 0.7 - 0.06 * K, n) * (0.2 + 0.8 * K);
+  // Waves inside a gust: short crests across the wind, 4 to 7 m apart, bent by a warp.
+  vec3 wq = vec3(w.y * 0.05, w.x * 0.02, uT * 0.1);
+  float ph = w.x * 1.15 + 9.0 * N(wq + 9.0);
+  float wv = sin(ph) * smoothstep(0.3, 0.6, N(wq * 2.0 + 3.0)) * (1.0 - smoothstep(0.4, 1.2, fx));
+  // The mean lean, the gust's push, and the wave on top.
+  float lean = (0.02 + 0.06 * K) * (0.3 + 0.7 * uWind) + g * (0.16 + 0.1 * wv);
+  // A stalk shows its pale side as it bends; it swings back a little dark behind the crest.
+  float sh = g * (0.75 + 0.45 * wv) - 0.25 * g * smoothstep(0.3, 1.0, -wv);
+  // A tiny flutter: each stalk on its own beat, never in step with its neighbours.
+  float fl = 0.012 * sin(uT * (2.6 + 2.0 * K) + xz.x * 1.7 + xz.y * 2.3) * (0.2 + K);
+  vec2 v = WDIR * (lean + fl);
+  // Near a tornado the inflow swirls in and lays the wheat flat toward the funnel.
+  for (int i = 0; i < ${MAX_TOR}; i++) {
+    vec4 t = uTorF[i];
+    if (t.w <= 0.0) continue;
+    vec2 d = t.xy - xz;
+    float r = length(d);
+    float k = t.z * (1.0 - smoothstep(0.15 * t.w, t.w, r));
+    if (k <= 0.0) continue;
+    // The inflow turns in cyclonically: about 40 degrees off the straight line.
+    vec2 dir = mat2(0.77, 0.64, -0.64, 0.77) * (d / max(r, 1.0));
+    v = mix(v, dir * 0.9, k);
+    sh = mix(sh, 0.9, k * 0.8);
+    g = max(g, k);
+  }
+  return vec4(v, sh, g);
 }
 // How far a stalk's tip leans at height h, in metres.
-vec2 bend(vec2 xz, float h, float g) {
-  float lean = (0.03 + 0.22 * g) * (0.25 + 0.75 * uWind);
-  float flutter = 0.015 * sin(uT * 3.1 + xz.x * 1.7 + xz.y * 2.3) * (0.3 + uWind);
-  return WDIR * (lean + flutter) * h * h;
-}
+vec2 bend(vec4 gw, float h) { return gw.xy * h * h; }
 
 /* ---------- the deck's shadow ---------- */
 // The deck's cover along the sun's ray from a world point w, in km: 0 is open sun, 1 full shade.
@@ -443,9 +475,11 @@ vec3 wheatFar(vec2 xz, float fx) {
   float patchN = vn(xz * vec2(0.012, 0.004)) * 0.6 + vn(xz * vec2(0.05, 0.015)) * 0.4;
   // Ripe wheat in storm light: a dull gold, not a blown one.
   vec3 alb = mix(vec3(0.17, 0.11, 0.045), vec3(0.3, 0.21, 0.085), patchN);
-  // A bent stalk shows its pale side.
-  float g = gust(xz);
-  alb = mix(alb, vec3(0.38, 0.32, 0.2), g * 0.5);
+  // A bent stalk shows its pale side; behind a crest it swings back dark.
+  vec4 gw = gust(xz, fx);
+  float g = gw.w;
+  alb = mix(alb, vec3(0.36, 0.3, 0.19), max(gw.z, 0.0) * 0.45);
+  alb *= 1.0 + 0.3 * min(gw.z, 0.0);
   // Up close the field shows its make: drill rows along the road, clumps of ears with darker gaps,
   // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
   float near = 1.0 - smoothstep(0.08, 0.8, fx);
@@ -453,10 +487,9 @@ vec3 wheatFar(vec2 xz, float fx) {
     float rows = mix(0.5, 0.5 + 0.5 * cos(xz.x * 20.9 + vn(xz * 0.4) * 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
     float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
     float gap = smoothstep(0.38, 0.18, clump);
-    float rip = 0.5 + 0.5 * sin(dot(xz, WDIR) * 0.9 - uT * (2.0 + 4.0 * uWind) + vn(xz * 0.2) * 4.0);
-    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap) * (0.9 + 0.22 * rip * (0.3 + 0.7 * g)), near);
+    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap), near);
   }
-  return alb * (0.75 + 0.35 * g) * (uSunCol * 0.5 + uAmb * 0.55);
+  return alb * (0.85 + 0.2 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
 // The near wheat: shells of ears, from the tallest ear down into the stalks.
 // Each shell adds soft coverage, front to back. a is what still shows of the ground below.
@@ -472,9 +505,10 @@ vec4 wheatNear(vec3 rd, float fx) {
     vec2 xz = rd.xz * t;
     // Over the road and its verges this shell holds no wheat.
     if (abs(xz.x - ROAD_X) < WHEAT_GAP) continue;
-    float g = gust(xz);
+    vec4 gw = gust(xz, fx);
+    float g = max(gw.z, 0.0);
     // Undo the lean, to find the stalk that holds this point.
-    vec2 b = xz - bend(xz, h, g);
+    vec2 b = xz - bend(gw, h);
     // A turned, warped grid: no straight rows line up across the shells.
     b = mat2(0.83, -0.56, 0.56, 0.83) * b;
     vec2 q = b / 0.045 + 1.8 * vec2(vn(b * 1.7), vn(b * 1.7 + 9.0));
@@ -665,8 +699,8 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
     vec3 W = toWorld(vec3(x, 0.0, -z));
     // No ears on the road or its verges.
     if (abs(W.x - ROAD_X) < WHEAT_GAP) continue;
-    float g = gust(W.xz);
-    vec2 lean = bend(W.xz, 1.0, g);
+    vec4 gw = gust(W.xz, 0.0);
+    vec2 lean = bend(gw, 1.0);
     // The lean in camera space, as screen units at this depth.
     float lx = (lean.x * cos(uYaw) - lean.y * sin(uYaw)) / z * uFoc;
     vec2 tip = vec2(x / z * uFoc + lx, (top - CAMH) / z * uFoc);
@@ -795,6 +829,20 @@ const tors = [];
 // 0 degrees blows to the right; positive turns it toward the eye. The storm drifts with it.
 let wind = 0.85;
 const windDir = [0.944, 0.33];
+// The field's wind, 0 to 1: a young cell barely stirs the wheat, a full storm drives it hard.
+// A working tornado adds its inflow, most within a few kilometres of the eye.
+function fieldGust() {
+  let k = wind * (0.12 + 0.88 * sstep(0.1, 0.9, storm));
+  for (const t of tors) k += 0.5 * t.dust * (0.3 + 0.7 * t.f / 5) * Math.exp(-Math.hypot(t.x, t.z) / 4000);
+  return clamp(k);
+}
+// Each tornado's foot for the wheat: x and z in metres, its pull, and its reach.
+const feet = new Float32Array(MAX_TOR * 4);
+function torFeet() {
+  feet.fill(0);
+  tors.slice(0, MAX_TOR).forEach((t, i) => feet.set([t.x, t.z, t.dust * (0.4 + 0.6 * t.f / 5), 250 + 150 * t.f], i * 4));
+  return feet;
+}
 // The sun behind the eye, low, a little off to the left.
 const sun = [0, 0, 0], sunCol = [0, 0, 0], amb = [0, 0, 0];
 // The sun's bearing in radians: 0 is straight behind the eye. Dev sets it in degrees.
@@ -845,6 +893,7 @@ try {
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
+      uGust: fieldGust, uTorF: torFeet,
     },
   });
 } catch (err) {
