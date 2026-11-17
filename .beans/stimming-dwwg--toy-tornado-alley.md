@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:09:08Z
+updated_at: 2026-11-17T08:11:20Z
 parent: stimming-oh7b
 ---
 
@@ -195,3 +195,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: the build-up takes 15 s by default (range 5–300; key buildUpS, the old saved 90 removed); during it the far field renews in strips, so no frame stalls.
 
 - 2026-11-17, Tom (god rays drew as horizontal bands): at dusk the true shafts run almost level, so each row integrated different breaks into bands. The march now runs only under the deck (30 km, stops at the first opaque body, 24 jittered steps); each step follows the shaft to the base, never flatter than 24°, so beams hang from the openings; bright at the opening, fading with depth. Openings: far breaks and a young deck's raft gaps. Also: the deck's finest lumps fade by pixel size (the cause of the stipple on upper edges); a young tower is a narrow column with no anvil until Storm 0.25–0.65.
+
+- 2026-11-17, Tom (build-up far too quick; the far bake steps): the build-up takes 180 s by default (30–600, key buildUpT) on easeInOutSine; the first tornado drops at Storm 0.67, about 2 min in. A third far target keeps the previous bake and each new bake fades in over it (2.5 s in the build-up, 0.25 s for a drag), so the far field moves without steps. Beams: soft, ragged sides, tapering toward the ground. Thick cloud hides the sun globe fully. A young cell's shelf is small so the tower stands clear; the dome boils at two scales.

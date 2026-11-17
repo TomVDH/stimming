@@ -65,8 +65,8 @@ const ui = initPage({ id: 'tornado', bar: {
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
     // The opening build-up's length: the storm grows from nothing over this many seconds.
-    // Its key is new, so an old saved 90 s gives way to the 15 s default.
-    { type: 'slider', id: 'buildUpS', label: 'Build-up (s)', min: 5, max: 300, step: 1, value: 15, persist: true, onInput: v => act.buildUp(v) },
+    // Its key is new, so an old saved length gives way to the 180 s default.
+    { type: 'slider', id: 'buildUpT', label: 'Build-up (s)', min: 30, max: 600, step: 5, value: 180, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -177,8 +177,10 @@ float stormShapeSun(vec3 p) {
     tower -= ((W(pw * sc + 2.0) - 0.4) * mix(0.9, 1.7, hk) + (W(pw * sc * 2.7 + 5.0) - 0.4) * 0.45) * sun;
   }
   // The base: a broad flat shelf, its underside level.
-  vec2 b = (p.xz - SHELF) / (SHELF_R * mix(0.4, 1.0, g));
-  float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.6)) - 0.6);
+  // A young cell's shelf is small, so its tower stands clear; by the default storm it is as before.
+  float sr = g < 0.85 ? mix(0.2, 0.91, g / 0.85) : mix(0.4, 1.0, g);
+  vec2 b = (p.xz - SHELF) / (SHELF_R * sr);
+  float shelf = max((length(b) - 1.0) * SHELF_R.y * sr, abs(p.y - (BASE + 0.6)) - 0.6);
   // A young storm's shelf billows: domed Worley tops, not a flat lid.
   float yk = 1.0 - stormK();
   if (yk > 0.0 && shelf < 1.5 && p.y > BASE + 0.4) shelf -= yk * ((W(p * 0.35 + 4.7) - 0.4) * 1.2 + (W(p * 1.1 + 2.2) - 0.4) * 0.4);
@@ -193,7 +195,7 @@ float stormShapeSun(vec3 p) {
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.7, 2.8, g);
   // The overshooting top boils in big soft cells.
-  if (dome < 2.0) dome -= (W(o * 0.25 + 9.0) - 0.4) * 1.4;
+  if (dome < 2.5) dome -= (W(o * 0.25 + 9.0) - 0.4) * 2.0 + (W(o * 0.7 + 3.0) - 0.4) * 0.7;
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -217,12 +219,12 @@ float breakN(vec2 xz) {
 // How open the deck is over a camera-space point, 0 shut to 1 open: its far breaks.
 // They open at every storm, most toward the horizon and the sun's side. A full storm keeps a few narrow ones;
 // a young one opens more and wider. Near the eye the deck stays shut. The sun's shafts fall through them.
-float deckOpen(vec3 p) {
+float deckOpen(vec3 p, float soft) {
   float dist = length(p.xz);
   float far = smoothstep(10.0, 45.0, dist) * (0.35 + 0.65 * max(dot(p.xz / max(dist, 1e-3), normalize(gSunC.xz + 1e-5)), 0.0));
   if (far <= 0.0) return 0.0;
   float sy = sin(uYaw), cy = cos(uYaw), thr = mix(0.42, 0.3, stormK());
-  return far * smoothstep(thr, thr - 0.1, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
+  return far * smoothstep(thr + soft, thr - 0.1 - soft, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
 }
 // The young deck's gaps between its rafts over a camera-space point, 0 to 1.
 // At no storm the sky is mostly clear: a few rafts and the far cells. The gaps close by the default storm.
@@ -255,7 +257,7 @@ float stormShape(vec3 p) {
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(botY - p.y, p.y - topY));
   front += 1.6 * raftGap(p);
   // Far off the deck breaks open.
-  front += 1.5 * deckOpen(p);
+  front += 1.5 * deckOpen(p, 0.0);
   return smin(d, front, 0.8);
 }
 // The cloud base over a point, in km: lower in each tornado's pit. main.js deckAt() holds the same curve.
@@ -776,7 +778,8 @@ vec3 envScene(vec2 uv) {
     c = skyCol(rd);
     // The sun's globe and its close glow; the storm laid on next hides them where the deck is.
     float cs = max(dot(rd, uSun), 0.0);
-    c += uSunCol * (24.0 * smoothstep(0.99997, 0.99999, cs) + 0.35 * pow(cs, 900.0) + 0.06 * pow(cs, 60.0));
+    // Thick cloud hides the globe and its ring outright: the cover alone let a bright globe leak through.
+    c += uSunCol * (24.0 * smoothstep(0.99997, 0.99999, cs) + 0.35 * pow(cs, 900.0) + 0.06 * pow(cs, 60.0)) * smoothstep(0.85, 0.4, tv.a);
     // The sky dims round the storm: its shadow and its outflow haze.
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
@@ -889,7 +892,7 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
-const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true };
+const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farT: 0, farDur: 0 };
 let env = null;
 try {
   env = environment(canvas, {
@@ -930,7 +933,7 @@ function stormShapeJS(x, y, z) {
   const qx = x - T[0] - 0.28 * (y - B), qz = z - T[1] + 0.12 * (y - B);
   const rT = mixN(2.2, 7, g) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
   const tower = Math.max(Math.hypot(qx, qz) - rT, Math.max(B + 0.1 - y, y - top));
-  const k = mixN(0.4, 1, g), bx = (x - SH[0]) / (SR[0] * k), bz = (z - SH[1]) / (SR[1] * k);
+  const k = g < 0.85 ? mixN(0.2, 0.91, g / 0.85) : mixN(0.4, 1, g), bx = (x - SH[0]) / (SR[0] * k), bz = (z - SH[1]) / (SR[1] * k);
   const shelf = Math.max((Math.hypot(bx, bz) - 1) * SR[1] * k, Math.abs(y - (B + 0.6)) - 0.6);
   const ax = x - (T[0] + mixN(2, 14, g)), ay = y - (top - 0.5), az = z - (T[1] - 2);
   const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5) + 4 * (1 - sstep(0.25, 0.65, g));
@@ -1102,11 +1105,12 @@ const FAR_STRIPS = 8;
 let farD = 16, deckReach = 146;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
-// The opening build-up: the storm grows from nothing to its set level on an in-out quart ease.
+// The opening build-up: the storm grows from nothing to its set level on a gentle in-out sine ease.
 // Touching Storm stops it. Past 0.67 the first tornado touches down on its own.
 /** @type {{ t: number, dur: number, to: number, spawned: boolean } | null} */
 let build = null;
-const quart = x => (x < 0.5 ? 8 * x ** 4 : 1 - (-2 * x + 2) ** 4 / 2);
+// Long, soft ends and no fast middle.
+const easeSine = x => 0.5 - 0.5 * Math.cos(Math.PI * x);
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
   // Storm counts in steps of 0.02: the build-up moves it every frame.
@@ -1128,6 +1132,7 @@ function bakeFar(u, rw, rh, n) {
   // tFar points away from the target: on unit 0 it could meet farB and make a feedback loop.
   // That loop drops the draw, and the far field came out empty on the first load.
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
   gl.viewport(0, 0, rw, rh);
   // The first bake, or a still page, bakes whole; a running page bakes a strip a frame.
@@ -1140,7 +1145,12 @@ function bakeFar(u, rw, rh, n) {
     gl.disable(gl.SCISSOR_TEST);
     fun.farRow++;
   }
-  if (fun.farRow >= FAR_STRIPS) { [fun.farA, fun.farB] = [fun.farB, fun.farA]; fun.farBusy = false; fun.farReady = true; }
+  // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
+  if (fun.farRow >= FAR_STRIPS) {
+    [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
+    fun.farT = performance.now(); fun.farDur = !fun.farReady ? 0 : build ? 2500 : 250;
+    fun.farBusy = false; fun.farReady = true;
+  }
   // The live draw that follows takes these back.
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uTorOn, n ? 1 : 0);
@@ -1152,9 +1162,9 @@ function funnelPass(w, h) {
   fun.noise ||= noiseVolume(gl);
   const rw = Math.max(32, Math.round(w * FUN_RES)), rh = Math.max(32, Math.round(h * FUN_RES));
   if (rw !== fun.w || rh !== fun.h) {
-    for (const k of ['A', 'B', 'farA', 'farB']) free(gl, fun[k]);
+    for (const k of ['A', 'B', 'farA', 'farB', 'farC']) free(gl, fun[k]);
     fun.A = glTarget(gl, rw, rh, { clear: true }); fun.B = glTarget(gl, rw, rh, { clear: true });
-    fun.farA = glTarget(gl, rw, rh, { clear: true }); fun.farB = glTarget(gl, rw, rh, { clear: true });
+    fun.farA = glTarget(gl, rw, rh, { clear: true }); fun.farB = glTarget(gl, rw, rh, { clear: true }); fun.farC = glTarget(gl, rw, rh, { clear: true });
     fun.w = rw; fun.h = rh; fun.fresh = true; fun.farKey = '';
   }
   const n = fun.n = packFunnels(rw, rh);
@@ -1199,6 +1209,8 @@ function funnelPass(w, h) {
   gl.uniform1i(u.uMode, 0);
   gl.uniform1f(u.uFarD, farD);
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
+  gl.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
   const subs = hist ? 1 : 4;
@@ -1266,7 +1278,7 @@ function step(dt) {
   if (build) {
     build.t += dt;
     const k = clamp(build.t / build.dur);
-    storm = build.to * quart(k);
+    storm = build.to * easeSine(k);
     ui.slider?.set(+storm.toFixed(2));
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
     if (k >= 1) build = null;
@@ -1381,7 +1393,7 @@ act.clear = () => {
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
-act.buildUp = v => { if (build) build.dur = clamp(+v || 15, 5, 300); };
+act.buildUp = v => { if (build) build.dur = clamp(+v || 180, 30, 600); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
@@ -1452,11 +1464,11 @@ if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('ro
 // The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
 // Reduced motion starts at full storm with the first tornado formed.
 {
-  try { localStorage.removeItem('stimming.tornado.buildUp'); } catch { /* no storage */ }
-  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpS')?.value ?? 15);
+  try { ['buildUp', 'buildUpS'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
+  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpT')?.value ?? 180);
   if (!qs.has('tor') && !qs.has('storm')) {
     if (reduced() || !(bu > 0)) heroDown();
-    else { build = { t: 0, dur: clamp(bu, 5, 300), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
+    else { build = { t: 0, dur: clamp(bu, 30, 600), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
   }
 }
 // QA: GPU time per frame, or of the funnel pass alone, from timer queries.

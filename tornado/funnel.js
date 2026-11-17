@@ -168,6 +168,9 @@ uniform int uCount;
 uniform int uMode;
 uniform float uFarD;
 uniform sampler2D tFar;
+// The bake before the last, and how far the last has faded in over it, 0 to 1.
+uniform sampler2D tFarPrev;
+uniform float uFarK;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
@@ -963,7 +966,7 @@ void main() {
   vec4 now = vec4(acc, 1.0 - T);
   if (bake) { outC = now; return; }
   // The baked far field lies behind the near field.
-  vec4 far = texture(tFar, gl_FragCoord.xy / uRes);
+  vec4 far = mix(texture(tFarPrev, gl_FragCoord.xy / uRes), texture(tFar, gl_FragCoord.xy / uRes), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
   // Sun shafts hang from the deck's openings: its far breaks and a young deck's gaps.
   // The march runs only under the deck, from the eye to the base or the ground, 30 km at most,
@@ -977,9 +980,12 @@ void main() {
     for (int i = 0; i < 24; i++) {
       vec3 w = (rd * ((float(i) + jit2) * tG / 24.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
       vec3 qc = toCam(w + sd * (max(BASE - w.y, 0.0) / sd.y));
-      // A shaft is brightest at its opening and fades with depth into the haze.
+      // A shaft is brightest at its opening and tapers and fades with depth into the haze.
+      // Its edges read the break softly, and a streak noise along it rags its sides.
       // A young deck's wide gaps light whole rooms of air: they count for less than the far breaks.
-      sh += max(deckOpen(qc), 0.4 * raftGap(qc)) * exp(-max(BASE - w.y, 0.0) * 0.7);
+      float dep = max(BASE - w.y, 0.0);
+      float rag = 0.5 + 0.5 * vn(vec2(dot(qc.xz, vec2(-sd.z, sd.x)) * 3.0, dep * 0.8));
+      sh += max(deckOpen(qc, 0.06 + 0.05 * dep), 0.4 * raftGap(qc)) * exp(-dep * 1.1) * rag;
     }
     // Light only: the shafts glow most toward the sun.
     float cg = dot(rd, uSun);
