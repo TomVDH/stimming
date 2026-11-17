@@ -166,7 +166,7 @@ float stormCalm(vec3 p) {
   }
   return c;
 }
-// The horn lies under the deck: it takes the underside's shade, not the flank's light.
+// How much of a horn hangs here, 0 to 1. A low sun reaches its sides under the base.
 float hornUnder(vec3 p) {
   if (uTorOn < 0.5) return 0.0;
   float lb = baseAt(p.xz), u = 0.0;
@@ -244,7 +244,8 @@ vec3 stormLit(vec3 p, float d) {
   float ds = stormD(p + gSunC * 0.9);
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
   // A step up: deeper cloud above means an underside, out of the sun.
-  float under = max(clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0), hornUnder(p));
+  // A horn hangs below the base: its sides take the low sun as the funnel does, not the underside's shade.
+  float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
   lit *= 1.0 - 0.9 * under;
   // Thick cloud overhead darkens the base and the core.
   float up = smoothstep(0.6, 9.0, p.y);
@@ -973,7 +974,8 @@ act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 // QA: ?lens=85 picks the lens for one load.
 const qs0 = new URLSearchParams(location.search);
 storm = ui.slider?.value ?? storm;
-act.time(ui.setting('time')?.value ?? 'golden');
+// QA: ?time=golden picks the time for one load; Settings keep Tom's choice.
+act.time(qs0.get('time') || ui.setting('time')?.value || 'golden');
 lensMM = +(qs0.get('lens') || ui.setting('lens')?.value || 50);
 S.expo = ui.setting('expo')?.value ?? 1;
 act.sunAz(ui.setting('sunAz')?.value ?? 20);

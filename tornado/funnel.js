@@ -409,7 +409,8 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
   // Sky light falls off with depth into the funnel.
   float depth = max(0.0, 1.6 - xr);
   vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
-  vec3 ambL = ambC * (0.3 + 0.55 * u) * exp(-depth * 1.6);
+  // The deck over the funnel's top hides the sky: its light fails toward the base, as the deck's does.
+  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, smoothstep(0.55, 1.0, u)) * exp(-depth * 1.6);
   // Bounce from the sunlit wheat warms the lower funnel from below.
   ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
   vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
@@ -452,7 +453,8 @@ float cloudShade(vec3 p) {
   return od * 0.006;
 }
 // How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
-float topKAt(float h) { return smoothstep(gY0, gDeck, h); }
+// The turn starts a flare's length under the flare, so the funnel meets the deck in one tone.
+float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0), gDeck, h); }
 
 // The layers on one stretch of a ray, front to back among themselves.
 void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float Reb, float Ra, float Rb, float tapa, float tapb, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, inout vec3 fAcc, inout float fT) {
@@ -588,7 +590,7 @@ void main() {
   vec3 stC = vec3(-1.0);
   // The deck's last sample: where the next is due, its extinction per metre and colour.
   float tDn = -1.0, cSig = 0.0;
-  vec3 cCol = vec3(0.0);
+  vec3 cCol = vec3(0.0), cLit = vec3(-1.0);
   vec3 acc = vec3(0.0);
   float T = 1.0;
   for (int i = 0; i < 320; i++) {
@@ -653,7 +655,8 @@ void main() {
         if (d < soft) {
           // A full step through dense cloud covers 0.8 of what lies behind it.
           cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
-          cCol = mix(stormLit(pk, d), gHzC, hzF);
+          cLit = stormLit(pk, d);
+          cCol = mix(cLit, gHzC, hzF);
         }
       }
       // Inside the onion the funnel's step wins; up the flare the deck's step wins.
@@ -677,15 +680,18 @@ void main() {
         float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
         if (topK > 0.0 && stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl)); }
+        // The tone it turns to is the deck's own light right here, where the deck has cloud.
+        // Above the horn's surface the ray's one deck point stands in.
+        vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
         // x at the middle: a ray that turns back out inside the segment takes two straight pieces.
         vec2 qm = pm.xz - axisAt(pm.y);
         float Rem = 0.5 * (g0.Re + g1.Re), Rm = 0.5 * (g0.R + g1.R), tm = 0.5 * (g0.tap + g1.tap);
         float xm = length(qm) / Rem;
         split = xm < min(g0.x, g1.x) - 0.01;
         if (split) {
-          shellSeg(p, rc, st * 0.5, g0.x, xm, g0.Re, Rem, g0.R, Rm, g0.tap, tm, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc, fT);
-          shellSeg(pm, rc, st * 0.5, xm, g1.x, Rem, g1.Re, Rm, g1.R, tm, g1.tap, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc2, fT2);
-        } else shellSeg(p, rc, st, g0.x, g1.x, g0.Re, g1.Re, g0.R, g1.R, g0.tap, g1.tap, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc, fT);
+          shellSeg(p, rc, st * 0.5, g0.x, xm, g0.Re, Rem, g0.R, Rm, g0.tap, tm, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc, fT);
+          shellSeg(pm, rc, st * 0.5, xm, g1.x, Rem, g1.Re, Rm, g1.R, tm, g1.tap, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc2, fT2);
+        } else shellSeg(p, rc, st, g0.x, g1.x, g0.Re, g1.Re, g0.R, g1.R, g0.tap, g1.tap, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc, fT);
       }
       Geo gs = g0;
       g0 = g1;
