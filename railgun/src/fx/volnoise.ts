@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: ship/battleship runs first.
 import '../ship/battleship.ts';
 import * as THREE from 'three';

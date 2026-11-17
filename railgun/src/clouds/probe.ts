@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: clouds/clouds runs first.
 import './clouds.ts';
 import * as THREE from 'three';
@@ -123,10 +122,10 @@ void main() {
   gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
 }`;
 const stormCards = [tower, giants], cardMats = stormCards.map(m => m.material);
-let stormMats = null;
+let stormMats: THREE.ShaderMaterial[] | null = null;
 // Storm probe on: the towers and the giant march Window seat's volume.
-export function setStormProbe(on) {
+export function setStormProbe(on: boolean) {
   stormMats ??= stormCards.map(m => new THREE.ShaderMaterial({ uniforms: m.material.uniforms, vertexShader: STORM_VS, fragmentShader: STORM_FS, transparent: true, depthWrite: false }));
-  stormCards.forEach((m, i) => { m.material = on ? stormMats[i] : cardMats[i]; });
+  stormCards.forEach((m, i) => { m.material = on ? stormMats![i] : cardMats[i]; });
   stormFl.vol = on;
 }

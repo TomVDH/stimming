@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/volfx runs first.
 import '../fx/volfx.ts';
 import * as THREE from 'three';
@@ -119,7 +118,9 @@ shockRing.frustumCulled = false; shockRing.renderOrder = BAND.shockRing; shockRi
 scene.add(shockRing);
 export const zAx = new THREE.Vector3(0, 0, 1);
 // Air distortion: world place and radius of each shock, and the strength.
-export const warpM = new THREE.Vector4(), warpH = new THREE.Vector4();
+// strength is undefined until the first shot or blast sets it.
+export type Warp = THREE.Vector4 & { strength?: number };
+export const warpM = new THREE.Vector4() as Warp, warpH = new THREE.Vector4() as Warp;
 // Charge dust: one raymarched volume round the plinth.
 // The gun draws dust in, beats throw rings out, devils climb at rage.
 // uDu: strength, spread in metres, height in metres, time.
@@ -201,12 +202,12 @@ state.cdust = 0; state.dustShot = null;
 let dIn = 0, beatT = 0, dustT = 0, pulseI = 0; state.devil = 0; state.blow = null;
 export const pulses = Array.from({ length: 4 }, () => ({ t0: -1e9, k: 0 }));
 // A beat throws one ring of dust out from the mount.
-export function dustPulse(k) {
+export function dustPulse(k: number) {
   if (reduced()) return;
   const q = pulses[pulseI++ % 4];
   q.t0 = state.simT; q.k = k;
 }
-export function updateChargeDust(dt) {
+export function updateChargeDust(dt: number) {
   // It builds with the chaos and settles over a few seconds.
   const want = charge ? chaos : 0;
   state.cdust += (want - state.cdust) * (1 - Math.exp(-dt / (want > state.cdust ? 1.0 : 3.0)));
@@ -290,7 +291,7 @@ vec3 alb(vec3 p) { return uDustC; }
 // The blast's light reaches the dust strongly; the moon lights it through Ls.
 vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(0.75, 0.85, 1.0) * uMuzL.w * 6.0e5 / (dot(m, m) + 6.0e5) + blastLight(p) * 2.5; }`, { uBd: { value: new THREE.Vector4() }, uFwd: { value: new THREE.Vector2(0, -1) }, uDv: { value: Array.from({ length: 3 }, () => new THREE.Vector4()) }, uDustC: { value: new THREE.Vector3(...linFit(0.46, 0.035, 60)) } });
 // sa: seconds since the blast left the muzzle. c: power.
-export function updateShotDust(sa, c, foot) {
+export function updateShotDust(sa: number, c: number, foot: THREE.Vector3) {
   const u = shotDust.material.uniforms, on = !reduced() && sa >= 0 && sa < 16;
   shotDust.visible = on;
   if (!on) return;
@@ -332,8 +333,8 @@ export function updateCaseDust() {
   caseDustV.visible = on;
   if (!on) return;
   const u = caseDustV.material.uniforms, sa = Math.sqrt(age);
-  u.uCd.value.set(state.caseDust.P.x, 0, state.caseDust.P.z, age);
-  u.uC.value.set(state.caseDust.P.x, 0, state.caseDust.P.z); u.uR.value = 2 * (30 + 75 * sa);
+  u.uCd.value.set(state.caseDust!.P.x, 0, state.caseDust!.P.z, age);
+  u.uC.value.set(state.caseDust!.P.x, 0, state.caseDust!.P.z); u.uR.value = 2 * (30 + 75 * sa);
   u.uSlab.value = 4 * (10 + 40 * sa); u.uLs.value = 4 + 6 * sa;
   u.uVSteps.value = dustSteps(); u.uLSteps.value = volLSteps();
 }
@@ -417,7 +418,7 @@ export function updateMuzzleSmoke() {
   muzzleSmoke.visible = on;
   updateRingVols(age, on);
   if (!on) return;
-  const u = muzzleSmoke.material.uniforms, f = state.muzzleFx, R = 60 + 240 * Math.sqrt(age);
+  const u = muzzleSmoke.material.uniforms, f = state.muzzleFx!, R = 60 + 240 * Math.sqrt(age);
   u.uMs.value.set(f.P.x, f.P.y, f.P.z, age);
   u.uMx.value.set(f.ax.x, f.ax.y, f.ax.z, f.k);
   msC.copy(f.P).addScaledVector(f.ax, 360 * (1 - Math.exp(-age / 0.6))).add(bq.set(6, 5, 2).multiplyScalar(age));
@@ -447,12 +448,12 @@ vec3 alb(vec3 p) { return uVapC; }
 vec3 vlight(vec3 p) { vec3 m = uMuzL.xyz - p; return vec3(1.0, 0.72, 0.48) * uMuzL.w * 3.5e4 / (dot(m, m) + 3.5e4) + blastLight(p); }`, {
   uMs: { value: new THREE.Vector4() }, uMx: { value: new THREE.Vector4() }, uVapC: { value: new THREE.Vector3(...linFit(0.96, 0.006, 240)) },
 }));
-function updateRingVols(age, on) {
+function updateRingVols(age: number, on: boolean) {
   RINGS.forEach((r, i) => {
     const m = ringVols[i], a = age - r.d, live = on && a > 0 && a < 2.5;
     m.visible = live;
     if (!live) return;
-    const u = m.material.uniforms, f = state.muzzleFx;
+    const u = m.material.uniforms, f = state.muzzleFx!;
     u.uMs.value.set(f.P.x, f.P.y, f.P.z, age);
     u.uMx.value.set(f.ax.x, f.ax.y, f.ax.z, f.k);
     const Rv = (30 + 560 * (1 - Math.exp(-a / 0.28))) * r.s, tv = (22 + 0.16 * Rv) * (1 + r.s) / 2;

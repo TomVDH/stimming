@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: play/approach runs first.
 import './approach.ts';
 import * as THREE from 'three';
@@ -25,27 +24,48 @@ import { humGroan, humStart, humStop, humUpdate } from '../sound/hum.ts';
 // A press starts the charge.
 // The level follows the hold time.
 // Any release fires.
-export let charge = null;
+// Who holds the charge: the pointer or Space.
+export type HoldBy = 'pointer' | 'space';
+// The press and release hooks, as this module sets them on act.
+export type PressFn = (by?: HoldBy, skip?: boolean) => void;
+export type ReleaseFn = (by?: HoldBy) => void;
+// A live charge: start, level, arc chase, dust, owner, and later flags.
+export interface Charge {
+  t0: number;
+  c: number;
+  chase: number;
+  dust: number;
+  by: HoldBy;
+  bank?: number;
+  locked?: boolean;
+  armed?: boolean;
+}
+// The ranging before a charge: start time and owner.
+export interface Ranging {
+  t0: number;
+  by: HoldBy;
+}
+export let charge: Charge | null = null;
 // Hold times in seconds: full power, end of the ready window, the vent.
 // Full power at 8.6 s; a 4 s ready window; then 4 s of over-hold before the vent.
 export const HOLD = { full: 8.6, ready: 12.6, vent: 16.6 };
-export const CHASE_T = c => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(Math.min(c, 1), 1.5));
+export const CHASE_T = (c: number) => THREE.MathUtils.lerp(2.0, 0.08, Math.pow(Math.min(c, 1), 1.5));
 // The ease reaches full power at HOLD.full.
 const EASE_P = 2.4;
 // The over-hold, 0 to 1 from the ready window to the vent.
-const overOf = held => clamp((held - HOLD.ready) / (HOLD.vent - HOLD.ready), 0, 1);
+const overOf = (held: number) => clamp((held - HOLD.ready) / (HOLD.vent - HOLD.ready), 0, 1);
 // Past the ready window the power climbs to 1.25.
-const levelOf = held => held >= HOLD.full ? 1 + 0.25 * overOf(held) : 0.12 + 0.88 * (1 - Math.pow(1 - held / HOLD.full, EASE_P));
+const levelOf = (held: number) => held >= HOLD.full ? 1 + 0.25 * overOf(held) : 0.12 + 0.88 * (1 - Math.pow(1 - held / HOLD.full, EASE_P));
 // The inverse of levelOf.
-export const heldOf = c => c > 1 ? HOLD.ready + (HOLD.vent - HOLD.ready) * Math.min(1, (c - 1) / 0.25) : HOLD.full * (1 - Math.pow(1 - clamp((c - 0.12) / 0.88, 0, 1), 1 / EASE_P));
-export const stageOf = held => held < HOLD.full ? 'build' : held < HOLD.full + 0.4 ? 'full' : held < HOLD.ready ? 'ready' : held < HOLD.vent ? 'over' : 'vent';
+export const heldOf = (c: number) => c > 1 ? HOLD.ready + (HOLD.vent - HOLD.ready) * Math.min(1, (c - 1) / 0.25) : HOLD.full * (1 - Math.pow(1 - clamp((c - 0.12) / 0.88, 0, 1), 1 / EASE_P));
+export const stageOf = (held: number) => held < HOLD.full ? 'build' : held < HOLD.full + 0.4 ? 'full' : held < HOLD.ready ? 'ready' : held < HOLD.vent ? 'over' : 'vent';
 // Chaos keeps growing after the power has saturated.
 export let chaos = 0;
 // Rage is the last stretch of the build.
 export let rage = 0;
 // Over is the gun acting out past the ready window.
 export let over = 0;
-const chaosOf = held => 1 - Math.exp(-held / 8);
+const chaosOf = (held: number) => 1 - Math.exp(-held / 8);
 // The vent's start time; a vent has no shot.
 export let ventT = -1e9;
 // A hold belongs to the pointer or to Space.
@@ -54,15 +74,15 @@ export let ventT = -1e9;
 // The charge starts once the range locks; a release before that cancels.
 // QA can skip the ranging.
 const RANGE_T = 1.0;
-export let ranging = null;
-function startCharge(by) {
+export let ranging: Ranging | null = null;
+function startCharge(by: HoldBy) {
   charge = { t0: state.simT, c: 0.12, chase: 0, dust: 0, by };
   // The shake starts on this very frame.
   U.uCharge.value = 0.12;
 }
 // The live fire mode; a new pick lands at the next press.
 state.fireMode = 'rail';
-act.press = (by = 'pointer', skip = false) => {
+act.press = (by: HoldBy = 'pointer', skip = false) => {
   // After contact the gun stands down.
   if (charge || spin || ranging || state.strike?.hit) return;
   state.fireMode = ui.setting('firemode').value;
@@ -77,7 +97,7 @@ function armCue() {
   if (!reduced()) { spawnArc(0.5); spawnArc(0.8); }
   dustPulse(0.9); state.armSound();
 }
-act.release = (by = 'pointer') => {
+act.release = (by: HoldBy = 'pointer') => {
   if (ranging && ranging.by === by) { ranging = null; return; }
   if (!charge || charge.by !== by) return;
   releaseHint.style.opacity = '0';
@@ -136,13 +156,13 @@ state.armSound = () => {};
 // The shot assigns this below.
 state.fire = () => {};
 export const dustP = new THREE.Vector3(), dustV = new THREE.Vector3();
-const releaseHint = document.querySelector('.release-hint');
+const releaseHint = document.querySelector('.release-hint') as HTMLElement;
 // The ranging laser's beats, in seconds from the press.
 // It pulses twice, then paints the target with a faint steady beam.
 // The paint holds through the charge.
 // On the release it strobes fast and goes out as the slug leaves.
 const RANGE = { pulses: [[0.1, 0.22], [0.42, 0.54]], paint: 0.75, hold: 0.4, hz: 22 };
-const inB = (t, [a, b]) => t >= a && t < b;
+const inB = (t: number, [a, b]: number[]) => t >= a && t < b;
 // The laser's gain now: 0 is dark, 1 is a full pulse.
 export function laserGain() {
   if (ranging) {
@@ -158,8 +178,8 @@ export function laserGain() {
   }
   return 0;
 }
-const fract = x => x - Math.floor(x);
-export function stepCharge(dt) {
+const fract = (x: number) => x - Math.floor(x);
+export function stepCharge(dt: number) {
   if (ranging) {
     const t = state.simT - ranging.t0;
     if (t >= RANGE_T) { const by = ranging.by; ranging = null; startCharge(by); }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/ion runs first.
 import './ion.ts';
 import * as THREE from 'three';
@@ -10,7 +9,7 @@ import { starMat } from './burst.ts';
 /* ---------- glints: streaks of light with a length and a width in metres ---------- */
 // The length lies along one world direction.
 // It foreshortens as that direction turns away from the eye.
-export function makeGlint(color) {
+export function makeGlint(color: number[]) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: {
       uP: { value: new THREE.Vector3() }, uD: { value: new THREE.Vector3(0, 0, -1) }, uLW: { value: new THREE.Vector2(1, 1) },
@@ -47,7 +46,8 @@ export function makeGlint(color) {
   scene.add(m);
   return m;
 }
-export function glint(m, pos, dir, len, wid, gain) {
+export type Glint = ReturnType<typeof makeGlint>;
+export function glint(m: Glint, pos: THREE.Vector3Like, dir: THREE.Vector3Like, len: number, wid: number, gain: number) {
   const g = reduced() ? gain * 0.5 : gain;
   m.visible = g > 0.002;
   m.material.uniforms.uP.value.copy(pos);

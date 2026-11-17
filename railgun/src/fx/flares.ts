@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: play/charge runs first.
 import '../play/charge.ts';
 import * as THREE from 'three';
@@ -8,7 +7,7 @@ import { BAND } from '../clouds/bands.ts';
 
 /* ---------- flares: soft discs of light at the muzzle, the head and the hit ---------- */
 // shape: GLSL that sets float a from vUv; the default is a soft disc.
-export function makeFlare(color, shape = '') {
+export function makeFlare(color: number[], shape = '') {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: { uF: { value: new THREE.Vector4(0, 0, 0, 1) }, uC: { value: new THREE.Vector3(...color) }, uGain: { value: 0 } },
     transparent: true, depthWrite: false, depthTest: false,
@@ -32,4 +31,6 @@ export function makeFlare(color, shape = '') {
   scene.add(m);
   return m;
 }
+// A flare card: a camera-facing quad with its own shader.
+export type Flare = ReturnType<typeof makeFlare>;
 export const muzzleFlare = makeFlare(linFit(0.95, 0.05, 230));

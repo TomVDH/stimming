@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/wind runs first.
 import './wind.ts';
 import * as THREE from 'three';
@@ -8,11 +7,12 @@ import { CHASE_T, chaos, charge, over, rage } from '../play/charge.ts';
 import { filt, kit, track } from './kit.ts';
 import { stackStart, stackUpdate } from './surge.ts';
 import { bake, baked } from './samples.ts';
+import type { Stack } from './surge.ts';
 
 /* ---------- the charge hum ---------- */
 // One root carries ten harmonic partials.
 // Each partial enters as the chaos grows: [ratio, wave, enter, level].
-const PARTIALS = [
+const PARTIALS: [number, OscillatorType, number, number][] = [
   [1, 'sawtooth', 0, 1], [1.5, 'triangle', 0.1, 0.7], [2, 'sawtooth', 0.22, 0.6], [3, 'triangle', 0.34, 0.6], [4, 'sawtooth', 0.46, 0.4],
   [5, 'sine', 0.56, 0.5], [6, 'sine', 0.66, 0.45], [8, 'sine', 0.74, 0.4], [12, 'sine', 0.82, 0.3], [16, 'sine', 0.88, 0.25],
 ];
@@ -32,8 +32,10 @@ export const VOWEL = { oo: [300, 870], ah: [730, 1090], scream: [900, 2500], uu:
 // wob: tape wobble in semitones. bloom: a closed filter opens at the lock.
 // verb: plain send. pre: echo pre-delay in seconds. dark: send cutoff.
 // accent: the swell at the lock.
-export const MIX0 = { hum: 1, choir: 0, oct: 1, sub: 1, glide: 0.06, late: 1, tier: false, bass: false, wob: 0, bloom: false, verb: 0, pre: 0, dark: 0, accent: 0.5 };
-export const MIX = {
+// One charge mix; stack and surge name a SURGE profile.
+export interface Mix { hum: number; choir: number; oct: number; sub: number; glide: number; late: number; tier: boolean; bass: boolean; wob: number; bloom: boolean; verb: number; pre: number; dark: number; accent: number; stack?: string; surge?: string }
+export const MIX0: Mix = { hum: 1, choir: 0, oct: 1, sub: 1, glide: 0.06, late: 1, tier: false, bass: false, wob: 0, bloom: false, verb: 0, pre: 0, dark: 0, accent: 0.5 };
+export const MIX: Record<string, Mix> = {
   hum: MIX0,
   blend: { ...MIX0, choir: 0.55 },
   choir: { ...MIX0, hum: 0.6, choir: 1 },
@@ -55,8 +57,8 @@ export const MIX = {
 };
 // The plain: one convolver per context, built on first use.
 // Open flats have no room: a ground bounce, mesa echoes, a low roll.
-let verb = null;
-export function plainVerb(ac) {
+let verb: { ac: BaseAudioContext; in: GainNode; ir: AudioBuffer } | null = null;
+export function plainVerb(ac: BaseAudioContext) {
   if (verb && verb.ac === ac) return verb.in;
   const sr = ac.sampleRate, len = Math.round(sr * 6), ir = ac.createBuffer(2, len, sr);
   // Mesa echoes: [delay s, level, pan side]; far ones come back darker.
@@ -87,17 +89,33 @@ export function plainVerb(ac) {
 }
 // The charge bus: the charge sound's every output goes through it.
 // QA records it alone, with no other sound.
-let chargeBusN = null;
-export function chargeBus(ac) {
+let chargeBusN: GainNode | null = null;
+export function chargeBus(ac: BaseAudioContext) {
   if (!chargeBusN || chargeBusN.context !== ac) { chargeBusN = ac.createGain(); chargeBusN.connect(kit.out); }
   return chargeBusN;
 }
-export let hum = null;
-export function humStart(ac) {
+// One partial of the hum: a detuned pair under one gain.
+export interface HumLayer { os: OscillatorNode[]; lg: GainNode; ratio: number; enter: number; level: number }
+// One choir voice: saws through two formant filters.
+export interface HumVoice { os: OscillatorNode[]; f1: BiquadFilterNode; f2: BiquadFilterNode; vg: GainNode; tgt: number; start: number; k: number; sour: number; low: boolean; ph: number; enter: number }
+// The plain hum: partials, a sub, the choir and an optional surge on top.
+export interface PlainHum {
+  P: Mix; layers: HumLayer[]; src: AudioScheduledSourceNode[];
+  lp: BiquadFilterNode; pre: GainNode; g: GainNode; sub: OscillatorNode; sg: GainNode; lfo: OscillatorNode; lg: GainNode;
+  nb: BiquadFilterNode; ng: GainNode; voices: HumVoice[]; cpre: GainNode; cg: GainNode; bloom: BiquadFilterNode | null; vs: GainNode | null;
+  vlev: number; locked: boolean; lockAt: number; sour: number; surge?: Stack; stack?: undefined;
+}
+// A stack mix runs a surge in place of the plain hum.
+export type Hum = PlainHum | Stack;
+// The drive of the hum: the hold's own, or the strike's surge.
+export interface HumDrive { c: number; chaos: number; rage: number; over: number; vol: number }
+export let hum: Hum | null = null;
+export function humStart(ac: BaseAudioContext) {
   if (hum) return;
   // The echo's impulse builds in idle time during the hold, not on the shot.
-  if (!verb || verb.ac !== ac) (window.requestIdleCallback || setTimeout)(() => plainVerb(ac), { timeout: 1500 });
-  if (baked?.ac !== ac) (window.requestIdleCallback || setTimeout)(() => bake(ac), { timeout: 2500 });
+  // The fallback setTimeout takes the options object as its delay.
+  if (!verb || verb.ac !== ac) (window.requestIdleCallback || (setTimeout as typeof requestIdleCallback))(() => plainVerb(ac), { timeout: 1500 });
+  if (baked?.ac !== ac) (window.requestIdleCallback || (setTimeout as typeof requestIdleCallback))(() => bake(ac), { timeout: 2500 });
   const P = MIX[chargeMix] || MIX.vast;
   if (P.stack) { hum = stackStart(ac, P, chargeBus(ac)); return; }
   const lp = filt(ac, 'lowpass', 180, 1.2), pre = ac.createGain(), shape = ac.createWaveShaper(), trem = ac.createGain(), g = ac.createGain();
@@ -107,9 +125,9 @@ export function humStart(ac) {
   shape.curve = curve; shape.oversample = '2x';
   pre.gain.value = 0.5; trem.gain.value = 1; g.gain.value = 0;
   lp.connect(pre).connect(shape).connect(trem).connect(g).connect(chargeBus(ac));
-  const src = [], layers = [];
+  const src: AudioScheduledSourceNode[] = [], layers: HumLayer[] = [];
   PARTIALS.forEach(([ratio, type, enter, level], i) => {
-    const lg = ac.createGain(), pan = ac.createStereoPanner(), os = [];
+    const lg = ac.createGain(), pan = ac.createStereoPanner(), os: OscillatorNode[] = [];
     lg.gain.value = 0;
     // High partials sit wide; the root sits in the middle.
     pan.pan.value = (i % 2 ? 1 : -1) * Math.min(0.7, 0.1 * i);
@@ -140,7 +158,7 @@ export function humStart(ac) {
   if (bloom) cpre.connect(cshape).connect(bloom).connect(cg).connect(chargeBus(ac));
   else cpre.connect(cshape).connect(cg).connect(chargeBus(ac));
   // Each voice: [target, start semitones, arrival curve, sour sign, pan, bass].
-  const list = VOICES.map(([tgt, harm, k, sour, pn]) => [tgt, 12 * Math.log2(harm), k, sour, pn, false]);
+  const list: [number, number, number, number, number, boolean][] = VOICES.map(([tgt, harm, k, sour, pn]) => [tgt, 12 * Math.log2(harm), k, sour, pn, false]);
   // Bass voices rise a fifth into place.
   if (P.bass) BASS.forEach((tgt, i) => list.push([tgt, tgt - 7, 0.8 + 0.8 * Math.random(), Math.random() < 0.5 ? -1 : 1, (i % 2 ? 1 : -1) * 0.2 * i, true]));
   // Tiered mixes enter low to high; the top voices arrive at the climax.
@@ -180,7 +198,7 @@ export function humStart(ac) {
   }
 }
 // Semitones from the hum's root for a voice at power c.
-function voicePitch(v, c, t, P, wow, over) {
+function voicePitch(v: HumVoice, c: number, t: number, P: Mix, wow: number, over: number) {
   const u = clamp((c - 0.12) / 0.88, 0, 1);
   const lock = THREE.MathUtils.smoothstep(c, 0.93, 1.0);
   // Each voice climbs on its own curve.
@@ -195,7 +213,7 @@ function voicePitch(v, c, t, P, wow, over) {
 }
 // s: the drive; the hold's own by default, the strike's surge otherwise.
 // vol fades the whole stack in.
-export function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vol: 1 }) {
+export function humUpdate(ac: BaseAudioContext, s: HumDrive | null = charge && { c: charge!.c, chaos, rage, over, vol: 1 }) {
   if (!hum || !s) return;
   // A stacked charge sound runs its own update, only while a hold lasts.
   if (hum.stack) { if (charge) stackUpdate(ac, hum); return; }
@@ -203,7 +221,7 @@ export function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vo
   // A slow tape wobble bends the whole charge.
   const wow = P.wob * Math.min(c, 1) * Math.sin(t * 1.9 + 0.8 * Math.sin(t * 0.7));
   // In Salvo each banked round lifts the hum a semitone.
-  const lift = state.fireMode === 'salvo' ? (charge.bank || 0) : 0;
+  const lift = state.fireMode === 'salvo' ? (charge!.bank || 0) : 0;
   const f = 55 * P.oct * Math.pow(2, (c * 7 + wow + lift) / 12), hg = Math.max(0.05, 0.5 * P.glide);
   for (const l of hum.layers) {
     for (const o of l.os) o.frequency.setTargetAtTime(f * l.ratio, t, hg);
@@ -254,7 +272,7 @@ export function humUpdate(ac, s = charge && { c: charge.c, chaos, rage, over, vo
   if (hum.surge) stackUpdate(ac, hum.surge);
 }
 // The vent: the choir groans down two octaves and dies.
-export function humGroan(ac) {
+export function humGroan(ac: BaseAudioContext | null) {
   if (!hum || !ac) { humStop(ac, true); return; }
   const h = hum, t = ac.currentTime;
   hum = null;
@@ -267,12 +285,12 @@ export function humGroan(ac) {
   for (const n of h.src) n.stop(t + end);
   track(t + end + 0.1, ...h.src);
 }
-export function humStop(ac, now = false) {
+export function humStop(ac: BaseAudioContext | null, now = false) {
   if (!hum) return;
   const h = hum, t = ac ? ac.currentTime : 0;
   hum = null;
   if (!ac || now) { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* not started */ } } return; }
-  for (const n of [h.g, h.sg, h.ng, h.cg, h.surge?.g].filter(Boolean)) n.gain.setTargetAtTime(0, t, 0.03);
+  for (const n of [h.g, h.sg, h.ng, h.cg, h.surge?.g].filter(Boolean) as GainNode[]) n.gain.setTargetAtTime(0, t, 0.03);
   for (const n of h.src) n.stop(t + 0.4);
   track(t + 0.5, ...h.src);
 }

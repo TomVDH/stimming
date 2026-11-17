@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: view/sight runs first.
 import './sight.ts';
 import * as THREE from 'three';
@@ -93,12 +92,12 @@ export function toggleSight() {
 }
 // The eye: the rangefinder's right lens; it recoils with the housing.
 export const eyeP = new THREE.Vector3(), tgtP = new THREE.Vector3();
-function sightEye(out) {
+function sightEye(out: THREE.Vector3) {
   return barrelPt(VF.a + 30, VF.x, VF.u, out);
 }
 // A critically damped spring: the lens moves heavy and smooth.
 export const lookV = { yaw: 0, pitch: 0 };
-export function easeLook(dt) {
+export function easeLook(dt: number) {
   // The push builds over about twelve seconds of hold and eases out slower.
   const pt = charge ? clamp((state.simT - charge.t0) / 12, 0, 1) : 0;
   cam.push += (pt - cam.push) * (1 - Math.exp(-dt / (pt > cam.push ? 1.2 : 2.5)));
@@ -112,7 +111,7 @@ export function easeLook(dt) {
   U.uTrailK.value = Math.abs(skyTrail.span) / TRAIL_MAX;
   U.uSkyRot0.value.setFromMatrix4(skyRot0.makeRotationAxis(SKY.P, -(skyH - skyTrail.span)));
   const W = 1.6;
-  for (const k of ['yaw', 'pitch']) {
+  for (const k of ['yaw', 'pitch'] as const) {
     lookV[k] += (W * W * (lookTo[k] - look[k]) - 2 * W * lookV[k]) * dt;
     look[k] += lookV[k] * dt;
   }
@@ -159,5 +158,5 @@ export function aimAst() {
   // The smoke near the rock holds still in the world.
   PU.uFlow.value = FALL * ast.s / (1.05 * ast.R) + 0.012 * state.simT;
   // The blocker sits inside the rock's thinnest outline, so no gap shows.
-  PU.uSolid.value = astMesh.visible ? { long: 0.62, lumpy: 0.78, cratered: 0.8 }[astMesh.geometry.userData.kind] || 0.7 : 0;
+  PU.uSolid.value = astMesh.visible ? ({ long: 0.62, lumpy: 0.78, cratered: 0.8 } as Record<string, number>)[astMesh.geometry.userData.kind] || 0.7 : 0;
 }

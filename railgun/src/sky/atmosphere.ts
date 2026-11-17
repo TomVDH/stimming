@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sky/sun runs first.
 import './sun.ts';
 

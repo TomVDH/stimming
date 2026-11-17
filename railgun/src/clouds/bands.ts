@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: clouds/shafts runs first.
 import './shafts.ts';
 

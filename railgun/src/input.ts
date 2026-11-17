@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/motor runs first.
 import './sound/motor.ts';
 import { sound, reduced } from '../../shared/stim.js';
@@ -16,7 +15,7 @@ import { motorStop } from './sound/motor.ts';
 
 // Sound on mid-charge starts the hum where the hold is.
 // Sound off stops everything.
-sound.onChange(on => {
+sound.onChange((on: boolean) => {
   if (!on) { stopAll(); humStop(kit.ac); motorStop(true); surgeOverStop(true); if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } return; }
   if (charge) setTimeout(() => { const ac = kit.live(); if (ac && charge) humStart(ac); }, 60);
 });
@@ -45,7 +44,7 @@ stage.addEventListener('pointermove', e => {
   wake();
 });
 stage.addEventListener('pointerleave', () => { lookTo.yaw = lookTo.pitch = 0; wake(); });
-const end = e => {
+const end = (e: PointerEvent) => {
   if (!state.press || e.pointerId !== state.press.id) return;
   state.press = null;
   stage.classList.remove('held');
@@ -58,8 +57,8 @@ stage.addEventListener('lostpointercapture', end);
 // Space holds the charge.
 // The shell ignores it while a sheet has focus.
 document.addEventListener('keydown', e => {
-  if (TRAV[e.code] && !e.target.closest?.('input, .s2-sheet') && !e.metaKey && !e.ctrlKey) { e.preventDefault(); tkeys.add(e.code); wake(); return; }
-  if (e.code !== 'Space' || e.repeat || e.target.closest?.('input, button, .s2-sheet')) return;
+  if (TRAV[e.code as keyof typeof TRAV] && !(e.target as Element).closest?.('input, .s2-sheet') && !e.metaKey && !e.ctrlKey) { e.preventDefault(); tkeys.add(e.code); wake(); return; }
+  if (e.code !== 'Space' || e.repeat || (e.target as Element).closest?.('input, button, .s2-sheet')) return;
   e.preventDefault();
   state.spaceDown = true;
   if (sound.on) kit.wake();
@@ -67,7 +66,7 @@ document.addEventListener('keydown', e => {
   wake();
 });
 document.addEventListener('keyup', e => {
-  if (TRAV[e.code]) { tkeys.delete(e.code); return; }
+  if (TRAV[e.code as keyof typeof TRAV]) { tkeys.delete(e.code); return; }
   if (e.code !== 'Space' || !state.spaceDown) return;
   state.spaceDown = false;
   act.release('space');

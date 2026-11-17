@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: clouds/lightning runs first.
 import '../clouds/lightning.ts';
 import * as THREE from 'three';
@@ -17,7 +16,7 @@ import { GROUND_C } from '../world/ground.ts';
 // aPart: station, part level, seed (plus 2 when fixed), tone (2 is graphite).
 // Level 0.5 elevates with the cradle; level 1 also recoils.
 export const noise3 = createNoise3D(rnd);
-function part(geo, recoil = 0, tone = 0, fixed = 0) {
+function part(geo: THREE.BufferGeometry, recoil = 0, tone = 0, fixed = 0) {
   const p = geo.attributes.position, v = new THREE.Vector3(), seed = rnd();
   const a = new Float32Array(p.count * 4);
   for (let i = 0; i < p.count; i++) {
@@ -31,17 +30,17 @@ function part(geo, recoil = 0, tone = 0, fixed = 0) {
   return geo;
 }
 // A block in the world frame; y is its centre.
-const block = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+const block = (w: number, h: number, d: number, x: number, y: number, z: number) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 // The central pylon: half widths at the shaft and the foot, leg width.
 const PYLON = { shaft: 95, foot: 250, leg: 70, d: 120, collar: 0.18 };
 // The pylon seen from the front: the yoke and a short collar stand plumb.
 // Below the collar the pylon spreads like an A.
 // Its profile lies in x and y; it runs d metres along z, centred on the pin.
-function aPylon(y0, top) {
+function aPylon(y0: number, top: number) {
   const S = PYLON.shaft, F = PYLON.foot, t = PYLON.leg, mid = top - (top - y0) * PYLON.collar;
   const sh = new THREE.Shape().moveTo(-F, y0).lineTo(F, y0).lineTo(S, mid).lineTo(S, top).lineTo(-S, top).lineTo(-S, mid).closePath();
   // The A's opening: sides parallel to the legs, a pointed head.
-  const outX = y => F - (F - S) * (y - y0) / (mid - y0);
+  const outX = (y: number) => F - (F - S) * (y - y0) / (mid - y0);
   const h0 = y0 + 12, h1 = mid - 34;
   sh.holes.push(new THREE.Path().moveTo(-(outX(h0) - t), h0).lineTo(outX(h0) - t, h0).lineTo(outX(h1) - t, h1).lineTo(0, mid - 8).lineTo(-(outX(h1) - t), h1).closePath());
   const g = new THREE.ExtrudeGeometry(sh, { depth: PYLON.d, curveSegments: 8, bevelEnabled: true, bevelThickness: 3, bevelSize: 3, bevelSegments: 1 });
@@ -50,28 +49,28 @@ function aPylon(y0, top) {
   return mergeVertices(g).translate(0, 0, -PYLON.d / 2);
 }
 // Narrow a box's top: kx across, kz along, then shift the top along z.
-function taper(g, kx, kz, dz = 0) {
+function taper(g: THREE.BufferGeometry, kx: number, kz: number, dz = 0) {
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) p.setXYZ(i, p.getX(i) * kx, p.getY(i), p.getZ(i) * kz + dz);
   g.computeVertexNormals();
   return g;
 }
 // The barrel frame: a along the axis, x across, u above it.
-const toBarrel = (g, a0, a1, x, u) => g.translate(x, u, -(a0 + a1) / 2).rotateX(ELEV).translate(A0.x, A0.y, A0.z);
-const slab = (w, h, a0, a1, x = 0, u = 0) => toBarrel(new THREE.BoxGeometry(w, h, a1 - a0), a0, a1, x, u);
+const toBarrel = (g: THREE.BufferGeometry, a0: number, a1: number, x: number, u: number) => g.translate(x, u, -(a0 + a1) / 2).rotateX(ELEV).translate(A0.x, A0.y, A0.z);
+const slab = (w: number, h: number, a0: number, a1: number, x = 0, u = 0) => toBarrel(new THREE.BoxGeometry(w, h, a1 - a0), a0, a1, x, u);
 // A slab with chamfered edges, r metres wide.
 // One bevel step: the flat-face shading shows it as a lit edge.
-function bslab(w, h, a0, a1, x = 0, u = 0, r = 4) {
-  let g = new RoundedBoxGeometry(w, h, a1 - a0, 1, r);
+function bslab(w: number, h: number, a0: number, a1: number, x = 0, u = 0, r = 4) {
+  let g: THREE.BufferGeometry = new RoundedBoxGeometry(w, h, a1 - a0, 1, r);
   g.deleteAttribute('uv'); g.deleteAttribute('normal');
   g = mergeVertices(g);
   // Shared corners give the bevel a smooth roll of light.
   g.computeVertexNormals();
   return toBarrel(g, a0, a1, x, u);
 }
-const tube = (r, a0, a1, x = 0, u = 0) => toBarrel(new THREE.CylinderGeometry(r, r, a1 - a0, 24, 1).rotateX(Math.PI / 2), a0, a1, x, u);
+const tube = (r: number, a0: number, a1: number, x = 0, u = 0) => toBarrel(new THREE.CylinderGeometry(r, r, a1 - a0, 24, 1).rotateX(Math.PI / 2), a0, a1, x, u);
 const Z1 = new THREE.Vector3(0, 0, 1);
-function beam(p, q, w, h) {
+function beam(p: THREE.Vector3, q: THREE.Vector3, w: number, h: number) {
   const d = new THREE.Vector3().subVectors(q, p), len = d.length();
   const g = new THREE.BoxGeometry(w, h, len);
   g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(Z1, d.normalize()));
@@ -88,15 +87,15 @@ export const ANT = { a: -264, u: 250 };
 // The viewfinder's station, and its optic's side offset and height.
 export const VF = { a: -33, x: 21, u: 104 };
 // The barrel's half width and half height at a metres from the trunnion.
-export const halfW = a => a < 250 ? 62 : a < 460 ? 24 : a < L - 82 ? 18 : 22;
-export const halfH = a => a < 250 ? 54 : a < 460 ? 24 : a < L - 82 ? 18 : 22;
+export const halfW = (a: number) => a < 250 ? 62 : a < 460 ? 24 : a < L - 82 ? 18 : 22;
+export const halfH = (a: number) => a < 250 ? 54 : a < 460 ? 24 : a < L - 82 ? 18 : 22;
 // A square strut in the barrel frame, from (a0, u0) to (a1, u1).
-const spar = (a0, u0, a1, u1, x, w) => beam(barrelPt(a0, x, u0, v3()), barrelPt(a1, x, u1, v3()), w, w);
+const spar = (a0: number, u0: number, a1: number, u1: number, x: number, w: number) => beam(barrelPt(a0, x, u0, v3()), barrelPt(a1, x, u1, v3()), w, w);
 function buildGun() {
-  const pieces = [];
+  const pieces: THREE.BufferGeometry[] = [];
   // World-frame pieces rise with the berm; fixed 2 marks a piece on the ground.
-  const add = (g, level = 0, tone = 0, fixed = 0) => pieces.push(part(level === 0 && fixed !== 2 ? g.translate(0, LIFT, 0) : g, level, tone, fixed));
-  const drum = (r0, r1, h, y, n = 72) => new THREE.CylinderGeometry(r0, r1, h, n, 1).translate(0, y, 0);
+  const add = (g: THREE.BufferGeometry, level = 0, tone = 0, fixed = 0) => pieces.push(part(level === 0 && fixed !== 2 ? g.translate(0, LIFT, 0) : g, level, tone, fixed));
+  const drum = (r0: number, r1: number, h: number, y: number, n = 72) => new THREE.CylinderGeometry(r0, r1, h, n, 1).translate(0, y, 0);
   // The fixed plinth: an apron, a parapet, buttresses, a ramp.
   // A berm stands under it only while LIFT is above zero.
   if (LIFT > 0) add(drum(456, BERM_R, LIFT, LIFT / 2, 96), 0, 4, 2);
@@ -110,7 +109,7 @@ function buildGun() {
   add(drum(404, 404, 4, 23, 64), 0, 2);
   // The deck has a slot behind the pylon: the recoil well.
   // The breech swings down into it as the gun climbs.
-  { const disc = (r, h, y) => {
+  { const disc = (r: number, h: number, y: number) => {
       const sh = new THREE.Shape().absarc(0, 0, r, 0, Math.PI * 2, false);
       sh.holes.push(new THREE.Path().moveTo(-WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z0).lineTo(WELL.x, -WELL.z1).lineTo(-WELL.x, -WELL.z1).closePath());
       const g = new THREE.ExtrudeGeometry(sh, { depth: h, curveSegments: 64, bevelEnabled: false });
@@ -197,7 +196,7 @@ function buildGun() {
     // They leave the housing's flank and meet the neck.
     for (const [x0, u, sag] of [[84, 30, 40], [90, 16, 52], [80, 4, 60]]) {
       const N = 8, a0 = -130, a1 = 236, x1 = 38;
-      const at = (f, out) => barrelPt(a0 + (a1 - a0) * f, sd * (x0 + (x1 - x0) * f), u - sag * Math.sin(Math.PI * f), out);
+      const at = (f: number, out: THREE.Vector3) => barrelPt(a0 + (a1 - a0) * f, sd * (x0 + (x1 - x0) * f), u - sag * Math.sin(Math.PI * f), out);
       for (let i = 0; i < N; i++) add(beam(at(i / N, v3()), at((i + 1) / N, v3()), 4, 4), 0.5, 2);
     }
     // Capacitor banks ride the flanks behind the yoke.
@@ -240,7 +239,7 @@ function buildGun() {
   // The viewfinder: a squat eight-sided cupola on a ring, a dark visor,
   // and a long sighting optic along its right side, parallel to the bore.
   // The barrel frame keeps y as up, so an upright drum needs no turn.
-  const up = (g, x, u, a) => toBarrel(g, a, a, x, u);
+  const up = (g: THREE.BufferGeometry, x: number, u: number, a: number) => toBarrel(g, a, a, x, u);
   add(up(new THREE.CylinderGeometry(19, 21, 6, 32, 1), 0, 87, VF.a), 0.5, 2);
   add(up(new THREE.CylinderGeometry(13, 16, 18, 8, 1), 0, 99, VF.a), 0.5, 0);
   add(up(new THREE.CylinderGeometry(9, 13, 4, 8, 1), 0, 110, VF.a), 0.5, 0);

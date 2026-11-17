@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: world/uniforms runs first.
 import '../world/uniforms.ts';
 import * as THREE from 'three';
@@ -17,7 +16,8 @@ import { draw } from '../view/render.ts';
 // sunSwing turns the low sun right of it, in degrees.
 const VIEW_AZ = rad(-155.6);
 state.sunSwing = 36;
-const lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
+type RGB = THREE.Vector3Tuple;
+const lerp3 = (a: readonly number[], b: readonly number[], t: number) => a.map((x, i) => x + (b[i] - x) * t) as RGB;
 export const sstep = THREE.MathUtils.smoothstep;
 export const lerp = THREE.MathUtils.lerp;
 // The moon: cool and dim, high on the left.
@@ -33,14 +33,14 @@ const skyFrame = () => {
   SKY.P.copy(yUp).multiplyScalar(Math.sin(PHI)).addScaledVector(SKY.S, -Math.cos(PHI));
 };
 // A direction on the sky at hour angle H and declination d.
-function skyDir(H, d, out) {
+function skyDir(H: number, d: number, out: THREE.Vector3) {
   const cd = Math.cos(d), sd = Math.sin(d), cP = Math.cos(PHI), sP = Math.sin(PHI);
   out.copy(SKY.E).multiplyScalar(-Math.sin(H) * cd);
   out.addScaledVector(yUp, Math.cos(H) * cd * cP + sd * sP);
   return out.addScaledVector(SKY.S, Math.cos(H) * cd * sP - sd * cP);
 }
 // The morning hour angle where the sun stands deg degrees up.
-const hourOf = deg => -Math.acos(clamp(Math.sin(rad(deg)) / Math.cos(PHI), -1, 1));
+const hourOf = (deg: number) => -Math.acos(clamp(Math.sin(rad(deg)) / Math.cos(PHI), -1, 1));
 // Turn the frame so the dusk sun lands sw degrees right of the look.
 export function aimSky(sw = state.sunSwing) {
   const az = VIEW_AZ - rad(sw);
@@ -62,14 +62,14 @@ U.uSkyRot0 = { value: new THREE.Matrix3() };
 U.uTrailK = { value: 0 };
 // span: the sky angle swept lately, in radians; it decays fast.
 export const TRAIL_MAX = 0.04;
-export const skyTrail = { H: null, span: 0 };
+export const skyTrail = { H: null as number | null, span: 0 };
 export const skyRot0 = new THREE.Matrix4();
 export let skyH = 0;
 // The sky frame stays put: no swing toward a high sun.
 // The sky frame stays fixed: the sun and the moon run true arcs.
 // Sun bearing alone turns the frame.
-export function sun(deg) { aimSky(state.sunSwing); skyAt(hourOf(deg)); }
-export function skyAt(H) {
+export function sun(deg: number) { aimSky(state.sunSwing); skyAt(hourOf(deg)); }
+export function skyAt(H: number) {
   if (skyTrail.H !== null && !reduced()) skyTrail.span = clamp(skyTrail.span + H - skyTrail.H, -TRAIL_MAX, TRAIL_MAX);
   skyTrail.H = H;
   skyH = H;
@@ -98,18 +98,18 @@ export function skyAt(H) {
   hor = lerp3(lerp3([0.012, 0.015, 0.028], [0.2, 0.15, 0.2], nt), hor, tw);
   // The disc's light goes as it sets; the glow lasts to -10.
   const kS = sstep(deg, -1.5, 1.5);
-  U.uGlowC.value.set(...sunC.map(x => x * sstep(deg, -10, 0)));
+  U.uGlowC.value.set(...sunC.map(x => x * sstep(deg, -10, 0)) as RGB);
   // The moon takes the key light below -3 degrees.
   const mK = (1 - sstep(deg, -10, -3)) * moonUp;
   U.uMoonK.value = mK;
   U.uStars.value = 1 - sstep(deg, -10, -2);
   U.uSun.value.copy(deg > -3 ? U.uSunD.value : U.uMoonD.value);
   U.uSun.value.setY(Math.max(U.uSun.value.y, 0.02)).normalize();
-  U.uSunC.value.set(...sunC.map((x, i) => x * kS + MOON_C[i] * mK));
+  U.uSunC.value.set(...sunC.map((x, i) => x * kS + MOON_C[i] * mK) as RGB);
   U.uZenC.value.set(...zen);
   U.uHorC.value.set(...hor);
   // Cloud nine kilometres up sees the sun to -6 degrees.
-  U.uCloudSun.value.set(...sunC.map((x, i) => x * sstep(deg, -6, 1) + MOON_C[i] * mK * 0.3));
+  U.uCloudSun.value.set(...sunC.map((x, i) => x * sstep(deg, -6, 1) + MOON_C[i] * mK * 0.3) as RGB);
   U.uCloudAmb.value.setScalar(lerp(lerp(0.012, 0.05, nt), 0.22, tw));
   // A high sun needs no lift on the plain.
   U.uGLift.value.set(lerp(2.6, 1.1, day), lerp(0.08, 0.05, day));
@@ -121,7 +121,7 @@ export function skyAt(H) {
 // The slider runs from night to noon.
 // The knots keep dusk mid-slider, where the first look sat.
 const TIME_K = [[0, -14], [0.18, -6], [0.32, 0], [0.5, 5.6], [0.72, 18], [1, 60]];
-export function sunDeg(v) {
+export function sunDeg(v: number) {
   for (let i = 1; i < TIME_K.length; i++) {
     const [v0, d0] = TIME_K[i - 1], [v1, d1] = TIME_K[i];
     if (v <= v1) return lerp(d0, d1, (v - v0) / (v1 - v0));

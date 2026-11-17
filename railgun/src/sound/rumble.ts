@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/gameover runs first.
 import './gameover.ts';
 import * as THREE from 'three';
@@ -6,13 +5,14 @@ import { state } from '../state.ts';
 import { camera, clamp } from '../setup.ts';
 import { chaos, rage } from '../play/charge.ts';
 import { filt, hiss, jit, kit, pend, track, trackS } from './kit.ts';
+import type { Held } from './kit.ts';
 import { plainVerb } from './hum.ts';
 
 /* ---------- arcs and rumble ---------- */
 // Every hit jitters in pitch, time and level.
 let lastClick = 0;
 const panV = new THREE.Vector3();
-state.click = arc => {
+state.click = (arc: { a: THREE.Vector3 }) => {
   const ac = kit.live();
   if (!ac || ac.currentTime - lastClick < 0.05 - 0.025 * rage) return;
   lastClick = ac.currentTime;
@@ -57,15 +57,18 @@ state.armSound = () => {
 export const SAMPLES = { impact: 'impact.mp3', boom: 'boom.mp3', shot: 'shot.mp3' };
 // The impact's peak sits 1.85 s into its file.
 export const IMPACT_AT = 1.85;
-const sampleP = {};
+// The name of one of Tom's samples.
+export type SampleName = keyof typeof SAMPLES;
+const sampleP: Partial<Record<SampleName, Promise<AudioBuffer | null>>> = {};
 // A missing or failed sample resolves null and tries again next time.
-export const sample = (ac, name) => (sampleP[name] ??= fetch(SAMPLES[name])
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+export const sample = (ac: BaseAudioContext, name: SampleName) => (sampleP[name] ??= fetch(SAMPLES[name])
+  // The status is a number; the cast keeps the old call.
+  .then(r => { if (!r.ok) throw new Error(r.status as unknown as string); return r.arrayBuffer(); })
   .then(b => ac.decodeAudioData(b))
   .catch(() => { delete sampleP[name]; return null; }));
 // Send a node into the plain's echoes, darkened above dark hertz.
 // dest: a send bus in front of the echoes; the plain itself by default.
-export function echo(ac, node, lvl, dark = 6000, dest = plainVerb(ac)) {
+export function echo(ac: BaseAudioContext, node: AudioNode, lvl: number, dark = 6000, dest: AudioNode = plainVerb(ac)) {
   const s = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
   s.gain.value = lvl;
   node.connect(s).connect(lp).connect(dest);
@@ -73,7 +76,7 @@ export function echo(ac, node, lvl, dark = 6000, dest = plainVerb(ac)) {
 // dark: lowpass corner in hertz, with a low shelf lift; 0 plays it plain.
 // wet: the send into the plain's echoes. dest: the bus it feeds.
 // tag: a salvo tag, so a Reset can stop the sample.
-export function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = kit.out, tag = null) {
+export function playSample(ac: BaseAudioContext, buf: AudioBuffer, when: number, gain: number, rate: number, dark = 0, wet = 0, dest: AudioNode = kit.out, tag: string | null = null) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate; g.gain.value = gain;
   if (dark) {
@@ -87,7 +90,7 @@ export function playSample(ac, buf, when, gain, rate, dark = 0, wet = 0, dest = 
 }
 // A sample from off seconds in, faded in over 30 ms, so it never clicks.
 // dark: lowpass corner in hertz. Returns the source.
-function playFrom(ac, buf, when, off, gain, rate, dark, dest, wet = 0) {
+function playFrom(ac: BaseAudioContext, buf: AudioBuffer, when: number, off: number, gain: number, rate: number, dark: number, dest: AudioNode, wet = 0) {
   const src = ac.createBufferSource(), g = ac.createGain(), lp = filt(ac, 'lowpass', dark, 0.5);
   src.buffer = buf; src.playbackRate.value = rate;
   g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(gain, when + 0.03);
@@ -98,7 +101,7 @@ function playFrom(ac, buf, when, off, gain, rate, dark, dest, wet = 0) {
 }
 // A sample-only hit into a live handle; the handle exists at once.
 // The tail of Tom's impact plays when the file is ready.
-export function sampleHit(ac, h, t, gain, rate, dark, dest, wet = 0, name = 'impact') {
+export function sampleHit(ac: BaseAudioContext, h: Held, t: number, gain: number, rate: number, dark: number, dest: AudioNode, wet = 0, name: SampleName = 'impact') {
   sample(ac, name).then(buf => {
     if (!buf || !pend.has(h)) return;
     const off = name === 'impact' ? IMPACT_AT - 0.02 : 0;
@@ -109,8 +112,8 @@ export function sampleHit(ac, h, t, gain, rate, dark, dest, wet = 0, name = 'imp
 // The blast bus: the impact, the boom, the fire and the rumble.
 // One limiter holds the stacked layers under the master's knee.
 // Its peak output sits near -3 dBFS.
-let limBus = null;
-export function blastBus(ac) {
+let limBus: { ac: BaseAudioContext; in: GainNode; lim: DynamicsCompressorNode } | null = null;
+export function blastBus(ac: BaseAudioContext) {
   if (limBus?.ac === ac) return limBus.in;
   const inG = ac.createGain(), lim = ac.createDynamicsCompressor(), mk = ac.createGain();
   // A slow attack keeps the limiter from bending the sub-bass waveform.

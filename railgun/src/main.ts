@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: qa runs first.
 import './qa.ts';
 import * as THREE from 'three';
@@ -42,7 +41,7 @@ setBox(ui.setting('letterbox').value);
 setAimMode(ui.setting('aim').value);
 // The stored graphics settings apply before the first frame.
 gunMat.uniforms.uMetalF0.value = ui.setting('gunmetal').value; gunMat.uniforms.uMetalR.value = ui.setting('gunrough').value; gunMat.uniforms.uWear.value = ui.setting('basewear').value;
-gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; state.shaftGain = ui.setting('shafts').value; state.sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
+gfx.res = ui.setting('res').value; gfx.detail = DETAIL[ui.setting('detail').value as keyof typeof DETAIL] || 1; gfx.bloom = ui.setting('bloom').value; gfx.fxaa = ui.setting('fxaa').value; state.shaftGain = ui.setting('shafts').value; state.sunSwing = ui.setting('sunaz').value; aimSky(); sun(sunDeg(opts.sun));
 // The layered air's two knobs.
 U.uLayer.value.set(ui.setting('farhaze').value, ui.setting('valfog').value);
 U.uAirK.value.set(ui.setting('airray').value, ui.setting('airdust').value, ui.setting('airdusth').value, ui.setting('airglow').value);
@@ -63,8 +62,8 @@ renderer.compileAsync(scene, camera).then(async () => {
   built();
   // Warm every hidden piece once behind the intro.
   // The first charge, shot and hit then link no programs and upload no buffers.
-  const hidden = [];
-  scene.traverse(o => { if ((o.isMesh || o.isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
+  const hidden: THREE.Object3D[] = [];
+  scene.traverse(o => { if (((o as THREE.Mesh).isMesh || (o as THREE.Points).isPoints) && !o.visible) { hidden.push(o); o.visible = true; } });
   // A failed warm-up falls through to the normal start; the first shot then warms itself.
   // The far bake's two passes link in parallel with the scene.
   fbQuad.material = farBakeL;
@@ -83,6 +82,6 @@ renderer.compileAsync(scene, camera).then(async () => {
   markReady();
   wake();
 }, err => {
-  stage.querySelector('.fail').hidden = false; ui.hideControls(); markReady();
+  stage.querySelector<HTMLElement>('.fail')!.hidden = false; ui.hideControls(); markReady();
   throw err;
 });

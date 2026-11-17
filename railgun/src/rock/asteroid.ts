@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: world/shadows runs first.
 import '../world/shadows.ts';
 import * as THREE from 'three';
@@ -16,15 +15,15 @@ import { draw } from '../view/render.ts';
 
 /* ---------- asteroid: a displaced ball with a hot face ---------- */
 // One shape per size bakes at load: long, lumpy or cratered.
-export function bakeRock(detail, sd, kind) {
+export function bakeRock(detail: number, sd: number, kind: 'long' | 'lumpy' | 'cratered') {
   // Merged vertices give smooth normals; the icosahedron comes unindexed.
   const g = mergeVertices(new THREE.IcosahedronGeometry(1, detail));
   const p = g.attributes.position, v = new THREE.Vector3();
   const dir = () => new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
   const dents = Array.from({ length: 6 }, dir);
   // Flat cuts shear the ball into a few broad faces.
-  const cuts = Array.from({ length: 3 }, () => [dir(), 0.8 + 0.12 * rnd()]);
-  const craters = kind === 'cratered' ? Array.from({ length: 11 }, () => [dir(), 0.12 + 0.28 * rnd()]) : [];
+  const cuts = Array.from({ length: 3 }, () => [dir(), 0.8 + 0.12 * rnd()] as [THREE.Vector3, number]);
+  const craters = kind === 'cratered' ? Array.from({ length: 11 }, () => [dir(), 0.12 + 0.28 * rnd()] as [THREE.Vector3, number]) : [];
   const o = sd * 10, amp = kind === 'lumpy' ? 0.34 : 0.22;
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
@@ -120,9 +119,17 @@ scene.add(astMesh);
 // state: approach, hold, entry (reserved), shatter, gone.
 // away: the trail's direction; side and upv span its section.
 // jolt: a crater's shove; tally: the damage the salvo rounds have done.
-export const ast = { jolt: new THREE.Vector3(), tally: makeTally(), s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
+// strike and struck: the rock's last fall; see rock/strike.
+export type AstState = 'approach' | 'hold' | 'entry' | 'strike' | 'struck' | 'shatter' | 'gone';
+export interface Ast {
+  jolt: THREE.Vector3; tally: ReturnType<typeof makeTally>; s: number; state: AstState; shape: number; holdT: number; th: number; R: number;
+  pos: THREE.Vector3; end: THREE.Vector3; turn: number; next: number; away: THREE.Vector3; side: THREE.Vector3; upv: THREE.Vector3; spin: THREE.Vector3;
+  // The hit's sim time; play/shot sets it.
+  hitAt?: number;
+}
+export const ast: Ast = { jolt: new THREE.Vector3(), tally: makeTally(), s: 0.25, state: 'approach', shape: 0, holdT: 0, th: 0, R: 1, pos: new THREE.Vector3(), end: END0.clone(), turn: 0, next: 0, away: AWAY0.clone(), side: new THREE.Vector3(), upv: new THREE.Vector3(), spin: new THREE.Vector3(0.3, 1, 0.2).normalize() };
 // Where the rock is at fall fraction s.
-export const astAt = (s, out) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 - s));
+export const astAt = (s: number, out: THREE.Vector3) => out.copy(ast.end).addScaledVector(ast.away, FALL * (1 - s));
 export function astSize() {
   ast.R = SIZES[opts.size].R;
   astMesh.geometry = ROCKS[opts.size];
@@ -144,7 +151,7 @@ function trailBasis() {
 }
 trailBasis();
 // Each rock's path turns a little about the gun.
-export function turnPath(turn) {
+export function turnPath(turn: number) {
   ast.turn = turn;
   ast.end.copy(END0).sub(A0).applyAxisAngle(yUp, turn).add(A0);
   ast.away.copy(AWAY0).applyAxisAngle(yUp, turn);

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: post/settings runs first.
 import './post/settings.ts';
 import * as THREE from 'three';
@@ -55,10 +54,168 @@ import { sfxN } from './sound/hit.ts';
 import { roarSet } from './sound/ship.ts';
 import { clunks, motor } from './sound/motor.ts';
 import { setBloom } from './post/settings.ts';
+import type { FireMode, TargetKind } from './state.ts';
+import type { RockSize } from './setup.ts';
+import type { AmbKind } from './play/ambient.ts';
+import type { GoDrive } from './sound/gameover.ts';
+
+// A place or a target for a close eye: x, y, z.
+type Vec3T = [number, number, number];
+// One range row for uRg or uRa.
+type Vec4T = [number, number, number, number];
+// still's knobs: the Time slider, the fall, the sim clock, the rung.
+interface StillOpts { sun?: number; fall?: number; t?: number; rung?: number }
+// The cloud card's base widths, kept on the attribute by stormSolo.
+type QaAttr = THREE.BufferAttribute & { qaW0?: number[] };
+
+// The hooks a test script calls through window.__qa.
+// A query returns plain data for the script; no module reads it.
+interface QaHooks {
+  skyQ(): unknown;
+  stormProbe(on?: boolean): void;
+  still(o?: StillOpts): { rung: number; simT: number; sun: number };
+  stormSolo(k?: number | null): void;
+  stormsQ(): unknown;
+  stormFlash(): void;
+  storms(): unknown;
+  sun(v: number): void;
+  simT(): number;
+  draws(): number;
+  rung(): number;
+  marks(): unknown;
+  laserQ(): unknown;
+  info(): unknown;
+  size(v: RockSize): void;
+  fall(s: number): void;
+  strikeQ(): unknown;
+  ast(): unknown;
+  charge(c: number): void;
+  hold(t: number): void;
+  press(): void;
+  ranging(): number;
+  level(): number;
+  stage(): string;
+  holding(): boolean;
+  mode(m: FireMode): void;
+  fireMode(): FireMode;
+  bank(): number;
+  recoil(): unknown;
+  heat(): number;
+  rockKind(): unknown;
+  spin(): unknown;
+  reset(): void;
+  tgt(): TargetKind;
+  shipFire(): void;
+  shipShot(): unknown;
+  projectPt(x: number, y: number, z: number): unknown;
+  landing(): unknown;
+  shipFireEnabled(): boolean;
+  ship(): unknown;
+  domesQ(): unknown;
+  hailsQ(): unknown;
+  rumbleDelay(i: number): unknown;
+  pendQ(): unknown;
+  wakeAudio(): void;
+  record(tap?: 'go' | 'charge'): { stop(): Promise<unknown> };
+  impOff(on: number | boolean): void;
+  gunMask(step?: number, pad?: number): number[][];
+  bloom(v: number): void;
+  shafts(v: number): void;
+  swing(v: number): void;
+  hulkPos(i: number, t: number): unknown;
+  hulkSite(i: number): unknown;
+  hulkG(i: number, a: number): unknown;
+  busy(): unknown;
+  shipBusyQ(): unknown;
+  shipScreen(): unknown;
+  shipLens(z: number): void;
+  pick(k: TargetKind): void;
+  target(k: TargetKind): void;
+  sight(): unknown;
+  toggleSight(): void;
+  look(): unknown;
+  blastState(): unknown;
+  frags(): unknown;
+  splits(): unknown;
+  lastSplit(): unknown;
+  ablation(): unknown;
+  ion(): unknown;
+  slide(m: number): void;
+  eject(): void;
+  caseP(): unknown;
+  lay(y: number, e: number): void;
+  eye(p: Vec3T, t: Vec3T, fov?: number): void;
+  cap(): number;
+  rings(): unknown;
+  tally(): unknown;
+  sfx(): unknown;
+  flash(): number;
+  hitAt(): unknown;
+  craters(): number;
+  hunted(): number;
+  rounds(): unknown;
+  salvo(n: number): void;
+  muzzle(): unknown;
+  aim(): unknown;
+  release(): void;
+  jump(t: number): void;
+  glowK(k: number): void;
+  setS(v: number): void;
+  charged(): number;
+  chaos(): number;
+  audio(): unknown;
+  surgeOver(d: GoDrive | null): void;
+  surgeLive(): unknown;
+  take(name: string, c?: number): void;
+  mute(on: boolean): void;
+  shipSfx(): unknown;
+  tap(): boolean;
+  peak(reset?: boolean): number;
+  shoot(c: number): void;
+  lens(): unknown;
+  ambient(kind: AmbKind): void;
+  farGaps(): unknown;
+  amb(): unknown;
+  freeze(on?: boolean): void;
+  bump(v: number): void;
+  rangeLight(x: number, y: number, z: number, rock?: string): void;
+  ranges(table: Parameters<typeof rangeUniforms>[0], land?: Parameters<typeof landValues>[0]): void;
+  farSkip(on: boolean): void;
+  grid(): unknown;
+  // A third argument sets uForms; the body reads it from arguments.
+  far(mode?: 'bake' | 'live' | null, ero?: number | null, forms?: number | null): unknown;
+  gpuMs(what?: string, n?: number): Promise<unknown>;
+  partsOff(names: string[]): void;
+  run(t: number, dt?: number): void;
+  shot(): unknown;
+  endShot(): void;
+  shipLaidQ(): unknown;
+  aimFree(y?: number | null, e?: number): void;
+  aimTrack(): void;
+  astScreen(): unknown;
+  screenOf(a: number, x?: number, u?: number): { x: number; y: number };
+  muzzleScreen(): { x: number; y: number };
+  spent(): unknown;
+  resetReady(): unknown;
+  dust(): unknown;
+  chunkSegs(): unknown;
+  strike(): void;
+  strikeAt(u: number): void;
+  fast(on: boolean): void;
+  strikeState(): unknown;
+  blast(t: number): void;
+}
+
+declare global {
+  interface Window {
+    __qa: QaHooks;
+    __models: () => { gun: typeof gun; flapMesh: typeof flapMesh; portMesh: typeof portMesh; frameMesh: typeof frameMesh };
+  }
+}
 
 window.__qa = {
   // The sun and the moon: elevation in degrees, screen place in NDC.
-  skyQ() { const f = d => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
+  skyQ() { const f = (d: THREE.Vector3) => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
   stormProbe(on = true) { setStormProbe(on); draw(); },
   // One repeatable still for tools/clouds-check.mjs.
   // It freezes the clocks, stops random events and pins the rung.
@@ -83,9 +240,9 @@ window.__qa = {
   stormSolo(k = null) {
     let j = 0;
     for (const m of [tower, giants]) {
-      const a = m.geometry.getAttribute('aC');
+      const a = m.geometry.getAttribute('aC') as QaAttr;
       a.qaW0 ??= Array.from({ length: a.count }, (_, i) => a.getW(i));
-      for (let i = 0; i < a.count; i++, j++) a.setW(i, k === null || k === j ? a.qaW0[i] : 0);
+      for (let i = 0; i < a.count; i++, j++) a.setW(i, k === null || k === j ? a.qaW0![i] : 0);
       a.needsUpdate = true;
     }
     draw();
@@ -100,14 +257,14 @@ window.__qa = {
   rung: () => state.rung,
   marks: () => { const m = sightMarks(); return { state: m.state, rdot: m.rdot, rock: !!m.rock, hit: m.hit ? { x: m.hit.x, y: m.hit.y } : null }; },
   laserQ: () => ({ on: laser.visible, end: lzB.toArray(), live: tgtLive() }),
-  info: () => ({ ...renderer.info.render, programs: renderer.info.programs.length, ...renderer.info.memory }),
+  info: () => ({ ...renderer.info.render, programs: renderer.info.programs!.length, ...renderer.info.memory }),
   size: v => { opts.size = v; retune(); },
   // Jump the rock to fall fraction s; past 1 the strike starts.
   fall(s) { ast.s = s; placeAst(); astSize(); },
   strikeQ: () => (state.strike ? { u: strikeU(), s1: state.strike.s1, hit: state.strike.hit } : null),
   ast: () => ({ s: ast.s, state: ast.state, R: ast.R, th: THREE.MathUtils.radToDeg(ast.th), pos: ast.pos.toArray() }),
   // Hold at a level: the charge starts as if held for c.
-  charge(c) { c = clamp(c, 0.12, 1.25); act.press('pointer', true); charge.t0 = state.simT - heldOf(c); stepCharge(0); frame(); draw(); },
+  charge(c) { c = clamp(c, 0.12, 1.25); act.press('pointer', true); charge!.t0 = state.simT - heldOf(c); stepCharge(0); frame(); draw(); },
   // Hold as if pressed t seconds ago.
   hold(t) { act.press('pointer', true); if (charge) charge.t0 = state.simT - t; stepCharge(0); frame(); draw(); },
   // A real press: ranging first, then the charge.
@@ -140,7 +297,7 @@ window.__qa = {
     uEntry: shipMeshes.map(m => m.material.uniforms.uEntry.value.w), f: ship.hulks.map(h => (h.breakAt === null ? 0 : hulkAt(h, state.simT - h.breakAt).f)),
     fallT: ship.hulks.map(h => h.fallT), pos: shipMeshes.map(m => m.position.toArray()), vis: shipMeshes.map(m => m.visible),
     tumble: shipMeshes.map(m => m.quaternion.angleTo(shipQ)), lit: shipMeshes.map(m => m.material.uniforms.uLit.value), halo: U.uAstR.value,
-    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib.material.uniforms.uLen.value : t.pu.uLen.value, lift: t.cheap ? (t.rib.material.uniforms.uLift.value.y ? t.rib.material.uniforms.uLift.value.x * t.rib.material.uniforms.uLen.value : 0) : t.pu.uLift.value.y ? t.pu.uLift.value.x : 0 })),
+    trains: shipTrains.map(t => ({ on: t.m.visible || (!!t.rib && t.rib.visible), cheap: t.cheap, len: t.cheap ? t.rib!.material.uniforms.uLen.value : t.pu.uLen.value, lift: t.cheap ? (t.rib!.material.uniforms.uLift.value.y ? t.rib!.material.uniforms.uLift.value.x * t.rib!.material.uniforms.uLen.value : 0) : t.pu.uLift.value.y ? t.pu.uLift.value.x : 0 })),
     steps: PU.uSteps.value, vent: ventN, shed: shedN,
     domes: shipDomes.filter(domeAlive).length, landedF: ship.hulks.map(h => h.landedAt !== null), rumbleAt: ship.hulks.map(h => h.rumbleAt ?? null),
     rumbles: shipRumbles.length, rise: state.simT - ship.t0, flash: IMP_U.uImp.value.map(v => v.w) }),
@@ -156,9 +313,9 @@ window.__qa = {
   // Record the sound output; stop() resolves to a data URL.
   // tap 'go' or 'charge': that sound alone, with no other sound.
   record(tap) {
-    const ac = kit.live(), d = ac.createMediaStreamDestination(), src = tap === 'go' ? goBus(ac) : tap === 'charge' ? chargeBus(ac) : kit.out;
+    const ac = kit.live()!, d = ac.createMediaStreamDestination(), src = tap === 'go' ? goBus(ac) : tap === 'charge' ? chargeBus(ac) : kit.out;
     src.connect(d);
-    const r = new MediaRecorder(d.stream), parts = [];
+    const r = new MediaRecorder(d.stream), parts: Blob[] = [];
     r.ondataavailable = e => parts.push(e.data);
     r.start();
     return { stop: () => new Promise(res => {
@@ -183,7 +340,7 @@ window.__qa = {
     renderer.readRenderTargetPixels(rt, 0, 0, w, h, px);
     renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); mat.colorWrite = cw; rt.dispose();
     const r = canvas.getBoundingClientRect(), k = r.width / w, out = [];
-    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < h && px[(y * w + x) * 4] > 128;
+    const on = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && px[(y * w + x) * 4] > 128;
     for (let y = pad; y < h - pad; y += step) for (let x = pad; x < w - pad; x += step) {
       if (!on(x, y) || !on(x - pad, y) || !on(x + pad, y) || !on(x, y - pad) || !on(x, y + pad)) continue;
       out.push([Math.round(r.left + x * k), Math.round(r.top + (h - 1 - y) * k)]);
@@ -206,11 +363,11 @@ window.__qa = {
   // The ship's centre and its hull's screen bounds, in CSS pixels.
   shipScreen() {
     const r = canvas.getBoundingClientRect(), v = new THREE.Vector3();
-    const px = q => { q.project(camera); return [r.left + (q.x * 0.5 + 0.5) * r.width, r.top + (0.5 - q.y * 0.5) * r.height]; };
+    const px = (q: THREE.Vector3) => { q.project(camera); return [r.left + (q.x * 0.5 + 0.5) * r.width, r.top + (0.5 - q.y * 0.5) * r.height]; };
     const [x, y] = px(shipP.clone()), b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 };
     for (const m of shipMeshes) {
       m.updateMatrixWorld();
-      const bb = m.geometry.boundingBox;
+      const bb = m.geometry.boundingBox!;
       for (let i = 0; i < 8; i++) {
         const [sx, sy] = px(v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(m.matrixWorld));
         b.x0 = Math.min(b.x0, sx); b.x1 = Math.max(b.x1, sx); b.y0 = Math.min(b.y0, sy); b.y1 = Math.max(b.y1, sy);
@@ -270,7 +427,7 @@ window.__qa = {
   sfx: () => ({ ...sfxN }),
   flash: () => state.hitFlash,
   hitAt: () => ast.hitAt,
-  craters: () => astMat.uniforms.uCrater.value.filter(c => c.w >= 0 && state.simT - c.w < 20).length,
+  craters: () => astMat.uniforms.uCrater.value.filter((c: THREE.Vector4) => c.w >= 0 && state.simT - c.w < 20).length,
   hunted: () => chunks.filter(ch => ch.burstAt).length,
   rounds: () => rounds.map(r => ({ j: r.j, age: state.simT - r.s0, hit: r.hit, res: r.res, canHit: !!r.canHit })),
   salvo(n) { ui.setting('firemode').set('salvo'); state.fireMode = 'salvo'; state.fire(ROUND_C, n, true); frame(); draw(); },
@@ -298,7 +455,7 @@ window.__qa = {
     if (state.meter || !kit.ac) return !!state.meter;
     const an = kit.ac.createAnalyser(), buf = new Float32Array(2048);
     an.fftSize = 2048; kit.out.connect(an);
-    state.meter = { peak: 0, id: setInterval(() => { an.getFloatTimeDomainData(buf); for (const x of buf) state.meter.peak = Math.max(state.meter.peak, Math.abs(x)); }, 20) };
+    state.meter = { peak: 0, id: setInterval(() => { an.getFloatTimeDomainData(buf); for (const x of buf) state.meter!.peak = Math.max(state.meter!.peak, Math.abs(x)); }, 20) };
     return true;
   },
   peak(reset = true) { const p = state.meter ? state.meter.peak : -1; if (reset && state.meter) state.meter.peak = 0; return p; },
@@ -321,8 +478,8 @@ window.__qa = {
   // Try a range table and landscape knobs live; the grid and the bake follow.
   ranges(table, land) {
     const { rg, ra } = rangeUniforms(table);
-    FAR_U.uRg.value.forEach((v, i) => v.set(...(rg[i] || [0, 0, 0, 0])));
-    FAR_U.uRa.value.forEach((v, i) => v.set(...(ra[i] || [0, 0, 0, 0])));
+    FAR_U.uRg.value.forEach((v, i) => v.set(...(rg[i] || [0, 0, 0, 0]) as Vec4T));
+    FAR_U.uRa.value.forEach((v, i) => v.set(...(ra[i] || [0, 0, 0, 0]) as Vec4T));
     if (land) FAR_U.uLand.value = landValues(land);
     farBake.dirty = true;
   },
@@ -331,11 +488,11 @@ window.__qa = {
   far(mode, ero) { if (mode) setFarMode(mode === 'bake'); if (ero != null) { FAR_U.uEro.value = ero; farBake.dirty = true; } if (arguments[2] != null) { FAR_U.uForms.value = arguments[2]; farBake.dirty = true; } return { on: farBake.on, bakes: farBake.bakes, hard: farBake.hard, lights: farBake.lights, size: FS_U.uBakeSize.value.toArray() }; },
   // GPU time in ms over n frames: what 'far' for the far pass, 'all' for the frame.
   async gpuMs(what = 'far', n = 30) {
-    const gl = renderer.getContext(), ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    const gl = renderer.getContext() as WebGL2RenderingContext, ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
     if (!ext) return null;
-    const qs = [];
-    let q = null;
-    const on = () => { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }, off = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); qs.push(q); };
+    const qs: WebGLQuery[] = [];
+    let q: WebGLQuery | null = null;
+    const on = () => { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }, off = () => { gl.endQuery(ext.TIME_ELAPSED_EXT); qs.push(q!); };
     const b0 = farPass.onBeforeRender, a0 = farPass.onAfterRender;
     if (what === 'far') { farPass.onBeforeRender = (...a) => { b0(...a); on(); }; farPass.onAfterRender = off; }
     // 'farup' times the bake's own work in each frame.
@@ -350,7 +507,7 @@ window.__qa = {
     else for (let i = 0; i < n; i++) { if (what === 'all') on(); this.run(1 / 30); if (what === 'all') off(); }
     farPass.onBeforeRender = b0; farPass.onAfterRender = a0;
     state.farBakeUpdate = u0;
-    const ms = [];
+    const ms: number[] = [];
     for (const x of qs) {
       while (!gl.getQueryParameter(x, gl.QUERY_RESULT_AVAILABLE)) await new Promise(r => setTimeout(r, 5));
       if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) ms.push(gl.getQueryParameter(x, gl.QUERY_RESULT) / 1e6);
@@ -373,7 +530,7 @@ window.__qa = {
   endShot() { if (state.shot) endShot(); },
   shipLaidQ: () => shipLaid(),
   // Free aim: lay the gun at yaw and elevation in degrees.
-  aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e); } },
+  aimFree(y, e) { ui.setting('aim').set('free', true); if (y != null) { manual.yaw = rad(y); manual.elev = rad(e!); } },
   aimTrack() { ui.setting('aim').set('track', true); },
   // The rock's centre and radius in CSS pixels, for cropped stills.
   astScreen() { const p = ast.pos.clone().project(camera), q = ast.pos.clone().addScaledVector(camera.up, ast.R).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height, R: Math.abs(q.y - p.y) * 0.5 * r.height }; },
@@ -388,7 +545,7 @@ window.__qa = {
   // Put the rock at the end of its grace hold: the strike starts next step.
   strike() { ast.s = 1; ast.state = 'approach'; stepAst(0); frame(); draw(); },
   // Put a live strike at nearness u, 0 at the horizon line, 1 at contact.
-  strikeAt(u) { if (!state.strike) this.strike(); ast.s = 1 + u * (state.strike.s1 - 1); placeAst(); astSize(); stepStrike(0); frame(); draw(); },
+  strikeAt(u) { if (!state.strike) this.strike(); ast.s = 1 + u * (state.strike!.s1 - 1); placeAst(); astSize(); stepStrike(0); frame(); draw(); },
   fast(on) { state.fastRock = on; },
   strikeState: () => (state.strike ? { tb: state.strike.tb, u: strikeU(), hit: state.strike.hit, out: state.strike.out, s: ast.s, s1: state.strike.s1, y: ast.pos.y, dist: ast.pos.distanceTo(camera.position), ground: strikeP.distanceTo(camera.position), fill: +fillEl.style.opacity, flash: grade.uniforms.uFlash.value, lf: grade.uniforms.uLF2.value.z, god: grade.uniforms.uGod.value.z } : { state: ast.state, s: ast.s, fill: +fillEl.style.opacity, spin: !!spin, fillOn: !!fill }),
   // Pose the blast on the clouds t seconds after a hit at the rock.

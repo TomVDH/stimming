@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/surge runs first.
 import './surge.ts';
 import * as THREE from 'three';
@@ -7,6 +6,31 @@ import { charge } from '../play/charge.ts';
 import { blip, burst, filt, jit, kit, track } from './kit.ts';
 import { MIX, MIX0, VOWEL } from './hum.ts';
 import { SURGE, stackStart, stackUpdate } from './surge.ts';
+import type { Mix } from './hum.ts';
+import type { Stack } from './surge.ts';
+
+// The game-over drive; lock and choir are optional.
+export interface GoDrive { u: number; vol: number; over: number; lock?: boolean; choir?: number }
+// A Shepard hum's parts and its glide state.
+export interface Shepard { g: GainNode; lp: BiquadFilterNode; parts: { os: OscillatorNode[]; pg: GainNode; p: number }[]; base: number; n: number; ph: number; last: number; land: number | null }
+// A game-over stack: a machine-free surge with a tape wobble.
+// Ascent and Undertow add a Shepard hum; Undertow adds a bend and a sub.
+export interface GoStack extends Stack {
+  wob: GainNode; shep?: Shepard; bend?: ConstantSourceNode; sub?: OscillatorNode; ac?: BaseAudioContext; eo?: undefined;
+  // A method, so a take may narrow h to its own kind.
+  upd?(ac: BaseAudioContext, h: GoSurge, d: GoDrive): void;
+}
+// One Requiem voice: two saws, two formants and a lid.
+export interface ReqVoice { os: OscillatorNode[]; f1: BiquadFilterNode; f2: BiquadFilterNode; vg: GainNode; lid: BiquadFilterNode; tgt: number; maj: number; low: boolean; enter: number; ph: number; sour: number }
+// The Requiem take's nodes and state.
+export interface Requiem {
+  src: AudioScheduledSourceNode[]; g: GainNode; sg: GainNode; drive: GainNode; plp: BiquadFilterNode; pg: GainNode; cb: GainNode; vib: GainNode[];
+  voices: ReqVoice[]; fg: GainNode; vs: GainNode; es: GainNode; eo: GainNode; next: number; locked: boolean; lockAt: number; ac?: BaseAudioContext;
+  upd(ac: BaseAudioContext, h: GoSurge, d: GoDrive): void;
+}
+// The game-over sound: a stack or a take.
+export type GoSurge = GoStack | Requiem;
+type GoUpd = (ac: BaseAudioContext, h: GoSurge, d: GoDrive) => void;
 
 /* ---------- the game-over surge ---------- */
 // The picked surge plays the rock's last fall to the game over.
@@ -14,33 +38,35 @@ import { SURGE, stackStart, stackUpdate } from './surge.ts';
 // d.u: nearness, 0 at the horizon line, 1 at contact; d.vol: the level.
 // d.over: the strain; the strike sends 0, so the chord stays clean.
 // Null stops it. A null ac (muted) stops it hard.
-export let goSurge = null;
+export let goSurge: GoSurge | null = null;
 // The game over plays its surge without the machines.
 // Each pick gets a machine-free copy on first use.
-function goMixP(key) {
-  const k = MIX[key] && MIX[key].stack ? key : 'penta', S = SURGE[MIX[k].stack];
+function goMixP(key: string): Mix {
+  const k = MIX[key] && MIX[key].stack ? key : 'penta', S = SURGE[MIX[k].stack!];
   SURGE[k + '_go'] ??= { ...S, mech: [] };
   return { ...MIX[k], stack: k + '_go' };
 }
-export function surgeOver(ac, d, hold = 0) {
+export function surgeOver(ac: BaseAudioContext | null, d: GoDrive | null, hold = 0) {
   if (!d || !ac) { surgeOverStop(!ac, hold); return; }
   if (goSurge && goSurge.ac !== ac) surgeOverStop(true);
   // A take from GO_TAKES builds its own voices; a surge mix builds a stack.
   if (!goSurge) { goSurge = GO_TAKES[goMix] ? GO_TAKES[goMix](ac) : goStack(ac, goMixP(goMix)); goSurge.ac = ac; }
-  (goSurge.upd || goStackUpdate)(ac, goSurge, d);
+  (goSurge.upd || (goStackUpdate as GoUpd))(ac, goSurge, d);
 }
 // A machine-free stack for the game over, with a slow tape wobble.
-function goStack(ac, P) {
-  const h = stackStart(ac, P);
+function goStack(ac: BaseAudioContext, P: Mix) {
+  // goStack fills in wob below.
+  const h = stackStart(ac, P) as GoStack;
   // The wobble settles as the rock comes down.
   const lfo = ac.createOscillator(), lg = ac.createGain();
   lfo.frequency.value = 0.55; lg.gain.value = 0;
   lfo.connect(lg);
-  for (const n of h.src) if (n.detune && n.frequency.value > 30) lg.connect(n.detune);
+  // A machine-free stack holds only oscillators so far.
+  for (const n of h.src as OscillatorNode[]) if (n.detune && n.frequency.value > 30) lg.connect(n.detune);
   lfo.start(); h.src.push(lfo); h.wob = lg;
   return h;
 }
-function goStackUpdate(ac, h, d) {
+function goStackUpdate(ac: BaseAudioContext, h: GoStack, d: GoDrive) {
   h.wob.gain.setTargetAtTime(30 * (1 - THREE.MathUtils.smoothstep(d.u, 0.2, 0.85)), ac.currentTime, 0.3);
   const ss = THREE.MathUtils.smoothstep;
   // The chord resolves gently near contact and holds through the burn.
@@ -65,7 +91,7 @@ const GO_LEVEL = 1.6;
 // cut: every output and the echo drop to silence at once.
 export function surgeOverStop(now = false, hold = 0, cut = false) {
   if (!goSurge) return;
-  const h = goSurge, ac = h.ac, t = ac.currentTime;
+  const h = goSurge, ac = h.ac!, t = ac.currentTime;
   goSurge = null;
   if (now || ac.state !== 'running') { for (const n of h.src) { try { n.stop(); n.disconnect(); } catch { /* gone */ } } return; }
   if (cut) {
@@ -85,13 +111,13 @@ export function surgeOverStop(now = false, hold = 0, cut = false) {
 // Ascent: a Shepard hum climbs forever under the Surge choir.
 // Requiem: a sung minor chord over a pedal; it turns major.
 // Undertow: a Shepard hum and a dark cluster sink, then open.
-const GO_TAKES = { ascent: goAscent, requiem: goRequiem, undertow: goUndertow };
+const GO_TAKES: Record<string, (ac: BaseAudioContext) => GoSurge> = { ascent: goAscent, requiem: goRequiem, undertow: goUndertow };
 // A Shepard hum: octave-spaced tones under one fixed bell.
 // The tones glide by octaves, so the pitch seems to move forever.
-function shepard(ac, src, dest, base = 27.5, n = 7) {
+function shepard(ac: BaseAudioContext, src: AudioScheduledSourceNode[], dest: AudioNode, base = 27.5, n = 7): Shepard {
   const lp = filt(ac, 'lowpass', 1200, 0.7), g = ac.createGain();
   g.gain.value = 0; lp.connect(g).connect(dest);
-  const parts = [];
+  const parts: Shepard['parts'] = [];
   for (let i = 0; i < n; i++) {
     const pg = ac.createGain();
     pg.gain.value = 0; pg.connect(lp);
@@ -102,7 +128,7 @@ function shepard(ac, src, dest, base = 27.5, n = 7) {
 }
 // rate: octaves a second; a negative rate falls.
 // lock: the tones settle on the root's octaves and hold.
-function shepardStep(ac, s, rate, lock) {
+function shepardStep(ac: BaseAudioContext, s: Shepard, rate: number, lock: boolean | undefined) {
   const t = ac.currentTime, dt = s.last ? Math.min(t - s.last, 0.2) : 0;
   s.last = t;
   if (lock) {
@@ -122,12 +148,12 @@ function shepardStep(ac, s, rate, lock) {
   }
 }
 // Ascent: the Surge choir over a hum that climbs from the horizon line.
-function goAscent(ac) {
+function goAscent(ac: BaseAudioContext) {
   const h = goStack(ac, goMixP('penta'));
   h.shep = shepard(ac, h.src, h.cg);
-  h.upd = (ac, h, d) => {
+  h.upd = (ac: BaseAudioContext, h: GoStack, d: GoDrive) => {
     goStackUpdate(ac, h, d);
-    const t = ac.currentTime, s = h.shep;
+    const t = ac.currentTime, s = h.shep!;
     // The climb quickens to an octave in four seconds at contact.
     shepardStep(ac, s, 0.03 + 0.22 * d.u * d.u, d.lock);
     s.lp.frequency.setTargetAtTime(1200 * Math.pow(2, 2 * d.u), t, 0.1);
@@ -143,7 +169,7 @@ SURGE.undertow = {
   bass: [-12, 0, 7, 12], mid: [12, 19, 24, 28, 31, 36, 40, 43], high: [43, 48, 52, 55, 60, 64],
   pre: { bass: [-12, -1, 0, 1], mid: [11, 12, 13, 14, 15, 16, 17, 18], high: [22, 23, 24, 25, 26, 27] },
 };
-function goUndertow(ac) {
+function goUndertow(ac: BaseAudioContext) {
   const h = goStack(ac, { ...MIX0, stack: 'undertow', verb: 0.6, pre: 0.08, dark: 9000 });
   // One offset bends every swarm voice down together.
   const bend = ac.createConstantSource();
@@ -155,15 +181,15 @@ function goUndertow(ac) {
   const sub = ac.createOscillator(), subG = ac.createGain();
   subG.gain.value = 0.6; subG.connect(h.sg);
   sub.frequency.value = 41.2; sub.connect(subG); sub.start(); h.src.push(sub); h.sub = sub;
-  h.upd = (ac, h, d) => {
+  h.upd = (ac: BaseAudioContext, h: GoStack, d: GoDrive) => {
     goStackUpdate(ac, h, d);
-    const t = ac.currentTime, s = h.shep;
+    const t = ac.currentTime, s = h.shep!;
     shepardStep(ac, s, -(0.03 + 0.22 * d.u * d.u), d.lock);
     s.lp.frequency.setTargetAtTime(1000 * Math.pow(2, 2 * d.u), t, 0.1);
     s.g.gain.setTargetAtTime(GO_SHEP * (0.35 + 1.25 * d.u), t, 0.1);
     // At the lock the bend lets go, so the chord rises as it opens.
-    h.bend.offset.setTargetAtTime(d.lock ? 0 : -500 * Math.pow(d.u, 1.5), t, d.lock ? 0.5 : 0.2);
-    h.sub.frequency.setTargetAtTime(41.2 * Math.pow(2, -0.58 * d.u), t, 0.3);
+    h.bend!.offset.setTargetAtTime(d.lock ? 0 : -500 * Math.pow(d.u, 1.5), t, d.lock ? 0.5 : 0.2);
+    h.sub!.frequency.setTargetAtTime(41.2 * Math.pow(2, -0.58 * d.u), t, 0.3);
   };
   return h;
 }
@@ -172,9 +198,9 @@ function goUndertow(ac) {
 const REQ = [[0, 0], [7, 7], [12, 12], [15, 16], [19, 19], [24, 24], [27, 28], [31, 31], [36, 36], [39, 40], [43, 43]];
 // The Requiem's levels: voices, pedal, forte layer, echo, whole take.
 const GO_REQ = { voice: 0.42, pedal: 0.25, forte: 0.05, echo: 0.45, out: 0.32 };
-function goRequiem(ac) {
-  const src = [], R = 55;
-  const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
+function goRequiem(ac: BaseAudioContext): Requiem {
+  const src: AudioScheduledSourceNode[] = [], R = 55;
+  const osc = (type: OscillatorType, f: number, to: AudioNode, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
   // One soft clip glues the take; the stop fades g and sg.
   const drive = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain(), sg = ac.createGain();
   const curve = new Float32Array(257);
@@ -222,8 +248,8 @@ function goRequiem(ac) {
   return { src, g, sg, drive, plp, pg, cb, vib, voices, fg, vs, es, eo, next: 0, locked: false, lockAt: -1e9, upd: requiemUpdate };
 }
 // A concert-hall tail: dense noise that darkens and dies over 6 s.
-let hallBuf = null;
-function hallIR(ac) {
+let hallBuf: AudioBuffer | null = null;
+function hallIR(ac: BaseAudioContext) {
   if (hallBuf && hallBuf.sampleRate === ac.sampleRate) return hallBuf;
   const sr = ac.sampleRate, len = Math.round(6 * sr), b = ac.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) {
@@ -240,12 +266,12 @@ function hallIR(ac) {
 }
 // The game-over bus: the take's every output goes through it.
 // QA records it alone, with no other sound.
-let goBusN = null;
-export function goBus(ac) {
+let goBusN: GainNode | null = null;
+export function goBus(ac: BaseAudioContext) {
   if (!goBusN || goBusN.context !== ac) { goBusN = ac.createGain(); goBusN.connect(kit.out); }
   return goBusN;
 }
-function requiemUpdate(ac, h, d) {
+function requiemUpdate(ac: BaseAudioContext, h: Requiem, d: GoDrive) {
   const t = ac.currentTime, ss = THREE.MathUtils.smoothstep, lerp = THREE.MathUtils.lerp;
   const u = d.u, cu = d.choir ?? 1, lock = d.lock ?? u >= 0.999, ov = 0.5 * d.over, vol = d.vol * (charge ? 0.35 : 1);
   if (lock && !h.locked) h.lockAt = t;
@@ -282,12 +308,12 @@ function requiemUpdate(ac, h, d) {
   h.vs.gain.setTargetAtTime(0.6 * (0.5 + 0.5 * u) * (lock ? 1.3 : 1) * vol, t, lock ? 0.7 : 0.1);
 }
 // A temple bell: inharmonic partials two octaves over the root, long decay.
-export function bell(ac, h, t, u) {
+export function bell(ac: BaseAudioContext, h: Stack, t: number, u: number) {
   const f = 4 * h.R, k = 0.5 + 0.5 * u;
   track(t + 5, ...[[0.5, 0.05, 4.5], [1, 0.06, 3.5], [1.19, 0.035, 2.8], [1.5, 0.03, 2.2], [2, 0.025, 1.6], [2.74, 0.015, 1.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.004), peak: lv * k, a: 0.004, dur: d })));
 }
 // A ratchet tooth: a low metal clank with a short bright click.
-export function ratchet(ac, h, t, u) {
+export function ratchet(ac: BaseAudioContext, h: Stack, t: number, u: number) {
   const f = (h.n = (h.n || 0) + 1) % 2 ? 180 : 140, k = (0.5 + 0.5 * u) * jit(0.15);
   track(t + 0.4, ...[[1, 0.07, 0.3], [2.4, 0.04, 0.18], [4.1, 0.02, 0.1]].map(([r, lv, d]) => blip(ac, h.g, t, { f0: f * r * jit(0.02), peak: lv * k, a: 0.001, dur: d })),
     burst(ac, h.g, t, { dur: 0.03, rate: 1.2, f: 2500, q: 1.2, peak: 0.04 * k, a: 0.0008 }).src);

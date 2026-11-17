@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/volumes runs first.
 import './volumes.ts';
 import * as THREE from 'three';
@@ -12,6 +11,7 @@ import { puff } from './dust.ts';
 import { starMat, writeStar } from './burst.ts';
 import { dustP, dustV } from '../play/charge.ts';
 import { makeFlare } from './flares.ts';
+import type { Flare } from './flares.ts';
 import { flare } from './bowshock.ts';
 import { SHARD_MAX, sPos, sSeed, sVel, shardGeo } from '../rock/shards.ts';
 import { flashOf } from '../ship/hulks.ts';
@@ -28,8 +28,10 @@ export const hailT = new Float32Array(SHARD_MAX), hailDone = new Uint8Array(SHAR
 // Eight flash cards serve the landings in turn.
 const hailCards = Array.from({ length: 8 }, () => makeFlare(linFit(0.86, 0.13, 58)));
 for (const m of hailCards) m.material.depthTest = true;
+// One landing: place, start, radius and flash card.
+export interface Hail { P: THREE.Vector3; t0: number; r: number; card: Flare }
 // hails: { P, t0, r, card } for each landing, newest last.
-export const hails = [];
+export const hails: Hail[] = [];
 let hailCard = 0;
 const hailP = new THREE.Vector3(), hailV = new THREE.Vector3();
 // Most pieces land on the plain in front of the ranges: 16 to 34 km out.
@@ -37,14 +39,14 @@ const hailP = new THREE.Vector3(), hailV = new THREE.Vector3();
 const HAIL_NEAR = 16000, HAIL_FAR = 34000, HAIL_BACK = [95000, 125000], HAIL_BACK_K = 0.4;
 // The shatter aims each piece's sideways throw at that band.
 // The fall's time stays; only the sideways speed changes.
-export function aimHail(n) {
+export function aimHail(n: number) {
   const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, cx = camera.position.x, cz = camera.position.z;
   let ux = P[0] - cx, uz = P[2] - cz;
   const ul = Math.hypot(ux, uz) || 1;
   ux /= ul; uz /= ul;
   for (let i = 0; i < n; i++) {
     const vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
-    const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+    const yAt = (t: number) => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
     let T = 58;
     if (yAt(58) < 15) { let lo = 0; for (let b = 0; b < 20; b++) { const m = 0.5 * (lo + T); if (yAt(m) < 15) T = m; else lo = m; } }
     // Big pieces land nearer the middle of the band; crumbs scatter wider.
@@ -63,7 +65,7 @@ function stepRibs() {
   if (!n || reduced()) return;
   // The biggest loose pieces take the ribbons, once per shatter.
   if (hailRibs[0].i < 0) {
-    const ids = [];
+    const ids: number[] = [];
     for (let i = chunks.length; i < n; i++) ids.push(i);
     ids.sort((a, b) => S[b * 4 + 1] - S[a * 4 + 1]);
     hailRibs.forEach((r, j) => { r.i = j < ids.length ? ids[j] : -2; });
@@ -93,13 +95,13 @@ function stepRibs() {
   }
 }
 // The shatter finds each piece's landing age by bisection.
-export function armHail(n) {
+export function armHail(n: number) {
   hailRibs.forEach(r => { r.i = -1; });
   const P = sPos.array, V = sVel.array, S = sSeed.array;
   hailDone.fill(0); hailT.fill(0); hails.length = 0;
   for (let i = 0; i < n; i++) {
     const vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
-    const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+    const yAt = (t: number) => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-0.1 * t)) / 0.1 - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
     if (yAt(58) >= 15) continue;
     let lo = 0, hi = 58;
     for (let b = 0; b < 20; b++) { const m = 0.5 * (lo + hi); if (yAt(m) < 15) hi = m; else lo = m; }
@@ -107,8 +109,8 @@ export function armHail(n) {
   }
 }
 // The plain drops away with the planet's curve.
-const curveY = p => -((p.x - camera.position.x) ** 2 + (p.z - camera.position.z) ** 2) / (2 * PLANET_R);
-function hailLand(i) {
+const curveY = (p: THREE.Vector3Like) => -((p.x - camera.position.x) ** 2 + (p.z - camera.position.z) ** 2) / (2 * PLANET_R);
+function hailLand(i: number) {
   const S = sSeed.array, age = hailT[i];
   // A piece that burned away in the air lands as nothing.
   const shr = ((S[i * 4] * 5.13) % 1) < 0.5 ? 1 - THREE.MathUtils.smoothstep(age, 8, 22) : 1;
@@ -149,7 +151,7 @@ export function stepHail() {
   }
 }
 // The newest landings light the horizon in the free impact slots.
-export function hailLights(L) {
+export function hailLights(L: THREE.Vector4[]) {
   let k = hails.length - 1;
   for (const v of L) {
     if (v.w > 0) continue;

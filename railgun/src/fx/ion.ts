@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/bolt runs first.
 import './bolt.ts';
 import * as THREE from 'three';
@@ -12,6 +11,7 @@ import { AIR } from '../sky/air.ts';
 import { BAND } from '../clouds/bands.ts';
 import { starMat } from './burst.ts';
 import { bolt, boltMat, makeBoltGeo } from './bolt.ts';
+import type { Round } from '../play/shot.ts';
 
 /* ---------- the ion line: the bolt's path stays in the sky ---------- */
 // It glows blue-white just behind the head, then cools to a contrail.
@@ -114,7 +114,8 @@ scene.add(ionLine);
 // The contrail: a chain of lit puffs, round from any angle.
 // Puffs crowd near the muzzle, where the line is closest.
 const ION_PUFFS = 160;
-export const ionPuffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
+// three types copy() for an instanced source; any geometry works.
+export const ionPuffGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2) as THREE.BufferGeometry as THREE.InstancedBufferGeometry);
 {
   const a = new Float32Array(ION_PUFFS * 2);
   for (let i = 0; i < ION_PUFFS; i++) a.set([Math.pow((i + 0.5) / ION_PUFFS, 1.6), rnd() * 50], i * 2);
@@ -183,21 +184,29 @@ ionPuffs.frustumCulled = false; ionPuffs.renderOrder = BAND.ionPuffs; ionPuffs.v
 scene.add(ionPuffs);
 // Tracers: one ribbon and one ion trail per round in flight.
 // Slot 0 is the first set; the copies share every uniform but their own.
-export function matCopy(m, own) {
+// Every source sets both alpha factors, so neither is null.
+export function matCopy(m: THREE.ShaderMaterial, own: Record<string, THREE.IUniform>) {
   return new THREE.ShaderMaterial({
     uniforms: { ...m.uniforms, ...own }, vertexShader: m.vertexShader, fragmentShader: m.fragmentShader, defines: { ...m.defines },
     transparent: m.transparent, depthWrite: m.depthWrite, depthTest: m.depthTest, side: m.side,
-    blending: m.blending, blendSrc: m.blendSrc, blendDst: m.blendDst, blendSrcAlpha: m.blendSrcAlpha, blendDstAlpha: m.blendDstAlpha,
+    blending: m.blending, blendSrc: m.blendSrc, blendDst: m.blendDst, blendSrcAlpha: m.blendSrcAlpha!, blendDstAlpha: m.blendDstAlpha!,
   });
 }
-export const tracers = [{ bolt, line: ionLine, puffs: ionPuffs, round: null }];
+// One slot's meshes and the round that holds it; null when free.
+export interface TracerSet {
+  bolt: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  line: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  puffs: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
+  round: Round | null;
+}
+export const tracers: TracerSet[] = [{ bolt, line: ionLine, puffs: ionPuffs, round: null }];
 for (let i = 1; i < MAX_ROUNDS; i++) {
   const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() } };
-  const t = {
+  const t: TracerSet = {
     bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 6 } })),
     line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, own)), round: null,
   };
-  for (const k of ['bolt', 'line', 'puffs']) { t[k].frustumCulled = false; t[k].renderOrder = tracers[0][k].renderOrder; t[k].visible = false; scene.add(t[k]); }
+  for (const k of ['bolt', 'line', 'puffs'] as const) { t[k].frustumCulled = false; t[k].renderOrder = tracers[0][k].renderOrder; t[k].visible = false; scene.add(t[k]); }
   tracers.push(t);
 }
 // Each slot's ion trail follows its round: hot behind the head, then a contrail.

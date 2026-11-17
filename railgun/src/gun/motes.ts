@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/muzzle runs first.
 import './muzzle.ts';
 import * as THREE from 'three';
@@ -66,7 +65,7 @@ motes.frustumCulled = false; motes.renderOrder = BAND.sparks;
 scene.add(motes);
 export let moteHead = 0, moteEnd = 0, moteN = 0;
 const moteE = new THREE.Vector3(), moteF = new THREE.Vector3();
-export function spawnMote(k) {
+export function spawnMote(k: number) {
   const i = moteHead, a = 180 + rnd() * (L - 220);
   moteHead = (moteHead + 1) % MOTE_N;
   moteN = Math.max(moteN, i + 1);
@@ -85,9 +84,9 @@ export function spawnMote(k) {
   moteT.needsUpdate = true;
 }
 // The pull grows with the charge: orbits run at about 60 to 160 m/s.
-const moteG = k => 3600 + 22000 * k;
+const moteG = (k: number) => 3600 + 22000 * k;
 // Semi-implicit Euler in substeps of at most 1/60 s.
-export function stepMotes(dt) {
+export function stepMotes(dt: number) {
   if (state.simT > moteEnd || !moteN || dt <= 0) return;
   const k = Math.min(1, U.uCharge.value), P = motePos.array, T = moteT.array;
   // At full power the field collapses: the pull grows, the orbits lose their spin,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/blast runs first.
 import '../fx/blast.ts';
 import * as THREE from 'three';
@@ -14,11 +13,14 @@ import { SHIP_SCALE, hulkSite, newShip, ship, shipMeshes, shipOff } from './batt
 import { PU } from '../rock/trail.ts';
 import { prewarmEmbers } from '../rock/fragments.ts';
 import { makeVol, volSteps } from '../fx/volfx.ts';
+import type { Vol } from '../fx/volfx.ts';
 import { hailLights } from '../fx/hail.ts';
 import { respawn, stepAim } from './hit.ts';
 import { fill, resetReady, spin } from '../play/reset.ts';
 import { kit, pend } from '../sound/kit.ts';
 import { roarSet, sfxQueue, shipRumble } from '../sound/ship.ts';
+import type { QueuedSfx, Roar, ShipSfx, ShipVoice } from '../sound/ship.ts';
+import type { Held } from '../sound/kit.ts';
 
 /* ---------- the hulks land: a flash, a dust dome, a late rumble ---------- */
 // A dome lives 60 s.
@@ -92,7 +94,9 @@ for (const m of domeVols) {
 // shipDue: the sounds that wait for their sim time.
 // shipVoice: per hulk, its groan and roar state.
 // shipSfxLog: every ship sound, for QA.
-export const shipDomes = [], shipRumbles = [], shipDue = [], shipVoice = [], shipSfxLog = [];
+// One landed hulk's dust dome: volume, start, hulk, place, size.
+export interface ShipDome { m: Vol; t0: number; i: number; P: THREE.Vector3; S: number }
+export const shipDomes: ShipDome[] = [], shipRumbles: Held[] = [], shipDue: QueuedSfx[] = [], shipVoice: ShipVoice[] = [], shipSfxLog: ShipSfx[] = [];
 // impK is a QA switch.
 // 1 draws the impacts in full.
 // 0 draws no impact.
@@ -102,8 +106,9 @@ state.impK = 1;
 // The flash is a hard spike.
 // A glow follows for some seconds.
 // Reduced motion halves it.
-export const flashOf = a => (a < 0 ? 0 : (reduced() ? 0.5 : 1) * (Math.exp(-a / 0.3) + 0.35 * Math.exp(-a / 2.5) + 0.06 * Math.exp(-a / 12)));
-export const domeAlive = d => state.simT - d.t0 < DOME_LIFE;
+export const flashOf = (a: number) => (a < 0 ? 0 : (reduced() ? 0.5 : 1) * (Math.exp(-a / 0.3) + 0.35 * Math.exp(-a / 2.5) + 0.06 * Math.exp(-a / 12)));
+export const domeAlive = (d: ShipDome) => state.simT - d.t0 < DOME_LIFE;
+// A gone ship has every hulk landed, so landedAt is set.
 // Each landing gets a dome and a rumble.
 // A Reset's spin lets no new impact land.
 // The next target comes when the last dome settles.
@@ -113,13 +118,13 @@ export function stepImpacts() {
     if (h.landedAt === null || h.domed) return;
     h.domed = true;
     const m = shipMeshes[i];
-    shipDomes.push({ m: domeVols[i], t0: h.landedAt, i, P: hulkSite(i, new THREE.Vector3()), S: 3500 + 1.5 * m.geometry.boundingSphere.radius * SHIP_SCALE });
+    shipDomes.push({ m: domeVols[i], t0: h.landedAt, i, P: hulkSite(i, new THREE.Vector3()), S: 3500 + 1.5 * m.geometry.boundingSphere!.radius * SHIP_SCALE });
     h.rumbleAt = h.landedAt + h.rumbleDelay;
     // The frame loop starts the rumble when its time comes.
-    const rs = shipMeshes.map(x => x.geometry.boundingSphere.radius), k = 0.6 + 0.4 * rs[i] / Math.max(...rs);
+    const rs = shipMeshes.map(x => x.geometry.boundingSphere!.radius), k = 0.6 + 0.4 * rs[i] / Math.max(...rs);
     sfxQueue('rumble', h.rumbleAt, 8, i, k, h.landedAt, ac => shipRumble(ac, k));
   });
-  if (ship.state === 'gone' && ship.hulks.every(h => state.simT - h.landedAt >= DOME_LIFE)) nextTarget();
+  if (ship.state === 'gone' && ship.hulks.every(h => state.simT - h.landedAt! >= DOME_LIFE)) nextTarget();
 }
 // The domes and the flash lights follow the clock.
 export function updateDomes() {
@@ -151,10 +156,12 @@ export function updateDomes() {
   // Hail landings take the slots no dome holds.
   if (state.impK && state.tgtKind === 'rock') hailLights(L);
 }
-export function killVoice(r) {
-  for (const n of r.nodes) { try { n.stop(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
+// r is a held sound; a roar is one too.
+export function killVoice(r: Held) {
+  // A node with no stop throws; the catch takes it.
+  for (const n of r.nodes) { try { n.stop!(); } catch { /* not started */ } try { n.disconnect(); } catch { /* gone */ } }
   pend.delete(r);
-  roarSet.delete(r);
+  roarSet.delete(r as Roar);
 }
 // The Reset click stops every ship sound.
 export function stopRumbles() {

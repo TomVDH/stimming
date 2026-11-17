@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/gun runs first.
 import './gun.ts';
 import * as THREE from 'three';
@@ -62,7 +61,7 @@ export function ejectCase() {
   caseMat.uniforms.uCaseHeat.value = 1;
 }
 const spinQ = new THREE.Quaternion();
-export function stepCase(dt) {
+export function stepCase(dt: number) {
   if (!state.spent) return;
   const s = state.spent, u = caseMat.uniforms;
   u.uCaseHeat.value *= Math.exp(-dt / 3);

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: play/reset runs first.
 import '../play/reset.ts';
 import * as THREE from 'three';
@@ -30,14 +29,14 @@ let fireOff = true;
 const sP = new THREE.Vector3(), sD = new THREE.Vector3(), sV = new THREE.Vector3(), sN = new THREE.Vector3();
 // The belly is the hull's -y side.
 // The mesh matrix takes it to world space.
-function shipBelly(out) {
+function shipBelly(out: THREE.Vector3) {
   const m = shipMeshes[0];
   m.updateMatrixWorld(true);
-  return out.set(0, m.geometry.boundingBox.min.y, 0).applyMatrix4(m.matrixWorld);
+  return out.set(0, m.geometry.boundingBox!.min.y, 0).applyMatrix4(m.matrixWorld);
 }
 // A spot on the plain, 3 to 8 km out.
 // It stays inside a safe band of the frame.
-function pickLanding(out) {
+function pickLanding(out: THREE.Vector3) {
   camera.updateMatrixWorld(true);
   const cp = camera.position;
   for (let i = 0; i < 80; i++) {
@@ -70,7 +69,7 @@ export function shipShot() {
 }
 // The round speeds up all the way down.
 // The boom runs on its own clock.
-export function stepShipShot(dt) {
+export function stepShipShot(dt: number) {
   const off = !shipShotReady() || !!state.sshot;
   if (off !== fireOff) ui.setting('shipfire').disabled = fireOff = off;
   if (!state.sshot) return;
@@ -103,14 +102,14 @@ export function stepShipShot(dt) {
   if (a > 3) { sPop.visible = false; sPopGlow.visible = false; }
   if (a > 5) { state.sshot = null; sPop.visible = sPopGlow.visible = false; }
 }
-function sillyRing(p, k) {
+function sillyRing(p: THREE.Vector3Like, k: number) {
   for (let i = 0; i < 14; i++) {
     const a = (i / 14) * Math.PI * 2 + rnd() * 0.3, v = (260 + 120 * rnd()) * k;
     puff(sP.set(p.x, 6, p.z), sV.set(Math.cos(a) * v, 60 + 90 * rnd(), Math.sin(a) * v), 3.5 + 1.5 * rnd(), (260 + 160 * rnd()) * k);
   }
 }
 // A placeholder shows an oversized pop, a dust ring and sparks.
-function sillyBoom(p) {
+function sillyBoom(p: THREE.Vector3Like) {
   sillyRing(p, 1);
   for (let i = 0; i < (reduced() ? 0 : 18); i++) {
     const a = rnd() * Math.PI * 2, v = 200 + 350 * rnd();

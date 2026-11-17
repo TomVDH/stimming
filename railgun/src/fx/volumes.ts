@@ -1,15 +1,16 @@
-// @ts-nocheck
 // Load order: ship/hulks runs first.
 import '../ship/hulks.ts';
 import * as THREE from 'three';
 import { reduced, linFit } from '../../../shared/stim.js';
 import { state } from '../state.ts';
+import type { Burst } from '../state.ts';
 import { camera, renderer, rnd, scene } from '../setup.ts';
 import { MUZZLE } from '../world/axis.ts';
 import { U } from '../world/uniforms.ts';
 import { BAND } from '../clouds/bands.ts';
 import { WHITE, ast } from '../rock/asteroid.ts';
 import { PU, aimMini, makeMini } from '../rock/trail.ts';
+import type { Mini } from '../rock/trail.ts';
 import { shockR } from '../rock/fragments.ts';
 import { puff } from './dust.ts';
 import { writeStar } from './burst.ts';
@@ -17,6 +18,7 @@ import { dustP, dustV } from '../play/charge.ts';
 import { makeFlare } from './flares.ts';
 import { burstFlares, flare } from './bowshock.ts';
 import { volSteps } from './volfx.ts';
+import type { Vol } from './volfx.ts';
 import { caseDustV, chargeDust, makeShell, muzzleSmoke, plume, ringVols, shotDust, warpH } from '../gun/muzzle.ts';
 import { ventJets } from '../gun/vents.ts';
 import { sPos, sSeed, sVel, shardGeo } from '../rock/shards.ts';
@@ -31,10 +33,15 @@ import { bp, bv } from '../play/shot.ts';
 // A depth-tested volume tests its quad at the far side of its proxy.
 // Full resolution by default: the 75% composite darkens a hard disc round the blast.
 // ?volres=0.75 turns the low-resolution path on, for its fix.
-const VOL_RES = Math.min(1, +new URLSearchParams(location.search).get('volres') || 1);
-const volGroups = [];
+// Unary plus turns a missing value into 0, so the 1 holds.
+const VOL_RES = Math.min(1, +new URLSearchParams(location.search).get('volres')! || 1);
+// A low-resolution group: its layer, target, quad, volumes, depth volume.
+interface VolGroup { layer: number; rt: THREE.WebGLRenderTarget; quad: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>; meshes: VolMesh[]; depthOf: Vol | null }
+// A volume mesh with a shader material.
+type VolMesh = THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+const volGroups: VolGroup[] = [];
 const volDepthP = new THREE.Vector3(), volClear = new THREE.Color();
-function lowRes(order, meshes, depthOf = null) {
+function lowRes(order: number, meshes: VolMesh[], depthOf: Vol | null = null) {
   if (VOL_RES >= 1) return;
   const layer = volGroups.length + 1;
   const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: false });
@@ -166,11 +173,12 @@ export function updateBlast() {
 }
 // Each burst: a warm flash through the soot, a spray of sparks, a flicker of light.
 const burstP = new THREE.Vector3();
-function burstAt(b, out) { return out.copy(state.blastFx.P).add(b.off).setY(state.blastFx.P.y + b.off.y + 25 * b.t); }
-function updateBursts(ha, R, k) {
-  state.blastFx.bursts.forEach((b, i) => {
+// Both run only while a blast is live, so blastFx is set.
+function burstAt(b: Burst, out: THREE.Vector3) { return out.copy(state.blastFx!.P).add(b.off).setY(state.blastFx!.P.y + b.off.y + 25 * b.t); }
+function updateBursts(ha: number, R: number, k: number) {
+  state.blastFx!.bursts.forEach((b, i) => {
     const bt = ha - b.t, m = burstFlares[i];
-    if (bt < 0 || bt > 4) { flare(m, state.blastFx.P, 1, 0); return; }
+    if (bt < 0 || bt > 4) { flare(m, state.blastFx!.P, 1, 0); return; }
     burstAt(b, burstP);
     flare(m, burstP, R * b.k * (2.5 + 3 * (1 - Math.exp(-bt / 0.3))), k * b.k * (3 * Math.exp(-bt / 0.08) + 0.7 * Math.exp(-bt / 1.1)));
     if (b.done) return;
@@ -184,7 +192,7 @@ function updateBursts(ha, R, k) {
   });
 }
 // The bursts' light, as a share of the blast light.
-export function burstLight(ha) {
+export function burstLight(ha: number) {
   if (!state.blastFx) return 0;
   let s = 0;
   for (const b of state.blastFx.bursts) if (ha > b.t) s += 0.22 * b.k * Math.exp(-(ha - b.t) / 0.3);
@@ -193,7 +201,7 @@ export function burstLight(ha) {
 // Burning fragments rain from the cloud's underside for about ten seconds.
 // The rate is on the sim clock, so a slow frame drops none.
 let rainAcc = 0;
-export function stepRain(dt) {
+export function stepRain(dt: number) {
   if (!state.blastFx || reduced()) return;
   const ha = state.simT - state.blastFx.t0;
   if (ha < 0.6 || ha > 12) { rainAcc = 0; return; }
@@ -214,7 +222,7 @@ export function stepRain(dt) {
 // The shards trail burning smoke while they are hot.
 // Twelve emissions a second on the sim clock keep the star budget.
 let shardAcc = 0;
-export function stepShards(dt) {
+export function stepShards(dt: number) {
   if (state.simT > state.shardsEnd || reduced()) return;
   shardAcc += dt;
   if (shardAcc < 1 / 12) return;
@@ -234,10 +242,10 @@ export function stepShards(dt) {
   }
 }
 // A shard's place and velocity at age, as the shard shader has them.
-export function shardAt(i, age, out, vel) {
+export function shardAt(i: number, age: number, out: THREE.Vector3, vel: THREE.Vector3) {
   const P = sPos.array, V = sVel.array, S = sSeed.array, kh = 0.035, kv = 0.1, vt = 260 + 480 * ((S[i * 4] * 3.7) % 1);
   // The clock halts at touchdown: a landed piece lies still.
-  const yAt = t => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-kv * t)) / kv - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
+  const yAt = (t: number) => P[i * 3 + 1] + V[i * 4 + 1] * (1 - Math.exp(-kv * t)) / kv - vt * (t - (1 - Math.exp(-0.2 * t)) / 0.2);
   if (yAt(age) < 15) { let lo = 0, hi = age; for (let b = 0; b < 12; b++) { const m = 0.5 * (lo + hi); if (yAt(m) < 15) hi = m; else lo = m; } age = hi; }
   const e = (1 - Math.exp(-kh * age)) / kh, ek = Math.exp(-kh * age), ev = (1 - Math.exp(-kv * age)) / kv, ekv = Math.exp(-kv * age);
   out.set(P[i * 3] + V[i * 4] * e, Math.max(15, P[i * 3 + 1] + V[i * 4 + 1] * ev - vt * (age - (1 - Math.exp(-0.2 * age)) / 0.2)), P[i * 3 + 2] + V[i * 4 + 2] * e);
@@ -248,7 +256,19 @@ export function shardAt(i, age, out, vel) {
 const SEG = 5;
 // Four trailed pieces: scaled-down rocks, not slabs.
 // uDebL and uPool hold one slot per piece.
-export const chunks = Array.from({ length: 4 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
+// One trailed piece: its trains, its shard, its burst and its landing.
+// The shot sets the burst fields; the trail step sets the landing.
+export interface Chunk {
+  segs: Mini[];
+  i: number;
+  burstAt?: number;
+  burstAge?: number;
+  r0?: number;
+  burstP?: THREE.Vector3 | null;
+  landAt?: number;
+  landP?: THREE.Vector3 | null;
+}
+export const chunks: Chunk[] = Array.from({ length: 4 }, () => ({ segs: Array.from({ length: SEG }, makeMini), i: -1 }));
 const chP = new THREE.Vector3(), chV = new THREE.Vector3(), chA = new THREE.Vector3();
 const chPts = Array.from({ length: SEG + 1 }, () => new THREE.Vector3()), chX = new Float32Array(SEG + 1);
 // A faint warm globe of glow hangs round each falling piece.
@@ -260,7 +280,8 @@ export function stepChunks() {
   for (const [ci, ch] of chunks.entries()) {
     if (ch.i < 0 || state.simT > state.shardsEnd || reduced()) { for (const m of ch.segs) m.m.visible = false; chunkGlow[ci].visible = false; U.uDebL.value[ci].w = 0; U.uPool.value[ci].z = 0; huntFlares[ci].visible = false; continue; }
     // A hunted chunk stops where it burst; its trail holds, then fades.
-    const age = ch.burstAt ? ch.burstAge : state.simT - sSeed.array[ch.i * 4 + 2], r = ch.burstAt ? ch.r0 : sSeed.array[ch.i * 4 + 1];
+    // A set burstAt comes with burstAge and r0.
+    const age = ch.burstAt ? ch.burstAge! : state.simT - sSeed.array[ch.i * 4 + 2], r = ch.burstAt ? ch.r0! : sSeed.array[ch.i * 4 + 1];
     const bt = ch.burstAt ? state.simT - ch.burstAt : -1;
     flare(huntFlares[ci], ch.burstP || MUZZLE, r * 12 * (1 + (1 - Math.exp(-Math.max(bt, 0) / 0.3))), bt >= 0 && bt < 4 ? 3 * Math.exp(-bt / 0.08) + 0.7 * Math.exp(-bt / 1.1) : 0);
     shardAt(ch.i, age, chP, chV);

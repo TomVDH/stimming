@@ -1,9 +1,9 @@
-// @ts-nocheck
 // Load order: ship/shipshot runs first.
 import '../ship/shipshot.ts';
 import * as THREE from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { state } from '../state.ts';
+import type { GoDrive } from '../sound/gameover.ts';
 import { SIZES, camera, clamp, goMix, opts, rnd } from '../setup.ts';
 import { U } from '../world/uniforms.ts';
 import { lerp } from '../sky/sun.ts';
@@ -46,7 +46,7 @@ const GO_FULL = 4;
 // The ground point the rock strikes.
 export const strikeP = new THREE.Vector3(), strikeF = new THREE.Vector3();
 // The horizon's drop at ground distance d, as hzFade draws it.
-const dropAt = d => d * d / 3.2e6;
+const dropAt = (d: number) => d * d / 3.2e6;
 // The fall fraction at contact: the centre half a radius over the curved ground.
 // It caches per size and path, and leaves the ground point in strikeP.
 let contactKey = '', contactS1 = 1;
@@ -80,9 +80,10 @@ export function endStrike() {
 // d.lock: the chord resolves at contact; it holds through the burn.
 // Today it drives the charge hum; a live charge owns the hum.
 // hold: with null, the sound holds this many seconds, then cuts.
-export function gameOverSound(ac, d, hold = 0) {
+export interface StrikeDrive extends GoDrive { crush: number; choir: number; lock: boolean; }
+export function gameOverSound(ac: BaseAudioContext | null, d: StrikeDrive | null, hold = 0) {
   // A surge mix takes the seam; Hum falls through to the charge hum.
-  if (goMix !== 'hum' && typeof surgeOver === 'function') { surgeOver(ac, d, hold); return; }
+  if ((goMix as string) !== 'hum' && typeof surgeOver === 'function') { surgeOver(ac, d, hold); return; }
   if (!d) { humStop(ac); return; }
   if (!ac || charge) return;
   humStart(ac);
@@ -90,8 +91,8 @@ export function gameOverSound(ac, d, hold = 0) {
   humUpdate(ac, { c: 0.12 + 0.88 * Math.pow(d.u, 1.4), chaos: ch, rage: THREE.MathUtils.smoothstep(ch, 0.55, 0.85), over: d.over, vol: d.vol });
 }
 // The climax's end: the dry take stops dead; its echo rings on.
-function gameOverCut(ac) {
-  if (goMix === 'hum' || typeof surgeOverStop !== 'function') { gameOverSound(ac, null); return; }
+function gameOverCut(ac: BaseAudioContext | null) {
+  if ((goMix as string) === 'hum' || typeof surgeOverStop !== 'function') { gameOverSound(ac, null); return; }
   surgeOverStop(false, 0, true);
 }
 // Strike test: the rock jumps to the horizon line.
@@ -100,13 +101,13 @@ export function strikeSoon() {
   ast.s = Math.max(ast.s, 0.995);
   placeAst(); astSize(); wake();
 }
-export const strikeU = () => clamp((ast.s - 1) / Math.max(state.strike.s1 - 1, 1e-3), 0, 1);
+export const strikeU = () => clamp((ast.s - 1) / Math.max(state.strike!.s1 - 1, 1e-3), 0, 1);
 const burnT = () => (reduced() ? 1.6 : 1) * BURN_T;
 // The burn, 0 to 1: it starts after the blink and ends at burnT.
-const burnOf = tb => clamp((tb - BLINK_T) / (burnT() - BLINK_T), 0, 1);
+const burnOf = (tb: number) => clamp((tb - BLINK_T) / (burnT() - BLINK_T), 0, 1);
 // The blink, 0 to 1: the dark beat after the contact flash.
-const blinkOf = tb => THREE.MathUtils.smoothstep(tb, 0.05, 0.18) * (1 - THREE.MathUtils.smoothstep(tb, 0.3, BLINK_T + 0.4));
-export function stepStrike(dt) {
+const blinkOf = (tb: number) => THREE.MathUtils.smoothstep(tb, 0.05, 0.18) * (1 - THREE.MathUtils.smoothstep(tb, 0.3, BLINK_T + 0.4));
+export function stepStrike(dt: number) {
   if (!state.strike) return;
   // During the Reset's rewind the blast light dies away.
   if (spin) { state.hitFlash *= Math.exp(-dt / 0.3); U.uHit.value.w = state.hitFlash; if (state.blastFx) U.uBlast.value.w = state.hitFlash; return; }
@@ -148,7 +149,7 @@ export function stepStrike(dt) {
   if (state.blastFx) U.uBlast.value.w = state.hitFlash;
 }
 function strikeHit() {
-  state.strike.hit = true;
+  state.strike!.hit = true;
   ast.state = 'struck';
   astMesh.visible = false;
   // A live charge or ranging ends with the planet.
@@ -177,7 +178,7 @@ export function updateStrike() {
   }
   // The glow stops growing past the Moon: Aerosmith would white the frame early.
   const u = strikeU(), L = state.strike.L ?? 0, tb = state.strike.tb, R = ast.R, Rg = Math.min(R, SIZES.moon.R), hit = state.strike.hit;
-  const e = x => 1 - Math.exp(-Math.max(x, 0));
+  const e = (x: number) => 1 - Math.exp(-Math.max(x, 0));
   // A bright globe of glow wraps the rock as it nears the ground.
   if (!hit) flare(rockGlobe, ast.pos, Rg * (3 + 5 * u), 0.15 * L + 1.6 * Math.pow(L, 3)); else rockGlobe.visible = false;
   // The ground glows under the rock and swells after contact.

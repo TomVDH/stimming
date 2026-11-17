@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/rings runs first.
 import './rings.ts';
 import * as THREE from 'three';

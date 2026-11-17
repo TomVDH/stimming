@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: play/shot runs first.
 import '../play/shot.ts';
 import * as THREE from 'three';
@@ -6,13 +5,16 @@ import { linFit, reduced } from '../../../shared/stim.js';
 import { HULL, hitShip, jointOrder, hulkAt } from '../../ship.js';
 import { recoilAt } from '../../salvo.js';
 import { state } from '../state.ts';
+import type { Cycle } from '../state.ts';
 import { camera, clamp, devSize, opts, rad, rnd, ui } from '../setup.ts';
+import type { RockSize } from '../setup.ts';
 import { A0, AX, AX_UP, ELEV, L, LIFT, MUZZLE, TRUN_Y, axisAt, barrelPt } from '../world/axis.ts';
 import { U } from '../world/uniforms.ts';
 import { WELL } from '../gun/gun.ts';
 import { ejectCase } from '../gun/case.ts';
 import { ast, astAt, astMat, astMesh, astSize, placeAst, turnPath } from '../rock/asteroid.ts';
 import { SHIP_MID, SHIP_SCALE, STREAK_R, hulkPos, hulkTurn, ship, shipAim, shipAt, shipMat, shipMeshes, shipPose } from './battleship.ts';
+import type { JointFx } from './battleship.ts';
 import { PU, smoke } from '../rock/trail.ts';
 import { seedFrags, shedSpark } from '../rock/fragments.ts';
 import { puff } from '../fx/dust.ts';
@@ -33,6 +35,7 @@ import { updateMuzzle } from '../gun/beacon.ts';
 import { rumbleDue } from './hulks.ts';
 import { burstLight } from '../fx/volumes.ts';
 import { SALVO_CAP, bp, bq, bv, clearHits, landOf, newest, roundAt, stepRounds, tgtLead } from '../play/shot.ts';
+import type { Round } from '../play/shot.ts';
 import { resetReady } from '../play/reset.ts';
 import { contactS } from '../rock/strike.ts';
 import { wake } from '../loop.ts';
@@ -54,16 +57,17 @@ const shipVapour = makeFlare(linFit(0.9, 0.03, 225), 'float d = length(vUv); flo
 const jointFlares = HULL.joints.map(() => makeFlare(linFit(0.95, 0.08, 70)));
 const fxP = new THREE.Vector3(), fxV = new THREE.Vector3(), fxF = new THREE.Vector3(), fxQ = new THREE.Quaternion();
 // A random unit vector.
-const rndDir = out => out.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
+const rndDir = (out: THREE.Vector3) => out.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize();
 // A hull-frame point, in the world now.
-function hullPt(x, y, out) {
+function hullPt(x: number, y: number, out: THREE.Vector3) {
   shipPose(state.simT, fxP, fxQ, fxF);
   return out.set(x, y, 0).multiplyScalar(SHIP_SCALE).applyQuaternion(fxQ).add(fxP);
 }
 // The bolt strikes the ship at the mid hull.
 // r is the round.
 // It returns 'wound', 'kill' or null.
-export function shipHit(c, r) {
+// A landed round has left the muzzle, so its muzzle is set.
+export function shipHit(c: number, r?: Round) {
   const res = hitShip(ship, c, state.simT, SHIP_MID.x);
   if (!res) return null;
   const P = shipAim(state.simT, new THREE.Vector3()), kill = res === 'kill';
@@ -72,7 +76,7 @@ export function shipHit(c, r) {
   U.uHit.value.set(fxV.x, fxV.y, fxV.z, 1);
   if (!reduced()) cam.shake += 0.3 * Math.min(c, 1);
   // Molten spray flies out in straight lines, mostly along the bolt.
-  const fw = new THREE.Vector3().subVectors(P, r ? r.muzzle : MUZZLE).normalize();
+  const fw = new THREE.Vector3().subVectors(P, r ? r.muzzle! : MUZZLE).normalize();
   for (let i = 0, n = kill ? 260 : 90; i < n; i++) {
     const f = rnd();
     rndDir(fxV).addScaledVector(fw, 0.7 * rnd()).normalize().multiplyScalar(300 + 1700 * f * f);
@@ -81,7 +85,7 @@ export function shipHit(c, r) {
   commitStars();
   // A kill fails each joint in turn.
   // A wound fails the nearest joint.
-  const joints = kill ? jointOrder(SHIP_MID.x) : [{ joint: ship.wound.joint, at: 0.12 }];
+  const joints = kill ? jointOrder(SHIP_MID.x) : [{ joint: ship.wound!.joint, at: 0.12 }];
   ship.fx = { t0: state.simT, P, kill, joints: joints.map(j => ({ joint: j.joint, t: state.simT + j.at, done: false, P: new THREE.Vector3() })) };
   queueShipSounds(ship.fx, Math.min(c, 1.25));
   if (!kill) return res;
@@ -98,7 +102,7 @@ export function shipHit(c, r) {
   });  return res;
 }
 // A joint fails with a short flash and thrown plates.
-function jointBurst(j, wound) {
+function jointBurst(j: JointFx, wound: boolean) {
   hullPt(j.joint, 0, j.P);
   // A wound throws one big plate.
   // A kill throws many.
@@ -114,9 +118,9 @@ function jointBurst(j, wound) {
   if (!reduced()) cam.shake += wound ? 0.1 : 0.15;
 }
 // The smoulder's level, a seconds into a wound.
-const smoulderAt = a => THREE.MathUtils.smoothstep(a, 0, 0.4) * (1 - THREE.MathUtils.smoothstep(a, SMOULDER - 6, SMOULDER));
+const smoulderAt = (a: number) => THREE.MathUtils.smoothstep(a, 0, 0.4) * (1 - THREE.MathUtils.smoothstep(a, SMOULDER - 6, SMOULDER));
 // The ship's hit effects, on the sim clock.
-export function stepShipFx(dt) {
+export function stepShipFx(dt: number) {
   const W = shipMat.uniforms.uWound.value, fx = state.tgtKind === 'ship' ? ship.fx : null;
   if (state.tgtKind === 'ship' && ship.wound) {
     const a = state.simT - ship.wound.t0;
@@ -157,7 +161,7 @@ const hulkSrc = { pos: new THREE.Vector3(), away: new THREE.Vector3(), side: new
 // In the air they shed burning pieces.
 // The counts follow the sim step.
 // A long jump sends one short burst.
-export function stepHulks(dt) {
+export function stepHulks(dt: number) {
   if (state.tgtKind !== 'ship' || !ship.go || dt <= 0 || reduced()) return;
   ship.hulks.forEach((h, i) => {
     if (h.breakAt === null) return;
@@ -182,7 +186,7 @@ export function stepHulks(dt) {
       src.side.set(0, 1, 0).cross(src.away);
       if (src.side.lengthSq() < 1e-6) src.side.set(1, 0, 0);
       src.side.normalize();
-      src.R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
+      src.R = STREAK_R * m.geometry.boundingSphere!.radius * SHIP_SCALE;
       for (let n = Math.min(4, Math.floor(dt * SHED_RATE * a.entry + rnd())); n > 0; n--) shedSpark(0, src);
     }
   });
@@ -195,7 +199,7 @@ export function respawn() {
   clearHits();
   // Each new rock rolls its size.
   // Random runs through the three common sizes; Aerosmith is picked on purpose.
-  if (devSize === 'random') { const ks = ['boulder', 'mountain', 'moon']; opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
+  if (devSize === 'random') { const ks: RockSize[] = ['boulder', 'mountain', 'moon']; opts.size = ks[(ks.indexOf(opts.size) + 1) % ks.length]; }
   // Each rock comes in a little to one side of the last.
   turnPath(ast.next);
   PU.uTrail.value = 0;
@@ -206,10 +210,12 @@ export function respawn() {
 }
 // The gun's aim: yaw left of negative z, elevation over the plain.
 // vy and ve: slew rates. dy and de: the error to the target.
-export const aimNow = { yaw: 0, elev: ELEV, sy: 0, se: ELEV, err: 0, vy: 0, ve: 0, dy: 0, de: 0 };
+// The aim state; the slew sets ty, te, fy and fe on its first step.
+export interface AimNow { yaw: number; elev: number; sy: number; se: number; err: number; vy: number; ve: number; dy: number; de: number; ty?: number; te?: number; fy?: number; fe?: number }
+export const aimNow: AimNow = { yaw: 0, elev: ELEV, sy: 0, se: ELEV, err: 0, vy: 0, ve: 0, dy: 0, de: 0 };
 // The cradle's kick and the deck's sway, in radians.
 export const kick = { p: 0, y: 0 };
-export function setAim(yaw, elev) {
+export function setAim(yaw: number, elev: number) {
   aimNow.yaw = yaw; aimNow.elev = elev;
   applyAim();
 }
@@ -231,14 +237,15 @@ const aimP = new THREE.Vector3();
 // Free aim: the arrow keys or WASD lay the gun by hand.
 // Left turns the muzzle to the frame's left; up raises it.
 export const manual = { on: false, yaw: 0, elev: rad(8), hold: 0, idle: 0 };
-export const tkeys = new Set();
+// tkeys holds only TRAV's keys: input adds no other code.
+export const tkeys = new Set<string>();
 export const TRAV = { ArrowLeft: [1, 0], KeyA: [1, 0], ArrowRight: [-1, 0], KeyD: [-1, 0], ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1] };
-export function setAimMode(v) {
+export function setAimMode(v: string) {
   manual.on = v === 'free';
   if (manual.on) { manual.yaw = aimNow.yaw; manual.elev = aimNow.elev; }
   wake();
 }
-function stepTraverse(dt) {
+function stepTraverse(dt: number) {
   if (dt <= 0) return;
   if (!tkeys.size) {
     manual.hold = 0;
@@ -252,7 +259,7 @@ function stepTraverse(dt) {
   // The first key press hands the gun over to the keys.
   if (!manual.on) ui.setting('aim').set('free', true);
   let y = 0, e = 0;
-  for (const k of tkeys) { y += TRAV[k][0]; e += TRAV[k][1]; }
+  for (const k of tkeys) { y += TRAV[k as keyof typeof TRAV][0]; e += TRAV[k as keyof typeof TRAV][1]; }
   // A heavy mount: it starts slow and builds over four seconds of hold.
   manual.hold += dt;
   const ramp = THREE.MathUtils.smoothstep(manual.hold, 0, 4);
@@ -272,7 +279,7 @@ export function shipLaid() {
 const PARK = new THREE.Vector3(0, Math.sin(rad(8)), -Math.cos(rad(8)));
 // At rest the gun parks.
 // A hold traverses it to lead the rock by the bolt's flight time.
-export function stepAim(dt, snap = false) {
+export function stepAim(dt: number, snap = false) {
   stepTraverse(dt);
   if (state.shot && !state.shot.hit) return;
   // After the hit the gun waits, then parks; laid by hand, it stays where it is put.
@@ -290,7 +297,8 @@ export function stepAim(dt, snap = false) {
   const de = Math.atan2(aimP.y, Math.hypot(aimP.x, aimP.z)) - aimNow.elev;
   aimNow.dy = dy; aimNow.de = de; aimNow.err = Math.hypot(dy, de);
   // The gun's swing home: its first error, for the breech's half-way cue.
-  if (parking && state.shot.parkErr0 == null) state.shot.parkErr0 = aimNow.err;
+  // parking holds only with a live shot.
+  if (parking && state.shot!.parkErr0 == null) state.shot!.parkErr0 = aimNow.err;
   // The target's own turn rate, for the feed-forward.
   const ty = aimNow.yaw + dy, te = aimNow.elev + de;
   if (snap) { aimNow.vy = aimNow.ve = 0; aimNow.ty = ty; aimNow.te = te; setAim(ty, te); return; }
@@ -312,19 +320,19 @@ export function stepAim(dt, snap = false) {
   stepSway((aimNow.vy - vy0) / dt, (aimNow.ve - ve0) / dt, dt);
   setAim(aimNow.yaw + aimNow.vy * dt, aimNow.elev + aimNow.ve * dt);
 }
-const wrapPi = a => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+const wrapPi = (a: number) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
 // Slew limits per axis: top speed v and acceleration a, in radians.
 // The mount traverses faster than the cradle climbs.
 const SLEW = { yaw: { v: rad(3.2), a: rad(2) }, elev: { v: rad(2.4), a: rad(1.5) }, hand: { yaw: { v: rad(16), a: rad(10) }, elev: { v: rad(7), a: rad(6) } } };
 // One axis: the speed that stops on the target, plus the target's own rate.
 // The square-root ramp brakes at the axis's own acceleration.
-function slewAxis(d, v, rate, L, dt) {
+function slewAxis(d: number, v: number, rate: number, L: { v: number; a: number }, dt: number) {
   const a = Math.abs(d), want = Math.sign(d) * Math.min(L.v, Math.sqrt(2 * L.a * a * 0.9), 3 * a);
   const vd = clamp(want + clamp(rate, -L.v, L.v), -1.2 * L.v, 1.2 * L.v);
   return v + clamp(vd - v, -L.a * dt, L.a * dt);
 }
 // The sway: a damped spring at 0.8 Hz that the slew's acceleration drives.
-function stepSway(ay, ae, dt) {
+function stepSway(ay: number, ae: number, dt: number) {
   if (reduced()) { sway.p = sway.y = sway.vp = sway.vy = 0; return; }
   const W = 2 * Math.PI * 0.8, Z = 0.22, K = 0.9;
   sway.vy += (-W * W * sway.y - 2 * Z * W * sway.vy - K * ay) * dt;
@@ -332,8 +340,10 @@ function stepSway(ay, ae, dt) {
   sway.y += sway.vy * dt; sway.p += sway.vp * dt;
 }
 // Sand streams: each pours small puffs straight down from a ledge.
-export const sandStreams = [];
-function stepSand(dt) {
+// One stream: its ledge, start, length in seconds, puff count due.
+export interface SandStream { p: THREE.Vector3; t0: number; dur: number; acc: number }
+export const sandStreams: SandStream[] = [];
+function stepSand(dt: number) {
   for (let i = sandStreams.length - 1; i >= 0; i--) {
     const s = sandStreams[i], a = state.simT - s.t0;
     if (a > s.dur) { sandStreams.splice(i, 1); continue; }
@@ -349,7 +359,7 @@ function stepSand(dt) {
 // Over the well the counterweight may drop to its floor.
 // Past the well it must clear the deck, then the apron and teeth.
 const CW = { a: -368, u: -35, gap: 8 };
-function cwClear(s, se, ce) {
+function cwClear(s: number, se: number, ce: number) {
   const a = CW.a - 0.85 * s, z = -a * ce + CW.u * se, y = TRUN_Y + a * se + CW.u * ce - LIFT;
   // The base's height under z: well, deck, apron and teeth, then the plain.
   const floor = z < WELL.z1 - 6 ? WELL.floor : z < 396 ? 34 : z < 477 ? 30 : z < 529 ? 30 * (529 - z) / 52 : 4;
@@ -361,18 +371,18 @@ export function recoilRoom() {
   return 1e9;
 }
 // A soft knee eases the slide into the buffer.
-function capRecoil(v) {
+function capRecoil(v: number) {
   const r = recoilRoom(), k = 0.8 * r;
   return v <= k ? v : k + (r - k) * (1 - Math.exp(-(v - k) / Math.max(r - k, 1e-3)));
 }
 // The run-out: the barrel holds back, then the recuperator draws it home.
 // It speeds up, then the buffer eases it onto battery.
 const RUN = { hold: 0.6, t: 4.2 };
-function runOut(ra) {
+function runOut(ra: number) {
   const u = clamp((ra - RUN.hold) / RUN.t, 0, 1);
   return 1 - u * u * u * (u * (6 * u - 15) + 10);
 }
-export function stepShot(dt) {
+export function stepShot(dt: number) {
   stepRounds();
   stepSand(dt);
   stepMotes(dt);
@@ -472,9 +482,10 @@ export function stepShot(dt) {
   // Laid by hand the gun does not park: the breech cycles 3.5 s after the hit.
   const halfHome = state.shot.parkErr0 != null && (state.shot.parkErr0 < 0.01 || aimNow.err < 0.5 * state.shot.parkErr0);
   if (!state.shot.vented && state.shot.hit && (halfHome || (manual.on && age > state.shot.hitT + 3.5) || age > state.shot.hitT + 12)) { state.shot.vented = true; state.shot.ventT = age; fireVents(); }
-  if (!state.shot.flapped && state.shot.vented && age > state.shot.ventT + 0.7) { state.shot.flapped = true; flapSound(); }
+  // The vent step sets ventT with vented.
+  if (!state.shot.flapped && state.shot.vented && age > state.shot.ventT! + 0.7) { state.shot.flapped = true; flapSound(); }
   // The breech throws the spent case just before the gun parks.
-  if (!state.shot.ejected && state.shot.vented && age > state.shot.ventT + 1.0) { state.shot.ejected = true; ejectCase(); }
+  if (!state.shot.ejected && state.shot.vented && age > state.shot.ventT! + 1.0) { state.shot.ejected = true; ejectCase(); }
   // After a kill the Reset chip glows; only a press starts the timelapse.
   // A wound leaves the ship alive, so the chip stays dark.
   if (state.lit && state.lit.res !== 'wound' && state.simT - state.lit.t0 > state.lit.hitT + 6) resetReady(true);
@@ -490,13 +501,13 @@ export function endShot() {
 }
 
 // The blast: the slug leaves the muzzle.
-function blast(sh, k = sh.c) {
+function blast(sh: Cycle, k = sh.c) {
   cam.shake += 2.3 * k; cam.kickP += rad(1.0) * k; cam.kickY -= rad(0.3) * k;
   // shotDust carries the dust of the blast.
 }
 // The ribbon, the head and the flares, each drawn frame.
 // The last stretch: the slug's light dies away into the distance before it strikes.
-function farFade(r, a) {
+function farFade(r: Round, a: number) {
   const ux = 1 - Math.pow(1 - Math.min(1, Math.max(0, (a - 0.3) / r.T)), 2.6);
   return 1 - THREE.MathUtils.smoothstep(ux, 0.84, 0.97);
 }

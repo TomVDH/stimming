@@ -1,6 +1,6 @@
-// @ts-nocheck
 // Load order: ship/hit runs first.
 import '../ship/hit.ts';
+import type * as THREE from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { state } from '../state.ts';
 import { clamp, ui } from '../setup.ts';
@@ -41,17 +41,24 @@ const SPIN_T = 1.8, SPIN_GO = 3.4, DAYS_MAX = 1.5;
 const spinT = () => (spin && spin.go ? SPIN_GO : SPIN_T);
 // The game over's white clears slower: GO_OUT.
 const FILL_IN = 0.3, FILL_HOLD = 0.1, FILL_OUT = 1.2, GO_OUT = 2.0;
-export let spin = null, fill = null, cutFlash = 0;
-export const fillEl = document.querySelector('.reset-fill');
+// The rewind: elapsed time, sky hour, the day's mean, the game-over flag.
+export interface Spin { t: number; H: number; m: DayMean; go: boolean; }
+// The white fill: elapsed time, calm (reduced motion), the cut, the burn-off length.
+export interface Fill { t: number; calm?: boolean; cut?: boolean; out?: number; }
+export let spin: Spin | null = null, fill: Fill | null = null, cutFlash = 0;
+export const fillEl = document.querySelector('.reset-fill') as HTMLElement;
 // The sky values the shutter blends toward their mean over one day.
-const SHUT_V = ['uSunC', 'uZenC', 'uHorC', 'uGlowC', 'uCloudSun', 'uCloudAmb', 'uGLift'], SHUT_S = ['uStars', 'uMoonK', 'uSunE'];
-function dayMean(H) {
-  const m = { exp: 0 }, N = 24;
-  for (const k of SHUT_V) m[k] = U[k].value.clone().multiplyScalar(0);
+const SHUT_V = ['uSunC', 'uZenC', 'uHorC', 'uGlowC', 'uCloudSun', 'uCloudAmb', 'uGLift'] as const, SHUT_S = ['uStars', 'uMoonK', 'uSunE'] as const;
+// One day's mean sky: the blended vectors, scalars and exposure.
+// uGLift is a Vector2; it has the same calls, so the types use Vector3.
+type DayMean = { exp: number } & Record<typeof SHUT_V[number], THREE.Vector3> & Record<typeof SHUT_S[number], number>;
+function dayMean(H: number) {
+  const m = { exp: 0 } as DayMean, N = 24;
+  for (const k of SHUT_V) m[k] = (U[k].value as THREE.Vector3).clone().multiplyScalar(0);
   for (const k of SHUT_S) m[k] = 0;
   for (let i = 0; i < N; i++) {
     skyAt(H + i * Math.PI * 2 / N);
-    for (const k of SHUT_V) m[k].addScaledVector(U[k].value, 1 / N);
+    for (const k of SHUT_V) m[k].addScaledVector(U[k].value as THREE.Vector3, 1 / N);
     for (const k of SHUT_S) m[k] += U[k].value / N;
     m.exp += state.baseExp / N;
   }
@@ -59,14 +66,14 @@ function dayMean(H) {
   return m;
 }
 // s: 0 sees one instant, 1 sees the whole day's mean.
-function shutter(m, s) {
-  for (const k of SHUT_V) U[k].value.lerp(m[k], s);
+function shutter(m: DayMean, s: number) {
+  for (const k of SHUT_V) (U[k].value as THREE.Vector3).lerp(m[k], s);
   for (const k of SHUT_S) U[k].value = lerp(U[k].value, m[k], s);
   state.baseExp = lerp(state.baseExp, m.exp, s);
 }
 // In: white eases up and the image punches in.
 // Out: white falls fast, then slow; the frame settles from overexposure.
-function stepFill(dt) {
+function stepFill(dt: number) {
   const g = grade.uniforms;
   if (!fill) return;
   fill.t += dt;
@@ -99,9 +106,9 @@ export function resetToy(force = false) {
   if (!force) whoosh();
 }
 // The Reset chip: hidden while a rock lives, glowing after a kill.
-const resetChip = [...document.querySelectorAll('.s2-chip')].find(b => b.querySelector('.s2-label')?.textContent === 'Reset');
-export let resetOn = null;
-export function resetReady(on) {
+const resetChip = [...document.querySelectorAll<HTMLElement>('.s2-chip')].find(b => b.querySelector('.s2-label')?.textContent === 'Reset');
+export let resetOn: boolean | null = null;
+export function resetReady(on: boolean) {
   if (on === resetOn || !resetChip) return;
   resetOn = on;
   resetChip.style.display = on ? '' : 'none';
@@ -110,7 +117,7 @@ export function resetReady(on) {
 resetReady(false);
 // The sim runs up to thirty times faster as the days spin by.
 export const spinSpeed = () => (spin ? 1 + 30 * Math.min(1, spin.t / 3) : 1);
-export function stepSpin(dt) {
+export function stepSpin(dt: number) {
   cutFlash *= Math.exp(-dt / 0.5);
   stepFill(dt);
   if (!spin) return;

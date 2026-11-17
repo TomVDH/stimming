@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/kit runs first.
 import './kit.ts';
 import { state } from '../state.ts';
@@ -10,8 +9,10 @@ import { filt, kit } from './kit.ts';
 /* ---------- the wind bed ---------- */
 // Low wind over the plain, a whistle past the pylon.
 // It dips under a charge.
-export let bed = null;
-function windBed(ac) {
+// The wind bed's nodes; null until the first live frame.
+export interface WindBed { src: AudioBufferSourceNode; g: GainNode; g2: GainNode; lfo: OscillatorNode }
+export let bed: WindBed | null = null;
+function windBed(ac: BaseAudioContext) {
   if (bed) return;
   const src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 400), g = ac.createGain();
   src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.5;
@@ -29,8 +30,8 @@ function windBed(ac) {
 }
 // The rock's roar: Ten seconds' booster crackle, far off and soft.
 // It loads once; null while it loads, false if it fails.
-let roarBuf = null, roarP = null, roarBed = null;
-function loadRoar(ac) {
+let roarBuf: AudioBuffer | false | null = null, roarP: Promise<void> | null = null, roarBed: { src: AudioBufferSourceNode; lp: BiquadFilterNode; g: GainNode } | null = null;
+function loadRoar(ac: BaseAudioContext) {
   roarP ??= fetch('thrust.mp3').then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => {
     // The MP3 pads both ends with silence; the loop skips it.
     const d0 = buf.getChannelData(0), q = 0.002;
@@ -49,7 +50,7 @@ function loadRoar(ac) {
     roarBuf = out;
   }).catch(() => { roarBuf = false; });
 }
-function rockRoar(ac) {
+function rockRoar(ac: BaseAudioContext) {
   if (roarBed) return;
   loadRoar(ac);
   if (!roarBuf) return;
@@ -66,8 +67,8 @@ export function soundBed() {
   if (!ac) { if (bed) { bed.g.gain.value = 0; bed.g2.gain.value = 0; } if (roarBed) roarBed.g.gain.value = 0; return; }
   windBed(ac);
   const k = state.pace * (1 - 0.4 * chaos);
-  bed.g.gain.setTargetAtTime(0.02 * k, ac.currentTime, 0.3);
-  bed.g2.gain.setTargetAtTime(0.006 * k, ac.currentTime, 0.3);
+  bed!.g.gain.setTargetAtTime(0.02 * k, ac.currentTime, 0.3);
+  bed!.g2.gain.setTargetAtTime(0.006 * k, ac.currentTime, 0.3);
   rockRoar(ac);
   if (roarBed) {
     // It plays only while a rock burns in the sky.

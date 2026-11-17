@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/rumble runs first.
 import './rumble.ts';
 import { filt, hiss, jit } from './kit.ts';
@@ -6,8 +5,10 @@ import { filt, hiss, jit } from './kit.ts';
 /* ---------- baked buffers ---------- */
 // The slug's N-wave and the debris rattle.
 // They build once per context, in idle time during the charge.
-export let baked = null;
-export function bake(ac) {
+// The baked buffers of one context.
+export interface Baked { ac: BaseAudioContext; nwave: AudioBuffer; rattle: AudioBuffer }
+export let baked: Baked | null = null;
+export function bake(ac: BaseAudioContext) {
   if (baked?.ac === ac) return baked;
   baked = {
     ac, nwave: nWave(ac),
@@ -20,14 +21,14 @@ export function bake(ac) {
   return baked;
 }
 // The slug's sonic boom: a jump up, a straight fall, a jump back.
-function nWave(ac) {
+function nWave(ac: BaseAudioContext) {
   const sr = ac.sampleRate, n = Math.round(0.012 * sr), b = ac.createBuffer(1, n + 8, sr), d = b.getChannelData(0);
   for (let i = 0; i < n; i++) d[i] = 1 - 2 * i / n;
   return b;
 }
 // A stereo buffer of short grains at a falling rate.
 // rate(t): grains a second. grain(t): [length s, ring hertz or 0, level].
-function grains(ac, dur, sr, rate, grain) {
+function grains(ac: BaseAudioContext, dur: number, sr: number, rate: (t: number) => number, grain: (t: number) => [number, number, number]) {
   const b = ac.createBuffer(2, Math.round(dur * sr), sr), L = b.getChannelData(0), R = b.getChannelData(1);
   for (let t = 0.01; t < dur; t += -Math.log(1 - Math.random()) / rate(t)) {
     const [len, ring, lv] = grain(t), n = Math.round(len * sr), i0 = Math.round(t * sr), p = Math.random();
@@ -44,10 +45,10 @@ function grains(ac, dur, sr, rate, grain) {
 }
 // A rolling tail: low noise whose level waves on two slow beats.
 // It swells, ebbs over dur seconds and drifts across the plain.
-export function roll(ac, dest, t, dur, lvl, cut) {
+export function roll(ac: BaseAudioContext, dest: AudioNode, t: number, dur: number, lvl: number, cut: number) {
   const n = hiss(ac, t, dur, 0.3), lp = filt(ac, 'lowpass', cut, 0.6), am = ac.createGain(), g = ac.createGain(), pn = ac.createStereoPanner();
   am.gain.value = 0.65;
-  const srcs = [n];
+  const srcs: AudioScheduledSourceNode[] = [n];
   for (const [fr, dp] of [[0.21, 0.22], [0.47, 0.13], [0.06, 0]]) {
     const l = ac.createOscillator(), lg = ac.createGain();
     l.frequency.value = fr * jit(0.3); lg.gain.value = dp || 0.45;

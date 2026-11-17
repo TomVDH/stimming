@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/shot runs first.
 import './shot.ts';
 import { roundGain } from '../../salvo.js';
@@ -10,11 +9,16 @@ import { filt, hiss, jit, kit, track, trackS } from './kit.ts';
 import { IMPACT_AT, blastBus, echo, playSample, sample, sampleHit } from './rumble.ts';
 import { roll } from './samples.ts';
 import { shotDuck } from './shot.ts';
+import type * as THREE from 'three';
+import type { Sfx, TargetKind } from '../state.ts';
+
+// What the hit sounds read: a rail shot, or one salvo round.
+export interface HitShot { canHit: boolean; hitT: number; c: number; target: THREE.Vector3; sfx?: Sfx; tag?: string; kind: TargetKind }
 
 /* ---------- the hit ---------- */
 // The prelude: the whoosh swells and brightens into the hit.
 // A short hush before the peak makes the hit land harder.
-function impactSound(ac, buf, hit, k, tag = null) {
+function impactSound(ac: BaseAudioContext, buf: AudioBuffer, hit: number, k: number, tag: string | null = null) {
   const rate = jit(0.03), start = hit - IMPACT_AT / rate, t = Math.max(ac.currentTime, start);
   const bus = blastBus(ac), src = ac.createBufferSource(), lp = filt(ac, 'lowpass', 700, 0.9), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = rate;
@@ -46,11 +50,12 @@ function impactSound(ac, buf, hit, k, tag = null) {
 export const sfxN = { round: 0, crater: 0, hunt: 0 };
 // One salvo round's report: the shot take, louder round by round.
 // Early rounds cut their tail short so the ripple stays crisp.
-export function roundSound(ac, r) {
+// r: one salvo round; j counts from 1 to n.
+export function roundSound(ac: BaseAudioContext, r: { j: number; n: number }) {
   const at = ac.currentTime + 0.3, k = roundGain(r.j, r.n), last = r.j === r.n;
   sfxN.round++;
   sample(ac, 'shot').then(buf => {
-    if (!buf || !rounds.includes(r) || !kit.live()) return;
+    if (!buf || !(rounds as unknown[]).includes(r) || !kit.live()) return;
     const src = ac.createBufferSource(), g = ac.createGain(), t0 = Math.max(ac.currentTime, at);
     src.buffer = buf; src.playbackRate.value = jit(0.03) * (1.06 - 0.06 * k);
     g.gain.setValueAtTime(1.4 * k * jit(0.1), t0);
@@ -68,15 +73,15 @@ export function roundSound(ac, r) {
 }
 // A far strike: the impact's tail, slowed and darkened, after the sound's delay.
 // It has no synthetic crack, tick or crackle.
-function farHit(ac, P, k, rate) {
+function farHit(ac: BaseAudioContext, P: THREE.Vector3, k: number, rate: number) {
   const t = ac.currentTime + camera.position.distanceTo(P) / 343 / 28;
   sampleHit(ac, trackS(t + 0.5), t, 0.55 * k, rate * jit(0.04), 1400, blastBus(ac), 0.3);
 }
-export function craterSound(P) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.9, 0.8); }
-export function huntSound(P) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 0.6, 1.0); }
+export function craterSound(P: THREE.Vector3) { sfxN.crater++; const ac = kit.live(); if (ac) farHit(ac, P, 0.9, 0.8); }
+export function huntSound(P: THREE.Vector3) { sfxN.hunt++; const ac = kit.live(); if (ac) farHit(ac, P, 0.6, 1.0); }
 // The impact's prelude lands on the flash.
 // The boom crosses the distance at sound speed, compressed 28 times.
-export function hitSounds(ac, sh, alive = () => state.shot === sh) {
+export function hitSounds(ac: BaseAudioContext, sh: HitShot, alive = () => state.shot === sh) {
   // A ship hit does not play the rock's samples.
   if (!sh.canHit || sh.kind === 'ship') return;
   const hit = ac.currentTime + sh.hitT, k = SIZES[opts.size].rumble * Math.min(sh.c, 1.25);
@@ -86,16 +91,16 @@ export function hitSounds(ac, sh, alive = () => state.shot === sh) {
   blastBus(ac);
   Promise.all([sample(ac, 'impact'), sample(ac, 'boom')]).then(([imp, boom]) => {
     if (!alive() || !kit.live()) return;
-    if (imp) { sh.sfx.impact = hit - IMPACT_AT; impactSound(ac, imp, hit, k, sh.tag); }
-    sh.sfx.boom = hit + late;
-    boomSound(ac, boom, sh.sfx.boom, k, sh.tag);
+    if (imp) { sh.sfx!.impact = hit - IMPACT_AT; impactSound(ac, imp, hit, k, sh.tag); }
+    sh.sfx!.boom = hit + late;
+    boomSound(ac, boom, sh.sfx!.boom, k, sh.tag);
   });
 }
 // The boom: Tom's far boom at half speed, an octave down, about 45 s long.
 // Under it: a sub swell and a rolling tail.
 // Without the file the synth body plays alone.
-function boomSound(ac, buf, t, k, tag = null) {
-  const bus = blastBus(ac), srcs = [];
+function boomSound(ac: BaseAudioContext, buf: AudioBuffer | null, t: number, k: number, tag: string | null = null) {
+  const bus = blastBus(ac), srcs: AudioScheduledSourceNode[] = [];
   if (buf) playSample(ac, buf, t, 1.5 * k * jit(0.1), 0.5 * jit(0.03), 1200, 0.2, bus, tag);
   // The sub swell: two low tones beat slowly and sink as they fade.
   for (const [f, lv] of [[31, 0.22], [43, 0.12]]) {
@@ -111,7 +116,7 @@ function boomSound(ac, buf, t, k, tag = null) {
 // The rumble crosses forty kilometres of air, compressed eight times.
 // It lands fifteen seconds after the flash.
 // It plays only when the hit's sounds were not scheduled.
-export function rumble(c) {
+export function rumble(c: number) {
   const ac = kit.live();
   if (!ac) return;
   const t = ac.currentTime + DA / 343 / 8, k = SIZES[opts.size].rumble, bus = blastBus(ac);

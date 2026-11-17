@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: world/axis runs first.
 import './axis.ts';
 import * as THREE from 'three';
@@ -6,6 +5,36 @@ import { linFit } from '../../../shared/stim.js';
 import { A0, AX, AX_UP, L } from './axis.ts';
 
 /* ---------- uniforms ---------- */
+type V<T> = THREE.IUniform<T>;
+// The shared uniforms every pass reads.
+// It is a type, not an interface: a material's uniform map needs an index signature.
+export type Uniforms = {
+  uGunD: V<THREE.DepthTexture | null>; uDRes: V<THREE.Vector2>; uNF: V<THREE.Vector2>; uCamFwd: V<THREE.Vector3>;
+  uTime: V<number>;
+  uSun: V<THREE.Vector3>; uSunC: V<THREE.Vector3>; uZenC: V<THREE.Vector3>; uHorC: V<THREE.Vector3>; uSunE: V<number>;
+  uSunD: V<THREE.Vector3>; uGlowC: V<THREE.Vector3>; uMoonD: V<THREE.Vector3>; uMoonK: V<number>; uStars: V<number>;
+  // uStarT starts null; the last line points it at uTime.
+  uStarT: V<number>;
+  uCloudSun: V<THREE.Vector3>; uCloudAmb: V<THREE.Vector3>; uGLift: V<THREE.Vector2>;
+  uHitP: V<THREE.Vector4>; uHitR: V<number>;
+  uHaze: V<number>; uDustLoad: V<number>; uHazeH: V<number>; uLayer: V<THREE.Vector2>; uDeck: V<number>; uWisp: V<THREE.Vector3>;
+  uAst: V<THREE.Vector4>; uAstR: V<number>; uAstC: V<THREE.Vector3>; uFill: V<number>;
+  uRockL: V<THREE.Vector4>; uRockR: V<number>;
+  uBolt: V<THREE.Vector4>; uBoltC: V<THREE.Vector3>; uHit: V<THREE.Vector4>;
+  uVoid: V<THREE.Vector4>; uVoidK: V<number>; uVoidD: V<THREE.Vector2>; uVoidT: V<number>;
+  uCharge: V<number>; uRage: V<number>; uChase: V<number>; uChaseW: V<number>; uFire: V<number>;
+  uAxisA: V<THREE.Vector3>; uAxisD: V<THREE.Vector3>; uAxisUp: V<THREE.Vector3>; uL: V<number>;
+  uRecoil: V<number>; uDrop: V<THREE.Vector2>; uAxis0: V<THREE.Vector3>; uYaw: V<THREE.Vector2>;
+  uShadowT: V<THREE.DepthTexture | null>; uShadowM: V<THREE.Matrix4>; uShadowB: V<number>;
+  uArcL: V<THREE.Vector4>; uMuzL: V<THREE.Vector4>; uShocks: V<THREE.Vector4[]>;
+  uAir: V<number>; uAirK: V<THREE.Vector4>;
+  uHeat: V<number>; uHeatT: V<number>; uOver: V<number>;
+  uBlast: V<THREE.Vector4>; uBk: V<number>;
+  uSootS: V<THREE.Vector4>; uSootK: V<number>; uSootL: V<THREE.Vector3>; uEat: V<THREE.Vector4>;
+  uAstG: V<THREE.Vector2>; uDebL: V<THREE.Vector4[]>; uPool: V<THREE.Vector4[]>;
+  // sky/sun adds these three after the literal.
+  uSkyRot: V<THREE.Matrix3>; uSkyRot0: V<THREE.Matrix3>; uTrailK: V<number>;
+};
 export const BLUE = linFit(0.82, 0.12, 225), AMBER = linFit(0.78, 0.17, 50);
 export const U = {
   // The gun's depth from the eye: volumes stop marching at its skin.
@@ -24,7 +53,7 @@ export const U = {
   uMoonD: { value: new THREE.Vector3(-0.58, 0.42, -0.69).normalize() },
   uMoonK: { value: 0 },
   uStars: { value: 0 },
-  uStarT: null,
+  uStarT: null as unknown as V<number>,
   // High cloud still holds the sun after it sets.
   uCloudSun: { value: new THREE.Vector3() },
   uCloudAmb: { value: new THREE.Vector3(0.22, 0.22, 0.22) },
@@ -110,5 +139,5 @@ export const U = {
   uDebL: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
   // Ember pools where pieces land: x, z, strength, radius.
   uPool: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) },
-};
+} as Uniforms;
 U.uStarT = U.uTime;

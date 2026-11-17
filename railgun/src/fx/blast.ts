@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: rock/shards runs first.
 import '../rock/shards.ts';
 import * as THREE from 'three';
@@ -151,4 +150,4 @@ vec3 vlight(vec3 p) {
 // The fireball is far out: clouds and mesas stand in front of it, so it keeps the depth test.
 fireball.material.depthTest = true;
 // The fire's pull-in, 0 to 1, as the fireball shader has it.
-export const pullOf = a => THREE.MathUtils.smoothstep(a, 2.0, 5.5) - 0.35 * THREE.MathUtils.smoothstep(a, 7.0, 12.0);
+export const pullOf = (a: number) => THREE.MathUtils.smoothstep(a, 2.0, 5.5) - 0.35 * THREE.MathUtils.smoothstep(a, 7.0, 12.0);

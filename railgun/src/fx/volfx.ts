@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/glints runs first.
 import './glints.ts';
 import * as THREE from 'three';
@@ -100,7 +99,7 @@ export const volSteps = () => Math.min(48, Math.round((state.rung >= 3 ? 10 : st
 export const volLSteps = () => (state.rung >= 2 ? 2 : 3);
 // Ground dust is thin and wide: it takes more steps.
 export const dustSteps = () => Math.min(48, Math.round((state.rung >= 3 ? 14 : state.rung >= 2 ? 22 : 34) * gfx.detail));
-export function makeVol(decl, extra) {
+export function makeVol(decl: string, extra: Record<string, THREE.IUniform>) {
   const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), new THREE.ShaderMaterial({
     // uLs: the first light step in metres. uSlab: the top of the slab.
     uniforms: { ...U, uVol: { value: volRT.texture }, uC: { value: new THREE.Vector3() }, uR: { value: 1 }, uVSteps: { value: volSteps() }, uLSteps: { value: volLSteps() }, uLs: { value: 20 }, uSlab: { value: 1e7 }, ...extra },
@@ -131,3 +130,5 @@ export function makeVol(decl, extra) {
   scene.add(m);
   return m;
 }
+// A raymarched volume on a bounding sphere.
+export type Vol = ReturnType<typeof makeVol>;

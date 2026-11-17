@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/bowshock runs first.
 import './bowshock.ts';
 import * as THREE from 'three';
@@ -7,7 +6,7 @@ import { scene } from '../setup.ts';
 import { BAND } from '../clouds/bands.ts';
 
 /* ---------- shock rings: thin discs of compressed air ---------- */
-function makeRing(color) {
+function makeRing(color: number[]) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: {
       uC: { value: new THREE.Vector3() }, uA: { value: new THREE.Vector3(1, 0, 0) }, uB: { value: new THREE.Vector3(0, 1, 0) },
@@ -37,7 +36,7 @@ function makeRing(color) {
   return m;
 }
 // Centre c, plane axes a and b, radius r, front width w.
-function ring(m, c, a, b, r, w, gain) {
+function ring(m: ReturnType<typeof makeRing>, c: THREE.Vector3Like, a: THREE.Vector3Like, b: THREE.Vector3Like, r: number, w: number, gain: number) {
   if (reduced()) gain *= 0.5;
   m.visible = gain > 0.002;
   const u = m.material.uniforms;

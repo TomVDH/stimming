@@ -1,6 +1,6 @@
-// @ts-nocheck
 // Load order: rock/strike runs first.
 import './rock/strike.ts';
+import type * as THREE from 'three';
 import { reduced, whenVisible, sound, onQuality, onReducedChange } from '../../shared/stim.js';
 import { state } from './state.ts';
 import { FRAME, stage } from './setup.ts';
@@ -32,12 +32,13 @@ import { hushRoars } from './sound/ship.ts';
 import { motorStop, motorUpdate } from './sound/motor.ts';
 
 /* Frame loop: 30 fps, idle or not; it sleeps 60 s after the last input. */
-const SLEEP = +new URLSearchParams(location.search).get('sleep') || 60000;
+// A missing key gives null; + turns it to 0, so the default holds.
+const SLEEP = +new URLSearchParams(location.search).get('sleep')! || 60000;
 export let nap = 0, raf = 0, lastT = 0, lastDraw = 0, lastInput = performance.now();
 state.qaFreeze = false;
 // A live landing dome and a view's move keep the loop awake.
-export const busy = () => !!state.sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (state.tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || state.simT < moteEnd || (state.spent && state.spent.bounce < 2) || (state.caseDust && state.simT - state.caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || state.cdust > 0.02 || (state.dustShot && state.simT - state.dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!state.strike || cutFlash > 0.01 || !!state.press || !!charge || !!state.shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some(c => c.w >= 0 && state.simT - c.w < 20) || !!state.blastFx || state.simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || state.simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || state.simT < state.dustEnd || state.simT < state.lastDeath || state.simT < state.shardsEnd || state.hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(sway.p) + Math.abs(sway.y) > 1e-5 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0;
-function tick(now) {
+export const busy = () => !!state.sshot || shipBusy() || shipDomes.some(domeAlive) || !!ranging || (state.tgtKind === 'ship' && ship.state === 'arrive') || cam.swayE > 0.001 || tkeys.size > 0 || state.simT < moteEnd || (state.spent && state.spent.bounce < 2) || (state.caseDust && state.simT - state.caseDust.t0 < 12) || caseMat.uniforms.uCaseHeat.value > 0.02 || state.cdust > 0.02 || (state.dustShot && state.simT - state.dustShot.t0 < 16.5) || sight || !!spin || !!fill || !!state.strike || cutFlash > 0.01 || !!state.press || !!charge || !!state.shot || rounds.length > 0 || astMat.uniforms.uCrater.value.some((c: THREE.Vector4) => c.w >= 0 && state.simT - c.w < 20) || !!state.blastFx || state.simT - U.uHitP.value.w < 95 || U.uHeat.value > 0 || state.simT - ventT < 14 || U.uCharge.value > 0 || arcsAlive() || state.simT < state.dustEnd || state.simT < state.lastDeath || state.simT < state.shardsEnd || state.hitFlash > 0.01 || aimNow.err > 0.004 || Math.abs(sway.p) + Math.abs(sway.y) > 1e-5 || Math.abs(aimNow.vy) + Math.abs(aimNow.ve) > (shipLaid() ? 1e-3 : 1e-4) || Math.abs(lookTo.yaw - look.yaw) + Math.abs(lookTo.pitch - look.pitch) + Math.abs(lookV.yaw) + Math.abs(lookV.pitch) + cam.push > 1e-4 || skyTrail.span !== 0;
+function tick(now: number) {
   raf = 0;
   if (!state.visible || document.hidden) { lastT = 0; return; }
   // A QA freeze holds the clock; stills land on exact times.
@@ -55,7 +56,8 @@ function tick(now) {
     U.uTime.value = state.simT;
     stepAst(sdt);
     stepAim(sdt);
-    motorUpdate(dt);
+    // motorUpdate takes no time step; the extra argument does nothing.
+    (motorUpdate as (dt: number) => void)(dt);
     stepCharge(sdt);
     stepShot(sdt);
     stepShipShot(sdt);
@@ -90,7 +92,7 @@ export function wake() {
 }
 /* Performance ladder: slow frames step quality down a rung, never back up. */
 let watchFrom = 0, watchN = 0, watchSum = 0, prevDraw = 0;
-function watch(now, lively) {
+function watch(now: number, lively: boolean) {
   const gap = now - prevDraw;
   prevDraw = now;
   if (gap > 200) { watchFrom = now; watchN = watchSum = 0; return; }
@@ -102,7 +104,7 @@ function watch(now, lively) {
   if (watchSum / watchN > (lively ? 48 : 70) && state.rung < 3 && !state.rungPin) { state.rung++; resize(); }
   watchFrom = now - 4000; watchN = watchSum = 0;
 }
-whenVisible(stage, vis => {
+whenVisible(stage, (vis: boolean) => {
   state.visible = vis;
   if (!vis) {
     cancelAnimationFrame(raf); clearTimeout(nap); raf = 0; nap = 0; lastT = 0;
@@ -121,4 +123,4 @@ whenVisible(stage, vis => {
 });
 new ResizeObserver(() => resize()).observe(stage);
 onQuality(() => resize());
-onReducedChange(on => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.uniforms.uSpin.value = on ? 0 : 1; wake(); });
+onReducedChange((on: boolean) => { starMat.uniforms.uSteady.value = on ? 1 : 0; shardMat.uniforms.uSpin.value = on ? 0 : 1; wake(); });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: rock/trail runs first.
 import './trail.ts';
 import * as THREE from 'three';
@@ -127,6 +126,7 @@ export const frags = Array.from({ length: 16 }, () => {
   // glow: a split piece's own soft halo, so it stands apart from riders.
   return { m, glow: makeFlare(linFit(0.85, 0.14, 55)), trail: makeFragTrail(), mini: makeMini(), on: false, ox: 0, oy: 0, oz: 0, k: 0.2, pos: new THREE.Vector3(), breakT: 0, broke: -1, spin: new THREE.Vector3(0, 1, 0), splitS: -1, splitT: -1e9 };
 });
+export type Frag = (typeof frags)[number];
 const fragGlowP = new THREE.Vector3();
 // Seconds a split piece takes to drift out to its own track.
 const SPLIT_T = 40;
@@ -190,7 +190,7 @@ export function placeFrags() {
 export let fillPopT = -1e9;
 // A piece breaks off the main rock and swells the sky's glow.
 // A rock already deep in its fall shows the piece already apart.
-function splitFrag(f) {
+function splitFrag(f: Frag) {
   f.on = true; f.m.visible = true; f.trail.visible = true;
   f.splitT = ast.s - f.splitS > 0.02 ? -1e9 : state.simT;
   f.trail.material.uniforms.uOn.value = f.splitT < 0 ? 1 : 0;
@@ -199,7 +199,7 @@ function splitFrag(f) {
 }
 // The shock front's radius, ha seconds after the hit.
 // It sweeps out slowly toward the eye: 36 km, over half a minute.
-export const shockR = (ha, R) => R * 1.4 + 36000 * (1 - Math.exp(-ha / 9));
+export const shockR = (ha: number, R: number) => R * 1.4 + 36000 * (1 - Math.exp(-ha / 9));
 // The hit sets each fragment's break time by its distance.
 export function armFrags() {
   for (const f of frags) {
@@ -223,7 +223,7 @@ export function stepFrags() {
   }
 }
 // A fragment bursts into embers.
-function breakFrag(f) {
+function breakFrag(f: Frag) {
   f.broke = state.simT; f.m.visible = false; f.glow.visible = false;
   const r = f.k * ast.R, sp = r / 120;
   // It throws no ember sparks (Tom: no small yellow wisps).
@@ -236,7 +236,8 @@ const shedP = new THREE.Vector3(), shedV = new THREE.Vector3();
 const shedU = new THREE.Vector3();
 // src: a falling hulk { pos, away, side, R, vel }.
 // A null src sheds from the rock.
-export function shedSpark(age = 0, src = null) {
+export interface ShedSrc { pos: THREE.Vector3; away: THREE.Vector3; side: THREE.Vector3; R: number; vel: THREE.Vector3; }
+export function shedSpark(age = 0, src: ShedSrc | null = null) {
   if (src) { shedHulk(src); return; }
   const R = ast.R, tp = astMat.uniforms.uToPlanet.value;
   // They leave from anywhere across the rock's back, not from one spot.
@@ -253,7 +254,7 @@ export function shedSpark(age = 0, src = null) {
 // A burning piece leaves a hulk's back in the air.
 // Drag stops it.
 // Its weight then sinks it back along the streak.
-function shedHulk(src) {
+function shedHulk(src: ShedSrc) {
   const th = rnd() * Math.PI * 2, rr = src.R * Math.sqrt(rnd());
   shedU.crossVectors(src.away, src.side);
   shedP.copy(src.pos).addScaledVector(src.away, 0.5 * src.R).addScaledVector(src.side, Math.cos(th) * rr).addScaledVector(shedU, Math.sin(th) * rr);

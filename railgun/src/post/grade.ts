@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: post/bloom runs first.
 import './bloom.ts';
 import * as THREE from 'three';
@@ -8,7 +7,9 @@ import { FLARE } from '../../../shared/flare.js';
 
 /* ---------- K2: grade ---------- */
 // Linear grade before tone mapping: fringe, split tone, vignette, grain, letterbox.
-export function makeGrade({ tint, vig, vigIn, grain }) {
+// The grade's base look: shadow tint, vignette and grain.
+export interface GradeLook { tint: [number, number, number]; vig: number; vigIn: number; grain: number }
+export function makeGrade({ tint, vig, vigIn, grain }: GradeLook) {
   return new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },

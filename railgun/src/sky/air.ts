@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sky/atmosphere runs first.
 import './atmosphere.ts';
 

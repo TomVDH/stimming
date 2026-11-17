@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/hum runs first.
 import './hum.ts';
 import * as THREE from 'three';
@@ -7,6 +6,28 @@ import { charge, over, rage } from '../play/charge.ts';
 import { filt, kit } from './kit.ts';
 import { hum, plainVerb } from './hum.ts';
 import { bell, ratchet } from './gameover.ts';
+import type { Mix } from './hum.ts';
+
+// Chord tones per register, in semitones from the root.
+export interface Chord { bass: number[]; mid: number[]; high: number[] }
+// One surge profile; see the notes on SURGE.
+export interface Surge extends Chord { root: number; wave: 'saw' | 'organ' | 'brass' | 'pipe'; leslie?: boolean; mech: string[]; sub?: boolean; late?: number; fade?: number; pre?: Chord }
+// One swarm voice: a detuned pair gliding to its chord tone.
+export interface StackVoice { os: OscillatorNode[]; vg: GainNode; ps: number; tgt: number; pre: number; enter: number; lv: number; ph: number; rate: number; k: number; sour: number }
+// A running surge stack; each machine layer exists only if its mix has it.
+export interface Stack {
+  P: Mix; S: Surge; R: number; stack: true; src: AudioScheduledSourceNode[]; g: GainNode; cg: GainNode;
+  locked: boolean; lockAt: number; sour: number; next: number;
+  mainsG?: GainNode; whineG?: GainNode; whine?: OscillatorNode; whine2?: OscillatorNode; grindG?: GainNode; gb?: BiquadFilterNode;
+  sg: GainNode; ng: GainNode; tb?: BiquadFilterNode; turb?: OscillatorNode; thr?: OscillatorNode; sw: BiquadFilterNode;
+  voices: StackVoice[]; vs?: GainNode;
+  // The ratchet's tooth count.
+  n?: number;
+  // A stack has no surge on top.
+  surge?: undefined;
+}
+// An outside drive in place of the charge; see stackUpdate.
+export interface StackDrive { c: number; over: number; rage: number; lock: boolean; vol: number; choir?: number | null; accent?: number; glide?: number; open?: number; drive?: number }
 
 /* ---------- the surge charge ---------- */
 // Surge mixes: mechanical layers enter one by one as the charge grows.
@@ -17,7 +38,7 @@ import { bell, ratchet } from './gameover.ts';
 // Waves: saw (two detuned saws), organ (two squares), brass (saws, resonant filter),
 // pipe (drawbar harmonics, a little buzz). leslie: a rotary tremolo on the swarm.
 // Layers: mains, whine, turbine, grind (stone), toll (bells), ratchet (clanks).
-export const SURGE = {
+export const SURGE: Record<string, Surge> = {
   // Surge: a pentatonic chord, open fifths, thirds and sixths.
   penta: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 19, 24, 28, 31, 33, 36, 40], high: [43, 45, 48, 52, 55, 60] },
   // Surge Syl: Surge's chord and machines, with pipe-organ voices and a rotary tremolo.
@@ -39,19 +60,21 @@ export const SURGE = {
   monolith: { root: 0, wave: 'saw', mech: ['mains', 'whine', 'grind', 'turbine'], bass: [-12, 0, 0, 7], mid: [12, 12, 19, 19, 24, 24, 31, 31], high: [36, 36, 43, 43, 48, 55] },
 };
 // Per register: [entry charge, start low Hz, start high Hz, voice level].
-const REG = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
-export function stackStart(ac, P, dest = kit.out) {
-  const src = [], S = SURGE[P.stack], R = 55 * Math.pow(2, S.root / 12), has = l => S.mech.includes(l);
-  const osc = (type, f, to, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
-  const gain = (to, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to); return n; };
-  const noise = (to, rate = 1) => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate; n.connect(to); n.start(); src.push(n); return n; };
+const REG: Record<keyof Chord, [number, number, number, number]> = { bass: [0.32, 40, 90, 0.12], mid: [0.48, 150, 450, 0.075], high: [0.72, 500, 1500, 0.05] };
+export function stackStart(ac: BaseAudioContext, P: Mix, dest: AudioNode = kit.out) {
+  const src: AudioScheduledSourceNode[] = [], S = SURGE[P.stack!], R = 55 * Math.pow(2, S.root / 12), has = (l: string) => S.mech.includes(l);
+  const osc = (type: OscillatorType, f: number, to: AudioNode, dt = 0) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = dt; o.connect(to); o.start(); src.push(o); return o; };
+  // to: a node or a param; the cast picks one connect() overload for both.
+  const gain = (to: AudioNode | AudioParam, v = 0) => { const n = ac.createGain(); n.gain.value = v; n.connect(to as AudioNode); return n; };
+  const noise = (to: AudioNode, rate = 1) => { const n = ac.createBufferSource(); n.buffer = kit.noise; n.loop = true; n.playbackRate.value = rate; n.connect(to); n.start(); src.push(n); return n; };
   // Every layer runs through one soft clip for glue and growl.
   const cg = ac.createGain(), shape = ac.createWaveShaper(), g = ac.createGain();
   const curve = new Float32Array(257);
   for (let i = 0; i < 257; i++) curve[i] = Math.tanh(2 * (i / 128 - 1));
   shape.curve = curve; shape.oversample = '2x'; cg.gain.value = 0.8; g.gain.value = 0;
   cg.connect(shape).connect(g).connect(dest);
-  const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 };
+  // The layers below fill in the rest of the stack.
+  const h = { P, S, R, stack: true, src, g, cg, locked: false, lockAt: -1e9, sour: 0, next: 0 } as Stack;
   // The mains: a transformer hum, saw and square on the root.
   if (has('mains')) {
     const mlp = filt(ac, 'lowpass', 380, 1.5);
@@ -91,15 +114,15 @@ export function stackStart(ac, P, dest = kit.out) {
     h.sw.connect(rot).connect(cg);
   } else h.sw.connect(cg);
   // Pipe: drawbar harmonics 1, 2, 3, 4, 6 and 8, over a faint saw buzz.
-  let pw = null;
+  let pw: PeriodicWave | null = null;
   if (S.wave === 'pipe') {
-    const im = new Float32Array(17), DRAW = { 1: 1, 2: 0.75, 3: 0.45, 4: 0.55, 5: 0.12, 6: 0.3, 8: 0.25 };
+    const im = new Float32Array(17), DRAW: Record<number, number> = { 1: 1, 2: 0.75, 3: 0.45, 4: 0.55, 5: 0.12, 6: 0.3, 8: 0.25 };
     for (let n = 1; n < 17; n++) im[n] = (DRAW[n] || 0) + 0.08 / n;
     pw = ac.createPeriodicWave(new Float32Array(17), im);
   }
   const type = S.wave === 'organ' ? 'square' : 'sawtooth', wk = S.wave === 'organ' ? 0.7 : S.wave === 'pipe' ? 0.85 : 1;
   h.voices = [];
-  for (const reg of ['bass', 'mid', 'high']) {
+  for (const reg of ['bass', 'mid', 'high'] as const) {
     const [enter, lo, hi, lv] = REG[reg], tg = S[reg];
     tg.forEach((s, i) => {
       const pn = ac.createStereoPanner();
@@ -125,8 +148,8 @@ export function stackStart(ac, P, dest = kit.out) {
 // dv: an optional drive { c, over, rage, lock, vol, choir } in place of the charge.
 // dv.choir drives the swarm alone; without it the swarm follows c.
 // dv.accent scales the lock's accent; dv.glide sets the lock's glide in seconds.
-export function stackUpdate(ac, h = hum, dv = null) {
-  const P = h.P, c = dv ? dv.c : charge.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
+export function stackUpdate(ac: BaseAudioContext, h: Stack = hum as Stack, dv: StackDrive | null = null) {
+  const P = h.P, c = dv ? dv.c : charge!.c, t = ac.currentTime, u = clamp(c, 0, 1), ss = THREE.MathUtils.smoothstep;
   const cu = dv && dv.choir != null ? clamp(dv.choir, 0, 1) : u;
   const ov = dv ? dv.over : over, rg = dv ? dv.rage : rage, vol = dv ? dv.vol : 1;
   const locked = dv ? dv.lock : c >= 0.999 && ov < 0.15;
@@ -138,18 +161,18 @@ export function stackUpdate(ac, h = hum, dv = null) {
   // The whine climbs from 180 Hz to 4 kHz.
   if (h.whine) {
     h.whine.frequency.setTargetAtTime(180 * Math.pow(2, 4.5 * u), t, 0.08);
-    h.whine2.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
-    h.whineG.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
+    h.whine2!.frequency.setTargetAtTime(90 * Math.pow(2, 4.5 * u), t, 0.08);
+    h.whineG!.gain.setTargetAtTime(0.035 * ss(u, 0.1, 0.22) * (1 - 0.5 * ss(u, 0.9, 1)), t, 0.08);
   }
   // The stone grinds louder and higher.
-  if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
+  if (h.grindG) { h.grindG.gain.setTargetAtTime(0.5 * ss(u, 0.08, 0.3) * (0.6 + 0.4 * u), t, 0.1); h.gb!.frequency.setTargetAtTime(140 + 220 * u, t, 0.2); }
   // The sub swells, and drops in hard at the lock.
   h.sg.gain.setTargetAtTime(0.2 * ss(u, 0.22, 1) * (1 + 0.8 * accent) * vol, t, 0.08);
   // The turbine spins up from 3 to 18 throbs a second.
   h.ng.gain.setTargetAtTime((h.turb ? 0.1 * ss(u, 0.6, 0.72) : 0) + 0.06 * rg + 0.08 * ov, t, 0.08);
   if (h.turb) {
-    h.thr.frequency.setTargetAtTime(3 + 15 * u + 10 * rg, t, 0.1);
-    h.tb.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rg, t, 0.1);
+    h.thr!.frequency.setTargetAtTime(3 + 15 * u + 10 * rg, t, 0.1);
+    h.tb!.frequency.setTargetAtTime(400 + 1600 * u + 2000 * rg, t, 0.1);
     h.turb.frequency.setTargetAtTime(2 * h.R * (1 + u), t, 0.1);
   }
   // Bells toll and the ratchet clanks, faster with the charge.

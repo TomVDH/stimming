@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/dust runs first.
 import './dust.ts';
 import * as THREE from 'three';
@@ -27,7 +26,7 @@ export const starGeo = new THREE.InstancedBufferGeometry();
 // A trail can bend.
 starGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0, 2, -1, 0, 2, 1, 0], 3));
 starGeo.setIndex([0, 2, 3, 0, 3, 1, 2, 4, 5, 2, 5, 3]);
-const slot = name => {
+const slot = (name: string) => {
   const a = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
   a.setUsage(THREE.DynamicDrawUsage);
   starGeo.setAttribute(name, a);
@@ -137,7 +136,7 @@ stars.renderOrder = BAND.sparks;
 scene.add(stars);
 let dirtyFrom = -1, dirtyN = 0; state.head = 0; state.lastDeath = 0;
 // Write one star into the next slot; the oldest slot gives way.
-export function writeStar(p0, t0, v0, k, ramp, life, trail, size, kind = 0, gain = 1, ramp2 = -1) {
+export function writeStar(p0: THREE.Vector3Like, t0: number, v0: THREE.Vector3Like, k: number, ramp: number, life: number, trail: number, size: number, kind = 0, gain = 1, ramp2 = -1) {
   const i = state.head;
   state.head = (state.head + 1) % CAP;
   if (dirtyFrom < 0) dirtyFrom = i;

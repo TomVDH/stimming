@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: view/render runs first.
 import '../view/render.ts';
 import * as THREE from 'three';
@@ -20,6 +19,9 @@ import { flare } from '../fx/bowshock.ts';
 import { BOLT_SEG, boltMat, makeBoltGeo } from '../fx/bolt.ts';
 import { ionGeo, ionMat, ionPuffGeo, ionPuffs, matCopy, tracers } from '../fx/ion.ts';
 import { glint, makeGlint } from '../fx/glints.ts';
+import type { Glint } from '../fx/glints.ts';
+import type { Flare } from '../fx/flares.ts';
+import type { TracerSet } from '../fx/ion.ts';
 import { domeAlive, domeVols, flashOf, shipDomes, shipRumbles } from '../ship/hulks.ts';
 import { chunks } from '../fx/volumes.ts';
 import { rounds, tgtCanHit, tgtLead } from './shot.ts';
@@ -33,12 +35,58 @@ import { shipRumble } from '../sound/ship.ts';
 // The director holds off while the player charges or a shot flies.
 // Shooting stars stay out for now (Tom, 2026-11-16); the Dev test still plays one.
 // The far guns (war, bolt) stay out too (Tom); the Dev test still fires them.
-const AMB_KINDS = ['sat', 'flak', 'shed'];
+const AMB_KINDS: AmbKind[] = ['sat', 'flak', 'shed'];
+// Every event: its start, its length, and whether it belongs to a kill's aftermath.
+interface AmbBase { t0: number; dur: number; after?: boolean }
+// A far gun's round: site, notch, range, power, flight time, aim.
+export interface AmbBolt extends AmbBase {
+  kind: 'bolt';
+  site: THREE.Vector3;
+  notch: THREE.Vector3;
+  D: number;
+  siteD: number;
+  c: number;
+  T: number;
+  flash: number;
+  dir: THREE.Vector3;
+  L: number;
+  aimed: boolean;
+}
+// A late chunk's fall, flash and dust dome.
+export interface AmbLand extends AmbBase {
+  kind: 'land';
+  site: THREE.Vector3;
+  dir: THREE.Vector3;
+  D: number;
+  S: number;
+  domed: boolean;
+}
+// One smouldering spot: its source, place, start time and flicker seed.
+interface EmberSite { ref: Chunk | AmbLand | null; P: THREE.Vector3; t: number; seed: number }
+// The embers where the pieces lie; test marks the Dev test's own spots.
+export interface AmbEmbers extends AmbBase { kind: 'embers'; sites: EmberSite[]; acc: number; test?: boolean }
+// A satellite: start and end rays, shadow entry, strength.
+export interface AmbSat extends AmbBase { kind: 'sat'; d0: THREE.Vector3; d1: THREE.Vector3; shade: number; k: number }
+// Orbital flak: the patch's centre and its pops.
+export interface AmbFlak extends AmbBase { kind: 'flak'; c: THREE.Vector3; pops: { t: number; k: number; off: THREE.Vector3 }[] }
+// A lump shed from the rock: its side and strength.
+export interface AmbShed extends AmbBase { kind: 'shed'; side: THREE.Vector3; k: number }
+// A shooting star: its meteor, start, direction, run and strength.
+export interface AmbStar extends AmbBase { kind: 'star'; m: Meteor; p0: THREE.Vector3; dir: THREE.Vector3; run: number; k: number }
+export type AmbEvent = AmbBolt | AmbLand | AmbEmbers | AmbSat | AmbFlak | AmbShed | AmbStar;
+// 'war' starts a ripple of far bolts; it is no event of its own.
+export type AmbKind = AmbEvent['kind'] | 'war';
+// A late rumble: its due time and its strength.
+interface DueRumble { at: number; k: number }
+// The director: live events, next start, idle clock, due rumbles, last hit, far-gun wait.
+export interface Amb { live: AmbEvent[]; next: number; deadSince: number | null; due: DueRumble[]; hit: number; farNext: number }
+// A trailed chunk, as fx/volumes keeps it.
+type Chunk = typeof chunks[number];
 // farNext: the far guns wait 150 to 300 s between attempts.
-export const amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6, farNext: 0 };
+export const amb: Amb = { live: [], next: 20, deadSince: null, due: [], hit: -1e6, farNext: 0 };
 /* A meteor: a streak from its tail to a hot round head.
    The tail tapers, cools and fades; the head stays white-hot. */
-function makeMeteor(hot, cool) {
+function makeMeteor(hot: number[], cool: number[]) {
   const g = new THREE.PlaneGeometry(1, 2, 24, 1).translate(0.5, 0, 0);
   const m = new THREE.Mesh(g, new THREE.ShaderMaterial({
     uniforms: {
@@ -86,7 +134,8 @@ function makeMeteor(hot, cool) {
   return m;
 }
 // Draw a meteor from tail A to head B; w is the head's width in metres.
-function meteor(m, A, B, w, gain) {
+type Meteor = ReturnType<typeof makeMeteor>;
+function meteor(m: Meteor, A: THREE.Vector3, B: THREE.Vector3, w: number, gain: number) {
   const g = reduced() ? gain * 0.5 : gain;
   m.visible = g > 0.002;
   const u = m.material.uniforms;
@@ -102,7 +151,17 @@ const ambSat = makeFlare(linFit(0.95, 0.02, 90));
 // A far gun's round: the main shot's ribbon, ion line and contrail.
 // The parts share the main programs; a far bolt builds a set when none is free.
 // Four sets at most: a battery's ripple fires up to four rounds.
-const farGuns = [];
+// A far gun's own ion uniforms: ends, glow clock, trail scale.
+type FarOwn = { uA: THREE.IUniform<THREE.Vector3>; uB: THREE.IUniform<THREE.Vector3>; uI: THREE.IUniform<THREE.Vector3>; uK: THREE.IUniform<number> };
+// A far gun's set: the tracer meshes, their uniforms, two glows, its round.
+interface FarGun extends Omit<TracerSet, 'round'> {
+  own: FarOwn;
+  pOwn: FarOwn & { uAer: THREE.IUniform<number> };
+  glow: Flare;
+  flash: Flare;
+  e?: AmbBolt | null;
+}
+const farGuns: FarGun[] = [];
 const farP = new THREE.Vector3(), farQ = new THREE.Vector3();
 function makeFarGun() {
   const own = { uA: { value: new THREE.Vector3() }, uB: { value: new THREE.Vector3() }, uI: { value: new THREE.Vector3() }, uK: { value: 1 } };
@@ -111,8 +170,8 @@ function makeFarGun() {
   const g = {
     bolt: new THREE.Mesh(makeBoltGeo(), matCopy(boltMat, { uCore: { value: 3 }, uGain: { value: 8 }, uWide: { value: 110 } })),
     line: new THREE.Mesh(ionGeo, matCopy(ionMat, own)), puffs: new THREE.Mesh(ionPuffGeo, matCopy(ionPuffs.material, pOwn)), own, pOwn,
-  };
-  for (const k of ['bolt', 'line', 'puffs']) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
+  } as FarGun;
+  for (const k of ['bolt', 'line', 'puffs'] as const) { g[k].frustumCulled = false; g[k].renderOrder = tracers[0][k].renderOrder; g[k].visible = false; scene.add(g[k]); }
   // A warm glow round the head, and the muzzle's glow in its notch.
   // The ridges mask the muzzle's glow, so it shows only in the gap.
   g.glow = makeFlare(FAR_WARM); g.flash = makeFlare(FAR_WARM);
@@ -122,18 +181,18 @@ function makeFarGun() {
 // The far rounds' warm light: the muzzle, the glow and the clouds.
 const FAR_WARM = linFit(0.82, 0.13, 58);
 // A round draws in its launch's distance band, so nearer layers cover it.
-function farBand(g, e) {
+function farBand(g: FarGun, e: AmbBolt) {
   const b = e.siteD > 100000 ? BAND.deep : BAND.far;
   g.flash.renderOrder = b; g.puffs.renderOrder = b + 0.01; g.line.renderOrder = b + 0.02; g.bolt.renderOrder = b + 0.03; g.glow.renderOrder = b + 0.04;
 }
 // A far round keeps the main shot's clock and path.
 // It rides the rails 0.3 s, then crosses in T: fast out, slowing.
-const farReach = (e, a) => 1 - Math.pow(1 - clamp((a - 0.3) / e.T, 0, 1), 2.6);
-const farAt = (e, a, out) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, a));
+const farReach = (e: AmbBolt, a: number) => 1 - Math.pow(1 - clamp((a - 0.3) / e.T, 0, 1), 2.6);
+const farAt = (e: AmbBolt, a: number, out: THREE.Vector3) => out.copy(e.site).addScaledVector(e.dir, e.L * farReach(e, a));
 // Another gun fires at the falling rock from site and misses.
 // t0 is its rail start: the horizon flash is its muzzle.
 // c is its power: a weak round takes 11.5 s to cross, a full one 8.5.
-function farShot(q, t0, flash) {
+function farShot(q: FarPlace, t0: number, flash: number): AmbBolt {
   const c = 0.5 + 0.5 * rnd();
   return { kind: 'bolt', t0, dur: 0.3 + 11.5 + 12, site: q.site.clone(), notch: q.notch.clone(), D: q.D, siteD: q.D, c, T: THREE.MathUtils.lerp(11.5, 8.5, c), flash, dir: new THREE.Vector3(), L: 1, aimed: false };
 }
@@ -141,7 +200,9 @@ function farShot(q, t0, flash) {
 // farGaps() reads the skyline from the ranges' geometry bake.
 // Without a bake, three fixed places stand in: screen x and distance.
 const FAR_PIECES = [{ sx: -0.8, D: 96000 }, { sx: -0.45, D: 80000 }, { sx: 0.74, D: 104000 }];
-const farGapsAt = { bakes: -1, list: null };
+// A far gun's place: screen x, range, site on the plain, notch crest.
+export interface FarPlace { sx: number; D: number; site: THREE.Vector3; notch: THREE.Vector3 }
+const farGapsAt: { bakes: number; list: FarPlace[] | null } = { bakes: -1, list: null };
 // The three deepest notches in the near skyline on screen.
 // Each gives a site 6 km behind the notch and the notch's crest point.
 export function farGaps() {
@@ -153,7 +214,7 @@ export function farGaps() {
   const H = THREE.DataUtils.fromHalfFloat, v = new THREE.Vector4(), d = new THREE.Vector3(), cols = [];
   // The near skyline: the top of the ranges within 150 km.
   // The back ranges stand behind the gaps, so they do not count.
-  const near = (x, y) => { const j = (y * w + x) * 4, g = H(px[j]); return g >= 0 && (g + H(px[j + 1])) * 512 < 150000; };
+  const near = (x: number, y: number) => { const j = (y * w + x) * 4, g = H(px[j]); return g >= 0 && (g + H(px[j + 1])) * 512 < 150000; };
   for (let x = 2; x < w; x += 4) {
     let y = h - 1;
     while (y >= 0 && !near(x, y)) y--;
@@ -187,7 +248,7 @@ export function farGaps() {
   // Too few notches: the lowest stretches of skyline fill the three places.
   const low = cols.filter(c => Math.abs(c.sx) <= 0.85 && !(c.sx > g0 - 0.05 && c.sx < g1 + 0.05)).sort((a, b) => a.el - b.el);
   for (const c of low) gaps.push({ c, depth: 0 });
-  const list = [];
+  const list: FarPlace[] = [];
   for (const g of gaps) {
     if (list.length >= 3 || list.some(q => Math.abs(q.sx - g.c.sx) < 0.2)) continue;
     const flat = ambA.set(g.c.d.x, 0, g.c.d.z).normalize(), D = (g.c.hit > 0 ? g.c.hit : 84000) + 6000;
@@ -222,7 +283,7 @@ export function farLight() {
 // At its rail start the round leads the rock, as the main gun does.
 // The aim point sits beside the rock as the eye sees it: a near miss.
 // It returns false when there is no rock to shoot.
-function farAim(e) {
+function farAim(e: AmbBolt) {
   if (!(state.tgtKind === 'rock' && tgtCanHit() && astMesh.visible)) return false;
   const lead = tgtLead(e.T, new THREE.Vector3()), to = farP.copy(lead).sub(e.site).normalize();
   const off = farQ.crossVectors(to, ambB.copy(lead).sub(camera.position)).normalize();
@@ -242,7 +303,7 @@ const ambShed = makeFlare(linFit(0.88, 0.14, 55)), ambShedTail = makeGlint(linFi
 // The smoke train hides what lies behind it.
 // It returns 1 in the clear sky, 0 behind the train.
 const ambS0 = new THREE.Vector3(), ambS1 = new THREE.Vector3(), ambSP = new THREE.Vector3();
-function ambClear(p) {
+function ambClear(p: THREE.Vector3) {
   if (state.tgtKind !== 'rock') return 1;
   ambSP.copy(p).project(camera);
   ambS0.copy(ast.pos).project(camera);
@@ -258,22 +319,22 @@ function ambClear(p) {
 // A streak from A along dir for L metres.
 // glint() centres its streak on its point, so this passes the midpoint.
 const ambMid = new THREE.Vector3();
-function ambSeg(m, A, dir, L, wid, gain) {
+function ambSeg(m: Glint, A: THREE.Vector3, dir: THREE.Vector3, L: number, wid: number, gain: number) {
   glint(m, ambMid.copy(A).addScaledVector(dir, L / 2), dir, L / 2, wid, gain);
 }
 // The shared air's transmittance from the eye to P, as one grey value.
 // It follows aerialFrom() in the AIR chunk: Rayleigh and the dusty Mie.
 // Additive glows scale by it, so they fade with distance like the ranges.
-function ambT(P) {
+function ambT(P: THREE.Vector3) {
   const c = camera.position, hit = c.distanceTo(P), yc = Math.max(c.y, 0), yp = Math.max(P.y, 0), dy = yp - yc;
-  const avg = h => (Math.abs(dy) < 1 ? Math.exp(-yc / h) : (Math.exp(-yc / h) - Math.exp(-yp / h)) * h / dy);
+  const avg = (h: number) => (Math.abs(dy) < 1 ? Math.exp(-yc / h) : (Math.exp(-yc / h) - Math.exp(-yp / h)) * h / dy);
   const k = U.uAirK.value, aR = avg(8000) * k.x, aM = avg(Math.max(k.z, 100)) * k.y, m = 1.1e-5 * aM;
   return 0.2126 * Math.exp(-(5.8e-6 * aR + m) * hit) + 0.7152 * Math.exp(-(13.5e-6 * aR + m) * hit) + 0.0722 * Math.exp(-(33.1e-6 * aR + m) * hit);
 }
 // Metres per pixel at distance D, for the live lens.
-const ambPx = D => D * Math.tan(rad(camera.fov / 2)) / (state.size.h / 2);
+const ambPx = (D: number) => D * Math.tan(rad(camera.fov / 2)) / (state.size.h / 2);
 // A direction through screen point (sx, sy), each -1 to 1.
-function ambRay(sx, sy, out) {
+function ambRay(sx: number, sy: number, out: THREE.Vector3) {
   camera.updateMatrixWorld(true);
   return out.set(sx, sy, 0.5).unproject(camera).sub(camera.position).normalize();
 }
@@ -297,7 +358,7 @@ function ambKinds() {
 }
 // After a kill: late landings, then embers where pieces lie.
 // The debris hail fills the sky; there is no re-entry rain.
-function ambAfter(t0) {
+function ambAfter(t0: number) {
   amb.live = amb.live.filter(e => !e.after);
   const n = 1 + Math.floor(rnd() * 3);
   for (let i = 0; i < n; i++) amb.live.push(ambLanding(t0 + 55 + 100 * rnd()));
@@ -305,7 +366,7 @@ function ambAfter(t0) {
   amb.live.push({ kind: 'embers', after: true, t0: t0 + 6, dur: 240, sites: [], acc: 0 });
 }
 // A horizontal direction through screen x, sx from -1 to 1.
-function ambFlat(sx, out) {
+function ambFlat(sx: number, out: THREE.Vector3) {
   for (let i = 0; i < 20; i++) {
     ambRay(sx, 0, out);
     out.y = 0;
@@ -314,7 +375,7 @@ function ambFlat(sx, out) {
   return out.normalize();
 }
 // One late chunk: a 2.5 s fall, a flash, a dust dome, a late rumble.
-function ambLanding(t0) {
+function ambLanding(t0: number): AmbLand {
   for (let i = 0; i < 20; i++) {
     ambRay((rnd() * 2 - 1) * 0.75, 0, ambA);
     ambA.y = 0;
@@ -327,7 +388,7 @@ function ambLanding(t0) {
   return { kind: 'land', after: true, t0, dur: 2.5 + 62, site, dir, D, S: 3000 + 2500 * rnd(), domed: false };
 }
 // Start one event of this kind.
-export function ambStart(kind) {
+export function ambStart(kind: AmbKind) {
   if (kind === 'war') {
     // The far guns fire in turn, one round each; all miss.
     // Each muzzle flash lights the horizon.
@@ -381,7 +442,7 @@ export function ambStart(kind) {
     // Now and then a second one follows close behind.
     const pair = rnd() < 0.25;
     for (let j = 0; j < (pair ? 2 : 1); j++) {
-      const m = ambStars.find(g => !amb.live.some(e => e.m === g));
+      const m = ambStars.find(g => !amb.live.some(e => (e as AmbStar).m === g));
       if (!m) return;
       const sx = (rnd() * 2 - 1) * 0.85, sy = 0.15 + 0.7 * rnd(), D = 90000;
       const p0 = camera.position.clone().addScaledVector(ambRay(sx, sy, ambA), D);
@@ -392,7 +453,7 @@ export function ambStart(kind) {
   }
 }
 // The director: one event every 12 to 40 s, busier as the rock nears.
-export function stepAmbient(dt) {
+export function stepAmbient(dt: number) {
   const on = ui.setting('ambient')?.value !== false;
   const rate = +(ui.setting('ambrate')?.value ?? 1);
   for (let i = amb.live.length - 1; i >= 0; i--) if (state.simT - amb.live[i].t0 > amb.live[i].dur) amb.live.splice(i, 1);
@@ -455,7 +516,8 @@ export function drawAmbient() {
         flare(ambFlak[n++], ambB, 4 * ambPx(300000) * (1 + 2 * pa), 1.4 * q.k * Math.exp(-pa / 0.12) * U.uStars.value * ambClear(ambB) * ambT(ambB));
       }
     } else if (e.kind === 'embers') {
-      drawEmbers(e, a);
+      // drawEmbers reads no age; the extra argument does nothing.
+      (drawEmbers as (e: AmbEmbers, a: number) => void)(e, a);
     } else if (e.kind === 'shed') {
       drawShed(e, a);
     } else if (e.kind === 'land') {
@@ -480,7 +542,7 @@ export function drawAmbient() {
 }
 // The far round: the ribbon at the head, the ion line, the contrail.
 // The trail scales with distance, so it reads like the main shot's.
-function drawFarBolt(e, a) {
+function drawFarBolt(e: AmbBolt, a: number) {
   // A round with no rock to shoot never fires.
   if (!e.aimed && !farAim(e)) { e.dur = 0; return false; }
   let g = farGuns.find(f => f.e === e) || farGuns.find(f => !f.e);
@@ -532,7 +594,7 @@ function drawFarBolt(e, a) {
   return true;
 }
 // A late landing: the fall, then the flash and the dome.
-function drawLanding(e, a) {
+function drawLanding(e: AmbLand, a: number) {
   const FALL_T = 2.5;
   if (a < FALL_T) {
     const u = a / FALL_T, run = 26000, head = run * (u - 1), tail = head - 9000;
@@ -552,7 +614,7 @@ function drawLanding(e, a) {
   amb.due.push({ at: state.simT + Math.min(30, e.D / 343), k: 0.6 });
 }
 // The sites: the landed chunks, the late landings, or a test spot.
-function emberSites(e) {
+function emberSites(e: AmbEmbers) {
   for (const ch of chunks) if (ch.landP && !e.sites.some(s => s.ref === ch)) e.sites.push({ ref: ch, P: ch.landP.clone().setY(4), t: state.simT, seed: rnd() });
   for (const l of amb.live) if (l.kind === 'land' && l.domed && !e.sites.some(s => s.ref === l)) e.sites.push({ ref: l, P: l.site.clone().setY(4), t: state.simT, seed: rnd() });
   if (e.test && !e.sites.length) for (let i = 0; i < 4; i++) {
@@ -562,7 +624,7 @@ function emberSites(e) {
   if (e.sites.length > ambEmbers.length) e.sites.length = ambEmbers.length;
 }
 // A thin thread of smoke rises from each ember.
-function stepEmbers(e, dt) {
+function stepEmbers(e: AmbEmbers, dt: number) {
   if (state.simT < e.t0) return;
   emberSites(e);
   e.acc += dt / 1.5;
@@ -574,7 +636,7 @@ function stepEmbers(e, dt) {
   }
 }
 // Each ember flickers and cools over two minutes; night shows it best.
-function drawEmbers(e) {
+function drawEmbers(e: AmbEmbers) {
   const night = 0.2 + 0.8 * U.uStars.value;
   e.sites.forEach((st, i) => {
     const age = state.simT - st.t, sd = st.seed * 40;
@@ -584,7 +646,7 @@ function drawEmbers(e) {
   });
 }
 // The lump peels off the side and lags back up the train.
-function drawShed(e, a) {
+function drawShed(e: AmbShed, a: number) {
   if (!tgtCanHit() || !astMesh.visible) return;
   const R = ast.R, u = a / e.dur;
   ambB.copy(ast.pos).addScaledVector(e.side, R * (1.1 + 1.2 * a)).addScaledVector(ast.away, R * 0.3 * a * a);

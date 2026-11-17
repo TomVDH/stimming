@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: view/camera runs first.
 import './camera.ts';
 import * as THREE from 'three';
@@ -27,6 +26,7 @@ import { drawAmbient, farLight } from '../play/ambient.ts';
 import { over, rage } from '../play/charge.ts';
 import { updateBow } from '../fx/bowshock.ts';
 import { updateIon } from '../fx/ion.ts';
+import type { Warp } from '../gun/muzzle.ts';
 import { caseDustV, chargeDust, muzzleSmoke, plume, shotDust, updateCaseDust, updateChargeDust, updateMuzzleSmoke, updateShotDust, warpH, warpM } from '../gun/muzzle.ts';
 import { updateVents } from '../gun/vents.ts';
 import { updateFlap } from '../gun/flap.ts';
@@ -136,7 +136,7 @@ export function draw() {
 }
 // Project the shock fronts and the hot barrel for the grade's warp.
 const wv = new THREE.Vector3(), wb = new THREE.Vector3();
-function warpFront(src, out, gain) {
+function warpFront(src: Warp, out: THREE.Vector4, gain: number) {
   const s = src.strength || 0;
   wv.set(src.x, src.y, src.z);
   const D = wv.distanceTo(camera.position);

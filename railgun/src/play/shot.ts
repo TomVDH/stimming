@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/hail runs first.
 import '../fx/hail.ts';
 import * as THREE from 'three';
@@ -6,6 +5,7 @@ import { reduced } from '../../../shared/stim.js';
 import { KILL as SHIP_KILL } from '../../ship.js';
 import { landRound, makeTally, MAX_ROUNDS, LAUNCH, GAP, launchAt } from '../../salvo.js';
 import { state } from '../state.ts';
+import type { Cycle, ShipHit, TargetKind } from '../state.ts';
 import { SIZES, camera, opts, rad, rnd } from '../setup.ts';
 import { AX, AX_UP, BREECH, FALL, MUZZLE, axisAt, barrelPt, yUp } from '../world/axis.ts';
 import { U } from '../world/uniforms.ts';
@@ -41,31 +41,57 @@ state.shot = null; state.lit = null; state.hitFlash = 0; state.flashNow = 0;
 export const bp = new THREE.Vector3(), bq = new THREE.Vector3(), bv = new THREE.Vector3();
 // Rounds in flight.
 // A round's clock starts on the rails, 0.3 s before it leaves the muzzle.
-export const rounds = [];
+// What a landed round did; null until it lands.
+export type RoundRes = ShipHit | 'miss' | ReturnType<typeof landRound>;
+// A tracer slot: the bolt, the line and the puffs one round draws.
+export type Tracer = typeof tracers[number];
+// One round: its number, count, power, clock, cycle and slot.
+export interface Round {
+  j: number;
+  n: number;
+  c: number;
+  salvo: boolean;
+  T: number;
+  cy: Cycle;
+  s0: number;
+  launched: boolean;
+  hit: boolean;
+  res: RoundRes | null;
+  chunk: number;
+  slot: Tracer | null;
+  kind: TargetKind;
+  // launchRound sets these three; each is undefined until then.
+  target?: THREE.Vector3;
+  muzzle?: THREE.Vector3;
+  canHit?: boolean;
+  // A hunting round's new path: start time, start, end, length.
+  re?: { t: number; p0: THREE.Vector3; to: THREE.Vector3; T: number };
+}
+export const rounds: Round[] = [];
 // Where a round is t seconds after its rail start.
-export function roundAt(r, t, out) {
+export function roundAt(r: Round, t: number, out: THREE.Vector3) {
   // A hunting round leaves its path and runs slowly to its chunk.
   if (r.re && t >= r.re.t) return out.lerpVectors(r.re.p0, r.re.to, Math.min(1, (t - r.re.t) / r.re.T));
   if (t <= 0 || !r.target) return axisAt(BREECH, out);
   if (t < 0.3) return axisAt(BREECH + (1 - BREECH) * Math.pow(t / 0.3, 2), out);
   // It leaves at 2.6 times its mean speed and slows in the air: same arrival, a much quicker look.
   const x = Math.min(1, (t - 0.3) / r.T), u = 1 - Math.pow(1 - x, 2.6);
-  return out.lerpVectors(r.muzzle, r.target, u);
+  return out.lerpVectors(r.muzzle!, r.target, u);
 }
 // A round's landing time on its own clock.
-export const landOf = r => (r.re ? r.re.t + r.re.T : 0.3 + r.T);
+export const landOf = (r: Round) => (r.re ? r.re.t + r.re.T : 0.3 + r.T);
 // The target seam: the rock or the capital ship.
 // The live target takes the stored choice.
 // It updates at load and at Reset.
 state.tgtKind = 'rock';
 // Where the target is now.
-export function tgtPos(out) {
+export function tgtPos(out: THREE.Vector3) {
   if (state.tgtKind === 'rock') return out.copy(ast.pos);
   return shipAim(state.simT, out);
 }
 // Where the target is after 0.3 + T seconds.
 // The rock's lead stops at contact with the ground.
-export function tgtLead(T, out) {
+export function tgtLead(T: number, out: THREE.Vector3) {
   if (state.tgtKind === 'rock') return astAt(Math.min(ast.s + (0.3 + T) / fallT(), contactS()), out);
   return shipAim(state.simT + 0.3 + T, out);
 }
@@ -83,13 +109,13 @@ export function tgtCanHit() {
 }
 // The bolt lands on the target.
 // A ship round passes itself, so the hit marks its cycle.
-function tgtHit(c, r) {
+function tgtHit(c: number, r?: Round) {
   if (state.tgtKind === 'rock') shatter(c);
   else return shipHit(c, r);
 }
 // True when ship rounds already in flight break the ship first.
 // Each earlier round either wounds or kills.
-function shipDoomed(r) {
+function shipDoomed(r: Round) {
   let s = ship.state;
   for (const q of rounds) {
     if (q === r) break;
@@ -101,7 +127,7 @@ function shipDoomed(r) {
 }
 // A round takes its aim and a tracer slot as it starts down the rails.
 // Each round leads the target on its own, so Track mode leads every round.
-function launchRound(r) {
+function launchRound(r: Round) {
   r.launched = true;
   let canHit = tgtCanHit();
   // A bolt that would land after contact is too late.
@@ -119,7 +145,7 @@ function launchRound(r) {
   if (!canHit) target.copy(MUZZLE).addScaledVector(AX, Math.max(20000, target.distanceTo(MUZZLE)));
   r.target = target; r.muzzle = MUZZLE.clone(); r.canHit = canHit;
   // A free slot, else the oldest round's slot.
-  const t = tracers.find(x => !x.round) || tracers.reduce((a, b) => (a.round.s0 <= b.round.s0 ? a : b));
+  const t = tracers.find(x => !x.round) || tracers.reduce((a, b) => (a.round!.s0 <= b.round!.s0 ? a : b));
   if (t.round) t.round.slot = null;
   t.round = r; r.slot = t;
   t.line.material.uniforms.uA.value.copy(MUZZLE); t.line.material.uniforms.uB.value.copy(target);
@@ -131,11 +157,11 @@ function launchRound(r) {
   roundSound(ac, r);
   // The round that will break the rock gets the impact prelude and the boom.
   const k = breakPower(r);
-  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target, sfx: {}, tag: 'salvo', kind: r.kind }, () => rounds.includes(r));
+  if (k) hitSounds(ac, { canHit: true, hitT: 0.3 + r.T, c: k, target: r.target!, sfx: {}, tag: 'salvo', kind: r.kind }, () => rounds.includes(r));
 }
 // The tally this round would leave on landing, if it breaks the rock; else 0.
 // A ship round never breaks the rock.
-function breakPower(r) {
+function breakPower(r: Round) {
   if (!r.canHit || r.kind === 'ship' || ast.tally.broken) return 0;
   const t = { ...ast.tally };
   for (const q of rounds) {
@@ -146,10 +172,10 @@ function breakPower(r) {
   return 0;
 }
 // A cycle's hit is decided: its light and its blast follow this round.
-function decide(cy, r, power) {
+function decide(cy: Cycle, r: Round, power: number) {
   cy.decided = cy.hit = cy.canHit = true;
   cy.hitT = r.s0 - cy.t0 + 0.3 + r.T;
-  cy.target.copy(r.target);
+  cy.target.copy(r.target!);
   // The ship's hit takes no rock size.
   cy.bk = (0.75 + 0.5 * Math.min(power, 1.25)) * (r.kind === 'ship' ? 1 : SIZES[opts.size].rumble);
   state.lit = cy;
@@ -158,7 +184,7 @@ function decide(cy, r, power) {
 // Rail: a round on target breaks the rock.
 // Salvo: the tally says crater, break, hunt or miss.
 // Ship: each round wounds or kills by its own charge, or misses.
-function roundHits(r) {
+function roundHits(r: Round) {
   const cy = r.cy;
   if (r.kind === 'ship') {
     const res = r.canHit && tgtCanHit() ? tgtHit(r.c, r) : null;
@@ -198,9 +224,9 @@ function huntAfter() {
 }
 // A crater: a hot pit on the face toward the gun, spall, a small flash, a shove.
 const crDir = new THREE.Vector3(), crP = new THREE.Vector3(), crV = new THREE.Vector3();
-function addCrater(r) {
+function addCrater(r: Round) {
   const R = ast.R;
-  crDir.copy(r.muzzle).sub(ast.pos).normalize().add(crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.7)).normalize();
+  crDir.copy(r.muzzle!).sub(ast.pos).normalize().add(crV.set(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).multiplyScalar(0.7)).normalize();
   crP.copy(ast.pos).addScaledVector(crDir, R);
   astMesh.updateMatrixWorld();
   crV.copy(crP); astMesh.worldToLocal(crV).normalize();
@@ -226,7 +252,7 @@ export function clearHits() {
   ast.jolt.set(0, 0, 0);
 }
 // A hunted chunk bursts in the air: a flash, embers, and its trail stops.
-function burstChunk(ci) {
+function burstChunk(ci: number) {
   const ch = chunks[ci];
   if (!ch || ch.i < 0 || ch.burstAt) return;
   const age = state.simT - sSeed.array[ch.i * 4 + 2];
@@ -243,10 +269,10 @@ function burstChunk(ci) {
   }
 }
 // The gun-side power of a round: it rises round by round in a salvo.
-const gunPow = r => (r.salvo ? r.j / MAX_ROUNDS : r.c);
+const gunPow = (r: Round) => (r.salvo ? r.j / MAX_ROUNDS : r.c);
 // The newest round out of the muzzle: its number, its clock and its power.
 // Rail has one round: j 1, the clock from 0.3 s, the shot's power.
-export function newest(sh) {
+export function newest(sh: Cycle) {
   const age = state.simT - sh.t0, j = sh.salvo ? Math.max(1, Math.min(sh.n, Math.floor((age - LAUNCH) / GAP) + 1)) : 1;
   return { j, ra: age - launchAt(j), gp: sh.salvo ? j / MAX_ROUNDS : sh.c };
 }
@@ -262,7 +288,7 @@ export function stepRounds() {
   for (const r of rounds) {
     if (!r.launched) continue;
     const sa = Math.max(0, state.simT - r.s0 - 0.3), k = gunPow(r);
-    U.uShocks.value[r.j - 1].set(r.muzzle.x, r.muzzle.z, 340 * sa, sa > 14 ? 0 : k * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5)));
+    U.uShocks.value[r.j - 1].set(r.muzzle!.x, r.muzzle!.z, 340 * sa, sa > 14 ? 0 : k * (Math.max(0, 1 - sa / 14) + 1.5 * Math.exp(-sa / 1.5)));
   }
   for (let i = rounds.length - 1; i >= 0; i--) {
     const r = rounds[i];
@@ -279,11 +305,11 @@ state.fire = (c, n = 1, salvo = false) => {
   // The barrel may still be back from the last cycle; slide0 eases it in.
   const slide0 = U.uRecoil.value;
   // kind marks a ship cycle and its rounds.
-  state.shot = { slide0, t0: state.simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T, kind: state.tgtKind, res: null };
+  state.shot = { slide0, t0: state.simT, c, n, salvo, T, target: new THREE.Vector3(), muzzle: MUZZLE.clone(), canHit: false, decided: false, hit: false, jolt: false, hitT: launchAt(n) + T, kind: state.tgtKind, res: null } as Cycle;
   for (let j = 1; j <= n; j++) rounds.push({ j, n, c, salvo, T, cy: state.shot, s0: state.simT + launchAt(j) - 0.3, launched: false, hit: false, res: null, chunk: -1, slot: null, kind: state.tgtKind });
   launchRound(rounds[rounds.length - n]);
   // Rail: the cycle knows its target at once.
-  if (!salvo) { const r = rounds[rounds.length - 1]; state.shot.target.copy(r.target); state.shot.canHit = r.canHit; }
+  if (!salvo) { const r = rounds[rounds.length - 1]; state.shot.target.copy(r.target!); state.shot.canHit = r.canHit!; }
   // The Mach ring starts at the muzzle's foot.
   // It reaches the eye at the speed of sound.
   state.shot.arrive = 0.3 + Math.hypot(camera.position.x - MUZZLE.x, camera.position.z - MUZZLE.z) / 343;
@@ -305,7 +331,7 @@ state.fire = (c, n = 1, salvo = false) => {
   shotDust.material.uniforms.uFwd.value.set(AX.x, AX.z).normalize();
   // Three devils wait on the plain ahead; each wakes as the front reaches it.
   { const fw = shotDust.material.uniforms.uFwd.value, base = Math.atan2(fw.y, fw.x);
-    shotDust.material.uniforms.uDv.value.forEach(v => {
+    shotDust.material.uniforms.uDv.value.forEach((v: THREE.Vector4) => {
       const a = base + (rnd() - 0.5) * 2.0, d = 1800 + 1700 * rnd();
       v.set(MUZZLE.x + Math.cos(a) * d, MUZZLE.z + Math.sin(a) * d, d / 340 + 0.3, reduced() ? 0 : 0.6 + 0.3 * rnd());
     }); }
@@ -318,7 +344,7 @@ state.fire = (c, n = 1, salvo = false) => {
   { const ac = kit.live(); if (ac && !salvo) { shotSound(ac, state.shot); hitSounds(ac, state.shot); } }
   wake();
 };
-function shatter(c) {
+function shatter(c: number) {
   endStrike();
   starMat.uniforms.uShedCut.value = state.simT + 0.3;
   ast.state = 'shatter';
@@ -361,7 +387,7 @@ function shatter(c) {
     const go = (190 + 140 * c) * (R / 600) * (0.7 + 0.55 * rnd());
     bv.copy(sd).multiplyScalar(Math.cos(a) * sp * 0.9).addScaledVector(up, (0.45 * Math.sin(a) + 0.5 + 0.6 * rnd()) * sp).addScaledVector(fw, go);
     // Each is a small copy of the rock: a fifth to two fifths of its radius.
-    sPos.setXYZ(j, ...p); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.2 + 0.2 * Math.pow(rnd(), 1.5)), d[2], d[3]);
+    sPos.setXYZ(j, ...p as [number, number, number]); sVel.setXYZW(j, bv.x, bv.y, bv.z, v[3]); sSeed.setXYZW(j, d[0], R * (0.2 + 0.2 * Math.pow(rnd(), 1.5)), d[2], d[3]);
   });
   // A crowd of big burning pieces lobs out round the trained ones.
   // They smoke through the stars, not trains, so they cost little.

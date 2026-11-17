@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/flap runs first.
 import './flap.ts';
 import * as THREE from 'three';

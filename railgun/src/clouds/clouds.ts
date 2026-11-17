@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: world/farcountry runs first.
 import '../world/farcountry.ts';
 import * as THREE from 'three';
@@ -21,7 +20,7 @@ import { polar } from '../world/farcountry.ts';
 // uCloudC: the clouds' own slow clock, in sim seconds.
 // uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-export const CLOUD_U = { uVol: { value: null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uStormSoft: { value: STORM_SOFT }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
+export const CLOUD_U = { uVol: { value: null as THREE.Texture | null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uStormSoft: { value: STORM_SOFT }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -305,12 +304,12 @@ void main() {
 }`;
 // list: [angle in degrees, range m, base m, half width m, height m, kind].
 // pick keeps a subset; each card keeps the seed it has in the whole list.
-export function cloudLayer(list, order, pick = () => true) {
+export function cloudLayer(list: number[][], order: number, pick: (c: number[]) => boolean = () => true) {
   const g = new THREE.InstancedBufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
   g.setIndex([0, 1, 2, 0, 2, 3]);
   // Far cards draw first.
-  const s = [...list].sort((a, b) => b[1] - a[1]).map((c, i) => [c, 13.7 * i + c[0]]).filter(([c]) => pick(c));
+  const s = [...list].sort((a, b) => b[1] - a[1]).map((c, i) => [c, 13.7 * i + c[0]] as [number[], number]).filter(([c]) => pick(c));
   const aC = new Float32Array(s.length * 4), aS = new Float32Array(s.length * 4);
   s.forEach(([c, sd], i) => {
     const p = polar(rad(c[0]), c[1]);

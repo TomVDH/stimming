@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: input runs first.
 import '../input.ts';
 import * as THREE from 'three';
@@ -9,7 +8,7 @@ import { lerp } from '../sky/sun.ts';
 import { POST, bloomPass, grade } from './chain.ts';
 import { draw } from '../view/render.ts';
 
-export function setBox(on) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
+export function setBox(on: boolean) { grade.uniforms.uBox.value = on ? 1 : 0; draw(); }
 export function setGrain() { grade.uniforms.uGrain.value = POST.grain * ui.setting('grain').value; draw(); }
 // Mist at full: the bloom's threshold and its knee width.
 const MIST = [0.5, 2.5];
@@ -28,7 +27,7 @@ export function setLens() { grade.uniforms.uVig.value = POST.vig * gfx.vig; grad
 // Villeneuve runs in the grade; the output pass then maps no tones.
 const TONES = { agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, neutral: THREE.NeutralToneMapping, villeneuve: THREE.NoToneMapping };
 export function setTone() {
-  renderer.toneMapping = TONES[gfx.tone] ?? THREE.AgXToneMapping;
+  renderer.toneMapping = TONES[gfx.tone as keyof typeof TONES] ?? THREE.AgXToneMapping;
   const g = grade.uniforms;
   g.uVil.value = gfx.tone === 'villeneuve' ? 1 : 0;
   g.uCon.value = gfx.con; g.uSat.value = gfx.sat; g.uBri.value = gfx.bri;
@@ -36,7 +35,7 @@ export function setTone() {
   draw();
 }
 // The key hues, each at a luminance of one: desert sand and cold slate.
-const lum1 = c => { const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return c.map(x => x / l); };
+const lum1 = (c: number[]) => { const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return c.map(x => x / l); };
 const KEY_SAND = lum1(linFit(0.8, 0.1, 68)), KEY_SLATE = lum1(linFit(0.8, 0.05, 228));
 export function vilKey() {
   const k = gfx.pal === 'sand' ? 1 : gfx.pal === 'slate' ? 0 : state.keyDay;

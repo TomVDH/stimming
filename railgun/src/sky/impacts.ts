@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sky/air runs first.
 import './air.ts';
 import * as THREE from 'three';

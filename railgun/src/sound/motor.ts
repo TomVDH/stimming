@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/ship runs first.
 import './ship.ts';
 import { clamp, rad } from '../setup.ts';
@@ -8,10 +7,12 @@ import { blip, burst, filt, jit, kit, track } from './kit.ts';
 /* ---------- the traverse motor ---------- */
 // A hydraulic pump whines with the slew speed; gears chatter under it.
 // A clunk marks each start and each stop.
-export let motor = null, clunks = 0;
+// The motor's sources and the params the slew drives.
+export interface Motor { srcs: AudioScheduledSourceNode[]; g: GainNode; pump: OscillatorNode; gear: OscillatorNode; bp: BiquadFilterNode; chat: OscillatorNode; fg: GainNode; on: boolean; quiet: boolean; off: number; next: number; n: number }
+export let motor: Motor | null = null, clunks = 0;
 // This slew speed, in radians a second, runs the motor flat out.
 const SLEW_TOP = rad(6);
-function motorStart(ac) {
+function motorStart(ac: BaseAudioContext) {
   const g = ac.createGain(), am = ac.createGain(), lp = filt(ac, 'lowpass', 700, 0.9), bp = filt(ac, 'bandpass', 900, 5);
   g.gain.value = 0; am.gain.value = 0.75;
   // The pump: a low saw, darkened, for the hydraulic drone.
@@ -43,7 +44,8 @@ export function motorUpdate() {
   const s = clamp(Math.hypot(aimNow.vy, aimNow.ve) / SLEW_TOP, 0, 1), ac = kit.live();
   if (!ac) { motorStop(true); return; }
   if (!motor) { if (s < 0.1) return; motorStart(ac); }
-  const m = motor, t = ac.currentTime;
+  // motorStart() sets motor.
+  const m = motor!, t = ac.currentTime;
   // Two thresholds keep a slow settle from clunking twice.
   if (!m.on && s > 0.1) { m.on = true; m.quiet = false; clearTimeout(m.off); clunk(ac, 1); m.next = t + 0.12; }
   else if (m.on && s < 0.025) { m.on = false; clunk(ac, 0.7); m.off = setTimeout(() => { if (motor === m && !m.on) motorStop(); }, 1500); }
@@ -63,7 +65,7 @@ export function motorUpdate() {
 }
 // A metal clank: a gear tooth strikes; tick and tock alternate in pitch.
 // Inharmonic partials ring short, over a click of bright noise.
-function clank(ac, t, tock, s) {
+function clank(ac: BaseAudioContext, t: number, tock: number, s: number) {
   const o = kit.out, f = (tock ? 470 : 610) * jit(0.03), k = 1.4 * (0.6 + 0.4 * s) * jit(0.15), lp = filt(ac, 'lowpass', 5200, 0.7);
   lp.connect(o);
   track(t + 0.4,
@@ -83,7 +85,7 @@ export function motorStop(now = false) {
   track(t + 0.25, ...m.srcs);
 }
 // A clunk: a low knock, a short tick, a brief metal ring.
-export function clunk(ac, k) {
+export function clunk(ac: BaseAudioContext, k: number) {
   const t = ac.currentTime, o = kit.out;
   clunks++;
   track(t + 0.5,

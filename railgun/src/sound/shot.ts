@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sound/samples runs first.
 import './samples.ts';
 import { state } from '../state.ts';
@@ -8,38 +7,40 @@ import { blip, burst, filt, hiss, jit, kit, track } from './kit.ts';
 import { plainVerb } from './hum.ts';
 import { echo, sample } from './rumble.ts';
 import { bake, roll } from './samples.ts';
+import type { Cycle } from '../state.ts';
 
 /* ---------- the shot ---------- */
 // The shot bus: the impact's prelude ducks the shot's tail under its swell.
 // The duck holds the dry sound and the send into the echoes.
-let shotG = null, shotW = null;
-function shotBus(ac) {
+let shotG: GainNode | null = null, shotW: GainNode | null = null;
+function shotBus(ac: BaseAudioContext) {
   if (shotG?.context !== ac) {
     shotG = ac.createGain(); shotG.connect(kit.out);
     shotW = ac.createGain(); shotW.connect(plainVerb(ac));
   }
-  return shotG;
+  return shotG!;
 }
-const shotSend = ac => (shotBus(ac), shotW);
-export function shotDuck(ac, to, at, tau) {
-  for (const p of [shotBus(ac).gain, shotW.gain]) { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); p.setTargetAtTime(to, at, tau); }
+// shotBus() builds shotW too.
+const shotSend = (ac: BaseAudioContext) => (shotBus(ac), shotW!);
+export function shotDuck(ac: BaseAudioContext, to: number, at: number, tau: number) {
+  for (const p of [shotBus(ac).gain, shotW!.gain]) { p.cancelScheduledValues(at); p.setValueAtTime(p.value, at); p.setTargetAtTime(to, at, tau); }
 }
 // The shot plays as the slug leaves the muzzle.
-export function shotSound(ac, sh) {
+export function shotSound(ac: BaseAudioContext, sh: Cycle) {
   const at = ac.currentTime + 0.3;
   sh.sfx = { ...sh.sfx, shot: at, shotLate: 0, take: shotMix };
   playShot(ac, at, Math.min(sh.c, 1.25), shotMix, sh);
 }
 // One take at time t with charge k.
 // A report that decodes after its shot is gone stays silent.
-export function playShot(ac, t, k, name, sh = null) {
+export function playShot(ac: BaseAudioContext, t: number, k: number, name: string, sh: Cycle | null = null) {
   // A new shot lifts the last duck.
   shotDuck(ac, 1, ac.currentTime, 0.005);
   if (name === 'report' || !TAKES[name]) {
     sample(ac, 'shot').then(buf => {
       if (!buf || (sh && state.shot !== sh) || !kit.live()) return;
       t = Math.max(ac.currentTime, t);
-      if (sh) sh.sfx.shot = t;
+      if (sh) sh.sfx!.shot = t;
       report(ac, buf, t, k);
     });
     return;
@@ -48,14 +49,14 @@ export function playShot(ac, t, k, name, sh = null) {
   track(end, ...srcs);
 }
 // A pick in Settings plays the take once, while no shot flies.
-function audition(name) {
+function audition(name: string) {
   const ac = kit.live();
   if (!ac || state.shot) return;
   playShot(ac, ac.currentTime + 0.05, 1, name);
   wake();
 }
 // Report: Tom's cannon sample with a sub punch under it.
-function report(ac, buf, t0, k) {
+function report(ac: BaseAudioContext, buf: AudioBuffer, t0: number, k: number) {
   const src = ac.createBufferSource(), g = ac.createGain();
   src.buffer = buf; src.playbackRate.value = jit(0.03);
   // Its long tail fades out before the boom lands.
@@ -73,13 +74,14 @@ function report(ac, buf, t0, k) {
 const MESAS = [[0.85, -0.7, 0.55], [1.5, 0.75, 0.42], [2.35, -0.5, 0.33], [3.4, 0.6, 0.24], [4.7, -0.35, 0.16], [6.3, 0.4, 0.1]];
 // The synth takes: each plays at t with charge k.
 // Each returns its sources and its end time.
-const TAKES = {
+// A synth take returns its sources and its end time.
+const TAKES: Record<string, (ac: BaseAudioContext, t: number, k: number) => { srcs: AudioScheduledSourceNode[]; end: number }> = {
   // Mesa: a deep cannon; its echo rolls off the mesas for ten seconds.
   mesa(ac, t, k) {
     const o = shotBus(ac), b = burst(ac, o, t, { dur: 1.8, rate: 0.6, type: 'lowpass', f: 2600, f1: 150, q: 0.8, peak: 0.85 * k, a: 0.005 });
     echo(ac, b.g, 0.6, 2000, shotSend(ac));
     // The body: two low tones sink under the blast.
-    const srcs = [b.src,
+    const srcs: AudioScheduledSourceNode[] = [b.src,
       blip(ac, o, t, { f0: 56, f1: 23, glide: 1.3, peak: 0.95 * k, a: 0.01, dur: 1.7 }),
       blip(ac, o, t, { type: 'triangle', f0: 120, f1: 40, glide: 0.45, peak: 0.3 * k, a: 0.004, dur: 0.7 })];
     // Each mesa wall answers later, wider and darker.
@@ -89,7 +91,7 @@ const TAKES = {
   },
   // Coil: a hard electric crack, a ringing barrel, the slug's supersonic snap.
   coil(ac, t, k) {
-    const o = shotBus(ac), srcs = [];
+    const o = shotBus(ac), srcs: AudioScheduledSourceNode[] = [];
     // The crack: a bright tear of noise, then a sizzle that falls.
     srcs.push(burst(ac, o, t, { dur: 0.05, rate: 1.5, type: 'highpass', f: 2200, peak: 0.9 * k, a: 0.0008 }).src,
       burst(ac, o, t, { dur: 0.35, rate: 1.2, f: 6000, f1: 1500, q: 1.2, peak: 0.25 * k, a: 0.002 }).src);
@@ -117,7 +119,7 @@ const TAKES = {
   },
   // Thump: a heavy knock, a pressure whoomp, then debris rattling down.
   thump(ac, t, k) {
-    const o = shotBus(ac), srcs = [];
+    const o = shotBus(ac), srcs: AudioScheduledSourceNode[] = [];
     // The knock: a dull burst and a deep falling tone.
     srcs.push(burst(ac, o, t, { dur: 0.14, rate: 0.7, type: 'lowpass', f: 600, f1: 140, peak: 0.9 * k, a: 0.002 }).src,
       blip(ac, o, t, { f0: 78, f1: 27, glide: 0.4, peak: 1.0 * k, a: 0.004, dur: 1.0 }));

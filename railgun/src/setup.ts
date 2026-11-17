@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as THREE from 'three';
 import { STORM_SOFT } from '../storms.js';
 import { stage as mark, initPage, pageReady } from '../../shared/stim.js';
@@ -21,13 +20,14 @@ import { shipShot } from './ship/shipshot.ts';
 import { strikeSoon } from './rock/strike.ts';
 import { wake } from './loop.ts';
 import { setBloom, setBox, setGrain, setLens, setTone } from './post/settings.ts';
+import type { PressFn, ReleaseFn } from './play/charge.ts';
 
 mark('libs');
 
 /* ---------- settings ---------- */
 const store = {
-  get(k) { try { return localStorage.getItem(`stimming.railgun.${k}`); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(`stimming.railgun.${k}`, String(v)); } catch { /* storage off */ } },
+  get(k: string) { try { return localStorage.getItem(`stimming.railgun.${k}`); } catch { return null; } },
+  set(k: string, v: unknown) { try { localStorage.setItem(`stimming.railgun.${k}`, String(v)); } catch { /* storage off */ } },
 };
 // Per size: radius in metres, fall seconds, shard count, rumble gain.
 export const SIZES = {
@@ -37,17 +37,18 @@ export const SIZES = {
   // Aerosmith: a dark, cracked world-killer, barely clear of the horizon at its hold.
   aerosmith: { R: 4200, T: 520, shards: 84, rumble: 2.0 },
 };
+export type RockSize = keyof typeof SIZES;
 export const opts = {
   // The first rock rolls its size too.
-  size: 'mountain',
+  size: 'mountain' as RockSize,
   // Time of day, 0 for night to 1 for noon.
   // It has its own key: the old Sun key had a narrower range.
-  sun: Number.isFinite(+store.get('time')) && store.get('time') !== null ? Math.min(1, Math.max(0, +store.get('time'))) : 0.5,
+  sun: Number.isFinite(+store.get('time')!) && store.get('time') !== null ? Math.min(1, Math.max(0, +store.get('time')!)) : 0.5,
 };
 
 /* ---------- bar ---------- */
 // 'random' turns to the next size at each Reset; a dev pick pins it.
-export let devSize = 'random';
+export let devSize: RockSize | 'random' = 'random';
 // roarK scales the rock's soft roar.
 export let roarK = 1;
 // The charge sound's mix: one of the MIX keys; the surges are listed in SURGE.
@@ -71,7 +72,8 @@ state.shaftGain = 1.6;
 // The frame budget in ms; the Dev sheet's FPS row sets it.
 export let FRAME = 1000 / 30;
 // The hold is the toy: no action chips.
-export const act = { press() {}, release() {} };
+// play/charge sets the real hooks; they take an owner.
+export const act: { press: PressFn; release: ReleaseFn } = { press() {}, release() {} };
 // The far ranges' pass: the bake, or the live march with ?far=live.
 export const FAR_MODE = new URLSearchParams(location.search).get('far') === 'live' ? 'live' : 'bake';
 export const ui = initPage({ id: 'railgun', bar: {
@@ -87,7 +89,7 @@ export const ui = initPage({ id: 'railgun', bar: {
     { type: 'toggle', id: 'letterbox', group: 'View', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
     { type: 'slider', id: 'res', group: 'Graphics', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
-    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v]; resize(); } },
+    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v as keyof typeof DETAIL]; resize(); } },
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
@@ -95,7 +97,7 @@ export const ui = initPage({ id: 'railgun', bar: {
     // The soft crackle while a rock burns in the sky.
     { type: 'slider', id: 'roar', group: 'Sound', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
     // Random rolls a new size per rock.
-    { type: 'choice', id: 'devsize', group: 'Tests', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v; if (v !== 'random') { opts.size = v; retune(); } } },
+    { type: 'choice', id: 'devsize', group: 'Tests', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v as RockSize | 'random'; if (v !== 'random') { opts.size = v as RockSize; retune(); } } },
     // The choice waits for Reset.
     { type: 'choice', id: 'target', group: 'Tests', label: 'Target', display: 'segments', value: 'rock', persist: true, options: [{ value: 'rock', label: 'Asteroid' }, { value: 'ship', label: 'Ship' }] },
     // The button waits for a ship at station.
@@ -195,10 +197,10 @@ export const ui = initPage({ id: 'railgun', bar: {
   keys: [['hold', 'charge'], ['release', 'fire'], ['arrows', 'traverse'], ['v', 'sight']],
 } });
 
-export const stage = document.getElementById('stage');
+export const stage = document.getElementById('stage')!;
 mark('build');
-export let markReady;
-const sceneReady = new Promise(r => { markReady = () => { mark('first-frame'); r(); }; });
+export let markReady!: () => void;
+const sceneReady = new Promise<void>(r => { markReady = () => { mark('first-frame'); r(); }; });
 // A slow phone compiles for many seconds; the intro holds for it.
 playIntro({ ready: pageReady(15000) });
 
@@ -206,14 +208,15 @@ playIntro({ ready: pageReady(15000) });
 state.seed = 7331;
 export const rnd = () => (state.seed = (state.seed * 16807) % 2147483647) / 2147483647;
 export const rad = THREE.MathUtils.degToRad;
-export const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
+// fitShadow calls it with no arguments for a zero vector.
+export const v3 = (x?: number, y?: number, z?: number) => new THREE.Vector3(x, y, z);
 export const clamp = THREE.MathUtils.clamp;
 
-export let renderer;
+export let renderer: THREE.WebGLRenderer;
 try {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 } catch (err) {
-  stage.querySelector('.fail').hidden = false; ui.hideControls(); markReady();
+  stage.querySelector<HTMLElement>('.fail')!.hidden = false; ui.hideControls(); markReady();
   throw err;
 }
 // AgX rolls bright fire and sky off softly, without the yellow skew of ACES.
@@ -234,7 +237,7 @@ export const scene = new THREE.Scene();
 export const camera = new THREE.PerspectiveCamera(44, 1, 20, 800000);
 camera.rotation.order = 'YXZ';
 // The performance ladder's rung; slow frames raise it, never lower it.
-state.rung = +new URLSearchParams(location.search).get('rung') || 0;
+state.rung = +new URLSearchParams(location.search).get('rung')! || 0;
 // A QA still pins the rung, so slow frames never change its size.
 state.rungPin = false;
 // Graphics settings: resolution share, smoke step factor, bloom gain, FXAA mode.

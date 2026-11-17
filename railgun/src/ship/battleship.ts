@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: rock/asteroid runs first.
 import '../rock/asteroid.ts';
 import * as THREE from 'three';
@@ -14,7 +13,9 @@ import { AIR } from '../sky/air.ts';
 import { SEAM } from '../gun/gun.ts';
 import { ast, astMat, astMesh } from '../rock/asteroid.ts';
 import { PU, smoke } from '../rock/trail.ts';
+import type { makeTrain } from '../rock/trail.ts';
 import { frags } from '../rock/fragments.ts';
+import type { makeFragTrail } from '../rock/fragments.ts';
 import { starMat } from '../fx/burst.ts';
 import { LINGER } from './hulks.ts';
 
@@ -44,10 +45,10 @@ const SHIP_TIP = rad(18);
 export const SHIP_AIM_R = 3750;
 const SHIP_HULL = linFit(0.42, 0.012, 245), SHIP_RUST = linFit(0.56, 0.065, 45), SHIP_GROOVE = linFit(0.2, 0.008, 245), SHIP_BELL = linFit(0.24, 0.008, 250), SHIP_DARK = linFit(0.1, 0.005, 250);
 // A box: x0 to x1, y0 to y1, half width hz.
-const sbox = (x0, x1, y0, y1, hz) => new THREE.BoxGeometry(x1 - x0, y1 - y0, 2 * hz).translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
+const sbox = (x0: number, x1: number, y0: number, y1: number, hz: number) => new THREE.BoxGeometry(x1 - x0, y1 - y0, 2 * hz).translate((x0 + x1) / 2, (y0 + y1) / 2, 0);
 // f moves each vertex.
 // A box has vertices at its corners only.
-function shapeG(g, f) {
+function shapeG<G extends THREE.BufferGeometry>(g: G, f: (v: THREE.Vector3) => void) {
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) { f(v.fromBufferAttribute(p, i)); p.setXYZ(i, v.x, v.y, v.z); }
   return g;
@@ -56,7 +57,7 @@ function shapeG(g, f) {
 // aShip: albedo, then 1 for a dark recess.
 // aTop is the part's top height.
 // Its wall lip catches the sun.
-function shipPart(g, col, recess) {
+function shipPart(g: THREE.BufferGeometry, col: number[], recess: number) {
   g.deleteAttribute('uv');
   g.deleteAttribute('normal');
   const p = g.attributes.position, a = new Float32Array(p.count * 4);
@@ -67,19 +68,19 @@ function shipPart(g, col, recess) {
   g.setAttribute('aTop', new THREE.Float32BufferAttribute(new Float32Array(p.count).fill(top), 1));
   return g;
 }
-function buildHulk(id) {
-  const parts = [];
-  const add = (g, col = SHIP_HULL, recess = 0) => parts.push(shipPart(g, col, recess));
+function buildHulk(id: string) {
+  const parts: THREE.BufferGeometry[] = [];
+  const add = (g: THREE.BufferGeometry, col = SHIP_HULL, recess = 0) => parts.push(shipPart(g, col, recess));
   // A hull block in strakes: lower hull, recessed rust band, upper hull.
   // A dark groove cuts the upper hull.
   // Each ledge catches the sun.
-  const block = (x0, x1, y0, y1, hz, f = () => {}) => {
+  const block = (x0: number, x1: number, y0: number, y1: number, hz: number, f: (v: THREE.Vector3) => void = () => {}) => {
     const g0 = y1 - 260;
-    for (const [a, b, c, d] of [[y0, -150, SHIP_HULL, 0], [-150, 30, SHIP_RUST, 60], [30, g0, SHIP_HULL, 0], [g0, g0 + 70, SHIP_GROOVE, 70], [g0 + 70, y1, SHIP_HULL, 0]]) add(shapeG(sbox(x0, x1, a, b, hz - d), f), c);
+    for (const [a, b, c, d] of [[y0, -150, SHIP_HULL, 0], [-150, 30, SHIP_RUST, 60], [30, g0, SHIP_HULL, 0], [g0, g0 + 70, SHIP_GROOVE, 70], [g0 + 70, y1, SHIP_HULL, 0]] satisfies [number, number, number[], number][]) add(shapeG(sbox(x0, x1, a, b, hz - d), f), c);
   };
   // A turret: a sloped house and twin barrels to the prow.
   // dn -1 hangs it under the hull.
-  const turret = (x, y, dn = 1) => {
+  const turret = (x: number, y: number, dn = 1) => {
     const top = y + 170 * dn;
     add(shapeG(sbox(x - 220, x + 220, Math.min(y - 20 * dn, top), Math.max(y - 20 * dn, top), 200), v => { if ((v.y - y) * dn > 100) { v.x = x + (v.x - x) * 0.7; v.z *= 0.8; } }));
     for (const s of [-1, 1]) add(sbox(x + 120, x + 860, Math.min(y + 70 * dn, y + 120 * dn), Math.max(y + 70 * dn, y + 120 * dn), 25).translate(0, 0, s * 130));
@@ -236,7 +237,7 @@ export const shipMat = new THREE.ShaderMaterial({
 export const shipMeshes = HULL.sections.map(sec => {
   const g = buildHulk(sec.id);
   g.computeBoundingBox();
-  const c = g.boundingBox.getCenter(new THREE.Vector3());
+  const c = g.boundingBox!.getCenter(new THREE.Vector3());
   g.translate(-c.x, -c.y, -c.z);
   g.computeBoundingSphere();
   const mat = new THREE.ShaderMaterial({ uniforms: { ...shipMat.uniforms, uEntry: { value: new THREE.Vector4() }, uCtr: { value: new THREE.Vector4(0, 0, 0, 1) }, uLit: { value: 1 } }, vertexShader: shipMat.vertexShader, fragmentShader: shipMat.fragmentShader });
@@ -261,9 +262,41 @@ const SHIP_S = new THREE.Vector3(), SHIP_T = new THREE.Vector3();
   const up = new THREE.Vector3().crossVectors(SHIP_S, left);
   SHIP_T.copy(left).multiplyScalar(Math.cos(SHIP_CLIMB)).addScaledVector(up, Math.sin(SHIP_CLIMB));
 }
+// A hulk: one section's fall, from its break to its landing.
+export interface Hulk {
+  id: string;
+  fallT: number;
+  dist: number;
+  bearing: number;
+  rumbleDelay: number;
+  breakAt: number | null;
+  landedAt: number | null;
+  // The impact step sets these two at the landing.
+  domed?: boolean;
+  rumbleAt?: number;
+}
+// A failing joint: its hull x, its time, its flash place.
+export interface JointFx { joint: number; t: number; done: boolean; P: THREE.Vector3 }
+// The hit's effects: start, place, kill or wound, and the joints.
+export interface HitFx { t0: number; P: THREE.Vector3; kill: boolean; joints: JointFx[] }
+// One hulk's breakup kick: direction, pop, coast speed, tumble axis.
+export interface HulkGo { dir: THREE.Vector3; pop: number; v: number; axis: THREE.Vector3 }
+// The ship: arrive, station, wounded, breakup, falling or gone.
+export interface Ship {
+  state: string;
+  t0: number;
+  wound: { joint: number; t0: number } | null;
+  hulks: Hulk[];
+  seed: number;
+  // The hit sets fx; a kill sets go.
+  fx?: HitFx;
+  go?: HulkGo[];
+}
+// A hulk's fall state at an age, from ship.js.
+export type HulkState = ReturnType<typeof hulkAt>;
 // The rock mode keeps a parked ship.
 // That ship never steps.
-export let ship = makeShip(1, 0);
+export let ship: Ship = makeShip(1, 0);
 export const shipP = new THREE.Vector3(), shipD = new THREE.Vector3(), shipF = new THREE.Vector3(), shipY = new THREE.Vector3(), shipZ = new THREE.Vector3();
 export const shipQ = new THREE.Quaternion(), shipM = new THREE.Matrix4(), shipE0 = new THREE.Vector3(), shipE1 = new THREE.Vector3();
 // A wound sinks the ship 3 degrees in 8 s.
@@ -272,19 +305,19 @@ const SINK = rad(3), SINK_T = 8;
 const DRIFT_MAX = 3;
 // The orbit angle at time t.
 // It eases up, then drifts.
-export function shipArc(t) {
+export function shipArc(t: number) {
   const age = t - ship.t0;
   const sink = ship.wound ? SINK * THREE.MathUtils.smootherstep(t - ship.wound.t0, 0, SINK_T) : 0;
   if (age < ARRIVE) return -SHIP_RISE * Math.pow(1 - Math.max(0, age) / ARRIVE, 3) - sink;
   return rad(DRIFT_MAX * Math.sin(driftDeg(age - ARRIVE) / DRIFT_MAX)) - sink;
 }
 // The ship's centre at time t.
-export function shipAt(t, out) {
+export function shipAt(t: number, out: THREE.Vector3) {
   const a = shipArc(t);
   return out.copy(SHIP_S).multiplyScalar(Math.cos(a)).addScaledVector(SHIP_T, Math.sin(a)).multiplyScalar(SHIP_DIST).add(A0);
 }
 // The ship's centre P, turn Q and prow F at time t.
-export function shipPose(t, P, Q, F) {
+export function shipPose(t: number, P: THREE.Vector3, Q: THREE.Quaternion, F: THREE.Vector3) {
   const a = shipArc(t);
   shipAt(t, P);
   shipD.copy(P).sub(A0).normalize();
@@ -299,10 +332,10 @@ export function shipPose(t, P, Q, F) {
   Q.setFromRotationMatrix(shipM.makeBasis(F, shipY, shipZ));
 }
 // The bolt aims at the mid hull's centre.
-export const SHIP_MID = shipMeshes[HULL.sections.findIndex(s => s.id === 'mid')].userData.c;
+export const SHIP_MID: THREE.Vector3 = shipMeshes[HULL.sections.findIndex(s => s.id === 'mid')].userData.c;
 const aimQ = new THREE.Quaternion(), aimF = new THREE.Vector3(), aimV = new THREE.Vector3();
 // The aim point at time t.
-export function shipAim(t, out) {
+export function shipAim(t: number, out: THREE.Vector3) {
   shipPose(t, out, aimQ, aimF);
   return out.add(aimV.copy(SHIP_MID).multiplyScalar(SHIP_SCALE).applyQuaternion(aimQ));
 }
@@ -310,7 +343,7 @@ const hulkQ = new THREE.Quaternion(), hulkPP = new THREE.Vector3(), hulkPF = new
 // Hulk i's drift off its joint at time t, in metres.
 // The joint's kick throws it out.
 // Then it coasts.
-export function hulkDrift(i, t) {
+export function hulkDrift(i: number, t: number) {
   const h = ship.hulks[i], go = ship.go && ship.go[i];
   if (!go || h.breakAt === null || t <= h.breakAt) return 0;
   const age = t - h.breakAt;
@@ -320,7 +353,7 @@ export function hulkDrift(i, t) {
 // A plus bearing turns right, so the prow falls left.
 const SITE_YAW = rad(24.5);
 // Hulk i's impact site on the plain, about the landscape eye.
-export function hulkSite(i, out) {
+export function hulkSite(i: number, out: THREE.Vector3) {
   const h = ship.hulks[i], th = SITE_YAW - h.bearing;
   return out.set(1670 - Math.sin(th) * h.dist, 0, 1990 - Math.cos(th) * h.dist);
 }
@@ -329,13 +362,13 @@ export function hulkSite(i, out) {
 // The fall grows out of the breakup drift.
 const GLIDE = 0.6;
 // The ground ease for a fall fraction f.
-export const glideOf = f => f + GLIDE * f * (1 - f);
+export const glideOf = (f: number) => f + GLIDE * f * (1 - f);
 // Hulk i's centre at time t.
 // It drifts off its joint.
 // Then it falls to its site, eased by f.
 // It reads only the clock.
 // A jump gives the same pose.
-export function hulkPos(i, t, out) {
+export function hulkPos(i: number, t: number, out: THREE.Vector3) {
   const h = ship.hulks[i], go = ship.go && ship.go[i];
   shipPose(t, hulkPP, hulkPQ, hulkPF);
   out.copy(shipMeshes[i].userData.c).multiplyScalar(SHIP_SCALE);
@@ -352,7 +385,7 @@ export function hulkPos(i, t, out) {
 // Hulk i's turn at time t.
 // It takes the ship's turn, then a tumble.
 // Reduced motion keeps the ship's turn.
-export function hulkTurn(i, t, out) {
+export function hulkTurn(i: number, t: number, out: THREE.Quaternion) {
   const h = ship.hulks[i], go = ship.go && ship.go[i];
   shipPose(t, hulkPP, out, hulkPF);
   if (go && h.breakAt !== null && t > h.breakAt && !reduced()) out.multiply(hulkQ.setFromAxisAngle(go.axis, hulkAt(h, t - h.breakAt).tumble));
@@ -360,14 +393,16 @@ export function hulkTurn(i, t, out) {
 }
 const hulkH = new THREE.Vector3();
 // Hulk i's heading at time t, a unit vector.
-function hulkHead(i, t, out) {
+function hulkHead(i: number, t: number, out: THREE.Vector3) {
   hulkPos(i, t, out);
   return out.sub(hulkPos(i, t - 0.25, hulkH)).normalize();
 }
 // Each hulk has a raymarched streak.
 // The prow and the tower also have a cheap ribbon.
 // cheap is true while the ribbon stands in for the train.
-export const shipTrains = [];
+// One hulk's streak: the train, its uniforms, an optional ribbon.
+export interface ShipTrain { m: ReturnType<typeof makeTrain>; pu: Record<string, THREE.IUniform>; rib: ReturnType<typeof makeFragTrail> | null; cheap: boolean }
+export const shipTrains: ShipTrain[] = [];
 // The streak runs back to the entry point, 60 km at most.
 const STREAK_MAX = 60000;
 // A streak's head radius, as a share of its hulk's bounding radius.
@@ -375,33 +410,34 @@ export const STREAK_R = 0.5;
 const trA = new THREE.Vector3(), trE = new THREE.Vector3();
 // Point hulk i's streak.
 // a is the hulk's hulkAt state, or null before the break.
-function placeTrain(i, a) {
+// on is above zero only with a hulk state, so later reads use a!.
+function placeTrain(i: number, a: HulkState | null) {
   const tr = shipTrains[i];
   if (!tr) return;
   const h = ship.hulks[i], m = shipMeshes[i];
   // A landed streak holds its landing pose.
   // It lingers for LINGER seconds.
-  const tl = a && a.landed ? h.breakAt + h.fallT : state.simT, late = state.simT - tl;
+  const tl = a && a.landed ? h.breakAt! + h.fallT : state.simT, late = state.simT - tl;
   const on = !a ? 0 : a.landed ? (late < LINGER ? 1 : 0) : a.entry;
   // Rungs 2 and 3 give the prow and the tower a ribbon.
   tr.cheap = !!tr.rib && state.rung >= 2;
   tr.m.visible = on > 0.01 && !tr.cheap;
   if (tr.rib) tr.rib.visible = on > 0.01 && tr.cheap;
   if (on <= 0.01) return;
-  const age = tl - h.breakAt, R = STREAK_R * m.geometry.boundingSphere.radius * SHIP_SCALE;
+  const age = tl - h.breakAt!, R = STREAK_R * m.geometry.boundingSphere!.radius * SHIP_SCALE;
   // The tail follows the last few seconds of the fall.
   hulkPos(i, tl - clamp(age - VACUUM, 0.25, 8), trA).sub(m.position).normalize();
-  const len = Math.min(STREAK_MAX, m.position.distanceTo(hulkPos(i, h.breakAt + VACUUM, trE))) + R;
+  const len = Math.min(STREAK_MAX, m.position.distanceTo(hulkPos(i, h.breakAt! + VACUUM, trE))) + R;
   // The fade runs from the ground up.
   const fade = THREE.MathUtils.smootherstep(late, 0, LINGER);
   if (tr.cheap) {
-    const u = tr.rib.material.uniforms;
+    const u = tr.rib!.material.uniforms;
     u.uP.value.copy(m.position); u.uAway.value.copy(trA);
     u.uSide.value.set(0, 1, 0).cross(trA);
     if (u.uSide.value.lengthSq() < 1e-6) u.uSide.value.set(1, 0, 0);
     u.uSide.value.normalize();
     u.uR.value = 0.5 * R; u.uLen.value = len; u.uOn.value = on;
-    u.uLift.value.set(1.25 * fade - 0.25, a.landed ? 1 : 0, Math.exp(-late / 1.2));
+    u.uLift.value.set(1.25 * fade - 0.25, a!.landed ? 1 : 0, Math.exp(-late / 1.2));
     u.uRes.value.copy(starMat.uniforms.uRes.value); u.uDpr.value = starMat.uniforms.uDpr.value;
     return;
   }
@@ -413,10 +449,10 @@ function placeTrain(i, a) {
   u.uUpv.value.crossVectors(u.uSide.value, trA);
   u.uAstRad.value = R; u.uLen.value = len; u.uTrail.value = on;
   // The floor climbs from behind the head to the tail's end.
-  u.uLift.value.set(len * (1.25 * fade - 0.25), a.landed ? 1 : 0);
+  u.uLift.value.set(len * (1.25 * fade - 0.25), a!.landed ? 1 : 0);
   // The fire builds as the hulk speeds up.
   // It dies in a second or two after the landing.
-  u.uBurn.value = on * (0.35 + 0.4 * THREE.MathUtils.smoothstep(a.f, 0.05, 0.5)) * Math.exp(-late / 1.2);
+  u.uBurn.value = on * (0.35 + 0.4 * THREE.MathUtils.smoothstep(a!.f, 0.05, 0.5)) * Math.exp(-late / 1.2);
   // The smoke holds still in the world as the hulk runs on.
   u.uFlow.value = len / (1.05 * R) + 0.012 * state.simT;
 }
@@ -435,7 +471,7 @@ export function placeShip() {
     if (a && a.entry > 0) {
       hulkHead(i, state.simT, trE);
       u.uEntry.value.set(trE.x, trE.y, trE.z, a.entry);
-      u.uCtr.value.set(m.position.x, m.position.y, m.position.z, m.geometry.boundingSphere.radius * SHIP_SCALE);
+      u.uCtr.value.set(m.position.x, m.position.y, m.position.z, m.geometry.boundingSphere!.radius * SHIP_SCALE);
     } else u.uEntry.value.set(0, 0, 0, 0);
     placeTrain(i, a);
   });

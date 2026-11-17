@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: clouds/bands runs first.
 import '../clouds/bands.ts';
 import * as THREE from 'three';

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: play/ambient runs first.
 import './ambient.ts';
 import { stepShip } from '../../ship.js';
@@ -25,7 +24,7 @@ state.strike = null; state.strikeTest = false;
 // Fast rock: a dev toggle that runs the fall ten times faster.
 state.fastRock = false;
 export const fallT = () => SIZES[opts.size].T / (state.fastRock ? 10 : 1);
-export function stepAst(dt) {
+export function stepAst(dt: number) {
   if (state.tgtKind === 'ship') stepShip(ship, state.simT);
   stepShipFx(dt);
   stepHulks(dt);

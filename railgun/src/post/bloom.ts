@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/arcs runs first.
 import '../gun/arcs.ts';
 import * as THREE from 'three';
@@ -11,7 +10,7 @@ import { rnd } from '../setup.ts';
 // Bloom on a float target; only bright sources cross the threshold.
 // Lens dirt, drawn once: soft smudges, fine specks, a few hairs.
 function makeDirt() {
-  const c = document.createElement('canvas'), x = c.getContext('2d');
+  const c = document.createElement('canvas'), x = c.getContext('2d')!;
   c.width = 512; c.height = 320;
   x.fillStyle = '#000'; x.fillRect(0, 0, 512, 320);
   for (let i = 0; i < 46; i++) {
@@ -26,8 +25,10 @@ function makeDirt() {
   t.colorSpace = THREE.NoColorSpace;
   return t;
 }
-export function makeBloom(strength, radius, threshold) {
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold);
+// three types the high pass uniforms as a bare object.
+export type Bloom = UnrealBloomPass & { highPassUniforms: { smoothWidth: THREE.IUniform<number> } };
+export function makeBloom(strength: number, radius: number, threshold: number): Bloom {
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold) as Bloom;
   const full = bloom.setSize.bind(bloom);
   // A wide, soft knee: sunlit cloud and smoke bloom only a trace.
   // Fire, flashes and sparks run far past it and bloom in full.

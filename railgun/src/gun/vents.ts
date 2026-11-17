@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/motes runs first.
 import './motes.ts';
 import * as THREE from 'three';
@@ -52,7 +51,7 @@ vec3 vlight(vec3 p) { return blastLight(p); }`, {
   uVd: { value: Array.from({ length: VJ }, () => new THREE.Vector4()) },
   uSteamC: { value: new THREE.Vector3(...linFit(0.9, 0.008, 240)) },
 });
-let ventFx = null;
+let ventFx: { t0: number } | null = null;
 const vjB = new THREE.Vector3();
 // The vents fire back to front, the two flanks a beat apart.
 export function fireVents() {

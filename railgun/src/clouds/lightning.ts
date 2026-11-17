@@ -1,9 +1,8 @@
-// @ts-nocheck
 // Load order: clouds/probe runs first.
 import './probe.ts';
 import * as THREE from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { state } from '../state.ts';
+import { state, type ShaftCloud } from '../state.ts';
 import { camera, rad } from '../setup.ts';
 import { U } from '../world/uniforms.ts';
 import { hs1, shaftList } from './shafts.ts';
@@ -16,16 +15,18 @@ import { CLOUD_U, GIANTS, TOWERS, cloudLayer } from './clouds.ts';
 // Most sit mid-level in the core; a mature storm sends some through its anvil.
 // A storm recharges between bursts: one somewhere every 6 to 22 s.
 export const STORM_SPOTS = [...shaftList(TOWERS), ...shaftList(GIANTS)];
+// One stroke: start time, world place, light level, reach in metres.
+export interface Stroke { t0: number; P: THREE.Vector3; L: number; r: number; }
 // vol: the storm probe is on, so flashes sit inside its narrower towers.
-export const stormFl = { rate: 1, next: 4, strokes: [], vol: false };
+export const stormFl = { rate: 1, next: 4, strokes: [] as Stroke[], vol: false };
 const flV = new THREE.Vector3();
 // A storm's centre as the card shader drifts it, at the cloud clock t.
-export function stormAt(c, t, out) {
+export function stormAt(c: ShaftCloud, t: number, out: THREE.Vector3) {
   const ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * 0.2;
   return out.set(c.p.x * Math.cos(a) - c.p.z * Math.sin(a), 0, c.p.x * Math.sin(a) + c.p.z * Math.cos(a));
 }
 // One spot in a storm: across the card at the eye's right, at a height.
-function stormSpot(c, P0, out) {
+function stormSpot(c: ShaftCloud, P0: THREE.Vector3, out: THREE.Vector3) {
   const fx = P0.x - camera.position.x, fz = P0.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
   const anvil = Math.random() < 0.25;
   // The probe's tower is narrower: its core spans about a quarter of its height.
@@ -77,7 +78,7 @@ export const MIDS = [
 const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
 const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
 // The deck stands in for the middle heaps; they show only with the deck off.
-export function setDeck(v) {
+export function setDeck(v: number) {
   U.uDeck.value = v;
   mids.visible = farMids.visible = v < 0.01;
   state.shaftOcc = null;

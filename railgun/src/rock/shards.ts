@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/beacon runs first.
 import '../gun/beacon.ts';
 import * as THREE from 'three';
@@ -31,8 +30,8 @@ const shardBase = (() => {
   g.computeVertexNormals();
   return g;
 })();
-export const shardGeo = new THREE.InstancedBufferGeometry().copy(shardBase);
-const shardSlot = (name, n) => {
+export const shardGeo = new THREE.InstancedBufferGeometry().copy(shardBase as THREE.InstancedBufferGeometry);
+const shardSlot = (name: string, n: number) => {
   const a = new THREE.InstancedBufferAttribute(new Float32Array(SHARD_MAX * n), n);
   a.setUsage(THREE.DynamicDrawUsage);
   shardGeo.setAttribute(name, a);

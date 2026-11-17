@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/case runs first.
 import '../gun/case.ts';
 import * as THREE from 'three';
@@ -9,7 +8,7 @@ import { AIM, gun } from '../gun/gun.ts';
 
 /* ---------- sun shadows: one depth map along the sun ---------- */
 const shadowRT = new THREE.WebGLRenderTarget(2048, 1024, { depthTexture: new THREE.DepthTexture(2048, 1024, THREE.UnsignedIntType) });
-shadowRT.depthTexture.minFilter = shadowRT.depthTexture.magFilter = THREE.NearestFilter;
+shadowRT.depthTexture!.minFilter = shadowRT.depthTexture!.magFilter = THREE.NearestFilter;
 U.uShadowT.value = shadowRT.depthTexture;
 const shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 10);
 const shadowScene = new THREE.Scene();
@@ -61,7 +60,7 @@ export function drawShadow() {
 
 // The gun's depth from the eye, each drawn frame: one cheap pass, no colour.
 const gunDepthRT = new THREE.WebGLRenderTarget(2, 2, { depthTexture: new THREE.DepthTexture(2, 2) });
-gunDepthRT.depthTexture.minFilter = gunDepthRT.depthTexture.magFilter = THREE.NearestFilter;
+gunDepthRT.depthTexture!.minFilter = gunDepthRT.depthTexture!.magFilter = THREE.NearestFilter;
 U.uGunD.value = gunDepthRT.depthTexture;
 export const gunDepthScene = new THREE.Scene();
 export const gunDepthMesh = new THREE.Mesh(gun.geometry, shadowMesh.material.clone());

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/burst runs first.
 import '../fx/burst.ts';
 import * as THREE from 'three';
@@ -84,9 +83,9 @@ const arcList = Array.from({ length: ARC_N }, () => ({ on: false, a: new THREE.V
 const arcP = Array.from({ length: ARC_PTS }, () => new THREE.Vector3());
 const tmpC = new THREE.Vector3();
 // The top of the plinth and its berm at r metres from the mount.
-const plinthY = r => r < 396 ? 34 + LIFT : r < 456 ? 22 + LIFT : r < BERM_R ? LIFT * (BERM_R - r) / (BERM_R - 456) : 0;
+const plinthY = (r: number) => r < 396 ? 34 + LIFT : r < 456 ? 22 + LIFT : r < BERM_R ? LIFT * (BERM_R - r) / (BERM_R - 456) : 0;
 // A point on the apron, just outside the plinth.
-function rimPt(out, y, far = 0.2) {
+function rimPt(out: THREE.Vector3, y: number, far = 0.2) {
   const th = rnd() * Math.PI * 2, k = 470 * (1.02 + rnd() * far);
   out.set(Math.sin(th) * k, y, Math.cos(th) * k);
   return th;
@@ -94,7 +93,7 @@ function rimPt(out, y, far = 0.2) {
 // The barrel's side and up at station a, as the gun turns.
 // Returns the side, +1 or -1, that faces the eye.
 export const arcSide = new THREE.Vector3(), arcUp = new THREE.Vector3(), arcO = new THREE.Vector3();
-export function arcFrame(a) {
+export function arcFrame(a: number) {
   barrelPt(a, 0, 0, arcO);
   barrelPt(a, 1, 0, arcSide).sub(arcO);
   barrelPt(a, 0, 1, arcUp).sub(arcO);
@@ -102,7 +101,7 @@ export function arcFrame(a) {
 }
 // mode 'vent' drops a strike straight down from the barrel.
 // mode 'corona' throws a streamer from the brake into the air.
-export function spawnArc(st, mode = '') {
+export function spawnArc(st: number, mode = '') {
   const arc = arcList.find(x => !x.on);
   if (!arc) return;
   const a = st * L, hw = halfW(a) + 1.5, hh = halfH(a);

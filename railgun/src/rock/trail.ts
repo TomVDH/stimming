@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/volnoise runs first.
 import '../fx/volnoise.ts';
 import * as THREE from 'three';
@@ -42,7 +41,7 @@ export const PU = {
 };
 // One train per uniform set: the rock's own, and smaller ones for debris.
 const TRAIN_GEO = new THREE.CylinderGeometry(1, 1, 1, 20, 1);
-export function makeTrain(pu) {
+export function makeTrain(pu: Record<string, THREE.IUniform>) {
   return new THREE.Mesh(TRAIN_GEO, new THREE.ShaderMaterial({
   uniforms: { ...U, ...pu }, transparent: true, depthWrite: false,
   blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
@@ -252,7 +251,8 @@ export function makeMini() {
   return { m, pu };
 }
 // Point a mini train: head at pos, streaming along away.
-export function aimMini(t, pos, away, R, len, on, burn) {
+export type Mini = ReturnType<typeof makeMini>;
+export function aimMini(t: Mini, pos: THREE.Vector3, away: THREE.Vector3, R: number, len: number, on: number, burn: number) {
   const u = t.pu;
   u.uAstP.value.copy(pos); u.uAway.value.copy(away).normalize();
   u.uSide.value.set(0, 1, 0).cross(u.uAway.value).negate().normalize(); u.uUpv.value.crossVectors(u.uSide.value, u.uAway.value);

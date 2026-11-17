@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: gun/vents runs first.
 import './vents.ts';
 import * as THREE from 'three';
@@ -44,7 +43,7 @@ for (const m of [flapMesh, portMesh, frameMesh]) { m.matrixAutoUpdate = false; m
 const flapM = new THREE.Matrix4(), flapR = new THREE.Matrix4(), flapH = new THREE.Vector3(), flapA = new THREE.Vector3();
 let flapAng = 0;
 // Open: a fast swing with a small overshoot. Close: a slow fall back.
-function flapAt(t, open, shut) {
+function flapAt(t: number, open: number, shut: number) {
   if (t < open) return 0;
   if (t < shut) { const s = t - open; return rad(105) * (1 - Math.exp(-s / 0.07) * Math.cos(s * 9)); }
   return rad(105) * Math.max(0, 1 - THREE.MathUtils.smoothstep(t - shut, 0, 0.7));
@@ -85,7 +84,7 @@ scene.add(gaugeMesh);
 export function updateFlap() {
   flapAng = 0;
   if (state.shot) {
-    const t = state.simT - state.shot.t0, open = state.shot.vented ? state.shot.ventT + 0.7 : 1e9, shut = open + 2.1;
+    const t = state.simT - state.shot.t0, open = state.shot.vented ? state.shot.ventT! + 0.7 : 1e9, shut = open + 2.1;
     flapAng = reduced() ? (t > open && t < shut ? rad(105) : 0) : flapAt(t, open, shut);
   }
   arcFrame(FLAP.a);

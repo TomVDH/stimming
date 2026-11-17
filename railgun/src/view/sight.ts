@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: post/chain runs first.
 import '../post/chain.ts';
 import * as THREE from 'three';
@@ -21,7 +20,20 @@ import { aimNow } from '../ship/hit.ts';
 /* ---------- sight: Monolith over an image intensifier ---------- */
 // The sight runs the finished frame through the NVG toy's tube, white phosphor.
 // Its marks and words burn in as negatives through a key (stimming-cido).
-const sightFx = { tube: null, out: null, kc: null, kx: null, keyTex: null, keyMat: null, kd: 1, last: 0, size: '' };
+// The sight's tube, its output target, the key canvas and the key pass.
+// sightSetup fills the null fields together, on first use.
+interface SightFx {
+  tube: Tube | null;
+  out: THREE.WebGLRenderTarget | null;
+  kc: HTMLCanvasElement | null;
+  kx: CanvasRenderingContext2D | null;
+  keyTex: THREE.CanvasTexture | null;
+  keyMat: THREE.ShaderMaterial | null;
+  kd: number;
+  last: number;
+  size: string;
+}
+const sightFx: SightFx = { tube: null, out: null, kc: null, kx: null, keyTex: null, keyMat: null, kd: 1, last: 0, size: '' };
 export function sightSetup() {
   if (sightFx.tube) { sightSize(); return; }
   const t = sightFx.tube = new Tube(renderer);
@@ -107,27 +119,28 @@ export function sightSize() {
   const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
   f.out?.dispose();
   f.out = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-  f.keyMat.uniforms.uTexel.value.set(1 / bw, 1 / bh);
+  f.keyMat!.uniforms.uTexel.value.set(1 / bw, 1 / bh);
   f.kd = Math.min(dpr, 1.5);
-  f.kc.width = Math.round(w * f.kd); f.kc.height = Math.round(h * f.kd);
-  f.keyTex.dispose();
+  f.kc!.width = Math.round(w * f.kd); f.kc!.height = Math.round(h * f.kd);
+  f.keyTex!.dispose();
 }
 // The last pass in the chain while the sight is on.
 class SightPass extends Pass {
   constructor() { super(); this.enabled = false; this.needsSwap = false; }
-  render(r, writeBuffer, readBuffer) {
+  render(r: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
     const f = sightFx;
     if (!f.tube) return;
     const now = performance.now(), dt = f.last ? clamp((now - f.last) / 1000, 1 / 120, 0.1) : 1 / 30;
     f.last = now;
-    f.tube.sigU.tCam.value = readBuffer.texture;
+    // tube.js starts tCam at null, so its type is null; it takes a texture.
+    (f.tube.sigU.tCam as THREE.IUniform<THREE.Texture | null>).value = readBuffer.texture;
     // Tom: the big chunky grain. The NVG toy's own photon count, starved at any hour.
     f.tube.sigU.uCamExpo.value = 14;
     f.tube.mOut.uniforms.uFlick.value = reduced() ? 0 : 1;
     f.tube.render(null, null, dt, now / 1000);
-    f.keyMat.uniforms.tImg.value = f.out.texture;
-    f.keyMat.uniforms.uNeg.value = reduced() ? 0.9 : 0.86 + 0.08 * Math.sin(now / 1000 * 1.3);
-    f.tube.quad.material = f.keyMat;
+    f.keyMat!.uniforms.tImg.value = f.out!.texture;
+    f.keyMat!.uniforms.uNeg.value = reduced() ? 0.9 : 0.86 + 0.08 * Math.sin(now / 1000 * 1.3);
+    f.tube.quad.material = f.keyMat!;
     r.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     r.render(f.tube.scene, f.tube.cam);
   }
@@ -137,14 +150,36 @@ composer.addPass(sightPass);
 
 // The marks, in CSS pixels, from the toy's own geometry.
 const skP = new THREE.Vector3(), skQ = new THREE.Vector3(), skV = new THREE.Vector3(), skT = new THREE.Vector3();
-function skScreen(v) {
+function skScreen(v: THREE.Vector3) {
   skP.copy(v).project(camera);
   return { x: (skP.x * 0.5 + 0.5) * state.size.w, y: (0.5 - skP.y * 0.5) * state.size.h, ok: skP.z < 1 };
+}
+// A point on the stage in CSS pixels; ok is false behind the eye.
+type ScreenPt = ReturnType<typeof skScreen>;
+// A marked disc: its centre, its radius in pixels, its range in metres.
+type Disc = ScreenPt & { r: number; D: number };
+// What the sight shows under the monolith.
+type MarkState = 'hold' | 'charging' | 'full' | 'fired' | 'struck';
+// The sight's marks: the stage, the bore, the state and the target's readouts.
+// rock, rdot, pip and lay come together, only for a live target.
+export interface Marks {
+  W: number;
+  H: number;
+  phone: boolean;
+  bore: ScreenPt;
+  state: MarkState;
+  lvl: number;
+  left?: number;
+  hit?: Disc;
+  rock?: Disc;
+  rdot?: number;
+  pip?: ScreenPt;
+  lay?: number;
 }
 export function sightMarks() {
   const W = state.size.w, H = state.size.h, fpx = (H / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
   const bore = skScreen(barrelPt(60000, 0, 0, skQ));
-  const m = { W, H, phone: W < 640, bore, state: 'hold', lvl: 0 };
+  const m: Marks = { W, H, phone: W < 640, bore, state: 'hold', lvl: 0 };
   // A ship kill keeps its hit in ship.fx.
   // A rock hit sets uHitP.
   const kill = state.tgtKind === 'ship' && ship.fx && ship.fx.kill ? ship.fx : null;
@@ -182,7 +217,7 @@ export function sightKey() {
   const m = sightMarks(), k = m.phone || m.H < 500 ? 0.8 : 1;
   const ph = reduced() ? 0.5 : (Math.floor(state.simT * 10) / 10) % 1;
   x.setTransform(1, 0, 0, 1, 0, 0);
-  x.clearRect(0, 0, f.kc.width, f.kc.height);
+  x.clearRect(0, 0, f.kc!.width, f.kc!.height);
   // Every mark is burnt into the phosphor: one pass, in the blue channel.
   // Only the laser stays live light, in the red core.
   for (const band of [false]) {
@@ -192,11 +227,11 @@ export function sightKey() {
     const col = '#00f';
     x.strokeStyle = x.fillStyle = col;
     x.lineJoin = 'round';
-    const lw = w => (x.lineWidth = band ? 5 : w * k);
-    const line = pts => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.stroke(); };
-    const box = (a, b, w, h, fill) => { if (fill) { if (h > 0) x.fillRect(a, b, w, h); } else { lw(1.1); x.strokeRect(a, b, w, h); } };
-    const dot = (a, b, r) => { x.beginPath(); x.arc(a, b, r, 0, Math.PI * 2); x.fill(); };
-    const word = (a, b, str, sz, align = 'center', ls = 0.45, wt = 500) => {
+    const lw = (w: number) => (x.lineWidth = band ? 5 : w * k);
+    const line = (pts: [number, number][]) => { x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.stroke(); };
+    const box = (a: number, b: number, w: number, h: number, fill?: boolean) => { if (fill) { if (h > 0) x.fillRect(a, b, w, h); } else { lw(1.1); x.strokeRect(a, b, w, h); } };
+    const dot = (a: number, b: number, r: number) => { x.beginPath(); x.arc(a, b, r, 0, Math.PI * 2); x.fill(); };
+    const word = (a: number, b: number, str: string, sz: number, align: CanvasTextAlign = 'center', ls = 0.45, wt = 500) => {
       x.font = `${wt} ${sz * k}px Gabarito, sans-serif`;
       x.letterSpacing = `${ls * sz * k}px`;
       x.textAlign = align;
@@ -239,11 +274,11 @@ export function sightKey() {
       }
       if (m.state !== 'fired') {
         // The lead: beads drift from the rock to the intercept ring.
-        if (m.pip.ok) {
-          const dx = m.pip.x - rock.x, dy = m.pip.y - rock.y, d = Math.hypot(dx, dy) || 1, a0 = Math.min(0.9, rock.r * 0.6 / d);
+        if (m.pip!.ok) {
+          const dx = m.pip!.x - rock.x, dy = m.pip!.y - rock.y, d = Math.hypot(dx, dy) || 1, a0 = Math.min(0.9, rock.r * 0.6 / d);
           for (let i = 0; i < 6; i++) { const u = a0 + (1 - a0) * ((i + ph) / 6); if (u < 0.96) dot(rock.x + dx * u, rock.y + dy * u, band ? 4 : 2 * k); }
-          lw(1.2); x.beginPath(); x.arc(m.pip.x, m.pip.y, 6 * k, 0, Math.PI * 2); x.stroke();
-          if (m.state !== 'hold') word(m.pip.x, m.pip.y - 14 * k, m.lay.toFixed(0), 10, 'center', 0.3);
+          lw(1.2); x.beginPath(); x.arc(m.pip!.x, m.pip!.y, 6 * k, 0, Math.PI * 2); x.stroke();
+          if (m.state !== 'hold') word(m.pip!.x, m.pip!.y - 14 * k, m.lay!.toFixed(0), 10, 'center', 0.3);
         }
       } else {
         // In flight: beads climb the bolt's path from the bore to the rock.
@@ -255,7 +290,7 @@ export function sightKey() {
       const tx = m.phone ? clamp(rock.x, 90, W - 90) : rock.x + (right ? 1 : -1) * (rock.r + 36 * k);
       const ty = m.phone ? rock.y - hgt - 34 * k : rock.y + 2;
       word(tx, ty, (rock.D / 1000).toFixed(2), 34, al, 0.1, 400);
-      word(tx, ty + 22 * k, m.state === 'fired' ? 'KM' : `KM  ·  −${Math.round(Math.abs(m.rdot))} M/S`, 11, al, 0.5);
+      word(tx, ty + 22 * k, m.state === 'fired' ? 'KM' : `KM  ·  −${Math.round(Math.abs(m.rdot!))} M/S`, 11, al, 0.5);
     }
     if (m.hit && m.hit.ok) {
       // Struck: a ring broken into six arcs where the rock was.
@@ -281,5 +316,5 @@ export function sightKey() {
   x.fillText('SCINFAXI', m.W / 2 + 0.275 * 26 * k, (m.phone ? 92 : 50) * k);
   x.filter = 'none';
   x.globalCompositeOperation = 'source-over';
-  f.keyTex.needsUpdate = true;
+  f.keyTex!.needsUpdate = true;
 }

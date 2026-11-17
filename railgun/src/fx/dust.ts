@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: rock/fragments runs first.
 import '../rock/fragments.ts';
 import * as THREE from 'three';
@@ -13,8 +12,9 @@ import { BAND } from '../clouds/bands.ts';
 // Alpha-blended billboards lit by the sun and the sky.
 // A ring buffer holds the puffs.
 const DUST_N = 1600;
-export const dustGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2));
-const dustSlot = (name, n) => {
+// three types copy() for an instanced source; any geometry works.
+export const dustGeo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(2, 2) as THREE.BufferGeometry as THREE.InstancedBufferGeometry);
+const dustSlot = (name: string, n: number) => {
   const a = new THREE.InstancedBufferAttribute(new Float32Array(DUST_N * n), n);
   a.setUsage(THREE.DynamicDrawUsage);
   dustGeo.setAttribute(name, a);
@@ -70,7 +70,7 @@ dust.renderOrder = BAND.dust;
 scene.add(dust);
 let dustDirty = false; state.dustHead = 0; state.dustEnd = 0;
 // Steam puffs carry a seed past 1000; they draw white and thin.
-export function puff(p, v, life, size, steam = false) {
+export function puff(p: THREE.Vector3Like, v: THREE.Vector3Like, life: number, size: number, steam = false) {
   const i = state.dustHead;
   state.dustHead = (state.dustHead + 1) % DUST_N;
   d0.setXYZW(i, p.x, p.y, p.z, state.simT);

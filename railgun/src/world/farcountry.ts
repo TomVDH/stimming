@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: world/ground runs first.
 import './ground.ts';
 import * as THREE from 'three';
@@ -15,7 +14,7 @@ import { sight } from '../view/camera.ts';
 
 /* ---------- far country: crescent ranges on a curved planet, raymarched ---------- */
 // Angles turn left from negative z, about the landscape eye.
-export const polar = (th, d) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
+export const polar = (th: number, d: number) => v3(1670 - Math.sin(th) * d, 0, 1990 - Math.cos(th) * d);
 // RANGES and the height GLSL live in ranges.js.
 export const FAR_U = {
   // Centre x, z, arc radius, crest; then the arc's start, span and phase, in radians.
@@ -40,15 +39,16 @@ export const FAR_U = {
   uRangeL: { value: new THREE.Vector3(0.6, 0.85, 1) },
 };
 // The ranges' rock: [slope, wall] in OKLCH; each differs from the sand plain.
-const ROCK_COLS = {
+type Lch = THREE.Vector3Tuple;
+const ROCK_COLS: Record<string, [Lch, Lch]> = {
   umber: [[0.43, 0.035, 48], [0.37, 0.045, 32]],
   slate: [[0.42, 0.02, 250], [0.35, 0.025, 265]],
   rust: [[0.44, 0.06, 40], [0.39, 0.08, 24]],
 };
-export function setRockCol(k) {
+export function setRockCol(k: string) {
   const c = ROCK_COLS[k] || ROCK_COLS.umber;
-  FAR_U.uSlopeC.value.set(...linFit(...c[0]));
-  FAR_U.uRockC.value.set(...linFit(...c[1]));
+  FAR_U.uSlopeC.value.set(...linFit(...c[0]) as THREE.Vector3Tuple);
+  FAR_U.uRockC.value.set(...linFit(...c[1]) as THREE.Vector3Tuple);
 }
 setRockCol('umber');
 const FAR_GLSL = RANGE_GLSL;
@@ -56,7 +56,17 @@ const FAR_GLSL = RANGE_GLSL;
 // The live pass and the bake share them, so both draw the same country.
 // The height grid: a fine and a coarse level about the landscape eye.
 // It rebuilds only when the ranges' shape changes.
-export const farGrid = { n: 256, half: 330000, key: '', builds: 0 };
+// The height grid's state; f and c are its fine and coarse targets.
+export interface FarGrid {
+  n: number;
+  half: number;
+  key: string;
+  builds: number;
+  f: THREE.WebGLRenderTarget;
+  c: THREE.WebGLRenderTarget;
+}
+// The next two lines add the fine and coarse targets f and c.
+export const farGrid = { n: 256, half: 330000, key: '', builds: 0 } as FarGrid;
 farGrid.f = new THREE.WebGLRenderTarget(farGrid.n, farGrid.n, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
 farGrid.c = new THREE.WebGLRenderTarget(farGrid.n / 4, farGrid.n / 4, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false });
 export const GRID_U = {
@@ -247,6 +257,16 @@ const fbBuf = () => ({
   // The window's rotation-only view-projection and its inverse; its lens and eye.
   vp: new THREE.Matrix4(), inv: new THREE.Matrix4(), q: new THREE.Quaternion(), eye: new THREE.Vector3(), tb: 1, M: 1, aspect: 0, ok: false,
 });
+// One bake buffer: the geometry and light targets and the window's view.
+export type FarBuf = ReturnType<typeof fbBuf>;
+// A bake in progress: its buffer, its pass and its size.
+export interface FarJob {
+  f: FarBuf;
+  pass: number;
+  lit: boolean;
+  h: number;
+  w: number;
+}
 export const farBake = {
   on: true,
   // The window's margin: the sight follows the gun, so its margin is wider.
@@ -255,13 +275,13 @@ export const farBake = {
   res: 1,
   bufs: [fbBuf(), fbBuf()], front: 0,
   // A bake in progress: its buffer and the next row to fill.
-  job: null, rows: 8,
+  job: null as FarJob | null, rows: 8,
   sun: new THREE.Vector3(), dirty: true, bakes: 0, hard: 0, lights: 0,
 };
 // The bake passes' inputs: the buffer under construction.
-const FB_U = { uPhase: { value: new THREE.Vector2(1, 0) }, uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uBakeEye: { value: new THREE.Vector3() } };
+const FB_U = { uPhase: { value: new THREE.Vector2(1, 0) }, uRefInv: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null as THREE.Texture | null }, uBakeEye: { value: new THREE.Vector3() } };
 // The baked pass's inputs: the front buffer.
-export const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null }, uFarL: { value: null } };
+export const FS_U = { uRefVP: { value: new THREE.Matrix4() }, uBakeSize: { value: new THREE.Vector2(1, 1) }, uFarG: { value: null as THREE.Texture | null }, uFarL: { value: null as THREE.Texture | null } };
 // The geometry bake: range and normal per texel.
 // The range splits in two halves, so the half floats keep a quarter metre.
 export const farBakeG = new THREE.ShaderMaterial({
@@ -414,14 +434,14 @@ export function farGridUpdate() {
   return true;
 }
 // Pick the live march or the bake.
-export function setFarMode(on) {
+export function setFarMode(on: boolean) {
   farBake.on = on && renderer.extensions.has('EXT_color_buffer_float');
   farPass.material = farBake.on ? farBaked : farLive;
   farBake.dirty = true;
 }
 // How far the view sits from buffer f's window: 1 is at its edge.
 // The eye's drift and the lens's zoom count too.
-function fbReach(f, c, building) {
+function fbReach(f: FarBuf, c: THREE.PerspectiveCamera, building?: boolean) {
   if ((!f.ok && !building) || c.aspect !== f.aspect) return 9;
   const tn = Math.tan(rad(c.fov / 2));
   let r = Math.max(c.position.distanceTo(f.eye) / 25, f.tb / (tn * f.M * 1.15));
@@ -436,7 +456,7 @@ function fbReach(f, c, building) {
 }
 // Start a bake of the back buffer around the view as it is now.
 // k scales the buffer: a quick bake runs at a quarter of the size.
-export function fbStart(c, k = 1) {
+export function fbStart(c: THREE.PerspectiveCamera, k = 1) {
   const B = farBake, f = B.bufs[1 - B.front], M = sight ? B.Msight : B.M;
   f.ok = false; f.aspect = c.aspect; f.M = M;
   f.eye.copy(c.position); f.q.copy(c.quaternion);
@@ -452,7 +472,7 @@ export function fbStart(c, k = 1) {
 // After the last pass, one frame lights the buffer; then it turns front.
 // all runs the whole job at once.
 export function fbStep(all = false) {
-  const B = farBake, j = B.job, f = j.f, n = all ? 1 : B.rows;
+  const B = farBake, j = B.job!, f = j.f, n = all ? 1 : B.rows;
   if (j.pass < n) {
     FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(j.w, j.h); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
     FB_U.uPhase.value.set(n, j.pass);
@@ -472,7 +492,7 @@ export function fbStep(all = false) {
   FS_U.uRefVP.value.copy(f.vp); FS_U.uBakeSize.value.set(j.w, j.h); FS_U.uFarG.value = f.g.texture; FS_U.uFarL.value = f.l.texture;
 }
 // Light buffer f: the sun's shadow per texel.
-function fbLight(f) {
+function fbLight(f: FarBuf) {
   const B = farBake;
   FB_U.uRefInv.value.copy(f.inv); FB_U.uBakeSize.value.set(f.g.width, f.g.height); FB_U.uBakeEye.value.copy(f.eye); FB_U.uFarG.value = f.g.texture;
   B.sun.copy(U.uSun.value); B.lights++;

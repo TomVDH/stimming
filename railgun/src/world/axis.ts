@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: setup runs first.
 import '../setup.ts';
 import * as THREE from 'three';
@@ -18,7 +17,7 @@ export const ELEV = rad(6), L = 1046, TRUN_Y = 215 + RISE + LIFT;
 export const AX = new THREE.Vector3(0, Math.sin(ELEV), -Math.cos(ELEV));
 export const AX_UP = new THREE.Vector3(0, Math.cos(ELEV), Math.sin(ELEV));
 export const A0 = new THREE.Vector3(0, TRUN_Y, 0);
-export const axisAt = (s, out) => out.copy(A0).addScaledVector(AX, L * s);
+export const axisAt = (s: number, out: THREE.Vector3) => out.copy(A0).addScaledVector(AX, L * s);
 // The bore starts behind the trunnion.
 export const BREECH = -0.25;
 // The rock ends its fall 40 km out, low over the horizon.
@@ -32,5 +31,5 @@ export const FALL = 17680;
 // A point on the barrel: a metres along, x across, u up.
 // SY and CY hold the mount's yaw, left of negative z.
 state.SE = Math.sin(ELEV); state.CE = Math.cos(ELEV); state.SY = 0; state.CY = 1;
-export const barrelPt = (a, x, u, out) => { const z = -a * state.CE + u * state.SE; return out.set(x * state.CY + z * state.SY, TRUN_Y + a * state.SE + u * state.CE, z * state.CY - x * state.SY); };
+export const barrelPt = (a: number, x: number, u: number, out: THREE.Vector3) => { const z = -a * state.CE + u * state.SE; return out.set(x * state.CY + z * state.SY, TRUN_Y + a * state.SE + u * state.CE, z * state.CY - x * state.SY); };
 export const MUZZLE = axisAt(1, new THREE.Vector3());

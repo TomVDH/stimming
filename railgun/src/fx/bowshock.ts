@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: fx/flares runs first.
 import './flares.ts';
 import * as THREE from 'three';
@@ -10,6 +9,7 @@ import { BAND } from '../clouds/bands.ts';
 import { ast, astMat, astMesh } from '../rock/asteroid.ts';
 import { frags } from '../rock/fragments.ts';
 import { makeFlare } from './flares.ts';
+import type { Flare } from './flares.ts';
 import { strikeU } from '../rock/strike.ts';
 
 /* ---------- the bow shock: a glowing arc of air in front of the rock ---------- */
@@ -136,7 +136,7 @@ rockGlobe.renderOrder = ROCK_GLOW_ORDER;
 for (const f of frags) { f.glow.material.depthTest = true; f.glow.renderOrder = ROCK_GLOW_ORDER; }
 // Late bursts inside the cloud, as big pieces break.
 export const burstFlares = [0, 1, 2].map(() => makeFlare(linFit(0.88, 0.13, 58)));
-export function flare(m, pos, size, gain) {
+export function flare(m: Flare, pos: THREE.Vector3Like, size: number, gain: number) {
   // Reduced motion halves every flash.
   if (reduced()) gain *= 0.5;
   m.visible = gain > 0.002;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Load order: sky/dome runs first.
 import '../sky/dome.ts';
 import * as THREE from 'three';
@@ -46,9 +45,9 @@ float terrH(vec2 p) {
 // The grid packs its vertices round the eye: about 3 m apart there.
 // The spacing grows outward to about 3 km at the rim.
 // So the near waves displace, and the vertex count stays the same.
-export function groundGeo(cx, cz) {
+export function groundGeo(cx: number, cz: number) {
   const N = 480, K = 7.07, A = 120000 / (Math.exp(K) - 1);
-  const f = u => Math.sign(u) * A * (Math.exp(K * Math.abs(u)) - 1);
+  const f = (u: number) => Math.sign(u) * A * (Math.exp(K * Math.abs(u)) - 1);
   const g = new THREE.PlaneGeometry(2, 2, N, N).rotateX(-Math.PI / 2);
   const P = g.attributes.position;
   for (let i = 0; i < P.count; i++) P.setXYZ(i, cx + f(P.getX(i)), 0, cz + f(P.getZ(i)));
