@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T23:55:53Z
+updated_at: 2026-11-17T00:40:32Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -61,3 +61,5 @@ Tom picked option A of the cloud plan: "A: Earth-true weather". Storm tops 12 to
 - [ ] Tom's look verdict on the lab stills.
 - [ ] Port to the toy host (card from stormGeom), clouds-check or look-approved, push.
 - [ ] Fix storms.js line 9 (the wrong range heights).
+
+- [x] 2026-11-16 17:40: storm cards back as the default (Storm volumes off), Deck off so the cirrus streaks are the upper layer; heaps and mids spread out and lifted clear of the crests, near ring 11 to 17 km. Tom: "Yes, push it".

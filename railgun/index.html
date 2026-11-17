@@ -208,7 +208,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Valley fog pools in the far ranges.
     { type: 'slider', id: 'valfog', group: 'Sky', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
     // The broken layer of cells five kilometres up.
-    { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { setDeck(v); draw(); } },
+    { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 0, persist: true, onInput: v => { setDeck(v); draw(); } },
     // The colossal storms far beyond the ranges.
     // Storm lightning: how often flashes light the storms from inside.
     { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
@@ -217,7 +217,7 @@ const ui = initPage({ id: 'railgun', bar: {
     // Storm volumes: the towers and the giant as Window seat's marched volumes; off shows the flat cards.
     // Storm softness: how fuzzy the storm volumes are, crisp at 1.
     { type: 'slider', id: 'stormsoft', group: 'Sky', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
-    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: true, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
+    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: false, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
@@ -385,7 +385,7 @@ const U = {
   // Layered air: x sinks far clouds into the haze; y pools fog in far valleys.
   uLayer: { value: new THREE.Vector2(1, 0.5) },
   // The cell deck's strength: 0 off.
-  uDeck: { value: 1 },
+  uDeck: { value: 0 },
   uWisp: { value: new THREE.Vector3(Math.random() * 200, Math.random() * 200, 0.6 + Math.random() * 0.4) },
   // The asteroid: direction from the eye, light strength; its angular radius.
   uAst: { value: new THREE.Vector4(0, 1, 0, 0) },
@@ -2303,17 +2303,12 @@ function cloudLayer(list, order, pick = () => true) {
   return m;
 }
 // Heaps stand in front of the rock's track: they draw after its smoke.
-// The far clusters float clear of the crests, so the ranges show whole.
-// Clusters with open sky between; two small ones nearer.
+// Every heap's base stands more than 9 degrees up, so the ranges show clear.
+// A near ring 11 to 17 km out, then a ring 22 to 27 km out, with open gaps.
 const HEAPS = [
-  [-6, 37000, 3150, 3600, 2000, 0], [-1, 33000, 3050, 2000, 1300, 0], [3, 36500, 3200, 2400, 1500, 0],
-  [9, 16000, 1250, 900, 650, 0],
-  [17, 30000, 3100, 3000, 1900, 0], [21.5, 34000, 3200, 2200, 1500, 0],
-  [37, 38000, 3250, 4400, 2600, 0], [43, 32000, 3100, 2300, 1400, 0],
-  [50, 14500, 1200, 800, 600, 0], [58, 35000, 3150, 3000, 1800, 0], [63, 29000, 3050, 1800, 1100, 0],
-  // Nearer the eye, between the far clusters.
-  [-13, 22000, 3000, 1800, 1100, 0], [13, 9500, 950, 900, 620, 0], [30, 12000, 1050, 1050, 720, 0],
-  [46, 8000, 850, 820, 560, 0], [70, 11000, 1000, 950, 640, 0], [77, 25000, 3050, 2100, 1300, 0],
+  [-18, 14000, 2300, 1900, 1300, 0], [-4, 17000, 3100, 2300, 1500, 0], [7, 11000, 2000, 1600, 1100, 0], [19, 15000, 2900, 2100, 1400, 0],
+  [33, 12500, 2100, 1800, 1200, 0], [45, 16500, 3000, 2400, 1600, 0], [58, 13000, 2200, 1700, 1150, 0], [71, 15500, 2700, 2200, 1450, 0],
+  [-11, 24000, 3700, 2200, 1300, 0], [12, 27000, 4200, 2600, 1500, 0], [27, 23000, 3700, 2000, 1200, 0], [51, 26000, 4100, 2400, 1400, 0], [64, 22000, 3600, 1800, 1100, 0],
 ];
 const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Towers stand far out: one behind the gun, one on each flank.
@@ -2484,11 +2479,10 @@ function stepStorms() {
   }
 }
 // A middle deck: heaps four to six kilometres up fill the middle of the sky.
+// They stand 23 to 34 km out, 10 degrees up or more, clear of the crests.
 const MIDS = [
-  [-8, 34000, 4200, 3200, 1700, 0], [6, 27000, 4800, 2600, 1500, 0], [17, 40000, 5600, 4200, 2200, 0], [29, 30000, 4400, 2400, 1300, 0],
-  [38, 45000, 5200, 3800, 2000, 0], [48, 26000, 4600, 2200, 1200, 0], [57, 38000, 5000, 3400, 1800, 0], [66, 31000, 4300, 2600, 1400, 0],
-  // Farther out.
-  [12, 70000, 6200, 6000, 2600, 0], [44, 85000, 6500, 7000, 2800, 0],
+  [-14, 30000, 5000, 3000, 1500, 0], [2, 24000, 4600, 2400, 1300, 0], [16, 33000, 5800, 3800, 1900, 0], [31, 26000, 4800, 2400, 1300, 0],
+  [40, 34000, 5600, 3400, 1800, 0], [53, 23000, 4500, 2000, 1100, 0], [62, 31000, 5200, 3000, 1600, 0], [74, 27000, 4700, 2400, 1300, 0],
 ];
 // Mids past the rock draw behind it; the rest draw in front.
 const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
