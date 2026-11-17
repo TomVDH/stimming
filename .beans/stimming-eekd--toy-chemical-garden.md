@@ -3,8 +3,9 @@
 title: 'Toy: Chemical garden'
 status: todo
 type: feature
+priority: normal
 created_at: 2026-11-17T22:10:21Z
-updated_at: 2026-11-17T22:10:21Z
+updated_at: 2026-11-17T22:15:35Z
 parent: stimming-oh7b
 ---
 
