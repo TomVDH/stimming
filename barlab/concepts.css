@@ -1,0 +1,375 @@
+/* Bar lab: the Signal bar and Bare, two directions for the toy bars.
+   shim.js adds this sheet to the toy page inside the lab's frame.
+   Every direction holds three floors: a keyboard focus mark, 44 px touch targets, 4.5:1 text. */
+
+/* A direction hides the shell's own layer; Today shows it. */
+.bl-on .stim-ui { display: none; }
+.bl-ui {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none;
+  /* The layer clips to the stage, so a closed drawer hides below it. */
+  overflow: hidden; border-radius: 18px;
+  --ink: oklch(0.05 0.01 275);
+  --sheet: oklch(0.12 0.012 275 / 0.98);
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --h: 36px; --pad: 12px; --track: oklch(0.94 0.008 275 / 0.3);
+  font: 700 12px/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg);
+}
+.bl-ui[data-concept="today"] { display: none; }
+.bl-ui > * { pointer-events: auto; }
+/* The lab's Phone sizes stand in for a touch screen. */
+.bl-touch .bl-ui { --h: 44px; font-size: 13px; }
+@media (pointer: coarse) { .bl-ui { --h: 44px; font-size: 13px; } }
+
+/* ---------- shared parts ---------- */
+.b-btn {
+  appearance: none; box-sizing: border-box; position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--h); min-width: var(--h); margin: 0; padding: 0 12px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; white-space: nowrap; text-decoration: none;
+  color: inherit; background: none; border: 0; border-radius: 0; cursor: pointer;
+}
+.b-btn svg { flex: none; width: 16px; height: 16px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.b-btn svg .solid { fill: currentColor; stroke: none; }
+.b-btn > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.b-ico { padding: 0; width: var(--h); text-transform: none; }
+.b-snd[aria-pressed="true"] .off, .b-snd[aria-pressed="false"] .on { display: none; }
+.b-btn kbd, .b-hints kbd { font: 700 10px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 5px; border: 1px solid currentColor; }
+.b-btn kbd { opacity: 0.85; }
+.bl-touch .b-btn kbd { display: none; }
+@media (hover: none), (pointer: coarse) { .b-btn kbd { display: none; } }
+.b-caret { width: 0; height: 0; border: 4px solid transparent; border-bottom-color: currentColor; border-top: 0; }
+/* The focus mark: a bar under the control, never a ring. */
+.bl-ui :is(.b-btn, a):focus-visible, .bl-ui .b-slider:has(input:focus-visible) { box-shadow: inset 0 -3px 0 currentColor; }
+
+/* The logo and the name stay unboxed and without shadow. */
+.b-id { position: absolute; top: var(--pad); left: var(--pad); display: flex; align-items: center; gap: 8px; height: var(--h); max-width: calc(100% - 2 * var(--pad)); }
+/* shim.js measures the top row; a name with no room leaves whole. */
+.b-id.is-tight .b-name { display: none; }
+.b-id .s2-back { height: var(--h); flex: none; }
+.b-id .s2-back .mark { font-size: 22px; }
+.b-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.1em; }
+.b-name::before { content: "/"; margin-right: 8px; color: var(--muted); font-weight: 500; }
+@container stim (width < 300px) { .b-name { display: none; } }
+
+.b-slider { box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px; height: var(--h); padding: 0 12px; white-space: nowrap; }
+.b-slider input {
+  -webkit-appearance: none; appearance: none; width: 110px; height: var(--h); margin: 0; cursor: pointer; background:
+    linear-gradient(currentColor, currentColor) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(var(--track), var(--track)) 0 50% / 100% 2px no-repeat;
+}
+.b-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 8px; height: 18px; background: currentColor; border: 0; border-radius: 0; }
+.b-slider input::-moz-range-thumb { width: 8px; height: 18px; background: currentColor; border: 0; border-radius: 0; }
+
+.b-seg { display: inline-flex; border: 1px solid var(--line); }
+.b-seg .b-btn { height: calc(var(--h) - 8px); min-width: 36px; padding: 0 10px; font-weight: 500; }
+.b-seg .b-btn + .b-btn { border-left: 1px solid var(--line); }
+.b-seg .b-btn[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+
+/* The key strip: keycap, then verb. Each word carries its own dark edge. */
+.b-hints {
+  position: absolute; left: 50%; bottom: calc(var(--pad) + var(--h) + 12px); transform: translateX(-50%); z-index: 1;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin: 0; width: max-content; max-width: calc(100% - 24px);
+  font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: none; pointer-events: none; transition: opacity 0.6s ease;
+}
+.b-hints > div { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.b-hints span { -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.b-hints kbd { background: var(--sheet); border-color: oklch(0.94 0.008 275 / 0.45); }
+.b-hints.is-faded { opacity: 0; }
+.b-hints--list { position: static; transform: none; justify-content: flex-start; width: auto; max-width: none; pointer-events: auto; }
+.b-hints--list span { -webkit-text-stroke: 0; }
+
+/* Sheets: the option list and Settings. */
+.b-pop {
+  position: absolute; z-index: 3; box-sizing: border-box; width: min(320px, calc(100% - 2 * var(--pad)));
+  max-height: calc(100% - 2 * var(--pad) - var(--h) - 16px); overflow-y: auto; overscroll-behavior: contain;
+  color: var(--fg); background: var(--sheet); border: 1px solid var(--fg);
+}
+.b-pop[hidden] { display: none; }
+.b-pop-hd { display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 12px; border-bottom: 1px solid var(--line); letter-spacing: 0.14em; }
+.b-x { color: var(--muted); }
+.b-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 2px; padding: 8px; }
+.b-opt { justify-content: flex-start; width: 100%; min-width: 0; padding: 0 10px; font-weight: 500; letter-spacing: 0.04em; }
+.b-opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.b-opt kbd { margin-left: auto; }
+.b-opt[aria-pressed="true"] { color: var(--bg); background: var(--fg); }
+.b-rows { display: grid; gap: 2px; padding: 6px 12px 10px; }
+.b-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--h); height: auto; padding: 0; font-weight: 500; letter-spacing: 0.06em; }
+.b-row input { width: 120px; }
+/* The main slider's Settings row shows only on a narrow stage. */
+.b-row--main { display: none; }
+.b-edge { height: calc(var(--h) - 6px); border: 1px solid var(--line); font-weight: 500; }
+.b-ft { display: flex; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.b-ft .b-btn { flex: 1; }
+@media (hover: hover) {
+  .b-pop .b-btn:not([aria-pressed="true"]):hover, .b-body .b-btn:not([aria-pressed="true"]):hover { background: oklch(0.94 0.008 275 / 0.1); }
+}
+
+/* A narrow stage: the row of options folds into its list; the slider joins Settings. */
+.b-narrow { display: none; }
+@container stim (width < 640px) {
+  .b-wide, .b-main { display: none; }
+  .b-narrow { display: inline-flex; }
+  .b-row--main { display: flex; }
+}
+
+/* ---------- corners, for Bare ---------- */
+.b-tr, .b-bl, .b-br { position: absolute; display: flex; align-items: center; }
+.b-tr { top: var(--pad); right: var(--pad); }
+.b-bl { bottom: var(--pad); left: var(--pad); }
+.b-br { bottom: var(--pad); right: var(--pad); }
+[data-concept="bare"] .b-pop--pick { left: var(--pad); bottom: calc(var(--pad) + var(--h) + 10px); }
+[data-concept="bare"] .b-pop--set { right: var(--pad); top: calc(var(--pad) + var(--h) + 10px); }
+
+/* ---------- Bare: no boxes; a pick flashes white ---------- */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) { gap: 2px; }
+/* Each word carries a dark edge, so it reads on any scene. */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn > span, .b-slider > span, .b-info) { -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn svg { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn kbd { background: var(--sheet); }
+/* The flash box opens from the middle, as the intro's box does. */
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn::before {
+  content: ""; position: absolute; inset: 5px 2px; z-index: -1; background: var(--fg);
+  transform: scaleX(0); transition: transform 0.2s steps(6, end);
+}
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible) { color: var(--bg); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible)::before { transform: scaleX(1); }
+[data-concept="bare"] :is(.b-tr, .b-bl, .b-br) :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible) :is(span, svg) { -webkit-text-stroke: 0; filter: none; }
+@media (hover: hover) {
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover { color: var(--bg); }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover::before { transform: scaleX(1); }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn:hover :is(span, svg) { -webkit-text-stroke: 0; filter: none; }
+  [data-concept="bare"] :is(.b-tr, .b-bl, .b-br) .b-btn.b-info:hover { -webkit-text-stroke: 0; }
+}
+[data-concept="bare"] .b-seg { border: 0; }
+[data-concept="bare"] .b-seg .b-btn { height: var(--h); border: 0; font-weight: 700; background: none; }
+/* The bare slider is a line with a dark casing. */
+[data-concept="bare"] .b-main input {
+  background:
+    linear-gradient(currentColor, currentColor) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.45), oklch(0.94 0.008 275 / 0.45)) 0 50% / 100% 2px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 6px no-repeat;
+}
+[data-concept="bare"] .b-main input::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--ink); }
+[data-concept="bare"] .b-main input::-moz-range-thumb { box-shadow: 0 0 0 2px var(--ink); }
+
+/* ---------- Signal: one bar, no boxes, in the intro's beats ---------- */
+/* Tom's ingredients (2026-11-16): one bar, no boxes, flash beats, leave then return. */
+/* White is the flash: a thing that happens now. The toy's ink is a state that holds. */
+@property --sg-split { syntax: "<percentage>"; inherits: true; initial-value: 50%; }
+.bl-ui[data-concept="signal"] {
+  --h: 44px; --edge: 3.5px;
+  font: 800 14px/1 "Iosevka Term Slab Nerd Font", var(--slab); letter-spacing: 0.06em;
+}
+.bl-touch .bl-ui[data-concept="signal"] { --h: 46px; font-size: 14px; }
+@media (pointer: coarse) { .bl-ui[data-concept="signal"] { --h: 46px; font-size: 14px; } }
+[data-concept="signal"] .b-btn { padding: 0 11px; }
+[data-concept="signal"] .b-btn svg { width: 18px; height: 18px; stroke-width: 1.75; color: var(--acc-ink); }
+[data-concept="signal"] .b-btn kbd { font-size: 11px; }
+[data-concept="signal"] .b-ico { padding: 0; }
+.sg-bar {
+  position: absolute; left: var(--pad); right: var(--pad); bottom: var(--pad); z-index: 2;
+  width: fit-content; max-width: calc(100% - 2 * var(--pad)); margin-inline: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  /* The bar is one blend group, so its flash box inverts only its own words. */
+  isolation: isolate; transform-origin: 50% 50%;
+}
+.sg-bar[data-off] { visibility: hidden; pointer-events: none; }
+.sg-grp { display: flex; align-items: center; }
+/* The slash of the logo's breadcrumb parts the groups. */
+.sg-grp + .sg-grp::before { content: "/"; margin: 0 8px; color: var(--fg); opacity: 0.6; font-weight: 500; -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill; }
+/* Each word carries a dark edge, so it reads on any scene. */
+.sg-bar :is(.b-btn > span, .b-slider > span) { -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill; }
+.sg-bar .b-btn svg { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)) drop-shadow(0 0 2px var(--ink)); }
+.sg-bar .b-caret { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)); }
+.sg-bar .b-btn kbd { background: var(--sheet); }
+/* The flash box: white sides that close on the middle, as in the intro.
+   Difference blending turns the words under it dark, frame by frame. */
+.sg-box, [data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn::after {
+  content: ""; position: absolute; pointer-events: none; mix-blend-mode: difference;
+  background: linear-gradient(90deg, #fff calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #fff 0);
+}
+.sg-box { inset: 3px -10px; z-index: 2; }
+.sg-box--sheet { inset: 0; }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn { --sg-split: 50%; transition: --sg-split 0.1s steps(3, end); }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn::after { inset: 6px 2px; z-index: 1; transform: scale(var(--sg-k, 1)); }
+[data-concept="signal"] .b-pop .b-btn::after { inset: 2px 0; }
+/* The white box is a press: it is there while a pointer is down, and on an open sheet. */
+[data-concept="signal"] :is(.sg-bar, .b-pop) :is(.b-btn[aria-expanded="true"], .b-btn.is-on, .b-btn.is-cut) { --sg-split: 0%; }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn.is-cut { transition: none; }
+/* Hover. The lab's Hover knob picks the treatment; every one is instant or a few held frames.
+   Keyboard focus always shows the ink bar. A press is always the white box. */
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn {
+  background: var(--acc-img) 50% calc(100% - 3px) / 0 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / 0 8px no-repeat;
+  transition: --sg-split 0.1s steps(3, end), background-size 0.1s steps(3, end);
+}
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn > span { transition: translate 0.07s steps(2, end); }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn:focus-visible { box-shadow: none; }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):focus-visible { background: var(--acc-img) 50% calc(100% - 3px) / calc(100% - 18px) 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / calc(100% - 14px) 8px no-repeat; }
+[data-concept="signal"] :is(.sg-bar, .b-pop) .b-ico:not([aria-pressed="true"]:not(.b-snd)):focus-visible { background: var(--acc-img) 50% calc(100% - 3px) / 20px 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / 24px 8px no-repeat; }
+@media (hover: hover) and (pointer: fine) {
+  /* Bar: the flash box dropped to a bar at the foot, in the toy's ink (the intro's --box-y). */
+  [data-concept="signal"][data-hover="bar"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover { background: var(--acc-img) 50% calc(100% - 3px) / calc(100% - 18px) 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / calc(100% - 14px) 8px no-repeat; }
+  [data-concept="signal"][data-hover="bar"] :is(.sg-bar, .b-pop) .b-ico:not([aria-pressed="true"]:not(.b-snd)):hover { background: var(--acc-img) 50% calc(100% - 3px) / 20px 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / 24px 8px no-repeat; }
+  /* Line: a thin white line at the foot. */
+  [data-concept="signal"][data-hover="line"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover { background: linear-gradient(var(--fg), var(--fg)) 50% calc(100% - 4px) / calc(100% - 18px) 2px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 2px) / calc(100% - 14px) 6px no-repeat; }
+  [data-concept="signal"][data-hover="line"] :is(.sg-bar, .b-pop) .b-ico:not([aria-pressed="true"]:not(.b-snd)):hover { background: linear-gradient(var(--fg), var(--fg)) 50% calc(100% - 4px) / 20px 2px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 2px) / 24px 6px no-repeat; }
+  /* Box: the white flash box closes in from the sides. */
+  [data-concept="signal"][data-hover="box"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover { --sg-split: 0%; }
+  [data-concept="signal"][data-hover="box"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover :is(svg, span) { color: var(--fg); }
+  /* Ink box: the box grows from the middle in the toy's ink; the white box is still the press. */
+  [data-concept="signal"][data-hover="inkbox"] :is(.sg-bar, .b-pop) .b-btn { background: var(--acc-fill) 50% 50% / 0 calc(100% - 12px) no-repeat; }
+  [data-concept="signal"][data-hover="inkbox"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover { background: var(--acc-fill) 50% 50% / calc(100% - 4px) calc(100% - 12px) no-repeat; }
+  [data-concept="signal"][data-hover="inkbox"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover :is(svg, span) { color: var(--acc-on); -webkit-text-stroke: 0; filter: none; }
+  /* Brackets: the word steps into a pair of keycap brackets. */
+  [data-concept="signal"][data-hover="brackets"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover { background: linear-gradient(var(--fg), var(--fg)) 3px 50% / 2px 24px no-repeat, linear-gradient(var(--fg), var(--fg)) calc(100% - 3px) 50% / 2px 24px no-repeat, linear-gradient(var(--fg), var(--fg)) 3px calc(50% - 11px) / 7px 2px no-repeat, linear-gradient(var(--fg), var(--fg)) 3px calc(50% + 11px) / 7px 2px no-repeat, linear-gradient(var(--fg), var(--fg)) calc(100% - 3px) calc(50% - 11px) / 7px 2px no-repeat, linear-gradient(var(--fg), var(--fg)) calc(100% - 3px) calc(50% + 11px) / 7px 2px no-repeat; transition: none; }
+  /* Word: the word takes the toy's ink and steps up. */
+  [data-concept="signal"][data-hover="word"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover > span { color: var(--acc-ink); translate: 0 -2px; }
+  [data-concept="signal"][data-hover="word"] :is(.sg-bar, .b-pop) .b-btn:not([aria-pressed="true"]:not(.b-snd)):hover > svg { translate: 0 -2px; }
+  /* The slider answers the pointer too: its thumb takes the ink. */
+  [data-concept="signal"] .b-slider:hover input::-webkit-slider-thumb { background: var(--acc-ink); }
+  [data-concept="signal"] .b-slider:hover input::-moz-range-thumb { background: var(--acc-ink); }
+}
+/* Under the white box every hover mark is gone at once. */
+[data-concept="signal"] :is(.sg-bar, .b-pop) :is(.b-btn.is-cut, .b-btn[aria-expanded="true"], .b-btn.is-on) { background-size: 0 0 !important; }
+[data-concept="signal"] :is(.sg-bar, .b-pop) :is(.b-btn.is-cut, .b-btn[aria-expanded="true"], .b-btn.is-on) > :is(span, svg) { translate: none !important; }
+/* An open list turns its caret; sound that is off rests white. */
+[data-concept="signal"] .b-pick[aria-expanded="true"] .b-caret { rotate: 180deg; }
+[data-concept="signal"] .b-snd[aria-pressed="false"] svg { color: var(--fg); opacity: 0.75; }
+/* The slider: the thumb answers the grip at once. */
+[data-concept="signal"] .b-slider input:active::-webkit-slider-thumb { height: 28px; background: var(--acc-ink); }
+[data-concept="signal"] .b-slider input:active::-moz-range-thumb { height: 28px; background: var(--acc-ink); }
+[data-concept="signal"] .b-slider:has(input:focus-visible) { box-shadow: none; }
+[data-concept="signal"] .b-slider:has(input:focus-visible) input::-webkit-slider-thumb { background: var(--acc-ink); height: 28px; }
+[data-concept="signal"] .b-slider:has(input:focus-visible) input::-moz-range-thumb { background: var(--acc-ink); height: 28px; }
+/* The name of an icon button: a bare word above it. */
+.sg-tip {
+  position: absolute; bottom: calc(var(--pad) + var(--barh, var(--h)) + 2px); z-index: 4; transform: translateX(-50%);
+  font-size: 12px; letter-spacing: 0.1em; white-space: nowrap; pointer-events: none;
+  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
+}
+.sg-tip[hidden] { display: none; }
+[data-concept="signal"] .b-hints.is-under { opacity: 0.2; }
+/* Option art keeps its colours; a heading parts the groups. */
+[data-concept="signal"] .b-btn svg.b-art { position: relative; z-index: 2; width: 24px; height: 24px; stroke: none; filter: none; }
+.b-group-hd { grid-column: 1 / -1; padding: 10px 10px 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.2em; color: var(--fg); }
+/* Keycaps show only in How to play, and they are gentle (Tom, 2026-11-17): a hairline box, no fill. */
+[data-concept="signal"] :is(.sg-bar, .b-pop--pick) kbd { display: none; }
+[data-concept="signal"] .b-how kbd {
+  font: 700 11px/1 "Iosevka Term Slab Nerd Font", var(--slab); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 4px 6px; color: var(--fg); background: none; border: 1px solid oklch(0.94 0.008 275 / 0.45); box-shadow: none; opacity: 1;
+}
+/* How to play: one row per gesture or key. */
+.b-how { display: grid; padding: 0 10px 4px; }
+.b-how-row { display: flex; align-items: center; gap: 14px; min-height: calc(var(--h) - 10px); font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: none; }
+.b-how-row kbd { flex: none; min-width: 20px; text-align: center; }
+.b-rows > .b-group-hd { padding-inline: 0; }
+/* Ink: Words. The lab can put the toy's ink on the words too. */
+[data-concept="signal"][data-ink="words"] :is(.sg-bar .b-btn > span, .sg-bar .b-slider > span, .b-pop .b-opt > span, .b-pop .b-row > span, .b-pop .b-step-now) { color: var(--acc-ink); }
+/* Ink: Flash. The flash box takes the ink; the marks rest white. */
+[data-concept="signal"][data-ink="flash"] .b-btn svg { color: var(--fg); }
+.sg-tint { display: none; }
+[data-ink="flash"] .sg-tint, [data-concept="signal"][data-ink="flash"] :is(.sg-bar, .b-pop) .b-btn::before {
+  content: ""; display: block; position: absolute; pointer-events: none; mix-blend-mode: multiply; background: var(--acc-img);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+  mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+}
+[data-ink="flash"] .sg-tint { inset: 3px -10px; z-index: 3; }
+[data-ink="flash"] .sg-tint--sheet { inset: 0; }
+[data-concept="signal"][data-ink="flash"] :is(.sg-bar, .b-pop) .b-btn::before { inset: 6px 2px; z-index: 2; transform: scale(var(--sg-k, 1)); }
+[data-concept="signal"][data-ink="flash"] .b-pop .b-btn::before { inset: 2px 0; }
+/* Under the white box a mark is plain white, so the blend turns it dark. */
+[data-concept="signal"] :is(.sg-bar, .b-pop) :is(.b-btn[aria-expanded="true"], .b-btn.is-on, .b-btn.is-cut) :is(svg, span) { color: var(--fg); }
+[data-concept="signal"] .is-boxed svg.b-art { filter: brightness(0) invert(1); }
+/* The same holds while a whole bar or sheet sits under its box. */
+[data-concept="signal"]:not([data-ink="flash"]) .is-boxed { --acc-img: linear-gradient(var(--fg), var(--fg)); --acc-fill: linear-gradient(var(--fg), var(--fg)); --acc-on: var(--fg); }
+[data-concept="signal"] .is-boxed :is(svg, span) { color: var(--fg) !important; }
+/* A pick that holds wears the toy's ink, as the intro's logo does at rest. */
+[data-concept="signal"] :is(.b-opt, .b-seg .b-btn)[aria-pressed="true"] { color: var(--acc-on); background: var(--acc-fill); }
+[data-concept="signal"] :is(.b-opt, .b-seg .b-btn)[aria-pressed="true"] :is(span, svg) { color: var(--acc-on); -webkit-text-stroke: 0; filter: none; }
+[data-concept="signal"] .b-seg { border: 0; gap: 2px; }
+[data-concept="signal"] .b-seg .b-btn { height: calc(var(--h) - 10px); border: 0; font-weight: 800; }
+[data-concept="signal"] .b-seg .b-btn + .b-btn { border: 0; }
+.sg-bar .b-seg .b-btn { height: calc(var(--h) - 8px); }
+/* The slider: a line with a dark casing; its fill is the toy's ink. */
+[data-concept="signal"] .b-slider input {
+  width: 124px; background:
+    var(--acc-img) 0 50% / var(--v, 0%) 3px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.5), oklch(0.94 0.008 275 / 0.5)) 0 50% / 100% 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 7px no-repeat;
+}
+[data-concept="signal"] .b-slider input::-webkit-slider-thumb { width: 10px; height: 22px; background: var(--fg); box-shadow: 0 0 0 2px var(--ink); }
+[data-concept="signal"] .b-slider input::-moz-range-thumb { width: 10px; height: 22px; background: var(--fg); box-shadow: 0 0 0 2px var(--ink); }
+@container stim (width < 640px) {
+  .sg-grp.b-main { display: none; }
+  .sg-grp + .sg-grp::before { margin: 0 2px; }
+  .sg-bar .b-btn { padding: 0 9px; }
+  .sg-bar .b-ico { padding: 0; width: 42px; min-width: 42px; }
+}
+/* The glass rises behind an open sheet, with a soft top and no edge. */
+.sg-glass {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 0; z-index: 1; opacity: 0; pointer-events: none;
+  -webkit-backdrop-filter: blur(28px) brightness(0.34); backdrop-filter: blur(28px) brightness(0.34);
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent);
+  transition: opacity 0.1s steps(3, end);
+}
+.sg-glass[data-on] { opacity: 1; pointer-events: auto; }
+/* A sheet has no box: its rows stand on the glass, above the bar. */
+[data-concept="signal"] .b-pop {
+  left: var(--pad); right: var(--pad); bottom: calc(var(--pad) + var(--barh, var(--h)) + 14px); margin-inline: auto;
+  width: min(620px, calc(100% - 2 * var(--pad))); max-height: calc(100% - 2 * var(--pad) - var(--barh, var(--h)) - var(--h) - 60px);
+  background: none; border: 0; isolation: isolate; transform-origin: 50% 100%;
+}
+[data-concept="signal"] .b-pop--set { width: min(420px, calc(100% - 2 * var(--pad))); }
+/* A closing sheet stays for its two frames. */
+[data-concept="signal"] .b-pop.is-closing { display: block !important; pointer-events: none; }
+[data-concept="signal"] .b-pop-hd { height: 30px; padding: 0 10px; border: 0; color: var(--fg); font-size: 11px; font-weight: 800; letter-spacing: 0.2em; }
+[data-concept="signal"] .b-x { display: none; }
+[data-concept="signal"] .b-grid { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 0 4px; padding: 0; }
+[data-concept="signal"] .b-opt { height: calc(var(--h) - 6px); font-size: 13px; font-weight: 700; letter-spacing: 0.05em; }
+[data-concept="signal"] .b-rows { gap: 0; padding: 0 10px; border: 0; }
+[data-concept="signal"] .b-row { font-size: 13px; font-weight: 700; }
+[data-concept="signal"] .b-ft { padding: 4px 0 0; border: 0; justify-content: flex-start; }
+[data-concept="signal"] .b-ft .b-btn { flex: none; }
+[data-concept="signal"] .b-edge { height: calc(var(--h) - 6px); border: 0; font-weight: 800; }
+[data-concept="signal"] .b-hints { bottom: calc(var(--pad) + var(--barh, var(--h)) + 10px); font-size: 12px; transition: none; }
+[data-concept="signal"] .b-hints kbd { font-size: 11px; }
+/* A long choice steps: one name between two arrows. */
+.b-step { display: inline-flex; align-items: center; }
+.b-step .b-ico { width: calc(var(--h) - 8px); min-width: 34px; height: calc(var(--h) - 8px); font-size: 20px; line-height: 1; }
+.b-step-now { min-width: 104px; padding: 0 4px; text-align: center; white-space: nowrap; }
+[data-concept="signal"][data-ink="flash"] .b-slider input { background:
+  linear-gradient(var(--fg), var(--fg)) 0 50% / var(--v, 0%) 3px no-repeat,
+  linear-gradient(oklch(0.94 0.008 275 / 0.5), oklch(0.94 0.008 275 / 0.5)) 0 50% / 100% 3px no-repeat,
+  linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 7px no-repeat; }
+/* The top left: the toy's icon as a monogram. It is the intro's flash box at rest:
+   a white square with the emblem cut out dark (Tom, 2026-11-17). No shadow. */
+.sg-mono {
+  position: absolute; top: var(--pad); left: var(--pad); z-index: 2;
+  display: inline-flex; align-items: center; height: var(--h); padding: 0 10px 0 0;
+  color: var(--fg); text-decoration: none; cursor: pointer;
+}
+.sg-emblem {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden;
+  color: var(--bg); background: var(--fg); --sg-split: 0%;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+  mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+  transition: --sg-split 0.1s steps(3, end), width 0s;
+}
+.sg-emblem i { display: block; width: 90%; height: 90%; background: currentColor; -webkit-mask: var(--emblem) center / contain no-repeat; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.sg-emblem b { font: 700 34px/1 "B612", var(--sans); }
+.sg-mono .mark { display: inline-flex; align-items: baseline; font: 700 30px/1 "B612", var(--sans); letter-spacing: -0.02em; text-transform: none; }
+/* At rest the logo holds no room. */
+.sg-mono .mark span { max-width: 0; opacity: 0; transition: max-width 0s, opacity 0s; }
+.sg-mono .s2-arrow { font: 800 24px/1 var(--slab); transition: width 0s, opacity 0s; }
+/* Pointing parts the square down the middle in three frames, as the intro's box parts.
+   Then the logo plays: the chevron, and one letter per film frame, and the shell's colour wave. */
+.sg-mono:is(:hover, :focus-visible) .sg-emblem { --sg-split: 50%; width: 0; transition: --sg-split 0.1s steps(3, end), width 0s linear 0.1s; }
+.sg-mono:is(:hover, :focus-visible) .mark span { max-width: 1.5em; opacity: 1; transition-delay: calc(100ms + var(--i) * 33.333ms); animation-delay: calc(100ms + var(--i) * 33.333ms); }
+.sg-mono:is(:hover, :focus-visible) .s2-arrow { width: 0.8em; opacity: 1; transition-delay: 100ms; }
+@media (prefers-reduced-motion: reduce) { .sg-mono .mark span, .sg-emblem { transition: none !important; animation: none !important; } }
+/* A bar on two rows drops its slashes. */
+.sg-bar.is-wrapped .sg-grp + .sg-grp::before { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bl-ui *, .bl-ui *::before, .bl-ui *::after { transition: none !important; }
+}

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Bar probe</title>
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+:root { --bg: oklch(0.16 0.012 275); --fg: oklch(0.94 0.008 275); --muted: oklch(0.64 0.02 275); --line: oklch(0.29 0.016 275); --mono: "Iosevka Term Slab", ui-monospace, monospace; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "Gabarito", system-ui, sans-serif; }
+body { display: flex; flex-direction: column; }
+/* The lab strip sits above the toy; it is not part of any direction. */
+.strip { flex: none; display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: center; align-items: center; padding: 10px 16px 6px; }
+.strip div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.strip span { font: 500 11px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.strip button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--muted); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 8px 13px; cursor: pointer; }
+.strip button[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
+.strip button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
+.strip select { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--fg); background: var(--bg); border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 7px 10px; }
+.strip input[type="color"] { width: 30px; height: 30px; padding: 0; border: 1px solid oklch(0.32 0.02 275); border-radius: 50%; background: none; cursor: pointer; }
+/* The accent, ink and presence knobs act on Signal only. */
+body:not([data-c="signal"]) .sig { opacity: 0.35; pointer-events: none; }
+.note { flex: none; margin: 0; padding: 0 16px 10px; text-align: center; font-size: 14px; color: var(--muted); min-height: 1.3em; }
+/* The toy runs in the frame at the picked size. */
+.well { flex: 1; min-height: 0; display: grid; place-items: start center; overflow: hidden; }
+iframe { display: block; border: 0; width: 100%; height: 100%; background: var(--bg); transform-origin: 50% 0; }
+.well[data-size="phone"] iframe { width: 375px; height: 812px; outline: 1px solid var(--line); }
+.well[data-size="wide"] iframe { width: 812px; height: 375px; outline: 1px solid var(--line); }
+</style>
+<body>
+<div class="strip">
+  <div role="group" aria-label="Bar direction" id="concepts"><span>Bar</span>
+    <button type="button" data-c="signal">Signal</button>
+    <button type="button" data-c="bare">Bare</button>
+    <button type="button" data-c="today">Today</button>
+  </div>
+  <div><span>Toy</span>
+    <select id="toy" aria-label="Toy">
+      <optgroup label="The first ten">
+        <option value="cauldron">Cauldron: grouped list, slider, Dev</option>
+        <option value="trainride">Train ride: stepper, long choice row</option>
+        <option value="railgun">Railgun: grouped Settings, 56 Dev rows</option>
+        <option value="galaxy">Galaxy: 16 options, slider</option>
+        <option value="window">Window seat: five on the bar, seven rows</option>
+        <option value="fire">Fire: stepper, slider, segments</option>
+        <option value="eyes">Googly eyes: actions only</option>
+        <option value="prism">Prism: add and clear, a stepper</option>
+        <option value="bubbles">Bubbles: a held action</option>
+        <option value="frietkot">Frietkot: nothing on the bar</option>
+      </optgroup>
+      <optgroup label="More hard menus">
+        <option value="windmap">Wind map: three actions, choices</option>
+        <option value="carwash">Car wash: held action, Dev</option>
+        <option value="pendulum">Pendulum: three actions</option>
+        <option value="rain">Rain: choice and slider</option>
+      </optgroup>
+    </select>
+  </div>
+  <div role="group" aria-label="Size" id="sizes"><span>Size</span>
+    <button type="button" data-s="full">Full</button>
+    <button type="button" data-s="phone">Phone</button>
+    <button type="button" data-s="wide">Phone, wide</button>
+  </div>
+  <div role="group" aria-label="Accent" id="accents" class="sig"><span>Accent</span>
+    <button type="button" data-a="toy">Toy</button>
+    <button type="button" data-a="series">Series</button>
+    <button type="button" data-a="mark">Wordmark</button>
+    <button type="button" data-a="white">White</button>
+    <input type="color" id="tint" value="#ffd24a" aria-label="Your own accent" title="Your own accent">
+  </div>
+  <div role="group" aria-label="Ink" id="inks" class="sig"><span>Ink</span>
+    <button type="button" data-k="marks">Marks</button>
+    <button type="button" data-k="words">Words</button>
+    <button type="button" data-k="flash">Flash</button>
+  </div>
+  <div role="group" aria-label="Hover" id="hovers" class="sig"><span>Hover</span>
+    <button type="button" data-h="box">White box</button>
+    <button type="button" data-h="bar">Ink bar</button>
+    <button type="button" data-h="line">Line</button>
+    <button type="button" data-h="inkbox">Ink box</button>
+    <button type="button" data-h="brackets">Brackets</button>
+    <button type="button" data-h="word">Ink word</button>
+  </div>
+  <div role="group" aria-label="Presence" id="stays" class="sig"><span>Leaves</span>
+    <button type="button" data-p="idle">After 8 s idle</button>
+    <button type="button" data-p="stay">Never</button>
+    <button type="button" data-p="touch">On touch</button>
+  </div>
+  <div><button type="button" id="dev">Dev</button><button type="button" id="replay" title="Key R">Replay</button></div>
+</div>
+<p class="note" id="note"></p>
+<div class="well" id="well"><iframe id="frame" title="Toy with the picked bar"></iframe></div>
+<script type="module">
+// A probe: other ways to do the toy bars. It changes no shell file.
+// The frame runs a real toy; shim.js stands in for shared/stim.js there.
+const NOTES = {
+  signal: 'Signal: one bar, no boxes, in the intro\'s beats. It stays while you play and leaves after 8 s with no input. Accent, Ink and Leaves are knobs to explore.',
+  bare: 'Bare: no boxes. Words and icons sit in the corners; a pick flashes white.',
+  today: 'Today: Bar v2. Controls in four corners, on dark glass.',
+};
+const q = new URLSearchParams(location.search);
+const state = {
+  c: NOTES[q.get('c')] ? q.get('c') : 'signal',
+  t: q.get('t') || 'galaxy',
+  s: ['full', 'phone', 'wide'].includes(q.get('s')) ? q.get('s') : 'full',
+  a: q.get('a') || 'toy',
+  k: ['marks', 'words', 'flash'].includes(q.get('k')) ? q.get('k') : 'marks',
+  p: ['idle', 'stay', 'touch'].includes(q.get('p')) ? q.get('p') : 'idle',
+  h: ['bar', 'line', 'box', 'inkbox', 'brackets', 'word'].includes(q.get('h')) ? q.get('h') : 'box',
+  dev: q.has('dev'),
+};
+let frame = document.getElementById('frame');
+const well = document.getElementById('well');
+const SIZES = { phone: [375, 812], wide: [812, 375] };
+
+// The toy page loads as text, so its import map can point stim.js at the shim.
+async function load(toy) {
+  const dir = new URL(`../${toy}/`, location.href);
+  let html = await (await fetch(new URL('index.html', dir), { cache: 'no-cache' })).text();
+  const stim = new URL('../shared/stim.js', location.href).href;
+  const shim = new URL('shim.js', location.href).href;
+  const re = /<script type="importmap">([\s\S]*?)<\/script>/;
+  const found = html.match(re);
+  const map = found ? JSON.parse(found[1]) : {};
+  // Only modules in the toy's folder get the shim; shared modules keep stim.js.
+  map.scopes = { ...(map.scopes || {}), [dir.href]: { [stim]: shim } };
+  const tag = `<script type="importmap">${JSON.stringify(map)}<\/script>`;
+  if (found) html = html.replace(re, () => tag);
+  // The intro leaves at once, so a switch of toy costs no wait.
+  const skip = `<script>new MutationObserver((_, mo) => { const el = document.querySelector('.intro'); if (el) { el.remove(); mo.disconnect(); } }).observe(document.documentElement, { childList: true, subtree: true });<\/script>`;
+  // The page takes the toy's own address, so code that reads location still works.
+  const home = `<script>history.replaceState(null, '', ${JSON.stringify(dir.href + (state.dev ? '?dev' : ''))});<\/script>`;
+  html = html.replace(/<head[^>]*>/i, h => `${h}<base href="${dir.href}">${home}${found ? '' : tag}${skip}`);
+  // A fresh frame per toy: the old toy's timers and GL context go with its window.
+  const next = frame.cloneNode(false);
+  frame.replaceWith(next);
+  frame = next;
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(html);
+  doc.close();
+}
+
+// A size too tall for the well scales down to fit.
+function fit() {
+  well.dataset.size = state.s;
+  frame.dataset.size = state.s;
+  const dim = SIZES[state.s];
+  const k = dim ? Math.min(1, (well.clientHeight - 8) / dim[1], (well.clientWidth - 8) / dim[0]) : 1;
+  frame.style.transform = k < 1 ? `scale(${k})` : '';
+}
+function show() {
+  frame.dataset.concept = state.c;
+  frame.dataset.accent = state.a;
+  frame.dataset.ink = state.k;
+  frame.dataset.presence = state.p;
+  frame.dataset.hover = state.h;
+  for (const b of document.querySelectorAll('[data-h]')) b.setAttribute('aria-pressed', String(b.dataset.h === state.h));
+  frame.dataset.dev = state.dev ? '1' : '0';
+  document.body.dataset.c = state.c;
+  document.getElementById('toy').value = state.t;
+  for (const b of document.querySelectorAll('[data-a]')) b.setAttribute('aria-pressed', String(b.dataset.a === state.a));
+  for (const b of document.querySelectorAll('[data-k]')) b.setAttribute('aria-pressed', String(b.dataset.k === state.k));
+  for (const b of document.querySelectorAll('[data-p]')) b.setAttribute('aria-pressed', String(b.dataset.p === state.p));
+  document.getElementById('dev').setAttribute('aria-pressed', String(state.dev));
+  document.getElementById('note').textContent = NOTES[state.c];
+  for (const b of document.querySelectorAll('[data-c]')) b.setAttribute('aria-pressed', String(b.dataset.c === state.c));
+  for (const b of document.querySelectorAll('[data-s]')) b.setAttribute('aria-pressed', String(b.dataset.s === state.s));
+  fit();
+  // The address keeps the view, so a link opens the same one.
+  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}&a=${encodeURIComponent(state.a)}&k=${state.k}&h=${state.h}&p=${state.p}${state.dev ? '&dev' : ''}${q.get('slow') ? `&slow=${q.get('slow')}` : ''}`);
+  try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {}
+}
+document.getElementById('concepts').addEventListener('click', e => { const c = e.target.closest('[data-c]')?.dataset.c; if (c) { state.c = c; show(); } });
+document.getElementById('toy').addEventListener('change', e => { state.t = e.target.value; show(); load(state.t); });
+document.getElementById('accents').addEventListener('click', e => { const a = e.target.closest('[data-a]')?.dataset.a; if (a) { state.a = a; show(); } });
+document.getElementById('tint').addEventListener('input', e => { state.a = e.target.value; show(); });
+document.getElementById('inks').addEventListener('click', e => { const k = e.target.closest('[data-k]')?.dataset.k; if (k) { state.k = k; show(); } });
+document.getElementById('hovers').addEventListener('click', e => { const v = e.target.closest('[data-h]')?.dataset.h; if (v) { state.h = v; show(); } });
+document.getElementById('stays').addEventListener('click', e => { const v = e.target.closest('[data-p]')?.dataset.p; if (v) { state.p = v; show(); } });
+document.getElementById('dev').addEventListener('click', () => { state.dev = !state.dev; show(); });
+document.getElementById('sizes').addEventListener('click', e => { const s = e.target.closest('[data-s]')?.dataset.s; if (s) { state.s = s; show(); } });
+// Replay draws the direction again, so its arrival plays.
+const replay = () => { try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {} };
+document.getElementById('replay').addEventListener('click', replay);
+// ?slow=N stretches each film frame, for a close look at the beats.
+if (Number(q.get('slow')) > 1) frame.dataset.slow = q.get('slow');
+// Keys 1 to 3 pick a direction; R replays.
+addEventListener('keydown', e => {
+  const c = Object.keys(NOTES)[Number(e.key) - 1];
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (c) { state.c = c; show(); }
+  else if (e.key === 'r' || e.key === 'R') replay();
+});
+addEventListener('resize', fit);
+show();
+load(state.t);
+</script>

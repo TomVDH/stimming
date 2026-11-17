@@ -58,7 +58,8 @@
 .palette .tile svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
 .palette .tile svg .solid { fill: currentColor; stroke: none; }
 @media (hover: hover) { .palette .tile:hover { color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift); } }
-html[data-carry] .palette { opacity: 0; pointer-events: none; }
+/* A carried piece needs a clear table: the tray and Bar v3's sheet and glass step aside. */
+html[data-carry] :is(.palette, .sg-tray, .sg-glass) { opacity: 0; pointer-events: none; }
 /* The zoom chip shows only while the view is zoomed; a press resets it. */
 .zoomchip {
   position: absolute; left: 50%; top: 8px; z-index: 1; transform: translateX(-50%);
@@ -91,19 +92,19 @@ html[data-carry] .palette { opacity: 0; pointer-events: none; }
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/prism.svg)"></span><span class="intro-name">Prism</span><span class="intro-sub">Stimming No. 07</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/prism.svg)"></span><span class="intro-name">Prism</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
     <canvas class="halo" aria-hidden="true"></canvas>
-    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism and fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the Piece tray. Drag a piece to move it, drag its ring or Shift-drag to turn it, or twist with two fingers. Scroll or pinch to resize a piece. Tab picks a piece, arrow keys move it, Q and E turn it, minus and plus resize it, Delete removes it, Escape lets go.">
+    <div class="stage stage--prism" id="stage" tabindex="0" role="application" aria-label="A black table. A white lamp shines through a prism. The light fans into a spectrum. Add prisms, lenses, mirrors and sensor pads from the Pieces tray. Drag a piece to move it. Drag its ring to turn it. Scroll on a piece to change its size. Press Tab to select a piece. Press the arrow keys to move it. Press Q and E to turn it. Press plus and minus to change its size. Press Delete to remove it. Press Escape to release it.">
       <canvas aria-hidden="true"></canvas>
       <canvas class="light" aria-hidden="true"></canvas>
       <canvas class="over" aria-hidden="true"></canvas>
       <button class="drop" type="button" tabindex="-1" aria-label="Remove" hidden><svg viewBox="0 0 26 26" aria-hidden="true"><circle class="disc" cx="13" cy="13" r="12"/><path class="cut" d="M9 9l8 8M17 9l-8 8"/></svg></button>
       <div class="pips" aria-hidden="true"></div>
-      <p class="fail" hidden>Prism needs WebGL2, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Prism</h1><div class="vignette" hidden></div></section>
@@ -149,10 +150,12 @@ const LIGHTS = [
   { value: '1', label: 'Violet laser', dot: 'oklch(0.58 0.24 300)' },
   ...SALTS.map(e => ({ value: e.id, label: `${e.label} lamp`, dot: okCss(e.col) })),
 ];
-const ui = initPage({ id: 'prism', bar: {
+const ui = initPage({ id: 'prism', signal: true, bar: {
   choice: { label: 'Light', display: 'stepper', value: '-1', options: LIGHTS, onPick: v => setLight(v) },
   actions: [
-    { verb: 'add', noun: 'Piece', key: 'A', onPress: () => palette.toggle() },
+    // Bar v3 shows the pieces in its own sheet; Bar v2 uses the palette below.
+    { verb: 'add', noun: 'Piece', key: 'A', onPress: () => palette.toggle(),
+      tray: { title: 'Pieces', hint: 'Click or drag', touchHint: 'Tap or drag', options: KINDS, onPick: v => { addPiece(v); panel.focus({ preventScroll: true }); } } },
     { verb: 'clear', key: 'C', onPress: () => clearAll() },
   ],
   settings: [
@@ -161,7 +164,12 @@ const ui = initPage({ id: 'prism', bar: {
   ],
   reset: () => reset(),
   quality: true,
-  keys: [['drag', 'move'], ['drag ring', 'turn'], ['scroll', 'size, zoom'], ['delete', 'remove']],
+  keys: [['drag', 'move a piece'], ['drag ring', 'turn a piece'], ['scroll', 'size, zoom'], ['delete', 'remove the piece']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Move a piece'], ['drag', 'Turn a piece by its ring'], ['drag', 'Move the view'], ['scroll', 'Change the size of a piece'], ['scroll', 'Zoom the view'],
+    ['double-click', 'Reset the view'], ['tab', 'Select the next piece'], ['← → ↑ ↓', 'Move the piece'], ['Q E', 'Turn the piece'],
+    ['+ -', 'Change the size of the piece'], ['delete', 'Remove the piece'], ['esc', 'Release the piece'], ['0', 'Reset the view'],
+    ['A', 'Add a piece'], ['C', 'Clear the table']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 /* ---------- the piece palette ---------- */
@@ -172,7 +180,7 @@ const palette = (() => {
   el.hidden = true;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Pieces');
-  el.innerHTML = '<div class="s2-hd"><span>Pieces</span><em aria-hidden="true">tap or drag</em></div><div class="grid"></div>';
+  el.innerHTML = `<div class="s2-hd"><span>Pieces</span><em aria-hidden="true">${matchMedia('(pointer: coarse)').matches ? 'Tap or drag' : 'Click or drag'}</em></div><div class="grid"></div>`;
   const grid = el.querySelector('.grid');
   for (const k of KINDS) {
     const b = document.createElement('button');
@@ -184,7 +192,9 @@ const palette = (() => {
     grid.append(b);
   }
   panel.parentElement.append(el);
-  const btn = () => [...document.querySelectorAll('.stim-ui .s2-chip')].find(b => /\+\s*Piece/i.test(b.textContent));
+  // Bar v3 draws its own + Piece button; the Bar v2 chip is then hidden.
+  // The palette hangs off the one that shows.
+  const btn = () => [...document.querySelectorAll('.sg-bar .sg-act, .stim-ui .s2-chip')].find(b => /\+\s*Piece/i.test(b.textContent) && b.getClientRects().length);
   // The palette opens above its button and stays inside the stage.
   function place() {
     const b = btn(), fr = panel.parentElement.getBoundingClientRect();
@@ -196,11 +206,13 @@ const palette = (() => {
     el.style.transform = `translate(${x}px, ${y}px)`;
   }
   function open() { el.hidden = false; place(); btn()?.setAttribute('aria-expanded', 'true'); el.querySelector('.tile')?.focus({ preventScroll: true }); }
-  function close() { if (el.hidden) return; el.hidden = true; btn()?.setAttribute('aria-expanded', 'false'); }
+  // Bar v3's sheet, when Bar v3 draws the bar.
+  const tray = () => ui.action('add')?.tray;
+  function close() { tray()?.open(false); if (el.hidden) return; el.hidden = true; btn()?.setAttribute('aria-expanded', 'false'); }
   document.addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target) && !btn()?.contains(e.target)) close(); }, true);
   document.addEventListener('keydown', e => { if (!el.hidden && e.key === 'Escape') { e.preventDefault(); close(); panel.focus({ preventScroll: true }); } }, true);
   addEventListener('resize', () => { if (!el.hidden) place(); });
-  return { open, close, toggle: () => (el.hidden ? open() : close()), get isOpen() { return !el.hidden; } };
+  return { open, close, toggle: () => { const t = tray(); if (t) t.open(); else if (el.hidden) open(); else close(); }, get isOpen() { return tray()?.isOpen ?? !el.hidden; } };
 })();
 // A laser is one wavelength bin, so it never splits.
 let lightBin = -1, wire = ui.setting('wire').value;
@@ -2164,9 +2176,9 @@ function carryEndAt(e, drop) {
   panel.focus({ preventScroll: true });
 }
 document.addEventListener('pointerdown', e => {
-  const b = e.target.closest?.('.palette [data-kind]');
+  const b = e.target.closest?.('.palette [data-kind], .sg-tray [data-value]');
   if (!b || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  carry = { kind: b.dataset.kind, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
+  carry = { kind: b.dataset.kind || b.dataset.value, id: e.pointerId, x0: e.clientX, y0: e.clientY, p: null };
 });
 addEventListener('pointermove', e => {
   if (!carry || e.pointerId !== carry.id) return;
@@ -2185,7 +2197,7 @@ addEventListener('pointerup', e => { if (carry && e.pointerId === carry.id) { if
 addEventListener('pointercancel', e => { if (carry && e.pointerId === carry.id) carryEndAt(e, false); });
 // The release after a carry is not a tap on the tray.
 document.addEventListener('click', e => {
-  if (performance.now() - carryEnd < 400 && e.target.closest?.('.palette')) { e.stopPropagation(); e.preventDefault(); }
+  if (performance.now() - carryEnd < 400 && e.target.closest?.('.palette, .sg-tray')) { e.stopPropagation(); e.preventDefault(); }
 }, true);
 function kill(p) {
   if (p.dying || p.kind === 'source') return;

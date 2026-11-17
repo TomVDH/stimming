@@ -35,14 +35,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true" data-done>
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/morpher.svg)"></span><span class="intro-name">Morpher</span><span class="intro-sub">Stimming No. 01</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/morpher.svg)"></span><span class="intro-name">Morpher</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape that melts from one form into the next. Shape picks a form, or Auto to roam. Click to drop a blob, drag to throw one, drag the shape to stretch it. Arrow keys move the aim, Space drops a blob there, C clears the blobs.">
+    <div class="stage stage--morpher" id="stage" tabindex="0" role="application" aria-label="A shape on a dark panel. It melts from one form into the next. A small blob marks the aim. Move the pointer to move the aim. Click to add a blob. Drag to throw a blob. Drag the shape to stretch it. A blob circles the shape. Then it melts into the shape. Press the arrow keys to move the aim. Press Space to add a blob. Press C to clear the panel.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Morpher needs WebGL, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -116,7 +116,7 @@ const PICK = [
   ['Ring', '<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.6"/>'],
   ['Diamond', '<path d="M8 1.5l5 6.5-5 6.5-5-6.5z"/>'],
 ];
-// Auto roams eight more forms that the Shape choice never shows.
+// Changing roams eight more forms that the Shape choice never shows.
 // Gear, burst, clover, bean, bolt, drop, wobble, smiley.
 const AUTO = [12, 13, 14, 15, 16, 17, 18, 19];
 const NPICK = PICK.length, NS = NPICK + AUTO.length;
@@ -146,16 +146,19 @@ const PAL = [
 // Blobs take candy colours in turn; the pip wears the next one.
 const CANDY = [[0.74, 0.19, 28], [0.82, 0.17, 62], [0.9, 0.17, 102], [0.84, 0.16, 162], [0.78, 0.14, 232], [0.68, 0.2, 298], [0.78, 0.17, 350]].map(lab);
 
-/* ---------- the bar: Bar v2 corners ---------- */
-// The Shape choice opens with Auto, then the twelve forms.
-const SHAPES = [{ value: 'auto', label: 'Auto' }, ...PICK.map(([label, svg], i) => ({ value: String(i), label, icon: `<svg viewBox="0 0 16 16">${svg}</svg>` }))];
+/* ---------- the bar ---------- */
+// The Shape choice opens with Changing, then the twelve forms.
+const SHAPES = [{ value: 'auto', label: 'Changing' }, ...PICK.map(([label, svg], i) => ({ value: String(i), label, icon: `<svg viewBox="0 0 16 16">${svg}</svg>` }))];
 // Morpher is silent, so the shell hides the sound toggle.
-const ui = initPage({ id: 'morpher', silent: true, bar: {
+const ui = initPage({ id: 'morpher', signal: true, silent: true, bar: {
   choice: { label: 'Shape', display: 'stepper', value: 'auto', options: SHAPES, onPick: choose },
   slider: { label: 'Blend', min: 0.02, max: 0.3, step: 0.01, value: 0.14, onInput: v => { if (U) U.uK.value = v; wakeToy(); } },
   actions: [{ verb: 'clear', key: 'C', onPress: clear }],
   quality: true,
-  keys: [['click', 'drop'], ['drag', 'throw'], ['drag the shape', 'stretch'], ['arrows + space', 'aim and drop']],
+  keys: [['click', 'add a blob'], ['drag', 'throw a blob'], ['drag', 'stretch the shape'], ['arrows', 'move the aim']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['move', 'Move the aim'], ['click', 'Add a blob'], ['drag', 'Throw a blob'], ['drag', 'Stretch the shape'],
+    ['← → ↑ ↓', 'Move the aim'], ['shift ← → ↑ ↓', 'Move the aim in large steps'], ['space', 'Add a blob'], ['C', 'Clear the panel']],
 } });
 ui.action('clear').disabled = true;
 
@@ -437,7 +440,7 @@ function setTarget(i) {
   kick(0.9);
   wakeToy();
 }
-// Auto draws forms from a shuffled bag, without back-to-back repeats.
+// Changing draws forms from a shuffled bag, without back-to-back repeats.
 function nextAuto() {
   if (!bag.length) {
     bag = AUTO.slice();
@@ -448,8 +451,8 @@ function nextAuto() {
 }
 
 /* ---------- controls ---------- */
-// A picked form holds; Auto roams the hidden forms.
-// Under reduced motion, Auto morphs once to a roaming form and rests.
+// A picked form holds; Changing roams the hidden forms.
+// Under reduced motion, Changing morphs once to a roaming form and rests.
 function choose(v) {
   auto = v === 'auto';
   if (!auto) setTarget(+v);

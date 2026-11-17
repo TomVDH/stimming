@@ -2,7 +2,7 @@ import {
   NS, reduce, TAU, PI, D2R, R2D, clamp, lerp, mod, f2, f3, rnd, angDiff, KEYS, css, mixLch, ramp, C, TICK, BUTTER, el, set, nid, grad, DOWN, blur, LIGHT, svgIn, mat, skin, WELL, well, shine, wake, sleep, S, spring, rest, board, snd, BEZEL,
 } from '../kit.js';
 
-const MARKUP = `<div class="grp"><div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick. Press the nub to shuffle the board."></div></div>`;
+const MARKUP = `<div class="grp"><div class="ctl joy" id="joy" tabindex="0" role="group" aria-roledescription="joystick" aria-label="Joystick. Click it to shuffle the board."></div></div>`;
 
 export default {
   id: 'joy', slot: 'small',

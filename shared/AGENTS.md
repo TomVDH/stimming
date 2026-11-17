@@ -36,6 +36,14 @@ Code every toy uses. A change here reaches every page.
 - `tests/bar-v2.html` must pass. Check 1280 px, 375 x 812 and 812 x 375.
 - Settings holds what a player may want. Builder tuning goes in `dev: [...]` rows, shown with `?dev`.
 
+## Shell (Bar v3, Signal)
+
+- Spec: `docs/plans/bar-v3.md`. `signal.js` and `signal.css` draw it; a toy opts in with `initPage({ signal: true })`.
+- Bar v2 still builds under it, hidden: the spec, the keys, the stored values and the handles are the same ones.
+- Bar v2 comes out when Tom has signed off Bar v3 on every toy (Tom, 2026-11-17). Until then both must work.
+- `?bar=signal` and `?bar=v2` pick one on any Bar v2 toy, for a side-by-side check.
+- `barlab/` is its workbench. A change of look starts there.
+
 ## Intro
 
 - The intro is the preloader. `progress(part)` runs 0 to 1 and never goes back. The intro lifts on its `ready` promise.

@@ -75,8 +75,8 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a night flight, the wing below. Towns glow on the ground; storms flash inside the clouds. Drag to peer around, pull the time of day, dim the glass, tap a storm to make it flash.">
-      <p class="fail" hidden>Window seat needs WebGL2, which this browser has turned off.</p>
+    <div class="stage stage--window" id="stage" tabindex="0" role="application" aria-label="A cabin window on a flight. The wing is below. Towns glow on the ground. Storms flash in the clouds. Drag to look around. Scroll to lean to the glass. Click a storm to flash it. Hold the arrow keys to fly the plane.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
       <p class="cue" aria-live="polite"></p>
     </div>
   </main>
@@ -2091,6 +2091,7 @@ if (!HOURS[opts.hour]) opts.hour = 'dusk';
 const pick3 = (a, b, c) => [{ value: a[0], label: a[1] }, { value: b[0], label: b[1] }, { value: c[0], label: c[1] }];
 const ui = initPage({
   id: 'window',
+  signal: true,
   bar: {
     choice: {
       label: 'Time of day', display: 'stepper', value: opts.hour,
@@ -2100,20 +2101,24 @@ const ui = initPage({
     slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: opts.storm, onInput: v => { if (v > stormTarget + 0.12) stormKick(v); stormTarget = v; save('storm', v); } },
     // Dim steps the glass through five levels, then back to clear.
     actions: [{ verb: 'dim', label: 'Dim', key: 'D', onPress: () => { opts.dim = (opts.dim + 1) % 5; save('dim', opts.dim); } },
-      { verb: 'light', label: 'Light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
+      { verb: 'light', label: 'Wing light', key: 'W', onPress: () => { wlight.on = !wlight.on; wake(); } },
       { verb: 'cozy', label: 'Cozy quiet flight', key: 'Q', onPress: cozy }],
     settings: [
-      { type: 'choice', id: 'cloud', label: 'Cloud', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Deck']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
-      { type: 'choice', id: 'towns', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Sparse'], ['1', 'Some'], ['1.7', 'Dense']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
-      { type: 'choice', id: 'rain', label: 'Rain', value: String(opts.rain), options: pick3(['0', 'Off'], ['0.5', 'Light'], ['1', 'Heavy']), onPick: v => { opts.rain = +v; save('rain', v); render(); } },
-      { type: 'choice', id: 'seat', label: 'Seat', value: opts.seat, options: [{ value: 'wl', label: 'Wing L' }, { value: 'wr', label: 'Wing R' }, { value: 'al', label: 'Aft L' }, { value: 'ar', label: 'Aft R' }], onPick: v => { opts.seat = v; save('seat', v); applySeat(); render(); } },
-      { type: 'toggle', id: 'aurora', label: 'Aurora', value: opts.aurora === 'on', onToggle: on => { opts.aurora = on ? 'on' : 'off'; save('aurora', opts.aurora); render(); } },
+      { type: 'choice', id: 'cloud', group: 'Outside', label: 'Clouds', value: String(opts.cloud), options: pick3(['0.62', 'Clear'], ['0.5', 'Broken'], ['0.38', 'Overcast']), onPick: v => { opts.cloud = +v; save('cloud', v); render(); } },
+      { type: 'choice', id: 'rain', group: 'Outside', label: 'Rain', value: String(opts.rain), options: pick3(['0', 'Off'], ['0.5', 'Light'], ['1', 'Heavy']), onPick: v => { opts.rain = +v; save('rain', v); render(); } },
+      { type: 'choice', id: 'towns', group: 'Outside', label: 'Towns', value: String(opts.towns), options: pick3(['0.5', 'Few'], ['1', 'Some'], ['1.7', 'Many']), onPick: v => { opts.towns = +v; save('towns', v); render(); } },
+      { type: 'toggle', id: 'aurora', group: 'Outside', label: 'Aurora', value: opts.aurora === 'on', onToggle: on => { opts.aurora = on ? 'on' : 'off'; save('aurora', opts.aurora); render(); } },
+      { type: 'choice', id: 'seat', group: 'Cabin', label: 'Seat', value: opts.seat, options: [{ value: 'wl', label: 'Wing left' }, { value: 'wr', label: 'Wing right' }, { value: 'al', label: 'Aft left' }, { value: 'ar', label: 'Aft right' }], onPick: v => { opts.seat = v; save('seat', v); applySeat(); render(); } },
       // Sights: each option calls its sight now.
-      { type: 'choice', id: 'falling', label: 'Falling', value: '', options: [{ value: 'meteor', label: 'Meteor' }, { value: 'fireball', label: 'Fireball' }, { value: 'boom', label: 'Impact' }], onPick: v => startEvent(v) },
-      { type: 'choice', id: 'flying', label: 'Flying', value: '', options: [{ value: 'rocket', label: 'Rocket' }, { value: 'jet', label: 'Jet' }], onPick: v => startEvent(v) },
+      { type: 'choice', id: 'falling', group: 'Sights', label: 'Falling', value: '', options: [{ value: 'meteor', label: 'Meteor' }, { value: 'fireball', label: 'Fireball' }, { value: 'boom', label: 'Impact' }], onPick: v => startEvent(v) },
+      { type: 'choice', id: 'flying', group: 'Sights', label: 'Flying', value: '', options: [{ value: 'rocket', label: 'Rocket' }, { value: 'jet', label: 'Jet' }], onPick: v => startEvent(v) },
     ],
     quality: true,
-    keys: [['drag', 'lean and peer'], ['scroll', 'lean closer'], ['click', 'a storm flashes'], ['arrows', 'bank, climb, dive']],
+    keys: [['drag', 'look around'], ['scroll', 'lean to the glass'], ['click', 'flash a storm'], ['arrows', 'fly the plane']],
+    // Bar v3 lists every input in How to play: one instruction per row.
+    help: [['click', 'Flash a storm'], ['drag', 'Look around'], ['drag', 'Pull the shade'], ['drag', 'Draw in the fog'], ['scroll', 'Lean to the glass'],
+      ['← →', 'Bank the plane'], ['↑', 'Dive'], ['↓', 'Climb'], ['shift ← → ↑ ↓', 'Look around'], ['+ -', 'Lean to the glass'],
+      ['B', 'Breathe on the glass'], ['D', 'Dim the glass'], ['W', 'Switch the wing light on and off'], ['Q', 'Start a cozy quiet flight']],
   },
 });
 // Quality sets the canvas size, the pass 1 size and the march steps.
