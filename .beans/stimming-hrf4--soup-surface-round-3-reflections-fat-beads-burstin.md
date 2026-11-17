@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T03:20:39Z
-updated_at: 2026-11-17T03:37:22Z
+updated_at: 2026-11-17T03:49:38Z
 parent: stimming-fskg
 ---
 
@@ -18,3 +18,9 @@ Tom: yes all, five more for the surface and liquid shader. One at a time, a stil
 - [ ] Light patterns under thin broth
 - [x] Timing check at High, full pot: new features about 3.4 ms of draw at 2496x1704, under 1 ms after the glancing-only thing march; emulated hidden tab, so absolute fps not verified
 - [ ] Tom checks fps in a visible pane
+
+## Test matrix (2026-11-16)
+
+Six soup states (broth, stirred, chilli oil, thick cream, set skin, boiled down) at Fire 0, 0.25, 0.5, 0.75 and 1: 30 stills, no NaN pixels, white under 0.07%.
+At High (2496x1704), full pot of 16 things: frame 16 to 19 ms at every fire level, calm or stirred. Emulated tab; not a visible-pane fps reading.
+Dev fire at its maximum (power 3, size 1, spread 3, height 0.5) whites out the screen; main does the same (91% white), so it predates this branch.
