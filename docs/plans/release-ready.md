@@ -458,3 +458,15 @@ Batch 7, 2026-11-16 (Tom):
 | fire.1 | Keep in Settings | Temperature and Turbulence stay player settings |
 | fire.2 | Keep own row | Fire keeps its four-step Quality row (Low to High) |
 | rain.1 | Fog returns alone | No new control. The fog creeps back over a wiped pane by itself; Rain's chat checks the code and adds the creep if it is missing |
+
+Batch 8, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| tvtree.1 | Rethink it | Tom: "revisualize what interactivity can mean here -- subsession". A separate session (`tvtree-interactivity`) proposes interaction ideas and records Tom's pick here |
+| tvtree.2 | Keep all | Every channel stays, the adult-leaning and war ones too |
+| tvtree.3 | Keep both | "Asteroids" and "Pinball" keep their names |
+| balloons.1 | Swap into strip | "← → gust" replaces "enter let go" on the strip; Let go keeps its chip |
+| bubbles.1 | Drop it | No auto puff on arrival; nothing moves until the visitor acts |
+| lava.1 | Drop them | The arrow-key turn goes |
+| lava.2 | No Reset | No Reset anywhere |
