@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:07:42Z
+updated_at: 2026-11-17T07:09:56Z
 parent: stimming-oh7b
 ---
 
@@ -153,3 +153,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17: the power line's first pole stands 30 m out, so at 28 mm from 8 m it shows with its wires sagging between real poles; the near wheat shows drill rows, clumps with darker gaps and downwind ripples, fading out by pixel size. The deck now runs 150 km left and right and about 146 km ahead (one vast system, no edge at any lens), with a thin glow at the horizon under its far edge.
 
 - 2026-11-17, Tom: the far field is baked: past 16 km the deck is a half-size picture with no tornadoes; the live march stops at 16 km with a 14–16 km crossover. The bake renews on Time, Sun dir, Cloud base, Storm, Eye height, lens or size changes, in 8 strips on a running page. GPU, 3 × F4.5, 1828×984, 28 mm, minimum frame: 23.0 ms before, 16.2–17.1 ms after.
+
+- 2026-11-17: the far sky: a tight horizon glow, warmer toward the sun, under three thin ragged haze bands just over the horizon; only the strip under the deck's far edge shows, as a lit, layered glow.
