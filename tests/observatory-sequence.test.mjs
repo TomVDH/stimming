@@ -13,11 +13,12 @@ const until = (phase, from, goal, dt = 0.1, max = 60) => {
   return { v, t };
 };
 
-test('CUTS holds 4 cuts that run about 10 s with no gap', () => {
-  // The heavy shutter made the sequence 2 s longer than the old 8 s.
+test('CUTS holds 4 cuts that run about 11 s with no gap', () => {
+  // The shutter cuts hold 3 s each.
+  // The slew cuts hold about 2.5 s each.
   // The lens cut joins later as a fifth cut of about 2 s.
   assert.equal(CUTS.length, 4, `got ${CUTS.length} cuts`);
-  assert.ok(total >= 9.5 && total <= 10.5 + 1e-9, `total ${total}`);
+  assert.ok(total >= 10.5 && total <= 11.5 + 1e-9, `total ${total}`);
   assert.equal(CUTS[0].at, 0);
   for (let i = 1; i < CUTS.length; i++) {
     assert.ok(Math.abs(CUTS[i].at - (CUTS[i - 1].at + CUTS[i - 1].dur)) < 1e-9, `gap before cut ${i}`);
@@ -27,17 +28,22 @@ test('CUTS holds 4 cuts that run about 10 s with no gap', () => {
 test('each cut is a locked camera: one field of view, no zoom', () => {
   for (const c of CUTS) {
     assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number, got ${JSON.stringify(c.fov)}`);
-    assert.ok(Number.isFinite(c.fov) && c.fov >= 4 && c.fov <= 40, `${c.shot}: fov ${c.fov}`);
+    // The inside shot needs a wider lens: the room is small.
+    assert.ok(Number.isFinite(c.fov) && c.fov >= 4 && c.fov <= 60, `${c.shot}: fov ${c.fov}`);
   }
 });
-test("the shutter cuts cover the shutter's travel, half each; the slew cuts hold 2 to 2.6 s", () => {
+test("the shutter cuts cover the shutter's travel, half each; the slew cuts hold about 2.5 s", () => {
   const open = CUTS.filter(c => c.phase === 'open');
   assert.equal(open.length, 2);
   assert.equal(open[0].at, 0);
   for (const c of open) assert.ok(Math.abs(c.dur - SHUTTER_S / 2) < 1e-9, `${c.shot}: ${c.dur} s`);
   assert.ok(Math.abs(open[1].at + open[1].dur - SHUTTER_S) < 1e-9, 'the open cuts end with the travel');
   assert.equal(CUTS.find(c => c.phase === 'slew').at, SHUTTER_S);
-  for (const c of CUTS.filter(c => c.phase === 'slew')) assert.ok(c.dur >= 2 - 1e-9 && c.dur <= 2.6, `${c.shot}: ${c.dur} s`);
+  for (const c of CUTS.filter(c => c.phase === 'slew')) assert.ok(c.dur >= 2.3 - 1e-9 && c.dur <= 2.7, `${c.shot}: ${c.dur} s`);
+});
+test('the shots: the shutter starts, the slit opens, the tube lifts, the tube rolls in the slit', () => {
+  // The lift cut takes the near-static gear cut's place.
+  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll']);
 });
 // A star far round from the slit, so the slew outlasts the cuts.
 const far = { hip: 1, ra: 0, dec: 0, mag: 1, ci: 0, dist: 1, spect: '', name: '', bayer: '' };
@@ -67,6 +73,36 @@ test('the real machine: each cut shows the phase it names; the slew starts on th
   assert.ok(first, 'a slew cut');
   assert.ok(Math.abs(slewT - first.at) <= dt + 1e-9, `slew at ${slewT}, first slew cut at ${first.at}`);
   CUTS.forEach((c, i) => assert.deepEqual([...seen[i]], [c.phase], `${c.shot} shows ${[...seen[i]]}`));
+});
+// The most a part moves in each cut, in degrees.
+// And the shutter's travel in each cut.
+function moves(m, ctx) {
+  const dt = 0.01, out = CUTS.map(() => ({ deg: 0, shutter: 0 }));
+  let i = 0;
+  for (const [k, c] of CUTS.entries()) {
+    const a = { cup: m.cupolaAz, alt: m.tubeAlt, az: m.tubeAz, sh: m.shutter01 };
+    for (; i * dt < c.at + c.dur - 1e-9; i++) m.step(dt, ctx);
+    const d = (x, y) => Math.abs(((y - x + 540) % 360) - 180);
+    out[k].deg = Math.max(d(a.cup, m.cupolaAz), Math.abs(m.tubeAlt - a.alt), d(a.az, m.tubeAz));
+    out[k].shutter = m.shutter01 - a.sh;
+  }
+  return out;
+}
+test('the machine moves in every cut: from rest, and after a long aim', () => {
+  // From rest the slit faces away: the cupola has far to turn.
+  const rest = makeMachine({ az: 0 });
+  rest.pick(far);
+  // After a long aim the slit faces the star.
+  // Then only the tube moves.
+  const aimed = makeMachine({ az: 180 });
+  aimed.pick(far);
+  for (const [name, m] of [['rest', rest], ['aimed', aimed]]) {
+    const mv = moves(m, { targetAlt: 20, targetAz: 180, trails: false });
+    CUTS.forEach((c, k) => {
+      if (c.phase === 'open') assert.ok(mv[k].shutter >= 0.4, `${name} ${c.shot}: shutter ${mv[k].shutter}`);
+      else assert.ok(mv[k].deg >= 1, `${name} ${c.shot}: ${mv[k].deg.toFixed(2)} degrees`);
+    });
+  }
 });
 test('with the shutter open, the sequence starts at the first slew cut', () => {
   const shut = makeMachine({ az: 0 });

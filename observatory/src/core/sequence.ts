@@ -3,7 +3,7 @@
 import type { Phase } from './machine.ts';
 import { SHUTTER_S } from './dome.ts';
 
-export type Shot = 'edge' | 'slit' | 'roll' | 'gear';
+export type Shot = 'edge' | 'slit' | 'lift' | 'roll';
 // Each cut is a locked camera.
 // fov: the vertical field of view in degrees, fixed for the cut.
 // phase: the machine phase the cut shows.
@@ -13,20 +13,24 @@ export type Cut = { at: number; shot: Shot; dur: number; fov: number; phase: 'op
 // The slew starts when it is open.
 // The cut times come from that.
 // So the cuts stay true to the machine.
-// edge: the shutter starts to slide, tight on the slit edge.
-// slit: the shutter opens further, the whole slit.
-// gear: the cupola starts to turn on its ring as the slew begins.
-// roll: the tube rolls in the open slit, against the sky.
-// The lens cut joins at the end later, as a fifth cut.
+// edge: the upper leaf slides back off the seam, over the crown.
+// slit: the lower leaf drops.
+// The slit opens on the tube.
+// lift: inside, the tube lifts toward the slit and the stars.
+// roll: outside, the tube in the slit.
+// The cupola carries it round.
 // The two shutter cuts share its travel.
 const OPEN_CUT = SHUTTER_S / 2;
 // A slew cut holds this many seconds.
-const SLEW_CUT = 2;
+// The slew starts from rest, so a cut needs time.
+const SLEW_CUT = 2.5;
+// A fifth cut, the lens, joins after the roll.
+// It needs a Shot name, a CUTS row and a view/cuts.ts plan.
 export const CUTS: Cut[] = [
   { at: 0, shot: 'edge', dur: OPEN_CUT, fov: 16, phase: 'open' },
-  { at: OPEN_CUT, shot: 'slit', dur: OPEN_CUT, fov: 17, phase: 'open' },
-  { at: SHUTTER_S, shot: 'gear', dur: SLEW_CUT, fov: 8, phase: 'slew' },
-  { at: SHUTTER_S + SLEW_CUT, shot: 'roll', dur: SLEW_CUT, fov: 9, phase: 'slew' },
+  { at: OPEN_CUT, shot: 'slit', dur: OPEN_CUT, fov: 19, phase: 'open' },
+  { at: SHUTTER_S, shot: 'lift', dur: SLEW_CUT, fov: 50, phase: 'slew' },
+  { at: SHUTTER_S + SLEW_CUT, shot: 'roll', dur: SLEW_CUT, fov: 18, phase: 'slew' },
 ];
 export const cutsTotal = CUTS.reduce((s, c) => s + c.dur, 0);
 

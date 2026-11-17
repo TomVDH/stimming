@@ -43,7 +43,7 @@ A failed model load shows the stage's `.fail` line.
 | `world/hero-scope.ts` | The hero telescope: a long refractor on a German equatorial mount that never changes sides; its own pier 0.42 south of the dome's axis, through the floor; the axes cross over the dome's centre; a night sky map for the metal and the coated glass; `buildHeroScope(size)`, `HeroScope` with `root`, `glass`, `setTube(alt, az)` in degrees |
 | `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
-| `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade; the swap to the hero model in the close shots |
+| `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade; the swap to the hero model in the close shots |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
 | `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
