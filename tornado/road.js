@@ -8,7 +8,8 @@ export const ROAD_GLSL = /* glsl */`
 // A noise term that fades to its mean once a pixel covers it: no shimmer far off.
 float rdN(vec2 p, float fx, float size) { return mix(0.5, vn(p), 1.0 - smoothstep(size * 0.5, size * 2.0, fx)); }
 // Cells from the noise volume (Worley): 0 at a stone's heart, near 1 at its edge. 4 cells per unit of p.
-float rdW(vec2 p, float fx, float size) { return mix(0.5, W(vec3(p, 0.37)), 1.0 - smoothstep(size * 0.5, size * 2.0, fx)); }
+// The volume repeats every 16 units; the slice drifts through its depth, so no tile repeats.
+float rdW(vec2 p, float fx, float size) { return mix(0.5, W(vec3(p, 0.37 + 6.0 * vn(p * 0.045 + 3.1))), 1.0 - smoothstep(size * 0.5, size * 2.0, fx)); }
 // The split-sum's reflectance for a roughness and a view angle (a fitted curve).
 vec2 envBRDF(float r, float nv) {
   vec4 q = r * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
@@ -27,18 +28,20 @@ float sunSpec(vec3 n, vec3 v, vec3 l, float r, float f0) {
 }
 // The ground's materials over the far colour c at ground point P.
 // fx is a pixel's footprint in metres; rd is the view ray.
+// The ditch's slope across the verge: a swale 2.2 m wide and 35 cm deep.
+float rdSwale(float ax) { float u = clamp((ax - 4.3) / 2.2, 0.0, 1.0); return -0.35 * 3.14159 / 2.2 * cos(3.14159 * u) * step(4.3, ax) * step(ax, 6.5); }
 vec3 roadside(vec3 c, vec3 P, vec3 rd, float fx) {
   float side = sign(P.x - ROAD_X), ax = abs(P.x - ROAD_X), z = P.z;
   if (ax > 8.0) return c;
   vec3 V = -rd, L = normalize(uSun + vec3(0.0, 1e-3, 0.0));
   vec2 r1 = mat2(0.8, -0.6, 0.6, 0.8) * P.xz;
-  // The ditch: the berm falls to a shallow ditch, which rises to the field.
-  float dh = -0.5 * smoothstep(4.3, 4.6, ax) * (1.0 - smoothstep(5.1, 5.4, ax)) + 0.55 * smoothstep(5.5, 5.8, ax) * (1.0 - smoothstep(6.1, 6.5, ax));
-  vec3 Nd = normalize(vec3(-dh * side, 1.0, 0.0));
-  // A slope toward the sun takes more of it; one away takes less. The sky's fill stays.
-  float kS = clamp(dot(Nd, L) / max(L.y, 0.12), 0.35, 1.7);
+  // The normal follows the swale's slope: the floor faces up, each bank leans.
+  vec3 Nd = normalize(vec3(-rdSwale(ax) * side, 1.0, 0.0));
+  // A bank toward the sun takes more of it; one away takes less. The sky's fill stays.
+  // A low sun rakes the banks; grass blades soften that by half.
+  float kS = mix(1.0, clamp(dot(Nd, L) / max(L.y, 0.12), 0.35, 1.7), 0.5);
   // The ditch's floor sees less sky.
-  float ao = 1.0 - 0.25 * smoothstep(4.9, 5.4, ax) * (1.0 - smoothstep(5.6, 6.0, ax));
+  float ao = 1.0 - 0.12 * smoothstep(4.9, 5.4, ax) * (1.0 - smoothstep(5.6, 6.0, ax));
   // The sky the road reflects: the bright horizon low down, the deck's slate above.
   vec3 Rf = reflect(rd, vec3(0.0, 1.0, 0.0));
   vec3 hz = hazeCol(Rf);
@@ -90,6 +93,8 @@ vec3 roadside(vec3 c, vec3 P, vec3 rd, float fx) {
   // Fine cracks near the crumbling edge: a ridge network in the noise.
   float crk = (1.0 - smoothstep(0.0, 0.025, abs(rdN(r1 * 2.6 + 9.0, fx, 0.02) - 0.5))) * smoothstep(2.9, 3.5, ux) * (1.0 - smoothstep(0.01, 0.04, fx));
   aA *= (1.0 + 0.25 * wheel) * (1.0 - 0.25 * oil) * (1.0 - 0.3 * tar) * (1.0 - 0.5 * crk);
+  // Long stains run with the traffic, metres to tens of metres: the surface never reads as one sheet.
+  aA *= 0.82 + 0.36 * rdN(vec2(dx * 0.35, z * 0.06) + 7.0, fx, 4.0) * (0.7 + 0.6 * rdN(vec2(dx * 1.1, z * 0.2) + 2.0, fx, 1.5));
   float rA = mix(0.78, 0.55, wheel * 0.6) - 0.3 * tar - 0.1 * pIn;
   vec2 bA = envBRDF(rA, nv);
   vec3 envA = mix(hz, deck, smoothstep(0.02, 0.2, Rf.y) * (1.0 - 0.4 * rA) + 0.35 * rA);
