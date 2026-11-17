@@ -441,33 +441,62 @@ float stormShape(vec3 p) {
 // Declared here, defined with the merge below.
 float nearW(vec3 ps);
 float shellOff(vec3 ps);
+// The deck swirls into the wall cloud: a point's texture comes from upstream.
+// It turns fast near the funnel and slow far out, so bands wind into spirals.
+// It also drifts in toward the funnel and rises by it. High up it holds still.
+vec3 swirl(vec3 p, float age) {
+  vec2 q = p.xz - WALL;
+  float r = length(q);
+  float low = 1.0 - smoothstep(BASE + 2.0, BASE + 5.0, p.y);
+  float w = 0.12 * uSpin / (1.0 + pow(r, 1.5)) * low;
+  float a = w * age;
+  // Inflow: the texture at r came from further out.
+  q = mat2(cos(a), sin(a), -sin(a), cos(a)) * q * exp(0.012 * uSpin * low * age);
+  // Lift by the funnel: the texture at a height came from below it.
+  float lift = 0.004 * uSpin * age * exp(-r * r / 2.0) * low;
+  return vec3(q.x + WALL.x, p.y - lift, q.y + WALL.y);
+}
+// One layer of the deck's texture. p sets the masks; pr is the turned point; o shifts the noise.
+float deckN(vec3 p, vec3 pr, vec3 o, float calm) {
+  vec3 pn = pr + o;
+  // Lumpy towers, a smoother anvil.
+  float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
+  vec3 n = pn * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
+  float d = (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp * calm;
+  // The base heaves: broad swells drift under it and breathe, so the deck undulates gently.
+  float swell = (vn3(pn * 0.45 + vec3(uTime * 0.03, 0.0, uTime * 0.02)) - 0.5) * (0.6 + 0.4 * sin(uTime * 0.6 + vn3(pn * 0.2) * 6.28));
+  swell += (vn3(pn * 1.2 - vec3(uTime * 0.05, 0.0, 0.0)) - 0.5) * 0.35;
+  d += swell * 0.5 * (1.0 - smoothstep(BASE + 0.3, BASE + 1.5, p.y));
+  // The base: stacked plates on its flank, turning round the updraft.
+  // Up close they read as contour bands: they stay off the base's underside and away from the tornado.
+  float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(nearR(), nearR() * 2.2, length(p.xz - WALL));
+  float turn = atan(pr.z - TOWER.y, pr.x - TOWER.x);
+  d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(pn * 1.4));
+  // Fine lumps, for the near base.
+  d += (vn3(pn * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
+  // Ragged scud hangs under the base, with Worley lumps in it.
+  float low = (1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y)) * calm;
+  d += low * (vn3(pn * 3.1 + vec3(uTime * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
+  // Rounded lumps hang from the underside, in two sizes.
+  float under = (1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y)) * mix(1.0, calm, 0.6);
+  return d - under * ((W(pn * 2.6 + 1.7) - 0.35) * 0.32 + (W(pn * 8.0) - 0.35) * 0.16);
+}
+// A turning texture winds up into streaks, so two layers take turns.
+// Each layer lives one cycle and fades out while the next fades in.
+const float DECK_P = 20.0, DECK_F = 5.0;
+vec3 deckSeed(float c) { return vec3(fract(c * 0.618) * 37.0, 0.0, fract(c * 0.382) * 29.0); }
 float stormD(vec3 p) {
   float d = stormShape(p);
   if (d > 2.5) return d;
   // On the horn the base's ragged noise eases, so the trumpet stays a trumpet.
   // Low on the horn, by the funnel, it eases most; up by the deck it keeps the deck's texture.
   float calm = 1.0 - gOn * (1.0 - smoothstep(gRtopKm * 1.3, gRtopKm * 2.4, length(p.xz - WALL))) * mix(0.85, 0.35, smoothstep(BASE - 0.5, BASE - 0.05, p.y)) * (1.0 - smoothstep(BASE - 0.05, BASE + 0.3, p.y));
-  // Lumpy towers, a smoother anvil.
-  float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
-  vec3 n = p * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
-  d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp * calm;
-  // The base heaves: broad swells drift under it and breathe, so the deck undulates gently.
-  float swell = (vn3(p * 0.45 + vec3(uTime * 0.03, 0.0, uTime * 0.02)) - 0.5) * (0.6 + 0.4 * sin(uTime * 0.6 + vn3(p * 0.2) * 6.28));
-  swell += (vn3(p * 1.2 - vec3(uTime * 0.05, 0.0, 0.0)) - 0.5) * 0.35;
-  d += swell * 0.5 * (1.0 - smoothstep(BASE + 0.3, BASE + 1.5, p.y));
-  // The base: stacked plates on its flank, turning round the updraft.
-  // Up close they read as contour bands: they stay off the base's underside and away from the tornado.
-  float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(nearR(), nearR() * 2.2, length(p.xz - WALL));
-  float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
-  d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
-  // Fine lumps, for the near base.
-  d += (vn3(p * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
-  // Ragged scud hangs under the base, with Worley lumps in it.
-  float low = (1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y)) * calm;
-  d += low * (vn3(p * 3.1 + vec3(uTime * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
-  // Rounded lumps hang from the underside, in two sizes.
-  float under = (1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y)) * mix(1.0, calm, 0.6);
-  return d - under * ((W(p * 2.6 + 1.7) - 0.35) * 0.32 + (W(p * 8.0) - 0.35) * 0.16);
+  float s = fract(uTime / DECK_P), c = floor(uTime / DECK_P);
+  float age = s * DECK_P + DECK_F, wNew = smoothstep(0.0, DECK_F / DECK_P, s);
+  d += wNew * deckN(p, swirl(p, age), deckSeed(c), calm);
+  // The old layer reads only while it fades.
+  if (wNew < 1.0) d += (1.0 - wNew) * deckN(p, swirl(p, age + DECK_P), deckSeed(c - 1.0), calm);
+  return d;
 }
 // The colour of one storm sample.
 vec3 stormLit(vec3 p, float d) {
@@ -540,13 +569,9 @@ float shellOff(vec3 ps) {
   return (1.0 - smoothstep(nr * 0.55, nr * 0.8, r)) * (1.0 - smoothstep(NEAR_TOP - 0.7, NEAR_TOP - 0.3, ps.y));
 }
 // The near storm's density at a lab point, 0 to 1. ps and d return its storm point and distance.
-// It turns with the funnel's outer sheath round the axis, and holds still toward its edge.
 float nearCloud(vec3 p, out vec3 ps, out float d) {
-  vec2 q = p.xz - topXZ();
-  float k = 1.0 - smoothstep(nearR() * 0.25, nearR() * 0.65, length(q) * 0.001 * uKs);
-  float a = uPh[5].x;
-  vec2 qr = mix(q, mat2(cos(a), sin(a), -sin(a), cos(a)) * q, k);
-  ps = toStorm(vec3(qr.x + topXZ().x, p.y, qr.y + topXZ().y));
+  // The swirl in stormD turns it; a rigid turn here drew a ring of horn round the funnel.
+  ps = toStorm(p);
   d = stormD(ps);
   // A soft shell turns the distance into density.
   return smoothstep(0.035, -0.035, d) * nearW(ps);
@@ -559,9 +584,11 @@ float cloudShade(vec3 p) {
   od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 80.0))) * 80.0;
   od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 260.0))) * 180.0;
   float L = (max(gDeck - p.y, 0.0) + 60.0) / max(uSun.y, 0.03);
-  if (L < 20000.0) {
-    od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * L))) * 300.0;
-    od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * (L + 400.0)))) * 300.0;
+  // Far under the base the sun slips past the deck: its shade fades out, with no step.
+  float far = 1.0 - smoothstep(12000.0, 20000.0, L);
+  if (far > 0.0) {
+    od += far * smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * L))) * 300.0;
+    od += far * smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * (L + 400.0)))) * 300.0;
   }
   return od * 0.006;
 }
@@ -616,14 +643,17 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
         float tear = N(vec3(cos(ang) * 2.2, ph.y / max(R * 0.6, 4.0) - uPh[0].y * 3.0, sin(ang) * 2.2) + 4.4);
         d *= mix(smoothstep(0.45, 0.7, 0.6 * nc + 0.4 * tear), 1.0, smoothstep(0.35, 1.0, tap));
       }
-      od = funnelSig(d, R) * rampInt(xa, xb, len, edge, 0.1);
+      // One noise read gives one clean outline; the lab's per-step reads blurred it.
+      // The soft edge widens by the noise's own swing instead.
+      float wC = 0.1 + 0.3 * uAmp;
+      od = funnelSig(d, R) * rampInt(xa, xb, len, edge, wC);
       // Light the core where the ray meets its ragged edge, so the relief shades.
       // The point stays outside the mean core, so a deep pocket is not black.
       // A stretch deep inside lights the core where the ray came in, before it.
-      uk = abs(dx) > 1e-4 ? clamp((max(edge - 0.05, 0.9) - xa) / dx, -3.0, 1.0) : 0.5;
+      uk = abs(dx) > 1e-4 ? clamp((max(edge - 0.5 * wC, 0.9) - xa) / dx, -3.0, 1.0) : 0.5;
       ph = pa + rd * (len * uk);
       q = ph.xz - axisAt(ph.y);
-      xr = (edge - 0.05) * mix(Rea, Reb, uk) / R;
+      xr = (edge - 0.5 * wC) * mix(Rea, Reb, uk) / R;
       // The volume showed its depth as streaks: a deep pocket in the wall reads darker.
       shade = mix(0.7, 1.2, smoothstep(0.25, 0.75, nc));
     } else {
@@ -786,6 +816,8 @@ void main() {
         vec3 ps;
         float dS;
         float dn = uDbg > 3.5 && uDbg < 4.5 ? 0.0 : nearCloud(p, ps, dS);
+        // The near storm's region has a flat floor: the horn fades in above it, with no cut.
+        dn *= smoothstep(uH - 200.0, uH + 50.0, p.y);
         // Outside the cloud, step by its distance; inside, short steps.
         // A ray that skims the underside keeps a floor on its step, scaled by distance.
         float sC = dS > 0.035 ? max((dS - 0.035) * 1000.0 / uKs * 0.7, max(6.0, t * 0.003)) : clamp(t * 0.005, 6.0, 30.0);

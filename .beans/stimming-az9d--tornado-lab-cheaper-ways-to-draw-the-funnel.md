@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T03:23:51Z
-updated_at: 2026-11-17T04:05:07Z
+updated_at: 2026-11-17T04:36:57Z
 parent: stimming-dwwg
 ---
 
@@ -35,3 +35,10 @@ Tom (2026-11-16): the lab is a heavy shader and the Claude app stalls while it r
 
 ## Next
 Join spikes 1 and 2: shells for the funnel, the bake for the far storm and the near deck. Keep 5 as a phone fallback.
+
+## Shells, round 2 (Tom: hard cut-offs, a shroud, a flat-turning deck)
+- The core's soft edge widens with Turbulence (0.1 + 0.3 × amp): one noise read per crossing gave one clean outline.
+- The deck's shadow fades out between 12 and 20 km of sun path; a hard cut drew a level line across the funnel.
+- The near deck fades in over 250 m above its region's flat floor; the floor cut the horn flat.
+- The near deck no longer turns rigidly with the outer sheath: past half a turn that blend pulled a ring of horn onto the axis, a shroud once a turn.
+- The deck swirls: angular speed falls with distance from the wall cloud, with inflow and lift by the funnel; two noise layers take turns every 20 s so it never winds into streaks. Spin sets its speed.
