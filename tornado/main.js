@@ -63,6 +63,12 @@ const horizon = () => GOLD;
 // The scene pass and the funnel pass share this GLSL: the camera, the sky, the haze and the supercell.
 // It reads uSun, uSunCol, uAmb, uYaw, uStorm and uT, and the sky palette (uZen, uMid, uBand, uAnti).
 const SHARED = /* glsl */`
+// The tornadoes, for the scene pass; the funnel pass leaves them unset.
+// uTorOn is 1 while the funnel pass draws.
+// uTorZ: each foot and reach in camera km, and its storm km per km (0 when off).
+// uTorN: each top in camera km, the near deck's reach, and its height over the local base.
+uniform float uTorOn;
+uniform vec4 uTorZ[${MAX_FUNNELS}], uTorN[${MAX_FUNNELS}];
 // The eye crouches just over the ears, 1.25 m up.
 const float CAMH = 1.25;
 // The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
@@ -166,8 +172,24 @@ vec3 stormLit(vec3 p, float d) {
   // The core goes black-green behind its rain.
   return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
 }
+// 1 where this storm can hide a tornado; 0 round a tornado's top, where the funnel pass draws the deck.
+float stormKeep(vec3 p) {
+  if (uTorOn < 0.5) return 1.0;
+  float k = 1.0;
+  for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+    float s = uTorZ[i].w;
+    if (s <= 0.0) continue;
+    vec4 n = uTorN[i];
+    float r = length(p.xz - n.xy);
+    // The near deck's top follows the base: lower under the wall cloud, as funnel.js lifts it.
+    float top = mix(1.35, 0.85, 1.0 - smoothstep(1.2, 2.8, length(p.xz - WALL))) + n.w;
+    k *= 1.0 - (1.0 - smoothstep(n.z * 0.55, n.z * 0.8, r)) * (1.0 - smoothstep(top - 0.7 / s, top - 0.3 / s, p.y));
+  }
+  return k;
+}
 // Marches the storm. Returns colour and coverage; t is the hit distance in km.
 // aCut is the cover in front of tCut, in km: what hides a tornado that far out.
+// Round a tornado's top the funnel pass draws its own deck, so that cloud hides nothing.
 vec4 storm(vec3 rd, float tCut, out float tHit, out float aCut) {
   vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
   float t = 1.0, T = 1.0, Tc = 1.0;
@@ -184,7 +206,7 @@ vec4 storm(vec3 rd, float tCut, out float tHit, out float aCut) {
       float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8;
       acc += T * a * stormLit(p, d);
       T *= 1.0 - a;
-      Tc *= 1.0 - a * (1.0 - smoothstep(tCut - 0.25, tCut + 0.25, t));
+      if (t < tCut + 0.25) Tc *= 1.0 - a * stormKeep(p) * (1.0 - smoothstep(tCut - 0.25, tCut + 0.25, t));
       t += 0.03 + 0.006 * t;
     } else t += d * 0.75 + 0.01 * t;
   }
@@ -215,9 +237,6 @@ uniform vec3 uSun, uSunCol, uAmb;
 uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
 // The funnel pass's picture: colour, premultiplied, and cover. uTorOn is 0 with no tornado.
 uniform sampler2D tTor;
-uniform float uTorOn;
-// Each tornado's foot and reach in camera km, and 1 when it draws: for the storm's cover.
-uniform vec4 uTorZ[${MAX_FUNNELS}];
 ${SHARED}
 
 /* ---------- the wind ---------- */
@@ -484,16 +503,21 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 }
 
 // The distance in km to the nearest tornado whose column the ray crosses, or 0.
-float torDepth(vec3 rc) {
+// w returns how much nearer cloud may hide it: it fades out at the column's edge, so no line shows.
+float torDepth(vec3 rc, out float w) {
+  w = 0.0;
   if (uTorOn < 0.5) return 0.0;
-  float k2 = max(dot(rc.xz, rc.xz), 1e-6), dT = 1e9;
+  float k2 = max(dot(rc.xz, rc.xz), 1e-6), dT = 0.0, ws = 0.0;
+  // A weighted mean of the depths, so the cut has no step where two columns overlap.
   for (int i = 0; i < ${MAX_FUNNELS}; i++) {
     vec4 z = uTorZ[i];
-    if (z.w < 0.5) continue;
-    float tc = dot(rc.xz, z.xy) / k2;
-    if (tc > 0.0 && length(rc.xz * tc - z.xy) < z.z) dT = min(dT, tc);
+    if (z.w <= 0.0) continue;
+    float tc = dot(rc.xz, z.xy) / k2, m = length(rc.xz * tc - z.xy) / z.z;
+    float wi = tc > 0.0 ? 1.0 - smoothstep(0.6, 1.0, m) : 0.0;
+    dT += wi * tc; ws += wi;
+    w = max(w, wi);
   }
-  return dT > 1e8 ? 0.0 : dT;
+  return ws > 1e-4 ? dT / ws : 0.0;
 }
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
@@ -505,6 +529,7 @@ vec3 envScene(vec2 uv) {
   vec3 c;
   // The storm's cover in front of the tornadoes: their tops go up into the cloud.
   float hideT = 0.0;
+  vec4 tv = uTorOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
     c = ground(rd, px);
   } else {
@@ -513,10 +538,15 @@ vec3 envScene(vec2 uv) {
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
     float tHit;
-    vec4 st = storm(rc, torDepth(rc) - 0.1, tHit, hideT);
+    float hideW;
+    float dT = torDepth(rc, hideW);
+    vec4 st = storm(rc, dT - 0.1, tHit, hideT);
+    hideT *= hideW;
     // The far storm sinks into the haze.
     float h = 1.0 - exp(-tHit / 70.0);
     c = c * (1.0 - st.a) + mix(st.rgb, hazeCol(rd) * st.a, h * 0.8);
+    // Nearer cloud hides the funnel pass, but not round a tornado's top.
+    tv *= 1.0 - hideT;
     // Under the base: the gloom, and the rain curtain hanging out of the core.
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
@@ -529,7 +559,7 @@ vec3 envScene(vec2 uv) {
   // The thin band where ground meets sky takes the haze.
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
   // The tornadoes, from the funnel pass at a lower resolution.
-  if (uTorOn > 0.5) { vec4 tv = texture(tTor, uv) * (1.0 - hideT); c = c * (1.0 - tv.a) + tv.rgb; }
+  c = c * (1.0 - tv.a) + tv.rgb;
   farm(c, s, rd, px);
   poles(c, s, rd, px);
   nearEars(c, s, px, asp);
@@ -538,6 +568,8 @@ vec3 envScene(vec2 uv) {
 `;
 
 /* ---------- state ---------- */
+// qaHold stops the loop while a QA timing runs.
+let qaHold = false;
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
@@ -580,7 +612,7 @@ try {
     scene: SCENE,
     animated: true,
     budget: 1.8e6,
-    active: () => visible,
+    active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
     before: (w, h) => funnelPass(w, h),
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
@@ -588,7 +620,7 @@ try {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => storm, uStorm: () => storm, uT: () => simT,
       uTorOn: () => (fun.on ? 1 : 0),
-      uTorZ: () => pk.Z,
+      uTorZ: () => pk.Z, uTorN: () => pk.NR,
     },
   });
 } catch (err) {
@@ -623,7 +655,7 @@ function deckAt(cx, cz) {
 // The wall cloud in camera km: WALL in the scene's GLSL.
 const WALL = [-0.9, -8.0];
 const CAMH = 1.25;
-const pk = { Z: new Float32Array(MAX_FUNNELS * 4), A: new Float32Array(16), B: new Float32Array(16), C: new Float32Array(16), D: new Float32Array(16), E: new Float32Array(16), F: new Float32Array(16), ph: new Float32Array(MAX_FUNNELS * 14) };
+const pk = { Z: new Float32Array(MAX_FUNNELS * 4), NR: new Float32Array(MAX_FUNNELS * 4), A: new Float32Array(16), B: new Float32Array(16), C: new Float32Array(16), D: new Float32Array(16), E: new Float32Array(16), F: new Float32Array(16), ph: new Float32Array(MAX_FUNNELS * 14) };
 // Packs the tornadoes nearest first and finds their box on the target. Returns the count.
 function packFunnels(rw, rh) {
   const a = yaw(), co = Math.cos(a), si = Math.sin(a), foc = focal(), asp = rw / rh, hz = horizon();
@@ -639,31 +671,45 @@ function packFunnels(rw, rh) {
     // The march's column, as wide as the shader's, so the box holds all of it.
     const rTop = r * flare * 1.15;
     const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + at('lean', f) + at('sway', f) * 2 + 140 + 1300 * clamp(t.rope);
+    // The near deck round the top: the lab's reach in storm km, kS storm km per km.
+    const kS = 1000 / lm, ss = (e0, e1, x) => { const k = clamp((x - e0) / (e1 - e0)); return k * k * (3 - 2 * k); };
+    const wallR = Math.max(0.9 + 1.5 * ss(0, 1, f / 5), rTop * 1.7 * 0.001 * kS);
+    const nearR = Math.max(Math.max(2.8, wallR * 1.33), 4.3 - 1.5 * ss(1.1, 2.0, foc));
+    const tx = cx + at('lean', f) + 500 * clamp(t.rope), tz = cz - 0.3 * at('lean', f) - 125 * clamp(t.rope);
+    const H = deck - 0.3 * lm, nrM = nearR * lm, topC = H + 1.6 * lm + Math.max(1350 - deck, 0);
+    const nr = [tx * 0.001, tz * 0.001, nearR / kS, 1.3 * lm * 0.001];
     let bx0 = 1, by0 = 1, bx1 = 0, by1 = 0, behind = false;
-    for (const ox of [-Rb, Rb]) for (const oz of [-Rb, Rb]) for (const oy of [0, deck + 60]) {
-      const z = -(cz + oz);
-      if (z < 50) { behind = true; continue; }
-      const u = (cx + ox) / z * foc / asp + 0.5, v = (oy - CAMH) / z * foc + hz;
-      bx0 = Math.min(bx0, u); bx1 = Math.max(bx1, u); by0 = Math.min(by0, v); by1 = Math.max(by1, v);
+    // The box on screen holds the funnel's column and the near deck's.
+    for (const [ux, uz, R, y0b, y1b] of [[cx, cz, Rb, 0, deck + 60], [tx, tz, nrM, H - 200, topC]]) {
+      for (const ox of [-R, R]) for (const oz of [-R, R]) for (const oy of [y0b, y1b]) {
+        const z = -(uz + oz);
+        if (z < 50) { behind = true; continue; }
+        const u = (ux + ox) / z * foc / asp + 0.5, v = (oy - CAMH) / z * foc + hz;
+        bx0 = Math.min(bx0, u); bx1 = Math.max(bx1, u); by0 = Math.min(by0, v); by1 = Math.max(by1, v);
+      }
     }
     if (behind) { bx0 = 0; by0 = 0; bx1 = 1; by1 = 1; }
     if (bx1 < 0 || bx0 > 1 || by1 < 0 || by0 > 1 || fade <= 0) continue;
     x0 = Math.min(x0, bx0 * rw); x1 = Math.max(x1, bx1 * rw); y0 = Math.min(y0, by0 * rh); y1 = Math.max(y1, by1 * rh);
-    list.push({ t, d: -cz, rb: Rb, v: [
-      [cx, cz, deck - 0.3 * lm, deck],
+    // The cover test reaches as far as the near deck, so it has no edge inside the pass's picture.
+    const reach = Math.max(Rb, Math.hypot(tx - cx, tz - cz) + nrM);
+    list.push({ t, d: -cz, rb: reach, nr, v: [
+      [cx, cz, H, deck],
       [r, flare, at('prof', f), at('vmax', f)],
       [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f), at('rain', f) * fade],
       [at('dark', f), at('lean', f), at('sway', f), f / 5],
       [t.ds, t.zs, t.rope, t.seed],
-      [lm, fade, densAt(f), 0],
+      [lm, fade, densAt(f), nrM],
     ] });
   }
   list.sort((p, q) => p.d - q.d);
   pk.Z.fill(0);
-  list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb }, i) => {
+  pk.NR.fill(0);
+  list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb, nr }, i) => {
     ['A', 'B', 'C', 'D', 'E', 'F'].forEach((k, j) => pk[k].set(v[j], i * 4));
     pk.ph.set(t.ph, i * 14);
-    pk.Z.set([v[0][0] * 0.001, v[0][1] * 0.001, rb * 0.001, 1], i * 4);
+    pk.Z.set([v[0][0] * 0.001, v[0][1] * 0.001, rb * 0.001, 1000 / v[5][0]], i * 4);
+    pk.NR.set(nr, i * 4);
   });
   const pad = 3;
   pk.box = [Math.max(0, Math.floor(x0) - pad), Math.max(0, Math.floor(y0) - pad), Math.min(rw, Math.ceil(x1) + pad), Math.min(rh, Math.ceil(y1) + pad)];
@@ -879,9 +925,10 @@ async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
   const k = Math.sqrt(px / (canvas.clientWidth * canvas.clientHeight));
   const fw = Math.round(canvas.clientWidth * k), fh = Math.round(canvas.clientHeight * k);
   // The loop stops while the queries run, so no other frame shares the GPU.
-  const was = env.paused;
-  env.paused = true;
+  qaHold = true;
   await new Promise(r => setTimeout(r, 100));
+  // One frame first: the funnel targets take this size before the timing.
+  if (part === 'pass') funnelPass(fw, fh); else env.draw(fw, fh);
   const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
   if (!ext) return null;
   const list = [];
@@ -896,7 +943,8 @@ async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
   }
   const last = list[list.length - 1];
   for (let k = 0; k < 200 && !gl.getQueryParameter(last, gl.QUERY_RESULT_AVAILABLE); k++) await new Promise(r => setTimeout(r, 20));
-  env.paused = was;
+  qaHold = false;
+  env.touch();
   if (gl.getParameter(ext.GPU_DISJOINT_EXT)) return 'disjoint';
   const ms = list.map(q => gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6).sort((p, q) => p - q);
   list.forEach(q => gl.deleteQuery(q));

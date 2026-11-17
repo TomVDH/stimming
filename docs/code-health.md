@@ -37,7 +37,7 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | 5 | Module order | Invisible steps first: audio kit, colour helper, tone curve |
 | 6 | New modules | `gl.js` and `noise.js` may exist. `voices.js`, `bloomPass` and `pointer.js` wait |
 | 7 | Toy docs | About ten main shelf docs by hand, then a generator for the factual sections |
-| 8 | TypeScript | JSDoc types, checked by `tsc --noEmit`. No build step. Start in `shared/`; Fog horn is the pilot |
+| 8 | TypeScript | Every toy moves to TypeScript: `.ts` in `<id>/src/`, bundled by esbuild to `<id>/dist/main.js`, built in the Pages workflow (Tom, 2026-11-16; replaces JSDoc-only, no build step). Railgun is the pilot. `shared/` keeps JSDoc types until it moves |
 | 9 | Dev tools | A `package.json` with TypeScript and library types is approved. `node_modules/` stays git-ignored |
 | 10 | Type check in CI | No. It runs locally only |
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
