@@ -1,11 +1,11 @@
 ---
 # stimming-7u0q
 title: 'Tornado lab: raymarch performance pass'
-status: in-progress
+status: scrapped
 type: task
 priority: normal
 created_at: 2026-11-17T04:53:38Z
-updated_at: 2026-11-17T05:16:24Z
+updated_at: 2026-11-17T05:19:43Z
 parent: stimming-dwwg
 ---
 
@@ -48,3 +48,7 @@ The default Resolution goes from 0.5 to 0.7. Best of 12, against the last commit
 - Best of 12 against the last commit: F1 8.6 → 7.6, F2.5 10.0 → 9.9, F4.5 14.9 → 14.3 ms. Same picture: mean difference 0.62 of 255, no bias.
 - Not kept: 2 noise octaves in place of 4 saves about 1 ms. Plain noise on faint sheath flanks saved nothing and moved the look.
 - What is left at F4.5 (about 15 ms): funnel noise 6, dust 4, lighting 3, near deck 3, everything outside the march 2.8.
+
+## Reasons for Scrapping
+Tom (2026-11-16): "you introduced SEVERAL regressions". He picked a full revert. tornado/lab.js and lab.html are back to b69652aa (the approved lab). The lab chat takes performance from there; the notes above list each change, its numbers and its switches. QA clip stays in docs/qa/tornado-perf/.
+Lesson: paused stills and pixel diffs at t=40 missed what Tom saw in the live lab. Judge each change live, in motion, at the default view, with Tom, before the next one.

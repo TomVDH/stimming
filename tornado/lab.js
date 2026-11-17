@@ -1,6 +1,6 @@
 // Tornado lab: one hero tornado up close, on a continuous F-scale slider.
 // Raw WebGL2 on shared/gl.js. The tornado here replaces the shot's stand-in once Tom signs it off.
-import { program, linked, target, free, tri, to, TRI_VS } from '../shared/gl.js';
+import { program, linked, target, free, tri, TRI_VS } from '../shared/gl.js';
 import { GRADE } from '../shared/grade.js';
 import { OUTPUT } from '../shared/output.js';
 
@@ -65,12 +65,6 @@ in vec2 vUv;
 out vec4 outC;
 uniform sampler3D tNoise;
 uniform sampler2D tPrev;
-// The baked backdrop: colour, and in alpha how far the volume may reach.
-uniform sampler2D tBg;
-// 0 draws all; 1 bakes the backdrop; 2 reads the baked backdrop.
-// 3 reads the bake and marches one pixel of each 2 by 2 block: out, the volume and its transmittance.
-uniform int uMode;
-uniform ivec2 uSub;
 uniform vec2 uRes, uJit;
 uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
@@ -525,9 +519,7 @@ vec3 groundCol(vec3 P, float t) {
 
 void main() {
   hornInit();
-  // In mode 3 a texel stands for one pixel of a 2 by 2 block; uSub picks which.
-  ivec2 pix = uMode == 3 ? ivec2(gl_FragCoord.xy) * 2 + uSub : ivec2(gl_FragCoord.xy);
-  vec2 fc = (uMode == 3 ? vec2(pix) + 0.5 : gl_FragCoord.xy) + uJit;
+  vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
   vec3 rd = normalize(vec3(s, -uFoc));
@@ -536,11 +528,7 @@ void main() {
   vec3 bg;
   float tMax;
   float jit = hash(fc + fract(uTime * 7.31) * 113.0);
-  if (uMode >= 2) {
-    vec4 bk = texelFetch(tBg, pix, 0);
-    bg = bk.rgb;
-    tMax = bk.a;
-  } else if (rd.y < 0.0) {
+  if (rd.y < 0.0) {
     tMax = CAMH / -rd.y;
     vec3 P = ro + rd * tMax;
     // The wheat lies in the storm's shadow where the sun cannot get under the base.
@@ -576,19 +564,6 @@ void main() {
   float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + hornA()) * 1.3) + uLean + uSway * 2.0 + 140.0;
   vec2 cy = cylinder(ro, rd, Rb, 0.0, gDeck + 60.0);
   float tA0 = cy.y > 0.0 ? cy.x : 1e9, tA1 = cy.y > 0.0 ? cy.x + cy.y : -1.0;
-  // A baked pixel with alpha below zero is whole: its ray misses the funnel's column.
-  if (uMode == 3 && tMax < 0.0) { outC = vec4(0.0, 0.0, 0.0, 1.0); return; }
-  if (uMode == 2 && tMax < 0.0) {
-    vec3 prevW = texture(tPrev, gl_FragCoord.xy / uRes).rgb;
-    outC = vec4(mix(prevW, bg, uBlend), 1.0);
-    return;
-  }
-  // The bake keeps only the backdrop where the ray meets the funnel's column.
-  if (uMode == 1 && cy.y > 0.0) {
-    vec3 old = texelFetch(tBg, pix, 0).rgb;
-    outC = vec4(mix(old, bg, uBlend), min(tMax, 60000.0));
-    return;
-  }
   vec2 cc2 = cylinder(ro - o3, rd, nearR() * 1000.0 / uKs, uH - 200.0, uH + (NEAR_TOP - BASE + DECK) * 1000.0 / uKs);
   float tC0 = cc2.y > 0.0 ? cc2.x : 1e9, tC1 = cc2.y > 0.0 ? cc2.x + cc2.y : -1.0;
   float tEnd = min(max(tA1, tC1), tMax);
@@ -596,7 +571,6 @@ void main() {
   float T = 1.0;
   float t = min(tA0, tC0);
   bool offDeck = true;
-  int nStep = 0;
   if (t < tEnd) {
     float dtv = tA1 > tA0 ? (tA1 - tA0) / float(uSteps) : 50.0;
     // A full step of jitter, so the steps leave no wood grain.
@@ -606,11 +580,8 @@ void main() {
     float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
     float ph1 = mix(hg(cosT, 0.3), hg(cosT, -0.1), 0.55);
     vec3 skyH = skyCol(vec3(rd.x, 0.0, rd.z));
-    // The storm's shadow changes slowly: one lookup serves eight steps.
-    // The step count is the same across a pixel group, so the group skips the lookup together.
-    float shOd = -1.0;
     for (int i = 0; i < 360; i++) {
-      if (t > tEnd || T < 0.02) break;
+      if (t > tEnd || T < 0.01) break;
       bool inA = t >= tA0 && t <= tA1, inC = t >= tC0 && t <= tC1;
       if (!inA && !inC) {
         // Jump to the next region.
@@ -627,35 +598,26 @@ void main() {
       if (inA) {
         vec2 q = p.xz - axisAt(p.y);
         float sH, r = length(q), R = hornR(p.y, sH);
-        if ((i & 7) == 0 || shOd < 0.0) shOd = cloudShade(p);
         // The pixel's size in metres where the ray is now.
         float foot = t / (uRes.y * uFoc);
         gSp = max(0.2, 3.5 * foot / R);
         gAng = clamp(R * 0.06 / foot, 0.3, 1.0);
         float Rout = R * (1.25 + 4.0 * gSp) + 2.0;
         // Fine steps inside the funnel, long ones outside it.
-        // A step shorter than a pixel adds no detail.
-        float fine = clamp(max(R * 0.045, foot), 0.3, dtv);
+        float fine = clamp(R * 0.045, 0.3, dtv);
         st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
-        // Empty air: the distance to the funnel, the dust or the rain sets the step.
-        // A ray that climbs into the flare meets the horn's full width.
-        float Rg = p.y + abs(rd.y) * (r - Rout) > gY0 - 50.0 ? (radiusAt(uH) + gA) * (1.25 + 4.0 * gSp) + 2.0 : Rout;
-        float Rr = R * 1.15 + uR0 * 0.35;
-        float gap = min(r - Rg, max(r - debrisR(p.y) * 1.3, p.y - uDustH * 1.8));
-        if (uRain > 0.01 && p.y < uH) gap = min(gap, abs(r - Rr) - Rr * 0.22);
-        if (gap > 0.0) st = max(gap * 0.6, st);
         float u;
         float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
         u = clamp(p.y / uH, 0.0, 1.0);
-        float d = 0.0, w = 0.0;
-        if (gap <= 0.0) vol(p, d, w);
+        float d, w;
+        vol(p, d, w);
         float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
         if (sc + sd + sw > 1e-6) {
           // Sunlight through the funnel, the dust and, near the top, the storm above.
           // Up the horn the tone turns to the storm's own.
           // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
           float topK = max(topKAt(p.y), 1.0 - smoothstep(0.0, 0.5, uCond));
-          float od = sunDepth(p, R) + shOd;
+          float od = sunDepth(p, R) + cloudShade(p);
           vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
           // Sky light falls off with depth into the funnel.
           float depth = max(0.0, 1.6 - r / R);
@@ -706,62 +668,26 @@ void main() {
         T *= 1.0 - a;
       }
       t += st;
-      nStep++;
     }
   }
-  // ?dbg=6 paints the march's step count: green to 60, red to 240.
-  if (uDbg > 5.5 && uDbg < 6.5) { acc = vec3(smoothstep(60.0, 240.0, float(nStep)), smoothstep(0.0, 60.0, float(nStep)), 0.0); T = 0.0; }
-  if (uMode == 3) { outC = vec4(acc, T); return; }
   vec3 col = bg * T + acc;
-  // Elsewhere the bake keeps the whole picture: the backdrop and the near deck.
-  if (uMode == 1) {
-    vec3 old = texelFetch(tBg, pix, 0).rgb;
-    outC = vec4(mix(old, col, uBlend), -1.0);
-    return;
-  }
   // A short history blend: steady frames lose their march noise.
   vec3 prev = texture(tPrev, gl_FragCoord.xy / uRes).rgb;
   outC = vec4(mix(prev, col, uBlend), 1.0);
 }`;
 
 
-// Fills the full-size volume from this frame's quarter and the history.
-// The camera never moves, so the history needs no reprojection.
-const RESOLVE_FS = /* glsl */`#version 300 es
-precision highp float;
-out vec4 outC;
-uniform sampler2D tVol, tHist;
-uniform ivec2 uSub;
-uniform float uBlend;
-void main() {
-  ivec2 pix = ivec2(gl_FragCoord.xy), b = pix / 2, top = textureSize(tVol, 0) - 1;
-  vec4 fresh = texelFetch(tVol, min(b, top), 0);
-  // The fresh samples nearest this pixel bound its history, so the spin leaves no ghost.
-  ivec2 d = pix - b * 2 - uSub;
-  vec4 lo = fresh, hi = fresh;
-  for (int k = 1; k < 4; k++) {
-    vec4 v = texelFetch(tVol, clamp(b + d * ivec2(k & 1, k >> 1), ivec2(0), top), 0);
-    lo = min(lo, v);
-    hi = max(hi, v);
-  }
-  vec4 old = clamp(texelFetch(tHist, pix, 0), lo, hi);
-  outC = d == ivec2(0) ? mix(old, fresh, uBlend) : old;
-}`;
-
 const FINAL_FS = /* glsl */`#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outC;
-uniform sampler2D tSrc, tBg, tVH;
-// 1 lays the volume over the baked backdrop; 0 reads one finished picture.
-uniform int uComp;
+uniform sampler2D tSrc;
 uniform vec2 uRes;
 uniform float uSeed;
 ${GRADE}
 ${OUTPUT}
 void main() {
-  vec4 vh = texture(tVH, vUv);
-  vec3 c = uComp == 1 ? texture(tBg, vUv).rgb * vh.a + vh.rgb : texture(tSrc, vUv).rgb;
+  vec3 c = texture(tSrc, vUv).rgb;
   c = gdGrade(c, vUv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0), 0.35, 0.4, 0.035);
   outC = vec4(ouFilm(c, 1.0, gl_FragCoord.xy), 1.0);
 }`;
@@ -815,7 +741,7 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
   /** @type {HTMLElement} */ (document.querySelector('.fail')).hidden = false;
   throw new Error('WebGL2 with float targets is needed');
 }
-const P = await linked(gl, { scene: program(gl, TRI_VS, SCENE_FS), final: program(gl, TRI_VS, FINAL_FS), resolve: program(gl, TRI_VS, RESOLVE_FS) });
+const P = await linked(gl, { scene: program(gl, TRI_VS, SCENE_FS), final: program(gl, TRI_VS, FINAL_FS) });
 const vao = gl.createVertexArray();
 const noise = noiseVolume(gl);
 
@@ -842,8 +768,6 @@ fEl.addEventListener('input', () => { f = +fEl.value; morph = false; $('morph').
 const toggle = (id, set) => $(id).addEventListener('click', () => { const on = $(id).getAttribute('aria-pressed') !== 'true'; $(id).setAttribute('aria-pressed', String(on)); set(on); });
 toggle('morph', on => { morph = on; });
 toggle('pause', on => { paused = on; });
-// A knob change bakes the whole backdrop again.
-document.querySelector('.panel').addEventListener('input', () => { bakeAll = true; });
 toggle('knobsBtn', on => document.getElementById('panel').classList.toggle('min', !on));
 // QA and links: ?f=4.5, ?morph, ?t=12 (start time), ?still (no history blend).
 const qs = new URLSearchParams(location.search);
@@ -868,17 +792,6 @@ function light(hour, azDeg) {
   return { sun, sunCol, amb };
 }
 
-// G is the baked backdrop on screen; G2 fills strip by strip behind it.
-// ?live draws the backdrop every frame, for comparison.
-let G = null, G2 = null, bakeRow = 0, bakeAll = true, baking = !qs.has('live');
-// V holds this frame's quarter of the volume; H and H2 the full volume, ping-ponged.
-// ?full marches every pixel every frame, for comparison.
-let V = null, H = null, H2 = null;
-const interleave = () => baking && !qs.has('full');
-// The 2 by 2 pixel each frame marches, in an order that spreads them.
-const SUBS = [[0, 0], [1, 1], [1, 0], [0, 1]];
-// The backdrop renews in this many strips, one strip a frame.
-const STRIPS = 8;
 let A = null, B = null, w = 0, h = 0, frame = 0, last = 0, fpsT = 0, fpsN = 0;
 function size() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -886,13 +799,9 @@ function size() {
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   const rw = Math.max(64, Math.round(cw * K.res())), rh = Math.max(64, Math.round(ch * K.res()));
   if (rw !== w || rh !== h) {
-    free(gl, A); free(gl, B); free(gl, G); free(gl, G2); free(gl, V); free(gl, H); free(gl, H2);
+    free(gl, A); free(gl, B);
     w = rw; h = rh;
     A = target(gl, w, h, { clear: true }); B = target(gl, w, h, { clear: true });
-    G = target(gl, w, h, { clear: true }); G2 = target(gl, w, h, { clear: true });
-    V = target(gl, Math.ceil(w / 2), Math.ceil(h / 2), { filter: gl.NEAREST });
-    H = target(gl, w, h, { clear: true }); H2 = target(gl, w, h, { clear: true });
-    bakeAll = true;
     frame = 0;
   }
 }
@@ -949,65 +858,17 @@ function draw(now) {
   set(sc, 'uH', 850);
   for (const [u, k] of [['uR0', 'r0'], ['uFlare', 'flare'], ['uProf', 'prof'], ['uVmax', 'vmax'], ['uCond', 'cond'], ['uDustH', 'dustH'], ['uMulti', 'multi'], ['uRain', 'rain'], ['uDark', 'dark'], ['uLean', 'lean'], ['uSway', 'sway']]) set(sc, u, at(k, fk));
   set(sc, 'uDebris', at('debris', fk) * K.deb());
-  const blendMain = frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55;
-  gl.uniform1i(sc.u.tBg, 2);
-  gl.activeTexture(gl.TEXTURE2);
-  gl.bindTexture(gl.TEXTURE_2D, G.tex);
-  if (baking) {
-    gl.uniform1i(sc.u.uMode, 1);
-    if (bakeAll) {
-      // A knob or a new size bakes the whole backdrop at once.
-      set(sc, 'uBlend', 1);
-      tri(gl, G2, vao);
-      [G, G2] = [G2, G];
-      bakeRow = 0;
-      bakeAll = false;
-    } else {
-      const rows = Math.ceil(h / STRIPS);
-      set(sc, 'uBlend', 0.5);
-      gl.enable(gl.SCISSOR_TEST);
-      to(gl, G2);
-      gl.scissor(0, bakeRow * rows, w, rows);
-      tri(gl, G2, vao);
-      gl.disable(gl.SCISSOR_TEST);
-      if (++bakeRow === STRIPS) { [G, G2] = [G2, G]; bakeRow = 0; }
-    }
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, G.tex);
-  }
-  const sub = SUBS[frame % 4];
-  if (interleave()) {
-    gl.uniform1i(sc.u.uMode, 3);
-    gl.uniform2i(sc.u.uSub, sub[0], sub[1]);
-    set(sc, 'uJit', [0, 0]);
-    tri(gl, V, vao);
-    const rs = P.resolve;
-    gl.useProgram(rs.p);
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, V.tex); gl.uniform1i(rs.u.tVol, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, H.tex); gl.uniform1i(rs.u.tHist, 1);
-    gl.uniform2i(rs.u.uSub, sub[0], sub[1]);
-    // A pixel refreshes every fourth frame: its history fades as four frames of the plain blend.
-    set(rs, 'uBlend', 1 - (1 - blendMain) ** 4);
-    tri(gl, H2, vao);
-    [H, H2] = [H2, H];
-  } else {
-    gl.uniform1i(sc.u.uMode, baking ? 2 : 0);
-    set(sc, 'uBlend', blendMain);
-    tri(gl, B, vao);
-  }
+  tri(gl, B, vao);
   const fn = P.final;
   gl.useProgram(fn.p);
-  gl.uniform1i(fn.u.uComp, interleave() ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, B.tex); gl.uniform1i(fn.u.tSrc, 0);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.tex); gl.uniform1i(fn.u.tBg, 1);
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, H.tex); gl.uniform1i(fn.u.tVH, 2);
   set(fn, 'uRes', [canvas.width, canvas.height]);
   set(fn, 'uSeed', frame % 997);
   tri(gl, null, vao);
   [A, B] = [B, A];
   frame++;
   fpsN++;
-  if (now - fpsT > 1000) { document.getElementById('fps').textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} fps · ${w}×${h} · ${interleave() ? 'interleaved' : baking ? 'baked' : 'live'}`; fpsT = now; fpsN = 0; }
+  if (now - fpsT > 1000) { document.getElementById('fps').textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} fps · ${w}×${h}`; fpsT = now; fpsN = 0; }
 }
 // The app's own window shares the GPU, so the lab draws 30 frames a second at most.
 const FRAME_MS = 1000 / 30;
@@ -1030,18 +891,4 @@ for (const ev of ['visibilitychange', 'input', 'click', 'keydown']) document.add
 addEventListener('resize', wake);
 for (const id of ['res']) $(id).addEventListener('input', () => size());
 raf = requestAnimationFrame(loop);
-// Times n frames with a pixel read, free of the screen's frame clock.
-window.__bench = (n = 12, bake = baking) => {
-  const was = baking, px = new Uint8Array(4);
-  baking = bake;
-  bakeAll = true;
-  for (let i = 0; i < 3; i++) draw(performance.now());
-  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  const t0 = performance.now();
-  for (let i = 0; i < n; i++) { draw(t0 + i * 33); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
-  const ms = (performance.now() - t0) / n;
-  baking = was;
-  bakeAll = true;
-  return Math.round(ms * 10) / 10;
-};
 window.__lab = { get f() { return fShown; }, set f(v) { f = fShown = v; } };
