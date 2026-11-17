@@ -11,7 +11,7 @@ The decisions behind each column are in [code-health.md](../code-health.md).
 | Work | Plan |
 |---|---|
 | A toy doc in `docs/toys/<id>.md` | [toy-docs.md](toy-docs.md) |
-| The type check: the module script moves to `<id>/main.js`, the folder joins `tsconfig.json` | [typescript.md](typescript.md) |
+| TypeScript: the module script moves to `<id>/src/main.ts`, esbuild bundles it to `<id>/dist/main.js` (decision 8, 2026-11-16; Railgun is the pilot). Toys ported before that (`foghorn`, `eyes`, `rain`, `dijkstra`) have a checked `<id>/main.js`: the `.ts` step is still to do | [typescript.md](typescript.md) |
 
 ## Rules
 

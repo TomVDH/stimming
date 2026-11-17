@@ -38,8 +38,8 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | 6 | New modules | `gl.js` and `noise.js` may exist. `voices.js`, `bloomPass` and `pointer.js` wait |
 | 7 | Toy docs | About ten main shelf docs by hand, then a generator for the factual sections |
 | 8 | TypeScript | Every toy moves to TypeScript: `.ts` in `<id>/src/`, bundled by esbuild to `<id>/dist/main.js`, built in the Pages workflow (Tom, 2026-11-16; replaces JSDoc-only, no build step). Railgun is the pilot. `shared/` keeps JSDoc types until it moves |
-| 9 | Dev tools | A `package.json` with TypeScript and library types is approved. `node_modules/` stays git-ignored |
-| 10 | Type check in CI | No. It runs locally only |
+| 9 | Dev tools | A `package.json` with TypeScript, esbuild and library types is approved. `node_modules/` stays git-ignored. `npm run build` bundles the TypeScript toys; the Pages workflow runs it |
+| 10 | Type check in CI | No. `npm run check` runs locally only; CI runs only the build |
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
 | 12 | Same frame | A shift of 1/255 on a few pixels counts as the same frame (2026-11-15, from Rain's `oklchLinear` proof). A larger change needs Tom's look |
 | 13 | Fire and smoke | A key shared module (2026-11-16). Fire's flame and smoke (its K3 volume fluid, three.js WebGPU and TSL) become one module that other toys reuse. Ink copies it today. WebGPU only for now (Tom, 2026-11-16): `shared/fire.js` serves Compute toys; WebGL toys keep their noise plumes. A WebGL2 twin, grown from `cauldron`, only on demand. Plan: `docs/plans/fire-smoke.md` |
