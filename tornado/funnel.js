@@ -173,6 +173,8 @@ uniform sampler2D tFar;
 // The bake before the last, and how far the last has faded in over it, 0 to 1.
 uniform sampler2D tFarPrev;
 uniform float uFarK;
+// The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
+uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
@@ -739,6 +741,7 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
 }
 #endif
 void main() {
+  if (uMode == 1 && uSlice >= 0 && int(gl_FragCoord.y) % 8 != uSlice) discard;
   vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
@@ -983,8 +986,9 @@ void main() {
       // Its edges read the break softly, and a streak noise along it rags its sides.
       // A young deck's wide gaps light whole rooms of air: they count for less than the far breaks.
       float dep = max(BASE - w.y, 0.0);
-      float rag = 0.5 + 0.5 * vn(vec2(dot(qc.xz, vec2(-sd.z, sd.x)) * 3.0, dep * 0.8));
-      sh += max(deckOpen(qc, 0.06 + 0.05 * dep), 0.4 * raftGap(qc)) * exp(-dep * 1.1) * rag;
+      // Across a hole the light splits into two or three beams.
+      float rag = smoothstep(0.3, 0.7, vn(vec2(dot(qc.xz, vec2(-sd.z, sd.x)) * 1.2, dep * 0.5)));
+      sh += max(deckOpen(qc, 0.1 + 0.1 * dep), 0.4 * raftGap(qc)) * exp(-dep * 0.45) * rag;
     }
     // Light only: the shafts glow most toward the sun.
     float cg = dot(rd, uSun);
