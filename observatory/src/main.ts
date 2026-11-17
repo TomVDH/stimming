@@ -1,6 +1,6 @@
 // Load order: loop runs first.
 import './loop.ts';
-import { pixelRatio, stage } from '../../shared/stim.js';
+import { onQuality, pixelRatio, stage } from '../../shared/stim.js';
 import { renderer, stageEl } from './setup.ts';
 import { resizePost } from './post/chain.ts';
 import { setStarDpr } from './sky/stars.ts';
@@ -21,5 +21,8 @@ function resize(): void {
   draw();
 }
 new ResizeObserver(resize).observe(stageEl);
+// A Quality change resizes the canvas, the post chain and the stars.
+// resize ends with one draw, so the idle page shows the new frame.
+onQuality(() => resize());
 resize();
 stage('first-frame');
