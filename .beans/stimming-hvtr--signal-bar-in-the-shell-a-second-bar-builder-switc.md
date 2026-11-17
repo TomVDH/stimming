@@ -29,7 +29,7 @@ Hard rule 3 applies: this bean changes `shared/`. It needs Tom's yes before the 
 - [ ] A Bar v3 test page beside it
 - [x] Cauldron's real page, with its real intro, at 1280 px, 375 x 812 and 812 x 375: the bar waits for the intro, no control leaves the stage, clean console
 - [ ] A real touch screen; keyboard only from end to end
-- [x] A disabled control shows at 40% and takes no input (built; no toy in the ten disables one, so it is not seen in use)
+- [x] A disabled control shows at 40% and takes no input (seen in use: Prism's Clear is off while the table has no added piece)
 - [x] The site's type check passes (`tsc --noEmit -p tsconfig.json`). `npm run check` itself fails on Windows: its script is bash
 - [x] `docs/plans/bar-v3.md` (the spec), `shared/AGENTS.md` and `DESIGN.md` say what is true
 - [ ] `/code-review` before the merge (rule in `shared/AGENTS.md`)
@@ -37,4 +37,30 @@ Hard rule 3 applies: this bean changes `shared/`. It needs Tom's yes before the 
 - [ ] `shared/signal.js` is not strict-clean: 94 findings under Railgun's tsconfig, most of them untyped parameters. `stim.js` builds the module's address at run time so that check passes; typing the module is still to do
 - [x] Train ride and Railgun are on Bar v3 (2026-11-17)
 - [x] Cauldron first: `signal: true` in `cauldron/index.html`
-- [ ] The other nine, one at a time, each in its own bean
+- [x] The other nine, one at a time, each in its own bean (2026-11-17: all ten run Bar v3 on this branch, each with its copy applied on Tom's yes)
+
+## State on 2026-11-17: the ten run Bar v3
+
+What the per-toy pass added to the shell, each from a fault or a need on one toy:
+
+| Addition | From | Where |
+|---|---|---|
+| `help: [[input, instruction], ...]`, a typed spec field | Cauldron, Railgun | `shared/stim.js`, `shared/signal.js` |
+| A touch-only gesture shows on touch alone | Train ride | `shared/signal.js` |
+| An action leaves the bar while the toy hides its Bar v2 chip | Railgun's Reset | `actionParts` |
+| One input column in How to play, as wide as its widest input | Railgun's four arrows | `shared/signal.css` |
+| A lone `+` is a keycap | Galaxy | `inputHTML` |
+| A bar group wraps its own parts on a narrow stage | Window seat | `.sg-grp` |
+| An option's colour dot keeps its colour | Fire's salts | `optHTML`, `.sg-dot` |
+| Drawings for a circle and for a pointer move | Googly eyes, Bubble wand | `GESTURE`; both are pointer words in `stim.js` |
+| A tray: an action opens its options in a sheet, with tap or drag | Prism's Pieces | `actionParts`, `tray` in the action's type |
+
+Open before a merge:
+
+- `/code-review` (rule in `shared/AGENTS.md`).
+- The branch is behind `main`; `main` has moved `shared/stim.css` and Railgun's Dev menu.
+- A real touch screen; keyboard only from end to end; hands-on play of each toy.
+- Tom signs off each toy. Bar v2 leaves a toy only after its sign-off.
+- Railgun: a mark for Reset after a kill; Space and W A S D in its help.
+- Window seat: three rows on a phone. Window seat and Train ride have no Reset.
+- Prism: the Remove button and the zoom chip keep the old look.

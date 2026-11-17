@@ -143,3 +143,20 @@ Not covered by the ten: a toy with no bar spec. None of the 25 can take the bar 
 ## Toys with no bar spec (25)
 
 `cube`, `eastvan`, `flap`, `flock`, `foil`, `frost`, `gears`, `glow`, `harmono`, `harp`, `marble`, `musicbox`, `oilslick`, `orbits`, `plasma`, `sand`, `sequin`, `slime`, `snow`, `subway`, `tesseract`, `top`, `viaduct`, `windfarm`, `zipper`
+
+## State of the first ten on 2026-11-17
+
+Each toy runs Bar v3 on `feature/stimming-hvtr`, and each has its copy applied on Tom's yes. No toy is signed off; only Tom signs off. No toy was played by hand, and no real touch screen is checked.
+
+| # | Toy | Bean | What changed most |
+|---|---|---|---|
+| 1 | `cauldron` | stimming-u2in | + Ingredients, Throw out, Heat; Dev rows in groups |
+| 2 | `trainride` | stimming-1bwk | Swiss red and white; Route, Time of day, Weather change |
+| 3 | `railgun` | stimming-o4nv | Aim: Auto, Manual; Shot: Single, Salvo; Reset shows only after a kill |
+| 4 | `galaxy` | stimming-0ix6 | Objects, Black hole, Speed |
+| 5 | `window` | stimming-8sfe | Wing light; Settings in three groups; three rows on a phone |
+| 6 | `fire` | stimming-i3il | Size, Fuel; Reset in Settings; the salts keep their colour dots |
+| 7 | `eyes` | stimming-npnu | No control changed; eleven help rows; a circle drawing |
+| 8 | `prism` | stimming-vgcj | The Pieces palette is a Bar v3 sheet, tap or drag |
+| 9 | `bubbles` | stimming-qazn | Pop all; a drawing for a pointer move |
+| 10 | `frietkot` | stimming-i0ey | Weather on the bar; Neon colour; Settings in two groups |
