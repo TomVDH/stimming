@@ -217,7 +217,8 @@ function tap(a: AltAz): void {
   if (!s) return;
   const from = machine.phase;
   machine.pick(s);
-  if (from === 'aim' || from === 'lost') cuts.start(machine.cupolaAz);
+  // An open shutter plays only the slew cuts.
+  if (from === 'aim' || from === 'lost') cuts.start(machine.phase);
   lastInput = performance.now();
   dirty = true;
   wake();

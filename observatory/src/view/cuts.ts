@@ -3,7 +3,8 @@ import '../world/dusk.ts';
 import { MathUtils, Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { CUTS, cutAt, cutsTotal, type Cut, type Shot } from '../core/sequence.ts';
+import { CUTS, cutAt, cutsTotal, lens, makeLocks, startAt, type Cut, type Shot } from '../core/sequence.ts';
+import type { Phase } from '../core/machine.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
@@ -59,14 +60,13 @@ const STILL_CUT: Cut = CUTS.find(c => c.shot === 'slit')!;
 const BAR = 0.055;
 // The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
 const BEAM_CLOSE = 0.1;
-// A portrait lens is at most this much wider than the landscape lens.
-const PORTRAIT_MAX = 1.5;
 
 const ease = (k: number): number => k * k * (3 - 2 * k);
 
 // A locked camera in world space.
-// tall: the aim of a portrait frame.
-type Framed = { eye: Vector3; look: Vector3; tall: Vector3; fov: number };
+// aim: the point it looks at.
+// fov: its vertical lens in degrees.
+type Framed = { eye: Vector3; aim: Vector3; fov: number };
 
 const centre = new Vector3();
 const ray = new Raycaster();
@@ -89,11 +89,13 @@ const slitNow = (): number => -complex.main.cupola.rotation.y / DEG;
 
 // Places the eye of one cut so nothing blocks the dome.
 // az: the slit's azimuth in degrees.
+// aspect: the frame's width over its height.
 // The look point turns with the slit, not with the eye.
-function place(cut: Cut, az: number): Framed {
-  const plan = PLANS[cut.shot], fov = cut.fov;
+function place(cut: Cut, az: number, aspect: number): Framed {
+  const plan = PLANS[cut.shot];
   const look = slitPoint(plan.look, az * DEG, new Vector3());
-  const tall = plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
+  const { fov, tall } = lens(cut.fov, aspect);
+  const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
   const eye = new Vector3();
   for (const near of NEAR) {
     for (const turn of TURNS) {
@@ -104,12 +106,12 @@ function place(cut: Cut, az: number): Framed {
       ray.set(look, tmp.copy(eye).sub(look).normalize());
       ray.far = eye.distanceTo(look);
       if (ray.intersectObjects(blockers(), true).length) continue;
-      return { eye, look, tall, fov };
+      return { eye, aim, fov };
     }
   }
   // No clear eye: the nearest eye of the plan as it stands.
   slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
-  return { eye, look, tall, fov };
+  return { eye, aim, fov };
 }
 
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
@@ -136,7 +138,10 @@ let t = 0;
 let mode: 'off' | 'cuts' | 'still' | 'fade' = 'off';
 let fadeT = 0, grab = false;
 // The locked cameras: each cut sets its own on its first frame.
-let shots: Partial<Record<Shot, Framed>> = {};
+// The cupola can turn after the pick.
+// So each cut frames the slit where it stands at the cut.
+// The aspect is fixed then too: a resize keeps the aim and the lens.
+const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
 
 function toWide(): void {
   mode = 'off';
@@ -161,16 +166,16 @@ export const cuts = {
   get shot(): Shot | null { return mode === 'cuts' ? cutAt(t)?.shot ?? null : mode === 'still' ? STILL_CUT.shot : null; },
   get time(): number { return t; },
   // Starts the sequence.
-  // az: the slit's azimuth at the pick, for the first cut.
-  start(az: number): void {
+  // phase: the machine's phase after the pick.
+  // An open shutter plays only the slew cuts.
+  start(phase: Phase): void {
     const main = complex.main;
     main.root.updateMatrixWorld(true);
     main.cupola.getWorldPosition(centre);
     R = DOME_R1 * main.root.scale.x;
-    t = 0;
     mode = reduced() ? 'still' : 'cuts';
-    const first = mode === 'still' ? STILL_CUT : CUTS[0];
-    shots = { [first.shot]: place(first, az) };
+    t = mode === 'cuts' ? startAt(phase) : 0;
+    locks.clear();
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
@@ -197,16 +202,10 @@ export const cuts = {
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
     if (mode === 'off' || (mode === 'fade' && !grab)) return;
-    const cut = mode === 'cuts' ? cutAt(t) : STILL_CUT;
-    if (!cut) return;
-    // A cut locks its camera on its first frame.
-    // The cupola can turn after the pick.
-    // The cut frames the slit where it stands at the cut.
-    const s = shots[cut.shot] ??= place(cut, slitNow());
-    // A portrait frame takes a wider lens, so the subject still fits across.
-    const portrait = camera.aspect < 1;
-    const wider = portrait ? Math.min(PORTRAIT_MAX, 1 / Math.sqrt(camera.aspect)) : 1;
-    applyShot(camera.aspect, s.eye, portrait ? s.tall : s.look, s.fov * wider);
+    const s = mode === 'cuts' ? locks.at(t) : locks.of(STILL_CUT);
+    if (!s) return;
+    // The projection follows the canvas, so a resize never stretches the frame.
+    applyShot(camera.aspect, s.eye, s.aim, s.fov);
     beam(BEAM_CLOSE);
     showBars(true);
   },
