@@ -168,7 +168,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 
   | Role | Library |
   |---|---|
-  | Rendering | Raw WebGL2 for shader toys; three.js 0.170.0 for 3D scenes (Galaxy, Fire, Ink Water and Spark wheel keep the 0.186.1 WebGPU build) |
+  | Rendering | Raw WebGL2 for shader toys; three.js 0.170.0 for 3D scenes (Galaxy, Fire, Ink Water, Spark wheel and Cauldron keep the 0.186.1 WebGPU build) |
   | Colour | culori 4.0.1 |
   | Sound | Tone.js 15.0.4 |
   | Motion | GSAP 3.13.0 (the menu keeps the cdnjs UMD build) |
@@ -247,7 +247,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 
 - Icons and emblems: per toy, in each toy's own chat (Tom starts them).
 - Vignettes for the other six main toys.
-- Fine-tune pass: vary the purple stage tints per toy; Kaleidoscope zooms in too far; Glass and Coil stall on the first tap while audio starts.
+- Fine-tune pass: vary the purple stage tints per toy; Glass and Coil stall on the first tap while audio starts.
 - Move selected Lab toys onto the toy view.
 
 ## Claude-specific overrides

@@ -12,7 +12,7 @@ Each item comes from a rule that already exists. The source column names that ru
 | 2 | Toy doc | `docs/toys/<id>.md` exists from [the template](../toys/_template.md). Every section is there; a section with nothing to say says "None." The doc says what is now, cites `file:line`, and dates its numbers. | [toy-docs.md](toy-docs.md) |
 | 3 | Type check | The module script is in `<id>/main.js` (or other `.js` files), the folder is in `include` in `tsconfig.json`, and `npm run check` gives 0 errors. | [typescript.md](typescript.md), [code-health.md](../code-health.md) decisions 8 to 10 |
 | 4 | Stack and build | The toy doc names the stack type (Sketch, Shader, Environment, Scene, Compute), the renderer tier, each library with its version, the shared modules, and how the toy is built: passes, sims, key techniques. The type matches the toy, or the doc names the planned move. | [code-health.md](../code-health.md) Stack types, [stack.md](../stack.md), [stack-types.md](stack-types.md) |
-| 5 | Importmap | The page carries the importmap word for word. The WebGPU toys (Galaxy, Fire, Ink Water, Spark wheel) carry the 0.186.1 map. A page that imports no library needs none. No library outside the set, unless Tom named it. | `AGENTS.md` Conventions, [stack.md](../stack.md) |
+| 5 | Importmap | The page carries the importmap word for word. The WebGPU toys (Galaxy, Fire, Ink Water, Spark wheel, Cauldron) carry the 0.186.1 map. A page that imports no library needs none. No library outside the set, unless Tom named it. | `AGENTS.md` Conventions, [stack.md](../stack.md) |
 | 6 | Attributions | The toy doc lists every outside source: libraries and their licences, data (maps, datasets), audio files, fonts, models, textures, and shader techniques or papers the toy adapts. Each row gives the source, the licence, and whether credit must show on screen. An unknown licence blocks the label. | This page (see Attributions below) |
 | 7 | Bar v2 | The toy passes a `bar` spec to `initPage`. Slot limits hold: one choice, three actions, one slider, four key strip entries, five visible controls. Settings holds only what anyone playing may want; tuning sits in `dev` rows under `?dev`. The key strip and the phone layout work; item 14 checks the compliance list at each size. A toy change to the shell passes `tests/bar-v2.html`. | [bar-v2.md](bar-v2.md) (Slots, Phones, Mobile and compliance, Dev sheet) |
 | 8 | Bar answered | Tom has answered the toy's questions in the question sheet below: what stays, what moves to Settings or Dev, what is missing, what goes. The bar matches his answers. | This page (Question sheet) |
@@ -111,7 +111,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 41 | trainride | N | N | N | N | Y | P | P | N | P | Y | P | Y | Y | N | N |
 | 42 | foghorn | Y | N | Y | N | Y | P | Y | N | P | Y | P | Y | Y | N | N |
 | 43 | washline | N | N | P | N | Y | P | Y | N | P | Y | N | P | P | N | N |
-| 44 | cauldron | N | P | P | P | P | P | Y | N | P | Y | P | Y | Y | P | N |
+| 44 | cauldron | N | P | P | P | Y | P | Y | N | P | Y | P | Y | Y | P | N |
 | 45 | meshball | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
 | 46 | washer | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
 | 47 | spark | N | N | N | N | Y | N | P | N | P | Y | P | Y | Y | N | N |
@@ -130,7 +130,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 2 | Never: no doc has the Attributions section yet | The doc exists. Stale on 2026-11-16: railgun, meshball, schlieren, steelwool, cauldron | No doc |
 | 3 | Folder in `tsconfig.json` with its script in `.js` | Has `.js` modules, but the folder is not in the check | Script inline in HTML |
 | 4 | The doc names the stack type and the build | The doc has the renderer section only | No doc |
-| 5 | Word for word, the WebGPU map on an allowed toy, or no library import | Fireworks loads ZzFX from outside the map; Cauldron uses the 0.186.1 map but is not on the allowed list | Only the three.js entries (the "Map" rows in `ports.md`) |
+| 5 | Word for word, the WebGPU map on an allowed toy, or no library import | Fireworks loads ZzFX from outside the map. Cauldron read P until Tom added it to the WebGPU list (G6) | Only the three.js entries (the "Map" rows in `ports.md`) |
 | 6 | Never | A credits file or a code notice covers part of it | Nothing on record |
 | 7 | Bar v2 with no open flag | Bar v2 with Settings rows that read as tuning, an own dev panel or own quality row, or a play control hidden in Settings | Bar v1 (Oil slick) |
 | 9 | Every field set | `tag` and `tagNl` null (No. 28 to 53); `nl` and `ipa` null too on cauldron, meshball, washer, ladder, windtunnel, schlieren, steelwool | |
@@ -410,3 +410,15 @@ Batch 3, 2026-11-16 (Tom):
 | fidget.3 | No Settings | No Quality row; the Settings button stays hidden |
 | domino.1 | Keep Yours | The photo upload stays; the photo never leaves the browser |
 | domino.2 | Leave hidden | The strip keeps its four entries; Space stays a hidden key |
+
+Batch 4, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| pins.1 | Add a key | Shuffle gets a key that typing never needs (not a letter: Pin art presses typed words) |
+| pins.2 | Keep it | The iOS motion prompt and the tilt sway stay |
+| galaxy.1 | Move to Dev | Star streaks and Effect streaks become `dev` rows. Settings keeps Quality and Reset |
+| prism.1 | Keep in Settings | Wireframe stays a player setting |
+| kaleido.1 | Fixed | The "zooms in too far" item leaves `AGENTS.md` |
+| kaleido.2 | Add a slider | Kaleidoscope's chat proposes one main slider for Tom to pick |
+| G6 | Add to the list | Cauldron joins the 0.186.1 WebGPU list in `AGENTS.md` and `docs/stack.md`. It gets the still-frame fallback (G5) |

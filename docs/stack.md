@@ -8,7 +8,7 @@ Audit of every toy on 2026-11-09. `AGENTS.md` keeps the short rules; this file h
 | Role | Library | Notes |
 |---|---|---|
 | 3D scenes | three.js 0.170.0 (WebGL) | About 170 KB gzipped, 690 KB parsed. |
-| 3D on WebGPU | three.js 0.186.1 WebGPU build | Galaxy, Fire, Ink Water and Spark wheel only. About 205 KB gzipped. Spark wheel keeps its WebGL build as Classic and goes there when the browser has no WebGPU. |
+| 3D on WebGPU | three.js 0.186.1 WebGPU build | Galaxy, Fire, Ink Water, Spark wheel and Cauldron (Tom, 2026-11-16) only. About 205 KB gzipped. Spark wheel keeps its WebGL build as Classic and goes there when the browser has no WebGPU. |
 | Colour | culori 4.0.1 | `shared/stim.js` loads it once; use its OKLCH helpers. |
 | Sound | Tone.js 15.0.4 | Through `audioKit()`, so mute and gesture start hold. |
 | Motion | GSAP 3.13.0 | DOM and SVG tweens; the menu keeps the UMD build. |
