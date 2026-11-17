@@ -3,12 +3,10 @@ import './hill.ts';
 import { BackSide, BoxGeometry, BufferGeometry, CylinderGeometry, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, Group, MathUtils, Mesh, MeshLambertMaterial, Shape, Vector3 } from 'three';
 import type { Object3D, Side } from 'three';
 import type { AltAz } from '../core/sky.ts';
-import { scene } from '../setup.ts';
-import { SITE } from './hill.ts';
 
-/* ---------- the observatory: stone drum, white dome, slit, shutter, tube ---------- */
+/* ---------- one dome: stone drum, white cupola, slit, shutter, tube ---------- */
 const DEG = MathUtils.DEG2RAD;
-// Sizes in metres.
+// Sizes in metres at size 1.
 const DRUM_R = 3.2, DRUM_H = 3.4;
 const DOME_R = 3.3;
 // The slit is 1.3 m wide.
@@ -21,8 +19,12 @@ const SPLIT_E = 45 * DEG;
 const UP_OPEN = Math.PI - SLIT_E - 3 * DEG;
 const LOW_OPEN = -SPLIT_E - 2 * DEG;
 // The tube pivots this high over the dome's centre.
-const PIVOT_Y = 0.9;
-const TUBE_REST_ALT = 45;
+const PIVOT_Y = 0.5;
+// The tube reaches 2.6 m forward, so it stays inside the dome at any altitude.
+const TUBE_FRONT = 2.6, TUBE_BACK = 1.4;
+export const TUBE_REST_ALT = 45;
+// With the shutter shut, the tube parks low under the shutter line.
+export const TUBE_PARK_ALT = 30;
 
 // A piece of the dome's sphere in slit coordinates.
 // b: angle across the slit, from -90 to 90 degrees.
@@ -72,7 +74,7 @@ function merge(parts: BufferGeometry[]): BufferGeometry {
 
 const lam = (color: number, side: Side = FrontSide) => new MeshLambertMaterial({ color, side });
 
-export type Observatory = {
+export type Dome = {
   root: Group;
   cupola: Group;
   shutter: Object3D;
@@ -83,8 +85,10 @@ export type Observatory = {
   slitTop: Vector3;
 };
 
-export function buildObservatory(): Observatory {
+// size scales the whole dome; 1 is a 6.6 m cupola.
+export function buildDome(size: number): Dome {
   const root = new Group();
+  root.scale.setScalar(size);
 
   // The stone drum, with a ledge where the dome sits.
   const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * 1.04, DRUM_H, 48), lam(0x6c6c6c));
@@ -145,15 +149,16 @@ export function buildObservatory(): Observatory {
   const tube = new Group();
   tube.position.y = PIVOT_Y;
   fork.add(tube);
-  const body = new Mesh(new CylinderGeometry(0.36, 0.36, 5.0, 24), lam(0x8e8e8e));
+  const body = new Mesh(new CylinderGeometry(0.36, 0.36, TUBE_FRONT + TUBE_BACK, 24), lam(0x8e8e8e));
   body.rotation.x = -Math.PI / 2;
-  body.position.z = -1.7;
+  body.position.z = -(TUBE_FRONT - TUBE_BACK) / 2;
   tube.add(body);
 
   const slitTop = new Vector3();
   const slitLocal = new Vector3(0, DOME_R * Math.sin(SLIT_E), -DOME_R * Math.cos(SLIT_E));
 
   // Turns the slit to face an azimuth in degrees.
+  // The parents' world matrices must be current.
   function setCupola(az: number): void {
     cupola.rotation.y = -az * DEG;
     cupola.updateMatrixWorld(true);
@@ -173,11 +178,3 @@ export function buildObservatory(): Observatory {
   setTube({ alt: TUBE_REST_ALT, az: 0 });
   return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop };
 }
-
-export { TUBE_REST_ALT };
-
-export const obs = buildObservatory();
-obs.root.position.copy(SITE);
-scene.add(obs.root);
-obs.root.updateMatrixWorld(true);
-obs.setCupola(0);

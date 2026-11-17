@@ -16,13 +16,15 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `core/sky.ts` | Pure sky maths: sidereal time, alt/az |
 | `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta, axis stepper |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
-| `world/hill.ts` | The ridge, the flat land, the key light; `hillHeight`, `SITE` |
-| `world/observatory.ts` | The drum, the door, the cupola with its slit and shutter, the tube on its fork |
+| `world/hill.ts` | The land: the observatory hill and its clearing, the camera's rise, far ridges; the key light; `hillHeight`, `SITE` |
+| `world/observatory.ts` | One dome: drum, door, cupola with its slit and shutter, the tube on its fork; `buildDome(size)` |
+| `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |
+| `world/woods.ts` | The conifers over the hill, one instanced draw; a clearing and a gap for the road |
 | `world/laser.ts` | The green aiming beam; `altAzDir` |
 | `sky/stars.ts` | Placeholder stars: random points on a far shell |
-| `view/camera.ts` | The locked-off shot: eye, pitch, yaw, fov for wide and tall frames |
+| `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView` |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; alt and az from the camera ray |
-| `loop.ts` | The frame loop and sleep; the cupola turns after the beam; `window.__qa` |
+| `loop.ts` | The frame loop and sleep; the three domes turn after the beam; `window.__qa` |
 | `main.ts` | Resize and the first draw |
 
 ## Axes

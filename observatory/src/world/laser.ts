@@ -1,5 +1,5 @@
-// Load order: world/observatory runs first.
-import './observatory.ts';
+// Load order: world/woods runs first.
+import './woods.ts';
 import { CylinderGeometry, MathUtils, Mesh, MeshBasicMaterial, Vector3 } from 'three';
 import type { AltAz } from '../core/sky.ts';
 import { scene } from '../setup.ts';
@@ -19,7 +19,8 @@ export type Laser = { mesh: Mesh; aim(from: Vector3, a: AltAz): void; visible: b
 
 export function buildLaser(): Laser {
   // A unit cylinder that grows along +Y from its foot.
-  const geo = new CylinderGeometry(0.06, 0.06, 1, 6, 1, true).translate(0, 0.5, 0);
+  // It is 0.5 m wide, so it shows from the rise 300 m away.
+  const geo = new CylinderGeometry(0.25, 0.25, 1, 6, 1, true).translate(0, 0.5, 0);
   const mesh = new Mesh(geo, new MeshBasicMaterial({ color: 0x33ff66 }));
   mesh.scale.set(1, LENGTH, 1);
   const dir = new Vector3(), up = new Vector3(0, 1, 0);

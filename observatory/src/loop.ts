@@ -4,29 +4,45 @@ import { whenVisible } from '../../shared/stim.js';
 import type { AltAz } from './core/sky.ts';
 import { azDelta, clampAim, stepAxis } from './core/dome.ts';
 import { camera, renderer, scene, stageEl } from './setup.ts';
-import { obs, TUBE_REST_ALT } from './world/observatory.ts';
+import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
+import { complex } from './world/complex.ts';
 import { laser } from './world/laser.ts';
 import { applyCamera, type View } from './view/camera.ts';
 import { onAim, onTap } from './input.ts';
 
-/* ---------- frame loop: it runs while the cupola turns or input is fresh ---------- */
-// The cupola turns at 3 degrees a second at most and eases in and out.
-const CUP_CAP = 3, CUP_ACCEL = 1.5;
+/* ---------- frame loop: it runs while a dome turns or input is fresh ---------- */
 // The loop sleeps 60 s after the last input.
 const SLEEP = 60000;
 
-// The beam's aim; the cupola turns after its azimuth.
-const aim: AltAz = { alt: 40, az: 165 };
-const cup = { pos: aim.az, vel: 0 };
+// The beam's aim; every dome turns after its azimuth.
+const aim: AltAz = { alt: 16, az: 172 };
+// The main dome starts at once at 3 degrees a second.
+// The small domes start 1.5 s and 3 s later, and turn slower.
+type Turn = { dome: Dome; pos: number; vel: number; cap: number; accel: number; delay: number; open: number };
+const turns: Turn[] = [
+  { dome: complex.main, pos: aim.az, vel: 0, cap: 3, accel: 1.5, delay: 0, open: 1 },
+  { dome: complex.small[0], pos: aim.az, vel: 0, cap: 2.5, accel: 1.2, delay: 1.5, open: 1 },
+  { dome: complex.small[1], pos: aim.az, vel: 0, cap: 2, accel: 1, delay: 3, open: 1 },
+];
+// Recent aim azimuths, so a late dome can read the aim of 3 s ago.
+const seen: { t: number; az: number }[] = [{ t: -Infinity, az: aim.az }];
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
 
-const turning = () => cup.vel !== 0 || azDelta(cup.pos, aim.az) !== 0;
+// The aim azimuth as it was some seconds ago.
+function azAgo(now: number, s: number): number {
+  for (let i = seen.length - 1; i >= 0; i--) if (seen[i].t <= now - s * 1000) return seen[i].az;
+  return seen[0].az;
+}
+const turning = () => turns.some(d => d.vel !== 0 || azDelta(d.pos, aim.az) !== 0);
 
 function pose(): void {
-  obs.setCupola(cup.pos);
-  // The tube rides in the slit at a rest altitude.
-  obs.setTube({ alt: TUBE_REST_ALT, az: cup.pos });
-  laser.aim(obs.slitTop, aim);
+  for (const d of turns) {
+    d.dome.setCupola(d.pos);
+    // A shut dome parks its tube low, under the shutter.
+    d.dome.setTube({ alt: d.open >= 1 ? TUBE_REST_ALT : TUBE_PARK_ALT, az: d.pos });
+    d.dome.setShutter(d.open);
+  }
+  laser.aim(complex.main.slitTop, aim);
 }
 
 export function draw(): void {
@@ -42,9 +58,13 @@ function tick(now: number): void {
   // A long gap, such as a background tab, counts as 0.1 s.
   const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
   lastT = now;
-  if (turning()) {
-    const s = stepAxis(cup.pos, aim.az, cup.vel, dt, CUP_CAP, CUP_ACCEL, true);
-    cup.pos = s.pos; cup.vel = s.vel;
+  // Input times come from the same clock.
+  const t = performance.now();
+  for (const d of turns) {
+    const target = azAgo(t, d.delay);
+    if (d.vel === 0 && azDelta(d.pos, target) === 0) continue;
+    const s = stepAxis(d.pos, target, d.vel, dt, d.cap, d.accel, true);
+    d.pos = s.pos; d.vel = s.vel;
     dirty = true;
   }
   if (dirty) draw();
@@ -60,6 +80,9 @@ function input(a: AltAz): void {
   const c = clampAim(a);
   aim.alt = c.alt; aim.az = c.az;
   lastInput = performance.now();
+  seen.push({ t: lastInput, az: aim.az });
+  // Keep one sample older than the longest delay.
+  while (seen.length > 1 && seen[1].t <= lastInput - 3000) seen.shift();
   dirty = true;
   wake();
 }
@@ -80,9 +103,10 @@ declare global { interface Window { __qa?: Record<string, unknown> } }
 window.__qa = {
   get running() { return raf !== 0; },
   get frames() { return frames; },
-  get cupola() { return { ...cup }; },
+  get domes() { return turns.map(d => ({ pos: d.pos, vel: d.vel, open: d.open })); },
   get aim() { return { ...aim }; },
   // A test view; a resize restores the default.
   look(v: View) { const c = renderer.domElement; applyCamera(c.width / c.height, v); draw(); },
-  shutter(k: number) { obs.setShutter(k); draw(); },
+  // Dome i: 0 main, 1 east, 2 roof.
+  shutter(i: number, k: number) { turns[i].open = k; draw(); },
 };
