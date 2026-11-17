@@ -492,6 +492,8 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 |---|---|---|
 | 2026-11-16 | Tom: "we're completely redoing the style and ux of the bars". | 1, 2, 6, 7, 17, 20, 22 |
 | 2026-11-16 | Tom's ingredients for the bar redo, picked in a dialog: one bar (the Dock probe), no boxes (the Bare probe), built from the intro's flash beats, and controls that leave while you touch the stage and then return. Tuck and Askew are not picked. | 2, 22 |
+| 2026-11-16 | Tom on the Signal bar (one bar, no boxes, the intro's flash beats, leave then return): "i like signal a lot -- needs some iterations". Signal is the base of the bar redo. | 2, 22 |
+| 2026-11-16 | Tom's picks for Signal round 2, in a dialog: iterate the type and weight, the sheets, the motion beats and the toy's ink; the sheets keep the soft glass. Then: "we'll keep bare too". Bare stays beside Signal. | 2, 22 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.

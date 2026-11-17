@@ -19,8 +19,7 @@ const FRAME = 1000 / 30;
 const slow = () => Number(window.frameElement?.dataset.slow) || 1;
 const fr = (n = 1) => new Promise(r => setTimeout(r, n * FRAME * slow()));
 const CARET = '<i class="b-caret" aria-hidden="true"></i>';
-// Askew gives each block its own tilt, as the wordmark does for its letters.
-const TILTS = [-2, 1.5, -1, 2.5, -1.5, 1, -2.5, 2];
+const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v4"/><circle class="solid" cx="8" cy="4.8" r="0.7"/></svg>';
 
 const h = (tag, cls = '', html = null) => {
   const el = document.createElement(tag);
@@ -56,7 +55,7 @@ function mount(id, spec, ui) {
   // Each draw fills these; a redraw empties them.
   let syncers = [], open = null, hints = null, hintTimer = 0, gestures = 0, relayout = null;
   // Signal sets these: a sheet hook and the leave-and-return of its bar.
-  let popHook = null, presence = null, run = 0;
+  let popHook = null, presence = null, run = 0, pickBeat = null, pickDone = null;
   const sync = () => syncers.forEach(fn => fn());
   const touch = () => COARSE.matches || (host?.dataset.size || 'full') !== 'full';
   const hasChoice = !!spec.choice?.options?.length;
@@ -88,7 +87,8 @@ function mount(id, spec, ui) {
     const el = h('div', 'b-grid');
     const all = options.map(o => {
       const b = btn('b-opt', `${optHTML(o)}${o.key ? `<kbd>${o.key}</kbd>` : ''}`);
-      b.addEventListener('click', () => { pick(o.value); done?.(); });
+      // A direction may hold the list open for a beat, so the pick shows.
+      b.addEventListener('click', async () => { pick(o.value); await pickBeat?.(b); done?.(); pickDone?.(); });
       el.append(b);
       return [b, o];
     });
@@ -102,7 +102,7 @@ function mount(id, spec, ui) {
     const x = btn('b-ico b-x', '✕', 'Close');
     el.append(box('b-pop-hd', text('span', '', title), x));
     const api = {
-      el,
+      el, anchor,
       get isOpen() { return !el.hidden; },
       open(on) {
         if (on && open && open !== api) open.open(false);
@@ -232,68 +232,30 @@ function mount(id, spec, ui) {
   };
 
   /* ---------- directions ---------- */
-  // Dock: one bar at the bottom centre holds every control.
-  const dock = P => {
-    const play = box('b-group b-play', P.seg, P.pick, P.acts, P.slider);
-    const sys = box('b-group b-sys', P.snd, P.set, P.info);
-    const bar = box('b-dock', play, sys);
-    layer.append(...[P.id, hints, bar, P.pickPop?.el, P.setPop?.el].filter(Boolean));
-    // On a narrow stage the dock keeps play; sound, Settings and (i) go top right.
-    relayout = () => {
-      const narrow = layer.clientWidth < 640;
-      sys.className = narrow ? 'b-tr b-sys' : 'b-group b-sys';
-      (narrow ? layer : bar).append(sys);
-    };
-    relayout();
-  };
-  // Bare and Askew: the name on top, play at the bottom, in every size.
+  // Bare: the name on top, play at the bottom, in every size.
   const corners = P => {
     const tr = box('b-tr', P.snd, P.set, P.info), bl = box('b-bl', P.seg, P.pick, P.acts), br = box('b-br', P.slider);
     layer.append(...[P.id, tr, bl, br, hints, P.pickPop?.el, P.setPop?.el].filter(Boolean));
-    [...tr.children, ...bl.children, ...br.children].forEach((el, i) => el.style.setProperty('--tilt', `${TILTS[i % TILTS.length]}deg`));
   };
-  // Tuck: one tab; the drawer behind it holds every control.
-  const tuck = P => {
-    const tab = btn('b-tab', '', 'Controls');
-    syncers.push(() => { tab.innerHTML = (hasChoice ? optHTML(cur()) : '<span>Controls</span>') + CARET; });
-    const body = h('div', 'b-body');
-    const api = {
-      get isOpen() { return layer.hasAttribute('data-open'); },
-      open(on) {
-        layer.toggleAttribute('data-open', on);
-        tab.setAttribute('aria-expanded', String(on));
-        body.inert = !on;
-        open = on ? api : null;
-        if (on) showHints(false);
-      },
-    };
-    const sec = (title, ...kids) => box('b-sec', text('span', 'b-lab', title), kids);
-    if (hasChoice) body.append(sec(spec.choice.label || 'Pick', gridPart(() => api.open(false))));
-    if (P.acts.length) body.append(sec('Do', box('b-acts', P.acts)));
-    const how = hintsPart(false);
-    if (how) body.append(sec('How', how));
-    const rows = rowsPart();
-    if (rows.children.length) body.append(sec('Settings', rows));
-    const ft = resetPart(() => api.open(false));
-    if (ft) body.append(ft);
-    tab.addEventListener('click', () => api.open(!api.isOpen));
-    api.open(false);
-    layer.append(...[P.id, box('b-tr', P.snd), hints, box('b-drawer', tab, body)].filter(Boolean));
-  };
-
   // Signal: one bar with no boxes, in the intro's beats (Tom's ingredients, 2026-11-16).
   // The bar is one object: a white flash box lands, parts down the middle and leaves bare words.
-  // It leaves while a pointer is down on the stage and returns when the stage is still.
+  // White is the flash, a thing that happens now; the toy's ink is a state that holds.
+  // The bar leaves while a pointer is down on the stage and returns when the stage is still.
   const signal = P => {
     const grp = (cls, ...kids) => { const k = kids.flat().filter(Boolean); return k.length ? box(`sg-grp ${cls}`.trim(), k) : null; };
     const flash = h('i', 'sg-box');
+    if (P.info) P.info.innerHTML = INFO_SVG;
     const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.info), flash);
     const glass = h('div', 'sg-glass');
-    layer.append(...[P.id, glass, hints, bar, P.pickPop?.el, P.setPop?.el].filter(Boolean));
+    const sheets = [P.pickPop, P.setPop].filter(Boolean);
+    sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet')));
+    layer.append(...[P.id, glass, hints, bar, ...sheets.map(sh => sh.el)].filter(Boolean));
     let shown = false, downs = 0, backTimer = 0;
     // One frame of the bar: its box, its size and whether it shows.
     const set = ({ split = 50, sx = 1, sy = 1, off = false }) => {
       flash.style.setProperty('--sg-split', `${split}%`);
+      // While the box is on, the ink turns white, so the blend gives clean dark.
+      bar.classList.toggle('is-boxed', split < 50);
       bar.style.transform = sx === 1 && sy === 1 ? '' : `scale(${sx}, ${sy})`;
       bar.toggleAttribute('data-off', off);
       bar.inert = off;
@@ -335,16 +297,53 @@ function mount(id, spec, ui) {
       wake() { clearTimeout(backTimer); if (!shown) arrive(false); },
       stop() { clearTimeout(backTimer); },
     };
-    // A sheet is one object too: its glass and its rows land together, from the bar up.
+    // A pick cuts in: the word's box lands oversize for one frame, holds at size, then parts.
+    const cut = async el => {
+      if (RM.matches || !el) return;
+      el.classList.add('is-cut');
+      el.style.setProperty('--sg-split', '0%');
+      el.style.setProperty('--sg-k', '1.3');
+      await fr();
+      el.style.setProperty('--sg-k', '1');
+      await fr(2);
+      el.style.removeProperty('--sg-split');
+      el.style.removeProperty('--sg-k');
+      el.classList.remove('is-cut');
+    };
+    bar.addEventListener('click', e => { const b = e.target.closest('.b-btn'); if (b && bar.contains(b)) cut(b); });
+    // A picked row cuts in, holds one frame in the toy's ink, then the list leaves.
+    pickBeat = async row => { await cut(row); await fr(); };
+    pickDone = () => cut(P.pick);
+    // A sheet is one object too: its box lands from the bar up and parts over its rows.
+    // It grows from its own button; on the way out it drops to a line.
     popHook = async (api, on) => {
+      const el = api.el, box = el.querySelector('.sg-box--sheet');
+      const me = el._run = (el._run || 0) + 1;
+      const frame = (split, sy) => { box.style.setProperty('--sg-split', `${split}%`); el.classList.toggle('is-boxed', split < 50); el.style.transform = sy === 1 ? '' : `scaleY(${sy})`; };
+      el.classList.remove('is-closing');
       glass.toggleAttribute('data-on', on);
-      if (!on) return;
-      glass.style.height = `${api.el.offsetHeight + bar.offsetHeight + 110}px`;
+      if (on) {
+        el.scrollTop = 0;
+        glass.style.height = `${el.offsetHeight + bar.offsetHeight + 130}px`;
+        const a = api.anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
+        el.style.transformOrigin = `${Math.round(a.left + a.width / 2 - b.left)}px 100%`;
+        if (RM.matches) return frame(50, 1);
+        for (const [split, sy] of [[0, 0.06], [0, 1], [0, 1], [16, 1], [34, 1]]) {
+          if (me !== el._run) return;
+          frame(split, sy);
+          await fr();
+        }
+        if (me === el._run) frame(50, 1);
+        return;
+      }
       if (RM.matches) return;
-      const el = api.el;
-      for (const sy of [0.08, 0.6]) { el.style.transform = `scaleY(${sy})`; el.classList.add('is-flash'); await fr(); }
-      el.style.transform = '';
-      el.classList.remove('is-flash');
+      el.classList.add('is-closing');
+      for (const [split, sy] of [[0, 0.4], [0, 0.06]]) {
+        if (me !== el._run) return;
+        frame(split, sy);
+        await fr();
+      }
+      if (me === el._run) { el.classList.remove('is-closing'); frame(50, 1); }
     };
     glass.addEventListener('pointerdown', () => open?.open(false));
     // The strip and the sheets stand on the bar, however many rows it takes.
@@ -375,6 +374,8 @@ function mount(id, spec, ui) {
     hints = null;
     relayout = null;
     popHook = null;
+    pickBeat = null;
+    pickDone = null;
     presence?.stop();
     presence = null;
     run++;
@@ -383,12 +384,15 @@ function mount(id, spec, ui) {
     layer.dataset.concept = c;
     document.documentElement.classList.toggle('bl-on', c !== 'today');
     document.documentElement.classList.toggle('bl-touch', touch());
-    // The toy's accent inks Askew; a gradient gives its first stop to line work.
+    // The toy's accent inks Signal; a gradient gives its first stop to line work.
     layer.style.setProperty('--acc', toy.accent || 'var(--fg)');
     layer.style.setProperty('--acc-ink', toy.accent?.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)');
+    // A fill needs an image: a plain accent becomes a flat gradient.
+    const acc = toy.accent || 'var(--fg)';
+    layer.style.setProperty('--acc-img', acc.includes('gradient(') ? acc : `linear-gradient(${acc}, ${acc})`);
     if (c === 'today') return;
     const P = build();
-    (c === 'signal' ? signal : c === 'tuck' ? tuck : c === 'dock' ? dock : corners)(P);
+    (c === 'signal' ? signal : corners)(P);
     sync();
     fitName();
     if (c === 'signal') hints?.classList.add('is-faded'); else showHints(true);

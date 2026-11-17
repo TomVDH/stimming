@@ -25,7 +25,17 @@ Question: which direction does the bar redo take?
 - [x] One idea from those ingredients: the Signal bar, in `barlab/` (the lab's default view; Replay and `?slow=N` show its beats)
 - [x] Signal checked on Galaxy, Pendulum, Fire, Eyes and Rain at 1280 px and 375 x 812: no control leaves the stage, clean console; arrival, leave and return filmed frame by frame
 - [ ] Not checked on Signal: 812 x 375, a real touch screen, keyboard-only use, the frame cost of the glass on a slow machine
-- [ ] Tom's verdict on the Signal bar
+- [x] Tom's verdict on the Signal bar (2026-11-16): "i like signal a lot -- needs some iterations". Signal is the base
+- [x] Branches: another session built Standard (three rounds) on `claude/bold-davinci-7fc18a` and cut the first four directions there. Signal continues on `claude/bold-davinci-7fc18a-signal`; neither branch overwrites the other
+- [x] Signal round 2 (Tom, 2026-11-16, by dialog: iterate type and weight, the sheets, the motion beats and the toy's ink; keep the soft glass)
+  - Type: Iosevka Term Slab ExtraBold 14 px, 18 px icons, 44 px controls, a heavier slider
+  - Ink: white is the flash (a thing that happens now); the toy's accent is a state that holds (icons, the slider fill, a held pick)
+  - Beats: a pick cuts in oversize for one frame, holds two, then parts; a picked row holds one frame in ink before its list leaves
+  - Sheets: no boxes or hairlines; a sheet lands as a flash box from its own button and parts over its rows; it leaves in two frames
+- [x] Tom, 2026-11-16: "we'll keep bare too". The lab shows Signal, Bare and Today; Dock, Tuck and Askew are cut from the lab and its code
+- [ ] Not checked on round 2: 812 x 375, a real touch screen, keyboard-only use; Railgun loads in the lab but two of its files failed once on the local server
+- [ ] Not ported from the other session's Standard: the Dev sheet (`?dev`)
+- [ ] Tom judges Signal round 2
 
 ## Notes
 
