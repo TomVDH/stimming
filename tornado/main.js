@@ -14,6 +14,7 @@ import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, t
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex, debrisUniforms } from './damage.js';
 import { FARM_GLSL, farmState, farmStep, farmUniforms } from './farm.js';
+import { INFRA_GLSL, infraState, infraStep, infraReset, infraUniforms } from './infra.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -990,6 +991,7 @@ ${LINE_GLSL}
 ${DAMAGE_GLSL}
 ${PLAIN_GLSL}
 ${FARM_GLSL}
+${INFRA_GLSL}
 ${TRAFFIC_GLSL}
 // A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
 // with two or three short branches. Thin, with a soft glow; s is the screen point.
@@ -1032,6 +1034,7 @@ vec3 envScene(vec2 uv) {
   linePoles(s, rd, px);
   wires(s, rd, px);
   plain(s, rd, px);
+  infra(s, rd, px);
   debris(s, rd, px);
   traffic(s, rd, px, true);
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
@@ -1219,6 +1222,8 @@ const traf = trafficState();
 const dmg = damageState();
 // The farm's buildings, each a site in the damage field.
 const farmS = farmState(dmg);
+// The water tower, the billboard, the pivot and the bales.
+const inf = infraState(dmg);
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
@@ -1233,7 +1238,7 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
@@ -1243,7 +1248,7 @@ try {
       uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uSwayPh: () => line.uSwayPh,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uInfra: () => inf.uInfra, uBale: () => inf.uBale, uBaleB: () => inf.uBaleB, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1739,6 +1744,7 @@ function step(dt) {
   lineStep(line, tors, dt, simT, wind, storm);
   damageStep(dmg, tors, simT);
   farmStep(farmS, dmg, simT);
+  infraStep(inf, dmg, tors, dt, simT, traf);
   lineUniforms(line, tors);
   trafficStep(traf, tors, simT, dt, line);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
@@ -1873,7 +1879,7 @@ act.add = () => {
 act.clear = () => {
   if (tors.some(t => !t.roping)) tors.forEach(t => ropeOut(t));
   // The second Clear mends the power line and every damaged thing too.
-  else { tors.length = 0; lineReset(line); damageReset(dmg); }
+  else { tors.length = 0; lineReset(line); damageReset(dmg); infraReset(inf); }
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
@@ -1968,7 +1974,7 @@ if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(pa
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
 // QA: ?line=1.6 puts the newest tornado 1.6 km out, left of the power line, drifting into it.
 if (qs.has('line') && tors.length) Object.assign(tors[tors.length - 1], { x: -400, z: -1000 * +qs.get('line') });
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); damageStep(dmg, tors, simT); farmStep(farmS, dmg, simT); } };
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); damageStep(dmg, tors, simT); farmStep(farmS, dmg, simT); infraStep(inf, dmg, tors, 0.05, simT, traf); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
@@ -2040,7 +2046,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, dmg, farmS, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

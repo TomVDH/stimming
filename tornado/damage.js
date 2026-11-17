@@ -19,10 +19,23 @@ export function windAt(t, d) {
 }
 // The wind's direction at a point: it turns anticlockwise seen from above, and spirals in.
 // Returns the unit direction in x and z.
-function windDir(dx, dz, d) {
+export function windDir(dx, dz, d) {
   const tx = dz / d, tz = -dx / d;
   const x = tx - 0.35 * dx / d, z = tz - 0.35 * dz / d, n = Math.hypot(x, z) || 1;
   return [x / n, z / n];
+}
+
+// The wind now at (x, z) from every tornado, as a vector in m/s.
+export function windNow(tors, x, z) {
+  let wx = 0, wz = 0;
+  for (const t of tors) {
+    if (t.dust <= 0.05) continue;
+    const dx = x - t.x, dz = z - t.z, d = Math.max(Math.hypot(dx, dz), 1);
+    if (d > 1.6 * dustR(t)) continue;
+    const v = windAt(t, d), [ux, uz] = windDir(dx, dz, d);
+    wx += v * ux; wz += v * uz;
+  }
+  return [wx, wz];
 }
 
 /* ---------- the grid ---------- */

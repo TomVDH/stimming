@@ -229,6 +229,10 @@ void fence(vec2 s, vec3 rd, float px) {
     // No post stands quite true.
     vec3 P = vec3(FENCE_X + 0.05 * (th(vec2(i, 3.0)) - 0.5), 0.0, -(4.0 + 4.0 * i));
     vec3 A = normalize(vec3((th(vec2(i, 6.1)) - 0.5) * 0.06, 1.0, (th(vec2(i, 1.9)) - 0.5) * 0.05));
+    // A tornado's wind lays the fence down: posts lean from 35 m/s and lie flat by 55.
+    vec3 dm = dmgAt(P.xz);
+    float fa = clamp((dm.x - 35.0 - 6.0 * th(vec2(i, 4.4))) / 20.0, 0.0, 1.0) * 1.35;
+    if (fa > 0.0) A = normalize(A * cos(fa) + vec3(dm.y, 0.0, dm.z) * sin(fa));
     float zp = depthOf(P);
     if (zp < 1.0) continue;
     float hgt = post ? 1.3 : 1.15, u, sx;
@@ -248,8 +252,10 @@ void fence(vec2 s, vec3 rd, float px) {
     put(plainHaze(col, rd, zp), kp, zp);
   }
   // The strands: barbed wire, sagging a little between posts; its slope on screen sets its weight.
+  // A flattened fence's strands lie low with its posts.
+  float fs = cos(clamp((dmgAt(vec2(FENCE_X, wz)).x - 38.0) / 20.0, 0.0, 1.0) * 1.35);
   for (int j = 0; j < 3; j++) {
-    float f = fract(L / 4.0), y = 0.55 + 0.27 * float(j) - 0.2 * f * (1.0 - f);
+    float f = fract(L / 4.0), y = (0.55 + 0.27 * float(j) - 0.2 * f * (1.0 - f)) * fs;
     vec3 P0 = vec3(FENCE_X, y, wz), P1 = vec3(FENCE_X, y, wz - 0.5);
     vec2 s0 = proj(P0), s1 = proj(P1), sd = s1 - s0;
     float sl = abs(sd.x) > 1e-7 ? sd.y / sd.x : 1e3;
