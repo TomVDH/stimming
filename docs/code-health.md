@@ -10,17 +10,18 @@ The detail lives in the plans; this page links them and does not repeat them.
 | Toy docs | What does each toy's reference page hold? | [toy-docs.md](plans/toy-docs.md), [template](toys/_template.md) |
 | TypeScript | How do we get type checks? | [typescript.md](plans/typescript.md) |
 | Port list | Which toys get ported, and what each one needs? Main shelf toys start at v1.5 | [ports.md](plans/ports.md) |
+| Release readiness | What must a toy pass before Tom gives it the approved label? | [release-ready.md](plans/release-ready.md) |
 
 ## The site today
 
-88 toys in `toys.json`: 41 on the main shelf, 47 in the Lab.
+Counts from the 2026-11-14 audit. `toys.json` is the live list.
 
 | Renderer | Toys |
 |---|---|
 | three.js 0.170, WebGL | 42 |
 | Raw WebGL2 (GLSL) | 36 |
 | Canvas 2D | 6 |
-| three.js 0.186, WebGPU | 3 (Galaxy, Fire, Ink) |
+| three.js 0.186, WebGPU | 3 at the audit; now Galaxy, Fire, Ink, Spark wheel, Cauldron |
 | DOM / SVG | 1 |
 
 About 2,900 lines are copied word for word across three or more toys. Many more are near copies.
@@ -30,18 +31,18 @@ About 2,900 lines are copied word for word across three or more toys. Many more 
 | # | Topic | Decision |
 |---|---|---|
 | 1 | Stack types | Keep five: Sketch, Shader, Environment, Scene, Compute |
-| 2 | Starters | The reference toys are the starters. No starter pages |
+| 2 | Starters | Replaced 2026-11-16: `tools/new-toy.mjs` writes a new toy's start page (bean `stimming-wrxq`) |
 | 3 | Flat three.js toys | Move all five to raw WebGL2, each after a same-frame check. Pop goes last |
-| 4 | WebGPU fallback | A Compute toy without WebGPU shows a still frame and one line |
+| 4 | WebGPU fallback | A Compute toy without WebGPU goes to its `legacy.html` when one exists; otherwise its still and one line (2026-11-16) |
 | 5 | Module order | Invisible steps first: audio kit, colour helper, tone curve |
 | 6 | New modules | `gl.js` and `noise.js` may exist. `voices.js`, `bloomPass` and `pointer.js` wait |
 | 7 | Toy docs | About ten main shelf docs by hand, then a generator for the factual sections |
-| 8 | TypeScript | JSDoc types, checked by `tsc --noEmit`. No build step. Start in `shared/`; Fog horn is the pilot |
-| 9 | Dev tools | A `package.json` with TypeScript and library types is approved. `node_modules/` stays git-ignored |
-| 10 | Type check in CI | No. It runs locally only |
+| 8 | TypeScript | Every toy moves to TypeScript: `.ts` in `<id>/src/`, bundled by esbuild to `<id>/dist/main.js`, built in the Pages workflow (Tom, 2026-11-16; replaces JSDoc-only, no build step). Railgun is the pilot. `shared/` keeps JSDoc types until it moves |
+| 9 | Dev tools | A `package.json` with TypeScript, esbuild and library types is approved. `node_modules/` stays git-ignored. `npm run build` bundles the TypeScript toys; the Pages workflow runs it |
+| 10 | Type check in CI | No. `npm run check` runs locally only; CI runs only the build |
 | 11 | Bugs the audit found | One bean per toy now; each fix happens in that toy's own chat |
 | 12 | Same frame | A shift of 1/255 on a few pixels counts as the same frame (2026-11-15, from Rain's `oklchLinear` proof). A larger change needs Tom's look |
-| 13 | Fire and smoke | A key shared module (2026-11-16). Fire's flame and smoke (its K3 volume fluid, three.js WebGPU and TSL) become one module that other toys reuse. Ink copies it today. The design must say how Scene toys on WebGL take it |
+| 13 | Fire and smoke | A key shared module (2026-11-16). Fire's flame and smoke (its K3 volume fluid, three.js WebGPU and TSL) become one module that other toys reuse. Ink copies it today. WebGPU only for now (Tom, 2026-11-16): `shared/fire.js` serves Compute toys; WebGL toys keep their noise plumes. A WebGL2 twin, grown from `cauldron`, only on demand. Plan: `docs/plans/fire-smoke.md` |
 
 ## Stack types
 
@@ -92,7 +93,6 @@ Steps 7, 8 and 10 (`voices.js`, `bloomPass`, `pointer.js`) wait for Tom.
 
 ## Still open
 
-- `fireworks` loads ZzFX from a CDN outside the importmap. Tom picked it; the library rule does not list it yet.
 - `nvg/tube.js` into `shared/`: yes or no.
 - Toy docs: the section list, and uniform tables for every shader or only the tuned ones.
 - Which flat three.js toy moves first.

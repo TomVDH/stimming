@@ -1,5 +1,7 @@
 # Railgun (`railgun`) implementation plan
 
+Status: done · Bean: `stimming-f793`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task, in its feature worktree. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A colossal old railgun stands on a pylon over a dusty plain under a low sun, seen from 2.6 km in one locked-off shot. The flats run open to the horizon with a few far mesas; long cirrus hangs over them. Far beyond the muzzle a burning asteroid falls head-on along its own smoke train, minutes out. Hold to charge: lightning crackles over the barrel, dust lifts, the ground shakes, and it all grows the longer you hold. Release: a muzzle blast with shock rings, a bolt that foreshortens to a spark as it crosses the sky for seconds, a fireball with shock shells that lights the plain, a fresh rock.
@@ -356,3 +358,76 @@ All code stays in `railgun/index.html`. A test here is a probe in the browser pa
 
 The straight-block builder with flat facets, the `aim` turn about a pin, the sun depth map, the day sky `k2skyS` with its cirrus, the far-country builder, the dust ring buffer, `makeRing` and `makeGlint`, marked. Any daylight diorama can copy them.
 The `vol` and `trail` blocks are liftable as a pair; Tom may take the trail shading to another toy ("ten seconds").
+
+## Watch mode (stimming-z267)
+
+The toy tells people that watching is fine. The scene carries itself:
+- The parked cinematic views are gone. The wide eye and Sight stay.
+- The loop keeps 30 fps while a target can be hit or an ambient event runs. A hidden tab still stops all work. A falling rock is not an idle page.
+- After a kill with no input for 45 s, the toy runs its own Reset 75 s after the kill.
+- The ambient director starts one event every 12 to 40 s, faster as the rock nears. It holds off under a charge, a shot, a blast, a strike and a reset.
+  - Horizon war (Tom, 2026-11-16: the far events are other railguns' attempts to bring the rock down; they all fail): the three far guns fire one round each, in turn (see Far bolt). Each launch lights the horizon and the cloud bases. A low rumble follows 20 to 60 s later. No smoke columns.
+  - Shooting stars: dusk and night only, now and then a pair. Reduced motion shows none.
+  - Satellite pass: a dark sky only. A point of sunlight crosses the frame in 70 to 110 s; most fade into the planet's shadow partway.
+- A kill starts the aftermath. A strike or a Reset ends it, and the self-Reset waits for it.
+  - Re-entry rain: from 12 s after the kill, warm streaks come down round the kill for two and a half minutes, thinning; one in five burns bright and some burst.
+  - Late landings: one to three chunks land 55 to 155 s after the kill, 18 to 48 km out: a 2.5 s fall, a horizon flash, a dust dome in a free dome slot, a rumble at the speed of sound (cut to 30 s).
+- Flares and glints draw over the smoke; a screen test along the train dims the stars and the satellite behind it.
+- Dev rows: Ambient (on or off), Ambient rate, Ambient test (War, Star, Satellite, Rain, Landing) and Play. `__qa.ambient(kind)` and `__qa.amb()` drive stills.
+- Micro-interactions:
+  - Air specks: deleted (Tom, 2026-11-16: "get rid of the mouse responsive dust flakes"). Do not bring them back.
+  - Star trails: a fast Time drag smears the stars into short arcs (up to 2.3 degrees) that fade in 0.3 s. The Reset timelapse draws them too.
+  - The looming: after 20 s with no input, while a rock falls, the lens narrows up to 7% as the rock nears. Any input eases it back in about 2.5 s.
+  - `__qa.lens()` reads the push, the loom, the arc and the stir.
+- Four more ambient events (each runs alone). The ambient dust devil is deleted (Tom, 2026-11-16: it looked odd).
+  - The far guns are off (Tom, 2026-11-16 15:09: "take off the other rail gun shots (ambient for now), lock to off unless dev mode"): War and Far bolt left `AMB_KINDS`; Dev, Ambient test still fires them. Next, before they come back: launch from the gaps between the ranges, draw in the launch's distance band, warm cloud light with some volumetric glow.
+    - From between the mountains (Tom): `farGaps()` reads the ranges' geometry bake once per bake. It finds the top of the ranges within 150 km per column (the back ranges stand behind the gaps), takes the three deepest notches on screen outside our own gun's span, and fills any short list with the lowest stretches. Each place is 6 km behind its notch. Without a bake, `FAR_PIECES` stand in. `__qa.farGaps()` lists them.
+    - In its band (Tom: "if the trail emanates from a certain layer bracket, ensure the effects play in that bracket too"): every part of a round draws in the band of its launch distance (`farBand`: Deep past 100 km, else Far), so nearer clouds and mids cover it.
+    - Warm light with some volume (Tom: "light up clouds and offer some volumetrics", "warm and real"): the muzzle's glow fills its notch (a depth-tested flare, so the ridges mask it), a soft warm glow (4 km) rides the head, and the round lights the clouds near it through `uBolt` at 0.12 times power. While a far round holds `uBolt`, `uBoltC` turns warm (`FAR_WARM`); the main round keeps its own colour.
+  - Far bolt (rebuilt 2026-11-16, bean stimming-ut05): another gun shoots at the falling rock and misses. Tom: "a horizon flash is the muzzle then the projectile goes up; use exact same timing and effects". So it keeps the main shot's clock: the muzzle flash lights the horizon at the rail start, the slug leaves 0.3 s later, crosses in `lerp(11.5, 8.5, power)` s, fast out and slowing (`1 - (1 - x)^2.6`), and its light dies between 84 and 97 percent of the way. It draws the main shot's own parts: the bolt ribbon with its shock diamonds, the ion line and the contrail puffs (copies that share the main programs; `uK` scales widths and wind to distance / 6 km). At its rail start it leads the rock as the main gun does (`tgtLead`) and aims 1.6 to 3.5 rock widths beside it, as the eye sees it (`farAim`). Three far guns stand behind the ranges, 80 to 104 km out, at fixed places across the frame (`FAR_PIECES`, Tom: "one shot per artillery piece, three firing positions"). A single attempt fires the piece farthest across the frame from the rock (`farPiece`), so its round crosses the sky. A volley (the horizon war) fires all three in turn, one round each, 4 to 9 s apart. Few and far between (Tom: "slower shooting cadence"): far guns fire only while a rock falls, 150 to 300 s apart (`amb.farNext`), and never after a kill. A far round lights the clouds faintly through the main bolt's light (`uBolt`, strength 0.05 times power), only while the main round is not in flight (`farLight`). Shared air (sky session's request, 2026-11-16): the far contrail puffs take `aerial()` (`uAer` 1; the main shot keeps 0), and every additive ambient glow (the far ribbon and ion glow, the cloud light, flak, satellite, star, the landing fall, embers, the shed lump) scales by `ambT(P)`, a grey copy of `aerialFrom()`'s transmittance.
+  - Orbital flak: a dark sky only; five to nine pinprick pops in one patch of sky over 4 s. Silent.
+  - Embers: part of the aftermath; dull red points flicker and cool for two minutes where chunks and late landings lie, each under a thin thread of smoke.
+  - The rock sheds: a falling rock throws off a hot lump that peels sideways and lags back up the train for 6 s.
+- `glint()` centres its streak on its point; `ambSeg()` draws a streak from a start point.
+
+## Foreground terrain (stimming-z267)
+
+- The ground grid packs its 480 by 480 vertices round the eye: about 3 m apart there, about 3 km at the rim. The wide and portrait eyes each get their own grid. The vertex count is unchanged.
+- Gentle sand swells, 180 to 300 m apart and up to about 4 m high, roll from 40 m past the eye out to about 4 km. The ground round the mount and under the eye stays level, and the gun's foot stays in view.
+- The fragment shader takes the swells' slope with a 6 m step near the eye, and adds soft hummocks about 30 m across as a bump only, filtered out with distance.
+
+## Hit sounds: samples only (Tom, 2026-11-16)
+
+Tom: no synthetic clicks or ticks in the projectile's impact and its explosion; only those (Tom: "I am talking about the projectile impact and impact explosion only").
+- The rock hit plays Tom's impact sample alone: the noise crack and the knock tone are gone. The hush before the peak and the rise into it take 60 ms each, so the gain never clicks.
+- Salvo crater and hunt hits play the impact's tail, slowed and darkened, after the sound's delay. The noise tick, the thud and the crackle bursts are gone.
+- The game-over contact and the ship's hits keep their own sounds.
+- `playFrom()` fades every sample in over 30 ms; `sampleHit()` plays one into a live handle.
+- Still synthetic, not hits: the over-hold crackle under a too-long charge, the noise beds and low rumbles.
+
+## Meteors, not glints (Tom, 2026-11-16: the streaks "look like shit")
+
+- The re-entry rain after a kill is gone; the debris hail fills that sky.
+- Shooting stars and the late-landing fall draw with `makeMeteor()` / `meteor()`: a round white-hot head and a tail that narrows, cools and fades toward its end. The old glint was a symmetric sliver with a hard spine.
+- Shooting stars are out of the rotation for now (Tom, 2026-11-16); the Dev test still plays one.
+- Stars: a 70 m head, 10 to 22 km runs in 0.6 to 1.1 s; the tail keeps a floor of most of a pixel.
+
+## The gun, final pass (Tom signed off 2026-11-16, stimming-shkv)
+
+- Name (Tom, 2026-11-16): the gun is **SCINFAXI** (Tom's spelling, over the Norse Skinfaxi). The sight burns it into its tube, top centre: the key's blue channel dims the picture in the letters and lights one edge.
+- Sight marks (Tom, 2026-11-16): every mark is burnt into the tube like the name, in the key's blue channel. On a bright picture the burn dims it; on a dark one it glows as a faint ghost. Only the ranging laser stays live light, in the red core.
+- Materials: the gun and the spent case share one physically based light (`PBR`): GGX, Smith visibility, Schlick Fresnel, Lambert for the rest, the sky as image light (hemisphere irradiance, split-sum reflection). Graphite parts are blackened steel. Dev rows: Gun steel, Gun steel rough, Base wear.
+- Base: a two-tier apron, buttress teeth that lean in, a chamfered deck lip; tone patches, rain stains, cracks, a grease band at the race, sand at the foot.
+- Mount: one central pylon (Tom picked it over side towers and piers). The yoke and a short collar stand plumb; below them the pylon spreads like an A with a pointed opening. `RISE` lifts the trunnion 20 m over the old 215 m.
+- Recoil well: a slot in the turning deck behind the pylon; the breech swings down into it as the gun climbs. The struts stand wide on either side.
+- Variable recoil: `recoilRoom()` shortens the slide where the counterweight would strike the well floor, the deck, the apron or the teeth. Full slide to about 15 degrees.
+- Laser (Tom's pattern): a violet-white near-IR thread. Two pulses on the press, a faint paint through the charge, a 22 Hz strobe on the release, out as the slug leaves. The sight's key draws it to a spot on the rock. Ranging takes 1.0 s; the gun lays on the rock from the press.
+- Motion: each axis ramps, cruises and brakes (`SLEW`: traverse 3.2, elevation 2.4 degrees a second), with a feed-forward on the falling rock. Braking rocks the cradle (`sway`). After the shot the barrel holds 0.6 s, runs out over 4.2 s (`RUN`) and seats at battery with a clunk.
+- QA hooks: `eye`, `lay`, `eject`, `caseP`, `slide`; `aim()` reports the slew and the sway. Stills and a clip: `docs/qa/railgun-gun/`.
+
+## No ember sprays; the sky fills with fire (Tom, 2026-11-16)
+
+- Tom: "NO RAIN OR ENTRY" and "small yellow wisps fly out". The rock sheds no ember sparks while it falls, a split piece throws none, and a broken fragment throws none. `prewarmEmbers()` does nothing.
+- Tom: "a globular orange glow filling the sky ... as we near the surface, and as the bits start popping off". `rockFill()` adds a wide orange globe round the rock and warms the low sky and the whole dome. `uFill` starts halfway down, grows to the ground, and the strike drives it higher. Each split swells it for a few seconds (`fillPopT`).
+- The fill is a globe, not a wash (Tom: "does not look good"): a hot core, an orange globe and a soft halo round the rock; the far sky keeps its own colour. `uFill` tops out at 1.15.
+- The clouds take the fire (Tom: "look at the clouds, how dark they are"). The marched storms (`STORM_FS`) and the card clouds add `uAstC * uFill`: a warm fill, stronger on the side toward the rock and in thin parts. The storm's own density shades it, so the storm keeps its form.

@@ -1,0 +1,1774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 270); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kintsugi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Kintsugi: one glazed bowl on a dark cloth, under one soft light. */
+:root { --stage: oklch(0.07 0.008 270); }
+.stage--kintsugi canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--kintsugi canvas.on { opacity: 1; }
+.stage--kintsugi { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .stage--kintsugi canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Kintsugi</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--kintsugi" id="stage" tabindex="0" role="application" aria-label="A glazed bowl on a dark cloth. Click or tap the bowl, or press Space, to break it. The pieces come back together and gold fills every crack. Move the pointer to move the light.">
+      <p class="fail" hidden>Kintsugi needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Kintsugi</h1>
+    <div class="vignette">
+      <div>
+        <h2>Mended with gold</h2>
+        <p>Kintsugi is the Japanese craft of mending broken pottery. The pieces are glued with urushi, the sap of the lacquer tree, built up in thin coats that cure for weeks, and the last coat is dusted with powdered gold. A chip that is lost is filled with lacquer and covered in gold too. The story goes that it began in the fifteenth century, when a tea bowl came back from a repair held together with ugly metal staples.</p>
+        <p>The repair does not hide the break. Here a tap is the blow: cracks run out from where you strike, and the bowl falls apart on the cloth. Then the pieces come back together and gold runs from the point of the blow along every seam. Each break takes new lines and the old gold stays, so no two bowls end the same.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 320 150" role="img" aria-label="A section through a mended crack. Two pieces of clay, each with a thin coat of glaze on both faces, sit side by side. Dark lacquer fills the narrow gap between them, and a raised bead of gold covers the crack on the top face.">
+          <path d="M18 52H150L153 64L149 78L154 92L151 108H18Z" fill="oklch(0.62 0.05 65)"/>
+          <path d="M302 52H170L167 64L171 78L166 92L169 108H302Z" fill="oklch(0.62 0.05 65)"/>
+          <path d="M150 52L153 64L149 78L154 92L151 108H169L166 92L171 78L167 64L170 52Z" fill="oklch(0.24 0.03 35)"/>
+          <path d="M18 44H150V52H18ZM170 44H302V52H170Z" fill="oklch(0.72 0.06 172)"/>
+          <path d="M18 108H151V114H18ZM169 108H302V114H169Z" fill="oklch(0.72 0.06 172)"/>
+          <path d="M140 46C146 36 174 36 180 46Z" fill="oklch(0.82 0.13 85)"/>
+          <path d="M146 115C150 119 170 119 174 115Z" fill="oklch(0.82 0.13 85)"/>
+        </svg>
+        <figcaption>A mended crack in section: clay and glaze on each side, lacquer in the gap, a bead of gold on top.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, stage as mark, pageReady, linFit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { OUTPUT } from '../shared/output.js';
+import { detail } from '../shared/detail.js';
+import { program, linked, target, free, TRI_VS } from '../shared/gl.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const TAU = Math.PI * 2;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- storage ---------- */
+// Storage is optional; a private window can refuse it.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage is optional */ } },
+};
+const KEY_BOWL = 'stimming.kintsugi.bowl', KEY_GLAZE = 'stimming.kintsugi.glaze';
+
+/* ---------- glazes ---------- */
+// Each glaze: thick, thin and pooled colour, crackle, streaks, gloss, specks.
+// Colours are OKLCH; the shader gets them as linear light.
+const GLAZES = {
+  celadon: { thick: [0.71, 0.055, 172], thin: [0.38, 0.04, 48], pool: [0.62, 0.07, 182], crk: [0.42, 0.035, 70], clay: [0.64, 0.045, 68],
+    rough: 0.16, crackle: 0.55, streak: 0, milk: 0.3, specks: 0.35, scale: 11 },
+  tenmoku: { thick: [0.19, 0.018, 48], thin: [0.42, 0.09, 52], pool: [0.14, 0.022, 255], crk: [0.3, 0.02, 50], clay: [0.43, 0.04, 45],
+    rough: 0.17, crackle: 0, streak: 0.85, milk: 0, specks: 0, scale: 11 },
+  shino: { thick: [0.9, 0.016, 82], thin: [0.68, 0.11, 50], pool: [0.85, 0.03, 78], crk: [0.58, 0.012, 78], clay: [0.66, 0.05, 62],
+    rough: 0.42, crackle: 0.3, streak: 0, milk: 1, specks: 0.9, scale: 8 },
+  indigo: { thick: [0.37, 0.13, 263], thin: [0.58, 0.085, 250], pool: [0.25, 0.12, 266], crk: [0.3, 0.05, 263], clay: [0.64, 0.045, 68],
+    rough: 0.15, crackle: 0, streak: 0.25, milk: 0, specks: 0.25, scale: 11 },
+};
+const GLAZE_IDS = Object.keys(GLAZES);
+const lin = c => linFit(c[0], c[1], c[2]);
+// The uniform set of a glaze, ready to blend into another.
+const glazeVals = id => {
+  const g = GLAZES[id];
+  return [...lin(g.thick), ...lin(g.thin), ...lin(g.pool), ...lin(g.crk), ...lin(g.clay), g.rough, g.crackle, g.streak, g.milk, g.specks, g.scale];
+};
+
+/* ---------- bar ---------- */
+const saved = store.get(KEY_GLAZE);
+let glazeId = GLAZES[saved] ? saved : 'celadon';
+// The handlers bind once the GL state exists.
+const act = { glaze() {}, reset() {}, view() {} };
+const ui = initPage({ id: 'kintsugi', bar: {
+  choice: { label: 'Glaze', value: glazeId, options: [
+    { value: 'celadon', label: 'Celadon', key: '1', dot: 'oklch(0.74 0.055 172)' },
+    { value: 'tenmoku', label: 'Tenmoku', key: '2', dot: 'oklch(0.3 0.04 48)' },
+    { value: 'shino', label: 'Shino', key: '3', dot: 'oklch(0.9 0.02 82)' },
+    { value: 'indigo', label: 'Indigo', key: '4', dot: 'oklch(0.42 0.13 263)' },
+  ], onPick: v => act.glaze(v) },
+  reset: () => act.reset(),
+  quality: true,
+  dev: [
+    { type: 'slider', id: 'pitch', label: 'Pitch', min: 15, max: 85, step: 1, value: 41, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'yaw', label: 'Yaw', min: -180, max: 180, step: 1, value: 0, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'fov', label: 'Field of view', min: 12, max: 60, step: 1, value: 26, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'eye', label: 'Distance', min: 0.6, max: 1.6, step: 0.01, value: 1, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.3, max: 3, step: 0.01, value: 1, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'soft', label: 'Light size', min: 2, max: 25, step: 0.5, value: 9, persist: true, onInput: () => act.view() },
+    { type: 'slider', id: 'vein', label: 'Vein width', min: 0.006, max: 0.04, step: 0.001, value: 0.017, persist: true, onInput: () => act.view() },
+  ],
+  keys: [['click', 'break'], ['move', 'turn the light'], ['space', 'break']],
+} });
+const dev = id => ui.setting(id).value;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+const failed = msg => {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  mark('first-frame');
+  throw new Error(msg);
+};
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) failed('Kintsugi needs WebGL 2 with float targets.');
+
+/* ---------- geometry ---------- */
+// The bowl is an ellipsoid shell, cut flat at the rim.
+// A foot ring stands under it.
+// Scaled space divides y by KY: both walls become spheres round C.
+const RO = 1, RI = 0.945, KY = 1.12, CUT = -0.12;
+const RFO = 0.44, RFI = 0.37, HF = 0.12, YT = 0.14;
+const CY = HF + KY * Math.sqrt(RO * RO - RFO * RFO);
+// Most shards per break, gold map extent and size, nodes per seam.
+const MAXS = 12, LR = 1.36, GOLD = 2048, NS = 32;
+const f = x => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+
+/* ---------- GLSL ---------- */
+// Shared GLSL: the cells, seams and gold of one break.
+const COMMON = `
+#define MAXS ${MAXS}
+#define PI 3.14159265
+const float RO = ${f(RO)};
+const float RI = ${f(RI)};
+const float KY = ${f(KY)};
+const float CUT = ${f(CUT)};
+const float CY = ${CY.toFixed(6)};
+const float RFO = ${f(RFO)};
+const float RFI = ${f(RFI)};
+const float YT = ${f(YT)};
+const float LR = ${f(LR)};
+const vec3 SC = vec3(1.0, 1.0 / KY, 1.0);
+uniform vec3 uSite[MAXS];
+uniform int uK, uChip;
+uniform vec4 uW0, uW1, uW2, uW3;
+uniform vec3 uImpact;
+uniform float uVein;
+uniform highp sampler2D uSeams;
+
+float h13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float vnoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h13(i), h13(i + vec3(1, 0, 0)), f.x), mix(h13(i + vec3(0, 1, 0)), h13(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x), mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+// The crack field bends each cell wall: broad bends, then small wiggles.
+vec3 warpD(vec3 d) {
+  return normalize(d + uW0.w * sin(d.yzx * uW0.xyz + uW1.xyz) + uW2.w * sin(d.zxy * uW2.xyz + uW3.xyz));
+}
+// The lead of cell i over its strongest rival.
+// It is positive inside the cell.
+float marginOf(vec3 d, int i) {
+  vec3 q = warpD(d);
+  float si = -3.0, so = -3.0;
+  for (int k = 0; k < MAXS; k++) {
+    if (k >= uK) break;
+    float s = dot(q, uSite[k]);
+    if (k == i) si = s; else so = max(so, s);
+  }
+  return si - so;
+}
+// The top cell, its rival, and the leads between the top three.
+void cells3(vec3 d, out int i, out int j, out float m12, out float m23) {
+  vec3 q = warpD(d);
+  float s1 = -3.0, s2 = -3.0, s3 = -3.0;
+  i = 0; j = 0;
+  for (int k = 0; k < MAXS; k++) {
+    if (k >= uK) break;
+    float s = dot(q, uSite[k]);
+    if (s > s1) { s3 = s2; s2 = s1; j = i; s1 = s; i = k; }
+    else if (s > s2) { s3 = s2; s2 = s; j = k; }
+    else if (s > s3) s3 = s;
+  }
+  m12 = s1 - s2;
+  m23 = s2 - s3;
+}
+void tangents(vec3 d, out vec3 t1, out vec3 t2) {
+  t1 = normalize(cross(d, abs(d.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+  t2 = cross(d, t1);
+}
+// The angle from d to the crack between cells i and j.
+float pairDist(vec3 d, int i, int j, float m) {
+  vec3 t1, t2;
+  tangents(d, t1, t2);
+  vec3 sd = uSite[i] - uSite[j];
+  const float e = 0.004;
+  float m1 = dot(warpD(normalize(d + t1 * e)), sd) - m;
+  float m2 = dot(warpD(normalize(d + t2 * e)), sd) - m;
+  return m * e / max(length(vec2(m1, m2)), 1e-6);
+}
+// When gold reaches d on the seam between cells i and j.
+// The unit is radians of seam.
+// Each seam row holds its arc and 32 arrival samples.
+float seamArrival(vec3 d, int i, int j) {
+  int row = min(i, j) * MAXS + max(i, j);
+  vec4 h0 = texelFetch(uSeams, ivec2(0, row), 0);
+  vec4 h1 = texelFetch(uSeams, ivec2(1, row), 0);
+  if (h1.w < 0.5) return acos(clamp(dot(d, uImpact), -1.0, 1.0)) * 1.3;
+  float a = atan(dot(d, h1.xyz), dot(d, h0.xyz));
+  if (a < -0.6) a += 2.0 * PI;
+  float u = clamp(a / h0.w, 0.0, 1.0) * 31.0;
+  int k = min(int(u), 30);
+  return mix(texelFetch(uSeams, ivec2(2 + k, row), 0).x, texelFetch(uSeams, ivec2(3 + k, row), 0).x, u - float(k));
+}
+// The lacquer line: its half-width wanders and swells at the junctions.
+float veinHalf(vec3 d, float m23) {
+  float n = 0.65 * vnoise(d * 7.0 + 3.1) + 0.35 * vnoise(d * 19.0);
+  return uVein * (0.6 + 0.85 * n) * (1.0 + 0.6 * exp(-m23 / 0.012));
+}
+struct Seam { float cov; float hgt; float arr; float dist; };
+// One break's gold at d: cover, ridge, arrival and crack distance.
+Seam roundAt(vec3 d, float aa) {
+  int i, j;
+  float m12, m23;
+  cells3(d, i, j, m12, m23);
+  Seam s;
+  s.dist = pairDist(d, i, j, m12);
+  float w = veinHalf(d, m23);
+  s.cov = 1.0 - smoothstep(w - aa, w + aa, s.dist);
+  float x = clamp(s.dist / w, 0.0, 1.0);
+  s.hgt = sqrt(1.0 - x * x);
+  s.arr = seamArrival(d, i, j);
+  // A lost chip comes back as a patch of gold.
+  if (((uChip >> i) & 1) == 1) {
+    s.cov = 1.0;
+    s.hgt = max(s.hgt, 0.5);
+    s.arr = min(s.arr, acos(clamp(dot(d, uImpact), -1.0, 1.0)));
+  }
+  return s;
+}
+// The gold map: an equal-area view of the bowl from below.
+vec2 goldUv(vec3 d) { return d.xz * inversesqrt(max(1.0 - d.y, 1e-4) * 0.5) / (2.0 * LR) + 0.5; }
+vec3 unlaea(vec2 m) {
+  float r2 = dot(m, m), k = sqrt(max(1.0 - r2 * 0.25, 0.0));
+  return vec3(m.x * k, r2 * 0.5 - 1.0, m.y * k);
+}
+`;
+
+// The picture: ray traced bowl or shards, the cloth, soft shadows.
+const MAIN_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+${COMMON}
+uniform vec2 uRes, uShift, uJit;
+uniform vec3 uEye, uCR, uCU, uCF;
+uniform float uTanF, uPixA;
+uniform vec3 uL, uLc;
+uniform float uLtan;
+uniform vec2 uSpot;
+uniform int uN, uRound, uQ;
+uniform mat3 uRot[MAXS];
+uniform vec3 uPos[MAXS];
+uniform vec4 uBnd[MAXS];
+// Each cell's Voronoi neighbours, as bits.
+uniform int uNbr[MAXS];
+// The top of the highest shard: shadow rays stop above it.
+uniform float uTop;
+uniform float uCrackT, uHair, uFlowT, uLiveA, uWetW, uBump, uAcc;
+uniform sampler2D uGold, uPrev;
+uniform vec3 uGThick, uGThin, uGPool, uGCrk, uClay, uCloth;
+// Glaze: roughness, crackle, streaks, milk. Then specks, crackle scale.
+uniform vec4 uGP, uGP2;
+out vec4 o;
+
+const float YIN0 = CY - KY * RI;
+const float YRIM = CY + CUT * KY;
+
+struct Hit { float t; int id; int kind; vec3 X; };
+// Kinds 1 to 4: outside, inside, rim, break face.
+// Kinds 5 to 8: foot wall, foot inside, foot sole, foot top.
+
+bool sphIv(vec3 O, vec3 V, float r, out vec2 iv) {
+  float a = dot(V, V), b = dot(O, V), c = dot(O, O) - r * r, h = b * b - a * c;
+  iv = vec2(0.0);
+  if (h < 0.0) return false;
+  h = sqrt(h);
+  iv = vec2(-b - h, -b + h) / a;
+  return true;
+}
+bool cylIv(vec3 o, vec3 v, float r, out vec2 iv) {
+  float a = dot(v.xz, v.xz), b = dot(o.xz, v.xz), c = dot(o.xz, o.xz) - r * r;
+  iv = vec2(-1e9, 1e9);
+  if (a < 1e-9) return c <= 0.0;
+  float h = b * b - a * c;
+  if (h < 0.0) return false;
+  h = sqrt(h);
+  iv = vec2(-b - h, -b + h) / a;
+  return true;
+}
+// One span of solid along the ray, entered through surface ka.
+// A shard owns only its cell.
+// It finds its break face inside the span.
+// cc is the stretch of ray inside the cell's widened cone.
+void span(vec3 O, vec3 V, float a, float b, int ka, int cell, vec2 cc, inout Hit h) {
+  a = max(a, 1e-4);
+  b = min(min(b, h.t), cc.y);
+  float a0 = a;
+  a = max(a, cc.x);
+  if (b <= a) return;
+  if (cell < 0 || (a == a0 && marginOf(normalize(O + V * a), cell) >= 0.0)) { h.t = a; h.kind = ka; h.id = cell; h.X = O + V * a; return; }
+  float lo = a, dt = (b - a) / 10.0;
+  for (int k = 1; k <= 10; k++) {
+    float t = a + dt * float(k);
+    if (marginOf(normalize(O + V * t), cell) >= 0.0) {
+      float hi = t;
+      for (int s = 0; s < 6; s++) {
+        float mid = 0.5 * (lo + hi);
+        if (marginOf(normalize(O + V * mid), cell) >= 0.0) hi = mid; else lo = mid;
+      }
+      h.t = hi; h.kind = 4; h.id = cell; h.X = O + V * hi;
+      return;
+    }
+    lo = t;
+  }
+}
+// The stretch of ray inside a cell's cone.
+// The cone is wide enough for the crack's bends.
+vec2 coneIv(vec3 O, vec3 V, int cell) {
+  vec2 cc = vec2(-1e9, 1e9);
+  if (cell < 0) return cc;
+  vec3 si = uSite[cell];
+  for (int k = 0; k < MAXS; k++) {
+    if (k >= uK) break;
+    if (k == cell || ((uNbr[cell] >> k) & 1) == 0) continue;
+    vec3 n = normalize(uSite[k] - si);
+    float a = dot(O, n) - 0.14, b = dot(V, n);
+    if (abs(b) < 1e-9) { if (a > 0.0) return vec2(1.0, -1.0); }
+    else if (b > 0.0) cc.y = min(cc.y, -a / b);
+    else cc.x = max(cc.x, -a / b);
+  }
+  return cc;
+}
+// The bowl, or one shard of it, under its own pose.
+void bowlHit(vec3 ro, vec3 rd, int cell, mat3 R, vec3 T, inout Hit h) {
+  mat3 Ri = transpose(R);
+  vec3 o = Ri * (ro - T), v = Ri * rd;
+  vec3 O = (o - vec3(0.0, CY, 0.0)) * SC, V = v * SC;
+  vec2 cc = coneIv(O, V, cell);
+  if (cc.x >= cc.y || cc.y < 0.0) return;
+  vec2 ao, ai;
+  if (sphIv(O, V, RO, ao) && ao.y > 0.0) {
+    float lo = -1e9, hi = 1e9;
+    if (abs(V.y) > 1e-7) { float tr = (CUT - O.y) / V.y; if (V.y < 0.0) lo = tr; else hi = tr; }
+    else if (O.y > CUT) lo = 1e9;
+    bool inner = sphIv(O, V, RI, ai);
+    float a1 = ao.x; int k1 = 1;
+    if (lo > a1) { a1 = lo; k1 = 3; }
+    span(O, V, a1, min(inner ? ai.x : ao.y, hi), k1, cell, cc, h);
+    if (inner) {
+      float a2 = ai.y; int k2 = 2;
+      if (lo > a2) { a2 = lo; k2 = 3; }
+      span(O, V, a2, min(ao.y, hi), k2, cell, cc, h);
+    }
+  }
+  vec2 co, ci;
+  if (cylIv(o, v, RFO, co) && co.y > 0.0) {
+    float lo = -1e9, hi = 1e9; int kc = 7;
+    if (abs(v.y) > 1e-7) {
+      float t0 = -o.y / v.y, t1 = (YT - o.y) / v.y;
+      lo = min(t0, t1); hi = max(t0, t1);
+      kc = v.y < 0.0 ? 8 : 7;
+    } else if (o.y < 0.0 || o.y > YT) lo = 1e9;
+    bool inner = cylIv(o, v, RFI, ci);
+    float a1 = co.x; int k1 = 5;
+    if (lo > a1) { a1 = lo; k1 = kc; }
+    span(O, V, a1, min(inner ? ci.x : co.y, hi), k1, cell, cc, h);
+    if (inner) {
+      float a2 = ci.y; int k2 = 6;
+      if (lo > a2) { a2 = lo; k2 = kc; }
+      span(O, V, a2, min(co.y, hi), k2, cell, cc, h);
+    }
+  }
+}
+
+/* distance bounds for soft shadows and occlusion */
+float sdBowl(vec3 p, int cell, mat3 R, vec3 T) {
+  vec3 o = transpose(R) * (p - T);
+  vec3 X = (o - vec3(0.0, CY, 0.0)) * SC;
+  float r = length(X);
+  float d = max(max(r - RO, RI - r), X.y - CUT);
+  float rr = length(o.xz);
+  d = min(d, max(max(rr - RFO, RFI - rr), max(-o.y, o.y - YT)));
+  if (cell >= 0) {
+    vec3 si = uSite[cell];
+    for (int k = 0; k < MAXS; k++) {
+      if (k >= uK) break;
+      if (k == cell || ((uNbr[cell] >> k) & 1) == 0) continue;
+      vec3 n = uSite[k] - si;
+      d = max(d, dot(X, n) * inversesqrt(dot(n, n)));
+    }
+  }
+  return d;
+}
+// The scene bound over the shards in mask m.
+float sdScene(vec3 p, int m) {
+  if (uN == 0) return sdBowl(p, -1, mat3(1.0), vec3(0.0));
+  float d = 1e9;
+  for (int s = 0; s < MAXS; s++) {
+    if (s >= uN) break;
+    if (((m >> s) & 1) == 0) continue;
+    float b = length(p - uBnd[s].xyz) - uBnd[s].w;
+    if (b > d) continue;
+    d = min(d, max(b, sdBowl(p, s, uRot[s], uPos[s])));
+  }
+  return d;
+}
+// A soft shadow from the area light.
+// The ray keeps its closest pass by any shard.
+// Only shards whose bounds come near the ray take part.
+float shadowRay(vec3 p, vec3 L) {
+  int m = 0;
+  float tmax = (uTop - p.y) / max(L.y, 0.05);
+  if (tmax <= 0.0) return 1.0;
+  if (uN == 0) {
+    vec3 oc = vec3(0.0, 0.55, 0.0) - p;
+    float t = clamp(dot(oc, L), 0.0, tmax);
+    if (length(oc - L * t) < 1.25 + t * uLtan * 1.5 + 0.05) m = 1;
+  } else {
+    for (int s = 0; s < MAXS; s++) {
+      if (s >= uN) break;
+      vec3 oc = uBnd[s].xyz - p;
+      float t = clamp(dot(oc, L), 0.0, tmax);
+      if (length(oc - L * t) < uBnd[s].w + t * uLtan * 1.5 + 0.05) m |= 1 << s;
+    }
+  }
+  if (m == 0) return 1.0;
+  int steps = uQ == 0 ? 16 : uQ == 1 ? 26 : 34;
+  float res = 1.0, t = 0.012, ph = 1e10;
+  for (int k = 0; k < 36; k++) {
+    if (k >= steps) break;
+    float hh = sdScene(p + L * t, m);
+    float y = hh * hh / (2.0 * ph);
+    float dd = sqrt(max(hh * hh - y * y, 0.0));
+    res = min(res, dd / (uLtan * max(1e-4, t - y)));
+    ph = hh;
+    t += clamp(hh, 0.01, 0.25);
+    if (res < 0.002 || t > tmax) break;
+  }
+  res = clamp(res, 0.0, 1.0);
+  return res * res * (3.0 - 2.0 * res);
+}
+// Occlusion from the near shards and, for the bowl, the cloth.
+float occlusion(vec3 p, vec3 n, bool cloth) {
+  int m = uN == 0 ? 1 : 0;
+  for (int s = 0; s < MAXS; s++) {
+    if (s >= uN) break;
+    if (length(p - uBnd[s].xyz) - uBnd[s].w < 0.4) m |= 1 << s;
+  }
+  if (m == 0) return 1.0;
+  if (cloth && sdScene(p, m) > 0.55) return 1.0;
+  float occ = 0.0, w = 1.0;
+  for (int k = 1; k <= 4; k++) {
+    float hh = 0.025 * float(k * k);
+    vec3 q = p + n * hh;
+    float d = sdScene(q, m);
+    if (!cloth) d = min(d, q.y);
+    occ += (hh - d) * w;
+    w *= 0.62;
+  }
+  return clamp(1.0 - 1.7 * occ, 0.0, 1.0);
+}
+
+/* lighting */
+float spotAt(vec3 P) { vec2 q = P.xz - uSpot; return mix(0.16, 1.0, exp(-dot(q, q) / 5.0)); }
+// The dim room in the gloss: dark floor, warm ceiling.
+// One far window shows as a cool strip.
+vec3 room(vec3 R, float a) {
+  vec3 c = mix(vec3(0.005, 0.0047, 0.0045), vec3(0.075, 0.064, 0.052), smoothstep(-0.25, 0.85, R.y));
+  // Warm walls catch some of the lamp's spill.
+  c += vec3(0.03, 0.024, 0.017) * exp(-R.y * R.y * 6.0);
+  vec3 w = normalize(vec3(0.82, 0.32, 0.47));
+  c += vec3(0.11, 0.115, 0.13) * smoothstep(0.9 - 0.6 * a, 0.98 - 0.3 * a, dot(R, w));
+  return c;
+}
+// The room's bounce light.
+// A little more comes from the viewer's side.
+vec3 roomAmb(vec3 N) { return mix(vec3(0.02, 0.019, 0.018), vec3(0.13, 0.12, 0.107), N.y * 0.5 + 0.5) + vec3(0.1, 0.095, 0.09) * max(dot(N, normalize(vec3(0.35, 0.45, 0.82))), 0.0); }
+// GGX from the key light, widened by its size.
+vec3 keySpec(vec3 N, vec3 V, vec3 L, float rough, vec3 F0) {
+  vec3 H = normalize(V + L);
+  float NV = max(dot(N, V), 1e-3), NL = max(dot(N, L), 0.0), NH = max(dot(N, H), 0.0), VH = max(dot(V, H), 0.0);
+  float a = rough * rough;
+  float ap = sqrt(a * a + 0.5 * uLtan * uLtan), a2 = ap * ap;
+  float dd = NH * NH * (a2 - 1.0) + 1.0;
+  float D = a2 / (PI * dd * dd);
+  float k = (rough + 1.0) * (rough + 1.0) / 8.0;
+  float G = NV / (NV * (1.0 - k) + k) * NL / (NL * (1.0 - k) + k);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - VH, 5.0);
+  return D * G * F / (4.0 * NV);
+}
+vec3 fres(vec3 F0, float c, float rough) { return F0 + (max(vec3(1.0 - rough), F0) - F0) * pow(1.0 - c, 5.0); }
+
+/* surface patterns */
+// Crazing: a fine net of cracks in the glass of the glaze.
+float crackle(vec3 p, float aa) {
+  vec3 i = floor(p), fr = fract(p);
+  float d1 = 9.0, d2 = 9.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(float(x), float(y), float(z));
+    vec3 r = g + vec3(h13(i + g), h13(i + g + 11.7), h13(i + g + 23.1)) - fr;
+    float dd = dot(r, r);
+    if (dd < d1) { d2 = d1; d1 = dd; } else if (dd < d2) d2 = dd;
+  }
+  return 1.0 - smoothstep(0.0, max(aa, 0.025), sqrt(d2) - sqrt(d1));
+}
+// Small round dots in some cells: iron specks, grog, pinholes.
+float specks(vec3 p, float dens, float aa) {
+  vec3 i = floor(p), fr = fract(p);
+  if (h13(i) > dens) return 0.0;
+  vec3 c = vec3(h13(i + 5.1), h13(i + 9.7), h13(i + 13.3)) * 0.6 + 0.2;
+  float r = 0.07 + 0.14 * h13(i + 2.2);
+  return 1.0 - smoothstep(r - aa, r + aa, length(fr - c));
+}
+float innerTau(vec3 pr, out float pool) {
+  float hy = clamp((pr.y - YIN0) / (YRIM - YIN0), 0.0, 1.0);
+  float runs = vnoise(vec3(pr.x * 11.0, pr.y * 1.6, pr.z * 11.0));
+  float t = 0.55 + 0.6 * (1.0 - hy) * (1.0 - hy) + 0.18 * (runs - 0.5);
+  t *= mix(0.3, 1.0, smoothstep(1.0, 0.84, hy));
+  // The pond: glaze that ran down and gathered in the well.
+  float r = length(pr.xz) / (0.36 + 0.035 * (vnoise(pr * 5.0 + 2.0) - 0.5));
+  pool = 1.0 - smoothstep(0.78, 1.0, r);
+  return t + pool * 0.7;
+}
+// Where the outside glaze stops.
+// Drips ran down below it in the kiln.
+float glazeLine(vec3 pr) {
+  vec2 n = normalize(pr.xz);
+  float y = 0.3 + 0.035 * (vnoise(vec3(n * 2.5, 1.0)) - 0.5);
+  for (int k = 0; k < 6; k++) {
+    float fk = float(k);
+    float a = fk * 1.0472 + 0.37 * sin(fk * 2.7);
+    float c = dot(n, vec2(cos(a), sin(a)));
+    y -= (0.04 + 0.06 * fract(fk * 0.381)) * exp(-(1.0 - c) / (0.0011 + 0.0016 * fract(fk * 0.618)));
+  }
+  return y;
+}
+float outerTau(vec3 pr, out float flash) {
+  float yl = glazeLine(pr);
+  float above = smoothstep(yl - 0.003, yl + 0.003, pr.y);
+  float sag = smoothstep(yl + 0.22, yl + 0.012, pr.y);
+  float hy = clamp((pr.y - yl) / (YRIM - yl), 0.0, 1.0);
+  float t = 0.42 + 0.55 * sag + 0.25 * (vnoise(vec3(pr.x * 11.0, pr.y * 1.6, pr.z * 11.0)) - 0.5);
+  t *= mix(0.3, 1.0, smoothstep(1.0, 0.86, hy));
+  // Bare clay toasts orange near the glaze edge.
+  flash = (1.0 - above) * exp(-max(yl - pr.y, 0.0) / 0.045);
+  return t * above;
+}
+vec3 glazeCol(vec3 pr, float tau, float pool, int kind, float px) {
+  vec3 c = mix(uGThin, uGThick, smoothstep(0.08, 0.45, tau));
+  c = mix(c, uGPool, pool * 0.7);
+  float hy = clamp((pr.y - YIN0) / (YRIM - YIN0), 0.0, 1.0);
+  // Streaks: thin threads of the rim colour run down the walls.
+  // They run down the walls only; the floor stays dark.
+  if (uGP.z > 0.0) {
+    float fu = vnoise(vec3(pr.x * 90.0, pr.y * 2.5, pr.z * 90.0)) * 0.6 + vnoise(vec3(pr.x * 210.0, pr.y * 5.0, pr.z * 210.0)) * 0.4;
+    float wall = kind == 2 ? smoothstep(0.22, 0.5, hy) : 1.0;
+    c = mix(c, uGThin * 0.85, uGP.z * 0.75 * smoothstep(0.6, 0.78, fu) * wall * (1.0 - pool));
+  }
+  if (uGP.y > 0.0) {
+    float s = uGP2.y;
+    vec3 q = pr * s + (kind == 2 ? vec3(31.0) : vec3(0.0));
+    float cr = crackle(q, px * s * 1.6);
+    if (uQ > 0) cr = max(cr, 0.5 * crackle(q * 2.3 + 7.0, px * s * 3.7));
+    c = mix(c, uGCrk, cr * uGP.y * smoothstep(0.15, 0.5, tau));
+  }
+  if (uGP2.x > 0.0) c *= 1.0 - 0.75 * uGP2.x * specks(pr * 34.0, 0.1, px * 34.0);
+  return c;
+}
+vec3 clayCol(vec3 pr, float px, float fresh) {
+  float n = 0.6 * vnoise(pr * 24.0) + 0.4 * vnoise(pr * 70.0);
+  vec3 c = uClay * (0.8 + 0.35 * n);
+  c *= 1.0 - 0.55 * specks(pr * 60.0, 0.2, px * 60.0);
+  c = mix(c, uClay * 1.35, 0.55 * specks(pr * 90.0 + 3.0, 0.16, px * 90.0));
+  return c * mix(0.88, 1.06, fresh);
+}
+// The face of a break: its cell wall, bent like the crack.
+vec3 breakNormal(vec3 X, int i) {
+  vec3 d = normalize(X), q = warpD(d);
+  int j = 0;
+  float best = -3.0;
+  for (int k = 0; k < MAXS; k++) {
+    if (k >= uK) break;
+    if (k == i) continue;
+    float s = dot(q, uSite[k]);
+    if (s > best) { best = s; j = k; }
+  }
+  vec3 sd = uSite[j] - uSite[i], t1, t2;
+  tangents(d, t1, t2);
+  const float e = 0.003;
+  float f0 = dot(q, sd);
+  vec3 g = t1 * (dot(warpD(normalize(d + t1 * e)), sd) - f0) + t2 * (dot(warpD(normalize(d + t2 * e)), sd) - f0);
+  return normalize(normalize(g) * SC);
+}
+vec3 restNormal(int kind, vec3 X, vec3 pr, int cell) {
+  if (kind == 1) return normalize(X * SC);
+  if (kind == 2) return -normalize(X * SC);
+  if (kind == 3) {
+    // The lip is round: its normal turns from inside to outside.
+    float ri = sqrt(RI * RI - CUT * CUT), rv = sqrt(RO * RO - CUT * CUT);
+    float a = (clamp((length(X.xz) - ri) / (rv - ri), 0.0, 1.0) - 0.5) * 2.4;
+    vec2 rad = normalize(X.xz);
+    return normalize(vec3(rad.x * sin(a), cos(a), rad.y * sin(a)));
+  }
+  if (kind == 4) return breakNormal(X, cell);
+  if (kind == 5) return normalize(vec3(pr.x, 0.0, pr.z));
+  if (kind == 6) return -normalize(vec3(pr.x, 0.0, pr.z));
+  if (kind == 7) return vec3(0.0, -1.0, 0.0);
+  return vec3(0.0, 1.0, 0.0);
+}
+// The gold height at d: past breaks, then the live flow.
+float goldH(vec3 d) {
+  float hh = texture(uGold, goldUv(d)).g;
+  if (uRound == 1 && uFlowT > 0.0) {
+    Seam s = roundAt(d, 0.0015);
+    hh = max(hh, s.hgt * s.cov * clamp((uFlowT - s.arr - 0.06 * (1.0 - s.hgt)) / 0.015, 0.0, 1.0) * uLiveA);
+  }
+  return hh;
+}
+
+vec3 shadeBowl(vec3 ro, vec3 rd, Hit h) {
+  vec3 P = ro + rd * h.t, X = h.X, d = normalize(X);
+  vec3 pr = X / SC + vec3(0.0, CY, 0.0);
+  int cell = h.id;
+  mat3 R = cell >= 0 ? uRot[cell] : mat3(1.0);
+  vec3 Nr = restNormal(h.kind, X, pr, cell);
+  vec3 V = -rd;
+  float px = h.t * uPixA;
+  bool face = h.kind != 4;
+
+  // Gold: the map of past breaks, then this break's flow.
+  vec4 g = texture(uGold, goldUv(d));
+  float gc = face ? g.r : 0.0, gh = face ? g.g : 0.0, wet = 0.0, hair = 0.0;
+  if (uRound == 1 && face && (uHair > 0.0 || uFlowT > 0.0)) {
+    float aa = max(px * 1.1, 0.0012);
+    Seam s = roundAt(d, aa);
+    hair = uHair * step(s.arr, uCrackT) * (1.0 - smoothstep(0.35 * aa, 1.3 * aa, s.dist));
+    float live = s.cov * clamp((uFlowT - s.arr - 0.06 * (1.0 - s.hgt)) / 0.015, 0.0, 1.0) * uLiveA;
+    hair *= 1.0 - live;
+    gc = max(gc, live);
+    gh = max(gh, s.hgt * live);
+    wet = live * (1.0 - smoothstep(0.0, uWetW, uFlowT - s.arr));
+  }
+  if (gc > 0.02) {
+    // The gold stands proud of the glaze: its ridge bends the normal.
+    vec3 t1, t2;
+    tangents(d, t1, t2);
+    float e = max(px * 1.5, 0.0015);
+    float h1 = goldH(normalize(d + t1 * e)), h2 = goldH(normalize(d + t2 * e));
+    vec3 gr = (t1 * (h1 - gh) + t2 * (h2 - gh)) / e;
+    gr -= Nr * dot(gr, Nr);
+    Nr = normalize(Nr - uBump * gr * gc);
+  }
+
+  // Glaze depth, or bare clay.
+  float tau = 0.0, pool = 0.0, flash = 0.0;
+  if (h.kind == 2) tau = innerTau(pr, pool);
+  else if (h.kind == 1) tau = outerTau(pr, flash);
+  else if (h.kind == 3) {
+    // The glaze thins over the crest of the lip.
+    // There the body shows through.
+    float ri = sqrt(RI * RI - CUT * CUT), rv = sqrt(RO * RO - CUT * CUT);
+    tau = mix(0.6, 0.16, 1.0 - abs(2.0 * clamp((length(X.xz) - ri) / (rv - ri), 0.0, 1.0) - 1.0));
+  }
+  else if (h.kind >= 5) flash = 0.25;
+  vec3 clay = clayCol(pr, px, h.kind == 4 ? 1.0 : 0.0);
+  clay = mix(clay, clay * vec3(1.18, 0.86, 0.66), flash * 0.7);
+  vec3 alb = clay;
+  float gl = smoothstep(0.02, 0.2, tau);
+  if (tau > 0.0) alb = mix(clay, glazeCol(pr, tau, pool, h.kind, px), gl);
+  // A milky glaze lets clay colour through where it runs thin.
+  alb = mix(alb, mix(clay, alb, 0.55), uGP.w * (1.0 - smoothstep(0.1, 0.6, tau)) * gl);
+  if (uGP2.x > 0.0 && uGP.w > 0.5 && tau > 0.2) alb *= 1.0 - 0.5 * specks(pr * 46.0 + 9.0, 0.12, px * 46.0);
+  float rough = mix(0.85, uGP.x, gl);
+  float glazeAmt = gl;
+  if (h.kind == 4) {
+    // The break shows the wall in section.
+    // Clay fills it; glass coats both faces.
+    float s = (length(X) - RI) / (RO - RI), pIn, fl;
+    float tIn = d.y <= CUT / RI ? innerTau(d * RI / SC + vec3(0.0, CY, 0.0), pIn) : 0.25;
+    float tOut = outerTau(d * RO / SC + vec3(0.0, CY, 0.0), fl);
+    float bIn = 1.0 - smoothstep(0.12 * tIn - 0.02, 0.12 * tIn + 0.02, s);
+    float bOut = smoothstep(1.0 - 0.12 * tOut - 0.02, 1.0 - 0.12 * tOut + 0.02, s) * step(0.05, tOut);
+    float band = max(bIn, bOut);
+    alb = mix(alb, mix(uGThin, uGThick, 0.6), band);
+    rough = mix(0.9, uGP.x, band);
+    glazeAmt = band;
+    float gEdge = g.r * max(1.0 - smoothstep(0.03, 0.06, s), smoothstep(0.94, 0.97, s));
+    gc = gEdge;
+    // A fresh fracture is rough and conchoidal.
+    Nr = normalize(Nr + 0.3 * (vec3(vnoise(pr * 140.0), vnoise(pr * 140.0 + 5.0), vnoise(pr * 140.0 + 9.0)) - 0.5));
+  }
+
+  vec3 N = R * Nr;
+  float NV = dot(N, V);
+  if (NV < 0.02) { N = normalize(N + V * (0.02 - NV)); NV = 0.02; }
+  vec3 L = uL;
+  float NL = dot(N, L);
+  float sh = NL > -0.05 ? shadowRay(P + N * 0.005, L) : 0.0;
+  float ao = occlusion(P + N * 0.003, N, false);
+  vec3 Li = uLc * sh * spotAt(P);
+  vec3 Rv = reflect(-V, N);
+
+  // The glaze: a glass coat over a coloured body.
+  vec3 F = fres(vec3(0.04), NV, rough);
+  vec3 amb = roomAmb(N) * ao;
+  if (h.kind == 2) amb += uLc * 0.05 * dot(uGThick, vec3(0.3, 0.6, 0.1)) * ao;
+  vec3 body = alb * (Li * max(NL, 0.0) / PI + amb);
+  vec3 col = body * (1.0 - F * glazeAmt) + keySpec(N, V, L, rough, vec3(0.04)) * Li * max(NL, 0.0) + room(Rv, rough * rough) * F * ao;
+  // Gold: metal, satin when set, glossy while wet.
+  if (gc > 0.0) {
+    vec3 G0 = vec3(0.98, 0.74, 0.35);
+    float gr = mix(0.34, 0.16, wet) + 0.06 * (vnoise(pr * 220.0) - 0.5);
+    vec3 Fg = fres(G0, NV, gr);
+    vec3 gold = keySpec(N, V, L, gr, G0) * Li * max(NL, 0.0) + room(Rv, gr * gr) * Fg * ao * 2.2 + G0 * 0.08 * roomAmb(N) * ao;
+    col = mix(col, gold, gc);
+  }
+  return col * (1.0 - 0.88 * hair);
+}
+
+vec3 shadeCloth(vec3 P, vec3 rd, float t) {
+  vec3 V = -rd;
+  // A plain weave: warp and weft cross over and under.
+  const float FQ = 96.0;
+  float fp = t * uPixA / max(abs(rd.y), 0.2) * FQ;
+  float det = 1.0 - smoothstep(0.22, 0.6, fp);
+  vec2 q = P.xz * FQ, c = floor(q), fr = fract(q) - 0.5;
+  bool warp = mod(c.x + c.y, 2.0) < 1.0;
+  float across = warp ? fr.y : fr.x;
+  float prof = sqrt(max(0.0, 1.0 - 4.0 * across * across));
+  float thread = h13(vec3(warp ? c.y : c.x, warp ? 1.0 : 2.0, 5.0));
+  float slub = vnoise(warp ? vec3(q.x * 0.08, c.y, 4.0) : vec3(c.x, q.y * 0.08, 7.0));
+  float tone = mix(0.78, 1.0, prof) * mix(0.88, 1.12, slub) * mix(0.9, 1.1, thread);
+  tone = mix(0.92, tone, det);
+  vec3 alb = uCloth * tone * (0.9 + 0.2 * vnoise(vec3(P.xz * 1.6, 2.0)));
+  float slope = 4.0 * across / max(prof, 0.2) * 0.18 * det;
+  vec3 N = normalize(warp ? vec3(0.0, 1.0, slope) : vec3(slope, 1.0, 0.0));
+  // Soft, broad folds.
+  N = normalize(N + vec3(0.05 * sin(P.x * 1.1 + 1.7 * sin(P.z * 0.7)), 0.0, 0.045 * sin(P.z * 1.3 + 0.8)));
+  float NL = max(dot(N, uL), 0.0);
+  float sh = shadowRay(P + vec3(0.0, 0.003, 0.0), uL);
+  float ao = occlusion(P, vec3(0.0, 1.0, 0.0), true);
+  vec3 Li = uLc * sh * spotAt(P);
+  float NV = max(dot(N, V), 0.0);
+  vec3 col = alb * (Li * NL / PI + roomAmb(N) * ao);
+  // Fibres catch a little light at grazing angles.
+  col += uCloth * Li * NL * pow(1.0 - NV, 4.0) * 0.12;
+  return col;
+}
+
+void main() {
+  vec2 ndc = (gl_FragCoord.xy + uJit) / uRes * 2.0 - 1.0 - uShift;
+  vec3 rd = normalize(uCF + uTanF * (ndc.x * uRes.x / uRes.y * uCR + ndc.y * uCU));
+  vec3 ro = uEye;
+  Hit h;
+  h.t = 1e9; h.id = -9; h.kind = 0; h.X = vec3(0.0);
+  if (uN == 0) bowlHit(ro, rd, -1, mat3(1.0), vec3(0.0), h);
+  else for (int s = 0; s < MAXS; s++) {
+    if (s >= uN) break;
+    vec3 oc = ro - uBnd[s].xyz;
+    float b = dot(oc, rd), dd = b * b - dot(oc, oc) + uBnd[s].w * uBnd[s].w;
+    if (dd < 0.0) continue;
+    float sq = sqrt(dd);
+    if (-b + sq < 0.0 || -b - sq > h.t) continue;
+    bowlHit(ro, rd, s, uRot[s], uPos[s], h);
+  }
+  float tc = rd.y < -1e-4 ? -ro.y / rd.y : 1e9;
+  vec3 col;
+  if (h.kind > 0 && h.t < tc) col = shadeBowl(ro, rd, h);
+  else if (tc < 1e8) col = shadeCloth(ro + rd * tc, rd, tc);
+  else col = vec3(0.002);
+  if (uAcc > 0.5) col = mix(texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0).rgb, col, 1.0 / (uAcc + 1.0));
+  o = vec4(col, 1.0);
+}`;
+
+// The last step: exposure, film curve, vignette, grain.
+const POST_FS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+uniform sampler2D uHdr;
+uniform vec2 uRes;
+uniform float uExpo;
+out vec4 o;
+${OUTPUT}
+float ih(vec2 p) {
+  uvec2 q = uvec2(p);
+  uint n = (q.x * 1597334677u) ^ (q.y * 3812015801u);
+  n *= 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13;
+  return float(n) / 4294967295.0;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb;
+  vec2 q = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - 0.32 * smoothstep(0.42, 1.2, length(q));
+  c = ouSrgb(ouAces(c * uExpo));
+  c += (ih(gl_FragCoord.xy) - 0.5) * 0.016;
+  o = vec4(ouDither(c, gl_FragCoord.xy), 1.0);
+}`;
+
+// One break joins the gold map; the blend keeps the larger value.
+const MERGE_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+${COMMON}
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 m = (vUv * 2.0 - 1.0) * LR;
+  if (dot(m, m) > 3.95) discard;
+  vec3 d = unlaea(m);
+  if (d.y > CUT / RO + 0.03) discard;
+  Seam s = roundAt(d, 0.0016);
+  o = vec4(s.cov, s.hgt * s.cov, 0.0, 1.0);
+}`;
+
+let P;
+try {
+  P = await linked(gl, { main: program(gl, TRI_VS, MAIN_FS), post: program(gl, TRI_VS, POST_FS), merge: program(gl, TRI_VS, MERGE_FS) });
+} catch (err) {
+  console.error(err);
+  failed('Kintsugi could not build its shaders.');
+}
+const vao = gl.createVertexArray();
+const draw3 = () => { gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+
+/* ---------- textures ---------- */
+// The gold map holds every past break.
+// Red holds cover; green holds ridge height.
+const goldT = target(gl, GOLD, GOLD, { format: gl.RGBA8, clear: true });
+// Each seam row: its arc, then 32 arrival times along it.
+const SEAM_W = 2 + NS, SEAM_H = MAXS * MAXS;
+const seamTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, seamTex);
+gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, SEAM_W, SEAM_H);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+const seamZero = new Float32Array(SEAM_W * SEAM_H * 4);
+// Without a net, every cell counts as every other's neighbour.
+const NBR_ALL = new Int32Array(MAXS).fill((1 << MAXS) - 1);
+let hdr = [null, null], hi = 0;
+
+/* ---------- vectors and turns ---------- */
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = a => Math.hypot(a[0], a[1], a[2]);
+const norm = a => mul(a, 1 / (len(a) || 1));
+const ang = (a, b) => Math.acos(clamp(dot(a, b), -1, 1));
+// Quaternions are [x, y, z, w].
+const QI = [0, 0, 0, 1];
+const qAxis = (a, t) => { const s = Math.sin(t / 2); return [a[0] * s, a[1] * s, a[2] * s, Math.cos(t / 2)]; };
+const qMul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+function qSlerp(a, b, t) {
+  let c = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  if (c < 0) { b = b.map(v => -v); c = -c; }
+  if (c > 0.9995) { const r = a.map((v, i) => v + (b[i] - v) * t), l = Math.hypot(...r); return r.map(v => v / l); }
+  const th = Math.acos(c), s = Math.sin(th), wa = Math.sin((1 - t) * th) / s, wb = Math.sin(t * th) / s;
+  return a.map((v, i) => v * wa + b[i] * wb);
+}
+// A 3 x 3 rotation, column-major, as uniformMatrix3fv reads it.
+function qMat(q) {
+  const [x, y, z, w] = q;
+  return [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w),
+    2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w),
+    2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)];
+}
+const mRot = (m, v) => [m[0] * v[0] + m[3] * v[1] + m[6] * v[2], m[1] * v[0] + m[4] * v[1] + m[7] * v[2], m[2] * v[0] + m[5] * v[1] + m[8] * v[2]];
+const qRot = (q, v) => mRot(qMat(q), v);
+// Seeded random: one break replays the same from its seed.
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- the bowl on the CPU ---------- */
+const rest = X => [X[0], X[1] * KY + CY, X[2]];
+const scaled = p => [p[0], (p[1] - CY) / KY, p[2]];
+// Even samples over the outer wall, by direction from C.
+const DIRS = [];
+{
+  const M = 2400, top = CUT / RO;
+  for (let k = 0; k < M; k++) {
+    const y = -1 + (top + 1) * (k + 0.5) / M, r = Math.sqrt(1 - y * y), a = k * 2.399963229728653;
+    DIRS.push([r * Math.cos(a), y, r * Math.sin(a)]);
+  }
+}
+// The rim's two edges and the foot ring, as rest points.
+const EDGE = [];
+for (let k = 0; k < 96; k++) {
+  const a = k / 96 * TAU, c = Math.cos(a), s = Math.sin(a);
+  for (const r of [Math.sqrt(RO * RO - CUT * CUT), Math.sqrt(RI * RI - CUT * CUT)]) EDGE.push({ p: rest([r * c, CUT, r * s]), ring: false });
+  for (const r of [RFO, RFI]) for (const y of [0.002, YT - 0.02]) EDGE.push({ p: [r * c, y, r * s], ring: true });
+}
+// The crack field: the same warp as the shader's warpD.
+function warpJ(d, W) {
+  const [x, y, z] = d;
+  return norm([
+    x + W.a1 * Math.sin(y * W.f1[0] + W.p1[0]) + W.a2 * Math.sin(z * W.f2[0] + W.p2[0]),
+    y + W.a1 * Math.sin(z * W.f1[1] + W.p1[1]) + W.a2 * Math.sin(x * W.f2[1] + W.p2[1]),
+    z + W.a1 * Math.sin(x * W.f1[2] + W.p1[2]) + W.a2 * Math.sin(y * W.f2[2] + W.p2[2]),
+  ]);
+}
+function cellOf(d, sites, W) {
+  const q = warpJ(d, W);
+  let best = -3, c = 0;
+  for (let k = 0; k < sites.length; k++) { const s = dot(q, sites[k]); if (s > best) { best = s; c = k; } }
+  return c;
+}
+
+/* ---------- one break ---------- */
+// The blow sets the sites: a chip at the point.
+// A ring of wedges surrounds it; larger pieces lie beyond.
+function makeSites(p, rnd) {
+  const e1 = norm(cross(p, Math.abs(p[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = cross(p, e1);
+  const at = (rho, beta) => norm(add(mul(p, Math.cos(rho)), mul(add(mul(e1, Math.cos(beta)), mul(e2, Math.sin(beta))), Math.sin(rho))));
+  const S = [{ d: p, chip: true }];
+  const m1 = 4 + (rnd() < 0.5 ? 1 : 0), b1 = rnd() * TAU;
+  for (let k = 0; k < m1; k++) S.push({ d: at(0.22 + 0.08 * rnd(), b1 + (k + (rnd() - 0.5) * 0.5) * TAU / m1), chip: false });
+  const m2 = 3 + (rnd() < 0.45 ? 1 : 0), b2 = b1 + Math.PI / m1;
+  for (let k = 0; k < m2; k++) S.push({ d: at(0.85 + 0.45 * rnd(), b2 + (k + (rnd() - 0.5) * 0.6) * TAU / m2), chip: false });
+  // The far side breaks too, so the whole bowl opens.
+  const m3 = 2 + (rnd() < 0.5 ? 1 : 0), b3 = b2 + Math.PI / m2;
+  for (let k = 0; k < m3; k++) S.push({ d: at(1.75 + 0.35 * rnd(), b3 + (k + (rnd() - 0.5) * 0.5) * TAU / m3), chip: false });
+  // A site under the foot keeps one base piece.
+  if (!S.some(s => s.d[1] < -Math.cos(0.55))) S.push({ d: norm([(rnd() - 0.5) * 0.25, -1, (rnd() - 0.5) * 0.25]), chip: false });
+  return S;
+}
+// Drops sites whose cell is too small to read as a shard.
+function settleSites(S, W) {
+  for (let pass = 0; pass < 12; pass++) {
+    const sites = S.map(s => s.d), area = new Array(S.length).fill(0);
+    for (const d of DIRS) area[cellOf(d, sites, W)]++;
+    let worst = -1, wa = Infinity;
+    S.forEach((s, k) => {
+      const a = area[k] / DIRS.length;
+      if (a < (s.chip ? 0.005 : 0.03) && a < wa) { worst = k; wa = a; }
+    });
+    if (worst < 0 && S.length <= MAXS) break;
+    if (worst < 0) area.forEach((a, k) => { if (!S[k].chip && a / DIRS.length < wa) { worst = k; wa = a / DIRS.length; } });
+    S.splice(worst, 1);
+  }
+  return S;
+}
+function makeRound(p, seed, live) {
+  const rnd = mulberry(seed);
+  const r3 = (a, b) => [a + b * rnd(), a + b * rnd(), a + b * rnd()];
+  const W = { f1: r3(2.6, 1.6), a1: 0.04 + 0.02 * rnd(), p1: r3(0, TAU), f2: r3(15, 9), a2: 0.009 + 0.006 * rnd(), p2: r3(0, TAU) };
+  const S = settleSites(makeSites(p, rnd), W);
+  const rd = { p, seed, W, sites: S.map(s => s.d), chip: S.reduce((m, s, k) => m | (s.chip ? 1 << k : 0), 0) };
+  if (live) { seams(rd); shards(rd, rnd); }
+  return rd;
+}
+
+/* ---------- seams: where the gold runs, and when ---------- */
+// The plain Voronoi net of the sites gives each seam its arc.
+function seams(rd) {
+  const S = rd.sites, K = S.length;
+  const verts = [];
+  for (let a = 0; a < K; a++) for (let b = a + 1; b < K; b++) for (let c = b + 1; c < K; c++) {
+    const n = cross(sub(S[b], S[a]), sub(S[c], S[a])), l = len(n);
+    if (l < 1e-9) continue;
+    for (const sg of [1, -1]) {
+      const v = mul(n, sg / l), da = dot(v, S[a]);
+      if (S.every((s, k) => k === a || k === b || k === c || dot(v, s) <= da + 1e-7)) verts.push({ v, cells: [a, b, c] });
+    }
+  }
+  const top2 = (m, a, b) => S.every((s, k) => k === a || k === b || dot(m, s) <= Math.min(dot(m, S[a]), dot(m, S[b])) + 1e-6);
+  const edges = [];
+  for (let a = 0; a < K; a++) for (let b = a + 1; b < K; b++) {
+    const vs = verts.filter(v => v.cells.includes(a) && v.cells.includes(b));
+    if (vs.length < 2) continue;
+    const A = vs[0].v, B = vs[1].v;
+    let th = ang(A, B), w = sub(B, mul(A, dot(A, B)));
+    if (len(w) < 1e-9) continue;
+    w = norm(w);
+    const mid = add(mul(A, Math.cos(th / 2)), mul(w, Math.sin(th / 2)));
+    if (!top2(mid, a, b)) { w = mul(w, -1); th = TAU - th; }
+    const nodes = [];
+    for (let k = 0; k < NS; k++) {
+      const t = th * k / (NS - 1), d = add(mul(A, Math.cos(t)), mul(w, Math.sin(t)));
+      nodes.push({ d, inn: d[1] <= CUT / RO + 1e-3, D: Infinity });
+    }
+    edges.push({ a, b, A, w, th, va: verts.indexOf(vs[0]), vb: verts.indexOf(vs[1]), nodes });
+  }
+  // The gold pours in at the blow and runs through the net.
+  const src = rd.chip ? Math.log2(rd.chip & -rd.chip) : cellOf(rd.p, S, rd.W);
+  const all = edges.flatMap(e => e.nodes);
+  const links = new Map(all.map(n => [n, []]));
+  for (const e of edges) for (let k = 0; k + 1 < NS; k++) {
+    const n0 = e.nodes[k], n1 = e.nodes[k + 1], w = e.th / (NS - 1);
+    links.get(n0).push([n1, w]);
+    links.get(n1).push([n0, w]);
+  }
+  const atVert = new Map();
+  for (const e of edges) for (const [v, n] of [[e.va, e.nodes[0]], [e.vb, e.nodes[NS - 1]]]) {
+    if (!atVert.has(v)) atVert.set(v, []);
+    atVert.get(v).push(n);
+  }
+  for (const ns of atVert.values()) for (const n0 of ns) for (const n1 of ns) if (n0 !== n1) links.get(n0).push([n1, 0]);
+  const run = seeds => {
+    const open = [...seeds];
+    while (open.length) {
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) if (open[i].D < open[bi].D) bi = i;
+      const n = open.splice(bi, 1)[0];
+      if (n.done) continue;
+      n.done = true;
+      for (const [m, w] of links.get(n)) if (m.inn && !m.done && n.D + w < m.D) { m.D = n.D + w; open.push(m); }
+    }
+  };
+  const seeds = [];
+  for (const e of edges) if (e.a === src || e.b === src) for (const n of e.nodes) if (n.inn) { n.D = ang(n.d, rd.p); seeds.push(n); }
+  run(seeds);
+  // A seam the net cannot reach still fills, a little later.
+  for (let guard = 0; guard < 40; guard++) {
+    const lost = all.filter(n => n.inn && !n.done);
+    if (!lost.length) break;
+    const n = lost.reduce((x, y) => (ang(x.d, rd.p) < ang(y.d, rd.p) ? x : y));
+    n.D = ang(n.d, rd.p) * 1.25 + 0.2;
+    run([n]);
+  }
+  const data = new Float32Array(SEAM_W * SEAM_H * 4);
+  let maxD = 0;
+  rd.chimes = [];
+  for (const e of edges) {
+    const o = (e.a * MAXS + e.b) * SEAM_W * 4;
+    data.set([...e.A, e.th, ...e.w, 1], o);
+    let done = -1, sum = [0, 0, 0];
+    e.nodes.forEach((n, k) => {
+      const D = n.inn && Number.isFinite(n.D) ? n.D : 1e4;
+      data[o + (2 + k) * 4] = D;
+      if (D < 1e4) { done = Math.max(done, D); sum = add(sum, n.d); }
+    });
+    if (done >= 0) { maxD = Math.max(maxD, done); rd.chimes.push({ at: done, len: e.th, d: norm(sum) }); }
+  }
+  rd.seamData = data;
+  rd.maxD = maxD;
+  rd.nbr = new Int32Array(MAXS);
+  for (const e of edges) { rd.nbr[e.a] |= 1 << e.b; rd.nbr[e.b] |= 1 << e.a; }
+  rd.chimes.sort((x, y) => x.at - y.at);
+}
+
+/* ---------- shards: how the pieces fall and come back ---------- */
+function shards(rd, rnd) {
+  const S = rd.sites, K = S.length, W = rd.W;
+  const cells = S.map(() => ({ pts: [], outer: [], area: 0, n: [0, 0, 0], ring: 0 }));
+  for (const d of DIRS) {
+    const c = cells[cellOf(d, S, W)], po = rest(mul(d, RO));
+    c.pts.push(po);
+    c.outer.push(po);
+    c.area++;
+    c.n = add(c.n, norm([d[0], d[1] / KY, d[2]]));
+    if (d[1] <= CUT / RI) c.pts.push(rest(mul(d, RI)));
+  }
+  let ringAll = 0;
+  for (const e of EDGE) {
+    const c = cells[cellOf(norm(scaled(e.p)), S, W)];
+    c.pts.push(e.p);
+    if (e.ring) { c.ring++; ringAll++; }
+  }
+  const maxArea = Math.max(...cells.map(c => c.area));
+  const list = cells.map((c, i) => {
+    const n = norm(c.n), centre = norm(c.outer.reduce(add, [0, 0, 0]).map(v => v / Math.max(1, c.outer.length)));
+    const mid = mul(c.pts.reduce(add, [0, 0, 0]), 1 / Math.max(1, c.pts.length));
+    const rad = Math.max(...c.pts.map(p => len(sub(p, mid)))) + 0.04;
+    const size = Math.sqrt(c.area / maxArea);
+    const sh = { i, mid, rad, size, fixed: false, qf: QI, Tf: [0, 0, 0], toe: [0, 0, 0], toeF: [0, 0, 0], axis: [1, 0, 0], contact: [0, 0, 0] };
+    // A base piece with most of the foot stays standing.
+    if (c.ring > ringAll * 0.4 && n[1] < -0.75) { sh.fixed = true; return sh; }
+    let hl = Math.hypot(n[0], n[2]), h;
+    if (hl < 1e-3) { const a = rnd() * TAU; h = [Math.cos(a), 0, Math.sin(a)]; hl = 0; } else h = [n[0] / Math.hypot(n[0], n[2]), 0, n[2] / Math.hypot(n[0], n[2])];
+    const axis = norm(cross([0, 1, 0], h));
+    // It tips outward until it lies on its curved back.
+    const alpha = Math.PI / 2 + Math.atan2(n[1], hl) + (rnd() - 0.5) * 0.3;
+    const qYaw = qAxis([0, 1, 0], (rnd() - 0.5) * 0.7);
+    const qf = qMul(qYaw, qAxis(axis, alpha)), m = qMat(qf);
+    let ymin = Infinity;
+    for (const p of c.pts) ymin = Math.min(ymin, mRot(m, p)[1]);
+    const toe = c.outer.reduce((x, y) => (y[1] < x[1] ? y : x), c.outer[0] || [0, 0, 0]);
+    const slide = (rd.chip >> i) & 1 ? 0.3 + 0.3 * rnd() : 0.06 + 0.2 * rnd();
+    const rt = mRot(m, toe);
+    sh.Tf = [toe[0] + h[0] * slide - rt[0], -ymin, toe[2] + h[2] * slide - rt[2]];
+    sh.qf = qf;
+    sh.toe = toe;
+    sh.axis = qRot(qYaw, axis);
+    sh.ang = ang(centre, rd.p);
+    return sh;
+  });
+  // Pieces on the cloth push apart until their footprints clear.
+  const foot = sh => {
+    const m = qMat(sh.qf);
+    const pts = cells[sh.i].outer.filter((_, k) => k % 6 === 0).map(p => add(mRot(m, p), sh.Tf));
+    const c = mul(pts.reduce(add, [0, 0, 0]), 1 / Math.max(1, pts.length));
+    return { c, r: Math.max(0.05, ...pts.map(p => Math.hypot(p[0] - c[0], p[2] - c[2]))) * 0.82 };
+  };
+  for (let it = 0; it < 8; it++) {
+    const fp = list.map(foot);
+    for (let a = 0; a < K; a++) for (let b = a + 1; b < K; b++) {
+      const A = list[a], B = list[b];
+      if (A.fixed && B.fixed) continue;
+      const dx = fp[a].c[0] - fp[b].c[0], dz = fp[a].c[2] - fp[b].c[2], dl = Math.hypot(dx, dz) || 1e-3;
+      const over = fp[a].r + fp[b].r - dl;
+      if (over <= 0) continue;
+      const ka = A.fixed ? 0 : B.fixed ? 1 : 0.5, kb = 1 - ka;
+      if (!A.fixed) { A.Tf[0] += dx / dl * over * ka; A.Tf[2] += dz / dl * over * ka; }
+      if (!B.fixed) { B.Tf[0] -= dx / dl * over * kb; B.Tf[2] -= dz / dl * over * kb; }
+    }
+  }
+  let fallEnd = 0;
+  rd.events = [];
+  for (const sh of list) {
+    if (sh.fixed) continue;
+    const m = qMat(sh.qf);
+    sh.toeF = add(mRot(m, sh.toe), sh.Tf);
+    sh.contact = cells[sh.i].pts.map(p => add(mRot(m, p), sh.Tf)).reduce((x, y) => (y[1] < x[1] ? y : x));
+    // Pieces near the blow go first; big pieces tip slower.
+    sh.delay = 0.03 + 0.25 * sh.ang / Math.PI + 0.06 * rnd();
+    sh.dur = 0.95 + 0.6 * sh.size + 0.1 * rnd();
+    sh.rock = (0.05 + 0.04 * rnd()) * (1.1 - 0.4 * sh.size);
+    sh.mendAt = 0.25 * rnd();
+    const land = sh.delay + sh.dur;
+    fallEnd = Math.max(fallEnd, land + 1.1);
+    rd.events.push({ at: land, size: sh.size, lvl: 1, sh }, { at: land + 0.18, size: sh.size, lvl: 0.35, sh }, { at: land + 0.36, size: sh.size, lvl: 0.14, sh });
+  }
+  rd.events.sort((x, y) => x.at - y.at);
+  rd.list = list;
+  rd.fallEnd = Math.max(fallEnd, 1.2);
+}
+const smoother = t => t * t * t * (t * (t * 6 - 15) + 10);
+// One shard's pose at time t of the fall or the mend.
+function pose(sh, phase, t) {
+  if (sh.fixed) return [QI, [0, 0, 0]];
+  if (phase === 'rest') return [sh.qf, sh.Tf];
+  if (phase === 'fall') {
+    const u = clamp((t - sh.delay) / sh.dur);
+    if (u < 1) {
+      const e = u * u, q = qSlerp(QI, sh.qf, e);
+      const toe = [sh.toe[0] + (sh.toeF[0] - sh.toe[0]) * smoother(u), sh.toe[1] + (sh.toeF[1] - sh.toe[1]) * e, sh.toe[2] + (sh.toeF[2] - sh.toe[2]) * smoother(u)];
+      return [q, sub(toe, qRot(q, sh.toe))];
+    }
+    // It lands and rocks on its curved back, less each time.
+    const tl = t - sh.delay - sh.dur;
+    const a = sh.rock * Math.exp(-tl / 0.2) * Math.sin(tl * TAU / 0.36);
+    const qr = qAxis(sh.axis, a), q = qMul(qr, sh.qf);
+    return [q, add(qRot(qr, sub(sh.Tf, sh.contact)), sh.contact)];
+  }
+  // The mend lifts each piece clear of the cloth.
+  // It turns each piece back into place.
+  const u = clamp((t - sh.mendAt) / (MEND_T - sh.mendAt)), e = smoother(u);
+  const q = qSlerp(sh.qf, QI, e);
+  const toe = add(add(mul(sh.toeF, 1 - e), mul(sh.toe, e)), [0, 0.28 * Math.sin(Math.PI * e) * (0.6 + 0.4 * sh.size), 0]);
+  return [q, sub(toe, qRot(q, sh.toe))];
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit();
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.0015);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+function blip(ac, at, { f, dur, level, pan = 0, attack = 0.001 }) {
+  const o = ac.createOscillator();
+  o.frequency.value = f * jit(0.02);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level, at + attack);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.03);
+}
+// The blow: a sharp knock and the bowl's ring, cut short.
+// Then quick ticks: the crack running.
+function breakSound(pan) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, f0 = 1020 * jit(0.08);
+  burst(ac, at, { f: 3800, type: 'highpass', q: 0.7, dur: 0.014, level: 0.55, pan });
+  blip(ac, at, { f: 230, dur: 0.08, level: 0.3, pan });
+  [[1, 0.2, 0.32], [2.32, 0.13, 0.2], [4.08, 0.08, 0.12], [6.3, 0.045, 0.07]].forEach(([r, l, d]) => blip(ac, at, { f: f0 * r, dur: d, level: l, pan }));
+  for (let i = 0; i < 10; i++) burst(ac, at + 0.006 + i * 0.007 + Math.random() * 0.006, { f: 2600 + 3600 * Math.random(), q: 3, dur: 0.004 + 0.004 * Math.random(), level: 0.24 * (1 - i / 11), pan });
+}
+// A piece lands on the cloth: a soft thud.
+// A small ceramic tick rides on it.
+function settleSound(size, lvl, pan) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.004;
+  blip(ac, at, { f: 120 + 70 * (1 - size), dur: 0.07, level: 0.26 * lvl, pan });
+  burst(ac, at, { f: 800, type: 'lowpass', q: 0.7, dur: 0.035, level: 0.22 * lvl, pan });
+  burst(ac, at, { f: 3000 + 1500 * (1 - size), q: 2.5, dur: 0.008, level: 0.16 * lvl, pan });
+  blip(ac, at + 0.002, { f: (2200 + 1900 * (1 - size)) * jit(0.05), dur: 0.06, level: 0.05 * lvl, pan });
+}
+// The pieces meet: a soft, low click of clay on clay.
+function closeSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.004;
+  burst(ac, at, { f: 1900, q: 1.8, dur: 0.02, level: 0.16 });
+  blip(ac, at, { f: 310, dur: 0.09, level: 0.12 });
+  burst(ac, at + 0.03, { f: 2400, q: 2, dur: 0.012, level: 0.06 });
+}
+// A seam closes: a soft, low bell struck with a felt mallet.
+const SCALE = [146.83, 174.61, 196, 220, 261.63, 293.66];
+let soundEnd = 0;
+function chime(f, level, pan) {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime + 0.005, out = ac.createGain(), lp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+  out.gain.value = level;
+  lp.type = 'lowpass';
+  lp.frequency.value = 2200;
+  pn.pan.value = pan;
+  out.connect(lp).connect(pn).connect(kit.out);
+  for (const [r, a, d] of [[1, 1, 3.4], [2.0, 0.22, 2.2], [2.76, 0.3, 1.5], [5.4, 0.08, 0.8]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = f * r * jit(0.0015);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(a, at + 0.014);
+    g.gain.exponentialRampToValueAtTime(1e-4, at + d);
+    o.connect(g).connect(out);
+    o.start(at);
+    o.stop(at + d + 0.05);
+  }
+  soundEnd = Math.max(soundEnd, performance.now() + 3500);
+}
+
+/* ---------- camera ---------- */
+// Two views: close on the whole bowl, wide for the pieces.
+// The camera eases between them.
+// It backs off as the bowl falls apart.
+let size = { w: 1, h: 1, dpr: 1 };
+const cam = { eye: [0, 3, 6], R: [1, 0, 0], U: [0, 1, 0], F: [0, 0, -1], tanF: 0.25, shift: [0, 0], back: [0, 0, 1], tgt: [0, 0.35, 0] };
+const views = { near: { D: 6, shift: [0, 0] }, wide: { D: 8, shift: [0, 0] } };
+let wideK = 0, wideTo = 0;
+const ring = (r, y, n = 32) => Array.from({ length: n }, (_, k) => [r * Math.cos(k / n * TAU), y, r * Math.sin(k / n * TAU)]);
+const FIT_WIDE = [...ring(1.95, 0), ...ring(1, 1)];
+const FIT_NEAR = [...ring(1.3, 0), ...ring(1, 1)];
+function project(p, eye = cam.eye, shift = cam.shift) {
+  const v = sub(p, eye), z = dot(v, cam.F);
+  return [dot(v, cam.R) / (z * cam.tanF * size.w / size.h) + shift[0], dot(v, cam.U) / (z * cam.tanF) + shift[1]];
+}
+// Fits a set of points in the stage.
+// The corner controls keep their margins.
+function fit(pts) {
+  const sx = 1 - 2 * 14 / size.w, top = 1 - 2 * 52 / size.h, bot = -1 + 2 * 60 / size.h;
+  const box = D => {
+    const e = add(cam.tgt, mul(cam.back, D));
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) { const [x, y] = project(p, e, [0, 0]); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    return { x0, x1, y0, y1 };
+  };
+  let lo = 2, hi = 60;
+  for (let k = 0; k < 40; k++) {
+    const D = (lo + hi) / 2, b = box(D);
+    if (b.x1 - b.x0 > 2 * sx || b.y1 - b.y0 > top - bot) lo = D; else hi = D;
+  }
+  const D = hi * dev('eye'), b = box(D);
+  return { D, shift: [-(b.x0 + b.x1) / 2, (top + bot) / 2 - (b.y0 + b.y1) / 2] };
+}
+function frame() {
+  const pitch = dev('pitch') * Math.PI / 180, yaw = dev('yaw') * Math.PI / 180;
+  cam.tanF = Math.tan(dev('fov') * Math.PI / 360);
+  cam.back = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)];
+  cam.F = mul(cam.back, -1);
+  cam.R = norm(cross(cam.F, [0, 1, 0]));
+  cam.U = cross(cam.R, cam.F);
+  views.near = fit(FIT_NEAR);
+  views.wide = fit(FIT_WIDE);
+  place();
+}
+// The camera between the two views, by wideK.
+function place() {
+  const e = wideK * wideK * (3 - 2 * wideK), n = views.near, w = views.wide;
+  cam.eye = add(cam.tgt, mul(cam.back, n.D + (w.D - n.D) * e));
+  cam.shift = [n.shift[0] + (w.shift[0] - n.shift[0]) * e, n.shift[1] + (w.shift[1] - n.shift[1]) * e];
+}
+// A CSS point on the stage as a world ray.
+function rayAt(x, y) {
+  const nx = (x / size.w) * 2 - 1 - cam.shift[0], ny = (1 - y / size.h) * 2 - 1 - cam.shift[1];
+  return norm(add(cam.F, add(mul(cam.R, nx * cam.tanF * size.w / size.h), mul(cam.U, ny * cam.tanF))));
+}
+// The point of the blow, as a direction from C.
+// A miss takes the nearest point of the rim.
+function blowAt(x, y) {
+  const rd = rayAt(x, y), O = scaled(cam.eye), V = [rd[0], rd[1] / KY, rd[2]];
+  const iv = r => {
+    const a = dot(V, V), b = dot(O, V), c = dot(O, O) - r * r, h = b * b - a * c;
+    return h < 0 ? null : [(-b - Math.sqrt(h)) / a, (-b + Math.sqrt(h)) / a];
+  };
+  const ao = iv(RO), ai = iv(RI);
+  const tr = Math.abs(V[1]) > 1e-7 ? (CUT - O[1]) / V[1] : -Infinity;
+  if (ao) {
+    const lo = V[1] < 0 ? tr : -Infinity, hi2 = V[1] < 0 ? Infinity : tr;
+    for (const [a, b] of ai ? [[ao[0], ai[0]], [ai[1], ao[1]]] : [ao]) {
+      const s = Math.max(a, lo), e = Math.min(b, hi2);
+      if (e > s && s > 0) return norm(add(O, mul(V, s)));
+    }
+  }
+  let best = null, bd = Infinity;
+  const r = Math.sqrt(RO * RO - CUT * CUT);
+  for (let k = 0; k < 96; k++) {
+    const a = k / 96 * TAU, p = rest([r * Math.cos(a), CUT, r * Math.sin(a)]), [px, py] = project(p);
+    const sx = (px + 1) / 2 * size.w, sy = (1 - py) / 2 * size.h, dd = Math.hypot(sx - x, sy - y);
+    if (dd < bd) { bd = dd; best = norm(scaled(p)); }
+  }
+  return best;
+}
+const panOf = p => clamp(project(p)[0], -1, 1) * 0.7;
+
+/* ---------- light ---------- */
+// The key light sits high, to the left and a little back.
+// The pointer swings it slowly.
+const L0 = { az: -1.75, el: 0.9 };
+const lq = { ...L0 }, tq = { ...L0 };
+const lightDir = q => [Math.cos(q.el) * Math.sin(q.az), Math.sin(q.el), Math.cos(q.el) * Math.cos(q.az)];
+function aim(x, y) {
+  if (reduced()) { tq.az = L0.az; tq.el = L0.el; }
+  else {
+    const nx = clamp(x / size.w * 2 - 1, -1, 1), ny = clamp(1 - y / size.h * 2, -1, 1);
+    tq.az = L0.az + nx * 1.2;
+    tq.el = clamp(L0.el + ny * 0.32, 0.5, 1.32);
+  }
+  wake();
+}
+
+/* ---------- state ---------- */
+// A break runs: crack, fall, rest, mend, flow.
+// Then the bowl is whole again.
+const CRACK_V = 7, FLOW_V = 0.8, REST_T = 1.7, MEND_T = 2.3, SET_T = 1.2;
+let state = 'whole', st = 0, round = null, rounds = [];
+let glaze = glazeVals(glazeId), glazeFrom = glaze, glazeTo = glaze, glazeT = 1;
+let acc = 0;
+const D = detail({ maxDpr: 2, budget: 2.4e6, onChange: () => { resize(); wake(); } });
+
+function setRound(p, rd) {
+  const u = p.u;
+  gl.uniform1i(u.uK, rd ? rd.sites.length : 0);
+  if (!rd) return;
+  const s = new Float32Array(MAXS * 3);
+  rd.sites.forEach((d, k) => s.set(d, k * 3));
+  gl.uniform3fv(u.uSite, s);
+  gl.uniform1i(u.uChip, rd.chip);
+  const W = rd.W;
+  gl.uniform4f(u.uW0, ...W.f1, W.a1);
+  gl.uniform4f(u.uW1, ...W.p1, 0);
+  gl.uniform4f(u.uW2, ...W.f2, W.a2);
+  gl.uniform4f(u.uW3, ...W.p2, 0);
+  gl.uniform3f(u.uImpact, ...rd.p);
+  gl.uniform1f(u.uVein, dev('vein'));
+  if (u.uNbr) gl.uniform1iv(u.uNbr, rd.nbr || NBR_ALL);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, seamTex);
+  gl.uniform1i(u.uSeams, 2);
+}
+// One break joins the gold map for good.
+function merge(rd) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, goldT.fb);
+  gl.viewport(0, 0, GOLD, GOLD);
+  gl.useProgram(P.merge.p);
+  setRound(P.merge, rd);
+  gl.enable(gl.BLEND);
+  gl.blendEquation(gl.MAX);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  draw3();
+  gl.disable(gl.BLEND);
+  gl.blendEquation(gl.FUNC_ADD);
+}
+function clearGold() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, goldT.fb);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+}
+function upload(rd) {
+  gl.bindTexture(gl.TEXTURE_2D, seamTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SEAM_W, SEAM_H, gl.RGBA, gl.FLOAT, rd ? rd.seamData : seamZero);
+}
+const save = () => store.set(KEY_BOWL, JSON.stringify(rounds.map(r => ({ p: r.p.map(v => +v.toFixed(5)), s: r.seed }))));
+// The first bowl carries one repair, so its first look shows gold.
+const FIRST = [{ p: norm([-0.32, -0.72, -0.6]), s: 7 }];
+function loadBowl() {
+  let list = FIRST;
+  try { const raw = store.get(KEY_BOWL); if (raw) list = JSON.parse(raw); } catch { list = FIRST; }
+  if (!Array.isArray(list)) list = FIRST;
+  rounds = [];
+  clearGold();
+  for (const r of list.slice(-60)) {
+    if (!Array.isArray(r?.p) || r.p.length !== 3 || !Number.isFinite(r.s)) continue;
+    const rd = makeRound(norm(r.p), r.s, false);
+    merge(rd);
+    rounds.push(rd);
+  }
+}
+
+/* ---------- render ---------- */
+const uni = { rot: new Float32Array(MAXS * 9), pos: new Float32Array(MAXS * 3), bnd: new Float32Array(MAXS * 4) };
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height), dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  hdr.forEach(t => free(gl, t));
+  hdr = [target(gl, canvas.width, canvas.height), target(gl, canvas.width, canvas.height)];
+  frame();
+  acc = 0;
+}
+// The shard poses for this moment.
+// A whole bowl draws as one piece.
+function shardUniforms() {
+  const apart = round && (state === 'fall' || state === 'rest' || (state === 'mend' && st < MEND_T));
+  if (!apart) return 0;
+  round.list.forEach((sh, k) => {
+    const [q, T] = pose(sh, state, st), m = qMat(q);
+    uni.rot.set(m, k * 9);
+    uni.pos.set(T, k * 3);
+    uni.bnd.set([...add(mRot(m, sh.mid), T), sh.rad], k * 4);
+  });
+  return round.list.length;
+}
+function draw(jitter = [0, 0]) {
+  const u = P.main.u;
+  const write = hdr[hi], prev = hdr[1 - hi];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, write.fb);
+  gl.viewport(0, 0, write.w, write.h);
+  gl.useProgram(P.main.p);
+  setRound(P.main, round);
+  gl.uniform2f(u.uRes, write.w, write.h);
+  gl.uniform2f(u.uShift, ...cam.shift);
+  gl.uniform2f(u.uJit, ...jitter);
+  gl.uniform3f(u.uEye, ...cam.eye);
+  gl.uniform3f(u.uCR, ...cam.R);
+  gl.uniform3f(u.uCU, ...cam.U);
+  gl.uniform3f(u.uCF, ...cam.F);
+  gl.uniform1f(u.uTanF, cam.tanF);
+  gl.uniform1f(u.uPixA, 2 * cam.tanF / write.h);
+  gl.uniform3f(u.uL, ...lightDir(lq));
+  gl.uniform3f(u.uLc, 1.0 * 5, 0.93 * 5, 0.83 * 5);
+  gl.uniform1f(u.uLtan, Math.tan(dev('soft') * Math.PI / 180));
+  gl.uniform2f(u.uSpot, 0, 0);
+  const n = shardUniforms();
+  gl.uniform1i(u.uN, n);
+  let top = 1.05;
+  if (n) { top = 0; for (let k = 0; k < n; k++) top = Math.max(top, uni.bnd[k * 4 + 1] + uni.bnd[k * 4 + 3]); }
+  gl.uniform1f(u.uTop, top);
+  if (n) {
+    gl.uniformMatrix3fv(u.uRot, false, uni.rot);
+    gl.uniform3fv(u.uPos, uni.pos);
+    gl.uniform4fv(u.uBnd, uni.bnd);
+  }
+  gl.uniform1i(u.uQ, D.level);
+  gl.uniform1i(u.uRound, round ? 1 : 0);
+  const hair = !round ? 0 : state === 'crack' || state === 'pause' ? 1 : state === 'fall' ? clamp(1 - (st - 0.45) / 0.3) : state === 'mend' ? clamp((st - MEND_T * 0.86) / (MEND_T * 0.14)) : state === 'flow' ? 1 : 0;
+  gl.uniform1f(u.uHair, hair);
+  // Reduced motion shows the whole crack net at once.
+  gl.uniform1f(u.uCrackT, state === 'crack' && !reduced() ? st * CRACK_V : 1e3);
+  gl.uniform1f(u.uFlowT, state === 'flow' ? (reduced() ? 1e3 : st * FLOW_V) : -1);
+  gl.uniform1f(u.uLiveA, state === 'flow' && reduced() ? clamp(st / 1.2) : 1);
+  gl.uniform1f(u.uWetW, 0.9);
+  gl.uniform1f(u.uBump, 0.0045);
+  gl.uniform1f(u.uAcc, acc);
+  const g = glaze;
+  gl.uniform3f(u.uGThick, g[0], g[1], g[2]);
+  gl.uniform3f(u.uGThin, g[3], g[4], g[5]);
+  gl.uniform3f(u.uGPool, g[6], g[7], g[8]);
+  gl.uniform3f(u.uGCrk, g[9], g[10], g[11]);
+  gl.uniform3f(u.uClay, g[12], g[13], g[14]);
+  gl.uniform4f(u.uGP, g[15], g[16], g[17], g[18]);
+  gl.uniform4f(u.uGP2, g[19], g[20], 0, 0);
+  gl.uniform3f(u.uCloth, ...CLOTH);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, goldT.tex);
+  gl.uniform1i(u.uGold, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, prev.tex);
+  gl.uniform1i(u.uPrev, 1);
+  draw3();
+  // The post pass reads what this frame wrote.
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(P.post.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, write.tex);
+  gl.uniform1i(P.post.u.uHdr, 0);
+  gl.uniform2f(P.post.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(P.post.u.uExpo, dev('expo') * 1.15);
+  draw3();
+  hi = 1 - hi;
+}
+const CLOTH = linFit(0.36, 0.03, 266);
+
+/* ---------- the break ---------- */
+function breakAt(dir) {
+  if (state !== 'whole' || !dir) return;
+  round = makeRound(dir, (Math.random() * 2 ** 31) >>> 0, true);
+  upload(round);
+  state = 'crack';
+  st = 0;
+  breakSound(panOf(rest(dir)));
+  wake();
+}
+// Landing sounds play by the fall's own clock.
+let evAt = 0, chimeAt = 0;
+function step(dt) {
+  st += dt;
+  if (state === 'crack') {
+    // Reduced motion skips the flight: the cracks fill where they lie.
+    if (st >= Math.min(round.maxD / CRACK_V, 0.45) + 0.05) {
+      st = 0;
+      evAt = 0;
+      state = reduced() ? 'pause' : 'fall';
+    }
+  } else if (state === 'fall') {
+    while (evAt < round.events.length && round.events[evAt].at <= st) {
+      const e = round.events[evAt++];
+      settleSound(e.size, e.lvl, panOf(e.sh.contact));
+    }
+    if (st >= round.fallEnd) { state = 'rest'; st = 0; }
+  } else if (state === 'rest') {
+    if (st >= REST_T) { state = 'mend'; st = 0; }
+  } else if (state === 'pause') {
+    if (st >= 0.8) { state = 'flow'; st = 0; chimeAt = 0; }
+  } else if (state === 'mend') {
+    if (st >= MEND_T) { state = 'flow'; st = 0; chimeAt = 0; closeSound(); }
+  } else if (state === 'flow') {
+    const ft = reduced() ? 1e3 : st * FLOW_V;
+    let rung = 0;
+    while (chimeAt < round.chimes.length && round.chimes[chimeAt].at <= ft) {
+      const c = round.chimes[chimeAt++];
+      // Seams that close together share one bell.
+      if (rung++ === 0) chime(SCALE[Math.min(SCALE.length - 1, Math.floor(c.at * 1.6))] * (c.len > 1.2 ? 0.5 : 1), 0.11, panOf(rest(c.d)));
+    }
+    const end = reduced() ? 1.4 : round.maxD / FLOW_V + SET_T;
+    if (st >= end) {
+      merge(round);
+      rounds.push(round);
+      if (rounds.length > 60) rounds.shift();
+      save();
+      round = null;
+      upload(null);
+      state = 'whole';
+      st = 0;
+      acc = 0;
+    }
+  }
+}
+function mendNow() {
+  if (state === 'rest') st = REST_T;
+  wake();
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while a break plays or the light eases.
+// It also runs while a still frame refines; then it sleeps.
+let raf = 0, last = 0, visible = !document.hidden, ready = false;
+const HALTON = [[0, 0], [0.5, -0.17], [-0.25, 0.33], [0.25, -0.39], [-0.375, 0.11], [0.125, 0.44], [-0.125, -0.28], [0.375, 0.22], [-0.44, -0.06]];
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(tick); }
+}
+function tick(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = (now - last) / 1000;
+    last = now;
+    const dt = clamp(raw, 0, 0.05);
+    D.frame(raw);
+    if (round) step(dt);
+    const k = 1 - Math.exp(-dt / 0.55);
+    lq.az += (tq.az - lq.az) * k;
+    lq.el += (tq.el - lq.el) * k;
+    let easing = Math.abs(tq.az - lq.az) + Math.abs(tq.el - lq.el) > 2e-4;
+    if (!easing) { lq.az = tq.az; lq.el = tq.el; }
+    // The camera backs off while the pieces lie apart.
+    // It comes back in as they close.
+    wideTo = reduced() || !round ? 0 : state === 'fall' || state === 'rest' || (state === 'mend' && st < MEND_T * 0.45) ? 1 : 0;
+    if (Math.abs(wideTo - wideK) > 1e-3) {
+      wideK += (wideTo - wideK) * (1 - Math.exp(-dt / 0.45));
+      place();
+      easing = true;
+    } else if (wideK !== wideTo) { wideK = wideTo; place(); }
+    if (glazeT < 1) {
+      glazeT = Math.min(1, glazeT + dt / 0.6);
+      const e = smoother(glazeT);
+      glaze = glazeFrom.map((v, i) => v + (glazeTo[i] - v) * e);
+    }
+    const still = !round && !easing && glazeT >= 1;
+    // A still frame refines: jittered frames average into the last one.
+    const accN = D.level === 0 ? 0 : D.level === 1 ? 6 : 10;
+    if (!still) acc = 0;
+    draw(acc ? HALTON[acc % HALTON.length] : [0, 0]);
+    if (still) acc++;
+    again = !still || acc <= accN;
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(tick);
+    else sleepAudio();
+  }
+}
+// Audio sleeps once the last bell has rung out.
+function sleepAudio() {
+  const wait = Math.max(0, soundEnd - performance.now());
+  setTimeout(() => kit.rest(() => !raf && !down), wait);
+}
+
+/* ---------- pointer ---------- */
+// A mouse press breaks the bowl.
+// A touch tap breaks it; a touch drag turns the light.
+let down = null;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function strike(x, y) {
+  if (state === 'whole') breakAt(blowAt(x, y));
+  else if (state === 'rest') mendNow();
+}
+canvas.addEventListener('pointerdown', e => {
+  if (e.button > 0 || down) return;
+  const [x, y] = local(e);
+  down = { id: e.pointerId, x, y, t: e.timeStamp, touch: e.pointerType !== 'mouse', moved: false };
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  if (!down.touch) strike(x, y);
+});
+canvas.addEventListener('pointermove', e => {
+  const [x, y] = local(e);
+  if (!down) { if (e.pointerType === 'mouse') aim(x, y); return; }
+  if (e.pointerId !== down.id) return;
+  if (Math.hypot(x - down.x, y - down.y) > 10) down.moved = true;
+  if (!down.touch || down.moved) aim(x, y);
+});
+const up = e => {
+  if (!down || e.pointerId !== down.id) return;
+  const d = down;
+  down = null;
+  if (d.touch && !d.moved && e.type === 'pointerup' && e.timeStamp - d.t < 500) strike(d.x, d.y);
+  if (d.touch) { tq.az = L0.az; tq.el = L0.el; wake(); }
+};
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (!down && e.pointerType === 'mouse') { tq.az = L0.az; tq.el = L0.el; wake(); } });
+// Space or Enter breaks the bowl on its far wall.
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  if (e.key !== ' ' && e.key !== 'Enter') return;
+  if (e.target !== stage && e.target !== document.body) return;
+  e.preventDefault();
+  if (state === 'whole') {
+    const a = Math.PI + (Math.random() - 0.5) * 2.2, y = -0.35 - 0.45 * Math.random(), r = Math.sqrt(1 - y * y);
+    breakAt(norm([r * Math.sin(a + dev('yaw') * Math.PI / 180), y, r * Math.cos(a + dev('yaw') * Math.PI / 180)]));
+  } else if (state === 'rest') mendNow();
+});
+
+/* ---------- actions ---------- */
+act.glaze = v => {
+  if (!GLAZES[v]) return;
+  glazeId = v;
+  store.set(KEY_GLAZE, v);
+  glazeFrom = glaze;
+  glazeTo = glazeVals(v);
+  glazeT = reduced() ? 0.999 : 0;
+  wake();
+};
+// Reset: a new bowl with no breaks; it keeps the glaze.
+act.reset = () => {
+  round = null;
+  state = 'whole';
+  st = 0;
+  upload(null);
+  rounds = [];
+  clearGold();
+  save();
+  acc = 0;
+  wake();
+};
+act.view = () => { frame(); acc = 0; wake(); };
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders link and the first frame draws.
+upload(null);
+loadBowl();
+resize();
+draw();
+gl.finish();
+canvas.classList.add('on');
+ready = true;
+mark('first-frame');
+wake();
+
+new ResizeObserver(() => { resize(); if (ready) wake(); }).observe(stage);
+onReducedChange(() => { tq.az = L0.az; tq.el = L0.el; wake(); });
+// A hidden tab stops the loop; the break waits where it was.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>

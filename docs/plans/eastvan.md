@@ -1,5 +1,7 @@
 # East Van (`eastvan`) plan
 
+Status: active · Bean: `stimming-guw5`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Steps use checkbox (`- [x]`) syntax.
 
 **Goal:** A cute, simple diorama of East Vancouver: a house, a back alley and a piece of Commercial Drive. You poke everything; nearly every object reacts.

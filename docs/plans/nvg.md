@@ -1,5 +1,7 @@
 # Night vision (`nvg/`)
 
+Status: active · Bean: `stimming-5bjs`
+
 Lab toy. A shader showcase: an image intensifier tube over a moonless field.
 Bean: `stimming-5bjs`. Branch: `feature/stimming-5bjs`.
 

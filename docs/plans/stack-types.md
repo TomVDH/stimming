@@ -1,5 +1,7 @@
 # Stack types and renderer inventory
 
+Status: done · Bean: `stimming-xcs8`
+
 Bean: `stimming-xcs8` (epic `stimming-3s8z`). Audit of 2026-11-14. A proposal: Tom picks the types. Nothing is ported.
 
 Tom, 2026-11-14 (spoken): "We also want to have a list and an inventory of which toys run on three.js or GLSL or WebGPU ... and we also need to come up with several default stack types. Simple toys may not necessarily need three.js, whereas more involved ones do."

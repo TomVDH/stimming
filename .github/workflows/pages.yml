@@ -23,6 +23,13 @@ jobs:
         with:
           # The new tags read each toy's commit history.
           fetch-depth: 0
+      # TypeScript toys: each <toy>/src/main.ts becomes <toy>/dist/main.js.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: Assemble the site
         run: |
           mkdir -p _site
@@ -32,7 +39,8 @@ jobs:
             case "$d" in _site|node_modules) continue ;; esac
             [ -f "$d/index.html" ] || [ "$d" = shared ] || continue
             mkdir -p "_site/$d"
-            find "$d" -type f ! -name '*.md' -exec cp --parents {} _site/ \;
+            # A TypeScript toy publishes its bundle (dist/), not its source (src/).
+            find "$d" -type f ! -name '*.md' ! -path '*/src/*' ! -name tsconfig.json -exec cp --parents {} _site/ \;
           done
           cp toys.json series.json .nojekyll _site/
           python3 tools/updates.py > _site/updates.json

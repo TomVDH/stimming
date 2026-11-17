@@ -1,5 +1,7 @@
 # Wind map (`windmap`) implementation plan
 
+Status: done · Bean: `stimming-5qae`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Tens of thousands of particles trace a living wind field. Circle a finger to spin up a cyclone, and watch two cyclones orbit and merge.

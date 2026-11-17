@@ -1,5 +1,7 @@
 # Ascent: clean-up, a striking look, one flight with Ten seconds
 
+Status: active · Bean: `stimming-ng4g`
+
 A Lab toy (`ascent/`). A rocket flies from a dawn pad to deep space on cameras fixed to its hull. The probe it carries parts, opens its wings and coasts on alone.
 Bean: `stimming-ng4g`. In the Lab since PR #58 (2026-11-14). Today it is a blockout.
 

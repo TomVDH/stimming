@@ -1,5 +1,7 @@
 # Spark wheel: spark types, a hot wheel, a better roller: implementation plan
 
+Status: done · Bean: `stimming-0d7r`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give Spark wheel five new spark types that each have a trick, a wheel that heats while it grinds and sheds the heat in a flare, a roller with holes, a bevel and an axle nut, and a slightly smaller wheel on the stage.

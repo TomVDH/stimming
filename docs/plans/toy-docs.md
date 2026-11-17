@@ -1,5 +1,7 @@
 # Per-toy documentation standard
 
+Status: done · Bean: `stimming-l902`
+
 Bean: `stimming-l902` (epic `stimming-3s8z`). Written 2026-11-14. A proposal: Tom judges the standard on three examples before it rolls out.
 
 ## The problem
@@ -24,6 +26,8 @@ One doc per toy, in one shape, answers "what is this toy now" in one screen.
 |---|---|---|---|---|
 | 1 | Identity | Dutch name and IPA, motto, shelf and number, stage, series, accent, sound, legacy, signed off | `toys.json`, `series.json`, `data-done` in the page and the menu | Yes |
 | 2 | Idea | Two or three sentences | The vignette, the code, Tom | No |
+| 2a | Rules | Rules an agent must follow when working on this toy | Tom, the toy's beans, `tools/commit.sh` | No |
+| 2b | Direction | Tom's art direction: look, framing, motion, what is out | Tom | No |
 | 3 | Controls | The bar spec by slot; gestures | The `bar` object passed to `initPage` | Bar: yes. Gestures: no |
 | 4 | Renderer and libraries | Tier, imported libraries and addons, importmap match | `import` lines, the importmap | Yes |
 | 5 | Shared modules | Imports from `shared/` by name; drift | `import` lines; `docs/plans/modularize.md` | Imports: yes. Drift: no |
@@ -32,6 +36,7 @@ One doc per toy, in one shape, answers "what is this toy now" in one screen.
 | 8 | Sound | Graph, engine, voices, samples, sleep | The page | No |
 | 9 | Quality and performance | Pixel ratio, slow-frame step, idle, reduced motion, numbers | The page; `docs/plans/loading.md` | No |
 | 10 | State and storage | `localStorage` keys | `stimming.<id>.` keys in the page and the bar spec | Yes |
+| 10b | Attributions | Every outside source, its licence, and whether credit must show (2026-11-16, `release-ready.md`) | The page, `tools/`, the asset folders | No |
 | 11 | Tests and QA | Files in `tests/`, QA notes | `tests/`, `docs/qa/` | Partly |
 | 12 | Known issues | One line each, with the bean | Open beans; the code | Beans: yes |
 | 13 | Legacy build | What `legacy.html` is | `legacy.html` | No |

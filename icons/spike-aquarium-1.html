@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Aquarium 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Aquarium 1</h1>
+<p class="lede">Aquarium, round 1. The toy is not built; this is an icon only. A: a planted tank with three fish; the pointer is food, a quick sweep scatters them. D: the tank is the block.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The toy's tokens: green-teal water, sand, plants, three bright fish.
+  const WATER = [[0, 'oklch(0.62 0.1 195)'], [1, 'oklch(0.34 0.08 225)']];
+  const GLASS = [[0, 'oklch(0.9 0.03 200)', 0.38], [0.3, 'oklch(0.7 0.03 200)', 0.06], [0.75, 'oklch(0.7 0.03 200)', 0.06], [1, 'oklch(0.9 0.03 200)', 0.32]];
+  const SAND = [[0, 'oklch(0.84 0.06 85)'], [1, 'oklch(0.66 0.06 70)']];
+  const LEAF = [[0, 'oklch(0.78 0.17 138)'], [1, 'oklch(0.46 0.13 150)']];
+  const TRIM = 'oklch(0.24 0.01 250)', SURF = 'oklch(0.92 0.05 195)';
+  const FISH = [
+    { s: 1.15, body: ['oklch(0.84 0.16 62)', 'oklch(0.64 0.19 40)'], fin: 'oklch(0.96 0.04 80)', home: [-0.35, 0.58, 0.2] },
+    { s: 0.8, body: ['oklch(0.78 0.13 225)', 'oklch(0.52 0.16 255)'], fin: 'oklch(0.86 0.12 200)', home: [0.42, 0.38, -0.3] },
+    { s: 0.72, body: ['oklch(0.9 0.14 100)', 'oklch(0.7 0.16 80)'], fin: 'oklch(0.96 0.05 100)', home: [0.3, 0.72, 0.5] },
+  ];
+  // A fish, facing right: a round body, a forked tail, one bold eye.
+  const F_BODY = 'M-8 0Q-3 -7.2 5 -4.2Q9.6 -2 9.6 0Q9.6 2 5 4.2Q-3 7.2 -8 0Z';
+  const F_TAIL = 'M-6.5 0L-13.5 -6Q-12 0 -13.5 6Z';
+  const F_FIN = 'M-1 -5.4Q2 -9.6 5 -4.6Z';
+  const fishMarkup = (u, i) => `<g class="fish">${rg(`${u}f${i}`, FISH[i].body.map((c, k) => [k, c]), 'cx="0.4" cy="0.35" r="0.75"')}
+      <g class="tail"><path d="${F_TAIL}" fill="${FISH[i].fin}" opacity="0.9"/></g>
+      <path d="${F_FIN}" fill="${FISH[i].fin}" opacity="0.9"/>
+      <path d="${F_BODY}" fill="url(#${u}f${i})"/><path d="${F_BODY}" fill="url(#${u}lit)"/>
+      <circle cx="5.2" cy="-1.2" r="1.7" fill="oklch(0.16 0.02 250)"/></g>`;
+  // A plant: a few long blades from one root, drawn upward from 0 0.
+  const blade = (dx, h, w, lean) => `M${f(-w / 2)} 0Q${f(dx * 0.4 - w)} ${f(-h * 0.55)} ${f(dx + lean)} ${f(-h)}Q${f(dx * 0.4 + w)} ${f(-h * 0.5)} ${f(w / 2)} 0Z`;
+  const plant = (u, k, scale) => `<path d="${[[-6, 30, 5, -3], [2, 40, 6, 2], [9, 26, 5, 5]].map(([dx, h, w, l]) => blade(dx * scale, h * scale, w * scale, l * scale)).join('')}" fill="url(#${u}leaf)"/>`;
+
+  // The school, shared by A and D: tank space x and z in -1..1, y up 0..1.
+  // The fish rise to the pointer, as to food. A quick sweep is a tap on
+  // the glass: they scatter. Leave, and they swim home.
+  const school = (els, place, toTank, plants) => {
+    const F = FISH.map((d, i) => ({ ...d, i, p: [...d.home], v: [0, 0, 0], dir: i === 1 ? -1 : 1, tilt: 0 }));
+    const st = { live: false, food: null, scare: 0, last: null, t: 0 };
+    const step = time => {
+      st.t = time;
+      st.scare *= 0.95;
+      let still = !st.live;
+      F.forEach((fi, k) => {
+        let tg = fi.home;
+        if (st.live && st.food) {
+          const a = k * 2.1 + time * 0.8;
+          tg = [st.food[0] + 0.18 * Math.cos(a), st.food[1] - 0.08 - 0.06 * k, 0.4 * Math.sin(a)];
+          // Scared, a fish darts away from the tap.
+          if (st.scare > 0.25) tg = [fi.p[0] + Math.sign(fi.p[0] - st.food[0] || 1) * 0.9, fi.p[1] + (fi.p[1] - st.food[1]) * 0.8, fi.p[2]];
+        } else if (st.live) {
+          tg = [fi.home[0] + 0.25 * Math.sin(time * 0.7 + k), fi.home[1] + 0.06 * Math.sin(time * 1.1 + k), fi.home[2]];
+        }
+        const pull = st.scare > 0.25 ? 0.02 : 0.006;
+        for (let j = 0; j < 3; j++) { fi.v[j] = (fi.v[j] + (tg[j] - fi.p[j]) * pull) * 0.9; fi.p[j] += fi.v[j]; }
+        fi.p[0] = clamp(fi.p[0], -0.82, 0.82); fi.p[1] = clamp(fi.p[1], 0.16, 0.86); fi.p[2] = clamp(fi.p[2], -0.8, 0.8);
+        if (Math.abs(fi.v[0]) > 0.002) fi.dir = Math.sign(fi.v[0]);
+        fi.tilt += (clamp(-fi.v[1] * 900, -24, 24) * (fi.dir) - fi.tilt) * 0.2;
+        const sp = Math.hypot(fi.v[0], fi.v[1]);
+        if (Math.hypot(fi.p[0] - fi.home[0], fi.p[1] - fi.home[1], fi.p[2] - fi.home[2]) > 0.01 || sp > 0.0005) still = false;
+      });
+      F.forEach((fi, k) => place(els[k], fi, Math.sin(time * (8 + 30 * Math.hypot(fi.v[0], fi.v[1]))) * 14));
+      plants.forEach((pl, k) => pl.setAttribute('transform', pl.dataset.at + ` rotate(${f(st.live ? 4 * Math.sin(time * 1.3 + k) : 0)})`));
+      if (still) { F.forEach(fi => { fi.p = [...fi.home]; fi.v = [0, 0, 0]; fi.tilt = 0; }); F.forEach((fi, k) => place(els[k], fi, 0)); loop.stop(); }
+    };
+    const loop = clock(step);
+    F.forEach((fi, k) => place(els[k], fi, 0));
+    return {
+      enter(p) { st.live = true; st.last = null; loop.start(); if (p) this.move(p); },
+      move(p) {
+        if (!p) return;
+        const q = toTank(p);
+        if (st.last && Math.hypot(q[0] - st.last[0], q[1] - st.last[1]) > 0.22) st.scare = 1;
+        st.last = q; st.food = q;
+      },
+      leave() { st.live = false; st.food = null; loop.start(); },
+    };
+  };
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // Aquarium is not built; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NOT BUILT</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The tank from the front: dark trim top and foot, water, sand, plants.
+  const L = 16, Rr = 112, Tp = 30, Bt = 106, SURF_Y = 37, SAND_Y = 94;
+  const A_TANK = `M${L} ${Tp + 4}Q${L} ${Tp} ${L + 4} ${Tp}H${Rr - 4}Q${Rr} ${Tp} ${Rr} ${Tp + 4}V${Bt - 4}Q${Rr} ${Bt} ${Rr - 4} ${Bt}H${L + 4}Q${L} ${Bt} ${L} ${Bt - 4}Z`;
+  const A_SAND = `M${L} ${SAND_Y}Q${L + 24} ${SAND_Y - 5} ${64} ${SAND_Y - 1}T${Rr} ${SAND_Y - 3}V${Bt}H${L}Z`;
+  const toScreenA = ([x, y]) => [64 + x * 44, SAND_Y - 4 - y * (SAND_Y - 4 - SURF_Y - 2)];
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [15, 27, 98, 82],
+    idea: 'A planted tank from the front: dark trim at the top and the foot, teal water with a bright surface, a sand bed, two clumps of bold plants, and three bright fish, orange, blue and yellow. The pointer is food: the fish turn and rise to it. A quick sweep is a tap on the glass: they scatter. Leave, and they swim home and the plants come still.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.4)}
+          ${lg(`${u}water`, WATER)}${lg(`${u}glass`, GLASS, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}sand`, SAND)}${lg(`${u}leaf`, LEAF)}
+          <clipPath id="${u}in"><path d="${A_TANK}"/></clipPath></defs>
+        <ellipse cx="64" cy="${Bt + 2}" rx="50" ry="3.6" fill="oklch(0.05 0.01 240)" opacity="0.6" filter="url(#${u}b)"/>
+        <g clip-path="url(#${u}in)">
+          <rect x="${L}" y="${SURF_Y}" width="${Rr - L}" height="${Bt - SURF_Y}" fill="url(#${u}water)"/>
+          <rect x="${L}" y="${Tp}" width="${Rr - L}" height="${SURF_Y - Tp}" fill="oklch(0.7 0.04 200)" opacity="0.25"/>
+          <g class="plants">
+            <g data-at="translate(32 ${SAND_Y})" transform="translate(32 ${SAND_Y})">${plant(u, 0, 1.1)}</g>
+            <g data-at="translate(94 ${SAND_Y - 2})" transform="translate(94 ${SAND_Y - 2})">${plant(u, 1, 0.8)}</g>
+          </g>
+          ${FISH.map((_, i) => fishMarkup(u, i)).join('')}
+          <path d="${A_SAND}" fill="url(#${u}sand)"/>
+          <path d="M${L} ${SURF_Y}H${Rr}" stroke="${SURF}" stroke-width="2.4" opacity="0.7"/>
+        </g>
+        <path d="${A_TANK}" fill="url(#${u}glass)"/>
+        <path d="${A_TANK}" fill="url(#${u}lit)"/>
+        <path d="M${L} ${Tp + 4}Q${L} ${Tp} ${L + 4} ${Tp}H${Rr - 4}Q${Rr} ${Tp} ${Rr} ${Tp + 4}V${Tp + 5}H${L}Z" fill="${TRIM}"/>
+        <path d="M${L} ${Bt - 6}H${Rr}V${Bt - 4}Q${Rr} ${Bt} ${Rr - 4} ${Bt}H${L + 4}Q${L} ${Bt} ${L} ${Bt - 4}Z" fill="${TRIM}"/>
+        <path d="${A_TANK}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>`;
+      const els = [...svg.querySelectorAll('.fish')], plants = [...svg.querySelectorAll('.plants > g')];
+      return school(els, (el, fi, wag) => {
+        const [x, y] = toScreenA(fi.p), s = fi.s * (1 + fi.p[2] * 0.12);
+        el.setAttribute('transform', `translate(${f(x)} ${f(y)}) scale(${f(fi.dir * s)} ${f(s)}) rotate(${f(fi.tilt)})`);
+        el.querySelector('.tail').setAttribute('transform', `rotate(${f(wag)} -7 0)`);
+      }, p => [(p[0] - 64) / 44, (SAND_Y - 4 - p[1]) / (SAND_Y - 4 - SURF_Y - 2)], plants);
+    },
+    emblem: `${EMB_HEAD}<path d="${A_TANK}" fill="#fff"/><path d="${A_SAND}" fill="#000" opacity="0.4"/>${FISH.map(fi => { const [x, y] = toScreenA(fi.home); return `<g transform="translate(${f(x)} ${f(y)}) scale(${f(fi.s)})"><path d="${F_BODY}${F_TAIL}" fill="#000"/></g>`; }).join('')}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The tank is the block: a glass cube of water on a sand bed.
+  const CY = 38, HALF = 25, T = 46, SAND_H = 9;
+  const iso = (gx, gy, h = 0) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5 + T - h];
+  const corners = h => [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]].map(([x, y]) => iso(x, y, h));
+  const [Nt, Et, St, Wt] = corners(T), [Nb, Eb, Sb, Wb] = corners(0);
+  const sideFace = (a, b, h0, h1) => poly([iso(...a, h1), iso(...b, h1), iso(...b, h0), iso(...a, h0)]);
+  const CW = [-HALF, HALF], CS = [HALF, HALF], CE = [HALF, -HALF];
+  const toScreenD = ([x, y, z]) => iso(x * HALF * 0.8, z * HALF * 0.8, SAND_H + 3 + y * (T - SAND_H - 8));
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [20, 12, 88, 100],
+    idea: 'The tank is the block: a cube of teal water with a sand bed showing through its faces, dark trim on the top edges and the foot. Plants stand in the sand and three bright fish swim inside. The pointer is food: the fish rise and circle it; a quick sweep scatters them; leave, and they swim home.',
+    art(svg, u) {
+      const plants = [[-12, -10, 1], [10, 12, 0.8]];
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}
+          ${lg(`${u}water`, WATER)}${lg(`${u}glass`, GLASS, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}sand`, SAND)}${lg(`${u}leaf`, LEAF)}</defs>
+        <path d="${poly([Eb, Sb, Wb, [Wb[0], Wb[1] + 4], [Sb[0], Sb[1] + 4], [Eb[0], Eb[1] + 4]])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)"/>
+        <path d="${poly([Nt, Et, Eb, Sb, Wb, Wt])}" fill="url(#${u}water)"/>
+        <path d="${poly(corners(SAND_H))}" fill="oklch(0.78 0.06 82)"/>
+        <g class="plants">${plants.map(([gx, gy, k]) => { const b = iso(gx, gy, SAND_H); return `<g data-at="translate(${f(b[0])} ${f(b[1])})" transform="translate(${f(b[0])} ${f(b[1])})">${plant(u, 0, k)}</g>`; }).join('')}</g>
+        ${FISH.map((_, i) => fishMarkup(u, i)).join('')}
+        <path d="${sideFace(CW, CS, 0, SAND_H)}" fill="url(#${u}sand)"/><path d="${sideFace(CS, CE, 0, SAND_H)}" fill="url(#${u}sand)"/><path d="${sideFace(CS, CE, 0, SAND_H)}" fill="#000" opacity="0.2"/>
+        <path d="${poly([Wt, St, Sb, Wb])}" fill="url(#${u}glass)"/>
+        <path d="${poly([St, Et, Eb, Sb])}" fill="url(#${u}glass)"/>
+        <path d="${poly([St, Et, Eb, Sb])}" fill="#000" opacity="0.12"/>
+        <path d="${poly([Nt, Et, St, Wt])}" fill="${SURF}" opacity="0.28"/>
+        <path d="${poly([Nt, Et, St, Wt])}" fill="url(#${u}lit)"/>
+        <path d="M${f(Wt[0])} ${f(Wt[1])}L${f(Nt[0])} ${f(Nt[1])}L${f(Et[0])} ${f(Et[1])}L${f(St[0])} ${f(St[1])}Z" fill="none" stroke="${TRIM}" stroke-width="3.4" stroke-linejoin="round"/>
+        <path d="M${f(Wb[0])} ${f(Wb[1])}L${f(Sb[0])} ${f(Sb[1])}L${f(Eb[0])} ${f(Eb[1])}" fill="none" stroke="${TRIM}" stroke-width="3.4" stroke-linejoin="round"/>
+        <path d="M${f(Wt[0])} ${f(Wt[1])}L${f(St[0])} ${f(St[1])}L${f(Et[0])} ${f(Et[1])}M${f(St[0])} ${f(St[1])}V${f(Sb[1])}" stroke="#fff" stroke-opacity="0.55" stroke-width="2" fill="none" stroke-linejoin="round"/>`;
+      const els = [...svg.querySelectorAll('.fish')], pl = [...svg.querySelectorAll('.plants > g')];
+      return school(els, (el, fi, wag) => {
+        const [x, y] = toScreenD(fi.p), s = fi.s * 0.78;
+        el.setAttribute('transform', `translate(${f(x)} ${f(y)}) scale(${f(fi.dir * s)} ${f(s)}) rotate(${f(fi.tilt)})`);
+        el.querySelector('.tail').setAttribute('transform', `rotate(${f(wag)} -7 0)`);
+      }, p => [(p[0] - 64) / (HALF * 1.4), clamp((iso(0, 0, SAND_H)[1] - p[1]) / (T - SAND_H), 0, 1)], pl);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([Wt, St, Sb, Wb])}" fill="#5a5a5a"/><path d="${poly([St, Et, Eb, Sb])}" fill="#3a3a3a"/><path d="${poly([Nt, Et, St, Wt])}" fill="#8a8a8a"/>${FISH.map(fi => { const [x, y] = toScreenD(fi.home); return `<g transform="translate(${f(x)} ${f(y)}) scale(${f(fi.s * 0.78)})"><path d="${F_BODY}${F_TAIL}" fill="#fff"/></g>`; }).join('')}</svg>`,
+  });
+
+
+  /* ================= Gallery ================= */
+  const NAME = 'Aquarium';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-aquarium';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `aquarium-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

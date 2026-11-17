@@ -1,5 +1,7 @@
 # Dijkstra (`dijkstra`) implementation plan
 
+Status: active · Bean: `stimming-nl1y`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Watch the shortest-path algorithm think, as light. Tap a node: light floods out through a glowing web in exact Dijkstra order. Drag a target: the shortest path snaps on, hot and pulsing, and re-routes as you move.

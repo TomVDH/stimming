@@ -1,5 +1,7 @@
 # ShadyOS (`shadyos`) implementation plan
 
+Status: active · Bean: `stimming-shdy`
+
 **Goal:** An original glossy glass desktop OS, aged and quietly possessed. The OS itself is the fidget: drag a window and it smears copies of itself across the screen; fling one and it wobbles like jelly.
 
 **Lore:** A bootleg "Ultimate XTreme Edition" that a script kiddie (handle d4rkm0th) skinned in 2008. It has run on one machine in a basement ever since. Uptime: 6,809 days. The clock says 3:33.
@@ -16,7 +18,8 @@
 
 ## Rules for this toy
 
-- Fully original. No real OS names, logos, start button, caption-button cluster, icons, wallpapers or sounds.
+- Parody nods only (Tom, 2026-11-16): everyone gets the joke, nothing is lifted. Original art and synth sounds; no real OS names, logos, wallpapers or sounds.
+  The nods may be shapes and moments: gel beads, a caption cluster, a dock, a glass orb, a blue crash, a grey curtain, a wait wheel.
 - 7.css is a reference for the era's glass recipe only. Nothing from it is loaded or copied.
 - Possessed means quiet and uncanny. No jump scares, no horror imagery.
 - Exception to "no copy on the stage" (Tom): OS chrome carries text. Window titles, short dialog lines, file names and the clock.
@@ -101,3 +104,33 @@ After 1 to 4 settle. Three original sketches of a helper that grew out of one of
 ### Also open
 
 - Real-device fps and sound check with Tom.
+
+
+## Overhaul: the sentient hybrid (`stimming-r6g1`, 2026-11-16)
+
+**Direction (Tom):** one look, not skins. An evil, sentient, possessed hybrid of the glass-era Windows desktop and the brushed-aqua Mac desktop. Cheeky, never scary. The kid's flame windows stay on top.
+
+| Part | What it is |
+|---|---|
+| Chrome | Glass title bars with brushed pinstripes; gel beads left (close, fold, zoom), a glass caption cluster right with a red close tab |
+| Menu bar | The OS's eye (it follows the pointer, blinks, narrows when you close its windows), menus from YAML, uptime and clock |
+| Dock | Glass slab, icons swell under the pointer, a dot under running apps, the orb menu on the left, the Bin on the right; drop a window on the Bin |
+| Apps | Notes, Files, Bin, Terminal, Messenger, Mines, Patience, Media Thing, Control Panel, Task Manager, System Properties, the nfo, the cpu gauge |
+| Eggs | Boot, blue crash, grey restart curtain, Shut Down that refuses, the safe-to-turn-off screen, Safe Mode, the wait wheel, Not Responding (six fast title clicks), Konami cheats, Ctrl+Alt+Backspace, a third Error cascade in a minute crashes it |
+| Savers | Line-up, pipes, flying waffles, bouncing logo (a cheer on a corner), stars, mystify; the 45 s saver picks the next one |
+| Settings | Haunt, Hum (Off, Low, On), Trail (Dense, Sparse), Boot screen; Dev rows force each egg |
+
+### Modules
+
+| File | Holds |
+|---|---|
+| `main.js` | State, layout, windows and physics, panels, input, actions, haunt beats, frame loop |
+| `gl.js` | Shaders and passes over `shared/gl.js`: mesh windows and panels, bendy mesh shadow, sprites, glitter, aged screen with safe mode and shake |
+| `paint.js` | Canvas 2D kit, glyphs, the hybrid chrome, menu, balloon, bar, eye and dock faces, pointers |
+| `apps/*.js` | One object per app: `size`, `init`, `paint(win, r, ctx)`, `tap`, `type`, `key`, `tick`, `close` |
+| `eggs.js`, `savers.js`, `sound.js` | Full-screen moments, screensavers, all synth sound |
+| `content.yaml`, `content.js`, `defaults.js` | Every word; the loader; the fallback snapshot |
+
+### Content
+
+`content.yaml` documents each field in place. Bad YAML shows a Notice with the line number and runs `defaults.js`. A missing key keeps its default; a list replaces the whole list. After a content change, run `node tools/shadyos-defaults.mjs` so the fallback matches.

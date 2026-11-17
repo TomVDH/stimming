@@ -3,6 +3,8 @@
 // Colour comes from culori; Tone.js loads only when a toy asks for it.
 // Full URLs match the shared importmap, so each library loads once.
 import { converter, toGamut, formatRgb } from 'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm';
+// The intro shows the load; stage() reports it. A page imports the intro by this same address.
+import { progress } from './intro.js';
 const TONE_URL = 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
 /* ---------- storage ---------- */
@@ -43,10 +45,11 @@ export const sound = {
 
 /* ---------- header ---------- */
 // Each letter: glyph, hue, weight, tilt in degrees, lift in em.
+// The hues run as the menu footer's light does: magenta to red (Tom, 2026-11-16).
 const MARK = [
-  ['S', '0.8 0.15 62', 800, -8, 0.02], ['t', '0.72 0.2 318', 500, 6, -0.04], ['i', '0.8 0.12 195', 900, -3, 0.03],
-  ['m', '0.7 0.19 32', 600, 4, -0.02], ['m', '0.72 0.14 255', 700, -5, 0.04], ['i', '0.82 0.11 345', 400, 7, -0.05],
-  ['n', '0.86 0.15 100', 800, -4, 0.01], ['g', '0.78 0.16 150', 600, 3, -0.03],
+  ['S', '0.72 0.22 328', 800, -8, 0.02], ['t', '0.68 0.2 300', 500, 6, -0.04], ['i', '0.74 0.16 250', 900, -3, 0.03],
+  ['m', '0.82 0.13 205', 600, 4, -0.02], ['m', '0.84 0.16 150', 700, -5, 0.04], ['i', '0.88 0.16 110', 400, 7, -0.05],
+  ['n', '0.86 0.16 84', 800, -4, 0.01], ['g', '0.74 0.2 28', 600, 3, -0.03],
 ];
 const SOUND_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h2.6l3.9-3.2v10.4L5.6 12H3z"/><path class="on" d="M12.8 8.1a3 3 0 0 1 0 3.8M15.1 6.1a6 6 0 0 1 0 7.8"/><path class="off" d="M13.2 8l4 4M17.2 8l-4 4"/></svg>';
 function headerHTML(home) {
@@ -233,6 +236,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} [icon] SVG or text that leads the label.
  * @property {string} [dot] A CSS colour for a swatch dot.
  * @property {string} [key] A shortcut key that picks this option.
+ * @property {string} [group] A tray heading; a new value starts a new group.
  */
 /**
  * The top-left choice group.
@@ -271,6 +275,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} id The storage key part: stimming.<toy>.<id>.
  * @property {string} label
  * @property {boolean} [persist] Stores the value and restores it on load.
+ * @property {string} [group] A sheet heading; a new value starts a new section.
  */
 /**
  * @typedef {RowBase & { type: 'slider', value: number, min?: number, max?: number, step?: number, onInput?: (value: number) => void }} SliderRow
@@ -448,7 +453,13 @@ function makeChoice(spec, display, state, pick, layer) {
     b.addEventListener('click', () => { sheet.open(false, true); pick(o.value, true, true); });
     return b;
   });
-  grid.append(...cells);
+  // An option's group, when it changes, puts a heading across the grid.
+  let group;
+  options.forEach((o, i) => {
+    if (o.group && o.group !== group) grid.append(make('div', 's2-group', o.group));
+    group = o.group;
+    grid.append(cells[i]);
+  });
   sheet.el.append(grid);
   return { el, sheet, sync() {
     el.textContent = `+ ${find(state.value)?.label ?? ''}`;
@@ -773,6 +784,23 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
 
   /* the Settings sheet: toy rows, site rows, the build link, then Reset */
   const settings = new Map();
+  // Builds rows into sections; a new row.group opens a labelled section.
+  // Rows before the first group stay in the first section.
+  const grouped = (rows, first, host) => {
+    const secs = [first];
+    let sec = first, group;
+    rows.forEach(row => {
+      if (row.group && row.group !== group) {
+        sec = make('div', 's2-sec', `<span class="s2-lab">${row.group}</span>`);
+        secs.push(sec);
+      }
+      group = row.group;
+      const r = makeRow(row, `stimming.${id}.${row.id}`, host);
+      settings.set(row.id, r.handle);
+      sec.append(r.el);
+    });
+    return secs;
+  };
   let toyLab = null, toySec = null, sheet = null, ft = null;
   // The sheet builds on first need, so a late Classic link can join it.
   const ensureSheet = () => {
@@ -797,12 +825,8 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
       const sec = toySec = make('div', 's2-sec');
       toyLab = make('span', 's2-lab', name.firstChild.textContent);
       sec.append(toyLab);
-      (spec.settings || []).forEach(row => {
-        const r = makeRow(row, `stimming.${id}.${row.id}`, layer);
-        settings.set(row.id, r.handle);
-        sec.append(r.el);
-      });
-      addSec(sec);
+      // Grouped rows go into their own sections after the toy's own.
+      grouped(spec.settings || [], sec, layer).forEach(addSec);
     }
     if (spec.quality) {
       const sec = make('div', 's2-sec', '<span class="s2-lab">Site</span>');
@@ -820,15 +844,11 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
     const devOn = new URLSearchParams(location.search).has('dev');
     const sec = make('div', 's2-sec');
     const host = devOn ? layer : make('div', '');
-    spec.dev.forEach(row => {
-      const r = makeRow(row, `stimming.${id}.${row.id}`, host);
-      settings.set(row.id, r.handle);
-      sec.append(r.el);
-    });
+    const secs = grouped(spec.dev, sec, host);
     if (devOn) {
       const dev = iconButton('s2-set s2-dev', DEV_SVG, 'Dev');
       tr.append(dev);
-      makeSheet(layer, { title: 'Dev', anchor: dev }).el.append(sec);
+      makeSheet(layer, { title: 'Dev', anchor: dev }).el.append(...secs);
     }
   }
   let keys = null;
@@ -1163,12 +1183,37 @@ export function whenVisible(el, fn) {
 /* ---------- staged loading ---------- */
 // A toy page loads in five stages: shell, libs, build, first-frame, extras.
 // stage() marks each one for timing and sets html[data-stage].
+// It also feeds the intro's load line: each stage starts at a fixed point of the line.
+const STAGE_AT = { shell: 0.05, libs: 0.3, build: 0.5, 'first-frame': 0.95, extras: 1 };
+const STAGE_NEXT = { shell: 'libs', libs: 'build', build: 'first-frame' };
 let shown;
 export const firstFrame = new Promise(r => { shown = r; });
-export function stage(name) {
-  performance.mark(`stim:${name}`);
-  document.documentElement.dataset.stage = name;
-  if (name === 'first-frame') shown();
+/**
+ * @param {string} name shell, libs, build, first-frame or extras.
+ * @param {number} [part] How much of this stage is done, 0 to 1. A toy with a long build
+ *   calls stage('build', done / total) as it goes, so the load line shows real progress.
+ */
+export function stage(name, part = 0) {
+  const root = document.documentElement;
+  // A repeat call with a new part marks nothing.
+  if (root.dataset.stage !== name) {
+    performance.mark(`stim:${name}`);
+    root.dataset.stage = name;
+  }
+  const from = STAGE_AT[name], to = STAGE_AT[STAGE_NEXT[name]] ?? from;
+  if (from !== undefined) progress(from + (to - from) * Math.min(1, Math.max(0, part)));
+  if (name === 'first-frame') { framed = true; shown(); }
+}
+let framed = false;
+/**
+ * A build in n steps, for the intro's load line. Call the returned function once per finished step.
+ * It returns its argument, so it fits a promise chain: bake().then(step).
+ * @param {number} n The steps from stage('build') to the first frame.
+ */
+export function buildSteps(n) {
+  let k = 0;
+  // A step that ends after the first frame reports nothing.
+  return value => { if (!framed) stage('build', Math.min(1, ++k / n)); return value; };
 }
 // Resolves when the main thread is free, so a build step cannot stall the intro.
 export const idle = (timeout = 800) => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout }) : setTimeout(r, 50)));

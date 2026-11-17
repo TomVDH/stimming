@@ -1,0 +1,355 @@
+diff --git a/railgun/index.html b/railgun/index.html
+index d7a34dd5..0f10b954 100644
+--- a/railgun/index.html
++++ b/railgun/index.html
+@@ -84,6 +84,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+ import { Pass } from 'three/addons/postprocessing/Pass.js';
+ import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
++import { CU, CU_GLSL } from './cumulus.js';
+ import { RANGE_GLSL, RANGE_MAX, RANGE_CEIL, rangeRg, rangeRa, rangeUniforms, landValues, LAND_KEYS } from './ranges.js';
+ // The storms: the table, the noise, the shapes and the march; the storm lab shares them.
+ import { STORMS, GIANT_RANGE, STORM_K, STORM_SOFT, VOL_NOISE, STORM_GLSL, STORM_MARCH } from './storms.js';
+@@ -192,9 +193,9 @@ const ui = initPage({ id: 'railgun', bar: {
+     // Air blue fade: Rayleigh scattering, how fast far things turn blue and pale.
+     { type: 'slider', id: 'airray', group: 'Sky', label: 'Air blue fade', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.x = v; U.uAir.value = 0.7 * v; draw(); } },
+     // Air dust: the dusty haze (Mie), how thick the far air is.
+-    { type: 'slider', id: 'airdust', group: 'Sky', label: 'Air dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.y = v; draw(); } },
++    { type: 'slider', id: 'airdust', group: 'Sky', label: 'Air dust', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { U.uAirK.value.y = v; draw(); } },
+     // Air dust height: how deep the dust stands, in metres; low dust leaves tall things clear.
+-    { type: 'slider', id: 'airdusth', group: 'Sky', label: 'Air dust height', min: 500, max: 10000, step: 100, value: 3000, persist: true, onInput: v => { U.uAirK.value.z = v; draw(); } },
++    { type: 'slider', id: 'airdusth', group: 'Sky', label: 'Air dust height', min: 500, max: 10000, step: 100, value: 4000, persist: true, onInput: v => { U.uAirK.value.z = v; draw(); } },
+     // Air sun glow: the dust's warm glow toward the sun.
+     { type: 'slider', id: 'airglow', group: 'Sky', label: 'Air sun glow', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.w = v; draw(); } },
+     // Near dust: the plain's own low dust, thick near the ground.
+@@ -215,6 +216,7 @@ const ui = initPage({ id: 'railgun', bar: {
+     // Storm softness: how fuzzy the storm volumes are, crisp at 1.
+     { type: 'slider', id: 'stormsoft', group: 'Sky', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
+     { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: false, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
++    { type: 'toggle', id: 'cumulus', group: 'Sky', label: 'Cloud volumes', value: false, persist: true, onToggle: on => { setCumulus(on); draw(); } },
+     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+     // The gullies and strata in the light, as on the card clouds.
+     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
+@@ -429,7 +431,8 @@ const U = {
+   uAir: { value: 0.7 },
+   // The shared air's knobs: Rayleigh blue fade, dust amount, dust height in metres, sun glow.
+   // Dev rows Air blue fade, Air dust, Air dust height and Air sun glow set them.
+-  uAirK: { value: new THREE.Vector4(1, 1, 3000, 1) },
++  // More dust, higher up: the far ranges fade with distance (Tom).
++  uAirK: { value: new THREE.Vector4(1, 1.6, 4000, 1) },
+   // Barrel heat, 0 cold to 1 white-hot.
+   uHeat: { value: 0 },
+   // A slow dull-red tail after each shot.
+@@ -1186,7 +1189,7 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
+ // Each cloud's world centre, as the cloud vertex shader drifts it.
+ const hs1 = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+ function shaftList(list) {
+-  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0] }));
++  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0], r: c[1] }));
+ }
+ let shaftOcc = null;
+ const shaftV = new THREE.Vector3();
+@@ -1198,7 +1201,9 @@ function updateShafts() {
+   // The clouds take the shade at any sun height; not by night.
+   u.uCShade.value = 1 - U.uStars.value;
+   if (k < 0.001 && u.uCShade.value < 0.001) return;
+-  shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS) : [])];
++  // A cloud near the eye would shade half the sky: only clouds 10 to 30 km out cast shafts.
++  const far = c => c.r > 10000 && c.r < 30000;
++  shaftOcc ??= cuOn ? shaftList(TOWERS) : [...shaftList(HEAPS).filter(far), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS).filter(far) : [])];
+   const t = CLOUD_U.uCloudC.value;
+   let n = 0;
+   for (const c of shaftOcc) {
+@@ -1235,12 +1240,15 @@ const BAND = {
+   sky: -1,
+   // Country, 80 to 200 km: the ranges; they write depth.
+   country: -0.9,
++  // The rock's trail, up to space: every cloud and effect covers it (Tom).
++  smoke: -0.8,
+   // Deep, 100 to 300 km: giants, then towers.
+   giants: 1.45, deep: 1.5,
+   // Far, 50 to 100 km: far mids and far dust domes.
+   far: 1.6,
+   // Rock, 40 to 50 km: the rock and all it sheds, back to front.
+-  domes: 1.8, fireball: 1.9, shards: 1.95, smoke: 2, debris: 2.05, ribbons: 2.1, glows: 2.12,
++  // The blast's debris trails and ribbons fly nearer: they cover the soot ball.
++  domes: 1.8, fireball: 1.9, shards: 1.95, debris: 2.05, ribbons: 2.1, glows: 2.12,
+   // Mid, 5 to 40 km: heaps and near mids.
+   mids: 2.15, heaps: 2.2,
+   // Near, 0 to 5 km: the gun's volumes, dust and the ion line.
+@@ -2190,12 +2198,21 @@ void main() {
+   // The side away from the light stays dark, as on the comet's smoke.
+   // Light scattered many times keeps the shaded side warm and soft.
+   vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5;
+-  // Backlit cloud glows through its whole body, its thin rim most.
+-  float back = max(dot(V, Ls), 0.0);
+-  col += sunC * (0.15 * back * back + 0.35 * thin * pow(back, 6.0));
++  // Backlit: the sunlight must cross the whole body to reach the eye.
++  // Thick cores go dark; the sky light keeps them grey.
++  float back = max(dot(V, Ls), 0.0), bk = smoothstep(0.2, 0.9, mu);
++  float thru = exp(-10.0 * pd / H);
++  col *= mix(1.0, 0.1 + 0.9 * thru, bk);
++  // The rim, as a march sees it: light through depth t scatters as t exp(-t).
++  // Thin edges glow, the thinnest fade, thick cores swallow it.
++  // A forward lobe aims that glow toward the sun: a silver lining.
++  float tau = 5.0 * pd / H, g = 0.75;
++  float hg = min((1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5), 12.0);
++  col += sunC * (0.15 * back * back * thru + 0.3 * hg * tau * exp(-tau));
+   // A soft sky term: noisy normals must not swing between horizon and zenith light.
+   vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, 0.4 + 0.2 * N.y) * 1.05 + uCloudAmb * 0.5;
+-  col += amb * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y));
++  // A backlit core sees only the dim sky away from the sun.
++  col += amb * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y)) * mix(1.0, 0.3 + 0.7 * thru, bk);
+   // The tower keeps some body through seventy kilometres of air.
+   // At night the heaps take the moon dimly; they never glow.
+   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
+@@ -2206,7 +2223,8 @@ void main() {
+   // Far cloud sinks further into that air, foot first, crown last (Far haze).
+   // Near heaps stay crisp; far towers turn pale and flat.
+   float cdk = length(P.xz - cameraPosition.xz);
+-  col = mix(col, aerialIn(V), uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.9, 0.5, smoothstep(0.0, 20000.0, P.y)));
++  // Toward the sun the glow would wash a backlit core white: it takes less.
++  col = mix(col, aerialIn(V), uLayer.x * (1.0 - exp(-cdk / 32000.0)) * mix(0.9, 0.5, smoothstep(0.0, 20000.0, P.y)) * mix(1.0, 0.4, bk));
+   // The blast: its light, thin parts brightest, and the shock rim.
+   // It lands after the haze: the flash lights the air on the way too.
+   // Faces turned to the hit take it; the far side stays in shadow.
+@@ -2248,6 +2266,8 @@ const CLOUD_VS = /* glsl */`
+ attribute vec4 aC, aS;
+ ${CURVE}
+ uniform float uCloudC;
++// A flat layer's fades in view depth, in metres: near in from x to y, far out from z to w.
++uniform vec4 uNear;
+ varying vec2 vUv;
+ varying vec3 vP, vR, vF;
+ // Flat: the fragment shader hashes the seed.
+@@ -2262,7 +2282,18 @@ void main() {
+   float a = (ph - 0.5) * radians(16.0) * mix(0.2, 1.0, heap);
+   vec3 C = vec3(aC.x * cos(a) - aC.z * sin(a), aC.y, aC.x * sin(a) + aC.z * cos(a));
+   vLife = mix(1.0, sin(3.14159 * ph), heap);
++  // Cards fade by depth along the view, so each fade line is straight on screen.
++  // A fade or an end by range draws a ring, and a ring shows as an arc.
++  if (uNear.y > 0.0) {
++    vec3 fw = vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
++    float z = dot(C.xz - cameraPosition.xz, -normalize(fw.xz + 1e-5));
++    vLife *= smoothstep(uNear.x, uNear.y, z) * smoothstep(uNear.w, uNear.z, z);
++    if (vLife < 0.001) { gl_Position = vec4(0.0); return; }
++  }
++  // A heap faces the view's own forward axis, not the eye.
++  // Its base then runs level on screen, even at the frame's edge.
+   vec3 f = C - cameraPosition;
++  if (uNear.y > 0.0) f = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+   f.y = 0.0;
+   f = normalize(f);
+   vec3 R = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
+@@ -2279,7 +2310,8 @@ void main() {
+ }`;
+ // list: [angle in degrees, range m, base m, half width m, height m, kind].
+ // pick keeps a subset; each card keeps the seed it has in the whole list.
+-function cloudLayer(list, order, pick = () => true) {
++// near: a flat layer's fades in view depth: [near in, near full, far full, far out] in metres.
++function cloudLayer(list, order, pick = () => true, near = null) {
+   const g = new THREE.InstancedBufferGeometry();
+   g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, 1, 1, 0, -1, 1, 0], 3));
+   g.setIndex([0, 1, 2, 0, 2, 3]);
+@@ -2294,21 +2326,38 @@ function cloudLayer(list, order, pick = () => true) {
+   g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4));
+   g.setAttribute('aS', new THREE.InstancedBufferAttribute(aS, 4));
+   g.instanceCount = s.length;
+-  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U, ...SHAFT_U }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
++  const uNear = { value: new THREE.Vector4(...(near || [0, 0, 0, 0])) };
++  const m = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { ...U, ...CLOUD_U, ...SHAFT_U, uNear }, vertexShader: CLOUD_VS, fragmentShader: CLOUD_FS, transparent: true, depthWrite: false }));
+   m.frustumCulled = false;
+   m.renderOrder = order;
+   scene.add(m);
+   return m;
+ }
++// A flat cloud layer: cards on a jittered grid in one plane over the plain.
++// Sizes are in metres, so far cards shrink and sink to the horizon by themselves.
++// The grid covers bearings -35 to 85 degrees: wide and tall screens both fill.
++// Cover is even to r1, past the far fade at the frame's edge.
++// The vertex shader ends the layer by view depth, never by range.
++// Each row: bearing in degrees, range, base, half width, height, kind 0.
++function cloudField(o) {
++  const out = [], n = Math.ceil(o.r1 / o.cell), mix = (a, b, t) => a + (b - a) * t;
++  for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
++    const sd = o.seed + i * 31.7 + j * 57.3;
++    const x = (i + hs1(sd)) * o.cell, z = (j + hs1(sd + 1)) * o.cell, d = Math.hypot(x, z);
++    if (d < o.r0 || d > o.r1) continue;
++    // polar() puts bearing th at x = -sin(th) d, z = -cos(th) d from the eye.
++    const th = Math.atan2(-x, -z) * 180 / Math.PI;
++    if (th < -35 || th > 85 || hs1(sd + 2) > o.cover) continue;
++    const g = hs1(sd + 3);
++    out.push([th, d, o.base + (hs1(sd + 4) - 0.5) * 2 * o.jit, mix(o.w[0], o.w[1], g), mix(o.h[0], o.h[1], 0.7 * g + 0.3 * hs1(sd + 5)), 0]);
++  }
++  return out;
++}
+ // Heaps stand in front of the rock's track: they draw after its smoke.
+-// Every heap's base stands more than 9 degrees up, so the ranges show clear.
+-// A near ring 11 to 17 km out, then a ring 22 to 27 km out, with open gaps.
+-const HEAPS = [
+-  [-18, 14000, 2300, 1900, 1300, 0], [-4, 17000, 3100, 2300, 1500, 0], [7, 11000, 2000, 1600, 1100, 0], [19, 15000, 2900, 2100, 1400, 0],
+-  [33, 12500, 2100, 1800, 1200, 0], [45, 16500, 3000, 2400, 1600, 0], [58, 13000, 2200, 1700, 1150, 0], [71, 15500, 2700, 2200, 1450, 0],
+-  [-11, 24000, 3700, 2200, 1300, 0], [12, 27000, 4200, 2600, 1500, 0], [27, 23000, 3700, 2000, 1200, 0], [51, 26000, 4100, 2400, 1400, 0], [64, 22000, 3600, 1800, 1100, 0],
+-];
+-const heaps = cloudLayer(HEAPS, BAND.heaps);
++// The low layer: fair-weather heaps, bases near 1.8 km.
++// It shows from 8 to 24 km of view depth and fades out by 32 km.
++const HEAPS = cloudField({ seed: 1, base: 1800, jit: 150, r0: 4000, r1: 48000, cell: 4500, cover: 0.55, w: [1100, 2300], h: [700, 1400] });
++const heaps = cloudLayer(HEAPS, BAND.heaps, undefined, [5000, 8000, 24000, 32000]);
+ // Towers stand far out: one behind the gun, one on each flank.
+ // They draw before the smoke.
+ // Storm towers far out, scattered: different sizes and distances, uneven gaps.
+@@ -2501,21 +2550,104 @@ function stepStorms() {
+     if (e) { u[i].set(e.s.P.x, e.s.P.y, e.s.P.z, e.v); CLOUD_U.uFlR.value.setComponent(i, e.s.r); } else u[i].w = 0;
+   }
+ }
+-// A middle deck: heaps four to six kilometres up fill the middle of the sky.
+-// They stand 23 to 34 km out, 10 degrees up or more, clear of the crests.
+-const MIDS = [
+-  [-14, 30000, 5000, 3000, 1500, 0], [2, 24000, 4600, 2400, 1300, 0], [16, 33000, 5800, 3800, 1900, 0], [31, 26000, 4800, 2400, 1300, 0],
+-  [40, 34000, 5600, 3400, 1800, 0], [53, 23000, 4500, 2000, 1100, 0], [62, 31000, 5200, 3000, 1600, 0], [74, 27000, 4700, 2400, 1300, 0],
+-];
++// The middle layer: flatter heaps near 4.8 km up.
++// It shows from 12 to 40 km of view depth and fades out by 55 km.
++const MIDS = cloudField({ seed: 2, base: 4800, jit: 300, r0: 6000, r1: 80000, cell: 8000, cover: 0.45, w: [2000, 4000], h: [700, 1300] });
+ // Mids past the rock draw behind it; the rest draw in front.
+-const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
+-const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
++const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR, [8000, 12000, 40000, 55000]);
++const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR, [8000, 12000, 40000, 55000]);
+ // The deck stands in for the middle heaps; they show only with the deck off.
+ function setDeck(v) {
+   U.uDeck.value = v;
+-  mids.visible = farMids.visible = v < 0.01;
++  mids.visible = farMids.visible = v < 0.01 && !cuOn;
++  shaftOcc = null;
++}
++
++/* ---------- the cloud layer as a volume (Dev: Cloud volumes) ---------- */
++// One raymarched shell of heaps replaces the heap and middle cards.
++// It marches at half resolution; a quad lays it over the scene.
++const CU_RES = 0.5;
++let cuOn = false;
++const cuRT = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, depthBuffer: false });
++const CU_UN = {
++  uCuInv: { value: new THREE.Matrix4() }, uFarOn: { value: 0 }, uCuCover: { value: CU.cover },
++  uCuWind: { value: new THREE.Vector2(...CU.wind) },
++};
++const cuMat = new THREE.ShaderMaterial({
++  uniforms: { ...U, ...CLOUD_U, ...FS_U, ...CU_UN }, depthTest: false, depthWrite: false,
++  vertexShader: FAR_VS,
++  fragmentShader: /* glsl */`precision highp sampler3D;
++  uniform sampler3D uVol;
++  uniform float uCloudC, uCuCover, uFarOn;
++  uniform vec2 uCuWind, uBakeSize;
++  uniform mat4 uCuInv, uRefVP;
++  uniform sampler2D uFarG;
++  varying vec2 vN;
++  ${HEAD}
++  ${AIR}
++  // Sunlight turns red where it grazes the planet, high up first.
++  vec3 cuSun(float h) { return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, h)); }
++  vec3 cuSky() { return uZenC * 0.5 + uHorC * 0.5 + uCloudAmb * 0.5; }
++  ${CU_GLSL}
++  // The distance to the ranges, from the bake; far away without it.
++  float cuTerrain(vec3 rd) {
++    if (uFarOn < 0.5) return 1e9;
++    vec4 c = uRefVP * vec4(rd, 1.0);
++    if (c.w <= 0.0) return 1e9;
++    ivec2 i = ivec2((c.xy / c.w * 0.5 + 0.5) * uBakeSize), hi = ivec2(uBakeSize) - 1;
++    vec4 g = texelFetch(uFarG, clamp(i, ivec2(0), hi), 0);
++    return g.x < 0.0 ? 1e9 : (g.x + g.y) * 512.0;
++  }
++  void main() {
++    vec4 w = uCuInv * vec4(vN, 1.0, 1.0);
++    vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
++    vec4 r = cuMarch(ro, rd, cuTerrain(rd));
++    float al = 1.0 - r.a;
++    if (al < 0.002) { gl_FragColor = vec4(0.0); return; }
++    // The same air as the ranges and the cards, at the first cloud.
++    vec3 c = aerial(r.rgb / al, ro + rd * max(gCuT, 0.0));
++    gl_FragColor = vec4(c * al, al);
++  }`,
++});
++const cuScene = new THREE.Scene();
++{ const m = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3)), cuMat); m.frustumCulled = false; cuScene.add(m); }
++// The quad sits 2.5 km out in depth: the gun stays in front of the cloud.
++const cuComp = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
++  uniforms: { tCu: { value: cuRT.texture }, uZ: { value: 0.5 } },
++  transparent: true, depthWrite: false, depthTest: true,
++  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
++  blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
++  vertexShader: /* glsl */`uniform float uZ; varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, uZ, 1.0); }`,
++  fragmentShader: /* glsl */`uniform sampler2D tCu; varying vec2 vUv; void main() { gl_FragColor = texture2D(tCu, vUv); }`,
++}));
++cuComp.frustumCulled = false; cuComp.renderOrder = BAND.heaps; cuComp.visible = false;
++scene.add(cuComp);
++const cuZp = new THREE.Vector3();
++function setCumulus(on) {
++  cuOn = on;
++  heaps.visible = !on;
++  mids.visible = farMids.visible = !on && U.uDeck.value < 0.01;
++  cuComp.visible = on;
+   shaftOcc = null;
+ }
++// Runs once a frame, before the composer: the layer's own march.
++function drawCumulus() {
++  if (!cuOn) return;
++  const w = Math.max(1, Math.round(renderer.domElement.width * CU_RES)), h = Math.max(1, Math.round(renderer.domElement.height * CU_RES));
++  if (cuRT.width !== w || cuRT.height !== h) cuRT.setSize(w, h);
++  camera.updateMatrixWorld();
++  CU_UN.uCuInv.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
++  CU_UN.uFarOn.value = farBake.on && FS_U.uFarG.value ? 1 : 0;
++  cuComp.material.uniforms.uZ.value = cuZp.set(0, 0, -2500).applyMatrix4(camera.matrixWorld).project(camera).z;
++  const ca = renderer.getClearAlpha();
++  renderer.getClearColor(volClear);
++  renderer.setClearColor(0x000000, 0);
++  renderer.setRenderTarget(cuRT);
++  renderer.clear();
++  renderer.render(cuScene, camera);
++  renderer.setRenderTarget(null);
++  renderer.setClearColor(volClear, ca);
++}
+ 
+ /* ---------- the gun: one clean artillery piece ---------- */
+ // Every piece is a straight block or drum; one merged mesh, one draw call.
+@@ -5459,6 +5591,7 @@ function draw() {
+   drawVolumes();
+   if (sight) sightKey();
+   farBakeUpdate();
++  drawCumulus();
+   composer.render();
+ }
+ // Project the shock fronts and the hot barrel for the grade's warp.
+@@ -11909,6 +12042,23 @@ window.__qa = {
+     }
+     draw();
+   },
++  // Turn the cloud volume layer on or off; cover sets how much sky it fills.
++  cumulus(on = true, cover) { setCumulus(on); if (cover != null) CU_UN.uCuCover.value = cover; draw(); },
++  // Each cloud card's layer, screen point and range, for labelled shots.
++  cloudsQ() {
++    const t = CLOUD_U.uCloudC.value, r = canvas.getBoundingClientRect(), out = [];
++    for (const [name, list] of [['heap', HEAPS], ['mid', MIDS], ['tower', TOWERS], ['giant', GIANTS]]) for (const c of shaftList(list)) {
++      const heap = c.kind === 0, ph = (((t * (0.6 + 0.8 * hs1(c.sd))) / 360 + hs1(c.sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * (heap ? 1 : 0.2);
++      const p = new THREE.Vector3(c.p.x * Math.cos(a) - c.p.z * Math.sin(a), c.base + 0.5 * c.H, c.p.x * Math.sin(a) + c.p.z * Math.cos(a));
++      const dx = p.x - camera.position.x, dz = p.z - camera.position.z;
++      // The same drop as the curve the cards ride.
++      p.y -= (dx * dx + dz * dz) / 1.2e7;
++      p.project(camera);
++      if (p.z > 1) continue;
++      out.push({ name, x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (0.5 - p.y * 0.5) * r.height, km: Math.round(Math.hypot(dx, dz) / 1000), base: c.base, H: c.H });
++    }
++    return out;
++  },
+   stormsQ: () => STORM_SPOTS.map(c => { const P = stormAt(c, simT, new THREE.Vector3()); return { P: [P.x, c.base, P.z], H: c.H, W: c.W, kind: c.kind }; }),
+   // Fire one lightning burst in a storm now; storms() lists the live strokes.
+   stormFlash() { stormBurst(); },
+@@ -12244,6 +12394,7 @@ U.uAir.value = 0.7 * ui.setting('airray').value;
+ U.uHaze.value = 0.00013 * ui.setting('neardust').value; U.uHazeH.value = ui.setting('neardusth').value;
+ setDeck(ui.setting('deck').value);
+ setStormProbe(ui.setting('stormprobe').value);
++setCumulus(ui.setting('cumulus').value);
+ CLOUD_U.uStormSoft.value = ui.setting('stormsoft').value;
+ stormFl.rate = ui.setting('stormfl').value;
+ giants.visible = ui.setting('giants').value;

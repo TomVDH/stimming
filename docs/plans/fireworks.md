@@ -1,5 +1,7 @@
 # Fireworks (`fireworks`) implementation plan
 
+Status: done · Bean: `stimming-ersl`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Shells burst over dark water at night; each burst lights its own smoke, the low sky and the water, and its boom arrives late.

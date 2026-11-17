@@ -7,9 +7,7 @@
 <meta name="robots" content="noindex">
 <style>html { background: oklch(0.16 0.012 275); }</style>
 <title>Intro lab</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
-<link rel="stylesheet" href="../shared/intro.css?v=35">
+<link rel="stylesheet" href="../shared/intro.css?v=36">
 <style>
 /* Intro lab: replay the toy intro and tune each beat live. */
 :root {
@@ -107,6 +105,12 @@ button:hover { border-color: var(--fg); }
   <label class="check"><input type="checkbox" id="nameflash"> Name in flash (try-out)</label>
   <label class="check"><input type="checkbox" id="textflash"> Text flash: the title wipes in as a box with the flash</label>
   <label class="check"><input type="checkbox" id="classic"> Classic notice</label>
+  <div class="row"><label for="slow">Slow load</label><select id="slow">
+    <option value="0">Off: the toy is ready at once</option>
+    <option value="5000">5 s</option>
+    <option value="10000">10 s</option>
+    <option value="20000">20 s</option>
+  </select></div>
   <div class="row"><label for="snote">Audio notice</label><select id="snote">
     <option value="off">Off</option>
     <option value="glyph">Headphones</option>
@@ -136,7 +140,7 @@ button:hover { border-color: var(--fg); }
 
 <script type="module">
 // The version query skips a stale cached copy of the engine.
-import { intro, fitIntro, popFit, tableOf, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=35';
+import { intro, progress, fitIntro, popFit, tableOf, TIMING, PHASES, VARIETIES, DEFAULT_VARIETY } from '../shared/intro.js?v=36';
 
 // Knobs by group. Each: [min, max, step, unit]. Frames step by 1, milliseconds by 10.
 const GROUPS = {
@@ -426,6 +430,7 @@ for (const [id, t] of Object.entries(toys)) toySel.add(new Option(`${t.name}${t.
 toySel.value = saved.toy && toys[saved.toy] ? saved.toy : 'morpher';
 tlReady = true;
 toySel.addEventListener('change', () => { save(); replay(); });
+document.getElementById('slow').addEventListener('change', () => replay());
 
 // Each play builds a fresh intro block, as a toy page carries it.
 // A new play replaces the running one at once.
@@ -465,7 +470,10 @@ async function run({ hold = null } = {}) {
     }
     return gate(ph);
   };
-  await intro({ id: toySel.value, timing: { ...tuned(), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
+  // Slow load: the toy takes this long; its progress comes in uneven steps, as a real build does.
+  const slow = +document.getElementById('slow').value;
+  if (slow) [[0.1, 0.3], [0.28, 0.5], [0.5, 0.62], [0.74, 0.8], [0.9, 0.92]].forEach(([t, p]) => setTimeout(() => { if (my === gen) progress(p); }, t * slow));
+  await intro({ ready: slow ? new Promise(r => setTimeout(r, slow)) : undefined, id: toySel.value, timing: { ...tuned(), ...(still ? FAST : {}) }, gate: beat, soundNote: still ? { ...soundNote(), glyph: true } : soundNote(), variety: varSel.value, nameFlash: flashBox.checked, textFlash: textBox.checked, classic: classicBox.checked, fill: still ? FILL : null });
   if (my !== gen) return;
   playing = false;
   took.textContent = `Run time: ${((performance.now() - t0) / 1000).toFixed(2)} s (${V().label.split(':')[0]}, ${t.name})${pauses.size ? ', with pauses' : ''}`;

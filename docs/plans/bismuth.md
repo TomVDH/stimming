@@ -1,5 +1,7 @@
 # Bismuth crystals (`bismuth`) implementation plan
 
+Status: active · Bean: `stimming-g3d9`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Drag up from a pool of liquid metal and pull out a bismuth crystal. Its square terraces step out while you drag, and a rainbow oxide film blooms across each new face.

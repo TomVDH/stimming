@@ -1,5 +1,7 @@
 # Lichtenberg burn (`lichtenberg`) implementation plan
 
+Status: done · Bean: `stimming-oz30`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Press and hold on a board. A blue-white fractal tree crawls out from your finger, crackles, and burns into the wood. Let go and it cools to embers.

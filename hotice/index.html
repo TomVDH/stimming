@@ -1,0 +1,1471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 250); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hot ice</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Hot ice: one glass dish of supercooled liquid on a dark bench. */
+:root { --stage: oklch(0.07 0.008 250); }
+.stage--hotice canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--hotice canvas.on { opacity: 1; }
+.stage--hotice { cursor: crosshair; }
+@media (prefers-reduced-motion: reduce) { .stage--hotice canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Hot ice</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--hotice" id="stage" tabindex="0" role="application" aria-label="A shallow glass dish of clear, supercooled liquid on a dark bench. Click or tap the liquid to seed a crystal: needles race out and freeze the dish. Enter seeds a crystal at random. Move the pointer to move the lamp. R melts the dish back to clear.">
+      <p class="fail" hidden>Hot ice needs WebGL 2 with float targets, which this browser does not offer.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Hot ice</h1>
+    <div class="vignette">
+      <div>
+        <h2>Ice that comes out warm</h2>
+        <p>Heat sodium acetate and it dissolves in its own water of crystallisation. Let the clear liquid cool in a clean dish and it stays liquid far below its melting point of 58 °C: supercooled, with nothing to start a crystal. One seed is enough. A touch, a speck of dust or a crystal on a wire, and needles grow from that point until they reach the glass.</p>
+        <p>The freeze gives back the heat that the melt took in, so the solid comes out warm, at about 54 °C. That is why it is called hot ice, and it is how a click-pad hand warmer works: the metal disc in the pouch starts the crystal. Boil the pouch, let it cool, and it waits again.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 320 150" role="img" aria-label="A temperature curve. The liquid cools past 58 degrees and stays liquid down to room temperature. At the touch the temperature jumps to about 54 degrees, holds, then slowly falls.">
+          <path d="M22 132H302M22 132V18" fill="none" stroke="oklch(0.5 0.01 260)" stroke-width="1.5"/>
+          <path d="M22 62H302" fill="none" stroke="oklch(0.62 0.02 250)" stroke-width="1" stroke-dasharray="4 5"/>
+          <text x="266" y="56" font-size="11" fill="oklch(0.72 0.02 250)">58 °C</text>
+          <path d="M24 26C64 64 98 106 168 120" fill="none" stroke="oklch(0.78 0.08 225)" stroke-width="3" stroke-linecap="round"/>
+          <path d="M168 120L177 70C214 66 252 72 300 96" fill="none" stroke="oklch(0.8 0.13 70)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="168" cy="120" r="5" fill="oklch(0.95 0.02 230)"/>
+          <text x="152" y="142" font-size="11" fill="oklch(0.72 0.02 250)">touch</text>
+          <text x="196" y="60" font-size="11" fill="oklch(0.8 0.08 70)">54 °C</text>
+        </svg>
+        <figcaption>Cooled past its melting point, the liquid waits. A touch starts the freeze, and the freeze warms it.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, stage as mark, pageReady } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
+import { TRI_VS, program, linked, target, free, bind, tri, renderable, onContextLoss } from '../shared/gl.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+import { intro as playIntro } from '../shared/intro.js';
+
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+const rad = d => (d * Math.PI) / 180;
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- bar ---------- */
+// Cold sets the next seed: colder grows faster, with finer needles.
+let cold = 0.55;
+// The handlers bind once the GL state exists.
+const act = { melt() {}, view() {}, viewReset() {}, look() {}, follow() {} };
+const camRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.view() });
+const lookRow = (id, label, min, max, step, value) => ({ type: 'slider', id, label, min, max, step, value, persist: true, onInput: () => act.look() });
+const ui = initPage({ id: 'hotice', bar: {
+  actions: [{ verb: 'reset', key: 'R', onPress: () => act.melt() }],
+  slider: { label: 'Cold', min: 0, max: 1, step: 0.01, value: cold, onInput: v => { cold = v; } },
+  settings: [
+    // Off keeps the lamp still, for a calmer view.
+    { type: 'toggle', id: 'follow', label: 'Lamp follows pointer', value: true, persist: true, onToggle: () => act.follow() },
+  ],
+  quality: true,
+  dev: [
+    // The camera: tilt, turn, distance and width, over the fitted view.
+    camRow('pitch', 'Pitch', -20, 20, 0.5, 0),
+    camRow('yaw', 'Yaw', -40, 40, 0.5, 0),
+    camRow('zoom', 'Zoom', 0.6, 1.5, 0.01, 1),
+    camRow('fov', 'Field of view', 0.6, 1.6, 0.01, 1),
+    { type: 'button', id: 'viewReset', label: 'View', text: 'Reset', onClick: () => act.viewReset() },
+    lookRow('exposure', 'Exposure', 0.5, 2, 0.01, 1),
+    lookRow('sheen', 'Needle sheen', 0, 2, 0.01, 1),
+    lookRow('sparkle', 'Sparkle', 0, 2, 0.01, 1),
+    lookRow('vapour', 'Vapour', 0, 3, 0.01, 1),
+  ],
+  keys: [['click', 'seed a crystal'], ['move', 'move the lamp'], ['enter', 'seed at random'], ['r', 'melt']],
+} });
+const dev = id => ui.setting(id)?.value;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+const failed = why => {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls();
+  mark('first-frame');
+  throw new Error(why);
+};
+if (!gl || !gl.getExtension('EXT_color_buffer_float') || !renderable(gl, gl.RGBA32F)) failed('Hot ice needs WebGL 2 with float targets.');
+
+/* ---------- the dish ---------- */
+// In dish units the inner radius is 1.
+// The bench is the plane z = 0.
+// RO is the outer wall; HH is the rim height.
+// ZB is the top of the base; ZL is the liquid surface.
+const DISH = { R: 1, RO: 1.03, HH: 0.26, ZB: 0.03, ZL: 0.12 };
+const GEOM = `
+#define R ${DISH.R.toFixed(3)}
+#define RO ${DISH.RO.toFixed(3)}
+#define HH ${DISH.HH.toFixed(3)}
+#define ZB ${DISH.ZB.toFixed(3)}
+#define ZL ${DISH.ZL.toFixed(3)}
+const float BIG = 1e5;
+#define BENCH_SPAN 12.0
+`;
+// Seeds hold one grain each; the shaders index their tables by grain.
+const MAXS = 16;
+
+/* ---------- GLSL: shared ---------- */
+const NOISE = `
+float h12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 h22(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h12(i), h12(i + vec2(1, 0)), f.x), mix(h12(i + vec2(0, 1)), h12(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vn(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+  return s / 0.9375;
+}
+// An integer hash per texel and salt: no float stripes.
+uint pcg(uint v) { uint s = v * 747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; }
+float rnd(ivec2 p, uint k) { return float(pcg(pcg(uint(p.x) + pcg(uint(p.y) + k * 7919u)))) * (1.0 / 4294967295.0); }
+`;
+
+/* ---------- growth field ---------- */
+// One RGBA32F texel per cell of the dish:
+//   r  arrival time: when the crystal reaches this cell, in seconds
+//   g  needle angle, in radians
+//   b  streak: noise carried along the needle, so needles read as fibres
+//   a  grain: the seed's number, from 1; 0 is liquid
+// Arrival times relax toward the first arrival, as in an eikonal solver.
+// Needles grow fast along their axis and slowly across it.
+
+// A seed stamps a small disc of crystal.
+// The disc is cut into fans that lean off the radius.
+const SEED_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uA;
+uniform vec2 uP;
+uniform float uR0, uT0, uV0, uIdx, uSalt, uK, uTilt;
+out vec4 o;
+${NOISE}
+void main() {
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 me = texelFetch(uA, ip, 0);
+  vec2 d = vec2(ip) + 0.5 - uP;
+  float r = length(d);
+  float t = uT0 + r / uV0;
+  if (r > uR0 || t >= me.r) { o = me; return; }
+  float phi = atan(d.y, d.x);
+  // K fans; each leans off the radius by its own angle.
+  float u = fract((phi + 3.14159265) / 6.2831853 + fract(uSalt * 0.618)) * uK;
+  float lean = (h12(vec2(floor(u), uSalt)) * 2.0 - 1.0) * uTilt;
+  // The grain's fraction holds a fan code.
+  // Each fan rolls its facets its own way.
+  o = vec4(t, phi + lean, (h12(vec2(ip) + uSalt) - 0.5) * 3.464, uIdx + 0.05 + 0.4 * h12(vec2(floor(u) + 7.0, uSalt)));
+}`;
+
+// One relaxation step: each cell takes the earliest arrival over 16 neighbours.
+// The 16 directions keep the front from turning square.
+const RELAX_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uA;
+uniform vec2 uC;
+uniform float uRt, uNow;
+uniform float uV[${MAXS}], uBr[${MAXS}], uAl[${MAXS}];
+uniform float uSide, uJit, uBeta;
+out vec4 o;
+${GEOM}
+${NOISE}
+const ivec2 OFF[16] = ivec2[16](
+  ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1),
+  ivec2(1, 1), ivec2(1, -1), ivec2(-1, 1), ivec2(-1, -1),
+  ivec2(2, 1), ivec2(2, -1), ivec2(-2, 1), ivec2(-2, -1),
+  ivec2(1, 2), ivec2(1, -2), ivec2(-1, 2), ivec2(-1, -2));
+// The streak upstream along the needle, from cells of the same grain.
+float upstream(vec2 at, float g, float fallback) {
+  vec2 f = at - 0.5;
+  ivec2 i0 = ivec2(floor(f));
+  vec2 w = f - floor(f);
+  float acc = 0.0, ws = 0.0;
+  for (int k = 0; k < 4; k++) {
+    ivec2 d = ivec2(k & 1, k >> 1);
+    vec4 q = texelFetch(uA, i0 + d, 0);
+    float wk = (d.x == 1 ? w.x : 1.0 - w.x) * (d.y == 1 ? w.y : 1.0 - w.y);
+    if (q.r < BIG && abs(q.a - g) < 0.5) { acc += q.b * wk; ws += wk; }
+  }
+  return ws > 0.3 ? acc / ws : fallback;
+}
+void main() {
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 me = texelFetch(uA, ip, 0);
+  vec2 p = vec2(ip) + 0.5;
+  // Cells outside the dish stay as they are.
+  // Cells settled well behind the front stay too.
+  if (length(p - uC) > uRt || me.r < uNow - 0.45) { o = me; return; }
+  // Slow lobes and a fine jitter in the growth speed.
+  float F = (0.8 + 0.4 * vn(p * 0.03)) * (0.94 + 0.12 * rnd(ip, 3u));
+  float best = me.r;
+  vec4 par = vec4(0.0);
+  bool moved = false;
+  for (int i = 0; i < 16; i++) {
+    vec4 q = texelFetch(uA, ip + OFF[i], 0);
+    if (q.r >= BIG) continue;
+    vec2 e = -vec2(OFF[i]);
+    float len = length(e);
+    e /= len;
+    float c = dot(vec2(cos(q.g), sin(q.g)), e);
+    // Fast along the needle, slow across it, slower still backwards.
+    float an = c > 0.0 ? mix(uSide, 1.0, c * c) : uSide * (1.0 + 0.6 * c);
+    int g = int(q.a + 0.5) - 1;
+    float t = q.r + len / (uV[g] * an * F);
+    if (t < best - 1e-5) { best = t; par = q; moved = true; }
+  }
+  if (moved) {
+    int g = int(par.a + 0.5) - 1;
+    uint salt = uint(g) * 101u + 17u;
+    // A needle keeps its parent's angle, with a small wander.
+    float th = par.g + (rnd(ip, salt) - 0.5) * 2.0 * uJit;
+    // Now and then it branches off at a steep angle.
+    float a = par.a;
+    if (rnd(ip, salt + 1u) < uBr[g]) {
+      th += (rnd(ip, salt + 2u) < 0.5 ? -uBeta : uBeta) * (0.6 + 0.8 * rnd(ip, salt + 3u));
+      if (rnd(ip, salt + 5u) < 0.3) a = floor(a) + 0.05 + 0.4 * rnd(ip, salt + 4u);
+    }
+    me = vec4(best, th, par.b, a);
+  }
+  // Streaks settle in the live band and then stay put.
+  if (me.r < BIG && me.r > uNow - 0.35) {
+    int g = int(me.a + 0.5) - 1;
+    vec2 d = vec2(cos(me.g), sin(me.g));
+    // A jitter across the needle keeps the streaks free of grid lines.
+    vec2 side = vec2(-d.y, d.x) * (rnd(ip, 77u) - 0.5) * 0.9;
+    float up = upstream(p - d * (1.0 + 0.5 * rnd(ip, 78u)) + side, me.a, me.b);
+    float k = 1.0 - uAl[g];
+    me.b = up * k + (rnd(ip, uint(g) * 31u + 9u) - 0.5) * 3.464 * sqrt(1.0 - k * k);
+  }
+  o = me;
+}`;
+
+/* ---------- summary ---------- */
+// Stage 1 holds 64 x 64 blocks.
+// Each block counts frozen, fresh and fresh seam cells.
+// Each block also keeps its mean heat.
+// The scene reads the heat for the vapour.
+// Stage 2 sums the blocks for the sound.
+const SUM1_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uA;
+uniform int uB;
+uniform float uShow, uPrev, uTau;
+out vec4 o;
+bool other(vec4 n, vec4 s) { return n.r <= uShow && abs(n.a - s.a) > 0.5; }
+void main() {
+  ivec2 c0 = ivec2(gl_FragCoord.xy) * uB;
+  float fr = 0.0, fresh = 0.0, seam = 0.0, heat = 0.0;
+  for (int j = 0; j < uB; j++) for (int i = 0; i < uB; i++) {
+    ivec2 ip = c0 + ivec2(i, j);
+    vec4 s = texelFetch(uA, ip, 0);
+    if (s.r > uShow) continue;
+    fr += 1.0;
+    // The heat fades to exactly zero, so the page can go still.
+    heat += max(exp(-(uShow - s.r) / uTau) - 0.12, 0.0) / 0.88;
+    if (s.r <= uPrev) continue;
+    fresh += 1.0;
+    if (other(texelFetch(uA, ip + ivec2(1, 0), 0), s) || other(texelFetch(uA, ip - ivec2(1, 0), 0), s)
+      || other(texelFetch(uA, ip + ivec2(0, 1), 0), s) || other(texelFetch(uA, ip - ivec2(0, 1), 0), s)) seam += 1.0;
+  }
+  o = vec4(fr, fresh, seam, heat / float(uB * uB));
+}`;
+// Stage 2: 8 x 8 cells for the CPU.
+const SUM2_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uS;
+out vec4 o;
+void main() {
+  ivec2 c0 = ivec2(gl_FragCoord.xy) * 8;
+  vec4 acc = vec4(0.0);
+  for (int j = 0; j < 8; j++) for (int i = 0; i < 8; i++) acc += texelFetch(uS, c0 + ivec2(i, j), 0);
+  o = acc;
+}`;
+
+/* ---------- the scene ---------- */
+// One ray per pixel meets the bench, the dish and its contents.
+const SCENE_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uA;
+uniform sampler2D uHeat, uWear;
+uniform vec2 uRes;
+uniform vec3 uEye, uFwd, uRight, uUp;
+uniform float uTan;
+uniform vec3 uLpos, uLamp, uRoom, uBench, uIceC, uIceW, uGlass;
+uniform float uN, uRt, uShow, uReveal, uMelt, uBump, uD0;
+uniform vec4 uRip[4];
+uniform float uSheen, uSpark, uVap, uCot;
+uniform vec2 uLean;
+out vec4 o;
+${GEOM}
+${NOISE}
+float fres(float c, float f0) { return f0 + (1.0 - f0) * pow(1.0 - clamp(c, 0.0, 1.0), 5.0); }
+vec3 toLamp(vec3 P) { return normalize(uLpos - P); }
+// The lamp's light at P, falling off with distance.
+float fall(vec3 P) { vec3 d = uLpos - P; return uD0 * uD0 / dot(d, d); }
+
+// The room: dark, a little lighter overhead, and one lamp.
+vec3 env(vec3 P, vec3 d) {
+  vec3 room = uRoom * mix(0.35, 1.6, smoothstep(-0.2, 0.9, d.z));
+  float c = dot(d, toLamp(P));
+  float disc = smoothstep(0.9984, 0.9992, c);
+  float halo = exp(-(1.0 - c) / 0.0025) * 0.08 + exp(-(1.0 - c) / 0.05) * 0.005;
+  return room + uLamp * (disc * 140.0 + halo * 6.0);
+}
+
+/* the bench: black epoxy, a little worn */
+// The wear and the scratches come baked; only the speckle runs live.
+vec3 benchAlb(vec2 p) {
+  vec2 ws = texture(uWear, p / BENCH_SPAN + 0.5).rg;
+  float sp = vn(p * 95.0);
+  return uBench * ((0.8 + 0.4 * ws.x) * (0.88 + 0.24 * sp) + 0.6 * ws.y);
+}
+
+/* the growth field */
+vec2 tx(vec2 xy) { return vec2(0.5 * uN) + xy * uRt; }
+struct Cry { float T; vec2 d; float s; vec2 gs; float seam; float fan; };
+// Bilinear by hand: the float targets may have no linear filter.
+Cry sampleCry(vec2 xy) {
+  xy *= min(1.0, 1.0 / max(length(xy), 1e-4));
+  vec2 f = tx(xy) - 0.5;
+  ivec2 i = ivec2(floor(f));
+  vec2 w = f - floor(f);
+  vec4 a = texelFetch(uA, i, 0), b = texelFetch(uA, i + ivec2(1, 0), 0);
+  vec4 c = texelFetch(uA, i + ivec2(0, 1), 0), d = texelFetch(uA, i + ivec2(1, 1), 0);
+  // Liquid counts as the near future, so the front stays smooth.
+  float far = uShow + 0.5;
+  vec4 T = min(vec4(a.r, b.r, c.r, d.r), vec4(far));
+  vec4 ok = step(vec4(a.r, b.r, c.r, d.r), vec4(BIG * 0.5));
+  Cry k;
+  k.T = mix(mix(T.x, T.y, w.x), mix(T.z, T.w, w.x), w.y);
+  vec2 dv = mix(mix(vec2(cos(a.g), sin(a.g)) * ok.x, vec2(cos(b.g), sin(b.g)) * ok.y, w.x),
+                mix(vec2(cos(c.g), sin(c.g)) * ok.z, vec2(cos(d.g), sin(d.g)) * ok.w, w.x), w.y);
+  k.d = dot(dv, dv) > 1e-6 ? normalize(dv) : vec2(1.0, 0.0);
+  k.s = mix(mix(a.b, b.b, w.x), mix(c.b, d.b, w.x), w.y);
+  k.gs = vec2(mix(b.b - a.b, d.b - c.b, w.y), mix(c.b - a.b, d.b - b.b, w.x)) * uRt;
+  // A seam: two reached cells of different grains.
+  float sm = max(max(ok.x * ok.y * step(0.5, abs(a.a - b.a)), ok.z * ok.w * step(0.5, abs(c.a - d.a))),
+                 max(ok.x * ok.z * step(0.5, abs(a.a - c.a)), ok.y * ok.w * step(0.5, abs(b.a - d.a))));
+  k.seam = sm;
+  vec4 nn = w.x < 0.5 ? (w.y < 0.5 ? a : c) : (w.y < 0.5 ? b : d);
+  k.fan = clamp((fract(nn.a) - 0.05) / 0.4, 0.0, 1.0);
+  return k;
+}
+// The melt runs in from the rim; the needles hold out longest.
+float meltKeep(vec2 xy, float sN) {
+  if (uMelt <= 0.0) return 1.0;
+  float ord = 0.06 + 0.74 * (1.0 - length(xy)) + 0.1 * sN + 0.1 * vn(xy * 7.0);
+  float m = uMelt * 1.16 - 0.06;
+  return smoothstep(m - 0.03, m + 0.03, ord);
+}
+float meltGlass(vec2 xy, float sN) {
+  if (uMelt <= 0.0) return 0.0;
+  float ord = 0.06 + 0.74 * (1.0 - length(xy)) + 0.1 * sN + 0.1 * vn(xy * 7.0);
+  float m = uMelt * 1.16 - 0.06;
+  return 1.0 - smoothstep(m + 0.02, m + 0.22, ord);
+}
+// Crystal or liquid at a dish point, with no screen derivatives.
+float frozenAt(vec2 xy) {
+  if (dot(xy, xy) > R * R) return 0.0;
+  vec2 f = tx(xy) - 0.5;
+  ivec2 i = ivec2(floor(f));
+  vec2 w = f - floor(f);
+  float far = uShow + 1.0;
+  float a = min(texelFetch(uA, i, 0).r, far), b = min(texelFetch(uA, i + ivec2(1, 0), 0).r, far);
+  float c = min(texelFetch(uA, i + ivec2(0, 1), 0).r, far), d = min(texelFetch(uA, i + ivec2(1, 1), 0).r, far);
+  float T = mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+  return smoothstep(0.02, -0.02, T - uShow) * meltKeep(xy, 0.0) * uReveal;
+}
+
+/* light on the bench */
+// Under the dish, light comes down through the liquid.
+// Crystal over a point stops that light.
+vec3 benchUnder(vec2 p) {
+  vec3 P = vec3(p, 0.0), l = toLamp(P);
+  vec2 q = p + l.xy / max(l.z, 0.2) * ZL;
+  float sh = 1.0 - 0.92 * frozenAt(q);
+  return benchAlb(p) * (uLamp * max(l.z, 0.0) * fall(P) * 0.9 * sh + uRoom) * 0.95;
+}
+// Outside the dish: a contact shadow, the wall's shade and its caustic.
+vec3 benchOut(vec2 p) {
+  vec3 P = vec3(p, 0.0), l = toLamp(P);
+  float r = length(p);
+  vec2 dir = l.xy / max(l.z, 0.2);
+  float sh = 1.0, caus = 0.0;
+  float a = dot(dir, dir), b = dot(p, dir), c = dot(p, p) - RO * RO;
+  float disc = b * b - a * c;
+  if (disc > 0.0 && a > 1e-5) {
+    // The path to the lamp enters the wall at this height.
+    float z0 = (-b - sqrt(disc)) / a;
+    if (z0 > 0.0 && z0 < HH) {
+      sh *= 0.9;
+      vec2 q = p + dir * ZL;
+      float fq = dot(q, q) < R * R ? frozenAt(q) : 0.0;
+      // The meniscus bends light into a thin bright line.
+      caus = exp(-pow((z0 - ZL * 0.85) / 0.02, 2.0)) * (1.0 - fq);
+      if (z0 < ZL) sh *= 1.0 - 0.85 * fq;
+    }
+  }
+  sh *= 1.0 - 0.6 * exp(-max(r - RO, 0.0) / 0.028);
+  return benchAlb(p) * (uLamp * max(l.z, 0.0) * fall(P) * (sh + caus * 0.7) + uRoom);
+}
+
+/* the liquid */
+// The meniscus climbs the glass; touches leave a ring of ripples.
+vec3 liquidN(vec2 xy) {
+  float r = max(length(xy), 1e-4);
+  vec2 n = -(xy / r) * exp(-(R - r) / 0.022) * 0.85;
+  for (int i = 0; i < 4; i++) {
+    vec4 rp = uRip[i];
+    if (rp.w <= 0.0) continue;
+    vec2 dv = xy - rp.xy;
+    float d = max(length(dv), 1e-4);
+    float ph = d - rp.z * 1.1;
+    float en = exp(-ph * ph / 0.006) * exp(-rp.z * 2.6) * rp.w;
+    n += (dv / d) * sin(ph * 70.0) * en * 0.3;
+  }
+  return normalize(vec3(n, 1.0));
+}
+// thru: the bench seen through, without the surface's mirror.
+vec3 liquid(vec3 P, vec3 v, out vec3 thru) {
+  vec3 N = liquidN(P.xy);
+  float F = fres(dot(-v, N), 0.03);
+  vec3 refl = env(P, reflect(v, N));
+  // Down through the solution and the base glass, onto the bench.
+  vec3 t1 = refract(v, N, 1.0 / 1.43);
+  vec3 B1 = P + t1 * ((ZB - P.z) / min(t1.z, -1e-3));
+  vec3 t2 = refract(t1, vec3(0.0, 0.0, 1.0), 1.43 / 1.5);
+  vec3 B2 = B1 + t2 * (-B1.z / min(t2.z, -1e-3));
+  thru = benchUnder(B2.xy) * uGlass;
+  return refl * F + thru * (1.0 - F);
+}
+
+/* the crystal */
+// Glints: a few cells hold a tilted facet that flashes the lamp.
+float glints(vec2 xy, vec3 V, vec3 L, vec3 N, float scale, float dens, float sharp) {
+  vec2 g = xy * scale, id = floor(g), f = fract(g) - 0.5;
+  float h = h12(id + 13.1);
+  if (h > dens) return 0.0;
+  vec2 r = h22(id) - 0.5;
+  vec3 n = normalize(N + vec3(r * 0.28, 0.0));
+  float sp = pow(max(dot(reflect(-L, n), V), 0.0), sharp);
+  vec2 c = (h22(id + 5.3) - 0.5) * 0.4;
+  return sp * smoothstep(0.34, 0.08, length(f - c)) * (0.5 + h / dens);
+}
+vec3 crystal(vec3 P, Cry k, vec3 V, float age, float sN, float glassy) {
+  vec3 N = normalize(vec3(-k.gs * uBump, 1.0));
+  vec3 L = toLamp(P), H = normalize(L + V);
+  float E = fall(P);
+  float fresh = exp(-age / 2.5);
+  // A needle's crest, from the streak carried along it.
+  float needle = smoothstep(-0.35, 0.7, sN);
+  // Fresh crystal is glassy; it turns white within a second.
+  float white = (0.5 + 0.5 * smoothstep(0.0, 0.9, age)) * (1.0 - 0.65 * glassy);
+  vec3 alb = mix(uIceC, uIceW, fresh * 0.5) * (0.62 + 0.38 * needle) * (0.9 + 0.2 * k.fan) * white;
+  // Light scatters inside the crystal, so the shading wraps round.
+  float wrap = max((dot(N, L) + 0.25) / 1.25, 0.0);
+  vec3 c = alb * (uLamp * wrap * E + uRoom * 2.5);
+  // Needles: a sheen across their axis.
+  vec3 t = vec3(k.d, 0.0);
+  float th = dot(t, H);
+  float sheen = pow(max(1.0 - th * th, 0.0), 300.0);
+  c += uLamp * E * sheen * uSheen * needle * 0.7;
+  // Each fan rolls its facets its own way.
+  // So the fans light in turn as the lamp moves.
+  vec2 perp = vec2(-k.d.y, k.d.x);
+  vec3 nf = normalize(N + vec3(perp * (k.fan * 2.0 - 1.0) * 0.75, 0.0));
+  float fanSpec = pow(max(dot(nf, H), 0.0), 50.0);
+  c += uLamp * E * fanSpec * uSheen * (0.2 + 0.8 * needle) * 0.35;
+  // Fresh crystal is still wet: one tight highlight.
+  float wet = pow(max(dot(N, H), 0.0), 220.0) * (0.15 * fresh + 0.5 * glassy);
+  c += uLamp * E * wet;
+  float gl = glints(P.xy, V, L, N, uRt / 1.8, 0.5, 350.0) + 1.8 * glints(P.xy + 3.7, V, L, N, uRt / 6.5, 0.35, 500.0);
+  c += uLamp * E * gl * uSpark * 4.0;
+  // Grains meet in a faint groove.
+  c *= 1.0 - 0.3 * k.seam;
+  return c;
+}
+
+/* the glass */
+// Ray against a vertical cylinder: near t, far t, and the discriminant.
+vec3 cylX(vec3 e, vec3 v, float r) {
+  float a = dot(v.xy, v.xy), b = dot(e.xy, v.xy), c = dot(e.xy, e.xy) - r * r;
+  float h = b * b - a * c;
+  float s = sqrt(max(h, 0.0));
+  return vec3((-b - s) / a, (-b + s) / a, h);
+}
+// The rounded lip: a glass edge that catches the lamp.
+vec3 rimCol(vec3 PH, vec3 v, vec3 PB) {
+  float rr = length(PH.xy);
+  float s = clamp((rr - 0.5 * (R + RO)) / (0.5 * (RO - R)), -1.0, 1.0);
+  vec3 n = normalize(vec3(PH.xy / rr * s, sqrt(max(1.0 - s * s, 0.0)) + 0.2));
+  float F = fres(dot(-v, n), 0.045);
+  vec3 body = uGlass * (uLamp * 0.05 * fall(PH) + uRoom * 3.0) + benchOut(PB.xy) * 0.35;
+  return body + env(PH, reflect(v, n)) * max(F, 0.07);
+}
+// The far wall shows the bench behind and mirrors the dish.
+vec3 farWall(vec3 e, vec3 v) {
+  vec3 ci = cylX(e, v, R);
+  vec3 W = e + v * ci.y;
+  vec3 n = vec3(-W.xy / R, 0.0);
+  float F = fres(abs(dot(v, n)), 0.045);
+  vec3 behind = benchOut((W + v * (-W.z / v.z)).xy) * uGlass;
+  vec3 rv = reflect(v, n);
+  vec3 Q = W + rv * ((ZL - W.z) / min(rv.z, -1e-3));
+  float fq = frozenAt(Q.xy);
+  vec3 mir = mix(env(W, rv) * 0.6, uIceC * (uLamp * 0.3 * fall(W) + uRoom * 2.5), fq);
+  vec3 col = behind * (1.0 - F) + mir * max(F, 0.05);
+  // The waterline, where the meniscus meets the glass.
+  col += uLamp * fall(W) * 0.035 * exp(-pow((W.z - ZL - 0.01) / 0.008, 2.0));
+  return col;
+}
+// The near wall: the dish's contents through thin glass, and a reflection.
+vec3 nearWall(vec3 e, vec3 v, float tO, vec3 surf, float rL, vec3 PB) {
+  vec3 O = e + v * tO;
+  vec3 n = vec3(O.xy / RO, 0.0);
+  float ci = abs(dot(v, n));
+  float F = fres(ci, 0.045);
+  vec3 cin = cylX(e, v, R);
+  vec3 I = e + v * cin.x;
+  vec3 behind;
+  if (cin.z <= 0.0) behind = benchOut(PB.xy);
+  else if (I.z > ZL && rL < R) behind = surf;
+  else if (I.z > ZL) behind = farWall(e, v);
+  else if (I.z > ZB) {
+    // The side of the layer: white where it froze.
+    float fq = frozenAt(I.xy * 0.985);
+    vec3 side = uIceC * (uLamp * 0.14 * fall(I) + uRoom * 3.0) * (0.8 + 0.2 * vn(I.xy * 40.0 + I.z * 90.0));
+    behind = mix(benchUnder(PB.xy) * uGlass, side, fq);
+  } else behind = benchUnder(PB.xy) * 0.85;
+  // Glass greens toward the silhouette, where the path is long.
+  vec3 tint = exp(-vec3(0.5, 0.22, 0.32) * 0.09 / max(ci, 0.12));
+  vec3 col = behind * (1.0 - F) * tint + env(O, reflect(v, n)) * F;
+  // The waterline shows through the glass as a fine line.
+  col += uLamp * fall(O) * 0.03 * exp(-pow((O.z - ZL - 0.008) / 0.01, 2.0));
+  return col;
+}
+
+/* vapour */
+// Warm air lifts a faint breath off fresh crystal.
+float vapour(vec2 xy0) {
+  float acc = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float h = 0.04 + 0.16 * float(i);
+    vec2 src = xy0 - uLean * h * uCot;
+    float heat = texture(uHeat, tx(src) / uN).a;
+    if (heat <= 0.001) continue;
+    // The breath rises and drifts away from the eye.
+    vec2 q = (xy0 - uLean * (uShow * 0.12 + h * 0.9)) * vec2(2.6, 1.4);
+    float n = smoothstep(0.34, 0.86, fbm(q + float(i) * 3.1));
+    acc += heat * n * (1.0 - 0.2 * float(i));
+  }
+  return acc;
+}
+
+void main() {
+  vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
+  vec3 e = uEye;
+  vec3 v = normalize(uFwd + uRight * (ndc.x * uTan * uRes.x / uRes.y) + uUp * (ndc.y * uTan));
+  vec3 PH = e + v * ((HH - e.z) / v.z);
+  vec3 PL = e + v * ((ZL - e.z) / v.z);
+  vec3 PB = e + v * (-e.z / v.z);
+  float rH = length(PH.xy), rL = length(PL.xy);
+  float aL = max(fwidth(rL), 1e-5);
+
+  // The crystal on this pixel's line of sight, sampled where derivatives hold.
+  Cry k = sampleCry(PL.xy);
+  float sN = clamp(k.s * 0.6, -1.0, 1.0);
+  // Needle tips run a little ahead of the front.
+  float Te = k.T - 0.03 * pow(max(sN, 0.0), 2.0);
+  float fT = max(fwidth(Te), 1e-4);
+  float keep = meltKeep(PL.xy, sN);
+  float fr = clamp((uShow - Te) / fT + 0.5, 0.0, 1.0) * keep * uReveal * (1.0 - smoothstep(R - 2.0 * aL, R, rL));
+  float age = max(uShow - Te, 0.0);
+  float glassy = meltGlass(PL.xy, sN);
+
+  // Coverage: the rim, the opening, the near wall, the bench.
+  float aH = max(fwidth(rH), 1e-5);
+  float open = 1.0 - smoothstep(R - aH, R + aH, rH);
+  float rim = smoothstep(R - aH, R + aH, rH) - smoothstep(RO - aH, RO + aH, rH);
+  vec3 cw = cylX(e, v, RO);
+  float zO = e.z + v.z * cw.x;
+  float aZ = max(fwidth(zO), 1e-5), aD = max(fwidth(cw.z), 1e-9);
+  float wall = (1.0 - open - rim) * smoothstep(-aZ, aZ, zO) * step(zO, HH) * smoothstep(0.0, aD, cw.z) * step(0.0, cw.x);
+  float bench = max(1.0 - open - rim - wall, 0.0);
+
+  vec3 col = vec3(0.0);
+  vec3 surf = vec3(0.0);
+  if ((open > 0.0 || wall > 0.0) && rL < R + 0.02) {
+    vec3 cr = vec3(0.0);
+    float opac = 0.0;
+    if (fr > 0.0) {
+      cr = crystal(PL, k, -v, age, sN, glassy);
+      // The leading edge stays half clear for a moment.
+      opac = mix(mix(0.3, 0.75, smoothstep(-0.5, 0.5, sN)), 1.0, smoothstep(0.0, 0.6, age)) * (1.0 - 0.5 * glassy);
+    }
+    if (fr * opac < 0.999) {
+      vec3 thru;
+      surf = liquid(PL, v, thru);
+      // Rough crystal has no mirror.
+      // Young crystal shows only the bench through it.
+      surf = mix(surf, mix(thru, cr, opac), fr);
+    } else surf = cr;
+    if (fr > 0.0) {
+      // The front itself: a thin bright line of new needles.
+      surf += uLamp * fall(PL) * exp(-age / 0.06) * fr * (0.5 + 0.5 * max(sN, 0.0)) * 0.9;
+    }
+  }
+  if (open > 0.0) {
+    float far = smoothstep(R - aL, R + aL, rL);
+    vec3 inside = surf;
+    if (far > 0.0) inside = mix(surf, farWall(e, v), far);
+    col += inside * open;
+  }
+  if (wall > 0.0) col += nearWall(e, v, cw.x, surf, rL, PB) * wall;
+  if (rim > 0.0) col += rimCol(PH, v, PB) * rim;
+  if (bench > 0.0) col += benchOut(PB.xy) * bench;
+
+  // A faint warm breath over fresh crystal, brightest against the lamp.
+  if (uVap > 0.0) {
+    float va = vapour(PL.xy);
+    if (va > 0.0) {
+      float hg = 0.35 + 2.2 * pow(max(dot(v, toLamp(PL)), 0.0), 6.0);
+      col += uIceW * uLamp * fall(PL) * va * hg * 0.065 * uVap;
+    }
+  }
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------- bench bake ---------- */
+// The build bakes the bench once, over 12 x 12 units.
+// Red holds the wear; green holds the scratches.
+const WEAR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+${GEOM}
+${NOISE}
+void main() {
+  vec2 p = (vUv - 0.5) * BENCH_SPAN;
+  float m = fbm(p * 1.1 + 3.0);
+  vec2 q = mat2(0.8, 0.6, -0.6, 0.8) * p;
+  float sc = vn(q * vec2(1.6, 48.0) + 3.0);
+  float scr = smoothstep(0.95, 0.995, 1.0 - abs(sc * 2.0 - 1.0)) * smoothstep(0.55, 0.8, fbm(p * 0.8 + 9.0));
+  o = vec4(m, scr, 0.0, 1.0);
+}`;
+
+/* ---------- composite ---------- */
+const COMP_FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uBloomK, uExp;
+out vec4 o;
+${GRADE}
+${OUTPUT}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c *= gdVignette(uv, uRes.x / uRes.y, 0.5, 0.35);
+  c = ouSrgb(ouAces(c * uExp));
+  c *= gdGrain(gdHash(gl_FragCoord.xy), gdLuma(c), 0.035, vec2(0.6, 1.0));
+  o = vec4(ouDither(c, gl_FragCoord.xy), 1.0);
+}`;
+
+/* ---------- palette ---------- */
+// Every colour starts as OKLCH and goes in as linear light.
+const PAL = {
+  lamp: linFit(0.97, 0.035, 78),
+  room: linFit(0.2, 0.02, 250).map(x => x * 0.35),
+  bench: linFit(0.27, 0.008, 250),
+  iceC: linFit(0.8, 0.012, 235),
+  iceW: linFit(0.81, 0.026, 80),
+  glass: linFit(0.97, 0.012, 175),
+};
+const LAMP_I = 2.1;
+
+/* ---------- state ---------- */
+// Phases: liquid, growing, solid (heat still fading), melting.
+let phase = 'liquid';
+const seeds = [], pending = [];
+// Crystal time in seconds since the last melt.
+let simT = 0, solidAt = -1, meltT = 0, reveal = 1;
+const MELT_TIME = 1.7, TAIL = 7.6, HEAT_TAU = 3.5;
+
+let P = null, vao = null, st = null, sum1 = null, sum2 = null, hdr = null, bloom = null, wear = null;
+let N = 512, rt = 252, block = 8;
+const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => { resize(); if (ready) draw(); } });
+const gridFor = level => (level >= 2 ? 768 : level === 1 ? 512 : 384);
+
+// The readback ring: one pixel buffer and its fence.
+let pbo = null, fence = null, sumBusy = false, prevShow = 0, sumAt = 0;
+const sumData = new Float32Array(8 * 8 * 4);
+let inDish = new Float32Array(64), inDishAll = 1;
+
+async function build() {
+  P = await linked(gl, {
+    seed: program(gl, TRI_VS, SEED_FS),
+    relax: program(gl, TRI_VS, RELAX_FS),
+    sum1: program(gl, TRI_VS, SUM1_FS),
+    sum2: program(gl, TRI_VS, SUM2_FS),
+    scene: program(gl, TRI_VS, SCENE_FS),
+    comp: program(gl, TRI_VS, COMP_FS),
+    wear: program(gl, TRI_VS, WEAR_FS),
+  }, { wait: () => new Promise(r => { requestAnimationFrame(r); setTimeout(r, 50); }) });
+  vao = gl.createVertexArray();
+  bloom = bloomChain(gl);
+  pbo = gl.createBuffer();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, sumData.byteLength, gl.STREAM_READ);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  makeGrid(gridFor(D.level));
+  free(gl, wear);
+  wear = target(gl, 2048, 2048, { format: gl.RGBA8, filter: gl.LINEAR });
+  gl.useProgram(P.wear.p);
+  tri(gl, wear, vao);
+}
+
+// The grid: two state targets that swap, and the two summary targets.
+function makeGrid(n) {
+  free(gl, st); free(gl, sum1); free(gl, sum2);
+  N = n;
+  rt = N / 2 - 4;
+  block = N / 64;
+  st = { r: target(gl, N, N, { format: gl.RGBA32F, filter: gl.NEAREST }), w: target(gl, N, N, { format: gl.RGBA32F, filter: gl.NEAREST }) };
+  sum1 = target(gl, 64, 64, { format: gl.RGBA16F, filter: gl.LINEAR });
+  sum2 = target(gl, 8, 8, { format: gl.RGBA32F, filter: gl.NEAREST });
+  clearGrid();
+  // Cells per summary cell that lie inside the dish.
+  inDish = new Float32Array(64);
+  const c = N / 2, cell = N / 8;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    if (Math.hypot(i + 0.5 - c, j + 0.5 - c) <= rt) inDish[Math.floor(j / cell) * 8 + Math.floor(i / cell)]++;
+  }
+  inDishAll = inDish.reduce((a, b) => a + b, 0);
+}
+function clearGrid() {
+  for (const t of [st.r, st.w]) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.clearBufferfv(gl.COLOR, 0, [1e6, 0, 0, 0]);
+  }
+  for (const t of [sum1, sum2]) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+const swap = () => { const t = st.r; st.r = st.w; st.w = t; };
+const toTex = (x, y) => [N / 2 + x * rt, N / 2 + y * rt];
+
+/* ---------- seeds ---------- */
+// Each seed carries its own cold: speed, branching and needle length.
+function addSeed(x, y) {
+  if (seeds.length >= MAXS) return false;
+  const c = cold;
+  const s = {
+    x, y, t0: simT, idx: seeds.length + 1, salt: Math.random() * 97,
+    v: lerp(0.3, 1.0, c),
+    br: lerp(0.0015, 0.006, c),
+    al: lerp(0.02, 0.06, c),
+    fans: Math.round(lerp(5, 9, c)),
+    tilt: lerp(0.42, 0.26, c),
+  };
+  seeds.push(s);
+  pending.push(s);
+  phase = 'growing';
+  solidAt = -1;
+  if (reduced()) reveal = 0;
+  syncAction();
+  return true;
+}
+function seedPass(s) {
+  const p = P.seed;
+  gl.useProgram(p.p);
+  bind(gl, p, 'uA', 0, st.r);
+  gl.uniform2f(p.u.uP, ...toTex(s.x, s.y));
+  gl.uniform1f(p.u.uR0, 3.2);
+  gl.uniform1f(p.u.uT0, s.t0);
+  gl.uniform1f(p.u.uV0, s.v * rt * 1.5);
+  gl.uniform1f(p.u.uIdx, s.idx);
+  gl.uniform1f(p.u.uSalt, s.salt);
+  gl.uniform1f(p.u.uK, s.fans);
+  gl.uniform1f(p.u.uTilt, s.tilt);
+  tri(gl, st.w, vao);
+  swap();
+}
+const vArr = new Float32Array(MAXS), brArr = new Float32Array(MAXS), alArr = new Float32Array(MAXS);
+function relax(iters) {
+  const p = P.relax;
+  gl.useProgram(p.p);
+  seeds.forEach((s, i) => { vArr[i] = s.v * rt; brArr[i] = s.br; alArr[i] = s.al; });
+  gl.uniform1fv(p.u.uV, vArr);
+  gl.uniform1fv(p.u.uBr, brArr);
+  gl.uniform1fv(p.u.uAl, alArr);
+  gl.uniform2f(p.u.uC, N / 2, N / 2);
+  gl.uniform1f(p.u.uRt, rt);
+  gl.uniform1f(p.u.uNow, simT);
+  gl.uniform1f(p.u.uSide, 0.36);
+  gl.uniform1f(p.u.uJit, 0.02);
+  gl.uniform1f(p.u.uBeta, 0.55);
+  // Only a box round the seeds can change.
+  // The passes skip every cell outside the box.
+  // Both targets agree outside it, so the swap stays true.
+  let x0 = N, y0 = N, x1 = 0, y1 = 0;
+  for (const s of seeds) {
+    const r = (simT - s.t0) * s.v * rt * 2.6 + 12;
+    const [cx, cy] = toTex(s.x, s.y);
+    x0 = Math.min(x0, cx - r); y0 = Math.min(y0, cy - r);
+    x1 = Math.max(x1, cx + r); y1 = Math.max(y1, cy + r);
+  }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+  x1 = Math.min(N, Math.ceil(x1)); y1 = Math.min(N, Math.ceil(y1));
+  if (x1 <= x0 || y1 <= y0) return;
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x0, y0, x1 - x0, y1 - y0);
+  for (let i = 0; i < iters; i++) {
+    bind(gl, p, 'uA', 0, st.r);
+    tri(gl, st.w, vao);
+    swap();
+  }
+  gl.disable(gl.SCISSOR_TEST);
+}
+// The clock the picture shows: real time while growing.
+// A still reveal shows the far future instead.
+const showT = () => (reduced() && phase !== 'liquid' ? 1e4 : simT);
+
+/* ---------- summary and readback ---------- */
+function summarise() {
+  const show = showT();
+  let p = P.sum1;
+  gl.useProgram(p.p);
+  bind(gl, p, 'uA', 0, st.r);
+  gl.uniform1i(p.u.uB, block);
+  gl.uniform1f(p.u.uShow, show);
+  gl.uniform1f(p.u.uPrev, prevShow);
+  gl.uniform1f(p.u.uTau, HEAT_TAU);
+  tri(gl, sum1, vao);
+  p = P.sum2;
+  gl.useProgram(p.p);
+  bind(gl, p, 'uS', 0, sum1);
+  tri(gl, sum2, vao);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.readPixels(0, 0, 8, 8, gl.RGBA, gl.FLOAT, 0);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  sumBusy = true;
+  const span = Math.max(show - prevShow, 1e-3);
+  prevShow = show;
+  return span;
+}
+let pendingSpan = 0;
+function pollSummary() {
+  if (!sumBusy || !fence) return;
+  if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+  gl.deleteSync(fence);
+  fence = null;
+  sumBusy = false;
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+  gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, sumData);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  onSummary(pendingSpan);
+}
+// The summary drives the sound and tells when the dish is solid.
+function onSummary(span) {
+  let frozen = 0, fresh = 0, fx = 0, seam = 0;
+  for (let c = 0; c < 64; c++) {
+    const [fr, fs, sm] = [sumData[c * 4], sumData[c * 4 + 1], sumData[c * 4 + 2]];
+    frozen += fr;
+    fresh += fs;
+    fx += fs * ((c % 8) + 0.5) / 8;
+    seam += sm;
+    if (sm > 0) seamTick(c, sm);
+  }
+  const liquidLeft = inDishAll - frozen;
+  if (phase === 'growing' && !pending.length && seeds.length && liquidLeft <= inDishAll * 1e-4) {
+    phase = 'solid';
+    solidAt = simT;
+    if (reduced()) { revealAt = performance.now(); revealSound(); }
+    else settleSound();
+  }
+  if (!reduced()) crackle(fresh / inDishAll / span, fresh > 0 ? fx / fresh : 0.5);
+}
+
+/* ---------- camera ---------- */
+// The view fits the dish to the stage.
+// Dev rows tilt, turn and move it.
+const cam = { eye: [0, 0, 0], fwd: [0, 1, 0], right: [1, 0, 0], up: [0, 0, 1], tan: 0.27, pitch: 1 };
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+let size = { w: 1, h: 1, dpr: 1 };
+function fitCamera() {
+  const { w, h } = size, asp = w / h;
+  // Tall stages look down more steeply, so the dish stays large.
+  const pitch = rad(clamp(lerp(58, 72, clamp((1.3 - asp) / 0.8)) + (dev('pitch') ?? 0), 25, 89));
+  const yaw = rad(dev('yaw') ?? 0);
+  cam.tan = Math.tan(rad(28 * (dev('fov') ?? 1)) / 2);
+  cam.pitch = pitch;
+  cam.fwd = [Math.sin(yaw) * Math.cos(pitch), Math.cos(yaw) * Math.cos(pitch), -Math.sin(pitch)];
+  cam.right = norm(cross(cam.fwd, [0, 0, 1]));
+  cam.up = cross(cam.right, cam.fwd);
+  // The outline: the rim and the foot of the dish.
+  const ring = [];
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    ring.push([Math.cos(a) * DISH.RO, Math.sin(a) * DISH.RO, DISH.HH], [Math.cos(a) * DISH.RO, Math.sin(a) * DISH.RO, 0]);
+  }
+  // The fill box leaves room for the corners of the bar.
+  // A short stage lets the dish rise between the top corners.
+  const topPx = h < 520 ? 22 : 60, botPx = h < 520 ? 58 : 65;
+  const fillX = asp < 0.8 ? 0.9 : 0.8, top = 1 - Math.min(0.5, (2 * topPx) / h), bot = -1 + Math.min(0.5, (2 * botPx) / h);
+  let tgt = [0, 0, DISH.ZL], d = 5;
+  for (let it = 0; it < 4; it++) {
+    const eye = add(tgt, cam.fwd, -d);
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const q of ring) {
+      const r = sub(q, eye), z = dot3(r, cam.fwd);
+      const x = dot3(r, cam.right) / (z * cam.tan * asp), y = dot3(r, cam.up) / (z * cam.tan);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    }
+    const k = Math.max((x1 - x0) / (2 * fillX), (y1 - y0) / (top - bot));
+    // The aim moves so the outline sits mid box.
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2 - (top + bot) / 2;
+    tgt = add(add(tgt, cam.right, mx * d * cam.tan * asp), cam.up, my * d * cam.tan);
+    d *= k;
+  }
+  d /= dev('zoom') ?? 1;
+  cam.eye = add(tgt, cam.fwd, -d);
+}
+// A CSS point on the stage gives a ray.
+// The ray meets the liquid's plane at one point.
+function rayAt(x, y) {
+  const { w, h } = size;
+  const nx = (x / w) * 2 - 1, ny = 1 - (y / h) * 2;
+  return norm(add(add(cam.fwd, cam.right, nx * cam.tan * (w / h)), cam.up, ny * cam.tan));
+}
+function planeAt(v, z = DISH.ZL) {
+  const t = (z - cam.eye[2]) / v[2];
+  return add(cam.eye, v, t);
+}
+
+/* ---------- light ---------- */
+// The lamp hangs on the mirror line from the pointer.
+// So its reflection sits under the pointer.
+const LDIST = 3.6;
+const REST = [-0.34, 0.3];
+const lpos = [0, 0, 0], ltgt = [0, 0, 0];
+function lampFor(x, y) {
+  const v = rayAt(x, y);
+  let p = planeAt(v);
+  const r = Math.hypot(p[0], p[1]);
+  if (r > 1.5) p = [p[0] * 1.5 / r, p[1] * 1.5 / r, p[2]];
+  // The mirror ray; the lamp never drops below 30 degrees.
+  let m = [v[0], v[1], -v[2]];
+  const minZ = Math.sin(rad(30));
+  if (m[2] < minZ) { const k = Math.sqrt((1 - minZ * minZ) / Math.max(m[0] * m[0] + m[1] * m[1], 1e-6)); m = [m[0] * k, m[1] * k, minZ]; }
+  return add(p, m, LDIST);
+}
+// The rest lamp lights the back left of the dish.
+function restLamp() {
+  const p = [REST[0], REST[1], DISH.ZL];
+  const v = norm(sub(p, cam.eye));
+  return add(p, [v[0], v[1], -v[2]], LDIST);
+}
+let lampHome = true;
+function aimLamp(x, y) {
+  if (ui.setting('follow')?.value === false) x = null;
+  const t = reduced() || x == null ? restLamp() : lampFor(x, y);
+  lampHome = x == null;
+  ltgt[0] = t[0]; ltgt[1] = t[1]; ltgt[2] = t[2];
+  if (reduced()) { lpos[0] = t[0]; lpos[1] = t[1]; lpos[2] = t[2]; }
+  wake();
+}
+
+/* ---------- ripples ---------- */
+// A touch rings the surface once before the crystal takes it.
+const rips = [];
+const ripU = new Float32Array(16);
+function ripple(x, y) {
+  if (reduced()) return;
+  rips.push({ x, y, t: performance.now() });
+  if (rips.length > 4) rips.shift();
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.6 });
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// A short noise burst through a filter, with a fast attack.
+function burst(ac, at, { f, q = 1.5, dur, level, pan = 0, type = 'bandpass' }) {
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  const flt = ac.createBiquadFilter();
+  flt.type = type;
+  flt.frequency.value = f * jit(0.12);
+  flt.Q.value = q;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.2), at + 0.0015);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  src.connect(flt).connect(g).connect(pn).connect(kit.out);
+  src.start(at, Math.random() * (kit.noise.duration - dur - 0.02), dur + 0.02);
+}
+// A short decaying sine.
+function blip(ac, at, { f, dur, level, pan = 0, to = 0 }) {
+  const o = ac.createOscillator();
+  o.frequency.setValueAtTime(f * jit(0.05), at);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(level * jit(0.15), at + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + dur);
+  const pn = ac.createStereoPanner();
+  pn.pan.value = pan;
+  o.connect(g).connect(pn).connect(kit.out);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+// Dust is a loop of sparse clicks, each very short.
+function dust(ac, perSec, sizeMs, seconds = 2.3) {
+  const n = Math.round(ac.sampleRate * seconds);
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n;) {
+    i += 1 + Math.floor((-Math.log(1 - Math.random()) * ac.sampleRate) / perSec);
+    const amp = Math.pow(Math.random(), 2.2) * (Math.random() < 0.5 ? -1 : 1);
+    const len = Math.max(2, Math.round((sizeMs * (0.3 + Math.random())) * ac.sampleRate / 1000));
+    for (let k = 0; k < len && i + k < n; k++) d[i + k] += amp * (Math.random() * 2 - 1) * Math.exp(-k / (len * 0.3));
+  }
+  return buf;
+}
+// The crackle voice: a fine fizz and a sparser, drier snap.
+let crk = null;
+function crackleVoice(ac) {
+  const pan = ac.createStereoPanner();
+  pan.connect(kit.out);
+  const layer = (buf, type, f, q) => {
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.playbackRate.value = jit(0.05);
+    const flt = ac.createBiquadFilter();
+    flt.type = type;
+    flt.frequency.value = f;
+    flt.Q.value = q;
+    const g = ac.createGain();
+    g.gain.value = 0;
+    src.connect(flt).connect(g).connect(pan);
+    src.start(0, Math.random() * buf.duration);
+    return g;
+  };
+  return {
+    pan,
+    fine: layer(dust(ac, 1400, 0.25), 'highpass', 3800, 0.7),
+    dry: layer(dust(ac, 160, 0.6), 'bandpass', 2600, 0.9),
+  };
+}
+let tinkAt = 0;
+// The crackle follows the front.
+// Rate is the share of the dish that froze per second.
+function crackle(rate, x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  crk ||= crackleVoice(ac);
+  const now = ac.currentTime, lvl = clamp(rate / 1.1);
+  const pan = clamp((x - 0.5) * 1.6, -0.8, 0.8);
+  crk.fine.gain.setTargetAtTime(0.55 * Math.sqrt(lvl), now, 0.04);
+  crk.dry.gain.setTargetAtTime(0.9 * Math.pow(lvl, 0.7), now, 0.04);
+  crk.pan.pan.setTargetAtTime(pan, now, 0.08);
+  // Now and then a needle rings as it snaps.
+  if (lvl > 0.02 && now > tinkAt) {
+    tinkAt = now + 0.03 + Math.random() * 0.25 / (0.2 + lvl);
+    blip(ac, now + Math.random() * 0.02, { f: 4200 + Math.random() * 4200, dur: 0.012 + Math.random() * 0.02, level: 0.05 * Math.sqrt(lvl), pan: clamp(pan + (Math.random() - 0.5) * 0.4, -1, 1) });
+  }
+}
+function crackleOff() {
+  const ac = kit.ac;
+  if (!crk || !ac) return;
+  crk.fine.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+  crk.dry.gain.setTargetAtTime(0, ac.currentTime, 0.08);
+}
+// A soft tick sounds where two fronts lock.
+// Each summary cell rests between ticks.
+const cellAt = new Float64Array(64);
+let tickAt = 0;
+function seamTick(c, amount) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const now = ac.currentTime;
+  if (now < cellAt[c] || now < tickAt) return;
+  cellAt[c] = now + 0.16 + Math.random() * 0.12;
+  tickAt = now + 0.045;
+  const pan = clamp((((c % 8) + 0.5) / 8 - 0.5) * 1.6, -0.8, 0.8);
+  const lvl = clamp(0.12 + Math.sqrt(amount) * 0.05, 0, 0.42);
+  const at = now + Math.random() * 0.03;
+  burst(ac, at, { f: 2100, q: 3.5, dur: 0.018, level: lvl, pan });
+  blip(ac, at, { f: 1150 + Math.random() * 500, dur: 0.05, level: lvl * 0.35, pan });
+}
+// The touch: a drop's tip on the surface, then the first snap.
+function seedSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = clamp(x * 0.7, -0.8, 0.8);
+  blip(ac, at, { f: 1500, to: 700, dur: 0.05, level: 0.2, pan });
+  burst(ac, at + 0.02, { f: 5200, q: 1.2, dur: 0.07, level: 0.32, pan });
+  burst(ac, at + 0.03, { f: 2400, q: 1.8, dur: 0.03, level: 0.25, pan });
+}
+// A knock on solid crystal: dull and short.
+function tockSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = clamp(x * 0.7, -0.8, 0.8);
+  blip(ac, at, { f: 520, dur: 0.06, level: 0.28, pan });
+  burst(ac, at, { f: 900, type: 'lowpass', q: 0.7, dur: 0.03, level: 0.25, pan });
+}
+// The last liquid locks, and the fizz ends on one low settle.
+function settleSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  crackleOff();
+  const at = ac.currentTime + 0.02;
+  blip(ac, at, { f: 210, to: 170, dur: 0.22, level: 0.16 });
+  burst(ac, at, { f: 1800, q: 2.5, dur: 0.05, level: 0.12 });
+}
+// A still reveal: one swell of crackle instead of a moving front.
+function revealSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  for (let i = 0; i < 26; i++) burst(ac, ac.currentTime + 0.01 + Math.random() * 0.7, { f: 2500 + Math.random() * 4000, q: 2, dur: 0.006 + Math.random() * 0.01, level: 0.18 * Math.random(), pan: (Math.random() - 0.5) * 1.2 });
+}
+// The melt: a soft hush that sinks, and a few small bubbles.
+// One last drop ends it.
+function meltSound() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  crackleOff();
+  const at = ac.currentTime + 0.01, dur = MELT_TIME + 0.2;
+  const src = ac.createBufferSource();
+  src.buffer = kit.noise;
+  src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(3600, at);
+  bp.frequency.exponentialRampToValueAtTime(700, at + dur);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.16, at + 0.35);
+  g.gain.setTargetAtTime(0, at + dur * 0.7, 0.18);
+  src.connect(bp).connect(g).connect(kit.out);
+  src.start(at);
+  src.stop(at + dur + 0.8);
+  for (let i = 0; i < 9; i++) {
+    const t = at + 0.15 + Math.random() * dur * 0.8;
+    blip(ac, t, { f: 600 + Math.random() * 700, to: 1500 + Math.random() * 900, dur: 0.04, level: 0.06, pan: (Math.random() - 0.5) * 1.2 });
+  }
+  blip(ac, at + dur, { f: 900, to: 1700, dur: 0.07, level: 0.12 });
+}
+
+/* ---------- layout ---------- */
+let ready = false;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.max(1, r.width), h = Math.max(1, r.height);
+  const dpr = D.dpr(w, h);
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  size = { w, h, dpr };
+  fitCamera();
+  if (lampHome) { const t = restLamp(); for (let i = 0; i < 3; i++) lpos[i] = ltgt[i] = t[i]; }
+  if (!P) return;
+  free(gl, hdr);
+  hdr = target(gl, canvas.width, canvas.height, { format: gl.RGBA16F, filter: gl.LINEAR });
+}
+
+/* ---------- render ---------- */
+function draw() {
+  const p = P.scene;
+  gl.useProgram(p.p);
+  bind(gl, p, 'uA', 0, st.r);
+  bind(gl, p, 'uHeat', 1, sum1);
+  bind(gl, p, 'uWear', 2, wear);
+  gl.uniform2f(p.u.uRes, canvas.width, canvas.height);
+  gl.uniform3f(p.u.uEye, ...cam.eye);
+  gl.uniform3f(p.u.uFwd, ...cam.fwd);
+  gl.uniform3f(p.u.uRight, ...cam.right);
+  gl.uniform3f(p.u.uUp, ...cam.up);
+  gl.uniform1f(p.u.uTan, cam.tan);
+  gl.uniform3f(p.u.uLpos, ...lpos);
+  gl.uniform3f(p.u.uLamp, ...PAL.lamp.map(c => c * LAMP_I));
+  gl.uniform3f(p.u.uRoom, ...PAL.room);
+  gl.uniform3f(p.u.uBench, ...PAL.bench);
+  gl.uniform3f(p.u.uIceC, ...PAL.iceC);
+  gl.uniform3f(p.u.uIceW, ...PAL.iceW);
+  gl.uniform3f(p.u.uGlass, ...PAL.glass);
+  gl.uniform1f(p.u.uN, N);
+  gl.uniform1f(p.u.uRt, rt);
+  gl.uniform1f(p.u.uShow, showT());
+  gl.uniform1f(p.u.uReveal, reveal);
+  gl.uniform1f(p.u.uMelt, phase === 'melting' ? meltT : 0);
+  gl.uniform1f(p.u.uBump, 0.5 / rt);
+  gl.uniform1f(p.u.uD0, Math.hypot(lpos[0], lpos[1], lpos[2] - DISH.ZL));
+  const now = performance.now();
+  ripU.fill(0);
+  rips.forEach((r, i) => ripU.set([r.x, r.y, (now - r.t) / 1000, 1], i * 4));
+  gl.uniform4fv(p.u.uRip, ripU);
+  gl.uniform1f(p.u.uSheen, dev('sheen') ?? 1);
+  gl.uniform1f(p.u.uSpark, dev('sparkle') ?? 1);
+  gl.uniform1f(p.u.uVap, reduced() ? 0 : dev('vapour') ?? 1);
+  gl.uniform1f(p.u.uCot, 1 / Math.tan(cam.pitch));
+  const lean = norm([cam.fwd[0], cam.fwd[1], 0]);
+  gl.uniform2f(p.u.uLean, lean[0], lean[1]);
+  tri(gl, hdr, vao);
+  const bt = bloom.render(hdr.tex, hdr.w, hdr.h, { threshold: 2.2, cap: 8, levels: glowDetail(D.level).levels });
+  const c = P.comp;
+  gl.useProgram(c.p);
+  bind(gl, c, 'uHdr', 0, hdr);
+  bind(gl, c, 'uBloom', 1, bt);
+  gl.uniform2f(c.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(c.u.uBloomK, 0.28);
+  gl.uniform1f(c.u.uExp, dev('exposure') ?? 1);
+  tri(gl, null, vao);
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while the dish grows, melts, ripples or steams.
+// It also runs while the lamp eases; otherwise it sleeps.
+let raf = 0, last = 0, visible = !document.hidden, revealAt = 0;
+function wake() {
+  if (!raf && visible && ready) { last = performance.now(); raf = requestAnimationFrame(frame); }
+}
+// One step moves the clock, the seeds, the field and the summary.
+function step(dt) {
+  if (phase === 'growing' || phase === 'solid') simT += dt;
+  if (phase === 'melting') {
+    meltT += dt / (reduced() ? 0.5 : MELT_TIME);
+    if (meltT >= 1) clearDish();
+  }
+  pollSummary();
+  if (phase === 'growing') {
+    while (pending.length) seedPass(pending.shift());
+    const vmax = Math.max(...seeds.map(s => s.v)) * rt;
+    relax(reduced() ? 24 : clamp(Math.ceil((vmax * dt * 2.2) / 1.7) + 1, 2, 16));
+  }
+  // Summaries run while the crystal grows and while its heat fades.
+  const warm = phase === 'solid' && !reduced() && simT < solidAt + TAIL;
+  if ((phase === 'growing' || warm) && !sumBusy) pendingSpan = summarise();
+  if (reduced() && phase === 'solid') reveal = clamp((performance.now() - revealAt) / 800);
+}
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = (now - last) / 1000;
+    D.frame(raw);
+    const dt = clamp(raw, 0, 0.05);
+    last = now;
+    // The lamp eases after its target in 120 ms.
+    const k = 1 - Math.exp(-dt / 0.12);
+    let moving = false;
+    for (let i = 0; i < 3; i++) {
+      lpos[i] += (ltgt[i] - lpos[i]) * k;
+      if (Math.abs(ltgt[i] - lpos[i]) > 1e-3) moving = true; else lpos[i] = ltgt[i];
+    }
+    while (rips.length && now - rips[0].t > 1100) rips.shift();
+    step(dt);
+    draw();
+    again = moving || rips.length > 0 || phase === 'growing' || phase === 'melting'
+      || (phase === 'solid' && ((!reduced() && simT < solidAt + TAIL) || reveal < 1 || sumBusy));
+    if (phase === 'solid' && !again) crackleOff();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else kit.rest(() => !raf && !ptr);
+  }
+}
+
+/* ---------- actions ---------- */
+function syncAction() {
+  const a = ui.action('reset');
+  if (a) a.disabled = phase === 'liquid' || phase === 'melting';
+}
+// Melt: the crystal goes glassy from the rim in, then clear.
+act.melt = () => {
+  if (phase === 'liquid' || phase === 'melting') return;
+  phase = 'melting';
+  meltT = 0;
+  pending.length = 0;
+  meltSound();
+  syncAction();
+  wake();
+};
+function clearDish() {
+  phase = 'liquid';
+  seeds.length = pending.length = 0;
+  simT = 0; solidAt = -1; meltT = 0; reveal = 1; prevShow = 0;
+  // A new quality level changes the grid only on a clear dish.
+  if (gridFor(D.level) !== N) makeGrid(gridFor(D.level)); else clearGrid();
+  syncAction();
+}
+act.view = () => { fitCamera(); if (lampHome) aimLamp(); else wake(); if (ready && !raf) draw(); };
+act.viewReset = () => {
+  for (const [id, v] of [['pitch', 0], ['yaw', 0], ['zoom', 1], ['fov', 1]]) ui.setting(id)?.set(v);
+  act.view();
+};
+act.look = () => { if (ready && !raf) draw(); };
+act.follow = () => aimLamp();
+
+// The crystal at a dish point, read straight from the grid.
+const px = new Float32Array(4);
+function frozenHere(x, y) {
+  const [i, j] = toTex(x, y).map(Math.floor);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, st.r.fb);
+  gl.readPixels(i, j, 1, 1, gl.RGBA, gl.FLOAT, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return px[0] <= showT();
+}
+// A touch on the liquid seeds a crystal there.
+function touch(x, y) {
+  if (!ready || phase === 'melting' || Math.hypot(x, y) > 0.97) return false;
+  if (phase !== 'liquid' && frozenHere(x, y)) { tockSound(x); return true; }
+  if (!addSeed(x, y)) { tockSound(x); return true; }
+  ripple(x, y);
+  seedSound(x);
+  wake();
+  return true;
+}
+// Enter seeds a crystal at a random spot that is still liquid.
+function seedRandom() {
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2, r = 0.85 * Math.sqrt(Math.random());
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (phase === 'liquid' || !frozenHere(x, y)) return touch(x, y);
+  }
+  return false;
+}
+stage.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.target !== stage) return;
+  e.preventDefault();
+  seedRandom();
+});
+
+/* ---------- pointer ---------- */
+let ptr = null;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function down(e) {
+  if (ptr || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  ptr = { id: e.pointerId, touch: e.pointerType !== 'mouse' };
+  aimLamp(x, y);
+  const p = planeAt(rayAt(x, y));
+  touch(p[0], p[1]);
+}
+function move(e) {
+  const [x, y] = local(e);
+  if (ptr && e.pointerId !== ptr.id) return;
+  if (ptr || e.pointerType === 'mouse') aimLamp(x, y);
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  // On touch the lamp eases home after release.
+  if (ptr.touch) aimLamp();
+  ptr = null;
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('pointerleave', e => { if (!ptr && e.pointerType === 'mouse') aimLamp(); });
+// A press anywhere wakes the sound.
+// With the loop asleep, the sound sleeps again.
+addEventListener('pointerup', () => { if (!raf) kit.rest(() => !raf && !ptr); });
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders link and the first frame draws.
+async function boot() {
+  await build();
+  resize();
+  draw();
+  gl.finish();
+  canvas.classList.add('on');
+  ready = true;
+  syncAction();
+  mark('first-frame');
+}
+await boot();
+new ResizeObserver(() => { resize(); if (ready && !raf) draw(); }).observe(stage);
+onReducedChange(() => { aimLamp(); });
+onContextLoss(canvas, {
+  lost() { ready = false; cancelAnimationFrame(raf); raf = 0; fence = null; sumBusy = false; },
+  async restored() {
+    phase = 'liquid'; seeds.length = pending.length = 0; simT = 0; solidAt = -1; meltT = 0; reveal = 1; prevShow = 0; hdr = null; st = sum1 = sum2 = wear = null;
+    await build();
+    resize();
+    ready = true;
+    syncAction();
+    draw();
+  },
+});
+// A hidden tab stops the loop and the crystal's clock with it.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>
