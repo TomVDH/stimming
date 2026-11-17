@@ -79,6 +79,9 @@ const REVIEW = new URLSearchParams(location.search).has('cuts');
 const opening = makeOpening(reduced() || REVIEW);
 // The sky starts behind real time and runs fast to catch up.
 if (!opening.done) driveClock(opening, clock);
+// True while the shared intro shows.
+// Once it is gone, the loop stops looking.
+let intro = document.querySelector('.intro') !== null;
 // True once a frame shows the night look after the opening.
 let nightSet = false;
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
@@ -157,7 +160,10 @@ function tick(now: number): void {
   lastT = now;
   // Input times come from the same clock.
   const t = performance.now();
-  if (!opening.done) {
+  // The opening starts when the shared intro ends.
+  // The shell removes the .intro element then.
+  if (intro) intro = document.querySelector('.intro') !== null;
+  if (!opening.done && !intro) {
     opening.step(dt);
     driveClock(opening, clock);
     dirty = true;
