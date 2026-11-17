@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:56:29Z
+updated_at: 2026-11-17T09:06:20Z
 parent: stimming-oh7b
 ---
 
@@ -215,3 +215,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (scary green before the big dark clouds; bruised storm colours): uGreen (greenK()) rises from Storm 0.3 to 0.5 and sinks 0.62–0.85 (peaking about 20–28 s into the 45 s build-up, before the first drop); the deck's underside turns green-teal where rainAt() says rain falls (heaviest round the core, drifting downwind); light through rain glows green-teal (a trace at full storm); one gloomCol() for both passes (slate at full storm, green-teal in the phase; the never-green rule is replaced); haze and the sunlit plain turn sickly yellow-green in the phase. Shaded undersides take bruised violet and flanks slate, on the fill light only.
 
 - 2026-11-17, Tom (a cinematic pan-up button): Rise (bar action, key R): the eye cranes from its set height to Rise height (Dev, 10–80 m, default 35) over Rise time (6–30 s, default 15) on a soft ease while the lens widens 30%, holds 4 s, eases back; a press turns it round; level camera keeps the golden framing; far bakes keep their own lens (uFarFoc) and fade in. Not a true dolly zoom yet: the tornado shrinks by the widening; a true one needs the eye to travel toward it, which every ground file assumes is fixed at the origin.
+
+- 2026-11-17, Tom (rain slanting with the wind, reaching the ground, not only far and scattered): rain curtains as volumes from base to ground, densest at the foot, slanting downwind (rainSlant(): 0.15–0.85 km drift per km of fall) with gust sway, soft feathered sides and leaning streaks; rainAt() gives 1–3 km curtains with clear air between, a big curtain on each tornado's rear flank, the air round each funnel kept clear, light veils near the eye, main curtains 3–10 km, far ones baked; green-teal in the green phase. About +3 ms (35.1 vs 31.9 ms, three F4.5). Note: Tom's saved Wet glass (Window group) on High costs about 20 ms more.

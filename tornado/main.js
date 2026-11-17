@@ -143,6 +143,8 @@ uniform float uBase;
 uniform float uReach;
 // The wind's bearing as a world direction: the deck and its breaks drift with it.
 uniform vec2 uWDir;
+// The wind's strength, 0 to 1: Dev's Wind.
+uniform float uWind;
 #define WDIR uWDir
 // The base shelf: its centre and its two half widths.
 const vec2 SHELF = vec2(1.0, -13.0);
@@ -459,12 +461,34 @@ float cloudPh(float mu) {
 // Where rain falls from the deck, 0 to 1, over a camera-space point in km.
 // Ragged shafts in world space drift and slant downwind; most fall round the core.
 // Rain starts as the storm grows.
+// The rain field's blur, 0 to 1: a coarse march sets it, so curtains do not speckle.
+float gRainLod = 0.0;
+// How far rain slants downwind per km it falls: more with the wind and the storm.
+float rainSlant() { return (0.25 + 0.6 * uWind) * (0.6 + 0.4 * stormK()); }
 float rainAt(vec3 p) {
-  float sy = sin(uYaw), cy = cos(uYaw);
-  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * (uT * 0.012 + max(BASE - p.y, 0.0) * 0.35);
-  float f = vn(w * 0.16 + 31.0) * 0.6 + vn(w * 0.5 + 7.0) * 0.4;
-  f += 0.3 * (1.0 - smoothstep(3.0, 9.0, length(p.xz - mix(TOWER, CORE, 0.55))));
-  return smoothstep(0.55, 0.85, f) * smoothstep(0.3, 0.6, uStorm);
+  float sy = sin(uYaw), cy = cos(uYaw), fall = max(BASE - p.y, 0.0);
+  // The shafts slant downwind as they fall, and gusts sway them slowly.
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
+  w -= WDIR * fall * (rainSlant() + 0.08 * sin(uT * 0.21 + w.x * 0.4 + w.y * 0.3));
+  // Curtains one to three km wide, with clear air between them.
+  float f = vn(w * 0.3 + 31.0) * 0.65 + 0.15 * (1.0 - smoothstep(3.0, 9.0, length(p.xz - mix(TOWER, CORE, 0.55))));
+  // Each tornado has a curtain on its rear flank, upwind and to the left of it.
+  // Round the funnel itself the air stays clear, so the rain never hides it.
+  if (uTorOn > 0.5) {
+    vec2 wc = vec2(WDIR.x * cy - WDIR.y * sy, WDIR.x * sy + WDIR.y * cy), q = p.xz - wc * fall * rainSlant();
+    for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+      if (uTorZ[i].w <= 0.0) continue;
+      vec2 rear = uTorN[i].xy - wc * 2.4 + vec2(-wc.y, wc.x) * 0.8;
+      f += 0.6 * uTorH[i].x * (1.0 - smoothstep(0.6, 1.7, length(q - rear)));
+      f -= 0.6 * uTorH[i].x * (1.0 - smoothstep(1.0, 2.2, length(p.xz - uTorN[i].xy)));
+    }
+  }
+  float lo = 0.6 - 0.15 * gRainLod;
+  // Even the fine octave at its top cannot reach the threshold: no rain here.
+  if (f + 0.35 < lo) return 0.0;
+  // A blurred field keeps the fine octave at its mean.
+  f += mix(vn(w * 0.9 + 7.0), 0.5, gRainLod) * 0.35;
+  return smoothstep(lo, 0.85 + 0.1 * gRainLod, f) * smoothstep(0.3, 0.6, uStorm);
 }
 // The colour of one storm sample. Its light follows Window seat's and Railgun's cloud light:
 // Beer's law with a slower multiple-scatter tail, powder, a silver lining, sky light by direction, ground bounce.
@@ -599,7 +623,7 @@ float sunCover(vec3 w) {
 `;
 const SCENE = /* glsl */`
 uniform vec3 uSun, uSunCol, uAmb;
-uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
+uniform float uFoc, uHz, uYaw, uStorm, uT;
 uniform float uRain;
 uniform vec2 uRainDir;
 uniform vec3 uWB;
@@ -1557,6 +1581,7 @@ function funnelPass(w, h) {
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
+  gl.uniform1f(u.uWind, wind);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
