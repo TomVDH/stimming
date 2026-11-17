@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T22:35:27Z
+updated_at: 2026-11-17T22:36:26Z
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -79,3 +79,10 @@ Round 3 asks (14:16): the HUD responds as in real flight; the Gimbal view costs 
 Tom: "it is a brand name exception for now -- may rename". The toy is Zena; its id and folder stay drone.
 Rule 11 and its copies (AGENTS.md, PRODUCT.md, DESIGN.md, docs/standards/code.md) list Zena as an exception for now.
 The vault decision note waits for adjudant; this bean holds Tom's words.
+
+
+## Icon (round 1)
+
+- [x] Gallery icons/spike-drone-1.html: A, the craft from above that the pointer flies; D, the landing pad as the block that the craft lifts off
+- [x] Emblems icons/spike/emblems/drone-a.svg and drone-d.svg; the sheet's GALLERY lists drone-1
+- [ ] Tom picks on the icon sheet; the pick becomes the emblem (Bar v3 monogram) and, with Tom's yes and its own bean, the Lab menu tile
