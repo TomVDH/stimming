@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T05:22:22Z
-updated_at: 2026-11-17T05:39:40Z
+updated_at: 2026-11-17T05:43:14Z
 parent: stimming-51dy
 ---
 
@@ -17,4 +17,6 @@ Interview 46, 49: no hard shadows anywhere. Gallery of three press/on cues for B
 
 - [x] Gallery of three cues
 - [ ] Tom picks
-- [ ] Shell change in shared/stim.css (worktree + PR, Tom's look)
+- [x] Shell change in shared/stim.css (worktree + PR)
+- [ ] Tom's look on the PR
+- [ ] Prism and Canal at dusk drop their own hard shadows (their own chats)
