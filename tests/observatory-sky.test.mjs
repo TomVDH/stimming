@@ -16,8 +16,9 @@ test('toRaDec undoes toAltAz', () => {
   const a = toAltAz(80, 20, 200, 51), b = toRaDec(a, 200, 51);
   assert.ok(Math.abs(b.ra - 80) < 1e-9 && Math.abs(b.dec - 20) < 1e-9);
 });
-// By hand: at Dec 0 and hour angle -90°, sin alt = cos(lat) cos(-90°) = 0.
-// The azimuth term atan2(-sin H, -sin lat cos H) is atan2(1, 0) = 90°.
+// By hand, at Dec 0 and hour angle -90°:
+// sin alt = cos(lat) cos(-90°) = 0.
+// The azimuth is atan2(-sin H, -sin lat cos H) = atan2(1, 0) = 90°.
 // At hour angle +90° it is atan2(-1, 0), so 270°.
 test('a star on the equator rises due east and sets due west', () => {
   const east = toAltAz(123 + 90, 0, 123, 51), west = toAltAz(123 - 90, 0, 123, 51);

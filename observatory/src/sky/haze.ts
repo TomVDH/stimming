@@ -1,21 +1,25 @@
 // Load order: setup runs first.
 import '../setup.ts';
-// Haze amount copied from railgun/src/sky/k2-haze.glsl; night colours from railgun/src/sky/sun.ts.
+// The haze amount is copied from railgun/src/sky/k2-haze.glsl.
+// The night colours come from railgun/src/sky/sun.ts.
 import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector3 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the night air: a moonless sky, a faint horizon glow, low haze ---------- */
-// Linear colours. The zenith is near black; the horizon glows a little.
+// Linear colours.
+// The zenith is near black.
+// The horizon glows a little.
 export const ZENITH = new Color(0.0035, 0.0048, 0.011);
 export const HORIZON = new Color(0.022, 0.024, 0.034);
 // The haze takes the horizon colour, a little darker.
 export const HAZE_C = HORIZON.clone().multiplyScalar(0.9);
 // Haze density at the valley floor, per metre.
 const HAZE_D = 0.003;
-// The haze thins by e every 40 m of height: it lies in the valleys.
+// The haze thins by e every 40 m of height.
+// So it lies in the valleys.
 export const HAZE_H = 40;
 
-// The haze along the line from the eye to P: 0 clear, 1 full.
+// The haze from the eye to P: 0 clear, 1 full.
 // It integrates a density that falls off with height.
 export const HAZE_GLSL = /* glsl */`
 float hazeAmount(vec3 P, float density) {
@@ -48,7 +52,8 @@ ShaderChunk.fog_fragment = '#ifdef USE_FOG\ngl_FragColor.rgb = mix(gl_FragColor.
 export const fog = new FogExp2(HAZE_C.clone(), HAZE_D);
 scene.fog = fog;
 
-// The sky shell sits inside the star shell; the stars add over it.
+// The sky shell sits inside the star shell.
+// The stars add over it.
 // The gradient follows Railgun's bare sky: zenith to horizon, a low band.
 // The dusk sets these.
 // At night they hold the night values.
@@ -59,7 +64,8 @@ export const skyU = {
   uWarm: { value: new Color(0, 0, 0) }, uSun: { value: new Vector3(-1, 0, 0) },
 };
 // The sky's colour in direction d.
-// The far ridges share it, so they fade into the sky behind them.
+// The far ridges share it.
+// So they fade into the sky behind them.
 export const SKY_GLSL = /* glsl */`
 uniform vec3 uZen, uHor, uWarm, uSun;
 vec3 skyColor(vec3 d) {

@@ -22,7 +22,8 @@ function resize(): void {
 }
 new ResizeObserver(resize).observe(stageEl);
 // A Quality change resizes the canvas, the post chain and the stars.
-// resize ends with one draw, so the idle page shows the new frame.
+// resize ends with one draw.
+// So the idle page shows the new frame.
 onQuality(() => resize());
 resize();
 stage('first-frame');

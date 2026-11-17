@@ -1,4 +1,5 @@
-// Star pick. A tap picks the brightest star near the tap point.
+// Star pick.
+// A tap picks the brightest star near the tap point.
 import type { Star } from './catalog.ts';
 import { toAltAz, type AltAz } from './sky.ts';
 

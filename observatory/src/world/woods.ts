@@ -14,12 +14,15 @@ import { roadDist } from './complex.ts';
 import { bakeImpostor } from './impostor.ts';
 
 /* ---------- the woods: dark pines over the hill, in two draw calls ---------- */
-// Trees stand on a jittered 7 m grid in the land the camera sees.
+// Trees stand on a jittered 7 m grid.
+// The grid covers the land the camera sees.
 const STEP = 7;
 const AREA = { x0: -760, x1: 760, z0: -330, z1: 760 };
-// No trees within this distance of the camera's foot, the clearing or the road.
+// No tree stands inside these gaps, in metres.
+// The gaps are round the eye's foot, the clearing and the road.
 const EYE_GAP = 75, CLEAR_GAP = 6, ROAD_GAP = 6;
-// The hilltop is bare above this height, so the treetops stay under the complex.
+// The hilltop is bare above this height.
+// The treetops then stay under the complex.
 const TREELINE = TOP - 17;
 
 // Every tree this near the complex stays.

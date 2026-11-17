@@ -10,7 +10,7 @@ const star = (hip, ra, dec, mag) => ({ hip, ra, dec, mag, ci: 0.5, dist: 10, spe
 const at = (hip, alt, az, mag) => { const p = toRaDec({ alt, az }, LST, LAT); return star(hip, p.ra, p.dec, mag); };
 
 test('of two stars at the same distance, the brighter wins', () => {
-  // Dec 39 and Dec 41 stand 1 degree from Dec 40 on one hour circle.
+  // Dec 39 and 41 lie 1 degree from Dec 40.
   const aim = toAltAz(100, 40, LST, LAT);
   const faint = star(1, 100, 41, 3), bright = star(2, 100, 39, 1);
   assert.equal(pickStar([faint, bright], aim, LST, LAT).hip, 2);
@@ -29,7 +29,7 @@ test('a star under 5 degrees is never picked', () => {
     // The tap lands on the star itself.
     assert.equal(pickStar([at(1, alt, 200, -1)], { alt, az: 200 }, LST, LAT), null, `alt ${alt}`);
   }
-  // A brighter low star does not hide a fainter star above 5 degrees.
+  // A brighter low star does not hide a fainter high star.
   const low = at(1, 4, 200, -1), high = at(2, 6.5, 200, 3);
   assert.equal(pickStar([low, high], { alt: 5.2, az: 200 }, LST, LAT).hip, 2);
 });

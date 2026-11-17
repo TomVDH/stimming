@@ -6,8 +6,10 @@ import { SITE, hillHeight } from './hill.ts';
 import { buildDome, stoneMap, type Dome } from './observatory.ts';
 
 /* ---------- the complex: three domes, the stone building, the shed, the road ---------- */
-// Positions are in metres from the clearing's centre; +X is east, -Z is north.
-// The camera looks south, so east is on the left of the frame.
+// Positions are in metres from the clearing's centre.
+// +X is east and -Z is north.
+// The camera looks south.
+// So east is on the left of the frame.
 
 const lam = (color: number) => new MeshLambertMaterial({ color });
 
@@ -44,7 +46,7 @@ function roadMesh(): Mesh {
   g.setAttribute('position', new Float32BufferAttribute(p, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  // Pale gravel reads under starlight.
+  // The gravel is about as dark as the grass, a little warmer.
   const m = new MeshLambertMaterial({ color: 0x4c4842, polygonOffset: true, polygonOffsetFactor: -2 });
   return new Mesh(g, m);
 }
@@ -55,8 +57,10 @@ const box = (w: number, h: number, d: number, color: number | MeshLambertMateria
   return m;
 };
 
-// The long, low stone building, with a row of windows on its north face.
-// It is 30 m long, 9 m deep and 5 m high, with a flat roof.
+// The long, low stone building.
+// A row of windows runs along its north face.
+// It is 30 m long, 9 m deep and 5 m high.
+// It has a flat roof.
 const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
 // Each lit pane has its own material.
 // Then each pane can come on alone.
@@ -79,7 +83,8 @@ function hall(): Group {
   return g;
 }
 
-// A shed with a roll-off roof; the roof stands rolled off to the west on its rails.
+// A shed with a roll-off roof.
+// The roof stands rolled off to the west on its rails.
 function shed(): Group {
   const g = new Group();
   const x = -30, z = 9;
@@ -105,10 +110,12 @@ export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: M
 export function buildComplex(): Complex {
   const root = new Group();
   root.position.copy(SITE);
-  // The main dome holds the big refractor; the laser leaves it.
+  // The main dome holds the big refractor.
+  // The laser leaves it.
   const main = buildDome(1.5);
   main.root.position.set(-6, 0, -2);
-  // One small dome stands alone to the east; one sits on the hall's roof.
+  // One small dome stands alone to the east.
+  // One sits on the hall's roof.
   const east = buildDome(0.8);
   east.root.position.set(40, 0, 2);
   const roof = buildDome(0.75);

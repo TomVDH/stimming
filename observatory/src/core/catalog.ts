@@ -1,4 +1,5 @@
-// Star catalog decoder. Source: HYG v4.4 (CC BY-SA 4.0), cut by tools/hyg-cut.mjs.
+// The star catalog decoder.
+// The source is HYG v4.4 (CC BY-SA 4.0), cut by tools/hyg-cut.mjs.
 
 export type Star = {
   hip: number; // Hipparcos id, 0 when the star has none
@@ -18,8 +19,13 @@ export type StarMeta = {
   spect: string[];
 };
 
-// One record: ra f32, dec f32, mag i16 (x100), ci i16 (x1000, -32768 = unknown),
-// dist f32 (NaN = unknown), hip u32, spect u16 (index into meta.spect). Little endian.
+// One record is STAR_BYTES long, little endian:
+// ra f32 and dec f32, in degrees.
+// mag i16, times 100.
+// ci i16, times 1000, or CI_UNKNOWN when unknown.
+// dist f32 in parsecs, or NaN when unknown.
+// hip u32.
+// spect u16, an index into meta.spect.
 export const STAR_BYTES = 22;
 export const CI_UNKNOWN = -32768;
 

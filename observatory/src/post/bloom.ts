@@ -1,6 +1,7 @@
 // Load order: sky/haze runs first.
 import '../sky/haze.ts';
-// Copied from railgun/src/post/bloom.ts; the ladder rung is trimmed.
+// Copied from railgun/src/post/bloom.ts.
+// The ladder rung is trimmed.
 import { CanvasTexture, NoColorSpace, Vector2 } from 'three';
 import type { IUniform } from 'three';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -8,8 +9,9 @@ import { quality } from '../../../shared/stim.js';
 import { renderer } from '../setup.ts';
 
 /* ---------- bloom ---------- */
-// Bloom on a float target; only bright sources cross the threshold.
-// A seeded generator, so the lens dirt is the same on every load.
+// Bloom on a float target.
+// Only bright sources cross the threshold.
+// A seeded generator keeps the lens dirt the same on every load.
 function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

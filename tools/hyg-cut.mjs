@@ -1,11 +1,14 @@
-// Cut HYG v4.4 to the naked-eye stars. Run: node tools/hyg-cut.mjs <hyg_v44.csv>
-// Writes observatory/stars.bin and observatory/stars.json. Format: observatory/src/core/catalog.ts.
+// Cuts HYG v4.4 to the naked-eye stars.
+// Run: node tools/hyg-cut.mjs <hyg_v44.csv>
+// It writes observatory/stars.bin and observatory/stars.json.
+// The format is in observatory/src/core/catalog.ts.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const MAG_LIMIT = 6.5;
 const GREEK = { Alp: 'α', Bet: 'β', Gam: 'γ', Del: 'δ', Eps: 'ε', Zet: 'ζ', Eta: 'η', The: 'θ', Iot: 'ι', Kap: 'κ', Lam: 'λ', Mu: 'μ', Nu: 'ν', Xi: 'ξ', Omi: 'ο', Pi: 'π', Rho: 'ρ', Sig: 'σ', Tau: 'τ', Ups: 'υ', Phi: 'φ', Chi: 'χ', Psi: 'ψ', Ome: 'ω' };
 
-// Split CSV text into rows. Handles quoted fields, doubled quotes and newlines in quotes.
+// Splits CSV text into rows.
+// It handles quoted fields, doubled quotes and newlines in quotes.
 function parseCsv(text) {
   const rows = [];
   let row = [], f = '', q = false;
@@ -27,7 +30,9 @@ function parseCsv(text) {
   return rows;
 }
 
-// "Alp" + "CMa" + flam "9" -> "α CMa"; a numbered Bayer ("Pi1") keeps its digit; no Bayer -> "9 CMa".
+// The label for "Alp", "CMa" and flam "9" is "α CMa".
+// A numbered Bayer such as "Pi1" keeps its digit.
+// Without a Bayer, the label is "9 CMa".
 function label(bf, bayer, flam, con) {
   if (bayer) {
     const m = /^([A-Za-z]+?)-?(\d*)$/.exec(bayer);

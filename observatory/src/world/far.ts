@@ -1,15 +1,16 @@
 // Load order: world/hill runs first.
-import './hill.ts';
+import { EYE_H, RISE, hillHeight } from './hill.ts';
 // Crest noise ported from ridge2 in railgun/ranges.js.
 // Foot melt copied from railgun/src/world/farcountry.ts, trimmed to one term.
 import { BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, ShaderMaterial } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
 import { SKY_GLSL, fog, skyU } from '../sky/haze.ts';
-import { EYE_H, RISE, hillHeight } from './hill.ts';
 
 /* ---------- the far view: ridgelines on the southern horizon ---------- */
-// The camera never moves far, so each ridge is a ring round the wide eye.
-// A ring stands inside the sky shell but shows the angles of far ranges.
+// The camera never moves far.
+// So each ridge is a ring round the wide eye.
+// A ring stands inside the sky shell.
+// It still shows the angles of far ranges.
 // Each ridge's crest height is an angle over the horizon, in degrees.
 
 // One ridge: ring radius in metres, crest angles, feature scale, fade.
@@ -46,7 +47,7 @@ function noise(x: number, y: number, s: number): number {
   return n0 + (n1 - n0) * b;
 }
 
-// Sharp ridges in [0, 1]: lines of 1 with a narrow V between.
+// Sharp ridges in [0, 1]: lines of 1, narrow Vs between.
 function ridge2(x: number, y: number, s: number): number {
   let sum = 0, amp = 0.5, w = 1;
   for (let i = 0; i < 3; i++) {
@@ -60,7 +61,8 @@ function ridge2(x: number, y: number, s: number): number {
 }
 
 // The crest angle of a ridge at an azimuth, in degrees.
-// The noise runs round a circle, so the ring closes without a seam.
+// The noise runs round a circle.
+// So the ring closes without a seam.
 function crest(k: Ridge, az: number): number {
   const x = Math.sin(az * DEG) * k.f / (2 * Math.PI), z = Math.cos(az * DEG) * k.f / (2 * Math.PI);
   // Broad swells carry the sharp ridges.
@@ -100,7 +102,8 @@ function ridgeMesh(): BufferGeometry {
   return g;
 }
 
-// The ridges take the sky's own colours, so the dusk drives them too.
+// The ridges take the sky's own colours.
+// So the dusk drives them too.
 const farMat = new ShaderMaterial({
   uniforms: { ...skyU, uFog: { value: fog.color } },
   // The eye sees the rings from inside.

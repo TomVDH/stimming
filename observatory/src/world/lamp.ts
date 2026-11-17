@@ -5,8 +5,11 @@ import { complex } from './complex.ts';
 import { disposeTree, onLeave } from '../setup.ts';
 
 /* ---------- the tracking lamp: a small amber light on the main dome's drum ---------- */
-// The drum has a 3.2 m radius; the door faces the camera. The lamp sits right of the door.
-// Linear colours; on crosses the bloom threshold.
+// The drum has a 3.2 m radius.
+// The door faces the camera.
+// The lamp sits right of the door.
+// Linear colours.
+// ON crosses the bloom threshold.
 const OFF = new Color(0.02, 0.012, 0.006), ON = new Color(5, 2, 0.4);
 
 const mat = new MeshBasicMaterial({ color: OFF.clone() });

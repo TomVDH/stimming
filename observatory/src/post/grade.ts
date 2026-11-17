@@ -1,6 +1,7 @@
 // Load order: post/bloom runs first.
 import './bloom.ts';
-// Copied from railgun/src/post/grade.ts; only the base grade and grain stay.
+// Copied from railgun/src/post/grade.ts.
+// Only the base grade and grain stay.
 import { Vector2, Vector3 } from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 

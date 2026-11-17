@@ -27,7 +27,9 @@ function skyMatrix(ms: number, out = new Matrix4()): Matrix4 {
   );
 }
 
-// Blackbody tint from the colour index B-V (Ballesteros temperature, Helland fit). Unknown is white.
+// Blackbody tint from the colour index B-V.
+// It uses the Ballesteros temperature and the Helland fit.
+// An unknown index gives white.
 function tint(ci: number, out: Color): Color {
   if (Number.isNaN(ci)) return out.setRGB(1, 1, 1);
   const bv = Math.max(-0.4, Math.min(2, ci));
@@ -47,7 +49,8 @@ const vert = /* glsl */ `
   varying float vUp;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
-    // The star shell is centred on the origin, the camera sits near it: below the horizon is hidden.
+    // The shell's centre is the origin, near the camera.
+    // So world.y under 0 is below the horizon.
     vUp = world.y;
     // Low stars shine through more air: 0.3 magnitudes per airmass.
     float airmass = 1.0 / max(world.y / ${RADIUS.toFixed(1)}, 0.03);
@@ -71,7 +74,8 @@ const frag = /* glsl */ `
   }
 `;
 
-// The device pixel ratio; the stage's resize sets it.
+// The device pixel ratio.
+// The stage's resize sets it.
 const starDpr = { value: 1 };
 export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
 // The faintest magnitude in full.
@@ -94,7 +98,8 @@ export const skyReady: Promise<void> = starFile.then((stars) => {
     const d = shellDir(s.ra, s.dec);
     pos.set([RADIUS * d.x, RADIUS * d.y, RADIUS * d.z], i * 3);
     tint(s.ci, c).toArray(col, i * 3);
-    // Brighter is larger and brighter; magnitude 6.5 barely shows.
+    // A brighter star is larger and brighter.
+    // Magnitude 6.5 barely shows.
     const k = Math.max(0, Math.min(1, (6.5 - s.mag) / 7.9));
     look[i * 3] = 1.2 + 3.6 * k;
     look[i * 3 + 1] = 0.12 + 0.88 * Math.pow(k, 0.7);
@@ -122,7 +127,8 @@ export function skyAt(ms: number): void {
   if (sky.points) skyMatrix(ms, sky.points.matrix);
 }
 
-// Where a star by Hipparcos id stands at a sky time, read back through the sky matrix.
+// Where a star by Hipparcos id stands at a sky time.
+// It reads back through the sky matrix.
 export function starAltAz(hip: number, ms: number): AltAz | null {
   const i = sky.index.get(hip);
   if (i === undefined) return null;

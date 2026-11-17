@@ -1,4 +1,6 @@
-// Sky maths. Angles are in degrees. Azimuth runs from north through east.
+// Sky maths.
+// Angles are in degrees.
+// Azimuth runs from north through east.
 
 export type AltAz = { alt: number; az: number };
 
@@ -28,7 +30,8 @@ export function toAltAz(raDeg: number, decDeg: number, lstDeg: number, latDeg: n
   const lat = latDeg * RAD;
   const sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(ha);
   const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
-  // Azimuth from north through east: atan2(-sin H, tan dec cos lat - sin lat cos H).
+  // Azimuth runs from north through east.
+  // It is atan2(-sin H, tan dec cos lat - sin lat cos H).
   const y = -Math.sin(ha) * Math.cos(dec);
   const x = Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.sin(lat) * Math.cos(ha);
   return { alt: alt * DEG, az: wrap360(Math.atan2(y, x) * DEG) };
@@ -48,18 +51,20 @@ export function toRaDec(a: AltAz, lstDeg: number, latDeg: number): { ra: number;
 }
 
 /* ---------- the star shell's sky matrix ---------- */
-// sky/stars.ts draws the stars on a shell and turns it with one matrix.
+// sky/stars.ts draws the stars on a shell.
+// One matrix turns the shell.
 // Scene axes: x east, y up, z south.
 export type Vec3 = { x: number; y: number; z: number };
 
 // A star's unit direction on the shell, at LST zero.
-// x points to the meridian, y to the west, z to the pole.
+// x points to the meridian, y west, z to the pole.
 export function shellDir(raDeg: number, decDeg: number): Vec3 {
   const ra = raDeg * RAD, dec = decDeg * RAD, cd = Math.cos(dec);
   return { x: cd * Math.cos(ra), y: -cd * Math.sin(ra), z: Math.sin(dec) };
 }
 
-// The sky matrix for an LST and a latitude, 3 by 3, row by row.
+// The sky matrix for an LST and a latitude.
+// It is 3 by 3, row by row.
 // It turns the shell by the LST about the pole.
 // Then it tilts the pole up to the latitude, due north.
 // Rows are the scene x, y and z.

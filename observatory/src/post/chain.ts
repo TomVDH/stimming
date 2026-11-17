@@ -1,6 +1,7 @@
 // Load order: post/grade runs first.
 import './grade.ts';
-// Copied from railgun/src/post/chain.ts and settings.ts; FXAA and the Dev rows are trimmed.
+// Copied from railgun/src/post/chain.ts and settings.ts.
+// FXAA and the Dev rows are trimmed.
 import { ACESFilmicToneMapping, HalfFloatType, WebGLRenderTarget } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -11,9 +12,11 @@ import { makeBloom } from './bloom.ts';
 import { makeGrade } from './grade.ts';
 
 /* ---------- post chain: render, bloom, grade, tone map ---------- */
-// Railgun's look values: bloom strength, radius, threshold; tint, vignette, grain.
+// Railgun's look values: the bloom's strength, radius and threshold.
+// Then the tint, the vignette and the grain.
 const POST = { bloom: [0.5, 0.5, 2.0] as const, tint: [0.0008, 0.0009, 0.0016] as [number, number, number], vig: 0.6, vigIn: 0.38, grain: 0.075 };
-// The output pass maps the tones with ACES, as Railgun does by default.
+// The output pass maps the tones with ACES.
+// Railgun does the same by default.
 renderer.toneMapping = ACESFilmicToneMapping;
 // Railgun's night exposure: 2.2 for the night times 0.55 for the setting.
 renderer.toneMappingExposure = 2.2 * 0.55;
@@ -32,7 +35,8 @@ composer.addPass(new OutputPass());
 // Each pass frees its own targets and materials.
 onLeave(() => { for (const p of composer.passes) p.dispose(); composer.dispose(); });
 
-// Sizes the chain to the canvas; w and h in CSS pixels.
+// Sizes the chain to the canvas.
+// w and h are in CSS pixels.
 export function resizePost(w: number, h: number): void {
   const dpr = renderer.getPixelRatio();
   composer.setSize(w * dpr, h * dpr);
@@ -41,7 +45,8 @@ export function resizePost(w: number, h: number): void {
 
 // Draws one frame through the chain.
 export function renderPost(): void {
-  // The grain moves with each frame; reduced motion keeps it still.
+  // The grain moves with each frame.
+  // Reduced motion keeps it still.
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;
   composer.render();
 }
