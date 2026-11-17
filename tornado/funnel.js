@@ -32,6 +32,8 @@ export const KNOBS = [
   ['Funnel', 'rim', 'Rim blend', 0, 1, 0.01, 0.6],
   ['Funnel', 'trans', 'Light through', 0, 1, 0.01, 0.4],
   ['Funnel', 'amp', 'Turbulence', 0, 1.5, 0.01, 0.63],
+  // The gap between layers over the radius: one value for every funnel at any distance.
+  ['Funnel', 'gap', 'Layer gap', 0.05, 0.5, 0.01, 0.2],
   ['Funnel', 'spin', 'Spin', 0, 3, 0.01, 1],
   ['Colour', 'alb', 'Reflectivity', 0.2, 1.5, 0.01, 0.9],
   ['Colour', 'sunK', 'Sunlit weight', 0, 2, 0.01, 0.85],
@@ -174,7 +176,7 @@ uniform float uFarK;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
-uniform float uWid, uSheathK, uEdgeW, uAmp, uAlb, uSunK, uAmbK, uHazeK, uTopDark, uDustK;
+uniform float uWid, uSheathK, uEdgeW, uAmp, uAlb, uSunK, uAmbK, uHazeK, uTopDark, uDustK, uGap;
 // Rim blend: a grazing ray sees thinner core, so the lit rim blends, 0 to 1.
 uniform float uRim;
 #ifdef TUBE
@@ -278,8 +280,8 @@ float debrisR(float h) { return uR0 * mix(2.2, 1.18, uFk) * (1.0 + 0.6 * h / uDu
 
 /* ---------- the funnel: an onion of spinning sheaths ---------- */
 const int SHEATHS = 5;
-// Detail follows the screen: set per sample from the pixel's size where the ray is.
-// gSp: the gap between sheaths over R, at least about three pixels. gAng: the noise's scale round the funnel.
+// gSp: the gap between sheaths over R, Dev's Layer gap.
+// gAng: the noise's scale round the funnel, set per sample from the pixel's size where the ray is.
 float gSp = 0.2, gAng = 1.0;
 // gPxM: one pixel's size in metres where the ray is.
 float gPxM = 1.0;
@@ -568,8 +570,6 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
   float fade = (1.0 - smoothstep(0.75, 1.0, sHm)) * smoothstep(0.0, 0.45, 0.5 * (tapa + tapb));
   if (fade <= 0.0) return;
   float sw = 0.42 * gSp;
-  // A layer thinner than a pixel fades into the core's edge, not into a lone hoop.
-  float swV = smoothstep(0.6, 1.6, sw * 0.5 * (Ra + Rb) / gPxM);
   float coreMax = 1.0 + uAmp * 0.225 + 0.02;
   // 0 is the core, 1 to 5 the sheaths; an inward stretch meets the outer ones first.
   for (int j = 0; j <= SHEATHS; j++) {
@@ -620,7 +620,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       if (rk < xlo - 3.0 * sw || rk > xhi + 3.0 * sw) continue;
       R = 0.5 * (Ra + Rb);
       // The path in a layer is capped, so an edge-on layer draws no dark stroke.
-      float I = min(layerInt(xa, xb, len, rk, sw), 3.5 * sw * R) * (1.0 - fl) * fade * swV;
+      float I = min(layerInt(xa, xb, len, rk, sw), 3.5 * sw * R) * (1.0 - fl) * fade;
       float sMax = funnelSig(mix(0.9, 0.35, fk), R) * I;
       if (sMax < 0.003) continue;
       // Outer sheaths show only their densest noise, so the edge stays wispy.
@@ -694,8 +694,9 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   float x = length(q) / Re, ang = atan(q.y, q.x);
   float nc = tubeN(ang, ps.y, x, R, 0);
   // The core: the deck's cloud inside a ragged edge.
-  float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.6, fl);
-  float wC = 0.1 + uEdgeW * uAmp;
+  // Up the bell a ray grazes the edge: a soft, calm edge there, or each sample lands in or out by chance.
+  float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.25, fl);
+  float wC = (0.1 + uEdgeW * uAmp) * mix(1.0, 2.5, fl);
   // The noise rags the lower edge a little: more drew a comb of hairs.
   float tp = clamp(tap - (nc - 0.5) * 0.35, 0.0, 1.0);
   // Point samples read thinner than the shells' exact ramp: the core takes more.
@@ -708,8 +709,6 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   float s = funnelSig(dC, R), sB = 0.0;
   // The bands: thin and spaced as the shells, but cut from the deck's cloud.
   float sw = 0.3 * gSp;
-  // A band thinner than a pixel fades into the core's edge, not into a lone hoop.
-  float swV = smoothstep(0.6, 1.6, sw * R / gPxM);
   for (int j = 0; j < SHEATHS; j++) {
     if (float(j) >= uTbCount) break;
     float fk = float(j) / float(SHEATHS - 1);
@@ -725,7 +724,6 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
     sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov - 0.04, cov + 0.22, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
   }
   // The bands' share of the step: their torn edges take the deck's tone.
-  sB *= swV;
   float bk = sB / max(s + sB, 1e-6);
   s = (s + sB) * uDens * fade * live(ps.y);
   if (s < 1e-7) return;
@@ -733,7 +731,7 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   vec3 pl = ps + gSunC * (0.3 * R);
   vec2 ql = pl.xz - axisAt(pl.y);
   // A gentle gain: a steep one turned per-sample noise into light and dark specks.
-  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * 1.5 + 0.5, 0.0, 1.0);
+  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * mix(1.5, 0.6, fl) + 0.5, 0.0, 1.0);
   vec3 c = shellCol(q, ps.y, R, x * Re / R, cs + (1.0 - lit) * 0.6, ph0, ph1, skyH, topK, stC);
   c = mix(c, stC, 0.45 * bk);
   sum += hazed(c, funnelHaze(ps.y)) * s;
@@ -833,8 +831,8 @@ void main() {
       float foot = t / (uRes.y * uFoc), sH0;
       gPxM = foot;
       float R0 = hornR(p.y, sH0);
-      // The layers hug the core closer the farther the funnel is: tight at 8 to 14 km.
-      gSp = 0.2 * mix(1.0, 0.4, smoothstep(4000.0, 12000.0, t));
+      // Dev's Layer gap: one value for every funnel, at any distance.
+      gSp = uGap;
       gAng = clamp(R0 * 0.06 / foot, 0.3, 1.0);
       xOut = 1.25 + 4.0 * gSp;
       if (!have) g0 = geo(p, xOut + 0.6);
@@ -903,7 +901,8 @@ void main() {
         // Inside the bell the horn's underside read darker than the deck round it.
         if (stC.x < 0.0) {
           vec2 tc = topXZ(), toEye = normalize(-gFoot.xz - tc + 1e-3);
-          vec3 pb = vec3(tc.x + toEye.x * gRtopKm * 1300.0, max(pm.y, gDeck - 120.0), tc.y + toEye.y * gRtopKm * 1300.0);
+          // One fixed point per tornado: read at each pixel's own height, its lumps speckled the top.
+          vec3 pb = vec3(tc.x + toEye.x * gRtopKm * 1300.0, gDeck - 120.0, tc.y + toEye.y * gRtopKm * 1300.0);
           vec3 pt = toKm(pb);
           stC = stormLit(pt, deckD(pt, true, pb, 1e3));
         }

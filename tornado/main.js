@@ -1185,7 +1185,7 @@ function funnelPass(w, h) {
   gl.uniform2f(u.uRes, rw, rh);
   const fr = fun.frame++;
   gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
-  gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
+  gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uGap, KNOB.gap); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
   gl.uniform1f(u.uAlb, KNOB.alb); gl.uniform1f(u.uSunK, KNOB.sunK); gl.uniform1f(u.uAmbK, KNOB.ambK);
   gl.uniform1f(u.uHazeK, KNOB.hazeK); gl.uniform1f(u.uTopDark, KNOB.topK); gl.uniform1f(u.uDustK, KNOB.dustK);
   gl.uniform1f(u.uSpIn, KNOB.spIn);
