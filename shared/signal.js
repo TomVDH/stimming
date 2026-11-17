@@ -54,14 +54,17 @@ const STAY_MOVE = '<path d="M13.5 5.5v5M13.5 8h7.5M19 6l2 2-2 2"/>';
 const GESTURE = {
   click: LEFT, 'right-click': RIGHT, 'double-click': LEFT,
   drag: LEFT + MOVE, 'right-drag': RIGHT + MOVE, hold: LEFT + STAY, 'hold + drag': LEFT + STAY_MOVE,
+  // A release: no button is down, and an arrow leaves the mouse.
+  release: `<path d="${MOUSE}M3 7h7M6.5 3v4"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>`,
+  'touch-release': '<circle cx="6.5" cy="8" r="4.5"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>',
   scroll: `<path d="${MOUSE}"/><rect class="solid" x="5.75" y="4.5" width="1.5" height="3.2" rx="0.75"/><path d="M15 6.5l2-2 2 2M15 9.5l2 2 2-2"/>`,
   tap: POINT, 'double-tap': POINT, 'long-press': POINT + STAY, 'touch-drag': POINT + MOVE, 'touch-hold-drag': POINT + STAY_MOVE,
   'two-finger drag': '<circle class="solid" cx="4.5" cy="6" r="1.8"/><circle class="solid" cx="8.5" cy="10" r="1.8"/>' + MOVE,
   pinch: '<circle class="solid" cx="4" cy="8" r="1.8"/><circle class="solid" cx="20" cy="8" r="1.8"/><path d="M7 8h3.5M9 6.5 10.5 8 9 9.5M17 8h-3.5M15 6.5 13.5 8 15 9.5"/>',
 };
 // On a touch screen each mouse gesture has one touch gesture, as in keyWord.
-const TOUCH = { click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch' };
-const KINDS = ['hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch'];
+const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch' };
+const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch'];
 /**
  * The icon for one How to play entry: a gesture drawing, or keycaps for a key.
  * @param {string} word The spec's word, such as 'drag', 'drag a thing' or 'T'.

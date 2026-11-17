@@ -199,7 +199,8 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
     const want = new URLSearchParams(location.search).get('bar');
     if (want === 'signal' || (signal && want !== 'v2')) {
       document.documentElement.classList.add('stim-signal');
-      import('./signal.js').then(m => m.mountSignal(id, bar, ui));
+      // The address is built here, so a strict TypeScript toy does not pull the module into its own check.
+      import(new URL('./signal.js', import.meta.url).href).then(m => m.mountSignal(id, bar, ui));
     }
   } else {
     legacyLink();

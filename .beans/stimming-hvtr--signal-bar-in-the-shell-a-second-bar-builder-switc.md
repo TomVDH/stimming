@@ -34,5 +34,7 @@ Hard rule 3 applies: this bean changes `shared/`. It needs Tom's yes before the 
 - [x] `docs/plans/bar-v3.md` (the spec), `shared/AGENTS.md` and `DESIGN.md` say what is true
 - [ ] `/code-review` before the merge (rule in `shared/AGENTS.md`)
 - [ ] The lab keeps its own copy of the builder; one source is still to do
+- [ ] `shared/signal.js` is not strict-clean: 94 findings under Railgun's tsconfig, most of them untyped parameters. `stim.js` builds the module's address at run time so that check passes; typing the module is still to do
+- [x] Train ride and Railgun are on Bar v3 (2026-11-17)
 - [x] Cauldron first: `signal: true` in `cauldron/index.html`
 - [ ] The other nine, one at a time, each in its own bean
