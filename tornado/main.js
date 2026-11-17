@@ -5,7 +5,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
-import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, MAX_FUNNELS } from './funnel.js';
+import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -57,6 +57,10 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
+    // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
+    ...KNOBS.map(([group, id, label, min, max, step, value]) => ({ type: 'slider', group, id: 'k_' + id, label, min, max, step, value, persist: true, onInput: v => act.knob(id, v) })),
+    { type: 'button', group: 'Knobs', id: 'kCopy', label: 'Copy JSON', text: 'Copy', onClick: () => act.knobCopy() },
+    { type: 'button', group: 'Knobs', id: 'kReset', label: 'Defaults', text: 'Reset', onClick: () => act.knobReset() },
   ],
   quality: true,
   keys: [['click', 'touch down'], ['drag', 'steer'], ['0-5', 'F-scale']],
@@ -207,7 +211,8 @@ float hornUnder(vec3 p) {
 // The deck's whirls: each tornado turns the deck above it, and the wall cloud has a gentle one.
 // A whirl's texture lies on angle and log distance, so a turn and an inflow are one plain slide.
 // It never winds up, and it moves with its centre.
-const float SP_TURN = 0.08, SP_IN = 0.025, SP_TWIST = 1.4, SP_R = 4.5;
+// The inflow's speed: Dev's Inflow.
+uniform float uSpIn;
 // One whirl's noise point at p, round centre c with reach R, in km. w returns its weight there.
 // turn is its angle, summed on the CPU, so a change of speed never jumps.
 // twist sets how tightly its arms wind; seed keeps two whirls apart.
@@ -215,7 +220,7 @@ vec3 whirlPt(vec3 p, vec2 c, float R, float turn, float twist, vec2 seed, out fl
   vec2 q = p.xz - c;
   float r = max(length(q), 0.08);
   w = (1.0 - smoothstep(R * 0.55, R, r)) * (1.0 - smoothstep(BASE + 1.0, BASE + 2.6, p.y));
-  float lr = log(r) + SP_IN * uT;
+  float lr = log(r) + uSpIn * uT;
   float ang = atan(q.y, q.x) + turn - twist * lr;
   return vec3(cos(ang) * 2.2 + lr * 2.8 + seed.x, p.y, sin(ang) * 2.2 + seed.y);
 }
@@ -735,7 +740,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: () => base, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: () => base, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
   });
@@ -828,7 +833,7 @@ function deckAt(cx, cz, pits) {
 }
 // A tornado's pit: it deepens as its whirl forms, to 0.55 km under the base.
 const pitOf = t => {
-  const f = t.f, reachF = 1.5 + 3 * f / 5;
+  const f = t.f, reachF = (1.5 + 3 * f / 5) * KNOB.spR;
   return [(0.6 + 0.35 * reachF) * (0.6 + 0.4 * storm), 0.55 * sstep(0, 1, t.form)];
 };
 const CAMH = 1.25;
@@ -843,7 +848,7 @@ function packFunnels(rw, rh) {
   let x0 = rw, y0 = rh, x1 = 0, y1 = 0;
   // Each tornado's top and pit first: a funnel's height hangs from the pits round it.
   const tops = tors.map(t => {
-    const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co, lean = at('lean', t.f) * (0.4 + 0.8 * wind);
+    const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co, lean = at('lean', t.f) * KNOB.lean * (0.4 + 0.8 * wind);
     return [cx + windC[0] * lean + 500 * clamp(t.rope), cz + windC[1] * lean - 125 * clamp(t.rope)];
   });
   const pits = tors.map((t, i) => [tops[i][0] * 0.001, tops[i][1] * 0.001, ...pitOf(t)]);
@@ -851,16 +856,16 @@ function packFunnels(rw, rh) {
     // The foot in camera space.
     const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co;
     const f = t.f, fade = 1 - clamp(t.rope - 1), lm = labM(f), deck = deckAt(tops[ti][0], tops[ti][1], pits);
-    const r0 = at('r0', f) * KNOB.width, flare = at('flare', f);
+    const r0 = at('r0', f) * KNOB.width, flare = at('flare', f) * KNOB.flare;
     // Roping out, the funnel narrows to a rope about 35 m across.
     const r = r0 + (Math.min(r0, 18) - r0) * clamp(t.rope);
     // The march's column, as wide as the shader's, so the box holds all of it.
     const rTop = r * flare * 1.15;
     // The wind leans the funnel and bows its trunk; gusts swell the bow slowly. Thin funnels bend most.
-    const lean = at('lean', f) * (0.4 + 0.8 * wind);
+    const lean = at('lean', f) * KNOB.lean * (0.4 + 0.8 * wind);
     const gust = 0.5 + 0.5 * Math.sin(simT * 0.13 + t.seed * 9) * Math.sin(simT * 0.071 + t.seed * 4);
     const bow = wind * (350 + (50 - 350) * f / 5) * (0.7 + 0.6 * gust) * (1 - clamp(t.rope));
-    const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + lean + bow + at('sway', f) * 2 + 140 + 1300 * clamp(t.rope);
+    const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + lean + bow + at('sway', f) * KNOB.sway * 2 + 140 + 1300 * clamp(t.rope);
     // The horn's top radius and the near deck's reach, in km, as funnel.js finds them.
     const ss = (e0, e1, x) => { const k = clamp((x - e0) / (e1 - e0)); return k * k * (3 - 2 * k); };
     const fs = ss(0, 1, f / 5), wallRad = Math.max((0.9 + 1.5 * fs) * lm, rTop * 1.7);
@@ -872,7 +877,7 @@ function packFunnels(rw, rh) {
     // The horn's strength, and the near deck's height over the base in km.
     // Its whirl in the deck grows with F and fades as it ropes out.
     // Its whirl in the deck: it forms first, wide and slow, and tightens to its F's reach.
-    const form = ss(0, 1, t.form), reachF = 1.5 + 3 * f / 5;
+    const form = ss(0, 1, t.form), reachF = (1.5 + 3 * f / 5) * KNOB.spR;
     const horn = [ss(0, 0.35, t.cond), t.turn, reachF * (1 + 1.2 * (1 - form)), (0.5 + 0.5 * f / 5) * form];
     let bx0 = 1, by0 = 1, bx1 = 0, by1 = 0, behind = false;
     // The box on screen holds the funnel's column and the near deck's.
@@ -892,8 +897,8 @@ function packFunnels(rw, rh) {
     list.push({ t, d: -cz, rb: reach, nr, horn, dep: pits[ti][3], v: [
       [cx, cz, H, deck],
       [r, flare, at('prof', f), at('vmax', f)],
-      [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f), at('rain', f) * fade],
-      [at('dark', f) * KNOB.darkK, lean, at('sway', f), f / 5],
+      [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f) * KNOB.dustH, at('rain', f) * fade],
+      [at('dark', f) * KNOB.darkK, lean, at('sway', f) * KNOB.sway, f / 5],
       [t.ds, t.zs, t.rope, t.seed],
       [lm, fade, densAt(f), bow],
     ] });
@@ -905,7 +910,7 @@ function packFunnels(rw, rh) {
   list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb, nr, horn, dep }, i) => {
     ['A', 'B', 'C', 'D', 'E', 'F'].forEach((k, j) => pk[k].set(v[j], i * 4));
     pk.ph.set(t.ph, i * 14);
-    pk.Z.set([t.seed * 37.1, t.seed * 53.7, 1.4 * (0.35 + 0.65 * sstep(0, 1, t.form)), 0.01 + dep], i * 4);
+    pk.Z.set([t.seed * 37.1, t.seed * 53.7, KNOB.spTwist * (0.35 + 0.65 * sstep(0, 1, t.form)), 0.01 + dep], i * 4);
     pk.NR.set(nr, i * 4);
     pk.H.set(horn, i * 4);
   });
@@ -942,6 +947,10 @@ function funnelPass(w, h) {
   gl.uniform2f(u.uJit, hist ? ((fr * 0.618) % 1) - 0.5 : 0, hist ? ((fr * 0.382) % 1) - 0.5 : 0);
   gl.uniform1f(u.uBlend, hist ? 0.55 : 1);
   gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
+  gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
+  gl.uniform1f(u.uAlb, KNOB.alb); gl.uniform1f(u.uSunK, KNOB.sunK); gl.uniform1f(u.uAmbK, KNOB.ambK);
+  gl.uniform1f(u.uHazeK, KNOB.hazeK); gl.uniform1f(u.uTopDark, KNOB.topK); gl.uniform1f(u.uDustK, KNOB.dustK);
+  gl.uniform1f(u.uSpIn, KNOB.spIn);
   gl.uniform3fv(u.uSun, sun); gl.uniform3fv(u.uSunCol, sunCol); gl.uniform3fv(u.uAmb, amb);
   gl.uniform3fv(u.uZen, sk.zen); gl.uniform3fv(u.uMid, sk.mid); gl.uniform3fv(u.uBand, sk.band); gl.uniform3fv(u.uAnti, sk.anti);
   gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
@@ -972,11 +981,11 @@ function live(t, dt) {
   const sp = spinLayers(t.ph, dt, t.f);
   t.zs = sp.zs; t.ds = sp.ds;
   // Its whirl in the deck turns faster as it forms, and with F; the angle sums here, so it never jumps.
-  t.turn = (t.turn + 0.08 * (0.25 + (0.75 + 0.5 * t.f / 5) * t.form) * dt) % (Math.PI * 200);
+  t.turn = (t.turn + 0.08 * KNOB.spTurn * (0.25 + (0.75 + 0.5 * t.f / 5) * t.form) * dt) % (Math.PI * 200);
   if (!t.roping) {
     // Touchdown: the whirl converges over about 8 s, then the horn and the condensation lower.
     t.form = Math.min(1, t.form + dt / 8);
-    const target = at('cond', t.f);
+    const target = clamp(at('cond', t.f) + KNOB.reach);
     if (t.form > 0.6) t.cond += (target - t.cond) * (1 - Math.exp(-dt / 3));
     // The dust spins up on the ground just before the funnel meets it.
     if (t.cond > 0.5 * target) t.dust = Math.min(1, t.dust + dt / 2.5);
@@ -1109,6 +1118,13 @@ act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wak
 act.lens = v => { lensMM = +v || 28; wake(); };
 act.expo = v => { S.expo = v; wake(); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
+act.knob = (id, v) => { KNOB[id] = +v; wake(); };
+// Copy JSON: every knob, to paste back as defaults.
+act.knobCopy = async () => {
+  const text = JSON.stringify(KNOB, null, 2);
+  try { await navigator.clipboard.writeText(text); } catch { console.log(text); }
+};
+act.knobReset = () => { for (const [, id, , , , , value] of KNOBS) ui.setting('k_' + id)?.set(value, true); };
 act.wind = v => { wind = clamp(+v); wake(); };
 act.windDir = v => { const a = (+v || 0) * Math.PI / 180; windDir[0] = Math.cos(a); windDir[1] = Math.sin(a); wake(); };
 act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
@@ -1127,6 +1143,8 @@ else if (savedTod !== null) act.tod(+savedTod);
 else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
 S.expo = ui.setting('expo')?.value ?? 1;
+// Each knob: the address for one load, else Dev's saved value, else its default.
+for (const [, id, , , , , value] of KNOBS) KNOB[id] = qs0.has(id) ? +qs0.get(id) : +(ui.setting('k_' + id)?.value ?? value);
 // QA: ?wind=0.5 and ?winddir=19 set the wind for one load.
 act.wind(qs0.has('wind') ? +qs0.get('wind') : ui.setting('wind')?.value ?? 0.85);
 act.windDir(qs0.has('winddir') ? +qs0.get('winddir') : ui.setting('windDir')?.value ?? 19);

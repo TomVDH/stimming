@@ -22,10 +22,38 @@ export const TABLE = {
   lean: [430, 260, 120, 60, 25, 10],       // top offset, m
   sway: [90, 60, 35, 20, 10, 5],
 };
-// The scene's knob values. They start from the lab's approved set (Tom, 2026-11-16).
+// The scene's knobs, each a Dev row: group, id, label, range, step and default.
+// The defaults start from the lab's approved set (Tom, 2026-11-16).
 // The scene is denser, brighter and less dark (Tom: "poppier and more reflective", "a lot more opaque").
-// darkK scales the table's darkness; sunK is the sunlit side's weight (the lab's is 0.6).
-export const KNOB = { darkK: 0.55, sunK: 1.0, width: 1.6, dens: 2.4, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
+export const KNOBS = [
+  ['Funnel', 'dens', 'Opacity', 0.1, 6, 0.05, 2.4],
+  ['Funnel', 'sheath', 'Sheaths', 0, 2, 0.01, 0.35],
+  ['Funnel', 'edge', 'Core edge', 0, 1.6, 0.01, 0.8],
+  ['Funnel', 'rim', 'Rim blend', 0, 1, 0.01, 0.6],
+  ['Funnel', 'trans', 'Light through', 0, 1, 0.01, 0.4],
+  ['Funnel', 'amp', 'Turbulence', 0, 1.5, 0.01, 0.63],
+  ['Funnel', 'spin', 'Spin', 0, 3, 0.01, 1],
+  ['Colour', 'alb', 'Reflectivity', 0.2, 1.5, 0.01, 0.9],
+  ['Colour', 'sunK', 'Sunlit weight', 0, 2, 0.01, 0.85],
+  ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.6],
+  ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.55],
+  ['Colour', 'hazeK', 'Haze on funnel', 0, 2, 0.01, 1],
+  ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 1],
+  ['Colour', 'dustK', 'Dust tint', 0, 2, 0.01, 1],
+  ['Shape', 'width', 'Width', 0.5, 3, 0.01, 1.6],
+  ['Shape', 'flare', 'Flare', 0, 2, 0.01, 1],
+  ['Shape', 'lean', 'Lean', 0, 2, 0.01, 1],
+  ['Shape', 'sway', 'Sway', 0, 2, 0.01, 1],
+  ['Shape', 'reach', 'Reach', -0.5, 0.5, 0.01, 0],
+  ['Dust', 'debris', 'Debris', 0, 2, 0.01, 0.58],
+  ['Dust', 'dustH', 'Dust height', 0.3, 2.5, 0.01, 1],
+  ['Deck whirl', 'spTurn', 'Turn', 0, 3, 0.01, 1],
+  ['Deck whirl', 'spIn', 'Inflow', 0, 0.1, 0.001, 0.025],
+  ['Deck whirl', 'spTwist', 'Twist', -3, 3, 0.05, 1.4],
+  ['Deck whirl', 'spR', 'Reach', 0.3, 2.5, 0.01, 1],
+];
+// The live values, by id. main.js sets them from Dev, the address or the defaults.
+export const KNOB = Object.fromEntries(KNOBS.map(k => [k[1], k[6]]));
 // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
 export const densAt = f => KNOB.dens * (0.5 + 1.75 * Math.log(1 + f));
 // A smooth curve through the table (Catmull-Rom), held inside each step's two values.
@@ -131,6 +159,8 @@ uniform float uBlend;
 uniform int uCount;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
+// Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
+uniform float uWid, uSheathK, uEdgeW, uAmp, uAlb, uSunK, uAmbK, uHazeK, uTopDark, uDustK;
 // Rim blend: a grazing ray sees thinner core, so the lit rim blends, 0 to 1.
 uniform float uRim;
 // The scene's own uniforms, the same values as the scene pass.
@@ -147,7 +177,6 @@ ${sky}
 ${storm}
 
 // The lab's approved knob values.
-const float uWid = ${KNOB.width.toFixed(3)}, uSheathK = ${KNOB.sheath.toFixed(3)}, uEdgeW = ${KNOB.edge.toFixed(3)}, uAmp = ${KNOB.amp.toFixed(3)};
 // A step through the onion is this share of its radius: the lab's 60 steps.
 const float K_ON = 0.3;
 
@@ -419,18 +448,27 @@ float live(float h) {
 // The colour of the funnel's cloud at one layer hit, before haze.
 vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1, vec3 skyH, float topK, vec3 stC) {
   float u = clamp(h / uH, 0.0, 1.0);
-  float od = sunOD(q, h, R) + cs;
+  // The deck's shadow falls on the upper funnel: it darkens and cools there, and grows out of the cloud.
+  float top = smoothstep(0.45, 1.0, u) * uTopDark;
+  float od = sunOD(q, h, R) + cs + top * 1.5;
   vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
   // Sky light falls off with depth into the funnel.
   float depth = max(0.0, 1.6 - xr);
+  // The shade side fills with the light round it: the cool sky low down, the deck's dim tone up high.
   vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
-  // Up the flare the deck hides the sky: its light fails toward the base, as the deck's does.
-  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, topK) * exp(-depth * 1.6);
+  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, max(topK, top * 0.6)) * exp(-depth * 1.6);
   // Bounce from the sunlit wheat warms the lower funnel from below.
   ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
-  vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
-  alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-  return mix(alb * (sunL * ${KNOB.sunK.toFixed(2)} + ambL * 0.8), stC, topK);
+  vec3 alb = uAlb * vec3(1.0, 1.01, 1.03) * mix(1.0, 0.1, uDark);
+  // The lower funnel takes the dust's brown.
+  alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), clamp((1.0 - smoothstep(0.0, 0.35, u)) * uDebris * uDustK, 0.0, 1.0));
+  return mix(alb * (sunL * uSunK + ambL * 0.8 * uAmbK), stC, topK);
+}
+// The air in front of a funnel sample, by its height: as thick as the plain's near the ground,
+// as thin as the deck's up at the base, so a funnel sits in the same air as both.
+float gTm = 0.0;
+float funnelHaze(float h) {
+  return mix(1.0 - exp(-gTm / 22000.0), 0.8 * (1.0 - exp(-gTm / 70000.0)), smoothstep(0.0, 1200.0, h)) * uHazeK;
 }
 
 /* ---------- the deck round a tornado: the horn ---------- */
@@ -555,11 +593,13 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       ph = pa + rd * (len * uk);
       q = ph.xz - axisAt(ph.y);
       od = sMax * den * uSheathK * uDens;
+      // A sheath's own noise shows as tone: its dense puffs read lighter, its thin parts darker.
+      shade = mix(0.72, 1.12, den);
       xr = rk * mix(Rea, Reb, uk) / R;
     }
     od *= live(ph.y);
     if (od < 1e-4) continue;
-    vec3 c = hazed(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, hzF);
+    vec3 c = hazed(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, funnelHaze(ph.y));
     float a = 1.0 - exp(-od);
     fAcc += fT * a * c;
     fT *= 1.0 - a;
@@ -640,6 +680,7 @@ void main() {
     float st = 1e9, xOut = 0.0;
     bool inDust = false;
     float hzF = 0.8 * (1.0 - exp(-t / 70000.0));
+    gTm = t;
     float gLen = clamp(t * 0.001 - gGl.x, 0.0, gGl.y);
     gGk = 1.0 - exp(-gLen * gLen * 0.003 * uStorm);
     if (inA) {
@@ -738,7 +779,8 @@ void main() {
           vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.21) * (ambC * 0.7 + uSunCol * exp(-od) * 0.05);
-          sum += hazed(dcol, hzF) * sd + hazed(wcol, hzF) * sw2;
+          float hzD = funnelHaze(p.y);
+          sum += hazed(dcol, hzD) * sd + hazed(wcol, hzD) * sw2;
           sig += sd + sw2;
         }
       }

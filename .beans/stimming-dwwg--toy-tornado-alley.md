@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:58:45Z
+updated_at: 2026-11-17T07:01:29Z
 parent: stimming-oh7b
 ---
 
@@ -143,3 +143,5 @@ Built; waits for the checkpoint with Tom.
 
 - 2026-11-16, Tom: (1) no fixed pit: with no tornado the base is plain; each tornado lowers its own pit (to 0.55 km as its whirl forms, radius with F), centred on its top, following it, leaving with it; funnel heights hang from the pits. (2) Dev Time of day 14:00 to 21:00 (?tod); the sun sets after about 19:40 into twilight. (3) Dev Wind and Wind dir (?wind, ?winddir): wheat, gusts, drift and each funnel's lean; the trunk bows downwind (thin up to 350 m, wedges 50 m) with the top anchored under its whirl and a slow gust swell.
 - [x] Tom: the funnel's twist, reach and bend follow the wind and move over time (started: Wind drives lean and bow).
+
+- 2026-11-17, Tom: 25 live Dev knobs in the scene (?dev; one table KNOBS in funnel.js; remembered as k_<id>; ?id=value for one load; Copy JSON and Reset): Funnel, Colour (Reflectivity, Sunlit weight, Ambient, Darkness, Haze on funnel, Top darkening, Dust tint), Shape, Dust, Deck whirl. Colour blending: a cool shade side from the sky and deck, the upper funnel darkened by the deck's shadow, dust brown and wheat bounce low down, sheath noise as tone, haze on the funnel by height.
