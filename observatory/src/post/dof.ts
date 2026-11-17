@@ -1,7 +1,7 @@
 // Load order: none.
 // The module builds its pass when the chain asks.
-import { ShaderMaterial, Vector2 } from 'three';
-import type { PerspectiveCamera, WebGLRenderer, WebGLRenderTarget } from 'three';
+import { DepthTexture, HalfFloatType, ShaderMaterial, Vector2, WebGLRenderTarget } from 'three';
+import type { PerspectiveCamera, WebGLRenderer } from 'three';
 import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 
 /* ---------- depth of field: a gather blur from the scene's depth ---------- */
@@ -64,6 +64,8 @@ export type Dof = Pass & {
   // focus: metres from the eye.
   // aperture: the blur at infinity, a share of the frame's height.
   set(focus: number, aperture: number): void;
+  // Compiles the pass's shader once, off screen, before any cut.
+  warm(r: WebGLRenderer): void;
 };
 
 export function makeDof(camera: PerspectiveCamera): Dof {
@@ -99,6 +101,16 @@ export function makeDof(camera: PerspectiveCamera): Dof {
       U.uFar.value = camera.far;
       r.setRenderTarget(this.renderToScreen ? null : write);
       quad.render(r);
+    }
+    warm(r: WebGLRenderer): void {
+      // The target matches the composer's: half float, 4 samples, a depth texture.
+      // The GPU builds its draw state per target format.
+      const rt = new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples: 4, depthTexture: new DepthTexture(1, 1) });
+      r.setRenderTarget(rt);
+      quad.render(r);
+      r.setRenderTarget(null);
+      rt.depthTexture?.dispose();
+      rt.dispose();
     }
     dispose(): void {
       mat.dispose();

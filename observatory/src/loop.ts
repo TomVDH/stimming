@@ -409,6 +409,8 @@ window.__qa = {
   hero(on: boolean) { cuts.hold(on); draw(); },
   // The hero's triangles, draw calls and build time.
   get heroStats() { return hero.stats(); },
+  // The shader programs on the GPU: no cut may add one.
+  get programs() { return renderer.info.programs?.length ?? 0; },
   // The opening's time and state.
   get opening() {
     const o = opening;

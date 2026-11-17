@@ -1,6 +1,6 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Matrix4, Raycaster, Vector3 } from 'three';
+import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
@@ -302,7 +302,15 @@ let stars: readonly Star[] | null = null, starsSet = false;
 function feedGlass(show: boolean): void {
   const sc = hero.scope;
   if (!sc) return;
-  if (stars && !starsSet) { sc.setStars(stars); starsSet = true; }
+  if (stars && !starsSet) {
+    sc.setStars(stars);
+    starsSet = true;
+    // The star map goes to the GPU now, not in the glass shot.
+    // Before the hero's warm-up, the warm-up uploads it.
+    const u = (renderer.properties.get(sc.glass.material) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+    const map = u?.uStars?.value;
+    if (map instanceof Texture) renderer.initTexture(map);
+  }
   if (show && sky.points) sc.setSky(sky.points.matrix);
 }
 
@@ -320,7 +328,7 @@ function toWide(): void {
 // Steps the dip: the last cut fades down, the wide shot fades up.
 function stepDip(dt: number): void {
   dipT += dt;
-  // The cuts' grain eases back to the wide shot's as the black comes up.
+  // The cuts' grain eases back as the black comes up.
   if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); cutGrain(1 - k); return; }
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
