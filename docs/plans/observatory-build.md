@@ -261,6 +261,13 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 
 One change each, as in the spec section "Detail and trees". Each ends with stills and Tom's gate.
 
+### Task 7l: The laser like Railgun's (Tom, 2026-11-17)
+
+Tom: "the laser is thinner and more realistic like the rail gun targeting one". **Files:** Modify `observatory/src/world/laser.ts`, copied and trimmed from `railgun/src/gun/laser.ts` (credit the file).
+
+- [ ] **Step 1:** A thin beam with Railgun's look: its core, falloff and haze scatter. Still solid near the dome, fading with height. Aim, dusk lock and cuts unchanged.
+- [ ] **Step 2:** Stills at 1280 and 375 next to a Railgun still with its targeting laser. **Gate:** show Tom; commit locally with his words.
+
 ### Task 7d: Distance haze (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/sky/haze.ts`, `observatory/src/world/far.ts`.
