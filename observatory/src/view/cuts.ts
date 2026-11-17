@@ -14,7 +14,7 @@ import { applyCamera, applyShot } from './camera.ts';
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
 // Hard cuts join the shots.
-// After the last shot, the wide shot comes back.
+// After the last shot, a quick dip to black leads to the wide shot.
 // Each cut is a locked camera: one eye, one aim, one lens.
 // Only the machine moves in the frame.
 
@@ -56,6 +56,11 @@ const EYE_R = 42;
 const STILL_S = 2.6, FADE_S = 1.2;
 // Reduced motion holds the slit shot.
 const STILL_CUT: Cut = CUTS.find(c => c.shot === 'slit')!;
+// After the last cut, a quick dip to black leads to the wide shot.
+// The last cut fades down in DIP_DOWN seconds.
+// The wide shot fades up in DIP_UP seconds.
+const DIP_DOWN = 0.35, DIP_UP = 0.45;
+const LAST_CUT: Cut = CUTS[CUTS.length - 1];
 // The letterbox bars, as a share of the stage height.
 const BAR = 0.055;
 // The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
@@ -122,7 +127,16 @@ const bars = [0, 1].map(i => {
 });
 const still = document.createElement('canvas');
 still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
-renderer.domElement.after(still, ...bars);
+// The dip's black lies over the frame and the bars.
+const dip = document.createElement('div');
+dip.style.cssText = 'position:absolute;inset:0;background:#000;pointer-events:none;display:none';
+renderer.domElement.after(still, ...bars, dip);
+
+// k: 0 clear, 1 black.
+function black(k: number): void {
+  dip.style.display = k > 0 ? 'block' : 'none';
+  dip.style.opacity = String(k);
+}
 
 function beam(k: number): void { laser.mesh.scale.x = laser.mesh.scale.z = k; }
 
@@ -134,9 +148,13 @@ function showBars(on: boolean, opacity = 1): void {
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
 let t = 0;
-// mode: 'off', 'cuts' (hard cuts), 'still' (reduced motion), 'fade' (the crossfade).
-let mode: 'off' | 'cuts' | 'still' | 'fade' = 'off';
+// mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
+// Reduced motion: 'still', then 'fade' (the crossfade).
+let mode: 'off' | 'cuts' | 'dip' | 'still' | 'fade' = 'off';
 let fadeT = 0, grab = false;
+// The time in the dip.
+// dipWide is true once the black hides the change to the wide shot.
+let dipT = 0, dipWide = false;
 // The locked cameras: each cut sets its own on its first frame.
 // The cupola can turn after the pick.
 // So each cut frames the slit where it stands at the cut.
@@ -146,9 +164,29 @@ const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
 function toWide(): void {
   mode = 'off';
   showBars(false);
+  black(0);
   still.style.display = 'none';
   beam(1);
   applyCamera(camera.aspect);
+}
+
+// Steps the dip: the last cut fades down, the wide shot fades up.
+function stepDip(dt: number): void {
+  dipT += dt;
+  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); return; }
+  if (!dipWide) {
+    // The frame is black now, so the change to the wide shot does not show.
+    dipWide = true;
+    showBars(false);
+    beam(1);
+    applyCamera(camera.aspect);
+    // This frame shows full black.
+    black(1);
+    return;
+  }
+  const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
+  black((1 - k) * (1 - k));
+  if (k >= 1) toWide();
 }
 
 function startFade(): void {
@@ -159,11 +197,15 @@ function startFade(): void {
 }
 
 export const cuts = {
-  // True while the sequence owns the camera or the crossfade runs.
+  // True while the cuts, the dip or the crossfade run.
   get busy(): boolean { return mode !== 'off'; },
-  // True while a close shot shows; a tap or Esc then skips.
-  get showing(): boolean { return mode === 'cuts' || mode === 'still'; },
-  get shot(): Shot | null { return mode === 'cuts' ? cutAt(t)?.shot ?? null : mode === 'still' ? STILL_CUT.shot : null; },
+  // True while a close shot or the dip shows; a tap or Esc then skips.
+  get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
+  get shot(): Shot | null {
+    if (mode === 'cuts') return cutAt(t)?.shot ?? null;
+    if (mode === 'dip') return dipWide ? null : LAST_CUT.shot;
+    return mode === 'still' ? STILL_CUT.shot : null;
+  },
   get time(): number { return t; },
   // Starts the sequence.
   // phase: the machine's phase after the pick.
@@ -179,7 +221,8 @@ export const cuts = {
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
-    if (mode === 'cuts') toWide();
+    // A skip in the dip lands on the wide shot at once.
+    if (mode === 'cuts' || mode === 'dip') toWide();
     else if (mode === 'still') startFade();
     else return;
     redraw();
@@ -189,7 +232,11 @@ export const cuts = {
   step(dt: number): void {
     if (mode === 'off') return;
     t += dt;
-    if (mode === 'cuts' && t >= cutsTotal) toWide();
+    if (mode === 'cuts' && t >= cutsTotal) {
+      mode = 'dip';
+      dipT = 0; dipWide = false;
+      stepDip(t - cutsTotal);
+    } else if (mode === 'dip') stepDip(dt);
     else if (mode === 'still' && t >= STILL_S) startFade();
     else if (mode === 'fade' && !grab) {
       fadeT += dt;
@@ -201,8 +248,9 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    if (mode === 'off' || (mode === 'fade' && !grab)) return;
-    const s = mode === 'cuts' ? locks.at(t) : locks.of(STILL_CUT);
+    if (mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide)) return;
+    // The dip holds the last cut until the frame is black.
+    const s = mode === 'cuts' ? locks.at(t) : locks.of(mode === 'dip' ? LAST_CUT : STILL_CUT);
     if (!s) return;
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);

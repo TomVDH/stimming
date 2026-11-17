@@ -41,7 +41,7 @@ A failed model load shows the stage's `.fail` line.
 | `world/dusk.ts` | The dusk look: sky, haze and starlight toward the night; the last light on high ground, added to every lit material; `setDusk` |
 | `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
-| `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the reduced-motion crossfade |
+| `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
 | `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
