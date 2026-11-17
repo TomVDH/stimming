@@ -1,0 +1,614 @@
+// Load order: world/dusk runs first.
+import './dusk.ts';
+import {
+  BoxGeometry, BufferGeometry, CanvasTexture, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh,
+  Matrix3, Matrix4, Mesh, MeshStandardMaterial, NoColorSpace, RepeatWrapping, SRGBColorSpace, SphereGeometry,
+  TorusGeometry, Vector3,
+} from 'three';
+import type { Material, Object3D } from 'three';
+import { renderer } from '../setup.ts';
+import { complex } from './complex.ts';
+import { patch as duskPatch } from './dusk.ts';
+import { DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, type Dome } from './observatory.ts';
+
+/* ---------- the hero model: the main dome in full detail, for the cuts only ---------- */
+// The wide shot keeps the light model; the cuts swap this one in.
+// It hangs under the main dome's root, so it shares its place and scale.
+// Sizes are dome units, as in world/observatory.ts.
+// u() turns real metres into dome units.
+
+const DEG = Math.PI / 180;
+const R = DOME_R;
+// One dome unit is this many metres.
+const SCALE = complex.main.root.scale.x;
+const u = (metres: number): number => metres / SCALE;
+
+// The drum's radius at a height: it leans in a little as it rises.
+const wallR = (y: number): number => DRUM_R * (DRUM_BATTER - (DRUM_BATTER - 1) * y / DRUM_H);
+// Heights from the ground.
+// The plinth's top; the ashlar courses start here.
+const PLINTH_Y = 0.55;
+// The drum wall stops here; the track and the gear sit on top.
+const WALL_TOP = DRUM_H - 0.44;
+// Six courses fill the wall between the plinth and the top.
+const COURSES = 6;
+const COURSE_H = (WALL_TOP - PLINTH_Y) / COURSES;
+// The string course marks the observing floor, three courses up.
+const STRING_Y = PLINTH_Y + 3 * COURSE_H;
+// The catwalk's deck is 0.9 m deep, 0.9 m under the cupola's foot.
+const DECK_Y = DRUM_H - 0.6;
+const DECK_IN = wallR(DECK_Y), DECK_OUT = DECK_IN + u(0.95);
+// The rail is 1.05 m high.
+const RAIL_H = u(1.05);
+
+/* ---------- the mesh kit ---------- */
+type P2 = [number, number];
+const ID = new Matrix4();
+
+// One bucket of triangles for one material.
+// A matrix places each part; the winding follows the vertex normals.
+class Geo {
+  p: number[] = []; n: number[] = []; t: number[] = []; ix: number[] = [];
+  private m = new Matrix4(); private nm = new Matrix3();
+  private a = new Vector3(); private b = new Vector3();
+  at(m: Matrix4 = ID): this { this.m.copy(m); this.nm.getNormalMatrix(m); return this; }
+  v(x: number, y: number, z: number, nx: number, ny: number, nz: number, s = 0, t = 0): number {
+    this.a.set(x, y, z).applyMatrix4(this.m);
+    this.b.set(nx, ny, nz).applyMatrix3(this.nm).normalize();
+    this.p.push(this.a.x, this.a.y, this.a.z);
+    this.n.push(this.b.x, this.b.y, this.b.z);
+    this.t.push(s, t);
+    return this.p.length / 3 - 1;
+  }
+  // A face that points against its normals turns round.
+  tri(i: number, j: number, k: number): void {
+    const p = this.p, n = this.n;
+    const ax = p[3 * j] - p[3 * i], ay = p[3 * j + 1] - p[3 * i + 1], az = p[3 * j + 2] - p[3 * i + 2];
+    const bx = p[3 * k] - p[3 * i], by = p[3 * k + 1] - p[3 * i + 1], bz = p[3 * k + 2] - p[3 * i + 2];
+    const fx = ay * bz - az * by, fy = az * bx - ax * bz, fz = ax * by - ay * bx;
+    const d = fx * (n[3 * i] + n[3 * j] + n[3 * k]) + fy * (n[3 * i + 1] + n[3 * j + 1] + n[3 * k + 1]) + fz * (n[3 * i + 2] + n[3 * j + 2] + n[3 * k + 2]);
+    if (d < 0) this.ix.push(i, k, j);
+    else this.ix.push(i, j, k);
+  }
+  // Four corners in order round the face.
+  quad(a: number, b: number, c: number, d: number): void { this.tri(a, b, c); this.tri(a, c, d); }
+  // Copies a three.js shape through the current matrix.
+  add(g: BufferGeometry): this {
+    const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+    const base = this.p.length / 3;
+    for (let i = 0; i < pos.count; i++) {
+      this.v(pos.getX(i), pos.getY(i), pos.getZ(i), nor.getX(i), nor.getY(i), nor.getZ(i), uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
+    }
+    const idx = g.index;
+    const count = idx ? idx.count : pos.count;
+    for (let i = 0; i < count; i += 3) {
+      const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+      this.ix.push(base + a, base + b, base + c);
+    }
+    g.dispose();
+    return this;
+  }
+  box(w: number, h: number, d: number, m: Matrix4): this { return this.at(m).add(new BoxGeometry(w, h, d)); }
+  // Copies a shape drawn in door space onto the curved, leaning drum wall.
+  // Door space: x to the right as seen from outside, y up, z out of the wall.
+  // ashlar: the texture points follow the courses, as on the drum.
+  // one: the shape is one stone, so its texture points stay inside one block.
+  wrap(g: BufferGeometry, ashlar = false, one = false): this {
+    // A random block of the four in the texture's top row.
+    const bu = Math.floor(rnd() * 4) * 0.25;
+    const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+    const base = this.p.length / 3;
+    this.at();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), r = wallR(y);
+      const a = -x / r, sn = Math.sin(a), cs = Math.cos(a), rr = r + z;
+      const nx = nor.getX(i), ny = nor.getY(i), nz = nor.getZ(i);
+      let s = ashlar ? a / (2 * Math.PI) * 6 : uv ? uv.getX(i) : 0;
+      let t = ashlar ? (y - PLINTH_Y) / COURSE_H * 0.5 : uv ? uv.getY(i) : 0;
+      if (one) { s = bu + 0.02 + 0.2 * (s - Math.floor(s)); t = 0.54 + 0.42 * (t - Math.floor(t)); }
+      this.v(rr * sn, y, -rr * cs, -nx * cs + nz * sn, ny, -nx * sn - nz * cs, s, t);
+    }
+    const idx = g.index;
+    const count = idx ? idx.count : pos.count;
+    for (let i = 0; i < count; i += 3) {
+      const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+      this.tri(base + a, base + b, base + c);
+    }
+    g.dispose();
+    return this;
+  }
+  // A closed or open profile turned round the Y axis.
+  // Angle 0 is north (-Z); angles grow toward east (+X), as azimuth does.
+  // uv gives the texture point for an angle and a profile point.
+  // caps: a closed profile cut short gets flat ends; it must be convex.
+  lathe(prof: P2[], seg: number, opt: { a0?: number; a1?: number; closed?: boolean; smooth?: boolean; caps?: boolean; uv?: (a: number, r: number, y: number, k: number) => P2 } = {}): this {
+    const { a0 = 0, a1 = 2 * Math.PI, closed = false, smooth = false } = opt;
+    const uv = opt.uv ?? ((a: number, _r: number, y: number) => [a / (2 * Math.PI), y] as P2);
+    if (opt.caps) {
+      for (const [a, sd] of [[a0, -1], [a1, 1]]) {
+        const sn = Math.sin(a), cs = Math.cos(a);
+        const ids = prof.map(([r, y]) => this.v(r * sn, y, -r * cs, sd * cs, 0, sd * sn, r, y));
+        for (let i = 1; i + 1 < ids.length; i++) this.tri(ids[0], ids[i], ids[i + 1]);
+      }
+    }
+    sweepCore(this, prof, closed, smooth, seg + 1, (j, s, h, out) => {
+      const a = a0 + (a1 - a0) * j / seg, sn = Math.sin(a), cs = Math.cos(a);
+      out.x = s * sn; out.y = h; out.z = -s * cs;
+    }, (j, ns, nh, out) => {
+      const a = a0 + (a1 - a0) * j / seg;
+      out.set(ns * Math.sin(a), nh, -ns * Math.cos(a));
+    }, (j, k) => { const a = a0 + (a1 - a0) * j / seg; const q = prof[k % prof.length]; return uv(a, q[0], q[1], k); });
+    return this;
+  }
+  // A profile carried along a path of frames.
+  // A frame gives a point, a side axis and an up axis.
+  sweep(prof: P2[], frames: Frame[], opt: { closed?: boolean; smooth?: boolean; uv?: (j: number, k: number) => P2 } = {}): this {
+    const { closed = true, smooth = false } = opt;
+    const uv = opt.uv ?? ((j: number, k: number) => [j, k] as P2);
+    sweepCore(this, prof, closed, smooth, frames.length, (j, s, h, out) => {
+      const f = frames[j];
+      out.copy(f.p).addScaledVector(f.s, s).addScaledVector(f.u, h);
+    }, (j, ns, nh, out) => {
+      const f = frames[j];
+      out.copy(f.s).multiplyScalar(ns).addScaledVector(f.u, nh);
+    }, uv);
+    return this;
+  }
+  get tris(): number { return this.ix.length / 3; }
+  build(): BufferGeometry {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new Float32BufferAttribute(this.n, 3));
+    g.setAttribute('uv', new Float32BufferAttribute(this.t, 2));
+    g.setIndex(this.ix);
+    g.computeBoundingSphere();
+    return g;
+  }
+}
+
+export type Frame = { p: Vector3; s: Vector3; u: Vector3 };
+const PV = new Vector3(), NV = new Vector3();
+
+// The shared core of lathe and sweep.
+// at(j, s, h) places a profile point; nor(j, ns, nh) turns a profile normal.
+function sweepCore(g: Geo, prof: P2[], closed: boolean, smooth: boolean, rows: number,
+  at: (j: number, s: number, h: number, out: Vector3) => void,
+  nor: (j: number, ns: number, nh: number, out: Vector3) => void,
+  uv: (j: number, k: number) => P2): void {
+  const n = prof.length, segs = closed ? n : n - 1;
+  // A closed profile that runs clockwise turns its normals round.
+  let area = 0;
+  for (let k = 0; k < n; k++) { const a = prof[k], b = prof[(k + 1) % n]; area += a[0] * b[1] - b[0] * a[1]; }
+  const o = closed && area < 0 ? -1 : 1;
+  const segN: P2[] = [];
+  for (let k = 0; k < segs; k++) {
+    const a = prof[k], b = prof[(k + 1) % n];
+    const ds = b[0] - a[0], dh = b[1] - a[1], l = Math.hypot(ds, dh) || 1;
+    segN.push([o * dh / l, -o * ds / l]);
+  }
+  if (smooth) {
+    // One vertex per profile point; its normal is the mean of its two edges.
+    const ptN: P2[] = prof.map((_, k) => {
+      const e0 = segN[(k - 1 + segs) % segs], e1 = segN[Math.min(k, segs - 1)];
+      const first = !closed && k === 0, last = !closed && k === n - 1;
+      const x = first ? e1[0] : last ? e0[0] : e0[0] + e1[0], y = first ? e1[1] : last ? e0[1] : e0[1] + e1[1];
+      const l = Math.hypot(x, y) || 1;
+      return [x / l, y / l];
+    });
+    const idx: number[][] = [];
+    for (let j = 0; j < rows; j++) {
+      const row: number[] = [];
+      for (let k = 0; k < n; k++) {
+        at(j, prof[k][0], prof[k][1], PV); nor(j, ptN[k][0], ptN[k][1], NV);
+        const [s, t] = uv(j, k);
+        row.push(g.v(PV.x, PV.y, PV.z, NV.x, NV.y, NV.z, s, t));
+      }
+      idx.push(row);
+    }
+    for (let j = 0; j + 1 < rows; j++) for (let k = 0; k < segs; k++) {
+      const k1 = (k + 1) % n;
+      g.quad(idx[j][k], idx[j + 1][k], idx[j + 1][k1], idx[j][k1]);
+    }
+    return;
+  }
+  // Hard edges: each profile edge has its own strip of vertices.
+  for (let k = 0; k < segs; k++) {
+    const k1 = (k + 1) % n, [ns, nh] = segN[k];
+    let prev0 = -1, prev1 = -1;
+    for (let j = 0; j < rows; j++) {
+      nor(j, ns, nh, NV);
+      at(j, prof[k][0], prof[k][1], PV);
+      const [s0, t0] = uv(j, k);
+      const i0 = g.v(PV.x, PV.y, PV.z, NV.x, NV.y, NV.z, s0, t0);
+      at(j, prof[k1][0], prof[k1][1], PV);
+      const [s1, t1] = uv(j, k + 1);
+      const i1 = g.v(PV.x, PV.y, PV.z, NV.x, NV.y, NV.z, s1, t1);
+      if (j) g.quad(prev0, i0, i1, prev1);
+      prev0 = i0; prev1 = i1;
+    }
+  }
+}
+
+// A matrix from a place and Euler angles in YXZ order.
+function mat(x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): Matrix4 {
+  const m = new Matrix4();
+  const cx = Math.cos(rx), snx = Math.sin(rx), cy = Math.cos(ry), sny = Math.sin(ry), cz = Math.cos(rz), snz = Math.sin(rz);
+  // R = Ry * Rx * Rz.
+  m.set(
+    cy * cz + sny * snx * snz, -cy * snz + sny * snx * cz, sny * cx, x,
+    cx * snz, cx * cz, -snx, y,
+    -sny * cz + cy * snx * snz, sny * snz + cy * snx * cz, cy * cx, z,
+    0, 0, 0, 1);
+  return m.multiply(new Matrix4().makeScale(sx, sy, sz));
+}
+
+// A frame on the drum wall at azimuth a and height y.
+// X runs to the right as seen from outside; Z points out of the wall.
+function onWall(a: number, y: number, out = 0, r = wallR(y)): Matrix4 {
+  const sn = Math.sin(a), cs = Math.cos(a);
+  return new Matrix4().makeBasis(
+    new Vector3(-cs, 0, -sn), new Vector3(0, 1, 0), new Vector3(sn, 0, -cs),
+  ).setPosition((r + out) * sn, y, -(r + out) * cs);
+}
+
+// An instanced copy of one shape at many matrices.
+function instances(g: Geo, m: Material, mats: Matrix4[]): InstancedMesh {
+  const im = new InstancedMesh(g.build(), m, mats.length);
+  mats.forEach((x, i) => im.setMatrixAt(i, x));
+  im.computeBoundingSphere();
+  return im;
+}
+
+/* ---------- textures, painted in code ---------- */
+// A seeded generator keeps every load the same.
+let seed = 1931;
+const rnd = (): number => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return [c, c.getContext('2d', { willReadFrequently: true })!];
+}
+
+// A soft noise layer that tiles.
+// cells: the grid of random values; it is drawn large and smooth.
+function noise(x: CanvasRenderingContext2D, w: number, h: number, cx: number, cy: number, alpha: number, op: GlobalCompositeOperation): void {
+  const [c, g] = canvas(cx + 2, cy + 2);
+  const d = g.createImageData(cx + 2, cy + 2);
+  const val: number[] = [];
+  for (let i = 0; i < cx * cy; i++) val.push(rnd() * 255);
+  // The border repeats the far edge, so the layer tiles.
+  for (let y = 0; y < cy + 2; y++) for (let xx = 0; xx < cx + 2; xx++) {
+    const v = val[((y + cy - 1) % cy) * cx + ((xx + cx - 1) % cx)], i = 4 * (y * (cx + 2) + xx);
+    d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255;
+  }
+  g.putImageData(d, 0, 0);
+  x.save();
+  x.imageSmoothingEnabled = true;
+  x.globalAlpha = alpha; x.globalCompositeOperation = op;
+  x.drawImage(c, 1, 1, cx, cy, 0, 0, w, h);
+  x.restore();
+}
+
+// A normal map from a height map; both tile.
+// k: the slope gain.
+function normalOf(h: HTMLCanvasElement, k: number): HTMLCanvasElement {
+  const w = h.width, ht = h.height;
+  const src = h.getContext('2d')!.getImageData(0, 0, w, ht).data;
+  const [c, x] = canvas(w, ht);
+  const out = x.createImageData(w, ht), d = out.data;
+  const H = (xx: number, yy: number): number => src[4 * (((yy + ht) % ht) * w + ((xx + w) % w))];
+  for (let y = 0; y < ht; y++) for (let xx = 0; xx < w; xx++) {
+    // The canvas top is the texture's top, so up is row - 1.
+    const dx = (H(xx + 1, y) - H(xx - 1, y)) * k / 255, dy = (H(xx, y - 1) - H(xx, y + 1)) * k / 255;
+    const l = Math.hypot(dx, dy, 1), i = 4 * (y * w + xx);
+    d[i] = 128 + 127 * (-dx / l); d[i + 1] = 128 + 127 * (-dy / l); d[i + 2] = 128 + 127 / l; d[i + 3] = 255;
+  }
+  x.putImageData(out, 0, 0);
+  return c;
+}
+
+function tex(c: HTMLCanvasElement, srgb: boolean): CanvasTexture {
+  const t = new CanvasTexture(c);
+  t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return t;
+}
+
+// Ashlar: four blocks across, two courses up; the lower course sits half a block over.
+function stoneTex(): { map: CanvasTexture; normal: CanvasTexture } {
+  const W = 1024, H = 256, BW = 256, CH = 128;
+  const [a, ax] = canvas(W, H), [h, hx] = canvas(W, H);
+  ax.fillStyle = '#3d3a35'; ax.fillRect(0, 0, W, H);
+  hx.fillStyle = '#404040'; hx.fillRect(0, 0, W, H);
+  for (let row = 0; row < 2; row++) {
+    const off = row ? BW / 2 : 0;
+    for (let col = 0; col < 4; col++) {
+      const v = 122 + rnd() * 30, warm = rnd() * 6;
+      const fill = `rgb(${v + 4 + warm | 0},${v + warm / 2 | 0},${v - 8 | 0})`;
+      // A block that runs past the right edge comes back on the left.
+      for (const wrap of [0, -W]) {
+        const x0 = col * BW + off + wrap, y0 = row * CH;
+        ax.fillStyle = fill; ax.fillRect(x0 + 2, y0 + 2, BW - 4, CH - 4);
+        // The arrises are worn round: three steps up from the joint.
+        for (let s = 0; s < 4; s++) {
+          const g = 120 + s * 28;
+          hx.fillStyle = `rgb(${g},${g},${g})`;
+          hx.fillRect(x0 + 2 + s, y0 + 2 + s, BW - 4 - 2 * s, CH - 4 - 2 * s);
+        }
+      }
+    }
+  }
+  // Tooling and grain in the face.
+  noise(ax, W, H, 96, 24, 0.16, 'overlay');
+  noise(ax, W, H, 24, 6, 0.10, 'multiply');
+  noise(ax, W, H, 512, 128, 0.12, 'overlay');
+  noise(hx, W, H, 512, 128, 0.22, 'overlay');
+  noise(hx, W, H, 128, 32, 0.18, 'overlay');
+  // Rain darkens the foot of each course a little.
+  for (let row = 0; row < 2; row++) {
+    const gr = ax.createLinearGradient(0, row * CH + CH * 0.55, 0, row * CH + CH);
+    gr.addColorStop(0, 'rgba(30,28,25,0)'); gr.addColorStop(1, 'rgba(30,28,25,0.22)');
+    ax.fillStyle = gr; ax.fillRect(0, row * CH, W, CH);
+  }
+  return { map: tex(a, true), normal: tex(normalOf(h, 2.2), false) };
+}
+
+/* ---------- materials ---------- */
+// Every hero material takes the dusk's last light, as the scene's do.
+const mats: Material[] = [];
+function std(p: ConstructorParameters<typeof MeshStandardMaterial>[0]): MeshStandardMaterial {
+  const m = new MeshStandardMaterial(p);
+  mats.push(m);
+  return m;
+}
+
+/* ---------- the hero ---------- */
+export type Hero = {
+  root: Group;
+  // Puts the hero under the main dome's root, or takes it away.
+  show(on: boolean): void;
+  // Copies the light model's pose: cupola, shutter, tube, door glow.
+  follow(d: Dome): void;
+  // Triangles and draw calls; the build time in ms.
+  stats(): { tris: number; calls: number; ms: number };
+};
+
+function buildHero(main: Dome): Hero {
+  const t0 = performance.now();
+  const root = new Group();
+  root.name = 'hero';
+
+  const stone = stoneTex();
+  // The stone matches the light model's drum: a pale, warm limestone.
+  const stoneMat = std({ map: stone.map, normalMap: stone.normal, roughness: 0.92 });
+  // Black-painted iron: rail, brackets, lamp cages.
+  const iron = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
+  const ironI = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
+  // The doors: dark green paint over oak.
+  const doorMat = std({ color: 0x2e4a3a, roughness: 0.45 });
+  // The fanlight and the crack between the doors glow like the light model's door.
+  const glow = std({ color: 0x000000, emissive: DOOR_GLOW, emissiveIntensity: 0, roughness: 0.3 });
+
+  /* ---------- the drum ---------- */
+  const st = new Geo(), ir = new Geo(), dr = new Geo(), gl = new Geo();
+  // The door's opening on the wall, in azimuth, at the courses it cuts.
+  // The gap stays inside the jambs, so no cut end shows.
+  const DOOR_W = DOOR_HALF + 0.17;
+  const doorA = DOOR_W / wallR(1);
+  const DOOR_TOP = DOOR_SPRING + DOOR_HALF + 0.24;
+  // Ashlar texture: 24 blocks round the drum, so six tiles.
+  const stoneUV = (row: number, y0: number, y1: number) => (a: number, _r: number, y: number): P2 =>
+    [a / (2 * Math.PI) * 6, row * 0.5 + 0.5 * (y - y0) / (y1 - y0)];
+
+  // The plinth: one tall course that stands proud, with a sloped top.
+  const pr = wallR(0) + u(0.12);
+  st.lathe([[wallR(0) - 0.3, 0], [pr, 0], [pr, PLINTH_Y - u(0.09)], [wallR(PLINTH_Y) - 0.005, PLINTH_Y], [wallR(0) - 0.3, PLINTH_Y]], 144,
+    { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(0, 0, PLINTH_Y + 0.3) });
+  // The courses: each face has a small chamfer at its joints.
+  const J = u(0.012), C = u(0.025);
+  for (let k = 0; k < COURSES; k++) {
+    const y0 = PLINTH_Y + k * COURSE_H, y1 = y0 + COURSE_H;
+    const cut = y0 < DOOR_TOP;
+    st.lathe([[wallR(y0) - J, y0], [wallR(y0 + C), y0 + C], [wallR(y1 - C), y1 - C], [wallR(y1) - J, y1]], 144,
+      { a0: cut ? doorA : 0, a1: cut ? 2 * Math.PI - doorA : 2 * Math.PI, uv: stoneUV(k % 2, y0, y1) });
+  }
+  // The string course: a weathered band with a drip under it.
+  const sy = STRING_Y, sr = wallR(sy);
+  st.lathe([[sr - 0.02, sy - u(0.12)], [sr + u(0.09), sy - u(0.10)], [sr + u(0.11), sy - u(0.07)], [sr + u(0.11), sy + u(0.02)],
+    [sr + u(0.05), sy + u(0.08)], [sr - 0.02, sy + u(0.09)]], 144,
+  { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(1, sy - 0.3, sy + 0.3) });
+  // The coping on the wall's top, under the track.
+  const cr = wallR(WALL_TOP);
+  st.lathe([[DRUM_R - 0.36, WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP + u(0.04)],
+    [cr + u(0.03), WALL_TOP + u(0.07)], [DRUM_R - 0.36, WALL_TOP + u(0.07)]], 144, { closed: true, uv: stoneUV(0, WALL_TOP - 0.3, WALL_TOP + 0.3) });
+
+  /* ---------- the door: a stone surround, two leaves, a lit fanlight ---------- */
+  // The surround is drawn flat in door space, then wrapped onto the wall.
+  // Door space: x to the right as seen from outside, y up, z out of the wall.
+  const PROUD = u(0.05);
+  // Jambs: long and short blocks in turn, proud of the wall.
+  for (let i = 0; i < 4; i++) {
+    const h = DOOR_SPRING / 4, w = i % 2 ? 0.2 : 0.27, y = h * (i + 0.5);
+    for (const sd of [-1, 1]) {
+      st.wrap(new BoxGeometry(w - 0.012, h - 0.012, 0.2).translate(sd * (DOOR_HALF + w / 2), y, PROUD - 0.1), false, true);
+    }
+  }
+  // Voussoirs round the arch; the keystone stands taller and further out.
+  const NV = 9, RO = DOOR_HALF + 0.24;
+  for (let i = 0; i < NV; i++) {
+    const a0 = Math.PI * i / NV + 0.0025, a1 = Math.PI * (i + 1) / NV - 0.0025;
+    const key = i === (NV - 1) / 2;
+    const ro = key ? RO + 0.07 : RO;
+    const shape: P2[] = [[Math.cos(a0) * DOOR_HALF, DOOR_SPRING + Math.sin(a0) * DOOR_HALF], [Math.cos(a0) * ro, DOOR_SPRING + Math.sin(a0) * ro],
+      [Math.cos(a1) * ro, DOOR_SPRING + Math.sin(a1) * ro], [Math.cos(a1) * DOOR_HALF, DOOR_SPRING + Math.sin(a1) * DOOR_HALF]];
+    const w = new Geo();
+    prism(w, shape, PROUD - 0.2, PROUD + (key ? u(0.03) : 0), ID);
+    st.wrap(w.build(), false, true);
+  }
+  // The courses stop at the door; the spandrels fill round the arch.
+  const cutTop = PLINTH_Y + Math.ceil((DOOR_TOP - PLINTH_Y) / COURSE_H) * COURSE_H;
+  {
+    // It sits a joint's depth back and fills only the gap.
+    // A fine grid keeps it on the curve of the wall.
+    const g = new Geo(), NX = 28, NY = 6;
+    const foot = (x: number): number => Math.abs(x) < RO ? DOOR_SPRING + Math.sqrt(RO * RO - x * x) - 0.02 : DOOR_SPRING;
+    const ids: number[][] = [];
+    for (let i = 0; i <= NX; i++) {
+      const x = -DOOR_W + 2 * DOOR_W * i / NX, y0 = foot(x), col: number[] = [];
+      for (let j = 0; j <= NY; j++) { const y = y0 + (cutTop - y0) * j / NY; col.push(g.v(x, y, -J, 0, 0, 1)); }
+      ids.push(col);
+    }
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NY; j++) g.quad(ids[i][j], ids[i + 1][j], ids[i + 1][j + 1], ids[i][j + 1]);
+    st.wrap(g.build(), true);
+  }
+  // The reveal: the opening's sides, set back to the doors.
+  const DEPTH = u(0.4);
+  const outline: P2[] = [[DOOR_HALF, 0], [DOOR_HALF, DOOR_SPRING]];
+  for (let i = 1; i < 24; i++) { const a = Math.PI * i / 24; outline.push([Math.cos(a) * DOOR_HALF, DOOR_SPRING + Math.sin(a) * DOOR_HALF]); }
+  outline.push([-DOOR_HALF, DOOR_SPRING], [-DOOR_HALF, 0]);
+  {
+    const fr: Frame[] = outline.map(([x, y]) => ({ p: new Vector3(x, y, 0), s: new Vector3(0, 0, 1), u: new Vector3() }));
+    // The reveal's faces look into the opening.
+    fr.forEach((f, i) => {
+      const a = outline[Math.max(0, i - 1)], b = outline[Math.min(outline.length - 1, i + 1)];
+      f.u.set(-(b[1] - a[1]), b[0] - a[0], 0).normalize();
+      if (f.u.x * f.p.x + f.u.y * (f.p.y - DOOR_SPRING * 0.6) > 0) f.u.negate();
+    });
+    // It runs past the leaves, so no gap shows at their edges.
+    const rv = new Geo().sweep([[PROUD, 0], [-DEPTH - 0.08, 0]], fr, { closed: false, uv: (j, k) => [j * 0.15, k * 0.3] });
+    st.wrap(rv.build());
+  }
+  // The leaves stand flat, leaning back with the drum's batter.
+  const LEAN = Math.atan(DRUM_R * (DRUM_BATTER - 1) / DRUM_H);
+  const dm = onWall(0, 0, 0).multiply(mat(0, 0, 0, -LEAN));
+  // The threshold step.
+  st.box(DOOR_HALF * 2 + 0.36, 0.1, 0.42, onWall(0, 0.05, PROUD + 0.12));
+  // Two leaves, framed and panelled, set back in the reveal.
+  const back = -DEPTH + 0.02;
+  dr.box(DOOR_HALF * 2, DOOR_SPRING, 0.04, mat(0, DOOR_SPRING / 2, back).premultiply(dm));
+  for (const sd of [-1, 1]) {
+    const cx = sd * DOOR_HALF / 2, lw = DOOR_HALF;
+    // Stiles and rails stand 2 cm proud of the panels.
+    for (const x of [cx - lw / 2 + 0.04, cx + lw / 2 - 0.04]) dr.box(0.07, DOOR_SPRING - 0.02, 0.05, mat(x, DOOR_SPRING / 2, back + 0.025).premultiply(dm));
+    for (const y of [0.1, 0.62, 1.12, DOOR_SPRING - 0.04]) dr.box(lw - 0.1, y === 0.1 ? 0.2 : 0.07, 0.05, mat(cx, y, back + 0.025).premultiply(dm));
+    // Raised fields inside the panels.
+    for (const [y0, y1] of [[0.24, 0.58], [0.66, 1.08], [1.16, DOOR_SPRING - 0.08]]) {
+      dr.box(lw - 0.2, y1 - y0 - 0.06, 0.035, mat(cx, (y0 + y1) / 2, back + 0.02).premultiply(dm));
+    }
+    // A ring pull on each leaf.
+    ir.at(mat(sd * 0.07, 0.95, back + 0.06).premultiply(dm)).add(new TorusGeometry(0.045, 0.008, 6, 16));
+  }
+  // The light from the room shows in a crack between the leaves.
+  gl.box(0.012, DOOR_SPRING - 0.06, 0.05, mat(0, DOOR_SPRING / 2, back + 0.01).premultiply(dm));
+  // The fanlight: lit glass behind iron glazing bars.
+  {
+    const fan: P2[] = [];
+    for (let i = 0; i <= 24; i++) { const a = Math.PI * i / 24; fan.push([Math.cos(a) * DOOR_HALF, Math.sin(a) * DOOR_HALF]); }
+    prism(gl, fan, -0.03, 0, mat(0, DOOR_SPRING, back).premultiply(dm));
+    ir.box(DOOR_HALF * 2, 0.06, 0.06, mat(0, DOOR_SPRING + 0.02, back + 0.03).premultiply(dm));
+    for (let i = 1; i < 6; i++) {
+      const a = Math.PI * i / 6;
+      ir.box(0.025, DOOR_HALF, 0.03, mat(Math.cos(a) * DOOR_HALF / 2, DOOR_SPRING + Math.sin(a) * DOOR_HALF / 2, back + 0.02, 0, 0, a - Math.PI / 2).premultiply(dm));
+    }
+    ir.at(mat(0, DOOR_SPRING, back + 0.02).premultiply(dm)).add(new TorusGeometry(DOOR_HALF * 0.45, 0.012, 4, 24, Math.PI));
+  }
+
+  /* ---------- the lamps: bulkhead cages round the light model's bulbs ---------- */
+  // world/lights and world/lamp own the bulbs; the hero only adds the iron round them.
+  const bulbs = main.root.children.filter((o): o is Mesh => o instanceof Mesh && o.geometry instanceof SphereGeometry);
+  for (const b of bulbs) {
+    const r = (b.geometry as SphereGeometry).parameters.radius, bp = b.position;
+    const a = Math.atan2(bp.x, -bp.z), wr = wallR(bp.y);
+    const m = onWall(a, bp.y, 0, wr);
+    // The wall plate behind the globe.
+    ir.at(mat(0, 0, 0.01, Math.PI / 2).premultiply(m)).add(new CylinderGeometry(r * 1.45, r * 1.5, 0.04, 24));
+    // Three bars arch over the globe.
+    const out = Math.hypot(bp.x, bp.z) - wr;
+    for (const tilt of [-0.75, 0, 0.75]) {
+      ir.at(mat(0, 0, out, 0, 0, tilt).premultiply(m))
+        .add(new TorusGeometry(r * 1.08, r * 0.075, 5, 14, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2));
+    }
+    // A collar where the bars meet the plate.
+    ir.at(mat(0, 0, 0.025).premultiply(m)).add(new TorusGeometry(r * 1.12, r * 0.09, 6, 24));
+    // A small visor keeps the rain off the globe.
+    ir.at(mat(0, r * 1.05, r * 0.55, -0.35).premultiply(m)).add(new BoxGeometry(r * 2.6, 0.02, r * 1.3));
+  }
+
+  /* ---------- the catwalk round the drum ---------- */
+  // A steel deck on brackets, a toe board, a rail with a knee rail.
+  ir.at().lathe([[DECK_IN - 0.02, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y], [DECK_IN - 0.02, DECK_Y]], 160, { closed: true });
+  // The fascia channel at the deck's edge rises into a toe board.
+  ir.lathe([[DECK_OUT - u(0.01), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y + u(0.1)],
+    [DECK_OUT - u(0.01), DECK_Y + u(0.1)]], 160, { closed: true });
+  const RAIL_R = DECK_OUT - u(0.03);
+  for (const [y, t] of [[DECK_Y + RAIL_H, u(0.024)], [DECK_Y + RAIL_H * 0.5, u(0.018)]] as P2[]) {
+    ir.at(mat(0, y, 0, Math.PI / 2)).add(new TorusGeometry(RAIL_R, t, 8, 220));
+  }
+  ir.at();
+  // One post, one bracket and one joist every 10 degrees.
+  const post = new Geo();
+  const pw = u(0.045);
+  post.box(pw, RAIL_H, pw, mat(0, DECK_Y + RAIL_H / 2, -RAIL_R));
+  // The joist runs under the deck from the wall to the fascia.
+  const jl = DECK_OUT - DECK_IN;
+  post.box(u(0.05), u(0.12), jl, mat(0, DECK_Y - u(0.09), -(DECK_IN + jl / 2)));
+  // The knee brace runs from the wall up to the joist's outer third.
+  const b0 = new Vector3(0, DECK_Y - u(0.75), -wallR(DECK_Y - u(0.75))), b1 = new Vector3(0, DECK_Y - u(0.12), -(DECK_IN + jl * 0.75));
+  const bl = b0.distanceTo(b1);
+  post.box(u(0.04), bl, u(0.06), mat(0, (b0.y + b1.y) / 2, (b0.z + b1.z) / 2, Math.atan2(b1.z - b0.z, b1.y - b0.y)));
+  post.box(u(0.12), u(0.18), u(0.02), mat(0, b0.y, b0.z - u(0.01)));
+  const steps: Matrix4[] = [];
+  for (let k = 0; k < 36; k++) steps.push(new Matrix4().makeRotationY(-(5 + 10 * k) * DEG));
+  const posts = instances(post, ironI, steps);
+
+  const parts: Object3D[] = [
+    new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts,
+  ];
+  root.add(...parts);
+
+  for (const m of mats) duskPatch(m);
+  const ms = performance.now() - t0;
+
+  let shown = false;
+  return {
+    root,
+    show(on) {
+      if (on === shown) return;
+      shown = on;
+      if (on) main.root.add(root);
+      else root.removeFromParent();
+    },
+    follow(d) {
+      glow.emissiveIntensity = d.door.emissiveIntensity;
+    },
+    stats() {
+      let tris = 0, calls = 0;
+      root.traverse((o) => {
+        if (!(o instanceof Mesh)) return;
+        const g = o.geometry as BufferGeometry;
+        const n = (g.index ? g.index.count : g.attributes.position.count) / 3;
+        const k = o instanceof InstancedMesh ? o.count : 1;
+        tris += n * k; calls++;
+      });
+      return { tris, calls, ms: Math.round(ms * 10) / 10 };
+    },
+  };
+}
+
+// A flat shape pushed out between two depths along local Z.
+function prism(g: Geo, shape: P2[], z0: number, z1: number, m: Matrix4): void {
+  g.at(m);
+  const n = shape.length;
+  // The front and the back faces fan out from the first point.
+  for (const [z, nz] of [[z1, 1], [z0, -1]] as P2[]) {
+    const ids = shape.map(([x, y]) => g.v(x, y, z, 0, 0, nz, x, y));
+    for (let i = 1; i + 1 < n; i++) g.tri(ids[0], ids[i], ids[i + 1]);
+  }
+  const fr: Frame[] = [z0, z1].map(z => ({ p: new Vector3(0, 0, z), s: new Vector3(1, 0, 0), u: new Vector3(0, 1, 0) }));
+  g.sweep(shape, fr);
+  g.at();
+}
+
+export const hero = buildHero(complex.main);
