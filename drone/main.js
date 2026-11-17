@@ -371,7 +371,7 @@ const kit = audioKit({ gain: .6 });
 const rotorSound = createRotorSound(kit, U.props.length);
 
 /* ---------- cameras ---------- */
-const cam = { mode: 'chase', dist: 4.5, gPitch: -12 * DEG, zoom: 1, yaw: START_YAW, pos: new Vector3(), look: new Vector3() };
+const cam = { mode: 'chase', dist: 4.5, gPitch: -12 * DEG, zoom: 1, yaw: START_YAW, pos: new Vector3(), look: new Vector3(), fr: 0, fp: 0 };
 const PILOT = new Vector3(3, 1.7, 9);
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -391,7 +391,7 @@ function snapCam() {
   cam.look.copy(craft.position);
 }
 function updateCam(dt) {
-  const e = S.euler || { yaw: START_YAW };
+  const e = S.euler || { yaw: START_YAW, roll: 0, pitch: 0 };
   let dy = e.yaw - cam.yaw;
   dy = Math.atan2(Math.sin(dy), Math.cos(dy));
   if (cam.mode === 'chase') {
@@ -408,11 +408,21 @@ function updateCam(dt) {
     camera.lookAt(cam.look);
     camera.fov = 60;
   } else if (cam.mode === 'gimbal') {
-    // A stabilised camera in the nose: it follows yaw, never roll.
-    cam.yaw += dy * (1 - Math.exp(-dt * 8));
+    // A three-axis gimbal in the nose: it follows yaw smoothly.
+    // It cancels roll and pitch with a short lag, so hard moves tilt the picture briefly.
+    cam.yaw += dy * (1 - Math.exp(-dt * 6));
+    const k = 1 - Math.exp(-dt / .2);
+    cam.fr += (e.roll - cam.fr) * k;
+    cam.fp += (e.pitch - cam.fp) * k;
+    // Past its stops, about 50 degrees, the picture goes with the craft.
+    const stop = clamp((Math.abs(e.roll) - 50 * DEG) / (25 * DEG), 0, 1);
+    // The motors shake the frame a hair.
+    const buzz = reduced() || !S.armed ? 0 : .0011 * clamp(hud.load, 0, 1.6);
+    const jr = buzz * (Math.sin(lastT * 91) + Math.sin(lastT * 137)), jp = buzz * Math.sin(lastT * 113);
     camera.position.copy(U.camera).add(v3.set(.07, -.035, 0));
     craft.localToWorld(camera.position);
-    camera.rotation.set(cam.gPitch, cam.yaw - Math.PI / 2, 0, 'YXZ');
+    camera.rotation.set(cam.gPitch + (e.pitch - cam.fp) * .5 + jp, cam.yaw - Math.PI / 2,
+      -((e.roll - cam.fr) * .5 + e.roll * stop) + jr, 'YXZ');
     camera.fov = 72;
   } else {
     // The tracking camera stands by the pad and keeps the craft framed.
@@ -427,18 +437,32 @@ function updateCam(dt) {
 
 /* ---------- the onboard feed's marks ---------- */
 const feed = createFeed(renderer);
+// The HUD shows filtered values, as a flight display does.
+const hud = { v: new Vector3(), kmh: 0, agl: 0, vs: 0, acc: 0, load: 0, lost: 0 };
+let lastT = 0;
+function hudStep(dt) {
+  const m = sim.telemetry(), k = 1 - Math.exp(-dt / .12);
+  hud.v.lerp(v3.set(S.v[0], S.v[1], S.v[2]), k);
+  const kmh = m.ground * 3.6;
+  hud.acc += ((kmh - hud.kmh) / Math.max(dt, 1e-3) - hud.acc) * (1 - Math.exp(-dt / .4));
+  hud.kmh += (kmh - hud.kmh) * k;
+  hud.agl += (Math.max(0, m.agl) - hud.agl) * k;
+  hud.vs += (m.vs - hud.vs) * k;
+  hud.load = m.load;
+  // A crash takes the picture away in half a second.
+  hud.lost += ((S.crashed ? 1 : 0) - hud.lost) * (1 - Math.exp(-dt / .25));
+}
 const proj = new Vector3();
 const PAD = new Vector3(0, 0, 0);
 const MODE_TAG = { position: 'POS', angle: 'ANG', acro: 'ACRO' };
 let recT = 0;
 function marks(x, W, H) {
   const m = sim.telemetry(), fs = clamp(H * .025, 12, 17);
-  // Every mark and word is burned into the phosphor, as in Railgun's sight.
-  // One pass in the blue channel, a touch soft; the shader shades its edges.
-  x.filter = 'blur(0.6px)';
+  // Every mark and word is burned in through the blue channel.
+  // The feed shader whitens it, rims it and shades its edges.
   x.globalCompositeOperation = 'lighter';
   x.strokeStyle = x.fillStyle = '#00f';
-  x.lineWidth = 1.3;
+  x.lineWidth = 1.4;
   x.lineCap = 'square';
   x.lineJoin = 'round';
   x.font = `500 ${fs}px Gabarito, sans-serif`;
@@ -449,64 +473,92 @@ function marks(x, W, H) {
     const tr = x.textAlign === 'center' ? .225 * fs : x.textAlign === 'right' ? .45 * fs : 0;
     x.fillText(s, px + tr, py);
   };
-  const ix = W * .06, iy = H * .08, L = Math.min(W, H) * .05;
-  for (const [cx, cy, sx, sy] of [[ix, iy, 1, 1], [W - ix, iy, -1, 1], [ix, H - iy, 1, -1], [W - ix, H - iy, -1, -1]]) {
-    x.beginPath(); x.moveTo(cx, cy + sy * L); x.lineTo(cx, cy); x.lineTo(cx + sx * L, cy); x.stroke();
-  }
+  // A world direction, by azimuth and elevation, on the picture; null when behind.
+  const at = (az, el) => {
+    proj.set(Math.cos(el) * Math.cos(az), Math.sin(el), -Math.cos(el) * Math.sin(az)).multiplyScalar(800).add(camera.position).project(camera);
+    return proj.z < 1 ? [(proj.x * .5 + .5) * W, (.5 - proj.y * .5) * H] : null;
+  };
+  const ix = W * .06, iy = H * .08, L = Math.min(W, H) * .05, cx = W / 2, cy = H / 2;
+
+  // The frame: corner marks and the boresight cross.
   x.beginPath();
-  x.moveTo(W / 2 - 14, H / 2); x.lineTo(W / 2 - 5, H / 2); x.moveTo(W / 2 + 5, H / 2); x.lineTo(W / 2 + 14, H / 2);
-  x.moveTo(W / 2, H / 2 - 14); x.lineTo(W / 2, H / 2 - 5); x.moveTo(W / 2, H / 2 + 5); x.lineTo(W / 2, H / 2 + 14);
+  for (const [px, py, sx, sy] of [[ix, iy, 1, 1], [W - ix, iy, -1, 1], [ix, H - iy, 1, -1], [W - ix, H - iy, -1, -1]]) {
+    x.moveTo(px, py + sy * L); x.lineTo(px, py); x.lineTo(px + sx * L, py);
+  }
+  x.moveTo(cx - 12, cy); x.lineTo(cx - 5, cy); x.moveTo(cx + 5, cy); x.lineTo(cx + 12, cy);
+  x.moveTo(cx, cy - 12); x.lineTo(cx, cy - 5); x.moveTo(cx, cy + 5); x.lineTo(cx, cy + 12);
   x.stroke();
-  x.textAlign = 'center';
+
   // Heading tape: 60 degrees each side of the nose.
-  const tapeY = iy + fs * 1.4, span = Math.min(W * .2, 260);
+  x.textAlign = 'center';
+  // The tape sits a row below the corner labels, clear of them.
+  const tapeY = iy + fs * 3, span = Math.min(W * .18, 230);
   x.beginPath();
   for (let d = Math.ceil((m.hdg - 60) / 10) * 10; d <= m.hdg + 60; d += 10) {
-    const px = W / 2 + (d - m.hdg) / 60 * span, big = d % 30 === 0;
+    const px = cx + (d - m.hdg) / 60 * span, big = d % 30 === 0;
     x.moveTo(px, tapeY); x.lineTo(px, tapeY + (big ? 9 : 5));
     if (big) {
       const n = ((d % 360) + 360) % 360;
       text({ 0: 'N', 90: 'E', 180: 'S', 270: 'W' }[n] ?? String(n / 10), px, tapeY + 9 + fs * .8);
     }
   }
-  x.moveTo(W / 2, tapeY - 3); x.lineTo(W / 2 - 5, tapeY - 10); x.moveTo(W / 2, tapeY - 3); x.lineTo(W / 2 + 5, tapeY - 10);
+  x.moveTo(cx, tapeY - 3); x.lineTo(cx - 5, tapeY - 10); x.moveTo(cx, tapeY - 3); x.lineTo(cx + 5, tapeY - 10);
   x.stroke();
-  // Horizon and pitch ladder: the gimbal holds the picture level.
-  const foc = (H / 2) / Math.tan(camera.fov * DEG / 2);
-  const elevY = el => H / 2 - Math.tan(el - cam.gPitch) * foc;
-  const hy = elevY(0);
-  x.beginPath();
-  x.moveTo(W * .26, hy); x.lineTo(W * .44, hy); x.moveTo(W * .56, hy); x.lineTo(W * .74, hy);
-  x.stroke();
-  x.textAlign = 'right';
-  for (const el of [-20, -10, 10, 20]) {
-    const y = elevY(el * DEG), w = Math.min(W * .05, 70);
-    if (y < H * .16 || y > H * .82) continue;
-    // Rungs above the horizon are solid; rungs below are dashed.
-    x.setLineDash(el < 0 ? [7, 6] : []);
-    x.beginPath();
-    x.moveTo(W / 2 - w * 2, y + Math.sign(el) * 6); x.lineTo(W / 2 - w * 2, y); x.lineTo(W / 2 - w, y);
-    x.moveTo(W / 2 + w, y); x.lineTo(W / 2 + w * 2, y); x.lineTo(W / 2 + w * 2, y + Math.sign(el) * 6);
-    x.stroke();
-    text(String(Math.abs(el)), W / 2 - w * 2 - 8, y);
-  }
-  x.setLineDash([]);
 
-  // The craft's bank and pitch, against the level picture.
-  const e = S.euler || { roll: 0, pitch: 0 }, bank = -e.roll, lift = clamp(e.pitch / DEG, -30, 30) * H * .006;
-  x.save();
-  x.translate(W / 2, H / 2 + lift);
-  x.rotate(bank);
-  x.beginPath();
-  x.moveTo(-70, 0); x.lineTo(-30, 0); x.lineTo(-30, 6);
-  x.moveTo(70, 0); x.lineTo(30, 0); x.lineTo(30, 6);
-  x.stroke();
-  x.restore();
+  // Horizon and pitch ladder, fixed to the world: they roll and pitch with the picture.
+  const h0 = at(cam.yaw, 0), hl = at(cam.yaw + .08, 0), hr = at(cam.yaw - .08, 0);
+  let ang = 0;
+  if (h0 && hl && hr) {
+    const ux = hr[0] - hl[0], uy = hr[1] - hl[1], ul = Math.hypot(ux, uy) || 1, u = [ux / ul, uy / ul];
+    ang = Math.atan2(u[1], u[0]);
+    const seg = (c, a0, a1) => { x.moveTo(c[0] + u[0] * a0, c[1] + u[1] * a0); x.lineTo(c[0] + u[0] * a1, c[1] + u[1] * a1); };
+    const inView = c => Math.hypot(c[0] - cx, c[1] - cy) < H * .34;
+    x.beginPath();
+    if (Math.abs(h0[1] - cy) < H * .45) { seg(h0, -W * .26, -W * .06); seg(h0, W * .06, W * .26); }
+    x.stroke();
+    const w1 = Math.min(W * .045, 60), w2 = w1 * 2.1;
+    for (let el = -30; el <= 30; el += 5) {
+      if (el === 0) continue;
+      const c = at(cam.yaw, el * DEG);
+      if (!c || !inView(c)) continue;
+      const big = el % 10 === 0, ww = big ? w2 : w1 * 1.6;
+      // Rungs above the horizon are solid; rungs below are dashed.
+      x.setLineDash(el < 0 ? [6, 5] : []);
+      x.beginPath();
+      seg(c, -ww, -w1 * .9); seg(c, w1 * .9, ww);
+      // End ticks point toward the horizon.
+      const n = [u[1] * Math.sign(el) * 6, -u[0] * Math.sign(el) * 6];
+      for (const s of [-ww, ww]) { const p = [c[0] + u[0] * s, c[1] + u[1] * s]; x.moveTo(p[0], p[1]); x.lineTo(p[0] + n[0], p[1] + n[1]); }
+      x.stroke();
+      if (big) {
+        x.save();
+        x.translate(c[0] - u[0] * (ww + 16), c[1] - u[1] * (ww + 16));
+        x.rotate(ang);
+        x.textAlign = 'center';
+        text(String(Math.abs(el)), 0, 0);
+        x.restore();
+      }
+    }
+    x.setLineDash([]);
+  }
+
+  // Waterline: where the nose points, banked with the craft.
+  const e = S.euler || { roll: 0, pitch: 0, yaw: 0 };
+  const nose = at(e.yaw, e.pitch);
+  if (nose) {
+    x.save();
+    x.translate(clamp(nose[0], W * .3, W * .7), clamp(nose[1], H * .2, H * .8));
+    x.rotate(ang + e.roll);
+    x.beginPath();
+    x.moveTo(-46, 0); x.lineTo(-18, 0); x.lineTo(-10, 8); x.lineTo(0, 0); x.lineTo(10, 8); x.lineTo(18, 0); x.lineTo(46, 0);
+    x.stroke();
+    x.restore();
+  }
 
   // Velocity vector: where the craft is going, not where it points.
-  const sp = Math.hypot(S.v[0], S.v[1], S.v[2]);
+  const sp = hud.v.length();
   if (sp > .6) {
-    proj.set(S.v[0], S.v[1], S.v[2]).multiplyScalar(60 / sp).add(camera.position).project(camera);
+    proj.copy(hud.v).multiplyScalar(800 / sp).add(camera.position).project(camera);
     if (proj.z < 1) {
       let px = (proj.x * .5 + .5) * W, py = (.5 - proj.y * .5) * H;
       // Off the picture, the marker waits at the edge, dashed.
@@ -525,36 +577,45 @@ function marks(x, W, H) {
   }
 
   // Speed tape on the left, altitude tape on the right.
-  // side: -1 puts the ticks and numbers outward to the left.
-  function tape(cx, side, value, step, every, range, fmt, sub) {
-    const th = H * .44, y0 = H / 2 - th / 2, k = th / (2 * range), bw = fs * 4.6, bh = fs * 1.9;
+  // side -1 puts the ticks and numbers outward to the left.
+  // trend: the value three seconds on, drawn as a bar from the box.
+  function tape(tx, side, value, step, every, range, fmt, sub, trend) {
+    const th = H * .44, y0 = cy - th / 2, k = th / (2 * range), bw = fs * 4.6, bh = fs * 1.9;
     x.beginPath();
-    x.moveTo(cx, y0); x.lineTo(cx, y0 + th);
+    x.moveTo(tx, y0); x.lineTo(tx, y0 + th);
     x.textAlign = side < 0 ? 'right' : 'left';
     for (let i = Math.ceil((value - range) / step); i * step <= value + range; i++) {
-      const v = i * step, y = H / 2 - (v - value) * k;
-      if (v < 0 || Math.abs(y - H / 2) < bh * .7) continue;
+      const v = i * step, y = cy - (v - value) * k;
+      if (v < 0 || Math.abs(y - cy) < bh * .7) continue;
       const big = i % every === 0;
-      x.moveTo(cx, y); x.lineTo(cx + side * (big ? 12 : 6), y);
-      if (big) text(fmt(v), cx + side * 18, y);
+      x.moveTo(tx, y); x.lineTo(tx + side * (big ? 12 : 6), y);
+      if (big) text(fmt(v), tx + side * 18, y);
+    }
+    // The trend bar runs along the inner side of the tape.
+    const ty = clamp(cy - (trend - value) * k, y0, y0 + th);
+    if (Math.abs(ty - cy) > bh * .55) {
+      const tb = tx - side * 3, from = cy + Math.sign(ty - cy) * bh * .55;
+      x.moveTo(tb, from); x.lineTo(tb, ty);
+      x.moveTo(tb - 4, ty); x.lineTo(tb + 4, ty);
     }
     // The value box sits on the inner side and points at the tape.
-    const bx = cx - side * 6, inner = bx - side * bw;
-    x.moveTo(bx, H / 2); x.lineTo(bx - side * 8, H / 2 - bh / 2); x.lineTo(inner, H / 2 - bh / 2);
-    x.lineTo(inner, H / 2 + bh / 2); x.lineTo(bx - side * 8, H / 2 + bh / 2); x.closePath();
+    const bx = tx - side * 6, inner = bx - side * bw;
+    x.moveTo(bx, cy); x.lineTo(bx - side * 8, cy - bh / 2); x.lineTo(inner, cy - bh / 2);
+    x.lineTo(inner, cy + bh / 2); x.lineTo(bx - side * 8, cy + bh / 2); x.closePath();
     x.stroke();
     x.textAlign = 'center';
     // The live value reads larger and heavier than the scale.
     x.font = `700 ${fs * 1.2}px Gabarito, sans-serif`;
-    text(fmt(value), (bx - side * 8 + inner) / 2, H / 2);
+    text(fmt(value), (bx - side * 8 + inner) / 2, cy);
     x.font = `500 ${fs}px Gabarito, sans-serif`;
-    if (sub) text(sub, (bx - side * 8 + inner) / 2, H / 2 + bh * 1.2);
+    if (sub) text(sub, (bx - side * 8 + inner) / 2, cy + bh * 1.2);
   }
-  const vs = Math.abs(m.vs) < .05 ? 0 : m.vs;
-  const kmh = m.ground * 3.6, agl = Math.max(0, m.agl);
-  tape(W * .2, -1, kmh, 5, 2, 25, v => String(Math.round(v)), 'KM/H');
-  tape(W * .8, 1, agl, 1, 5, 10, v => v.toFixed(Math.abs(v - Math.round(v)) < .05 ? 0 : 1), `${vs >= 0 ? '+' : ''}${vs.toFixed(1)} M/S`);
+  const vs = Math.abs(hud.vs) < .05 ? 0 : hud.vs;
+  tape(W * .2, -1, hud.kmh, 5, 2, 25, v => String(Math.round(v)), 'KM/H', hud.kmh + hud.acc * 3);
+  tape(W * .8, 1, hud.agl, 1, 5, 10, v => v.toFixed(Math.abs(v - Math.round(v)) < .05 ? 0 : 1),
+    `${vs >= 0 ? '+' : ''}${vs.toFixed(1)} M/S`, hud.agl + hud.vs * 3);
 
+  // Corner lines and the state.
   const top = iy + fs * 1.4, bot = H - Math.max(H * .17, 96);
   x.textAlign = 'left';
   text(`CAM 1   GIMBAL ${Math.round(cam.gPitch / DEG)}°`, ix + L * .4, top);
@@ -564,8 +625,7 @@ function marks(x, W, H) {
   if (Math.floor(recT * 2) % 2 === 0) { x.beginPath(); x.arc(W - ix - L * .4 - x.measureText(`REC ${tc}`).width - fs * .7, top, fs * .3, 0, Math.PI * 2); x.fill(); }
   x.textAlign = 'center';
   PAD.y = craft.position.y;
-  text(`HOME ${craft.position.distanceTo(PAD).toFixed(0)} M   ${MODE_TAG[S.mode]}   ${S.crashed ? 'SIGNAL LOST' : S.armed ? 'ARMED' : 'SAFE'}`, W / 2, bot + fs * 1.5);
-  x.filter = 'none';
+  text(`HOME ${craft.position.distanceTo(PAD).toFixed(0)} M   ${MODE_TAG[S.mode]}   ${S.crashed ? 'SIGNAL LOST' : S.armed ? 'ARMED' : 'SAFE'}`, cx, bot + fs * 1.5);
   x.letterSpacing = '0px';
   x.globalCompositeOperation = 'source-over';
 }
@@ -620,7 +680,9 @@ function look(dt, t) {
 
   const g = groundAt(S.p[0], S.p[2]), agl = S.p[1] - g;
   const m = sim.telemetry();
-  const I = wash.update(dt, t, { x: S.p[0], z: S.p[2], ground: g, agl, load: m.load, armed: S.armed, wind: S.wind });
+  // Cloud puffs size in metres; this turns metres at one metre into pixels.
+  const pxScale = renderer.domElement.height / 2 / Math.tan(camera.fov * DEG / 2);
+  const I = wash.update(dt, t, { x: S.p[0], z: S.p[2], ground: g, agl, load: m.load, armed: S.armed, wind: S.wind }, pxScale);
 
   // The windsock points downwind and lifts with speed.
   // A craft close by blows it away from itself.
@@ -670,12 +732,14 @@ function frame(now) {
     if (crashedAt && t - crashedAt > 3) act.reset();
     place();
     look(dt, t);
+    hudStep(dt);
+    lastT = t;
     updateCam(dt);
     if (cam.mode === 'gimbal') recT += dt;
   } finally {
-    // The feed sizes its tube on first use, then on each resize.
+    // The feed sizes its target on first use, then on each resize.
     if (cam.mode === 'gimbal') feed.size(W, H, dpr);
-    if (cam.mode === 'gimbal') feed.render(scene, camera, Infinity, marks, t, reduced());
+    if (cam.mode === 'gimbal') feed.render(scene, camera, marks, reduced(), hud.lost);
     else renderer.render(scene, camera);
   }
   if (first) { first = false; canvas.classList.add('on'); mark('first-frame'); }

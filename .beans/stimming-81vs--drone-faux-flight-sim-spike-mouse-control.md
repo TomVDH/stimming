@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T22:15:48Z
+updated_at: 2026-11-17T22:24:37Z
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -54,3 +54,20 @@ Tom's asks: motor sound, downwash, model and graphics, refine the scene, an obst
 - [ ] Obstacle course inside the field (design to Tom first)
 
 Known: on Windows D3D11 the tube shaders log X4000 notes once; they come from nvg/tube.js.
+
+
+## Scope ahead (Tom, 2026-11-17 14:21)
+
+Tom: "this toy will probably become an XXXXXL too". Four parts to come, each its own piece of work:
+
+- [ ] Power washing: the craft cleans surfaces with a spray
+- [ ] Surveying: fly a site and map it
+- [ ] Military intelligence: reconnaissance with the onboard feed
+- [ ] Warehouse logistics: carry and deliver loads
+
+Not designed yet. Each part gets a design talk with Tom before a line of code.
+Round 3 asks (14:16): the HUD responds as in real flight; the Gimbal view costs too much; the downwash takes a cloud texture; the model waits.
+
+- [x] Gimbal feed rebuilt light: one render and one pass (ACES, mono, fine grain, wide lens, sharpening); about 11 times faster than the NVG tube, no D3D notes
+- [x] HUD as in flight: a three-axis gimbal with lag, stops and motor buzz; horizon and ladder fixed to the world; a waterline at the nose; filtered values; trend bars on both tapes; the picture tears and fades on a crash
+- [x] Downwash clouds: billowing puffs that grow, turn and drift; the ripple ring stays
