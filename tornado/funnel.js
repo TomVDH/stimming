@@ -358,15 +358,20 @@ void vol(vec3 p, out float d, out float w, int oct) {
     vec2 phd = phOf(6);
     vec2 qd = mat2(cos(phd.x), sin(phd.x), -sin(phd.x), cos(phd.x)) * q;
     vec3 cd = vec3(qd.x / uDs, h / uDs * 0.9 - phd.y, qd.y / uDs) + uSeed * 29.0;
-    float nd = fbm(cd + 7.3, oct);
-    if (oct > 3) nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
-    float puff = smoothstep(0.4, 0.6, nd);
+    // Octaves finer than about a pixel are left out: they only stipple.
+    float px = uDs * 0.25 / max(gPxM, 1e-3);
+    int o = min(oct, 1 + int(max(log2(px / 1.5), 0.0)));
+    float nd = fbm(cd + 7.3, o);
+    if (o > 3) nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
+    // A wide threshold: a narrow one flips per sample.
+    float puff = smoothstep(0.32, 0.68, nd);
     d = uDebris * smoothstep(Rd, Rd * 0.3, r * (0.7 + 0.6 * nd)) * (1.0 - smoothstep(uDustH * 0.25, uDustH * 1.4, h + (nd - 0.5) * uDustH * 1.2)) * puff * 2.0;
   }
   // Rain wrapped round a big tornado, in falling streaks.
   if (uRain > 0.01) {
     float Rr = R * 1.15 + uR0 * 0.35;
-    float ring = smoothstep(Rr * 0.22, 0.0, abs(r - Rr));
+    // A wide soft ring: a thin one is hit or missed by chance and stipples.
+    float ring = smoothstep(Rr * 0.5, 0.0, abs(r - Rr)) * 0.6;
     if (ring > 0.0) {
       float ang = atan(q.y, q.x);
       float streak = N(vec3(cos(ang) * 3.0, sin(ang) * 3.0, h * 0.0015 + uTime * 0.5) + 3.0);
@@ -546,6 +551,8 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
   float fade = (1.0 - smoothstep(0.75, 1.0, sHm)) * smoothstep(0.0, 0.45, 0.5 * (tapa + tapb));
   if (fade <= 0.0) return;
   float sw = 0.42 * gSp;
+  // A layer thinner than a pixel fades into the core's edge, not into a lone hoop.
+  float swV = smoothstep(0.6, 1.6, sw * 0.5 * (Ra + Rb) / gPxM);
   float coreMax = 1.0 + uAmp * 0.225 + 0.02;
   // 0 is the core, 1 to 5 the sheaths; an inward stretch meets the outer ones first.
   for (int j = 0; j <= SHEATHS; j++) {
@@ -596,7 +603,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       if (rk < xlo - 3.0 * sw || rk > xhi + 3.0 * sw) continue;
       R = 0.5 * (Ra + Rb);
       // The path in a layer is capped, so an edge-on layer draws no dark stroke.
-      float I = min(layerInt(xa, xb, len, rk, sw), 3.5 * sw * R) * (1.0 - fl) * fade;
+      float I = min(layerInt(xa, xb, len, rk, sw), 3.5 * sw * R) * (1.0 - fl) * fade * swV;
       float sMax = funnelSig(mix(0.9, 0.35, fk), R) * I;
       if (sMax < 0.003) continue;
       // Outer sheaths show only their densest noise, so the edge stays wispy.
@@ -684,6 +691,8 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   float s = funnelSig(dC, R), sB = 0.0;
   // The bands: thin and spaced as the shells, but cut from the deck's cloud.
   float sw = 0.3 * gSp;
+  // A band thinner than a pixel fades into the core's edge, not into a lone hoop.
+  float swV = smoothstep(0.6, 1.6, sw * R / gPxM);
   for (int j = 0; j < SHEATHS; j++) {
     if (float(j) >= uTbCount) break;
     float fk = float(j) / float(SHEATHS - 1);
@@ -699,6 +708,7 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
     sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov - 0.04, cov + 0.22, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
   }
   // The bands' share of the step: their torn edges take the deck's tone.
+  sB *= swV;
   float bk = sB / max(s + sB, 1e-6);
   s = (s + sB) * uDens * fade * live(ps.y);
   if (s < 1e-7) return;
@@ -745,7 +755,8 @@ void main() {
     if (cy.y > 0.0) { a0[i] = cy.x; a1[i] = min(cy.x + cy.y, tMax); aStart = min(aStart, a0[i]); aEnd = max(aEnd, a1[i]); }
   }
   bool bake = uMode == 1;
-  float farD = uFarD * 1000.0, band = 2000.0;
+  // The crossover band scales with the bake's distance: 2 km at 16 km.
+  float farD = uFarD * 1000.0, band = max(750.0, 0.125 * farD);
   float tEnd = sky ? (bake ? tMax : min(tMax, farD)) : min(tMax, aEnd);
   float t = sky ? (bake ? farD - band : min(1000.0, aStart)) : aStart;
   float cosT = dot(rc, gSunC);
@@ -803,7 +814,8 @@ void main() {
       float foot = t / (uRes.y * uFoc), sH0;
       gPxM = foot;
       float R0 = hornR(p.y, sH0);
-      gSp = max(0.2, 3.5 * foot / R0);
+      // The layers hug the core closer the farther the funnel is: tight at 8 to 14 km.
+      gSp = 0.2 * mix(1.0, 0.4, smoothstep(4000.0, 12000.0, t));
       gAng = clamp(R0 * 0.06 / foot, 0.3, 1.0);
       xOut = 1.25 + 4.0 * gSp;
       if (!have) g0 = geo(p, xOut + 0.6);
@@ -817,7 +829,7 @@ void main() {
       if (inDust) st = min(st, Rd * 2.6 / 8.0 / max(1.0 - eD, 0.05));
       // The rain ring is a soft veil: its own steps are as long as the onion's.
       float Rr = radiusAt(p.y) * 1.15 + uR0 * 0.35;
-      if (uRain > 0.01 && abs(ra - Rr) < Rr * 0.3) st = min(st, Rr * 0.3);
+      if (uRain > 0.01 && abs(ra - Rr) < Rr * 0.5) st = min(st, Rr * 0.2);
     }
     vec3 sum = vec3(0.0);
     float sig = 0.0;

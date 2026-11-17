@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:48:18Z
+updated_at: 2026-11-17T07:53:44Z
 parent: stimming-oh7b
 ---
 
@@ -175,3 +175,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (the rain at the right, awful): the core's rain cylinder drew a hard dark block (its cover had no softening). Its sides are now ragged (noise eats up to 2 km), its cover linear and capped at 0.65, thinner near the ground, mixed 30–70% into the far haze; only a faint soft haze remains (in bce8db66).
 
 - 2026-11-17, Tom (grain; tops too dark, not blending): the tube's fine noise and Worley fade to their mean below a pixel (the main grain cause: aliasing); gentler tone gain and band threshold; history 0.35 while running, four jittered sub-draws for a still; the edge rag halved (no comb hairs); the deck's soft edge 2 steps wide. Tops: the turn-to tone is read from the deck beside the bell; the bell takes half the sun at the base; the tube's density fades over the whole bell while the horn takes over through a softer join; Top darkening 0.6. Seen, not yet touched: vertical streaks in the deck near the whirls.
+
+- 2026-11-17: deck streaks near whirls came from blending overlapping whirls' noise points; the two strongest whirls now read their own deck noise and blend values. Layers hug the core with distance (gap 0.2 near to 0.08 by 12 km; sub-pixel layers fade into the core), ending the hoops; the far dust drops sub-pixel octaves and the rain ring is wider and softer (the dotted far funnel). Dev rows Bake from (6–40 km, default 16; the tornado clamp follows) and Deck reach (20–200 km, default 146). GPU, 3 × F4.5 tubes, minimum frame: 17.3 ms at 8 km, 22.5 at 16, 25.6 at 30.

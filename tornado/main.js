@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -62,6 +62,9 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'eye', label: 'Eye height', min: 1, max: 40, step: 0.5, value: 8, persist: true, onInput: v => act.eye(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
+    // Where the live march stops and the baked far field begins, and how far the deck runs.
+    { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
+    { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
     // The Tube group opens with the funnel's mode: the deck's cloud as a tube (Tom's default) or the analytic shells.
     // The key is new, so an old saved Shells gives way to the new default.
@@ -107,6 +110,8 @@ const vec2 CORE = vec2(6.5, -19.0);
 // The base's height in km: Dev's Cloud base sets it (1.35 by default).
 uniform float uBase;
 #define BASE uBase
+// How far ahead the deck runs, in km: Dev's Deck reach (146 by default).
+uniform float uReach;
 // The base shelf: its centre and its two half widths.
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
@@ -183,7 +188,8 @@ float stormShapeSun(vec3 p) {
 float stormShape(vec3 p) {
   float d = stormShapeSun(p);
   float under = BASE + 0.12 + 0.25 * smoothstep(-6.0, 4.0, p.z);
-  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 70.0) - 76.0);
+  // The slab runs from 6 km behind the eye to uReach ahead.
+  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach - 6.0)) - 0.5 * (uReach + 6.0));
   // A young storm's deck is thin; a full one is a kilometre deep.
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(under - p.y, p.y - (BASE + mix(0.35, 1.0, stormK()))));
   // A young deck breaks into rafts with sky between; the gaps close as the storm grows.
@@ -279,23 +285,27 @@ float deckN(vec3 p, vec3 pn, float calm) {
   return d - under * ((W(pn * 2.6 + 1.7) - 0.35) * 0.32 + wf * 0.16);
 }
 // The deck's texture on a shape distance d. In a tornado's column the horn is in d already.
-// Where whirls meet, their noise points blend by weight, so no seam shows.
+// Where whirls meet, the two strongest each read their own noise and the values blend.
+// Blending their noise points instead squeezed the texture into hanging streaks.
 float stormNoise(vec3 p, float d) {
   // With no tornado the deck has no whirl.
-  float calm = stormCalm(p), w, W = 0.0;
-  vec3 pw = vec3(0.0);
+  float calm = stormCalm(p), w, w1 = 0.0, w2 = 0.0;
+  vec3 p1 = p, p2 = p;
   if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) {
     vec4 h = uTorH[i], z = uTorZ[i];
     if (z.w <= 0.0 || h.w <= 0.0) continue;
     vec3 q = whirlPt(p, uTorN[i].xy, h.z, h.y, z.z, z.xy, w);
-    pw += q * (w * h.w);
-    W += w * h.w;
+    w *= h.w;
+    if (w > w1) { w2 = w1; p2 = p1; w1 = w; p1 = q; }
+    else if (w > w2) { w2 = w; p2 = q; }
   }
-  float wS = clamp(W, 0.0, 1.0);
-  // The still deck and the whirl each read only where they show.
+  float W = w1 + w2, wS = clamp(W, 0.0, 1.0);
+  // The still deck and each whirl read only where they show.
   float n0 = wS < 1.0 ? deckN(p, p, calm) : 0.0;
-  float n1 = W > 1e-4 ? deckN(p, pw / W, calm) : 0.0;
-  return d + mix(n0, n1, wS);
+  float n1 = w1 > 1e-4 ? deckN(p, p1, calm) : 0.0;
+  float n2 = w2 > 0.02 ? deckN(p, p2, calm) : n1;
+  float nw = W > 1e-4 ? (n1 * w1 + n2 * w2) / W : 0.0;
+  return d + mix(n0, nw, wS);
 }
 float stormD(vec3 p) {
   float d = stormShape(p);
@@ -833,7 +843,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
   });
@@ -870,7 +880,7 @@ function stormShapeJS(x, y, z) {
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
-  const fx = Math.abs(x) - 150, fz = Math.abs(z + 70) - 76;
+  const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach - 6)) - 0.5 * (deckReach + 6);
   const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
   return smin(d, front, 0.8);
 }
@@ -1024,12 +1034,14 @@ function packFunnels(rw, rh) {
   pk.box = [Math.max(0, Math.floor(x0) - pad), Math.max(0, Math.floor(y0) - pad), Math.min(rw, Math.ceil(x1) + pad), Math.min(rh, Math.ceil(y1) + pad)];
   return Math.min(list.length, MAX_FUNNELS);
 }
-// The far field: past FAR_D km the deck is baked, not marched each frame (the camera is locked off).
+// The far field: past Bake from (farD km) the deck is baked, not marched each frame (the camera is locked off).
 // It renews when the light, the base, the storm, the eye or the lens change, in strips over frames.
-const FAR_D = 16, FAR_STRIPS = 8;
+const FAR_STRIPS = 8;
+// Dev's Bake from and Deck reach, in km.
+let farD = 16, deckReach = 146;
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
-  const key = [S.hour, sunAz, base, storm, camH, focal(), horizon(), yaw(), rw, rh].map(v => +(+v).toFixed(4)).join();
+  const key = [S.hour, sunAz, base, storm, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
@@ -1037,7 +1049,7 @@ function bakeFar(u, rw, rh, n) {
   if (!fun.farBusy) return;
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
   gl.uniform1i(u.uMode, 1);
-  gl.uniform1f(u.uFarD, FAR_D);
+  gl.uniform1f(u.uFarD, farD);
   gl.uniform1i(u.uN, 0);
   gl.uniform1f(u.uTorOn, 0);
   gl.uniform1f(u.uBlend, 1);
@@ -1102,6 +1114,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, baseNow());
+  gl.uniform1f(u.uReach, deckReach);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
@@ -1111,7 +1124,7 @@ function funnelPass(w, h) {
   gl.bindVertexArray(null);
   bakeFar(u, rw, rh, n);
   gl.uniform1i(u.uMode, 0);
-  gl.uniform1f(u.uFarD, FAR_D);
+  gl.uniform1f(u.uFarD, farD);
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
@@ -1191,8 +1204,9 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay under the base: 5 km out at the nearest, 14 km at the most.
-  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 5000, 14000) : 14000;
+  // Funnels stay in the live march: 5 km out at the nearest, up to the bake's crossover at the most.
+  const far = Math.max(5000, (farD - 0.125 * farD) * 1000 - 500);
+  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 5000, far) : far;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -1290,6 +1304,8 @@ let expoTrim = 1;
 act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wake(); };
 act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
+act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
+act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
 act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
 // Copy JSON: every knob, to paste back as defaults.
@@ -1327,6 +1343,9 @@ act.windDir(qs0.has('winddir') ? +qs0.get('winddir') : ui.setting('windDir')?.va
 act.eye(qs0.has('eye') ? +qs0.get('eye') : ui.setting('eye')?.value ?? 8);
 // QA: ?base=2 sets the cloud base for one load.
 act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
+// ?bakefrom=30 and ?deckreach=60 set them for one load.
+act.bakeFrom(qs0.has('bakefrom') ? +qs0.get('bakefrom') : ui.setting('bakeFrom')?.value ?? 16);
+act.deckReach(qs0.has('deckreach') ? +qs0.get('deckreach') : ui.setting('deckReach')?.value ?? 146);
 // QA: ?storm=0.2 sets the storm for one load.
 if (qs0.has('storm')) act.storm(clamp(+qs0.get('storm'), 0, 1));
 // QA: ?sunaz=20 sets the sun's bearing for one load.
@@ -1355,6 +1374,8 @@ async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
   const list = [];
   for (let i = 0; i < n; i++) {
     const q = gl.createQuery();
+    // Each timed frame counts as a running one: one draw with history, not a still's four.
+    fun.loopT = performance.now();
     gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
     if (part === 'pass') funnelPass(fw, fh); else env.draw(fw, fh);
     gl.endQuery(ext.TIME_ELAPSED_EXT);
