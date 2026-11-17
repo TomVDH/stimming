@@ -22,6 +22,29 @@ Vet the controls of every toy, one toy at a time, against the bar standard. Wher
 7. Hard cases draw well in the Signal bar (`barlab/`): long lists, long choice rows, grouped rows, held actions, a bar with no controls.
 8. Contrast: text on a held pick reaches 4.5:1 with the toy's accent. Measured on 2026-11-17: honey, turing, calaeno, meshball and lavaskin need the lightest stop of their accent; the lab does that now.
 
+## The first ten (proposal; Tom confirms)
+
+Tom, 2026-11-17: "earmark 10 toys that will receive the new bar -- concurrently -- we will redo their controls and menus and ensure it's clean and neat".
+
+The ten cover every control pattern in the shell and hold Tom's own picks. Each gets the Signal bar and a redo of its controls in the same pass; each gets a child bean when Tom confirms the list.
+
+| # | Toy | Why it is in | First read of what to redo |
+|---|---|---|---|
+| 1 | `cauldron` | Tom named it. Grouped list, slider, Dev rows. | `+ Thing` beside an Add list: say once what adds. Eleven Dev rows need groups. |
+| 2 | `trainride` | Tom named it. Stepper choice, a long Time row, toggles. | The own verb Line. Time has many values in one row. |
+| 3 | `railgun` | The largest menus: grouped Settings, 56 Dev rows. TypeScript. | Sight and Reset on the bar. Dev needs an order a builder can scan. |
+| 4 | `galaxy` | The reference port. A list of 16 options. | Little: confirm the list's order and the two streak sliders. |
+| 5 | `window` | The fullest bar: five controls, seven Settings rows. | Dim, Light and Cozy look like three states of one thing: one choice may hold them. |
+| 6 | `fire` | S tier. Stepper, slider, segments. | Reset is the only action on the bar; it may belong in Settings. |
+| 7 | `eyes` | S tier. Actions only. | Shuffle, Shake, Blink: check each earns its place. |
+| 8 | `prism` | S tier. Add and Clear with a stepper. | Little: the Light stepper's names. |
+| 9 | `bubbles` | A held action (Blow). Shader-rich. | It has no key strip, so How to play is empty. |
+| 10 | `frietkot` | The empty bar: every control sits in Settings. | Decide whether one of its six rows belongs on the bar. |
+
+Alternates, if Tom swaps one: `windmap` (five on the bar, own verbs Isobars and Fronts), `pendulum` (own verbs Release, Stop, Iso), `pins` (S tier, simple), `lava` (a held Shake).
+
+Not covered by the ten: a toy with no bar spec. None of the 25 can take the bar before its port.
+
 ## Method
 
 - The list below is a static read of each `bar` spec: 86 toys, 11 with a flag. A count can be off where a spec builds its rows in code. Open the toy at `barlab/?t=<id>` to see the truth.
