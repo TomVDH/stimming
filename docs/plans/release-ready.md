@@ -510,3 +510,20 @@ Batch 11, 2026-11-16 (Tom):
 | fireworks.3 | Add to the table | ZzFX 1.3.2 (MIT) joins the library table in `AGENTS.md`, Fireworks only |
 | launch.1 | Lens rows to Dev | Bokeh, Aperture, Focus and Highlights become `dev` rows. Settings keeps Letterbox and Quality |
 | launch.2 | Bind Space to chip | The Launch chip takes key Space |
+
+Batch 12, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| frietkot.1 | Keep it empty | No bar controls; a scene to watch. Item 7 passes on this point |
+| frietkot.2 | Tilt-shift and Camcorder to Dev | Both become `dev` rows. Sign and Neon stay player settings |
+| frietkot.3 | Fix it | A hold on the shack shakes the fry basket; it gets a key strip entry |
+| railgun.1 | Ship in Settings | Fire (Rail, Salvo) stays a Settings row for release |
+| railgun.2 | Move to Settings | FPS (24, 30, 75) moves from Dev to Settings |
+| railgun.3 | Keep in Dev | Ambient stays a `dev` row |
+| trainride.1 | Move to Dev | Wet glass becomes a `dev` row |
+| trainride.2 | Swap T in | "t time" replaces "e express" on the strip; Express stays in Settings |
+| trainride.3 | Top view to Dev | Top view becomes a `dev` row; the sound mixer stays a custom `?dev` panel |
+| trainride.4 | Delete it | The unused `trainride/sound/idle.mp3` goes |
+| foghorn.1 | Keep in Settings | Storm stays a Settings slider |
+| foghorn.2 | Add Dev rows | Bloom, grain and haze become `dev` rows |
