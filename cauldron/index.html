@@ -206,6 +206,7 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'oilFilm', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
     { type: 'slider', id: 'stiff', label: 'Stiffness', min: 0, max: 1, step: 0.05, value: 1 },
     { type: 'toggle', id: 'mirror', label: 'Reflections', value: true },
+    { type: 'slider', id: 'beads', label: 'Fat beads', min: 0, max: 1, step: 0.05, value: 1 },
     // The light: the lamp over the pot, and the dim room round it.
     { type: 'slider', id: 'keyUp', label: 'Lamp height', min: 0.1, max: 1, step: 0.01, value: 0.45 },
     { type: 'slider', id: 'keyTurn', label: 'Lamp turn', min: -180, max: 180, step: 1, value: 0 },
@@ -1291,7 +1292,7 @@ uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uC
 uniform vec4 uPlumeS[4];
 uniform float uGlowK;
 // 0 keeps the skin close to the soup; 1 makes it its own layer.
-uniform float uSkinK, uFilmK, uRoomK, uMirror;
+uniform float uSkinK, uFilmK, uRoomK, uMirror, uBeads, uSpin;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
 uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
@@ -1691,6 +1692,46 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // The film's edge shows as a fine bright line.
   col += fedge * env(reflect(rd, normalize(n + vec3(0.0, 0.3, 0.0))), 0.03) * 0.25;
   col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
+  // Fat beads: round eyes of oil that turn with the soup.
+  // A stir splits them small; calm soup merges them into fewer, bigger eyes.
+  float fz = smoothstep(0.02, 0.2, ax.g) * uBeads * (1.0 - skin);
+  if (fz > 0.01) {
+    float ca = cos(uSpin), sa = sin(uSpin);
+    vec2 sp2 = mat2(ca, -sa, sa, ca) * p.xz;
+    float fresh = smoothstep(0.1, 0.6, ax.a);
+    vec3 bc = vec3(0.0);
+    float bw = 0.0;
+    for (int L = 0; L < 2; L++) {
+      float sc = L == 0 ? 22.0 : 10.0;
+      float grow = (L == 0 ? fresh : 1.0 - fresh) * (0.6 + 0.4 * fz);
+      if (grow < 0.02) continue;
+      vec2 q = sp2 * sc + float(L) * 17.0, ci = floor(q), cf = fract(q);
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(i, j), id = ci + g;
+        float h1 = hash12(id + 3.7), h2 = hash12(id + 9.1), h3 = hash12(id + 5.3);
+        // Not every cell holds a bead; more do where the fat lies thick.
+        if (h3 > 0.15 + 0.75 * fz) continue;
+        vec2 o = g + 0.2 + 0.6 * vec2(h1, h2) - cf;
+        float r = (0.14 + 0.26 * hash12(id + 1.9)) * grow;
+        float d = length(o) / max(r, 1e-3);
+        if (d < 1.0) {
+          // A low dome: the normal leans out toward the bead's edge.
+          vec2 lo = -o / max(r, 1e-3);
+          vec3 bn = normalize(n + vec3(lo.x, 0.0, lo.y) * 0.9 * d);
+          float bF = 0.04 + 0.96 * pow(1.0 - max(dot(bn, v), 0.0), 5.0);
+          vec3 hb = normalize(uKeyDir + v);
+          vec3 c = alb * vec3(1.05, 0.88, 0.5) * 0.12 + env(reflect(rd, bn), 0.02) * (bF + 0.08);
+          c += uKeyCol * pow(max(dot(bn, hb), 0.0), 300.0) * 3.0;
+          // The edge: a dark meniscus, then a thin bright lip.
+          float e = smoothstep(0.7, 0.95, d);
+          c = c * (1.0 - 0.35 * e) + env(reflect(rd, normalize(n - vec3(lo.x, 0.0, lo.y) * 0.5)), 0.05) * 0.15 * smoothstep(0.9, 1.0, d);
+          float a = 1.0 - smoothstep(0.92, 1.0, d);
+          bc = mix(bc, c, a); bw = max(bw, a);
+        }
+      }
+    }
+    col = mix(col, bc + col * 0.55, bw * 0.85);
+  }
   // A dark ring hugs each floating thing, then a thin bright lip.
   if (gNc > 0) {
     int id; float m;
@@ -2436,6 +2477,8 @@ function sampleF(a, x, z) {
   return (a[k] * (1 - fx) + a[k + 1] * fx) * (1 - fz) + (a[k + FN] * (1 - fx) + a[k + FN + 1] * fx) * fz;
 }
 let omega = 0, energy = 0, calm = true;
+// The soup's turn so far, in radians: the fat beads ride it.
+let spin = 0;
 function stepFluid(dt) {
   const T = thick();
   // Vorticity confinement keeps thin broth swirly; stew stays smooth.
@@ -3660,6 +3703,8 @@ function scenePass() {
   const kcol = kw < 0.5 ? [1.02, 1.02, 1.08].map((v, i) => lerp(v, [1.2, 1.02, 0.82][i], kw * 2)) : [1.2, 1.02, 0.82].map((v, i) => lerp(v, [1.3, 0.88, 0.5][i], kw * 2 - 1));
   gl.uniform3f(sceneP.u('uKeyCol'), kcol[0] * ki, kcol[1] * ki, kcol[2] * ki);
   gl.uniform1f(sceneP.u('uRoomK'), devV('room', 1));
+  gl.uniform1f(sceneP.u('uBeads'), devV('beads', 1));
+  gl.uniform1f(sceneP.u('uSpin'), spin);
   gl.uniform1f(sceneP.u('uMirror'), devV('mirror', true) ? 1 : 0);
   gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
   gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
@@ -3806,6 +3851,7 @@ function frame(now) {
     dip = clamp(w2 / (2 * G), 0, 0.2);
     funnel = clamp(w2 * 0.006, 0, 0.1);
     swirl += omega * dt * 0.5;
+    spin += omega * dt;
     stepBodies(dt);
     stepPours(dt);
     stepBubbles(dt);
