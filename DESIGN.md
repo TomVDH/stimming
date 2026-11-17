@@ -514,6 +514,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom replaces that pick: "i want our glyph as a monogram in the top left corner instead". When you point at it, the Stimming logo plays and the return chevron shows. Built as the wordmark's S; it always stays. | 2 |
 | 2026-11-17 | Tom makes it exact: "the toy icon i mean". The monogram is the toy's own emblem in its ink. And: "the key caps only show with the info thing -- and they are gentle". Signal has no key strip; keycaps show only in the How to play sheet, as hairline boxes. | 2 |
 | 2026-11-17 | Tom: "white square fill monogram like intro". The monogram top left is a white square with the toy's emblem cut out dark, the intro's flash box at rest. Tom also asks for ten toys to take the new bar first, with a redo of their controls in the same pass (proposal in epic `stimming-a5rs`). | 2 |
+| 2026-11-17 | Tom confirms the ten: Cauldron, Train ride, Railgun, Galaxy, Window seat, Fire, Googly eyes, Prism, Bubbles, Frietkot. He also asks for a larger icon in the monogram; it fills 90% of the square. | 2 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.

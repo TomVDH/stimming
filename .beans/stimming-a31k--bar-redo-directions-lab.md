@@ -57,6 +57,8 @@ Question: which direction does the bar redo take?
 - [x] Tom, 2026-11-17: "the key caps only show with the info thing -- and they are gentle". Signal has no key strip and no keycaps on the bar or in the option list. (i) opens How to play, where each keycap is a hairline box with no fill
 - [x] Tom, 2026-11-17: "white square fill monogram like intro". The monogram is the intro's flash box at rest: a white square with the emblem cut out dark. Pointing parts the square down the middle in three frames, then the Stimming logo plays behind the chevron. A toy with no emblem shows the wordmark's S in the square
 - [x] Tom, 2026-11-17: earmark ten toys for the new bar. The proposal is in epic `stimming-a5rs`; the lab lists the ten first
+- [x] Tom, 2026-11-17: "Yes, these ten". Ten child beans sit under `stimming-a5rs`; the shell port is feature `stimming-hvtr`
+- [x] Tom, 2026-11-17: the icon in the monogram is larger. It fills 90% of the square (was 70%)
 - [ ] Open: the toy's name is no longer on the stage. Tom says where it goes, if anywhere
 - [ ] Tom judges the rest of round 4 (keycaps, How to play, the contrast fixes) and the top left
 - [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use, a disabled control

@@ -22,11 +22,11 @@ Vet the controls of every toy, one toy at a time, against the bar standard. Wher
 7. Hard cases draw well in the Signal bar (`barlab/`): long lists, long choice rows, grouped rows, held actions, a bar with no controls.
 8. Contrast: text on a held pick reaches 4.5:1 with the toy's accent. Measured on 2026-11-17: honey, turing, calaeno, meshball and lavaskin need the lightest stop of their accent; the lab does that now.
 
-## The first ten (proposal; Tom confirms)
+## The first ten (Tom confirmed, 2026-11-17: "Yes, these ten")
 
 Tom, 2026-11-17: "earmark 10 toys that will receive the new bar -- concurrently -- we will redo their controls and menus and ensure it's clean and neat".
 
-The ten cover every control pattern in the shell and hold Tom's own picks. Each gets the Signal bar and a redo of its controls in the same pass; each gets a child bean when Tom confirms the list.
+The ten cover every control pattern in the shell and hold Tom's own picks. Each gets the Signal bar and a redo of its controls in the same pass. Each has a child bean under this epic; all ten wait on `stimming-hvtr`, the Signal bar in the shell.
 
 | # | Toy | Why it is in | First read of what to redo |
 |---|---|---|---|
