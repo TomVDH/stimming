@@ -618,8 +618,21 @@ vec3 envScene(vec2 uv) {
     // The sky dims round the storm: its shadow and its outflow haze.
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
-    if (uStormOn > 0.5) c = c * (1.0 - tv.a) + tv.rgb;
-    else {
+    // Under the base: the gloom, and the rain curtain hanging out of the core.
+    vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
+    vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
+    vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
+    vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
+    float glK = 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm);
+    float streak = 0.75 + 0.25 * vn(vec2(atan(rc.x, -rc.z) * 260.0, 0.5));
+    float rnK = (1.0 - exp(-rn.y * rn.y * 0.05 * uStorm * streak)) * smoothstep(0.0, 0.003, rd.y + 0.001);
+    vec3 rainC = gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01;
+    if (uStormOn > 0.5) {
+      // The sky behind takes the gloom and the rain; the storm pass carries its own gloom, sample by sample.
+      // Laid over everything, the gloom drew a backlit funnel in the sky's own tone: it read as hollow.
+      c = mix(mix(c, gloom, glK), rainC, rnK);
+      c = c * (1.0 - tv.a) + tv.rgb;
+    } else {
       // White noise per pixel, new each frame: it reads as film grain, not a pattern.
       float jit = th(gl_FragCoord.xy + fract(uT * 7.31) * 113.0);
       float tHit;
@@ -627,15 +640,8 @@ vec3 envScene(vec2 uv) {
       // The far storm sinks into the haze.
       float h = 1.0 - exp(-tHit / 70.0);
       c = c * (1.0 - st.a) + mix(st.rgb, hazeCol(rd) * st.a, h * 0.8);
+      c = mix(mix(c, gloom, glK), rainC, rnK);
     }
-    // Under the base: the gloom, and the rain curtain hanging out of the core.
-    vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
-    vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
-    vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
-    vec3 gloom = uAmb * vec3(0.05, 0.085, 0.075);
-    c = mix(c, gloom, 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm));
-    float streak = 0.75 + 0.25 * vn(vec2(atan(rc.x, -rc.z) * 260.0, 0.5));
-    c = mix(c, gloom * vec3(0.8, 1.0, 0.95) + uSunCol * 0.01, (1.0 - exp(-rn.y * rn.y * 0.05 * uStorm * streak)) * smoothstep(0.0, 0.003, rd.y + 0.001));
   }
   // The thin band where ground meets sky takes the haze.
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);

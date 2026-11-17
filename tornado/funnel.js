@@ -156,6 +156,12 @@ vec3 gFoot;
 int gI;
 // The haze colour on this ray, and its share at the funnel's distance.
 vec3 gHzC;
+// The gloom under the base: its colour, this ray's stretch inside it in km, and its share at the march's place.
+// Each sample takes only the gloom in front of it, so a funnel is not dimmed by the air behind it.
+vec3 gGloom;
+vec2 gGl;
+float gGk = 0.0;
+vec3 hazed(vec3 c, float hz) { return mix(mix(c, gHzC, hz), gGloom, gGk); }
 void pick(int i) {
   vec4 a = uTA[i], b = uTB[i], c = uTC[i], d = uTD[i], e = uTE[i], f = uTF[i];
   gFoot = vec3(a.x, 0.0, a.y); uH = a.z; uDeckY = a.w;
@@ -549,7 +555,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
     }
     od *= live(ph.y);
     if (od < 1e-4) continue;
-    vec3 c = mix(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, gHzC, hzF);
+    vec3 c = hazed(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, hzF);
     float a = 1.0 - exp(-od);
     fAcc += fT * a * c;
     fT *= 1.0 - a;
@@ -567,6 +573,8 @@ void main() {
   float jit2 = hash(fc.yx * 1.37 + fract(uT * 3.17) * 71.0);
   vec3 skyH = skyCol(normalize(vec3(rd.x, 0.0, rd.z)));
   gHzC = hazeCol(rd);
+  gGloom = uAmb * vec3(0.05, 0.085, 0.075);
+  gGl = cylinder(vec3(0.0, CAMH * 0.001, 0.0), rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
   // One march, in metres from the eye, through the whole storm: the deck and every funnel's column.
   vec3 eye = vec3(0.0, CAMH, 0.0);
   // Only a ray that climbs can reach the deck; one that falls meets only the funnels' feet.
@@ -628,6 +636,8 @@ void main() {
     float st = 1e9, xOut = 0.0;
     bool inDust = false;
     float hzF = 0.8 * (1.0 - exp(-t / 70000.0));
+    float gLen = clamp(t * 0.001 - gGl.x, 0.0, gGl.y);
+    gGk = 1.0 - exp(-gLen * gLen * 0.003 * uStorm);
     if (inA) {
       // The pixel's size in metres where the ray is now.
       float foot = t / (uRes.y * uFoc), sH0;
@@ -668,7 +678,7 @@ void main() {
           // A full step through dense cloud covers 0.8 of what lies behind it.
           cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
           cLit = stormLit(pk, d);
-          cCol = mix(cLit, gHzC, hzF);
+          cCol = hazed(cLit, hzF);
         }
       }
       // Inside the onion the funnel's step wins; up the flare the deck's step wins.
@@ -724,7 +734,7 @@ void main() {
           vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.21) * (ambC * 0.7 + uSunCol * exp(-od) * 0.05);
-          sum += mix(dcol, gHzC, hzF) * sd + mix(wcol, gHzC, hzF) * sw2;
+          sum += hazed(dcol, hzF) * sd + hazed(wcol, hzF) * sw2;
           sig += sd + sw2;
         }
       }
