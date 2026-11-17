@@ -1147,8 +1147,8 @@ function draw(now) {
   let skip = +(qs.get('skip') || 0);
   for (const el of document.querySelectorAll('[data-skip]')) if (!el.checked && !(skip & +el.dataset.skip)) skip += +el.dataset.skip;
   set(sc, 'uSkip', skip);
-  // Opacity grows with the log of F: 2.6 times at F2, 3.7 times at F5.
-  set(sc, 'uWid', K.width()); set(sc, 'uDens', K.dens() * (1 + 1.5 * Math.log(1 + fk))); set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
+  // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
+  set(sc, 'uWid', K.width()); set(sc, 'uDens', K.dens() * (0.5 + 1.75 * Math.log(1 + fk))); set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
   set(sc, 'uSpTurn', K.spTurn()); set(sc, 'uSpIn', K.spIn()); set(sc, 'uSpTwist', K.spTwist()); set(sc, 'uSpR', K.spR());
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
