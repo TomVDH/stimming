@@ -3,14 +3,18 @@ import './input.ts';
 import { whenVisible } from '../../shared/stim.js';
 import type { AltAz } from './core/sky.ts';
 import { azDelta, clampAim, stepAxis } from './core/dome.ts';
+import { Vector3 } from 'three';
 import { camera, renderer, scene, stageEl } from './setup.ts';
 import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
 import { complex } from './world/complex.ts';
 import { altAzDir, laser } from './world/laser.ts';
 import { trackingLamp } from './world/lamp.ts';
+import { lights } from './world/lights.ts';
 import { makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
-import { applyCamera, type View } from './view/camera.ts';
+import { lightGoal, lightLevel } from './core/sequence.ts';
+import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
+import { cuts } from './view/cuts.ts';
 import { onAim, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
 import { sky, skyAt, skyReady, starAltAz, LAT, LON } from './sky/stars.ts';
@@ -23,17 +27,32 @@ const SLEEP = 60000;
 
 // The beam's aim; every dome turns after its azimuth.
 const aim: AltAz = { alt: 16, az: 172 };
+// At rest the main dome's shut slit faces the camera.
+const mainAt = complex.main.root.getWorldPosition(new Vector3());
+const eye = eyeAt(WIDE);
+const REST_AZ = (Math.atan2(eye.x - mainAt.x, -(eye.z - mainAt.z)) * 180 / Math.PI + 360) % 360;
+// The cupola turns after the beam only once the pointer has moved.
+let aimed = false;
 // The machine owns the main dome: cupola, tube and shutter. It starts shut.
-const machine = makeMachine({ az: aim.az });
+const machine = makeMachine({ az: REST_AZ });
 // The small domes start 1.5 s and 3 s after the leader, and turn slower.
 // In aim the leader is the beam; after a pick it is the main dome's cupola.
-type Turn = { dome: Dome; pos: number; vel: number; cap: number; accel: number; delay: number; open: number };
+// They rest shut, open that long after a pick, and shut that long after aim.
+// p: shutter progress, 0 to 1; open: the eased shutter.
+type Turn = { dome: Dome; pos: number; vel: number; cap: number; accel: number; delay: number; p: number; open: number };
 const turns: Turn[] = [
-  { dome: complex.small[0], pos: aim.az, vel: 0, cap: 2.5, accel: 1.2, delay: 1.5, open: 1 },
-  { dome: complex.small[1], pos: aim.az, vel: 0, cap: 2, accel: 1, delay: 3, open: 1 },
+  { dome: complex.small[0], pos: REST_AZ, vel: 0, cap: 2.5, accel: 1.2, delay: 1.5, p: 0, open: 0 },
+  { dome: complex.small[1], pos: REST_AZ, vel: 0, cap: 2, accel: 1, delay: 3, p: 0, open: 0 },
 ];
+// A small shutter takes as long as the main one.
+const SHUTTER_S = 4;
+const ease = (k: number): number => k * k * (3 - 2 * k);
+// The small shutters want open after a pick; the time the wish changed.
+let wantOpen = false, wantT = 0;
+// The complex lights: 1 full, 0.35 dim, 0 off.
+let light = 1;
 // Recent leader azimuths, so a late dome can read the leader of 3 s ago.
-const seen: { t: number; az: number }[] = [{ t: -Infinity, az: aim.az }];
+const seen: { t: number; az: number }[] = [{ t: -Infinity, az: REST_AZ }];
 // While tracking, the loop redraws this often, so the tube creeps with the sky.
 const TRACK_REDRAW_MS = 3000;
 let lastTrackDraw = 0;
@@ -48,8 +67,13 @@ function azAgo(now: number, s: number): number {
   return seen[0].az;
 }
 // The leader's azimuth: the beam in aim, the main cupola after a pick.
-const leaderAz = () => (machine.phase === 'aim' ? aim.az : machine.cupolaAz);
-const turning = () => machine.moving || turns.some(d => d.vel !== 0 || azDelta(d.pos, leaderAz()) !== 0);
+const leaderAz = () => (machine.phase === 'aim' && aimed ? aim.az : machine.cupolaAz);
+// A small shutter still has a way to go.
+const shutting = () => turns.some(d => d.p !== (wantOpen ? 1 : 0));
+const turning = () => machine.moving || shutting() || turns.some(d => d.vel !== 0 || azDelta(d.pos, leaderAz()) !== 0);
+// The cuts, the crossfade or the lights still need frames.
+const showing = () => cuts.busy || light !== lightGoal(machine.phase);
+const awake = () => turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
 // Where the target stands now.
 const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LON), LAT);
 const skyMoving = () => clock.easing() || clock.speed > 1;
@@ -59,7 +83,7 @@ function pose(): void {
   for (const d of turns) {
     d.dome.setCupola(d.pos);
     // A shut dome parks its tube low, under the shutter.
-    d.dome.setTube({ alt: d.open >= 1 ? TUBE_REST_ALT : TUBE_PARK_ALT, az: d.pos });
+    d.dome.setTube({ alt: TUBE_PARK_ALT + (TUBE_REST_ALT - TUBE_PARK_ALT) * d.open, az: d.pos });
     d.dome.setShutter(d.open);
   }
   const m = machine;
@@ -67,13 +91,17 @@ function pose(): void {
   complex.main.setTube({ alt: m.tubeAlt, az: m.tubeAz });
   complex.main.setShutter(m.shutter01);
   trackingLamp.set(m.tracking);
+  lights.set(light);
   // The beam follows the pointer in aim; after a pick it follows the tube.
   laser.aim(complex.main.slitTop, m.phase === 'aim' || m.phase === 'lost' ? aim : { alt: m.tubeAlt, az: m.tubeAz });
 }
 
 export function draw(): void {
   pose();
+  // A close shot sets the camera after the pose, so it can frame the tube.
+  cuts.frame();
   renderer.render(scene, camera);
+  cuts.afterRender();
   dirty = false;
 }
 
@@ -91,8 +119,22 @@ function tick(now: number): void {
   // The machine reads the sky as it is now.
   const tp = machine.target ? targetPos(machine.target) : { alt: 0, az: 0 };
   const before = machine.phase;
-  machine.step(dt, { targetAlt: tp.alt, targetAz: tp.az, trails: clock.trails(), aimAz: aim.az });
+  machine.step(dt, { targetAlt: tp.alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
   if (machine.moving || machine.phase !== before) dirty = true;
+  cuts.step(dt);
+  if (cuts.busy) dirty = true;
+  const lv = lightLevel(machine.phase, light, dt);
+  if (lv !== light) { light = lv; dirty = true; }
+  // The small shutters follow the main dome after their delays.
+  const want = machine.phase !== 'aim';
+  if (want !== wantOpen) { wantOpen = want; wantT = t; }
+  for (const d of turns) {
+    const goal = wantOpen ? 1 : 0;
+    if (d.p === goal || t - wantT < d.delay * 1000) continue;
+    d.p = wantOpen ? Math.min(1, d.p + dt / SHUTTER_S) : Math.max(0, d.p - dt / SHUTTER_S);
+    d.open = ease(d.p);
+    dirty = true;
+  }
   // A slow track draws every few seconds, not every frame.
   if (machine.phase === 'track' && t - lastTrackDraw > TRACK_REDRAW_MS) dirty = true;
   if (dirty) lastTrackDraw = t;
@@ -110,7 +152,7 @@ function tick(now: number): void {
     dirty = true;
   }
   if (dirty) draw();
-  if (turning() || skyMoving() || machine.phase === 'open' || performance.now() - lastInput < SLEEP) raf = requestAnimationFrame(tick);
+  if (awake()) raf = requestAnimationFrame(tick);
   else lastT = 0;
 }
 
@@ -121,9 +163,12 @@ export function wake(): void {
 }
 
 function input(a: AltAz): void {
+  lastInput = performance.now();
+  // A close shot's camera gives no true aim; the pointer waits for the wide shot.
+  if (cuts.busy) { wake(); return; }
   const c = clampAim(a);
   aim.alt = c.alt; aim.az = c.az;
-  lastInput = performance.now();
+  aimed = true;
   // A lost machine goes back to aim; a picked star keeps its tracking while the pointer moves.
   if (machine.phase === 'lost') machine.release();
   if (machine.phase === 'aim') {
@@ -137,10 +182,16 @@ function input(a: AltAz): void {
 onAim(input);
 
 // A tap picks the brightest star within 3 degrees of the tap. An empty patch changes nothing.
+// A pick from rest or lost plays the cuts; a re-pick only slews.
+// A tap during the cuts skips to the wide shot and picks nothing.
 function tap(a: AltAz): void {
+  if (cuts.showing) { cuts.skip(); lastInput = performance.now(); dirty = true; wake(); return; }
+  if (cuts.busy) return;
   const s = pickStar(sky.stars, a, lst(clock.skyMs(), LON), LAT);
   if (!s) return;
+  const from = machine.phase;
   machine.pick(s);
+  if (from === 'aim' || from === 'lost') cuts.start(machine.cupolaAz);
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -153,7 +204,7 @@ whenVisible(stageEl, (vis: boolean) => {
   if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
   clock.wake();
   draw();
-  if (turning() || skyMoving() || machine.phase === 'open' || performance.now() - lastInput < SLEEP) wake();
+  if (awake()) wake();
 });
 
 // The catalog arrives after the first frame: draw the stars in.
@@ -205,5 +256,10 @@ window.__qa = {
   // A test view; a resize restores the default.
   look(v: View) { const c = renderer.domElement; applyCamera(c.width / c.height, v); draw(); },
   // Dome i: 0 main, 1 east, 2 roof.
-  shutter(i: number, k: number) { if (i > 0) turns[i - 1].open = k; draw(); },
+  shutter(i: number, k: number) { if (i > 0) { turns[i - 1].p = k; turns[i - 1].open = ease(k); } draw(); },
+  get restAz() { return REST_AZ; },
+  get light() { return light; },
+  // The sequence: the shot that shows, its time, and true while it owns the camera.
+  get cut() { return { shot: cuts.shot, t: cuts.time, busy: cuts.busy }; },
+  skipCuts() { cuts.skip(); dirty = true; wake(); },
 };

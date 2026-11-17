@@ -1,5 +1,6 @@
 // Load order: sky/stars runs first.
 import '../sky/stars.ts';
+import { Vector3 } from 'three';
 import { camera } from '../setup.ts';
 import { RISE, hillHeight } from '../world/hill.ts';
 
@@ -21,10 +22,27 @@ const DEG = Math.PI / 180;
 export function applyCamera(aspect: number, v: View = aspect < 1 ? TALL : WIDE): void {
   camera.aspect = aspect;
   camera.fov = v.fov;
-  camera.position.set(v.eye.x, hillHeight(v.eye.x, v.eye.z) + v.eye.h, v.eye.z);
+  eyeAt(v, camera.position);
   // Yaw first, then pitch: the horizon stays level.
   camera.rotation.order = 'YXZ';
   camera.rotation.set(v.pitch * DEG, -v.yaw * DEG, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
+// The eye of a view in world space.
+export function eyeAt(v: View = WIDE, out = new Vector3()): Vector3 {
+  return out.set(v.eye.x, hillHeight(v.eye.x, v.eye.z) + v.eye.h, v.eye.z);
+}
+
+// A close shot: an eye, the point it looks at, a vertical fov in degrees.
+// The cut sequence sets it each frame; a resize keeps it.
+export function applyShot(aspect: number, eye: Vector3, look: Vector3, fov: number): void {
+  camera.aspect = aspect;
+  camera.fov = fov;
+  camera.position.copy(eye);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(look);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }

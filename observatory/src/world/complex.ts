@@ -57,12 +57,14 @@ const box = (w: number, h: number, d: number, color: number, x: number, y: numbe
 // The long, low stone building, with a row of windows on its north face.
 // It is 30 m long, 9 m deep and 5 m high, with a flat roof.
 const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
+// The lit panes share one material, so the lights dim them together.
+const litPanes = new MeshBasicMaterial({ color: 0xd2d2d2 });
 function hall(): Group {
   const g = new Group();
   g.add(box(HALL.w, HALL.h, HALL.d, 0x6a6a6a, HALL.x, 0, HALL.z));
   g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x5c5c5c, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
-  const lit = new MeshBasicMaterial({ color: 0xd2d2d2 }), dark = lam(0x2a2a2a);
+  const lit = litPanes, dark = lam(0x2a2a2a);
   for (let i = 0; i < 7; i++) {
     const w = new Mesh(new BoxGeometry(1.4, 1.8, 0.1), i === 1 || i === 2 || i === 5 ? lit : dark);
     w.position.set(HALL.x - 12 + i * 4, 2.2, HALL.z - HALL.d / 2 - 0.05);
@@ -88,7 +90,8 @@ function shed(): Group {
   return g;
 }
 
-export type Complex = { root: Group; main: Dome; small: [Dome, Dome] };
+// windows: the material of the lit panes.
+export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial };
 
 export function buildComplex(): Complex {
   const root = new Group();
@@ -103,7 +106,7 @@ export function buildComplex(): Complex {
   roof.root.position.set(HALL.x + 8, HALL.h + 0.4, HALL.z);
   root.add(main.root, east.root, roof.root, hall(), shed());
   root.updateMatrixWorld(true);
-  return { root, main, small: [east, roof] };
+  return { root, main, small: [east, roof], windows: litPanes };
 }
 
 export const complex = buildComplex();
