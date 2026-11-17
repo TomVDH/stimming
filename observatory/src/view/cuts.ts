@@ -38,27 +38,28 @@ const DOME_R1 = 3.3;
 type Point = [number, number, number];
 type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean };
 const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
-  // a. Low on the slit's left: the louvred leaf between its girders.
-  // The crown cuts the frame on a diagonal, with sky above.
-  // The leaf slides back over the crown and opens a black arch.
-  edge: { eye: [2.2, -0.7, 0.1], look: [0.72, -0.05, 0.72] },
+  // a. Tight from the slit's left, a long lens on the louvred leaf.
+  // Its leading edge slides up past the girder's fixed line.
+  // The leaf leaves the girder arch over a black slit.
+  edge: { eye: [3, -0.5, 0.2], look: [0.62, -0.1, 0.78] },
   // b. Dead centre from the front, low, on a long lens.
-  // The lamp and the door sit under the slit, on one line.
+  // Only the slit, the dome's face and the catwalk rail show.
+  // The door lamp's glow lights the rail from below.
   // The lower leaf drops and the slit opens on the tube.
-  slit: { eye: [6.5, 0, -0.86], look: [0.3, 0, 0] },
+  slit: { eye: [6.5, 0, -0.86], look: [0.5, 0, 0.45] },
   // c. Inside, low, behind the mount, left of the slit.
   // The pier and mount stand dark on the right.
   // The wall lamp lights them red.
   // The tube lifts on a diagonal toward the slit and its stars.
   // The ring beam's curve runs along the foot of the frame.
   // A portrait frame aims at the tube's middle.
-  lift: { eye: [-0.55, -0.45, -0.42], look: [0.45, 0, 0.22], tall: [0.25, -0.05, 0.12], inside: true },
+  lift: { eye: [-0.55, -0.45, -0.42], look: [0.35, 0, 0.24], tall: [0.25, -0.05, 0.14], inside: true },
   // d. Outside, high on the slit's right, a long lens.
   // The riveted gores fill the left.
   // The slit is a dark band.
   // The dew shield rises while the cupola carries the slit round.
   // A portrait frame aims at the dew shield.
-  roll: { eye: [2.283, 0.742, 0.5], look: [0.72, 0.05, 0.3], tall: [0.72, -0.08, 0.33] },
+  roll: { eye: [2.283, 0.742, 0.5], look: [0.74, 0.04, 0.25], tall: [0.74, -0.04, 0.27] },
 };
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
