@@ -14,25 +14,31 @@ const EYE_GAP = 75, CLEAR_GAP = 6, ROAD_GAP = 6;
 // The hilltop is bare above this height, so the treetops stay under the complex.
 const TREELINE = TOP - 17;
 
-// Every tree this near the complex stays: the close cuts look out over them.
+// Every tree this near the complex stays.
+// The close cuts look out over these trees.
 const NEAR_KEEP = 250;
-// The view's half-width in degrees either side of south, with a margin.
+// The view's half-width in degrees either side of south.
+// The value includes a margin.
 const HALF_VIEW = 60;
-// The trim tests from 10 m over the eye, so a taller Dev eye still sees woods.
+// The trim tests from 10 m over the eye.
+// A taller Dev eye then still sees woods.
 const TEST_EYE_H = EYE_H + 10;
-// The canopy hides what is behind it from this height over the ground.
+// The canopy starts this high over the ground.
+// It hides what is behind it.
 const CANOPY = 6;
-// The test stops this far short of the tree, so its own neighbours do not hide it.
+// The test stops this far short of the tree.
+// Then its own neighbours do not hide it.
 const SELF_GAP = 15;
 
-// True when the eye can see a tree top over the land and the canopy.
+// True when the eye sees a tree top over land and canopy.
 // The camera faces south (+Z) from the rise.
 function seen(x: number, z: number, top: number): boolean {
   if (Math.hypot(x, z) < NEAR_KEEP) return true;
   const ex = RISE.x, ez = RISE.z, ey = hillHeight(ex, ez) + TEST_EYE_H;
   const dx = x - ex, dz = z - ez, d = Math.hypot(dx, dz);
   if (Math.abs(Math.atan2(dx, dz)) * 180 / Math.PI > HALF_VIEW) return false;
-  // March the sight line every 8 m; the clearing has no canopy.
+  // March the sight line every 8 m.
+  // The clearing has no canopy.
   for (let s = EYE_GAP; s < d - SELF_GAP; s += 8) {
     const k = s / d, px = ex + dx * k, pz = ez + dz * k;
     const roof = hillHeight(px, pz) + (Math.hypot(px, pz) < CLEAR + CLEAR_GAP ? 0 : CANOPY);
@@ -58,16 +64,19 @@ function hash(x: number, z: number): number {
   return v - Math.floor(v);
 }
 
-// One crown: three stacked tiers of branches, 1 m tall and 1 m in radius.
+// One crown has three stacked tiers of branches.
+// The crown is 1 m tall and 1 m in radius.
 // Each tier's rim has six branch tips with gaps between them.
-// aShade darkens the gaps under the branches; tips and tops stay lit.
+// aShade darkens the gaps under the branches.
+// The tips and the tops stay lit.
 const TIERS: [number, number, number][] = [[0, 0.52, 1], [0.3, 0.78, 0.74], [0.56, 1, 0.46]];
 const TIPS = 6;
 function crownGeometry(): BufferGeometry {
   const p: number[] = [], shade: number[] = [];
   const rim = (y0: number, r: number, k: number): [number, number, number, number] => {
     const a = (k / (TIPS * 2)) * Math.PI * 2, tip = k % 2 === 0;
-    // Tips reach out and droop; the gaps sit in and higher.
+    // The tips reach out and droop.
+    // The gaps sit in and higher.
     const rr = tip ? r : r * 0.6, y = tip ? y0 - 0.03 : y0 + 0.06;
     return [Math.cos(a) * rr, y, -Math.sin(a) * rr, tip ? 0.8 : 0.3];
   };
@@ -87,11 +96,14 @@ function crownGeometry(): BufferGeometry {
   return g;
 }
 
-// Woods-only haze over the shared haze: its strength and its distance in metres.
+// The woods get their own haze over the shared haze.
+// LAYER_K sets its strength.
+// LAYER_D sets its distance in metres.
 // Far rows fade more, so the hillside reads in layers.
 const LAYER_K = 0.5, LAYER_D = 350;
 
-// Lambert with extra terms: crown shade, a dark base, a cool top, layer haze.
+// The material is Lambert with four extra terms.
+// It adds crown shade, a dark base, a cool top, haze layers.
 function crownMaterial(): MeshLambertMaterial {
   const m = new MeshLambertMaterial({ color: 0xffffff });
   m.onBeforeCompile = (sh) => {
@@ -142,7 +154,9 @@ export function buildWoods(): InstancedMesh {
     o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();
     trees.setMatrixAt(i, o.matrix);
-    // Spruce green; some trees bluer, some darker, a few brown.
+    // Most trees are spruce green.
+    // Some trees are bluer or darker.
+    // A few trees are brown.
     const k = 0.75 + 0.5 * q;
     if (q2 > 0.93) c.setRGB(0.05 * k, 0.045 * k, 0.03 * k);
     else c.setRGB((0.026 + 0.012 * r) * k, (0.05 + 0.018 * q2) * k, (0.036 + 0.02 * q2) * k);
