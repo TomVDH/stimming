@@ -57,6 +57,8 @@ const GESTURE = {
   click: LEFT, 'right-click': RIGHT, 'double-click': LEFT,
   drag: LEFT + MOVE, 'right-drag': RIGHT + MOVE, hold: LEFT + STAY, 'hold + drag': LEFT + STAY_MOVE,
   circle: LEFT + ROUND, 'touch-circle': POINT + ROUND,
+  // A move: the pointer moves and no button is down.
+  move: `<path d="${MOUSE}M3 7h7M6.5 3v4"/>` + MOVE,
   // A release: no button is down, and an arrow leaves the mouse.
   release: `<path d="${MOUSE}M3 7h7M6.5 3v4"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>`,
   'touch-release': '<circle cx="6.5" cy="8" r="4.5"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>',
@@ -66,8 +68,8 @@ const GESTURE = {
   pinch: '<circle class="solid" cx="4" cy="8" r="1.8"/><circle class="solid" cx="20" cy="8" r="1.8"/><path d="M7 8h3.5M9 6.5 10.5 8 9 9.5M17 8h-3.5M15 6.5 13.5 8 15 9.5"/>',
 };
 // On a touch screen each mouse gesture has one touch gesture, as in keyWord.
-const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch', circle: 'touch-circle' };
-const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch', 'circle'];
+const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch', circle: 'touch-circle', move: 'touch-drag' };
+const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch', 'circle', 'move'];
 /**
  * The icon for one How to play entry: a gesture drawing, or keycaps for a key.
  * @param {string} word The spec's word, such as 'drag', 'drag a thing' or 'T'.

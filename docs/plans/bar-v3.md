@@ -53,7 +53,7 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - An action leaves the bar while the toy hides its Bar v2 chip, and returns with it. Railgun shows Reset only after a kill.
 - A group wider than the stage wraps its own parts. Window seat on a phone has three rows.
 - An action may open a tray: `tray: { title, hint, touchHint, options, onPick }`. Bar v3 draws it as a sheet; the action's handle gets `tray.open(on)` and `tray.isOpen`. Each option carries `data-value`, so the toy can start a drag from it. Prism's Pieces is the first.
-- How to play has a drawing for each of: click, drag, hold, hold and drag, release, scroll, circle, and their touch forms. An option's colour dot keeps its colour.
+- How to play has a drawing for each of: click, drag, hold, hold and drag, release, scroll, circle, move, and their touch forms. An option's colour dot keeps its colour.
 
 ## Open
 
