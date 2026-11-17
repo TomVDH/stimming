@@ -22,7 +22,7 @@ Wells merge, and a merger can fall into a black hole with a lensed disk and jets
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`galaxy/index.html:88`). Galaxy is the reference port for Bar v2.
+Bar: v3, the Signal bar, over Bar v2 (`galaxy/index.html:89`, `signal: true`). Galaxy is the reference port for Bar v2.
 
 | Slot | Holds |
 |---|---|
