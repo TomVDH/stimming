@@ -374,7 +374,9 @@ export function mountSignal(id, spec, ui) {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { if (busy()) return arm(); if (shown) leave(); }, 8000);
     };
-    poke = () => { if (!shown) arrive(false); else arm(); };
+    // Input counts only once the bar has landed: the intro owns the screen before that.
+    let landed = false;
+    poke = () => { if (!landed) return; if (!shown) arrive(false); else arm(); };
     stop = () => clearTimeout(idleTimer);
 
     // A sheet is one object: its box lands from the bar up and parts over its rows.
@@ -466,9 +468,10 @@ export function mountSignal(id, spec, ui) {
     sync();
     set({ off: true });
     // The bar lands when the intro has gone, on the intro's own beat.
-    if (!document.querySelector('.intro')) arrive(true);
+    const first = () => { landed = true; arrive(true); };
+    if (!document.querySelector('.intro')) first();
     else {
-      const go = () => { mo.disconnect(); clearTimeout(cap); arrive(true); };
+      const go = () => { mo.disconnect(); clearTimeout(cap); first(); };
       const me = run;
       const mo = new MutationObserver(() => { if (me !== run) mo.disconnect(); else if (!document.querySelector('.intro')) go(); });
       mo.observe(document.body, { childList: true, subtree: true });
