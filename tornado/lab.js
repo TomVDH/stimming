@@ -600,6 +600,9 @@ void main() {
     float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
     float ph1 = mix(hg(cosT, 0.3), hg(cosT, -0.1), 0.55);
     vec3 skyH = skyCol(vec3(rd.x, 0.0, rd.z));
+    // The storm's shadow changes slowly: one lookup serves eight steps.
+    // The step count is the same across a pixel group, so the group skips the lookup together.
+    float shOd = -1.0;
     for (int i = 0; i < 360; i++) {
       if (t > tEnd || T < 0.01) break;
       bool inA = t >= tA0 && t <= tA1, inC = t >= tC0 && t <= tC1;
@@ -618,6 +621,7 @@ void main() {
       if (inA) {
         vec2 q = p.xz - axisAt(p.y);
         float sH, r = length(q), R = hornR(p.y, sH);
+        if ((i & 7) == 0 || shOd < 0.0) shOd = cloudShade(p);
         // The pixel's size in metres where the ray is now.
         float foot = t / (uRes.y * uFoc);
         gSp = max(0.2, 3.5 * foot / R);
@@ -637,7 +641,7 @@ void main() {
           // Up the horn the tone turns to the storm's own.
           // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
           float topK = max(topKAt(p.y), 1.0 - smoothstep(0.0, 0.5, uCond));
-          float od = sunDepth(p, R) + cloudShade(p);
+          float od = sunDepth(p, R) + shOd;
           vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
           // Sky light falls off with depth into the funnel.
           float depth = max(0.0, 1.6 - r / R);
