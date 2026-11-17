@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T03:23:51Z
-updated_at: 2026-11-17T04:36:57Z
+updated_at: 2026-11-17T04:58:37Z
 parent: stimming-dwwg
 ---
 
@@ -42,3 +42,8 @@ Join spikes 1 and 2: shells for the funnel, the bake for the far storm and the n
 - The near deck fades in over 250 m above its region's flat floor; the floor cut the horn flat.
 - The near deck no longer turns rigidly with the outer sheath: past half a turn that blend pulled a ring of horn onto the axis, a shroud once a turn.
 - The deck swirls: angular speed falls with distance from the wall cloud, with inflow and lift by the funnel; two noise layers take turns every 20 s so it never winds into streaks. Spin sets its speed.
+
+## Shells, round 3
+- The straight line down the shaded side: the core's light point was extrapolated back and clamped at -3 segments, a fixed geometry on every ray. It is now the ray's exact entry into the circle at the light depth, or its point nearest the axis.
+- The deck spirals into the wall cloud: its texture lies on angle and log distance, so the turn (90 s a lap) and the inflow (one e-fold in 40 s) are one slide, with no wind-up and no crossfade. Arms trail along the inflow; Spin sets the speed.
+- GPU time, 800×960, helper's timer queries before the spiral: lab 14.9 / 25 / 37.6 ms, shells 14.7 / 23 / 31 ms at F1 / 2.5 / 4.5. The swirl had doubled the near storm's cost; the spiral replaces it with one deck read. Not yet re-timed: the hidden pane stalls the shader compile.

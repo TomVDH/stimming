@@ -441,24 +441,28 @@ float stormShape(vec3 p) {
 // Declared here, defined with the merge below.
 float nearW(vec3 ps);
 float shellOff(vec3 ps);
-// The deck swirls into the wall cloud: a point's texture comes from upstream.
-// It turns fast near the funnel and slow far out, so bands wind into spirals.
-// It also drifts in toward the funnel and rises by it. High up it holds still.
-vec3 swirl(vec3 p, float age) {
-  vec2 q = p.xz - WALL;
-  float r = length(q);
-  float low = 1.0 - smoothstep(BASE + 2.0, BASE + 5.0, p.y);
-  float w = 0.12 * uSpin / (1.0 + pow(r, 1.5)) * low;
-  float a = w * age;
-  // Inflow: the texture at r came from further out.
-  q = mat2(cos(a), sin(a), -sin(a), cos(a)) * q * exp(0.012 * uSpin * low * age);
-  // Lift by the funnel: the texture at a height came from below it.
-  float lift = 0.004 * uSpin * age * exp(-r * r / 2.0) * low;
-  return vec3(q.x + WALL.x, p.y - lift, q.y + WALL.y);
+// The deck spirals into the wall cloud. Its texture lies on angle and log distance.
+// On those axes a turn and an inflow are one plain slide, so it never winds up.
+// The whirl reaches this far round the wall cloud, in km.
+const float SPIRAL_R = 4.5;
+// The whirl's share at a point: full near the funnel and low on the deck.
+float spiralW(vec3 p) {
+  float r = length(p.xz - WALL);
+  return (1.0 - smoothstep(SPIRAL_R * 0.55, SPIRAL_R, r)) * (1.0 - smoothstep(BASE + 1.0, BASE + 2.6, p.y));
 }
-// One layer of the deck's texture. p sets the masks; pr is the turned point; o shifts the noise.
-float deckN(vec3 p, vec3 pr, vec3 o, float calm) {
-  vec3 pn = pr + o;
+// The noise point for a deck point inside the whirl.
+vec3 spiralPt(vec3 p) {
+  vec2 q = p.xz - WALL;
+  float r = max(length(q), 0.08);
+  float t = uTime * uSpin;
+  // Inflow: the texture at r came from further out. One e-fold takes 40 s.
+  float lr = log(r) + 0.025 * t;
+  // Turn: one lap takes 90 s. The arms trail along the inflow.
+  float ang = atan(q.y, q.x) + 0.07 * t - 1.4 * lr;
+  return vec3(cos(ang) * 2.2 + lr * 2.8, p.y, sin(ang) * 2.2);
+}
+// One layer of the deck's texture. p sets the masks; pn is the noise point.
+float deckN(vec3 p, vec3 pn, float calm) {
   // Lumpy towers, a smoother anvil.
   float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
   vec3 n = pn * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
@@ -470,7 +474,7 @@ float deckN(vec3 p, vec3 pr, vec3 o, float calm) {
   // The base: stacked plates on its flank, turning round the updraft.
   // Up close they read as contour bands: they stay off the base's underside and away from the tornado.
   float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(nearR(), nearR() * 2.2, length(p.xz - WALL));
-  float turn = atan(pr.z - TOWER.y, pr.x - TOWER.x);
+  float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
   d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(pn * 1.4));
   // Fine lumps, for the near base.
   d += (vn3(pn * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
@@ -481,22 +485,17 @@ float deckN(vec3 p, vec3 pr, vec3 o, float calm) {
   float under = (1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y)) * mix(1.0, calm, 0.6);
   return d - under * ((W(pn * 2.6 + 1.7) - 0.35) * 0.32 + (W(pn * 8.0) - 0.35) * 0.16);
 }
-// A turning texture winds up into streaks, so two layers take turns.
-// Each layer lives one cycle and fades out while the next fades in.
-const float DECK_P = 20.0, DECK_F = 5.0;
-vec3 deckSeed(float c) { return vec3(fract(c * 0.618) * 37.0, 0.0, fract(c * 0.382) * 29.0); }
 float stormD(vec3 p) {
   float d = stormShape(p);
   if (d > 2.5) return d;
   // On the horn the base's ragged noise eases, so the trumpet stays a trumpet.
   // Low on the horn, by the funnel, it eases most; up by the deck it keeps the deck's texture.
   float calm = 1.0 - gOn * (1.0 - smoothstep(gRtopKm * 1.3, gRtopKm * 2.4, length(p.xz - WALL))) * mix(0.85, 0.35, smoothstep(BASE - 0.5, BASE - 0.05, p.y)) * (1.0 - smoothstep(BASE - 0.05, BASE + 0.3, p.y));
-  float s = fract(uTime / DECK_P), c = floor(uTime / DECK_P);
-  float age = s * DECK_P + DECK_F, wNew = smoothstep(0.0, DECK_F / DECK_P, s);
-  d += wNew * deckN(p, swirl(p, age), deckSeed(c), calm);
-  // The old layer reads only while it fades.
-  if (wNew < 1.0) d += (1.0 - wNew) * deckN(p, swirl(p, age + DECK_P), deckSeed(c - 1.0), calm);
-  return d;
+  float wS = spiralW(p);
+  // The still deck and the whirl each read only where they show.
+  float n0 = wS < 1.0 ? deckN(p, p, calm) : 0.0;
+  float n1 = wS > 0.0 ? deckN(p, spiralPt(p), calm) : 0.0;
+  return d + mix(n0, n1, wS);
 }
 // The colour of one storm sample.
 vec3 stormLit(vec3 p, float d) {
@@ -649,9 +648,17 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       od = funnelSig(d, R) * rampInt(xa, xb, len, edge, wC);
       // Light the core where the ray meets its ragged edge, so the relief shades.
       // The point stays outside the mean core, so a deep pocket is not black.
-      // A stretch deep inside lights the core where the ray came in, before it.
-      uk = abs(dx) > 1e-4 ? clamp((max(edge - 0.5 * wC, 0.9) - xa) / dx, -3.0, 1.0) : 0.5;
-      ph = pa + rd * (len * uk);
+      float xt = max(edge - 0.5 * wC, 0.9);
+      // Each stretch lights the core where the ray enters that radius.
+      // The entry is solved on the circle, so it moves smoothly across the image.
+      // A clamped step out along x drew a hard line down the shaded side.
+      // A ray that never gets that deep takes its point nearest the axis.
+      float rho = xt * 0.5 * (Rea + Reb);
+      vec2 qa = pa.xz - axisAt(pa.y), dz = rd.xz;
+      float qA = max(dot(dz, dz), 1e-6), qB = dot(qa, dz), qD = qB * qB - qA * (dot(qa, qa) - rho * rho);
+      float sE = qD > 0.0 ? (-qB - sqrt(qD)) / qA : -qB / qA;
+      ph = pa + rd * sE;
+      uk = clamp(sE / len, 0.0, 1.0);
       q = ph.xz - axisAt(ph.y);
       xr = (edge - 0.5 * wC) * mix(Rea, Reb, uk) / R;
       // The volume showed its depth as streaks: a deep pocket in the wall reads darker.
@@ -662,7 +669,9 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       float rk = 1.0 + gSp * float(k - 1) * (1.0 - fl);
       if (rk < xlo - 3.0 * sw || rk > xhi + 3.0 * sw) continue;
       R = 0.5 * (Ra + Rb);
-      float I = layerInt(xa, xb, len, rk, sw) * (1.0 - fl) * fade;
+      // A layer seen edge-on drew a dark stroke down the outline: a torn layer is patchy along that path.
+      // The path in a layer is capped at twice a straight crossing.
+      float I = min(layerInt(xa, xb, len, rk, sw), 3.5 * sw * R) * (1.0 - fl) * fade;
       float sMax = funnelSig(mix(0.9, 0.35, fk), R) * I;
       if (sMax < 0.003) continue;
       // Outer sheaths show only their densest noise, so the edge stays wispy.
@@ -1127,4 +1136,13 @@ for (const ev of ['visibilitychange', 'input', 'click', 'keydown']) document.add
 addEventListener('resize', wake);
 for (const id of ['res']) $(id).addEventListener('input', () => size());
 raf = requestAnimationFrame(loop);
+// Times n frames with a pixel read, free of the screen's frame clock.
+window.__bench = (n = 12) => {
+  const px = new Uint8Array(4);
+  for (let i = 0; i < 3; i++) draw(performance.now());
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) { draw(t0 + i * 33); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+  return Math.round((performance.now() - t0) / n * 10) / 10;
+};
 window.__lab = { get f() { return fShown; }, set f(v) { f = fShown = v; } };
