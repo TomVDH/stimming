@@ -204,6 +204,8 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
     { type: 'slider', id: 'blend', label: 'Marble blend', min: 0, max: 20, step: 0.5, value: 5 },
     { type: 'slider', id: 'oilFilm', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
+    { type: 'slider', id: 'keyUp', label: 'Lamp height', min: 0.2, max: 1, step: 0.01, value: 0.45 },
+    { type: 'slider', id: 'keyI', label: 'Lamp strength', min: 0.3, max: 1.2, step: 0.05, value: 0.8 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -3577,8 +3579,9 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
   plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
   gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
-  gl.uniform3f(sceneP.u('uKeyDir'), ...KEY);
-  gl.uniform3f(sceneP.u('uKeyCol'), 1.2, 1.02, 0.82);
+  gl.uniform3f(sceneP.u('uKeyDir'), ...norm([KEY[0], devV('keyUp', 0.45), KEY[2]]));
+  const ki = devV('keyI', 0.8);
+  gl.uniform3f(sceneP.u('uKeyCol'), 1.2 * ki, 1.02 * ki, 0.82 * ki);
   gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
   gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
   gl.uniform1f(sceneP.u('uDof'), devV('dof', 7));
@@ -3624,7 +3627,8 @@ function scenePass() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // The key lamp hangs high behind the pot, a little to the left.
-const KEY = norm([-0.12, 0.68, -0.72]);
+// The lamp's bearing; its height and strength come from Dev rows.
+const KEY = [-0.12, 0.68, -0.72];
 let seedN = 0;
 function outPass() {
   const bl = bloom.render(hdr.tex[0], hdr.w, hdr.h, { threshold: 0.9, cap: 8, levels: glowDetail(D.level).levels });
