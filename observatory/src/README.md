@@ -32,7 +32,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `core/machine.ts` | The telescope machine: shutter, main dome, tube, each a heavy part from `core/dome.ts`; `makeMachine`, `Phase`, the limits `CUPOLA` and `TUBE`; `shut` for the `?cuts` review |
 | `core/pick.ts` | A tap picks the brightest star near it: `pickStar` |
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
-| `core/opening.ts` | The opening, 70 s from the golden hour into night: sun, star limit, sky lag and speed, the star streak (`streakForDusk` reads it from the dusk alone), lamps, play lock, skip; `sunsetAz` |
+| `core/opening.ts` | The opening, 10 s from the golden hour into night: sun, star limit, sky lag and speed, the star streak (`streakForDusk` reads it from the dusk alone), lamps, play lock, skip; `sunsetAz` |
 | `core/sequence.ts` | The pick sequence's five shots; their timing from the shutter and the tube's lift, `startSeq`, `stepSeq`; the camera locks, `makeLocks`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage; the fail line, `fail` and `bootFail`; the star catalog's early start, `starFile`; `onLeave` and `disposeTree` |
 | `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the sunset glow, which the golden hour spreads wider and higher; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |

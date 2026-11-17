@@ -5,9 +5,9 @@
 import type { Clock } from './clock.ts';
 
 // The golden hour to full night takes this long.
-export const OPENING_S = 70;
+export const OPENING_S = 10;
 // A tap or Esc reaches night in this time.
-export const SKIP_S = 1.5;
+export const SKIP_S = 0.8;
 // After night, the beam fades in over this time.
 export const BEAM_S = 1;
 // The sun sinks from 3 degrees above the horizon to 18 below.
@@ -19,20 +19,21 @@ export const SUN_START = 3, SUN_END = -18;
 export const MAG_START = -2.5, MAG_END = 6.5;
 // The first stars show from this time.
 // The limit reaches MAG_END at STARS_TO.
-const STARS_FROM = 12, STARS_TO = 60;
+const STARS_FROM = 2, STARS_TO = 8.5;
 // The sky clock's top speed, in sky seconds per real second.
 // It stays under the trail speed, 120.
 export const PEAK_SPEED = 110;
 // The clock holds its top speed until HOLD_S.
 // Then it eases to speed 1 at full night.
-export const HOLD_S = 54;
+export const HOLD_S = 8.5;
 // A streak shows the sky's turn over this many real seconds.
 // Only the turn past real time counts.
 // So a streak is zero at speed 1.
+// It does not follow the opening's length.
 export const EXPOSURE_S = 8;
 // The lamps come on between these times.
 // Each lamp takes LAMP_RAMP seconds to reach full.
-export const LAMP_FROM = 34, LAMP_TO = 60, LAMP_RAMP = 1.2;
+export const LAMP_FROM = 5, LAMP_TO = 8.5, LAMP_RAMP = 0.3;
 
 const END = OPENING_S + BEAM_S;
 // The sky turns this many degrees per second at speed 1.
