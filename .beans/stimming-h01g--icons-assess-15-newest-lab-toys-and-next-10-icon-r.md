@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T05:35:18Z
-updated_at: 2026-11-17T06:09:31Z
+updated_at: 2026-11-17T06:11:49Z
 ---
 
 Tom asked for an assessment of the 15 newest Lab toys and the next 10 toys to build, and an icon rework for each of the 15.
@@ -71,3 +71,4 @@ Order: the 11 Lab toys, newest first. The four shelf toys (cauldron, washer, lad
 | Spillway | icons/spike-spillway-1.html (icon only, toy not built) | A (2026-11-16) |
 | Deep vent | icons/spike-vent-1.html (icon only, toy not built) | A (2026-11-16) |
 | Observatory | icons/spike-observatory-1.html (icon only, toy not built) | A (2026-11-16) |
+| Rain stick | icons/spike-rainstick-1.html (icon only, toy not built) | D (2026-11-16) |
