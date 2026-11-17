@@ -776,7 +776,7 @@ function packFunnels(rw, rh) {
       [cx, cz, H, deck],
       [r, flare, at('prof', f), at('vmax', f)],
       [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f), at('rain', f) * fade],
-      [at('dark', f), at('lean', f), at('sway', f), f / 5],
+      [at('dark', f) * KNOB.darkK, at('lean', f), at('sway', f), f / 5],
       [t.ds, t.zs, t.rope, t.seed],
       [lm, fade, densAt(f), nrM],
     ] });
@@ -990,7 +990,8 @@ storm = ui.slider?.value ?? storm;
 act.time(qs0.get('time') || ui.setting('time')?.value || 'golden');
 lensMM = +(qs0.get('lens') || ui.setting('lens')?.value || 50);
 S.expo = ui.setting('expo')?.value ?? 1;
-act.sunAz(ui.setting('sunAz')?.value ?? 20);
+// QA: ?sunaz=20 sets the sun's bearing for one load.
+act.sunAz(qs0.has('sunaz') ? +qs0.get('sunaz') : ui.setting('sunAz')?.value ?? 20);
 // QA can start with funnels down: ?tor=F3,F5 places them under the wall cloud.
 const qs = new URLSearchParams(location.search);
 if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(parseFloat(f.replace(/[^\d.]/g, '')) || 0, 0, 5); act.add(); }

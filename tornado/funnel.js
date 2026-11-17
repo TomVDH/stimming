@@ -22,8 +22,10 @@ export const TABLE = {
   lean: [430, 260, 120, 60, 25, 10],       // top offset, m
   sway: [90, 60, 35, 20, 10, 5],
 };
-// The lab's approved knob values (Tom, 2026-11-16).
-export const KNOB = { width: 1.6, dens: 1.2, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
+// The scene's knob values. They start from the lab's approved set (Tom, 2026-11-16).
+// The scene is denser, brighter and less dark (Tom: "poppier and more reflective", "a lot more opaque").
+// darkK scales the table's darkness; sunK is the sunlit side's weight (the lab's is 0.6).
+export const KNOB = { darkK: 0.55, sunK: 1.0, width: 1.6, dens: 2.4, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
 // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
 export const densAt = f => KNOB.dens * (0.5 + 1.75 * Math.log(1 + f));
 // A smooth curve through the table (Catmull-Rom), held inside each step's two values.
@@ -349,7 +351,8 @@ Geo geo(vec3 p, float xn) {
   g.q = p.xz - axisAt(p.y);
   g.R = hornR(p.y, g.sH);
   // The tip's taper keeps its length when Width widens the funnel.
-  float taperL = max(g.R * 4.0 / uWid, 80.0);
+  // Once the funnel reaches the ground it thins only in its last short stretch, inside the dust.
+  float taperL = max(g.R * 4.0 / uWid, 80.0) * mix(1.0, 0.35, smoothstep(0.9, 1.0, uCond));
   float top = uH * (1.0 - uCond) + 0.2 * uH * mix(1.0, 0.3, uCond) + taperL * 1.4;
   // The noisy edge eases into the flat one before xn, so x has no step there.
   float xr = length(g.q) / g.R, eh = uH * (1.0 - uCond);
@@ -411,13 +414,13 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
   // Sky light falls off with depth into the funnel.
   float depth = max(0.0, 1.6 - xr);
   vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
-  // The deck over the funnel's top hides the sky: its light fails toward the base, as the deck's does.
-  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, smoothstep(0.55, 1.0, u)) * exp(-depth * 1.6);
+  // Up the flare the deck hides the sky: its light fails toward the base, as the deck's does.
+  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, topK) * exp(-depth * 1.6);
   // Bounce from the sunlit wheat warms the lower funnel from below.
   ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
   vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
   alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-  return mix(alb * (sunL * 0.6 + ambL * 0.8), stC, topK);
+  return mix(alb * (sunL * ${KNOB.sunK.toFixed(2)} + ambL * 0.8), stC, topK);
 }
 
 /* ---------- the deck round a tornado: the horn ---------- */
@@ -458,8 +461,8 @@ float cloudShade(vec3 p) {
   return od * 0.006;
 }
 // How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
-// The turn starts a flare's length under the flare, so the funnel meets the deck in one tone.
-float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0), gDeck, h); }
+// The deck's tone stays in the flare: the body below it keeps its own sunlit colour.
+float topKAt(float h) { return smoothstep(gY0, gDeck, h); }
 
 // The layers on one stretch of a ray, front to back among themselves.
 void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float Reb, float Ra, float Rb, float tapa, float tapb, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, inout vec3 fAcc, inout float fT) {
