@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T21:32:17Z
+updated_at: 2026-11-17T22:12:37Z
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -33,3 +33,23 @@ Airframe: ported from the hubspot-nightly intro (procedural, no .glb). No brand 
 - Node checks: hard drop crashes, a tree crashes, the container roof takes a landing.
 - Tom, 2026-11-17: "push to GH lab so I can show to coworker". The page moves to drone/index.html with a Lab entry in toys.json.
 - No menu tile yet: a tile is a menu edit, which needs its own bean and Tom's yes. The page opens at drone/.
+
+
+## Round 2 (Tom, 2026-11-17)
+
+Tom's asks: motor sound, downwash, model and graphics, refine the scene, an obstacle course in it, keys and a gamepad, haze discs on the lower rotors, Bar v3, a video feed on the onboard view with less grain, a flight HUD with a velocity vector, a horizon, speed and altitude tapes, the HUD text burned in as in Railgun.
+
+- [x] Bar v3: the shell spec, opted in with signal: true; How to play rows in help
+- [x] Haze discs on every rotor, upper and lower
+- [x] Keys (W S A D, arrows, I J K L, Shift for fine) and a gamepad (two sticks, Mode 2)
+- [x] Rotor sound: a blade tone per rotor, air wash, downwash rumble, distance, pan, Doppler; muted by default
+- [x] Gimbal view as the onboard feed through the NVG tube: fine grain, no dead spots
+- [x] Flight HUD: heading tape, horizon and ladder, velocity vector, speed and altitude tapes, burned in
+- [x] Telemetry panel, rotor map and stage text removed (Bar v3: nothing written on the stage)
+- [x] A crash returns to the pad after 3 s
+- [ ] Downwash: dust and grass flung out under the craft
+- [ ] Model and graphics, from the reference photos
+- [ ] Refine the dusk field
+- [ ] Obstacle course inside the field (design to Tom first)
+
+Known: on Windows D3D11 the tube shaders log X4000 notes once; they come from nvg/tube.js.

@@ -414,7 +414,8 @@ export function airframe(o = {}) {
       const bl = new Mesh(bladeGeo, carbon);
       bl.castShadow = true;
       prop.add(bl);
-      if (lvl > 0) prop.add(new Mesh(discGeo, discM));
+      // Every rotor carries its own haze disc, upper and lower.
+      prop.add(new Mesh(discGeo, discM));
       prop.rotation.y = row + j + lvl;
       // +1 turns counter-clockwise, seen from above.
       prop.userData.dir = (row === j ? 1 : -1) * lvl;
