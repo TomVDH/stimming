@@ -78,10 +78,11 @@ function hash(x: number, z: number): number {
 const PINE_URL = new URL('../models/pine.glb', import.meta.url).href;
 // The model's own alpha cut.
 const PINE_CUT = 0.486;
-// The bark fills the texture's top-left corner, to v 0.523.
+// The bark fills the texture's top-left square, to u and v 0.523.
 // The trunk's foot and top strips sit at v 0.52.
-const BARK_V = 0.53;
-const isBark = (u: number, v: number) => u < 0.5 && v < BARK_V;
+// One bound serves the vertex test and the bark recolour.
+const BARK_UV = 0.53;
+const isBark = (u: number, v: number) => u < BARK_UV && v < BARK_UV;
 // The crown's reach is measured in this many height bands.
 const BANDS = 10;
 
@@ -133,7 +134,8 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   const mean = new Color(0, 0, 0);
   let n = 0;
   // The branches fill the rows under the bark.
-  const barkRows = Math.ceil(BARK_V * h);
+  // The bound scales by each side, so any texture aspect works.
+  const barkRows = Math.ceil(BARK_UV * h), barkCols = Math.ceil(BARK_UV * w);
   for (let i = barkRows * w; i < w * h; i++) {
     if (img.data[i * 4 + 3] < 128) continue;
     mean.r += toLinear(img.data[i * 4] / 255);
@@ -147,7 +149,7 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const meanL = lum(mean.r, mean.g, mean.b);
   for (let y = 0; y < barkRows; y++) {
-    for (let x = 0; x < barkRows * w / h; x++) {
+    for (let x = 0; x < barkCols; x++) {
       const i = (y * w + x) * 4;
       const k = lum(toLinear(img.data[i] / 255), toLinear(img.data[i + 1] / 255), toLinear(img.data[i + 2] / 255)) / meanL;
       img.data[i] = toSrgb(mean.r * k * BARK[0]) * 255;
@@ -350,13 +352,15 @@ export function buildWoods(pine: Pine): Woods {
   const far = new InstancedMesh(imp.cards, woodsMaterial(imp.albedo, true, imp.normal), farSpots.length);
   const o = new Object3D(), c = new Color();
   const place = (mesh: InstancedMesh, list: [number, number, number][]) => list.forEach(([x, z, r], i) => {
-    // A second number per tree, from its place, keeps the trim unchanged.
-    const q = hash(x, z), q2 = hash(z, x);
+    // More numbers per tree, from its place, keep the trim unchanged.
+    // q2 picks the tint and the brown trees.
+    // qw sets the width alone, so brown trees are not always broad.
+    const q = hash(x, z), q2 = hash(z, x), qw = hash(x * 1.618 + 31.4, z * 0.618 - 27.1);
     // The crown height h starts 1 m over the ground.
     const h = (12 + 8 * r) * (0.82 + 0.26 * q);
     o.position.set(x, hillHeight(x, z), z);
     // Some crowns are slim spires, some are broad.
-    const w = h * (0.3 + 0.12 * q2) / pine.R;
+    const w = h * (0.3 + 0.12 * qw) / pine.R;
     o.scale.set(w, h + 1, w * (0.9 + 0.2 * q));
     o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();
@@ -375,9 +379,8 @@ export function buildWoods(pine: Pine): Woods {
   place(far, farSpots);
   const root = new Group();
   root.add(near, far);
-  // disposeTree finds the colour atlas on the card material.
-  // The normal atlas sits only in the card shader's uniforms.
-  const dispose = (): void => { disposeTree(root); imp.normal.dispose(); };
+  // The impostor frees its own atlases.
+  const dispose = (): void => { disposeTree(root); imp.dispose(); };
   return { root, near, far, bakeMs: imp.ms, dispose };
 }
 

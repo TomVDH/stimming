@@ -121,11 +121,15 @@ const farMat = new ShaderMaterial({
   varying float vAlt, vFade;
   void main() {
     vec3 d = normalize(vP - cameraPosition);
-    vec2 h = d.xz / max(length(d.xz), 1e-4);
-    float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
     // The rock is a dark slate of the horizon.
+    vec3 body = uHor * 0.4;
     // Toward the sunset it holds a little warm light.
-    vec3 body = uHor * 0.4 + uWarm * exp(-away / 0.75) * 0.12;
+    // At night uWarm is black, so the night frame skips this branch.
+    if (uWarm != vec3(0.0)) {
+      vec2 h = d.xz / max(length(d.xz), 1e-4);
+      float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
+      body += uWarm * exp(-away / 0.75) * 0.12;
+    }
     // Each range fades by its distance into the sky behind it.
     vec3 col = mix(body, skyColor(d), vFade);
     // The foot melts into the valley haze, so no seam shows.

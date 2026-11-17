@@ -68,10 +68,13 @@ vec3 skyColor(vec3 d) {
   // The glow gathers in a thin band on the horizon.
   col = mix(col, uHor * 1.15, exp(-up * 14.0) * 0.55);
   // The sunset glow lies low and spreads wide round the sun.
-  // The guard keeps the zenith free of a zero-length vector.
-  vec2 h = d.xz / max(length(d.xz), 1e-4);
-  float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
-  col += uWarm * exp(-away / 0.75) * exp(-up * 10.0);
+  // At night uWarm is black, so the night frame skips this branch.
+  if (uWarm != vec3(0.0)) {
+    // The guard keeps the zenith free of a zero-length vector.
+    vec2 h = d.xz / max(length(d.xz), 1e-4);
+    float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
+    col += uWarm * exp(-away / 0.75) * exp(-up * 10.0);
+  }
   return col;
 }`;
 const skyMat = new ShaderMaterial({

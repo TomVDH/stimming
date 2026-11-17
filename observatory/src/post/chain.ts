@@ -20,6 +20,9 @@ renderer.toneMappingExposure = 2.2 * 0.55;
 
 // The scene renders with 4x multisampling into a half-float target.
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 }));
+// The composer takes device pixels at its own pixel ratio of 1.
+// Its setPixelRatio resizes every target, so a resize would allocate twice.
+composer.setPixelRatio(1);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(makeBloom(...POST.bloom));
 const grade = makeGrade(POST);
@@ -32,8 +35,7 @@ onLeave(() => { for (const p of composer.passes) p.dispose(); composer.dispose()
 // Sizes the chain to the canvas; w and h in CSS pixels.
 export function resizePost(w: number, h: number): void {
   const dpr = renderer.getPixelRatio();
-  composer.setPixelRatio(dpr);
-  composer.setSize(w, h);
+  composer.setSize(w * dpr, h * dpr);
   grade.uniforms.uRes.value.set(w * dpr, h * dpr);
 }
 

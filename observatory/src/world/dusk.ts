@@ -42,6 +42,7 @@ const duskU = {
 
 // Adds the last light to a lit material.
 // It lights only faces above the earth's shadow line.
+// At night uDuskC is black, so the night frame skips the branch.
 // world/hero adds it to the hero model's materials.
 export function patch(m: Material): void {
   const prev = m.onBeforeCompile, key = m.customProgramCacheKey();
@@ -52,7 +53,7 @@ export function patch(m: Material): void {
       .replace('#include <common>', '#include <common>\nuniform vec3 uDuskC, uDuskDir;\nuniform float uDuskY;')
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         #ifdef USE_FOG
-        {
+        if (uDuskC != vec3(0.0)) {
           vec3 nW = inverseTransformDirection(normal, viewMatrix);
           float lit = max(dot(nW, uDuskDir), 0.0) * smoothstep(uDuskY - 5.0, uDuskY + 5.0, vHazeP.y);
           reflectedLight.directDiffuse += uDuskC * lit * BRDF_Lambert(diffuseColor.rgb);
