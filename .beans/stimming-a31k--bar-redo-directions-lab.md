@@ -52,7 +52,9 @@ Question: which direction does the bar redo take?
 - [x] Tom, 2026-11-17: the round 3 underline clung to the letters; he wants controls for the hover treatments. The underline is gone. A Hover knob holds six: Ink bar (the default, at the very foot, clear of the letters), Line, White box, Ink box, Brackets, Ink word. A press is the white box in all six; keyboard focus is the ink bar in all six
 - [x] Tom's pick (2026-11-17): Hover is the White box. The white flash box closes in from the sides when you point; a press lands it oversize for one frame. It is the lab's default
 - [x] Top left (Tom, 2026-11-17, by dialog: the toy's own mark; it always stays). The toy's emblem in its ink, then its name. Pointing flashes the white box and swaps in a back arrow and the Stimming wordmark; a click goes to the menu. On the first arrival it lands on the bar's beat. A toy with no emblem (63 of 112) shows its name alone
-- [ ] Open: the name and the emblem wear the dark edge that every Signal word wears. Tom's older rule says no shadow on the logo or the name. Tom rules
+- [x] Tom, 2026-11-17: "i want our glyph as a monogram in the top left corner instead"; on hover the Stimming logo plays with the return chevron. The toy's mark is cut. The top left is the wordmark's S alone, with no box and no edge (Tom's rule: no shadow on the logo). Pointing plays the whole logo, one letter per film frame, behind the chevron, then the shell's colour wave; it folds back to the S when the pointer leaves
+- [ ] Open: the repo holds no glyph file, so the monogram is the wordmark's S. Tom confirms, or names the glyph he means
+- [ ] Open: the toy's name is no longer on the stage. Tom says where it goes, if anywhere
 - [ ] Tom judges the rest of round 4 (keycaps, How to play, the contrast fixes) and the top left
 - [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use, a disabled control
 - [ ] Next, on Tom's yes only: Signal moves from the lab into the shell on one toy (hard rule 3: its own bean)

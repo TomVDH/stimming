@@ -5,7 +5,7 @@ Workbench for the redo of the toy bars (Tom, 2026-11-16: "we're completely redoi
 - A real toy runs in a frame at its own address. `shim.js` stands in for `shared/stim.js` there: it reads the toy's own `bar` spec and draws the picked direction from it. Every control acts through the shell's handles.
 - Directions on the switch (keys 1 to 3): Signal (the base; Tom: "i like signal a lot"), Bare (Tom: "we'll keep bare too"), Today. Dock, Tuck and Askew are cut.
 - Signal: one bar at the foot, no boxes, the intro's flash beats. Tom, 2026-11-16: the layout is "great"; the flash reveals and the transitions into sheets are "perfect". Do not change those without his word.
-- Signal's top left (Tom, 2026-11-17): the toy's own mark, its emblem in its ink and then its name. It always stays. Pointing shows a back arrow and the Stimming wordmark in the white box.
+- Signal's top left (Tom, 2026-11-17): the Stimming monogram, the wordmark's S alone, with no box and no shadow. It always stays. Pointing plays the whole logo letter by letter behind the return chevron. The toy's own mark (emblem and name) was tried first and is cut.
 - Signal's rules:
   - White is the flash: a press, or a thing that lands. The toy's ink is a state that holds: icons, the slider fill, a held pick.
   - Pointing and pressing share the white box: it closes in from the sides when you point, and a press lands it oversize for one frame. A key press shows no box; keyboard focus shows an ink bar at the word's foot.

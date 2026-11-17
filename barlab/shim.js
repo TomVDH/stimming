@@ -326,16 +326,11 @@ function mount(id, spec, ui) {
     }
     const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.dev, info), flash, tint);
     const glass = h('div', 'sg-glass');
-    // The top left is the toy's own mark: its emblem in its ink, then its name.
-    // Pointing at it flashes the white box and shows the way back to Stimming.
-    // It always stays; on the first arrival it lands on the bar's beat.
-    const home = shell.querySelector('.s2-back');
-    const id = h('a', 'sg-id');
-    id.href = home.getAttribute('href');
-    id.setAttribute('aria-label', `${toy.name}. Back to Stimming`);
-    const emblem = toy.emblem ? `<span class="sg-emblem"><i style="--emblem: url(${new URL('../' + toy.emblem, import.meta.url).href})"></i></span>` : '';
-    id.append(h('span', 'sg-id-toy', `${emblem}<b></b>`), h('span', 'sg-id-home', `<i class="sg-id-arrow">\u2039</i>${home.querySelector('.mark').outerHTML}`));
-    id.querySelector('b').textContent = toy.name;
+    // The top left is the Stimming monogram: the wordmark's S alone (Tom, 2026-11-17).
+    // Pointing at it plays the whole logo, letter by letter, behind the return chevron.
+    // It is the shell's own back link, so the letters, their hues and the wave stay true.
+    const id = shell.querySelector('.s2-back').cloneNode(true);
+    id.classList.add('sg-mono');
     const sheets = [P.pickPop, P.setPop, P.devPop, howPop].filter(Boolean);
     sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet'), h('i', 'sg-tint sg-tint--sheet')));
     layer.append(...[id, glass, hints, bar, ...sheets.map(sh => sh.el)].filter(Boolean));
@@ -347,13 +342,11 @@ function mount(id, spec, ui) {
     // Presence: 'idle' leaves after 8 s with no input, 'stay' never leaves, 'touch' leaves on a press.
     const mode = host?.dataset.presence || 'idle';
     stayHints = mode !== 'touch';
-    let shown = false, downs = 0, backTimer = 0, idleTimer = 0, wanted = true, landing = false;
+    let shown = false, downs = 0, backTimer = 0, idleTimer = 0, wanted = true;
     // One frame of the bar: its box, its size and whether it shows.
     const set = ({ split = 50, sx = 1, sy = 1, off = false }) => {
       flash.style.setProperty('--sg-split', `${split}%`);
       tint.style.setProperty('--sg-split', `${split}%`);
-      // On the first arrival the top left lands on the same beat.
-      if (landing) { id.style.setProperty('--sg-split', `${split}%`); id.classList.toggle('is-boxed', split < 50); }
       // While the box is on, the ink turns white, so the blend gives clean dark.
       bar.classList.toggle('is-boxed', split < 50);
       bar.style.transform = sx === 1 && sy === 1 ? '' : `scale(${sx}, ${sy})`;
@@ -371,18 +364,10 @@ function mount(id, spec, ui) {
       return me === run;
     };
     // The key strip is part of the bar: it comes and goes with it, unless (i) put it away.
-    const rest = () => {
-      set({});
-      landing = false;
-      id.style.removeProperty('--sg-split');
-      id.classList.remove('is-boxed');
-      if (wanted && !open) showHints(true);
-      return true;
-    };
+    const rest = () => { set({}); if (wanted && !open) showHints(true); return true; };
     // The first arrival is the intro's beat: the flash fills, snaps to size, holds, then parts.
     const arrive = async first => {
       shown = true;
-      landing = !!first;
       if (RM.matches) return rest();
       const land = first
         ? [[{ split: 0, sx: 1.3, sy: 1.3 }, 2], [{ split: 0, sx: 0.95, sy: 0.95 }], [{ split: 0, sx: 1.03, sy: 1.03 }], [{ split: 0 }, 3]]
@@ -433,7 +418,7 @@ function mount(id, spec, ui) {
     let held = null;
     const release = () => { if (!held) return; held.classList.remove('is-cut'); held.style.removeProperty('--sg-k'); held = null; };
     const press = async e => {
-      const b = e.target.closest('.b-btn, .sg-id');
+      const b = e.target.closest('.b-btn');
       if (!b || e.button > 0 || b.matches('[aria-pressed="true"]:not(.b-snd)')) return;
       release();
       held = b;
@@ -443,7 +428,7 @@ function mount(id, spec, ui) {
       await fr();
       if (held === b) b.style.removeProperty('--sg-k');
     };
-    [bar, id, ...sheets.map(sh => sh.el)].forEach(el => el.addEventListener('pointerdown', press));
+    [bar, ...sheets.map(sh => sh.el)].forEach(el => el.addEventListener('pointerdown', press));
     for (const t of ['pointerup', 'pointercancel', 'blur']) addEventListener(t, release, true);
     // An icon button names itself: after a pause on the first, at once on its neighbours.
     const tip = text('span', 'sg-tip', '');

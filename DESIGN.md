@@ -511,6 +511,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom asks for real hover interactions, a contrast check, and work on the info and keycap menus; and for a bean that vets every toy's controls and standardizes them where relevant (the epic "Vet every toy's controls"). | 2, 6, 20 |
 | 2026-11-17 | Tom's hover pick for Signal: the White box. The white flash box closes in from the sides when you point at a control. | 2 |
 | 2026-11-17 | Tom's pick for Signal's top left, in a dialog: the toy's own mark (its emblem in its ink, then its name), which shows the way back to Stimming when you point at it. It always stays; it does not leave with the bar. | 2 |
+| 2026-11-17 | Tom replaces that pick: "i want our glyph as a monogram in the top left corner instead". When you point at it, the Stimming logo plays and the return chevron shows. Built as the wordmark's S; it always stays. | 2 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.
