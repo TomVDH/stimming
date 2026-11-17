@@ -105,6 +105,29 @@ export function stepSeq(s: Seq, dt: number, m: Lift): Seq {
   }
 }
 
+/* ---------- the film cadence: the cuts render 24 frames a second ---------- */
+// Tom, 2026-11-17: "render the cuts at 24 fps".
+export const CUT_FPS = 24;
+// acc: real seconds since the last rendered beat.
+export type Cadence = { acc: number };
+// One display frame: true when this frame renders.
+// It renders on the frame that reaches each 1/24 s beat.
+// The remainder carries over.
+// So the beats keep 24 a second on any display.
+// At 120 and 144 Hz a beat is 5 or 6 frames, always even.
+// At 60 Hz the beats alternate 2 and 3 frames.
+// The display forces that.
+export function cadence(c: Cadence, dt: number, fps = CUT_FPS): boolean {
+  const beat = 1 / fps;
+  c.acc += dt;
+  if (c.acc < beat - 1e-6) return false;
+  c.acc -= beat;
+  // The carry stays under one display frame.
+  // So a stall or the first frame never makes a burst.
+  if (c.acc >= Math.min(dt, beat) - 1e-6) c.acc = 0;
+  return true;
+}
+
 // A tap or Esc ends the sequence at once.
 export const skipSeq = (s: Seq): Seq => ({ ...s, done: true });
 
