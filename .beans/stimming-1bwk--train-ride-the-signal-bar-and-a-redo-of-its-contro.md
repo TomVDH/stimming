@@ -24,6 +24,8 @@ First read of what to redo: The own verb Line. Time holds many values in one row
 - [ ] 1280 px, 375 x 812 and 812 x 375; clean console
 - [ ] The toy's doc in `docs/toys/` says what is true
 
+Tom, 2026-11-17: "make it swiss red and white this one". The toy's accent in `toys.json` is `oklch(0.52 0.21 29)` (#c50807). On Bar v3: red icons, a red slider fill, and white text on a red pick. Measured: white on the red is 5.15:1; the red on its dark edge is 3.41:1. The intro's logo takes the same red.
+
 ## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
 
 Rules: one word for one thing; a label is a noun or one verb; a help line is one instruction, verb first; the same action has the same words in every place; no "or" in a line.
