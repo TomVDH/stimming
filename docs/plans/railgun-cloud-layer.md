@@ -1,60 +1,53 @@
-# Railgun: one raymarched cloud layer
+# Railgun: one depth-aware cloud pass
 
-Status: active · Bean: `stimming-fx4g`
+Status: plan, waits for Tom · Bean: `stimming-d6wc` (under `stimming-626s`) · Builds on [railgun-clouds-review.md](railgun-clouds-review.md), sections 4 and 8 (Tom approved 2026-11-16, 15:58).
 
-Bean: `stimming-fx4g`. Tom, 2026-11-16: the clouds must show in true proportion and perspective, as the rock's trail does. Card clouds cannot do that.
+## Tom's asks (2026-11-16)
 
-## The cloud layers today
+| Time | Ask, in his words |
+|---|---|
+| 20:04 | "imagine a set of flat cloud layers over the scene" |
+| 20:16 | "clouds in the distance be smaller, much smaller and a better realistic depth layering" |
+| 21:41 | "redo the storm clouds and their distribution", "cloud bands to slowly drift" |
+| 21:44 | "rim lighting on the card clouds and have their cores and masses darker" |
+| 22:04 | "the storm clouds in the distance need reshapes and better graphics, also need to slowly drift" |
+| 22:10 | "rim lighting that approaches the way raymarched clouds do it" |
+| 22:13 | "attempt raymarched clouds (like we did for window seat) but of the regular variety" |
+| 22:21 | "clouds don't properly occlude or layer on top of one another" |
 
-| Layer | Height | Distance | Drawn as | State |
-|---|---|---|---|---|
-| Cirrus | 9 km | the whole sky | `wisps()` in the sky dome; a dome map, not a plane | On, always |
-| Cloud deck | 5.2 km | the whole sky | `deck()` in the sky dome; a true plane | Off (Dev slider Cloud deck at 0) |
-| Heaps | bases 2.0 to 4.2 km | 11 to 27 km | 13 cards (`HEAPS`), a ring 9 degrees up | On |
-| Middle heaps | bases 4.5 to 5.8 km | 23 to 34 km | 8 cards (`MIDS`) | On while the deck is off |
-| Storm towers | tops 10 to 15 km | 85 to 135 km | 3 cards; raymarched with Storm volumes on | On |
-| Supercell | top 18 km | 200 km | 1 card; raymarched with Storm volumes on | On |
+## Why the clouds do not layer today
 
-Not clouds, but they read as cloud: the rock's trail (raymarched), the soot ball (raymarched, low resolution), the dust domes, the muzzle smoke.
+Every cloud draws on its own with no depth: storm cards or storm volumes, heap and middle cards, the trail. The fixed `BAND` table in `clouds/bands.ts` alone decides what covers what. A near storm and a far heap swap; two cards cannot cross. Card clouds also cannot show true perspective: they turn to the eye, their bases are flat cuts, and any edge by range draws an arc.
 
-## Why cards fail
+## The fix: one march for every cloud
 
-- A card turns to face the eye. The eye never sees its underside or its side.
-- A card's base is a flat cut.
-- A size or a fade by range draws a ring. A ring at one height shows as an arc.
-- Many cards overlap near the horizon. 240 cards cost about 250 ms a frame (tried 2026-11-16, taken out).
-
-## The new layer
-
-One raymarched pass replaces the heaps and the middle heaps. The ray finds the cloud itself, so perspective and size are true by construction.
+One full-screen pass, at reduced resolution, marches each ray once through every cloud: the heap layer and the storms. The ray meets each cloud at its true distance, so occlusion, layering and perspective come out right by construction.
 
 | Part | How |
 |---|---|
-| Shape | Two shells on the planet's curve: low 1.5 to 2.6 km (heaps), middle 4.5 to 5.5 km (flatter heaps). |
-| Cover | A 2D cover map from the baked Perlin-Worley noise (`uVol`, `VOL_NOISE`), at a scale of kilometres. |
-| Form | The 3D noise cuts the cover into billows; a height curve gives flat bases and round tops; fine Worley erodes the edges. |
-| Drift | The cover map slides with one wind per shell: low 10 m/s, middle 16 m/s. Nothing wraps; the map is endless. |
-| Light | The storm volumes' model: two or three sun taps, Beer plus powder, a two-lobe phase. Cores go dark, thin edges take a bright rim, a backlit edge takes a silver lining. |
-| Other light | The blast, the bolt and the rock land after the air, as `stormExtra()` does. |
-| Air | `aerial()` on the first hit, as every other cloud. |
-| Reach | The march stops at about 45 km (low) and 70 km (middle); the haze takes the far end. |
-| Cost | Half resolution in the `lowRes()` group, which already reads the gun's depth. 24 to 40 steps, long steps through empty cover, a stop at full cover. Target: 3 ms or less at 1280 on Standard. |
-| Order | It draws in the heaps' band, after the rock: the layer lies far below the rock's track. |
-| Fallback | Dev row Cloud layer: Volume or Cards. Cards stay until Tom approves the volume. |
+| Module | `railgun/src/clouds/pass.ts` (the pass, its target, its composite) and `clouds/field.ts` (the cell list from the storm table). GLSL beside them. |
+| Heap layer | A shell 1.6 to 3.9 km over the curved ground: cover map, round domes on cells, billows, after Window seat's deck. Reference: `docs/plans/railgun-cumulus.js` (the parked spike, round 2 look in `docs/qa/railgun-scale/cloud-volumes-1.jpg`). |
+| Storms | One storm field (review, 4.1): cells with place, radius, top, age and type; a height profile per type; the same noise erodes them; anvils in kilometres, 50 km and more downwind. Window seat's tower march at true scale (review, 4.0). |
+| One march | The ray steps through the layer's shell and every storm cylinder it crosses, in order of distance. Empty air is skipped by the cover map and the cell bounds. |
+| Light | One model for all: Beer with a slow tail, powder, two phase lobes (silver lining), sky light on crowns; a sun tap march. Then the blast, the bolt, the rock and lightning, after the air. |
+| Depth | The pass writes the first cloud's distance. Its composite writes that depth, so the gun, the rock, the fx and the ranges sort against the clouds per pixel. The trail stays under every cloud (Tom, 21:38). |
+| Ranges | Rays stop at the far bake's per-pixel range distance (`world/farcountry.ts`, `uFarG`). |
+| Drift | The cover map and the cells slide with the wind; the whole layer moves, storms slower. |
+| Cost | Half resolution first; temporal reuse if needed; a bake of the storm band as the review's fallback (4.2). Target 30 fps on Standard. |
+| Fallback | Dev row Cloud volumes; the cards stay until Tom approves, then retire. |
+| God rays | Later, from the pass's own cover and cells, not card spheres. |
 
-## Steps (one look from Tom between each)
+## Steps (one look from Tom between each; `tools/clouds-check.mjs` before each commit)
 
-1. Low shell only: shape, cover and sun light, behind the Dev row (off by default). Stills at Time 0.72 and 0.33, wide and phone; `__qa.gpuMs('all')` with the row on and off.
-2. Rim light and dark cores: tune powder, the phase and the sun taps (Tom, 21:44).
-3. Drift.
-4. Middle shell.
-5. Blast, bolt and rock light.
-6. Tom approves: the volume becomes the default, the heap and middle cards go.
+1. The pass with the heap layer only, and per-pixel depth. Stills at Time 0.72 and 0.3, wide and phone; frame time on and off.
+2. The storms join the march as a cell field, at their current places.
+3. Storm redo: shapes per type, anvils in kilometres, placement for the camera (review, 4.4).
+4. Drift: layer and storms.
+5. Blast, bolt, rock and lightning light.
+6. Tom approves: the volume pass is the default; the heap, middle and storm cards retire.
 
-After this: the storm redo (where they stand, shapes, light), then the god rays. The god rays then take their shade from the layer's own cover map, not from card spheres.
+## Lessons from 2026-11-16
 
-## Risks
-
-- Half resolution can fringe against the gun. The `lowRes()` group's depth read handles the soot ball today; check it on the layer.
-- The far end must not sit in front of the ranges: the reach stops short of the foothills (about 50 km).
-- Frame time: measure in a tab of its own. Tom's tab skews every reading.
+- Card layers: 240 to 760 cards cost 250 ms frames and glitched; any card edge by range arcs.
+- The light shafts took card spheres near the eye and shaded half the sky.
+- Each fix moved a draw band and shifted other overlaps: one pass ends that.
