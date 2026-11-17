@@ -321,6 +321,8 @@ Tom: "we want slowly more mechanical (with inertia) movement of all parts of the
 
 **Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
 
+Tom, 2026-11-17: "in that last cut -- as it is still pivoting up -- we want a closer cut on the telescope so its glass reflects the starry sky clearly (with distortion etc bc its glass...)". So the lens shot cuts in close while the tube is still pivoting up; the glass shows the real star field clearly, bent by the curve of the lens (stronger toward the rim), sliding across the glass as the tube moves; then the tube stops and the shot holds.
+
 - [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
 - [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it, pivots slowly in place, stops, and the shot holds about 1.5 s before the cut back wide. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
 - [ ] **Step 3:** Reduced motion: a still of the lens inside the crossfade.
