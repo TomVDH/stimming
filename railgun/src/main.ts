@@ -53,7 +53,7 @@ setStormProbe(ui.setting('stormprobe').value);
 setCloudPass(ui.setting('cloudpass').value);
 CLOUD_U.uStormSoft.value = ui.setting('stormsoft').value;
 stormFl.rate = ui.setting('stormfl').value;
-giants.visible = ui.setting('giants').value;
+giants.visible = ui.setting('giants').value && !state.cloudPass;
 gfx.tone = ui.setting('tone').value; gfx.exp = ui.setting('exposure').value; gfx.con = ui.setting('contrast').value; gfx.sat = ui.setting('saturation').value; gfx.bri = ui.setting('brightness').value;
 gfx.pal = ui.setting('palette').value; gfx.pull = ui.setting('pull').value; gfx.lift = ui.setting('lift').value;
 gfx.mist = ui.setting('mist').value; gfx.hal = ui.setting('halation').value; gfx.vig = ui.setting('vignette').value; gfx.gsize = ui.setting('grainsize').value;

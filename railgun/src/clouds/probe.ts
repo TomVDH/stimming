@@ -17,22 +17,9 @@ const STORM_VS = CLOUD_VS
   // The card reaches below the base, so the rain shafts under it draw.
   .replace('vec2 uv = position.xy * vec2(1.2, 1.5);', 'vec2 uv = position.xy * vec2(3.0, 1.5) - vec2(0.0, 0.2);')
   .replace('vUv = uv; vP = P;', 'vC = C; vUv = uv; vP = P;');
-const STORM_FS = /* glsl */`precision highp sampler3D;
-// three.js sets it on every program; only the vertex stage declares it.
-uniform mat4 projectionMatrix;
-uniform sampler3D uVol;
-varying vec2 vUv;
-varying vec3 vP, vR, vF;
-flat varying vec4 vS;
-flat varying vec3 vC;
-${HEAD}
-${AIR}
-uniform float uCloudC;
-uniform vec4 uFl[4];
-uniform vec4 uFlR;
-uniform vec4 uStormK;
-uniform float uStormSoft;
-${STORM_GLSL}
+// The storm's lights, shared by the probe and the cloud pass.
+// The host declares uFl, uFlR, uStormK, uStormSoft and the storm chunk first.
+export const STORM_HOST = /* glsl */`
 // Lightning's colour inside cloud, as Window seat's.
 #define FLASH_C vec3(0.64, 0.72, 1.0)
 vec3 stormFlash(vec3 P) {
@@ -94,6 +81,24 @@ vec3 stormExtra(vec3 P, vec3 p, float powder, float Tl2) {
   }
   return L;
 }
+`;
+const STORM_FS = /* glsl */`precision highp sampler3D;
+// three.js sets it on every program; only the vertex stage declares it.
+uniform mat4 projectionMatrix;
+uniform sampler3D uVol;
+varying vec2 vUv;
+varying vec3 vP, vR, vF;
+flat varying vec4 vS;
+flat varying vec3 vC;
+${HEAD}
+${AIR}
+uniform float uCloudC;
+uniform vec4 uFl[4];
+uniform vec4 uFlR;
+uniform vec4 uStormK;
+uniform float uStormSoft;
+${STORM_GLSL}
+${STORM_HOST}
 ${STORM_MARCH}
 void main() {
   float H = vS.y;
