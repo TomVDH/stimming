@@ -3,6 +3,7 @@
 // The CPU part drives each vehicle: it brakes, follows, and swerves round what lies on the road.
 // The GLSL part ray-traces each vehicle as faceted hulls, wheels, glass, lamps and spray.
 import { POLE_X, POLE_Z0, POLE_GAP, POLES } from './line.js';
+import { reduced } from '../shared/stim.js';
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
@@ -118,7 +119,7 @@ export function trafficStep(T, tors, simT, dt = 0.016, line = null) {
 // True while any vehicle still drives: the page keeps its loop.
 export const trafficBusy = T => T.veh.length > 0;
 // Packs each vehicle for the scene pass: x, z, signed speed, kind; alive, seed, age, heading;
-// brake, pitch, roll.
+// brake, pitch, roll, twinkle (0 under reduced motion).
 export function trafficUniforms(T, simT) {
   T.u.fill(0); T.uB.fill(0); T.uC.fill(0);
   T.veh.slice(0, MAX_VEH).forEach((v, i) => {
@@ -126,7 +127,7 @@ export function trafficUniforms(T, simT) {
     const hd = Math.atan2(v.xv, v.dir * Math.max(v.v, 0.3));
     T.u.set([v.x, v.z, v.dir * v.v, v.kind], i * 4);
     T.uB.set([age >= 0 ? 1 : 0, v.seed, Math.max(age, 0), hd], i * 4);
-    T.uC.set([v.brake, v.pitch, v.roll, 0], i * 4);
+    T.uC.set([v.brake, v.pitch, v.roll, reduced() ? 0 : 1], i * 4);
   });
 }
 
@@ -715,16 +716,38 @@ vec3 vShade(int id, int kind, vec3 P, vec3 N, vec3 V, vec3 h, vec3 nl, float see
   return c + em;
 }
 // A lamp's glow: a point of light at P facing along dir, of colour col.
-void vLamp(vec2 s, vec3 P, vec3 dir, vec3 col, float px) {
+// The lens's ghosts: place along the line from the frame's centre through the lamp,
+// radius as a share of the frame's height, and the coating's tint.
+const float GT[5] = float[](-0.35, -0.7, -1.05, 0.45, -1.5);
+const float GR[5] = float[](0.012, 0.03, 0.018, 0.022, 0.055);
+const vec3 GC[5] = vec3[](vec3(0.7, 1.0, 0.75), vec3(1.0, 0.6, 0.85), vec3(0.75, 0.85, 1.0), vec3(1.0, 0.85, 0.55), vec3(0.6, 0.9, 1.0));
+// tw is 1 when far lamps twinkle; 0 under reduced motion.
+void vLamp(vec2 s, vec3 P, vec3 dir, vec3 col, float px, float seed, float tw) {
   float z = depthOf(P);
   if (z < 0.5) return;
   vec3 toEye = normalize(vec3(0.0, CAMH, 0.0) - P);
   float face = pow(max(dot(dir, toEye), 0.0), 3.0);
   if (face <= 0.0) return;
+  // The lamp grows brighter as it closes in.
+  float k = face * clamp(60.0 / z, 0.25, 3.0);
+  // Far off, hot air over the road bends the beam: the lamp twinkles in and out.
+  float sh = vn(vec2(uT * 3.1 + seed * 17.0, seed * 5.3)) * 0.65 + vn(vec2(uT * 8.3 + seed * 3.0, seed * 11.0 + 3.0)) * 0.35;
+  k *= mix(1.0, smoothstep(0.3, 0.7, sh) * 1.6, smoothstep(80.0, 400.0, z) * tw);
   // A hot core as wide as the lamp, and a bloom a few pixels round it: the lens's, not the air's.
-  float d = length(s - proj(P)), dp = d / px;
+  vec2 lp = proj(P);
+  float d = length(s - lp), dp = d / px;
   float core = exp(-pow(d / (px * 0.9 + 0.09 / z * uFoc), 2.0));
-  gVehGlow += col * face * (core * 5.0 + 0.5 * exp(-dp / 5.0) + 0.05 * exp(-dp / 30.0));
+  gVehGlow += col * k * (core * 5.0 + 0.5 * exp(-dp / 5.0) + 0.05 * exp(-dp / 30.0));
+  // Only a bright lamp throws ghosts: soft discs with a brighter rim, never a hard edge.
+  float g = k * face - 0.3;
+  if (g <= 0.0) return;
+  vec2 cc = vec2(0.0, 0.5 - uHz), a = lp - cc;
+  for (int i = 0; i < 5; i++) {
+    float q = length(s - cc - a * GT[i]) / GR[i];
+    if (q > 1.0) continue;
+    float disc = smoothstep(1.0, 0.6, q) * (0.55 + 0.45 * smoothstep(0.3, 0.9, q));
+    gVehGlow += col * GC[i] * disc * min(g, 2.5) * 0.03;
+  }
 }
 // The spray behind the vehicle: a plume off each rear wheel.
 // On a wet road it is bright mist lit by the sky and the tail lamps; on a dry one, thin dust.
@@ -804,14 +827,14 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     float hy = kind == 2 ? 0.82 : 0.88;
     for (int k = 0; k < 2; k++) {
       float sx = k == 0 ? -1.0 : 1.0;
-      vLamp(s, C + rt * sx * (hw - 0.22) + vec3(0.0, hy, 0.0) + f * (fr + 0.01), f, vec3(1.0, 0.9, 0.75), px);
-      vLamp(s, C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.1, 0.0) + f * (rr - 0.01), -f, vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake), px);
+      vLamp(s, C + rt * sx * (hw - 0.22) + vec3(0.0, hy, 0.0) + f * (fr + 0.01), f, vec3(1.0, 0.9, 0.75), px, seed + sx * 7.0, cV.w);
+      vLamp(s, C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.1, 0.0) + f * (rr - 0.01), -f, vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake), px, seed + sx * 9.0 + 2.0, cV.w);
       if (kind != 0) {
         // The amber bar flashes left and right in turn.
         float on = step(0.5, fract(uT * 1.6 + (sx > 0.0 ? 0.5 : 0.0)));
         vec3 Pb = C + rt * sx * 0.4 + vec3(0.0, kind == 1 ? 1.85 : 2.41, 0.0) + f * (kind == 1 ? 0.12 : 0.55);
-        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) - f), vec3(1.0, 0.45, 0.05) * on * 0.8, px);
-        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) + f), vec3(1.0, 0.45, 0.05) * on * 0.8, px);
+        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) - f), vec3(1.0, 0.45, 0.05) * on * 0.8, px, seed + 4.0, cV.w);
+        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) + f), vec3(1.0, 0.45, 0.05) * on * 0.8, px, seed + 5.0, cV.w);
       }
     }
   }
