@@ -109,6 +109,8 @@ const PICKS = [['mix', 'Mix', 'Mix'],
   ['garlic', 'Garlic', 'Things'], ['chilli', 'Chilli', 'Things'], ['tomato', 'Tomato', 'Things'], ['mushroom', 'Mushroom', 'Things'],
   ['beet', 'Beetroot', 'Things'], ['pea', 'Peas', 'Things'], ['bay', 'Bay leaf', 'Things'], ['noodles', 'Noodles', 'Things'],
   ['fish', 'Fish', 'Things'], ['star', 'Star', 'Things'], ['duck', 'Duck', 'Things'], ['boot', 'Boot', 'Things'],
+  ['frog', 'Frog', 'Witchy'], ['candle', 'Candle stub', 'Witchy'],
+  ['anti', 'Antimatter', 'Odd'], ['hole', 'Tiny black hole', 'Odd'],
   ['cream', 'Cream', 'Liquids'], ['ink', 'Squid ink', 'Liquids'], ['chillioil', 'Chilli oil', 'Liquids'], ['saffron', 'Saffron', 'Liquids']];
 let pick = 'mix';
 // Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
@@ -137,6 +139,15 @@ const ART = {
   duck: [['M-14 3c0-5 7-7 11-6c0-7 3-10 8-10s7 3 7 7c0 2-1 4-3 5c3 1 5 3 4 8c-1 5-9 7-15 7c-8 0-12-4-12-11z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
     ['M12-7l7 1.2-7 2.4z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(8, -8, 1.5), [0.2, 0, 0], [0.1, 0, 0]]],
   boot: [['M-10-15h10v16c7 0 14 2 14 8v3h-24z', [0.5, 0.06, 55], [0.3, 0.04, 50]], ['M-10 12h24v3.5h-24z', [0.26, 0.02, 50], [0.16, 0.01, 50]]],
+  frog: [['M-15 9c0-10 6-15 15-15s15 5 15 15c0 4-7 6-15 6s-15-2-15-6z', [0.74, 0.17, 140], [0.5, 0.15, 150]],
+    [circ(-7, -6, 5), [0.8, 0.16, 135], [0.6, 0.16, 140]], [circ(7, -6, 5), [0.8, 0.16, 135], [0.6, 0.16, 140]],
+    [circ(-7, -6.5, 2.2), [0.2, 0, 0], [0.1, 0, 0]], [circ(7, -6.5, 2.2), [0.2, 0, 0], [0.1, 0, 0]], ['M-6 6c3 2.5 9 2.5 12 0', [0.35, 0.1, 150], [0.3, 0.1, 150]]],
+  candle: [['M-7-2c0-1.2 1-2 2-2h10c1 0 2 0.8 2 2v15c0 1.2-1 2-2 2h-10c-1 0-2-0.8-2-2z', [0.95, 0.04, 92], [0.8, 0.05, 80]],
+    ['M-7-2h14v3c-2 0-2 4-4 4s-1-3-3-3-2 6-4 6-1-5-3-5z', [0.99, 0.02, 95], [0.9, 0.04, 90]],
+    ['M0-17c3 4 5 7 5 9a5 5 0 0 1-10 0c0-2 2-5 5-9z', [0.97, 0.14, 95], [0.75, 0.19, 55]]],
+  anti: [[circ(0, 0, 15) + circ(0, 0, 11.5), [0.8, 0.14, 300], [0.55, 0.18, 290]], [circ(0, 0, 8), [0.99, 0.04, 280], [0.78, 0.14, 290]]],
+  hole: [['M-16 1a16 6 0 1 0 32 0a16 6 0 1 0-32 0z', [0.9, 0.15, 80], [0.62, 0.2, 40]], [circ(0, 0, 8.5), [0.16, 0.01, 280], [0.04, 0, 0]],
+    ['M-16 1a16 6 0 0 0 32 0h-7.5a8.5 3.2 0 0 1-17 0z', [0.95, 0.12, 85], [0.7, 0.2, 45]]],
   cream: [[DROP, [0.99, 0.015, 90], [0.84, 0.03, 80]]],
   ink: [[DROP, [0.34, 0.05, 290], [0.12, 0.03, 290]]],
   chilli_oil: [[DROP, [0.7, 0.2, 38], [0.48, 0.2, 28]]],
@@ -796,8 +807,49 @@ vec2 sdNoodles(vec3 p, float s) {
   d = min(d, sdTor(q - vec3(0.02, 0.012, 0.0), 0.075 + 0.012 * sin(b * 6.0 + 1.0), 0.019 + s));
   return vec2(d, 0.0);
 }
+// A frog: head at +x, two bulging eyes, folded hind legs.
+// s pushes the hind legs out: 0 sits, 0.012 kicks.
+vec2 sdFrog(vec3 p, float s) {
+  float e = clamp(s / 0.012, 0.0, 1.0);
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float d = sdEll(p - vec3(0.0, 0.01, 0.0), vec3(0.13, 0.08, 0.105));
+  d = smin(d, sdEll(p - vec3(0.1, 0.03, 0.0), vec3(0.08, 0.055, 0.085)), 0.04);
+  vec3 kn = vec3(-0.11 - 0.06 * e, -0.005, 0.11 - 0.03 * e), ft = vec3(-0.02 - 0.2 * e, -0.02, 0.13 - 0.06 * e);
+  float lg = min(sdCap(q, vec3(-0.04, 0.0, 0.08), kn, 0.03), sdCap(q, kn, ft, 0.018));
+  lg = smin(lg, sdEll(q - ft, vec3(0.045, 0.01, 0.035)), 0.015);
+  lg = min(lg, sdCap(q, vec3(0.07, -0.01, 0.07), vec3(0.11, -0.03, 0.11), 0.014));
+  d = smin(d, lg, 0.02);
+  float ey = length(q - vec3(0.115, 0.085, 0.048)) - 0.036;
+  return ey < d ? vec2(ey, 1.0) : vec2(d, 0.0);
+}
+// The candle's top: s burns it down to about half.
+float candleTop(float s) { return -0.09 + 0.18 * (1.0 - 0.45 * clamp(s / 0.012, 0.0, 1.0)); }
+// A candle stub: wax with a dished top and two drips, a wick, and a flame when lit.
+vec2 sdCandle(vec3 p, float s, float lit) {
+  float top = candleTop(s), h = (top + 0.09) * 0.5;
+  float d = sdCyl(p - vec3(0.0, -0.09 + h, 0.0), 0.052, h - 0.008) - 0.008;
+  d = max(d, -sdEll(p - vec3(0.0, top + 0.01, 0.0), vec3(0.042, 0.018, 0.042)));
+  d = smin(d, sdCap(p, vec3(0.055, top - 0.004, 0.012), vec3(0.06, top - 0.055, 0.016), 0.011), 0.012);
+  d = smin(d, sdCap(p, vec3(-0.03, top - 0.004, -0.047), vec3(-0.033, top - 0.035, -0.052), 0.01), 0.012);
+  float w = sdCap(p, vec3(0.0, top - 0.01, 0.0), vec3(0.004, top + 0.032, 0.0), 0.006);
+  vec2 r = w < d ? vec2(w, 1.0) : vec2(d, 0.0);
+  if (lit > 0.5) {
+    vec3 f = p - vec3(0.004 * sin(uTime * 9.0), top + 0.058, 0.004 * cos(uTime * 7.0));
+    float fl = smin(length(f) - 0.02, sdRCone(f, vec3(0.0), vec3(0.0, 0.05 + 0.007 * sin(uTime * 17.0), 0.0), 0.019, 0.002), 0.012);
+    if (fl < r.x) r = vec2(fl, 2.0);
+  }
+  return r;
+}
+// A tiny black hole: a dark ball in a thin, tilted ring of hot matter.
+vec2 sdHole(vec3 p) {
+  float d = length(p) - 0.045;
+  vec3 q = p; q.yz = rot2(0.6) * q.yz;
+  float ring = extrude(abs(length(q.xz) - 0.1) - 0.042, q.y, 0.0025, 0.002);
+  return ring < d ? vec2(ring, 1.0) : vec2(d, 0.0);
+}
 // Kinds: 0 carrot, 1 onion, 2 fish, 3 beetroot, 4 duck, 5 pea, 6 boot, 7 star, 8 tomato, 9 mushroom,
 // 16 potato, 17 leek, 18 garlic, 19 chilli, 20 bay leaf, 21 noodles,
+// 25 frog, 26 lit candle, 27 antimatter, 28 black hole, 29 candle without its flame,
 // pieces 22 potato cube, 23 leek ring, 24 garlic clove,
 // then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
 vec2 sdKind(int k, vec3 p, float s) {
@@ -826,6 +878,11 @@ vec2 sdKind(int k, vec3 p, float s) {
     case 22: return vec2(sdRBox(p, vec3(0.04), 0.014) - s, 0.0);
     case 23: return vec2(sdTor(p, 0.052, 0.017), 0.0);
     case 24: return vec2(smin(sdEll(p, vec3(0.05, 0.03, 0.034)), sdRCone(p, vec3(0.02, 0.0, 0.0), vec3(0.065, 0.0, 0.0), 0.02, 0.004), 0.02), 0.0);
+    case 25: return sdFrog(p, s);
+    case 26: return sdCandle(p, s, 1.0);
+    case 27: return vec2(length(p) - 0.034 * (1.0 + 0.06 * sin(uTime * 31.0)), 0.0);
+    case 28: return sdHole(p);
+    case 29: return sdCandle(p, s, 0.0);
   }
   return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
 }
@@ -1298,6 +1355,10 @@ uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
 uniform int uNB;
 uniform vec4 uB[${NB * 3}];
+uniform int uNG;
+uniform vec4 uGlow[6], uGlowC[6];
+// The black hole: xz, dip depth and reach on the soup; then its centre and strength.
+uniform vec4 uHole, uHoleP;
 uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
@@ -1322,7 +1383,17 @@ ${SDF}
 vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
 // The stir dips the middle and lifts the edge; the funnel deepens the centre.
 float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
-float surfH(vec2 xz) { vec2 r = texture(uRip, soupUV(xz)).xz; return uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y; }
+float surfH(vec2 xz) {
+  vec2 r = texture(uRip, soupUV(xz)).xz;
+  float h = uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y;
+  // A black hole pulls a dip with two spiral arms that wind in.
+  if (uHole.z > 0.0) {
+    vec2 d = xz - uHole.xy;
+    float r2 = dot(d, d) / (uHole.w * uHole.w);
+    h -= uHole.z * exp(-r2) * (1.0 + 0.3 * sin(atan(d.y, d.x) * 2.0 + sqrt(r2) * 7.0 - uTime * 5.0));
+  }
+  return h;
+}
 float soupT(vec3 ro, vec3 rd) {
   float t = (uLevel - ro.y) / rd.y;
   for (int i = 0; i < 3; i++) t = (surfH((ro + rd * t).xz) - ro.y) / rd.y;
@@ -1407,6 +1478,29 @@ vec3 litPBR(vec3 n, vec3 v, vec3 alb, float rough, vec3 f0, float metal) {
   vec3 col = alb * (1.0 - metal) * (uKeyCol * nl + skyAmb(n) * 3.0);
   col += uKeyCol * ggx(n, v, uKeyDir, rough, f0);
   return col + env(reflect(-v, n), rough) * envBRDF(f0, rough, nv);
+}
+// Small lights from the things: a flame, an antimatter bead, a flash.
+// xyz is the place, w the strength; rgb the colour, a the reach.
+vec3 glowAt(vec3 p, vec3 n) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 L = uGlow[i].xyz - p;
+    float d2 = dot(L, L), r = uGlowC[i].a;
+    s += uGlowC[i].rgb * uGlow[i].w * max(dot(n, L * inversesqrt(d2 + 1e-6)) * 0.7 + 0.3, 0.0) / (1.0 + d2 / (r * r));
+  }
+  return s;
+}
+// The glints of those lights in a wet surface.
+vec3 glowSpec(vec3 p, vec3 r) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 L = uGlow[i].xyz - p;
+    float d2 = dot(L, L), rr = uGlowC[i].a;
+    s += uGlowC[i].rgb * uGlow[i].w * pow(max(dot(r, L * inversesqrt(d2 + 1e-6)), 0.0), 900.0) * 1.2 / (1.0 + d2 / (rr * rr));
+  }
+  return s;
 }
 // Hammered iron: dimples on cells that wrap round the pot, and a casting grain.
 // part: 0 belly, 1 rim, 2 inner wall, 3 leg.
@@ -1782,6 +1876,7 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
     vec3 fc = (alb * 0.6 + vec3(0.3, 0.28, 0.25)) * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.35 + skyAmb(n) * 2.0);
     col = mix(col, fc * (0.9 + 0.2 * cells), clamp(foam, 0.0, 1.0) * 0.9);
   }
+  if (uNG > 0) col += alb * glowAt(p, n) * 0.8 + glowSpec(p, reflect(rd, n));
   return col;
 }
 vec3 shadeBubble(vec3 p, vec3 n, vec3 rd, vec4 b) {
@@ -1918,6 +2013,49 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
   } else if (k == 23) {
     c = mix(lch(0.9, 0.05, 110.0), lch(0.68, 0.12, 132.0), smoothstep(0.044, 0.06, length(p.xz)));
     rough = 0.2;
+  } else if (k == 25) {
+    // Frog: wet green skin with dark spots, a pale belly, gold eyes.
+    c = lch(0.55, 0.16, 140.0) * (0.92 + 0.12 * wob);
+    c = mix(c, lch(0.34, 0.1, 152.0), smoothstep(0.55, 0.6, noise3(p * 34.0 + sd)) * 0.85);
+    c = mix(c, lch(0.86, 0.07, 105.0), smoothstep(-0.01, -0.04, p.y));
+    rough = 0.16;
+    if (m > 0.5) {
+      // A gold eye with a wide black slit that looks up and forward.
+      vec3 q = normalize(vec3(p.x, p.y, abs(p.z)) - vec3(0.115, 0.085, 0.048));
+      vec3 lk = normalize(vec3(0.75, 0.6, 0.28));
+      float a = dot(q, lk);
+      vec3 sd2 = normalize(cross(lk, vec3(0.0, 1.0, 0.0)));
+      c = mix(lch(0.5, 0.13, 140.0), lch(0.8, 0.15, 86.0), smoothstep(0.35, 0.45, a));
+      c = mix(c, vec3(0.003), smoothstep(0.82, 0.86, a) * smoothstep(0.32, 0.22, abs(dot(q, sd2))));
+      rough = 0.04;
+    }
+  } else if (k == 26 || k == 29) {
+    // Candle: creamy wax that glows warm near a lit flame; a black wick.
+    float top = candleTop(0.012 * cook);
+    c = lch(0.92, 0.035, 88.0) * (0.95 + 0.06 * wob);
+    rough = 0.38;
+    if (k == 26) emit = lch(0.8, 0.13, 70.0) * 0.35 * smoothstep(top - 0.06, top, p.y);
+    if (m > 0.5) { c = lch(0.14, 0.01, 60.0); rough = 0.7; if (k == 26) emit = lch(0.7, 0.2, 40.0) * smoothstep(top + 0.015, top + 0.03, p.y); }
+    if (m > 1.5) {
+      // The flame: blue at its root, then gold to a white heart.
+      float u = clamp((p.y - top - 0.04) / 0.07, 0.0, 1.0);
+      c = vec3(0.0);
+      emit = mix(lch(0.55, 0.14, 262.0) * 0.8, mix(lch(0.97, 0.08, 95.0) * 3.0, lch(0.78, 0.19, 58.0) * 2.0, u), smoothstep(0.0, 0.25, u)) * (0.9 + 0.1 * sin(uTime * 23.0));
+    }
+  } else if (k == 27) {
+    // Antimatter: a white-violet core, hotter at its edge, never still.
+    c = vec3(0.0);
+    emit = mix(lch(0.98, 0.04, 290.0), lch(0.72, 0.22, 300.0), smoothstep(0.02, 0.034, length(p))) * (2.2 + 0.6 * sin(uTime * 47.0 + sd));
+  } else if (k == 28) {
+    c = vec3(0.0);
+    rough = 0.05;
+    if (m > 0.5) {
+      // The ring: white at its inner edge, red at its outer edge, in fast streaks.
+      vec3 q = p; q.yz = rot2(0.6) * q.yz;
+      float rr = length(q.xz), st = noise2(vec2(atan(q.z, q.x) * 4.0 - uTime * 6.0 + rr * 30.0, rr * 50.0));
+      // Gold-white close in, deep amber at the edge, fading out.
+      emit = mix(lch(0.97, 0.05, 90.0) * 1.6, lch(0.74, 0.15, 72.0) * 0.8, smoothstep(0.06, 0.13, rr)) * (0.6 + 0.6 * st) * (1.0 - smoothstep(0.125, 0.147, rr));
+    }
   } else {
     c = lch(0.92, 0.025, 92.0);
     rough = 0.3;
@@ -1932,7 +2070,13 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec3 emit;
   // M.y runs 0 to 1 while a thing cooks, then 1 to 2 while it melts away.
   float cook = clamp(M.y, 0.0, 1.0), melt = clamp(M.y - 1.0, 0.0, 1.0);
-  vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
+  int k = int(M.x);
+  vec3 alb = thingLook(k, m, lp, cook, M.z, rough, emit);
+  // Flame, antimatter and the hole give light; they take none.
+  if ((k == 26 && m > 1.5) || k == 27) return emit * (1.0 - melt);
+  if (k == 28) return emit + env(reflect(rd, n), 0.02) * 0.06 * (1.0 - m);
+  // The frog's slot holds its kick, the candle's its burn: neither cooks.
+  if (k == 25 || k == 26 || k == 29) cook = 0.0;
   // A soft noise varies each skin: waxy patches and dull pores, never speckle.
   rough = clamp(rough * (0.88 + 0.24 * noise3(lp * 16.0 + M.x * 7.0)), 0.05, 0.9);
   // Cooking deepens and glosses a thing, and soaks the soup's colour into it.
@@ -1960,6 +2104,7 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   float lip = exp(-pow((hA - 0.011) / 0.0025, 2.0));
   col += env(reflect(rd, normalize(n + vec3(0.0, 0.6, 0.0))), 0.05) * 0.45 * lip;
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
+  col += alb * glowAt(p, n);
   return col + emit;
 }
 vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
@@ -2230,6 +2375,27 @@ void main() {
     vec3 ba = legB - legA;
     float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
     col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0, 3);
+  }
+  // The things' lights warm the iron near them.
+  if (uNG > 0 && (mat == 2 || mat == 3)) col += glowAt(p, mat == 2 ? normalize(p - vec3(normalize(p.xz) * RR, RY).xzy) : -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI))) * 0.12;
+  // A black hole swallows the light round it and rings it with a thin bright edge.
+  if (uHoleP.w > 0.0) {
+    vec3 H = uHoleP.xyz;
+    float tc = dot(H - ro, rd);
+    if (tc > 0.0 && tc < tHit + 0.15) {
+      float d = length(ro + rd * tc - H), R = 0.045 * uHoleP.w;
+      col *= 1.0 - 0.92 * uHoleP.w * (1.0 - smoothstep(R * 1.2, R * 4.0, d));
+      col += lch(0.95, 0.08, 80.0) * exp(-pow((d - R * 1.25) / 0.0015, 2.0)) * 0.6 * uHoleP.w;
+    }
+  }
+  // Each light blooms where the ray passes near it, unless a surface hides it.
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 G = uGlow[i].xyz;
+    float tc = dot(G - ro, rd);
+    if (tc < 0.0 || tc > tHit + 0.04) continue;
+    float d = length(ro + rd * tc - G), k = 0.035 * uGlowC[i].a;
+    col += uGlowC[i].rgb * uGlow[i].w * (0.3 * exp(-d * d / (k * k)) + 0.05 * exp(-d / (k * 4.0)));
   }
   // A small tent blur softens the volume, as Fire blurs its own.
   vec2 lt = 1.0 / vec2(textureSize(uFront, 0));
@@ -2643,9 +2809,12 @@ let level = 0, dip = 0, funnel = 0;
 // Boiling down: 0 is a full pot; 1 has lost 12 cm and turned brown.
 let reduce = 0;
 const G = 22;
+// The black hole's dip on the soup, in world units: x, z, depth, reach.
+const holeDip = [0, 0, 0, 0.16];
 function surfY(x, z) {
   const r = Math.min(1, Math.hypot(x, z));
-  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19);
+  const hd = holeDip[2] ? holeDip[2] * Math.exp(-((x - holeDip[0]) ** 2 + (z - holeDip[1]) ** 2) / holeDip[3] ** 2) : 0;
+  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19) - hd;
 }
 
 /* ---------- things ---------- */
@@ -2678,6 +2847,13 @@ const KINDS = {
   pcube: { k: 22, bound: 0.07, float: 0.012, lag: 0.25, cook: 24, tint: [0.85, 0.05, 88], mass: 0.1, into: 'melt', n: 0, sq: 0.06, L: 0.06, W: 0.06 },
   lring: { k: 23, bound: 0.075, float: 0.006, lag: 0.25, cook: 22, tint: [0.75, 0.08, 125], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.07, W: 0.07 },
   clove: { k: 24, bound: 0.075, float: 0.01, lag: 0.25, cook: 20, tint: [0.9, 0.02, 90], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.065, W: 0.04 },
+  // Witchy and odd things: each has its own step in ACT.
+  frog: { k: 25, bound: 0.3, float: 0.035, lag: 0.5, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.3, L: 0.17, W: 0.12 },
+  // The candle's cook is its burn: it burns down, then melts away.
+  candle: { k: 26, bound: 0.24, float: 0.03, lag: 0.6, cook: 90, tint: [0.93, 0.03, 90], mass: 0.15, into: 'melt', n: 0, sq: 0.2, L: 0.07, W: 0.07 },
+  // Antimatter hovers a hair above the soup: it must touch nothing.
+  anti: { k: 27, bound: 0.045, float: 0.07, lag: 0.3, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.05, L: 0.05, W: 0.05 },
+  hole: { k: 28, bound: 0.14, float: 0, lag: 2, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.4, L: 0.1, W: 0.1 },
 };
 // The throw order; the pot starts with a carrot and an onion.
 const ORDER = ['fish', 'potato', 'beet', 'leek', 'duck', 'pea', 'garlic', 'boot', 'chilli', 'star', 'tomato', 'noodles', 'mushroom', 'bay', 'carrot', 'onion'];
@@ -2953,8 +3129,157 @@ function stepSparks(dt) {
 }
 
 /* ---------- things: motion, cooking, breaking ---------- */
+/* ---------- witchy and odd things ---------- */
+// Short lights: a flash where antimatter meets matter, or where a hole pops.
+const flashes = [];
+function flash(x, y, z, w, c, dur, reach) { flashes.push({ x, y, z, w, c, dur, reach, t: 0 }); wake(); }
+// The newest hole pulls; each frame its step claims this.
+let holeB = null;
+const ACT = {
+  frog(b, dt, rs) {
+    // A kick: legs out, a shove forward, a small wake.
+    b.legT = Math.max(0, (b.legT || 0) - dt);
+    b.cook = b.legT > 0 ? Math.sin(Math.PI * (1 - b.legT / 0.35)) : 0;
+    if (b.held || reduced()) return;
+    b.tk = (b.tk ?? rand(1, 3)) - dt;
+    if (b.tk > 0) return;
+    // The hotter the pot, the more it wants out.
+    if (b.age > 3 && Math.random() < 0.18 + 0.5 * fire) { startHop(b, rs); return; }
+    const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
+    b.vx += ax * 0.35; b.vz += az * 0.35;
+    b.yawV += rand(-3, 3);
+    b.pitchV -= 3;
+    b.legT = 0.35;
+    imps.push([b.x - ax * 0.07, b.z - az * 0.07, 0.05, -0.012]);
+    b.tk = rand(1.5, 4);
+  },
+  candle(b, dt) {
+    b.out = Math.max(0, (b.out || 0) - dt);
+    // Its wax melts into a thin film of fat round it.
+    if (!b.out && Math.random() < dt * 1.2) emit(b.x + rand(-0.04, 0.04), b.z + rand(-0.04, 0.04), rand(0.02, 0.035), rand(0.3, 0.5), null, 1);
+  },
+  anti(b, dt, rs) {
+    if (Math.random() < dt * 2) emit(b.x + rand(-0.03, 0.03), b.z + rand(-0.03, 0.03), 0.04, 0.4, null, 2);
+    for (const o of bodies) {
+      if (o === b || o.gone || o.fly || o.hop || o.kind === 'hole') continue;
+      if (Math.hypot(o.x - b.x, o.z - b.z) * rs < o.rad + b.rad) { annihilate(b, o, rs); return; }
+    }
+  },
+  hole(b, dt, rs) {
+    // It grows in, holds, then fades and pops at 20 s.
+    const s = smooth(0, 1.2, b.age) * (1 - smooth(16.5, 20, b.age));
+    b.hs = s;
+    b.scale = 0.4 + 0.6 * s;
+    b.vx *= Math.exp(-dt * 3); b.vz *= Math.exp(-dt * 3);
+    holeB = b;
+    holeDip[0] = b.x * rs; holeDip[1] = b.z * rs; holeDip[2] = 0.06 * s;
+    if (b.age >= 20) { holePop(b); return; }
+    // Things near it spiral in; a thing at its middle goes.
+    for (const o of bodies) {
+      if (o === b || o.gone || o.fly || o.hop) continue;
+      const dx = b.x - o.x, dz = b.z - o.z, d = Math.hypot(dx, dz) + 1e-4;
+      if (d > 0.6) continue;
+      const k = s * 0.6 / (d + 0.08);
+      o.vx += (dx / d * 1.3 - dz / d) * k * dt * 3;
+      o.vz += (dz / d * 1.3 + dx / d) * k * dt * 3;
+      // The flow alone lets things orbit; a steady drift draws them in.
+      const inn = Math.min(d, s * 0.035 / (d + 0.05) * dt);
+      o.x += dx / d * inn; o.z += dz / d * inn;
+      if (d < 0.08 + 0.4 * o.rad / rs) { o.gone = 1e-3; o.eaten = b; gulpSound(o); }
+    }
+    // The soup turns round it and runs inward.
+    const kk = Math.min(1, dt * 3);
+    for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+      const k = j * FN + i;
+      if (!fluid[k]) continue;
+      const dx = cx(i) - b.x, dz = cx(j) - b.z, d2 = dx * dx + dz * dz;
+      if (d2 > 0.2) continue;
+      const w = s * 5 * Math.exp(-d2 / 0.03);
+      fu[k] += ((-dz - 0.6 * dx) * w - fu[k]) * kk * Math.min(1, w);
+      fv[k] += ((dx - 0.6 * dz) * w - fv[k]) * kk * Math.min(1, w);
+    }
+  },
+};
+// The frog's leap to the rim: out, a sit, then back in.
+function startHop(b, rs) {
+  let a = Math.atan2(b.z, b.x);
+  // It keeps to the sides and the back, clear of the near rim.
+  if (Math.sin(a) > 0.2) a = Math.cos(a) > 0 ? Math.asin(0.2) : Math.PI - Math.asin(0.2);
+  const from = [b.wx ?? b.x * rs, b.y, b.wz ?? b.z * rs];
+  const to = [Math.cos(a) * RR, RY + RT + 0.06, Math.sin(a) * RR];
+  b.hop = { ph: 0, t: 0, dur: 0.6, from, to, ang: a, sit: rand(2.5, 5) };
+  b.yaw = Math.atan2(-(to[2] - from[2]), to[0] - from[0]);
+  b.yawV = 0; b.vx = b.vz = 0;
+  imps.push([b.x, b.z, 0.07, -0.02]);
+  for (let i = 0; i < 4 && !reduced(); i++) addDrop(from[0], from[1], from[2], rand(-0.4, 0.4), rand(1, 1.8), rand(-0.4, 0.4), rand(0.01, 0.016));
+  croak(b);
+}
+function stepHop(b, dt, rs) {
+  const h = b.hop;
+  h.t += dt;
+  b.legT = 0;
+  if (h.ph === 1) {
+    // On the rim it turns to face the soup, then picks a spot.
+    const yin = Math.atan2(Math.sin(h.ang), -Math.cos(h.ang));
+    const dy = Math.atan2(Math.sin(yin - b.yaw), Math.cos(yin - b.yaw));
+    b.yaw += dy * Math.min(1, dt * 3);
+    b.cook = 0;
+    if (h.t > h.sit) {
+      const [x, z] = freeSpot();
+      b.x = x; b.z = z;
+      h.from = [b.wx, b.y, b.wz];
+      h.to = [x * rs, surfY(x * rs, z * rs) + b.K.float, z * rs];
+      h.ph = 2; h.t = 0; h.dur = 0.55;
+      b.yaw = Math.atan2(-(h.to[2] - h.from[2]), h.to[0] - h.from[0]);
+      croak(b);
+    }
+    return;
+  }
+  const u = Math.min(1, h.t / h.dur);
+  b.wx = lerp(h.from[0], h.to[0], u);
+  b.wz = lerp(h.from[2], h.to[2], u);
+  b.y = lerp(h.from[1], h.to[1], u) + (h.ph === 0 ? 0.45 : 0.35) * 4 * u * (1 - u);
+  // Legs out at the jump and tucked for the landing; nose up, then down.
+  b.cook = Math.max(0, 1 - u * 1.6);
+  b.pitch = 0.7 * (1 - 2 * u);
+  if (u < 1) return;
+  b.pitch = 0;
+  if (h.ph === 0) { h.ph = 1; h.t = 0; rimSound(b); return; }
+  b.hop = null; b.bob = 0; b.vy = 0; b.tk = rand(2, 5);
+  splash(b);
+}
+// A dunk puts the flame out; it lights again by itself.
+function snuff(b) {
+  b.out = 2.5;
+  addPuff(b.x, b.z, 0.12);
+  hissSound(b.x);
+}
+// Antimatter meets matter: both go, in a white flash.
+function annihilate(a, o, rs) {
+  const x = (a.x + o.x) / 2, z = (a.z + o.z) / 2, wx = x * rs, wz = z * rs, y = surfY(wx, wz) + 0.05;
+  for (const t of [a, o]) { t.gone = Math.max(t.gone, 0.97); t.zap = true; }
+  flash(wx, y, wz, 7, [1, 0.95, 1.1], 0.45, 1.6);
+  imps.push([x, z, 0.14, -0.04]);
+  for (let i = 0; i < 16 && !reduced(); i++) { const g = rand(0, TAU), sp = rand(0.6, 1.6); addDrop(wx, y, wz, Math.cos(g) * sp, rand(1.5, 3), Math.sin(g) * sp, rand(0.012, 0.024)); }
+  for (let i = 0; i < 6; i++) emit(x + rand(-0.1, 0.1), z + rand(-0.1, 0.1), 0.08, 1, null, 2);
+  addPuff(x, z, 0.5);
+  splashAt = time;
+  zapSound(x);
+}
+// The hole evaporates: a small blue pop and a ring of glitter.
+function holePop(b) {
+  const rs = soupR(level);
+  b.gone = 0.97; b.zap = true; b.hs = 0;
+  flash(b.x * rs, b.y + 0.04, b.z * rs, 4, [0.7, 0.85, 1.2], 0.5, 1);
+  imps.push([b.x, b.z, 0.1, 0.03]);
+  for (let i = 0; i < 8; i++) { const g = i / 8 * TAU; emit(b.x + Math.cos(g) * 0.1, b.z + Math.sin(g) * 0.1, 0.05, 1, null, 2); }
+  splashAt = time;
+  holePopSound(b.x);
+}
 function stepBodies(dt) {
   const rs = soupR(level), heat = 0.25 + 0.95 * fire;
+  holeB = null;
+  for (let i = flashes.length - 1; i >= 0; i--) if ((flashes[i].t += dt) >= flashes[i].dur) flashes.splice(i, 1);
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i], K = b.K;
     b.age += dt;
@@ -2973,6 +3298,7 @@ function stepBodies(dt) {
       if (t >= 1) { b.fly = null; b.tumble = null; splash(b); }
       continue;
     }
+    if (b.hop) { stepHop(b, dt, rs); continue; }
     // A held thing follows the hand, lifted a little; otherwise it rides the flow.
     if (b.held) {
       const kh = 1 - Math.exp(-dt * 10);
@@ -2988,6 +3314,7 @@ function stepBodies(dt) {
       b.vx += (ux - b.vx) * k;
       b.vz += (uz - b.vz) * k;
     }
+    if (!b.gone) ACT[b.kind]?.(b, dt, rs);
     b.liftH = (b.liftH || 0) + ((b.held ? 0.07 : 0) - (b.liftH || 0)) * (1 - Math.exp(-dt * (b.held ? 6 : 9)));
     // The boil pushes things off the plumes.
     for (const p of plumes) {
@@ -3049,17 +3376,21 @@ function stepBodies(dt) {
     // Melting: shrink and sink, and let the last colour go.
     if (b.gone) {
       // A thing that split clears fast, as its pieces grow in; a piece melts slowly.
-      b.gone += dt / (b.split ? 0.45 : 2.2);
-      b.sink += dt * 0.05;
-      if (K.tint && !b.split && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
+      b.gone += dt / (b.split || b.eaten ? 0.45 : 2.2);
+      b.sink += dt * (b.eaten ? 0.25 : 0.05);
+      // A thing the hole takes slides into it as it shrinks.
+      if (b.eaten) { const kk = Math.min(1, dt * 6); b.x += (b.eaten.x - b.x) * kk; b.z += (b.eaten.z - b.z) * kk; }
+      if (K.tint && !b.split && !b.eaten && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
       if (b.gone >= 1) { bodies.splice(i, 1); continue; }
     }
   }
+  if (!holeB) holeDip[2] = 0;
   // Things nudge each other apart.
   for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
     const a = bodies[i], b = bodies[j];
     // A thing that just split no longer pushes; its pieces take its place.
-    if (a.fly || b.fly || a.split || b.split) continue;
+    // A hole takes things in; it never pushes them off.
+    if (a.fly || b.fly || a.split || b.split || a.hop || b.hop || a.kind === 'hole' || b.kind === 'hole') continue;
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) + 1e-4, min = (a.rad + b.rad) / rs * 0.85;
     if (d < min) {
       const push = (min - d) * 0.5, nx = dx / d, nz = dz / d;
@@ -3108,7 +3439,7 @@ function thingAt(sx, sz) {
   const rs = soupR(level);
   let best = null, bd = 1e9;
   for (const b of bodies) {
-    if (b.fly || b.gone) continue;
+    if (b.fly || b.gone || b.hop) continue;
     const d = Math.hypot(b.x - sx, b.z - sz) * rs;
     if (d < Math.max(b.rad, 0.07) * 1.2 && d < bd) { bd = d; best = b; }
   }
@@ -3116,6 +3447,8 @@ function thingAt(sx, sz) {
 }
 // A tap on a thing dunks it: it bobs under, splashes and rocks.
 function dunk(b) {
+  if (b.kind === 'candle') snuff(b);
+  if (b.kind === 'frog') b.tk = 0.12;
   b.vy -= 0.9 + 0.8 * clamp(b.K.sq + 0.1);
   b.pitchV += rand(-6, 6); b.rollV += rand(-6, 6);
   imps.push([b.x, b.z, 0.06 + b.rad / soupR(level) * 0.5, -0.02]);
@@ -3462,7 +3795,68 @@ function plopSound(b) {
     o.start(t);
     o.stop(t + 0.15);
   }
+  // The hole lands with a long, deep groan; antimatter with a thin whine.
+  if (K.k === 28) blop(ac, at, { f: 70, rise: 0.5, dur: 1.6, level: 0.3, pan });
+  if (K.k === 27) blop(ac, at, { f: 1800, rise: 1.3, dur: 0.7, level: 0.04, pan, type: 'triangle' });
   if (K.k === 7) for (let i = 0; i < 6; i++) blop(ac, at + 0.05 + i * 0.07, { f: rand(1800, 3600), rise: 1.02, dur: 0.5, level: 0.035, pan: rand(-0.5, 0.5), type: 'triangle' });
+}
+// The frog croaks: two short, buzzy, falling notes.
+function croak(b) {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime + 0.01, pan = panOf(b.x);
+  for (let i = 0; i < 2; i++) {
+    const t = at + i * 0.13, o = ac.createOscillator(), am = ac.createOscillator(), ag = ac.createGain(), mg = ac.createGain(), g = ac.createGain(), lp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(190 * jit(0.06), t);
+    o.frequency.exponentialRampToValueAtTime(120, t + 0.11);
+    // A fast wobble makes the buzz.
+    am.frequency.value = 38; ag.gain.value = 0.5; mg.gain.value = 0.5;
+    am.connect(ag).connect(mg.gain);
+    lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 4;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(1e-4, t + 0.12);
+    pn.pan.value = pan;
+    o.connect(lp).connect(mg).connect(g).connect(pn).connect(kit.out);
+    o.start(t); am.start(t);
+    o.stop(t + 0.14); am.stop(t + 0.14);
+  }
+}
+// Wet feet land on iron.
+function rimSound(b) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(b.wx ?? b.x);
+  blop(ac, at, { f: 140, rise: 0.7, dur: 0.08, level: 0.1, pan });
+  burst(ac, at, { f: 900, q: 0.8, dur: 0.06, level: 0.05, pan });
+}
+function hissSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.005, { f: 3800, q: 0.6, dur: 0.35, level: 0.07, pan: panOf(x) });
+}
+// Antimatter: a bright crack, a falling zap and a low thump.
+function zapSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.003, pan = panOf(x);
+  burst(ac, at, { f: 5000, q: 0.5, dur: 0.12, level: 0.2, pan });
+  blop(ac, at, { f: 2400, rise: 0.05, dur: 0.35, level: 0.1, pan, type: 'square' });
+  blop(ac, at, { f: 90, rise: 0.4, dur: 0.5, level: 0.35, pan });
+}
+// The hole swallows a thing: a short note that slides away down.
+function gulpSound(o) {
+  const ac = kit.live();
+  if (!ac) return;
+  blop(ac, ac.currentTime + 0.01, { f: 600, rise: 0.12, dur: 0.6, level: 0.08, pan: panOf(o.x), type: 'triangle' });
+}
+function holePopSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  blop(ac, at, { f: 300, rise: 3, dur: 0.18, level: 0.15, pan });
+  for (let i = 0; i < 5; i++) blop(ac, at + 0.04 + i * 0.05, { f: rand(2000, 3800), rise: 1.02, dur: 0.4, level: 0.03, pan: rand(-0.5, 0.5), type: 'triangle' });
 }
 // A soft whoosh as a thing leaves the hand.
 function throwSound() {
@@ -3769,6 +4163,7 @@ function layerPass() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 const plumeS = new Float32Array(16);
+const glowU = new Float32Array(24), glowCU = new Float32Array(24);
 const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4), spatU = new Float32Array(NSP * 4);
 function scenePass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
@@ -3825,11 +4220,30 @@ function scenePass() {
     if (q[3] < 0) q = q.map(x => -x);
     const mark = b.fly ? 0 : clamp(b.bob + (b.dunk || 0), 0, 0.08);
     const wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
-    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], mark, b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
+    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], mark, b.kind === 'candle' && b.out ? 29 : b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
     n++;
   }
   gl.uniform1i(sceneP.u('uNB'), n);
   gl.uniform4fv(sceneP.u('uB'), bodyU);
+  // Lights from the things: flashes first, then flames, beads and the hole's ring.
+  let ng = 0;
+  const glow = (x, y, z, w, c, reach) => { if (ng >= 6) return; glowU.set([x, y, z, w], ng * 4); glowCU.set([...c, reach], ng * 4); ng++; };
+  for (const f of flashes) glow(f.x, f.y, f.z, f.w * (1 - f.t / f.dur) ** 2, f.c, f.reach);
+  for (const b of bodies) {
+    if (b.fly && b.fly.t < 0) continue;
+    const shrink = b.gone ? 1 - smooth(0, 1, b.gone) : 1, wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
+    if (b.kind === 'candle' && !b.out) {
+      const top = -0.09 + 0.18 * (1 - 0.45 * Math.min(b.cook, 1));
+      glow(wx, b.y + (top + 0.075) * b.scale * shrink, wz, 0.9 * shrink * (0.88 + 0.08 * Math.sin(time * 23) + 0.06 * Math.sin(time * 9.7)), [1, 0.62, 0.3], 0.45);
+    } else if (b.kind === 'anti') glow(wx, b.y, wz, 0.5 * shrink * (0.85 + 0.15 * Math.sin(time * 47)), [0.75, 0.6, 1.2], 0.3);
+    else if (b.kind === 'hole' && b.hs) glow(wx, b.y, wz, 0.35 * b.hs * shrink, [1, 0.55, 0.25], 0.4);
+  }
+  gl.uniform1i(sceneP.u('uNG'), ng);
+  gl.uniform4fv(sceneP.u('uGlow'), glowU);
+  gl.uniform4fv(sceneP.u('uGlowC'), glowCU);
+  gl.uniform4f(sceneP.u('uHole'), holeDip[0], holeDip[1], holeDip[2], holeDip[3]);
+  const hb = holeB && !holeB.gone ? holeB : null;
+  gl.uniform4f(sceneP.u('uHoleP'), hb ? hb.wx ?? hb.x * rs : 0, hb ? hb.y : 0, hb ? hb.wz ?? hb.z * rs : 0, hb ? hb.hs : 0);
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
   gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
   gl.uniform4fv(sceneP.u('uBub'), bubU);
@@ -3924,7 +4338,7 @@ function wake() {
 let splashAt = -10;
 function busy() {
   return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || (spoon.lift < 1 && !(spoon.rest && Math.hypot(spoon.tx - spoon.x, spoon.tz - spoon.z) < 0.01)) || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
-    || pours.length > 0 || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
+    || pours.length > 0 || bodies.some(b => b.fly || b.hop) || !!holeB || flashes.length > 0 || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
   frameNo++;

@@ -201,7 +201,13 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 |---|---|
 | Hands | Tap a thing to dunk it; drag a thing to pull it (it lifts, drips, leaves a wake); with a liquid picked, a drag pours along the path |
 | Things | 16 kinds: the ten, cleaner and chunkier, plus potato (cubes), leek (rings), garlic (cloves), chilli (sweats oil), bay leaf (never cooks through), noodles (melt) |
-| Tray | Mix, Things and Liquids groups (the shell's opt-in `group`), four across, larger icons with no plate |
+| Tray | Mix, Things, Witchy, Odd and Liquids groups (the shell's opt-in `group`), four across, larger icons with no plate. Mix throws only the Things |
+| Witchy and Odd | Tom, 2026-11-17: ten witchy and ten odd things, two of each per round, bean `stimming-bont`. Round 1: Frog, Candle stub, Antimatter, Tiny black hole. Each has its own step in `ACT` |
+| Frog | Kicks now and then (legs out, a shove, a wake). Sometimes it hops onto the rim at the sides or back, turns to face the soup, sits 2.5 to 5 s and jumps back in; a hotter pot makes hops likelier. It croaks on each jump. A tap makes it kick away. It never cooks |
+| Candle stub | Floats upright and burns down over 90 s, then melts away. Its wax leaves a film of fat. The flame lights the soup, the things and the iron near it, and glints in the soup. A tap puts it out with a hiss and a puff; it lights again after 2.5 s |
+| Antimatter | A violet-white bead that hovers just above the soup and drops glitter. The first thing it touches goes with it in a white flash that lights the whole pot, a crater, a ring of drops and a crack and thump |
+| Tiny black hole | A black ball in a tilted gold disk, with a dark lens and a thin bright ring round it. The soup turns round it into a dip with two spiral arms; things near it spiral in and vanish with a falling note. It fades and pops in a small blue flash after 20 s |
+| Thing lights | Up to six small lights (`uGlow`): flames, beads, the hole's disk and flashes. They light the soup, the things and the iron, glint in the soup and bloom where the ray passes them. High, a full pot of 16 plus the four: 20.2 to 21.1 ms a frame |
 | Spoon | Rests on the rim at the back when let go; taps the iron as it settles; clinks on a hard stir |
 | Air | Heat shimmer above the flames (output pass); steam parts under a passing hand |
 | Floor | Cobbles tilt one by one, warm to cool, ash in the joints; a depth-of-field blur away from the pot (Dev: Background blur) |
