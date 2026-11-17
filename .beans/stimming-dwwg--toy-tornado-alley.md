@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:43:19Z
+updated_at: 2026-11-17T07:48:18Z
 parent: stimming-oh7b
 ---
 
@@ -173,3 +173,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (the Storm slider did nothing; spawn squiggles; instant spawn): Storm now reaches the whole sky (low: a higher, thinner, broken deck in rafts with sky between, no pits; 0.85 and up: the heavy deck as before); any bake-key change bakes the far field whole that frame, so near and far follow a moving slider together (also fixes the Time lag). The empty first bake was a texture feedback loop on unit 0, now fixed. Spawn: each whirl's reach and twist stay fixed (their ramp slid the log-polar texture fast); touchdown runs about 38 s (whirl 20 s, pit and horn 10 s from 15 s, funnel 12 s from 23 s, dust 4 s before contact); F eases over 5 s; rope-out reverses slowly. ?age=45 shows a full funnel.
 
 - 2026-11-17, Tom (the rain at the right, awful): the core's rain cylinder drew a hard dark block (its cover had no softening). Its sides are now ragged (noise eats up to 2 km), its cover linear and capped at 0.65, thinner near the ground, mixed 30–70% into the far haze; only a faint soft haze remains (in bce8db66).
+
+- 2026-11-17, Tom (grain; tops too dark, not blending): the tube's fine noise and Worley fade to their mean below a pixel (the main grain cause: aliasing); gentler tone gain and band threshold; history 0.35 while running, four jittered sub-draws for a still; the edge rag halved (no comb hairs); the deck's soft edge 2 steps wide. Tops: the turn-to tone is read from the deck beside the bell; the bell takes half the sun at the base; the tube's density fades over the whole bell while the horn takes over through a softer join; Top darkening 0.6. Seen, not yet touched: vertical streaks in the deck near the whirls.

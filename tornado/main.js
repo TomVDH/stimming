@@ -219,16 +219,17 @@ float stormCalm(vec3 p) {
   return c;
 }
 // How much of a horn hangs here, 0 to 1. A low sun reaches its sides under the base.
-// At the base the bell keeps the underside's slate; down the bell it takes the sun by degrees.
+// At the base the bell is lit as the deck round it; down the bell it takes the sun by degrees.
 float hornUnder(vec3 p) {
   if (uTorOn < 0.5) return 0.0;
   float lb = baseAt(p.xz), u = 0.0;
-  float hk = smoothstep(lb, lb * 0.8, p.y);
+  // At the base the bell takes half the sun, as the deck's lumps round it do; down the bell, all of it.
+  float hk = mix(0.5, 1.0, smoothstep(lb, lb * 0.8, p.y)) * (1.0 - smoothstep(lb, lb + 0.3, p.y));
   if (hk <= 0.0) return 0.0;
   for (int i = 0; i < ${MAX_FUNNELS}; i++) {
     if (uTorZ[i].w <= 0.0) continue;
     vec4 n = uTorN[i];
-    u = max(u, uTorH[i].x * (1.0 - smoothstep(n.w * 0.8, n.w * 1.3, length(p.xz - n.xy))) * hk);
+    u = max(u, uTorH[i].x * (1.0 - smoothstep(n.w * 0.9, n.w * 1.5, length(p.xz - n.xy))) * hk);
   }
   return u;
 }
@@ -1090,8 +1091,6 @@ function funnelPass(w, h) {
   const sk = skyAt(S.hour);
   gl.uniform2f(u.uRes, rw, rh);
   const fr = fun.frame++;
-  gl.uniform2f(u.uJit, hist ? ((fr * 0.618) % 1) - 0.5 : 0, hist ? ((fr * 0.382) % 1) - 0.5 : 0);
-  gl.uniform1f(u.uBlend, hist ? 0.55 : 1);
   gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
   gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
   gl.uniform1f(u.uAlb, KNOB.alb); gl.uniform1f(u.uSunK, KNOB.sunK); gl.uniform1f(u.uAmbK, KNOB.ambK);
@@ -1111,14 +1110,21 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
   bakeFar(u, rw, rh, n);
-  gl.uniform2f(u.uJit, hist ? ((fr * 0.618) % 1) - 0.5 : 0, hist ? ((fr * 0.382) % 1) - 0.5 : 0);
-  gl.uniform1f(u.uBlend, hist ? 0.55 : 1);
   gl.uniform1i(u.uMode, 0);
   gl.uniform1f(u.uFarD, FAR_D);
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
-  gl.viewport(0, 0, rw, rh);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // A running page blends each frame into a long history: the march's grain averages out.
+  // A still frame has no history: it averages four jittered draws of its own.
+  const subs = hist ? 1 : 4;
+  for (let k = 0; k < subs; k++) {
+    if (k) { [fun.A, fun.B] = [fun.B, fun.A]; gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); }
+    const j = hist ? fr : k, on = hist || k > 0;
+    gl.uniform2f(u.uJit, on ? ((j * 0.618) % 1) - 0.5 : 0, on ? ((j * 0.382) % 1) - 0.5 : 0);
+    gl.uniform1f(u.uBlend, hist ? 0.35 : 1 / (k + 1));
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
+    gl.viewport(0, 0, rw, rh);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
   // The runner wants the context in its default state.
   gl.bindTexture(gl.TEXTURE_3D, null);
   gl.activeTexture(gl.TEXTURE0);

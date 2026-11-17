@@ -38,7 +38,7 @@ export const KNOBS = [
   ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.1],
   ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.55],
   ['Colour', 'hazeK', 'Haze on funnel', 0, 2, 0.01, 1],
-  ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 1],
+  ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 0.6],
   ['Colour', 'dustK', 'Dust tint', 0, 2, 0.01, 1],
   ['Shape', 'width', 'Width', 0.5, 3, 0.01, 1],
   ['Shape', 'flare', 'Flare', 0, 2, 0.01, 1],
@@ -276,6 +276,8 @@ const int SHEATHS = 5;
 // Detail follows the screen: set per sample from the pixel's size where the ray is.
 // gSp: the gap between sheaths over R, at least about three pixels. gAng: the noise's scale round the funnel.
 float gSp = 0.2, gAng = 1.0;
+// gPxM: one pixel's size in metres where the ray is.
+float gPxM = 1.0;
 float sheathR(int k) { return 1.0 + gSp * float(k); }
 // One sheath's noise, spun as one body, from integrated phases.
 // x is the radius over R: the noise varies through the sheath too.
@@ -507,7 +509,7 @@ float deckD(vec3 pk, bool horn, vec3 pl, float soft) {
   if (horn && gOn > 0.0) {
     vec2 qt = pl.xz - topXZ();
     float hr = gNearR * 1000.0;
-    if (dot(qt, qt) < hr * hr) d = smin(d, mix(4.0, hornDist(pl.y, length(pl.xz - axisAt(pl.y))) * 0.001, gOn), 0.12);
+    if (dot(qt, qt) < hr * hr) d = smin(d, mix(4.0, hornDist(pl.y, length(pl.xz - axisAt(pl.y))) * 0.001, gOn), 0.25);
   }
   // Far from the cloud the noise cannot reach: a safe distance needs no noise.
   // It stays past the soft edge, so the march never takes it for cloud.
@@ -643,19 +645,24 @@ float tubeN(float ang, float h, float x, float R, int idx) {
   float rr = x * max(rb, 1.0) * 1.4 * gAng;
   // No offset per layer: the bands cut one body of cloud.
   vec3 c = vec3(cos(a) * rr, zz * uTbStretch, sin(a) * rr) + uSeed * 23.0;
-  float n = (0.5 * N(c) + 0.25 * N(c * 2.03 + 7.1) + 0.125 * N(c * 4.1 + 3.7) + 0.0625 * N(c * 8.3)) / 0.9375;
+  // An octave finer than a pixel gives way to its mean: it would only speckle.
+  // One unit of c holds four noise cells; s is pixels per cell of the first octave.
+  float s = uZs * 0.25 / max(gPxM, 1e-3);
+  float k1 = smoothstep(0.7, 2.0, s * 0.5), k2 = smoothstep(0.7, 2.0, s * 0.25), k3 = smoothstep(0.7, 2.0, s * 0.12);
+  float n = (0.5 * N(c) + 0.25 * mix(0.5, N(c * 2.03 + 7.1), k1) + 0.125 * mix(0.5, N(c * 4.1 + 3.7), k2) + 0.0625 * mix(0.5, N(c * 8.3), k3)) / 0.9375;
   // The deck's rounded lumps, in two sizes, are not stretched: they stay round.
   vec3 cl = vec3(c.x, zz + uSeed * 23.0, c.z);
-  n += (W(cl * 0.65 + 1.7) - 0.4) * 0.32 + (W(cl * 2.0) - 0.4) * 0.16;
+  n += (W(cl * 0.65 + 1.7) - 0.4) * 0.32 + (mix(0.45, W(cl * 2.0), k1) - 0.4) * 0.16;
   // Erosion: fine detail eats into the edges, as in sheathN().
-  return n - (1.0 - n) * N(cl * 3.7 + 7.0) * 0.45;
+  return n - (1.0 - n) * mix(0.5, N(cl * 3.7 + 7.0), k2) * 0.45;
 }
 // One step through the tube, as a volume: extinction per metre into sig, colour times it into sum.
 // The core is a soft solid of deck cloud; the bands are thin radial layers with clear air between.
 // Each band's share of the step is exact, so thin bands do not alias.
 void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, float sHm, float cs, float topK, vec3 stC, float ph0, float ph1, vec3 skyH, float jt, inout vec3 sum, inout float sig) {
   float fl = smoothstep(0.15, 0.6, sHm);
-  float fade = 1.0 - smoothstep(0.75, 1.0, sHm);
+  // Up the bell the tube thins while the deck's horn takes over: no lip where one ends.
+  float fade = 1.0 - smoothstep(0.35, 1.0, sHm);
   if (fade <= 0.0) return;
   vec3 ps = pa + rd * (len * jt);
   vec2 q = ps.xz - axisAt(ps.y);
@@ -665,7 +672,8 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   // The core: the deck's cloud inside a ragged edge.
   float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.6, fl);
   float wC = 0.1 + uEdgeW * uAmp;
-  float tp = clamp(tap - (nc - 0.5) * 0.7, 0.0, 1.0);
+  // The noise rags the lower edge a little: more drew a comb of hairs.
+  float tp = clamp(tap - (nc - 0.5) * 0.35, 0.0, 1.0);
   // Point samples read thinner than the shells' exact ramp: the core takes more.
   // It reads as dense condensation, not thin smoke.
   float dC = 3.2 * smoothstep(0.0, 0.45, tp) * clamp((edge - x) / wC, 0.0, 1.0);
@@ -687,7 +695,8 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
     float nb = j == 0 ? nc : tubeN(ang, ps.y, x, R, j + 1);
     // The lumps widen the noise's spread, so the cut sits higher than the shells'.
     float cov = mix(0.5, 0.72, fk);
-    sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov, cov + 0.14, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
+    // A wide threshold: a narrow one flips per sample and speckles.
+    sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov - 0.04, cov + 0.22, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
   }
   // The bands' share of the step: their torn edges take the deck's tone.
   float bk = sB / max(s + sB, 1e-6);
@@ -696,7 +705,8 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   // The deck's light: a step toward the sun finds thinner cloud on the lit side of a lump.
   vec3 pl = ps + gSunC * (0.3 * R);
   vec2 ql = pl.xz - axisAt(pl.y);
-  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * 3.0 + 0.5, 0.0, 1.0);
+  // A gentle gain: a steep one turned per-sample noise into light and dark specks.
+  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * 1.5 + 0.5, 0.0, 1.0);
   vec3 c = shellCol(q, ps.y, R, x * Re / R, cs + (1.0 - lit) * 0.6, ph0, ph1, skyH, topK, stC);
   c = mix(c, stC, 0.45 * bk);
   sum += hazed(c, funnelHaze(ps.y)) * s;
@@ -791,6 +801,7 @@ void main() {
     if (inA) {
       // The pixel's size in metres where the ray is now.
       float foot = t / (uRes.y * uFoc), sH0;
+      gPxM = foot;
       float R0 = hornR(p.y, sH0);
       gSp = max(0.2, 3.5 * foot / R0);
       gAng = clamp(R0 * 0.06 / foot, 0.3, 1.0);
@@ -816,7 +827,8 @@ void main() {
         // The finest noise fades out far off, where it is under a pixel.
         gFine = 1.0 - smoothstep(25000.0, 45000.0, t);
         // The soft edge and the inner step grow with distance: crisp near, smooth far.
-        float inStep = 30.0 + 0.006 * t, soft = 1.2 * inStep * 0.001;
+        // A soft edge of two steps: a thinner one is met by chance and stipples the lumps' rims.
+        float inStep = 30.0 + 0.006 * t, soft = 2.0 * inStep * 0.001;
         float d = deckD(pk, inA, p, soft);
         // The first step into the cloud is a random part of a step: no contour bands.
         if (d < soft && outside && !inA) { outside = false; t += inStep * jit; continue; }
@@ -855,7 +867,14 @@ void main() {
         float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
         // The sheaths' torn edges take this tone too, so every column reads it once.
-        if (stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl, 1e3)); }
+        // It is read beside the bell, on the eye's side, where the deck shows its own tone.
+        // Inside the bell the horn's underside read darker than the deck round it.
+        if (stC.x < 0.0) {
+          vec2 tc = topXZ(), toEye = normalize(-gFoot.xz - tc + 1e-3);
+          vec3 pb = vec3(tc.x + toEye.x * gRtopKm * 1300.0, max(pm.y, gDeck - 120.0), tc.y + toEye.y * gRtopKm * 1300.0);
+          vec3 pt = toKm(pb);
+          stC = stormLit(pt, deckD(pt, true, pb, 1e3));
+        }
         // The tone it turns to is the deck's own light right here, where the deck has cloud.
         // Above the horn's surface the ray's one deck point stands in.
         vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
