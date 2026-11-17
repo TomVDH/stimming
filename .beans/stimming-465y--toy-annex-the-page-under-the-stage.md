@@ -141,7 +141,7 @@ His words, 2026-11-16: "we have the player with the toy -- but we also need an /
 | `docs/plans/annex.md` | The plan: both rounds, the content kit, the data proposal. |
 | `PRODUCT.md`, `DESIGN.md`, `.impeccable/design.json` | Product truth and the visual system as the code has it. On `main`. |
 
-Run: start the `stimming` preview server, then open `/annexlab/sheet.html`.
+Run: start the `stimming` preview server, then open `/.worktrees/stimming-465y/annexlab/sheet.html` (the branch), or `/annexlab/sheet.html` after the PR merges.
 
 Lab keys and URL:
 
@@ -175,11 +175,13 @@ Lab keys and URL:
 
 ### Git
 
-- Branch: `feature/stimming-465y`, pushed. It holds the lab from Flash cut on, the sheet, the plan and this bean.
-- The shared checkout stays on `main`. The branch commits were built in a private index (`git read-tree`, `git update-index --add`, `git commit-tree`, `git push origin <sha>:refs/heads/feature/stimming-465y`). No worktree exists yet; make `.worktrees/stimming-465y` before the shell build.
-- The same files sit uncommitted in the main checkout, so the preview server shows the newest lab. Do not commit them to `main`.
-- Three commits went to `main` before Tom asked for a branch: `PRODUCT.md`, round 2 with its first four directions, and `DESIGN.md`. Tom has not said to revert them.
-- Other sessions got Tom's branch instruction by message: fire-module, Calaeno, and the modularization session (for its Dijkstra and Subway ports).
+- Branch: `feature/stimming-465y`, pushed. Worktree: `.worktrees/stimming-465y`. Work there, and commit with `tools/commit.sh`.
+- 2026-11-17: `main` took 410 commits from the MacBook. `main` is merged into this branch; the merge was clean. The branch is `main` plus the annex work, so a PR merges with no conflict.
+- The PR changes four files only: `annexlab/round2.html`, `annexlab/sheet.html`, `docs/plans/annex.md` and this bean. It touches no toy, no file in `shared/` and not the menu.
+- Until the PR merges, `main` holds the first build of the lab (four directions, no Flash cut). Test the branch at `/.worktrees/stimming-465y/annexlab/sheet.html` on the dev server.
+- The shell on `main` now sets headings in B612. The lab links the shell, so its names and part headings show in B612, not Gabarito. Tom has not ruled on that for the content zone.
+- The lab and the sheet take their fonts from the shell; no page links Google Fonts.
+- `PRODUCT.md`, round 2 with its first four directions, and `DESIGN.md` went to `main` on 2026-11-16, before Tom asked for a branch.
 
 ### Design tools (bean `stimming-lcp9`)
 
