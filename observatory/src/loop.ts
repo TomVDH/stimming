@@ -4,7 +4,8 @@ import { whenVisible } from '../../shared/stim.js';
 import type { AltAz } from './core/sky.ts';
 import { azDelta, clampAim, stepAxis } from './core/dome.ts';
 import { Vector3 } from 'three';
-import { camera, renderer, scene, stageEl } from './setup.ts';
+import { camera, renderer, stageEl } from './setup.ts';
+import { renderPost } from './post/chain.ts';
 import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
 import { complex } from './world/complex.ts';
 import { altAzDir, laser } from './world/laser.ts';
@@ -100,7 +101,7 @@ export function draw(): void {
   pose();
   // A close shot sets the camera after the pose, so it can frame the tube.
   cuts.frame();
-  renderer.render(scene, camera);
+  renderPost();
   cuts.afterRender();
   dirty = false;
 }

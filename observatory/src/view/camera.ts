@@ -2,7 +2,7 @@
 import '../sky/stars.ts';
 import { Vector3 } from 'three';
 import { camera } from '../setup.ts';
-import { RISE, hillHeight } from '../world/hill.ts';
+import { EYE_H, RISE, hillHeight } from '../world/hill.ts';
 
 /* ---------- camera: from the rise, a little above the treetops ---------- */
 // The eye stands on the rise 300 m north of the complex and looks south at it.
@@ -13,9 +13,9 @@ import { RISE, hillHeight } from '../world/hill.ts';
 export type View = { eye: { x: number; z: number; h: number }; pitch: number; yaw: number; fov: number };
 
 // Landscape and square frames.
-export const WIDE: View = { eye: { x: RISE.x, z: RISE.z, h: 27 }, pitch: 4, yaw: 177, fov: 40 };
+export const WIDE: View = { eye: { x: RISE.x, z: RISE.z, h: EYE_H }, pitch: 4, yaw: 177, fov: 40 };
 // Portrait frames: a taller lens, so the complex stays in frame.
-export const TALL: View = { eye: { x: RISE.x, z: RISE.z, h: 27 }, pitch: 6, yaw: 179, fov: 58 };
+export const TALL: View = { eye: { x: RISE.x, z: RISE.z, h: EYE_H }, pitch: 6, yaw: 179, fov: 58 };
 
 const DEG = Math.PI / 180;
 

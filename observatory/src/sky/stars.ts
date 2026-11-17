@@ -1,6 +1,6 @@
 // Load order: world/laser runs first.
 import '../world/laser.ts';
-import { BufferAttribute, BufferGeometry, Color, Matrix4, Points, ShaderMaterial, Vector3 } from 'three';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Matrix4, Points, ShaderMaterial, Vector3 } from 'three';
 import { scene } from '../setup.ts';
 import { lst, type AltAz } from '../core/sky.ts';
 import { loadStars, type Star } from '../core/catalog.ts';
@@ -11,9 +11,6 @@ export const LAT = 51, LON = 0;
 // The star shell stays inside the camera far plane.
 const RADIUS = 4000;
 const RAD = Math.PI / 180;
-
-// The blockout sky is a near-black blue-grey, so the faint stars show.
-scene.background = new Color(0x090a0f);
 
 // The star group's matrix for a sky time.
 // Star positions sit on the shell at hour angle zero (x to the meridian, y to the west, z to the pole).
@@ -47,15 +44,18 @@ function tint(ci: number, out: Color): Color {
 
 const vert = /* glsl */ `
   attribute vec3 tint;
-  attribute vec2 look; // x: size in px, y: brightness
+  attribute vec2 look; // x: size in CSS px, y: brightness
+  uniform float uDpr;
   varying vec3 vColor;
   varying float vUp;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
     // The star shell is centred on the origin, the camera sits near it: below the horizon is hidden.
     vUp = world.y;
-    vColor = tint * look.y;
-    gl_PointSize = look.x;
+    // Low stars shine through more air: 0.3 magnitudes per airmass.
+    float airmass = 1.0 / max(world.y / ${RADIUS.toFixed(1)}, 0.03);
+    vColor = tint * look.y * pow(10.0, -0.12 * (airmass - 1.0));
+    gl_PointSize = look.x * uDpr;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
@@ -70,6 +70,10 @@ const frag = /* glsl */ `
     gl_FragColor = vec4(vColor * a, 1.0);
   }
 `;
+
+// The device pixel ratio; the stage's resize sets it.
+const starDpr = { value: 1 };
+export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
 
 export const sky = { stars: [] as Star[], index: new Map<number, number>(), points: null as Points | null };
 
@@ -94,7 +98,8 @@ export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.
   geo.setAttribute('position', new BufferAttribute(pos, 3));
   geo.setAttribute('tint', new BufferAttribute(col, 3));
   geo.setAttribute('look', new BufferAttribute(look, 2));
-  const pts = new Points(geo, new ShaderMaterial({ vertexShader: vert, fragmentShader: frag, depthWrite: false }));
+  // The stars add over the sky's glow.
+  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
   pts.matrixAutoUpdate = false;
   pts.frustumCulled = false;
   scene.add(pts);

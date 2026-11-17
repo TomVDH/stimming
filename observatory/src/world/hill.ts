@@ -1,7 +1,6 @@
-// Load order: setup runs first.
-import '../setup.ts';
-import { AmbientLight, DirectionalLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
-import type { BufferAttribute } from 'three';
+// Load order: post/chain runs first.
+import '../post/chain.ts';
+import { BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, HemisphereLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
 import { scene } from '../setup.ts';
 
 /* ---------- the land: the observatory hill, the camera's rise, far ridges ---------- */
@@ -12,6 +11,8 @@ import { scene } from '../setup.ts';
 export const CLEAR = 46;
 // The camera's rise lies north of the hill, across a wooded valley.
 export const RISE = { x: 0, z: -300 };
+// The wide eye stands this high over the rise.
+export const EYE_H = 27;
 
 function land(x: number, z: number): number {
   const r = Math.hypot(x, z);
@@ -36,24 +37,50 @@ export function hillHeight(x: number, z: number): number {
 // The centre of the clearing.
 export const SITE = new Vector3(0, TOP, 0);
 
-const grey = new MeshLambertMaterial({ color: 0x4a4b4e });
+// Dark grass and earth under starlight.
+const ground = new MeshLambertMaterial({ color: new Color(0.06, 0.066, 0.05) });
 
-// One mesh holds all the land in view, at 6 m steps.
-const geo = new PlaneGeometry(2000, 2600, 330, 430);
-geo.rotateX(-Math.PI / 2);
-geo.translate(0, 0, 600);
-const pos = geo.attributes.position as BufferAttribute;
-for (let i = 0; i < pos.count; i++) pos.setY(i, hillHeight(pos.getX(i), pos.getZ(i)));
-geo.computeVertexNormals();
-export const hill = new Mesh(geo, grey);
+// Grid lines from lo to hi, dense at 0 and sparse at the ends.
+// n0 and n1 are the steps on each side of 0.
+function axis(lo: number, hi: number, n0: number, n1: number): number[] {
+  // Spacing at 0 is a third of the mean spacing.
+  const warp = (u: number) => 0.35 * u + 0.65 * u * u * u;
+  const out: number[] = [];
+  for (let i = n0; i > 0; i--) out.push(lo * warp(i / n0));
+  for (let i = 0; i <= n1; i++) out.push(hi * warp(i / n1));
+  return out;
+}
+
+// One mesh holds all the land in view.
+// Steps are about 4 m at the complex and grow to 30 m at the edges.
+function landMesh(): BufferGeometry {
+  const xs = axis(-1000, 1000, 80, 80), zs = axis(-700, 1900, 50, 150);
+  const p: number[] = [], idx: number[] = [];
+  for (const z of zs) for (const x of xs) p.push(x, hillHeight(x, z), z);
+  const row = xs.length;
+  for (let j = 0; j < zs.length - 1; j++) {
+    for (let i = 0; i < row - 1; i++) {
+      const a = j * row + i, b = a + 1, c = a + row, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(p, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+export const hill = new Mesh(landMesh(), ground);
 scene.add(hill);
 
 // Flat land past the mesh hides the stars below the horizon.
-const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), grey);
+const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), ground);
 flat.position.y = -0.5;
 scene.add(flat);
 
-// One dim key light and a weak fill.
-const key = new DirectionalLight(0xffffff, 1.4);
-key.position.set(-60, 80, -90);
-scene.add(key, new AmbientLight(0xffffff, 0.35));
+// Starlight: a cold, dim sky over a black ground.
+scene.add(new HemisphereLight(new Color(0.5, 0.55, 0.68), new Color(0.02, 0.02, 0.025), 1.3));
+// A faint key from high in the north gives the shapes form.
+const key = new DirectionalLight(new Color(0.62, 0.7, 0.92), 0.35);
+key.position.set(-60, 120, -90);
+scene.add(key);

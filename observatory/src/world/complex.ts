@@ -3,7 +3,7 @@ import './observatory.ts';
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Vector3 } from 'three';
 import { scene } from '../setup.ts';
 import { SITE, hillHeight } from './hill.ts';
-import { buildDome, type Dome } from './observatory.ts';
+import { buildDome, stoneMap, type Dome } from './observatory.ts';
 
 /* ---------- the complex: three domes, the stone building, the shed, the road ---------- */
 // Positions are in metres from the clearing's centre; +X is east, -Z is north.
@@ -44,12 +44,13 @@ function roadMesh(): Mesh {
   g.setAttribute('position', new Float32BufferAttribute(p, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  const m = new MeshLambertMaterial({ color: 0x7a7a7c, polygonOffset: true, polygonOffsetFactor: -2 });
+  // Pale gravel reads under starlight.
+  const m = new MeshLambertMaterial({ color: 0x4c4842, polygonOffset: true, polygonOffsetFactor: -2 });
   return new Mesh(g, m);
 }
 
-const box = (w: number, h: number, d: number, color: number, x: number, y: number, z: number): Mesh => {
-  const m = new Mesh(new BoxGeometry(w, h, d), lam(color));
+const box = (w: number, h: number, d: number, color: number | MeshLambertMaterial, x: number, y: number, z: number): Mesh => {
+  const m = new Mesh(new BoxGeometry(w, h, d), typeof color === 'number' ? lam(color) : color);
   m.position.set(x, y + h / 2, z);
   return m;
 };
@@ -58,13 +59,16 @@ const box = (w: number, h: number, d: number, color: number, x: number, y: numbe
 // It is 30 m long, 9 m deep and 5 m high, with a flat roof.
 const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
 // The lit panes share one material, so the lights dim them together.
-const litPanes = new MeshBasicMaterial({ color: 0xd2d2d2 });
+// world/lights sets its colour.
+const litPanes = new MeshBasicMaterial();
 function hall(): Group {
   const g = new Group();
-  g.add(box(HALL.w, HALL.h, HALL.d, 0x6a6a6a, HALL.x, 0, HALL.z));
-  g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x5c5c5c, HALL.x, HALL.h, HALL.z));
+  // The stone blocks match the drums: about 1 m by 0.4 m.
+  g.add(box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z));
+  // A dark tarred roof slab.
+  g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x26272a, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
-  const lit = litPanes, dark = lam(0x2a2a2a);
+  const lit = litPanes, dark = lam(0x121315);
   for (let i = 0; i < 7; i++) {
     const w = new Mesh(new BoxGeometry(1.4, 1.8, 0.1), i === 1 || i === 2 || i === 5 ? lit : dark);
     w.position.set(HALL.x - 12 + i * 4, 2.2, HALL.z - HALL.d / 2 - 0.05);
@@ -77,13 +81,14 @@ function hall(): Group {
 function shed(): Group {
   const g = new Group();
   const x = -30, z = 9;
-  g.add(box(7, 3, 6, 0x6a6a6a, x, 0, z));
-  for (const dz of [-2.4, 2.4]) g.add(box(9, 0.25, 0.25, 0x505050, x - 7.5, 2.8, z + dz));
-  for (const dz of [-2.4, 2.4]) for (const dx of [-11.5, -5]) g.add(box(0.25, 2.8, 0.25, 0x505050, x + dx + 1.5, 0, z + dz));
-  g.add(box(7.4, 0.5, 6.4, 0x8a8a8a, x - 8.5, 3.05, z));
+  // Weathered timber walls, steel rails, a pale roof.
+  g.add(box(7, 3, 6, 0x4a4036, x, 0, z));
+  for (const dz of [-2.4, 2.4]) g.add(box(9, 0.25, 0.25, 0x2c2f33, x - 7.5, 2.8, z + dz));
+  for (const dz of [-2.4, 2.4]) for (const dx of [-11.5, -5]) g.add(box(0.25, 2.8, 0.25, 0x2c2f33, x + dx + 1.5, 0, z + dz));
+  g.add(box(7.4, 0.5, 6.4, 0x8c8a86, x - 8.5, 3.05, z));
   // A small tube on a pier stands in the open shed.
-  const pier = box(0.5, 2.2, 0.5, 0x585858, x, 0, z);
-  const t = new Mesh(new CylinderGeometry(0.2, 0.2, 2.4, 12), lam(0x8e8e8e));
+  const pier = box(0.5, 2.2, 0.5, 0x2c2f33, x, 0, z);
+  const t = new Mesh(new CylinderGeometry(0.2, 0.2, 2.4, 12), lam(0x9aa2aa));
   t.position.set(x, 3.1, z + 0.3);
   t.rotation.x = 0.7;
   g.add(pier, t);
