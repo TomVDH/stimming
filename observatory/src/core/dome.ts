@@ -1,7 +1,8 @@
 // Dome and telescope motion maths. Angles are in degrees.
 // Every moving part is heavy.
 // It speeds up slowly and runs down slowly.
-// A part settles at each stop; it never snaps.
+// A part settles at each stop.
+// It never snaps.
 import type { AltAz } from './sky.ts';
 
 // Keeps the aim between 5 and 85 degrees of altitude.
@@ -49,6 +50,12 @@ const SUB = 1 / 120;
 const REST_DRIVE = 0.001;
 // A slow load this close to its drive rests on it.
 const REST_LOAD = 0.004;
+// The load's acceleration stays within this share of the drive's limit.
+const LOAD_MAX = 1.1;
+// A moving axis this close to its target can lock on it.
+// Its speed must match the target's within LOCK_V.
+const LOCK_ERR = 0.004;
+const LOCK_V = 0.005;
 
 export const makeAxis = (pos: number): Axis => ({ pos, vel: 0, drv: pos, dvel: 0 });
 
@@ -59,6 +66,30 @@ export const atRest = (a: Axis): boolean => a.vel === 0 && a.dvel === 0 && a.pos
 export function moveTime(d: number, cap: number, accel: number): number {
   const x = Math.abs(d);
   return x >= cap * cap / accel ? x / cap + cap / accel : 2 * Math.sqrt(x / accel);
+}
+
+// Seconds a drive takes to land on a target d degrees away.
+// v: the drive's speed now, plus toward the target.
+// It speeds up, cruises and slows down as the drive does.
+export function etaTime(d: number, v: number, cap: number, accel: number): number {
+  const x = Math.abs(d);
+  let v0 = d === 0 ? -Math.abs(v) : v * Math.sign(d);
+  if (x === 0 && v0 === 0) return 0;
+  // Moving away: stop first, then come back from rest.
+  if (v0 < 0) return -v0 / accel + moveTime(x + v0 * v0 / (2 * accel), cap, accel);
+  // Too fast to stop in time: stop past it, then come back.
+  if (v0 * v0 / (2 * accel) > x) return v0 / accel + moveTime(v0 * v0 / (2 * accel) - x, cap, accel);
+  // Over the cap: slow to the cap first.
+  let t = 0, left = x;
+  if (v0 > cap) {
+    t = (v0 - cap) / accel;
+    left -= (v0 * v0 - cap * cap) / (2 * accel);
+    v0 = cap;
+  }
+  const peak = Math.sqrt(accel * left + v0 * v0 / 2);
+  if (peak <= cap) return t + (2 * peak - v0) / accel;
+  const up = (cap * cap - v0 * v0) / (2 * accel), down = cap * cap / (2 * accel);
+  return t + (cap - v0) / accel + (left - up - down) / cap + cap / accel;
 }
 
 // The share of the limits that makes a move take t seconds.
@@ -80,7 +111,8 @@ function load(a: Axis, h: number, accel: number, wrap: boolean): void {
     a.vel = 0;
     return;
   }
-  a.vel += (W2 * e + C * (a.dvel - a.vel)) * h;
+  const max = LOAD_MAX * accel;
+  a.vel += Math.max(-max, Math.min(max, W2 * e + C * (a.dvel - a.vel))) * h;
   a.pos += a.vel * h;
   if (wrap) a.pos = wrap360(a.pos);
 }
@@ -88,20 +120,22 @@ function load(a: Axis, h: number, accel: number, wrap: boolean): void {
 // One sub-step of the drive toward a target.
 // pace: a share of the cap and of the speed-up.
 // Paced axes arrive together.
+// rate: the target's own speed, so a creeping star needs no lag.
 // A star creeps less than REST_DRIVE in a frame.
-// So the drive follows it in steps, at rest between frames.
-function drive(a: Axis, target: number, h: number, lim: Limits, pace: number): void {
-  const err = lim.wrap ? azDelta(a.drv, target) : target - a.drv;
+// So the drive lands on it each frame, at the star's speed.
+function drive(a: Axis, target: number, h: number, lim: Limits, pace: number, rate: number): void {
+  // The error left after a move at the target's speed.
+  const err = (lim.wrap ? azDelta(a.drv, target) : target - a.drv) - rate * h;
   const full = lim.accel * h;
-  if (Math.abs(err) <= REST_DRIVE && Math.abs(a.dvel) <= full) {
+  if (Math.abs(err) <= REST_DRIVE && Math.abs(a.dvel - rate) <= full) {
     a.drv = lim.wrap ? wrap360(target) : target;
-    a.dvel = 0;
+    a.dvel = rate;
     return;
   }
   const cap = lim.cap * pace, acc = lim.accel * pace;
   // The fastest speed that still stops on the target in whole steps.
   const brake = acc * h * (Math.sqrt(0.25 + 2 * Math.abs(err) / (acc * h * h)) - 0.5);
-  const want = Math.sign(err) * Math.min(cap, brake);
+  const want = Math.max(-cap, Math.min(cap, rate + Math.sign(err) * brake));
   const dv = want - a.dvel;
   // A drive slows at its full acceleration.
   // So a paced axis never overruns its target.
@@ -112,12 +146,14 @@ function drive(a: Axis, target: number, h: number, lim: Limits, pace: number): v
 }
 
 // One frame of an axis toward a target.
-export function stepAxis(a: Axis, target: number, dt: number, lim: Limits, pace = 1): void {
+// rate: the target's speed, 0 for a still target.
+export function stepAxis(a: Axis, target: number, dt: number, lim: Limits, pace = 1, rate = 0): void {
   // The first frame after a sleep has no time: it moves nothing.
   if (!(dt > 0)) return;
   const n = Math.max(1, Math.ceil(dt / SUB - 1e-9)), h = dt / n;
   for (let i = 0; i < n; i++) {
-    drive(a, target, h, lim, pace);
+    // A moving target stands where it is at this sub-step.
+    drive(a, target - rate * (n - 1 - i) * h, h, lim, pace, rate);
     load(a, h, lim.accel, lim.wrap);
   }
 }
@@ -133,6 +169,37 @@ export function brakeAxis(a: Axis, dt: number, lim: Limits): void {
     if (lim.wrap) a.drv = wrap360(a.drv);
     load(a, h, lim.accel, lim.wrap);
   }
+}
+
+// True when an axis moves with its target, close enough to lock.
+export function settled(a: Axis, target: number, rate: number, wrap: boolean): boolean {
+  const off = (x: number): number => Math.abs(wrap ? azDelta(x, target) : target - x);
+  return off(a.pos) <= LOCK_ERR && off(a.drv) <= LOCK_ERR
+    && Math.abs(a.vel - rate) <= LOCK_V && Math.abs(a.dvel - rate) <= LOCK_V;
+}
+
+// One frame of an axis locked on a creeping target.
+// No drive and no spring act on it.
+// It reports no speed, so the loop can sleep.
+export function lockAxis(a: Axis, target: number, wrap: boolean): void {
+  a.pos = a.drv = wrap ? wrap360(target) : target;
+  a.vel = a.dvel = 0;
+}
+
+// Hands a locked axis back to its drive at the star's speed.
+export function unlockAxis(a: Axis, rate: number): void {
+  a.drv = a.pos;
+  a.vel = a.dvel = rate;
+}
+
+// The lead of one azimuth axis over another, into out.
+export function leadOf(a: Axis, base: Axis, out: Axis): void {
+  out.pos = azDelta(base.pos, a.pos);
+  out.vel = a.vel - base.vel;
+  // The drive's lead stays on the load's branch.
+  // So it never turns a full circle.
+  out.drv = out.pos + azDelta(a.pos, a.drv) - azDelta(base.pos, base.drv);
+  out.dvel = a.dvel - base.dvel;
 }
 
 /* ---------- a heavy shutter ---------- */

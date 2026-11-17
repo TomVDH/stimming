@@ -3,18 +3,21 @@ import './woods.ts';
 import { AdditiveBlending, CylinderGeometry, MathUtils, Mesh, ShaderMaterial, Vector3 } from 'three';
 import { HAZE_H } from '../sky/haze.ts';
 import type { AltAz } from '../core/sky.ts';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the aiming laser: a thin green beam into the sky ---------- */
 const DEG = MathUtils.DEG2RAD;
 // The beam stops short of the star shell.
 const LENGTH = 3800;
 // The beam shows by the haze it lights.
-// The low haze makes it solid near the dome; thin high air keeps a trace.
-// Gains on the low haze and the high air; heights in metres.
+// The low haze makes it solid near the dome.
+// Thin high air keeps a trace.
+// Gains on the low haze and the high air.
+// Heights are in metres.
 const LOW_K = 2.2, HIGH_K = 0.5, HIGH_H = 600;
 
-// Unit vector for an altitude and azimuth: -Z is north, +X is east.
+// The unit vector for an altitude and azimuth.
+// -Z is north and +X is east.
 export function altAzDir(a: AltAz, out = new Vector3()): Vector3 {
   const c = Math.cos(a.alt * DEG);
   return out.set(c * Math.sin(a.az * DEG), Math.sin(a.alt * DEG), -c * Math.cos(a.az * DEG));
@@ -24,7 +27,8 @@ export type Laser = { mesh: Mesh; aim(from: Vector3, a: AltAz): void; level(k: n
 
 export function buildLaser(): Laser {
   // A unit cylinder that grows along +Y from its foot.
-  // It is 0.5 m wide, so it shows from the rise 300 m away.
+  // It is 0.5 m wide.
+  // So it shows from the rise, 300 m away.
   const geo = new CylinderGeometry(0.25, 0.25, 1, 6, 1, true).translate(0, 0.5, 0);
   const mat = new ShaderMaterial({
     // uK fades the beam in after the opening.
@@ -65,3 +69,4 @@ export function buildLaser(): Laser {
 
 export const laser = buildLaser();
 scene.add(laser.mesh);
+onLeave(() => disposeTree(laser.mesh));

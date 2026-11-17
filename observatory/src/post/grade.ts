@@ -1,7 +1,8 @@
 // Load order: post/bloom runs first.
 import './bloom.ts';
-// Copied from railgun/src/post/grade.ts; only the base grade and grain stay.
-import * as THREE from 'three';
+// Copied from railgun/src/post/grade.ts.
+// Only the base grade and grain stay.
+import { Vector2, Vector3 } from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 /* ---------- grade ---------- */
@@ -12,8 +13,8 @@ export function makeGrade({ tint, vig, vigIn, grain }: GradeLook) {
   return new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uRes: { value: new THREE.Vector2(1, 1) },
-      uTint: { value: new THREE.Vector3(...tint) },
+      uRes: { value: new Vector2(1, 1) },
+      uTint: { value: new Vector3(...tint) },
       uVig: { value: vig },
       uVigIn: { value: vigIn },
       uGrain: { value: grain },

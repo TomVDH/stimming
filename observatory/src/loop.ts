@@ -58,6 +58,8 @@ const turns: Turn[] = [
 const SMALL_TUBE: Limits = { cap: 1.2, accel: 0.4, wrap: false };
 // The small shutters want open after a pick.
 // Each dome reads the wish as it was its delay ago.
+// The histories keep one entry older than the longest delay.
+const KEEP_MS = Math.max(...turns.map(d => d.delay)) * 1000;
 const wishes: { t: number; open: boolean }[] = [{ t: -Infinity, open: false }];
 // The complex lights: 1 full, 0.35 dim, 0 off.
 let light = 1;
@@ -80,6 +82,8 @@ if (!opening.done) driveClock(opening, clock);
 // True once a frame shows the night look after the opening.
 let nightSet = false;
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
+// Draws so far, for QA: a slow track draws every few seconds.
+let draws = 0;
 
 // The aim azimuth as it was some seconds ago.
 function azAgo(now: number, s: number): number {
@@ -136,6 +140,7 @@ export function draw(): void {
   renderPost();
   cuts.afterRender();
   dirty = false;
+  draws++;
 }
 
 function tick(now: number): void {
@@ -168,11 +173,11 @@ function tick(now: number): void {
   if (want !== wishes[wishes.length - 1].open) {
     wishes.push({ t, open: want });
     // Keep one wish older than the longest delay.
-    while (wishes.length > 1 && wishes[1].t <= t - 3000) wishes.shift();
+    while (wishes.length > 1 && wishes[1].t <= t - KEEP_MS) wishes.shift();
   }
   for (const d of turns) {
     const open = wishAgo(t, d.delay);
-    // The shutter stays open until the tube is low enough to clear it.
+    // The shutter stays open until the tube clears it.
     const goal = open || d.alt.pos >= TUBE_CLEAR_ALT ? 1 : 0;
     if (!shutterAtRest(d.sh) || d.sh.p !== goal) {
       // A shutter that turns back mid-way runs down first.
@@ -193,7 +198,7 @@ function tick(now: number): void {
   const lead = leaderAz();
   if (lead !== seen[seen.length - 1].az) {
     seen.push({ t, az: lead });
-    while (seen.length > 1 && seen[1].t <= t - 3000) seen.shift();
+    while (seen.length > 1 && seen[1].t <= t - KEEP_MS) seen.shift();
   }
   for (const d of turns) {
     const target = azAgo(t, d.delay);
@@ -226,7 +231,7 @@ function input(a: AltAz): void {
   if (machine.phase === 'aim') {
     seen.push({ t: lastInput, az: aim.az });
     // Keep one sample older than the longest delay.
-    while (seen.length > 1 && seen[1].t <= lastInput - 3000) seen.shift();
+    while (seen.length > 1 && seen[1].t <= lastInput - KEEP_MS) seen.shift();
   }
   dirty = true;
   wake();
@@ -347,6 +352,7 @@ declare global { interface Window { __qa?: Record<string, unknown> } }
 window.__qa = {
   get running() { return raf !== 0; },
   get frames() { return frames; },
+  get draws() { return draws; },
   // Dome 0 is the main dome, read from the machine.
   // vel: the cupola's speed on screen.
   get domes() {

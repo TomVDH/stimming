@@ -1,38 +1,35 @@
 // Load order: world/laser runs first.
 import '../world/laser.ts';
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Matrix4, Points, ShaderMaterial, Vector3 } from 'three';
-import { scene } from '../setup.ts';
-import { lst, type AltAz } from '../core/sky.ts';
-import { loadStars, type Star } from '../core/catalog.ts';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Matrix4, Points, ShaderMaterial } from 'three';
+import { disposeTree, onLeave, scene, starFile } from '../setup.ts';
+import { dirAltAz, lst, shellDir, skyRows, turn, type AltAz } from '../core/sky.ts';
+import type { Star } from '../core/catalog.ts';
 
 /* ---------- tonight's real sky: the catalog stars at the site, by sidereal time ---------- */
 // The site: 51 N, 0 E.
 export const LAT = 51, LON = 0;
 // The star shell stays inside the camera far plane.
 const RADIUS = 4000;
-const RAD = Math.PI / 180;
 // A star fades in over this many magnitudes past the limit.
 const FADE_MAG = 0.75;
 
 // The star group's matrix for a sky time.
-// Star positions sit on the shell at hour angle zero (x to the meridian, y to the west, z to the pole).
-// The sky turns by LST about the pole, then tilts so the pole stands at the latitude.
-// One matrix per redraw does the whole sky; no per-star work on the CPU.
-// Scene axes: x east, y up, z south.
+// The maths is skyRows in core/sky.ts.
+// One matrix per redraw turns the whole sky.
+// The CPU does no work per star.
 function skyMatrix(ms: number, out = new Matrix4()): Matrix4 {
-  const L = lst(ms, LON) * RAD, cl = Math.cos(L), sl = Math.sin(L);
-  const cp = Math.cos(LAT * RAD), sp = Math.sin(LAT * RAD);
-  // Tilt (east = -y, up = x cos + z sin, south = x sin - z cos) times a turn by L about z.
-  // Rows are the scene x, y and z; columns take the star's (x, y, z).
+  const r = skyRows(lst(ms, LON), LAT);
   return out.set(
-    -sl, -cl, 0, 0,
-    cp * cl, -cp * sl, sp, 0,
-    sp * cl, -sp * sl, -cp, 0,
+    r[0], r[1], r[2], 0,
+    r[3], r[4], r[5], 0,
+    r[6], r[7], r[8], 0,
     0, 0, 0, 1,
   );
 }
 
-// Blackbody tint from the colour index B-V (Ballesteros temperature, Helland fit). Unknown is white.
+// Blackbody tint from the colour index B-V.
+// It uses the Ballesteros temperature and the Helland fit.
+// An unknown index gives white.
 function tint(ci: number, out: Color): Color {
   if (Number.isNaN(ci)) return out.setRGB(1, 1, 1);
   const bv = Math.max(-0.4, Math.min(2, ci));
@@ -52,7 +49,8 @@ const vert = /* glsl */ `
   varying float vUp;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
-    // The star shell is centred on the origin, the camera sits near it: below the horizon is hidden.
+    // The shell's centre is the origin, near the camera.
+    // So world.y under 0 is below the horizon.
     vUp = world.y;
     // Low stars shine through more air: 0.3 magnitudes per airmass.
     float airmass = 1.0 / max(world.y / ${RADIUS.toFixed(1)}, 0.03);
@@ -76,7 +74,8 @@ const frag = /* glsl */ `
   }
 `;
 
-// The device pixel ratio; the stage's resize sets it.
+// The device pixel ratio.
+// The stage's resize sets it.
 const starDpr = { value: 1 };
 export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
 // The faintest magnitude in full.
@@ -88,18 +87,19 @@ export function setStarLimit(mag: number): void { magLim.value = mag; }
 
 export const sky = { stars: [] as Star[], index: new Map<number, number>(), points: null as Points | null };
 
-// The bundle is observatory/dist/main.js, so the catalog sits one folder up.
-// The catalog loads in the background; the promise settles when the stars are in the scene.
-export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.meta.url).href).then((stars) => {
+// setup.ts starts the catalog early.
+// The promise settles when the stars are in the scene.
+// It rejects when the catalog does not load.
+export const skyReady: Promise<void> = starFile.then((stars) => {
   const n = stars.length;
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), look = new Float32Array(n * 3);
   const c = new Color();
   stars.forEach((s, i) => {
-    const ra = s.ra * RAD, dec = s.dec * RAD, cd = Math.cos(dec);
-    // Hour angle zero at RA zero: x toward the meridian, y west.
-    pos.set([RADIUS * cd * Math.cos(ra), -RADIUS * cd * Math.sin(ra), RADIUS * Math.sin(dec)], i * 3);
+    const d = shellDir(s.ra, s.dec);
+    pos.set([RADIUS * d.x, RADIUS * d.y, RADIUS * d.z], i * 3);
     tint(s.ci, c).toArray(col, i * 3);
-    // Brighter is larger and brighter; magnitude 6.5 barely shows.
+    // A brighter star is larger and brighter.
+    // Magnitude 6.5 barely shows.
     const k = Math.max(0, Math.min(1, (6.5 - s.mag) / 7.9));
     look[i * 3] = 1.2 + 3.6 * k;
     look[i * 3 + 1] = 0.12 + 0.88 * Math.pow(k, 0.7);
@@ -117,6 +117,7 @@ export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.
   scene.add(pts);
   sky.stars = stars; sky.points = pts;
   skyAt(lastMs);
+  onLeave(() => disposeTree(pts));
 });
 
 let lastMs = Date.now();
@@ -126,14 +127,11 @@ export function skyAt(ms: number): void {
   if (sky.points) skyMatrix(ms, sky.points.matrix);
 }
 
-// Where a star by Hipparcos id stands at a sky time, read back through the sky matrix.
+// Where a star by Hipparcos id stands at a sky time.
+// It reads back through the sky matrix.
 export function starAltAz(hip: number, ms: number): AltAz | null {
   const i = sky.index.get(hip);
   if (i === undefined) return null;
-  const s = sky.stars[i], ra = s.ra * RAD, dec = s.dec * RAD, cd = Math.cos(dec);
-  const v = new Vector3(cd * Math.cos(ra), -cd * Math.sin(ra), Math.sin(dec)).applyMatrix4(skyMatrix(ms));
-  // Invert altAzDir in world/laser.ts: x = sin(az) cos(alt), z = -cos(az) cos(alt).
-  const alt = Math.asin(Math.max(-1, Math.min(1, v.y))) / RAD;
-  const az = ((Math.atan2(v.x, -v.z) / RAD) + 360) % 360;
-  return { alt, az };
+  const s = sky.stars[i];
+  return dirAltAz(turn(skyRows(lst(ms, LON), LAT), shellDir(s.ra, s.dec)));
 }
