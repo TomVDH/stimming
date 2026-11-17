@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -64,6 +64,7 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
+    { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
     // The Tube group opens with the funnel's mode: the deck's cloud as a tube (Tom's default) or the analytic shells.
@@ -112,6 +113,9 @@ uniform float uBase;
 #define BASE uBase
 // How far ahead the deck runs, in km: Dev's Deck reach (146 by default).
 uniform float uReach;
+// The wind's bearing as a world direction: the deck and its breaks drift with it.
+uniform vec2 uWDir;
+#define WDIR uWDir
 // The base shelf: its centre and its two half widths.
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
@@ -183,6 +187,21 @@ float stormShapeSun(vec3 p) {
   }
   return d;
 }
+// The deck's breaks, in world km: broad ragged gaps that drift downwind with the deck.
+float breakN(vec2 xz) {
+  vec2 c = xz - WDIR * uT * 0.012;
+  return 0.7 * vn(c * 0.4 + 11.0) + 0.3 * vn(c * 1.3 + 3.0);
+}
+// How open the deck is over a camera-space point, 0 shut to 1 open: its far breaks.
+// They open at every storm, most toward the horizon and the sun's side. A full storm keeps a few narrow ones;
+// a young one opens more and wider. Near the eye the deck stays shut. The sun's shafts fall through them.
+float deckOpen(vec3 p) {
+  float dist = length(p.xz);
+  float far = smoothstep(10.0, 45.0, dist) * (0.35 + 0.65 * max(dot(p.xz / max(dist, 1e-3), normalize(gSunC.xz + 1e-5)), 0.0));
+  if (far <= 0.0) return 0.0;
+  float sy = sin(uYaw), cy = cos(uYaw), thr = mix(0.42, 0.3, stormK());
+  return far * smoothstep(thr, thr - 0.1, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
+}
 // The storm as the eye sees it: the base runs out over and behind the eye, and far left, right and ahead.
 // It reads as a vast system, not one cell; its underside rises a little toward the eye.
 // No edge of the deck shows in frame at any lens; far off it meets the horizon's glow.
@@ -199,6 +218,8 @@ float stormShape(vec3 p) {
     float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
     front += 1.6 * smoothstep(0.3 + 0.65 * stormK(), 0.5 + 0.65 * stormK(), n);
   }
+  // Far off the deck breaks open.
+  front += 1.5 * deckOpen(p);
   return smin(d, front, 0.8);
 }
 // The cloud base over a point, in km: lower in each tornado's pit. main.js deckAt() holds the same curve.
@@ -276,6 +297,8 @@ float deckN(vec3 p, vec3 pn, float calm) {
   // Up close the plates read as contour bands: they stay away from each tornado's pit.
   if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) if (uTorZ[i].w > 0.0) flank *= smoothstep(2.8, 6.2, length(p.xz - uTorN[i].xy));
   if (flank > 0.0) d += 0.09 * flank * sin(p.y * 15.0 + atan(p.z - TOWER.y, p.x - TOWER.x) * 2.0 + 1.3 * vn3(pn * 1.4));
+  // Cauliflower lumps round the tower's top and the overshooting dome.
+  if (p.y > 6.0) d -= smoothstep(6.0, 9.0, p.y) * (W(pn * 0.55 + 3.1) - 0.4) * 0.7;
   // Fine lumps, for the near base.
   if (gFine > 0.0) d += (vn3(pn * 4.3) - 0.5) * 0.14 * gFine * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
   // Ragged scud hangs under the base.
@@ -386,32 +409,6 @@ vec2 cylinder(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
 // Ground, road, poles, farm and funnels live in world space; the storm lives in camera space.
 vec3 toWorld(vec3 c) { float s = sin(uYaw), k = cos(uYaw); return vec3(c.x * k + c.z * s, c.y, -c.x * s + c.z * k); }
 vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
-`;
-const SCENE = /* glsl */`
-uniform vec3 uSun, uSunCol, uAmb;
-uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
-// The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
-uniform sampler2D tTor;
-uniform float uStormOn;
-${SHARED}
-
-/* ---------- the wind ---------- */
-// The wind blows left to right and a little toward the eye.
-// Dev's Wind sets its bearing and strength (uWind).
-uniform vec2 uWDir;
-#define WDIR uWDir
-// Gust fronts: broad patches that roll downwind over the wheat, 0 calm to 1 full gust.
-float gust(vec2 xz) {
-  vec2 q = xz - WDIR * uT * (3.0 + 6.0 * uWind);
-  float g = vn(q * vec2(0.022, 0.04)) * 0.65 + vn(q * 0.1 + 4.0) * 0.35;
-  return smoothstep(0.4, 0.78, g);
-}
-// How far a stalk's tip leans at height h, in metres.
-vec2 bend(vec2 xz, float h, float g) {
-  float lean = (0.03 + 0.22 * g) * (0.25 + 0.75 * uWind);
-  float flutter = 0.015 * sin(uT * 3.1 + xz.x * 1.7 + xz.y * 2.3) * (0.3 + uWind);
-  return WDIR * (lean + flutter) * h * h;
-}
 
 /* ---------- the deck's shadow ---------- */
 // The deck's cover along the sun's ray from a world point w, in km: 0 is open sun, 1 full shade.
@@ -429,6 +426,31 @@ float sunCover(vec3 w) {
   float n = 0.7 * vn(m * 0.4 + 11.0) + 0.3 * vn(m * 1.3 + 3.0);
   return max(core, 0.88 * smoothstep(0.4, 0.66, n));
 }
+`;
+const SCENE = /* glsl */`
+uniform vec3 uSun, uSunCol, uAmb;
+uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
+// The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
+uniform sampler2D tTor;
+uniform float uStormOn;
+${SHARED}
+
+/* ---------- the wind ---------- */
+// The wind blows left to right and a little toward the eye.
+// Dev's Wind sets its bearing and strength (uWind); WDIR comes with the storm GLSL.
+// Gust fronts: broad patches that roll downwind over the wheat, 0 calm to 1 full gust.
+float gust(vec2 xz) {
+  vec2 q = xz - WDIR * uT * (3.0 + 6.0 * uWind);
+  float g = vn(q * vec2(0.022, 0.04)) * 0.65 + vn(q * 0.1 + 4.0) * 0.35;
+  return smoothstep(0.4, 0.78, g);
+}
+// How far a stalk's tip leans at height h, in metres.
+vec2 bend(vec2 xz, float h, float g) {
+  float lean = (0.03 + 0.22 * g) * (0.25 + 0.75 * uWind);
+  float flutter = 0.015 * sin(uT * 3.1 + xz.x * 1.7 + xz.y * 2.3) * (0.3 + uWind);
+  return WDIR * (lean + flutter) * h * h;
+}
+
 // The share of a lit colour left in shade: the sun's part goes, the sky's fill stays.
 vec3 shadeK(float cover) {
   vec3 l = uSunCol * 0.5 + uAmb * 0.55;
@@ -1042,6 +1064,8 @@ function packFunnels(rw, rh) {
 const FAR_STRIPS = 8;
 // Dev's Bake from and Deck reach, in km.
 let farD = 16, deckReach = 146;
+// Dev's God rays: the shafts' strength.
+let god = 0.6;
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
   const key = [S.hour, sunAz, base, storm, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
@@ -1049,7 +1073,8 @@ function bakeFar(u, rw, rh, n) {
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
   const whole = !fun.farReady || fun.farHold || moved;
-  if (!fun.farBusy) return;
+  // A running page renews the far field strip by strip, so its breaks drift with the deck.
+  if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
   gl.uniform1i(u.uMode, 1);
   gl.uniform1f(u.uFarD, farD);
@@ -1118,6 +1143,8 @@ function funnelPass(w, h) {
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, baseNow());
   gl.uniform1f(u.uReach, deckReach);
+  gl.uniform1f(u.uGod, god);
+  gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
@@ -1308,6 +1335,7 @@ act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wak
 act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
+act.god = v => { god = clamp(+v, 0, 1); wake(); };
 act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
 act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
@@ -1348,6 +1376,7 @@ act.eye(qs0.has('eye') ? +qs0.get('eye') : ui.setting('eye')?.value ?? 8);
 act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
 // ?bakefrom=30 and ?deckreach=60 set them for one load.
 act.bakeFrom(qs0.has('bakefrom') ? +qs0.get('bakefrom') : ui.setting('bakeFrom')?.value ?? 16);
+act.god(qs0.has('god') ? +qs0.get('god') : ui.setting('god')?.value ?? 0.6);
 act.deckReach(qs0.has('deckreach') ? +qs0.get('deckreach') : ui.setting('deckReach')?.value ?? 146);
 // QA: ?storm=0.2 sets the storm for one load.
 if (qs0.has('storm')) act.storm(clamp(+qs0.get('storm'), 0, 1));

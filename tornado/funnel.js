@@ -177,6 +177,8 @@ uniform float uRim;
 #ifdef TUBE
 // The tube's own knobs: band strength, band count, and the stretch up the tube.
 uniform float uTbBands, uTbCount, uTbStretch;
+// Dev's God rays: the strength of the sun's shafts in the haze, 0 to 1.
+uniform float uGod;
 #endif
 // The scene's own uniforms, the same values as the scene pass.
 uniform vec3 uSun, uSunCol, uAmb, uZen, uMid, uBand, uAnti;
@@ -955,6 +957,21 @@ void main() {
   // The baked far field lies behind the near field.
   vec4 far = texture(tFar, gl_FragCoord.xy / uRes);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
+  // Sun shafts: the haze under the deck scatters sunlight to the eye below the deck's far breaks.
+  // Twelve jittered steps to the base or the ground, 45 km at most; the history smooths them.
+  // The breaks drift with the deck, so the shafts sweep slowly over the plain.
+  if (uGod > 0.0 && uSun.y > 0.0) {
+    float tG = min(rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y, 45000.0), sh = 0.0;
+    for (int i = 0; i < 12; i++) {
+      vec3 w = (rd * ((float(i) + jit2) * tG / 12.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
+      // The sun's ray from this point crosses the base here: open sky there lights the point.
+      vec3 q = w + uSun * (max(BASE - w.y, 0.0) / max(uSun.y, 0.02));
+      sh += deckOpen(toCam(q)) * exp(-w.y / 1.2);
+    }
+    // Light only: the shafts glow most toward the sun.
+    float cg = dot(rd, uSun);
+    now.rgb += uSunCol * vec3(1.0, 0.86, 0.68) * (sh / 12.0) * (tG / 45000.0) * mix(hg(cg, 0.6), 1.0, 0.2) * 0.25 * uGod;
+  }
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
   if (uCount == 1) outC = vec4(float(gWork), float(steps), 0.0, 1.0);

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:56:23Z
+updated_at: 2026-11-17T08:01:13Z
 parent: stimming-oh7b
 ---
 
@@ -181,3 +181,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: Storm drives the funnels (default 0.85 unchanged): a young storm gives paler, cleaner funnels with more sky light and less haze and density; a full one gives darker, dirtier funnels the deck's tone runs further down, with more rain wrap.
 
 - 2026-11-17, Tom: towers show at low Storm: the tower's radius, top and overshooting dome read max(Storm, 0.6), so a young cell stands as a towering, sunlit Cb over a thin, broken deck (default unchanged).
+
+- 2026-11-17, Tom: far breaks and sweeping god rays: deckOpen() opens holes in the deck from 10 km to full at 45 km, toward the sun's side, at every Storm (few and narrow at full storm), drifting downwind with the deck; the storm pass marches 12 jittered steps per ray and lights air whose sun ray crosses a break (haze by height, forward scatter); Dev row God rays (default 0.6, ?god). The far bake renews in strips while running so the far breaks move. Cheap cauliflower lumps on the tower top and dome. Shafts read as warm fans under the deck, best with the sun ahead; not yet crisp beams.
