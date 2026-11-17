@@ -251,4 +251,3 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
 ## Claude-specific overrides
 
 Live in `CLAUDE.md` next to this file. CLAUDE.md `@`-imports this file.
-    - Phones (Tom, 2026-11-16: "needs mobile spacing", "we cannot see the hover effect"). In portrait up to 640 px the dial keeps 24 px clear of each edge and the gaps open up. The tube's plate is never wider than the window, so the page never pans sideways (it did by 18 px). A touch has no hover: the first tap on a toy shows it (tube, wedge, its icon's motion), a tap on another toy moves there, a tap away puts it down, and a second tap on the same toy opens it. The tap gives the link focus, so the focus path does the work; Chrome focuses a link on the tap itself, so the check reads the focus from before the tap.
