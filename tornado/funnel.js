@@ -36,7 +36,7 @@ export const KNOBS = [
   ['Colour', 'alb', 'Reflectivity', 0.2, 1.5, 0.01, 0.9],
   ['Colour', 'sunK', 'Sunlit weight', 0, 2, 0.01, 0.85],
   ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.1],
-  ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.55],
+  ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.95],
   ['Colour', 'hazeK', 'Haze on funnel', 0, 2, 0.01, 1],
   ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 0.6],
   ['Colour', 'dustK', 'Dust tint', 0, 2, 0.01, 1],
@@ -497,6 +497,9 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
   float se = uStorm - 0.85;
   alb *= 1.0 - 0.35 * se;
   alb = mix(alb, alb * vec3(0.8, 0.75, 0.7), clamp(se * 5.0, 0.0, 1.0));
+  // The F scale: F0 to F1 pale ropes, F2 to F3 grey and dusty, F4 to F5 near black.
+  alb *= 1.0 + 0.15 * (1.0 - smoothstep(0.1, 0.3, uFk));
+  alb = mix(alb, alb * vec3(0.75, 0.72, 0.68), smoothstep(0.3, 0.8, uFk));
   // The lower funnel takes the dust's brown.
   alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), clamp((1.0 - smoothstep(0.0, 0.35, u)) * uDebris * uDustK, 0.0, 1.0));
   return mix(alb * (sunL * uSunK + ambL * 0.8 * uAmbK), stC, topK);
@@ -548,7 +551,8 @@ float cloudShade(vec3 p) {
 // How far up the join a height is: 0 on the body, 1 where the bell meets the deck.
 // The deck's tone starts down the upper funnel, a bell's height under the bell, and grows up it.
 // A heavier storm takes the deck's tone further down the funnel; a young one keeps it to the bell.
-float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0) * clamp(1.0 + 4.0 * (uStorm - 0.85), 0.2, 1.6), gDeck, h); }
+// A higher F takes it further down too: a wedge is one body with the deck.
+float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0) * clamp(1.0 + 4.0 * (uStorm - 0.85), 0.2, 1.6) * (1.0 + 0.8 * uFk), gDeck, h); }
 
 // The layers on one stretch of a ray, front to back among themselves.
 void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float Reb, float Ra, float Rb, float tapa, float tapb, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, inout vec3 fAcc, inout float fT) {
