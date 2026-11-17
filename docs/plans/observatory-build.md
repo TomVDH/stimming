@@ -248,6 +248,19 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 - [ ] **Step 2:** They take the opening's light: warm toward the west at dusk, dark on the sky glow at night.
 - [ ] **Step 3:** Stills at 1280 and 375, dusk 0 s and night; frame time at 375. **Gate:** show Tom; commit locally with his words.
 
+### Task 7h: Trees from Tom's pine (Tom, 2026-11-17)
+
+**Files:** Create `observatory/models/pine.glb` (Tom's upload, unchanged), `observatory/src/world/impostor.ts` (the bake). Modify `observatory/src/world/woods.ts`, `CREDITS.md`.
+
+- [ ] **Step 1:** Load the GLB with `GLTFLoader` from `three/addons/` (three 0.170.0). Smooth texture filtering with mipmaps; alpha cut kept.
+- [ ] **Step 2:** Near trees as the instanced mesh; the rest as impostors baked at load from the same model (crossed cards). Keep the trim, the count, the starlit tops, dark bases, haze layers and per-tree variation.
+- [ ] **Step 3:** `CREDITS.md` row: Pine Tree - PS1 Low Poly by Wersaus33, Sketchfab, CC BY 4.0.
+- [ ] **Step 4:** Stills at 1280 and 375, dusk and night, plus a treeline crop; frame time at 375; load time. **Gate:** show Tom; commit locally with his words.
+
+### Task 7i: The hill · Task 7j: The complex · Task 7k: The telescope
+
+One change each, as in the spec section "Detail and trees". Each ends with stills and Tom's gate.
+
 ### Task 7d: Distance haze (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/sky/haze.ts`, `observatory/src/world/far.ts`.

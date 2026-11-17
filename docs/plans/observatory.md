@@ -119,6 +119,17 @@ Tom, 2026-11-17: "we want faraway mountains -- distance haze -- clouds (railgun 
 4. **A live trial of the pick sequence.** Tom plays the cuts in the browser.
 5. **Order.** One change at a time, each shown to Tom: mountains, haze, clouds, then the trial. The outside view, fast time (Task 8) included, is done before the inside of the telescope (Task 9).
 
+## Detail and trees
+
+Tom, 2026-11-17: "lets also up detail on the complex, telescope and the hill it sits on -- can we get some cheap but nice looking trees we can instance?" Tom then supplied the tree model: "Pine Tree - PS1 Low Poly" by Wersaus33 (Sketchfab), CC BY 4.0, a 124 KB GLB of about 1,180 triangles in alpha-cut branch cards with one 23 KB PNG.
+
+Four changes, one at a time, each shown to Tom:
+
+1. **Trees.** The woods use Tom's pine. Near trees (the clearing edge and what the close cuts see) are the real mesh, instanced. The rest are impostors baked from the same model at load: crossed cards, a few triangles each. The texture filters smoothly (no PS1 pixel crunch) to sit in the Villeneuve look. The woods keep the starlit tops, the dark bases, the haze layers and the per-tree variation. Credit in `CREDITS.md`.
+2. **The hill.** Uneven ground, rock outcrops, grass and bare earth, a gravel path from the road to the buildings, a road edge.
+3. **The complex.** Roof edge, window frames, a door canopy and a chimney on the building; panel seams and a catwalk rail on the domes; stone courses on the drums; rails on the roll-off shed; a fence along the road.
+4. **The telescope.** A real mount, a counterweight, a dew shield and a finder scope.
+
 ## The pick sequence and the lights
 
 Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
