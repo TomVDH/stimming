@@ -72,3 +72,14 @@ Levers, biggest first (each one change, judged live):
 3. The light probes: change 1 (light reuse at seven tenths) took 14 % of reads. More needs a cheaper probe.
 4. The scene pass: split it the same way.
 5. The funnel shells.
+
+## Lever 1 tried: grazing rays jump to a cloud floor (2026-11-17, not kept)
+
+A rising sky ray starts its deck samples where it reaches a floor height; no cloud hangs below it.
+
+- The cloud's real floor, probed on a 60 x 60 km grid (full noise, distance under 0.3 km): 0.12 km above the ground near the tornadoes and the tower. Elsewhere the noise hangs up to 0.9 km under the base (0.45 km at the default base).
+- So a safe floor is base - 1.0 km, with discs round each tornado (pit radius x 1.33 + 1.5 km, about 4 km) and the tower (7 + 3 km) where the floor is the ground.
+- The rays that cost the most look into the storm: their ground tracks cross a disc early. Safe jump: reads 34.7 to 34.6, steps 15.4 to 13.6. No gain.
+- Unsafe upper bound (floor base - 0.65 km, no discs): reads -16 %, frame about -16 %. It would cut through real low cloud by the funnels.
+
+The approach cost comes from deckD()'s far shortcut: under the base it returns distance - 1.1 km, so a ray 1.3 km under the base steps only about 0.2 km x 750. A tighter bound for the noise's reach would lengthen those steps; it changes nothing the eye sees if the bound holds.
