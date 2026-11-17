@@ -117,8 +117,10 @@ export const MAX_FUNNELS = 4;
  * The funnel pass's fragment shader.
  * @param {string} sky  shared/sky.js SKY: skyCol() needs skDusk().
  * @param {string} storm  The scene's shared GLSL: camera, sky, haze, the supercell.
+ * @param {boolean} [tube]  True builds the Cloud tube probe in place of the shells.
  */
-export const funnelFS = (sky, storm) => /* glsl */`#version 300 es
+export const funnelFS = (sky, storm, tube = false) => /* glsl */`#version 300 es
+${tube ? '#define TUBE' : ''}
 precision highp float;
 out vec4 outC;
 // The storm GLSL below declares tNoise, the noise volume.
@@ -143,7 +145,12 @@ ${storm}
 // The lab's approved knob values.
 const float uWid = ${KNOB.width.toFixed(3)}, uSheathK = ${KNOB.sheath.toFixed(3)}, uEdgeW = ${KNOB.edge.toFixed(3)}, uAmp = ${KNOB.amp.toFixed(3)};
 // A step through the onion is this share of its radius: the lab's 60 steps.
+// The tube samples its volume, so it takes steps half as long.
+#ifdef TUBE
+const float K_ON = 0.15;
+#else
 const float K_ON = 0.3;
+#endif
 
 // One tornado's values, set by pick(). The names are the lab's uniforms.
 float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDark, uLean, uSway, uFk, uDs, uZs, uRope, uSeed, uTime, uLabM, uFade, uDens;
@@ -545,6 +552,75 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
     fT *= 1.0 - a;
   }
 }
+#ifdef TUBE
+/* ---------- the Cloud tube probe: the deck's own cloud, pulled down round the axis ---------- */
+// Features run this much longer up the tube than round it.
+const float TB_STRETCH = 0.6;
+// The deck's material in one layer's spinning frame: idx picks the layer's spin and climb.
+// The same noise volume and recipe as deckN(): three octaves, a fine one, and Worley lumps.
+float tubeN(float ang, float h, float x, float R, int idx) {
+  vec2 ph = phOf(idx);
+  float zz = h / uZs - ph.y;
+  float rb = clamp(0.73 * R / uZs, 0.6, 3.5);
+  // The helix leans by arc, as in sheathN().
+  float a = ang - ph.x - zz * 0.99 / (rb * gAng);
+  // A thin funnel keeps several features round it: no ring-shaped flakes.
+  float rr = x * max(rb, 1.0) * 1.4 * gAng;
+  // No offset per layer: the bands cut one body of cloud.
+  vec3 c = vec3(cos(a) * rr, zz * TB_STRETCH, sin(a) * rr) + uSeed * 23.0;
+  float n = (0.5 * N(c) + 0.25 * N(c * 2.03 + 7.1) + 0.125 * N(c * 4.1 + 3.7) + 0.0625 * N(c * 8.3)) / 0.9375;
+  // The deck's rounded lumps, in two sizes, are not stretched: they stay round.
+  vec3 cl = vec3(c.x, zz + uSeed * 23.0, c.z);
+  n += (W(cl * 0.65 + 1.7) - 0.4) * 0.32 + (W(cl * 2.0) - 0.4) * 0.16;
+  // Erosion: fine detail eats into the edges, as in sheathN().
+  return n - (1.0 - n) * N(cl * 3.7 + 7.0) * 0.45;
+}
+// One step through the tube, as a volume: extinction per metre into sig, colour times it into sum.
+// The core is a soft solid of deck cloud; the bands are thin radial layers with clear air between.
+// Each band's share of the step is exact, so thin bands do not alias.
+void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, float jt, inout vec3 sum, inout float sig) {
+  float fl = smoothstep(0.15, 0.6, sHm);
+  float fade = 1.0 - smoothstep(0.75, 1.0, sHm);
+  if (fade <= 0.0) return;
+  vec3 ps = pa + rd * (len * jt);
+  vec2 q = ps.xz - axisAt(ps.y);
+  float R = mix(ga.R, gb.R, jt), Re = mix(ga.Re, gb.Re, jt), tap = mix(ga.tap, gb.tap, jt);
+  float x = length(q) / Re, ang = atan(q.y, q.x);
+  float nc = tubeN(ang, ps.y, x, R, 0);
+  // The core: the deck's cloud inside a ragged edge.
+  float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.6, fl);
+  float wC = 0.1 + uEdgeW * uAmp;
+  float tp = clamp(tap - (nc - 0.5) * 0.7, 0.0, 1.0);
+  // Point samples read thinner than the shells' exact ramp: the core takes a little more.
+  float dC = 2.1 * smoothstep(0.0, 0.45, tp) * clamp((edge - x) / wC, 0.0, 1.0);
+  // Near the tip only the dense parts hold.
+  if (tp < 1.0) dC *= mix(smoothstep(0.45, 0.7, nc), 1.0, smoothstep(0.35, 1.0, tp));
+  float s = funnelSig(dC, R);
+  // The bands: thin and spaced as the shells, but cut from the deck's cloud.
+  float sw = 0.3 * gSp;
+  for (int j = 0; j < SHEATHS; j++) {
+    float fk = float(j) / float(SHEATHS - 1);
+    float rk = 1.0 + gSp * float(j) * (1.0 - fl);
+    float I = split ? layerInt(ga.x, xm, len * 0.5, rk, sw) + layerInt(xm, gb.x, len * 0.5, rk, sw) : layerInt(ga.x, gb.x, len, rk, sw);
+    I = min(I, 3.5 * sw * R);
+    if (I < 1e-3 * len) continue;
+    // Each band turns at its own rate; the switch falls in clear air.
+    float nb = j == 0 ? nc : tubeN(ang, ps.y, x, R, j + 1);
+    // The lumps widen the noise's spread, so the cut sits higher than the shells'.
+    float cov = mix(0.5, 0.72, fk);
+    s += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov, cov + 0.14, nb) * (0.6 + 0.4 * nb) * uSheathK * (1.0 - fl);
+  }
+  s *= uDens * fade * live(ps.y);
+  if (s < 1e-7) return;
+  // The deck's light: a step toward the sun finds thinner cloud on the lit side of a lump.
+  vec3 pl = ps + gSunC * (0.3 * R);
+  vec2 ql = pl.xz - axisAt(pl.y);
+  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * 3.0 + 0.5, 0.0, 1.0);
+  vec3 c = shellCol(q, ps.y, R, x * Re / R, cs + (1.0 - lit) * 0.6, ph0, ph1, skyH, topK, stC);
+  sum += mix(c, gHzC, hzF) * s;
+  sig += s;
+}
+#endif
 void main() {
   vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
@@ -591,7 +667,12 @@ void main() {
   vec3 cCol = vec3(0.0);
   vec3 acc = vec3(0.0);
   float T = 1.0;
+  // The tube's shorter steps need a longer march.
+#ifdef TUBE
+  for (int i = 0; i < 480; i++) {
+#else
   for (int i = 0; i < 320; i++) {
+#endif
     if (t > tEnd || T < 0.01) break;
     int k = -1;
     for (int j = 0; j < ${MAX_FUNNELS}; j++) { if (k < 0 && t >= a0[j] && t <= a1[j]) k = j; }
@@ -682,10 +763,16 @@ void main() {
         float Rem = 0.5 * (g0.Re + g1.Re), Rm = 0.5 * (g0.R + g1.R), tm = 0.5 * (g0.tap + g1.tap);
         float xm = length(qm) / Rem;
         split = xm < min(g0.x, g1.x) - 0.01;
+#ifdef TUBE
+        // The tube is part of the volume: no layers to order.
+        tubeSeg(p, rc, st, g0, g1, xm, split, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fract(jit + float(i) * 0.618034), sum, sig);
+        split = false;
+#else
         if (split) {
           shellSeg(p, rc, st * 0.5, g0.x, xm, g0.Re, Rem, g0.R, Rm, g0.tap, tm, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc, fT);
           shellSeg(pm, rc, st * 0.5, xm, g1.x, Rem, g1.Re, Rm, g1.R, tm, g1.tap, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc2, fT2);
         } else shellSeg(p, rc, st, g0.x, g1.x, g0.Re, g1.Re, g0.R, g1.R, g0.tap, g1.tap, sHm, csF, topK, stC, hzF, ph0, ph1, skyH, fAcc, fT);
+#endif
       }
       Geo gs = g0;
       g0 = g1;

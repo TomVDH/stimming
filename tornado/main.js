@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -50,6 +50,11 @@ const ui = initPage({ id: 'tornado', bar: {
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
+    // A probe: the funnel as the deck's cloud pulled down into a tube.
+    { type: 'choice', id: 'funnel', label: 'Funnel', value: 'shells', persist: true, options: [
+      { value: 'shells', label: 'Shells' },
+      { value: 'tube', label: 'Cloud tube' },
+    ], onPick: v => act.funnel(v) },
   ],
   quality: true,
   keys: [['click', 'touch down'], ['drag', 'steer'], ['0-5', 'F-scale']],
@@ -661,7 +666,7 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
-const fun = { n: 0, prog: null, noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true };
+const fun = { n: 0, prog: null, progs: {}, mode: 'shells', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true };
 let env = null;
 try {
   env = environment(canvas, {
@@ -697,9 +702,19 @@ const FUN_RES = 0.5;
 const gl = env.gl;
 // The pass compiles beside the first frames; until then the plain shows no funnel.
 // The poll waits on a timer, so a background tab still finishes the link.
-linked(gl, { f: program(gl, TRI_VS, funnelFS(SKY, SHARED)) }, { wait: () => new Promise(r => setTimeout(r, 30)) })
-  .then(set => { fun.prog = set.f; env.touch(); })
-  .catch(err => console.error('funnel pass:', err));
+// Each funnel mode has its own program; the Cloud tube compiles when first picked.
+function useFunnel(mode) {
+  fun.mode = mode;
+  if (fun.progs[mode]) { fun.prog = fun.progs[mode]; fun.fresh = true; env.touch(); return; }
+  if (fun.progs[mode] === null) return;
+  fun.progs[mode] = null;
+  linked(gl, { f: program(gl, TRI_VS, funnelFS(SKY, SHARED, mode === 'tube')) }, { wait: () => new Promise(r => setTimeout(r, 30)) })
+    .then(set => { fun.progs[mode] = set.f; if (fun.mode === mode) { fun.prog = set.f; fun.fresh = true; } env.touch(); })
+    .catch(err => { delete fun.progs[mode]; console.error('funnel pass:', err); });
+}
+act.funnel = v => useFunnel(v === 'tube' ? 'tube' : 'shells');
+// QA: ?funnel=tube picks the Cloud tube for one load.
+act.funnel(new URLSearchParams(location.search).get('funnel') || ui.setting('funnel')?.value || 'shells');
 // The storm's noise volume: the scene pass reads it from the first frame.
 fun.noise = noiseVolume(gl);
 // The scene pass reads the volume on unit 0, its sampler's default: the runner binds only 2D textures there.
@@ -1017,7 +1032,7 @@ async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
   list.forEach(q => gl.deleteQuery(q));
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), max: +ms[n - 1].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas };
+if (qs.has('qa')) window.__qa = { tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');
