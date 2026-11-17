@@ -33,8 +33,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -58,6 +58,10 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'choice', id: 'preset', label: 'Look', value: 'stimming', persist: true, options: [
+      { value: 'stimming', label: 'Stimming' },
+      { value: 'photoreal', label: 'Photoreal' },
+    ], onPick: v => act.preset(v) },
     { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [
       { value: 'film', label: 'Film' },
       { value: 'aces', label: 'ACES' },
@@ -593,6 +597,8 @@ uniform vec3 uSun, uSunCol, uAmb;
 uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
 uniform float uRain;
 uniform vec2 uRainDir;
+uniform vec3 uWB;
+uniform float uSat, uCon;
 // The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
 uniform sampler2D tTor;
 uniform float uStormOn;
@@ -1071,6 +1077,10 @@ vec3 envScene(vec2 uv) {
     float w = ppRain(uv * 1.8, asp, uT, uRain, uRainDir, uAirN);
     c = c * (1.0 - 0.1 * min(w, 1.0)) + (uSunCol * 0.04 + uAmb * 0.07) * w;
   }
+  // The Look preset's camera: white balance, saturation, then contrast about a dark mid tone.
+  c *= uWB;
+  c = max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uSat), 0.0);
+  c = 0.05 * pow(c / 0.05, vec3(uCon));
   return c;
 }
 `;
@@ -1125,6 +1135,8 @@ function setSun(hour) {
   // Once the sun is down its light goes, and the sky's fill dims into twilight.
   const up = sstep(-0.035, 0.012, el), tw = 0.45 + 0.55 * sstep(-0.12, 0.0, el);
   for (let i = 0; i < 3; i++) { sunCol[i] *= up; amb[i] *= tw; }
+  // The Look preset scales the sun and the sky's fill.
+  for (let i = 0; i < 3; i++) { sunCol[i] *= LOOK_NOW.sunK; amb[i] *= LOOK_NOW.skyK; }
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
@@ -1163,6 +1175,7 @@ try {
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
+      uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
       uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uSwayPh: () => line.uSwayPh,
@@ -1179,6 +1192,26 @@ const S = env.state;
 Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky: false });
 Object.assign(S, { clouds: 0, stars: 0, haze: 0.4, bloom: 0.18, thr: 1.4, orbs: 0, vig: 0.38, grain: 0.035, tintK: 0, expo: 1 });
 S.frame = false;
+
+/* ---------- the Look preset ---------- */
+// Stimming is the tuned shot. Photoreal reads as a camera on the plain:
+// a harder sun over a dimmer sky, a daylight white balance, a camera's saturation,
+// more contrast, a faint wide lens glare, a natural lens falloff and fine grain.
+const LOOKS = {
+  stimming: { sunK: 1, skyK: 1, expoK: 1, wb: [1, 1, 1], sat: 1, con: 1, bloom: 0.18, thr: 1.4, vig: 0.38, grain: 0.035, tintK: 0 },
+  photoreal: { sunK: 1.3, skyK: 0.85, expoK: 1, wb: [0.92, 1, 1.12], sat: 0.85, con: 1.15, bloom: 0.07, thr: 0.6, vig: 0.22, grain: 0.02, tintK: 3 },
+};
+let LOOK_NOW = LOOKS.stimming;
+// It sets the post values and the Grain row; Tone map stays as it is.
+// On load, keepGrain keeps the Grain row's saved value.
+act.preset = (v, keepGrain = false) => {
+  LOOK_NOW = LOOKS[v] || LOOKS.stimming;
+  const L = LOOK_NOW;
+  Object.assign(S, { bloom: L.bloom, thr: L.thr, vig: L.vig, tintK: L.tintK });
+  if (!keepGrain) ui.setting('grain')?.set(L.grain, true);
+  setSun(S.hour);
+  act.expo(expoTrim);
+};
 
 /* ---------- near rain ---------- */
 // The Rain row: 0 is dry.
@@ -1727,7 +1760,7 @@ act.lens = v => { lensMM = +v || 28; wake(); };
 // Each curve's own gain sets the scene's level; Exposure trims both.
 const TONE_GAIN = { film: 1, aces: 1.1 };
 let expoTrim = 1;
-act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wake(); };
+act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone] * LOOK_NOW.expoK; wake(); };
 act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
 // Each Window row and the runner value it sets. The scene draws the rain itself.
 const LOOK = { glass: 'glass', wet: 'wet', fog: 'fog', bokeh: 'defocus', grain: 'grain' };
@@ -1772,6 +1805,8 @@ else if (qs0.has('time')) act.tod(HOURS[qs0.get('time')] ?? HOURS.golden);
 else if (savedTod !== null) act.tod(+savedTod);
 else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
+// QA: ?look=photoreal picks the Look for one load.
+act.preset(qs0.get('look') || ui.setting('preset')?.value || 'stimming', !qs0.has('look'));
 // QA: ?tone=film picks the curve for one load.
 act.tone(qs0.get('tone') || ui.setting('tone')?.value || 'aces');
 act.expo(ui.setting('expo')?.value ?? 1);
@@ -1873,7 +1908,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { preset: act.preset, traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

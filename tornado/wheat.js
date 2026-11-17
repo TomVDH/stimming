@@ -13,6 +13,9 @@ const float WH_CELL = 0.045;
 const float WH_TOP = 1.09, WH_SKIN = 1.0;
 // The grid turns against the road, so no row lines up with the eye.
 const mat2 WH_R = mat2(0.83, -0.56, 0.56, 0.83);
+// The lens focuses far: a near stalk blurs by the aperture's radius, about 3 mm at f/5.6.
+// In metres that blur is the same at every depth, so one constant serves.
+const float WH_BLUR = 0.003 / WH_CELL;
 // The field's edge along the verge wanders, in metres past WHEAT_GAP.
 float whEdge(float z) { return 0.32 * (vn(vec2(z * 0.35, 1.7)) - 0.5) + 0.14 * (vn(vec2(z * 2.1, 4.3)) - 0.5); }
 // How far a world point lies inside the field, in metres; below 0 it is verge.
@@ -131,7 +134,7 @@ vec4 wheatStand(vec3 rd, float px) {
         vec2 D = onHead ? Dh0 + Dhv * sc : Ds0 + Dsv * sc;
         float y = p0.y + rd.y * sc, d = length(D);
         // A pixel's width here, in cell units.
-        float aa = max((t0 + sc) * px / uFoc / WH_CELL, 0.02);
+        float aa = max((t0 + sc) * px / uFoc / WH_CELL, 0.02) + WH_BLUR;
         float e = (top - y) / hl;
         float r = 0.0, a = 1.0;
         bool head = onHead && e > -0.5 && e < 1.0;
