@@ -78,8 +78,10 @@ function hash(x: number, z: number): number {
 const PINE_URL = new URL('../models/pine.glb', import.meta.url).href;
 // The model's own alpha cut.
 const PINE_CUT = 0.486;
-// The bark fills the texture's top-left quarter.
-const isBark = (u: number, v: number) => u < 0.5 && v < 0.5;
+// The bark fills the texture's top-left corner, to v 0.523.
+// The trunk's foot and top strips sit at v 0.52.
+const BARK_V = 0.53;
+const isBark = (u: number, v: number) => u < 0.5 && v < BARK_V;
 // The crown's reach is measured in this many height bands.
 const BANDS = 10;
 
@@ -130,8 +132,9 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   dilate(img.data, w, h);
   const mean = new Color(0, 0, 0);
   let n = 0;
-  // The branches fill the lower half of the image.
-  for (let i = (h >> 1) * w; i < w * h; i++) {
+  // The branches fill the rows under the bark.
+  const barkRows = Math.ceil(BARK_V * h);
+  for (let i = barkRows * w; i < w * h; i++) {
     if (img.data[i * 4 + 3] < 128) continue;
     mean.r += toLinear(img.data[i * 4] / 255);
     mean.g += toLinear(img.data[i * 4 + 1] / 255);
@@ -143,8 +146,8 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   // The bark takes that mean colour, so it keeps the tree's tone.
   const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const meanL = lum(mean.r, mean.g, mean.b);
-  for (let y = 0; y < h >> 1; y++) {
-    for (let x = 0; x < w >> 1; x++) {
+  for (let y = 0; y < barkRows; y++) {
+    for (let x = 0; x < barkRows * w / h; x++) {
       const i = (y * w + x) * 4;
       const k = lum(toLinear(img.data[i] / 255), toLinear(img.data[i + 1] / 255), toLinear(img.data[i + 2] / 255)) / meanL;
       img.data[i] = toSrgb(mean.r * k * BARK[0]) * 255;
