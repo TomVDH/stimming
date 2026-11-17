@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<style>html { background: oklch(0.12 0.02 70); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tornado flipbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* Tornado flipbook spike: baked loops play back, one per F step. */
+:root {
+  --ink: oklch(0.94 0.01 80);
+  --dim: oklch(0.7 0.02 80);
+  --panel: oklch(0.14 0.015 70 / 0.82);
+  --line: oklch(0.4 0.02 70 / 0.6);
+  --accent: oklch(0.8 0.13 80);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: oklch(0.12 0.02 70); color: var(--ink); font: 14px/1.3 Gabarito, system-ui, sans-serif; overflow: hidden; }
+video { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; object-fit: cover; pointer-events: none; }
+video + video { opacity: 0; }
+.panel {
+  position: fixed; left: 16px; bottom: 16px; width: min(340px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; backdrop-filter: blur(6px);
+}
+.panel h1 { margin: 0 0 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.f { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.f output { font-size: 40px; font-weight: 800; line-height: 1; color: var(--accent); min-width: 3.2ch; font-variant-numeric: tabular-nums; }
+.f span { color: var(--dim); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+input#f { height: 28px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+button { font: inherit; color: var(--ink); background: oklch(0.22 0.02 70); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--accent); color: oklch(0.15 0.02 70); border-color: transparent; }
+.fps { position: fixed; right: 16px; top: 12px; color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<video id="v0" muted playsinline loop preload="auto" aria-hidden="true"></video>
+<video id="v1" muted playsinline loop preload="auto" aria-hidden="true"></video>
+<div class="panel">
+  <h1>Tornado flipbook</h1>
+  <div class="f"><output id="fOut">F2.0</output><span id="fName">cone</span></div>
+  <input id="f" type="range" min="0" max="5" step="0.01" value="2" aria-label="F-scale">
+  <div class="btns">
+    <button id="pause" aria-pressed="false">Pause</button>
+  </div>
+</div>
+<div class="fps" id="fps"></div>
+<script type="module">
+// Plays one baked loop per F step and fades between the two nearest.
+// Video el[i % 2] holds loop i, so a step change reloads the hidden one.
+const NAMES = ['storm cloud', 'funnel cloud', 'cone', 'wide cone', 'stovepipe', 'wedge'];
+const el = [document.getElementById('v0'), document.getElementById('v1')];
+const fEl = /** @type {HTMLInputElement} */ (document.getElementById('f'));
+const pauseEl = document.getElementById('pause');
+const fpsEl = document.getElementById('fps');
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const qs = new URLSearchParams(location.search);
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+let f = qs.has('f') ? clamp(Number(qs.get('f')) || 0, 0, 5) : +fEl.value;
+let fShown = f, paused = still, raf = 0, last = 0;
+fEl.value = String(f);
+pauseEl.setAttribute('aria-pressed', String(paused));
+
+// Blob URLs keep a step change free of network waits.
+const urls = Array.from({ length: 6 }, (_, i) => `flip/f${i}.mp4`);
+await Promise.all(urls.map(async (u, i) => {
+  try { urls[i] = URL.createObjectURL(await (await fetch(u)).blob()); } catch { /* The plain path still plays. */ }
+}));
+
+// The loop each element holds now.
+const holds = [-1, -1];
+// The element that holds the lower loop leads; the other follows its clock.
+let lead = 0;
+function want(i) {
+  const v = el[i % 2];
+  if (holds[i % 2] === i) return;
+  holds[i % 2] = i;
+  v.src = urls[i];
+  // A new loop starts at the leader's time, so the two stay in step.
+  v.addEventListener('loadeddata', () => {
+    const o = el[(i + 1) % 2];
+    // A seek takes time, so a playing loop aims a little ahead.
+    if (holds[(i + 1) % 2] >= 0 && o.readyState >= 2) v.currentTime = (o.currentTime + (paused ? 0 : 0.08)) % (o.duration || 5);
+    else if (still) v.currentTime = 1;
+    if (!paused) v.play().catch(() => {});
+  }, { once: true });
+}
+function apply() {
+  const lo = Math.min(4, Math.floor(fShown)), m = fShown - lo;
+  want(lo); want(lo + 1);
+  lead = lo % 2;
+  // el[1] lies on top: its opacity is the weight of the loop it holds.
+  el[1].style.opacity = String(holds[1] === lo + 1 ? m : 1 - m);
+  document.getElementById('fOut').textContent = `F${fShown.toFixed(1)}`;
+  document.getElementById('fName').textContent = NAMES[Math.round(fShown)];
+}
+// A slider jump eases over about a second, so it reads as growth.
+function tick(now) {
+  raf = 0;
+  const dt = last ? Math.min(0.1, (now - last) / 1000) : 0.016;
+  last = now;
+  fShown += (f - fShown) * (1 - Math.exp(-dt / 0.6));
+  if (Math.abs(f - fShown) < 0.002 || still) fShown = f;
+  apply();
+  if (fShown !== f) raf = requestAnimationFrame(tick);
+  else last = 0;
+}
+const wake = () => { if (!raf) raf = requestAnimationFrame(tick); };
+fEl.addEventListener('input', () => { f = +fEl.value; wake(); });
+pauseEl.addEventListener('click', () => {
+  paused = !paused;
+  pauseEl.setAttribute('aria-pressed', String(paused));
+  for (const v of el) if (v.src) paused ? v.pause() : v.play().catch(() => {});
+  if (!paused) sync();
+});
+
+// The follower runs a little fast or slow until it meets the leader.
+// A large drift seeks instead.
+// The difference wraps round the loop, so the loop point is no drift.
+let drift = 0;
+function sync() {
+  const a = el[lead], b = el[1 - lead];
+  a.playbackRate = 1;
+  if (a.readyState < 2 || b.readyState < 2 || !a.duration) return;
+  const D = a.duration;
+  let d = (b.currentTime - a.currentTime) % D;
+  if (d > D / 2) d -= D;
+  if (d < -D / 2) d += D;
+  drift = d;
+  if (Math.abs(d) > 0.5) { b.currentTime = (a.currentTime + 0.08) % D; b.playbackRate = 1; }
+  else b.playbackRate = Math.abs(d) < 1 / 48 ? 1 : 1 - Math.max(-0.3, Math.min(0.3, d * 2));
+}
+setInterval(() => { if (!paused && !document.hidden) sync(); }, 200);
+// The readout: decoded frames a second of both videos, and their drift.
+// A new source resets a video's counter.
+const seen = [0, 0];
+let lastT = performance.now(), decoded = 0;
+setInterval(() => {
+  if (paused || document.hidden) return;
+  el.forEach((v, i) => {
+    const n = v.getVideoPlaybackQuality?.().totalVideoFrames ?? 0;
+    decoded += n >= seen[i] ? n - seen[i] : n;
+    seen[i] = n;
+  });
+  const now = performance.now();
+  fpsEl.textContent = `video · ${Math.round(decoded * 1000 / (now - lastT))} frames/s decoded · drift ${Math.round(drift * 1000)} ms`;
+  decoded = 0; lastT = now;
+}, 1000);
+if (still) fpsEl.textContent = 'reduced motion: still frame';
+apply();
+window.__flip = { get f() { return fShown; }, set f(v) { f = fShown = clamp(v, 0, 5); fEl.value = String(f); apply(); }, el };
+</script>
+</body>
+</html>
