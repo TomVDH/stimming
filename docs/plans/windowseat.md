@@ -1,5 +1,7 @@
 # Window seat (`windowseat`) implementation plan
 
+Status: done · Bean: `stimming-w1nd`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** The night side of the Earth slides past below you from orbit. Storms flicker inside the clouds, and you hear the lightning as radio.

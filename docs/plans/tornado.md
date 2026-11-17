@@ -1,5 +1,7 @@
 # Tornado alley (`tornado`) implementation plan
 
+Status: active · Bean: `stimming-dwwg`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Many sessions build this toy, one stage at a time. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A wide, still, deadpan cinematic vista of the Oklahoma plains under a vast supercell. Several tornadoes can touch down at once; each carries an F-scale, F0 to F5, that sets its size, speed and violence. Place them, scale them and watch them cross the land.

@@ -1,5 +1,7 @@
 # Port list: main shelf at v1.5
 
+Status: active · Bean: `stimming-3s8z`
+
 Tom, 2026-11-15: every main shelf toy can be ported, and each one starts at version `1.5` (`version` in `toys.json`), no matter its state before.
 Lab toys hold `version: null` and wait.
 The decisions behind each column are in [code-health.md](../code-health.md).

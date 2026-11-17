@@ -1,5 +1,7 @@
 # Coast and meteor (`meteor`) implementation plan
 
+Status: active · Bean: `stimming-ko3s`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A calm cove at dusk. Tap the sky: a meteor streaks in, its light sweeps the cliff's shadow across the bay, and the boom arrives late. The biggest one hits beyond the horizon, and the sea pulls back, then returns.

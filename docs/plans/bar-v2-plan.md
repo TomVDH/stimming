@@ -1,5 +1,7 @@
 # Bar v2 Implementation Plan
 
+Status: done · Bean: `stimming-tbpn`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Bar v2 Corners shell in `shared/stim.js` and `shared/stim.css`, then move Galaxy onto it as the pilot.

@@ -1,5 +1,7 @@
 # Fire and smoke: the shared module and its reach
 
+Status: done · Bean: `stimming-oeym`
+
 Tom, 2026-11-16 (decision 13 in [code-health.md](../code-health.md)): Fire's flame and smoke become one shared module that other toys reuse.
 Bean `stimming-oeym`, under epic `stimming-3s8z`.
 

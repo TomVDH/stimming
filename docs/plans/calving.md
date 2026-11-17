@@ -1,5 +1,7 @@
 # Calving (`calving`) implementation plan
 
+Status: active · Bean: `stimming-2ddv`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Many sessions build this toy, one stage at a time. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A cinematic fjord. A glacier wall towers over dark water. Tap the ice: a crack runs, a tower of ice leans and falls, the splash goes up, and a slow surge rolls across the fjord toward the camera.

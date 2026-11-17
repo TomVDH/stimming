@@ -1,5 +1,7 @@
 # Shared shader library
 
+Status: active · Bean: `stimming-ssrh`
+
 Bean: `stimming-ssrh`. Started 2026-11-09. Tom picks; nothing here is built yet.
 
 Tom, Train Ride chat, 2026-11-09: "we also need to spin off sub session into REUSABLE shader effects that are shared between several toys; some of these too will be sourced from havoc / buoy business".

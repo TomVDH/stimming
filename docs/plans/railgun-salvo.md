@@ -1,5 +1,7 @@
 # Railgun: Salvo fire mode (`stimming-e39e`) design
 
+Status: done · Bean: `stimming-qsnm`
+
 > Design spec. Tom approved it section by section, 2026-11-12. Plan: `docs/plans/railgun-salvo-plan.md`. Build nothing until Tom approves the plan.
 
 **Goal:** A second Railgun fire mode beside today's Rail. The hold banks up to five rounds. The release ripples them out. The rounds crater the rock, break it, then hunt its big chunks in the sky.

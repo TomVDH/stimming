@@ -1,5 +1,7 @@
 # Washing line: one scene (proposal for review)
 
+Status: done · Bean: `stimming-d1vq`
+
 Bean `stimming-d1vq`. Tom, 2026-11-15: can East Van and the multi-place iteration; make one incredibly high-quality new scene; review first. When it ships, the four places retire (git keeps them).
 
 Nothing is built until Tom picks a concept and approves the spec.

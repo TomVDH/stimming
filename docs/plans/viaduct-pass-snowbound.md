@@ -1,5 +1,7 @@
 # Night viaduct, Pass: snowbound (spec)
 
+Status: done · Bean: `stimming-3cmz`
+
 > Sub-project 1 of 2 for the Pass rebuild that Tom asked for on 2026-11-09. Bean `stimming-3cmz`.
 > Sub-project 2 is the avalanche on tap. It gets its own spec.
 

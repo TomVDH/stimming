@@ -1,5 +1,7 @@
 # Modularization audit
 
+Status: done · Bean: `stimming-5kiq`
+
 Bean: `stimming-5kiq` (epic `stimming-3s8z`). Audit of 2026-11-14. A plan: no toy changes here.
 A toy adopts a module in its own chat, when Tom picks it (`AGENTS.md`, Process).
 

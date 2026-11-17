@@ -1,5 +1,7 @@
 # Night viaduct, Port: polish (spec)
 
+Status: done · Bean: `stimming-3cmz`
+
 > Sub-project 1 of 3 for the Port pass that Tom asked for on 2026-11-08. Bean `stimming-3cmz`.
 > Sub-project 2 is layers and settings. Sub-project 3 is interactions. Each one gets its own spec.
 

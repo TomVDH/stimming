@@ -1,5 +1,7 @@
 # Lantern lake (`lanterns`) implementation plan
 
+Status: done · Bean: `stimming-h35c`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A still lake at dusk. Tap to set paper lanterns free; they rise, drift on the wind and burn in the water below them. A Festival sends up a river of light.

@@ -1,5 +1,7 @@
 # Railgun Salvo implementation plan
 
+Status: done · Bean: `stimming-qsnm`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add Salvo, a second Railgun fire mode: the hold banks up to five rounds, the release ripples them out, and the rounds crater the rock, break it, then hunt its big chunks.

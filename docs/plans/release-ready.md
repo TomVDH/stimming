@@ -1,5 +1,7 @@
 # Release readiness: the approved label
 
+Status: done · Bean: `stimming-jfwe`
+
 Bean: `stimming-jfwe` (epic `stimming-3s8z`). Written 2026-11-16.
 A toy gets the approved label only when it passes every item on this list. Tom gives the label; nothing else does.
 Each item comes from a rule that already exists. The source column names that rule. This page adds no new rule, except the Attributions section in the toy doc.
