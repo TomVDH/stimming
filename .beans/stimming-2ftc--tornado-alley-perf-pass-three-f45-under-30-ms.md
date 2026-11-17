@@ -47,3 +47,28 @@ Three F4.5, ?qa&tor=F4.5,F4.5,F4.5&glass=0&age=20, 1.8 MP. Fault: at age 20 no f
 
 Tried, no gain: deckN's low terms gated by height (exact, ratio 1.011). Too visible: probes on the still deck only (12 % of pixels move 5 %+), no underside probe (51 %).
 Reads are not the main cost: 14 % fewer reads saved about 3 %. The next step needs a split of the funnel shells, the deck march and the bake.
+
+## Cost split (2026-11-17, three F4.5 pinned at age 50)
+
+Method: the storm program's source is read from the page; a copy with one part removed is compiled beside it and timed against it frame by frame (gpuTime, 6 pairs of 8 frames). The tornadoes' life is set endless and the clock is held, so all three stay down. Load from other sessions moves single pairs; the medians below have tight pairs.
+
+| Part removed | Frame ratio | Share of frame |
+|---|---|---|
+| Storm pass, all | 0.335 | about 66 % |
+| Deck march (live and bake) | 0.49 | about 51 % |
+| Deck light probes (stormLit) | 0.81 | about 19 % |
+| Far-field bake strip (one per frame) | 0.825 | about 17 % |
+| Funnel shells | 0.857 | about 14 % |
+| Rain, sun shafts, dust | inside the noise | small |
+
+The scene pass (wheat, road, line, plain, objects) is the other third: not split yet.
+
+Deck reads, per pixel over the whole frame: 31. Before the ray meets cloud: 13 reads in 10.8 steps. In the cloud: 18, of which about 11 are light probes. The rays under the base step 0.75 x their distance to the cloud; a ray at a few degrees runs nearly parallel to the base, so it takes many short steps. The lowest 6 % of sky over the horizon meets no cloud before the bake, yet takes about 30 steps.
+
+Levers, biggest first (each one change, judged live):
+
+1. The approach under the base: a step bound from the gap to the lowest cloud (base, pits, hanging lumps), so grazing rays jump. Needs a safe floor height.
+2. The bake strip: renew it less often. The far breaks would drift more slowly.
+3. The light probes: change 1 (light reuse at seven tenths) took 14 % of reads. More needs a cheaper probe.
+4. The scene pass: split it the same way.
+5. The funnel shells.
