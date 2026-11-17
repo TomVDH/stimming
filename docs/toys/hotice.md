@@ -28,16 +28,16 @@ The lamp hangs on the pointer's mirror line, so its reflection follows the point
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3 (the default). Bar v2 still builds, hidden.
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | None |
-| Bottom left (actions) | Reset (key R): the melt |
-| Bottom right (slider) | Cold: sets the next seed. Colder grows faster, branches more and has shorter needles. |
-| Key strip | `[CLICK] seed a crystal`, `[MOVE] move the lamp`, `[ENTER] seed at random`, `[R] melt`; touch: `[TAP] seed a crystal` |
+| Choice | None |
+| Action | Reset (key R): the melt |
+| Slider | Cold: sets the next seed. Colder grows faster, branches more and has shorter needles. |
+| How to play | `[CLICK] Seed a crystal`, `[MOVE] Move the lamp`, `[ENTER] Seed a crystal at random`, `[R] Melt the dish` |
 | Settings | Lamp follows pointer (toggle, stored), site Quality |
-| Dev (`?dev`) | Pitch, Yaw, Zoom, Field of view, View Reset, Exposure, Needle sheen, Sparkle, Vapour (all stored) |
+| Dev (`?dev`) | Camera: Pitch, Yaw, Zoom, Field of view, View Reset. Look: Exposure, Needle sheen, Sparkle, Vapour. All stored. |
 <!-- /gen:bar -->
 
 | Gesture | Does |
