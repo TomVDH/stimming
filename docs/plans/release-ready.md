@@ -482,3 +482,17 @@ Batch 9, 2026-11-16 (Tom):
 | trails.1 | Keep in Settings | Colour (True, Mono) stays a player setting |
 | trails.2 | Wake for meteors | A meteor wakes the loop for its flight, then the sky rests again |
 | shadyos.1 | Keep in Settings | Trail stays a player setting |
+
+Batch 10, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| chamber.1 | Light to Dev; keep Mist and Tracks | Light becomes a `dev` row. Activity, Mist and Tracks stay player settings |
+| ink.1 | "dark field is default" | Dark field becomes the default light (today it is Backlit, `ink/index.html:142`). The Light row stays in Settings |
+| ink.2 | Keep own row | Ink Water keeps its four-step Quality row, as Fire does |
+| window.1 | Keep in Settings | Falling and Flying stay Settings rows |
+| window.2 | Keep the phrase | "Cozy quiet flight" keeps its label |
+| window.3 | Dev rows | Head lean, track offset, event and time become `dev` rows; the URL flags keep working |
+| windmap.1 | Trails to Dev only | Trails becomes a `dev` row; Look stays a player pick |
+| windmap.2 | Add keys | The actions get keys; Wind map's chat checks for clashes |
+| windmap.3 | Isobars and Fronts to Settings | The two overlay toggles move to Settings and keep their keys as shortcuts. The bar keeps View, + Cyclone and Wind |
