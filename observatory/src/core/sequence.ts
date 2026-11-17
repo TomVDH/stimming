@@ -18,10 +18,10 @@ export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 // glass: close on the objective glass, with tonight's stars in it.
 // The glass rises into the frame, stops and holds.
 export const CUTS: Cut[] = [
-  { shot: 'edge', fov: 16, phase: 'open' },
-  { shot: 'slit', fov: 19, phase: 'open' },
-  { shot: 'lift', fov: 50, phase: 'slew' },
-  { shot: 'roll', fov: 18, phase: 'slew' },
+  { shot: 'edge', fov: 8, phase: 'open' },
+  { shot: 'slit', fov: 10, phase: 'open' },
+  { shot: 'lift', fov: 34, phase: 'slew' },
+  { shot: 'roll', fov: 11, phase: 'slew' },
   { shot: 'glass', fov: 20, phase: 'slew' },
 ];
 export const cutOf = (shot: Shot): Cut => CUTS.find(c => c.shot === shot)!;
