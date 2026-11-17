@@ -174,7 +174,7 @@ A toy page puts play first. The stage fills the first screen. The controls sit i
 **Key Characteristics:**
 - Dark only. Every colour is OKLCH.
 - The shell has no accent colour of its own. Each toy brings one (`accent` in `toys.json`).
-- Square slab controls on dark glass. No hard shadows anywhere; the Bar v2 state cue is open (bean `stimming-zggq`).
+- Square slab controls on dark glass. An offset ring marks hover, press, pick and open. No hard shadows anywhere.
 - The flash box: white fill, dark ink, used for the intro logo and for every picked control.
 - Motion in the shell runs in steps at 30 fps, not in smooth curves.
 - No tap flash and no selection. Keyboard focus shows a ring in `--focus` on `:focus-visible` only (bean `stimming-knup`).
@@ -323,15 +323,14 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 The system is a hybrid, and each layer has its own device.
 
 - **The menu is flat.** Tiles have no card, no border and no shadow. Depth lives inside each icon as light: the shared `lit` glint and `rim` line (`index.html:203-210`).
-- **No hard shadows anywhere.** Bar v2 controls still ship hard offset shadows as state (hover 2 px, pick 3 px, sheet 5 px) until bean `stimming-zggq` replaces them with a new cue.
+- **No hard shadows anywhere.** Bar v2 controls show state with an offset ring: a 1 px `--fg` line 4 px off the slab. Hover shows it at 60%, a press snaps it to the edge, a pick or an open control holds it at full strength. A sheet and a choice group with a pick wear a `--ring` outline 3 px off.
 - **Bare text on the stage wears a soft dark halo**, so it stays legible on bright scenes. The logo and the toy name share it (Bar v2 rule 8). The shell still leaves them bare (`shared/stim.css:373`); see Drift and gaps.
 - **Glass is backdrop blur plus dimming.** The intro blurs and darkens the whole page behind it. v1 controls on a stage carry a frosted backing.
 
 ### Shadow Vocabulary
 
-- **Lift** (`--lift: 2px 2px 0 oklch(0.05 0.01 275)`): a hovered control, with `transform: translate(-1px, -1px)`.
-- **Shadow** (`--shadow: 3px 3px 0 oklch(0.07 0.01 275)`): a picked chip, an open Settings or tray button.
-- **Hard** (`--hard: 5px 5px 0 oklch(0.05 0.01 275)`): sheets.
+- **Ring** (a 1 px `--fg` line on `::after`, 4 px off the slab; `--ring: oklch(0.94 0.008 275 / 0.6)` for outlines): hover, press, pick and open on Bar v2 controls; sheets and picked choice groups.
+- `--lift`, `--shadow` and `--hard` stay defined for toys that still read them. The shell uses none.
 - **Halo** (`--halo: 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9)`): a `text-shadow` on the key strip.
 - **Intro glass** (`blur(60px) brightness(0.3)` in Signal, over a tint of `oklch(0.1 0.02 275 / 0.45)`): `shared/intro.css:26-27`, `:176`; values from `shared/intro.js:126`.
 - **v1 frost** (`blur(10px)` under `oklch(0.15 0.012 275 / 0.84)`; trays `blur(14px)` under `oklch(0.19 0.012 275 / 0.94)`): `shared/stim.css:169-172`, `:240-241`.
@@ -359,9 +358,10 @@ Square slab on dark glass. A box always means a control.
 
 - **Shape:** 26 px tall, never narrower than tall, 2 px radius, 1 px `--line` border, `0 10px` padding (`shared/stim.css:343-350`). 36 px on coarse pointers.
 - **Rest:** `--glass` backing, `--muted` text, slab caps.
-- **Hover (mouse only):** `--fg` text, border at 45% `--fg`, 1 px up and left, `--lift`. 0.15 s ease.
-- **Picked or open:** `--fg` fill, `--bg` text, `--shadow`. The pick outranks hover.
-- **Held:** 1 px down and right, no shadow.
+- **Hover (mouse only):** `--fg` text, border at 45% `--fg`, the ring at 60%. No movement.
+- **Press:** the ring snaps in to the slab's edge at full strength, in two 30 fps steps.
+- **Picked or open:** `--fg` fill, `--bg` text, the full ring. The pick outranks hover.
+- **Held:** the ring sits on the edge.
 - **Disabled:** 0.4 opacity, no lift.
 - **Focus:** no ring shows. See Drift and gaps.
 - **Icon chip:** square, a 14 px stroke icon at 1.5 width.
@@ -378,7 +378,7 @@ One box 26 px tall on `--glass`: a word label, then a 96 px track. The filled pa
 
 ### Sheet (Settings, Dev, tray)
 
-- **Shape:** 280 px wide, no radius, 1 px `--fg` border, `--hard` shadow, near-opaque backing (`shared/stim.css:413-419`).
+- **Shape:** 280 px wide, no radius, 1 px `--fg` border, a `--ring` outline 3 px off, near-opaque backing (`shared/stim.css:413-419`).
 - **Anatomy:** header row in bold caps at 0.14em with an `esc` keycap; sections of rows split by hairlines; a section label at 9.5 px; a Reset footer (`:424`, `:451-459`).
 - **Behaviour:** drops below its corner; on a narrow stage the left sheet rises from the bottom. A short stage scrolls the sheet inside its own box. Opens on click, never on hover.
 
@@ -493,5 +493,5 @@ Recorded as found. Nothing here is fixed.
 | 19 | Proposals, not final: the toy accents (first set, 2026-11-09), eight of the eleven series shots, five Flemish series names. | `toys.json`; `shared/series/shots.js`; `series.json` |
 | 20 | The contrast of small control text is not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. | `shared/stim.css:392`, `:453` |
 | 21 | The Creative North Star has no name. The playbook asks the owner for it; Tom has not set one. Colours keep the code's token names. | this file |
-| 22 | Bar v2 controls and sheets still wear hard offset shadows; the rule is none (bean `stimming-zggq`). The stage logo and name still wear no halo; the rule is the shared halo. | `AGENTS.md`; `docs/plans/bar-v2.md` |
+| 22 | Prism and Canal at dusk still draw their own hard shadows from `--hard` and `--lift`; each moves in its own chat. The stage logo and name still wear no halo; the rule is the shared halo (bean `stimming-jmnh`). | `AGENTS.md`; `docs/plans/bar-v2.md` |
 | 23 | The tonal ramps in `.impeccable/design.json` are made for the panel. They are not project tokens. | `.impeccable/design.json` |

@@ -313,9 +313,12 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 .stim2 {
   --slab: "Iosevka Term Slab", ui-monospace, monospace;
   --glass: oklch(0.13 0.012 275 / 0.86);
+  /* The shell draws no hard shadow. Some toys still read these three. */
   --shadow: 3px 3px 0 oklch(0.07 0.01 275);
   --hard: 5px 5px 0 oklch(0.05 0.01 275);
   --lift: 2px 2px 0 oklch(0.05 0.01 275);
+  /* The offset ring marks hover, press, pick and open. */
+  --ring: oklch(0.94 0.008 275 / 0.6);
   /* A dark halo keeps bare text legible on bright stages. */
   --halo: 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9);
   --chip: 26px;
@@ -348,25 +351,34 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
   box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: var(--chip); min-width: var(--chip); margin: 0; padding: 0 10px;
   font: inherit; letter-spacing: inherit; text-transform: inherit; white-space: nowrap; text-decoration: none;
+  position: relative;
   color: var(--muted); background: var(--glass); border: 1px solid var(--line); border-radius: 2px;
   cursor: pointer; -webkit-tap-highlight-color: transparent;
-  transition: color 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
-/* Hover lifts a control onto a hard shadow; a pick inverts it. */
-/* Touch screens get no hover state, so a tap never leaves a lift behind. */
+/* The ring stands 4 px off the slab. A press snaps it to the edge. */
+:is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .stim-ui .ver--build)::after {
+  content: ""; position: absolute; inset: -4px; border: 1px solid var(--fg); border-radius: 3px;
+  opacity: 0; pointer-events: none; transition: inset 0.066s steps(2, end), opacity 0.1s steps(2, end);
+}
+/* Touch screens get no hover state, so a tap never leaves a ring behind. */
 @media (hover: hover) {
-  :is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .s2-seg, .s2-step):hover {
-    color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); transform: translate(-1px, -1px); box-shadow: var(--lift);
-  }
+  :is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .s2-seg, .s2-step):hover { color: var(--fg); border-color: oklch(0.94 0.008 275 / 0.45); }
+  :is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .stim-ui .ver--build):hover::after { opacity: 0.6; }
+  .s2-step:hover { outline: 1px solid var(--ring); outline-offset: 3px; }
 }
+:is(.s2-chip, .stim-ui .snd, .s2-set, .s2-info, .stim-ui .ver--build):active::after { inset: -1px; opacity: 1; }
+/* A pick inverts to the flash box and keeps the full ring. */
 /* The pick outranks hover, so a hovered pick keeps its ink. */
 .stim-ui :is(.s2-chip[aria-pressed="true"], .s2-set[aria-expanded="true"], .s2-tray[aria-expanded="true"]) {
-  color: var(--bg); background: var(--fg); border-color: var(--fg); box-shadow: var(--shadow);
+  color: var(--bg); background: var(--fg); border-color: var(--fg);
 }
+.stim-ui :is(.s2-chip[aria-pressed="true"], .s2-set[aria-expanded="true"], .s2-tray[aria-expanded="true"])::after { opacity: 1; }
 /* A held chip takes the whole gesture: no scroll, no select, no callout. */
 .stim-ui .s2-chip[data-hold] { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.stim-ui .s2-chip[data-hold][aria-pressed="true"] { transform: translate(1px, 1px); box-shadow: none; }
-:is(.s2-chip, .s2-seg, .s2-step, .s2-tray)[aria-disabled="true"]:hover { transform: none; box-shadow: none; }
+.stim-ui .s2-chip[data-hold][aria-pressed="true"]::after { inset: -1px; }
+:is(.s2-chip, .s2-tray)[aria-disabled="true"]::after { opacity: 0 !important; }
+:is(.s2-seg, .s2-step)[aria-disabled="true"] { outline: none !important; }
 .s2-chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }
 .stim-ui .s2-icon { width: var(--chip); padding: 0; text-transform: none; }
 .stim-ui svg { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -401,11 +413,14 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 }
 
 /* Choice: one joined block with hairlines; the pick is the flash box. */
-.s2-seg, .s2-step { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 2px; transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
+.s2-seg, .s2-step { display: inline-flex; background: var(--glass); border: 1px solid var(--line); border-radius: 2px; transition: border-color 0.15s ease; }
+/* A joined block wears one ring round the whole group, not one per chip. */
+:is(.s2-seg, .s2-step) .s2-chip::after { display: none; }
+.s2-seg:has(.s2-chip[aria-pressed="true"]) { outline: 1px solid var(--ring); outline-offset: 3px; }
 /* A joined chip is never narrower than it is tall, so touch targets hold. */
-:is(.s2-seg, .s2-step) .s2-chip, :is(.s2-seg, .s2-step) .s2-chip:hover { height: calc(var(--chip) - 2px); min-width: calc(var(--chip) - 2px); justify-content: center; background: none; border: 0; border-radius: 0; box-shadow: none; transform: none; }
+:is(.s2-seg, .s2-step) .s2-chip, :is(.s2-seg, .s2-step) .s2-chip:hover { height: calc(var(--chip) - 2px); min-width: calc(var(--chip) - 2px); justify-content: center; background: none; border: 0; border-radius: 0; }
 .s2-seg .s2-chip + .s2-chip { border-left: 1px solid var(--line); }
-.s2-seg .s2-chip[aria-pressed="true"] { background: var(--fg); box-shadow: none; }
+.s2-seg .s2-chip[aria-pressed="true"] { background: var(--fg); }
 :is(.s2-seg, .s2-step)[aria-disabled="true"], .s2-tray[aria-disabled="true"] { opacity: 0.4; }
 :is(.s2-seg, .s2-step)[aria-disabled="true"] .s2-chip { cursor: default; }
 .s2-step .s2-icon { color: var(--fg); font-size: 14px; }
@@ -413,11 +428,11 @@ main { position: relative; display: grid; gap: 14px; min-width: 0; }
 .s2-step-now { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 96px; padding: 0 4px; color: var(--fg); }
 .s2-dot { width: 8px; height: 8px; flex: none; }
 
-/* Sheets drop below a corner, with a hard shadow. */
+/* Sheets drop below a corner, inside an offset ring. */
 .stim-ui > .s2-sheet {
   top: calc(12px + var(--chip) + 8px); z-index: 2; pointer-events: auto;
   display: grid; align-items: stretch; gap: 0; box-sizing: border-box; width: 280px; max-width: calc(100% - 20px);
-  color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); box-shadow: var(--hard);
+  color: var(--fg); background: oklch(0.12 0.012 275 / 0.97); border: 1px solid var(--fg); outline: 1px solid var(--ring); outline-offset: 3px;
   /* A short stage scrolls the sheet inside its own box. */
   max-height: calc(100% - 2 * 12px - var(--chip) - 8px); overflow-y: auto; overscroll-behavior: contain;
 }
