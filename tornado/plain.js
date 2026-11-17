@@ -7,8 +7,8 @@
 
 export const PLAIN_GLSL = /* glsl */`
 /* ---------- the far plain ---------- */
-// Air between the eye and a far shape: the ground's own haze, so the shapes sit in the land.
-vec3 plainHaze(vec3 col, vec3 rd, float z) { return mix(col, hazeCol(rd), 1.0 - exp(-z / 22000.0)); }
+// Air between the eye and a far shape: the scene's one air model, so every shape sits in the same air.
+vec3 plainHaze(vec3 col, vec3 rd, float z) { return hazed(col, rd, z); }
 // Foliage in the storm light: dark green, with the sun's share where the deck lets it through.
 vec3 leafCol(vec3 P, float k) {
   float sun = 1.0 - sunCover(P * 0.001);
