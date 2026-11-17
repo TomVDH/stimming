@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:23:29Z
+updated_at: 2026-11-17T07:27:31Z
 parent: stimming-oh7b
 ---
 
@@ -161,3 +161,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (a weird green patch on the left): flat green tints came from the gloom colour, the rain curtain, the low haze bands and the storm core's tint; the gloom is now cool slate, the rain neutral, the bands warm dust, the core dark slate. Green returns only where light passes rain (the palette step).
 
 - 2026-11-17, Tom: cloud shadows on the plain: sunCover() follows the sun's ray to the base (the storm's bulk shades outright; the ragged fringe gives soft patches drifting downwind; a low sun stretches them into long bands); only the sun's share of light is taken. God rays can reuse sunCover.
+
+- 2026-11-17, Tom: Dev always on for now: tornado/index.html adds ?dev to its own address (remove that head script to hide Dev).
