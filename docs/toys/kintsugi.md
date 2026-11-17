@@ -28,16 +28,16 @@ The old gold stays. Each break takes new lines, so after a few rounds every bowl
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3.
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | Glaze, segments: Celadon (1), Tenmoku (2), Shino (3), Indigo (4), each with a colour dot |
 | Bottom left (actions) | None |
 | Bottom right (slider) | None |
-| Key strip | `[CLICK] break`, `[MOVE] turn the light`, `[SPACE] break`; touch: `[TAP] break` |
+| Key strip | `[CLICK] break the bowl`, `[MOVE] turn the light`, `[SPACE] break the bowl`; touch: `[TAP] break the bowl` |
 | Settings | Site Quality, Reset (a new bowl with no breaks; the glaze stays) |
-| Dev (`?dev`) | Pitch, Yaw, Field of view, Distance, Exposure, Light size, Vein width (all stored) |
+| Dev (`?dev`) | Camera: Pitch, Yaw, Field of view, Distance. Light: Exposure, Size. Gold: Vein width. All stored. |
 <!-- /gen:bar -->
 
 | Gesture | Does |
