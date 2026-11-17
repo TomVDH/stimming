@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq, cadence, CUT_FPS,
-  OPEN_CUT, LIFT_CUT, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
+  OPEN_CUT, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
 } from '../observatory/src/core/sequence.ts';
 import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
 import { SHUTTER_S } from '../observatory/src/core/dome.ts';
@@ -75,13 +75,12 @@ test('the real machine: the slew starts when the lift shot starts', () => {
 // The time the lift comes within SETTLE of its goal.
 // The hold starts then.
 const settleT = (L) => { let t = 0; while (L.at(t).altLeft > SETTLE && t < 60) t += 0.001; return t; };
-test('a mid lift: the roll plays; the glass enters with 6 degrees to lift, rises, stops and holds 1.5 s', () => {
+test('a mid lift: the roll plays at least 2.5 s; the glass enters with 6 degrees at most, rises and holds 1.5 s', () => {
   const L = lift(15), r = play(L.at);
   assert.equal(names(r), 'edge,slit,lift,roll,glass');
   const roll = of(r, 'roll'), glass = of(r, 'glass');
-  assert.ok(roll.dur >= MIN_SHOT - 0.02 && roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
-  const left = L.at(glass.at).altLeft;
-  assert.ok(left <= GLASS_ENTER + 0.05 && left >= GLASS_ENTER - 0.2, `left at the glass ${left}`);
+  assert.ok(roll.dur >= ROLL_MIN - 0.02 && roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
+  assert.ok(L.at(glass.at).altLeft <= GLASS_ENTER + 0.05, `left at the glass ${L.at(glass.at).altLeft}`);
   assert.ok(L.T - glass.at >= GLASS_RISE - 0.02, `rise ${L.T - glass.at}`);
   assert.ok(Math.abs(r.end - (settleT(L) + GLASS_HOLD)) < 0.03, `end ${r.end}, settle ${settleT(L)}`);
   assert.ok(r.end >= 13 && r.end <= 24, `the sequence runs ${r.end} s`);
@@ -90,34 +89,28 @@ test('a long lift: the roll holds at most 9 s; the glass starts before the arriv
   // A budgeted lift: 30 degrees arrive about 14 s after the start.
   const L = lift(30, SHUTTER_S / 2, 3, 0.5), r = play(L.at);
   const roll = of(r, 'roll'), glass = of(r, 'glass');
-  assert.ok(roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
-  assert.ok(L.at(glass.at).altLeft <= GLASS_ENTER + 0.05, `left ${L.at(glass.at).altLeft}`);
+  assert.ok(roll.dur >= ROLL_MIN - 0.02 && roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
   assert.ok(L.T - glass.at >= GLASS_RISE - 0.02, `rise ${L.T - glass.at}`);
   assert.ok(r.end >= 13 && r.end <= 24, `the sequence runs ${r.end} s`);
 });
-test('a short lift: the roll gives way; the glass enters from under the frame and rises at least 2 s', () => {
-  // 8 degrees: about 4 are left when the shutter is open.
-  const L = lift(8), r = play(L.at);
-  assert.ok(!of(r, 'roll'), names(r));
-  assert.ok(L.T - of(r, 'glass').at >= GLASS_RISE - 0.02, `rise ${L.T - of(r, 'glass').at}`);
-  // A shot either shows for MIN_SHOT or is skipped: no flash.
-  for (const x of r.shots) assert.ok(x.dur >= MIN_SHOT - 0.02, `${x.shot} ${x.dur}`);
-});
-test('every lift: no shot flashes; the glass never starts before the shutter is open', () => {
-  for (const deg of [3, 6, 9, 12, 15, 19, 24]) {
-    const r = play(lift(deg).at);
+test('every lift plays all five shots: the roll at least 2.5 s, no flash, the glass after the open shutter', () => {
+  for (const deg of [0, 3, 6, 9, 12, 15, 19, 24]) {
+    const r = play(deg ? lift(deg).at : () => ({ altLeft: 0, altEta: 0 }));
+    assert.equal(names(r), 'edge,slit,lift,roll,glass', `${deg} degrees`);
+    assert.ok(of(r, 'roll').dur >= ROLL_MIN - 0.02, `${deg} degrees: roll ${of(r, 'roll').dur}`);
     for (const x of r.shots) assert.ok(x.dur >= MIN_SHOT - 0.02, `${deg} degrees: ${x.shot} ${x.dur}`);
     assert.ok(of(r, 'glass').at >= SHUTTER_S - 0.02, `${deg} degrees: glass at ${of(r, 'glass').at}`);
   }
 });
-test('a very short lift: the lift shot is skipped; the glass starts when the shutter is open', () => {
-  const L = lift(4), r = play(L.at);
-  assert.equal(names(r), 'edge,slit,glass');
-  assert.ok(Math.abs(of(r, 'glass').at - SHUTTER_S) < 0.02);
+test('a short lift: the glass starts later, with a smaller entry, after the roll', () => {
+  // 8 degrees: under 6 are left when the roll starts.
+  const L = lift(8), r = play(L.at);
+  const roll = of(r, 'roll'), glass = of(r, 'glass');
+  assert.ok(Math.abs(roll.dur - ROLL_MIN) < 0.03, `roll ${roll.dur}`);
+  assert.ok(L.at(glass.at).altLeft < GLASS_ENTER, `left ${L.at(glass.at).altLeft}`);
 });
-test('no lift: the glass shot holds 1.5 s after the shutter cuts', () => {
+test('no lift: the glass shot holds 1.5 s after the roll', () => {
   const r = play(() => ({ altLeft: 0, altEta: 0 }));
-  assert.equal(names(r), 'edge,slit,glass');
   assert.ok(Math.abs(of(r, 'glass').dur - GLASS_HOLD) < 0.03);
 });
 test('a pick on an open shutter starts with the lift shot', () => {
