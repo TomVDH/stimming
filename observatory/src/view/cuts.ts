@@ -1,6 +1,6 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Matrix4, Raycaster, Vector3 } from 'three';
+import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
@@ -14,7 +14,7 @@ import { complex } from '../world/complex.ts';
 import { hero } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
-import { cutFocus } from '../post/chain.ts';
+import { cutFocus, cutGrain } from '../post/chain.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
@@ -302,13 +302,22 @@ let stars: readonly Star[] | null = null, starsSet = false;
 function feedGlass(show: boolean): void {
   const sc = hero.scope;
   if (!sc) return;
-  if (stars && !starsSet) { sc.setStars(stars); starsSet = true; }
+  if (stars && !starsSet) {
+    sc.setStars(stars);
+    starsSet = true;
+    // The star map goes to the GPU now, not in the glass shot.
+    // Before the hero's warm-up, the warm-up uploads it.
+    const u = (renderer.properties.get(sc.glass.material) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+    const map = u?.uStars?.value;
+    if (map instanceof Texture) renderer.initTexture(map);
+  }
   if (show && sky.points) sc.setSky(sky.points.matrix);
 }
 
 function toWide(): void {
   mode = 'off';
   cutFocus(null);
+  cutGrain(0);
   showBars(false);
   black(0);
   still.style.display = 'none';
@@ -319,7 +328,8 @@ function toWide(): void {
 // Steps the dip: the last cut fades down, the wide shot fades up.
 function stepDip(dt: number): void {
   dipT += dt;
-  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); return; }
+  // The cuts' grain eases back as the black comes up.
+  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); cutGrain(1 - k); return; }
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
@@ -329,6 +339,7 @@ function stepDip(dt: number): void {
     // This frame shows full black.
     black(1);
     cutFocus(null);
+    cutGrain(0);
     return;
   }
   const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
@@ -425,12 +436,14 @@ export const cuts = {
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
-    if (!close) { cutFocus(null); return; }
+    if (!close) { cutFocus(null); cutGrain(0); return; }
     const s = locks.of(cutOf(shot));
     if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);
     cutFocus(s);
+    // The dip sets its own grain.
+    if (mode !== 'dip') cutGrain(1);
     beam(BEAM_CLOSE);
     showBars(true);
   },
