@@ -33,8 +33,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ rise: () => void, riseDur: (v: number) => void, riseTop: (v: number) => void, vehicles: () => void, f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { rise() {}, riseDur() {}, riseTop() {}, vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ rise: () => void, riseDur: (v: number) => void, riseTop: (v: number) => void, vehicles: () => void, f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, front: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { rise() {}, riseDur() {}, riseTop() {}, vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, front() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -84,6 +84,9 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
+    // Where the deck's front edge stands, km ahead of the eye; below 0 it runs on behind the eye.
+    // Ahead of the eye, the sun behind it lights a bright plain under a dark storm.
+    { type: 'slider', id: 'front', label: 'Front edge (km)', min: -6, max: 15, step: 0.5, value: -6, persist: true, onInput: v => act.front(v) },
     // The window, rain in the air and grain. The defaults keep the shot as it was.
     { type: 'toggle', group: 'Window', id: 'glass', label: 'Glass', value: false, persist: true, onToggle: v => act.look('glass', v) },
     { type: 'slider', group: 'Window', id: 'wet', label: 'Drops', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.look('wet', v) },
@@ -141,6 +144,8 @@ uniform float uBase;
 #define BASE uBase
 // How far ahead the deck runs, in km: Dev's Deck reach (146 by default).
 uniform float uReach;
+// The deck's front edge, km ahead of the eye: Dev's Front edge (-6, behind the eye, by default).
+uniform float uFront;
 // The wind's bearing as a world direction: the deck and its breaks drift with it.
 uniform vec2 uWDir;
 // The wind's strength, 0 to 1: Dev's Wind.
@@ -177,6 +182,8 @@ float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * 
 // The storm's growth for the deck's own terms: 1 from the default storm up, so that look holds.
 float stormK() { return clamp(uStorm / 0.85, 0.0, 1.0); }
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// The front edge's distance over a camera-space x in km: ragged, never a straight line.
+float frontAt(float x) { return uFront + (vn(vec2(x * 0.3, 1.7)) - 0.5) * 2.4 + (vn(vec2(x * 1.1, 4.2)) - 0.5) * 0.7; }
 
 // The sky in a direction: the shared dusk sky, turned away from the sun.
 vec3 skyCol(vec3 d) {
@@ -314,7 +321,9 @@ float stormShape(vec3 p) {
   float d = stormShapeSun(p);
   float under = BASE + 0.12 + 0.25 * smoothstep(-6.0, 4.0, p.z);
   // The slab runs from 6 km behind the eye to uReach ahead.
-  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach - 6.0)) - 0.5 * (uReach + 6.0));
+  // The slab runs from its front edge to uReach ahead.
+  float zN = frontAt(p.x);
+  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach + zN)) - 0.5 * (uReach - zN));
   // A young storm's deck is thin; a full one is a kilometre deep.
   float topY = BASE + mix(0.35, 1.0, stormK()), botY = under;
   // A young deck breaks into rafts with sky between; the gaps close as the storm grows.
@@ -618,6 +627,8 @@ float sunCover(vec3 w) {
   // The deck follows the storm: none at the start, a full lid at full storm.
   // The sun reaches the plain only through its openings: the breaks and a young deck's gaps.
   float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(deckOpen(qc, 0.05), raftGap(qc)));
+  // Past the front edge, nearer the eye, there is no deck to shade the plain.
+  deck *= smoothstep(-frontAt(qc.x) + 1.2, -frontAt(qc.x) - 1.2, qc.z);
   return max(core, 0.92 * deck);
 }
 `;
@@ -1249,7 +1260,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
@@ -1325,7 +1336,7 @@ function stormShapeJS(x, y, z) {
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
-  const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach - 6)) - 0.5 * (deckReach + 6);
+  const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach + front)) - 0.5 * (deckReach - front);
   const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
   return smin(d, front, 0.8);
 }
@@ -1490,6 +1501,8 @@ function packFunnels(rw, rh) {
 const FAR_STRIPS = 8;
 // Dev's Bake from and Deck reach, in km.
 let farD = 16, deckReach = 146;
+// Dev's Front edge, km ahead of the eye.
+let front = -6;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
 // The beam's hole in world km: centre x, z and radius; radius 0 when the sun is down.
@@ -1528,7 +1541,7 @@ function bakeFar(u, rw, rh, n) {
   // Storm counts in steps of 0.02: the build-up moves it every frame.
   // During the Rise the eye and the lens leave the key: the far field is read through its own lens.
   const lens = rise.dir ? ['rise'] : [camH, focal(), yaw()];
-  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, ...lens, horizon(), farD, deckReach, rw, rh].map(v => (typeof v === 'string' ? v : +(+v).toFixed(4))).join();
+  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, ...lens, horizon(), farD, deckReach, front, rw, rh].map(v => (typeof v === 'string' ? v : +(+v).toFixed(4))).join();
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
@@ -1612,6 +1625,7 @@ function funnelPass(w, h) {
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, baseNow());
   gl.uniform1f(u.uReach, deckReach);
+  gl.uniform1f(u.uFront, front);
   gl.uniform1f(u.uGod, god);
   gl.uniform1f(u.uPlainLit, plainLit());
   gl.uniform1f(u.uGreen, greenK());
@@ -1910,6 +1924,7 @@ act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
 act.god = v => { god = clamp(+v, 0, 1); wake(); };
 act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
+act.front = v => { front = clamp(Number.isFinite(+v) ? +v : -6, -6, 15); wake(); };
 act.eye = v => { eyeSet = clamp(+v || 8, 1, 40); camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u); wake(); };
 // A press starts the Rise, or turns it back at any point.
 act.rise = () => { rise.dir = rise.dir > 0 || (rise.dir === 0 && rise.u >= 1) ? -1 : 1; rise.hold = 0; wake(); };
@@ -1959,6 +1974,8 @@ act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35)
 act.bakeFrom(qs0.has('bakefrom') ? +qs0.get('bakefrom') : ui.setting('bakeFrom')?.value ?? 16);
 act.god(qs0.has('god') ? +qs0.get('god') : ui.setting('god')?.value ?? 0.6);
 act.deckReach(qs0.has('deckreach') ? +qs0.get('deckreach') : ui.setting('deckReach')?.value ?? 146);
+// QA: ?front=4 puts the deck's front edge 4 km ahead for one load.
+act.front(qs0.has('front') ? +qs0.get('front') : ui.setting('front')?.value ?? -6);
 // QA: ?storm=0.2 sets the storm for one load.
 if (qs0.has('storm')) act.storm(clamp(+qs0.get('storm'), 0, 1));
 // QA: ?sunaz=20 sets the sun's bearing for one load.
