@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T05:49:46Z
+updated_at: 2026-11-17T05:58:38Z
 parent: stimming-oh7b
 ---
 
@@ -114,3 +114,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: Light through knob (0 to 1, default 0): sunlight passes the funnel's own cloud more freely, so its shaded side lightens (Tom).
 
 - 2026-11-16: Rim blend knob (default 0.6): a ray that only grazes the core's edge sees thinner cloud, so the lit rim fades into what lies behind it (Tom: rim too harsh; otherwise "looking impressive"). Tom's defaults from his JSON: Light through 0.4, Time 20.7, Sun dir -106, Steps 63, Resolution 0.6, Bake strips 16.
+
+- 2026-11-16: the scene draws the lab's tornado (tornado/funnel.js): the lab's shells, dust, F table and Tom's defaults, in a half-size pass scissored to the tornadoes' box, laid into envScene; the funnel's top hides behind the scene's cloud by the cover in front of it, so it rises into the base with no seam. Up to four tornadoes, rope-out kept. GPU, M3 Pro, 1828×984: frame 12.7 ms with no tornado, 15.8 ms with one F2.5, 19.5 ms with three F4.5 (minimums). Next: the lab's volumetric deck in the scene (Tom: the scene's deck is "the fake 2d one").
