@@ -109,8 +109,8 @@ const PICKS = [['mix', 'Mix', 'Mix'],
   ['garlic', 'Garlic', 'Things'], ['chilli', 'Chilli', 'Things'], ['tomato', 'Tomato', 'Things'], ['mushroom', 'Mushroom', 'Things'],
   ['beet', 'Beetroot', 'Things'], ['pea', 'Peas', 'Things'], ['bay', 'Bay leaf', 'Things'], ['noodles', 'Noodles', 'Things'],
   ['fish', 'Fish', 'Things'], ['star', 'Star', 'Things'], ['duck', 'Duck', 'Things'], ['boot', 'Boot', 'Things'],
-  ['frog', 'Frog', 'Witchy'], ['candle', 'Candle stub', 'Witchy'],
-  ['anti', 'Antimatter', 'Odd'], ['hole', 'Tiny black hole', 'Odd'],
+  ['frog', 'Frog', 'Witchy'], ['candle', 'Candle stub', 'Witchy'], ['eye', 'Eyeball', 'Witchy'], ['toad', 'Toadstool', 'Witchy'],
+  ['anti', 'Antimatter', 'Odd'], ['hole', 'Tiny black hole', 'Odd'], ['moon', 'Moon pebble', 'Odd'], ['ice', 'Absolute-zero cube', 'Odd'],
   ['cream', 'Cream', 'Liquids'], ['ink', 'Squid ink', 'Liquids'], ['chillioil', 'Chilli oil', 'Liquids'], ['saffron', 'Saffron', 'Liquids']];
 let pick = 'mix';
 // Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
@@ -148,6 +148,11 @@ const ART = {
   anti: [[circ(0, 0, 15) + circ(0, 0, 11.5), [0.8, 0.14, 300], [0.55, 0.18, 290]], [circ(0, 0, 8), [0.99, 0.04, 280], [0.78, 0.14, 290]]],
   hole: [['M-16 1a16 6 0 1 0 32 0a16 6 0 1 0-32 0z', [0.9, 0.15, 80], [0.62, 0.2, 40]], [circ(0, 0, 8.5), [0.16, 0.01, 280], [0.04, 0, 0]],
     ['M-16 1a16 6 0 0 0 32 0h-7.5a8.5 3.2 0 0 1-17 0z', [0.95, 0.12, 85], [0.7, 0.2, 45]]],
+  eye: [[circ(0, 0, 14), [0.98, 0.01, 90], [0.82, 0.03, 30]], [circ(3, -2, 7), [0.72, 0.13, 135], [0.5, 0.12, 150]], [circ(3.5, -2.5, 3.2), [0.2, 0, 0], [0.08, 0, 0]]],
+  toad: [['M-15 1c0-9 7-15 15-15s15 6 15 15z', [0.62, 0.21, 30], [0.48, 0.2, 26]], ['M-5 1h10l1.5 14h-13z', [0.95, 0.03, 85], [0.8, 0.04, 80]],
+    [circ(-7, -5, 2.4) + circ(2, -9, 2.2) + circ(8, -3, 2.6) + circ(-1, -3, 1.6), [0.98, 0.01, 90], [0.9, 0.02, 80]]],
+  moon: [[circ(0, 0, 14), [0.88, 0.01, 250], [0.6, 0.015, 250]], [circ(-5, -3, 3.5) + circ(5, 4, 2.6) + circ(4, -6, 1.8), [0.62, 0.01, 250], [0.55, 0.01, 250]]],
+  ice: [['M0-15l13 7-13 7-13-7z', [0.97, 0.04, 215], [0.9, 0.06, 215]], ['M-13-8l13 7v16l-13-7z', [0.85, 0.08, 220], [0.72, 0.1, 225]], ['M13-8l-13 7v16l13-7z', [0.72, 0.1, 225], [0.58, 0.11, 230]]],
   cream: [[DROP, [0.99, 0.015, 90], [0.84, 0.03, 80]]],
   ink: [[DROP, [0.34, 0.05, 290], [0.12, 0.03, 290]]],
   chilli_oil: [[DROP, [0.7, 0.2, 38], [0.48, 0.2, 28]]],
@@ -847,9 +852,21 @@ vec2 sdHole(vec3 p) {
   float ring = extrude(abs(length(q.xz) - 0.1) - 0.042, q.y, 0.0025, 0.002);
   return ring < d ? vec2(ring, 1.0) : vec2(d, 0.0);
 }
+// An eyeball: it looks along +x, with a slight bulge for the cornea.
+vec2 sdEye(vec3 p) { return vec2(smin(length(p) - 0.065, length(p - vec3(0.032, 0.0, 0.0)) - 0.045, 0.012), 0.0); }
+// A toadstool, upright: a domed cap over gills, on a short stem. s swells the cap.
+vec2 sdToad(vec3 p, float s) {
+  float cap = max(sdEll(p - vec3(0.0, 0.02, 0.0), vec3(0.13, 0.08, 0.13) + s * 1.5), -(p.y - 0.02));
+  cap = smin(cap, sdTor(p - vec3(0.0, 0.022, 0.0), 0.11, 0.018), 0.02);
+  float stem = sdCap(p, vec3(0.0, -0.1, 0.0), vec3(0.0, 0.02, 0.0), 0.038);
+  return stem < cap ? vec2(stem, 1.0) : vec2(cap, 0.0);
+}
+// A moon pebble: a small grey ball with shallow craters.
+vec2 sdMoon(vec3 p) { return vec2(length(p) - 0.065 + 0.004 * smoothstep(0.58, 0.72, noise3(p * 28.0)), 0.0); }
 // Kinds: 0 carrot, 1 onion, 2 fish, 3 beetroot, 4 duck, 5 pea, 6 boot, 7 star, 8 tomato, 9 mushroom,
 // 16 potato, 17 leek, 18 garlic, 19 chilli, 20 bay leaf, 21 noodles,
 // 25 frog, 26 lit candle, 27 antimatter, 28 black hole, 29 candle without its flame,
+// 30 eyeball, 31 toadstool, 32 moon pebble, 33 ice cube,
 // pieces 22 potato cube, 23 leek ring, 24 garlic clove,
 // then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
 vec2 sdKind(int k, vec3 p, float s) {
@@ -883,6 +900,10 @@ vec2 sdKind(int k, vec3 p, float s) {
     case 27: return vec2(length(p) - 0.034 * (1.0 + 0.06 * sin(uTime * 31.0)), 0.0);
     case 28: return sdHole(p);
     case 29: return sdCandle(p, s, 0.0);
+    case 30: return sdEye(p);
+    case 31: return sdToad(p, s);
+    case 32: return sdMoon(p);
+    case 33: return vec2(sdRBox(p, vec3(0.055 - s), 0.012), 0.0);
   }
   return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
 }
@@ -1359,6 +1380,10 @@ uniform int uNG;
 uniform vec4 uGlow[6], uGlowC[6];
 // The black hole: xz, dip depth and reach on the soup; then its centre and strength.
 uniform vec4 uHole, uHoleP;
+// The moon's tide: the soup's tilt, as height per world unit in x and z.
+uniform vec2 uTide;
+// The frost patch: centre xz, radius and strength, in world units.
+uniform vec4 uFrost;
 uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
@@ -1385,7 +1410,7 @@ vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
 float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
 float surfH(vec2 xz) {
   vec2 r = texture(uRip, soupUV(xz)).xz;
-  float h = uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y;
+  float h = uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y + dot(uTide, xz);
   // A black hole pulls a dip with two spiral arms that wind in.
   if (uHole.z > 0.0) {
     vec2 d = xz - uHole.xy;
@@ -1876,6 +1901,21 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
     vec3 fc = (alb * 0.6 + vec3(0.3, 0.28, 0.25)) * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.35 + skyAmb(n) * 2.0);
     col = mix(col, fc * (0.9 + 0.2 * cells), clamp(foam, 0.0, 1.0) * 0.9);
   }
+  // Frost: a pale crust of ice ferns that glints, with a ragged edge.
+  if (uFrost.w > 0.0) {
+    vec2 d = p.xz - uFrost.xy;
+    float edge = uFrost.z * (0.82 + 0.3 * noise2(vec2(atan(d.y, d.x) * 2.5, 0.0) + uFrost.xy * 7.0));
+    float kf = smoothstep(edge, edge - 0.05, length(d)) * uFrost.w;
+    if (kf > 0.0) {
+      float fern = noise2(p.xz * 45.0) * 0.6 + noise2(p.xz * 120.0) * 0.4;
+      vec3 fn = normalize(vec3(noise2(p.xz * 90.0) - 0.5, 2.5, noise2(p.xz * 90.0 + 7.0) - 0.5));
+      vec3 fa = mix(vec3(0.62, 0.72, 0.82), vec3(0.93, 0.96, 1.0), smoothstep(0.35, 0.75, fern));
+      vec3 fc = litSurf(fn, -rd, fa, 0.42, 0.04);
+      fc += vec3(0.9, 0.95, 1.0) * pow(hash12(floor(p.xz * 260.0)), 60.0) * 2.0 * max(dot(fn, uKeyDir), 0.0);
+      // The ice thins to clear at its edge, so the soup shows through.
+      col = mix(col, fc, kf * mix(0.45, 0.95, smoothstep(edge - 0.02, edge - 0.12, length(d))));
+    }
+  }
   if (uNG > 0) col += alb * glowAt(p, n) * 0.8 + glowSpec(p, reflect(rd, n));
   return col;
 }
@@ -2042,6 +2082,38 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
       c = vec3(0.0);
       emit = mix(lch(0.55, 0.14, 262.0) * 0.8, mix(lch(0.97, 0.08, 95.0) * 3.0, lch(0.78, 0.19, 58.0) * 2.0, u), smoothstep(0.0, 0.25, u)) * (0.9 + 0.1 * sin(uTime * 23.0));
     }
+  } else if (k == 30) {
+    // Eyeball: wet white, red veins at the back, a green iris and a black pupil.
+    vec3 q = normalize(p);
+    float a = q.x;
+    c = lch(0.95, 0.02, 80.0);
+    float vn = abs(noise2(vec2(atan(q.z, q.y) * 5.0, a * 7.0) + sd) - 0.5);
+    c = mix(c, lch(0.55, 0.17, 25.0), smoothstep(0.05, 0.015, vn) * smoothstep(0.55, -0.2, a) * 0.85);
+    vec3 iris = lch(0.6, 0.13, 135.0) * (0.75 + 0.5 * noise2(vec2(atan(q.z, q.y) * 12.0, 0.0)));
+    iris = mix(iris, lch(0.86, 0.02, 240.0), cook);
+    c = mix(c, iris, smoothstep(0.86, 0.88, a));
+    c = mix(c, lch(0.32, 0.08, 150.0), smoothstep(0.86, 0.88, a) * smoothstep(0.9, 0.87, a));
+    c = mix(c, mix(vec3(0.003), lch(0.72, 0.01, 240.0), cook), smoothstep(0.975, 0.98, a));
+    rough = 0.05;
+  } else if (k == 31) {
+    // Toadstool: a red cap with white flecks, pale gills and stem.
+    c = lch(0.55, 0.21, 29.0) * (0.94 + 0.1 * wob);
+    c = mix(c, lch(0.97, 0.015, 90.0), smoothstep(0.66, 0.7, noise3(p * 19.0 + sd)));
+    if (p.y < 0.026) c = lch(0.86, 0.04, 80.0) * (0.9 + 0.1 * sin(atan(p.z, p.x) * 60.0));
+    if (m > 0.5) c = lch(0.92, 0.03, 85.0) * (0.95 + 0.06 * wob);
+    rough = 0.4;
+  } else if (k == 32) {
+    // Moon pebble: pale grey with darker seas, and a faint glow of its own.
+    c = mix(lch(0.82, 0.01, 250.0), lch(0.55, 0.012, 250.0), smoothstep(0.5, 0.7, noise3(p * 9.0 + sd)));
+    c *= 1.0 - 0.25 * smoothstep(0.58, 0.72, noise3(p * 28.0));
+    rough = 0.8;
+    emit = lch(0.9, 0.02, 240.0) * 0.08;
+  } else if (k == 33) {
+    // Ice: pale blue, glassy, frosted white at the edges, cold inside.
+    float ed = smoothstep(0.035, 0.055, max(max(abs(p.x), abs(p.y)), abs(p.z)));
+    c = mix(lch(0.8, 0.06, 220.0), lch(0.97, 0.02, 230.0), ed);
+    rough = mix(0.06, 0.5, ed);
+    emit = lch(0.75, 0.1, 225.0) * 0.12;
   } else if (k == 27) {
     // Antimatter: a white-violet core, hotter at its edge, never still.
     c = vec3(0.0);
@@ -2077,6 +2149,13 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   if (k == 28) return emit + env(reflect(rd, n), 0.02) * 0.06 * (1.0 - m);
   // The frog's slot holds its kick, the candle's its burn: neither cooks.
   if (k == 25 || k == 26 || k == 29) cook = 0.0;
+  // Frost coats a thing low down, near the soup.
+  if (uFrost.w > 0.0) {
+    vec2 fd = p.xz - uFrost.xy;
+    float kf = smoothstep(uFrost.z, uFrost.z - 0.05, length(fd)) * uFrost.w * smoothstep(0.08, 0.0, p.y - surfH(p.xz));
+    alb = mix(alb, vec3(0.82, 0.88, 0.95), kf * 0.55);
+    rough = mix(rough, 0.5, kf);
+  }
   // A soft noise varies each skin: waxy patches and dull pores, never speckle.
   rough = clamp(rough * (0.88 + 0.24 * noise3(lp * 16.0 + M.x * 7.0)), 0.05, 0.9);
   // Cooking deepens and glosses a thing, and soaks the soup's colour into it.
@@ -2811,10 +2890,14 @@ let reduce = 0;
 const G = 22;
 // The black hole's dip on the soup, in world units: x, z, depth, reach.
 const holeDip = [0, 0, 0, 0.16];
+// The moon's tide: the soup's tilt, height per world unit in x and z.
+const tide = [0, 0];
+// The frost patch, in soup units, with its radius in world units; null without one.
+let frost = null;
 function surfY(x, z) {
   const r = Math.min(1, Math.hypot(x, z));
   const hd = holeDip[2] ? holeDip[2] * Math.exp(-((x - holeDip[0]) ** 2 + (z - holeDip[1]) ** 2) / holeDip[3] ** 2) : 0;
-  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19) - hd;
+  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19) - hd + tide[0] * x + tide[1] * z;
 }
 
 /* ---------- things ---------- */
@@ -2854,6 +2937,13 @@ const KINDS = {
   // Antimatter hovers a hair above the soup: it must touch nothing.
   anti: { k: 27, bound: 0.045, float: 0.07, lag: 0.3, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.05, L: 0.05, W: 0.05 },
   hole: { k: 28, bound: 0.14, float: 0, lag: 2, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.4, L: 0.1, W: 0.1 },
+  // The eye's cook turns it milky; it never breaks.
+  eye: { k: 30, bound: 0.1, float: 0.03, lag: 0.4, cook: 35, tint: [0.78, 0.07, 12], mass: 0.2, into: null, n: 0, sq: 0.15, L: 0.07, W: 0.07 },
+  // The toadstool's cook ends in a burst of spores.
+  toad: { k: 31, bound: 0.2, float: 0.06, lag: 0.45, cook: 14, tint: null, mass: 0, into: null, n: 0, sq: 0.25, L: 0.13, W: 0.13 },
+  moon: { k: 32, bound: 0.075, float: 0.03, lag: 0.6, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.15, L: 0.065, W: 0.065 },
+  // Ice melts in the heat and leaves nothing.
+  ice: { k: 33, bound: 0.1, float: 0.03, lag: 0.5, cook: 40, tint: null, mass: 0, into: 'melt', n: 0, sq: 0.2, L: 0.06, W: 0.06 },
 };
 // The throw order; the pot starts with a carrot and an onion.
 const ORDER = ['fish', 'potato', 'beet', 'leek', 'duck', 'pea', 'garlic', 'boot', 'chilli', 'star', 'tomato', 'noodles', 'mushroom', 'bay', 'carrot', 'onion'];
@@ -3027,6 +3117,7 @@ function stepBubbles(dt) {
     let x = pl.x + rand(-0.22, 0.22), z = pl.z + rand(-0.22, 0.22);
     if (Math.random() < 0.35) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.85; x = Math.cos(a) * r; z = Math.sin(a) * r; }
     if (Math.hypot(x, z) > 0.88) continue;
+    if (frost && Math.hypot(x - frost.x, z - frost.z) * soupR(level) < frost.r) continue;
     const rMax = rand(0.025, 0.06) * (1 + 0.7 * T) * (0.8 + 0.3 * heat);
     bubbles.push({ x, z, r: 0, h: 0, rMax, age: 0, life: rand(0.5, 1.1) * (1 + 1.6 * T) });
   }
@@ -3165,6 +3256,13 @@ const ACT = {
       if (Math.hypot(o.x - b.x, o.z - b.z) * rs < o.rad + b.rad) { annihilate(b, o, rs); return; }
     }
   },
+  // The toadstool bursts when it is done, or when a tap squeezes it.
+  toad(b) { if (b.cook >= 1) sporePop(b); },
+  ice(b) {
+    if (!frost) frost = { x: b.x, z: b.z, r: 0, a: 0 };
+    // Cold vapour curls off it now and then.
+    if (Math.random() < 0.004) addPuff(b.x, b.z, 0.08);
+  },
   hole(b, dt, rs) {
     // It grows in, holds, then fades and pops at 20 s.
     const s = smooth(0, 1.2, b.age) * (1 - smooth(16.5, 20, b.age));
@@ -3200,6 +3298,44 @@ const ACT = {
     }
   },
 };
+// Steps that run after the springs, so they win over the bob and tilt.
+const AIM = {
+  // The eye watches the spoon, else the pointer, else the viewer; cooked, it stares up.
+  eye(b, dt, rs) {
+    const wx = b.x * rs, wz = b.z * rs;
+    let t;
+    if (b.cook >= 1) t = null;
+    else if (spoon.on || spoon.lift < 1) t = [spoon.x * rs, level + 0.25, spoon.z * rs];
+    else if (performance.now() / 1000 - hand.t < 3) t = [hand.x, level + 0.15, hand.z];
+    else t = cam.pos;
+    let yaw = b.yaw, pitch = 1.25;
+    if (t) {
+      const dx = t[0] - wx, dy = t[1] - b.y, dz = t[2] - wz;
+      yaw = Math.atan2(-dz, dx);
+      pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), 0.35, 1.45);
+    }
+    const k = Math.min(1, dt * 7);
+    b.yaw += Math.atan2(Math.sin(yaw - b.yaw), Math.cos(yaw - b.yaw)) * k;
+    b.pitch += (pitch - b.pitch) * k;
+    b.roll *= 1 - k;
+  },
+  // The toadstool stands upright, with only a small sway.
+  toad(b) { b.pitch *= 0.5; b.roll *= 0.5; },
+};
+// Spores: a violet puff, glitter and tint, then the toadstool melts away.
+function sporePop(b) {
+  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs;
+  b.gone = Math.max(b.gone, 1e-3);
+  const vio = lchLin([0.62, 0.17, 305]);
+  for (let i = 0; i < 18 && !reduced(); i++) { const g = rand(0, TAU), sp = rand(0.15, 0.6); addDrop(wx, b.y + 0.08, wz, Math.cos(g) * sp, rand(0.8, 1.8), Math.sin(g) * sp, rand(0.006, 0.012), vio); }
+  emit(b.x, b.z, 0.22, 0.6, [0.5, 0.16, 305], 0);
+  for (let i = 0; i < 8; i++) emit(b.x + rand(-0.15, 0.15), b.z + rand(-0.15, 0.15), 0.06, 1, null, 2);
+  flash(wx, b.y + 0.1, wz, 1.2, [0.7, 0.4, 1], 0.7, 0.6);
+  addPuff(b.x, b.z, 0.3);
+  imps.push([b.x, b.z, 0.08, -0.015]);
+  splashAt = time;
+  poofSound(b.x);
+}
 // The frog's leap to the rim: out, a sit, then back in.
 function startHop(b, rs) {
   let a = Math.atan2(b.z, b.x);
@@ -3280,6 +3416,22 @@ function stepBodies(dt) {
   const rs = soupR(level), heat = 0.25 + 0.95 * fire;
   holeB = null;
   for (let i = flashes.length - 1; i >= 0; i--) if ((flashes[i].t += dt) >= flashes[i].dur) flashes.splice(i, 1);
+  // Each moon adds a tilt that turns round once in 7 s.
+  tide[0] = tide[1] = 0;
+  for (const b of bodies) {
+    if (b.kind !== 'moon' || b.fly) continue;
+    b.ph = (b.ph ?? rand(0, TAU)) + dt * TAU / 7;
+    const m = 0.03 * smooth(0, 2, b.age) * (b.gone ? 1 - smooth(0, 1, b.gone) : 1);
+    tide[0] += m * Math.cos(b.ph); tide[1] += m * Math.sin(b.ph);
+  }
+  // Frost spreads from a cube while the fire is low; the heat thaws it back.
+  if (frost) {
+    const cube = bodies.some(b => b.kind === 'ice' && !b.gone && !b.fly);
+    frost.r = clamp(frost.r + dt * ((cube ? 0.16 : 0) - (0.02 + 0.16 * fire)), 0, 0.55);
+    frost.a = Math.min(1, frost.a + dt * 2);
+    if (!cube && frost.r <= 0) frost = null;
+    else if (cube && Math.random() < dt * 2.5 * (frost.r < 0.55 ? 1 : 0.2)) crackSound(frost.x);
+  }
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i], K = b.K;
     b.age += dt;
@@ -3315,6 +3467,11 @@ function stepBodies(dt) {
       b.vz += (uz - b.vz) * k;
     }
     if (!b.gone) ACT[b.kind]?.(b, dt, rs);
+    // The tilt slides things downhill.
+    b.vx -= tide[0] * 6 * dt; b.vz -= tide[1] * 6 * dt;
+    // Frost holds a thing still.
+    b.frozen = !!frost && Math.hypot(b.x - frost.x, b.z - frost.z) * rs < frost.r * 0.9;
+    if (b.frozen) { const f = Math.exp(-dt * 10); b.vx *= f; b.vz *= f; b.yawV *= f; b.vy *= f; }
     b.liftH = (b.liftH || 0) + ((b.held ? 0.07 : 0) - (b.liftH || 0)) * (1 - Math.exp(-dt * (b.held ? 6 : 9)));
     // The boil pushes things off the plumes.
     for (const p of plumes) {
@@ -3353,6 +3510,7 @@ function stepBodies(dt) {
     b.rollV += (-b.roll * 30 - b.rollV * 4) * dt;
     b.pitch += b.pitchV * dt;
     b.roll += b.rollV * dt;
+    if (!b.gone) AIM[b.kind]?.(b, dt, rs);
     // A thing about to break shivers.
     const shiver = K.into && K.into !== 'melt' && b.cook > 0.86 && b.cook < 1 && !reduced() ? (b.cook - 0.86) * 0.5 : 0;
     if (shiver) { b.roll += rand(-1, 1) * shiver; b.pitch += rand(-1, 1) * shiver; }
@@ -3449,6 +3607,7 @@ function thingAt(sx, sz) {
 function dunk(b) {
   if (b.kind === 'candle') snuff(b);
   if (b.kind === 'frog') b.tk = 0.12;
+  if (b.kind === 'toad' && !b.gone) { sporePop(b); return; }
   b.vy -= 0.9 + 0.8 * clamp(b.K.sq + 0.1);
   b.pitchV += rand(-6, 6); b.rollV += rand(-6, 6);
   imps.push([b.x, b.z, 0.06 + b.rad / soupR(level) * 0.5, -0.02]);
@@ -3797,6 +3956,9 @@ function plopSound(b) {
   }
   // The hole lands with a long, deep groan; antimatter with a thin whine.
   if (K.k === 28) blop(ac, at, { f: 70, rise: 0.5, dur: 1.6, level: 0.3, pan });
+  // The moon rings low and long; the ice cracks as it lands.
+  if (K.k === 32) for (const f of [196, 294, 392]) blop(ac, at + 0.02, { f, rise: 1.0, dur: 2.2, level: 0.035, pan, type: 'triangle' });
+  if (K.k === 33) for (let i = 0; i < 5; i++) burst(ac, at + 0.05 + i * 0.04 * jit(0.4), { f: rand(3500, 6500), q: 4, dur: 0.03, level: 0.06, pan });
   if (K.k === 27) blop(ac, at, { f: 1800, rise: 1.3, dur: 0.7, level: 0.04, pan, type: 'triangle' });
   if (K.k === 7) for (let i = 0; i < 6; i++) blop(ac, at + 0.05 + i * 0.07, { f: rand(1800, 3600), rise: 1.02, dur: 0.5, level: 0.035, pan: rand(-0.5, 0.5), type: 'triangle' });
 }
@@ -3844,6 +4006,20 @@ function zapSound(x) {
   burst(ac, at, { f: 5000, q: 0.5, dur: 0.12, level: 0.2, pan });
   blop(ac, at, { f: 2400, rise: 0.05, dur: 0.35, level: 0.1, pan, type: 'square' });
   blop(ac, at, { f: 90, rise: 0.4, dur: 0.5, level: 0.35, pan });
+}
+// Frost creeps: a tiny, high crackle.
+function crackSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.005, { f: rand(4000, 7000), q: 5, dur: 0.02, level: 0.03, pan: panOf(x) });
+}
+// Spores: a soft, low puff and a few high sparkles.
+function poofSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  burst(ac, at, { f: 400, type: 'lowpass', q: 0.7, dur: 0.25, level: 0.18, pan });
+  for (let i = 0; i < 4; i++) blop(ac, at + 0.06 + i * 0.06, { f: rand(2600, 4200), rise: 1.02, dur: 0.3, level: 0.025, pan: rand(-0.5, 0.5), type: 'triangle' });
 }
 // The hole swallows a thing: a short note that slides away down.
 function gulpSound(o) {
@@ -4237,11 +4413,14 @@ function scenePass() {
       glow(wx, b.y + (top + 0.075) * b.scale * shrink, wz, 0.9 * shrink * (0.88 + 0.08 * Math.sin(time * 23) + 0.06 * Math.sin(time * 9.7)), [1, 0.62, 0.3], 0.45);
     } else if (b.kind === 'anti') glow(wx, b.y, wz, 0.5 * shrink * (0.85 + 0.15 * Math.sin(time * 47)), [0.75, 0.6, 1.2], 0.3);
     else if (b.kind === 'hole' && b.hs) glow(wx, b.y, wz, 0.35 * b.hs * shrink, [1, 0.55, 0.25], 0.4);
+    else if (b.kind === 'moon') glow(wx, b.y + 0.05, wz, 0.18 * shrink, [0.75, 0.85, 1.1], 0.35);
   }
   gl.uniform1i(sceneP.u('uNG'), ng);
   gl.uniform4fv(sceneP.u('uGlow'), glowU);
   gl.uniform4fv(sceneP.u('uGlowC'), glowCU);
   gl.uniform4f(sceneP.u('uHole'), holeDip[0], holeDip[1], holeDip[2], holeDip[3]);
+  gl.uniform2f(sceneP.u('uTide'), tide[0], tide[1]);
+  gl.uniform4f(sceneP.u('uFrost'), frost ? frost.x * rs : 0, frost ? frost.z * rs : 0, frost ? frost.r : 0, frost && frost.r > 0 ? frost.a : 0);
   const hb = holeB && !holeB.gone ? holeB : null;
   gl.uniform4f(sceneP.u('uHoleP'), hb ? hb.wx ?? hb.x * rs : 0, hb ? hb.y : 0, hb ? hb.wz ?? hb.z * rs : 0, hb ? hb.hs : 0);
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
@@ -4338,7 +4517,7 @@ function wake() {
 let splashAt = -10;
 function busy() {
   return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || (spoon.lift < 1 && !(spoon.rest && Math.hypot(spoon.tx - spoon.x, spoon.tz - spoon.z) < 0.01)) || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
-    || pours.length > 0 || bodies.some(b => b.fly || b.hop) || !!holeB || flashes.length > 0 || Math.abs(omega) > 0.08 || energy > 0.004;
+    || pours.length > 0 || bodies.some(b => b.fly || b.hop) || !!holeB || flashes.length > 0 || !!frost || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
   frameNo++;
@@ -4402,6 +4581,7 @@ act.add = () => { const [x, z] = freeSpot(); throwNext(x, z); };
 act.clear = () => startDrain();
 act.reset = () => {
   draining = null;
+  frost = null;
   level = 0;
   clearFlow();
   fillBroth();
