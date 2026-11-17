@@ -34,10 +34,13 @@ export function lineState() {
     quiet: 0,
     // The cascade: from the first fault, each pole toward the eye shorts in turn.
     casc: { i0: -1, t0: -1e4, k: 0 },
+    // The wires' two swing phases: the wind's slow swing, and a near tornado's faster one.
+    // They sum here, so a change of speed never jumps the phase.
+    ph: [0, 0],
     // The packed uniforms.
     uPole: new Float32Array(POLES), uSpan: new Float32Array(POLES * 4),
     uArc: new Float32Array(MAX_ARCS * 4), uArcK: new Float32Array(MAX_ARCS * 4),
-    uFoot: new Float32Array(16), uCasc: new Float32Array(4),
+    uFoot: new Float32Array(16), uCasc: new Float32Array(4), uSwayPh: new Float32Array(2),
   };
   lineReset(L);
   return L;
@@ -73,7 +76,12 @@ function fault(L, simT, x, y, z, k, kind) {
 }
 
 // One step of the line: wind loads, leans, falls, breaks and faults.
-export function lineStep(L, tors, dt, simT) {
+export function lineStep(L, tors, dt, simT, wind = 0.85, storm = 0.85) {
+  // The swing's speed follows the wind and the storm; a near strong tornado drives it harder.
+  let nearF = 0;
+  for (const t of tors) nearF = Math.max(nearF, t.f / 5 * clamp(1 - (Math.abs(t.x - POLE_X) - dustR(t)) / 1500) * clamp(t.dust * 2));
+  L.ph[0] = (L.ph[0] + dt * (0.55 + 0.6 * wind * (0.5 + 0.5 * storm))) % 6283.2;
+  L.ph[1] = (L.ph[1] + dt * (1.4 + 1.1 * nearF)) % 6283.2;
   // The recloser closes again slowly: one fault back every 20 s.
   L.charge = Math.min(4, L.charge + dt / 20);
   // Old events leave after their sparks cool.
@@ -147,6 +155,7 @@ export function lineUniforms(L, tors) {
     L.uArc.set([a.x, a.y, a.z, a.t0], i * 4);
     L.uArcK.set([a.k, a.seed, a.kind, 1], i * 4);
   });
+  L.uSwayPh.set(L.ph);
   L.uCasc.set([L.casc.i0, L.casc.t0, CASC_STEP, L.casc.k]);
   L.uFoot.fill(0);
   tors.slice(0, 4).forEach((t, i) => L.uFoot.set([t.x, t.z, dustR(t), 0.01 + t.f / 5 * (1 - clamp(t.rope - 1)) * clamp(t.dust * 2)], i * 4));
@@ -161,6 +170,8 @@ uniform vec4 uPole[${POLES / 4}], uSpan[${POLES}], uArc[${MAX_ARCS}], uArcK[${MA
 uniform vec4 uFoot[4];
 // The cascade: its first pole, start time, time per pole and strength.
 uniform vec4 uCasc;
+// The wires' swing phases, summed on the CPU: the wind's, and a near tornado's.
+uniform vec2 uSwayPh;
 const float POLE_X = ROAD_X + 9.0, POLE_Z0 = ${POLE_Z0}.0, POLE_GAP = ${POLE_GAP}.0;
 const int POLES = ${POLES};
 float poleLean(int i) { return i < 0 || i >= POLES ? 0.0 : uPole[i >> 2][i & 3]; }
@@ -200,8 +211,39 @@ void put(vec3 col, float k, float z) {
   gOF = gOF * (1.0 - f) + vec4(col, 1.0) * f;
 }
 
+/* ---------- the wires' sway ---------- */
+// The sway's size at a world point, in metres, and how near a tornado is, 0 to 1.
+// The wind and the storm give a slow swing; a near tornado makes it grow fast.
+float swayAmp(vec2 xz, out float nearK) {
+  float a = (0.03 + 0.45 * uWind * uWind) * (0.5 + 0.5 * uStorm) * (0.6 + 0.8 * gust(xz));
+  nearK = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec4 f = uFoot[i];
+    if (f.w <= 0.0) continue;
+    // Its inflow reaches well past its dust: a kilometre or two for a big one.
+    float d = max(length(xz - f.xy) - f.z, 0.0) / (300.0 + f.z);
+    float k = f.w / (1.0 + d * d);
+    nearK = max(nearK, k);
+  }
+  return a + 2.5 * nearK;
+}
+// One wire's offset from its rest line: across (x) and up (y), in metres.
+// u runs 0 to 1 along span i; wire j is 0, 1 or 2.
+// Two slow modes; their phases sum on the CPU, so a new speed never jumps.
+vec2 swayAt(int i, int j, float u, float z) {
+  float nearK;
+  float a = swayAmp(vec2(POLE_X, z), nearK);
+  float ph = th(vec2(float(i), float(j) * 0.37 + 2.1)) * 6.2832, ph2 = th(vec2(float(i) + 0.5, 7.7)) * 6.2832;
+  float m1 = sin(3.14159 * u), m2 = sin(6.28318 * u);
+  // A steady blow across the line, and the swing about it.
+  float blow = 0.45 * WDIR.x * (0.3 + 0.7 * uWind);
+  float p1 = uSwayPh.x, p2 = uSwayPh.y;
+  float x = a * m1 * (blow + 0.55 * sin(p1 + ph)) + a * nearK * 0.5 * m2 * sin(p2 + ph2);
+  float y = a * m1 * 0.35 * sin(p1 * 0.8 + ph2) + a * (0.12 + 0.4 * nearK) * m2 * sin(p2 * 0.85 + ph);
+  return vec2(x, y);
+}
 // The wire's point at u along span i, as an offset in x and a height, in metres.
-// It takes the poles' leans, the sag, and a broken half falling and whipping.
+// It takes the poles' leans, the sag, the sway, and a broken half falling and whipping.
 // A missing piece of wire returns a height below -50.
 vec2 wireAt(int i, int j, float u, float z) {
   float ox = float(j - 1) * 1.1, wy = j == 1 ? 9.9 : 9.2;
@@ -209,7 +251,7 @@ vec2 wireAt(int i, int j, float u, float z) {
   // Each end hangs where its leaning pole holds it.
   vec2 A = vec2(ox * cos(la) + wy * sin(la) - ox, wy * cos(la) - ox * sin(la));
   vec2 B = vec2(ox * cos(lb) + wy * sin(lb) - ox, wy * cos(lb) - ox * sin(lb));
-  vec2 w = mix(A, B, u) - vec2(0.0, 0.8 * 4.0 * u * (1.0 - u));
+  vec2 w = mix(A, B, u) - vec2(0.0, 0.8 * 4.0 * u * (1.0 - u)) + swayAt(i, j, u, z);
   vec4 sp = uSpan[i];
   float ts = uT - sp.x;
   if (sp.x < -1e3 || ts < 0.0 || mod(floor(sp.y / pow(2.0, float(j))), 2.0) < 0.5) return w;
@@ -228,7 +270,7 @@ vec2 wireAt(int i, int j, float u, float z) {
   // A whip runs from the free end back toward the pole and dies away.
   float wk = exp(-ts / 1.4) * (s / Lh);
   float whip = sin(s * 0.35 - ts * 9.0) * wk;
-  return vec2(E.x + whip * 1.6, max(y + whip * 0.8, 0.0));
+  return vec2(E.x + whip * 1.6 + swayAt(i, j, u, z).x * 0.3, max(y + whip * 0.8, 0.0));
 }
 // The wires: for each screen column, the place along the line where each wire crosses.
 void wires(vec2 s, vec3 rd, float px) {

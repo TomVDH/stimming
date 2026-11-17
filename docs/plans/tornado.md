@@ -96,6 +96,7 @@ Each stage is one or more sessions and ends with a checkpoint with Tom.
 ### Stage 5: Debris and the land
 - [ ] Wheat that bends and flattens along each track, lofted debris, a damage track that stays.
 - [x] The power line (`line.js`, bean `stimming-o3o5`): a tornado's wind leans poles from 40 m/s and topples them past 58 m/s; spans break and their halves fall and whip. A fault arcs in hard blue-white pulses, throws sparks that fall and bounce, and lights the dust. From the first fault a short runs down the line toward the eye, pole by pole (Tom, 2026-11-17: "every pole shorts"). A recloser allows about four faults, then one more every 20 s. The second Clear mends the line. QA: `?tor=F4.5&line=1.5&age=40` puts the tornado 1.5 km out, left of the line.
+- [x] The wires swing in two slow modes: their size follows Wind, Storm and the gusts, and grows fast as a tornado's inflow nears the line (by distance and F). The phases sum on the CPU, so a change of speed never jumps.
 
 ### Stage 6: Finish and QA
 - [ ] Sound, Settings, Dev rows, the performance ladder. QA in the browser pane. Tick the bean, record the cost.

@@ -827,7 +827,7 @@ try {
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1179,7 +1179,7 @@ function keepOff(t) {
 function step(dt) {
   simT += dt;
   for (const t of tors) live(t, dt);
-  lineStep(line, tors, dt, simT);
+  lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
@@ -1352,7 +1352,7 @@ if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(pa
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
 // QA: ?line=1.6 puts the newest tornado 1.6 km out, left of the power line, drifting into it.
 if (qs.has('line') && tors.length) Object.assign(tors[tors.length - 1], { x: -400, z: -1000 * +qs.get('line') });
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT); } };
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
