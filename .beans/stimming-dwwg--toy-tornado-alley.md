@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:17:38Z
+updated_at: 2026-11-17T08:19:05Z
 parent: stimming-oh7b
 ---
 
@@ -201,3 +201,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (no automatic layer falloff; top blend): Dev knob Layer gap (0.05–0.5, default 0.2, ?gap) sets one gap for every funnel at any distance; the distance logic is gone. The top's speckle came from the tube core's ragged edge under grazing rays in the flare: there the edge noise drops to 0.25×, the edge ramp widens 2.5× and the lump light gain eases to 0.6; the turn-to tone is read at one fixed point per tornado. A faint grain remains on the shade side at the join.
 
 - 2026-11-17, Tom (rhythmic frame lag; build-up in 45 s): the build-up is 45 s by default (10–600, key buildUpU); the first tornado drops about 31 s in. The hitch: the far field renewed one contiguous eighth per frame, and the band across the horizon cost several ms more, every 8th frame. Each slice is now every eighth row, so every frame bakes the same mix. One whole far bake costs about 8 ms. Also in this commit, unfinished: deckOpen as discrete holes and a beam split (safe, not yet tuned).
+
+- 2026-11-17, Tom (god rays must follow the sun, the real breaks and the sun's colour): shafts follow the true sun (no floor), lit only through openings the march draws (deckOpen far holes, raftGap gaps), blocked by the storm's bulk; a few soft ragged holes 3–8 km wide, 15–40 km out, drifting with the deck; each hole splits into two or three beams fading down their sun path; colour uSunCol tinted by the haze. At Tom's default (19.05, Sun dir 100, sun 4.7° up, side-on) no shafts read, which is honest; Time 17–18.5 or Sun dir 140–180 shows them.
