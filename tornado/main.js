@@ -532,33 +532,91 @@ vec3 shadeK(float cover) {
 const float ROAD_X = 3.4, WHEAT_GAP = 6.2;
 // Coverage of a band of half width w round 0, at pixel footprint f.
 float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / f); }
-// The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
-vec3 wheatFar(vec2 xz, float fx) {
+// A detail of size s fades out as the pixel's footprint f grows past it.
+float detail(float s, float f) { return 1.0 - smoothstep(0.25 * s, 0.7 * s, f); }
+/* ---------- the fields ---------- */
+// Quarter-mile squares (402 m) run out from both verges; a few are cut into strips.
+// Crops: 0 ripe wheat, 1 stubble, 2 fallow, 3 green; -1 is the verge and the road.
+const float QM = 402.3;
+// Each crop's height in metres; a field's margin is short grass.
+const vec4 CROP_H = vec4(0.95, 0.15, 0.0, 0.45);
+const float MARGIN = 2.5;
+// The crop at a point. edge: metres to the field's own boundary. id: a hash per field.
+float cropAt(vec2 xz, out float edge, out float id) {
+  float side = sign(xz.x - ROAD_X), u = abs(xz.x - ROAD_X) - WHEAT_GAP;
+  edge = 0.0; id = 0.0;
+  if (u < 0.0) return -1.0;
+  // The fields beside the eye end 180 m ahead.
+  vec2 q = vec2(u, 222.0 - xz.y) / QM, c = floor(q), f = fract(q) * QM;
+  id = th(c + vec2(41.0 + 7.0 * side, 13.0));
+  // No margin on the verge side: the verge is the margin there.
+  edge = min(min(c.x > 0.5 ? f.x : 1e4, QM - f.x), min(f.y, QM - f.y));
+  float crop = id < 0.45 ? 0.0 : (id < 0.7 ? 1.0 : (id < 0.87 ? 2.0 : 3.0));
+  // Beside the eye: ripe wheat on the left, a cut field across the road.
+  if (c.x < 0.5 && c.y < 0.5) return side < 0.0 ? 0.0 : 1.0;
+  // Strip fields: wheat and fallow side by side, 60 to 110 m wide.
+  if (th(c + vec2(9.3 * side, 2.0)) < 0.22) {
+    float sw = 60.0 + 50.0 * th(c + 2.2), s = mod(f.x, sw);
+    crop = mod(floor(f.x / sw), 2.0) < 0.5 ? 0.0 : 2.0;
+    edge = min(edge, min(s, sw - s) + MARGIN * 0.6);
+  }
+  return crop;
+}
+float cropH(float crop, float edge) { return crop < 0.0 ? -1.0 : (edge < MARGIN ? 0.12 : CROP_H[int(crop)]); }
+bool isWheat(vec2 xz) { float e, id; return cropAt(xz, e, id) == 0.0 && e >= MARGIN; }
+// The wheat's top seen from afar: ripe patches, and the gusts as a paler sheen.
+// fx and fz: the pixel's footprint across and along the view, in metres.
+vec3 wheatFar(vec2 xz, float fx, float fz) {
   float patchN = vn(xz * vec2(0.012, 0.004)) * 0.6 + vn(xz * vec2(0.05, 0.015)) * 0.4;
   // Ripe wheat in storm light: a dull gold, not a blown one.
   vec3 alb = mix(vec3(0.17, 0.11, 0.045), vec3(0.3, 0.21, 0.085), patchN);
   // A bent stalk shows its pale side; behind a crest it swings back dark.
-  vec4 gw = gust(xz, fx);
-  float g = gw.w;
+  vec4 gw = gust(xz, fx + 0.35 * fz);
   alb = mix(alb, vec3(0.36, 0.3, 0.19), max(gw.z, 0.0) * 0.45);
   alb *= 1.0 + 0.3 * min(gw.z, 0.0);
-  // Up close the field shows its make: drill rows along the road, clumps of ears with darker gaps,
-  // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
-  float near = 1.0 - smoothstep(0.08, 0.8, fx);
+  // Up close: clumps of ears with darker gaps between. They fade before they alias.
+  float fm = max(fx, fz), near = detail(0.8, fm);
   if (near > 0.0) {
-    float rows = mix(0.5, 0.5 + 0.5 * cos(xz.x * 20.9 + vn(xz * 0.4) * 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
-    float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
-    float gap = smoothstep(0.38, 0.18, clump);
-    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap), near);
+    float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), detail(0.3, fm)) * 0.4;
+    alb *= mix(1.0, (0.8 + 0.3 * clump) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
-  return alb * (0.85 + 0.2 * g) * (uSunCol * 0.5 + uAmb * 0.55);
+  return alb * (0.85 + 0.2 * gw.w) * (uSunCol * 0.5 + uAmb * 0.55);
+}
+// A low field's top: stubble, fallow, green, or a grass margin.
+vec3 lowField(float crop, vec2 xz, float edge, float id, float fx, float fz) {
+  float fm = max(fx, fz), nz = vn(xz * vec2(0.02, 0.008) + id * 50.0);
+  vec3 alb;
+  if (edge < MARGIN) {
+    // Dry June grass, tan and olive.
+    alb = mix(vec3(0.16, 0.15, 0.07), vec3(0.22, 0.19, 0.1), nz);
+  } else if (crop < 1.5) {
+    // Stubble: pale cut straw in drill rows, and the combine's straw swaths every 9 m.
+    alb = mix(vec3(0.28, 0.23, 0.13), vec3(0.36, 0.3, 0.18), nz);
+    float row = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.19);
+    alb *= mix(1.0, 0.75 + 0.4 * row, detail(0.19, fx));
+    float sw = abs(fract(xz.x / 9.1 + 0.2 * vn(vec2(xz.y * 0.01, id))) - 0.5) * 9.1;
+    alb = mix(alb, vec3(0.42, 0.35, 0.2), band(sw, 0.7, fx) * 0.6);
+    alb *= mix(1.0, 0.8 + 0.4 * vn(xz * 3.0), detail(0.4, fm));
+  } else if (crop < 2.5) {
+    // Fallow: dark tilled soil in disk furrows, clods up close.
+    alb = mix(vec3(0.09, 0.065, 0.045), vec3(0.14, 0.1, 0.065), nz);
+    float fur = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.35 + vn(xz * 0.05) * 6.0);
+    alb *= mix(1.0, 0.75 + 0.45 * fur, detail(0.35, fx));
+    alb *= mix(1.0, 0.7 + 0.6 * vn(xz * 9.0), detail(0.15, fm));
+  } else {
+    // Green: young milo in rows 76 cm apart, darker where it is thick.
+    alb = mix(vec3(0.05, 0.075, 0.025), vec3(0.09, 0.12, 0.04), nz);
+    float row = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.76);
+    alb *= mix(1.0, 0.7 + 0.5 * row, detail(0.76, fx));
+    alb = mix(alb, vec3(0.12, 0.13, 0.06), max(gust(xz, fx + 0.35 * fz).z, 0.0) * 0.3);
+  }
+  return alb * (uSunCol * 0.55 + uAmb * 0.6);
 }
 // The stand: ears top out at 0.86 to 1.04 m; the eye sees the field at its tops.
 // The drill set the rows 19 cm apart, along the road.
 const float TOP = 1.1, CANOPY = 0.95, ROW = 0.19, CW = ROW / 4.0, DZ = 0.035;
 // The march stops here, in metres ahead; past it the field is a texture.
 const float STAND_FAR = 30.0;
-bool inField(float x) { return abs(x - ROAD_X) >= WHEAT_GAP; }
 // Light inside the stand at height y, edge metres in from the field's road edge.
 // side is -1 for the field left of the road, 1 for the one right of it.
 // The sun reaches in through the tops, or through the edge where it faces the sun.
@@ -579,9 +637,11 @@ vec4 wheatStand(vec3 rd, float px) {
   // The ray drops under the tallest awn at tIn and meets the soil at tOut.
   float tIn = max(CAMH - TOP, 0.0) / -rd.y, tOut = CAMH / -rd.y;
   // From over a verge the ray reaches the wheat where it crosses the field's edge.
-  if (!inField(rd.x * tIn)) tIn = max(tIn, rd.x < 0.0 ? (ROAD_X - WHEAT_GAP) / rd.x : (rd.x > 0.0 ? (ROAD_X + WHEAT_GAP) / rd.x : 1e9));
+  if (abs(rd.x * tIn - ROAD_X) < WHEAT_GAP) tIn = max(tIn, rd.x < 0.0 ? (ROAD_X - WHEAT_GAP) / rd.x : (rd.x > 0.0 ? (ROAD_X + WHEAT_GAP) / rd.x : 1e9));
   float zIn = -rd.z * tIn;
   if (tIn > tOut || zIn > STAND_FAR) return vec4(0.0, 0.0, 0.0, 1.0);
+  // A ray over a low field at both ends of its march meets no stalks.
+  if (!isWheat(rd.xz * tIn) && !isWheat(rd.xz * min(tOut, STAND_FAR / -rd.z))) return vec4(0.0, 0.0, 0.0, 1.0);
   // The sun's side across the view: the ears' lit flank faces it.
   float sunX = toCam(uSun).x / max(length(uSun.xz), 1e-3);
   // The wind at both ends of the first two metres; the slices blend between them.
@@ -595,7 +655,7 @@ vec4 wheatStand(vec3 rd, float px) {
     if (t > tOut) { acc += T * vec3(0.07, 0.05, 0.03) * standLight(0.0, abs(rd.x * tOut - ROAD_X) - WHEAT_GAP, sign(rd.x * tOut - ROAD_X)); T = 0.0; break; }
     vec3 p = rd * t;
     p.y += CAMH;
-    if (p.y > TOP || !inField(p.x)) continue;
+    if (p.y > TOP || !isWheat(p.xz)) continue;
     float fp = t * px / uFoc;
     vec4 gw = mix(g0, g1, clamp((t - tIn) * 0.5, 0.0, 1.0));
     float side = sign(p.x - ROAD_X), edge = abs(p.x - ROAD_X) - WHEAT_GAP;
@@ -660,16 +720,36 @@ vec3 ground(vec3 rd, float px) {
   // The footprint of one pixel on the ground, in metres.
   float fx = t * px / uFoc;
   float ax = abs(P.x - ROAD_X);
-  // From afar the eye sees the wheat at its tops, nearer than the soil.
-  float tc = max(CAMH - CANOPY, 0.05) / -rd.y;
-  vec2 Pc = rd.xz * tc;
-  vec3 col;
-  if (inField(Pc.x)) col = wheatFar(Pc, tc * px / uFoc);
-  else {
-    // Seen from the verge, the field's edge is a wall of stalks under the ears.
-    // It takes the stand's light where the ray meets the edge.
+  // The plain, top down: the ray meets a field at its crop's top, or a taller crop's side.
+  // A wheat field's side is a wall of stalks under the ears, in the stand's own light.
+  vec3 col = vec3(0.0);
+  bool hit = false;
+  float hPrev = CAMH;
+  for (int i = 0; i < 4; i++) {
+    float h = i == 0 ? CROP_H.x : (i == 1 ? CROP_H.w : (i == 2 ? CROP_H.y : 0.0));
+    if (h >= CAMH) continue;
+    float th_ = (CAMH - h) / -rd.y;
+    vec2 Q = rd.xz * th_;
+    float edge, id, crop = cropAt(Q, edge, id), H = cropH(crop, edge);
+    if (H < h - 0.01) { hPrev = h; continue; }
+    hit = true;
+    float fq = th_ * px / uFoc, fz = fq * th_ / (CAMH - h);
+    if (H > h + 0.01) {
+      // The side of a taller crop, met somewhere between this level and the last.
+      // On the road's side the meeting height is exact.
+      float side = sign(Q.x - ROAD_X), ye = 0.5 * (h + min(hPrev, H));
+      if (abs(rd.x * (CAMH - hPrev) / -rd.y - ROAD_X) < WHEAT_GAP) ye = CAMH + rd.y * (ROAD_X + side * WHEAT_GAP) / rd.x;
+      if (crop == 0.0 && edge >= MARGIN) col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
+      else col = lowField(crop, Q, edge, id, fq, fz) * 0.7;
+    } else if (crop == 0.0 && edge >= MARGIN) col = wheatFar(Q, fq, fz);
+    else col = lowField(crop, Q, edge, id, fq, fz);
+    break;
+  }
+  if (!hit) {
+    // Seen from the verge, the near field's edge is a wall of stalks under the ears.
     float side = sign(P.x - ROAD_X), te = (ROAD_X + side * WHEAT_GAP) / rd.x, ye = CAMH + rd.y * te;
     col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
+    if (!isWheat(vec2(ROAD_X + side * (WHEAT_GAP + 0.5), P.z))) col = lowField(1.0, P.xz, 9.0, 0.0, fx, fx);
     // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
     vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
     float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
