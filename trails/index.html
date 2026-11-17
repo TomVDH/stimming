@@ -43,7 +43,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--trails" id="stage" tabindex="0" role="application" aria-label="A night sky over a dark horizon. Hold the pointer or Space to open the shutter; the turning stars draw arcs.">
+    <div class="stage stage--trails" id="stage" tabindex="0" role="application" aria-label="A night sky over a dark horizon. The turning stars draw arcs while the shutter is open. Hold the pointer down to open the shutter. Hold Space to open the shutter. Press 1, 2 or 3 to change the sky. Press C to clear the plate.">
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
@@ -93,14 +93,17 @@ const ui = initPage({ id: 'trails', bar: {
       { value: '2000', label: 'Few' }, { value: '4500', label: 'Some' }, { value: '9000', label: 'Many' },
     ], onPick: v => act.count(v) },
     { type: 'choice', id: 'tint', label: 'Colour', value: opts.tint, persist: true, options: [
-      { value: 'true', label: 'True' }, { value: 'mono', label: 'Mono' },
+      { value: 'true', label: 'True' }, { value: 'mono', label: 'Monochrome' },
     ], onPick: v => act.tint(v) },
     { type: 'choice', id: 'meteors', label: 'Meteors', value: String(opts.meteors), persist: true, options: [
       { value: '0', label: 'Off' }, { value: '1', label: 'Some' }, { value: '4', label: 'Shower' },
     ], onPick: v => act.meteors(v) },
   ],
   quality: true,
-  keys: [['hold', 'open the shutter'], ['release', 'close it']],
+  keys: [['hold', 'open the shutter'], ['release', 'close the shutter'], ['1 2 3', 'change the sky'], ['C', 'clear the plate']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Open the shutter'], ['release', 'Close the shutter'], ['space', 'Open the shutter'], ['enter', 'Open the shutter'],
+    ['1 2 3', 'Change the sky'], ['C', 'Clear the plate']],
 } });
 // Handlers bind once the renderer is up; early input does nothing.
 const act = { sky() {}, expo() {}, open() {}, close() {}, clear() {}, count() {}, tint() {}, meteors() {} };
@@ -131,7 +134,7 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 // The fail line counts as the first frame, so the intro lifts.
-const fail = () => { stage.querySelector('.fail').hidden = false; mark('first-frame'); throw new Error('no webgl2'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); mark('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Half floats keep faint trails smooth; bytes are the fallback.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');

@@ -39,7 +39,9 @@ const ui = initPage({ id: 'rain', bar: {
     onPick: v => { wx = WEATHER[v]; rainLevel(); } },
   slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { windGoal = v; rainLevel(); } },
   quality: true,
-  keys: [['drag', 'wipe the fog'], ['arrows', 'wipe a stripe'], ['space', 'next weather']],
+  keys: [['click', 'wipe a spot'], ['drag', 'wipe the fog'], ['arrows', 'wipe a stripe'], ['space', 'select the next weather']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Wipe a spot'], ['drag', 'Wipe the fog'], ['← → ↑ ↓', 'Wipe a stripe'], ['space', 'Select the next weather']],
 } });
 const panel = document.getElementById('pane'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');

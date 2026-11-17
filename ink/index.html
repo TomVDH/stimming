@@ -44,7 +44,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--ink" id="ink" tabindex="0" role="application" aria-label="A tall tank of dark water, lit from the side. One indigo drop of ink falls through it as a ring and breaks into fingers.">
+    <div class="stage stage--ink" id="ink" tabindex="0" role="application" aria-label="A tall tank of dark water, lit from the side. One indigo drop of ink falls through it as a ring and breaks into fingers. Click to add a drop of ink. Hold to add a thread of ink. Drag to stir the water. Press Space to add a drop of ink. Press C to clear the tank.">
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGPU.</p>
     </div>
   </main>
@@ -80,21 +80,16 @@ function noWebGPU() {
 }
 
 /* ---------- tank ---------- */
-// The tank fills the stage between the corner rows; its width follows the stage's shape.
+// The tank fills the stage clear of the bar; its width follows the stage's shape.
 // Height and depth are fixed, in world units.
 let W = 0.6;
 const H = 1, D = 0.3;
 const GAP_PX = 8, SIDE_PX = 16, MIN_W = 0.45, MAX_W = 2.4;
-// Returns the stage's top and bottom bands that the shell's corners take.
-// Offsets skip the entrance transform, so the bands hold during the intro.
+// Returns the stage's top and bottom bands that the bar takes.
+// Each band is 24 px at least, before the bar arrives.
 function bands() {
-  const layer = panel.parentElement.querySelector('.stim-ui');
-  if (!layer) return [GAP_PX * 3, GAP_PX * 3];
-  const h = layer.clientHeight;
-  const rows = sel => [...layer.querySelectorAll(sel)].filter(el => el.offsetHeight);
-  const top = Math.max(0, ...rows(':scope > .s2-tl, :scope > .s2-tr').map(el => el.offsetTop + el.offsetHeight));
-  const bot = Math.max(0, ...rows(':scope > .s2-bl, :scope > .s2-br').map(el => h - el.offsetTop));
-  return [top + GAP_PX, bot + GAP_PX];
+  const c = ui.cover();
+  return [Math.max(GAP_PX * 2, c.top) + GAP_PX, Math.max(GAP_PX * 2, c.bottom) + GAP_PX];
 }
 function tankWidth() {
   const [top, bot] = bands();
@@ -173,7 +168,10 @@ const ui = initPage({ id: 'ink', bar: {
       options: ['low', 'medium', 'standard', 'high'].map(v => ({ value: v, label: cap(v) })),
       onPick: v => live.quality?.(v) },
   ],
-  keys: [['click', 'drop'], ['hold', 'pipette'], ['drag', 'stir'], ['space', 'drop']],
+  keys: [['click', 'add a drop of ink'], ['hold', 'add a thread of ink'], ['drag', 'stir the water'], ['space', 'add a drop of ink']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add a drop of ink'], ['hold', 'Add a thread of ink'], ['hold + drag', 'Draw a thread of ink'],
+    ['drag', 'Stir the water'], ['space', 'Add a drop of ink'], ['C', 'Clear the tank']],
 } });
 // Drop and Clear wait for the sim.
 ui.action('drop').disabled = ui.action('clear').disabled = true;
@@ -1095,10 +1093,10 @@ async function start() {
   await renderer.compileAsync(scene, camera);
 
   panel.prepend(canvas);
-  // The corners change size on narrow stages, so the tank refits with them.
   const fit = new ResizeObserver(resize);
   fit.observe(panel);
-  panel.parentElement.querySelectorAll('.stim-ui > div').forEach(el => fit.observe(el));
+  // A bar that arrives, wraps or moves refits the tank.
+  ui.onCover(resize);
   resize();
   ui.action('drop').disabled = ui.action('clear').disabled = false;
   canvas.classList.add('on');

@@ -43,7 +43,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--balloons" id="stage" tabindex="0" role="application" aria-label="Foil balloon letters float on a dark stage, saying HI. Type to inflate more; drag to bat them, rub one to squeak it and hold one to prick it, or use the arrow keys to bat, Backspace to prick and Enter to let them all go.">
+    <div class="stage stage--balloons" id="stage" tabindex="0" role="application" aria-label="Foil balloon letters float on a dark stage. They say HI. Type a letter to inflate it. Drag to bat the letters. Click a letter to push it. Rub a letter to make it squeak. Hold a letter to prick it. Press the arrow keys to bat the letters. Press Backspace to prick the last letter. Press Enter to let the letters go.">
       <input class="keys" id="keys" type="text" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Letters to inflate">
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
@@ -60,7 +60,7 @@ const FOIL_OPTS = [
   { value: 'gold', label: 'Gold', dot: 'linear-gradient(135deg, oklch(0.95 0.08 95), oklch(0.8 0.15 80) 55%, oklch(0.6 0.12 70))' },
   { value: 'silver', label: 'Silver', dot: 'linear-gradient(135deg, oklch(0.97 0.01 250), oklch(0.8 0.015 255) 55%, oklch(0.58 0.02 260))' },
   { value: 'rose', label: 'Rose', dot: 'linear-gradient(135deg, oklch(0.93 0.06 20), oklch(0.78 0.12 15) 55%, oklch(0.58 0.12 10))' },
-  { value: 'holo', label: 'Holo', dot: 'conic-gradient(from 40deg, oklch(0.82 0.15 350), oklch(0.88 0.14 90), oklch(0.86 0.14 165), oklch(0.8 0.13 240), oklch(0.8 0.15 300), oklch(0.82 0.15 350))' },
+  { value: 'holo', label: 'Holographic', dot: 'conic-gradient(from 40deg, oklch(0.82 0.15 350), oklch(0.88 0.14 90), oklch(0.86 0.14 165), oklch(0.8 0.13 240), oklch(0.8 0.15 300), oklch(0.82 0.15 350))' },
 ];
 // The foil choice comes back on the next visit.
 const FOIL_KEY = 'stimming.balloons.foil';
@@ -78,7 +78,10 @@ const ui = initPage({ id: 'balloons', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['type', 'inflate'], ['drag', 'bat it'], ['hold', 'prick'], ['enter', 'let go']],
+  keys: [['type', 'inflate a letter'], ['drag', 'bat the letters'], ['hold', 'prick a letter'], ['enter', 'let the letters go']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['A-Z 0-9', 'Inflate a letter'], ['space', 'Add a space'], ['drag', 'Bat the letters'], ['click', 'Push a letter'], ['circle', 'Rub a letter'], ['hold', 'Prick a letter'],
+    ['← → ↑ ↓', 'Bat the letters'], ['backspace', 'Prick the last letter'], ['enter', 'Let the letters go'], ['tap', 'Open the keyboard']],
 } });
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1032,17 +1035,12 @@ function makeRope(L) {
 
 /* ---------- layout: the word sits in rows, as large as fits ---------- */
 // The word sits between bandB and bandT, in world units.
-// The shell's corner rows push the band in.
+// The bar's strips push the band in.
 let bandT = 1, bandB = -0.72;
 function measureBands() {
   const h = panel.clientHeight;
   if (!h) return;
-  let t = 0, b = 0;
-  for (const el of document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
-    if (!el.offsetParent || !el.offsetHeight) continue;
-    if (el.offsetTop < h / 2) t = Math.max(t, el.offsetTop + el.offsetHeight);
-    else b = Math.max(b, h - el.offsetTop);
-  }
+  const c = ui.cover(), t = c.top, b = c.bottom;
   // A gap of 24 px leaves room for the bob and the tilt.
   bandT = t ? Math.min(1, 1 - (2 * (t + 24)) / h) : 1;
   bandB = Math.max(-0.72, -1 + (2 * (b + 24)) / h);
@@ -2069,6 +2067,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) wake
 /* ---------- start: font, room, glyphs and shaders in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
+  ui.hideControls();
 }
 async function fontReady() {
   const link = document.querySelector('link[href*="Gabarito"]');
@@ -2196,9 +2195,8 @@ async function start() {
 
   panel.prepend(canvas);
   fitRenderer(2, onSize, 1.4e6);
-  // The corners change size with the phone layout and the toy name.
-  const ro = new ResizeObserver(() => { measureBands(); layout(); poke(); });
-  document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)').forEach(el => ro.observe(el));
+  // A bar that arrives, wraps or moves fits the word again.
+  ui.onCover(() => { measureBands(); layout(); poke(); });
   if (!panel.clientWidth) onSize(16, 9);
   // HI arrives already inflated.
   for (const ch of 'HI') {
