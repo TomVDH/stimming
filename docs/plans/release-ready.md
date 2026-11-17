@@ -21,8 +21,8 @@ Each item comes from a rule that already exists. The source column names that ru
 | 11 | Load progress | A heavy toy reports real progress with `stage()` and `buildSteps(n)`. Heavy: a Scene, Compute or Environment toy, or a toy that fetches or bakes assets before its first frame. A light toy may keep the shell default. | `AGENTS.md` (The intro is the preloader), [loading.md](loading.md) |
 | 12 | Sound | Sound is muted by default, starts after a gesture, and goes through `audioKit()` or the shell's `sound`, so the stored choice and sleep hold. A toy with no sound has `sound: false` in `toys.json`. | `AGENTS.md` Conventions, [modularize.md](modularize.md) step 1 |
 | 13 | Reduced motion | The toy reads `prefers-reduced-motion` and changes what moves. The doc says what changes. | `AGENTS.md` Conventions, [stack.md](../stack.md) rule 4 |
-| 14 | Runtime QA | Recorded and dated in the toy doc: 30 fps or better at 1280 px and on a phone; the loop stops when idle and when hidden; a clean console on load and after every control; the Bar v2 compliance list at 1280, 375 x 812 and 812 x 375. | `AGENTS.md` Process and Conventions, [bar-v2.md](bar-v2.md) Checks |
-| 15 | Sign-off | Tom puts `data-done` on the intro and the menu `<li>`, and sets the version after the port. Then he gives the approved label. | `AGENTS.md` (`data-done`), [ports.md](ports.md) Rules |
+| 14 | Runtime QA | Recorded and dated in the toy doc: 30 fps or better at 1280 px and on a phone; the loop stops when hidden, and stops when idle unless Tom accepts the toy's idle motion (G4); a clean console on load and after every control; the Bar v2 compliance list at 1280, 375 x 812 and 812 x 375. | `AGENTS.md` Process and Conventions, [bar-v2.md](bar-v2.md) Checks |
+| 15 | Sign-off | Tom puts `data-done` on the intro and the menu `<li>`. The approved label is version `"2.0"` in `toys.json`; only Tom sets it (Tom, 2026-11-16, G0). | `AGENTS.md` (`data-done`), [ports.md](ports.md) Rules |
 
 ### Rules for the list
 
@@ -30,7 +30,7 @@ Each item comes from a rule that already exists. The source column names that ru
 - A runtime item (12 to 14) passes only with a dated record in the toy doc. No record is a fail, not a pass.
 - The list runs one toy at a time, in that toy's own chat, when Tom picks it. Never fix gaps across toys in one sweep.
 - Tom alone sets `data-done`, the version and the approved label. An agent never sets them.
-- How the label shows in the files is open (question 0 in the sheet).
+- The label is version `"2.0"` in `toys.json` (Tom, 2026-11-16). No field is added.
 
 ## Attributions
 
@@ -380,4 +380,11 @@ Tom answers in small batches. Each answer goes under its question with the date.
 
 ### Answers
 
-None yet.
+Batch 1, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| G0 | Version 2.0 | The approved label is `version: "2.0"` in `toys.json`. No new field. Item 15 says so |
+| G1 | All downloaded | None of the recorded audio is Tom's own work. Each file needs its source and licence found before its toy is approved: Railgun (shot, impact, boom, thrust), Launch (thrust), Fireworks (15 takes), Glass (gunshot), Sonar (ping). `ms3guns.mp3` is gone from the repo |
+| G4 | Judge per toy | Each toy's own chat proposes rest or keeps the motion; Tom decides there. Item 14 says so |
+| G5 | Still frame and one line | Galaxy, Fire, Ink Water and Cauldron get decision 4 as written. Spark wheel keeps its Classic build |
