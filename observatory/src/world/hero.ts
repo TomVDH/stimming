@@ -555,7 +555,7 @@ const um = (pts: P2[]): P2[] => pts.map(([a, b]) => [u(a), u(b)]);
 // There it gives a deep red glow.
 const RED = { uRedP: { value: new Vector3() }, uRedC: { value: new Color(1.0, 0.06, 0.025).multiplyScalar(34) } };
 function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
-  const prev = m.onBeforeCompile, uOcc = { value: occ };
+  const prev = m.onBeforeCompile, key = m.customProgramCacheKey(), uOcc = { value: occ };
   m.onBeforeCompile = (sh, r) => {
     prev.call(m, sh, r);
     Object.assign(sh.uniforms, RED, { uOcc });
@@ -576,8 +576,9 @@ function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
         }
         #endif`);
   };
-  // Every inside material shares one program per kind.
-  m.customProgramCacheKey = () => 'hero-inside';
+  // The patch changes the program, so the cache key changes too.
+  // It builds on the material's own key, as world/dusk does.
+  m.customProgramCacheKey = () => key + '|inside';
   return m;
 }
 
