@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -52,6 +52,7 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
   ],
   quality: true,
@@ -84,7 +85,9 @@ const float CAMH = 1.25;
 const vec2 TOWER = vec2(-4.3, -23.0);
 const vec2 WALL = vec2(-0.9, -8.0);
 const vec2 CORE = vec2(6.5, -19.0);
-const float BASE = 1.35;
+// The base's height in km: Dev's Cloud base sets it (1.35 by default).
+uniform float uBase;
+#define BASE uBase
 // The base shelf: its centre and its two half widths.
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
@@ -138,7 +141,7 @@ float stormShapeSun(vec3 p) {
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
   // The wall cloud: a lowered block under the base, by the rotation.
-  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), abs(p.y - BASE + 0.2) - 0.35);
+  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, BASE - 0.55, p.y)), abs(p.y - BASE + 0.2) - 0.35);
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -156,7 +159,7 @@ float stormShape(vec3 p) {
   return smin(d, front, 0.8);
 }
 // The cloud base over a point, in km: lower under the wall cloud. main.js deckAt() holds the same curve.
-float baseAt(vec2 c) { return mix(BASE, 0.85, 1.0 - smoothstep(1.2, 2.8, length(c - WALL))); }
+float baseAt(vec2 c) { return mix(BASE, BASE - 0.5, 1.0 - smoothstep(1.2, 2.8, length(c - WALL))); }
 // Near a tornado's horn the deck's ragged noise eases, most by the funnel.
 float stormCalm(vec3 p) {
   if (uTorOn < 0.5) return 1.0;
@@ -550,7 +553,9 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   const int N = 56;
   for (int i = 0; i < N; i++) {
     float fi = float(i);
-    float z = 4.0 - fi * (3.3 / float(N));
+    // The ears stand nearer on a wider lens, so they keep their size on screen at any lens.
+    // At 28 mm the 50 mm distances drew them as thin strokes.
+    float z = (4.0 - fi * (3.3 / float(N))) * uFoc / 2.083;
     float hw = 0.5 * asp / uFoc * z;
     float x = (th(vec2(fi, 4.2)) - 0.5) * 2.2 * hw;
     float top = 0.98 + 0.12 * th(vec2(fi, 9.1));
@@ -578,7 +583,8 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
     vec2 foot = vec2(x / z * uFoc, -1.0);
     float ds = segD(s, foot, base, us);
     float ws = 0.0022 / z * uFoc;
-    k = max(k, smoothstep(ws + bl, ws - bl, ds) * 0.9);
+    // A stalk thinner than its blur covers only its share of the blur: at a wide lens it is a hair, not a stroke.
+    k = max(k, smoothstep(ws + bl, ws - bl, ds) * 0.9 * clamp(ws / bl, 0.0, 1.0));
     // The awns: a pale tuft past the tip.
     float ua;
     float da = segD(s, tip, tip + (tip - base) * 0.75, ua);
@@ -640,6 +646,8 @@ vec3 envScene(vec2 uv) {
 /* ---------- state ---------- */
 // qaHold stops the loop while a QA timing runs.
 let qaHold = false;
+// The storm's base in km: Dev's Cloud base.
+let base = 1.35;
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
@@ -691,7 +699,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => storm, uStorm: () => storm, uT: () => simT,
-      uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0), uWallSw: () => (fun.on && fun.n ? pk.wall : 1),
+      uBase: () => base, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0), uWallSw: () => (fun.on && fun.n ? pk.wall : 1),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
   });
@@ -727,7 +735,7 @@ function bindNoise() {
 function deckAt(cx, cz) {
   const d = Math.hypot(cx * 0.001 - WALL[0], cz * 0.001 - WALL[1]);
   const k = 1 - clamp((d - 1.2) / 1.6) ** 2 * (3 - 2 * clamp((d - 1.2) / 1.6));
-  return 1350 + (850 - 1350) * k;
+  return base * 1000 - 500 * k;
 }
 // The wall cloud in camera km: WALL in the scene's GLSL.
 const WALL = [-0.9, -8.0];
@@ -834,6 +842,7 @@ function funnelPass(w, h) {
   gl.uniform3fv(u.uZen, sk.zen); gl.uniform3fv(u.uMid, sk.mid); gl.uniform3fv(u.uBand, sk.band); gl.uniform3fv(u.uAnti, sk.anti);
   gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
   gl.uniform1i(u.uN, n);
+  gl.uniform1f(u.uBase, base);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
@@ -983,6 +992,7 @@ act.storm = v => { storm = v; wake(); };
 act.time = v => { S.hour = HOURS[v] ?? HOURS.golden; setSun(S.hour); wake(); };
 act.lens = v => { lensMM = +v || 28; wake(); };
 act.expo = v => { S.expo = v; wake(); };
+act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 
 /* ---------- start ---------- */
@@ -993,6 +1003,8 @@ storm = ui.slider?.value ?? storm;
 act.time(qs0.get('time') || ui.setting('time')?.value || 'golden');
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
 S.expo = ui.setting('expo')?.value ?? 1;
+// QA: ?base=2 sets the cloud base for one load.
+act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
 // QA: ?sunaz=20 sets the sun's bearing for one load.
 act.sunAz(qs0.has('sunaz') ? +qs0.get('sunaz') : ui.setting('sunAz')?.value ?? 20);
 // QA can start with funnels down: ?tor=F3,F5 places them under the wall cloud.
