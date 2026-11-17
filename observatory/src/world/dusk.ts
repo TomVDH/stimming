@@ -42,7 +42,8 @@ const duskU = {
 
 // Adds the last light to a lit material.
 // It lights only faces above the earth's shadow line.
-function patch(m: Material): void {
+// world/hero adds it to the hero model's materials.
+export function patch(m: Material): void {
   const prev = m.onBeforeCompile, key = m.customProgramCacheKey();
   m.onBeforeCompile = (sh, r) => {
     prev.call(m, sh, r);

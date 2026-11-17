@@ -66,6 +66,14 @@ Tier: raw WebGL2. A ray-cast scene in one fragment shader (pot, soup heightfield
 
 Fire's solver in WebGL2 under the pot; PBR hammered iron; flagstone floor; Add tray with four liquids; marbled soup with film layers; neater cooking; steam pass. WebGPU fire parked behind ?fire=gpu. Next: a performance pass and an icon pass, then Tom promotes the toy to the main shelf.
 
+## Soup surface
+
+- [x] Depth absorption: light dies with depth, tinted by the soup's hue; thin broth shows sunk things and the spoon, thick soup, skin and fat close it up (Dev: Soup density)
+- [ ] Tom reviews depth absorption, then PR (stimming-tao4)
+- [ ] Open ideas, one bean each: fire glow (p5hq, done), viscosity (hupj, done), fat beads (xce4), skin rafts (1gin), wall scum (z7ca, done), bubble rings (i0dx), boil by fire (ycif, done)
+- [ ] Merge origin/main before the PR
+- [ ] PR to main
+
 ## Performance pass
 
 - [x] Performance pass: see stimming-mbpi

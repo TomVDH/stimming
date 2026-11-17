@@ -458,7 +458,7 @@ Round pills in Gabarito 13 px: transparent, `--line` border, 999 px radius, `6px
 - **Don't** put blurbs or taglines on the stage. Writing lives under it.
 - **Don't** colour the intro title. Only the logo takes the toy's ink.
 - **Don't** swap a live icon for a still copy.
-- **Don't** use a brand name for a toy (Tom's exceptions: Domino Day, Strandbeest).
+- **Don't** use a brand name for a toy (Tom's exceptions: Domino Day, Strandbeest, and Zena for now).
 - **Don't** make it skeuomorphic or fussy, and don't make it bare-minimal.
 - **Don't** add a font or a library without Tom.
 - **Don't** light a scene wall to wall in neon. Use practical lamps, real materials and haze; bloom only on lamps.

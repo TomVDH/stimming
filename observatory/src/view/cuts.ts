@@ -1,107 +1,123 @@
-// Load order: world/dusk runs first.
-import '../world/dusk.ts';
+// Load order: world/hero runs first.
+import '../world/hero.ts';
 import { MathUtils, Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { CUTS, cutAt, cutsTotal, type Shot } from '../core/sequence.ts';
+import { CUTS, cutAt, cutsTotal, lens, makeLocks, startAt, type Cut, type Shot } from '../core/sequence.ts';
+import type { Phase } from '../core/machine.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
+import { hero } from '../world/hero.ts';
 import { laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
 
-/* ---------- the pick sequence: close long-lens cuts of the main dome ---------- */
-// A pick from rest cuts to close shots while the shutter opens and the tube rolls.
-// Hard cuts between shots; after the last one, back to the wide shot.
-// The machine runs on underneath; the cuts change only the camera.
+/* ---------- the pick sequence: locked cuts of the main dome ---------- */
+// A pick from rest cuts to close shots of the main dome.
+// Hard cuts join the shots.
+// After the last shot, a quick dip to black leads to the wide shot.
+// Each cut is a locked camera: one eye, one aim, one lens.
+// Only the machine moves in the frame.
 
 const DEG = MathUtils.DEG2RAD;
 // The cupola's radius at size 1, from world/observatory.ts.
 const DOME_R1 = 3.3;
-// The tube's front end, in the tube's local units.
-const TUBE_TIP = new Vector3(0, 0, -2.3);
 
 // One shot in the slit's frame, in units of the cupola radius.
-// f: out of the slit, level; r: to the slit's right; u: up. Origin: the cupola's centre.
-// look: the point it frames, or 'tip' for the tube's front end.
-// drift: how far the eye moves inside the cut. fov: start and end, vertical degrees.
-type Plan = {
-  eye: [number, number, number];
-  look: [number, number, number] | 'tip';
-  drift: [number, number, number];
-  fov: [number, number];
-};
-const C55 = Math.cos(55 * DEG), S55 = Math.sin(55 * DEG);
-const C50 = Math.cos(50 * DEG), S50 = Math.sin(50 * DEG);
-// The edge look sits left of centre: seen from the right, the gap shows there.
+// f: out of the slit, level.
+// r: to the slit's right.
+// u: up.
+// The origin is the cupola's centre.
+// eye: the camera.
+// look: the point it aims at.
+// tall: the point a portrait frame aims at, when it differs.
+type Point = [number, number, number];
+type Plan = { eye: Point; look: Point; tall?: Point };
 const PLANS: Record<Shot, Plan> = {
-  // Tight on the slit edge where the two leaves part.
-  edge: { eye: [4.2, 1.4, -0.6], look: [C55, -0.12, S55], drift: [0, 0.18, 0.06], fov: [20, 9] },
-  // The whole slit, straight on.
-  slit: { eye: [6, -0.5, -0.55], look: [C50 * 0.9, 0, S50 * 0.9], drift: [-0.25, -0.12, 0], fov: [28, 12] },
-  // Low and to the side on the rim at the slit's foot, where the cupola meets the drum.
-  gear: { eye: [2.4, 2.6, -0.8], look: [0.97, 0.25, 0.12], drift: [0, -0.2, 0.03], fov: [20, 10] },
-  // Low in the slit's plane: the tube's mouth, and the sky through the slit's top.
-  roll: { eye: [2.8, 0, -0.9], look: 'tip', drift: [0, 0.12, 0.04], fov: [24, 10] },
+  // Low on the slit's left, tight on the leaves' seam.
+  // The dome's rim cuts the frame on a diagonal, with sky above.
+  edge: { eye: [2.2, -0.7, 0.1], look: [0.72, -0.05, 0.72] },
+  // Low and straight on: the whole dome, the slit up its middle.
+  slit: { eye: [5, 0, -0.6], look: [0.5, 0, 0.5] },
+  // The same axis, closer: the slit's foot on the ledge.
+  // The turn slides the slit and its leaf over the fixed stone.
+  // A portrait frame holds one slit edge and the stone beside it.
+  gear: { eye: [3.4, 0, -0.8], look: [1, 0, 0], tall: [1, 0.22, 0] },
+  // Low on the slit's right, long lens: the tube's mouth.
+  // A portrait frame holds the mouth at its centre.
+  roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.6], tall: [0.7, 0.05, 0.55] },
 };
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
+// The eye moves in by these shares when a building blocks it.
 const NEAR = [1, 0.8, 0.65];
 // The eye stays inside the clearing; the trees start at about 45 m.
 const EYE_R = 42;
 // Reduced motion: one still shot, then one crossfade to the wide shot.
 const STILL_S = 2.6, FADE_S = 1.2;
+// Reduced motion holds the slit shot.
+const STILL_CUT: Cut = CUTS.find(c => c.shot === 'slit')!;
+// After the last cut, a quick dip to black leads to the wide shot.
+// The last cut fades down in DIP_DOWN seconds.
+// The wide shot fades up in DIP_UP seconds.
+const DIP_DOWN = 0.35, DIP_UP = 0.45;
+const LAST_CUT: Cut = CUTS[CUTS.length - 1];
 // The letterbox bars, as a share of the stage height.
 const BAR = 0.055;
 // The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
 const BEAM_CLOSE = 0.1;
-// A portrait lens is at most this much wider than the landscape lens.
-const PORTRAIT_MAX = 1.5;
 
 const ease = (k: number): number => k * k * (3 - 2 * k);
 
-type Framed = { eye: Vector3; f: Vector3; r: Vector3; plan: Plan };
+// A locked camera in world space.
+// aim: the point it looks at.
+// fov: its vertical lens in degrees.
+type Framed = { eye: Vector3; aim: Vector3; fov: number };
 
 const centre = new Vector3();
 const ray = new Raycaster();
-const tmp = new Vector3(), tmp2 = new Vector3();
+const tmp = new Vector3();
+// The cupola's radius in metres, set at the pick.
+let R = 1;
 
 // Everything in the complex that can stand between the eye and the dome.
 const blockers = (): Object3D[] => complex.root.children.filter(o => o !== complex.main.root);
 
-// Places the eye of one shot so nothing blocks the dome.
-function frame(plan: Plan, az: number, R: number): Framed {
-  const f = new Vector3(), r = new Vector3();
-  const look = plan.look === 'tip' ? new Vector3(0.6 * R, 0.5 * R, 0) : new Vector3(plan.look[0] * R, plan.look[2] * R, 0);
-  let best: Framed | null = null;
+// A point of the slit's frame in world space.
+// a: the frame's azimuth in radians.
+function slitPoint(p: Point, a: number, out: Vector3): Vector3 {
+  const [f, r, u] = p;
+  return out.copy(centre).add(tmp.set((Math.sin(a) * f + Math.cos(a) * r) * R, u * R, (-Math.cos(a) * f + Math.sin(a) * r) * R));
+}
+
+// The slit's azimuth in degrees, read from the posed cupola.
+const slitNow = (): number => -complex.main.cupola.rotation.y / DEG;
+
+// Places the eye of one cut so nothing blocks the dome.
+// az: the slit's azimuth in degrees.
+// aspect: the frame's width over its height.
+// The look point turns with the slit, not with the eye.
+function place(cut: Cut, az: number, aspect: number): Framed {
+  const plan = PLANS[cut.shot];
+  const look = slitPoint(plan.look, az * DEG, new Vector3());
+  const { fov, tall } = lens(cut.fov, aspect);
+  const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
+  const eye = new Vector3();
   for (const near of NEAR) {
     for (const turn of TURNS) {
-      const a = (az + turn) * DEG;
-      f.set(Math.sin(a), 0, -Math.cos(a));
-      r.set(Math.cos(a), 0, Math.sin(a));
-      const [ef, er, eu] = plan.eye;
-      const eye = centre.clone().addScaledVector(f, ef * R * near).addScaledVector(r, er * R).add(tmp.set(0, eu * R, 0));
+      slitPoint(plan.eye, (az + turn) * DEG, eye);
+      eye.lerp(look, 1 - near);
       if (Math.hypot(eye.x, eye.z) > EYE_R) continue;
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
-      // The look point turns with the slit, not with the eye.
-      const sa = az * DEG;
-      const target = tmp2.copy(centre).addScaledVector(tmp.set(Math.sin(sa), 0, -Math.cos(sa)), look.x).add(tmp.set(0, look.y, 0));
-      const dist = eye.distanceTo(target);
-      ray.set(target, tmp.copy(eye).sub(target).normalize());
-      ray.far = dist;
+      ray.set(look, tmp.copy(eye).sub(look).normalize());
+      ray.far = eye.distanceTo(look);
       if (ray.intersectObjects(blockers(), true).length) continue;
-      best = { eye, f: f.clone(), r: r.clone(), plan };
-      break;
+      return { eye, aim, fov };
     }
-    if (best) break;
   }
-  if (best) return best;
-  // No clear eye: the nearest eye straight out of the slit.
-  const a = az * DEG;
-  f.set(Math.sin(a), 0, -Math.cos(a));
-  r.set(Math.cos(a), 0, Math.sin(a));
-  const eye = centre.clone().addScaledVector(f, plan.eye[0] * R * NEAR[NEAR.length - 1]).add(tmp.set(0, plan.eye[2] * R, 0));
-  return { eye, f, r, plan };
+  // No clear eye: the nearest eye of the plan as it stands.
+  slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
+  return { eye, aim, fov };
 }
 
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
@@ -112,7 +128,16 @@ const bars = [0, 1].map(i => {
 });
 const still = document.createElement('canvas');
 still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
-renderer.domElement.after(still, ...bars);
+// The dip's black lies over the frame and the bars.
+const dip = document.createElement('div');
+dip.style.cssText = 'position:absolute;inset:0;background:#000;pointer-events:none;display:none';
+renderer.domElement.after(still, ...bars, dip);
+
+// k: 0 clear, 1 black.
+function black(k: number): void {
+  dip.style.display = k > 0 ? 'block' : 'none';
+  dip.style.opacity = String(k);
+}
 
 function beam(k: number): void { laser.mesh.scale.x = laser.mesh.scale.z = k; }
 
@@ -124,19 +149,58 @@ function showBars(on: boolean, opacity = 1): void {
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
 let t = 0;
-// mode: 'off', 'cuts' (hard cuts), 'still' (reduced motion), 'fade' (the crossfade).
-let mode: 'off' | 'cuts' | 'still' | 'fade' = 'off';
+// mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
+// Reduced motion: 'still', then 'fade' (the crossfade).
+let mode: 'off' | 'cuts' | 'dip' | 'still' | 'fade' = 'off';
 let fadeT = 0, grab = false;
-let shots: Partial<Record<Shot, Framed>> = {};
-let slitAz = 0, R = 1;
-const eye = new Vector3(), look = new Vector3(), tip = new Vector3();
+// The time in the dip.
+// dipWide is true once the black hides the change to the wide shot.
+let dipT = 0, dipWide = false;
+// The locked cameras: each cut sets its own on its first frame.
+// The cupola can turn after the pick.
+// So each cut frames the slit where it stands at the cut.
+// The aspect is fixed then too: a resize keeps the aim and the lens.
+const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
+
+// The hero model shows in the close shots only.
+// The wide shot keeps the light model, so nothing changes there.
+// held: QA keeps the hero in outside the cuts.
+let heroOn = false, held = false;
+function swap(on: boolean): void {
+  if (on !== heroOn) {
+    heroOn = on;
+    hero.show(on);
+    complex.main.show(!on);
+  }
+  if (on) hero.follow(complex.main);
+}
 
 function toWide(): void {
   mode = 'off';
   showBars(false);
+  black(0);
   still.style.display = 'none';
   beam(1);
   applyCamera(camera.aspect);
+}
+
+// Steps the dip: the last cut fades down, the wide shot fades up.
+function stepDip(dt: number): void {
+  dipT += dt;
+  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); return; }
+  if (!dipWide) {
+    // The frame is black now, so the change to the wide shot does not show.
+    dipWide = true;
+    showBars(false);
+    beam(1);
+    applyCamera(camera.aspect);
+    // This frame shows full black.
+    black(1);
+    return;
+  }
+  const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
+  black((1 - k) * (1 - k));
+  if (k >= 1) toWide();
 }
 
 function startFade(): void {
@@ -147,27 +211,32 @@ function startFade(): void {
 }
 
 export const cuts = {
-  // True while the sequence owns the camera or the crossfade runs.
+  // True while the cuts, the dip or the crossfade run.
   get busy(): boolean { return mode !== 'off'; },
-  // True while a close shot shows; a tap or Esc then skips.
-  get showing(): boolean { return mode === 'cuts' || mode === 'still'; },
-  get shot(): Shot | null { return mode === 'cuts' ? cutAt(t)?.shot ?? null : mode === 'still' ? 'slit' : null; },
+  // True while a close shot or the dip shows; a tap or Esc then skips.
+  get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
+  get shot(): Shot | null {
+    if (mode === 'cuts') return cutAt(t)?.shot ?? null;
+    if (mode === 'dip') return dipWide ? null : LAST_CUT.shot;
+    return mode === 'still' ? STILL_CUT.shot : null;
+  },
   get time(): number { return t; },
-  // Starts the sequence; az is the slit's azimuth at the pick.
-  start(az: number): void {
-    slitAz = az;
+  // Starts the sequence.
+  // phase: the machine's phase after the pick.
+  // An open shutter plays only the slew cuts.
+  start(phase: Phase): void {
     const main = complex.main;
     main.root.updateMatrixWorld(true);
     main.cupola.getWorldPosition(centre);
     R = DOME_R1 * main.root.scale.x;
-    shots = {};
-    for (const c of CUTS) shots[c.shot] = frame(PLANS[c.shot], slitAz, R);
-    t = 0;
     mode = reduced() ? 'still' : 'cuts';
+    t = mode === 'cuts' ? startAt(phase) : 0;
+    locks.clear();
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
-    if (mode === 'cuts') toWide();
+    // A skip in the dip lands on the wide shot at once.
+    if (mode === 'cuts' || mode === 'dip') toWide();
     else if (mode === 'still') startFade();
     else return;
     redraw();
@@ -177,7 +246,11 @@ export const cuts = {
   step(dt: number): void {
     if (mode === 'off') return;
     t += dt;
-    if (mode === 'cuts' && t >= cutsTotal) toWide();
+    if (mode === 'cuts' && t >= cutsTotal) {
+      mode = 'dip';
+      dipT = 0; dipWide = false;
+      stepDip(t - cutsTotal);
+    } else if (mode === 'dip') stepDip(dt);
     else if (mode === 'still' && t >= STILL_S) startFade();
     else if (mode === 'fade' && !grab) {
       fadeT += dt;
@@ -189,31 +262,22 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    if (mode === 'off' || (mode === 'fade' && !grab)) return;
-    const cut = mode === 'cuts' ? cutAt(t) : null;
-    const shot: Shot = cut ? cut.shot : 'slit';
-    const s = shots[shot];
+    const close = !(mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide));
+    // The swap happens in the frame that changes the shot.
+    // Until the hero is ready, the cuts keep the light model.
+    swap((close || held) && hero.ready);
+    if (!close) return;
+    // The dip holds the last cut until the frame is black.
+    const s = mode === 'cuts' ? locks.at(t) : locks.of(mode === 'dip' ? LAST_CUT : STILL_CUT);
     if (!s) return;
-    const p = s.plan;
-    // Reduced motion holds the end of the shot: no zoom, no drift.
-    const k = cut ? Math.min(1, (t - cut.at) / cut.dur) : 1;
-    const dk = cut ? k : 0;
-    eye.copy(s.eye).addScaledVector(s.f, p.drift[0] * R * dk).addScaledVector(s.r, p.drift[1] * R * dk);
-    eye.y += p.drift[2] * R * dk;
-    if (p.look === 'tip') {
-      look.copy(complex.main.tube.localToWorld(tip.copy(TUBE_TIP)));
-    } else {
-      const a = slitAz * DEG;
-      look.copy(centre).add(tmp.set(Math.sin(a) * p.look[0] * R, p.look[2] * R, -Math.cos(a) * p.look[0] * R))
-        .addScaledVector(tmp2.set(Math.cos(a), 0, Math.sin(a)), p.look[1] * R);
-    }
-    // A portrait frame takes a wider lens, so the subject still fits across.
-    const tall = camera.aspect < 1 ? Math.min(PORTRAIT_MAX, 1 / Math.sqrt(camera.aspect)) : 1;
-    const fov = MathUtils.lerp(p.fov[0], p.fov[1], cut ? ease(k) : 1) * tall;
-    applyShot(camera.aspect, eye, look, fov);
+    // The projection follows the canvas, so a resize never stretches the frame.
+    applyShot(camera.aspect, s.eye, s.aim, s.fov);
     beam(BEAM_CLOSE);
     showBars(true);
   },
+  // QA: keeps the hero model in outside the cuts, for stills.
+  // The beam thins as in the close shots.
+  hold(on: boolean): void { held = on; beam(on ? BEAM_CLOSE : 1); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     if (!grab) return;

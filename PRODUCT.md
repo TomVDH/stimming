@@ -30,7 +30,7 @@ Success: the visitor plays first, with nothing in the way. A curious visitor fin
 
 ## Positioning
 
-- Every toy is an original object. No toy carries a brand name (Tom's exceptions: Domino Day, Strandbeest).
+- Every toy is an original object. No toy carries a brand name (Tom's exceptions: Domino Day, Strandbeest, and Zena for now).
 - Every toy has a Flemish name with IPA beside its English name (`toys.json`).
 - Shader-rich toys are the strength: Glass, Rain, Bubbles, Galaxy.
 - S tier, the bar for new toys: Prism, Googly eyes, Fire, Pin art.
