@@ -23,10 +23,11 @@ Tom, 2026-11-17, for the Cauldron chat: "add more ingredients -- including forbi
 - [x] List every control and what it does (from the spec, the toy doc and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17). Tom: "Ingredients for T -- Throw Out for C", so the T action is `+ Ingredients` and the C action is `Throw out`; the rest is the copy rewrite below. Bar v3 reads a new optional `help` list for How to play; `keys` keeps four entries for Bar v2
 - [x] Switch the toy to the Signal bar: `signal: true` (2026-11-17, with stimming-hvtr)
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px close-ups of the bar and every sheet with the new copy; clean console
+- [ ] 375 x 812 and 812 x 375 with the new copy; a hands-on play session
+- [x] The toy's doc in `docs/toys/` says what is true (the bar block of `docs/toys/cauldron.md`)
 
 ## Review of 2026-11-17: controls, labels, help and copy (proposal; nothing is changed)
 

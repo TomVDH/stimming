@@ -516,6 +516,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom: "white square fill monogram like intro". The monogram top left is a white square with the toy's emblem cut out dark, the intro's flash box at rest. Tom also asks for ten toys to take the new bar first, with a redo of their controls in the same pass (proposal in epic `stimming-a5rs`). | 2 |
 | 2026-11-17 | Tom confirms the ten: Cauldron, Train ride, Railgun, Galaxy, Window seat, Fire, Googly eyes, Prism, Bubbles, Frietkot. He also asks for a larger icon in the monogram; it fills 90% of the square. | 2 |
 | 2026-11-17 | Tom says yes to the shell port, and: "we will pull out bar v2 when we have signed off barv3 per toy". Signal is Bar v3 (`docs/plans/bar-v3.md`); a toy opts in, and Bar v2 stays until every toy is signed off. Cauldron is the first toy on it. | 1, 2 |
+| 2026-11-17 | Tom asks for an STE100-inspired rewrite of all copy, with "ultimate clarity and consistency -- esp with the controls", and for a redo of the mouse and keycap icons. Cauldron is first: its labels, help and other copy are rewritten; Tom sets two labels himself: "Ingredients for T -- Throw Out for C". How to play draws each input. | 2 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.

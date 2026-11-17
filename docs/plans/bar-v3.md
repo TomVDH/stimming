@@ -39,7 +39,7 @@ All motion is in film frames at 30 fps, as in the intro. Every sequence stops wh
 - The choice opens a list: every option as a tile; a `group` on an option puts a heading across the list.
 - Settings: the main slider on a narrow stage, the toy's rows, Quality, the build link, Reset. A `group` on a row opens a labelled section.
 - A choice row with more than four options, or long names, steps one name at a time.
-- How to play, behind (i): every gesture, every action key, every option key. Keycaps show only here, as hairline boxes.
+- How to play, behind (i): each input as a drawing (a mouse, touch points) or a hairline keycap, then what it does. A toy may pass `help: [[input, instruction], ...]`, one instruction per row with the verb first; without it the `keys` entries and the action keys make the list. Keycaps show only here.
 
 ## Top left
 

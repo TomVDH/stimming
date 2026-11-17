@@ -336,7 +336,7 @@ export function mountSignal(id, spec, ui) {
       sys.push(dev);
     }
     // (i) opens How to play: every gesture and every key. Keycaps show nowhere else.
-    if (spec.keys?.length) {
+    if (spec.help?.length || spec.keys?.length) {
       const info = btn('sg-ico', INFO_SVG, 'How to play');
       const sheet = sheetPart('sg-sheet--rows', 'How to play', info);
       const how = h('div', 'sg-how');
@@ -347,8 +347,10 @@ export function mountSignal(id, spec, ui) {
         input.setAttribute('aria-label', keyWord(word, touch()).toLowerCase());
         how.append(box('sg-how-row', input, text('span', '', verb)));
       };
-      spec.keys.forEach(([word, verb]) => { if (!(touch() && !onTouch(word))) row(word, verb); });
-      if (!touch()) {
+      // A toy may give help rows: one instruction per row, as many as it needs.
+      // Without them the key strip's entries and the action keys make the list.
+      (spec.help || spec.keys).forEach(([word, verb]) => { if (!(touch() && !onTouch(word))) row(word, verb); });
+      if (!touch() && !spec.help) {
         (spec.actions || []).forEach(a => { if (a.key) row(String(a.key), actLabel(a).toLowerCase()); });
         options.forEach(o => { if (o.key) row(String(o.key), String(o.label).toLowerCase()); });
       }

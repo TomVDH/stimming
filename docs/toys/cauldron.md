@@ -22,16 +22,16 @@ A drag stirs it with a wooden spoon: the soup turns with weight, the middle dips
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`cauldron/index.html:105`).
+Bar: v3, the Signal bar, over Bar v2 (`signal: true` in `cauldron/index.html`). Copy rewritten 2026-11-17 (bean `stimming-u2in`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Add` tray: Mix (the old round), the ten things, and four liquids: cream, squid ink, chilli oil, saffron |
-| Bottom left (actions) | `+ Thing` (T), `Clear` (C) |
-| Bottom right (slider) | `Fire`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
-| Key strip | drag stir; click throw in; ← → stir |
+| Choice | `Ingredients` list: Any (the old round, no heading), then Solids (sixteen) and Liquids (cream, squid ink, chilli oil, saffron) |
+| Actions | `+ Ingredients` (T), `Throw out` (C) |
+| Slider | `Heat`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
+| How to play | Click: add an ingredient, push an ingredient down. Drag: stir the soup, move an ingredient, pour the liquid. ← →: stir the soup. T: add an ingredient. C: throw out the soup |
 | Settings | Simmer sound (toggle); Quality; Reset in the footer |
-| Dev (`?dev`) | Exposure, Bloom; Camera height and Camera turn (near 0 is a side view); Fire X, Fire Z, Fire height, Fire size, Fire power, Fire spread. The camera and fire rows keep no value |
+| Dev (`?dev`) | Look: Exposure, Bloom, Blur. Camera: Height, Turn (near 0 is a side view). Fire: X, Z, Height, Size, Power, Spread. The camera and fire rows keep no value |
 <!-- /gen:bar -->
 
 | Gesture | Does |
