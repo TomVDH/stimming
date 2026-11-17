@@ -1,11 +1,11 @@
 ---
 # stimming-h9ve
 title: 'Railgun to TypeScript: .ts + esbuild pilot for every toy'
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-17T05:17:45Z
-updated_at: 2026-11-17T06:17:55Z
+updated_at: 2026-11-17T06:18:17Z
 parent: stimming-3s8z
 ---
 
@@ -43,3 +43,5 @@ Railgun is the first TypeScript toy (Tom, 2026-11-16: every toy goes to TypeScri
 Same behaviour at every step: the split bundle matched the single-file bundle line for line; strict types left the bundle byte-identical; play and salvo QA logs match main; stills A/B differ from main only as main differs from itself; clouds-check gives main's result on every check.
 
 Not done, by choice: an `init()` per module in place of the load-order chain (it would turn about 900 consts into typed lets). Five unused values (`heaps`, `ring`, `rimPt`, `sceneReady`, `audition`) stay for a separate cleanup.
+
+PR: #70 https://github.com/TomVDH/stimming/pull/70
