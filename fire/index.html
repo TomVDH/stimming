@@ -46,13 +46,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/fire.svg)"></span><span class="intro-name">Fire</span><span class="intro-sub">Stimming No. 21</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/fire.svg)"></span><span class="intro-name">Fire</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire burns on a dark floor. Click the air or press Enter to flick a pinch of salt into it; the salt colours the flames, then burns off. Hold to keep feeding salt. Drag through the air to blow on it, drag the fire to move it, and click the fire or press Space to make it flare. Type a word to burn it in an iron plate; Backspace trims it and Escape clears it. Salt picks the chemical you flick and Intensity sets the fire's size. Settings hold the base fuel, motion, temperature, turbulence and quality.">
-      <p class="fail" hidden>Fire needs WebGPU, which this browser doesn't have.</p>
+    <div class="stage stage--fire" id="fire" tabindex="0" role="application" aria-label="A fire on a dark floor. Click the air to add salt. The salt colours the flames. Hold to add a stream of salt. Drag the air to blow on the fire. Drag the fire to move it. Click the fire to flare it. Type a word to burn it. Press Enter to add salt. Press Space to flare the fire.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGPU.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Fire</h1><div class="vignette" hidden></div></section>
@@ -196,7 +196,7 @@ const saved = k => { try { return localStorage.getItem(`stimming.fire.${k}`); } 
 const save = (k, v) => { try { localStorage.setItem(`stimming.fire.${k}`, String(v)); } catch { /* storage is optional */ } };
 const unit = (k, d) => { const v = saved(k); return v !== null && Number.isFinite(+v) ? Math.min(1, Math.max(0, +v)) : d; };
 const MOTIONS = ['steady', 'gusts', 'twister', 'pulse'];
-// Base is the fuel that burns; salt is what a flick throws in.
+// The fuel burns; a click adds the salt.
 const BASES = ['wood', 'methanol', 'magnesium'];
 const SALT_IDS = ['strontium', 'lithium', 'calcium', 'sodium', 'barium', 'boron', 'copper', 'cesium', 'potassium'];
 // An old Fuel pick becomes the base or the salt.
@@ -247,11 +247,10 @@ function pickQuality(v) {
 const ui = initPage({ id: 'fire', signal: true, bar: {
   choice: { label: 'Salt', display: 'stepper', value: salt, options: SALTS,
     onPick: v => { salt = v; save('salt', v); sim.salt(); } },
-  slider: { label: 'Intensity', min: 0, max: 1, step: 0.01, value: intensity,
+  slider: { label: 'Size', min: 0, max: 1, step: 0.01, value: intensity,
     onInput: v => { intensity = v; save('intensity', v); sim.tune(); } },
-  actions: [{ verb: 'reset', onPress: () => sim.reset() }],
   settings: [
-    { type: 'choice', id: 'base', label: 'Base', value: fuel, options: BASES.map(v => ({ value: v, label: cap(v) })),
+    { type: 'choice', id: 'base', label: 'Fuel', value: fuel, options: BASES.map(v => ({ value: v, label: cap(v) })),
       onPick: v => { fuel = v; save('base', v); sim.fuel(); } },
     { type: 'choice', id: 'motion', label: 'Motion', value: motion, options: MOTIONS.map(v => ({ value: v, label: cap(v) })),
       onPick: v => { motion = v; save('motion', v); sim.changed(); } },
@@ -262,10 +261,13 @@ const ui = initPage({ id: 'fire', signal: true, bar: {
     { type: 'choice', id: 'quality', label: 'Quality', value: quality, onPick: pickQuality,
       options: ['low', 'medium', 'standard', 'high'].map(v => ({ value: v, label: cap(v) })) },
   ],
-  keys: [['click', 'flick salt'], ['hold', 'feed'], ['drag air', 'blow'], ['type', 'burn a word']],
+  // Reset sits in Settings; the hook does nothing until the sim binds it.
+  reset: () => sim.reset(),
+  keys: [['click', 'add salt'], ['hold', 'add a stream of salt'], ['drag', 'blow on the fire'], ['type', 'burn a word']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add salt'], ['click', 'Flare the fire'], ['hold', 'Add a stream of salt'], ['drag', 'Blow on the fire'], ['drag', 'Move the fire'],
+    ['A-Z 0-9', 'Burn a word'], ['backspace', 'Remove a letter'], ['esc', 'Remove the word'], ['enter', 'Add salt'], ['space', 'Flare the fire']],
 } });
-// Reset waits for the sim.
-ui.action('reset').disabled = true;
 // A site change moves Fire too, except from Low or Medium.
 onQuality(q => {
   if (quality === 'low' || quality === 'medium') return;
@@ -844,7 +846,7 @@ async function start() {
   }
 
   /* ---------- smart sync ---------- */
-  // Intensity, Temperature, Chaos and the chemical set every hidden parameter.
+  // Size, Temperature, Chaos and the chemical set every hidden parameter.
   const live = { emit: 1, smoke: 1, crackle: 1, sparks: 0, sputter: 0, flick: 1, sway: 1, height: 3.5, tone: 1 };
   function tune() {
     const I = intensity, T = temp, C = chaos, chem = CHEMS[fuel], f = FEEL[fuel];
@@ -921,7 +923,7 @@ async function start() {
   }
 
   // Heat, flare and a gust set emission and the light's glow.
-  // Boost carries Pulse and sputter; Intensity scales the base.
+  // Boost carries Pulse and sputter; Size scales the base.
   let boost = 1;
   function feed(gust) {
     const base = heat * live.emit * boost;
@@ -978,7 +980,7 @@ async function start() {
     if (!ac || !kit.noise) { if (roar && kit.ac) roar.g.gain.setTargetAtTime(0, kit.ac.currentTime, 0.05); return; }
     const t = ac.currentTime, r = roarVoice(ac);
     // The roar swells and opens with drag speed and flares.
-    // Intensity, Pulse and the twister swell it too.
+    // Size, Pulse and the twister swell it too.
     const swell = (0.5 + 0.7 * intensity) * boost + swirlNow / 40;
     const level = heat * (0.09 * swell + 0.5 * drive + 0.45 * flare) * uFlicker.value;
     r.g.gain.setTargetAtTime(level, t, 0.06);
@@ -1319,7 +1321,6 @@ async function start() {
     wake();
     if (reduced()) still(360);
   };
-  ui.action('reset').disabled = false;
   applyFuel(true);
 
   onReducedChange(on => { sync(); if (on) still(120); else wake(); });

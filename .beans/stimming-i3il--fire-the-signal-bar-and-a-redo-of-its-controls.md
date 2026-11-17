@@ -19,12 +19,12 @@ First read of what to redo: Reset is the only action on the bar; it may belong i
 - [x] List every control and what it does (from the spec, the input code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Yes, apply"), as proposed
 - [x] Switch the toy to the Signal bar: `signal: true` in `fire/index.html` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy)
+- [x] The toy's doc in `docs/toys/` says what is true: Fire has no doc there, so no doc line is false
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Yes, apply")
 
 The rules are those of the five toys before it: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 

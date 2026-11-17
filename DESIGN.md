@@ -521,6 +521,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom on Railgun's copy: "Yes, apply". Time of day; Aim: Auto, Manual; Shot: Single, Salvo; Medium; one instruction per help row. Reset stays on the bar: the toy shows it only after a kill, and Bar v3 now follows that. | 19 |
 | 2026-11-17 | Tom on Galaxy's copy: "Yes, apply". Objects for the list; Black hole for Supermassive; Speed for Gravity; nine help rows, one instruction each. | 19 |
 | 2026-11-17 | Tom on Window seat's copy: "Yes, apply". Wing light; Clouds: Clear, Broken, Overcast; Towns: Few, Some, Many; Seat in whole words; Settings in three groups (Outside, Cabin, Sights); fourteen help rows. | 19 |
+| 2026-11-17 | Tom on Fire's copy: "Yes, apply". Size for Intensity; Fuel for Base; Reset moves from the bar into Settings; ten help rows; add salt, not flick. | 19 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.
