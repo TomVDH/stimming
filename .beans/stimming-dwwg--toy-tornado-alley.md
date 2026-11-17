@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T05:47:22Z
+updated_at: 2026-11-17T05:49:46Z
 parent: stimming-oh7b
 ---
 
@@ -112,3 +112,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: Sheaths 0.35 by default; low F is thinner: opacity × (0.5 + 1.75 ln(1 + F)) (Tom).
 
 - 2026-11-16: Light through knob (0 to 1, default 0): sunlight passes the funnel's own cloud more freely, so its shaded side lightens (Tom).
+
+- 2026-11-16: Rim blend knob (default 0.6): a ray that only grazes the core's edge sees thinner cloud, so the lit rim fades into what lies behind it (Tom: rim too harsh; otherwise "looking impressive"). Tom's defaults from his JSON: Light through 0.4, Time 20.7, Sun dir -106, Steps 63, Resolution 0.6, Bake strips 16.
