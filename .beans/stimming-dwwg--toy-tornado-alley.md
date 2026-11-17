@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:55:08Z
+updated_at: 2026-11-17T07:56:23Z
 parent: stimming-oh7b
 ---
 
@@ -179,3 +179,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17: deck streaks near whirls came from blending overlapping whirls' noise points; the two strongest whirls now read their own deck noise and blend values. Layers hug the core with distance (gap 0.2 near to 0.08 by 12 km; sub-pixel layers fade into the core), ending the hoops; the far dust drops sub-pixel octaves and the rain ring is wider and softer (the dotted far funnel). Dev rows Bake from (6–40 km, default 16; the tornado clamp follows) and Deck reach (20–200 km, default 146). GPU, 3 × F4.5 tubes, minimum frame: 17.3 ms at 8 km, 22.5 at 16, 25.6 at 30.
 
 - 2026-11-17, Tom: Storm drives the funnels (default 0.85 unchanged): a young storm gives paler, cleaner funnels with more sky light and less haze and density; a full one gives darker, dirtier funnels the deck's tone runs further down, with more rain wrap.
+
+- 2026-11-17, Tom: towers show at low Storm: the tower's radius, top and overshooting dome read max(Storm, 0.6), so a young cell stands as a towering, sunlit Cb over a thin, broken deck (default unchanged).

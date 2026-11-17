@@ -152,10 +152,12 @@ vec3 hazeCol(vec3 d) { return skyCol(normalize(vec3(d.x, 0.03, d.z))) * 0.95; }
 // The storm as one distance field, in km. uStorm grows a young cell into a full supercell.
 float stormShapeSun(vec3 p) {
   float g = uStorm;
-  float top = mix(8.0, 12.5, g);
+  // The tower and its top stay tall in a young storm: the sky keeps its height over a thin deck.
+  float gT = max(g, 0.6);
+  float top = mix(8.0, 12.5, gT);
   // The updraft tower leans downshear as it climbs.
   vec2 q = p.xz - TOWER - vec2(0.28, -0.12) * (p.y - BASE);
-  float rT = mix(3.5, 7.0, g) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
+  float rT = mix(3.5, 7.0, gT) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
   float tower = max(length(q) - rT, max(BASE + 0.1 - p.y, p.y - top));
   // The base: a broad flat shelf, its underside level.
   vec2 b = (p.xz - SHELF) / (SHELF_R * mix(0.4, 1.0, g));
@@ -165,7 +167,7 @@ float stormShapeSun(vec3 p) {
   float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
-  float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
+  float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, gT);
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -865,17 +867,17 @@ const sstep = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * 
 const smin = (a, b, k) => { const h = clamp(0.5 + 0.5 * (b - a) / k); return b + (a - b) * h - k * h * (1 - h); };
 const mixN = (a, b, t) => a + (b - a) * t;
 function stormShapeJS(x, y, z) {
-  const g = storm, B = baseNow(), top = mixN(8, 12.5, g);
+  const g = storm, gT = Math.max(g, 0.6), B = baseNow(), top = mixN(8, 12.5, gT);
   const T = [-4.3, -23], SH = [1, -13], SR = [15, 9];
   const qx = x - T[0] - 0.28 * (y - B), qz = z - T[1] + 0.12 * (y - B);
-  const rT = mixN(3.5, 7, g) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
+  const rT = mixN(3.5, 7, gT) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
   const tower = Math.max(Math.hypot(qx, qz) - rT, Math.max(B + 0.1 - y, y - top));
   const k = mixN(0.4, 1, g), bx = (x - SH[0]) / (SR[0] * k), bz = (z - SH[1]) / (SR[1] * k);
   const shelf = Math.max((Math.hypot(bx, bz) - 1) * SR[1] * k, Math.abs(y - (B + 0.6)) - 0.6);
   const ax = x - (T[0] + mixN(2, 14, g)), ay = y - (top - 0.5), az = z - (T[1] - 2);
   const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5);
   const ox = x - (T[0] + 0.28 * (top - B)), oy = (y - (top + 0.4)) * 1.6, oz = z - (T[1] - 0.12 * (top - B));
-  const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.4, 2.8, g);
+  const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.4, 2.8, gT);
   let d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
