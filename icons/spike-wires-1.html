@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Crow wires 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Crow wires 1</h1>
+<p class="lede">Crow wires, round 1. A only (Tom, 2026-11-17). The toy has no menu icon yet, so no Current card.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+
+  // The toy's tokens: weathered pole wood, a steel arm, a timber arm,
+  // grey cans, black cable, red canvas sneakers with white rubber.
+  const WOOD = [[0, 'oklch(0.66 0.05 68)'], [1, 'oklch(0.44 0.05 52)']];
+  const STEEL = [[0, 'oklch(0.78 0.01 250)'], [1, 'oklch(0.52 0.012 250)']];
+  const TIMBER = [[0, 'oklch(0.76 0.09 72)'], [1, 'oklch(0.54 0.08 60)']];
+  const CAN = [[0, 'oklch(0.82 0.008 250)'], [1, 'oklch(0.56 0.01 250)']];
+  const RED = [[0, 'oklch(0.62 0.2 26)'], [1, 'oklch(0.44 0.16 24)']];
+  const CABLE = 'oklch(0.24 0.02 275)', RUBBER = 'oklch(0.96 0.01 90)', DARK = 'oklch(0.2 0.02 275)';
+
+  const DIRS = [];
+
+  /* ================= A: Shaded object ================= */
+
+  // The pole head, tilted as the toy shows it: two crossarms, three insulators,
+  // a transformer can, and a pair of sneakers over the cable.
+  const TILT = 9, PIV = [119.6, 35.4];
+  const A_POLE = 'M56 126L58.5 22Q64 17 69.5 22L72 126Z';
+  const A_ARM1 = 'M28 29H100Q102 29 102 31V35Q102 37 100 37H28Q26 37 26 35V31Q26 29 28 29Z';
+  const A_ARM2 = 'M34 45H94Q96 45 96 47V52Q96 54 94 54H34Q32 54 32 52V47Q32 45 34 45Z';
+  const A_CAN = 'M30 68Q30 64 42 64Q54 64 54 68V96Q54 100 42 100Q30 100 30 96Z';
+  const A_LID = 'M28.5 66Q28.5 61 42 61Q55.5 61 55.5 66Q55.5 69 42 69Q28.5 69 28.5 66Z';
+  // A post insulator: a short stem with three round sheds.
+  const post = (x, y) => [0, 1, 2].map(i => `M${x - 5} ${y - i * 4}Q${x} ${y - i * 4 - 3} ${x + 5} ${y - i * 4}Q${x} ${y - i * 4 + 1.6} ${x - 5} ${y - i * 4}Z`).join('') + `M${x - 1.8} ${y + 1}V${y - 11}H${x + 1.8}V${y + 1}Z`;
+  const A_POSTS = post(33, 27) + post(95, 27) + post(64, 15);
+  // The cable leaves the east insulator and sags off to the right.
+  const A_WIRE = 'M95 17Q114 38 138 40';
+  // One high-top hanging toe down, seen from the side, its lace knot at 0 0.
+  // The sole runs down the left side and round the toe; the instep faces right.
+  const S_UP = 'M-3.5 2Q1 0 5.5 2L6.5 12Q10 16 10 22Q10 29.5 4 30.5H-3.5Z';
+  const S_SOLE = 'M-7 5Q-7 3 -4.5 3H-3.2V28Q-3.2 30.6 -0.4 30.6H4.6Q9.6 30.2 10.2 26.6Q10.6 33.4 4 34.4H-2.6Q-7 34 -7 30Z';
+  const S_HOLE = 'M-2.6 2.4Q1 0.8 4.8 2.4Q1 4.2 -2.6 2.4Z';
+  const S_LACE = 'M6.5 13.5L9.2 15.6M7.3 17.4L10 19.6M7.6 21.4L10 23.4';
+  const shoeAt = (x, y, deg) => `translate(${x} ${y}) rotate(${deg})`;
+  // The laces meet over the cable; one shoe hangs higher than the other.
+  const S1 = [-4.5, 15, 4], S2 = [7.5, 27, -6];
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [24, 9, 119, 117],
+    idea: 'The toy\'s pole head at its tilt: a grey steel arm and a tan timber arm, three post insulators, a grey can. A black cable sags off the east insulator; a pair of red high-tops hangs over it by the laces. Hover: the cable bobs and the shoes swing, each at its own beat; the pointer\'s side sets the push.',
+    art(svg, u) {
+      const shoe = (x, y, deg) => `<g transform="${shoeAt(x, y, deg)}">${body(S_UP, u, 'red')}<path d="${S_SOLE}" fill="${RUBBER}"/><path d="${S_SOLE}" fill="url(#${u}lit)"/><path d="${S_HOLE}" fill="${DARK}"/><path d="${S_LACE}" stroke="${RUBBER}" stroke-width="1.5" stroke-linecap="round"/></g>`;
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}
+          ${lg(`${u}wood`, WOOD, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}steel`, STEEL)}${lg(`${u}timber`, TIMBER)}
+          ${lg(`${u}can`, CAN, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}red`, RED)}${lg(`${u}post`, STEEL, 'x1="0" y1="0" x2="1" y2="0"')}</defs>
+        <g transform="rotate(${TILT} 64 70)">
+          <ellipse cx="64" cy="126" rx="22" ry="3.4" fill="oklch(0.05 0.01 275)" opacity="0.55" filter="url(#${u}b)"/>
+          ${body(A_POLE, u, 'wood')}
+          <path d="M60 40V118M66.5 30V122" stroke="oklch(0.36 0.04 50)" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/>
+          ${body(A_ARM2, u, 'timber')}
+          <path d="M40 54L60 66M88 54L68 66" stroke="oklch(0.6 0.01 250)" stroke-width="3" stroke-linecap="round"/>
+          ${body(A_ARM1, u, 'steel')}
+          <path d="${A_POSTS}" fill="url(#${u}post)"/>
+          ${body(A_CAN, u, 'can')}
+          ${body(A_LID, u, 'can')}
+          <path d="M30 95Q30 99 42 99Q54 99 54 95" stroke="${DARK}" stroke-width="2.4" fill="none" opacity="0.5"/>
+          <path d="M54 72H58M54 90H58" stroke="oklch(0.58 0.012 250)" stroke-width="4" stroke-linecap="round"/>
+          <g class="line">
+            <path class="wire" d="${A_WIRE}" stroke="${CABLE}" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+            <g class="pair2">
+              <path d="M${PIV[0]} ${PIV[1]}L${PIV[0] + S2[0]} ${PIV[1] + S2[1]}" stroke="${RUBBER}" stroke-width="1.4" fill="none"/>
+              ${shoe(PIV[0] + S2[0], PIV[1] + S2[1], S2[2])}
+            </g>
+            <g class="pair">
+              <path d="M${PIV[0]} ${PIV[1]}L${PIV[0] + S1[0]} ${PIV[1] + S1[1]}" stroke="${RUBBER}" stroke-width="1.4" fill="none"/>
+              ${shoe(PIV[0] + S1[0], PIV[1] + S1[1], S1[2])}
+            </g>
+          </g>
+        </g>`;
+      // The laces meet over the cable; each shoe swings from there.
+      const line = svg.querySelector('.line'), wire = svg.querySelector('.wire');
+      const p1 = svg.querySelector('.pair'), p2 = svg.querySelector('.pair2');
+      const origin = `${PIV[0]} ${PIV[1]}`;
+      let tl = null;
+      return {
+        enter(p) {
+          tl?.kill();
+          // The pointer's side sets which way the push goes.
+          const push = p && p[0] < PIV[0] ? 1 : -1;
+          tl = gsap.timeline({ repeat: -1 })
+            .fromTo(line, { y: 0 }, { y: 2.4, duration: 0.55, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 0)
+            .fromTo(wire, { attr: { d: A_WIRE } }, { attr: { d: 'M95 17Q114 42 138 42' }, duration: 0.55, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 0)
+            .fromTo(p1, { rotation: 0 }, { rotation: 14 * push, svgOrigin: origin, duration: 0.6, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 0)
+            .fromTo(p2, { rotation: 0 }, { rotation: -10 * push, svgOrigin: origin, duration: 0.75, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 0)
+            .to({}, { duration: 0.25 });
+        },
+        move() {},
+        leave() {
+          tl?.kill(); tl = null;
+          gsap.to(line, { y: 0, duration: 0.5, ease: 'power2.out', overwrite: true });
+          gsap.to(wire, { attr: { d: A_WIRE }, duration: 0.5, ease: 'power2.out', overwrite: true });
+          gsap.to([p1, p2], { rotation: 0, svgOrigin: origin, duration: 0.9, ease: 'elastic.out(1, 0.4)', overwrite: true });
+        },
+      };
+    },
+    // White pole, arms, can and shoes; the cable and the laces stay thin and white too.
+    emblem: `${EMB_HEAD}<g transform="rotate(${TILT} 64 70)"><path d="${A_POLE}${A_ARM2}${A_ARM1}${A_POSTS}${A_CAN}${A_LID}" fill="#fff"/><path d="M40 54L60 66M88 54L68 66" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M54 72H58M54 90H58" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="${A_WIRE}" stroke="#fff" stroke-width="3.2" fill="none" stroke-linecap="round"/><path d="M${PIV[0]} ${PIV[1]}L${PIV[0] + S1[0]} ${PIV[1] + S1[1]}M${PIV[0]} ${PIV[1]}L${PIV[0] + S2[0]} ${PIV[1] + S2[1]}" stroke="#fff" stroke-width="1.6" fill="none"/>${[S2, S1].map(([x, y, a]) => `<g transform="${shoeAt(PIV[0] + x, PIV[1] + y, a)}"><path d="${S_UP}${S_SOLE}" fill="#fff"/><path d="${S_HOLE}" fill="#000"/></g>`).join('')}<path d="M30 95Q30 99 42 99Q54 99 54 95" stroke="#000" stroke-width="2" fill="none"/><path d="M28.5 66Q42 71 55.5 66" stroke="#000" stroke-width="1.6" fill="none"/></g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Crow wires';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-wires';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `wires-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header><b>${D.l}</b><span>· ${D.name}</span></header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

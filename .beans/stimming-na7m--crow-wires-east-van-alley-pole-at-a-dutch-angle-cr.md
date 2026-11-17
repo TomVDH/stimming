@@ -31,4 +31,4 @@ Design (Tom said ok, then dive in):
 - [ ] QA: 1280, 375x812, 812x375, console, reduced motion, hidden tab, load time
 - [ ] Split main.js (about 1,800 lines) into modules
 - [ ] Toy doc docs/toys/wires.md
-- [ ] Ask Tom about the menu Lab tile
+- [x] Icon A (spike wires-1, Tom's pick): menu Lab tile in the East Van row, intro emblem shared/emblems/wires.svg
