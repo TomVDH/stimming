@@ -542,18 +542,52 @@ ${SHARED}
 /* ---------- the wind ---------- */
 // The wind blows left to right and a little toward the eye.
 // Dev's Wind sets its bearing and strength (uWind); WDIR comes with the storm GLSL.
-// Gust fronts: broad patches that roll downwind over the wheat, 0 calm to 1 full gust.
-float gust(vec2 xz) {
-  vec2 q = xz - WDIR * uT * (3.0 + 6.0 * uWind);
-  float g = vn(q * vec2(0.022, 0.04)) * 0.65 + vn(q * 0.1 + 4.0) * 0.35;
-  return smoothstep(0.4, 0.78, g);
+// The field's wind, 0 to 1: Wind times the storm's growth, more near a working tornado.
+uniform float uGust;
+// Each tornado's foot in world metres, its pull on the field, 0 to 1, and its reach in metres.
+uniform vec4 uTorF[${MAX_TOR}];
+// The wind over the wheat at a point, for a pixel footprint of fx metres.
+// xy: the lean of a stalk's tip per metre of height squared. z: the sheen, -1 dark to 1 pale.
+// w: the gust, 0 calm to 1 full.
+vec4 gust(vec2 xz, float fx) {
+  float K = uGust;
+  // Wind frame: x runs downwind, y across. The pattern rides downwind at the gusts' speed.
+  vec2 w = vec2(dot(xz, WDIR), dot(xz, vec2(-WDIR.y, WDIR.x)));
+  w.x -= (1.5 + 8.5 * K) * uT;
+  // Gust patches: short along the wind, long across it; they grow and die as they go.
+  float n = N(vec3(w.x * 0.007, w.y * 0.0025, uT * 0.04)) * 0.6 + N(vec3(w.x * 0.022, w.y * 0.008, uT * 0.09 + 5.0)) * 0.4;
+  float g = smoothstep(0.55 - 0.08 * K, 0.7 - 0.06 * K, n) * (0.2 + 0.8 * K);
+  // Waves inside a gust: short crests across the wind, 4 to 7 m apart, bent by a warp.
+  vec3 wq = vec3(w.y * 0.05, w.x * 0.02, uT * 0.1);
+  float ph = w.x * 1.15 + 9.0 * N(wq + 9.0);
+  float wv = sin(ph) * smoothstep(0.3, 0.6, N(wq * 2.0 + 3.0)) * (1.0 - smoothstep(0.4, 1.2, fx));
+  // The mean lean, the gust's push, and the wave on top.
+  float lean = (0.02 + 0.06 * K) * (0.3 + 0.7 * uWind) + g * (0.16 + 0.1 * wv);
+  // A stalk shows its pale side as it bends; it swings back a little dark behind the crest.
+  float sh = g * (0.75 + 0.45 * wv) - 0.25 * g * smoothstep(0.3, 1.0, -wv);
+  // A tiny flutter: each stalk on its own beat, never in step with its neighbours.
+  float fl = 0.012 * sin(uT * (2.6 + 2.0 * K) + xz.x * 1.7 + xz.y * 2.3) * (0.2 + K);
+  vec2 v = WDIR * (lean + fl);
+  // Near a tornado the inflow swirls in and lays the wheat flat toward the funnel.
+  for (int i = 0; i < ${MAX_TOR}; i++) {
+    vec4 t = uTorF[i];
+    if (t.w <= 0.0) continue;
+    vec2 d = t.xy - xz;
+    float r = length(d);
+    float k = t.z * (1.0 - smoothstep(0.15 * t.w, t.w, r));
+    if (k <= 0.0) continue;
+    // The inflow turns in cyclonically: about 40 degrees off the straight line.
+    vec2 dir = mat2(0.77, 0.64, -0.64, 0.77) * (d / max(r, 1.0));
+    v = mix(v, dir * 0.9, k);
+    sh = mix(sh, 0.9, k * 0.8);
+    g = max(g, k);
+  }
+  return vec4(v, sh, g);
 }
 // How far a stalk's tip leans at height h, in metres.
-vec2 bend(vec2 xz, float h, float g) {
-  float lean = (0.03 + 0.22 * g) * (0.25 + 0.75 * uWind);
-  float flutter = 0.015 * sin(uT * 3.1 + xz.x * 1.7 + xz.y * 2.3) * (0.3 + uWind);
-  return WDIR * (lean + flutter) * h * h;
-}
+vec2 bend(vec4 gw, float h) { return gw.xy * h * h; }
+// The short form: the gust alone, 0 calm to 1 full.
+float gust(vec2 xz) { return gust(xz, 0.0).w; }
 
 // The share of a lit colour left in shade: the sun's part goes, the sky's fill stays.
 vec3 shadeK(float cover) {
@@ -566,27 +600,102 @@ vec3 shadeK(float cover) {
 const float ROAD_X = 3.4, WHEAT_GAP = 6.2;
 // Coverage of a band of half width w round 0, at pixel footprint f.
 float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / f); }
-// The wheat's colour seen from far off: ripe patches, and the gusts as a paler sheen.
-vec3 wheatFar(vec2 xz, float fx) {
+// A detail of size s fades out as the pixel's footprint f grows past it.
+float detail(float s, float f) { return 1.0 - smoothstep(0.25 * s, 0.7 * s, f); }
+/* ---------- the fields ---------- */
+// Quarter-mile squares (402 m) run out from both verges; a few are cut into strips.
+// Crops: 0 ripe wheat, 1 stubble, 2 fallow, 3 green; -1 is the verge and the road.
+const float QM = 402.3;
+// Each crop's height in metres; a field's margin is short grass.
+const vec4 CROP_H = vec4(0.95, 0.15, 0.0, 0.45);
+const float MARGIN = 2.5;
+// The crop at a point. edge: metres to the field's own boundary. id: a hash per field.
+float cropAt(vec2 xz, out float edge, out float id) {
+  float side = sign(xz.x - ROAD_X), u = abs(xz.x - ROAD_X) - WHEAT_GAP;
+  edge = 0.0; id = 0.0;
+  if (u < 0.0) return -1.0;
+  // The fields beside the eye end 180 m ahead.
+  vec2 q = vec2(u, 222.0 - xz.y) / QM, c = floor(q), f = fract(q) * QM;
+  id = th(c + vec2(41.0 + 7.0 * side, 13.0));
+  // No margin on the verge side: the verge is the margin there.
+  edge = min(min(c.x > 0.5 ? f.x : 1e4, QM - f.x), min(f.y, QM - f.y));
+  float crop = id < 0.45 ? 0.0 : (id < 0.7 ? 1.0 : (id < 0.87 ? 2.0 : 3.0));
+  // Beside the eye, on both sides of the road: ripe wheat.
+  if (c.x < 0.5 && c.y < 0.5) return 0.0;
+  // Strip fields: wheat and fallow side by side, 60 to 110 m wide.
+  if (th(c + vec2(9.3 * side, 2.0)) < 0.22) {
+    float sw = 60.0 + 50.0 * th(c + 2.2), s = mod(f.x, sw);
+    crop = mod(floor(f.x / sw), 2.0) < 0.5 ? 0.0 : 2.0;
+    edge = min(edge, min(s, sw - s) + MARGIN * 0.6);
+  }
+  return crop;
+}
+float cropH(float crop, float edge) { return crop < 0.0 ? -1.0 : (edge < MARGIN ? 0.12 : CROP_H[int(crop)]); }
+bool isWheat(vec2 xz) { float e, id; return cropAt(xz, e, id) == 0.0 && e >= MARGIN; }
+// The wheat's top seen from afar: ripe patches, and the gusts as a paler sheen.
+// fx and fz: the pixel's footprint across and along the view, in metres.
+vec3 wheatFar(vec2 xz, float fx, float fz) {
   float patchN = vn(xz * vec2(0.012, 0.004)) * 0.6 + vn(xz * vec2(0.05, 0.015)) * 0.4;
   // Ripe wheat in storm light: a dull gold, not a blown one.
   vec3 alb = mix(vec3(0.17, 0.11, 0.045), vec3(0.3, 0.21, 0.085), patchN);
-  // A bent stalk shows its pale side.
-  float g = gust(xz);
-  alb = mix(alb, vec3(0.38, 0.32, 0.2), g * 0.5);
-  // Up close the field shows its make: drill rows along the road, clumps of ears with darker gaps,
-  // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
-  float near = 1.0 - smoothstep(0.08, 0.8, fx);
+  // A bent stalk shows its pale side; behind a crest it swings back dark.
+  vec4 gw = gust(xz, fx + 0.35 * fz);
+  alb = mix(alb, vec3(0.36, 0.3, 0.19), max(gw.z, 0.0) * 0.45);
+  alb *= 1.0 + 0.3 * min(gw.z, 0.0);
+  // Up close: clumps of ears with darker gaps between. They fade before they alias.
+  float fm = max(fx, fz), near = detail(0.8, fm);
   if (near > 0.0) {
     // Each term reads turned, stretched noise: no grid or row lines up across the field.
     vec2 r1 = mat2(0.8, -0.6, 0.6, 0.8) * xz, r2 = mat2(0.36, 0.93, -0.93, 0.36) * xz;
-    float rows = mix(0.5, vn(r1 * vec2(5.3, 1.7) + 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
-    float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
-    float gap = smoothstep(0.38, 0.18, clump);
-    float rip = 0.5 + 0.5 * sin(dot(xz, WDIR) * 0.9 - uT * (2.0 + 4.0 * uWind) + vn(xz * 0.2) * 4.0);
-    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap) * (0.9 + 0.22 * rip * (0.3 + 0.7 * g)), near);
+    float rows = mix(0.5, vn(r1 * vec2(5.3, 1.7) + 3.0), detail(0.3, fm));
+    float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), detail(0.3, fm)) * 0.4;
+    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
-  return alb * (0.75 + 0.35 * g) * (uSunCol * 0.5 + uAmb * 0.55);
+  return alb * (0.85 + 0.2 * gw.w) * (uSunCol * 0.5 + uAmb * 0.55);
+}
+// A low field's top: stubble, fallow, green, or a grass margin.
+vec3 lowField(float crop, vec2 xz, float edge, float id, float fx, float fz) {
+  float fm = max(fx, fz), nz = vn(xz * vec2(0.02, 0.008) + id * 50.0);
+  vec3 alb;
+  if (edge < MARGIN) {
+    // Dry June grass, tan and olive.
+    alb = mix(vec3(0.16, 0.15, 0.07), vec3(0.22, 0.19, 0.1), nz);
+  } else if (crop < 1.5) {
+    // Stubble: pale cut straw in drill rows, and the combine's straw swaths every 9 m.
+    alb = mix(vec3(0.28, 0.23, 0.13), vec3(0.36, 0.3, 0.18), nz);
+    float row = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.19);
+    alb *= mix(1.0, 0.75 + 0.4 * row, detail(0.19, fx));
+    float sw = abs(fract(xz.x / 9.1 + 0.2 * vn(vec2(xz.y * 0.01, id))) - 0.5) * 9.1;
+    alb = mix(alb, vec3(0.42, 0.35, 0.2), band(sw, 0.7, fx) * 0.6);
+    alb *= mix(1.0, 0.8 + 0.4 * vn(xz * 3.0), detail(0.4, fm));
+  } else if (crop < 2.5) {
+    // Fallow: dark tilled soil in disk furrows, clods up close.
+    alb = mix(vec3(0.09, 0.065, 0.045), vec3(0.14, 0.1, 0.065), nz);
+    float fur = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.35 + vn(xz * 0.05) * 6.0);
+    alb *= mix(1.0, 0.75 + 0.45 * fur, detail(0.35, fx));
+    alb *= mix(1.0, 0.7 + 0.6 * vn(xz * 9.0), detail(0.15, fm));
+  } else {
+    // Green: young milo in rows 76 cm apart, darker where it is thick.
+    alb = mix(vec3(0.05, 0.075, 0.025), vec3(0.09, 0.12, 0.04), nz);
+    float row = 0.5 + 0.5 * cos(xz.x * 6.2832 / 0.76);
+    alb *= mix(1.0, 0.7 + 0.5 * row, detail(0.76, fx));
+    alb = mix(alb, vec3(0.12, 0.13, 0.06), max(gust(xz, fx + 0.35 * fz).z, 0.0) * 0.3);
+  }
+  return alb * (uSunCol * 0.55 + uAmb * 0.6);
+}
+// The wheat's tops, where the far field's eye meets it.
+const float CANOPY = 0.95;
+// Light inside the stand at height y, edge metres in from the field's road edge.
+// side is -1 for the field left of the road, 1 for the one right of it.
+// The sun reaches in through the tops, or through the edge where it faces the sun.
+// Straw and ears scatter some sunlight down into the stand.
+// The sky's light comes down through the tops and in at the edge.
+vec3 standLight(float y, float edge, float side) {
+  float depth = max(CANOPY + 0.04 - y, 0.0), dTop = depth / max(uSun.y, 0.03);
+  float toSun = -side * uSun.x;
+  float dSun = toSun > 0.02 ? min(dTop, edge / toSun) : dTop;
+  float sky = exp(-2.5 * min(depth, edge));
+  return uSunCol * 0.5 * (exp(-3.5 * dSun) + 0.3 * exp(-2.0 * depth)) + uAmb * 0.55 * mix(0.45, 1.0, sky);
 }
 // The near wheat walks the stalks: wheat.js.
 ${WHEAT_GLSL}
@@ -596,7 +705,36 @@ vec3 ground(vec3 rd, float px) {
   vec3 P = rd * t;
   // The footprint of one pixel on the ground, in metres.
   float fx = t * px / uFoc;
-  vec3 col = wheatFar(P.xz, fx);
+  // The plain, top down: the ray meets a field at its crop's top, or a taller crop's side.
+  // A wheat field's side is a wall of stalks under the ears, in the stand's own light.
+  vec3 col = vec3(0.0);
+  bool hit = false;
+  float hPrev = CAMH;
+  for (int i = 0; i < 4; i++) {
+    float h = i == 0 ? CROP_H.x : (i == 1 ? CROP_H.w : (i == 2 ? CROP_H.y : 0.0));
+    if (h >= CAMH) continue;
+    float th_ = (CAMH - h) / -rd.y;
+    vec2 Q = rd.xz * th_;
+    float edge, id, crop = cropAt(Q, edge, id), H = cropH(crop, edge);
+    if (H < h - 0.01) { hPrev = h; continue; }
+    hit = true;
+    float fq = th_ * px / uFoc, fz = fq * th_ / (CAMH - h);
+    if (H > h + 0.01) {
+      // The side of a taller crop, met somewhere between this level and the last.
+      // On the road's side the meeting height is exact.
+      float side = sign(Q.x - ROAD_X), ye = 0.5 * (h + min(hPrev, H));
+      if (abs(rd.x * (CAMH - hPrev) / -rd.y - ROAD_X) < WHEAT_GAP) ye = CAMH + rd.y * (ROAD_X + side * WHEAT_GAP) / rd.x;
+      if (crop == 0.0 && edge >= MARGIN) col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
+      else col = lowField(crop, Q, edge, id, fq, fz) * 0.7;
+    } else if (crop == 0.0 && edge >= MARGIN) col = wheatFar(Q, fq, fz);
+    else col = lowField(crop, Q, edge, id, fq, fz);
+    break;
+  }
+  if (!hit) {
+    // Seen from the verge, the near field's edge is a wall of stalks under the ears.
+    float side = sign(P.x - ROAD_X), te = (ROAD_X + side * WHEAT_GAP) / rd.x, ye = CAMH + rd.y * te;
+    col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
+  }
   // The ditch and verge, the gravel berm, asphalt and paint: road.js.
   col = roadside(col, P, rd, fx);
   // Near the eye the wheat stands as stalks over the ground, faded out before it shimmers.
@@ -710,8 +848,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
     vec3 W = toWorld(vec3(x, 0.0, -z));
     // No ears on the road or its verges.
     if (abs(W.x - ROAD_X) < WHEAT_GAP) continue;
-    float g = gust(W.xz);
-    vec2 lean = bend(W.xz, 1.0, g);
+    vec2 lean = bend(gust(W.xz, 0.0), 1.0);
     // The lean in camera space, as screen units at this depth.
     float lx = (lean.x * cos(uYaw) - lean.y * sin(uYaw)) / z * uFoc;
     vec2 tip = vec2(x / z * uFoc + lx, (top - CAMH) / z * uFoc);
@@ -863,6 +1000,20 @@ const tors = [];
 // 0 degrees blows to the right; positive turns it toward the eye. The storm drifts with it.
 let wind = 0.85;
 const windDir = [0.944, 0.33];
+// The field's wind, 0 to 1: a young cell barely stirs the wheat, a full storm drives it hard.
+// A working tornado adds its inflow, most within a few kilometres of the eye.
+function fieldGust() {
+  let k = wind * (0.12 + 0.88 * sstep(0.1, 0.9, storm));
+  for (const t of tors) k += 0.5 * t.dust * (0.3 + 0.7 * t.f / 5) * Math.exp(-Math.hypot(t.x, t.z) / 4000);
+  return clamp(k);
+}
+// Each tornado's foot for the wheat: x and z in metres, its pull, and its reach.
+const feet = new Float32Array(MAX_TOR * 4);
+function torFeet() {
+  feet.fill(0);
+  tors.slice(0, MAX_TOR).forEach((t, i) => feet.set([t.x, t.z, t.dust * (0.4 + 0.6 * t.f / 5), 250 + 150 * t.f], i * 4));
+  return feet;
+}
 // The sun behind the eye, low, a little off to the left.
 const sun = [0, 0, 0], sunCol = [0, 0, 0], amb = [0, 0, 0];
 // The sun's bearing in radians: 0 is straight behind the eye. Dev sets it in degrees.
@@ -918,6 +1069,7 @@ try {
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
+      uGust: fieldGust, uTorF: torFeet,
       uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uSwayPh: () => line.uSwayPh,
     },
   });

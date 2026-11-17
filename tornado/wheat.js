@@ -1,7 +1,8 @@
 // Tornado alley: the near wheat, as a stand of stalks the ray walks through.
 // The ray steps cell by cell through a grid of stalks, front to back.
 // Each cell holds one stalk with its head; the ray meets it at its nearest pass.
-// It reads main.js's CAMH, ROAD_X, WHEAT_GAP, WDIR, gust(), bend(), th() and vn().
+// It reads main.js's CAMH, ROAD_X, WHEAT_GAP, gust(), bend(), th() and vn().
+// The wind's waves and gusts come from gust(): xy the lean, z the sheen, w the gust.
 
 export const WHEAT_GLSL = /* glsl */`
 /* ---------- the near wheat ---------- */
@@ -18,12 +19,6 @@ float whEdge(float z) { return 0.32 * (vn(vec2(z * 0.35, 1.7)) - 0.5) + 0.14 * (
 float whInside(vec2 xz) { return abs(xz.x - ROAD_X) - WHEAT_GAP - whEdge(xz.y); }
 // The stand thins out over its outer 45 cm, so the edge is feathered, not cut.
 const float WH_FEATHER = 0.45;
-// A wave that runs downwind through the stand: crests about 6 m apart.
-// It rides on the gusts and grows with the wind. 0 is upright, 1 a full crest.
-float wheatWave(vec2 xz) {
-  float ph = dot(xz, WDIR) * 1.05 - uT * (2.2 + 2.8 * uWind) + vn(xz * 0.15) * 3.0;
-  return pow(0.5 + 0.5 * sin(ph), 2.0) * (0.25 + 0.75 * gust(xz)) * (0.3 + 0.7 * uWind);
-}
 // The stand along one ray. It returns the stand's colour and what still shows of the ground.
 vec4 wheatStand(vec3 rd, float px) {
   vec3 eye = vec3(0.0, CAMH, 0.0);
@@ -42,7 +37,8 @@ vec4 wheatStand(vec3 rd, float px) {
   if (CAMH + rd.y * t0 <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
   vec2 xs = (eye + rd * mix(tA, t0, 0.5)).xz;
   if (t0 > tA) {
-    float g = gust(xs), wv = wheatWave(xs);
+    vec4 gs = gust(xs, 0.0);
+    float g = gs.w, wv = max(gs.z, 0.0);
     float dens = 1.1 * (0.55 + 0.9 * vn(xs * 2.3)) * (1.0 - 0.35 * wv) * smoothstep(0.0, WH_FEATHER * 1.5, whInside(xs));
     float Tb = exp(-dens * (t0 - tA) * length(rd.xz));
     vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g) * (uSunCol * 0.5 * 1.2 + uAmb * 0.55);
@@ -52,8 +48,9 @@ vec4 wheatStand(vec3 rd, float px) {
   vec3 p0 = eye + rd * t0;
   // The lean barely changes over one walk: it is read once, where the ray enters.
   // The walk runs in leaned space, where every stalk stands straight.
-  float g = gust(p0.xz), wv = wheatWave(p0.xz);
-  vec2 L = WH_R * (bend(p0.xz, 1.0, g) + WDIR * 0.16 * wv) / WH_CELL;
+  vec4 gw = gust(p0.xz, 0.0);
+  float g = gw.w, wv = max(gw.z, 0.0);
+  vec2 L = WH_R * bend(gw, 1.0) / WH_CELL;
   // The ray in cell units: q(s) = q0 + dq * s, with s in metres past t0.
   vec2 q0 = WH_R * p0.xz / WH_CELL - L * p0.y, dq = WH_R * rd.xz / WH_CELL - L * rd.y;
   vec2 cell = floor(q0), stp = sign(dq);
@@ -116,7 +113,9 @@ vec4 wheatStand(vec3 rd, float px) {
         vec3 alb = head ? mix(vec3(0.3, 0.2, 0.08), vec3(0.46, 0.33, 0.14), th(c + 1.3)) : mix(vec3(0.3, 0.23, 0.11), vec3(0.26, 0.24, 0.1), th(c + 2.9));
         if (e < 0.0 && head) alb = vec3(0.55, 0.47, 0.3);
         // A bent stalk shows its pale side to the eye.
-        alb = mix(alb, vec3(0.55, 0.47, 0.3), (g * 0.35 + wv * 0.4) * (head ? 1.0 : 0.5));
+        // Behind a crest it swings back and shows its dark side.
+        alb = mix(alb, vec3(0.55, 0.47, 0.3), (g * 0.2 + wv * 0.5) * (head ? 1.0 : 0.5));
+        alb *= 1.0 + 0.3 * min(gw.z, 0.0);
         vec3 col = alb * (uSunCol * 0.5 * lam * sunT * 1.4 + uAmb * 0.55 * ao);
         acc += T * k * col;
         T *= 1.0 - k;
