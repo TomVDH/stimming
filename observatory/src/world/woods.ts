@@ -1,6 +1,6 @@
 // Load order: world/complex runs first.
 import './complex.ts';
-import { Color, ConeGeometry, InstancedMesh, MeshLambertMaterial, Object3D } from 'three';
+import { BufferGeometry, Color, Float32BufferAttribute, InstancedMesh, MeshLambertMaterial, Object3D } from 'three';
 import { scene } from '../setup.ts';
 import { CLEAR, EYE_H, RISE, TOP, hillHeight } from './hill.ts';
 import { roadDist } from './complex.ts';
@@ -52,6 +52,65 @@ function rng(seed: number): () => number {
   };
 }
 
+// A number from 0 to 1 for a place.
+function hash(x: number, z: number): number {
+  const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+// One crown: three stacked tiers of branches, 1 m tall and 1 m in radius.
+// Each tier's rim has six branch tips with gaps between them.
+// aShade darkens the gaps under the branches; tips and tops stay lit.
+const TIERS: [number, number, number][] = [[0, 0.52, 1], [0.3, 0.78, 0.74], [0.56, 1, 0.46]];
+const TIPS = 6;
+function crownGeometry(): BufferGeometry {
+  const p: number[] = [], shade: number[] = [];
+  const rim = (y0: number, r: number, k: number): [number, number, number, number] => {
+    const a = (k / (TIPS * 2)) * Math.PI * 2, tip = k % 2 === 0;
+    // Tips reach out and droop; the gaps sit in and higher.
+    const rr = tip ? r : r * 0.6, y = tip ? y0 - 0.03 : y0 + 0.06;
+    return [Math.cos(a) * rr, y, -Math.sin(a) * rr, tip ? 0.8 : 0.3];
+  };
+  for (const [y0, y1, r] of TIERS) {
+    for (let k = 0; k < TIPS * 2; k++) {
+      const a = rim(y0, r, k), b = rim(y0, r, k + 1);
+      // Counter-clockwise from outside: rim point, next rim point, apex.
+      p.push(a[0], a[1], a[2], b[0], b[1], b[2], 0, y1, 0);
+      shade.push(a[3], b[3], 1);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(p, 3));
+  g.setAttribute('aShade', new Float32BufferAttribute(shade, 1));
+  // Flat faces read as separate boughs.
+  g.computeVertexNormals();
+  return g;
+}
+
+// Woods-only haze over the shared haze: its strength and its distance in metres.
+// Far rows fade more, so the hillside reads in layers.
+const LAYER_K = 0.5, LAYER_D = 350;
+
+// Lambert with extra terms: crown shade, a dark base, a cool top, layer haze.
+function crownMaterial(): MeshLambertMaterial {
+  const m = new MeshLambertMaterial({ color: 0xffffff });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aShade;\nvarying float vShade;\nvarying float vTreeH;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvShade = aShade;\nvTreeH = position.y;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vShade;\nvarying float vTreeH;')
+      // The lower crown lies in the shade of the trees round it.
+      // Starlight from the sky catches the top, a little cooler.
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        diffuseColor.rgb *= vShade * mix(0.3, 1.25, vTreeH);
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(0.9, 1.0, 1.18), vTreeH * vTreeH);`)
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, ${LAYER_K.toFixed(2)} * (1.0 - exp(-length(vHazeP - cameraPosition) / ${LAYER_D.toFixed(1)})));`);
+  };
+  return m;
+}
+
 export function buildWoods(): InstancedMesh {
   const rand = rng(51);
   const spots: [number, number, number][] = [];
@@ -69,20 +128,25 @@ export function buildWoods(): InstancedMesh {
       spots.push([tx, tz, r]);
     }
   }
-  // A unit cone with its foot at the origin; the base is never seen.
-  const geo = new ConeGeometry(1, 1, 7, 1, true).translate(0, 0.5, 0);
-  const trees = new InstancedMesh(geo, new MeshLambertMaterial({ color: 0xffffff }), spots.length);
+  const trees = new InstancedMesh(crownGeometry(), crownMaterial(), spots.length);
   const o = new Object3D(), c = new Color();
   spots.forEach(([x, z, r], i) => {
-    const h = 12 + 8 * r;
+    // A second number per tree, from its place, keeps the trim unchanged.
+    const q = hash(x, z), q2 = hash(z, x);
+    const h = (12 + 8 * r) * (0.82 + 0.26 * q);
     // The crown starts 1 m up; a trunk does not show at this range.
     o.position.set(x, hillHeight(x, z) + 1, z);
-    o.scale.set(h * 0.36, h, h * 0.36);
-    o.rotation.y = r * 6.28;
+    // Some crowns are slim spires, some are broad.
+    const w = h * (0.3 + 0.12 * q2);
+    o.scale.set(w, h, w * (0.9 + 0.2 * q));
+    o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();
     trees.setMatrixAt(i, o.matrix);
-    // Dark spruce green, each tree a little different.
-    trees.setColorAt(i, c.setRGB(0.03 + 0.015 * r, 0.05 + 0.02 * r, 0.038 + 0.012 * r));
+    // Spruce green; some trees bluer, some darker, a few brown.
+    const k = 0.75 + 0.5 * q;
+    if (q2 > 0.93) c.setRGB(0.05 * k, 0.045 * k, 0.03 * k);
+    else c.setRGB((0.026 + 0.012 * r) * k, (0.05 + 0.018 * q2) * k, (0.036 + 0.02 * q2) * k);
+    trees.setColorAt(i, c);
   });
   return trees;
 }
