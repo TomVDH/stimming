@@ -43,8 +43,9 @@ function cloudTex() {
 /**
  * @param {import('three').Scene} scene
  * @param {() => boolean} reduced
+ * @param {{ x: number, z: number, r: number }} [pad] The landing pad: no grass to press there.
  */
-export function createWash(scene, reduced) {
+export function createWash(scene, reduced, pad = { x: 0, z: 0, r: 3 }) {
   // Clouds: one puff per slot, recycled in a ring.
   const pos = new Float32Array(N * 3), size = new Float32Array(N), alpha = new Float32Array(N), rot = new Float32Array(N);
   const tintA = new Float32Array(N * 3), vel = new Float32Array(N * 3);
@@ -93,27 +94,51 @@ export function createWash(scene, reduced) {
   const tints = [new Color('#c4b196'), new Color('#ab9f86'), new Color('#b8ab90')];
   let head = 0, alive = 0, carry = 0;
 
-  // The ground ring: pressed grass, with ripples running outward.
+  // The ground patch: grass pressed flat in gusts that the wash carries outward.
+  // Noise, not rings: each gust is a warped patch, so no two look alike.
   const ring = new Mesh(new CircleGeometry(1, 64), new ShaderMaterial({
     transparent: true, depthWrite: false, fog: true,
-    uniforms: UniformsUtils.merge([UniformsLib.fog, { uT: { value: 0 }, uI: { value: 0 } }]),
-    vertexShader: `varying vec2 vP;
+    uniforms: UniformsUtils.merge([UniformsLib.fog, { uT: { value: 0 }, uI: { value: 0 }, uPad: { value: [pad.x, pad.z, pad.r] } }]),
+    vertexShader: `varying vec2 vP, vW;
       #include <fog_pars_vertex>
       void main() {
         vP = position.xy;
+        vW = (modelMatrix * vec4(position, 1.0)).xz;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
       }`,
-    fragmentShader: `uniform float uT, uI; varying vec2 vP;
+    fragmentShader: `uniform float uT, uI; uniform vec3 uPad; varying vec2 vP, vW;
       #include <fog_pars_fragment>
+      float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float n2(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h(i), h(i + vec2(1.0, 0.0)), f.x), mix(h(i + vec2(0.0, 1.0)), h(i + 1.0), f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 4; i++) { v += a * n2(p); p = p * 2.03 + 17.0; a *= 0.5; }
+        return v;
+      }
       void main() {
         float d = length(vP);
-        // Dark where the grass lies flat, pale at the crests of the ripples.
-        float rip = 0.5 + 0.5 * sin(d * 22.0 - uT * 11.0);
-        float edge = smoothstep(1.0, 0.55, d) * smoothstep(0.0, 0.2, d);
-        vec3 c = mix(vec3(0.08, 0.09, 0.05), vec3(0.75, 0.7, 0.58), rip * 0.55);
-        gl_FragColor = vec4(c, edge * uI * (0.22 + 0.2 * rip));
+        // The noise rides outward from the craft, at the wash's speed.
+        vec2 out_ = vP / max(d, 1e-3);
+        vec2 q = vW - out_ * uT * 2.4;
+        // A slow warp breaks up any regular front.
+        q += vec2(fbm(vW * 0.7 + uT * 0.21), fbm(vW * 0.7 - uT * 0.17)) * 1.8;
+        float g = fbm(q * 1.3);
+        // Fine streaks stretched along the flow.
+        float s = n2(vec2(dot(vW, vec2(-out_.y, out_.x)) * 6.0, d * 1.5 - uT * 3.0));
+        float flat_ = smoothstep(0.42, 0.78, g * 0.8 + s * 0.3);
+        float edge = smoothstep(1.0, 0.4, d) * smoothstep(0.0, 0.15, d);
+        // Pressed grass shows its pale underside; standing grass stays dark.
+        vec3 c = mix(vec3(0.07, 0.08, 0.05), vec3(0.62, 0.6, 0.47), flat_);
+        float a = edge * uI * (0.08 + 0.34 * flat_);
+        // No grass on the pad.
+        a *= smoothstep(uPad.z, uPad.z + 0.3, distance(vW, uPad.xy));
+        gl_FragColor = vec4(c, a);
         #include <fog_fragment>
       }`
   }));
@@ -131,14 +156,17 @@ export function createWash(scene, reduced) {
      * @returns {number} The wash strength, 0 to about 1.5.
      */
     update(dt, t, s, pxScale) {
-      const I = s.armed ? clamp(s.load, 0, 1.5) * clamp(1 - s.agl / WASH_TOP, 0, 1) : 0;
+      // Idle rotors on the ground move no air worth seeing.
+      // The wash starts above about 30 percent of hover thrust.
+      const lift = s.armed ? clamp((s.load - .3) / .7, 0, 1.5) : 0;
+      const I = lift * clamp(1 - s.agl / WASH_TOP, 0, 1);
       mat.uniforms.uScale.value = pxScale;
-      // The ring.
+      // The pressed grass: none on a roof.
       ring.position.set(s.x, s.ground + .025, s.z);
       ring.scale.setScalar(1.6 + s.agl * 1.1 + I * 1.2);
       ring.material.uniforms.uT.value = reduced() ? 0 : t;
       ring.material.uniforms.uI.value += (I - ring.material.uniforms.uI.value) * (1 - Math.exp(-dt * 6));
-      ring.visible = ring.material.uniforms.uI.value > .01;
+      ring.visible = ring.material.uniforms.uI.value > .01 && s.ground < .05;
 
       // New clouds: more, and faster, the lower and harder the rotors blow.
       carry += I * (reduced() ? 50 : 120) * dt;
