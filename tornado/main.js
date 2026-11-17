@@ -42,7 +42,10 @@ const ui = initPage({ id: 'tornado', bar: {
       { value: 'golden', label: 'Golden hour' },
       { value: 'dusk', label: 'Dusk' },
     ], onPick: v => act.time(v) },
-    { type: 'choice', id: 'lens', label: 'Lens', value: '50', persist: true, options: [
+    // A new key: a 50 saved under the old one does not hold back the new wide default.
+    { type: 'choice', id: 'lensWide', label: 'Lens', value: '28', persist: true, options: [
+      { value: '28', label: '28 mm' },
+      { value: '35', label: '35 mm' },
       { value: '50', label: '50 mm' },
       { value: '85', label: '85 mm' },
     ], onPick: v => act.lens(v) },
@@ -661,7 +664,7 @@ function setSun(hour) {
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
-let lensMM = 50;
+let lensMM = 28;
 // A narrow frame takes a somewhat wider lens and crops the storm's sides.
 const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3));
 // The road vanishes on the right golden line.
@@ -978,7 +981,7 @@ act.clear = () => {
 };
 act.storm = v => { storm = v; wake(); };
 act.time = v => { S.hour = HOURS[v] ?? HOURS.golden; setSun(S.hour); wake(); };
-act.lens = v => { lensMM = +v || 50; wake(); };
+act.lens = v => { lensMM = +v || 28; wake(); };
 act.expo = v => { S.expo = v; wake(); };
 act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 
@@ -988,7 +991,7 @@ const qs0 = new URLSearchParams(location.search);
 storm = ui.slider?.value ?? storm;
 // QA: ?time=golden picks the time for one load; Settings keep Tom's choice.
 act.time(qs0.get('time') || ui.setting('time')?.value || 'golden');
-lensMM = +(qs0.get('lens') || ui.setting('lens')?.value || 50);
+lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
 S.expo = ui.setting('expo')?.value ?? 1;
 // QA: ?sunaz=20 sets the sun's bearing for one load.
 act.sunAz(qs0.has('sunaz') ? +qs0.get('sunaz') : ui.setting('sunAz')?.value ?? 20);
