@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Drone</title>
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.72 0.02 275);
+  --glass: oklch(0.15 0.012 275 / 0.62);
+  --edge: oklch(1 0 0 / 0.14);
+  --on: oklch(0.93 0.03 75);
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+canvas#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.hud { position: fixed; inset: 0; pointer-events: none; font: 500 11px/1.2 var(--slab); letter-spacing: .08em; text-transform: uppercase; }
+.top { position: absolute; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.grp { display: flex; gap: 4px; flex-wrap: wrap; }
+.hud button { pointer-events: auto; font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--fg); background: var(--glass);
+  border: 1px solid var(--edge); border-radius: 8px; padding: 8px 10px 7px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.hud button[aria-pressed="true"] { background: var(--on); color: oklch(0.2 0.02 60); border-color: transparent; }
+.hud button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 2px; }
+.tele { position: absolute; left: 12px; bottom: max(12px, env(safe-area-inset-bottom)); margin: 0; padding: 10px 12px; display: grid;
+  grid-template-columns: auto auto; gap: 4px 14px; background: var(--glass); border: 1px solid var(--edge); border-radius: 10px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-variant-numeric: tabular-nums; }
+.tele dt { color: var(--muted); }
+.tele dd { margin: 0; text-align: right; min-width: 9ch; }
+#rotors { position: absolute; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: 132px; height: 96px;
+  background: var(--glass); border: 1px solid var(--edge); border-radius: 10px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.state { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); padding: 8px 14px 7px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--edge); font-weight: 700; letter-spacing: .14em; transition: opacity .4s; }
+.state[data-s="armed"], .state[data-s="flying"] { opacity: 0; }
+.state[data-s="crashed"] { color: oklch(0.8 0.15 35); }
+.legend { position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 18px;
+  color: var(--muted); white-space: nowrap; transition: opacity .6s; }
+.legend b { color: var(--fg); font-weight: 700; margin-right: 6px; }
+.legend[hidden] { display: flex; opacity: 0; }
+.stick { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; transition: opacity .15s; }
+.stick.on { opacity: 1; }
+.stick::before { content: ""; position: absolute; left: calc(var(--r) * -1); top: calc(var(--r) * -1); width: calc(var(--r) * 2); height: calc(var(--r) * 2);
+  border-radius: 50%; border: 1.5px solid oklch(1 0 0 / .32); background: oklch(0.15 0.01 275 / .18); }
+.stick i { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px; border-radius: 50%; background: var(--on);
+  transform: translate(var(--kx, 0px), var(--ky, 0px)); box-shadow: 0 0 14px oklch(0.93 0.03 75 / .45); }
+.stick b { position: absolute; left: 50%; top: calc(var(--r) + 8px); transform: translateX(-50%); white-space: nowrap; color: var(--fg); font-weight: 500; }
+.fail { position: fixed; inset: 0; display: grid; place-items: center; font: 500 13px var(--slab); color: var(--muted); }
+@media (max-width: 640px) {
+  .legend { flex-direction: column; gap: 4px; align-items: center; bottom: 128px; }
+  .tele { grid-template-columns: auto auto; gap: 3px 10px; padding: 8px 10px; font-size: 10px; }
+  #rotors { width: 110px; height: 80px; }
+}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="stage" aria-label="Drone flight"></canvas>
+<div class="hud">
+  <div class="top">
+    <div class="grp" role="group" aria-label="Flight mode">
+      <button type="button" data-mode="position" aria-pressed="true">Position</button>
+      <button type="button" data-mode="angle" aria-pressed="false">Angle</button>
+      <button type="button" data-mode="acro" aria-pressed="false">Acro</button>
+    </div>
+    <div class="grp">
+      <div class="grp" role="group" aria-label="Camera">
+        <button type="button" data-cam="chase" aria-pressed="true">Chase</button>
+        <button type="button" data-cam="gimbal" aria-pressed="false">Gimbal</button>
+        <button type="button" data-cam="pilot" aria-pressed="false">Pilot</button>
+      </div>
+      <button type="button" id="wind" aria-pressed="true">Wind</button>
+      <button type="button" id="reset">Reset</button>
+    </div>
+  </div>
+  <dl class="tele">
+    <dt>Alt</dt><dd id="t-alt">0.0 m</dd>
+    <dt>Spd</dt><dd id="t-spd">0 km/h</dd>
+    <dt>V/S</dt><dd id="t-vs">0.0 m/s</dd>
+    <dt>Hdg</dt><dd id="t-hdg">000°</dd>
+    <dt>Load</dt><dd id="t-load">0%</dd>
+    <dt>Wind</dt><dd id="t-wind">0.0 m/s</dd>
+  </dl>
+  <canvas id="rotors" width="264" height="192" aria-hidden="true"></canvas>
+  <div class="state" id="state" data-s="disarmed">Disarmed</div>
+  <div class="legend" id="legend">
+    <span class="mouse"><b>Left drag</b>pitch · roll</span>
+    <span class="mouse"><b>Right drag</b>throttle · yaw</span>
+    <span class="mouse"><b>Wheel</b>zoom</span>
+  </div>
+  <div class="stick" id="s-cyc"><i></i><b>Pitch · roll</b></div>
+  <div class="stick" id="s-col"><i></i><b>Throttle · yaw</b></div>
+</div>
+
+<script type="module">
+import {
+  WebGLRenderer, Scene, PerspectiveCamera, Color, FogExp2, Mesh, SphereGeometry, ShaderMaterial, BackSide,
+  PMREMGenerator, HemisphereLight, DirectionalLight, PlaneGeometry, MeshStandardMaterial, CanvasTexture,
+  RepeatWrapping, SRGBColorSpace, ACESFilmicToneMapping, PCFSoftShadowMap, CircleGeometry, InstancedMesh,
+  ConeGeometry, CylinderGeometry, Object3D, Vector3, BoxGeometry, MeshBasicMaterial, BufferGeometry,
+  Float32BufferAttribute, Sprite, SpriteMaterial, AdditiveBlending, Group, DoubleSide
+} from 'three';
+import { airframe } from './airframe.js';
+import { createSim } from './flight.js';
+
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const canvas = $('stage');
+
+function fail(msg) {
+  const d = document.createElement('div');
+  d.className = 'fail';
+  d.textContent = msg;
+  document.body.append(d);
+}
+
+// Seeded random, so the world is the same on every load.
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+let renderer;
+try {
+  renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+} catch (e) {
+  fail('WebGL is not available.');
+  throw e;
+}
+let dpr = Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(dpr);
+renderer.toneMapping = ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = PCFSoftShadowMap;
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); fail('The graphics context was lost. Reload the page.'); });
+
+const scene = new Scene();
+const camera = new PerspectiveCamera(60, 1, .05, 5000);
+
+// ── sky, haze and sun ──────────────────────────────────────────────────
+const FOG = new Color('#bfa99c');
+scene.fog = new FogExp2(FOG, .0045);
+const DEG = Math.PI / 180;
+const sunEl = 7 * DEG, sunAz = 200 * DEG;
+// The sun sits low in the west, a little south.
+const sunDir = new Vector3(Math.cos(sunEl) * Math.cos(sunAz), Math.sin(sunEl), -Math.cos(sunEl) * Math.sin(sunAz)).normalize();
+
+function skyMesh() {
+  return new Mesh(new SphereGeometry(2400, 48, 24), new ShaderMaterial({
+    side: BackSide, depthWrite: false, fog: false,
+    uniforms: {
+      zenith: { value: new Color('#4c5c7e') }, horizon: { value: FOG.clone() }, warm: { value: new Color('#f0a26a') },
+      haze: { value: new Color('#9f938e') }, sunCol: { value: new Color('#ffb070') }, sunDir: { value: sunDir }
+    },
+    vertexShader: `varying vec3 vDir;
+      void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec3 zenith, horizon, warm, haze, sunCol, sunDir; varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        float toward = pow(max(dot(normalize(d.xz + 1e-5), normalize(sunDir.xz)), 0.0), 3.0);
+        vec3 col = mix(mix(horizon, warm, toward * .85), zenith, pow(clamp(d.y, 0.0, 1.0), .45));
+        col = mix(col, haze, smoothstep(.01, -.06, d.y));
+        float s = max(dot(d, sunDir), 0.0);
+        col += sunCol * (pow(s, 1400.0) * 22.0 + pow(s, 60.0) * .4 + pow(s, 6.0) * .14);
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`
+  }));
+}
+const sky = skyMesh();
+sky.renderOrder = -1;
+scene.add(sky);
+
+// Reflections come from the sky itself.
+{
+  const pm = new PMREMGenerator(renderer), env = new Scene();
+  env.add(skyMesh());
+  scene.environment = pm.fromScene(env, .04, 1, 5000).texture;
+  scene.environmentIntensity = .7;
+  env.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+  pm.dispose();
+}
+
+scene.add(new HemisphereLight('#c3cde0', '#5a4c3c', 1.1));
+const sun = new DirectionalLight('#ffc794', 3.2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 140 });
+sun.shadow.bias = -.0004;
+sun.shadow.normalBias = .02;
+scene.add(sun, sun.target);
+
+// ── textures ───────────────────────────────────────────────────────────
+function tex(n, draw, repeat) {
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  draw(c.getContext('2d'), n);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
+  return t;
+}
+const grass = tex(512, (x, n) => {
+  x.fillStyle = '#4a5432'; x.fillRect(0, 0, n, n);
+  const pal = ['#3c4a28', '#56603a', '#5f5a36', '#6b6a40', '#44502c', '#2f3b22', '#585c34'];
+  for (let i = 0; i < 9000; i++) {
+    const px = rnd() * n, py = rnd() * n, a = -Math.PI / 2 + (rnd() - .5) * .9, l = 3 + rnd() * 7;
+    x.strokeStyle = pal[i % pal.length]; x.lineWidth = .8 + rnd() * 1.4; x.globalAlpha = .55 + rnd() * .45;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * l, py + Math.sin(a) * l); x.stroke();
+  }
+}, true);
+// Broad light and dark patches over the field, in grey.
+const patches = tex(256, (x, n) => {
+  const img = x.createImageData(n, n), g = [];
+  for (let i = 0; i < 64; i++) g.push(rnd());
+  const at = (i, j) => g[(i & 7) * 8 + (j & 7)];
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    let v = 0, amp = .55, f = 8 / n;
+    for (let o = 0; o < 3; o++) {
+      const u = i * f, w = j * f, iu = Math.floor(u), iw = Math.floor(w), fu = u - iu, fw = w - iw;
+      const su = fu * fu * (3 - 2 * fu), sw = fw * fw * (3 - 2 * fw);
+      const a = at(iu, iw) + (at(iu + 1, iw) - at(iu, iw)) * su, b = at(iu, iw + 1) + (at(iu + 1, iw + 1) - at(iu, iw + 1)) * su;
+      v += (a + (b - a) * sw) * amp; amp *= .5; f *= 2;
+    }
+    const k = (j * n + i) * 4, c = Math.round(clamp(v / .96, 0, 1) * 255);
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = c; img.data[k + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+}, true);
+const glowTex = tex(128, (x, n) => {
+  const g = x.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.2, 'rgba(255,255,255,.45)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, n, n);
+});
+
+// ── ground ─────────────────────────────────────────────────────────────
+grass.repeat.set(500, 500);
+const groundMat = new MeshStandardMaterial({ map: grass, roughness: 1, metalness: 0 });
+groundMat.onBeforeCompile = sh => {
+  sh.uniforms.patchMap = { value: patches };
+  sh.vertexShader = 'varying vec2 vWxz;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+    '#include <begin_vertex>\nvWxz = (modelMatrix * vec4(transformed, 1.0)).xz;');
+  sh.fragmentShader = 'uniform sampler2D patchMap; varying vec2 vWxz;\n' + sh.fragmentShader.replace('#include <map_fragment>',
+    `#include <map_fragment>
+    float pv = texture2D(patchMap, vWxz / 700.0).r * .6 + texture2D(patchMap, vWxz / 90.0 + .31).r * .4;
+    diffuseColor.rgb *= mix(vec3(.6, .64, .55), vec3(1.3, 1.2, 1.02), pv);
+    diffuseColor.rgb *= mix(.82, 1.0, smoothstep(16.0, 24.0, length(vWxz)));`);
+};
+const ground = new Mesh(new PlaneGeometry(5000, 5000), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Far hills: two hazy ridgelines, untouched by the fog.
+function ridge(rad, base, amp, col, s0) {
+  const pos = [], N = 180;
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2, h = base + amp * (.5 + .3 * Math.sin(a * 3 + s0) + .2 * Math.sin(a * 7.3 + s0 * 2) + .12 * Math.sin(a * 17 + s0));
+    const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
+    pos.push(x, -20, z, x, h, z);
+  }
+  const g = new BufferGeometry(), idx = [];
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  for (let i = 0; i < N; i++) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+  g.setIndex(idx);
+  return new Mesh(g, new MeshBasicMaterial({ color: col, fog: false, side: DoubleSide }));
+}
+scene.add(ridge(1700, 30, 90, '#a6a2a8', 1.3), ridge(1250, 10, 60, '#8a8f9f', 4.1));
+
+// ── landing pad, with four small lamps ─────────────────────────────────
+const padTex = tex(512, (x, n) => {
+  x.fillStyle = '#2c2d2f'; x.beginPath(); x.arc(n / 2, n / 2, n / 2, 0, Math.PI * 2); x.fill();
+  for (let i = 0; i < 4000; i++) { x.fillStyle = `rgba(255,255,255,${rnd() * .05})`; x.fillRect(rnd() * n, rnd() * n, 2, 2); }
+  x.strokeStyle = 'rgba(236,232,222,.85)'; x.lineWidth = 10;
+  x.beginPath(); x.arc(n / 2, n / 2, n * .42, 0, Math.PI * 2); x.stroke();
+  x.fillStyle = 'rgba(236,232,222,.88)';
+  const w = n * .07, hh = n * .36, sp = n * .13;
+  x.fillRect(n / 2 - sp - w / 2, n / 2 - hh / 2, w, hh); x.fillRect(n / 2 + sp - w / 2, n / 2 - hh / 2, w, hh);
+  x.fillRect(n / 2 - sp, n / 2 - w / 2, sp * 2, w);
+});
+const pad = new Mesh(new CircleGeometry(3, 64), new MeshStandardMaterial({ map: padTex, roughness: .9, transparent: true,
+  polygonOffset: true, polygonOffsetFactor: -2 }));
+pad.rotation.x = -Math.PI / 2;
+pad.position.y = .003;
+pad.receiveShadow = true;
+scene.add(pad);
+
+const warmGlow = new SpriteMaterial({ map: glowTex, color: '#ffc27a', transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: .55 });
+const bulbM = new MeshBasicMaterial({ color: new Color('#ffd9a0').multiplyScalar(2.2) });
+const postM = new MeshStandardMaterial({ color: '#2a2b2d', roughness: .6, metalness: .4 });
+function lamp(x, z, h, glow) {
+  const g = new Group();
+  const post = new Mesh(new CylinderGeometry(.03 * h, .045 * h, h, 8), postM);
+  post.position.y = h / 2; post.castShadow = true;
+  const bulb = new Mesh(new SphereGeometry(.05 * Math.max(1, h / 2), 10, 8), bulbM);
+  bulb.position.y = h;
+  const sp = new Sprite(warmGlow);
+  sp.scale.setScalar(glow); sp.position.y = h;
+  g.add(post, bulb, sp);
+  g.position.set(x, 0, z);
+  scene.add(g);
+}
+for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; lamp(Math.cos(a) * 3.5, Math.sin(a) * 3.5, .4, .9); }
+
+// ── obstacles: lamp poles, a container, a windsock, trees ──────────────
+const obstacles = [], boxes = [];
+for (const [x, z] of [[-14, -6], [16, -22], [-9, 24], [26, 10], [-30, -30], [6, -40]]) {
+  lamp(x, z, 7, 3.2);
+  obstacles.push({ x, z, r: .14, h: 7.2 });
+}
+
+const corrugate = tex(256, (x, n) => {
+  x.fillStyle = '#7f3727'; x.fillRect(0, 0, n, n);
+  for (let i = 0; i < n; i += 8) { x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(i, 0, 3, n); x.fillStyle = 'rgba(255,220,200,.07)'; x.fillRect(i + 4, 0, 2, n); }
+  for (let i = 0; i < 300; i++) { x.fillStyle = `rgba(60,30,20,${rnd() * .25})`; x.fillRect(rnd() * n, rnd() * n, 3 + rnd() * 9, 2 + rnd() * 5); }
+}, true);
+corrugate.repeat.set(3, 1);
+{
+  const b = { x: -16, z: -12, hx: 3.03, hz: 1.22, h: 2.59 };
+  const box = new Mesh(new BoxGeometry(b.hx * 2, b.h, b.hz * 2), new MeshStandardMaterial({ map: corrugate, roughness: .75, metalness: .35 }));
+  box.position.set(b.x, b.h / 2, b.z);
+  box.castShadow = box.receiveShadow = true;
+  scene.add(box);
+  boxes.push(b);
+}
+
+const sockTex = tex(128, (x, n) => {
+  for (let i = 0; i < 5; i++) { x.fillStyle = i % 2 ? '#f2efe8' : '#e8642c'; x.fillRect(0, i * n / 5, n, n / 5); }
+});
+const sock = new Group();
+{
+  const pole = new Mesh(new CylinderGeometry(.04, .05, 5, 8), postM);
+  pole.position.y = 2.5; pole.castShadow = true;
+  const cone = new Mesh(new ConeGeometry(.24, 1.4, 16, 1, true), new MeshStandardMaterial({ map: sockTex, side: DoubleSide, roughness: .9 }));
+  // The cone's wide mouth sits at the pole; the tail points downwind.
+  cone.rotation.z = -Math.PI / 2;
+  cone.position.x = .7;
+  cone.castShadow = true;
+  sock.add(cone);
+  sock.position.set(9, 4.9, 7);
+  const base = new Group();
+  base.add(pole);
+  base.position.set(9, 0, 7);
+  scene.add(base, sock);
+  obstacles.push({ x: 9, z: 7, r: .1, h: 5 });
+}
+
+// Trees: hedgerows and loose clumps, kept clear of the pad.
+{
+  const spots = [];
+  const lines = [[-60, -80, 120, -70], [-120, 40, -40, 140], [50, 30, 170, 60], [-200, -150, -90, -220], [90, -150, 220, -120]];
+  for (const [x0, z0, x1, z1] of lines) {
+    const n = Math.round(Math.hypot(x1 - x0, z1 - z0) / 5);
+    for (let i = 0; i < n; i++) spots.push([x0 + (x1 - x0) * i / n + (rnd() - .5) * 3, z0 + (z1 - z0) * i / n + (rnd() - .5) * 3]);
+  }
+  for (let k = 0; k < 14; k++) {
+    const a = rnd() * Math.PI * 2, d = 45 + rnd() * 300, cx = Math.cos(a) * d, cz = Math.sin(a) * d;
+    for (let i = 0; i < 6 + rnd() * 10; i++) spots.push([cx + (rnd() - .5) * 18, cz + (rnd() - .5) * 18]);
+  }
+  const keep = spots.filter(([x, z]) => Math.hypot(x, z) > 30);
+  const crown = new InstancedMesh(new ConeGeometry(1, 1, 7), new MeshStandardMaterial({ color: '#33402a', roughness: 1, flatShading: true }), keep.length);
+  const trunk = new InstancedMesh(new CylinderGeometry(.6, 1, 1, 6), new MeshStandardMaterial({ color: '#3b3127', roughness: 1 }), keep.length);
+  const o = new Object3D(), tint = new Color();
+  keep.forEach(([x, z], i) => {
+    const h = 7 + rnd() * 9, r = 1.6 + rnd() * 1.6, th = h * .28;
+    o.position.set(x, th + (h - th) / 2, z); o.scale.set(r, h - th, r); o.rotation.y = rnd() * 6; o.updateMatrix();
+    crown.setMatrixAt(i, o.matrix);
+    crown.setColorAt(i, tint.setHSL(.24 + rnd() * .06, .25 + rnd() * .12, .55 + rnd() * .3));
+    o.position.set(x, th / 2, z); o.scale.set(.22, th, .22); o.updateMatrix();
+    trunk.setMatrixAt(i, o.matrix);
+    obstacles.push({ x, z, r: r * .7, h });
+  });
+  crown.castShadow = trunk.castShadow = true;
+  crown.receiveShadow = true;
+  scene.add(crown, trunk);
+}
+
+// ── the drone and its sim ──────────────────────────────────────────────
+const craft = airframe({ livery: 'indigo', tone: 'b', det: 2 });
+scene.add(craft);
+const U = craft.userData;
+const groundAt = (x, z) => {
+  for (const b of boxes) if (Math.abs(x - b.x) < b.hx && Math.abs(z - b.z) < b.hz) return b.h;
+  return 0;
+};
+const sim = createSim({
+  rotors: U.props.map(p => ({ x: p.userData.at.x, y: p.userData.at.y, z: p.userData.at.z, dir: p.userData.dir })),
+  contacts: U.contacts.map(c => [c.x, c.y, c.z]),
+  feet: 4, obstacles, boxes, ground: groundAt
+});
+const S = sim.s;
+S.windOn = !reduced;
+const START_YAW = Math.PI / 2;
+sim.reset(0, 0, START_YAW);
+
+// Rotor wash: a pale dust ring under the craft near the ground.
+const wash = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({
+  map: tex(256, (x, n) => {
+    const g = x.createRadialGradient(n / 2, n / 2, n * .1, n / 2, n / 2, n / 2);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.45, 'rgba(255,255,255,.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, n, n);
+    for (let i = 0; i < 500; i++) { x.fillStyle = `rgba(255,255,255,${rnd() * .3})`; x.fillRect(rnd() * n, rnd() * n, 2, 2); }
+  }),
+  color: '#d8c4a6', transparent: true, depthWrite: false, opacity: 0
+}));
+wash.rotation.x = -Math.PI / 2;
+scene.add(wash);
+
+// ── input: two spring sticks from the mouse, or two thumbs ─────────────
+const sticks = {
+  cyc: { on: false, ox: 0, oy: 0, x: 0, y: 0, el: $('s-cyc') },
+  col: { on: false, ox: 0, oy: 0, x: 0, y: 0, el: $('s-col') }
+};
+const reach = () => clamp(Math.min(innerWidth, innerHeight) * .13, 56, 130);
+const expo = v => v * (.45 + .55 * v * v);
+function press(k, x, y) {
+  const s = sticks[k];
+  Object.assign(s, { on: true, ox: x, oy: y, x: 0, y: 0 });
+  s.el.style.transform = `translate(${x}px, ${y}px)`;
+  s.el.style.setProperty('--r', reach() + 'px');
+  s.el.classList.add('on');
+  move(k, x, y);
+  wake();
+}
+function move(k, x, y) {
+  const s = sticks[k], R = reach();
+  let dx = (x - s.ox) / R, dy = (s.oy - y) / R;
+  const l = Math.hypot(dx, dy);
+  if (l > 1) { dx /= l; dy /= l; }
+  s.x = dx; s.y = dy;
+  s.el.style.setProperty('--kx', dx * R + 'px');
+  s.el.style.setProperty('--ky', -dy * R + 'px');
+}
+function release(k) {
+  const s = sticks[k];
+  s.on = false; s.x = 0; s.y = 0;
+  s.el.classList.remove('on');
+}
+let mouseButtons = 0;
+const touches = new Map();
+function mouse(e) {
+  const b = e.buttons;
+  for (const [bit, k] of [[1, 'cyc'], [2, 'col']]) {
+    const was = mouseButtons & bit, now = b & bit;
+    if (now && !was) press(k, e.clientX, e.clientY);
+    else if (!now && was) release(k);
+    else if (now) move(k, e.clientX, e.clientY);
+  }
+  mouseButtons = b;
+}
+canvas.addEventListener('pointerdown', e => {
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  if (e.pointerType === 'mouse') { mouse(e); return; }
+  // Thumbs: the left half is throttle and yaw, the right half pitch and roll.
+  const k = e.clientX < innerWidth / 2 ? 'col' : 'cyc';
+  if (sticks[k].on) return;
+  touches.set(e.pointerId, k);
+  press(k, e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse') { if (e.buttons || mouseButtons) mouse(e); return; }
+  const k = touches.get(e.pointerId);
+  if (k) move(k, e.clientX, e.clientY);
+});
+function lift(e) {
+  if (e.pointerType === 'mouse') { mouse({ buttons: 0 }); return; }
+  const k = touches.get(e.pointerId);
+  if (k) { release(k); touches.delete(e.pointerId); }
+}
+for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) canvas.addEventListener(t, lift);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ── cameras ────────────────────────────────────────────────────────────
+const CAMS = ['chase', 'gimbal', 'pilot'];
+const cam = { mode: 'chase', dist: 4.5, gPitch: -12 * DEG, zoom: 1, yaw: START_YAW, pos: new Vector3(), look: new Vector3() };
+const PILOT = new Vector3(3, 1.7, 9);
+addEventListener('wheel', e => {
+  e.preventDefault();
+  const k = Math.sign(e.deltaY);
+  if (cam.mode === 'chase') cam.dist = clamp(cam.dist * (1 + k * .12), 2.5, 16);
+  else if (cam.mode === 'gimbal') cam.gPitch = clamp(cam.gPitch - k * 4 * DEG, -70 * DEG, 10 * DEG);
+  else cam.zoom = clamp(cam.zoom * (1 - k * .12), .4, 3);
+  wake();
+}, { passive: false });
+
+const v3 = new Vector3(), fwd = new Vector3();
+function snapCam() {
+  cam.yaw = S.euler ? S.euler.yaw : START_YAW;
+  fwd.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
+  cam.pos.copy(craft.position).addScaledVector(fwd, -cam.dist).add(v3.set(0, 1 + cam.dist * .18, 0));
+  cam.look.copy(craft.position);
+}
+function updateCam(dt) {
+  const e = S.euler || { yaw: START_YAW };
+  let dy = e.yaw - cam.yaw;
+  dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  if (cam.mode === 'chase') {
+    cam.yaw += dy * (1 - Math.exp(-dt * 3));
+    fwd.set(Math.cos(cam.yaw), 0, -Math.sin(cam.yaw));
+    v3.copy(craft.position).addScaledVector(fwd, -cam.dist);
+    v3.y += .9 + cam.dist * .18;
+    cam.pos.lerp(v3, 1 - Math.exp(-dt * 5));
+    cam.pos.y = Math.max(cam.pos.y, groundAt(cam.pos.x, cam.pos.z) + .4);
+    v3.copy(craft.position).addScaledVector(fwd, 1.2);
+    v3.y += .25;
+    cam.look.lerp(v3, 1 - Math.exp(-dt * 10));
+    camera.position.copy(cam.pos);
+    camera.lookAt(cam.look);
+    camera.fov = 60;
+  } else if (cam.mode === 'gimbal') {
+    // A stabilised camera in the nose: it follows yaw, never roll.
+    cam.yaw += dy * (1 - Math.exp(-dt * 8));
+    camera.position.copy(U.camera).add(v3.set(.07, -.035, 0));
+    craft.localToWorld(camera.position);
+    camera.rotation.set(cam.gPitch, cam.yaw - Math.PI / 2, 0, 'YXZ');
+    camera.fov = 72;
+  } else {
+    // The pilot stands by the pad and keeps the craft in view.
+    cam.look.lerp(craft.position, 1 - Math.exp(-dt * 6));
+    camera.position.copy(PILOT);
+    camera.lookAt(cam.look);
+    const d = PILOT.distanceTo(cam.look);
+    camera.fov = clamp(2 * Math.atan(4.5 / (d * cam.zoom)) / DEG, 6, 62);
+  }
+  camera.updateProjectionMatrix();
+}
+
+// ── controls in the HUD ────────────────────────────────────────────────
+const pressed = (sel, attr, val) => document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === val)));
+function setMode(m) { S.mode = m; pressed('[data-mode]', 'mode', m); wake(); }
+function setCam(m) { cam.mode = m; pressed('[data-cam]', 'cam', m); if (m === 'chase') snapCam(); wake(); }
+function reset() { sim.reset(0, 0, START_YAW); place(); snapCam(); wake(); }
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll('[data-cam]').forEach(b => b.addEventListener('click', () => setCam(b.dataset.cam)));
+$('wind').addEventListener('click', e => { S.windOn = !S.windOn; e.currentTarget.setAttribute('aria-pressed', String(S.windOn)); wake(); });
+$('wind').setAttribute('aria-pressed', String(S.windOn));
+$('reset').addEventListener('click', reset);
+addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '3') setMode(['position', 'angle', 'acro'][+k - 1]);
+  else if (k === 'c') setCam(CAMS[(CAMS.indexOf(cam.mode) + 1) % 3]);
+  else if (k === 'r') reset();
+  else return;
+  wake();
+});
+if (matchMedia('(pointer: coarse)').matches) {
+  $('legend').innerHTML = '<span><b>Left thumb</b>throttle · yaw</span><span><b>Right thumb</b>pitch · roll</span>';
+}
+
+// ── HUD readout ────────────────────────────────────────────────────────
+const out = { alt: $('t-alt'), spd: $('t-spd'), vs: $('t-vs'), hdg: $('t-hdg'), load: $('t-load'), wind: $('t-wind') };
+const put = (el, s) => { if (el.textContent !== s) el.textContent = s; };
+const rc = $('rotors'), rx = rc.getContext('2d');
+let flown = false;
+function hud() {
+  const m = sim.telemetry();
+  put(out.alt, Math.max(0, m.agl).toFixed(1) + ' m');
+  put(out.spd, Math.round(m.ground * 3.6) + ' km/h');
+  const vs = Math.abs(m.vs) < .05 ? 0 : m.vs;
+  put(out.vs, (vs >= 0 ? '+' : '') + vs.toFixed(1) + ' m/s');
+  put(out.hdg, String(Math.round(m.hdg) % 360).padStart(3, '0') + '°');
+  put(out.load, Math.round(m.load * 100) + '%');
+  put(out.wind, m.wind.toFixed(1) + ' m/s');
+  const st = S.crashed ? 'crashed' : !S.armed ? 'disarmed' : S.landed ? 'armed' : 'flying';
+  const el = $('state');
+  if (el.dataset.s !== st) { el.dataset.s = st; el.textContent = st === 'crashed' ? 'Crashed · R' : st === 'disarmed' ? 'Disarmed · throttle up' : st; }
+  if (!flown && !S.landed && S.armed) { flown = true; $('legend').hidden = true; }
+
+  // Rotor map, seen from above with the nose up.
+  // The outer ring is the upper prop; the inner ring is the lower prop.
+  const W = rc.width, Hh = rc.height;
+  rx.clearRect(0, 0, W, Hh);
+  U.props.forEach((p, i) => {
+    const a = p.userData.at, cx = W / 2 + a.z * W * .72, cy = Hh / 2 - a.x * Hh * 1.55;
+    const r = p.userData.lower ? 15 : 24, f = m.rpm[i] / sim.P.rpmMax;
+    rx.lineWidth = 6;
+    rx.strokeStyle = 'rgba(255,255,255,.12)';
+    rx.beginPath(); rx.arc(cx, cy, r, 0, Math.PI * 2); rx.stroke();
+    rx.strokeStyle = p.userData.dir > 0 ? '#a9c6ff' : '#ffbf8a';
+    rx.beginPath(); rx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 - f * Math.PI * 2 * p.userData.dir, p.userData.dir > 0); rx.stroke();
+  });
+  rx.fillStyle = 'rgba(255,255,255,.55)';
+  rx.beginPath(); rx.moveTo(W / 2, Hh / 2 - 16); rx.lineTo(W / 2 - 7, Hh / 2 + 8); rx.lineTo(W / 2 + 7, Hh / 2 + 8); rx.fill();
+}
+
+// ── per frame ──────────────────────────────────────────────────────────
+function place() {
+  craft.position.set(S.p[0], S.p[1], S.p[2]);
+  craft.quaternion.set(S.q[0], S.q[1], S.q[2], S.q[3]);
+  craft.updateMatrixWorld();
+}
+place();
+snapCam();
+
+const sprite = U.sprites;
+function look(dt, t) {
+  // Props: the eye reads a slow spin; past that, a blur disc.
+  let avg = 0;
+  U.props.forEach((p, i) => {
+    const rps = Math.sqrt(S.f[i]) * sim.P.rpmMax / 60;
+    avg += rps / U.props.length;
+    p.rotation.y += p.userData.dir * Math.min(rps, 9) * Math.PI * 2 * dt;
+  });
+  U.carbon.opacity = clamp(1.15 - avg / 45, .16, 1);
+  U.discM.opacity = clamp((avg - 10) / 60, 0, .2);
+  const lit = S.armed ? 1 : .35;
+  sprite.core.opacity = .85 * lit; sprite.bloom.opacity = .12 * lit; sprite.flare.opacity = .1 * lit;
+  // Front strobes: a double blink every 1.2 s.
+  const ph = t % 1.2;
+  sprite.strobe.opacity = S.armed && (ph < .05 || (ph > .14 && ph < .19)) ? 1 : 0;
+
+  const g = groundAt(S.p[0], S.p[2]), agl = S.p[1] - g;
+  const m = sim.telemetry();
+  wash.position.set(S.p[0], g + .02, S.p[2]);
+  wash.scale.setScalar(1.4 + agl * .9);
+  wash.rotation.z += dt * .4;
+  wash.material.opacity = (S.armed ? clamp(m.load, 0, 1.4) : 0) * clamp(1 - agl / 4, 0, 1) * .3;
+
+  // The windsock points downwind and lifts with speed.
+  const w = S.wind, ws = Math.hypot(w[0], w[2]);
+  sock.rotation.set(0, Math.atan2(-w[2], w[0]), -(1 - clamp(ws / 6, 0, 1)) * 1.1 + (reduced ? 0 : .04 * Math.sin(t * 7)));
+
+  sun.position.copy(craft.position).addScaledVector(sunDir, 70);
+  sun.target.position.copy(craft.position);
+  sky.position.copy(camera.position);
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  wake();
+}
+addEventListener('resize', resize);
+
+let running = false, last = 0, idle = 0, slow = 0, slowFor = 0, frames = 0;
+function frame(now) {
+  if (!running) return;
+  const dt = Math.min(.05, (now - last) / 1000);
+  last = now;
+  try {
+    S.input.roll = expo(sticks.cyc.x);
+    S.input.pitch = expo(sticks.cyc.y);
+    S.input.yaw = expo(sticks.col.x);
+    S.input.thr = expo(sticks.col.y);
+    sim.step(dt);
+    place();
+    look(dt, now / 1000);
+    updateCam(dt);
+    if (++frames % 3 === 0) hud();
+  } finally {
+    renderer.render(scene, camera);
+  }
+  // Slow frames: step the pixel ratio down once, never up.
+  slow = slow * .95 + dt * .05;
+  slowFor = frames > 240 && slow > 1 / 38 ? slowFor + dt : 0;
+  if (slowFor > 2 && dpr > 1) { dpr = 1; renderer.setPixelRatio(1); resize(); slowFor = 0; }
+  // Asleep: on the ground, disarmed and untouched for 30 s.
+  const busy = S.armed || !S.landed || sticks.cyc.on || sticks.col.on;
+  idle = busy ? 0 : idle + dt;
+  if (idle > 30) { running = false; return; }
+  requestAnimationFrame(frame);
+}
+function wake() {
+  idle = 0;
+  if (running || document.hidden) return;
+  running = true;
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { running = false; for (const k in sticks) release(k); mouseButtons = 0; touches.clear(); }
+  else wake();
+});
+resize();
+hud();
+wake();
+</script>
+</body>
+</html>
