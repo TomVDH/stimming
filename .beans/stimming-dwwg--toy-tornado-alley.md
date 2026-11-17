@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:20:35Z
+updated_at: 2026-11-17T08:31:14Z
 parent: stimming-oh7b
 ---
 
@@ -205,3 +205,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (god rays must follow the sun, the real breaks and the sun's colour): shafts follow the true sun (no floor), lit only through openings the march draws (deckOpen far holes, raftGap gaps), blocked by the storm's bulk; a few soft ragged holes 3–8 km wide, 15–40 km out, drifting with the deck; each hole splits into two or three beams fading down their sun path; colour uSunCol tinted by the haze. At Tom's default (19.05, Sun dir 100, sun 4.7° up, side-on) no shafts read, which is honest; Time 17–18.5 or Sun dir 140–180 shows them.
 
 - 2026-11-17, Tom: the opening holds 7 s of sun at Storm 0 before the build-up, at any time of day. Cloud shadows follow the storm: sunCover = smoothstep(0.05, 0.85, Storm) × (1 − the deck's openings where the true sun ray crosses the base), using the same deckOpen/raftGap the deck draws; dark at full storm except under the breaks. Breaks across the whole sky (holes(): far big holes as before, plus sparse 1.2–3.2 km breaks overhead and in the foreground, 20% of 6 km cells at full storm, 40% at Storm 0), feeding the deck, the shadows and the god rays. deckOpen now runs per deck sample; cost not timed cleanly.
+
+- 2026-11-17, Tom: at most 4 tornadoes (roping ones count until they leave); at 4 a spawn does nothing (no despawn); + Tornado greys out and the click cursor shows not-allowed until one leaves. Lighting from Window seat and Railgun in stormLit(): a two-lobe cloud phase, a multiple-scatter tail, powder darkening on thin edges away from the sun, a silver lining toward the sun dimmed by haze, sky light by direction (zenith, warm low sky toward the sun, cool sky away), and warm ground bounce on the base scaled by uPlainLit; lightInit() sets the sun and sky once per pixel. The funnels' own light is unchanged. GPU not measured (shared GPU).

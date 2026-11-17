@@ -137,6 +137,11 @@ const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
 // The sun's direction in camera space, and the pixel size; set once per pixel.
 vec3 gSunC;
+// The view ray in camera space, and the sky's light for the cloud: lightInit() sets them.
+// gSkyZ: the zenith. gSkySun, gSkyAnti: the low sky toward the sun and away from it.
+vec3 gRdC = vec3(0.0, 0.0, -1.0), gSkyZ, gSkySun, gSkyAnti;
+// The share of the plain the sun reaches under the deck, 0 to 1: the ground's bounce.
+uniform float uPlainLit;
 // The deck's finest noise, 0 to 1: it fades with distance, and the light's probes skip it.
 float gFine = 1.0;
 float gPx;
@@ -402,7 +407,14 @@ float stormD(vec3 p) {
   float d = stormShape(p);
   return d > 2.5 ? d : stormNoise(p, d);
 }
-// The colour of one storm sample.
+// Two Henyey-Greenstein lobes, after Window seat's and Railgun's clouds: a strong forward one, a soft back one.
+// Isotropic is 1. Toward the sun it reaches about 14: the silver lining.
+float cloudPh(float mu) {
+  float a = 1.5184 - 1.44 * mu, b = 1.04 + 0.4 * mu;
+  return mix(0.4816 / (a * sqrt(a)), 0.96 / (b * sqrt(b)), 0.35);
+}
+// The colour of one storm sample. Its light follows Window seat's and Railgun's cloud light:
+// Beer's law with a slower multiple-scatter tail, powder, a silver lining, sky light by direction, ground bounce.
 vec3 stormLit(vec3 p, float d) {
   // A step toward the sun: thinner cloud there means this side is lit.
   // The probes read the light's broad shape: they skip the finest noise.
@@ -422,9 +434,26 @@ vec3 stormLit(vec3 p, float d) {
   // The core: between the updraft and the rain, low down.
   vec2 cc = mix(TOWER, CORE, 0.55);
   float core = (1.0 - smoothstep(3.0, 9.0, length(p.xz - cc))) * (1.0 - smoothstep(3.0, 8.0, p.y));
-  vec3 amb = uAmb * mix(mix(0.3, 0.08, stormK()), 0.85, up) * (1.0 - 0.7 * under);
+  float mu = dot(gRdC, gSunC);
+  // Sky light by direction: tops see the zenith, sides the low sky.
+  // A sunlit side sees the warm sky round the sun; a shaded side the cool sky away from it.
+  vec3 skyS = mix(gSkyAnti, gSkySun, lit);
+  vec3 skyD = mix(skyS, gSkyZ, (1.0 - under) * (0.35 + 0.5 * up));
+  // The dome keeps the old fill's strength; only its hue and its direction come from the sky.
+  float yA = dot(uAmb, vec3(0.2126, 0.7152, 0.0722)), yS = max(dot(skyD, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+  vec3 amb = mix(uAmb, skyD * (yA / yS), 0.6) * mix(mix(0.3, 0.08, stormK()), 0.85, up) * (1.0 - 0.7 * under);
+  // The sunlit plain lights the underside warm from below.
+  amb += uSunCol * vec3(0.3, 0.21, 0.09) * 0.16 * uPlainLit * under * (1.0 - up);
+  // Beer's law for the direct beam; light scattered many times leaves a slower tail.
+  float Tl = lit * lit, Tm = 0.22 * lit;
+  // Powder: thin edges that face away from the light stay dark. Thick cloud does not.
+  float dn = clamp(0.4 - d / 0.25, 0.0, 1.0);
+  float powder = mix(1.0, 1.0 - exp(-4.0 * dn), 0.3 * (1.0 - max(mu, 0.0)));
+  // The silver lining: the forward lobe on a lit edge, toward the sun only.
+  // Storm haze veils it, but never all of it.
+  float silver = max(cloudPh(mu) - 0.4, 0.0) * 0.35 * Tl * (1.0 - 0.6 * stormK());
   // The lower flank stays dark: the storm's own bulk shades it.
-  vec3 c = uSunCol * lit * lit * mix(0.14, 0.8, up * up) + amb;
+  vec3 c = uSunCol * ((Tl * 0.85 + Tm) * powder + silver) * mix(0.14, 0.8, up * up) + amb;
   // The core goes dark slate behind its rain; its green comes only where light passes the rain.
   return mix(c, c * vec3(0.3, 0.33, 0.37), core * 0.8);
 }
@@ -475,6 +504,15 @@ vec2 cylinder(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
 // Ground, road, poles, farm and funnels live in world space; the storm lives in camera space.
 vec3 toWorld(vec3 c) { float s = sin(uYaw), k = cos(uYaw); return vec3(c.x * k + c.z * s, c.y, -c.x * s + c.z * k); }
 vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
+// Sets the sun and the view ray in camera space, and the sky's light for the cloud. rc is the camera ray.
+void lightInit(vec3 rc) {
+  gSunC = toCam(uSun);
+  gRdC = rc;
+  gSkyZ = skyCol(vec3(0.0, 1.0, 0.0));
+  vec2 sh = normalize(uSun.xz + 1e-5);
+  gSkySun = skyCol(normalize(vec3(sh.x, 0.05, sh.y)));
+  gSkyAnti = skyCol(normalize(vec3(-sh.x, 0.05, -sh.y)));
+}
 
 /* ---------- the deck's shadow ---------- */
 // The deck's cover along the sun's ray from a world point w, in km: 0 is open sun, 1 full shade.
@@ -850,7 +888,7 @@ vec3 envScene(vec2 uv) {
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
   vec3 rc = normalize(vec3(s, -uFoc));
   vec3 rd = toWorld(rc);
-  gSunC = toCam(uSun);
+  lightInit(rc);
   gPx = px;
   vec3 c;
   // The objects on the plain first: each one sorts itself behind or in front of the funnels.
@@ -1028,7 +1066,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
@@ -1250,6 +1288,8 @@ const FAR_STRIPS = 8;
 let farD = 16, deckReach = 146;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
+// The share of the plain in sun under the deck, 0 to 1: the cloud's ground bounce.
+const plainLit = () => 1 - 0.92 * sstep(0.05, 0.85, storm);
 // The opening build-up: the storm grows from nothing to its set level on a gentle in-out sine ease.
 // Touching Storm stops it. Past 0.67 the first tornado touches down on its own.
 /** @type {{ t: number, dur: number, to: number, spawned: boolean } | null} */
@@ -1336,6 +1376,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uBase, baseNow());
   gl.uniform1f(u.uReach, deckReach);
   gl.uniform1f(u.uGod, god);
+  gl.uniform1f(u.uPlainLit, plainLit());
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
@@ -1423,6 +1464,8 @@ function step(dt) {
   lineUniforms(line, tors);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
+  // A tornado that leaves frees a place: + Tornado and the click come back.
+  capUI();
   if (build) {
     build.t += dt;
     // The scene opens in sun: the storm waits 7 s, then builds.
@@ -1458,13 +1501,21 @@ function heroDown() {
   const [x, z] = toWorld(6500 * sx / h, -6500 * foc / h);
   touchDown(x, z);
 }
+// At four tornadoes a spawn does nothing: none ropes out or leaves to make room (Tom).
+// A roping tornado counts until it leaves.
+const full = () => tors.length >= MAX_TOR;
+// Quiet feedback at the cap: + Tornado greys out, and a click on open ground shows not-allowed.
+function capUI() {
+  const a = ui.action?.('add');
+  if (a && a.disabled !== full()) a.disabled = full();
+  const c = full() && !hover && !drag ? 'not-allowed' : '';
+  if (canvas.style.cursor !== c) canvas.style.cursor = c;
+}
 function touchDown(x, z) {
-  // The oldest ropes out to make room; at the cap it goes at once.
-  const standing = tors.filter(t => !t.roping);
-  if (standing.length >= MAX_TOR - 1) standing[0].roping = true;
-  if (tors.length >= MAX_TOR) tors.shift();
+  if (full()) return;
   const still = reduced();
   tors.push({ x, z, f: fLevel, fT: fLevel, cond: still ? at('cond', fLevel) : 0, dust: still ? 1 : 0, form: still ? 1 : 0, low: still ? 1 : 0, desc: still ? 1 : 0, turn: 0, rope: 0, roping: false, age: 0, life: F_LIFE[Math.round(fLevel)] * (0.85 + 0.3 * Math.random()), seed: Math.random(), ph: new Float32Array(14), zs: 28, ds: 20 });
+  capUI();
   wake();
 }
 // The tornado nearest a screen point, if the point is near enough.
@@ -1496,13 +1547,14 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   hover = tornadoAt(e.clientX, e.clientY);
+  capUI();
   if (!drag) return;
   const g = groundAt(e.clientX, e.clientY);
   drag.x = g.x; drag.z = g.z;
   keepOff(drag);
   wake();
 });
-const endDrag = () => { drag = null; };
+const endDrag = () => { drag = null; capUI(); };
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 // A right click or a double click ropes a tornado out.
