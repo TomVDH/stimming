@@ -23,16 +23,17 @@ A touch startles a patch: a ring of flashes runs out and the patch loses the bea
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`fireflies/index.html:101`).
+Bar: v3, the default (`fireflies/index.html:101`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | `Rhythm`, segments: Pulse (1), Double (2), Burst (3), default Pulse |
 | Bottom left (actions) | `Shuffle` (S); `Lead` (L), a held action |
 | Bottom right (slider) | `Pull`, 0 to 1, default 0.45: how hard each firefly answers a flash |
-| Key strip | click scatter; drag sweep; hold lead; S shuffle |
-| Settings | Quality; Reset in the footer |
-| Dev (`?dev`) | `Exposure`, `Bloom`, `Light`, `Aperture`, `Spread`, `Sight`, `Reach` (all persist) |
+| Key strip | click scatter the fireflies; drag sweep the fireflies; hold light the lantern; S shuffle the fireflies |
+| How to play (`help`) | Scatter the fireflies; Sweep the fireflies; Light the lantern; Move the lantern; Space Scatter a patch of fireflies; Enter Scatter a patch of fireflies; 1 2 3 Change the rhythm; S Shuffle the fireflies; L Hold to light the lantern |
+| Settings | Quality; Reset |
+| Dev (`?dev`) | Look: `Exposure`, `Bloom`, `Light`, `Aperture`. Swarm: `Spread`, `Sight`, `Reach` (all persist) |
 <!-- /gen:bar -->
 
 | Gesture | Does |

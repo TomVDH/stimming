@@ -29,7 +29,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--coil" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three steps. Drag an end to stretch it, or drop it over the edge and it walks down the stairs. Space nudges it into a walk, the up arrow plucks the top end, and R resets it.">
+    <div class="stage stage--coil" id="stage" tabindex="0" role="application" aria-label="A rainbow coil spring on three steps. Drag an end to stretch the coil. Drag the coil over the edge to walk it down the stairs. Press Space to nudge the coil. Press the up arrow to pluck the top end. Press R to reset the toy.">
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
@@ -44,13 +44,16 @@
 </script>
 <script type="module">
 import { initPage, audioKit, reduced, onReducedChange, onQuality, pixelRatio } from '../shared/stim.js';
-initPage({ id: 'coil', bar: {
+const ui = initPage({ id: 'coil', bar: {
   actions: [
     { verb: 'nudge', key: 'Space', onPress: () => nudge() },
-    { verb: 'reset', key: 'R', onPress: () => resetCoil0() },
   ],
   quality: true,
-  keys: [['drag an end', 'stretch'], ['drag over the edge', 'walk'], ['↑', 'pluck']],
+  reset: () => resetCoil0(),
+  keys: [['drag', 'stretch the coil'], ['drag', 'drop the coil over the edge'], ['↑', 'pluck the top end']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Stretch the coil'], ['drag', 'Drop the coil over the edge'], ['space', 'Nudge the coil'],
+    ['↑', 'Pluck the top end'], ['R', 'Reset the toy']],
 } });
 const panel = document.getElementById('stage');
 let reduce = reduced();
@@ -734,28 +737,17 @@ function fitRenderer(cap, budget) {
   };
   const ro = new ResizeObserver(apply);
   ro.observe(panel);
-  // The corners change size as the shell lays them out.
-  shellParts().forEach(el => ro.observe(el));
+  // The bar boxes change size as the shell lays them out.
+  ui.onCover(apply);
   addEventListener('perf-low', apply);
   // A new quality setting clears the slow-frame step and re-fits the renderer.
   onQuality(() => { lowDpr = false; slow = 0; apply(); });
   apply();
 }
-// Shell corners and the key strip that sit over the stage.
-const shellParts = () => [...document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys)')];
 // The top and foot bands, in parts of the stage height.
-// Offsets ignore the corners' slide-in transform.
 function bands(h) {
-  let top = 0, foot = 0;
-  for (const el of shellParts()) {
-    if (!el.offsetHeight || !el.childElementCount) continue;
-    // A short stage lets the fading key strip cross the floor.
-    if (el.classList.contains('s2-keys') && h < 560) continue;
-    const y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
-    if (y1 < h / 2) top = Math.max(top, y1);
-    else foot = Math.max(foot, h - y0);
-  }
-  return [clamp(top / h, 0, 0.25), clamp(foot / h, 0, 0.3)];
+  const c = ui.cover();
+  return [clamp(c.top / h, 0, 0.25), clamp(c.bottom / h, 0, 0.3)];
 }
 // The camera looks in from the front right and a little above.
 // It backs off until the whole box of action fits between the bands.
@@ -944,11 +936,14 @@ const lift = e => {
   wake();
 };
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => panel.addEventListener(t, lift));
-// The shell binds Space and R; the up arrow plucks.
+// The shell binds Space; the up arrow plucks.
+// Reset in Settings has no key of its own, so R binds here.
 // Below the stage, the up arrow scrolls the page.
 addEventListener('keydown', e => {
-  if (e.key !== 'ArrowUp' || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  if (e.key === 'r' || e.key === 'R') { if (!e.repeat) { e.preventDefault(); resetCoil0(); } return; }
+  if (e.key !== 'ArrowUp') return;
   if (e.target === document.body ? scrollY > 80 : !e.target.closest?.('.stim-frame')) return;
   e.preventDefault();
   if (!e.repeat) pluck();

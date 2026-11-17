@@ -26,16 +26,17 @@ A close view of living cuttlefish skin. Thousands of chromatophores, small elast
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3.
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | Display, segments: Cloud (1), Mottle (2), Zebra (3), Flash (4) |
 | Bottom left (actions) | Ink (I): a sepia cloud jets from the pointer; the skin flushes dark, then blanches |
 | Bottom right (slider) | Zoom, 0.6 to 1.8: the lens on the skin; cells and patterns scale together |
-| Key strip | `[MOVE] it watches`, `[CLICK] pulse`, `[HOLD] stare`, `[DRAG FAST] startle` |
+| Key strip | `[MOVE] send waves of colour`, `[CLICK] send a pulse`, `[HOLD] make the skin stare`, `[DRAG FAST] startle the skin` |
+| How to play | Eight rows: move, click, hold, drag fast, 1 2 3 4, I, Space, Enter |
 | Settings | Startle flash (toggle, persisted); site Quality; Reset in the footer |
-| Dev (`?dev`) | Sheen, Gloss, Twitch, Exposure, Grain (sliders, persisted) |
+| Dev (`?dev`) | Skin: Sheen, Gloss, Twitch. Look: Exposure, Grain (sliders, persisted) |
 <!-- /gen:bar -->
 
 | Gesture | Does |
