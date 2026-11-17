@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T03:19:02Z
+updated_at: 2026-11-17T05:28:41Z
 parent: stimming-oh7b
 ---
 
@@ -97,3 +97,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the lab opens at a lower quality (Tom: step down, go from there): Resolution 0.5, Steps 60. M3 Pro, pane at 762×984: 47 fps (was 26 at 0.75 / 80).
 
 - 2026-11-16: the Claude app stalled while the lab ran (Tom). The lab now draws 30 fps at most, draws nothing in a hidden pane, and rests once paused and settled; any input wakes it.
+
+- 2026-11-16: the lab is now the joined build from spike stimming-az9d (shells for the funnel, the backdrop baked in strips, a log-polar deck whirl, every setting as a knob, Width 1.6 by default). Tom: "spike joined is good". About 1.8–1.9× less GPU time than the old march at the same size.

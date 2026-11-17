@@ -1,11 +1,11 @@
 ---
 # stimming-az9d
 title: 'Tornado lab: cheaper ways to draw the funnel'
-status: in-progress
+status: completed
 type: spike
 priority: normal
 created_at: 2026-11-17T03:23:51Z
-updated_at: 2026-11-17T05:25:11Z
+updated_at: 2026-11-17T05:28:41Z
 parent: stimming-dwwg
 ---
 
@@ -68,3 +68,6 @@ Join spikes 1 and 2: shells for the funnel, the bake for the far storm and the n
 
 ## Verdict
 Tom (2026-11-16): "spike joined is good". The joined spike (shells + bake, with its knobs) is the way forward for the tornado.
+
+## Summary of Changes
+Three spikes (bake, shells, flipbook), then shells and bake joined, with knobs. Tom approved the joined build; it is now tornado/lab.html and lab.js (2026-11-16). The spike pages stay as records. The flipbook stays as a possible phone fallback.
