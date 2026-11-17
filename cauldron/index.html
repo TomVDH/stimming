@@ -1302,6 +1302,9 @@ uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
 uniform vec4 uDrop[${ND}];
+// Rim spatter: xyz on the rim; w is the size in mm, plus the age as a fraction.
+uniform int uNSp;
+uniform vec4 uSpat[12];
 // A drop's own colour, linear; alpha 0 takes the soup's colour.
 uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
@@ -1936,8 +1939,10 @@ vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
   vec3 v = -rd;
   float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
   vec3 h = normalize(uKeyDir + v);
-  vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + env(reflect(rd, n), 0.02) * F;
-  return col + uKeyCol * pow(max(dot(n, h), 0.0), 500.0) * 6.0;
+  // The lamp's core is capped: a small drop must not bloom into a spark.
+  vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + min(env(reflect(rd, n), 0.1), vec3(0.3)) * F;
+  // A soft, small lamp spot: a drop reads as soup, not as a spark.
+  return col + uKeyCol * pow(max(dot(n, h), 0.0), 120.0) * 0.3;
 }
 // Ray against a capsule: the spoon's handle.
 float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
@@ -2167,7 +2172,25 @@ void main() {
   if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0, 0);
   else if (mat == 2) {
     vec3 q = p - vec3(0.0, RY, 0.0);
-    col = shadeIron(p, normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy), v, 0.0, 1);
+    vec3 rn = normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy);
+    col = shadeIron(p, rn, v, 0.0, 1);
+    // Spatter: a wet, glossy spot of soup that dries to a pale crust ring.
+    for (int i = 0; i < 12; i++) {
+      if (i >= uNSp) break;
+      vec4 sp = uSpat[i];
+      float age = fract(sp.w), d = length(p - sp.xyz) / (floor(sp.w) / 1000.0);
+      if (d > 1.2) continue;
+      vec3 sc = soupCol(normalize(p.xz) * uRS * 0.9);
+      vec3 lit = uKeyCol * max(dot(rn, uKeyDir), 0.0) * 0.6 + skyAmb(rn) * 3.0 + uFireCol * uFlick * 0.1;
+      float disk = 1.0 - smoothstep(0.75, 1.0, d);
+      float wet = 1.0 - smoothstep(0.05, 0.18, age);
+      float crust = smoothstep(0.1, 0.2, age) * (1.0 - smoothstep(0.75, 1.0, age));
+      float ring = smoothstep(0.55, 0.85, d) * (1.0 - smoothstep(0.85, 1.05, d));
+      vec3 wc = sc * lit * 0.8 + env(reflect(-v, rn), 0.04) * 0.12;
+      col = mix(col, wc, disk * wet * 0.9);
+      vec3 cc = (sc * 0.6 + 0.12) * lit;
+      col = mix(col, cc, (disk * 0.25 + ring * 0.75) * crust * 0.8);
+    }
   }
   else if (mat == 3) col = shadeWall(p, -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI)), v);
   else if (mat == 4) col = shadeSoup(p, rd);
@@ -2748,6 +2771,8 @@ function stepPours(dt) {
 
 /* ---------- bubbles, droplets, puffs, sparks, ripples ---------- */
 const bubbles = [], drops = [], puffs = [], sparks = [], imps = [];
+// Spatter on the rim: a wet spot that dries to a crust, then flakes off.
+const NSP = 12, spats = [];
 function addDrop(x, y, z, vx, vy, vz, r, c = null) {
   if (drops.length >= ND) drops.shift();
   drops.push({ x, y, z, vx, vy, vz, r, c });
@@ -2801,12 +2826,26 @@ function stepBubbles(dt) {
 }
 // A burst: a ring on the surface, a puff of steam, spatter if big, and a blop.
 function pop(b) {
-  imps.push([b.x, b.z, b.rMax * 0.7, -b.rMax * 0.12]);
+  // Thick soup keeps a crater where a glop burst.
+  imps.push([b.x, b.z, b.rMax * 0.7, -b.rMax * 0.12 * (1 + 2 * thick())]);
   if (Math.random() < 0.5) addPuff(b.x, b.z, 0.25 + b.rMax * 6);
-  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs;
-  if (b.rMax > 0.06 && !reduced()) for (let i = 0; i < 3; i++) {
-    const a = rand(0, TAU);
-    addDrop(wx, surfY(wx, wz) + 0.03, wz, Math.cos(a) * 0.4, rand(1.2, 2), Math.sin(a) * 0.4, rand(0.008, 0.014));
+  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs, wy = surfY(wx, wz);
+  if (!reduced()) {
+    // A big burst throws a crown of drops round its edge and a jet up the middle.
+    if (b.rMax > 0.055) {
+      const n = 6, a0 = rand(0, TAU), rr = b.rMax * rs * 0.8;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + i / n * TAU;
+        addDrop(wx + Math.cos(a) * rr, wy + 0.02, wz + Math.sin(a) * rr, Math.cos(a) * 0.3, rand(0.8, 1.2), Math.sin(a) * 0.3, rand(0.006, 0.009));
+      }
+      addDrop(wx, wy + 0.03, wz, 0, rand(2, 2.6), 0, rand(0.01, 0.014));
+    }
+    // Spatter flies wide; some of it reaches the rim.
+    const ns = b.rMax > 0.045 ? Math.min(5, Math.round((b.rMax - 0.04) * 100)) : 0;
+    for (let i = 0; i < ns; i++) {
+      const a = rand(0, TAU), sp = rand(0.5, 1.2);
+      addDrop(wx, wy + 0.03, wz, Math.cos(a) * sp, rand(1.4, 2.2), Math.sin(a) * sp, rand(0.007, 0.012));
+    }
   }
   // Nearby things rock.
   for (const t of bodies) {
@@ -2824,12 +2863,27 @@ function stepDrops(dt) {
     d.vy -= 9 * dt;
     d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
     const rs = soupR(level);
+    // A drop that lands on the rim leaves a wet spot.
+    const rh = Math.hypot(d.x, d.z);
+    if (d.vy < 0 && Math.abs(rh - RR) < RT) {
+      const top = RY + Math.sqrt(RT * RT - (rh - RR) * (rh - RR));
+      if (d.y < top) {
+        drops.splice(i, 1);
+        if (spats.length >= NSP) spats.shift();
+        spats.push({ x: d.x, y: top, z: d.z, age: 0, r: d.r * 2.6 });
+        continue;
+      }
+    }
     if (d.vy < 0 && d.y < surfY(d.x, d.z)) {
       drops.splice(i, 1);
       // Back into the pot: a tiny ring; outside the rim it just goes.
       if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (!d.c && Math.random() < 0.35) dripSound(d); }
     } else if (d.y < -2) drops.splice(i, 1);
   }
+}
+function stepSpats(dt) {
+  // A spot dries in about 4 s, then its crust lasts about 20 s.
+  for (let i = spats.length - 1; i >= 0; i--) { spats[i].age += dt / 24; if (spats[i].age >= 1) spats.splice(i, 1); }
 }
 function stepPuffs(dt) {
   for (let i = puffs.length - 1; i >= 0; i--) { puffs[i].age += dt / puffs[i].life; if (puffs[i].age >= 1) puffs.splice(i, 1); }
@@ -3672,7 +3726,7 @@ function layerPass() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 const plumeS = new Float32Array(16);
-const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4);
+const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4), spatU = new Float32Array(NSP * 4);
 function scenePass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
   gl.viewport(0, 0, hdr.w, hdr.h);
@@ -3738,6 +3792,9 @@ function scenePass() {
   gl.uniform4fv(sceneP.u('uDropC'), dropCU);
   gl.uniform1i(sceneP.u('uND'), drops.length);
   gl.uniform4fv(sceneP.u('uDrop'), dropU);
+  spats.forEach((p, i) => spatU.set([p.x, p.y, p.z, p.age + Math.floor(p.r * 1000)], i * 4));
+  gl.uniform1i(sceneP.u('uNSp'), spats.length);
+  gl.uniform4fv(sceneP.u('uSpat'), spatU);
   const sw = spoonWorld();
   gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
   gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
@@ -3856,6 +3913,7 @@ function frame(now) {
     stepPours(dt);
     stepBubbles(dt);
     stepDrops(dt);
+    stepSpats(dt);
     stepPuffs(dt);
     stepSparks(dt);
     // Bodies and the bed sound.
