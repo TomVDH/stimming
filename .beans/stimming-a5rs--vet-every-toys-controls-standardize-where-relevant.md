@@ -174,3 +174,4 @@ Tom, 2026-11-17: "also proceed with all the toys -- subagetns for all -- per 5".
 |---|---|---|
 | 1 | morpher, pop, fidget, domino, pins | Switched; proposals written |
 | 2 | kaleido, ferro, neon, magnet, soap | Switched; proposals written |
+| 3 | glass, chladni, pendulum, pool, putty | Switched; proposals written |

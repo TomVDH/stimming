@@ -242,8 +242,10 @@ export function mountSignal(id, spec, ui) {
     } else b.addEventListener('click', () => { handle?.set(null, true); sync(); });
     // A toy may hide its Bar v2 chip until the action has a use.
     // Railgun shows Reset only after a kill.
+    // A label may hold an icon; its words find the chip.
+    const words = actLabel(a).replace(/<[^>]+>/g, '').trim();
     /** @type {any} */
-    const chip = [...shell.querySelectorAll('.s2-chip')].find(c => c.querySelector('.s2-label')?.textContent === actLabel(a));
+    const chip = [...shell.querySelectorAll('.s2-chip')].find(c => c.querySelector('.s2-label')?.textContent.trim() === words);
     syncers.push(() => {
       b.toggleAttribute('data-disabled', !!handle?.disabled);
       // A toy marks a toggle action on its Bar v2 chip; the button shows the same state.
@@ -261,6 +263,8 @@ export function mountSignal(id, spec, ui) {
     if (!handle) return null;
     if (row.type === 'slider') return rangePart(row.label, row, handle, 'sg-row');
     const el = box('sg-row', text('span', '', row.label));
+    // A row that the toy switches off shows so and takes no input.
+    syncers.push(() => { el.toggleAttribute('data-disabled', !!handle.disabled); el.inert = !!handle.disabled; });
     if (row.type === 'toggle') el.append(segPart([{ value: false, label: 'Off' }, { value: true, label: 'On' }], () => handle.value, v => handle.set(v, true)));
     else if (row.type === 'choice') el.append(choiceRow(row.options, () => handle.value, v => handle.set(v, true)));
     else if (row.type === 'button') {
