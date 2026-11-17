@@ -57,6 +57,7 @@ Every toy page that uses them carries this importmap, word for word:
 </script>
 ```
 
+- A Compute toy maps `three`, `three/webgpu`, `three/tsl`, `three/addons/` and `three.core.js` to three 0.186.1 instead. Copy that block word for word from `galaxy/index.html`.
 - `shared/stim.js` imports culori by the same URL, so it loads once.
 - A bump: Tom's yes, a chore bean, one library at a time. Its reference toy proves it with a same-frame check. Then every importmap changes in one commit.
 
