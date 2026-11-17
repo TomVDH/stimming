@@ -44,7 +44,9 @@ Question: which direction does the bar redo take?
   - Interactions, from emil-design-eng and gestures: the press is the flash (box on pointer down, oversize for one frame, parts on release); pointing is a line under the word; no box for a key press; icon buttons name themselves after 450 ms, at once on a neighbour; the slider thumb answers the grip; sound off rests white
 - [ ] Not checked on round 3: 812 x 375, a real touch screen, keyboard-only use from end to end, a disabled control (the lab does not mirror it)
 - [ ] The `review-animations` skill is not run on Signal
-- [ ] Tom judges Signal round 3 and picks an Accent and an Ink
+- [x] Tom's pick (2026-11-17): Accent Toy, Ink Marks. The toy's own accent inks the icons, the slider fill and a held pick; the words stay white
+- [ ] Tom judges the rest of Signal round 3 (interactions, the 8 s rule, the hard menus)
+- [ ] Next, on Tom's yes only: Signal moves from the lab into the shell on one toy (hard rule 3: its own bean)
 
 ## Notes
 
