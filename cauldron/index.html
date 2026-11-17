@@ -206,6 +206,7 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'oilFilm', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
     { type: 'slider', id: 'keyUp', label: 'Lamp height', min: 0.2, max: 1, step: 0.01, value: 0.45 },
     { type: 'slider', id: 'keyI', label: 'Lamp strength', min: 0.3, max: 1.2, step: 0.05, value: 0.8 },
+    { type: 'slider', id: 'stiff', label: 'Stiffness', min: 0, max: 1, step: 0.05, value: 1 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -959,7 +960,7 @@ precision highp float;
 in vec2 vUv;
 uniform sampler2D uRip, uDye;
 uniform vec2 uTexel;
-uniform float uExt, uDamp, uTime, uShiver, uBoil;
+uniform float uExt, uDamp, uTime, uShiver, uBoil, uStiff;
 uniform int uNI;
 uniform vec4 uImp[16];
 uniform vec4 uPl[4];
@@ -968,9 +969,10 @@ float hsh(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); 
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
   if (dot(p, p) > 0.99) { o = vec4(0.0); return; }
-  vec2 c = texture(uRip, vUv).xy;
-  float l = texture(uRip, vUv - vec2(uTexel.x, 0.0)).x, r = texture(uRip, vUv + vec2(uTexel.x, 0.0)).x;
-  float b = texture(uRip, vUv - vec2(0.0, uTexel.y)).x, t = texture(uRip, vUv + vec2(0.0, uTexel.y)).x;
+  vec3 c = texture(uRip, vUv).xyz;
+  vec3 L = texture(uRip, vUv - vec2(uTexel.x, 0.0)).xyz, R = texture(uRip, vUv + vec2(uTexel.x, 0.0)).xyz;
+  vec3 B = texture(uRip, vUv - vec2(0.0, uTexel.y)).xyz, U = texture(uRip, vUv + vec2(0.0, uTexel.y)).xyz;
+  float l = L.x, r = R.x, b = B.x, t = U.x;
   // Thick soup is slow and heavy: waves crawl, ring less and dents hold.
   float T = clamp((texture(uDye, vUv).a - 1.0) * 0.3, 0.0, 1.0);
   float kv = mix(1.0, 0.82, T), c2 = 0.42 * mix(1.0, 0.3, T);
@@ -981,12 +983,20 @@ void main() {
   float up = 0.0;
   for (int i = 0; i < 4; i++) { vec2 d = p - uPl[i].xy; up += exp(-dot(d, d) / 0.04); }
   h += uBoil * up * (hsh(floor(vUv * 20.0) + tk * 7.3) - 0.5);
+  // Set (z): a slow shape that stiff soup holds, apart from the waves.
+  // It levels out into its neighbours and sinks back; thin broth at once.
+  float st = T * uStiff;
+  float z = mix(c.z, (L.z + R.z + B.z + U.z) * 0.25, mix(0.25, 0.02, st));
+  z *= 1.0 - 1.0 / (120.0 * mix(0.25, 6.0, st));
   for (int i = 0; i < 16; i++) {
     if (i >= uNI) break;
     vec2 d = p - uImp[i].xy;
-    h += uImp[i].w * exp(-dot(d, d) / (uImp[i].z * uImp[i].z));
+    float rr = uImp[i].z * uImp[i].z, g = exp(-dot(d, d) / rr);
+    // Thick soup rings less; it holds the dent, with the soup heaped round it.
+    h += uImp[i].w * g * (1.0 - 0.6 * st);
+    z += uImp[i].w * st * 5.0 * (g - 0.25 * exp(-dot(d, d) / (4.0 * rr)));
   }
-  o = vec4(clamp(h, -0.2, 0.2), c.x, 0.0, 1.0);
+  o = vec4(clamp(h, -0.2, 0.2), c.x, clamp(z, -0.06, 0.06), 1.0);
 }`;
 
 /* ---------- GLSL: the layers at half size ---------- */
@@ -1302,7 +1312,7 @@ ${SDF}
 vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
 // The stir dips the middle and lifts the edge; the funnel deepens the centre.
 float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
-float surfH(vec2 xz) { return uLevel + dipAt(min(length(xz) / uRS, 1.0)) + texture(uRip, soupUV(xz)).x; }
+float surfH(vec2 xz) { vec2 r = texture(uRip, soupUV(xz)).xz; return uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y; }
 float soupT(vec3 ro, vec3 rd) {
   float t = (uLevel - ro.y) / rd.y;
   for (int i = 0; i < 3; i++) t = (surfH((ro + rd * t).xz) - ro.y) / rd.y;
@@ -2317,7 +2327,7 @@ function dyeTargets() {
     fillBroth();
   }
 }
-const ripT = [0, 1].map(() => { const tex = texture(RN, RN, gl.RG16F, gl.RG); return { tex, fb: target([tex]) }; });
+const ripT = [0, 1].map(() => { const tex = texture(RN, RN, gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]) }; });
 rip[0] = ripT[0]; rip[1] = ripT[1];
 const velTex = texture(FN, FN, gl.RG16F, gl.RG);
 const velData = new Float32Array(FN * FN * 2);
@@ -3458,6 +3468,7 @@ function rippleStep(steps) {
   gl.uniform2f(ripP.u('uTexel'), 1 / RN, 1 / RN);
   gl.uniform1f(ripP.u('uExt'), FE);
   gl.uniform1f(ripP.u('uDamp'), 0.98);
+  gl.uniform1f(ripP.u('uStiff'), devV('stiff', 1));
   gl.uniform1i(ripP.u('uDye'), 1);
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, dye[di].tex[0]);

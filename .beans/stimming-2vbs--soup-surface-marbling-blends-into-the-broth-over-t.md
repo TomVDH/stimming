@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T01:21:11Z
-updated_at: 2026-11-17T01:44:44Z
+updated_at: 2026-11-17T01:46:47Z
 parent: stimming-fskg
 ---
 
@@ -18,4 +18,6 @@ Tom: no gradual blend of the marbling with the soup. The dye field only blended 
 - [x] Oil film: fat spreads fast, calms ripples, golden sheen, edge line; Dev row Oil film
 - [x] Tom checks the oil film (keep)
 - [x] Lamp lower and dimmer (Tom); Dev rows Lamp height, Lamp strength
-- [ ] Film layers and stiffness read clearly (next, one at a time)
+- [x] Film layers read clearly (oil film)
+- [x] Stiffness: thick soup holds grooves and dents with heaped edges; Dev row Stiffness
+- [ ] Tom checks the stiffness
