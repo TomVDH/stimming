@@ -452,8 +452,10 @@ vec3 wheatFar(vec2 xz, float fx) {
   // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
   float near = 1.0 - smoothstep(0.08, 0.8, fx);
   if (near > 0.0) {
-    float rows = mix(0.5, 0.5 + 0.5 * cos(xz.x * 20.9 + vn(xz * 0.4) * 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
-    float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
+    // Each term reads turned, stretched noise: no grid or row lines up across the field.
+    vec2 r1 = mat2(0.8, -0.6, 0.6, 0.8) * xz, r2 = mat2(0.36, 0.93, -0.93, 0.36) * xz;
+    float rows = mix(0.5, vn(r1 * vec2(5.3, 1.7) + 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
+    float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
     float gap = smoothstep(0.38, 0.18, clump);
     float rip = 0.5 + 0.5 * sin(dot(xz, WDIR) * 0.9 - uT * (2.0 + 4.0 * uWind) + vn(xz * 0.2) * 4.0);
     alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap) * (0.9 + 0.22 * rip * (0.3 + 0.7 * g)), near);
