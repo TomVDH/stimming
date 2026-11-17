@@ -1,7 +1,7 @@
 // Observatory machine, pick and gesture. Run: node --test tests/observatory-machine.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeMachine, CUPOLA, TUBE, TUBE_PARK_ALT } from '../observatory/src/core/machine.ts';
+import { makeMachine, liftLimits, CUPOLA, TUBE, TUBE_PARK_ALT } from '../observatory/src/core/machine.ts';
 import { atRest, azDelta, shutterAtRest, SHUTTER_S } from '../observatory/src/core/dome.ts';
 import { pickStar } from '../observatory/src/core/pick.ts';
 import { classify } from '../observatory/src/core/gesture.ts';
@@ -38,8 +38,9 @@ const snap = m => Object.fromEntries(AXES.map(k => [k, { ...m.axes[k] }]));
 // The load on each drive changes speed a tenth faster at most.
 // Outside track the tube az rides the cupola.
 // So its bound adds the cupola's acceleration.
-function noStep(m, b, dt, what) {
-  const acc = { cupola: CUPOLA.accel, alt: TUBE.accel, az: TUBE.accel + CUPOLA.accel };
+// altAcc: the lift's own acceleration after a pick.
+function noStep(m, b, dt, what, altAcc = TUBE.accel) {
+  const acc = { cupola: CUPOLA.accel, alt: altAcc, az: TUBE.accel + CUPOLA.accel };
   for (const k of AXES) {
     const a = m.axes[k];
     assert.ok(Math.abs(a.dvel - b[k].dvel) <= acc[k] * dt + 1e-9, `${what}, ${k}: drive speed step ${a.dvel - b[k].dvel}`);
@@ -56,7 +57,7 @@ test("Tom's limits: the cupola 2°/s at 0.6°/s², the tube 1.5°/s at 0.5°/s²
     const lim = { cupola: CUPOLA, alt: TUBE, az: TUBE };
     for (let i = 0; i < 130 / step; i++) {
       const b = snap(m);
-      m.step(step, { targetAlt: 70, targetAz: 250, trails: false });
+      m.step(step, { targetAlt: 20, targetAz: 250, trails: false });
       noStep(m, b, step, `dt ${step}`);
       for (const k of AXES) {
         const a = m.axes[k];
@@ -127,10 +128,10 @@ test('the lift starts when the shutter is half open', () => {
     assert.ok(m.axes.alt.dvel > 0, `dt ${step}: the lift starts at shutter ${m.shutter01}`);
   }
 });
-test('from the 5° park to a 40° star the altitude cruises at 1.5°/s and keeps its limits', () => {
+test('a 15° lift uses 1.5°/s and keeps its limits', () => {
   for (const step of [1 / 60, 0.1]) {
     const m = makeMachine({ az: 100 });
-    const ctx = { targetAlt: 40, targetAz: 100, trails: false };
+    const ctx = { targetAlt: 20, targetAz: 100, trails: false };
     m.pick(star(1, 0, 0, 1));
     assert.equal(m.tubeAlt, 5);
     let cruise = 0, prev = 0;
@@ -143,7 +144,7 @@ test('from the 5° park to a 40° star the altitude cruises at 1.5°/s and keeps
       prev = v;
     }
     assert.ok(cruise > 0, `dt ${step}: it cruises at 1.5°/s`);
-    assert.equal(m.tubeAlt, 40);
+    assert.equal(m.tubeAlt, 20);
   }
 });
 test('a long cupola turn does not slow the lift', () => {
@@ -181,7 +182,7 @@ test('the hand-over to track has no speed step, then the tube sits on the star',
     for (; t < 120; t += step) {
       const b = snap(m), before = m.phase;
       m.step(step, sky(t));
-      noStep(m, b, step, `dt ${step} at ${t.toFixed(2)}`);
+      noStep(m, b, step, `dt ${step} at ${t.toFixed(2)}`, liftLimits(35).accel);
       if (before === 'slew' && m.phase === 'track') handed = t;
     }
     assert.ok(handed !== null, `dt ${step}: track`);
@@ -243,12 +244,13 @@ test('lost during a slew eases to rest, so the loop can sleep', () => {
   run(m, 5, { targetAlt: 60, targetAz: 250, trails: false });
   assert.equal(m.phase, 'slew');
   assert.ok(m.moving);
-  run(m, 20, { targetAlt: 2, targetAz: 250, trails: false });
+  // The 55° lift runs at up to 4°/s, so it takes longer to bring down.
+  run(m, 30, { targetAlt: 2, targetAz: 250, trails: false });
   assert.equal(m.phase, 'lost');
   assert.equal(m.moving, false);
 });
 test('hold, lost and release run down without a speed step, then rest', () => {
-  const far = { targetAlt: 75, targetAz: 250, trails: false };
+  const far = { targetAlt: 20, targetAz: 250, trails: false };
   const cases = {
     hold: [m => m, { ...far, trails: true }],
     lost: [m => m, { ...far, targetAlt: 2 }],
@@ -452,4 +454,76 @@ test('a fractional shutter at the start never jams the machine', () => {
   const m = makeMachine({ az: 100, shutter01: 0.5 });
   run(m, 10, { targetAlt: 0, targetAz: 0, trails: false });
   assert.equal(m.moving, false);
+});
+// A pick from rest at az 100, the shutter shut, the tube parked at 5°.
+// Steps until the drive lands on alt; returns the times from the pick.
+function liftRun(alt, step = 1 / 60, see = () => {}) {
+  const m = makeMachine({ az: 100 });
+  const ctx = { targetAlt: alt, targetAz: 100, trails: false };
+  m.pick(star(1, 0, 0, 1));
+  let t = 0, half = null, landed = null;
+  while (t < 60 && landed === null) {
+    const b = snap(m);
+    m.step(step, ctx);
+    t += step;
+    see(m, b, t);
+    if (half === null && m.shutter01 >= 0.5) half = t;
+    if (m.axes.alt.drv === alt && m.axes.alt.dvel === 0) landed = t;
+  }
+  return { m, half, landed };
+}
+test('the lift budget: a 15° lift keeps 1.5°/s; longer lifts take about 14 s, at 4°/s at most', () => {
+  assert.deepEqual(liftLimits(15), TUBE);
+  assert.deepEqual(liftLimits(-15), TUBE);
+  for (const [lift, cap] of [[15, 1.5], [35, 35 / 11], [60, 4]]) {
+    const lim = liftLimits(lift);
+    assert.ok(Math.abs(lim.cap - cap) < 1e-9, `${lift}°: cap ${lim.cap}`);
+    assert.ok(Math.abs(lim.accel - cap / 3) < 1e-9, `${lift}°: accel ${lim.accel}`);
+    for (const step of [1 / 60, 0.1]) {
+      let top = 0;
+      const { half, landed } = liftRun(5 + lift, step, (m, b) => {
+        const v = m.axes.alt.dvel;
+        top = Math.max(top, Math.abs(v));
+        assert.ok(Math.abs(v) <= cap + 1e-9, `${lift}°, dt ${step}: speed ${v}`);
+        assert.ok(Math.abs(v - b.alt.dvel) <= (cap / 3) * step + 1e-9, `${lift}°, dt ${step}: speed step ${v - b.alt.dvel}`);
+      });
+      assert.ok(Math.abs(top - cap) < 1e-9, `${lift}°, dt ${step}: cruises at ${top}`);
+      if (lift === 35) assert.ok(landed - half <= 14.5, `35°, dt ${step}: lands ${landed - half} s after the lift starts`);
+    }
+  }
+});
+test('the boost ends with the lift: a release lowers the tube at the normal limits', () => {
+  const m = makeMachine({ az: 100 });
+  m.pick(star(1, 0, 0, 1));
+  run(m, 60, { targetAlt: 65, targetAz: 100, trails: false });
+  assert.equal(m.phase, 'track');
+  m.release();
+  let prev = m.axes.alt.dvel;
+  for (let i = 0; i < 80 / dt; i++) {
+    m.step(dt, { targetAlt: 0, targetAz: 0, trails: false });
+    const v = m.axes.alt.dvel;
+    assert.ok(Math.abs(v) <= TUBE.cap + 1e-9, `speed ${v}`);
+    assert.ok(Math.abs(v - prev) <= TUBE.accel * dt + 1e-9, `speed step ${v - prev}`);
+    prev = v;
+  }
+  assert.equal(m.tubeAlt, 5);
+});
+test('altLeft and altEta: the way and the time left to the lift\'s arrival', () => {
+  // A short lift, a budgeted lift and a capped lift.
+  for (const lift of [10, 30, 60]) {
+    const marks = [];
+    const { m, landed } = liftRun(5 + lift, 1 / 60, (mm, _, t) => {
+      // Sample from the first frame, through the shutter, into the lift.
+      if (marks.length < 12 && Math.round(t * 60) % 60 === 0) marks.push({ t, eta: mm.altEta(), left: mm.altLeft(), alt: mm.axes.alt.pos });
+    });
+    assert.ok(landed !== null, `${lift}°: lands`);
+    for (const k of marks) {
+      assert.ok(Math.abs(k.t + k.eta - landed) <= 0.3, `${lift}°: at ${k.t.toFixed(2)} s the eta says ${(k.t + k.eta).toFixed(2)}, it lands at ${landed.toFixed(2)}`);
+      assert.ok(Math.abs(k.left - Math.abs(5 + lift - k.alt)) < 1e-6, `${lift}°: left ${k.left}`);
+    }
+    // Settled on the star: nothing left.
+    run(m, 5, { targetAlt: 5 + lift, targetAz: 100, trails: false });
+    assert.equal(m.altLeft(), 0);
+    assert.equal(m.altEta(), 0);
+  }
 });

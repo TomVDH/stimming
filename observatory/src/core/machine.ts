@@ -4,8 +4,8 @@
 // No phase change stops a part at once: each one runs down.
 import type { Star } from './catalog.ts';
 import {
-  atRest, azDelta, brakeAxis, leadOf, lockAxis, makeAxis, makeShutter, settled, shutterAtRest,
-  stepAxis, stepShutter, unlockAxis, type Axis, type Limits, type Shutter,
+  atRest, azDelta, brakeAxis, etaTime, leadOf, lockAxis, makeAxis, makeShutter, moveTime, settled,
+  shutterAtRest, stepAxis, stepShutter, unlockAxis, SHUTTER_S, type Axis, type Limits, type Shutter,
 } from './dome.ts';
 
 export type Phase = 'aim' | 'open' | 'slew' | 'track' | 'hold' | 'lost';
@@ -38,6 +38,11 @@ export type Machine = {
   // Only the ?cuts review switch calls it.
   shut(): void;
   step(dt: number, ctx: MachineCtx): void;
+  // Degrees the tube's altitude still has to travel; 0 once it has settled.
+  altLeft(): number;
+  // Seconds until the altitude's drive lands, from its trapezoid.
+  // After a pick it counts the wait for the half-open shutter.
+  altEta(): number;
 };
 
 // Tom, 2026-11-17: the cupola runs at 2 degrees a second.
@@ -57,6 +62,21 @@ export const LIFT_AT = 0.5;
 export const TUBE_CLEAR_ALT = 20;
 // A target faster than this has jumped to a new place.
 const RATE_MAX = 1;
+// Tom, 2026-11-17: the final shot shows the tube rise into frame and stop.
+// So a long lift after a pick runs faster and lands in about 14 s.
+const LIFT_S = 14;
+// A budgeted lift cruises 11 s and ramps 3 s.
+const LIFT_CRUISE_S = 11, LIFT_RAMP_S = 3;
+// A budgeted lift never runs faster than 4 degrees a second.
+const LIFT_MAX = 4;
+
+// The tube's altitude limits for a lift of d degrees after a pick.
+// A lift that takes 14 s or less keeps the normal limits.
+export function liftLimits(d: number): Limits {
+  if (moveTime(d, TUBE.cap, TUBE.accel) <= LIFT_S) return TUBE;
+  const cap = Math.min(LIFT_MAX, Math.max(TUBE.cap, Math.abs(d) / LIFT_CRUISE_S));
+  return { cap, accel: cap / LIFT_RAMP_S, wrap: false };
+}
 // The cupola waits until the star is this far off the slit, then steps after it.
 const CUPOLA_BAND = 1;
 // A tracking tube off by more than this goes back to slew.
@@ -87,6 +107,10 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
   // In track the tube locks on the creeping star.
   // A locked tube reports no speed, so the loop can sleep.
   let locked = false;
+  // The altitude's limits for this pick's lift, set on the first step.
+  let lift: Limits = TUBE, planLift = false;
+  // The altitude's last target, limits and target speed, for the getters.
+  let altGoal = alt.pos, altLim: Limits = TUBE, altRate = 0;
 
   // The tube az joins the cupola.
   // off takes the tube's lead and speed over the cupola.
@@ -120,6 +144,7 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
       m.tracking = false;
       catching = false;
       goal = 1;
+      planLift = true;
       m.phase = sh.p === 1 ? 'slew' : 'open';
     },
     release() {
@@ -171,6 +196,15 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
       const rides = m.phase !== 'track';
       if (rides && !riding) join();
       riding = rides;
+      if (planLift) { lift = liftLimits(tAlt - alt.pos); planLift = false; }
+      // Out of the lift the tube keeps its normal limits.
+      // A boosted tube still slows at its lift's acceleration.
+      const lifting = m.phase === 'open' || m.phase === 'slew';
+      if (!lifting && Math.abs(alt.dvel) <= TUBE.cap) lift = TUBE;
+      const normal: Limits = lift === TUBE ? TUBE : { ...TUBE, accel: lift.accel };
+      altLim = lifting ? lift : normal;
+      altGoal = lifting || m.phase === 'track' ? tAlt : TUBE_PARK_ALT;
+      altRate = lifting || m.phase === 'track' ? rAlt : 0;
       // The shutter stays open until the tube clears it.
       stepShutter(sh, goal === 0 && alt.pos >= TUBE_CLEAR_ALT ? 1 : goal, dt);
 
@@ -178,7 +212,7 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
         case 'aim': {
           if (ctx.aimAz !== undefined) stepAxis(cup, ctx.aimAz, dt, CUPOLA);
           else brakeAxis(cup, dt, CUPOLA);
-          stepAxis(alt, TUBE_PARK_ALT, dt, TUBE);
+          stepAxis(alt, TUBE_PARK_ALT, dt, normal);
           stepAxis(off, 0, dt, TUBE);
           break;
         }
@@ -186,8 +220,8 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
           // The cupola runs down while the shutter opens.
           brakeAxis(cup, dt, CUPOLA);
           // The tube lifts at its own pace from the half-open shutter.
-          if (sh.value >= LIFT_AT) stepAxis(alt, tAlt, dt, TUBE);
-          else brakeAxis(alt, dt, TUBE);
+          if (sh.value >= LIFT_AT) stepAxis(alt, tAlt, dt, lift);
+          else brakeAxis(alt, dt, lift);
           stepAxis(off, 0, dt, TUBE);
           if (sh.p === 1) m.phase = 'slew';
           break;
@@ -196,7 +230,7 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
           // The cupola and the tube altitude each run at their own limits.
           // The tube az rides the cupola until both have arrived.
           stepAxis(cup, tAz, dt, CUPOLA, 1, rAz);
-          stepAxis(alt, tAlt, dt, TUBE, 1, rAlt);
+          stepAxis(alt, tAlt, dt, lift, 1, rAlt);
           stepAxis(off, 0, dt, TUBE);
           // Track starts once both move with the star, with no lead.
           if (settled(cup, tAz, rAz, true) && settled(alt, tAlt, rAlt, false) && atRest(off) && off.pos === 0) {
@@ -213,7 +247,7 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
             lockAxis(alt, tAlt, false);
             lockAxis(az, tAz, true);
           } else {
-            stepAxis(alt, tAlt, dt, TUBE, 1, rAlt);
+            stepAxis(alt, tAlt, dt, normal, 1, rAlt);
             stepAxis(az, tAz, dt, TUBE_AZ, 1, rAz);
           }
           if (Math.abs(azDelta(cup.pos, tAz)) > CUPOLA_BAND) catching = true;
@@ -230,14 +264,15 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
         }
         case 'hold': {
           brakeAxis(cup, dt, CUPOLA);
-          brakeAxis(alt, dt, TUBE);
+          brakeAxis(alt, dt, normal);
+          altGoal = alt.drv + Math.sign(alt.dvel) * alt.dvel * alt.dvel / (2 * normal.accel);
           brakeAxis(off, dt, TUBE);
           break;
         }
         case 'lost': {
           // The tube lowers to its park.
           // The cupola and the tube az run down where they stand.
-          stepAxis(alt, TUBE_PARK_ALT, dt, TUBE);
+          stepAxis(alt, TUBE_PARK_ALT, dt, normal);
           brakeAxis(cup, dt, CUPOLA);
           brakeAxis(off, dt, TUBE);
           break;
@@ -249,6 +284,16 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
       m.tubeAlt = tubeAlt();
       m.tubeAz = az.pos;
       m.shutter01 = sh.value;
+    },
+    altLeft() {
+      if (locked || settled(alt, altGoal, altRate, false) || (atRest(alt) && alt.pos === altGoal)) return 0;
+      return Math.abs(altGoal - alt.pos);
+    },
+    altEta() {
+      if (m.altLeft() === 0) return 0;
+      // The shutter's travel reaches the half-open point at p 0.5.
+      const wait = m.phase === 'open' && sh.value < LIFT_AT ? Math.max(0, LIFT_AT - sh.p) * SHUTTER_S : 0;
+      return wait + etaTime(altGoal - alt.drv, alt.dvel, altLim.cap, altLim.accel);
     },
   };
   return m;

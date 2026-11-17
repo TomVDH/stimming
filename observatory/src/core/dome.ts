@@ -68,6 +68,30 @@ export function moveTime(d: number, cap: number, accel: number): number {
   return x >= cap * cap / accel ? x / cap + cap / accel : 2 * Math.sqrt(x / accel);
 }
 
+// Seconds a drive takes to land on a target d degrees away.
+// v: the drive's speed now, plus toward the target.
+// It speeds up, cruises and slows down as the drive does.
+export function etaTime(d: number, v: number, cap: number, accel: number): number {
+  const x = Math.abs(d);
+  let v0 = d === 0 ? -Math.abs(v) : v * Math.sign(d);
+  if (x === 0 && v0 === 0) return 0;
+  // Moving away: stop first, then come back from rest.
+  if (v0 < 0) return -v0 / accel + moveTime(x + v0 * v0 / (2 * accel), cap, accel);
+  // Too fast to stop in time: stop past it, then come back.
+  if (v0 * v0 / (2 * accel) > x) return v0 / accel + moveTime(v0 * v0 / (2 * accel) - x, cap, accel);
+  // Over the cap: slow to the cap first.
+  let t = 0, left = x;
+  if (v0 > cap) {
+    t = (v0 - cap) / accel;
+    left -= (v0 * v0 - cap * cap) / (2 * accel);
+    v0 = cap;
+  }
+  const peak = Math.sqrt(accel * left + v0 * v0 / 2);
+  if (peak <= cap) return t + (2 * peak - v0) / accel;
+  const up = (cap * cap - v0 * v0) / (2 * accel), down = cap * cap / (2 * accel);
+  return t + (cap - v0) / accel + (left - up - down) / cap + cap / accel;
+}
+
 // The share of the limits that makes a move take t seconds.
 // It never goes over 1.
 // A move cannot run faster than its limits.
