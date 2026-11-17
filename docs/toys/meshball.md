@@ -22,16 +22,17 @@ Drag to roll the squeeze round the ball. Let go and the bubbles suck back in wit
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`meshball/index.html:116`).
+Bar: v3 (`meshball/index.html:104`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | `Goo`, segments with colour dots: Grape, Lime, Mango, Glitter, Rainbow (keys 1 to 5), default Grape |
 | Bottom left (actions) | `Squeeze` (held, Space): two palms press the ball from the left and the right |
 | Bottom right (slider) | `Mesh`, 3 to 8 holes along a cube edge, default 5 |
-| Key strip | hold squeeze; drag move the squeeze; space squeeze both sides |
+| Key strip | hold squeeze the ball; hold + drag move the squeeze; space squeeze from both sides |
+| How to play | hold Squeeze the ball; hold + drag Move the squeeze; space Squeeze from both sides; move Move the light; 1 2 3 4 5 Change the goo |
 | Settings | `Wobble` (0 to 1, 0.6), Quality; Reset in the footer |
-| Dev (`?dev`) | `Bloom` (0 to 1.5, 0.55), `Exposure` (0.5 to 2, 1), `Glow` (0 to 2, 1), `Gloss` (0 to 2, 1), `Net bite` (0 to 2, 1) |
+| Dev (`?dev`) | Look: `Bloom` (0 to 1.5, 0.55), `Exposure` (0.5 to 2, 1), `Glow` (0 to 2, 1), `Gloss` (0 to 2, 1). Net: `Bite` (0 to 2, 1) |
 <!-- /gen:bar -->
 
 | Gesture | Does |

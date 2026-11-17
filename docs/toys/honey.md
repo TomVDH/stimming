@@ -22,16 +22,17 @@ The hand moves the pour. Held still, the coil stacks. Dragged slowly, it lays lo
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`honey/index.html:129`).
+Bar: v3, the default (`honey/index.html:126`). Bar v2 still builds, hidden.
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | `Fluid`, segments: Honey (1), Syrup (2), Treacle (3), with colour dots; default Honey |
 | Bottom left (actions) | `Pour` (Space, held), `Clear` (C) |
 | Bottom right (slider) | `Height`, 0 to 1, default 0.4: the fall height. On phones it moves into Settings |
-| Key strip | hold pour; drag steer; space pour; arrows steer |
+| Key strip | hold pour the fluid; drag move the pour; space pour the fluid; arrows move the pour |
+| How to play | hold: Pour the fluid; drag: Move the pour; space: Pour the fluid; arrows: Move the pour; 1 2 3: Choose the fluid; C: Clear the slate |
 | Settings | Quality |
-| Dev (`?dev`) | `Exposure` (0.4 to 2.5, 1), `Bloom` (0 to 0.5, 0.1), `Pitch` (-15 to 25 degrees, 0), `Yaw` (-60 to 60 degrees, 0), `Distance` (0.6 to 1.8, 1), `Field of view` (18 to 50 degrees, 30), `Tempo` (0.4 to 1.6, 1), `Melt time` (0.4 to 2.5, 1) |
+| Dev (`?dev`) | Light: `Exposure` (0.4 to 2.5, 1), `Bloom` (0 to 0.5, 0.1). Camera: `Pitch` (-15 to 25 degrees, 0), `Yaw` (-60 to 60 degrees, 0), `Distance` (0.6 to 1.8, 1), `Field of view` (18 to 50 degrees, 30). Flow: `Tempo` (0.4 to 1.6, 1), `Melt time` (0.4 to 2.5, 1) |
 <!-- /gen:bar -->
 
 | Gesture | Does |

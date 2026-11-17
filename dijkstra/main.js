@@ -42,7 +42,11 @@ const ui = initPage({ id: 'dijkstra', bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'source'], ['hold', 'destination'], ['drag', 'pin or jam'], ['double-click', 'blackout']],
+  keys: [['click', 'set the source'], ['hold', 'set the destination'], ['drag', 'jam the streets'], ['double-click', 'black out a spot']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Set the source'], ['hold', 'Set the destination'], ['drag', 'Move a pin'], ['drag', 'Jam the streets'],
+    ['double-click', 'Black out a spot'], ['S', 'Shuffle the pins'], ['M', 'Build a new map'], ['C', 'Clear the streets'],
+    ['T', 'Show and hide the tree'], ['space', 'Play the search again']],
 } });
 glow = ui.setting('glow')?.value ?? glow;
 treeOn = ui.setting('tree')?.value ?? treeOn;
@@ -1782,12 +1786,11 @@ act.algo = v => {
   if (web && v === 'districts' && srcs.length < 2) setSrcs(spreadPins(3, [src]));
   if (web) { replay(); live(); }
 };
-// Districts has no destination, so two key words change.
+// Districts has no destination, so the old key strip changes.
 function keyWords() {
   const dd = stage.parentElement.querySelectorAll('.s2-keys dd'), many = algo === 'districts';
-  if (dd[0]) dd[0].textContent = many ? 'add district' : 'source';
+  if (dd[0]) dd[0].textContent = many ? 'add a district' : 'set the source';
   if (dd[1]) dd[1].parentElement.hidden = many;
-  if (dd[2]) dd[2].textContent = many ? 'move, drop or jam' : 'pin or jam';
 }
 act.tree = v => { treeOn = v; still(); live(); };
 act.reset = () => {

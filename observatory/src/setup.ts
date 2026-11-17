@@ -1,8 +1,18 @@
 import * as THREE from 'three';
 import { initPage } from '../../shared/stim.js';
 
-// The Bar v2 spec and the Dev rows come in later tasks.
-export const ui = initPage({ id: 'observatory', bar: {} });
+// The Dev rows come in a later task.
+export const ui = initPage({
+  id: 'observatory',
+  bar: {
+    // Bar v3 lists every input in How to play: one instruction per row.
+    help: [
+      ['move', 'Aim the beam'],
+      ['click', 'Select a star'],
+      ['esc', 'Skip ahead'],
+    ],
+  },
+});
 
 export const stageEl = document.getElementById('stage')!;
 
