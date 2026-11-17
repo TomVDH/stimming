@@ -175,3 +175,14 @@ Tom, 2026-11-17: "also proceed with all the toys -- subagetns for all -- per 5".
 | 1 | morpher, pop, fidget, domino, pins | Switched; proposals written |
 | 2 | kaleido, ferro, neon, magnet, soap | Switched; proposals written |
 | 3 | glass, chladni, pendulum, pool, putty | Switched; proposals written |
+| 4 | scope, walker, rain, tvtree, balloons | Switched; proposals written |
+
+Tom, 2026-11-17, on batches 1 to 3: "Yes, apply all". The apply runs by subagents, five toys at a time; "Yours" stays on Domino Day.
+
+## The rollout plan (2026-11-17)
+
+Tom, 2026-11-17: "this cannot take so long to just replace and integrate a new bar per toy", then "Bar + copy, slow -- make a plan pelase so integration is easy".
+
+The plan is `docs/plans/bar-v3-rollout.md`: two lanes. Lane 1 switches the 57 toys left by script, once. Lane 2 does the copy, one subagent run for each toy, five at a time. It waits for Tom's ruling on its four decisions.
+
+Batch 1's copy is applied (Morpher, Pop field, Fidget board, Domino Day, Pin art); each page passes at three sizes. Batches 2, 3 and 4 hold proposals.

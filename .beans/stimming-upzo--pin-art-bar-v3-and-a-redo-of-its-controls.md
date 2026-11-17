@@ -15,9 +15,9 @@ A subagent read the toy and wrote this review; it did not play the toy. The toy'
 
 - [x] Switch the toy to Bar v3 (`signal: true`)
 - [x] Review every control, label, help row and line of copy, as a proposal
-- [ ] Tom rules on the proposal
-- [ ] Apply the copy and the fixes under "Under Bar v3"
-- [ ] 1280 px, 375 x 812 and 812 x 375 on the real page; clean console
+- [x] Tom rules on the proposal (2026-11-17: "Yes, apply all")
+- [x] Apply the copy and the fixes under "Under Bar v3" (2026-11-17, by a subagent; its report names what it left and Tom's calls)
+- [x] 1280 px, 375 x 812 and 812 x 375 on the real page; clean console (2026-11-17, after the apply)
 - [ ] The toy's doc in `docs/toys/` says what is true
 
 ## The review (proposal; no word is changed)

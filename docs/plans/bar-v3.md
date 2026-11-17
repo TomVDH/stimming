@@ -54,6 +54,23 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - While a sheet is open a key is the sheet's; the toy's own keys wait. Escape closes the sheet and does nothing else.
 - Only the pointer, keyboard focus or an open sheet keeps the bar. A mouse click does not.
 - If the module does not load or the draw fails, Bar v2 shows again.
+- After a mouse or touch press on the bar, focus returns to the stage, so the toy's keys act. A sheet closed by key returns focus to its button.
+- An action button follows its Bar v2 chip: hidden, disabled, `aria-pressed`, and the HTML of its label when the toy rewrites it.
+
+## Where the bar stands: `ui.cover()`
+
+A toy that keeps its picture clear of the bar asks the shell; it never measures bar parts by itself.
+
+```js
+const c = ui.cover();          // { top, bottom, rects: [{ x0, y0, x1, y1 }] } in stage CSS pixels
+const stop = ui.onCover(fit);  // fit runs when the boxes change
+```
+
+- `top` and `bottom` are the strips at the top and the foot that hold every bar part. `rects` has each part's box.
+- Under Bar v3 the parts are the monogram and the bar. Under Bar v2 they are the corner rows and the key strip. One code path in the toy serves both.
+- Bar v3 mounts after a toy's first fit. The first `cover()` can be all zero; `onCover` then fires.
+- The boxes are layout boxes: a bar in a beat, or a bar that has left, still counts.
+- `?qa` on a toy's address puts the bar's handles on `globalThis.__stimUI`, for a test script.
 - An action leaves the bar while the toy hides its Bar v2 chip, and returns with it. Railgun shows Reset only after a kill.
 - A group wider than the stage wraps its own parts. Window seat on a phone has three rows.
 - An action may open a tray: `tray: { title, hint, touchHint, options, onPick }`. Bar v3 draws it as a sheet; the action's handle gets `tray.open(on)` and `tray.isOpen`. Each option carries `data-value`, so the toy can start a drag from it. Prism's Pieces is the first.

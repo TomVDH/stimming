@@ -97,3 +97,16 @@ Fixed in the shell on 2026-11-17 and checked on real pages (Train ride, Domino D
 Open: 4, 8 and 10.
 
 Findings 4 and 8 are one pattern, and the largest open matter: a toy that keeps its picture clear of the bar measures the Bar v2 rows, which have no size under Bar v3. Of the first five further toys, three do it (Pop field, Pin art, Fidget board). The shell needs one call that gives a toy the strips the bar covers; each such toy then uses it.
+
+## The keep-clear call (2026-11-17; Tom: "Yes, apply all")
+
+Tom's yes covers the shell call that the keep-clear fault needs. It is `ui.cover()` and `ui.onCover(fn)` in `shared/stim.js`; `shared/signal.js` tells the shell when the bar has drawn or changed size (`stim:bar` on the frame). The spec is in `docs/plans/bar-v3.md`.
+
+Checked on Window seat's real page with `?qa`: under Bar v3 at 1280 px the call gives top 56 and bottom 56 with two boxes, and at 375 px bottom 144 for the three-row bar; under Bar v2 it gives the five corner parts. `onCover` fires when Bar v3 arrives.
+
+Also in the shell, from the subagents' reports:
+
+- A mouse or touch press on the bar hands focus back to the stage (Soap cutting and Balloon letters did this for Bar v2 chips by themselves).
+- An action button shows the HTML of its Bar v2 chip's label when the toy rewrites it (Pendulum wave's pattern glyph, TV tree's "Lights out" and "Lights on").
+
+Open: Googly eyes and Prism, of the first ten, still measure Bar v2 parts; they move to `ui.cover()` next. The lab's copy of the builder has none of the fixes since the port.

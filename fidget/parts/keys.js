@@ -2,7 +2,7 @@ import {
   NS, reduce, TAU, PI, D2R, R2D, clamp, lerp, mod, f2, f3, rnd, angDiff, KEYS, css, mixLch, ramp, C, TICK, BUTTER, el, set, nid, grad, DOWN, blur, LIGHT, svgIn, mat, skin, WELL, well, shine, wake, sleep, S, spring, rest, board, snd, BEZEL,
 } from '../kit.js';
 
-const MARKUP = `<div class="grp" role="group" aria-label="Keys"><button class="ctl key" type="button" aria-label="Key 1"></button><button class="ctl key" type="button" aria-label="Key 2"></button><button class="ctl key" type="button" aria-label="Key 3"></button><button class="ctl key" type="button" aria-label="Latching key" aria-pressed="false"></button></div>`;
+const MARKUP = `<div class="grp" role="group" aria-label="Keys"><button class="ctl key" type="button" aria-label="Key 1"></button><button class="ctl key" type="button" aria-label="Key 2"></button><button class="ctl key" type="button" aria-label="Key 3"></button><button class="ctl key" type="button" aria-label="Mint key" aria-pressed="false"></button></div>`;
 
 export default {
   id: 'keys', slot: 'row',

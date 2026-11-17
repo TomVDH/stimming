@@ -194,6 +194,8 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
   if (ui) {
     // toys.json gives the name, the tags and the legacy flag.
     toysData().then(toys => ui.applyToy(toys ? toys[id] : null));
+    // ?qa hands the bar's handles to a test script.
+    if (new URLSearchParams(location.search).has('qa')) /** @type {any} */ (globalThis).__stimUI = ui;
     // A toy that opts in gets the Signal bar; it draws over Bar v2, which still builds.
     // ?bar=signal and ?bar=v2 pick one for a side-by-side check.
     const want = new URLSearchParams(location.search).get('bar');
@@ -921,9 +923,60 @@ export function buildBar(stage, spec = {}, { id, home = '../index.html', keyDela
   const ro = new ResizeObserver(fit);
   for (const el of [frame, tl, tr]) ro.observe(el);
 
+  /* cover: where the bar stands on the stage, for a toy that keeps its picture clear */
+  // The parts are Bar v3's monogram and bar, or Bar v2's corner rows and key strip.
+  const coverParts = () => {
+    const sg = frame.querySelector(':scope > .sg-ui');
+    const parts = sg ? sg.querySelectorAll(':scope > .sg-mono, :scope > .sg-bar')
+      : layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys)');
+    return /** @type {HTMLElement[]} */ ([...parts]).filter(el => el.offsetWidth && el.offsetHeight);
+  };
+  /**
+   * The boxes of the stage that the bar covers, in stage pixels.
+   * `top` and `bottom` are the two strips that hold every box.
+   * Offsets give the layout box, so a bar that is mid-beat or has left still counts.
+   * @returns {{ top: number, bottom: number, rects: { x0: number, y0: number, x1: number, y1: number }[] }}
+   */
+  const cover = () => {
+    const s = stage.getBoundingClientRect();
+    let top = 0, bottom = 0;
+    const rects = coverParts().map(el => {
+      const o = /** @type {HTMLElement} */ (el.offsetParent || frame).getBoundingClientRect();
+      const x0 = o.left - s.left + el.offsetLeft, y0 = o.top - s.top + el.offsetTop;
+      const r = { x0, y0, x1: x0 + el.offsetWidth, y1: y0 + el.offsetHeight };
+      if ((r.y0 + r.y1) / 2 < s.height / 2) top = Math.max(top, r.y1); else bottom = Math.max(bottom, s.height - r.y0);
+      return r;
+    });
+    return { top: Math.max(0, top), bottom: Math.max(0, bottom), rects };
+  };
+  /** @type {Set<() => void>} */
+  const coverFns = new Set();
+  /** @type {ResizeObserver | null} */
+  let coverRO = null;
+  const coverTell = () => coverFns.forEach(fn => fn());
+  const coverWatch = () => {
+    coverRO?.disconnect();
+    coverRO = new ResizeObserver(coverTell);
+    for (const el of [stage, ...coverParts()]) coverRO.observe(el);
+  };
+  // Bar v3 mounts after a toy's first fit; it says so when it has drawn or changed size.
+  frame.addEventListener('stim:bar', () => { if (!coverFns.size) return; coverWatch(); coverTell(); });
+  /**
+   * Runs fn each time the covered boxes change: a resize, a bar that wraps, Bar v3's arrival.
+   * @param {() => void} fn
+   * @returns {() => void} Stops the calls.
+   */
+  const onCover = fn => {
+    coverFns.add(fn);
+    if (!coverRO) coverWatch();
+    return () => { coverFns.delete(fn); };
+  };
+
   const ui = {
     choice,
     slider: slider?.handle ?? null,
+    cover,
+    onCover,
     action: verb => actions.get(verb) ?? null,
     setting: sid => settings.get(sid) ?? null,
     keys: keys?.handle ?? { show() {}, hide() {}, shown: false },

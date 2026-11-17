@@ -37,13 +37,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pins.svg)"></span><span class="intro-name">Pin art</span><span class="intro-sub">Stimming No. 05</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/pins.svg)"></span><span class="intro-name">Pin art</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="Pin screen. Press and drag to push pins; hold to push deeper. Knock the frame to shake the pins flat; drag the frame sideways to turn the board over. Shuffle presses a new object from behind. Type a word to press its letters from behind; Backspace lifts the last letter. Arrow keys move the press point, Space presses, Enter turns the board over, Escape shakes the pins flat.">
-      <p class="fail" hidden>Pin art needs WebGL, which this browser has turned off.</p>
+    <div class="stage stage--pins board" id="board" tabindex="0" role="application" aria-label="A board of metal pins in an orange frame. Click the pins to push them. Drag to draw in the pins. Hold to push the pins deeper. Click the frame to shake the pins flat. Drag the frame sideways to turn the board over. Scroll to zoom the view. Shuffle presses an object into the pins. Type a word to press it into the pins. Press Backspace to remove a letter. Press the arrow keys to move the ring. Press Space to push the pins. Press Enter to turn the board over. Press Escape to shake the pins flat.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -67,12 +67,17 @@ const FINISHES = [
   { value: 'chrome', label: 'Chrome', dot: 'oklch(0.88 0.01 260)' },
   { value: 'anodised', label: 'Anodised', dot: 'linear-gradient(135deg, oklch(0.86 0.14 72), oklch(0.62 0.19 352) 35%, oklch(0.64 0.17 252) 65%, oklch(0.86 0.15 124))' },
 ];
-initPage({ id: 'pins', signal: true, bar: {
+const ui = initPage({ id: 'pins', signal: true, bar: {
   choice: { label: 'Finish', value: savedFinish, options: FINISHES, onPick: v => setFinish(v) },
   // Shake and Flip live on the frame itself; Escape and Enter still work.
   actions: [{ verb: 'shuffle', onPress: () => shuffle() }],
   quality: true,
-  keys: [['drag', 'push, hold deeper'], ['click frame', 'knock flat'], ['drag frame', 'turn over'], ['type', 'press a word']],
+  keys: [['drag', 'draw in the pins'], ['click frame', 'shake the pins flat'], ['drag frame', 'turn the board over'], ['type', 'press a word']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Push the pins'], ['drag', 'Draw in the pins'], ['hold', 'Push the pins deeper'],
+    ['click frame', 'Shake the pins flat'], ['drag frame', 'Turn the board over'], ['scroll', 'Zoom the view'],
+    ['A-Z 0-9', 'Press a word'], ['backspace', 'Remove a letter'], ['← → ↑ ↓', 'Move the ring'], ['space', 'Push the pins'],
+    ['enter', 'Turn the board over'], ['esc', 'Shake the pins flat']],
 } });
 
 const panel = document.getElementById('board');
@@ -883,18 +888,14 @@ function bounds(pts) {
   }
   return [x0, x1, y0, y1];
 }
-// Pixels the top and bottom control rows take from the stage.
-function rowsClear(h) {
-  const chip = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chip')) || 26;
-  let top = 12 + chip, bot = 12 + chip;
-  const p = panel.getBoundingClientRect();
-  for (const el of document.querySelectorAll('.stim-ui > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br) > *')) {
-    const r = el.getBoundingClientRect();
-    if (!r.height) continue;
-    if (r.top - p.top < h / 2) top = Math.max(top, r.bottom - p.top);
-    else bot = Math.max(bot, p.bottom - r.top);
-  }
-  return [top + 4, bot + 4];
+// The frame keeps this margin where no bar part stands.
+const CLEAR_MIN = 38;
+// The last fit's strips show if a bar change needs a refit.
+let clear = [0, 0];
+// Pixels the bar takes from the top and the foot of the stage.
+function rowsClear() {
+  const c = ui.cover();
+  return [Math.max(CLEAR_MIN, c.top) + 4, Math.max(CLEAR_MIN, c.bottom) + 4];
 }
 // The grid follows the panel's shape; the camera backs off until the frame fits.
 function fit(w, h) {
@@ -911,8 +912,9 @@ function fit(w, h) {
     for (const sy of [-1, 1]) for (const z of [-LIP, LIP]) pts.push(new THREE.Vector3(sx * fw, sy * fh, z));
     pts.push(new THREE.Vector3(sx * halfW, -halfH, L0 + HMAX + HEAD_Z));
   }
-  // The frame clears the top and bottom control rows of the shell.
-  const [top, bot] = rowsClear(h), padT = (2 * top) / h, padB = (2 * bot) / h;
+  // The frame is a control, so it stays clear of the bar.
+  clear = rowsClear();
+  const [top, bot] = clear, padT = (2 * top) / h, padB = (2 * bot) / h;
   const span = 1.94 - padT - padB, mid = (padB - padT) / 2 - 0.03;
   let d = 150, ty = 0;
   for (let it = 0; it < 4; it++) {
@@ -1044,7 +1046,8 @@ function onFrame(rr) {
   if (ax > ow || ay > oh || (ax < iw && ay < ih) || march(rr)) return null;
   return x;
 }
-// A press on the frame knocks it flat; a sideways drag turns it over.
+// A click on the frame shakes the pins flat.
+// A sideways drag on the frame turns the board over.
 const KNOCK_MOVE = 8, TURN_DRAG = 28;
 let grab = null;
 function grabMove(e) {
@@ -1281,6 +1284,7 @@ function focusRgb() {
 }
 function failed() {
   panel.querySelector('.fail').hidden = false;
+  ui.hideControls();
 }
 // Nearer pins catch more of the front lamp.
 const LAMP = 'mix(0.7, 1.14, smoothstep(0.0, 5.0, pinP))';
@@ -1449,13 +1453,15 @@ async function start() {
   }, 1.4e6);
   // A panel with no size yet still gets a grid.
   if (!N) fit(16, 9);
-  // Stacked or moved corner rows refit the camera.
-  const shell = panel.closest('.stim-frame');
-  if (shell) new MutationObserver(() => {
+  // A bar that arrives, wraps or moves refits the camera.
+  ui.onCover(() => {
     if (!panel.clientWidth || !panel.clientHeight) return;
+    const [top, bot] = rowsClear();
+    // A plain resize already has its fit from the renderer.
+    if (top === clear[0] && bot === clear[1]) return;
     fit(panel.clientWidth, panel.clientHeight);
     if (ready) { draw(); wake(); }
-  }).observe(shell, { attributes: true, attributeFilter: ['data-stack', 'data-narrow'] });
+  });
   kb.x = -0.5 * halfW;
   await idle();
   intro();

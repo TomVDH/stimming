@@ -244,11 +244,15 @@ export function mountSignal(id, spec, ui) {
     // Railgun shows Reset only after a kill.
     // A label may hold an icon; its words find the chip.
     const words = actLabel(a).replace(/<[^>]+>/g, '').trim();
+    let shown = null;
     /** @type {any} */
     const chip = [...shell.querySelectorAll('.s2-chip')].find(c => c.querySelector('.s2-label')?.textContent.trim() === words);
     syncers.push(() => {
       b.toggleAttribute('data-disabled', !!handle?.disabled);
       // A toy marks a toggle action on its Bar v2 chip; the button shows the same state.
+      // A toy may change its chip's label, such as a glyph for the next pattern.
+      const lab = chip?.querySelector('.s2-label')?.innerHTML;
+      if (lab != null && lab !== shown) { shown = lab; b.firstElementChild.innerHTML = lab; }
       const on = a.hold ? null : chip?.getAttribute('aria-pressed');
       if (on == null) b.removeAttribute('aria-pressed'); else b.setAttribute('aria-pressed', on);
       const gone = !!chip && (chip.hidden || chip.style.display === 'none');
@@ -312,7 +316,7 @@ export function mountSignal(id, spec, ui) {
           // Focus that was in the sheet returns to its button; a key press opens into the sheet.
           const inside = el.contains(document.activeElement), byKey = anchor.matches(':focus-visible');
           el.hidden = !on;
-          if (!on && inside) anchor.focus({ preventScroll: true });
+          if (!on && inside) (byKeys ? anchor : stage).focus({ preventScroll: true });
           if (on && byKey) el.querySelector('button, a, input')?.focus({ preventScroll: true });
           anchor.setAttribute('aria-expanded', String(on));
           if (on) open = api; else if (open === api) open = null;
@@ -533,6 +537,9 @@ export function mountSignal(id, spec, ui) {
       if (held === b) b.style.removeProperty('--sg-k');
     };
     [bar, ...sheets.map(s => s.el)].forEach(el => el.addEventListener('pointerdown', press));
+    // A mouse or touch press on the bar hands focus back to the stage, so the toy's keys act.
+    // Bar v2's toys did this themselves for its chips. A press that opens a sheet keeps focus.
+    bar.addEventListener('click', e => { if (!byKeys && !open && e.target.closest('.sg-btn')) stage.focus({ preventScroll: true }); });
 
     // An icon button names itself: after a pause on the first, at once on its neighbours.
     const tip = text('span', 'sg-tip', '');
@@ -564,6 +571,8 @@ export function mountSignal(id, spec, ui) {
       // One part gives the row height: a group may wrap by itself.
       bar.classList.toggle('is-wrapped', bar.offsetHeight > 1.5 * (bar.querySelector('.sg-btn')?.offsetHeight || bar.offsetHeight));
       layer.style.setProperty('--barh', `${bar.offsetHeight}px`);
+      // A toy that keeps its picture clear of the bar reads ui.cover() again.
+      frame.dispatchEvent(new Event('stim:bar'));
     };
     relayout();
     sync();
@@ -584,6 +593,10 @@ export function mountSignal(id, spec, ui) {
 
   /* ---------- wiring that outlives a draw ---------- */
   let poke = () => {}, stop = () => {}, release = () => {}, relayout = () => {};
+  // The last input: a key, or the pointer.
+  let byKeys = false;
+  addEventListener('keydown', () => { byKeys = true; }, true);
+  addEventListener('pointerdown', () => { byKeys = false; }, true);
   // Any input brings the bar back and starts the 8 s again.
   for (const t of ['pointermove', 'pointerdown', 'touchstart', 'keydown', 'wheel']) addEventListener(t, () => poke(), { passive: true, capture: true });
   for (const t of ['pointerup', 'pointercancel', 'blur']) addEventListener(t, () => release(), true);

@@ -32,10 +32,15 @@
 .stage canvas.on { opacity: 1; }
 .stage canvas.tip { cursor: pointer; }
 .stage canvas.turn { cursor: grabbing; }
-/* The Iso chip carries a cube; its cuts take the chip's own backing. */
+/* The Isometric chip carries a cube; its cuts take the chip's own backing. */
 .s2-chip .cube { margin-right: 6px; vertical-align: -2px; fill: currentColor; stroke: none; }
 .s2-chip .cube .cut { fill: none; stroke: var(--glass); stroke-width: 1.4; }
 .s2-chip[aria-pressed="true"] .cube .cut { stroke: var(--fg); }
+/* Bar v3's button has no backing: the cuts take its dark edge. */
+.sg-ui .sg-btn .cube { fill: currentColor; stroke: none; }
+.sg-ui .sg-btn .cube .cut { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+/* A held button wears the toy's ink, and so do its cuts. */
+.sg-ui .sg-btn[aria-pressed="true"] .cube .cut { stroke: var(--acc-ink); }
 /* A dragged picture lights the table edge. */
 .stage--domino.drop { box-shadow: inset 0 0 0 2px var(--fg); }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
@@ -43,14 +48,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/domino.svg)"></span><span class="intro-name">Domino Day</span><span class="intro-sub">Stimming No. 04</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/domino.svg)"></span><span class="intro-name">Domino Day</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino table. Drag to lay what Add picks: a line, rows, a picture field, a spiral, a star, a tower or a steel ball; a long line ends at a tower. Drop an image on the table to make it the field picture. Click or tap a tile to tip it. Right-drag or two fingers turn the table; I toggles the iso view. Space tips the first tile, C clears, R stands the tiles back up.">
+    <div class="stage stage--domino table" id="table" tabindex="0" role="application" aria-label="Domino tiles on a dark table. A long line ends at a tower. Drag to lay tiles. The Add list sets what a drag makes. Click a tile to tip it. Click a tower to tip it. Drag with the right button to turn the table. Drop a picture file on the table to use it in a picture field. Press Space to tip the first tile. Press the arrow keys to turn the table. Press I to switch the isometric view on and off. Press C to clear the table. Press R to stand the tiles up.">
       <canvas></canvas>
-      <p class="fail" hidden>The tiles need WebGL, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
     <input type="file" id="file" accept="image/*" hidden>
   </main>
@@ -91,7 +96,7 @@ const act = { tool() {}, picture() {}, own() {}, iso() {}, clear() {}, reset() {
 const ui = initPage({ id: 'domino', signal: true, bar: {
   choice: { label: 'Add', display: 'tray', value: savedTool, options: TOOL_OPTS, onPick: v => act.tool(v) },
   actions: [
-    { verb: 'iso', label: `${CUBE}Iso`, key: 'I', onPress: () => act.iso() },
+    { verb: 'iso', label: `${CUBE}Isometric`, key: 'I', onPress: () => act.iso() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
   ],
   settings: [
@@ -100,7 +105,12 @@ const ui = initPage({ id: 'domino', signal: true, bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['drag', 'lay tiles'], ['click', 'tip a tile'], ['right-drag', 'turn the table'], ['i', 'iso view']],
+  keys: [['drag', 'lay tiles'], ['click', 'tip a tile'], ['right-drag', 'turn the table'], ['i', 'switch the isometric view on and off']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Lay tiles'], ['drag', 'Add a tower'], ['drag', 'Throw a steel ball'],
+    ['click', 'Tip a tile'], ['click', 'Tip a tower'], ['click', 'Add a tower'], ['click', 'Throw a steel ball'],
+    ['right-drag', 'Turn the table'], ['space', 'Tip the first tile'], ['← → ↑ ↓', 'Turn the table'],
+    ['I', 'Switch the isometric view on and off'], ['C', 'Clear the table'], ['R', 'Stand the tiles up']],
 } });
 const isoB = document.querySelector('.stim-ui [aria-keyshortcuts="I"]');
 isoB.setAttribute('aria-pressed', 'false');
@@ -1764,7 +1774,7 @@ function fitShadow() {
   sc.left = sc.bottom = -half; sc.right = sc.top = half; sc.near = 1; sc.far = 90;
   sc.updateProjectionMatrix();
 }
-// Iso turns to the nearest diagonal and flattens the lens.
+// The isometric view turns to the nearest diagonal and flattens the lens.
 const diagonal = y => QUARTER + Math.round((y - QUARTER) / HALF) * HALF;
 function setView(iso, save = true) {
   lensTo = iso ? 1 : 0;
@@ -1952,7 +1962,7 @@ function turnEnd(e) {
   if (!turns.delete(e.pointerId)) return false;
   if (!turns.size) {
     canvas.classList.remove('turn');
-    // Iso settles on the nearest quarter turn.
+    // The isometric view settles on the nearest quarter turn.
     if (lensTo) goal.yaw = diagonal(goal.yaw);
     wake();
   }
