@@ -1155,7 +1155,7 @@ try {
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uSwayPh: () => line.uSwayPh,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1572,7 +1572,7 @@ function step(dt) {
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
-  trafficStep(traf, tors, simT);
+  trafficStep(traf, tors, simT, dt, line);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   // A tornado that leaves frees a place: + Tornado and the click come back.
