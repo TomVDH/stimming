@@ -138,6 +138,8 @@ uniform vec3 uSun, uSunCol, uAmb, uZen, uMid, uBand, uAnti;
 uniform float uFoc, uHz, uYaw, uStorm, uT;
 // The tornadoes, nearest first. main.js packs each one; see pick().
 uniform int uN;
+// The wind's direction in camera space: the funnels lean and bow along it.
+uniform vec2 uWindC;
 uniform vec4 uTA[${MAX_FUNNELS}], uTB[${MAX_FUNNELS}], uTC[${MAX_FUNNELS}], uTD[${MAX_FUNNELS}], uTE[${MAX_FUNNELS}], uTF[${MAX_FUNNELS}];
 // Spin angle and climb, seven layers per tornado: the core, five sheaths, the dust.
 uniform vec2 uPhs[${MAX_FUNNELS * 7}];
@@ -150,7 +152,7 @@ const float uWid = ${KNOB.width.toFixed(3)}, uSheathK = ${KNOB.sheath.toFixed(3)
 const float K_ON = 0.3;
 
 // One tornado's values, set by pick(). The names are the lab's uniforms.
-float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDark, uLean, uSway, uFk, uDs, uZs, uRope, uSeed, uTime, uLabM, uFade, uDens;
+float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDark, uLean, uSway, uFk, uDs, uZs, uRope, uSeed, uTime, uLabM, uFade, uDens, uBow;
 // The foot in camera space, in metres.
 vec3 gFoot;
 int gI;
@@ -169,7 +171,7 @@ void pick(int i) {
   uCond = c.x; uDebris = c.y; uDustH = c.z; uRain = c.w;
   uDark = d.x; uLean = d.y; uSway = d.z; uFk = d.w;
   uDs = e.x; uZs = e.y; uRope = e.z; uSeed = e.w;
-  uLabM = f.x; uFade = f.y; uDens = f.z;
+  uLabM = f.x; uFade = f.y; uDens = f.z; uBow = f.w;
   // Each tornado sways on its own clock.
   uTime = uT + uSeed * 40.0;
   gI = i * 7;
@@ -194,7 +196,9 @@ float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33);
 // Roping out bends it into a long S.
 vec2 axisAt(float h) {
   float u = clamp(h / uH, 0.0, 1.0);
-  vec2 o = vec2(uLean, -0.3 * uLean) * u * u;
+  vec2 o = uWindC * uLean * u * u;
+  // The wind bows the lower and middle trunk downwind; the top stays under its whirl.
+  o += uWindC * uBow * sin(u * 3.1416) * (1.0 - 0.35 * u);
   o += vec2(sin(u * 3.0 + uTime * 0.23), cos(u * 2.3 + uTime * 0.19)) * uSway * u * (0.4 + u);
   float r = clamp(uRope, 0.0, 1.0);
   o += vec2(1.0, -0.25) * r * (sin(u * 3.1416) * 700.0 * (1.0 + 0.3 * sin(uTime * 0.3)) + u * 500.0);
@@ -431,7 +435,7 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
 
 /* ---------- the deck round a tornado: the horn ---------- */
 // The funnel's top, without its sway; a rope's bend carries it.
-vec2 topXZ() { return vec2(uLean, -0.3 * uLean) + vec2(1.0, -0.25) * 500.0 * clamp(uRope, 0.0, 1.0); }
+vec2 topXZ() { return uWindC * uLean + vec2(1.0, -0.25) * 500.0 * clamp(uRope, 0.0, 1.0); }
 // The horn's reach past its top radius, in km.
 float nearR() { return gRtopKm * 1.6 + 0.3; }
 // Metres round the foot to the scene's camera km.
@@ -588,7 +592,7 @@ void main() {
     if (i >= uN) continue;
     pick(i);
     hornInit();
-    float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + gA) * 1.3) + uLean + uSway * 2.0 + 140.0 + 1300.0 * clamp(uRope, 0.0, 1.0);
+    float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + gA) * 1.3) + uLean + uBow + uSway * 2.0 + 140.0 + 1300.0 * clamp(uRope, 0.0, 1.0);
     vec2 cy = cylinder(eye - gFoot, rc, Rb, 0.0, gDeck + 60.0);
     if (cy.y > 0.0) { a0[i] = cy.x; a1[i] = min(cy.x + cy.y, tMax); aStart = min(aStart, a0[i]); aEnd = max(aEnd, a1[i]); }
   }

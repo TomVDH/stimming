@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:55:27Z
+updated_at: 2026-11-17T06:58:45Z
 parent: stimming-oh7b
 ---
 
@@ -140,3 +140,6 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the backlit funnel read hollow: the gloom under the base was laid over the frame after the storm, along each ray's whole path, so the dark core took the sky's tone. Each storm sample now takes only the gloom in front of it; the sky behind takes the full gloom first. A backlit core is a dark silhouette with lit rims.
 
 - 2026-11-16, Tom: touchdown as a sequence: no whirl with no tornado; per tornado the whirl forms over about 8 s (reach tightens from 2.2×, arms wind 0.5 to 1.4, speed rises; the turn is summed on the CPU), the horn lowers at 60% formed, then the condensation descends (3 s) and the dust spins up halfway down. Rope-out runs in reverse; the tornado leaves when its whirl is gone. Each whirl has its own texture seed. Reduced motion starts formed.
+
+- 2026-11-16, Tom: (1) no fixed pit: with no tornado the base is plain; each tornado lowers its own pit (to 0.55 km as its whirl forms, radius with F), centred on its top, following it, leaving with it; funnel heights hang from the pits. (2) Dev Time of day 14:00 to 21:00 (?tod); the sun sets after about 19:40 into twilight. (3) Dev Wind and Wind dir (?wind, ?winddir): wheat, gusts, drift and each funnel's lean; the trunk bows downwind (thin up to 350 m, wedges 50 m) with the top anchored under its whirl and a slow gust swell.
+- [x] Tom: the funnel's twist, reach and bend follow the wind and move over time (started: Wind drives lean and bow).

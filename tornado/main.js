@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -52,6 +52,9 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
+    { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
+    { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
   ],
@@ -72,17 +75,16 @@ const SHARED = /* glsl */`
 precision highp sampler3D;
 uniform sampler3D tNoise;
 // The tornadoes; both passes set them. uTorOn is 1 while the funnel pass draws.
-// uTorZ: each whirl's texture seed (two numbers), its twist, and 1 when it draws.
-// uTorN: each top in camera km, the near deck's reach, and the horn's top radius, in km.
+// uTorZ: each whirl's texture seed (two numbers), its twist, and 0.01 plus its pit's depth in km (0 when off).
+// uTorN: each top in camera km, its pit's radius, and the horn's top radius, in km.
 // uTorH: each horn's strength, 0 to 1; its whirl's turn in radians, reach in km and strength.
 uniform float uTorOn;
 uniform vec4 uTorZ[${MAX_FUNNELS}], uTorN[${MAX_FUNNELS}], uTorH[${MAX_FUNNELS}];
 // The eye crouches just over the ears, 1.25 m up.
 const float CAMH = 1.25;
-// The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
-// The wall cloud sits 8 km out on the left golden line; the base fills the sky above.
+// The storm's parts in km, in camera space: the updraft and the rain core. The base fills the sky above.
+// Each tornado brings its own wall cloud.
 const vec2 TOWER = vec2(-4.3, -23.0);
-const vec2 WALL = vec2(-0.9, -8.0);
 const vec2 CORE = vec2(6.5, -19.0);
 // The base's height in km: Dev's Cloud base sets it (1.35 by default).
 uniform float uBase;
@@ -139,12 +141,19 @@ float stormShapeSun(vec3 p) {
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
-  // The wall cloud: a lowered block under the base, by the rotation.
-  float wall = max(length(p.xz - WALL) - mix(0.5, 2.4, g) * (1.0 - 0.25 * smoothstep(BASE, BASE - 0.55, p.y)), abs(p.y - BASE + 0.2) - 0.35);
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
-  d = smin(d, wall, 0.6);
+  // Each tornado lowers its own wall cloud, the pit, centred on its top.
+  // It forms with the whirl, follows the tornado, and leaves with it. With no tornado the base is plain.
+  if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+    float dep = uTorZ[i].w - 0.01;
+    if (dep <= 0.0) continue;
+    vec4 n = uTorN[i];
+    float wall = max(length(p.xz - n.xy) - n.z * (1.0 - 0.25 * smoothstep(BASE, BASE - dep, p.y)), abs(p.y - (BASE + 0.075 - 0.5 * dep)) - (0.075 + 0.5 * dep));
+    // The join softens as the pit deepens, so a young pit adds no bulge.
+    d = smin(d, wall, 0.01 + 0.6 * smoothstep(0.0, 0.3, dep));
+  }
   return d;
 }
 // The storm as the eye sees it: the base also runs out over and behind the eye.
@@ -157,8 +166,17 @@ float stormShape(vec3 p) {
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(under - p.y, p.y - (BASE + 1.0)));
   return smin(d, front, 0.8);
 }
-// The cloud base over a point, in km: lower under the wall cloud. main.js deckAt() holds the same curve.
-float baseAt(vec2 c) { return mix(BASE, BASE - 0.5, 1.0 - smoothstep(1.2, 2.8, length(c - WALL))); }
+// The cloud base over a point, in km: lower in each tornado's pit. main.js deckAt() holds the same curve.
+float baseAt(vec2 c) {
+  float b = BASE;
+  if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+    float dep = uTorZ[i].w - 0.01;
+    if (dep <= 0.0) continue;
+    vec4 n = uTorN[i];
+    b = min(b, BASE - dep * (1.0 - smoothstep(n.z * 0.57, n.z * 1.33, length(c - n.xy))));
+  }
+  return b;
+}
 // Near a tornado's horn the deck's ragged noise eases, most by the funnel.
 float stormCalm(vec3 p) {
   if (uTorOn < 0.5) return 1.0;
@@ -216,7 +234,9 @@ float deckN(vec3 p, vec3 pn, float calm) {
   swell += (vn3(pn * 1.2 - vec3(uT * 0.05, 0.0, 0.0)) - 0.5) * 0.35;
   d += swell * 0.5 * (1.0 - smoothstep(BASE + 0.3, BASE + 1.5, p.y));
   // Plates on the flank, turning round the updraft. They stay off the underside and away from the wall cloud.
-  float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(2.8, 6.2, length(p.xz - WALL));
+  float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y));
+  // Up close the plates read as contour bands: they stay away from each tornado's pit.
+  if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) if (uTorZ[i].w > 0.0) flank *= smoothstep(2.8, 6.2, length(p.xz - uTorN[i].xy));
   if (flank > 0.0) d += 0.09 * flank * sin(p.y * 15.0 + atan(p.z - TOWER.y, p.x - TOWER.x) * 2.0 + 1.3 * vn3(pn * 1.4));
   // Fine lumps, for the near base.
   if (gFine > 0.0) d += (vn3(pn * 4.3) - 0.5) * 0.14 * gFine * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
@@ -333,7 +353,9 @@ ${SHARED}
 
 /* ---------- the wind ---------- */
 // The wind blows left to right and a little toward the eye.
-const vec2 WDIR = vec2(0.944, 0.33);
+// Dev's Wind sets its bearing and strength (uWind).
+uniform vec2 uWDir;
+#define WDIR uWDir
 // Gust fronts: broad patches that roll downwind over the wheat, 0 calm to 1 full gust.
 float gust(vec2 xz) {
   vec2 q = xz - WDIR * uT * (3.0 + 6.0 * uWind);
@@ -662,15 +684,17 @@ let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = 
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
 /** @type {Tor[]} */
 const tors = [];
-// The storm carries its tornadoes to the right and a little toward the eye.
-const DRIFT = [0.93, 0.36];
+// The wind: its strength, 0 to 1, and its bearing as a world direction.
+// 0 degrees blows to the right; positive turns it toward the eye. The storm drifts with it.
+let wind = 0.85;
+const windDir = [0.944, 0.33];
 // The sun behind the eye, low, a little off to the left.
 const sun = [0, 0, 0], sunCol = [0, 0, 0], amb = [0, 0, 0];
 // The sun's bearing in radians: 0 is straight behind the eye. Dev sets it in degrees.
 let sunAz = 0.35;
 function setSun(hour) {
-  // Elevation in degrees: 25 in the afternoon, 1 at dusk.
-  const el = clamp((19.6 - hour) / 3.6) * 25 * Math.PI / 180 + 0.015;
+  // Elevation in degrees: 25 in the afternoon, 1 at dusk, and on down below the horizon after 19:40.
+  const el = clamp((19.6 - hour) / 3.6, -0.3, 1) * 25 * Math.PI / 180 + 0.015;
   const az = sunAz;
   sun[0] = -Math.sin(az) * Math.cos(el); sun[1] = Math.sin(el); sun[2] = Math.cos(az) * Math.cos(el);
   // Low light is warm and weak; the sky's fill turns blue and dim.
@@ -678,6 +702,9 @@ function setSun(hour) {
   const g = 0.5 + 0.5 * k;
   sunCol[0] = 2.6 * (0.45 + 0.55 * g); sunCol[1] = 2.6 * (0.2 + 0.7 * g * g); sunCol[2] = 2.6 * (0.08 + 0.72 * k * k);
   amb[0] = 0.18 + 0.2 * k; amb[1] = 0.22 + 0.24 * k; amb[2] = 0.32 + 0.3 * k;
+  // Once the sun is down its light goes, and the sky's fill dims into twilight.
+  const up = sstep(-0.035, 0.012, el), tw = 0.45 + 0.55 * sstep(-0.12, 0.0, el);
+  for (let i = 0; i < 3; i++) { sunCol[i] *= up; amb[i] *= tw; }
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
@@ -707,7 +734,7 @@ try {
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
-      uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => storm, uStorm: () => storm, uT: () => simT,
+      uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
       uBase: () => base, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
@@ -731,7 +758,7 @@ const smin = (a, b, k) => { const h = clamp(0.5 + 0.5 * (b - a) / k); return b +
 const mixN = (a, b, t) => a + (b - a) * t;
 function stormShapeJS(x, y, z) {
   const g = storm, B = base, top = mixN(8, 12.5, g);
-  const T = [-4.3, -23], SH = [1, -13], SR = [15, 9], W = [-0.9, -8];
+  const T = [-4.3, -23], SH = [1, -13], SR = [15, 9];
   const qx = x - T[0] - 0.28 * (y - B), qz = z - T[1] + 0.12 * (y - B);
   const rT = mixN(3.5, 7, g) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
   const tower = Math.max(Math.hypot(qx, qz) - rT, Math.max(B + 0.1 - y, y - top));
@@ -741,11 +768,9 @@ function stormShapeJS(x, y, z) {
   const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5);
   const ox = x - (T[0] + 0.28 * (top - B)), oy = (y - (top + 0.4)) * 1.6, oz = z - (T[1] - 0.12 * (top - B));
   const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.4, 2.8, g);
-  const wall = Math.max(Math.hypot(x - W[0], z - W[1]) - mixN(0.5, 2.4, g) * (1 - 0.25 * sstep(B, B - 0.55, y)), Math.abs(y - B + 0.2) - 0.35);
   let d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
-  d = smin(d, wall, 0.6);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
   const fx = Math.abs(x) - 30, fz = Math.abs(z + 4) - 10;
   const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + 1)));
@@ -794,39 +819,56 @@ function bindNoise() {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_3D, fun.noise);
 }
-// The cloud base over a foot, in metres: lower under the wall cloud.
-function deckAt(cx, cz) {
-  const d = Math.hypot(cx * 0.001 - WALL[0], cz * 0.001 - WALL[1]);
-  const k = 1 - clamp((d - 1.2) / 1.6) ** 2 * (3 - 2 * clamp((d - 1.2) / 1.6));
-  return base * 1000 - 500 * k;
+// The cloud base over a point in camera metres, lower in each tornado's pit. baseAt() in the GLSL holds the same curve.
+// pits holds each pit's centre in camera km, radius and depth in km.
+function deckAt(cx, cz, pits) {
+  let b = base;
+  for (const [px, pz, R, dep] of pits) b = Math.min(b, base - dep * (1 - sstep(R * 0.57, R * 1.33, Math.hypot(cx * 0.001 - px, cz * 0.001 - pz))));
+  return b * 1000;
 }
-// The wall cloud in camera km: WALL in the scene's GLSL.
-const WALL = [-0.9, -8.0];
+// A tornado's pit: it deepens as its whirl forms, to 0.55 km under the base.
+const pitOf = t => {
+  const f = t.f, reachF = 1.5 + 3 * f / 5;
+  return [(0.6 + 0.35 * reachF) * (0.6 + 0.4 * storm), 0.55 * sstep(0, 1, t.form)];
+};
 const CAMH = 1.25;
 const pk = { Z: new Float32Array(MAX_FUNNELS * 4), NR: new Float32Array(MAX_FUNNELS * 4), H: new Float32Array(MAX_FUNNELS * 4), A: new Float32Array(16), B: new Float32Array(16), C: new Float32Array(16), D: new Float32Array(16), E: new Float32Array(16), F: new Float32Array(16), ph: new Float32Array(MAX_FUNNELS * 14) };
 // Packs the tornadoes nearest first and finds their box on the target. Returns the count.
+// The wind's direction in camera space, for the funnels' lean and bow.
+const windC = [1, 0];
 function packFunnels(rw, rh) {
   const a = yaw(), co = Math.cos(a), si = Math.sin(a), foc = focal(), asp = rw / rh, hz = horizon();
+  windC[0] = windDir[0] * co - windDir[1] * si; windC[1] = windDir[0] * si + windDir[1] * co;
   const list = [];
   let x0 = rw, y0 = rh, x1 = 0, y1 = 0;
-  for (const t of tors) {
+  // Each tornado's top and pit first: a funnel's height hangs from the pits round it.
+  const tops = tors.map(t => {
+    const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co, lean = at('lean', t.f) * (0.4 + 0.8 * wind);
+    return [cx + windC[0] * lean + 500 * clamp(t.rope), cz + windC[1] * lean - 125 * clamp(t.rope)];
+  });
+  const pits = tors.map((t, i) => [tops[i][0] * 0.001, tops[i][1] * 0.001, ...pitOf(t)]);
+  for (const [ti, t] of tors.entries()) {
     // The foot in camera space.
     const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co;
-    const f = t.f, fade = 1 - clamp(t.rope - 1), lm = labM(f), deck = deckAt(cx, cz);
+    const f = t.f, fade = 1 - clamp(t.rope - 1), lm = labM(f), deck = deckAt(tops[ti][0], tops[ti][1], pits);
     const r0 = at('r0', f) * KNOB.width, flare = at('flare', f);
     // Roping out, the funnel narrows to a rope about 35 m across.
     const r = r0 + (Math.min(r0, 18) - r0) * clamp(t.rope);
     // The march's column, as wide as the shader's, so the box holds all of it.
     const rTop = r * flare * 1.15;
-    const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + at('lean', f) + at('sway', f) * 2 + 140 + 1300 * clamp(t.rope);
+    // The wind leans the funnel and bows its trunk; gusts swell the bow slowly. Thin funnels bend most.
+    const lean = at('lean', f) * (0.4 + 0.8 * wind);
+    const gust = 0.5 + 0.5 * Math.sin(simT * 0.13 + t.seed * 9) * Math.sin(simT * 0.071 + t.seed * 4);
+    const bow = wind * (350 + (50 - 350) * f / 5) * (0.7 + 0.6 * gust) * (1 - clamp(t.rope));
+    const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + lean + bow + at('sway', f) * 2 + 140 + 1300 * clamp(t.rope);
     // The horn's top radius and the near deck's reach, in km, as funnel.js finds them.
     const ss = (e0, e1, x) => { const k = clamp((x - e0) / (e1 - e0)); return k * k * (3 - 2 * k); };
     const fs = ss(0, 1, f / 5), wallRad = Math.max((0.9 + 1.5 * fs) * lm, rTop * 1.7);
     const hornA = clamp(rTop * (0.9 - 0.4 * fs) + 20, rTop * 0.25, Math.max(wallRad * 0.85 - rTop, rTop * 0.25));
     const rTopKm = (rTop + hornA) * 0.001, nearR = Math.max(rTopKm * 1.6 + 0.4, 0.9);
-    const tx = cx + at('lean', f) + 500 * clamp(t.rope), tz = cz - 0.3 * at('lean', f) - 125 * clamp(t.rope);
+    const [tx, tz] = tops[ti];
     const H = deck - 0.3 * lm, nrM = nearR * 1000, topC = deck + 600;
-    const nr = [tx * 0.001, tz * 0.001, nearR, rTopKm];
+    const nr = [tx * 0.001, tz * 0.001, pits[ti][2], rTopKm];
     // The horn's strength, and the near deck's height over the base in km.
     // Its whirl in the deck grows with F and fades as it ropes out.
     // Its whirl in the deck: it forms first, wide and slow, and tightens to its F's reach.
@@ -847,23 +889,23 @@ function packFunnels(rw, rh) {
     x0 = Math.min(x0, bx0 * rw); x1 = Math.max(x1, bx1 * rw); y0 = Math.min(y0, by0 * rh); y1 = Math.max(y1, by1 * rh);
     // The cover test reaches as far as the near deck, so it has no edge inside the pass's picture.
     const reach = Math.max(Rb, Math.hypot(tx - cx, tz - cz) + nrM);
-    list.push({ t, d: -cz, rb: reach, nr, horn, v: [
+    list.push({ t, d: -cz, rb: reach, nr, horn, dep: pits[ti][3], v: [
       [cx, cz, H, deck],
       [r, flare, at('prof', f), at('vmax', f)],
       [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f), at('rain', f) * fade],
-      [at('dark', f) * KNOB.darkK, at('lean', f), at('sway', f), f / 5],
+      [at('dark', f) * KNOB.darkK, lean, at('sway', f), f / 5],
       [t.ds, t.zs, t.rope, t.seed],
-      [lm, fade, densAt(f), nrM],
+      [lm, fade, densAt(f), bow],
     ] });
   }
   list.sort((p, q) => p.d - q.d);
   pk.Z.fill(0);
   pk.NR.fill(0);
   pk.H.fill(0);
-  list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb, nr, horn }, i) => {
+  list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb, nr, horn, dep }, i) => {
     ['A', 'B', 'C', 'D', 'E', 'F'].forEach((k, j) => pk[k].set(v[j], i * 4));
     pk.ph.set(t.ph, i * 14);
-    pk.Z.set([t.seed * 37.1, t.seed * 53.7, 1.4 * (0.35 + 0.65 * sstep(0, 1, t.form)), 1], i * 4);
+    pk.Z.set([t.seed * 37.1, t.seed * 53.7, 1.4 * (0.35 + 0.65 * sstep(0, 1, t.form)), 0.01 + dep], i * 4);
     pk.NR.set(nr, i * 4);
     pk.H.set(horn, i * 4);
   });
@@ -905,6 +947,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, base);
+  gl.uniform2f(u.uWindC, windC[0], windC[1]);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
@@ -948,7 +991,7 @@ function live(t, dt) {
   }
   if (t !== drag) {
     const v = fAt(F_SPEED, t.f) * (1 - 0.6 * clamp(t.rope));
-    t.x += DRIFT[0] * v * dt; t.z += DRIFT[1] * v * dt;
+    t.x += windDir[0] * v * dt; t.z += windDir[1] * v * dt;
   }
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
@@ -1060,10 +1103,14 @@ act.clear = () => {
   wake();
 };
 act.storm = v => { storm = v; wake(); };
-act.time = v => { S.hour = HOURS[v] ?? HOURS.golden; setSun(S.hour); wake(); };
+// The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
+act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
+act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
 act.lens = v => { lensMM = +v || 28; wake(); };
 act.expo = v => { S.expo = v; wake(); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
+act.wind = v => { wind = clamp(+v); wake(); };
+act.windDir = v => { const a = (+v || 0) * Math.PI / 180; windDir[0] = Math.cos(a); windDir[1] = Math.sin(a); wake(); };
 act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 
 /* ---------- start ---------- */
@@ -1071,9 +1118,18 @@ act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 const qs0 = new URLSearchParams(location.search);
 storm = ui.slider?.value ?? storm;
 // QA: ?time=golden picks the time for one load; Settings keep Tom's choice.
-act.time(qs0.get('time') || ui.setting('time')?.value || 'golden');
+// The hour: ?tod for one load, else Dev's saved Time of day, else the Time choice's hour.
+let savedTod = null;
+try { savedTod = localStorage.getItem('stimming.tornado.tod'); } catch { /* no storage */ }
+if (qs0.has('tod')) act.tod(+qs0.get('tod'));
+else if (qs0.has('time')) act.tod(HOURS[qs0.get('time')] ?? HOURS.golden);
+else if (savedTod !== null) act.tod(+savedTod);
+else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
 S.expo = ui.setting('expo')?.value ?? 1;
+// QA: ?wind=0.5 and ?winddir=19 set the wind for one load.
+act.wind(qs0.has('wind') ? +qs0.get('wind') : ui.setting('wind')?.value ?? 0.85);
+act.windDir(qs0.has('winddir') ? +qs0.get('winddir') : ui.setting('windDir')?.value ?? 19);
 // QA: ?base=2 sets the cloud base for one load.
 act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
 // QA: ?sunaz=20 sets the sun's bearing for one load.
