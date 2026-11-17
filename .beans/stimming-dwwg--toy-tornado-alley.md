@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:55:08Z
+updated_at: 2026-11-17T08:13:26Z
 parent: stimming-oh7b
 ---
 
@@ -179,3 +179,23 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17: deck streaks near whirls came from blending overlapping whirls' noise points; the two strongest whirls now read their own deck noise and blend values. Layers hug the core with distance (gap 0.2 near to 0.08 by 12 km; sub-pixel layers fade into the core), ending the hoops; the far dust drops sub-pixel octaves and the rain ring is wider and softer (the dotted far funnel). Dev rows Bake from (6–40 km, default 16; the tornado clamp follows) and Deck reach (20–200 km, default 146). GPU, 3 × F4.5 tubes, minimum frame: 17.3 ms at 8 km, 22.5 at 16, 25.6 at 30.
 
 - 2026-11-17, Tom: Storm drives the funnels (default 0.85 unchanged): a young storm gives paler, cleaner funnels with more sky light and less haze and density; a full one gives darker, dirtier funnels the deck's tone runs further down, with more rain wrap.
+
+- 2026-11-17, Tom: towers show at low Storm: the tower's radius, top and overshooting dome read max(Storm, 0.6), so a young cell stands as a towering, sunlit Cb over a thin, broken deck (default unchanged).
+
+- 2026-11-17, Tom: far breaks and sweeping god rays: deckOpen() opens holes in the deck from 10 km to full at 45 km, toward the sun's side, at every Storm (few and narrow at full storm), drifting downwind with the deck; the storm pass marches 12 jittered steps per ray and lights air whose sun ray crosses a break (haze by height, forward scatter); Dev row God rays (default 0.6, ?god). The far bake renews in strips while running so the far breaks move. Cheap cauliflower lumps on the tower top and dome. Shafts read as warm fans under the deck, best with the sun ahead; not yet crisp beams.
+
+- 2026-11-17, Tom (pancake clouds; the tower looks weird; hollow tube with the sun ahead): god rays stop where the ray turns half opaque, so they light only the air in front (the hollow V); below the default storm each raft gets its own height, domed Worley tops at two sizes, a heaving ragged base and slow drift; the tower is stacked, domain-warped Worley turrets growing softer with height, a boiling overshooting dome and a fibrous anvil edge, paid only near the tower. Known: fine stipple on far high cloud edges.
+
+- 2026-11-17, Tom (higher F, darker and more imposing): Darkness default 0.95 (was 0.55): albedo about 0.16× and sun about 0.5× at F5; F0–F1 pale (+15% albedo); F2 up a dirty brown-grey, full by F4; the deck's tone runs further down with F.
+
+- 2026-11-17, Tom: an opening build-up: the storm eases from 0 to its set level (0.85) on an in-out quart over 90 s (Dev row Build-up 20–300 s; ?buildup=0 for full at once); the Storm slider follows; touching it takes over. At 0.67 the first tornado spawns on the left golden line (0.355 across), 6.5 km out at a strong angle, and runs the slow touchdown. Reduced motion starts formed. QA loads with ?tor or ?storm skip it.
+
+- [ ] Later (Tom): volumetric rain haze: a cloud-noise texture of rain pouring down over the scene.
+
+- 2026-11-17, Tom: the build-up takes 15 s by default (range 5–300; key buildUpS, the old saved 90 removed); during it the far field renews in strips, so no frame stalls.
+
+- 2026-11-17, Tom (god rays drew as horizontal bands): at dusk the true shafts run almost level, so each row integrated different breaks into bands. The march now runs only under the deck (30 km, stops at the first opaque body, 24 jittered steps); each step follows the shaft to the base, never flatter than 24°, so beams hang from the openings; bright at the opening, fading with depth. Openings: far breaks and a young deck's raft gaps. Also: the deck's finest lumps fade by pixel size (the cause of the stipple on upper edges); a young tower is a narrow column with no anvil until Storm 0.25–0.65.
+
+- 2026-11-17, Tom (build-up far too quick; the far bake steps): the build-up takes 180 s by default (30–600, key buildUpT) on easeInOutSine; the first tornado drops at Storm 0.67, about 2 min in. A third far target keeps the previous bake and each new bake fades in over it (2.5 s in the build-up, 0.25 s for a drag), so the far field moves without steps. Beams: soft, ragged sides, tapering toward the ground. Thick cloud hides the sun globe fully. A young cell's shelf is small so the tower stands clear; the dome boils at two scales.
+
+- 2026-11-17, Tom (no automatic layer falloff; top blend): Dev knob Layer gap (0.05–0.5, default 0.2, ?gap) sets one gap for every funnel at any distance; the distance logic is gone. The top's speckle came from the tube core's ragged edge under grazing rays in the flare: there the edge noise drops to 0.25×, the edge ramp widens 2.5× and the lump light gain eases to 0.6; the turn-to tone is read at one fixed point per tornado. A faint grain remains on the shade side at the join.
