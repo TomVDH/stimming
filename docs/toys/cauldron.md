@@ -232,7 +232,6 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 
 - The fire grid is coarse (0.08 cells); fine flame detail comes from Fire's simplex detail noise in the march.
 - Frame time after the fire solver and the PBR iron is not measured with the pane in view.
-- `probe-gpu.html` (noindex) runs Fire's own WebGPU engine under a matching pot, for comparison; it is not linked.
 
 - Things push each other as circles of their half-width, so two long things can overlap a little. The wall test uses each thing's true length.
 - The steam layer runs at half the CSS size; on a large High-quality screen it reads soft.
