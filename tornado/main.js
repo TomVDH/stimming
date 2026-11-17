@@ -6,6 +6,7 @@ import { environment } from '../shared/environment.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
 import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
+import { WHEAT_GLSL } from './wheat.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 mark('libs');
 
@@ -459,55 +460,8 @@ vec3 wheatFar(vec2 xz, float fx) {
   }
   return alb * (0.75 + 0.35 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
-// The near wheat: shells of ears, from the tallest ear down into the stalks.
-// Each shell adds soft coverage, front to back. a is what still shows of the ground below.
-vec4 wheatNear(vec3 rd, float fx) {
-  vec3 lit = uSunCol * 0.5 + uAmb * 0.55;
-  vec3 acc = vec3(0.0);
-  float T = 1.0;
-  // The soft edge of an ear, in cell units, grows with the pixel footprint.
-  float aa = clamp(fx / 0.045 * 1.5, 0.04, 0.5);
-  for (int i = 0; i < 18; i++) {
-    float h = 1.1 - float(i) * 0.03;
-    float t = (CAMH - h) / -rd.y;
-    vec2 xz = rd.xz * t;
-    // Over the road and its verges this shell holds no wheat.
-    if (abs(xz.x - ROAD_X) < WHEAT_GAP) continue;
-    float g = gust(xz);
-    // Undo the lean, to find the stalk that holds this point.
-    vec2 b = xz - bend(xz, h, g);
-    // A turned, warped grid: no straight rows line up across the shells.
-    b = mat2(0.83, -0.56, 0.56, 0.83) * b;
-    vec2 q = b / 0.045 + 1.8 * vec2(vn(b * 1.7), vn(b * 1.7 + 9.0));
-    // The offset keeps the hash clear of cell index 0, where it degenerates.
-    vec2 cell = floor(q) + 517.0, f = fract(q);
-    // The ear stays inside its cell, so no cell edge cuts it.
-    vec2 o = 0.32 + 0.36 * vec2(th(cell), th(cell + 3.1));
-    float top = 0.9 + 0.17 * th(cell + 7.7);
-    // An ear is 11 cm long and thickest in its middle; below it, a thin stalk.
-    float e = (top - h) / 0.11;
-    float r = e > 0.0 && e < 1.0 ? 0.24 * sin(3.14159 * sqrt(e)) : (e >= 1.0 ? 0.07 : 0.0);
-    float d = length(f - o);
-    float k = smoothstep(r + aa, r - aa, d) * step(0.0, e);
-    // The awns: a pale fringe round the top of the ear.
-    float awn = e > -0.35 && e < 0.6 ? smoothstep(0.31 + aa, 0.2, d) * 0.35 : 0.0;
-    k = max(k, awn);
-    if (k > 0.0) {
-      // Lower in the stand the light fails a little; the low sun behind lights the field's face.
-      float depth = clamp((h - 0.6) / 0.5, 0.0, 1.0);
-      vec3 ear = mix(vec3(0.2, 0.135, 0.055), vec3(0.34, 0.24, 0.1), th(cell + 1.3));
-      ear = mix(ear, vec3(0.52, 0.45, 0.28), g * 0.45);
-      acc += T * k * ear * lit * mix(0.78, 1.0, depth);
-      T *= 1.0 - k;
-      if (T < 0.03) break;
-    }
-  }
-  // Under the ears: stalks in their own shade.
-  // Under the ears: shaded stalks, unless the ray ends on a verge or the road.
-  float gx = rd.x * CAMH / -rd.y;
-  if (abs(gx - ROAD_X) >= WHEAT_GAP) { acc += T * vec3(0.2, 0.14, 0.06) * lit * 0.8; T = 0.0; }
-  return vec4(acc, T);
-}
+// The near wheat walks the stalks: wheat.js.
+${WHEAT_GLSL}
 vec3 ground(vec3 rd, float px) {
   float t = CAMH / -rd.y;
   vec3 P = rd * t;
@@ -525,10 +479,12 @@ vec3 ground(vec3 rd, float px) {
   col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
   float dx = P.x - ROAD_X;
   col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
-  // Near the eye the wheat stands up in shells over the ground, faded out before it shimmers.
-  float nearK = 1.0 - smoothstep(0.01, 0.03, fx);
+  // Near the eye the wheat stands as stalks over the ground, faded out before it shimmers.
+  // The fade reads the pixel's size where the ray meets the canopy, not the ground.
+  float fxc = max(CAMH - 1.0, 0.05) / -rd.y * px / uFoc;
+  float nearK = 1.0 - smoothstep(0.012, 0.03, fxc);
   if (nearK > 0.0) {
-    vec4 w = wheatNear(rd, fx);
+    vec4 w = wheatStand(rd, px);
     col = mix(col, w.rgb + w.a * col, nearK);
   }
   // The deck's cover along the sun's ray darkens the plain in soft patches.
