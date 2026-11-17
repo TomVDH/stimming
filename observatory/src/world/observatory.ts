@@ -1,5 +1,5 @@
-// Load order: world/hill runs first.
-import './hill.ts';
+// Load order: world/far runs first.
+import './far.ts';
 import { BackSide, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, Group, MathUtils, Mesh, MeshLambertMaterial, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, Shape, Vector3 } from 'three';
 import type { Object3D, Side } from 'three';
 import type { AltAz } from '../core/sky.ts';

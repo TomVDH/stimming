@@ -23,10 +23,11 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
 | `core/sequence.ts` | The pick sequence's cut list, `cutAt`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
-| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk |
+| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |
 | `post/grade.ts` | The grade: split tone, contrast, vignette, grain, copied from Railgun |
 | `post/chain.ts` | The post chain: render, bloom, grade, ACES output; `resizePost`, `renderPost` |
+| `world/far.ts` | The far mountains: three ridgelines on rings round the wide eye, 1 to 3° high; they fade into the sky behind them and melt into the haze at the foot; `far` |
 | `world/hill.ts` | The land: the observatory hill and its clearing, the camera's rise, far ridges; starlight; `hillHeight`, `SITE`, `EYE_H` |
 | `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; `buildDome(size)`, `stoneMap` |
 | `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |

@@ -58,26 +58,30 @@ export const skyU = {
   uZen: { value: ZENITH.clone() }, uHor: { value: HORIZON.clone() },
   uWarm: { value: new Color(0, 0, 0) }, uSun: { value: new Vector3(-1, 0, 0) },
 };
+// The sky's colour in direction d.
+// The far ridges share it, so they fade into the sky behind them.
+export const SKY_GLSL = /* glsl */`
+uniform vec3 uZen, uHor, uWarm, uSun;
+vec3 skyColor(vec3 d) {
+  float up = max(d.y, 0.0);
+  vec3 col = mix(uHor, uZen, pow(up, 0.45));
+  // The glow gathers in a thin band on the horizon.
+  col = mix(col, uHor * 1.15, exp(-up * 14.0) * 0.55);
+  // The sunset glow lies low and spreads wide round the sun.
+  // The guard keeps the zenith free of a zero-length vector.
+  vec2 h = d.xz / max(length(d.xz), 1e-4);
+  float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
+  col += uWarm * exp(-away / 0.75) * exp(-up * 10.0);
+  return col;
+}`;
 const skyMat = new ShaderMaterial({
   uniforms: skyU,
   side: BackSide, depthWrite: false,
   vertexShader: /* glsl */`varying vec3 vP; void main() { vP = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0); }`,
   fragmentShader: /* glsl */`
-  uniform vec3 uZen, uHor, uWarm, uSun;
+  ${SKY_GLSL}
   varying vec3 vP;
-  void main() {
-    vec3 d = normalize(vP - cameraPosition);
-    float up = max(d.y, 0.0);
-    vec3 col = mix(uHor, uZen, pow(up, 0.45));
-    // The glow gathers in a thin band on the horizon.
-    col = mix(col, uHor * 1.15, exp(-up * 14.0) * 0.55);
-    // The sunset glow lies low and spreads wide round the sun.
-    // The guard keeps the zenith free of a zero-length vector.
-    vec2 h = d.xz / max(length(d.xz), 1e-4);
-    float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
-    col += uWarm * exp(-away / 0.75) * exp(-up * 10.0);
-    gl_FragColor = vec4(col, 1.0);
-  }`,
+  void main() { gl_FragColor = vec4(skyColor(normalize(vP - cameraPosition)), 1.0); }`,
 });
 const sky = new Mesh(new SphereGeometry(3900, 32, 16), skyMat);
 // The shell draws first, behind everything.
