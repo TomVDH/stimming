@@ -301,6 +301,15 @@ Tom: "the laser is thinner and more realistic like the rail gun targeting one". 
 - [ ] **Step 3:** The hero follows the same machine pose (cupola, shutter, tube) as the light model, and takes the same light, haze and post. It draws only in the cuts; the wide shot's frame time and triangle count do not change.
 - [ ] **Step 4:** Stills of the hero from each current cut camera, plus two free beauty views. **Gate:** show Tom; ship to main.
 
+### Task 7p: Heavy, mechanical motion (Tom, 2026-11-17)
+
+Tom: "we want slowly more mechanical (with inertia) movement of all parts of the observatory". **Files:** Modify `observatory/src/core/dome.ts`, `observatory/src/core/machine.ts`, `observatory/src/loop.ts` (small domes), `tests/observatory-machine.test.mjs`, `tests/observatory-sequence.test.mjs` if cut times move.
+
+- [ ] **Step 1:** Test then change the motion of every part: a slow start under a low acceleration, a long run-down, and a small damped settle at each stop. Cupola: cap 2°/s, acceleration 0.6°/s². Tube: cap 1.5°/s, acceleration 0.5°/s². Shutter: 6 s, eased at both ends, with a short settle at the end stops. The small domes follow slower still.
+- [ ] **Step 2:** No part ever snaps: `hold`, `lost`, a retarget and a release all run down under the same inertia.
+- [ ] **Step 3:** Keep the cut script true to the machine: the shutter cuts cover the 6 s; the slew cuts start when the slew starts.
+- [ ] **Step 4:** Check live on `?cuts` and in play. **Gate:** ship to main; Tom judges it in motion.
+
 ### Task 7o: The cuts recomposed (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/core/sequence.ts`, `observatory/src/view/cuts.ts`, `tests/observatory-sequence.test.mjs`.
