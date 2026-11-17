@@ -7,6 +7,7 @@ import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.
 import { SKY, skyAt } from '../shared/sky.js';
 import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
 import { WHEAT_GLSL } from './wheat.js';
+import { ROAD_GLSL } from './road.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 mark('libs');
 
@@ -464,23 +465,15 @@ vec3 wheatFar(vec2 xz, float fx) {
 }
 // The near wheat walks the stalks: wheat.js.
 ${WHEAT_GLSL}
+${ROAD_GLSL}
 vec3 ground(vec3 rd, float px) {
   float t = CAMH / -rd.y;
   vec3 P = rd * t;
   // The footprint of one pixel on the ground, in metres.
   float fx = t * px / uFoc;
-  float ax = abs(P.x - ROAD_X);
   vec3 col = wheatFar(P.xz, fx);
-  // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
-  vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
-  float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
-  col = mix(col, vec3(0.13, 0.15, 0.05) * (0.6 + 0.8 * tuft) * lit, band(ax - 5.5, 0.7, fx));
-  float grit = mix(0.75, 1.2, vn(P.xz * 40.0) * clamp(1.0 - fx * 40.0, 0.0, 1.0) + 0.5 * clamp(fx * 40.0, 0.0, 1.0));
-  col = mix(col, vec3(0.2, 0.18, 0.15) * grit * lit, band(ax - 4.25, 0.57, fx));
-  col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
-  col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
-  float dx = P.x - ROAD_X;
-  col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
+  // The ditch and verge, the gravel berm, asphalt and paint: road.js.
+  col = roadside(col, P, rd, fx);
   // Near the eye the wheat stands as stalks over the ground, faded out before it shimmers.
   // The fade reads the pixel's size where the ray meets the canopy, not the ground.
   float fxc = max(CAMH - 1.0, 0.05) / -rd.y * px / uFoc;
