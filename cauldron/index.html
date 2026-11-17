@@ -2327,7 +2327,7 @@ function fireStep(dt) {
   simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl, uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(divP);
-  gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
+  gl.uniform1f(divP.u('uExpand'), fireSpread());
   simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
   // Jacobi sweeps ping-pong; the last pressure warms the next step.
   for (let i = 0; i < 12; i++) {
@@ -2343,12 +2343,22 @@ function fireStep(dt) {
   gl.uniform1f(fdyeP.u('uDiss'), k.diss);
   // Fire's emit rates, per cell of this grid.
   // Heat is per cell, so a cell takes what Fire's 0.12 cell takes: about eight points.
-  const pw = devV('fireI', 1);
+  const pw = firePower();
   gl.uniform1f(fdyeP.u('uEmitT'), 5.5 / 120 * 14 * k.emit * pw);
   gl.uniform1f(fdyeP.u('uEmitD'), 7.0 / 120 * 8 * k.emit * pw);
   gl.uniform4f(fdyeP.u('uBed'), devV('fireX', 0), devV('fireZ', 0), devV('fireY', 0.04), devV('fireR', 0.62));
   simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uSolid: solid });
   S.di = 1 - S.di;
+}
+// The Dev fire rows level off before the flames fill the screen with white.
+// Up to 60% of the cap a value passes; above it, it bends toward the cap.
+const softCap = (x, c) => x <= c * 0.6 ? x : c * 0.6 + c * 0.4 * Math.tanh((x - c * 0.6) / (c * 0.4));
+// Spread past about 0.8 floods the view; the default 0.45 passes.
+const fireSpread = () => softCap(devV('fireExp', 0.45), 0.8);
+// Power times bed area past about 1.8 floods the view; the default is 1.
+function firePower() {
+  const pw = devV('fireI', 1), a = pw * (devV('fireR', 0.62) / 0.62) ** 2;
+  return a > 1e-6 ? pw * softCap(a, 1.8) / a : pw;
 }
 // Fire runs at 1.2 speed; steps here are up to 1/50 s, two at most a frame.
 let fireAcc = 0, coldT = 0;
