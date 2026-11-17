@@ -16,6 +16,7 @@ import { pickStar } from './core/pick.ts';
 import { lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { cuts } from './view/cuts.ts';
+import { hero } from './world/hero.ts';
 import { onAim, onEsc, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
 import { driveClock, makeOpening } from './core/opening.ts';
@@ -338,6 +339,11 @@ window.__qa = {
   // The sequence: the shot that shows, its time, and true while it owns the camera.
   get cut() { return { shot: cuts.shot, t: cuts.time, busy: cuts.busy }; },
   skipCuts() { cuts.skip(); },
+  // QA: the hero model outside the cuts, for stills.
+  // false puts the light model back.
+  hero(on: boolean) { cuts.hold(on); draw(); },
+  // The hero's triangles, draw calls and build time.
+  get heroStats() { return hero.stats(); },
   // The opening's time and state.
   get opening() {
     const o = opening;

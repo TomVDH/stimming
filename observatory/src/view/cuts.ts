@@ -1,5 +1,5 @@
-// Load order: world/dusk runs first.
-import '../world/dusk.ts';
+// Load order: world/hero runs first.
+import '../world/hero.ts';
 import { MathUtils, Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
@@ -8,6 +8,7 @@ import type { Phase } from '../core/machine.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
+import { hero } from '../world/hero.ts';
 import { laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
 
@@ -161,6 +162,19 @@ let dipT = 0, dipWide = false;
 // The aspect is fixed then too: a resize keeps the aim and the lens.
 const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
 
+// The hero model shows in the close shots only.
+// The wide shot keeps the light model, so nothing changes there.
+// held: QA keeps the hero in outside the cuts.
+let heroOn = false, held = false;
+function swap(on: boolean): void {
+  if (on !== heroOn) {
+    heroOn = on;
+    hero.show(on);
+    complex.main.show(!on);
+  }
+  if (on) hero.follow(complex.main);
+}
+
 function toWide(): void {
   mode = 'off';
   showBars(false);
@@ -248,7 +262,11 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    if (mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide)) return;
+    const close = !(mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide));
+    // The swap happens in the frame that changes the shot.
+    // Until the hero is ready, the cuts keep the light model.
+    swap((close || held) && hero.ready);
+    if (!close) return;
     // The dip holds the last cut until the frame is black.
     const s = mode === 'cuts' ? locks.at(t) : locks.of(mode === 'dip' ? LAST_CUT : STILL_CUT);
     if (!s) return;
@@ -257,6 +275,8 @@ export const cuts = {
     beam(BEAM_CLOSE);
     showBars(true);
   },
+  // QA: keeps the hero model in outside the cuts, for stills.
+  hold(on: boolean): void { held = on; },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     if (!grab) return;
