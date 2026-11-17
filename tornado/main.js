@@ -10,7 +10,7 @@ import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_F
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL } from './plain.js';
-import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy } from './traffic.js';
+import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy, trafficShake } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex, debrisUniforms } from './damage.js';
 import { FARM_GLSL, farmState, farmStep, farmUniforms } from './farm.js';
@@ -1809,6 +1809,20 @@ function riseStep(dt) {
   if (rise.dir < 0 && rise.u <= 0) rise.dir = 0;
   camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u);
 }
+// A close pass shakes the whole frame, as a hand-held camera; reduced motion keeps it still.
+// The frame moves as one, so the baked far field and the funnels stay in register.
+// It zooms in a little while it shakes: the stage clips, so no edge shows.
+function shakeFrame(dt) {
+  const k = reduced() ? 0 : Math.min(trafficShake(traf, simT, dt, camH), 1.2);
+  if (k < 1e-3) { if (canvas.style.transform) canvas.style.transform = ''; return; }
+  // Three detuned sines per axis: buffeting at 5 to 11 Hz over a slower sway.
+  const n = (a, b, c) => 0.5 * Math.sin(simT * a + c) + 0.35 * Math.sin(simT * b + c * 1.7) + 0.15 * Math.sin(simT * 13 + c * 2.3);
+  const amp = k * 7, rot = k * 0.35;
+  const x = n(41, 67, 1) * amp, y = n(53, 29, 4) * amp, r = n(37, 23, 9) * rot;
+  const W = canvas.clientWidth, H = canvas.clientHeight, m = Math.max(1, Math.min(W, H));
+  const sc = 1 + (2 * amp) / m + Math.sin((rot * Math.PI) / 180) * (Math.max(W, H) / m + 1);
+  canvas.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) rotate(${r.toFixed(3)}deg) scale(${sc.toFixed(4)})`;
+}
 function step(dt) {
   simT += dt;
   riseStep(dt);
@@ -1820,6 +1834,7 @@ function step(dt) {
   infraStep(inf, dmg, tors, dt, simT, traf);
   lineUniforms(line, tors);
   trafficStep(traf, tors, simT, dt, line);
+  shakeFrame(dt);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   // A tornado that leaves frees a place: + Tornado and the click come back.

@@ -26,7 +26,7 @@ const POLE_LEN = 10.4;
 
 export function trafficState() {
   return {
-    veh: [], obs: [], extra: [], auto: false, autoAt: -1,
+    veh: [], obs: [], extra: [], auto: false, autoAt: -1, shk: 0,
     u: new Float32Array(MAX_VEH * 4), uB: new Float32Array(MAX_VEH * 4), uC: new Float32Array(MAX_VEH * 4),
   };
 }
@@ -118,6 +118,20 @@ export function trafficStep(T, tors, simT, dt = 0.016, line = null) {
 }
 // True while any vehicle still drives: the page keeps its loop.
 export const trafficBusy = T => T.veh.length > 0;
+// How hard a close pass shakes the eye: its wind and the road's tremor.
+// It grows with speed and nearness, and with a low eye.
+// It rises in a blink and settles over half a second.
+export function trafficShake(T, simT, dt, camH) {
+  let want = 0;
+  for (const v of T.veh) {
+    if (simT < v.t0) continue;
+    const s = clamp(v.v / 30, 0, 1.4);
+    want = Math.max(want, (s * s) / (1 + (Math.hypot(v.x, v.z) / 5) ** 2));
+  }
+  want *= clamp(2.5 / camH);
+  T.shk += (want - T.shk) * (1 - Math.exp(-dt / (want > T.shk ? 0.06 : 0.5)));
+  return T.veh.length ? T.shk : (T.shk = 0);
+}
 // Packs each vehicle for the scene pass: x, z, signed speed, kind; alive, seed, age, heading;
 // brake, pitch, roll, twinkle (0 under reduced motion).
 export function trafficUniforms(T, simT) {
