@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T01:26:22Z
-updated_at: 2026-11-17T01:43:53Z
+updated_at: 2026-11-17T01:48:48Z
 ---
 
 Tom (2026-11-16): yes to all four follow-ups of stimming-qof2. One branch, one PR. Tom merges.
@@ -16,7 +16,7 @@ Tom (2026-11-16): yes to all four follow-ups of stimming-qof2. One branch, one P
 - [x] A loading sign on the menu at the click: the intro's hairline under the clicked icon
 - [x] Checks: console clean on the menu (Clock, ?all), Fire and Window seat; the click sign at 1280, 375 x 812 and with reduced motion. Not checked: 812 x 375, no JS (the sign needs JS; without it the menu is as before).
 - [x] Docs: AGENTS.md, docs/plans/loading.md
-- [ ] PR open
+- [x] PR open: https://github.com/TomVDH/stimming/pull/68
 
 ## Findings: the Lab split (2026-11-16)
 
