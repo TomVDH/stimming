@@ -25,6 +25,9 @@ export type Machine = {
   pick(s: Star): void;
   // Back to aim. Only a lost machine leaves its target this way.
   release(): void;
+  // Back to aim, then the shutter shuts and the tube parks.
+  // Only the ?cuts review switch calls it.
+  shut(): void;
   step(dt: number, ctx: MachineCtx): void;
 };
 
@@ -54,6 +57,8 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
   let vC = 0, vA = 0, vZ = 0;
   // The cupola is stepping after a star that left the band.
   let catching = false;
+  // The shutter is shutting, after shut().
+  let shutting = false;
 
   const m: Machine = {
     phase: 'aim',
@@ -63,11 +68,12 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
     tubeAz: opts.az ?? 0,
     shutter01: ease(openP),
     tracking: false,
-    get moving() { return vC !== 0 || vA !== 0 || vZ !== 0 || this.phase === 'open'; },
+    get moving() { return vC !== 0 || vA !== 0 || vZ !== 0 || this.phase === 'open' || shutting; },
     pick(s) {
       m.target = s;
       m.tracking = false;
       catching = false;
+      shutting = false;
       m.phase = openP >= 1 ? 'slew' : 'open';
     },
     release() {
@@ -75,6 +81,10 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
       m.target = null;
       m.tracking = false;
       catching = false;
+    },
+    shut() {
+      m.release();
+      shutting = openP > 0;
     },
     step(dt, ctx) {
       const { targetAlt: tAlt, targetAz: tAz } = ctx;
@@ -103,6 +113,11 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
 
       switch (m.phase) {
         case 'aim': {
+          if (shutting) {
+            openP = Math.max(0, openP - dt / SHUTTER_S);
+            m.shutter01 = ease(openP);
+            shutting = openP > 0;
+          }
           if (ctx.aimAz !== undefined) cupola(ctx.aimAz, CUPOLA_CAP, CUPOLA_ACCEL);
           tubeAlt(restAlt, TUBE_CAP, TUBE_ACCEL);
           m.tubeAz = m.cupolaAz;

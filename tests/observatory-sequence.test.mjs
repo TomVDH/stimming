@@ -1,7 +1,8 @@
 // Observatory pick sequence and the complex lights. Run: node --test tests/observatory-sequence.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CUTS, cutAt, lightLevel, lightGoal, cutsTotal } from '../observatory/src/core/sequence.ts';
+import { CUTS, cutAt, lightLevel, lightGoal, cutsTotal, startAt, makeLocks, lens } from '../observatory/src/core/sequence.ts';
+import { makeMachine } from '../observatory/src/core/machine.ts';
 
 const total = CUTS.reduce((s, c) => s + c.dur, 0);
 // Steps lightLevel until it reaches the goal; returns the seconds it took.
@@ -30,12 +31,69 @@ test('each cut is a locked camera: one field of view, no zoom', () => {
 test('each cut holds a beat: 2 to 2.6 s', () => {
   for (const c of CUTS) assert.ok(c.dur >= 2 - 1e-9 && c.dur <= 2.6, `${c.shot}: ${c.dur} s`);
 });
-test('the shutter opens over the first two cuts; the slew starts on the third', () => {
-  // The shutter takes 4 s from the pick.
-  // The slew starts then.
-  assert.equal(cutAt(3.99).shot, 'slit');
-  assert.equal(cutAt(4).shot, 'gear');
-  assert.equal(CUTS[CUTS.length - 1].shot, 'roll');
+// A star far round from the slit, so the slew outlasts the cuts.
+const far = { hip: 1, ra: 0, dec: 0, mag: 1, ci: 0, dist: 1, spect: '', name: '', bayer: '' };
+const sky = { targetAlt: 15, targetAz: 180, trails: false };
+test('the real machine: each cut shows the phase it names; the slew starts on the first slew cut', () => {
+  const m = makeMachine({ az: 0 });
+  m.pick(far);
+  assert.equal(m.phase, 'open');
+  const dt = 0.01;
+  let t = 0, slewT = null;
+  const seen = CUTS.map(() => new Set());
+  while (t < cutsTotal) {
+    const c = cutAt(t);
+    seen[CUTS.indexOf(c)].add(m.phase);
+    m.step(dt, sky);
+    t += dt;
+    if (slewT === null && m.phase === 'slew') slewT = t;
+  }
+  const first = CUTS.find(c => c.phase === 'slew');
+  assert.ok(first, 'a slew cut');
+  assert.ok(Math.abs(slewT - first.at) <= dt + 1e-9, `slew at ${slewT}, first slew cut at ${first.at}`);
+  CUTS.forEach((c, i) => assert.deepEqual([...seen[i]], [c.phase], `${c.shot} shows ${[...seen[i]]}`));
+});
+test('with the shutter open, the sequence starts at the first slew cut', () => {
+  const shut = makeMachine({ az: 0 });
+  shut.pick(far);
+  assert.equal(startAt(shut.phase), 0);
+  const open = makeMachine({ az: 0, shutter01: 1 });
+  open.pick(far);
+  assert.equal(open.phase, 'slew');
+  const t0 = startAt(open.phase);
+  assert.equal(cutAt(t0), CUTS.find(c => c.phase === 'slew'));
+  // From there only slew cuts play, and the sequence is shorter.
+  for (let t = t0; t < cutsTotal; t += 0.05) assert.equal(cutAt(t).phase, 'slew', `t ${t}`);
+  assert.ok(cutsTotal - t0 < cutsTotal);
+});
+test('each cut locks its camera: the same values at its start, middle and end', () => {
+  // The slit turns and the screen turns to portrait inside each cut.
+  let az = 0, aspect = 1.6, made = 0;
+  const locks = makeLocks(cut => { made++; return { shot: cut.shot, az, ...lens(cut.fov, aspect) }; });
+  for (const c of CUTS) {
+    const start = locks.at(c.at);
+    az += 2; aspect = 0.5;
+    const mid = locks.at(c.at + c.dur / 2);
+    az += 2; aspect = 1.6;
+    const end = locks.at(c.at + c.dur - 1e-6);
+    assert.equal(start.shot, c.shot);
+    assert.equal(mid, start, `${c.shot}: middle`);
+    assert.equal(end, start, `${c.shot}: end`);
+    assert.deepEqual(end, { shot: c.shot, az: start.az, fov: c.fov, tall: false }, `${c.shot}: values`);
+  }
+  assert.equal(made, CUTS.length);
+  assert.equal(locks.at(cutsTotal + 0.01), null);
+  // A new pick locks every cut again.
+  locks.clear();
+  assert.equal(locks.at(0).az, az);
+});
+test('lens: a portrait frame aims tall and widens up to 1.5 times; landscape keeps the cut lens', () => {
+  assert.deepEqual(lens(10, 1.6), { fov: 10, tall: false });
+  assert.deepEqual(lens(10, 1), { fov: 10, tall: false });
+  const p = lens(10, 0.8);
+  assert.equal(p.tall, true);
+  assert.ok(p.fov > 10 && p.fov < 15, `fov ${p.fov}`);
+  assert.deepEqual(lens(10, 0.2), { fov: 15, tall: true });
 });
 test('each shot shows once', () => {
   assert.equal(new Set(CUTS.map(c => c.shot)).size, CUTS.length);

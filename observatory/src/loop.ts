@@ -62,9 +62,12 @@ let lastTrackDraw = 0;
 // The sky clock: real time at speed 1. At speed 1 the sky moves 0.004 degrees a second,
 // so it never keeps the loop awake; only a wake catch-up or a faster speed does.
 const clock = makeClock(Date.now);
+// The review switch, ?cuts: it plays the pick sequence for Tom.
+// The page reads it once, at boot.
+const REVIEW = new URLSearchParams(location.search).has('cuts');
 // The opening: dusk into night before play.
-// Reduced motion opens at night.
-const opening = makeOpening(reduced());
+// Reduced motion and the review switch open at night.
+const opening = makeOpening(reduced() || REVIEW);
 // The sky starts behind real time and runs fast to catch up.
 if (!opening.done) driveClock(opening, clock);
 // True once a frame shows the night look after the opening.
@@ -205,24 +208,31 @@ function input(a: AltAz): void {
 }
 onAim(input);
 
+// The ?cuts review takes a tap after the cuts; it gives true then.
+let reviewTap = (): boolean => false;
+
 // A tap picks the brightest star within 3 degrees of the tap. An empty patch changes nothing.
-// A pick from rest or lost plays the cuts; a re-pick only slews.
 // A tap during the cuts skips to the wide shot and picks nothing.
 function tap(a: AltAz): void {
   // A tap at dusk skips to night.
   if (opening.locked) { skipOpening(); return; }
   if (cuts.showing) { lastInput = performance.now(); cuts.skip(); return; }
   if (cuts.busy) return;
+  if (reviewTap()) return;
   const s = pickStar(sky.stars, a, lst(clock.skyMs(), LON), LAT);
-  if (!s) return;
+  if (s) pick(s);
+}
+onTap(tap);
+// A pick from rest or lost plays the cuts; a re-pick only slews.
+function pick(s: Star): void {
   const from = machine.phase;
   machine.pick(s);
-  if (from === 'aim' || from === 'lost') cuts.start(machine.cupolaAz);
+  // An open shutter plays only the slew cuts.
+  if (from === 'aim' || from === 'lost') cuts.start(machine.phase);
   lastInput = performance.now();
   dirty = true;
   wake();
 }
-onTap(tap);
 function skipOpening(): void {
   if (opening.skip()) wake();
 }
@@ -245,6 +255,54 @@ whenVisible(stageEl, (vis: boolean) => {
 // The catalog arrives after the first frame: draw the stars in.
 void skyReady.then(() => draw());
 
+// A star's place on the canvas in CSS pixels, or null when it stands behind the camera.
+function starScreen(hip: number): { x: number; y: number; alt: number; az: number } | null {
+  const p = starAltAz(hip, clock.skyMs());
+  if (!p) return null;
+  const v = altAzDir(p).multiplyScalar(1000).add(camera.position).project(camera);
+  if (v.z > 1) return null;
+  const r = stageEl.getBoundingClientRect();
+  return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, alt: p.alt, az: p.az };
+}
+// The brightest catalog stars that stand on the canvas now, above 8 degrees.
+function brightOnScreen(n: number): { star: Star; x: number; y: number; alt: number; az: number }[] {
+  const out: { star: Star; x: number; y: number; alt: number; az: number }[] = [];
+  const r = stageEl.getBoundingClientRect();
+  for (const s of sky.stars) {
+    if (!s.hip || s.mag > 3) continue;
+    const p = starScreen(s.hip);
+    if (p && p.alt > 8 && p.x > r.left + 20 && p.x < r.right - 20 && p.y > r.top + 20 && p.y < r.bottom - 20) out.push({ star: s, ...p });
+  }
+  return out.sort((x, y) => x.star.mag - y.star.mag).slice(0, n);
+}
+
+/* ---------- the review switch, ?cuts ---------- */
+// Tom sees the cuts on the live site with it.
+// About 1 s in, it picks the brightest star on screen, as a tap would.
+// After the cuts, a tap anywhere shuts the dome.
+// Once the shutter is shut, the cuts play again on the same star.
+function review(): void {
+  let star: Star | null = null, shutting = false;
+  // As a tap on the star: the beam aims at it, then the pick.
+  const play = (s: Star): void => { input(targetPos(s)); pick(s); };
+  const replay = (): void => {
+    if (machine.shutter01 > 0) { setTimeout(replay, 100); return; }
+    shutting = false;
+    if (star) play(star);
+  };
+  reviewTap = () => {
+    if (!star) return false;
+    if (!shutting) { shutting = true; machine.shut(); dirty = true; wake(); replay(); }
+    return true;
+  };
+  void skyReady.then(() => setTimeout(() => {
+    // A tap before the first pick keeps its own star.
+    star = machine.target ?? brightOnScreen(1)[0]?.star ?? null;
+    if (star && !machine.target) play(star);
+  }, 1000));
+}
+if (REVIEW) review();
+
 // Test hooks for QA scripts.
 declare global { interface Window { __qa?: Record<string, unknown> } }
 window.__qa = {
@@ -262,25 +320,8 @@ window.__qa = {
   get tube() { return { alt: machine.tubeAlt, az: machine.tubeAz }; },
   get shutter01() { return machine.shutter01; },
   // The brightest catalog stars that stand on the canvas now.
-  onScreen(n = 8) {
-    const out: { hip: number; mag: number; x: number; y: number; alt: number; az: number }[] = [];
-    const r = stageEl.getBoundingClientRect();
-    for (const s of sky.stars) {
-      if (!s.hip || s.mag > 3) continue;
-      const p = (window.__qa!.starScreen as (h: number) => { x: number; y: number; alt: number; az: number } | null)(s.hip);
-      if (p && p.alt > 8 && p.x > r.left + 20 && p.x < r.right - 20 && p.y > r.top + 20 && p.y < r.bottom - 20) out.push({ hip: s.hip, mag: s.mag, ...p });
-    }
-    return out.sort((x, y) => x.mag - y.mag).slice(0, n);
-  },
-  // A star's place on the canvas in CSS pixels, or null when it stands behind the camera.
-  starScreen(hip: number) {
-    const p = starAltAz(hip, clock.skyMs());
-    if (!p) return null;
-    const v = altAzDir(p).multiplyScalar(1000).add(camera.position).project(camera);
-    if (v.z > 1) return null;
-    const r = stageEl.getBoundingClientRect();
-    return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, alt: p.alt, az: p.az };
-  },
+  onScreen(n = 8) { return brightOnScreen(n).map(({ star, ...p }) => ({ hip: star.hip, mag: star.mag, ...p })); },
+  starScreen,
   get aim() { return { ...aim }; },
   get skyMs() { return clock.skyMs(); },
   // A star's alt and az at a sky time, read back through the sky matrix.
