@@ -240,6 +240,34 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 - [ ] **Step 4:** Stills at 1280 and 375 at 0 s, 15 s, 30 s and 45 s; frame time at 375.
 - [ ] **Step 5: Gate.** Show Tom. **Commit** locally with his words.
 
+### Task 7c: Far mountains (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/world/far.ts` (copied and trimmed from `railgun/src/world/farcountry.ts` where it fits). Modify `observatory/src/sky/haze.ts` only to receive the ridges.
+
+- [ ] **Step 1:** Two or three ridgelines on the southern horizon, 10 to 40 km out, 1 to 3° high; no hard horizon line left.
+- [ ] **Step 2:** They take the opening's light: warm toward the west at dusk, dark on the sky glow at night.
+- [ ] **Step 3:** Stills at 1280 and 375, dusk 0 s and night; frame time at 375. **Gate:** show Tom; commit locally with his words.
+
+### Task 7d: Distance haze (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/sky/haze.ts`, `observatory/src/world/far.ts`.
+
+- [ ] **Step 1:** Each ridge further back fades more into the sky; the valley haze runs out to the mountains.
+- [ ] **Step 2:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
+
+### Task 7e: Distant clouds (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/clouds/` (copied and trimmed from `railgun/src/clouds/`; credit each file). Railgun's cloud files must not change.
+
+- [ ] **Step 1:** A low raymarched cloud bank above the far ridges only; the sky over the hill stays clear.
+- [ ] **Step 2:** The clouds take the sunset at dusk and go dark at night; the pass renders only when the loop renders.
+- [ ] **Step 3:** Frame time at 1280 and 375 inside the budget (30 fps or better); a lower step on the slow-frame rung if needed.
+- [ ] **Step 4:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
+
+### Task 7f: Live trial of the pick sequence (Tom, 2026-11-17)
+
+- [ ] **Step 1:** Serve the branch on port 8037 and open it in Tom's tab; Tom plays the cuts. Changes from his notes, one at a time.
+
 ### Task 8: Fast time and trails
 
 **Files:**

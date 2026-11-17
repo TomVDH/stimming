@@ -25,6 +25,7 @@ The joy is the heavy, slow machine that does what you ask, under a real sky.
 | The build | Approach A: TypeScript and three.js, the Railgun way |
 | The sky's time | Tonight's real sky: the real date and sidereal time, drawn as night after the opening. At 14:00 you see the stars that are over the hill now. |
 | The opening | "We will start from a nice cinematic dusk and will slowly go into the night before play becomes possible". The approved reading is in "The opening: dusk into night". |
+| The far view | "we want faraway mountains -- distance haze -- clouds (railgun raymarched) in the distance -- then we will trial the first versions of the telescope ready cut etc etc -- we'll focus on getting all of this sorted before the actual telescope". The approved reading is in "The far view". |
 | The moon | None. A dark, moonless sky. |
 | The scene (blockout review) | "we want woods and a view of the complex around it". The approved reading is in "The outside view": woods on the hill, a complex of three domes, a stone building, a roll-off shed and a road; all three domes answer the laser. |
 
@@ -107,6 +108,16 @@ Tom, 2026-11-17: "We will start from a nice cinematic dusk and will slowly go in
 3. **Play.** The laser and picks stay off until full night. Then the laser comes on and the toy plays.
 4. **The sky stays real.** The light comes from tonight's real sunset direction at 51° N. The sky clock runs fast through the opening and eases to speed 1 at full night, so it ends on the real sky of now. Its speed stays under the trail speed.
 5. **Defaults (designer's calls, approved).** It plays on every visit. A tap or Esc skips to night in a short ease. Reduced motion opens at night. Sound stays muted.
+
+## The far view
+
+Tom, 2026-11-17: "we want faraway mountains -- distance haze -- clouds (railgun raymarched) in the distance -- then we will trial the first versions of the telescope ready cut etc etc -- we'll focus on getting all of this sorted before the actual telescope". Tom approved this reading ("Yes, go"):
+
+1. **Far mountains.** Two or three ridgelines on the southern horizon, about 10 to 40 km away, 1 to 3° above the horizon. They replace the hard horizon line. At dusk they are warm silhouettes toward the west; at night, dark shapes on the sky glow.
+2. **Distance haze.** Each ridge further back fades more into the sky. The valley haze runs out to the mountains.
+3. **Distant clouds.** Railgun's raymarched clouds, copied, as a low bank above the far ridges only. The sky over the hill stays clear for the stars. The clouds take the sunset at dusk and go dark at night.
+4. **A live trial of the pick sequence.** Tom plays the cuts in the browser.
+5. **Order.** One change at a time, each shown to Tom: mountains, haze, clouds, then the trial. The outside view, fast time (Task 8) included, is done before the inside of the telescope (Task 9).
 
 ## The pick sequence and the lights
 
