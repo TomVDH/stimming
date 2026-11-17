@@ -220,27 +220,30 @@ float breakN(vec2 xz) {
   vec2 c = xz - WDIR * uT * 0.012;
   return 0.7 * vn(c * 0.4 + 11.0) + 0.3 * vn(c * 1.3 + 3.0);
 }
-// How open the deck is over a camera-space point, 0 shut to 1 open: its far holes.
-// The holes are few and distinct: soft ragged ellipses 3 to 8 km wide, 15 to 40 km out.
-// Each 10 km cell of the world holds one by chance: a few at full storm, more in a young one.
-// They drift downwind with the deck. soft widens their edge, for the shafts under them.
-float deckOpen(vec3 p, float soft) {
-  float dist = length(p.xz);
-  float band = smoothstep(12.0, 18.0, dist) * (1.0 - smoothstep(40.0, 48.0, dist));
-  if (band <= 0.0) return 0.0;
-  float sy = sin(uYaw), cy = cos(uYaw);
-  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
-  vec2 b = floor(w / 10.0 - 0.5);
-  float prob = mix(0.5, 0.28, stormK()), open = 0.0;
+// Holes in the deck from one world grid, in world km: each cell holds one by chance.
+// A hole is a soft ragged ellipse of radius r0 to r1 km. soft widens its edge.
+float holes(vec2 w, float cell, float prob, float r0, float r1, float soft, float seed) {
+  vec2 b = floor(w / cell - 0.5);
+  float open = 0.0;
   for (int k = 0; k < 4; k++) {
-    vec2 c = b + vec2(float(k & 1), float(k >> 1));
+    vec2 c = b + vec2(float(k & 1), float(k >> 1)) + seed;
     if (th(c + 31.7) > prob) continue;
-    vec2 ctr = (c + 0.2 + 0.6 * vec2(th(c + 1.3), th(c + 7.1))) * 10.0;
-    float rad = mix(1.5, 4.0, th(c + 4.4)) * mix(1.3, 1.0, stormK());
-    float r = length(w - ctr) / rad + (vn(w * 0.8 + c * 3.1) - 0.5) * 0.35;
+    vec2 ctr = (c - seed + 0.2 + 0.6 * vec2(th(c + 1.3), th(c + 7.1))) * cell;
+    float r = length(w - ctr) / mix(r0, r1, th(c + 4.4)) + (vn(w * 0.8 + c * 3.1) - 0.5) * 0.35;
     open = max(open, smoothstep(1.0, 0.6 - soft, r));
   }
-  return band * open;
+  return open;
+}
+// How open the deck is over a camera-space point, 0 shut to 1 open. They drift downwind with the deck.
+// Far off, a few big holes, 3 to 8 km wide, 15 to 40 km out. Everywhere, overhead too, sparse small breaks.
+// A young storm has more and wider ones of both.
+float deckOpen(vec3 p, float soft) {
+  float sy = sin(uYaw), cy = cos(uYaw), k = stormK();
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
+  float dist = length(p.xz);
+  float band = smoothstep(12.0, 18.0, dist) * (1.0 - smoothstep(40.0, 48.0, dist));
+  float open = band > 0.0 ? band * holes(w, 10.0, mix(0.5, 0.28, k), 1.5 * mix(1.3, 1.0, k), 4.0 * mix(1.3, 1.0, k), soft, 0.0) : 0.0;
+  return max(open, holes(w, 6.0, mix(0.4, 0.2, k), 0.6, 1.6, soft, 17.0));
 }
 // The young deck's gaps between its rafts over a camera-space point, 0 to 1.
 // At no storm the sky is mostly clear: a few rafts and the far cells. The gaps close by the default storm.
@@ -470,15 +473,13 @@ vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w
 float sunCover(vec3 w) {
   if (uSun.y <= 0.0) return 0.0;
   float L = max(BASE - w.y, 0.0) / max(uSun.y, 0.017);
-  vec3 q = w + uSun * L;
+  vec3 qc = toCam(w + uSun * L);
   // The supercell's bulk blocks the sun outright, until the sun slips under its far edge.
-  float core = smoothstep(0.5, -0.5, stormShapeSun(toCam(q))) * (1.0 - smoothstep(12.0, 20.0, L));
-  // The base's ragged fringe lets the light through in broad patches that drift downwind.
-  // A low sun draws each patch out along its rays: long bands at dusk, blobs in the afternoon.
-  vec2 a = normalize(uSun.xz + 1e-5), c = q.xz - WDIR * uT * 0.012;
-  vec2 m = vec2(dot(c, a) * clamp(uSun.y / length(uSun.xz) * 4.0, 0.08, 1.0), dot(c, vec2(-a.y, a.x)));
-  float n = 0.7 * vn(m * 0.4 + 11.0) + 0.3 * vn(m * 1.3 + 3.0);
-  return max(core, 0.88 * smoothstep(0.4, 0.66, n));
+  float core = smoothstep(0.5, -0.5, stormShapeSun(qc)) * (1.0 - smoothstep(12.0, 20.0, L));
+  // The deck follows the storm: none at the start, a full lid at full storm.
+  // The sun reaches the plain only through its openings: the breaks and a young deck's gaps.
+  float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(deckOpen(qc, 0.05), raftGap(qc)));
+  return max(core, 0.92 * deck);
 }
 `;
 const SCENE = /* glsl */`
@@ -1230,7 +1231,8 @@ function step(dt) {
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   if (build) {
     build.t += dt;
-    const k = clamp(build.t / build.dur);
+    // The scene opens in sun: the storm waits 7 s, then builds.
+    const k = clamp((build.t - 7) / build.dur);
     storm = build.to * easeSine(k);
     ui.slider?.set(+storm.toFixed(2));
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
