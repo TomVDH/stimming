@@ -1,7 +1,8 @@
 // Load order: sky/haze runs first.
 import '../sky/haze.ts';
 // Copied from railgun/src/post/bloom.ts; the ladder rung is trimmed.
-import * as THREE from 'three';
+import { CanvasTexture, NoColorSpace, Vector2 } from 'three';
+import type { IUniform } from 'three';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { quality } from '../../../shared/stim.js';
 import { renderer } from '../setup.ts';
@@ -32,14 +33,14 @@ function makeDirt() {
   for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(255,255,255,${0.1 + rnd() * 0.35})`; x.beginPath(); x.arc(rnd() * 512, rnd() * 320, 0.4 + rnd() * 1.4, 0, 7); x.fill(); }
   x.strokeStyle = 'rgba(255,255,255,0.18)'; x.lineWidth = 0.7;
   for (let i = 0; i < 4; i++) { x.beginPath(); const sx = rnd() * 512, sy = rnd() * 320; x.moveTo(sx, sy); x.bezierCurveTo(sx + 40 * rnd(), sy + 30 * rnd(), sx + 60 * rnd(), sy - 20 * rnd(), sx + 90 * rnd(), sy + 10 * rnd()); x.stroke(); }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.NoColorSpace;
+  const t = new CanvasTexture(c);
+  t.colorSpace = NoColorSpace;
   return t;
 }
 // three types the high pass uniforms as a bare object.
-export type Bloom = UnrealBloomPass & { highPassUniforms: { smoothWidth: THREE.IUniform<number> } };
+export type Bloom = UnrealBloomPass & { highPassUniforms: { smoothWidth: IUniform<number> } };
 export function makeBloom(strength: number, radius: number, threshold: number): Bloom {
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), strength, radius, threshold) as Bloom;
+  const bloom = new UnrealBloomPass(new Vector2(256, 256), strength, radius, threshold) as Bloom;
   const full = bloom.setSize.bind(bloom);
   // A wide, soft knee: lit stone blooms only a trace.
   // Lamps and the beam run far past it and bloom in full.

@@ -25,6 +25,8 @@ export function makeClock(nowMs: () => number): Clock {
   let anchorReal = nowMs(), anchorSky = anchorReal;
   // What the last step showed, and when. A gap since then means the loop slept.
   let lastStepReal = anchorReal, shown = anchorSky;
+  // A wake before the first step has no old sky to ease from.
+  let stepped = false;
   // The wake catch-up: the sky starts off0 ms behind and closes that over EASE_S.
   let off0 = 0, p = 1;
 
@@ -54,12 +56,12 @@ export function makeClock(nowMs: () => number): Clock {
     trails: () => speed >= TRAIL_SPEED,
     easing: () => p < 1,
     wake() {
-      if (nowMs() - lastStepReal < SLEEP_GAP_MS) return;
+      if (!stepped || nowMs() - lastStepReal < SLEEP_GAP_MS) return;
       off0 = shown - base(); p = 0;
     },
     step(dtReal) {
       if (p < 1) p = Math.min(1, p + dtReal / EASE_S);
-      lastStepReal = nowMs(); shown = skyMs();
+      lastStepReal = nowMs(); shown = skyMs(); stepped = true;
     },
   };
 }

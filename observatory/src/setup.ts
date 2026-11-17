@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import { BufferGeometry, InstancedMesh, PerspectiveCamera, Scene, ShaderMaterial, Texture, WebGLRenderer } from 'three';
+import type { Material, Object3D } from 'three';
 import { initPage } from '../../shared/stim.js';
 import { loadStars } from './core/catalog.ts';
 
@@ -8,7 +9,7 @@ export const ui = initPage({ id: 'observatory', bar: {} });
 export const stageEl = document.getElementById('stage')!;
 const failEl = stageEl.querySelector<HTMLElement>('.fail')!;
 
-export let renderer: THREE.WebGLRenderer;
+export let renderer: WebGLRenderer;
 
 /* ---------- failures: the stage's fail line ---------- */
 // Shows the fail line and hides the canvas and the controls.
@@ -21,7 +22,7 @@ export function fail(text?: string): void {
 }
 
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 } catch (err) {
   fail();
   throw err;
@@ -58,8 +59,8 @@ renderer.domElement.addEventListener('webglcontextlost', (e) => {
   fail('Observatory lost its WebGL context. Reload the page.');
 });
 
-export const scene = new THREE.Scene();
-export const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
+export const scene = new Scene();
+export const camera = new PerspectiveCamera(60, 1, 0.1, 5000);
 
 /* ---------- the star catalog starts at once ---------- */
 // It loads beside the pine model, which world/woods waits for.
@@ -83,14 +84,14 @@ addEventListener('pagehide', () => {
 addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
 
 // Frees every geometry, material and texture under root.
-export function disposeTree(root: THREE.Object3D): void {
+export function disposeTree(root: Object3D): void {
   root.traverse((o) => {
-    if (o instanceof THREE.InstancedMesh) o.dispose();
-    if ('geometry' in o && o.geometry instanceof THREE.BufferGeometry) o.geometry.dispose();
+    if (o instanceof InstancedMesh) o.dispose();
+    if ('geometry' in o && o.geometry instanceof BufferGeometry) o.geometry.dispose();
     if (!('material' in o)) return;
-    for (const m of ([] as THREE.Material[]).concat(o.material as THREE.Material | THREE.Material[])) {
-      for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
-      if (m instanceof THREE.ShaderMaterial) for (const u of Object.values(m.uniforms)) if (u.value instanceof THREE.Texture) u.value.dispose();
+    for (const m of ([] as Material[]).concat(o.material as Material | Material[])) {
+      for (const v of Object.values(m)) if (v instanceof Texture) v.dispose();
+      if (m instanceof ShaderMaterial) for (const u of Object.values(m.uniforms)) if (u.value instanceof Texture) u.value.dispose();
       m.dispose();
     }
   });
