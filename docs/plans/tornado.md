@@ -69,6 +69,7 @@ The F-scale sets width, rotation speed, translation speed, debris density, dust 
 | Bottom right | Slider: Storm (a building cell to a full supercell) |
 | Bottom centre | Keys: `[CLICK] touch down` · `[DRAG] steer` · `[0-5] F-scale` |
 | Settings | Time: Afternoon, Golden hour, Dusk · Quality (shared); Dev rows for every look knob |
+| Dev: Tone map | Film (`ouFilm`) or ACES (`ouFilmAces`), default ACES. ACES takes a 1.1 gain; Exposure trims both. `?tone=film` for one load |
 
 ## Sound
 

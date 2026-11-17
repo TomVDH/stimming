@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -52,6 +52,10 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [
+      { value: 'film', label: 'Film' },
+      { value: 'aces', label: 'ACES' },
+    ], onPick: v => act.tone(v) },
     { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
     { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
@@ -1237,7 +1241,11 @@ act.storm = v => { storm = v; wake(); };
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
 act.lens = v => { lensMM = +v || 28; wake(); };
-act.expo = v => { S.expo = v; wake(); };
+// Each curve's own gain sets the scene's level; Exposure trims both.
+const TONE_GAIN = { film: 1, aces: 1.1 };
+let expoTrim = 1;
+act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wake(); };
+act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
@@ -1264,7 +1272,9 @@ else if (qs0.has('time')) act.tod(HOURS[qs0.get('time')] ?? HOURS.golden);
 else if (savedTod !== null) act.tod(+savedTod);
 else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
-S.expo = ui.setting('expo')?.value ?? 1;
+// QA: ?tone=film picks the curve for one load.
+act.tone(qs0.get('tone') || ui.setting('tone')?.value || 'aces');
+act.expo(ui.setting('expo')?.value ?? 1);
 // Each knob: the address for one load, else Dev's saved value, else its default.
 for (const [, id, , , , , value] of KNOBS) KNOB[id] = qs0.has(id) ? +qs0.get(id) : +(ui.setting('k_' + id)?.value ?? value);
 // QA: ?wind=0.5 and ?winddir=19 set the wind for one load.
