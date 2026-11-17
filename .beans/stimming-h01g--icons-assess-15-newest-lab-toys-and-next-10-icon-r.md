@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T05:35:18Z
-updated_at: 2026-11-17T06:17:02Z
+updated_at: 2026-11-17T06:20:32Z
 ---
 
 Tom asked for an assessment of the 15 newest Lab toys and the next 10 toys to build, and an icon rework for each of the 15.
@@ -74,3 +74,4 @@ Order: the 11 Lab toys, newest first. The four shelf toys (cauldron, washer, lad
 | Rain stick | icons/spike-rainstick-1.html (icon only, toy not built) | D (2026-11-16) |
 | Calm jar | icons/spike-calmjar-1.html (icon only, toy not built) | A (2026-11-16) |
 | BZ reaction | icons/spike-bz-1.html (icon only, toy not built) | A (2026-11-16) |
+| Calving | icons/spike-calving-1.html (icon only, toy not built) | A (2026-11-16) |
