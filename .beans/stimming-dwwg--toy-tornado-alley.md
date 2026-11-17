@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T09:45:00Z
+updated_at: 2026-11-17T09:50:28Z
 parent: stimming-oh7b
 ---
 
@@ -225,3 +225,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (volumetric distance haze): one air model in the shared GLSL (airInit/airTo): a dust layer (450 m scale height, denser with Storm) and clean air (8 km, scatters blue); analytic optical depth by distance and climb; in-scatter from sky light (slate under the deck, warm toward the sun, cool away) plus the sun's dust lobe times the sunlit share from sunCover; deck, funnels, rain, the scene and the far bake share it. About +1 ms. plain.js's plainHaze() still uses the old mix (one-line follow-up for the destruction session).
 
 - 2026-11-17: tornadoes stay inside the live march: farMax() = max(1.5, Bake from − crossover − 0.5) km (13.5 km at 16); placement, drag, drift and ?near clamp to it; a tornado drifting out ropes out at the limit.
+
+- 2026-11-17, Tom (classic golden ratio): eye 1.25 m (key eyeGold) and a 35 mm lens (key lensGold; 28, 35, 50, 85 in Settings) by default, old saved keys removed; horizon at 0.383, road vanishing at 0.618, no deck edge at any lens with Front edge −6; the first tornado drops upwind so it meets the ground at about 0.368 across. Perf: three F4.5 now 33–36 ms best (3D farm, infra and damage field added about 4 ms; 35 mm funnels fill more pixels); the 30 ms target needs another pass.
