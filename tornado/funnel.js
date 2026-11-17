@@ -747,7 +747,7 @@ void main() {
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
   vec3 rc = normalize(vec3(s, -uFoc));
   vec3 rd = toWorld(rc);
-  gSunC = toCam(uSun);
+  lightInit(rc);
   float jit = hash(fc + fract(uT * 7.31) * 113.0);
   // The dust's own jitter, apart from the march's.
   float jit2 = hash(fc.yx * 1.37 + fract(uT * 3.17) * 71.0);
