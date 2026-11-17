@@ -23,7 +23,8 @@ The joy is the heavy, slow machine that does what you ask, under a real sky.
 | The stars | A real catalog: HYG (Hipparcos, Yale, Gliese). The download needs Tom's yes with file and size. |
 | The eyepiece | Approved as proposed: the way in, the round view, the sparse data, the hand (see "Inside the telescope") |
 | The build | Approach A: TypeScript and three.js, the Railgun way |
-| The sky's time | Tonight's real sky: the real date and sidereal time, always drawn as night. At 14:00 you see the stars that are over the hill now. |
+| The sky's time | Tonight's real sky: the real date and sidereal time, drawn as night after the opening. At 14:00 you see the stars that are over the hill now. |
+| The opening | "We will start from a nice cinematic dusk and will slowly go into the night before play becomes possible". The approved reading is in "The opening: dusk into night". |
 | The moon | None. A dark, moonless sky. |
 | The scene (blockout review) | "we want woods and a view of the complex around it". The approved reading is in "The outside view": woods on the hill, a complex of three domes, a stone building, a roll-off shed and a road; all three domes answer the laser. |
 
@@ -54,7 +55,7 @@ Tom can change any of these.
 
 - The moon, the planets, satellites or deep-sky objects.
 - Constellation lines, star labels on the sky, a search box. This is not a planetarium app.
-- Daytime. The toy is always night.
+- Daytime. The toy opens at dusk, then stays night.
 
 ## Anti-goals
 
@@ -96,6 +97,16 @@ Tom picked A: the 3D machine needs three.js, and the look comes from Railgun in 
 - **The laser.** A thin green beam from the dome top to the aim point. The haze shows it, so it looks solid near the dome and fades with height.
 - **The sky.** Tonight's real sky at 51° N, from the catalog, with no moon. It turns at sidereal speed. Railgun's haze and grade sit over it.
 - **Fast time.** The Time slider runs the sky faster. Above a set speed, the stars draw trails with the accumulate and decay pass from `trails/index.html`, ported into the three.js chain.
+
+## The opening: dusk into night
+
+Tom, 2026-11-17: "We will start from a nice cinematic dusk and will slowly go into the night before play becomes possible". Tom approved this reading ("Go"):
+
+1. **Start.** The page opens at dusk, just after sunset, in the same locked wide shot. The west is still warm; the sky runs from deep blue to slate. The domes, the drum and the treetops catch the last light.
+2. **Into the night.** About 45 s. The sky darkens to the night look of Task 7. The stars come out by magnitude, brightest first. The haze cools. The complex lights come on one by one as it gets dark.
+3. **Play.** The laser and picks stay off until full night. Then the laser comes on and the toy plays.
+4. **The sky stays real.** The light comes from tonight's real sunset direction at 51° N. The sky clock runs fast through the opening and eases to speed 1 at full night, so it ends on the real sky of now. Its speed stays under the trail speed.
+5. **Defaults (designer's calls, approved).** It plays on every visit. A tap or Esc skips to night in a short ease. Reduced motion opens at night. Sound stays muted.
 
 ## The pick sequence and the lights
 

@@ -228,6 +228,18 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 - [ ] **Step 4: Gate.** Show Tom; change one thing at a time on his notes (memory: one visual change at a time).
 - [ ] **Step 5: Commit** with his words in the message.
 
+### Task 7b: The opening, dusk into night (Tom, 2026-11-17)
+
+**Files:**
+- Create: `observatory/src/core/opening.ts` (the opening's timeline: progress 0 to 1, sun depression, star magnitude limit, sky speed, play lock; no three.js), `tests/observatory-opening.test.mjs`
+- Modify: `observatory/src/sky/stars.ts`, `observatory/src/sky/haze.ts`, `observatory/src/world/*.ts`, `observatory/src/post/grade.ts`, `observatory/src/loop.ts`, `observatory/src/input.ts`, `observatory/src/core/clock.ts`
+
+- [ ] **Step 1:** Test then build `core/opening.ts`: 45 s from sun 4° below the horizon to 18° below; the star limit rises from about magnitude 0 to 6.5; the sky clock ends at real now at speed 1, under `TRAIL_SPEED` throughout; `skip()` reaches night in about 1.5 s; reduced motion starts at night.
+- [ ] **Step 2:** The dusk light: a warm west from tonight's sunset azimuth at 51° N, the sky from deep blue to slate, last light on the domes, the drum and the crowns; it eases into the Task 7 night look.
+- [ ] **Step 3:** The complex lights come on one by one as the sky darkens; the laser and picks unlock at full night.
+- [ ] **Step 4:** Stills at 1280 and 375 at 0 s, 15 s, 30 s and 45 s; frame time at 375.
+- [ ] **Step 5: Gate.** Show Tom. **Commit** locally with his words.
+
 ### Task 8: Fast time and trails
 
 **Files:**
