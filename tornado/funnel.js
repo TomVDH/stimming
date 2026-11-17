@@ -853,7 +853,8 @@ void main() {
     if (sky) {
       if (t >= tDn) {
         // The finest noise fades out far off, where it is under a pixel.
-        gFine = 1.0 - smoothstep(25000.0, 45000.0, t);
+        // It fades by the pixel's size there: the fine lumps stippled every far edge.
+        gFine = 1.0 - smoothstep(6.0, 18.0, t / (uRes.y * uFoc));
         // The soft edge and the inner step grow with distance: crisp near, smooth far.
         // A soft edge of two steps: a thinner one is met by chance and stipples the lumps' rims.
         float inStep = 30.0 + 0.006 * t, soft = 2.0 * inStep * 0.001;
@@ -964,20 +965,25 @@ void main() {
   // The baked far field lies behind the near field.
   vec4 far = texture(tFar, gl_FragCoord.xy / uRes);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
-  // Sun shafts: the haze under the deck scatters sunlight to the eye below the deck's far breaks.
-  // Twelve jittered steps to the base or the ground, 45 km at most; the history smooths them.
-  // The breaks drift with the deck, so the shafts sweep slowly over the plain.
+  // Sun shafts hang from the deck's openings: its far breaks and a young deck's gaps.
+  // The march runs only under the deck, from the eye to the base or the ground, 30 km at most,
+  // and stops in front of anything opaque. Each step follows the shaft up to the base:
+  // an opening there lights the step. Jittered steps; the history smooths them.
   if (uGod > 0.0 && uSun.y > 0.0) {
-    float tG = min(min(rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y, 45000.0), tOpq), sh = 0.0;
-    for (int i = 0; i < 12; i++) {
-      vec3 w = (rd * ((float(i) + jit2) * tG / 12.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
-      // The sun's ray from this point crosses the base here: open sky there lights the point.
-      vec3 q = w + uSun * (max(BASE - w.y, 0.0) / max(uSun.y, 0.02));
-      sh += deckOpen(toCam(q)) * exp(-w.y / 1.2);
+    float tTop = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y;
+    float tG = min(min(tTop, 30000.0), tOpq), sh = 0.0;
+    // The shafts slant down at 24 degrees at least, so they hang from the openings even at dusk.
+    vec3 sd = normalize(vec3(uSun.x, max(uSun.y, 0.45), uSun.z));
+    for (int i = 0; i < 24; i++) {
+      vec3 w = (rd * ((float(i) + jit2) * tG / 24.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
+      vec3 qc = toCam(w + sd * (max(BASE - w.y, 0.0) / sd.y));
+      // A shaft is brightest at its opening and fades with depth into the haze.
+      // A young deck's wide gaps light whole rooms of air: they count for less than the far breaks.
+      sh += max(deckOpen(qc), 0.4 * raftGap(qc)) * exp(-max(BASE - w.y, 0.0) * 0.7);
     }
     // Light only: the shafts glow most toward the sun.
     float cg = dot(rd, uSun);
-    now.rgb += uSunCol * vec3(1.0, 0.86, 0.68) * (sh / 12.0) * (tG / 45000.0) * mix(hg(cg, 0.6), 1.0, 0.2) * 0.25 * uGod;
+    now.rgb += uSunCol * vec3(1.0, 0.86, 0.68) * sh * (tG / 24.0) * 2.5e-5 * mix(hg(cg, 0.5), 1.0, 0.3) * uGod;
   }
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);

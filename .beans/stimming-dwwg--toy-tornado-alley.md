@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:07:18Z
+updated_at: 2026-11-17T08:09:08Z
 parent: stimming-oh7b
 ---
 
@@ -193,3 +193,5 @@ Built; waits for the checkpoint with Tom.
 - [ ] Later (Tom): volumetric rain haze: a cloud-noise texture of rain pouring down over the scene.
 
 - 2026-11-17, Tom: the build-up takes 15 s by default (range 5–300; key buildUpS, the old saved 90 removed); during it the far field renews in strips, so no frame stalls.
+
+- 2026-11-17, Tom (god rays drew as horizontal bands): at dusk the true shafts run almost level, so each row integrated different breaks into bands. The march now runs only under the deck (30 km, stops at the first opaque body, 24 jittered steps); each step follows the shaft to the base, never flatter than 24°, so beams hang from the openings; bright at the opening, fading with depth. Openings: far breaks and a young deck's raft gaps. Also: the deck's finest lumps fade by pixel size (the cause of the stipple on upper edges); a young tower is a narrow column with no anvil until Storm 0.25–0.65.

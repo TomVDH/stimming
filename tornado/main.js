@@ -164,7 +164,8 @@ float stormShapeSun(vec3 p) {
   float top = mix(8.0, 12.5, gT);
   // The updraft tower leans downshear as it climbs.
   vec2 q = p.xz - TOWER - vec2(0.28, -0.12) * (p.y - BASE);
-  float rT = mix(3.5, 7.0, gT) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
+  // A young tower is a narrow column; it widens as the storm matures.
+  float rT = mix(2.2, 7.0, g) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
   float tower = max(length(q) - rT, max(BASE + 0.1 - p.y, p.y - top));
   // The tower is stacked turrets: Worley cells on a warped domain, larger and softer up high.
   // The sunward side is rougher. Only points near the tower pay for it.
@@ -184,11 +185,13 @@ float stormShapeSun(vec3 p) {
   // The anvil: flat on top, thin at its edge, and streaming off to the right.
   vec3 a = p - vec3(TOWER.x + mix(2.0, 14.0, g), top - 0.5, TOWER.y - 2.0);
   float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
+  // A young cell has no anvil yet: it spreads out as the storm matures.
+  anvil += 4.0 * (1.0 - smoothstep(0.25, 0.65, g));
   // The anvil's edge streams out in fibres along its spread.
   if (anvil < 1.5) anvil -= (vn(vec2(a.z * 1.6, a.y * 3.0) + a.x * 0.08) - 0.5) * 0.9;
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
-  float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, gT);
+  float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.7, 2.8, g);
   // The overshooting top boils in big soft cells.
   if (dome < 2.0) dome -= (W(o * 0.25 + 9.0) - 0.4) * 1.4;
   float d = smin(tower, shelf, 1.4);
@@ -221,6 +224,13 @@ float deckOpen(vec3 p) {
   float sy = sin(uYaw), cy = cos(uYaw), thr = mix(0.42, 0.3, stormK());
   return far * smoothstep(thr, thr - 0.1, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
 }
+// The young deck's gaps between its rafts over a camera-space point, 0 to 1.
+// At no storm the sky is mostly clear: a few rafts and the far cells. The gaps close by the default storm.
+float raftGap(vec3 p) {
+  if (stormK() >= 1.0) return 0.0;
+  float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
+  return smoothstep(0.15 + 0.8 * stormK(), 0.35 + 0.8 * stormK(), n);
+}
 // The storm as the eye sees it: the base runs out over and behind the eye, and far left, right and ahead.
 // It reads as a vast system, not one cell; its underside rises a little toward the eye.
 // No edge of the deck shows in frame at any lens; far off it meets the horizon's glow.
@@ -243,11 +253,7 @@ float stormShape(vec3 p) {
     botY -= yk * (vn(pd.xz * 0.6 + 2.0) - 0.5) * 0.3;
   }
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(botY - p.y, p.y - topY));
-  if (yk > 0.0) {
-    float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
-    // At no storm the sky is mostly clear: a few rafts and the far cells.
-    front += 1.6 * smoothstep(0.15 + 0.8 * stormK(), 0.35 + 0.8 * stormK(), n);
-  }
+  front += 1.6 * raftGap(p);
   // Far off the deck breaks open.
   front += 1.5 * deckOpen(p);
   return smin(d, front, 0.8);
@@ -922,14 +928,14 @@ function stormShapeJS(x, y, z) {
   const g = storm, gT = Math.max(g, 0.6), B = baseNow(), top = mixN(8, 12.5, gT);
   const T = [-4.3, -23], SH = [1, -13], SR = [15, 9];
   const qx = x - T[0] - 0.28 * (y - B), qz = z - T[1] + 0.12 * (y - B);
-  const rT = mixN(3.5, 7, gT) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
+  const rT = mixN(2.2, 7, g) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
   const tower = Math.max(Math.hypot(qx, qz) - rT, Math.max(B + 0.1 - y, y - top));
   const k = mixN(0.4, 1, g), bx = (x - SH[0]) / (SR[0] * k), bz = (z - SH[1]) / (SR[1] * k);
   const shelf = Math.max((Math.hypot(bx, bz) - 1) * SR[1] * k, Math.abs(y - (B + 0.6)) - 0.6);
   const ax = x - (T[0] + mixN(2, 14, g)), ay = y - (top - 0.5), az = z - (T[1] - 2);
-  const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5);
+  const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5) + 4 * (1 - sstep(0.25, 0.65, g));
   const ox = x - (T[0] + 0.28 * (top - B)), oy = (y - (top + 0.4)) * 1.6, oz = z - (T[1] - 0.12 * (top - B));
-  const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.4, 2.8, gT);
+  const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.7, 2.8, g);
   let d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
