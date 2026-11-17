@@ -130,6 +130,8 @@ Four changes, one at a time, each shown to Tom:
 3. **The complex.** Roof edge, window frames, a door canopy and a chimney on the building; panel seams and a catwalk rail on the domes; stone courses on the drums; rails on the roll-off shed; a fence along the road.
 4. **The telescope.** A real mount, a counterweight, a dew shield and a finder scope.
 
+Tom, 2026-11-17, on the order: "lets prioritize the cut -- then move to detail and making the complex road up to it and street lights etc nice". So: the cuts first (locked cuts, then the lens shot), then the complex with its road and street lights, then the hill and the telescope. The road up to the complex and its street lights are part of change 3.
+
 ## The pick sequence and the lights
 
 Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
@@ -141,6 +143,7 @@ Tom, 2026-11-17, on the second blockout: "the slit points at camera initially --
    3. The telescope rolls through the open slit, against the sky.
    4. Optional: the dome's ring gear or rail turning.
    5. The lens (Tom, 2026-11-17: "the final cut of the sequence is a close up of the lens of the telescope with starry reflections on the glass / mirror itself -- this will be filmic as fuck"). About 2 s, the last cut: tight on the objective glass of a refractor, very shallow focus, a slow push in. Tonight's real stars reflect in the glass, slightly curved, the target star brightest near the centre. The slit edge crosses the reflection as a dark band. A faint green and magenta coating sheen moves as the tube tilts. The tube settles onto the star, the reflections drift and stop, then the cut goes back wide. Reduced motion: a still frame inside the crossfade. Approved ("Yes, queue it").
+   Tom, 2026-11-17, on the first cuts: "the cinematic intro for when the telescope goes has a stupid zoom in cut for every one -- static angles, slow moving geometry -- think ace combat / coen -- also -- the telescope rises up from below in the final shot -- dont forget we're gonna spruce up those models like fuck later". Approved reading ("Yes, go"): every cut is a locked camera, a fixed angle and a fixed lens, with no push and no zoom. Only the machine moves in the frame, slowly and heavily. Hard cuts between static frames, each held a beat longer. The final lens shot is locked on the open slit; the tube rises into frame from below until the objective glass fills it, with tonight's stars reflected, then the cut goes back wide. The models gain detail later; the cuts pick it up.
 3. **Back to the wide shot.** The domes turn to the star; the tube hunts for it.
 4. **The lights.** While the telescope hunts, the complex lights dim (windows, door lamps, road lamps). When it locks on and the survey starts, they go off. "Survey" is tracking and the time inside the telescope. Back to aim: the lights come up again, slowly.
 

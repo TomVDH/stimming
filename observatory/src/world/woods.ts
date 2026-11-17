@@ -1,11 +1,19 @@
 // Load order: world/complex runs first.
 import './complex.ts';
-import { BufferGeometry, Color, Float32BufferAttribute, InstancedMesh, MeshLambertMaterial, Object3D } from 'three';
-import { scene } from '../setup.ts';
+import {
+  BufferGeometry, Color, DataTexture, DoubleSide, Float32BufferAttribute, Group, InstancedMesh, LinearFilter,
+  LinearMipmapLinearFilter, Mesh, MeshLambertMaterial, Object3D, RepeatWrapping, SRGBColorSpace,
+} from 'three';
+import type { MeshStandardMaterial, Texture } from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { buildSteps, stage } from '../../../shared/stim.js';
+import { renderer, scene, stageEl, ui } from '../setup.ts';
 import { CLEAR, EYE_H, RISE, TOP, hillHeight } from './hill.ts';
 import { roadDist } from './complex.ts';
+import { bakeImpostor } from './impostor.ts';
 
-/* ---------- the woods: dark conifers over the hill, in one draw call ---------- */
+/* ---------- the woods: dark pines over the hill, in two draw calls ---------- */
 // Trees stand on a jittered 7 m grid in the land the camera sees.
 const STEP = 7;
 const AREA = { x0: -760, x1: 760, z0: -330, z1: 760 };
@@ -64,66 +72,256 @@ function hash(x: number, z: number): number {
   return v - Math.floor(v);
 }
 
-// One crown has three stacked tiers of branches.
-// The crown is 1 m tall and 1 m in radius.
-// Each tier's rim has six branch tips with gaps between them.
-// aShade darkens the gaps under the branches.
-// The tips and the tops stay lit.
-const TIERS: [number, number, number][] = [[0, 0.52, 1], [0.3, 0.78, 0.74], [0.56, 1, 0.46]];
-const TIPS = 6;
-function crownGeometry(): BufferGeometry {
-  const p: number[] = [], shade: number[] = [];
-  const rim = (y0: number, r: number, k: number): [number, number, number, number] => {
-    const a = (k / (TIPS * 2)) * Math.PI * 2, tip = k % 2 === 0;
-    // The tips reach out and droop.
-    // The gaps sit in and higher.
-    const rr = tip ? r : r * 0.6, y = tip ? y0 - 0.03 : y0 + 0.06;
-    return [Math.cos(a) * rr, y, -Math.sin(a) * rr, tip ? 0.8 : 0.3];
-  };
-  for (const [y0, y1, r] of TIERS) {
-    for (let k = 0; k < TIPS * 2; k++) {
-      const a = rim(y0, r, k), b = rim(y0, r, k + 1);
-      // Counter-clockwise from outside: rim point, next rim point, apex.
-      p.push(a[0], a[1], a[2], b[0], b[1], b[2], 0, y1, 0);
-      shade.push(a[3], b[3], 1);
+/* ---------- the pine: Tom's model, 1 tall, its foot at the origin ---------- */
+// "Pine Tree - PS1 Low Poly" by Wersaus33, CC BY 4.0.
+// CREDITS.md holds the full credit.
+const PINE_URL = new URL('../models/pine.glb', import.meta.url).href;
+// The model's own alpha cut.
+const PINE_CUT = 0.486;
+// The bark fills the texture's top-left quarter.
+const isBark = (u: number, v: number) => u < 0.5 && v < 0.5;
+// The crown's reach is measured in this many height bands.
+const BANDS = 10;
+
+type Pine = { geo: BufferGeometry; map: Texture; R: number; mean: Color };
+
+// The texture's empty texels take the colour of their neighbours.
+// The mipmaps then blend no white into the branch edges.
+function dilate(d: Uint8ClampedArray, w: number, h: number): void {
+  let done = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) done[i] = d[i * 4 + 3] >= 128 ? 1 : 0;
+  for (let grew = true; grew;) {
+    grew = false;
+    const next = done.slice();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (done[i]) continue;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx, yy = y + dy, j = yy * w + xx;
+            if (xx < 0 || yy < 0 || xx >= w || yy >= h || !done[j]) continue;
+            r += d[j * 4]; g += d[j * 4 + 1]; b += d[j * 4 + 2]; n++;
+          }
+        }
+        if (!n) continue;
+        d[i * 4] = r / n; d[i * 4 + 1] = g / n; d[i * 4 + 2] = b / n;
+        next[i] = 1;
+        grew = true;
+      }
+    }
+    done = next;
+  }
+}
+
+const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const toSrgb = (c: number) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.min(c, 1) ** (1 / 2.4) - 0.055);
+// The bark is darker and a little warmer than the branches.
+const BARK = [0.7, 0.5, 0.45];
+
+// The texture filters smoothly, with mipmaps.
+// mean is the branches' mean linear colour.
+function pineTexture(image: CanvasImageSource & { width: number; height: number }): { map: Texture; mean: Color } {
+  const w = image.width, h = image.height;
+  const ctx = Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d')!;
+  ctx.drawImage(image, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h);
+  dilate(img.data, w, h);
+  const mean = new Color(0, 0, 0);
+  let n = 0;
+  // The branches fill the lower half of the image.
+  for (let i = (h >> 1) * w; i < w * h; i++) {
+    if (img.data[i * 4 + 3] < 128) continue;
+    mean.r += toLinear(img.data[i * 4] / 255);
+    mean.g += toLinear(img.data[i * 4 + 1] / 255);
+    mean.b += toLinear(img.data[i * 4 + 2] / 255);
+    n++;
+  }
+  mean.multiplyScalar(1 / Math.max(n, 1));
+  // The instance colour divides out the branches' mean colour.
+  // The bark takes that mean colour, so it keeps the tree's tone.
+  const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const meanL = lum(mean.r, mean.g, mean.b);
+  for (let y = 0; y < h >> 1; y++) {
+    for (let x = 0; x < w >> 1; x++) {
+      const i = (y * w + x) * 4;
+      const k = lum(toLinear(img.data[i] / 255), toLinear(img.data[i + 1] / 255), toLinear(img.data[i + 2] / 255)) / meanL;
+      img.data[i] = toSrgb(mean.r * k * BARK[0]) * 255;
+      img.data[i + 1] = toSrgb(mean.g * k * BARK[1]) * 255;
+      img.data[i + 2] = toSrgb(mean.b * k * BARK[2]) * 255;
     }
   }
+  const map = new DataTexture(new Uint8Array(img.data.buffer), w, h);
+  map.colorSpace = SRGBColorSpace;
+  map.wrapS = map.wrapT = RepeatWrapping;
+  map.generateMipmaps = true;
+  map.minFilter = LinearMipmapLinearFilter;
+  map.magFilter = LinearFilter;
+  map.anisotropy = 4;
+  map.needsUpdate = true;
+  return { map, mean };
+}
+
+// Bakes the model's node matrices into one geometry, 1 tall.
+// The trunk's foot stands at the origin.
+// +Y is up.
+function pineGeometry(gltf: GLTF): BufferGeometry {
+  gltf.scene.updateMatrixWorld(true);
+  let mesh: Mesh | undefined;
+  gltf.scene.traverse((o) => { if (o instanceof Mesh) mesh = o; });
+  if (!mesh) throw new Error('pine.glb holds no mesh');
+  const src = mesh.geometry as BufferGeometry;
   const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(p, 3));
-  g.setAttribute('aShade', new Float32BufferAttribute(shade, 1));
-  // Flat faces read as separate boughs.
-  g.computeVertexNormals();
+  for (const k of ['position', 'normal', 'uv']) g.setAttribute(k, src.getAttribute(k).clone());
+  g.setIndex(src.getIndex()!.clone());
+  g.applyMatrix4(mesh.matrixWorld);
+  g.computeBoundingBox();
+  const box = g.boundingBox!, pos = g.getAttribute('position'), uv = g.getAttribute('uv');
+  // The trunk's centre line sets the axis.
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    if (!isBark(uv.getX(i), uv.getY(i))) continue;
+    x0 = Math.min(x0, pos.getX(i)); x1 = Math.max(x1, pos.getX(i));
+    z0 = Math.min(z0, pos.getZ(i)); z1 = Math.max(z1, pos.getZ(i));
+  }
+  const H = box.max.y - box.min.y;
+  g.translate(-(x0 + x1) / 2, -box.min.y, -(z0 + z1) / 2);
+  g.scale(1 / H, 1 / H, 1 / H);
   return g;
 }
 
+// Gives the pine its shading attributes.
+// It returns the crown radius.
+// aShade darkens the crown's inside, near the trunk.
+// The normals point out of the crown.
+// The crown then takes the light as one mass.
+function shadePine(g: BufferGeometry): number {
+  const pos = g.getAttribute('position'), nrm = g.getAttribute('normal'), uv = g.getAttribute('uv');
+  const band = (y: number) => Math.min(BANDS - 1, Math.max(0, Math.floor(y * BANDS)));
+  const reach = new Array<number>(BANDS).fill(0);
+  for (let i = 0; i < pos.count; i++) {
+    if (isBark(uv.getX(i), uv.getY(i))) continue;
+    const b = band(pos.getY(i));
+    reach[b] = Math.max(reach[b], Math.hypot(pos.getX(i), pos.getZ(i)));
+  }
+  const shade = new Float32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    if (isBark(uv.getX(i), uv.getY(i))) { shade[i] = 0.3; continue; }
+    const env = Math.max(reach[band(y)], 0.02), k = Math.min(1, Math.hypot(x, z) / env);
+    shade[i] = 0.3 + 0.7 * k;
+    // The crown normal leans up, so starlight from the sky catches it.
+    let vx = x / env, vy = 0.6, vz = z / env;
+    const vl = Math.hypot(vx, vy, vz);
+    vx /= vl; vy /= vl; vz /= vl;
+    // A little of the card's own normal keeps the boughs apart.
+    let ox = nrm.getX(i), oy = nrm.getY(i), oz = nrm.getZ(i);
+    if (ox * vx + oy * vy + oz * vz < 0) { ox = -ox; oy = -oy; oz = -oz; }
+    const nx = vx * 0.75 + ox * 0.25, ny = vy * 0.75 + oy * 0.25, nz = vz * 0.75 + oz * 0.25;
+    const nl = Math.hypot(nx, ny, nz);
+    nrm.setXYZ(i, nx / nl, ny / nl, nz / nl);
+  }
+  g.setAttribute('aShade', new Float32BufferAttribute(shade, 1));
+  return Math.max(...reach);
+}
+
+async function loadPine(): Promise<Pine> {
+  const gltf = await new GLTFLoader().loadAsync(PINE_URL);
+  const geo = pineGeometry(gltf);
+  const R = shadePine(geo);
+  const src = (gltf.scene.getObjectByProperty('isMesh', true) as Mesh).material as MeshStandardMaterial;
+  const { map, mean } = pineTexture(src.map!.image);
+  src.map!.dispose();
+  src.dispose();
+  return { geo, map, R, mean };
+}
+
+/* ---------- the woods' look ---------- */
 // The woods get their own haze over the shared haze.
 // LAYER_K sets its strength.
 // LAYER_D sets its distance in metres.
 // Far rows fade more, so the hillside reads in layers.
 const LAYER_K = 0.5, LAYER_D = 350;
+// Each mip level raises the alpha by this much.
+// Far branches then keep their mass and do not thin out.
+const MIP_ALPHA = 0.25;
 
-// The material is Lambert with four extra terms.
+// The material is Lambert with extra terms.
 // It adds crown shade, a dark base, a cool top, haze layers.
-function crownMaterial(): MeshLambertMaterial {
-  const m = new MeshLambertMaterial({ color: 0xffffff });
+// It keeps the branch alpha whole at every mip level.
+// card is true for the impostor cards, false for the near mesh.
+function woodsMaterial(map: Texture, card: false): MeshLambertMaterial;
+function woodsMaterial(map: Texture, card: true, normals: Texture): MeshLambertMaterial;
+function woodsMaterial(map: Texture, card: boolean, normals?: Texture): MeshLambertMaterial {
+  const m = new MeshLambertMaterial({
+    color: 0xffffff, map, side: DoubleSide,
+    alphaTest: card ? 0.5 : PINE_CUT, alphaToCoverage: true,
+  });
   m.onBeforeCompile = (sh) => {
+    if (normals) sh.uniforms.uNormals = { value: normals };
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aShade;\nvarying float vShade;\nvarying float vTreeH;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvShade = aShade;\nvTreeH = position.y;');
+      .replace('#include <common>', `#include <common>
+        ${card ? 'varying vec3 vIm0, vIm1, vIm2;' : 'attribute float aShade;'}
+        varying float vShade;
+        varying float vTreeH;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vShade = ${card ? '1.0' : 'aShade'};
+        vTreeH = position.y;`)
+      // The cards carry the instance's normal transform to the fragment.
+      .replace('#include <defaultnormal_vertex>', card ? `#include <defaultnormal_vertex>
+        mat3 cm = mat3(instanceMatrix);
+        vIm0 = normalMatrix * (cm[0] / dot(cm[0], cm[0]));
+        vIm1 = normalMatrix * (cm[1] / dot(cm[1], cm[1]));
+        vIm2 = normalMatrix * (cm[2] / dot(cm[2], cm[2]));` : '#include <defaultnormal_vertex>');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vShade;\nvarying float vTreeH;')
+      .replace('#include <common>', `#include <common>
+        varying float vShade;
+        varying float vTreeH;
+        ${card ? 'varying vec3 vIm0, vIm1, vIm2;\nuniform sampler2D uNormals;' : ''}
+        float woodsLod(vec2 uv, vec2 size) {
+          vec2 dx = dFdx(uv * size), dy = dFdy(uv * size);
+          return 0.5 * log2(max(dot(dx, dx), dot(dy, dy)));
+        }`)
+      // The atlas is premultiplied, so the colour divides by alpha.
+      .replace('#include <map_fragment>', `
+        vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+        ${card ? 'sampledDiffuseColor.rgb /= max(sampledDiffuseColor.a, 1e-4);' : ''}
+        sampledDiffuseColor.a *= 1.0 + max(0.0, woodsLod(vMapUv, vec2(textureSize(map, 0)))) * ${MIP_ALPHA.toFixed(2)};
+        diffuseColor *= sampledDiffuseColor;`)
       // The lower crown lies in the shade of the trees round it.
       // Starlight from the sky catches the top, a little cooler.
       .replace('#include <color_fragment>', `#include <color_fragment>
         diffuseColor.rgb *= vShade * mix(0.3, 1.25, vTreeH);
         diffuseColor.rgb *= mix(vec3(1.0), vec3(0.9, 1.0, 1.18), vTreeH * vTreeH);`)
+      // Both faces of a branch take the crown's outward normal.
+      .replace('#include <normal_fragment_begin>', card ? `#include <normal_fragment_begin>
+        {
+          vec4 nt = texture2D(uNormals, vMapUv);
+          vec3 nl = nt.rgb / max(nt.a, 1e-4) * 2.0 - 1.0;
+          normal = normalize(mat3(vIm0, vIm1, vIm2) * nl);
+        }` : `#include <normal_fragment_begin>
+        normal = normalize(vNormal);`)
       .replace('#include <fog_fragment>', `#include <fog_fragment>
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, ${LAYER_K.toFixed(2)} * (1.0 - exp(-length(vHazeP - cameraPosition) / ${LAYER_D.toFixed(1)})));`);
+        #ifdef USE_FOG
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, ${LAYER_K.toFixed(2)} * (1.0 - exp(-length(vHazeP - cameraPosition) / ${LAYER_D.toFixed(1)})));
+        #endif`);
   };
+  // The two kinds compile to different programs.
+  m.customProgramCacheKey = () => (card ? 'woods-card' : 'woods-mesh');
   return m;
 }
 
-export function buildWoods(): InstancedMesh {
+/* ---------- the woods: near trees as the mesh, far trees as cards ---------- */
+// Trees this near the clearing are the full mesh.
+// Close shots of the domes can frame them.
+const MESH_SITE = 110;
+// Trees this near the wide eye are the full mesh too.
+const MESH_EYE = 150;
+
+export type Woods = { root: Group; near: InstancedMesh; far: InstancedMesh; bakeMs: number };
+
+export function buildWoods(pine: Pine): Woods {
   const rand = rng(51);
   const spots: [number, number, number][] = [];
   for (let z = AREA.z0; z < AREA.z1; z += STEP) {
@@ -140,30 +338,55 @@ export function buildWoods(): InstancedMesh {
       spots.push([tx, tz, r]);
     }
   }
-  const trees = new InstancedMesh(crownGeometry(), crownMaterial(), spots.length);
+  const isNear = ([x, z]: [number, number, number]) =>
+    Math.hypot(x, z) < MESH_SITE || Math.hypot(x - RISE.x, z - RISE.z) < MESH_EYE;
+  const nearSpots = spots.filter(isNear), farSpots = spots.filter(s => !isNear(s));
+  const imp = bakeImpostor(renderer, pine.geo, pine.map, PINE_CUT, pine.R);
+  const near = new InstancedMesh(pine.geo, woodsMaterial(pine.map, false), nearSpots.length);
+  const far = new InstancedMesh(imp.cards, woodsMaterial(imp.albedo, true, imp.normal), farSpots.length);
   const o = new Object3D(), c = new Color();
-  spots.forEach(([x, z, r], i) => {
+  const place = (mesh: InstancedMesh, list: [number, number, number][]) => list.forEach(([x, z, r], i) => {
     // A second number per tree, from its place, keeps the trim unchanged.
     const q = hash(x, z), q2 = hash(z, x);
+    // The crown height h starts 1 m over the ground.
     const h = (12 + 8 * r) * (0.82 + 0.26 * q);
-    // The crown starts 1 m up; a trunk does not show at this range.
-    o.position.set(x, hillHeight(x, z) + 1, z);
+    o.position.set(x, hillHeight(x, z), z);
     // Some crowns are slim spires, some are broad.
-    const w = h * (0.3 + 0.12 * q2);
-    o.scale.set(w, h, w * (0.9 + 0.2 * q));
+    const w = h * (0.3 + 0.12 * q2) / pine.R;
+    o.scale.set(w, h + 1, w * (0.9 + 0.2 * q));
     o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();
-    trees.setMatrixAt(i, o.matrix);
+    mesh.setMatrixAt(i, o.matrix);
     // Most trees are spruce green.
     // Some trees are bluer or darker.
     // A few trees are brown.
     const k = 0.75 + 0.5 * q;
     if (q2 > 0.93) c.setRGB(0.05 * k, 0.045 * k, 0.03 * k);
     else c.setRGB((0.026 + 0.012 * r) * k, (0.05 + 0.018 * q2) * k, (0.036 + 0.02 * q2) * k);
-    trees.setColorAt(i, c);
+    // The texture's own colour divides out, so the tone stays the same.
+    c.r /= pine.mean.r; c.g /= pine.mean.g; c.b /= pine.mean.b;
+    mesh.setColorAt(i, c);
   });
-  return trees;
+  place(near, nearSpots);
+  place(far, farSpots);
+  const root = new Group();
+  root.add(near, far);
+  return { root, near, far, bakeMs: imp.ms };
 }
 
-export const woods = buildWoods();
-scene.add(woods);
+// The page's load line counts the model and the bake.
+// A failed load or bake shows the stage's fail line.
+async function grow(): Promise<Woods> {
+  stage('build');
+  const step = buildSteps(2);
+  try {
+    const pine = step(await loadPine());
+    return step(buildWoods(pine));
+  } catch (err) {
+    stageEl.querySelector<HTMLElement>('.fail')!.hidden = false;
+    ui.hideControls();
+    throw err;
+  }
+}
+export const woods = await grow();
+scene.add(woods.root);
