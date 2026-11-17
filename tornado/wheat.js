@@ -39,7 +39,9 @@ vec4 wheatStand(vec3 rd, float px) {
   if (t0 > tA) {
     vec4 gs = gust(xs, 0.0);
     float g = gs.w, wv = max(gs.z, 0.0);
-    float dens = 1.1 * (0.55 + 0.9 * vn(xs * 2.3)) * (1.0 - 0.35 * wv) * smoothstep(0.0, WH_FEATHER * 1.5, whInside(xs));
+    // Clumps thicken the skin; they fade once a pixel spans them along the view.
+    float fs = t0 * px / uFoc * t0 / max(CAMH - WH_SKIN, 0.02);
+    float dens = 1.1 * (0.55 + 0.9 * mix(0.5, vn(xs * 2.3), 1.0 - smoothstep(0.1, 0.4, fs))) * (1.0 - 0.35 * wv) * smoothstep(0.0, WH_FEATHER * 1.5, whInside(xs));
     float Tb = exp(-dens * (t0 - tA) * length(rd.xz));
     vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g) * (uSunCol * 0.5 * 1.2 + uAmb * 0.55);
     acc = awn * (1.0 - Tb);
@@ -133,7 +135,10 @@ vec4 wheatStand(vec3 rd, float px) {
   vec3 deep = vec3(0.17, 0.12, 0.05) * (uSunCol * 0.12 + uAmb * 0.3);
   vec3 crown = vec3(0.36, 0.26, 0.11) * (uSunCol * 0.3 + uAmb * 0.45);
   // The fill varies stalk to stalk too, so a far face is not one flat colour.
-  float fv = 0.75 + 0.5 * vn(gxz * 3.7 + vec2(yEnd * 9.0, 0.0));
+  // Its grain reads where the ray enters the stand, so it holds still from row to row.
+  // From the tops a pixel spans metres along the view there: the grain fades out.
+  float fe = t0 * px / uFoc, fz = t0 > tE + 1e-3 ? fe * t0 / max(CAMH - WH_SKIN, 0.02) : fe;
+  float fv = 0.75 + 0.5 * mix(0.5, vn(vec2(dot(p0.xz, vec2(1.1, 3.7)), p0.y * 2.0)), 1.0 - smoothstep(0.08, 0.25, fz));
   if (whInside(gxz) > -0.05) { acc += T * mix(deep, crown, smoothstep(0.55, 1.0, yEnd)) * fv; T = 0.0; }
   return vec4(acc, T);
 }
