@@ -170,6 +170,26 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Part | Does |
 |---|---|
 | Soup | Marbled: Catmull-Rom advection clamped to its texels, a fine curl that wakes with the stir, plumes that fold in nearby soup, tints that land as ribbons, seams that stand up where colours meet. Only a drain evens the pot out |
+| Depth | Light dies with depth in the soup, tinted by its own hue. Thin broth shows sunk things, the spoon and the iron near the wall; thick soup, skin and fat close it up. Dev row Soup density scales it |
+| Fire glow | The fire glows up through thin soup over the boil's plumes and the hot base, tinted by the soup's hue, stronger with Fire. Dev row Soup glow scales it |
+| Boil | The heat drives the ripple field: a calm shiver everywhere at low fire, rolling heaves over the plumes near Fire 1 (heat cubed). Dev row Boil scales both |
+| Viscosity | The ripple field reads the local thickness: thick soup waves at a third of the speed, keeps less of each swing and holds a dent longer; thin broth rings as before |
+| Wall foam | Above Fire 0.35 a pale foam line gathers at the wall in slow clumps, thicker in thick soup |
+| Rising bubbles | Small bubbles rise through thin broth over the hot spots: three depth slices, a rim and a glint, dimmed by the depth absorption; more with Fire |
+| Waterline | The soup climbs each thing in a thin film with a lit lip; a thing that bobbed up keeps a wet, soup-tinted band that dries down at 2 cm a second. The mark rides in the rotation's w slot; the shader rebuilds w from xyz |
+| Swept glints | While the soup moves, the normal averages five taps along the flow (14 cm span at full speed), so the lamp's glints sweep along the swirl; calm soup keeps its crisp ripples |
+| Soft seams | The ridges between soups read over a 4-texel stencil from the capped thickness, not the raw weight, so a heavy pour has no crater or cliff |
+| Settling | Freshness rides in aux a: a pour or a stir sets it, it fades over about 4 s and moves with the soup. The marbling's relief follows it down to a tenth, so old swirls lie flat and keep only their colour |
+| Marble blend | The dye field blurs each frame with its four neighbours, so streaks melt into the broth over about a minute. Thick soup blends at a third of the rate; skin and glitter creep at half of it. Dev row `blend` (0 is off) |
+| Oil film | Fat runs out across the broth at four times the colour blend. A thin film calms the small ripples into a glassy slick, adds a golden sheen with a trace of rainbow, and shows a fine bright line at its edge. Dev row `oilFilm` (0 is off) |
+| Lamp | The key lamp sits lower (height 0.45, was 0.68) and dimmer (0.8), so its reflection lies on the far rim, not across the soup. Dev group Light: `keyUp` (height), `keyTurn` (bearing, degrees), `keyI` (strength), `keyWarm` (0 cool white, 0.5 today, 1 amber), `room` (the room's ambient and reflected light) |
+| Stiffness | The ripple field carries a held shape in z, apart from the waves. In thick soup a dent or a spoon stroke presses into it, with the pushed soup heaped round the edge; it levels out over about 6 s, in thin broth at once. Thick soup also rings less. Dev row `stiff` (0 is off) |
+| Reflections | The soup mirrors what stands over it: the inner iron wall (a dark band at the far side), the floating things and the stirrer's handle; the room otherwise. The gloss reads a little stronger than true Fresnel. The things show only at a glancing view (Fresnel over 0.05), so steep views skip their march. Dev toggle `mirror` |
+| Fat beads | Round eyes of oil, drawn from two jittered grids that turn with the soup (`spin`). Fresh, stirred soup shows the small grid; calm soup fades it out and grows the large one, so the eyes merge. Thin oil gives fewer eyes, not smaller ones. Each is a low glossy dome with a lamp spot, a dark meniscus and a bright lip. Dev row `beads` |
+| Bursts | A big pop throws a crown of six drops round its edge and a jet up the middle; any pop over 4.5 cm sends spatter wide. A drop that lands on the rim leaves a wet spot that dries to a pale crust ring in about 4 s and lasts about 20 s (`spats`, 12 at most). Thick soup keeps a crater where a glop burst. Drops show the soup's colour; the lamp's core is capped on them so they never bloom into sparks |
+| Boiling down | Above Fire 0.3 the soup steams down (`reduce`, 0 to 1, about 4 minutes at full fire): the level drops up to 12 cm, the soup turns darker and browner and closes up. The wall keeps a stain down to the new level and a crust ring at the old one. Each pour tops it up by 6%; a drain or Reset refills it. Dev row `reduce` (speed; 0 is off) |
+| Light patterns | Light through the moving surface gathers into wavy lines: brighter where the ripples focus it (the ripple field's curvature), plus a slow net of ridged noise that keeps a calm pot alive. Clear broth shows them in its body and on things under it; thick soup and skin hide them. Dev row `caustics` (0.6) |
+| Fire caps | The Dev fire rows level off before the flames flood the view (`softCap`): Fire spread bends toward 0.8, and power times bed area toward 1.8. Below 60% of each cap a value passes unchanged, so the defaults (spread 0.45, power 1, size 0.62) look as before. At every row's maximum the pot stays readable |
 | Film layers | Skin (aux b) sets on calm thick soup and cream, matte and wrinkled; wet broth; glassy fat with a faint oil-film rainbow |
 | Cooking | Things deepen, gloss and shrink a touch; a split thing clears in 0.45 s while its pieces grow in; melting pieces take on the soup's colour |
 | Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |
@@ -181,7 +201,29 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 |---|---|
 | Hands | Tap a thing to dunk it; drag a thing to pull it (it lifts, drips, leaves a wake); with a liquid picked, a drag pours along the path |
 | Things | 16 kinds: the ten, cleaner and chunkier, plus potato (cubes), leek (rings), garlic (cloves), chilli (sweats oil), bay leaf (never cooks through), noodles (melt) |
-| Tray | Mix, Things and Liquids groups (the shell's opt-in `group`), four across, larger icons with no plate |
+| Tray | Any, then Solids, Witchy, Odd and Liquids groups in the Bar v3 Ingredients sheet. Any throws only the Solids |
+| Witchy and Odd | Tom, 2026-11-17: ten witchy and ten odd things, two of each per round, bean `stimming-bont`. All twenty are in. Each has its own step in `ACT`; `AIM` runs after the springs; `free()` names the things on the soup |
+| Frog | Kicks now and then (legs out, a shove, a wake). Sometimes it hops onto the rim at the sides or back, turns to face the soup, sits 2.5 to 5 s and jumps back in; a hotter pot makes hops likelier. It croaks on each jump. A tap makes it kick away. It never cooks |
+| Candle stub | Floats upright and burns down over 90 s, then melts away. Its wax leaves a film of fat. The flame lights the soup, the things and the iron near it, and glints in the soup. A tap puts it out with a hiss and a puff; it lights again after 2.5 s |
+| Antimatter | A violet-white bead that hovers just above the soup and drops glitter. The first thing it touches goes with it in a white flash that lights the whole pot, a crater, a ring of drops and a crack and thump |
+| Tiny black hole | A black ball in a tilted gold disk, with a dark lens and a thin bright ring round it. The soup turns round it into a dip with two spiral arms; things near it spiral in and vanish with a falling note. It fades and pops in a small blue flash after 20 s |
+| Eyeball | Floats iris up and watches the spoon, else the pointer over the soup (3 s), else the viewer. It cooks milky in 35 s and then stares up. A faint pink cloud |
+| Toadstool | Stands upright. After 14 s, or at a tap, the cap bursts: violet spores fly up, a violet tint and glitter spread, a soft violet flash and a puff; then it melts away |
+| Moon pebble | A cratered grey ball with a faint glow. It tilts the whole soup (3 cm at the wall), and the tilt turns once in 7 s; things slide downhill. Moons add up |
+| Absolute-zero cube | Frost spreads from the cube as a crust of ice ferns with a ragged edge that glints. Things in the frost freeze still and no bubbles rise there. Fire thaws it back; at Fire 1 it shrinks. The cube melts in the heat |
+| Bone | A cartoon bone that never cooks. It boils out a pale stock that slowly thickens the soup |
+| Mandrake root | A tan root with legs, a leafy tuft and a small face. It shrieks as it lands and rolls now and then so its face comes up |
+| Bat wing | A dark violet scalloped wing on three finger bones. It flutters and lifts a little, then sinks and melts into a dark ink |
+| Newt | Orange with dark spots and a yellow belly, its tail swinging. It swims slow laps round the wall and turns away from the spoon |
+| Raven feather | Never sinks and rides the swirl. Near black, with a blue-violet sheen at a slant |
+| Moonstone | Sinks and lies under the soup. The soup above it glows cold blue and breathes slowly |
+| Spoonful of sun | The fire goes to full for 8 s and the pot glows orange for about 12 s; then the slider's fire comes back. Taking it out early gives the fire back too |
+| Rain cloud | Hangs 0.5 above the soup and drifts. It rains drops that ring the surface, with a soft patter, for 25 s |
+| Prism | A glass bar with rainbow edges. The light patterns in the soup turn to colours and grow stronger, and a spectrum falls on the soup away from the lamp |
+| Slow clock | A gold pocket watch whose hands turn with the pot's time. While it floats, everything in the pot runs at half speed: bubbles, ripples, swirl, flames. It ticks once a pot-second |
+| Magnet | A red horseshoe magnet. It draws the other things in to cluster round it |
+| Anti-gravity drop | A glowing green drop that falls up. After 0.7 s every thing on the soup lifts 22 to 42 cm, turns slowly in the air and drips, then falls back with a splash |
+| Thing lights | Up to six small lights (`uGlow`): flames, beads, the hole's disk and flashes. They light the soup, the things and the iron, glint in the soup and bloom where the ray passes them. High, a full pot of 16 plus the four: 20.2 to 21.1 ms a frame |
 | Spoon | Rests on the rim at the back when let go; taps the iron as it settles; clinks on a hard stir |
 | Air | Heat shimmer above the flames (output pass); steam parts under a passing hand |
 | Floor | Cobbles tilt one by one, warm to cool, ash in the joints; a depth-of-field blur away from the pot (Dev: Background blur) |

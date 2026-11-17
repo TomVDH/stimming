@@ -20,6 +20,11 @@
 /* The Add tray shows its things large enough to read at a glance. */
 .s2-grid { --chip: 44px; grid-template-columns: repeat(4, var(--chip)); }
 .s2-grid .s2-chip svg { width: 32px; height: 32px; }
+/* Bar v3: forty ingredients need a wider sheet, five across, so all four groups fit. */
+.sg-ui .sg-sheet--pick { width: min(1000px, calc(100% - 2 * var(--pad))); }
+/* On a phone, two across; a long name wraps onto a second line. */
+.sg-ui .sg-sheet--pick .sg-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.sg-ui .sg-sheet--pick .sg-opt { white-space: normal; text-align: left; line-height: 1.15; }
 /* The WebGPU fire is light on black: screen adds it over the pot. */
 .stage--cauldron canvas.gpufire { mix-blend-mode: screen; pointer-events: none; }
 .stage--cauldron { cursor: grab; }
@@ -103,12 +108,18 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- the tray: what a tap adds ---------- */
-// Any keeps the old round; the rest pick one solid or one liquid, in two groups.
+// Any keeps the old round; the rest pick one solid, one witchy or odd thing, or one liquid.
 const PICKS = [['mix', 'Any', ''],
   ['carrot', 'Carrot', 'Solids'], ['onion', 'Onion', 'Solids'], ['potato', 'Potato', 'Solids'], ['leek', 'Leek', 'Solids'],
   ['garlic', 'Garlic', 'Solids'], ['chilli', 'Chilli', 'Solids'], ['tomato', 'Tomato', 'Solids'], ['mushroom', 'Mushroom', 'Solids'],
   ['beet', 'Beetroot', 'Solids'], ['pea', 'Peas', 'Solids'], ['bay', 'Bay leaf', 'Solids'], ['noodles', 'Noodles', 'Solids'],
   ['fish', 'Fish', 'Solids'], ['star', 'Star', 'Solids'], ['duck', 'Duck', 'Solids'], ['boot', 'Boot', 'Solids'],
+  ['frog', 'Frog', 'Witchy'], ['candle', 'Candle stub', 'Witchy'], ['eye', 'Eyeball', 'Witchy'], ['toad', 'Toadstool', 'Witchy'],
+  ['bone', 'Bone', 'Witchy'], ['mandrake', 'Mandrake root', 'Witchy'], ['bat', 'Bat wing', 'Witchy'], ['newt', 'Newt', 'Witchy'],
+  ['feather', 'Raven feather', 'Witchy'], ['stone', 'Moonstone', 'Witchy'],
+  ['anti', 'Antimatter', 'Odd'], ['hole', 'Tiny black hole', 'Odd'], ['moon', 'Moon pebble', 'Odd'], ['ice', 'Absolute-zero cube', 'Odd'],
+  ['sun', 'Spoonful of sun', 'Odd'], ['cloud', 'Rain cloud', 'Odd'], ['prism', 'Prism', 'Odd'], ['clock', 'Slow clock', 'Odd'],
+  ['magnet', 'Magnet', 'Odd'], ['lift', 'Anti-gravity drop', 'Odd'],
   ['cream', 'Cream', 'Liquids'], ['ink', 'Squid ink', 'Liquids'], ['chillioil', 'Chilli oil', 'Liquids'], ['saffron', 'Saffron', 'Liquids']];
 let pick = 'mix';
 // Icon parts: a path and its gradient, top colour to bottom colour, in OKLCH.
@@ -137,6 +148,36 @@ const ART = {
   duck: [['M-14 3c0-5 7-7 11-6c0-7 3-10 8-10s7 3 7 7c0 2-1 4-3 5c3 1 5 3 4 8c-1 5-9 7-15 7c-8 0-12-4-12-11z', [0.92, 0.17, 98], [0.78, 0.17, 85]],
     ['M12-7l7 1.2-7 2.4z', [0.75, 0.18, 50], [0.62, 0.19, 42]], [circ(8, -8, 1.5), [0.2, 0, 0], [0.1, 0, 0]]],
   boot: [['M-10-15h10v16c7 0 14 2 14 8v3h-24z', [0.5, 0.06, 55], [0.3, 0.04, 50]], ['M-10 12h24v3.5h-24z', [0.26, 0.02, 50], [0.16, 0.01, 50]]],
+  frog: [['M-15 9c0-10 6-15 15-15s15 5 15 15c0 4-7 6-15 6s-15-2-15-6z', [0.74, 0.17, 140], [0.5, 0.15, 150]],
+    [circ(-7, -6, 5), [0.8, 0.16, 135], [0.6, 0.16, 140]], [circ(7, -6, 5), [0.8, 0.16, 135], [0.6, 0.16, 140]],
+    [circ(-7, -6.5, 2.2), [0.2, 0, 0], [0.1, 0, 0]], [circ(7, -6.5, 2.2), [0.2, 0, 0], [0.1, 0, 0]], ['M-6 6c3 2.5 9 2.5 12 0', [0.35, 0.1, 150], [0.3, 0.1, 150]]],
+  candle: [['M-7-2c0-1.2 1-2 2-2h10c1 0 2 0.8 2 2v15c0 1.2-1 2-2 2h-10c-1 0-2-0.8-2-2z', [0.95, 0.04, 92], [0.8, 0.05, 80]],
+    ['M-7-2h14v3c-2 0-2 4-4 4s-1-3-3-3-2 6-4 6-1-5-3-5z', [0.99, 0.02, 95], [0.9, 0.04, 90]],
+    ['M0-17c3 4 5 7 5 9a5 5 0 0 1-10 0c0-2 2-5 5-9z', [0.97, 0.14, 95], [0.75, 0.19, 55]]],
+  anti: [[circ(0, 0, 15) + circ(0, 0, 11.5), [0.8, 0.14, 300], [0.55, 0.18, 290]], [circ(0, 0, 8), [0.99, 0.04, 280], [0.78, 0.14, 290]]],
+  hole: [['M-16 1a16 6 0 1 0 32 0a16 6 0 1 0-32 0z', [0.9, 0.15, 80], [0.62, 0.2, 40]], [circ(0, 0, 8.5), [0.16, 0.01, 280], [0.04, 0, 0]],
+    ['M-16 1a16 6 0 0 0 32 0h-7.5a8.5 3.2 0 0 1-17 0z', [0.95, 0.12, 85], [0.7, 0.2, 45]]],
+  eye: [[circ(0, 0, 14), [0.98, 0.01, 90], [0.82, 0.03, 30]], [circ(3, -2, 7), [0.72, 0.13, 135], [0.5, 0.12, 150]], [circ(3.5, -2.5, 3.2), [0.2, 0, 0], [0.08, 0, 0]]],
+  toad: [['M-15 1c0-9 7-15 15-15s15 6 15 15z', [0.62, 0.21, 30], [0.48, 0.2, 26]], ['M-5 1h10l1.5 14h-13z', [0.95, 0.03, 85], [0.8, 0.04, 80]],
+    [circ(-7, -5, 2.4) + circ(2, -9, 2.2) + circ(8, -3, 2.6) + circ(-1, -3, 1.6), [0.98, 0.01, 90], [0.9, 0.02, 80]]],
+  moon: [[circ(0, 0, 14), [0.88, 0.01, 250], [0.6, 0.015, 250]], [circ(-5, -3, 3.5) + circ(5, 4, 2.6) + circ(4, -6, 1.8), [0.62, 0.01, 250], [0.55, 0.01, 250]]],
+  ice: [['M0-15l13 7-13 7-13-7z', [0.97, 0.04, 215], [0.9, 0.06, 215]], ['M-13-8l13 7v16l-13-7z', [0.85, 0.08, 220], [0.72, 0.1, 225]], ['M13-8l-13 7v16l13-7z', [0.72, 0.1, 225], [0.58, 0.11, 230]]],
+  bone: [['M-10-3h20v6h-20z', [0.96, 0.02, 85], [0.84, 0.03, 80]], [circ(-11, -4, 4.5), [0.96, 0.02, 85], [0.84, 0.03, 80]], [circ(-11, 4, 4.5), [0.94, 0.02, 85], [0.82, 0.03, 80]],
+    [circ(11, -4, 4.5), [0.96, 0.02, 85], [0.84, 0.03, 80]], [circ(11, 4, 4.5), [0.94, 0.02, 85], [0.82, 0.03, 80]]],
+  mandrake: [['M-8-2c0-5 3-7 8-7s8 2 8 7c0 4-2 6-3 9l-2 7h-2l-1-6-1 6h-2l-2-7c-1-3-5-5-5-9z', [0.78, 0.07, 72], [0.58, 0.07, 60]],
+    ['M-6-8c-3-5-1-8 2-7c0-4 4-4 4 0c3-2 6 1 2 7z', ...GREEN], [circ(-3.5, -1, 1.5) + circ(3.5, -1, 1.5) + circ(0, 4, 2.2), [0.2, 0.02, 40], [0.1, 0.01, 40]]],
+  bat: [['M-16-4c6 0 11-4 16-9c5 5 10 9 16 9c-3 3-3 7-3 11c-3-2-6-2-9 0c-1-3-2-5-4-5s-3 2-4 5c-3-2-6-2-9 0c0-4 0-8-3-11z', [0.36, 0.06, 310], [0.18, 0.04, 300]]],
+  newt: [['M-16 6c3 0 6-3 10-4s8-1 12-2c3-1 5-4 8-4s4 3 2 5-5 2-8 3c-4 1-8 3-12 4s-9 0-12-2z', [0.7, 0.17, 48], [0.55, 0.18, 38]],
+    ['M-2 3l-3 6M7 1l2 6', [0.6, 0.17, 40], [0.5, 0.17, 35]], [circ(13, -3, 1.4), [0.15, 0, 0], [0.1, 0, 0]]],
+  feather: [['M-14 13c2-12 12-24 29-27c-4 15-14 25-29 27z', [0.32, 0.06, 265], [0.12, 0.03, 285]], ['M-14 13l0.8 0.8 27-26.5-0.8-0.8z', [0.6, 0.02, 260], [0.5, 0.02, 260]]],
+  stone: [['M-13 1a13 9 0 1 0 26 0a13 9 0 1 0-26 0z', [0.88, 0.05, 235], [0.62, 0.09, 245]], [circ(-3, -2, 4.5), [0.98, 0.03, 230], [0.85, 0.08, 235]]],
+  sun: [[Array.from({ length: 8 }, (_, i) => { const a = i * Math.PI / 4, c = Math.cos(a), s = Math.sin(a); const f = v => v.toFixed(1); return `M${f(c * 16)} ${f(s * 16)}L${f(c * 11 - s * 3)} ${f(s * 11 + c * 3)}L${f(c * 11 + s * 3)} ${f(s * 11 - c * 3)}z`; }).join(''), [0.92, 0.17, 85], [0.75, 0.19, 60]],
+    [circ(0, 0, 10), [0.97, 0.15, 95], [0.78, 0.19, 55]]],
+  cloud: [['M-12 5a6 6 0 0 1 1-12a8 8 0 0 1 15-2a6 6 0 0 1 8 8a5 5 0 0 1-3 6z', [0.92, 0.01, 250], [0.68, 0.02, 250]], ['M-6 8l-2 6h2l2-6zM1 8l-2 6h2l2-6zM8 8l-2 6h2l2-6z', [0.75, 0.1, 235], [0.6, 0.12, 240]]],
+  prism: [['M0-14l14 24h-28z', [0.95, 0.03, 220], [0.75, 0.05, 230]], ['M0-6l6 11h-12z', [0.99, 0.01, 220], [0.9, 0.02, 220]], ['M9 0l8-2v3z', [0.7, 0.2, 30], [0.75, 0.15, 290]]],
+  clock: [[circ(0, 2, 12.5), [0.85, 0.13, 88], [0.62, 0.13, 70]], [circ(0, 2, 9.5), [0.98, 0.02, 90], [0.9, 0.03, 85]], ['M-0.8 2.5v-7h1.6v7zM-0.4 1.8l5.5 2.8-0.7 1.4-5.5-2.8z', [0.2, 0.01, 60], [0.1, 0, 0]], ['M-2.5-14h5v3.5h-5z', [0.85, 0.13, 88], [0.62, 0.13, 70]]],
+  magnet: [['M-12-14v12a12 12 0 0 0 24 0v-12h-7v12a5 5 0 0 1-10 0v-12z', [0.62, 0.21, 28], [0.46, 0.2, 25]], ['M-12-14h7v5h-7zM5-14h7v5h-7z', [0.92, 0.01, 250], [0.7, 0.01, 250]]],
+  lift: [['M0 15C8 5 12-1 12-6A12 12 0 0 0-12-6C-12-1-8 5 0 15z', [0.9, 0.15, 165], [0.7, 0.16, 185]], [circ(-4, -7, 3), [0.99, 0.05, 160], [0.95, 0.08, 165]]],
   cream: [[DROP, [0.99, 0.015, 90], [0.84, 0.03, 80]]],
   ink: [[DROP, [0.34, 0.05, 290], [0.12, 0.03, 290]]],
   chilli_oil: [[DROP, [0.7, 0.2, 38], [0.48, 0.2, 28]]],
@@ -190,6 +231,30 @@ const ui = initPage({ id: 'cauldron', signal: true, bar: {
     { type: 'slider', id: 'fireI', group: 'Fire', label: 'Power', min: 0, max: 3, step: 0.01, value: 1 },
     // Spread: how hard burning gas expands, pushing flames out round the belly.
     { type: 'slider', id: 'fireExp', group: 'Fire', label: 'Spread', min: 0, max: 3, step: 0.05, value: 0.45 },
+    // Density: how fast light dies in the soup, from clear broth to opaque.
+    { type: 'slider', id: 'clarity', group: 'Soup', label: 'Density', min: 0.1, max: 3, step: 0.01, value: 1 },
+    // Boil: how hard the heat stirs the surface. Glow: the fire seen through thin soup.
+    { type: 'slider', id: 'boil', group: 'Soup', label: 'Boil', min: 0, max: 3, step: 0.01, value: 1 },
+    { type: 'slider', id: 'soupGlow', group: 'Soup', label: 'Glow', min: 0, max: 3, step: 0.01, value: 1 },
+    // Skin look: 0 is today's skin, 1 a yellowed matte layer with torn edges.
+    { type: 'slider', id: 'skinLook', group: 'Soup', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
+    { type: 'slider', id: 'blend', group: 'Soup', label: 'Marble blend', min: 0, max: 20, step: 0.5, value: 5 },
+    { type: 'slider', id: 'oilFilm', group: 'Soup', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
+    { type: 'slider', id: 'stiff', group: 'Soup', label: 'Stiffness', min: 0, max: 1, step: 0.05, value: 1 },
+    { type: 'toggle', id: 'mirror', group: 'Soup', label: 'Reflections', value: true },
+    { type: 'slider', id: 'beads', group: 'Soup', label: 'Fat beads', min: 0, max: 1, step: 0.05, value: 1 },
+    // Boil-down: 1 takes minutes at full fire, 0 is off.
+    { type: 'slider', id: 'reduce', group: 'Soup', label: 'Boil-down', min: 0, max: 30, step: 0.5, value: 1 },
+    { type: 'slider', id: 'caustics', group: 'Soup', label: 'Light patterns', min: 0, max: 3, step: 0.05, value: 0.6 },
+    // Stirrer proposal: 0 spoon, 1 carved spoon, 2 iron ladle, 3 paddle.
+    { type: 'slider', id: 'tool', group: 'Stirrer', label: 'Kind', min: 0, max: 3, step: 1, value: 0 },
+    // The lamp over the pot, and the dim room round it.
+    { type: 'slider', id: 'keyUp', group: 'Light', label: 'Lamp height', min: 0.1, max: 1, step: 0.01, value: 0.45 },
+    { type: 'slider', id: 'keyTurn', group: 'Light', label: 'Lamp turn', min: -180, max: 180, step: 1, value: 0 },
+    { type: 'slider', id: 'keyI', group: 'Light', label: 'Lamp strength', min: 0, max: 2, step: 0.05, value: 0.8 },
+    // Warmth: 0 is a cool white, 0.5 today's lamp, 1 a deep amber.
+    { type: 'slider', id: 'keyWarm', group: 'Light', label: 'Lamp warmth', min: 0, max: 1, step: 0.01, value: 0.5 },
+    { type: 'slider', id: 'room', group: 'Light', label: 'Room', min: 0, max: 3, step: 0.05, value: 1 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -775,8 +840,144 @@ vec2 sdNoodles(vec3 p, float s) {
   d = min(d, sdTor(q - vec3(0.02, 0.012, 0.0), 0.075 + 0.012 * sin(b * 6.0 + 1.0), 0.019 + s));
   return vec2(d, 0.0);
 }
+// A frog: head at +x, two bulging eyes, folded hind legs.
+// s pushes the hind legs out: 0 sits, 0.012 kicks.
+vec2 sdFrog(vec3 p, float s) {
+  float e = clamp(s / 0.012, 0.0, 1.0);
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float d = sdEll(p - vec3(0.0, 0.01, 0.0), vec3(0.13, 0.08, 0.105));
+  d = smin(d, sdEll(p - vec3(0.1, 0.03, 0.0), vec3(0.08, 0.055, 0.085)), 0.04);
+  vec3 kn = vec3(-0.11 - 0.06 * e, -0.005, 0.11 - 0.03 * e), ft = vec3(-0.02 - 0.2 * e, -0.02, 0.13 - 0.06 * e);
+  float lg = min(sdCap(q, vec3(-0.04, 0.0, 0.08), kn, 0.03), sdCap(q, kn, ft, 0.018));
+  lg = smin(lg, sdEll(q - ft, vec3(0.045, 0.01, 0.035)), 0.015);
+  lg = min(lg, sdCap(q, vec3(0.07, -0.01, 0.07), vec3(0.11, -0.03, 0.11), 0.014));
+  d = smin(d, lg, 0.02);
+  float ey = length(q - vec3(0.115, 0.085, 0.048)) - 0.036;
+  return ey < d ? vec2(ey, 1.0) : vec2(d, 0.0);
+}
+// The candle's top: s burns it down to about half.
+float candleTop(float s) { return -0.09 + 0.18 * (1.0 - 0.45 * clamp(s / 0.012, 0.0, 1.0)); }
+// A candle stub: wax with a dished top and two drips, a wick, and a flame when lit.
+vec2 sdCandle(vec3 p, float s, float lit) {
+  float top = candleTop(s), h = (top + 0.09) * 0.5;
+  float d = sdCyl(p - vec3(0.0, -0.09 + h, 0.0), 0.052, h - 0.008) - 0.008;
+  d = max(d, -sdEll(p - vec3(0.0, top + 0.01, 0.0), vec3(0.042, 0.018, 0.042)));
+  d = smin(d, sdCap(p, vec3(0.055, top - 0.004, 0.012), vec3(0.06, top - 0.055, 0.016), 0.011), 0.012);
+  d = smin(d, sdCap(p, vec3(-0.03, top - 0.004, -0.047), vec3(-0.033, top - 0.035, -0.052), 0.01), 0.012);
+  float w = sdCap(p, vec3(0.0, top - 0.01, 0.0), vec3(0.004, top + 0.032, 0.0), 0.006);
+  vec2 r = w < d ? vec2(w, 1.0) : vec2(d, 0.0);
+  if (lit > 0.5) {
+    vec3 f = p - vec3(0.004 * sin(uTime * 9.0), top + 0.058, 0.004 * cos(uTime * 7.0));
+    float fl = smin(length(f) - 0.02, sdRCone(f, vec3(0.0), vec3(0.0, 0.05 + 0.007 * sin(uTime * 17.0), 0.0), 0.019, 0.002), 0.012);
+    if (fl < r.x) r = vec2(fl, 2.0);
+  }
+  return r;
+}
+// A tiny black hole: a dark ball in a thin, tilted ring of hot matter.
+vec2 sdHole(vec3 p) {
+  float d = length(p) - 0.045;
+  vec3 q = p; q.yz = rot2(0.6) * q.yz;
+  float ring = extrude(abs(length(q.xz) - 0.1) - 0.042, q.y, 0.0025, 0.002);
+  return ring < d ? vec2(ring, 1.0) : vec2(d, 0.0);
+}
+// An eyeball: it looks along +x, with a slight bulge for the cornea.
+vec2 sdEye(vec3 p) { return vec2(smin(length(p) - 0.065, length(p - vec3(0.032, 0.0, 0.0)) - 0.045, 0.012), 0.0); }
+// A toadstool, upright: a domed cap over gills, on a short stem. s swells the cap.
+vec2 sdToad(vec3 p, float s) {
+  float cap = max(sdEll(p - vec3(0.0, 0.02, 0.0), vec3(0.13, 0.08, 0.13) + s * 1.5), -(p.y - 0.02));
+  cap = smin(cap, sdTor(p - vec3(0.0, 0.022, 0.0), 0.11, 0.018), 0.02);
+  float stem = sdCap(p, vec3(0.0, -0.1, 0.0), vec3(0.0, 0.02, 0.0), 0.038);
+  return stem < cap ? vec2(stem, 1.0) : vec2(cap, 0.0);
+}
+// A moon pebble: a small grey ball with shallow craters.
+vec2 sdMoon(vec3 p) { return vec2(length(p) - 0.065 + 0.004 * smoothstep(0.58, 0.72, noise3(p * 28.0)), 0.0); }
+// A cartoon bone: a shaft with two knobs at each end.
+vec2 sdBone(vec3 p) {
+  vec3 q = vec3(abs(p.x), p.y, abs(p.z));
+  float d = sdCap(p, vec3(-0.12, 0.0, 0.0), vec3(0.12, 0.0, 0.0), 0.024);
+  return vec2(smin(d, length(q - vec3(0.13, 0.0, 0.03)) - 0.035, 0.02), 0.0);
+}
+// A mandrake: a fat root with a head at +x, two legs, a leafy tuft.
+vec2 sdMandrake(vec3 p) {
+  vec3 q = vec3(p.x, p.y, abs(p.z));
+  float d = smin(length(p - vec3(0.06, 0.0, 0.0)) - 0.065, sdRCone(p, vec3(-0.04, 0.0, 0.0), vec3(0.06, 0.0, 0.0), 0.055, 0.06), 0.03);
+  d = smin(d, sdCap(q, vec3(-0.05, 0.0, 0.025), vec3(-0.19, -0.01, 0.06), 0.02), 0.025);
+  float l = min(sdEll(q - vec3(0.17, 0.02, 0.03), vec3(0.06, 0.015, 0.03)), sdEll(p - vec3(0.18, 0.03, 0.0), vec3(0.07, 0.015, 0.025)));
+  return l < d ? vec2(l, 1.0) : vec2(d, 0.0);
+}
+// A bat wing, flat: a scalloped membrane on three finger bones.
+vec2 sdBat(vec3 p) {
+  vec2 q = p.xz;
+  float d2 = (length(q / vec2(0.21, 0.1)) - 1.0) * 0.1;
+  d2 = max(d2, -(length(q - vec2(-0.09, -0.11)) - 0.06));
+  d2 = max(d2, -(length(q - vec2(0.03, -0.12)) - 0.06));
+  d2 = max(d2, -(length(q - vec2(0.15, -0.09)) - 0.05));
+  d2 = max(d2, q.y - 0.06);
+  float d = extrude(d2, p.y, 0.004, 0.003);
+  vec3 r = p - vec3(0.0, 0.0, 0.055);
+  float b = min(sdCap(r, vec3(0.0), vec3(-0.15, 0.0, -0.13), 0.009), min(sdCap(r, vec3(0.0), vec3(-0.03, 0.0, -0.15), 0.009), sdCap(r, vec3(0.0), vec3(0.1, 0.0, -0.15), 0.009)));
+  b = min(b, sdCap(p, vec3(-0.2, 0.0, 0.055), vec3(0.2, 0.0, 0.055), 0.011));
+  return b < d ? vec2(b, 1.0) : vec2(d, 0.0);
+}
+// A newt: head at +x, a long body and tail; s swings the tail.
+vec2 sdNewt(vec3 p, float s) {
+  float sw = (clamp(s / 0.012, 0.0, 1.0) - 0.5) * 2.0;
+  vec3 q = p; q.z += sw * 1.4 * min(q.x, 0.0) * min(q.x, 0.0) - sw * 0.01;
+  float d = sdRCone(q, vec3(-0.24, 0.0, 0.0), vec3(0.04, 0.0, 0.0), 0.006, 0.03);
+  d = smin(d, sdEll(q - vec3(0.06, 0.0, 0.0), vec3(0.07, 0.025, 0.035)), 0.02);
+  d = smin(d, sdEll(p - vec3(0.13, 0.0, 0.0), vec3(0.04, 0.02, 0.03)), 0.015);
+  vec3 a = vec3(q.x, q.y, abs(q.z));
+  d = min(d, min(sdCap(a, vec3(0.08, -0.01, 0.025), vec3(0.1, -0.015, 0.06), 0.008), sdCap(a, vec3(0.0, -0.01, 0.025), vec3(-0.02, -0.015, 0.06), 0.008)));
+  return vec2(d, 0.0);
+}
+// A raven feather, flat: a long vane on its shaft.
+vec2 sdFeather(vec3 p) {
+  vec2 q = p.xz;
+  float w = 0.045 * (1.0 - pow(abs(q.x + 0.02) / 0.2, 2.0));
+  float d2 = max(abs(q.y - 0.01 * (1.0 - q.x * 4.0)) - max(w, 0.0), abs(q.x + 0.02) - 0.2);
+  float d = extrude(d2, p.y - 0.4 * q.y * q.y, 0.003, 0.002);
+  float r = sdCap(p, vec3(-0.27, 0.0, 0.0), vec3(0.19, 0.0, 0.0), 0.005);
+  return r < d ? vec2(r, 1.0) : vec2(d, 0.0);
+}
+// A prism: a glass bar of equal triangles along x.
+vec2 sdPrism(vec3 p) {
+  vec2 q = p.zy;
+  const float k = 1.7320508;
+  q.x = abs(q.x);
+  float d2 = max(q.x * k * 0.5 + q.y * 0.5, -q.y) - 0.03;
+  return vec2(extrude(d2, p.x, 0.09, 0.006), 0.0);
+}
+// A pocket watch, flat: a gold case, a crown and a ring.
+vec2 sdClock(vec3 p) {
+  float d = sdCyl(p, 0.062, 0.01) - 0.006;
+  d = smin(d, sdCyl((p - vec3(0.078, 0.0, 0.0)).yxz, 0.012, 0.012) - 0.003, 0.008);
+  d = min(d, sdTor((p - vec3(0.1, 0.0, 0.0)).yxz, 0.018, 0.005));
+  return vec2(d, 0.0);
+}
+// A horseshoe magnet, flat, open at +x; m 1 marks the bare tips.
+vec2 sdMagnet(vec3 p) {
+  vec2 q = p.xz;
+  float u = q.x < 0.0 ? abs(length(q) - 0.06) - 0.022 : abs(abs(q.y) - 0.06) - 0.022;
+  u = max(u, q.x - 0.085);
+  float d = extrude(u, p.y, 0.02, 0.006);
+  return vec2(d, step(0.055, q.x));
+}
+// A drop that falls up: round below, its point at +y.
+vec2 sdLift(vec3 p) { return vec2(smin(length(p) - 0.04, sdRCone(p, vec3(0.0), vec3(0.0, 0.07, 0.0), 0.03, 0.003), 0.02), 0.0); }
+// A cloud: a few soft balls, flat below.
+vec2 sdCloud(vec3 p) {
+  float d = length(p - vec3(0.0, 0.03, 0.0)) - 0.09;
+  d = smin(d, length(p - vec3(0.09, 0.0, 0.02)) - 0.07, 0.04);
+  d = smin(d, length(p - vec3(-0.09, 0.0, -0.01)) - 0.07, 0.04);
+  d = smin(d, length(p - vec3(0.02, 0.0, 0.08)) - 0.065, 0.04);
+  d = smin(d, length(p - vec3(-0.02, 0.0, -0.08)) - 0.065, 0.04);
+  return vec2(max(d, -p.y - 0.04), 0.0);
+}
 // Kinds: 0 carrot, 1 onion, 2 fish, 3 beetroot, 4 duck, 5 pea, 6 boot, 7 star, 8 tomato, 9 mushroom,
 // 16 potato, 17 leek, 18 garlic, 19 chilli, 20 bay leaf, 21 noodles,
+// 25 frog, 26 lit candle, 27 antimatter, 28 black hole, 29 candle without its flame,
+// 30 eyeball, 31 toadstool, 32 moon pebble, 33 ice cube, 34 bone, 35 mandrake, 36 sun, 37 cloud,
+// 38 bat wing, 39 newt, 40 prism, 41 clock, 42 feather, 43 moonstone, 44 magnet, 45 lift drop,
 // pieces 22 potato cube, 23 leek ring, 24 garlic clove,
 // then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
 vec2 sdKind(int k, vec3 p, float s) {
@@ -805,6 +1006,27 @@ vec2 sdKind(int k, vec3 p, float s) {
     case 22: return vec2(sdRBox(p, vec3(0.04), 0.014) - s, 0.0);
     case 23: return vec2(sdTor(p, 0.052, 0.017), 0.0);
     case 24: return vec2(smin(sdEll(p, vec3(0.05, 0.03, 0.034)), sdRCone(p, vec3(0.02, 0.0, 0.0), vec3(0.065, 0.0, 0.0), 0.02, 0.004), 0.02), 0.0);
+    case 25: return sdFrog(p, s);
+    case 26: return sdCandle(p, s, 1.0);
+    case 27: return vec2(length(p) - 0.034 * (1.0 + 0.06 * sin(uTime * 31.0)), 0.0);
+    case 28: return sdHole(p);
+    case 29: return sdCandle(p, s, 0.0);
+    case 30: return sdEye(p);
+    case 31: return sdToad(p, s);
+    case 32: return sdMoon(p);
+    case 33: return vec2(sdRBox(p, vec3(0.055 - s), 0.012), 0.0);
+    case 34: return sdBone(p);
+    case 35: return sdMandrake(p);
+    case 36: return vec2(length(p) - 0.05 - 0.002 * sin(uTime * 7.0 + p.x * 90.0), 0.0);
+    case 37: return sdCloud(p);
+    case 38: return sdBat(p);
+    case 39: return sdNewt(p, s);
+    case 40: return sdPrism(p);
+    case 41: return sdClock(p);
+    case 42: return sdFeather(p);
+    case 43: return vec2(sdEll(p, vec3(0.065, 0.035, 0.045)), 0.0);
+    case 44: return sdMagnet(p);
+    case 45: return sdLift(p);
   }
   return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
 }
@@ -834,7 +1056,7 @@ const DYE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uDye, uAux, uVel;
-uniform float uDt, uExt, uTime, uConv, uRelax, uStir;
+uniform float uDt, uExt, uTime, uConv, uRelax, uStir, uBlend;
 uniform vec4 uMean;
 uniform vec4 uPlume[4];
 uniform int uNE;
@@ -872,6 +1094,17 @@ vec4 sharp(sampler2D t, vec2 uv) {
   vec4 a = texelFetch(t, i, 0), b = texelFetch(t, i + ivec2(1, 0), 0), d = texelFetch(t, i + ivec2(0, 1), 0), e = texelFetch(t, i + ivec2(1, 1), 0);
   return clamp(r, min(min(a, b), min(d, e)), max(max(a, b), max(d, e)));
 }
+// Crack lines for the skin: near 1 on the edges between cells.
+float crack(vec2 q) {
+  vec2 c = floor(q), f = fract(q);
+  float d1 = 9.0, d2 = 9.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), r = g + vec2(hash12(c + g), hash12(c + g + 17.3)) - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  return 1.0 - smoothstep(0.0, 0.25, sqrt(d2) - sqrt(d1));
+}
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
   if (dot(p, p) > 1.0) { oDye = uMean; oAux = vec4(0.0); return; }
@@ -890,13 +1123,26 @@ void main() {
   vec2 o = vec2(0.09 / uExt * 0.5, 0.0);
   vec4 near = (texture(uDye, su + o) + texture(uDye, su - o) + texture(uDye, su + o.yx) + texture(uDye, su - o.yx)) * 0.25;
   d = mix(d, near, k);
+  // The marbling melts into the soup over time; thick soup holds it longer.
+  vec2 o2 = vec2(2.0 / float(textureSize(uDye, 0).x), 0.0);
+  vec4 nb = (texture(uDye, su + o2) + texture(uDye, su - o2) + texture(uDye, su + o2.yx) + texture(uDye, su - o2.yx)) * 0.25;
+  float bk = clamp(uDt * uBlend * mix(1.0, 0.35, T) * (0.5 + uConv), 0.0, 0.5);
+  d = mix(d, nb, bk);
+  // Oil runs out across the broth into a thin film; skin and glitter creep.
+  vec4 na = (texture(uAux, su + o2) + texture(uAux, su - o2) + texture(uAux, su + o2.yx) + texture(uAux, su - o2.yx)) * 0.25;
+  a.rb = mix(a.rb, na.rb, bk * 0.5);
+  a.g = mix(a.g, na.g, min(bk * 2.0, 0.6));
   d = mix(d, uMean, uRelax);
   a.g *= 1.0 - 1.5 * k;
   a.r *= 1.0 - 0.3 * k;
   // Skin: a thin film that sets on calm, thick soup; the stir and the boil tear it.
   a.b += uDt * 0.04 * T * (1.0 - uStir) * (1.0 - clamp(up * uConv, 0.0, 1.0));
-  a.b *= max(1.0 - uDt * (0.9 * uStir + 1.2 * up * uConv), 0.0);
+  // The stir tears it along cracks first, so it breaks into rafts.
+  float ck = uStir > 0.01 ? crack(p * 14.0 + vec2(uTime * 0.03, 0.0)) : 0.0;
+  a.b *= max(1.0 - uDt * (0.9 * uStir * mix(0.15, 8.0, ck) + 1.2 * up * uConv), 0.0);
   a.b = min(a.b, 1.0);
+  // Freshness (aux a): a pour or a stir makes it 1; it fades over seconds.
+  a.a = max(a.a * exp(-uDt / 4.0), uStir * 0.8);
   for (int i = 0; i < 16; i++) {
     if (i >= uNE) break;
     vec4 e0 = uE[i * 2], e1 = uE[i * 2 + 1];
@@ -905,6 +1151,7 @@ void main() {
     float sl = length(sv);
     if (sl > 1e-3) { vec2 ax = sv / sl; float al = dot(dd, ax); dd = (dd - ax * al) + ax * al / (1.0 + 2.5 * min(sl, 1.0)); }
     float w = e0.w * exp(-dot(dd, dd) / (e0.z * e0.z));
+    a.a = max(a.a, min(w * 3.0, 1.0));
     if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
     else if (e1.w < 1.5) a.g += w;
     else if (e1.w < 2.5) a.r += w;
@@ -919,25 +1166,45 @@ void main() {
 const RIP_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
-uniform sampler2D uRip;
+uniform sampler2D uRip, uDye;
 uniform vec2 uTexel;
-uniform float uExt, uDamp;
+uniform float uExt, uDamp, uTime, uShiver, uBoil, uStiff;
 uniform int uNI;
 uniform vec4 uImp[16];
+uniform vec4 uPl[4];
 out vec4 o;
+float hsh(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uExt;
   if (dot(p, p) > 0.99) { o = vec4(0.0); return; }
-  vec2 c = texture(uRip, vUv).xy;
-  float l = texture(uRip, vUv - vec2(uTexel.x, 0.0)).x, r = texture(uRip, vUv + vec2(uTexel.x, 0.0)).x;
-  float b = texture(uRip, vUv - vec2(0.0, uTexel.y)).x, t = texture(uRip, vUv + vec2(0.0, uTexel.y)).x;
-  float h = (2.0 * c.x - c.y + 0.42 * (l + r + b + t - 4.0 * c.x)) * uDamp;
+  vec3 c = texture(uRip, vUv).xyz;
+  vec3 L = texture(uRip, vUv - vec2(uTexel.x, 0.0)).xyz, R = texture(uRip, vUv + vec2(uTexel.x, 0.0)).xyz;
+  vec3 B = texture(uRip, vUv - vec2(0.0, uTexel.y)).xyz, U = texture(uRip, vUv + vec2(0.0, uTexel.y)).xyz;
+  float l = L.x, r = R.x, b = B.x, t = U.x;
+  // Thick soup is slow and heavy: waves crawl, ring less and dents hold.
+  float T = clamp((texture(uDye, vUv).a - 1.0) * 0.3, 0.0, 1.0);
+  float kv = mix(1.0, 0.82, T), c2 = 0.42 * mix(1.0, 0.3, T);
+  float h = (c.x + (c.x - c.y) * kv + c2 * (l + r + b + t - 4.0 * c.x)) * mix(uDamp, 0.996, T);
+  // The heat drives the surface: a fine shiver everywhere, heaves over the plumes.
+  float tk = floor(uTime * 12.0);
+  h += uShiver * (hsh(floor(vUv * 90.0) + tk * 13.1) - 0.5);
+  float up = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 d = p - uPl[i].xy; up += exp(-dot(d, d) / 0.04); }
+  h += uBoil * up * (hsh(floor(vUv * 20.0) + tk * 7.3) - 0.5);
+  // Set (z): a slow shape that stiff soup holds, apart from the waves.
+  // It levels out into its neighbours and sinks back; thin broth at once.
+  float st = T * uStiff;
+  float z = mix(c.z, (L.z + R.z + B.z + U.z) * 0.25, mix(0.25, 0.02, st));
+  z *= 1.0 - 1.0 / (120.0 * mix(0.25, 6.0, st));
   for (int i = 0; i < 16; i++) {
     if (i >= uNI) break;
     vec2 d = p - uImp[i].xy;
-    h += uImp[i].w * exp(-dot(d, d) / (uImp[i].z * uImp[i].z));
+    float rr = uImp[i].z * uImp[i].z, g = exp(-dot(d, d) / rr);
+    // Thick soup rings less; it holds the dent, with the soup heaped round it.
+    h += uImp[i].w * g * (1.0 - 0.6 * st);
+    z += uImp[i].w * st * 5.0 * (g - 0.25 * exp(-dot(d, d) / (4.0 * rr)));
   }
-  o = vec4(clamp(h, -0.2, 0.2), c.x, 0.0, 1.0);
+  o = vec4(clamp(h, -0.2, 0.2), c.x, clamp(z, -0.06, 0.06), 1.0);
 }`;
 
 /* ---------- GLSL: the layers at half size ---------- */
@@ -1221,19 +1488,39 @@ precision highp int;
 uniform vec3 uCam, uRight, uUp, uFwd;
 uniform float uFocal;
 uniform vec2 uPP, uRes;
-uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK;
+uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uClear;
+// The boil's plumes in world units, with their heat.
+uniform vec4 uPlumeS[4];
+uniform float uGlowK;
+// 0 keeps the skin close to the soup; 1 makes it its own layer.
+uniform float uSkinK, uFilmK, uRoomK, uMirror, uBeads, uSpin, uReduce, uCaus;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
-uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD;
+uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
 uniform int uNB;
 uniform vec4 uB[${NB * 3}];
+uniform int uNG;
+uniform vec4 uGlow[6], uGlowC[6];
+// The black hole: xz, dip depth and reach on the soup; then its centre and strength.
+uniform vec4 uHole, uHoleP;
+// The moon's tide: the soup's tilt, as height per world unit in x and z.
+uniform vec2 uTide;
+// The frost patch: centre xz, radius and strength, in world units.
+uniform vec4 uFrost;
+// The prism: xz and strength; the moonstone: xyz and strength.
+uniform vec4 uPrism, uStone;
 uniform int uNBub;
 uniform vec4 uBub[${NBUB}];
 uniform int uND;
 uniform vec4 uDrop[${ND}];
+// Rim spatter: xyz on the rim; w is the size in mm, plus the age as a fraction.
+uniform int uNSp;
+uniform vec4 uSpat[12];
 // A drop's own colour, linear; alpha 0 takes the soup's colour.
 uniform vec4 uDropC[${ND}];
 uniform vec4 uSpA, uSpB;
+// The stirrer: 0 today's spoon, 1 carved spoon, 2 iron ladle, 3 paddle.
+uniform int uTool;
 uniform int uMarch;
 // The background blur's widest disc, in back-layer texels.
 uniform float uDof;
@@ -1246,7 +1533,17 @@ ${SDF}
 vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
 // The stir dips the middle and lifts the edge; the funnel deepens the centre.
 float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
-float surfH(vec2 xz) { return uLevel + dipAt(min(length(xz) / uRS, 1.0)) + texture(uRip, soupUV(xz)).x; }
+float surfH(vec2 xz) {
+  vec2 r = texture(uRip, soupUV(xz)).xz;
+  float h = uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y + dot(uTide, xz);
+  // A black hole pulls a dip with two spiral arms that wind in.
+  if (uHole.z > 0.0) {
+    vec2 d = xz - uHole.xy;
+    float r2 = dot(d, d) / (uHole.w * uHole.w);
+    h -= uHole.z * exp(-r2) * (1.0 + 0.3 * sin(atan(d.y, d.x) * 2.0 + sqrt(r2) * 7.0 - uTime * 5.0));
+  }
+  return h;
+}
 float soupT(vec3 ro, vec3 rd) {
   float t = (uLevel - ro.y) / rd.y;
   for (int i = 0; i < 3; i++) t = (surfH((ro + rd * t).xz) - ro.y) / rd.y;
@@ -1255,9 +1552,11 @@ float soupT(vec3 ro, vec3 rd) {
 vec3 soupCol(vec2 xz) { vec4 d = texture(uDye, soupUV(xz)); return max(lab2lin(d.rgb / max(d.a, 1e-3)), 0.0); }
 
 /* the things */
+// The rotation's w comes back from xyz; the w slot holds the wet mark.
+float qw(vec4 Q) { return sqrt(max(1.0 - dot(Q.xyz, Q.xyz), 0.0)); }
 float sdBody(int i, vec3 p, out float m) {
   vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
-  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
   vec2 d = sdKind(int(M.x), lp, 0.012 * clamp(M.y, 0.0, 1.0));
   m = d.y;
   return d.x * M.w;
@@ -1286,7 +1585,7 @@ vec3 bodyN(int i, vec3 p) {
 /* light */
 // The lamp: a soft key from the upper back. The room: a dark sky, a warm haze low down.
 vec3 env(vec3 r, float rough) {
-  vec3 c = mix(vec3(0.04, 0.028, 0.03), vec3(0.008, 0.009, 0.02), smoothstep(-0.1, 0.6, r.y));
+  vec3 c = mix(vec3(0.04, 0.028, 0.03), vec3(0.008, 0.009, 0.02), smoothstep(-0.1, 0.6, r.y)) * uRoomK;
   // Firelight on the smoke all round, low down; below the horizon, the fire.
   c += uFireCol * uFlick * 0.1 * exp(-max(r.y, 0.0) * 4.0);
   c = mix(c, uFireCol * uFlick * 0.15, smoothstep(0.0, -0.4, r.y));
@@ -1296,7 +1595,7 @@ vec3 env(vec3 r, float rough) {
   c += uKeyCol * (pow(k, sh) * sh * 0.06 + pow(k, 16.0) * 0.04);
   return c;
 }
-vec3 skyAmb(vec3 n) { return mix(vec3(0.03, 0.02, 0.014), vec3(0.025, 0.028, 0.04), n.y * 0.5 + 0.5); }
+vec3 skyAmb(vec3 n) { return mix(vec3(0.03, 0.02, 0.014), vec3(0.025, 0.028, 0.04), n.y * 0.5 + 0.5) * uRoomK; }
 vec3 litSurf(vec3 n, vec3 v, vec3 alb, float rough, float f0) {
   vec3 h = normalize(uKeyDir + v);
   float nl = max(dot(n, uKeyDir), 0.0), nh = max(dot(n, h), 0.0);
@@ -1329,6 +1628,29 @@ vec3 litPBR(vec3 n, vec3 v, vec3 alb, float rough, vec3 f0, float metal) {
   vec3 col = alb * (1.0 - metal) * (uKeyCol * nl + skyAmb(n) * 3.0);
   col += uKeyCol * ggx(n, v, uKeyDir, rough, f0);
   return col + env(reflect(-v, n), rough) * envBRDF(f0, rough, nv);
+}
+// Small lights from the things: a flame, an antimatter bead, a flash.
+// xyz is the place, w the strength; rgb the colour, a the reach.
+vec3 glowAt(vec3 p, vec3 n) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 L = uGlow[i].xyz - p;
+    float d2 = dot(L, L), r = uGlowC[i].a;
+    s += uGlowC[i].rgb * uGlow[i].w * max(dot(n, L * inversesqrt(d2 + 1e-6)) * 0.7 + 0.3, 0.0) / (1.0 + d2 / (r * r));
+  }
+  return s;
+}
+// The glints of those lights in a wet surface.
+vec3 glowSpec(vec3 p, vec3 r) {
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 L = uGlow[i].xyz - p;
+    float d2 = dot(L, L), rr = uGlowC[i].a;
+    s += uGlowC[i].rgb * uGlow[i].w * pow(max(dot(r, L * inversesqrt(d2 + 1e-6)), 0.0), 900.0) * 1.2 / (1.0 + d2 / (rr * rr));
+  }
+  return s;
 }
 // Hammered iron: dimples on cells that wrap round the pot, and a casting grain.
 // part: 0 belly, 1 rim, 2 inner wall, 3 leg.
@@ -1410,6 +1732,16 @@ vec3 shadeWall(vec3 p, vec3 n, vec3 v) {
   col = mix(col, film, wet * 0.85);
   // The soup's glow lights the wall low down.
   col += soup * uSoupK * 0.08 * exp(-max(above, 0.0) / 0.15);
+  // Boiled down, the soup leaves a stain on the iron and a crust at the old level.
+  float rk = clamp(uReduce * 8.0, 0.0, 1.0);
+  if (rk > 0.0) {
+    float band = smoothstep(uLevel + 0.01, uLevel + 0.03, p.y) * (1.0 - smoothstep(-0.004, 0.01, p.y));
+    float crust = exp(-pow((p.y + 0.004) / 0.013, 2.0));
+    float bits = 0.7 + 0.6 * noise2(vec2(atan(p.z, p.x) * 60.0, p.y * 90.0));
+    col = mix(col, col * 0.6 + soup * 0.02, band * 0.7 * rk);
+    vec3 cr = litSurf(n, v, (soup * 0.8 + vec3(0.1, 0.07, 0.04)) * bits, 0.6, 0.02) + soup * uSoupK * 0.06;
+    col = mix(col, cr, crust * 0.85 * rk);
+  }
   return col;
 }
 
@@ -1423,73 +1755,260 @@ float glint(vec2 xz, float g, vec3 n, vec3 v) {
   float s = pow(max(dot(reflect(-v, fn), uKeyDir), 0.0), 40.0);
   return s * smoothstep(0.4, 0.0, length(f)) * (0.6 + 0.4 * sin(uTime * 5.0 + h * 50.0)) * 9.0;
 }
+vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, out vec3 emit);
+float sdTool(vec3 p, out float part);
+// Small bubbles rise through thin broth: three depth slices, one bubble a cell.
+vec3 risers(vec3 p, vec3 rr, vec3 sig, float heat) {
+  vec3 acc = vec3(0.0);
+  for (int k = 0; k < 3; k++) {
+    float ds = 0.03 + 0.05 * float(k);
+    vec2 g = (p + rr * (ds / max(-rr.y, 0.2))).xz * 13.0, c = floor(g), f = fract(g) - 0.5;
+    float h = hash12(c + float(k) * 31.7);
+    // The heat sets how many cells carry a bubble.
+    if (h > heat) continue;
+    float dep = 0.16 * (1.0 - fract(uTime * (0.5 + 0.6 * h) + h * 7.0));
+    float on = exp(-pow((dep - ds) / 0.025, 2.0));
+    vec2 o = (vec2(hash12(c + 3.3), hash12(c + 9.1)) - 0.5) * 0.5;
+    float r = 0.1 + 0.12 * hash12(c + 5.5), d = length(f - o) / r;
+    // A thin bright rim and a glint on the upper side.
+    float rim = smoothstep(1.0, 0.75, d) * (0.35 + 0.65 * smoothstep(0.5, 0.95, d));
+    float gl = smoothstep(0.35, 0.0, length(f - o - vec2(-0.3, 0.3) * r) / r);
+    acc += uKeyCol * (0.35 * rim + 0.9 * gl) * on * exp(-sig * ds * 2.0);
+  }
+  return acc;
+}
+float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r);
+// What the soup mirrors: the iron wall and rim, the things, the stirrer; else the room.
+vec3 mirror(vec3 p, vec3 r, float rough, float F) {
+  vec3 c = env(r, rough);
+  if (uMirror < 0.5) return c;
+  float tEnd = 3.0;
+  // The inner wall up to the rim's top, dark iron warmed by the fire.
+  float tw = iEll(p, r, vec3(0.0, BCY, 0.0), RI).y;
+  vec3 qw0 = p + r * tw;
+  if (tw > 0.0 && qw0.y < RY + RT) {
+    tEnd = tw;
+    vec3 nw = -normalize((qw0 - vec3(0.0, BCY, 0.0)) / (RI * RI));
+    c = vec3(0.016, 0.015, 0.014) * (uKeyCol * max(dot(nw, uKeyDir), 0.0) + skyAmb(nw) * 3.0 + uFireCol * uFlick * 0.12);
+    c += env(reflect(r, nw), 0.35) * 0.05;
+  }
+  // The stirrer's handle, as a plain stick.
+  if (uSpB.w > 0.0) {
+    float ts = iCapsule(p, r, uSpA.xyz, uSpB.xyz, 0.025);
+    if (ts > 0.0 && ts < tEnd) {
+      tEnd = ts;
+      vec3 sc = uTool == 2 ? vec3(0.02) : lch(0.45, 0.06, 60.0);
+      c = sc * (uKeyCol * 0.35 + skyAmb(vec3(0.0, -1.0, 0.0)) * 3.0 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.2);
+    }
+  }
+  // The things, seen from below: their lit colour, darker on the underside.
+  // Only a glancing view shows them, so steep views skip the march.
+  if (gNc > 0 && F > 0.05) {
+    float t = 0.01;
+    for (int s = 0; s < 12; s++) {
+      if (t > min(tEnd, 0.6)) break;
+      vec3 q = p + r * t;
+      int id; float m;
+      float d = sdAll(q, id, m);
+      if (d < 0.003) {
+        vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
+        float ro_; vec3 em;
+        vec3 a = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
+        c = a * (uKeyCol * 0.25 + skyAmb(vec3(0.0, -1.0, 0.0)) * 3.0 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.35) + em;
+        break;
+      }
+      t += max(d, 0.006);
+    }
+  }
+  return c;
+}
 vec3 shadeSoup(vec3 p, vec3 rd) {
   vec2 uv = soupUV(p.xz);
   vec4 dy = texture(uDye, uv), ax = texture(uAux, uv);
   vec3 alb = max(lab2lin(dy.rgb / max(dy.a, 1e-3)), 0.0);
+  // A soup boiled down turns darker and browner.
+  alb = mix(alb, alb * vec3(0.72, 0.52, 0.34), uReduce * 0.55);
   float T = clamp((dy.a - 1.0) * 0.3, 0.0, 1.0);
   // The normal: the dip, the ripples and the bubbles' rings.
   // Two ripple texels each way: smoother normals, no facets.
   float e = uRS * uExt * 4.0 / 256.0;
   float hx = surfH(p.xz + vec2(e, 0.0)) - surfH(p.xz - vec2(e, 0.0));
   float hz = surfH(p.xz + vec2(0.0, e)) - surfH(p.xz - vec2(0.0, e));
+  // A moving soup smears its ripples along the flow, so glints streak.
+  vec2 fv = texture(uVel, uv).xy;
+  float sp = length(fv), st = smoothstep(0.05, 0.6, sp);
+  if (st > 0.01) {
+    vec2 o = fv / sp * 0.07 * st;
+    for (int k = -2; k <= 2; k++) {
+      if (k == 0) continue;
+      vec2 q = p.xz + o * float(k);
+      hx += surfH(q + vec2(e, 0.0)) - surfH(q - vec2(e, 0.0));
+      hz += surfH(q + vec2(0.0, e)) - surfH(q - vec2(0.0, e));
+    }
+    hx /= 5.0; hz /= 5.0;
+  }
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
+  // A thin oil film calms the small ripples into a slick.
+  float slick = smoothstep(0.02, 0.12, ax.g) * uFilmK;
+  n = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.65 * slick));
   // Thick soup shows its swirls as low ridges.
-  float e2 = 1.5 / 512.0;
+  // A wide stencil keeps each step between two soups a soft slope.
+  float e2 = 4.0 / 512.0;
   vec4 dxp = texture(uDye, uv + vec2(e2, 0.0)), dxm = texture(uDye, uv - vec2(e2, 0.0));
   vec4 dzp = texture(uDye, uv + vec2(0.0, e2)), dzm = texture(uDye, uv - vec2(0.0, e2));
-  float wx = dxp.a - dxm.a, wz = dzp.a - dzm.a;
+  // The thickness, not the raw weight, so a heavy pour gives no cliff.
+  float wx = clamp((dxp.a - 1.0) * 0.3, 0.0, 1.0) - clamp((dxm.a - 1.0) * 0.3, 0.0, 1.0);
+  float wz = clamp((dzp.a - 1.0) * 0.3, 0.0, 1.0) - clamp((dzm.a - 1.0) * 0.3, 0.0, 1.0);
   // Where two colours meet, the seam stands up a little: marbling, not a flat wash.
   float lx = dxp.r / max(dxp.a, 1e-3) - dxm.r / max(dxm.a, 1e-3), lz = dzp.r / max(dzp.a, 1e-3) - dzm.r / max(dzm.a, 1e-3);
-  n = normalize(n - vec3(wx, 0.0, wz) * 0.08 * T - vec3(lx, 0.0, lz) * (0.05 + 0.1 * T));
+  // Fresh marbling stands up; it settles flat as it ages.
+  float relief = mix(0.1, 1.0, smoothstep(0.05, 0.5, ax.a));
+  n = normalize(n - (vec3(wx, 0.0, wz) * 0.05 + vec3(lx, 0.0, lz) * (0.03 + 0.05 * T)) * relief);
   // The skin wrinkles as the soup under it moves.
-  float skin = smoothstep(0.15, 0.6, ax.b);
+  float skin = smoothstep(mix(0.15, 0.3, uSkinK), mix(0.6, 0.42, uSkinK), ax.b);
+  // A raft's torn edge stands up as a low lip.
+  vec4 axp = texture(uAux, uv + vec2(e2, 0.0)), axm = texture(uAux, uv - vec2(e2, 0.0));
+  vec4 azp = texture(uAux, uv + vec2(0.0, e2)), azm = texture(uAux, uv - vec2(0.0, e2));
+  float sx = axp.b - axm.b, sz = azp.b - azm.b;
+  // The oil film's edge: where the fat thins out fast.
+  float fedge = smoothstep(0.01, 0.06, length(vec2(axp.g - axm.g, azp.g - azm.g))) * uFilmK;
+  n = normalize(n - vec3(sx, 0.0, sz) * mix(0.15, 0.5, uSkinK));
   if (skin > 0.01) {
     vec2 wq = p.xz * 38.0;
     float w0 = noise2(wq), wxk = noise2(wq + vec2(0.3, 0.0)) - w0, wzk = noise2(wq + vec2(0.0, 0.3)) - w0;
-    n = normalize(n - vec3(wxk, 0.0, wzk) * 0.5 * skin);
+    n = normalize(n - vec3(wxk, 0.0, wzk) * mix(0.5, 0.9, uSkinK) * skin);
   }
   vec3 v = -rd;
   float nv = max(dot(n, v), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
   // The body: lit from above and warm from its own heat.
   vec3 body = alb * (uKeyCol * 0.4 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42 + vec3(0.02, 0.022, 0.03));
-  // Things under the surface show through thin broth.
-  if (gNc > 0) {
-    vec3 rr = refract(rd, n, 0.75);
-    for (int s = 1; s <= 3; s++) {
-      float dep = float(s) * float(s) * 0.014;
-      int id; float m;
-      float d = sdAll(p + rr * dep, id, m);
-      if (d < 0.004) {
-        vec4 M = uB[id * 3 + 2];
-        vec3 c =int(M.x) == 4 ? lch(0.86, 0.16, 96.0) : int(M.x) == 7 ? lch(0.84, 0.15, 90.0) : alb * 1.4;
-        body = mix(body, c * alb * 2.0 * (uSoupK * 0.4 + 0.08), exp(-dep * mix(14.0, 60.0, T)) * 0.75);
+  // Light dies with depth in the soup: thin broth shows what lies under it.
+  // The soup's own hue sets the tint; thick soup, skin and fat close it up.
+  float mx = max(max(alb.r, alb.g), max(alb.b, 1e-3));
+  float dens = uClear * mix(9.0, 90.0, T) * (1.0 + 5.0 * skin + 1.5 * smoothstep(0.3, 0.6, ax.g)) * (1.0 + uReduce);
+  vec3 sig = dens * (0.35 + 0.8 * -log(clamp(alb / mx, 0.04, 1.0)));
+  vec3 rr = refract(rd, n, 0.75);
+  // The ray ends on the iron, or on a thing or the spoon's bowl on its way.
+  float tb = iEll(p, rr, vec3(0.0, BCY, 0.0), RI).y;
+  tb = tb > 0.0 ? tb : 1.0;
+  float tEnd = min(tb, 4.0 / max(dens * 0.35, 1e-3));
+  vec3 uAlb = vec3(0.016, 0.015, 0.014);
+  float tu = tb;
+  if (gNc > 0 || uSpB.w > 0.0) {
+    float t = 0.004;
+    for (int s = 0; s < 14; s++) {
+      if (t > tEnd) break;
+      vec3 q = p + rr * t;
+      int id = -1; float m = 0.0, d = 1e9;
+      if (gNc > 0) d = sdAll(q, id, m);
+      float tp, ds = uSpB.w > 0.0 ? (uTool > 0 ? sdTool(q, tp) : sdEll(q - uSpA.xyz + vec3(0.0, 0.03, 0.0), vec3(0.13, 0.035, 0.1))) : 1e9;
+      if (min(d, ds) < 0.002) {
+        tu = t;
+        if (ds < d) uAlb = lch(0.5, 0.07, 65.0);
+        else {
+          vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
+          float ro_; vec3 em;
+          uAlb = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
+          uAlb = mix(uAlb, alb, smoothstep(1.0, 1.8, M.y));
+        }
         break;
       }
+      t += max(min(d, ds) * 0.9, 0.006);
     }
   }
-  // The spoon's bowl under the surface.
-  if (uSpB.w > 0.0) {
-    vec3 rr = refract(rd, n, 0.75);
-    for (int s = 1; s <= 3; s++) {
-      float dep = float(s) * 0.03;
-      vec3 q = p + rr * dep - uSpA.xyz + vec3(0.0, 0.03, 0.0);
-      if (sdEll(q, vec3(0.13, 0.035, 0.1)) < 0.0) { body = mix(body, lch(0.5, 0.07, 65.0) * alb * 1.6 * (uSoupK * 0.4 + 0.08), exp(-dep * mix(12.0, 50.0, T)) * 0.7); break; }
-    }
+  // Light reaches the hidden thing down from the top, then climbs back to the eye.
+  vec3 qu = p + rr * tu;
+  vec3 Tr = exp(-sig * (tu + max(p.y - qu.y, 0.0)));
+  vec3 uLit = uAlb * (uKeyCol * 0.45 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.5);
+  // Light through the moving surface gathers into bright, wavy lines below it.
+  // Clear broth shows them in its body; things under it catch them too.
+  if (uCaus > 0.0 && T < 0.95) {
+    vec2 cq = (tu < tb ? qu.xz : p.xz) + uKeyDir.xz * 0.08;
+    float ce = 0.012, h0 = surfH(cq);
+    float lap = surfH(cq + vec2(ce, 0.0)) + surfH(cq - vec2(ce, 0.0)) + surfH(cq + vec2(0.0, ce)) + surfH(cq - vec2(0.0, ce)) - 4.0 * h0;
+    float foc = clamp(-lap * 900.0, -0.5, 1.5);
+    // A slow net of ridges keeps a calm pot alive.
+    float r1 = 1.0 - abs(noise2(cq * 11.0 + vec2(uTime * 0.21, uTime * 0.13)) * 2.0 - 1.0);
+    float r2 = 1.0 - abs(noise2(cq * 13.0 - vec2(uTime * 0.17, -uTime * 0.19)) * 2.0 - 1.0);
+    float net = pow(r1 * r2, 4.0);
+    float cz = uCaus * (1.0 + uPrism.w) * (foc + 1.4 * net) * (1.0 - T);
+    // A prism in the pot splits the light patterns into colours.
+    vec3 rb = clamp(abs(fract(net * 1.5 + foc * 0.6 + dot(cq, vec2(2.0, 1.3)) + vec3(0.0, 0.333, 0.667)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+    uLit *= 1.0 + cz * mix(vec3(1.0), rb * 2.2, uPrism.w);
+    body *= 1.0 + cz * 0.3 * (1.0 - skin);
   }
+  body = body * (1.0 - Tr) + uLit * Tr;
+  // The fire glows up through the soup over the plumes and the hot base.
+  // The soup's hue filters the glow; thick soup hides it.
+  float hot = 0.35 * exp(-dot(p.xz, p.xz) / 0.3);
+  for (int i = 0; i < 4; i++) { vec2 d = p.xz - uPlumeS[i].xy; hot += uPlumeS[i].z * exp(-dot(d, d) / 0.07); }
+  vec3 glowC = uFireCol * mix(vec3(1.0), alb / mx, 0.6);
+  body += glowC * uFlick * hot * exp(-dens * 0.05) * uGlowK;
+  if (uFire > 0.05) body += risers(p, rr, sig, min(hot * uFire, 1.0) * 0.6);
   // A set skin is paler and duller than the broth under it.
   body = mix(body, body * 1.18 + alb * 0.03, skin * 0.6);
+  // As its own layer, the skin is a yellowed, matte film lit from above.
+  vec3 skinC = mix(alb, lch(0.86, 0.07, 88.0), 0.55);
+  vec3 skinB = skinC * (uKeyCol * 0.55 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.85, 0.65) * 0.38 + skyAmb(n) * 2.0);
+  body = mix(body, skinB, skin * 0.9 * uSkinK);
   vec3 col = body * (1.0 - F);
   // Three films, three roughnesses: glassy fat, wet broth, a matte skin.
   float fat = smoothstep(0.3, 0.42, ax.g);
   float rough = mix(mix(0.045, 0.09, T) * (1.0 - 0.45 * fat), 0.34, skin * (1.0 - fat));
   // The gloss reads a touch stronger than true Fresnel, so the surface looks wet.
-  col += env(reflect(rd, n), rough) * (F + 0.025) * (1.0 - 0.5 * skin);
+  vec3 refl = mirror(p, reflect(rd, n), rough, F);
+  col += refl * (F + 0.025 + 0.04 * uMirror) * (1.0 - mix(0.5, 0.85, uSkinK) * skin);
   // Fat floats in golden, glassy pools; thin oil shows a faint rainbow at a glance.
   vec3 film = 0.5 + 0.5 * cos(6.2832 * (ax.g * 2.2 + (1.0 - nv) * 1.4) + vec3(0.0, 2.1, 4.2));
-  col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  col += fat * (refl * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  // A thin film: a golden mirror sheen with a trace of oil rainbow.
+  float thin = slick * (1.0 - fat);
+  vec3 bow = 0.5 + 0.5 * cos(6.2832 * (ax.g * 6.0 + (1.0 - nv) * 0.8) + vec3(0.0, 2.1, 4.2));
+  col += thin * env(reflect(rd, n), 0.015) * (0.05 + F) * mix(vec3(1.0, 0.82, 0.5), bow, 0.3);
+  // The film's edge shows as a fine bright line.
+  col += fedge * env(reflect(rd, normalize(n + vec3(0.0, 0.3, 0.0))), 0.03) * 0.25;
   col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
+  // Fat beads: round eyes of oil that turn with the soup.
+  // A stir splits them small; calm soup merges them into fewer, bigger eyes.
+  float fz = smoothstep(0.02, 0.2, ax.g) * uBeads * (1.0 - skin);
+  if (fz > 0.01) {
+    float ca = cos(uSpin), sa = sin(uSpin);
+    vec2 sp2 = mat2(ca, -sa, sa, ca) * p.xz;
+    float fresh = smoothstep(0.1, 0.6, ax.a);
+    vec3 bc = vec3(0.0);
+    float bw = 0.0;
+    for (int L = 0; L < 2; L++) {
+      float sc = L == 0 ? 22.0 : 10.0;
+      float grow = (L == 0 ? fresh : 1.0 - fresh) * (0.6 + 0.4 * fz);
+      if (grow < 0.02) continue;
+      vec2 q = sp2 * sc + float(L) * 17.0, ci = floor(q), cf = fract(q);
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 g = vec2(i, j), id = ci + g;
+        float h1 = hash12(id + 3.7), h2 = hash12(id + 9.1), h3 = hash12(id + 5.3);
+        // Not every cell holds a bead; more do where the fat lies thick.
+        if (h3 > 0.15 + 0.75 * fz) continue;
+        vec2 o = g + 0.2 + 0.6 * vec2(h1, h2) - cf;
+        float r = (0.14 + 0.26 * hash12(id + 1.9)) * grow;
+        float d = length(o) / max(r, 1e-3);
+        if (d < 1.0) {
+          // A low dome: the normal leans out toward the bead's edge.
+          vec2 lo = -o / max(r, 1e-3);
+          vec3 bn = normalize(n + vec3(lo.x, 0.0, lo.y) * 0.9 * d);
+          float bF = 0.04 + 0.96 * pow(1.0 - max(dot(bn, v), 0.0), 5.0);
+          vec3 hb = normalize(uKeyDir + v);
+          vec3 c = alb * vec3(1.05, 0.88, 0.5) * 0.12 + env(reflect(rd, bn), 0.02) * (bF + 0.08);
+          c += uKeyCol * pow(max(dot(bn, hb), 0.0), 300.0) * 3.0;
+          // The edge: a dark meniscus, then a thin bright lip.
+          float e = smoothstep(0.7, 0.95, d);
+          c = c * (1.0 - 0.35 * e) + env(reflect(rd, normalize(n - vec3(lo.x, 0.0, lo.y) * 0.5)), 0.05) * 0.15 * smoothstep(0.9, 1.0, d);
+          float a = 1.0 - smoothstep(0.92, 1.0, d);
+          bc = mix(bc, c, a); bw = max(bw, a);
+        }
+      }
+    }
+    col = mix(col, bc + col * 0.55, bw * 0.85);
+  }
   // A dark ring hugs each floating thing, then a thin bright lip.
   if (gNc > 0) {
     int id; float m;
@@ -1500,6 +2019,45 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // The meniscus at the iron wall.
   float rw = length(p.xz) / uRS;
   col *= 1.0 - 0.6 * smoothstep(0.9, 1.0, rw);
+  // A high boil leaves a pale foam line at the wall, in clumps.
+  float fb = smoothstep(0.8, 0.95, rw) * (1.0 - smoothstep(0.99, 1.0, rw)) * smoothstep(0.35, 0.9, uFire);
+  if (fb > 0.0) {
+    float cells = noise2(p.xz * 40.0);
+    float clump = noise2(vec2(atan(p.z, p.x) * 9.0 + uTime * 0.05, rw * 24.0)) + 0.25 * cells;
+    float foam = fb * smoothstep(0.35, 0.75, clump) * mix(0.7, 1.2, T);
+    vec3 fc = (alb * 0.6 + vec3(0.3, 0.28, 0.25)) * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.35 + skyAmb(n) * 2.0);
+    col = mix(col, fc * (0.9 + 0.2 * cells), clamp(foam, 0.0, 1.0) * 0.9);
+  }
+  // Frost: a pale crust of ice ferns that glints, with a ragged edge.
+  if (uFrost.w > 0.0) {
+    vec2 d = p.xz - uFrost.xy;
+    float edge = uFrost.z * (0.82 + 0.3 * noise2(vec2(atan(d.y, d.x) * 2.5, 0.0) + uFrost.xy * 7.0));
+    float kf = smoothstep(edge, edge - 0.05, length(d)) * uFrost.w;
+    if (kf > 0.0) {
+      float fern = noise2(p.xz * 45.0) * 0.6 + noise2(p.xz * 120.0) * 0.4;
+      vec3 fn = normalize(vec3(noise2(p.xz * 90.0) - 0.5, 2.5, noise2(p.xz * 90.0 + 7.0) - 0.5));
+      vec3 fa = mix(vec3(0.62, 0.72, 0.82), vec3(0.93, 0.96, 1.0), smoothstep(0.35, 0.75, fern));
+      vec3 fc = litSurf(fn, -rd, fa, 0.42, 0.04);
+      fc += vec3(0.9, 0.95, 1.0) * pow(hash12(floor(p.xz * 260.0)), 60.0) * 2.0 * max(dot(fn, uKeyDir), 0.0);
+      // The ice thins to clear at its edge, so the soup shows through.
+      col = mix(col, fc, kf * mix(0.45, 0.95, smoothstep(edge - 0.02, edge - 0.12, length(d))));
+    }
+  }
+  // The prism throws a spectrum on the soup, away from the lamp.
+  if (uPrism.w > 0.0) {
+    vec2 dir = -normalize(uKeyDir.xz + 1e-4), pr = vec2(-dir.y, dir.x), d = p.xz - uPrism.xy;
+    float al = dot(d, dir), ac = dot(d, pr), wd = 0.02 + al * 0.18;
+    if (al > 0.04 && al < 0.45 && abs(ac) < wd) {
+      vec3 sp = clamp(abs(fract(ac / wd * 0.42 + 0.5 + vec3(0.0, 0.333, 0.667)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+      col += sp * 0.5 * uPrism.w * (1.0 - al / 0.45) * smoothstep(1.0, 0.7, abs(ac) / wd) * (1.0 - 0.7 * T);
+    }
+  }
+  // The moonstone lights the soup from below, cold blue, slowly breathing.
+  if (uStone.w > 0.0) {
+    vec3 d = p - uStone.xyz;
+    col += lch(0.7, 0.13, 240.0) * uStone.w * exp(-dot(d, d) / 0.035) * (0.75 + 0.25 * sin(uTime * 1.3)) * (1.0 - 0.6 * T);
+  }
+  if (uNG > 0) col += alb * glowAt(p, n) * 0.8 + glowSpec(p, reflect(rd, n));
   return col;
 }
 vec3 shadeBubble(vec3 p, vec3 n, vec3 rd, vec4 b) {
@@ -1636,6 +2194,147 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
   } else if (k == 23) {
     c = mix(lch(0.9, 0.05, 110.0), lch(0.68, 0.12, 132.0), smoothstep(0.044, 0.06, length(p.xz)));
     rough = 0.2;
+  } else if (k == 25) {
+    // Frog: wet green skin with dark spots, a pale belly, gold eyes.
+    c = lch(0.55, 0.16, 140.0) * (0.92 + 0.12 * wob);
+    c = mix(c, lch(0.34, 0.1, 152.0), smoothstep(0.55, 0.6, noise3(p * 34.0 + sd)) * 0.85);
+    c = mix(c, lch(0.86, 0.07, 105.0), smoothstep(-0.01, -0.04, p.y));
+    rough = 0.16;
+    if (m > 0.5) {
+      // A gold eye with a wide black slit that looks up and forward.
+      vec3 q = normalize(vec3(p.x, p.y, abs(p.z)) - vec3(0.115, 0.085, 0.048));
+      vec3 lk = normalize(vec3(0.75, 0.6, 0.28));
+      float a = dot(q, lk);
+      vec3 sd2 = normalize(cross(lk, vec3(0.0, 1.0, 0.0)));
+      c = mix(lch(0.5, 0.13, 140.0), lch(0.8, 0.15, 86.0), smoothstep(0.35, 0.45, a));
+      c = mix(c, vec3(0.003), smoothstep(0.82, 0.86, a) * smoothstep(0.32, 0.22, abs(dot(q, sd2))));
+      rough = 0.04;
+    }
+  } else if (k == 26 || k == 29) {
+    // Candle: creamy wax that glows warm near a lit flame; a black wick.
+    float top = candleTop(0.012 * cook);
+    c = lch(0.92, 0.035, 88.0) * (0.95 + 0.06 * wob);
+    rough = 0.38;
+    if (k == 26) emit = lch(0.8, 0.13, 70.0) * 0.35 * smoothstep(top - 0.06, top, p.y);
+    if (m > 0.5) { c = lch(0.14, 0.01, 60.0); rough = 0.7; if (k == 26) emit = lch(0.7, 0.2, 40.0) * smoothstep(top + 0.015, top + 0.03, p.y); }
+    if (m > 1.5) {
+      // The flame: blue at its root, then gold to a white heart.
+      float u = clamp((p.y - top - 0.04) / 0.07, 0.0, 1.0);
+      c = vec3(0.0);
+      emit = mix(lch(0.55, 0.14, 262.0) * 0.8, mix(lch(0.97, 0.08, 95.0) * 3.0, lch(0.78, 0.19, 58.0) * 2.0, u), smoothstep(0.0, 0.25, u)) * (0.9 + 0.1 * sin(uTime * 23.0));
+    }
+  } else if (k == 30) {
+    // Eyeball: wet white, red veins at the back, a green iris and a black pupil.
+    vec3 q = normalize(p);
+    float a = q.x;
+    c = lch(0.95, 0.02, 80.0);
+    float vn = abs(noise2(vec2(atan(q.z, q.y) * 5.0, a * 7.0) + sd) - 0.5);
+    c = mix(c, lch(0.55, 0.17, 25.0), smoothstep(0.05, 0.015, vn) * smoothstep(0.55, -0.2, a) * 0.85);
+    vec3 iris = lch(0.6, 0.13, 135.0) * (0.75 + 0.5 * noise2(vec2(atan(q.z, q.y) * 12.0, 0.0)));
+    iris = mix(iris, lch(0.86, 0.02, 240.0), cook);
+    c = mix(c, iris, smoothstep(0.86, 0.88, a));
+    c = mix(c, lch(0.32, 0.08, 150.0), smoothstep(0.86, 0.88, a) * smoothstep(0.9, 0.87, a));
+    c = mix(c, mix(vec3(0.003), lch(0.72, 0.01, 240.0), cook), smoothstep(0.975, 0.98, a));
+    rough = 0.05;
+  } else if (k == 31) {
+    // Toadstool: a red cap with white flecks, pale gills and stem.
+    c = lch(0.55, 0.21, 29.0) * (0.94 + 0.1 * wob);
+    c = mix(c, lch(0.97, 0.015, 90.0), smoothstep(0.66, 0.7, noise3(p * 19.0 + sd)));
+    if (p.y < 0.026) c = lch(0.86, 0.04, 80.0) * (0.9 + 0.1 * sin(atan(p.z, p.x) * 60.0));
+    if (m > 0.5) c = lch(0.92, 0.03, 85.0) * (0.95 + 0.06 * wob);
+    rough = 0.4;
+  } else if (k == 32) {
+    // Moon pebble: pale grey with darker seas, and a faint glow of its own.
+    c = mix(lch(0.82, 0.01, 250.0), lch(0.55, 0.012, 250.0), smoothstep(0.5, 0.7, noise3(p * 9.0 + sd)));
+    c *= 1.0 - 0.25 * smoothstep(0.58, 0.72, noise3(p * 28.0));
+    rough = 0.8;
+    emit = lch(0.9, 0.02, 240.0) * 0.08;
+  } else if (k == 33) {
+    // Ice: pale blue, glassy, frosted white at the edges, cold inside.
+    float ed = smoothstep(0.035, 0.055, max(max(abs(p.x), abs(p.y)), abs(p.z)));
+    c = mix(lch(0.8, 0.06, 220.0), lch(0.97, 0.02, 230.0), ed);
+    rough = mix(0.06, 0.5, ed);
+    emit = lch(0.75, 0.1, 225.0) * 0.12;
+  } else if (k == 34) {
+    c = lch(0.9, 0.03, 85.0) * (0.94 + 0.08 * wob);
+    rough = 0.45;
+  } else if (k == 35) {
+    // Mandrake: wrinkled tan root, green leaves, a little face on its head.
+    c = m > 0.5 ? lch(0.52, 0.13, 135.0) : lch(0.68, 0.07, 70.0) * (0.9 + 0.12 * sin(p.x * 140.0 + wob * 3.0));
+    if (m < 0.5) {
+      vec3 f = p - vec3(0.09, 0.045, 0.0);
+      float face = min(length(vec2(f.x, abs(f.z) - 0.022)), 1.0);
+      c = mix(c, vec3(0.02), smoothstep(0.011, 0.008, face) * step(0.0, p.y));
+      c = mix(c, lch(0.25, 0.06, 20.0), smoothstep(0.014, 0.01, length(vec2(f.x + 0.035, f.z) * vec2(1.0, 0.8))) * step(0.0, p.y));
+    }
+    rough = 0.6;
+  } else if (k == 36) {
+    // The sun: boiling gold, hotter in its cells.
+    c = vec3(0.0);
+    float g = noise3(p * 60.0 + vec3(0.0, uTime * 0.8, 0.0));
+    emit = mix(lch(0.72, 0.2, 48.0) * 2.0, lch(0.97, 0.12, 95.0) * 4.0, g);
+  } else if (k == 37) {
+    // A rain cloud: pale on top, slate grey below.
+    c = mix(lch(0.45, 0.015, 250.0), lch(0.9, 0.01, 250.0), smoothstep(-0.03, 0.06, p.y));
+    rough = 0.95;
+  } else if (k == 38) {
+    // Bat wing: a dark violet membrane, thin enough to glow at the edge.
+    c = m > 0.5 ? lch(0.2, 0.03, 310.0) : lch(0.26, 0.06, 315.0) * (0.85 + 0.25 * noise3(p * 40.0));
+    rough = 0.55;
+  } else if (k == 39) {
+    // Newt: orange with dark spots on the back, a yellow belly.
+    c = lch(0.7, 0.19, 48.0);
+    c = mix(c, lch(0.3, 0.06, 40.0), smoothstep(0.64, 0.68, noise3(p * 45.0 + sd)));
+    c = mix(c, lch(0.82, 0.15, 88.0), smoothstep(0.0, -0.015, p.y));
+    rough = 0.18;
+  } else if (k == 40) {
+    // Glass: nearly clear, with a rainbow along its edges.
+    float e = smoothstep(0.02, 0.03, max(abs(p.z) * 0.87 + p.y * 0.5, -p.y));
+    c = lch(0.85, 0.02, 220.0) * 0.4;
+    emit = clamp(abs(fract(p.x * 6.0 + p.y * 20.0 + vec3(0.0, 0.333, 0.667)) * 6.0 - 3.0) - 1.0, 0.0, 1.0) * 0.5 * e;
+    rough = 0.03;
+  } else if (k == 41) {
+    // The watch: gold case, cream face, hands that turn with the pot's own time.
+    c = lch(0.78, 0.13, 85.0);
+    rough = 0.22;
+    float r = length(p.xz);
+    if (p.y > 0.008 && r < 0.054) {
+      c = lch(0.95, 0.02, 90.0);
+      float a = atan(p.z, p.x);
+      float mh = abs(sin((a + uTime * 0.6) * 0.5)) * r, hh = abs(sin((a + uTime * 0.05) * 0.5)) * r;
+      c = mix(c, vec3(0.02), max(smoothstep(0.0035, 0.002, mh) * step(r, 0.046) * step(0.0, cos(a + uTime * 0.6)), smoothstep(0.005, 0.003, hh) * step(r, 0.03) * step(0.0, cos(a + uTime * 0.05))));
+      c = mix(c, lch(0.4, 0.02, 60.0), smoothstep(0.002, 0.0, abs(r - 0.05)) * step(0.85, fract(a / 6.2832 * 12.0 + 0.5) * 0.5 + 0.5));
+      rough = 0.08;
+    }
+  } else if (k == 42) {
+    // Raven feather: near black, combed into fine barbs.
+    c = m > 0.5 ? lch(0.35, 0.01, 260.0) : lch(0.09, 0.015, 270.0) * (0.8 + 0.4 * sin(p.z * 700.0 + abs(p.x) * 120.0));
+    rough = 0.35;
+  } else if (k == 43) {
+    // Moonstone: milky, with a blue light that floats inside it.
+    c = lch(0.86, 0.03, 240.0);
+    emit = lch(0.72, 0.12, 240.0) * (0.5 + 0.4 * smoothstep(0.0, 0.03, p.y + 0.01 * sin(uTime * 1.3)));
+    rough = 0.06;
+  } else if (k == 44) {
+    c = m > 0.5 ? lch(0.85, 0.01, 250.0) : lch(0.52, 0.2, 27.0);
+    rough = m > 0.5 ? 0.18 : 0.3;
+  } else if (k == 45) {
+    c = vec3(0.0);
+    emit = mix(lch(0.92, 0.14, 165.0) * 1.6, lch(0.75, 0.15, 185.0), smoothstep(0.0, 0.05, p.y));
+  } else if (k == 27) {
+    // Antimatter: a white-violet core, hotter at its edge, never still.
+    c = vec3(0.0);
+    emit = mix(lch(0.98, 0.04, 290.0), lch(0.72, 0.22, 300.0), smoothstep(0.02, 0.034, length(p))) * (2.2 + 0.6 * sin(uTime * 47.0 + sd));
+  } else if (k == 28) {
+    c = vec3(0.0);
+    rough = 0.05;
+    if (m > 0.5) {
+      // The ring: white at its inner edge, red at its outer edge, in fast streaks.
+      vec3 q = p; q.yz = rot2(0.6) * q.yz;
+      float rr = length(q.xz), st = noise2(vec2(atan(q.z, q.x) * 4.0 - uTime * 6.0 + rr * 30.0, rr * 50.0));
+      // Gold-white close in, deep amber at the edge, fading out.
+      emit = mix(lch(0.97, 0.05, 90.0) * 1.6, lch(0.74, 0.15, 72.0) * 0.8, smoothstep(0.06, 0.13, rr)) * (0.6 + 0.6 * st) * (1.0 - smoothstep(0.125, 0.147, rr));
+    }
   } else {
     c = lch(0.92, 0.025, 92.0);
     rough = 0.3;
@@ -1644,13 +2343,26 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
 }
 vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
-  vec3 lp = qrot(vec4(-Q.xyz, Q.w), p - A.xyz) / M.w;
+  vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
   vec3 n = bodyN(i, p);
   float rough;
   vec3 emit;
   // M.y runs 0 to 1 while a thing cooks, then 1 to 2 while it melts away.
   float cook = clamp(M.y, 0.0, 1.0), melt = clamp(M.y - 1.0, 0.0, 1.0);
-  vec3 alb = thingLook(int(M.x), m, lp, cook, M.z, rough, emit);
+  int k = int(M.x);
+  vec3 alb = thingLook(k, m, lp, cook, M.z, rough, emit);
+  // Flame, antimatter and the hole give light; they take none.
+  if ((k == 26 && m > 1.5) || k == 27 || k == 36 || k == 45) return emit * (1.0 - melt);
+  if (k == 28) return emit + env(reflect(rd, n), 0.02) * 0.06 * (1.0 - m);
+  // The frog's slot holds its kick, the candle's its burn: neither cooks.
+  if (k == 25 || k == 26 || k == 29 || k == 39) cook = 0.0;
+  // Frost coats a thing low down, near the soup.
+  if (uFrost.w > 0.0) {
+    vec2 fd = p.xz - uFrost.xy;
+    float kf = smoothstep(uFrost.z, uFrost.z - 0.05, length(fd)) * uFrost.w * smoothstep(0.08, 0.0, p.y - surfH(p.xz));
+    alb = mix(alb, vec3(0.82, 0.88, 0.95), kf * 0.55);
+    rough = mix(rough, 0.5, kf);
+  }
   // A soft noise varies each skin: waxy patches and dull pores, never speckle.
   rough = clamp(rough * (0.88 + 0.24 * noise3(lp * 16.0 + M.x * 7.0)), 0.05, 0.9);
   // Cooking deepens and glosses a thing, and soaks the soup's colour into it.
@@ -1665,11 +2377,24 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   float hA = p.y - surfH(p.xz);
   // Low parts sit in the soup's shade, and wet soup coats them.
   float wet = exp(-max(hA, 0.0) / 0.03);
-  alb = mix(alb, soup * 0.8, wet * 0.35);
-  rough = mix(rough, 0.08, wet * 0.8);
+  // The soup climbs the thing in a thin film at the waterline.
+  float climb = smoothstep(0.013, 0.004, hA) * smoothstep(-0.006, 0.0, hA);
+  // A thing that bobbed up keeps a wet band; it dries from the top down.
+  float mark = Q.w, band = mark > 0.001 ? smoothstep(mark + 0.004, mark - 0.004, hA) * step(0.0, hA) : 0.0;
+  float film = max(climb, band * 0.8);
+  alb = mix(alb, soup * 0.8, max(wet * 0.35, film * 0.6));
+  rough = mix(rough, 0.08, max(wet * 0.8, film));
   vec3 v = -rd;
   vec3 col = litSurf(n, v, alb, rough, 0.04) * (0.5 + 0.5 * smoothstep(-0.01, 0.1, hA));
+  // The film's curved top edge catches the light in a thin line.
+  float lip = exp(-pow((hA - 0.011) / 0.0025, 2.0));
+  col += env(reflect(rd, normalize(n + vec3(0.0, 0.6, 0.0))), 0.05) * 0.45 * lip;
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
+  col += alb * glowAt(p, n);
+  // A feather's barbs shine blue-violet at a slant.
+  if (k == 42 && m < 0.5) col += mix(lch(0.5, 0.16, 255.0), lch(0.45, 0.2, 305.0), max(dot(n, v), 0.0)) * 0.35 * pow(1.0 - max(dot(n, v), 0.0), 2.0);
+  // Glass passes the soup's light: a bright, clear sheen over it.
+  if (k == 40) col += soup * 0.5 + env(reflect(rd, n), 0.03) * 0.5;
   return col + emit;
 }
 vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
@@ -1677,8 +2402,10 @@ vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
   vec3 v = -rd;
   float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
   vec3 h = normalize(uKeyDir + v);
-  vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + env(reflect(rd, n), 0.02) * F;
-  return col + uKeyCol * pow(max(dot(n, h), 0.0), 500.0) * 6.0;
+  // The lamp's core is capped: a small drop must not bloom into a spark.
+  vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + min(env(reflect(rd, n), 0.1), vec3(0.3)) * F;
+  // A soft, small lamp spot: a drop reads as soup, not as a spark.
+  return col + uKeyCol * pow(max(dot(n, h), 0.0), 120.0) * 0.3;
 }
 // Ray against a capsule: the spoon's handle.
 float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
@@ -1697,6 +2424,71 @@ float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r) {
     if (h > 0.0) return -b - sqrt(h);
   }
   return -1.0;
+}
+/* the stirrer, as a signed distance */
+// u runs up the handle; h is the bowl's long axis, level; s runs across.
+void toolFrame(out vec3 u, out vec3 h, out vec3 s) {
+  u = normalize(uSpB.xyz - uSpA.xyz);
+  h = normalize(vec3(u.x, 0.0, u.z) + vec3(1e-4, 0.0, 0.0));
+  s = normalize(cross(vec3(0.0, 1.0, 0.0), h));
+}
+// part: 0 handle, 1 wooden bowl or blade, 2 iron.
+float sdTool(vec3 p, out float part) {
+  vec3 u, h, s;
+  toolFrame(u, h, s);
+  vec3 q = p - uSpA.xyz, l = vec3(dot(q, h), q.y, dot(q, s));
+  part = 0.0;
+  if (uTool == 2) {
+    // A deep round cup on a long thin handle.
+    vec3 c = vec3(0.0, 0.05, 0.0);
+    float cup = max(abs(length(l - c) - 0.088) - 0.005, l.y - c.y - 0.012);
+    vec3 r0 = uSpA.xyz + c.y * vec3(0.0, 1.0, 0.0) + h * 0.09 + vec3(0.0, 0.012, 0.0);
+    float han = sdCap(p, r0, r0 + u * 3.0, 0.011);
+    part = 2.0;
+    return smin(cup, han, 0.012);
+  }
+  if (uTool == 3) {
+    // A flat blade along the handle, then a thick round shaft.
+    vec3 f = normalize(cross(u, s));
+    vec3 b = q - u * 0.07;
+    float blade = sdRBox(vec3(dot(b, s), dot(b, u), dot(b, f)), vec3(0.07, 0.17, 0.011), 0.01);
+    float han = sdCap(p, uSpA.xyz + u * 0.22, uSpA.xyz + u * 3.0, 0.026);
+    part = blade < han ? 1.0 : 0.0;
+    return smin(blade, han, 0.04);
+  }
+  // A carved spoon: a dished bowl, a neck and a tapered handle.
+  float bowl = max(sdEll(l - vec3(0.0, -0.02, 0.0), vec3(0.12, 0.042, 0.085)), -sdEll(l - vec3(0.0, 0.006, 0.0), vec3(0.106, 0.035, 0.072)));
+  bowl = max(bowl, l.y);
+  vec3 n0 = uSpA.xyz + h * 0.1;
+  float han = sdRCone(p, n0, n0 + u * 3.0, 0.014, 0.034);
+  part = bowl < han ? 1.0 : 0.0;
+  return smin(bowl, han, 0.025);
+}
+vec3 toolN(vec3 p) {
+  const vec2 e = vec2(1.0, -1.0) * 0.0015;
+  float m;
+  return normalize(e.xyy * sdTool(p + e.xyy, m) + e.yyx * sdTool(p + e.yyx, m) + e.yxy * sdTool(p + e.yxy, m) + e.xxx * sdTool(p + e.xxx, m));
+}
+vec3 shadeTool(vec3 p, vec3 n, vec3 rd, float part) {
+  vec3 v = -rd;
+  vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
+  float sAx = dot(p - uSpA.xyz, ax);
+  vec3 soup = soupCol(uSpA.xz);
+  float wet = smoothstep(0.3, 0.1, sAx);
+  if (uTool == 2) {
+    // Iron: dark, worn, with a soup film low down.
+    vec3 alb = vec3(0.05, 0.048, 0.046);
+    vec3 col = litPBR(n, v, alb, mix(0.32, 0.12, wet), mix(vec3(0.42, 0.41, 0.4), soup * 0.3 + 0.04, wet * 0.7), 1.0 - 0.7 * wet);
+    return col + fireOn(p, n, v, alb, 0.3, vec3(0.42)) * 0.15;
+  }
+  // Wood: long grain along the handle, darker and stained where it meets the soup.
+  float around = dot(n, cross(ax, vec3(0.0, 1.0, 0.0)));
+  float grain = noise2(vec2(sAx * 6.0, around * 3.0)), fine = noise2(vec2(sAx * 40.0, around * 12.0));
+  vec3 alb = lch(0.62, 0.075, 68.0) * (0.8 + 0.3 * grain);
+  if (uTool == 3) alb = mix(alb, vec3(0.03, 0.025, 0.02), smoothstep(0.02, -0.1, sAx) * 0.9 * part);
+  alb = mix(alb, alb * 0.5 + soup * 0.28, wet);
+  float rough = clamp(0.45 + 0.22 * (fine - 0.5) + 0.12 * (grain - 0.5), 0.25, 0.75);
+  return litSurf(n, v, alb, mix(rough, 0.12, wet), 0.04);
 }
 vec3 shadeSpoon(vec3 p, vec3 n, vec3 rd) {
   vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
@@ -1814,7 +2606,21 @@ void main() {
   }
   // The spoon's handle.
   vec3 spN = vec3(0.0, 1.0, 0.0);
-  if (uSpB.w > 0.0) {
+  float toolPart = -1.0;
+  if (uSpB.w > 0.0 && uTool > 0) {
+    // March the stirrer inside a capsule that bounds it.
+    vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
+    float tb = iCapsule(ro, rd, uSpA.xyz - ax * 0.2, uSpB.xyz, 0.17);
+    if (tb > 0.0 && tb < tHit) {
+      float t = tb;
+      for (int i = 0; i < 64; i++) {
+        float pt, d = sdTool(ro + rd * t, pt);
+        if (d < 0.0006 * t) { tHit = t; mat = 8; toolPart = pt; spN = toolN(ro + rd * t); break; }
+        t += d * 0.9;
+        if (t > tHit) break;
+      }
+    }
+  } else if (uSpB.w > 0.0) {
     float t = iCapsule(ro, rd, uSpA.xyz, uSpB.xyz, uSpA.w);
     if (t > 0.0 && t < tHit) {
       vec3 q = ro + rd * t, ba = uSpB.xyz - uSpA.xyz;
@@ -1829,18 +2635,57 @@ void main() {
   if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0, 0);
   else if (mat == 2) {
     vec3 q = p - vec3(0.0, RY, 0.0);
-    col = shadeIron(p, normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy), v, 0.0, 1);
+    vec3 rn = normalize(q - vec3(normalize(q.xz) * RR, 0.0).xzy);
+    col = shadeIron(p, rn, v, 0.0, 1);
+    // Spatter: a wet, glossy spot of soup that dries to a pale crust ring.
+    for (int i = 0; i < 12; i++) {
+      if (i >= uNSp) break;
+      vec4 sp = uSpat[i];
+      float age = fract(sp.w), d = length(p - sp.xyz) / (floor(sp.w) / 1000.0);
+      if (d > 1.2) continue;
+      vec3 sc = soupCol(normalize(p.xz) * uRS * 0.9);
+      vec3 lit = uKeyCol * max(dot(rn, uKeyDir), 0.0) * 0.6 + skyAmb(rn) * 3.0 + uFireCol * uFlick * 0.1;
+      float disk = 1.0 - smoothstep(0.75, 1.0, d);
+      float wet = 1.0 - smoothstep(0.05, 0.18, age);
+      float crust = smoothstep(0.1, 0.2, age) * (1.0 - smoothstep(0.75, 1.0, age));
+      float ring = smoothstep(0.55, 0.85, d) * (1.0 - smoothstep(0.85, 1.05, d));
+      vec3 wc = sc * lit * 0.8 + env(reflect(-v, rn), 0.04) * 0.12;
+      col = mix(col, wc, disk * wet * 0.9);
+      vec3 cc = (sc * 0.6 + 0.12) * lit;
+      col = mix(col, cc, (disk * 0.25 + ring * 0.75) * crust * 0.8);
+    }
   }
   else if (mat == 3) col = shadeWall(p, -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI)), v);
   else if (mat == 4) col = shadeSoup(p, rd);
   else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
   else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
   else if (mat == 7) col = shadeDrop(p, dropN, rd, uDropC[dropI]);
-  else if (mat == 8) col = shadeSpoon(p, spN, rd);
+  else if (mat == 8) col = toolPart >= 0.0 ? shadeTool(p, spN, rd, toolPart) : shadeSpoon(p, spN, rd);
   else if (mat == 9) {
     vec3 ba = legB - legA;
     float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
     col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0, 3);
+  }
+  // The things' lights warm the iron near them.
+  if (uNG > 0 && (mat == 2 || mat == 3)) col += glowAt(p, mat == 2 ? normalize(p - vec3(normalize(p.xz) * RR, RY).xzy) : -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI))) * 0.12;
+  // A black hole swallows the light round it and rings it with a thin bright edge.
+  if (uHoleP.w > 0.0) {
+    vec3 H = uHoleP.xyz;
+    float tc = dot(H - ro, rd);
+    if (tc > 0.0 && tc < tHit + 0.15) {
+      float d = length(ro + rd * tc - H), R = 0.045 * uHoleP.w;
+      col *= 1.0 - 0.92 * uHoleP.w * (1.0 - smoothstep(R * 1.2, R * 4.0, d));
+      col += lch(0.95, 0.08, 80.0) * exp(-pow((d - R * 1.25) / 0.0015, 2.0)) * 0.6 * uHoleP.w;
+    }
+  }
+  // Each light blooms where the ray passes near it, unless a surface hides it.
+  for (int i = 0; i < 6; i++) {
+    if (i >= uNG) break;
+    vec3 G = uGlow[i].xyz;
+    float tc = dot(G - ro, rd);
+    if (tc < 0.0 || tc > tHit + 0.04) continue;
+    float d = length(ro + rd * tc - G), k = 0.035 * uGlowC[i].a;
+    col += uGlowC[i].rgb * uGlow[i].w * (0.3 * exp(-d * d / (k * k)) + 0.05 * exp(-d / (k * 4.0)));
   }
   // A small tent blur softens the volume, as Fire blurs its own.
   vec2 lt = 1.0 / vec2(textureSize(uFront, 0));
@@ -1935,7 +2780,7 @@ function fireStep(dt) {
   simPass(fvelP, S.vel[1 - S.vi], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uCurl: S.curl, uSolid: solid });
   S.vi = 1 - S.vi;
   gl.useProgram(divP);
-  gl.uniform1f(divP.u('uExpand'), devV('fireExp', 0.45));
+  gl.uniform1f(divP.u('uExpand'), fireSpread());
   simPass(divP, S.div, { uVel: S.vel[S.vi], uDye: S.dye[S.di] });
   // Jacobi sweeps ping-pong; the last pressure warms the next step.
   for (let i = 0; i < 12; i++) {
@@ -1951,12 +2796,22 @@ function fireStep(dt) {
   gl.uniform1f(fdyeP.u('uDiss'), k.diss);
   // Fire's emit rates, per cell of this grid.
   // Heat is per cell, so a cell takes what Fire's 0.12 cell takes: about eight points.
-  const pw = devV('fireI', 1);
+  const pw = firePower();
   gl.uniform1f(fdyeP.u('uEmitT'), 5.5 / 120 * 14 * k.emit * pw);
   gl.uniform1f(fdyeP.u('uEmitD'), 7.0 / 120 * 8 * k.emit * pw);
   gl.uniform4f(fdyeP.u('uBed'), devV('fireX', 0), devV('fireZ', 0), devV('fireY', 0.04), devV('fireR', 0.62));
   simPass(fdyeP, S.dye[1 - S.di], { uVel: S.vel[S.vi], uDye: S.dye[S.di], uSolid: solid });
   S.di = 1 - S.di;
+}
+// The Dev fire rows level off before the flames fill the screen with white.
+// Up to 60% of the cap a value passes; above it, it bends toward the cap.
+const softCap = (x, c) => x <= c * 0.6 ? x : c * 0.6 + c * 0.4 * Math.tanh((x - c * 0.6) / (c * 0.4));
+// Spread past about 0.8 floods the view; the default 0.45 passes.
+const fireSpread = () => softCap(devV('fireExp', 0.45), 0.8);
+// Power times bed area past about 1.8 floods the view; the default is 1.
+function firePower() {
+  const pw = devV('fireI', 1), a = pw * (devV('fireR', 0.62) / 0.62) ** 2;
+  return a > 1e-6 ? pw * softCap(a, 1.8) / a : pw;
 }
 // Fire runs at 1.2 speed; steps here are up to 1/50 s, two at most a frame.
 let fireAcc = 0, coldT = 0;
@@ -2081,7 +2936,7 @@ function dyeTargets() {
     fillBroth();
   }
 }
-const ripT = [0, 1].map(() => { const tex = texture(RN, RN, gl.RG16F, gl.RG); return { tex, fb: target([tex]) }; });
+const ripT = [0, 1].map(() => { const tex = texture(RN, RN, gl.RGBA16F, gl.RGBA); return { tex, fb: target([tex]) }; });
 rip[0] = ripT[0]; rip[1] = ripT[1];
 const velTex = texture(FN, FN, gl.RG16F, gl.RG);
 const velData = new Float32Array(FN * FN * 2);
@@ -2139,6 +2994,8 @@ function sampleF(a, x, z) {
   return (a[k] * (1 - fx) + a[k + 1] * fx) * (1 - fz) + (a[k + FN] * (1 - fx) + a[k + FN + 1] * fx) * fz;
 }
 let omega = 0, energy = 0, calm = true;
+// The soup's turn so far, in radians: the fat beads ride it.
+let spin = 0;
 function stepFluid(dt) {
   const T = thick();
   // Vorticity confinement keeps thin broth swirly; stew stays smooth.
@@ -2239,10 +3096,19 @@ function clearFlow() { fu.fill(0); fv.fill(0); fp.fill(0); omega = energy = 0; }
 /* ---------- the surface ---------- */
 // The soup level, its dip under the stir and its funnel, in world units.
 let level = 0, dip = 0, funnel = 0;
+// Boiling down: 0 is a full pot; 1 has lost 12 cm and turned brown.
+let reduce = 0;
 const G = 22;
+// The black hole's dip on the soup, in world units: x, z, depth, reach.
+const holeDip = [0, 0, 0, 0.16];
+// The moon's tide: the soup's tilt, height per world unit in x and z.
+const tide = [0, 0];
+// The frost patch, in soup units, with its radius in world units; null without one.
+let frost = null;
 function surfY(x, z) {
   const r = Math.min(1, Math.hypot(x, z));
-  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19);
+  const hd = holeDip[2] ? holeDip[2] * Math.exp(-((x - holeDip[0]) ** 2 + (z - holeDip[1]) ** 2) / holeDip[3] ** 2) : 0;
+  return level + dip * (r * r - 0.5) - funnel * (1 / (1 + r * r * 14) - 0.19) - hd + tide[0] * x + tide[1] * z;
 }
 
 /* ---------- things ---------- */
@@ -2275,7 +3141,37 @@ const KINDS = {
   pcube: { k: 22, bound: 0.07, float: 0.012, lag: 0.25, cook: 24, tint: [0.85, 0.05, 88], mass: 0.1, into: 'melt', n: 0, sq: 0.06, L: 0.06, W: 0.06 },
   lring: { k: 23, bound: 0.075, float: 0.006, lag: 0.25, cook: 22, tint: [0.75, 0.08, 125], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.07, W: 0.07 },
   clove: { k: 24, bound: 0.075, float: 0.01, lag: 0.25, cook: 20, tint: [0.9, 0.02, 90], mass: 0.05, into: 'melt', n: 0, sq: 0.05, L: 0.065, W: 0.04 },
+  // Witchy and odd things: each has its own step in ACT.
+  frog: { k: 25, bound: 0.3, float: 0.035, lag: 0.5, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.3, L: 0.17, W: 0.12 },
+  // The candle's cook is its burn: it burns down, then melts away.
+  candle: { k: 26, bound: 0.24, float: 0.03, lag: 0.6, cook: 90, tint: [0.93, 0.03, 90], mass: 0.15, into: 'melt', n: 0, sq: 0.2, L: 0.07, W: 0.07 },
+  // Antimatter hovers a hair above the soup: it must touch nothing.
+  anti: { k: 27, bound: 0.045, float: 0.07, lag: 0.3, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.05, L: 0.05, W: 0.05 },
+  hole: { k: 28, bound: 0.14, float: 0, lag: 2, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.4, L: 0.1, W: 0.1 },
+  // The eye's cook turns it milky; it never breaks.
+  eye: { k: 30, bound: 0.1, float: 0.03, lag: 0.4, cook: 35, tint: [0.78, 0.07, 12], mass: 0.2, into: null, n: 0, sq: 0.15, L: 0.07, W: 0.07 },
+  // The toadstool's cook ends in a burst of spores.
+  toad: { k: 31, bound: 0.2, float: 0.06, lag: 0.45, cook: 14, tint: null, mass: 0, into: null, n: 0, sq: 0.25, L: 0.13, W: 0.13 },
+  moon: { k: 32, bound: 0.075, float: 0.03, lag: 0.6, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.15, L: 0.065, W: 0.065 },
+  // Ice melts in the heat and leaves nothing.
+  ice: { k: 33, bound: 0.1, float: 0.03, lag: 0.5, cook: 40, tint: null, mass: 0, into: 'melt', n: 0, sq: 0.2, L: 0.06, W: 0.06 },
+  bone: { k: 34, bound: 0.2, float: 0, lag: 0.6, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.3, L: 0.17, W: 0.06 },
+  mandrake: { k: 35, bound: 0.26, float: 0.02, lag: 0.5, cook: 30, tint: [0.72, 0.06, 70], mass: 0.3, into: null, n: 0, sq: 0.3, L: 0.2, W: 0.08 },
+  sun: { k: 36, bound: 0.07, float: 0.03, lag: 0.4, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.2, L: 0.05, W: 0.05 },
+  // The cloud hangs in the air above the soup.
+  cloud: { k: 37, bound: 0.17, float: 0.5, lag: 1.5, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.2, L: 0.15, W: 0.15, air: true },
+  bat: { k: 38, bound: 0.23, float: 0.006, lag: 0.3, cook: 15, tint: [0.2, 0.03, 300], mass: 0.6, into: 'melt', n: 0, sq: 0.1, L: 0.2, W: 0.1 },
+  newt: { k: 39, bound: 0.27, float: 0.01, lag: 0.4, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.15, L: 0.2, W: 0.05 },
+  prism: { k: 40, bound: 0.12, float: 0.02, lag: 0.5, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.2, L: 0.1, W: 0.04 },
+  clock: { k: 41, bound: 0.13, float: 0.012, lag: 0.5, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.2, L: 0.08, W: 0.07 },
+  feather: { k: 42, bound: 0.29, float: 0.008, lag: 0.15, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.05, L: 0.25, W: 0.05 },
+  // The moonstone sinks and lies under the soup.
+  stone: { k: 43, bound: 0.075, float: -0.07, lag: 1, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.15, L: 0.06, W: 0.05 },
+  magnet: { k: 44, bound: 0.12, float: 0.015, lag: 0.7, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.3, L: 0.09, W: 0.09 },
+  lift: { k: 45, bound: 0.08, float: 0.04, lag: 0.3, cook: 0, tint: null, mass: 0, into: null, n: 0, sq: 0.1, L: 0.04, W: 0.04 },
 };
+// A thing on the soup, not in the air, a leap or a lift.
+const free = o => !(o.gone || o.fly || o.hop || o.lev || o.K.air);
 // The throw order; the pot starts with a carrot and an onion.
 const ORDER = ['fish', 'potato', 'beet', 'leek', 'duck', 'pea', 'garlic', 'boot', 'chilli', 'star', 'tomato', 'noodles', 'mushroom', 'bay', 'carrot', 'onion'];
 let next = 0;
@@ -2365,6 +3261,8 @@ const LIQ = {
 };
 const pours = [];
 function pour(kind, x, z, held = null) {
+  // A pour tops the pot back up a little.
+  reduce = Math.max(0, reduce - 0.06);
   const p = { kind, x, z, t: 0, dur: held ? Infinity : 1.2, acc: 0, col: lchLin(LIQ[kind].tint), held, sounded: 0 };
   pours.push(p);
   pourSound(kind, x);
@@ -2408,6 +3306,8 @@ function stepPours(dt) {
 
 /* ---------- bubbles, droplets, puffs, sparks, ripples ---------- */
 const bubbles = [], drops = [], puffs = [], sparks = [], imps = [];
+// Spatter on the rim: a wet spot that dries to a crust, then flakes off.
+const NSP = 12, spats = [];
 function addDrop(x, y, z, vx, vy, vz, r, c = null) {
   if (drops.length >= ND) drops.shift();
   drops.push({ x, y, z, vx, vy, vz, r, c });
@@ -2444,6 +3344,7 @@ function stepBubbles(dt) {
     let x = pl.x + rand(-0.22, 0.22), z = pl.z + rand(-0.22, 0.22);
     if (Math.random() < 0.35) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.85; x = Math.cos(a) * r; z = Math.sin(a) * r; }
     if (Math.hypot(x, z) > 0.88) continue;
+    if (frost && Math.hypot(x - frost.x, z - frost.z) * soupR(level) < frost.r) continue;
     const rMax = rand(0.025, 0.06) * (1 + 0.7 * T) * (0.8 + 0.3 * heat);
     bubbles.push({ x, z, r: 0, h: 0, rMax, age: 0, life: rand(0.5, 1.1) * (1 + 1.6 * T) });
   }
@@ -2461,12 +3362,26 @@ function stepBubbles(dt) {
 }
 // A burst: a ring on the surface, a puff of steam, spatter if big, and a blop.
 function pop(b) {
-  imps.push([b.x, b.z, b.rMax * 0.7, -b.rMax * 0.12]);
+  // Thick soup keeps a crater where a glop burst.
+  imps.push([b.x, b.z, b.rMax * 0.7, -b.rMax * 0.12 * (1 + 2 * thick())]);
   if (Math.random() < 0.5) addPuff(b.x, b.z, 0.25 + b.rMax * 6);
-  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs;
-  if (b.rMax > 0.06 && !reduced()) for (let i = 0; i < 3; i++) {
-    const a = rand(0, TAU);
-    addDrop(wx, surfY(wx, wz) + 0.03, wz, Math.cos(a) * 0.4, rand(1.2, 2), Math.sin(a) * 0.4, rand(0.008, 0.014));
+  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs, wy = surfY(wx, wz);
+  if (!reduced()) {
+    // A big burst throws a crown of drops round its edge and a jet up the middle.
+    if (b.rMax > 0.055) {
+      const n = 6, a0 = rand(0, TAU), rr = b.rMax * rs * 0.8;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + i / n * TAU;
+        addDrop(wx + Math.cos(a) * rr, wy + 0.02, wz + Math.sin(a) * rr, Math.cos(a) * 0.3, rand(0.8, 1.2), Math.sin(a) * 0.3, rand(0.006, 0.009));
+      }
+      addDrop(wx, wy + 0.03, wz, 0, rand(2, 2.6), 0, rand(0.01, 0.014));
+    }
+    // Spatter flies wide; some of it reaches the rim.
+    const ns = b.rMax > 0.045 ? Math.min(5, Math.round((b.rMax - 0.04) * 100)) : 0;
+    for (let i = 0; i < ns; i++) {
+      const a = rand(0, TAU), sp = rand(0.5, 1.2);
+      addDrop(wx, wy + 0.03, wz, Math.cos(a) * sp, rand(1.4, 2.2), Math.sin(a) * sp, rand(0.007, 0.012));
+    }
   }
   // Nearby things rock.
   for (const t of bodies) {
@@ -2484,12 +3399,27 @@ function stepDrops(dt) {
     d.vy -= 9 * dt;
     d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
     const rs = soupR(level);
+    // A drop that lands on the rim leaves a wet spot.
+    const rh = Math.hypot(d.x, d.z);
+    if (d.vy < 0 && Math.abs(rh - RR) < RT) {
+      const top = RY + Math.sqrt(RT * RT - (rh - RR) * (rh - RR));
+      if (d.y < top) {
+        drops.splice(i, 1);
+        if (spats.length >= NSP) spats.shift();
+        spats.push({ x: d.x, y: top, z: d.z, age: 0, r: d.r * 2.6 });
+        continue;
+      }
+    }
     if (d.vy < 0 && d.y < surfY(d.x, d.z)) {
       drops.splice(i, 1);
       // Back into the pot: a tiny ring; outside the rim it just goes.
       if (Math.hypot(d.x, d.z) < rs * 0.97) { imps.push([d.x / rs, d.z / rs, 0.03, -0.004]); if (!d.c && Math.random() < 0.35) dripSound(d); }
     } else if (d.y < -2) drops.splice(i, 1);
   }
+}
+function stepSpats(dt) {
+  // A spot dries in about 4 s, then its crust lasts about 20 s.
+  for (let i = spats.length - 1; i >= 0; i--) { spats[i].age += dt / 24; if (spats[i].age >= 1) spats.splice(i, 1); }
 }
 function stepPuffs(dt) {
   for (let i = puffs.length - 1; i >= 0; i--) { puffs[i].age += dt / puffs[i].life; if (puffs[i].age >= 1) puffs.splice(i, 1); }
@@ -2517,8 +3447,324 @@ function stepSparks(dt) {
 }
 
 /* ---------- things: motion, cooking, breaking ---------- */
+/* ---------- witchy and odd things ---------- */
+// Short lights: a flash where antimatter meets matter, or where a hole pops.
+const flashes = [];
+function flash(x, y, z, w, c, dur, reach) { flashes.push({ x, y, z, w, c, dur, reach, t: 0 }); wake(); }
+// The newest hole pulls; each frame its step claims this.
+let holeB = null;
+const ACT = {
+  frog(b, dt, rs) {
+    // A kick: legs out, a shove forward, a small wake.
+    b.legT = Math.max(0, (b.legT || 0) - dt);
+    b.cook = b.legT > 0 ? Math.sin(Math.PI * (1 - b.legT / 0.35)) : 0;
+    if (b.held || reduced()) return;
+    b.tk = (b.tk ?? rand(1, 3)) - dt;
+    if (b.tk > 0) return;
+    // The hotter the pot, the more it wants out.
+    if (b.age > 3 && Math.random() < 0.18 + 0.5 * fire) { startHop(b, rs); return; }
+    const ax = Math.cos(b.yaw), az = -Math.sin(b.yaw);
+    b.vx += ax * 0.35; b.vz += az * 0.35;
+    b.yawV += rand(-3, 3);
+    b.pitchV -= 3;
+    b.legT = 0.35;
+    imps.push([b.x - ax * 0.07, b.z - az * 0.07, 0.05, -0.012]);
+    b.tk = rand(1.5, 4);
+  },
+  candle(b, dt) {
+    b.out = Math.max(0, (b.out || 0) - dt);
+    // Its wax melts into a thin film of fat round it.
+    if (!b.out && Math.random() < dt * 1.2) emit(b.x + rand(-0.04, 0.04), b.z + rand(-0.04, 0.04), rand(0.02, 0.035), rand(0.3, 0.5), null, 1);
+  },
+  anti(b, dt, rs) {
+    if (Math.random() < dt * 2) emit(b.x + rand(-0.03, 0.03), b.z + rand(-0.03, 0.03), 0.04, 0.4, null, 2);
+    for (const o of bodies) {
+      if (o === b || !free(o) || o.kind === 'hole') continue;
+      if (Math.hypot(o.x - b.x, o.z - b.z) * rs < o.rad + b.rad) { annihilate(b, o, rs); return; }
+    }
+  },
+  // A bone never cooks; it boils out a pale stock that thickens the soup.
+  bone(b, dt) { if (Math.random() < dt * 1.2 * (0.3 + fire)) emit(b.x + rand(-0.08, 0.08), b.z + rand(-0.08, 0.08), 0.12, 0.05, [0.88, 0.03, 85], 0); },
+  // The mandrake rolls now and then, so its face comes up.
+  mandrake(b, dt) {
+    b.rt = (b.rt ?? rand(2, 4)) - dt;
+    if (b.rt < 0 && !reduced()) { b.rollV += rand(-1, 1) < 0 ? -9 : 9; b.rt = rand(3, 6); }
+  },
+  // A spoonful of sun: the pot boils hard and glows orange, then it is spent.
+  sun(b, dt, rs) {
+    if (!b.lit) {
+      b.lit = 1;
+      sunSave = sunSave ?? fire;
+      fire = 1;
+      flash(b.x * rs, b.y + 0.1, b.z * rs, 1.6, [1.2, 0.55, 0.15], 12, 1.4);
+      emit(b.x, b.z, 0.3, 0.3, [0.7, 0.16, 55], 0);
+    }
+    if (b.age > 8) {
+      b.gone = Math.max(b.gone, 1e-3);
+      if (fire === 1 && sunSave !== null) fire = sunSave;
+      sunSave = null;
+    }
+  },
+  // The cloud rains on the soup for 25 s, then thins away.
+  cloud(b, dt, rs) {
+    const n = Math.floor(dt * 22 + Math.random());
+    for (let i = 0; i < n && !reduced(); i++) addDrop(b.x * rs + rand(-0.12, 0.12), b.y - 0.05, b.z * rs + rand(-0.12, 0.12), 0, -0.8, 0, rand(0.006, 0.01), RAIN);
+    if (Math.random() < dt * 10) rainSound(b.x);
+    b.vx += Math.sin(b.age * 0.4 + b.seed) * 0.03 * dt;
+    if (b.age > 25) b.gone = Math.max(b.gone, 1e-3);
+  },
+  // A bat wing flutters on the surface, lifts a little, then sinks.
+  bat(b, dt) {
+    b.ft = (b.ft ?? rand(0.5, 1.5)) - dt;
+    if (b.ft < 0 && b.cook < 0.6 && !reduced()) { b.vy += 1.4; b.rollV += rand(-8, 8); b.pitchV += rand(-5, 5); b.ft = rand(1, 2.5); }
+    if (b.cook > 0.6) b.sink += dt * 0.02;
+  },
+  // A newt swims slow laps round the wall and keeps clear of the spoon.
+  newt(b, dt) {
+    b.dir = b.dir ?? (Math.random() < 0.5 ? -1 : 1);
+    b.ph = (b.ph ?? Math.atan2(b.z, b.x)) + dt * 0.35 * b.dir;
+    const tx = Math.cos(b.ph) * 0.68, tz = Math.sin(b.ph) * 0.68, k = Math.min(1, dt * 2);
+    b.vx += ((tx - b.x) * 1.2 - b.vx) * k;
+    b.vz += ((tz - b.z) * 1.2 - b.vz) * k;
+    if (spoon.on || spoon.lift < 1) {
+      const dx = b.x - spoon.x, dz = b.z - spoon.z, d = Math.hypot(dx, dz) + 1e-3;
+      if (d < 0.35) { b.vx += dx / d * 2 * dt * 10; b.vz += dz / d * 2 * dt * 10; if (d < 0.2 && Math.random() < dt) b.dir = -b.dir; }
+    }
+    b.cook = 0.5 + 0.5 * Math.sin(b.age * 9);
+  },
+  // The watch ticks once a second of the pot's own time.
+  clock(b, dt) {
+    b.tick = (b.tick ?? 1) - dt;
+    if (b.tick < 0) { b.tick += 1; tickSound(b.x); }
+  },
+  // The magnet draws other things in to cluster round it.
+  magnet(b, dt) {
+    for (const o of bodies) {
+      if (o === b || !free(o) || o.kind === 'hole') continue;
+      const dx = b.x - o.x, dz = b.z - o.z, d = Math.hypot(dx, dz) + 1e-4;
+      if (d > 0.9) continue;
+      const k = 0.35 / (d + 0.15);
+      o.vx += dx / d * k * dt * 3; o.vz += dz / d * k * dt * 3;
+    }
+  },
+  // The drop that falls up lifts every thing out of the soup, once.
+  lift(b, dt, rs) {
+    if (b.age < 0.7 || b.used) return;
+    b.used = true;
+    for (const o of bodies) if (o !== b && free(o)) o.lev = { t: rand(-0.3, 0), dur: rand(2.8, 3.6), h: rand(0.22, 0.42), spin: rand(-1.5, 1.5), y: 0, vy: 0 };
+    flash(b.x * rs, b.y + 0.05, b.z * rs, 2, [0.4, 1.1, 0.8], 0.7, 1.1);
+    b.gone = 0.97; b.zap = true;
+    liftSound(b.x);
+  },
+  // The toadstool bursts when it is done, or when a tap squeezes it.
+  toad(b) { if (b.cook >= 1) sporePop(b); },
+  ice(b) {
+    if (!frost) frost = { x: b.x, z: b.z, r: 0, a: 0 };
+    // Cold vapour curls off it now and then.
+    if (Math.random() < 0.004) addPuff(b.x, b.z, 0.08);
+  },
+  hole(b, dt, rs) {
+    // It grows in, holds, then fades and pops at 20 s.
+    const s = smooth(0, 1.2, b.age) * (1 - smooth(16.5, 20, b.age));
+    b.hs = s;
+    b.scale = 0.4 + 0.6 * s;
+    b.vx *= Math.exp(-dt * 3); b.vz *= Math.exp(-dt * 3);
+    holeB = b;
+    holeDip[0] = b.x * rs; holeDip[1] = b.z * rs; holeDip[2] = 0.06 * s;
+    if (b.age >= 20) { holePop(b); return; }
+    // Things near it spiral in; a thing at its middle goes.
+    for (const o of bodies) {
+      if (o === b || !free(o)) continue;
+      const dx = b.x - o.x, dz = b.z - o.z, d = Math.hypot(dx, dz) + 1e-4;
+      if (d > 0.6) continue;
+      const k = s * 0.6 / (d + 0.08);
+      o.vx += (dx / d * 1.3 - dz / d) * k * dt * 3;
+      o.vz += (dz / d * 1.3 + dx / d) * k * dt * 3;
+      // The flow alone lets things orbit; a steady drift draws them in.
+      const inn = Math.min(d, s * 0.035 / (d + 0.05) * dt);
+      o.x += dx / d * inn; o.z += dz / d * inn;
+      if (d < 0.08 + 0.4 * o.rad / rs) { o.gone = 1e-3; o.eaten = b; gulpSound(o); }
+    }
+    // The soup turns round it and runs inward.
+    const kk = Math.min(1, dt * 3);
+    for (let j = 1; j < FN - 1; j++) for (let i = 1; i < FN - 1; i++) {
+      const k = j * FN + i;
+      if (!fluid[k]) continue;
+      const dx = cx(i) - b.x, dz = cx(j) - b.z, d2 = dx * dx + dz * dz;
+      if (d2 > 0.2) continue;
+      const w = s * 5 * Math.exp(-d2 / 0.03);
+      fu[k] += ((-dz - 0.6 * dx) * w - fu[k]) * kk * Math.min(1, w);
+      fv[k] += ((dx - 0.6 * dz) * w - fv[k]) * kk * Math.min(1, w);
+    }
+  },
+};
+// What the sun took from the fire slider, to give back when it is spent.
+let sunSave = null;
+const RAIN = lchLin([0.72, 0.03, 230]);
+// A lifted thing: up out of the soup, a slow turn in the air, then a fall and a splash.
+function stepLev(b, dt, rs) {
+  const L = b.lev;
+  L.t += dt;
+  const base = surfY(b.x * rs, b.z * rs) + b.K.float * b.scale;
+  b.wx = b.x * rs; b.wz = b.z * rs;
+  if (L.t < L.dur) {
+    const up = smooth(0, 0.9, Math.max(L.t, 0));
+    L.y = base + L.h * up + 0.02 * Math.sin(L.t * 3 + b.seed) * up;
+    b.y = L.y;
+    b.yaw += L.spin * dt * up;
+    b.pitch = 0.35 * Math.sin(L.t * 1.7 + b.seed) * up;
+    if (up > 0.2 && Math.random() < dt * 3 && !reduced()) addDrop(b.wx, b.y - 0.04, b.wz, 0, -0.2, 0, rand(0.008, 0.013));
+    return;
+  }
+  L.vy -= 9 * dt;
+  L.y += L.vy * dt;
+  b.y = L.y;
+  if (L.y > base) return;
+  b.lev = null; b.bob = 0; b.vy = 0; b.pitch = 0;
+  splash(b);
+}
+// Steps that run after the springs, so they win over the bob and tilt.
+const AIM = {
+  // The eye watches the spoon, else the pointer, else the viewer; cooked, it stares up.
+  eye(b, dt, rs) {
+    const wx = b.x * rs, wz = b.z * rs;
+    let t;
+    if (b.cook >= 1) t = null;
+    else if (spoon.on || spoon.lift < 1) t = [spoon.x * rs, level + 0.25, spoon.z * rs];
+    else if (performance.now() / 1000 - hand.t < 3) t = [hand.x, level + 0.15, hand.z];
+    else t = cam.pos;
+    let yaw = b.yaw, pitch = 1.25;
+    if (t) {
+      const dx = t[0] - wx, dy = t[1] - b.y, dz = t[2] - wz;
+      yaw = Math.atan2(-dz, dx);
+      pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), 0.35, 1.45);
+    }
+    const k = Math.min(1, dt * 7);
+    b.yaw += Math.atan2(Math.sin(yaw - b.yaw), Math.cos(yaw - b.yaw)) * k;
+    b.pitch += (pitch - b.pitch) * k;
+    b.roll *= 1 - k;
+  },
+  // The toadstool stands upright, with only a small sway.
+  toad(b) { b.pitch *= 0.5; b.roll *= 0.5; },
+  // The newt faces the way it swims.
+  newt(b, dt) {
+    if (Math.hypot(b.vx, b.vz) < 0.02) return;
+    const yaw = Math.atan2(-b.vz, b.vx);
+    b.yaw += Math.atan2(Math.sin(yaw - b.yaw), Math.cos(yaw - b.yaw)) * Math.min(1, dt * 5);
+  },
+};
+// Spores: a violet puff, glitter and tint, then the toadstool melts away.
+function sporePop(b) {
+  const rs = soupR(level), wx = b.x * rs, wz = b.z * rs;
+  b.gone = Math.max(b.gone, 1e-3);
+  const vio = lchLin([0.62, 0.17, 305]);
+  for (let i = 0; i < 18 && !reduced(); i++) { const g = rand(0, TAU), sp = rand(0.15, 0.6); addDrop(wx, b.y + 0.08, wz, Math.cos(g) * sp, rand(0.8, 1.8), Math.sin(g) * sp, rand(0.006, 0.012), vio); }
+  emit(b.x, b.z, 0.22, 0.6, [0.5, 0.16, 305], 0);
+  for (let i = 0; i < 8; i++) emit(b.x + rand(-0.15, 0.15), b.z + rand(-0.15, 0.15), 0.06, 1, null, 2);
+  flash(wx, b.y + 0.1, wz, 1.2, [0.7, 0.4, 1], 0.7, 0.6);
+  addPuff(b.x, b.z, 0.3);
+  imps.push([b.x, b.z, 0.08, -0.015]);
+  splashAt = time;
+  poofSound(b.x);
+}
+// The frog's leap to the rim: out, a sit, then back in.
+function startHop(b, rs) {
+  let a = Math.atan2(b.z, b.x);
+  // It keeps to the sides and the back, clear of the near rim.
+  if (Math.sin(a) > 0.2) a = Math.cos(a) > 0 ? Math.asin(0.2) : Math.PI - Math.asin(0.2);
+  const from = [b.wx ?? b.x * rs, b.y, b.wz ?? b.z * rs];
+  const to = [Math.cos(a) * RR, RY + RT + 0.06, Math.sin(a) * RR];
+  b.hop = { ph: 0, t: 0, dur: 0.6, from, to, ang: a, sit: rand(2.5, 5) };
+  b.yaw = Math.atan2(-(to[2] - from[2]), to[0] - from[0]);
+  b.yawV = 0; b.vx = b.vz = 0;
+  imps.push([b.x, b.z, 0.07, -0.02]);
+  for (let i = 0; i < 4 && !reduced(); i++) addDrop(from[0], from[1], from[2], rand(-0.4, 0.4), rand(1, 1.8), rand(-0.4, 0.4), rand(0.01, 0.016));
+  croak(b);
+}
+function stepHop(b, dt, rs) {
+  const h = b.hop;
+  h.t += dt;
+  b.legT = 0;
+  if (h.ph === 1) {
+    // On the rim it turns to face the soup, then picks a spot.
+    const yin = Math.atan2(Math.sin(h.ang), -Math.cos(h.ang));
+    const dy = Math.atan2(Math.sin(yin - b.yaw), Math.cos(yin - b.yaw));
+    b.yaw += dy * Math.min(1, dt * 3);
+    b.cook = 0;
+    if (h.t > h.sit) {
+      const [x, z] = freeSpot();
+      b.x = x; b.z = z;
+      h.from = [b.wx, b.y, b.wz];
+      h.to = [x * rs, surfY(x * rs, z * rs) + b.K.float, z * rs];
+      h.ph = 2; h.t = 0; h.dur = 0.55;
+      b.yaw = Math.atan2(-(h.to[2] - h.from[2]), h.to[0] - h.from[0]);
+      croak(b);
+    }
+    return;
+  }
+  const u = Math.min(1, h.t / h.dur);
+  b.wx = lerp(h.from[0], h.to[0], u);
+  b.wz = lerp(h.from[2], h.to[2], u);
+  b.y = lerp(h.from[1], h.to[1], u) + (h.ph === 0 ? 0.45 : 0.35) * 4 * u * (1 - u);
+  // Legs out at the jump and tucked for the landing; nose up, then down.
+  b.cook = Math.max(0, 1 - u * 1.6);
+  b.pitch = 0.7 * (1 - 2 * u);
+  if (u < 1) return;
+  b.pitch = 0;
+  if (h.ph === 0) { h.ph = 1; h.t = 0; rimSound(b); return; }
+  b.hop = null; b.bob = 0; b.vy = 0; b.tk = rand(2, 5);
+  splash(b);
+}
+// A dunk puts the flame out; it lights again by itself.
+function snuff(b) {
+  b.out = 2.5;
+  addPuff(b.x, b.z, 0.12);
+  hissSound(b.x);
+}
+// Antimatter meets matter: both go, in a white flash.
+function annihilate(a, o, rs) {
+  const x = (a.x + o.x) / 2, z = (a.z + o.z) / 2, wx = x * rs, wz = z * rs, y = surfY(wx, wz) + 0.05;
+  for (const t of [a, o]) { t.gone = Math.max(t.gone, 0.97); t.zap = true; }
+  flash(wx, y, wz, 7, [1, 0.95, 1.1], 0.45, 1.6);
+  imps.push([x, z, 0.14, -0.04]);
+  for (let i = 0; i < 16 && !reduced(); i++) { const g = rand(0, TAU), sp = rand(0.6, 1.6); addDrop(wx, y, wz, Math.cos(g) * sp, rand(1.5, 3), Math.sin(g) * sp, rand(0.012, 0.024)); }
+  for (let i = 0; i < 6; i++) emit(x + rand(-0.1, 0.1), z + rand(-0.1, 0.1), 0.08, 1, null, 2);
+  addPuff(x, z, 0.5);
+  splashAt = time;
+  zapSound(x);
+}
+// The hole evaporates: a small blue pop and a ring of glitter.
+function holePop(b) {
+  const rs = soupR(level);
+  b.gone = 0.97; b.zap = true; b.hs = 0;
+  flash(b.x * rs, b.y + 0.04, b.z * rs, 4, [0.7, 0.85, 1.2], 0.5, 1);
+  imps.push([b.x, b.z, 0.1, 0.03]);
+  for (let i = 0; i < 8; i++) { const g = i / 8 * TAU; emit(b.x + Math.cos(g) * 0.1, b.z + Math.sin(g) * 0.1, 0.05, 1, null, 2); }
+  splashAt = time;
+  holePopSound(b.x);
+}
 function stepBodies(dt) {
   const rs = soupR(level), heat = 0.25 + 0.95 * fire;
+  holeB = null;
+  for (let i = flashes.length - 1; i >= 0; i--) if ((flashes[i].t += dt) >= flashes[i].dur) flashes.splice(i, 1);
+  // A sun taken out early still gives the fire back.
+  if (sunSave !== null && !bodies.some(b => b.kind === 'sun' && !b.gone)) { if (fire === 1) fire = sunSave; sunSave = null; }
+  // Each moon adds a tilt that turns round once in 7 s.
+  tide[0] = tide[1] = 0;
+  for (const b of bodies) {
+    if (b.kind !== 'moon' || b.fly) continue;
+    b.ph = (b.ph ?? rand(0, TAU)) + dt * TAU / 7;
+    const m = 0.03 * smooth(0, 2, b.age) * (b.gone ? 1 - smooth(0, 1, b.gone) : 1);
+    tide[0] += m * Math.cos(b.ph); tide[1] += m * Math.sin(b.ph);
+  }
+  // Frost spreads from a cube while the fire is low; the heat thaws it back.
+  if (frost) {
+    const cube = bodies.some(b => b.kind === 'ice' && !b.gone && !b.fly);
+    frost.r = clamp(frost.r + dt * ((cube ? 0.16 : 0) - (0.02 + 0.16 * fire)), 0, 0.55);
+    frost.a = Math.min(1, frost.a + dt * 2);
+    if (!cube && frost.r <= 0) frost = null;
+    else if (cube && Math.random() < dt * 2.5 * (frost.r < 0.55 ? 1 : 0.2)) crackSound(frost.x);
+  }
   for (let i = bodies.length - 1; i >= 0; i--) {
     const b = bodies[i], K = b.K;
     b.age += dt;
@@ -2534,9 +3780,11 @@ function stepBodies(dt) {
       b.wz = lerp(f.start[2], end[2], t);
       b.y = lerp(f.start[1], end[1], t) + 1.1 * t * (1 - t);
       b.tumble = qaxis(...f.ax, f.spin * (1 - t) * (1 - t));
-      if (t >= 1) { b.fly = null; b.tumble = null; splash(b); }
+      if (t >= 1) { b.fly = null; b.tumble = null; if (K.air) throwSound(); else splash(b); }
       continue;
     }
+    if (b.hop) { stepHop(b, dt, rs); continue; }
+    if (b.lev) { stepLev(b, dt, rs); continue; }
     // A held thing follows the hand, lifted a little; otherwise it rides the flow.
     if (b.held) {
       const kh = 1 - Math.exp(-dt * 10);
@@ -2552,6 +3800,12 @@ function stepBodies(dt) {
       b.vx += (ux - b.vx) * k;
       b.vz += (uz - b.vz) * k;
     }
+    if (!b.gone) ACT[b.kind]?.(b, dt, rs);
+    // The tilt slides things downhill.
+    b.vx -= tide[0] * 6 * dt; b.vz -= tide[1] * 6 * dt;
+    // Frost holds a thing still.
+    b.frozen = !!frost && !K.air && Math.hypot(b.x - frost.x, b.z - frost.z) * rs < frost.r * 0.9;
+    if (b.frozen) { const f = Math.exp(-dt * 10); b.vx *= f; b.vz *= f; b.yawV *= f; b.vy *= f; }
     b.liftH = (b.liftH || 0) + ((b.held ? 0.07 : 0) - (b.liftH || 0)) * (1 - Math.exp(-dt * (b.held ? 6 : 9)));
     // The boil pushes things off the plumes.
     for (const p of plumes) {
@@ -2584,10 +3838,13 @@ function stepBodies(dt) {
     // Bob: a spring to the surface; tilt: springs that rock back.
     b.vy += (-b.bob * 46 - b.vy * 5.5) * dt;
     b.bob += b.vy * dt;
+    // How deep it went lately; the mark dries down at 2 cm a second.
+    b.dunk = Math.max((b.dunk || 0) - dt * 0.02, -b.bob);
     b.pitchV += (-b.pitch * 30 - b.pitchV * 4) * dt;
     b.rollV += (-b.roll * 30 - b.rollV * 4) * dt;
     b.pitch += b.pitchV * dt;
     b.roll += b.rollV * dt;
+    if (!b.gone) AIM[b.kind]?.(b, dt, rs);
     // A thing about to break shivers.
     const shiver = K.into && K.into !== 'melt' && b.cook > 0.86 && b.cook < 1 && !reduced() ? (b.cook - 0.86) * 0.5 : 0;
     if (shiver) { b.roll += rand(-1, 1) * shiver; b.pitch += rand(-1, 1) * shiver; }
@@ -2611,17 +3868,21 @@ function stepBodies(dt) {
     // Melting: shrink and sink, and let the last colour go.
     if (b.gone) {
       // A thing that split clears fast, as its pieces grow in; a piece melts slowly.
-      b.gone += dt / (b.split ? 0.45 : 2.2);
-      b.sink += dt * 0.05;
-      if (K.tint && !b.split && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
+      b.gone += dt / (b.split || b.eaten ? 0.45 : 2.2);
+      b.sink += dt * (b.eaten ? 0.25 : 0.05);
+      // A thing the hole takes slides into it as it shrinks.
+      if (b.eaten) { const kk = Math.min(1, dt * 6); b.x += (b.eaten.x - b.x) * kk; b.z += (b.eaten.z - b.z) * kk; }
+      if (K.tint && !b.split && !b.eaten && Math.random() < dt * 4) emit(b.x, b.z, 0.12, K.mass * 0.12, K.tint, 0);
       if (b.gone >= 1) { bodies.splice(i, 1); continue; }
     }
   }
+  if (!holeB) holeDip[2] = 0;
   // Things nudge each other apart.
   for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
     const a = bodies[i], b = bodies[j];
     // A thing that just split no longer pushes; its pieces take its place.
-    if (a.fly || b.fly || a.split || b.split) continue;
+    // A hole takes things in; it never pushes them off.
+    if (a.fly || b.fly || a.split || b.split || a.hop || b.hop || a.lev || b.lev || a.K.air || b.K.air || a.kind === 'hole' || b.kind === 'hole') continue;
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz) + 1e-4, min = (a.rad + b.rad) / rs * 0.85;
     if (d < min) {
       const push = (min - d) * 0.5, nx = dx / d, nz = dz / d;
@@ -2670,7 +3931,7 @@ function thingAt(sx, sz) {
   const rs = soupR(level);
   let best = null, bd = 1e9;
   for (const b of bodies) {
-    if (b.fly || b.gone) continue;
+    if (b.fly || b.gone || b.hop) continue;
     const d = Math.hypot(b.x - sx, b.z - sz) * rs;
     if (d < Math.max(b.rad, 0.07) * 1.2 && d < bd) { bd = d; best = b; }
   }
@@ -2678,6 +3939,9 @@ function thingAt(sx, sz) {
 }
 // A tap on a thing dunks it: it bobs under, splashes and rocks.
 function dunk(b) {
+  if (b.kind === 'candle') snuff(b);
+  if (b.kind === 'frog') b.tk = 0.12;
+  if (b.kind === 'toad' && !b.gone) { sporePop(b); return; }
   b.vy -= 0.9 + 0.8 * clamp(b.K.sq + 0.1);
   b.pitchV += rand(-6, 6); b.rollV += rand(-6, 6);
   imps.push([b.x, b.z, 0.06 + b.rad / soupR(level) * 0.5, -0.02]);
@@ -2849,7 +4113,19 @@ function spoonWorld() {
   // The handle leans out and away, so it reads as a long stick.
   const l0 = [spoon.x * 0.7 + 0.22, 1, -0.32 - spoon.z * 0.25], r0 = Math.hypot(spoon.x, spoon.z) || 1, k = spoon.lean || 0;
   // At rest the handle leans out over the rim, away from the middle.
-  const lean = norm([lerp(l0[0], spoon.x / r0 * 1.1, k), lerp(1, 0.85, k), lerp(l0[2], spoon.z / r0 * 1.1, k)]);
+  let lean = norm([lerp(l0[0], spoon.x / r0 * 1.1, k), lerp(1, 0.85, k), lerp(l0[2], spoon.z / r0 * 1.1, k)]);
+  // The handle clears the rim: it stands up until it passes over the lip.
+  // The handle starts up to 9 cm out from the bowl's centre, toward the wall.
+  const rimD = (px, py, pz) => Math.hypot(Math.hypot(px, pz) - RR, py - RY) - RT;
+  for (let i = 0; i < 16; i++) {
+    const h = Math.hypot(lean[0], lean[2]);
+    if (h < 1e-3) break;
+    const ox = x + lean[0] / h * 0.1, oy = by, oz = z + lean[2] / h * 0.1;
+    let near = 9;
+    for (let t = 0; t < 0.8; t += 0.02) near = Math.min(near, rimD(ox + lean[0] * t, oy + lean[1] * t, oz + lean[2] * t));
+    if (near > 0.05) break;
+    lean = norm([lean[0] * 0.85, lean[1], lean[2] * 0.85]);
+  }
   return { a: [x, by, z], b: [x + lean[0] * 3, by + lean[1] * 3, z + lean[2] * 3], show: spoon.lift < 0.999 };
 }
 
@@ -3012,7 +4288,123 @@ function plopSound(b) {
     o.start(t);
     o.stop(t + 0.15);
   }
+  // The hole lands with a long, deep groan; antimatter with a thin whine.
+  if (K.k === 28) blop(ac, at, { f: 70, rise: 0.5, dur: 1.6, level: 0.3, pan });
+  // The mandrake shrieks; the magnet hums.
+  if (K.k === 35) shriek(ac, at, pan);
+  if (K.k === 44) blop(ac, at, { f: 110, rise: 1.0, dur: 0.6, level: 0.05, pan, type: 'square' });
+  // The moon rings low and long; the ice cracks as it lands.
+  if (K.k === 32) for (const f of [196, 294, 392]) blop(ac, at + 0.02, { f, rise: 1.0, dur: 2.2, level: 0.035, pan, type: 'triangle' });
+  if (K.k === 33) for (let i = 0; i < 5; i++) burst(ac, at + 0.05 + i * 0.04 * jit(0.4), { f: rand(3500, 6500), q: 4, dur: 0.03, level: 0.06, pan });
+  if (K.k === 27) blop(ac, at, { f: 1800, rise: 1.3, dur: 0.7, level: 0.04, pan, type: 'triangle' });
   if (K.k === 7) for (let i = 0; i < 6; i++) blop(ac, at + 0.05 + i * 0.07, { f: rand(1800, 3600), rise: 1.02, dur: 0.5, level: 0.035, pan: rand(-0.5, 0.5), type: 'triangle' });
+}
+// The frog croaks: two short, buzzy, falling notes.
+function croak(b) {
+  const ac = kit.live();
+  if (!ac) return;
+  const at = ac.currentTime + 0.01, pan = panOf(b.x);
+  for (let i = 0; i < 2; i++) {
+    const t = at + i * 0.13, o = ac.createOscillator(), am = ac.createOscillator(), ag = ac.createGain(), mg = ac.createGain(), g = ac.createGain(), lp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(190 * jit(0.06), t);
+    o.frequency.exponentialRampToValueAtTime(120, t + 0.11);
+    // A fast wobble makes the buzz.
+    am.frequency.value = 38; ag.gain.value = 0.5; mg.gain.value = 0.5;
+    am.connect(ag).connect(mg.gain);
+    lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 4;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(1e-4, t + 0.12);
+    pn.pan.value = pan;
+    o.connect(lp).connect(mg).connect(g).connect(pn).connect(kit.out);
+    o.start(t); am.start(t);
+    o.stop(t + 0.14); am.stop(t + 0.14);
+  }
+}
+// Wet feet land on iron.
+function rimSound(b) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(b.wx ?? b.x);
+  blop(ac, at, { f: 140, rise: 0.7, dur: 0.08, level: 0.1, pan });
+  burst(ac, at, { f: 900, q: 0.8, dur: 0.06, level: 0.05, pan });
+}
+function hissSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.005, { f: 3800, q: 0.6, dur: 0.35, level: 0.07, pan: panOf(x) });
+}
+// Antimatter: a bright crack, a falling zap and a low thump.
+function zapSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.003, pan = panOf(x);
+  burst(ac, at, { f: 5000, q: 0.5, dur: 0.12, level: 0.2, pan });
+  blop(ac, at, { f: 2400, rise: 0.05, dur: 0.35, level: 0.1, pan, type: 'square' });
+  blop(ac, at, { f: 90, rise: 0.4, dur: 0.5, level: 0.35, pan });
+}
+// The mandrake's shriek: a rising, wavering scream that breaks off.
+function shriek(ac, at, pan) {
+  const o = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain(), bp = ac.createBiquadFilter(), pn = ac.createStereoPanner();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(700, at);
+  o.frequency.exponentialRampToValueAtTime(1700, at + 0.18);
+  o.frequency.exponentialRampToValueAtTime(1100, at + 0.6);
+  lfo.frequency.value = 13; lg.gain.value = 60;
+  lfo.connect(lg).connect(o.frequency);
+  bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 2;
+  g.gain.setValueAtTime(0, at);
+  g.gain.linearRampToValueAtTime(0.1, at + 0.04);
+  g.gain.setValueAtTime(0.1, at + 0.5);
+  g.gain.exponentialRampToValueAtTime(1e-4, at + 0.65);
+  pn.pan.value = pan;
+  o.connect(bp).connect(g).connect(pn).connect(kit.out);
+  o.start(at); lfo.start(at);
+  o.stop(at + 0.7); lfo.stop(at + 0.7);
+}
+function rainSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + Math.random() * 0.05, { f: rand(3000, 6000), q: 2, dur: 0.02, level: 0.012, pan: panOf(x) + rand(-0.2, 0.2) });
+}
+function tickSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.005, { f: 3200, q: 6, dur: 0.012, level: 0.05, pan: panOf(x) });
+}
+// The lift: a deep swell that rises.
+function liftSound(x) {
+  const ac = kit.live();
+  if (!ac) return;
+  blop(ac, ac.currentTime + 0.01, { f: 80, rise: 4, dur: 1.2, level: 0.18, pan: panOf(x) });
+}
+// Frost creeps: a tiny, high crackle.
+function crackSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  burst(ac, ac.currentTime + 0.005, { f: rand(4000, 7000), q: 5, dur: 0.02, level: 0.03, pan: panOf(x) });
+}
+// Spores: a soft, low puff and a few high sparkles.
+function poofSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  burst(ac, at, { f: 400, type: 'lowpass', q: 0.7, dur: 0.25, level: 0.18, pan });
+  for (let i = 0; i < 4; i++) blop(ac, at + 0.06 + i * 0.06, { f: rand(2600, 4200), rise: 1.02, dur: 0.3, level: 0.025, pan: rand(-0.5, 0.5), type: 'triangle' });
+}
+// The hole swallows a thing: a short note that slides away down.
+function gulpSound(o) {
+  const ac = kit.live();
+  if (!ac) return;
+  blop(ac, ac.currentTime + 0.01, { f: 600, rise: 0.12, dur: 0.6, level: 0.08, pan: panOf(o.x), type: 'triangle' });
+}
+function holePopSound(x) {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  const at = ac.currentTime + 0.005, pan = panOf(x);
+  blop(ac, at, { f: 300, rise: 3, dur: 0.18, level: 0.15, pan });
+  for (let i = 0; i < 5; i++) blop(ac, at + 0.04 + i * 0.05, { f: rand(2000, 3800), rise: 1.02, dur: 0.4, level: 0.03, pan: rand(-0.5, 0.5), type: 'triangle' });
 }
 // A soft whoosh as a thing leaves the hand.
 function throwSound() {
@@ -3138,6 +4530,7 @@ function stepDrain(dt) {
 }
 function fillBroth() {
   resetMean();
+  reduce = 0;
   for (const t of dye) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
     gl.viewport(0, 0, dyeN, dyeN);
@@ -3190,6 +4583,7 @@ function runDye(dt, src, dst, n = dyeN) {
   if (relaxT > 0.25) { relax = draining ? 0.25 : 0; relaxT = 0; }
   if (draining && draining.phase === 'down') relax = Math.max(relax, dt * 2.5);
   gl.uniform1f(dyeP.u('uRelax'), relax);
+  gl.uniform1f(dyeP.u('uBlend'), devV('blend', 5));
   const m = draining ? [BROTH[0], BROTH[1], BROTH[2], 1] : [mean[0], mean[1], mean[2], mean[3]];
   gl.uniform4f(dyeP.u('uMean'), ...m);
   const pl = new Float32Array(16);
@@ -3212,13 +4606,24 @@ function dyeStep(dt) {
   runDye(dt, dye[di], dye[1 - di]);
   di = 1 - di;
 }
-const impU = new Float32Array(16 * 4);
+const impU = new Float32Array(16 * 4), plumeR = new Float32Array(16);
 function rippleStep(steps) {
   gl.useProgram(ripP);
   gl.viewport(0, 0, RN, RN);
   gl.uniform2f(ripP.u('uTexel'), 1 / RN, 1 / RN);
   gl.uniform1f(ripP.u('uExt'), FE);
-  gl.uniform1f(ripP.u('uDamp'), 0.98 - 0.012 * thick());
+  gl.uniform1f(ripP.u('uDamp'), 0.98);
+  gl.uniform1f(ripP.u('uStiff'), devV('stiff', 1));
+  gl.uniform1i(ripP.u('uDye'), 1);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, dye[di].tex[0]);
+  // A calm shiver at low fire grows into a rolling boil at full fire.
+  const heat = reduced() || draining ? 0 : fire;
+  const bk = heat < 0.04 ? 0 : devV('boil', 1);
+  gl.uniform1f(ripP.u('uShiver'), 0.00003 * (0.4 + heat) * bk);
+  gl.uniform1f(ripP.u('uBoil'), 0.0005 * heat * heat * heat * bk);
+  plumes.forEach((p, i) => plumeR.set([p.x, p.z, 0, 0], i * 4));
+  gl.uniform4fv(ripP.u('uPl'), plumeR);
   gl.uniform1i(ripP.u('uRip'), 0);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindVertexArray(vao);
@@ -3226,6 +4631,7 @@ function rippleStep(steps) {
     const n = s === 0 ? Math.min(16, imps.length) : 0;
     for (let i = 0; i < n; i++) impU.set(imps[i], i * 4);
     if (s === 0) imps.splice(0, n);
+    gl.uniform1f(ripP.u('uTime'), time + s / 120);
     gl.uniform1i(ripP.u('uNI'), n);
     gl.uniform4fv(ripP.u('uImp'), impU);
     gl.bindFramebuffer(gl.FRAMEBUFFER, rip[1 - ri].fb);
@@ -3304,7 +4710,9 @@ function layerPass() {
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
-const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4);
+const plumeS = new Float32Array(16);
+const glowU = new Float32Array(24), glowCU = new Float32Array(24);
+const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4), spatU = new Float32Array(NSP * 4);
 function scenePass() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
   gl.viewport(0, 0, hdr.w, hdr.h);
@@ -3316,14 +4724,30 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uFire'), fire);
   gl.uniform1f(sceneP.u('uFlick'), flick);
   gl.uniform1f(sceneP.u('uLevel'), level);
+  gl.uniform1f(sceneP.u('uReduce'), reduce);
+  gl.uniform1f(sceneP.u('uCaus'), devV('caustics', 0.6));
   gl.uniform1f(sceneP.u('uRS'), rs);
   gl.uniform3f(sceneP.u('uBedP'), ...bedP());
   gl.uniform1f(sceneP.u('uDip'), dip);
   gl.uniform1f(sceneP.u('uFunnel'), funnel);
   gl.uniform1f(sceneP.u('uExt'), FE);
   gl.uniform1f(sceneP.u('uSoupK'), 0.75 + 0.35 * fire);
-  gl.uniform3f(sceneP.u('uKeyDir'), ...KEY);
-  gl.uniform3f(sceneP.u('uKeyCol'), 1.2, 1.02, 0.82);
+  gl.uniform1f(sceneP.u('uClear'), devV('clarity', 1));
+  gl.uniform1f(sceneP.u('uSkinK'), devV('skinLook', 0));
+  gl.uniform1f(sceneP.u('uFilmK'), devV('oilFilm', 1));
+  gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
+  plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
+  gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
+  const kt = devV('keyTurn', 0) * Math.PI / 180, kc = Math.cos(kt), ks = Math.sin(kt);
+  gl.uniform3f(sceneP.u('uKeyDir'), ...norm([KEY[0] * kc - KEY[2] * ks, devV('keyUp', 0.45), KEY[0] * ks + KEY[2] * kc]));
+  const ki = devV('keyI', 0.8), kw = devV('keyWarm', 0.5);
+  // Cool white, today's warm lamp, deep amber.
+  const kcol = kw < 0.5 ? [1.02, 1.02, 1.08].map((v, i) => lerp(v, [1.2, 1.02, 0.82][i], kw * 2)) : [1.2, 1.02, 0.82].map((v, i) => lerp(v, [1.3, 0.88, 0.5][i], kw * 2 - 1));
+  gl.uniform3f(sceneP.u('uKeyCol'), kcol[0] * ki, kcol[1] * ki, kcol[2] * ki);
+  gl.uniform1f(sceneP.u('uRoomK'), devV('room', 1));
+  gl.uniform1f(sceneP.u('uBeads'), devV('beads', 1));
+  gl.uniform1f(sceneP.u('uSpin'), spin);
+  gl.uniform1f(sceneP.u('uMirror'), devV('mirror', true) ? 1 : 0);
   gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
   gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
   gl.uniform1f(sceneP.u('uDof'), devV('dof', 7));
@@ -3340,12 +4764,42 @@ function scenePass() {
     q = qmul(q, qaxis(1, 0, 0, b.roll));
     q = qmul(q, qaxis(0, 0, 1, b.pitch));
     if (b.tumble) q = qmul(b.tumble, q);
+    // Keep w positive so the shader can rebuild it.
+    if (q[3] < 0) q = q.map(x => -x);
+    const mark = b.fly ? 0 : clamp(b.bob + (b.dunk || 0), 0, 0.08);
     const wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
-    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], q[3], b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
+    bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], mark, b.kind === 'candle' && b.out ? 29 : b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
     n++;
   }
   gl.uniform1i(sceneP.u('uNB'), n);
   gl.uniform4fv(sceneP.u('uB'), bodyU);
+  // Lights from the things: flashes first, then flames, beads and the hole's ring.
+  let ng = 0;
+  const glow = (x, y, z, w, c, reach) => { if (ng >= 6) return; glowU.set([x, y, z, w], ng * 4); glowCU.set([...c, reach], ng * 4); ng++; };
+  for (const f of flashes) glow(f.x, f.y, f.z, f.w * (1 - f.t / f.dur) ** 2, f.c, f.reach);
+  for (const b of bodies) {
+    if (b.fly && b.fly.t < 0) continue;
+    const shrink = b.gone ? 1 - smooth(0, 1, b.gone) : 1, wx = b.wx ?? b.x * rs, wz = b.wz ?? b.z * rs;
+    if (b.kind === 'candle' && !b.out) {
+      const top = -0.09 + 0.18 * (1 - 0.45 * Math.min(b.cook, 1));
+      glow(wx, b.y + (top + 0.075) * b.scale * shrink, wz, 0.9 * shrink * (0.88 + 0.08 * Math.sin(time * 23) + 0.06 * Math.sin(time * 9.7)), [1, 0.62, 0.3], 0.45);
+    } else if (b.kind === 'anti') glow(wx, b.y, wz, 0.5 * shrink * (0.85 + 0.15 * Math.sin(time * 47)), [0.75, 0.6, 1.2], 0.3);
+    else if (b.kind === 'hole' && b.hs) glow(wx, b.y, wz, 0.35 * b.hs * shrink, [1, 0.55, 0.25], 0.4);
+    else if (b.kind === 'moon') glow(wx, b.y + 0.05, wz, 0.18 * shrink, [0.75, 0.85, 1.1], 0.35);
+    else if (b.kind === 'sun') glow(wx, b.y, wz, 1.4 * shrink, [1.2, 0.6, 0.2], 1.2);
+    else if (b.kind === 'lift') glow(wx, b.y, wz, 0.35 * shrink, [0.4, 1.1, 0.8], 0.3);
+  }
+  gl.uniform1i(sceneP.u('uNG'), ng);
+  gl.uniform4fv(sceneP.u('uGlow'), glowU);
+  gl.uniform4fv(sceneP.u('uGlowC'), glowCU);
+  gl.uniform4f(sceneP.u('uHole'), holeDip[0], holeDip[1], holeDip[2], holeDip[3]);
+  gl.uniform2f(sceneP.u('uTide'), tide[0], tide[1]);
+  const pz = bodies.find(b => b.kind === 'prism' && !b.fly), st = bodies.find(b => b.kind === 'stone' && !b.fly);
+  gl.uniform4f(sceneP.u('uPrism'), pz ? pz.x * rs : 0, pz ? pz.z * rs : 0, 0, pz ? smooth(0, 1, pz.age) * (pz.gone ? 1 - smooth(0, 1, pz.gone) : 1) : 0);
+  gl.uniform4f(sceneP.u('uStone'), st ? st.x * rs : 0, st ? st.y : 0, st ? st.z * rs : 0, st ? smooth(0, 1.5, st.age) * (st.gone ? 1 - smooth(0, 1, st.gone) : 1) : 0);
+  gl.uniform4f(sceneP.u('uFrost'), frost ? frost.x * rs : 0, frost ? frost.z * rs : 0, frost ? frost.r : 0, frost && frost.r > 0 ? frost.a : 0);
+  const hb = holeB && !holeB.gone ? holeB : null;
+  gl.uniform4f(sceneP.u('uHoleP'), hb ? hb.wx ?? hb.x * rs : 0, hb ? hb.y : 0, hb ? hb.wz ?? hb.z * rs : 0, hb ? hb.hs : 0);
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
   gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
   gl.uniform4fv(sceneP.u('uBub'), bubU);
@@ -3353,19 +4807,24 @@ function scenePass() {
   gl.uniform4fv(sceneP.u('uDropC'), dropCU);
   gl.uniform1i(sceneP.u('uND'), drops.length);
   gl.uniform4fv(sceneP.u('uDrop'), dropU);
+  spats.forEach((p, i) => spatU.set([p.x, p.y, p.z, p.age + Math.floor(p.r * 1000)], i * 4));
+  gl.uniform1i(sceneP.u('uNSp'), spats.length);
+  gl.uniform4fv(sceneP.u('uSpat'), spatU);
   const sw = spoonWorld();
   gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
   gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
-  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex].forEach((t, i) => {
+  gl.uniform1i(sceneP.u('uTool'), Math.round(devV('tool', 0)));
+  [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex, velTex].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, t);
   });
-  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
+  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD', 'uVel'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // The key lamp hangs high behind the pot, a little to the left.
-const KEY = norm([-0.12, 0.68, -0.72]);
+// The lamp's bearing; its height and strength come from Dev rows.
+const KEY = [-0.12, 0.68, -0.72];
 let seedN = 0;
 function outPass() {
   const bl = bloom.render(hdr.tex[0], hdr.w, hdr.h, { threshold: 0.9, cap: 8, levels: glowDetail(D.level).levels });
@@ -3433,9 +4892,16 @@ function wake() {
 // Only a hand's work counts: a stir, a throw and its splash, a drain, a spin still turning.
 // Bobbing and bubbles are the simmer, which 30 fps carries.
 let splashAt = -10;
+// A floating watch runs the pot at half speed; time eases back when it goes.
+let timeK = 1;
+function slowK(gap) {
+  const slow = bodies.some(b => b.kind === 'clock' && !b.gone && !b.fly);
+  timeK += ((slow ? 0.5 : 1) - timeK) * Math.min(1, gap * 2);
+  return timeK;
+}
 function busy() {
   return Math.hypot(look.tx - look.x, look.ty - look.y) > 0.01 || !!ptr || spoon.on || (spoon.lift < 1 && !(spoon.rest && Math.hypot(spoon.tx - spoon.x, spoon.tz - spoon.z) < 0.01)) || keyStir.dir !== 0 || !!draining || time - splashAt < 1.5
-    || pours.length > 0 || bodies.some(b => b.fly) || Math.abs(omega) > 0.08 || energy > 0.004;
+    || pours.length > 0 || bodies.some(b => b.fly || b.hop || b.lev || b.K.air) || !!holeB || flashes.length > 0 || !!frost || Math.abs(omega) > 0.08 || energy > 0.004;
 }
 function frame(now) {
   frameNo++;
@@ -3446,7 +4912,7 @@ function frame(now) {
     // A hand at work draws at up to 60 fps; the simmer draws at 30.
     // A 2 ms slack absorbs rAF timestamp jitter, so no frame is skipped.
     if (now - rendered < (lively ? 1000 / 60 - 2 : 1000 / 30 - 2)) { again = visible; return; }
-    const gap = (now - (rendered || now - 16)) / 1000, dt = clamp(gap, 0, 0.05);
+    const gap = (now - (rendered || now - 16)) / 1000, dt = clamp(gap, 0, 0.05) * slowK(gap);
     if (lively && wasLively && gap < 0.1) D.frame(gap);
     wasLively = lively;
     rendered = now;
@@ -3456,6 +4922,11 @@ function frame(now) {
     stepLook(dt);
     hand.s *= Math.exp(-dt * 1.5);
     stepDrain(dt);
+    // A hard boil steams the soup down, over minutes at full fire.
+    if (!draining) {
+      if (fire > 0.3 && !reduced()) reduce = Math.min(1, reduce + dt * 0.004 * devV('reduce', 1) * (fire - 0.3) / 0.7);
+      level = -0.12 * reduce;
+    }
     stepSpoon(dt);
     if (lively || energy > 1e-5) stepFluid(dt);
     else { omega = 0; energy = 0; }
@@ -3464,10 +4935,12 @@ function frame(now) {
     dip = clamp(w2 / (2 * G), 0, 0.2);
     funnel = clamp(w2 * 0.006, 0, 0.1);
     swirl += omega * dt * 0.5;
+    spin += omega * dt;
     stepBodies(dt);
     stepPours(dt);
     stepBubbles(dt);
     stepDrops(dt);
+    stepSpats(dt);
     stepPuffs(dt);
     stepSparks(dt);
     // Bodies and the bed sound.
@@ -3492,6 +4965,7 @@ act.add = () => { const [x, z] = freeSpot(); throwNext(x, z); };
 act.clear = () => startDrain();
 act.reset = () => {
   draining = null;
+  frost = null;
   level = 0;
   clearFlow();
   fillBroth();
