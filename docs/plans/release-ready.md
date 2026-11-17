@@ -42,7 +42,7 @@ One row per outside source:
 | Source | What it is, and its file or URL |
 | Kind | Library, data, audio, font, model, texture, technique |
 | Licence | The licence by name (MIT, CC0, CC BY 4.0, ODbL, own work). "Unknown" blocks the label |
-| Credit shows | Yes (where on screen) or No (not required) |
+| Credit shows | Yes (in the annex's Credits block, G8) or No (not required) |
 
 - The libraries from the set and their licences: three.js (MIT), culori (MIT), Tone.js (MIT), GSAP 3.13 (the GSAP standard licence, free since 3.13), simplex-noise (MIT). B612 (SIL OFL 1.1), Gabarito (SIL OFL 1.1) and Iosevka (SIL OFL 1.1) are the site fonts. List each one a toy loads.
 - A technique counts when a comment names its source (an author, a paper, a Shadertoy id) or when the code follows a known published method.
@@ -388,3 +388,12 @@ Batch 1, 2026-11-16 (Tom):
 | G1 | All downloaded | None of the recorded audio is Tom's own work. Each file needs its source and licence found before its toy is approved: Railgun (shot, impact, boom, thrust), Launch (thrust), Fireworks (15 takes), Glass (gunshot), Sonar (ping). `ms3guns.mp3` is gone from the repo |
 | G4 | Judge per toy | Each toy's own chat proposes rest or keeps the motion; Tom decides there. Item 14 says so |
 | G5 | Still frame and one line | Galaxy, Fire, Ink Water and Cauldron get decision 4 as written. Spark wheel keeps its Classic build |
+
+Batch 2, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| G2 | Find each licence | Window seat's and Train ride's chats trace each clip to its page and record the licence. A clip that asks for credit gets it in the annex (G8) |
+| G3 | Keep all four | The Strangereal egg (`window/ode.js`), the flyby nod, ShadyOS's OS names and TV tree's "Claude" channel stay. The traced map still needs an attribution row; its licence is unknown |
+| G7 | Keep, `noindex` | Lab and probe pages in toy folders stay public with `noindex` and no link. Each toy's chat adds the tag |
+| G8 | The annex | Credits show in the annex under the stage, its Credits block ([annex.md](annex.md); Tom picked A, Recede, 2026-11-09). Tom: "remember we had an area for below (content) to the toys on their toy pages". A toy whose source asks for credit needs its annex before approval |
