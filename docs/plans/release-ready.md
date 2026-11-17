@@ -397,3 +397,16 @@ Batch 2, 2026-11-16 (Tom):
 | G3 | Keep all four | The Strangereal egg (`window/ode.js`), the flyby nod, ShadyOS's OS names and TV tree's "Claude" channel stay. The traced map still needs an attribution row; its licence is unknown |
 | G7 | Keep, `noindex` | Lab and probe pages in toy folders stay public with `noindex` and no link. Each toy's chat adds the tag |
 | G8 | The annex | Credits show in the annex under the stage, its Credits block ([annex.md](annex.md); Tom picked A, Recede, 2026-11-09). Tom: "remember we had an area for below (content) to the toys on their toy pages". A toy whose source asks for credit needs its annex before approval |
+
+Batch 3, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| morpher.1 | Keep cycling | Auto stays the default and keeps morphing. Tom accepts its idle motion (G4); item 14 passes on this point |
+| morpher.2 | Keep silent | No sound. `sound: false` stays |
+| pop.1 | Write it | Pop field gets a vignette in its own chat |
+| fidget.1 | Add Shuffle (S) | A `shuffle` action with key S beside Reset |
+| fidget.2 | Move to archive | The 46 unmounted parts leave `fidget/parts/` for an archive folder outside the published toy. This overrides G7 for Fidget |
+| fidget.3 | No Settings | No Quality row; the Settings button stays hidden |
+| domino.1 | Keep Yours | The photo upload stays; the photo never leaves the browser |
+| domino.2 | Leave hidden | The strip keeps its four entries; Space stays a hidden key |
