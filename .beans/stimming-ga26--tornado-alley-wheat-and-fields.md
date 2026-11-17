@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T08:00:13Z
-updated_at: 2026-11-17T08:22:47Z
+updated_at: 2026-11-17T08:30:24Z
 parent: stimming-dwwg
 ---
 
@@ -16,3 +16,7 @@ Own the plain's wheat and fields in tornado/main.js (envScene GLSL): the wheat a
 - [x] Near wheat: stalks and heads near the eye with self-shadow, parallax and motion
 - [ ] 30 fps on the minimum frame with three F4.5 at 1828 x 984; console clean
 - [ ] Stills in docs/qa/tornado-fields/ (golden hour, dusk, low and full Storm)
+
+## Merge with main (2026-11-17)
+
+Main's `tornado/wheat.js` stand (ground session, stimming-o3o5) replaces my slice stand. My wind (`gust(xz, fx)` vec4, `bend(gw, h)`, uGust, uTorF, the flatten) and the fields stay. Short forms `gust(xz)` and `bend(xz, h, g)` read the new wind, so wheat.js and line.js run on it unchanged. Both fields beside the eye are wheat. The 30 fps check waits for a quiet GPU: main alone measured 35.5 ms at best during the merge, the branch 33.7 ms.
