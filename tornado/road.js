@@ -7,6 +7,8 @@ export const ROAD_GLSL = /* glsl */`
 /* ---------- the road and its verges ---------- */
 // A noise term that fades to its mean once a pixel covers it: no shimmer far off.
 float rdN(vec2 p, float fx, float size) { return mix(0.5, vn(p), 1.0 - smoothstep(size * 0.5, size * 2.0, fx)); }
+// Cells from the noise volume (Worley): 0 at a stone's heart, near 1 at its edge. 4 cells per unit of p.
+float rdW(vec2 p, float fx, float size) { return mix(0.5, W(vec3(p, 0.37)), 1.0 - smoothstep(size * 0.5, size * 2.0, fx)); }
 // The split-sum's reflectance for a roughness and a view angle (a fitted curve).
 vec2 envBRDF(float r, float nv) {
   vec4 q = r * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
@@ -45,17 +47,30 @@ vec3 roadside(vec3 c, vec3 P, vec3 rd, float fx) {
   // The wandering edges: asphalt to gravel, gravel to grass, grass to wheat.
   float eA = 3.7 + 0.05 * (vn(vec2(z * 0.9, 3.0)) - 0.5) + 0.05 * (rdN(r1 * vec2(3.0, 9.0), fx, 0.05) - 0.5);
   float mA = 1.0 - smoothstep(eA - 0.012 - fx, eA + 0.012 + fx, ax);
-  float eG = 4.75 + 0.3 * (vn(vec2(z * 0.25, 7.0)) - 0.5) + 0.35 * (rdN(r1 * 1.7, fx, 0.3) - 0.5) + 0.15 * (rdN(P.xz * 9.0, fx, 0.05) - 0.5);
-  float mG = smoothstep(eG - 0.12 - fx, eG + 0.12 + fx, ax);
+  // Gravel to grass is a wide, soft feather: grass tufts creep onto the stones first, then close up.
+  float eG = 4.75 + 0.3 * (vn(vec2(z * 0.25, 7.0)) - 0.5) + 0.3 * (rdN(r1 * 1.7, fx, 0.3) - 0.5);
+  float tufts = rdW(r1 * 5.0, fx, 0.06);
+  float mG = smoothstep(eG - 0.45 - fx, eG + 0.45 + fx, ax);
+  mG = clamp(mG * 1.6 - tufts * 0.6 * (1.0 - mG), 0.0, 1.0);
+  // Where they meet, fine dirt washed off the berm.
+  float dirt = mG * (1.0 - mG) * 4.0 * (0.5 + 0.5 * rdN(r1 * 3.3 + 2.0, fx, 0.1));
   float mW = smoothstep(-0.1 - fx, 0.45 + fx, whInside(P.xz) + 0.2 * (rdN(r1 * 3.1, fx, 0.15) - 0.5));
   // Grass: dry, late in the season, in tufts with bare patches; rough and dull.
-  float tuft = rdN(P.xz * vec2(9.0, 2.0), fx, 0.1) * 0.5 + rdN(r1 * 31.0, fx, 0.03) * 0.5;
-  vec3 gA = mix(vec3(0.13, 0.15, 0.05), vec3(0.22, 0.18, 0.09), rdN(r1 * 0.9, fx, 0.5)) * (0.6 + 0.8 * tuft);
+  // Blades show as streaks, each clump combed its own way; dark gaps open between the clumps.
+  vec2 r3 = mat2(0.26, 0.97, -0.97, 0.26) * P.xz;
+  float blades = rdN(r1 * vec2(70.0, 9.0), fx, 0.012) * 0.5 + rdN(r3 * vec2(55.0, 7.0), fx, 0.015) * 0.5;
+  float clumpG = rdW(P.xz * 2.2, fx, 0.12);
+  float tuft = mix(rdN(P.xz * vec2(9.0, 2.0), fx, 0.1), blades, 0.6) * (1.15 - 0.6 * smoothstep(0.55, 0.9, clumpG));
+  vec3 gA = mix(vec3(0.13, 0.15, 0.05), vec3(0.24, 0.2, 0.1), rdN(r1 * 0.9, fx, 0.5)) * (0.55 + 0.85 * tuft);
   gA = mix(gA, vec3(0.12, 0.09, 0.06), 0.5 * smoothstep(0.62, 0.8, rdN(P.xz * 1.3 + 4.0, fx, 0.4)) * smoothstep(4.9, 5.4, ax) * (1.0 - smoothstep(5.6, 6.0, ax)));
   vec3 grass = gA * (uSunCol * 0.55 * kS + uAmb * 0.6 * ao) + uSunCol * sunSpec(Nd, V, L, 0.85, 0.03) * 0.3;
-  // Gravel: grey-brown stones, very rough; the berm's slope turns it to or from the sun.
-  float grit = mix(0.75, 1.2, rdN(P.xz * 40.0, fx, 0.025));
-  vec3 grav = vec3(0.2, 0.18, 0.15) * grit * (uSunCol * 0.55 * kS + uAmb * 0.6 * ao);
+  // Gravel: stones 2 to 4 cm, each its own tone, dark in the gaps; very rough.
+  // The berm's slope turns it to or from the sun.
+  float st1 = rdW(P.xz * 6.0, fx, 0.04), st2 = rdW(r1 * 14.0, fx, 0.018);
+  float stone = (1.15 - 0.55 * st1 * st1) * (1.05 - 0.3 * st2 * st2);
+  vec3 gTone = mix(vec3(0.2, 0.18, 0.15), vec3(0.26, 0.22, 0.17), rdN(P.xz * 24.0, fx, 0.04));
+  vec3 grav = gTone * stone * (uSunCol * 0.55 * kS + uAmb * 0.6 * ao);
+  grav = mix(grav, vec3(0.24, 0.19, 0.13) * (uSunCol * 0.55 * kS + uAmb * 0.6 * ao), dirt * 0.6);
   vec2 bG = envBRDF(0.9, nv);
   grav += mix(hz, deck, 0.6) * (0.04 * bG.x + bG.y) + uSunCol * sunSpec(Nd, V, L, 0.9, 0.04);
   // Asphalt: worn dark, lighter where tyres polish the aggregate, an oily strip down each lane.
@@ -65,9 +80,17 @@ vec3 roadside(vec3 c, vec3 P, vec3 rd, float fx) {
   // Crack seal: thin dark tar lines across the lanes, now and then.
   float cz = z / 13.0 + 0.4 * vn(vec2(dx * 0.6, floor(z / 13.0)));
   float tar = smoothstep(0.012 + fx, 0.0, abs(fract(cz) - 0.5) * 13.0) * step(0.4, vn(vec2(floor(z / 13.0), 2.0))) * (1.0 - smoothstep(0.02, 0.08, fx));
-  float rA = mix(0.78, 0.55, wheel * 0.6) - 0.3 * tar;
   vec3 aA = vec3(0.05, 0.05, 0.052) * (0.85 + 0.3 * rdN(P.xz * 0.7, fx, 1.0)) * (0.85 + 0.25 * rdN(r1 * 23.0, fx, 0.03));
-  aA *= (1.0 + 0.25 * wheel) * (1.0 - 0.25 * oil) * (1.0 - 0.3 * tar);
+  // Aggregate: pale stones show through the worn binder, most in the wheel paths.
+  float agg = smoothstep(0.22, 0.08, rdW(P.xz * 45.0, fx, 0.006)) * (0.5 + 0.8 * wheel);
+  aA = mix(aA, vec3(0.13, 0.125, 0.12), agg * 0.5);
+  // Patches of newer, darker asphalt, cut square across a lane.
+  float pz = floor(z / 9.0), pIn = step(0.82, th(vec2(pz, sign(dx)))) * step(abs(fract(z / 9.0) - 0.5), 0.3) * step(0.3, ux) * step(ux, 3.3);
+  aA *= 1.0 - 0.3 * pIn;
+  // Fine cracks near the crumbling edge: a ridge network in the noise.
+  float crk = (1.0 - smoothstep(0.0, 0.025, abs(rdN(r1 * 2.6 + 9.0, fx, 0.02) - 0.5))) * smoothstep(2.9, 3.5, ux) * (1.0 - smoothstep(0.01, 0.04, fx));
+  aA *= (1.0 + 0.25 * wheel) * (1.0 - 0.25 * oil) * (1.0 - 0.3 * tar) * (1.0 - 0.5 * crk);
+  float rA = mix(0.78, 0.55, wheel * 0.6) - 0.3 * tar - 0.1 * pIn;
   vec2 bA = envBRDF(rA, nv);
   vec3 envA = mix(hz, deck, smoothstep(0.02, 0.2, Rf.y) * (1.0 - 0.4 * rA) + 0.35 * rA);
   vec3 asph = aA * (uSunCol * 0.55 + uAmb * 0.6) + envA * (0.04 * bA.x + bA.y) + uSunCol * sunSpec(vec3(0.0, 1.0, 0.0), V, L, rA, 0.04);
