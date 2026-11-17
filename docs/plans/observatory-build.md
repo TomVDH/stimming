@@ -192,6 +192,30 @@ Tom on the first blockout: "we want woods and a view of the complex around it". 
 - [ ] **Step 5:** Wire it: a tap picks, a drag aims, the scene reads the machine each frame. The tracking light is a small lamp on the drum.
 - [ ] **Step 6: Commit.**
 
+### Task 6b: The pick sequence and the lights (Tom, 2026-11-17)
+
+Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
+
+**Files:**
+- Create: `observatory/src/core/sequence.ts`, `observatory/src/view/cuts.ts`, `observatory/src/world/lights.ts`
+- Modify: `observatory/src/loop.ts`, `observatory/src/view/camera.ts`, `observatory/src/world/complex.ts`
+- Test: `tests/observatory-sequence.test.mjs`
+
+**Interfaces:**
+- Consumes: `makeMachine` and `Phase` (Task 6).
+- Produces:
+  - `type Cut = { at: number; shot: 'edge' | 'slit' | 'roll' | 'gear'; dur: number }`
+  - `CUTS: Cut[]`: 3 or 4 cuts, 6 to 8 s in all
+  - `cutAt(t: number): Cut | null`: the cut that shows at sequence time t; null after the last cut (back to the wide shot)
+  - `lightLevel(phase: Phase, prev: number, dt: number): number`: 1 in `aim`, dims toward 0.35 in `open` and `slew`, 0 in `track`, `hold` and inside the telescope; it rises back to 1 over about 4 s
+  - `lights.ts`: `buildLights(complex): { set(level: number): void }` for windows, door lamps and road lamps
+
+- [ ] **Step 1: Write the failing tests:** `CUTS` covers 6 to 8 s with no gap; `cutAt(0)` is the `edge` cut; `cutAt(total + 0.01)` is null; `lightLevel('track', 1, 0.1)` falls toward 0 and reaches 0 within 3 s of steps; `lightLevel('aim', 0, 0.1)` reaches 1 within 4 to 5 s, not sooner than 3.5 s.
+- [ ] **Step 2: Run, expect FAIL.** **Step 3: Implement.** **Step 4: Run, expect PASS.**
+- [ ] **Step 5:** On load the main dome's shut slit faces the camera. A pick runs the cuts (each a close camera with a long lens, about 20 to 35° fov down to 8 to 12°, a slow drift inside each cut) while the shutter opens and the tube rolls through; then the wide shot, the turn and the hunt. Reduced motion: one crossfade to the wide shot, no cuts.
+- [ ] **Step 6:** Stills of each cut and the wide shot with lights at 1, 0.35 and 0; show Tom (a visible change).
+- [ ] **Step 7: Commit.**
+
 ### Task 7: The look (Tom's gate)
 
 **Files:**

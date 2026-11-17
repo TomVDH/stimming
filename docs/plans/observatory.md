@@ -97,6 +97,21 @@ Tom picked A: the 3D machine needs three.js, and the look comes from Railgun in 
 - **The sky.** Tonight's real sky at 51° N, from the catalog, with no moon. It turns at sidereal speed. Railgun's haze and grade sit over it.
 - **Fast time.** The Time slider runs the sky faster. Above a set speed, the stars draw trails with the accumulate and decay pass from `trails/index.html`, ported into the three.js chain.
 
+## The pick sequence and the lights
+
+Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
+
+1. **At rest.** On load, the main dome's shut slit faces the camera.
+2. **On a pick: a cut sequence.** About 6 to 8 s, 3 or 4 cuts, each a close-up on a long zoom lens: tight, shallow depth, slow, clean.
+   1. The shutter starts to slide: tight on the slit edge.
+   2. The shutter opens further: a wider close-up of the whole slit.
+   3. The telescope rolls through the open slit, against the sky.
+   4. Optional: the dome's ring gear or rail turning.
+3. **Back to the wide shot.** The domes turn to the star; the tube hunts for it.
+4. **The lights.** While the telescope hunts, the complex lights dim (windows, door lamps, road lamps). When it locks on and the survey starts, they go off. "Survey" is tracking and the time inside the telescope. Back to aim: the lights come up again, slowly.
+
+Blockout v2 (woods, clearing, three domes, building, shed, road, the camera on the rise) is approved.
+
 ## The machine
 
 1. **Aim.** The pointer moves the laser (mouse: move; touch: drag). The cupola turns after the beam's azimuth at a capped speed, with ease in and out.
