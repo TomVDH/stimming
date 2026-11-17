@@ -180,7 +180,8 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Swept glints | While the soup moves, the normal averages five taps along the flow (14 cm span at full speed), so the lamp's glints sweep along the swirl; calm soup keeps its crisp ripples |
 | Soft seams | The ridges between soups read over a 4-texel stencil from the capped thickness, not the raw weight, so a heavy pour has no crater or cliff |
 | Settling | Freshness rides in aux a: a pour or a stir sets it, it fades over about 4 s and moves with the soup. The marbling's relief follows it down to a tenth, so old swirls lie flat and keep only their colour |
-| Marble blend | The dye field blurs each frame with its four neighbours, so streaks melt into the broth over about a minute. Thick soup blends at a third of the rate; fat and skin spread at half of it. Dev row `blend` (0 is off) |
+| Marble blend | The dye field blurs each frame with its four neighbours, so streaks melt into the broth over about a minute. Thick soup blends at a third of the rate; skin and glitter creep at half of it. Dev row `blend` (0 is off) |
+| Oil film | Fat runs out across the broth at four times the colour blend. A thin film calms the small ripples into a glassy slick, adds a golden sheen with a trace of rainbow, and shows a fine bright line at its edge. Dev row `oilFilm` (0 is off) |
 | Film layers | Skin (aux b) sets on calm thick soup and cream, matte and wrinkled; wet broth; glassy fat with a faint oil-film rainbow |
 | Cooking | Things deepen, gloss and shrink a touch; a split thing clears in 0.45 s while its pieces grow in; melting pieces take on the soup's colour |
 | Steam | Rises over the boil's plumes in threads (Fire's detail noise erodes it), thin at high fire, leans with the wind |

@@ -203,6 +203,7 @@ const ui = initPage({ id: 'cauldron', bar: {
     { type: 'slider', id: 'tool', label: 'Stirrer', min: 0, max: 3, step: 1, value: 0 },
     { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
     { type: 'slider', id: 'blend', label: 'Marble blend', min: 0, max: 20, step: 0.5, value: 5 },
+    { type: 'slider', id: 'oilFilm', label: 'Oil film', min: 0, max: 1, step: 0.05, value: 1 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -916,9 +917,10 @@ void main() {
   vec4 nb = (texture(uDye, su + o2) + texture(uDye, su - o2) + texture(uDye, su + o2.yx) + texture(uDye, su - o2.yx)) * 0.25;
   float bk = clamp(uDt * uBlend * mix(1.0, 0.35, T) * (0.5 + uConv), 0.0, 0.5);
   d = mix(d, nb, bk);
-  // Fat and skin spread out into a thin film at half that rate.
+  // Oil runs out across the broth into a thin film; skin and glitter creep.
   vec4 na = (texture(uAux, su + o2) + texture(uAux, su - o2) + texture(uAux, su + o2.yx) + texture(uAux, su - o2.yx)) * 0.25;
-  a.rgb = mix(a.rgb, na.rgb, bk * 0.5);
+  a.rb = mix(a.rb, na.rb, bk * 0.5);
+  a.g = mix(a.g, na.g, min(bk * 2.0, 0.6));
   d = mix(d, uMean, uRelax);
   a.g *= 1.0 - 1.5 * k;
   a.r *= 1.0 - 0.3 * k;
@@ -1271,7 +1273,7 @@ uniform float uTime, uFire, uFlick, uLevel, uRS, uDip, uFunnel, uExt, uSoupK, uC
 uniform vec4 uPlumeS[4];
 uniform float uGlowK;
 // 0 keeps the skin close to the soup; 1 makes it its own layer.
-uniform float uSkinK;
+uniform float uSkinK, uFilmK;
 uniform vec3 uKeyDir, uKeyCol, uFireCol;
 uniform sampler2D uDye, uAux, uRip, uBack, uFront, uFD, uVel;
 uniform vec3 uBedP;
@@ -1523,6 +1525,9 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
     hx /= 5.0; hz /= 5.0;
   }
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
+  // A thin oil film calms the small ripples into a slick.
+  float slick = smoothstep(0.02, 0.12, ax.g) * uFilmK;
+  n = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.65 * slick));
   // Thick soup shows its swirls as low ridges.
   // A wide stencil keeps each step between two soups a soft slope.
   float e2 = 4.0 / 512.0;
@@ -1539,8 +1544,11 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // The skin wrinkles as the soup under it moves.
   float skin = smoothstep(mix(0.15, 0.3, uSkinK), mix(0.6, 0.42, uSkinK), ax.b);
   // A raft's torn edge stands up as a low lip.
-  float sx = texture(uAux, uv + vec2(e2, 0.0)).b - texture(uAux, uv - vec2(e2, 0.0)).b;
-  float sz = texture(uAux, uv + vec2(0.0, e2)).b - texture(uAux, uv - vec2(0.0, e2)).b;
+  vec4 axp = texture(uAux, uv + vec2(e2, 0.0)), axm = texture(uAux, uv - vec2(e2, 0.0));
+  vec4 azp = texture(uAux, uv + vec2(0.0, e2)), azm = texture(uAux, uv - vec2(0.0, e2));
+  float sx = axp.b - axm.b, sz = azp.b - azm.b;
+  // The oil film's edge: where the fat thins out fast.
+  float fedge = smoothstep(0.01, 0.06, length(vec2(axp.g - axm.g, azp.g - azm.g))) * uFilmK;
   n = normalize(n - vec3(sx, 0.0, sz) * mix(0.15, 0.5, uSkinK));
   if (skin > 0.01) {
     vec2 wq = p.xz * 38.0;
@@ -1613,6 +1621,12 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // Fat floats in golden, glassy pools; thin oil shows a faint rainbow at a glance.
   vec3 film = 0.5 + 0.5 * cos(6.2832 * (ax.g * 2.2 + (1.0 - nv) * 1.4) + vec3(0.0, 2.1, 4.2));
   col += fat * (env(reflect(rd, n), 0.02) * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  // A thin film: a golden mirror sheen with a trace of oil rainbow.
+  float thin = slick * (1.0 - fat);
+  vec3 bow = 0.5 + 0.5 * cos(6.2832 * (ax.g * 6.0 + (1.0 - nv) * 0.8) + vec3(0.0, 2.1, 4.2));
+  col += thin * env(reflect(rd, n), 0.015) * (0.05 + F) * mix(vec3(1.0, 0.82, 0.5), bow, 0.3);
+  // The film's edge shows as a fine bright line.
+  col += fedge * env(reflect(rd, normalize(n + vec3(0.0, 0.3, 0.0))), 0.03) * 0.25;
   col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
   // A dark ring hugs each floating thing, then a thin bright lip.
   if (gNc > 0) {
@@ -3559,6 +3573,7 @@ function scenePass() {
   gl.uniform1f(sceneP.u('uSoupK'), 0.75 + 0.35 * fire);
   gl.uniform1f(sceneP.u('uClear'), devV('clarity', 1));
   gl.uniform1f(sceneP.u('uSkinK'), devV('skinLook', 0));
+  gl.uniform1f(sceneP.u('uFilmK'), devV('oilFilm', 1));
   gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
   plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
   gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
