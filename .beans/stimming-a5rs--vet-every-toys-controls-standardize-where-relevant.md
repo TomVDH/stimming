@@ -160,3 +160,16 @@ Each toy runs Bar v3 on `feature/stimming-hvtr`, and each has its copy applied o
 | 8 | `prism` | stimming-vgcj | The Pieces palette is a Bar v3 sheet, tap or drag |
 | 9 | `bubbles` | stimming-qazn | Pop all; a drawing for a pointer move |
 | 10 | `frietkot` | stimming-i0ey | Weather on the bar; Neon colour; Settings in two groups |
+
+## All the other toys (Tom, 2026-11-17)
+
+Tom, 2026-11-17: "also proceed with all the toys -- subagetns for all -- per 5".
+
+- 77 toys have a bar spec and were not on Bar v3. They go in batches of five, in the order of `toys.json`, one subagent for each toy.
+- A subagent makes one edit, `signal: true`, and writes a review as a proposal. It changes no word. The brief is in the session's scratch folder; its rules are the ones in the ten beans.
+- The main session checks each batch on the real page, commits, and puts the five proposals to Tom. A copy change still waits for Tom's yes.
+- 26 toys have no bar spec, so Bar v3 has nothing to draw there: oilslick, foil, eastvan, postcard, frost, gears, glow, harmono, cube, marble, flock, musicbox, viaduct, orbits, plasma, sequin, slime, snow, top, flap, harp, subway, tesseract, windfarm, sand, zipper. Each needs a Bar v2 port first.
+
+| Batch | Toys | State |
+|---|---|---|
+| 1 | morpher, pop, fidget, domino, pins | Switched; proposals written |

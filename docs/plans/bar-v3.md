@@ -50,6 +50,10 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - Text on a held pick reaches 4.5:1: the fill and the text colour come from the accent's stops (`setAcc` in `shared/signal.js`).
 - Controls are 44 px or more. Keyboard focus always shows.
 - A disabled control shows at 40% and takes no input.
+- A toggle action shows its state: the toy sets `aria-pressed` on its Bar v2 chip, and the button holds the toy's ink.
+- While a sheet is open a key is the sheet's; the toy's own keys wait. Escape closes the sheet and does nothing else.
+- Only the pointer, keyboard focus or an open sheet keeps the bar. A mouse click does not.
+- If the module does not load or the draw fails, Bar v2 shows again.
 - An action leaves the bar while the toy hides its Bar v2 chip, and returns with it. Railgun shows Reset only after a kill.
 - A group wider than the stage wraps its own parts. Window seat on a phone has three rows.
 - An action may open a tray: `tray: { title, hint, touchHint, options, onPick }`. Bar v3 draws it as a sheet; the action's handle gets `tray.open(on)` and `tray.isOpen`. Each option carries `data-value`, so the toy can start a drag from it. Prism's Pieces is the first.

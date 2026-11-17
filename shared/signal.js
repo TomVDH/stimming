@@ -125,7 +125,8 @@ export function mountSignal(id, spec, ui) {
   const frame = /** @type {HTMLElement | null} */ (document.querySelector('.stim-frame'));
   const shell = /** @type {HTMLElement | null} */ (frame?.querySelector('.stim-ui'));
   const stage = /** @type {HTMLElement | null} */ (frame?.querySelector('.stage'));
-  if (!frame || !shell || !stage) return;
+  // Without a stage to draw on, Bar v2 shows again.
+  if (!frame || !shell || !stage) { document.documentElement.classList.remove('stim-signal'); return; }
   const css = h('link');
   css.rel = 'stylesheet';
   css.href = new URL('signal.css', import.meta.url).href;
@@ -245,6 +246,9 @@ export function mountSignal(id, spec, ui) {
     const chip = [...shell.querySelectorAll('.s2-chip')].find(c => c.querySelector('.s2-label')?.textContent === actLabel(a));
     syncers.push(() => {
       b.toggleAttribute('data-disabled', !!handle?.disabled);
+      // A toy marks a toggle action on its Bar v2 chip; the button shows the same state.
+      const on = a.hold ? null : chip?.getAttribute('aria-pressed');
+      if (on == null) b.removeAttribute('aria-pressed'); else b.setAttribute('aria-pressed', on);
       const gone = !!chip && (chip.hidden || chip.style.display === 'none');
       if (gone === b.hidden) return;
       b.hidden = gone;
@@ -301,7 +305,11 @@ export function mountSignal(id, spec, ui) {
         el, anchor, flash,
         open(on) {
           if (on && open && open !== api) open.open(false);
+          // Focus that was in the sheet returns to its button; a key press opens into the sheet.
+          const inside = el.contains(document.activeElement), byKey = anchor.matches(':focus-visible');
           el.hidden = !on;
+          if (!on && inside) anchor.focus({ preventScroll: true });
+          if (on && byKey) el.querySelector('button, a, input')?.focus({ preventScroll: true });
           anchor.setAttribute('aria-expanded', String(on));
           if (on) open = api; else if (open === api) open = null;
           land(api, on);
@@ -392,7 +400,9 @@ export function mountSignal(id, spec, ui) {
       const fits = word => (touch() ? onTouch(word) : !/^(pinch|tap|double-tap|long-press|two-finger|swipe)\b/i.test(word));
       (spec.help || spec.keys).forEach(([word, verb]) => { if (fits(word)) row(word, verb); });
       if (!touch() && !spec.help) {
-        (spec.actions || []).forEach(a => { if (a.key) row(String(a.key), actLabel(a).toLowerCase()); });
+        // An action's label may hold an icon; the row shows its words. No key shows twice.
+        const listed = new Set(spec.keys.map(([word]) => String(word).toLowerCase()));
+        (spec.actions || []).forEach(a => { if (a.key && !listed.has(String(a.key).toLowerCase())) row(String(a.key), actLabel(a).replace(/<[^>]+>/g, '').trim().toLowerCase()); });
         options.forEach(o => { if (o.key) row(String(o.key), String(o.label).toLowerCase()); });
       }
       sheet.el.append(how);
@@ -454,7 +464,8 @@ export function mountSignal(id, spec, ui) {
     };
     // The bar stays while you play. It leaves after 8 s with no input.
     // It never leaves under the pointer, under focus, or with a sheet open.
-    const busy = () => !!open || bar.matches(':hover') || layer.contains(document.activeElement);
+    // A mouse click also leaves focus on a button; only keyboard focus counts.
+    const busy = () => !!open || bar.matches(':hover') || !!layer.querySelector(':focus-visible');
     const arm = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { if (busy()) return arm(); if (shown) leave(); }, 8000);
@@ -552,6 +563,8 @@ export function mountSignal(id, spec, ui) {
     };
     relayout();
     sync();
+    // A toy that failed before this draw keeps only the monogram.
+    layer.toggleAttribute('data-bare', 'bare' in shell.dataset);
     set({ off: true });
     // The bar lands when the intro has gone, on the intro's own beat.
     const first = () => { landed = true; arrive(true); };
@@ -571,7 +584,13 @@ export function mountSignal(id, spec, ui) {
   for (const t of ['pointermove', 'pointerdown', 'touchstart', 'keydown', 'wheel']) addEventListener(t, () => poke(), { passive: true, capture: true });
   for (const t of ['pointerup', 'pointercancel', 'blur']) addEventListener(t, () => release(), true);
   stage.addEventListener('pointerdown', () => open?.open(false));
-  addEventListener('keydown', e => { if (e.key === 'Escape') open?.open(false); });
+  // While a sheet is open a key is the sheet's, as in Bar v2: the toy's own keys wait.
+  // Escape closes the sheet and does nothing else. A control's own key action still runs.
+  addEventListener('keydown', e => {
+    if (!open) return;
+    if (e.key === 'Escape') { e.preventDefault(); open.open(false); }
+    e.stopPropagation();
+  }, true);
   new ResizeObserver(() => relayout()).observe(frame);
   document.fonts?.ready.then(() => relayout());
   // The hidden Bar v2 layer changes when a key, a stored value or the toy sets a control.
@@ -588,5 +607,10 @@ export function mountSignal(id, spec, ui) {
     if (toys?.[id]) toy = toys[id];
     stop();
     draw();
+  }).catch(err => {
+    // A draw that fails gives the stage back to Bar v2.
+    console.error(err);
+    layer.remove();
+    document.documentElement.classList.remove('stim-signal');
   });
 }
