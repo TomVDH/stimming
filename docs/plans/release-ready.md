@@ -65,39 +65,39 @@ About 20 more toys come; then the project closes. Each new toy meets this list f
 52 toys, in `toys.json` order. Read from the code, the toy docs, `toys.json`, `tsconfig.json`, `docs/plans/ports.md` and `shared/stills/`. No browser run.
 Key: **Y** passes, **P** partly, **N** fails or has no record. Columns are the item numbers above.
 
-No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or 14 (Runtime QA) in full.
+No toy passes every item. No toy has items 6 (Attributions) or 14 (Runtime QA) in full. Item 8 was N for every toy on 2026-11-16 and changed after Tom answered the sheet the same day.
 
 | No. | Toy | 1 Port | 2 Doc | 3 Type | 4 Stack | 5 Map | 6 Attr | 7 Bar | 8 Ans | 9 json | 10 Still | 11 Load | 12 Sound | 13 RM | 14 QA | 15 Sign |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | morpher | N | N | N | N | N | N | Y | N | Y | Y | P | Y | Y | N | P |
 | 2 | pop | N | P | N | P | Y | N | Y | N | Y | Y | P | Y | Y | N | P |
-| 3 | fidget | N | N | P | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
+| 3 | fidget | N | N | P | N | Y | N | P | N | Y | Y | Y | Y | Y | N | N |
 | 4 | domino | N | N | N | N | N | N | Y | N | Y | Y | P | Y | Y | N | N |
-| 5 | pins | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
+| 5 | pins | N | N | N | N | N | N | P | N | Y | Y | P | P | Y | N | N |
 | 6 | galaxy | P | P | N | P | Y | N | P | N | Y | Y | Y | P | Y | N | N |
-| 7 | prism | N | N | N | N | Y | N | P | N | Y | Y | P | Y | Y | N | N |
-| 8 | kaleido | N | N | N | N | Y | N | Y | N | Y | Y | Y | P | Y | N | N |
+| 7 | prism | N | N | N | N | Y | N | Y | N | Y | Y | P | Y | Y | N | N |
+| 8 | kaleido | N | N | N | N | Y | N | P | N | Y | Y | Y | P | Y | N | N |
 | 9 | ferro | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
-| 10 | neon | N | N | N | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | P |
-| 11 | magnet | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
-| 12 | soap | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
-| 13 | glass | N | N | N | N | Y | N | Y | N | Y | Y | P | Y | Y | N | N |
-| 15 | chladni | N | N | N | N | Y | N | Y | N | Y | Y | Y | P | Y | N | N |
+| 10 | neon | N | N | N | N | Y | N | P | N | Y | Y | Y | Y | Y | N | P |
+| 11 | magnet | N | N | N | N | N | N | P | N | Y | Y | P | P | Y | N | N |
+| 12 | soap | N | N | N | N | N | N | P | N | Y | Y | P | P | Y | N | N |
+| 13 | glass | N | N | N | N | Y | N | P | N | Y | Y | P | Y | Y | N | N |
+| 15 | chladni | N | N | N | N | Y | N | P | N | Y | Y | Y | P | Y | N | N |
 | 16 | pendulum | N | N | N | N | N | N | Y | N | Y | Y | P | Y | Y | N | N |
 | 17 | pool | N | N | N | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
 | 18 | putty | N | N | N | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
 | 19 | scope | N | N | N | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
 | 20 | walker | N | N | N | N | N | N | Y | N | Y | Y | P | Y | Y | N | P |
-| 21 | fire | P | N | N | N | Y | P | P | N | Y | Y | Y | Y | Y | N | N |
+| 21 | fire | P | N | N | N | Y | P | Y | N | Y | Y | Y | Y | Y | N | N |
 | 22 | rain | P | P | Y | Y | Y | P | Y | N | Y | Y | Y | P | Y | P | N |
 | 23 | tvtree | N | N | P | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
-| 24 | balloons | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
+| 24 | balloons | N | N | N | N | N | N | P | N | Y | Y | P | P | Y | N | N |
 | 25 | bubbles | N | N | N | N | N | N | Y | N | Y | Y | P | P | Y | N | N |
 | 26 | lava | N | N | N | N | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
-| 27 | eyes | P | P | Y | Y | Y | N | Y | N | Y | Y | Y | Y | Y | N | N |
+| 27 | eyes | P | P | Y | Y | Y | N | P | N | Y | Y | Y | Y | Y | N | N |
 | 28 | sonar | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
-| 29 | trails | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | P |
-| 30 | shadyos | Y | N | P | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
+| 29 | trails | N | N | N | N | Y | N | Y | N | P | Y | Y | Y | Y | N | P |
+| 30 | shadyos | Y | N | P | N | Y | N | Y | N | P | Y | Y | Y | Y | N | N |
 | 31 | chamber | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
 | 32 | ink | P | N | N | N | Y | N | P | N | P | Y | P | Y | Y | N | P |
 | 33 | window | Y | N | P | N | Y | P | P | N | P | Y | Y | Y | Y | N | P |
@@ -109,15 +109,15 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 39 | frietkot | N | N | P | N | Y | N | P | N | P | Y | P | Y | Y | N | N |
 | 40 | railgun | Y | P | P | P | Y | N | P | N | P | Y | Y | Y | Y | N | N |
 | 41 | trainride | N | N | N | N | Y | P | P | N | P | Y | P | Y | Y | N | N |
-| 42 | foghorn | Y | N | Y | N | Y | P | Y | N | P | Y | P | Y | Y | N | N |
-| 43 | washline | N | N | P | N | Y | P | Y | N | P | Y | N | P | P | N | N |
-| 44 | cauldron | N | P | P | P | Y | P | Y | N | P | Y | P | Y | Y | P | N |
+| 42 | foghorn | Y | N | Y | N | Y | P | P | N | P | Y | P | Y | Y | N | N |
+| 43 | washline | N | N | P | N | Y | P | P | N | P | Y | N | P | P | N | N |
+| 44 | cauldron | N | P | P | P | Y | P | P | N | P | Y | P | Y | Y | P | N |
 | 45 | meshball | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
-| 46 | washer | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
+| 46 | washer | N | P | N | P | Y | N | P | N | P | Y | Y | Y | Y | P | N |
 | 47 | spark | N | N | N | N | Y | N | P | N | P | Y | P | Y | Y | N | N |
-| 48 | oilslick | N | N | N | N | Y | N | N | N | P | Y | Y | Y | Y | N | N |
-| 49 | ladder | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
-| 50 | windtunnel | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
+| 48 | oilslick | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
+| 49 | ladder | N | P | N | P | Y | N | P | N | P | Y | Y | Y | Y | P | N |
+| 50 | windtunnel | N | P | N | P | Y | N | P | N | P | Y | Y | Y | Y | P | N |
 | 51 | schlieren | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
 | 52 | lichtenberg | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
 | 53 | steelwool | N | P | N | P | Y | N | Y | N | P | Y | Y | Y | Y | P | N |
@@ -133,6 +133,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 5 | Word for word, the WebGPU map on an allowed toy, or no library import | Fireworks read P until Tom added ZzFX to the library table (fireworks.3). Cauldron read P until Tom added it to the WebGPU list (G6) | Only the three.js entries (the "Map" rows in `ports.md`) |
 | 6 | Never | A credits file or a code notice covers part of it | Nothing on record |
 | 7 | Bar v2 with no open flag | Bar v2 with Settings rows that read as tuning, an own dev panel or own quality row, or a play control hidden in Settings | Bar v1 (Oil slick) |
+| 8 | Tom answered, and the bar already matches the answers | Tom answered; a bar change waits for the toy's chat | Not answered |
 | 9 | Every field set | `tag` and `tagNl` null (No. 28 to 53); `nl` and `ipa` null too on cauldron, meshball, washer, ladder, windtunnel, schlieren, steelwool | |
 | 11 | `buildSteps`, or a light toy (Sketch or Shader) | A heavy toy with `stage()` marks only | No `stage()` on a heavy toy (Washing line) |
 | 12 | `audioKit()` or no sound, and `toys.json` agrees | Own `AudioContext` (muted by the shell gate, but no kit sleep), or `toys.json` says `sound: true` on a silent page (Dijkstra, Washing line) | |
@@ -539,3 +540,19 @@ Batch 13, 2026-11-16 (Tom):
 | cauldron.2 | Rest after 60 s | The simmer settles to a still pot a minute after the last input (G4) |
 | meshball.1 | Keep in Settings | Wobble stays a player setting |
 | washer.1 | Both | Jet power and Drying move from Dev to Settings |
+
+Batch 14, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| spark.1 | Both to Dev; keep Smoke | Trails and Floor become `dev` rows. Smoke stays a player setting |
+| oilslick.1 | Port to v2; keep all three | Oil slick moves to Bar v2 with Sky, Film, + Drop, Shuffle and Clear (five controls, at the limit) |
+| ladder.1 | Persist them | The 14 `dev` rows take `persist: true`, as Wind tunnel's do |
+| ladder.2 | Keep hidden | Enter stays a hidden key |
+| windtunnel.1 | Rest when steady | Drawing stops once the smoke settles; any input wakes it |
+| windtunnel.2 | Fix both | The grid ripple off plate tips and the lingering footprint go before approval |
+| schlieren.1 | Keep in Settings | Filter stays a player setting |
+| lichtenberg.1 | All three to Dev | Branching, Ember life and Glow become `dev` rows. Settings keeps Quality only |
+| steelwool.1 | Keep both | Grade and Reset both stay |
+
+Every question on the sheet now has an answer. Item 8 in the audit table follows from them.
