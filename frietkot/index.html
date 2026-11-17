@@ -66,13 +66,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/frietkot.svg)"></span><span class="intro-name">Frietkot</span><span class="intro-sub">Stimming No. 39</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/frietkot.svg)"></span><span class="intro-name">Frietkot</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack alone on a dark village square at night. Its service window glows; the staff fry and serve on their own. Drag to look round.">
-      <p class="fail" hidden>Frietkot needs WebGL 2, which this browser has turned off.</p>
+    <div class="stage stage--frietkot" id="stage" tabindex="0" role="application" aria-label="A chip shack on a dark village square at night. Its window glows. The staff fry and serve by themselves. Drag to look around. Scroll to zoom the view.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -112,22 +112,28 @@ const SAUCES = [
 // Each neon gas glows in its own colour.
 const NEON = { red: [0.66, 0.24, 28], blue: [0.62, 0.17, 255], green: [0.8, 0.2, 145] };
 
+// Weather sits on the bar. Its pick keeps the key it had as a Settings row.
+const WX_KEY = 'stimming.frietkot.weather';
+const WX_PICKS = [{ value: 'shift', label: 'Changing' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }];
+const wxSaved = (() => { try { return localStorage.getItem(WX_KEY); } catch { return null; } })();
 const ui = initPage({ id: 'frietkot', signal: true, bar: {
+  choice: { label: 'Weather', display: 'stepper', value: WX_PICKS.some(o => o.value === wxSaved) ? wxSaved : 'shift', options: WX_PICKS,
+    onPick: v => { try { localStorage.setItem(WX_KEY, v); } catch { /* storage is optional */ } act.weather(v); } },
   settings: [
-    // The night first, then the place, then the lens.
-    { type: 'choice', id: 'weather', label: 'Weather', display: 'stepper', value: 'shift', persist: true, onPick: v => act.weather(v),
-      options: [{ value: 'shift', label: 'Shifting' }, { value: 'dry', label: 'Dry' }, { value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'fog', label: 'Fog' }] },
-    { type: 'choice', id: 'sign', label: 'Sign', display: 'stepper', value: 'board', persist: true, onPick: v => act.sign(v),
+    // The place first, then the lens.
+    { type: 'choice', id: 'sign', group: 'Place', label: 'Sign', display: 'stepper', value: 'board', persist: true, onPick: v => act.sign(v),
       options: [{ value: 'neon', label: 'Neon' }, { value: 'board', label: 'Lit board' }, { value: 'box', label: 'Lightbox' }] },
-    { type: 'choice', id: 'neon', label: 'Neon', display: 'stepper', value: 'red', persist: true, onPick: v => act.neon(v),
+    { type: 'choice', id: 'neon', group: 'Place', label: 'Neon colour', display: 'stepper', value: 'red', persist: true, onPick: v => act.neon(v),
       options: [{ value: 'red', label: 'Red' }, { value: 'blue', label: 'Blue' }, { value: 'green', label: 'Green' }] },
-    { type: 'toggle', id: 'traffic', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
-    { type: 'slider', id: 'tilt', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
-    { type: 'toggle', id: 'camcorder', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
+    { type: 'toggle', id: 'traffic', group: 'Place', label: 'Traffic', value: true, persist: true, onToggle: on => act.traffic(on) },
+    { type: 'slider', id: 'tilt', group: 'Lens', label: 'Tilt-shift', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => act.tilt(v) },
+    { type: 'toggle', id: 'camcorder', group: 'Lens', label: 'Camcorder', value: true, persist: true, onToggle: on => act.camcorder(on) },
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['drag', 'look round'], ['scroll', 'zoom']],
+  keys: [['drag', 'look around'], ['scroll', 'zoom the view']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Look around'], ['scroll', 'Zoom the view']],
 } });
 
 // Seeded random keeps the square the same on every load.
@@ -2049,7 +2055,7 @@ const WEATHER = {
 };
 let weatherKey = 'dry';
 const HAZE0 = U.uHaze.value.clone();
-// Shifting: Belgian weather that will not settle; it moves through a cycle of fronts.
+// Changing: Belgian weather that will not settle; it moves through a cycle of fronts.
 const CYCLE = ['dry', 'drizzle', 'rain', 'drizzle', 'dry', 'fog', 'drizzle'];
 const wx = { i: 0, t: 0, dur: 70, wet: 0, rain: 0, fog: 0 };
 let gust = 1;
@@ -3801,7 +3807,7 @@ act.traffic = on => { traffic = on; wake(); };
 // Camcorder: the handheld sway and the tape look of the late nineties.
 act.camcorder = on => { camcorder = on; grade.uniforms.uDV.value = on ? 1 : 0; frame(); draw(); };
 act.weather = v => { setWeather(v); wake(); draw(); };
-setWeather(DAY ? 'dry' : ui.setting('weather')?.value ?? 'shift');
+setWeather(DAY ? 'dry' : ui.choice?.value ?? 'shift');
 // The people are ink; ?people=line or haze shows the other looks.
 const LOOKS = { ink: 0, line: 1, haze: 2 };
 act.people = v => { figMat.uniforms.uStyle.value = LOOKS[v] ?? 0; draw(); };
