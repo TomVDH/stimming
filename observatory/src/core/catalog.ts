@@ -45,11 +45,25 @@ export function decodeStars(bin: ArrayBuffer, meta: StarMeta): Star[] {
   return out;
 }
 
+// One catalog file.
+// A failed request or a failed status rejects with the file's address.
+async function get(url: string): Promise<Response> {
+  let r: Response;
+  try {
+    r = await fetch(url);
+  } catch (err) {
+    throw new Error(`Observatory could not load ${url}`, { cause: err });
+  }
+  if (!r.ok) throw new Error(`Observatory could not load ${url}: HTTP ${r.status}`);
+  return r;
+}
+
+// The catalog: stars.bin and stars.json from the folder of url.
 export async function loadStars(url: string): Promise<Star[]> {
   const base = url.replace(/[^/]*$/, '');
   const [bin, meta] = await Promise.all([
-    fetch(`${base}stars.bin`).then((r) => r.arrayBuffer()),
-    fetch(`${base}stars.json`).then((r) => r.json() as Promise<StarMeta>),
+    get(`${base}stars.bin`).then((r) => r.arrayBuffer()),
+    get(`${base}stars.json`).then((r) => r.json() as Promise<StarMeta>),
   ]);
   return decodeStars(bin, meta);
 }

@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { reduced } from '../../../shared/stim.js';
-import { camera, renderer, scene } from '../setup.ts';
+import { camera, onLeave, renderer, scene } from '../setup.ts';
 import { makeBloom } from './bloom.ts';
 import { makeGrade } from './grade.ts';
 
@@ -25,6 +25,9 @@ composer.addPass(makeBloom(...POST.bloom));
 const grade = makeGrade(POST);
 composer.addPass(grade);
 composer.addPass(new OutputPass());
+// The composer frees its two targets.
+// Each pass frees its own targets and materials.
+onLeave(() => { for (const p of composer.passes) p.dispose(); composer.dispose(); });
 
 // Sizes the chain to the canvas; w and h in CSS pixels.
 export function resizePost(w: number, h: number): void {

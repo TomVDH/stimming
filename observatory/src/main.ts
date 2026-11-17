@@ -1,9 +1,9 @@
 // Load order: loop runs first.
 import './loop.ts';
 import { onQuality, pixelRatio, stage } from '../../shared/stim.js';
-import { renderer, stageEl } from './setup.ts';
+import { bootFail, booted, renderer, stageEl } from './setup.ts';
 import { resizePost } from './post/chain.ts';
-import { setStarDpr } from './sky/stars.ts';
+import { setStarDpr, skyReady } from './sky/stars.ts';
 import { applyCamera } from './view/camera.ts';
 import { draw } from './loop.ts';
 
@@ -26,3 +26,6 @@ new ResizeObserver(resize).observe(stageEl);
 onQuality(() => resize());
 resize();
 stage('first-frame');
+// The boot ends when the stars are in.
+// A catalog that does not load is a boot failure.
+skyReady.then(booted, bootFail);

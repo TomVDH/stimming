@@ -39,8 +39,18 @@ function label(bf, bayer, flam, con) {
 
 const csvPath = process.argv[2];
 if (!csvPath) { console.error('usage: node tools/hyg-cut.mjs <hyg_v44.csv>'); process.exit(1); }
-const rows = parseCsv(readFileSync(csvPath, 'utf8'));
+// A byte order mark would hide the first column name.
+const rows = parseCsv(readFileSync(csvPath, 'utf8').replace(/^﻿/, ''));
+if (!rows.length) { console.error(`hyg-cut: ${csvPath} has no header row`); process.exit(1); }
 const col = Object.fromEntries(rows[0].map((h, i) => [h, i]));
+// The cut reads these columns.
+// A file without one of them is not HYG v4.4.
+const NEEDED = ['id', 'hip', 'proper', 'ra', 'dec', 'dist', 'mag', 'ci', 'spect', 'bf', 'bayer', 'flam', 'con'];
+const missing = NEEDED.filter((k) => !(k in col));
+if (missing.length) {
+  console.error(`hyg-cut: ${csvPath} has missing columns: ${missing.join(', ')}`);
+  process.exit(1);
+}
 const num = (r, k) => (r[col[k]] === '' ? NaN : Number(r[col[k]]));
 
 const kept = [];

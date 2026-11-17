@@ -3,7 +3,7 @@ import './hill.ts';
 // Crest noise ported from ridge2 in railgun/ranges.js.
 // Foot melt copied from railgun/src/world/farcountry.ts, trimmed to one term.
 import { BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, ShaderMaterial } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { SKY_GLSL, fog, skyU } from '../sky/haze.ts';
 import { EYE_H, RISE, hillHeight } from './hill.ts';
 
@@ -136,3 +136,4 @@ const farMat = new ShaderMaterial({
 
 export const far = new Mesh(ridgeMesh(), farMat);
 scene.add(far);
+onLeave(() => disposeTree(far));

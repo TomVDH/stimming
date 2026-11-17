@@ -1,9 +1,9 @@
 // Load order: world/laser runs first.
 import '../world/laser.ts';
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, Matrix4, Points, ShaderMaterial } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene, starFile } from '../setup.ts';
 import { dirAltAz, lst, shellDir, skyRows, turn, type AltAz } from '../core/sky.ts';
-import { loadStars, type Star } from '../core/catalog.ts';
+import type { Star } from '../core/catalog.ts';
 
 /* ---------- tonight's real sky: the catalog stars at the site, by sidereal time ---------- */
 // The site: 51 N, 0 E.
@@ -83,9 +83,10 @@ export function setStarLimit(mag: number): void { magLim.value = mag; }
 
 export const sky = { stars: [] as Star[], index: new Map<number, number>(), points: null as Points | null };
 
-// The bundle is observatory/dist/main.js, so the catalog sits one folder up.
-// The catalog loads in the background; the promise settles when the stars are in the scene.
-export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.meta.url).href).then((stars) => {
+// setup.ts starts the catalog early.
+// The promise settles when the stars are in the scene.
+// It rejects when the catalog does not load.
+export const skyReady: Promise<void> = starFile.then((stars) => {
   const n = stars.length;
   const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), look = new Float32Array(n * 3);
   const c = new Color();
@@ -111,6 +112,7 @@ export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.
   scene.add(pts);
   sky.stars = stars; sky.points = pts;
   skyAt(lastMs);
+  onLeave(() => disposeTree(pts));
 });
 
 let lastMs = Date.now();

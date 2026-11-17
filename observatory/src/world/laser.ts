@@ -3,7 +3,7 @@ import './woods.ts';
 import { AdditiveBlending, CylinderGeometry, MathUtils, Mesh, ShaderMaterial, Vector3 } from 'three';
 import { HAZE_H } from '../sky/haze.ts';
 import type { AltAz } from '../core/sky.ts';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the aiming laser: a thin green beam into the sky ---------- */
 const DEG = MathUtils.DEG2RAD;
@@ -65,3 +65,4 @@ export function buildLaser(): Laser {
 
 export const laser = buildLaser();
 scene.add(laser.mesh);
+onLeave(() => disposeTree(laser.mesh));

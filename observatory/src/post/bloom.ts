@@ -77,11 +77,15 @@ export function makeBloom(strength: number, radius: number, threshold: number): 
     // Lens dirt: smudges and specks light up where the bloom is bright.
     .replace('vec4 bsw(float v) {', 'uniform sampler2D tDirt;\n    uniform float uDirtK;\n    vec4 bsw(float v) {')
     .replace(/\}\s*$/, '  gl_FragColor.rgb *= 1.0 + uDirtK * texture2D(tDirt, vUv).rgb;\n}');
-  cm.uniforms.tDirt = { value: makeDirt() };
+  const dirt = makeDirt();
+  cm.uniforms.tDirt = { value: dirt };
   cm.uniforms.uDirtK = { value: 1.6 };
   cm.needsUpdate = true;
   // Halation: the widest blur levels bleed warm red, as on film.
   bloom.bloomTintColors[3].set(1.0, 0.72, 0.55);
   bloom.bloomTintColors[4].set(1.0, 0.55, 0.38);
+  // The bloom's dispose also frees the lens dirt.
+  const free = bloom.dispose.bind(bloom);
+  bloom.dispose = () => { free(); dirt.dispose(); };
   return bloom;
 }

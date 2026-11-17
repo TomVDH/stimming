@@ -8,7 +8,7 @@ import type { MeshStandardMaterial, Texture } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { buildSteps, stage } from '../../../shared/stim.js';
-import { renderer, scene, stageEl, ui } from '../setup.ts';
+import { disposeTree, onLeave, renderer, scene } from '../setup.ts';
 import { CLEAR, EYE_H, RISE, TOP, hillHeight } from './hill.ts';
 import { roadDist } from './complex.ts';
 import { bakeImpostor } from './impostor.ts';
@@ -322,7 +322,8 @@ const MESH_SITE = 110;
 // Trees this near the wide eye are the full mesh too.
 const MESH_EYE = 150;
 
-export type Woods = { root: Group; near: InstancedMesh; far: InstancedMesh; bakeMs: number };
+// dispose frees the meshes, the materials, the texture and the atlases.
+export type Woods = { root: Group; near: InstancedMesh; far: InstancedMesh; bakeMs: number; dispose(): void };
 
 export function buildWoods(pine: Pine): Woods {
   const rand = rng(51);
@@ -374,22 +375,42 @@ export function buildWoods(pine: Pine): Woods {
   place(far, farSpots);
   const root = new Group();
   root.add(near, far);
-  return { root, near, far, bakeMs: imp.ms };
+  // disposeTree finds the colour atlas on the card material.
+  // The normal atlas sits only in the card shader's uniforms.
+  const dispose = (): void => { disposeTree(root); imp.normal.dispose(); };
+  return { root, near, far, bakeMs: imp.ms, dispose };
+}
+
+// The page waits this long for the model.
+const PINE_WAIT_MS = 8000;
+
+// The model, or a rejection after PINE_WAIT_MS.
+function pineInTime(): Promise<Pine> {
+  let timer = 0;
+  const late = new Promise<never>((_, no) => {
+    timer = window.setTimeout(() => no(new Error(`pine.glb took over ${PINE_WAIT_MS} ms`)), PINE_WAIT_MS);
+  });
+  return Promise.race([loadPine(), late]).finally(() => clearTimeout(timer));
 }
 
 // The page's load line counts the model and the bake.
-// A failed load or bake shows the stage's fail line.
-async function grow(): Promise<Woods> {
+// A failed or slow model leaves the woods out.
+// The page then starts without them.
+async function grow(): Promise<Woods | null> {
   stage('build');
   const step = buildSteps(2);
   try {
-    const pine = step(await loadPine());
+    const pine = step(await pineInTime());
     return step(buildWoods(pine));
   } catch (err) {
-    stageEl.querySelector<HTMLElement>('.fail')!.hidden = false;
-    ui.hideControls();
-    throw err;
+    // A known warning: the page runs on without the woods.
+    console.warn('Observatory: the woods are left out.', err);
+    return null;
   }
 }
+// setup.ts started the star catalog, so it loads meanwhile.
 export const woods = await grow();
-scene.add(woods.root);
+if (woods) {
+  scene.add(woods.root);
+  onLeave(woods.dispose);
+}

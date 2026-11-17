@@ -1,7 +1,7 @@
 // Load order: world/observatory runs first.
 import './observatory.ts';
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { SITE, hillHeight } from './hill.ts';
 import { buildDome, stoneMap, type Dome } from './observatory.ts';
 
@@ -98,7 +98,9 @@ function shed(): Group {
 }
 
 // windows: the lit panes' materials, west to east.
-export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[] };
+// own: the hall and the shed.
+// world/observatory owns the domes.
+export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[]; own: Group[] };
 
 export function buildComplex(): Complex {
   const root = new Group();
@@ -111,12 +113,15 @@ export function buildComplex(): Complex {
   east.root.position.set(40, 0, 2);
   const roof = buildDome(0.75);
   roof.root.position.set(HALL.x + 8, HALL.h + 0.4, HALL.z);
-  root.add(main.root, east.root, roof.root, hall(), shed());
+  const own = [hall(), shed()];
+  root.add(main.root, east.root, roof.root, ...own);
   root.updateMatrixWorld(true);
-  return { root, main, small: [east, roof], windows: litPanes };
+  return { root, main, small: [east, roof], windows: litPanes, own };
 }
 
 export const complex = buildComplex();
 scene.add(complex.root);
 // The road lies in world space.
-scene.add(roadMesh());
+const road = roadMesh();
+scene.add(road);
+onLeave(() => { for (const g of complex.own) disposeTree(g); disposeTree(road); });

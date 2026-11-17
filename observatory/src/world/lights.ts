@@ -1,7 +1,7 @@
 // Load order: world/lamp runs first.
 import './lamp.ts';
 import { BoxGeometry, Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, PointLight, SphereGeometry, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { hillHeight } from './hill.ts';
 import { ROAD, complex, type Complex } from './complex.ts';
 
@@ -42,9 +42,11 @@ export function buildLights(c: Complex): Lights {
   // A lamp over each dome door, in the dome's own scale.
   // The drum radius is 3.2; the door arch tops out at 2.1.
   const bulb = new SphereGeometry(0.16, 10, 6);
+  const bulbs: Mesh[] = [];
   const doors: Lamp[] = domes.map((d) => {
     const mat = new MeshBasicMaterial({ color: LAMP_ON });
     const m = new Mesh(bulb, mat);
+    bulbs.push(m);
     m.position.set(0, 2.5, -3.28);
     // The lamp's light reaches about 12 m at size 1.
     const pl = new PointLight(LAMP_ON.clone().multiplyScalar(1 / 6), DOOR_CD, 12 * d.root.scale.x, 2);
@@ -73,6 +75,7 @@ export function buildLights(c: Complex): Lights {
     return glow(mat, 1);
   });
   scene.add(road);
+  onLeave(() => { disposeTree(road); for (const m of bulbs) disposeTree(m); });
 
   const panes = c.windows.map(m => glow(m, 0));
   // The order they come on at dusk.

@@ -1,7 +1,7 @@
 // Load order: post/chain runs first.
 import '../post/chain.ts';
 import { BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, HemisphereLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the land: the observatory hill, the camera's rise, far ridges ---------- */
 // Scene axes: +Y is up, -Z is north, +X is east.
@@ -77,6 +77,7 @@ scene.add(hill);
 const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), ground);
 flat.position.y = -0.5;
 scene.add(flat);
+onLeave(() => { disposeTree(hill); disposeTree(flat); });
 
 // Starlight: a cold, dim sky over a black ground.
 // The dusk raises it.

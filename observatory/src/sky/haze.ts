@@ -2,7 +2,7 @@
 import '../setup.ts';
 // Haze amount copied from railgun/src/sky/k2-haze.glsl; night colours from railgun/src/sky/sun.ts.
 import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the night air: a moonless sky, a faint horizon glow, low haze ---------- */
 // Linear colours. The zenith is near black; the horizon glows a little.
@@ -89,3 +89,4 @@ sky.renderOrder = -1;
 sky.frustumCulled = false;
 scene.add(sky);
 scene.background = null;
+onLeave(() => disposeTree(sky));

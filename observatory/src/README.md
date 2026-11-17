@@ -9,7 +9,17 @@ Each module builds its part of the scene when it loads, so the order is fixed.
 The chain starts at `setup.ts`. `main.ts` imports the last module.
 A new module goes into the chain at the place it loads; never import a later module for its side effects.
 `world/woods.ts` waits for the pine model with a top-level await, so every later module waits with it.
-A failed model load shows the stage's `.fail` line.
+It waits 8 s at most.
+A failed or slow model leaves the woods out, with one console warning; the page starts without them.
+`setup.ts` starts the star catalog first, so it loads beside the model.
+
+## Failures and leaving
+
+- A WebGL failure shows the stage's `.fail` line with its own WebGL 2 text.
+- Any other boot failure sets the line to "Observatory could not start.": an uncaught error or rejection, or a catalog that does not load. The boot ends when the stars are in.
+- A lost WebGL context shows the line too.
+- On `pagehide`, each module frees the GPU objects it registered with `onLeave`; then the renderer goes. A page back from the back-forward cache loads again.
+- `world/observatory.ts`, `world/hero.ts`, `world/hero-scope.ts` and `view/cuts.ts` register nothing yet.
 
 ## Modules
 
@@ -24,7 +34,7 @@ A failed model load shows the stage's `.fail` line.
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
 | `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
 | `core/sequence.ts` | The pick sequence's cut list, timed from `SHUTTER_S`, `cutAt`; the complex lights' level per phase, `lightLevel` |
-| `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
+| `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage; the fail line, `fail` and `bootFail`; the star catalog's early start, `starFile`; `onLeave` and `disposeTree` |
 | `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |
 | `post/grade.ts` | The grade: split tone, contrast, vignette, grain, copied from Railgun |
@@ -46,7 +56,7 @@ A failed model load shows the stage's `.fail` line.
 | `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade; the swap to the hero model in the close shots |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
 | `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
-| `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
+| `main.ts` | Resize (pixel budget, post chain, star size), the first draw, the end of the boot |
 
 ## Review switch
 

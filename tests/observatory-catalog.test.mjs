@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CI_UNKNOWN, STAR_BYTES, decodeStars } from '../observatory/src/core/catalog.ts';
+import { CI_UNKNOWN, STAR_BYTES, decodeStars, loadStars } from '../observatory/src/core/catalog.ts';
 
 const binBuf = readFileSync(new URL('../observatory/stars.bin', import.meta.url));
 const bin = binBuf.buffer.slice(binBuf.byteOffset, binBuf.byteOffset + binBuf.byteLength);
@@ -40,3 +40,26 @@ test('a star with no colour index decodes to NaN', () => {
   assert.ok(Number.isNaN(none.ci), `ci ${none.ci}`);
   assert.equal(known.ci, 0.65);
 });
+
+// loadStars with a fake fetch for one test.
+async function withFetch(fake, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = fake;
+  try { await fn(); } finally { globalThis.fetch = real; }
+}
+test('loadStars rejects with the file and the status when the server says no', () => withFetch(
+  async (url) => (String(url).endsWith('stars.bin') ? new Response(null, { status: 404 }) : new Response('{"names":{},"bayer":{},"spect":[""]}')),
+  () => assert.rejects(loadStars('http://site/observatory/stars.bin'), /stars\.bin.*404/),
+));
+test('loadStars rejects with the file when the request fails', () => withFetch(
+  async () => { throw new TypeError('Failed to fetch'); },
+  () => assert.rejects(loadStars('http://site/observatory/stars.bin'), /could not load .*stars\.(bin|json)/),
+));
+test('loadStars decodes a good answer', () => withFetch(
+  async (url) => (String(url).endsWith('stars.bin') ? new Response(new ArrayBuffer(STAR_BYTES)) : new Response('{"names":{"0":"Test"},"bayer":{},"spect":[""]}')),
+  async () => {
+    const s = await loadStars('http://site/observatory/stars.bin');
+    assert.equal(s.length, 1);
+    assert.equal(s[0].name, 'Test');
+  },
+));
