@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: high
 created_at: 2026-11-17T16:10:23Z
-updated_at: 2026-11-17T18:28:38Z
+updated_at: 2026-11-17T21:18:17Z
 parent: stimming-dwwg
 ---
 
@@ -83,3 +83,22 @@ A rising sky ray starts its deck samples where it reaches a floor height; no clo
 - Unsafe upper bound (floor base - 0.65 km, no discs): reads -16 %, frame about -16 %. It would cut through real low cloud by the funnels.
 
 The approach cost comes from deckD()'s far shortcut: under the base it returns distance - 1.1 km, so a ray 1.3 km under the base steps only about 0.2 km x 750. A tighter bound for the noise's reach would lengthen those steps; it changes nothing the eye sees if the bound holds.
+
+## Bake candidates (2026-11-17, models session)
+
+Tom: "lets see what else we can potentially bake to up performance". Scene-pass split, one part removed per copy, each copy alone in the browser and paired with the base (three F4.5, funnels down, glass off). The machine was shared, so the base swung 99 to 132 ms; only the pair ratios count.
+
+| Part removed | Ratios (2 pairs) | Reading |
+|---|---|---|
+| sunCover() (returns a constant) | 0.927, 0.967 | about 3 to 7 % |
+| Ground (wheat, road) | 0.894, 1.043 | inside the noise |
+| All objects (farm, line, plain, vehicles, infra, debris) | 0.927, 1.011 | inside the noise |
+| plain() | 0.983, 1.000 | about 0 |
+
+Candidates, biggest first:
+
+1. A cloud floor map: the deck's true lowest cloud height over x, z, baked from the full noise and renewed a few rows a frame. Grazing rays jump to it safely. Lever 1's unsafe bound gave about 16 %; a true floor keeps most of that with no cut through low cloud.
+2. A deck light volume: stormLit()'s probes baked into a 3D texture, renewed in slices over about 1 s; the march reads one texel. Probes are about 19 % of the frame.
+3. The bake strip less often: one strip every 2 to 4 frames, not every frame (about 17 % now). The far breaks drift more slowly.
+4. A sun cover map: sunCover() depends only on where the sun's ray meets the deck, so a 2D map at deck height is exact. 28 call sites (every ground pixel, every vehicle sample, trees, fence, farm) become one texture read: about 3 to 7 %.
+5. The far plain into the far-field bake: about 0 %; not worth it.
