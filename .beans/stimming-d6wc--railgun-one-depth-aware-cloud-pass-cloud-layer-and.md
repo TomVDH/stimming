@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T06:20:46Z
-updated_at: 2026-11-17T07:37:02Z
+updated_at: 2026-11-17T07:53:20Z
 parent: stimming-626s
 ---
 
@@ -55,3 +55,5 @@ Plan: docs/plans/railgun-cloud-layer.md
 - [x] Card clouds hide less of the asteroid: heaps in front of the rock thin away (Dev Clear rock, 0.8).
 - [x] Reorganise the Dev menu: Tests, Ambient, Sound, Clouds, Storms, Cards, Sun and air, Land, Gun, Lens, Grade, Performance; Cloud volumes is now Marched storms.
 - [ ] Out of scope, to place: gun glitch flash (yellow squiggle on the back block); the rock's glow casting the gun's shadow at night.
+
+- [x] Gun squiggle (Tom, "while charging", "raymarch glitch"): the cloud pass composite read depth 0 on edge texels with no cloud, so the blurred cloud edge drew at the eye, over the gun. The composite now takes the farthest of its five depth taps.
