@@ -139,7 +139,7 @@ Tom, 2026-11-17, on the order: "lets prioritize the cut -- then move to detail a
 Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
 
 1. **At rest.** On load, the main dome's shut slit faces the camera.
-2. **On a pick: a cut sequence.** About 6 to 8 s, 3 or 4 cuts (about 9.5 s with the lens cut), each a close-up on a long zoom lens: tight, shallow depth, slow, clean.
+2. **On a pick: a cut sequence.** About 10 to 13 s: four cuts and then the lens shot, each a locked close frame on the hero model. The first two follow the 6 s shutter; a quick dip to black returns to the wide shot.
    1. The shutter starts to slide: tight on the slit edge.
    2. The shutter opens further: a wider close-up of the whole slit.
    3. The telescope rolls through the open slit, against the sky.
@@ -156,7 +156,7 @@ Blockout v2 (woods, clearing, three domes, building, shed, road, the camera on t
 
 1. **Aim.** The pointer moves the laser (mouse: move; touch: drag). The cupola turns after the beam's azimuth at a capped speed, with ease in and out.
 2. **Pick.** A tap or click picks the brightest catalog star near the beam end.
-3. **Open.** The slit shutter opens, about 4 s, if it is shut.
+3. **Open.** The slit shutter opens, 6 s on an S-curve, if it is shut. The tube starts to lift from its 5° park when the shutter is half open.
 4. **Slew.** The cupola turns to the star; the tube slews in its mount. The tube and the dome arrive together.
 5. **Track.** The tube follows the star as the sky turns; the cupola steps after it. A small tracking light comes on.
 6. **Idle.** After the sleep time, the shutter stays as it is; nothing moves.

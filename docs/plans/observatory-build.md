@@ -21,7 +21,7 @@ Status: active · Bean: `stimming-wqq9`
 - `core/` files: erasable TypeScript only (no `enum`, no parameter properties, no namespaces); relative imports end in `.ts`.
 - Place: latitude 51° N, longitude 0°. Both are Dev rows. The shot faces south.
 - Sky: tonight's real sky from the clock, always night, no moon.
-- The machine moves at real speed or slower: cupola cap 3°/s, tube cap 2°/s, shutter 4 s. Ease in and out.
+- The machine moves at real speed or slower, heavy and with inertia (Tom, 2026-11-17): cupola cap 2°/s with acceleration 0.6°/s², tube cap 1.5°/s with acceleration 0.5°/s², shutter 6 s on an S-curve; a damped settle at each stop; nothing snaps.
 - Sound muted by default, starts after a gesture. Idle: loop stops 60 s after the last input. Hidden: stop at once. Reduced motion: real speed only, no trails, crossfade instead of the flight.
 - Budgets: 30 fps or better, first frame under 3 s, toy files under 1 MB, catalog files under 300 KB.
 - Code comments: ASD-STE100, `.claude/rules/adjudant-code.md`. Prose: no em dashes.
