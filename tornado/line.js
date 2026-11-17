@@ -7,9 +7,10 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 
 /* ---------- the line ---------- */
-// The poles stand 9 m right of the road's centre, 55 m apart, the first 30 m out.
+// The poles stand 9 m right of the road's centre, 55 m apart, the first in view 30 m out.
+// Two more stand behind the eye, so the near span runs past the camera, overhead and out of frame.
 // main.js ROAD_X is 3.4 m; the GLSL takes the same numbers.
-export const POLE_X = 3.4 + 9.0, POLE_Z0 = 30, POLE_GAP = 55, POLES = 48;
+export const POLE_X = 3.4 + 9.0, POLE_Z0 = -80, POLE_GAP = 55, POLES = 52;
 // The wires' rest height at the cross-arm, in metres.
 const WIRE_Y = 9.2;
 // Gravity, m/s².
@@ -397,6 +398,8 @@ void linePoles(vec2 s, vec3 rd, float px) {
   for (int i = 0; i < POLES; i++) {
     vec3 P = vec3(POLE_X, 0.0, -(POLE_Z0 + POLE_GAP * float(i)));
     float z = depthOf(P);
+    // A pole behind the eye holds its wires but does not draw.
+    if (z < 2.0) continue;
     vec2 b = proj(P);
     if (abs(s.x - b.x) > 12.0 / z * uFoc + px) continue;
     float l = poleLean(i), sl = sin(l), cl = cos(l);
