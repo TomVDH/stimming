@@ -632,6 +632,8 @@ float cropAt(vec2 xz, out float edge, out float id) {
 }
 float cropH(float crop, float edge) { return crop < 0.0 ? -1.0 : (edge < MARGIN ? 0.12 : CROP_H[int(crop)]); }
 bool isWheat(vec2 xz) { float e, id; return cropAt(xz, e, id) == 0.0 && e >= MARGIN; }
+// The ray of the pixel ground() shades: the field's tops read it for their light.
+vec3 gRd;
 // The wheat's top seen from afar: ripe patches, and the gusts as a paler sheen.
 // fx and fz: the pixel's footprint across and along the view, in metres.
 vec3 wheatFar(vec2 xz, float fx, float fz) {
@@ -651,7 +653,13 @@ vec3 wheatFar(vec2 xz, float fx, float fz) {
     float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), detail(0.3, fm)) * 0.4;
     alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
-  return alb * (0.85 + 0.2 * gw.w) * (uSunCol * 0.5 + uAmb * 0.55);
+  // Toward the sun the tops glow: the light comes through the heads and awns.
+  vec3 sunD = normalize(uSun + vec3(0.0, 0.02, 0.0));
+  float back = pow(max(dot(gRd, sunD), 0.0), 3.0);
+  // The shade takes the low sky's colour, at the fill's brightness.
+  vec3 sky = hazeCol(-sunD) + hazeCol(sunD);
+  sky = mix(uAmb, sky * dot(uAmb, vec3(0.3, 0.55, 0.15)) / max(dot(sky, vec3(0.15, 0.275, 0.075)), 1e-4), 0.5);
+  return alb * (0.85 + 0.2 * gw.w) * (uSunCol * 0.5 * (1.0 + 1.2 * back * vec3(1.0, 0.85, 0.55)) + sky * 0.55);
 }
 // A low field's top: stubble, fallow, green, or a grass margin.
 vec3 lowField(float crop, vec2 xz, float edge, float id, float fx, float fz) {
@@ -701,6 +709,7 @@ vec3 standLight(float y, float edge, float side) {
 ${WHEAT_GLSL}
 ${ROAD_GLSL}
 vec3 ground(vec3 rd, float px) {
+  gRd = rd;
   float t = CAMH / -rd.y;
   vec3 P = rd * t;
   // The footprint of one pixel on the ground, in metres.
