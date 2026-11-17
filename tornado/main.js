@@ -8,6 +8,7 @@ import { SKY, skyAt } from '../shared/sky.js';
 import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
+import { PLAIN_GLSL } from './plain.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 mark('libs');
 
@@ -620,6 +621,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 }
 
 ${LINE_GLSL}
+${PLAIN_GLSL}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -634,6 +636,7 @@ vec3 envScene(vec2 uv) {
   farm(c, s, rd, px);
   linePoles(s, rd, px);
   wires(s, rd, px);
+  plain(s, rd, px);
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
