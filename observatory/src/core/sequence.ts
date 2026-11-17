@@ -1,6 +1,7 @@
 // The pick sequence and the complex lights. Pure; a test steps it by hand.
 // Times are in seconds from the pick.
 import type { Phase } from './machine.ts';
+import { SHUTTER_S } from './dome.ts';
 
 export type Shot = 'edge' | 'slit' | 'roll' | 'gear';
 // Each cut is a locked camera.
@@ -8,18 +9,24 @@ export type Shot = 'edge' | 'slit' | 'roll' | 'gear';
 // phase: the machine phase the cut shows.
 export type Cut = { at: number; shot: Shot; dur: number; fov: number; phase: 'open' | 'slew' };
 
-// The shutter opens from 0 to 4 s.
-// The slew starts at 4 s.
+// The shutter opens over SHUTTER_S, from 0 s.
+// The slew starts when it is open.
+// The cut times come from that.
+// So the cuts stay true to the machine.
 // edge: the shutter starts to slide, tight on the slit edge.
 // slit: the shutter opens further, the whole slit.
 // gear: the cupola starts to turn on its ring as the slew begins.
 // roll: the tube rolls in the open slit, against the sky.
 // The lens cut joins at the end later, as a fifth cut.
+// The two shutter cuts share its travel.
+const OPEN_CUT = SHUTTER_S / 2;
+// A slew cut holds this many seconds.
+const SLEW_CUT = 2;
 export const CUTS: Cut[] = [
-  { at: 0, shot: 'edge', dur: 2, fov: 16, phase: 'open' },
-  { at: 2, shot: 'slit', dur: 2, fov: 17, phase: 'open' },
-  { at: 4, shot: 'gear', dur: 2, fov: 8, phase: 'slew' },
-  { at: 6, shot: 'roll', dur: 2, fov: 9, phase: 'slew' },
+  { at: 0, shot: 'edge', dur: OPEN_CUT, fov: 16, phase: 'open' },
+  { at: OPEN_CUT, shot: 'slit', dur: OPEN_CUT, fov: 17, phase: 'open' },
+  { at: SHUTTER_S, shot: 'gear', dur: SLEW_CUT, fov: 8, phase: 'slew' },
+  { at: SHUTTER_S + SLEW_CUT, shot: 'roll', dur: SLEW_CUT, fov: 9, phase: 'slew' },
 ];
 export const cutsTotal = CUTS.reduce((s, c) => s + c.dur, 0);
 
