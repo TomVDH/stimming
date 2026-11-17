@@ -15,21 +15,22 @@ const rad = d => d * Math.PI / 180;
 export const RANGES = [
   // Tom's pick, layered sierra (2026-11-16): four even layers, low and realistic.
   // Each layer is three arcs; each range is about six times as wide as tall.
+  // True scale (Tom, option A): crests 2.6 to 9 km; the far layers sink behind the curve.
   // Foothills, about 50 km out: a ridge stands in front of every far gun.
   [47.3, 98000, 46000, 3100, 167, 228],
   [29.5, 98000, 50000, 2600, 165, 233],
   [-10.2, 97000, 42000, 2900, 156, 283],
   // The main range, about 90 km out.
-  [48, 157000, 65500, 10100, 185, 222],
-  [6.1, 153000, 69000, 9100, 191, 275],
-  [-10.2, 151000, 57500, 10600, 172, 274],
+  [48, 157000, 65500, 6000, 185, 222],
+  [6.1, 153000, 69000, 5400, 191, 275],
+  [-10.2, 151000, 57500, 6300, 172, 274],
   // The high range, about 130 km out.
-  [37.9, 206000, 77000, 15600, 201, 229],
-  [-3.6, 213000, 80500, 16800, 191, 283],
+  [37.9, 206000, 77000, 8000, 201, 229],
+  [-3.6, 213000, 80500, 8600, 191, 283],
   // Far peaks, about 180 km out, deep in the haze.
-  [55, 269000, 88500, 22800, 187, 215],
-  [23.4, 282000, 96000, 25200, 195, 240],
-  [-15.3, 258000, 84500, 21600, 156, 292],
+  [55, 269000, 88500, 9000, 187, 215],
+  [23.4, 282000, 96000, 9000, 195, 240],
+  [-15.3, 258000, 84500, 8800, 156, 292],
 ];
 // Each form's bearing from its centre to the landscape eye, for the cone's seam.
 const rangeFace = m => { const c = polar(rad(m[0]), m[1]); return Math.atan2(EYE[1] - c[1], EYE[0] - c[0]); };

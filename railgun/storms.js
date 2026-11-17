@@ -5,14 +5,14 @@
 // Each storm: bearing in degrees, range, base height, half width, height, form.
 // Bearings turn left from negative z, about the landscape eye, as the ranges do.
 // Forms: 1 storm tower, 2 towering cumulus, 3 squall line, 4 dying storm, 5 supercell.
-// Bases sit two to four kilometres up, as storm bases do; rain falls to the plain.
-// Heights match this world's ranges, whose far crests reach 30 to 50 km.
+// Bases sit about two kilometres up, as storm bases do; rain falls to the plain.
+// True scale (Tom, option A): tops reach 10 to 18 km.
 // The nearer storms stand in front of the ranges; the supercell's foot sinks behind the curve.
 export const STORMS = [
-  [-14, 85000, 2500, 13000, 30000, 1],
-  [8, 135000, 2800, 10000, 22000, 2],
-  [28, 95000, 2200, 14000, 26000, 3],
-  [52, 200000, 3500, 36000, 62000, 5],
+  [-14, 85000, 2000, 6500, 15000, 1],
+  [8, 135000, 1800, 4500, 10000, 2],
+  [28, 95000, 1800, 7000, 13000, 3],
+  [52, 200000, 2500, 10500, 18000, 5],
 ];
 export const FORMS = ['', 'Storm tower', 'Towering cumulus', 'Squall line', 'Dying storm', 'Supercell'];
 // A storm past this range draws in the Giants band, behind the towers.
