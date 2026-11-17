@@ -1753,14 +1753,20 @@ function live(t, dt) {
   if (t !== drag) {
     const v = fAt(F_SPEED, t.f) * (1 - 0.6 * clamp(t.rope));
     t.x += windDir[0] * v * dt; t.z += windDir[1] * v * dt;
+    // A tornado that drifts out to the far limit ropes out there.
+    if (!t.roping && Math.hypot(t.x, t.z) > farMax() - 300 && t.x * windDir[0] + t.z * windDir[1] > 0) ropeOut(t);
   }
   keepOff(t);
 }
 // A tornado comes no nearer than its dust's reach plus a margin, and never under the eye.
 const nearMin = t => Math.max(1000, 2.2 * at('r0', t.f) * KNOB.width + 300);
+// The farthest a tornado stands, in metres: inside the live march.
+// It stays half a kilometre short of the crossover to the baked far field.
+const farMax = () => Math.max(1500, farD * 1000 - Math.max(750, 125 * farD) - 500);
 function keepOff(t) {
-  const d = Math.hypot(t.x, t.z), m = nearMin(t);
+  const d = Math.hypot(t.x, t.z), m = nearMin(t), M = Math.max(m, farMax());
   if (d < m) { t.x *= m / Math.max(d, 1); t.z *= m / Math.max(d, 1); }
+  else if (d > M) { t.x *= M / d; t.z *= M / d; }
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
 // The Rise moves the eye and the lens; reduced motion jumps to the end.
@@ -1839,8 +1845,8 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay in the live march: 1.2 km out at the nearest, up to the bake's crossover at the most.
-  const far = Math.max(5000, (farD - 0.125 * farD) * 1000 - 500);
+  // Funnels stay in the live march: 1.2 km out at the nearest, farMax() at the most.
+  const far = farMax();
   const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 1200, far) : far;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T09:43:34Z
+updated_at: 2026-11-17T09:45:00Z
 parent: stimming-oh7b
 ---
 
@@ -223,3 +223,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17: perf at defaults (Wet glass off): three F4.5, Storm 1, golden, 1870×962: 29.6 ms best (storm pass 20.9 ms, scene pass ~9 ms); Tom's live settings (Wet glass on, base 1.9, High) cost about 54 ms. Dev row Front edge (km, −6 to 15, default −6 = the old layout; ?front=): the deck runs from a ragged front edge to Deck reach; nearer the eye the plain is in full sun (bright foreground, dark storm ahead). Not automatic with Storm yet.
 
 - 2026-11-17, Tom (volumetric distance haze): one air model in the shared GLSL (airInit/airTo): a dust layer (450 m scale height, denser with Storm) and clean air (8 km, scatters blue); analytic optical depth by distance and climb; in-scatter from sky light (slate under the deck, warm toward the sun, cool away) plus the sun's dust lobe times the sunlit share from sunCover; deck, funnels, rain, the scene and the far bake share it. About +1 ms. plain.js's plainHaze() still uses the old mix (one-line follow-up for the destruction session).
+
+- 2026-11-17: tornadoes stay inside the live march: farMax() = max(1.5, Bake from − crossover − 0.5) km (13.5 km at 16); placement, drag, drift and ?near clamp to it; a tornado drifting out ropes out at the limit.
