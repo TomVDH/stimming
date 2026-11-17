@@ -86,6 +86,22 @@ Four Tool-approved dioramas Tom wants next. Each has a draft bean. The sizes are
 | 58 | **Observatory** | C | L |
 | 60 | **Lantern lake** | C | M |
 
+## Tom's picks, 2026-11-17
+
+Three Tool-approved toys Tom wants next, each held to size S to M. Each has a bean; no plan exists yet.
+
+| # | Toy | Group | Bean | Note |
+|---|---|---|---|---|
+| 124 | **Chemical garden** | A | `stimming-eekd` | |
+| 73 | **Water wheel** | E | `stimming-2s2a` | [toy-plan.md](toy-plan.md) rates it L and high risk. The plan must cut the scope to fit M. |
+| 117 | **Moire veils** | F | `stimming-p32r` | |
+
+One new idea from Tom, the same day. The interaction is open.
+
+| # | Toy | Group | Bean | Note |
+|---|---|---|---|---|
+| 365 | **Volcano** | C | `stimming-4wnw` (draft) | A volcano erupts: a high fidelity diorama. Close to Lava coast (99). Not in the S to M batch. |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
