@@ -125,6 +125,8 @@ out vec4 outC;
 uniform sampler2D tPrev;
 uniform vec2 uRes, uJit;
 uniform float uBlend;
+// QA: 1 writes the work per pixel instead of the picture.
+uniform int uCount;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Rim blend: a grazing ray sees thinner core, so the lit rim blends, 0 to 1.
@@ -428,14 +430,17 @@ vec3 toKm(vec3 p) { return (p + gFoot) * 0.001; }
 // The deck's distance at a point pk in km. In a tornado's column (horn true) the horn joins it.
 // pl is the same point round that tornado's foot, in metres.
 // A smooth minimum joins the horn, so the deck's lumps and light run on down it.
-float deckD(vec3 pk, bool horn, vec3 pl) {
+float deckD(vec3 pk, bool horn, vec3 pl, float soft) {
   float d = stormShape(pk);
   if (horn && gOn > 0.0) {
     vec2 qt = pl.xz - topXZ();
     float hr = gNearR * 1000.0;
     if (dot(qt, qt) < hr * hr) d = smin(d, mix(4.0, hornDist(pl.y, length(pl.xz - axisAt(pl.y))) * 0.001, gOn), 0.12);
   }
-  return d > 2.5 ? d : stormNoise(pk, d);
+  // Far from the cloud the noise cannot reach: a safe distance needs no noise.
+  // It stays past the soft edge, so the march never takes it for cloud.
+  if (d > 1.2 + soft) return d - 1.1;
+  return stormNoise(pk, d);
 }
 // The storm's shade on a funnel point: its shape along the sun ray.
 // A high sun is cut off by the storm overhead; a low one slips under the base.
@@ -593,7 +598,9 @@ void main() {
   vec3 cCol = vec3(0.0), cLit = vec3(-1.0);
   vec3 acc = vec3(0.0);
   float T = 1.0;
+  int steps = 0;
   for (int i = 0; i < 320; i++) {
+    steps++;
     if (t > tEnd || T < 0.01) break;
     int k = -1;
     for (int j = 0; j < ${MAX_FUNNELS}; j++) { if (k < 0 && t >= a0[j] && t <= a1[j]) k = j; }
@@ -643,9 +650,11 @@ void main() {
     // The deck keeps its own sample spacing: the funnel's short steps reuse its last sample.
     if (sky) {
       if (t >= tDn) {
-        float d = deckD(pk, inA, p);
+        // The finest noise fades out far off, where it is under a pixel.
+        gFine = 1.0 - smoothstep(25000.0, 45000.0, t);
         // The soft edge and the inner step grow with distance: crisp near, smooth far.
         float inStep = 30.0 + 0.006 * t, soft = 1.2 * inStep * 0.001;
+        float d = deckD(pk, inA, p, soft);
         // The first step into the cloud is a random part of a step: no contour bands.
         if (d < soft && outside && !inA) { outside = false; t += inStep * jit; continue; }
         if (d < soft) outside = false;
@@ -679,7 +688,7 @@ void main() {
         // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
         float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
-        if (topK > 0.0 && stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl)); }
+        if (topK > 0.0 && stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl, 1e3)); }
         // The tone it turns to is the deck's own light right here, where the deck has cloud.
         // Above the horn's surface the ray's one deck point stands in.
         vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
@@ -731,4 +740,5 @@ void main() {
   vec4 now = vec4(acc, 1.0 - T);
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
+  if (uCount == 1) outC = vec4(float(gWork), float(steps), 0.0, 1.0);
 }`;

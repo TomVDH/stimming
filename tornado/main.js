@@ -87,6 +87,8 @@ const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
 // The sun's direction in camera space, and the pixel size; set once per pixel.
 vec3 gSunC;
+// The deck's finest noise, 0 to 1: it fades with distance, and the light's probes skip it.
+float gFine = 1.0;
 float gPx;
 
 float th(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
@@ -194,11 +196,15 @@ vec3 whirlPt(vec3 p, vec2 c, float R, out float w) {
   return vec3(cos(ang) * 2.2 + lr * 2.8 + c.x * 3.1, p.y, sin(ang) * 2.2 + c.y * 2.7);
 }
 // One layer of the deck's texture. p sets the masks; pn is the noise point.
+// QA: the deck's noise reads on this pixel, counted for ?qa.
+int gWork = 0;
 float deckN(vec3 p, vec3 pn, float calm) {
+  gWork++;
   // Lumpy towers, a smoother anvil.
   float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
   vec3 n = pn * 0.75 + vec3(0.0, -uT * 0.006, 0.0);
-  float d = (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp * calm;
+  // A faded term gives way to its mean, so the cloud keeps its size.
+  float d = (fbm3(n) + 0.0625 * (gFine > 0.0 ? gFine * (vn3(n * 8.3) - 0.5) + 0.5 : 0.5) - 0.5) * amp * calm;
   // The base heaves: broad swells drift under it and breathe.
   float swell = (vn3(pn * 0.45 + vec3(uT * 0.03, 0.0, uT * 0.02)) - 0.5) * (0.6 + 0.4 * sin(uT * 0.6 + vn3(pn * 0.2) * 6.28));
   swell += (vn3(pn * 1.2 - vec3(uT * 0.05, 0.0, 0.0)) - 0.5) * 0.35;
@@ -207,13 +213,14 @@ float deckN(vec3 p, vec3 pn, float calm) {
   float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(2.8, 6.2, length(p.xz - WALL));
   if (flank > 0.0) d += 0.09 * flank * sin(p.y * 15.0 + atan(p.z - TOWER.y, p.x - TOWER.x) * 2.0 + 1.3 * vn3(pn * 1.4));
   // Fine lumps, for the near base.
-  d += (vn3(pn * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
+  if (gFine > 0.0) d += (vn3(pn * 4.3) - 0.5) * 0.14 * gFine * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
   // Ragged scud hangs under the base.
   float low = (1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y)) * calm;
   d += low * (vn3(pn * 3.1 + vec3(uT * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
   // Rounded lumps hang from the underside, in two sizes.
   float under = (1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y)) * mix(1.0, calm, 0.6);
-  return d - under * ((W(pn * 2.6 + 1.7) - 0.35) * 0.32 + (W(pn * 8.0) - 0.35) * 0.16);
+  float wf = gFine > 0.0 ? mix(0.07, W(pn * 8.0) - 0.35, gFine) : 0.07;
+  return d - under * ((W(pn * 2.6 + 1.7) - 0.35) * 0.32 + wf * 0.16);
 }
 // The deck's texture on a shape distance d. In a tornado's column the horn is in d already.
 // Where whirls meet, their noise points blend by weight, so no seam shows.
@@ -241,11 +248,15 @@ float stormD(vec3 p) {
 // The colour of one storm sample.
 vec3 stormLit(vec3 p, float d) {
   // A step toward the sun: thinner cloud there means this side is lit.
+  // The probes read the light's broad shape: they skip the finest noise.
+  float fine = gFine;
+  gFine = 0.0;
   float ds = stormD(p + gSunC * 0.9);
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
   // A step up: deeper cloud above means an underside, out of the sun.
   // A horn hangs below the base: its sides take the low sun as the funnel does, not the underside's shade.
   float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
+  gFine = fine;
   lit *= 1.0 - 0.9 * under;
   // Thick cloud overhead darkens the base and the core.
   float up = smoothstep(0.6, 9.0, p.y);
@@ -269,6 +280,7 @@ vec4 storm(vec3 rd, float jit, out float tHit) {
   for (int i = 0; i < 110; i++) {
     vec3 p = ro + rd * t;
     if (p.y > 16.0 || p.y < -0.01 || t > 110.0 || T < 0.03) break;
+    gFine = 1.0 - smoothstep(25.0, 45.0, t);
     float d = stormD(p);
     // The soft edge grows with distance, a little wider than the inner step.
     // A sample then covers part of a step, not all of it: no terraces and less grain.
@@ -1010,16 +1022,41 @@ async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
     list.push(q);
     await new Promise(r => setTimeout(r, 20));
   }
-  const last = list[list.length - 1];
-  for (let k = 0; k < 200 && !gl.getQueryParameter(last, gl.QUERY_RESULT_AVAILABLE); k++) await new Promise(r => setTimeout(r, 20));
+  // A hidden pane can leave queries pending: wait for each, and drop the ones that never land.
+  const avail = q => gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE);
+  for (let k = 0; k < 300 && !list.every(avail); k++) await new Promise(r => setTimeout(r, 20));
   qaHold = false;
   env.touch();
   if (gl.getParameter(ext.GPU_DISJOINT_EXT)) return 'disjoint';
-  const ms = list.map(q => gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6).sort((p, q) => p - q);
+  const ms = list.filter(avail).map(q => gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6).filter(v => v > 0).sort((p, q) => p - q);
   list.forEach(q => gl.deleteQuery(q));
-  return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), max: +ms[n - 1].toFixed(2), size: [fw, fh, fun.w, fun.h] };
+  if (!ms.length) return 'no results';
+  n = ms.length;
+  return { n, median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), max: +ms[n - 1].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas };
+// QA: the same timing by the wall clock, each frame waited out with a pixel read.
+// It counts the CPU's share too; timer queries can stall in a hidden pane.
+async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
+  const k = Math.sqrt(px / (canvas.clientWidth * canvas.clientHeight));
+  const fw = Math.round(canvas.clientWidth * k), fh = Math.round(canvas.clientHeight * k);
+  qaHold = true;
+  await new Promise(r => setTimeout(r, 100));
+  // The pass is read back from its own target: the read waits for it to finish.
+  const pix = new Float32Array(4), run = () => {
+    if (part === 'pass') funnelPass(fw, fh); else env.draw(fw, fh);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fun.A.fb);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pix);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  };
+  run();
+  const ms = [];
+  for (let i = 0; i < n; i++) { const t0 = performance.now(); run(); ms.push(performance.now() - t0); }
+  qaHold = false;
+  env.touch();
+  ms.sort((p, q) => p - q);
+  return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
+}
+if (qs.has('qa')) window.__qa = { syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

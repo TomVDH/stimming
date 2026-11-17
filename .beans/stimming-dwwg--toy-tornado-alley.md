@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:44:58Z
+updated_at: 2026-11-17T06:45:27Z
 parent: stimming-oh7b
 ---
 
@@ -126,3 +126,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: Opacity 1.2 by default in the scene and the lab (was 0.40; Tom: funnel density low). 0.40 was set close up in the lab; at 8 km in the scene, behind haze, with Rim blend and Light through, it read faint.
 
 - 2026-11-16: the lab's Opacity is back to Tom's 0.40 (Tom: "get me my lab settings back"). The scene keeps its own values.
+
+- 2026-11-16, cloud optimization (parked): the deck's finest noise fades out between 25 and 45 km, held at its mean; the light probes skip it; clear air steps by the bare storm shape with no noise. QA: ?time, a sturdier GPU timer, a wall timer, a noise-read counter (uCount). Before/after GPU times not measured: the GPU was shared.
