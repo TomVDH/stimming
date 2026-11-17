@@ -30,7 +30,7 @@ let follow = kept === null || kept === 'now';
 let hour = follow ? localHour() : clamp(+kept || 0, 0, 24);
 
 const act = { hour() {}, now() {}, car() {}, scatter() {} };
-const ui = initPage({ id: 'wires', bar: {
+const ui = initPage({ id: 'wires', signal: true, bar: {
   slider: { label: 'Time', min: 0, max: 24, step: 0.05, value: hour, onInput: v => act.hour(v) },
   actions: [
     { verb: 'now', key: 'N', onPress: () => act.now() },
@@ -38,7 +38,7 @@ const ui = initPage({ id: 'wires', bar: {
     { verb: 'scatter', key: 'S', onPress: () => act.scatter() },
   ],
   quality: true,
-  keys: [['click', 'startle crows'], ['click a wire', 'pluck it'], ['click the shoes', 'swing them']],
+  help: [['click', 'Startle the crows'], ['click', 'Pluck a wire'], ['click', 'Swing the sneakers'], ['scroll', 'Read about the crows']],
 } });
 
 /* ---------- the lane ---------- */
