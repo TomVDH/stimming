@@ -26,14 +26,14 @@ Impatience gets a reaction: every press knocks a dot out early, the box rattles 
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`crossing/index.html:111`).
+Bar: v3, the default bar (`crossing/index.html:108`). Copy rewritten 2026-11-17.
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | None |
-| Bottom left (actions) | None |
-| Bottom right (slider) | None |
-| Key strip | click press; hold push hard; space press |
+| Choice | None |
+| Actions | None |
+| Slider | None |
+| How to play | Click: press the button. Hold: push the button hard. Space: press the button. Enter: press the button |
 | Settings | Quality; Reset in the footer |
 | Dev (`?dev`) | `Wait` (0.4 to 3, 1: scales the countdown), `Glow` (0 to 2, 1: LED bloom) |
 <!-- /gen:bar -->
