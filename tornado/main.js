@@ -626,6 +626,72 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   }
 }
 
+/* ---------- the windmill: an old water pump in the near wheat, a blockout ---------- */
+// Its foot in world metres: about 38 m out, left of where tornadoes touch down, in frame at 28 and 50 mm.
+const vec3 MILL = vec3(-18.1, 0.0, -36.3);
+// Screen point of a camera-space point.
+vec2 projC(vec3 c) { return vec2(c.x, c.y - CAMH) / -c.z * uFoc; }
+// Coverage of a bar from a to b in camera space, wid metres wide, at pixel size px.
+float bar(vec2 s, vec3 a, vec3 b, float wid, float px) {
+  float u;
+  float d = segD(s, projC(a), projC(b), u);
+  float w = 0.5 * wid / -mix(a.z, b.z, u) * uFoc;
+  return clamp((w - d) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px + 0.25);
+}
+void windmill(inout vec3 c, vec2 s, vec3 rc, vec3 rd, float px) {
+  vec3 m = toCam(MILL);
+  vec3 hub = m + vec3(0.0, 13.6, 0.0);
+  // The quick test: the mill's box on screen.
+  float reach = 3.2 / -m.z * uFoc;
+  if (abs(s.x - projC(m).x) > reach + px * 2.0 || s.y > projC(hub).y + reach || s.y < projC(m).y - px * 2.0) return;
+  float k = 0.0;
+  // Four legs taper from a 4 m square at the ground to under a metre at the top.
+  for (int i = 0; i < 4; i++) {
+    vec2 o = vec2(i == 0 || i == 3 ? 1.0 : -1.0, i < 2 ? 1.0 : -1.0);
+    k = max(k, bar(s, m + vec3(o.x * 2.0, 0.0, o.y * 2.0), m + vec3(o.x * 0.4, 13.0, o.y * 0.4), 0.14, px));
+  }
+  // Girts at four heights.
+  for (int j = 0; j < 4; j++) {
+    float h = 2.5 + float(j) * 2.8, hw = mix(2.0, 0.4, h / 13.0);
+    k = max(k, bar(s, m + vec3(-hw, h, -hw), m + vec3(hw, h, -hw), 0.08, px));
+    k = max(k, bar(s, m + vec3(-hw, h, hw), m + vec3(hw, h, hw), 0.08, px));
+    k = max(k, bar(s, m + vec3(-hw, h, -hw), m + vec3(-hw, h, hw), 0.08, px));
+    k = max(k, bar(s, m + vec3(hw, h, -hw), m + vec3(hw, h, hw), 0.08, px));
+  }
+  vec3 ro = vec3(0.0, CAMH, 0.0);
+  // The wheel faces into the wind; the vane trails downwind.
+  vec3 wd = normalize(toCam(vec3(WDIR.x, 0.0, WDIR.y)));
+  vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), wd));
+  // The wheel: an annulus of 18 blades, turning with the wind.
+  vec3 wc = hub - wd * 0.6;
+  float den = dot(rc, wd);
+  if (abs(den) > 1e-4) {
+    float t = dot(wc - ro, wd) / den;
+    vec3 q = ro + rc * t - wc;
+    vec2 l = vec2(dot(q, side), q.y);
+    float r = length(l), fp = t * px / uFoc;
+    float a = atan(l.y, l.x) + uT * (0.4 + 2.2 * uWind);
+    float gap = smoothstep(0.55, 0.8, abs(fract(a * 18.0 / 6.2832) - 0.5) * 2.0);
+    float ann = clamp((2.4 - r) / fp + 0.5, 0.0, 1.0) * clamp((r - 0.5) / fp + 0.5, 0.0, 1.0) * (1.0 - 0.85 * gap);
+    float rim = clamp((0.07 - abs(r - 2.35)) / fp + 0.5, 0.0, 1.0);
+    float hubK = clamp((0.3 - r) / fp + 0.5, 0.0, 1.0);
+    if (t > 0.0) k = max(k, max(ann, max(rim, hubK)));
+  }
+  // The tail: a boom and a plate in the upright plane along the wind.
+  float den2 = dot(rc, side);
+  if (abs(den2) > 1e-4) {
+    float t = dot(hub - ro, side) / den2;
+    vec3 q = ro + rc * t - hub;
+    float along = dot(q, wd), up = q.y, fp = t * px / uFoc;
+    float boom = clamp((0.05 - abs(up)) / fp + 0.5, 0.0, 1.0) * clamp(along / fp + 0.5, 0.0, 1.0) * clamp((2.6 - along) / fp + 0.5, 0.0, 1.0);
+    float hh = mix(0.3, 0.9, clamp((along - 1.6) / 1.6, 0.0, 1.0));
+    float plate = clamp((hh - abs(up - 0.1)) / fp + 0.5, 0.0, 1.0) * clamp((along - 1.6) / fp + 0.5, 0.0, 1.0) * clamp((3.2 - along) / fp + 0.5, 0.0, 1.0);
+    if (t > 0.0) k = max(k, max(boom, plate));
+  }
+  // Dark weathered steel in the scene's light, in the air at its distance.
+  vec3 steel = uAmb * 0.05 + uSunCol * 0.035;
+  c = mix(c, hazed(steel, rd, -m.z), clamp(k, 0.0, 1.0));
+}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -676,6 +742,7 @@ vec3 envScene(vec2 uv) {
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
   farm(c, s, rd, px);
   poles(c, s, rd, px);
+  windmill(c, s, rc, rd, px);
   nearEars(c, s, px, asp);
   return c;
 }
