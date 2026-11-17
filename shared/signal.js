@@ -51,9 +51,12 @@ const POINT = '<circle class="solid" cx="6.5" cy="8" r="2"/><circle cx="6.5" cy=
 const MOVE = '<path d="M13 8h8M15 6l-2 2 2 2M19 6l2 2-2 2"/>';
 const STAY = '<path d="M13.5 5.5v5M13.5 8h7M20.5 5.5v5"/>';
 const STAY_MOVE = '<path d="M13.5 5.5v5M13.5 8h7.5M19 6l2 2-2 2"/>';
+// A circle: the pointer goes round, as the arrow shows.
+const ROUND = '<path d="M18.2 4.5a3.5 3.5 0 1 1-3.03 1.75M13.1 7l2.07-.75.38 2.17"/>';
 const GESTURE = {
   click: LEFT, 'right-click': RIGHT, 'double-click': LEFT,
   drag: LEFT + MOVE, 'right-drag': RIGHT + MOVE, hold: LEFT + STAY, 'hold + drag': LEFT + STAY_MOVE,
+  circle: LEFT + ROUND, 'touch-circle': POINT + ROUND,
   // A release: no button is down, and an arrow leaves the mouse.
   release: `<path d="${MOUSE}M3 7h7M6.5 3v4"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>`,
   'touch-release': '<circle cx="6.5" cy="8" r="4.5"/><path d="M17 11V5M14.5 7.5 17 5l2.5 2.5"/>',
@@ -63,8 +66,8 @@ const GESTURE = {
   pinch: '<circle class="solid" cx="4" cy="8" r="1.8"/><circle class="solid" cx="20" cy="8" r="1.8"/><path d="M7 8h3.5M9 6.5 10.5 8 9 9.5M17 8h-3.5M15 6.5 13.5 8 15 9.5"/>',
 };
 // On a touch screen each mouse gesture has one touch gesture, as in keyWord.
-const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch' };
-const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch'];
+const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch', circle: 'touch-circle' };
+const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch', 'circle'];
 /**
  * The icon for one How to play entry: a gesture drawing, or keycaps for a key.
  * @param {string} word The spec's word, such as 'drag', 'drag a thing' or 'T'.

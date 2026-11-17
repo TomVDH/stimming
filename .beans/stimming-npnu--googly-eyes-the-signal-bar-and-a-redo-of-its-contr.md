@@ -19,12 +19,12 @@ First read of what to redo: Shuffle, Shake, Blink: check that each earns its pla
 - [x] List every control and what it does (from the spec, the input code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Yes, apply"), as proposed
 - [x] Switch the toy to the Signal bar: `signal: true` in `eyes/main.js` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy)
+- [x] The toy's doc in `docs/toys/` says what is true (the bar block, by hand)
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Yes, apply")
 
 The rules are those of the six toys before it: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 
@@ -65,6 +65,6 @@ Each of the three earns its place: the bar holds three words and nothing else. D
 
 ### Findings
 
-- The builder has no drawing for a circle gesture. The apply adds one (`circle` in `shared/signal.js`).
+- The builder had no drawing for a circle gesture. It has one now: `circle` in `shared/signal.js`, and `circle` is a pointer word in `shared/stim.js`, so the row stays on touch.
 - A click on empty space starts a wave of blinks from the point. "Blink all the eyes" is close, not exact.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen.

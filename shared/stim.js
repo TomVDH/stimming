@@ -652,7 +652,7 @@ export function keyWord(word, touch) {
 const COARSE = matchMedia('(pointer: coarse)');
 // A word that starts with a pointer verb stays on touch.
 // Every other word is a keyboard key.
-const POINTER_WORD = /^(right-drag|right-click|two-finger|long-press|double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe)\b/i;
+const POINTER_WORD = /^(right-drag|right-click|two-finger|long-press|double-click|double-tap|click|tap|drag|hold|release|scroll|pinch|press|swipe|circle)\b/i;
 // A pointer word keeps its row on a touch screen.
 export const onTouch = word => POINTER_WORD.test(word);
 function makeKeys(entries, stage, info, delay) {
