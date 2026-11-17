@@ -612,6 +612,9 @@ vec3 envScene(vec2 uv) {
     c = c * (1.0 - tv.a) + tv.rgb;
   } else {
     c = skyCol(rd);
+    // The sun's globe and its close glow; the storm laid on next hides them where the deck is.
+    float cs = max(dot(rd, uSun), 0.0);
+    c += uSunCol * (24.0 * smoothstep(0.99997, 0.99999, cs) + 0.35 * pow(cs, 900.0) + 0.06 * pow(cs, 60.0));
     // The sky dims round the storm: its shadow and its outflow haze.
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
@@ -694,7 +697,7 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { funnelPass(w, h); bindNoise(); },
+    before: (w, h) => { funnelPass(w, h); bindNoise(); sunFlare(); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
@@ -714,6 +717,60 @@ const S = env.state;
 Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky: false });
 Object.assign(S, { clouds: 0, stars: 0, haze: 0.4, bloom: 0.18, thr: 1.4, orbs: 0, vig: 0.38, grain: 0.035, tintK: 0, expo: 1 });
 S.frame = false;
+
+/* ---------- the sun's flare ---------- */
+// The storm's shape in camera km, as the scene's GLSL has it, with no noise: for the sun's cover.
+const sstep = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const smin = (a, b, k) => { const h = clamp(0.5 + 0.5 * (b - a) / k); return b + (a - b) * h - k * h * (1 - h); };
+const mixN = (a, b, t) => a + (b - a) * t;
+function stormShapeJS(x, y, z) {
+  const g = storm, B = base, top = mixN(8, 12.5, g);
+  const T = [-4.3, -23], SH = [1, -13], SR = [15, 9], W = [-0.9, -8];
+  const qx = x - T[0] - 0.28 * (y - B), qz = z - T[1] + 0.12 * (y - B);
+  const rT = mixN(3.5, 7, g) * (1 - 0.25 * sstep(B, 6, y) + 0.2 * sstep(top - 3, top, y));
+  const tower = Math.max(Math.hypot(qx, qz) - rT, Math.max(B + 0.1 - y, y - top));
+  const k = mixN(0.4, 1, g), bx = (x - SH[0]) / (SR[0] * k), bz = (z - SH[1]) / (SR[1] * k);
+  const shelf = Math.max((Math.hypot(bx, bz) - 1) * SR[1] * k, Math.abs(y - (B + 0.6)) - 0.6);
+  const ax = x - (T[0] + mixN(2, 14, g)), ay = y - (top - 0.5), az = z - (T[1] - 2);
+  const anvil = Math.max((Math.hypot(ax / mixN(6, 28, g), ay / 1.7, az / mixN(4, 9, g)) - 1) * 1.6, y - top - 0.5);
+  const ox = x - (T[0] + 0.28 * (top - B)), oy = (y - (top + 0.4)) * 1.6, oz = z - (T[1] - 0.12 * (top - B));
+  const dome = Math.hypot(ox, oy, oz) / 1.6 - mixN(1.4, 2.8, g);
+  const wall = Math.max(Math.hypot(x - W[0], z - W[1]) - mixN(0.5, 2.4, g) * (1 - 0.25 * sstep(B, B - 0.55, y)), Math.abs(y - B + 0.2) - 0.35);
+  let d = smin(tower, shelf, 1.4);
+  d = smin(d, dome, 1.2);
+  d = smin(d, anvil, 2.2);
+  d = smin(d, wall, 0.6);
+  const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
+  const fx = Math.abs(x) - 30, fz = Math.abs(z + 4) - 10;
+  const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + 1)));
+  return smin(d, front, 0.8);
+}
+// The sun's flare through the lens: full in frame, a veil just past the edge, none behind the eye.
+// The storm hides it where the sun is behind the deck; its ragged edge makes the cover soft.
+function sunFlare() {
+  const a = yaw(), sx = sun[0] * Math.cos(a) - sun[2] * Math.sin(a), sz = sun[0] * Math.sin(a) + sun[2] * Math.cos(a), sy = sun[1];
+  let gain = 0;
+  if (sz < -0.05 && sy > -0.01) {
+    const foc = focal(), u = sx / -sz * foc / aspect() + 0.5, v = sy / -sz * foc + horizon();
+    const out = Math.max(0, -u, u - 1) + Math.max(0, -v, v - 1);
+    // The cover: the lowest distance to the storm's shape along the sun's ray.
+    let t = 0.3, minD = 1e9;
+    for (let i = 0; i < 120 && t < 120; i++) {
+      const d = stormShapeJS(sx * t, 0.00125 + sy * t, sz * t);
+      minD = Math.min(minD, d);
+      if (d < -0.3) break;
+      t += Math.max(d * 0.8, 0.1);
+    }
+    const cover = clamp((0.8 - minD) / 1.0);
+    gain = Math.exp(-out * 4) * (1 - cover) * clamp(sy / 0.02 + 0.5);
+    S.light = [u, v];
+  }
+  const m = Math.max(sunCol[0], sunCol[1], sunCol[2], 1e-3);
+  S.lightColor = [sunCol[0] / m, sunCol[1] / m, sunCol[2] / m];
+  S.on.flare = gain > 0.01;
+  S.flGain = 0.5 * gain;
+  S.flSize = 0.8;
+}
 
 /* ---------- the funnel pass ---------- */
 // The tornadoes draw at this share of the frame's size, into their own target.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:50:05Z
+updated_at: 2026-11-17T06:51:09Z
 parent: stimming-oh7b
 ---
 
@@ -134,3 +134,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16, Tom: a wider view: 28 mm by default (35, 50, 85 in Settings; new key lensWide so an old saved 50 does not hold). Horizon 0.382 and the road's vanishing point at 0.618 kept; no deck edge at 28 mm. Tornadoes 8 km out read small at 28 mm.
 
 - 2026-11-16, Tom: Dev row Cloud base (0.8 to 3.0 km, default 1.35; ?base for one load): the base is a uniform and every part hung from it follows (shelf, front deck, wall cloud 0.55 km lower, funnel tops and horns, whirls, deck bands, gloom, rain, cloudShade). The bottom-left strokes at 28 mm were foreground wheat ears; they now keep their 50 mm size and place at any lens.
+
+- 2026-11-16, sky pass 1, Tom: a sun globe with a lens flare: the globe and its glow sit in the sky, so the deck hides them; the flare is the runner's own (shared/flare.js), full in frame, a veil past the edge, off behind the eye or below the horizon, and dimmed softly when the sun's ray meets the deck (a JS copy of the storm's shape).
