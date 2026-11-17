@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T03:23:51Z
-updated_at: 2026-11-17T05:20:31Z
+updated_at: 2026-11-17T05:25:11Z
 parent: stimming-dwwg
 ---
 
@@ -65,3 +65,6 @@ Join spikes 1 and 2: shells for the funnel, the bake for the far storm and the n
 - Width × (default 1.6) scales the table's radius, so the funnel, horn, dust and bake column widen together. Flare, Lean, Sway and Dust height scale theirs; Reach + shifts how far down the funnel condenses.
 - Funnel: Sheaths (density, was 1.6 fixed), Core edge (was 0.3 fixed). Deck whirl: Turn, Inflow, Twist, Reach km (were constants). Quality: Bake strips, Bake mix. Parts: one box per `?skip` bit.
 - The panel scrolls when it is taller than the window.
+
+## Verdict
+Tom (2026-11-16): "spike joined is good". The joined spike (shells + bake, with its knobs) is the way forward for the tornado.
