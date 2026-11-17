@@ -77,6 +77,8 @@ uniform vec2 uRes, uJit;
 // 1 the funnel, 2 the near storm, 4 the far storm, 8 storm shade on the funnel,
 // 16 the deck's tone on the horn, 32 sheath noise, 64 dust and rain.
 uniform float uSkip;
+// Lab knobs: sheath density, core edge, and the deck's whirl.
+uniform float uSheathK, uEdgeW, uSpTurn, uSpIn, uSpTwist, uSpR;
 bool off(float b) { return mod(floor(uSkip / b), 2.0) > 0.5; }
 uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
@@ -447,22 +449,20 @@ float nearW(vec3 ps);
 float shellOff(vec3 ps);
 // The deck spirals into the wall cloud. Its texture lies on angle and log distance.
 // On those axes a turn and an inflow are one plain slide, so it never winds up.
-// The whirl reaches this far round the wall cloud, in km.
-const float SPIRAL_R = 4.5;
 // The whirl's share at a point: full near the funnel and low on the deck.
 float spiralW(vec3 p) {
   float r = length(p.xz - WALL);
-  return (1.0 - smoothstep(SPIRAL_R * 0.55, SPIRAL_R, r)) * (1.0 - smoothstep(BASE + 1.0, BASE + 2.6, p.y));
+  return (1.0 - smoothstep(uSpR * 0.55, uSpR, r)) * (1.0 - smoothstep(BASE + 1.0, BASE + 2.6, p.y));
 }
 // The noise point for a deck point inside the whirl.
 vec3 spiralPt(vec3 p) {
   vec2 q = p.xz - WALL;
   float r = max(length(q), 0.08);
   float t = uTime * uSpin;
-  // Inflow: the texture at r came from further out. One e-fold takes 40 s.
-  float lr = log(r) + 0.025 * t;
-  // Turn: one lap takes 90 s. The arms trail along the inflow.
-  float ang = atan(q.y, q.x) + 0.07 * t - 1.4 * lr;
+  // Inflow: the texture at r came from further out.
+  float lr = log(r) + uSpIn * t;
+  // Turn. The arms trail along the inflow by the twist.
+  float ang = atan(q.y, q.x) + uSpTurn * t - uSpTwist * lr;
   return vec3(cos(ang) * 2.2 + lr * 2.8, p.y, sin(ang) * 2.2);
 }
 // One layer of the deck's texture. p sets the masks; pn is the noise point.
@@ -648,7 +648,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       }
       // One noise read gives one clean outline; the lab's per-step reads blurred it.
       // The soft edge widens by the noise's own swing instead.
-      float wC = 0.1 + 0.3 * uAmp;
+      float wC = 0.1 + uEdgeW * uAmp;
       od = funnelSig(d, R) * rampInt(xa, xb, len, edge, wC);
       // Light the core where the ray meets its ragged edge, so the relief shades.
       // The point stays outside the mean core, so a deep pocket is not black.
@@ -697,7 +697,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       ph = pa + rd * (len * uk);
       q = ph.xz - axisAt(ph.y);
       // Thin crossings carry more cloud than the volume's mean, so the puffs read.
-      od = sMax * den * 1.6;
+      od = sMax * den * uSheathK;
       xr = rk * mix(Rea, Reb, uk) / R;
     }
     if (od < 1e-4) continue;
@@ -1022,12 +1022,12 @@ const knob = id => {
   if (pre !== null && pre !== '') el.value = pre;
   // Time shows as a clock; the rest as numbers.
   const clock = v => `${Math.floor(v)}:${String(Math.round((v % 1) * 60) % 60).padStart(2, '0')}`;
-  const show = () => { if (out) out.textContent = id === 'tod' ? clock(+el.value) : (+el.value).toFixed(el.step < 1 ? 2 : 0); };
+  const show = () => { if (out) out.textContent = id === 'tod' ? clock(+el.value) : (+el.value).toFixed(el.step < 1 ? Math.max(2, (el.step.split('.')[1] || '').length) : 0); };
   el.addEventListener('input', show);
   show();
   return () => +el.value;
 };
-const K = { spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
+const K = { width: knob('width'), flare: knob('flare'), lean: knob('lean'), sway: knob('sway'), reach: knob('reach'), dustH: knob('dustH'), sheath: knob('sheath'), edge: knob('edge'), spTurn: knob('spTurn'), spIn: knob('spIn'), spTwist: knob('spTwist'), spR: knob('spR'), strips: knob('strips'), bakeMix: knob('bakeMix'), spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
 const fEl = $('f');
 let f = +fEl.value, fShown = f, morph = false, paused = false, simT = 0;
 const showF = () => {
@@ -1068,7 +1068,6 @@ function light(hour, azDeg) {
 // G is the baked backdrop on screen; G2 fills strip by strip behind it.
 let G = null, G2 = null, bakeRow = 0, bakeAll = true, baking = true;
 // The backdrop renews in this many strips, one strip a frame.
-const STRIPS = 4;
 let A = null, B = null, w = 0, h = 0, frame = 0, last = 0, fpsT = 0, fpsN = 0;
 function size() {
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -1124,7 +1123,12 @@ function draw(now) {
   set(sc, 'uKs', 8000 / dist);
   // A light history: enough to calm the march's grain, too little to smear the spin.
   set(sc, 'uBlend', frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55);
-  set(sc, 'uSkip', +(qs.get('skip') || 0));
+  // Each part's box off adds its bit; ?skip=n adds more.
+  let skip = +(qs.get('skip') || 0);
+  for (const el of document.querySelectorAll('[data-skip]')) if (!el.checked && !(skip & +el.dataset.skip)) skip += +el.dataset.skip;
+  set(sc, 'uSkip', skip);
+  set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
+  set(sc, 'uSpTurn', K.spTurn()); set(sc, 'uSpIn', K.spIn()); set(sc, 'uSpTwist', K.spTwist()); set(sc, 'uSpR', K.spR());
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
   spinLayers(moving ? dt : 0, fShown, K.spin());
@@ -1137,6 +1141,13 @@ function draw(now) {
   set(sc, 'uSun', L.sun); set(sc, 'uSunCol', L.sunCol); set(sc, 'uAmb', L.amb);
   set(sc, 'uH', 850);
   for (const [u, k] of [['uR0', 'r0'], ['uFlare', 'flare'], ['uProf', 'prof'], ['uVmax', 'vmax'], ['uCond', 'cond'], ['uDustH', 'dustH'], ['uMulti', 'multi'], ['uRain', 'rain'], ['uDark', 'dark'], ['uLean', 'lean'], ['uSway', 'sway']]) set(sc, u, at(k, fk));
+  // The shape knobs scale the table's values.
+  set(sc, 'uR0', at('r0', fk) * K.width());
+  set(sc, 'uFlare', at('flare', fk) * K.flare());
+  set(sc, 'uLean', at('lean', fk) * K.lean());
+  set(sc, 'uSway', at('sway', fk) * K.sway());
+  set(sc, 'uCond', clamp(at('cond', fk) + K.reach()));
+  set(sc, 'uDustH', at('dustH', fk) * K.dustH());
   set(sc, 'uDebris', at('debris', fk) * K.deb());
   const blendMain = frame === 0 || qs.has('still') ? 1 : paused ? 0.15 : 0.55;
   gl.uniform1i(sc.u.tBg, 2);
@@ -1152,14 +1163,16 @@ function draw(now) {
       bakeRow = 0;
       bakeAll = false;
     } else {
-      const rows = Math.ceil(h / STRIPS);
-      set(sc, 'uBlend', 0.6);
+      const strips = Math.round(K.strips());
+      if (bakeRow >= strips) bakeRow = 0;
+      const rows = Math.ceil(h / strips);
+      set(sc, 'uBlend', K.bakeMix());
       gl.enable(gl.SCISSOR_TEST);
       to(gl, G2);
       gl.scissor(0, bakeRow * rows, w, rows);
       tri(gl, G2, vao);
       gl.disable(gl.SCISSOR_TEST);
-      if (++bakeRow === STRIPS) { [G, G2] = [G2, G]; bakeRow = 0; }
+      if (++bakeRow >= strips) { [G, G2] = [G2, G]; bakeRow = 0; }
     }
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, G.tex);
