@@ -596,6 +596,7 @@ void main() {
   float T = 1.0;
   float t = min(tA0, tC0);
   bool offDeck = true;
+  int nStep = 0;
   if (t < tEnd) {
     float dtv = tA1 > tA0 ? (tA1 - tA0) / float(uSteps) : 50.0;
     // A full step of jitter, so the steps leave no wood grain.
@@ -609,7 +610,7 @@ void main() {
     // The step count is the same across a pixel group, so the group skips the lookup together.
     float shOd = -1.0;
     for (int i = 0; i < 360; i++) {
-      if (t > tEnd || T < 0.01) break;
+      if (t > tEnd || T < 0.02) break;
       bool inA = t >= tA0 && t <= tA1, inC = t >= tC0 && t <= tC1;
       if (!inA && !inC) {
         // Jump to the next region.
@@ -633,13 +634,21 @@ void main() {
         gAng = clamp(R * 0.06 / foot, 0.3, 1.0);
         float Rout = R * (1.25 + 4.0 * gSp) + 2.0;
         // Fine steps inside the funnel, long ones outside it.
-        float fine = clamp(R * 0.045, 0.3, dtv);
+        // A step shorter than a pixel adds no detail.
+        float fine = clamp(max(R * 0.045, foot), 0.3, dtv);
         st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
+        // Empty air: the distance to the funnel, the dust or the rain sets the step.
+        // A ray that climbs into the flare meets the horn's full width.
+        float Rg = p.y + abs(rd.y) * (r - Rout) > gY0 - 50.0 ? (radiusAt(uH) + gA) * (1.25 + 4.0 * gSp) + 2.0 : Rout;
+        float Rr = R * 1.15 + uR0 * 0.35;
+        float gap = min(r - Rg, max(r - debrisR(p.y) * 1.3, p.y - uDustH * 1.8));
+        if (uRain > 0.01 && p.y < uH) gap = min(gap, abs(r - Rr) - Rr * 0.22);
+        if (gap > 0.0) st = max(gap * 0.6, st);
         float u;
         float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
         u = clamp(p.y / uH, 0.0, 1.0);
-        float d, w;
-        vol(p, d, w);
+        float d = 0.0, w = 0.0;
+        if (gap <= 0.0) vol(p, d, w);
         float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
         if (sc + sd + sw > 1e-6) {
           // Sunlight through the funnel, the dust and, near the top, the storm above.
@@ -697,8 +706,11 @@ void main() {
         T *= 1.0 - a;
       }
       t += st;
+      nStep++;
     }
   }
+  // ?dbg=6 paints the march's step count: green to 60, red to 240.
+  if (uDbg > 5.5 && uDbg < 6.5) { acc = vec3(smoothstep(60.0, 240.0, float(nStep)), smoothstep(0.0, 60.0, float(nStep)), 0.0); T = 0.0; }
   if (uMode == 3) { outC = vec4(acc, T); return; }
   vec3 col = bg * T + acc;
   // Elsewhere the bake keeps the whole picture: the backdrop and the near deck.

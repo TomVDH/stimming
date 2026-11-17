@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T04:53:38Z
-updated_at: 2026-11-17T05:10:30Z
+updated_at: 2026-11-17T05:16:24Z
 parent: stimming-dwwg
 ---
 
@@ -16,7 +16,7 @@ Tom (2026-11-16) picked option A: keep the approved raymarch look, cut its cost.
 - [x] 2. Storm shadow once per eight steps (storm light: under 1 ms, left as is)
 - [ ] 3. Noise octaves by pixel footprint
 - [ ] 4. Half-res volume with temporal upsample
-- [ ] 5. Footprint-tied steps and early outs
+- [x] 5. Footprint-tied steps, empty-air skip, early out at T 0.02
 - [ ] 6. Carry to tornado/main.js after Tom signs off
 
 ## Baseline (2026-11-16)
@@ -41,3 +41,10 @@ A per-pixel distance test saved nothing: a pixel group runs in lockstep. The loo
 ## Step 4: interleaved volume (Tom: "Yes, commit it")
 Each frame marches 1 pixel of each 2×2 block (4-frame cycle) into a quarter target. A resolve pass keeps the other 3 from history, clamped to the nearest fresh samples, so the spin leaves no ghost. A fresh pixel takes 1 − (1 − blend)⁴. The final pass lays the volume over the baked backdrop. ?full marches every pixel. Paused, against ?full at the same resolution: mean difference 0.6, bias under 0.2 of 255.
 The default Resolution goes from 0.5 to 0.7. Best of 12, against the last commit at 0.5: F1 10.9 → 8.1, F2.5 13.6 → 10.4, F4.5 21.4 → 14.4 ms. At 0.5 interleaved: about 5.3 / 6.5 / 8.5 ms. Clip: docs/qa/tornado-perf/interleave-F2.5-sbs.mp4 (left: last commit at 0.5; right: interleaved at 0.7).
+
+## Steps 3 and 5
+- `?dbg=6` paints the march's step count. Empty air in the funnel's column took 60 steps per pixel. Now the distance to the funnel, the dust or the rain ring sets the step there; a ray that climbs toward the flare uses the horn's full width.
+- Inside the funnel a step is never shorter than a pixel. The march ends at T 0.02 (was 0.01).
+- Best of 12 against the last commit: F1 8.6 → 7.6, F2.5 10.0 → 9.9, F4.5 14.9 → 14.3 ms. Same picture: mean difference 0.62 of 255, no bias.
+- Not kept: 2 noise octaves in place of 4 saves about 1 ms. Plain noise on faint sheath flanks saved nothing and moved the look.
+- What is left at F4.5 (about 15 ms): funnel noise 6, dust 4, lighting 3, near deck 3, everything outside the march 2.8.
