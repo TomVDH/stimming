@@ -69,8 +69,8 @@ const ui = initPage({ id: 'tornado', bar: {
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
     // The opening build-up's length: the storm grows from nothing over this many seconds.
-    // Its key is new, so an old saved length gives way to the 180 s default.
-    { type: 'slider', id: 'buildUpT', label: 'Build-up (s)', min: 30, max: 600, step: 5, value: 180, persist: true, onInput: v => act.buildUp(v) },
+    // Its key is new, so an old saved length gives way to the 45 s default.
+    { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -220,15 +220,27 @@ float breakN(vec2 xz) {
   vec2 c = xz - WDIR * uT * 0.012;
   return 0.7 * vn(c * 0.4 + 11.0) + 0.3 * vn(c * 1.3 + 3.0);
 }
-// How open the deck is over a camera-space point, 0 shut to 1 open: its far breaks.
-// They open at every storm, most toward the horizon and the sun's side. A full storm keeps a few narrow ones;
-// a young one opens more and wider. Near the eye the deck stays shut. The sun's shafts fall through them.
+// How open the deck is over a camera-space point, 0 shut to 1 open: its far holes.
+// The holes are few and distinct: soft ragged ellipses 3 to 8 km wide, 15 to 40 km out.
+// Each 10 km cell of the world holds one by chance: a few at full storm, more in a young one.
+// They drift downwind with the deck. soft widens their edge, for the shafts under them.
 float deckOpen(vec3 p, float soft) {
   float dist = length(p.xz);
-  float far = smoothstep(10.0, 45.0, dist) * (0.35 + 0.65 * max(dot(p.xz / max(dist, 1e-3), normalize(gSunC.xz + 1e-5)), 0.0));
-  if (far <= 0.0) return 0.0;
-  float sy = sin(uYaw), cy = cos(uYaw), thr = mix(0.42, 0.3, stormK());
-  return far * smoothstep(thr + soft, thr - 0.1 - soft, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
+  float band = smoothstep(12.0, 18.0, dist) * (1.0 - smoothstep(40.0, 48.0, dist));
+  if (band <= 0.0) return 0.0;
+  float sy = sin(uYaw), cy = cos(uYaw);
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
+  vec2 b = floor(w / 10.0 - 0.5);
+  float prob = mix(0.5, 0.28, stormK()), open = 0.0;
+  for (int k = 0; k < 4; k++) {
+    vec2 c = b + vec2(float(k & 1), float(k >> 1));
+    if (th(c + 31.7) > prob) continue;
+    vec2 ctr = (c + 0.2 + 0.6 * vec2(th(c + 1.3), th(c + 7.1))) * 10.0;
+    float rad = mix(1.5, 4.0, th(c + 4.4)) * mix(1.3, 1.0, stormK());
+    float r = length(w - ctr) / rad + (vn(w * 0.8 + c * 3.1) - 0.5) * 0.35;
+    open = max(open, smoothstep(1.0, 0.6 - soft, r));
+  }
+  return band * open;
 }
 // The young deck's gaps between its rafts over a camera-space point, 0 to 1.
 // At no storm the sky is mostly clear: a few rafts and the far cells. The gaps close by the default storm.
@@ -1037,6 +1049,7 @@ function packFunnels(rw, rh) {
 }
 // The far field: past Bake from (farD km) the deck is baked, not marched each frame (the camera is locked off).
 // It renews when the light, the base, the storm, the eye or the lens change, in strips over frames.
+// The bake's slices: funnel.js discards rows by the same count, 8.
 const FAR_STRIPS = 8;
 // Dev's Bake from and Deck reach, in km.
 let farD = 16, deckReach = 146;
@@ -1072,16 +1085,10 @@ function bakeFar(u, rw, rh, n) {
   gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
   gl.viewport(0, 0, rw, rh);
-  // The first bake, or a still page, bakes whole; a running page bakes a strip a frame.
-  if (whole) { gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
-  else {
-    const rows = Math.ceil(rh / FAR_STRIPS);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(0, fun.farRow * rows, rw, rows);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.disable(gl.SCISSOR_TEST);
-    fun.farRow++;
-  }
+  // The first bake, or a still page, bakes whole; a running page bakes one slice a frame.
+  // A slice is every eighth row, not a band: a band across the horizon cost far more and hitched.
+  if (whole) { gl.uniform1i(u.uSlice, -1); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
+  else { gl.uniform1i(u.uSlice, fun.farRow); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow++; }
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
@@ -1341,7 +1348,7 @@ act.clear = () => {
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
-act.buildUp = v => { if (build) build.dur = clamp(+v || 180, 30, 600); };
+act.buildUp = v => { if (build) build.dur = clamp(+v || 45, 10, 600); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
@@ -1414,11 +1421,11 @@ if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('ro
 // The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
 // Reduced motion starts at full storm with the first tornado formed.
 {
-  try { ['buildUp', 'buildUpS'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
-  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpT')?.value ?? 180);
+  try { ['buildUp', 'buildUpS', 'buildUpT'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
+  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpU')?.value ?? 45);
   if (!qs.has('tor') && !qs.has('storm')) {
     if (reduced() || !(bu > 0)) heroDown();
-    else { build = { t: 0, dur: clamp(bu, 30, 600), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
+    else { build = { t: 0, dur: clamp(bu, 10, 600), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
   }
 }
 // QA: GPU time per frame, or of the funnel pass alone, from timer queries.
