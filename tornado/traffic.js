@@ -455,6 +455,7 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
   }
 }
 // One vehicle, ray-traced at several moments in the shutter, each at its own spot in the pixel.
+// Edges take more samples, so silhouettes and panel lines stay smooth at any distance.
 // Far vehicles draw before the line, near ones after it.
 void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   vec4 a = uVeh[i], b = uVehB[i], cV = uVehC[i];
@@ -508,14 +509,18 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   // The smear across the view in the shutter's 1/40 s, in metres at the vehicle.
   float lat = abs(dot(C, rt)) + 1.0;
   gPxW = max(px * z / uFoc, lat * spd / 40.0 / max(z, 1.0) * abs(dot(f, normalize(C))));
-  // A near vehicle takes six: its blur spans many pixels.
-  int ns = z < 25.0 ? 6 : 3;
-  float jit = th(gl_FragCoord.xy + fract(uT * 3.7) * 61.0);
+  // Four samples, six near; where they disagree (an edge, a lamp, a pane) sixteen.
+  // Each sample is its own spot in the pixel and its own moment in the shutter.
+  int nb = z < 25.0 ? 6 : 4, ns = 0, id0 = -1;
+  bool mixed = false;
+  float jit = th(gl_FragCoord.xy + fract(uT * 3.7) * 61.0), jit2 = th(gl_FragCoord.yx * 1.37 + 5.1);
   vec3 acc = vec3(0.0);
   float cov = 0.0, zHit = z;
-  for (int k = 0; k < ns; k++) {
-    float fk = (float(k) + jit) / float(ns);
-    vec2 so = s + (vec2(fract(fk * 1.618 + 0.3), fract(fk * 2.414 + 0.7)) - 0.5) * px;
+  for (int k = 0; k < 16; k++) {
+    if (k == nb && !mixed) break;
+    ns++;
+    float fk = fract(float(k) * 0.618034 + jit);
+    vec2 so = s + (fract(vec2(0.7548777, 0.5698403) * float(k) + vec2(jit, jit2)) - 0.5) * px;
     vec3 rw = toWorld(normalize(vec3(so, -uFoc)));
     // The shutter is open 1/40 s: the vehicle moves within it.
     vec3 Ck = C + f * spd * (fk - 0.5) / 40.0;
@@ -528,11 +533,13 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     // The whole vehicle's box first: most rays in the screen box miss it.
     vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.2, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.2, top, fr + 0.15) - lo) * inv;
     vec3 mn = min(ta, tb), mx = max(ta, tb);
-    if (min(min(mx.x, mx.y), mx.z) < max(max(max(mn.x, mn.y), mn.z), 0.0)) continue;
     float t;
     vec3 n;
     gHitK = 1.0;
-    int id = vHit(kind, lo, ld, t, n, spin);
+    int id = min(min(mx.x, mx.y), mx.z) < max(max(max(mn.x, mn.y), mn.z), 0.0) ? 0 : vHit(kind, lo, ld, t, n, spin);
+    if (id != 0) id = vPart(id, kind, lo + ld * t, n);
+    if (id0 < 0) id0 = id;
+    mixed = mixed || id != id0 || gHitK < 1.0;
     if (id == 0) continue;
     vec3 hl = lo + ld * t;
     // Back out of the roll and pitch for the world normal.
@@ -540,15 +547,16 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     nb.yz = transpose(mp) * nb.yz; nb.xy = transpose(mr) * nb.xy;
     vec3 N = normalize(rt * nb.x + vec3(0.0, nb.y, 0.0) + f * nb.z);
     vec3 P = Ck + rt * hl.x + vec3(0.0, hl.y, 0.0) + f * hl.z;
-    id = vPart(id, kind, hl, n);
     // Glass in a cab with windows all round shows the world through the far window.
     float see = 0.0;
     if (id == 2 && kind != 2) {
       vec3 xp = lo + ld * gExT;
       see = float(vPart(2, kind, xp, gExN) == 2);
-      // Seat backs and headrests block the lower part of the far window.
-      float hr = step(abs(abs(xp.x) - 0.42), 0.13) * step(xp.y, vBelt(kind) + 0.38);
-      see *= 1.0 - max(step(xp.y, vBelt(kind) + 0.2), hr);
+      // Seat backs with rounded shoulders, and a rounded headrest over each, block the lower window.
+      float bx = abs(abs(xp.x) - 0.42), by = xp.y - vBelt(kind);
+      float back = step(by, 0.16 - 0.5 * max(bx - 0.18, 0.0));
+      float rest = step(length(vec2(bx / 0.12, (by - 0.3) / 0.09)), 1.0);
+      see *= 1.0 - max(back, rest);
     }
     vec3 col = vShade(id, kind, P, N, -rw, hl, n, seed, brake, see);
     // The amber bar flashes, left and right in turn.

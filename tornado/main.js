@@ -990,9 +990,9 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 ${LINE_GLSL}
 ${DAMAGE_GLSL}
 ${PLAIN_GLSL}
+${TRAFFIC_GLSL}
 ${FARM_GLSL}
 ${INFRA_GLSL}
-${TRAFFIC_GLSL}
 // A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
 // with two or three short branches. Thin, with a soft glow; s is the screen point.
 float boltChannel(vec2 s, float px) {
