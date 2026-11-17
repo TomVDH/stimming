@@ -220,14 +220,17 @@ float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDar
 // The foot in camera space, in metres.
 vec3 gFoot;
 int gI;
-// The haze colour on this ray, and its share at the funnel's distance.
+// The low sky's colour on this ray: rain and god rays take it.
 vec3 gHzC;
 // The gloom under the base: its colour, this ray's stretch inside it in km, and its share at the march's place.
 // Each sample takes only the gloom in front of it, so a funnel is not dimmed by the air behind it.
 vec3 gGloom;
 vec2 gGl;
 float gGk = 0.0;
-vec3 hazed(vec3 c, float hz) { return mix(mix(c, gHzC, hz), gGloom, gGk); }
+// The march's distance in metres: the air in front of a sample reaches this far.
+float gTm = 0.0;
+// The air in front of a sample at gTm metres; k is the share of it, 1 for the deck.
+vec3 hazed(vec3 c, float k) { return mix(mix(c, airTo(c, gTm), k), gGloom, gGk); }
 void pick(int i) {
   vec4 a = uTA[i], b = uTB[i], c = uTC[i], d = uTD[i], e = uTE[i], f = uTF[i];
   gFoot = vec3(a.x, 0.0, a.y); uH = a.z; uDeckY = a.w;
@@ -517,11 +520,10 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
   alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), clamp((1.0 - smoothstep(0.0, 0.35, u)) * uDebris * uDustK, 0.0, 1.0));
   return mix(alb * (sunL * uSunK + ambL * 0.8 * uAmbK), stC, topK);
 }
-// The air in front of a funnel sample, by its height: as thick as the plain's near the ground,
-// as thin as the deck's up at the base, so a funnel sits in the same air as both.
-float gTm = 0.0;
+// The share of the air in front of a funnel that it takes; h is unused.
+// Dev's Haze on funnel scales it; a young storm leaves the funnel clearer.
 float funnelHaze(float h) {
-  return mix(1.0 - exp(-gTm / 22000.0), 0.8 * (1.0 - exp(-gTm / 70000.0)), smoothstep(0.0, 1200.0, h)) * uHazeK * clamp(1.0 + 1.5 * (uStorm - 0.85), 0.4, 1.3);
+  return uHazeK * clamp(1.0 + 1.5 * (uStorm - 0.85), 0.4, 1.3);
 }
 
 /* ---------- the deck round a tornado: the horn ---------- */
@@ -794,7 +796,7 @@ vec4 rainBatch(vec3 rc, float t0, float t1, float jt, bool bake, float farD, flo
     if (abs(t - tSun) > 3000.0) { sunK = 1.0 - sunCover(toWorld(pk)); tSun = t; }
     // Drops scatter the bright low sky round the storm: a curtain reads lighter than the dark base.
     vec3 col = shadeC * mix(0.75, 1.1, y) + gHzC * sunT * 0.18 + uSunCol * sunT * sunK * 0.025 * fw;
-    col = mix(col, gHzC, 1.0 - exp(-t / 45000.0));
+    col = airTo(col, t);
     acc += T * a * col;
     T *= 1.0 - a;
   }
@@ -813,6 +815,8 @@ void main() {
   float jit2 = hash(fc.yx * 1.37 + fract(uT * 3.17) * 71.0);
   vec3 skyH = skyCol(normalize(vec3(rd.x, 0.0, rd.z)));
   gHzC = hazeCol(rd);
+  // The air's light along this ray: the deck, the funnels and the rain sit in it.
+  airInit(rd);
   gGloom = gloomCol();
   gGl = cylinder(vec3(0.0, CAMH * 0.001, 0.0), rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
   // One march, in metres from the eye, through the whole storm: the deck and every funnel's column.
@@ -885,7 +889,8 @@ void main() {
     vec3 p = inA ? eye + rc * t - gFoot : vec3(0.0);
     float st = 1e9, xOut = 0.0;
     bool inDust = false;
-    float hzF = 0.8 * (1.0 - exp(-t / 70000.0));
+    // The deck takes all the air in front of it.
+    float hzF = 1.0;
     gTm = t;
     float gLen = clamp(t * 0.001 - gGl.x, 0.0, gGl.y);
     gGk = 1.0 - exp(-gLen * gLen * 0.003 * uStorm);

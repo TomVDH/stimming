@@ -621,18 +621,80 @@ void lightInit(vec3 rc) {
 /* ---------- the deck's shadow ---------- */
 // The deck's cover along the sun's ray from a world point w, in km: 0 is open sun, 1 full shade.
 // It reads the ray where it crosses the base, so a point in the air gets the same answer: god rays use it too.
+// For the air, sunCover reads the deck's lid only: no breaks, no core.
+// Only the beam's hole lights air, and the god rays draw that.
+bool gAirCov = false;
 float sunCover(vec3 w) {
   if (uSun.y <= 0.0) return 0.0;
   float L = max(BASE - w.y, 0.0) / max(uSun.y, 0.017);
   vec3 qc = toCam(w + uSun * L);
   // The supercell's bulk blocks the sun outright, until the sun slips under its far edge.
-  float core = smoothstep(0.5, -0.5, stormShapeSun(qc)) * (1.0 - smoothstep(12.0, 20.0, L));
+  float core = gAirCov ? 0.0 : smoothstep(0.5, -0.5, stormShapeSun(qc)) * (1.0 - smoothstep(12.0, 20.0, L));
   // The deck follows the storm: none at the start, a full lid at full storm.
   // The sun reaches the plain only through its openings: the breaks and a young deck's gaps.
-  float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(deckOpen(qc, 0.05), raftGap(qc)));
+  float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(gAirCov ? 0.0 : deckOpen(qc, 0.05), raftGap(qc)));
   // Past the front edge, nearer the eye, there is no deck to shade the plain.
   deck *= smoothstep(-frontAt(qc.x) + 1.2, -frontAt(qc.x) - 1.2, qc.z);
   return max(core, 0.92 * deck);
+}
+
+/* ---------- the air ---------- */
+// Aerial perspective: two layers of air, each thinner with height.
+// Dust lies low and scatters forward; clean air reaches high and scatters blue.
+// Scale heights in metres.
+const float AIR_HD = 450.0, AIR_HA = 8000.0;
+// Clean air's extinction per metre at the ground: blue goes first.
+const vec3 AIR_BA = vec3(0.55, 0.78, 1.1) * 1.0e-5;
+// Dust's extinction per metre at the ground: a full storm raises the most.
+float airBD() { return mix(0.25, 1.0, stormK()) * 3.6e-5; }
+// One layer's depth from the eye to t metres, per unit of ground extinction.
+// y is the ray's climb per metre; H is the layer's scale height.
+float airOD(float t, float y, float H) {
+  float k = t * y / H;
+  return exp(-CAMH / H) * t * (abs(k) < 1e-3 ? 1.0 - 0.5 * k : (1.0 - exp(-k)) / k);
+}
+// A phase lobe, 1 for even scatter.
+float airHG(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
+// The ray's state, kept small: the march holds it the whole way.
+// Its climb per metre, its shaded sky light, and the dust's and the air's sun phase.
+float gAirY = 0.0;
+vec3 gAirSky;
+vec2 gAirPh;
+// The sunlit share of the air near the eye and far off.
+vec2 gAirLit;
+bool gAirOn = false;
+// Sets the air's light for one ray, rd in world space.
+// It reads the sun's reach near the eye and far off.
+// Under the deck the air is in shade; past its front edge, in sun.
+// A young deck's gaps let sun into the air.
+void airInit(vec3 rd) {
+  gAirY = rd.y;
+  gAirOn = true;
+  float tg = rd.y < 0.0 ? 0.95 * CAMH / -rd.y : 1e9;
+  vec3 eye = vec3(0.0, CAMH, 0.0);
+  gAirCov = true;
+  gAirLit = 1.0 - vec2(sunCover((eye + rd * min(1200.0, tg)) * 0.001), sunCover((eye + rd * min(8000.0, tg)) * 0.001));
+  gAirCov = false;
+  // Shaded air takes the sky's light; under the deck, a slate lid and the far horizon.
+  // The horizon's light keeps far air lighter than the deck it veils.
+  // That light is warm toward the sun and cool away from it.
+  float toSun = pow(max(dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5)), 0.0), 3.0);
+  vec3 hz = hazeCol(rd), slate = mix(uAmb * vec3(0.16, 0.18, 0.22), hz * mix(vec3(0.72, 0.84, 1.05), vec3(1.0, 0.94, 0.86), toSun), 0.45 + 0.15 * toSun);
+  gAirSky = mix(hz * 0.85, slate, smoothstep(0.05, 0.85, uStorm));
+  // Dust throws the sun forward; clean air scatters it more evenly.
+  float mu = dot(rd, uSun);
+  gAirPh = vec2(0.1 * mix(airHG(mu, 0.7), airHG(mu, -0.15), 0.4), 0.07 * 0.75 * (1.0 + mu * mu));
+}
+// The air over a colour c at t metres along the ray airInit() set.
+vec3 airTo(vec3 c, float t) {
+  float dd = airBD() * airOD(t, gAirY, AIR_HD);
+  vec3 da = AIR_BA * airOD(t, gAirY, AIR_HA), tau = dd + da, T = exp(-tau);
+  // The path's sunlit share: near air for near things, far air for far ones.
+  float lit = mix(gAirLit.x, gAirLit.y, smoothstep(1000.0, 6000.0, t));
+  // Clean air's shade is bluer under the deck.
+  vec3 skyA = gAirSky * mix(vec3(1.0), vec3(0.85, 0.95, 1.15), smoothstep(0.05, 0.85, uStorm));
+  vec3 L = dd * (gAirSky + uSunCol * vec3(1.0, 0.86, 0.68) * (gAirPh.x * lit)) + da * (skyA + uSunCol * (gAirPh.y * lit));
+  return c * T + (1.0 - T) * L / max(tau, vec3(1e-9));
 }
 `;
 const SCENE = /* glsl */`
@@ -706,6 +768,10 @@ vec3 shadeK(float cover) {
   vec3 l = uSunCol * 0.5 + uAmb * 0.55;
   return (uSunCol * 0.5 * (1.0 - cover) + uAmb * 0.55) / max(l, vec3(1e-4));
 }
+
+// The air over a thing t metres off along this pixel's ray d.
+// The air's light is set once per pixel, at the first thing it veils.
+vec3 hazed(vec3 col, vec3 d, float t) { if (!gAirOn) airInit(d); return airTo(col, t); }
 
 /* ---------- the plain ---------- */
 // The eye hangs over the road's left edge; the road centre runs 3.4 m to its right.
@@ -913,7 +979,7 @@ vec3 ground(vec3 rd, float px) {
   float under = 1.0 - smoothstep(0.6, 1.0, length((C.xz - SHELF) / SHELF_R));
   col = mix(col, col * uAmb * 0.35, under);
   // Air between the eye and the ground.
-  return mix(col, hazeCol(rd), 1.0 - exp(-t / 22000.0));
+  return hazed(col, rd, t);
 }
 
 /* ---------- objects on the plain ---------- */
@@ -923,8 +989,6 @@ float depthOf(vec3 P) { return -toCam(P).z; }
 // Lays a lit flat shape z metres off into the objects' layers. k is coverage.
 // put() lives in line.js: it sorts each shape behind or in front of the funnels.
 void put(vec3 col, float k, float z);
-// The haze over a thing t metres off, in direction d.
-vec3 hazed(vec3 col, vec3 d, float t) { return mix(col, hazeCol(d), 1.0 - exp(-t / 30000.0)); }
 
 // The telephone poles and their wires live in line.js.
 // The farm lives in farm.js.
@@ -1102,8 +1166,9 @@ vec3 envScene(vec2 uv) {
       c = mix(mix(c, gloom, glK), rainC, rnK);
     }
   }
-  // The thin band where ground meets sky takes the haze.
-  c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
+  // The thin band where ground meets sky takes the far air's own light.
+  float hb = exp(-abs(rd.y) * 900.0) * 0.6;
+  if (hb > 0.004) c = mix(c, hazed(vec3(0.0), rd, 1e6), hb);
   // The sun's glow in the haze: a soft half globe low on the sun's side, never streaks.
   // It is the far sunlit air seen under the deck, so it fades up from the horizon.
   float cA = dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5));
