@@ -463,7 +463,7 @@ Batch 8, 2026-11-16 (Tom):
 
 | Q | Answer | What follows |
 |---|---|---|
-| tvtree.1 | Rethink it | Tom: "revisualize what interactivity can mean here -- subsession". A separate session (`tvtree-interactivity`) proposes interaction ideas and records Tom's pick here |
+| tvtree.1 | Rethink it | Tom: "revisualize what interactivity can mean here -- subsession". A separate session (`tvtree-interactivity`) proposes interaction ideas and records Tom's pick here. Tom picked Pass the picture (2026-11-16, bean `stimming-idee`): drop a set on another set and a spark carries its picture across. Actions are Shuffle, Eyes and Lights out (O); Tune leaves the bar and keeps T. The lantern lights with a tap on the tree. Settings keeps Channels and Quality only. Threads between alike sets were tried and cut ("get rid") |
 | tvtree.2 | Keep all | Every channel stays, the adult-leaning and war ones too |
 | tvtree.3 | Keep both | "Asteroids" and "Pinball" keep their names |
 | balloons.1 | Swap into strip | "← → gust" replaces "enter let go" on the strip; Let go keeps its chip |

@@ -37,6 +37,7 @@
 }
 .stage--tvtree canvas.on { opacity: 1; }
 .stage--tvtree.grab { cursor: grab; }
+.stage--tvtree.lamp { cursor: pointer; }
 .stage--tvtree.held { cursor: grabbing; }
 @media (prefers-reduced-motion: reduce) { .stage--tvtree canvas { transition: none; } }
 </style>
@@ -48,7 +49,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--tvtree" id="stage" tabindex="0" role="application" aria-label="A tree hung with little TVs. Tap a TV to change its channel, drag it to swing, hold it to switch it off, and drag the trunk to shake the tree. Arrow keys pick a TV, Enter changes its channel, holding Enter switches it off, Shift with an arrow swings it, and Space shakes the tree.">
+    <div class="stage stage--tvtree" id="stage" tabindex="0" role="application" aria-label="A tree hung with little TVs. Tap a TV to change its channel, drag it to swing, let it go over another TV to pass its picture, hold it to switch it off, tap the lantern to light it, and drag the trunk to shake the tree. Arrow keys pick a TV, Enter changes its channel, holding Enter switches it off, C passes a picture from one TV to another, Shift with an arrow swings it, Space shakes the tree, O turns every TV off or on, and L lights the lantern.">
       <p class="fail" hidden>TV tree needs WebGL 2, which this browser has turned off.</p>
     </div>
   </main>
@@ -64,18 +65,16 @@ const run = k => () => { if (ready) { ACTS[k](); wake(); } };
 const ui = initPage({ id: 'tvtree', bar: {
   actions: [
     { verb: 'shuffle', key: 'S', onPress: run('shuffle') },
-    { verb: 'tune', key: 'T', onPress: run('tune') },
     { verb: 'eyes', key: 'E', onPress: run('eyes') },
+    // Lights out reads Lights on while every set is dark.
+    { verb: 'lights', label: 'Lights out', key: 'O', onPress: run('power') },
   ],
-  // Power follows the sets; Lantern comes back on the next visit.
   settings: [
-    { type: 'toggle', id: 'power', label: 'Power', value: true, onToggle: on => { if (ready) { powerAll(on); wake(); } else ui.setting('power').set(true); } },
-    { type: 'toggle', id: 'lantern', label: 'Lantern', value: false, persist: true, onToggle: on => { if (lantern.on !== on) toggleLantern(); } },
     // The contact sheet shows every channel at once.
     { type: 'link', id: 'channels', label: 'Channels', text: `All ${NCH - 1}`, href: 'channels.html', title: 'Every channel on one sheet' },
   ],
   quality: true,
-  keys: [['click', 'change channel'], ['drag', 'swing'], ['hold', 'power off'], ['scroll', 'zoom']],
+  keys: [['click', 'change channel'], ['drag', 'swing or pass'], ['hold', 'power off'], ['scroll', 'zoom']],
 } });
 const panel = document.getElementById('stage');
 // The shell layer lies over the stage; its corners hold the controls.
@@ -1375,7 +1374,6 @@ function changeChannel(s, to = -1, hand = true) {
 function powerSet(s, on) {
   if (s.power === on) return;
   s.power = on;
-  ui.setting('power').set(sets.some(t => t.power));
   syncActs();
   s.syncOn = false;
   if (on) {
@@ -1625,7 +1623,6 @@ function buildLantern() {
   add(new THREE.ConeGeometry(0.095, 0.075, 20), metal, 0.232);
   add(new THREE.TorusGeometry(0.042, 0.007, 8, 20, Math.PI), metal, 0.27);
   g.scale.setScalar(1.35);
-  g.visible = false;
   // The light stays in the scene at zero, so shaders never rebuild.
   lantern.light = new THREE.PointLight(col3(WARM), 0, 7, 2);
   lantern.light.position.y = 0.12;
@@ -1641,12 +1638,11 @@ function stepLantern(dt) {
   if (Math.abs(goal - lantern.fade) < 0.002) lantern.fade = goal;
   lantern.t += dt;
   const f = lantern.fade * (reduce ? 0.95 : 0.86 + 0.08 * Math.sin(lantern.t * 11.3) + 0.06 * Math.sin(lantern.t * 23.7 + 1.3));
-  const TU = treeMat.uniforms, k = 0.4 + 2.4 * f;
+  const TU = treeMat.uniforms, k = 0.1 + 2.7 * f;
   TU.uLanP.value.set(lantern.x, 0.22, lantern.z);
   TU.uLanC.value.set(WARM[0], WARM[1], WARM[2]).multiplyScalar(f * 0.55);
   lantern.light.intensity = f * 1.6;
   lantern.glass.material.color.setRGB(WARM[0] * k, WARM[1] * k, WARM[2] * k, THREE.LinearSRGBColorSpace);
-  lantern.group.visible = lantern.on || lantern.fade > 0.01;
   return lantern.fade > 0;
 }
 // A match strikes and the wick catches.
@@ -1658,9 +1654,11 @@ function strike() {
   burst(a, d, t + 0.06, 'bandpass', 900, 0.8, 0.2 * g, 0.09, 0.35);
   setTimeout(() => d.disconnect(), 1200);
 }
+// The old Settings row's key keeps each visitor's choice.
+const LANTERN_KEY = 'stimming.tvtree.lantern';
 function toggleLantern() {
   lantern.on = !lantern.on;
-  ui.setting('lantern').set(lantern.on);
+  try { localStorage.setItem(LANTERN_KEY, lantern.on ? '1' : '0'); } catch (err) { /* storage is optional */ }
   if (lantern.on) strike();
   wake();
 }
@@ -2197,6 +2195,12 @@ function pick(e, skip = null) {
   }
   return best;
 }
+// A sphere round the lantern body takes the tap.
+function lanternHit(e) {
+  toNdc(e);
+  hitV.set(lantern.x, 0.2, lantern.z);
+  return ray.ray.distanceSqToPoint(hitV) < 0.2 * 0.2;
+}
 function showRing() { sets.forEach((s, i) => { s.ring.visible = kbd && i === picked; }); }
 panel.addEventListener('pointerdown', e => {
   if (!ready || held || (e.pointerType === 'mouse' && e.button !== 0)) return;
@@ -2210,7 +2214,8 @@ panel.addEventListener('pointerdown', e => {
     holdT = setTimeout(() => {
       if (held && held.s === s && !held.drag) { held.long = true; powerSet(s, !s.power); }
     }, 520);
-  } else {
+  } else if (lanternHit(e)) held.lantern = true;
+  else {
     const p = planeHit(e, 0) || hitV.set(0, 1.5, 0);
     held.gx = p.x;
     held.gy = p.y;
@@ -2234,13 +2239,14 @@ panel.addEventListener('pointermove', e => {
     if (e.pointerType === 'mouse') {
       const h = pick(e);
       panel.classList.toggle('grab', !!h);
+      panel.classList.toggle('lamp', !h && lanternHit(e));
       if (h !== hover) { hover = h; wake(); }
     }
     return;
   }
   if (e.pointerId !== held.id) return;
   if (!held.drag && Math.hypot(e.clientX - held.x0, e.clientY - held.y0) > 7) { held.drag = true; clearTimeout(holdT); }
-  if (!held.drag) return;
+  if (!held.drag || held.lantern) return;
   const s = held.s;
   if (s) {
     // The set under a carried set lights, so the drop shows.
@@ -2268,6 +2274,8 @@ function lift(e) {
     else if (held.drag && e.type === 'pointerup') { const t = pick(e, s); if (t) passPicture(s, t); }
     s.drag = null;
     hover = null;
+  } else if (held.lantern) {
+    if (!held.drag && e.type === 'pointerup') toggleLantern();
   } else {
     sway.tgt = null;
     // A tap on the wood gives the tree a small knock.
@@ -2387,19 +2395,21 @@ const ACTS = {
 function powerAll(on) {
   for (const s of sets) setTimeout(() => powerSet(s, on), waveDelay(s, 140));
 }
-// Tune and Eyes are disabled while they would do nothing.
-let actState = '';
+// Eyes is disabled while it would do nothing.
+// Lights out reads Lights on while every set is dark.
+let actState = '', lightsLabel = null;
 function syncActs() {
   const calm = party.phase === 'idle' && !watch.on;
-  const tune = calm && sets.some(s => s.power), eyes = calm && sets.filter(s => s.power && s.lost === 0).length >= 3;
-  const st = `${+tune}${+eyes}`;
+  const eyes = calm && sets.filter(s => s.power && s.lost === 0).length >= 3, any = sets.some(s => s.power);
+  const st = `${+eyes}${+any}`;
   if (st === actState) return;
   actState = st;
-  ui.action('tune').disabled = !tune;
   ui.action('eyes').disabled = !eyes;
+  lightsLabel ||= layer?.querySelector('.s2-chip[aria-keyshortcuts="O"] .s2-label');
+  if (lightsLabel) lightsLabel.textContent = any ? 'Lights out' : 'Lights on';
 }
-// The shell binds S, T and E; Settings rows have no keys, so P and L bind here.
-const ACT_KEYS = { p: 'power', l: 'lantern' };
+// The shell binds S, E and O; T, P and L bind here.
+const ACT_KEYS = { t: 'tune', p: 'power', l: 'lantern' };
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || !ready || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
@@ -2591,7 +2601,7 @@ async function start() {
   composer.addPass(fin);
 
   // The stored Lantern choice lights the lantern at once, without the match.
-  lantern.on = ui.setting('lantern').value;
+  try { lantern.on = localStorage.getItem(LANTERN_KEY) === '1'; } catch (err) { lantern.on = false; }
   lantern.fade = lantern.on ? 1 : 0;
   panel.prepend(canvas);
   await premesh(panel.clientWidth || 16, panel.clientHeight || 9);
