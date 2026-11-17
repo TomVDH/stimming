@@ -1,10 +1,11 @@
 ---
 # stimming-wqq9
 title: 'Toy: Observatory'
-status: draft
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-16T21:08:16Z
+updated_at: 2026-11-17T08:04:16Z
 parent: stimming-oh7b
 ---
 
@@ -14,6 +15,7 @@ An old dome at night. Tap a star; the dome turns, the slit opens and the telesco
 
 Rough size: L (a guess; no plan yet).
 
+- [x] Design approved by Tom (docs/plans/observatory.md)
 - [ ] Blockout, signed off by Tom
 - [ ] Development plan in docs/plans/observatory.md
 - [ ] Build in the Lab
