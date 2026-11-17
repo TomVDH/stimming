@@ -104,7 +104,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 34 | windmap | N | N | N | N | Y | P | P | N | P | Y | Y | Y | Y | N | N |
 | 35 | vortex | N | N | N | N | Y | N | P | N | P | Y | Y | Y | Y | N | N |
 | 36 | dijkstra | Y | P | Y | Y | Y | P | P | N | P | Y | P | P | Y | N | N |
-| 37 | fireworks | N | N | N | N | P | N | P | N | P | Y | P | Y | Y | N | P |
+| 37 | fireworks | N | N | N | N | Y | N | P | N | P | Y | P | Y | Y | N | P |
 | 38 | launch | N | N | N | N | Y | N | P | N | P | Y | P | Y | Y | N | P |
 | 39 | frietkot | N | N | P | N | Y | N | P | N | P | Y | P | Y | Y | N | N |
 | 40 | railgun | Y | P | P | P | Y | N | P | N | P | Y | Y | Y | Y | N | N |
@@ -130,7 +130,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 | 2 | Never: no doc has the Attributions section yet | The doc exists. Stale on 2026-11-16: railgun, meshball, schlieren, steelwool, cauldron | No doc |
 | 3 | Folder in `tsconfig.json` with its script in `.js` | Has `.js` modules, but the folder is not in the check | Script inline in HTML |
 | 4 | The doc names the stack type and the build | The doc has the renderer section only | No doc |
-| 5 | Word for word, the WebGPU map on an allowed toy, or no library import | Fireworks loads ZzFX from outside the map. Cauldron read P until Tom added it to the WebGPU list (G6) | Only the three.js entries (the "Map" rows in `ports.md`) |
+| 5 | Word for word, the WebGPU map on an allowed toy, or no library import | Fireworks read P until Tom added ZzFX to the library table (fireworks.3). Cauldron read P until Tom added it to the WebGPU list (G6) | Only the three.js entries (the "Map" rows in `ports.md`) |
 | 6 | Never | A credits file or a code notice covers part of it | Nothing on record |
 | 7 | Bar v2 with no open flag | Bar v2 with Settings rows that read as tuning, an own dev panel or own quality row, or a play control hidden in Settings | Bar v1 (Oil slick) |
 | 9 | Every field set | `tag` and `tagNl` null (No. 28 to 53); `nl` and `ipa` null too on cauldron, meshball, washer, ladder, windtunnel, schlieren, steelwool | |
@@ -496,3 +496,17 @@ Batch 10, 2026-11-16 (Tom):
 | windmap.1 | Trails to Dev only | Trails becomes a `dev` row; Look stays a player pick |
 | windmap.2 | Add keys | The actions get keys; Wind map's chat checks for clashes |
 | windmap.3 | Isobars and Fronts to Settings | The two overlay toggles move to Settings and keep their keys as shortcuts. The bar keeps View, + Cyclone and Wind |
+
+Batch 11, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| vortex.1 | All three to Dev; keep Smoke | Laser, Density and Breakup become `dev` rows. Smoke (Volume, Particles) stays a player setting |
+| dijkstra.1 | Keep in Settings | Glow stays a player setting |
+| dijkstra.2 | Leave hidden | Space and T stay hidden keys |
+| dijkstra.3 | Set `sound: false` | `toys.json` sets `sound: false`; the dead Sound button goes (bean `stimming-e94j`) |
+| fireworks.1 | Move to dev rows | The `.fxdev` panel becomes bar `dev` rows; the backquote key goes |
+| fireworks.2 | Keep in Settings | Smoke and Water stay player settings |
+| fireworks.3 | Add to the table | ZzFX 1.3.2 (MIT) joins the library table in `AGENTS.md`, Fireworks only |
+| launch.1 | Lens rows to Dev | Bokeh, Aperture, Focus and Highlights become `dev` rows. Settings keeps Letterbox and Quality |
+| launch.2 | Bind Space to chip | The Launch chip takes key Space |

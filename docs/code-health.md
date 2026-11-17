@@ -93,7 +93,6 @@ Steps 7, 8 and 10 (`voices.js`, `bloomPass`, `pointer.js`) wait for Tom.
 
 ## Still open
 
-- `fireworks` loads ZzFX from a CDN outside the importmap. Tom picked it; the library rule does not list it yet.
 - `nvg/tube.js` into `shared/`: yes or no.
 - Toy docs: the section list, and uniform tables for every shader or only the tuned ones.
 - Which flat three.js toy moves first.

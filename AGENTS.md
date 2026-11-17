@@ -174,6 +174,7 @@ Build locally, commit and push to `main`. GitHub Pages deploys every push to <ht
   | Motion | GSAP 3.13.0 (the menu keeps the cdnjs UMD build) |
   | Noise | simplex-noise 4.0.3 |
   | YAML content | js-yaml 4.1.0 (ShadyOS only, `dist/js-yaml.mjs` by full URL, Tom 2026-11-16) |
+  | Sound effects | ZzFX 1.3.2 (Fireworks only, `zzfx@1.3.2/ZzFX.js` by full URL, MIT, Tom 2026-11-16) |
 
   Every toy page that uses them carries this importmap, word for word:
 
