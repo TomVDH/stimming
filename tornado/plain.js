@@ -142,6 +142,32 @@ void fence(vec2 s, vec3 rd, float px) {
     if (a > 0.0) put(plainHaze(steel, rd, z), a * 0.8, z);
   }
 }
+// Far trees, scattered to the horizon: six distance bands from 2.5 to 22 km.
+// Each band splits the view into slices of azimuth about 220 m wide; a slice holds a tree or none.
+// None stands on the road's line, and none nearer than 9 km stands in front of the touchdown ground.
+void farTrees(vec2 s, vec3 rd, float px) {
+  float az = atan(rd.x, -rd.z);
+  for (int b = 0; b < 6; b++) {
+    float fb = float(b), d0 = 2500.0 * pow(1.55, fb), cw = 220.0 / d0;
+    float ci = floor(az / cw);
+    for (int k = -1; k <= 1; k++) {
+      float c = ci + float(k);
+      vec3 h = vec3(th(vec2(c, fb + 0.5)), th(vec2(fb + 3.3, c)), th(vec2(c + 7.1, fb * 3.0)));
+      // Trees gather in loose groups: some stretches of horizon hold many, some none.
+      float dens = 0.25 + 0.5 * smoothstep(0.3, 0.7, vn(vec2(c * cw * 6.0, fb * 1.7)));
+      if (h.x > dens) continue;
+      float a = (c + 0.15 + 0.7 * h.y) * cw, d = d0 * (0.8 + 0.5 * h.z);
+      vec3 P = vec3(sin(a) * d, 0.0, -cos(a) * d);
+      if (abs(P.x - ROAD_X) < 60.0) continue;
+      if (d < 9000.0 && a > -0.45 && a < -0.1) continue;
+      // Old cottonwoods and elms: crowns 12 to 24 m across, often two or three together.
+      float r = 6.0 + 6.0 * th(vec2(c, fb + 9.0)), H = r * (2.0 + 0.5 * th(vec2(fb, c + 2.0)));
+      loneTree(s, rd, px, P, r, H, c * 0.37 + fb);
+      if (h.y > 0.45) loneTree(s, rd, px, P + vec3(cos(a) * r * 1.6, 0.0, sin(a) * r * 1.6), r * 0.8, H * 0.85, c * 0.37 + fb + 0.5);
+      if (h.y > 0.75) loneTree(s, rd, px, P - vec3(cos(a) * r * 1.5, 0.0, sin(a) * r * 1.5), r * 0.7, H * 0.8, c * 0.37 + fb + 0.7);
+    }
+  }
+}
 // Every far shape on the plain, laid into the objects' layers.
 void plain(vec2 s, vec3 rd, float px) {
   // Everything here stands within a thin band round the horizon, or near the road for the fence.
@@ -155,6 +181,8 @@ void plain(vec2 s, vec3 rd, float px) {
   belt(s, rd, px, vec2(-3218.0, -1609.0), vec2(-3218.0, -4800.0), 12.0, 4.0);
   belt(s, rd, px, vec2(1000.0, -12870.0), vec2(8000.0, -12870.0), 16.0, 5.0);
   belt(s, rd, px, vec2(2400.0, -6400.0), vec2(2400.0, -11200.0), 13.0, 6.0);
+  // Far trees, only in the thin band over the horizon where they can stand.
+  if (abs(s.y) < 0.025) farTrees(s, rd, px);
   // Lone trees in the fields.
   loneTree(s, rd, px, vec3(-600.0, 0.0, -950.0), 5.0, 11.0, 1.0);
   loneTree(s, rd, px, vec3(-260.0, 0.0, -2600.0), 6.0, 13.0, 2.0);
