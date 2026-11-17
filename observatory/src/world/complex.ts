@@ -66,10 +66,29 @@ const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
 // Then each pane can come on alone.
 // world/lights sets their colours.
 const litPanes = [new MeshBasicMaterial(), new MeshBasicMaterial(), new MeshBasicMaterial()];
+// Scales a box's UVs to each face's own size.
+// The texture repeat then fits the w by h faces.
+// Every other face keeps the same stone size.
+// BoxGeometry's face order: +x, -x, +y, -y, +z, -z.
+// Each face has four corners.
+// The x faces run d across.
+// The y faces run d up.
+function evenUvs(g: BufferGeometry, w: number, h: number, d: number): void {
+  const uv = g.getAttribute('uv');
+  const scale = [[d / w, 1], [d / w, 1], [1, d / h], [1, d / h], [1, 1], [1, 1]];
+  for (let i = 0; i < uv.count; i++) {
+    const [su, sv] = scale[Math.floor(i / 4)];
+    uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  }
+}
+
 function hall(): Group {
   const g = new Group();
   // The stone blocks match the drums: about 1 m by 0.4 m.
-  g.add(box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z));
+  const walls = box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z);
+  // The end walls take the same block size as the long walls.
+  evenUvs(walls.geometry, HALL.w, HALL.h, HALL.d);
+  g.add(walls);
   // A dark tarred roof slab.
   g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x26272a, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
