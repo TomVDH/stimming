@@ -150,7 +150,7 @@ No toy passes every item. No toy has items 6 (Attributions), 8 (Bar answered) or
 6. **Own sound graph, not `audioKit()`.** Galaxy, Kaleidoscope, Ferrofluid, Magnet balls, Soap cutting, Pin art, Chladni, Rain, TV tree, Balloon letters, Bubble wand.
 7. **Port list gaps.** The eleven toys numbered 43 to 53 have no row in `ports.md`.
 8. **`toys.json` against the page.** Dijkstra and Washing line say `sound: true`; neither page makes sound.
-9. **Stale text.** The intro fallback says "Stimming Lab" on chamber, oilslick, ink, meshball, schlieren and washline. `AGENTS.md` says Glass keeps its old header; it is on Bar v2. Most pages still link Gabarito from Google Fonts while `stim.css` self-hosts it.
+9. **Stale text.** The intro fallback says "Stimming Lab" on chamber, oilslick, ink, meshball, schlieren and washline. `AGENTS.md` says Glass keeps its old header; it is on Bar v2. On 2026-11-16 the pages dropped their Google Fonts link (bean `stimming-6ayf`); Frietkot keeps it for Tilt Neon and Courgette only.
 10. **Pages that ship but are not the toy.** Railgun's `celllab`, `rangelab`, `stormlab`; Cauldron's `probe-gpu.html`; Frietkot's `people.html`, `voices.html`; `trainride/dev/`; `washline/archive/`; 46 unused parts in `fidget/parts/`; `dijkstra/maps/fetch.py`. Launch sets `window.__qa` in production.
 
 ## Question sheet
@@ -434,3 +434,15 @@ Batch 5, 2026-11-16 (Tom):
 | soap.1 | Put on strip | "Enter: pop all" goes on the key strip in place of one entry. Soap cutting's chat proposes which entry leaves |
 | glass.1 | Tool as choice | Tool (Hammer, Gun, Brick) becomes the top-left choice; the glass type moves to Settings |
 | glass.2 | Delete it | The unused `glass/gunshot.mp3` goes (bean `stimming-syu9`). `gunshot.wav` stays and still needs its source and licence (G1) |
+
+Batch 6, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| chladni.1 | Keep the rail | The pitch rail stays a diegetic control; the slider slot stays empty |
+| chladni.2 | Rename to Pour | The action reads Pour (key Space). Reset is not on Chladni's bar |
+| pendulum.1 | Keep as action | Iso stays a chip with key V |
+| pool.1 | Rest after 60 s | The drift eases to a still frame a minute after the last input (G4) |
+| pool.2 | Leave hidden | N and P stay hidden keys |
+| putty.1 | Keep it bare | No new controls |
+| putty.2 | Soften it | The hard offset block shadow under the slab becomes a soft shadow |
