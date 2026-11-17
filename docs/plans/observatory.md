@@ -130,6 +130,8 @@ Four changes, one at a time, each shown to Tom:
 3. **The complex.** Roof edge, window frames, a door canopy and a chimney on the building; panel seams and a catwalk rail on the domes; stone courses on the drums; rails on the roll-off shed; a fence along the road.
 4. **The telescope.** A real mount, a counterweight, a dew shield and a finder scope.
 
+Tom, 2026-11-17, on the order: "lets prioritize the cut -- then move to detail and making the complex road up to it and street lights etc nice". So: the cuts first (locked cuts, then the lens shot), then the complex with its road and street lights, then the hill and the telescope. The road up to the complex and its street lights are part of change 3.
+
 ## The pick sequence and the lights
 
 Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
