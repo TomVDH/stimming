@@ -176,6 +176,9 @@ uniform float uFarK;
 // The lens each far picture was baked through: x for tFar, y for tFarPrev.
 // During the Rise the lens moves; the read reprojects each picture by its own lens.
 uniform vec2 uFarFoc;
+// Lightning: the channel's top in camera km, and its light, seed, kind and glow (see main.js).
+uniform vec3 uBoltT;
+uniform vec4 uBolt;
 // The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
 uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
@@ -1035,6 +1038,15 @@ void main() {
   vec4 far = mix(texture(tFarPrev, uvC), texture(tFar, uvA), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
   now = vec4(rn.rgb + (1.0 - rn.a) * now.rgb, 1.0 - (1.0 - rn.a) * (1.0 - now.a));
+  // Lightning lights the deck and the rain from inside: a soft ball round the stroke, a wide glow past it.
+  // An in-cloud flash sits higher in the cloud.
+  if (uBolt.x > 0.0) {
+    vec3 dF = normalize(uBoltT + vec3(0.0, mix(0.6, 0.1, uBolt.z), 0.0) - vec3(0.0, CAMH * 0.001, 0.0));
+    float aF = max(dot(rc, dF), 0.0);
+    // The cloud's own lumps break the light up, so it never reads as a ball.
+    float n = 0.35 + 1.3 * smoothstep(0.25, 0.75, N(vec3(rc.xy * 14.0, uBolt.y)));
+    now.rgb += vec3(0.75, 0.8, 1.0) * uBolt.x * uBolt.w * now.a * now.a * (n * 0.12 * exp(-(1.0 - aF) / 0.003) + 0.03 * exp(-(1.0 - aF) / 0.02));
+  }
   // Sun shafts: light through one large opening on the sun's side, along the true sun.
   // The march runs under the deck only, 30 km at most, and stops at anything opaque.
   // Each step follows the sun's ray up to the base: the opening there lights it.

@@ -631,6 +631,10 @@ uniform float uSat, uCon;
 // The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
 uniform sampler2D tTor;
 uniform float uStormOn;
+// Lightning, far off: the channel's top under the base and its foot on the ground, in camera km.
+// uBolt: the stroke's light (0 when dark), its seed, 1 for cloud to ground or 0 in cloud, and its glow.
+uniform vec3 uBoltT, uBoltG;
+uniform vec4 uBolt;
 ${SHARED}
 
 /* ---------- the wind ---------- */
@@ -1002,6 +1006,31 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 ${LINE_GLSL}
 ${PLAIN_GLSL}
 ${TRAFFIC_GLSL}
+// A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
+// with two or three short branches. Thin, with a soft glow; s is the screen point.
+float boltChannel(vec2 s, float px) {
+  vec2 a = uBoltT.xy / -uBoltT.z * uFoc - vec2(0.0, CAMH * 0.001 / -uBoltT.z * uFoc), b = uBoltG.xy / -uBoltG.z * uFoc - vec2(0.0, CAMH * 0.001 / -uBoltG.z * uFoc);
+  float h = a.y - b.y;
+  if (h <= 0.0 || s.y > a.y + 4.0 * px || s.y < b.y - 4.0 * px || abs(s.x - mix(a.x, b.x, 0.5)) > h * 0.6) return 0.0;
+  float sd = uBolt.y * 37.0;
+  // How far down the channel this row is, 0 at the base, 1 at the ground.
+  float u = clamp((a.y - s.y) / h, 0.0, 1.0);
+  float xc = mix(a.x, b.x, u) + h * ((vn(vec2(u * 7.0, sd)) - 0.5) * 0.22 + (vn(vec2(u * 26.0, sd + 3.0)) - 0.5) * 0.07 + (vn(vec2(u * 90.0, sd + 7.0)) - 0.5) * 0.02);
+  float d = abs(s.x - xc);
+  float k = exp(-pow(d / (1.1 * px), 2.0)) + 0.3 * exp(-d / (7.0 * px));
+  // The branches fork off down the upper half and fade toward their tips.
+  for (int j = 0; j < 3; j++) {
+    float fj = float(j), ub = 0.12 + 0.4 * th(vec2(sd, fj)), len = 0.15 + 0.25 * th(vec2(fj, sd));
+    if (u < ub || u > ub + len) continue;
+    float side = th(vec2(sd + fj, 9.0)) < 0.5 ? -1.0 : 1.0, v = (u - ub) / len;
+    float x0 = mix(a.x, b.x, ub) + h * (vn(vec2(ub * 7.0, sd)) - 0.5) * 0.22;
+    float xb = x0 + side * v * h * len * 0.6 + h * (vn(vec2(u * 30.0, sd + fj * 5.0)) - 0.5) * 0.05;
+    float db = abs(s.x - xb);
+    k += (exp(-pow(db / (0.9 * px), 2.0)) * 0.6 + 0.12 * exp(-db / (5.0 * px))) * (1.0 - v);
+  }
+  // The foot fades a little into the dust; the top into the base.
+  return k * smoothstep(0.0, 0.06, u) * (0.7 + 0.3 * smoothstep(1.0, 0.85, u));
+}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -1091,6 +1120,15 @@ vec3 envScene(vec2 uv) {
   // It is the far sunlit air seen under the deck, so it fades up from the horizon.
   float cA = dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5));
   c += uSunCol * vec3(1.0, 0.82, 0.6) * 0.03 * exp(-(1.0 - cA) * 3.0) * exp(-abs(rd.y) * 7.0);
+  // Lightning: a cloud-to-ground channel, behind rain and funnels; its light on the plain and in the air.
+  if (uBolt.x > 0.0) {
+    vec3 fl = vec3(0.75, 0.8, 1.0);
+    if (uBolt.z > 0.5) c += fl * boltChannel(s, px) * uBolt.x * 3.0 * (1.0 - 0.7 * tv.a);
+    vec3 dG = normalize(uBoltG + vec3(0.0, 0.3, 0.0));
+    float aG = max(dot(rc, dG), 0.0);
+    // A faint glow round the strike, low over the plain, and a flicker across the whole air.
+    c += fl * uBolt.x * uBolt.w * (0.05 * exp(-(1.0 - aG) / 0.004) + 0.004);
+  }
   c = c * (1.0 - gOF.a) + gOF.rgb;
   // Arcs and sparks on the line: their light shows through the dust, and lights it.
   c += sparks(s, px, tv.a);
@@ -1211,7 +1249,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
@@ -1577,6 +1615,8 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uGod, god);
   gl.uniform1f(u.uPlainLit, plainLit());
   gl.uniform1f(u.uGreen, greenK());
+  gl.uniform3fv(u.uBoltT, bolt.top);
+  gl.uniform4fv(u.uBolt, bolt.u);
   gl.uniform3fv(u.uBeam, beamSpot());
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
@@ -1661,6 +1701,33 @@ function keepOff(t) {
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
 // The Rise moves the eye and the lens; reduced motion jumps to the end.
+// Lightning far off: rare bursts 15 to 50 km out, every 8 to 30 s, never near the eye.
+// Most strike the ground; some flash inside the cloud. A burst is two or three strokes over 0.4 s.
+const bolt = { next: 8 + 14 * Math.random(), t0: -9, strokes: [], top: new Float32Array(3), foot: new Float32Array(3), u: new Float32Array(4) };
+function boltStep() {
+  if (reduced()) { bolt.u[0] = 0; return; }
+  if (simT >= bolt.next && storm > 0.5) {
+    bolt.next = simT + 8 + 22 * Math.random();
+    bolt.t0 = simT;
+    // Somewhere in the view's width, a little past either edge.
+    const D = 15 + 35 * Math.random(), a = (Math.random() - 0.5) * 2 * Math.atan(0.6 * aspect() / focal());
+    const cx = Math.sin(a) * D, cz = -Math.cos(a) * D, B = baseNow();
+    const lean = (Math.random() - 0.5) * 0.25 * D * 0.1;
+    bolt.top.set([cx, B * 0.95, cz]);
+    bolt.foot.set([cx + lean, 0, cz]);
+    bolt.u[1] = Math.random() * 10;
+    bolt.u[2] = Math.random() < 0.7 ? 1 : 0;
+    bolt.u[3] = 0.6 + 0.8 * Math.random();
+    // The strokes: times and strengths, the first the brightest.
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    bolt.strokes = Array.from({ length: n }, (_, i) => [i ? 0.08 + i * 0.13 + 0.05 * Math.random() : 0, i ? 0.4 + 0.5 * Math.random() : 1]);
+  }
+  // Each stroke snaps on, then dies in a tenth of a second with a flicker.
+  const age = simT - bolt.t0;
+  let k = 0;
+  for (const [t, L] of bolt.strokes) { const x = age - t; if (x >= 0) k = Math.max(k, L * Math.exp(-x / 0.06) * (0.8 + 0.2 * Math.sin(x * 150))); }
+  bolt.u[0] = k > 0.01 ? k * Math.min(1, (storm - 0.5) * 4) : 0;
+}
 function riseStep(dt) {
   if (!rise.dir) return;
   if (rise.dir > 0 && rise.u >= 1) {
@@ -1674,6 +1741,7 @@ function riseStep(dt) {
 function step(dt) {
   simT += dt;
   riseStep(dt);
+  boltStep();
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
@@ -1974,7 +2042,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { preset: act.preset, traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

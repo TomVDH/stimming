@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T09:06:20Z
+updated_at: 2026-11-17T09:09:22Z
 parent: stimming-oh7b
 ---
 
@@ -217,3 +217,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (a cinematic pan-up button): Rise (bar action, key R): the eye cranes from its set height to Rise height (Dev, 10–80 m, default 35) over Rise time (6–30 s, default 15) on a soft ease while the lens widens 30%, holds 4 s, eases back; a press turns it round; level camera keeps the golden framing; far bakes keep their own lens (uFarFoc) and fade in. Not a true dolly zoom yet: the tornado shrinks by the widening; a true one needs the eye to travel toward it, which every ground file assumes is fixed at the origin.
 
 - 2026-11-17, Tom (rain slanting with the wind, reaching the ground, not only far and scattered): rain curtains as volumes from base to ground, densest at the foot, slanting downwind (rainSlant(): 0.15–0.85 km drift per km of fall) with gust sway, soft feathered sides and leaning streaks; rainAt() gives 1–3 km curtains with clear air between, a big curtain on each tornado's rear flank, the air round each funnel kept clear, light veils near the eye, main curtains 3–10 km, far ones baked; green-teal in the green phase. About +3 ms (35.1 vs 31.9 ms, three F4.5). Note: Tom's saved Wet glass (Window group) on High costs about 20 ms more.
+
+- 2026-11-17, Tom (distant cloud-to-ground lightning): boltStep() fires a burst every 8–30 s once Storm passes 0.5 (full by 0.75): two or three strokes over about 0.4 s, 15–50 km out, never near the eye; 70% cloud-to-ground (a jagged channel with a glow and short branches, behind rain and funnels), 30% in-cloud; the deck and rain glow round the stroke, a faint glow on the plain, a slight air flicker; reduced motion has none. Not yet seen in motion.
