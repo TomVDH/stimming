@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:39:22Z
+updated_at: 2026-11-17T06:40:52Z
 parent: stimming-oh7b
 ---
 
@@ -122,3 +122,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the scene's storm and funnels are one march (Tom: "merge them"): one half-size pass with history draws the deck (scene shapes, the lab's noise, lumps and light), each horn joined in by smooth minimum, and each funnel's shells and dust; envScene keeps the ground, road, poles and farm sharp and lays the storm on by its cover. Each tornado carries its own whirl in the deck, centred on its top, growing with F (Tom: the deck's swirls are the tornadoes' sources). The deck runs over and behind the eye (no edge in frame at 50 or 85 mm). Dev row Sun dir (default 20°). The crosshatch came from a pixel-locked dither; it is now per-frame noise. GPU, 1828×984, minimum frame: no tornado 9.6 ms, 1 × F1 12.2 ms, 3 × F4.5 18.0 ms. Unchecked: motion, rope-out, phone.
 
 - 2026-11-16, join part 1: the horn's sides take the low sun as the funnel does; the funnel's top turns to the deck's own light at each step; the sky light fails toward the base under the deck, so the light band at the top is gone; the tone turns a flare's length lower. ?time=golden picks Time for one load (QA).
+
+- 2026-11-16: Opacity 1.2 by default in the scene and the lab (was 0.40; Tom: funnel density low). 0.40 was set close up in the lab; at 8 km in the scene, behind haze, with Rim blend and Light through, it read faint.

@@ -23,7 +23,7 @@ export const TABLE = {
   sway: [90, 60, 35, 20, 10, 5],
 };
 // The lab's approved knob values (Tom, 2026-11-16).
-export const KNOB = { width: 1.6, dens: 0.4, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
+export const KNOB = { width: 1.6, dens: 1.2, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
 // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
 export const densAt = f => KNOB.dens * (0.5 + 1.75 * Math.log(1 + f));
 // A smooth curve through the table (Catmull-Rom), held inside each step's two values.
