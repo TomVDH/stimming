@@ -147,6 +147,9 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
         }
         case 'lost': {
           tubeAlt(PARK_ALT, TUBE_CAP, TUBE_ACCEL);
+          // The cupola and the tube az brake to rest where they stand.
+          cupola(m.cupolaAz, CUPOLA_CAP, CUPOLA_ACCEL);
+          tubeAz(m.tubeAz, TUBE_CAP, TUBE_ACCEL);
           break;
         }
         default: break;

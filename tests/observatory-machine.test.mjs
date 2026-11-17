@@ -86,6 +86,16 @@ test('a target under 5 degrees is lost and the tube parks at 30', () => {
   assert.equal(m.phase, 'aim');
   assert.equal(m.target, null);
 });
+test('lost during a slew eases to rest, so the loop can sleep', () => {
+  const m = makeMachine({ az: 100, shutter01: 1 });
+  m.pick(star(1, 0, 0, 1));
+  run(m, 5, { targetAlt: 60, targetAz: 250, trails: false });
+  assert.equal(m.phase, 'slew');
+  assert.ok(m.moving);
+  run(m, 20, { targetAlt: 2, targetAz: 250, trails: false });
+  assert.equal(m.phase, 'lost');
+  assert.equal(m.moving, false);
+});
 test('in aim the cupola turns after the beam', () => {
   const m = makeMachine({ az: 100 });
   run(m, 60, { targetAlt: 0, targetAz: 0, trails: false, aimAz: 140 });
