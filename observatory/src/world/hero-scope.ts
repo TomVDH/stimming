@@ -3,11 +3,13 @@
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CylinderGeometry,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
-  MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
+  MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
   SphereGeometry, TorusGeometry, Vector2, Vector3,
 } from 'three';
-import type { Material, MeshStandardMaterialParameters } from 'three';
+import type { Material, Matrix3, MeshStandardMaterialParameters, Texture } from 'three';
+import type { Star } from '../core/catalog.ts';
 import { HEMI_I, hemi } from './hill.ts';
+import { buildStarEnv, lensGeometry, makeGlassMaterial, type LensShape } from './hero-glass.ts';
 import { TUBE_REST_ALT } from './observatory.ts';
 
 /* ---------- the hero scope: a long refractor on a German equatorial mount ---------- */
@@ -16,7 +18,22 @@ import { TUBE_REST_ALT } from './observatory.ts';
 // Sizes are in metres at size 1, as in world/observatory.ts.
 // +Y is up, -Z is north, +X is east.
 
-export type HeroScope = { root: Group; glass: Mesh; setTube(alt: number, az: number): void };
+export type HeroScope = {
+  root: Group;
+  glass: Mesh;
+  setTube(alt: number, az: number): void;
+  // m: the sky matrix from sky/stars.ts, catalog frame to world.
+  setSky(m: Matrix4 | Matrix3): void;
+  // dir: the target star's world direction.
+  // k = 0 adds no boost.
+  setTarget(dir: Vector3, k: number): void;
+  // The slit's azimuth and half width in degrees.
+  // The slit is off by default.
+  setSlit(azDeg: number, halfWidthDeg: number, on: boolean): void;
+  // Hands over the catalog once it loads.
+  // The glass then shows the stars.
+  setStars(stars: readonly Star[]): void;
+};
 
 const DEG = Math.PI / 180;
 // Copied from world/observatory.ts, DRUM_H: the drum's height.
@@ -406,7 +423,7 @@ function nightEnv(): CanvasTexture {
 
 /* ---------- materials ---------- */
 type Mats = Record<'enamel' | 'cast' | 'pier' | 'darkSteel' | 'steel' | 'zinc' | 'brass' | 'hourCircle' | 'decCircle'
-  | 'anodised' | 'matte' | 'rubber' | 'lens', MeshStandardMaterial> & { glass: MeshPhysicalMaterial };
+  | 'anodised' | 'matte' | 'rubber' | 'lens', MeshStandardMaterial>;
 
 // The hemisphere light gives the diffuse light.
 // The env map adds reflections only, so paint keeps the scene's level.
@@ -439,32 +456,6 @@ function materials(): Mats {
     float cv = clamp(dot(geometryNormal, geometryViewDir), 0.0, 1.0);
     radiance *= mix(vec3(0.62, 1.0, 0.72), vec3(1.0, 0.62, 0.95), smoothstep(0.3, 0.95, cv));
   }`;
-  // The dew shield hides the sky from the glass near its rim.
-  // Each vertex traces its reflected ray up the shield.
-  // A ray that meets a baffle or the black wall reflects nothing.
-  const wall = SHIELD_R - 0.01, baffle = SHIELD_R - 0.022;
-  const pass = (z: number, r: number): string => `smoothstep(${(r + 0.004).toFixed(4)}, ${(r - 0.03).toFixed(4)}, length(vLensP.xy + vLensR.xy * ((${z.toFixed(4)} - vLensP.z) / max(vLensR.z, 1e-3))))`;
-  const shade = `{
-    float open = vLensR.z > 0.0 ? ${pass(CELL_Z + 0.1, baffle)} * ${pass(CELL_Z + 0.2, baffle)} * ${pass(TUBE_FRONT, wall)} : 0.0;
-    radiance *= open;
-  }`;
-  const glass = reflectOnly(new MeshPhysicalMaterial({
-    color: 0x060708, metalness: 0, roughness: 0.03, ior: 1.52, envMap: env, envMapIntensity: 3.5,
-  }), 'glass', coat + shade);
-  const glassBase = glass.onBeforeCompile;
-  glass.onBeforeCompile = (sh, r) => {
-    glassBase.call(glass, sh, r);
-    const decl = '#include <common>\nvarying vec3 vLensP, vLensR;';
-    // The ray starts in the tube's frame, where the shield is round.
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', decl).replace('#include <project_vertex>', `#include <project_vertex>
-      {
-        vec4 wp = modelMatrix * vec4(transformed, 1.0);
-        vec3 wr = reflect(normalize(wp.xyz - cameraPosition), normalize(mat3(modelMatrix) * objectNormal));
-        vLensR = normalize(transpose(mat3(modelMatrix)) * wr);
-        vLensP = transformed;
-      }`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', decl);
-  };
   return {
     // Cream enamel.
     // Chips show metal through the map.
@@ -485,7 +476,6 @@ function materials(): Mats {
     matte: std('matte', { color: 0x09090a, metalness: 0, roughness: 0.92 }),
     rubber: std('rubber', { color: 0x101010, metalness: 0, roughness: 0.85 }),
     lens: reflectOnly(new MeshStandardMaterial({ color: 0x050607, metalness: 0, roughness: 0.04, envMap: env, envMapIntensity: 4 }), 'lens', coat),
-    glass,
   };
 }
 
@@ -498,12 +488,17 @@ const R_FRONT = 0.1615, R_MID = 0.1565, R_REAR0 = 0.151, R_REAR1 = 0.132;
 const Z_REAR = -1.1, Z_J1 = -0.2, Z_J2 = 0.95, Z_CELL = 2.12;
 // The rear section tapers toward the eyepiece.
 const rearR = (z: number): number => R_REAR1 + (R_REAR0 - R_REAR1) * ((z - Z_REAR) / (Z_J1 - Z_REAR));
-// The objective: its edge, its clear radius, its front face.
-const GLASS_R = 0.138, GLASS_Z = 2.27, GLASS_SAG = 0.008;
+// The objective: its radius and its rim's plane.
+const GLASS_R = 0.138, GLASS_Z = 2.27;
 // The cell's bore, its front face, its radius, and the dew shield.
 const BORE_R = 0.148, CELL_Z = 2.3, CELL_R = 0.172, SHIELD_R = 0.1815;
 // The shield's clamp ring is its widest part.
 const SHIELD_OUT = SHIELD_R + 0.006;
+// The glass's face: sin(tilt) = 0.1 r + 0.4 r^3.
+// The face tilts 30 degrees at the rim.
+// The field slides fast across the centre as the tube turns.
+// The rim crowds the sky together.
+const LENS: LensShape = { radius: GLASS_R, edge: GLASS_Z, a: 0.1, b: 0.4 };
 // The shield keeps this much room to each slit edge.
 const SLIT_ROOM = 0.085;
 // The tube's axis runs this far from the polar axis.
@@ -548,7 +543,7 @@ function seam(k: Kit, M: Mats, Pc: Pieces, z0: number, z1: number, r: (z: number
   }
 }
 
-function buildTube(k: Kit, M: Mats, Pc: Pieces): Mesh {
+function buildTube(k: Kit, M: Mats, Pc: Pieces, glassMat: Material): Mesh {
   // Three rolled sections.
   k.add(M.enamel,
     along(turn([[[R_REAR1, Z_REAR], [R_REAR0, Z_J1]]], 72), Y_TO_Z),
@@ -580,15 +575,8 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): Mesh {
   ], 96), Y_TO_Z));
   for (const m of ringZ(8, (BORE_R + ri) / 2, rz, 1, Math.PI / 8, 0.75)) k.put(Pc.button, M.zinc, m);
 
-  // The glass is a shallow cap, set back in the cell.
-  // Its points run from edge to centre, so it faces forward.
-  const cap: P[] = [];
-  for (let i = 0; i <= 9; i++) {
-    const r = GLASS_R * (1 - i / 9);
-    cap.push([r, GLASS_SAG * (1 - (r / GLASS_R) ** 2)]);
-  }
-  const glassGeo = along(turn([[[GLASS_R, -0.03], [GLASS_R, 0]], cap], 96), Y_TO_Z, 0, 0, GLASS_Z);
-  const glass = new Mesh(glassGeo, M.glass);
+  // The glass: a sphere cap, set back in the cell.
+  const glass = new Mesh(lensGeometry(LENS, 0.03), glassMat);
 
   /* the dew shield */
   const s0 = CELL_Z, s1 = TUBE_FRONT;
@@ -962,7 +950,9 @@ export function buildHeroScope(size: number): HeroScope {
   buildPolar(kits[1], M, Pc);
   buildRa(kits[2], M, Pc);
   buildDec(kits[3], M, Pc);
-  const glass = buildTube(kits[4], M, Pc);
+  // The objective's glass reflects the stars once they arrive.
+  const G = makeGlassMaterial(null, LENS);
+  const glass = buildTube(kits[4], M, Pc, G.material);
   [mount, polar, ra, dec, tube].forEach((g, i) => kits[i].build(g));
   tube.add(glass);
 
@@ -981,5 +971,14 @@ export function buildHeroScope(size: number): HeroScope {
     dec.rotation.x = -(SIDE > 0 ? decl : Math.PI - decl);
   }
   setTube(TUBE_REST_ALT, 0);
-  return { root, glass, setTube };
+  let env: Texture | null = null;
+  return {
+    root, glass, setTube,
+    setSky: G.setSky, setTarget: G.setTarget, setSlit: G.setSlit,
+    setStars(stars) {
+      env?.dispose();
+      env = buildStarEnv(stars);
+      G.setEnv(env);
+    },
+  };
 }
