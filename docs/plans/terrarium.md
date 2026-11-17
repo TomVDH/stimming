@@ -1,5 +1,7 @@
 # Terrarium (`terrarium`) implementation plan
 
+Status: active · Bean: `stimming-ral1`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A sealed glass jar of moss and ferns sits on a dark stage. Mist it; drops bead and run down the inside of the glass, and the green inside wakes up.

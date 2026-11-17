@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T03:19:02Z
+updated_at: 2026-11-17T05:58:38Z
 parent: stimming-oh7b
 ---
 
@@ -97,3 +97,22 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the lab opens at a lower quality (Tom: step down, go from there): Resolution 0.5, Steps 60. M3 Pro, pane at 762×984: 47 fps (was 26 at 0.75 / 80).
 
 - 2026-11-16: the Claude app stalled while the lab ran (Tom). The lab now draws 30 fps at most, draws nothing in a hidden pane, and rests once paused and settled; any input wakes it.
+
+- 2026-11-16: the lab is now the joined build from spike stimming-az9d (shells for the funnel, the backdrop baked in strips, a log-polar deck whirl, every setting as a knob, Width 1.6 by default). Tom: "spike joined is good". About 1.8–1.9× less GPU time than the old march at the same size.
+
+- 2026-11-16 (Tom: thicker as in opaque, more ground connection at low F, a hard light edge in the base dust, a JSON copy): Opacity knob (default 2.2) on the core and sheaths; the tip's taper keeps its length when Width widens the funnel (it had thinned most of the body); the dust's self-shade uses three nested circles and a sun ray across the whole cloud; condensation reaches 0.65 / 0.92 down at F0 / F1 and the dust whirl stands 120 to 190 m at low F, so they meet; Copy JSON copies every knob, F and the part boxes.
+
+- 2026-11-16: the funnel's self-shade stopped 100 m over the funnel's top, which lit the flare above a hard elliptical ring (Tom: "sigh.."). The shade now runs up through the flare with a soft foot. Next in the scene: the sun and gentle sunlight patterns through gaps in the clouds, ready for god rays later (Tom).
+
+- 2026-11-16, Tom's lab defaults: Opacity 4.55, Sheaths 0.25, Core edge 0.23, Debris 0.58, deck Turn 0.08 (the rest unchanged).
+- [ ] Tom: the funnel's twist, reach and bend follow the wind and move over time (dynamic, not fixed knobs).
+
+- 2026-11-16, Tom's lab defaults (second set): Turbulence 0.63, Opacity 0.40, Sheaths 0.05, Core edge 0.80, Debris 0.58. Opacity grows with the log of F: × (1 + 1.5 ln(1 + F)). Opacity's slider goes down to 0.05, Core edge's up to 1.6.
+
+- 2026-11-16: Sheaths 0.35 by default; low F is thinner: opacity × (0.5 + 1.75 ln(1 + F)) (Tom).
+
+- 2026-11-16: Light through knob (0 to 1, default 0): sunlight passes the funnel's own cloud more freely, so its shaded side lightens (Tom).
+
+- 2026-11-16: Rim blend knob (default 0.6): a ray that only grazes the core's edge sees thinner cloud, so the lit rim fades into what lies behind it (Tom: rim too harsh; otherwise "looking impressive"). Tom's defaults from his JSON: Light through 0.4, Time 20.7, Sun dir -106, Steps 63, Resolution 0.6, Bake strips 16.
+
+- 2026-11-16: the scene draws the lab's tornado (tornado/funnel.js): the lab's shells, dust, F table and Tom's defaults, in a half-size pass scissored to the tornadoes' box, laid into envScene; the funnel's top hides behind the scene's cloud by the cover in front of it, so it rises into the base with no seam. Up to four tornadoes, rope-out kept. GPU, M3 Pro, 1828×984: frame 12.7 ms with no tornado, 15.8 ms with one F2.5, 19.5 ms with three F4.5 (minimums). Next: the lab's volumetric deck in the scene (Tom: the scene's deck is "the fake 2d one").

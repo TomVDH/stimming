@@ -1,5 +1,7 @@
 # Staged loading
 
+Status: active · Bean: `stimming-bg6j`
+
 Bean: `stimming-bg6j`. Started 2026-11-09.
 
 ## The stages

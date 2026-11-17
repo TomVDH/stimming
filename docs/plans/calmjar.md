@@ -1,5 +1,7 @@
 # Calm jar (`calmjar`) implementation plan
 
+Status: active · Bean: `stimming-tvg4`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** The stage is the inside of a jar of thick, clear liquid full of glitter. Drag to swirl it. Holographic flakes tumble and flash as they turn, then settle slowly, the big ones first and the fine dust last, into layers of colour at the bottom.

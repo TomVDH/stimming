@@ -1,5 +1,7 @@
 # Railgun: true scale (spike)
 
+Status: active · Bean: `stimming-tgis`
+
 Tom, 2026-11-15: the wide view works with hacks; the cinematic views need real scale.
 Branch `claude/railgun-scale`, cut from `claude/railgun-fx-f99e87`. The current look stays there.
 

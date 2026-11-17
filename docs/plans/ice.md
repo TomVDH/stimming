@@ -1,5 +1,7 @@
 # Ice tray (`ice`) implementation plan
 
+Status: done · Bean: `stimming-9lcg`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A tray of ice cubes lies on a dark, wet table under one cool light. Twist the tray and it creaks, cracks race through the cubes as white flashes, and the cubes jump loose one by one. Flick them across the table, where they spin and throw rippling caustics. Dump the tray, then refill it and watch the water freeze from the edges in.

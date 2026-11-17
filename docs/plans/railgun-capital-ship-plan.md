@@ -1,5 +1,7 @@
 # Railgun capital ship implementation plan
 
+Status: done · Bean: `stimming-x3wl`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an enemy battleship in orbit as a second Railgun target: a full charge breaks it into five hulks, a tap wounds it, the hulks de-orbit as re-entry streaks and crash far beyond the mesas.

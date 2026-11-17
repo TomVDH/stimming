@@ -1,5 +1,7 @@
 # Sunbeam dust (`sunbeam`) implementation plan
 
+Status: active · Bean: `stimming-tsoh`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** One shaft of light crosses a dark room. Dust motes drift and glint inside it, and your hand stirs them.

@@ -1,5 +1,7 @@
 # Canal at dusk (`canal`) implementation plan
 
+Status: done · Bean: `stimming-afnz`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A Flemish canal at blue hour in the rain. Tap the quay lamps to light them one by one; their reflections stretch across rain-pocked water, and a paper boat drifts through the light.

@@ -1,8 +1,11 @@
 // Tornado alley: the toy's module, loaded by index.html.
-// Stage 1 is the blockout: the shot, the bar and placeholder funnels.
+// The shot, the bar, the supercell, and the lab's tornado (funnel.js) in its own pass.
 import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
+import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
+import { SKY, skyAt } from '../shared/sky.js';
+import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, MAX_FUNNELS } from './funnel.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -12,11 +15,9 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- the F-scale ---------- */
-// Ground width in metres per F level; the shader holds the same table in fWidth().
-const F_WIDTH = [25, 70, 160, 320, 600, 1100];
-// Travel speed in m/s, and how far the condensation reaches down (1 is the ground).
+// The look per F level is the lab's table in funnel.js.
+// Travel speed in m/s.
 const F_SPEED = [6, 8, 10, 12, 14, 16];
-const F_COND = [0.72, 0.86, 1, 1, 1, 1];
 // Seconds a tornado lives before it ropes out by itself.
 const F_LIFE = [55, 70, 85, 100, 115, 130];
 const MAX_TOR = 4;
@@ -59,11 +60,9 @@ const ui = initPage({ id: 'tornado', bar: {
 // Golden lines: the horizon sits 0.382 up the frame.
 const GOLD = 0.381966;
 const horizon = () => GOLD;
-const SCENE = /* glsl */`
-uniform vec3 uSun, uSunCol, uAmb;
-uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
-// The tornadoes: see the tornado section for what A and B hold.
-uniform vec4 uTor0, uTor1, uTor2, uTor3, uTorB0, uTorB1, uTorB2, uTorB3;
+// The scene pass and the funnel pass share this GLSL: the camera, the sky, the haze and the supercell.
+// It reads uSun, uSunCol, uAmb, uYaw, uStorm and uT, and the sky palette (uZen, uMid, uBand, uAnti).
+const SHARED = /* glsl */`
 // The eye crouches just over the ears, 1.25 m up.
 const float CAMH = 1.25;
 // The storm's parts in km, in camera space. The updraft, the wall cloud, the rain core.
@@ -168,9 +167,10 @@ vec3 stormLit(vec3 p, float d) {
   return mix(c, c * vec3(0.22, 0.46, 0.38), core * 0.9);
 }
 // Marches the storm. Returns colour and coverage; t is the hit distance in km.
-vec4 storm(vec3 rd, out float tHit) {
+// aCut is the cover in front of tCut, in km: what hides a tornado that far out.
+vec4 storm(vec3 rd, float tCut, out float tHit, out float aCut) {
   vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
-  float t = 1.0, T = 1.0;
+  float t = 1.0, T = 1.0, Tc = 1.0;
   vec3 acc = vec3(0.0);
   tHit = 120.0;
   for (int i = 0; i < 110; i++) {
@@ -184,9 +184,11 @@ vec4 storm(vec3 rd, out float tHit) {
       float a = clamp(0.5 - d / soft, 0.0, 1.0) * 0.8;
       acc += T * a * stormLit(p, d);
       T *= 1.0 - a;
+      Tc *= 1.0 - a * (1.0 - smoothstep(tCut - 0.25, tCut + 0.25, t));
       t += 0.03 + 0.006 * t;
     } else t += d * 0.75 + 0.01 * t;
   }
+  aCut = 1.0 - Tc;
   return vec4(acc, 1.0 - T);
 }
 // The length a ray runs inside a vertical cylinder; x is where it enters.
@@ -207,6 +209,16 @@ vec2 cylinder(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
 // Ground, road, poles, farm and funnels live in world space; the storm lives in camera space.
 vec3 toWorld(vec3 c) { float s = sin(uYaw), k = cos(uYaw); return vec3(c.x * k + c.z * s, c.y, -c.x * s + c.z * k); }
 vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
+`;
+const SCENE = /* glsl */`
+uniform vec3 uSun, uSunCol, uAmb;
+uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
+// The funnel pass's picture: colour, premultiplied, and cover. uTorOn is 0 with no tornado.
+uniform sampler2D tTor;
+uniform float uTorOn;
+// Each tornado's foot and reach in camera km, and 1 when it draws: for the storm's cover.
+uniform vec4 uTorZ[${MAX_FUNNELS}];
+${SHARED}
 
 /* ---------- the wind ---------- */
 // The wind blows left to right and a little toward the eye.
@@ -416,146 +428,6 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
     over(c, hazed(steel, rd, zw), k);
   }
 }
-/* ---------- the tornadoes ---------- */
-// One tornado in two vectors.
-// A: its foot (x, z in metres), the eased F level, 1 when live.
-// B: condensation (0 in the cloud, 1 down to the ground), dust, rope-out (0 to 2), a seed.
-// The funnel rises to the local cloud base, in metres; tornado() sets it per tornado.
-float TOR_TOP = 1150.0;
-// The F-scale table: ground width in metres, F0 to F5.
-float fWidth(float f) {
-  if (f < 1.0) return mix(25.0, 70.0, f);
-  if (f < 2.0) return mix(70.0, 160.0, f - 1.0);
-  if (f < 3.0) return mix(160.0, 320.0, f - 2.0);
-  if (f < 4.0) return mix(320.0, 600.0, f - 3.0);
-  return mix(600.0, 1100.0, clamp(f - 4.0, 0.0, 1.0));
-}
-// How much wider the funnel grows toward the cloud: ropes flare most, wedges least.
-float fFlare(float f) { return mix(3.4, 1.35, f / 5.0); }
-// The axis: a slow sway, a lean, and on rope-out a long bent S.
-vec2 torAxis(float h, vec4 A, vec4 B) {
-  float u = h / TOR_TOP, thin = 1.0 - A.z / 5.0, sd = B.w * 6.2832;
-  vec2 o = vec2(sin(u * 2.6 + uT * 0.21 + sd), cos(u * 2.1 + uT * 0.17 + sd * 1.3)) * (20.0 + 140.0 * thin) * u;
-  // The top trails toward the wall cloud.
-  o += vec2(-0.9, -0.3) * u * (40.0 + 220.0 * thin);
-  float r = clamp(B.z, 0.0, 1.0);
-  o += vec2(1.0, -0.25) * r * (sin(u * 3.1416) * 700.0 * (1.0 + 0.3 * sin(uT * 0.3 + sd)) + u * 500.0);
-  return o;
-}
-float torRadius(float h, vec4 A, vec4 B) {
-  float u = h / TOR_TOP, f = A.z;
-  // Roping out, the funnel narrows to a rope about 35 m across.
-  float r0 = mix(0.5 * fWidth(f), min(0.5 * fWidth(f), 18.0), clamp(B.z, 0.0, 1.0));
-  // The last stretch spreads out into the wall cloud.
-  return r0 * mix(1.0, fFlare(f), pow(u, mix(2.6, 1.3, f / 5.0))) * (1.0 + 0.6 * smoothstep(0.8, 1.0, u));
-}
-// Marches one tornado. Returns its colour, premultiplied, and its cover.
-vec4 tornado(vec3 ro, vec3 rd, float tMax, vec4 A, vec4 B) {
-  if (A.w < 0.5) return vec4(0.0);
-  vec3 G = vec3(A.x, 0.0, A.y);
-  // Under the wall cloud the base hangs lower, so the funnel is shorter there.
-  float wallK = 1.0 - smoothstep(1.2, 2.8, length(toCam(G).xz * 0.001 - WALL));
-  TOR_TOP = mix(BASE * 1000.0, (BASE - 0.5) * 1000.0, wallK);
-  float f = A.z, fk = f / 5.0, rope = B.z;
-  float w = fWidth(f);
-  // The F-scale sets the spin, the dust skirt's height and the debris.
-  float vt = mix(45.0, 120.0, fk);
-  float skirtH = mix(45.0, 380.0, fk) * B.y;
-  // A near-level ray crosses the funnel at one height: find it, then march only near the axis.
-  float k2 = max(dot(rd.xz, rd.xz), 1e-6), kl = sqrt(k2);
-  float hs = ro.y + rd.y * dot(G.xz - ro.xz, rd.xz) / k2;
-  if (hs < -20.0 || hs > TOR_TOP + 80.0) return vec4(0.0);
-  float hc0 = clamp(hs, 0.0, TOR_TOP);
-  vec2 C = G.xz + torAxis(hc0, A, B);
-  float tc = dot(C - ro.xz, rd.xz) / k2;
-  vec2 miss = ro.xz + rd.xz * tc - C;
-  // The pixel's footprint there: a thin rope stays at least about a pixel wide.
-  float foot = tc * gPx / uFoc;
-  float Rl = max(torRadius(hc0, A, B), foot) * 1.9 + 30.0;
-  // The dust reaches about 1.7 skirt heights with its billows; keep it in the window.
-  if (hs < skirtH * 2.0) Rl = max(Rl, 0.5 * w * mix(2.2, 1.4, fk) * 2.0 + 60.0);
-  if (length(miss) > Rl) return vec4(0.0);
-  float t0 = max(tc - Rl / kl, 0.0), t1 = min(tc + Rl / kl, tMax);
-  if (t1 <= t0) return vec4(0.0);
-  float hc = mix(TOR_TOP, 0.0, B.x);
-  float fade = 1.0 - clamp(rope - 1.0, 0.0, 1.0);
-  vec2 sunXZ = normalize(uSun.xz + vec2(1e-4));
-  const int STEPS = 36;
-  float dt = (t1 - t0) / float(STEPS);
-  float t = t0 + dt * th(gl_FragCoord.xy + B.w * 71.0);
-  vec3 acc = vec3(0.0);
-  float T = 1.0;
-  for (int i = 0; i < STEPS; i++) {
-    vec3 p = ro + rd * t - G;
-    t += dt;
-    float h = p.y;
-    if (h < 0.0 || h > TOR_TOP + 60.0) continue;
-    vec2 q = p.xz - torAxis(h, A, B);
-    float r = length(q);
-    float Rt = torRadius(h, A, B);
-    // Under a pixel wide, the rope keeps a pixel's width and thins its density.
-    float R = max(Rt, foot * 0.7), thinK = (Rt / R) * (Rt / R);
-    float ang = atan(q.y, q.x);
-    // Spin: the wall turns at vt over R; a twist up the height draws helices.
-    float om = min(vt / max(R, 8.0), 3.0);
-    float a1 = ang - om * uT + h / (R * 3.0 + 30.0);
-    vec3 nc = vec3(cos(a1) * 1.6, sin(a1) * 1.6, h / (R * 2.2 + 40.0) - uT * 0.05) + B.w * 13.0;
-    float n = fbm3(nc) + 0.12 * (vn3(nc * 7.3) - 0.5);
-    // The condensation funnel: a ragged wall and a ragged lower edge.
-    float edge = R * (1.0 + mix(0.55, 0.85, fk) * (n - 0.45));
-    float cond = smoothstep(edge, edge * 0.55, r) * smoothstep(hc - 50.0, hc + 50.0, h + (n - 0.5) * 0.25 * TOR_TOP);
-    // Rope-out tears the funnel into pieces.
-    if (rope > 0.4) cond *= smoothstep(0.0, 0.25, vn(vec2(h * 0.006 + uT * 0.05, B.w * 9.0)) - (rope - 0.4) * 0.55);
-    // The top thins into the cloud base, so no hard rim shows.
-    // The fade ends before the march's top cut, so no straight rim shows.
-    cond *= fade * thinK * (1.0 - smoothstep(TOR_TOP * 0.62, TOR_TOP - 60.0, h + (n - 0.5) * 160.0));
-    // The dust skirt: wider than the funnel, spinning faster, low and turbulent.
-    float dust = 0.0;
-    if (skirtH > 1.0 && h < skirtH * 2.0) {
-      float a2 = ang - om * 1.6 * uT;
-      float nd = fbm3(vec3(cos(a2) * 2.2, sin(a2) * 2.2, h / (skirtH * 0.5) - uT * 0.3) + B.w * 5.0);
-      float Rd = 0.5 * w * mix(2.2, 1.4, fk) * (1.0 + 0.5 * h / skirtH);
-      // Billows: only the dense half of the noise holds dust.
-      float puff = smoothstep(0.38, 0.7, nd);
-      dust = smoothstep(Rd, Rd * 0.25, r * (0.75 + 0.6 * nd)) * (1.0 - smoothstep(skirtH * 0.3, skirtH * 1.3, h + (nd - 0.5) * skirtH * 1.4)) * puff * 2.2 * fade;
-    }
-    float sig = cond * 0.05 + dust * mix(0.012, 0.016, fk);
-    if (sig <= 1e-4) continue;
-    float a = 1.0 - exp(-sig * dt);
-    // The low sun behind the eye lights the near face; the far side and the core fall dark.
-    float ndl = clamp(dot(q / max(r, 1e-3), sunXZ), 0.0, 1.0);
-    float lit = (0.3 + 0.7 * ndl) * smoothstep(0.0, 1.0, r / max(R, 1e-3));
-    // Helical bands and lumps in the wall catch the light unevenly.
-    float band = 0.5 + 0.5 * sin(a1 * 5.0 + h / (R * 0.7 + 10.0) + n * 4.0);
-    lit *= (0.45 + 1.1 * n) * (0.88 + 0.22 * band);
-    // Strong tornadoes are dark with dirt and rain: grey at F2, near black at F5.
-    float dark = mix(1.0, 0.38, smoothstep(1.5, 5.0, f));
-    vec3 cc = (uAmb * 0.17 + uSunCol * 0.1 * lit) * dark;
-    // Up near the base the funnel takes the gloom's colour.
-    cc = mix(cc, uAmb * vec3(0.05, 0.085, 0.075), smoothstep(TOR_TOP * 0.6, TOR_TOP, h) * 0.7);
-    // Dirt drawn up into the foot of a strong funnel.
-    cc = mix(cc, cc * vec3(0.72, 0.6, 0.48), (1.0 - smoothstep(0.0, 0.35 * TOR_TOP, h)) * fk);
-    vec3 dc = (uAmb * 0.12 + uSunCol * 0.08 * (0.4 + 0.6 * ndl)) * vec3(0.78, 0.62, 0.46);
-    vec3 col = (cc * cond * 0.05 + dc * dust * mix(0.012, 0.016, fk)) / sig;
-    acc += T * a * col;
-    T *= 1.0 - a;
-    if (T < 0.02) break;
-  }
-  // Air between the eye and the tornado; under the storm the haze is thin.
-  float hz = 1.0 - exp(-t0 / 70000.0);
-  acc = mix(acc, hazeCol(rd) * (1.0 - T), hz);
-  return vec4(acc, 1.0 - T);
-}
-void tornadoes(inout vec3 c, vec3 rd) {
-  vec3 ro = vec3(0.0, CAMH, 0.0);
-  float tMax = rd.y < 0.0 ? CAMH / -rd.y : 1e9;
-  vec4 r;
-  r = tornado(ro, rd, tMax, uTor0, uTorB0); c = c * (1.0 - r.a) + r.rgb;
-  r = tornado(ro, rd, tMax, uTor1, uTorB1); c = c * (1.0 - r.a) + r.rgb;
-  r = tornado(ro, rd, tMax, uTor2, uTorB2); c = c * (1.0 - r.a) + r.rgb;
-  r = tornado(ro, rd, tMax, uTor3, uTorB3); c = c * (1.0 - r.a) + r.rgb;
-}
-
 // The foreground: large ears a metre or two off, soft with defocus, swaying in the gusts.
 // They live in camera space; far ones draw first, so near ones cover them.
 float segD(vec2 p, vec2 a, vec2 b, out float u) {
@@ -611,6 +483,18 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   }
 }
 
+// The distance in km to the nearest tornado whose column the ray crosses, or 0.
+float torDepth(vec3 rc) {
+  if (uTorOn < 0.5) return 0.0;
+  float k2 = max(dot(rc.xz, rc.xz), 1e-6), dT = 1e9;
+  for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+    vec4 z = uTorZ[i];
+    if (z.w < 0.5) continue;
+    float tc = dot(rc.xz, z.xy) / k2;
+    if (tc > 0.0 && length(rc.xz * tc - z.xy) < z.z) dT = min(dT, tc);
+  }
+  return dT > 1e8 ? 0.0 : dT;
+}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -619,6 +503,8 @@ vec3 envScene(vec2 uv) {
   gSunC = toCam(uSun);
   gPx = px;
   vec3 c;
+  // The storm's cover in front of the tornadoes: their tops go up into the cloud.
+  float hideT = 0.0;
   if (rd.y < -1e-4) {
     c = ground(rd, px);
   } else {
@@ -627,7 +513,7 @@ vec3 envScene(vec2 uv) {
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
     float tHit;
-    vec4 st = storm(rc, tHit);
+    vec4 st = storm(rc, torDepth(rc) - 0.1, tHit, hideT);
     // The far storm sinks into the haze.
     float h = 1.0 - exp(-tHit / 70.0);
     c = c * (1.0 - st.a) + mix(st.rgb, hazeCol(rd) * st.a, h * 0.8);
@@ -642,7 +528,8 @@ vec3 envScene(vec2 uv) {
   }
   // The thin band where ground meets sky takes the haze.
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
-  tornadoes(c, rd);
+  // The tornadoes, from the funnel pass at a lower resolution.
+  if (uTorOn > 0.5) { vec4 tv = texture(tTor, uv) * (1.0 - hideT); c = c * (1.0 - tv.a) + tv.rgb; }
   farm(c, s, rd, px);
   poles(c, s, rd, px);
   nearEars(c, s, px, asp);
@@ -653,11 +540,9 @@ vec3 envScene(vec2 uv) {
 /* ---------- state ---------- */
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
-/** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number }} Tor */
+/** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
 /** @type {Tor[]} */
 const tors = [];
-const torU = [0, 1, 2, 3].map(() => [0, 0, 0, 0]);
-const torB = [0, 1, 2, 3].map(() => [0, 0, 0, 0]);
 // The storm carries its tornadoes to the right and a little toward the eye.
 const DRIFT = [0.93, 0.36];
 // The sun behind the eye, low, a little off to the left.
@@ -687,6 +572,8 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
+// The funnel pass: its program, the noise volume, two targets for the history, and its state.
+const fun = { prog: null, noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true };
 let env = null;
 try {
   env = environment(canvas, {
@@ -694,12 +581,14 @@ try {
     animated: true,
     budget: 1.8e6,
     active: () => visible,
-    onFrame: raw => step(Math.min(raw, 0.05)),
+    onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
+    before: (w, h) => funnelPass(w, h),
+    textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => storm, uStorm: () => storm, uT: () => simT,
-      uTor0: () => torU[0], uTor1: () => torU[1], uTor2: () => torU[2], uTor3: () => torU[3],
-      uTorB0: () => torB[0], uTorB1: () => torB[1], uTorB2: () => torB[2], uTorB3: () => torB[3],
+      uTorOn: () => (fun.on ? 1 : 0),
+      uTorZ: () => pk.Z,
     },
   });
 } catch (err) {
@@ -714,22 +603,137 @@ Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky:
 Object.assign(S, { clouds: 0, stars: 0, haze: 0.4, bloom: 0.18, thr: 1.4, orbs: 0, vig: 0.38, grain: 0.035, tintK: 0, expo: 1 });
 S.frame = false;
 
-function packTors() {
-  for (let i = 0; i < 4; i++) {
-    const t = tors[i];
-    torU[i] = t ? [t.x, t.z, t.f, 1] : [0, 0, 0, 0];
-    torB[i] = t ? [t.cond, t.dust, t.rope, t.seed] : [0, 0, 0, 0];
-  }
+/* ---------- the funnel pass ---------- */
+// The tornadoes draw at this share of the frame's size, into their own target.
+const FUN_RES = 0.5;
+const gl = env.gl;
+// The pass compiles beside the first frames; until then the plain shows no funnel.
+// The poll waits on a timer, so a background tab still finishes the link.
+linked(gl, { f: program(gl, TRI_VS, funnelFS(SKY, SHARED)) }, { wait: () => new Promise(r => setTimeout(r, 30)) })
+  .then(set => { fun.prog = set.f; env.touch(); })
+  .catch(err => console.error('funnel pass:', err));
+// The noise volume takes a few tens of milliseconds: build it after the first frame.
+setTimeout(() => { fun.noise ||= noiseVolume(gl); }, 300);
+// The cloud base over a foot, in metres: lower under the wall cloud.
+function deckAt(cx, cz) {
+  const d = Math.hypot(cx * 0.001 - WALL[0], cz * 0.001 - WALL[1]);
+  const k = 1 - clamp((d - 1.2) / 1.6) ** 2 * (3 - 2 * clamp((d - 1.2) / 1.6));
+  return 1350 + (850 - 1350) * k;
 }
+// The wall cloud in camera km: WALL in the scene's GLSL.
+const WALL = [-0.9, -8.0];
+const CAMH = 1.25;
+const pk = { Z: new Float32Array(MAX_FUNNELS * 4), A: new Float32Array(16), B: new Float32Array(16), C: new Float32Array(16), D: new Float32Array(16), E: new Float32Array(16), F: new Float32Array(16), ph: new Float32Array(MAX_FUNNELS * 14) };
+// Packs the tornadoes nearest first and finds their box on the target. Returns the count.
+function packFunnels(rw, rh) {
+  const a = yaw(), co = Math.cos(a), si = Math.sin(a), foc = focal(), asp = rw / rh, hz = horizon();
+  const list = [];
+  let x0 = rw, y0 = rh, x1 = 0, y1 = 0;
+  for (const t of tors) {
+    // The foot in camera space.
+    const cx = t.x * co - t.z * si, cz = t.x * si + t.z * co;
+    const f = t.f, fade = 1 - clamp(t.rope - 1), lm = labM(f), deck = deckAt(cx, cz);
+    const r0 = at('r0', f) * KNOB.width, flare = at('flare', f);
+    // Roping out, the funnel narrows to a rope about 35 m across.
+    const r = r0 + (Math.min(r0, 18) - r0) * clamp(t.rope);
+    // The march's column, as wide as the shader's, so the box holds all of it.
+    const rTop = r * flare * 1.15;
+    const Rb = Math.max(r * Math.max(flare * 2, 2.6), (rTop * 1.9 + 20) * 1.3) + at('lean', f) + at('sway', f) * 2 + 140 + 1300 * clamp(t.rope);
+    let bx0 = 1, by0 = 1, bx1 = 0, by1 = 0, behind = false;
+    for (const ox of [-Rb, Rb]) for (const oz of [-Rb, Rb]) for (const oy of [0, deck + 60]) {
+      const z = -(cz + oz);
+      if (z < 50) { behind = true; continue; }
+      const u = (cx + ox) / z * foc / asp + 0.5, v = (oy - CAMH) / z * foc + hz;
+      bx0 = Math.min(bx0, u); bx1 = Math.max(bx1, u); by0 = Math.min(by0, v); by1 = Math.max(by1, v);
+    }
+    if (behind) { bx0 = 0; by0 = 0; bx1 = 1; by1 = 1; }
+    if (bx1 < 0 || bx0 > 1 || by1 < 0 || by0 > 1 || fade <= 0) continue;
+    x0 = Math.min(x0, bx0 * rw); x1 = Math.max(x1, bx1 * rw); y0 = Math.min(y0, by0 * rh); y1 = Math.max(y1, by1 * rh);
+    list.push({ t, d: -cz, rb: Rb, v: [
+      [cx, cz, deck - 0.3 * lm, deck],
+      [r, flare, at('prof', f), at('vmax', f)],
+      [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f), at('rain', f) * fade],
+      [at('dark', f), at('lean', f), at('sway', f), f / 5],
+      [t.ds, t.zs, t.rope, t.seed],
+      [lm, fade, densAt(f), 0],
+    ] });
+  }
+  list.sort((p, q) => p.d - q.d);
+  pk.Z.fill(0);
+  list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb }, i) => {
+    ['A', 'B', 'C', 'D', 'E', 'F'].forEach((k, j) => pk[k].set(v[j], i * 4));
+    pk.ph.set(t.ph, i * 14);
+    pk.Z.set([v[0][0] * 0.001, v[0][1] * 0.001, rb * 0.001, 1], i * 4);
+  });
+  const pad = 3;
+  pk.box = [Math.max(0, Math.floor(x0) - pad), Math.max(0, Math.floor(y0) - pad), Math.min(rw, Math.ceil(x1) + pad), Math.min(rh, Math.ceil(y1) + pad)];
+  return Math.min(list.length, MAX_FUNNELS);
+}
+// Draws every tornado into the funnel target. The runner calls it before its passes.
+function funnelPass(w, h) {
+  fun.on = false;
+  if (!fun.prog || !tors.length || !visible) return;
+  fun.noise ||= noiseVolume(gl);
+  const rw = Math.max(32, Math.round(w * FUN_RES)), rh = Math.max(32, Math.round(h * FUN_RES));
+  if (rw !== fun.w || rh !== fun.h) {
+    free(gl, fun.A); free(gl, fun.B);
+    fun.A = glTarget(gl, rw, rh, { clear: true }); fun.B = glTarget(gl, rw, rh, { clear: true });
+    fun.w = rw; fun.h = rh; fun.fresh = true;
+  }
+  const n = packFunnels(rw, rh);
+  if (!n) { fun.fresh = true; gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
+  // The history blend runs only while the loop runs; a still frame draws whole.
+  const hist = !fun.fresh && performance.now() - fun.loopT < 150;
+  const P = fun.prog, u = P.u;
+  gl.useProgram(P.p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
+  gl.viewport(0, 0, rw, rh);
+  gl.disable(gl.BLEND);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  const [bx0, by0, bx1, by1] = pk.box;
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(bx0, by0, Math.max(0, bx1 - bx0), Math.max(0, by1 - by0));
+  // Units 0 to 4 belong to the runner; the pass uses 5 and 6.
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); gl.uniform1i(u.tPrev, 5);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, fun.noise); gl.uniform1i(u.tNoise, 6);
+  const sk = skyAt(S.hour);
+  gl.uniform2f(u.uRes, rw, rh);
+  const fr = fun.frame++;
+  gl.uniform2f(u.uJit, hist ? ((fr * 0.618) % 1) - 0.5 : 0, hist ? ((fr * 0.382) % 1) - 0.5 : 0);
+  gl.uniform1f(u.uBlend, hist ? 0.55 : 1);
+  gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
+  gl.uniform3fv(u.uSun, sun); gl.uniform3fv(u.uSunCol, sunCol); gl.uniform3fv(u.uAmb, amb);
+  gl.uniform3fv(u.uZen, sk.zen); gl.uniform3fv(u.uMid, sk.mid); gl.uniform3fv(u.uBand, sk.band); gl.uniform3fv(u.uAnti, sk.anti);
+  gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
+  gl.uniform1i(u.uN, n);
+  for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
+  gl.uniform2fv(u.uPhs, pk.ph);
+  gl.bindVertexArray(null);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // The runner wants the context in its default state.
+  gl.disable(gl.SCISSOR_TEST);
+  gl.bindTexture(gl.TEXTURE_3D, null);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  [fun.A, fun.B] = [fun.B, fun.A];
+  fun.on = true;
+  fun.fresh = false;
+}
+
 // One tornado's life: dust spins up, the funnel lowers, it travels, then ropes out.
 function live(t, dt) {
   t.age += dt;
   // A new F level eases in over a few seconds.
   t.f += (t.fT - t.f) * (1 - Math.exp(-dt / 2.5));
+  // Each layer's spin and climb integrate here, so a new F only changes speed.
+  const sp = spinLayers(t.ph, dt, t.f);
+  t.zs = sp.zs; t.ds = sp.ds;
   if (!t.roping) {
     // Dust rises from the ground before the funnel reaches it.
     t.dust = Math.min(1, t.dust + dt / 3);
-    if (t.age > 1.5) t.cond += (fAt(F_COND, t.f) - t.cond) * (1 - Math.exp(-dt / 2.2));
+    if (t.age > 1.5) t.cond += (at('cond', t.f) - t.cond) * (1 - Math.exp(-dt / 2.2));
     if (t.age > t.life) t.roping = true;
   } else {
     // The rope bends out over 14 s, then breaks up and fades over 7 s.
@@ -746,7 +750,6 @@ function step(dt) {
   simT += dt;
   for (const t of tors) live(t, dt);
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2) tors.splice(i, 1);
-  packTors();
   if (!asleep && !tors.length && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
@@ -772,8 +775,7 @@ function touchDown(x, z) {
   if (standing.length >= MAX_TOR - 1) standing[0].roping = true;
   if (tors.length >= MAX_TOR) tors.shift();
   const still = reduced();
-  tors.push({ x, z, f: fLevel, fT: fLevel, cond: still ? F_COND[fLevel] : 0, dust: still ? 1 : 0, rope: 0, roping: false, age: 0, life: F_LIFE[fLevel] * (0.85 + 0.3 * Math.random()), seed: Math.random() });
-  packTors();
+  tors.push({ x, z, f: fLevel, fT: fLevel, cond: still ? at('cond', fLevel) : 0, dust: still ? 1 : 0, rope: 0, roping: false, age: 0, life: F_LIFE[Math.round(fLevel)] * (0.85 + 0.3 * Math.random()), seed: Math.random(), ph: new Float32Array(14), zs: 28, ds: 20 });
   wake();
 }
 // The tornado nearest a screen point, if the point is near enough.
@@ -782,7 +784,7 @@ function tornadoAt(clientX, clientY) {
   let best = null, bd = Infinity;
   for (const t of tors) {
     const d = Math.hypot(t.x - g.x, t.z - g.z);
-    if (d < bd && d < Math.max(1200, F_WIDTH[t.fT] * 1.6, Math.hypot(t.x, t.z) * 0.09)) { bd = d; best = t; }
+    if (d < bd && d < Math.max(1200, at('r0', t.fT) * KNOB.width * 3.2, Math.hypot(t.x, t.z) * 0.09)) { bd = d; best = t; }
   }
   return best;
 }
@@ -808,7 +810,6 @@ canvas.addEventListener('pointermove', e => {
   if (!drag) return;
   const g = groundAt(e.clientX, e.clientY);
   drag.x = g.x; drag.z = g.z;
-  packTors();
   wake();
 });
 const endDrag = () => { drag = null; };
@@ -849,7 +850,6 @@ act.add = () => {
 act.clear = () => {
   if (tors.some(t => !t.roping)) tors.forEach(t => ropeOut(t));
   else tors.length = 0;
-  packTors();
   wake();
 };
 act.storm = v => { storm = v; wake(); };
@@ -866,14 +866,43 @@ lensMM = +(qs0.get('lens') || ui.setting('lens')?.value || 50);
 S.expo = ui.setting('expo')?.value ?? 1;
 // QA can start with funnels down: ?tor=F3,F5 places them under the wall cloud.
 const qs = new URLSearchParams(location.search);
-if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(+f.replace(/\D/g, '') || 0, 0, 5); act.add(); }
+if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(parseFloat(f.replace(/[^\d.]/g, '')) || 0, 0, 5); act.add(); }
 // QA: ?near=8 puts the newest tornado 8 km out; ?age=20 runs every tornado 20 s on.
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); } packTors(); };
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
-if (qs.has('qa')) window.__qa = { tors, live, ropeOut, setF, step };
+// QA: GPU time per frame, or of the funnel pass alone, from timer queries.
+// The frame holds px pixels at the canvas's own shape, so runs compare at one size.
+async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
+  const k = Math.sqrt(px / (canvas.clientWidth * canvas.clientHeight));
+  const fw = Math.round(canvas.clientWidth * k), fh = Math.round(canvas.clientHeight * k);
+  // The loop stops while the queries run, so no other frame shares the GPU.
+  const was = env.paused;
+  env.paused = true;
+  await new Promise(r => setTimeout(r, 100));
+  const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  if (!ext) return null;
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const q = gl.createQuery();
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+    if (part === 'pass') funnelPass(fw, fh); else env.draw(fw, fh);
+    gl.endQuery(ext.TIME_ELAPSED_EXT);
+    gl.flush();
+    list.push(q);
+    await new Promise(r => setTimeout(r, 20));
+  }
+  const last = list[list.length - 1];
+  for (let k = 0; k < 200 && !gl.getQueryParameter(last, gl.QUERY_RESULT_AVAILABLE); k++) await new Promise(r => setTimeout(r, 20));
+  env.paused = was;
+  if (gl.getParameter(ext.GPU_DISJOINT_EXT)) return 'disjoint';
+  const ms = list.map(q => gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6).sort((p, q) => p - q);
+  list.forEach(q => gl.deleteQuery(q));
+  return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), max: +ms[n - 1].toFixed(2), size: [fw, fh, fun.w, fun.h] };
+}
+if (qs.has('qa')) window.__qa = { tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

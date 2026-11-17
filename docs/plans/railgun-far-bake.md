@@ -1,5 +1,7 @@
 # Railgun: far ranges, bake and relight
 
+Status: done · Bean: `stimming-75xm`
+
 Bean `stimming-75xm`. Tom, 2026-11-16: "will the mountains benefit from being made into cards or baked landscape vs raymarched? I want elegant and smart performance savings where possible."
 
 ## Finding

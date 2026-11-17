@@ -5,7 +5,7 @@
    to the window, so nothing scrolls sideways. Do not clip on the root: the body would then clip at its
    8 px margin and box the footer's glow. */
 /* The Clock fits the window: the wordmark, the tagline, the gaps and the clock all scale with its height,
-   so the whole clock and its Re-roll show with no scroll. The footer may lie below the fold. */
+   so the whole clock shows with no scroll. The footer may lie below the fold. */
 :root[data-view="clock"] {
   --pad: clamp(14px, 3svh, 44px);
   --gap: clamp(10px, 2.4svh, 30px);
@@ -14,7 +14,7 @@
   --tag: clamp(12px, min(1.6vw, 1.75svh), 17px);
   /* The clock takes the height that is left: the window less the blocks above and below it.
      Below 200 px the page scrolls instead. */
-  --clk: max(200px, min(92vw, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 34px - 20px)));
+  --clk: max(200px, min(92vw, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px)));
 }
 /* Phones: the dial keeps 24 px clear of each edge, so a held toy never meets it.
    The gaps open up, since a phone has height to spare. */
@@ -22,7 +22,7 @@
   :root[data-view="clock"] {
     --pad: clamp(18px, 4svh, 44px);
     --gap: clamp(16px, 3.6svh, 34px);
-    --clk: max(200px, min(100vw - 48px, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 34px - 20px)));
+    --clk: max(200px, min(100vw - 48px, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px)));
   }
 }
 :root[data-view="clock"] .wrap { padding-block-start: var(--pad); gap: var(--gap); }
@@ -40,8 +40,6 @@
 }
 /* The shelf waits out of sight until the script deals the first dozen. */
 :root[data-view="clock"]:not([data-clock]) main > .shelf { visibility: hidden; }
-/* The Re-roll's place is kept from the first paint, so the footer does not jump when it comes. */
-:root[data-view="clock"]:not([data-clock]) main::after { content: ""; height: 34px; }
 :root[data-view="clock"] main > .shelf > li {
   position: absolute; width: 19%; pointer-events: auto;
   left: calc(50% + var(--x, 0) * 40.5% - 9.5%); top: calc(50% + var(--y, 0) * 40.5% - 9.5%);
@@ -97,7 +95,8 @@
 /* The middle: the toy's number, name and motto, over a soft dark plate. */
 .clock-mid {
   position: absolute; inset: 22%; box-sizing: border-box; isolation: isolate; border-radius: 50%;
-  display: grid; place-content: center; justify-items: center; gap: 1.3cqw;
+  /* The name's foot sits on the middle line; the motto hangs below it. */
+  display: grid; grid-template-rows: 1fr 1fr; justify-items: center; column-gap: 0; row-gap: 1.3cqw;
   text-align: center;
   /* The words stay clear over a bright still. */
   text-shadow: 0 1px 14px oklch(0.1 0.012 275 / 0.9), 0 0 3px oklch(0.1 0.012 275 / 0.7);
@@ -115,6 +114,8 @@
 .clock-tube { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 .clock-name, .clock-tag { margin: 0; }
+.clock-name { align-self: end; }
+.clock-tag { align-self: start; }
 /* With no toy in hand the middle is empty: no plate, no picture, no words. */
 .clock-plate, .clock-name, .clock-tag { opacity: 0; transition: opacity 0.5s ease; }
 .clock-face[data-live] :is(.clock-plate, .clock-name, .clock-tag) { opacity: 1; }
@@ -128,18 +129,20 @@
 /* A short hairline parts the name from the motto. */
 .clock-tag::before { content: ""; display: block; width: 22px; height: 1px; margin: 0.4cqw auto 1.5cqw; background: color-mix(in oklch, var(--fg) 40%, transparent); }
 
-/* The Re-roll waits five seconds, then shows under the clock. */
+/* The Re-roll waits five seconds, then shows in the clock, low in the middle.
+   It sits under the motto and over the six o'clock toy; it scales with the face. */
 .clock-roll { display: none; }
 :root[data-view="clock"] .clock-roll {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 9px 16px; border-radius: 999px; cursor: pointer;
+  position: absolute; left: 50%; top: 73%; translate: -50% -50%; z-index: 1;
+  display: inline-flex; align-items: center; gap: max(6px, 1.2cqw); min-height: max(26px, 5cqw); padding: max(6px, 1.3cqw) max(11px, 2.4cqw); border-radius: 999px; cursor: pointer;
   border: 1px solid color-mix(in oklch, var(--fg) 26%, transparent); background: none; color: var(--fg);
-  font: 500 12px/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase;
+  font: 500 clamp(10px, 1.8cqw, 12px)/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
   opacity: 0; pointer-events: none; transition: opacity 0.9s ease, border-color 0.2s ease;
 }
 /* The rule above is strong; this one must name the view too, or the button never shows. */
 :root[data-view="clock"] .clock-roll[data-on] { opacity: 1; pointer-events: auto; }
 .clock-roll:is(:hover, :focus-visible) { border-color: var(--fg); }
-.clock-roll svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.clock-roll svg { width: max(12px, 2.3cqw); height: max(12px, 2.3cqw); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; transition: rotate 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
 .clock-roll svg circle { fill: currentColor; stroke: none; }
 .clock-roll:active svg { rotate: 180deg; }
 

@@ -1,5 +1,7 @@
 # BZ reaction (`bz`) implementation plan
 
+Status: active · Bean: `stimming-e75e`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A petri dish of the Belousov-Zhabotinsky reaction on a lightbox. Touch it to start target rings and spirals that pulse out, collide and wipe each other out.

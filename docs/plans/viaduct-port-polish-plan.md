@@ -1,5 +1,7 @@
 # Night viaduct, Port polish: implementation plan
 
+Status: done · Bean: `stimming-3cmz`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** the Port glows only from real sources, the causeway ends in a lit terminal portal, and the train and the ride camera move smoothly.

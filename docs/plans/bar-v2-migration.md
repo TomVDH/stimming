@@ -1,5 +1,7 @@
 # Bar v2 migration: every toy
 
+Status: active · Bean: `stimming-80dc`
+
 Tom, 2026-11-09: move every toy to Bar v2, five at a time. Be diligent, fix bugs, truly upgrade, and look for diegetic controls.
 Spec: [bar-v2.md](bar-v2.md). Standard: `AGENTS.md`, "Control bar standard". Reference port: `galaxy/index.html`.
 Bean: `stimming-80dc`. One session per toy. The orchestrating session starts the next batch when a batch lands.

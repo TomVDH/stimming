@@ -1,5 +1,7 @@
 # Bar v2: the Corners shell
 
+Status: done · Bean: `stimming-tbpn`
+
 Spec. Tom approved the design on 2026-11-08. Bean: `stimming-tbpn`.
 It replaces the control bar standard of 2026-11-03 in `AGENTS.md` and bean `stimming-848s`.
 Mockups: the brainstorm screens `layout-v2`, `onscreen`, `settings` and `phone` (Corners, Keys, Drop sheet, Corners stay).

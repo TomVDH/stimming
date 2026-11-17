@@ -1,5 +1,7 @@
 # Chocolate tempering (`chocolate`) implementation plan
 
+Status: done · Bean: `stimming-kzm6`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Temper chocolate by hand on a cold slab of Belgian black marble. Get the temperature curve right and it sets to a mirror with a clean snap. Get it wrong and it sets dull, grey and streaky, and crumbles.

@@ -27,6 +27,16 @@ A section with nothing to say keeps its heading and says "None."
 Two or three sentences: what the toy is and what a hand does with it.
 Say what makes it this toy, not what every toy does.
 
+## Rules
+
+Rules an agent must follow when working on this toy. One rule per line.
+State each rule as it stands. "None." if the toy has none.
+
+## Direction
+
+Tom's art direction for the toy: the look, the framing, the motion, and what is out.
+State each point as it stands. "None." if there is none.
+
 ## Controls
 
 <!-- gen:bar -->

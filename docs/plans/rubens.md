@@ -1,5 +1,7 @@
 # Rubens tube (`rubens`) implementation plan
 
+Status: active · Bean: `stimming-eaj6`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A long pipe lies in a dark room with a row of gas flames along its top. A speaker at one end plays the tone you choose. The flames follow the standing wave in the pipe: nodes dip and antinodes leap.

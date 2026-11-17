@@ -1,5 +1,7 @@
 # Railgun clouds and storms: an outside review
 
+Status: done · Bean: `stimming-5yhc`
+
 > Bean `stimming-5yhc` (spike, under `stimming-626s`). 2026-11-16. Read-only: no code changed.
 > Stills: `docs/qa/railgun-clouds-review/`. Method at the end.
 

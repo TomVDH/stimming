@@ -1,5 +1,7 @@
 # Marsh launch (`launch`) implementation plan
 
+Status: done · Bean: `stimming-4wu3`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Dawn over a reed marsh. Tap to launch a rocket from the far shore. Its light crosses the marsh at once; its roar arrives seconds later and lifts the birds from the reeds. High up, its plume catches the sun before the ground does.

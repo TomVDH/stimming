@@ -1,5 +1,7 @@
 # Railgun (`railgun`) implementation plan
 
+Status: done · Bean: `stimming-f793`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task, in its feature worktree. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A colossal old railgun stands on a pylon over a dusty plain under a low sun, seen from 2.6 km in one locked-off shot. The flats run open to the horizon with a few far mesas; long cirrus hangs over them. Far beyond the muzzle a burning asteroid falls head-on along its own smoke train, minutes out. Hold to charge: lightning crackles over the barrel, dust lifts, the ground shakes, and it all grows the longer you hold. Release: a muzzle blast with shock rings, a bolt that foreshortens to a spark as it crosses the sky for seconds, a fireball with shock shells that lights the plain, a fresh rock.

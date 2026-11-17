@@ -1,6 +1,8 @@
 # Railgun: names for the sky, the air and every volume
 
-Status: in use (2026-11-16, bean `stimming-626s`).
+Status: active · Bean: `stimming-626s`
+
+In use (2026-11-16).
 One name per effect. Chats, beans, Dev rows and code comments use the name in **bold**.
 Code handles stay as they are: five sessions share `railgun/index.html`, so a rename waits for a quiet day.
 
