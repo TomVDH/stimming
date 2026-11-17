@@ -110,3 +110,9 @@ Also in the shell, from the subagents' reports:
 - An action button shows the HTML of its Bar v2 chip's label when the toy rewrites it (Pendulum wave's pattern glyph, TV tree's "Lights out" and "Lights on").
 
 Open: Googly eyes and Prism, of the first ten, still measure Bar v2 parts; they move to `ui.cover()` next. The lab's copy of the builder has none of the fixes since the port.
+
+## Tom's rulings of 2026-11-17, afternoon
+
+- "Yes, run it": the rollout plan (`docs/plans/bar-v3-rollout.md`) with its four decisions.
+- "SIGNAL IS THE NEW DEFAULT AND WILL NOT BE A SWITCH -- afer we're done we're pulling out ALL legacy bars". This replaces "we will pull out bar v2 when we have signed off barv3 per toy". The flag goes at the end of lane 1; the pull-out is the plan's last stage.
+- "Yes, merge now": PR 72 merged into `main` as commit 8513a3fb (the shell and the first 30 toys). The Drone chat had relayed the wish; the merge waited for Tom's word in this chat.

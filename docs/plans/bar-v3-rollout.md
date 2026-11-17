@@ -1,6 +1,8 @@
 # Bar v3 rollout: every toy onto the new bar, with its copy
 
-Status: proposed, 2026-11-17. Tom asked for it: "make a plan please so integration is easy".
+Status: in progress, 2026-11-17. Tom asked for it ("make a plan please so integration is easy") and ruled "Yes, run it" on its four decisions.
+Tom, 2026-11-17, later the same day: "SIGNAL IS THE NEW DEFAULT AND WILL NOT BE A SWITCH -- afer we're done we're pulling out ALL legacy bars". The last stage below follows from it.
+PR 72 (the shell and the first 30 toys) is on `main`: merge commit 8513a3fb, on Tom's "Yes, merge now".
 Beans: `stimming-a5rs` (the epic), `stimming-hvtr` (the shell). Spec of the bar: `docs/plans/bar-v3.md`.
 
 ## The aim
@@ -87,6 +89,12 @@ Order:
 2. The 38 toys with no flagged pattern, in the order of `toys.json`.
 3. The 19 toys with a flagged pattern.
 
+### The last stage: Signal by default, then the pull-out
+
+1. **The default.** A toy with a bar spec gets Bar v3 with no flag. The shell's default flips, and a script takes `signal: true` out of every toy. This is the end of lane 1.
+2. **The pull-out**, when lane 2 is done and Tom has looked. Bar v3 draws on the hidden parts of Bar v2 today and acts through its handles. So first Bar v3 takes over the handles, the key binding and the stored values; then the Bar v2 builder, its styles and its test page go, and with them the Classic pages' old bar. It is one piece of shell work, with its own bean and its own review.
+3. Until the pull-out, `?bar=v2` stays as a test switch only. A toy's code need not serve the old bar.
+
 ## Time and cost
 
 | | Before | With this plan |
@@ -134,7 +142,7 @@ A merge to `main` publishes the site. Tom says when.
 |---|---|---|
 | 1 | May a run apply the rows that follow the word rules with no wait? | Yes. Tom approved 25 of 25 proposals; his one change was "Keep Yours". |
 | 2 | A list that a toy asked to show as a stepper | Keep Bar v3's button and sheet of tiles. |
-| 3 | When PR 72 lands | After lane 1 and Tom's look. |
+| 3 | When PR 72 lands | Done: merged on 2026-11-17 on Tom's word, before lane 1 was in. The 57 toys of lane 1 follow in the next request. |
 | 4 | The 26 toys with no bar spec | Outside this plan. Each needs a port to a bar spec first. |
 
 ## Risks

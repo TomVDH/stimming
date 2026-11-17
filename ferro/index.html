@@ -22,7 +22,7 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
 <style>
-/* Ferrofluid: the dish fills the stage under the Bar v2 corners. */
+/* Ferrofluid: the canvas fills the stage; the dish stays above the bar. */
 :root { --stage: oklch(0.185 0.006 265); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -34,13 +34,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/ferro.svg)"></span><span class="intro-name">Ferrofluid</span><span class="intro-sub">Stimming No. 09</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/ferro.svg)"></span><span class="intro-name">Ferrofluid</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D 1 2 3 4 - =" aria-label="A dish of ferrofluid. The pointer holds a faint glow above it, which acts as a magnet; scrolling or pinching sets the field strength, and holding charges the field and lifts drops up to it. Arrow keys move the glow, minus and equals set the strength, Space toggles a full field, Escape lifts it away, D lets a drop fall, 1 to 4 pick the fluid.">
-      <p class="fail" hidden>Ferrofluid needs WebGL, which this browser has turned off.</p>
+    <div class="stage stage--ferro pool" id="pool" tabindex="0" role="application" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Space Escape D 1 2 3 4 - =" aria-label="A dish of ferrofluid. A faint glow hangs above the dish. The glow is a magnet. Move the pointer to move the glow. Hold to charge the field. The charged field lifts drops to the glow. Scroll to change the field. Press the arrow keys to move the glow. Press plus and minus to change the field. Press Space to switch the full field on and off. Press Escape to remove the glow. Press D to add a drop. Press 1 to 4 to change the fluid.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Ferrofluid</h1><div class="vignette" hidden></div></section>
@@ -54,7 +54,7 @@ const FLUID_KEY = 'stimming.ferro.fluid';
 let fluidNow = 'ink';
 try { const v = localStorage.getItem(FLUID_KEY); if (['ink', 'alien', 'magma', 'oil'].includes(v)) fluidNow = v; } catch (err) { /* storage is optional */ }
 // Each fluid's dot shows its glow; Oil shows its film.
-const ui = initPage({ id: 'ferro', signal: true, bar: {
+const ui = initPage({ id: 'ferro', bar: {
   choice: { label: 'Fluid', value: fluidNow,
     options: [
       { value: 'ink', label: 'Ink', key: '1', dot: 'oklch(0.86 0.09 215)' },
@@ -70,7 +70,11 @@ const ui = initPage({ id: 'ferro', signal: true, bar: {
   slider: { label: 'Field', min: 0.5, max: 1.7, step: 0.01, value: 1, onInput: v => setDial(v) },
   actions: [{ verb: 'drip', label: 'Drip', key: 'D', onPress: () => drip() }],
   quality: true,
-  keys: [['hover', 'move the glow'], ['hold + drag', 'charge, lift drops'], ['scroll', 'field strength'], ['space', 'full field']],
+  keys: [['move', 'move the glow'], ['hold', 'charge the field'], ['scroll', 'change the field'], ['space', 'switch the full field on and off']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['move', 'Move the glow'], ['hold', 'Charge the field'], ['hold + drag', 'Move the drops'], ['release', 'Release the drops'],
+    ['scroll', 'Change the field'], ['← → ↑ ↓', 'Move the glow'], ['+ -', 'Change the field'], ['space', 'Switch the full field on and off'],
+    ['esc', 'Remove the glow'], ['D', 'Add a drop'], ['1 2 3 4', 'Change the fluid']],
 } });
 const panel = document.getElementById('pool');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -1012,12 +1016,18 @@ for (let k = 0; k < 64; k++) {
 // The magnet's top stays in frame over most of the dish.
 // Near the back rim the frame can cut its top.
 for (let z = -0.55; z <= 0.951; z += 0.05) FIT.push([0, hoverY(0, z) + DIP * (HOVER - DMIN) + MH + 0.01, z - MR]);
+// The last fit's foot strip shows if a bar change needs a refit.
+let foot = 0;
 function fitCamera(w, h) {
   const port = w / h < 1.1, el = ((port ? 45 : 32) * Math.PI) / 180;
   camera.aspect = w / h;
   camera.fov = port ? 32 : 27;
   camera.updateProjectionMatrix();
   const mxN = port ? 0.97 : 0.94, myN = port ? 0.92 : 0.93;
+  // The dish fits the band above the bar's strip at the foot.
+  foot = ui.cover().bottom;
+  // A tall bar on a short stage takes 40% at most.
+  const lift = Math.min(foot / h, 0.4);
   let off = 0, d = 5;
   // The target slides along the camera's up vector to centre the dish.
   const place = () => {
@@ -1042,12 +1052,13 @@ function fitCamera(w, h) {
       d = (lo + hi) / 2;
       place();
       const [x1, y0, y1] = box();
-      if (Math.max(x1 / mxN, (y1 - y0) / 2 / myN) > 1) lo = d; else hi = d;
+      if (Math.max(x1 / mxN, (y1 - y0) / 2 / (myN * (1 - lift))) > 1) lo = d; else hi = d;
     }
     d = hi;
     place();
     const [, y0, y1] = box();
-    off += ((y0 + y1) / 2) * d * Math.tan((camera.fov * Math.PI) / 360);
+    // The band's centre sits above the stage's centre by the lift.
+    off += ((y0 + y1) / 2 - lift) * d * Math.tan((camera.fov * Math.PI) / 360);
   }
   place();
 }
@@ -1381,8 +1392,10 @@ function setFluid(name) {
   if (ready) { draw(); wake(); }
 }
 /* ---------- start: WebGL setup in idle slices ---------- */
+// Only the logo and the name stay beside the fail line.
 function failed() {
   panel.querySelector('.fail').hidden = false;
+  ui.hideControls();
 }
 async function start() {
   let RoomEnvironment;
@@ -1590,6 +1603,14 @@ async function start() {
     if (ready) { draw(); wake(); }
   }, 1.4e6);
   if (!panel.clientWidth) fitCamera(16, 9);
+  // A bar that arrives, wraps or moves refits the camera.
+  ui.onCover(() => {
+    const w = panel.clientWidth, h = panel.clientHeight;
+    // A plain resize already has its fit from the renderer.
+    if (!w || !h || ui.cover().bottom === foot) return;
+    fitCamera(w, h);
+    if (ready) { draw(); wake(); }
+  });
   await idle();
   // Async compile keeps the shader build off the main thread.
   await renderer.compileAsync(scene, camera);

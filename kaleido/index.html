@@ -13,7 +13,7 @@
 <link rel="modulepreload" href="../shared/intro.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <style>
-/* Kaleidoscope: the barrel view in the Bar v2 shell. */
+/* Kaleidoscope: the barrel view in the shared shell. */
 :root { --stage: #000; }
 .stage { cursor: grab; }
 .stage.held { cursor: grabbing; }
@@ -30,14 +30,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/kaleido.svg)"></span><span class="intro-name">Kaleidoscope</span><span class="intro-sub">Stimming No. 08</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/kaleido.svg)"></span><span class="intro-name">Kaleidoscope</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--kaleido" id="stage" tabindex="0" role="application" aria-label="A kaleidoscope full of coloured glass. Drag to turn the barrel or flick to spin it; arrow keys turn it and Space shakes the glass.">
+    <div class="stage stage--kaleido" id="stage" tabindex="0" role="application" aria-label="A kaleidoscope full of coloured glass. Drag to turn the barrel. Drag fast to spin it. Click to stop it. Press the arrow keys to turn it. Press Space to shake the glass. Press S to shuffle the glass.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Kaleidoscope needs WebGL 2, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Kaleidoscope</h1>
@@ -45,7 +45,7 @@
       <div>
         <h2>Two mirrors and a handful of glass</h2>
         <p>David Brewster, a Scottish physicist, built the first kaleidoscope in 1816 while he studied how mirrors bend light. He named it from the Greek words for beautiful, form and look. Copies sold by the hundred thousand within months, but a flaw in his patent let anyone make them, and he earned little.</p>
-        <p>Two mirrors meet at an angle that divides the circle evenly. At 60 degrees, the glass in one wedge shows six times. Each copy is the mirror image of the one beside it, so the edges always match. <em>12</em> closes the angle to 30 degrees. <em>Tri</em> adds a third mirror: three mirrors in a triangle never close the loop, so the images run on to the edge.</p>
+        <p>Two mirrors meet at an angle that divides the circle evenly. At 60 degrees, the glass in one wedge shows six times. Each copy is the mirror image of the one beside it, so the edges always match. <em>12</em> closes the angle to 30 degrees. <em>Triangle</em> adds a third mirror: three mirrors in a triangle never close the loop, so the images run on to the edge.</p>
       </div>
       <figure>
         <svg viewBox="-110 -110 220 220" role="img" aria-label="A round rosette of coloured glass. Two dark lines from the centre mark the mirrors around one wedge; the other five wedges repeat it, each flipped against its neighbour.">
@@ -83,15 +83,18 @@
 <script type="module">
 import { initPage, sound, quality, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
 stage('libs');
-// Mirrors 6 and 12 set the sector count; Tri sets it to 0.
+// Mirrors 6 and 12 set the sector count; Triangle sets it to 0.
 const MIRRORS = { 6: 6, 12: 12, tri: 0 };
-const ui = initPage({ id: 'kaleido', signal: true, bar: {
+const ui = initPage({ id: 'kaleido', bar: {
   choice: { label: 'Mirrors', value: '6',
-    options: [{ value: '6', label: '6' }, { value: '12', label: '12' }, { value: 'tri', label: 'Tri' }],
+    options: [{ value: '6', label: '6' }, { value: '12', label: '12' }, { value: 'tri', label: 'Triangle' }],
     onPick: v => { setN(MIRRORS[v]); panel.focus({ preventScroll: true }); } },
   actions: [{ verb: 'shuffle', key: 'S', onPress: () => pour() }],
   quality: true,
-  keys: [['drag', 'turn'], ['swipe', 'spin'], ['space', 'shake'], ['arrows', 'turn']],
+  keys: [['drag', 'turn the barrel'], ['drag fast', 'spin the barrel'], ['space', 'shake the glass'], ['← → ↑ ↓', 'turn the barrel']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Turn the barrel'], ['drag fast', 'Spin the barrel'], ['click', 'Stop the barrel'], ['move', 'Show the mirrors'],
+    ['← → ↑ ↓', 'Turn the barrel'], ['space', 'Shake the glass'], ['S', 'Shuffle the glass']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -877,7 +880,7 @@ uniform vec2 uApex, uHov, uPtr;
 uniform float uTheta, uRho, uMix, uLod;
 out vec4 o;
 const float TAU = 6.28318531;
-// The Tri triangle: inradius and height in view units.
+// The Triangle mode's triangle: inradius and height in view units.
 const float TRI_RI = 0.17, TRI_H = 3.0 * TRI_RI;
 // Its glass patch sits on the heap, inside the drum wall.
 const float TRI_CELL = 0.4, TRI_AT = 3.3;
@@ -938,7 +941,7 @@ vec3 tri(vec2 q) {
   // Far images pass more mirrors, so they dim a little.
   return shade(uApex * TRI_AT + v, v * 0.02) * max(pow(0.985, hops), 0.6);
 }
-// One mode's image: n is the sector count, or 0 for Tri.
+// One mode's image: n is the sector count, or 0 for Triangle.
 vec3 look(vec2 q, float r, float n) {
   bool t = n < 0.5;
   if (!t && r >= 1.03) return vec3(0.0);
@@ -950,7 +953,7 @@ vec3 look(vec2 q, float r, float n) {
   float l = dot(k, vec3(0.2126, 0.7152, 0.0722));
   k = max(mix(vec3(l), k, 1.15), 0.0);
   k = 1.0 - exp(-k * 1.25);
-  // Tri fills the stage edge to edge.
+  // Triangle fills the stage edge to edge.
   if (t) return k;
   // Each channel tapers to black on its own radius, so the fade fringes.
   vec3 rc = r * vec3(0.975, 1.0, 1.025);
@@ -1063,11 +1066,16 @@ function aimApex() {
   AIM[1] = (sy / d) * REACH;
 }
 let W = 0, H = 0, RV = 1, pr = 1, cellDirty = true, rect = null;
+// UP lifts the view centre above the stage centre, in CSS pixels.
+let UP = 0;
 function fit() {
   const w = panel.clientWidth, h = panel.clientHeight;
   if (!w || !h) return;
   W = w; H = h; rect = null;
-  RV = 0.475 * Math.min(w, h);
+  // The disc keeps clear of the bar at the foot of the stage.
+  const foot = Math.min(ui.cover().bottom, h / 2), moved = foot !== 2 * UP;
+  UP = foot / 2;
+  RV = 0.475 * Math.min(w, h - foot);
   const p = pixelRatio(w, h, { maxDpr: 2, budget: 1.4e6, low: lowDpr });
   const cw = Math.round(w * p), ch = Math.round(h * p);
   pr = cw / w;
@@ -1077,7 +1085,7 @@ function fit() {
   if (cell.width !== S) { cell.width = cell.height = S; cellDirty = true; }
   const grew = canvas.width !== cw || canvas.height !== ch;
   if (grew) { canvas.width = cw; canvas.height = ch; }
-  if (ready && (grew || cellDirty)) render();
+  if (ready && (grew || cellDirty || moved)) render();
 }
 
 /* ---------- drawing ---------- */
@@ -1086,7 +1094,7 @@ let theta = 0, nOld = 6, nNew = 6, mixT = 1;
 // a: pointer angle; x, y: pointer in view units; s: shown strength; t: target; k: zone.
 const hov = { a: 0, x: 0, y: 0, s: 0, t: 0, k: -1 };
 const wedge = a => Math.floor(((((a - theta) % TAU) + TAU) % TAU) / (TAU / nNew));
-// Tri mirrors match the shader: three edge normals, inradius and height.
+// The Triangle mirrors match the shader: three edge normals, inradius and height.
 const TRI_RI = 0.17, TRI_E = [[0, -1], [0.8660254, 0.5], [-0.8660254, 0.5]];
 function triangle(x, y) {
   const co = Math.cos(theta), si = Math.sin(theta), px = co * x + si * y, py = co * y - si * x;
@@ -1113,7 +1121,7 @@ function render() {
   gl.useProgram(prog.p);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.uniform3f(U.uView, cw / 2, ch / 2, RV * pr);
+  gl.uniform3f(U.uView, cw / 2, ch / 2 + UP * pr, RV * pr);
   gl.uniform2f(U.uN, nOld, nNew);
   gl.uniform1f(U.uTheta, theta);
   gl.uniform1f(U.uRho, RHO);
@@ -1195,7 +1203,7 @@ addEventListener('scroll', () => { rect = null; }, { passive: true });
 // Pointer position from the view centre, in CSS pixels, y up.
 function local(e) {
   const r = rect || (rect = panel.getBoundingClientRect());
-  return [e.clientX - r.left - W / 2, r.top + H / 2 - e.clientY];
+  return [e.clientX - r.left - W / 2, r.top + H / 2 - UP - e.clientY];
 }
 // Near the centre, a sideways drag turns the barrel's top edge.
 function turnBy(x, y, dx, dy) {
@@ -1360,6 +1368,8 @@ async function boot() {
   stage('first-frame');
   requestAnimationFrame(() => canvas.classList.add('on'));
   new ResizeObserver(fit).observe(panel);
+  // Bar v3 mounts after the first fit, and a bar can wrap.
+  ui.onCover(fit);
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); }).observe(panel);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
   spin = intro;

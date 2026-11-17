@@ -24,7 +24,7 @@
 .stage { cursor: ns-resize; }
 
 /* ---------- the rail: a cut slot, a notch per pattern, a solid cap ---------- */
-/* The rail runs between the shell's right-hand corners. */
+/* The rail's two ends keep clear of the bar. */
 .rail {
   position: absolute; z-index: 1; right: 14px; top: var(--rail-top, 64px); bottom: var(--rail-bot, 28px); width: 44px;
   cursor: grab; touch-action: none; -webkit-tap-highlight-color: transparent;
@@ -65,15 +65,15 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/chladni.svg)"></span><span class="intro-name">Chladni plate</span><span class="intro-sub">Stimming No. 15</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/chladni.svg)"></span><span class="intro-name">Chladni plate</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A sand-covered steel plate: drag up or down, or slide the cap on the rail, to tune it, and tap to toss sand. Arrow keys step between patterns, S picks a random pattern, Space spreads the sand again and Enter tosses it.">
+    <div class="stage stage--chladni" id="stage" tabindex="0" role="application" aria-label="A steel plate covered in sand. Drag up or down to tune the plate. Drag the cap on the rail to tune the plate. Click the rail to select a pattern. Click the plate to toss the sand. Press the arrow keys to select the next pattern. Press S to shuffle the pattern. Press Space to scatter the sand. Press Enter to toss the sand.">
       <canvas aria-hidden="true"></canvas>
       <div class="rail" id="rail" role="slider" tabindex="0" aria-label="Pitch" aria-orientation="vertical"><output aria-hidden="true"></output><b></b></div>
-      <p class="fail" hidden>Chladni plate needs WebGL 2 with float textures, which this browser lacks.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2 with float targets.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Chladni plate</h1><div class="vignette" hidden></div></section>
@@ -82,17 +82,19 @@
 <script type="module">
 import { initPage, sound, pixelRatio, onQuality, stage, idle } from '../shared/stim.js';
 stage('libs');
-const ui = initPage({ id: 'chladni', signal: true, bar: {
+const ui = initPage({ id: 'chladni', bar: {
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => { if (ready) shuffle(); } },
-    // Reset pours fresh sand over the plate.
-    { verb: 'reset', key: 'Space', onPress: () => { if (ready) scatter(); } },
+    // Scatter pours fresh sand over the plate; the pitch stays.
+    { verb: 'reset', label: 'Scatter', key: 'Space', onPress: () => { if (ready) scatter(); } },
   ],
   quality: true,
-  keys: [['drag', 'tune'], ['click', 'toss sand'], ['drag rail', 'ring'], ['arrows', 'next pattern']],
+  keys: [['drag', 'tune the plate'], ['click', 'toss the sand'], ['click rail', 'select a pattern'], ['← → ↑ ↓', 'select the next pattern']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Tune the plate'], ['drag rail', 'Tune the plate'], ['click rail', 'Select a pattern'], ['click', 'Toss the sand'],
+    ['← → ↑ ↓', 'Select the next pattern'], ['enter', 'Toss the sand'], ['S', 'Shuffle the pattern'], ['space', 'Scatter the sand']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas'), rail = document.getElementById('rail');
-const shell = panel.parentElement.querySelector('.stim-ui');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
@@ -894,23 +896,17 @@ function seed() {
 /* ---------- camera ---------- */
 let W = 0, H = 0, pr = 1, cw = 0, ch = 0, lowDpr = false;
 let VP = null, INV = null, EYE = [0, -2, 2], refW = 1, plateW = 1, drawN = N;
-// The shell's corners in stage pixels; offsets ignore the entrance slide.
-// top and bot span the whole width; tr and br hold the right-hand lane.
+// The bar's boxes in stage pixels, from the shell.
+// top and bot span the whole width; tr and br hold the rail's lane.
+let bar = { top: 0, bot: 0, tr: 0, br: 0 };
 function corners() {
-  const c = { top: 0, bot: 0, tr: 0, br: 0 };
-  if (!shell) return c;
-  const SW = shell.clientWidth, SH = shell.clientHeight, lane = SW - 72;
-  for (const el of shell.children) {
-    if (!el.offsetParent || !el.offsetHeight) continue;
-    const cls = el.className, t = el.offsetTop, b = t + el.offsetHeight;
-    const right = el.offsetLeft + el.offsetWidth > lane;
-    if (/^s2-t[lr]$/.test(cls)) { c.top = Math.max(c.top, b); if (right) c.tr = Math.max(c.tr, b); }
-    else if (/^s2-b[lr]$/.test(cls)) { c.bot = Math.max(c.bot, SH - t); if (right) c.br = Math.max(c.br, SH - t); }
-    // The key strip counts only where it reaches the rail's lane.
-    // Its offset ignores the centring transform, so it adds half its width.
-    else if (/^s2-keys/.test(cls) && el.offsetLeft + el.offsetWidth / 2 > lane) c.br = Math.max(c.br, SH - t);
+  const c = ui.cover(), lane = W - 72, out = { top: c.top, bot: c.bottom, tr: 0, br: 0 };
+  for (const r of c.rects) {
+    if (r.x1 <= lane) continue;
+    if ((r.y0 + r.y1) / 2 < H / 2) out.tr = Math.max(out.tr, r.y1);
+    else out.br = Math.max(out.br, H - r.y0);
   }
-  return c;
+  return out;
 }
 function camera() {
   const A = cw / ch, deg = lerp(20, 50, sstep(0.75, 1.78, A)), tilt = deg * D2R, dist = 3.2, tgt = [0, 0.02, -0.02];
@@ -925,10 +921,10 @@ function camera() {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
   // The rail keeps a lane on the right, under its readout.
-  const cn = corners();
+  const cn = bar = corners();
   rail.style.setProperty('--rail-top', `${Math.max(cn.tr, 12) + 52}px`);
   rail.style.setProperty('--rail-bot', `${Math.max(cn.br, 12) + 16}px`);
-  // The plate sits clear of every corner.
+  // The plate sits clear of the bar's top and foot strips.
   const mL = (2 * 16) / W, mR = (2 * (W < 560 ? 60 : 76)) / W, myTop = (2 * (cn.top + 10)) / H, myBot = (2 * (cn.bot + 12)) / H;
   const k = Math.min((2 - mL - mR) / (x1 - x0), (2 - myTop - myBot) / (y1 - y0));
   const ox = (mL - mR) / 2 - k * (x0 + x1) / 2, oy = (myBot - myTop) / 2 - k * (y0 + y1) / 2;
@@ -1246,6 +1242,7 @@ function failed() {
   panel.querySelector('.fail').hidden = false;
   panel.style.cursor = 'default';
   rail.hidden = true;
+  ui.hideControls();
   ['shuffle', 'reset'].forEach(v => { const a = ui.action?.(v); if (a) a.disabled = true; });
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; pause(); });
@@ -1273,11 +1270,11 @@ async function boot() {
   requestAnimationFrame(() => { canvas.classList.add('on'); stage('first-frame'); });
   const ro = new ResizeObserver(fit);
   ro.observe(panel);
-  // The plate and the rail follow the shell when it refits.
-  if (shell) {
-    [...shell.children].forEach(el => ro.observe(el));
-    new MutationObserver(fit).observe(shell.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
-  }
+  // Bar v3 mounts late and can wrap; new boxes refit the plate and the rail.
+  ui.onCover(() => {
+    const c = corners();
+    if (c.top !== bar.top || c.bot !== bar.bot || c.tr !== bar.tr || c.br !== bar.br) fit();
+  });
   // A new quality choice clears the slow-frame step.
   onQuality(() => { lowDpr = false; slow = 0; fit(); });
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; if (onScreen) wake(); else pause(); }).observe(panel);

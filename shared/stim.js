@@ -177,7 +177,7 @@ function fitStage() {
  * @returns {{ sound: typeof sound } & Partial<BarUI>}
  */
 /** @param {InitOptions} options */
-export function initPage({ id, silent = false, home = '../index.html', bar = null, signal = false }) {
+export function initPage({ id, silent = false, home = '../index.html', bar = null }) {
   const stage = bar && /** @type {HTMLElement | null} */ (document.querySelector('.stage'));
   const ui = stage ? buildBar(stage, bar, { id, home }) : null;
   const shell = document.querySelector('header[data-shell]');
@@ -196,10 +196,10 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
     toysData().then(toys => ui.applyToy(toys ? toys[id] : null));
     // ?qa hands the bar's handles to a test script.
     if (new URLSearchParams(location.search).has('qa')) /** @type {any} */ (globalThis).__stimUI = ui;
-    // A toy that opts in gets the Signal bar; it draws over Bar v2, which still builds.
-    // ?bar=signal and ?bar=v2 pick one for a side-by-side check.
-    const want = new URLSearchParams(location.search).get('bar');
-    if (want === 'signal' || (signal && want !== 'v2')) {
+    // Bar v3, the Signal bar, is the bar of every toy (Tom, 2026-11-17).
+    // It draws over Bar v2, which still builds until the pull-out.
+    // ?bar=v2 shows the old bar, for a test.
+    if (new URLSearchParams(location.search).get('bar') !== 'v2') {
       document.documentElement.classList.add('stim-signal');
       // The address is built here, so a strict TypeScript toy does not pull the module into its own check.
       // A module that does not load gives the stage back to Bar v2.
@@ -227,7 +227,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {boolean} [silent] Hides the sound button.
  * @property {string} [home] The menu address for the back link.
  * @property {BarSpec | null} [bar] Bar v2 spec; without it the page keeps the v1 header.
- * @property {boolean} [signal] Draws the Signal bar over Bar v2 (shared/signal.js). It needs a bar spec.
+ * @property {boolean} [signal] Not read: Bar v3 is the default. A toy does not set it.
  */
 /**
  * One Bar v2 spec: every control the shell builds over the stage.

@@ -57,6 +57,11 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - After a mouse or touch press on the bar, focus returns to the stage, so the toy's keys act. A sheet closed by key returns focus to its button.
 - An action button follows its Bar v2 chip: hidden, disabled, `aria-pressed`, and the HTML of its label when the toy rewrites it.
 
+## Signal is the default (Tom, 2026-11-17)
+
+Tom: "SIGNAL IS THE NEW DEFAULT AND WILL NOT BE A SWITCH -- afer we're done we're pulling out ALL legacy bars".
+A toy with a bar spec gets Bar v3; it sets no flag. `?bar=v2` is a test switch until the old bar is pulled out. The pull-out is the last stage of `docs/plans/bar-v3-rollout.md`.
+
 ## Where the bar stands: `ui.cover()`
 
 A toy that keeps its picture clear of the bar asks the shell; it never measures bar parts by itself.

@@ -35,15 +35,15 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true" data-done>
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/walker.svg)"></span><span class="intro-name">Beach walker</span><span class="intro-sub">Stimming No. 20</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/walker.svg)"></span><span class="intro-name">Beach walker</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A many-legged walker on a beach, seen from the side. Drag across the stage to blow wind and it strides with the wind. Drag the crank hub to turn it by hand. The breeze blows on its own and sometimes dies down. The arrow keys blow gusts, V switches wide and close views and R resets.">
+    <div class="stage stage--walker" id="stage" tabindex="0" role="application" aria-label="A walker with many legs on a beach. A breeze blows by itself. The walker strides with the wind. Drag across the stage to blow a gust of wind. Click to blow a puff of wind. Drag the crank hub to turn the crank. Hold the left or right arrow key to blow a steady wind. Press V to switch the close-up on and off. Press R to reset the toy.">
       <canvas class="sky" aria-hidden="true"></canvas>
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Beach walker needs canvas drawing, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs the 2D canvas.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -384,15 +384,18 @@ const SUN = [0.95, 0.08, 92], CLOUD = [0.24, 0.07, 310], LAND = [0.17, 0.04, 300
 // Cloud bars: start and end in widths, height in horizon units, thickness in pixels.
 const CLOUDS = [[0.04, 0.42, 0.3, 3], [0.38, 0.97, 0.45, 2], [0.5, 0.86, 0.7, 4], [0.1, 0.36, 0.78, 2.5], [0.44, 0.7, 0.88, 2]];
 const PRINT = css([0.14, 0.03, 295]);
+// The feet stand 8 px above the bar, and 64 px above the foot at least.
+const footRoom = () => Math.max(64, ui.cover().bottom + 8);
+let foot = 64;
 function fit() {
   const r = fitCanvas(canvas, { budget: 2.6e6 });
   w = r.w; h = r.h; dpr = r.dpr;
   wc.width = bg.width = r.W; wc.height = bg.height = r.H;
   // The walker stays small in a wide, empty scene.
   s = Math.max(0.2, Math.min(h / 680, w / 520));
-  // The feet stay above the bottom row of controls.
-  trackY = Math.round(clamp(h * 0.85, h * 0.5, h - 64));
-  // Close view: the horizon crosses the body; the legs stand on wet sand.
+  foot = footRoom();
+  trackY = Math.round(clamp(h * 0.85, h * 0.5, h - foot));
+  // Close-up: the horizon crosses the body; the legs stand on wet sand.
   horClose = Math.max(20, Math.round(trackY - Math.max(96 * s, h * 0.2)));
   // A long lens: a large sun, low over the sea, behind the walker.
   focalClose = 2.2 * Math.max(w, h);
@@ -1919,21 +1922,22 @@ canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', () => { if (!mode && hubHover) { hubHover = false; canvas.classList.remove('grab'); if (!raf) draw(); } });
 
 /* ---------- controls ---------- */
-// Time walks eight looks: five hours of the day, then three other worlds.
+// Time of day holds eight looks: five hours of the day, then three other worlds.
 const TIMES = [['0', 'Noon'], ['0.3', 'Golden hour'], ['0.6', 'Sunset'], ['0.8', 'Dusk'], ['1', 'Night'],
   ['end', 'End of the world'], ['alien', 'Alien night'], ['hole', 'Black hole']];
 const lookOf = v => WORLDS[v] ?? todLook(Number(v));
 // The flat 2D scene has no time of day and no camera move.
 const savedTime = sea && TIMES.some(([v]) => v === store.get(TIME_KEY)) ? store.get(TIME_KEY) : '0.6';
-const ui = initPage({ id: 'walker', signal: true, bar: {
-  choice: sea ? { label: 'Time', display: 'stepper', value: savedTime,
-    options: TIMES.map(([value, label]) => ({ value, label })), onPick: v => pickTime(v) } : null,
-  // Close swaps the far wide shot for the near one.
-  actions: sea ? [{ verb: 'close', label: 'Close', key: 'V', onPress: () => setWide(viewTo === 0) }] : [],
+const ui = initPage({ id: 'walker', bar: {
+  // The three worlds stand under their own heading in the list.
+  choice: sea ? { label: 'Time of day', display: 'stepper', value: savedTime,
+    options: TIMES.map(([value, label]) => ({ value, label, ...(WORLDS[value] && { group: 'Other worlds' }) })), onPick: v => pickTime(v) } : null,
+  // Close-up swaps the far wide shot for the near one.
+  actions: sea ? [{ verb: 'close', label: 'Close-up', key: 'V', onPress: () => setWide(viewTo === 0) }] : [],
   settings: [
     { type: 'choice', id: 'legs', label: 'Legs', value: '6', persist: true,
       options: [{ value: '4', label: '8' }, { value: '6', label: '12' }], onPick: v => { build(+v); draw(); wake(); } },
-    ...(sea ? [{ type: 'toggle', id: 'cycle', label: 'Cycle the day', value: false, persist: true, onToggle: on => setCycle(on) }] : []),
+    ...(sea ? [{ type: 'toggle', id: 'cycle', label: 'Day cycle', value: false, persist: true, onToggle: on => setCycle(on) }] : []),
   ],
   reset: () => reset(),
   quality: true,

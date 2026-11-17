@@ -33,7 +33,7 @@
 import { initPage, sound, onQuality, pixelRatio, stage, idle, oklchLinear } from '../shared/stim.js';
 stage('libs');
 // Space steps the weather; arrows wipe stripes. The page binds both below.
-const ui = initPage({ id: 'rain', signal: true, bar: {
+const ui = initPage({ id: 'rain', bar: {
   choice: { label: 'Weather', value: 'rain',
     options: [{ value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'storm', label: 'Storm' }],
     onPick: v => { wx = WEATHER[v]; rainLevel(); } },

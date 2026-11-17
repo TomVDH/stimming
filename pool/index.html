@@ -36,7 +36,7 @@
 }
 .stage canvas.on { opacity: 1; }
 /* Each tool icon is a solid stencil. */
-.stim-ui svg.solid { fill: currentColor; stroke: none; }
+.stim-ui svg.solid, .sg-ui .sg-btn svg.solid, .sg-ui .sg-opt svg.solid { fill: currentColor; stroke: none; }
 /* Cut mode aims with a crosshair. */
 :root[data-mode="cut"] .stage { cursor: crosshair; }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
@@ -49,9 +49,9 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. In Throw, tap to drop a ball, an anvil or a kettlebell, or drag and let go to throw it. In Cut, press and drag to dig a trench through the water. Drag the deck to turn the view. Space tosses one in, P picks the next pool, N switches day and night, R toggles rain and C clears the pool.">
+    <div class="stage stage--pool" id="stage" tabindex="0" role="application" aria-label="A pool of thick water seen from above. Click the water to add a ball, an anvil or a kettlebell. Hold to keep it over the water. Drag on the water to throw it. Drag with the Cut tool to cut a trench in the water. Drag the deck to look around. Scroll to zoom the view. Press Space to add an object at a random place. Press 1, 2 and 3 to select an object. Press X to select the Cut tool. Press C to clear the pool. Press R to switch the rain on and off. Press N to change the time of day. Press P to select the next pool. Press the arrow keys to look around.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Caustic pool needs WebGL 2 with float textures, which this browser lacks.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2 with float targets.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Caustic pool</h1><div class="vignette" hidden></div></section>
@@ -81,7 +81,9 @@ const savedThing = ['ball', 'anvil', 'bell'].includes(store.get(THING_KEY)) ? st
 const savedTool = store.get(MODE_KEY) === 'cut' ? 'cut' : savedThing;
 // Handlers bind once the pool exists.
 const act = { tool() {}, clear() {}, rain() {}, pool() {}, time() {} };
-const ui = initPage({ id: 'pool', signal: true, bar: {
+// A second finger zooms, so touch gets no right-drag row.
+const RIGHT_DRAG = matchMedia('(pointer: coarse)').matches ? [] : [['right-drag', 'Look around']];
+const ui = initPage({ id: 'pool', bar: {
   choice: { label: 'Tool', value: savedTool, options: TOOLS, onPick: v => act.tool(v) },
   actions: [
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
@@ -89,10 +91,15 @@ const ui = initPage({ id: 'pool', signal: true, bar: {
   ],
   settings: [
     { type: 'choice', id: 'pool', label: 'Pool', value: 'lane', options: POOL_OPTS, persist: true, onPick: v => act.pool(v) },
-    { type: 'choice', id: 'time', label: 'Time', value: 'day', options: TIME_OPTS, persist: true, onPick: v => act.time(v) },
+    { type: 'choice', id: 'time', label: 'Time of day', value: 'day', options: TIME_OPTS, persist: true, onPick: v => act.time(v) },
   ],
   quality: true,
-  keys: [['click', 'drop'], ['drag', 'throw or cut'], ['drag the deck', 'turn'], ['space', 'toss one in']],
+  keys: [['click', 'add an object'], ['drag', 'throw an object'], ['drag the deck', 'look around'], ['space', 'add an object at a random place']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add an object'], ['hold', 'Hold an object over the water'], ['drag', 'Throw an object'], ['drag', 'Cut a trench with the Cut tool'],
+    ['drag the deck', 'Look around'], ...RIGHT_DRAG, ['scroll', 'Zoom the view'], ['space', 'Add an object at a random place'], ['← → ↑ ↓', 'Look around'],
+    ['1 2 3', 'Select an object'], ['X', 'Select the Cut tool'], ['C', 'Clear the pool'], ['R', 'Switch the rain on and off'],
+    ['N', 'Change the time of day'], ['P', 'Select the next pool']],
 } });
 // Rain is a switch: its chip stays pressed while it rains.
 const rainB = document.querySelector('.stim-ui [aria-keyshortcuts="R"]');
@@ -253,10 +260,13 @@ function project(x, y, z) {
   const d = [x - cam.p[0], y - cam.p[1], z - cam.p[2]], zc = dot3(d, cam.f);
   return [dot3(d, cam.r) / (zc * cam.tx), dot3(d, cam.u) / (zc * cam.ty)];
 }
-// The camera frames the pool and its rim to fill the stage.
+// The bar at the foot holds this share of the stage height.
+let foot = 0, footLaid = 0;
+const footOf = h => Math.min(ui.cover().bottom / h, 0.4);
+// The camera fits the pool and its rim over the bar.
 function fitCam(A, pz, yaw = cam.yaw) {
   let dist = 5, tz = 0, xm = 1, y0 = -1, y1 = 1;
-  const X = PX + RIM, Z = pz + RIM;
+  const X = PX + RIM, Z = pz + RIM, room = 1 - foot;
   const pts = shape === 0 ? [[-X, -Z], [X, -Z], [X, Z], [-X, Z]] : outline;
   for (let i = 0; i < 60; i++) {
     place(A, dist, tz, yaw);
@@ -267,11 +277,11 @@ function fitCam(A, pz, yaw = cam.yaw) {
       y0 = Math.min(y0, q[1]);
       y1 = Math.max(y1, q[1]);
     }
-    dist *= Math.max(xm, (y1 - y0) / 2);
-    tz -= ((y0 + y1) / 2) * pz * 0.6;
+    dist *= Math.max(xm, (y1 - y0) / 2 / room);
+    tz -= ((y0 + y1) / 2 - foot) * pz * 0.6;
   }
   place(A, dist, tz, yaw);
-  return { w: xm, h: (y1 - y0) / 2 };
+  return { w: xm, h: (y1 - y0) / 2 / room };
 }
 // The front view sets the distance; a turn keeps it, so the view stays close.
 // A tall stage views the bean from its side, so it fills the height.
@@ -284,6 +294,7 @@ const petals = [], objs = [];
 let petalScale = 1, outline = [], lampZ = [-0.62, 0.62];
 function layoutPool(A) {
   aspect = A;
+  footLaid = foot;
   let pz = PX * POOLS[poolId].ar;
   // The lane pool takes its shape from the front view.
   if (shape === 0) {
@@ -2333,13 +2344,15 @@ function fit() {
   rect = null;
   W = w;
   H = h;
+  foot = footOf(h);
   const p = pixelRatio(w, h, { low: lowDpr });
   const cw = Math.round(w * p), ch = Math.round(h * p);
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   if (!ready) return;
   // A new shape rebuilds the pool.
   // A small change only reframes it.
-  if (Math.abs(w / h / aspect - 1) > 0.02) { layoutPool(w / h); allocPool(); }
+  // The lap pool takes its shape from the room over the bar.
+  if (Math.abs(w / h / aspect - 1) > 0.02 || (shape === 0 && Math.abs(foot - footLaid) > 0.01)) { layoutPool(w / h); allocPool(); }
   else { frameCam(w / h); camUniforms(); }
   if (running) render(0);
 }
@@ -2588,6 +2601,8 @@ async function boot() {
   allocPool();
   ready = true;
   new ResizeObserver(fit).observe(panel);
+  // Bar v3 mounts after the first fit; the pool then fits again.
+  ui.onCover(() => { if (footOf(H) !== foot) fit(); });
   // A new quality setting clears the slow-frame step.
   onQuality(() => { lowDpr = false; slowN = 0; fit(); });
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);

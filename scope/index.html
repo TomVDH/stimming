@@ -31,17 +31,17 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/scope.svg)"></span><span class="intro-name">Oscilloscope</span><span class="intro-sub">Stimming No. 19</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/scope.svg)"></span><span class="intro-name">Oscilloscope</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope in X–Y mode. In Pen mode, drag to draw a shape; the beam plays it as a stereo tone, left channel across and right channel up. In Knot mode, drag to pick a ratio of two sine waves. Shapes are 3D wires that spin. Up and down arrows change the pitch, Space starts and stops the spin, S shuffles, C clears, P changes the phosphor.">
+    <div class="stage stage--scope" id="stage" tabindex="0" role="application" aria-label="An oscilloscope screen. A beam draws a shape. The shape plays as a stereo tone. Drag in Pen mode to draw a shape. Drag in Knot mode to tie a knot. Press the up and down arrow keys to change the pitch. Press Space to switch the spin on and off. Press P to change the phosphor. Press S to shuffle the shape. Press C to clear the screen.">
       <canvas aria-hidden="true"></canvas>
       <button class="snd-tag" id="snd-tag" type="button" aria-label="Turn sound on" hidden></button>
       <button class="snd-tag" id="spin-tag" type="button" aria-label="Spin" aria-keyshortcuts="Space"></button>
       <button class="snd-tag" id="phos-tag" type="button" aria-label="Change the phosphor" aria-keyshortcuts="P"></button>
-      <p class="fail" hidden>Oscilloscope needs WebGL 2, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -75,7 +75,7 @@ const fromHz = f => Math.round(1000 * Math.log10(f / 40));
 // The handlers bind once the scope exists.
 const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {} };
 // The screen draws its own legend, so the key strip stays off.
-const ui = initPage({ id: 'scope', signal: true, bar: {
+const ui = initPage({ id: 'scope', bar: {
   choice: { label: 'Mode', value: 'pen', options: [{ value: 'pen', label: 'Pen' }, { value: 'knot', label: 'Knot' }], onPick: v => act.mode(v) },
   slider: { label: 'Pitch', min: 0, max: 1000, step: 1, value: fromHz(110), onInput: v => act.pitch(v) },
   actions: [
@@ -85,6 +85,9 @@ const ui = initPage({ id: 'scope', signal: true, bar: {
   reset: () => act.reset(),
   quality: true,
   keys: false,
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Draw a shape'], ['drag', 'Tie a knot'], ['click', 'Tie a knot'], ['↑ ↓', 'Change the pitch'],
+    ['space', 'Switch the spin on and off'], ['P', 'Change the phosphor'], ['S', 'Shuffle the shape'], ['C', 'Clear the screen']],
 } });
 
 const TAU = Math.PI * 2;
@@ -93,7 +96,7 @@ const now = () => performance.now() / 1000;
 
 mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
-const shell = stage.parentElement.querySelector('.stim-ui'), sndTag = document.getElementById('snd-tag');
+const sndTag = document.getElementById('snd-tag');
 const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); throw new Error('no webgl2'); };
@@ -722,7 +725,7 @@ function paintHud() {
     }
   }
   // Readouts: the mode on the left, the pitch and its note on the right.
-  // They sit under the shell's top corners.
+  // They sit under the bar's top strip.
   const pad = 18, top = hudTop;
   g.textBaseline = 'top'; g.textAlign = 'left';
   g.fillStyle = grey(0.92); g.font = `800 ${big}px Gabarito, system-ui, sans-serif`;
@@ -763,10 +766,10 @@ function paintHud() {
     keycap(g, '↑', x - dn - 4 - measureCap(g, '↑', kc), top + big + 6, kc);
     g.textAlign = 'right';
   }
-  // The sound tag invites a tap while the toy is muted.
+  // The sound tag invites a press while the toy is muted.
   sndTag.hidden = sound.on;
   if (!sound.on) {
-    const txt = '♪ SOUND OFF · TAP', y = top + big + small + 16;
+    const txt = FINE.matches ? '♪ SOUND OFF · CLICK' : '♪ SOUND OFF · TAP', y = top + big + small + 16;
     g.fillStyle = grey(0.62); g.font = `700 ${small}px ${MONO}`;
     g.fillText(txt, w - pad, y);
     const tw = g.measureText(txt).width;
@@ -791,27 +794,18 @@ function paintHud() {
 }
 
 /* ---------- layout ---------- */
-// The face is square and sits between the shell's corners; the screen runs full bleed.
+// The face is square and sits between the bar's strips; the screen runs full bleed.
 // Face geometry is in device pixels, y up.
 let acc = [], blm = [], ai = 0, dpr = 1, CX = 0, CY = 0, DIV = 1, K = 1, sigma = 1;
 let cssC = [0, 0], cssDiv = 1, hudTop = 18, sizeKey = '';
-// The corners' boxes in stage pixels; offsets ignore the entrance slide.
-function corners() {
-  let top = 0, bot = 0;
-  if (!shell) return { top, bot };
-  const H = shell.clientHeight;
-  for (const el of shell.children) {
-    if (!el.offsetParent || !/^s2-(tl|tr|bl|br)$/.test(el.className)) continue;
-    if (/t[lr]$/.test(el.className)) top = Math.max(top, el.offsetTop + el.offsetHeight);
-    else bot = Math.max(bot, H - el.offsetTop);
-  }
-  return { top, bot };
-}
+// The bar's top and foot strips, in stage pixels, at the last layout.
+let barTop = 0, barBot = 0;
 function layout() {
   const { w, h, W, H } = fitCanvas(canvas, { budget: 2.6e6 });
   dpr = W / w;
-  const m = clamp(Math.min(w, h) * 0.05, 14, 40), { top, bot } = corners();
-  // The readouts start under the top corners.
+  const m = clamp(Math.min(w, h) * 0.05, 14, 40), cov = ui.cover();
+  const top = barTop = cov.top, bot = barBot = cov.bottom;
+  // The readouts start under the bar's top strip.
   hudTop = Math.max(18, top + 10);
   const yBot = h - Math.max(m / 2, bot + 12);
   // With no room beside the face, the face drops below a strip for the HUD.
@@ -820,7 +814,7 @@ function layout() {
   cssDiv = size / 10;
   cssC = [w / 2, (yTop + yBot) / 2];
   CX = cssC[0] * dpr; CY = (h - cssC[1]) * dpr; DIV = cssDiv * dpr;
-  // A new size rebuilds the targets; a corner change only moves the face.
+  // A new size rebuilds the targets; a bar change only moves the face.
   const key = `${W}x${H}`;
   if (key === sizeKey && acc.length) { clearAcc(); paintHud(); restart(); return; }
   sizeKey = key;
@@ -1191,12 +1185,12 @@ else {
 document.fonts.ready.then(paintHud);
 FINE.addEventListener?.('change', paintHud);
 new ResizeObserver(layout).observe(stage);
-// The corners resize or move when the shell refits; the face follows.
-if (shell) {
-  const ro = new ResizeObserver(layout);
-  [...shell.children].forEach(el => ro.observe(el));
-  new MutationObserver(layout).observe(shell.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
-}
+// A bar that arrives, wraps or moves refits the face.
+ui.onCover(() => {
+  const cov = ui.cover();
+  // A plain resize already has its layout from the stage observer.
+  if (cov.top !== barTop || cov.bottom !== barBot) layout();
+});
 onQuality(layout);
 layout();
 changed({ first: true });
