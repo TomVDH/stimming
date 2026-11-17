@@ -32,6 +32,7 @@ One doc per toy, in one shape, answers "what is this toy now" in one screen.
 | 8 | Sound | Graph, engine, voices, samples, sleep | The page | No |
 | 9 | Quality and performance | Pixel ratio, slow-frame step, idle, reduced motion, numbers | The page; `docs/plans/loading.md` | No |
 | 10 | State and storage | `localStorage` keys | `stimming.<id>.` keys in the page and the bar spec | Yes |
+| 10b | Attributions | Every outside source, its licence, and whether credit must show (2026-11-16, `release-ready.md`) | The page, `tools/`, the asset folders | No |
 | 11 | Tests and QA | Files in `tests/`, QA notes | `tests/`, `docs/qa/` | Partly |
 | 12 | Known issues | One line each, with the bean | Open beans; the code | Beans: yes |
 | 13 | Legacy build | What `legacy.html` is | `legacy.html` | No |

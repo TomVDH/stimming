@@ -10,6 +10,7 @@ The detail lives in the plans; this page links them and does not repeat them.
 | Toy docs | What does each toy's reference page hold? | [toy-docs.md](plans/toy-docs.md), [template](toys/_template.md) |
 | TypeScript | How do we get type checks? | [typescript.md](plans/typescript.md) |
 | Port list | Which toys get ported, and what each one needs? Main shelf toys start at v1.5 | [ports.md](plans/ports.md) |
+| Release readiness | What must a toy pass before Tom gives it the approved label? | [release-ready.md](plans/release-ready.md) |
 
 ## The site today
 
