@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:27:31Z
+updated_at: 2026-11-17T07:34:09Z
 parent: stimming-oh7b
 ---
 
@@ -163,3 +163,7 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: cloud shadows on the plain: sunCover() follows the sun's ray to the base (the storm's bulk shades outright; the ragged fringe gives soft patches drifting downwind; a low sun stretches them into long bands); only the sun's share of light is taken. God rays can reuse sunCover.
 
 - 2026-11-17, Tom: Dev always on for now: tornado/index.html adds ?dev to its own address (remove that head script to hide Dev).
+
+- 2026-11-17, Tom: the Cloud tube is the new default funnel (Shells stays as a Dev choice). The taper, colour blend, spawn fixes, range limit and closer bands with distance apply to the tube first.
+
+- 2026-11-17, Tom (an F2 far too fat; no taper, no colour blend): Width 1.0 by default; the bell spans the top fifth of the funnel, at most about 2× its top radius. The pale ring was the horn's sides taking the sun at the base: the bell keeps the deck's slate there and takes the sun only by degrees down the bell; the deck's tone grows up a bell's height. Cool slate shade side, real falloff on the lit side, Ambient 1.1; torn sheath edges take the deck's tone. The far bake's key holds the full projection and bakes again 30 frames on, so the deck reaches the horizon on every load.

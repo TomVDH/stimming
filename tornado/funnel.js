@@ -35,12 +35,12 @@ export const KNOBS = [
   ['Funnel', 'spin', 'Spin', 0, 3, 0.01, 1],
   ['Colour', 'alb', 'Reflectivity', 0.2, 1.5, 0.01, 0.9],
   ['Colour', 'sunK', 'Sunlit weight', 0, 2, 0.01, 0.85],
-  ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.6],
+  ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.1],
   ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.55],
   ['Colour', 'hazeK', 'Haze on funnel', 0, 2, 0.01, 1],
   ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 1],
   ['Colour', 'dustK', 'Dust tint', 0, 2, 0.01, 1],
-  ['Shape', 'width', 'Width', 0.5, 3, 0.01, 1.6],
+  ['Shape', 'width', 'Width', 0.5, 3, 0.01, 1],
   ['Shape', 'flare', 'Flare', 0, 2, 0.01, 1],
   ['Shape', 'lean', 'Lean', 0, 2, 0.01, 1],
   ['Shape', 'sway', 'Sway', 0, 2, 0.01, 1],
@@ -306,12 +306,11 @@ float hornA() {
   float Rt = radiusAt(uH);
   return clamp(Rt * mix(0.9, 0.5, smoothstep(0.0, 1.0, uFk)) + 20.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
 }
-// How far under the funnel's top the flare starts. A tall flare reads as a dark cone.
-float collarLen() { return clamp(hornA() * 0.6, 40.0, uH * 0.15); }
 // The horn's strength: none until the funnel forms.
 float hornOn() { return smoothstep(0.0, 0.35, uCond); }
-// Where the flare starts: a shallow sag under the deck, down to the funnel's top as it forms.
-float hornBot() { return mix(uDeckY - 0.6 * (uDeckY - uH), uH - collarLen(), smoothstep(0.0, 0.5, uCond)); }
+// Where the flare starts: a shallow sag under the deck, down to the bell's foot as it forms.
+// The bell spans the top fifth of the funnel's height, and reaches at least the funnel's top.
+float hornBot() { return mix(uDeckY - 0.6 * (uDeckY - uH), min(uDeckY * 0.8, uH - 40.0), smoothstep(0.0, 0.5, uCond)); }
 // The horn's values for this tornado, set once per tornado.
 // gOn: the horn's strength. gRtopKm: its top radius in km. gNearR: the near deck's reach in km.
 float gA, gY0, gDeck, gOn, gRtopKm, gNearR;
@@ -471,11 +470,13 @@ vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1
   // The deck's shadow falls on the upper funnel: it darkens and cools there, and grows out of the cloud.
   float top = smoothstep(0.45, 1.0, u) * uTopDark;
   float od = sunOD(q, h, R) + cs + top * 1.5;
-  vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+  // The lit side falls off into the body: little light scatters round to the shade side.
+  vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.3 * exp(-od * 0.4) * ph1 + 0.05 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
   // Sky light falls off with depth into the funnel.
   float depth = max(0.0, 1.6 - xr);
   // The shade side fills with the light round it: the cool sky low down, the deck's dim tone up high.
-  vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
+  // The shade side is a cool slate blue.
+  vec3 ambC = mix(uAmb * vec3(0.7, 0.85, 1.2), skyH * 0.9, 0.2 + 0.4 * topK);
   vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, max(topK, top * 0.6)) * exp(-depth * 1.6);
   // Bounce from the sunlit wheat warms the lower funnel from below.
   ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
@@ -528,9 +529,9 @@ float cloudShade(vec3 p) {
   }
   return od * 0.006;
 }
-// How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
-// The deck's tone stays in the flare: the body below it keeps its own sunlit colour.
-float topKAt(float h) { return smoothstep(gY0, gDeck, h); }
+// How far up the join a height is: 0 on the body, 1 where the bell meets the deck.
+// The deck's tone starts down the upper funnel, a bell's height under the bell, and grows up it.
+float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0), gDeck, h); }
 
 // The layers on one stretch of a ray, front to back among themselves.
 void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float Reb, float Ra, float Rb, float tapa, float tapb, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, inout vec3 fAcc, inout float fT) {
@@ -547,7 +548,8 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
   // 0 is the core, 1 to 5 the sheaths; an inward stretch meets the outer ones first.
   for (int j = 0; j <= SHEATHS; j++) {
     int k = inward ? SHEATHS - j : j;
-    float od = 0.0, uk = 0.5, xr, shade = 1.0;
+    // dk: the share of the deck's tone in this layer's colour.
+    float od = 0.0, uk = 0.5, xr, shade = 1.0, dk = 0.0;
     vec3 ph;
     vec2 q;
     float R;
@@ -615,11 +617,13 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       od = sMax * den * uSheathK * uDens;
       // A sheath's own noise shows as tone: its dense puffs read lighter, its thin parts darker.
       shade = mix(0.72, 1.12, den);
+      // Torn sheath edges take the deck's tone, the outer ones most: no bright flecks on dark cloud.
+      dk = (0.35 + 0.45 * fk) * (1.0 - 0.5 * den);
       xr = rk * mix(Rea, Reb, uk) / R;
     }
     od *= live(ph.y);
     if (od < 1e-4) continue;
-    vec3 c = hazed(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, funnelHaze(ph.y));
+    vec3 c = hazed(mix(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, stC, dk), funnelHaze(ph.y));
     float a = 1.0 - exp(-od);
     fAcc += fT * a * c;
     fT *= 1.0 - a;
@@ -846,7 +850,8 @@ void main() {
         // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
         float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
-        if (topK > 0.0 && stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl, 1e3)); }
+        // The sheaths' torn edges take this tone too, so every column reads it once.
+        if (stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl, 1e3)); }
         // The tone it turns to is the deck's own light right here, where the deck has cloud.
         // Above the horn's surface the ray's one deck point stands in.
         vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
