@@ -541,55 +541,106 @@ vec3 wheatFar(vec2 xz, float fx) {
   }
   return alb * (0.85 + 0.2 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
-// The near wheat: shells of ears, from the tallest ear down into the stalks.
-// Each shell adds soft coverage, front to back. a is what still shows of the ground below.
-vec4 wheatNear(vec3 rd, float fx) {
-  vec3 lit = uSunCol * 0.5 + uAmb * 0.55;
+// The stand: ears top out at 0.86 to 1.04 m; the eye sees the field at its tops.
+// The drill set the rows 19 cm apart, along the road.
+const float TOP = 1.1, CANOPY = 0.95, ROW = 0.19, CW = ROW / 4.0, DZ = 0.035;
+// The march stops here, in metres ahead; past it the field is a texture.
+const float STAND_FAR = 30.0;
+bool inField(float x) { return abs(x - ROAD_X) >= WHEAT_GAP; }
+// Light inside the stand at height y, edge metres in from the field's road edge.
+// side is -1 for the field left of the road, 1 for the one right of it.
+// The sun reaches in through the tops, or through the edge where it faces the sun.
+// Straw and ears scatter some sunlight down into the stand.
+// The sky's light comes down through the tops and in at the edge.
+vec3 standLight(float y, float edge, float side) {
+  float depth = max(CANOPY + 0.04 - y, 0.0), dTop = depth / max(uSun.y, 0.03);
+  float toSun = -side * uSun.x;
+  float dSun = toSun > 0.02 ? min(dTop, edge / toSun) : dTop;
+  float sky = exp(-2.5 * min(depth, edge));
+  return uSunCol * 0.5 * (exp(-3.5 * dSun) + 0.3 * exp(-2.0 * depth)) + uAmb * 0.55 * mix(0.45, 1.0, sky);
+}
+// The near wheat: thin slices across the view, 3.5 cm apart, front to back.
+// Each slice holds the plants whose feet fall in it: a stalk with an ear on top.
+// Returns the colour and what still shows behind, 0 to 1.
+vec4 wheatStand(vec3 rd, float px) {
+  if (rd.z > -0.05 || rd.y > -1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
+  // The ray drops under the tallest awn at tIn and meets the soil at tOut.
+  float tIn = max(CAMH - TOP, 0.0) / -rd.y, tOut = CAMH / -rd.y;
+  // From over a verge the ray reaches the wheat where it crosses the field's edge.
+  if (!inField(rd.x * tIn)) tIn = max(tIn, rd.x < 0.0 ? (ROAD_X - WHEAT_GAP) / rd.x : (rd.x > 0.0 ? (ROAD_X + WHEAT_GAP) / rd.x : 1e9));
+  float zIn = -rd.z * tIn;
+  if (tIn > tOut || zIn > STAND_FAR) return vec4(0.0, 0.0, 0.0, 1.0);
+  // The sun's side across the view: the ears' lit flank faces it.
+  float sunX = toCam(uSun).x / max(length(uSun.xz), 1e-3);
+  // The wind at both ends of the first two metres; the slices blend between them.
+  vec4 g0 = gust(rd.xz * tIn, 0.0), g1 = gust(rd.xz * (tIn + 2.0), 0.0);
   vec3 acc = vec3(0.0);
-  float T = 1.0;
-  // The soft edge of an ear, in cell units, grows with the pixel footprint.
-  float aa = clamp(fx / 0.045 * 1.5, 0.04, 0.5);
-  for (int i = 0; i < 18; i++) {
-    float h = 1.1 - float(i) * 0.03;
-    float t = (CAMH - h) / -rd.y;
-    vec2 xz = rd.xz * t;
-    // Over the road and its verges this shell holds no wheat.
-    if (abs(xz.x - ROAD_X) < WHEAT_GAP) continue;
-    vec4 gw = gust(xz, fx);
-    float g = max(gw.z, 0.0);
-    // Undo the lean, to find the stalk that holds this point.
-    vec2 b = xz - bend(gw, h);
-    // A turned, warped grid: no straight rows line up across the shells.
-    b = mat2(0.83, -0.56, 0.56, 0.83) * b;
-    vec2 q = b / 0.045 + 1.8 * vec2(vn(b * 1.7), vn(b * 1.7 + 9.0));
-    // The offset keeps the hash clear of cell index 0, where it degenerates.
-    vec2 cell = floor(q) + 517.0, f = fract(q);
-    // The ear stays inside its cell, so no cell edge cuts it.
-    vec2 o = 0.32 + 0.36 * vec2(th(cell), th(cell + 3.1));
-    float top = 0.9 + 0.17 * th(cell + 7.7);
-    // An ear is 11 cm long and thickest in its middle; below it, a thin stalk.
-    float e = (top - h) / 0.11;
-    float r = e > 0.0 && e < 1.0 ? 0.24 * sin(3.14159 * sqrt(e)) : (e >= 1.0 ? 0.07 : 0.0);
-    float d = length(f - o);
-    float k = smoothstep(r + aa, r - aa, d) * step(0.0, e);
-    // The awns: a pale fringe round the top of the ear.
-    float awn = e > -0.35 && e < 0.6 ? smoothstep(0.31 + aa, 0.2, d) * 0.35 : 0.0;
-    k = max(k, awn);
-    if (k > 0.0) {
-      // Lower in the stand the light fails a little; the low sun behind lights the field's face.
-      float depth = clamp((h - 0.6) / 0.5, 0.0, 1.0);
-      vec3 ear = mix(vec3(0.2, 0.135, 0.055), vec3(0.34, 0.24, 0.1), th(cell + 1.3));
-      ear = mix(ear, vec3(0.52, 0.45, 0.28), g * 0.45);
-      acc += T * k * ear * lit * mix(0.78, 1.0, depth);
-      T *= 1.0 - k;
-      if (T < 0.03) break;
+  float T = 1.0, k0 = floor(zIn / DZ);
+  for (int i = 0; i < 36; i++) {
+    float k = k0 + float(i);
+    float t = (k + 0.5) * DZ / -rd.z;
+    // The soil lies dark in the stand's own shade.
+    if (t > tOut) { acc += T * vec3(0.07, 0.05, 0.03) * standLight(0.0, abs(rd.x * tOut - ROAD_X) - WHEAT_GAP, sign(rd.x * tOut - ROAD_X)); T = 0.0; break; }
+    vec3 p = rd * t;
+    p.y += CAMH;
+    if (p.y > TOP || !inField(p.x)) continue;
+    float fp = t * px / uFoc;
+    vec4 gw = mix(g0, g1, clamp((t - tIn) * 0.5, 0.0, 1.0));
+    float side = sign(p.x - ROAD_X), edge = abs(p.x - ROAD_X) - WHEAT_GAP;
+    vec3 L = standLight(p.y, edge, side);
+    float deep = smoothstep(0.1, 0.9, p.y);
+    // Undo the lean, to find the stalk's foot.
+    float xb = p.x - gw.x * p.y * p.y;
+    float c = floor(xb / CW), fc = xb / CW - c;
+    for (int j = 0; j < 2; j++) {
+      float ci = c + (j == 0 ? 0.0 : (fc < 0.5 ? -1.0 : 1.0));
+      // The offset keeps the hash clear of index 0, where it degenerates.
+      vec2 hc = vec2(ci, k) + 517.0;
+      float hp = th(hc);
+      // Plants crowd the drill row; the middle between rows stays thin.
+      float m = mod(ci, 4.0);
+      if (hp > (m < 0.5 ? 0.98 : (m > 1.5 && m < 2.5 ? 0.25 : 0.7))) continue;
+      float hy = th(hc + 3.1), hz = th(hc + 7.7), hw = th(hc + 1.3);
+      float top = 0.86 + 0.18 * hy;
+      // Each ear nods on its own beat about the wind's lean.
+      float nod = (hz - 0.5) * 0.05 + 0.012 * sin(uT * (2.2 + hw) + hw * 40.0) * (0.3 + gw.w);
+      float dx = xb - (ci + 0.2 + 0.6 * hw) * CW - nod * p.y * p.y;
+      float e = (top - p.y) / (0.075 + 0.04 * hz);
+      if (e < -0.6) continue;
+      vec3 col;
+      float w, a;
+      // One dry leaf per plant hangs off the stalk, angled out and down.
+      float hl = 0.3 + 0.4 * hz, lu = (hl - p.y) / 0.16;
+      float dl = dx - (hw - 0.5) * 2.0 * lu * 0.09;
+      if (e < 0.0) {
+        // The awns: a pale, see-through brush over the ear.
+        w = 0.008 * (1.0 + e); a = 0.3 * (1.0 + e / 0.6);
+        col = vec3(0.4, 0.31, 0.16);
+      } else if (e < 1.0) {
+        // The ear: spindle-shaped, round, lit on the sun's flank.
+        w = 0.0062 * sin(3.14159 * sqrt(e)) + 0.0014; a = 1.0;
+        col = mix(vec3(0.2, 0.135, 0.055), vec3(0.34, 0.24, 0.1), hy);
+        col *= 0.8 + 0.28 * clamp(dx / w, -1.0, 1.0) * sunX;
+      } else if (lu > 0.0 && lu < 1.0 && abs(dl) < abs(dx)) {
+        w = 0.0035 * (1.0 - lu) + 0.001; a = 0.9; dx = dl;
+        col = mix(vec3(0.16, 0.14, 0.07), vec3(0.3, 0.23, 0.12), hy);
+      } else {
+        // The stalk: straw at the top, darker and greener near the soil.
+        w = 0.0017; a = 0.95;
+        col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.22, 0.1), deep);
+      }
+      // A bent plant shows its pale side.
+      col = mix(col, vec3(0.5, 0.42, 0.26), max(gw.z, 0.0) * 0.4);
+      float cov = clamp((w - abs(dx)) / fp + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / fp) * a;
+      if (cov <= 0.0) continue;
+      acc += T * cov * col * L;
+      T *= 1.0 - cov;
     }
+    if (T < 0.04) break;
   }
-  // Under the ears: stalks in their own shade.
-  // Under the ears: shaded stalks, unless the ray ends on a verge or the road.
-  float gx = rd.x * CAMH / -rd.y;
-  if (abs(gx - ROAD_X) >= WHEAT_GAP) { acc += T * vec3(0.2, 0.14, 0.06) * lit * 0.8; T = 0.0; }
-  return vec4(acc, T);
+  // Far out the stand hands over to the field's texture.
+  float fade = 1.0 - smoothstep(STAND_FAR * 0.5, STAND_FAR, zIn);
+  return vec4(acc * fade, mix(1.0, T, fade));
 }
 vec3 ground(vec3 rd, float px) {
   float t = CAMH / -rd.y;
@@ -597,23 +648,30 @@ vec3 ground(vec3 rd, float px) {
   // The footprint of one pixel on the ground, in metres.
   float fx = t * px / uFoc;
   float ax = abs(P.x - ROAD_X);
-  vec3 col = wheatFar(P.xz, fx);
-  // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
-  vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
-  float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
-  col = mix(col, vec3(0.13, 0.15, 0.05) * (0.6 + 0.8 * tuft) * lit, band(ax - 5.5, 0.7, fx));
-  float grit = mix(0.75, 1.2, vn(P.xz * 40.0) * clamp(1.0 - fx * 40.0, 0.0, 1.0) + 0.5 * clamp(fx * 40.0, 0.0, 1.0));
-  col = mix(col, vec3(0.2, 0.18, 0.15) * grit * lit, band(ax - 4.25, 0.57, fx));
-  col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
-  col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
-  float dx = P.x - ROAD_X;
-  col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
-  // Near the eye the wheat stands up in shells over the ground, faded out before it shimmers.
-  float nearK = 1.0 - smoothstep(0.01, 0.03, fx);
-  if (nearK > 0.0) {
-    vec4 w = wheatNear(rd, fx);
-    col = mix(col, w.rgb + w.a * col, nearK);
+  // From afar the eye sees the wheat at its tops, nearer than the soil.
+  float tc = max(CAMH - CANOPY, 0.05) / -rd.y;
+  vec2 Pc = rd.xz * tc;
+  vec3 col;
+  if (inField(Pc.x)) col = wheatFar(Pc, tc * px / uFoc);
+  else {
+    // Seen from the verge, the field's edge is a wall of stalks under the ears.
+    // It takes the stand's light where the ray meets the edge.
+    float side = sign(P.x - ROAD_X), te = (ROAD_X + side * WHEAT_GAP) / rd.x, ye = CAMH + rd.y * te;
+    col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
+    // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
+    vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
+    float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
+    col = mix(col, vec3(0.13, 0.15, 0.05) * (0.6 + 0.8 * tuft) * lit, band(ax - 5.5, 0.7, fx));
+    float grit = mix(0.75, 1.2, vn(P.xz * 40.0) * clamp(1.0 - fx * 40.0, 0.0, 1.0) + 0.5 * clamp(fx * 40.0, 0.0, 1.0));
+    col = mix(col, vec3(0.2, 0.18, 0.15) * grit * lit, band(ax - 4.25, 0.57, fx));
+    col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
+    col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
+    float dx = P.x - ROAD_X;
+    col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
   }
+  // Near the eye the wheat stands up as plants over the field's texture.
+  vec4 w = wheatStand(rd, px);
+  col = w.rgb + w.a * col;
   // The deck's cover along the sun's ray darkens the plain in soft patches.
   col *= shadeK(sunCover(P * 0.001 + vec3(0.0, CAMH * 0.001, 0.0)));
   // The storm shades the plain under its base.
@@ -725,64 +783,6 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
     over(c, hazed(steel, rd, zw), k);
   }
 }
-// The foreground: large ears a metre or two off, soft with defocus, swaying in the gusts.
-// They live in camera space; far ones draw first, so near ones cover them.
-float segD(vec2 p, vec2 a, vec2 b, out float u) {
-  vec2 ab = b - a;
-  u = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
-  return length(p - a - ab * u);
-}
-void nearEars(inout vec3 c, vec2 s, float px, float asp) {
-  // The tallest ear, with its tuft, stays below this line.
-  if (s.y > 0.0) return;
-  vec3 lit = (uSunCol * 0.5 + uAmb * 0.55) * shadeK(sunCover(vec3(0.0)));
-  const int N = 56;
-  for (int i = 0; i < N; i++) {
-    float fi = float(i);
-    // The ears stand nearer on a wider lens, so they keep their size on screen at any lens.
-    // At 28 mm the 50 mm distances drew them as thin strokes.
-    float z = (4.0 - fi * (3.3 / float(N))) * uFoc / 2.083;
-    float hw = 0.5 * asp / uFoc * z;
-    float x = (th(vec2(fi, 4.2)) - 0.5) * 2.2 * hw;
-    float top = 0.98 + 0.12 * th(vec2(fi, 9.1));
-    // The gust at this ear, from its place in the world.
-    vec3 W = toWorld(vec3(x, 0.0, -z));
-    // No ears on the road or its verges.
-    if (abs(W.x - ROAD_X) < WHEAT_GAP) continue;
-    vec4 gw = gust(W.xz, 0.0);
-    vec2 lean = bend(gw, 1.0);
-    // The lean in camera space, as screen units at this depth.
-    float lx = (lean.x * cos(uYaw) - lean.y * sin(uYaw)) / z * uFoc;
-    vec2 tip = vec2(x / z * uFoc + lx, (top - CAMH) / z * uFoc);
-    vec2 base = vec2(x / z * uFoc + lx * 0.55, (top - 0.11 - CAMH) / z * uFoc);
-    if (s.y > tip.y + 0.1 / z) continue;
-    float w = 0.011 / z * uFoc;
-    // Defocus: the nearer the ear, the softer its edge.
-    float bl = 0.009 / z * uFoc + px;
-    float u;
-    float d = segD(s, base, tip, u);
-    // Kernel rows bead the ear's edge.
-    float ww = w * (0.55 + 0.45 * sin(3.14159 * sqrt(u))) * (0.88 + 0.12 * sin(u * 30.0));
-    float k = smoothstep(ww + bl, ww - bl, d);
-    // The stalk: thin, down out of the frame.
-    float us;
-    vec2 foot = vec2(x / z * uFoc, -1.0);
-    float ds = segD(s, foot, base, us);
-    float ws = 0.0022 / z * uFoc;
-    // A stalk thinner than its blur covers only its share of the blur: at a wide lens it is a hair, not a stroke.
-    k = max(k, smoothstep(ws + bl, ws - bl, ds) * 0.9 * clamp(ws / bl, 0.0, 1.0));
-    // The awns: a pale tuft past the tip.
-    float ua;
-    float da = segD(s, tip, tip + (tip - base) * 0.75, ua);
-    k = max(k, smoothstep(w * 1.1 + bl, 0.0, da) * 0.35 * (1.0 - ua));
-    if (k <= 0.0) continue;
-    vec3 ear = mix(vec3(0.42, 0.29, 0.11), vec3(0.6, 0.45, 0.2), th(vec2(fi, 2.7)));
-    // Lit face toward the eye, darker at the rim.
-    float rim = clamp(d / max(ww, 1e-4), 0.0, 1.0);
-    c = mix(c, ear * lit * (1.05 - 0.4 * rim * rim), clamp(k, 0.0, 1.0));
-  }
-}
-
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -856,7 +856,6 @@ vec3 envScene(vec2 uv) {
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
   farm(c, s, rd, px);
   poles(c, s, rd, px);
-  nearEars(c, s, px, asp);
   return c;
 }
 `;
