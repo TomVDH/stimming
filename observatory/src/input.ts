@@ -12,6 +12,9 @@ const aimFns: ((a: AltAz) => void)[] = [];
 const tapFns: ((a: AltAz) => void)[] = [];
 export const onAim = (fn: (a: AltAz) => void): void => { aimFns.push(fn); };
 export const onTap = (fn: (a: AltAz) => void): void => { tapFns.push(fn); };
+const escFns: (() => void)[] = [];
+export const onEsc = (fn: () => void): void => { escFns.push(fn); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') for (const fn of escFns) fn(); });
 
 const ray = new Raycaster(), ndc = new Vector2();
 // The camera ray through a client point, as altitude and azimuth.

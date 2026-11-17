@@ -1,5 +1,5 @@
-// Load order: world/lights runs first.
-import '../world/lights.ts';
+// Load order: world/dusk runs first.
+import '../world/dusk.ts';
 import { MathUtils, Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';

@@ -12,6 +12,7 @@ export type Clock = {
   skyMs(): number;
   speed: number;
   setSpeed(x: number): void;
+  setLag(ms: number): void;
   trails(): boolean;
   easing(): boolean;
   wake(): void;
@@ -42,6 +43,13 @@ export function makeClock(nowMs: () => number): Clock {
       // Re-anchor so the sky time does not jump.
       const now = nowMs(), s = base();
       anchorReal = now; anchorSky = s; speed = x;
+    },
+    setLag(ms) {
+      // The sky runs ms behind real time.
+      // The speed stays.
+      // A wake ease in progress ends here.
+      const now = nowMs();
+      anchorReal = now; anchorSky = now - ms; off0 = 0; p = 1;
     },
     trails: () => speed >= TRAIL_SPEED,
     easing: () => p < 1,

@@ -6,8 +6,11 @@ import { hillHeight } from './hill.ts';
 import { ROAD, complex, type Complex } from './complex.ts';
 
 /* ---------- the complex lights: window panes, door lamps, road lamps ---------- */
-// Each group has one material; a level from 0 to 1 sets its colour.
-// The lamps are small unlit meshes; only the door lamps cast light.
+// Each lamp has its own material.
+// Then each lamp can come on alone.
+// A level from 0 to 1 sets its colour.
+// The lamps are small unlit meshes.
+// Only the door lamps cast light.
 // No light casts a shadow.
 
 // Linear colours; values over 2 cross the bloom threshold.
@@ -25,25 +28,31 @@ const ROAD_LAMPS = [3, 10, 17, 24, 31, 38];
 const ROAD_SIDE = 3.6;
 const POST_H = 4;
 
-export type Lights = { set(level: number): void };
+// One lamp: a level from 0 to 1 sets it.
+type Lamp = (k: number) => void;
+// lamp(i, n) gives lamp i of n its own level at dusk.
+export type Lights = { count: number; set(level: number, lamp?: (i: number, n: number) => number): void };
 
 export function buildLights(c: Complex): Lights {
-  const doorMat = new MeshBasicMaterial({ color: LAMP_ON });
-  const roadMat = new MeshBasicMaterial({ color: LAMP_ON });
-  const doorLights: PointLight[] = [];
+  const domes = [c.main, ...c.small];
+  const glow = (m: MeshBasicMaterial, i: number): Lamp => (k) => { m.color.copy(off[i]).lerp(on[i], k); };
+  const off = [PANE_OFF, LAMP_OFF];
+  const on = [PANE_ON, LAMP_ON];
 
   // A lamp over each dome door, in the dome's own scale.
   // The drum radius is 3.2; the door arch tops out at 2.1.
   const bulb = new SphereGeometry(0.16, 10, 6);
-  for (const d of [c.main, ...c.small]) {
-    const m = new Mesh(bulb, doorMat);
+  const doors: Lamp[] = domes.map((d) => {
+    const mat = new MeshBasicMaterial({ color: LAMP_ON });
+    const m = new Mesh(bulb, mat);
     m.position.set(0, 2.5, -3.28);
     // The lamp's light reaches about 12 m at size 1.
     const pl = new PointLight(LAMP_ON.clone().multiplyScalar(1 / 6), DOOR_CD, 12 * d.root.scale.x, 2);
     pl.position.set(0, 2.6, -3.9);
     d.root.add(m, pl);
-    doorLights.push(pl);
-  }
+    const bulbLamp = glow(mat, 1);
+    return (k) => { bulbLamp(k); d.door.emissiveIntensity = DOOR_GLOW_K * k; pl.intensity = DOOR_CD * k; };
+  });
 
   // Lamp posts along the road near the complex, in world space.
   const road = new Group();
@@ -51,28 +60,30 @@ export function buildLights(c: Complex): Lights {
   const head = new BoxGeometry(0.5, 0.22, 0.5);
   const postMat = new MeshLambertMaterial({ color: 0x505050 });
   const side = new Vector3();
-  for (const i of ROAD_LAMPS) {
+  const roadLamps: Lamp[] = ROAD_LAMPS.map((i) => {
     const a = ROAD[i - 1], b = ROAD[i + 1], p = ROAD[i];
     side.set(-(b.z - a.z), 0, b.x - a.x).normalize().multiplyScalar(ROAD_SIDE);
     const x = p.x + side.x, z = p.z + side.z, y = hillHeight(x, z);
     const pm = new Mesh(post, postMat);
     pm.position.set(x, y, z);
-    const hm = new Mesh(head, roadMat);
+    const mat = new MeshBasicMaterial({ color: LAMP_ON });
+    const hm = new Mesh(head, mat);
     hm.position.set(x, y + POST_H + 0.11, z);
     road.add(pm, hm);
-  }
+    return glow(mat, 1);
+  });
   scene.add(road);
 
-  const off = [PANE_OFF, LAMP_OFF];
-  const on = [PANE_ON, LAMP_ON];
-  const groups: [MeshBasicMaterial, number][] = [[c.windows, 0], [doorMat, 1], [roadMat, 1]];
-  const doorPanels = [c.main, ...c.small].map(d => d.door);
+  const panes = c.windows.map(m => glow(m, 0));
+  // The order they come on at dusk.
+  // People light the hall and the domes first.
+  // Then the road lamps come on from the top down.
+  const lamps: Lamp[] = [panes[1], doors[0], panes[0], doors[1], panes[2], doors[2], ...roadLamps];
   return {
-    set(level) {
+    count: lamps.length,
+    set(level, lamp) {
       const k = Math.min(1, Math.max(0, level));
-      for (const [m, i] of groups) m.color.copy(off[i]).lerp(on[i], k);
-      for (const m of doorPanels) m.emissiveIntensity = DOOR_GLOW_K * k;
-      for (const l of doorLights) l.intensity = DOOR_CD * k;
+      lamps.forEach((l, i) => l(lamp ? k * lamp(i, lamps.length) : k));
     },
   };
 }

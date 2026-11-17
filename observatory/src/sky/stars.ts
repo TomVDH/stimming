@@ -11,6 +11,8 @@ export const LAT = 51, LON = 0;
 // The star shell stays inside the camera far plane.
 const RADIUS = 4000;
 const RAD = Math.PI / 180;
+// A star fades in over this many magnitudes past the limit.
+const FADE_MAG = 0.75;
 
 // The star group's matrix for a sky time.
 // Star positions sit on the shell at hour angle zero (x to the meridian, y to the west, z to the pole).
@@ -44,8 +46,8 @@ function tint(ci: number, out: Color): Color {
 
 const vert = /* glsl */ `
   attribute vec3 tint;
-  attribute vec2 look; // x: size in CSS px, y: brightness
-  uniform float uDpr;
+  attribute vec3 look; // x: size in CSS px, y: brightness, z: magnitude
+  uniform float uDpr, uMagLim;
   varying vec3 vColor;
   varying float vUp;
   void main() {
@@ -55,6 +57,9 @@ const vert = /* glsl */ `
     // Low stars shine through more air: 0.3 magnitudes per airmass.
     float airmass = 1.0 / max(world.y / ${RADIUS.toFixed(1)}, 0.03);
     vColor = tint * look.y * pow(10.0, -0.12 * (airmass - 1.0));
+    // At dusk a star fades in as the limit passes its magnitude.
+    // A star at the limit or brighter shows in full.
+    vColor *= clamp(1.0 + (uMagLim - look.z) / ${FADE_MAG.toFixed(2)}, 0.0, 1.0);
     gl_PointSize = look.x * uDpr;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
@@ -74,6 +79,12 @@ const frag = /* glsl */ `
 // The device pixel ratio; the stage's resize sets it.
 const starDpr = { value: 1 };
 export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
+// The faintest magnitude in full.
+// The dusk sets it.
+// At night it is far past the catalog's 6.5.
+export const NIGHT_MAG = 99;
+const magLim = { value: NIGHT_MAG };
+export function setStarLimit(mag: number): void { magLim.value = mag; }
 
 export const sky = { stars: [] as Star[], index: new Map<number, number>(), points: null as Points | null };
 
@@ -81,7 +92,7 @@ export const sky = { stars: [] as Star[], index: new Map<number, number>(), poin
 // The catalog loads in the background; the promise settles when the stars are in the scene.
 export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.meta.url).href).then((stars) => {
   const n = stars.length;
-  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), look = new Float32Array(n * 2);
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), look = new Float32Array(n * 3);
   const c = new Color();
   stars.forEach((s, i) => {
     const ra = s.ra * RAD, dec = s.dec * RAD, cd = Math.cos(dec);
@@ -90,16 +101,17 @@ export const skyReady: Promise<void> = loadStars(new URL('../stars.bin', import.
     tint(s.ci, c).toArray(col, i * 3);
     // Brighter is larger and brighter; magnitude 6.5 barely shows.
     const k = Math.max(0, Math.min(1, (6.5 - s.mag) / 7.9));
-    look[i * 2] = 1.2 + 3.6 * k;
-    look[i * 2 + 1] = 0.12 + 0.88 * Math.pow(k, 0.7);
+    look[i * 3] = 1.2 + 3.6 * k;
+    look[i * 3 + 1] = 0.12 + 0.88 * Math.pow(k, 0.7);
+    look[i * 3 + 2] = s.mag;
     if (s.hip) sky.index.set(s.hip, i);
   });
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(pos, 3));
   geo.setAttribute('tint', new BufferAttribute(col, 3));
-  geo.setAttribute('look', new BufferAttribute(look, 2));
+  geo.setAttribute('look', new BufferAttribute(look, 3));
   // The stars add over the sky's glow.
-  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
+  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr, uMagLim: magLim }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
   pts.matrixAutoUpdate = false;
   pts.frustumCulled = false;
   scene.add(pts);

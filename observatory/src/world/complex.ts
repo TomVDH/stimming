@@ -58,9 +58,10 @@ const box = (w: number, h: number, d: number, color: number | MeshLambertMateria
 // The long, low stone building, with a row of windows on its north face.
 // It is 30 m long, 9 m deep and 5 m high, with a flat roof.
 const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
-// The lit panes share one material, so the lights dim them together.
-// world/lights sets its colour.
-const litPanes = new MeshBasicMaterial();
+// Each lit pane has its own material.
+// Then each pane can come on alone.
+// world/lights sets their colours.
+const litPanes = [new MeshBasicMaterial(), new MeshBasicMaterial(), new MeshBasicMaterial()];
 function hall(): Group {
   const g = new Group();
   // The stone blocks match the drums: about 1 m by 0.4 m.
@@ -68,9 +69,10 @@ function hall(): Group {
   // A dark tarred roof slab.
   g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x26272a, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
-  const lit = litPanes, dark = lam(0x121315);
+  const lit = [1, 2, 5], dark = lam(0x121315);
   for (let i = 0; i < 7; i++) {
-    const w = new Mesh(new BoxGeometry(1.4, 1.8, 0.1), i === 1 || i === 2 || i === 5 ? lit : dark);
+    const k = lit.indexOf(i);
+    const w = new Mesh(new BoxGeometry(1.4, 1.8, 0.1), k < 0 ? dark : litPanes[k]);
     w.position.set(HALL.x - 12 + i * 4, 2.2, HALL.z - HALL.d / 2 - 0.05);
     g.add(w);
   }
@@ -95,8 +97,8 @@ function shed(): Group {
   return g;
 }
 
-// windows: the material of the lit panes.
-export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial };
+// windows: the lit panes' materials, west to east.
+export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[] };
 
 export function buildComplex(): Complex {
   const root = new Group();

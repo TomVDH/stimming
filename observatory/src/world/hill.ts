@@ -79,7 +79,11 @@ flat.position.y = -0.5;
 scene.add(flat);
 
 // Starlight: a cold, dim sky over a black ground.
-scene.add(new HemisphereLight(new Color(0.5, 0.55, 0.68), new Color(0.02, 0.02, 0.025), 1.3));
+// The dusk raises it.
+// At night it holds HEMI_I.
+export const HEMI_I = 1.3;
+export const hemi = new HemisphereLight(new Color(0.5, 0.55, 0.68), new Color(0.02, 0.02, 0.025), HEMI_I);
+scene.add(hemi);
 // A faint key from high in the north gives the shapes form.
 const key = new DirectionalLight(new Color(0.62, 0.7, 0.92), 0.35);
 key.position.set(-60, 120, -90);

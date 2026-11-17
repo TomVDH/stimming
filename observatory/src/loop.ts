@@ -1,6 +1,6 @@
 // Load order: input runs first.
 import './input.ts';
-import { whenVisible } from '../../shared/stim.js';
+import { reduced, whenVisible } from '../../shared/stim.js';
 import type { AltAz } from './core/sky.ts';
 import { azDelta, clampAim, stepAxis } from './core/dome.ts';
 import { Vector3 } from 'three';
@@ -16,8 +16,10 @@ import { pickStar } from './core/pick.ts';
 import { lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { cuts } from './view/cuts.ts';
-import { onAim, onTap } from './input.ts';
+import { onAim, onEsc, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
+import { driveClock, makeOpening } from './core/opening.ts';
+import { setDusk } from './world/dusk.ts';
 import { sky, skyAt, skyReady, starAltAz, LAT, LON } from './sky/stars.ts';
 import { lst, toAltAz } from './core/sky.ts';
 import type { Star } from './core/catalog.ts';
@@ -60,6 +62,13 @@ let lastTrackDraw = 0;
 // The sky clock: real time at speed 1. At speed 1 the sky moves 0.004 degrees a second,
 // so it never keeps the loop awake; only a wake catch-up or a faster speed does.
 const clock = makeClock(Date.now);
+// The opening: dusk into night before play.
+// Reduced motion opens at night.
+const opening = makeOpening(reduced());
+// The sky starts behind real time and runs fast to catch up.
+if (!opening.done) driveClock(opening, clock);
+// True once a frame shows the night look after the opening.
+let nightSet = false;
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
 
 // The aim azimuth as it was some seconds ago.
@@ -74,7 +83,7 @@ const shutting = () => turns.some(d => d.p !== (wantOpen ? 1 : 0));
 const turning = () => machine.moving || shutting() || turns.some(d => d.vel !== 0 || azDelta(d.pos, leaderAz()) !== 0);
 // The cuts, the crossfade or the lights still need frames.
 const showing = () => cuts.busy || light !== lightGoal(machine.phase);
-const awake = () => turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
+const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
 // Where the target stands now.
 const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LON), LAT);
 const skyMoving = () => clock.easing() || clock.speed > 1;
@@ -92,7 +101,14 @@ function pose(): void {
   complex.main.setTube({ alt: m.tubeAlt, az: m.tubeAz });
   complex.main.setShutter(m.shutter01);
   trackingLamp.set(m.tracking);
-  lights.set(light);
+  // The dusk sets the look each frame until night shows once.
+  if (!nightSet) {
+    setDusk(opening.dusk(), opening.magLimit());
+    laser.level(opening.beam());
+    nightSet = opening.done;
+  }
+  // At dusk each lamp comes on alone.
+  lights.set(light, opening.done ? undefined : opening.lamp);
   // The beam follows the pointer in aim; after a pick it follows the tube.
   laser.aim(complex.main.slitTop, m.phase === 'aim' || m.phase === 'lost' ? aim : { alt: m.tubeAlt, az: m.tubeAz });
 }
@@ -115,6 +131,11 @@ function tick(now: number): void {
   lastT = now;
   // Input times come from the same clock.
   const t = performance.now();
+  if (!opening.done) {
+    opening.step(dt);
+    driveClock(opening, clock);
+    dirty = true;
+  }
   clock.step(dt);
   if (skyMoving()) dirty = true;
   // The machine reads the sky as it is now.
@@ -164,6 +185,8 @@ export function wake(): void {
 }
 
 function input(a: AltAz): void {
+  // The beam stays off until night.
+  if (opening.locked) return;
   lastInput = performance.now();
   // A close shot's camera gives no true aim; the pointer waits for the wide shot.
   if (cuts.busy) { wake(); return; }
@@ -186,6 +209,8 @@ onAim(input);
 // A pick from rest or lost plays the cuts; a re-pick only slews.
 // A tap during the cuts skips to the wide shot and picks nothing.
 function tap(a: AltAz): void {
+  // A tap at dusk skips to night.
+  if (opening.locked) { skipOpening(); return; }
   if (cuts.showing) { lastInput = performance.now(); cuts.skip(); return; }
   if (cuts.busy) return;
   const s = pickStar(sky.stars, a, lst(clock.skyMs(), LON), LAT);
@@ -198,6 +223,10 @@ function tap(a: AltAz): void {
   wake();
 }
 onTap(tap);
+function skipOpening(): void {
+  if (opening.skip()) wake();
+}
+onEsc(() => { if (opening.locked) skipOpening(); });
 // A skip by tap or Esc draws the wide shot on the next frame.
 cuts.onSkip(() => { dirty = true; wake(); });
 
@@ -205,7 +234,10 @@ cuts.onSkip(() => { dirty = true; wake(); });
 whenVisible(stageEl, (vis: boolean) => {
   visible = vis;
   if (!vis) { cancelAnimationFrame(raf); raf = 0; lastT = 0; return; }
-  clock.wake();
+  // The opening pauses while hidden, but the sky keeps real time.
+  // The first frame back shows the sky at its true lag.
+  if (!opening.done) driveClock(opening, clock);
+  else clock.wake();
   draw();
   if (awake()) wake();
 });
@@ -265,4 +297,18 @@ window.__qa = {
   // The sequence: the shot that shows, its time, and true while it owns the camera.
   get cut() { return { shot: cuts.shot, t: cuts.time, busy: cuts.busy }; },
   skipCuts() { cuts.skip(); },
+  // The opening's time and state.
+  get opening() {
+    const o = opening;
+    return { t: o.t, locked: o.locked, done: o.done, skipping: o.skipping, sunAlt: o.sunAlt(), mag: o.magLimit(), speed: clock.speed };
+  },
+  // Puts the opening at a time.
+  // The opening then runs on from there.
+  seekOpening(s: number) {
+    opening.seek(s);
+    nightSet = false;
+    driveClock(opening, clock);
+    draw();
+    wake();
+  },
 };

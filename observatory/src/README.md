@@ -20,9 +20,10 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `core/machine.ts` | The telescope machine: shutter, main dome, tube; `makeMachine`, `Phase` |
 | `core/pick.ts` | A tap picks the brightest star near it: `pickStar` |
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
+| `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
 | `core/sequence.ts` | The pick sequence's cut list, `cutAt`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
-| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow; the height haze in every fog chunk |
+| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |
 | `post/grade.ts` | The grade: split tone, contrast, vignette, grain, copied from Railgun |
 | `post/chain.ts` | The post chain: render, bloom, grade, ACES output; `resizePost`, `renderPost` |
@@ -30,14 +31,15 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; `buildDome(size)`, `stoneMap` |
 | `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |
 | `world/woods.ts` | The conifers over the hill, one instanced draw; a clearing and a gap for the road; trees the eye never sees are left out |
-| `world/laser.ts` | The green aiming beam, lit by the haze; `altAzDir` |
+| `world/laser.ts` | The green aiming beam, lit by the haze; it fades in after the opening; `altAzDir` |
 | `world/lamp.ts` | The tracking lamp on the main dome's drum |
-| `world/lights.ts` | The complex lights: lit window panes, door lamps with their light, door glow, road lamps; one level for all |
-| `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; `skyAt`, `starAltAz`, `setStarDpr` |
+| `world/lights.ts` | The complex lights: lit window panes, door lamps with their light, door glow, road lamps; one level for all, or one per lamp at dusk |
+| `world/dusk.ts` | The dusk look: sky, haze and starlight toward the night; the last light on high ground, added to every lit material; `setDusk` |
+| `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
 | `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the reduced-motion crossfade |
-| `input.ts` | Pointer: aim with a move or a drag, a tap; alt and az from the camera ray |
-| `loop.ts` | The frame loop and sleep; the machine, the small domes, the lights, the cuts; `window.__qa` |
+| `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
+| `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
 
 ## Axes
