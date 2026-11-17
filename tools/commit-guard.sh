@@ -60,7 +60,7 @@ guard_drops() {
   return $bad
 }
 
-# The railgun's cloud code: its own files, and these sections of index.html.
+# The railgun's cloud code: its own files, and these sections of its source.
 # A section runs from its marker line to the next "/* ----------" marker.
 GUARD_CLOUD_FILES='^railgun/(storms\.js|stormlab\.html)$'
 GUARD_CLOUD_MARKS='^(/\* ---------- (clouds|air|sky dome|storm probe|storm lightning|bands)[ :]|const K2_SKY = )'
@@ -78,7 +78,7 @@ guard_clouds() {
   grep -qE 'clouds-check: PASS|look-approved:' "$msg" && return 0
   while IFS= read -r -d '' p; do
     if [[ $p =~ $GUARD_CLOUD_FILES ]]; then hit+=("$p"); continue; fi
-    [[ $p == railgun/index.html || $p == railgun/src/main.ts ]] || continue
+    [[ $p == railgun/index.html || $p == railgun/src/*.ts ]] || continue
     # Changed lines on both sides of the diff, against each side's own sections.
     ranges=$(git show "$new:$p" 2>/dev/null | guard_sections)
     while read -r a n; do
