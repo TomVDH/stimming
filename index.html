@@ -3,11 +3,9 @@
 <meta name="color-scheme" content="dark">
 <style>html { background: oklch(0.16 0.012 275); }</style>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=Gabarito:wght@400..900&display=swap">
 <link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js">
 <link rel="preload" as="script" href="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js">
+<link rel="preload" as="font" type="font/woff2" href="shared/fonts/B612-Bold.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="shared/fonts/IosevkaTermSlab-Medium.woff2" crossorigin>
 <link rel="modulepreload" href="shared/menu/clock.js">
 <link rel="modulepreload" href="shared/menu/tube.js">
@@ -128,6 +126,13 @@ body { overflow-x: clip; }
 a.toy { cursor: pointer; }
 .obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .obj svg { width: 70%; height: 70%; overflow: visible; }
+/* At the click: the intro's hairline waits under the icon until the toy's page comes.
+   It comes in after 0.25 s, so a fast load never shows it. */
+.go { position: absolute; left: 22%; bottom: 5%; width: 56%; height: 2px; overflow: hidden; pointer-events: none; background: oklch(1 0 0 / 0.16); opacity: 0; animation: go-in 0.3s steps(9, end) 0.25s forwards; }
+.go::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 34%; background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.7), transparent); animation: go-sheen 1.5s steps(45, end) infinite; }
+@keyframes go-in { to { opacity: 1; } }
+@keyframes go-sheen { from { translate: -100% 0; } to { translate: 294% 0; } }
+@media (prefers-reduced-motion: reduce) { .go { background: oklch(1 0 0 / 0.3); animation: go-in 0.01s linear 0.25s forwards; } .go::before { display: none; } }
 /* Each toy arrives through grainy blur as it scrolls into view. */
 .js-reveal .toy:not(.is-in) { opacity: 0; filter: blur(14px); }
 .js-reveal .toy { transition: opacity 0.5s steps(15, end), filter 0.6s steps(18, end); transition-delay: var(--d, 0s); }
@@ -140,6 +145,11 @@ a.toy { cursor: pointer; }
 .js-reveal .toy.is-in .obj::after { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .js-reveal .toy:not(.is-in) { opacity: 1; filter: none; } .js-reveal .toy .obj::after { display: none; } }
 /* Toy labels set in the self-hosted Iosevka Term Slab, all caps. */
+/* Gabarito and B612 load from the repo: no font host blocks the first paint. */
+@font-face { font-family: "Gabarito"; font-weight: 400 900; font-display: swap; src: url(shared/fonts/Gabarito-ext.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Gabarito"; font-weight: 400 900; font-display: swap; src: url(shared/fonts/Gabarito.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "B612"; font-weight: 400; font-display: swap; src: url(shared/fonts/B612-Regular.woff2) format("woff2"); }
+@font-face { font-family: "B612"; font-weight: 700; font-display: swap; src: url(shared/fonts/B612-Bold.woff2) format("woff2"); }
 @font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
 @font-face { font-family: "Iosevka Term Slab"; font-weight: 700; font-display: swap; src: url(shared/fonts/IosevkaTermSlab-Bold.woff2) format("woff2"); }
 /* The wordmark takes B612; the tagline takes Iosevka Term Slab. */
@@ -2051,6 +2061,23 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
         for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
         shelf.append(...items);
+      })();
+    </script>
+    <script>
+      // At the click, the toy's tile shows a hairline until the next page comes.
+      (() => {
+        let going = null;
+        const clear = () => { going?.remove(); going = null; };
+        document.querySelector('main').addEventListener('click', e => {
+          const obj = e.target.closest('a.toy')?.querySelector('.obj');
+          // A click that opens a new tab leaves this page as it is.
+          if (!obj || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          clear();
+          going = Object.assign(document.createElement('i'), { className: 'go' });
+          obj.append(going);
+        });
+        // A page that comes back from the history shows no line.
+        addEventListener('pageshow', clear);
       })();
     </script>
     <script>
