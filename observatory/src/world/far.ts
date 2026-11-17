@@ -18,9 +18,9 @@ import { EYE_H, RISE, hillHeight } from './hill.ts';
 type Ridge = { r: number; lo: number; hi: number; f: number; fade: number; seed: number };
 // Back to front: about 38 km, 22 km and 12 km out.
 const RIDGES: Ridge[] = [
-  { r: 3400, lo: 1.3, hi: 3.0, f: 44, fade: 0.55, seed: 31 },
-  { r: 3200, lo: 0.9, hi: 2.4, f: 26, fade: 0.3, seed: 17 },
-  { r: 3000, lo: 0.5, hi: 1.8, f: 15, fade: 0.08, seed: 5 },
+  { r: 3400, lo: 1.5, hi: 3.0, f: 44, fade: 0.55, seed: 31 },
+  { r: 3200, lo: 1.2, hi: 2.5, f: 26, fade: 0.3, seed: 17 },
+  { r: 3000, lo: 1.0, hi: 2.0, f: 15, fade: 0.08, seed: 5 },
 ];
 // Crest points per ridge: one every tenth of a degree.
 const STEPS = 3600;
