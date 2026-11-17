@@ -1,5 +1,7 @@
 # Broodautomaat (`bread`) implementation plan
 
+Status: active · Bean: `stimming-m9cd`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A bread vending machine glows alone at the edge of a dark Flemish village road at night. Drop a coin: the carousel turns, a hatch swings open on a warm loaf.

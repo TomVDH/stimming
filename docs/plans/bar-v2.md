@@ -1,5 +1,7 @@
 # Bar v2: the Corners shell
 
+Status: done · Bean: `stimming-tbpn`
+
 Spec. Tom approved the design on 2026-11-08. Bean: `stimming-tbpn`.
 It replaces the control bar standard of 2026-11-03 in `AGENTS.md` and bean `stimming-848s`.
 Mockups: the brainstorm screens `layout-v2`, `onscreen`, `settings` and `phone` (Corners, Keys, Drop sheet, Corners stay).
@@ -51,7 +53,7 @@ The audit of 51 toys found four problems. Tom confirmed all four.
 
 **Logo.** The Stimming mark in B612, unboxed, at the far left. It rests white. Hover, focus or a tap waves it into colour, and a `‹` slides in. It links to the menu. It shrinks to its `S` below 300 px.
 
-**One look (Tom, 2026-11-09).** A box always means a control; the logo and the name are never boxed. Every control shares one chip: dark glass, a hairline, a 1 px lift onto a hard shadow on hover, and the inverted flash box when picked or open. Every keycap shares one look. The corners slide in from their edges once the intro has gone.
+**One look (Tom, 2026-11-09).** A box always means a control; the logo and the name are never boxed. Every control shares one chip: dark glass, a hairline, an offset ring on hover, and the inverted flash box with the ring when picked or open. Every keycap shares one look. The corners slide in from their edges once the intro has gone.
 
 **Toy name.** Slab caps, from `toys.json` `name`. A Lab toy adds a quiet `LAB` tag. A toy with the new optional `toys.json` field `tier: "beta"` or `"alpha"` adds that tag, as the menu does.
 
@@ -126,17 +128,17 @@ All new rules live in `shared/stim.css` under `.stim2`. The shell adds `.stim2` 
 |---|---|---|
 | `--slab` | `"Iosevka Term Slab", ui-monospace, monospace` | All control text |
 | `--glass` | `oklch(0.13 0.012 275 / 0.86)` | Control backing |
-| `--shadow` | `3px 3px 0 oklch(0.07 0.01 275)` | Picked chip |
-| `--hard` | `5px 5px 0 oklch(0.05 0.01 275)` | Sheets |
-| `--lift` | `2px 2px 0 oklch(0.05 0.01 275)` | Hovered chip |
+| `--ring` | `oklch(0.94 0.008 275 / 0.6)` | Offset ring on a picked choice group and a sheet |
+| `--shadow`, `--hard`, `--lift` | hard offsets | Kept for toys that still read them; the shell uses none |
 | `--halo` | `0 0 3px` and `0 1px 2px` in `oklch(0.05 0.01 275)` | Bare text on the stage: logo, name, key strip |
 
 - Text: slab, 500, 11 px, caps, 0.07em tracking. Keycaps: 700, 10 px.
 - Chips: 26 px tall (36 px on touch), never narrower than they are tall, 2 px radius, 1 px `--line` border, `--glass` backing. A chip inside a joined block is 2 px less, so 34 px on touch.
-- Picked: `--fg` fill, `--bg` text, `--shadow`. This is the intro's flash box.
+- Hover: a 1 px `--fg` ring 4 px off the slab at 60%. Press: the ring snaps to the edge at full strength. Picked: `--fg` fill, `--bg` text, the full ring. The flash box is the intro's.
+- A choice group wears one ring round the group while it holds a pick, not one per chip.
 - Choice groups: one block, 1 px hairlines between options.
 - Slider: a 2 px track, the filled part in `--fg`, a 6 × 12 px bar thumb.
-- Sheets: 1 px `--fg` border, `--hard` shadow, near-opaque backing. Header row `SETTINGS` with `esc` on the right.
+- Sheets: 1 px `--fg` border, a `--ring` outline 3 px off, near-opaque backing. Header row `SETTINGS` with `esc` on the right.
 - Key strip: no backing. Keycaps have a 1 px border at 45% `--fg`; verbs at 62% `--fg`.
 - The Iosevka `@font-face` rules move from `index.html` and `shared/intro.css` into `stim.css`.
 - Reduced motion: no transitions; the key strip shows and hides at once.

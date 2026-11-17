@@ -7,9 +7,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Fire</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <script type="importmap">
@@ -62,7 +59,7 @@
 </div>
 
 <script type="module">
-import { initPage, audioKit, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio, stage } from '../shared/stim.js';
+import { initPage, audioKit, whenVisible, reduced, onReducedChange, oklchRgb, quality as siteQuality, setQuality as setSiteQuality, onQuality, pixelRatio, stage, buildSteps } from '../shared/stim.js';
 import { createFire } from '../shared/fire.js';
 stage('libs');
 // Adapted from the three.js webgpu_volume_fire example (MIT).
@@ -297,6 +294,9 @@ function noWebGPU() {
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
 
+  // Each library moves the load line.
+  let libs = 0;
+  const got = m => { stage('libs', ++libs / 9); return m; };
   const [
     THREE, TSL, { snoise, snoiseVec3 }, { ImprovedNoise }, { gaussianBlur }, { bloom },
     { DragControls }, { mergeGeometries }, { RoundedBoxGeometry },
@@ -310,8 +310,10 @@ async function start() {
     import('three/addons/controls/DragControls.js'),
     import('three/addons/utils/BufferGeometryUtils.js'),
     import('three/addons/geometries/RoundedBoxGeometry.js'),
-  ]);
+  ].map(lib => lib.then(got)));
   stage('build');
+  // Its load line: the device, three compiles, then two frames.
+  const built = buildSteps(6);
   const {
     vec3, vec4, float, Fn, uniform, texture3D, instanceIndex, pass, smoothstep, mix, min, max,
     mx_noise_float, If, positionWorld, positionLocal, saturation, cos, sin, abs, vec2, uint, hash, select, uv, instancedArray,
@@ -319,6 +321,7 @@ async function start() {
 
   const renderer = new THREE.WebGPURenderer();
   await renderer.init();
+  built();
   // WebGPURenderer can fall back to WebGL 2; this toy does not.
   if (!renderer.backend.isWebGPUBackend) {
     renderer.dispose();
@@ -875,10 +878,13 @@ async function start() {
   /* ---------- async warm-up ---------- */
   // Shaders compile off the critical path, so loading never freezes.
   await fire.compile([sparkPass]);
+  built();
   await scenePass.compileAsync(renderer);
+  built();
   const cameraMask = camera.layers.mask;
   camera.layers.mask = volumetricLayer.mask;
   await volumetricPass.compileAsync(renderer);
+  built();
   camera.layers.mask = cameraMask;
 
   canvas.setAttribute('aria-hidden', 'true');
@@ -948,6 +954,7 @@ async function start() {
     keyLight.shadow.needsUpdate = !running || ++shadowFrame % QUALITY[quality].shadow === 0;
     renderPipeline.render();
     if (++frames >= 3 && !canvas.classList.contains('on')) { canvas.classList.add('on'); stage('first-frame'); }
+    else if (frames < 3) built();
   }
 
   // Reduced motion: run the fire forward, then show one still frame.

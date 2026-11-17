@@ -16,8 +16,10 @@
 
 ## Idea
 
-A Prince Rupert's drop, a glass tadpole, lies on a wet black table in a dark studio. Click the head: a big steel hammer swings down, bounces twice and lifts away. The glass rings and nothing happens; that is the joke.
-Click the thin tail: pliers nip it and time drops to slow motion. A crack front runs from the cut to the head, the glass goes white behind it, and the drop bursts into a slow cloud of glittering shards that falls and settles on the table. Reset drips a glowing gob that quenches in steam and cools into a new drop.
+A Prince Rupert's drop, a glass tadpole, lies on black acrylic in a graphite studio. Click the head: a big steel hammer swings down, bounces twice and lifts away. The glass rings and nothing happens; that is the joke.
+Click the thin tail: pliers nip it and time drops to slow motion. One crack races up the core of the tail, then forks into a tree that fills the body and runs on to the front of the head. Frost follows the cracks, so the drop turns white in ragged fingers. The white drop holds for a beat, then bursts along its frost cells into a cloud of powder that settles on the table. Reset drips a glowing gob that quenches in steam and cools into a new drop.
+
+The look follows real drops and real high-speed footage (Tom, 2026-11-16: the first build looked "cheap and not well done"). Tom picked the dark studio over a backlit lightbox in `rupert/stagelab.html`, which keeps both stages on a switch (`noindex`).
 
 ## Controls
 
@@ -77,19 +79,22 @@ Drift: none known. The page keeps its own `spectral()` (also in Worry stone) and
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2005 | The page: CSS, markup, vignette, one module script |
+| `index.html` | 2277 | The page: CSS, markup, vignette, one module script |
+| `stagelab.html` | 2321 | Lab (`noindex`): the same toy with a switch between stage B (the toy's) and the backlit stage A |
 <!-- /gen:files -->
 
 ## Render pipeline
 
 | Pass | Target | Shader | Does |
 |---|---|---|---|
-| 1. Scene | `hdr.col` (RGBA16F) and `hdr.dep` (RG16F) | `SCENE_FS` (`:218`) | Ray march of the drop (body A from the head, tip piece B after a cut), the hammer and the pliers; glass with refraction, one inner reflection and six-wavelength dispersion; frost, crack front, heat glow, photoelastic fringes; the wet floor with rings, a mirror march, the lens shadow and its caustic; steam; flashes. Writes hit distance and a glass flag for pass 2. |
-| 2. Shards | `hdr.col`, additive | `PART_VS` / `PART_FS` (`:886`) | Up to 14,000 instanced shard quads, drawn twice: the mirror in the floor, then the shards. Paths are closed form in show time; the depth target hides shards behind steel and dims them behind glass. |
+| 1. Scene | `hdr.col` (RGBA16F) and `hdr.dep` (RG16F) | `SCENE_FS` (`:218`) | Ray march of the drop (body A from the head, tip piece B after a cut), the hammer and the pliers; glass with refraction, one inner reflection, six-wavelength dispersion and seven trapped bubbles; the crack tree, frost cells, heat glow, photoelastic fringes; the acrylic floor with rings, a mirror that fades with height, the lens shadow and its caustic; steam; flashes. Writes hit distance and a glass flag for pass 2. |
+| 2. Shards | `hdr.col`, additive | `PART_VS` / `PART_FS` (`:1011`) | Up to 14,000 instanced chips, drawn twice: the mirror in the floor, then the chips. Paths are closed form in show time; the depth target hides chips behind steel and dims them behind glass. |
 | 3. Bloom | Half-size chain | `bloomChain` from `shared/glow.js` | Threshold 1.0; 5 levels, 3 on Low. |
-| 4. Composite | Screen | `COMP_FS` (`:996`) | Bloom, the slow-motion tint and vignette, `gdGrade`, `ouFilm`. |
+| 4. Composite | Screen | `COMP_FS` (`:1123`) | Bloom, the slow-motion tint and vignette, `gdGrade`, `ouFilm`. |
 
-The drop is a chain of 15 round cones on 16 points (`REST`, `:1075`): a teardrop head, then a tail on a smooth curve with a log-scale taper. After a snip the chain splits at the cut. A crumbling tail is cut back on the CPU as the release front passes.
+The drop is a chain of 23 round cones on 24 points (`REST`, `:1208`), with no blends: a blend at a joint shows as a rib. It is a long teardrop, three times longer than wide, lying on its belly; it tapers on a curve into a thread that rises and curls back. No section sinks into the floor. After a snip the chain splits at the cut. A crumbling tail is cut back on the CPU as the release front passes.
+
+The crack tree (`growCracks`, `:1395`) grows on the CPU at the snip and goes to the shader as a float texture, two texels per segment, sorted by birth arc. All live cracks move in step through one cross-section; their count follows its area, from one in the tail to 24 in the head. A fork aims into the widest empty angle; cracks push apart, and one stops when two meet. The front runs up the tail 2.2 times faster than through the body (`TAIL_K`), and the white drop holds for 0.8 s (`WHITE`) before the head bursts. In the shader a crack is a narrow face along its line: dark in clear glass, flashing only where it mirrors a light. Frost spreads out from the cracks a little behind them; shattered glass is two scales of 3D cells. At the burst each large frost cell becomes one chip where the eye saw it (`makeDust`, `:1487`, with the shader's `hash33` in float32 steps); fine dust fills the rest.
 
 ### Uniforms (the ones a person tunes)
 
@@ -99,6 +104,7 @@ The drop is a chain of 15 round cones on 16 points (`REST`, `:1075`): a teardrop
 | `uDisp` | `float` | Spread of the glass index from violet to red | Dev `Dispersion`, 0.014 |
 | `uPolar` | `float` | Clear (0) to Polarised (1); fades over 0.45 s | Light choice |
 | `uFront` | `float` | Crack front, in arc s (0 at the tip, 1 at the back of the head) | From the burst clock |
+| `uCrk`, `uNCrk` | `sampler2D`, `int` | The crack tree and its segment count | Grown at the snip, up to 768 |
 | `uHeat` | `float` | Heat of a new drop; the thin tail cools first | 1 at the drip, 0 when cool |
 | `uExposure`, `uBloomK` | `float` | Film exposure and bloom strength | Dev rows, 1.15 and 0.3 |
 
@@ -119,7 +125,7 @@ The drop is a chain of 15 round cones on 16 points (`REST`, `:1075`): a teardrop
 | Slow-frame step | `detail()`: two slow seconds drop one level. Steps per level: march 56/80/100, inner 18/28/36, mirror 28/44/56; shards 5000/9000/14000 at snip time; bloom 3 or 5 levels |
 | Idle | The loop runs only while the hammer, the snip, the replay, the drip, the light fade, a ring or a flash moves; `whenVisible` stops it off screen |
 | Reduced motion | The hammer shows at the contact without a swing or jolt; a snip jumps to the settled end (the slider still scrubs); a new drop appears in place and cools; no water rings; the light switches at once; no slow-motion grade |
-| Measured | 2026-11-15, Mac, High quality, 1280 x 800 (canvas 2496 x 1504): frame interval median 8.3 ms, p90 9.3 ms over a full snip and replay; 8 to 17 ms as the burst starts. Building 14,000 shards takes 14 ms. Not measured on a phone. |
+| Measured | 2026-11-15, Mac, High quality, 1280 x 800 (canvas 2496 x 1504): frame interval median 8.3 ms, p90 9.3 ms over a full snip and replay; 8 to 17 ms as the burst starts. Building 14,000 shards takes 14 ms. Not measured on a phone. 2026-11-16, after the rebuild: headless runs read 38 to 60 fps through the crack and the burst on a busy shared GPU; a clean measure is still to do. Building the chips from the frost cells takes 26 ms once, at the snip. |
 
 ## State and storage
 
@@ -140,7 +146,8 @@ No files in `tests/`. On 2026-11-15, in the built-in browser pane: a clean conso
 
 - On phones the Time slider sits in Settings (the Bar v2 rule with a choice and an action), so the scrub is one tap further away. (`stimming-2gnm`)
 - During the slow motion the pliers cover the snipped tip; it shows when they let go. (`stimming-2gnm`)
-- Two faint pinch marks sit on the centre line of the neck under Polarised light. (`stimming-2gnm`)
+- A small stepped highlight sits on the drop's underside where it meets the floor; the lumps, bubbles, skin ripple and floor caustic are ruled out. (`stimming-zdo0`)
+- Frame rate after the rebuild is not cleanly measured. (`stimming-zdo0`)
 
 ## Legacy build
 
@@ -151,5 +158,6 @@ None.
 | | |
 |---|---|
 | Epic | `stimming-2gnm` (feature) |
+| Rebuild | `stimming-bfva` (stage probe), `stimming-zdo0` (model, crack, shards), 2026-11-16 |
 | Plans | None |
 | Version | None |

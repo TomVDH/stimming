@@ -1,5 +1,7 @@
 # Staged loading
 
+Status: active · Bean: `stimming-bg6j`
+
 Bean: `stimming-bg6j`. Started 2026-11-09.
 
 ## The stages
@@ -19,6 +21,7 @@ Helpers in `shared/stim.js`:
 - `stage(name)` sets `performance.mark('stim:<name>')` and `html[data-stage]`.
 - `idle()` resolves when the main thread is free.
 - `pageReady()` is the intro's `ready`: page load, fonts and the first frame, capped at 6 s.
+- `stage(name, part)` also feeds the intro's load line; `buildSteps(n)` counts a build in n steps. See "The intro is the preloader".
 - `later(fn)` runs `fn` after the first frame, in idle time.
 
 ## Recipe for one toy
@@ -31,6 +34,7 @@ Helpers in `shared/stim.js`:
 5. Import `idle` from `stim.js`; delete the local copy.
 6. Find the longest main-thread task with the harness. Slice it with `await idle()`, or move pure maths into a worker.
 7. Move anything the first frame does not need into `later()`.
+8. A build with more than one awaited step: `const built = buildSteps(n)`, then `built()` after each step. The load line then shows real progress.
 
 All 36 main-shelf toys follow the recipe.
 A page with its own `stage` variable imports the helper under another name (`stage as mark`).
@@ -44,6 +48,65 @@ A page with its own `stage` variable imports the helper under another name (`sta
 - All of it is fetch only. Nothing runs. `saveData` and 2G links skip it.
 
 The icon script stays as it is. It costs about 50 ms of main-thread time, and other sessions edit it daily.
+
+## The menu opens in stages (2026-11-16)
+
+Bean `stimming-qof2`. Tom: "ensure the main page either loads gracefully, chunked or has a preloader before opening up".
+
+| Stage | When | What shows |
+|---|---|---|
+| First paint | With the first bytes | The ground colour. The wordmark, the tagline and the labels wait for their fonts (1.2 s at most), then fade in once |
+| Wait | From 0.4 s, only while the page still loads | The comet's head at twelve o'clock, CSS only; it breathes |
+| Comet | When the whole page stands and the tube is ready (0.9 s at most) | The dot turns into the comet; it drops the dozen off |
+| After | 2.6 s later | The footer shader; after the load event, the shell prefetch |
+
+- No gate: a fast load is usable 0.3 s after the click, and the wait sign never shows on it.
+- `clock.js`, `tube.js` and `gl.js` preload from the head; the tagline's font preloads.
+- A script that stalls for 8 s leaves the whole shelf (the guard is in the view script in `index.html`). No JS and a failed `clock.js` leave it too.
+- States: `data-fonts` (`wait`, `in`) and `data-clock` (`wait`, `on`) on the root.
+
+Measured on Pages, cold, before (ms): wordmark at 204 to 328 (fast) and 572 (slow 4G, 4x CPU); first toy at 290 to 716 and 3024. Between the wordmark and the first toy the slow load showed nothing for 2.4 s.
+Measured on the local server, same slow link, main against the branch: first toy at 2039 and 1684; the wait dot comes in from 0.5 s.
+Fast, cold, the branch: first paint 164, first toy 247, last toy 1514, footer shader 2765. Main: 172, 265, 1529, 2792. One run each; the gap is inside the noise.
+
+Tried and dropped: an early start. The main shelf ends 32 kB (gzip) into the 162 kB page, so `clock.js` ran there. The first toy came at 0.6 s on the slow link. But the icon script, at the end of the page, draws some icons; tiles stood empty until it ran.
+The Lab's markup out of `index.html`: tried on 2026-11-16 and set aside (bean `stimming-zchj`). On that day the page was 148 kB gzip: 41 kB head and main shelf, 27 kB Lab markup, 72 kB icon script. The 58 kB above was wrong for that page. The icon script draws Lab icons at load and fails without their elements. 27 kB is about 0.14 s on a slow link. The real gain is a split of the icon script.
+Fonts in the repo (2026-11-16, Tom's yes): Gabarito (variable, 400 to 900, Latin and Latin Extended) and B612 (400, 700) are in `shared/fonts/`, 72 kB in all. The menu, `shared/stim.css`, `shared/intro.css` and Window seat hold the `@font-face` rules; the menu preloads B612 Bold. Local server, cold: the menu's first paint moves from 192 ms to 64 ms. About 240 toy pages still link Google's style sheet; the shell's own rules win there, so the look is the same, but the link still blocks their first paint until a roll removes it.
+
+The roll (2026-11-16, Tom: "Yes, all pages"; bean `stimming-6ayf`): 243 pages lose the Google link. 130 of them are on the shell and need no link. 113 lab and gallery pages link `shared/fonts/fonts.css`, the same four rules. Frietkot and `icons/spike-frietkot-1.html` keep Google for Tilt Neon and Courgette only; the intro lab keeps its loader for trial faces. `railgun/stormlab.html` went last, on Tom's word ("Yes, roll it"): `tools/commit.sh` gates that file, and `tools/clouds-check.mjs` fails on `main` as it is.
+
+## The intro is the preloader (2026-11-16)
+
+Tom: "make the intro flash parts the preloader as well".
+
+| When | What shows |
+|---|---|
+| Before `intro.js` runs, after 0.5 s | A hairline with a sheen, where the foot of the flash box will be. CSS only |
+| The intro plays | As before: flash, titles, reading time |
+| The toy still loads 10 frames after the titles open | The load line at the foot of the flash box fills in the toy's ink. Nothing else moves: a breathing emblem was rejected (Tom, 2026-11-16) |
+| The toy is ready | The line fills in 6 frames, then the intro leaves |
+
+- API: `progress(part)` in `shared/intro.js`, 0 to 1, never back. The intro lifts on `ready`, as before.
+- Shell default: `stage()` puts `libs` at 0.3, `build` at 0.5, `first-frame` at 0.95; with no stage call the intro itself reports 0.12, then 0.4 at the load event.
+- The line creeps up to 0.14 past the last report. The sheen is `translate` only, so it runs while the main thread compiles.
+- Reduced motion: a still line and the word Loading at the foot, after 1.2 s. No creep.
+- A toy that is ready in time never shows the line. Intro length, cold, main against the branch (ms): Galaxy 5297 and 5281, Window seat 3930 and 3981.
+- The failsafe that clears a dead overlay is 10 s, was 5 s.
+
+Four heavy toys on Pages before the change, cold (ms): fast link, then slow 4G with a 4x slower CPU.
+
+| Toy | Wire | Intro live | First frame | Intro gone | Warm: first frame, intro gone |
+|---|---|---|---|---|---|
+| Galaxy | 445 kB | 282 / 1033 | 2530 / 3502 | 5530 / 6596 | 245, 5209 |
+| Fire | 458 kB | 276 / 1201 | 2807 / 3518 | 5217 / 6538 | 165, 4942 |
+| Railgun | 1701 kB | 814 / 3376 | 1848 / 3802 | 5195 / 7479 | 425, 4080 |
+| Window seat | 1052 kB | 830 / 2085 | 1288 / 6003 | 4709 / 7053 | 332, 3863 |
+
+- The first paint waits 0.4 to 1.0 s (fast) and 1.5 to 3.9 s (slow) for the style sheets; the menu stays on screen until then. A sign on the menu at the click covers that (2026-11-16): the intro's hairline under the clicked icon, after 0.25 s. Clip: `docs/qa/loading/menu-click-sign.mp4`.
+- In the app's own browser, Window seat's first frame once came at 5.7 s on a cold shader cache. That is the case the load line is for.
+
+Harness: `npx -y -p playwright@1.63.0 node tools/loadtime.mjs <base> <path> menu|toy [out.json]`. `NET=slow4g|local4g`, `CPU=4`, `VIDEO=<dir>`, `VIEW=375x812`, `COLD_ONLY=1`, `DELAY="<glob>=<ms>"`.
+Clips and stills: `docs/qa/loading/`.
 
 ## Baseline, 2026-11-09
 

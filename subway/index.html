@@ -7,9 +7,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Subway</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <style>
@@ -100,7 +97,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initPage, choices, whenVisible, reduced, onReducedChange, pixelRatio, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { initPage, choices, whenVisible, reduced, onReducedChange, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { detail } from '../shared/detail.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -813,11 +811,12 @@ composer.addPass(new OutputPass());
 
 /* ---------- size ---------- */
 // Slow frames step down one rung: High to Standard, Standard to 1x.
-let rung = 0, size = { w: 1, h: 1, dpr: 1 };
+const D = detail({ maxDpr: 2, budget: 2.6e6, onChange: () => resize(true) });
+let size = { w: 1, h: 1, dpr: 1 };
 function resize(force = false) {
   const r = stage.getBoundingClientRect();
   const w = Math.max(1, r.width), h = Math.max(1, r.height);
-  const dpr = pixelRatio(w, h, { maxDpr: 2, budget: 2.6e6, low: rung > 0 });
+  const dpr = D.dpr(w, h);
   if (!force && w === size.w && h === size.h && dpr === size.dpr) return;
   size = { w, h, dpr };
   renderer.setPixelRatio(dpr);
@@ -827,15 +826,6 @@ function resize(force = false) {
   grade.uniforms.uRes.value.set(w * dpr, h * dpr);
   S.frame(w, h);
   if (ready) draw();
-}
-let runT = 0, avg = 1 / 60, slowT = 0;
-function watchdog(dt) {
-  if (!dt || rung) return;
-  runT += dt;
-  avg += (dt - avg) * 0.1;
-  if (runT < 4) return;
-  slowT = avg > 1 / 38 ? slowT + dt : 0;
-  if (slowT > 2) { rung = 1; resize(true); }
 }
 
 /* ---------- sound ---------- */
@@ -914,7 +904,7 @@ function loop(now) {
   S.update(dt, pace);
   voice();
   draw();
-  watchdog(dt);
+  D.frame(dt);
   if (!S.lively()) { hush(); kit.rest(() => !raf); return; }
   raf = requestAnimationFrame(loop);
 }
@@ -952,7 +942,8 @@ function popover(box, btn) {
 popover(document.getElementById('setter'), document.getElementById('setBtn'));
 // Settings holds the site-wide Quality choice.
 qualitySetting(document.getElementById('sets'));
-onQuality(() => { rung = 0; resize(true); wake(); });
+// The detail driver resizes on a new quality choice first.
+onQuality(() => wake());
 
 // Each shot cuts straight to its camera.
 const shotChoice = choices(document.getElementById('shots'), v => { opts.shot = v; save('shot', v); S.setShot(v); if (ready) draw(); wake(); });

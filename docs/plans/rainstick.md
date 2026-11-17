@@ -1,5 +1,7 @@
 # Rain stick (`rainstick`) implementation plan
 
+Status: active · Bean: `stimming-6hb9`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A long glass tube lies across a dark stage, full of beads and a forest of pins. Tilt it and the beads trickle down through the pins. Every bead that hits a pin clicks and lights that pin, so the tube rains light as it rains sound.

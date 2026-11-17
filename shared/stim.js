@@ -3,6 +3,8 @@
 // Colour comes from culori; Tone.js loads only when a toy asks for it.
 // Full URLs match the shared importmap, so each library loads once.
 import { converter, toGamut, formatRgb } from 'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm';
+// The intro shows the load; stage() reports it. A page imports the intro by this same address.
+import { progress } from './intro.js';
 const TONE_URL = 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
 /* ---------- storage ---------- */
@@ -1181,12 +1183,37 @@ export function whenVisible(el, fn) {
 /* ---------- staged loading ---------- */
 // A toy page loads in five stages: shell, libs, build, first-frame, extras.
 // stage() marks each one for timing and sets html[data-stage].
+// It also feeds the intro's load line: each stage starts at a fixed point of the line.
+const STAGE_AT = { shell: 0.05, libs: 0.3, build: 0.5, 'first-frame': 0.95, extras: 1 };
+const STAGE_NEXT = { shell: 'libs', libs: 'build', build: 'first-frame' };
 let shown;
 export const firstFrame = new Promise(r => { shown = r; });
-export function stage(name) {
-  performance.mark(`stim:${name}`);
-  document.documentElement.dataset.stage = name;
-  if (name === 'first-frame') shown();
+/**
+ * @param {string} name shell, libs, build, first-frame or extras.
+ * @param {number} [part] How much of this stage is done, 0 to 1. A toy with a long build
+ *   calls stage('build', done / total) as it goes, so the load line shows real progress.
+ */
+export function stage(name, part = 0) {
+  const root = document.documentElement;
+  // A repeat call with a new part marks nothing.
+  if (root.dataset.stage !== name) {
+    performance.mark(`stim:${name}`);
+    root.dataset.stage = name;
+  }
+  const from = STAGE_AT[name], to = STAGE_AT[STAGE_NEXT[name]] ?? from;
+  if (from !== undefined) progress(from + (to - from) * Math.min(1, Math.max(0, part)));
+  if (name === 'first-frame') { framed = true; shown(); }
+}
+let framed = false;
+/**
+ * A build in n steps, for the intro's load line. Call the returned function once per finished step.
+ * It returns its argument, so it fits a promise chain: bake().then(step).
+ * @param {number} n The steps from stage('build') to the first frame.
+ */
+export function buildSteps(n) {
+  let k = 0;
+  // A step that ends after the first frame reports nothing.
+  return value => { if (!framed) stage('build', Math.min(1, ++k / n)); return value; };
 }
 // Resolves when the main thread is free, so a build step cannot stall the intro.
 export const idle = (timeout = 800) => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout }) : setTimeout(r, 50)));

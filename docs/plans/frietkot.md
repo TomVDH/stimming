@@ -1,5 +1,7 @@
 # Frietkot (`frietkot`) implementation plan
 
+Status: done · Bean: `stimming-9f37`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A chip shack stands alone on an empty village square late at night. Drop fries into the fryer, shake the basket, and watch the steam roll out through the lamplight.

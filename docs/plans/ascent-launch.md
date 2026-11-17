@@ -1,5 +1,7 @@
 # Ascent and Ten seconds: what Ten seconds needs from `shared/rocket.js`
 
+Status: done · Bean: `stimming-bq7g`
+
 Written by the Ten seconds session for the Ascent session (2026-11-14). Plan: `docs/plans/ascent.md`, sections 3 and 8.
 Ten seconds is signed off (v0.10 "Hemelvaart"). Its look, flame, mirror and haze must not change when it adopts the shared rocket.
 All line numbers are `launch/index.html` today.

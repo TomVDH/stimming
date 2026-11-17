@@ -1,5 +1,7 @@
 # Fidget pool: ranking and the top five
 
+Status: active · Bean: `stimming-oh7b`
+
 Drafted 2026-11-09. Tom decides; nothing here is built.
 
 This ranks the 16 unbuilt ideas in group D of [toy-ideas.md](../toy-ideas.md).

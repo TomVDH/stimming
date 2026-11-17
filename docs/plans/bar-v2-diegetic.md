@@ -1,5 +1,7 @@
 # Bar v2: diegetic controls
 
+Status: active · Bean: `stimming-80dc`
+
 A diegetic control lives inside the scene. It draws on the toy's canvas, the pointer grabs it like any other part, and it replaces a bar control. It never duplicates one. A key in the key strip keeps the keyboard path.
 
 Every Bar v2 port proposes one, or says in one line that none fits. Brief: [bar-v2-migration.md](bar-v2-migration.md), step 4. Spec: [bar-v2.md](bar-v2.md).

@@ -166,7 +166,7 @@ Where the code and a ruling disagree, see "Drift and gaps" at the end.
 Stimming is a dark shelf of toys. The page itself stays quiet: near-black violet ground, white type, hairlines. The colour belongs to the toys, to their icons and to the eight letters of the wordmark.
 Tom's taste line governs every surface: "Daring, zany and original. Never skeuomorphic or fussy." Harmonograph and Music box were "way too involved". Bare-minimal is "too minimal". A menu concept must stay usable first.
 
-Two voices share the screen. Gabarito speaks for the page (titles, prose). Iosevka Term Slab in caps speaks for the machine (toy labels, every Bar v2 control, keycaps). B612 carries the Stimming wordmark only, plus parts of the intro.
+Two voices share the screen. Gabarito speaks for the page (titles, prose). Iosevka Term Slab in caps speaks for the machine (toy labels, every Bar v2 control, keycaps). B612 carries the Stimming wordmark and every heading: the Clock name, the menu headings and the toy-page headings.
 One device ties the intro, the controls and the build link together: the flash box. It is a white box with dark content cut out of it. The intro lands the logo in it. A picked control inverts into it.
 
 A toy page puts play first. The stage fills the first screen. The controls sit in its four corners. Writing lives under the stage, and that zone is hidden today.
@@ -174,10 +174,10 @@ A toy page puts play first. The stage fills the first screen. The controls sit i
 **Key Characteristics:**
 - Dark only. Every colour is OKLCH.
 - The shell has no accent colour of its own. Each toy brings one (`accent` in `toys.json`).
-- Square slab controls on dark glass, with hard offset shadows as a state signal.
+- Square slab controls on dark glass. An offset ring marks hover, press, pick and open. No hard shadows anywhere.
 - The flash box: white fill, dark ink, used for the intro logo and for every picked control.
 - Motion in the shell runs in steps at 30 fps, not in smooth curves.
-- No browser interaction markers show: no ring, no tap flash, no selection.
+- No tap flash and no selection. Keyboard focus shows a ring in `--focus` on `:focus-visible` only (bean `stimming-knup`).
 
 ## Colors
 
@@ -223,7 +223,7 @@ Colour that data files own.
 
 - **Toy accents** (`toys.json`, field `accent`): one per toy. A value is one OKLCH colour or a `linear-gradient(...)` of OKLCH stops, most at 100deg. Examples: Morpher `linear-gradient(100deg, oklch(0.84 0.17 340), oklch(0.84 0.14 250))`, Pop field `oklch(0.9 0.2 128)`. The Signal intro inks the logo with it (`shared/intro.js:344-345`). The frontmatter does not list them; `toys.json` is the source.
 - **Footer glow** (`index.html:114-121`): three radial glows under the menu's footer: `oklch(0.6 0.22 320 / 0.5)`, `oklch(0.74 0.14 200 / 0.42)`, `oklch(0.82 0.15 80 / 0.38)`.
-  In the Clock view the glow is a mesh of five lights mixed `in oklch` and added as light; it leans to the pointer and brightens near the onnozelaer mark, which sits in the credit line (`shared/menu/clock.css`).
+  In the Clock view the glow is `shared/menu/mesh.js`: slow noise picks from six hues (magenta, violet, cyan, green, amber, red) mixed in OKLab, as a low horizon 340 px at most. The pointer stirs and brightens it. Rules: `docs/menu.md`.
 
 ### Neutral
 
@@ -250,14 +250,14 @@ Tokens on `:root` in `shared/stim.css:13-24`. The Bar v2 tokens sit on `.stim2` 
 
 **The Borrowed Colour Rule.** The shell owns no accent. Colour comes from the toy (`accent`), the series (`color`) or the wordmark's letters. Shell chrome stays in the neutral family and in white.
 
-**The White Title Rule.** In the Signal intro the logo takes the toy's ink. The title stays white (Tom, 2026-11-09).
+**The White Title Rule.** In the Signal intro the logo takes the toy's ink. The title stays white.
 
 ## Typography
 
-**Display Font:** Gabarito (with "Avenir Next", "Segoe UI", system-ui, sans-serif). Variable, 400 to 900, from Google Fonts.
+**Display Font:** Gabarito (with "Avenir Next", "Segoe UI", system-ui, sans-serif). Variable, 400 to 900. Self-hosted in `shared/fonts/`.
 **Body Font:** Gabarito (same stack, token `--sans`).
 **Label/Mono Font:** Iosevka Term Slab (with ui-monospace, monospace). Self-hosted in `shared/fonts/`, weights 500 and 700 (`shared/stim.css:307-308`). Token `--slab` on `.stim2`.
-**Wordmark Font:** B612 (with `--sans`). From Google Fonts, weights 400 and 700.
+**Wordmark and Heading Font:** B612 (with `--sans`). Self-hosted in `shared/fonts/`, weights 400 and 700. It sets the wordmark and every heading.
 
 **Character:** A round, friendly sans for the page, set tight and heavy at size. A slab monospace in caps for anything that acts like a machine label.
 
@@ -323,24 +323,21 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 The system is a hybrid, and each layer has its own device.
 
 - **The menu is flat.** Tiles have no card, no border and no shadow. Depth lives inside each icon as light: the shared `lit` glint and `rim` line (`index.html:203-210`).
-- **Bar v2 controls use hard offset shadows as state.** A control at rest is flat dark glass with a hairline. Hover lifts it 1 px up and left onto a 2 px shadow. A pick or an open sheet holds a 3 px shadow. A sheet holds a 5 px shadow. Touch screens get no hover lift.
-- **Bare text on the stage wears a soft dark halo**, so it stays legible on bright scenes. The logo and the toy name wear none (Tom): `shared/stim.css:373`.
+- **No hard shadows anywhere.** Bar v2 controls show state with an offset ring: a 1 px `--fg` line 4 px off the slab. Hover shows it at 60%, a press snaps it to the edge, a pick or an open control holds it at full strength. A sheet and a choice group with a pick wear a `--ring` outline 3 px off.
+- **Bare text on the stage wears a soft dark halo**, so it stays legible on bright scenes. The logo and the toy name share it (Bar v2 rule 8). The shell still leaves them bare (`shared/stim.css:373`); see Drift and gaps.
 - **Glass is backdrop blur plus dimming.** The intro blurs and darkens the whole page behind it. v1 controls on a stage carry a frosted backing.
 
 ### Shadow Vocabulary
 
-- **Lift** (`--lift: 2px 2px 0 oklch(0.05 0.01 275)`): a hovered control, with `transform: translate(-1px, -1px)`.
-- **Shadow** (`--shadow: 3px 3px 0 oklch(0.07 0.01 275)`): a picked chip, an open Settings or tray button.
-- **Hard** (`--hard: 5px 5px 0 oklch(0.05 0.01 275)`): sheets.
+- **Ring** (a 1 px `--fg` line on `::after`, 4 px off the slab; `--ring: oklch(0.94 0.008 275 / 0.6)` for outlines): hover, press, pick and open on Bar v2 controls; sheets and picked choice groups.
+- `--lift`, `--shadow` and `--hard` stay defined for toys that still read them. The shell uses none.
 - **Halo** (`--halo: 0 0 3px oklch(0.05 0.01 275), 0 1px 2px oklch(0.05 0.01 275 / 0.9)`): a `text-shadow` on the key strip.
 - **Intro glass** (`blur(60px) brightness(0.3)` in Signal, over a tint of `oklch(0.1 0.02 275 / 0.45)`): `shared/intro.css:26-27`, `:176`; values from `shared/intro.js:126`.
 - **v1 frost** (`blur(10px)` under `oklch(0.15 0.012 275 / 0.84)`; trays `blur(14px)` under `oklch(0.19 0.012 275 / 0.94)`): `shared/stim.css:169-172`, `:240-241`.
 
 ### Named Rules
 
-**The Shadow Is State Rule.** A hard shadow means hovered, picked or open. Nothing wears one at rest except a sheet.
-
-**The Hard Shadow Scope Rule.** Hard offset shadows belong to Bar v2 controls and sheets. A menu icon never has one: no dark copy and no slab offset behind the shape (Tom, 2026-11-09). A soft halo is fine there.
+**The No Hard Shadow Rule.** No surface wears a hard offset shadow: no control, no sheet, no icon. A soft halo is fine. Light sources (the footer glow, lamps in a toy) may glow.
 
 ## Shapes
 
@@ -361,11 +358,12 @@ Square slab on dark glass. A box always means a control.
 
 - **Shape:** 26 px tall, never narrower than tall, 2 px radius, 1 px `--line` border, `0 10px` padding (`shared/stim.css:343-350`). 36 px on coarse pointers.
 - **Rest:** `--glass` backing, `--muted` text, slab caps.
-- **Hover (mouse only):** `--fg` text, border at 45% `--fg`, 1 px up and left, `--lift`. 0.15 s ease.
-- **Picked or open:** `--fg` fill, `--bg` text, `--shadow`. The pick outranks hover.
-- **Held:** 1 px down and right, no shadow.
+- **Hover (mouse only):** `--fg` text, border at 45% `--fg`, the ring at 60%. No movement.
+- **Press:** the ring snaps in to the slab's edge at full strength, in two 30 fps steps.
+- **Picked or open:** `--fg` fill, `--bg` text, the full ring. The pick outranks hover.
+- **Held:** the ring sits on the edge.
 - **Disabled:** 0.4 opacity, no lift.
-- **Focus:** no ring shows (Tom, 2026-11-09). See Drift and gaps.
+- **Focus:** no ring shows. See Drift and gaps.
 - **Icon chip:** square, a 14 px stroke icon at 1.5 width.
 
 ### Choice: segments, stepper, tray
@@ -380,7 +378,7 @@ One box 26 px tall on `--glass`: a word label, then a 96 px track. The filled pa
 
 ### Sheet (Settings, Dev, tray)
 
-- **Shape:** 280 px wide, no radius, 1 px `--fg` border, `--hard` shadow, near-opaque backing (`shared/stim.css:413-419`).
+- **Shape:** 280 px wide, no radius, 1 px `--fg` border, a `--ring` outline 3 px off, near-opaque backing (`shared/stim.css:413-419`).
 - **Anatomy:** header row in bold caps at 0.14em with an `esc` keycap; sections of rows split by hairlines; a section label at 9.5 px; a Reset footer (`:424`, `:451-459`).
 - **Behaviour:** drops below its corner; on a narrow stage the left sheet rises from the bottom. A short stage scrolls the sheet inside its own box. Opens on click, never on hover.
 
@@ -411,7 +409,7 @@ The shipped intro (`DEFAULT_VARIETY = 'signal'`, `shared/intro.js:110`; Tom, 202
 - **Fixed point:** the logo's centre is `--origin: 36cqh` at every stage and never moves (`shared/intro.css:23`). The copy hangs below it.
 - **Logo:** the toy's emblem as a one-colour luminance mask, `clamp(96px, min(30cqw, 19cqh), 168px)`, with padding of 16% (`shared/intro.css:17-19`, `:75-79`).
 - **Beats** (30 fps; `CLASSIC` in `shared/intro.js:112` over `TIMING` at `:66-101`): lead 4 frames, pop 9 frames at scale 3.4, flash 16 frames, 400 ms per line with 5 frames between lines, reading time 1000 ms plus 15 ms per motto character up to 2200 ms, wipe 400 ms, fade 600 ms.
-- **Failsafe:** the overlay clears itself after 5 s if the script never runs.
+- **Failsafe:** the overlay clears itself after 10 s if the script never runs.
 - The Bar v2 corners wait for the intro, then slide in 6 px from their edges, 60 ms apart (`shared/stim.css:489-498`).
 
 ### Menu tile and icon
@@ -420,7 +418,7 @@ The shipped intro (`DEFAULT_VARIETY = 'signal'`, `shared/intro.js:110`; Tom, 202
 - **Icon:** inline SVG, the toy's own object drawn from its real frames. It stays live under the pointer: a GSAP 3.13 timeline per toy (`toys.<id> = { play, rest }`).
 - **Shared light:** `lit` is a radial white glint from the top left (0.38 to 0 opacity); `rim` is a white line that fades by the middle (0.62 to 0), 2 wide (`index.html:203-210`).
 - **Planned toy:** the same art as an outline in `--sketch`, 2 px stroke.
-- **Icon standard** (Tom, 2026-11-15): a toy has at most three icons: Current, Shaded object and Isometric block. The full standard is in `AGENTS.md`; the reference page is `icons/sheet.html`.
+- **Icon standard**: a toy has at most three icons: Current, Shaded object and Isometric block. The full standard is in `AGENTS.md`; the reference page is `icons/sheet.html`.
 
 ### Series divider and switch
 
@@ -442,7 +440,7 @@ Round pills in Gabarito 13 px: transparent, `--line` border, 999 px radius, `6px
 - **Do** keep every surface dark, and write every colour in OKLCH.
 - **Do** take colour from the toy's `accent`, the series `color` or the wordmark's letters. Keep shell chrome neutral or white.
 - **Do** set control text in Iosevka Term Slab caps (500, 11 px, 0.07em) and writing in Gabarito.
-- **Do** box a thing only when it is a control. Leave the logo and the toy name unboxed and without shadow.
+- **Do** box a thing only when it is a control. Leave the logo and the toy name unboxed; they share the stage-text halo.
 - **Do** show a pick as the flash box: `--fg` fill, `--bg` text.
 - **Do** build a new toy page on Bar v2: one `bar` spec to `initPage`, five visible controls at most, the rest in Settings.
 - **Do** keep the intro logo's centre on `--origin`. Nothing moves it.
@@ -454,15 +452,18 @@ Round pills in Gabarito 13 px: transparent, `--line` border, 999 px radius, `6px
 
 ### Don't:
 - **Don't** add a light theme.
-- **Don't** put a two-tone hard offset shadow on a menu icon: no dark copy and no slab offset behind the shape (Tom, 2026-11-09).
-- **Don't** draw an icon as a small model of the toy, or with dark outlines, thin lines, tiny parts or sparkle clutter (Tom, 2026-11-15). Draw no Stencil, Single-weight line or Abstract mark style.
-- **Don't** give a series icon a gold border, sparks, depth, tilt, wobble or sheen. No birds on the East Van and Belgium icons (Tom, 2026-11-15).
+- **Don't** put a hard offset shadow on anything: no dark copy and no slab offset behind a shape.
+- **Don't** draw an icon as a small model of the toy, or with dark outlines, thin lines, tiny parts or sparkle clutter. Draw no Stencil, Single-weight line or Abstract mark style.
+- **Don't** give a series icon a gold border, sparks, depth, tilt, wobble or sheen. No birds on the East Van and Belgium icons.
 - **Don't** put blurbs or taglines on the stage. Writing lives under it.
 - **Don't** colour the intro title. Only the logo takes the toy's ink.
 - **Don't** swap a live icon for a still copy.
 - **Don't** use a brand name for a toy (Tom's exceptions: Domino Day, Strandbeest).
 - **Don't** make it skeuomorphic or fussy, and don't make it bare-minimal.
 - **Don't** add a font or a library without Tom.
+- **Don't** light a scene wall to wall in neon. Use practical lamps, real materials and haze; bloom only on lamps.
+- **Don't** speed up big things. A ship, a train or a crane moves at real speed or slower; start nearer instead.
+- **Don't** put design-explanation copy on lab or gallery pages. Labels only.
 - **Don't** build a new page on the v1 bar or restyle the shared bar from a toy.
 
 ## Drift and gaps
@@ -476,21 +477,21 @@ Recorded as found. Nothing here is fixed.
 | 3 | The menu does not link `stim.css`. It has its own token block with other values: `--fg` 0.95 (shell 0.94), `--muted` 0.6 (shell 0.64), body 16 px / 1.3 (shell 14 px / 1.35). It has no `--surface`, `--line` or `--stage`. | `index.html:13-28` |
 | 4 | No type scale. Sizes are literals: 9, 9.5, 10, 11, 12, 13, 14, 15, 16 and 22 px, plus clamps. | both stylesheets |
 | 5 | No spacing scale and no radius tokens. Radii in use: 2, 4, 5, 6, 10, 12, 14, 16, 18 and 999 px. | both stylesheets |
-| 6 | Focus outlines are removed for every element with `!important`. This is Tom's ruling (2026-11-09, Bar v2 rule 6). The shell CSS gives no other focus mark, so a keyboard user sees no focus on a control (WCAG 2.4.7). | `shared/stim.css:40`; `index.html:37` |
+| 6 | Focus outlines are removed for every element with `!important`. The new rule is a `:focus-visible` ring in `--focus` (bean `stimming-knup`). | `shared/stim.css:40`; `index.html:37` |
 | 7 | `--focus` is defined twice. Its one shell use, the Series switch outline, loses to the rule in item 6. | `index.html:187` |
 | 8 | `--pick` and `--surface` are defined, and the shell uses neither. Only Fidget parts, lab pages and Viaduct read them. | `shared/stim.css:15`, `:20` |
-| 9 | B612 is the wordmark font and an intro font. `AGENTS.md` Conventions and `PRODUCT.md` name only Gabarito and Iosevka. | `shared/stim.css:1`, `:97` |
+| 9 | B612 is now the wordmark and heading font. The trial notes in `clock.css`, `stim.css` and `tube.js` go with bean `stimming-im51`. | `shared/stim.css:1`, `:97` |
 | 10 | The wordmark asks for weights 400 to 900 per letter. B612 loads at 400 and 700 only, so the browser shows two weights. | `shared/stim.js:46-50` |
 | 11 | Iosevka has three `@font-face` blocks under two family names. `bar-v2.md` section 2 says they move into `stim.css`; the other two remain. The menu tagline asks first for a family that the menu does not declare. | `shared/stim.css:307-308`; `index.html:139-143`; `shared/intro.css:5-8` |
 | 12 | Literal colours stand in for tokens: `#fff` for the flash, `--intro-bg` repeats `--bg`, each page repeats `oklch(0.16 0.012 275)` in a `<style>` tag, `.fail` repeats `--muted`, and three backings are literals. | `shared/intro.css:11`; `shared/stim.css:83`, `:157`, `:170`, `:240`, `:416` |
 | 13 | Some menu icon gradients are hex, not OKLCH. | `index.html:212-217` |
 | 14 | `--stage` sits at hue 270; the other neutrals sit at 275. | `shared/stim.css:21` |
-| 15 | `AGENTS.md` puts the intro subtitles at the foot, lifted -14. The shipped Signal variety sets both to 0 and stacks them under the translation. | `shared/intro.js:92-93`, `:126-127` |
-| 16 | The vignette and the display name are styled but hidden. The content zone's limit and file format are open (`PRODUCT.md`). | `shared/stim.css:143` |
+| 15 | The shipped Signal variety sets the subtitle lift to 0 and stacks the subtitles under the translation. The code is the rule. | `shared/intro.js:92-93`, `:126-127` |
+| 16 | The content zone and the display name are styled but hidden. The zone holds fixed short sections: idea, making-of, changes, credits. | `shared/stim.css:143` |
 | 17 | The v1 (i) button is 30 px and has no coarse-pointer rule. It is under the 34 px floor on touch. | `shared/stim.css:230-235` |
 | 18 | Dormant menu CSS: the series badge and Constellation rules stay while `SERIES_ON` is off. One 560 px media rule repeats the base size. | `index.html:122`, `:149-175` |
 | 19 | Proposals, not final: the toy accents (first set, 2026-11-09), eight of the eleven series shots, five Flemish series names. | `toys.json`; `shared/series/shots.js`; `series.json` |
 | 20 | The contrast of small control text is not measured: 9 px tags and 9.5 px section labels at 0.75 opacity. Bar v2 rule 8 asks for 4.5:1. | `shared/stim.css:392`, `:453` |
 | 21 | The Creative North Star has no name. The playbook asks the owner for it; Tom has not set one. Colours keep the code's token names. | this file |
-| 22 | The hard offset shadow has two rulings with two scopes: never on a menu icon, native on Bar v2 controls. Both are recorded above with their scopes. | `AGENTS.md`; `docs/plans/bar-v2.md` |
+| 22 | Prism and Canal at dusk still draw their own hard shadows from `--hard` and `--lift`; each moves in its own chat. The stage logo and name still wear no halo; the rule is the shared halo (bean `stimming-jmnh`). | `AGENTS.md`; `docs/plans/bar-v2.md` |
 | 23 | The tonal ramps in `.impeccable/design.json` are made for the panel. They are not project tokens. | `.impeccable/design.json` |

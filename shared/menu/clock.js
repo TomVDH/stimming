@@ -30,10 +30,10 @@ function start() {
   <p class="clock-tag"></p>
 </div>`;
   shelf.after(face);
-  // The Re-roll stands under the clock.
+  // The Re-roll stands in the clock, low in the middle.
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'clock-roll', title: 'Re-roll (R)' });
   button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
-  face.after(button);
+  face.append(button);
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
@@ -132,9 +132,28 @@ function start() {
   const tile = node => /** @type {Element | null} */ (node)?.closest?.('main > .shelf > li') ?? null;
   // The toys take no hover and no focus while the intro plays (Tom); `shy` holds them.
   let shy = false;
+  // A touch has no hover. The first tap on a toy shows it; a second tap opens it.
+  // The tap gives the toy focus, so the focus path below shows it and plays its icon.
+  let poke = '', before = null;
+  addEventListener('pointerdown', e => {
+    poke = e.pointerType;
+    // Some browsers focus a link on the tap itself; the focus from before the tap counts.
+    before = document.activeElement;
+    // A tap away from the toys puts the toy in hand down.
+    const held = tile(document.activeElement);
+    if (poke === 'touch' && held && !tile(e.target)) /** @type {HTMLElement} */ (document.activeElement).blur();
+  }, true);
+  shelf.addEventListener('click', e => {
+    const li = tile(e.target);
+    if (!li || poke !== 'touch') return;
+    const link = /** @type {HTMLElement} */ (li.querySelector('a.toy'));
+    if (before === link) return;
+    e.preventDefault();
+    link.focus({ preventScroll: true });
+  });
   shelf.addEventListener('pointerover', e => {
     const li = tile(e.target);
-    if (!li || shy) return;
+    if (!li || shy || e.pointerType === 'touch') return;
     const fresh = !face.hasAttribute('data-live');
     // The wedge starts at the toy, so it does not sweep in from afar.
     if (fresh) aim(hour(li), true);
@@ -148,11 +167,12 @@ function start() {
     const r = face.getBoundingClientRect();
     aim(Math.atan2(e.clientX - (r.left + r.width / 2), (r.top + r.height / 2) - e.clientY) * 180 / Math.PI);
   });
-  shelf.addEventListener('pointerout', e => { if (!tile(e.relatedTarget)) rest(); });
+  shelf.addEventListener('pointerout', e => { if (e.pointerType !== 'touch' && !tile(e.relatedTarget)) rest(); });
   shelf.addEventListener('focusin', e => {
     const li = tile(e.target);
     if (!li || shy) return;
-    aim(hour(li));
+    // The wedge starts at the toy when the middle was empty.
+    aim(hour(li), !face.hasAttribute('data-live'));
     live(true);
     show(li);
   });
@@ -203,7 +223,7 @@ function start() {
   function arrive(first = false) {
     const lis = dozen();
     // With no motion the dozen simply shows.
-    if (calm()) { lis.forEach(li => hold(li, false)); return; }
+    if (calm()) { root.dataset.clock = 'on'; lis.forEach(li => hold(li, false)); return; }
     lis.forEach(li => hold(li, true));
     shy = true;
     // On a fresh page the set warms up to snow and switches off first; then the comet runs.
@@ -212,6 +232,9 @@ function start() {
       // The comet fades in where it starts, on the track at twelve o'clock.
       const head = { a: 0, fade: 0 }, paint = () => drawComet(head.a, head.fade);
       let came = 0;
+      // The wait ends here: the CSS dot at twelve fades out as the comet fades in.
+      // The dot waits through the TV's blink, so the comet's head never leaves.
+      root.dataset.clock = 'on';
       // The hold ends when the comet is gone.
       gsap.timeline({ onComplete() { drawComet(0, 0); release(); } })
         .to(head, { a: 1, duration: 1.6, ease: 'sine.inOut', onUpdate() {
@@ -316,10 +339,17 @@ function start() {
   ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => addEventListener(type, wake, { passive: true }));
 
   deal();
-  root.dataset.clock = 'on';
+  // The dozen stands, out of sight; the wait goes on until the comet starts.
+  root.dataset.clock = 'wait';
   // The intro waits for the tube, so its shader build does not stall the sweep. A timer, not a frame:
   // a hidden tab gets no frames. Until then the dozen is out of sight.
   if (!calm()) dozen().forEach(li => hold(li, true));
-  Promise.race([tubeReady, new Promise(r => setTimeout(r, 900))]).then(() => setTimeout(() => arrive(true), 40));
+  const after = ms => new Promise(r => setTimeout(r, ms));
+  // The wordmark drops in when its fonts are in; the TV comes in just after it, not with it.
+  const lettered = new Promise(r => {
+    if (root.dataset.fonts !== 'wait') return r();
+    new MutationObserver((_, o) => { if (root.dataset.fonts !== 'wait') { o.disconnect(); r(); } }).observe(root, { attributes: true, attributeFilter: ['data-fonts'] });
+  }).then(() => after(300));
+  Promise.all([Promise.race([tubeReady, after(900)]), lettered]).then(() => setTimeout(() => arrive(true), 40));
   wake();
 }

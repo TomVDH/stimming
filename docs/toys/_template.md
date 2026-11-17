@@ -27,6 +27,16 @@ A section with nothing to say keeps its heading and says "None."
 Two or three sentences: what the toy is and what a hand does with it.
 Say what makes it this toy, not what every toy does.
 
+## Rules
+
+Rules an agent must follow when working on this toy. One rule per line.
+State each rule as it stands. "None." if the toy has none.
+
+## Direction
+
+Tom's art direction for the toy: the look, the framing, the motion, and what is out.
+State each point as it stands. "None." if there is none.
+
 ## Controls
 
 <!-- gen:bar -->
@@ -54,6 +64,7 @@ Bar: v2 \| v1 \| own shell.
 <!-- gen:stack -->
 | | |
 |---|---|
+| Stack type | Sketch \| Shader \| Environment \| Scene \| Compute |
 | Tier | DOM/SVG \| Canvas 2D \| Raw WebGL2 \| three.js \| three.js WebGPU (TSL) |
 | Libraries | Names from the importmap that the page imports, three.js addons by name |
 | Importmap | Word for word \| Differs: say how |
@@ -110,6 +121,7 @@ One table per shader that a person tunes. Leave out the frame-size and time unif
 | Slow-frame step | `detail()` \| own watch (rule) \| None |
 | Idle | The loop stops when: ... \| Never (say why) |
 | Reduced motion | What changes |
+| Start-up | What builds behind the intro, and the steps the load line counts (`buildSteps(n)`) \| Shell default |
 | Measured | First frame, steady fps at 1280 px and on a phone, with the date |
 
 ## State and storage
@@ -117,6 +129,14 @@ One table per shader that a person tunes. Leave out the frame-size and time unif
 | Key | Holds |
 |---|---|
 | `stimming.<id>.sound` | Sound on or off |
+
+## Attributions
+
+Every outside source: libraries, data, audio, fonts, models, textures, and techniques or papers the toy adapts.
+An unknown licence blocks the approved label (`docs/plans/release-ready.md`).
+
+| Source | Kind | Licence | Credit shows |
+|---|---|---|---|
 
 ## Tests and QA
 

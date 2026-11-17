@@ -1,5 +1,7 @@
 # Night viaduct, Pass snowbound: implementation plan
 
+Status: done · Bean: `stimming-3cmz`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Pass becomes a snowbound epic: a long freight with a plough crosses a tall curved viaduct in a storm, under a moon that breaks through the cloud.

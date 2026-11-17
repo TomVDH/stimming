@@ -1,5 +1,7 @@
 # Shared shader library
 
+Status: active · Bean: `stimming-ssrh`
+
 Bean: `stimming-ssrh`. Started 2026-11-09. Tom picks; nothing here is built yet.
 
 Tom, Train Ride chat, 2026-11-09: "we also need to spin off sub session into REUSABLE shader effects that are shared between several toys; some of these too will be sourced from havoc / buoy business".
@@ -164,6 +166,7 @@ For raw WebGL2 toys only. A three.js toy keeps the renderer's ACES and its `Outp
 | About twenty more raw toys | `+ (hash(px) - 0.5) / 255.0` | `ouDither(c, px)`: the same hash |
 
 A new raw toy ends its last pass with `ouFilm(col, exposure, gl_FragCoord.xy)`.
+`ouFilmAces(col, exposure, px)` is the same with Stephen Hill's fitted ACES curve and its colour matrices. On the environment runner, `env.state.tone = 'aces'` picks it; the default `'film'` keeps `ouFilm`. Tornado alley is the one toy on it (2026-11-17).
 
 ### Detail: how a toy adopts it
 

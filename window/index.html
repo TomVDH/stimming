@@ -7,9 +7,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Window seat</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <script type="importmap">
@@ -90,7 +87,7 @@
 </div>
 
 <script type="module">
-import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit, sound, stage as mark, pageReady, buildSteps } from '../shared/stim.js';
 mark('libs');
 import { intro as playIntro } from '../shared/intro.js';
 import { QUAD_VS, outsideFS, cabinFS, standIn } from './shader.js';
@@ -366,8 +363,10 @@ function uploadSky() {
 }
 // The cloud noise volume: 64 cubed, tiling, with mipmaps for far cloud.
 const NOISE_N = 64;
+// The intro's load line: the two bakes, the map, the shader compile, then the first frame.
+const built = buildSteps(VANC ? 5 : 4);
 // Sky and noise bake side by side, before the bar exists.
-const [noiseVol, firstSky, vanMap] = await Promise.all([offThread('./noise3d.js', bakeNoise, [NOISE_N]), offThread('./sky.js', bake, skyArgs(HOURS[opts.hour] || HOURS.dusk)), VANC ? loadVan() : null]);
+const [noiseVol, firstSky, vanMap] = await Promise.all([offThread('./noise3d.js', bakeNoise, [NOISE_N]).then(built), offThread('./sky.js', bake, skyArgs(HOURS[opts.hour] || HOURS.dusk)).then(built), VANC ? loadVan().then(built) : null]);
 const noiseTex = new THREE.Data3DTexture(noiseVol, NOISE_N, NOISE_N, NOISE_N);
 Object.assign(noiseTex, {
   format: THREE.RGBAFormat, type: THREE.UnsignedByteType, generateMipmaps: true, unpackAlignment: 1,
@@ -2145,6 +2144,8 @@ if (renderer.extensions.has('KHR_parallel_shader_compile')) {
     });
   }
 }
+// The compile is done, or the stand-in took its place.
+built();
 buildSky(firstSky);
 uploadSky();
 new ResizeObserver(() => resize()).observe(stage);

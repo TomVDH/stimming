@@ -1,6 +1,8 @@
 # Railgun: names for the sky, the air and every volume
 
-Status: in use (2026-11-16, bean `stimming-626s`).
+Status: active · Bean: `stimming-626s`
+
+In use (2026-11-16).
 One name per effect. Chats, beans, Dev rows and code comments use the name in **bold**.
 Code handles stay as they are: five sessions share `railgun/index.html`, so a rename waits for a quiet day.
 
@@ -97,3 +99,94 @@ Known mixes: `sparks` holds both the muzzle's sparks (near) and the rock's spark
 | **Shock rings** | `makeRing()` | Thin discs of compressed air. |
 | **Ion line** | `ionMat` | The bolt's path stays in the sky. |
 | **Arcs** | `arcMat` | Lightning over the barrel during the charge. |
+
+## Added since the first pass (2026-11-16, bean `stimming-z267`)
+
+Tom asked for every volume and glow by name. These came in after the inventory frames were taken.
+
+### Rock glows
+
+| Name | Code | Notes |
+|---|---|---|
+| **Fire globe** | `rockFill()`, `uFill` | The nearing rock wraps the sky round it in fire: a hot core, an orange globe, a soft halo. From halfway down; full near the ground; each split swells it (`fillPopT`). |
+| **Fire light** | `uFill` in `STORM_FS` and the card cloud shader | The globe lights the Storm volumes and the cards, warm, strongest toward the rock. |
+| **Rock globe** | `rockGlobe` | A glow card round the rock in the strike. |
+| **Bow halo** | `haloMat` | The wide glow ahead of the Bow shock. |
+| **Hit flare** | `hitFlare`, `hitGlow` | The flash and glow at the hit. |
+| **Ember pools** | `uPool` in the ground shader | Hot spots on the plain where Debris lands; they cool in about 20 s. |
+
+### Far guns and distant events (the ambient section, session `railgun-ambient`)
+
+| Name | Code | Notes |
+|---|---|---|
+| **Far rounds** | `kind: 'bolt'`, `farAt()`, `farBand()`, `FAR_WARM` | Other railguns fire from between the ranges and miss: the main shot's ribbon, Ion line and contrail puffs at lower detail, in their launch's distance band, lighting the clouds warm. Off unless `?dev` (Tom). |
+| **Horizon war** | `kind: 'war'`, a free `IMP_U.uImp` slot | Flashes past the ranges on the horizon and the cloud bases; a late rumble. |
+| **Late landings** | `kind: 'land'`, `ambFall` (a Meteor), `domeVols` | Chunks fall far out minutes after a kill: a streak, a flash, a Dust dome. |
+| **Embers** | `kind: 'embers'`, `ambEmbers`, Dust puffs | Red points where pieces lie after a kill, each under a thread of smoke. |
+| **Satellite** | `kind: 'sat'`, `ambSat` | A point of sunlight crossing a dark sky; dims behind the Smoke trail. |
+| **Orbital flak** | `kind: 'flak'`, `ambFlak` | Pinprick pops in one patch of night sky. |
+| **Rock shed** | `kind: 'shed'`, `ambShed`, `ambShedTail` | A hot lump peels off the falling rock. |
+| **Meteor** | `makeMeteor()`, `meteor()` | The streak shape: a round hot head and a tapering, cooling tail. Shooting stars use it and are off (Tom). |
+
+### Near the gun
+
+| Name | Code | Notes |
+|---|---|---|
+| **Field motes** | `moteMat` | Dust that falls into orbit round the barrel during the charge. |
+| **Contrail puffs** | `ionPuffs` | The puffs along the Ion line; Far rounds have their own. |
+| **Lens dirt** | the grade pass | Smudges and specks that light up in bright bloom. |
+
+### Gone, on Tom's word
+
+Re-entry rain, the ambient dust devil, the air specks, and the ember sprays off the rock, its splits and its fragments.
+
+### Corrections to the tables above
+
+- **Giants**: the Supercell, 225 km out, in `STORMS` in `railgun/storms.js` (see below).
+- **Hail ribbons** (`hailRibs`, the hail section) now run behind the pieces that land in front of and behind the ranges.
+
+## Storms and the storm lab
+
+`railgun/storms.js` holds the storm table (`STORMS`), the look knobs (`STORM_K`), the baked noise (`VOL_NOISE`), the shapes (`STORM_GLSL`) and the march (`STORM_MARCH`). The toy and `railgun/stormlab.html` (noindex) both import it, so the lab draws what the toy draws.
+
+| Form | What it is |
+|---|---|
+| 1 Storm tower | A cumulonimbus; about two in three carry an anvil. |
+| 2 Towering cumulus | Young, no anvil, a cauliflower crown. |
+| 3 Squall line | Cells in a row across the wind, one long anvil, a shelf cloud at the foot. |
+| 4 Dying storm | A thin, ragged column under a wide anvil that drifts on. |
+| 5 Supercell | One fat banded column, a big overshoot, a broad anvil. |
+
+Lightning inside the storms takes Window seat's `FLASH_C` (a cold, slightly violet blue-white) and is added after the air, so far flashes punch through the haze.
+
+## Air controls (Dev, group Sky)
+
+| Row | Uniform | What it does |
+|---|---|---|
+| **Air blue fade** | `uAirK.x`, `uAir` | Rayleigh: how fast far things turn blue and pale. |
+| **Air dust** | `uAirK.y` | The dusty Mie haze: how thick the far air is. |
+| **Air dust height** | `uAirK.z` | How deep the dust stands, in metres; low dust leaves tall things clear. |
+| **Air sun glow** | `uAirK.w` | The dust's warm glow toward the sun. |
+| **Near dust** | `uHaze` | The plain's own low dust, thick near the ground. |
+| **Near dust height** | `uHazeH` | How high that low dust reaches. |
+| **Cloud far fade** | `uLayer.x` | Far clouds sink further into the air, foot first. |
+| **Valley fog** | `uLayer.y` | Fog pools in the far valleys. |
+| **Sun rays** | `shaftGain` | Cloud and trail shadows in the low air. |
+
+`aerialFrom()`, `aerialT()`, `aerialIn()`, `cirrusAir()` and the ambient section's `ambT()` all read `uAirK`, so one knob moves every far thing at once.
+
+## Ray-marched clouds: the names
+
+Only one family of sky cloud is ray-marched: the **Storm volumes** (`STORM_FS`, `railgun/storms.js`). Every other sky cloud is painted flat (Deck, Cirrus) or drawn on a card (Heaps, Mids).
+
+| Name | Form | Where today |
+|---|---|---|
+| **Storm tower** | 1 | Right of the gun, 85 km |
+| **Towering cumulus** | 2 | Right of centre, 135 km |
+| **Squall line** | 3 | Behind the gun, 95 km, the long anvil |
+| **Dying storm** | 4 | Not placed; the lab can add one |
+| **Supercell** (the Giant) | 5 | Left, 200 km |
+
+Other ray-marched volumes are not sky clouds: the **Smoke trail** and **Debris trails** (trains), and the blast volumes (**Fireball**, **Muzzle flash**, **Shot dust**, **Charge dust**).
+
+Storm look knobs: Billows, Ragged, Anvil reach, Density (`STORM_K`) and **Storm softness** (`STORM_SOFT`, Dev row and lab).

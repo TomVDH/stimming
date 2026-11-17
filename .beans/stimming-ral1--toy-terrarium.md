@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T20:54:59Z
+updated_at: 2026-11-16T23:17:36Z
 parent: stimming-oh7b
 ---
 
@@ -61,3 +61,34 @@ Tom: "make a higher quality apothecary jar". New profile: belly, round shoulder,
 
 Tom asked to max out the plants and fill, with online examples (moss as fur, plants, particles, volume). Findings and two build paths are in docs/plans/terrarium.md under "The fill, maxed out". Recommendation: A, a raster garden of instanced meshes read by the ray-marched jar.
 - [ ] Tom picks the fill build: A (raster garden) or B (ray march)
+
+## Moss and fern, procedural PBR (2026-11-16)
+
+Tom: "start with moss and the fern", then "PBR the plants".
+- Moss: each strand is a shoot with nine leaves in a golden-angle spiral; dry leaves press to the stem, wet ones spread. Physical material: sheen for the velvet, a clearcoat water film that grows with the wake. Sub-pixel leaves have a light ceiling, so they cannot flare.
+- Fern: leaflets split into nine pinnules a side. Generated PBR maps (colour, normal, roughness): raised midrib, side veins, domed lobes, paler rim. The underside is paler and rougher; old fronds carry spore dots there. Light through the leaf dims along the veins.
+- The garden picture holds at most 2.2 MP. Misting, headless: 2.7 ms at 1x, 21 ms at 2x (57 ms on garden redraws).
+
+## Moss and fern tuned (2026-11-16)
+
+Tom: "tune moss and fern".
+- The white patch on the big fern was its direct specular at grazing angles (found by switching each term off). Leaf specular is now 0.06, the wet clearcoat 0.17 at most.
+- Moss grows in tufts (a small noise sets height) with colour in patches (yellow-green tufts, deep green hollows); each shoot varies only a little, so the carpet reads as a surface.
+- The front of the bed was dark: the grow light is behind. A soft fill from the viewer's side, a wider spot cone and more ambient light it. Wet moss is a fifth brighter.
+- Frond stems are green-brown with a little sheen; each frond has its own green.
+- garden.debug (materials, lights, redraw) is open to QA through window.__terrarium.garden.
+
+## The stone (2026-11-16)
+
+Tom: "do the stone". A smooth, merged mesh (about 47,000 triangles; the old one was 720 flat faces): a lumpy body, sharp ridges from ridged noise, upright grooves, stepped strata and a flat foot. Per-vertex colour: blue-grey stone, faint calcite veins, dark crevices, lichen on the upward faces. PBR: shader grain; wet, it darkens and turns glossy, most in the crevices where water gathers. Moss now sits in the cracks (a sampler weight), about 5,000 shoots, no longer a cap.
+
+## The branch (2026-11-16)
+
+Tom: "do the branch". One rule grows it: a limb tapering from its base, two forks and a twig, each a tube with deep lengthwise bark ridges, a knot or two, and a cut end of pale heartwood. Colour: grey-brown driftwood bleached silver on top, dark in the grooves, a few lichen spots. PBR: fibre grain in the shader; wet, it darkens and shines, most in the grooves. Moss takes it in a few patches on top (about 1,400 shoots).
+
+## Bugs, a tighter shot, a bokeh room (2026-11-16)
+
+Tom: "add the bugs", then "a tighter shot with nice bokeh background behind the jar; it looks very flat".
+- Bugs live in their own small scene, drawn into their own picture with a depth test against the garden's depth texture; only that picture redraws while a bug moves. 36 springtails (pale specks on the moss tips; a mist or a tap near them sends them off in two or three hops). A woodlouse, about 1 cm, seven shiny plates and feelers; it walks for a while after a mist, a planting change or the page opening, and a tap on it rolls it into a ball for 3.5 s. A firefly drifts and blinks at dusk (Light under a quarter), for 30 s after a stir. The page still sleeps.
+- The camera is a longer lens from further back and a little lower (FOC 2.1, eye 1.15 high, 4.2 back): the jar fills the frame.
+- The far wall is an out-of-focus room: soft dark plant shapes and bokeh discs of warm, green and pale blue lights; the glass reflects it. The floor melts into it with no line; the side light panels show only in reflections.

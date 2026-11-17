@@ -1,5 +1,7 @@
 # Fire and smoke: the shared module and its reach
 
+Status: done · Bean: `stimming-oeym`
+
 Tom, 2026-11-16 (decision 13 in [code-health.md](../code-health.md)): Fire's flame and smoke become one shared module that other toys reuse.
 Bean `stimming-oeym`, under epic `stimming-3s8z`.
 
@@ -138,6 +140,8 @@ The module needs WebGPU: it writes 3D storage textures from compute kernels. thr
 | C. WebGPU only | The module serves Compute toys. Scene toys keep their noise plumes | No new work, no drift | WebGL toys get no sim fire |
 
 **Recommendation: C now, A only on demand.**
+
+Tom picked C on 2026-11-16: WebGPU only for now. A waits until Tom asks for a hero sim fire in a WebGL toy.
 
 1. Every fire in a Scene toy is a plume, a train or a puff: far away, fast, often kilometres long. A 12-unit grid does not fit those scales, and ray-marched noise already looks right there.
 2. B breaks the one-pin rule and costs the most for the least.

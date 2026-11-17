@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>Storm lab</title>
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* Storm lab: shape the railgun's storms, then copy the table into storms.js. */
+:root { --bg: oklch(0.13 0.01 260); --panel: oklch(0.16 0.012 260); --ink: oklch(0.93 0.01 260); --muted: oklch(0.66 0.015 260); --line: oklch(0.28 0.015 260); --acc: oklch(0.8 0.12 75); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.35 Gabarito, system-ui, sans-serif; }
+body { display: grid; grid-template-columns: minmax(0, 1fr) 310px; min-height: 100vh; }
+main { padding: 12px 16px 24px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+aside { border-left: 1px solid var(--line); position: sticky; top: 0; height: 100vh; overflow: auto; background: var(--panel); }
+.top { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+h1 { font-size: 16px; margin: 0; }
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
+section { border-bottom: 1px solid var(--line); padding: 8px 14px; }
+.row { display: grid; grid-template-columns: 84px 1fr 52px; align-items: center; gap: 8px; margin: 3px 0; }
+.row span { color: var(--muted); }
+.row output { text-align: right; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--acc); }
+select { font: inherit; color: var(--ink); background: oklch(0.2 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; width: 100%; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+button { font: inherit; color: var(--ink); background: oklch(0.21 0.012 260); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+button:hover { border-color: var(--acc); }
+button.on { border-color: var(--acc); color: var(--acc); }
+.list { display: grid; gap: 2px; margin: 4px 0; }
+.list button { text-align: left; display: flex; justify-content: space-between; }
+.list button small { color: var(--muted); }
+#status { color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.3em; }
+#status.err { color: oklch(0.7 0.17 25); white-space: pre-wrap; }
+p.note { color: var(--muted); margin: 4px 0; }
+canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 4px; }
+@media (max-width: 760px) { body { grid-template-columns: 1fr; } aside { position: static; height: auto; border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="view" width="1280" height="720"></canvas>
+  <div id="status">Baking the noise...</div>
+  <p class="note">Drag on the picture to orbit the selected storm (Orbit view). The table and look knobs go to <code>railgun/storms.js</code> with Copy config.</p>
+</main>
+<aside>
+  <div class="top"><h1>Storm lab</h1><p class="note">The railgun's storms, alone, with the toy's own shapes and march.</p></div>
+  <section>
+    <h2>View</h2>
+    <div class="btns"><button id="vGun" class="on" type="button">Gun view</button><button id="vOrbit" type="button">Orbit storm</button><button id="sharp" type="button" title="Full resolution">Sharp</button></div>
+    <div class="row"><span>Time</span><input id="time" type="range" min="0" max="1" step="0.002" value="0.5"><output></output></div>
+    <div class="row"><span>Sun bearing</span><input id="sunaz" type="range" min="-40" max="80" step="1" value="36"><output></output></div>
+    <div class="row"><span>Cloud clock</span><input id="clock" type="range" min="0" max="3600" step="1" value="0"><output></output></div>
+    <div class="row"><span>Far haze</span><input id="farhaze" type="range" min="0" max="1.5" step="0.05" value="1"><output></output></div>
+    <div class="row"><span>Orbit turn</span><input id="oyaw" type="range" min="-180" max="180" step="1" value="0"><output></output></div>
+    <div class="row"><span>Orbit tilt</span><input id="opitch" type="range" min="-5" max="40" step="1" value="6"><output></output></div>
+    <div class="row"><span>Orbit range</span><input id="odist" type="range" min="0.6" max="6" step="0.05" value="1.4"><output></output></div>
+  </section>
+  <section>
+    <h2>Look</h2>
+    <div class="row"><span>Billows</span><input id="k0" type="range" min="0" max="2" step="0.05"><output></output></div>
+    <div class="row"><span>Ragged</span><input id="k1" type="range" min="0" max="3" step="0.05"><output></output></div>
+    <div class="row"><span>Anvil reach</span><input id="k2" type="range" min="0" max="2" step="0.05"><output></output></div>
+    <div class="row"><span>Density</span><input id="k3" type="range" min="0.2" max="2" step="0.05"><output></output></div>
+    <div class="row"><span>Softness</span><input id="soft" type="range" min="1" max="4" step="0.05"><output></output></div>
+  </section>
+  <section>
+    <h2>Storms</h2>
+    <div class="list" id="list"></div>
+    <div class="btns"><button id="add" type="button">+ Storm</button><button id="del" type="button">Remove</button><button id="flash" type="button" title="Lightning in the selected storm (F)">Flash</button></div>
+    <div class="row"><span>Form</span><select id="form"></select><output></output></div>
+    <div class="row"><span>Bearing</span><input id="s0" type="range" min="-40" max="80" step="0.5"><output></output></div>
+    <div class="row"><span>Range km</span><input id="s1" type="range" min="40" max="320" step="1"><output></output></div>
+    <div class="row"><span>Base km</span><input id="s2" type="range" min="0" max="20" step="0.25"><output></output></div>
+    <div class="row"><span>Width km</span><input id="s3" type="range" min="4" max="80" step="0.5"><output></output></div>
+    <div class="row"><span>Height km</span><input id="s4" type="range" min="8" max="120" step="0.5"><output></output></div>
+  </section>
+  <section>
+    <div class="btns"><button id="copy" type="button" title="The table and the look knobs, as JS for storms.js">Copy config</button><button id="reset" type="button" title="Start again from storms.js">Reset</button></div>
+    <p class="note" id="source"></p>
+  </section>
+</aside>
+<script type="module">
+import { program, linked, TRI_VS } from '../shared/gl.js';
+import * as S from './storms.js';
+
+/* ---------- constants ---------- */
+// The toy's landscape eye and lens.
+const EYE = [1670, 30, 1990], YAW = 24.5, FOV = 55, HORIZON = 0.84, PLANET_R = 6.0e6;
+const rad = d => d * Math.PI / 180;
+const STORE = 'stimming.stormlab';
+const $ = q => document.querySelector(q);
+
+/* ---------- state: the module's table, or edits kept in this browser ---------- */
+const fresh = () => ({ storms: S.STORMS.map(s => [...s]), k: [...S.STORM_K], soft: S.STORM_SOFT });
+let st = fresh();
+try { const j = JSON.parse(localStorage.getItem(STORE)); if (j && Array.isArray(j.storms)) st = j; } catch { /* storage off */ }
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(st)); } catch { /* storage off */ } };
+let sel = 0, orbit = false, sharp = false;
+
+/* ---------- the sky palette: a copy of the toy's sun() ---------- */
+const lerp = (a, b, t) => a + (b - a) * t, lerp3 = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
+const sstep = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const TIME_K = [[0, -14], [0.18, -6], [0.32, 0], [0.5, 5.6], [0.72, 18], [1, 60]];
+const sunDeg = v => { for (let i = 1; i < TIME_K.length; i++) { const [v0, d0] = TIME_K[i - 1], [v1, d1] = TIME_K[i]; if (v <= v1) return lerp(d0, d1, (v - v0) / (v1 - v0)); } return 60; };
+const MOON_C = [0.09, 0.11, 0.16];
+function palette(deg) {
+  const low = Math.min(1, Math.max(0, deg / 15));
+  let sunC = lerp3([1.6, 0.62, 0.22], [1.9, 1.75, 1.55], low).map(x => x * (0.55 + 0.45 * low));
+  let zen = lerp3([0.10, 0.15, 0.30], [0.16, 0.30, 0.62], low), hor = lerp3([0.78, 0.38, 0.17], [0.72, 0.68, 0.62], low);
+  const day = sstep(deg, 15, 60);
+  sunC = lerp3(sunC, [2.05, 2.0, 1.9], day); zen = lerp3(zen, [0.05, 0.16, 0.56], day); hor = lerp3(hor, [0.56, 0.65, 0.78], day);
+  const tw = sstep(deg, -6, 0), nt = sstep(deg, -14, -6);
+  zen = lerp3(lerp3([0.004, 0.006, 0.016], [0.035, 0.06, 0.15], nt), zen, tw);
+  hor = lerp3(lerp3([0.012, 0.015, 0.028], [0.2, 0.15, 0.2], nt), hor, tw);
+  const kS = sstep(deg, -1.5, 1.5), mK = 1 - sstep(deg, -10, -3);
+  return {
+    sunC: sunC.map((x, i) => x * kS + MOON_C[i] * mK), zen, hor,
+    glow: sunC.map(x => x * sstep(deg, -10, 0)),
+    cloudSun: sunC.map((x, i) => x * sstep(deg, -6, 1) + MOON_C[i] * mK * 0.3),
+    amb: lerp(lerp(0.012, 0.05, nt), 0.22, tw), stars: 1 - sstep(deg, -10, -2),
+    exp: lerp(lerp(2.2, 1.35, nt), 0.9, tw),
+  };
+}
+
+/* ---------- the toy's storm seeds and drift ---------- */
+// The toy deals seeds per layer, far cards first, as cloudLayer() does.
+const hs = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+function placed(clock) {
+  const out = [];
+  for (const giant of [false, true]) {
+    const layer = st.storms.map((s, i) => ({ s, i })).filter(o => (o.s[1] > S.GIANT_RANGE) === giant).sort((a, b) => b.s[1] - a.s[1]);
+    layer.forEach((o, k) => {
+      const [ang, range, base, W, H, form] = o.s, sd = 13.7 * k + ang;
+      const ph = (((clock * (0.6 + 0.8 * hs(sd))) / 360 + hs(sd + 1)) % 1 + 1) % 1, a = (ph - 0.5) * rad(16) * 0.2;
+      const px = EYE[0] - Math.sin(rad(ang)) * range, pz = EYE[1] - Math.cos(rad(ang)) * range;
+      out.push({ i: o.i, C: [px * Math.cos(a) - pz * Math.sin(a), base, px * Math.sin(a) + pz * Math.cos(a)], H, W, form, sd });
+    });
+  }
+  return out;
+}
+
+/* ---------- the shader ---------- */
+const MAXS = 8;
+const FS = () => `#version 300 es
+precision highp float;
+precision highp sampler3D;
+in vec2 vUv;
+out vec4 o;
+uniform mat3 uRot;
+uniform vec2 uTan;
+uniform vec3 uEye, uSunD, uSunC, uZenC, uHorC, uGlowC, uCloudSun;
+uniform float uCloudAmb, uStars, uCloudC, uFarHaze, uExp;
+uniform vec4 uStormK;
+uniform float uStormSoft;
+uniform sampler3D uVol;
+uniform int uN;
+uniform vec4 uSt[${MAXS}], uSs[${MAXS}];
+uniform vec4 uFl[4], uFlR;
+vec3 cameraPosition;
+// The bare sky, as the toy's k2skyB without stars, moon or cirrus.
+vec3 skyB(vec3 d) {
+  float up = max(d.y, 0.0), cp = max(dot(d, uSunD), 0.0);
+  vec3 c = mix(uHorC, uZenC, pow(up, 0.45));
+  c = mix(c, uHorC * 0.92, exp(-up * 14.0) * 0.55);
+  c = mix(c, uHorC * 0.8, smoothstep(0.0, -0.05, d.y));
+  return c + uGlowC * (pow(cp, 5.0) * 0.22 + pow(cp, 90.0) * 0.7 + pow(cp, 8000.0) * 14.0) * (0.35 + 0.65 * exp(-up * 4.0));
+}
+// The toy's shared air: Rayleigh and a dusty Mie along the ray.
+vec3 aerial(vec3 col, vec3 P) {
+  vec3 v = P - cameraPosition;
+  float hit = length(v);
+  vec3 rd = v / max(hit, 1.0);
+  float yc = max(cameraPosition.y, 0.0), yp = max(P.y, 0.0), dy = yp - yc;
+  float aR = abs(dy) < 1.0 ? exp(-yc / 8000.0) : (exp(-yc / 8000.0) - exp(-yp / 8000.0)) * 8000.0 / dy;
+  float aM = abs(dy) < 1.0 ? exp(-yc / 3000.0) : (exp(-yc / 3000.0) - exp(-yp / 3000.0)) * 3000.0 / dy;
+  aM *= 0.5 + 0.5 * uFarHaze;
+  vec3 T = exp(-(vec3(5.8e-6, 13.5e-6, 33.1e-6) * aR + vec3(1.1e-5) * aM) * hit);
+  float mu = dot(rd, uSunD), g = 0.76;
+  float mie = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5) / 12.0;
+  vec3 inL = skyB(normalize(vec3(rd.x, 0.02, rd.z))) * 0.95 + uGlowC * mie * aM / max(aM + aR, 1e-3);
+  return col * T + inL * (1.0 - T);
+}
+${S.STORM_GLSL}
+vec3 Ls;
+vec3 stormSun(vec3 P) {
+  float el = asin(clamp(uSunD.y + dot(uSunD.xz, P.xz - cameraPosition.xz) / ${PLANET_R.toFixed(1)}, -1.0, 1.0)), dip = sqrt(2.0 * max(P.y, 0.0) / ${PLANET_R.toFixed(1)});
+  float litTop = smoothstep(-dip - 0.006, -dip + 0.006, el) * (1.0 - smoothstep(-0.026, 0.026, el));
+  return mix(uSunC, uCloudSun, smoothstep(1500.0, 11000.0, P.y)) + uGlowC * vec3(1.0, 0.5, 0.28) * 1.6 * litTop;
+}
+// Window seat's dome: the zenith, the sun-side glow and the far side, mixed.
+vec3 stormSky(float h) { return uZenC * 0.5 + uHorC * 0.5 + uCloudAmb * 0.5; }
+// The sky's glow low on the sun's side.
+vec3 stormTwi() { return skyB(normalize(vec3(uSunD.x, 0.06, uSunD.z))); }
+// The lab has no rock: no other light.
+vec3 stormExtra(vec3 P, vec3 p, float powder, float Tl2) { return vec3(0.0); }
+#define FLASH_C vec3(0.64, 0.72, 1.0)
+vec3 stormFlash(vec3 P) {
+  vec3 L = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    if (uFl[i].w < 0.001) continue;
+    float fd = length(P - uFl[i].xyz), r = uFlR[i];
+    L += FLASH_C * uFl[i].w * (1.8 * exp(-fd * fd / (r * r)) + 0.5 * exp(-fd / (2.2 * r)));
+  }
+  return L * mix(3.0, 1.0, uStars);
+}
+${S.STORM_MARCH}
+// The toy's film curve, so a still here reads as a still there.
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+void main() {
+  cameraPosition = uEye;
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 rd = normalize(uRot * vec3(ndc * uTan, -1.0));
+  // The plain below the horizon, the sky above it.
+  vec3 col;
+  float tg = rd.y < -1e-4 ? -uEye.y / rd.y : -1.0;
+  if (tg > 0.0) col = aerial(vec3(0.33, 0.27, 0.21) * (dot(uSunC, vec3(0.33)) * max(uSunD.y, 0.0) * 0.8 + uCloudAmb + 0.25 * uHorC), uEye + rd * tg);
+  else col = skyB(rd);
+  Ls = uSunD.y > -0.12 ? uSunD : vec3(0.0, 1.0, 0.0);
+  float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
+  // Far storms first, so nearer ones cover them.
+  for (int i = 0; i < ${MAXS}; i++) {
+    if (i >= uN) break;
+    vec3 C = uSt[i].xyz;
+    float H = uSt[i].w;
+    float base = C.y;
+    // The storm sinks by the planet's curve, as the toy's cards do.
+    vec2 dc = C.xz - uEye.xz;
+    C.y -= dot(dc, dc) / ${(2 * PLANET_R).toFixed(1)};
+    setStorm(uSs[i].z, uSs[i].y);
+    setGround(base, H);
+    vec2 sp = stormSpan(uEye, rd, C, H);
+    if (sp.y <= sp.x) continue;
+    if (tg > 0.0) sp.y = min(sp.y, tg);
+    vec3 Phit, Flash;
+    vec4 m = marchStorm(uEye, rd, C, H, sp.x, sp.y, jit, Phit, Flash);
+    if (m.a < 0.004) continue;
+    col = mix(col, aerial(m.rgb, Phit), m.a) + Flash * 0.85;
+    // The selected storm gets a faint rim mark.
+    if (uSs[i].w > 0.5 && m.a < 0.08) col += vec3(0.25, 0.18, 0.05) * m.a * 4.0;
+  }
+  o = vec4(pow(aces(col * uExp), vec3(1.0 / 2.2)), 1.0);
+}`;
+const BAKE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform float uZ;
+${S.VOL_NOISE}
+void main() { o = volAt(vec3(vUv, uZ)); }`;
+
+/* ---------- GL ---------- */
+const canvas = $('#view');
+const gl = canvas.getContext('webgl2', { antialias: false });
+let prog, vol;
+const VOL_N = 96;
+async function bake() {
+  const bp = program(gl, TRI_VS, BAKE_FS);
+  await linked(gl, { bp });
+  vol = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, vol);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, VOL_N, VOL_N, VOL_N, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.viewport(0, 0, VOL_N, VOL_N);
+  gl.useProgram(bp.p);
+  for (let z = 0; z < VOL_N; z++) {
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, vol, 0, z);
+    gl.uniform1f(bp.u.uZ, (z + 0.5) / VOL_N);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+}
+
+/* ---------- lightning ---------- */
+const strokes = [];
+function flash() {
+  const p = placed(+$('#clock').value).find(q => q.i === sel);
+  if (!p) return;
+  const U = p.H / 14, rc = 3.4 * U, t0 = performance.now();
+  for (let j = 0; j < 3; j++) {
+    const P = [p.C[0] + (Math.random() - 0.5) * 1.2 * rc, p.C[1] + U * (3 + 7 * Math.random()), p.C[2] + (Math.random() - 0.5) * 1.2 * rc];
+    strokes.push({ t0: t0 + j * (150 + 500 * Math.random()), P, L: 1.6 + 1.5 * Math.random(), r: rc * (0.4 + 0.8 * Math.random()) });
+  }
+  loop();
+}
+
+/* ---------- draw ---------- */
+let raf = 0;
+function loop() { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }
+function draw() {
+  if (!prog) return;
+  const scale = sharp ? 1 : 0.5;
+  const w = Math.round(canvas.clientWidth * devicePixelRatio * scale), h = Math.round(canvas.clientHeight * devicePixelRatio * scale);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const deg = sunDeg(+$('#time').value), pal = palette(deg), clock = +$('#clock').value;
+  const ps = placed(clock);
+  // The sun: elevation from Time, bearing from the knob, right of the look.
+  const sa = rad(YAW - +$('#sunaz').value), se = rad(deg);
+  const sunD = [-Math.sin(sa) * Math.cos(se), Math.sin(se), -Math.cos(sa) * Math.cos(se)];
+  // The eye: the toy's lens, or a camera circling the selected storm.
+  let eye = EYE, yaw = rad(YAW), pitch = Math.atan((2 * HORIZON - 1) * Math.tan(rad(FOV / 2)));
+  const me = ps.find(q => q.i === sel);
+  if (orbit && me) {
+    const d = me.H * +$('#odist').value, oy = rad(+$('#oyaw').value), op = rad(+$('#opitch').value);
+    const dx = me.C[0] - EYE[0], dz = me.C[2] - EYE[2], base = Math.atan2(-dx, -dz) + oy;
+    eye = [me.C[0] + Math.sin(base) * d * Math.cos(op), Math.max(30, me.C[1] + me.H * 0.35 + Math.sin(op) * d), me.C[2] + Math.cos(base) * d * Math.cos(op)];
+    yaw = Math.atan2(-(me.C[0] - eye[0]), -(me.C[2] - eye[2]));
+    pitch = Math.atan2(me.C[1] + me.H * 0.45 - eye[1], Math.hypot(me.C[0] - eye[0], me.C[2] - eye[2]));
+  }
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), ty = Math.tan(rad(FOV / 2));
+  gl.viewport(0, 0, w, h);
+  gl.useProgram(prog.p);
+  const u = prog.u;
+  gl.uniformMatrix3fv(u.uRot, false, [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
+  gl.uniform2f(u.uTan, ty * w / h, ty);
+  gl.uniform3fv(u.uEye, eye);
+  gl.uniform3fv(u.uSunD, sunD);
+  gl.uniform3fv(u.uSunC, pal.sunC); gl.uniform3fv(u.uZenC, pal.zen); gl.uniform3fv(u.uHorC, pal.hor);
+  gl.uniform3fv(u.uGlowC, pal.glow); gl.uniform3fv(u.uCloudSun, pal.cloudSun);
+  gl.uniform1f(u.uCloudAmb, pal.amb); gl.uniform1f(u.uStars, pal.stars); gl.uniform1f(u.uCloudC, clock);
+  gl.uniform1f(u.uFarHaze, +$('#farhaze').value); gl.uniform1f(u.uExp, pal.exp);
+  gl.uniform4fv(u.uStormK, st.k);
+  gl.uniform1f(u.uStormSoft, st.soft ?? S.STORM_SOFT);
+  // Far storms first.
+  const order = ps.map(q => ({ q, d: Math.hypot(q.C[0] - eye[0], q.C[2] - eye[2]) })).sort((a, b) => b.d - a.d).slice(0, MAXS);
+  const sT = new Float32Array(MAXS * 4), sS = new Float32Array(MAXS * 4);
+  order.forEach(({ q }, k) => { sT.set([...q.C, q.H], k * 4); sS.set([q.W, q.form, q.sd, q.i === sel ? 1 : 0], k * 4); });
+  gl.uniform1i(u.uN, order.length);
+  gl.uniform4fv(u.uSt, sT); gl.uniform4fv(u.uSs, sS);
+  // Live strokes: each snaps on and dies in a tenth of a second.
+  const now = performance.now(), fl = new Float32Array(16), fr = [1, 1, 1, 1];
+  const live = strokes.filter(s => now >= s.t0 && now - s.t0 < 600).slice(0, 4);
+  live.forEach((s, k) => { const a = (now - s.t0) / 1000; fl.set([...s.P, s.L * Math.exp(-a / 0.07)], k * 4); fr[k] = s.r; });
+  gl.uniform4fv(u.uFl, fl); gl.uniform4fv(u.uFlR, fr);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_3D, vol); gl.uniform1i(u.uVol, 0);
+  const t0 = performance.now();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  status(`${deg.toFixed(1)} degrees sun · ${order.length} storms · ${w}×${h}`);
+  // Keep drawing while a stroke is due or alive.
+  for (let i = strokes.length - 1; i >= 0; i--) if (now - strokes[i].t0 > 600) strokes.splice(i, 1);
+  if (strokes.length) loop();
+}
+function status(t, err) { const s = $('#status'); s.textContent = t; s.classList.toggle('err', !!err); }
+
+/* ---------- panel ---------- */
+const KM = [false, true, true, true, true];
+function fillForm() {
+  const f = $('#form');
+  f.innerHTML = S.FORMS.slice(1).map((n, i) => `<option value="${i + 1}">${n}</option>`).join('');
+}
+function list() {
+  $('#list').innerHTML = st.storms.map((s, i) => `<button type="button" data-i="${i}" class="${i === sel ? 'on' : ''}">${S.FORMS[s[5]] || 'Storm'} <small>${(s[1] / 1000).toFixed(0)} km · ${s[0]}°</small></button>`).join('');
+  $('#list').querySelectorAll('button').forEach(b => b.addEventListener('click', () => { sel = +b.dataset.i; refresh(); }));
+}
+function refresh() {
+  sel = Math.min(sel, st.storms.length - 1);
+  list();
+  const s = st.storms[sel];
+  if (s) {
+    $('#form').value = s[5];
+    for (let k = 0; k < 5; k++) { const el = $('#s' + k); el.value = KM[k] ? s[k] / 1000 : s[k]; }
+  }
+  for (let k = 0; k < 4; k++) $('#k' + k).value = st.k[k];
+  $('#soft').value = st.soft ?? S.STORM_SOFT;
+  document.querySelectorAll('.row').forEach(r => { const i = r.querySelector('input'), o = r.querySelector('output'); if (i && o) o.textContent = (+i.value).toFixed(i.step < 0.1 ? 2 : i.step < 1 ? 1 : 0); });
+  const same = JSON.stringify({ storms: st.storms, k: st.k, soft: st.soft ?? S.STORM_SOFT }) === JSON.stringify(fresh());
+  $('#source').textContent = same ? 'The table in storms.js.' : 'Your edits, kept in this browser. Copy config to keep them; Reset to start from storms.js.';
+  loop();
+}
+for (let k = 0; k < 5; k++) $('#s' + k).addEventListener('input', e => { const s = st.storms[sel]; if (!s) return; s[k] = KM[k] ? Math.round(+e.target.value * 1000) : +e.target.value; save(); refresh(); });
+for (let k = 0; k < 4; k++) $('#k' + k).addEventListener('input', e => { st.k[k] = +e.target.value; save(); refresh(); });
+$('#soft').addEventListener('input', e => { st.soft = +e.target.value; save(); refresh(); });
+$('#form').addEventListener('change', e => { const s = st.storms[sel]; if (s) { s[5] = +e.target.value; save(); refresh(); } });
+for (const id of ['time', 'sunaz', 'clock', 'farhaze', 'oyaw', 'opitch', 'odist']) $('#' + id).addEventListener('input', refresh);
+$('#vGun').addEventListener('click', () => { orbit = false; $('#vGun').classList.add('on'); $('#vOrbit').classList.remove('on'); loop(); });
+$('#vOrbit').addEventListener('click', () => { orbit = true; $('#vOrbit').classList.add('on'); $('#vGun').classList.remove('on'); loop(); });
+$('#sharp').addEventListener('click', () => { sharp = !sharp; $('#sharp').classList.toggle('on', sharp); loop(); });
+$('#add').addEventListener('click', () => { st.storms.push([20, 140000, 6000, 15000, 22000, 1]); sel = st.storms.length - 1; save(); refresh(); });
+$('#del').addEventListener('click', () => { if (st.storms.length > 1) { st.storms.splice(sel, 1); save(); refresh(); } });
+$('#flash').addEventListener('click', flash);
+$('#reset').addEventListener('click', () => { st = fresh(); save(); refresh(); });
+$('#copy').addEventListener('click', async () => {
+  const txt = `export const STORMS = [\n${st.storms.map(s => `  [${s.join(', ')}],`).join('\n')}\n];\nexport const STORM_K = [${st.k.join(', ')}];\nexport const STORM_SOFT = ${st.soft ?? S.STORM_SOFT};\n`;
+  try { await navigator.clipboard.writeText(txt); status('Copied. Paste over STORMS and STORM_K in railgun/storms.js.'); } catch { status(txt); }
+});
+addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F') flash(); });
+// Drag on the picture turns the orbit.
+let drag = null;
+canvas.addEventListener('pointerdown', e => { if (!orbit) return; drag = { x: e.clientX, y: e.clientY, yaw: +$('#oyaw').value, pitch: +$('#opitch').value }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => { if (!drag) return; $('#oyaw').value = drag.yaw - (e.clientX - drag.x) * 0.4; $('#opitch').value = drag.pitch + (e.clientY - drag.y) * 0.2; refresh(); });
+canvas.addEventListener('pointerup', () => { drag = null; });
+addEventListener('resize', loop);
+
+/* ---------- start ---------- */
+fillForm();
+try {
+  await bake();
+  prog = program(gl, TRI_VS, FS());
+  await linked(gl, { prog });
+  status('Ready.');
+  refresh();
+} catch (err) { status(String(err.message || err), true); }
+// QA: draw now and read the picture.
+window.__lab = { st: () => st, set(v) { Object.assign(st, v); refresh(); }, sel(i) { sel = i; refresh(); }, orbit(on) { orbit = on; refresh(); }, flash, draw };
+</script>
+</body>
+</html>

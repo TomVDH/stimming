@@ -1,0 +1,26 @@
+---
+# stimming-o3o5
+title: 'Tornado alley: power line sparks, swaying wires, near wheat, plain geometry'
+status: completed
+type: task
+priority: normal
+created_at: 2026-11-17T07:41:24Z
+updated_at: 2026-11-17T08:16:54Z
+parent: stimming-dwwg
+---
+
+Lead session's task. 1) Tornadoes may cross 1-2 km out; a funnel touching the power line throws sparks, a flash, a snapped or sagging wire, poles that lean or fall by F. 2) Wires bob and sway with Wind, storm and near tornadoes. 3) Near wheat: denser stalks and heads with depth and self-shadow, travelling gust waves. 4) Far plain: shelterbelts, lone trees, far farmsteads, grain bins, fence lines; hazed and cheap.
+
+- [x] Close tornadoes and power-line sparks (plus Tom's cascade: each pole shorts in turn toward the eye)
+- [x] Wires sway
+- [x] Near wheat
+- [x] Plain geometry
+- [x] Perf: 30 fps minimum, three F4.5 at 1828x984; clean console; stills in docs/qa/tornado-ground/
+
+## Summary of Changes
+
+- line.js: tornadoes cross as near as 1.2 km; their wind leans and topples poles and breaks spans; faults arc with sparks and a flash on the dust; a short runs pole by pole toward the eye (Tom's add); wires swing with Wind, Storm and near tornadoes.
+- wheat.js: the near wheat is a stalk walk with heads, awns, canopy self-shadow and a feathered, wandering edge; no grid (Tom's add).
+- road.js: PBR asphalt, paint, gravel berm and grass ditch with noisy blended edges (Tom's add).
+- plain.js: shelterbelts, lone trees, far farmsteads with grain bins, a fence.
+- GPU frame minimum, three F4.5 at 1828x984, shared GPU: 29.4 ms at eye 8, 30.9 ms at eye 1.25 (main alone 26.6 ms).

@@ -1,5 +1,7 @@
 # Ink in water (`ink`) implementation plan
 
+Status: done · Bean: `stimming-x4qk`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Drop ink into a tall, still tank. It falls as a vortex ring, breaks into mushroom fingers, and colours mix the way real inks do.

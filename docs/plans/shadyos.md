@@ -1,5 +1,7 @@
 # ShadyOS (`shadyos`) implementation plan
 
+Status: active · Bean: `stimming-shdy`
+
 **Goal:** An original glossy glass desktop OS, aged and quietly possessed. The OS itself is the fidget: drag a window and it smears copies of itself across the screen; fling one and it wobbles like jelly.
 
 **Lore:** A bootleg "Ultimate XTreme Edition" that a script kiddie (handle d4rkm0th) skinned in 2008. It has run on one machine in a basement ever since. Uptime: 6,809 days. The clock says 3:33.

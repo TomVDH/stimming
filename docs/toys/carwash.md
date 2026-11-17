@@ -19,6 +19,20 @@
 A 1950s roadside car wash in the Nevada desert that never closed and was never updated. Nobody knows who owns it; it is open all night; now and then something strange happens on a run.
 The toy opens on an establishing shot: the place from across the road at night, held like a film's first frame. One action, Proceed, cuts to the driver's seat, and the wash runs by itself: a chain pulls the car through soak, suds, cloth strips, brushes, rinse, wax and the blower at 0.33 m/s, then the driver rolls out into the desert. The film cuts back to the establishing shot and waits.
 
+## Rules
+
+- The camera's point of view is a set of Dev rows (`?dev`): the driver's seat and the establishing shot, each with position, pitch, yaw and field of view.
+- Today's view is the default, so the page is the same without `?dev`.
+
+## Direction
+
+- A shady car wash in the Nevada desert. Nobody knows where it came from or who owns it. It is open 24 hours a day.
+- It is a 1950s roadside wash, built then and never updated. The present year stays unstated.
+- The toy opens on a wide establishing shot of the outside. The sole action is Proceed. Then the wash runs as one animation.
+- Outside is empty desert at night. One buzzing OPEN 24 HRS sign is the only neon.
+- Inside is old and worn. No generic neon tunnel.
+- Most runs are ordinary. Sometimes one quiet, deniable strange moment happens. At most one per run. No jump scares.
+
 ## The place (Tom, 2026-11-16)
 
 | Part | Built |

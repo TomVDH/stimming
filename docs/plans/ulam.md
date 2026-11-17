@@ -1,5 +1,7 @@
 # Ulam spiral (`ulam`) implementation plan
 
+Status: active · Bean: `stimming-6ibd`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A million numbers spiral out from the centre, and the primes glow. Zoom from ten cells to a million, morph the spiral's shape, and let a sweeping beam sing the primes it crosses.

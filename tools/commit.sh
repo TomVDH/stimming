@@ -7,18 +7,21 @@ shopt -s inherit_errexit 2>/dev/null || true
 
 usage() {
   cat <<'EOF'
-Usage: tools/commit.sh -m "msg" [-m "more"] [--hunks <patch>]... [--no-push] [-- <paths>...]
+Usage: tools/commit.sh -m "msg" [-m "more"] [--hunks <patch>]... [--no-push] [--drop-ok] [-- <paths>...]
 
   -m <msg>         Commit message paragraph. Repeat for more paragraphs.
   -F <file>        Read the commit message from a file.
   --hunks <patch>  Apply only this patch (from `git diff HEAD -- <file>`). Repeatable. `-` reads stdin.
   --no-push        Commit to the local branch only.
+  --drop-ok        Allow dropping lines that other beans added; say why in the message.
   -- <paths>...    Commit these paths whole, as they are in the working tree.
 
 The script builds the commit in a private index from the branch tip.
 It never stages, resets or checks out your other files.
 It holds .git/stim-commit.lock from commit to push.
 It moves the branch only if the tip is still the parent (compare-and-swap).
+It refuses a commit that drops lines other beans added recently (a stale copy).
+It refuses a railgun cloud change without "clouds-check: PASS" or "look-approved:".
 Env: STIM_LOCK_WAIT (s, default 180), STIM_LOCK_STALE (s, default 900), STIM_TRIES (default 5).
 EOF
 }
@@ -27,19 +30,24 @@ die()  { printf 'commit.sh: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'commit.sh: %s\n' "$*" >&2; }
 info() { printf 'commit.sh: %s\n' "$*"; }
 
+# The guards: tools/commit-guard.sh.
+# shellcheck source=commit-guard.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/commit-guard.sh"
+
 LOCK_WAIT=${STIM_LOCK_WAIT:-180}
 LOCK_STALE=${STIM_LOCK_STALE:-900}
 TRIES=${STIM_TRIES:-5}
 
 # --- Arguments ---------------------------------------------------------------
 
-msgs=(); patches=(); paths=(); push=1
+msgs=(); patches=(); paths=(); push=1; drop_ok=0
 while (($#)); do
   case $1 in
     -m) (($# >= 2)) || die "-m needs a value"; msgs+=("$2"); shift 2 ;;
     -F) (($# >= 2)) || die "-F needs a file"; msgs+=("$(cat "$2")"); shift 2 ;;
     --hunks) (($# >= 2)) || die "--hunks needs a file"; patches+=("$2"); shift 2 ;;
     --no-push) push=0; shift ;;
+    --drop-ok) drop_ok=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; paths=("$@"); break ;;
     *) die "unknown argument: $1 (paths go after --)" ;;
@@ -195,6 +203,20 @@ for ((try = 1; try <= TRIES; try++)); do
   if [[ -z $new ]]; then
     info "nothing to commit: $short already holds these changes"
     exit 0
+  fi
+  # A stale whole-file copy drops other beans' lines; stop it here.
+  if ((!drop_ok)) && ! guard_out=$(guard_drops "$parent" "$new" "$msgfile"); then
+    die "this commit drops lines that other beans added; your copy may be stale:
+$guard_out
+Pull --ff-only and rebuild, or commit your hunks with --hunks.
+To drop them on purpose, pass --drop-ok and say why in the message."
+  fi
+  # The railgun clouds pass the cloud check or carry Tom's approval.
+  if ! guard_out=$(guard_clouds "$parent" "$new" "$msgfile"); then
+    die "$guard_out
+The railgun clouds are gated: docs/plans/railgun-clouds-review.md, sections 6 and 7.
+Run: npx -y -p playwright@1.63.0 node tools/clouds-check.mjs
+Put its last line (clouds-check: PASS ...) in the message, or Tom's words after look-approved:."
   fi
   # The old value makes update-ref a compare-and-swap.
   if git update-ref -m "commit.sh: $subject" "$branch" "$new" "$parent" 2>/dev/null; then

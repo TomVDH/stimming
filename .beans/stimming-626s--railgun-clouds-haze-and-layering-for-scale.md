@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:00:19Z
-updated_at: 2026-11-16T20:20:30Z
+updated_at: 2026-11-17T00:40:32Z
 ---
 
 Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze and layering to evoke SCALE".
@@ -40,3 +40,26 @@ Tom: "the clouds (the 3d ish cards) as well as atmospheric haze, distance haze a
 - [x] Lightning rumbles: bluer, brighter, clustered spots
 - [x] Storm probe: Window seat's storm volumes marched inside the cards, Dev toggle, off by default (+2.4 ms at 1280)
 - [ ] Tom: probe or cards? Then sign off the storms
+
+## Storm lab (2026-11-16)
+
+- [x] Clouds lit blue by the bolt: cloud bolt light is warm white; storm lightning is Window seat's FLASH_C, added after the air
+- [x] storms.js: the table, noise, shapes and march, shared by the toy and the lab
+- [x] Five forms: storm tower, towering cumulus, squall line, dying storm, supercell
+- [x] railgun/stormlab.html (noindex): gun or orbit view, time of day, look knobs, per-storm edits, Flash, Copy config
+- [ ] Tom tunes the storms in the lab and signs off
+
+## Scale decision (Tom, 2026-11-16 16:38)
+
+Tom picked option A of the cloud plan: "A: Earth-true weather". Storm tops 12 to 18 km, crests 3 to 9 km, and the rock first seen high and far, above the anvils. Plan: docs/plans/railgun-clouds-review.md, sections 5 and 8.
+
+## Step 3, scale A (2026-11-16)
+
+- [x] railgun/stormcells.js: Window seat's storm cell at true km (setTower, towerShape, billows with mips, light taps, ice-anvil fray, decay), six kinds, own wind each; stormGeom() gives the card, the bound and the shape.
+- [x] railgun/celllab.html: the lab, over the ranges (option A or today), Window seat's noise3d.
+- [x] Placement: Tom kept today's ranges, so storms stand 44 to 88 km out, in front of the main range; anvils run across the view; narrower feet. Lab stills sent to Tom.
+- [ ] Tom's look verdict on the lab stills.
+- [ ] Port to the toy host (card from stormGeom), clouds-check or look-approved, push.
+- [ ] Fix storms.js line 9 (the wrong range heights).
+
+- [x] 2026-11-16 17:40: storm cards back as the default (Storm volumes off), Deck off so the cirrus streaks are the upper layer; heaps and mids spread out and lifted clear of the crests, near ring 11 to 17 km. Tom: "Yes, push it".

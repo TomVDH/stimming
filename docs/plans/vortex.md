@@ -1,5 +1,7 @@
 # Smoke ring cannon (`vortex`) implementation plan
 
+Status: done · Bean: `stimming-g0wy`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Vortex rings of smoke fly through dark haze. A laser light sheet cuts a bright plane through the haze, and each ring flares as it crosses it.

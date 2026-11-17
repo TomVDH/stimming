@@ -1,7 +1,11 @@
 # TypeScript feasibility
 
+Status: superseded by path (b), Railgun pilot in progress · Beans: `stimming-35mm`, `stimming-h9ve`
+
 Bean: `stimming-35mm` (epic `stimming-3s8z`). Written 2026-11-14.
 Tom picked path (a) on 2026-11-14 (`docs/code-health.md`, decisions 8 to 10). Steps 1 to 3 and the pilot are done (bean `stimming-bn47`).
+
+> [!note] 2026-11-16: Tom moved to path (b) for every toy: "we want all toys to go to typescript", deployed on GitHub Pages as today. Railgun is the pilot (bean `stimming-h9ve`). The build: `tools/build.mjs` bundles `<id>/src/main.ts` to `<id>/dist/main.js` (git-ignored). The Pages workflow builds it. `npm run dev` serves the repo and rebuilds. A toy's own `tsconfig.json` sets `strict`.
 
 ## Run the check
 
