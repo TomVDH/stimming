@@ -19,12 +19,12 @@ First read of what to redo: Dim, Light and Cozy look like three states of one th
 - [x] List every control and what it does (from the spec, the input code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Yes, apply"), as proposed
 - [x] Switch the toy to the Signal bar: `signal: true` in `window/index.html` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy)
+- [x] The toy's doc in `docs/toys/` says what is true (the Controls block, by hand; it said "To write.")
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Yes, apply")
 
 The rules are those of the four toys before it: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 
@@ -78,7 +78,8 @@ The rules are those of the four toys before it: one word for one thing; a label 
 
 - The toy has no Reset. It stores nine values (hour, storm, dim, cloud, towns, rain, seat, aurora, shade).
 - A tap on the winglet calls a lightning strike on the plane. It is a secret; the help does not list it.
-- On a phone the bar's first row is full: Dusk, Dim, Light, Cozy quiet flight. "Wing light" adds five letters; the row may wrap.
+- On a phone "Wing light" pushed the bar's first row off the stage. A bar group now wraps its own parts (`.sg-grp` in `shared/signal.css`). The phone bar has three rows: Dusk, Dim, Wing light; Cozy quiet flight; the three icons.
+- In How to play the Shift row has five keycaps, so "Switch the wing light on and off" takes two lines.
 - On 812 x 375 the Settings sheet shows three rows at a time and scrolls.
 - `docs/toys/window.md` says "To write." for its controls.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen.

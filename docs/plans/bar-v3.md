@@ -51,6 +51,7 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - Controls are 44 px or more. Keyboard focus always shows.
 - A disabled control shows at 40% and takes no input.
 - An action leaves the bar while the toy hides its Bar v2 chip, and returns with it. Railgun shows Reset only after a kill.
+- A group wider than the stage wraps its own parts. Window seat on a phone has three rows.
 
 ## Open
 

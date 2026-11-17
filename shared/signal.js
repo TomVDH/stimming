@@ -521,7 +521,8 @@ export function mountSignal(id, spec, ui) {
     // The sheets stand on the bar, however many rows it takes; a bar on two rows drops its slashes.
     relayout = () => {
       bar.classList.remove('is-wrapped');
-      bar.classList.toggle('is-wrapped', bar.offsetHeight > 1.5 * bar.firstElementChild.offsetHeight);
+      // One part gives the row height: a group may wrap by itself.
+      bar.classList.toggle('is-wrapped', bar.offsetHeight > 1.5 * (bar.querySelector('.sg-btn')?.offsetHeight || bar.offsetHeight));
       layer.style.setProperty('--barh', `${bar.offsetHeight}px`);
     };
     relayout();
