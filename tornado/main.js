@@ -1013,10 +1013,11 @@ function packFunnels(rw, rh) {
     list.push({ t, d: -cz, rb: reach, nr, horn, dep: pits[ti][3], v: [
       [cx, cz, H, deck],
       [r, flare, at('prof', f), at('vmax', f)],
-      [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f) * KNOB.dustH, at('rain', f) * fade],
+      [t.cond, at('debris', f) * KNOB.debris * t.dust, at('dustH', f) * KNOB.dustH, clamp(at('rain', f) * (1 + 3 * (storm - 0.85)) + 0.6 * Math.max(0, storm - 0.85), 0, 1) * fade],
       [at('dark', f) * KNOB.darkK, lean, at('sway', f) * KNOB.sway, f / 5],
       [t.ds, t.zs, t.rope, t.seed],
-      [lm, fade, densAt(f), bow],
+      // A heavier storm packs the funnel denser; a young one leaves it thinner.
+      [lm, fade, densAt(f) * clamp(1 + 1.5 * (storm - 0.85), 0.6, 1.25), bow],
     ] });
   }
   list.sort((p, q) => p.d - q.d);
