@@ -17,7 +17,7 @@
 ## Idea
 
 One big iron pot of broth over a fire, seen from a little above, so the soup is the stage.
-A drag stirs it with a wooden spoon: the soup turns with weight, the middle dips, and the things ride round. A tap or `+ Thing` throws in the next thing (carrot, onion, fish, beetroot, rubber duck, peas, boot, star, tomato, mushroom). Each one splashes, bobs, cooks, breaks up and gives the soup its colour, so the colour and the thickness are a record of what went in.
+A drag stirs it with a wooden spoon: the soup turns with weight, the middle dips, and the things ride round. A tap or `+ Ingredients` throws in the next thing (carrot, onion, fish, beetroot, rubber duck, peas, boot, star, tomato, mushroom). Each one splashes, bobs, cooks, breaks up and gives the soup its colour, so the colour and the thickness are a record of what went in.
 
 ## Controls
 
