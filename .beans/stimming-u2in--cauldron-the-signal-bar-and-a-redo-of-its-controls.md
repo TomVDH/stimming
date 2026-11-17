@@ -44,3 +44,61 @@ Tom, 2026-11-17, for the Cauldron chat: "add more ingredients -- including forbi
 | 10 | The page's own intro text | It still says "Stimming Lab" under the name. Cauldron is on the main shelf; `toys.json` holds no Lab tag. | Remove the fallback line. |
 
 Tom, 2026-11-17: review all controls, labels, help and copy per toy before the next toy. This table is that review for Cauldron.
+
+## Copy rewrite of 2026-11-17 (proposal; nothing is changed)
+
+Tom: "STE100 inspired rewrite of all copy -- no ai slop ... ultimate clarity and consistency -- esp with the controls". Also: redo the mouse and keycap icons.
+
+Rules used: one word for one thing; a label is a noun or one verb; a help line is one instruction, verb first; the same action has the same words in every place; no "or" in a line.
+
+Word list for this toy: ingredient (what goes in), solid, liquid, add, stir, pour, move, push down, clear, heat, pot, soup.
+
+### Controls
+
+| Where | Have | Suggested | Why |
+|---|---|---|---|
+| List title | Add | Ingredient | The list picks a thing. The button adds it. |
+| List heading 1 | Mix | (no heading) | It stood over one tile with the same word. |
+| List heading 2 | Things | Solids | It pairs with Liquids. |
+| First option | Mix | Any | "Mix" also means "stir". Any adds each solid in turn. |
+| Action | + Thing | + Carrot, + Cream, + Any | The label names the pick, as `+ Noun` asks. |
+| Action | Clear | Clear | Keep. |
+| Slider | Fire | Heat | A slider names a quantity. The fire is the object. |
+| Settings row | Simmer sound | Simmer sound | Keep. |
+| Dev rows | Exposure, Bloom, Background blur | Look: Exposure, Bloom, Blur | A group; short labels. |
+| Dev rows | Camera height, Camera turn | Camera: Height, Turn | The group says "Camera" once. |
+| Dev rows | Fire X, Fire Z, Fire height, Fire size, Fire power, Fire spread | Fire: X, Z, Height, Size, Power, Spread | The group says "Fire" once. |
+
+### Help (How to play)
+
+| Input | Have | Suggested |
+|---|---|---|
+| Drag | stir or pour | Stir the soup |
+| Drag, with a liquid picked | (same line) | Pour the liquid |
+| Drag a thing | pull | Move an ingredient |
+| Click | add or dunk | Add the ingredient |
+| Click an ingredient | (same line) | Push an ingredient down |
+| ← → | stir | Stir the soup |
+| T | + thing | Add the ingredient |
+| C | clear | Clear the pot |
+
+### Other copy
+
+| Where | Have | Suggested |
+|---|---|---|
+| Stage label (screen readers) | A big iron pot of soup over a fire. Drag on the soup in a circle to stir it. Click the soup to throw the next thing in. Hold the left or right arrow key to stir. | A pot of soup on a fire. Drag the soup to stir it. Click the soup to add the ingredient. Hold the left or right arrow key to stir. |
+| Line when the toy cannot run | Soup cauldron needs WebGL 2 with float targets, which this browser has turned off. | This toy cannot run in this browser. It needs WebGL 2 with float targets. |
+| Intro, under the name | Stimming Lab | (remove; the toy is on the main shelf) |
+| Flemish name, IPA, motto | none | Tom sets them. |
+
+### Words on every toy (shell; a change here needs its own yes)
+
+| Where | Have | Suggested | Why |
+|---|---|---|---|
+| (i) button and its sheet | How to play | Controls | A noun, as Sound and Settings are. |
+| Monogram, for screen readers | Soup cauldron. Back to Stimming | Back to the menu | It says where the link goes. |
+| Sound, Settings, Dev, Quality, Standard, High, Reset, Version | (as they are) | Keep | One noun or one verb each. |
+
+### Input drawings (built in `shared/signal.js`)
+
+How to play now draws each input: a mouse with its pressed button filled, an arrow for a drag, a bar for a hold, a wheel for a scroll; touch points on a touch screen; a hairline keycap for a key. The same input looks the same on every toy. Words that name the target ("a thing") still sit beside the drawing until the copy above is applied.

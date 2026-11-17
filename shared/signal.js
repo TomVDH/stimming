@@ -42,6 +42,42 @@ function setAcc(el, acc) {
   el.style.setProperty('--acc-on', on);
 }
 
+// How to play draws each gesture as a small line icon: a mouse, or touch points on a touch screen.
+// One icon per kind of input, so the same gesture looks the same on every toy.
+const MOUSE = 'M3 6.5a3.5 3.5 0 0 1 7 0v3a3.5 3.5 0 0 1-7 0z';
+const LEFT = `<path d="${MOUSE}M3 7h7M6.5 3v4"/><path class="solid" d="M6.5 3A3.5 3.5 0 0 0 3 6.5V7h3.5z"/>`;
+const RIGHT = `<path d="${MOUSE}M3 7h7M6.5 3v4"/><path class="solid" d="M6.5 3a3.5 3.5 0 0 1 3.5 3.5V7H6.5z"/>`;
+const POINT = '<circle class="solid" cx="6.5" cy="8" r="2"/><circle cx="6.5" cy="8" r="4.5"/>';
+const MOVE = '<path d="M13 8h8M15 6l-2 2 2 2M19 6l2 2-2 2"/>';
+const STAY = '<path d="M13.5 5.5v5M13.5 8h7M20.5 5.5v5"/>';
+const STAY_MOVE = '<path d="M13.5 5.5v5M13.5 8h7.5M19 6l2 2-2 2"/>';
+const GESTURE = {
+  click: LEFT, 'right-click': RIGHT, 'double-click': LEFT,
+  drag: LEFT + MOVE, 'right-drag': RIGHT + MOVE, hold: LEFT + STAY, 'hold + drag': LEFT + STAY_MOVE,
+  scroll: `<path d="${MOUSE}"/><rect class="solid" x="5.75" y="4.5" width="1.5" height="3.2" rx="0.75"/><path d="M15 6.5l2-2 2 2M15 9.5l2 2 2-2"/>`,
+  tap: POINT, 'double-tap': POINT, 'long-press': POINT + STAY, 'touch-drag': POINT + MOVE, 'touch-hold-drag': POINT + STAY_MOVE,
+  'two-finger drag': '<circle class="solid" cx="4.5" cy="6" r="1.8"/><circle class="solid" cx="8.5" cy="10" r="1.8"/>' + MOVE,
+  pinch: '<circle class="solid" cx="4" cy="8" r="1.8"/><circle class="solid" cx="20" cy="8" r="1.8"/><path d="M7 8h3.5M9 6.5 10.5 8 9 9.5M17 8h-3.5M15 6.5 13.5 8 15 9.5"/>',
+};
+// On a touch screen each mouse gesture has one touch gesture, as in keyWord.
+const TOUCH = { click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch' };
+const KINDS = ['hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch'];
+/**
+ * The icon for one How to play entry: a gesture drawing, or keycaps for a key.
+ * @param {string} word The spec's word, such as 'drag', 'drag a thing' or 'T'.
+ * @param {boolean} touch
+ */
+function inputHTML(word, touch) {
+  const w = word.toLowerCase().trim();
+  let kind = KINDS.find(k => w.startsWith(k));
+  if (!kind) return w.split(/[\s/+]+/).filter(Boolean).map(k => `<kbd>${k}</kbd>`).join('');
+  // A word after the gesture says what you do it on.
+  const rest = w.slice(kind.length).trim();
+  const twice = kind.startsWith('double') ? '<small>2×</small>' : '';
+  if (touch && TOUCH[kind]) kind = TOUCH[kind];
+  return `<svg viewBox="0 0 24 16" aria-hidden="true">${GESTURE[kind]}</svg>${twice}${rest ? `<small>${rest}</small>` : ''}`;
+}
+
 /** @returns {any} */
 const h = (tag, cls = '', html = null) => {
   const el = document.createElement(tag);
@@ -304,11 +340,17 @@ export function mountSignal(id, spec, ui) {
       const info = btn('sg-ico', INFO_SVG, 'How to play');
       const sheet = sheetPart('sg-sheet--rows', 'How to play', info);
       const how = h('div', 'sg-how');
-      const row = (key, verb) => how.append(box('sg-how-row', text('kbd', '', key), text('span', '', verb)));
-      spec.keys.forEach(([word, verb]) => { if (!(touch() && !onTouch(word))) row(keyWord(word, touch()), verb); });
+      // One row: the drawing of the input, then what it does. The words name it for a screen reader.
+      const row = (word, verb) => {
+        const input = h('span', 'sg-input', inputHTML(word, touch()));
+        input.setAttribute('role', 'img');
+        input.setAttribute('aria-label', keyWord(word, touch()).toLowerCase());
+        how.append(box('sg-how-row', input, text('span', '', verb)));
+      };
+      spec.keys.forEach(([word, verb]) => { if (!(touch() && !onTouch(word))) row(word, verb); });
       if (!touch()) {
-        (spec.actions || []).forEach(a => { if (a.key) row(String(a.key).toUpperCase(), actLabel(a).toLowerCase()); });
-        options.forEach(o => { if (o.key) row(String(o.key).toUpperCase(), String(o.label).toLowerCase()); });
+        (spec.actions || []).forEach(a => { if (a.key) row(String(a.key), actLabel(a).toLowerCase()); });
+        options.forEach(o => { if (o.key) row(String(o.key), String(o.label).toLowerCase()); });
       }
       sheet.el.append(how);
       sys.push(info);
