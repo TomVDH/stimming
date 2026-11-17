@@ -162,13 +162,14 @@ float stormShapeSun(vec3 p) {
   }
   return d;
 }
-// The storm as the eye sees it: the base also runs out over and behind the eye.
-// Its underside rises a little toward the eye, so no edge of the deck shows in frame.
+// The storm as the eye sees it: the base runs out over and behind the eye, and far left, right and ahead.
+// It reads as a vast system, not one cell; its underside rises a little toward the eye.
+// No edge of the deck shows in frame at any lens; far off it meets the horizon's glow.
 // The sun still reaches the plain under it: shade reads stormShapeSun(), without this part.
 float stormShape(vec3 p) {
   float d = stormShapeSun(p);
   float under = BASE + 0.12 + 0.25 * smoothstep(-6.0, 4.0, p.z);
-  vec2 q = vec2(abs(p.x) - 30.0, abs(p.z + 4.0) - 10.0);
+  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 70.0) - 76.0);
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(under - p.y, p.y - (BASE + 1.0)));
   return smin(d, front, 0.8);
 }
@@ -388,6 +389,16 @@ vec3 wheatFar(vec2 xz, float fx) {
   // A bent stalk shows its pale side.
   float g = gust(xz);
   alb = mix(alb, vec3(0.55, 0.47, 0.3), g * 0.6);
+  // Up close the field shows its make: drill rows along the road, clumps of ears with darker gaps,
+  // and ripples running downwind with the gusts. Each fades out once a pixel covers it.
+  float near = 1.0 - smoothstep(0.08, 0.8, fx);
+  if (near > 0.0) {
+    float rows = mix(0.5, 0.5 + 0.5 * cos(xz.x * 20.9 + vn(xz * 0.4) * 3.0), 1.0 - smoothstep(0.03, 0.12, fx));
+    float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), 1.0 - smoothstep(0.03, 0.15, fx)) * 0.4;
+    float gap = smoothstep(0.38, 0.18, clump);
+    float rip = 0.5 + 0.5 * sin(dot(xz, WDIR) * 0.9 - uT * (2.0 + 4.0 * uWind) + vn(xz * 0.2) * 4.0);
+    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * gap) * (0.9 + 0.22 * rip * (0.3 + 0.7 * g)), near);
+  }
   return alb * (0.7 + 0.5 * g) * (uSunCol * 0.5 + uAmb * 0.55);
 }
 // The near wheat: shells of ears, from the tallest ear down into the stalks.
@@ -485,7 +496,8 @@ float box(vec2 s, vec2 a, vec2 b, float px) {
 vec3 hazed(vec3 col, vec3 d, float t) { return mix(col, hazeCol(d), 1.0 - exp(-t / 30000.0)); }
 
 // Telephone poles down the far verge, 55 m apart, with three sagging wires.
-const float POLE_X = ROAD_X + 9.0, POLE_Z0 = 10.0, POLE_GAP = 55.0;
+// The first pole stands 30 m out, so the line runs on in frame with its poles even from a high eye at 28 mm.
+const float POLE_X = ROAD_X + 9.0, POLE_Z0 = 30.0, POLE_GAP = 55.0;
 void poles(inout vec3 c, vec2 s, vec3 rd, float px) {
   vec3 wood = uSunCol * vec3(0.16, 0.1, 0.06) + uAmb * 0.03;
   for (int i = 0; i < 48; i++) {
@@ -848,7 +860,7 @@ function stormShapeJS(x, y, z) {
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
-  const fx = Math.abs(x) - 30, fz = Math.abs(z + 4) - 10;
+  const fx = Math.abs(x) - 150, fz = Math.abs(z + 70) - 76;
   const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + 1)));
   return smin(d, front, 0.8);
 }

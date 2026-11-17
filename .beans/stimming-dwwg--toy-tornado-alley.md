@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:03:35Z
+updated_at: 2026-11-17T07:05:56Z
 parent: stimming-oh7b
 ---
 
@@ -149,3 +149,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: Dev row Eye height (1 to 40 m, ?eye), default 8 m (was 1.25) for a more expansive view; the view stays level, so the horizon (0.382) and the road's vanishing point (0.618) hold; the near wheat reads from above.
 
 - 2026-11-17, Tom: an old water-pump windmill blockout in the left foreground wheat, about 38 m out: four tapering lattice legs with girts (13 m), an 18-blade wheel facing the wind and turning with Wind, a tail vane; dark weathered steel, hazed for its distance. Clear of the touchdown area and the road at 28 mm; cut at the left edge at 50 mm.
+
+- 2026-11-17: the power line's first pole stands 30 m out, so at 28 mm from 8 m it shows with its wires sagging between real poles; the near wheat shows drill rows, clumps with darker gaps and downwind ripples, fading out by pixel size. The deck now runs 150 km left and right and about 146 km ahead (one vast system, no edge at any lens), with a thin glow at the horizon under its far edge.
