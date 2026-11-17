@@ -5,17 +5,17 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T09:50:28Z
+updated_at: 2026-11-17T16:10:34Z
 parent: stimming-oh7b
 ---
 
 Build Tornado alley from docs/plans/tornado.md (idea 364, Tom's add 2026-11-16). Size XXXL. It starts in the Lab. A wide, still, deadpan cinematic vista of the Oklahoma plains under a huge supercell. Several tornadoes at once; each carries an F-scale (F0 to F5) to set and play with.
 
 - [x] Task 1: blockout of the shot: plains, wheat, farmhouse, road, supercell; checkpoint with Tom
-- [ ] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob (framing blockout done; next: the hero ray-marched tornado with a continuous F-scale slider, per Tom)
-- [ ] Task 3: many tornadoes: place, set F-scale, paths, ropes out
+- [x] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob (framing blockout done; next: the hero ray-marched tornado with a continuous F-scale slider, per Tom)
+- [x] Task 3: many tornadoes: place, set F-scale, paths, ropes out
 - [ ] Task 4: storm: wall cloud, rain curtain, hail, lightning, light and grade
-- [ ] Task 5: debris and damage: wheat flattens, fence and barn debris
+- [x] Task 5: debris and damage: wheat flattens, fence and barn debris
 - [ ] Task 6: sound, Settings, Dev rows, QA at 1280 and 375 px
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name
@@ -190,7 +190,7 @@ Built; waits for the checkpoint with Tom.
 
 - 2026-11-17, Tom: an opening build-up: the storm eases from 0 to its set level (0.85) on an in-out quart over 90 s (Dev row Build-up 20–300 s; ?buildup=0 for full at once); the Storm slider follows; touching it takes over. At 0.67 the first tornado spawns on the left golden line (0.355 across), 6.5 km out at a strong angle, and runs the slow touchdown. Reduced motion starts formed. QA loads with ?tor or ?storm skip it.
 
-- [ ] Later (Tom): volumetric rain haze: a cloud-noise texture of rain pouring down over the scene.
+- [ ] Later (Tom): volumetric rain haze: a cloud-noise texture of rain pouring down over the scene. Now stimming-u0iy.
 
 - 2026-11-17, Tom: the build-up takes 15 s by default (range 5–300; key buildUpS, the old saved 90 removed); during it the far field renews in strips, so no frame stalls.
 
@@ -227,3 +227,24 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17: tornadoes stay inside the live march: farMax() = max(1.5, Bake from − crossover − 0.5) km (13.5 km at 16); placement, drag, drift and ?near clamp to it; a tornado drifting out ropes out at the limit.
 
 - 2026-11-17, Tom (classic golden ratio): eye 1.25 m (key eyeGold) and a 35 mm lens (key lensGold; 28, 35, 50, 85 in Settings) by default, old saved keys removed; horizon at 0.383, road vanishing at 0.618, no deck edge at any lens with Front edge −6; the first tornado drops upwind so it meets the ground at about 0.368 across. Perf: three F4.5 now 33–36 ms best (3D farm, infra and damage field added about 4 ms; 35 mm funnels fill more pixels); the 30 ms target needs another pass.
+
+## Remote pickup (2026-11-17)
+
+Main holds all work from the five side sessions (cloud tube, power line, fields, ACES and Look, destruction). No branch holds unmerged tornado work.
+
+Open work, one bean each:
+
+| Bean | What | Needs |
+|---|---|---|
+| stimming-2ftc | Perf pass: three F4.5 under 30 ms (now 33 to 36 ms) | Ready |
+| stimming-u0iy | Volumetric rain haze to the ground, slanted with the wind | Ready |
+| stimming-uzgg | Rise: true dolly zoom or keep the widening | Tom |
+| stimming-2mtw | Easter eggs, wordless nods | Tom |
+| stimming-mnpe | Engine sound from havoc | Tom |
+| stimming-h8tu | Front edge recedes with Storm | Tom |
+| stimming-xk5e | Photoreal: road, albedos, wires; then the default | Tom |
+| stimming-ga26 | Fields: QA stills | Ready |
+
+Still open on this bean: Task 4 hail, Task 6 sound and QA at 1280 and 375 px, the Dutch name, the session cost.
+
+Start: `npm ci`, `npm run dev`, then http://localhost:8000/tornado/ (Dev is always on). Files: tornado/main.js (scene), funnel.js (storm pass), wheat.js, road.js, line.js, plain.js, traffic.js, farm.js, infra.js, damage.js, pane.js. Plan: docs/plans/tornado.md.
