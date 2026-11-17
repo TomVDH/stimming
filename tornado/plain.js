@@ -1,7 +1,9 @@
 // Tornado alley: the far plain's geometry, drawn flat on the screen in the scene pass.
 // Shelterbelts and lone trees, far farmsteads with grain bins, and a fence along the road.
+// Trees sway in the wind and take damage from the damage field.
 // Every shape lays itself into the objects' layers with put(), so it sorts against the funnels.
-// It reads main.js's proj(), depthOf(), vn(), th(), hazeCol(), sunCover(), shadeK() and CAMH.
+// It reads main.js's proj(), depthOf(), vn(), th(), hazeCol(), sunCover(), shadeK(), gust() and CAMH,
+// line.js's swayAmp() and segCover(), and damage.js's dmgAt().
 
 export const PLAIN_GLSL = /* glsl */`
 /* ---------- the far plain ---------- */
@@ -12,6 +14,32 @@ vec3 leafCol(vec3 P, float k) {
   float sun = 1.0 - sunCover(P * 0.001);
   return mix(vec3(0.035, 0.045, 0.022), vec3(0.05, 0.055, 0.03), k) * (uSunCol * 0.45 * sun + uAmb * 0.5);
 }
+/* ---------- trees in the wind ---------- */
+// A tree's damage from the damage field, by its peak wind and its own strength.
+// x: leaves lost, y: limbs lost, z: fallen, w: carried off (only a stripped stump stays).
+// dir: the way it falls, in world x and z.
+vec4 treeDmg(vec2 xz, float seed, out vec2 dir) {
+  vec3 d = dmgAt(xz);
+  // Trees differ: some go at 45 m/s, some stand to 57.
+  float j = (th(vec2(seed, 4.7)) - 0.5) * 12.0, v = d.x;
+  dir = length(d.yz) > 0.05 ? normalize(d.yz) : WDIR;
+  // A felled tree keeps most of its leaves; only the strongest wind strips it bare.
+  float gone = smoothstep(76.0 + j, 92.0 + j, v);
+  return vec4(0.65 * smoothstep(30.0 + j, 62.0 + j, v) + 0.35 * gone, smoothstep(38.0 + j, 58.0 + j, v), smoothstep(45.0 + j, 55.0 + j, v), gone);
+}
+// A crown's sway at its top, in metres along the world wind (x, z).
+// Wind, storm and gusts give a slow swing; a near tornado's inflow bends it hard toward the funnel.
+vec2 treeSway(vec2 xz, float h, float seed) {
+  vec2 lean = gust(xz, 0.0).xy;
+  float nearK;
+  swayAmp(xz, nearK);
+  float a = length(lean), ph = uT * (0.9 + 0.5 * th(vec2(seed, 1.3))) + seed * 6.3;
+  // A steady lean, and a swing about it that grows with the wind.
+  float top = h * (0.05 + 0.1 * nearK) * a * (1.0 + 0.45 * sin(ph) + 0.2 * sin(ph * 2.7 + 1.0));
+  return a > 1e-4 ? lean / a * top : vec2(0.0);
+}
+// How far one world metre along xz moves on screen at P, in screen units over m (-1 to 1).
+float screenAlong(vec3 P, vec2 xz) { return (proj(P + vec3(xz.x, 0.0, xz.y)).x - proj(P).x) / (uFoc / depthOf(P)); }
 // A shelterbelt: a row of trees on the ground from a to b, about h metres tall.
 // The view ray's column meets the row's line once; the crown's top is ragged along it.
 void belt(vec2 s, vec3 rd, float px, vec2 a, vec2 b, float h, float seed) {
@@ -32,31 +60,97 @@ void belt(vec2 s, vec3 rd, float px, vec2 a, vec2 b, float h, float seed) {
   float top = h * (0.6 + 0.4 * vn(vec2(L * 0.02, seed + 3.0))) * (0.82 + 0.18 * sqrt(max(1.0 - pow(2.0 * tree - 1.0, 2.0), 0.0)));
   // The row thins at its two ends.
   top *= smoothstep(0.0, 0.04, u) * smoothstep(1.0, 0.96, u);
+  // The damage field strips, breaks and lays down the trees along the row.
+  vec2 fdir;
+  vec4 dm = treeDmg(Q, seed + floor(L / 9.0), fdir);
+  top *= (1.0 - 0.3 * dm.y) * mix(1.0, 0.12 + 0.2 * vn(vec2(L * 0.2, seed + 7.0)), dm.z) * (1.0 - 0.6 * dm.w);
+  // The crowns swing along the row, each tree a little out of step.
+  top += h * 0.03 * length(gust(Q, 0.0).xy) * sin(uT * 1.2 + L * 0.11 + seed);
   float sy = (top - CAMH) / z * uFoc, sb = -CAMH / z * uFoc;
   float k = clamp((sy - s.y) / px + 0.5, 0.0, 1.0) * clamp((s.y - sb) / px + 1.5, 0.0, 1.0);
   if (k <= 0.0) return;
-  // Light shows through the thin crowns near the top.
-  k *= mix(1.0, 0.75 + 0.25 * vn(vec2(L * 0.8, s.y * 900.0)), smoothstep(sy - 3.0 * px, sy, s.y));
-  put(plainHaze(leafCol(P, vn(vec2(L * 0.1, seed))), rd, z), k, z);
+  // Light shows through the thin crowns near the top; stripped crowns let it through all over.
+  k *= mix(1.0, 0.75 + 0.25 * vn(vec2(L * 0.8, s.y * 900.0)), max(smoothstep(sy - 3.0 * px, sy, s.y), dm.x * 0.8));
+  vec3 col = mix(leafCol(P, vn(vec2(L * 0.1, seed))), vec3(0.06, 0.055, 0.04) * (uSunCol * 0.4 + uAmb * 0.5), dm.x * 0.6);
+  put(plainHaze(col, rd, z), k, z);
 }
-// A lone tree: a trunk and a round, ragged crown of radius r, its top h metres up.
+// A lone tree: a trunk, a few limbs, and a crown of lobes of radius r, its top h metres up.
+// The wind leans it; the damage field strips it, breaks it, or lays it down.
 void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h, float seed) {
   float z = depthOf(P);
   if (z < 50.0) return;
   vec2 b = proj(P);
   float m = uFoc / z;
-  if (abs(s.x - b.x) > r * 1.3 * m + px || s.y < b.y - px || s.y > b.y + h * m + px) return;
-  vec2 c = b + vec2(0.0, (h - r) * m);
-  vec2 q = (s - c) / m;
-  float ang = atan(q.y, q.x);
-  // The crown's edge: lumps of foliage round it.
-  float rr = r * (0.85 + 0.15 * vn(vec2(ang * 2.5, seed)) + 0.08 * vn(vec2(ang * 7.0, seed + 2.0)));
-  float k = clamp((rr - length(q * vec2(1.0, 1.15))) * m / px + 0.5, 0.0, 1.0);
-  // The trunk, under the crown.
-  k = max(k, clamp((0.35 * m - abs(s.x - b.x)) / px + 0.5, 0.0, 1.0) * min(1.0, 0.7 * m / px) * step(s.y, c.y));
-  if (k <= 0.0) return;
-  // The crown's sunward side takes a little more light.
-  put(plainHaze(leafCol(P, clamp(0.5 - q.x / r * 0.5, 0.0, 1.0)), rd, z), k, z);
+  // A fallen tree reaches along the ground: the screen box takes its whole height either way.
+  if (abs(s.x - b.x) > h * m + px * 2.0 || s.y < b.y - r * 0.6 * m - px || s.y > b.y + h * m + px) return;
+  vec2 fdir;
+  vec4 dm = treeDmg(P.xz, seed, fdir);
+  vec2 sw = treeSway(P.xz, h, seed);
+  // The sway and the fall, as screen leans: k is how much of a world metre shows sideways.
+  float swX = screenAlong(P, sw), kf = screenAlong(P, fdir);
+  // Most trees snap part way up; some go over at the roots.
+  bool snaps = th(vec2(seed, 8.1)) < 0.55;
+  float hb = snaps ? h * (0.25 + 0.3 * th(vec2(seed, 2.2))) : 0.0;
+  float ang = dm.z * 1.5708;
+  // The tree's frame: q in metres from its foot, the part above the break turned about it.
+  // As it goes down the turned part settles, so the crown lies on the ground, not in the air.
+  vec2 q = (s - b) / m;
+  vec2 qa = q - vec2(0.0, mix(hb, r * 0.6, dm.z));
+  float ca = cos(ang), sa = sin(ang) * kf;
+  // The turn as it looks from here: a tree falling toward the eye shortens, not swings.
+  float L = max(length(vec2(sa, ca)), 0.35);
+  vec2 ax = vec2(sa, ca) / length(vec2(sa, ca) + 1e-5);
+  vec2 ql = vec2(ax.y * qa.x - ax.x * qa.y, (ax.x * qa.x + ax.y * qa.y) / L) + vec2(0.0, hb);
+  bool above = ql.y > hb || hb <= 0.0;
+  if (!above) ql = q;
+  // The sway leans the upper tree a little more than the lower.
+  float hy = clamp(ql.y / h, 0.0, 1.0);
+  ql.x -= swX * hy * hy * (1.0 - dm.z);
+  float sun = 1.0 - sunCover(P * 0.001);
+  // The bark: dark and wet; a stripped stump shows pale wood.
+  vec3 bark = mix(vec3(0.03, 0.025, 0.02), vec3(0.16, 0.13, 0.1), dm.w) * (uSunCol * 0.4 * sun + uAmb * 0.5);
+  float cy = h - r;
+  // The crown's carried away with the top in the strongest wind.
+  float keep = above ? 1.0 - dm.w : 1.0;
+  // The trunk, to the crown's heart; a broken top's trunk turns with it.
+  float tw = 0.32 * (1.0 - 0.3 * hy);
+  float kt = clamp((max(tw * m, px * 0.5) - abs(ql.x) * m) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * tw * m / px) * step(0.0, ql.y) * step(ql.y, cy) * keep;
+  if (!above && hb > 0.0) kt *= step(q.y, hb + 0.4 * abs(q.x * 3.0));
+  // Four limbs from the trunk's top to the lobes, seen most once the leaves go.
+  float kl = 0.0;
+  for (int i = 0; i < 4; i++) {
+    if (!above) break;
+    float fi = float(i), lx = (fi - 1.5) * 0.5 * r, ly = cy + (0.15 - 0.25 * abs(fi - 1.5)) * r;
+    if (th(vec2(seed + fi, 5.5)) < dm.y * 0.8) continue;
+    float sx, u;
+    kl = max(kl, segCover(ql * m, vec2(0.0, cy - 0.5 * r) * m, vec2(lx, ly) * m, 0.08 * m, px, sx, u));
+  }
+  put(plainHaze(bark, rd, z), max(kt, kl * keep), z);
+  // Below a break only the stump stands.
+  if (!above) return;
+  // The crown: five lobes, each with a ragged edge; limbs lost take whole lobes.
+  float kc = 0.0, lit = 0.0;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    vec3 lb = i == 0 ? vec3(0.0, 0.25, 0.62) : i == 1 ? vec3(-0.5, -0.05, 0.55) : i == 2 ? vec3(0.5, 0.0, 0.55) : i == 3 ? vec3(0.1, 0.55, 0.48) : vec3(-0.2, -0.4, 0.5);
+    if (th(vec2(seed + fi, 3.9)) < dm.y * 0.75) continue;
+    // Each lobe flutters on its own beat.
+    vec2 c = vec2(lb.x * r + swX * 0.06 * sin(uT * 2.1 + fi * 1.7 + seed), cy + lb.y * r);
+    vec2 d = ql - c;
+    float an = atan(d.y, d.x);
+    float R = lb.z * r * (1.0 - 0.3 * dm.y) * (0.88 + 0.12 * vn(vec2(an * 2.5 + fi, seed)) + 0.07 * vn(vec2(an * 6.0, seed + fi)));
+    float k = clamp((R - length(d * vec2(1.0, 1.12))) * m / px + 0.5, 0.0, 1.0);
+    if (k > kc) { kc = k; lit = clamp(0.5 + 0.5 * dot(d / max(R, 1e-3), normalize(vec2(-uSun.x, 0.6))), 0.0, 1.0); }
+  }
+  if (kc <= 0.0) return;
+  // Leaves go in holes first: light shows through, then the bare limbs.
+  // The gaps scale with the crown and fade to their mean once smaller than a pixel: no checker.
+  float hole = mix(0.5, vn(ql / r * 3.0 + seed * 7.0), smoothstep(1.5, 4.0, r * m / px / 3.0));
+  kc *= mix(1.0, 0.12, smoothstep(0.85, 0.35, hole + 0.8 - dm.x * 0.9));
+  kc *= keep;
+  // Torn leaves show their pale backs.
+  vec3 col = mix(leafCol(P, lit), vec3(0.09, 0.09, 0.06) * (uSunCol * 0.4 * sun + uAmb * 0.5), dm.x * 0.5);
+  put(plainHaze(col, rd, z), kc, z);
 }
 // Coverage of a box from screen point a to b, at pixel size px.
 float pbox(vec2 s, vec2 a, vec2 b, float px) {

@@ -176,6 +176,9 @@ uniform float uFarK;
 // The lens each far picture was baked through: x for tFar, y for tFarPrev.
 // During the Rise the lens moves; the read reprojects each picture by its own lens.
 uniform vec2 uFarFoc;
+// Lightning: the channel's top in camera km, and its light, seed, kind and glow (see main.js).
+uniform vec3 uBoltT;
+uniform vec4 uBolt;
 // The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
 uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
@@ -743,6 +746,60 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   sig += s;
 }
 #endif
+/* ---------- rain batches ---------- */
+// Curtains of rain from the deck's base to the ground, where rainAt() says rain falls.
+// They slant downwind, darkest at the foot, with soft sides and soft streaks.
+// They grey and darken what lies behind, catch the sun where it reaches them,
+// and take the green-teal of the green phase. The bake draws the far ones.
+// t0 and t1 bound the ray in metres; jt jitters the steps.
+vec4 rainBatch(vec3 rc, float t0, float t1, float jt, bool bake, float farD, float band) {
+  if (t1 <= t0 || uStorm < 0.3) return vec4(0.0);
+  vec3 acc = vec3(0.0);
+  float T = 1.0, mu = dot(rc, gSunC);
+  // The sun shines through rain most toward itself.
+  float fw = mix(1.0, min(hg(mu, 0.6), 5.0), 0.4);
+  // Rain in shade: a grey a little lighter than the gloom; in the green phase, green-teal.
+  float gk = clamp(uGreen + 0.15, 0.0, 1.0);
+  vec3 shadeC = uAmb * mix(vec3(0.11, 0.115, 0.12), vec3(0.075, 0.125, 0.105), gk);
+  vec3 sunT = mix(vec3(1.0), vec3(0.8, 1.0, 0.6), gk);
+  // Soft streaks by the view's angles, leaning as the shafts do: one value per ray, so no grain.
+  float az = atan(rc.x, -rc.z) - rc.y * rainSlant() * uWindC.x;
+  float stK = 0.7 + 0.6 * N(vec3(az * 55.0, rc.y * 5.0 + uT * 0.3, 0.5));
+  // The bake has no history to smooth its grain: it takes many more steps.
+  // Steps grow with distance, as a pixel's footprint does; a short span takes fewer.
+  float l0 = log(t0), l1 = log(t1);
+  int nr = int(ceil((bake ? 48.0 : 16.0) * clamp((l1 - l0) / 2.0, 0.15, 1.0)));
+  float dl = (l1 - l0) / float(nr), tSun = -1e9, sunK = 0.0;
+  for (int i = 0; i < 48; i++) {
+    if (i >= nr) break;
+    float t = exp(l0 + (float(i) + jt) * dl), dt = t * dl;
+    vec3 pk = (vec3(0.0, CAMH, 0.0) + rc * t) * 0.001;
+    float y = pk.y / BASE;
+    if (y > 1.0 || y < 0.0) continue;
+    // A step much longer than a fine curtain blurs the field.
+    gRainLod = smoothstep(400.0, 1500.0, dt);
+    float r = rainAt(pk);
+    gRainLod = 0.0;
+    if (r < 0.01) continue;
+    // Base to ground: densest at the foot; the top melts into the base.
+    r *= mix(1.5, 0.55, y) * (1.0 - smoothstep(0.82, 1.0, y)) * stK;
+    // Light veils near the eye, the big curtains at mid distance, lighter far off.
+    r *= mix(0.3, 1.0, smoothstep(1500.0, 4000.0, t)) * mix(1.0, 0.55, smoothstep(12000.0, 30000.0, t));
+    // The live march and the bake cross over as the deck does.
+    float wf = smoothstep(farD - band, farD, t);
+    r *= bake ? wf : 1.0 - wf;
+    float a = 1.0 - exp(-r * 0.2e-3 * dt);
+    if (a < 1e-4) continue;
+    // The sun's reach is read again only every 3 km: the deck's breaks are wider.
+    if (abs(t - tSun) > 3000.0) { sunK = 1.0 - sunCover(toWorld(pk)); tSun = t; }
+    // Drops scatter the bright low sky round the storm: a curtain reads lighter than the dark base.
+    vec3 col = shadeC * mix(0.75, 1.1, y) + gHzC * sunT * 0.18 + uSunCol * sunT * sunK * 0.025 * fw;
+    col = mix(col, gHzC, 1.0 - exp(-t / 45000.0));
+    acc += T * a * col;
+    T *= 1.0 - a;
+  }
+  return vec4(acc, 1.0 - T);
+}
 void main() {
   if (uMode == 1 && uSlice >= 0 && int(gl_FragCoord.y) % 8 != uSlice) discard;
   vec2 fc = gl_FragCoord.xy + uJit;
@@ -970,12 +1027,26 @@ void main() {
     t += st;
   }
   vec4 now = vec4(acc, 1.0 - T);
-  if (bake) { outC = now; return; }
+  // Rain lies under the base, in front of the first opaque body.
+  // A sky ray runs to the base, a falling ray to the ground. The bake draws it past the crossover.
+  float tB = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / max(-rc.y, 1e-5);
+  vec4 rn = rainBatch(rc, bake ? farD - band : 1000.0, min(min(bake ? 90000.0 : farD, tB), tOpq), jit2, bake, farD, band);
+  if (bake) { outC = vec4(rn.rgb + (1.0 - rn.a) * now.rgb, 1.0 - (1.0 - rn.a) * (1.0 - now.a)); return; }
   // The baked far field lies behind the near field.
   vec2 sf = vec2((gl_FragCoord.x / uRes.x - 0.5) * asp, gl_FragCoord.y / uRes.y - uHz) / uFoc;
   vec2 uvA = vec2(sf.x * uFarFoc.x / asp + 0.5, sf.y * uFarFoc.x + uHz), uvC = vec2(sf.x * uFarFoc.y / asp + 0.5, sf.y * uFarFoc.y + uHz);
   vec4 far = mix(texture(tFarPrev, uvC), texture(tFar, uvA), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
+  now = vec4(rn.rgb + (1.0 - rn.a) * now.rgb, 1.0 - (1.0 - rn.a) * (1.0 - now.a));
+  // Lightning lights the deck and the rain from inside: a soft ball round the stroke, a wide glow past it.
+  // An in-cloud flash sits higher in the cloud.
+  if (uBolt.x > 0.0) {
+    vec3 dF = normalize(uBoltT + vec3(0.0, mix(0.6, 0.1, uBolt.z), 0.0) - vec3(0.0, CAMH * 0.001, 0.0));
+    float aF = max(dot(rc, dF), 0.0);
+    // The cloud's own lumps break the light up, so it never reads as a ball.
+    float n = 0.35 + 1.3 * smoothstep(0.25, 0.75, N(vec3(rc.xy * 14.0, uBolt.y)));
+    now.rgb += vec3(0.75, 0.8, 1.0) * uBolt.x * uBolt.w * now.a * now.a * (n * 0.12 * exp(-(1.0 - aF) / 0.003) + 0.03 * exp(-(1.0 - aF) / 0.02));
+  }
   // Sun shafts: light through one large opening on the sun's side, along the true sun.
   // The march runs under the deck only, 30 km at most, and stops at anything opaque.
   // Each step follows the sun's ray up to the base: the opening there lights it.
