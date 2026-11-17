@@ -891,4 +891,13 @@ for (const ev of ['visibilitychange', 'input', 'click', 'keydown']) document.add
 addEventListener('resize', wake);
 for (const id of ['res']) $(id).addEventListener('input', () => size());
 raf = requestAnimationFrame(loop);
-window.__lab = { get f() { return fShown; }, set f(v) { f = fShown = v; } };
+// Times n frames with a pixel read, free of the screen's frame clock.
+window.__bench = (n = 12) => {
+  const px = new Uint8Array(4);
+  for (let i = 0; i < 3; i++) draw(performance.now());
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) { draw(t0 + i * 33); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+  return Math.round((performance.now() - t0) / n * 10) / 10;
+};
+window.__lab ={ get f() { return fShown; }, set f(v) { f = fShown = v; } };
