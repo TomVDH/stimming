@@ -53,8 +53,8 @@ const ui = initPage({ id: 'tornado', bar: {
       { value: 'golden', label: 'Golden hour' },
       { value: 'dusk', label: 'Dusk' },
     ], onPick: v => act.time(v) },
-    // A new key: a 50 saved under the old one does not hold back the new wide default.
-    { type: 'choice', id: 'lensWide', label: 'Lens', value: '28', persist: true, options: [
+    // A new key: a lens saved under an old one does not hold back the 35 mm default.
+    { type: 'choice', id: 'lensGold', label: 'Lens', value: '35', persist: true, options: [
       { value: '28', label: '28 mm' },
       { value: '35', label: '35 mm' },
       { value: '50', label: '50 mm' },
@@ -74,7 +74,8 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
     { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
-    { type: 'slider', id: 'eye', label: 'Eye height', min: 1, max: 40, step: 0.5, value: 8, persist: true, onInput: v => act.eye(v) },
+    // A new key: a height saved under the old one does not hold back the 1.25 m default.
+    { type: 'slider', id: 'eyeGold', label: 'Eye height', min: 1, max: 40, step: 0.25, value: 1.25, persist: true, onInput: v => act.eye(v) },
     // Rise: how long the crane takes each way, and how high it goes.
     { type: 'slider', id: 'riseDur', label: 'Rise time (s)', min: 6, max: 30, step: 1, value: 15, persist: true, onInput: v => act.riseDur(v) },
     { type: 'slider', id: 'riseTop', label: 'Rise height (m)', min: 10, max: 80, step: 1, value: 35, persist: true, onInput: v => act.riseTop(v) },
@@ -1212,10 +1213,10 @@ let qaHold = false;
 let base = 1.35;
 // The base as drawn: the slider's height at the default storm, a third higher for a young one.
 const baseNow = () => base * (1 + 0.4 * (0.85 - storm));
-// The eye's height in metres: Dev's Eye height. It stands higher than a crouch, for a wider view.
-let camH = 8;
+// The eye's height in metres: Dev's Eye height. It stands in the wheat, just over the ears.
+let camH = 1.25;
 // The eye height Dev sets; camH is that height plus the Rise.
-let eyeSet = 8;
+let eyeSet = 1.25;
 // Rise: u runs 0 to 1 and back; dir is +1 up, -1 down, 0 at rest.
 // At the top it holds hold seconds, then eases back by itself.
 const rise = { u: 0, dir: 0, dur: 15, top: 35, hold: 0 };
@@ -1269,7 +1270,7 @@ function setSun(hour) {
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
-let lensMM = 28;
+let lensMM = 35;
 // A narrow frame takes a somewhat wider lens and crops the storm's sides.
 const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3)) * (1 - RISE_WIDEN * easeRise(rise.u));
 // The road vanishes on the right golden line.
@@ -1851,11 +1852,14 @@ function groundAt(clientX, clientY) {
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
-// The first tornado: on the left golden line, 6.5 km out, at a strong angle to the eye.
+// The first tornado: on the left third, 6.5 km out, at a strong angle to the eye.
+// It drops a little upwind, so it reaches the ground 0.355 across.
 function heroDown() {
   const sx = (0.355 - 0.5) * aspect(), foc = focal(), h = Math.hypot(foc, sx);
   const [x, z] = toWorld(6500 * sx / h, -6500 * foc / h);
-  touchDown(x, z);
+  // Its drift over the 30 s before the funnel meets the ground.
+  const up = reduced() ? 0 : fAt(F_SPEED, fLevel) * 30;
+  touchDown(x - windDir[0] * up, z - windDir[1] * up);
 }
 // At four tornadoes a spawn does nothing: none ropes out or leaves to make room (Tom).
 // A roping tornado counts until it leaves.
@@ -1958,7 +1962,7 @@ act.buildUp = v => { if (build) build.dur = clamp(+v || 45, 10, 600); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
-act.lens = v => { lensMM = +v || 28; wake(); };
+act.lens = v => { lensMM = +v || 35; wake(); };
 // Each curve's own gain sets the scene's level; Exposure trims both.
 const TONE_GAIN = { film: 1, aces: 1.1 };
 let expoTrim = 1;
@@ -1983,7 +1987,7 @@ act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
 act.god = v => { god = clamp(+v, 0, 1); wake(); };
 act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
 act.front = v => { front = clamp(Number.isFinite(+v) ? +v : -6, -6, 15); wake(); };
-act.eye = v => { eyeSet = clamp(+v || 8, 1, 40); camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u); wake(); };
+act.eye = v => { eyeSet = clamp(+v || 1.25, 1, 40); camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u); wake(); };
 // A press starts the Rise, or turns it back at any point.
 act.rise = () => { rise.dir = rise.dir > 0 || (rise.dir === 0 && rise.u >= 1) ? -1 : 1; rise.hold = 0; wake(); };
 act.riseDur = v => { rise.dur = clamp(+v || 15, 6, 30); };
@@ -2011,7 +2015,7 @@ if (qs0.has('tod')) act.tod(+qs0.get('tod'));
 else if (qs0.has('time')) act.tod(HOURS[qs0.get('time')] ?? HOURS.golden);
 else if (savedTod !== null) act.tod(+savedTod);
 else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
-lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
+lensMM = +(qs0.get('lens') || ui.setting('lensGold')?.value || 35);
 // QA: ?look=photoreal picks the Look for one load.
 act.preset(qs0.get('look') || ui.setting('preset')?.value || 'stimming', !qs0.has('look'));
 // QA: ?tone=film picks the curve for one load.
@@ -2025,7 +2029,7 @@ for (const [, id, , , , , value] of KNOBS) KNOB[id] = qs0.has(id) ? +qs0.get(id)
 act.wind(qs0.has('wind') ? +qs0.get('wind') : ui.setting('wind')?.value ?? 0.85);
 act.windDir(qs0.has('winddir') ? +qs0.get('winddir') : ui.setting('windDir')?.value ?? 19);
 // QA: ?eye=20 sets the eye's height for one load.
-act.eye(qs0.has('eye') ? +qs0.get('eye') : ui.setting('eye')?.value ?? 8);
+act.eye(qs0.has('eye') ? +qs0.get('eye') : ui.setting('eyeGold')?.value ?? 1.25);
 // QA: ?base=2 sets the cloud base for one load.
 act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
 // ?bakefrom=30 and ?deckreach=60 set them for one load.
@@ -2052,7 +2056,7 @@ if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('ro
 // The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
 // Reduced motion starts at full storm with the first tornado formed.
 {
-  try { ['buildUp', 'buildUpS', 'buildUpT'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
+  try { ['buildUp', 'buildUpS', 'buildUpT', 'lensWide', 'eye'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
   const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpU')?.value ?? 45);
   if (!qs.has('tor') && !qs.has('storm')) {
     if (reduced() || !(bu > 0)) heroDown();
