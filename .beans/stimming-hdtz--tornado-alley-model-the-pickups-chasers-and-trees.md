@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T16:13:07Z
-updated_at: 2026-11-17T20:46:41Z
+updated_at: 2026-11-17T21:07:41Z
 parent: stimming-dwwg
 ---
 
@@ -19,7 +19,7 @@ Tom, 2026-11-17: "model the pick up trucks and the trees". The vehicles and tree
 - [x] Near trees (infra, plain lone trees): crowns with volume, trunk, branch gaps, self-shadow, sway
 - [x] Farm windbreak trees
 - [x] Far trees and shelterbelts
-- [ ] Destruction still works at each band (read, not yet seen with a live tornado)
+- [x] Destruction: trees uproot whole past about 84 m/s; near trees fly into the funnel and fade out there, far ones fade in place (seen headless with a tornado through test trees and the farm windbreak)
 - [ ] Tom approves the trees
 - [x] Frame cost flat, console clean
 - [ ] Commit through tools/commit.sh with this bean

@@ -6,7 +6,7 @@ import { damageSite, debrisThrow } from './damage.js';
 
 /* ---------- the farm ---------- */
 // The farm's place in world metres: main.js drew it here first.
-const FX = -420, FZ = -1500;
+export const FX = -420, FZ = -1500;
 // Each site, in the order the GLSL reads uFarm: house, barn, windmill, big bin, small bin.
 const SITES = [[FX + 3, FZ], [FX - 26, FZ - 20], [FX + 25, FZ + 30], [FX - 52, FZ - 12], [FX - 61, FZ - 8]];
 // The winds, m/s, at which each site throws debris: each stage of its failure.

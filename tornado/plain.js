@@ -5,6 +5,63 @@
 // It reads main.js's proj(), depthOf(), vn(), th(), hazeCol(), sunCover(), shadeK(), gust() and CAMH,
 // line.js's swayAmp() and segCover(), and damage.js's dmgAt().
 
+import { damageSite } from './damage.js';
+import { FX, FZ } from './farm.js';
+
+/* ---------- uprooted trees ---------- */
+// A near tree that a tornado uproots leaves its spot whole: it rides the inflow to the funnel,
+// climbs it tumbling, and fades out there. Far trees only fade where they stand.
+export const MAX_FLY = 8;
+// How long a flight lasts, in seconds.
+const FLY_LIFE = 9;
+const fr = x => x - Math.floor(x), f32 = Math.fround;
+// main.js's th() in single precision: a seed picks the same spot and kind here as in the GLSL.
+function th(a, b) {
+  let x = f32(fr(f32(a * 233.34))), y = f32(fr(f32(b * 851.73)));
+  const d = f32(f32(x * f32(x + 23.45)) + f32(y * f32(y + 23.45)));
+  x = f32(x + d); y = f32(y + d);
+  return f32(fr(f32(x * y)));
+}
+// The near trees, as the GLSL places them: x, z, crown radius, height, seed.
+function nearTrees() {
+  const T = [[-600, -950, 5, 11, 1], [-260, -2600, 6, 13, 2], [520, -1900, 4.5, 10, 3], [1500, -3500, 7, 15, 4], [-1900, -2200, 5.5, 12, 5], [3400, -2600, 6.5, 14, 6]];
+  // farm.js fHedge3(): the farm's windbreak.
+  for (let i = 0; i < 9; i++) {
+    const h0 = th(i, 31);
+    if (h0 < 0.18) continue;
+    const r = 3.5 + 2.5 * th(i, 34);
+    T.push([FX - 58 + 11 * i + 4 * (th(i, 32) - 0.5), FZ - 40 - 4 * th(33, i), r, r * (2 + 0.5 * h0), 40 + i]);
+  }
+  // stead(): four trees behind each far farmstead.
+  for (const [x, z, sd] of [[-2900, -5200, 1], [1700, -3900, 2], [-1200, -11500, 3]]) {
+    for (let i = 0; i < 4; i++) T.push([x - 40 + 24 * i + 8 * th(sd, i), z - 30 - 10 * th(i, sd), 6 + 2 * th(sd + i, 1), 13 + 4 * th(i, sd + 2), sd + i]);
+  }
+  return T;
+}
+export function treesState(D) {
+  return {
+    trees: nearTrees().map(([x, z, r, h, seed]) => ({ x, z, r, h, seed, site: damageSite(D, x, z), gone: false })),
+    fly: [], uFly: new Float32Array(MAX_FLY * 4), uFlyB: new Float32Array(MAX_FLY * 4),
+  };
+}
+// A tree goes at its own strength: about 84 m/s, as the GLSL's treeDmg() takes it.
+export function treesStep(T, simT) {
+  for (const t of T.trees) {
+    // Clear mends the field: the tree stands again.
+    if (t.site.peak <= 0) { if (t.gone) T.fly.length = 0; t.gone = false; continue; }
+    if (t.gone || t.site.peak < 84 + (th(t.seed, 4.7) - 0.5) * 12) continue;
+    t.gone = true;
+    T.fly.push({ x: t.x, z: t.z, t: simT, seed: t.seed, r: t.r, h: t.h });
+    if (T.fly.length > MAX_FLY) T.fly.shift();
+  }
+}
+// Packs the flights still under way: place, start time, seed; then crown radius and height.
+export function treesUniforms(T, simT) {
+  T.fly = T.fly.filter(f => simT - f.t < FLY_LIFE);
+  T.uFly.fill(0); T.uFlyB.fill(0);
+  T.fly.forEach((f, i) => { T.uFly.set([f.x, f.z, f.t, f.seed], i * 4); T.uFlyB.set([f.r, f.h, 0, 0], i * 4); });
+}
+
 export const PLAIN_GLSL = /* glsl */`
 /* ---------- the far plain ---------- */
 // Air between the eye and a far shape: the scene's one air model, so every shape sits in the same air.
@@ -129,13 +186,14 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) 
   vec2 cc = tp == 0 ? vec2(0.0, h - r) : vec2(0.0, mix(y0, h, tp == 1 ? 0.5 : 0.36));
   vec2 cr = tp == 0 ? vec2(r) : vec2(W, (h - y0) * 0.5);
   float cy = tp == 0 ? h - r : y0 + 0.3 * (h - y0), fs = tp == 0 ? r * 0.38 : W * 0.7;
-  // The bark: dark and wet; a stripped stump shows pale wood.
+  // The bark: dark and wet.
   // The trunk is round: its sunward side is lit; under the crown it stands in shade.
   float tw0 = 0.32 * (1.0 - 0.3 * hy), sxn = clamp(ql.x / tw0, -1.0, 1.0);
   float tsun = max(dot(vec3(sxn, 0.0, sqrt(1.0 - sxn * sxn)), Ls), 0.0) * mix(1.0, 0.3, smoothstep(y0 - 0.5 * r, y0 + 0.5 * r, ql.y));
-  vec3 bark = mix(vec3(0.03, 0.025, 0.02), vec3(0.16, 0.13, 0.1), dm.w) * (uSunCol * 0.7 * sun * tsun + uAmb * 0.45);
-  // The crown's carried away with the top in the strongest wind.
-  float keep = above ? 1.0 - dm.w : 1.0;
+  vec3 bark = vec3(0.03, 0.025, 0.02) * (uSunCol * 0.7 * sun * tsun + uAmb * 0.45);
+  // Uprooted in the strongest wind: the whole tree leaves its spot, root ball and all.
+  // A near tree flies into the funnel as treesFly(); a far one only fades.
+  float keep = 1.0 - smoothstep(0.45, 0.55, dm.w);
   // The trunk, to the crown's heart; a broken top's trunk turns with it.
   float kt = clamp((max(tw0 * m, px * 0.5) - abs(ql.x) * m) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * tw0 * m / px) * step(0.0, ql.y) * step(ql.y, cy) * keep;
   if (!above && hb > 0.0) kt *= step(q.y, hb + 0.4 * abs(q.x * 3.0));
@@ -148,7 +206,7 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) 
     float sx, u;
     kl = max(kl, segCover(ql * m, vec2(0.0, cy - 0.5 * r) * m, vec2(lx, ly) * m, 0.08 * m, px, sx, u));
   }
-  put(plainHaze(bark, rd, z), max(kt, kl * keep), z);
+  put(plainHaze(bark, rd, z), max(kt, kl) * keep, z);
   // Below a break only the stump stands.
   if (!above) return;
   // The crown's outline; the edge is leafy at three scales, and a scale under a pixel fades to its mean.
@@ -398,5 +456,77 @@ void plain(vec2 s, vec3 rd, float px) {
   stead(s, rd, px, vec3(-2900.0, 0.0, -5200.0), 1.0);
   stead(s, rd, px, vec3(1700.0, 0.0, -3900.0), 2.0);
   stead(s, rd, px, vec3(-1200.0, 0.0, -11500.0), 3.0);
+}
+/* ---------- uprooted trees in flight ---------- */
+// Each flight: place x, z, start time, seed; then crown radius and height.
+uniform vec4 uFly[${MAX_FLY}], uFlyB[${MAX_FLY}];
+// An uprooted tree, root ball and all, lifts, rides the inflow to the nearest funnel, climbs it tumbling,
+// and fades out in the funnel's dust. It reads line.js's uFoot[] for each tornado's foot.
+void treesFly(vec2 s, vec3 rd, float px) {
+  for (int e = 0; e < ${MAX_FLY}; e++) {
+    vec4 a = uFly[e], b = uFlyB[e];
+    float age = uT - a.z, r = b.x, h = b.y, seed = a.w;
+    if (h <= 0.0 || age < 0.0 || age > ${FLY_LIFE}.0) continue;
+    // The nearest funnel takes it; with none it blows downwind.
+    vec2 S = a.xy, C = S + WDIR * 60.0;
+    float rc = 25.0, best = 1e9;
+    for (int i = 0; i < 4; i++) {
+      vec4 f = uFoot[i];
+      float d = length(f.xy - S);
+      if (f.w > 0.0 && d < best) { best = d; C = f.xy; rc = max(f.z * 0.3, 30.0); }
+    }
+    vec2 d0 = S - C;
+    float r0 = max(length(d0), 1.0), a0 = atan(d0.y, d0.x);
+    // It tears free in half a second, then spirals in and up; past the climb's middle it fades.
+    float TA = 3.5 + 1.5 * th(vec2(seed, 1.1)), ka = smoothstep(0.0, 1.0, clamp((age - 0.5) / TA, 0.0, 1.0));
+    float rad = mix(r0, rc * 0.9, ka), ang = a0 - 0.35 * age * (1.0 + 2.0 * ka);
+    float y = h * 0.5 + smoothstep(0.0, 0.6, age) * h * 0.3 + (60.0 + 120.0 * th(vec2(seed, 2.2))) * ka;
+    float fade = 1.0 - smoothstep(TA * 0.55, TA + 1.2, age);
+    if (fade <= 0.0) continue;
+    vec3 Pc = vec3(C.x + rad * cos(ang), y, C.y + rad * sin(ang));
+    float zp = depthOf(Pc);
+    if (zp < 20.0) continue;
+    float m = uFoc / zp;
+    vec2 c = proj(Pc);
+    if (length(s - c) > h * 0.6 * m + 2.0 * px) continue;
+    // It tumbles: its axis turns in the frame, slowly at first.
+    float tb = smoothstep(0.0, 1.2, age) * (0.8 + 1.2 * th(vec2(seed, 5.1))) + age * (0.5 + 1.0 * th(vec2(seed, 3.3)));
+    vec2 ax = vec2(sin(tb), cos(tb)), dq = (s - c) / m;
+    // u runs from the root ball (-h / 2) to the top (h / 2); v across.
+    float u = dot(dq, ax), v = dot(dq, vec2(ax.y, -ax.x)), pm = px / m;
+    float tk = th(vec2(seed, 6.6));
+    int tp = tk < 0.3 ? 1 : tk < 0.55 ? 2 : 0;
+    float W = tp == 1 ? r * 0.38 : tp == 2 ? r * 0.85 : r;
+    // The crown: an elm's round head, a poplar's column, a cedar's cone.
+    float kc, nx, ny;
+    if (tp == 2) {
+      // Ragged tiers and a leafy edge, as the standing cedar's.
+      float t = (u + h * 0.42) / (h * 0.92), hw = W * max(1.0 - t, 0.0) * (0.82 + 0.18 * smoothstep(0.0, 0.9, fract(t * 7.0 + seed)) + 0.08 * (vn(vec2(u * 2.0, seed + v)) - 0.5));
+      kc = clamp((hw - abs(v)) / pm + 0.5, 0.0, 1.0) * step(0.0, t);
+      nx = clamp(v / max(hw, 1e-3), -1.0, 1.0); ny = 0.4;
+    } else {
+      vec2 cc = tp == 1 ? vec2(0.0, h * 0.08) : vec2(0.0, h * 0.5 - r), rr = tp == 1 ? vec2(W, h * 0.4) : vec2(r);
+      vec2 e2 = (vec2(v, u) - cc) / rr;
+      float an = atan(e2.y, e2.x), R = 0.86 + 0.12 * vn(vec2(an * 3.0, seed)) + 0.06 * vn(vec2(an * 9.0, seed + 2.0));
+      kc = clamp((R - length(e2)) * min(rr.x, rr.y) / pm + 0.5, 0.0, 1.0);
+      nx = e2.x; ny = e2.y;
+    }
+    // The trunk, and the root ball of earth torn out with it.
+    float kt = clamp((0.32 - abs(v)) / pm + 0.5, 0.0, 1.0) * step(-h * 0.5, u) * step(u, h * 0.1);
+    float kr = clamp((r * 0.3 - length(vec2(v, u + h * 0.5))) / pm + 0.5, 0.0, 1.0);
+    float sun = 1.0 - sunCover(Pc * 0.001);
+    vec3 Ls = toCam(normalize(uSun + vec3(0.0, 1e-3, 0.0)));
+    // The crown's normal turns with the tumble.
+    vec2 nl = vec2(nx, ny), ns = nl.x * vec2(ax.y, -ax.x) + nl.y * ax;
+    vec3 N = normalize(vec3(ns, sqrt(max(1.0 - dot(nl, nl), 0.05))));
+    float dif = clamp(dot(N, Ls) * 0.65 + 0.35, 0.0, 1.0);
+    vec3 a0c = tp == 1 ? vec3(0.05, 0.064, 0.026) : tp == 2 ? vec3(0.024, 0.038, 0.028) : vec3(0.04, 0.05, 0.024);
+    vec3 leaf = a0c * (uSunCol * 0.95 * sun * dif + uAmb * 0.45);
+    vec3 bark = vec3(0.03, 0.025, 0.02) * (uSunCol * 0.4 * sun + uAmb * 0.45), earth = vec3(0.09, 0.07, 0.05) * (uSunCol * 0.4 * sun + uAmb * 0.5);
+    float k = max(kc, max(kt, kr));
+    if (k <= 0.0) continue;
+    vec3 col = kc >= max(kt, kr) ? leaf : kr > kt ? earth : bark;
+    put(hazed(col, rd, zp), k * fade, zp);
+  }
 }
 `;
