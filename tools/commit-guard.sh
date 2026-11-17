@@ -62,7 +62,7 @@ guard_drops() {
 
 # The railgun's cloud code: its own files, and these sections of its source.
 # A section runs from its marker line to the next "/* ----------" marker.
-GUARD_CLOUD_FILES='^railgun/(storms\.js|stormlab\.html)$'
+GUARD_CLOUD_FILES='^railgun/(storms\.js|stormlab\.html|src/sky/(k2-sky|air)\.glsl)$'
 GUARD_CLOUD_MARKS='^(/\* ---------- (clouds|air|sky dome|storm probe|storm lightning|bands)[ :]|const K2_SKY = )'
 
 # Prints "start end" for each cloud section of a file, one per line.

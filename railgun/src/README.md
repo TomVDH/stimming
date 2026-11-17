@@ -16,7 +16,7 @@ The chain starts at `setup.ts` and runs through the folders interleaved; read ea
 | Folder | Holds |
 |---|---|
 | `setup.ts` | Settings, the bar spec, the renderer, the scene, the camera |
-| `state.ts` | `state`: the values that more than one module writes |
+| `state.ts` | `state`: the values that more than one module writes, with their types |
 | `world/` | The gun's axis, shared uniforms, the ground, the far country, sun shadows |
 | `sky/` | The sun, the K2 sky and haze, the air, the impact light, the sky dome |
 | `clouds/` | Light shafts, draw bands, cloud cards, the storm probe, storm lightning |
@@ -32,6 +32,13 @@ The chain starts at `setup.ts` and runs through the folders interleaved; read ea
 | `input.ts` | Pointer and keys |
 | `qa.ts` | `window.__qa`, the test hooks |
 | `main.ts` | The first compile and the start |
+
+## Types and shaders
+
+- Strict TypeScript. `npm run check` runs tsc on `railgun/tsconfig.json`; it shows 0 errors.
+- `state.ts` types every shared field. Each module exports the types other modules read.
+- Plain shader chunks are `.glsl` files beside their module; esbuild imports each as text (`glsl.d.ts`).
+- A shader that splices other chunks with `${}` stays in TypeScript.
 
 ## Rules
 
