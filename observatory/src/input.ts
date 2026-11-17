@@ -2,12 +2,11 @@
 import './view/camera.ts';
 import { Raycaster, Vector2 } from 'three';
 import type { AltAz } from './core/sky.ts';
+import { classify } from './core/gesture.ts';
 import { camera, stageEl } from './setup.ts';
 
 /* ---------- pointer: aim with a move or a drag, pick with a tap ---------- */
 const DEG = 180 / Math.PI;
-// A tap moves less than this many pixels and lasts less than this many ms.
-const TAP_PX = 8, TAP_MS = 450;
 
 const aimFns: ((a: AltAz) => void)[] = [];
 const tapFns: ((a: AltAz) => void)[] = [];
@@ -41,7 +40,8 @@ stageEl.addEventListener('pointermove', e => {
 });
 const end = (e: PointerEvent) => {
   if (!press || press.id !== e.pointerId) return;
-  const tap = e.type === 'pointerup' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < TAP_PX && performance.now() - press.t < TAP_MS;
+  const tap = e.type === 'pointerup'
+    && classify(e.clientX - press.x, e.clientY - press.y, performance.now() - press.t) === 'tap';
   press = null;
   if (!tap) return;
   const a = pointerAltAz(e.clientX, e.clientY);
