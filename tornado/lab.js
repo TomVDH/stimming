@@ -79,7 +79,7 @@ uniform vec2 uRes, uJit;
 // 16 the deck's tone on the horn, 32 sheath noise, 64 dust and rain.
 uniform float uSkip;
 // Lab knobs: sheath density, core edge, and the deck's whirl.
-uniform float uWid, uDens, uSheathK, uEdgeW, uSpTurn, uSpIn, uSpTwist, uSpR;
+uniform float uTrans, uWid, uDens, uSheathK, uEdgeW, uSpTurn, uSpIn, uSpTwist, uSpR;
 bool off(float b) { return mod(floor(uSkip / b), 2.0) > 0.5; }
 uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
@@ -358,7 +358,8 @@ float sunOD(vec2 q, float h, float R) {
       float rho = sheathR(j) * R;
       od += funnelSig(mix(0.45, 0.12, float(j) / float(SHEATHS - 1)), R) * (chord(q, d, a, rho + w, L) - chord(q, d, a, max(rho - w, 0.0), L));
     }
-    od *= wf;
+    // Light through: sunlight passes the funnel's own cloud this much more freely.
+    od *= wf * (1.0 - 0.95 * uTrans);
   }
   // The dust's own shade: three nested circles, so its shadow has no hard rim.
   // Its sun ray runs across the whole cloud, not the funnel's short reach.
@@ -1036,7 +1037,7 @@ const knob = id => {
   show();
   return () => +el.value;
 };
-const K = { dens: knob('dens'), width: knob('width'), flare: knob('flare'), lean: knob('lean'), sway: knob('sway'), reach: knob('reach'), dustH: knob('dustH'), sheath: knob('sheath'), edge: knob('edge'), spTurn: knob('spTurn'), spIn: knob('spIn'), spTwist: knob('spTwist'), spR: knob('spR'), strips: knob('strips'), bakeMix: knob('bakeMix'), spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
+const K = { trans: knob('trans'), dens: knob('dens'), width: knob('width'), flare: knob('flare'), lean: knob('lean'), sway: knob('sway'), reach: knob('reach'), dustH: knob('dustH'), sheath: knob('sheath'), edge: knob('edge'), spTurn: knob('spTurn'), spIn: knob('spIn'), spTwist: knob('spTwist'), spR: knob('spR'), strips: knob('strips'), bakeMix: knob('bakeMix'), spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
 const fEl = $('f');
 let f = +fEl.value, fShown = f, morph = false, paused = false, simT = 0;
 const showF = () => {
@@ -1148,7 +1149,7 @@ function draw(now) {
   for (const el of document.querySelectorAll('[data-skip]')) if (!el.checked && !(skip & +el.dataset.skip)) skip += +el.dataset.skip;
   set(sc, 'uSkip', skip);
   // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
-  set(sc, 'uWid', K.width()); set(sc, 'uDens', K.dens() * (0.5 + 1.75 * Math.log(1 + fk))); set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
+  set(sc, 'uTrans', K.trans()); set(sc, 'uWid', K.width()); set(sc, 'uDens', K.dens() * (0.5 + 1.75 * Math.log(1 + fk))); set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
   set(sc, 'uSpTurn', K.spTurn()); set(sc, 'uSpIn', K.spIn()); set(sc, 'uSpTwist', K.spTwist()); set(sc, 'uSpR', K.spR());
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());

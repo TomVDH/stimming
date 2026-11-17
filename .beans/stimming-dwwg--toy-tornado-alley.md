@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T05:46:13Z
+updated_at: 2026-11-17T05:47:22Z
 parent: stimming-oh7b
 ---
 
@@ -110,3 +110,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16, Tom's lab defaults (second set): Turbulence 0.63, Opacity 0.40, Sheaths 0.05, Core edge 0.80, Debris 0.58. Opacity grows with the log of F: × (1 + 1.5 ln(1 + F)). Opacity's slider goes down to 0.05, Core edge's up to 1.6.
 
 - 2026-11-16: Sheaths 0.35 by default; low F is thinner: opacity × (0.5 + 1.75 ln(1 + F)) (Tom).
+
+- 2026-11-16: Light through knob (0 to 1, default 0): sunlight passes the funnel's own cloud more freely, so its shaded side lightens (Tom).
