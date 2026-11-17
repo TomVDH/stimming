@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   azDelta, clampAim, makeAxis, stepAxis, brakeAxis, atRest, moveTime, paceFor,
-  makeShutter, stepShutter, shutterAtRest, SHUTTER_S,
+  makeShutter, stepShutter, shutterAtRest, SHUTTER_S, leadOf, settled,
 } from '../observatory/src/core/dome.ts';
 
 // The cupola's limits, Tom 2026-11-17.
@@ -38,7 +38,7 @@ test('the trapezoid never beats its cap or its acceleration, at 60 and at 10 fra
       assert.ok(Math.abs(a.dvel) <= CUP.cap + 1e-9, `dt ${dt}: speed ${a.dvel}`);
       assert.ok(Math.abs(a.dvel - b.dvel) <= CUP.accel * dt + 1e-9, `dt ${dt}: speed change ${a.dvel - b.dvel}`);
       // The load on the drive moves without a step too.
-      assert.ok(Math.abs(a.vel - b.vel) <= 1.5 * CUP.accel * dt, `dt ${dt}: load speed change ${a.vel - b.vel}`);
+      assert.ok(Math.abs(a.vel - b.vel) <= 1.1 * CUP.accel * dt + 1e-9, `dt ${dt}: load speed change ${a.vel - b.vel}`);
       if (Math.abs(a.dvel - CUP.cap) < 1e-9) cruise++;
     });
     assert.ok(cruise > 0, `dt ${dt}: it cruises at the cap`);
@@ -59,7 +59,8 @@ test('the drive arrives at zero speed; the load overshoots about 0.08° once and
     });
     assert.ok(arrived !== null && Math.abs(arrived - moveTime(30, CUP.cap, CUP.accel)) < 0.2, `dt ${dt}: arrived at ${arrived}`);
     assert.ok(over > 0.06 && over < 0.1, `dt ${dt}: overshoot ${over}`);
-    // The swing back takes about 1.2 s; a second swing stays too small to see.
+    // The swing back takes about 1.2 s.
+    // A second swing stays too small to see.
     assert.ok(back - arrived < 1.5, `dt ${dt}: back on the mark ${back - arrived} s after`);
     assert.ok(after < 0.005, `dt ${dt}: second swing ${after}`);
     assert.ok(rest - arrived <= 2, `dt ${dt}: rest ${rest - arrived} s after`);
@@ -73,7 +74,7 @@ test('a retarget mid-move never changes speed faster than the acceleration', () 
     // Out toward 160, then back past the start mid-move.
     runAxis(ax, t => (t < 8 ? 160 : t < 14 ? 60 : 75), dt, 60, (a, b) => {
       assert.ok(Math.abs(a.dvel - b.dvel) <= CUP.accel * dt + 1e-9, `dt ${dt}: speed change ${a.dvel - b.dvel}`);
-      assert.ok(Math.abs(a.vel - b.vel) <= 1.5 * CUP.accel * dt, `dt ${dt}: load speed change ${a.vel - b.vel}`);
+      assert.ok(Math.abs(a.vel - b.vel) <= 1.1 * CUP.accel * dt + 1e-9, `dt ${dt}: load speed change ${a.vel - b.vel}`);
     });
     assert.ok(atRest(ax) && ax.pos === 75, `dt ${dt}: rests at 75, at ${ax.pos}`);
   }
@@ -99,7 +100,7 @@ test('a brake runs down under the acceleration, then rests exactly where it stop
       const b = { ...ax };
       brakeAxis(ax, dt, CUP);
       assert.ok(Math.abs(ax.dvel - b.dvel) <= CUP.accel * dt + 1e-9, `dt ${dt}: speed change ${ax.dvel - b.dvel}`);
-      assert.ok(Math.abs(ax.vel - b.vel) <= 1.5 * CUP.accel * dt, `dt ${dt}: load speed change ${ax.vel - b.vel}`);
+      assert.ok(Math.abs(ax.vel - b.vel) <= 1.1 * CUP.accel * dt + 1e-9, `dt ${dt}: load speed change ${ax.vel - b.vel}`);
     }
     assert.ok(atRest(ax), `dt ${dt}: at rest`);
     assert.equal(ax.pos, ax.drv);
@@ -117,7 +118,7 @@ test('a star at the sidereal rate: under 0.01° off after the settle, and the ax
   }
 });
 test('moveTime and paceFor: a paced move from rest takes the time asked', () => {
-  // 4 s to speed up, 11 s at the cap, 4 s to slow down.
+  // 4 s up to speed, 11 s at the cap, 4 s down.
   assert.ok(Math.abs(moveTime(30, 2, 0.5) - 19) < 1e-9);
   // A short move never reaches the cap.
   assert.ok(Math.abs(moveTime(2, 2, 0.5) - 4) < 1e-9);
@@ -154,7 +155,7 @@ test('the shutter: 6 s on an S-curve, then a 1% bounce at the end stop; the valu
         if (reached === null && sh.p === goal) reached = t;
         if (reached !== null) deep = Math.max(deep, Math.abs(sh.value - goal));
         if (reached !== null && back === null && shutterAtRest(sh)) back = t;
-        // A slow start and a slow stop: under 2% in the first and in the last half second.
+        // A slow start: under 2% in the first half second.
         if (t <= 0.5 + 1e-9) assert.ok(Math.abs(sh.value - from) < 0.02, `dt ${dt}: slow start, ${sh.value}`);
       }
       assert.ok(Math.abs(reached - SHUTTER_S) <= 0.1, `dt ${dt}: travel ${reached} s`);
@@ -190,4 +191,40 @@ test('a zero step, as on the first frame after a sleep, changes nothing', () => 
   const was = { ...sh };
   stepShutter(sh, 1, 0);
   assert.deepEqual(sh, was);
+});
+test('the load keeps within 10% of the acceleration on a short move, at up to 240 frames a second', () => {
+  for (const dt of [1 / 240, 1 / 120, 1 / 60, 0.1]) {
+    for (const d of [0.3, 2, 6]) {
+      const ax = makeAxis(100);
+      runAxis(ax, 100 + d, dt, 20, (a, b) => {
+        assert.ok(Math.abs(a.vel - b.vel) <= 1.1 * CUP.accel * dt + 1e-9, `dt ${dt}, ${d}°: load speed change ${(a.vel - b.vel) / dt} a second`);
+      });
+      assert.ok(atRest(ax) && ax.pos === 100 + d, `dt ${dt}, ${d}°: at rest`);
+    }
+  }
+});
+test('a creeping target: the load moves at its speed with no lag, and settles', () => {
+  // The rates of a star from the pole to near the zenith.
+  for (const rate of [0.0005, 0.0054, 0.04, 0.2]) {
+    for (const dt of [1 / 240, 1 / 60, 0.1]) {
+      const ax = makeAxis(100);
+      const star = t => 104 + rate * t;
+      const n = Math.round(20 / dt);
+      for (let i = 1; i <= n; i++) stepAxis(ax, star(i * dt), dt, CUP, 1, rate);
+      const at = star(n * dt);
+      assert.ok(Math.abs(azDelta(ax.pos, at)) < 0.002, `rate ${rate}, dt ${dt}: ${azDelta(ax.pos, at)} off`);
+      assert.ok(Math.abs(ax.vel - rate) < 0.002, `rate ${rate}, dt ${dt}: speed ${ax.vel}`);
+      assert.ok(settled(ax, at, rate, true), `rate ${rate}, dt ${dt}: settled`);
+    }
+  }
+});
+test('leadOf keeps the lead on one branch, even half a turn round', () => {
+  const base = { pos: 100.01, vel: 2, drv: 99.99, dvel: 2 };
+  const a = { pos: 280.0, vel: -1.5, drv: 280.02, dvel: -1.5 };
+  const out = makeAxis(0);
+  leadOf(a, base, out);
+  assert.ok(Math.abs(out.pos - azDelta(base.pos, a.pos)) < 1e-9);
+  assert.ok(Math.abs(out.drv - out.pos - 0.04) < 1e-9, `drive lead ${out.drv} against load lead ${out.pos}`);
+  assert.equal(out.vel, -3.5);
+  assert.equal(out.dvel, -3.5);
 });

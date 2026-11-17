@@ -35,14 +35,15 @@ const SIDEREAL = 360 / 86164;
 const AXES = ['cupola', 'alt', 'az'];
 const snap = m => Object.fromEntries(AXES.map(k => [k, { ...m.axes[k] }]));
 // One step: no drive changes speed faster than its acceleration.
-// The load on each drive changes speed at most half as fast again.
-// Outside track the tube az rides the cupola, so it adds the cupola's acceleration.
+// The load on each drive changes speed a tenth faster at most.
+// Outside track the tube az rides the cupola.
+// So its bound adds the cupola's acceleration.
 function noStep(m, b, dt, what) {
   const acc = { cupola: CUPOLA.accel, alt: TUBE.accel, az: TUBE.accel + CUPOLA.accel };
   for (const k of AXES) {
     const a = m.axes[k];
     assert.ok(Math.abs(a.dvel - b[k].dvel) <= acc[k] * dt + 1e-9, `${what}, ${k}: drive speed step ${a.dvel - b[k].dvel}`);
-    assert.ok(Math.abs(a.vel - b[k].vel) <= 1.5 * acc[k] * dt, `${what}, ${k}: speed step ${a.vel - b[k].vel}`);
+    assert.ok(Math.abs(a.vel - b[k].vel) <= 1.1 * acc[k] * dt + 1e-9, `${what}, ${k}: speed step ${a.vel - b[k].vel}`);
   }
 }
 const allRest = m => AXES.every(k => atRest(m.axes[k]));
@@ -59,7 +60,8 @@ test("Tom's limits: the cupola 2°/s at 0.6°/s², the tube 1.5°/s at 0.5°/s²
       noStep(m, b, step, `dt ${step}`);
       for (const k of AXES) {
         const a = m.axes[k];
-        // Before track the tube az rides the cupola: its own part keeps the tube's limits.
+        // Before track the tube az rides the cupola.
+        // Its lead keeps the tube's limits.
         const ride = k === 'az' && m.phase !== 'track';
         const v = ride ? a.dvel - m.axes.cupola.dvel : a.dvel;
         const vb = ride ? b.az.dvel - b.cupola.dvel : b[k].dvel;
@@ -85,7 +87,7 @@ test('a pick on a shut shutter opens it over 6 s, then slews', () => {
   assert.equal(m.phase, 'slew');
   assert.ok(Math.abs(t - SHUTTER_S) <= 0.1, `open took ${t} s`);
   assert.equal(m.shutter.p, 1);
-  // The bounce at the end stop keeps the shutter in 0 to 1.
+  // At the end stop the bounce stays in 0 to 1.
   for (let i = 0; i < 30; i++) { m.step(dt, ctx); assert.ok(m.shutter01 >= 0 && m.shutter01 <= 1); }
 });
 test('slew reaches track within 0.2 degrees', () => {
@@ -99,7 +101,8 @@ test('slew reaches track within 0.2 degrees', () => {
   assert.ok(Math.abs(m.cupolaAz - 130) < 0.2 && Math.abs(m.tubeAlt - 50) < 0.2);
 });
 // From rest: the shutter shut, the tube parked, the cupola at az.
-// Steps until the shutter is half open; returns the steps taken.
+// Steps until the shutter is half open.
+// Returns the steps taken.
 function toHalfOpen(m, step, ctx) {
   let n = 0;
   while (m.shutter01 < 0.5) { m.step(step, ctx); n++; }
@@ -366,4 +369,87 @@ test('a zero step mid-slew, as on the first frame after a sleep, keeps every num
   m.step(0, { targetAlt: 60, targetAz: 160.3, trails: false });
   for (const k of AXES) for (const f of ['pos', 'vel', 'drv', 'dvel']) assert.ok(Number.isFinite(m.axes[k][f]), `${k}.${f} ${m.axes[k][f]}`);
   assert.ok(Number.isFinite(m.shutter01));
+});
+// The real sky at latitude 51: a star's place t seconds on.
+// lst0 sets the local sidereal time at t 0, in degrees.
+const realSky = (ra, dec, lst0) => t => {
+  const p = toAltAz(ra, dec, lst0 + SIDEREAL * t, 51);
+  return { targetAlt: p.alt, targetAz: p.az, trails: false };
+};
+// The review's meridian star, a zenith star and a pole star.
+const STARS = {
+  meridian: realSky(0, 0, -3),
+  zenith: realSky(0, 47, -6),
+  pole: realSky(37.95, 89.26, 0),
+};
+test('a tracked star locks the tube: no per-frame work for 15 min of real sky, under 0.01° off', () => {
+  for (const [name, sky] of Object.entries(STARS)) {
+    for (const step of [1 / 60, 1 / 120, 1 / 240, 0.1]) {
+      const m = makeMachine({ az: 150, shutter01: 1 });
+      m.pick(star(1, 0, 0, 1));
+      let i = 0;
+      for (; i * step < 200 && m.phase !== 'track'; i++) m.step(step, sky(i * step));
+      assert.equal(m.phase, 'track', `${name}, dt ${step}`);
+      // The settle after the slew.
+      const settle = i + Math.round(5 / step);
+      let busy = 0, frames = 0, worst = 0;
+      for (const end = i + Math.round(900 / step); i < end; i++) {
+        const c = sky((i + 1) * step);
+        m.step(step, c);
+        if (i < settle) continue;
+        frames++;
+        worst = Math.max(worst, Math.abs(m.tubeAlt - c.targetAlt), Math.abs(azDelta(m.tubeAz, c.targetAz)));
+        assert.ok(atRest(m.axes.alt) && atRest(m.axes.az), `${name}, dt ${step}: the tube is not locked at ${(i * step).toFixed(1)} s`);
+        // Only the cupola's steps after the star keep the loop busy.
+        if (m.moving) { busy++; assert.ok(!atRest(m.axes.cupola), `${name}, dt ${step}: moving with the cupola still`); }
+      }
+      assert.ok(worst < 0.01, `${name}, dt ${step}: off by ${worst}`);
+      if (name !== 'zenith') assert.ok(busy / frames < 0.1, `${name}, dt ${step}: busy ${(100 * busy / frames).toFixed(1)}%`);
+      assert.equal(m.phase, 'track', `${name}, dt ${step}`);
+    }
+  }
+});
+test('a locked tube hands back to its drive without a visible step: hold, lost, release', () => {
+  const cases = {
+    hold: [m => m, c => ({ ...c, trails: true }), 1],
+    lost: [m => m, c => ({ ...c, targetAlt: 3 }), 1],
+    release: [m => { m.release(); return m; }, c => c, 2],
+  };
+  for (const step of [1 / 60, 1 / 240]) {
+    for (const [name, [act, ctxOf, k]] of Object.entries(cases)) {
+      const m = makeMachine({ az: 150, shutter01: 1 });
+      const sky = STARS.meridian;
+      m.pick(star(1, 0, 0, 1));
+      let i = 0;
+      for (; i * step < 200 && (m.phase !== 'track' || m.moving); i++) m.step(step, sky(i * step));
+      assert.ok(atRest(m.axes.alt) && atRest(m.axes.az), `${name}: locked first`);
+      // The tube's speed on screen, from its places.
+      let pAlt = m.tubeAlt, pAz = m.tubeAz, vAlt = null, vAz = null;
+      act(m);
+      for (let j = 0; j < 20 / step; j++, i++) {
+        const was = { alt: atRest(m.axes.alt), az: atRest(m.axes.az) };
+        m.step(step, ctxOf(sky((i + 1) * step)));
+        const nAlt = (m.tubeAlt - pAlt) / step, nAz = azDelta(pAz, m.tubeAz) / step;
+        if (vAlt !== null) {
+          // When an axis comes to rest, its load lands on the drive.
+          // That landing stays under 0.004°.
+          // Every other frame has no speed step.
+          const lands = k => !was[k] && atRest(m.axes[k]);
+          if (lands('alt')) assert.ok(Math.abs(nAlt - vAlt) * step <= 0.004, `${name}: alt lands ${(nAlt - vAlt) * step}°`);
+          else assert.ok(Math.abs(nAlt - vAlt) <= 1.1 * TUBE.accel * step + 1e-6, `${name}, dt ${step}: alt speed step ${(nAlt - vAlt) / step} a second at ${j}`);
+          if (lands('az')) assert.ok(Math.abs(nAz - vAz) * step <= 0.004, `${name}: az lands ${(nAz - vAz) * step}°`);
+          else assert.ok(Math.abs(nAz - vAz) <= 1.1 * k * (TUBE.accel + CUPOLA.accel) * step + 1e-6, `${name}, dt ${step}: az speed step ${(nAz - vAz) / step} a second at ${j}`);
+        }
+        // A landed axis stands still from here.
+        vAlt = !was.alt && atRest(m.axes.alt) ? 0 : nAlt;
+        vAz = !was.az && atRest(m.axes.az) ? 0 : nAz;
+        pAlt = m.tubeAlt; pAz = m.tubeAz;
+      }
+    }
+  }
+});
+test('a fractional shutter at the start never jams the machine', () => {
+  const m = makeMachine({ az: 100, shutter01: 0.5 });
+  run(m, 10, { targetAlt: 0, targetAz: 0, trails: false });
+  assert.equal(m.moving, false);
 });
