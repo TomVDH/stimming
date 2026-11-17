@@ -251,6 +251,15 @@ float holes(vec2 w, float cell, float prob, float r0, float r1, float soft, floa
   }
   return open;
 }
+// The beam's hole: one large opening on the sun's side, in world km: its centre and radius.
+// main.js places it, so its shaft falls in frame. Only this hole lights god rays.
+uniform vec3 uBeam;
+// How open the beam's hole is over a world point in km, 0 to 1: a soft, ragged disc.
+float beamHole(vec2 w, float soft) {
+  if (uBeam.z <= 0.0) return 0.0;
+  float r = length(w - uBeam.xy) / uBeam.z + (vn(w * 0.7 + 5.0) - 0.5) * 0.3 + (vn(w * 2.1) - 0.5) * 0.1;
+  return smoothstep(1.0, 0.55 - soft, r);
+}
 // How open the deck is over a camera-space point, 0 shut to 1 open. They drift downwind with the deck.
 // Far off, a few big holes, 3 to 8 km wide, 15 to 40 km out. Everywhere, overhead too, sparse small breaks.
 // A young storm has more and wider ones of both.
@@ -260,6 +269,7 @@ float deckOpen(vec3 p, float soft) {
   float dist = length(p.xz);
   float band = smoothstep(12.0, 18.0, dist) * (1.0 - smoothstep(40.0, 48.0, dist));
   float open = band > 0.0 ? band * holes(w, 10.0, mix(0.5, 0.28, k), 1.5 * mix(1.3, 1.0, k), 4.0 * mix(1.3, 1.0, k), soft, 0.0) : 0.0;
+  open = max(open, beamHole(w + WDIR * uT * 0.012, soft));
   return max(open, holes(w, 6.0, mix(0.4, 0.2, k), 0.6, 1.6, soft, 17.0));
 }
 // The young deck's gaps between its rafts over a camera-space point, 0 to 1.
@@ -269,6 +279,10 @@ float raftGap(vec3 p) {
   float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
   return smoothstep(0.15 + 0.8 * stormK(), 0.35 + 0.8 * stormK(), n);
 }
+// The deck's openness at the last point stormShape() read, and a held value for the probes.
+float gOpen = 0.0, gOpenHold = -1.0;
+// Where gOpen was last read, in camera km.
+vec2 gOpenP = vec2(1e9);
 // The storm as the eye sees it: the base runs out over and behind the eye, and far left, right and ahead.
 // It reads as a vast system, not one cell; its underside rises a little toward the eye.
 // No edge of the deck shows in frame at any lens; far off it meets the horizon's glow.
@@ -292,8 +306,13 @@ float stormShape(vec3 p) {
   }
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(botY - p.y, p.y - topY));
   front += 1.6 * raftGap(p);
-  // Far off the deck breaks open.
-  front += 1.5 * deckOpen(p, 0.0);
+  // The deck's breaks. A point a kilometre off the slab skips them: they only push it further.
+  // The light's probes reuse the last sample's value: the breaks are kilometres wide.
+  if (front < 1.0) {
+    // Along one ray the value holds for 0.3 km: the breaks' edges are wider.
+    if (gOpenHold < 0.0 && distance(p.xz, gOpenP) > 0.3) { gOpen = deckOpen(p, 0.0); gOpenP = p.xz; }
+    front += 1.5 * (gOpenHold < 0.0 ? gOpen : gOpenHold);
+  }
   return smin(d, front, 0.8);
 }
 // The cloud base over a point, in km: lower in each tornado's pit. main.js deckAt() holds the same curve.
@@ -423,12 +442,14 @@ vec3 stormLit(vec3 p, float d) {
   // The probes read the light's broad shape: they skip the finest noise.
   float fine = gFine;
   gFine = 0.0;
+  gOpenHold = gOpen;
   float ds = stormD(p + gSunC * 0.9);
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
   // A step up: deeper cloud above means an underside, out of the sun.
   // A horn hangs below the base: its sides take the low sun as the funnel does, not the underside's shade.
   float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
   gFine = fine;
+  gOpenHold = -1.0;
   // A young deck is thin: its underside takes more light.
   under *= mix(0.45, 1.0, stormK());
   lit *= 1.0 - 0.9 * under;
@@ -454,7 +475,7 @@ vec3 stormLit(vec3 p, float d) {
   float powder = mix(1.0, 1.0 - exp(-4.0 * dn), 0.3 * (1.0 - max(mu, 0.0)));
   // The silver lining: the forward lobe on a lit edge, toward the sun only.
   // Storm haze veils it, but never all of it.
-  float silver = max(cloudPh(mu) - 0.4, 0.0) * 0.35 * Tl * (1.0 - 0.6 * stormK());
+  float silver = mu > 0.0 ? max(cloudPh(mu) - 0.4, 0.0) * 0.35 * Tl * (1.0 - 0.6 * stormK()) : 0.0;
   // The lower flank stays dark: the storm's own bulk shades it.
   vec3 c = uSunCol * ((Tl * 0.85 + Tm) * powder + silver) * mix(0.14, 0.8, up * up) + amb;
   // The core goes dark slate behind its rain; its green comes only where light passes the rain.
@@ -846,7 +867,8 @@ float segD(vec2 p, vec2 a, vec2 b, out float u) {
 void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   // The tallest ear, with its tuft, stays below this line.
   if (s.y > 0.0) return;
-  vec3 lit = (uSunCol * 0.5 + uAmb * 0.55) * shadeK(sunCover(vec3(0.0)));
+  // The eye's shade is read once, at the first ear that covers this pixel.
+  vec3 lit = vec3(-1.0);
   const int N = 56;
   for (int i = 0; i < N; i++) {
     float fi = float(i);
@@ -886,6 +908,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
     float da = segD(s, tip, tip + (tip - base) * 0.75, ua);
     k = max(k, smoothstep(w * 1.1 + bl, 0.0, da) * 0.35 * (1.0 - ua));
     if (k <= 0.0) continue;
+    if (lit.x < 0.0) lit = (uSunCol * 0.5 + uAmb * 0.55) * shadeK(sunCover(vec3(0.0)));
     vec3 ear = mix(vec3(0.42, 0.29, 0.11), vec3(0.6, 0.45, 0.2), th(vec2(fi, 2.7)));
     // Lit face toward the eye, darker at the rim.
     float rim = clamp(d / max(ww, 1e-4), 0.0, 1.0);
@@ -981,6 +1004,10 @@ vec3 envScene(vec2 uv) {
   }
   // The thin band where ground meets sky takes the haze.
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
+  // The sun's glow in the haze: a soft half globe low on the sun's side, never streaks.
+  // It is the far sunlit air seen under the deck, so it fades up from the horizon.
+  float cA = dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5));
+  c += uSunCol * vec3(1.0, 0.82, 0.6) * 0.03 * exp(-(1.0 - cA) * 3.0) * exp(-abs(rd.y) * 7.0);
   c = c * (1.0 - gOF.a) + gOF.rgb;
   // Arcs and sparks on the line: their light shows through the dust, and lights it.
   c += sparks(s, px, tv.a);
@@ -1086,7 +1113,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
@@ -1308,6 +1335,26 @@ const FAR_STRIPS = 8;
 let farD = 16, deckReach = 146;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
+// The beam's hole in world km: centre x, z and radius; radius 0 when the sun is down.
+// The hole stands in frame, a fifth of the frame in from the middle on the sun's side.
+// It lies past the supercell's shelf, which would block its light: 10 km out at the nearest.
+// Its shaft falls from it, away from the sun.
+const beam = new Float32Array(3);
+function beamSpot() {
+  const a = yaw(), sx = sun[0] * Math.cos(a) - sun[2] * Math.sin(a);
+  if (sun[1] < 0.01) { beam[2] = 0; return beam; }
+  const u = (sx < 0 ? -0.22 : 0.22) * aspect(), foc = focal(), h = Math.hypot(foc, u);
+  // The shelf's ellipse in camera km, as stormShapeSun() sizes it.
+  const k = storm < 0.85 ? mixN(0.2, 0.91, storm / 0.85) : mixN(0.4, 1, storm);
+  let D = 10;
+  for (; D < 40; D += 1) {
+    const cx = D * u / h, cz = -D * foc / h;
+    if (Math.hypot((cx - 1) / (15 * k), (cz + 13) / (9 * k)) > 1 + 3.5 / (9 * k)) break;
+  }
+  [beam[0], beam[1]] = toWorld(D * u / h, -D * foc / h);
+  beam[2] = 2.6;
+  return beam;
+}
 // The share of the plain in sun under the deck, 0 to 1: the cloud's ground bounce.
 const plainLit = () => 1 - 0.92 * sstep(0.05, 0.85, storm);
 // The opening build-up: the storm grows from nothing to its set level on a gentle in-out sine ease.
@@ -1397,6 +1444,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uReach, deckReach);
   gl.uniform1f(u.uGod, god);
   gl.uniform1f(u.uPlainLit, plainLit());
+  gl.uniform3fv(u.uBeam, beamSpot());
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);

@@ -875,7 +875,8 @@ void main() {
           // Over the band the live march gives way to the baked far field, and the bake takes over.
           float wFar = smoothstep(farD - band, farD, t);
           cSig *= bake ? wFar : 1.0 - wFar;
-          cLit = stormLit(pk, d);
+          // Behind nine tenths of cover a sample adds little: it keeps the last light.
+          if (T > 0.1 || cLit.x < 0.0) cLit = stormLit(pk, d);
           cCol = hazed(cLit, hzF);
         }
       }
@@ -970,19 +971,20 @@ void main() {
   // The baked far field lies behind the near field.
   vec4 far = mix(texture(tFarPrev, gl_FragCoord.xy / uRes), texture(tFar, gl_FragCoord.xy / uRes), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
-  // Sun shafts: light through the deck's real openings, its far holes and a young deck's gaps,
-  // along the true sun. The march runs only under the deck, from the eye to the base or the ground,
-  // 30 km at most, and stops in front of anything opaque. Each step follows the sun's ray up to the base:
-  // an opening there, with no cell in the way, lights the step. Jittered steps; the history smooths them.
+  // Sun shafts: light through one large opening on the sun's side, along the true sun.
+  // The march runs under the deck only, 30 km at most, and stops at anything opaque.
+  // Each step follows the sun's ray up to the base: the opening there lights it.
+  // The steps are jittered; the history smooths them.
   if (uGod > 0.0 && uSun.y > 0.01) {
     float tTop = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y;
     float tG = min(min(tTop, 30000.0), tOpq), sh = 0.0;
     for (int i = 0; i < 24; i++) {
       vec3 w = (rd * ((float(i) + jit2) * tG / 24.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
       float dep = max(BASE - w.y, 0.0), L = dep / uSun.y;
-      vec3 qc = toCam(w + uSun * L);
-      // Its edges read the opening softly; across a hole the light splits into two or three beams.
-      float o = max(deckOpen(qc, 0.1 + 0.05 * dep), 0.4 * raftGap(qc));
+      vec3 wb = w + uSun * L, qc = toCam(wb);
+      // One large hole lights the shafts; the other breaks light only the ground.
+      // Its edges read the opening softly; across it the light splits into two or three beams.
+      float o = beamHole(wb.xz, 0.1 + 0.05 * dep);
       if (o < 0.01) continue;
       o *= smoothstep(0.7, 0.3, vn(vec2(dot(qc.xz, vec2(-uSun.z, uSun.x)) * 1.2, dep * 0.5)));
       // The supercell's bulk blocks the ray too.

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:31:14Z
+updated_at: 2026-11-17T08:47:09Z
 parent: stimming-oh7b
 ---
 
@@ -207,3 +207,7 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: the opening holds 7 s of sun at Storm 0 before the build-up, at any time of day. Cloud shadows follow the storm: sunCover = smoothstep(0.05, 0.85, Storm) × (1 − the deck's openings where the true sun ray crosses the base), using the same deckOpen/raftGap the deck draws; dark at full storm except under the breaks. Breaks across the whole sky (holes(): far big holes as before, plus sparse 1.2–3.2 km breaks overhead and in the foreground, 20% of 6 km cells at full storm, 40% at Storm 0), feeding the deck, the shadows and the god rays. deckOpen now runs per deck sample; cost not timed cleanly.
 
 - 2026-11-17, Tom: at most 4 tornadoes (roping ones count until they leave); at 4 a spawn does nothing (no despawn); + Tornado greys out and the click cursor shows not-allowed until one leaves. Lighting from Window seat and Railgun in stormLit(): a two-lobe cloud phase, a multiple-scatter tail, powder darkening on thin edges away from the sun, a silver lining toward the sun dimmed by haze, sky light by direction (zenith, warm low sky toward the sun, cool sky away), and warm ground bounce on the base scaled by uPlainLit; lightInit() sets the sun and sky once per pixel. The funnels' own light is unchanged. GPU not measured (shared GPU).
+
+- 2026-11-17, Tom's first scenes (triggered from the bar like the rest of the toy, not typed): (1) a crane-up with a dolly zoom: the eye rises slowly to a large height while the lens widens, the tornado holding its size; (2) a pickup rushes out of the action down the road; a little later two storm-chaser vehicles rush in toward the storm. Routed: camera to the main helper, vehicles to the ground session.
+
+- 2026-11-17, Tom (god rays from the edges; one large hazy one): one hole lights the shafts (beamHole(), a ragged 2.6 km disc placed in frame on the sun's side, clear of the shelf); the march reads only it; other breaks light ground patches only; a soft half-globe glow low on the sun's side. Perf pass (look unchanged): deckOpen skipped 1 km off the slab and held 0.3 km along a ray, probes reuse it, silver lining only facing the sun, behind 90% cover the last light is reused, nearEars reads sunCover only under an ear. 3 × F4.5 at Tom's base 2.65: 34.3 → 30.4 ms best; Tom's higher base roughly doubles the march under the deck.
