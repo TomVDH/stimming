@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:13:26Z
+updated_at: 2026-11-17T08:20:35Z
 parent: stimming-oh7b
 ---
 
@@ -199,3 +199,9 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (build-up far too quick; the far bake steps): the build-up takes 180 s by default (30–600, key buildUpT) on easeInOutSine; the first tornado drops at Storm 0.67, about 2 min in. A third far target keeps the previous bake and each new bake fades in over it (2.5 s in the build-up, 0.25 s for a drag), so the far field moves without steps. Beams: soft, ragged sides, tapering toward the ground. Thick cloud hides the sun globe fully. A young cell's shelf is small so the tower stands clear; the dome boils at two scales.
 
 - 2026-11-17, Tom (no automatic layer falloff; top blend): Dev knob Layer gap (0.05–0.5, default 0.2, ?gap) sets one gap for every funnel at any distance; the distance logic is gone. The top's speckle came from the tube core's ragged edge under grazing rays in the flare: there the edge noise drops to 0.25×, the edge ramp widens 2.5× and the lump light gain eases to 0.6; the turn-to tone is read at one fixed point per tornado. A faint grain remains on the shade side at the join.
+
+- 2026-11-17, Tom (rhythmic frame lag; build-up in 45 s): the build-up is 45 s by default (10–600, key buildUpU); the first tornado drops about 31 s in. The hitch: the far field renewed one contiguous eighth per frame, and the band across the horizon cost several ms more, every 8th frame. Each slice is now every eighth row, so every frame bakes the same mix. One whole far bake costs about 8 ms. Also in this commit, unfinished: deckOpen as discrete holes and a beam split (safe, not yet tuned).
+
+- 2026-11-17, Tom (god rays must follow the sun, the real breaks and the sun's colour): shafts follow the true sun (no floor), lit only through openings the march draws (deckOpen far holes, raftGap gaps), blocked by the storm's bulk; a few soft ragged holes 3–8 km wide, 15–40 km out, drifting with the deck; each hole splits into two or three beams fading down their sun path; colour uSunCol tinted by the haze. At Tom's default (19.05, Sun dir 100, sun 4.7° up, side-on) no shafts read, which is honest; Time 17–18.5 or Sun dir 140–180 shows them.
+
+- 2026-11-17, Tom: the opening holds 7 s of sun at Storm 0 before the build-up, at any time of day. Cloud shadows follow the storm: sunCover = smoothstep(0.05, 0.85, Storm) × (1 − the deck's openings where the true sun ray crosses the base), using the same deckOpen/raftGap the deck draws; dark at full storm except under the breaks. Breaks across the whole sky (holes(): far big holes as before, plus sparse 1.2–3.2 km breaks overhead and in the foreground, 20% of 6 km cells at full storm, 40% at Storm 0), feeding the deck, the shadows and the god rays. deckOpen now runs per deck sample; cost not timed cleanly.

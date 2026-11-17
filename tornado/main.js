@@ -6,6 +6,10 @@ import { environment } from '../shared/environment.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
 import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
+import { WHEAT_GLSL } from './wheat.js';
+import { ROAD_GLSL } from './road.js';
+import { PLAIN_GLSL } from './plain.js';
+import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -65,8 +69,8 @@ const ui = initPage({ id: 'tornado', bar: {
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
     // The opening build-up's length: the storm grows from nothing over this many seconds.
-    // Its key is new, so an old saved length gives way to the 180 s default.
-    { type: 'slider', id: 'buildUpT', label: 'Build-up (s)', min: 30, max: 600, step: 5, value: 180, persist: true, onInput: v => act.buildUp(v) },
+    // Its key is new, so an old saved length gives way to the 45 s default.
+    { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -216,15 +220,30 @@ float breakN(vec2 xz) {
   vec2 c = xz - WDIR * uT * 0.012;
   return 0.7 * vn(c * 0.4 + 11.0) + 0.3 * vn(c * 1.3 + 3.0);
 }
-// How open the deck is over a camera-space point, 0 shut to 1 open: its far breaks.
-// They open at every storm, most toward the horizon and the sun's side. A full storm keeps a few narrow ones;
-// a young one opens more and wider. Near the eye the deck stays shut. The sun's shafts fall through them.
+// Holes in the deck from one world grid, in world km: each cell holds one by chance.
+// A hole is a soft ragged ellipse of radius r0 to r1 km. soft widens its edge.
+float holes(vec2 w, float cell, float prob, float r0, float r1, float soft, float seed) {
+  vec2 b = floor(w / cell - 0.5);
+  float open = 0.0;
+  for (int k = 0; k < 4; k++) {
+    vec2 c = b + vec2(float(k & 1), float(k >> 1)) + seed;
+    if (th(c + 31.7) > prob) continue;
+    vec2 ctr = (c - seed + 0.2 + 0.6 * vec2(th(c + 1.3), th(c + 7.1))) * cell;
+    float r = length(w - ctr) / mix(r0, r1, th(c + 4.4)) + (vn(w * 0.8 + c * 3.1) - 0.5) * 0.35;
+    open = max(open, smoothstep(1.0, 0.6 - soft, r));
+  }
+  return open;
+}
+// How open the deck is over a camera-space point, 0 shut to 1 open. They drift downwind with the deck.
+// Far off, a few big holes, 3 to 8 km wide, 15 to 40 km out. Everywhere, overhead too, sparse small breaks.
+// A young storm has more and wider ones of both.
 float deckOpen(vec3 p, float soft) {
+  float sy = sin(uYaw), cy = cos(uYaw), k = stormK();
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
   float dist = length(p.xz);
-  float far = smoothstep(10.0, 45.0, dist) * (0.35 + 0.65 * max(dot(p.xz / max(dist, 1e-3), normalize(gSunC.xz + 1e-5)), 0.0));
-  if (far <= 0.0) return 0.0;
-  float sy = sin(uYaw), cy = cos(uYaw), thr = mix(0.42, 0.3, stormK());
-  return far * smoothstep(thr + soft, thr - 0.1 - soft, breakN(vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy)));
+  float band = smoothstep(12.0, 18.0, dist) * (1.0 - smoothstep(40.0, 48.0, dist));
+  float open = band > 0.0 ? band * holes(w, 10.0, mix(0.5, 0.28, k), 1.5 * mix(1.3, 1.0, k), 4.0 * mix(1.3, 1.0, k), soft, 0.0) : 0.0;
+  return max(open, holes(w, 6.0, mix(0.4, 0.2, k), 0.6, 1.6, soft, 17.0));
 }
 // The young deck's gaps between its rafts over a camera-space point, 0 to 1.
 // At no storm the sky is mostly clear: a few rafts and the far cells. The gaps close by the default storm.
@@ -454,15 +473,13 @@ vec3 toCam(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w
 float sunCover(vec3 w) {
   if (uSun.y <= 0.0) return 0.0;
   float L = max(BASE - w.y, 0.0) / max(uSun.y, 0.017);
-  vec3 q = w + uSun * L;
+  vec3 qc = toCam(w + uSun * L);
   // The supercell's bulk blocks the sun outright, until the sun slips under its far edge.
-  float core = smoothstep(0.5, -0.5, stormShapeSun(toCam(q))) * (1.0 - smoothstep(12.0, 20.0, L));
-  // The base's ragged fringe lets the light through in broad patches that drift downwind.
-  // A low sun draws each patch out along its rays: long bands at dusk, blobs in the afternoon.
-  vec2 a = normalize(uSun.xz + 1e-5), c = q.xz - WDIR * uT * 0.012;
-  vec2 m = vec2(dot(c, a) * clamp(uSun.y / length(uSun.xz) * 4.0, 0.08, 1.0), dot(c, vec2(-a.y, a.x)));
-  float n = 0.7 * vn(m * 0.4 + 11.0) + 0.3 * vn(m * 1.3 + 3.0);
-  return max(core, 0.88 * smoothstep(0.4, 0.66, n));
+  float core = smoothstep(0.5, -0.5, stormShapeSun(qc)) * (1.0 - smoothstep(12.0, 20.0, L));
+  // The deck follows the storm: none at the start, a full lid at full storm.
+  // The sun reaches the plain only through its openings: the breaks and a young deck's gaps.
+  float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(deckOpen(qc, 0.05), raftGap(qc)));
+  return max(core, 0.92 * deck);
 }
 `;
 const SCENE = /* glsl */`
@@ -520,6 +537,9 @@ vec4 gust(vec2 xz, float fx) {
 }
 // How far a stalk's tip leans at height h, in metres.
 vec2 bend(vec4 gw, float h) { return gw.xy * h * h; }
+// The short forms: the gust alone, and a lean read at the point. g is not used.
+float gust(vec2 xz) { return gust(xz, 0.0).w; }
+vec2 bend(vec2 xz, float h, float g) { return bend(gust(xz, 0.0), h); }
 
 // The share of a lit colour left in shade: the sun's part goes, the sky's fill stays.
 vec3 shadeK(float cover) {
@@ -552,8 +572,8 @@ float cropAt(vec2 xz, out float edge, out float id) {
   // No margin on the verge side: the verge is the margin there.
   edge = min(min(c.x > 0.5 ? f.x : 1e4, QM - f.x), min(f.y, QM - f.y));
   float crop = id < 0.45 ? 0.0 : (id < 0.7 ? 1.0 : (id < 0.87 ? 2.0 : 3.0));
-  // Beside the eye: ripe wheat on the left, a cut field across the road.
-  if (c.x < 0.5 && c.y < 0.5) return side < 0.0 ? 0.0 : 1.0;
+  // Beside the eye, on both sides of the road: ripe wheat.
+  if (c.x < 0.5 && c.y < 0.5) return 0.0;
   // Strip fields: wheat and fallow side by side, 60 to 110 m wide.
   if (th(c + vec2(9.3 * side, 2.0)) < 0.22) {
     float sw = 60.0 + 50.0 * th(c + 2.2), s = mod(f.x, sw);
@@ -577,8 +597,11 @@ vec3 wheatFar(vec2 xz, float fx, float fz) {
   // Up close: clumps of ears with darker gaps between. They fade before they alias.
   float fm = max(fx, fz), near = detail(0.8, fm);
   if (near > 0.0) {
-    float clump = vn(xz * 2.3) * 0.6 + mix(0.5, vn(xz * 7.1), detail(0.3, fm)) * 0.4;
-    alb *= mix(1.0, (0.8 + 0.3 * clump) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
+    // Each term reads turned, stretched noise: no grid or row lines up across the field.
+    vec2 r1 = mat2(0.8, -0.6, 0.6, 0.8) * xz, r2 = mat2(0.36, 0.93, -0.93, 0.36) * xz;
+    float rows = mix(0.5, vn(r1 * vec2(5.3, 1.7) + 3.0), detail(0.3, fm));
+    float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), detail(0.3, fm)) * 0.4;
+    alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
   return alb * (0.85 + 0.2 * gw.w) * (uSunCol * 0.5 + uAmb * 0.55);
 }
@@ -612,11 +635,8 @@ vec3 lowField(float crop, vec2 xz, float edge, float id, float fx, float fz) {
   }
   return alb * (uSunCol * 0.55 + uAmb * 0.6);
 }
-// The stand: ears top out at 0.86 to 1.04 m; the eye sees the field at its tops.
-// The drill set the rows 19 cm apart, along the road.
-const float TOP = 1.1, CANOPY = 0.95, ROW = 0.19, CW = ROW / 4.0, DZ = 0.035;
-// The march stops here, in metres ahead; past it the field is a texture.
-const float STAND_FAR = 30.0;
+// The wheat's tops, where the far field's eye meets it.
+const float CANOPY = 0.95;
 // Light inside the stand at height y, edge metres in from the field's road edge.
 // side is -1 for the field left of the road, 1 for the one right of it.
 // The sun reaches in through the tops, or through the edge where it faces the sun.
@@ -629,97 +649,14 @@ vec3 standLight(float y, float edge, float side) {
   float sky = exp(-2.5 * min(depth, edge));
   return uSunCol * 0.5 * (exp(-3.5 * dSun) + 0.3 * exp(-2.0 * depth)) + uAmb * 0.55 * mix(0.45, 1.0, sky);
 }
-// The near wheat: thin slices across the view, 3.5 cm apart, front to back.
-// Each slice holds the plants whose feet fall in it: a stalk with an ear on top.
-// Returns the colour and what still shows behind, 0 to 1.
-vec4 wheatStand(vec3 rd, float px) {
-  if (rd.z > -0.05 || rd.y > -1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
-  // The ray drops under the tallest awn at tIn and meets the soil at tOut.
-  float tIn = max(CAMH - TOP, 0.0) / -rd.y, tOut = CAMH / -rd.y;
-  // From over a verge the ray reaches the wheat where it crosses the field's edge.
-  if (abs(rd.x * tIn - ROAD_X) < WHEAT_GAP) tIn = max(tIn, rd.x < 0.0 ? (ROAD_X - WHEAT_GAP) / rd.x : (rd.x > 0.0 ? (ROAD_X + WHEAT_GAP) / rd.x : 1e9));
-  float zIn = -rd.z * tIn;
-  if (tIn > tOut || zIn > STAND_FAR) return vec4(0.0, 0.0, 0.0, 1.0);
-  // A ray over a low field at both ends of its march meets no stalks.
-  if (!isWheat(rd.xz * tIn) && !isWheat(rd.xz * min(tOut, STAND_FAR / -rd.z))) return vec4(0.0, 0.0, 0.0, 1.0);
-  // The sun's side across the view: the ears' lit flank faces it.
-  float sunX = toCam(uSun).x / max(length(uSun.xz), 1e-3);
-  // The wind at both ends of the first two metres; the slices blend between them.
-  vec4 g0 = gust(rd.xz * tIn, 0.0), g1 = gust(rd.xz * (tIn + 2.0), 0.0);
-  vec3 acc = vec3(0.0);
-  float T = 1.0, k0 = floor(zIn / DZ);
-  for (int i = 0; i < 36; i++) {
-    float k = k0 + float(i);
-    float t = (k + 0.5) * DZ / -rd.z;
-    // The soil lies dark in the stand's own shade.
-    if (t > tOut) { acc += T * vec3(0.07, 0.05, 0.03) * standLight(0.0, abs(rd.x * tOut - ROAD_X) - WHEAT_GAP, sign(rd.x * tOut - ROAD_X)); T = 0.0; break; }
-    vec3 p = rd * t;
-    p.y += CAMH;
-    if (p.y > TOP || !isWheat(p.xz)) continue;
-    float fp = t * px / uFoc;
-    vec4 gw = mix(g0, g1, clamp((t - tIn) * 0.5, 0.0, 1.0));
-    float side = sign(p.x - ROAD_X), edge = abs(p.x - ROAD_X) - WHEAT_GAP;
-    vec3 L = standLight(p.y, edge, side);
-    float deep = smoothstep(0.1, 0.9, p.y);
-    // Undo the lean, to find the stalk's foot.
-    float xb = p.x - gw.x * p.y * p.y;
-    float c = floor(xb / CW), fc = xb / CW - c;
-    for (int j = 0; j < 2; j++) {
-      float ci = c + (j == 0 ? 0.0 : (fc < 0.5 ? -1.0 : 1.0));
-      // The offset keeps the hash clear of index 0, where it degenerates.
-      vec2 hc = vec2(ci, k) + 517.0;
-      float hp = th(hc);
-      // Plants crowd the drill row; the middle between rows stays thin.
-      float m = mod(ci, 4.0);
-      if (hp > (m < 0.5 ? 0.98 : (m > 1.5 && m < 2.5 ? 0.25 : 0.7))) continue;
-      float hy = th(hc + 3.1), hz = th(hc + 7.7), hw = th(hc + 1.3);
-      float top = 0.86 + 0.18 * hy;
-      // Each ear nods on its own beat about the wind's lean.
-      float nod = (hz - 0.5) * 0.05 + 0.012 * sin(uT * (2.2 + hw) + hw * 40.0) * (0.3 + gw.w);
-      float dx = xb - (ci + 0.2 + 0.6 * hw) * CW - nod * p.y * p.y;
-      float e = (top - p.y) / (0.075 + 0.04 * hz);
-      if (e < -0.6) continue;
-      vec3 col;
-      float w, a;
-      // One dry leaf per plant hangs off the stalk, angled out and down.
-      float hl = 0.3 + 0.4 * hz, lu = (hl - p.y) / 0.16;
-      float dl = dx - (hw - 0.5) * 2.0 * lu * 0.09;
-      if (e < 0.0) {
-        // The awns: a pale, see-through brush over the ear.
-        w = 0.008 * (1.0 + e); a = 0.3 * (1.0 + e / 0.6);
-        col = vec3(0.4, 0.31, 0.16);
-      } else if (e < 1.0) {
-        // The ear: spindle-shaped, round, lit on the sun's flank.
-        w = 0.0062 * sin(3.14159 * sqrt(e)) + 0.0014; a = 1.0;
-        col = mix(vec3(0.2, 0.135, 0.055), vec3(0.34, 0.24, 0.1), hy);
-        col *= 0.8 + 0.28 * clamp(dx / w, -1.0, 1.0) * sunX;
-      } else if (lu > 0.0 && lu < 1.0 && abs(dl) < abs(dx)) {
-        w = 0.0035 * (1.0 - lu) + 0.001; a = 0.9; dx = dl;
-        col = mix(vec3(0.16, 0.14, 0.07), vec3(0.3, 0.23, 0.12), hy);
-      } else {
-        // The stalk: straw at the top, darker and greener near the soil.
-        w = 0.0017; a = 0.95;
-        col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.22, 0.1), deep);
-      }
-      // A bent plant shows its pale side.
-      col = mix(col, vec3(0.5, 0.42, 0.26), max(gw.z, 0.0) * 0.4);
-      float cov = clamp((w - abs(dx)) / fp + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / fp) * a;
-      if (cov <= 0.0) continue;
-      acc += T * cov * col * L;
-      T *= 1.0 - cov;
-    }
-    if (T < 0.04) break;
-  }
-  // Far out the stand hands over to the field's texture.
-  float fade = 1.0 - smoothstep(STAND_FAR * 0.5, STAND_FAR, zIn);
-  return vec4(acc * fade, mix(1.0, T, fade));
-}
+// The near wheat walks the stalks: wheat.js.
+${WHEAT_GLSL}
+${ROAD_GLSL}
 vec3 ground(vec3 rd, float px) {
   float t = CAMH / -rd.y;
   vec3 P = rd * t;
   // The footprint of one pixel on the ground, in metres.
   float fx = t * px / uFoc;
-  float ax = abs(P.x - ROAD_X);
   // The plain, top down: the ray meets a field at its crop's top, or a taller crop's side.
   // A wheat field's side is a wall of stalks under the ears, in the stand's own light.
   vec3 col = vec3(0.0);
@@ -749,21 +686,17 @@ vec3 ground(vec3 rd, float px) {
     // Seen from the verge, the near field's edge is a wall of stalks under the ears.
     float side = sign(P.x - ROAD_X), te = (ROAD_X + side * WHEAT_GAP) / rd.x, ye = CAMH + rd.y * te;
     col = mix(vec3(0.13, 0.11, 0.05), vec3(0.3, 0.21, 0.09), smoothstep(0.7, 0.95, ye)) * standLight(ye, 0.15, side) * 1.3;
-    if (!isWheat(vec2(ROAD_X + side * (WHEAT_GAP + 0.5), P.z))) col = lowField(1.0, P.xz, 9.0, 0.0, fx, fx);
-    // The ditch and verge, gravel shoulders, asphalt, a white edge line, a double yellow line.
-    vec3 lit = uSunCol * 0.55 + uAmb * 0.6;
-    float tuft = vn(P.xz * vec2(9.0, 2.0)) * 0.5 + vn(P.xz * 31.0) * 0.5;
-    col = mix(col, vec3(0.13, 0.15, 0.05) * (0.6 + 0.8 * tuft) * lit, band(ax - 5.5, 0.7, fx));
-    float grit = mix(0.75, 1.2, vn(P.xz * 40.0) * clamp(1.0 - fx * 40.0, 0.0, 1.0) + 0.5 * clamp(fx * 40.0, 0.0, 1.0));
-    col = mix(col, vec3(0.2, 0.18, 0.15) * grit * lit, band(ax - 4.25, 0.57, fx));
-    col = mix(col, vec3(0.05, 0.05, 0.052) * (0.9 + 0.2 * vn(P.xz * 0.7)) * lit, band(ax, 3.7, fx));
-    col = mix(col, vec3(0.7) * lit, band(ax - 3.45, 0.06, fx));
-    float dx = P.x - ROAD_X;
-    col = mix(col, vec3(0.62, 0.42, 0.04) * lit, max(band(dx - 0.12, 0.05, fx), band(dx + 0.12, 0.05, fx)));
   }
-  // Near the eye the wheat stands up as plants over the field's texture.
-  vec4 w = wheatStand(rd, px);
-  col = w.rgb + w.a * col;
+  // The ditch and verge, the gravel berm, asphalt and paint: road.js.
+  col = roadside(col, P, rd, fx);
+  // Near the eye the wheat stands as stalks over the ground, faded out before it shimmers.
+  // The fade reads the pixel's size where the ray meets the canopy, not the ground.
+  float fxc = max(CAMH - 1.0, 0.05) / -rd.y * px / uFoc;
+  float nearK = 1.0 - smoothstep(0.012, 0.03, fxc);
+  if (nearK > 0.0) {
+    vec4 w = wheatStand(rd, px);
+    col = mix(col, w.rgb + w.a * col, nearK);
+  }
   // The deck's cover along the sun's ray darkens the plain in soft patches.
   col *= shadeK(sunCover(P * 0.001 + vec3(0.0, CAMH * 0.001, 0.0)));
   // The storm shades the plain under its base.
@@ -778,8 +711,11 @@ vec3 ground(vec3 rd, float px) {
 // Screen x and y of a world point in metres.
 vec2 proj(vec3 P) { vec3 c = toCam(P); return vec2(c.x, c.y - CAMH) / -c.z * uFoc; }
 float depthOf(vec3 P) { return -toCam(P).z; }
-// Pastes a lit flat shape over c. k is coverage.
-void over(inout vec3 c, vec3 col, float k) { c = mix(c, col, clamp(k, 0.0, 1.0)); }
+// Lays a lit flat shape into the objects' layers at depth gPutZ. k is coverage.
+// put() lives in line.js: it sorts each shape behind or in front of the funnels.
+void put(vec3 col, float k, float z);
+float gPutZ = 0.0;
+void over(inout vec3 c, vec3 col, float k) { put(col, k, gPutZ); }
 // Coverage of the box a..b in screen units, at pixel size px.
 float box(vec2 s, vec2 a, vec2 b, float px) {
   vec2 lo = clamp((s - a) / px + 0.5, 0.0, 1.0), hi = clamp((b - s) / px + 0.5, 0.0, 1.0);
@@ -788,42 +724,7 @@ float box(vec2 s, vec2 a, vec2 b, float px) {
 // The haze over a thing t metres off, in direction d.
 vec3 hazed(vec3 col, vec3 d, float t) { return mix(col, hazeCol(d), 1.0 - exp(-t / 30000.0)); }
 
-// Telephone poles down the far verge, 55 m apart, with three sagging wires.
-// The first pole stands 30 m out, so the line runs on in frame with its poles even from a high eye at 28 mm.
-const float POLE_X = ROAD_X + 9.0, POLE_Z0 = 30.0, POLE_GAP = 55.0;
-void poles(inout vec3 c, vec2 s, vec3 rd, float px) {
-  vec3 wood = uSunCol * vec3(0.16, 0.1, 0.06) + uAmb * 0.03;
-  for (int i = 0; i < 48; i++) {
-    vec3 P = vec3(POLE_X, 0.0, -(POLE_Z0 + POLE_GAP * float(i)));
-    float z = depthOf(P);
-    vec2 b = proj(P);
-    if (abs(s.x - b.x) > 2.6 / z * uFoc + px) continue;
-    float w = 0.15 / z * uFoc;
-    vec2 tp = proj(P + vec3(0.0, 10.0, 0.0));
-    float k = box(s, vec2(b.x - w, b.y), vec2(b.x + w, tp.y), px);
-    // The cross-arm.
-    vec2 ca = proj(P + vec3(-1.2, 9.1, 0.0)), cb = proj(P + vec3(1.2, 9.25, 0.0));
-    k = max(k, box(s, vec2(min(ca.x, cb.x), ca.y), vec2(max(ca.x, cb.x), cb.y), px));
-    over(c, hazed(wood * shadeK(sunCover(P * 0.001)), rd, z), k);
-  }
-  // The wires: for each screen column, the place along the line of poles.
-  vec3 wire = uAmb * 0.05;
-  float sn = sin(uYaw), cs = cos(uYaw), k = s.x / uFoc;
-  for (int j = 0; j < 3; j++) {
-    float wx = POLE_X + float(j - 1) * 1.1, wy = j == 1 ? 9.9 : 9.2;
-    float den = k * cs - sn;
-    if (abs(den) < 1e-5) continue;
-    float wz = -wx * (cs + k * sn) / den;
-    float zz = depthOf(vec3(wx, 0.0, wz));
-    if (zz < 1.0 || -wz < POLE_Z0 || -wz > 2700.0) continue;
-    float u = fract((-wz - POLE_Z0) / POLE_GAP);
-    float y = wy - 0.8 * 4.0 * u * (1.0 - u);
-    float sy = (y - CAMH) / zz * uFoc;
-    float thick = 0.02 / zz * uFoc;
-    float a = clamp(1.0 - abs(s.y - sy) / (px * 0.8), 0.0, 1.0) * min(1.0, thick * 2.0 / px + 0.15);
-    over(c, hazed(wire, rd, zz), a * 0.9);
-  }
-}
+// The telephone poles and their wires live in line.js.
 // The farm, about a mile off to the left: a house, a barn, a windmill, a shelterbelt.
 void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
   float z = -1500.0, x = -420.0;
@@ -875,6 +776,65 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
     over(c, hazed(steel, rd, zw), k);
   }
 }
+// The foreground: large ears a metre or two off, soft with defocus, swaying in the gusts.
+// They live in camera space; far ones draw first, so near ones cover them.
+float segD(vec2 p, vec2 a, vec2 b, out float u) {
+  vec2 ab = b - a;
+  u = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
+  return length(p - a - ab * u);
+}
+void nearEars(inout vec3 c, vec2 s, float px, float asp) {
+  // The tallest ear, with its tuft, stays below this line.
+  if (s.y > 0.0) return;
+  vec3 lit = (uSunCol * 0.5 + uAmb * 0.55) * shadeK(sunCover(vec3(0.0)));
+  const int N = 56;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i);
+    // The ears stand nearer on a wider lens, so they keep their size on screen at any lens.
+    // At 28 mm the 50 mm distances drew them as thin strokes.
+    float z = (4.0 - fi * (3.3 / float(N))) * uFoc / 2.083;
+    float hw = 0.5 * asp / uFoc * z;
+    float x = (th(vec2(fi, 4.2)) - 0.5) * 2.2 * hw;
+    float top = 0.98 + 0.12 * th(vec2(fi, 9.1));
+    // The gust at this ear, from its place in the world.
+    vec3 W = toWorld(vec3(x, 0.0, -z));
+    // No ears on the road or its verges.
+    if (abs(W.x - ROAD_X) < WHEAT_GAP) continue;
+    vec2 lean = bend(gust(W.xz, 0.0), 1.0);
+    // The lean in camera space, as screen units at this depth.
+    float lx = (lean.x * cos(uYaw) - lean.y * sin(uYaw)) / z * uFoc;
+    vec2 tip = vec2(x / z * uFoc + lx, (top - CAMH) / z * uFoc);
+    vec2 base = vec2(x / z * uFoc + lx * 0.55, (top - 0.11 - CAMH) / z * uFoc);
+    if (s.y > tip.y + 0.1 / z) continue;
+    float w = 0.011 / z * uFoc;
+    // Defocus: the nearer the ear, the softer its edge.
+    float bl = 0.009 / z * uFoc + px;
+    float u;
+    float d = segD(s, base, tip, u);
+    // Kernel rows bead the ear's edge.
+    float ww = w * (0.55 + 0.45 * sin(3.14159 * sqrt(u))) * (0.88 + 0.12 * sin(u * 30.0));
+    float k = smoothstep(ww + bl, ww - bl, d);
+    // The stalk: thin, down out of the frame.
+    float us;
+    vec2 foot = vec2(x / z * uFoc, -1.0);
+    float ds = segD(s, foot, base, us);
+    float ws = 0.0022 / z * uFoc;
+    // A stalk thinner than its blur covers only its share of the blur: at a wide lens it is a hair, not a stroke.
+    k = max(k, smoothstep(ws + bl, ws - bl, ds) * 0.9 * clamp(ws / bl, 0.0, 1.0));
+    // The awns: a pale tuft past the tip.
+    float ua;
+    float da = segD(s, tip, tip + (tip - base) * 0.75, ua);
+    k = max(k, smoothstep(w * 1.1 + bl, 0.0, da) * 0.35 * (1.0 - ua));
+    if (k <= 0.0) continue;
+    vec3 ear = mix(vec3(0.42, 0.29, 0.11), vec3(0.6, 0.45, 0.2), th(vec2(fi, 2.7)));
+    // Lit face toward the eye, darker at the rim.
+    float rim = clamp(d / max(ww, 1e-4), 0.0, 1.0);
+    c = mix(c, ear * lit * (1.05 - 0.4 * rim * rim), clamp(k, 0.0, 1.0));
+  }
+}
+
+${LINE_GLSL}
+${PLAIN_GLSL}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -883,10 +843,18 @@ vec3 envScene(vec2 uv) {
   gSunC = toCam(uSun);
   gPx = px;
   vec3 c;
+  // The objects on the plain first: each one sorts itself behind or in front of the funnels.
+  objInit(s);
+  gPutZ = 1500.0;
+  farm(c, s, rd, px);
+  linePoles(s, rd, px);
+  wires(s, rd, px);
+  plain(s, rd, px);
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
     c = ground(rd, px);
+    c = c * (1.0 - gOB.a) + gOB.rgb;
     c = c * (1.0 - tv.a) + tv.rgb;
   } else {
     c = skyCol(rd);
@@ -912,6 +880,8 @@ vec3 envScene(vec2 uv) {
       // The bands are dust, warm in the low light, not the sky's own hue.
       c = mix(c, mix(hazeCol(rd), uSunCol * vec3(0.3, 0.22, 0.15) + uAmb * 0.15, 0.5) * (1.0 - 0.12 * fi), b * 0.35);
     }
+    // The objects behind the funnels stand in front of the sky and under the rain.
+    c = c * (1.0 - gOB.a) + gOB.rgb;
     // Under the base: the gloom, and the rain curtain hanging out of the core.
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
@@ -947,8 +917,10 @@ vec3 envScene(vec2 uv) {
   }
   // The thin band where ground meets sky takes the haze.
   c = mix(c, hazeCol(rd), exp(-abs(rd.y) * 900.0) * 0.6);
-  farm(c, s, rd, px);
-  poles(c, s, rd, px);
+  c = c * (1.0 - gOF.a) + gOF.rgb;
+  // Arcs and sparks on the line: their light shows through the dust, and lights it.
+  c += sparks(s, px, tv.a);
+  nearEars(c, s, px, asp);
   return c;
 }
 `;
@@ -1016,6 +988,8 @@ const yaw = () => Math.atan((ROAD_VP - 0.5) * aspect() / focal());
 // Camera space to world space, and back, about the vertical axis.
 const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Math.sin(a) + z * Math.cos(a)];
 
+// The power line's state: leans, breaks and spark events.
+const line = lineState();
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
@@ -1028,7 +1002,7 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { funnelPass(w, h); bindNoise(); sunFlare(); },
+    before: (w, h) => { lineUniforms(line, tors); funnelPass(w, h); bindNoise(); sunFlare(); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
@@ -1036,6 +1010,7 @@ try {
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1228,6 +1203,7 @@ function packFunnels(rw, rh) {
 }
 // The far field: past Bake from (farD km) the deck is baked, not marched each frame (the camera is locked off).
 // It renews when the light, the base, the storm, the eye or the lens change, in strips over frames.
+// The bake's slices: funnel.js discards rows by the same count, 8.
 const FAR_STRIPS = 8;
 // Dev's Bake from and Deck reach, in km.
 let farD = 16, deckReach = 146;
@@ -1263,16 +1239,10 @@ function bakeFar(u, rw, rh, n) {
   gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
   gl.viewport(0, 0, rw, rh);
-  // The first bake, or a still page, bakes whole; a running page bakes a strip a frame.
-  if (whole) { gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
-  else {
-    const rows = Math.ceil(rh / FAR_STRIPS);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(0, fun.farRow * rows, rw, rows);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.disable(gl.SCISSOR_TEST);
-    fun.farRow++;
-  }
+  // The first bake, or a still page, bakes whole; a running page bakes one slice a frame.
+  // A slice is every eighth row, not a band: a band across the horizon cost far more and hitched.
+  if (whole) { gl.uniform1i(u.uSlice, -1); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
+  else { gl.uniform1i(u.uSlice, fun.farRow); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow++; }
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
@@ -1396,16 +1366,26 @@ function live(t, dt) {
     const v = fAt(F_SPEED, t.f) * (1 - 0.6 * clamp(t.rope));
     t.x += windDir[0] * v * dt; t.z += windDir[1] * v * dt;
   }
+  keepOff(t);
+}
+// A tornado comes no nearer than its dust's reach plus a margin, and never under the eye.
+const nearMin = t => Math.max(1000, 2.2 * at('r0', t.f) * KNOB.width + 300);
+function keepOff(t) {
+  const d = Math.hypot(t.x, t.z), m = nearMin(t);
+  if (d < m) { t.x *= m / Math.max(d, 1); t.z *= m / Math.max(d, 1); }
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
 function step(dt) {
   simT += dt;
   for (const t of tors) live(t, dt);
+  lineStep(line, tors, dt, simT, wind, storm);
+  lineUniforms(line, tors);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   if (build) {
     build.t += dt;
-    const k = clamp(build.t / build.dur);
+    // The scene opens in sun: the storm waits 7 s, then builds.
+    const k = clamp((build.t - 7) / build.dur);
     storm = build.to * easeSine(k);
     ui.slider?.set(+storm.toFixed(2));
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
@@ -1425,9 +1405,9 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay in the live march: 5 km out at the nearest, up to the bake's crossover at the most.
+  // Funnels stay in the live march: 1.2 km out at the nearest, up to the bake's crossover at the most.
   const far = Math.max(5000, (farD - 0.125 * farD) * 1000 - 500);
-  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 5000, far) : far;
+  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 1200, far) : far;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -1478,6 +1458,7 @@ canvas.addEventListener('pointermove', e => {
   if (!drag) return;
   const g = groundAt(e.clientX, e.clientY);
   drag.x = g.x; drag.z = g.z;
+  keepOff(drag);
   wake();
 });
 const endDrag = () => { drag = null; };
@@ -1517,11 +1498,12 @@ act.add = () => {
 // Clear ropes every tornado out; a second Clear takes them away at once.
 act.clear = () => {
   if (tors.some(t => !t.roping)) tors.forEach(t => ropeOut(t));
-  else tors.length = 0;
+  // The second Clear mends the power line too.
+  else { tors.length = 0; lineReset(line); }
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
-act.buildUp = v => { if (build) build.dur = clamp(+v || 180, 30, 600); };
+act.buildUp = v => { if (build) build.dur = clamp(+v || 45, 10, 600); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
@@ -1585,18 +1567,20 @@ const qs = new URLSearchParams(location.search);
 if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(parseFloat(f.replace(/[^\d.]/g, '')) || 0, 0, 5); act.add(); }
 // QA: ?near=8 puts the newest tornado 8 km out; ?age=20 runs every tornado 20 s on.
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); } };
+// QA: ?line=1.6 puts the newest tornado 1.6 km out, left of the power line, drifting into it.
+if (qs.has('line') && tors.length) Object.assign(tors[tors.length - 1], { x: -400, z: -1000 * +qs.get('line') });
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
 // The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
 // Reduced motion starts at full storm with the first tornado formed.
 {
-  try { ['buildUp', 'buildUpS'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
-  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpT')?.value ?? 180);
+  try { ['buildUp', 'buildUpS', 'buildUpT'].forEach(k => localStorage.removeItem('stimming.tornado.' + k)); } catch { /* no storage */ }
+  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUpU')?.value ?? 45);
   if (!qs.has('tor') && !qs.has('storm')) {
     if (reduced() || !(bu > 0)) heroDown();
-    else { build = { t: 0, dur: clamp(bu, 30, 600), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
+    else { build = { t: 0, dur: clamp(bu, 10, 600), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
   }
 }
 // QA: GPU time per frame, or of the funnel pass alone, from timer queries.
@@ -1657,7 +1641,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

@@ -173,6 +173,8 @@ uniform sampler2D tFar;
 // The bake before the last, and how far the last has faded in over it, 0 to 1.
 uniform sampler2D tFarPrev;
 uniform float uFarK;
+// The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
+uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
@@ -739,6 +741,7 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
 }
 #endif
 void main() {
+  if (uMode == 1 && uSlice >= 0 && int(gl_FragCoord.y) % 8 != uSlice) discard;
   vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
@@ -967,28 +970,30 @@ void main() {
   // The baked far field lies behind the near field.
   vec4 far = mix(texture(tFarPrev, gl_FragCoord.xy / uRes), texture(tFar, gl_FragCoord.xy / uRes), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
-  // Sun shafts hang from the deck's openings: its far breaks and a young deck's gaps.
-  // The march runs only under the deck, from the eye to the base or the ground, 30 km at most,
-  // and stops in front of anything opaque. Each step follows the shaft up to the base:
-  // an opening there lights the step. Jittered steps; the history smooths them.
-  if (uGod > 0.0 && uSun.y > 0.0) {
+  // Sun shafts: light through the deck's real openings, its far holes and a young deck's gaps,
+  // along the true sun. The march runs only under the deck, from the eye to the base or the ground,
+  // 30 km at most, and stops in front of anything opaque. Each step follows the sun's ray up to the base:
+  // an opening there, with no cell in the way, lights the step. Jittered steps; the history smooths them.
+  if (uGod > 0.0 && uSun.y > 0.01) {
     float tTop = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y;
     float tG = min(min(tTop, 30000.0), tOpq), sh = 0.0;
-    // The shafts slant down at 24 degrees at least, so they hang from the openings even at dusk.
-    vec3 sd = normalize(vec3(uSun.x, max(uSun.y, 0.45), uSun.z));
     for (int i = 0; i < 24; i++) {
       vec3 w = (rd * ((float(i) + jit2) * tG / 24.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
-      vec3 qc = toCam(w + sd * (max(BASE - w.y, 0.0) / sd.y));
-      // A shaft is brightest at its opening and tapers and fades with depth into the haze.
-      // Its edges read the break softly, and a streak noise along it rags its sides.
-      // A young deck's wide gaps light whole rooms of air: they count for less than the far breaks.
-      float dep = max(BASE - w.y, 0.0);
-      float rag = 0.5 + 0.5 * vn(vec2(dot(qc.xz, vec2(-sd.z, sd.x)) * 3.0, dep * 0.8));
-      sh += max(deckOpen(qc, 0.06 + 0.05 * dep), 0.4 * raftGap(qc)) * exp(-dep * 1.1) * rag;
+      float dep = max(BASE - w.y, 0.0), L = dep / uSun.y;
+      vec3 qc = toCam(w + uSun * L);
+      // Its edges read the opening softly; across a hole the light splits into two or three beams.
+      float o = max(deckOpen(qc, 0.1 + 0.05 * dep), 0.4 * raftGap(qc));
+      if (o < 0.01) continue;
+      o *= smoothstep(0.7, 0.3, vn(vec2(dot(qc.xz, vec2(-uSun.z, uSun.x)) * 1.2, dep * 0.5)));
+      // The supercell's bulk blocks the ray too.
+      o *= smoothstep(-0.3, 0.4, stormShapeSun(qc));
+      // The haze dims the light along its path down from the opening.
+      sh += o * exp(-L * 0.05);
     }
-    // Light only: the shafts glow most toward the sun.
+    // Light only, in the sun's colour scattered by the haze; it glows most toward the sun.
     float cg = dot(rd, uSun);
-    now.rgb += uSunCol * vec3(1.0, 0.86, 0.68) * sh * (tG / 24.0) * 2.5e-5 * mix(hg(cg, 0.5), 1.0, 0.3) * uGod;
+    vec3 tint = mix(vec3(1.0), gHzC / max(max(gHzC.r, gHzC.g), max(gHzC.b, 1e-3)), 0.35);
+    now.rgb += uSunCol * tint * sh * (tG / 24.0) * 2.5e-5 * mix(hg(cg, 0.5), 1.0, 0.3) * uGod;
   }
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
