@@ -14,6 +14,10 @@ One of the first ten (Tom, 2026-11-17, epic stimming-a5rs). The toy takes the Si
 
 First read of what to redo: + Thing sits beside an Add list: say once what adds. Eleven Dev rows need groups.
 
+Tom, 2026-11-17: retain the colour icons for the ingredients. Done in Bar v3: each ingredient keeps its own colours, also under the white box.
+
+Tom, 2026-11-17, for the Cauldron chat: "add more ingredients -- including forbidden and witchy -- and bizarre ones". No Cauldron chat is on this machine, so the message is not sent; Tom has the text.
+
 ## Checklist
 
 - [ ] Play the toy; list every control and what it does

@@ -59,9 +59,16 @@ const btn = (cls, html, label) => {
   return b;
 };
 const box = (cls, ...kids) => { const el = h('div', cls); el.append(...kids.flat().filter(Boolean)); return el; };
-// An icon with its own fills is art: it keeps its colours.
+// An icon with its own fills is art: it keeps its colours (Tom, 2026-11-17).
+// Bar v2 holds the same icon in its hidden layer, and a hidden gradient paints nothing.
+// So each copy here gets its own ids.
 const isArt = icon => /url\(#|Gradient|fill="(?!none)/.test(icon);
-const optHTML = o => `${o.icon ? (isArt(o.icon) ? o.icon.replace('<svg', '<svg class="b-art"') : o.icon) : ''}<span>${o.label}</span>`;
+let artSeq = 0;
+const ownIds = icon => {
+  const n = ++artSeq;
+  return icon.replace(/\bid="([^"]+)"/g, (m, id) => `id="sg${n}-${id}"`).replace(/url\(#([^)]+)\)/g, (m, id) => `url(#sg${n}-${id})`);
+};
+const optHTML = o => `${o.icon ? (isArt(o.icon) ? ownIds(o.icon).replace('<svg', '<svg class="b-art"') : o.icon) : ''}<span>${o.label}</span>`;
 const actLabel = a => a.label || (a.verb === 'add' ? `+ ${a.noun ?? 'One'}` : a.verb.charAt(0).toUpperCase() + a.verb.slice(1));
 
 function mount(id, spec, ui) {
