@@ -59,11 +59,12 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
-    // The Tube group opens with the funnel's mode: the analytic shells or the deck's cloud as a tube.
+    // The Tube group opens with the funnel's mode: the deck's cloud as a tube (Tom's default) or the analytic shells.
+    // The key is new, so an old saved Shells gives way to the new default.
     ...KNOBS.flatMap(([group, id, label, min, max, step, value]) => [
-      ...(id === 'tbBands' ? [{ type: 'choice', group, id: 'funnel', label: 'Funnel', value: 'shells', persist: true, options: [
-        { value: 'shells', label: 'Shells' },
+      ...(id === 'tbBands' ? [{ type: 'choice', group, id: 'funnelMode', label: 'Funnel', value: 'tube', persist: true, options: [
         { value: 'tube', label: 'Cloud tube' },
+        { value: 'shells', label: 'Shells' },
       ], onPick: v => act.funnel(v) }] : []),
       { type: 'slider', group, id: 'k_' + id, label, min, max, step, value, persist: true, onInput: v => act.knob(id, v) },
     ]),
@@ -794,7 +795,7 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
-const fun = { n: 0, prog: null, progs: {}, mode: 'shells', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farN: 0, farAt: 0 };
+const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farN: 0, farAt: 0 };
 let env = null;
 try {
   env = environment(canvas, {
@@ -892,9 +893,11 @@ function useFunnel(mode) {
     .then(set => { fun.progs[mode] = set.f; if (fun.mode === mode) { fun.prog = set.f; fun.fresh = true; } env.touch(); })
     .catch(err => { delete fun.progs[mode]; console.error('funnel pass:', err); });
 }
-act.funnel = v => useFunnel(v === 'tube' ? 'tube' : 'shells');
-// QA: ?funnel=tube picks the Cloud tube for one load.
-act.funnel(new URLSearchParams(location.search).get('funnel') || ui.setting('funnel')?.value || 'shells');
+act.funnel = v => useFunnel(v === 'shells' ? 'shells' : 'tube');
+// The old key held the old default; it goes.
+try { localStorage.removeItem('stimming.tornado.funnel'); } catch { /* no storage */ }
+// QA: ?funnel=shells picks the Shells for one load.
+act.funnel(new URLSearchParams(location.search).get('funnel') || ui.setting('funnelMode')?.value || 'tube');
 // The storm's noise volume: the scene pass reads it from the first frame.
 fun.noise = noiseVolume(gl);
 // The scene pass reads the volume on unit 0, its sampler's default: the runner binds only 2D textures there.
