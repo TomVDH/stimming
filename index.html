@@ -126,6 +126,13 @@ body { overflow-x: clip; }
 a.toy { cursor: pointer; }
 .obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .obj svg { width: 70%; height: 70%; overflow: visible; }
+/* At the click: the intro's hairline waits under the icon until the toy's page comes.
+   It comes in after 0.25 s, so a fast load never shows it. */
+.go { position: absolute; left: 22%; bottom: 5%; width: 56%; height: 2px; overflow: hidden; pointer-events: none; background: oklch(1 0 0 / 0.16); opacity: 0; animation: go-in 0.3s steps(9, end) 0.25s forwards; }
+.go::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 34%; background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.7), transparent); animation: go-sheen 1.5s steps(45, end) infinite; }
+@keyframes go-in { to { opacity: 1; } }
+@keyframes go-sheen { from { translate: -100% 0; } to { translate: 294% 0; } }
+@media (prefers-reduced-motion: reduce) { .go { background: oklch(1 0 0 / 0.3); animation: go-in 0.01s linear 0.25s forwards; } .go::before { display: none; } }
 /* Each toy arrives through grainy blur as it scrolls into view. */
 .js-reveal .toy:not(.is-in) { opacity: 0; filter: blur(14px); }
 .js-reveal .toy { transition: opacity 0.5s steps(15, end), filter 0.6s steps(18, end); transition-delay: var(--d, 0s); }
@@ -2054,6 +2061,23 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
         for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
         shelf.append(...items);
+      })();
+    </script>
+    <script>
+      // At the click, the toy's tile shows a hairline until the next page comes.
+      (() => {
+        let going = null;
+        const clear = () => { going?.remove(); going = null; };
+        document.querySelector('main').addEventListener('click', e => {
+          const obj = e.target.closest('a.toy')?.querySelector('.obj');
+          // A click that opens a new tab leaves this page as it is.
+          if (!obj || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          clear();
+          going = Object.assign(document.createElement('i'), { className: 'go' });
+          obj.append(going);
+        });
+        // A page that comes back from the history shows no line.
+        addEventListener('pageshow', clear);
       })();
     </script>
     <script>

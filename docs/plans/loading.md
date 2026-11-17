@@ -68,8 +68,8 @@ Measured on the local server, same slow link, main against the branch: first toy
 Fast, cold, the branch: first paint 164, first toy 247, last toy 1514, footer shader 2765. Main: 172, 265, 1529, 2792. One run each; the gap is inside the noise.
 
 Tried and dropped: an early start. The main shelf ends 32 kB (gzip) into the 162 kB page, so `clock.js` ran there. The first toy came at 0.6 s on the slow link. But the icon script, at the end of the page, draws some icons; tiles stood empty until it ran.
-Next gain, not done: the Lab's markup is 58 kB of the 162 kB. Out of `index.html`, the slow load is a third shorter.
-Not done: Google Fonts' style sheet still blocks the first paint. Fonts in the repo would end that; an asset download needs Tom's yes.
+The Lab's markup out of `index.html`: tried on 2026-11-16 and set aside (bean `stimming-zchj`). On that day the page was 148 kB gzip: 41 kB head and main shelf, 27 kB Lab markup, 72 kB icon script. The 58 kB above was wrong for that page. The icon script draws Lab icons at load and fails without their elements. 27 kB is about 0.14 s on a slow link. The real gain is a split of the icon script.
+Fonts in the repo (2026-11-16, Tom's yes): Gabarito (variable, 400 to 900, Latin and Latin Extended) and B612 (400, 700) are in `shared/fonts/`, 72 kB in all. The menu, `shared/stim.css`, `shared/intro.css` and Window seat hold the `@font-face` rules; the menu preloads B612 Bold. Local server, cold: the menu's first paint moves from 192 ms to 64 ms. About 240 toy pages still link Google's style sheet; the shell's own rules win there, so the look is the same, but the link still blocks their first paint until a roll removes it.
 
 ## The intro is the preloader (2026-11-16)
 
@@ -98,7 +98,7 @@ Four heavy toys on Pages before the change, cold (ms): fast link, then slow 4G w
 | Railgun | 1701 kB | 814 / 3376 | 1848 / 3802 | 5195 / 7479 | 425, 4080 |
 | Window seat | 1052 kB | 830 / 2085 | 1288 / 6003 | 4709 / 7053 | 332, 3863 |
 
-- The first paint waits 0.4 to 1.0 s (fast) and 1.5 to 3.9 s (slow) for the style sheets; the menu stays on screen until then. A sign on the menu at the click would cover that; not done.
+- The first paint waits 0.4 to 1.0 s (fast) and 1.5 to 3.9 s (slow) for the style sheets; the menu stays on screen until then. A sign on the menu at the click covers that (2026-11-16): the intro's hairline under the clicked icon, after 0.25 s. Clip: `docs/qa/loading/menu-click-sign.mp4`.
 - In the app's own browser, Window seat's first frame once came at 5.7 s on a cold shader cache. That is the case the load line is for.
 
 Harness: `npx -y -p playwright@1.63.0 node tools/loadtime.mjs <base> <path> menu|toy [out.json]`. `NET=slow4g|local4g`, `CPU=4`, `VIDEO=<dir>`, `VIEW=375x812`, `COLD_ONLY=1`, `DELAY="<glob>=<ms>"`.
