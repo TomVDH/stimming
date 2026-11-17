@@ -69,6 +69,7 @@ The F-scale sets width, rotation speed, translation speed, debris density, dust 
 | Bottom right | Slider: Storm (a building cell to a full supercell) |
 | Bottom centre | Keys: `[CLICK] touch down` · `[DRAG] steer` · `[0-5] F-scale` |
 | Settings | Time: Afternoon, Golden hour, Dusk · Quality (shared); Dev rows for every look knob |
+| Dev: Look | Stimming (default) or Photoreal: sun and sky, white balance, saturation, contrast, glare, vignette, grain. QA: `docs/qa/tornado-look/` |
 | Dev: Tone map | Film (`ouFilm`) or ACES (`ouFilmAces`), default ACES. ACES takes a 1.1 gain; Exposure trims both. `?tone=film` for one load |
 | Dev: Window | Glass, Drops, Fog, Drop blur (focus on the plain: soft drops, `tornado/pane.js`), Bokeh (focus on the pane), Rain (the scene's own near rain: sunlit streaks, a grey veil on the distance), Grain. Off by default. QA: `docs/qa/tornado-window/` |
 

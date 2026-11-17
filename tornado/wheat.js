@@ -13,6 +13,9 @@ const float WH_CELL = 0.045;
 const float WH_TOP = 1.09, WH_SKIN = 1.0;
 // The grid turns against the road, so no row lines up with the eye.
 const mat2 WH_R = mat2(0.83, -0.56, 0.56, 0.83);
+// The lens focuses far: a near stalk blurs by the aperture's radius, about 3 mm at f/5.6.
+// In metres that blur is the same at every depth, so one constant serves.
+const float WH_BLUR = 0.003 / WH_CELL;
 // The field's edge along the verge wanders, in metres past WHEAT_GAP.
 float whEdge(float z) { return 0.32 * (vn(vec2(z * 0.35, 1.7)) - 0.5) + 0.14 * (vn(vec2(z * 2.1, 4.3)) - 0.5); }
 // How far a world point lies inside the field, in metres; below 0 it is verge.
@@ -57,11 +60,12 @@ vec4 wheatStand(vec3 rd, float px) {
     float dens = 1.1 * (0.55 + 0.9 * mix(0.5, vn(xs * 2.3), 1.0 - smoothstep(0.1, 0.4, fs))) * (1.0 - 0.35 * wv) * smoothstep(0.0, WH_FEATHER * 1.5, whInside(xs));
     float Tb = exp(-dens * (t0 - tA) * length(rd.xz));
     vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g);
-    // The heads' grain, 3 cm across: sharp across the view, stretched along it as a pixel spans more.
+    // The heads' grain, 3 cm across: sharp across the view, stretched up to four times along it, then faded.
     float fa = t0 * px / uFoc;
-    vec2 acr = vec2(-vh.y, vh.x);
-    float gr = vn(vec2(dot(xs, acr) * 33.0, dot(xs, vh) * 33.0 * clamp(0.03 / fs, 0.02, 1.0)));
-    awn *= 0.8 + 0.4 * mix(0.5, gr, 1.0 - smoothstep(0.012, 0.03, fa));
+    // The axes are the camera's: the pixel's own ray would give no across term.
+    vec2 acr = toWorld(vec3(1.0, 0.0, 0.0)).xz, alg = toWorld(vec3(0.0, 0.0, -1.0)).xz;
+    float gr = vn(vec2(dot(xs, acr) * 33.0, dot(xs, alg) * clamp(0.025 / max(fs, 1e-4), 8.25, 33.0)));
+    awn *= 0.8 + 0.4 * mix(0.5, gr, (1.0 - smoothstep(0.012, 0.03, fa)) * (1.0 - smoothstep(0.03, 0.085, fs)));
     awn *= uSunCol * 0.5 * (1.2 + 1.6 * back * vec3(1.0, 0.85, 0.55)) + (hzS + hzA) * 0.275;
     acc = awn * (1.0 - Tb);
     T = Tb;
@@ -130,7 +134,7 @@ vec4 wheatStand(vec3 rd, float px) {
         vec2 D = onHead ? Dh0 + Dhv * sc : Ds0 + Dsv * sc;
         float y = p0.y + rd.y * sc, d = length(D);
         // A pixel's width here, in cell units.
-        float aa = max((t0 + sc) * px / uFoc / WH_CELL, 0.02);
+        float aa = max((t0 + sc) * px / uFoc / WH_CELL, 0.02) + WH_BLUR;
         float e = (top - y) / hl;
         float r = 0.0, a = 1.0;
         bool head = onHead && e > -0.5 && e < 1.0;

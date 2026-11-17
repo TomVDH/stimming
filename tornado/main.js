@@ -33,13 +33,15 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ rise: () => void, riseDur: (v: number) => void, riseTop: (v: number) => void, vehicles: () => void, f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, front: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { rise() {}, riseDur() {}, riseTop() {}, vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, front() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
     { verb: 'add', noun: 'Tornado', key: 'T', onPress: () => act.add() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
+    // Rise: the eye cranes up while the lens widens; a second press eases it back.
+    { verb: 'rise', label: 'Rise', key: 'R', onPress: () => act.rise() },
   ],
   slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: 0.85, onInput: v => act.storm(v) },
   settings: [
@@ -58,6 +60,10 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   dev: [
     { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'choice', id: 'preset', label: 'Look', value: 'stimming', persist: true, options: [
+      { value: 'stimming', label: 'Stimming' },
+      { value: 'photoreal', label: 'Photoreal' },
+    ], onPick: v => act.preset(v) },
     { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [
       { value: 'film', label: 'Film' },
       { value: 'aces', label: 'ACES' },
@@ -66,6 +72,9 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
     { type: 'slider', id: 'eye', label: 'Eye height', min: 1, max: 40, step: 0.5, value: 8, persist: true, onInput: v => act.eye(v) },
+    // Rise: how long the crane takes each way, and how high it goes.
+    { type: 'slider', id: 'riseDur', label: 'Rise time (s)', min: 6, max: 30, step: 1, value: 15, persist: true, onInput: v => act.riseDur(v) },
+    { type: 'slider', id: 'riseTop', label: 'Rise height (m)', min: 10, max: 80, step: 1, value: 35, persist: true, onInput: v => act.riseTop(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // Where the live march stops and the baked far field begins, and how far the deck runs.
@@ -75,6 +84,9 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
+    // Where the deck's front edge stands, km ahead of the eye; below 0 it runs on behind the eye.
+    // Ahead of the eye, the sun behind it lights a bright plain under a dark storm.
+    { type: 'slider', id: 'front', label: 'Front edge (km)', min: -6, max: 15, step: 0.5, value: -6, persist: true, onInput: v => act.front(v) },
     // The window, rain in the air and grain. The defaults keep the shot as it was.
     { type: 'toggle', group: 'Window', id: 'glass', label: 'Glass', value: false, persist: true, onToggle: v => act.look('glass', v) },
     { type: 'slider', group: 'Window', id: 'wet', label: 'Drops', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.look('wet', v) },
@@ -132,8 +144,12 @@ uniform float uBase;
 #define BASE uBase
 // How far ahead the deck runs, in km: Dev's Deck reach (146 by default).
 uniform float uReach;
+// The deck's front edge, km ahead of the eye: Dev's Front edge (-6, behind the eye, by default).
+uniform float uFront;
 // The wind's bearing as a world direction: the deck and its breaks drift with it.
 uniform vec2 uWDir;
+// The wind's strength, 0 to 1: Dev's Wind.
+uniform float uWind;
 #define WDIR uWDir
 // The base shelf: its centre and its two half widths.
 const vec2 SHELF = vec2(1.0, -13.0);
@@ -166,6 +182,8 @@ float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * 
 // The storm's growth for the deck's own terms: 1 from the default storm up, so that look holds.
 float stormK() { return clamp(uStorm / 0.85, 0.0, 1.0); }
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// The front edge's distance over a camera-space x in km: ragged, never a straight line.
+float frontAt(float x) { return uFront + (vn(vec2(x * 0.3, 1.7)) - 0.5) * 2.4 + (vn(vec2(x * 1.1, 4.2)) - 0.5) * 0.7; }
 
 // The sky in a direction: the shared dusk sky, turned away from the sun.
 vec3 skyCol(vec3 d) {
@@ -303,7 +321,9 @@ float stormShape(vec3 p) {
   float d = stormShapeSun(p);
   float under = BASE + 0.12 + 0.25 * smoothstep(-6.0, 4.0, p.z);
   // The slab runs from 6 km behind the eye to uReach ahead.
-  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach - 6.0)) - 0.5 * (uReach + 6.0));
+  // The slab runs from its front edge to uReach ahead.
+  float zN = frontAt(p.x);
+  vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach + zN)) - 0.5 * (uReach - zN));
   // A young storm's deck is thin; a full one is a kilometre deep.
   float topY = BASE + mix(0.35, 1.0, stormK()), botY = under;
   // A young deck breaks into rafts with sky between; the gaps close as the storm grows.
@@ -450,12 +470,34 @@ float cloudPh(float mu) {
 // Where rain falls from the deck, 0 to 1, over a camera-space point in km.
 // Ragged shafts in world space drift and slant downwind; most fall round the core.
 // Rain starts as the storm grows.
+// The rain field's blur, 0 to 1: a coarse march sets it, so curtains do not speckle.
+float gRainLod = 0.0;
+// How far rain slants downwind per km it falls: more with the wind and the storm.
+float rainSlant() { return (0.25 + 0.6 * uWind) * (0.6 + 0.4 * stormK()); }
 float rainAt(vec3 p) {
-  float sy = sin(uYaw), cy = cos(uYaw);
-  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * (uT * 0.012 + max(BASE - p.y, 0.0) * 0.35);
-  float f = vn(w * 0.16 + 31.0) * 0.6 + vn(w * 0.5 + 7.0) * 0.4;
-  f += 0.3 * (1.0 - smoothstep(3.0, 9.0, length(p.xz - mix(TOWER, CORE, 0.55))));
-  return smoothstep(0.55, 0.85, f) * smoothstep(0.3, 0.6, uStorm);
+  float sy = sin(uYaw), cy = cos(uYaw), fall = max(BASE - p.y, 0.0);
+  // The shafts slant downwind as they fall, and gusts sway them slowly.
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * uT * 0.012;
+  w -= WDIR * fall * (rainSlant() + 0.08 * sin(uT * 0.21 + w.x * 0.4 + w.y * 0.3));
+  // Curtains one to three km wide, with clear air between them.
+  float f = vn(w * 0.3 + 31.0) * 0.65 + 0.15 * (1.0 - smoothstep(3.0, 9.0, length(p.xz - mix(TOWER, CORE, 0.55))));
+  // Each tornado has a curtain on its rear flank, upwind and to the left of it.
+  // Round the funnel itself the air stays clear, so the rain never hides it.
+  if (uTorOn > 0.5) {
+    vec2 wc = vec2(WDIR.x * cy - WDIR.y * sy, WDIR.x * sy + WDIR.y * cy), q = p.xz - wc * fall * rainSlant();
+    for (int i = 0; i < ${MAX_FUNNELS}; i++) {
+      if (uTorZ[i].w <= 0.0) continue;
+      vec2 rear = uTorN[i].xy - wc * 2.4 + vec2(-wc.y, wc.x) * 0.8;
+      f += 0.6 * uTorH[i].x * (1.0 - smoothstep(0.6, 1.7, length(q - rear)));
+      f -= 0.6 * uTorH[i].x * (1.0 - smoothstep(1.0, 2.2, length(p.xz - uTorN[i].xy)));
+    }
+  }
+  float lo = 0.6 - 0.15 * gRainLod;
+  // Even the fine octave at its top cannot reach the threshold: no rain here.
+  if (f + 0.35 < lo) return 0.0;
+  // A blurred field keeps the fine octave at its mean.
+  f += mix(vn(w * 0.9 + 7.0), 0.5, gRainLod) * 0.35;
+  return smoothstep(lo, 0.85 + 0.1 * gRainLod, f) * smoothstep(0.3, 0.6, uStorm);
 }
 // The colour of one storm sample. Its light follows Window seat's and Railgun's cloud light:
 // Beer's law with a slower multiple-scatter tail, powder, a silver lining, sky light by direction, ground bounce.
@@ -585,17 +627,25 @@ float sunCover(vec3 w) {
   // The deck follows the storm: none at the start, a full lid at full storm.
   // The sun reaches the plain only through its openings: the breaks and a young deck's gaps.
   float deck = smoothstep(0.05, 0.85, uStorm) * (1.0 - max(deckOpen(qc, 0.05), raftGap(qc)));
+  // Past the front edge, nearer the eye, there is no deck to shade the plain.
+  deck *= smoothstep(-frontAt(qc.x) + 1.2, -frontAt(qc.x) - 1.2, qc.z);
   return max(core, 0.92 * deck);
 }
 `;
 const SCENE = /* glsl */`
 uniform vec3 uSun, uSunCol, uAmb;
-uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
+uniform float uFoc, uHz, uYaw, uStorm, uT;
 uniform float uRain;
 uniform vec2 uRainDir;
+uniform vec3 uWB;
+uniform float uSat, uCon;
 // The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
 uniform sampler2D tTor;
 uniform float uStormOn;
+// Lightning, far off: the channel's top under the base and its foot on the ground, in camera km.
+// uBolt: the stroke's light (0 when dark), its seed, 1 for cloud to ground or 0 in cloud, and its glow.
+uniform vec3 uBoltT, uBoltG;
+uniform vec4 uBolt;
 ${SHARED}
 
 /* ---------- the wind ---------- */
@@ -712,6 +762,16 @@ vec3 wheatFar(vec2 xz, float fx, float fz) {
     float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), detail(0.3, fm)) * 0.4;
     alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
+  // The heads: lit clusters about 10 cm across with dark gaps, then single heads 4 cm apart.
+  // Each fades where a pixel no longer resolves it.
+  // The axes are the camera's, so the grain holds still on the ground.
+  vec2 va = toWorld(vec3(1.0, 0.0, 0.0)).xz, vd = toWorld(vec3(0.0, 0.0, -1.0)).xz;
+  vec2 hu = vec2(dot(xz, va), dot(xz, vd));
+  // Across the view it stays sharp; along it, it stretches up to four times, then fades out.
+  float h1 = vn(vec2(hu.x * 10.0, hu.y * clamp(0.025 / max(fz, 1e-4), 2.5, 10.0)));
+  float h2 = vn(vec2(hu.x * 25.0, hu.y * clamp(0.025 / max(fz, 1e-4), 6.25, 25.0)) + 5.0);
+  float hg = (h1 - 0.5) * detail(0.1, fx) * detail(0.4, fz) + 0.7 * (h2 - 0.5) * detail(0.04, fx) * detail(0.16, fz);
+  alb *= 1.0 + 0.8 * hg;
   // Toward the sun the tops glow: the light comes through the heads and awns.
   vec3 sunD = normalize(uSun + vec3(0.0, 0.02, 0.0));
   float back = pow(max(dot(gRd, sunD), 0.0), 3.0);
@@ -957,6 +1017,31 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 ${LINE_GLSL}
 ${PLAIN_GLSL}
 ${TRAFFIC_GLSL}
+// A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
+// with two or three short branches. Thin, with a soft glow; s is the screen point.
+float boltChannel(vec2 s, float px) {
+  vec2 a = uBoltT.xy / -uBoltT.z * uFoc - vec2(0.0, CAMH * 0.001 / -uBoltT.z * uFoc), b = uBoltG.xy / -uBoltG.z * uFoc - vec2(0.0, CAMH * 0.001 / -uBoltG.z * uFoc);
+  float h = a.y - b.y;
+  if (h <= 0.0 || s.y > a.y + 4.0 * px || s.y < b.y - 4.0 * px || abs(s.x - mix(a.x, b.x, 0.5)) > h * 0.6) return 0.0;
+  float sd = uBolt.y * 37.0;
+  // How far down the channel this row is, 0 at the base, 1 at the ground.
+  float u = clamp((a.y - s.y) / h, 0.0, 1.0);
+  float xc = mix(a.x, b.x, u) + h * ((vn(vec2(u * 7.0, sd)) - 0.5) * 0.22 + (vn(vec2(u * 26.0, sd + 3.0)) - 0.5) * 0.07 + (vn(vec2(u * 90.0, sd + 7.0)) - 0.5) * 0.02);
+  float d = abs(s.x - xc);
+  float k = exp(-pow(d / (1.1 * px), 2.0)) + 0.3 * exp(-d / (7.0 * px));
+  // The branches fork off down the upper half and fade toward their tips.
+  for (int j = 0; j < 3; j++) {
+    float fj = float(j), ub = 0.12 + 0.4 * th(vec2(sd, fj)), len = 0.15 + 0.25 * th(vec2(fj, sd));
+    if (u < ub || u > ub + len) continue;
+    float side = th(vec2(sd + fj, 9.0)) < 0.5 ? -1.0 : 1.0, v = (u - ub) / len;
+    float x0 = mix(a.x, b.x, ub) + h * (vn(vec2(ub * 7.0, sd)) - 0.5) * 0.22;
+    float xb = x0 + side * v * h * len * 0.6 + h * (vn(vec2(u * 30.0, sd + fj * 5.0)) - 0.5) * 0.05;
+    float db = abs(s.x - xb);
+    k += (exp(-pow(db / (0.9 * px), 2.0)) * 0.6 + 0.12 * exp(-db / (5.0 * px))) * (1.0 - v);
+  }
+  // The foot fades a little into the dust; the top into the base.
+  return k * smoothstep(0.0, 0.06, u) * (0.7 + 0.3 * smoothstep(1.0, 0.85, u));
+}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -1046,6 +1131,15 @@ vec3 envScene(vec2 uv) {
   // It is the far sunlit air seen under the deck, so it fades up from the horizon.
   float cA = dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5));
   c += uSunCol * vec3(1.0, 0.82, 0.6) * 0.03 * exp(-(1.0 - cA) * 3.0) * exp(-abs(rd.y) * 7.0);
+  // Lightning: a cloud-to-ground channel, behind rain and funnels; its light on the plain and in the air.
+  if (uBolt.x > 0.0) {
+    vec3 fl = vec3(0.75, 0.8, 1.0);
+    if (uBolt.z > 0.5) c += fl * boltChannel(s, px) * uBolt.x * 3.0 * (1.0 - 0.7 * tv.a);
+    vec3 dG = normalize(uBoltG + vec3(0.0, 0.3, 0.0));
+    float aG = max(dot(rc, dG), 0.0);
+    // A faint glow round the strike, low over the plain, and a flicker across the whole air.
+    c += fl * uBolt.x * uBolt.w * (0.05 * exp(-(1.0 - aG) / 0.004) + 0.004);
+  }
   c = c * (1.0 - gOF.a) + gOF.rgb;
   // Arcs and sparks on the line: their light shows through the dust, and lights it.
   c += sparks(s, px, tv.a);
@@ -1061,6 +1155,10 @@ vec3 envScene(vec2 uv) {
     float w = ppRain(uv * 1.8, asp, uT, uRain, uRainDir, uAirN);
     c = c * (1.0 - 0.1 * min(w, 1.0)) + (uSunCol * 0.04 + uAmb * 0.07) * w;
   }
+  // The Look preset's camera: white balance, saturation, then contrast about a dark mid tone.
+  c *= uWB;
+  c = max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, uSat), 0.0);
+  c = 0.05 * pow(c / 0.05, vec3(uCon));
   return c;
 }
 `;
@@ -1074,6 +1172,15 @@ let base = 1.35;
 const baseNow = () => base * (1 + 0.4 * (0.85 - storm));
 // The eye's height in metres: Dev's Eye height. It stands higher than a crouch, for a wider view.
 let camH = 8;
+// The eye height Dev sets; camH is that height plus the Rise.
+let eyeSet = 8;
+// Rise: u runs 0 to 1 and back; dir is +1 up, -1 down, 0 at rest.
+// At the top it holds hold seconds, then eases back by itself.
+const rise = { u: 0, dir: 0, dur: 15, top: 35, hold: 0 };
+// The lens widens by this share at the top of the Rise.
+const RISE_WIDEN = 0.3;
+// A soft ease with flat ends.
+const easeRise = x => x * x * x * (x * (6 * x - 15) + 10);
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, form: number, low: number, desc: number, turn: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
@@ -1115,12 +1222,14 @@ function setSun(hour) {
   // Once the sun is down its light goes, and the sky's fill dims into twilight.
   const up = sstep(-0.035, 0.012, el), tw = 0.45 + 0.55 * sstep(-0.12, 0.0, el);
   for (let i = 0; i < 3; i++) { sunCol[i] *= up; amb[i] *= tw; }
+  // The Look preset scales the sun and the sky's fill.
+  for (let i = 0; i < 3; i++) { sunCol[i] *= LOOK_NOW.sunK; amb[i] *= LOOK_NOW.skyK; }
 }
 const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
 let lensMM = 28;
 // A narrow frame takes a somewhat wider lens and crops the storm's sides.
-const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3));
+const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3)) * (1 - RISE_WIDEN * easeRise(rise.u));
 // The road vanishes on the right golden line.
 const ROAD_VP = 1 - GOLD;
 // The eye turns left until the road's vanishing point lies there.
@@ -1151,8 +1260,9 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
+      uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
       uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uSwayPh: () => line.uSwayPh,
@@ -1169,6 +1279,26 @@ const S = env.state;
 Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky: false });
 Object.assign(S, { clouds: 0, stars: 0, haze: 0.4, bloom: 0.18, thr: 1.4, orbs: 0, vig: 0.38, grain: 0.035, tintK: 0, expo: 1 });
 S.frame = false;
+
+/* ---------- the Look preset ---------- */
+// Stimming is the tuned shot. Photoreal reads as a camera on the plain:
+// a harder sun over a dimmer sky, a daylight white balance, a camera's saturation,
+// more contrast, a faint wide lens glare, a natural lens falloff and fine grain.
+const LOOKS = {
+  stimming: { sunK: 1, skyK: 1, expoK: 1, wb: [1, 1, 1], sat: 1, con: 1, bloom: 0.18, thr: 1.4, vig: 0.38, grain: 0.035, tintK: 0 },
+  photoreal: { sunK: 1.3, skyK: 0.85, expoK: 1, wb: [0.92, 1, 1.12], sat: 0.85, con: 1.15, bloom: 0.07, thr: 0.6, vig: 0.22, grain: 0.02, tintK: 3 },
+};
+let LOOK_NOW = LOOKS.stimming;
+// It sets the post values and the Grain row; Tone map stays as it is.
+// On load, keepGrain keeps the Grain row's saved value.
+act.preset = (v, keepGrain = false) => {
+  LOOK_NOW = LOOKS[v] || LOOKS.stimming;
+  const L = LOOK_NOW;
+  Object.assign(S, { bloom: L.bloom, thr: L.thr, vig: L.vig, tintK: L.tintK });
+  if (!keepGrain) ui.setting('grain')?.set(L.grain, true);
+  setSun(S.hour);
+  act.expo(expoTrim);
+};
 
 /* ---------- near rain ---------- */
 // The Rain row: 0 is dry.
@@ -1206,7 +1336,7 @@ function stormShapeJS(x, y, z) {
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
-  const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach - 6)) - 0.5 * (deckReach + 6);
+  const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach + front)) - 0.5 * (deckReach - front);
   const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
   return smin(d, front, 0.8);
 }
@@ -1371,6 +1501,8 @@ function packFunnels(rw, rh) {
 const FAR_STRIPS = 8;
 // Dev's Bake from and Deck reach, in km.
 let farD = 16, deckReach = 146;
+// Dev's Front edge, km ahead of the eye.
+let front = -6;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
 // The beam's hole in world km: centre x, z and radius; radius 0 when the sun is down.
@@ -1407,7 +1539,9 @@ const easeSine = x => 0.5 - 0.5 * Math.cos(Math.PI * x);
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
   // Storm counts in steps of 0.02: the build-up moves it every frame.
-  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
+  // During the Rise the eye and the lens leave the key: the far field is read through its own lens.
+  const lens = rise.dir ? ['rise'] : [camH, focal(), yaw()];
+  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, ...lens, horizon(), farD, deckReach, front, rw, rh].map(v => (typeof v === 'string' ? v : +(+v).toFixed(4))).join();
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
@@ -1415,6 +1549,10 @@ function bakeFar(u, rw, rh, n) {
   const whole = !fun.farReady || fun.farHold || (moved && !build);
   // A running page renews the far field strip by strip, so its breaks drift with the deck.
   if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
+  // A bake keeps the lens it started with through all its strips.
+  if (fun.farRow === 0) fun.farLens = [focal(), yaw()];
+  gl.uniform1f(u.uFoc, fun.farLens[0]);
+  gl.uniform1f(u.uYaw, fun.farLens[1]);
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
   gl.uniform1i(u.uMode, 1);
   gl.uniform1f(u.uFarD, farD);
@@ -1435,10 +1573,14 @@ function bakeFar(u, rw, rh, n) {
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
-    fun.farT = performance.now(); fun.farDur = !fun.farReady ? 0 : build ? 2500 : 250;
+    // Each picture keeps the lens it was baked through: the live read reprojects by it.
+    [fun.farFocC, fun.farFocA] = [fun.farFocA ?? fun.farLens[0], fun.farLens[0]];
+    fun.farT = performance.now(); fun.farDur = !fun.farReady ? 0 : build ? 2500 : rise.dir ? 400 : 250;
     fun.farBusy = false; fun.farReady = true;
   }
   // The live draw that follows takes these back.
+  gl.uniform1f(u.uFoc, focal());
+  gl.uniform1f(u.uYaw, yaw());
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uTorOn, n ? 1 : 0);
 }
@@ -1483,13 +1625,17 @@ function funnelPass(w, h) {
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, baseNow());
   gl.uniform1f(u.uReach, deckReach);
+  gl.uniform1f(u.uFront, front);
   gl.uniform1f(u.uGod, god);
   gl.uniform1f(u.uPlainLit, plainLit());
   gl.uniform1f(u.uGreen, greenK());
+  gl.uniform3fv(u.uBoltT, bolt.top);
+  gl.uniform4fv(u.uBolt, bolt.u);
   gl.uniform3fv(u.uBeam, beamSpot());
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
+  gl.uniform1f(u.uWind, wind);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
@@ -1501,6 +1647,7 @@ function funnelPass(w, h) {
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
   gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
   gl.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
+  gl.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
   const subs = hist ? 1 : 4;
@@ -1567,8 +1714,48 @@ function keepOff(t) {
   if (d < m) { t.x *= m / Math.max(d, 1); t.z *= m / Math.max(d, 1); }
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
+// The Rise moves the eye and the lens; reduced motion jumps to the end.
+// Lightning far off: rare bursts 15 to 50 km out, every 8 to 30 s, never near the eye.
+// Most strike the ground; some flash inside the cloud. A burst is two or three strokes over 0.4 s.
+const bolt = { next: 8 + 14 * Math.random(), t0: -9, strokes: [], top: new Float32Array(3), foot: new Float32Array(3), u: new Float32Array(4) };
+function boltStep() {
+  if (reduced()) { bolt.u[0] = 0; return; }
+  if (simT >= bolt.next && storm > 0.5) {
+    bolt.next = simT + 8 + 22 * Math.random();
+    bolt.t0 = simT;
+    // Somewhere in the view's width, a little past either edge.
+    const D = 15 + 35 * Math.random(), a = (Math.random() - 0.5) * 2 * Math.atan(0.6 * aspect() / focal());
+    const cx = Math.sin(a) * D, cz = -Math.cos(a) * D, B = baseNow();
+    const lean = (Math.random() - 0.5) * 0.25 * D * 0.1;
+    bolt.top.set([cx, B * 0.95, cz]);
+    bolt.foot.set([cx + lean, 0, cz]);
+    bolt.u[1] = Math.random() * 10;
+    bolt.u[2] = Math.random() < 0.7 ? 1 : 0;
+    bolt.u[3] = 0.6 + 0.8 * Math.random();
+    // The strokes: times and strengths, the first the brightest.
+    const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+    bolt.strokes = Array.from({ length: n }, (_, i) => [i ? 0.08 + i * 0.13 + 0.05 * Math.random() : 0, i ? 0.4 + 0.5 * Math.random() : 1]);
+  }
+  // Each stroke snaps on, then dies in a tenth of a second with a flicker.
+  const age = simT - bolt.t0;
+  let k = 0;
+  for (const [t, L] of bolt.strokes) { const x = age - t; if (x >= 0) k = Math.max(k, L * Math.exp(-x / 0.06) * (0.8 + 0.2 * Math.sin(x * 150))); }
+  bolt.u[0] = k > 0.01 ? k * Math.min(1, (storm - 0.5) * 4) : 0;
+}
+function riseStep(dt) {
+  if (!rise.dir) return;
+  if (rise.dir > 0 && rise.u >= 1) {
+    // At the top it holds 4 s, then eases back.
+    rise.hold += dt;
+    if (rise.hold > 4) rise.dir = -1;
+  } else rise.u = clamp(rise.u + rise.dir * (reduced() ? 1 : dt / rise.dur));
+  if (rise.dir < 0 && rise.u <= 0) rise.dir = 0;
+  camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u);
+}
 function step(dt) {
   simT += dt;
+  riseStep(dt);
+  boltStep();
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
@@ -1586,7 +1773,7 @@ function step(dt) {
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
     if (k >= 1) build = null;
   }
-  if (!asleep && !build && !tors.length && !trafficBusy(traf) && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
+  if (!asleep && !build && !rise.dir && !tors.length && !trafficBusy(traf) && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
   lastInput = performance.now();
@@ -1717,7 +1904,7 @@ act.lens = v => { lensMM = +v || 28; wake(); };
 // Each curve's own gain sets the scene's level; Exposure trims both.
 const TONE_GAIN = { film: 1, aces: 1.1 };
 let expoTrim = 1;
-act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wake(); };
+act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone] * LOOK_NOW.expoK; wake(); };
 act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
 // Each Window row and the runner value it sets. The scene draws the rain itself.
 const LOOK = { glass: 'glass', wet: 'wet', fog: 'fog', bokeh: 'defocus', grain: 'grain' };
@@ -1737,7 +1924,12 @@ act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
 act.god = v => { god = clamp(+v, 0, 1); wake(); };
 act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
-act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
+act.front = v => { front = clamp(Number.isFinite(+v) ? +v : -6, -6, 15); wake(); };
+act.eye = v => { eyeSet = clamp(+v || 8, 1, 40); camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u); wake(); };
+// A press starts the Rise, or turns it back at any point.
+act.rise = () => { rise.dir = rise.dir > 0 || (rise.dir === 0 && rise.u >= 1) ? -1 : 1; rise.hold = 0; wake(); };
+act.riseDur = v => { rise.dur = clamp(+v || 15, 6, 30); };
+act.riseTop = v => { rise.top = clamp(+v || 35, 10, 80); act.eye(eyeSet); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
 // Copy JSON: every knob, to paste back as defaults.
 act.knobCopy = async () => {
@@ -1762,6 +1954,8 @@ else if (qs0.has('time')) act.tod(HOURS[qs0.get('time')] ?? HOURS.golden);
 else if (savedTod !== null) act.tod(+savedTod);
 else act.tod(HOURS[ui.setting('time')?.value] ?? HOURS.golden);
 lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
+// QA: ?look=photoreal picks the Look for one load.
+act.preset(qs0.get('look') || ui.setting('preset')?.value || 'stimming', !qs0.has('look'));
 // QA: ?tone=film picks the curve for one load.
 act.tone(qs0.get('tone') || ui.setting('tone')?.value || 'aces');
 act.expo(ui.setting('expo')?.value ?? 1);
@@ -1780,6 +1974,8 @@ act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35)
 act.bakeFrom(qs0.has('bakefrom') ? +qs0.get('bakefrom') : ui.setting('bakeFrom')?.value ?? 16);
 act.god(qs0.has('god') ? +qs0.get('god') : ui.setting('god')?.value ?? 0.6);
 act.deckReach(qs0.has('deckreach') ? +qs0.get('deckreach') : ui.setting('deckReach')?.value ?? 146);
+// QA: ?front=4 puts the deck's front edge 4 km ahead for one load.
+act.front(qs0.has('front') ? +qs0.get('front') : ui.setting('front')?.value ?? -6);
 // QA: ?storm=0.2 sets the storm for one load.
 if (qs0.has('storm')) act.storm(clamp(+qs0.get('storm'), 0, 1));
 // QA: ?sunaz=20 sets the sun's bearing for one load.
@@ -1863,7 +2059,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');
