@@ -1619,6 +1619,7 @@ function propMesh(geo, pl, vs, fs, opts = {}) {
     uniform float uTime;
     ${NOISE}
     ${HAZE}
+    ${PBRL}
     ${PROPL}
     ${fs}`,
   }));
@@ -1837,10 +1838,36 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
   flat varying float vK, vV;
   uniform vec4 uCarP[${NB}];
   uniform float uCarK[${NB}];
+  // The props' light, plus GGX from the sun and the moon, the sky mirrored by roughness,
+  // and a glint from each town's light pool on a wet or glossy face.
+  vec3 propLitPBR(vec3 P, vec3 N, vec3 alb, float ao, float rough, float f0) {
+    vec3 V = normalize(cameraPosition - P), R = reflect(-V, N);
+    // A rough face scatters most of its sheen away: tile and plaster keep their colour at a slant.
+    float Fe = envF(N, V, rough, f0) * mix(1.0, 0.12, smoothstep(0.3, 0.75, rough));
+    vec3 c = propLit(P, N, alb, ao, 0.0) * (1.0 - Fe);
+    // A rough face mirrors only the sky's mean; a smooth one its picture. The ground fills below.
+    vec3 sky = mix(skyCol(R), skyA(R.y), smoothstep(0.2, 0.7, rough));
+    sky = mix(mix(vec3(0.004), skyA(0.0) * 0.25, uDay), sky, smoothstep(-0.15, 0.1, R.y));
+    c += sky * Fe * mix(0.6, 1.0, ao);
+    c += sunC() * uDay * ggxSpec(N, V, uSun, rough, f0);
+    c += vec3(0.3, 0.34, 0.42) * 0.6 * (1.0 - uDay) * ggxSpec(N, V, uMoon, rough, f0);
+    if (uDay < 0.99 && rough < 0.5) {
+      vec3 g = vec3(0.0);
+      for (int i = 0; i < ${NG}; i++) { vec3 L = uGP[i].xyz - P; float d2 = dot(L, L); g += uGC[i].rgb * uGP[i].w * 500.0 / (d2 + 2500.0) * ggxSpec(N, V, L * inversesqrt(d2), rough, f0); }
+      c += g * (1.0 - uDay) * 2.0;
+    }
+    return c;
+  }
   void main() {
     vec3 N = normalize(cross(dFdx(vP), dFdy(vP)));
     if (dot(N, cameraPosition - vP) < 0.0) N = -N;
+    // The face's normal in the house's own frame tells a slope from a hipped end.
+    vec3 nl = normalize(cross(dFdx(vL), dFdy(vL)));
     vec3 alb, glow = vec3(0.0);
+    // The surface: roughness, reflectance, bump height in metres and its feature size,
+    // how much rain darkens it, and where a wall's runs fall.
+    float rough = 0.85, f0 = 0.04, hb = 0.0, bw = 0.05, porous = 0.8, uw = 0.0, runs = 0.0;
+    bool wall = false;
     bool city = vK > 1.5 && vK < 2.5, church = vK > 2.5 && vK < 3.5, tower = vK > 3.5;
     // A modern block: a flat roof, pale concrete, and windows in long ribbons.
     bool modern = city && (vS.x > 22.0 || vV < 0.3) && fract(vV * 19.0) < 0.6;
@@ -1854,9 +1881,39 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       if (church) alb = rc < 0.6 ? vec3(0.26, 0.11, 0.07) : vec3(0.15, 0.15, 0.17);
       // Spires: green copper or dark slate; a saddle roof keeps its tile.
       if (tower) alb = vV < 0.4 ? vec3(0.26, 0.11, 0.07) : rc < 0.55 ? vec3(0.2, 0.36, 0.3) : vec3(0.12, 0.12, 0.14);
+      // The roof's cover: 0 clay tile, 1 slate or shingle, 2 copper, 3 a flat top.
+      int rm = rc < 0.5 ? 0 : 1;
+      if (city) rm = vV < 0.6 ? 0 : 1;
+      if (church) rm = rc < 0.6 ? 0 : 1;
+      if (tower) rm = vV < 0.4 ? 0 : rc < 0.55 ? 2 : 1;
+      if (modern || (city && (vS.x > 22.0 || vV < 0.3))) rm = 3;
+      // Courses run level; a along the course, cy up the slope.
+      float a = abs(nl.z) > abs(nl.x) ? vL.x : vL.z, cy = vL.y;
+      if (rm == 0) {
+        // Clay tiles: barrels 0.25 m wide, courses 0.16 m apart, each lower edge proud.
+        float ci = floor(cy / 0.16), ta = a / 0.25 + 0.5 * mod(ci, 2.0);
+        hb = 0.02 * (1.0 - fract(cy / 0.16)) + 0.012 * sin(fract(ta) * 3.14159);
+        alb *= mix(1.0, 0.86 + 0.28 * hash1(vec2(floor(ta), ci) + vV * 31.0), bumpFade(vP, 0.25));
+        rough = 0.62; bw = 0.16; porous = 1.0;
+      } else if (rm == 1) {
+        // Slates: thin courses, each slate tipped its own way.
+        float ci = floor(cy / 0.11), ta = a / 0.28 + 0.5 * mod(ci, 2.0), hs = hash1(vec2(floor(ta), ci) + vV * 17.0);
+        hb = 0.008 * (1.0 - fract(cy / 0.11)) + (fract(ta) - 0.5) * 0.008 * (hs - 0.5);
+        alb *= mix(1.0, 0.92 + 0.16 * hs, bumpFade(vP, 0.28));
+        rough = 0.45; bw = 0.11; porous = 0.4;
+      } else if (rm == 2) {
+        // Copper sheet: standing seams up the slope every 0.45 m.
+        hb = 0.012 * smoothstep(0.03, 0.0, abs(fract(a / 0.45) - 0.5) * 0.45);
+        rough = 0.4; bw = 0.45; porous = 0.0;
+      } else {
+        // A flat top: gravel on felt.
+        hb = gnoise(vL.xz * 9.0) * 0.004;
+        rough = 0.8; bw = 0.1; porous = 0.7;
+      }
       // The eaves' underside sits in shade.
-      if (N.y < -0.2) alb *= 0.4;
+      if (N.y < -0.2) { alb *= 0.4; hb = 0.0; }
     } else {
+      wall = true;
       // Plaster in six tints, one per house; timber in two.
       float pc = fract(vV * 29.0);
       vec3 plaster = pc < 0.3 ? vec3(0.84, 0.81, 0.74) : pc < 0.5 ? vec3(0.8, 0.76, 0.66) : pc < 0.64 ? vec3(0.82, 0.74, 0.56) : pc < 0.76 ? vec3(0.8, 0.66, 0.58) : pc < 0.9 ? vec3(0.7, 0.71, 0.7) : vec3(0.68, 0.74, 0.64);
@@ -1878,6 +1935,24 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       bool xface = abs(abs(vL.x) - vS.x * 0.5) < 0.05;
       float u = xface ? vL.z : vL.x, half_ = (xface ? vS.z : vS.x) * 0.5;
       float fade = 1.0 - smoothstep(0.25, 0.6, length(fwidth(vec2(u, vL.y))) * 2.0);
+      uw = u;
+      bool timber = !city && !church && !tower && (vK > 0.5 && vK < 1.5 ? vL.y >= 0.8 : !((vL.y < 2.6 && vPart < 1.5) || fract(vV * 13.0) > 0.35));
+      if (timber) {
+        // Upright boards 0.2 m wide with dark gaps; the grain varies board by board.
+        float gp = abs(fract(u / 0.2) - 0.5) * 0.2;
+        hb = -0.006 * smoothstep(0.015, 0.0, gp);
+        alb *= mix(1.0, 0.88 + 0.24 * hash1(vec2(floor(u / 0.2), vV * 41.0)), bumpFade(vP, 0.2));
+        rough = 0.75; bw = 0.2; porous = 1.0;
+      } else if (modern) {
+        // Concrete panels: a joint at every floor and every bay.
+        float jx = abs(fract(u / 3.6) - 0.5) * 3.6, jy = abs(fract(vL.y / 2.9) - 0.5) * 2.9;
+        hb = -0.008 * max(smoothstep(0.02, 0.0, abs(jx - 1.8)), smoothstep(0.02, 0.0, abs(jy - 1.45))) + gnoise(vec2(u, vL.y) * 14.0) * 0.0008;
+        rough = 0.8; bw = 0.3; porous = 0.5;
+      } else {
+        // Plaster: a soft trowelled wave and a fine grain.
+        hb = gnoise(vec2(u, vL.y) * 2.5) * 0.006 + gnoise(vec2(u, vL.y) * 22.0) * 0.0012;
+        rough = 0.88; bw = 0.05; porous = 0.8;
+      }
       vec3 lamp = vec3(1.0, 0.72, 0.42) * 1.4 * (1.0 - uDay);
       if (tower) {
         // A clock on each face, lit at night, over two dark belfry slots.
@@ -1930,6 +2005,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
             alb = mix(alb, vec3(0.05, 0.06, 0.07), fade);
             glow += lamp * litC * fade;
           } else if (pane) {
+            rough = mix(rough, 0.08, fade); hb *= 1.0 - fade; porous = 0.0;
             float h1 = hash1(cell), h2 = hash1(cell + 9.3), h3 = hash1(cell + 2.7);
             float lit = step(h1, awake);
             // A few rooms switch on and off, each at its own slow pace.
@@ -1970,8 +2046,11 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
             float sc = fract(vV * 41.0);
             vec3 sh = sc < 0.3 ? vec3(0.08, 0.2, 0.1) : sc < 0.5 ? vec3(0.3, 0.07, 0.05) : sc < 0.7 ? vec3(0.5, 0.5, 0.48) : sc < 0.85 ? vec3(0.1, 0.16, 0.28) : vec3(0.2, 0.12, 0.07);
             alb = mix(alb, sh, fade);
+            rough = mix(rough, 0.55, fade); hb *= 1.0 - fade;
           }
         }
+        // Rain and soot leave a run under each window, from its sill down.
+        if (zone && cv > wh && abs(cu) * gap < ww + 0.05) runs = exp(-(fh - cv) * 1.6) * (0.6 + 0.4 * gnoise(vec2(u * 9.0, sd)));
         // Shops: wide panes on a block's ground floor, a sign band over each; some stay lit.
         if (city && fract(vV * 3.1) < 0.5 && vPart < 0.5 && vL.y < 3.3 && abs(u) < half_ - 0.6) {
           float sg = gap * 2.0, si = floor(u / sg), sx = abs(u / sg - si - 0.5) * sg;
@@ -1981,6 +2060,7 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
               // Thin bars split the shop front into panes.
               float bar = det * step(abs(fract(u / 1.7) - 0.5), 0.03);
               alb = mix(alb, mix(vec3(0.05, 0.06, 0.07), vec3(0.2), bar), fade);
+              rough = mix(rough, 0.1, fade * (1.0 - bar)); hb *= 1.0 - fade; porous = 0.0;
               // The display light: warm or cool white, seldom a colour; a shut shop keeps a night light.
               vec3 sl = s2 < 0.55 ? vec3(1.0, 0.84, 0.62) : s2 < 0.88 ? vec3(0.8, 0.9, 1.0) : s2 < 0.94 ? vec3(0.9, 0.3, 0.5) : vec3(0.4, 0.9, 0.65);
               // Inside: a bright strip at the ceiling, dim air, and a dark floor.
@@ -2000,7 +2080,20 @@ const HIDE = 'gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return;';
       }
     }
     float ao = smoothstep(-0.5, 2.0, vL.y);
-    vec3 c = propLit(vP, N, alb, ao, 0.0) + glow;
+    // Runs from the sills and a damp band under the eaves darken the wall a little even when dry.
+    float eave = wall ? smoothstep(vS.y - 1.6, vS.y - 0.2, vL.y) * smoothstep(0.5, 0.75, vnoise(vec2(uw * 2.5, vV * 60.0))) : 0.0;
+    alb *= 1.0 - 0.12 * clamp(runs + eave * 0.6, 0.0, 1.0);
+    if (uWet > 0.0) {
+      // A roof takes the rain whole; a wall only in streaks, under its eaves and its sills.
+      float streak = wall ? clamp(smoothstep(0.42, 0.72, vnoise(vec2(uw * 3.0, vL.y * 0.2 + vV * 50.0))) * 0.6 + eave + runs, 0.0, 1.0) : smoothstep(0.1, 0.5, N.y);
+      float wk = uWet * streak;
+      alb *= 1.0 - 0.35 * wk * porous;
+      rough = mix(rough, wall ? 0.3 : 0.1, wk * mix(0.5, 1.0, porous));
+      // Water fills the joints, so the bump flattens.
+      hb *= 1.0 - 0.5 * wk;
+    }
+    vec3 Nb = bumpN(N, vP, hb * bumpFade(vP, bw) * 1.5);
+    vec3 c = propLitPBR(vP, Nb, alb, ao, rough, f0) + glow;
     // Headlights: a low cone that sweeps the walls a car points at.
     if (uDay < 0.6) {
       float beam = 0.0;
@@ -5152,7 +5245,8 @@ let pitch0 = -0.115;
 function frame(w, h, pr) {
   asp.v = w / h;
   outCam.aspect = w / h;
-  outCam.fov = w >= h ? 44 : 62;
+  // QA can narrow the view with ?fov= to look at far detail.
+  outCam.fov = qs.has('fov') ? +qs.get('fov') : w >= h ? 44 : 62;
   pitch0 = w >= h ? -0.115 : -0.02;
   outCam.updateProjectionMatrix();
   const tanY = Math.tan(THREE.MathUtils.degToRad(outCam.fov) / 2);
