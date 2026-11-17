@@ -19,12 +19,12 @@ First read of what to redo: A held Blow. It has no key list, so How to play is e
 - [x] List every control and what it does (from the spec, the input code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Go"), as proposed
 - [x] Switch the toy to the Signal bar: `signal: true` in `bubbles/index.html` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy)
+- [x] The toy's doc in `docs/toys/` says what is true: Bubble wand has no doc there, so no doc line is false
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Go")
 
 The rules are those of the eight toys before it: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 
@@ -61,7 +61,7 @@ On touch the move is a drag and the click is a tap; the builder swaps the drawin
 ### Findings
 
 - Fault, fixed: Bar v3 drew "move slow" as two keycaps, Move and Slow. A pointer move now has its own drawing: a mouse with no button down and an arrow (`move` in `shared/signal.js`; `move` is a pointer word in `shared/stim.js`).
-- The toy has two names: "Bubble wand" on the page and in the intro, `bubbles` as its id. `toys.json` rules; not checked here.
+- The toy's name is Bubble wand in `toys.json`, on the page and in the intro; `bubbles` is its id.
 - The toy has no Reset; Pop all empties the air.
 - Bubbles has no doc in `docs/toys/`.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen.
