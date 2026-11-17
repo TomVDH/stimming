@@ -326,11 +326,19 @@ function mount(id, spec, ui) {
     }
     const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.dev, info), flash, tint);
     const glass = h('div', 'sg-glass');
-    // The top left is the Stimming monogram: the wordmark's S alone (Tom, 2026-11-17).
-    // Pointing at it plays the whole logo, letter by letter, behind the return chevron.
+    // Keycaps show only in How to play (Tom, 2026-11-17): Signal has no key strip.
+    hints = null;
+    // The top left is the toy's icon as a monogram: its emblem in its ink (Tom, 2026-11-17).
+    // Pointing at it plays the Stimming logo, letter by letter, behind the return chevron.
     // It is the shell's own back link, so the letters, their hues and the wave stay true.
+    // A toy with no emblem shows the wordmark's S in its place.
     const id = shell.querySelector('.s2-back').cloneNode(true);
     id.classList.add('sg-mono');
+    id.setAttribute('aria-label', `${toy.name}. Back to Stimming`);
+    if (toy.emblem) {
+      id.classList.add('has-emblem');
+      id.prepend(h('span', 'sg-emblem', `<i style="--emblem: url(${new URL('../' + toy.emblem, import.meta.url).href})"></i>`));
+    }
     const sheets = [P.pickPop, P.setPop, P.devPop, howPop].filter(Boolean);
     sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet'), h('i', 'sg-tint sg-tint--sheet')));
     layer.append(...[id, glass, hints, bar, ...sheets.map(sh => sh.el)].filter(Boolean));
