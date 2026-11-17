@@ -1,0 +1,1534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.06 0.006 60); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Singing bowl</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Singing bowl: a bronze bowl, a little water, a dark room. */
+:root { --stage: oklch(0.06 0.006 60); }
+.stage--bowl canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--bowl canvas.on { opacity: 1; }
+.stage--bowl { cursor: grab; }
+.stage--bowl.is-rubbing { cursor: grabbing; }
+@media (prefers-reduced-motion: reduce) { .stage--bowl canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Singing bowl</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--bowl" id="stage" tabindex="0" role="application" aria-label="A bronze singing bowl with a little water in it. Drag round the rim in a steady circle to make it sing; the water ripples and, at full voice, throws drops. Click the bowl to strike it like a bell. Press and hold still on the rim to damp it. With the stage focused, hold the left or right arrow to circle the rim, and press Enter to strike.">
+      <p class="fail" hidden>Singing bowl needs WebGL 2, which this browser has turned off.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Singing bowl</h1>
+    <div class="vignette">
+      <div>
+        <h2>Why the water jumps at four points</h2>
+        <p>A wand drawn round the rim grips and slips hundreds of times a second. Each slip pushes the bowl further into its lowest way of ringing: the rim bends into an oval, then into the same oval turned a quarter, and back. Four points on the rim move the most and four hardly move. The wand rides one of the still points, so the whole pattern turns as the wand goes round.</p>
+        <p>Water at the four busy points is shaken hardest. Past a threshold the surface breaks into fine standing ripples, and then it throws drops. No bowl is perfectly round, so each tone is really two tones a hair apart. They beat slowly against each other: that is the slow pulse you hear as a struck bowl fades.</p>
+      </div>
+      <figure>
+        <svg viewBox="0 0 240 150" role="img" aria-label="The rim of the bowl seen from above. The round rim bends into an oval and then into the same oval turned a quarter. The wand touches the rim at a point that does not move. Drops jump at the four points that move the most.">
+          <ellipse cx="120" cy="75" rx="62" ry="50" fill="none" stroke="oklch(0.72 0.11 70)" stroke-width="3"/>
+          <ellipse cx="120" cy="75" rx="50" ry="62" fill="none" stroke="oklch(0.72 0.11 70 / 0.4)" stroke-width="3"/>
+          <circle cx="120" cy="75" r="56" fill="none" stroke="oklch(0.9 0.01 80 / 0.35)" stroke-width="1.2" stroke-dasharray="3 4"/>
+          <g fill="oklch(0.82 0.06 230)">
+            <circle cx="190" cy="75" r="4.5"/><circle cx="50" cy="75" r="4.5"/><circle cx="120" cy="5.5" r="4.5"/><circle cx="120" cy="144.5" r="4.5"/>
+          </g>
+          <path d="M159.6 114.6l20 20" stroke="oklch(0.42 0.07 45)" stroke-width="9" stroke-linecap="round"/>
+          <circle cx="159.6" cy="114.6" r="3" fill="oklch(0.95 0.02 80)"/>
+        </svg>
+        <figcaption>The rim from above: an oval one way, then the other. The wand rides a still point; drops leap where the rim moves most.</figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, reduced, onReducedChange, audioKit, linFit, sound, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { detail } from '../shared/detail.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { OUTPUT } from '../shared/output.js';
+import { GRADE } from '../shared/grade.js';
+import { program, linked, target, free, bind, tri, TRI_VS, onContextLoss } from '../shared/gl.js';
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2, DEG = Math.PI / 180;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const wrapPi = x => x - TAU * Math.round(x / TAU);
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+// A smooth 1D noise from -1 to 1.
+const vn1 = x => {
+  const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+  const h = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+  return (h(i) * (1 - u) + h(i + 1) * u) * 2 - 1;
+};
+
+playIntro({ ready: pageReady(9000) });
+mark('build');
+
+/* ---------- the bowls ---------- */
+// Partials: the rim's modes 2 to 6, as ratios to mode 2.
+// Each mode is two tones a split apart, so it beats.
+// tau: seconds for the lowest mode to fall to 1/e.
+// shape: rim lift, foot cut, height, wall, floor, water depth.
+// The widest radius is 1.
+// cells: hammer marks round the outside. ripple: the ripple wavelength.
+const BOWLS = {
+  small: { f: 329.6, ratio: [1, 2.71, 5.06, 8.08, 11.8], split: [2.3, 3.8, 5.6, 7.9, 10.4], tau: 9,
+    shape: [0.34, 0.78, 0.64, 0.056, 0.085, 0.085], cells: 26, cellsIn: 20, ripple: 0.064, wand: 0.062,
+    metal: [0.84, 0.12, 80], patina: [0.4, 0.05, 66], out: 0.22, inner: 0.06, rough: 0.12, dent: 0.42, seed: 3.1 },
+  medium: { f: 220.8, ratio: [1, 2.76, 5.2, 8.32, 12.1], split: [1.4, 2.6, 4.2, 6.1, 8.2], tau: 14,
+    shape: [0.3, 0.8, 0.66, 0.048, 0.075, 0.075], cells: 34, cellsIn: 26, ripple: 0.052, wand: 0.05,
+    metal: [0.79, 0.1, 76], patina: [0.3, 0.045, 58], out: 0.36, inner: 0.14, rough: 0.16, dent: 0.5, seed: 7.7 },
+  large: { f: 146.2, ratio: [1, 2.82, 5.4, 8.7, 12.7], split: [0.8, 1.9, 3.2, 4.6, 6.0], tau: 21,
+    shape: [0.27, 0.82, 0.58, 0.042, 0.065, 0.062], cells: 44, cellsIn: 32, ripple: 0.042, wand: 0.04,
+    metal: [0.75, 0.095, 70], patina: [0.19, 0.028, 50], out: 0.86, inner: 0.24, rough: 0.18, dent: 0.55, seed: 12.9 },
+};
+const M = 5;
+// The mallet: how much of each mode one strike gives.
+const STRIKE_W = [1, 0.62, 0.42, 0.27, 0.16];
+// The output level of each mode at full amplitude.
+const LEVEL = [0.3, 0.2, 0.13, 0.085, 0.055];
+let kind = 'medium', cur = null, G = null;
+// Builds the derived numbers for one bowl.
+function useBowl(k) {
+  const B = BOWLS[k];
+  const [kr, kb, c, t, tb, dep] = B.shape, a = 1;
+  const yc = c * kb, yRim = yc + c * kr, ai = a - t, ci = c - t;
+  const rAt = (ax, cx, y) => ax * Math.sqrt(Math.max(0, 1 - ((y - yc) / cx) ** 2));
+  G = { a, c, yc, yRim, ai, ci, yF: tb, yW: tb + dep };
+  Object.assign(G, { rimIn: rAt(ai, ci, yRim), rimOut: rAt(a, c, yRim), rW: rAt(ai, ci, G.yW), rBase: rAt(a, c, 0) });
+  // No bowl is quite round: each mode's two tones have fixed axes.
+  // Mode 2's axis makes a front strike beat at half depth.
+  const alpha = B.ratio.map((_, i) => { const s = Math.sin(B.seed * (i + 1) * 12.9898) * 43758.5; return (s - Math.floor(s)) * Math.PI / (i + 2); });
+  alpha[0] = Math.PI / 2 - Math.PI / 16 + (alpha[0] - Math.PI / 4) * 0.1;
+  const tau = B.ratio.map(r => B.tau * r ** -0.85);
+  cur = { ...B, alpha, tau, f0: linFit(B.metal), pat: linFit(B.patina) };
+}
+useBowl(kind);
+
+/* ---------- bar ---------- */
+// The handlers bind once the GL state exists.
+const act = { pick() {}, strike() {}, hush() {}, view() {}, room() {} };
+const ui = initPage({ id: 'bowl', bar: {
+  choice: { label: 'Bowl', value: 'medium', options: [
+    { value: 'small', label: 'Small', key: '1' },
+    { value: 'medium', label: 'Medium', key: '2' },
+    { value: 'large', label: 'Large', key: '3' },
+  ], onPick: v => act.pick(v) },
+  actions: [
+    { verb: 'strike', key: 'S', onPress: () => act.strike() },
+    { verb: 'hush', key: 'H', onPress: () => act.hush() },
+  ],
+  quality: true,
+  dev: [
+    { type: 'slider', id: 'elev', label: 'Eye height', min: 20, max: 88, step: 1, value: 56, onInput: () => act.view() },
+    { type: 'slider', id: 'azim', label: 'Eye turn', min: -180, max: 180, step: 1, value: 0, onInput: () => act.view() },
+    { type: 'slider', id: 'dist', label: 'Eye distance', min: 0.6, max: 1.8, step: 0.01, value: 1, onInput: () => act.view() },
+    { type: 'slider', id: 'fov', label: 'Field of view', min: 14, max: 60, step: 1, value: 30, onInput: () => act.view() },
+    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.3, max: 3, step: 0.05, value: 1, onInput: () => act.view() },
+    { type: 'slider', id: 'ripple', label: 'Ripples', min: 0.3, max: 2.5, step: 0.05, value: 1, onInput: () => act.view() },
+    { type: 'slider', id: 'room', label: 'Room', min: 0, max: 0.8, step: 0.01, value: 0.24, onInput: v => act.room(v) },
+  ],
+  keys: [['drag', 'circle the rim'], ['click', 'strike'], ['hold', 'damp'], ['← →', 'circle']],
+} });
+const dv = id => ui.setting(id)?.value;
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls();
+  mark('first-frame');
+  throw new Error('Singing bowl needs WebGL 2 with float targets.');
+}
+let F32 = !!gl.getExtension('OES_texture_float_linear');
+const MAXD = 24;
+
+/* ---------- GLSL ---------- */
+const NOISE = `
+float hash12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 hash22(vec2 p) { vec3 q = fract(p.xyx * vec3(0.1031, 0.103, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x), mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+`;
+
+// Passing waves: a map over the water disc.
+// Red holds this step, green the step before.
+// The wall holds the edge still.
+// The height pass adds the rim's ripples.
+const SIM_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uPrev;
+uniform vec2 uTexel;
+uniform float uC2, uDamp, uSpan;
+uniform vec4 uRing;
+uniform vec4 uImp[8];
+uniform int uNImp;
+out vec4 o;
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0 * uSpan;
+  float r = length(p), th = atan(p.y, p.x);
+  vec2 s = texture(uPrev, vUv).rg;
+  if (r >= 1.0) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  float hl = texture(uPrev, vUv - vec2(uTexel.x, 0.0)).r, hr = texture(uPrev, vUv + vec2(uTexel.x, 0.0)).r;
+  float hd = texture(uPrev, vUv - vec2(0.0, uTexel.y)).r, hu = texture(uPrev, vUv + vec2(0.0, uTexel.y)).r;
+  float h = s.r + (s.r - s.g) * (1.0 - uDamp) + uC2 * (hl + hr + hd + hu - 4.0 * s.r);
+  // A strike throws one ring in from the wall.
+  if (uRing.x != 0.0) h += uRing.x * (0.35 + 0.65 * cos(2.0 * (th - uRing.y))) * exp(-pow((1.0 - r) / 0.05, 2.0));
+  // A falling drop pushes a small dent.
+  for (int i = 0; i < 8; i++) {
+    if (i >= uNImp) break;
+    vec2 d = p - uImp[i].xy;
+    h -= uImp[i].z * exp(-dot(d, d) / (uImp[i].w * uImp[i].w));
+  }
+  o = vec4(h, s.r, 0.0, 1.0);
+}`;
+
+// The water's height, once a frame: rim ripples plus passing waves.
+// The scene reads this map, not the sources, per pixel.
+const HEIGHT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uWaves;
+uniform float uSpan;
+// Eight waterline sources: x, y in water radii, amplitude, phase.
+uniform vec4 uSrc[8];
+// Reach in from the wall, wavenumber, phase; in water radii.
+uniform vec4 uWv;
+out vec4 o;
+// A fan of rings from each busy point on the waterline.
+// Next-door fans are out of step.
+// Where they meet, they form a standing lattice.
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0 * uSpan;
+  float h = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 s = uSrc[i];
+    float d = length(p - s.xy);
+    if (s.z == 0.0 || d > uWv.x * 5.0) continue;
+    h += s.z * cos(uWv.y * d - uWv.z + s.w) * exp(-d / uWv.x) * inversesqrt(d + 0.06);
+  }
+  o = vec4(h * 0.25 + texture(uWaves, vUv).r, 0.0, 0.0, 1.0);
+}`;
+
+// The scene, ray cast per pixel: bowl, water, drops, wand and table.
+// Bowl space: widest radius 1, table at y = 0.
+const SCENE_FS = `#version 300 es
+precision highp float;
+#define MAXD ${MAXD}
+uniform vec2 uRes;
+uniform vec3 uEye, uCR, uCU, uCF;
+// Half-angle tangents, then a pixel's world size at unit distance.
+uniform vec3 uTan;
+// outer shell: radius, height, centre height, rim height
+uniform vec4 uOut;
+// inner shell: radius, height, floor height, water height
+uniform vec4 uIn;
+// rim inside, rim outside, water, foot
+uniform vec4 uRad;
+uniform vec3 uLampP, uLampC, uWinD, uWinC;
+uniform vec3 uF0, uPat;
+// patina outside, hammer cells, dent depth, seed
+uniform vec4 uMat;
+// patina inside, roughness, cells inside, unused
+uniform vec4 uMat2;
+uniform sampler2D uSim;
+// texel, half size of the map, height scale, caustic gain
+uniform vec4 uSimP;
+// crispation wavenumber, antinode angle, crispation, time
+uniform vec4 uWave;
+uniform vec4 uDrop[MAXD];
+uniform vec4 uDropV[MAXD];
+uniform int uNDrop;
+uniform vec4 uWandA;
+uniform vec4 uWandB;
+out vec4 o;
+const float PI = 3.14159265;
+const vec3 AMB = vec3(0.011, 0.0095, 0.0085);
+${NOISE}
+
+vec3 cen() { return vec3(0.0, uOut.z, 0.0); }
+vec3 axO() { return vec3(uOut.x, uOut.y, uOut.x); }
+vec3 axI() { return vec3(uIn.x, uIn.y, uIn.x); }
+
+/* geometry */
+vec2 ellip(vec3 ro, vec3 rd, vec3 ax) {
+  vec3 oc = (ro - cen()) / ax, d = rd / ax;
+  float a = dot(d, d), b = dot(oc, d), c = dot(oc, oc) - 1.0;
+  float h = b * b - a * c;
+  if (h < 0.0) return vec2(1e9, -1e9);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h) / a;
+}
+vec3 ellipN(vec3 p, vec3 ax) { return normalize((p - cen()) / (ax * ax)); }
+vec2 slab(vec3 ro, vec3 rd, float y0, float y1) {
+  if (abs(rd.y) < 1e-6) return (ro.y > y0 && ro.y < y1) ? vec2(-1e9, 1e9) : vec2(1e9, -1e9);
+  float a = (y0 - ro.y) / rd.y, b = (y1 - ro.y) / rd.y;
+  return vec2(min(a, b), max(a, b));
+}
+// The first bowl surface on a ray, and its kind.
+// Kinds: 1 outside, 2 lip, 3 inside, 4 water, 5 underside.
+vec2 hitBowl(vec3 ro, vec3 rd) {
+  vec2 eo = ellip(ro, rd, axO());
+  vec2 sl = slab(ro, rd, 0.0, uOut.w);
+  vec2 vo = vec2(max(eo.x, sl.x), min(eo.y, sl.y));
+  if (vo.x > vo.y || vo.y < 0.0) return vec2(1e9, 0.0);
+  vec2 vc = ellip(ro, rd, axI());
+  float tf = (uIn.z - ro.y) / rd.y;
+  if (rd.y < 0.0) vc.y = min(vc.y, tf); else vc.x = max(vc.x, tf);
+  // A ray already in the hollow came in through the mouth.
+  if (vc.x < vc.y && vc.x <= vo.x + 1e-4 && vc.y > vo.x) {
+    float tw = (uIn.w - ro.y) / rd.y;
+    if (rd.y < 0.0 && tw > vo.x && tw < vc.y) return vec2(tw, 4.0);
+    if (vc.y < vo.y) return vec2(vc.y, 3.0);
+    return vec2(1e9, 0.0);
+  }
+  return vec2(vo.x, sl.x > eo.x ? (rd.y < 0.0 ? 2.0 : 5.0) : 1.0);
+}
+float capsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float ra) {
+  vec3 ba = pb - pa, oa = ro - pa;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float a = baba - bard * bard, b = baba * rdoa - baoa * bard, c = baba * oaoa - baoa * baoa - ra * ra * baba;
+  float h = b * b - a * c;
+  if (h >= 0.0) {
+    float t = (-b - sqrt(h)) / a;
+    float y = baoa + t * bard;
+    if (y > 0.0 && y < baba) return t;
+    vec3 oc = y <= 0.0 ? oa : ro - pb;
+    b = dot(rd, oc);
+    c = dot(oc, oc) - ra * ra;
+    h = b * b - c;
+    if (h > 0.0) return -b - sqrt(h);
+  }
+  return -1.0;
+}
+vec3 capN(vec3 p, vec3 a, vec3 b, float r) {
+  vec3 ba = b - a, pa = p - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return (pa - h * ba) / r;
+}
+// The share of light from direction L that reaches p.
+// p is lit when the ray leaves through the mouth.
+// w softens the edge.
+float mouth(vec3 p, vec3 L, float w) {
+  vec2 e = ellip(p, L, axI());
+  vec3 q = p + L * max(e.y, 0.0);
+  return smoothstep(uOut.w - w, uOut.w + w * 0.85, q.y);
+}
+float mouth(vec3 p, vec3 L) { return mouth(p, L, 0.035); }
+// The bowl's soft shadow on the table.
+float bowlShadow(vec3 p, vec3 L, float soft) {
+  vec3 oc = (p - cen()) / axO(), d = normalize(L / axO());
+  float b = dot(oc, d);
+  if (b > 0.0) return 1.0;
+  float h = sqrt(max(dot(oc, oc) - b * b, 0.0));
+  float k = soft * -b + 0.02;
+  return smoothstep(1.0 - k, 1.0 + k, h);
+}
+
+/* light */
+vec3 lampAt(vec3 p, out vec3 L) { vec3 v = uLampP - p; float d2 = dot(v, v); L = v * inversesqrt(d2); return uLampC / d2; }
+float ggxD(float nh, float a) { float a2 = a * a, d = nh * nh * (a2 - 1.0) + 1.0; return a2 / (PI * d * d); }
+float ggxV(float nv, float nl, float a) { float k = 0.5 * a; return 0.25 / max((nv * (1.0 - k) + k) * (nl * (1.0 - k) + k), 1e-4); }
+vec3 schlick(vec3 f0, float c) { return f0 + (1.0 - f0) * pow(1.0 - c, 5.0); }
+// GGX from one light. The caller widens a by the light's size.
+vec3 spec(vec3 N, vec3 V, vec3 L, float a, vec3 f0) {
+  float nl = dot(N, L);
+  if (nl <= 0.0) return vec3(0.0);
+  vec3 H = normalize(L + V);
+  float nv = max(dot(N, V), 1e-3), nh = max(dot(N, H), 0.0);
+  return ggxD(nh, a) * ggxV(nv, nl, a) * schlick(f0, max(dot(V, H), 0.0)) * nl;
+}
+// The window behind the bowl: a pane with a cross bar.
+// Rough metal spreads it wide and dim.
+// y runs from the pane's bottom to its top.
+float pane(vec3 r, float a, out float y) {
+  y = 0.0;
+  float cw = dot(r, uWinD);
+  if (cw <= 0.05) return 0.0;
+  vec3 wr = normalize(cross(vec3(0.0, 1.0, 0.0), uWinD)), wu = cross(uWinD, wr);
+  vec2 q = vec2(dot(r, wr), dot(r, wu)) / cw;
+  float s = 0.006 + a * 0.9;
+  vec2 hw = vec2(0.05, 0.07);
+  float box = smoothstep(hw.x + s, hw.x - s, abs(q.x)) * smoothstep(hw.y + s, hw.y - s, abs(q.y));
+  float spread = hw.x * hw.y / ((hw.x + s) * (hw.y + s));
+  float bars = max(smoothstep(0.005 + s, 0.4 * s, abs(q.x)), smoothstep(0.005 + s, 0.4 * s, abs(q.y - 0.012)));
+  y = clamp(q.y / hw.y * 0.5 + 0.5, 0.0, 1.0);
+  return box * (1.0 - 0.9 * bars * spread) * spread;
+}
+// The dark room in reflections: walls, lamp wash, window, table.
+vec3 room(vec3 r, float a) {
+  vec3 lp = normalize(uLampP);
+  vec3 c = vec3(0.0042, 0.0037, 0.0034) * (0.45 + 0.55 * smoothstep(-0.2, 0.9, r.y));
+  c += vec3(0.02, 0.012, 0.0065) * pow(max(dot(r, lp), 0.0), 3.0);
+  // The lamp's wash on the wall behind the viewer, low and soft.
+  vec3 back = normalize(vec3(uEye.x, length(uEye.xz) * 0.36, uEye.z));
+  c += vec3(0.034, 0.024, 0.016) * pow(max(dot(r, back), 0.0), 6.0);
+  // The pane: deep blue sky, warming to a glow at the sill.
+  float wy;
+  float pn = pane(r, a, wy);
+  c += pn * 26.0 * mix(vec3(0.13, 0.1, 0.09), uWinC * vec3(0.85, 0.95, 1.15), smoothstep(0.0, 0.8, wy));
+  c += uWinC * 0.05 * pow(max(dot(r, uWinD), 0.0), 3.0);
+  if (r.y > 0.02) return c;
+  // Below the horizon: the table, in the lamp's pool.
+  vec3 q = vec3(r.x, 0.0, r.z) * (0.35 / max(-r.y, 0.05));
+  vec3 lv = uLampP - q;
+  vec3 tab = vec3(0.045, 0.028, 0.017) / PI * (uLampC / dot(lv, lv) * max(normalize(lv).y, 0.0) + uWinC * 0.6 + AMB);
+  return mix(c, tab, smoothstep(0.02, -0.1, r.y));
+}
+vec3 lightMetal(vec3 p, vec3 N, vec3 V, vec3 f0, vec3 dif, float a, float shL, float shW, vec3 refl) {
+  vec3 L;
+  vec3 E = lampAt(p, L);
+  vec3 col = spec(N, V, L, max(a, 0.035), f0) * E * shL;
+  col += dif / PI * (E * max(dot(N, L), 0.0) * shL + uWinC * max(dot(N, uWinD), 0.0) * shW + AMB);
+  return col + refl * schlick(f0, max(dot(N, V), 0.0));
+}
+
+/* the water */
+// The water height at xz, from the height map.
+float wh(vec2 xz) { return texture(uSim, xz / (2.0 * uSimP.y) + 0.5).r * uSimP.z; }
+void waterDiff(vec2 xz, out vec2 g, out float lap) {
+  float e = 2.0 * uSimP.y * uSimP.x;
+  float c = wh(xz), l = wh(xz - vec2(e, 0.0)), r = wh(xz + vec2(e, 0.0)), d = wh(xz - vec2(0.0, e)), u = wh(xz + vec2(0.0, e));
+  g = vec2(r - l, u - d) / (2.0 * e);
+  lap = (l + r + d + u - 4.0 * c) / (e * e);
+}
+float waterLap(vec2 xz) {
+  float e = 2.0 * uSimP.y * uSimP.x * 1.5;
+  float s = wh(xz - vec2(e, 0.0)) + wh(xz + vec2(e, 0.0)) + wh(xz - vec2(0.0, e)) + wh(xz + vec2(0.0, e));
+  return (s - 4.0 * wh(xz)) / (e * e);
+}
+
+// Hammer marks: shallow dimples on a jittered grid round the bowl.
+// xy: the blended pull toward the near dimple centres, in cells.
+// z: gap to the next cell. w: a cell hash.
+// k sharpens the ridges.
+vec4 hammer(vec2 q, float n, float seed, float k) {
+  vec2 ip = floor(q), fp = fract(q);
+  float d1 = 9.0, d2 = 9.0, hb = 0.0, ws = 0.0;
+  vec2 sl = vec2(0.0);
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 id = ip + g;
+      id.x = mod(id.x, n);
+      vec2 r = g + 0.15 + 0.7 * hash22(id + seed) - fp;
+      float d = dot(r, r);
+      // Each dimple tilts the surface toward its centre.
+      // Near cells blend at the ridges.
+      float w = exp(-k * d);
+      sl += w * r;
+      ws += w;
+      if (d < d1) { d2 = d1; d1 = d; hb = hash12(id * 1.37 + seed); }
+      else if (d < d2) d2 = d;
+    }
+  }
+  return vec4(sl / ws, sqrt(d2) - sqrt(d1), hb);
+}
+
+// What a hollow point sees along R: bowl, water or room.
+// Satin metal blurs it toward the hollow's mean glow.
+vec3 inside(vec3 p, vec3 R, float a) {
+  vec2 e = ellip(p, R, axI());
+  float tw = R.y < 0.0 ? (uIn.w - p.y) / R.y : 1e9;
+  vec3 c;
+  if (tw < e.y) c = vec3(0.0035, 0.004, 0.0052) + room(reflect(R, vec3(0.0, 1.0, 0.0)), a) * 0.05;
+  else {
+    vec3 q = p + R * max(e.y, 0.0);
+    if (q.y > uOut.w) c = room(R, a);
+    else {
+      vec3 n = -ellipN(q, axI());
+      vec3 L;
+      vec3 E = lampAt(q, L);
+      c = uF0 * (E * max(dot(n, L), 0.0) * mouth(q, L, 0.14) * 0.2 + 0.008);
+    }
+  }
+  vec3 mean = uF0 * 0.03 + room(R, 1.0) * 0.5;
+  return mix(c, mean, smoothstep(0.03, 0.22, a));
+}
+
+// Lamp light off the water onto the wall: the dancing band.
+vec3 wallCaustic(vec3 p, vec3 n) {
+  float h = p.y - uIn.w;
+  if (h < 0.0 || h > 0.42) return vec3(0.0);
+  vec3 lm = uLampP;
+  lm.y = 2.0 * uIn.w - lm.y;
+  vec2 w = mix(p.xz, lm.xz, h / (p.y - lm.y));
+  if (length(w) > uRad.z * 0.985) return vec3(0.0);
+  vec3 wp = vec3(w.x, uIn.w, w.y);
+  vec3 L;
+  vec3 E = lampAt(wp, L);
+  float F = 0.02 + 0.98 * pow(1.0 - L.y, 5.0);
+  float d = length(wp - p);
+  float focus = clamp(1.0 - uSimP.w * 1.4 * waterLap(w) * d, 0.0, 6.0);
+  return E * mouth(wp, L) * F * focus * max(dot(n, normalize(wp - p)), 0.0) * 5.0 * (1.0 - smoothstep(0.18, 0.42, h));
+}
+
+// The floor and low wall through the water, with caustics.
+vec3 underwater(vec3 p, vec3 T, float fp) {
+  vec2 e = ellip(p, T, axI());
+  float tf = (uIn.z - p.y) / T.y;
+  bool fl = tf < e.y;
+  float t = max(fl ? tf : e.y, 0.0);
+  vec3 q = p + T * t;
+  // A fillet rounds the crease where the floor meets the wall.
+  float rr = length(q.xz);
+  vec2 dir = q.xz / max(rr, 1e-4);
+  float rf = uIn.x * sqrt(max(1.0 - pow((uIn.z - uOut.z) / uIn.y, 2.0), 0.0));
+  vec3 up = vec3(0.0, 1.0, 0.0), edgeN = -ellipN(vec3(dir.x * rf, uIn.z, dir.y * rf), axI());
+  vec3 n = fl ? normalize(mix(up, edgeN, 0.5 * smoothstep(rf - 0.09, rf, rr)))
+              : normalize(mix(-ellipN(q, axI()), up, 0.5 * smoothstep(uIn.z + 0.08, uIn.z, q.y)));
+  vec3 L;
+  vec3 E = lampAt(q, L);
+  vec3 Lr = refract(-L, vec3(0.0, 1.0, 0.0), 0.75);
+  float s = (uIn.w - q.y) / max(-Lr.y, 0.2);
+  vec2 w = q.xz - Lr.xz * s;
+  float vis = mouth(vec3(w.x, uIn.w, w.y), L);
+  float caus = clamp(1.0 - uSimP.w * waterLap(w) * s, 0.0, 5.0);
+  // The floor: faint turned rings.
+  float ga = 1.0 - smoothstep(0.3, 0.7, fp * 300.0 / (2.0 * PI));
+  float ring = sin(rr * 300.0 + vnoise(q.xz * 9.0) * 3.0) * ga;
+  vec3 alb = mix(uF0 * 0.55, uPat, 0.2 + 0.4 * uMat2.x) * (0.96 + 0.04 * ring);
+  vec3 col = alb / PI * (E * max(dot(n, -Lr), 0.0) * vis * caus + uWinC * 0.5 * mouth(q, uWinD) + AMB);
+  col += spec(n, -T, -Lr, 0.06, uF0 * 0.45) * E * vis * caus * 0.4;
+  return col * exp(-(t + s) * vec3(1.5, 0.75, 0.6));
+}
+
+/* surfaces */
+vec3 shadeOuter(vec3 p, vec3 V, float fp) {
+  vec3 n0 = ellipN(p, axO());
+  float th = atan(p.z, p.x);
+  vec3 Tt = vec3(-sin(th), 0.0, cos(th));
+  vec3 Tm = normalize(cross(Tt, n0));
+  float cs = 2.0 * PI * uOut.x / uMat.y;
+  vec2 q = vec2(th / (2.0 * PI) * uMat.y, p.y / cs);
+  vec4 hm = hammer(q, uMat.y, uMat.w, 11.0);
+  // Facets fade out when a cell shrinks under a few pixels.
+  float aa = 1.0 - smoothstep(0.1, 0.3, fp / cs);
+  vec2 tilt = (hash22(vec2(hm.w * 91.0, 7.0)) - 0.5) * 0.12;
+  vec3 N = normalize(n0 + ((Tt * hm.x + Tm * hm.y) * uMat.z + Tt * tilt.x + Tm * tilt.y) * aa);
+  float ridge = 1.0 - smoothstep(0.0, 0.2, hm.z);
+  // The wand polishes a band under the rim.
+  // The foot keeps more patina.
+  float band = smoothstep(uOut.w - 0.075, uOut.w - 0.03, p.y);
+  float foot = smoothstep(0.16, 0.0, p.y);
+  float pat = clamp(uMat.x * (0.7 + 0.5 * vnoise(q * 0.6)) * (1.0 - 0.55 * ridge * aa) * (1.0 - band) + 0.3 * foot, 0.0, 1.0);
+  // Two lines cut round the bowl under the rim.
+  float lw = max(0.0032, fp);
+  float line = max(smoothstep(lw, 0.0, abs(p.y - (uOut.w - 0.085))), smoothstep(lw, 0.0, abs(p.y - (uOut.w - 0.105))));
+  vec3 f0 = mix(uF0, uF0 * 0.3 + 0.015, pat) * (1.0 - 0.6 * line);
+  vec3 dif = uPat * pat * (1.0 - 0.6 * line);
+  float a = mix(uMat2.y, 0.3, pat);
+  return lightMetal(p, N, V, f0, dif, a, 1.0, 1.0, room(reflect(-V, N), a));
+}
+vec3 shadeLip(vec3 p, vec3 V, float fp) {
+  float rr = length(p.xz);
+  vec3 radial = vec3(p.x, 0.0, p.z) / rr;
+  // The lip is half round: its normal turns from in to out.
+  float u = clamp((rr - uRad.x) / (uRad.y - uRad.x), 0.0, 1.0);
+  float ang = (u - 0.5) * 2.5;
+  vec3 N = normalize(vec3(0.0, cos(ang), 0.0) + radial * sin(ang));
+  float sc = vnoise(vec2(atan(p.z, p.x) * 400.0, rr * 30.0));
+  return lightMetal(p, N, V, uF0 * (0.96 + 0.08 * sc), vec3(0.0), 0.05, 1.0, 1.0, room(reflect(-V, N), 0.05));
+}
+vec3 shadeInner(vec3 p, vec3 V, float fp) {
+  vec3 n0 = -ellipN(p, axI());
+  float th = atan(p.z, p.x);
+  vec3 Tt = vec3(-sin(th), 0.0, cos(th));
+  vec3 Tm = normalize(cross(n0, Tt));
+  // Faint lathe lines run round the inside.
+  float gp = p.y * 420.0 + 2.5 * vnoise(vec2(th * 5.0, p.y * 14.0));
+  float ga = 1.0 - smoothstep(0.25, 0.6, fp * 420.0 / (2.0 * PI));
+  // Soft hammer marks lie under the turning.
+  float cs = 2.0 * PI * uIn.x / uMat2.z;
+  vec4 hm = hammer(vec2(th / (2.0 * PI) * uMat2.z, p.y / cs), uMat2.z, uMat.w + 5.0, 6.0);
+  float ha = 1.0 - smoothstep(0.1, 0.3, fp / cs);
+  vec3 N = normalize(n0 + Tm * sin(gp) * 0.012 * ga + (Tt * hm.x + Tm * hm.y) * uMat.z * 0.3 * ha);
+  // Just above the water the wall is wet.
+  // A faint tide line sits above that.
+  float wet = smoothstep(uIn.w + 0.03, uIn.w, p.y);
+  float tide = exp(-pow((p.y - uIn.w - 0.034) / 0.006, 2.0));
+  float pat = clamp(uMat2.x * (0.6 + 0.6 * vnoise(vec2(th * 3.0, p.y * 9.0))) + 0.3 * tide, 0.0, 1.0);
+  vec3 f0 = mix(uF0, uF0 * 0.35 + 0.015, pat) * (1.0 - 0.15 * wet);
+  vec3 dif = uPat * pat;
+  float a = mix(uMat2.y * 1.3, 0.4, pat) * (1.0 - 0.5 * wet);
+  vec3 L;
+  lampAt(p, L);
+  // The mirrored bowl uses a calmer normal, so edges do not streak.
+  vec3 col = lightMetal(p, N, V, f0, dif, a, mouth(p, L), mouth(p, uWinD), inside(p, reflect(-V, normalize(mix(n0, N, 0.35))), a));
+  return col + wallCaustic(p, n0) * (f0 * 0.3 + dif);
+}
+vec3 shadeWater(vec3 p, vec3 V, float fp) {
+  vec2 g;
+  float lap;
+  waterDiff(p.xz, g, lap);
+  // At full voice the water at the four busy points crinkles.
+  float th = atan(p.z, p.x), rr = length(p.xz) / uRad.z;
+  float cr = uWave.z * pow(abs(cos(2.0 * (th - uWave.y))), 10.0) * smoothstep(0.76, 0.98, rr);
+  if (cr > 0.002) {
+    vec2 q = p.xz * uWave.x;
+    g += cr * 0.18 * vec2(cos(q.x + uWave.w * 47.0) * sin(q.y), sin(q.x) * cos(q.y + uWave.w * 53.0));
+  }
+  vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  vec3 L;
+  vec3 E = lampAt(p, L);
+  float shL = mouth(p, L), shW = mouth(p, uWinD);
+  vec3 col = spec(N, V, L, 0.035, vec3(0.02)) * E * shL;
+  col += inside(p, reflect(-V, N), 0.0) * F;
+  col += underwater(p, refract(-V, N, 0.75), fp) * (1.0 - F);
+  // The meniscus: a thin curve where the water climbs the wall.
+  float men = smoothstep(uRad.z - max(0.012, fp * 1.5), uRad.z, length(p.xz));
+  if (men > 0.0) {
+    vec3 Nm = normalize(vec3(0.0, 1.0, 0.0) - vec3(p.x, 0.0, p.z) / max(length(p.xz), 1e-3) * 1.4);
+    float Fm = 0.02 + 0.98 * pow(1.0 - max(dot(Nm, V), 0.0), 5.0);
+    col += men * (spec(Nm, V, L, 0.04, vec3(0.02)) * E * shL + inside(p, reflect(-V, Nm), 0.03) * Fm * 1.5);
+  }
+  return col;
+}
+vec3 shadeTable(vec3 p, vec3 V) {
+  // Dark walnut, with a grain along x.
+  float gr = vnoise(vec2(p.x * 1.6, p.z * 22.0)) * 0.55 + vnoise(vec2(p.x * 4.0, p.z * 60.0)) * 0.3 + vnoise(vec2(p.x * 0.4, p.z * 3.0)) * 0.15;
+  vec3 alb = vec3(0.05, 0.03, 0.018) * (0.6 + 0.8 * gr);
+  vec3 L;
+  vec3 E = lampAt(p, L);
+  float sh = bowlShadow(p, L, 0.07), shw = bowlShadow(p, uWinD, 0.3);
+  float ao = 0.2 + 0.8 * smoothstep(uRad.w * 0.92, uRad.w + 0.45, length(p.xz));
+  vec3 col = alb / PI * (E * max(L.y, 0.0) * sh + uWinC * max(uWinD.y, 0.0) * shw + AMB * 0.5) * ao;
+  return col + spec(vec3(0.0, 1.0, 0.0), V, L, 0.16, vec3(0.03)) * E * sh;
+}
+// A drop is a few pixels wide; glint and rim carry it.
+vec3 shadeDrop(vec3 p, vec3 N, vec3 V) {
+  float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  vec3 L;
+  vec3 E = lampAt(p, L);
+  float sh = p.y < uOut.w ? mouth(p, L) : 1.0;
+  vec3 col = spec(N, V, L, 0.09, vec3(0.02)) * E * sh * 3.0;
+  col += room(reflect(-V, N), 0.0) * (F + 0.05) * 2.0 + room(N, 0.6) * 0.6;
+  // Through the drop: lit bronze below, and the lamp's focus beyond.
+  return col + (1.0 - F) * (uF0 * (E * sh * 0.12 + 0.02) + E * sh * 0.9 * pow(max(dot(-N, L) * 0.5 + 0.5, 0.0), 6.0));
+}
+vec3 shadeWand(vec3 p, vec3 N, vec3 V) {
+  vec3 ax = uWandB.xyz;
+  float along = dot(p - uWandA.xyz, ax);
+  vec3 sd = normalize(cross(ax, vec3(0.0, 1.0, 0.0)) + vec3(1e-4));
+  float ang = atan(dot(N, cross(ax, sd)), dot(N, sd));
+  // Rosewood: dark, with a grain along the stick.
+  float gr = vnoise(vec2(along * 26.0, ang * 2.0)) * 0.6 + vnoise(vec2(along * 80.0, ang * 5.0)) * 0.4;
+  vec3 alb = vec3(0.12, 0.05, 0.026) * (0.62 + 0.6 * gr);
+  vec3 L;
+  vec3 E = lampAt(p, L);
+  vec3 col = alb / PI * (E * max(dot(N, L), 0.0) + uWinC * max(dot(N, uWinD), 0.0) + AMB);
+  return col + spec(N, V, L, 0.2, vec3(0.04)) * E + room(reflect(-V, N), 0.3) * 0.04;
+}
+
+void main() {
+  vec2 ndc = gl_FragCoord.xy / uRes * 2.0 - 1.0;
+  vec3 rd = normalize(uCF + uCR * (ndc.x * uTan.x) + uCU * (ndc.y * uTan.y));
+  vec3 ro = uEye;
+  float tT = rd.y < -1e-5 ? -ro.y / rd.y : 1e9;
+  vec2 bh = hitBowl(ro, rd);
+  float t = 1e9;
+  int id = 0;
+  if (bh.y > 0.5 && bh.x < tT) { t = bh.x; id = int(bh.y + 0.5); }
+  else if (tT < 1e8) { t = tT; id = 10; }
+  // Drops fly near the bowl; a bounding sphere skips the rest.
+  int di = -1;
+  vec3 oc = ro - vec3(0.0, uOut.w * 0.6, 0.0);
+  float bb = dot(oc, rd);
+  if (bb * bb - dot(oc, oc) + 2.6 > 0.0) {
+    for (int i = 0; i < MAXD; i++) {
+      if (i >= uNDrop) break;
+      float td = capsule(ro, rd, uDrop[i].xyz - uDropV[i].xyz, uDrop[i].xyz + uDropV[i].xyz, uDrop[i].w);
+      if (td > 0.0 && td < t) { t = td; id = 20; di = i; }
+    }
+  }
+  vec3 p = ro + rd * t, V = -rd;
+  float fp = t * uTan.z;
+  vec3 col = vec3(0.0);
+  if (id == 1) col = shadeOuter(p, V, fp);
+  else if (id == 2) col = shadeLip(p, V, fp);
+  else if (id == 3) col = shadeInner(p, V, fp);
+  else if (id == 4) col = shadeWater(p, V, fp);
+  else if (id == 10) col = shadeTable(p, V);
+  else if (id == 20) col = shadeDrop(p, normalize(capN(p, uDrop[di].xyz - uDropV[di].xyz, uDrop[di].xyz + uDropV[di].xyz, uDrop[di].w)), V);
+  // The wand fades in over whatever lies behind it.
+  if (uWandA.w > 0.003) {
+    vec3 wb = uWandA.xyz + uWandB.xyz * 1.6;
+    float tw = capsule(ro, rd, uWandA.xyz, wb, uWandB.w);
+    if (tw > 0.0 && tw < t) {
+      vec3 pw = ro + rd * tw;
+      col = mix(col, shadeWand(pw, normalize(capN(pw, uWandA.xyz, wb, uWandB.w)), V), uWandA.w);
+    }
+  }
+  // Linear light out; the composite grades it.
+  o = vec4(col, 1.0);
+}`;
+
+// The composite: bloom on the glints, vignette, grain, film curve.
+const COMP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D uHdr, uBloom;
+uniform vec2 uRes;
+uniform float uExpo, uBloomK, uSeed;
+out vec4 o;
+${OUTPUT}
+${GRADE}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * uBloomK;
+  c *= gdVignette(uv, uRes.x / uRes.y, 0.5, 0.35);
+  c *= gdGrain(gdHash(gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0)), gdLuma(c), 0.035, vec2(0.5, 1.0));
+  o = vec4(ouFilm(c, uExpo, gl_FragCoord.xy), 1.0);
+}`;
+
+/* ---------- GL objects ---------- */
+// A lost context rebuilds all of these.
+let P = null, vao = null, hdr = null, bloom = null, sim = null;
+const tick = () => new Promise(r => setTimeout(r, 16));
+const U = (prog, name) => prog.u[name] ?? null;
+async function buildGL() {
+  F32 = !!gl.getExtension('OES_texture_float_linear');
+  gl.getExtension('EXT_color_buffer_float');
+  P = await linked(gl, {
+    scene: program(gl, TRI_VS, SCENE_FS),
+    sim: program(gl, TRI_VS, SIM_FS),
+    height: program(gl, TRI_VS, HEIGHT_FS),
+    comp: program(gl, TRI_VS, COMP_FS),
+  }, { wait: tick });
+  vao = gl.createVertexArray();
+  bloom = bloomChain(gl);
+  hdr = null;
+  sim = null;
+}
+
+/* ---------- lights ---------- */
+// A warm lamp in front, high on the left.
+// A dim window behind the bowl.
+const LAMP_P = [-2.4, 6.2, 2.0];
+const LAMP_C = [1, 0.7, 0.43].map(v => v * 38);
+const WIN_D = (() => { const az = 172 * DEG, el = 55 * DEG; return [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)]; })();
+const WIN_C = [0.5, 0.6, 0.76].map(v => v * 0.2);
+
+/* ---------- camera ---------- */
+const cam = { eye: [0, 3, 6], R: [1, 0, 0], Uv: [0, 1, 0], F: [0, 0, -1], tanX: 0.3, tanY: 0.27 };
+let W = 1, H = 1;
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const n = Math.hypot(...a) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+function look(tgt, dir, d) {
+  cam.eye = [tgt[0] + dir[0] * d, tgt[1] + dir[1] * d, tgt[2] + dir[2] * d];
+  cam.F = norm(sub(tgt, cam.eye));
+  cam.R = norm(cross(cam.F, [0, 1, 0]));
+  cam.Uv = cross(cam.R, cam.F);
+}
+// A world point to normalised screen space, y up.
+function project(p) {
+  const v = sub(p, cam.eye), z = dot(v, cam.F);
+  return [dot(v, cam.R) / (z * cam.tanX), dot(v, cam.Uv) / (z * cam.tanY)];
+}
+// Frames the bowl: its outline fills a set share of the stage.
+function fitCamera() {
+  const el = dv('elev') * DEG, az = dv('azim') * DEG;
+  cam.tanY = Math.tan(dv('fov') * DEG / 2);
+  cam.tanX = cam.tanY * W / H;
+  const dir = [Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)];
+  const pts = [];
+  for (let k = 0; k < 40; k++) {
+    const c = Math.cos(k / 40 * TAU), s = Math.sin(k / 40 * TAU);
+    pts.push([G.rimOut * c, G.yRim, G.rimOut * s], [G.a * c, G.yc, G.a * s], [G.rBase * c, 0, G.rBase * s]);
+  }
+  const box = () => {
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const p of pts) { const [x, y] = project(p); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    return { x0, x1, y0, y1 };
+  };
+  // The bowl keeps clear of the top corners.
+  // It also clears the bottom row and its key strip.
+  const narrow = W < 640;
+  const fx = narrow ? 0.84 : 0.7;
+  const yT = Math.min(0.84, 1 - 2 * 64 / H), yB = Math.max(-0.84, -1 + 2 * 72 / H);
+  const fy = Math.min(narrow ? 0.62 : 0.7, (yT - yB) / 2 * 0.96), cy0 = (yT + yB) / 2;
+  let tgt = [0, G.yRim * 0.42, 0], d = 6;
+  for (let it = 0; it < 3; it++) {
+    let lo = 0.5, hi = 80;
+    for (let k = 0; k < 30; k++) {
+      d = (lo + hi) / 2;
+      look(tgt, dir, d);
+      const b = box();
+      if ((b.x1 - b.x0) / 2 <= fx && (b.y1 - b.y0) / 2 <= fy) hi = d; else lo = d;
+    }
+    d = hi;
+    look(tgt, dir, d);
+    // Move the aim so the bowl sits in the clear band.
+    const b = box(), cy = (b.y0 + b.y1) / 2 - cy0;
+    const z = dot(sub(tgt, cam.eye), cam.F);
+    tgt = tgt.map((v, i) => v + cam.Uv[i] * cy * z * cam.tanY);
+  }
+  look(tgt, dir, d * dv('dist'));
+  // The ears sit between mode 2's axes, an eighth turn apart.
+  // Each ear hears both tones, so each ear hears the beat.
+  // The beats swing between the ears.
+  ears.L = cur.alpha[0] + Math.PI / 8 + Math.round((Math.atan2(dir[2], dir[0]) - cur.alpha[0]) / Math.PI) * Math.PI;
+  ears.R = ears.L + Math.PI / 4;
+}
+// The rim plane under a stage point: radius and angle.
+// Radius is in rim radii.
+function rimAt(cx, cy) {
+  const nx = (cx / W) * 2 - 1, ny = 1 - (cy / H) * 2;
+  const d = norm([0, 1, 2].map(i => cam.F[i] + cam.R[i] * nx * cam.tanX + cam.Uv[i] * ny * cam.tanY));
+  if (d[1] > -1e-4) return null;
+  const t = (G.yRim - cam.eye[1]) / d[1];
+  const x = cam.eye[0] + d[0] * t, z = cam.eye[2] + d[2] * t;
+  return { r: Math.hypot(x, z) / G.rimOut, th: Math.atan2(z, x) };
+}
+
+/* ---------- the bowl's voice: the state ---------- */
+// Each mode keeps two signed amplitudes, one per tone axis.
+// psi: the drift between a mode's two tones, which is the beat.
+// lock: near 1 while the wand drives.
+// A driven bowl rings as one tone.
+const bowl = { a: new Float64Array(M), b: new Float64Array(M), det: 0, hush: 0, psi: [0, 0], lock: 0 };
+const amp = i => Math.hypot(bowl.a[i], bowl.b[i]);
+// The angle of mode 2's busiest point on the rim.
+const antinode = () => cur.alpha[0] + Math.atan2(bowl.b[0], bowl.a[0]) / 2;
+const maxAmp = () => { let m = 0; for (let i = 0; i < M; i++) m = Math.max(m, amp(i)); return m; };
+// Growth per second at full drive.
+// The seed lets a still bowl start.
+const GROW = 2, SEED = 0.08, LOCK = 22;
+function stepBowl(dt, dtAll) {
+  // Free decay is exact for any step.
+  // A resting wand or a hush adds damping.
+  for (let i = 0; i < M; i++) {
+    const k = 1 / cur.tau[i] + wand.damp * (i === 0 ? 1 : 1.6) + (bowl.hush > 0 ? 10 : 0);
+    const f = Math.exp(-k * dtAll);
+    bowl.a[i] *= f;
+    bowl.b[i] *= f;
+  }
+  bowl.hush = Math.max(0, bowl.hush - dtAll);
+  if (wand.drive > 0) {
+    // The wand drives mode 2, and a little of mode 3.
+    for (let i = 0; i < 2; i++) {
+      const n = i + 2, w = i === 0 ? 1 : 0.1;
+      const T = Math.max(1e-3, wand.sat * w * (1 + 0.14 * wand.wobble));
+      let A = amp(i);
+      const g = GROW * wand.drive;
+      A = Math.max(0, A + (g * A * (1 - Math.min((A / T) ** 2, 3)) + SEED * wand.drive * w) * dt);
+      // The wand rides a still point, so the busy points sit between.
+      const goal = n * (wand.theta + Math.PI / (2 * n) - cur.alpha[i]);
+      let ang = A > 1e-5 ? Math.atan2(bowl.b[i], bowl.a[i]) : goal;
+      ang += wrapPi(goal - ang) * Math.min(1, LOCK * wand.drive * dt);
+      bowl.a[i] = A * Math.cos(ang);
+      bowl.b[i] = A * Math.sin(ang);
+    }
+  }
+  // A broken rhythm bends the pitch a hair.
+  bowl.det = 0.004 * wand.wobble;
+  // The wand holds the two tones together.
+  // Let go, and they drift apart and beat.
+  bowl.lock += ((wand.drive > 0.05 ? 1 : 0) - bowl.lock) * (1 - Math.exp(-dt / 0.3));
+  for (let i = 0; i < 2; i++) {
+    bowl.psi[i] += TAU * cur.split[i] * dt * (1 - bowl.lock);
+    bowl.psi[i] -= wrapPi(bowl.psi[i]) * Math.min(1, 4 * bowl.lock * dt);
+  }
+}
+// A strike at rim angle th gives each mode its share.
+// Each mode's busy point lies at the strike.
+function strikeModes(th, s) {
+  for (let i = 0; i < M; i++) {
+    const n = i + 2, w = STRIKE_W[i] * s, g = n * (th - cur.alpha[i]);
+    bowl.a[i] += w * Math.cos(g);
+    bowl.b[i] += w * Math.sin(g);
+    const A = amp(i);
+    if (A > 1.25) { bowl.a[i] *= 1.25 / A; bowl.b[i] *= 1.25 / A; }
+  }
+}
+
+/* ---------- the wand ---------- */
+const wand = { on: false, hold: false, theta: Math.PI / 2, target: Math.PI / 2, omega: 0, mean: 0, jerk: 0.5,
+  c: 0, cT: 0, vis: 0, drive: 0, sat: 0, damp: 0, steady: 0, wobble: 0 };
+let keyRub = 0, simT = 0;
+// Contact: generous round the rim, none over the middle of the water.
+const contact = r => smooth(0.32, 0.62, r) * (1 - smooth(1.6, 2.3, r));
+// The wand grips best between a slow and a fast circle.
+const speedResp = w => smooth(0.6, 2.2, w) * (1 - 0.6 * smooth(14, 24, w));
+function stepWand(dt) {
+  if (keyRub) { wand.target += keyRub * 6 * dt; wand.cT = 1; }
+  const prev = wand.theta;
+  wand.theta += (wand.target - wand.theta) * (1 - Math.exp(-dt / 0.035));
+  const om = dt > 0 ? (wand.theta - prev) / dt : 0;
+  wand.omega += (om - wand.omega) * (1 - Math.exp(-dt / 0.06));
+  wand.mean += (wand.omega - wand.mean) * (1 - Math.exp(-dt / 0.35));
+  // Steadiness: how far the speed strays from its own slow mean.
+  const dev = Math.abs(wand.omega - wand.mean) / Math.max(Math.abs(wand.mean), Math.abs(wand.omega), 2);
+  wand.jerk += (dev - wand.jerk) * (1 - Math.exp(-dt / 0.25));
+  const w = Math.abs(wand.omega);
+  const same = Math.sign(wand.omega) === Math.sign(wand.mean) || w < 0.3;
+  wand.steady = clamp(1 - Math.max(0, wand.jerk - 0.12) * 3) * (same ? 1 : 0.25);
+  wand.c += ((wand.on ? wand.cT : 0) - wand.c) * (1 - Math.exp(-dt / 0.05));
+  const k = reduced() ? 1 : 1 - Math.exp(-dt / (wand.on ? 0.07 : 0.16));
+  wand.vis += ((wand.on ? 1 : 0) - wand.vis) * k;
+  const rubbing = wand.on && !wand.hold;
+  wand.drive = rubbing ? wand.c * speedResp(w) * (0.3 + 0.7 * wand.steady) : 0;
+  wand.sat = (0.5 + 0.5 * smooth(1.8, 6.5, w)) * (0.82 + 0.18 * wand.steady);
+  // A still wand on the rim quiets the bowl.
+  // A held press quiets it fast.
+  wand.damp = wand.on ? wand.c * (wand.hold ? 2.6 : 0.45 * (1 - smooth(0.4, 1.4, w))) : 0;
+  wand.wobble = rubbing ? vn1(simT * 4.7) * (1 - wand.steady) * wand.c : 0;
+}
+function wandPose() {
+  const th = wand.theta, c = Math.cos(th), s = Math.sin(th), R = cur.wand;
+  // Off the rim, the wand stands a little way out.
+  const gap = 0.06 * (1 - wand.c);
+  const out = G.rimOut + R * 0.85 + gap;
+  const tip = [out * c, G.yRim - R * 0.4 + gap, out * s];
+  // The shaft leans well out, clear of the water.
+  // It trails the motion a little.
+  const lean = clamp(wand.omega / 7, -1, 1) * 0.3;
+  return { tip, dir: norm([c * 0.78 + s * lean, 0.6, s * 0.78 - c * lean]) };
+}
+
+/* ---------- drops ---------- */
+const drops = [], impacts = [];
+const GRAV = 48;
+let dropAcc = 0, ring = null;
+function spawnDrop(A) {
+  if (drops.length >= MAXD) return;
+  const th = antinode() + Math.floor(Math.random() * 4) * Math.PI / 2 + (Math.random() - 0.5) * 0.16;
+  const r0 = G.rW * (0.9 + 0.075 * Math.random());
+  // Most drops hop low; a few leap near the rim.
+  const h = (0.03 + 0.42 * Math.random() ** 2.2) * (0.55 + 0.45 * A);
+  const up = Math.sqrt(2 * GRAV * h), inw = up * (0.1 + 0.28 * Math.random()), tang = (Math.random() - 0.5) * 0.25 * up;
+  const c = Math.cos(th), s = Math.sin(th);
+  drops.push({ x: r0 * c, y: G.yW + 0.004, z: r0 * s, vx: -c * inw - s * tang, vy: up, vz: -s * inw + c * tang, r: 0.006 + 0.012 * Math.random() ** 2 });
+}
+function stepDrops(dt) {
+  const A = amp(0);
+  if (!reduced() && A > 0.62) {
+    dropAcc += 100 * ((A - 0.62) / 0.38) ** 1.3 * dt;
+    while (dropAcc >= 1) { dropAcc -= 1; spawnDrop(A); }
+  } else dropAcc = 0;
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.vy -= GRAV * dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.z += d.vz * dt;
+    if (d.vy < 0 && d.y <= G.yW) {
+      const rr = Math.hypot(d.x, d.z);
+      if (rr < G.rW * 0.985) {
+        if (impacts.length < 8) impacts.push([d.x / G.rW, d.z / G.rW, 0.3 * d.r / 0.012, 0.011 + d.r * 0.4]);
+        plip(d);
+      }
+      drops.splice(i, 1);
+    }
+  }
+}
+
+/* ---------- the water map ---------- */
+// The map spans the water disc and a little more.
+// Outside the disc the height stays zero.
+const SPAN = 1.04, VIS_HZ = 6.5;
+const simN = () => [256, 384, 512][D.level];
+let simRate = 120, simC2 = 0.3, simDamp = 0.01, simAcc = 0, simCalm = 99;
+// The wave pair, and the height map the scene reads.
+function makeSim() {
+  const n = simN();
+  if (sim?.n === n) return;
+  if (sim) { sim.pair.forEach(t => free(gl, t)); free(gl, sim.height); }
+  const format = F32 ? gl.RG32F : gl.RG16F;
+  sim = { n, i: 0, pair: [0, 1].map(() => target(gl, n, n, { format, clear: true })),
+    height: target(gl, n, n, { format: F32 ? gl.R32F : gl.R16F, clear: true }) };
+  simCalm = 99;
+  simTune();
+}
+// The wave speed gives one ripple length at the visible rate.
+// Steps per second keep the scheme stable.
+function simTune() {
+  if (!sim) return;
+  const hz = reduced() ? VIS_HZ * 0.5 : VIS_HZ;
+  const dx = 2 * SPAN * G.rW / sim.n, c = cur.ripple * hz;
+  const cells = c / dx;
+  simRate = Math.max(60, Math.ceil(cells / 0.6));
+  simC2 = (cells / simRate) ** 2;
+  // A passing ring fades over about half the water radius.
+  simDamp = 2 * (c / (0.55 * G.rW)) / simRate;
+}
+function clearSim() {
+  if (!sim) return;
+  for (const t of [...sim.pair, sim.height]) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  impacts.length = 0;
+  ring = null;
+  simCalm = 99;
+}
+// The ripples' height: soft at first, then strong.
+const wallK = A => 0.25 + 0.75 * Math.min(A, 1);
+const impU = new Float32Array(32);
+function stepSim(dt) {
+  if (impacts.length || ring) simCalm = 0;
+  else simCalm += dt;
+  if (simCalm > 3.5) return;
+  simTune();
+  simAcc += dt;
+  const sdt = 1 / simRate;
+  let steps = 0;
+  gl.useProgram(P.sim.p);
+  gl.bindVertexArray(vao);
+  gl.uniform2f(U(P.sim, 'uTexel'), 1 / sim.n, 1 / sim.n);
+  gl.uniform1f(U(P.sim, 'uC2'), simC2);
+  gl.uniform1f(U(P.sim, 'uDamp'), simDamp);
+  gl.uniform1f(U(P.sim, 'uSpan'), SPAN);
+  while (simAcc >= sdt && steps < 8) {
+    simAcc -= sdt;
+    gl.uniform4f(U(P.sim, 'uRing'), steps === 0 && ring ? ring[0] : 0, ring ? ring[1] : 0, 0, 0);
+    const n = steps === 0 ? impacts.length : 0;
+    if (n) { impU.fill(0); impacts.forEach((v, i) => impU.set(v, i * 4)); gl.uniform4fv(U(P.sim, 'uImp'), impU); }
+    gl.uniform1i(U(P.sim, 'uNImp'), n);
+    bind(gl, P.sim, 'uPrev', 0, sim.pair[sim.i]);
+    tri(gl, sim.pair[1 - sim.i]);
+    sim.i = 1 - sim.i;
+    if (steps === 0) { impacts.length = 0; ring = null; }
+    steps++;
+  }
+  if (steps === 8) simAcc = 0;
+}
+
+/* ---------- render ---------- */
+const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => { if (ready) { resize(); draw(); } } });
+let dpr = 1;
+const dropU = new Float32Array(MAXD * 4), dropV = new Float32Array(MAXD * 4), srcU = new Float32Array(32);
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width);
+  H = Math.max(1, r.height);
+  dpr = D.dpr(W, H);
+  canvas.width = Math.max(1, Math.round(W * dpr));
+  canvas.height = Math.max(1, Math.round(H * dpr));
+  if (!hdr || hdr.w !== canvas.width || hdr.h !== canvas.height) {
+    free(gl, hdr);
+    hdr = target(gl, canvas.width, canvas.height, { format: gl.RGBA16F });
+  }
+  makeSim();
+  fitCamera();
+}
+// The height map: mode 2's ripples plus the passing waves.
+// Eight points on the waterline are the sources.
+// Each swings as the sum of the mode's two tones.
+// So the beat turns the fans.
+function heights() {
+  const Hp = P.height, A2 = flat ? 0 : amp(0);
+  const k2 = flat ? 0 : wallK(A2), thp = antinode(), al = cur.alpha[0];
+  const cp = Math.cos(bowl.psi[0]), sp = Math.sin(bowl.psi[0]);
+  for (let k = 0; k < 8; k++) {
+    const th = thp + k * Math.PI / 4, C = Math.cos(2 * (th - al)), Sn = Math.sin(2 * (th - al));
+    const re = bowl.a[0] * C + bowl.b[0] * Sn * cp, im = bowl.b[0] * Sn * sp;
+    const m = Math.hypot(re, im) * k2;
+    srcU.set([0.985 * Math.cos(th), 0.985 * Math.sin(th), m > 1e-4 ? m : 0, Math.atan2(im, re)], k * 4);
+  }
+  gl.useProgram(Hp.p);
+  gl.uniform4fv(U(Hp, 'uSrc'), srcU);
+  const hz = reduced() ? VIS_HZ * 0.5 : VIS_HZ;
+  gl.uniform4f(U(Hp, 'uWv'), 0.16 + 0.42 * A2 * A2, TAU * G.rW / cur.ripple, TAU * hz * simT, 0);
+  gl.uniform1f(U(Hp, 'uSpan'), SPAN);
+  bind(gl, Hp, 'uWaves', 0, sim.pair[sim.i]);
+  tri(gl, sim.height, vao);
+}
+function draw() {
+  heights();
+  const S = P.scene, cw = canvas.width, ch = canvas.height;
+  gl.useProgram(S.p);
+  gl.uniform2f(U(S, 'uRes'), cw, ch);
+  gl.uniform3fv(U(S, 'uEye'), cam.eye);
+  gl.uniform3fv(U(S, 'uCR'), cam.R);
+  gl.uniform3fv(U(S, 'uCU'), cam.Uv);
+  gl.uniform3fv(U(S, 'uCF'), cam.F);
+  gl.uniform3f(U(S, 'uTan'), cam.tanX, cam.tanY, 2 * cam.tanY / ch);
+  gl.uniform4f(U(S, 'uOut'), G.a, G.c, G.yc, G.yRim);
+  gl.uniform4f(U(S, 'uIn'), G.ai, G.ci, G.yF, G.yW);
+  gl.uniform4f(U(S, 'uRad'), G.rimIn, G.rimOut, G.rW, G.rBase);
+  gl.uniform3fv(U(S, 'uLampP'), LAMP_P);
+  gl.uniform3fv(U(S, 'uLampC'), LAMP_C);
+  gl.uniform3fv(U(S, 'uWinD'), WIN_D);
+  gl.uniform3fv(U(S, 'uWinC'), WIN_C);
+  gl.uniform3fv(U(S, 'uF0'), cur.f0);
+  gl.uniform3fv(U(S, 'uPat'), cur.pat);
+  gl.uniform4f(U(S, 'uMat'), cur.out, cur.cells, cur.dent, cur.seed);
+  gl.uniform4f(U(S, 'uMat2'), cur.inner, cur.rough, cur.cellsIn, 0);
+  // Ripple slope at full voice: about a tenth, steeper where fans meet.
+  const hs = 0.0019 * dv('ripple') * cur.ripple / 0.052;
+  gl.uniform4f(U(S, 'uSimP'), 1 / sim.n, SPAN * G.rW, hs, 0.2);
+  const A2 = flat ? 0 : amp(0);
+  const crisp = reduced() ? 0 : smooth(0.78, 1, A2);
+  gl.uniform4f(U(S, 'uWave'), 4 * Math.PI / cur.ripple, antinode(), crisp, simT);
+  const n = Math.min(drops.length, MAXD);
+  for (let i = 0; i < n; i++) {
+    const d = drops[i], b = 1 / 160;
+    dropU.set([d.x, d.y, d.z, d.r], i * 4);
+    dropV.set([d.vx * b, d.vy * b, d.vz * b, 0], i * 4);
+  }
+  gl.uniform4fv(U(S, 'uDrop'), dropU);
+  gl.uniform4fv(U(S, 'uDropV'), dropV);
+  gl.uniform1i(U(S, 'uNDrop'), n);
+  const wp = wandPose();
+  gl.uniform4f(U(S, 'uWandA'), ...wp.tip, wand.vis);
+  gl.uniform4f(U(S, 'uWandB'), ...wp.dir, cur.wand);
+  bind(gl, S, 'uSim', 0, sim.height);
+  tri(gl, hdr, vao);
+  const glow = bloom.render(hdr.tex, hdr.w, hdr.h, { threshold: 1.1, levels: glowDetail(D.level).levels });
+  const C = P.comp;
+  gl.useProgram(C.p);
+  bind(gl, C, 'uHdr', 0, hdr);
+  bind(gl, C, 'uBloom', 1, glow);
+  gl.uniform2f(U(C, 'uRes'), cw, ch);
+  gl.uniform1f(U(C, 'uExpo'), 1.35 * dv('expo'));
+  gl.uniform1f(U(C, 'uBloomK'), 0.16);
+  gl.uniform1f(U(C, 'uSeed'), simT % 7);
+  tri(gl, null, vao);
+}
+
+/* ---------- sound ---------- */
+const kit = audioKit({ gain: 0.6, noiseSeconds: 2, sleepMs: 2500 });
+// Two virtual ears round the bowl; set by the camera.
+const ears = { L: Math.PI / 2 + 0.39, R: Math.PI / 2 - 0.39 };
+let au = null, roomMix = 0.24, attack = false, ringEnd = 0, restTimer = 0, plipBudget = 6, plipAt = 0;
+// A narrow pulse once per cycle, for the stick-slip buzz.
+const PULSE = (() => { const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) c[i] = Math.max(0, i / 1023 * 2 - 1) ** 8; return c; })();
+// A small dark room: noise that decays and darkens.
+function roomIR(ac) {
+  const sr = ac.sampleRate, n = Math.round(sr * 2.4), pre = Math.round(sr * 0.012);
+  const buf = ac.createBuffer(2, n, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = pre; i < n; i++) {
+      const t = (i - pre) / sr, k = 0.25 + 0.7 * Math.min(1, t / 1.6);
+      lp = lp * k + (Math.random() * 2 - 1) * (1 - k);
+      d[i] = lp * Math.exp(-t / 0.36) * Math.min(1, t / 0.004);
+    }
+  }
+  return buf;
+}
+// The graph: ten partial oscillators into two ears.
+// Then the wand voices and the room.
+function buildAudio(ac, dest, noise) {
+  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const bq = (type, f, q) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const bus = gain(1), wet = gain(roomMix), conv = ac.createConvolver();
+  conv.buffer = roomIR(ac);
+  bus.connect(dest);
+  bus.connect(conv).connect(wet).connect(dest);
+  const merge = ac.createChannelMerger(2);
+  merge.connect(bus);
+  const modes = Array.from({ length: M }, () => {
+    const oa = ac.createOscillator(), ob = ac.createOscillator();
+    const g = [0, 1, 2, 3].map(() => gain(0));
+    oa.connect(g[0]).connect(merge, 0, 0);
+    oa.connect(g[1]).connect(merge, 0, 1);
+    ob.connect(g[2]).connect(merge, 0, 0);
+    ob.connect(g[3]).connect(merge, 0, 1);
+    oa.start();
+    ob.start();
+    return { oa, ob, g };
+  });
+  // The wand on bronze: grit, a wooden drag, a stick-slip buzz.
+  const src = ac.createBufferSource();
+  src.buffer = noise;
+  src.loop = true;
+  const pan = ac.createStereoPanner();
+  pan.connect(bus);
+  const grit = gain(0), wood = gain(0), slip = gain(0), vca = gain(0), fizz = gain(0);
+  src.connect(bq('bandpass', 2600, 0.9)).connect(grit).connect(pan);
+  src.connect(bq('lowpass', 600, 0.7)).connect(wood).connect(pan);
+  src.connect(bq('highpass', 900, 0.7)).connect(vca).connect(bq('bandpass', 3000, 0.8)).connect(slip).connect(pan);
+  const pulse = ac.createOscillator(), shp = ac.createWaveShaper();
+  shp.curve = PULSE;
+  pulse.connect(shp).connect(vca.gain);
+  // The dancing surface: a faint fizz.
+  src.connect(bq('highpass', 5200, 0.7)).connect(fizz).connect(bus);
+  src.start();
+  pulse.start();
+  const A = { bus, wet, modes, grit, wood, slip, fizz, pan, pulse };
+  tune(A, ac.currentTime);
+  return A;
+}
+// Sets each partial's two tones for the current bowl.
+function tune(A, t) {
+  A.modes.forEach((m, i) => {
+    const f = cur.f * cur.ratio[i], s = cur.split[i] / 2;
+    m.oa.frequency.setValueAtTime(f - s, t);
+    m.ob.frequency.setValueAtTime(f + s, t);
+  });
+  A.pulse.frequency.setValueAtTime(cur.f, t);
+}
+const target_ = (p, v, t, k) => { p.cancelScheduledValues(t); p.setTargetAtTime(v, t, k); };
+// Each frame: every tone's level in each ear, from the mode amplitudes.
+function audioFrame(ac, A, t) {
+  const k = attack ? 0.004 : 0.03;
+  attack = false;
+  for (let i = 0; i < M; i++) {
+    const n = i + 2, al = cur.alpha[i], lv = LEVEL[i];
+    const a = bowl.a[i] * lv, b = bowl.b[i] * lv;
+    const m = A.modes[i];
+    target_(m.g[0].gain, a * Math.cos(n * (ears.L - al)), t, k);
+    target_(m.g[1].gain, a * Math.cos(n * (ears.R - al)), t, k);
+    target_(m.g[2].gain, b * Math.sin(n * (ears.L - al)), t, k);
+    target_(m.g[3].gain, b * Math.sin(n * (ears.R - al)), t, k);
+    if (i < 2) {
+      const f = cur.f * cur.ratio[i] * (1 + bowl.det * (i ? 0.5 : 1)), s = cur.split[i] / 2 * (1 - bowl.lock);
+      target_(m.oa.frequency, f - s, t, 0.05);
+      target_(m.ob.frequency, f + s, t, 0.05);
+    }
+  }
+  // The wand's own voices: a rasp that settles once the tone catches.
+  const w = Math.abs(wand.omega), speed = smooth(0.3, 4, w);
+  const lock = wand.steady * smooth(0.15, 0.6, amp(0));
+  const touch = wand.on ? wand.c : 0;
+  const rasp = touch * speed * (0.2 + 0.8 * (1 - lock));
+  // A wand held on a loud bowl buzzes against it.
+  const buzz = touch * amp(0) * (wand.hold ? 0.9 : 0.4 * (1 - smooth(0.4, 1.4, w)));
+  target_(A.grit.gain, rasp * 0.05, t, 0.03);
+  target_(A.wood.gain, rasp * 0.022, t, 0.03);
+  target_(A.slip.gain, touch * speed * (1 - lock) * 0.16 + buzz * 0.22, t, 0.03);
+  target_(A.fizz.gain, (reduced() ? 0 : smooth(0.6, 1, amp(0))) * 0.02, t, 0.1);
+  target_(A.pulse.frequency, cur.f * (1 + bowl.det), t, 0.05);
+  target_(A.pan.pan, clamp(project(wandPose().tip)[0], -1, 1) * 0.75, t, 0.05);
+}
+// The loop sleeps: each tone fades on its own time.
+function audioTail() {
+  const ac = kit.ac;
+  if (!au || !ac || ac.state === 'closed') return;
+  const t = ac.currentTime;
+  au.modes.forEach((m, i) => m.g.forEach(g => target_(g.gain, 0, t, cur.tau[i])));
+  [au.grit, au.wood, au.slip, au.fizz].forEach(g => target_(g.gain, 0, t, 0.05));
+}
+function soundFrame() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return;
+  au ||= buildAudio(ac, kit.out, kit.noise);
+  audioFrame(ac, au, ac.currentTime);
+}
+// The context sleeps only once the slowest tone has faded out.
+function restLater() {
+  clearTimeout(restTimer);
+  const A = maxAmp();
+  ringEnd = performance.now() + (A > 3e-4 ? 1000 * cur.tau[0] * Math.log(A / 3e-4) : 0);
+  restTimer = setTimeout(() => kit.rest(() => !raf && !ptr && performance.now() >= ringEnd - 50), Math.max(0, ringEnd - performance.now()));
+}
+// One strike's extras: high short partials and the mallet's soft knock.
+function strikeSound(th, s) {
+  const ac = kit.live();
+  if (!ac || !au || !kit.noise) return;
+  const t = ac.currentTime + 0.004, pan = clamp(project([Math.cos(th), G.yRim, Math.sin(th)])[0], -1, 1) * 0.6;
+  const p = ac.createStereoPanner();
+  p.pan.value = pan;
+  p.connect(au.bus);
+  for (const [r, tau, lv] of [[15.6, 0.22, 0.05], [19.4, 0.14, 0.035], [24.3, 0.09, 0.022]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = cur.f * r * jit(0.01);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(lv * s, t + 0.002);
+    g.gain.setTargetAtTime(0, t + 0.002, tau);
+    o.connect(g).connect(p);
+    o.start(t);
+    o.stop(t + tau * 8);
+  }
+  const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  f.type = 'bandpass';
+  f.frequency.value = 1700 * jit(0.15);
+  f.Q.value = 1.2;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.11 * s, t + 0.0015);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.025);
+  src.connect(f).connect(g).connect(p);
+  src.start(t, Math.random() * 1.5, 0.05);
+}
+// A drop falls back in: a tiny rising plip.
+function plip(d) {
+  const ac = kit.live();
+  if (!ac || !au) return;
+  const now = performance.now();
+  plipBudget = Math.min(6, plipBudget + (now - plipAt) / 50);
+  plipAt = now;
+  if (plipBudget < 1) return;
+  plipBudget -= 1;
+  const t = ac.currentTime + Math.random() * 0.01;
+  const o = ac.createOscillator(), g = ac.createGain(), p = ac.createStereoPanner();
+  const f0 = (1500 + 2200 * Math.random()) * (0.012 / Math.max(d.r, 0.006)) ** 0.3;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f0 * 1.9, t + 0.035);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.028 * jit(0.3), t + 0.002);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.04);
+  p.pan.value = clamp(project([d.x, d.y, d.z])[0], -1, 1) * 0.7;
+  o.connect(g).connect(p).connect(au.bus);
+  o.start(t);
+  o.stop(t + 0.06);
+}
+// A palm on the rim: a muffled thup.
+function hushSound() {
+  const ac = kit.live();
+  if (!ac || !au || !kit.noise) return;
+  const t = ac.currentTime + 0.004, src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = kit.noise;
+  f.type = 'lowpass';
+  f.frequency.value = 380;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.35, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(1e-4, t + 0.09);
+  src.connect(f).connect(g).connect(au.bus);
+  src.start(t, Math.random(), 0.12);
+}
+
+/* ---------- strike, hush, bowl ---------- */
+// A strike rings the bowl and throws a ring from the wall.
+function strike(th, s = 0.8) {
+  strikeModes(th, s);
+  ring = [0.9 * s, th];
+  // The wand taps the rim, then lifts away.
+  if (!wand.on) { wand.theta = wand.target = th; wand.vis = 1; wand.c = 1; wand.omega = wand.mean = 0; }
+  attack = true;
+  soundFrame();
+  strikeSound(th, s);
+  wake();
+}
+
+/* ---------- frame loop ---------- */
+// The loop runs while the bowl rings or a hand touches it.
+// The clock runs on while the loop sleeps.
+// So the ring decays in real time.
+let raf = 0, last = performance.now(), visible = !document.hidden, ready = false;
+function wake() {
+  if (!raf && visible && ready) raf = requestAnimationFrame(frame);
+}
+// Below a tenth of full voice, the ripples are too faint.
+// The loop then sleeps; the sound fades on by itself.
+function busy() {
+  return !!ptr || !!keyRub || wand.vis > 0.003 || maxAmp() > 0.09 || drops.length > 0 || simCalm <= 3.5;
+}
+function frame(now) {
+  raf = 0;
+  let again = false;
+  try {
+    const raw = Math.max(0, (now - last) / 1000);
+    last = now;
+    D.frame(raw);
+    const dt = Math.min(raw, 0.05);
+    simT += dt;
+    stepWand(dt);
+    stepBowl(dt, raw);
+    stepDrops(dt);
+    stepSim(dt);
+    draw();
+    soundFrame();
+    again = busy();
+  } finally {
+    if (again && visible) raf = requestAnimationFrame(frame);
+    else sleep();
+  }
+}
+// The page goes idle: the water is flat, the last frame stays.
+// The faint ring left in the metal plays on as sound.
+let flat = false;
+function sleep() {
+  drops.length = 0;
+  if (ready && simCalm > 3.5) {
+    clearSim();
+    flat = true;
+    draw();
+    flat = false;
+  }
+  audioTail();
+  restLater();
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a rub after 7 px.
+// A press held still for 300 ms becomes a damping hold.
+// A release that is neither is a tap, and a tap strikes.
+let ptr = null, holdTo = 0;
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+function wandOn(hit, hold) {
+  if (!wand.on) { wand.theta = wand.target = hit.th; wand.omega = wand.mean = 0; wand.jerk = 0.2; }
+  wand.on = true;
+  wand.hold = hold;
+  wand.cT = contact(hit.r);
+  stage.classList.add('is-rubbing');
+}
+function wandOff() {
+  wand.on = wand.hold = false;
+  stage.classList.remove('is-rubbing');
+}
+function down(e) {
+  if (ptr || e.button > 0 || !ready) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  const [x, y] = local(e);
+  const hit = rimAt(x, y) || { r: 9, th: Math.PI / 2 };
+  ptr = { id: e.pointerId, x0: x, y0: y, t0: e.timeStamp, mode: 'press', hit };
+  holdTo = setTimeout(() => {
+    if (ptr?.mode !== 'press' || contact(ptr.hit.r) < 0.3) return;
+    ptr.mode = 'hold';
+    wandOn(ptr.hit, true);
+    wake();
+  }, 300);
+  wake();
+}
+function move(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const [x, y] = local(e);
+  const hit = rimAt(x, y);
+  if (hit) ptr.hit = hit;
+  if (ptr.mode !== 'rub' && Math.hypot(x - ptr.x0, y - ptr.y0) > 7) {
+    clearTimeout(holdTo);
+    ptr.mode = 'rub';
+    wandOn(ptr.hit, false);
+  }
+  if (ptr.mode === 'rub' && hit) {
+    wand.target += wrapPi(hit.th - wand.target);
+    wand.cT = contact(hit.r);
+  }
+  wake();
+}
+function up(e) {
+  if (!ptr || (e && e.pointerId !== ptr.id)) return;
+  clearTimeout(holdTo);
+  const tap = ptr.mode === 'press' && e?.type === 'pointerup' && e.timeStamp - ptr.t0 < 450;
+  const hit = ptr.hit;
+  ptr = null;
+  wandOff();
+  if (tap) {
+    const s = 0.8 * (1 - smooth(1.5, 2.2, hit.r));
+    if (s > 0.05) strike(hit.th, s);
+  }
+  wake();
+}
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+// On the focused stage, arrows circle the rim.
+// Enter or Space strikes.
+const NEAR = () => Math.atan2(cam.eye[2], cam.eye[0]);
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage || e.metaKey || e.ctrlKey || e.altKey || !ready) return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (e.repeat) return;
+    keyRub = e.key === 'ArrowLeft' ? 1 : -1;
+    wandOn({ r: 1, th: wand.on ? wand.theta : NEAR() + 0.5 }, false);
+    wake();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    if (!e.repeat) strike(wand.on ? wand.theta : NEAR(), 0.75);
+  }
+});
+const keyStop = () => { if (keyRub) { keyRub = 0; if (!ptr) wandOff(); wake(); } };
+stage.addEventListener('keyup', e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') keyStop(); });
+stage.addEventListener('blur', keyStop);
+
+/* ---------- actions ---------- */
+act.strike = () => { if (ready) strike(NEAR() + (Math.random() - 0.5) * 0.6, 0.7); };
+act.hush = () => {
+  if (!ready) return;
+  bowl.hush = 0.45;
+  hushSound();
+  wake();
+};
+// A new bowl: the old one stops; the new one rings softly.
+act.pick = v => {
+  if (!ready || v === kind) return;
+  kind = v;
+  useBowl(kind);
+  bowl.a.fill(0);
+  bowl.b.fill(0);
+  drops.length = 0;
+  clearSim();
+  resize();
+  const ac = kit.live();
+  if (ac && au) {
+    const t = ac.currentTime;
+    au.modes.forEach(m => m.g.forEach(g => target_(g.gain, 0, t, 0.012)));
+    tune(au, t + 0.07);
+  }
+  setTimeout(() => strike(NEAR() + 0.4, 0.4), 90);
+  draw();
+  wake();
+};
+act.view = () => { if (ready) { fitCamera(); draw(); } };
+act.room = v => {
+  roomMix = v;
+  const ac = kit.ac;
+  if (au && ac) au.wet.gain.setTargetAtTime(v, ac.currentTime, 0.05);
+};
+sound.onChange(on => { if (on) wake(); });
+
+/* ---------- ready ---------- */
+// The intro holds until the shaders link and the first frame draws.
+async function boot() {
+  await buildGL();
+  resize();
+  clearSim();
+  draw();
+  gl.finish();
+  canvas.classList.add('on');
+  ready = true;
+  mark('first-frame');
+}
+onContextLoss(canvas, {
+  lost() { ready = false; cancelAnimationFrame(raf); raf = 0; },
+  async restored() { await boot(); wake(); },
+});
+await boot();
+new ResizeObserver(() => { if (ready) { resize(); draw(); } }).observe(stage);
+onReducedChange(() => { if (ready) { simTune(); draw(); } });
+// A hidden tab stops the loop and lets the sound sleep.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); raf = 0; audioTail(); kit.rest(() => true); return; }
+  wake();
+});
+</script>
+</body>
+</html>

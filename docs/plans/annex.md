@@ -1,5 +1,7 @@
 # Toy annex
 
+Status: active · Bean: `stimming-465y`
+
 The annex is the page under a toy's stage. It replaces the parked `section.about`.
 Lab: `annexlab/` (noindex). `?d=a|b|c` picks a direction. `?rm=1` shows reduced motion. `?js=1` forces the fallback driver.
 Bean: `stimming-465y`. Status: Tom picked A · Recede (2026-11-09). The lip is the stage cue. Round 2 is open (2026-11-16, below).

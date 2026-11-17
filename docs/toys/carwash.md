@@ -8,7 +8,7 @@
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
-| Accent | `linear-gradient(100deg, oklch(0.64 0.28 350), oklch(0.8 0.14 212), oklch(0.8 0.165 68))` |
+| Accent | `linear-gradient(100deg, oklch(0.64 0.28 350), oklch(0.8 0.14 212), oklch(0.8 0.165 68))` (a new one waits in the handoff: neon red to sodium amber) |
 | Sound | Yes |
 | Legacy build | No |
 | Signed off | No |
@@ -16,9 +16,53 @@
 
 ## Idea
 
-You sit in the driver's seat of a car on the conveyor of a tunnel car wash at night, and the whole picture is the windscreen.
-One tap and the conveyor pulls the car through eight stations at 0.33 m/s: pre-soak curtain, triple foam, hanging cloth strips, wrap and top brushes, rinse, hot wax, spot-free rinse and the dryer, then out into a wet street.
-Coloured tunnel light glows through the water, the foam and the cloth; the hand can run the wipers.
+A 1950s roadside car wash in the Nevada desert that never closed and was never updated. Nobody knows who owns it; it is open all night; now and then something strange happens on a run.
+The toy opens on an establishing shot: the place from across the road at night, held like a film's first frame. One action, Proceed, cuts to the driver's seat, and the wash runs by itself: a chain pulls the car through soak, suds, cloth strips, brushes, rinse, wax and the blower at 0.33 m/s, then the driver rolls out into the desert. The film cuts back to the establishing shot and waits.
+
+## Rules
+
+- The camera's point of view is a set of Dev rows (`?dev`): the driver's seat and the establishing shot, each with position, pitch, yaw and field of view.
+- Today's view is the default, so the page is the same without `?dev`.
+
+## Direction
+
+- A shady car wash in the Nevada desert. Nobody knows where it came from or who owns it. It is open 24 hours a day.
+- It is a 1950s roadside wash, built then and never updated. The present year stays unstated.
+- The toy opens on a wide establishing shot of the outside. The sole action is Proceed. Then the wash runs as one animation.
+- Outside is empty desert at night. One buzzing OPEN 24 HRS sign is the only neon.
+- Inside is old and worn. No generic neon tunnel.
+- Most runs are ordinary. Sometimes one quiet, deniable strange moment happens. At most one per run. No jump scares.
+
+## The place (Tom, 2026-11-16)
+
+| Part | Built |
+|---|---|
+| Outside | A two-lane road with telephone poles and sagging wires; a low stucco building with glass-block windows and hand-painted WASH · WAX · DRY; an office with a breeze-block screen; a swept canopy on pipe posts with two caged bulbs; an empty cashier's booth with a faded price board; one sodium lamp on a wooden pole with dust and bugs in its cone |
+| The pylon | 11 m: a slanted CAR WASH panel, an arrow ringed with bulbs (most dead, the rest chasing), and the only neon: OPEN 24 HRS, red and blue. The OPEN tubes buzz and drop out; the H is dead and now and then tries |
+| Sky | The shared sky at 01:30, a dense star field, the galaxy's band rising behind the building, far ranges, a glow of far towns, silent heat lightning |
+| Inside | Painted block walls (sea-green dado under cream, flaking), rust from the pipe brackets, a corrugated ceiling; arches of plain galvanised pipe with spray bars and nozzles; old twin tubes (one stutters, one runs dim, one is dead) and bulbs in wire cages; green motors with belts; small hand-painted signs; the chain in its slot; drain grates; moths at every lit lamp; mist that glows in the lamp light |
+| The car | Seen from outside in the shot: a long, low sedan with fins, chrome and lit tail lamps, in the Paint setting. From inside: a chrome strip down the bonnet, an ornament on the nose, a painted dash with a chrome trim. Low beams light the lot and the desert; the driver turns them off in the tunnel |
+| Suds | White, a touch warm or cool: soft heaped froth with a fine grain, a few clear bubbles of many sizes, lace where it drains. No coloured triple foam: that came decades later |
+
+## Strange (Tom, 2026-11-16: "strange things do happen when you go through it sometimes")
+
+Most runs are an ordinary wash. At Proceed the run may draw one moment: Sometimes gives a 30 % chance, Often 75 %, Off none; the moment is then one of eleven, equally likely (about 2.7 % each on Sometimes). Each moment has its own sound cue, and the world's sound ducks under it. Nothing rushes the glass; nothing flashes more than twice in a second.
+
+| Moment | Where | What happens | Cue |
+|---|---|---|---|
+| Lights out | Top brush | Every lamp in the tunnel dies for about 5 s; the cloth keeps turning in the dark; the lamps return with two flashes 0.45 s apart (a 1.5 s fade with reduced motion) | A relay's clunk and a falling hum; a ballast tick |
+| Hand | Full suds | A hand presses into the foam from outside, holds, then slides down and away, smearing it | A dull thump and a skin squeak; a long squeak |
+| Someone | Rolling out | A person stands in the desert at the far edge of the low beams. Back on the shot, someone stands under the lamp | A low swell, the world near silent |
+| Foam climbs | Suds | For three seconds the foam slides up the glass, then falls again | A slow rising creak |
+| Headlights | The whole run | Two headlights wait far behind in the mirror and never come closer; gone at the exit | A car idling, far off |
+| Extra station | Between wax and spot rinse | An arch that was not there, with a dim red bulb and a sign nobody can read | A low drone and a long hiss |
+| Two taps | Blower | The air stops and the chain holds; something taps the glass twice, and beads jump; the air starts again | The air dying; two knocks on glass; the air rising |
+| Snow | Rolling out | Snow on the ground and in the air, an overcast, no stars. Back on the shot it is still snowing | A muffled hush |
+| Noon | Rolling out | The exit opens on a bleached desert at noon. The shot is night again | Cicadas |
+| Lights on the hills | Rolling out | Four lights hang still over the far hills; one slowly fades and returns. They are still there on the shot | A soft low chord |
+| Exit is entrance | Rolling out | The exit opens on the entrance: the canopy, the door, the pylon | The sign's buzz |
+
+Cut, and why: the road gone (too small to notice at a 1.2 m eye height); the brushes parting on someone at the far end (foam and lens blur hide anyone in the tunnel; the figure moved to the desert); wipers that move on their own (not deniable).
 
 ## Controls
 
@@ -28,18 +72,17 @@ Bar: v2.
 | Slot | Holds |
 |---|---|
 | Top left (choice) | None |
-| Bottom left (actions) | Go (G), Wipers (W, held) |
+| Bottom left (actions) | Proceed (shown only while the establishing shot waits, or while reduced motion steps the run) |
 | Bottom right (slider) | None |
-| Key strip | `[CLICK] go`, `[DRAG] sweep the wipers`, `[W] wipers` |
-| Settings | Paint (Black, Cherry, Pearl, Teal), site Quality, Reset |
-| Dev (`?dev`) | Jump (to a station), Pace (1 to 8), camera: Eye height (-0.12 to 0.1 m), Eye side (-0.15 to 0.4 m), Seat distance (-0.18 to 0.25 m), Pitch (-10 to 10 deg), Yaw (-20 to 20 deg), Field of view (0.75 to 1.4), View Reset; Exposure, Bloom, Grain |
+| Key strip | `[CLICK] proceed`, `[DRAG] wipers` |
+| Settings | Paint (Black, Cherry, Pearl, Teal), Strange (Off, Sometimes, Often), site Quality, Reset |
+| Dev (`?dev`) | Jump (entry to desert), Pace (1 to 8), Strange next (Random, None, or one moment by name); driver's seat: Eye height, Eye side, Seat distance, Pitch, Yaw, Field of view, View Reset; establishing shot: Shot side, Shot height, Shot depth, Shot pitch, Shot yaw, Shot width, Shot Reset; Exposure, Bloom, Grain |
 <!-- /gen:bar -->
 
 | Gesture | Does |
 |---|---|
-| Click or tap | Parked or done: go (a dip to black returns the car to the door). Rolling: one wiper stroke |
-| Drag | The wiper blades follow the hand round their pivots |
-| Keys | G go, W wipers while held, Space or Enter on the stage go |
+| Click, tap, Enter or Space | On the shot: Proceed. On the run: one wiper stroke |
+| Drag | On the run: the wiper blades follow the hand round their pivots |
 | Wheel, pinch, tilt | None |
 
 ## Renderer and libraries
@@ -52,9 +95,10 @@ Bar: v2.
 | Importmap | Word for word |
 <!-- /gen:stack -->
 
-One full-screen pass per stage of the frame draws the whole view: a procedural tunnel seen through a simulated windscreen, so raw WebGL2 is the lightest tier that holds it.
+One full-screen pass per stage of the frame draws the whole view. Two cameras share the scene shader: the establishing shot (`uShot` 1, its own position and turn) and the driver's seat.
+The windscreen is a bowed plane that leans back 31 degrees: its cowl edge is 1.15 m ahead of the eye and 0.34 m down, its header 0.4 m ahead and 0.12 m up. Every view ray meets it (`glassHit()`), which gives glass coordinates in metres. The glass map, the drops and runs, the lather and the wipers work in those metres and reach the screen through a 2 x 2 Jacobian per pixel.
 
-The windscreen is a bowed plane that leans back 31 degrees: its cowl edge is 1.15 m ahead of the eye and 0.34 m down, its header 0.4 m ahead and 0.12 m up. Every view ray meets it (`glassHit()`), which gives glass coordinates: `gx` across, `gh` up the rake, in metres. The glass map, the shared drops and runs, the lather and the wipers all work in those metres and reach the screen through the glass's own perspective (a 2 x 2 Jacobian per pixel), so drops grow toward the header and runs converge.
+The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, the exit at z 19, the car toward +z). `exterior()` draws everything outside and hands rays through the front door to `tunnelFrom()`; `desertBeyond()` is the world past the exit door. The car from outside is a small sphere-traced SDF, drawn only in the shot. GLSL has no recursion, so mirrors use cheaper paths: `emitRay()` inside, `outEmit()` outside, `farLite()` for their sky.
 
 ## Shared modules
 
@@ -71,50 +115,57 @@ The windscreen is a bowed plane that leans back 31 degrees: its cowl edge is 1.1
 | `shared/glow.js` | `bloomChain`, `glowDetail` |
 | `shared/grade.js` | `GRADE` |
 | `shared/output.js` | `OUTPUT` |
+| `shared/sky.js` | `SKY`, `skyAt` |
 <!-- /gen:shared -->
 
-The page does not use `shared/environment.js`. The runner has one scene pass and a fixed glass step; this toy needs a glass-state pass before the scene and a per-pixel wet value in `wgPane()` (the wipers and the foam clear beads in their own places). It runs the runner's pass order by hand: scene, two box steps, the bokeh gather, the pane, the bloom chain, then grade and output.
-Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) for its scene and sim.
+`sky.js` gives the night palette (`skyAt(1.5)`), `skDusk`, `skStarField` and `skStars`; the galaxy band, the ranges, the town glow and the lightning are the page's own. The page does not use `shared/environment.js`: it needs a glass-state pass before the scene and a per-pixel wet value in `wgPane()`.
 
 ## Files
 
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2224 | The page: shell, shaders, sim, timeline, sound, input |
+| `index.html` | 3459 | The page: shell, shaders, sim, timeline, strange moments, sound, input |
 <!-- /gen:files -->
 
 ## Render pipeline
 
 | Pass | Target | Shader or material | Does |
 |---|---|---|---|
-| Glass | Two RGBA16F maps, ping-pong, 400 x 263 on Standard, over the glass in metres | `SIM_FS` | Foam depth, sheet water, bead wetness, foam dye, the foam's offset, the soap film it leaves, cloth and blade smear. Gravity runs down the rake; water runs in rivulet lanes, pools at the cowl and dams above parked blades; curtain lines climb the glass; blades push a bow wave; the dryer drives water up |
-| Scene | Full size, RGBA16F | `SCENE_FS` | Tunnel walls, floor and arches with LED bars and lit signs, the bonnet as a mirror, curtains, the foam fall, mitters, wrap and top brushes, the dryer's nozzle, the night street; spray streaks from `precip.js` |
-| Down | 1/4, 1/8, 1/32, 1/128 | `DOWN_FS` | Box steps; the two small ones light the foam |
-| Lens | Two targets, half or quarter size | `BOK_FS` (`bokeh.js`) | The eye focuses on the glass: a depth-aware disc gather from the 1/4 frame, tight (wiped glass) and wide (wet glass). Dry glass at the door racks focus to the tunnel |
-| Pane | Full size | `PANE_FS` (`wetglass.js`) | `wgPane()` in glass metres, sheet bending; lather with body (thickness relief, a lit lip, a contact shadow, froth and medium bubbles, large bubbles that pop into rings, glints that follow the nearest arch light, an iridescent film where it thins); dry-glass dust, dried spots and a sliding highlight; the dryer's air line; the wipers; then the car: dash and vents mirrored low on the glass, frit band and tint strip, pillar, side window, header, lining, mirror |
-| Knee | Half size | `KNEE_FS` | A soft knee picks the glow; halos lean a little toward white |
+| Glass | Two RGBA16F maps, ping-pong, 400 x 263 on Standard | `SIM_FS` | Foam depth, sheet water, beads, foam tint, the foam's offset, soap film, cloth and blade smear. Skipped on the shot |
+| Scene | Full size, RGBA16F | `SCENE_FS` | The shot: the lot, the building, the pylon, the car, the sky. The seat: the same world through the door, the tunnel and its stations, the bonnet, the desert past the exit; mist, moths and dust in the light |
+| Down | 1/4, 1/8, 1/32, 1/128 | `DOWN_FS` | Box steps; the two small ones light the foam. Skipped on the shot |
+| Lens | Two targets, half or quarter size | `BOK_FS` (`bokeh.js`) | The eye focuses on the glass from the soak to the blower; before and after, it looks out. Skipped on the shot |
+| Pane | Full size | `PANE_FS` (`wetglass.js`) | The wet glass, the lather, the blower's air line, the wipers, then the car round the glass. On the shot it passes the scene through |
+| Knee | Half size | `KNEE_FS` | A soft knee picks the glow |
 | Bloom | The chain from the knee | `bloomChain()` | Threshold 0, 5 levels (3 on Low) |
-| Final | Screen | `FINAL_FS` | `gdGrade()`, a fade for Go, hot light toward white, `ouAces()`, `ouSrgb()`, a triangular dither |
+| Final | Screen | `FINAL_FS` | `gdGrade()`, the dip to black, hot light toward white, `ouAces()`, `ouSrgb()`, a triangular dither |
 
-### Uniforms
+### Uniforms (beyond the stations)
 
 | Uniform | Type | Meaning | Range or default |
 |---|---|---|---|
-| `uS` | float | The car's place in the tunnel, metres from the door | -4.5 to 22.4 |
-| `uTop` | vec4 | Top brush: axis u, axis y, spin angle, on | Set each frame |
-| `uMit` | vec4 | Mitter curtain: u, strip sway, on | Swings 0.28 m at 0.41 Hz |
-| `uOn` | vec4 | Stations running: soak, foam, rinse, wax | 0 to 1 as the car nears |
-| `uAmb` | vec3 | The floods' light on the car, for the foam | From `carLight()` |
-| `uKnife` | vec3 | The dryer's air line: frame v, air | 0 to 1 |
+| `uShot`, `uShotP`, `uShotR`, `uShotF` | float, vec3, mat3, float | The establishing shot and its camera | From `shotCam()`: a wide and a tall preset, mixed by the stage's aspect, plus the Dev rows |
+| `uArchC[9]`, `uArchM[9]` | vec3, float | Each arch lamp's colour and level; the spray density round it | Flicker from `stepLights()`; mist from the stations |
+| `uOut` | vec4 | Sodium lamp, canopy bulbs, door spill, booth bulb | 0 to 1 |
+| `uNeon`, `uChase` | vec4, float | OPEN, 24 RS, the failing H, the bulbs; the bulbs' chase | 0 to 1 |
+| `uZen`, `uMid`, `uBand`, `uAnti`, `uSunD`, `uStars`, `uDay` | | The sky from `skyAt()` | 01:30 |
+| `uFlash` | vec2 | Heat lightning: level, bearing | Pulses at least 0.45 s apart |
+| `uMoth[25]` | vec3 | Two moths per arch lamp, bugs at the sodium head and the canopy bulbs | Placed each frame |
+| `uHead` | float | The low beams | 1 outside, 0 in the tunnel |
+| `uWorld` | vec4 | Strange: snow, noon, lights on the hills, the entrance past the exit | 0 to 1 |
+| `uFig`, `uExtra`, `uMirror` | vec4, float, float | Strange: a standing figure (x, z, level); the extra arch; the mirror's headlights | 0 to 1 |
+| `uHand`, `uTap`, `uGrav` | vec4, vec4, float | Strange, in the glass sim: a hand (x, y, press), a knock (x, y, strength), foam's gravity | Gravity 1, or -0.9 when the foam climbs |
 
 ## Sound
 
 | | |
 |---|---|
-| Graph | `audioKit()`; outside layers go through a cabin low-pass at 900 Hz and a peak at 125 Hz |
+| Graph | `audioKit()`; every world sound runs through one `duck` gain; inside sounds through a cabin low-pass at 900 Hz and a peak at 125 Hz; outside sounds through a low-pass at 2.2 kHz in the car, 7 kHz on the shot |
 | Engine | Raw Web Audio |
-| Voices | Engine idle (three low tones); roof drumming (a baked loop of ticks); glass drumming; spray hiss; brush cloth flutter with slaps; dryer roar with a turbine peak; curtain splashes; foam landing; conveyor chain knocks; wiper motor and turn knocks; the roller's clunk on Go |
+| Outside | Desert wind in gusts, crickets, the sign's 120 Hz transformer buzz and crackle when its tubes drop out, the lamp's hum |
+| Inside | Two old motors out of step, the chain's knock, a gurgling drain, a loose panel that rattles under the brushes and the blower, a belt that squeals now and then; roof and glass drumming, spray hiss, cloth flutter and slaps, the blower's roar, curtain splashes |
+| Strange | Each moment ducks the world bus and plays its own cue straight to the kit's output |
 | Sleep | The beds fade when the loop stops; the kit sleeps 1.5 s later and when the page hides |
 
 ## Quality and performance
@@ -122,10 +173,10 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 | | |
 |---|---|
 | Pixel ratio | `detail({ maxDpr: 2, budget: 2.2e6 })` |
-| Slow-frame step | `detail()` (sim size, bokeh scale and bloom levels follow the level) |
-| Idle | The loop stops when the car is parked, or 12 s after it stops past the exit, and the wipers rest |
-| Reduced motion | No loop: each Go shows the next station as a still (the glass sim runs forward to it); a wipe clears its fan at once; no body shake |
-| Measured | 2026-11-16, live page loop, pane shown, High at 2496 x 1344, roll-in: median 16.2 ms a frame (60 fps). Probe, one step and draw: 13 to 18 ms on High, 12 to 15 ms at Standard's 2.3 Mpx |
+| Slow-frame step | `detail()` watches the run only; the shot's capped frames do not count |
+| Idle | The shot lives at about 30 fps (the sign, the dust, the bugs, the lightning) and stops when hidden or under reduced motion |
+| Reduced motion | No loop; no flicker, no chase, no lightning. Proceed shows the next stop as a still; after the desert, the shot |
+| Measured | 2026-11-16, GPU timer queries in a background probe tab on a shared, loaded GPU, at 1052 x 560, interleaved with the v4 build: shot 6.9 ms; entry 17.3 (v4 14.3); suds 17.1 (16.5); brushes 18.5 (17.0); blower 11.9 (21.1); desert exit 20.0 (9.9). Absolute numbers are inflated by other tabs' work; the ratios hold |
 
 ## State and storage
 
@@ -133,22 +184,19 @@ Local copies: none. The page has its own hash and noise (`cwH`, `cwN`, `cwFbm`) 
 |---|---|
 | `stimming.carwash.sound` | Sound on or off |
 | `stimming.carwash.paint` | Paint |
+| `stimming.carwash.eyeX`, `.eyeY`, `.eyeZ`, `.pitch`, `.yaw`, `.fov` | The driver's seat |
+| `stimming.carwash.shotX`, `.shotY`, `.shotZ`, `.shotPitch`, `.shotYaw`, `.shotFov` | The establishing shot |
 | `stimming.carwash.expo`, `.bloom`, `.grain` | Dev tuning |
 
 ## Tests and QA
 
-None in `tests/`. Checked on 2026-11-15 in a probe tab (stills from the live shaders): every station at 1280 x 720, 375 x 812 and 812 x 375; the bar's corners do not overlap; no sideways scroll; sound levels measured per station with an analyser. Not checked: the look in motion at full speed with the pane in front, and sound by ear.
-
-## Setting (Tom, 2026-11-16)
-
-A shady car wash somewhere in the Nevada desert, open all night, owner unknown; now and then something strange happens on a run.
-Built so far: practical light only (cool white battens, warm work lamps at the brushes and dryer, the entry signal), plain lit sign boxes, galvanised steel, hazard paint, lamp mist; the camera Dev rows.
-Not built yet: the desert outside (road, sodium lamp, block building, stars, mountains), the OPEN 24 HRS sign, worn interior (flicker, rust), the Strange setting row and its events, the desert sound beds, the new vignette text.
+None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live shaders, defaults read through an in-page stub so stored Dev values do not apply): the shot at 1280 x 720, 375 x 812 and 812 x 375; every station; the first frame after Proceed; the Proceed flow driven through `frame()` (shot, dip, run, the button hidden); a drag on the glass; the sound graph built and rendered on an offline context through every phase. Each strange moment forced from its Dev handler and shot as a still, with the shot on return after Snow and Someone. Reduced motion, stubbed in the probe: the shot is a still, Proceed steps through every stop with the button kept, and the desert returns to the shot. Not checked: the look in motion with the pane in front, sound by ear, and the cues' timing by ear.
 
 ## Known issues
 
-- The live frame time of the heavy stations (foam, brushes) was not measured in the real loop; only the probe's GPU time. `stimming-auj3`
-- The passenger blade's arc is mostly out of frame on 16:9; only the driver's arc shows.
+- Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height, seat distance and grain sit at the end of their ranges. The stills above predate this change. `stimming-auj3`
+- The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
+- The passenger blade's arc is mostly out of frame on 16:9.
 
 ## Legacy build
 

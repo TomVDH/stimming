@@ -1,5 +1,7 @@
 # Wind farm (`windfarm`) implementation plan
 
+Status: active · Bean: `stimming-mku0`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Rows of offshore turbines fade into sea fog. The wind slider brings them to life, and at the right wind each turbine sheds a spiral of fog behind it.

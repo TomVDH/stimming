@@ -1,5 +1,7 @@
 # Washing line (`washline`): full redo spec
 
+Status: dropped · Bean: `stimming-d1vq`
+
 > Bean `stimming-d1vq`. Tom picked this direction on 2026-11-10. It replaces the first plan (sheets against the sky), the seven anime scenes and the Coen dioramas. Their pages stay in git history.
 
 **Goal:** you hang the washing yourself on a pulley line. Reel it out over a gap, watch it glow with the sun behind it, and pull pegs until a piece flies away.

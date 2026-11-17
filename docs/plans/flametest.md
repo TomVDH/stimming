@@ -1,5 +1,7 @@
 # Flame test (`flametest`) implementation plan
 
+Status: done · Bean: `stimming-6znk`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Flick a pinch of metal salt into a burner flame. The flame flares into that salt's colour, and a prism beside it fans the light into the salt's own emission lines.

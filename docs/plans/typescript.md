@@ -1,5 +1,7 @@
 # TypeScript feasibility
 
+Status: done · Bean: `stimming-35mm`
+
 Bean: `stimming-35mm` (epic `stimming-3s8z`). Written 2026-11-14.
 Tom picked path (a) on 2026-11-14 (`docs/code-health.md`, decisions 8 to 10). Steps 1 to 3 and the pilot are done (bean `stimming-bn47`).
 

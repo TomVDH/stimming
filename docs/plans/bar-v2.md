@@ -1,5 +1,7 @@
 # Bar v2: the Corners shell
 
+Status: done · Bean: `stimming-tbpn`
+
 Spec. Tom approved the design on 2026-11-08. Bean: `stimming-tbpn`.
 It replaces the control bar standard of 2026-11-03 in `AGENTS.md` and bean `stimming-848s`.
 Mockups: the brainstorm screens `layout-v2`, `onscreen`, `settings` and `phone` (Corners, Keys, Drop sheet, Corners stay).
@@ -166,6 +168,7 @@ It drops from the top-right cluster, right-aligned, 280 px wide (full width less
 - Closes on Escape, a click outside, or the button again. Focus returns to the button.
 - Focus moves into the sheet when it opens. Tab stays inside it.
 - A row with `persist: true` stores its value in `stimming.<id>.<setting id>`.
+- A row may carry `group: 'Name'`. A new group value opens a labelled section in the sheet; rows before the first group stay in the toy's own section. Settings and Dev both read it. Railgun is the first toy on it.
 - With no toy rows and no Quality, the Settings button hides.
 
 ### Dev sheet (Tom, 2026-11-12)

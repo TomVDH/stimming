@@ -1,5 +1,7 @@
 # Spark wheel (`spark`) implementation plan
 
+Status: done · Bean: `stimming-1dfl`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 > **Status, 2026-11-15.** Built from this plan as a WebGL page; that build is now Classic (`spark/legacy.html`). The Fresh page (`spark/index.html`) has moved on. Read "Since this plan" below before you trust a detail here.

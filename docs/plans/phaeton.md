@@ -1,5 +1,7 @@
 # Phaeton (`phaeton`) implementation plan
 
+Status: active · Bean: `stimming-xh8y`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A rail gun diorama, seen from the side. You load it by hand: the rack, the crane, the breech lever. Hold to charge, release to fire. The slug goes sideways through a row of mixed targets in bullet time, then everything bursts at once in real time.

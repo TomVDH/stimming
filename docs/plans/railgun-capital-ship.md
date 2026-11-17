@@ -1,5 +1,7 @@
 # Railgun: capital ship target (`stimming-ugc4`) design
 
+Status: done · Bean: `stimming-x3wl`
+
 > Design spec. Tom approved it section by section, 2026-11-12. The implementation plan comes next, through superpowers:writing-plans.
 
 **Goal:** A second Railgun target beside the asteroid: an enemy battleship in orbit. A full charge breaks it into five hulks. A tap wounds it. The hulks fall over minutes as re-entry streaks and crash far beyond the mesas.

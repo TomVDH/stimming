@@ -1,5 +1,7 @@
 # Bench (`bench`) implementation plan
 
+Status: active · Bean: `stimming-yaug`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** One backlit beaker, two experiments. Electrolysis: switch on the current, and bubbles stream from two electrodes while the indicator blooms into a rainbow from acid to base. Clock: pour one clear liquid into another, wait, and the beaker snaps to ink black.

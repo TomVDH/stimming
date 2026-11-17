@@ -7,9 +7,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Galaxy</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
 <script type="importmap">
@@ -62,7 +59,7 @@
 </div>
 
 <script type="module">
-import { initPage, sound, oklchLinear, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
+import { initPage, sound, oklchLinear, onQuality, pixelRatio, stage, pageReady, buildSteps } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 stage('libs');
 // The intro holds until the page, its font and the first frame are in.
@@ -357,14 +354,19 @@ const wells = [];
 async function start() {
   if (!(await hasWebGPU())) return noWebGPU();
 
+  // Each library that lands moves the intro's load line.
+  let libs = 0;
+  const got = m => { stage('libs', ++libs / 5); return m; };
   const [THREE, TSL, { bloom }, { default: AfterImageNode }, { snoise }] = await Promise.all([
-    import('three/webgpu'),
-    import('three/tsl'),
-    import('three/addons/tsl/display/BloomNode.js'),
-    import('three/addons/tsl/display/AfterImageNode.js'),
-    import('three/addons/tsl/math/curlNoise.js'),
+    import('three/webgpu').then(got),
+    import('three/tsl').then(got),
+    import('three/addons/tsl/display/BloomNode.js').then(got),
+    import('three/addons/tsl/display/AfterImageNode.js').then(got),
+    import('three/addons/tsl/math/curlNoise.js').then(got),
   ]);
   stage('build');
+  // The build: the device, the compute compile, the draw compile, then two frames before the third shows.
+  const built = buildSteps(5);
   const {
     Fn, If, uniform, instancedArray, instanceIndex, hash, vec3, vec4, float, uint, select, uv, smoothstep,
     mix, sqrt, cos, sin, log, exp, cross, inverseSqrt, varying, atomicAdd, atomicStore, atomicLoad, pass, max, atan,
@@ -387,6 +389,7 @@ async function start() {
 
   renderer = new THREE.WebGPURenderer({ antialias: false });
   await renderer.init();
+  built();
   // WebGPURenderer can fall back to WebGL 2; this toy does not.
   if (!renderer.backend.isWebGPUBackend) {
     renderer.dispose();
@@ -1823,6 +1826,7 @@ async function start() {
   resize();
   // Shaders compile off the critical path, so loading never freezes.
   await renderer.compileComputeAsync([seedPass, updatePass, resetPass, countPass, gasClear, ...gasPasses]);
+  built();
   seed();
   syncWells();
   // The hole's sprites compile now, drawn at zero size.
@@ -1833,6 +1837,7 @@ async function start() {
   gas.visible = true;
   shellFx.visible = true;
   await Promise.all([scenePass.compileAsync(renderer), diskPass.compileAsync(renderer)]);
+  built();
   shadow.visible = disk.visible = jets.visible = false;
   beams.forEach(b => { b.visible = false; });
   tails.forEach(t => { t.visible = false; });
@@ -2043,7 +2048,7 @@ async function start() {
     }
     renderPipeline.render();
     sample(now);
-    if (++frames === 3) { canvas.classList.add('on'); stage('first-frame'); }
+    if (++frames === 3) { canvas.classList.add('on'); stage('first-frame'); } else if (frames < 3) built();
   }
 
   // The loop runs only while the panel is on screen.

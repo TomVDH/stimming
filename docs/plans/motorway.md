@@ -1,5 +1,7 @@
 # Lit motorway (`motorway`) implementation plan
 
+Status: active · Bean: `stimming-o6te`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** One buzzing sodium lamp over a motorway overpass. Pull the zoom and the camera climbs out through the dark until the whole country's motorway network glows as orange ribbons.

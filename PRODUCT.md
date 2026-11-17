@@ -11,7 +11,7 @@ web
 
 ## Users
 
-Anyone who fidgets (Tom, 2026-11-16).
+Anyone who fidgets.
 The visitor sits at a desk, often in an office, and opens one toy to play for a short time.
 Phones count: every page is checked at 375 × 812 and 812 × 375.
 The visitor comes to play. Reading is for the curious visitor only.
@@ -24,7 +24,7 @@ A toy page has two parts:
 | Part | Job |
 |---|---|
 | Player | The toy itself on a full stage, with the Bar v2 controls. |
-| Content zone | The page under the stage. It holds the making-of, the idea behind the toy, notes and changes, and attribution (Tom, 2026-11-16). |
+| Content zone | The page under the stage, in fixed short sections: idea, making-of, changes, credits. Nothing is written on the stage. |
 
 Success: the visitor plays first, with nothing in the way. A curious visitor finds the content zone and reads it with ease.
 
@@ -33,19 +33,19 @@ Success: the visitor plays first, with nothing in the way. A curious visitor fin
 - Every toy is an original object. No toy carries a brand name (Tom's exceptions: Domino Day, Strandbeest).
 - Every toy has a Flemish name with IPA beside its English name (`toys.json`).
 - Shader-rich toys are the strength: Glass, Rain, Bubbles, Galaxy.
+- S tier, the bar for new toys: Prism, Googly eyes, Fire, Pin art.
 
 ## Operating Context
 
 - Plain HTML and JS, no build step. GitHub Pages deploys every push to `main`.
 - New toys start in the Lab (`?lab`). A toy reaches the main shelf only after Tom vets it.
 - One change goes to one toy first. Tom picks the toys that get it next.
-- Content authoring: Claude drafts each toy's content from its doc (`docs/toys/`) and its bean; Tom edits. One structured file per toy (Tom, 2026-11-16).
+- Content authoring: Claude drafts each toy's content from its doc (`docs/toys/`) and its bean; Tom edits. One structured file per toy.
 
 ## Capabilities and Constraints
 
-- 42 toys on the main shelf, 61 in the Lab (2026-11-16).
 - `toys.json` is the one source for each toy's name, number, Flemish name, IPA, motto, emblem and accent. `series.json` defines the eleven series.
-- Libraries are one fixed set (three.js, culori, Tone.js, GSAP, simplex-noise). Add no other library without Tom.
+- Libraries are one fixed set (`docs/standards/code.md`). Add no other library without Tom.
 - Hold 30 fps or better. An idle page does no per-frame work.
 - Sound is synthesized, muted by default, and starts after a gesture.
 - The page scrolls past the stage only into the content zone, never sideways (Bar v2 rule 4).
@@ -55,7 +55,6 @@ Open decisions:
 
 - The transition from the player to the content zone. Tom picked Recede on 2026-11-09 and asked for more iterations on 2026-11-16.
 - The file format of a toy's content.
-- The copy rule says writing lives only in the vignette (a heading, two paragraphs, a figure). The content zone holds more than that; the new limit is not set.
 
 ## Brand Commitments
 
@@ -63,21 +62,24 @@ Tom's standing rulings. Record only; do not expand.
 
 - Name: Stimming. The onnozelaer mark sits in the footer.
 - Dark only. Colours are OKLCH tokens (`shared/stim.css`).
-- Type: Gabarito. Menu toy labels use Iosevka Term Slab in caps.
+- Type: Gabarito for writing, B612 for the wordmark and headings, Iosevka Term Slab caps for menu labels and controls.
 - Taste: daring, zany and original. Never skeuomorphic or fussy.
 - Too much: Harmonograph and Music box were "way too involved". Too little: bare-minimal is "too minimal".
 - Usable first: the Awwwards-style menu set was "fun but not usable".
 - No blurbs or taglines on the stage. Writing lives under the stage.
-- Menu icons: never a two-tone hard offset shadow. A soft halo is fine.
+- No hard offset shadow on anything. A soft halo is fine.
 - Series icons: no gold border, no sparks, no depth, tilt or wobble, no sheen.
 - The intro ships the Signal variety: a flash box, then the logo takes the toy's accent.
+- Graphics: practical lamps, real materials and haze; never wall-to-wall neon.
+- Big things move at real speed or slower.
+- Replies and lab pages carry no design-explanation copy. Show the thing; labels only.
 
 ## Evidence on Hand
 
 | Evidence | Path |
 |---|---|
 | Toy facts | `toys.json`, `series.json` |
-| Toy docs (20 toys) | `docs/toys/` |
+| Toy docs | `docs/toys/` |
 | Work history per toy | `.beans/` |
 | Icon verdicts | `icons/picks.json` |
 | First content zone wireframes | `annexlab/`, `docs/plans/annex.md` |

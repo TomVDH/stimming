@@ -1,5 +1,7 @@
 # Beer pour (`beer`) implementation plan
 
+Status: active · Bean: `stimming-fvs3`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A high-fidelity pour of real Belgian beers. Each beer has its own bottle and its own glass. Bubbles stream up, the head climbs, swells and settles, and every sip leaves a lacing ring.

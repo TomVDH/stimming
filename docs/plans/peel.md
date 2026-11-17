@@ -1,5 +1,7 @@
 # Peel (`peel`) implementation plan
 
+Status: active · Bean: `stimming-9lbt`
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** A sheet of film lies over a glowing surface. Grab an edge and peel it back: the film curls, the surface under it comes up crisp and bright, and a faint blue line of light runs along the peel front. Flick it and the sheet tears free and flutters off. Lay another and peel again.

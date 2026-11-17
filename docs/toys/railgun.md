@@ -21,6 +21,19 @@
 An old railgun on a pylon stands over a dusty plain, in one locked-off shot from 2.6 km. A burning asteroid hangs beyond the muzzle.
 Hold to charge, release to fire; a full charge shatters the rock. If nobody fires, the rock strikes the planet, and the scene rewinds into white.
 
+## Rules
+
+- A cloud change needs a gate in its commit message: `clouds-check: PASS` or `look-approved:` with Tom's words. `tools/commit.sh` refuses the commit without one.
+- The gate covers `railgun/storms.js`, `railgun/stormlab.html`, and the cloud, air, sky, storm and band sections of `railgun/index.html`.
+- Run the check with `npx -y -p playwright@1.63.0 node tools/clouds-check.mjs`. Put its last line in the message.
+- The rig, its stills and its checks: `docs/qa/railgun-clouds/README.md`.
+- Write a new golden set (`--update-golden`) only after Tom approves the look. Put his words in the commit.
+- The camera's point of view is a set of Dev rows (`?dev`): eye, pitch, yaw and field of view. Today's view is the default. Railgun has no camera rows yet.
+
+## Direction
+
+To write.
+
 ## Controls
 
 <!-- gen:bar -->
@@ -61,7 +74,7 @@ A WebGPU spike (`stimming-gxfd`) kept Railgun on WebGL2; its proof sits in `lab/
 <!-- gen:shared -->
 | Module | Imports |
 |---|---|
-| `shared/stim.js` | `initPage`, `whenVisible`, `pixelRatio`, `onQuality`, `linFit`, `reduced`, `onReducedChange`, `quality`, `audioKit`, `sound`, `stage`, `pageReady`, `later` |
+| `shared/stim.js` | `initPage`, `whenVisible`, `pixelRatio`, `onQuality`, `linFit`, `reduced`, `onReducedChange`, `quality`, `audioKit`, `sound`, `stage`, `pageReady`, `later`, `buildSteps` |
 | `shared/intro.js` | `intro` |
 | `shared/flare.js` | `FLARE` |
 | `nvg/tube.js` | `Tube`: another toy's module, not in `shared/` |
@@ -131,6 +144,7 @@ Grade pass: `uRage`, `uFlash`, `uSoft`, `uSeed`, `uCon`, `uSat`, `uBri`, `uGrain
 | Idle | Sleeps after 60 s with no input (`?sleep=`); `whenVisible` pauses it off screen |
 | Reduced motion | About 60 checks: no shake, no sparks, no flaps or arcs, half gains |
 | QA hook | `window.__qa` exposes draws, rung and info |
+| Start-up | The scene builds in one task, then compiles twice behind the intro (visible meshes, then hidden ones). The intro's load line counts four steps: scene, compile, warm compile, first frame |
 
 ## State and storage
 
