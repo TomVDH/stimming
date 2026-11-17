@@ -814,7 +814,8 @@ function buildHero(main: Dome, tx: Painted): Built {
   // The slit girders run over the top to the back foot.
   // Their top carries the leaf's rails.
   // A lip over the slit sheds the wind and the rain.
-  const GIRDER = um([[0, 0], [0.2, 0], [0.2, 0.012], [0.15, 0.012], [0.15, 0.22], [0.135, 0.235], [-0.045, 0.235],
+  // The foot flange's edge is chamfered, so it catches the light.
+  const GIRDER = um([[0, 0], [0.205, 0], [0.18, 0.012], [0.15, 0.012], [0.15, 0.22], [0.135, 0.235], [-0.045, 0.235],
     [-0.045, 0.2], [-0.03, 0.2], [-0.03, 0.222], [0, 0.222]]);
   const pl = new Geo();
   for (const side of [-1, 1]) pl.sweep(GIRDER, framesAlongE(R, side * SLIT_B, 0, Math.PI, 120, side));
@@ -1060,7 +1061,8 @@ function buildHero(main: Dome, tx: Painted): Built {
     const r = p.length(), b = Math.asin(p.x / r), e = Math.atan2(p.y, -p.z);
     return Math.abs(b) < SLIT_B + u(0.32) / R && e < SLIT_E + u(0.3) / R;
   };
-  const RIBP = um([[-0.006, 0], [0.006, 0], [0.006, -0.2], [0.06, -0.2], [0.06, -0.215], [-0.06, -0.215], [-0.06, -0.2], [-0.006, -0.2]]);
+  // Their tops sit 2 cm under the plate, so no face fights the shell's depth.
+  const RIBP = um([[-0.006, -0.02], [0.006, -0.02], [0.006, -0.2], [0.06, -0.2], [0.06, -0.215], [-0.06, -0.215], [-0.06, -0.2], [-0.006, -0.2]]);
   for (let k = 0; k < 12; k++) {
     const az = (7.5 + 30 * k) * DEG, fr: Frame[] = [];
     for (let L = 0; L <= 88; L += 2) {
@@ -1070,7 +1072,7 @@ function buildHero(main: Dome, tx: Painted): Built {
     }
     if (fr.length > 1) rb.sweep(RIBP, fr);
   }
-  const INBOX = um([[0, 0], [0.24, 0], [0.24, -0.3], [0, -0.3]]);
+  const INBOX = um([[0, -0.02], [0.24, -0.02], [0.24, -0.3], [0, -0.3]]);
   for (const side of [-1, 1]) rb.sweep(INBOX, framesAlongE(R - 0.004, side * SLIT_B, 0, SLIT_E + u(0.24) / R, 60, side));
   rb.sweep(INBOX, framesAlongB(R - 0.004, SLIT_E, -SLIT_B, SLIT_B, 10));
   rb.lathe([[R - 0.01, u(0.16)], [R - u(0.2), u(0.16)], [R - u(0.2), u(0.14)], [R - u(0.03), u(0.14)], [R - u(0.03), u(0.02)],

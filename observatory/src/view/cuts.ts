@@ -276,7 +276,8 @@ export const cuts = {
     showBars(true);
   },
   // QA: keeps the hero model in outside the cuts, for stills.
-  hold(on: boolean): void { held = on; },
+  // The beam thins as in the close shots.
+  hold(on: boolean): void { held = on; beam(on ? BEAM_CLOSE : 1); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     if (!grab) return;
