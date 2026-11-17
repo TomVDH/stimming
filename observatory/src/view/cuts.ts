@@ -1,15 +1,18 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Raycaster, Vector3 } from 'three';
+import { MathUtils, Matrix4, Raycaster, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { CUTS, cutAt, cutsTotal, lens, makeLocks, startAt, type Cut, type Shot } from '../core/sequence.ts';
+import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
 import type { Phase } from '../core/machine.ts';
+import type { Star } from '../core/catalog.ts';
+import type { AltAz } from '../core/sky.ts';
+import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
 import { hero } from '../world/hero.ts';
-import { laser } from '../world/laser.ts';
+import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
@@ -34,7 +37,7 @@ const DOME_R1 = 3.3;
 // inside: the eye stands inside the drum, on the observing floor.
 type Point = [number, number, number];
 type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean };
-const PLANS: Record<Shot, Plan> = {
+const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // a. Low on the slit's left: the louvred leaf between its girders.
   // The crown cuts the frame on a diagonal, with sky above.
   // The leaf slides back over the crown and opens a black arch.
@@ -65,13 +68,10 @@ const NEAR = [1, 0.8, 0.65];
 const EYE_R = 42;
 // Reduced motion: one still shot, then one crossfade to the wide shot.
 const STILL_S = 2.6, FADE_S = 1.2;
-// Reduced motion holds the slit shot.
-const STILL_CUT: Cut = CUTS.find(c => c.shot === 'slit')!;
 // After the last cut, a quick dip to black leads to the wide shot.
 // The last cut fades down in DIP_DOWN seconds.
 // The wide shot fades up in DIP_UP seconds.
 const DIP_DOWN = 0.35, DIP_UP = 0.45;
-const LAST_CUT: Cut = CUTS[CUTS.length - 1];
 // The letterbox bars, as a share of the stage height.
 const BAR = 0.055;
 // The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
@@ -82,7 +82,9 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 // A locked camera in world space.
 // aim: the point it looks at.
 // fov: its vertical lens in degrees.
-type Framed = { eye: Vector3; aim: Vector3; fov: number };
+// glass: the glass shot's eye distance, in metres.
+// Its eye follows the glass's place of rest each frame.
+type Framed = { eye: Vector3; aim: Vector3; fov: number; glass?: { dist: number } };
 
 const centre = new Vector3();
 const ray = new Raycaster();
@@ -123,6 +125,7 @@ const slitNow = (): number => -complex.main.cupola.rotation.y / DEG;
 // aspect: the frame's width over its height.
 // The look point turns with the slit, not with the eye.
 function place(cut: Cut, az: number, aspect: number): Framed {
+  if (cut.shot === 'glass') return placeGlass(cut, aspect);
   const plan = PLANS[cut.shot];
   const look = slitPoint(plan.look, az * DEG, new Vector3());
   const { fov, tall } = lens(cut.fov, aspect);
@@ -144,6 +147,75 @@ function place(cut: Cut, az: number, aspect: number): Framed {
   // No clear eye: the nearest eye of the plan as it stands.
   slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
   return { eye, aim, fov };
+}
+
+/* ---------- the glass shot: locked on the glass's place of rest ---------- */
+// Copied from world/hero-scope.ts, in dome units.
+// The axes cross this high over the drum's foot.
+const AXES_Y = 3.75;
+// The site's latitude in degrees.
+const LAT = 51;
+// The tube's axis runs this far from the polar axis.
+const D_OFF = 0.3775;
+// The glass's face, along the tube from the declination axis.
+const GLASS_Z = 2.27;
+// The glass's diameter.
+const GLASS_D = 0.276;
+// The glass fills this share of a landscape frame's height.
+const GLASS_FILL = 0.6;
+// It fills this share of a portrait frame's width.
+const GLASS_FILL_TALL = 0.7;
+// The eye sits this many degrees under the tube's axis.
+// The glass then mirrors the sky, not the ground.
+const GLASS_UNDER = 4 * DEG;
+// The picked star shines this much brighter in the glass.
+const TARGET_K = 1.5;
+const POLE = new Vector3(0, Math.sin(LAT * DEG), -Math.cos(LAT * DEG));
+const EQ = new Vector3(0, Math.cos(LAT * DEG), Math.sin(LAT * DEG));
+const gm = new Matrix4(), gr = new Matrix4();
+const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
+
+// The glass's centre, axis and up in world space.
+// alt and az: the tube's pose in degrees.
+// The maths follow the mount in world/hero-scope.ts.
+// The real model never moves for it.
+function glassAt(alt: number, az: number): void {
+  const a = alt * DEG, z = az * DEG;
+  tmp.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
+  const ha = Math.atan2(-tmp.x, tmp.dot(EQ));
+  const decl = Math.asin(Math.min(1, Math.max(-1, tmp.dot(POLE))));
+  gm.makeTranslation(0, AXES_Y, 0)
+    .multiply(gr.makeRotationX(LAT * DEG - Math.PI / 2))
+    .multiply(gr.makeRotationY(-ha))
+    .multiply(gr.makeRotationX(-decl))
+    .multiply(gr.makeTranslation(D_OFF, 0, 0))
+    .premultiply(complex.main.root.matrixWorld);
+  gp.set(0, 0, GLASS_Z).applyMatrix4(gm);
+  ga.set(0, 0, 1).transformDirection(gm);
+  // Up lies across the axis, toward the sky.
+  gu.set(0, 1, 0).addScaledVector(ga, -ga.y).normalize();
+}
+
+// The glass shot's lens and eye distance, fixed at its first frame.
+// A landscape frame holds the glass at GLASS_FILL of its height.
+// A portrait frame holds it at GLASS_FILL_TALL of its width.
+function placeGlass(cut: Cut, aspect: number): Framed {
+  const d = GLASS_D * complex.main.root.scale.x;
+  const dist = d / GLASS_FILL / 2 / Math.tan(cut.fov * DEG / 2);
+  const fov = aspect < 1 ? 2 * Math.atan(d / GLASS_FILL_TALL / aspect / 2 / dist) / DEG : cut.fov;
+  return { eye: new Vector3(), aim: new Vector3(), fov, glass: { dist } };
+}
+
+// Puts the glass shot's eye before the glass's place of rest.
+// At rest the tube stands at its goal altitude.
+// Its azimuth is the one it has now.
+// So the eye turns with the tube and the dome.
+// The glass rises into the frame and stops at its centre.
+function glassEye(s: Framed, v: View): void {
+  glassAt(v.restAlt, v.tubeAz);
+  const d = s.glass!.dist;
+  s.eye.copy(gp).addScaledVector(ga, d * Math.cos(GLASS_UNDER)).addScaledVector(gu, -d * Math.sin(GLASS_UNDER));
+  s.aim.copy(gp);
 }
 
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
@@ -172,16 +244,25 @@ function showBars(on: boolean, opacity = 1): void {
 }
 
 /* ---------- the player ---------- */
+// The loop hands the cuts the tube and its lift each frame.
+// restAlt: the altitude the tube lifts to.
+// shutter: the shutter's travel, 1 when open.
+export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number };
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
-let t = 0;
 // mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
-// Reduced motion: 'still', then 'fade' (the crossfade).
-let mode: 'off' | 'cuts' | 'dip' | 'still' | 'fade' = 'off';
-let fadeT = 0, grab = false;
+// Reduced motion: 'wait', 'still', then 'fade'.
+// 'wait' keeps the wide shot while the tube lifts.
+let mode: 'off' | 'cuts' | 'dip' | 'wait' | 'still' | 'fade' = 'off';
+let seq: Seq = startSeq('open', { altLeft: 0, altEta: 0 });
+// The tube as the loop last reported it.
+let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0 };
+let stillT = 0, fadeT = 0, grab = false;
 // The time in the dip.
 // dipWide is true once the black hides the change to the wide shot.
 let dipT = 0, dipWide = false;
+// The shot the dip holds.
+let lastShot: Shot = 'glass';
 // The locked cameras: each cut sets its own on its first frame.
 // The cupola can turn after the pick.
 // So each cut frames the slit where it stands at the cut.
@@ -203,6 +284,19 @@ function swap(on: boolean): void {
     complex.main.show(!on);
   }
   if (on) hero.follow(complex.main);
+}
+
+// The catalog waits here until the hero's glass can take it.
+// The glass bakes its star map once, in about 30 ms.
+// That happens while the wide shot shows.
+let stars: readonly Star[] | null = null, starsSet = false;
+// Hands the glass its stars once.
+// It hands it the sky's turn while the hero shows.
+function feedGlass(show: boolean): void {
+  const sc = hero.scope;
+  if (!sc) return;
+  if (stars && !starsSet) { sc.setStars(stars); starsSet = true; }
+  if (show && sky.points) sc.setSky(sky.points.matrix);
 }
 
 function toWide(): void {
@@ -246,45 +340,64 @@ export const cuts = {
   // True while a close shot or the dip shows; a tap or Esc then skips.
   get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
   get shot(): Shot | null {
-    if (mode === 'cuts') return cutAt(t)?.shot ?? null;
-    if (mode === 'dip') return dipWide ? null : LAST_CUT.shot;
-    return mode === 'still' ? STILL_CUT.shot : null;
+    if (mode === 'cuts') return seq.shot;
+    if (mode === 'dip') return dipWide ? null : lastShot;
+    return mode === 'still' ? 'glass' : null;
   },
-  get time(): number { return t; },
+  // Seconds since the pick.
+  get time(): number { return seq.total; },
+  // The loop hands over the catalog once it loads.
+  setStars(s: readonly Star[]): void { stars = s; },
   // Starts the sequence.
   // phase: the machine's phase after the pick.
-  // An open shutter plays only the slew cuts.
-  start(phase: Phase): void {
+  // An open shutter starts with the lift shot.
+  // v: the tube and its lift.
+  // target: the picked star.
+  start(phase: Phase, v: View, target: AltAz): void {
     const main = complex.main;
     main.root.updateMatrixWorld(true);
     main.cupola.getWorldPosition(centre);
     R = DOME_R1 * main.root.scale.x;
-    mode = reduced() ? 'still' : 'cuts';
-    t = mode === 'cuts' ? startAt(phase) : 0;
+    view = v;
+    seq = startSeq(phase, v);
+    // Reduced motion waits in the wide shot until the tube rests.
+    mode = reduced() ? 'wait' : 'cuts';
+    stillT = 0;
     locks.clear();
     useHero = hero.ready;
     cutShot = null;
+    hero.scope?.setTarget(altAzDir(target), TARGET_K);
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
     // A skip in the dip lands on the wide shot at once.
-    if (mode === 'cuts' || mode === 'dip') toWide();
+    if (mode === 'cuts' || mode === 'dip' || mode === 'wait') { seq = skipSeq(seq); toWide(); }
     else if (mode === 'still') startFade();
     else return;
     redraw();
   },
   // The loop sets this hook: it marks the frame dirty and wakes.
   onSkip(fn: () => void): void { redraw = fn; },
-  step(dt: number): void {
+  // v: the tube and its lift now.
+  step(dt: number, v: View): void {
     if (mode === 'off') return;
-    t += dt;
-    if (mode === 'cuts' && t >= cutsTotal) {
-      mode = 'dip';
-      dipT = 0; dipWide = false;
-      stepDip(t - cutsTotal);
+    view = v;
+    if (mode === 'cuts') {
+      seq = stepSeq(seq, dt, v);
+      if (seq.done) {
+        lastShot = seq.shot;
+        mode = 'dip';
+        dipT = 0; dipWide = false;
+        stepDip(0);
+      }
     } else if (mode === 'dip') stepDip(dt);
-    else if (mode === 'still' && t >= STILL_S) startFade();
-    else if (mode === 'fade' && !grab) {
+    else if (mode === 'wait') {
+      // The still shows the settled glass in the open slit.
+      if (v.altLeft <= 0 && v.shutter >= 1) { mode = 'still'; stillT = 0; }
+    } else if (mode === 'still') {
+      stillT += dt;
+      if (stillT >= STILL_S) startFade();
+    } else if (mode === 'fade' && !grab) {
       fadeT += dt;
       const k = Math.min(1, fadeT / FADE_S);
       still.style.opacity = String(1 - ease(k));
@@ -294,16 +407,18 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    const close = !(mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide));
+    const close = mode === 'cuts' || mode === 'still' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
+    // The dip holds the last cut until the frame is black.
+    // The reduced-motion still is the glass shot.
+    const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
-    const cut = mode === 'cuts' ? cutAt(t) : null;
-    if (cut && cut.shot !== cutShot) { cutShot = cut.shot; useHero = hero.ready; }
+    if (mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready; }
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
+    feedGlass(close ? useHero : held);
     if (!close) return;
-    // The dip holds the last cut until the frame is black.
-    const s = mode === 'cuts' ? locks.at(t) : locks.of(mode === 'dip' ? LAST_CUT : STILL_CUT);
-    if (!s) return;
+    const s = locks.of(cutOf(shot));
+    if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);
     beam(BEAM_CLOSE);

@@ -106,6 +106,11 @@ const showing = () => cuts.busy || light !== lightGoal(machine.phase);
 const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
 // Where the target stands now.
 const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LON), LAT);
+// What the pick sequence reads: the tube and its lift.
+const liftView = () => ({
+  altLeft: machine.altLeft(), altEta: machine.altEta(), tubeAlt: machine.tubeAlt, tubeAz: machine.tubeAz,
+  restAlt: machine.target ? targetPos(machine.target).alt : machine.tubeAlt, shutter: machine.shutter01,
+});
 const skyMoving = () => clock.easing() || clock.speed > 1;
 
 function pose(): void {
@@ -164,7 +169,7 @@ function tick(now: number): void {
   const before = machine.phase;
   machine.step(dt, { targetAlt: tp.alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
   if (machine.moving || machine.phase !== before) dirty = true;
-  cuts.step(dt);
+  cuts.step(dt, liftView());
   if (cuts.busy) dirty = true;
   const lv = lightLevel(machine.phase, light, dt);
   if (lv !== light) { light = lv; dirty = true; }
@@ -258,7 +263,7 @@ function pick(s: Star): void {
   const from = machine.phase;
   machine.pick(s);
   // An open shutter plays only the slew cuts.
-  if (from === 'aim' || from === 'lost') cuts.start(machine.phase);
+  if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s));
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -283,7 +288,8 @@ whenVisible(stageEl, (vis: boolean) => {
 });
 
 // The catalog arrives after the first frame: draw the stars in.
-void skyReady.then(() => draw());
+// The hero's glass takes the catalog too.
+void skyReady.then(() => { cuts.setStars(sky.stars); draw(); });
 
 // A star's place on the canvas in CSS pixels, or null when it stands behind the camera.
 function starScreen(hip: number): { x: number; y: number; alt: number; az: number } | null {
@@ -329,7 +335,9 @@ function review(): void {
   const play = (s: Star): void => { input(targetPos(s)); pick(s); };
   const replay = (): void => {
     // The shutter is shut once its bounce at the stop ends.
-    if (machine.shutter01 > 0 || !shutterAtRest(machine.shutter)) { setTimeout(replay, 100); return; }
+    // The tube parks too.
+    // So the replay lifts as far as the first run.
+    if (machine.shutter01 > 0 || !shutterAtRest(machine.shutter) || machine.altLeft() > 0) { setTimeout(replay, 100); return; }
     shutting = false;
     if (star) play(star);
   };

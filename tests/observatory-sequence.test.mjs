@@ -1,11 +1,13 @@
 // Observatory pick sequence and the complex lights. Run: node --test tests/observatory-sequence.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CUTS, cutAt, lightLevel, lightGoal, cutsTotal, startAt, makeLocks, lens } from '../observatory/src/core/sequence.ts';
-import { makeMachine } from '../observatory/src/core/machine.ts';
+import {
+  CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq,
+  OPEN_CUT, LIFT_CUT, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
+} from '../observatory/src/core/sequence.ts';
+import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
 import { SHUTTER_S } from '../observatory/src/core/dome.ts';
 
-const total = CUTS.reduce((s, c) => s + c.dur, 0);
 // Steps lightLevel until it reaches the goal; returns the seconds it took.
 const until = (phase, from, goal, dt = 0.1, max = 60) => {
   let v = from, t = 0;
@@ -13,130 +15,145 @@ const until = (phase, from, goal, dt = 0.1, max = 60) => {
   return { v, t };
 };
 
-test('CUTS holds 4 cuts that run about 11 s with no gap', () => {
-  // The shutter cuts hold 3 s each.
-  // The slew cuts hold about 2.5 s each.
-  // The lens cut joins later as a fifth cut of about 2 s.
-  assert.equal(CUTS.length, 4, `got ${CUTS.length} cuts`);
-  assert.ok(total >= 10.5 && total <= 11.5 + 1e-9, `total ${total}`);
-  assert.equal(CUTS[0].at, 0);
-  for (let i = 1; i < CUTS.length; i++) {
-    assert.ok(Math.abs(CUTS[i].at - (CUTS[i - 1].at + CUTS[i - 1].dur)) < 1e-9, `gap before cut ${i}`);
+// A lift of L degrees from rest at t0, at cap and accel.
+// It gives what the machine reports.
+// altLeft and altEta at time t.
+function lift(L, t0 = SHUTTER_S / 2, cap = TUBE.cap, acc = TUBE.accel) {
+  const ta = Math.min(cap / acc, Math.sqrt(L / acc));
+  const v = acc * ta, cruise = Math.max(0, (L - acc * ta * ta) / v);
+  const T = 2 * ta + cruise;
+  const done = (u) => {
+    if (u <= 0) return 0;
+    if (u >= T) return L;
+    if (u < ta) return 0.5 * acc * u * u;
+    if (u < ta + cruise) return 0.5 * acc * ta * ta + v * (u - ta);
+    const w = T - u;
+    return L - 0.5 * acc * w * w;
+  };
+  return { T: t0 + T, at: (t) => ({ altLeft: L - done(t - t0), altEta: Math.max(0, t0 + T - Math.max(t, t0)) }) };
+}
+// Plays a sequence against a lift.
+// It returns each shot with its start and length.
+function play(view, phase = 'open', dt = 0.01) {
+  let s = startSeq(phase, view(0));
+  const shots = [{ shot: s.shot, at: 0 }];
+  let t = 0;
+  while (!s.done && t < 60) {
+    t += dt;
+    s = stepSeq(s, dt, view(t));
+    if (s.shot !== shots[shots.length - 1].shot) shots.push({ shot: s.shot, at: t });
   }
-  assert.equal(cutsTotal, total);
-});
-test('each cut is a locked camera: one field of view, no zoom', () => {
+  shots.forEach((x, i) => { x.dur = (i + 1 < shots.length ? shots[i + 1].at : t) - x.at; });
+  return { shots, end: t };
+}
+const names = (r) => r.shots.map(x => x.shot).join(',');
+const of = (r, shot) => r.shots.find(x => x.shot === shot);
+
+test('five shots in order, each a locked camera with one lens', () => {
+  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll', 'glass']);
   for (const c of CUTS) {
-    assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number, got ${JSON.stringify(c.fov)}`);
+    assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number`);
     // The inside shot needs a wider lens: the room is small.
     assert.ok(Number.isFinite(c.fov) && c.fov >= 4 && c.fov <= 60, `${c.shot}: fov ${c.fov}`);
   }
 });
-test("the shutter cuts cover the shutter's travel, half each; the slew cuts hold about 2.5 s", () => {
-  const open = CUTS.filter(c => c.phase === 'open');
-  assert.equal(open.length, 2);
-  assert.equal(open[0].at, 0);
-  for (const c of open) assert.ok(Math.abs(c.dur - SHUTTER_S / 2) < 1e-9, `${c.shot}: ${c.dur} s`);
-  assert.ok(Math.abs(open[1].at + open[1].dur - SHUTTER_S) < 1e-9, 'the open cuts end with the travel');
-  assert.equal(CUTS.find(c => c.phase === 'slew').at, SHUTTER_S);
-  for (const c of CUTS.filter(c => c.phase === 'slew')) assert.ok(c.dur >= 2.3 - 1e-9 && c.dur <= 2.7, `${c.shot}: ${c.dur} s`);
+test('the two shutter shots share its travel; the slew starts with the lift shot', () => {
+  assert.equal(OPEN_CUT * 2, SHUTTER_S);
+  const r = play(lift(15).at);
+  assert.equal(names(r), 'edge,slit,lift,roll,glass');
+  assert.ok(Math.abs(of(r, 'slit').at - OPEN_CUT) < 0.02);
+  assert.ok(Math.abs(of(r, 'lift').at - SHUTTER_S) < 0.02);
+  assert.ok(Math.abs(of(r, 'lift').dur - LIFT_CUT) < 0.02);
 });
-test('the shots: the shutter starts, the slit opens, the tube lifts, the tube rolls in the slit', () => {
-  // The lift cut takes the near-static gear cut's place.
-  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll']);
-});
-// A star far round from the slit, so the slew outlasts the cuts.
-const far = { hip: 1, ra: 0, dec: 0, mag: 1, ci: 0, dist: 1, spect: '', name: '', bayer: '' };
-const sky = { targetAlt: 15, targetAz: 180, trails: false };
-test('the real machine: each cut shows the phase it names; the slew starts on the first slew cut', () => {
+test('the real machine: the slew starts when the lift shot starts', () => {
   const m = makeMachine({ az: 0 });
-  m.pick(far);
-  assert.equal(m.phase, 'open');
-  const dt = 0.01;
-  let slewT = null;
-  const seen = CUTS.map(() => new Set());
-  let shut = null, open = null;
-  // The time counts steps, so float sums never shift a cut boundary.
-  for (let i = 0; i * dt < cutsTotal; i++) {
-    const c = cutAt(i * dt);
-    seen[CUTS.indexOf(c)].add(m.phase);
-    m.step(dt, sky);
-    const t = (i + 1) * dt;
-    if (slewT === null && m.phase === 'slew') slewT = t;
-    // The shutter moves from the first frame and is open when the slew starts.
-    if (shut === null) shut = m.shutter01;
-    if (open === null && m.phase === 'slew') open = m.shutter.p;
-  }
-  assert.ok(shut > 0 && shut < 0.01, `first frame ${shut}`);
-  assert.equal(open, 1);
-  const first = CUTS.find(c => c.phase === 'slew');
-  assert.ok(first, 'a slew cut');
-  assert.ok(Math.abs(slewT - first.at) <= dt + 1e-9, `slew at ${slewT}, first slew cut at ${first.at}`);
-  CUTS.forEach((c, i) => assert.deepEqual([...seen[i]], [c.phase], `${c.shot} shows ${[...seen[i]]}`));
+  m.pick({ hip: 1, ra: 0, dec: 0, mag: 1, ci: 0, dist: 1, spect: '', name: '', bayer: '' });
+  let t = 0;
+  while (m.phase === 'open' && t < 20) { m.step(0.01, { targetAlt: 20, targetAz: 180, trails: false }); t += 0.01; }
+  assert.ok(Math.abs(t - SHUTTER_S) <= 0.011, `slew at ${t}`);
 });
-// The most a part moves in each cut, in degrees.
-// And the shutter's travel in each cut.
-function moves(m, ctx) {
-  const dt = 0.01, out = CUTS.map(() => ({ deg: 0, shutter: 0 }));
-  let i = 0;
-  for (const [k, c] of CUTS.entries()) {
-    const a = { cup: m.cupolaAz, alt: m.tubeAlt, az: m.tubeAz, sh: m.shutter01 };
-    for (; i * dt < c.at + c.dur - 1e-9; i++) m.step(dt, ctx);
-    const d = (x, y) => Math.abs(((y - x + 540) % 360) - 180);
-    out[k].deg = Math.max(d(a.cup, m.cupolaAz), Math.abs(m.tubeAlt - a.alt), d(a.az, m.tubeAz));
-    out[k].shutter = m.shutter01 - a.sh;
-  }
-  return out;
-}
-test('the machine moves in every cut: from rest, and after a long aim', () => {
-  // From rest the slit faces away: the cupola has far to turn.
-  const rest = makeMachine({ az: 0 });
-  rest.pick(far);
-  // After a long aim the slit faces the star.
-  // Then only the tube moves.
-  const aimed = makeMachine({ az: 180 });
-  aimed.pick(far);
-  for (const [name, m] of [['rest', rest], ['aimed', aimed]]) {
-    const mv = moves(m, { targetAlt: 20, targetAz: 180, trails: false });
-    CUTS.forEach((c, k) => {
-      if (c.phase === 'open') assert.ok(mv[k].shutter >= 0.4, `${name} ${c.shot}: shutter ${mv[k].shutter}`);
-      else assert.ok(mv[k].deg >= 1, `${name} ${c.shot}: ${mv[k].deg.toFixed(2)} degrees`);
-    });
+// The time the lift comes within SETTLE of its goal.
+// The hold starts then.
+const settleT = (L) => { let t = 0; while (L.at(t).altLeft > SETTLE && t < 60) t += 0.001; return t; };
+test('a mid lift: the roll plays; the glass enters with 6 degrees to lift, rises, stops and holds 1.5 s', () => {
+  const L = lift(15), r = play(L.at);
+  assert.equal(names(r), 'edge,slit,lift,roll,glass');
+  const roll = of(r, 'roll'), glass = of(r, 'glass');
+  assert.ok(roll.dur >= MIN_SHOT - 0.02 && roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
+  const left = L.at(glass.at).altLeft;
+  assert.ok(left <= GLASS_ENTER + 0.05 && left >= GLASS_ENTER - 0.2, `left at the glass ${left}`);
+  assert.ok(L.T - glass.at >= GLASS_RISE - 0.02, `rise ${L.T - glass.at}`);
+  assert.ok(Math.abs(r.end - (settleT(L) + GLASS_HOLD)) < 0.03, `end ${r.end}, settle ${settleT(L)}`);
+  assert.ok(r.end >= 13 && r.end <= 24, `the sequence runs ${r.end} s`);
+});
+test('a long lift: the roll holds at most 9 s; the glass starts before the arrival', () => {
+  // A budgeted lift: 30 degrees arrive about 14 s after the start.
+  const L = lift(30, SHUTTER_S / 2, 3, 0.5), r = play(L.at);
+  const roll = of(r, 'roll'), glass = of(r, 'glass');
+  assert.ok(roll.dur <= ROLL_MAX + 0.02, `roll ${roll.dur}`);
+  assert.ok(L.at(glass.at).altLeft <= GLASS_ENTER + 0.05, `left ${L.at(glass.at).altLeft}`);
+  assert.ok(L.T - glass.at >= GLASS_RISE - 0.02, `rise ${L.T - glass.at}`);
+  assert.ok(r.end >= 13 && r.end <= 24, `the sequence runs ${r.end} s`);
+});
+test('a short lift: the roll gives way; the glass enters from under the frame and rises at least 2 s', () => {
+  // 8 degrees: about 4 are left when the shutter is open.
+  const L = lift(8), r = play(L.at);
+  assert.ok(!of(r, 'roll'), names(r));
+  assert.ok(L.T - of(r, 'glass').at >= GLASS_RISE - 0.02, `rise ${L.T - of(r, 'glass').at}`);
+  // A shot either shows for MIN_SHOT or is skipped: no flash.
+  for (const x of r.shots) assert.ok(x.dur >= MIN_SHOT - 0.02, `${x.shot} ${x.dur}`);
+});
+test('every lift: no shot flashes; the glass never starts before the shutter is open', () => {
+  for (const deg of [3, 6, 9, 12, 15, 19, 24]) {
+    const r = play(lift(deg).at);
+    for (const x of r.shots) assert.ok(x.dur >= MIN_SHOT - 0.02, `${deg} degrees: ${x.shot} ${x.dur}`);
+    assert.ok(of(r, 'glass').at >= SHUTTER_S - 0.02, `${deg} degrees: glass at ${of(r, 'glass').at}`);
   }
 });
-test('with the shutter open, the sequence starts at the first slew cut', () => {
-  const shut = makeMachine({ az: 0 });
-  shut.pick(far);
-  assert.equal(startAt(shut.phase), 0);
-  const open = makeMachine({ az: 0, shutter01: 1 });
-  open.pick(far);
-  assert.equal(open.phase, 'slew');
-  const t0 = startAt(open.phase);
-  assert.equal(cutAt(t0), CUTS.find(c => c.phase === 'slew'));
-  // From there only slew cuts play, and the sequence is shorter.
-  for (let t = t0; t < cutsTotal; t += 0.05) assert.equal(cutAt(t).phase, 'slew', `t ${t}`);
-  assert.ok(cutsTotal - t0 < cutsTotal);
+test('a very short lift: the lift shot is skipped; the glass starts when the shutter is open', () => {
+  const L = lift(4), r = play(L.at);
+  assert.equal(names(r), 'edge,slit,glass');
+  assert.ok(Math.abs(of(r, 'glass').at - SHUTTER_S) < 0.02);
+});
+test('no lift: the glass shot holds 1.5 s after the shutter cuts', () => {
+  const r = play(() => ({ altLeft: 0, altEta: 0 }));
+  assert.equal(names(r), 'edge,slit,glass');
+  assert.ok(Math.abs(of(r, 'glass').dur - GLASS_HOLD) < 0.03);
+});
+test('a pick on an open shutter starts with the lift shot', () => {
+  // The shutter is open, so the lift starts at once.
+  const L = lift(15, 0), r = play(L.at, 'slew');
+  assert.equal(names(r), 'lift,roll,glass');
+  assert.ok(L.T - of(r, 'glass').at >= GLASS_RISE - 0.02);
+});
+test('a skip ends the sequence at once', () => {
+  const s = skipSeq(startSeq('open', { altLeft: 10, altEta: 9 }));
+  assert.equal(s.done, true);
+  assert.equal(stepSeq(s, 0.1, { altLeft: 10, altEta: 9 }).done, true);
+});
+test('the ?cuts replay plays the same shots as the first pick', () => {
+  const L = lift(12);
+  assert.deepEqual(play(L.at).shots, play(L.at).shots);
 });
 test('each cut locks its camera: the same values at its start, middle and end', () => {
   // The slit turns and the screen turns to portrait inside each cut.
   let az = 0, aspect = 1.6, made = 0;
   const locks = makeLocks(cut => { made++; return { shot: cut.shot, az, ...lens(cut.fov, aspect) }; });
   for (const c of CUTS) {
-    const start = locks.at(c.at);
+    const start = locks.of(c);
     az += 2; aspect = 0.5;
-    const mid = locks.at(c.at + c.dur / 2);
+    const mid = locks.of(c);
     az += 2; aspect = 1.6;
-    const end = locks.at(c.at + c.dur - 1e-6);
+    const end = locks.of(c);
     assert.equal(start.shot, c.shot);
     assert.equal(mid, start, `${c.shot}: middle`);
     assert.equal(end, start, `${c.shot}: end`);
     assert.deepEqual(end, { shot: c.shot, az: start.az, fov: c.fov, tall: false }, `${c.shot}: values`);
   }
   assert.equal(made, CUTS.length);
-  assert.equal(locks.at(cutsTotal + 0.01), null);
   // A new pick locks every cut again.
   locks.clear();
-  assert.equal(locks.at(0).az, az);
+  assert.equal(locks.of(CUTS[0]).az, az);
 });
 test('lens: a portrait frame aims tall and widens up to 1.5 times; landscape keeps the cut lens', () => {
   assert.deepEqual(lens(10, 1.6), { fov: 10, tall: false });
@@ -145,21 +162,6 @@ test('lens: a portrait frame aims tall and widens up to 1.5 times; landscape kee
   assert.equal(p.tall, true);
   assert.ok(p.fov > 10 && p.fov < 15, `fov ${p.fov}`);
   assert.deepEqual(lens(10, 0.2), { fov: 15, tall: true });
-});
-test('each shot shows once', () => {
-  assert.equal(new Set(CUTS.map(c => c.shot)).size, CUTS.length);
-});
-test('cutAt(0) is the edge cut', () => {
-  assert.equal(cutAt(0).shot, 'edge');
-});
-test('cutAt picks the cut that holds the time', () => {
-  for (const c of CUTS) assert.equal(cutAt(c.at + c.dur / 2), c);
-  // A cut boundary belongs to the later cut.
-  for (let i = 1; i < CUTS.length; i++) assert.equal(cutAt(CUTS[i].at), CUTS[i]);
-});
-test('cutAt is null after the last cut and before the start', () => {
-  assert.equal(cutAt(total + 0.01), null);
-  assert.equal(cutAt(-0.01), null);
 });
 test('lightGoal: 1 at rest, 0.35 while it hunts, 0 for the survey', () => {
   assert.equal(lightGoal('aim'), 1);

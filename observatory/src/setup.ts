@@ -1,10 +1,19 @@
 import { BufferGeometry, InstancedMesh, PerspectiveCamera, Scene, ShaderMaterial, Texture, WebGLRenderer } from 'three';
 import type { Material, Object3D } from 'three';
-import { initPage } from '../../shared/stim.js';
+import { initPage, pageReady, stage } from '../../shared/stim.js';
+import { intro as playIntro } from '../../shared/intro.js';
 import { loadStars } from './core/catalog.ts';
+
+// The ?cuts review skips the intro, so it starts at once.
+// initPage waits for the intro, so the element goes first.
+if (new URLSearchParams(location.search).has('cuts')) document.querySelector('.intro')?.remove();
 
 // The Bar v2 spec and the Dev rows come in later tasks.
 export const ui = initPage({ id: 'observatory', bar: {} });
+
+// The intro holds until the page, its font and the first frame are in.
+// The cap keeps a failed boot from holding the intro.
+playIntro({ ready: pageReady(15000) });
 
 export const stageEl = document.getElementById('stage')!;
 const failEl = stageEl.querySelector<HTMLElement>('.fail')!;
@@ -17,6 +26,8 @@ export let renderer: WebGLRenderer;
 export function fail(text?: string): void {
   if (text) failEl.textContent = text;
   failEl.hidden = false;
+  // A failure frees the intro, so the fail line shows.
+  stage('first-frame');
   if (renderer) renderer.domElement.style.visibility = 'hidden';
   ui.hideControls();
 }
