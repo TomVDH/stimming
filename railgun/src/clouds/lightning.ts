@@ -8,6 +8,7 @@ import { U } from '../world/uniforms.ts';
 import { hs1, shaftList } from './shafts.ts';
 import { BAND, ROCK_FAR } from './bands.ts';
 import { CLOUD_U, GIANTS, TOWERS, cloudField, cloudLayer } from './clouds.ts';
+import { fieldFlash } from './field.ts';
 
 /* ---------- storm lightning: flashes inside the towers and the giant ---------- */
 // After Window seat: a burst of one to five strokes, 50 to 220 ms apart.
@@ -36,20 +37,29 @@ function stormSpot(c: ShaftCloud, P0: THREE.Vector3, out: THREE.Vector3) {
   out.set(P0.x + (-fz / fl) * across, c.base + c.H * up, P0.z + (fx / fl) * across);
   return out;
 }
+// One storm to flash: a spot picker, a flash reach, and the jitter's width and height in metres.
+// gain: the last spot's light share; thin anvil ice needs more to show.
+export interface FlashSrc { spot(out: THREE.Vector3): THREE.Vector3; reach(): number; gain?(): number; jw: number; jh: number; }
+// A storm card's flash source.
+function cardFlash(): FlashSrc {
+  const c = STORM_SPOTS[Math.floor(Math.random() * STORM_SPOTS.length)], P0 = stormAt(c, state.simT, new THREE.Vector3());
+  return { spot: o => stormSpot(c, P0, o), reach: () => stormFl.vol ? (3.4 * c.H / 14) * (0.4 + 0.8 * Math.random()) : c.W * (0.1 + 0.22 * Math.random()), jw: c.W, jh: c.H };
+}
 // A burst rumbles through one storm: two to five spots light in turn.
 // Each spot fires one to four strokes; now and then a cell boils over.
+// With the cloud pass on, the flashes sit in the storm field's cells.
 export function stormBurst() {
-  const c = STORM_SPOTS[Math.floor(Math.random() * STORM_SPOTS.length)], P0 = stormAt(c, state.simT, new THREE.Vector3());
+  const src = state.cloudPass ? fieldFlash(state.simT) : cardFlash();
   const boil = Math.random() < 0.15;
   const spots = boil ? 6 + Math.floor(Math.random() * 6) : 2 + Math.floor(Math.random() * 4);
   let t = state.simT;
   for (let j = 0; j < spots; j++) {
-    const P = stormSpot(c, P0, new THREE.Vector3());
+    const P = src.spot(new THREE.Vector3());
     // Log-normal light; a sheet flash is wide, a pulse is tight.
-    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8, r = stormFl.vol ? (3.4 * c.H / 14) * (0.4 + 0.8 * Math.random()) : c.W * (0.1 + 0.22 * Math.random());
+    const L = Math.exp(-0.3 + 0.8 * (Math.random() + Math.random() + Math.random() - 1.5)) * 2.8 * (src.gain?.() ?? 1), r = src.reach();
     const n = 1 + Math.floor(Math.random() * Math.random() * 4);
     let ts = t;
-    for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: ts, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.1 * c.W, (Math.random() - 0.5) * 0.06 * c.H, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); ts += 0.05 + 0.17 * Math.random(); }
+    for (let k = 0; k < n; k++) { stormFl.strokes.push({ t0: ts, P: P.clone().add(flV.set((Math.random() - 0.5) * 0.1 * src.jw, (Math.random() - 0.5) * 0.06 * src.jh, 0)), L: L * (k ? 0.5 + 0.6 * Math.random() : 1), r }); ts += 0.05 + 0.17 * Math.random(); }
     // The next spot answers 0.1 to 0.9 s later; a boiling cell fires faster.
     t += (boil ? 0.08 : 0.15) + (boil ? 0.3 : 0.75) * Math.random();
   }

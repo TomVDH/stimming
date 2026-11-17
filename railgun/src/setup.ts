@@ -8,7 +8,7 @@ import { aimSky, setSun } from './sky/sun.ts';
 import { FAR_U, GRID_U, farBake, setFarMode, setRockCol } from './world/farcountry.ts';
 import { CLOUD_U, giants } from './clouds/clouds.ts';
 import { setStormProbe } from './clouds/probe.ts';
-import { setCloudPass } from './clouds/pass.ts';
+import { setCloudPass, setPassLook } from './clouds/pass.ts';
 import { setDeck, stormBurst, stormFl } from './clouds/lightning.ts';
 import { gunMat } from './gun/gun.ts';
 import { retune } from './rock/asteroid.ts';
@@ -94,9 +94,6 @@ export const ui = initPage({ id: 'railgun', bar: {
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
-    { type: 'choice', id: 'chargemix', group: 'Sound', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
-    // The soft crackle while a rock burns in the sky.
-    { type: 'slider', id: 'roar', group: 'Sound', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
     // Random rolls a new size per rock.
     { type: 'choice', id: 'devsize', group: 'Tests', label: 'Rock', display: 'stepper', value: 'random', options: [{ value: 'random', label: 'Random' }, { value: 'boulder', label: 'Boulder' }, { value: 'mountain', label: 'Mountain' }, { value: 'moon', label: 'Moon' }, { value: 'aerosmith', label: 'Aerosmith' }], onPick: v => { devSize = v as RockSize | 'random'; if (v !== 'random') { opts.size = v as RockSize; retune(); } } },
     // The choice waits for Reset.
@@ -112,40 +109,55 @@ export const ui = initPage({ id: 'railgun', bar: {
     { type: 'slider', id: 'ambrate', group: 'Ambient', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
     { type: 'choice', id: 'ambkind', group: 'Ambient', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
     { type: 'button', id: 'ambfire', group: 'Ambient', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
+    { type: 'choice', id: 'chargemix', group: 'Sound', label: 'Charge sound', display: 'stepper', value: 'vast', persist: true, options: [{ value: 'hum', label: 'Hum' }, { value: 'blend', label: 'Blend' }, { value: 'choir', label: 'Choir' }, { value: 'vast', label: 'Expanse' }, { value: 'titan', label: 'Titan' }, { value: 'penta', label: 'Surge' }, { value: 'syl', label: 'Surge Syl' }, { value: 'hijaz', label: 'Surge Hijaz' }, { value: 'colossus', label: 'Colossus' }, { value: 'dirge', label: 'Dirge' }, { value: 'leviathan', label: 'Leviathan' }, { value: 'eclipse', label: 'Eclipse' }, { value: 'monolith', label: 'Monolith' }, { value: 'monohum', label: 'Monolith Hum' }], onPick: v => { chargeMix = v; } },
+    // The soft crackle while a rock burns in the sky.
+    { type: 'slider', id: 'roar', group: 'Sound', label: 'Rock roar', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { roarK = v; } },
+    // Clouds: which clouds march as volumes and which draw as cards.
+    // Marched storms: the cloud pass marches the storm field; off draws the storm cards.
+    // Marched heaps: with Marched storms on, the heap layer marches in place of the heap cards.
+    // Storm volumes: the old probe; the storm cards march inside themselves.
+    { type: 'toggle', id: 'cloudpass', group: 'Clouds', label: 'Marched storms', value: false, persist: true, onToggle: on => { setCloudPass(on); draw(); } },
+    { type: 'toggle', id: 'marchheaps', group: 'Clouds', label: 'Marched heaps', value: false, persist: true, onToggle: on => { setPassLook({ layer: on }); draw(); } },
+    { type: 'toggle', id: 'stormprobe', group: 'Clouds', label: 'Storm volumes', value: false, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
+    { type: 'toggle', id: 'giants', group: 'Clouds', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+    // The broken layer of cells five kilometres up.
+    { type: 'slider', id: 'deck', group: 'Clouds', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 0, persist: true, onInput: v => { setDeck(v); draw(); } },
+    // Cloud far fade: far clouds sink further into the air, foot first.
+    { type: 'slider', id: 'farhaze', group: 'Clouds', label: 'Cloud far fade', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
+    // Storm lightning: how often flashes light the storms from inside.
+    { type: 'slider', id: 'stormfl', group: 'Storms', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
+    // Flash now fires one lightning burst in a storm, for a test.
+    { type: 'button', id: 'stormnow', group: 'Storms', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
+    // Storm softness: how fuzzy the storm volumes are, crisp at 1.
+    { type: 'slider', id: 'stormsoft', group: 'Storms', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
+    // Cards: the card clouds by hand: sun, sky fill, self shade, backlit core, colour, rim, rock clearing.
+    { type: 'slider', id: 'cardlight', group: 'Cards', label: 'Card light', min: 0.2, max: 1.5, step: 0.05, value: 0.55, onInput: v => { CLOUD_U.uCardL.value = v; draw(); } },
+    { type: 'slider', id: 'cardsky', group: 'Cards', label: 'Card sky', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { CLOUD_U.uCardK.value.x = v; draw(); } },
+    { type: 'slider', id: 'cardshade', group: 'Cards', label: 'Card shade', min: 0, max: 3, step: 0.05, value: 1, onInput: v => { CLOUD_U.uCardK.value.y = v; draw(); } },
+    { type: 'slider', id: 'cardcore', group: 'Cards', label: 'Card core', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { CLOUD_U.uCardK.value.z = v; draw(); } },
+    { type: 'slider', id: 'cardcol', group: 'Cards', label: 'Card colour', min: 0, max: 1.5, step: 0.05, value: 1, onInput: v => { CLOUD_U.uCardK.value.w = v; draw(); } },
+    { type: 'slider', id: 'cardrim', group: 'Cards', label: 'Card rim', min: 0, max: 4, step: 0.05, value: 0, onInput: v => { CLOUD_U.uRim.value.x = v; draw(); } },
+    { type: 'slider', id: 'rimspread', group: 'Cards', label: 'Rim spread', min: 0, max: 3, step: 0.05, value: 0, onInput: v => { CLOUD_U.uRim.value.y = v; draw(); } },
+    // Heaps in front of the rock thin away, so the rock shows.
+    { type: 'slider', id: 'cardclear', group: 'Cards', label: 'Clear rock', min: 0, max: 1, step: 0.05, value: 0.8, onInput: v => { CLOUD_U.uRockClr.value = v; draw(); } },
     // The dusk sun's angle right of the look, in degrees.
-    { type: 'slider', id: 'sunaz', group: 'Sky', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { state.sunSwing = v; aimSky(); setSun(); } },
+    { type: 'slider', id: 'sunaz', group: 'Sun and air', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { state.sunSwing = v; aimSky(); setSun(); } },
     // The strength of the cloud shadows in the low air.
-    { type: 'slider', id: 'shafts', group: 'Sky', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { state.shaftGain = v; draw(); } },
-    // Far haze sinks far clouds into the air.
+    { type: 'slider', id: 'shafts', group: 'Sun and air', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { state.shaftGain = v; draw(); } },
     // The air, as every far thing sees it.
     // Air blue fade: Rayleigh scattering, how fast far things turn blue and pale.
-    { type: 'slider', id: 'airray', group: 'Sky', label: 'Air blue fade', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.x = v; U.uAir.value = 0.7 * v; draw(); } },
+    { type: 'slider', id: 'airray', group: 'Sun and air', label: 'Air blue fade', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.x = v; U.uAir.value = 0.7 * v; draw(); } },
     // Air dust: the dusty haze (Mie), how thick the far air is.
-    { type: 'slider', id: 'airdust', group: 'Sky', label: 'Air dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.y = v; draw(); } },
+    { type: 'slider', id: 'airdust', group: 'Sun and air', label: 'Air dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.y = v; draw(); } },
     // Air dust height: how deep the dust stands, in metres; low dust leaves tall things clear.
-    { type: 'slider', id: 'airdusth', group: 'Sky', label: 'Air dust height', min: 500, max: 10000, step: 100, value: 3000, persist: true, onInput: v => { U.uAirK.value.z = v; draw(); } },
+    { type: 'slider', id: 'airdusth', group: 'Sun and air', label: 'Air dust height', min: 500, max: 10000, step: 100, value: 3000, persist: true, onInput: v => { U.uAirK.value.z = v; draw(); } },
     // Air sun glow: the dust's warm glow toward the sun.
-    { type: 'slider', id: 'airglow', group: 'Sky', label: 'Air sun glow', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.w = v; draw(); } },
+    { type: 'slider', id: 'airglow', group: 'Sun and air', label: 'Air sun glow', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uAirK.value.w = v; draw(); } },
     // Near dust: the plain's own low dust, thick near the ground.
-    { type: 'slider', id: 'neardust', group: 'Sky', label: 'Near dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uHaze.value = 0.00013 * v; draw(); } },
-    { type: 'slider', id: 'neardusth', group: 'Sky', label: 'Near dust height', min: 100, max: 3000, step: 50, value: 700, persist: true, onInput: v => { U.uHazeH.value = v; draw(); } },
-    // Cloud far fade: far clouds sink further into the air, foot first.
-    { type: 'slider', id: 'farhaze', group: 'Sky', label: 'Cloud far fade', min: 0, max: 1.5, step: 0.05, value: 1, persist: true, onInput: v => { U.uLayer.value.x = v; draw(); } },
+    { type: 'slider', id: 'neardust', group: 'Sun and air', label: 'Near dust', min: 0, max: 3, step: 0.05, value: 1, persist: true, onInput: v => { U.uHaze.value = 0.00013 * v; draw(); } },
+    { type: 'slider', id: 'neardusth', group: 'Sun and air', label: 'Near dust height', min: 100, max: 3000, step: 50, value: 700, persist: true, onInput: v => { U.uHazeH.value = v; draw(); } },
     // Valley fog pools in the far ranges.
-    { type: 'slider', id: 'valfog', group: 'Sky', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
-    // The broken layer of cells five kilometres up.
-    { type: 'slider', id: 'deck', group: 'Sky', label: 'Cloud deck', min: 0, max: 1.5, step: 0.05, value: 0, persist: true, onInput: v => { setDeck(v); draw(); } },
-    // The colossal storms far beyond the ranges.
-    // Storm lightning: how often flashes light the storms from inside.
-    { type: 'slider', id: 'stormfl', group: 'Sky', label: 'Storm lightning', min: 0, max: 3, step: 0.1, value: 1, persist: true, onInput: v => { stormFl.rate = v; } },
-    // Flash now fires one lightning burst in a storm, for a test.
-    { type: 'button', id: 'stormnow', group: 'Sky', label: 'Storm flash', text: 'Flash', onClick: () => { stormBurst(); wake(); } },
-    // Storm volumes: the towers and the giant as Window seat's marched volumes; off shows the flat cards.
-    // Storm softness: how fuzzy the storm volumes are, crisp at 1.
-    { type: 'slider', id: 'stormsoft', group: 'Sky', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
-    { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: false, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
-    { type: 'toggle', id: 'cloudpass', group: 'Sky', label: 'Cloud volumes', value: false, persist: true, onToggle: on => { setCloudPass(on); draw(); } },
-    { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
+    { type: 'slider', id: 'valfog', group: 'Sun and air', label: 'Valley fog', min: 0, max: 1.5, step: 0.05, value: 0.5, persist: true, onInput: v => { U.uLayer.value.y = v; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },
     // The ranges' light: the sun and key, the sky, and the effects (blast, rock light).

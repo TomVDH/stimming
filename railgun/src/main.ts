@@ -9,7 +9,7 @@ import { aimSky, sun, sunDeg } from './sky/sun.ts';
 import { farBakeG, farBakeL, farGridC, farGridF, farPass, fbCam, fbQuad, fbScene } from './world/farcountry.ts';
 import { CLOUD_U, giants } from './clouds/clouds.ts';
 import { setStormProbe } from './clouds/probe.ts';
-import { setCloudPass } from './clouds/pass.ts';
+import { setCloudPass, setPassLook } from './clouds/pass.ts';
 import { setDeck, stormFl } from './clouds/lightning.ts';
 import { gunMat } from './gun/gun.ts';
 import { astSize, placeAst } from './rock/asteroid.ts';
@@ -51,6 +51,7 @@ U.uHaze.value = 0.00013 * ui.setting('neardust').value; U.uHazeH.value = ui.sett
 setDeck(ui.setting('deck').value);
 setStormProbe(ui.setting('stormprobe').value);
 setCloudPass(ui.setting('cloudpass').value);
+setPassLook({ layer: ui.setting('marchheaps').value });
 CLOUD_U.uStormSoft.value = ui.setting('stormsoft').value;
 stormFl.rate = ui.setting('stormfl').value;
 giants.visible = ui.setting('giants').value && !state.cloudPass;
