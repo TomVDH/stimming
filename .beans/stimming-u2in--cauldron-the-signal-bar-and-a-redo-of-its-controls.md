@@ -40,6 +40,7 @@ Tom, 2026-11-17, for the Cauldron chat: "add more ingredients -- including forbi
 | 6 | Dev: 11 rows in one list | No groups; long labels repeat "Fire" and "Camera". | Three groups: Look (Exposure, Bloom, Background blur), Camera (Height, Turn), Fire (X, Z, Height, Size, Power, Spread). |
 | 7 | Help: `DRAG stir or pour`, `DRAG A THING pull`, `CLICK add or dunk`, `← → stir` | "or pour" and "or dunk" do not say when. The key rows read `T + thing`, `C clear`. | `DRAG stir; pours a liquid`, `DRAG A THING pull it`, `CLICK throw in; dunks a thing`, `← → stir`, `T throw in the pick`, `C empty the pot`. |
 | 8 | Intro copy | No Flemish name, no IPA, no motto. | Tom sets them. |
-| 9 | Stage label for screen readers | Says "click or tap adds the next thing" and names ten things; the list now holds 21 and a pick. | Rewrite it from the list. |
+| 9 | Stage label for screen readers | It says "Click the soup to throw the next thing in". A click now adds the pick from the Add list, and a liquid pours. | Say: "Click the soup to add the thing you picked." |
+| 10 | The page's own intro text | It still says "Stimming Lab" under the name. Cauldron is on the main shelf; `toys.json` holds no Lab tag. | Remove the fallback line. |
 
 Tom, 2026-11-17: review all controls, labels, help and copy per toy before the next toy. This table is that review for Cauldron.
