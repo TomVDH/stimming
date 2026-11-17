@@ -1824,6 +1824,13 @@ vec3 mirror(vec3 p, vec3 r, float rough, float F) {
   }
   return c;
 }
+// Skin folds: ridged noise on a warped, turned grid, so no square pattern shows.
+float wrinkle(vec2 q) {
+  q += vec2(noise2(q * 0.21), noise2(q * 0.21 + 5.2)) * 4.0;
+  float a = 1.0 - abs(2.0 * noise2(q) - 1.0);
+  float b = 1.0 - abs(2.0 * noise2(mat2(0.8, 0.6, -0.6, 0.8) * q * 2.3 + 1.7) - 1.0);
+  return a * a + 0.2 * b * b;
+}
 vec3 shadeSoup(vec3 p, vec3 rd) {
   vec2 uv = soupUV(p.xz);
   vec4 dy = texture(uDye, uv), ax = texture(uAux, uv);
@@ -1876,9 +1883,9 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   float fedge = smoothstep(0.01, 0.06, length(vec2(axp.g - axm.g, azp.g - azm.g))) * uFilmK;
   n = normalize(n - vec3(sx, 0.0, sz) * mix(0.15, 0.5, uSkinK));
   if (skin > 0.01) {
-    vec2 wq = p.xz * 38.0;
-    float w0 = noise2(wq), wxk = noise2(wq + vec2(0.3, 0.0)) - w0, wzk = noise2(wq + vec2(0.0, 0.3)) - w0;
-    n = normalize(n - vec3(wxk, 0.0, wzk) * mix(0.5, 0.9, uSkinK) * skin);
+    vec2 wq = mat2(0.87, 0.5, -0.5, 0.87) * p.xz * 20.0;
+    float w0 = wrinkle(wq), wxk = wrinkle(wq + vec2(0.12, 0.0)) - w0, wzk = wrinkle(wq + vec2(0.0, 0.12)) - w0;
+    n = normalize(n - vec3(wxk, 0.0, wzk) * mix(0.3, 0.5, uSkinK) * skin);
   }
   vec3 v = -rd;
   float nv = max(dot(n, v), 0.0);
