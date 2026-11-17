@@ -106,7 +106,8 @@ const ownIds = icon => {
   const n = ++artSeq;
   return icon.replace(/\bid="([^"]+)"/g, (m, id) => `id="sg${n}-${id}"`).replace(/url\(#([^)]+)\)/g, (m, id) => `url(#sg${n}-${id})`);
 };
-const optHTML = o => `${o.icon ? (isArt(o.icon) ? ownIds(o.icon).replace('<svg', '<svg class="sg-art"') : o.icon) : ''}<span>${o.label}</span>`;
+// An option may carry a colour dot; the dot keeps its colour.
+const optHTML = o => `${o.dot ? `<i class="sg-dot" style="background: ${o.dot}"></i>` : ''}${o.icon ? (isArt(o.icon) ? ownIds(o.icon).replace('<svg', '<svg class="sg-art"') : o.icon) : ''}<span>${o.label}</span>`;
 const actLabel = a => a.label || (a.verb === 'add' ? `+ ${a.noun ?? 'One'}` : a.verb.charAt(0).toUpperCase() + a.verb.slice(1));
 
 /**
