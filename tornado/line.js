@@ -174,7 +174,13 @@ uniform vec4 uCasc;
 uniform vec2 uSwayPh;
 const float POLE_X = ROAD_X + 9.0, POLE_Z0 = ${POLE_Z0}.0, POLE_GAP = ${POLE_GAP}.0;
 const int POLES = ${POLES};
-float poleLean(int i) { return i < 0 || i >= POLES ? 0.0 : uPole[i >> 2][i & 3]; }
+// No line stands true: each pole has its own small lean, about 2 degrees, and now and then 4.
+float poleRest(int i) { float h = th(vec2(float(i), 11.3)); return (h - 0.5) * 0.07 * (th(vec2(float(i), 2.7)) > 0.83 ? 2.2 : 1.0); }
+// Each pole's lean in radians: its own rest lean plus what the wind did to it.
+float poleLean(int i) { return i < 0 || i >= POLES ? 0.0 : uPole[i >> 2][i & 3] + poleRest(i); }
+// Each pole's tilt along the line, and its cross-arm's roll, in radians.
+float poleTilt(int i) { return (th(vec2(float(i), 5.9)) - 0.5) * 0.06; }
+float armRoll(int i) { return i < 0 || i >= POLES ? 0.0 : (th(vec2(float(i), 8.4)) - 0.5) * 0.07; }
 
 /* ---------- objects and the funnels ---------- */
 // Objects on the plain gather in two layers: behind a funnel, or in front of it.
@@ -249,8 +255,9 @@ vec2 wireAt(int i, int j, float u, float z) {
   float ox = float(j - 1) * 1.1, wy = j == 1 ? 9.9 : 9.2;
   float la = poleLean(i), lb = poleLean(i + 1);
   // Each end hangs where its leaning pole holds it.
-  vec2 A = vec2(ox * cos(la) + wy * sin(la) - ox, wy * cos(la) - ox * sin(la));
-  vec2 B = vec2(ox * cos(lb) + wy * sin(lb) - ox, wy * cos(lb) - ox * sin(lb));
+  // A rolled cross-arm lifts one outer wire and drops the other.
+  vec2 A = vec2(ox * cos(la) + wy * sin(la) - ox, wy * cos(la) - ox * sin(la) + ox * armRoll(i));
+  vec2 B = vec2(ox * cos(lb) + wy * sin(lb) - ox, wy * cos(lb) - ox * sin(lb) + ox * armRoll(i + 1));
   vec2 w = mix(A, B, u) - vec2(0.0, 0.8 * 4.0 * u * (1.0 - u)) + swayAt(i, j, u, z);
   vec4 sp = uSpan[i];
   float ts = uT - sp.x;
@@ -393,7 +400,7 @@ void linePoles(vec2 s, vec3 rd, float px) {
     vec2 b = proj(P);
     if (abs(s.x - b.x) > 12.0 / z * uFoc + px) continue;
     float l = poleLean(i), sl = sin(l), cl = cos(l);
-    vec3 A = vec3(sl, cl, 0.0), X = vec3(cl, -sl, 0.0);
+    vec3 A = normalize(vec3(sl, cl, poleTilt(i))), X = normalize(vec3(cl, -sl, 0.0) + A * armRoll(i));
     vec3 V = normalize(vec3(0.0, CAMH, 0.0) - (P + A * 5.0));
     float m = uFoc / z;
     // The post: it thins a little toward its top.
