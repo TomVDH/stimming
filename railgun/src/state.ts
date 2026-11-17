@@ -181,6 +181,8 @@ export interface State {
   CY: number;
   sunSwing: number;
   shaftOcc: ShaftCloud[] | null;
+  // The Dev row Cloud volumes: the cloud pass replaces the heap and middle cards.
+  cloudPass: boolean;
   // True for a portrait stage; null before the first frame.
   groundTall: boolean | null;
   farBakeUpdate: () => void;

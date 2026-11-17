@@ -80,6 +80,7 @@ const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
 // The deck stands in for the middle heaps; they show only with the deck off.
 export function setDeck(v: number) {
   U.uDeck.value = v;
-  mids.visible = farMids.visible = v < 0.01;
+  // The cloud pass replaces the middle cards.
+  mids.visible = farMids.visible = v < 0.01 && !state.cloudPass;
   state.shaftOcc = null;
 }

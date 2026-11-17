@@ -11,6 +11,7 @@ import { updateShafts } from '../clouds/shafts.ts';
 import { FAR_U, farBake, farBaked } from '../world/farcountry.ts';
 import { CLOUD_U } from '../clouds/clouds.ts';
 import { stepStorms } from '../clouds/lightning.ts';
+import { drawCloudPass } from '../clouds/pass.ts';
 import { drawGunDepth, drawShadow } from '../world/shadows.ts';
 import { ast, astMat, astMesh } from '../rock/asteroid.ts';
 import { placeShip } from '../ship/battleship.ts';
@@ -132,6 +133,7 @@ export function draw() {
   drawVolumes();
   if (sight) sightKey();
   state.farBakeUpdate();
+  drawCloudPass();
   composer.render();
 }
 // Project the shock fronts and the hot barrel for the grade's warp.

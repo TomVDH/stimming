@@ -8,6 +8,7 @@ import { aimSky, setSun } from './sky/sun.ts';
 import { FAR_U, GRID_U, farBake, setFarMode, setRockCol } from './world/farcountry.ts';
 import { CLOUD_U, giants } from './clouds/clouds.ts';
 import { setStormProbe } from './clouds/probe.ts';
+import { setCloudPass } from './clouds/pass.ts';
 import { setDeck, stormBurst, stormFl } from './clouds/lightning.ts';
 import { gunMat } from './gun/gun.ts';
 import { retune } from './rock/asteroid.ts';
@@ -143,6 +144,7 @@ export const ui = initPage({ id: 'railgun', bar: {
     // Storm softness: how fuzzy the storm volumes are, crisp at 1.
     { type: 'slider', id: 'stormsoft', group: 'Sky', label: 'Storm softness', min: 1, max: 4, step: 0.05, value: STORM_SOFT, persist: true, onInput: v => { CLOUD_U.uStormSoft.value = v; draw(); } },
     { type: 'toggle', id: 'stormprobe', group: 'Sky', label: 'Storm volumes', value: false, persist: true, onToggle: on => { setStormProbe(on); draw(); } },
+    { type: 'toggle', id: 'cloudpass', group: 'Sky', label: 'Cloud volumes', value: false, persist: true, onToggle: on => { setCloudPass(on); draw(); } },
     { type: 'toggle', id: 'giants', group: 'Sky', label: 'Giants', value: true, persist: true, onToggle: on => { giants.visible = on; draw(); } },
     // The gullies and strata in the light, as on the card clouds.
     { type: 'slider', id: 'facebump', group: 'Land', label: 'Face bump', min: 0, max: 2, step: 0.05, value: 1, onInput: v => { FAR_U.uBump.value = v; draw(); } },

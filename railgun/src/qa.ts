@@ -14,6 +14,7 @@ import { IMP_U } from './sky/impacts.ts';
 import { FAR_U, FS_U, GRID_U, farBake, farGrid, farGridUpdate, farPass, fbStart, fbStep, setFarMode, setRockCol } from './world/farcountry.ts';
 import { CLOUD_U, giants, tower } from './clouds/clouds.ts';
 import { setStormProbe } from './clouds/probe.ts';
+import { LAYER_U, setCloudPass } from './clouds/pass.ts';
 import { STORM_SPOTS, stormAt, stormBurst, stormFl } from './clouds/lightning.ts';
 import { gun } from './gun/gun.ts';
 import { caseMesh, ejectCase, stepCase } from './gun/case.ts';
@@ -73,6 +74,7 @@ type QaAttr = THREE.BufferAttribute & { qaW0?: number[] };
 interface QaHooks {
   skyQ(): unknown;
   stormProbe(on?: boolean): void;
+  cloudPass(on?: boolean, cut?: number): void;
   still(o?: StillOpts): { rung: number; simT: number; sun: number };
   stormSolo(k?: number | null): void;
   stormsQ(): unknown;
@@ -217,6 +219,8 @@ window.__qa = {
   // The sun and the moon: elevation in degrees, screen place in NDC.
   skyQ() { const f = (d: THREE.Vector3) => { const p = camera.position.clone().addScaledVector(d, 1e5).project(camera); return { el: +(Math.asin(d.y) * 57.3).toFixed(1), x: +p.x.toFixed(2), y: +p.y.toFixed(2), front: p.z < 1 }; }; return { sun: f(U.uSunD.value), moon: f(U.uMoonD.value), moonK: +U.uMoonK.value.toFixed(2) }; },
   stormProbe(on = true) { setStormProbe(on); draw(); },
+  // The cloud pass on or off; cut sets the cover threshold (higher is more open sky).
+  cloudPass(on = true, cut) { setCloudPass(on); if (cut != null) LAYER_U.uLayerCut.value = cut; draw(); },
   // One repeatable still for tools/clouds-check.mjs.
   // It freezes the clocks, stops random events and pins the rung.
   // o: sun (the Time slider), fall (the rock's place), t (the sim clock), rung.

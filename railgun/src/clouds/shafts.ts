@@ -159,7 +159,8 @@ export function updateShafts() {
   // The clouds take the shade at any sun height; not by night.
   u.uCShade.value = 1 - U.uStars.value;
   if (k < 0.001 && u.uCShade.value < 0.001) return;
-  state.shaftOcc ??= [...shaftList(HEAPS), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS) : [])];
+  // With the cloud pass on, only the towers cast shafts until the pass casts its own.
+  state.shaftOcc ??= state.cloudPass ? shaftList(TOWERS) : [...shaftList(HEAPS), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS) : [])];
   const t = CLOUD_U.uCloudC.value;
   let n = 0;
   for (const c of state.shaftOcc) {

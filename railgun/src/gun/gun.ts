@@ -1,5 +1,5 @@
-// Load order: clouds/lightning runs first.
-import '../clouds/lightning.ts';
+// Load order: clouds/pass runs first.
+import '../clouds/pass.ts';
 import * as THREE from 'three';
 import { mergeVertices, mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';

@@ -1,10 +1,11 @@
 ---
 # stimming-d6wc
 title: 'Railgun: one depth-aware cloud pass (cloud layer and redone storms)'
-status: todo
+status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-17T06:20:46Z
-updated_at: 2026-11-17T06:20:46Z
+updated_at: 2026-11-17T06:30:28Z
 parent: stimming-626s
 ---
 
@@ -13,7 +14,7 @@ Tom, 2026-11-16: clouds do not occlude or layer on one another; the storm clouds
 Plan: docs/plans/railgun-cloud-layer.md
 
 - [ ] Plan approved by Tom
-- [ ] Step 1: one march, the heap shell only, with per-pixel depth
+- [x] Step 1: one march, the heap shell only, with per-pixel depth; built (clouds/pass.ts, clouds/layer.glsl, Dev row Cloud volumes), waits for Tom's look
 - [ ] Step 2: the storms move into the same march
 - [ ] Step 3: storm redo: shapes and look
 - [ ] Step 4: drift for layer and storms

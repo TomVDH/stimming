@@ -10,6 +10,8 @@ export const BAND = {
   sky: -1,
   // Country, 80 to 200 km: the ranges; they write depth.
   country: -0.9,
+  // The cloud pass: it writes each solid cloud's own depth, so later draws sort per pixel.
+  cloud: -0.85,
   // Deep, 100 to 300 km: giants, then towers.
   giants: 1.45, deep: 1.5,
   // Far, 50 to 100 km: far mids and far dust domes.

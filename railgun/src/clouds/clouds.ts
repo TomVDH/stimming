@@ -333,7 +333,7 @@ export const HEAPS = [
   [33, 12500, 2100, 1800, 1200, 0], [45, 16500, 3000, 2400, 1600, 0], [58, 13000, 2200, 1700, 1150, 0], [71, 15500, 2700, 2200, 1450, 0],
   [-11, 24000, 3700, 2200, 1300, 0], [12, 27000, 4200, 2600, 1500, 0], [27, 23000, 3700, 2000, 1200, 0], [51, 26000, 4100, 2400, 1400, 0], [64, 22000, 3600, 1800, 1100, 0],
 ];
-const heaps = cloudLayer(HEAPS, BAND.heaps);
+export const heaps = cloudLayer(HEAPS, BAND.heaps);
 // Towers stand far out: one behind the gun, one on each flank.
 // They draw before the smoke.
 // Storm towers far out, scattered: different sizes and distances, uneven gaps.
