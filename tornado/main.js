@@ -12,6 +12,7 @@ import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL } from './plain.js';
 import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
+import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex } from './damage.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -1015,6 +1016,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 }
 
 ${LINE_GLSL}
+${DAMAGE_GLSL}
 ${PLAIN_GLSL}
 ${TRAFFIC_GLSL}
 // A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
@@ -1241,6 +1243,8 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 const line = lineState();
 // The vehicles on the road: a pickup fleeing, then two chasers rushing in.
 const traf = trafficState();
+// The damage field: each ground point's peak wind, kept until the second Clear.
+const dmg = damageState();
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
@@ -1255,8 +1259,8 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
-    textures: { tTor: () => (fun.on ? fun.A.tex : null) },
+    before: (w, h) => { damageTex(dmg, env.gl); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
@@ -1758,6 +1762,7 @@ function step(dt) {
   boltStep();
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
+  damageStep(dmg, tors, simT);
   lineUniforms(line, tors);
   trafficStep(traf, tors, simT, dt, line);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
@@ -1891,8 +1896,8 @@ act.add = () => {
 // Clear ropes every tornado out; a second Clear takes them away at once.
 act.clear = () => {
   if (tors.some(t => !t.roping)) tors.forEach(t => ropeOut(t));
-  // The second Clear mends the power line too.
-  else { tors.length = 0; lineReset(line); }
+  // The second Clear mends the power line and every damaged thing too.
+  else { tors.length = 0; lineReset(line); damageReset(dmg); }
   wake();
 };
 act.storm = v => { storm = v; build = null; wake(); };
@@ -1987,7 +1992,7 @@ if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(pa
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
 // QA: ?line=1.6 puts the newest tornado 1.6 km out, left of the power line, drifting into it.
 if (qs.has('line') && tors.length) Object.assign(tors[tors.length - 1], { x: -400, z: -1000 * +qs.get('line') });
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); } };
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); damageStep(dmg, tors, simT); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
@@ -2059,7 +2064,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, dmg, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');
