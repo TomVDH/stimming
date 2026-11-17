@@ -1000,6 +1000,38 @@ function packFunnels(rw, rh) {
   pk.box = [Math.max(0, Math.floor(x0) - pad), Math.max(0, Math.floor(y0) - pad), Math.min(rw, Math.ceil(x1) + pad), Math.min(rh, Math.ceil(y1) + pad)];
   return Math.min(list.length, MAX_FUNNELS);
 }
+// The far field: past FAR_D km the deck is baked, not marched each frame (the camera is locked off).
+// It renews when the light, the base, the storm, the eye or the lens change, in strips over frames.
+const FAR_D = 16, FAR_STRIPS = 8;
+function bakeFar(u, rw, rh, n) {
+  const key = [S.hour, sunAz, base, storm, camH, lensMM, rw, rh].map(v => +(+v).toFixed(4)).join();
+  const whole = !fun.farReady || fun.farHold;
+  if (key !== fun.farKey) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
+  if (!fun.farBusy) return;
+  // The bake reads no tornado and no history; its noise keeps the time it was baked at.
+  gl.uniform1i(u.uMode, 1);
+  gl.uniform1f(u.uFarD, FAR_D);
+  gl.uniform1i(u.uN, 0);
+  gl.uniform1f(u.uTorOn, 0);
+  gl.uniform1f(u.uBlend, 1);
+  gl.uniform2f(u.uJit, 0, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
+  gl.viewport(0, 0, rw, rh);
+  // The first bake, or a still page, bakes whole; a running page bakes a strip a frame.
+  if (whole) { gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
+  else {
+    const rows = Math.ceil(rh / FAR_STRIPS);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(0, fun.farRow * rows, rw, rows);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.SCISSOR_TEST);
+    fun.farRow++;
+  }
+  if (fun.farRow >= FAR_STRIPS) { [fun.farA, fun.farB] = [fun.farB, fun.farA]; fun.farBusy = false; fun.farReady = true; }
+  // The live draw that follows takes these back.
+  gl.uniform1i(u.uN, n);
+  gl.uniform1f(u.uTorOn, n ? 1 : 0);
+}
 // Draws every tornado into the funnel target. The runner calls it before its passes.
 function funnelPass(w, h) {
   fun.on = false;
@@ -1007,13 +1039,16 @@ function funnelPass(w, h) {
   fun.noise ||= noiseVolume(gl);
   const rw = Math.max(32, Math.round(w * FUN_RES)), rh = Math.max(32, Math.round(h * FUN_RES));
   if (rw !== fun.w || rh !== fun.h) {
-    free(gl, fun.A); free(gl, fun.B);
+    for (const k of ['A', 'B', 'farA', 'farB']) free(gl, fun[k]);
     fun.A = glTarget(gl, rw, rh, { clear: true }); fun.B = glTarget(gl, rw, rh, { clear: true });
-    fun.w = rw; fun.h = rh; fun.fresh = true;
+    fun.farA = glTarget(gl, rw, rh, { clear: true }); fun.farB = glTarget(gl, rw, rh, { clear: true });
+    fun.w = rw; fun.h = rh; fun.fresh = true; fun.farKey = '';
   }
   const n = fun.n = packFunnels(rw, rh);
   // The history blend runs only while the loop runs; a still frame draws whole.
   const hist = !fun.fresh && performance.now() - fun.loopT < 150;
+  // A still page bakes the far field whole, at once.
+  fun.farHold = !hist;
   const P = fun.prog, u = P.u;
   gl.useProgram(P.p);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
@@ -1045,6 +1080,14 @@ function funnelPass(w, h) {
   // The storm GLSL reads every tornado too: the horns' calm and shade.
   gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
+  bakeFar(u, rw, rh, n);
+  gl.uniform2f(u.uJit, hist ? ((fr * 0.618) % 1) - 0.5 : 0, hist ? ((fr * 0.382) % 1) - 0.5 : 0);
+  gl.uniform1f(u.uBlend, hist ? 0.55 : 1);
+  gl.uniform1i(u.uMode, 0);
+  gl.uniform1f(u.uFarD, FAR_D);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
+  gl.viewport(0, 0, rw, rh);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // The runner wants the context in its default state.
   gl.bindTexture(gl.TEXTURE_3D, null);

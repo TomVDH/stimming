@@ -157,6 +157,11 @@ uniform vec2 uRes, uJit;
 uniform float uBlend;
 // QA: 1 writes the work per pixel instead of the picture.
 uniform int uCount;
+// The far field: 1 bakes the deck past uFarD km into its own picture; 0 marches the near field live
+// and lays the baked far field (tFar) behind it. The two cross over a 2 km band, so no seam shows.
+uniform int uMode;
+uniform float uFarD;
+uniform sampler2D tFar;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
 // Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
@@ -636,8 +641,10 @@ void main() {
     vec2 cy = cylinder(eye - gFoot, rc, Rb, 0.0, gDeck + 60.0);
     if (cy.y > 0.0) { a0[i] = cy.x; a1[i] = min(cy.x + cy.y, tMax); aStart = min(aStart, a0[i]); aEnd = max(aEnd, a1[i]); }
   }
-  float tEnd = sky ? tMax : min(tMax, aEnd);
-  float t = sky ? min(1000.0, aStart) : aStart;
+  bool bake = uMode == 1;
+  float farD = uFarD * 1000.0, band = 2000.0;
+  float tEnd = sky ? (bake ? tMax : min(tMax, farD)) : min(tMax, aEnd);
+  float t = sky ? (bake ? farD - band : min(1000.0, aStart)) : aStart;
   float cosT = dot(rc, gSunC);
   // Two lobes: some light bounces back toward the eye, most runs on.
   float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
@@ -722,6 +729,9 @@ void main() {
         if (d < soft) {
           // A full step through dense cloud covers 0.8 of what lies behind it.
           cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
+          // Over the band the live march gives way to the baked far field, and the bake takes over.
+          float wFar = smoothstep(farD - band, farD, t);
+          cSig *= bake ? wFar : 1.0 - wFar;
           cLit = stormLit(pk, d);
           cCol = hazed(cLit, hzF);
         }
@@ -797,6 +807,10 @@ void main() {
     t += st;
   }
   vec4 now = vec4(acc, 1.0 - T);
+  if (bake) { outC = now; return; }
+  // The baked far field lies behind the near field.
+  vec4 far = texture(tFar, gl_FragCoord.xy / uRes);
+  now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
   if (uCount == 1) outC = vec4(float(gWork), float(steps), 0.0, 1.0);
