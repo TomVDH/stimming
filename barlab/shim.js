@@ -534,6 +534,7 @@ function mount(id, spec, ui) {
     const src = host?.dataset.accent || 'toy';
     setAcc(layer, src === 'white' || src === 'mark' ? null : src === 'series' ? (series?.[toy.series]?.color || toy.accent) : src[0] === '#' ? src : toy.accent);
     layer.dataset.ink = host?.dataset.ink || 'marks';
+    layer.dataset.hover = host?.dataset.hover || 'bar';
     stayHints = false;
     if (c === 'today') return;
     const P = build();

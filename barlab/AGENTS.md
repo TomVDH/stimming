@@ -13,6 +13,7 @@ Workbench for the redo of the toy bars (Tom, 2026-11-16: "we're completely redoi
   - A sheet has no box. It lands from its own button and stands on a soft glass with no edge (Tom kept the glass).
   - The bar and its key strip stay while you play. They leave after 8 s with no input and return on the next one (Tom, 2026-11-16).
 - Tom's colour pick (2026-11-17): Accent Toy, Ink Marks. These are the defaults. The other Accent values (Series, Wordmark, White, your own) and Ink values (Words, Flash) stay as knobs and are not picked.
+- Hover knob, all proposals until Tom picks: Ink bar (default), Line, White box, Ink box, Brackets, Ink word. Tom, 2026-11-17: a line that clings to the letters is wrong; a hover mark keeps clear of the word.
 - Other knobs: Leaves (After 8 s idle is Tom's rule; Never and On touch are not picked), Dev, Replay (key R). `?slow=N` stretches each film frame.
 - The toy list holds hard menus on purpose: Cauldron (grouped options, Dev rows), Train ride (a long choice row), Railgun (grouped Settings), Window seat, Car wash, Wind map, Frietkot.
 - Another session built Standard on the branch `claude/bold-davinci-7fc18a`. Signal lives on `claude/bold-davinci-7fc18a-signal`.

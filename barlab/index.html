@@ -69,6 +69,14 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
     <button type="button" data-k="words">Words</button>
     <button type="button" data-k="flash">Flash</button>
   </div>
+  <div role="group" aria-label="Hover" id="hovers" class="sig"><span>Hover</span>
+    <button type="button" data-h="bar">Ink bar</button>
+    <button type="button" data-h="line">Line</button>
+    <button type="button" data-h="box">White box</button>
+    <button type="button" data-h="inkbox">Ink box</button>
+    <button type="button" data-h="brackets">Brackets</button>
+    <button type="button" data-h="word">Ink word</button>
+  </div>
   <div role="group" aria-label="Presence" id="stays" class="sig"><span>Leaves</span>
     <button type="button" data-p="idle">After 8 s idle</button>
     <button type="button" data-p="stay">Never</button>
@@ -94,6 +102,7 @@ const state = {
   a: q.get('a') || 'toy',
   k: ['marks', 'words', 'flash'].includes(q.get('k')) ? q.get('k') : 'marks',
   p: ['idle', 'stay', 'touch'].includes(q.get('p')) ? q.get('p') : 'idle',
+  h: ['bar', 'line', 'box', 'inkbox', 'brackets', 'word'].includes(q.get('h')) ? q.get('h') : 'bar',
   dev: q.has('dev'),
 };
 let frame = document.getElementById('frame');
@@ -141,6 +150,8 @@ function show() {
   frame.dataset.accent = state.a;
   frame.dataset.ink = state.k;
   frame.dataset.presence = state.p;
+  frame.dataset.hover = state.h;
+  for (const b of document.querySelectorAll('[data-h]')) b.setAttribute('aria-pressed', String(b.dataset.h === state.h));
   frame.dataset.dev = state.dev ? '1' : '0';
   document.body.dataset.c = state.c;
   document.getElementById('toy').value = state.t;
@@ -153,7 +164,7 @@ function show() {
   for (const b of document.querySelectorAll('[data-s]')) b.setAttribute('aria-pressed', String(b.dataset.s === state.s));
   fit();
   // The address keeps the view, so a link opens the same one.
-  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}&a=${encodeURIComponent(state.a)}&k=${state.k}&p=${state.p}${state.dev ? '&dev' : ''}${q.get('slow') ? `&slow=${q.get('slow')}` : ''}`);
+  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}&a=${encodeURIComponent(state.a)}&k=${state.k}&h=${state.h}&p=${state.p}${state.dev ? '&dev' : ''}${q.get('slow') ? `&slow=${q.get('slow')}` : ''}`);
   try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {}
 }
 document.getElementById('concepts').addEventListener('click', e => { const c = e.target.closest('[data-c]')?.dataset.c; if (c) { state.c = c; show(); } });
@@ -161,6 +172,7 @@ document.getElementById('toy').addEventListener('change', e => { state.t = e.tar
 document.getElementById('accents').addEventListener('click', e => { const a = e.target.closest('[data-a]')?.dataset.a; if (a) { state.a = a; show(); } });
 document.getElementById('tint').addEventListener('input', e => { state.a = e.target.value; show(); });
 document.getElementById('inks').addEventListener('click', e => { const k = e.target.closest('[data-k]')?.dataset.k; if (k) { state.k = k; show(); } });
+document.getElementById('hovers').addEventListener('click', e => { const v = e.target.closest('[data-h]')?.dataset.h; if (v) { state.h = v; show(); } });
 document.getElementById('stays').addEventListener('click', e => { const v = e.target.closest('[data-p]')?.dataset.p; if (v) { state.p = v; show(); } });
 document.getElementById('dev').addEventListener('click', () => { state.dev = !state.dev; show(); });
 document.getElementById('sizes').addEventListener('click', e => { const s = e.target.closest('[data-s]')?.dataset.s; if (s) { state.s = s; show(); } });

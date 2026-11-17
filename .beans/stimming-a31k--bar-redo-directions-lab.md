@@ -49,7 +49,8 @@ Question: which direction does the bar redo take?
   - Contrast, measured on all 112 accents: marks reach 4.26:1 or more on their dark edge; dark text on a held pick failed on honey, turing, calaeno, meshball and lavaskin, so a pick now takes the accent's lightest stop and the text colour that reaches 4.5:1; sheet headings are full white (grey was 3.9:1 on glass over a bright scene)
   - Keycaps are small flash boxes (white, dark ink, a dark edge) on the strip, on actions and in sheets
   - (i) opens a How to play sheet: every gesture, every action key and every option key
-- [ ] Tom judges round 4
+- [x] Tom, 2026-11-17: the round 3 underline clung to the letters; he wants controls for the hover treatments. The underline is gone. A Hover knob holds six: Ink bar (the default, at the very foot, clear of the letters), Line, White box, Ink box, Brackets, Ink word. A press is the white box in all six; keyboard focus is the ink bar in all six
+- [ ] Tom judges round 4 and picks a Hover
 - [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use, a disabled control
 - [ ] Next, on Tom's yes only: Signal moves from the lab into the shell on one toy (hard rule 3: its own bean)
 
