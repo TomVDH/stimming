@@ -1,11 +1,12 @@
 ---
 # stimming-81vs
 title: 'Drone: faux flight sim spike, mouse control'
-status: in-progress
+status: completed
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T22:36:26Z
+updated_at: 2026-11-17T22:44:57Z
+parent: stimming-vk1p
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -23,7 +24,7 @@ Airframe: ported from the hubspot-nightly intro (procedural, no .glb). No brand 
 - [x] Cameras: chase, gimbal, pilot
 - [x] HUD: altitude, speed, climb, heading, mode, motor bars
 - [x] Check in the browser pane: clean console, controls, 375 x 812
-- [ ] Tom tries it; keep, change or drop
+- [x] Tom tries it; keep, change or drop: kept, now the Lab toy Zena
 
 
 ## Notes
@@ -49,9 +50,9 @@ Tom's asks: motor sound, downwash, model and graphics, refine the scene, an obst
 - [x] A crash returns to the pad after 3 s
 - [x] Downwash: dust and grass flung out under the craft, ripples in the grass, the windsock blown by a close craft
 - [x] HUD marks white, still engraved (Tom, 14:13)
-- [ ] Model and graphics, from the reference photos
-- [ ] Refine the dusk field
-- [ ] Obstacle course inside the field (design to Tom first)
+- [x] Model and graphics, from the reference photos: moved to stimming-dwji
+- [x] Refine the dusk field: moved to stimming-fecx (two-tier trees and lamp pools done)
+- [x] Obstacle course inside the field: moved to stimming-fpcz
 
 Known: on Windows D3D11 the tube shaders log X4000 notes once; they come from nvg/tube.js.
 
@@ -60,10 +61,10 @@ Known: on Windows D3D11 the tube shaders log X4000 notes once; they come from nv
 
 Tom: "this toy will probably become an XXXXXL too". Four parts to come, each its own piece of work:
 
-- [ ] Power washing: the craft cleans surfaces with a spray
-- [ ] Surveying: fly a site and map it
-- [ ] Military intelligence: reconnaissance with the onboard feed
-- [ ] Warehouse logistics: carry and deliver loads
+- [x] Power washing: moved to stimming-5j4s
+- [x] Surveying: moved to stimming-u2u4
+- [x] Military intelligence: moved to stimming-rhm8
+- [x] Warehouse logistics: moved to stimming-p52g
 
 Not designed yet. Each part gets a design talk with Tom before a line of code.
 Round 3 asks (14:16): the HUD responds as in real flight; the Gimbal view costs too much; the downwash takes a cloud texture; the model waits.
@@ -85,4 +86,11 @@ The vault decision note waits for adjudant; this bean holds Tom's words.
 
 - [x] Gallery icons/spike-drone-1.html: A, the craft from above that the pointer flies; D, the landing pad as the block that the craft lifts off
 - [x] Emblems icons/spike/emblems/drone-a.svg and drone-d.svg; the sheet's GALLERY lists drone-1
-- [ ] Tom picks on the icon sheet; the pick becomes the emblem (Bar v3 monogram) and, with Tom's yes and its own bean, the Lab menu tile
+- [x] Tom picked A: emblem, intro and Lab tile done in stimming-t8tr
+
+
+## Summary of Changes
+
+The spike answered its question: mouse sticks, keys and a gamepad fly a heavy-lift X8 that feels right. It became the Lab toy Zena (drone/).
+Built: the procedural airframe, an eight-rotor flight model and flight controller (Position, Angle, Acro), Bar v3, rotor sound, downwash, the onboard feed with a flight HUD, the Chase and Pilot views, the emblem, the icon and the Lab tile.
+Open work lives under the epic stimming-vk1p. Toy doc: docs/toys/drone.md.
