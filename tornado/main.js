@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -55,6 +55,7 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
     { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
+    { type: 'slider', id: 'eye', label: 'Eye height', min: 1, max: 40, step: 0.5, value: 8, persist: true, onInput: v => act.eye(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -84,8 +85,9 @@ uniform sampler3D tNoise;
 // uTorH: each horn's strength, 0 to 1; its whirl's turn in radians, reach in km and strength.
 uniform float uTorOn;
 uniform vec4 uTorZ[${MAX_FUNNELS}], uTorN[${MAX_FUNNELS}], uTorH[${MAX_FUNNELS}];
-// The eye crouches just over the ears, 1.25 m up.
-const float CAMH = 1.25;
+// The eye's height in metres: Dev's Eye height (8 by default).
+uniform float uCamH;
+#define CAMH uCamH
 // The storm's parts in km, in camera space: the updraft and the rain core. The base fills the sky above.
 // Each tornado brings its own wall cloud.
 const vec2 TOWER = vec2(-4.3, -23.0);
@@ -684,6 +686,8 @@ vec3 envScene(vec2 uv) {
 let qaHold = false;
 // The storm's base in km: Dev's Cloud base.
 let base = 1.35;
+// The eye's height in metres: Dev's Eye height. It stands higher than a crouch, for a wider view.
+let camH = 8;
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
@@ -740,7 +744,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: () => base, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: () => base, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
   });
@@ -792,7 +796,7 @@ function sunFlare() {
     // The cover: the lowest distance to the storm's shape along the sun's ray.
     let t = 0.3, minD = 1e9;
     for (let i = 0; i < 120 && t < 120; i++) {
-      const d = stormShapeJS(sx * t, 0.00125 + sy * t, sz * t);
+      const d = stormShapeJS(sx * t, camH * 0.001 + sy * t, sz * t);
       minD = Math.min(minD, d);
       if (d < -0.3) break;
       t += Math.max(d * 0.8, 0.1);
@@ -836,7 +840,6 @@ const pitOf = t => {
   const f = t.f, reachF = (1.5 + 3 * f / 5) * KNOB.spR;
   return [(0.6 + 0.35 * reachF) * (0.6 + 0.4 * storm), 0.55 * sstep(0, 1, t.form)];
 };
-const CAMH = 1.25;
 const pk = { Z: new Float32Array(MAX_FUNNELS * 4), NR: new Float32Array(MAX_FUNNELS * 4), H: new Float32Array(MAX_FUNNELS * 4), A: new Float32Array(16), B: new Float32Array(16), C: new Float32Array(16), D: new Float32Array(16), E: new Float32Array(16), F: new Float32Array(16), ph: new Float32Array(MAX_FUNNELS * 14) };
 // Packs the tornadoes nearest first and finds their box on the target. Returns the count.
 // The wind's direction in camera space, for the funnels' lean and bow.
@@ -885,7 +888,7 @@ function packFunnels(rw, rh) {
       for (const ox of [-R, R]) for (const oz of [-R, R]) for (const oy of [y0b, y1b]) {
         const z = -(uz + oz);
         if (z < 50) { behind = true; continue; }
-        const u = (ux + ox) / z * foc / asp + 0.5, v = (oy - CAMH) / z * foc + hz;
+        const u = (ux + ox) / z * foc / asp + 0.5, v = (oy - camH) / z * foc + hz;
         bx0 = Math.min(bx0, u); bx1 = Math.max(bx1, u); by0 = Math.min(by0, v); by1 = Math.max(by1, v);
       }
     }
@@ -956,6 +959,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uBase, base);
+  gl.uniform1f(u.uCamH, camH);
   gl.uniform2f(u.uWindC, windC[0], windC[1]);
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
@@ -1024,7 +1028,7 @@ function groundAt(clientX, clientY) {
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
   // Funnels stay under the base: 5 km out at the nearest, 14 km at the most.
-  const dist = sy < -1e-4 ? clamp(1.25 * Math.hypot(foc, sx) / -sy, 5000, 14000) : 14000;
+  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 5000, 14000) : 14000;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -1118,6 +1122,7 @@ act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wak
 act.lens = v => { lensMM = +v || 28; wake(); };
 act.expo = v => { S.expo = v; wake(); };
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
+act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
 // Copy JSON: every knob, to paste back as defaults.
 act.knobCopy = async () => {
@@ -1148,6 +1153,8 @@ for (const [, id, , , , , value] of KNOBS) KNOB[id] = qs0.has(id) ? +qs0.get(id)
 // QA: ?wind=0.5 and ?winddir=19 set the wind for one load.
 act.wind(qs0.has('wind') ? +qs0.get('wind') : ui.setting('wind')?.value ?? 0.85);
 act.windDir(qs0.has('winddir') ? +qs0.get('winddir') : ui.setting('windDir')?.value ?? 19);
+// QA: ?eye=20 sets the eye's height for one load.
+act.eye(qs0.has('eye') ? +qs0.get('eye') : ui.setting('eye')?.value ?? 8);
 // QA: ?base=2 sets the cloud base for one load.
 act.base(qs0.has('base') ? +qs0.get('base') : ui.setting('base')?.value ?? 1.35);
 // QA: ?sunaz=20 sets the sun's bearing for one load.

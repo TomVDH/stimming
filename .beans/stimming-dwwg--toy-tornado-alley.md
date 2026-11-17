@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:01:29Z
+updated_at: 2026-11-17T07:02:21Z
 parent: stimming-oh7b
 ---
 
@@ -145,3 +145,5 @@ Built; waits for the checkpoint with Tom.
 - [x] Tom: the funnel's twist, reach and bend follow the wind and move over time (started: Wind drives lean and bow).
 
 - 2026-11-17, Tom: 25 live Dev knobs in the scene (?dev; one table KNOBS in funnel.js; remembered as k_<id>; ?id=value for one load; Copy JSON and Reset): Funnel, Colour (Reflectivity, Sunlit weight, Ambient, Darkness, Haze on funnel, Top darkening, Dust tint), Shape, Dust, Deck whirl. Colour blending: a cool shade side from the sky and deck, the upper funnel darkened by the deck's shadow, dust brown and wheat bounce low down, sheath noise as tone, haze on the funnel by height.
+
+- 2026-11-17, Tom: Dev row Eye height (1 to 40 m, ?eye), default 8 m (was 1.25) for a more expansive view; the view stays level, so the horizon (0.382) and the road's vanishing point (0.618) hold; the near wheat reads from above.
