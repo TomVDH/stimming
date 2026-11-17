@@ -46,7 +46,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | `toys.json`, `series.json` | The one list of toys, and the series |
 | `shared/` | Shell (`stim.js`, `stim.css`), intro, WebGL2 kit, shader bundles, menu code, fonts, stills, loops |
 | `icons/` | Icon workbench and the icon sheet |
-| `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
+| `barlab/`, `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
 | `tools/` | `commit.sh`, capture scripts, checks |
 | `tests/` | `bar-v2.html` and node tests |
 | `docs/` | Standards, menu, toy docs, plans, QA captures |

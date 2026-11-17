@@ -45,7 +45,9 @@ const btn = (cls, html, label) => {
   return b;
 };
 const box = (cls, ...kids) => { const el = h('div', cls); el.append(...kids.flat().filter(Boolean)); return el; };
-const optHTML = o => `${o.icon || ''}<span>${o.label}</span>`;
+// An icon with its own fills is art: it keeps its colours.
+const isArt = icon => /url\(#|Gradient|fill="(?!none)/.test(icon);
+const optHTML = o => `${o.icon ? (isArt(o.icon) ? o.icon.replace('<svg', '<svg class="b-art"') : o.icon) : ''}<span>${o.label}</span>`;
 const actLabel = a => a.label || (a.verb === 'add' ? `+ ${a.noun ?? 'One'}` : a.verb.charAt(0).toUpperCase() + a.verb.slice(1));
 
 function mount(id, spec, ui) {
@@ -97,7 +99,11 @@ function mount(id, spec, ui) {
   // Every option as a tile, for a list or a drawer.
   const gridPart = done => {
     const el = h('div', 'b-grid');
+    // A new group name puts a heading across the grid.
+    let group;
     const all = options.map(o => {
+      if (o.group && o.group !== group) el.append(text('div', 'b-group-hd', o.group));
+      group = o.group;
       const b = btn('b-opt', `${optHTML(o)}${o.key ? `<kbd>${o.key}</kbd>` : ''}`);
       // A direction may hold the list open for a beat, so the pick shows.
       b.addEventListener('click', async () => { pick(o.value); await pickBeat?.(b); done?.(); pickDone?.(); });
@@ -196,11 +202,22 @@ function mount(id, spec, ui) {
     }
     return el;
   };
+  // A new row group opens a labelled section, as in the shell.
+  const addRows = (el, rows) => {
+    let group;
+    (rows || []).forEach(row => {
+      const r = rowPart(row);
+      if (!r) return;
+      if (row.group && row.group !== group) el.append(text('div', 'b-group-hd', row.group));
+      group = row.group;
+      el.append(r);
+    });
+  };
   // The rows of Settings: the main slider on a narrow stage, toy rows, then Quality.
   const rowsPart = () => {
     const el = h('div', 'b-rows');
     if (spec.slider) el.append(rangePart(spec.slider.label, spec.slider, ui.slider, 'b-row b-row--main'));
-    (spec.settings || []).forEach(row => { const r = rowPart(row); if (r) el.append(r); });
+    addRows(el, spec.settings);
     if (spec.quality) el.append(box('b-row', text('span', '', 'Quality'),
       segPart([{ value: 'standard', label: 'Standard' }, { value: 'high', label: 'High' }], stim.quality, stim.setQuality)));
     return el;
@@ -240,7 +257,8 @@ function mount(id, spec, ui) {
       P.pick = btn(P.seg ? 'b-pick b-narrow' : 'b-pick', '', spec.choice.label);
       P.pickPop = popPart('b-pop--pick', spec.choice.label || 'Pick', P.pick);
       P.pickPop.el.append(gridPart(() => P.pickPop.open(false)));
-      syncers.push(() => { P.pick.innerHTML = optHTML(cur()) + CARET; });
+      let last;
+      syncers.push(() => { const o = cur(); if (o === last) return; last = o; P.pick.innerHTML = optHTML(o) + CARET; });
     }
     const rows = !!(spec.settings?.length || spec.quality || spec.reset);
     if (rows || spec.slider) {
@@ -254,7 +272,7 @@ function mount(id, spec, ui) {
       P.dev = btn('b-ico b-dev', DEV_SVG, 'Dev');
       P.devPop = popPart('b-pop--set b-pop--dev', 'Dev', P.dev);
       const rows = h('div', 'b-rows');
-      spec.dev.forEach(row => { const r = rowPart(row); if (r) rows.append(r); });
+      addRows(rows, spec.dev);
       P.devPop.el.append(rows);
     }
     hints = hintsPart();
@@ -314,7 +332,7 @@ function mount(id, spec, ui) {
       return me === run;
     };
     // The key strip is part of the bar: it comes and goes with it, unless (i) put it away.
-    const rest = () => { set({}); if (wanted) showHints(true); return true; };
+    const rest = () => { set({}); if (wanted && !open) showHints(true); return true; };
     // The first arrival is the intro's beat: the flash fills, snaps to size, holds, then parts.
     const arrive = async first => {
       shown = true;
@@ -362,10 +380,51 @@ function mount(id, spec, ui) {
       el.style.removeProperty('--sg-k');
       el.classList.remove('is-cut');
     };
-    bar.addEventListener('click', e => { const b = e.target.closest('.b-btn'); if (b && bar.contains(b)) cut(b); });
-    sheets.forEach(sh => sh.el.addEventListener('click', e => { const b = e.target.closest('.b-step .b-btn, .b-edge'); if (b) cut(b); }));
-    // A picked row cuts in, holds one frame in the toy's ink, then the list leaves.
-    pickBeat = async row => { await cut(row); await fr(); };
+    // Interactions (emil-design-eng, gestures).
+    // Feedback belongs to the press: the box lands oversize on pointer down, in the first frame.
+    // It holds at size while the pointer is down and parts on release.
+    // A key press shows no box: its result is there at once.
+    let held = null;
+    const release = () => { if (!held) return; held.classList.remove('is-cut'); held.style.removeProperty('--sg-k'); held = null; };
+    const press = async e => {
+      const b = e.target.closest('.b-btn');
+      if (!b || e.button > 0 || b.matches('[aria-pressed="true"]:not(.b-snd)')) return;
+      release();
+      held = b;
+      b.classList.add('is-cut');
+      if (RM.matches) return;
+      b.style.setProperty('--sg-k', '1.25');
+      await fr();
+      if (held === b) b.style.removeProperty('--sg-k');
+    };
+    [bar, ...sheets.map(sh => sh.el)].forEach(el => el.addEventListener('pointerdown', press));
+    for (const t of ['pointerup', 'pointercancel', 'blur']) addEventListener(t, release, true);
+    // An icon button names itself: after a pause on the first, at once on its neighbours.
+    const tip = text('span', 'sg-tip', '');
+    tip.hidden = true;
+    layer.append(tip);
+    let tipTimer = 0, tipAt = -1e9;
+    const showTip = b => {
+      tip.textContent = b.getAttribute('aria-label') || '';
+      const r = b.getBoundingClientRect(), l = layer.getBoundingClientRect();
+      tip.style.left = `${Math.round(r.left + r.width / 2 - l.left)}px`;
+      tip.hidden = false;
+      hints?.classList.add('is-under');
+    };
+    const hideTip = () => { clearTimeout(tipTimer); if (!tip.hidden) tipAt = performance.now(); tip.hidden = true; hints?.classList.remove('is-under'); };
+    bar.querySelectorAll('.b-ico').forEach(b => {
+      b.addEventListener('pointerenter', e => {
+        if (e.pointerType !== 'mouse') return;
+        clearTimeout(tipTimer);
+        if (performance.now() - tipAt < 400) showTip(b); else tipTimer = setTimeout(() => showTip(b), 450);
+      });
+      b.addEventListener('pointerleave', hideTip);
+      b.addEventListener('pointerdown', hideTip);
+      b.addEventListener('focus', () => { if (b.matches(':focus-visible')) showTip(b); });
+      b.addEventListener('blur', hideTip);
+    });
+    // A picked row holds two frames in the toy's ink, then its list leaves.
+    pickBeat = async () => { await fr(2); };
     pickDone = () => cut(P.pick);
     // A sheet is one object too: its box lands from the bar up and parts over its rows.
     // It grows from its own button; on the way out it drops to a line.

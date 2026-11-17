@@ -1,0 +1,16 @@
+# barlab/
+
+Workbench for the redo of the toy bars (Tom, 2026-11-16: "we're completely redoing the style and ux of the bars"). `noindex`. It changes no shell file. Bean: `stimming-a31k`.
+
+- A real toy runs in a frame at its own address. `shim.js` stands in for `shared/stim.js` there: it reads the toy's own `bar` spec and draws the picked direction from it. Every control acts through the shell's handles.
+- Directions on the switch (keys 1 to 3): Signal (the base; Tom: "i like signal a lot"), Bare (Tom: "we'll keep bare too"), Today. Dock, Tuck and Askew are cut.
+- Signal: one bar at the foot, no boxes, the intro's flash beats. Tom, 2026-11-16: the layout is "great"; the flash reveals and the transitions into sheets are "perfect". Do not change those without his word.
+- Signal's rules:
+  - White is the flash: a press, or a thing that lands. The toy's ink is a state that holds: icons, the slider fill, a held pick.
+  - Feedback belongs to the press: the box lands on pointer down. Pointing is a line under the word. A key press shows no box.
+  - A sheet has no box. It lands from its own button and stands on a soft glass with no edge (Tom kept the glass).
+  - The bar and its key strip stay while you play. They leave after 8 s with no input and return on the next one (Tom, 2026-11-16).
+- Knobs for Signal, all proposals: Accent (Toy, Series, Wordmark, White, your own), Ink (Marks, Words, Flash), Leaves (After 8 s idle, Never, On touch), Dev, Replay (key R). `?slow=N` stretches each film frame.
+- The toy list holds hard menus on purpose: Cauldron (grouped options, Dev rows), Train ride (a long choice row), Railgun (grouped Settings), Window seat, Car wash, Wind map, Frietkot.
+- Another session built Standard on the branch `claude/bold-davinci-7fc18a`. Signal lives on `claude/bold-davinci-7fc18a-signal`.
+- Railgun is a TypeScript toy: run `npm run build` before it loads here.

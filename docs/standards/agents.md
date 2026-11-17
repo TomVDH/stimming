@@ -16,7 +16,7 @@ How any agent (Claude, Gemini, Codex, Cursor) works in Stimming. Terms follow `G
 | `docs/toys/<id>.md` | One toy as it is now, with its Rules and Direction | Any agent, same commit as the code |
 | `<dir>/AGENTS.md` | Rules for one folder that differ from the root | Any agent, from Tom's words |
 
-- Nested `AGENTS.md` files: `shared/`, `icons/`, and the workbenches `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/`. A nested file never repeats the root.
+- Nested `AGENTS.md` files: `shared/`, `icons/`, and the workbenches `barlab/`, `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/`. A nested file never repeats the root.
 - Before work on a toy, read its `docs/toys/<id>.md` when one exists.
 - Before work on the menu, read `docs/menu.md`.
 - `.claude/rules/*.md` load by path in Claude Code. `adjudant-code.md` holds the comment register.

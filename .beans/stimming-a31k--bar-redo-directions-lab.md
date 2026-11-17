@@ -34,8 +34,17 @@ Question: which direction does the bar redo take?
   - Sheets: no boxes or hairlines; a sheet lands as a flash box from its own button and parts over its rows; it leaves in two frames
 - [x] Tom, 2026-11-16: "we'll keep bare too". The lab shows Signal, Bare and Today; Dock, Tuck and Askew are cut from the lab and its code
 - [ ] Not checked on round 2: 812 x 375, a real touch screen, keyboard-only use; Railgun loads in the lab but two of its files failed once on the local server
-- [ ] Not ported from the other session's Standard: the Dev sheet (`?dev`)
-- [ ] Tom judges Signal round 2
+- [x] Tom on round 2 (2026-11-16): the layout is "great"; the flash reveals and the transitions into sheets are "perfect"; redo the button and control interactions with the skills
+- [x] Round 3 (Tom, 2026-11-16: colour variations and accents incl. foldout menus; Cauldron and Train ride and toys with diverse menus; stop the auto fade, or leave after 8 s of inactivity; pull the latest main)
+  - Merged `origin/main` (453 commits): the lab reads today's toys; `barlab/AGENTS.md` holds the lab's record
+  - Toys: Cauldron, Train ride, Railgun, Window seat, Car wash, Wind map, Frietkot join Galaxy, Pendulum, Fire, Rain, Eyes; each loads at its own address in a fresh frame
+  - Menu edge cases: option groups, row groups, long choice rows that step, a Dev sheet, a bar on two rows, a list that scrolls
+  - Presence: the bar and its key strip stay; they leave after 8 s with no input and return on the next one (knob: Never, On touch)
+  - Colour: knobs for Accent (Toy, Series, Wordmark, White, own) and Ink (Marks, Words, Flash)
+  - Interactions, from emil-design-eng and gestures: the press is the flash (box on pointer down, oversize for one frame, parts on release); pointing is a line under the word; no box for a key press; icon buttons name themselves after 450 ms, at once on a neighbour; the slider thumb answers the grip; sound off rests white
+- [ ] Not checked on round 3: 812 x 375, a real touch screen, keyboard-only use from end to end, a disabled control (the lab does not mirror it)
+- [ ] The `review-animations` skill is not run on Signal
+- [ ] Tom judges Signal round 3 and picks an Accent and an Ink
 
 ## Notes
 
