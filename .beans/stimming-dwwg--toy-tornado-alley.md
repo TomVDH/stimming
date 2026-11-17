@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:40:52Z
+updated_at: 2026-11-17T06:44:58Z
 parent: stimming-oh7b
 ---
 
@@ -124,3 +124,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16, join part 1: the horn's sides take the low sun as the funnel does; the funnel's top turns to the deck's own light at each step; the sky light fails toward the base under the deck, so the light band at the top is gone; the tone turns a flare's length lower. ?time=golden picks Time for one load (QA).
 
 - 2026-11-16: Opacity 1.2 by default in the scene and the lab (was 0.40; Tom: funnel density low). 0.40 was set close up in the lab; at 8 km in the scene, behind haze, with Rim blend and Light through, it read faint.
+
+- 2026-11-16: the lab's Opacity is back to Tom's 0.40 (Tom: "get me my lab settings back"). The scene keeps its own values.
