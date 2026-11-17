@@ -732,6 +732,20 @@ vec3 envScene(vec2 uv) {
     // The sky dims round the storm: its shadow and its outflow haze.
     float near = dot(rc, normalize(vec3(SHELF.x, 4.0, SHELF.y)));
     c *= mix(1.0, 0.55, smoothstep(0.8, 0.98, near));
+    // The low sky under and beyond the storm: light from far off, brightest at the horizon,
+    // warmest toward the sun. The deck laid on later hides it wherever the deck is.
+    float el = max(rd.y, 0.0);
+    vec3 lowSky = skyCol(normalize(vec3(rd.x, 0.0, rd.z)));
+    float toSun = pow(max(dot(normalize(rd.xz + 1e-5), normalize(uSun.xz + 1e-5)), 0.0), 2.0);
+    c += mix(lowSky, uSunCol * vec3(0.5, 0.33, 0.2), 0.3 * toSun) * exp(-el * 60.0) * 0.5;
+    // Distant haze lies in layers: a few thin bands just over the horizon, each ragged along it.
+    float az = atan(rd.x, -rd.z);
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i), e = 0.004 + 0.008 * fi, w = 0.003 + 0.002 * fi;
+      float rag = vn(vec2(az * (30.0 + 12.0 * fi) + fi * 17.0, fi * 3.1));
+      float b = exp(-pow((el - e) / w, 2.0)) * (0.35 + 0.5 * rag);
+      c = mix(c, hazeCol(rd) * (1.0 - 0.12 * fi), b * 0.35);
+    }
     // Under the base: the gloom, and the rain curtain hanging out of the core.
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
