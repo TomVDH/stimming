@@ -24,6 +24,15 @@ vec4 wheatStand(vec3 rd, float px) {
   vec3 eye = vec3(0.0, CAMH, 0.0);
   vec3 sunD = normalize(uSun + vec3(0.0, 0.02, 0.0));
   float sinEl = max(sunD.y, 0.04);
+  // Toward the sun the eye sees light come through the heads and awns.
+  float back = pow(max(dot(rd, sunD), 0.0), 3.0);
+  // The shade takes the sky's colour: the horizon on the sun's side and away from it.
+  // The pair is scaled to the fill's brightness, so only the colour changes.
+  vec3 hzS = hazeCol(sunD), hzA = hazeCol(-sunD);
+  float lum = dot(uAmb, vec3(0.3, 0.55, 0.15)) * 2.0 / max(dot(hzS + hzA, vec3(0.3, 0.55, 0.15)), 1e-4);
+  // Half the tint: the sky's own colour, never a sunset wash over the whole stand.
+  hzS = mix(uAmb, hzS * lum, 0.5); hzA = mix(uAmb, hzA * lum, 0.5);
+  vec2 sh = normalize(sunD.xz + 1e-6), vh = normalize(-rd.xz + 1e-6);
   vec3 acc = vec3(0.0);
   float T = 1.0;
   // Where the ray enters the field: the eye may stand on the verge, beside the stand.
@@ -43,7 +52,8 @@ vec4 wheatStand(vec3 rd, float px) {
     float fs = t0 * px / uFoc * t0 / max(CAMH - WH_SKIN, 0.02);
     float dens = 1.1 * (0.55 + 0.9 * mix(0.5, vn(xs * 2.3), 1.0 - smoothstep(0.1, 0.4, fs))) * (1.0 - 0.35 * wv) * smoothstep(0.0, WH_FEATHER * 1.5, whInside(xs));
     float Tb = exp(-dens * (t0 - tA) * length(rd.xz));
-    vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g) * (uSunCol * 0.5 * 1.2 + uAmb * 0.55);
+    vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g);
+    awn *= uSunCol * 0.5 * (1.2 + 1.6 * back * vec3(1.0, 0.85, 0.55)) + (hzS + hzA) * 0.275;
     acc = awn * (1.0 - Tb);
     T = Tb;
   }
@@ -53,6 +63,15 @@ vec4 wheatStand(vec3 rd, float px) {
   vec4 gw = gust(p0.xz, 0.0);
   float g = gw.w, wv = max(gw.z, 0.0);
   vec2 L = WH_R * bend(gw, 1.0) / WH_CELL;
+  // Ripeness in patches: green-gold, ripe gold, and pale dead-ripe heads.
+  // A patch spans metres, so the ray reads it once, where it enters.
+  float rp0 = vn(p0.xz * 0.06 + 3.0) * 0.65 + vn(p0.xz * 0.5 + 8.0) * 0.35;
+  // The waxy sheen runs along the stalks: a hair-like highlight about their leaned axis.
+  // It is faint toward a sun behind the eye and glints at a grazing sun ahead.
+  vec2 lw = bend(gw, 1.0);
+  vec3 ax = normalize(vec3(lw.x, 1.0, lw.y)), Hs = normalize(sunD - rd);
+  float tH = dot(ax, Hs);
+  float spec = pow(max(1.0 - tH * tH, 0.0), 40.0) * (0.04 + 0.96 * pow(1.0 - max(dot(-rd, Hs), 0.0), 5.0));
   // The ray in cell units: q(s) = q0 + dq * s, with s in metres past t0.
   vec2 q0 = WH_R * p0.xz / WH_CELL - L * p0.y, dq = WH_R * rd.xz / WH_CELL - L * rd.y;
   vec2 cell = floor(q0), stp = sign(dq);
@@ -109,16 +128,30 @@ vec4 wheatStand(vec3 rd, float px) {
         // At the open face the sky and the verge's bounce light the stalks.
         float face = exp(-inside / 0.6);
         float ao = max(mix(0.25, 1.0, smoothstep(0.15, 0.95, y)), 1.3 * face);
-        // The head's side toward the sun takes the light; its far side goes dark.
+        // The surface the eye meets on the round stalk or head, and its normal.
+        float u = clamp(d / max(r, 1e-4), 0.0, 1.0);
         vec2 nxz = transpose(WH_R) * (D / max(d, 1e-4));
-        float lam = head ? clamp(dot(nxz, sunD.xz) * 0.6 + 0.45, 0.0, 1.0) : 0.6;
-        vec3 alb = head ? mix(vec3(0.3, 0.2, 0.08), vec3(0.46, 0.33, 0.14), th(c + 1.3)) : mix(vec3(0.3, 0.23, 0.11), vec3(0.26, 0.24, 0.1), th(c + 2.9));
-        if (e < 0.0 && head) alb = vec3(0.55, 0.47, 0.3);
+        vec2 N = nxz * u + vh * sqrt(1.0 - u * u);
+        // The side toward the sun takes the light; the far side goes dark.
+        float lam = clamp(dot(N, sunD.xz) * 0.6 + 0.45, 0.0, 1.0);
+        // Ripeness: the ray's patch, and each stalk a little on its own.
+        float rp = rp0 + 0.15 * (th(c + 1.3) - 0.5);
+        vec3 ripe = mix(mix(vec3(0.22, 0.21, 0.08), vec3(0.42, 0.3, 0.12), smoothstep(0.15, 0.45, rp)), vec3(0.5, 0.41, 0.25), smoothstep(0.6, 0.9, rp));
+        // Stalks are straw up top and still green-grey near the soil.
+        vec3 alb = head ? ripe : mix(vec3(0.17, 0.18, 0.08), ripe * vec3(0.9, 0.95, 1.0), smoothstep(0.15, 0.6, y));
+        if (e < 0.0 && head) alb = mix(ripe, vec3(0.6, 0.52, 0.34), 0.6);
         // A bent stalk shows its pale side to the eye.
         // Behind a crest it swings back and shows its dark side.
         alb = mix(alb, vec3(0.55, 0.47, 0.3), (g * 0.2 + wv * 0.5) * (head ? 1.0 : 0.5));
         alb *= 1.0 + 0.3 * min(gw.z, 0.0);
-        vec3 col = alb * (uSunCol * 0.5 * lam * sunT * 1.4 + uAmb * 0.55 * ao);
+        // Thin tissue passes light: awns most, heads some, stalks a little.
+        // Backlit, it glows warm and most at the rim, where the eye sees through the least.
+        float thin = e < 0.0 ? 0.9 : (head ? 0.35 : 0.15);
+        vec3 glow = alb * vec3(1.0, 0.85, 0.55) * 2.0 * back * thin * (0.4 + 0.9 * smoothstep(0.4, 1.0, u));
+        vec3 sun = alb * lam * 1.4 + spec * (head ? 1.5 : 3.0) + glow;
+        // The sky that way, in the shade and in the open face.
+        vec3 sky = mix(hzA, hzS, 0.5 + 0.5 * dot(N, sh));
+        vec3 col = uSunCol * 0.5 * sunT * sun + alb * sky * 0.55 * ao;
         acc += T * k * col;
         T *= 1.0 - k;
         if (T < 0.02) break;
@@ -132,8 +165,9 @@ vec4 wheatStand(vec3 rd, float px) {
   // A walk cut short high in the stand takes the canopy's mean light, not the deep shade.
   vec2 gxz = rd.xz * (CAMH / -rd.y);
   float yEnd = p0.y + rd.y * s;
-  vec3 deep = vec3(0.17, 0.12, 0.05) * (uSunCol * 0.12 + uAmb * 0.3);
-  vec3 crown = vec3(0.36, 0.26, 0.11) * (uSunCol * 0.3 + uAmb * 0.45);
+  vec3 hzM = (hzS + hzA) * 0.5;
+  vec3 deep = vec3(0.17, 0.12, 0.05) * (uSunCol * 0.12 + hzM * 0.3);
+  vec3 crown = vec3(0.36, 0.26, 0.11) * (uSunCol * (0.3 + 0.5 * back * vec3(1.0, 0.85, 0.55)) + hzM * 0.45);
   // The fill varies stalk to stalk too, so a far face is not one flat colour.
   // Its grain reads where the ray enters the stand, so it holds still from row to row.
   // From the tops a pixel spans metres along the view there: the grain fades out.
