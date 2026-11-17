@@ -527,3 +527,15 @@ Batch 12, 2026-11-16 (Tom):
 | trainride.4 | Delete it | The unused `trainride/sound/idle.mp3` goes |
 | foghorn.1 | Keep in Settings | Storm stays a Settings slider |
 | foghorn.2 | Add Dev rows | Bloom, grain and haze become `dev` rows |
+
+Batch 13, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| washline.1 | Set `sound: false` | Washing line stays silent; `toys.json` sets `sound: false` |
+| washline.2 | Wind as choice | Wind (Calm, Breeze, Blowy) becomes the top-left choice |
+| washline.3 | Keep, `noindex` | `washline/archive/` stays public with `noindex`, as G7 |
+| cauldron.1 | Dev row | A `dev` row switches the fire between WebGL and WebGPU; `?fire=gpu` keeps working |
+| cauldron.2 | Rest after 60 s | The simmer settles to a still pot a minute after the last input (G4) |
+| meshball.1 | Keep in Settings | Wobble stays a player setting |
+| washer.1 | Both | Jet power and Drying move from Dev to Settings |
