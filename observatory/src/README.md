@@ -15,7 +15,7 @@ A failed model load shows the stage's `.fail` line.
 
 | File | Holds |
 |---|---|
-| `core/sky.ts` | Pure sky maths: sidereal time, alt/az |
+| `core/sky.ts` | Pure sky maths: sidereal time, alt/az; the star shell's sky matrix, `skyRows` |
 | `core/catalog.ts` | The star catalog decoder: `loadStars`, `Star` |
 | `core/clock.ts` | The sky clock: speed, trail threshold, the 1 s wake ease; injected time |
 | `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta; the heavy axis, a drive on a trapezoid with its load on a damped spring that settles at each stop (`stepAxis`, `brakeAxis`, `atRest`, `moveTime`, `paceFor`); the heavy shutter, 6 s on an S-curve with a bounce at each end stop (`stepShutter`, `SHUTTER_S`) |

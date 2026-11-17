@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { decodeStars } from '../observatory/src/core/catalog.ts';
+import { CI_UNKNOWN, STAR_BYTES, decodeStars } from '../observatory/src/core/catalog.ts';
 
 const binBuf = readFileSync(new URL('../observatory/stars.bin', import.meta.url));
 const bin = binBuf.buffer.slice(binBuf.byteOffset, binBuf.byteOffset + binBuf.byteLength);
@@ -31,3 +31,12 @@ test('fields are sane', () => {
   }
 });
 test('stars.bin and stars.json stay under 300 KB together', () => assert.ok(binBuf.length + Buffer.byteLength(jsonText) < 300 * 1024));
+test('a star with no colour index decodes to NaN', () => {
+  // Two records: colour index unknown, then 0.65.
+  const v = new DataView(new ArrayBuffer(2 * STAR_BYTES));
+  v.setInt16(10, CI_UNKNOWN, true);
+  v.setInt16(STAR_BYTES + 10, 650, true);
+  const [none, known] = decodeStars(v.buffer, { names: {}, bayer: {}, spect: [''] });
+  assert.ok(Number.isNaN(none.ci), `ci ${none.ci}`);
+  assert.equal(known.ci, 0.65);
+});
