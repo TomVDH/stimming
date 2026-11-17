@@ -33,13 +33,15 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ rise: () => void, riseDur: (v: number) => void, riseTop: (v: number) => void, vehicles: () => void, f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, preset: (v: string, keepGrain?: boolean) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { rise() {}, riseDur() {}, riseTop() {}, vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, preset() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
     { verb: 'add', noun: 'Tornado', key: 'T', onPress: () => act.add() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
+    // Rise: the eye cranes up while the lens widens; a second press eases it back.
+    { verb: 'rise', label: 'Rise', key: 'R', onPress: () => act.rise() },
   ],
   slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: 0.85, onInput: v => act.storm(v) },
   settings: [
@@ -70,6 +72,9 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
     { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
     { type: 'slider', id: 'eye', label: 'Eye height', min: 1, max: 40, step: 0.5, value: 8, persist: true, onInput: v => act.eye(v) },
+    // Rise: how long the crane takes each way, and how high it goes.
+    { type: 'slider', id: 'riseDur', label: 'Rise time (s)', min: 6, max: 30, step: 1, value: 15, persist: true, onInput: v => act.riseDur(v) },
+    { type: 'slider', id: 'riseTop', label: 'Rise height (m)', min: 10, max: 80, step: 1, value: 35, persist: true, onInput: v => act.riseTop(v) },
     { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // Where the live march stops and the baked far field begins, and how far the deck runs.
@@ -1084,6 +1089,15 @@ let base = 1.35;
 const baseNow = () => base * (1 + 0.4 * (0.85 - storm));
 // The eye's height in metres: Dev's Eye height. It stands higher than a crouch, for a wider view.
 let camH = 8;
+// The eye height Dev sets; camH is that height plus the Rise.
+let eyeSet = 8;
+// Rise: u runs 0 to 1 and back; dir is +1 up, -1 down, 0 at rest.
+// At the top it holds hold seconds, then eases back by itself.
+const rise = { u: 0, dir: 0, dur: 15, top: 35, hold: 0 };
+// The lens widens by this share at the top of the Rise.
+const RISE_WIDEN = 0.3;
+// A soft ease with flat ends.
+const easeRise = x => x * x * x * (x * (6 * x - 15) + 10);
 let storm = 0.85, fLevel = 2, visible = true, simT = 0, lastInput = 0, asleep = false;
 // Each tornado: its foot in metres, the eased and the set F level, its life state.
 /** @typedef {{ x: number, z: number, f: number, fT: number, cond: number, dust: number, form: number, low: number, desc: number, turn: number, rope: number, roping: boolean, age: number, life: number, seed: number, ph: Float32Array, zs: number, ds: number }} Tor */
@@ -1132,7 +1146,7 @@ const aspect = () => canvas.clientWidth / Math.max(1, canvas.clientHeight);
 // The lens in mm on a 24 mm tall frame: the factor is focal length over 24.
 let lensMM = 28;
 // A narrow frame takes a somewhat wider lens and crops the storm's sides.
-const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3));
+const focal = () => (lensMM / 24) * Math.min(1, Math.sqrt(aspect() / 1.3)) * (1 - RISE_WIDEN * easeRise(rise.u));
 // The road vanishes on the right golden line.
 const ROAD_VP = 1 - GOLD;
 // The eye turns left until the road's vanishing point lies there.
@@ -1440,7 +1454,9 @@ const easeSine = x => 0.5 - 0.5 * Math.cos(Math.PI * x);
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
   // Storm counts in steps of 0.02: the build-up moves it every frame.
-  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
+  // During the Rise the eye and the lens leave the key: the far field is read through its own lens.
+  const lens = rise.dir ? ['rise'] : [camH, focal(), yaw()];
+  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, ...lens, horizon(), farD, deckReach, rw, rh].map(v => (typeof v === 'string' ? v : +(+v).toFixed(4))).join();
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
@@ -1448,6 +1464,10 @@ function bakeFar(u, rw, rh, n) {
   const whole = !fun.farReady || fun.farHold || (moved && !build);
   // A running page renews the far field strip by strip, so its breaks drift with the deck.
   if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
+  // A bake keeps the lens it started with through all its strips.
+  if (fun.farRow === 0) fun.farLens = [focal(), yaw()];
+  gl.uniform1f(u.uFoc, fun.farLens[0]);
+  gl.uniform1f(u.uYaw, fun.farLens[1]);
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
   gl.uniform1i(u.uMode, 1);
   gl.uniform1f(u.uFarD, farD);
@@ -1468,10 +1488,14 @@ function bakeFar(u, rw, rh, n) {
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
-    fun.farT = performance.now(); fun.farDur = !fun.farReady ? 0 : build ? 2500 : 250;
+    // Each picture keeps the lens it was baked through: the live read reprojects by it.
+    [fun.farFocC, fun.farFocA] = [fun.farFocA ?? fun.farLens[0], fun.farLens[0]];
+    fun.farT = performance.now(); fun.farDur = !fun.farReady ? 0 : build ? 2500 : rise.dir ? 400 : 250;
     fun.farBusy = false; fun.farReady = true;
   }
   // The live draw that follows takes these back.
+  gl.uniform1f(u.uFoc, focal());
+  gl.uniform1f(u.uYaw, yaw());
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uTorOn, n ? 1 : 0);
 }
@@ -1534,6 +1558,7 @@ function funnelPass(w, h) {
   gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
   gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
   gl.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
+  gl.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
   const subs = hist ? 1 : 4;
@@ -1600,8 +1625,20 @@ function keepOff(t) {
   if (d < m) { t.x *= m / Math.max(d, 1); t.z *= m / Math.max(d, 1); }
 }
 // The frame loop: tornadoes live; with none left, 60 s with no input puts the scene to sleep.
+// The Rise moves the eye and the lens; reduced motion jumps to the end.
+function riseStep(dt) {
+  if (!rise.dir) return;
+  if (rise.dir > 0 && rise.u >= 1) {
+    // At the top it holds 4 s, then eases back.
+    rise.hold += dt;
+    if (rise.hold > 4) rise.dir = -1;
+  } else rise.u = clamp(rise.u + rise.dir * (reduced() ? 1 : dt / rise.dur));
+  if (rise.dir < 0 && rise.u <= 0) rise.dir = 0;
+  camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u);
+}
 function step(dt) {
   simT += dt;
+  riseStep(dt);
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
@@ -1619,7 +1656,7 @@ function step(dt) {
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
     if (k >= 1) build = null;
   }
-  if (!asleep && !build && !tors.length && !trafficBusy(traf) && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
+  if (!asleep && !build && !rise.dir && !tors.length && !trafficBusy(traf) && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
   lastInput = performance.now();
@@ -1770,7 +1807,11 @@ act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
 act.god = v => { god = clamp(+v, 0, 1); wake(); };
 act.deckReach = v => { deckReach = clamp(+v || 146, 20, 200); wake(); };
-act.eye = v => { camH = clamp(+v || 8, 1, 40); wake(); };
+act.eye = v => { eyeSet = clamp(+v || 8, 1, 40); camH = eyeSet + (rise.top - eyeSet) * easeRise(rise.u); wake(); };
+// A press starts the Rise, or turns it back at any point.
+act.rise = () => { rise.dir = rise.dir > 0 || (rise.dir === 0 && rise.u >= 1) ? -1 : 1; rise.hold = 0; wake(); };
+act.riseDur = v => { rise.dur = clamp(+v || 15, 6, 30); };
+act.riseTop = v => { rise.top = clamp(+v || 35, 10, 80); act.eye(eyeSet); };
 act.knob = (id, v) => { KNOB[id] = +v; wake(); };
 // Copy JSON: every knob, to paste back as defaults.
 act.knobCopy = async () => {
