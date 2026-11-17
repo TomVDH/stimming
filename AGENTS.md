@@ -8,7 +8,8 @@ Read ADJUDANT.md first. It is generated; do not edit it.
 
 ## What this is
 
-Plain HTML and JS. No build step. Each toy is its own page in its own folder.
+Plain HTML and JS, moving to TypeScript one toy at a time (Tom, 2026-11-16). Each toy is its own page in its own folder.
+A TypeScript toy keeps its source in `<id>/src/` (entry `src/main.ts`); `tools/build.mjs` bundles it to `<id>/dist/main.js` (git-ignored), and its page loads that bundle. Railgun is the pilot (bean `stimming-h9ve`). Bare imports stay on the importmap; files outside `src/` stay separate files.
 Read `README.md` for the toy list and the full rules.
 
 ## Where things live
@@ -149,15 +150,20 @@ Read `README.md` for the toy list and the full rules.
 ## Running
 
 ```bash
-python3 -m http.server 8000
+npm ci
 ```
 
-Open <http://localhost:8000/>. All links are relative.
+```bash
+npm run dev
+```
+
+Open <http://localhost:8000/>. All links are relative. `npm run dev` serves the repo and rebuilds every TypeScript toy on a change.
+`python3 -m http.server 8000` still works after `npm run build`.
 
 ## Publishing
 
 The claude.ai Artifact is retired: never publish to it.
-Build locally, commit and push to `main`. GitHub Pages deploys every push to <https://tomvdh.github.io/stimming/> (`.github/workflows/pages.yml`).
+Build locally, commit and push to `main`. The Pages workflow runs `npm ci` and `npm run build`, then copies the site without `.ts` files. GitHub Pages deploys every push to <https://tomvdh.github.io/stimming/> (`.github/workflows/pages.yml`).
 
 ## Conventions
 

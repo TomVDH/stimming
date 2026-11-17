@@ -78,7 +78,7 @@ guard_clouds() {
   grep -qE 'clouds-check: PASS|look-approved:' "$msg" && return 0
   while IFS= read -r -d '' p; do
     if [[ $p =~ $GUARD_CLOUD_FILES ]]; then hit+=("$p"); continue; fi
-    [[ $p == railgun/index.html ]] || continue
+    [[ $p == railgun/index.html || $p == railgun/src/main.ts ]] || continue
     # Changed lines on both sides of the diff, against each side's own sections.
     ranges=$(git show "$new:$p" 2>/dev/null | guard_sections)
     while read -r a n; do

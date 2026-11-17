@@ -15,7 +15,7 @@
 // Patches change only the served copy; the files on disk never change.
 // Exit code: 0 when every check passes, 1 when a check fails, 2 when the harness fails.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -56,7 +56,7 @@ const steps = k => [
 // Green: the card's edge. Magenta: the cylinder's wall. Blue: the top cut.
 // The check compares each flag still with the same still unflagged.
 function flagPatches() {
-  const html = readFileSync(join(ROOT, 'railgun/index.html'), 'utf8');
+  const html = readFileSync(join(ROOT, MAIN), 'utf8');
   const card = html.match(/vec2 uv = position\.xy \* vec2\(([\d.]+), ([\d.]+)\) - vec2\(0\.0, ([\d.]+)\);'\)/);
   if (!card) throw new Harness('the storm card line moved; update flagPatches() in tools/clouds-check.mjs');
   const [X, Y, B] = card.slice(1).map(Number), f = v => v.toFixed(3);
@@ -76,6 +76,8 @@ const TRIES = {
 };
 
 class Harness extends Error {}
+// The toy's source; the page loads its bundle, railgun/dist/main.js.
+const MAIN = 'railgun/src/main.ts';
 const sha = f => createHash('sha1').update(readFileSync(join(ROOT, f))).digest('hex').slice(0, 7);
 
 async function freePort() {
@@ -102,7 +104,7 @@ async function load(browser, url, view, patches) {
   page.on('pageerror', e => errs.push(String(e)));
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   if (patches.length) {
-    await page.route(/\/railgun\/(index\.html|storms\.js)?(\?[^/]*)?$/, async route => {
+    await page.route(/\/railgun\/(dist\/main\.js|storms\.js)(\?[^/]*)?$/, async route => {
       const file = /storms\.js/.test(route.request().url()) ? 'storms' : 'index';
       // A request cut short by a closing page must not stop the run.
       try {
@@ -255,6 +257,8 @@ async function main() {
   const extra = TRY ? TRIES[TRY] : [];
   if (TRY && !extra) throw new Harness(`no test change named ${TRY}; names: ${Object.keys(TRIES).join(', ')}`);
   const { chromium } = await playwright('clouds-check.mjs');
+  // The page loads the bundle, so build it from the source first.
+  execFileSync('node', ['tools/build.mjs'], { cwd: ROOT, stdio: 'ignore' });
   const server = await serve();
   const browser = await chromium.launch({ headless: true, args: GPU });
   const res = { checks: [], notes: [] };
@@ -338,7 +342,7 @@ async function main() {
     if (UPDATE) {
       mkdirSync(GOLD, { recursive: true });
       for (const n of names) saveTo(join(GOLD, `${n}.jpg`), files[`${n}.jpg`]);
-      writeFileSync(join(GOLD, 'stats.json'), JSON.stringify({ storms: storms.length, visible: vis, colour: col, from: { storms: sha('railgun/storms.js'), index: sha('railgun/index.html') } }, null, 1) + '\n');
+      writeFileSync(join(GOLD, 'stats.json'), JSON.stringify({ storms: storms.length, visible: vis, colour: col, from: { storms: sha('railgun/storms.js'), main: sha(MAIN) } }, null, 1) + '\n');
       res.notes.push(`golden set written to ${GOLD}`);
     } else if (!existsSync(join(GOLD, 'w-s050.jpg'))) {
       res.notes.push('no golden set yet: run with --update-golden after Tom approves the look');
@@ -365,13 +369,13 @@ async function main() {
   }
 
   const failed = res.checks.filter(c => !c.ok);
-  const head = `# clouds-check\n\nstorms.js ${sha('railgun/storms.js')}, index.html ${sha('railgun/index.html')}${TRY ? `, test change: ${TRY}` : ''}\n\n| Check | Result | Detail |\n|---|---|---|\n`;
+  const head = `# clouds-check\n\nstorms.js ${sha('railgun/storms.js')}, main.ts ${sha(MAIN)}${TRY ? `, test change: ${TRY}` : ''}\n\n| Check | Result | Detail |\n|---|---|---|\n`;
   const rows = res.checks.map(c => `| ${c.name} | ${c.ok ? 'pass' : '**FAIL**'} | ${c.detail} |`).join('\n');
   writeFileSync(join(OUT, 'report.md'), head + rows + '\n\n' + res.notes.map(n => `- ${n}`).join('\n') + '\n');
   for (const c of res.checks) console.log(`${c.ok ? 'pass' : 'FAIL'}  ${c.name}: ${c.detail}`);
   for (const n of res.notes) console.log(`note  ${n}`);
   console.log(`stills and report: ${OUT}`);
-  console.log(failed.length ? `clouds-check: FAIL (${failed.map(c => c.name).join(', ')})` : `clouds-check: PASS storms.js@${sha('railgun/storms.js')} index.html@${sha('railgun/index.html')}`);
+  console.log(failed.length ? `clouds-check: FAIL (${failed.map(c => c.name).join(', ')})` : `clouds-check: PASS storms.js@${sha('railgun/storms.js')} main.ts@${sha(MAIN)}`);
   return failed.length ? 1 : 0;
 }
 
