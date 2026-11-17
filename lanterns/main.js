@@ -28,7 +28,7 @@ const save = (k, v) => { try { localStorage.setItem(`stimming.lanterns.${k}`, St
 const firstSaved = saved('time', 'dusk');
 const first = qs.get('t') in HOURS ? qs.get('t') : firstSaved in HOURS ? firstSaved : 'dusk';
 const ui = initPage({ id: 'lanterns', bar: {
-  choice: { label: 'Time', value: first, options: [
+  choice: { label: 'Time of day', value: first, options: [
     { value: 'dusk', label: 'Dusk', key: '1' },
     { value: 'blue', label: 'Blue hour', key: '2' },
     { value: 'night', label: 'Night', key: '3' },
@@ -47,14 +47,17 @@ const ui = initPage({ id: 'lanterns', bar: {
   ],
   // Tuning for the people who build the toy; the Dev button shows with ?dev.
   dev: [
-    { type: 'slider', id: 'hue', label: 'Paper hue', min: 30, max: 80, step: 1, value: 55, persist: true, onInput: () => act.redraw() },
-    { type: 'slider', id: 'flicker', label: 'Flicker', min: 0, max: 3, step: 0.05, value: 1, persist: true },
-    { type: 'slider', id: 'rise', label: 'Rise speed', min: 0.3, max: 2.5, step: 0.05, value: 1, persist: true },
-    { type: 'slider', id: 'burn', label: 'Burn time', min: 20, max: 160, step: 5, value: 60, persist: true },
-    { type: 'slider', id: 'cap', label: 'Lantern cap', min: 8, max: 160, step: 1, value: 160, persist: true },
+    { type: 'slider', id: 'hue', group: 'Light', label: 'Paper hue', min: 30, max: 80, step: 1, value: 55, persist: true, onInput: () => act.redraw() },
+    { type: 'slider', id: 'flicker', group: 'Light', label: 'Flicker', min: 0, max: 3, step: 0.05, value: 1, persist: true },
+    { type: 'slider', id: 'rise', group: 'Life', label: 'Rise speed', min: 0.3, max: 2.5, step: 0.05, value: 1, persist: true },
+    { type: 'slider', id: 'burn', group: 'Life', label: 'Burn time', min: 20, max: 160, step: 5, value: 60, persist: true },
+    { type: 'slider', id: 'cap', group: 'Life', label: 'Lantern cap', min: 8, max: 160, step: 1, value: 160, persist: true },
   ],
   quality: true,
-  keys: [['click', 'release'], ['hold', 'many'], ['drag', 'look'], ['space', 'festival']],
+  keys: [['click', 'add a lantern'], ['hold', 'add a stream of lanterns'], ['drag', 'look around'], ['space', 'start a festival']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add a lantern'], ['hold', 'Add a stream of lanterns'], ['drag', 'Look around'],
+    ['space', 'Start a festival'], ['1 2 3', 'Change the time of day']],
 } });
 
 // A row's value: its stored or default value, from Settings or Dev.

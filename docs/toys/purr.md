@@ -21,14 +21,14 @@ A furry blob of no known species fills the stage, seen from above. A stroke lays
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3.
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | Pelt, segments: Velvet, Shag, Frost, Ember (keys 1 to 4, with colour dots) |
 | Bottom left (actions) | Shake (key S) |
 | Bottom right (slider) | None |
-| Key strip | `[DRAG] stroke` · `[CLICK] poke` · `[HOLD] rest a hand` · `[S] shake` |
+| Key strip | `[DRAG] stroke the fur` · `[CLICK] poke the creature` · `[HOLD] rest a hand on it` · `[S] shake the creature` |
 | Settings | Hand (slider: brush size, persisted) · Quality (site) · Reset in the footer |
 | Dev (`?dev`) | Sheen, Rim, Exposure, Shells (sliders, not persisted) |
 <!-- /gen:bar -->
