@@ -79,18 +79,19 @@ export const act: { press: PressFn; release: ReleaseFn } = { press() {}, release
 export const FAR_MODE = new URLSearchParams(location.search).get('far') === 'live' ? 'live' : 'bake';
 export const ui = initPage({ id: 'railgun', signal: true, bar: {
   // Time runs from a starry night to a high noon sun.
-  slider: { label: 'Time', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
+  slider: { label: 'Time of day', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.
   settings: [
-    // The gun tracks the rock, or the arrow keys lay it.
-    { type: 'choice', id: 'aim', group: 'Play', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Track' }, { value: 'free', label: 'Free' }], onPick: v => setAimMode(v) },
+    // Auto: the gun tracks the rock. Manual: the arrow keys lay it.
+    // The stored values stay track and free.
+    { type: 'choice', id: 'aim', group: 'Play', label: 'Aim', value: 'track', persist: true, options: [{ value: 'track', label: 'Auto' }, { value: 'free', label: 'Manual' }], onPick: v => setAimMode(v) },
     // One rail shot, or a salvo of banked rounds.
     // This choice stands in until the HUD selector lands.
-    { type: 'choice', id: 'firemode', group: 'Play', label: 'Fire', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Rail' }, { value: 'salvo', label: 'Salvo' }] },
+    { type: 'choice', id: 'firemode', group: 'Play', label: 'Shot', display: 'segments', value: 'rail', persist: true, options: [{ value: 'rail', label: 'Single' }, { value: 'salvo', label: 'Salvo' }] },
     { type: 'toggle', id: 'letterbox', group: 'View', label: 'Letterbox', value: false, persist: true, onToggle: on => setBox(on) },
     // Graphics: fine tuning on top of Quality and the automatic ladder.
     { type: 'slider', id: 'res', group: 'Graphics', label: 'Resolution', min: 0.5, max: 1, step: 0.05, value: 1, persist: true, onInput: v => { gfx.res = v; resize(); } },
-    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Mid' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v as keyof typeof DETAIL]; resize(); } },
+    { type: 'choice', id: 'detail', group: 'Graphics', label: 'Smoke detail', value: 'mid', persist: true, options: [{ value: 'low', label: 'Low' }, { value: 'mid', label: 'Medium' }, { value: 'high', label: 'High' }], onPick: v => { gfx.detail = DETAIL[v as keyof typeof DETAIL]; resize(); } },
   ],
   // Dev: tuning for the people who build the toy; it shows only with ?dev.
   dev: [
@@ -108,10 +109,10 @@ export const ui = initPage({ id: 'railgun', signal: true, bar: {
     // Each rock starts at its hold and strikes after a grace.
     { type: 'toggle', id: 'striketest', group: 'Tests', label: 'Strike test', value: false, onToggle: on => { state.strikeTest = on; if (on) strikeSoon(); } },
     // Ambient: small events nobody fires, for a watcher.
-    { type: 'toggle', id: 'ambient', group: 'Ambient', label: 'Ambient', value: true, persist: true },
-    { type: 'slider', id: 'ambrate', group: 'Ambient', label: 'Ambient rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
-    { type: 'choice', id: 'ambkind', group: 'Ambient', label: 'Ambient test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
-    { type: 'button', id: 'ambfire', group: 'Ambient', label: 'Ambient now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
+    { type: 'toggle', id: 'ambient', group: 'Ambient', label: 'On', value: true, persist: true },
+    { type: 'slider', id: 'ambrate', group: 'Ambient', label: 'Rate', min: 0, max: 3, step: 0.1, value: 1, persist: true },
+    { type: 'choice', id: 'ambkind', group: 'Ambient', label: 'Test', display: 'stepper', value: 'war', options: [{ value: 'war', label: 'War' }, { value: 'star', label: 'Star' }, { value: 'sat', label: 'Satellite' }, { value: 'land', label: 'Landing' }, { value: 'bolt', label: 'Far bolt' }, { value: 'flak', label: 'Flak' }, { value: 'embers', label: 'Embers' }, { value: 'shed', label: 'Shed' }] },
+    { type: 'button', id: 'ambfire', group: 'Ambient', label: 'Now', text: 'Play', onClick: () => { ambStart(ui.setting('ambkind').value); wake(); } },
     // The dusk sun's angle right of the look, in degrees.
     { type: 'slider', id: 'sunaz', group: 'Sky', label: 'Sun bearing', min: 0, max: 70, step: 1, value: 36, persist: true, onInput: v => { state.sunSwing = v; aimSky(); setSun(); } },
     // The strength of the cloud shadows in the low air.
@@ -164,8 +165,8 @@ export const ui = initPage({ id: 'railgun', signal: true, bar: {
     { type: 'toggle', id: 'farskip', group: 'Land', label: 'Far skip', value: true, onToggle: on => { GRID_U.uGridOn.value = on ? 1 : 0; farBake.dirty = true; draw(); } },
     { type: 'choice', id: 'farmode', group: 'Land', label: 'Far ranges', display: 'segments', value: FAR_MODE, options: [{ value: 'bake', label: 'Bake' }, { value: 'live', label: 'Live' }], onPick: v => { setFarMode(v === 'bake'); draw(); } },
     // The graphite parts' reflectance and roughness.
-    { type: 'slider', id: 'gunmetal', group: 'Gun', label: 'Gun steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
-    { type: 'slider', id: 'gunrough', group: 'Gun', label: 'Gun steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
+    { type: 'slider', id: 'gunmetal', group: 'Gun', label: 'Steel', min: 0.04, max: 0.6, step: 0.02, value: 0.12, persist: true, onInput: v => { gunMat.uniforms.uMetalF0.value = v; draw(); } },
+    { type: 'slider', id: 'gunrough', group: 'Gun', label: 'Steel rough', min: 0.15, max: 0.9, step: 0.05, value: 0.45, persist: true, onInput: v => { gunMat.uniforms.uMetalR.value = v; draw(); } },
     // The stains, cracks and grease on the base.
     { type: 'slider', id: 'basewear', group: 'Gun', label: 'Base wear', min: 0, max: 1.6, step: 0.05, value: 1, persist: true, onInput: v => { gunMat.uniforms.uWear.value = v; draw(); } },
     { type: 'slider', id: 'bloom', group: 'Lens', label: 'Bloom', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: v => { gfx.bloom = v; setBloom(); } },
@@ -196,7 +197,10 @@ export const ui = initPage({ id: 'railgun', signal: true, bar: {
   // Reset waits right of Sight; it shows and glows after a kill.
   actions: [{ verb: 'sight', key: 'V', onPress: () => toggleSight() }, { verb: 'reset', key: 'R', onPress: () => resetToy() }],
   quality: true,
-  keys: [['hold', 'charge'], ['release', 'fire'], ['arrows', 'traverse'], ['v', 'sight']],
+  keys: [['hold', 'charge the gun'], ['release', 'fire the shot'], ['arrows', 'turn the gun']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Charge the gun'], ['release', 'Fire the shot'], ['← → ↑ ↓', 'Turn the gun'],
+    ['V', 'Show and hide the sight'], ['R', 'Reset the toy']],
 } });
 
 export const stage = document.getElementById('stage')!;

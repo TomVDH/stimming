@@ -213,7 +213,17 @@ export function mountSignal(id, spec, ui) {
       ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'].forEach(t => b.addEventListener(t, up));
       b.addEventListener('contextmenu', e => e.preventDefault());
     } else b.addEventListener('click', () => { handle?.set(null, true); sync(); });
-    syncers.push(() => b.toggleAttribute('data-disabled', !!handle?.disabled));
+    // A toy may hide its Bar v2 chip until the action has a use.
+    // Railgun shows Reset only after a kill.
+    /** @type {any} */
+    const chip = [...shell.querySelectorAll('.s2-chip')].find(c => c.querySelector('.s2-label')?.textContent === actLabel(a));
+    syncers.push(() => {
+      b.toggleAttribute('data-disabled', !!handle?.disabled);
+      const gone = !!chip && (chip.hidden || chip.style.display === 'none');
+      if (gone === b.hidden) return;
+      b.hidden = gone;
+      relayout();
+    });
     return b;
   });
   const rowPart = row => {

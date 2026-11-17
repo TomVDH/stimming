@@ -234,6 +234,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {SettingRow[]} [settings] Rows in the Settings sheet.
  * @property {SettingRow[]} [dev] Tuning rows; the Dev button shows only with ?dev.
  * @property {KeyEntry[]} [keys] The key strip: four entries at most.
+ * @property {KeyEntry[]} [help] Bar v3's How to play rows: one instruction per row.
  * @property {boolean} [quality] Adds the site Quality row to Settings.
  * @property {() => void} [reset] Adds Reset to the Settings footer.
  */

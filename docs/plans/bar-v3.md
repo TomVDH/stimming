@@ -50,6 +50,7 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - Text on a held pick reaches 4.5:1: the fill and the text colour come from the accent's stops (`setAcc` in `shared/signal.js`).
 - Controls are 44 px or more. Keyboard focus always shows.
 - A disabled control shows at 40% and takes no input.
+- An action leaves the bar while the toy hides its Bar v2 chip, and returns with it. Railgun shows Reset only after a kill.
 
 ## Open
 

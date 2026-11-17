@@ -518,6 +518,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom says yes to the shell port, and: "we will pull out bar v2 when we have signed off barv3 per toy". Signal is Bar v3 (`docs/plans/bar-v3.md`); a toy opts in, and Bar v2 stays until every toy is signed off. Cauldron is the first toy on it. | 1, 2 |
 | 2026-11-17 | Tom asks for an STE100-inspired rewrite of all copy, with "ultimate clarity and consistency -- esp with the controls", and for a redo of the mouse and keycap icons. Cauldron is first: its labels, help and other copy are rewritten; Tom sets two labels himself: "Ingredients for T -- Throw Out for C". How to play draws each input. | 2 |
 | 2026-11-17 | Tom on Train ride: "make it swiss red and white this one". Its accent is `oklch(0.52 0.21 29)`; its picks are white on red. | 19 |
+| 2026-11-17 | Tom on Railgun's copy: "Yes, apply". Time of day; Aim: Auto, Manual; Shot: Single, Salvo; Medium; one instruction per help row. Reset stays on the bar: the toy shows it only after a kill, and Bar v3 now follows that. | 19 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.

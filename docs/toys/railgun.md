@@ -37,15 +37,16 @@ To write.
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`railgun/index.html:149`). Railgun is the first toy on the Dev sheet (`?dev`).
+Bar: v3, the Signal bar, over Bar v2 (`railgun/src/setup.ts`, `signal: true`). Railgun is the first toy on the Dev sheet (`?dev`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | None |
-| Bottom left (actions) | `Sight` (V): Monolith or NVG sight; `Reset` (R): the rewind |
-| Bottom right (slider) | `Time`: starry night to noon |
-| Key strip | hold charge; release fire; arrows traverse; v sight |
-| Settings | Letterbox; Aim (Track, Free); Fire mode (Rail, Salvo); Resolution; Smoke detail; Quality |
+| Bottom left (actions) | `Sight` (V): Monolith or NVG sight; `Reset` (R): the rewind. Reset shows only after a kill. |
+| Bottom right (slider) | `Time of day`: starry night to noon |
+| Key strip (Bar v2) | hold charge the gun; release fire the shot; arrows turn the gun |
+| How to play (Bar v3) | Hold: Charge the gun. Release: Fire the shot. Arrows: Turn the gun. V: Show and hide the sight. R: Reset the toy. |
+| Settings | Aim (Auto, Manual); Shot (Single, Salvo); Letterbox; Resolution; Smoke detail (Low, Medium, High); Quality |
 | Dev (`?dev`) | Charge mix, FPS, Game-over mix, Rock size, Target (Asteroid, Ship), Ship fire, fast rock, strike test, grain, bloom, tone map, exposure, brightness, contrast, saturation, FXAA |
 <!-- /gen:bar -->
 
@@ -54,7 +55,7 @@ Bar: v2 (`railgun/index.html:149`). Railgun is the first toy on the Dev sheet (`
 | Press and hold | Ranges, then charges |
 | Release | Fires |
 | Pointer move | Leans the lens about 1.4° yaw and 0.9° pitch (mouse only) |
-| Keys | Space holds and fires; arrows traverse the gun in Aim Free |
+| Keys | Space holds and fires; the arrows and W A S D turn and raise the gun, and set Aim to Manual |
 | Wheel | None |
 
 ## Renderer and libraries
