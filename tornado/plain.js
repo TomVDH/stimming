@@ -112,7 +112,8 @@ void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
     put(plainHaze(vec3(0.05, 0.045, 0.045) * lit, rd, z), k, z);
   }
 }
-// The fence along the right field: wooden posts every 20 m, steel posts between, three strands.
+// The fence along the right field: round wooden posts every 20 m, painted steel T-posts between, three strands.
+// The posts take woodShade() from line.js; the strands are galvanised wire, lit as the conductors are.
 const float FENCE_X = ROAD_X + 6.0;
 void fence(vec2 s, vec3 rd, float px) {
   float sn = sin(uYaw), cs = cos(uYaw), k = s.x / uFoc, den = k * cs - sn;
@@ -121,25 +122,44 @@ void fence(vec2 s, vec3 rd, float px) {
   float L = -wz - 4.0;
   if (L < 0.0 || L > 2500.0) return;
   float z = depthOf(vec3(FENCE_X, 0.0, wz)), m = uFoc / z;
-  vec3 wood = vec3(0.16, 0.13, 0.1) * (uSunCol * 0.5 + uAmb * 0.55), steel = vec3(0.07) * (uSunCol * 0.4 + uAmb * 0.5);
+  vec3 eye = vec3(0.0, CAMH, 0.0), up = vec3(0.0, 1.0, 0.0);
   // The posts on either side of this column's place along the fence.
   float i0 = floor(L / 4.0);
   for (int j = 0; j < 2; j++) {
     float i = i0 + float(j);
     bool post = mod(i, 5.0) < 0.5;
+    // No post stands quite true.
     vec3 P = vec3(FENCE_X + 0.05 * (th(vec2(i, 3.0)) - 0.5), 0.0, -(4.0 + 4.0 * i));
+    vec3 A = normalize(vec3((th(vec2(i, 6.1)) - 0.5) * 0.06, 1.0, (th(vec2(i, 1.9)) - 0.5) * 0.05));
     float zp = depthOf(P);
-    vec2 b = proj(P);
-    float w = (post ? 0.06 : 0.02) / zp * uFoc, h = (post ? 1.3 : 1.15) / zp * uFoc;
-    float kp = clamp((w - abs(s.x - b.x)) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px + 0.1) * pbox(vec2(b.x, s.y), vec2(b.x - 1.0, b.y), vec2(b.x + 1.0, b.y + h), px);
-    if (kp > 0.0) put(plainHaze(post ? wood : steel, rd, zp), kp, zp);
+    if (zp < 1.0) continue;
+    float hgt = post ? 1.3 : 1.15, u, sx;
+    float kp = segCover(s, proj(P), proj(P + A * hgt), (post ? 0.06 : 0.02) / zp * uFoc, px, sx, u);
+    if (kp <= 0.0) continue;
+    vec3 V = normalize(eye - P), Q = P + A * hgt * u;
+    vec3 col;
+    if (post) col = woodShade(Q, A, V, sx, hgt * u + 0.3, vn(vec2(sx * 3.0 + i, u * 20.0)));
+    else {
+      // A T-post: green paint, chipped to rust, a satin sheen.
+      vec3 Nv = normalize(V - A * dot(V, A)), N = normalize(Nv + cross(A, Nv) * sx);
+      vec3 Ls = normalize(uSun + vec3(0.0, 1e-3, 0.0)), H = normalize(Ls + V);
+      float sun = 1.0 - sunCover(Q * 0.001);
+      vec3 alb = mix(vec3(0.06, 0.09, 0.06), vec3(0.16, 0.08, 0.04), step(0.7, vn(vec2(i * 3.1, u * 9.0))));
+      col = alb * (uSunCol * 0.9 * sun * max(dot(N, Ls), 0.0) + uAmb * 0.5) + uSunCol * sun * ggx(max(dot(N, H), 0.0), 0.45) * max(dot(N, Ls), 0.0) * 0.04 + lineEnv(reflect(-V, N)) * 0.04;
+    }
+    put(plainHaze(col, rd, zp), kp, zp);
   }
-  // The strands: barbed wire, a hair at any distance.
+  // The strands: barbed wire, sagging a little between posts; its slope on screen sets its weight.
   for (int j = 0; j < 3; j++) {
-    float y = 0.55 + 0.27 * float(j) - 0.05 * 4.0 * fract(L / 4.0) * (1.0 - fract(L / 4.0));
-    float sy = (y - CAMH) * m;
-    float a = clamp(1.0 - abs(s.y - sy) / (px * 0.8), 0.0, 1.0) * min(1.0, 0.006 * m * 2.0 / px + 0.1);
-    if (a > 0.0) put(plainHaze(steel, rd, z), a * 0.8, z);
+    float f = fract(L / 4.0), y = 0.55 + 0.27 * float(j) - 0.2 * f * (1.0 - f);
+    vec3 P0 = vec3(FENCE_X, y, wz), P1 = vec3(FENCE_X, y, wz - 0.5);
+    vec2 s0 = proj(P0), s1 = proj(P1), sd = s1 - s0;
+    float sl = abs(sd.x) > 1e-7 ? sd.y / sd.x : 1e3;
+    float dist = abs(s.y - s0.y) / sqrt(1.0 + sl * sl), rad = 0.003 * m;
+    float a = clamp((max(rad, px * 0.5) - dist) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * rad / px * 2.5);
+    if (a <= 0.0) continue;
+    // The barbs every 12 cm thicken the strand a little.
+    put(plainHaze(wireShade(P0, normalize(P1 - P0), normalize(eye - P0)), rd, z), a, z);
   }
 }
 // Far trees, scattered to the horizon: six distance bands from 2.5 to 22 km.
