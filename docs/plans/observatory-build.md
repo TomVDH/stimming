@@ -91,7 +91,7 @@ test('stepAxis never beats the cap and lands', () => { let s = { pos: 350, vel: 
 
 **Files:**
 - Create: `observatory/src/world/hill.ts`, `observatory/src/world/observatory.ts`, `observatory/src/world/laser.ts`, `observatory/src/sky/stars.ts` (placeholder: 3,000 random points on a sphere), `observatory/src/view/camera.ts`, `observatory/src/input.ts`, `observatory/src/loop.ts`
-- Modify (after Tom's yes only): `toys.json`, `index.html` Lab shelf and its icon hook, by hunk, shaped as Lantern lake's entry in commit `acd73c78`. The tile art is emblem A: `icons/spike/emblems/observatory-a.svg`.
+- Modify (after Tom's yes only): `toys.json`, `index.html` Lab shelf and its icon hook, by hunk, shaped as Lantern lake's entry in commit `acd73c78`. The tile art is icon 1 of `icons/spike-observatory-2.html`, the dome and beam (Tom, 2026-11-17). The intro emblem is `shared/emblems/observatory.svg`, emblem a of that round.
 
 **Interfaces:**
 - Consumes: `clampAim`, `stepAxis`, `azDelta` (Task 1).
