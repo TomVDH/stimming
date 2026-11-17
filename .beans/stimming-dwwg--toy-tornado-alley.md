@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:19:19Z
+updated_at: 2026-11-17T07:23:29Z
 parent: stimming-oh7b
 ---
 
@@ -159,3 +159,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (the scene way too bright; the windmill out for now): the foreground windmill is out (its code is in a28e1e65); the sun's light 1.7× its colour curve (was 2.6), the sky fill about 20% lower, the wheat's albedo about 35% lower with softer gust sheen; the storm reads heavy and dark.
 
 - 2026-11-17, Tom (a weird green patch on the left): flat green tints came from the gloom colour, the rain curtain, the low haze bands and the storm core's tint; the gloom is now cool slate, the rain neutral, the bands warm dust, the core dark slate. Green returns only where light passes rain (the palette step).
+
+- 2026-11-17, Tom: cloud shadows on the plain: sunCover() follows the sun's ray to the base (the storm's bulk shades outright; the ragged fringe gives soft patches drifting downwind; a low sun stretches them into long bands); only the sun's share of light is taken. God rays can reuse sunCover.

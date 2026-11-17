@@ -384,6 +384,28 @@ vec2 bend(vec2 xz, float h, float g) {
   return WDIR * (lean + flutter) * h * h;
 }
 
+/* ---------- the deck's shadow ---------- */
+// The deck's cover along the sun's ray from a world point w, in km: 0 is open sun, 1 full shade.
+// It reads the ray where it crosses the base, so a point in the air gets the same answer: god rays use it too.
+float sunCover(vec3 w) {
+  if (uSun.y <= 0.0) return 0.0;
+  float L = max(BASE - w.y, 0.0) / max(uSun.y, 0.017);
+  vec3 q = w + uSun * L;
+  // The supercell's bulk blocks the sun outright, until the sun slips under its far edge.
+  float core = smoothstep(0.5, -0.5, stormShapeSun(toCam(q))) * (1.0 - smoothstep(12.0, 20.0, L));
+  // The base's ragged fringe lets the light through in broad patches that drift downwind.
+  // A low sun draws each patch out along its rays: long bands at dusk, blobs in the afternoon.
+  vec2 a = normalize(uSun.xz + 1e-5), c = q.xz - WDIR * uT * 0.012;
+  vec2 m = vec2(dot(c, a) * clamp(uSun.y / length(uSun.xz) * 4.0, 0.08, 1.0), dot(c, vec2(-a.y, a.x)));
+  float n = 0.7 * vn(m * 0.4 + 11.0) + 0.3 * vn(m * 1.3 + 3.0);
+  return max(core, 0.88 * smoothstep(0.4, 0.66, n));
+}
+// The share of a lit colour left in shade: the sun's part goes, the sky's fill stays.
+vec3 shadeK(float cover) {
+  vec3 l = uSunCol * 0.5 + uAmb * 0.55;
+  return (uSunCol * 0.5 * (1.0 - cover) + uAmb * 0.55) / max(l, vec3(1e-4));
+}
+
 /* ---------- the plain ---------- */
 // The eye hangs over the road's left edge; the road centre runs 3.4 m to its right.
 const float ROAD_X = 3.4, WHEAT_GAP = 6.2;
@@ -481,6 +503,8 @@ vec3 ground(vec3 rd, float px) {
     vec4 w = wheatNear(rd, fx);
     col = mix(col, w.rgb + w.a * col, nearK);
   }
+  // The deck's cover along the sun's ray darkens the plain in soft patches.
+  col *= shadeK(sunCover(P * 0.001 + vec3(0.0, CAMH * 0.001, 0.0)));
   // The storm shades the plain under its base.
   vec3 C = toCam(P) * 0.001;
   float under = 1.0 - smoothstep(0.6, 1.0, length((C.xz - SHELF) / SHELF_R));
@@ -519,7 +543,7 @@ void poles(inout vec3 c, vec2 s, vec3 rd, float px) {
     // The cross-arm.
     vec2 ca = proj(P + vec3(-1.2, 9.1, 0.0)), cb = proj(P + vec3(1.2, 9.25, 0.0));
     k = max(k, box(s, vec2(min(ca.x, cb.x), ca.y), vec2(max(ca.x, cb.x), cb.y), px));
-    over(c, hazed(wood, rd, z), k);
+    over(c, hazed(wood * shadeK(sunCover(P * 0.001)), rd, z), k);
   }
   // The wires: for each screen column, the place along the line of poles.
   vec3 wire = uAmb * 0.05;
@@ -544,19 +568,21 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
   float z = -1500.0, x = -420.0;
   vec2 at = proj(vec3(x, 0.0, z));
   if (abs(s.x - at.x) > 0.06 || s.y > at.y + 0.03) return;
+  // The farm stands in the deck's shade or out of it as one.
+  float fk = 1.0 - sunCover(vec3(x, 0.0, z) * 0.001);
   // The trees behind the house: a dark ragged hedge.
   vec2 t0 = proj(vec3(x - 60.0, 0.0, z - 40.0)), t1 = proj(vec3(x + 30.0, 0.0, z - 40.0));
   if (s.x > t0.x && s.x < t1.x) {
     float u = (s.x - t0.x) / (t1.x - t0.x);
     float h = 9.0 + 6.0 * vn(vec2(u * 9.0, 1.3)) * (0.4 + 0.6 * sin(u * 3.14159));
     float top = proj(vec3(x, h, z - 40.0)).y;
-    over(c, hazed(vec3(0.012, 0.016, 0.008) + uSunCol * 0.012, rd, -z), clamp((top - s.y) / px + 0.5, 0.0, 1.0) * step(t0.y, s.y));
+    over(c, hazed(vec3(0.012, 0.016, 0.008) + (uSunCol * fk) * 0.012, rd, -z), clamp((top - s.y) / px + 0.5, 0.0, 1.0) * step(t0.y, s.y));
   }
   // The barn: red, with a gambrel roof.
   {
     float zb = z - 20.0;
     vec2 a = proj(vec3(x - 35.0, 0.0, zb)), b = proj(vec3(x - 17.0, 7.0, zb));
-    vec3 red = uSunCol * vec3(0.16, 0.035, 0.025) + uAmb * vec3(0.03, 0.01, 0.01);
+    vec3 red = (uSunCol * fk) * vec3(0.16, 0.035, 0.025) + uAmb * vec3(0.03, 0.01, 0.01);
     float k = box(s, a, b, px);
     float mid = (a.x + b.x) * 0.5, hw = (b.x - a.x) * 0.5, u = abs(s.x - mid) / hw;
     float roof = proj(vec3(x - 26.0, mix(12.0, 7.0, u < 0.55 ? u * 0.45 : 0.25 + (u - 0.55) * 1.65), zb)).y;
@@ -566,11 +592,11 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
   // The house: white boards, a dark gable roof.
   {
     vec2 a = proj(vec3(x - 3.0, 0.0, z)), b = proj(vec3(x + 9.0, 5.5, z));
-    over(c, hazed(uSunCol * 0.42 + uAmb * 0.12, rd, -z), box(s, a, b, px));
+    over(c, hazed((uSunCol * fk) * 0.42 + uAmb * 0.12, rd, -z), box(s, a, b, px));
     float mid = (a.x + b.x) * 0.5, hw = (b.x - a.x) * 0.5 * 1.1, u = abs(s.x - mid) / hw;
     float roof = proj(vec3(x + 3.0, 5.5 + 3.2 * (1.0 - u), z)).y;
     float k = clamp((roof - s.y) / px + 0.5, 0.0, 1.0) * step(b.y - px * 0.5, s.y) * step(u, 1.0);
-    over(c, hazed(uAmb * 0.05 + uSunCol * 0.02, rd, -z), k);
+    over(c, hazed(uAmb * 0.05 + (uSunCol * fk) * 0.02, rd, -z), k);
   }
   // The windmill: a thin lattice tower and a wheel of blades that turns with the wind.
   {
@@ -578,7 +604,7 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
     float zw = depthOf(W);
     vec2 a = proj(W), tp = proj(W + vec3(0.0, 13.0, 0.0));
     float w = mix(1.0, 0.25, clamp((s.y - a.y) / (tp.y - a.y), 0.0, 1.0)) / zw * uFoc;
-    vec3 steel = uAmb * 0.05 + uSunCol * 0.03;
+    vec3 steel = uAmb * 0.05 + (uSunCol * fk) * 0.03;
     float k = box(s, vec2(a.x - w, a.y), vec2(a.x + w, tp.y), px) * 0.8;
     vec2 r = s - tp;
     float rad = 2.4 / zw * uFoc;
@@ -598,7 +624,7 @@ float segD(vec2 p, vec2 a, vec2 b, out float u) {
 void nearEars(inout vec3 c, vec2 s, float px, float asp) {
   // The tallest ear, with its tuft, stays below this line.
   if (s.y > 0.0) return;
-  vec3 lit = uSunCol * 0.5 + uAmb * 0.55;
+  vec3 lit = (uSunCol * 0.5 + uAmb * 0.55) * shadeK(sunCover(vec3(0.0)));
   const int N = 56;
   for (int i = 0; i < N; i++) {
     float fi = float(i);
