@@ -7,7 +7,7 @@ import { camera, rad } from '../setup.ts';
 import { U } from '../world/uniforms.ts';
 import { hs1, shaftList } from './shafts.ts';
 import { BAND, ROCK_FAR } from './bands.ts';
-import { CLOUD_U, GIANTS, TOWERS, cloudLayer } from './clouds.ts';
+import { CLOUD_U, GIANTS, TOWERS, cloudField, cloudLayer } from './clouds.ts';
 
 /* ---------- storm lightning: flashes inside the towers and the giant ---------- */
 // After Window seat: a burst of one to five strokes, 50 to 220 ms apart.
@@ -68,19 +68,15 @@ export function stepStorms() {
     if (e) { u[i].set(e.s.P.x, e.s.P.y, e.s.P.z, e.v); CLOUD_U.uFlR.value.setComponent(i, e.s.r); } else u[i].w = 0;
   }
 }
-// A middle deck: heaps four to six kilometres up fill the middle of the sky.
-// They stand 23 to 34 km out, 10 degrees up or more, clear of the crests.
-export const MIDS = [
-  [-14, 30000, 5000, 3000, 1500, 0], [2, 24000, 4600, 2400, 1300, 0], [16, 33000, 5800, 3800, 1900, 0], [31, 26000, 4800, 2400, 1300, 0],
-  [40, 34000, 5600, 3400, 1800, 0], [53, 23000, 4500, 2000, 1100, 0], [62, 31000, 5200, 3000, 1600, 0], [74, 27000, 4700, 2400, 1300, 0],
-];
+// The middle layer: flatter heaps near 4.8 km up.
+// It shows from 12 to 40 km of view depth and fades out by 55 km.
+export const MIDS = cloudField({ seed: 2, base: 4800, jit: 300, r0: 6000, r1: 80000, cell: 8000, cover: 0.45, w: [2000, 4000], h: [700, 1300] });
 // Mids past the rock draw behind it; the rest draw in front.
-const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR);
-const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR);
+const mids = cloudLayer(MIDS, BAND.mids, c => c[1] <= ROCK_FAR, [8000, 12000, 40000, 55000]);
+const farMids = cloudLayer(MIDS, BAND.far, c => c[1] > ROCK_FAR, [8000, 12000, 40000, 55000]);
 // The deck stands in for the middle heaps; they show only with the deck off.
 export function setDeck(v: number) {
   U.uDeck.value = v;
-  // The cloud pass replaces the middle cards.
-  mids.visible = farMids.visible = v < 0.01 && !state.cloudPass;
+  mids.visible = farMids.visible = v < 0.01;
   state.shaftOcc = null;
 }

@@ -10,8 +10,8 @@ import { HEAD } from '../sky/atmosphere.ts';
 import { AIR } from '../sky/air.ts';
 import { BAND } from './bands.ts';
 import { STORM_GLSL, STORM_MARCH } from '../../storms.js';
-import { CLOUD_U, giants, heaps, tower } from './clouds.ts';
-import { STORM_SPOTS, setDeck, stormAt, stormFl } from './lightning.ts';
+import { CLOUD_U, giants, tower } from './clouds.ts';
+import { STORM_SPOTS, stormAt, stormFl } from './lightning.ts';
 import { STORM_HOST } from './probe.ts';
 import LAYER from './layer.glsl';
 
@@ -20,7 +20,8 @@ import LAYER from './layer.glsl';
 // It writes the cloud's light and, in a second target, the first cloud's distance.
 // Its composite writes that depth, so the scene sorts against the clouds per pixel.
 // It holds the heap layer and the storms; their segments join front to back by distance.
-const PASS_RES = 0.5;
+// The march's share of the screen's resolution; Dev knobs may change it.
+let passRes = 0.5;
 state.cloudPass = false;
 // Two targets: light with cover in alpha, and the first cloud's distance in km.
 const rt = new THREE.WebGLRenderTarget(2, 2, { count: 2, type: THREE.HalfFloatType, depthBuffer: false });
@@ -30,6 +31,10 @@ export const LAYER_U = {
   uLyInv: { value: new THREE.Matrix4() }, uFarOn: { value: 0 },
   // The cover threshold: higher leaves more open sky.
   uLayerCut: { value: 0.86 },
+  // How hard the heaps' silhouettes are: smaller is crisper.
+  uLayerEdge: { value: 0.04 },
+  // The marched heap layer: off, since the card heaps draw the layer (Tom's hybrid).
+  uLayerOn: { value: 0 },
   // The layer's wind, in m/s: it slides slowly across the sky.
   uLayerWind: { value: new THREE.Vector2(10, 4) },
   // Each storm: centre x, base on the curved ground, centre z, height.
@@ -44,7 +49,7 @@ const passMat = new THREE.ShaderMaterial({
   fragmentShader: /* glsl */`precision highp sampler3D;
   layout(location = 1) out highp vec4 gDepthOut;
   uniform sampler3D uVol;
-  uniform float uCloudC, uLayerCut, uFarOn;
+  uniform float uCloudC, uLayerCut, uLayerEdge, uFarOn, uLayerOn;
   uniform vec2 uLayerWind, uBakeSize;
   uniform mat4 uLyInv, uRefVP;
   uniform sampler2D uFarG;
@@ -85,7 +90,7 @@ const passMat = new THREE.ShaderMaterial({
     float tEnd = rangeDist(rd);
     // Each segment: premultiplied light and cover, and the distance of its first cloud.
     vec4 sc[5]; float sd[5]; int n = 0;
-    vec4 r = lyMarch(ro, rd, tEnd);
+    vec4 r = uLayerOn > 0.5 ? lyMarch(ro, rd, tEnd) : vec4(0.0, 0.0, 0.0, 1.0);
     float aL = 1.0 - r.a;
     // The same air as the ranges and the cards, at the first cloud.
     if (aL > 0.002) { sc[n] = vec4(aerial(r.rgb / aL, ro + rd * gLyT) * aL, aL); sd[n] = gLyT; n++; }
@@ -136,13 +141,17 @@ const tri = new THREE.BufferGeometry().setAttribute('position', new THREE.Float3
 { const m = new THREE.Mesh(tri, passMat); m.frustumCulled = false; passScene.add(m); }
 
 // The composite: the light over the scene, at each cloud's own depth.
-const COMP_U = { tCol: { value: rt.textures[0] }, tDep: { value: rt.textures[1] }, uInv: { value: new THREE.Matrix4() }, uVPc: { value: new THREE.Matrix4() } };
-const COMP_FS = (depthOnly: boolean) => /* glsl */`uniform sampler2D tCol, tDep; uniform mat4 uInv, uVPc; varying vec2 vUv;
+// uFirm: how much the composite firms the cover into a card-like silhouette. uBlur: the tent filter's share.
+const COMP_U = { tCol: { value: rt.textures[0] }, tDep: { value: rt.textures[1] }, uInv: { value: new THREE.Matrix4() }, uVPc: { value: new THREE.Matrix4() }, uFirm: { value: 0 }, uBlur: { value: 1 } };
+const COMP_FS = (depthOnly: boolean) => /* glsl */`uniform sampler2D tCol, tDep; uniform mat4 uInv, uVPc; uniform float uFirm, uBlur; varying vec2 vUv;
 void main() {
-  // A small tent filter softens the march's grain at half resolution.
+  // A small tent filter softens the march's grain at reduced resolution.
   vec2 px = 1.0 / vec2(textureSize(tCol, 0));
-  vec4 c = texture2D(tCol, vUv) * 0.4;
-  c += (texture2D(tCol, vUv + vec2(px.x, 0.0)) + texture2D(tCol, vUv - vec2(px.x, 0.0)) + texture2D(tCol, vUv + vec2(0.0, px.y)) + texture2D(tCol, vUv - vec2(0.0, px.y))) * 0.15;
+  vec4 c0 = texture2D(tCol, vUv);
+  vec4 c = (texture2D(tCol, vUv + vec2(px.x, 0.0)) + texture2D(tCol, vUv - vec2(px.x, 0.0)) + texture2D(tCol, vUv + vec2(0.0, px.y)) + texture2D(tCol, vUv - vec2(0.0, px.y))) * 0.25;
+  c = mix(c0, c0 * 0.4 + c * 0.6, uBlur);
+  // Firming: thin cover thins away and solid cover turns opaque, as a card's edge does.
+  if (uFirm > 0.0 && c.a > 1e-4) { float a2 = mix(c.a, smoothstep(0.12, 0.55, c.a), uFirm); c *= a2 / c.a; }
   // Only solid cloud hides what lies behind it; thin edges let it show.
   if (c.a < ${depthOnly ? '0.5' : '0.004'}) discard;
   vec4 w = uInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
@@ -166,16 +175,22 @@ const compDepth = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.Shader
 }));
 for (const [m, o] of [[comp, BAND.cloud], [compDepth, BAND.cloud + 0.001]] as const) { m.frustumCulled = false; m.renderOrder = o; m.visible = false; scene.add(m); }
 
-// The Dev row Cloud volumes: the pass replaces the heap and middle cards.
+// The Dev row Cloud volumes: the pass marches the storms; the heap and middle cards stay.
+// Dev knobs for the silhouette: resolution, edge, firming and blur.
+export function setPassLook(o: { res?: number; edge?: number; firm?: number; blur?: number; layer?: boolean }) {
+  if (o.layer != null) LAYER_U.uLayerOn.value = o.layer ? 1 : 0;
+  if (o.res != null) passRes = o.res;
+  if (o.edge != null) LAYER_U.uLayerEdge.value = o.edge;
+  if (o.firm != null) COMP_U.uFirm.value = o.firm;
+  if (o.blur != null) COMP_U.uBlur.value = o.blur;
+}
 export function setCloudPass(on: boolean) {
   state.cloudPass = on;
-  heaps.visible = !on;
   // The storms march in the pass; their cards hide.
   tower.visible = !on;
   giants.visible = !on;
   // Flashes sit inside the marched towers' narrower cores.
   if (on) stormFl.vol = true;
-  setDeck(U.uDeck.value);
   comp.visible = compDepth.visible = on;
   state.shaftOcc = null;
 }
@@ -183,7 +198,7 @@ const vp = new THREE.Matrix4(), clear = new THREE.Color(), sp = new THREE.Vector
 // Runs once a frame, before the composer.
 export function drawCloudPass() {
   if (!state.cloudPass) return;
-  const w = Math.max(1, Math.round(renderer.domElement.width * PASS_RES)), h = Math.max(1, Math.round(renderer.domElement.height * PASS_RES));
+  const w = Math.max(1, Math.round(renderer.domElement.width * passRes)), h = Math.max(1, Math.round(renderer.domElement.height * passRes));
   if (rt.width !== w || rt.height !== h) rt.setSize(w, h);
   camera.updateMatrixWorld();
   vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);

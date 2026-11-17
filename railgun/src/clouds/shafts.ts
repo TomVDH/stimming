@@ -147,7 +147,7 @@ vec3 shaftSky(vec3 c, vec3 rd, float L) {
 // Each cloud's world centre, as the cloud vertex shader drifts it.
 export const hs1 = (n: number) => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
 export function shaftList(list: number[][]): ShaftCloud[] {
-  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0] }));
+  return [...list].sort((a, b) => b[1] - a[1]).map((c, i) => ({ p: polar(rad(c[0]), c[1]), base: c[2], W: c[3], H: c[4], kind: c[5], sd: 13.7 * i + c[0], r: c[1] }));
 }
 state.shaftOcc = null;
 const shaftV = new THREE.Vector3();
@@ -159,8 +159,9 @@ export function updateShafts() {
   // The clouds take the shade at any sun height; not by night.
   u.uCShade.value = 1 - U.uStars.value;
   if (k < 0.001 && u.uCShade.value < 0.001) return;
-  // With the cloud pass on, only the towers cast shafts until the pass casts its own.
-  state.shaftOcc ??= state.cloudPass ? shaftList(TOWERS) : [...shaftList(HEAPS), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS) : [])];
+  // A cloud near the eye would shade half the sky: only clouds 10 to 30 km out cast shafts.
+  const far = (c: ShaftCloud) => c.r > 10000 && c.r < 30000;
+  state.shaftOcc ??= [...shaftList(HEAPS).filter(far), ...shaftList(TOWERS), ...(U.uDeck.value < 0.01 ? shaftList(MIDS).filter(far) : [])];
   const t = CLOUD_U.uCloudC.value;
   let n = 0;
   for (const c of state.shaftOcc) {
