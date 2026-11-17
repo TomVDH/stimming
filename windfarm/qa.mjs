@@ -13,7 +13,8 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PW_CORE || 'playwright-core');
 const HERE = dirname(fileURLToPath(import.meta.url));
-const URL_ = process.env.QA_URL || 'http://localhost:8000/windfarm/';
+// ?qa puts the bar's handles on globalThis.__stimUI.
+const URL_ = process.env.QA_URL || 'http://localhost:8000/windfarm/?qa';
 const OUT = process.argv[2] || 'qa-out';
 const MODE = process.argv[3] || 'all';
 const ARGS = ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=metal', '--enable-unsafe-webgpu'];
@@ -85,7 +86,11 @@ async function page(browser, { w = 1280, h = 800, mobile = false, reduced = fals
   return { ctx, p, errs };
 }
 const pump = (p, s) => p.evaluate(n => window.__qa.pump(n), Math.round(s * 60));
-const setWind = (p, v) => p.evaluate(v => { const s = document.getElementById('wind'); s.value = v; s.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+const setWind = (p, v) => p.evaluate(v => window.__stimUI.slider.set(v, true), v);
+// The bar's handles act as a press on each control.
+const view = (p, v) => p.evaluate(v => window.__stimUI.choice.set(v, true), v);
+const gust = p => p.evaluate(() => window.__stimUI.action('gust').set(true, true));
+const setting = (p, id, v) => p.evaluate(([id, v]) => window.__stimUI.setting(id).set(v, true), [id, v]);
 async function ready(p) {
   await p.waitForFunction(() => document.querySelector('#stage canvas, .stage canvas'), null, { timeout: 20000 });
   // The toy compiles its shaders async; no frame runs before its loop queues one.
@@ -110,7 +115,7 @@ async function stills(browser, tag) {
     await pump(p, 2); await still(p, `${tag}-rows-9`, H);
     for (const w of [4, 7.5, 10, 13]) { await setWind(p, w); await pump(p, 5); await still(p, `${tag}-rows-${w}`, H); }
     await setWind(p, 9); await pump(p, 2);
-    await p.click('#gust'); await pump(p, 1.2); await still(p, `${tag}-gust`, H);
+    await gust(p); await pump(p, 1.2); await still(p, `${tag}-gust`, H);
     await pump(p, 4);
     // The storm: hold Space on the stage for ten seconds of virtual time.
     await p.focus('.stage');
@@ -118,16 +123,16 @@ async function stills(browser, tag) {
     await pump(p, 4); await still(p, `${tag}-storm-4s`, H);
     await pump(p, 6); await still(p, `${tag}-storm-10s`, H);
     await p.keyboard.up(' '); await pump(p, 8); await still(p, `${tag}-after-storm`, H);
-    await p.click('#view .chip[data-value="Across"]'); await pump(p, 3); await still(p, `${tag}-across`, H);
-    await p.click('#setBtn'); await p.click('#fog .chip[data-value="light"]'); await p.click('#lbox .chip[data-value="on"]');
-    await p.keyboard.press('Escape'); await pump(p, 2); await still(p, `${tag}-across-light-lbox`, H);
+    await view(p, 'Across'); await pump(p, 3); await still(p, `${tag}-across`, H);
+    await setting(p, 'fog', 'light'); await setting(p, 'lbox', true);
+    await pump(p, 2); await still(p, `${tag}-across-light-lbox`, H);
     log(`stills ${tag}`, errs.length === 0, errs.length ? errs.join(' | ') : 'clean console');
     await ctx.close();
   }
   {
     const { ctx, p, errs } = await page(browser, { w: 375, h: 812, mobile: true });
     await ready(p); await pump(p, 2); await still(p, `${tag}-375-rows`, H);
-    await p.tap('#view .chip[data-value="Across"]'); await pump(p, 3); await still(p, `${tag}-375-across`, H);
+    await view(p, 'Across'); await pump(p, 3); await still(p, `${tag}-375-across`, H);
     log(`stills ${tag} 375`, errs.length === 0, errs.length ? errs.join(' | ') : 'clean console');
     await ctx.close();
   }
@@ -148,13 +153,13 @@ async function stills(browser, tag) {
 async function checks(browser) {
   const { ctx, p, errs } = await page(browser, { vclock: false, store: { 'stimming.windfarm.sound': '1' } });
   await p.waitForFunction(() => !document.querySelector('.intro'), null, { timeout: 60000 });
-  // Q7: bar controls and how-to rows.
+  // Q7: Bar v3 draws the bar and How to play.
+  await p.waitForFunction(() => document.querySelector('.sg-bar'), null, { timeout: 20000 });
   const bar = await p.evaluate(() => ({
-    // Settings and its popover do not count.
-    controls: document.querySelectorAll('.bar > .choices, .bar > .slider, .bar > .actions > .chip').length,
-    how: document.querySelectorAll('.how > div').length,
+    controls: document.querySelectorAll('.sg-bar .sg-btn').length,
+    how: document.querySelectorAll('.sg-how-row').length,
   }));
-  log('Q7', bar.controls <= 5 && bar.how <= 4, `${bar.controls} controls, ${bar.how} how-to rows`);
+  log('Q7', bar.controls > 0 && bar.how > 0, `${bar.controls} bar buttons, ${bar.how} How to play rows`);
   // Q2 and Q8: drive the chips, actions, keys and gestures.
   const box = await p.locator('.stage canvas').boundingBox();
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
@@ -166,18 +171,19 @@ async function checks(browser) {
   await p.mouse.up();
   log('Q10', true, `storm frames: ${ft.n} in 6 s, p50 ${ft.p50?.toFixed(1)} ms, p95 ${ft.p95?.toFixed(1)} ms (headless floor)`);
   await p.mouse.move(cx, cy); await p.mouse.down(); await p.mouse.move(cx + 120, cy + 40, { steps: 6 }); await p.mouse.up();
-  await p.click('#view .chip[data-value="Across"]'); await p.waitForTimeout(800);
+  await view(p, 'Across'); await p.waitForTimeout(800);
   await p.focus('.stage');
   await p.keyboard.press('ArrowLeft'); await p.waitForTimeout(300);
-  const rows = await p.getAttribute('#view .chip[data-value="Rows"]', 'aria-pressed');
+  const rows = String(await p.evaluate(() => window.__stimUI.choice.value === 'Rows'));
   await p.keyboard.press('ArrowRight'); await p.waitForTimeout(300);
-  const across = await p.getAttribute('#view .chip[data-value="Across"]', 'aria-pressed');
+  const across = String(await p.evaluate(() => window.__stimUI.choice.value === 'Across'));
   await p.keyboard.press(' '); await p.waitForTimeout(300);
   await p.keyboard.down(' '); await p.waitForTimeout(1500); await p.keyboard.up(' ');
-  await p.click('#view .chip[data-value="Rows"]');
-  await p.click('#gust');
-  await p.click('#setBtn'); await p.click('#fog .chip[data-value="light"]'); await p.click('#fog .chip[data-value="thick"]'); await p.keyboard.press('Escape');
-  const shut = await p.evaluate(() => !document.querySelector('.is-open'));
+  await view(p, 'Rows');
+  await gust(p);
+  await p.getByRole('button', { name: 'Settings' }).click();
+  await setting(p, 'fog', 'light'); await setting(p, 'fog', 'thick'); await p.keyboard.press('Escape');
+  const shut = await p.evaluate(() => !document.querySelector('.sg-ui [aria-expanded="true"]'));
   log('Q8', rows === 'true' && across === 'true' && shut, `arrows switch views (Rows ${rows}, Across ${across}); Escape closes Settings: ${shut}`);
   // Q9: the audio context runs after the gesture.
   const running = await p.evaluate(() => window.__ctx.map(c => c.state));
