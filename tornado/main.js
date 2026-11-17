@@ -5,6 +5,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
+import { paneBlur, GLASS_STEP, PANE_HEAD } from './pane.js';
 import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_FUNNELS } from './funnel.js';
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
@@ -31,8 +32,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -73,6 +74,14 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
+    // The window, rain in the air and grain. The defaults keep the shot as it was.
+    { type: 'toggle', group: 'Window', id: 'glass', label: 'Glass', value: false, persist: true, onToggle: v => act.look('glass', v) },
+    { type: 'slider', group: 'Window', id: 'wet', label: 'Drops', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.look('wet', v) },
+    { type: 'slider', group: 'Window', id: 'fog', label: 'Fog', min: 0, max: 1, step: 0.01, value: 0.15, persist: true, onInput: v => act.look('fog', v) },
+    { type: 'slider', group: 'Window', id: 'bokeh', label: 'Bokeh', min: 0, max: 0.3, step: 0.005, value: 0, persist: true, onInput: v => act.look('bokeh', v) },
+    { type: 'slider', group: 'Window', id: 'nearBlur', label: 'Drop blur', min: 0, max: 0.04, step: 0.001, value: 0.01, persist: true, onInput: v => act.look('nearBlur', v) },
+    { type: 'slider', group: 'Window', id: 'rain', label: 'Rain', min: 0, max: 1, step: 0.01, value: 0, persist: true, onInput: v => act.look('rain', v) },
+    { type: 'slider', group: 'Window', id: 'grain', label: 'Grain', min: 0, max: 0.2, step: 0.005, value: 0.035, persist: true, onInput: v => act.look('grain', v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
     // The Tube group opens with the funnel's mode: the deck's cloud as a tube (Tom's default) or the analytic shells.
     // The key is new, so an old saved Shells gives way to the new default.
@@ -485,6 +494,8 @@ float sunCover(vec3 w) {
 const SCENE = /* glsl */`
 uniform vec3 uSun, uSunCol, uAmb;
 uniform float uFoc, uHz, uYaw, uStorm, uWind, uT;
+uniform float uRain;
+uniform vec2 uRainDir;
 // The storm pass's picture: colour, premultiplied, and cover. uStormOn is 1 once it draws.
 uniform sampler2D tTor;
 uniform float uStormOn;
@@ -783,6 +794,15 @@ vec3 envScene(vec2 uv) {
   // Arcs and sparks on the line: their light shows through the dust, and lights it.
   c += sparks(s, px, tv.a);
   nearEars(c, s, px, asp);
+  // Near rain: the low sun at the eye's back lights the streaks against the storm.
+  if (uRain > 0.0) {
+    // Rain veils the distance: the far plain and the sky go grey, the near ground less.
+    vec3 veil = uAmb * 0.14 + uSunCol * 0.015;
+    c = mix(c, veil, uRain * 0.3 * (1.0 - smoothstep(0.0, 0.25, -rd.y)));
+    // The frame at 1.8x scale: shorter, finer, slower streaks.
+    float w = ppRain(uv * 1.8, asp, uT, uRain, uRainDir, uAirN);
+    c = c * (1.0 - 0.1 * min(w, 1.0)) + (uSunCol * 0.04 + uAmb * 0.07) * w;
+  }
   return c;
 }
 `;
@@ -846,16 +866,19 @@ let env = null;
 try {
   env = environment(canvas, {
     scene: SCENE,
+    glass: GLASS_STEP,
+    pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { lineUniforms(line, tors); funnelPass(w, h); bindNoise(); sunFlare(); },
+    before: (w, h) => { lineUniforms(line, tors); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
       uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uSwayPh: () => line.uSwayPh,
     },
@@ -871,6 +894,21 @@ const S = env.state;
 Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky: false });
 Object.assign(S, { clouds: 0, stars: 0, haze: 0.4, bloom: 0.18, thr: 1.4, orbs: 0, vig: 0.38, grain: 0.035, tintK: 0, expo: 1 });
 S.frame = false;
+
+/* ---------- near rain ---------- */
+// The Rain row: 0 is dry.
+let rain = 0;
+// The Drop blur row: the disc radius for the pane's drops, in frame heights.
+let nearBlur = 0.01;
+const rainDir = [0, -1];
+// The rain slants with the wind across the frame.
+// Full wind gives about 25 degrees: heavy drops, not speed lines.
+function rainAim() {
+  const a = yaw(), across = windDir[0] * Math.cos(a) - windDir[1] * Math.sin(a);
+  const x = clamp(across * wind * 0.55, -0.6, 0.6), l = Math.hypot(x, 1);
+  rainDir[0] = x / l; rainDir[1] = -1 / l;
+  return rainDir;
+}
 
 /* ---------- the sun's flare ---------- */
 // The storm's shape in camera km, as the scene's GLSL has it, with no noise: for the sun's cover.
@@ -917,6 +955,8 @@ function sunFlare() {
     gain = Math.exp(-out * 4) * (1 - cover) * clamp(sy / 0.02 + 0.5);
     S.light = [u, v];
   }
+  // A sun behind the eye or the storm lights no drops and no fog on the pane.
+  if (gain < 0.01) S.light = [0.5, 4];
   const m = Math.max(sunCol[0], sunCol[1], sunCol[2], 1e-3);
   S.lightColor = [sunCol[0] / m, sunCol[1] / m, sunCol[2] / m];
   S.on.flare = gain > 0.01;
@@ -928,6 +968,8 @@ function sunFlare() {
 // The tornadoes draw at this share of the frame's size, into their own target.
 const FUN_RES = 0.5;
 const gl = env.gl;
+// The pane's drops, out of focus: the focus is on the far plain.
+const drops = paneBlur(gl);
 // The pass compiles beside the first frames; until then the plain shows no funnel.
 // The poll waits on a timer, so a background tab still finishes the link.
 // Each funnel mode has its own program; the Cloud tube compiles when first picked.
@@ -1360,6 +1402,20 @@ const TONE_GAIN = { film: 1, aces: 1.1 };
 let expoTrim = 1;
 act.expo = v => { expoTrim = +v || 1; S.expo = expoTrim * TONE_GAIN[S.tone]; wake(); };
 act.tone = v => { S.tone = v === 'film' ? 'film' : 'aces'; act.expo(expoTrim); };
+// Each Window row and the runner value it sets. The scene draws the rain itself.
+const LOOK = { glass: 'glass', wet: 'wet', fog: 'fog', bokeh: 'defocus', grain: 'grain' };
+act.look = (id, v) => {
+  if (id === 'glass') S.on.glass = v === true || v === '1' || v === 1;
+  else if (id === 'rain') rain = clamp(+v || 0);
+  else if (id === 'nearBlur') nearBlur = clamp(+v || 0, 0, 0.04);
+  else S[LOOK[id]] = +v || 0;
+  // The fog patches follow the fog.
+  S.patch = S.fog;
+  // The runner lights the pane's drops by its daylight, and only with its sky on.
+  // The scene draws its own sky and does not read that switch.
+  S.on.sky = S.on.glass;
+  wake();
+};
 act.base = v => { base = clamp(+v || 1.35, 0.8, 3); wake(); };
 act.bakeFrom = v => { farD = clamp(+v || 16, 6, 40); wake(); };
 act.god = v => { god = clamp(+v, 0, 1); wake(); };
@@ -1372,7 +1428,7 @@ act.knobCopy = async () => {
   try { await navigator.clipboard.writeText(text); } catch { console.log(text); }
 };
 act.knobReset = () => { for (const [, id, , , , , value] of KNOBS) ui.setting('k_' + id)?.set(value, true); };
-act.wind = v => { wind = clamp(+v); wake(); };
+act.wind = v => { wind = clamp(+v); S.wind = wind * 12; wake(); };
 act.windDir = v => { const a = (+v || 0) * Math.PI / 180; windDir[0] = Math.cos(a); windDir[1] = Math.sin(a); wake(); };
 act.sunAz = v => { sunAz = v * Math.PI / 180; setSun(S.hour); wake(); };
 
@@ -1392,6 +1448,8 @@ lensMM = +(qs0.get('lens') || ui.setting('lensWide')?.value || 28);
 // QA: ?tone=film picks the curve for one load.
 act.tone(qs0.get('tone') || ui.setting('tone')?.value || 'aces');
 act.expo(ui.setting('expo')?.value ?? 1);
+// QA: ?glass=1&wet=0.6&fog=0.2&bokeh=0.1&rain=0.5&grain=0.05 set the Window rows for one load.
+for (const id of [...Object.keys(LOOK), 'rain', 'nearBlur']) act.look(id, qs0.has(id) ? qs0.get(id) : ui.setting(id)?.value ?? S[LOOK[id]] ?? 0);
 // Each knob: the address for one load, else Dev's saved value, else its default.
 for (const [, id, , , , , value] of KNOBS) KNOB[id] = qs0.has(id) ? +qs0.get(id) : +(ui.setting('k_' + id)?.value ?? value);
 // QA: ?wind=0.5 and ?winddir=19 set the wind for one load.
