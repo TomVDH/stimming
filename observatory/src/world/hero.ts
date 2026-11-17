@@ -551,9 +551,9 @@ const um = (pts: P2[]): P2[] => pts.map(([a, b]) => [u(a), u(b)]);
 // The red work lamp adds its own light in the shader.
 // So no light joins the scene.
 // A new scene light changes every shader of the wide shot.
-// The lamp lights the cupola's far side, 6 m off.
-// There it gives a deep red glow.
-const RED = { uRedP: { value: new Vector3() }, uRedC: { value: new Color(1.0, 0.06, 0.025).multiplyScalar(34) } };
+// A dull, deep red, a quarter as bright as at first.
+// The inside reads dark, with a faint warm-red spill near the lamp.
+const RED = { uRedP: { value: new Vector3() }, uRedC: { value: new Color(1.0, 0.075, 0.035).multiplyScalar(8.2) } };
 function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
   const prev = m.onBeforeCompile, key = m.customProgramCacheKey(), uOcc = { value: occ };
   m.onBeforeCompile = (sh, r) => {
@@ -1030,7 +1030,7 @@ function buildHero(main: Dome, tx: Painted): Built {
   const lampP = new Vector3(LAMP_R * Math.sin(LAMP_A), FLOOR_Y + 0.5, -LAMP_R * Math.cos(LAMP_A));
   main.root.localToWorld(RED.uRedP.value.copy(lampP));
   fix.box(0.12, 0.1, 0.07, mat((LAMP_R + 0.07) * Math.sin(LAMP_A), lampP.y + 0.03, -(LAMP_R + 0.07) * Math.cos(LAMP_A), 0, -LAMP_A));
-  const redBulb = new Mesh(new SphereGeometry(0.03, 10, 6), new MeshBasicMaterial({ color: new Color(0.9, 0.04, 0.02) }));
+  const redBulb = new Mesh(new SphereGeometry(0.03, 10, 6), new MeshBasicMaterial({ color: new Color(0.32, 0.02, 0.01) }));
   redBulb.position.copy(lampP);
   // The observing ladder stands against the wall, out of the telescope's way.
   // Every part stays 2 units from the axes' crossing and under its tube.
