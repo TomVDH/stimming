@@ -108,6 +108,26 @@ test('stepAxis never beats the cap and lands', () => { let s = { pos: 350, vel: 
 - [ ] **Step 5: Gate.** Show Tom the two stills and the live page. Ask for the blockout sign-off and, in the same message, for the Lab menu entry.
 - [ ] **Step 6: Commit** the scene files; the `toys.json` and `index.html` hunks only after his yes. Tick "Blockout, signed off by Tom" in the bean.
 
+### Task 3b: Woods and the complex (Tom's blockout review, 2026-11-17)
+
+Tom on the first blockout: "we want woods and a view of the complex around it". The spec's "The outside view" holds the approved reading.
+
+**Files:**
+- Create: `observatory/src/world/woods.ts`, `observatory/src/world/complex.ts`
+- Modify: `observatory/src/world/hill.ts`, `observatory/src/world/observatory.ts`, `observatory/src/view/camera.ts`, `observatory/src/loop.ts`, `observatory/src/README.md`
+
+**Interfaces:**
+- Produces:
+  - `observatory.ts`: `buildDome(size: number): Dome`, where `Dome` is the object `buildObservatory` returned (`root`, `cupola`, `shutter`, `tube`, `setCupola`, `setShutter`, `setTube`, `slitTop`)
+  - `complex.ts`: `buildComplex(): { root: THREE.Group; main: Dome; small: [Dome, Dome] }`, with the stone building (lit windows), the roll-off shed and the road
+  - `woods.ts`: `buildWoods(): THREE.InstancedMesh`: conifers over the hill, a clearing at the top, a gap for the road
+
+- [ ] **Step 1:** Woods: instanced conifers (one draw call) over the hill, a clearing at the top.
+- [ ] **Step 2:** Complex: the main dome, two smaller domes at different angles to the camera, the stone building, the shed, the road up through the woods.
+- [ ] **Step 3:** Camera: from a nearby rise, a little above the treetops, about 300 m from the complex; sky the upper 60%; the complex reads at 375 px.
+- [ ] **Step 4:** The two small domes turn to the laser's azimuth a few seconds after the main dome (delays about 1.5 s and 3 s), each at its own cap (about 2.5°/s and 2°/s). The laser leaves the main dome.
+- [ ] **Step 5:** Stills at 1280 and 375, rest and aim; the gate as in Task 3, Steps 5 and 6.
+
 ### Task 4: The catalog (Tom's gate for the download)
 
 **Files:**

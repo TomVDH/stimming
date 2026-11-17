@@ -25,6 +25,7 @@ The joy is the heavy, slow machine that does what you ask, under a real sky.
 | The build | Approach A: TypeScript and three.js, the Railgun way |
 | The sky's time | Tonight's real sky: the real date and sidereal time, always drawn as night. At 14:00 you see the stars that are over the hill now. |
 | The moon | None. A dark, moonless sky. |
+| The scene (blockout review) | "we want woods and a view of the complex around it". The approved reading is in "The outside view": woods on the hill, a complex of three domes, a stone building, a roll-off shed and a road; all three domes answer the laser. |
 
 ## Calls made by the designer
 
@@ -77,19 +78,21 @@ Tom picked A: the 3D machine needs three.js, and the look comes from Railgun in 
 ## The outside view
 
 ```
-  ·        ·    ·         ·      ·        ·   ·        ·
-     ·        ·      ·        ·       ·  ✦     ·    ·
-  ·     ·        ·       ·        ·       ╲        ·
-      ·      ·       ·      ·      ·       ╲  laser    ·
-  ·      ·       ·      ·       ·      ·    ╲     ·
-  ░░░░░░░░░░░░░░░░░░░░░ haze ░░░░░░░░░░░░░░░░╲░░░░░░░░░░░░
-                                        ▁▄▆██▆▄▁
-  ▁▁▁▁▂▂▂▃▃▃▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█▌▐█▄▄▄▄▃▃▂▂▁▁
-  ████████████████████ hill ████████████████████████████
+   ·    ·        ·     ·       ·    ✦      ·      ·     ·
+ ·   ·      ·       ·     ·      ·    ╲   ·    ·      ·
+      ·   ·     ·      ·      ·        ╲laser    ·   ·
+ ░░░░░░░░░░░░░░░░░░░░░ haze ░░░░░░░░░░░░╲░░░░░░░░░░░░░░░
+                         ▄▄    ▃▃    ▅██▅      ▂▂
+                ▲▲▲▲▲▲ ▐██▌ ▐▀▀▀▀▀▀▀▌▐████▌ ▐▀▀▌ ▲▲▲▲▲▲▲
+          ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+     ▲▲▲▲▲▲▲▲▲▲▲▲▲▲ woods ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 ```
 
-- **The shot.** Low, wide and locked off. The dome is small on the ridge, at about one third from the right. The sky fills about three quarters of the frame. A pointer move leans the lens a little, as in Railgun.
-- **The observatory.** A white dome on a stone drum, a warm lit door, a dark slit, the steel tube out of it. The icon (A of `icons/spike-observatory-1.html`) sets the shapes.
+- **The shot.** From a nearby rise, a little above the treetops, about 300 m from the complex. Locked off. The sky fills the upper 60% of the frame. A pointer move leans the lens a little, as in Railgun.
+- **The woods.** Dark conifer woods cover the hill. A clearing at the top holds the complex. A gravel road turns up through the woods to it.
+- **The complex.** The main dome (the big refractor; the laser comes out of it), two smaller domes, a long low stone building with a few lit windows, and a shed with a roll-off roof.
+- **The domes.** A white dome on a stone drum, a warm lit door, a dark slit, the steel tube out of it. The icon (A of `icons/spike-observatory-1.html`) sets the shapes.
+- **All three domes answer.** The two small domes turn to the same star a few seconds after the main dome, each at its own slow speed. Each stands at a different angle to the camera, so a slit faces the viewer for most aims.
 - **The laser.** A thin green beam from the dome top to the aim point. The haze shows it, so it looks solid near the dome and fades with height.
 - **The sky.** Tonight's real sky at 51° N, from the catalog, with no moon. It turns at sidereal speed. Railgun's haze and grade sit over it.
 - **Fast time.** The Time slider runs the sky faster. Above a set speed, the stars draw trails with the accumulate and decay pass from `trails/index.html`, ported into the three.js chain.
