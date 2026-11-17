@@ -42,10 +42,15 @@ Question: which direction does the bar redo take?
   - Presence: the bar and its key strip stay; they leave after 8 s with no input and return on the next one (knob: Never, On touch)
   - Colour: knobs for Accent (Toy, Series, Wordmark, White, own) and Ink (Marks, Words, Flash)
   - Interactions, from emil-design-eng and gestures: the press is the flash (box on pointer down, oversize for one frame, parts on release); pointing is a line under the word; no box for a key press; icon buttons name themselves after 450 ms, at once on a neighbour; the slider thumb answers the grip; sound off rests white
-- [ ] Not checked on round 3: 812 x 375, a real touch screen, keyboard-only use from end to end, a disabled control (the lab does not mirror it)
 - [ ] The `review-animations` skill is not run on Signal
 - [x] Tom's pick (2026-11-17): Accent Toy, Ink Marks. The toy's own accent inks the icons, the slider fill and a held pick; the words stay white
-- [ ] Tom judges the rest of Signal round 3 (interactions, the 8 s rule, the hard menus)
+- [x] Round 4 (Tom, 2026-11-17: hover interactions, colour contrast, the info and keycap menus)
+  - Hover is a ladder from the intro: bare at rest, the flash box dropped to an ink bar at the foot when you point, the white box when you press; the slider's thumb takes the ink; keyboard focus shows the same bar
+  - Contrast, measured on all 112 accents: marks reach 4.26:1 or more on their dark edge; dark text on a held pick failed on honey, turing, calaeno, meshball and lavaskin, so a pick now takes the accent's lightest stop and the text colour that reaches 4.5:1; sheet headings are full white (grey was 3.9:1 on glass over a bright scene)
+  - Keycaps are small flash boxes (white, dark ink, a dark edge) on the strip, on actions and in sheets
+  - (i) opens a How to play sheet: every gesture, every action key and every option key
+- [ ] Tom judges round 4
+- [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use, a disabled control
 - [ ] Next, on Tom's yes only: Signal moves from the lab into the shell on one toy (hard rule 3: its own bean)
 
 ## Notes

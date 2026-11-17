@@ -23,11 +23,25 @@ const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2
 // The wordmark's eight letter hues, for the lab's Wordmark accent.
 const HUES = ['0.8 0.15 62', '0.72 0.2 318', '0.8 0.12 195', '0.7 0.19 32', '0.72 0.14 255', '0.82 0.11 345', '0.86 0.15 100', '0.78 0.16 150'];
 // An accent is one colour or a gradient; a fill needs an image, line work one colour.
+// Text on a held pick must reach 4.5:1 (measured on all 112 accents, 2026-11-17).
+// A gradient with a stop too dark for dark text gives way to its lightest stop.
+const LIGHT = c => Number(c.match(/oklch\(([\d.]+)/)?.[1] ?? 0.94);
+const onDark = L => (L ** 3 + 0.05) / 0.0541;
 const setAcc = (el, acc) => {
   const a = acc || 'var(--fg)';
+  const stops = acc?.match(/oklch\([^)]*\)/g) || [];
+  const img = a.includes('gradient(') ? a : `linear-gradient(${a}, ${a})`;
+  let fill = img, on = 'var(--bg)';
+  if (stops.length && Math.min(...stops.map(c => onDark(LIGHT(c)))) < 4.5) {
+    const best = stops.reduce((p, c) => (LIGHT(c) > LIGHT(p) ? c : p));
+    fill = `linear-gradient(${best}, ${best})`;
+    if (onDark(LIGHT(best)) < 4.5) on = 'var(--fg)';
+  }
   el.style.setProperty('--acc', a);
-  el.style.setProperty('--acc-ink', acc?.includes('gradient(') ? (acc.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)') : a);
-  el.style.setProperty('--acc-img', a.includes('gradient(') ? a : `linear-gradient(${a}, ${a})`);
+  el.style.setProperty('--acc-ink', stops[0] && a.includes('gradient(') ? stops[0] : a);
+  el.style.setProperty('--acc-img', img);
+  el.style.setProperty('--acc-fill', fill);
+  el.style.setProperty('--acc-on', on);
 };
 const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v4"/><circle class="solid" cx="8" cy="4.8" r="0.7"/></svg>';
 
@@ -296,10 +310,23 @@ function mount(id, spec, ui) {
   const signal = P => {
     const grp = (cls, ...kids) => { const k = kids.flat().filter(Boolean); return k.length ? box(`sg-grp ${cls}`.trim(), k) : null; };
     const flash = h('i', 'sg-box'), tint = h('i', 'sg-tint');
-    if (P.info) P.info.innerHTML = INFO_SVG;
-    const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.dev, P.info), flash, tint);
+    // (i) opens How to play: every gesture and every key, in the sheet's own grammar.
+    let info = null, howPop = null;
+    if (spec.keys?.length) {
+      info = btn('b-ico b-info', INFO_SVG, 'How to play');
+      howPop = popPart('b-pop--set b-pop--how', 'How to play', info);
+      const how = h('div', 'b-how');
+      const row = (key, verb) => how.append(box('b-how-row', text('kbd', '', key), text('span', '', verb)));
+      spec.keys.forEach(([word, verb]) => { if (!(touch() && !stim.onTouch(word))) row(stim.keyWord(word, touch()), verb); });
+      if (!touch()) {
+        (spec.actions || []).forEach(a => { if (a.key) row(String(a.key).toUpperCase(), actLabel(a).toLowerCase()); });
+        options.forEach(o => { if (o.key) row(String(o.key).toUpperCase(), String(o.label).toLowerCase()); });
+      }
+      howPop.el.append(how);
+    }
+    const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.dev, info), flash, tint);
     const glass = h('div', 'sg-glass');
-    const sheets = [P.pickPop, P.setPop, P.devPop].filter(Boolean);
+    const sheets = [P.pickPop, P.setPop, P.devPop, howPop].filter(Boolean);
     sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet'), h('i', 'sg-tint sg-tint--sheet')));
     layer.append(...[P.id, glass, hints, bar, ...sheets.map(sh => sh.el)].filter(Boolean));
     // The lab's Wordmark accent gives each control its own letter hue; a sheet takes its button's.
@@ -366,7 +393,6 @@ function mount(id, spec, ui) {
       wake() { clearTimeout(backTimer); if (!shown) arrive(false); arm(); },
       stop() { clearTimeout(backTimer); clearTimeout(idleTimer); },
     };
-    P.info?.addEventListener('click', () => { wanted = !hints.classList.contains('is-faded'); });
     // A pick cuts in: the word's box lands oversize for one frame, holds at size, then parts.
     const cut = async el => {
       if (RM.matches || !el) return;

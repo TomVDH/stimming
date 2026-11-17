@@ -508,6 +508,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-16 | Tom's picks for Signal round 2, in a dialog: iterate the type and weight, the sheets, the motion beats and the toy's ink; the sheets keep the soft glass. Then: "we'll keep bare too". Bare stays beside Signal. | 2, 22 |
 | 2026-11-16 | Tom on Signal round 2: the layout is "great"; the flash reveals and the transitions into sheets are "perfect"; the button and control interactions get a redo with the skills. He asks for colour variations and accents, toys with diverse menus (Cauldron, Train ride), and no automatic fade: the bar leaves only after 8 s of inactivity. | 2, 6, 20, 22 |
 | 2026-11-17 | Tom's colour pick for Signal: Accent Toy, Ink Marks. The toy's own accent inks the icons, the slider fill and a held pick. Words stay white, and the flash stays white. | 2 |
+| 2026-11-17 | Tom asks for real hover interactions, a contrast check, and work on the info and keycap menus; and for a bean that vets every toy's controls and standardizes them where relevant (the epic "Vet every toy's controls"). | 2, 6, 20 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.
