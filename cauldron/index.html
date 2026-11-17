@@ -1153,7 +1153,13 @@ void main() {
     if (e1.w < 0.5) d += vec4(e1.xyz * w, w);
     else if (e1.w < 1.5) a.g += w;
     else if (e1.w < 2.5) a.r += w;
-    else a.b += w;
+    else if (e1.w < 3.5) a.b += w;
+    else {
+      // A bubble bursts through the skin: a hole, its skin pushed into a ring.
+      float dl = length(p - e0.xy), rb = a.b;
+      a.b *= 1.0 - 0.95 * e0.w * exp(-dl * dl / (e0.z * e0.z));
+      a.b += rb * 1.1 * e0.w * exp(-pow((dl - e0.z * 1.2) / (e0.z * 0.3), 2.0));
+    }
   }
   oDye = d;
   oAux = max(a, 0.0);
@@ -3186,7 +3192,7 @@ function splash(b) {
 
 /* ---------- emitters: what tints the soup ---------- */
 // Tint arrives in lumps, so half floats hold it.
-// type 0 tint, 1 fat, 2 glitter, 3 skin.
+// type 0 tint, 1 fat, 2 glitter, 3 skin, 4 a hole in the skin with a ring round it.
 const emits = [];
 function emit(x, z, r, mass, tint, type) {
   // A lump of mass m over radius r raises the pot's mean by m.
@@ -3337,6 +3343,8 @@ function pop(b) {
     const d = Math.hypot(t.x - b.x, t.z - b.z);
     if (d < 0.3) { const k = (0.3 - d) * b.rMax * 40; t.vy += k * 0.8; t.pitchV += rand(-1, 1) * k * 6; t.rollV += rand(-1, 1) * k * 6; }
   }
+  // A burst through set skin leaves a ring; calm soup heals it over.
+  emit(b.x, b.z, b.rMax * 1.3, 1, null, 4);
   // Fat rises with the boil.
   if (Math.random() < 0.35) emit(b.x + rand(-0.05, 0.05), b.z + rand(-0.05, 0.05), rand(0.025, 0.05), rand(0.4, 0.75), null, 1);
   popSound(b);
