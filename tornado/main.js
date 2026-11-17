@@ -1341,8 +1341,9 @@ function stormShapeJS(x, y, z) {
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
   const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach + front)) - 0.5 * (deckReach - front);
-  const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
-  return smin(d, front, 0.8);
+  // The deck's slab, from its front edge to its reach.
+  const slab = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
+  return smin(d, slab, 0.8);
 }
 // The sun's flare through the lens: full in frame, a veil just past the edge, none behind the eye.
 // The storm hides it where the sun is behind the deck; its ragged edge makes the cover soft.
