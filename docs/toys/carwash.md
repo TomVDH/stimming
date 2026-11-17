@@ -67,16 +67,15 @@ Cut, and why: the road gone (too small to notice at a 1.2 m eye height); the bru
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3 (the default; the old bar still builds, hidden).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | None |
-| Bottom left (actions) | Proceed (shown only while the establishing shot waits, or while reduced motion steps the run) |
-| Bottom right (slider) | None |
-| Key strip | `[CLICK] proceed`, `[DRAG] wipers` |
+| Actions | Proceed (shown only while the establishing shot waits, or while reduced motion steps the run) |
+| Key strip (old bar) | `[CLICK] proceed`, `[DRAG] move the wipers` |
+| How to play (`help`) | Click: Proceed. Click: Run the wipers once. Drag: Move the wipers. Enter: Proceed. Space: Proceed |
 | Settings | Paint (Black, Cherry, Pearl, Teal), Strange (Off, Sometimes, Often), site Quality, Reset |
-| Dev (`?dev`) | Jump (entry to desert), Pace (1 to 8), Strange next (Random, None, or one moment by name); driver's seat: Eye height, Eye side, Seat distance, Pitch, Yaw, Field of view, View Reset; establishing shot: Shot side, Shot height, Shot depth, Shot pitch, Shot yaw, Shot width, Shot Reset; Exposure, Bloom, Grain |
+| Dev (`?dev`) | Run: Jump (entry to desert), Pace (1 to 8), Strange next (Random, None, or one moment by name). Driver's seat: Eye height, Eye side, Distance, Pitch, Yaw, Field of view, View Reset. Shot: Side, Height, Depth, Pitch, Yaw, Width, View Reset. Look: Exposure, Bloom, Grain |
 <!-- /gen:bar -->
 
 | Gesture | Does |
