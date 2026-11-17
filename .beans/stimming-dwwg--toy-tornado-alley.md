@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T00:38:46Z
+updated_at: 2026-11-17T01:09:52Z
 parent: stimming-oh7b
 ---
 
@@ -91,3 +91,5 @@ Built; waits for the checkpoint with Tom.
 - Taper follows F, no puck (Tom, 2026-11-16: "the upper taper seems to stay as wide and doesnt seem to correspond with F scale", "we cant have a puck of taper on the cloud deck and then the funnel come from it"). The lowered wall-cloud block is gone; the deck is one flat base, DECK (0.3 storm km) over the funnel's top. The horn is now part of the storm's own shape (hornDist in stormShape, joined to the base by a smooth minimum), so the deck's lumps and light run down it with no edge. Its flare is a share of the funnel's top radius (1.4 at F0 to 0.8 at F5), so it widens step by step with F; its outline is a 1.6 superellipse, upright at the funnel, level at the deck. Low down it lies inside the funnel's body, so the deck shows only where the horn flares past the funnel. On the horn the base's ragged noise eases (most by the funnel) and the light is the underside's. F0 has no horn. The near storm and the shell overlap at their seam (shellOff). Checked F0 to F5 at 24, 50 and 85 mm and at noon; console clean. Left: faint arcs round the horn's rim at 24 mm, and a tone step where the light funnel enters the dark horn at 85 mm.
 
 - No shroud (Tom, 2026-11-16: "strange secondary shroud around tornado base"). The deck's horn showed as a darker cone round the funnel's middle wherever it flared past the funnel's bright body. Now it stays inside the funnel's body (0.7 of the funnel radius in) up to 55% of its height and reaches its full outline only near the deck, where the funnel has already taken the deck's tone; the funnel widens along the same outline, so they read as one body. Checked F0 to F5 at 24, 50 and 85 mm and at noon.
+
+- Shroud, the real cause (Tom, 2026-11-16: "that shroud over the funnel still appears", "innate blend", "gently undulate the main cloud layer"; he approved the side-by-side clip). The funnel's own flare ran up 45% of its height, darkened to the deck's tone, and hung in front of the far deck (6 km behind the tornado) as a cone round the bright lower funnel. Now the flare is short (collarLen: 0.6 of its width, at most 15% of the funnel's height), the colour turns only inside it, and the onion closes into one body up the flare. The deck swells: broad noise drifts under the base and breathes on a ten-second cycle. `?dbg=5` paints the funnel red and the deck blue. Lesson: judge in motion, at the default view, before showing Tom; stills at t=40 missed this twice.

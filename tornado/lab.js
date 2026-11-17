@@ -187,10 +187,11 @@ float deckY() { return uH + DECK * 1000.0 / uKs; }
 // It stays inside the rotating zone.
 float hornA() {
   float Rt = radiusAt(uH);
-  return clamp(Rt * mix(1.4, 0.8, smoothstep(0.0, 1.0, uFk)) + 20.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
+  return clamp(Rt * mix(0.9, 0.5, smoothstep(0.0, 1.0, uFk)) + 20.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
 }
-// How far under the funnel's top the flare starts: about the flare's width.
-float collarLen() { return clamp(hornA() * 1.2, 60.0, uH * 0.35); }
+// How far under the funnel's top the flare starts. Short: the flare opens just under the base.
+// A tall flare hangs in front of the far deck as a dark cone round the funnel.
+float collarLen() { return clamp(hornA() * 0.6, 40.0, uH * 0.15); }
 // The horn's strength: none at F0, where the deck is storm cloud only; full once the funnel forms.
 float hornOn() { return smoothstep(0.0, 0.35, uCond); }
 // Where the flare starts. Below F1 it is a shallow sag under the deck; it reaches down as the funnel forms.
@@ -219,7 +220,7 @@ float hornSlope(float s) {
 // It comes to the surface only near the deck, where the funnel has already taken the deck's tone.
 float hornDist(float y, float r) {
   float s, R = hornR(y, s), k = hornSlope(s);
-  R -= radiusAt(min(y, uH)) * mix(0.7, 0.0, smoothstep(0.55, 0.95, s));
+  R -= radiusAt(min(y, uH)) * mix(0.7, 0.0, smoothstep(0.4, 0.8, s));
   return max((r - R) / sqrt(1.0 + k * k), gY0 - y);
 }
 // Condensation density at p, 0 to about 2. u returns the height over the base.
@@ -242,26 +243,27 @@ float funnelD(vec3 p, out float u, int oct) {
   // The taper: the funnel narrows to a point at its lower edge; no flat cap.
   float tap = clamp((h - edgeH) / taperL, 0.0, 1.0);
   x /= mix(0.12, 1.0, sqrt(tap));
+  // Up the flare the onion closes into one body on the horn's outline: no veil round a narrow core.
+  float fl = smoothstep(0.15, 0.6, sH);
   // The core: the funnel body, its edge ragged by the inner sheath's noise.
-  float edge = 0.9 + uAmp * 0.45 * (nc - 0.5);
+  float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.6, fl);
   float d = smoothstep(edge, edge - 0.1, x) * 1.6;
   // Near the tip the core tears: only the dense parts of the wall's noise hold together.
   float tear = N(vec3(cos(ang) * 2.2, h / max(R * 0.6, 4.0) - uPh[0].y * 3.0, sin(ang) * 2.2) + 4.4);
   d *= mix(smoothstep(0.45, 0.7, 0.6 * nc + 0.4 * tear), 1.0, smoothstep(0.35, 1.0, tap));
   // The sheaths: thin layers of tattered cloud, each spinning at its own rate.
   for (int k = 0; k < SHEATHS; k++) {
-    float rk = sheathR(k), fk = float(k) / float(SHEATHS - 1);
-    // Thin sheaths with clear air between them: the onion's layers.
-    float wk = exp(-pow((x - rk) / (0.42 * gSp), 2.0));
+    float rk = 1.0 + gSp * float(k) * (1.0 - fl), fk = float(k) / float(SHEATHS - 1);
+    // Thin sheaths with clear air between them: the onion's layers. They close up and fade in the flare.
+    float wk = exp(-pow((x - rk) / (0.42 * gSp), 2.0)) * (1.0 - fl);
     if (wk < 0.03) continue;
     float n = sheathN(ang, h, x, R, rk, k + 1, oct);
     // Outer sheaths show only their densest noise, so the edge stays wispy.
     float cov = mix(0.42, 0.6, fk);
     d += wk * smoothstep(cov, cov + 0.14, n) * (0.6 + 0.4 * n) * mix(0.9, 0.35, fk);
   }
-  // The tip thins as it narrows; the top runs into the base.
-  // The top fades inside the horn, which carries it on up into the deck.
-  d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(uH - collarLen() * 0.35, uH + 60.0, h));
+  // The tip thins as it narrows. The top fades only once the deck's horn is fully out, near the deck.
+  d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(0.75, 1.0, sH));
   return d;
 }
 // Extinction per metre for a density: thin funnels get denser, so a rope still reads.
@@ -389,6 +391,10 @@ float stormD(vec3 p) {
   float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
   vec3 n = p * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
   d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp * calm;
+  // The base heaves: broad swells drift under it and breathe, so the deck undulates gently.
+  float swell = (vn3(p * 0.45 + vec3(uTime * 0.03, 0.0, uTime * 0.02)) - 0.5) * (0.6 + 0.4 * sin(uTime * 0.6 + vn3(p * 0.2) * 6.28));
+  swell += (vn3(p * 1.2 - vec3(uTime * 0.05, 0.0, 0.0)) - 0.5) * 0.35;
+  d += swell * 0.5 * (1.0 - smoothstep(BASE + 0.3, BASE + 1.5, p.y));
   // The base: stacked plates on its flank, turning round the updraft.
   // Up close they read as contour bands: they stay off the base's underside and away from the tornado.
   float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(nearR(), nearR() * 2.2, length(p.xz - WALL));
@@ -501,7 +507,7 @@ float cloudShade(vec3 p) {
 }
 // How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
 // The ramp eases at both ends, so the tone has no step at either end.
-float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0) * 0.25, gDeck, h); }
+float topKAt(float h) { return smoothstep(gY0, gDeck, h); }
 vec3 groundCol(vec3 P, float t) {
   float n = fbm(vec3(P.x * 0.01, 0.0, P.z * 0.03), 3);
   vec3 alb = mix(vec3(0.3, 0.2, 0.08), vec3(0.5, 0.37, 0.15), n);
@@ -629,6 +635,8 @@ void main() {
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.21) * (ambC * 0.7 + uSunCol * exp(-od) * 0.05);
           float hzF = 1.0 - exp(-t / 30000.0);
+          // ?dbg=5 paints the funnel red, to tell it from the deck.
+          if (uDbg > 4.5) fc3 = vec3(0.6, 0.05, 0.03) * (0.4 + 0.6 * clamp(sunL.r, 0.0, 1.0));
           sum += mix(fc3, skyH * 0.45, hzF) * sc + mix(dcol, skyH * 0.45, hzF) * sd + mix(wcol, skyH * 0.45, hzF) * sw;
           sig += sc + sd + sw;
         }
@@ -636,7 +644,7 @@ void main() {
       if (inC) {
         vec3 ps;
         float dS;
-        float dn = uDbg > 3.5 ? 0.0 : nearCloud(p, ps, dS);
+        float dn = uDbg > 3.5 && uDbg < 4.5 ? 0.0 : nearCloud(p, ps, dS);
         // Outside the cloud, step by its distance; inside, short steps.
         // A ray that skims the underside keeps a floor on its step, scaled by distance.
         float sC = dS > 0.035 ? max((dS - 0.035) * 1000.0 / uKs * 0.7, max(6.0, t * 0.003)) : clamp(t * 0.005, 6.0, 30.0);
@@ -646,6 +654,8 @@ void main() {
         st = min(st, sC);
         if (dn > 0.003) {
           vec3 ccl = stormLit(ps, dS);
+          // ?dbg=5 paints the deck blue.
+          if (uDbg > 4.5) ccl = vec3(0.03, 0.08, 0.5) * (0.5 + 4.0 * dot(ccl, vec3(0.33)));
           float hzS = (1.0 - exp(-t * 0.001 * uKs / 70.0)) * 0.8;
           float scl = dn * 0.01;
           sum += mix(ccl, skyH, hzS) * scl;
