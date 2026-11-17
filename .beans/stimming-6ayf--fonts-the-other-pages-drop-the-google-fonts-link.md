@@ -5,7 +5,7 @@ status: completed
 type: chore
 priority: normal
 created_at: 2026-11-17T03:10:53Z
-updated_at: 2026-11-17T03:17:43Z
+updated_at: 2026-11-17T03:18:40Z
 ---
 
 Tom, 2026-11-16: "Yes, all pages". About 240 pages still link Google for Gabarito. The link blocks their first paint.
@@ -32,3 +32,7 @@ Commit `a9218f65` on `main` holds 242 pages. The live site is checked on seven p
 `railgun/stormlab.html` keeps its Google link: the railgun cloud gate in `tools/commit.sh` holds that file.
 `tools/clouds-check.mjs` fails on `main` as it is (the golden stills differ by 22% to 66%), with no cloud change from this bean.
 That page needs a pass of the check or Tom's words after `look-approved:`.
+
+## The gated page
+
+Tom, 2026-11-16: "Yes, roll it". `railgun/stormlab.html` now links `shared/fonts/fonts.css`. The roll covers 243 pages.
