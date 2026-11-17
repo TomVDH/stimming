@@ -185,7 +185,7 @@ onAim(input);
 // A pick from rest or lost plays the cuts; a re-pick only slews.
 // A tap during the cuts skips to the wide shot and picks nothing.
 function tap(a: AltAz): void {
-  if (cuts.showing) { cuts.skip(); lastInput = performance.now(); dirty = true; wake(); return; }
+  if (cuts.showing) { lastInput = performance.now(); cuts.skip(); return; }
   if (cuts.busy) return;
   const s = pickStar(sky.stars, a, lst(clock.skyMs(), LON), LAT);
   if (!s) return;
@@ -197,6 +197,8 @@ function tap(a: AltAz): void {
   wake();
 }
 onTap(tap);
+// A skip by tap or Esc draws the wide shot on the next frame.
+cuts.onSkip(() => { dirty = true; wake(); });
 
 // A hidden page stops the loop at once.
 whenVisible(stageEl, (vis: boolean) => {
@@ -261,5 +263,5 @@ window.__qa = {
   get light() { return light; },
   // The sequence: the shot that shows, its time, and true while it owns the camera.
   get cut() { return { shot: cuts.shot, t: cuts.time, busy: cuts.busy }; },
-  skipCuts() { cuts.skip(); dirty = true; wake(); },
+  skipCuts() { cuts.skip(); },
 };

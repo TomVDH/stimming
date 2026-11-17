@@ -12,7 +12,8 @@ import { ROAD, complex, type Complex } from './complex.ts';
 const PANE_OFF = 0x2a2a2a, PANE_ON = 0xd2d2d2;
 const LAMP_OFF = 0x303030, LAMP_ON = 0xe6e6e6;
 
-// Sequence numbers on the road's centre line, about 3 m apart.
+// Indices into ROAD, whose points stand 2.3 m apart.
+// The lamps stand about 16 m apart.
 const ROAD_LAMPS = [3, 10, 17, 24, 31, 38];
 // A road lamp stands this far to the side of the centre line.
 const ROAD_SIDE = 3.6;

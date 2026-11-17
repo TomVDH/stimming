@@ -121,6 +121,8 @@ function showBars(on: boolean, opacity = 1): void {
 }
 
 /* ---------- the player ---------- */
+// A skip asks the loop for a frame through this hook.
+let redraw: () => void = () => {};
 let t = 0;
 // mode: 'off', 'cuts' (hard cuts), 'still' (reduced motion), 'fade' (the crossfade).
 let mode: 'off' | 'cuts' | 'still' | 'fade' = 'off';
@@ -167,7 +169,11 @@ export const cuts = {
   skip(): void {
     if (mode === 'cuts') toWide();
     else if (mode === 'still') startFade();
+    else return;
+    redraw();
   },
+  // The loop sets this hook: it marks the frame dirty and wakes.
+  onSkip(fn: () => void): void { redraw = fn; },
   step(dt: number): void {
     if (mode === 'off') return;
     t += dt;
