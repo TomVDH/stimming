@@ -33,7 +33,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `core/pick.ts` | A tap picks the brightest star near it: `pickStar` |
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
 | `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
-| `core/sequence.ts` | The pick sequence's cut list, timed from `SHUTTER_S`, `cutAt`; the complex lights' level per phase, `lightLevel` |
+| `core/sequence.ts` | The pick sequence's five shots; their timing from the shutter and the tube's lift, `startSeq`, `stepSeq`; the camera locks, `makeLocks`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage; the fail line, `fail` and `bootFail`; the star catalog's early start, `starFile`; `onLeave` and `disposeTree` |
 | `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |
@@ -53,7 +53,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `world/hero-scope.ts` | The hero telescope: a long refractor on a German equatorial mount that never changes sides; its own pier 0.42 south of the dome's axis, through the floor; the axes cross over the dome's centre; a night sky map for the metal and the coated glass; `buildHeroScope(size)`, `HeroScope` with `root`, `glass`, `setTube(alt, az)` in degrees |
 | `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
-| `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade; the swap to the hero model in the close shots |
+| `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the final shot on the objective glass, locked on its place of rest, with tonight's stars in it; the letterbox, the dip to black back to the wide shot, the reduced-motion still of the settled glass; the swap to the hero model in the close shots |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
 | `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size), the first draw, the end of the boot |

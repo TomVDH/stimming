@@ -1250,6 +1250,8 @@ export const hero = {
   get ready(): boolean { return ready; },
   // The objective glass: the lens cut puts the star reflections on it.
   get glass(): Mesh | null { return built ? built.scope.glass : null; },
+  // The telescope: the cuts hand its glass the stars and the sky.
+  get scope(): HeroScope | null { return built ? built.scope : null; },
   show(on: boolean): void { built?.show(on); },
   follow(d: Dome): void { built?.follow(d); },
   // Triangles, draw calls, and the time of each build step in ms.
