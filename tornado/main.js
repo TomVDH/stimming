@@ -145,6 +145,9 @@ vec3 gSunC;
 vec3 gRdC = vec3(0.0, 0.0, -1.0), gSkyZ, gSkySun, gSkyAnti;
 // The share of the plain the sun reaches under the deck, 0 to 1: the ground's bounce.
 uniform float uPlainLit;
+// The green phase, 0 to 1: as the storm grows, its light turns the green-teal of a hail core.
+// It peaks near Storm 0.5 to 0.6 and sinks into the slate gloom by full storm.
+uniform float uGreen;
 // The deck's finest noise, 0 to 1: it fades with distance, and the light's probes skip it.
 float gFine = 1.0;
 float gPx;
@@ -174,7 +177,16 @@ vec3 skyCol(vec3 d) {
   return mix(c, uSunCol * vec3(0.16, 0.12, 0.09) + uAmb * 0.1, low * 0.6);
 }
 // The haze colour: the low sky that way.
-vec3 hazeCol(vec3 d) { return skyCol(normalize(vec3(d.x, 0.03, d.z))) * 0.95; }
+// In the green phase the air turns sickly yellow-green, most toward the low sun.
+vec3 hazeCol(vec3 d) {
+  vec3 h = skyCol(normalize(vec3(d.x, 0.03, d.z))) * 0.95;
+  if (uGreen <= 0.0) return h;
+  float toSun = pow(max(dot(normalize(d.xz + 1e-5), normalize(uSun.xz + 1e-5)), 0.0), 2.0);
+  return mix(h, h * vec3(0.8, 1.0, 0.62), uGreen * (0.3 + 0.5 * toSun));
+}
+// The gloom under the base: a cool slate at full storm.
+// In the green phase it turns the green-teal of a hail core.
+vec3 gloomCol() { return uAmb * mix(vec3(0.06, 0.066, 0.078), vec3(0.045, 0.075, 0.066), uGreen); }
 
 /* ---------- the supercell ---------- */
 // The storm as one distance field, in km. uStorm grows a young cell into a full supercell.
@@ -435,6 +447,16 @@ float cloudPh(float mu) {
   float a = 1.5184 - 1.44 * mu, b = 1.04 + 0.4 * mu;
   return mix(0.4816 / (a * sqrt(a)), 0.96 / (b * sqrt(b)), 0.35);
 }
+// Where rain falls from the deck, 0 to 1, over a camera-space point in km.
+// Ragged shafts in world space drift and slant downwind; most fall round the core.
+// Rain starts as the storm grows.
+float rainAt(vec3 p) {
+  float sy = sin(uYaw), cy = cos(uYaw);
+  vec2 w = vec2(p.x * cy + p.z * sy, -p.x * sy + p.z * cy) - WDIR * (uT * 0.012 + max(BASE - p.y, 0.0) * 0.35);
+  float f = vn(w * 0.16 + 31.0) * 0.6 + vn(w * 0.5 + 7.0) * 0.4;
+  f += 0.3 * (1.0 - smoothstep(3.0, 9.0, length(p.xz - mix(TOWER, CORE, 0.55))));
+  return smoothstep(0.55, 0.85, f) * smoothstep(0.3, 0.6, uStorm);
+}
 // The colour of one storm sample. Its light follows Window seat's and Railgun's cloud light:
 // Beer's law with a slower multiple-scatter tail, powder, a silver lining, sky light by direction, ground bounce.
 vec3 stormLit(vec3 p, float d) {
@@ -468,6 +490,10 @@ vec3 stormLit(vec3 p, float d) {
   vec3 amb = mix(uAmb, skyD * (yA / yS), 0.6) * mix(mix(0.3, 0.08, stormK()), 0.85, up) * (1.0 - 0.7 * under);
   // The sunlit plain lights the underside warm from below.
   amb += uSunCol * vec3(0.3, 0.21, 0.09) * 0.16 * uPlainLit * under * (1.0 - up);
+  // The storm's palette, never a wash: shade under the deck takes a bruised violet, shaded flanks a slate.
+  float shadeK = (1.0 - lit) * stormK();
+  amb *= mix(vec3(1.0), vec3(1.07, 0.93, 1.12), 0.6 * under * shadeK);
+  amb *= mix(vec3(1.0), vec3(0.93, 0.98, 1.07), 0.6 * (1.0 - under) * shadeK);
   // Beer's law for the direct beam; light scattered many times leaves a slower tail.
   float Tl = lit * lit, Tm = 0.22 * lit;
   // Powder: thin edges that face away from the light stay dark. Thick cloud does not.
@@ -478,8 +504,17 @@ vec3 stormLit(vec3 p, float d) {
   float silver = mu > 0.0 ? max(cloudPh(mu) - 0.4, 0.0) * 0.35 * Tl * (1.0 - 0.6 * stormK()) : 0.0;
   // The lower flank stays dark: the storm's own bulk shades it.
   vec3 c = uSunCol * ((Tl * 0.85 + Tm) * powder + silver) * mix(0.14, 0.8, up * up) + amb;
-  // The core goes dark slate behind its rain; its green comes only where light passes the rain.
-  return mix(c, c * vec3(0.3, 0.33, 0.37), core * 0.8);
+  // The core goes dark slate behind its rain.
+  c = mix(c, c * vec3(0.3, 0.33, 0.37), core * 0.8);
+  // Light that passes the rain under the base turns green-teal, most where rain falls.
+  // It is strongest in the green phase; a trace stays in the rain at full storm.
+  float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.8, p.y), wet = 0.0;
+  if (low > 0.0) {
+    wet = rainAt(p);
+    c = mix(c, c * vec3(0.62, 1.0, 0.85), uGreen * low * (0.35 + 0.65 * wet));
+    wet *= low * (0.3 + 1.7 * uGreen);
+  }
+  return c + (uAmb * vec3(0.004, 0.017, 0.015) + uSunCol * vec3(0.002, 0.008, 0.006) * lit) * wet;
 }
 // Marches the storm at full size, while the storm pass builds. Returns colour and coverage.
 // tHit is the hit distance in km. jit, 0 to 1 per pixel, offsets the steps: no contour bands.
@@ -779,7 +814,10 @@ vec3 ground(vec3 rd, float px) {
     col = mix(col, w.rgb + w.a * col, nearK);
   }
   // The deck's cover along the sun's ray darkens the plain in soft patches.
-  col *= shadeK(sunCover(P * 0.001 + vec3(0.0, CAMH * 0.001, 0.0)));
+  float cover = sunCover(P * 0.001 + vec3(0.0, CAMH * 0.001, 0.0));
+  col *= shadeK(cover);
+  // In the green phase the sun's light through the rain lays a sickly yellow-green on the lit plain.
+  col = mix(col, col * vec3(0.86, 1.0, 0.6), uGreen * 0.7 * (1.0 - cover));
   // The storm shades the plain under its base.
   vec3 C = toCam(P) * 0.001;
   float under = 1.0 - smoothstep(0.6, 1.0, length((C.xz - SHELF) / SHELF_R));
@@ -973,8 +1011,8 @@ vec3 envScene(vec2 uv) {
     vec3 ro = vec3(0.0, CAMH * 0.001, 0.0);
     vec2 gl = cylinder(ro, rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
     vec2 rn = cylinder(ro, rc, CORE, mix(1.3, 4.6, uStorm), 0.0, BASE + 0.4);
-    // The gloom under the base is a cool slate, never green: green belongs only where light passes rain.
-    vec3 gloom = uAmb * vec3(0.06, 0.066, 0.078);
+    // The gloom under the base: slate at full storm, green-teal in the green phase.
+    vec3 gloom = gloomCol();
     float glK = 1.0 - exp(-gl.y * gl.y * 0.003 * uStorm);
     // The rain shaft: ragged and soft at its sides, never a solid block.
     float raz = atan(rc.x, -rc.z);
@@ -1113,7 +1151,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+      uBase: baseNow, uReach: () => deckReach, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
@@ -1357,6 +1395,9 @@ function beamSpot() {
 }
 // The share of the plain in sun under the deck, 0 to 1: the cloud's ground bounce.
 const plainLit = () => 1 - 0.92 * sstep(0.05, 0.85, storm);
+// The green phase (Tom: the scary green comes in before the big dark clouds).
+// It grows from Storm 0.3 and sinks into the slate gloom between 0.62 and 0.85.
+const greenK = () => sstep(0.3, 0.5, storm) * (1 - sstep(0.62, 0.85, storm));
 // The opening build-up: the storm grows from nothing to its set level on a gentle in-out sine ease.
 // Touching Storm stops it. Past 0.67 the first tornado touches down on its own.
 /** @type {{ t: number, dur: number, to: number, spawned: boolean } | null} */
@@ -1444,6 +1485,7 @@ function funnelPass(w, h) {
   gl.uniform1f(u.uReach, deckReach);
   gl.uniform1f(u.uGod, god);
   gl.uniform1f(u.uPlainLit, plainLit());
+  gl.uniform1f(u.uGreen, greenK());
   gl.uniform3fv(u.uBeam, beamSpot());
   gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
   gl.uniform1f(u.uCamH, camH);

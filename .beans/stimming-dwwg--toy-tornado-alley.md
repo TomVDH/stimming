@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:47:09Z
+updated_at: 2026-11-17T08:50:13Z
 parent: stimming-oh7b
 ---
 
@@ -211,3 +211,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom's first scenes (triggered from the bar like the rest of the toy, not typed): (1) a crane-up with a dolly zoom: the eye rises slowly to a large height while the lens widens, the tornado holding its size; (2) a pickup rushes out of the action down the road; a little later two storm-chaser vehicles rush in toward the storm. Routed: camera to the main helper, vehicles to the ground session.
 
 - 2026-11-17, Tom (god rays from the edges; one large hazy one): one hole lights the shafts (beamHole(), a ragged 2.6 km disc placed in frame on the sun's side, clear of the shelf); the march reads only it; other breaks light ground patches only; a soft half-globe glow low on the sun's side. Perf pass (look unchanged): deckOpen skipped 1 km off the slab and held 0.3 km along a ray, probes reuse it, silver lining only facing the sun, behind 90% cover the last light is reused, nearEars reads sunCover only under an ear. 3 × F4.5 at Tom's base 2.65: 34.3 → 30.4 ms best; Tom's higher base roughly doubles the march under the deck.
+
+- 2026-11-17, Tom (scary green before the big dark clouds; bruised storm colours): uGreen (greenK()) rises from Storm 0.3 to 0.5 and sinks 0.62–0.85 (peaking about 20–28 s into the 45 s build-up, before the first drop); the deck's underside turns green-teal where rainAt() says rain falls (heaviest round the core, drifting downwind); light through rain glows green-teal (a trace at full storm); one gloomCol() for both passes (slate at full storm, green-teal in the phase; the never-green rule is replaced); haze and the sunlit plain turn sickly yellow-green in the phase. Shaded undersides take bruised violet and flanks slate, on the fill light only.
