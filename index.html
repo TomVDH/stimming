@@ -2508,6 +2508,24 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           </a>
         </li>
         <li>
+          <a class="toy" id="drone" href="drone/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="-4.65 -5.65 137.31 137.31" aria-hidden="true">
+                <defs>
+                  <linearGradient id="drone-rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.62"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+                  <radialGradient id="drone-lit" cx="0.32" cy="0.26" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.38"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+                  <linearGradient id="drone-paint" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="oklch(0.5 0.17 279)"/><stop offset="0.55" stop-color="oklch(0.36 0.16 278)"/><stop offset="1" stop-color="oklch(0.24 0.11 276)"/></linearGradient>
+                  <radialGradient id="drone-disc" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="oklch(0.9 0.02 250)" stop-opacity="0.1"/><stop offset="0.7" stop-color="oklch(0.9 0.02 250)" stop-opacity="0.45"/><stop offset="1" stop-color="oklch(0.9 0.02 250)" stop-opacity="0.2"/></radialGradient>
+                  <filter id="drone-blur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+                </defs>
+                <ellipse id="drone-shadow" cx="64" cy="98" rx="44" ry="7" fill="oklch(0.05 0.01 270)" opacity="0.55" filter="url(#drone-blur)"/>
+                <g id="drone-craft"></g>
+              </svg>
+            </span>
+            <span class="name">Zena</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="zipper" href="zipper/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -4880,6 +4898,121 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         gsap.to(refl, { opacity: 0.75, duration: 0.4, overwrite: true });
       },
     };
+  }
+
+  // Zena: the craft from above (icon spike drone-1, A).
+  // The pointer flies it: the craft banks and drifts after it, and the rotors spin up into discs.
+  // The Lab calls play and rest only; the icon follows the pointer itself.
+  {
+    const tile = $('drone'), svg = tile.querySelector('svg'), g = $('drone-craft'), shadow = $('drone-shadow');
+    const f = n => +n.toFixed(2);
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+    // The craft's frame: u to the right, v forward (up the tile), w up.
+    // Hubs sit wide and short, as on the real airframe.
+    const HUBS = [[-40, 17], [40, 17], [-40, -17], [40, -17]], ROT = 17, K = 0.62;
+    const PAINT = 'url(#drone-paint)', CAMO = 'oklch(0.86 0.04 285)', BOOM = 'oklch(0.2 0.01 270)', POD = 'oklch(0.26 0.012 270)';
+    const LED = 'oklch(0.72 0.17 255)', DISC = 'oklch(0.9 0.02 250)', BLADE = 'oklch(0.16 0.01 270)', GLASS = 'oklch(0.14 0.02 270)';
+    // A lean lowers one side for a bank and the nose or the tail for a pitch.
+    const proj = (s, u, v, w) => {
+      const h = w - u * Math.sin(s.roll) * 0.9 + v * Math.sin(s.pitch) * 0.9;
+      return [64 + s.dx + u, 62 + s.dy - v * K - h * 0.8];
+    };
+    const shapes = s => {
+      const P = (u, v, w = 0) => proj(s, u, v, w);
+      const fus = [];
+      for (let i = 0; i <= 24; i++) {
+        const a = (i / 24) * Math.PI * 2, sn = Math.sin(a), c = Math.cos(a);
+        // Fuller at the tail, tapered at the nose.
+        const half = 7.5 * Math.sqrt(Math.max(0, 1 - Math.pow(Math.abs(sn), 2.6))) * (sn > 0 ? 1 - 0.2 * sn : 1);
+        fus.push(P(c >= 0 ? half : -half, sn * 25, 4));
+      }
+      const arms = HUBS.map(([hu, hv]) => {
+        const su = Math.sign(hu), sv = Math.sign(hv);
+        return poly([P(su * 5, sv * 3, 2), P(su * 5, sv * 19, 2), P(hu - su * 3, hv + sv * 4, 1), P(hu + su, hv, 1), P(hu - su * 3, hv - sv * 3.5, 1), P(su * 14, sv * 4, 2)]);
+      });
+      const camo = HUBS.map(([hu, hv]) => {
+        const su = Math.sign(hu), sv = Math.sign(hv);
+        return poly([P(su * 11, sv * 8, 2.5), P(su * 18, sv * 13, 2.5), P(su * 24, sv * 12, 2), P(su * 20, sv * 8.5, 2), P(su * 15, sv * 6.5, 2)]);
+      });
+      return { fus: poly(fus), arms, camo, nose: P(0, 26, 3), hubs: HUBS.map(([u, v]) => ({ base: P(u, v, 0), top: P(u, v, 7), low: P(u, v, -4) })) };
+    };
+    const disc = (c, rx, ry) => `M${f(c[0] - rx)} ${f(c[1])}A${f(rx)} ${f(ry)} 0 1 0 ${f(c[0] + rx)} ${f(c[1])}A${f(rx)} ${f(ry)} 0 1 0 ${f(c[0] - rx)} ${f(c[1])}Z`;
+    const blade = (c, rx, ry, t) => {
+      const ca = Math.cos(t), sa = Math.sin(t), nx = -sa * 2.3, ny = ca * 2.3 * ry / rx;
+      const a = [c[0] + ca * rx, c[1] + sa * ry], b = [c[0] - ca * rx, c[1] - sa * ry];
+      return poly([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]);
+    };
+    // The parts, built once: lower discs, booms, painted lobes, the body, pods, upper discs and blades.
+    g.innerHTML = HUBS.map((_, i) => `<path class="dl${i}" fill="${DISC}" opacity="0.18"/>`).join('')
+      + HUBS.map((_, i) => `<path class="arm${i}" fill="${BOOM}"/>`).join('')
+      + HUBS.map((_, i) => `<path class="arm${i}" fill="${PAINT}"/><path class="camo${i}" fill="${CAMO}" opacity="0.9"/>`).join('')
+      + '<path class="fus" fill="url(#drone-paint)"/><path class="fus" fill="url(#drone-lit)"/><path class="fus" fill="none" stroke="url(#drone-rim)" stroke-width="2" stroke-linejoin="round"/>'
+      + `<circle class="nose" r="4.6" fill="${GLASS}"/><circle class="nosehi" r="1.5" fill="#fff" opacity="0.7"/>`
+      + HUBS.map((_, i) => `<path class="pod${i}" fill="${POD}"/><circle class="led${i}" r="2.2" fill="${LED}"/>`).join('')
+      + HUBS.map((_, i) => `<path class="du${i}" fill="url(#drone-disc)"/><path class="bl${i}" fill="${BLADE}"/>`).join('');
+    const q = c => g.querySelectorAll(c);
+    const REST = { roll: 0, pitch: 0, dx: 0, dy: 0 };
+    const st = { ...REST, spin: 0, ang: 0 }, to = { ...REST, spin: 0 };
+    let live = false, running = false, sweep = null;
+    const draw = () => {
+      const S = shapes(st);
+      q('.fus').forEach(p => p.setAttribute('d', S.fus));
+      S.arms.forEach((d, i) => q(`.arm${i}`).forEach(p => p.setAttribute('d', d)));
+      S.camo.forEach((d, i) => q(`.camo${i}`)[0].setAttribute('d', d));
+      q('.nose')[0].setAttribute('cx', f(S.nose[0])); q('.nose')[0].setAttribute('cy', f(S.nose[1]));
+      q('.nosehi')[0].setAttribute('cx', f(S.nose[0] - 1.4)); q('.nosehi')[0].setAttribute('cy', f(S.nose[1] - 1.4));
+      // Spinning blades fade into the disc; a still blade reads as a bold bar.
+      const blur = clamp(st.spin / 0.6, 0, 1), rx = ROT, ry = ROT * K;
+      S.hubs.forEach((h, i) => {
+        q(`.pod${i}`)[0].setAttribute('d', poly([[h.low[0] - 3.4, h.low[1]], [h.top[0] - 3.4, h.top[1]], [h.top[0] + 3.4, h.top[1]], [h.low[0] + 3.4, h.low[1]]]));
+        const led = q(`.led${i}`)[0];
+        led.setAttribute('cx', f(h.base[0])); led.setAttribute('cy', f(h.base[1])); led.setAttribute('opacity', f(0.55 + 0.45 * blur));
+        q(`.dl${i}`)[0].setAttribute('d', disc(h.low, rx * 0.92, ry * 0.92));
+        const du = q(`.du${i}`)[0];
+        du.setAttribute('d', disc(h.top, rx, ry)); du.setAttribute('opacity', f(0.35 + 0.5 * blur));
+        const b = q(`.bl${i}`)[0];
+        b.setAttribute('d', blade(h.top, rx, ry, st.ang * (i % 3 === 0 ? 1 : -1) + i * 0.7)); b.setAttribute('opacity', f(1 - 0.75 * blur));
+      });
+      shadow.setAttribute('cx', f(64 + st.dx * 0.6));
+    };
+    const step = () => {
+      for (const k of ['roll', 'pitch', 'dx', 'dy']) st[k] += (to[k] - st[k]) * 0.12;
+      st.spin += (to.spin - st.spin) * 0.08;
+      st.ang += st.spin;
+      draw();
+      const off = ['roll', 'pitch', 'dx', 'dy', 'spin'].reduce((s, k) => s + Math.abs(st[k] - to[k]), 0);
+      // A settled icon stops its tick, so an idle menu does no per-frame work.
+      if (!live && off < 0.02) { Object.assign(st, REST, { spin: 0 }); draw(); halt(); }
+    };
+    const go = () => { if (!running) { running = true; gsap.ticker.add(step); } };
+    const halt = () => { if (running) { running = false; gsap.ticker.remove(step); } };
+    const aim = p => {
+      const kx = clamp((p[0] - 64) / 44, -1, 1), ky = clamp((p[1] - 62) / 34, -1, 1);
+      Object.assign(to, { roll: kx * 0.42, pitch: -ky * 0.32, dx: kx * 5, dy: ky * 3 });
+    };
+    toys.drone = {
+      // With no pointer the craft swings from side to side.
+      play() {
+        live = true; to.spin = 0.9; go();
+        const p = { x: 30, y: 56 };
+        sweep = gsap.timeline({ repeat: -1, yoyo: true, onUpdate: () => aim([p.x, p.y]) })
+          .fromTo(p, { x: 30, y: 56 }, { x: 98, y: 44, duration: 2.8, ease: 'sine.inOut' });
+        return { kill() {} };
+      },
+      rest() {
+        sweep?.kill(); sweep = null;
+        live = false; Object.assign(to, REST, { spin: 0 }); go();
+      },
+    };
+    tile.addEventListener('pointermove', e => {
+      if (!live) return;
+      // The pointer takes over from the idle swing.
+      sweep?.kill(); sweep = null;
+      const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+      aim([v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height]);
+    });
+    draw();
   }
 
   // Tornado alley: a live twister lit by the low gold sun (icon spike tornado-3, A).

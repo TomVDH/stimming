@@ -1,11 +1,11 @@
 ---
 # stimming-t8tr
 title: 'Zena: emblem (A) and the Lab menu tile'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-17T22:40:07Z
-updated_at: 2026-11-17T22:43:24Z
+updated_at: 2026-11-17T22:43:39Z
 parent: stimming-vk1p
 ---
 
@@ -14,4 +14,8 @@ Tom, 2026-11-17 14:39: 'Do A for logo right now -- make intro logo too'. A from 
 
 - [x] shared/emblems/drone.svg from A (icons/spike/emblems/drone-a.svg); toys.json emblem; the intro and the Bar v3 monogram show it
 - [x] toys.json: the entry moves to its Lab place by name (after Zen sand, before Zipper)
-- [ ] Lab menu tile in index.html: A, live under the pointer
+- [x] Lab menu tile in index.html: A, live under the pointer
+
+## Summary of Changes
+
+Zena's emblem is A of icons/spike-drone-1.html. It shows in the intro's flash box and as the Bar v3 monogram. The Lab menu has a Zena tile: the craft from above, which banks and drifts after the pointer while its rotors spin up; with no pointer it swings from side to side.
