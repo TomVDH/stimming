@@ -14,7 +14,7 @@ import { complex } from '../world/complex.ts';
 import { hero } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
-import { cutFocus } from '../post/chain.ts';
+import { cutFocus, cutGrain } from '../post/chain.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
@@ -309,6 +309,7 @@ function feedGlass(show: boolean): void {
 function toWide(): void {
   mode = 'off';
   cutFocus(null);
+  cutGrain(0);
   showBars(false);
   black(0);
   still.style.display = 'none';
@@ -319,7 +320,8 @@ function toWide(): void {
 // Steps the dip: the last cut fades down, the wide shot fades up.
 function stepDip(dt: number): void {
   dipT += dt;
-  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); return; }
+  // The cuts' grain eases back to the wide shot's as the black comes up.
+  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); cutGrain(1 - k); return; }
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
@@ -329,6 +331,7 @@ function stepDip(dt: number): void {
     // This frame shows full black.
     black(1);
     cutFocus(null);
+    cutGrain(0);
     return;
   }
   const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
@@ -425,12 +428,14 @@ export const cuts = {
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
-    if (!close) { cutFocus(null); return; }
+    if (!close) { cutFocus(null); cutGrain(0); return; }
     const s = locks.of(cutOf(shot));
     if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);
     cutFocus(s);
+    // The dip sets its own grain.
+    if (mode !== 'dip') cutGrain(1);
     beam(BEAM_CLOSE);
     showBars(true);
   },

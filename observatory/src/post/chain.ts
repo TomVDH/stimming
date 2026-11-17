@@ -59,6 +59,13 @@ export function cutFocus(f: { focus: number; aperture: number } | null): void {
   if (f) dof.set(f.focus, f.aperture);
 }
 
+// The cuts' grain: k 0 is the wide shot's, k 1 the cuts'.
+// The cuts take twice the grain, in cells 1.6 pixels wide.
+export function cutGrain(k: number): void {
+  grade.uniforms.uGrain.value = POST.grain * (1 + k);
+  grade.uniforms.uCell.value = 1 + 0.6 * k;
+}
+
 // Draws one frame through the chain.
 export function renderPost(): void {
   // The grain moves with each frame.
