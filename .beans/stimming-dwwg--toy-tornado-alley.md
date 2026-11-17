@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T07:36:44Z
+updated_at: 2026-11-17T07:41:49Z
 parent: stimming-oh7b
 ---
 
@@ -169,3 +169,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (an F2 far too fat; no taper, no colour blend): Width 1.0 by default; the bell spans the top fifth of the funnel, at most about 2× its top radius. The pale ring was the horn's sides taking the sun at the base: the bell keeps the deck's slate there and takes the sun only by degrees down the bell; the deck's tone grows up a bell's height. Cool slate shade side, real falloff on the lit side, Ambient 1.1; torn sheath edges take the deck's tone. The far bake's key holds the full projection and bakes again 30 frames on, so the deck reaches the horizon on every load.
 
 - 2026-11-17: the Cloud tube gets the shells' scale, bell and colour (shared code); its core is denser (2.1 to 3.2), so it reads as condensation; its bands' torn edges take the deck's tone.
+
+- 2026-11-17, Tom (the Storm slider did nothing; spawn squiggles; instant spawn): Storm now reaches the whole sky (low: a higher, thinner, broken deck in rafts with sky between, no pits; 0.85 and up: the heavy deck as before); any bake-key change bakes the far field whole that frame, so near and far follow a moving slider together (also fixes the Time lag). The empty first bake was a texture feedback loop on unit 0, now fixed. Spawn: each whirl's reach and twist stay fixed (their ramp slid the log-polar texture fast); touchdown runs about 38 s (whirl 20 s, pit and horn 10 s from 15 s, funnel 12 s from 23 s, dust 4 s before contact); F eases over 5 s; rope-out reverses slowly. ?age=45 shows a full funnel.
