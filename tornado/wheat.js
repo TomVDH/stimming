@@ -59,8 +59,9 @@ vec4 wheatStand(vec3 rd, float px) {
     vec3 awn = mix(vec3(0.42, 0.32, 0.15), vec3(0.58, 0.49, 0.31), 0.3 + 0.5 * wv + 0.2 * g);
     // The heads' grain, 3 cm across: sharp across the view, stretched up to four times along it, then faded.
     float fa = t0 * px / uFoc;
-    vec2 acr = vec2(-vh.y, vh.x);
-    float gr = vn(vec2(dot(xs, acr) * 33.0, dot(xs, vh) * clamp(0.025 / max(fs, 1e-4), 8.25, 33.0)));
+    // The axes are the camera's: the pixel's own ray would give no across term.
+    vec2 acr = toWorld(vec3(1.0, 0.0, 0.0)).xz, alg = toWorld(vec3(0.0, 0.0, -1.0)).xz;
+    float gr = vn(vec2(dot(xs, acr) * 33.0, dot(xs, alg) * clamp(0.025 / max(fs, 1e-4), 8.25, 33.0)));
     awn *= 0.8 + 0.4 * mix(0.5, gr, (1.0 - smoothstep(0.012, 0.03, fa)) * (1.0 - smoothstep(0.03, 0.085, fs)));
     awn *= uSunCol * 0.5 * (1.2 + 1.6 * back * vec3(1.0, 0.85, 0.55)) + (hzS + hzA) * 0.275;
     acc = awn * (1.0 - Tb);
