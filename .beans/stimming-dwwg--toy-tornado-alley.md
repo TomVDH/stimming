@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:04:11Z
+updated_at: 2026-11-17T08:05:57Z
 parent: stimming-oh7b
 ---
 
@@ -187,3 +187,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom (pancake clouds; the tower looks weird; hollow tube with the sun ahead): god rays stop where the ray turns half opaque, so they light only the air in front (the hollow V); below the default storm each raft gets its own height, domed Worley tops at two sizes, a heaving ragged base and slow drift; the tower is stacked, domain-warped Worley turrets growing softer with height, a boiling overshooting dome and a fibrous anvil edge, paid only near the tower. Known: fine stipple on far high cloud edges.
 
 - 2026-11-17, Tom (higher F, darker and more imposing): Darkness default 0.95 (was 0.55): albedo about 0.16× and sun about 0.5× at F5; F0–F1 pale (+15% albedo); F2 up a dirty brown-grey, full by F4; the deck's tone runs further down with F.
+
+- 2026-11-17, Tom: an opening build-up: the storm eases from 0 to its set level (0.85) on an in-out quart over 90 s (Dev row Build-up 20–300 s; ?buildup=0 for full at once); the Storm slider follows; touching it takes over. At 0.67 the first tornado spawns on the left golden line (0.355 across), 6.5 km out at a strong angle, and runs the slow touchdown. Reduced motion starts formed. QA loads with ?tor or ?storm skip it.

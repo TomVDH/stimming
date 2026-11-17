@@ -27,8 +27,8 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 /* ---------- bar ---------- */
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
-/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+/** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
+const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -64,6 +64,8 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
     // Where the live march stops and the baked far field begins, and how far the deck runs.
     { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
+    // The opening build-up's length: the storm grows from nothing over this many seconds.
+    { type: 'slider', id: 'buildUp', label: 'Build-up (s)', min: 20, max: 300, step: 5, value: 90, persist: true, onInput: v => act.buildUp(v) },
     { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
     { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // The funnel's and the deck's knobs, live; ?dens=2 and the like set one for one load.
@@ -242,7 +244,8 @@ float stormShape(vec3 p) {
   float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(botY - p.y, p.y - topY));
   if (yk > 0.0) {
     float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
-    front += 1.6 * smoothstep(0.3 + 0.65 * stormK(), 0.5 + 0.65 * stormK(), n);
+    // At no storm the sky is mostly clear: a few rafts and the far cells.
+    front += 1.6 * smoothstep(0.15 + 0.8 * stormK(), 0.35 + 0.8 * stormK(), n);
   }
   // Far off the deck breaks open.
   front += 1.5 * deckOpen(p);
@@ -1092,9 +1095,15 @@ const FAR_STRIPS = 8;
 let farD = 16, deckReach = 146;
 // Dev's God rays: the shafts' strength.
 let god = 0.6;
+// The opening build-up: the storm grows from nothing to its set level on an in-out quart ease.
+// Touching Storm stops it. Past 0.67 the first tornado touches down on its own.
+/** @type {{ t: number, dur: number, to: number, spawned: boolean } | null} */
+let build = null;
+const quart = x => (x < 0.5 ? 8 * x ** 4 : 1 - (-2 * x + 2) ** 4 / 2);
 function bakeFar(u, rw, rh, n) {
   // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
-  const key = [S.hour, sunAz, base, storm, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
+  // Storm counts in steps of 0.02: the build-up moves it every frame.
+  const key = [S.hour, sunAz, base, Math.round(storm * 50) / 50, camH, focal(), horizon(), yaw(), farD, deckReach, rw, rh].map(v => +(+v).toFixed(4)).join();
   // A change bakes whole at once, so the far field follows a moving slider with no lag.
   const moved = key !== fun.farKey;
   if (moved) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
@@ -1246,7 +1255,15 @@ function step(dt) {
   for (const t of tors) live(t, dt);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
-  if (!asleep && !tors.length && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
+  if (build) {
+    build.t += dt;
+    const k = clamp(build.t / build.dur);
+    storm = build.to * quart(k);
+    ui.slider?.set(+storm.toFixed(2));
+    if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
+    if (k >= 1) build = null;
+  }
+  if (!asleep && !build && !tors.length && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
   lastInput = performance.now();
@@ -1265,6 +1282,12 @@ function groundAt(clientX, clientY) {
   const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 5000, far) : far;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
+}
+// The first tornado: on the left golden line, 6.5 km out, at a strong angle to the eye.
+function heroDown() {
+  const sx = (0.355 - 0.5) * aspect(), foc = focal(), h = Math.hypot(foc, sx);
+  const [x, z] = toWorld(6500 * sx / h, -6500 * foc / h);
+  touchDown(x, z);
 }
 function touchDown(x, z) {
   // The oldest ropes out to make room; at the cap it goes at once.
@@ -1349,7 +1372,8 @@ act.clear = () => {
   else tors.length = 0;
   wake();
 };
-act.storm = v => { storm = v; wake(); };
+act.storm = v => { storm = v; build = null; wake(); };
+act.buildUp = v => { if (build) build.dur = clamp(+v || 90, 20, 300); };
 // The Time choice sets the hour and moves Dev's Time of day to it; Dev's slider then fine-tunes it.
 act.time = v => { act.tod(HOURS[v] ?? HOURS.golden); ui.setting('tod')?.set(S.hour); };
 act.tod = v => { S.hour = clamp(+v || HOURS.golden, 14, 21); setSun(S.hour); wake(); };
@@ -1417,6 +1441,15 @@ const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05;
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
+// The opening build-up, unless QA set the storm or placed funnels. ?buildup=0 starts at full.
+// Reduced motion starts at full storm with the first tornado formed.
+{
+  const bu = qs.has('buildup') ? +qs.get('buildup') : +(ui.setting('buildUp')?.value ?? 90);
+  if (!qs.has('tor') && !qs.has('storm')) {
+    if (reduced() || !(bu > 0)) heroDown();
+    else { build = { t: 0, dur: clamp(bu, 20, 300), to: storm, spawned: false }; storm = 0; ui.slider?.set(0); }
+  }
+}
 // QA: GPU time per frame, or of the funnel pass alone, from timer queries.
 // The frame holds px pixels at the canvas's own shape, so runs compare at one size.
 async function gpuTime(n = 20, part = 'frame', px = 1.8e6) {
