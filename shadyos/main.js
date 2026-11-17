@@ -45,18 +45,24 @@ const ui = initPage({ id: 'shadyos', bar: {
     { type: 'toggle', id: 'boot', label: 'Boot screen', value: true, persist: true, onToggle: v => { opts.boot = v; } },
   ],
   dev: [
-    { type: 'button', label: 'Screensaver', text: 'Start', onClick: devAct('saver') },
-    { type: 'button', label: 'Blue crash', text: 'Crash', onClick: devAct('crash') },
-    { type: 'button', label: 'Grey curtain', text: 'Panic', onClick: devAct('panic') },
-    { type: 'button', label: 'Safe mode', text: 'Enter', onClick: devAct('safe') },
-    { type: 'button', label: 'Shut down', text: 'Ask', onClick: devAct('shutdown') },
-    { type: 'button', label: 'Boot', text: 'Boot', onClick: devAct('boot') },
-    { type: 'button', label: 'Clock', text: '3:33 now', onClick: () => { spookAt = 0; spookTo = 0; wake(); } },
-    { type: 'button', label: 'Balloon', text: 'Pop', onClick: () => balloonNow() },
-    { type: 'button', label: 'Content', text: 'Reload', onClick: () => reloadContent() },
+    { type: 'button', group: 'Screens', label: 'Screensaver', text: 'Start', onClick: devAct('saver') },
+    { type: 'button', group: 'Screens', label: 'Blue crash', text: 'Crash', onClick: devAct('crash') },
+    { type: 'button', group: 'Screens', label: 'Grey curtain', text: 'Panic', onClick: devAct('panic') },
+    { type: 'button', group: 'Screens', label: 'Safe mode', text: 'Enter', onClick: devAct('safe') },
+    { type: 'button', group: 'Screens', label: 'Shut down', text: 'Ask', onClick: devAct('shutdown') },
+    { type: 'button', group: 'Screens', label: 'Boot', text: 'Boot', onClick: devAct('boot') },
+    { type: 'button', group: 'Desktop', label: 'Clock', text: '3:33 now', onClick: () => { spookAt = 0; spookTo = 0; wake(); } },
+    { type: 'button', group: 'Desktop', label: 'Balloon', text: 'Pop', onClick: () => balloonNow() },
+    { type: 'button', group: 'Desktop', label: 'Content', text: 'Reload', onClick: () => reloadContent() },
   ],
   quality: true,
   keys: false,
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Move a window'], ['drag fast', 'Throw a window'], ['drag', 'Remove a window at the Bin'],
+    ['double-click', 'Fold a window into the dock'], ['click', 'Open an app from the dock'], ['click', 'Open a menu'],
+    ['double-click', 'Open a desktop icon'], ['right-click', 'Open the desktop menu'],
+    ['N', 'Add a window'], ['space', 'Raise an error'], ['C', 'Clear the smears'], ['1 2', 'Change how a window drags'],
+    ['A-Z 0-9', 'Type into a window'], ['enter', 'Send the line'], ['↑ ↓', 'Select an earlier command'], ['esc', 'Close a menu']],
 } });
 ['haunt', 'hum', 'trail', 'boot'].forEach(k => { opts[k] = ui.setting(k).value; });
 snd.setHum(opts.hum);
@@ -107,8 +113,7 @@ let nextId = 1, blurDirty = true, clearing = 0, lastPhone = null;
 const lay = { bar: 25, tlR: 0, trL: 1e5, foot: 1e5, dockY: 0, dockX: 0, dockW: 0, dockH: 52, key: '' };
 const phone = () => W < 600;
 
-/* ---------- layout: the shell corners set the room ---------- */
-const corners = () => [...(document.querySelector('.stim-ui')?.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)') ?? [])];
+/* ---------- layout: the shell bar sets the room ---------- */
 let slots = [];
 function dockSlots() {
   const list = ['orb', ...(phone() ? C.dock.slice(0, 3) : C.dock).filter(id => APPS[id]), 'bin'];
@@ -120,10 +125,8 @@ function measureLay() {
   const step = phone() ? 42 : 50, dw = slots.length * step + 26, dh = phone() ? 46 : 54;
   const sx0 = W / 2 - dw / 2, sx1 = W / 2 + dw / 2;
   let dockB = H - 10;
-  // Offsets ignore the corners' slide-in transform.
-  for (const el of corners()) {
-    if (!el.offsetHeight || !el.childElementCount) continue;
-    const x0 = el.offsetLeft, x1 = x0 + el.offsetWidth, y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
+  // Each box is one bar part, in stage pixels.
+  for (const { x0, y0, x1, y1 } of ui.cover().rects) {
     if (y1 < H / 2) { bar = Math.max(bar, y1 + 7); if (x0 < W / 2) tlR = Math.max(tlR, x1); else trL = Math.min(trL, x0); continue; }
     if (x1 > W / 2) foot = Math.min(foot, y0);
     if (x0 < sx1 && x1 > sx0) dockB = Math.min(dockB, y0 - 8);
@@ -626,7 +629,7 @@ function seedScene() {
     makeWin('dialog', { title: 'Notice', head: N.welcome[0], body: N.welcome[1], yes: N.welcome_yes, no: N.welcome_no, x: W * 0.36, y: H * 0.55, w: 380, h: 132 });
   }
 }
-function cornersMoved() {
+function barMoved() {
   if (!deskTex || !W) return;
   const k = lay.key;
   if (measureLay() === k) return;
@@ -1091,8 +1094,8 @@ const [content] = await Promise.all([
 ]);
 C = content.C; contentError = content.error;
 new ResizeObserver(() => resize()).observe(stage);
-const cornerWatch = new ResizeObserver(() => cornersMoved());
-corners().forEach(el => cornerWatch.observe(el));
+// A bar that arrives, wraps or moves lays the desktop out again.
+ui.onCover(() => barMoved());
 // A new quality rebuilds the targets at the new pixel ratio.
 onQuality(() => { W = 0; resize(); });
 resize();

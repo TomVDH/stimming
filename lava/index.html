@@ -46,7 +46,7 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Drag a blob to pull it apart, hold the liquid or the base to warm it, drag the metal to pick the lamp up and shake it, drag beside it to tip it. F flips it, Space shakes it, the arrow keys rock it, and 1 to 8 pick the colours.">
+    <div class="stage stage--lava" id="stage" tabindex="0" role="application" aria-label="A lava lamp on a desk. Click a blob to pop it. Drag a blob to move it. Drag across a blob to slice it. Drag the pool of wax to pull a blob from it. Hold the liquid to warm the wax. Hold the base to warm the wax. Drag the metal to move the lamp. Drag beside the lamp to turn it. Press F to flip the lamp. Hold Space to shake the lamp. Press the left and right arrow keys to rock the lamp. Press 1 to 8 to change the colour.">
       <canvas aria-hidden="true"></canvas>
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
@@ -86,7 +86,11 @@ const ui = initPage({ id: 'lava', bar: {
     { verb: 'shake', key: 'Space', hold: true, onDown: () => act.shake(), onUp: () => act.still() },
   ],
   quality: true,
-  keys: [['tap a blob', 'pop'], ['swipe a blob', 'slice'], ['drag a blob', 'pull, fling'], ['hold the base', 'warm']],
+  keys: [['click a blob', 'pop a blob'], ['drag a blob', 'move a blob'], ['drag across a blob', 'slice a blob'], ['hold the base', 'warm the wax']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click blob', 'Pop a blob'], ['drag blob', 'Move a blob'], ['drag liquid', 'Slice a blob'], ['drag pool', 'Pull a blob from the pool'],
+    ['hold liquid', 'Warm the wax'], ['hold base', 'Warm the wax'], ['drag metal', 'Move the lamp'], ['drag beside', 'Turn the lamp'],
+    ['F', 'Flip the lamp'], ['space', 'Shake the lamp'], ['← →', 'Rock the lamp'], ['1-8', 'Change the colour']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 let reduce = reduced();
@@ -1508,24 +1512,20 @@ async function initGL() {
 // Render scale steps down on slow machines.
 const SCALES = [1, 0.8, 0.66, 0.5];
 let scaleI = 0, light = 1;
-// Shell controls that may sit over the lamp.
-const shellParts = () => [...document.querySelectorAll('.stim-ui > .s2-tl, .stim-ui > .s2-tr, .stim-ui > .s2-bl, .stim-ui > .s2-br, .stim-ui > .s2-keys')];
-// The lamp fills the band between the controls over its column.
+// The lamp fills the band between the bar parts over its column.
 // Narrow stages pull the camera back to fit the width.
 function frameLamp(w, h) {
-  const pr = panel.getBoundingClientRect();
+  // The shell gives each bar part's box in stage pixels.
+  const rects = ui.cover().rects || [];
   let t = Math.max(0.58, 0.42 / (w / h)) / CAMD, top = 24, bot = 24;
   for (let pass = 0; pass < 2; pass++) {
     const col = (0.24 / (t * CAMD)) * (h / 2);
     top = bot = 24;
-    for (const el of shellParts()) {
-      const r = el.getBoundingClientRect();
-      if (!r.width || !el.childElementCount) continue;
-      // A short stage lets the fading key strip cross the base.
-      if (el.classList.contains('s2-keys') && h < 560) continue;
-      if (r.right - pr.left < w / 2 - col || r.left - pr.left > w / 2 + col) continue;
-      if (r.top + r.bottom < pr.top * 2 + h) top = Math.max(top, r.bottom - pr.top + 10);
-      else bot = Math.max(bot, pr.bottom - r.top + 10);
+    for (const r of rects) {
+      if (r.x1 <= r.x0) continue;
+      if (r.x1 < w / 2 - col || r.x0 > w / 2 + col) continue;
+      if (r.y0 + r.y1 < h) top = Math.max(top, r.y1 + 10);
+      else bot = Math.max(bot, h - r.y0 + 10);
     }
     const band = 2 - (2 * (top + bot)) / h;
     t = Math.max(1.09 / (CAMD * Math.max(band, 0.5)), 0.42 / (w / h) / CAMD);
@@ -1901,7 +1901,7 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   // Controls and the sheets keep their own arrows.
-  if (e.target.closest?.('.stim-ui')) return;
+  if (e.target.closest?.('.stim-ui, .sg-ui')) return;
   e.preventDefault();
   wake();
   if (!lamp.tw) lamp.w += e.key === 'ArrowLeft' ? 2.4 : -2.4;
@@ -1923,6 +1923,7 @@ function failed() {
   ui.choice.disabled = true;
   ui.action('flip').disabled = true;
   ui.action('shake').disabled = true;
+  ui.hideControls();
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {
@@ -1948,8 +1949,8 @@ async function boot() {
   fit();
   const ro = new ResizeObserver(fit);
   ro.observe(panel);
-  // The corners change size as the shell lays them out.
-  shellParts().forEach(el => ro.observe(el));
+  // A bar that arrives, wraps or moves refits the lamp.
+  ui.onCover(fit);
   // A new quality setting clears the slow-frame steps.
   onQuality(() => { scaleI = 0; slow = 0; fit(); });
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);

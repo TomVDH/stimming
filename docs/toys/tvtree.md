@@ -16,7 +16,7 @@
 
 ## Idea
 
-A tree hung with old TV sets on a night stage, each set on its own channel. Click a set to change its channel, drag to swing it, hold to power it off; when the sets agree, one big picture spans the whole tree.
+A tree hung with old TV sets on a night stage, each set on its own channel. Click a set to change its channel, drag to move it, hold to switch it on and off; when the sets agree, one big picture spans the whole tree.
 
 ## Rules
 
