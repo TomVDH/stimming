@@ -141,6 +141,8 @@ The module needs WebGPU: it writes 3D storage textures from compute kernels. thr
 
 **Recommendation: C now, A only on demand.**
 
+Tom picked C on 2026-11-16: WebGPU only for now. A waits until Tom asks for a hero sim fire in a WebGL toy.
+
 1. Every fire in a Scene toy is a plume, a train or a puff: far away, fast, often kilometres long. A 12-unit grid does not fit those scales, and ray-marched noise already looks right there.
 2. B breaks the one-pin rule and costs the most for the least.
 3. A is the way if Tom wants a hero sim fire in a WebGL toy. Then build it from `cauldron`, its first reference port, and share the look with `fire.js` (ramp stops, tint, light terms), not the code.
