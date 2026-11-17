@@ -422,3 +422,15 @@ Batch 4, 2026-11-16 (Tom):
 | kaleido.1 | Fixed | The "zooms in too far" item leaves `AGENTS.md` |
 | kaleido.2 | Add a slider | Kaleidoscope's chat proposes one main slider for Tom to pick |
 | G6 | Add to the list | Cauldron joins the 0.186.1 WebGPU list in `AGENTS.md` and `docs/stack.md`. It gets the still-frame fallback (G5) |
+
+Batch 5, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| ferro.1 | Leave hidden | Escape and `-` `=` stay hidden keys; the strip keeps its four entries |
+| neon.1 | Keep in Settings | Wall stays a player setting |
+| neon.2 | Show it | The Undo chip prints its shortcut (Cmd/Ctrl+Z) |
+| magnet.1 | Ball finish | A top-left choice of ball finish. Magnet balls' chat proposes the options for Tom to pick |
+| soap.1 | Put on strip | "Enter: pop all" goes on the key strip in place of one entry. Soap cutting's chat proposes which entry leaves |
+| glass.1 | Tool as choice | Tool (Hammer, Gun, Brick) becomes the top-left choice; the glass type moves to Settings |
+| glass.2 | Delete it | The unused `glass/gunshot.mp3` goes (bean `stimming-syu9`). `gunshot.wav` stays and still needs its source and licence (G1) |
