@@ -166,6 +166,10 @@ const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
 // The wide shot keeps the light model, so nothing changes there.
 // held: QA keeps the hero in outside the cuts.
 let heroOn = false, held = false;
+// The model the close shots use, chosen at the start.
+// It changes only at a hard cut, so no locked shot swaps its model.
+// A hero that gets ready late joins at the next cut.
+let useHero = false, cutShot: Shot | null = null;
 function swap(on: boolean): void {
   if (on !== heroOn) {
     heroOn = on;
@@ -232,6 +236,8 @@ export const cuts = {
     mode = reduced() ? 'still' : 'cuts';
     t = mode === 'cuts' ? startAt(phase) : 0;
     locks.clear();
+    useHero = hero.ready;
+    cutShot = null;
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
@@ -263,9 +269,11 @@ export const cuts = {
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
     const close = !(mode === 'off' || (mode === 'fade' && !grab) || (mode === 'dip' && dipWide));
+    // A new cut is a hard cut, so the model may change there.
+    const cut = mode === 'cuts' ? cutAt(t) : null;
+    if (cut && cut.shot !== cutShot) { cutShot = cut.shot; useHero = hero.ready; }
     // The swap happens in the frame that changes the shot.
-    // Until the hero is ready, the cuts keep the light model.
-    swap((close || held) && hero.ready);
+    swap(close ? useHero : held && hero.ready);
     if (!close) return;
     // The dip holds the last cut until the frame is black.
     const s = mode === 'cuts' ? locks.at(t) : locks.of(mode === 'dip' ? LAST_CUT : STILL_CUT);

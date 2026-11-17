@@ -551,11 +551,11 @@ const um = (pts: P2[]): P2[] => pts.map(([a, b]) => [u(a), u(b)]);
 // The red work lamp adds its own light in the shader.
 // So no light joins the scene.
 // A new scene light changes every shader of the wide shot.
-// The lamp lights the cupola's far side, 6 m off.
-// There it gives a deep red glow.
-const RED = { uRedP: { value: new Vector3() }, uRedC: { value: new Color(1.0, 0.06, 0.025).multiplyScalar(34) } };
+// A dull, deep red, a quarter as bright as at first.
+// The inside reads dark, with a faint warm-red spill near the lamp.
+const RED = { uRedP: { value: new Vector3() }, uRedC: { value: new Color(1.0, 0.075, 0.035).multiplyScalar(8.2) } };
 function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
-  const prev = m.onBeforeCompile, uOcc = { value: occ };
+  const prev = m.onBeforeCompile, key = m.customProgramCacheKey(), uOcc = { value: occ };
   m.onBeforeCompile = (sh, r) => {
     prev.call(m, sh, r);
     Object.assign(sh.uniforms, RED, { uOcc });
@@ -576,8 +576,9 @@ function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
         }
         #endif`);
   };
-  // Every inside material shares one program per kind.
-  m.customProgramCacheKey = () => 'hero-inside';
+  // The patch changes the program, so the cache key changes too.
+  // It builds on the material's own key, as world/dusk does.
+  m.customProgramCacheKey = () => key + '|inside';
   return m;
 }
 
@@ -1008,51 +1009,48 @@ function buildHero(main: Dome, tx: Painted): Built {
   const FLOOR_Y = DRUM_H - PIER_H, IN_R = DRUM_R - 0.36;
   const plaster = inside(std({ color: 0x8a867e, roughness: 0.9 }), 0.12);
   const floorMat = inside(std({ color: 0x3e3832, roughness: 0.75 }), 0.12);
-  const pierMat = inside(std({ color: 0x3b4741, roughness: 0.45, metalness: 0.25 }), 0.14);
+  const lampMat = inside(std({ color: 0x3b4741, roughness: 0.45, metalness: 0.25 }), 0.14);
   const wood = inside(std({ color: 0x6a4a30, roughness: 0.7 }), 0.12);
   // The cupola's inside sees some sky through the slit.
   const ribMat = inside(std({ color: 0x6b6d6e, roughness: 0.7 }), 0.35);
   inside(inner, 0.35);
-  const inWall = new Geo(), fl = new Geo(), pr2 = new Geo(), lad = new Geo(), rb = new Geo();
+  const inWall = new Geo(), fl = new Geo(), fix = new Geo(), lad = new Geo(), rb = new Geo();
   // The drum's inner wall is plastered.
   // It faces in.
   inWall.lathe([[IN_R, WALL_TOP + u(0.07)], [IN_R, FLOOR_Y]], 96);
   // The observing floor, boarded, and the room's skirting.
+  // The telescope's pier rises through it, south of the dome's axis.
+  // The floor lies under the eyepiece's lowest reach.
   fl.lathe([[IN_R, FLOOR_Y], [0, FLOOR_Y]], 96);
   fl.lathe([[IN_R, FLOOR_Y + u(0.15)], [IN_R - u(0.02), FLOOR_Y + u(0.15)], [IN_R - u(0.02), FLOOR_Y]], 96);
-  // The pier: a cast column on a concrete collar.
-  // The mount stands on its cap.
-  pr2.lathe([[0.62, FLOOR_Y], [0.62, FLOOR_Y + u(0.1)], [0.55, FLOOR_Y + u(0.12)], [0.5, FLOOR_Y + u(0.2)], [0.43, DRUM_H - u(0.12)],
-    [0.5, DRUM_H - u(0.1)], [0.5, DRUM_H], [0, DRUM_H]], 40);
-  // Ribs cast into the column stiffen it.
-  for (let k = 0; k < 8; k++) {
-    const a = k / 8 * 2 * Math.PI, h = DRUM_H - FLOOR_Y - u(0.4);
-    pr2.box(u(0.025), h, u(0.08), mat(0.47 * Math.sin(a), FLOOR_Y + u(0.2) + h / 2, -0.47 * Math.cos(a), -0.035, -a));
-  }
-  // The red work lamp hangs on the pier, facing the ladder.
+  // The red work lamp hangs low on the wall.
   // It sits low, so the glow fades up the cupola.
-  const LAMP_A = 200 * DEG, lampP = new Vector3(0.55 * Math.sin(LAMP_A), FLOOR_Y + 0.45, -0.55 * Math.cos(LAMP_A));
+  // The bulb stands just in front of its housing.
+  const LAMP_A = 160 * DEG, LAMP_R = IN_R - 0.1;
+  const lampP = new Vector3(LAMP_R * Math.sin(LAMP_A), FLOOR_Y + 0.5, -LAMP_R * Math.cos(LAMP_A));
   main.root.localToWorld(RED.uRedP.value.copy(lampP));
-  pr2.box(0.1, 0.08, 0.08, mat(lampP.x, lampP.y + 0.02, lampP.z, 0, -LAMP_A));
-  const redBulb = new Mesh(new SphereGeometry(0.03, 10, 6), new MeshBasicMaterial({ color: new Color(0.9, 0.04, 0.02) }));
-  redBulb.position.set(0.6 * Math.sin(LAMP_A), lampP.y, -0.6 * Math.cos(LAMP_A));
-  // The observing ladder: five oak treads, a top step, two rails.
+  fix.box(0.12, 0.1, 0.07, mat((LAMP_R + 0.07) * Math.sin(LAMP_A), lampP.y + 0.03, -(LAMP_R + 0.07) * Math.cos(LAMP_A), 0, -LAMP_A));
+  const redBulb = new Mesh(new SphereGeometry(0.03, 10, 6), new MeshBasicMaterial({ color: new Color(0.32, 0.02, 0.01) }));
+  redBulb.position.copy(lampP);
+  // The observing ladder stands against the wall, out of the telescope's way.
+  // Every part stays 2 units from the axes' crossing and under its tube.
+  // Five oak treads, a top step, two rails.
   {
-    const a = 205 * DEG, m = new Matrix4().makeRotationY(-a).multiply(mat(0, FLOOR_Y, -1.55));
-    const H = u(1.9), D = u(1.1);
+    const H = u(1.5), D = u(1), RC = 2 + D / 2;
+    const m = new Matrix4().makeRotationY(-205 * DEG).multiply(mat(0, FLOOR_Y, -RC));
     // Stringers climb from the front foot to the top step.
     // Posts hold the back.
     for (const sx of [-1, 1]) {
       const l = Math.hypot(H, D);
       lad.box(u(0.05), l, u(0.12), mat(sx * u(0.32), H / 2, 0, Math.atan2(-D, H)).premultiply(m));
-      lad.box(u(0.045), H + u(0.9), u(0.045), mat(sx * u(0.3), (H + u(0.9)) / 2, -D / 2 - u(0.1), 0).premultiply(m));
+      lad.box(u(0.045), H + u(0.6), u(0.045), mat(sx * u(0.3), (H + u(0.6)) / 2, -D / 2 - u(0.1), 0).premultiply(m));
     }
-    for (let k = 1; k <= 6; k++) {
-      const f = k / 6;
-      lad.box(u(0.62), u(0.035), k === 6 ? u(0.35) : u(0.2), mat(0, H * f, D / 2 - D * f + (k === 6 ? u(0.08) : 0)).premultiply(m));
+    for (let k = 1; k <= 5; k++) {
+      const f = k / 5;
+      lad.box(u(0.62), u(0.035), k === 5 ? u(0.35) : u(0.2), mat(0, H * f, D / 2 - D * f + (k === 5 ? u(0.08) : 0)).premultiply(m));
     }
     // A hand rail joins the posts at the top.
-    lad.box(u(0.64), u(0.04), u(0.04), mat(0, H + u(0.9), -D / 2 - u(0.1)).premultiply(m));
+    lad.box(u(0.64), u(0.04), u(0.04), mat(0, H + u(0.6), -D / 2 - u(0.1)).premultiply(m));
   }
   // Inside the cupola, ribs climb the gore seams.
   // Box girders run along the slit.
@@ -1082,7 +1080,7 @@ function buildHero(main: Dome, tx: Painted): Built {
   const parts: Object3D[] = [
     new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
     new Mesh(fx.build(), steel), new Mesh(dv.build(), enamel), new Mesh(dvBrass.build(), brass), ...pinions,
-    new Mesh(inWall.build(), plaster), new Mesh(fl.build(), floorMat), new Mesh(pr2.build(), pierMat), new Mesh(lad.build(), wood), redBulb, new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts, cupola,
+    new Mesh(inWall.build(), plaster), new Mesh(fl.build(), floorMat), new Mesh(fix.build(), lampMat), new Mesh(lad.build(), wood), redBulb, new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts, cupola,
   ];
   root.add(...parts);
 
@@ -1099,7 +1097,8 @@ function buildHero(main: Dome, tx: Painted): Built {
     const m = o.material as Material;
     if (seen.has(m) || !(m instanceof MeshStandardMaterial)) return;
     seen.add(m);
-    mats.push(inside(m, 0.5));
+    // The tube stands in the slit, so it sees much of the sky.
+    mats.push(inside(m, 0.7));
   });
   if (scope.glass.material instanceof MeshStandardMaterial) mats.push(scope.glass.material);
   for (const m of mats) duskPatch(m);

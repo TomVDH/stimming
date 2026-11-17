@@ -18,12 +18,12 @@ A failed model load shows the stage's `.fail` line.
 | `core/sky.ts` | Pure sky maths: sidereal time, alt/az |
 | `core/catalog.ts` | The star catalog decoder: `loadStars`, `Star` |
 | `core/clock.ts` | The sky clock: speed, trail threshold, the 1 s wake ease; injected time |
-| `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta, axis stepper |
-| `core/machine.ts` | The telescope machine: shutter, main dome, tube; `makeMachine`, `Phase`; `shut` for the `?cuts` review |
+| `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta; the heavy axis, a drive on a trapezoid with its load on a damped spring that settles at each stop (`stepAxis`, `brakeAxis`, `atRest`, `moveTime`, `paceFor`); the heavy shutter, 6 s on an S-curve with a bounce at each end stop (`stepShutter`, `SHUTTER_S`) |
+| `core/machine.ts` | The telescope machine: shutter, main dome, tube, each a heavy part from `core/dome.ts`; `makeMachine`, `Phase`, the limits `CUPOLA` and `TUBE`; `shut` for the `?cuts` review |
 | `core/pick.ts` | A tap picks the brightest star near it: `pickStar` |
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
 | `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
-| `core/sequence.ts` | The pick sequence's cut list, `cutAt`; the complex lights' level per phase, `lightLevel` |
+| `core/sequence.ts` | The pick sequence's cut list, timed from `SHUTTER_S`, `cutAt`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage |
 | `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the dusk's sunset glow; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |

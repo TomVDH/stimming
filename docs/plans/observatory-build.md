@@ -240,6 +240,15 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 - [ ] **Step 4:** Stills at 1280 and 375 at 0 s, 15 s, 30 s and 45 s; frame time at 375.
 - [ ] **Step 5: Gate.** Show Tom. **Commit** locally with his words.
 
+### Task 7q: The opening, earlier, longer, stars as streaks (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/opening.ts`, `observatory/src/sky/stars.ts`, `observatory/src/world/dusk.ts`, `observatory/src/sky/haze.ts`, `tests/observatory-opening.test.mjs`.
+
+- [ ] **Step 1:** Test then change the timeline: 70 s, from the sun about 3° above the true horizon (behind the western ridge, so only its light shows) to 18° below; the sky clock still ends at real now at speed 1, under `TRAIL_SPEED`.
+- [ ] **Step 2:** The golden-hour light at the start: gold on the domes, the drums, the crowns and the east faces of the ridges, a warm sky in the west, easing into the dusk and the night look.
+- [ ] **Step 3:** Stars as streaks: each star draws along its own arc round the pole, with a length set by the sky clock's speed (copied idea: `railgun/src/sky/k2-sky.glsl`, the star field sampled along its recent turn); zero length at speed 1, so the night frame is unchanged. The stars come out earlier and brighter, brightest first.
+- [ ] **Step 4:** Stills at 0, 15, 30, 45, 60 and 70 s at 1280, and 0 and 45 s at 375; frame time. **Gate:** ship to main; Tom judges it live.
+
 ### Task 7c: Far mountains (Tom, 2026-11-17)
 
 **Files:** Create `observatory/src/world/far.ts` (copied and trimmed from `railgun/src/world/farcountry.ts` where it fits). Modify `observatory/src/sky/haze.ts` only to receive the ridges.
@@ -320,6 +329,8 @@ Tom: "we want slowly more mechanical (with inertia) movement of all parts of the
 ### Task 7g: The lens cut (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
+
+Tom, 2026-11-17: "in that last cut -- as it is still pivoting up -- we want a closer cut on the telescope so its glass reflects the starry sky clearly (with distortion etc bc its glass...)". So the lens shot cuts in close while the tube is still pivoting up; the glass shows the real star field clearly, bent by the curve of the lens (stronger toward the rim), sliding across the glass as the tube moves; then the tube stops and the shot holds.
 
 - [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
 - [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it, pivots slowly in place, stops, and the shot holds about 1.5 s before the cut back wide. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.

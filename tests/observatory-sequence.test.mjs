@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CUTS, cutAt, lightLevel, lightGoal, cutsTotal, startAt, makeLocks, lens } from '../observatory/src/core/sequence.ts';
 import { makeMachine } from '../observatory/src/core/machine.ts';
+import { SHUTTER_S } from '../observatory/src/core/dome.ts';
 
 const total = CUTS.reduce((s, c) => s + c.dur, 0);
 // Steps lightLevel until it reaches the goal; returns the seconds it took.
@@ -12,10 +13,11 @@ const until = (phase, from, goal, dt = 0.1, max = 60) => {
   return { v, t };
 };
 
-test('CUTS holds 4 cuts that run 7.5 to 8 s with no gap', () => {
+test('CUTS holds 4 cuts that run about 10 s with no gap', () => {
+  // The heavy shutter made the sequence 2 s longer than the old 8 s.
   // The lens cut joins later as a fifth cut of about 2 s.
   assert.equal(CUTS.length, 4, `got ${CUTS.length} cuts`);
-  assert.ok(total >= 7.5 && total <= 8 + 1e-9, `total ${total}`);
+  assert.ok(total >= 9.5 && total <= 10.5 + 1e-9, `total ${total}`);
   assert.equal(CUTS[0].at, 0);
   for (let i = 1; i < CUTS.length; i++) {
     assert.ok(Math.abs(CUTS[i].at - (CUTS[i - 1].at + CUTS[i - 1].dur)) < 1e-9, `gap before cut ${i}`);
@@ -28,8 +30,14 @@ test('each cut is a locked camera: one field of view, no zoom', () => {
     assert.ok(Number.isFinite(c.fov) && c.fov >= 4 && c.fov <= 40, `${c.shot}: fov ${c.fov}`);
   }
 });
-test('each cut holds a beat: 2 to 2.6 s', () => {
-  for (const c of CUTS) assert.ok(c.dur >= 2 - 1e-9 && c.dur <= 2.6, `${c.shot}: ${c.dur} s`);
+test("the shutter cuts cover the shutter's travel, half each; the slew cuts hold 2 to 2.6 s", () => {
+  const open = CUTS.filter(c => c.phase === 'open');
+  assert.equal(open.length, 2);
+  assert.equal(open[0].at, 0);
+  for (const c of open) assert.ok(Math.abs(c.dur - SHUTTER_S / 2) < 1e-9, `${c.shot}: ${c.dur} s`);
+  assert.ok(Math.abs(open[1].at + open[1].dur - SHUTTER_S) < 1e-9, 'the open cuts end with the travel');
+  assert.equal(CUTS.find(c => c.phase === 'slew').at, SHUTTER_S);
+  for (const c of CUTS.filter(c => c.phase === 'slew')) assert.ok(c.dur >= 2 - 1e-9 && c.dur <= 2.6, `${c.shot}: ${c.dur} s`);
 });
 // A star far round from the slit, so the slew outlasts the cuts.
 const far = { hip: 1, ra: 0, dec: 0, mag: 1, ci: 0, dist: 1, spect: '', name: '', bayer: '' };
@@ -39,15 +47,22 @@ test('the real machine: each cut shows the phase it names; the slew starts on th
   m.pick(far);
   assert.equal(m.phase, 'open');
   const dt = 0.01;
-  let t = 0, slewT = null;
+  let slewT = null;
   const seen = CUTS.map(() => new Set());
-  while (t < cutsTotal) {
-    const c = cutAt(t);
+  let shut = null, open = null;
+  // The time counts steps, so float sums never shift a cut boundary.
+  for (let i = 0; i * dt < cutsTotal; i++) {
+    const c = cutAt(i * dt);
     seen[CUTS.indexOf(c)].add(m.phase);
     m.step(dt, sky);
-    t += dt;
+    const t = (i + 1) * dt;
     if (slewT === null && m.phase === 'slew') slewT = t;
+    // The shutter moves from the first frame and is open when the slew starts.
+    if (shut === null) shut = m.shutter01;
+    if (open === null && m.phase === 'slew') open = m.shutter.p;
   }
+  assert.ok(shut > 0 && shut < 0.01, `first frame ${shut}`);
+  assert.equal(open, 1);
   const first = CUTS.find(c => c.phase === 'slew');
   assert.ok(first, 'a slew cut');
   assert.ok(Math.abs(slewT - first.at) <= dt + 1e-9, `slew at ${slewT}, first slew cut at ${first.at}`);
