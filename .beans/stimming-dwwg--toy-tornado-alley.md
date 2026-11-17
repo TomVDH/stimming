@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-16T23:40:18Z
+updated_at: 2026-11-17T00:03:13Z
 parent: stimming-oh7b
 ---
 
@@ -87,3 +87,5 @@ Built; waits for the checkpoint with Tom.
 - Taper and bands (Tom, 2026-11-16: "ensure smooth and realistic taper of clouds down to funnel", "i see bands of colour"). One horn joins the funnel to the deck: a quarter-ellipse outline (hornR), upright where it leaves the funnel, level where it meets the wall cloud's flat underside at uH. The funnel's own layers widen along it, so funnel and horn share one outline and no lip shows; a solid takes over up high and fades inside the wall cloud. The neck SDF, the bowl under the wall and the F lowering are gone. Bands removed: the far storm's plates stay on its flank (they striped the base's underside), the horn takes the deck's own light (stormLit at the underside just above it; cloudTone ran three times too dark), the sky under the base keeps one hue (the navy strip is gone), the rain shaft reaches the lab's ground as a soft grey veil (it floated as a green box), the funnel's shade takes the warm horizon light (it went navy), and the march's first steps carry a full step of jitter (wood grain). The wall cloud is always wider than the funnel's top, and the near region grows on a wide lens. The camera keeps the horn in frame at low F (frameK floor 0.76). Checked F0 to F5 at 24, 35, 50 and 85 mm, and at noon backlit; console clean.
 
 - Shared lab: <https://claude.ai/artifact/4rQ7D568vJZ2DSwGnwRpFf> (private until Tom shares it). One page built from `tornado/lab.html`, `lab.js`, `shared/gl.js`, GRADE and OUTPUT; phones open with the knobs folded. Republish after a lab change.
+
+- Taper follows F, no puck (Tom, 2026-11-16: "the upper taper seems to stay as wide and doesnt seem to correspond with F scale", "we cant have a puck of taper on the cloud deck and then the funnel come from it"). The lowered wall-cloud block is gone; the deck is one flat base, DECK (0.3 storm km) over the funnel's top. The horn is now part of the storm's own shape (hornDist in stormShape, joined to the base by a smooth minimum), so the deck's lumps and light run down it with no edge. Its flare is a share of the funnel's top radius (1.4 at F0 to 0.8 at F5), so it widens step by step with F; its outline is a 1.6 superellipse, upright at the funnel, level at the deck. Low down it lies inside the funnel's body, so the deck shows only where the horn flares past the funnel. On the horn the base's ragged noise eases (most by the funnel) and the light is the underside's. F0 has no horn. The near storm and the shell overlap at their seam (shellOff). Checked F0 to F5 at 24, 50 and 85 mm and at noon; console clean. Left: faint arcs round the horn's rim at 24 mm, and a tone step where the light funnel enters the dark horn at 85 mm.

@@ -103,7 +103,7 @@ vec2 axisAt(float h) {
   o += vec2(sin(u * 3.0 + uTime * 0.23), cos(u * 2.3 + uTime * 0.19)) * uSway * u * (0.4 + u);
   return o;
 }
-// The funnel's radius at a height; the last stretch spreads into the wall cloud.
+// The funnel's radius at a height; the last stretch spreads toward the deck.
 float radiusAt(float h) {
   float u = clamp(h / uH, 0.0, 1.0);
   return uR0 * mix(1.0, uFlare, pow(u, uProf)) * (1.0 + 0.15 * smoothstep(0.85, 1.0, u));
@@ -171,28 +171,55 @@ float sheathN(float ang, float h, float x, float R, float rk, int idx, int oct) 
   // Erosion: fine detail eats into the edges of each billow.
   return oct > 2 ? n - (1.0 - n) * N(c * 3.7 + 7.0) * 0.45 : n;
 }
-/* ---------- the horn: where the funnel flares up into the wall cloud ---------- */
-// The wall cloud's radius in storm km: 2.1, or wider than the funnel's top on a wide lens.
-float wallR() { return max(2.115, radiusAt(uH) * 1.7 * 0.001 * uKs); }
+/* ---------- the horn: where the funnel flares up into the deck ---------- */
+// The funnel's top, without its sway: the storm hangs from it at every F.
+vec2 topXZ() { return vec2(uLean, -0.3 * uLean); }
+// The rotating zone round the tornado, in storm km: small over a rope, broad over a wedge.
+// It stays wider than the funnel's top on a wide lens. It sizes the horn's cap and the near storm.
+float wallR() { return max(mix(0.9, 2.4, smoothstep(0.0, 1.0, uFk)), radiusAt(uH) * 1.7 * 0.001 * uKs); }
 // The same radius in lab metres.
 float wallRadLab() { return wallR() * 1000.0 / uKs; }
-// The flare's width past the funnel's top radius: wide over a rope, narrow over a wedge.
-// It stays inside the wall cloud: the horn never reaches past the deck's lowered part.
+// The deck's underside sits this far over the funnel's top, in storm km. No lowered block: the horn is the taper.
+const float DECK = 0.3;
+// The deck's underside over the axis, in lab metres.
+float deckY() { return uH + DECK * 1000.0 / uKs; }
+// The flare's width past the funnel's top radius: a share of it, so the horn grows with F.
+// It stays inside the rotating zone.
 float hornA() {
   float Rt = radiusAt(uH);
-  return clamp(Rt * mix(2.2, 0.6, smoothstep(0.0, 0.9, uFk)) + 30.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
+  return clamp(Rt * mix(1.4, 0.8, smoothstep(0.0, 1.0, uFk)) + 20.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
 }
-// How far the horn runs on up into the wall cloud: in storm km, so it scales with the deck.
-float hornTop() { return uH + 250.0 / uKs; }
-// The horn's height: about its width, so its curve reads round. A low bulge at F0.
-float collarLen() { return clamp(hornA() * 1.2, 60.0, uH * 0.35) * mix(0.35, 1.0, smoothstep(0.0, 0.5, uCond)); }
+// How far under the funnel's top the flare starts: about the flare's width.
+float collarLen() { return clamp(hornA() * 1.2, 60.0, uH * 0.35); }
+// The horn's strength: none at F0, where the deck is storm cloud only; full once the funnel forms.
+float hornOn() { return smoothstep(0.0, 0.35, uCond); }
+// Where the flare starts. Below F1 it is a shallow sag under the deck; it reaches down as the funnel forms.
+float hornBot() { return mix(deckY() - 0.6 * (deckY() - uH), uH - collarLen(), smoothstep(0.0, 0.5, uCond)); }
 // The horn's radius at a height, with no noise. s returns how far up the horn it is, 0 to 1.
-// The outline is a quarter ellipse: upright where it leaves the funnel, level where it meets the deck at uH.
+// One trumpet from the funnel to the deck: upright where it leaves the funnel, level where it meets the deck.
+// A superellipse of 1.6 flares sooner than a circle, so the curve spreads up the whole horn.
+// The horn's values for this frame, set once at the start of main.
+float gA, gY0, gDeck, gOn, gRtopKm;
+void hornInit() {
+  gA = hornA(); gY0 = hornBot(); gDeck = deckY(); gOn = hornOn();
+  gRtopKm = (radiusAt(uH) + gA) * 0.001 * uKs;
+}
 float hornR(float y, out float s) {
-  float Lc = collarLen();
-  s = (y - (uH - Lc)) / Lc;
+  s = (y - gY0) / (gDeck - gY0);
   float sc = clamp(s, 0.0, 1.0);
-  return radiusAt(min(y, uH)) + hornA() * (1.0 - sqrt(1.0 - sc * sc));
+  return radiusAt(min(y, uH)) + gA * (1.0 - pow(1.0 - pow(sc, 1.6), 0.625));
+}
+// The horn's widening per metre of height, for its distance field.
+float hornSlope(float s) {
+  float sc = clamp(s, 0.001, 0.995);
+  return gA * pow(sc, 0.6) * pow(1.0 - pow(sc, 1.6), -0.375) / (gDeck - gY0);
+}
+// The horn as a distance in lab metres: negative inside.
+// Low down it lies inside the funnel's body, so the deck shows only where the horn flares past the funnel.
+float hornDist(float y, float r) {
+  float s, R = hornR(y, s), k = hornSlope(s);
+  R -= radiusAt(min(y, uH)) * 0.3;
+  return max((r - R) / sqrt(1.0 + k * k), gY0 - y);
 }
 // Condensation density at p, 0 to about 2. u returns the height over the base.
 // oct sets the noise detail: 4 for the view, 2 for the shadow rays.
@@ -232,40 +259,12 @@ float funnelD(vec3 p, out float u, int oct) {
     d += wk * smoothstep(cov, cov + 0.14, n) * (0.6 + 0.4 * n) * mix(0.9, 0.35, fk);
   }
   // The tip thins as it narrows; the top runs into the base.
-  // The top fades inside the collar, which carries it on up into the wall cloud.
+  // The top fades inside the horn, which carries it on up into the deck.
   d *= smoothstep(0.0, 0.45, tap) * (1.0 - smoothstep(uH - collarLen() * 0.35, uH + 60.0, h));
   return d;
 }
 // Extinction per metre for a density: thin funnels get denser, so a rope still reads.
 float funnelSig(float d, float R) { return d * 7.0 / max(R, 5.0); }
-// The horn's cloud: a solid of turning, its edge torn by the outer sheath's spinning noise.
-// It runs on above uH into the wall cloud and fades there, so the deck overlaps it with no gap.
-// s returns how far up the horn the point is; Rc its radius there.
-float collarD(vec3 p, out float s, out float Rc) {
-  Rc = hornR(p.y, s);
-  float Lc = collarLen();
-  if (s < 0.0 || p.y > hornTop()) return 0.0;
-  vec2 q = p.xz - axisAt(p.y);
-  float r = length(q);
-  if (r > Rc * 1.3) return 0.0;
-  float n = sheathN(atan(q.y, q.x), p.y, 1.0, Rc, 1.0, 5, 4);
-  float edge = Rc * (1.0 + 0.24 * (n - 0.5));
-  float d = smoothstep(edge, edge - Rc * 0.1, r);
-  // The funnel's own layers fill the lower horn; this solid takes over up high and fades in the wall cloud.
-  return d * smoothstep(0.3, 0.75, s) * (1.0 - smoothstep(uH + 80.0 / uKs, hornTop(), p.y)) * (0.55 + 0.6 * n);
-}
-// Optical depth toward the sun through the horn's mean shape: its shaded side goes dark.
-float hornShade(vec3 p) {
-  float Ls = hornA() * 0.25, od = 0.0;
-  for (int k = 0; k < 3; k++) {
-    vec3 q = p + uSun * Ls * (float(k) + 0.5);
-    float sh, Rc = hornR(q.y, sh);
-    if (sh < 0.0 || q.y > hornTop()) continue;
-    float m = smoothstep(Rc, Rc * 0.8, length(q.xz - axisAt(q.y))) * smoothstep(0.3, 0.75, sh);
-    od += m * 14.0 / max(Rc, 5.0) * Ls;
-  }
-  return od;
-}
 // Henyey-Greenstein phase, scaled so that isotropic is 1.
 float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
 
@@ -327,18 +326,18 @@ vec3 skyCol(vec3 rd) {
 }
 /* ---------- the storm: the shot's blockout supercell ---------- */
 // Lifted from tornado/main.js: the same shapes, plates, scud and light, in km.
-// Storm space is the shot's camera space; the wall cloud sits over the lab's axis.
+// Storm space is the shot's camera space; WALL sits over the lab's axis.
 const vec2 TOWER = vec2(-4.3, -23.0);
 const vec2 WALL = vec2(-0.9, -8.0);
 const vec2 CORE = vec2(6.5, -19.0);
-// The base, in km: the wall cloud's underside sits at the funnel's top, uH.
+// The base, in km: the deck's underside, DECK over the funnel's top.
 const float BASE = 1.4;
 const vec2 SHELF = vec2(1.0, -13.0);
 const vec2 SHELF_R = vec2(15.0, 9.0);
 const float STORM = 0.85;
-// The near storm's reach round the wall cloud, in storm km.
+// The near storm's reach round the tornado, in storm km.
 const float NEAR_TOP = BASE + 1.3;
-// A wide lens sees further round the wall cloud: the region grows so its edge stays out of frame.
+// A wide lens sees further round the tornado: the region grows so its edge stays out of frame.
 float nearR() { return max(max(2.8, wallR() * 1.33), mix(4.3, 2.8, smoothstep(1.1, 2.0, uFoc))); }
 // The shot's noise names, on the lab's volume: one cell per unit.
 // N has four cells per unit; a quarter gives the shot's one cell per unit.
@@ -362,39 +361,45 @@ float stormShape(vec3 p) {
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, g);
-  // The wall cloud: a lowered block under the base. Its underside sits level with the funnel's top.
-  float wl = BASE - 0.2;
-  // The underside is flat over the horn, then rises gently toward the rim: no crease, no ring.
-  float rwl = wallR(), rr = length(p.xz - WALL) / rwl;
-  float rH = min((radiusAt(uH) + hornA()) / wallRadLab(), 0.95);
-  float wall = max(length(p.xz - WALL) - rwl * (1.0 - 0.25 * smoothstep(BASE, 0.8, p.y)), max(wl - 0.35 + 0.3 * smoothstep(rH, 1.0, rr) - p.y, p.y - wl - 0.35));
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
-  d = smin(d, wall, 0.6);
+  // The horn: the deck drawn down into the funnel, one solid of turning.
+  // A smooth minimum joins it to the base, so the deck's lumps and light run on down it.
+  vec2 qw = p.xz - WALL;
+  if (gOn > 0.0 && dot(qw, qw) < pow(gRtopKm * 1.6 + 0.3, 2.0)) {
+    float y = uH + (p.y - (BASE - DECK)) * 1000.0 / uKs;
+    float r = length(qw * 1000.0 / uKs + topXZ() - axisAt(y));
+    float dh = hornDist(y, r) * 0.001 * uKs;
+    d = smin(d, mix(4.0, dh, gOn), 0.12);
+  }
   return d;
 }
 // Declared here, defined with the merge below.
 float nearW(vec3 ps);
+float shellOff(vec3 ps);
 float stormD(vec3 p) {
   float d = stormShape(p);
   if (d > 2.5) return d;
+  // On the horn the base's ragged noise eases, so the trumpet stays a trumpet.
+  // Low on the horn, by the funnel, it eases most; up by the deck it keeps the deck's texture.
+  float calm = 1.0 - gOn * (1.0 - smoothstep(gRtopKm * 1.3, gRtopKm * 2.4, length(p.xz - WALL))) * mix(0.85, 0.35, smoothstep(BASE - 0.5, BASE - 0.05, p.y)) * (1.0 - smoothstep(BASE - 0.05, BASE + 0.3, p.y));
   // Lumpy towers, a smoother anvil.
   float amp = mix(1.1, 0.45, smoothstep(9.0, 12.0, p.y)) * mix(0.55, 1.0, smoothstep(BASE + 0.5, BASE + 2.5, p.y));
   vec3 n = p * 0.75 + vec3(0.0, -uTime * 0.006, 0.0);
-  d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp;
+  d += (fbm3(n) + 0.0625 * vn3(n * 8.3) - 0.5) * amp * calm;
   // The base: stacked plates on its flank, turning round the updraft.
   // Up close they read as contour bands: they stay off the base's underside and away from the tornado.
   float flank = smoothstep(BASE + 0.4, BASE + 0.8, p.y) * (1.0 - smoothstep(BASE + 1.6, BASE + 2.4, p.y)) * smoothstep(nearR(), nearR() * 2.2, length(p.xz - WALL));
   float turn = atan(p.z - TOWER.y, p.x - TOWER.x);
   d += 0.09 * flank * sin(p.y * 15.0 + turn * 2.0 + 1.3 * vn3(p * 1.4));
   // Fine lumps, for the near base.
-  d += (vn3(p * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y));
+  d += (vn3(p * 4.3) - 0.5) * 0.14 * (1.0 - smoothstep(BASE + 2.0, BASE + 4.0, p.y)) * calm;
   // Ragged scud hangs under the base, with Worley lumps in it.
-  float low = 1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y);
+  float low = (1.0 - smoothstep(BASE - 0.2, BASE + 0.4, p.y)) * calm;
   d += low * (vn3(p * 3.1 + vec3(uTime * 0.01, 0.0, 0.0)) - 0.45) * 0.55;
   // Rounded lumps hang from the underside, in two sizes.
-  float under = 1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y);
+  float under = (1.0 - smoothstep(BASE - 0.1, BASE + 0.7, p.y)) * mix(1.0, calm, 0.6);
   return d - under * ((W(p * 2.6 + 1.7) - 0.35) * 0.32 + (W(p * 8.0) - 0.35) * 0.16);
 }
 // The colour of one storm sample.
@@ -404,6 +409,8 @@ vec3 stormLit(vec3 p, float d) {
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
   // A step up: deeper cloud above means an underside, out of the sun.
   float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0);
+  // The horn lies under the deck: it takes the underside's shade, not the flank's light.
+  under = max(under, gOn * (1.0 - smoothstep(gRtopKm * 1.3, gRtopKm * 2.4, length(p.xz - WALL))) * (1.0 - smoothstep(BASE - 0.1, BASE + 0.3, p.y)));
   lit *= 1.0 - 0.9 * under;
   float up = smoothstep(0.6, 9.0, p.y);
   // The core: between the updraft and the rain, low down.
@@ -429,7 +436,7 @@ vec4 storm(vec3 ro, vec3 rd, float jit, out float tHit) {
     // The soft edge and the inner step grow with distance: crisp near, smooth far.
     float soft = max(0.025, t * 0.005);
     // Round the tornado the main march draws the storm as volume: the shell fades out there.
-    float keep = 1.0 - nearW(p);
+    float keep = 1.0 - shellOff(p);
     if (d < soft && outside) { outside = false; t += (0.03 + 0.006 * t) * jit; continue; }
     if (d < soft) {
       if (tHit > 119.0 && keep > 0.5) tHit = t;
@@ -447,18 +454,23 @@ vec2 stormCyl(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1) {
   return cylinder(ro - vec3(c.x, 0.0, c.y), rd, r, y0, y1);
 }
 /* ---------- the merge: near the tornado the storm is density in the funnel's own volume ---------- */
-// The funnel's top, without its sway: the storm hangs from it at every F.
-vec2 topXZ() { return vec2(uLean, -0.3 * uLean); }
-// Lab metres to storm km: the funnel's top meets the wall cloud's underside.
+// Lab metres to storm km: the funnel's top sits DECK under the deck.
 vec3 toStorm(vec3 p) {
   vec2 q = (p.xz - topXZ()) * 0.001 * uKs;
-  return vec3(WALL.x + q.x, BASE - 0.55 + (p.y - uH) * 0.001 * uKs, WALL.y + q.y);
+  return vec3(WALL.x + q.x, BASE - DECK + (p.y - uH) * 0.001 * uKs, WALL.y + q.y);
 }
 // 1 where the storm is volume near the tornado; 0 where the shell backdrop draws it.
 float nearW(vec3 ps) {
   float r = length(ps.xz - WALL);
   float nr = nearR();
-  return (1.0 - smoothstep(nr * 0.7, nr, r)) * (1.0 - smoothstep(NEAR_TOP - 0.4, NEAR_TOP, ps.y));
+  return (1.0 - smoothstep(nr * 0.8, nr, r)) * (1.0 - smoothstep(NEAR_TOP - 0.3, NEAR_TOP, ps.y));
+}
+// Where the shell backdrop gives way to the volume. It goes before the volume fades,
+// so the two overlap: no ring of thin cloud where both fade at once.
+float shellOff(vec3 ps) {
+  float r = length(ps.xz - WALL);
+  float nr = nearR();
+  return (1.0 - smoothstep(nr * 0.55, nr * 0.8, r)) * (1.0 - smoothstep(NEAR_TOP - 0.7, NEAR_TOP - 0.3, ps.y));
 }
 // The near storm's density at a lab point, 0 to 1. ps and d return its storm point and distance.
 // It turns with the funnel's outer sheath round the axis, and holds still toward its edge.
@@ -469,15 +481,8 @@ float nearCloud(vec3 p, out vec3 ps, out float d) {
   vec2 qr = mix(q, mat2(cos(a), sin(a), -sin(a), cos(a)) * q, k);
   ps = toStorm(vec3(qr.x + topXZ().x, p.y, qr.y + topXZ().y));
   d = stormD(ps);
-  // Inside the horn the horn's cloud rules: the deck's scud gives way there.
-  // It gives way only where the horn is dense, so the two overlap with no gap.
-  float sb, Rh = hornR(p.y, sb);
-  float rp = length(p.xz - axisAt(p.y));
-  float bell = sb > 0.0 ? smoothstep(Rh * 0.95, Rh * 0.75, rp) * (1.0 - smoothstep(0.85, 1.0, sb)) * smoothstep(0.0, 0.3, sb) : 0.0;
-  // Round the horn the deck's edge goes soft, so its lumps blend into the horn.
-  float soft = mix(0.035, 0.07, smoothstep(Rh * 2.0, Rh, rp));
   // A soft shell turns the distance into density.
-  return smoothstep(soft, -soft, d) * nearW(ps) * (1.0 - bell);
+  return smoothstep(0.035, -0.035, d) * nearW(ps);
 }
 // The storm's shade on a lab point: its shape along the sun ray.
 // Two steps near the point, then where the ray meets the base's height and a little past it:
@@ -486,7 +491,7 @@ float cloudShade(vec3 p) {
   float od = 0.0;
   od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 80.0))) * 80.0;
   od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * 260.0))) * 180.0;
-  float L = (max(uH - p.y, 0.0) + 60.0) / max(uSun.y, 0.03);
+  float L = (max(gDeck - p.y, 0.0) + 60.0) / max(uSun.y, 0.03);
   if (L < 20000.0) {
     od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * L))) * 300.0;
     od += smoothstep(0.06, -0.06, stormShape(toStorm(p + uSun * (L + 400.0)))) * 300.0;
@@ -495,7 +500,7 @@ float cloudShade(vec3 p) {
 }
 // How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
 // The ramp eases at both ends, so the tone has no step at either end.
-float topKAt(float h) { return smoothstep(uH - collarLen() * 1.3, uH + 40.0, h); }
+float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0) * 0.25, gDeck, h); }
 vec3 groundCol(vec3 P, float t) {
   float n = fbm(vec3(P.x * 0.01, 0.0, P.z * 0.03), 3);
   vec3 alb = mix(vec3(0.3, 0.2, 0.08), vec3(0.5, 0.37, 0.15), n);
@@ -506,6 +511,7 @@ vec3 groundCol(vec3 P, float t) {
 }
 
 void main() {
+  hornInit();
   vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
@@ -549,9 +555,9 @@ void main() {
   // One volume march through two regions: A, the funnel's cylinder; C, the near storm round it.
   vec3 o3 = vec3(topXZ().x, 0.0, topXZ().y);
   float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + hornA()) * 1.3) + uLean + uSway * 2.0 + 140.0;
-  vec2 cy = cylinder(ro, rd, Rb, 0.0, hornTop() + 20.0);
+  vec2 cy = cylinder(ro, rd, Rb, 0.0, gDeck + 60.0);
   float tA0 = cy.y > 0.0 ? cy.x : 1e9, tA1 = cy.y > 0.0 ? cy.x + cy.y : -1.0;
-  vec2 cc2 = cylinder(ro - o3, rd, nearR() * 1000.0 / uKs, uH - 200.0, uH + (NEAR_TOP - BASE + 0.55) * 1000.0 / uKs);
+  vec2 cc2 = cylinder(ro - o3, rd, nearR() * 1000.0 / uKs, uH - 200.0, uH + (NEAR_TOP - BASE + DECK) * 1000.0 / uKs);
   float tC0 = cc2.y > 0.0 ? cc2.x : 1e9, tC1 = cc2.y > 0.0 ? cc2.x + cc2.y : -1.0;
   float tEnd = min(max(tA1, tC1), tMax);
   vec3 acc = vec3(0.0);
@@ -595,24 +601,19 @@ void main() {
         st = r < Rout ? fine : min(dtv, max((r - Rout) * 0.8, fine));
         float u;
         float dc = r < Rout ? funnelD(p, u, 4) : 0.0;
-        float cs, Rc;
-        float dcol = uDbg > 2.5 && uDbg < 3.5 ? 0.0 : collarD(p, cs, Rc);
-        // In the bell, steps follow its own size.
-        if (dcol > 0.0) st = min(st, clamp(Rc * 0.04, 0.5, 20.0));
         u = clamp(p.y / uH, 0.0, 1.0);
         float d, w;
         vol(p, d, w);
-        float sc = funnelSig(dc, R) + funnelSig(dcol, Rc) * 2.0, sd = d * 0.014, sw = w * 0.0012;
+        float sc = funnelSig(dc, R), sd = d * 0.014, sw = w * 0.0012;
         if (sc + sd + sw > 1e-6) {
           // Sunlight through the funnel, the dust and, near the top, the storm above.
-          // Up the collar the tone turns to the storm's own.
+          // Up the horn the tone turns to the storm's own.
           // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
           float topK = max(topKAt(p.y), 1.0 - smoothstep(0.0, 0.5, uCond));
-          float od = sunDepth(p, R) + cloudShade(p) + (dcol > 0.0 || topK > 0.0 ? hornShade(p) : 0.0);
+          float od = sunDepth(p, R) + cloudShade(p);
           vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
-          // Sky light falls off with depth into the cloud: the funnel's or the horn's, by their shares.
-          float Rl = dcol > 0.0 ? mix(R, Rc, funnelSig(dcol, Rc) * 2.0 / sc) : R;
-          float depth = max(0.0, 1.6 - r / Rl);
+          // Sky light falls off with depth into the funnel.
+          float depth = max(0.0, 1.6 - r / R);
           // Under the base the sky light comes mostly from the warm horizon, the same light as the deck's.
           vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
           vec3 ambL = ambC * (0.3 + 0.55 * u) * exp(-depth * 1.6);
@@ -622,8 +623,8 @@ void main() {
           alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
           vec3 fc3 = alb * (sunL * 0.6 + ambL * 0.8);
           // Near the top the funnel takes the storm's own tone: it darkens up into the wall cloud.
-          // Up the horn the cloud takes the light of the deck's underside just above it, so no seam shows.
-          if (topK > 0.0) { vec3 pt = toStorm(p); pt.y = max(pt.y, BASE - 0.5); fc3 = mix(fc3, stormLit(pt, stormD(pt)), topK); }
+          // Up the horn the cloud takes the light of the deck's hanging lumps just above it, so no seam shows.
+          if (topK > 0.0) { vec3 pt = toStorm(p); pt.y = max(pt.y, BASE - 0.12); fc3 = mix(fc3, stormLit(pt, stormD(pt)), topK); }
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.21) * (ambC * 0.7 + uSunCol * exp(-od) * 0.05);
           float hzF = 1.0 - exp(-t / 30000.0);
