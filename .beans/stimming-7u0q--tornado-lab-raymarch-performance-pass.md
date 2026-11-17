@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T04:53:38Z
-updated_at: 2026-11-17T05:01:45Z
+updated_at: 2026-11-17T05:10:30Z
 parent: stimming-dwwg
 ---
 
@@ -37,3 +37,7 @@ Port of spike-bake: the far storm, ground, gloom, rain veil, and (outside the fu
 
 ## Step 2: storm shadow
 A per-pixel distance test saved nothing: a pixel group runs in lockstep. The lookup now runs once per eight steps by step count, which a group shares. Best of 10 interleaved: F1 9.3 vs 8.8, F2.5 12.5 vs 12.7, F4.5 19.5 vs 22.1 ms (noise about ±0.5). Same picture (mean difference 0.6 of 255). GPU timer queries swing as much as wall time on this shared GPU.
+
+## Step 4: interleaved volume (Tom: "Yes, commit it")
+Each frame marches 1 pixel of each 2×2 block (4-frame cycle) into a quarter target. A resolve pass keeps the other 3 from history, clamped to the nearest fresh samples, so the spin leaves no ghost. A fresh pixel takes 1 − (1 − blend)⁴. The final pass lays the volume over the baked backdrop. ?full marches every pixel. Paused, against ?full at the same resolution: mean difference 0.6, bias under 0.2 of 255.
+The default Resolution goes from 0.5 to 0.7. Best of 12, against the last commit at 0.5: F1 10.9 → 8.1, F2.5 13.6 → 10.4, F4.5 21.4 → 14.4 ms. At 0.5 interleaved: about 5.3 / 6.5 / 8.5 ms. Clip: docs/qa/tornado-perf/interleave-F2.5-sbs.mp4 (left: last commit at 0.5; right: interleaved at 0.7).

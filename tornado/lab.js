@@ -68,7 +68,9 @@ uniform sampler2D tPrev;
 // The baked backdrop: colour, and in alpha how far the volume may reach.
 uniform sampler2D tBg;
 // 0 draws all; 1 bakes the backdrop; 2 reads the baked backdrop.
+// 3 reads the bake and marches one pixel of each 2 by 2 block: out, the volume and its transmittance.
 uniform int uMode;
+uniform ivec2 uSub;
 uniform vec2 uRes, uJit;
 uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
@@ -523,7 +525,9 @@ vec3 groundCol(vec3 P, float t) {
 
 void main() {
   hornInit();
-  vec2 fc = gl_FragCoord.xy + uJit;
+  // In mode 3 a texel stands for one pixel of a 2 by 2 block; uSub picks which.
+  ivec2 pix = uMode == 3 ? ivec2(gl_FragCoord.xy) * 2 + uSub : ivec2(gl_FragCoord.xy);
+  vec2 fc = (uMode == 3 ? vec2(pix) + 0.5 : gl_FragCoord.xy) + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
   vec3 rd = normalize(vec3(s, -uFoc));
@@ -532,8 +536,8 @@ void main() {
   vec3 bg;
   float tMax;
   float jit = hash(fc + fract(uTime * 7.31) * 113.0);
-  if (uMode == 2) {
-    vec4 bk = texelFetch(tBg, ivec2(gl_FragCoord.xy), 0);
+  if (uMode >= 2) {
+    vec4 bk = texelFetch(tBg, pix, 0);
     bg = bk.rgb;
     tMax = bk.a;
   } else if (rd.y < 0.0) {
@@ -573,6 +577,7 @@ void main() {
   vec2 cy = cylinder(ro, rd, Rb, 0.0, gDeck + 60.0);
   float tA0 = cy.y > 0.0 ? cy.x : 1e9, tA1 = cy.y > 0.0 ? cy.x + cy.y : -1.0;
   // A baked pixel with alpha below zero is whole: its ray misses the funnel's column.
+  if (uMode == 3 && tMax < 0.0) { outC = vec4(0.0, 0.0, 0.0, 1.0); return; }
   if (uMode == 2 && tMax < 0.0) {
     vec3 prevW = texture(tPrev, gl_FragCoord.xy / uRes).rgb;
     outC = vec4(mix(prevW, bg, uBlend), 1.0);
@@ -580,7 +585,7 @@ void main() {
   }
   // The bake keeps only the backdrop where the ray meets the funnel's column.
   if (uMode == 1 && cy.y > 0.0) {
-    vec3 old = texelFetch(tBg, ivec2(gl_FragCoord.xy), 0).rgb;
+    vec3 old = texelFetch(tBg, pix, 0).rgb;
     outC = vec4(mix(old, bg, uBlend), min(tMax, 60000.0));
     return;
   }
@@ -694,10 +699,11 @@ void main() {
       t += st;
     }
   }
+  if (uMode == 3) { outC = vec4(acc, T); return; }
   vec3 col = bg * T + acc;
   // Elsewhere the bake keeps the whole picture: the backdrop and the near deck.
   if (uMode == 1) {
-    vec3 old = texelFetch(tBg, ivec2(gl_FragCoord.xy), 0).rgb;
+    vec3 old = texelFetch(tBg, pix, 0).rgb;
     outC = vec4(mix(old, col, uBlend), -1.0);
     return;
   }
@@ -707,17 +713,43 @@ void main() {
 }`;
 
 
+// Fills the full-size volume from this frame's quarter and the history.
+// The camera never moves, so the history needs no reprojection.
+const RESOLVE_FS = /* glsl */`#version 300 es
+precision highp float;
+out vec4 outC;
+uniform sampler2D tVol, tHist;
+uniform ivec2 uSub;
+uniform float uBlend;
+void main() {
+  ivec2 pix = ivec2(gl_FragCoord.xy), b = pix / 2, top = textureSize(tVol, 0) - 1;
+  vec4 fresh = texelFetch(tVol, min(b, top), 0);
+  // The fresh samples nearest this pixel bound its history, so the spin leaves no ghost.
+  ivec2 d = pix - b * 2 - uSub;
+  vec4 lo = fresh, hi = fresh;
+  for (int k = 1; k < 4; k++) {
+    vec4 v = texelFetch(tVol, clamp(b + d * ivec2(k & 1, k >> 1), ivec2(0), top), 0);
+    lo = min(lo, v);
+    hi = max(hi, v);
+  }
+  vec4 old = clamp(texelFetch(tHist, pix, 0), lo, hi);
+  outC = d == ivec2(0) ? mix(old, fresh, uBlend) : old;
+}`;
+
 const FINAL_FS = /* glsl */`#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 outC;
-uniform sampler2D tSrc;
+uniform sampler2D tSrc, tBg, tVH;
+// 1 lays the volume over the baked backdrop; 0 reads one finished picture.
+uniform int uComp;
 uniform vec2 uRes;
 uniform float uSeed;
 ${GRADE}
 ${OUTPUT}
 void main() {
-  vec3 c = texture(tSrc, vUv).rgb;
+  vec4 vh = texture(tVH, vUv);
+  vec3 c = uComp == 1 ? texture(tBg, vUv).rgb * vh.a + vh.rgb : texture(tSrc, vUv).rgb;
   c = gdGrade(c, vUv, uRes.x / uRes.y, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0), 0.35, 0.4, 0.035);
   outC = vec4(ouFilm(c, 1.0, gl_FragCoord.xy), 1.0);
 }`;
@@ -771,7 +803,7 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
   /** @type {HTMLElement} */ (document.querySelector('.fail')).hidden = false;
   throw new Error('WebGL2 with float targets is needed');
 }
-const P = await linked(gl, { scene: program(gl, TRI_VS, SCENE_FS), final: program(gl, TRI_VS, FINAL_FS) });
+const P = await linked(gl, { scene: program(gl, TRI_VS, SCENE_FS), final: program(gl, TRI_VS, FINAL_FS), resolve: program(gl, TRI_VS, RESOLVE_FS) });
 const vao = gl.createVertexArray();
 const noise = noiseVolume(gl);
 
@@ -827,6 +859,12 @@ function light(hour, azDeg) {
 // G is the baked backdrop on screen; G2 fills strip by strip behind it.
 // ?live draws the backdrop every frame, for comparison.
 let G = null, G2 = null, bakeRow = 0, bakeAll = true, baking = !qs.has('live');
+// V holds this frame's quarter of the volume; H and H2 the full volume, ping-ponged.
+// ?full marches every pixel every frame, for comparison.
+let V = null, H = null, H2 = null;
+const interleave = () => baking && !qs.has('full');
+// The 2 by 2 pixel each frame marches, in an order that spreads them.
+const SUBS = [[0, 0], [1, 1], [1, 0], [0, 1]];
 // The backdrop renews in this many strips, one strip a frame.
 const STRIPS = 8;
 let A = null, B = null, w = 0, h = 0, frame = 0, last = 0, fpsT = 0, fpsN = 0;
@@ -836,10 +874,12 @@ function size() {
   if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   const rw = Math.max(64, Math.round(cw * K.res())), rh = Math.max(64, Math.round(ch * K.res()));
   if (rw !== w || rh !== h) {
-    free(gl, A); free(gl, B); free(gl, G); free(gl, G2);
+    free(gl, A); free(gl, B); free(gl, G); free(gl, G2); free(gl, V); free(gl, H); free(gl, H2);
     w = rw; h = rh;
     A = target(gl, w, h, { clear: true }); B = target(gl, w, h, { clear: true });
-    G = target(gl, w, h, { clear: true, filter: gl.NEAREST }); G2 = target(gl, w, h, { clear: true, filter: gl.NEAREST });
+    G = target(gl, w, h, { clear: true }); G2 = target(gl, w, h, { clear: true });
+    V = target(gl, Math.ceil(w / 2), Math.ceil(h / 2), { filter: gl.NEAREST });
+    H = target(gl, w, h, { clear: true }); H2 = target(gl, w, h, { clear: true });
     bakeAll = true;
     frame = 0;
   }
@@ -923,19 +963,39 @@ function draw(now) {
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, G.tex);
   }
-  gl.uniform1i(sc.u.uMode, baking ? 2 : 0);
-  set(sc, 'uBlend', blendMain);
-  tri(gl, B, vao);
+  const sub = SUBS[frame % 4];
+  if (interleave()) {
+    gl.uniform1i(sc.u.uMode, 3);
+    gl.uniform2i(sc.u.uSub, sub[0], sub[1]);
+    set(sc, 'uJit', [0, 0]);
+    tri(gl, V, vao);
+    const rs = P.resolve;
+    gl.useProgram(rs.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, V.tex); gl.uniform1i(rs.u.tVol, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, H.tex); gl.uniform1i(rs.u.tHist, 1);
+    gl.uniform2i(rs.u.uSub, sub[0], sub[1]);
+    // A pixel refreshes every fourth frame: its history fades as four frames of the plain blend.
+    set(rs, 'uBlend', 1 - (1 - blendMain) ** 4);
+    tri(gl, H2, vao);
+    [H, H2] = [H2, H];
+  } else {
+    gl.uniform1i(sc.u.uMode, baking ? 2 : 0);
+    set(sc, 'uBlend', blendMain);
+    tri(gl, B, vao);
+  }
   const fn = P.final;
   gl.useProgram(fn.p);
+  gl.uniform1i(fn.u.uComp, interleave() ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, B.tex); gl.uniform1i(fn.u.tSrc, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.tex); gl.uniform1i(fn.u.tBg, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, H.tex); gl.uniform1i(fn.u.tVH, 2);
   set(fn, 'uRes', [canvas.width, canvas.height]);
   set(fn, 'uSeed', frame % 997);
   tri(gl, null, vao);
   [A, B] = [B, A];
   frame++;
   fpsN++;
-  if (now - fpsT > 1000) { document.getElementById('fps').textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} fps · ${w}×${h} · ${baking ? 'baked' : 'live'} backdrop`; fpsT = now; fpsN = 0; }
+  if (now - fpsT > 1000) { document.getElementById('fps').textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} fps · ${w}×${h} · ${interleave() ? 'interleaved' : baking ? 'baked' : 'live'}`; fpsT = now; fpsN = 0; }
 }
 // The app's own window shares the GPU, so the lab draws 30 frames a second at most.
 const FRAME_MS = 1000 / 30;
