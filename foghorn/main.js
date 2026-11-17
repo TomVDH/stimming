@@ -4,7 +4,7 @@ import { initPage, whenVisible, reduced, audioKit, stage as mark, pageReady } fr
 import { intro as playIntro } from '../shared/intro.js';
 import { environment } from '../shared/environment.js';
 import { weather } from '../shared/weather.js';
-import { skyAt } from '../shared/sky.js';
+import { HOURS, dayAt } from '../shared/daytime.js';
 import { swellHeight } from '../shared/water.js';
 mark('libs');
 
@@ -15,7 +15,7 @@ playIntro({ ready: pageReady(9000) });
 mark('build');
 
 /* ---------- bar ---------- */
-const HOURS = { dusk: 19.3, night: 23, dawn: 6.2 };
+// HOURS in daytime.js holds Fog horn's dusk, night and dawn.
 // The handlers bind once the scene exists.
 /** @type {{ time: (v: string) => void, fog: (v: number) => void, storm: (v: number) => void, horn: () => void }} */
 const act = { time() {}, fog() {}, storm() {}, horn() {} };
@@ -320,7 +320,7 @@ try {
       uThick: thick,
       uHorn: () => hornK,
       // The harbour lights the fog a little at night.
-      uFogGlow: () => { const k = 1 - skyAt(env.state.hour).day; return [0.03 * k, 0.034 * k, 0.042 * k]; },
+      uFogGlow: () => { const k = dayAt(env.state.hour).lamps; return [0.03 * k, 0.034 * k, 0.042 * k]; },
       uShipA: () => shipA,
       uShipK: () => shipK,
       uShipM: () => shipM,
@@ -518,7 +518,7 @@ function horn() {
   env.touch();
 }
 act.horn = horn;
-act.time = v => { S.hour = HOURS[v]; env.touch(); };
+act.time = v => { S.hour = HOURS[/** @type {import('../shared/daytime.js').DayPreset} */ (v)]; env.touch(); };
 act.fog = v => { fog = v; apply(); };
 act.storm = v => { storm = v; apply(); };
 storm = ui.setting('storm')?.value ?? storm;

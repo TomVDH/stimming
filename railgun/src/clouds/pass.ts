@@ -1,5 +1,5 @@
-// Load order: clouds/lightning runs first.
-import './lightning.ts';
+// Load order: clouds/field runs first.
+import './field.ts';
 import * as THREE from 'three';
 import { state } from '../state.ts';
 import { camera, renderer, scene } from '../setup.ts';
@@ -9,17 +9,19 @@ import { FS_U, farBake } from '../world/farcountry.ts';
 import { HEAD } from '../sky/atmosphere.ts';
 import { AIR } from '../sky/air.ts';
 import { BAND } from './bands.ts';
-import { STORM_GLSL, STORM_MARCH } from '../../storms.js';
-import { CLOUD_U, giants, tower } from './clouds.ts';
-import { STORM_SPOTS, stormAt, stormFl } from './lightning.ts';
+import { CLOUD_U, giants, heaps, tower } from './clouds.ts';
+import { stormFl } from './lightning.ts';
 import { STORM_HOST } from './probe.ts';
+import { CELL_N, FIELD_U, stepField } from './field.ts';
 import LAYER from './layer.glsl';
+import CELL from './cell.glsl';
+import CELL_MARCH from './cellmarch.glsl';
 
 /* ---------- the cloud pass: one march for the clouds, with true depth ---------- */
 // One full-screen march at reduced resolution finds each cloud at its true distance.
 // It writes the cloud's light and, in a second target, the first cloud's distance.
 // Its composite writes that depth, so the scene sorts against the clouds per pixel.
-// It holds the heap layer and the storms; their segments join front to back by distance.
+// It holds the heap layer and the storm field's cells; their segments join front to back by distance.
 // The march's share of the screen's resolution; Dev knobs may change it.
 let passRes = 0.5;
 state.cloudPass = false;
@@ -37,14 +39,10 @@ export const LAYER_U = {
   uLayerOn: { value: 0 },
   // The layer's wind, in m/s: it slides slowly across the sky.
   uLayerWind: { value: new THREE.Vector2(10, 4) },
-  // Each storm: centre x, base on the curved ground, centre z, height.
-  uSt: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
-  // Each storm: seed, form, on, base over its own ground.
-  uStF: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
 };
 // three's own prefix compiles as GLSL ES 3.0 and declares output 0; output 1 is declared here.
 const passMat = new THREE.ShaderMaterial({
-  uniforms: { ...U, ...CLOUD_U, ...FS_U, ...LAYER_U }, depthTest: false, depthWrite: false,
+  uniforms: { ...U, ...CLOUD_U, ...FS_U, ...LAYER_U, ...FIELD_U }, depthTest: false, depthWrite: false,
   vertexShader: /* glsl */`out vec2 vN; void main() { vN = position.xy; gl_Position = vec4(position.xy, 1.0, 1.0); }`,
   fragmentShader: /* glsl */`precision highp sampler3D;
   layout(location = 1) out highp vec4 gDepthOut;
@@ -57,13 +55,15 @@ const passMat = new THREE.ShaderMaterial({
   uniform vec4 uFlR;
   uniform vec4 uStormK;
   uniform float uStormSoft;
-  uniform vec4 uSt[4], uStF[4];
   in vec2 vN;
+  #define CELL_N ${CELL_N}
+  #define CELL_R ${PLANET_R.toFixed(1)}
+  #define ROCK_REACH 1.0
   ${HEAD}
   ${AIR}
-  ${STORM_GLSL}
+  ${CELL}
   ${STORM_HOST}
-  ${STORM_MARCH}
+  ${CELL_MARCH}
   // The sunlight at P, as the storms take it.
   // A cloud up high sees the sun after the ground has lost it: its horizon dips.
   // The sun's height at P itself: points toward the sun see it higher.
@@ -89,32 +89,30 @@ const passMat = new THREE.ShaderMaterial({
     vec3 ro = cameraPosition, rd = normalize(w.xyz / w.w - ro);
     float tEnd = rangeDist(rd);
     // Each segment: premultiplied light and cover, and the distance of its first cloud.
-    vec4 sc[5]; float sd[5]; int n = 0;
+    vec4 sc[CELL_N + 1]; float sd[CELL_N + 1]; int n = 0;
     vec4 r = uLayerOn > 0.5 ? lyMarch(ro, rd, tEnd) : vec4(0.0, 0.0, 0.0, 1.0);
     float aL = 1.0 - r.a;
     // The same air as the ranges and the cards, at the first cloud.
     if (aL > 0.002) { sc[n] = vec4(aerial(r.rgb / aL, ro + rd * gLyT) * aL, aL); sd[n] = gLyT; n++; }
     Ls = uSunD.y > -0.12 ? uSunD : uSun;
     float jit = fract(52.98 * fract(dot(gl_FragCoord.xy, vec2(0.0671, 0.00584))));
-    for (int i = 0; i < 4; i++) {
-      if (uStF[i].z < 0.5) continue;
-      vec3 C = uSt[i].xyz; float H = uSt[i].w;
-      setStorm(uStF[i].x, uStF[i].y);
-      setGround(uStF[i].w, H);
+    for (int i = 0; i < CELL_N; i++) {
+      if (uCe[i].w < 0.5) continue;
       // A range in front cuts the storm where the two really cross.
-      vec2 sp = stormSpan(ro, rd, C, H);
+      vec2 sp = cellSpan(i, ro, rd);
       sp.y = min(sp.y, tEnd);
       if (sp.y <= sp.x) continue;
+      setCell(i);
       gHitSh = -1.0; gRockSh = -1.0;
       vec3 Phit, Flash;
-      vec4 m = marchStorm(ro, rd, C, H, sp.x, sp.y, jit, Phit, Flash);
+      vec4 m = marchCell(ro, rd, sp.x, sp.y, jit, Phit, Flash);
       if (m.a < 0.004) continue;
       // Far flashes and the blast, the bolt and the rock land after the air.
       vec3 col = aerial(m.rgb, Phit) + Flash / m.a * 0.85;
       sc[n] = vec4(col * m.a, m.a); sd[n] = length(Phit - ro); n++;
     }
     // Near segments first.
-    for (int i = 1; i < 5; i++) {
+    for (int i = 1; i < CELL_N + 1; i++) {
       if (i >= n) break;
       for (int j = i; j > 0; j--) {
         if (sd[j - 1] <= sd[j]) break;
@@ -125,7 +123,7 @@ const passMat = new THREE.ShaderMaterial({
     // Front to back: each segment shows through what lies in front of it.
     vec3 col = vec3(0.0);
     float T = 1.0, dep = 0.0;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < CELL_N + 1; i++) {
       if (i >= n) break;
       col += T * sc[i].rgb;
       if (dep == 0.0 && sc[i].a > 0.3) dep = sd[i];
@@ -154,9 +152,13 @@ void main() {
   if (uFirm > 0.0 && c.a > 1e-4) { float a2 = mix(c.a, smoothstep(0.12, 0.55, c.a), uFirm); c *= a2 / c.a; }
   // Only solid cloud hides what lies behind it; thin edges let it show.
   if (c.a < ${depthOnly ? '0.5' : '0.004'}) discard;
+  // An edge texel without cloud reads depth 0, which puts its blurred colour at the eye.
+  // The farthest of the five taps keeps that edge behind the gun.
+  float dep = max(texture2D(tDep, vUv).r, max(max(texture2D(tDep, vUv + vec2(px.x, 0.0)).r, texture2D(tDep, vUv - vec2(px.x, 0.0)).r), max(texture2D(tDep, vUv + vec2(0.0, px.y)).r, texture2D(tDep, vUv - vec2(0.0, px.y)).r)));
+  if (dep <= 0.0) discard;
   vec4 w = uInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 rd = normalize(w.xyz / w.w - cameraPosition);
-  vec4 cp = uVPc * vec4(cameraPosition + rd * texture2D(tDep, vUv).r * 1000.0, 1.0);
+  vec4 cp = uVPc * vec4(cameraPosition + rd * dep * 1000.0, 1.0);
   gl_FragDepth = clamp(cp.z / cp.w * 0.5 + 0.5, 0.0, 1.0);
   gl_FragColor = c;
 }`;
@@ -175,17 +177,23 @@ const compDepth = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.Shader
 }));
 for (const [m, o] of [[comp, BAND.cloud], [compDepth, BAND.cloud + 0.001]] as const) { m.frustumCulled = false; m.renderOrder = o; m.visible = false; scene.add(m); }
 
-// The Dev row Cloud volumes: the pass marches the storms; the heap and middle cards stay.
+// The Dev row Marched storms: the pass marches the storm field; the heap and middle cards stay.
 // Dev knobs for the silhouette: resolution, edge, firming and blur.
 export function setPassLook(o: { res?: number; edge?: number; firm?: number; blur?: number; layer?: boolean }) {
-  if (o.layer != null) LAYER_U.uLayerOn.value = o.layer ? 1 : 0;
+  if (o.layer != null) { LAYER_U.uLayerOn.value = o.layer ? 1 : 0; showHeaps(); }
   if (o.res != null) passRes = o.res;
   if (o.edge != null) LAYER_U.uLayerEdge.value = o.edge;
   if (o.firm != null) COMP_U.uFirm.value = o.firm;
   if (o.blur != null) COMP_U.uBlur.value = o.blur;
 }
+// The heap cards hide while the pass marches the heap layer.
+function showHeaps() {
+  heaps.visible = !(state.cloudPass && LAYER_U.uLayerOn.value > 0.5);
+  state.shaftOcc = null;
+}
 export function setCloudPass(on: boolean) {
   state.cloudPass = on;
+  showHeaps();
   // The storms march in the pass; their cards hide.
   tower.visible = !on;
   giants.visible = !on;
@@ -194,7 +202,7 @@ export function setCloudPass(on: boolean) {
   comp.visible = compDepth.visible = on;
   state.shaftOcc = null;
 }
-const vp = new THREE.Matrix4(), clear = new THREE.Color(), sp = new THREE.Vector3();
+const vp = new THREE.Matrix4(), clear = new THREE.Color();
 // Runs once a frame, before the composer.
 export function drawCloudPass() {
   if (!state.cloudPass) return;
@@ -206,13 +214,8 @@ export function drawCloudPass() {
   COMP_U.uInv.value.copy(LAYER_U.uLyInv.value);
   COMP_U.uVPc.value.copy(vp);
   LAYER_U.uFarOn.value = farBake.on && FS_U.uFarG.value ? 1 : 0;
-  // The storms drift as their cards did; each base sits on the curved ground.
-  STORM_SPOTS.forEach((c, i) => {
-    if (i > 3) return;
-    const P = stormAt(c, state.simT, sp), dx = P.x - camera.position.x, dz = P.z - camera.position.z;
-    LAYER_U.uSt.value[i].set(P.x, c.base - (dx * dx + dz * dz) / (2 * PLANET_R), P.z, c.H);
-    LAYER_U.uStF.value[i].set(c.sd, c.kind, 1, c.base);
-  });
+  // The storm cells drift along their own winds.
+  stepField(state.simT);
   const ca = renderer.getClearAlpha();
   renderer.getClearColor(clear);
   renderer.setClearColor(0x000000, 0);

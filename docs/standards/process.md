@@ -38,7 +38,7 @@ Toy chats share one checkout and one git index.
 
 ## QA
 
-- Headless Playwright with GPU flags: `--enable-gpu --ignore-gpu-blocklist --use-angle=metal --enable-unsafe-webgpu`.
+- Headless Playwright with GPU flags: `--enable-gpu --ignore-gpu-blocklist --use-angle=metal --enable-unsafe-webgpu`. On Windows, use `--use-angle=d3d11`.
 - Every visual change: 1280 px, 375 x 812 and 812 x 375. The shell measures collisions; never trust a breakpoint alone.
 - Check: script syntax (`node --check`), a clean console, every control and gesture, reduced motion, hidden tab, idle sleep, sound suspends after a gesture.
 - Tests: `npm test` runs `node --test tests/*.test.mjs`, then `tests/run.sh` against the dev server on port 8000 (`stimming-04og` builds this). `tests/bar-v2.html` must pass.

@@ -20,7 +20,7 @@ import { polar } from '../world/farcountry.ts';
 // uCloudC: the clouds' own slow clock, in sim seconds.
 // uFl: four lightning flashes in the storms: world place, light level.
 // uFlR: each flash's reach in metres.
-export const CLOUD_U = { uVol: { value: null as THREE.Texture | null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uStormSoft: { value: STORM_SOFT }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, ...IMP_U };
+export const CLOUD_U = { uVol: { value: null as THREE.Texture | null }, uCloudT: { value: 0 }, uCloudC: { value: 0 }, uStormK: { value: new THREE.Vector4(...STORM_K) }, uStormSoft: { value: STORM_SOFT }, uFl: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uFlR: { value: new THREE.Vector4(4000, 4000, 4000, 4000) }, uRim: { value: new THREE.Vector2(0, 0) }, uCardL: { value: 0.55 }, uCardK: { value: new THREE.Vector4(1, 1, 1, 1) }, uRockClr: { value: 0.8 }, ...IMP_U };
 // The sky's deck shares the clouds' volume and clock.
 sky.material.uniforms.uVol = CLOUD_U.uVol;
 sky.material.uniforms.uCloudC = CLOUD_U.uCloudC;
@@ -40,6 +40,12 @@ ${SHAFT_GLSL}
 // Billows from the baked volume: R is Perlin-Worley, G is fine Worley.
 // uCloudT runs the reset timelapse; uCloudC boils each cloud at its own rate.
 uniform float uCloudT, uCloudC;
+// The card edge rim: its gain, then how far from the sun it reaches.
+uniform vec2 uRim;
+// The card clouds' sunlight gain: lower sits them deeper in the air.
+uniform float uCardL;
+// The card clouds' hand knobs: sky fill, self shade, backlit core, colour.
+uniform vec4 uCardK;
 uniform vec4 uFl[4];
 uniform vec4 uFlR;
 // Lightning lights a storm from inside, after Window seat.
@@ -209,32 +215,39 @@ void main() {
   // a soft term for light scattered many times, a forward and a back lobe, powder edges.
   float mu = dot(V, Ls);
   float ph = 0.5 * (1.0 - 0.36) / pow(1.0 + 0.36 - 1.2 * mu, 1.5) + 0.5 * (1.0 - 0.04) / pow(1.0 + 0.04 + 0.4 * mu, 1.5);
-  float od = occ / (H * 0.3), Tl = exp(-od), Tm = exp(-0.18 * od);
+  float od = occ / (H * 0.3) * uCardK.y, Tl = exp(-od), Tm = exp(-0.18 * od);
   float powder = mix(1.0, 1.0 - exp(-6.0 * pd / H), 0.5 * (1.0 - max(mu, 0.0)));
   float wrap = max(dot(N, Ls) * 0.6 + 0.4, 0.0);
   // The side away from the light stays dark, as on the comet's smoke.
   // Light scattered many times keeps the shaded side warm and soft.
-  vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5;
+  vec3 col = sunC * (Tl * 0.75 + Tm * 0.28) * ph * powder * (0.5 + 0.5 * wrap) * 1.5 * uCardL;
   // Backlit: the sunlight must cross the whole body to reach the eye.
   // Thick cores go dark; the sky light keeps them grey.
   float back = max(dot(V, Ls), 0.0), bk = smoothstep(0.2, 0.9, mu);
   float thru = exp(-10.0 * pd / H);
-  col *= mix(1.0, 0.1 + 0.9 * thru, bk);
+  col *= mix(1.0, 0.1 + 0.9 * thru, clamp(bk * uCardK.z, 0.0, 1.0));
   // The rim, as a march sees it: light through depth t scatters as t exp(-t).
   // Thin edges glow, the thinnest fade, thick cores swallow it.
   // A forward lobe aims that glow toward the sun: a silver lining.
-  float tau = 5.0 * pd / H, g = 0.75;
+  float tau = 5.0 * pd / H, g = 0.75, te = tau * exp(-tau);
   float hg = min((1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * mu, 1.5), 12.0);
-  col += sunC * (0.15 * back * back * thru + 0.3 * hg * tau * exp(-tau));
+  col += sunC * uCardL * (0.15 * back * back * thru + 0.3 * hg * te);
+  // The edge rim: the silhouette's thin band glows, most toward the sun.
+  // A wide lobe carries it to edges far from the sun.
+  float hgW = 0.7975 / pow(1.2025 - 0.9 * mu, 1.5);
+  // The cap keeps edges beside the sun from washing white.
+  col += sunC * uRim.x * 0.15 * (min(hg, 4.0) + uRim.y * 3.0 * hgW) * thin * thin;
   // A soft sky term: noisy normals must not swing between horizon and zenith light.
   vec3 amb = mix(uHorC * 0.85, uZenC * 1.1, 0.4 + 0.2 * N.y) * 1.05 + uCloudAmb * 0.5;
   // A backlit core sees only the dim sky away from the sun.
-  col += amb * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y)) * mix(1.0, 0.3 + 0.7 * thru, bk);
+  col += amb * uCardK.x * (0.3 + 0.4 * smoothstep(0.0, 0.35 * H, X.y)) * mix(1.0, 0.3 + 0.7 * thru, clamp(bk * uCardK.z, 0.0, 1.0));
   // The tower keeps some body through seventy kilometres of air.
   // At night the heaps take the moon dimly; they never glow.
   col *= mix(1.0, 0.45, uStars) * (0.55 + 0.45 * smoothstep(0.0, 0.5 * H, X.y));
   // Moonlit tops: the upper faces and thin crowns turn silver, like the tail's upper side.
   col += uSunC * uStars * uMoonK * (0.5 * max(dot(N, uSun), 0.0) + 0.9 * thin) * smoothstep(0.35 * H, 0.9 * H, X.y) * sh;
+  // Colour: 0 is grey, 1 is as lit.
+  col = max(mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, uCardK.w), 0.0);
   // The same air as the ranges: a cloud and a ridge at one distance share one tint.
   col = aerial(col, P);
   // Far cloud sinks further into that air, foot first, crown last (Far haze).
@@ -285,6 +298,9 @@ ${CURVE}
 uniform float uCloudC;
 // A flat layer's fades in view depth, in metres: near in from x to y, far out from z to w.
 uniform vec4 uNear;
+// The rock's place; how far heaps in front of it thin away.
+uniform vec4 uRockL;
+uniform float uRockClr;
 varying vec2 vUv;
 varying vec3 vP, vR, vF;
 // Flat: the fragment shader hashes the seed.
@@ -299,6 +315,16 @@ void main() {
   float a = (ph - 0.5) * radians(16.0) * mix(0.2, 1.0, heap);
   vec3 C = vec3(aC.x * cos(a) - aC.z * sin(a), aC.y, aC.x * sin(a) + aC.z * cos(a));
   vLife = mix(1.0, sin(3.14159 * ph), heap);
+  // A heap in front of the rock, on its line of sight, thins away.
+  if (heap > 0.5 && uRockClr > 0.0) {
+    vec3 cc = C + vec3(0.0, aS.x * 0.5, 0.0) - cameraPosition, rv = uRockL.xyz - cameraPosition;
+    float dc = length(cc), dr = length(rv);
+    if (dc < dr) {
+      // The angle to the rock, in the heap's own angular size.
+      float k = acos(clamp(dot(cc / dc, rv / dr), -1.0, 1.0)) * dc / max(aC.w, aS.x);
+      vLife *= 1.0 - uRockClr * (1.0 - smoothstep(0.8, 1.8, k));
+    }
+  }
   // Cards fade by depth along the view, so each fade line is straight on screen.
   // A fade or an end by range draws a ring, and a ring shows as an arc.
   if (uNear.y > 0.0) {

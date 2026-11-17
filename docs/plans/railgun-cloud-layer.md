@@ -34,7 +34,7 @@ One full-screen pass, at reduced resolution, marches each ray once through every
 | Ranges | Rays stop at the far bake's per-pixel range distance (`world/farcountry.ts`, `uFarG`). |
 | Drift | The cover map and the cells slide with the wind; the whole layer moves, storms slower. |
 | Cost | Half resolution first; temporal reuse if needed; a bake of the storm band as the review's fallback (4.2). Target 30 fps on Standard. |
-| Fallback | Dev row Cloud volumes; the cards stay until Tom approves, then retire. |
+| Fallback | Dev row Marched storms (group Clouds); the cards stay until Tom approves, then retire. |
 | God rays | Later, from the pass's own cover and cells, not card spheres. |
 
 ## Steps (one look from Tom between each; `tools/clouds-check.mjs` before each commit)

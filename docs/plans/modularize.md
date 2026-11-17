@@ -119,6 +119,7 @@ One module at a time, one toy at a time, picked by Tom. Each step names a refere
 | 8 | K2 `bloomPass` (new) with `gradePass` | `canal` | Its `makeGrade` is exact; `makeBloom` is the common base | `bread`, `meteor`, `spark`, `ice`, then `fireworks`, `launch`, `frietkot` |
 | 9 | `shared/noise.js` (new) | `frost` | Its Hoskins hash and `vnoise` equal the common text (20 and 12 toys) | Only toys whose hash text matches |
 | 10 | `shared/pointer.js` (new) | Tom picks | Feel matters most here | |
+| 11 | `shared/daytime.js` (new; decision 14) | `foghorn` (2026-11-16, `stimming-5dol`) | Its three Bar hours are the module's `dawn`, `dusk` and `night`; its fog glow reads `day`. `sky.js` does not change, so every `skyAt` caller keeps its frame | `lanterns` (proves `dayClock`), `tornado`, `carwash`, `eastvan/postcard`, then the toys with their own models. Map and order: `docs/plans/daytime.md` |
 
 Steps 1 to 3 change no picture and no sound. They are the cheapest proof that toy chats can adopt shared code safely.
 Steps 4 and 7 to 10 build new modules. Each new module gets the shader library's rule first: it must give the same frame or sound as the copy it replaces.

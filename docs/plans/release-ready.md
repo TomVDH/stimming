@@ -12,7 +12,7 @@ Each item comes from a rule that already exists. The source column names that ru
 |---|---|---|---|
 | 1 | Port | Every module in the toy's row of the port list is adopted; the toy uses only proved modules; the same-frame check is recorded (a 1/255 shift on a few pixels is the same frame; more needs Tom's look). A "Map" row has the standard importmap. | [ports.md](ports.md), [code-health.md](../code-health.md) decisions 3 and 12 |
 | 2 | Toy doc | `docs/toys/<id>.md` exists from [the template](../toys/_template.md). Every section is there; a section with nothing to say says "None." The doc says what is now, cites `file:line`, and dates its numbers. | [toy-docs.md](toy-docs.md) |
-| 3 | Type check | The module script is in `<id>/main.js` (or other `.js` files), the folder is in `include` in `tsconfig.json`, and `npm run check` gives 0 errors. | [typescript.md](typescript.md), [code-health.md](../code-health.md) decisions 8 to 10 |
+| 3 | Type check | The module script is in `<id>/src/main.ts` with the toy's own strict `<id>/tsconfig.json`; `npm run check` runs it (a `check:<id>` script) and gives 0 errors. A checked `<id>/main.js` from before decision 8 is a part pass: the `.ts` step is still to do. | [typescript.md](typescript.md), [code-health.md](../code-health.md) decisions 8 to 10 |
 | 4 | Stack and build | The toy doc names the stack type (Sketch, Shader, Environment, Scene, Compute), the renderer tier, each library with its version, the shared modules, and how the toy is built: passes, sims, key techniques. The type matches the toy, or the doc names the planned move. | [code-health.md](../code-health.md) Stack types, [stack.md](../stack.md), [stack-types.md](stack-types.md) |
 | 5 | Importmap | The page carries the importmap word for word. The WebGPU toys (Galaxy, Fire, Ink Water, Spark wheel, Cauldron) carry the 0.186.1 map. A page that imports no library needs none. No library outside the set, unless Tom named it. | `AGENTS.md` Conventions, [stack.md](../stack.md) |
 | 6 | Attributions | The toy doc lists every outside source: libraries and their licences, data (maps, datasets), audio files, fonts, models, textures, and shader techniques or papers the toy adapts. Each row gives the source, the licence, and whether credit must show on screen. An unknown licence blocks the label. | This page (see Attributions below) |
@@ -58,7 +58,7 @@ About 20 more toys come; then the project closes. Each new toy meets this list f
 1. Its bean names the stack type before the first line of code ([code-health.md](../code-health.md)).
 2. Its toy doc starts with the toy, from the template, Attributions included. Every outside source goes into the doc in the commit that adds it.
 3. It starts on Bar v2, with tuning in `dev` rows from day one.
-4. Its module script lives in `<id>/main.js` and its folder joins `tsconfig.json` in the first commit.
+4. Its module script lives in `<id>/src/main.ts`, with its own `<id>/tsconfig.json` and a `check:<id>` script, in the first commit.
 5. It uses the shared modules that are proved; it copies no shared code.
 6. It starts in the Lab. It reaches the main shelf only after Tom vets it; then it needs a `toys.json` entry in full and a still.
 

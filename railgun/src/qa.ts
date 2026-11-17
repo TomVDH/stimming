@@ -76,6 +76,9 @@ interface QaHooks {
   stormProbe(on?: boolean): void;
   cloudPass(on?: boolean, cut?: number): void;
   passLook(o: { res?: number; edge?: number; firm?: number; blur?: number; layer?: boolean }): void;
+  rim(gain: number, spread: number): void;
+  cardLight(k: number): void;
+  rockClear(k: number): void;
   still(o?: StillOpts): { rung: number; simT: number; sun: number };
   stormSolo(k?: number | null): void;
   stormsQ(): unknown;
@@ -224,6 +227,12 @@ window.__qa = {
   cloudPass(on = true, cut) { setCloudPass(on); if (cut != null) LAYER_U.uLayerCut.value = cut; draw(); },
   // The pass's silhouette knobs: res, edge, firm, blur.
   passLook(o) { setPassLook(o); draw(); },
+  // The card edge rim: its gain and its reach from the sun.
+  rim(gain, spread) { CLOUD_U.uRim.value.set(gain, spread); draw(); },
+  // The card clouds' sunlight gain.
+  cardLight(k) { CLOUD_U.uCardL.value = k; draw(); },
+  // How far heaps in front of the rock thin away.
+  rockClear(k) { CLOUD_U.uRockClr.value = k; draw(); },
   // One repeatable still for tools/clouds-check.mjs.
   // It freezes the clocks, stops random events and pins the rung.
   // o: sun (the Time slider), fall (the rock's place), t (the sim clock), rung.

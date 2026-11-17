@@ -22,10 +22,44 @@ export const TABLE = {
   lean: [430, 260, 120, 60, 25, 10],       // top offset, m
   sway: [90, 60, 35, 20, 10, 5],
 };
-// The scene's knob values. They start from the lab's approved set (Tom, 2026-11-16).
+// The scene's knobs, each a Dev row: group, id, label, range, step and default.
+// The defaults start from the lab's approved set (Tom, 2026-11-16).
 // The scene is denser, brighter and less dark (Tom: "poppier and more reflective", "a lot more opaque").
-// darkK scales the table's darkness; sunK is the sunlit side's weight (the lab's is 0.6).
-export const KNOB = { darkK: 0.55, sunK: 1.0, width: 1.6, dens: 2.4, sheath: 0.35, edge: 0.8, amp: 0.63, spin: 1, debris: 0.58, trans: 0.4, rim: 0.6 };
+export const KNOBS = [
+  ['Funnel', 'dens', 'Opacity', 0.1, 6, 0.05, 2.4],
+  ['Funnel', 'sheath', 'Sheaths', 0, 2, 0.01, 0.35],
+  ['Funnel', 'edge', 'Core edge', 0, 1.6, 0.01, 0.8],
+  ['Funnel', 'rim', 'Rim blend', 0, 1, 0.01, 0.6],
+  ['Funnel', 'trans', 'Light through', 0, 1, 0.01, 0.4],
+  ['Funnel', 'amp', 'Turbulence', 0, 1.5, 0.01, 0.63],
+  // The gap between layers over the radius: one value for every funnel at any distance.
+  ['Funnel', 'gap', 'Layer gap', 0.05, 0.5, 0.01, 0.2],
+  ['Funnel', 'spin', 'Spin', 0, 3, 0.01, 1],
+  ['Colour', 'alb', 'Reflectivity', 0.2, 1.5, 0.01, 0.9],
+  ['Colour', 'sunK', 'Sunlit weight', 0, 2, 0.01, 0.85],
+  ['Colour', 'ambK', 'Ambient', 0, 3, 0.01, 1.1],
+  ['Colour', 'darkK', 'Darkness', 0, 1.5, 0.01, 0.95],
+  ['Colour', 'hazeK', 'Haze on funnel', 0, 2, 0.01, 1],
+  ['Colour', 'topK', 'Top darkening', 0, 2, 0.01, 0.6],
+  ['Colour', 'dustK', 'Dust tint', 0, 2, 0.01, 1],
+  ['Shape', 'width', 'Width', 0.5, 3, 0.01, 1],
+  ['Shape', 'flare', 'Flare', 0, 2, 0.01, 1],
+  ['Shape', 'lean', 'Lean', 0, 2, 0.01, 1],
+  ['Shape', 'sway', 'Sway', 0, 2, 0.01, 1],
+  ['Shape', 'reach', 'Reach', -0.5, 0.5, 0.01, 0],
+  ['Dust', 'debris', 'Debris', 0, 2, 0.01, 0.58],
+  ['Dust', 'dustH', 'Dust height', 0.3, 2.5, 0.01, 1],
+  ['Deck whirl', 'spTurn', 'Turn', 0, 3, 0.01, 1],
+  ['Deck whirl', 'spIn', 'Inflow', 0, 0.1, 0.001, 0.025],
+  ['Deck whirl', 'spTwist', 'Twist', -3, 3, 0.05, 1.4],
+  ['Deck whirl', 'spR', 'Reach', 0.3, 2.5, 0.01, 1],
+  // The Cloud tube only: its bands' strength and count, and its noise's stretch up the tube.
+  ['Tube', 'tbBands', 'Bands', 0, 3, 0.01, 1],
+  ['Tube', 'tbCount', 'Band count', 0, 5, 1, 5],
+  ['Tube', 'tbStretch', 'Stretch', 0.2, 1.5, 0.01, 0.6],
+];
+// The live values, by id. main.js sets them from Dev, the address or the defaults.
+export const KNOB = Object.fromEntries(KNOBS.map(k => [k[1], k[6]]));
 // Opacity grows with the log of F: half at F0, 2.4 times at F2, 3.6 times at F5.
 export const densAt = f => KNOB.dens * (0.5 + 1.75 * Math.log(1 + f));
 // A smooth curve through the table (Catmull-Rom), held inside each step's two values.
@@ -119,8 +153,10 @@ export const MAX_FUNNELS = 4;
  * The funnel pass's fragment shader.
  * @param {string} sky  shared/sky.js SKY: skyCol() needs skDusk().
  * @param {string} storm  The scene's shared GLSL: camera, sky, haze, the supercell.
+ * @param {boolean} [tube]  True builds the Cloud tube in place of the shells.
  */
-export const funnelFS = (sky, storm) => /* glsl */`#version 300 es
+export const funnelFS = (sky, storm, tube = false) => /* glsl */`#version 300 es
+${tube ? '#define TUBE' : ''}
 precision highp float;
 out vec4 outC;
 // The storm GLSL below declares tNoise, the noise volume.
@@ -129,15 +165,41 @@ uniform vec2 uRes, uJit;
 uniform float uBlend;
 // QA: 1 writes the work per pixel instead of the picture.
 uniform int uCount;
+// The far field: 1 bakes the deck past uFarD km into its own picture; 0 marches the near field live
+// and lays the baked far field (tFar) behind it. The two cross over a 2 km band, so no seam shows.
+uniform int uMode;
+uniform float uFarD;
+uniform sampler2D tFar;
+// The bake before the last, and how far the last has faded in over it, 0 to 1.
+uniform sampler2D tFarPrev;
+uniform float uFarK;
+// The lens each far picture was baked through: x for tFar, y for tFarPrev.
+// During the Rise the lens moves; the read reprojects each picture by its own lens.
+uniform vec2 uFarFoc;
+// Lightning: the channel's top in camera km, and its light, seed, kind and glow (see main.js).
+uniform vec3 uBoltT;
+uniform vec4 uBolt;
+// The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
+uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
 uniform float uTrans;
+// Dev's knobs, live: the funnel's shape terms and its colour terms. KNOBS in funnel.js lists them.
+uniform float uWid, uSheathK, uEdgeW, uAmp, uAlb, uSunK, uAmbK, uHazeK, uTopDark, uDustK, uGap;
 // Rim blend: a grazing ray sees thinner core, so the lit rim blends, 0 to 1.
 uniform float uRim;
+#ifdef TUBE
+// The tube's own knobs: band strength, band count, and the stretch up the tube.
+uniform float uTbBands, uTbCount, uTbStretch;
+// Dev's God rays: the strength of the sun's shafts in the haze, 0 to 1.
+uniform float uGod;
+#endif
 // The scene's own uniforms, the same values as the scene pass.
 uniform vec3 uSun, uSunCol, uAmb, uZen, uMid, uBand, uAnti;
 uniform float uFoc, uHz, uYaw, uStorm, uT;
 // The tornadoes, nearest first. main.js packs each one; see pick().
 uniform int uN;
+// The wind's direction in camera space: the funnels lean and bow along it.
+uniform vec2 uWindC;
 uniform vec4 uTA[${MAX_FUNNELS}], uTB[${MAX_FUNNELS}], uTC[${MAX_FUNNELS}], uTD[${MAX_FUNNELS}], uTE[${MAX_FUNNELS}], uTF[${MAX_FUNNELS}];
 // Spin angle and climb, seven layers per tornado: the core, five sheaths, the dust.
 uniform vec2 uPhs[${MAX_FUNNELS * 7}];
@@ -145,17 +207,30 @@ ${sky}
 ${storm}
 
 // The lab's approved knob values.
-const float uWid = ${KNOB.width.toFixed(3)}, uSheathK = ${KNOB.sheath.toFixed(3)}, uEdgeW = ${KNOB.edge.toFixed(3)}, uAmp = ${KNOB.amp.toFixed(3)};
 // A step through the onion is this share of its radius: the lab's 60 steps.
+// The tube samples its volume, so it takes steps half as long.
+#ifdef TUBE
+const float K_ON = 0.15;
+#else
 const float K_ON = 0.3;
+#endif
 
 // One tornado's values, set by pick(). The names are the lab's uniforms.
-float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDark, uLean, uSway, uFk, uDs, uZs, uRope, uSeed, uTime, uLabM, uFade, uDens;
+float uH, uDeckY, uR0, uFlare, uProf, uVmax, uCond, uDebris, uDustH, uRain, uDark, uLean, uSway, uFk, uDs, uZs, uRope, uSeed, uTime, uLabM, uFade, uDens, uBow;
 // The foot in camera space, in metres.
 vec3 gFoot;
 int gI;
-// The haze colour on this ray, and its share at the funnel's distance.
+// The low sky's colour on this ray: rain and god rays take it.
 vec3 gHzC;
+// The gloom under the base: its colour, this ray's stretch inside it in km, and its share at the march's place.
+// Each sample takes only the gloom in front of it, so a funnel is not dimmed by the air behind it.
+vec3 gGloom;
+vec2 gGl;
+float gGk = 0.0;
+// The march's distance in metres: the air in front of a sample reaches this far.
+float gTm = 0.0;
+// The air in front of a sample at gTm metres; k is the share of it, 1 for the deck.
+vec3 hazed(vec3 c, float k) { return mix(mix(c, airTo(c, gTm), k), gGloom, gGk); }
 void pick(int i) {
   vec4 a = uTA[i], b = uTB[i], c = uTC[i], d = uTD[i], e = uTE[i], f = uTF[i];
   gFoot = vec3(a.x, 0.0, a.y); uH = a.z; uDeckY = a.w;
@@ -163,7 +238,7 @@ void pick(int i) {
   uCond = c.x; uDebris = c.y; uDustH = c.z; uRain = c.w;
   uDark = d.x; uLean = d.y; uSway = d.z; uFk = d.w;
   uDs = e.x; uZs = e.y; uRope = e.z; uSeed = e.w;
-  uLabM = f.x; uFade = f.y; uDens = f.z;
+  uLabM = f.x; uFade = f.y; uDens = f.z; uBow = f.w;
   // Each tornado sways on its own clock.
   uTime = uT + uSeed * 40.0;
   gI = i * 7;
@@ -188,7 +263,9 @@ float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33);
 // Roping out bends it into a long S.
 vec2 axisAt(float h) {
   float u = clamp(h / uH, 0.0, 1.0);
-  vec2 o = vec2(uLean, -0.3 * uLean) * u * u;
+  vec2 o = uWindC * uLean * u * u;
+  // The wind bows the lower and middle trunk downwind; the top stays under its whirl.
+  o += uWindC * uBow * sin(u * 3.1416) * (1.0 - 0.35 * u);
   o += vec2(sin(u * 3.0 + uTime * 0.23), cos(u * 2.3 + uTime * 0.19)) * uSway * u * (0.4 + u);
   float r = clamp(uRope, 0.0, 1.0);
   o += vec2(1.0, -0.25) * r * (sin(u * 3.1416) * 700.0 * (1.0 + 0.3 * sin(uTime * 0.3)) + u * 500.0);
@@ -214,9 +291,11 @@ float debrisR(float h) { return uR0 * mix(2.2, 1.18, uFk) * (1.0 + 0.6 * h / uDu
 
 /* ---------- the funnel: an onion of spinning sheaths ---------- */
 const int SHEATHS = 5;
-// Detail follows the screen: set per sample from the pixel's size where the ray is.
-// gSp: the gap between sheaths over R, at least about three pixels. gAng: the noise's scale round the funnel.
+// gSp: the gap between sheaths over R, Dev's Layer gap.
+// gAng: the noise's scale round the funnel, set per sample from the pixel's size where the ray is.
 float gSp = 0.2, gAng = 1.0;
+// gPxM: one pixel's size in metres where the ray is.
+float gPxM = 1.0;
 float sheathR(int k) { return 1.0 + gSp * float(k); }
 // One sheath's noise, spun as one body, from integrated phases.
 // x is the radius over R: the noise varies through the sheath too.
@@ -247,12 +326,11 @@ float hornA() {
   float Rt = radiusAt(uH);
   return clamp(Rt * mix(0.9, 0.5, smoothstep(0.0, 1.0, uFk)) + 20.0, Rt * 0.25, max(wallRadLab() * 0.85 - Rt, Rt * 0.25));
 }
-// How far under the funnel's top the flare starts. A tall flare reads as a dark cone.
-float collarLen() { return clamp(hornA() * 0.6, 40.0, uH * 0.15); }
 // The horn's strength: none until the funnel forms.
 float hornOn() { return smoothstep(0.0, 0.35, uCond); }
-// Where the flare starts: a shallow sag under the deck, down to the funnel's top as it forms.
-float hornBot() { return mix(uDeckY - 0.6 * (uDeckY - uH), uH - collarLen(), smoothstep(0.0, 0.5, uCond)); }
+// Where the flare starts: a shallow sag under the deck, down to the bell's foot as it forms.
+// The bell spans the top fifth of the funnel's height, and reaches at least the funnel's top.
+float hornBot() { return mix(uDeckY - 0.6 * (uDeckY - uH), min(uDeckY * 0.8, uH - 40.0), smoothstep(0.0, 0.5, uCond)); }
 // The horn's values for this tornado, set once per tornado.
 // gOn: the horn's strength. gRtopKm: its top radius in km. gNearR: the near deck's reach in km.
 float gA, gY0, gDeck, gOn, gRtopKm, gNearR;
@@ -298,15 +376,20 @@ void vol(vec3 p, out float d, out float w, int oct) {
     vec2 phd = phOf(6);
     vec2 qd = mat2(cos(phd.x), sin(phd.x), -sin(phd.x), cos(phd.x)) * q;
     vec3 cd = vec3(qd.x / uDs, h / uDs * 0.9 - phd.y, qd.y / uDs) + uSeed * 29.0;
-    float nd = fbm(cd + 7.3, oct);
-    if (oct > 3) nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
-    float puff = smoothstep(0.4, 0.6, nd);
+    // Octaves finer than about a pixel are left out: they only stipple.
+    float px = uDs * 0.25 / max(gPxM, 1e-3);
+    int o = min(oct, 1 + int(max(log2(px / 1.5), 0.0)));
+    float nd = fbm(cd + 7.3, o);
+    if (o > 3) nd -= (1.0 - nd) * N(cd * 4.5 + 5.0) * 0.35;
+    // A wide threshold: a narrow one flips per sample.
+    float puff = smoothstep(0.32, 0.68, nd);
     d = uDebris * smoothstep(Rd, Rd * 0.3, r * (0.7 + 0.6 * nd)) * (1.0 - smoothstep(uDustH * 0.25, uDustH * 1.4, h + (nd - 0.5) * uDustH * 1.2)) * puff * 2.0;
   }
   // Rain wrapped round a big tornado, in falling streaks.
   if (uRain > 0.01) {
     float Rr = R * 1.15 + uR0 * 0.35;
-    float ring = smoothstep(Rr * 0.22, 0.0, abs(r - Rr));
+    // A wide soft ring: a thin one is hit or missed by chance and stipples.
+    float ring = smoothstep(Rr * 0.5, 0.0, abs(r - Rr)) * 0.6;
     if (ring > 0.0) {
       float ang = atan(q.y, q.x);
       float streak = N(vec3(cos(ang) * 3.0, sin(ang) * 3.0, h * 0.0015 + uTime * 0.5) + 3.0);
@@ -409,23 +492,43 @@ float live(float h) {
 // The colour of the funnel's cloud at one layer hit, before haze.
 vec3 shellCol(vec2 q, float h, float R, float xr, float cs, float ph0, float ph1, vec3 skyH, float topK, vec3 stC) {
   float u = clamp(h / uH, 0.0, 1.0);
-  float od = sunOD(q, h, R) + cs;
-  vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.5 * exp(-od * 0.4) * ph1 + 0.12 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
+  // The deck's shadow falls on the upper funnel: it darkens and cools there, and grows out of the cloud.
+  float top = smoothstep(0.45, 1.0, u) * uTopDark;
+  float od = sunOD(q, h, R) + cs + top * 1.5;
+  // The lit side falls off into the body: little light scatters round to the shade side.
+  vec3 sunL = uSunCol * (exp(-od) * ph0 + 0.3 * exp(-od * 0.4) * ph1 + 0.05 * exp(-od * 0.16)) * (1.0 - 0.6 * uDark);
   // Sky light falls off with depth into the funnel.
   float depth = max(0.0, 1.6 - xr);
-  vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
-  // Up the flare the deck hides the sky: its light fails toward the base, as the deck's does.
-  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, topK) * exp(-depth * 1.6);
+  // The shade side fills with the light round it: the cool sky low down, the deck's dim tone up high.
+  // The shade side is a cool slate blue.
+  vec3 ambC = mix(uAmb * vec3(0.7, 0.85, 1.2), skyH * 0.9, 0.2 + 0.4 * topK);
+  vec3 ambL = ambC * (0.3 + 0.55 * u) * mix(1.0, 0.4, max(topK, top * 0.6)) * exp(-depth * 1.6);
+  // Under a young storm's thin deck more sky light reaches the funnel; under a heavy one, less.
+  ambL *= clamp(1.0 - 0.9 * (uStorm - 0.85), 0.85, 1.6);
   // Bounce from the sunlit wheat warms the lower funnel from below.
   ambL += uSunCol * vec3(0.55, 0.42, 0.22) * 0.07 * (1.0 - u) * exp(-depth * 1.2);
-  vec3 alb = vec3(0.9, 0.91, 0.93) * mix(1.0, 0.1, uDark);
-  alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), (1.0 - smoothstep(0.0, 0.35, u)) * uDebris);
-  return mix(alb * (sunL * ${KNOB.sunK.toFixed(2)} + ambL * 0.8), stC, topK);
+  vec3 alb = uAlb * vec3(1.0, 1.01, 1.03) * mix(1.0, 0.1, uDark);
+  // The storm's level: a young storm's funnel reads paler and cleaner, a heavy one's darker and dirtier.
+  // Both hinge on the default storm, so its look holds.
+  float se = uStorm - 0.85;
+  alb *= 1.0 - 0.35 * se;
+  alb = mix(alb, alb * vec3(0.8, 0.75, 0.7), clamp(se * 5.0, 0.0, 1.0));
+  // The F scale: F0 to F1 pale ropes, F2 to F3 grey and dusty, F4 to F5 near black.
+  alb *= 1.0 + 0.15 * (1.0 - smoothstep(0.1, 0.3, uFk));
+  alb = mix(alb, alb * vec3(0.75, 0.72, 0.68), smoothstep(0.3, 0.8, uFk));
+  // The lower funnel takes the dust's brown.
+  alb = mix(alb, vec3(0.45, 0.36, 0.27) * mix(1.0, 0.45, uDark), clamp((1.0 - smoothstep(0.0, 0.35, u)) * uDebris * uDustK, 0.0, 1.0));
+  return mix(alb * (sunL * uSunK + ambL * 0.8 * uAmbK), stC, topK);
+}
+// The share of the air in front of a funnel that it takes; h is unused.
+// Dev's Haze on funnel scales it; a young storm leaves the funnel clearer.
+float funnelHaze(float h) {
+  return uHazeK * clamp(1.0 + 1.5 * (uStorm - 0.85), 0.4, 1.3);
 }
 
 /* ---------- the deck round a tornado: the horn ---------- */
 // The funnel's top, without its sway; a rope's bend carries it.
-vec2 topXZ() { return vec2(uLean, -0.3 * uLean) + vec2(1.0, -0.25) * 500.0 * clamp(uRope, 0.0, 1.0); }
+vec2 topXZ() { return uWindC * uLean + vec2(1.0, -0.25) * 500.0 * clamp(uRope, 0.0, 1.0); }
 // The horn's reach past its top radius, in km.
 float nearR() { return gRtopKm * 1.6 + 0.3; }
 // Metres round the foot to the scene's camera km.
@@ -438,7 +541,7 @@ float deckD(vec3 pk, bool horn, vec3 pl, float soft) {
   if (horn && gOn > 0.0) {
     vec2 qt = pl.xz - topXZ();
     float hr = gNearR * 1000.0;
-    if (dot(qt, qt) < hr * hr) d = smin(d, mix(4.0, hornDist(pl.y, length(pl.xz - axisAt(pl.y))) * 0.001, gOn), 0.12);
+    if (dot(qt, qt) < hr * hr) d = smin(d, mix(4.0, hornDist(pl.y, length(pl.xz - axisAt(pl.y))) * 0.001, gOn), 0.25);
   }
   // Far from the cloud the noise cannot reach: a safe distance needs no noise.
   // It stays past the soft edge, so the march never takes it for cloud.
@@ -460,9 +563,11 @@ float cloudShade(vec3 p) {
   }
   return od * 0.006;
 }
-// How far up the join a height is: 0 on the funnel, 1 where the horn meets the deck.
-// The deck's tone stays in the flare: the body below it keeps its own sunlit colour.
-float topKAt(float h) { return smoothstep(gY0, gDeck, h); }
+// How far up the join a height is: 0 on the body, 1 where the bell meets the deck.
+// The deck's tone starts down the upper funnel, a bell's height under the bell, and grows up it.
+// A heavier storm takes the deck's tone further down the funnel; a young one keeps it to the bell.
+// A higher F takes it further down too: a wedge is one body with the deck.
+float topKAt(float h) { return smoothstep(gY0 - (gDeck - gY0) * clamp(1.0 + 4.0 * (uStorm - 0.85), 0.2, 1.6) * (1.0 + 0.8 * uFk), gDeck, h); }
 
 // The layers on one stretch of a ray, front to back among themselves.
 void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float Reb, float Ra, float Rb, float tapa, float tapb, float sHm, float cs, float topK, vec3 stC, float hzF, float ph0, float ph1, vec3 skyH, inout vec3 fAcc, inout float fT) {
@@ -479,7 +584,8 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
   // 0 is the core, 1 to 5 the sheaths; an inward stretch meets the outer ones first.
   for (int j = 0; j <= SHEATHS; j++) {
     int k = inward ? SHEATHS - j : j;
-    float od = 0.0, uk = 0.5, xr, shade = 1.0;
+    // dk: the share of the deck's tone in this layer's colour.
+    float od = 0.0, uk = 0.5, xr, shade = 1.0, dk = 0.0;
     vec3 ph;
     vec2 q;
     float R;
@@ -545,28 +651,174 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       ph = pa + rd * (len * uk);
       q = ph.xz - axisAt(ph.y);
       od = sMax * den * uSheathK * uDens;
+      // A sheath's own noise shows as tone: its dense puffs read lighter, its thin parts darker.
+      shade = mix(0.72, 1.12, den);
+      // Torn sheath edges take the deck's tone, the outer ones most: no bright flecks on dark cloud.
+      dk = (0.35 + 0.45 * fk) * (1.0 - 0.5 * den);
       xr = rk * mix(Rea, Reb, uk) / R;
     }
     od *= live(ph.y);
     if (od < 1e-4) continue;
-    vec3 c = mix(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, gHzC, hzF);
+    vec3 c = hazed(mix(shellCol(q, ph.y, R, xr, cs, ph0, ph1, skyH, topK, stC) * shade, stC, dk), funnelHaze(ph.y));
     float a = 1.0 - exp(-od);
     fAcc += fT * a * c;
     fT *= 1.0 - a;
   }
 }
+#ifdef TUBE
+/* ---------- the Cloud tube: the deck's own cloud, pulled down round the axis ---------- */
+// The deck's material in one layer's spinning frame: idx picks the layer's spin and climb.
+// The same noise volume and recipe as deckN(): three octaves, a fine one, and Worley lumps.
+float tubeN(float ang, float h, float x, float R, int idx) {
+  vec2 ph = phOf(idx);
+  float zz = h / uZs - ph.y;
+  float rb = clamp(0.73 * R / uZs, 0.6, 3.5);
+  // The helix leans by arc, as in sheathN().
+  float a = ang - ph.x - zz * 0.99 / (rb * gAng);
+  // A thin funnel keeps several features round it: no ring-shaped flakes.
+  float rr = x * max(rb, 1.0) * 1.4 * gAng;
+  // No offset per layer: the bands cut one body of cloud.
+  vec3 c = vec3(cos(a) * rr, zz * uTbStretch, sin(a) * rr) + uSeed * 23.0;
+  // An octave finer than a pixel gives way to its mean: it would only speckle.
+  // One unit of c holds four noise cells; s is pixels per cell of the first octave.
+  float s = uZs * 0.25 / max(gPxM, 1e-3);
+  float k1 = smoothstep(0.7, 2.0, s * 0.5), k2 = smoothstep(0.7, 2.0, s * 0.25), k3 = smoothstep(0.7, 2.0, s * 0.12);
+  float n = (0.5 * N(c) + 0.25 * mix(0.5, N(c * 2.03 + 7.1), k1) + 0.125 * mix(0.5, N(c * 4.1 + 3.7), k2) + 0.0625 * mix(0.5, N(c * 8.3), k3)) / 0.9375;
+  // The deck's rounded lumps, in two sizes, are not stretched: they stay round.
+  vec3 cl = vec3(c.x, zz + uSeed * 23.0, c.z);
+  n += (W(cl * 0.65 + 1.7) - 0.4) * 0.32 + (mix(0.45, W(cl * 2.0), k1) - 0.4) * 0.16;
+  // Erosion: fine detail eats into the edges, as in sheathN().
+  return n - (1.0 - n) * mix(0.5, N(cl * 3.7 + 7.0), k2) * 0.45;
+}
+// One step through the tube, as a volume: extinction per metre into sig, colour times it into sum.
+// The core is a soft solid of deck cloud; the bands are thin radial layers with clear air between.
+// Each band's share of the step is exact, so thin bands do not alias.
+void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, float sHm, float cs, float topK, vec3 stC, float ph0, float ph1, vec3 skyH, float jt, inout vec3 sum, inout float sig) {
+  float fl = smoothstep(0.15, 0.6, sHm);
+  // Up the bell the tube thins while the deck's horn takes over: no lip where one ends.
+  float fade = 1.0 - smoothstep(0.35, 1.0, sHm);
+  if (fade <= 0.0) return;
+  vec3 ps = pa + rd * (len * jt);
+  vec2 q = ps.xz - axisAt(ps.y);
+  float R = mix(ga.R, gb.R, jt), Re = mix(ga.Re, gb.Re, jt), tap = mix(ga.tap, gb.tap, jt);
+  float x = length(q) / Re, ang = atan(q.y, q.x);
+  float nc = tubeN(ang, ps.y, x, R, 0);
+  // The core: the deck's cloud inside a ragged edge.
+  // Up the bell a ray grazes the edge: a soft, calm edge there, or each sample lands in or out by chance.
+  float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.25, fl);
+  float wC = (0.1 + uEdgeW * uAmp) * mix(1.0, 2.5, fl);
+  // The noise rags the lower edge a little: more drew a comb of hairs.
+  float tp = clamp(tap - (nc - 0.5) * 0.35, 0.0, 1.0);
+  // Point samples read thinner than the shells' exact ramp: the core takes more.
+  // It reads as dense condensation, not thin smoke.
+  float dC = 3.2 * smoothstep(0.0, 0.45, tp) * clamp((edge - x) / wC, 0.0, 1.0);
+  // Near the tip only the dense parts hold.
+  if (tp < 1.0) dC *= mix(smoothstep(0.45, 0.7, nc), 1.0, smoothstep(0.35, 1.0, tp));
+  // The rim thins where the ray grazes the core's edge.
+  dC *= 1.0 - uRim * 0.75 * smoothstep(edge - wC, edge, x);
+  float s = funnelSig(dC, R), sB = 0.0;
+  // The bands: thin and spaced as the shells, but cut from the deck's cloud.
+  float sw = 0.3 * gSp;
+  for (int j = 0; j < SHEATHS; j++) {
+    if (float(j) >= uTbCount) break;
+    float fk = float(j) / float(SHEATHS - 1);
+    float rk = 1.0 + gSp * float(j) * (1.0 - fl);
+    float I = split ? layerInt(ga.x, xm, len * 0.5, rk, sw) + layerInt(xm, gb.x, len * 0.5, rk, sw) : layerInt(ga.x, gb.x, len, rk, sw);
+    I = min(I, 3.5 * sw * R);
+    if (I < 1e-3 * len) continue;
+    // Each band turns at its own rate; the switch falls in clear air.
+    float nb = j == 0 ? nc : tubeN(ang, ps.y, x, R, j + 1);
+    // The lumps widen the noise's spread, so the cut sits higher than the shells'.
+    float cov = mix(0.5, 0.72, fk);
+    // A wide threshold: a narrow one flips per sample and speckles.
+    sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov - 0.04, cov + 0.22, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
+  }
+  // The bands' share of the step: their torn edges take the deck's tone.
+  float bk = sB / max(s + sB, 1e-6);
+  s = (s + sB) * uDens * fade * live(ps.y);
+  if (s < 1e-7) return;
+  // The deck's light: a step toward the sun finds thinner cloud on the lit side of a lump.
+  vec3 pl = ps + gSunC * (0.3 * R);
+  vec2 ql = pl.xz - axisAt(pl.y);
+  // A gentle gain: a steep one turned per-sample noise into light and dark specks.
+  float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * mix(1.5, 0.6, fl) + 0.5, 0.0, 1.0);
+  vec3 c = shellCol(q, ps.y, R, x * Re / R, cs + (1.0 - lit) * 0.6, ph0, ph1, skyH, topK, stC);
+  c = mix(c, stC, 0.45 * bk);
+  sum += hazed(c, funnelHaze(ps.y)) * s;
+  sig += s;
+}
+#endif
+/* ---------- rain batches ---------- */
+// Curtains of rain from the deck's base to the ground, where rainAt() says rain falls.
+// They slant downwind, darkest at the foot, with soft sides and soft streaks.
+// They grey and darken what lies behind, catch the sun where it reaches them,
+// and take the green-teal of the green phase. The bake draws the far ones.
+// t0 and t1 bound the ray in metres; jt jitters the steps.
+vec4 rainBatch(vec3 rc, float t0, float t1, float jt, bool bake, float farD, float band) {
+  if (t1 <= t0 || uStorm < 0.3) return vec4(0.0);
+  vec3 acc = vec3(0.0);
+  float T = 1.0, mu = dot(rc, gSunC);
+  // The sun shines through rain most toward itself.
+  float fw = mix(1.0, min(hg(mu, 0.6), 5.0), 0.4);
+  // Rain in shade: a grey a little lighter than the gloom; in the green phase, green-teal.
+  float gk = clamp(uGreen + 0.15, 0.0, 1.0);
+  vec3 shadeC = uAmb * mix(vec3(0.11, 0.115, 0.12), vec3(0.075, 0.125, 0.105), gk);
+  vec3 sunT = mix(vec3(1.0), vec3(0.8, 1.0, 0.6), gk);
+  // Soft streaks by the view's angles, leaning as the shafts do: one value per ray, so no grain.
+  float az = atan(rc.x, -rc.z) - rc.y * rainSlant() * uWindC.x;
+  float stK = 0.7 + 0.6 * N(vec3(az * 55.0, rc.y * 5.0 + uT * 0.3, 0.5));
+  // The bake has no history to smooth its grain: it takes many more steps.
+  // Steps grow with distance, as a pixel's footprint does; a short span takes fewer.
+  float l0 = log(t0), l1 = log(t1);
+  int nr = int(ceil((bake ? 48.0 : 16.0) * clamp((l1 - l0) / 2.0, 0.15, 1.0)));
+  float dl = (l1 - l0) / float(nr), tSun = -1e9, sunK = 0.0;
+  for (int i = 0; i < 48; i++) {
+    if (i >= nr) break;
+    float t = exp(l0 + (float(i) + jt) * dl), dt = t * dl;
+    vec3 pk = (vec3(0.0, CAMH, 0.0) + rc * t) * 0.001;
+    float y = pk.y / BASE;
+    if (y > 1.0 || y < 0.0) continue;
+    // A step much longer than a fine curtain blurs the field.
+    gRainLod = smoothstep(400.0, 1500.0, dt);
+    float r = rainAt(pk);
+    gRainLod = 0.0;
+    if (r < 0.01) continue;
+    // Base to ground: densest at the foot; the top melts into the base.
+    r *= mix(1.5, 0.55, y) * (1.0 - smoothstep(0.82, 1.0, y)) * stK;
+    // Light veils near the eye, the big curtains at mid distance, lighter far off.
+    r *= mix(0.3, 1.0, smoothstep(1500.0, 4000.0, t)) * mix(1.0, 0.55, smoothstep(12000.0, 30000.0, t));
+    // The live march and the bake cross over as the deck does.
+    float wf = smoothstep(farD - band, farD, t);
+    r *= bake ? wf : 1.0 - wf;
+    float a = 1.0 - exp(-r * 0.2e-3 * dt);
+    if (a < 1e-4) continue;
+    // The sun's reach is read again only every 3 km: the deck's breaks are wider.
+    if (abs(t - tSun) > 3000.0) { sunK = 1.0 - sunCover(toWorld(pk)); tSun = t; }
+    // Drops scatter the bright low sky round the storm: a curtain reads lighter than the dark base.
+    vec3 col = shadeC * mix(0.75, 1.1, y) + gHzC * sunT * 0.18 + uSunCol * sunT * sunK * 0.025 * fw;
+    col = airTo(col, t);
+    acc += T * a * col;
+    T *= 1.0 - a;
+  }
+  return vec4(acc, 1.0 - T);
+}
 void main() {
+  if (uMode == 1 && uSlice >= 0 && int(gl_FragCoord.y) % 8 != uSlice) discard;
   vec2 fc = gl_FragCoord.xy + uJit;
   float asp = uRes.x / uRes.y;
   vec2 s = vec2((fc.x / uRes.x - 0.5) * asp, fc.y / uRes.y - uHz);
   vec3 rc = normalize(vec3(s, -uFoc));
   vec3 rd = toWorld(rc);
-  gSunC = toCam(uSun);
+  lightInit(rc);
   float jit = hash(fc + fract(uT * 7.31) * 113.0);
   // The dust's own jitter, apart from the march's.
   float jit2 = hash(fc.yx * 1.37 + fract(uT * 3.17) * 71.0);
   vec3 skyH = skyCol(normalize(vec3(rd.x, 0.0, rd.z)));
   gHzC = hazeCol(rd);
+  // The air's light along this ray: the deck, the funnels and the rain sit in it.
+  airInit(rd);
+  gGloom = gloomCol();
+  gGl = cylinder(vec3(0.0, CAMH * 0.001, 0.0), rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
   // One march, in metres from the eye, through the whole storm: the deck and every funnel's column.
   vec3 eye = vec3(0.0, CAMH, 0.0);
   // Only a ray that climbs can reach the deck; one that falls meets only the funnels' feet.
@@ -580,12 +832,15 @@ void main() {
     if (i >= uN) continue;
     pick(i);
     hornInit();
-    float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + gA) * 1.3) + uLean + uSway * 2.0 + 140.0 + 1300.0 * clamp(uRope, 0.0, 1.0);
+    float Rb = max(uR0 * max(uFlare * 2.0, 2.6), (radiusAt(uH) + gA) * 1.3) + uLean + uBow + uSway * 2.0 + 140.0 + 1300.0 * clamp(uRope, 0.0, 1.0);
     vec2 cy = cylinder(eye - gFoot, rc, Rb, 0.0, gDeck + 60.0);
     if (cy.y > 0.0) { a0[i] = cy.x; a1[i] = min(cy.x + cy.y, tMax); aStart = min(aStart, a0[i]); aEnd = max(aEnd, a1[i]); }
   }
-  float tEnd = sky ? tMax : min(tMax, aEnd);
-  float t = sky ? min(1000.0, aStart) : aStart;
+  bool bake = uMode == 1;
+  // The crossover band scales with the bake's distance: 2 km at 16 km.
+  float farD = uFarD * 1000.0, band = max(750.0, 0.125 * farD);
+  float tEnd = sky ? (bake ? tMax : min(tMax, farD)) : min(tMax, aEnd);
+  float t = sky ? (bake ? farD - band : min(1000.0, aStart)) : aStart;
   float cosT = dot(rc, gSunC);
   // Two lobes: some light bounces back toward the eye, most runs on.
   float ph0 = mix(hg(cosT, 0.6), hg(cosT, -0.25), 0.55);
@@ -602,7 +857,14 @@ void main() {
   vec3 acc = vec3(0.0);
   float T = 1.0;
   int steps = 0;
+  // Where the ray turns half opaque: the sun's shafts stop there, in front of a funnel or the deck.
+  float tOpq = 1e9;
+  // The tube's shorter steps need a longer march.
+#ifdef TUBE
+  for (int i = 0; i < 480; i++) {
+#else
   for (int i = 0; i < 320; i++) {
+#endif
     steps++;
     if (t > tEnd || T < 0.01) break;
     int k = -1;
@@ -627,12 +889,18 @@ void main() {
     vec3 p = inA ? eye + rc * t - gFoot : vec3(0.0);
     float st = 1e9, xOut = 0.0;
     bool inDust = false;
-    float hzF = 0.8 * (1.0 - exp(-t / 70000.0));
+    // The deck takes all the air in front of it.
+    float hzF = 1.0;
+    gTm = t;
+    float gLen = clamp(t * 0.001 - gGl.x, 0.0, gGl.y);
+    gGk = 1.0 - exp(-gLen * gLen * 0.003 * uStorm);
     if (inA) {
       // The pixel's size in metres where the ray is now.
       float foot = t / (uRes.y * uFoc), sH0;
+      gPxM = foot;
       float R0 = hornR(p.y, sH0);
-      gSp = max(0.2, 3.5 * foot / R0);
+      // Dev's Layer gap: one value for every funnel, at any distance.
+      gSp = uGap;
       gAng = clamp(R0 * 0.06 / foot, 0.3, 1.0);
       xOut = 1.25 + 4.0 * gSp;
       if (!have) g0 = geo(p, xOut + 0.6);
@@ -646,7 +914,7 @@ void main() {
       if (inDust) st = min(st, Rd * 2.6 / 8.0 / max(1.0 - eD, 0.05));
       // The rain ring is a soft veil: its own steps are as long as the onion's.
       float Rr = radiusAt(p.y) * 1.15 + uR0 * 0.35;
-      if (uRain > 0.01 && abs(ra - Rr) < Rr * 0.3) st = min(st, Rr * 0.3);
+      if (uRain > 0.01 && abs(ra - Rr) < Rr * 0.5) st = min(st, Rr * 0.2);
     }
     vec3 sum = vec3(0.0);
     float sig = 0.0;
@@ -654,9 +922,11 @@ void main() {
     if (sky) {
       if (t >= tDn) {
         // The finest noise fades out far off, where it is under a pixel.
-        gFine = 1.0 - smoothstep(25000.0, 45000.0, t);
+        // It fades by the pixel's size there: the fine lumps stippled every far edge.
+        gFine = 1.0 - smoothstep(6.0, 18.0, t / (uRes.y * uFoc));
         // The soft edge and the inner step grow with distance: crisp near, smooth far.
-        float inStep = 30.0 + 0.006 * t, soft = 1.2 * inStep * 0.001;
+        // A soft edge of two steps: a thinner one is met by chance and stipples the lumps' rims.
+        float inStep = 30.0 + 0.006 * t, soft = 2.0 * inStep * 0.001;
         float d = deckD(pk, inA, p, soft);
         // The first step into the cloud is a random part of a step: no contour bands.
         if (d < soft && outside && !inA) { outside = false; t += inStep * jit; continue; }
@@ -667,8 +937,12 @@ void main() {
         if (d < soft) {
           // A full step through dense cloud covers 0.8 of what lies behind it.
           cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
-          cLit = stormLit(pk, d);
-          cCol = mix(cLit, gHzC, hzF);
+          // Over the band the live march gives way to the baked far field, and the bake takes over.
+          float wFar = smoothstep(farD - band, farD, t);
+          cSig *= bake ? wFar : 1.0 - wFar;
+          // Behind nine tenths of cover a sample adds little: it keeps the last light.
+          if (T > 0.1 || cLit.x < 0.0) cLit = stormLit(pk, d);
+          cCol = hazed(cLit, hzF);
         }
       }
       // Inside the onion the funnel's step wins; up the flare the deck's step wins.
@@ -691,7 +965,16 @@ void main() {
         // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
         float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
-        if (topK > 0.0 && stC.x < 0.0) { vec3 pt = toKm(pm); pt.y = max(pt.y, gDeck * 0.001 - 0.12); vec3 pl = pt * 1000.0 - gFoot; stC = stormLit(pt, deckD(pt, true, pl, 1e3)); }
+        // The sheaths' torn edges take this tone too, so every column reads it once.
+        // It is read beside the bell, on the eye's side, where the deck shows its own tone.
+        // Inside the bell the horn's underside read darker than the deck round it.
+        if (stC.x < 0.0) {
+          vec2 tc = topXZ(), toEye = normalize(-gFoot.xz - tc + 1e-3);
+          // One fixed point per tornado: read at each pixel's own height, its lumps speckled the top.
+          vec3 pb = vec3(tc.x + toEye.x * gRtopKm * 1300.0, gDeck - 120.0, tc.y + toEye.y * gRtopKm * 1300.0);
+          vec3 pt = toKm(pb);
+          stC = stormLit(pt, deckD(pt, true, pb, 1e3));
+        }
         // The tone it turns to is the deck's own light right here, where the deck has cloud.
         // Above the horn's surface the ray's one deck point stands in.
         vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
@@ -700,10 +983,16 @@ void main() {
         float Rem = 0.5 * (g0.Re + g1.Re), Rm = 0.5 * (g0.R + g1.R), tm = 0.5 * (g0.tap + g1.tap);
         float xm = length(qm) / Rem;
         split = xm < min(g0.x, g1.x) - 0.01;
+#ifdef TUBE
+        // The tube is part of the volume: no layers to order.
+        tubeSeg(p, rc, st, g0, g1, xm, split, sHm, csF, topK, tone, ph0, ph1, skyH, fract(jit + float(i) * 0.618034), sum, sig);
+        split = false;
+#else
         if (split) {
           shellSeg(p, rc, st * 0.5, g0.x, xm, g0.Re, Rem, g0.R, Rm, g0.tap, tm, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc, fT);
           shellSeg(pm, rc, st * 0.5, xm, g1.x, Rem, g1.Re, Rm, g1.R, tm, g1.tap, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc2, fT2);
         } else shellSeg(p, rc, st, g0.x, g1.x, g0.Re, g1.Re, g0.R, g1.R, g0.tap, g1.tap, sHm, csF, topK, tone, hzF, ph0, ph1, skyH, fAcc, fT);
+#endif
       }
       Geo gs = g0;
       g0 = g1;
@@ -724,7 +1013,8 @@ void main() {
           vec3 ambC = mix(uAmb * vec3(0.85, 0.95, 1.15), skyH * 0.9, 0.3 + 0.4 * topK);
           vec3 dcol = vec3(0.42, 0.32, 0.22) * mix(1.0, 0.35, uDark) * (uSunCol * exp(-od) * 0.5 * (1.0 - 0.6 * uDark) + uAmb * (0.3 + 0.35 * u) * 0.8);
           vec3 wcol = vec3(0.21) * (ambC * 0.7 + uSunCol * exp(-od) * 0.05);
-          sum += mix(dcol, gHzC, hzF) * sd + mix(wcol, gHzC, hzF) * sw2;
+          float hzD = funnelHaze(p.y);
+          sum += hazed(dcol, hzD) * sd + hazed(wcol, hzD) * sw2;
           sig += sd + sw2;
         }
       }
@@ -738,9 +1028,56 @@ void main() {
     if (split) { acc += T * fAcc; T *= fT; acc += T * aV * cV; T *= 1.0 - aV; acc += T * fAcc2; T *= fT2; }
     else if (inward) { acc += T * aV * cV; T *= 1.0 - aV; acc += T * fAcc; T *= fT; }
     else { acc += T * fAcc; T *= fT; acc += T * aV * cV; T *= 1.0 - aV; }
+    if (T < 0.5 && tOpq > 1e8) tOpq = t;
     t += st;
   }
   vec4 now = vec4(acc, 1.0 - T);
+  // Rain lies under the base, in front of the first opaque body.
+  // A sky ray runs to the base, a falling ray to the ground. The bake draws it past the crossover.
+  float tB = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / max(-rc.y, 1e-5);
+  vec4 rn = rainBatch(rc, bake ? farD - band : 1000.0, min(min(bake ? 90000.0 : farD, tB), tOpq), jit2, bake, farD, band);
+  if (bake) { outC = vec4(rn.rgb + (1.0 - rn.a) * now.rgb, 1.0 - (1.0 - rn.a) * (1.0 - now.a)); return; }
+  // The baked far field lies behind the near field.
+  vec2 sf = vec2((gl_FragCoord.x / uRes.x - 0.5) * asp, gl_FragCoord.y / uRes.y - uHz) / uFoc;
+  vec2 uvA = vec2(sf.x * uFarFoc.x / asp + 0.5, sf.y * uFarFoc.x + uHz), uvC = vec2(sf.x * uFarFoc.y / asp + 0.5, sf.y * uFarFoc.y + uHz);
+  vec4 far = mix(texture(tFarPrev, uvC), texture(tFar, uvA), uFarK);
+  now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
+  now = vec4(rn.rgb + (1.0 - rn.a) * now.rgb, 1.0 - (1.0 - rn.a) * (1.0 - now.a));
+  // Lightning lights the deck and the rain from inside: a soft ball round the stroke, a wide glow past it.
+  // An in-cloud flash sits higher in the cloud.
+  if (uBolt.x > 0.0) {
+    vec3 dF = normalize(uBoltT + vec3(0.0, mix(0.6, 0.1, uBolt.z), 0.0) - vec3(0.0, CAMH * 0.001, 0.0));
+    float aF = max(dot(rc, dF), 0.0);
+    // The cloud's own lumps break the light up, so it never reads as a ball.
+    float n = 0.35 + 1.3 * smoothstep(0.25, 0.75, N(vec3(rc.xy * 14.0, uBolt.y)));
+    now.rgb += vec3(0.75, 0.8, 1.0) * uBolt.x * uBolt.w * now.a * now.a * (n * 0.12 * exp(-(1.0 - aF) / 0.003) + 0.03 * exp(-(1.0 - aF) / 0.02));
+  }
+  // Sun shafts: light through one large opening on the sun's side, along the true sun.
+  // The march runs under the deck only, 30 km at most, and stops at anything opaque.
+  // Each step follows the sun's ray up to the base: the opening there lights it.
+  // The steps are jittered; the history smooths them.
+  if (uGod > 0.0 && uSun.y > 0.01) {
+    float tTop = rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y;
+    float tG = min(min(tTop, 30000.0), tOpq), sh = 0.0;
+    for (int i = 0; i < 24; i++) {
+      vec3 w = (rd * ((float(i) + jit2) * tG / 24.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
+      float dep = max(BASE - w.y, 0.0), L = dep / uSun.y;
+      vec3 wb = w + uSun * L, qc = toCam(wb);
+      // One large hole lights the shafts; the other breaks light only the ground.
+      // Its edges read the opening softly; across it the light splits into two or three beams.
+      float o = beamHole(wb.xz, 0.1 + 0.05 * dep);
+      if (o < 0.01) continue;
+      o *= smoothstep(0.7, 0.3, vn(vec2(dot(qc.xz, vec2(-uSun.z, uSun.x)) * 1.2, dep * 0.5)));
+      // The supercell's bulk blocks the ray too.
+      o *= smoothstep(-0.3, 0.4, stormShapeSun(qc));
+      // The haze dims the light along its path down from the opening.
+      sh += o * exp(-L * 0.05);
+    }
+    // Light only, in the sun's colour scattered by the haze; it glows most toward the sun.
+    float cg = dot(rd, uSun);
+    vec3 tint = mix(vec3(1.0), gHzC / max(max(gHzC.r, gHzC.g), max(gHzC.b, 1e-3)), 0.35);
+    now.rgb += uSunCol * tint * sh * (tG / 24.0) * 2.5e-5 * mix(hg(cg, 0.5), 1.0, 0.3) * uGod;
+  }
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
   if (uCount == 1) outC = vec4(float(gWork), float(steps), 0.0, 1.0);

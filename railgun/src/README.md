@@ -19,7 +19,7 @@ The chain starts at `setup.ts` and runs through the folders interleaved; read ea
 | `state.ts` | `state`: the values that more than one module writes, with their types |
 | `world/` | The gun's axis, shared uniforms, the ground, the far country, sun shadows |
 | `sky/` | The sun, the K2 sky and haze, the air, the impact light, the sky dome |
-| `clouds/` | Light shafts, draw bands, cloud cards, the storm probe, storm lightning |
+| `clouds/` | Light shafts, draw bands, cloud cards, the storm probe, storm lightning, the storm field, the cloud pass |
 | `gun/` | The gun, the spent case, arcs, the muzzle, motes, vents, the flap, the laser, the beacon |
 | `rock/` | The asteroid, its trail, fragments, shards, the strike |
 | `ship/` | The battleship, the hulks, the hit, the ship's shot |

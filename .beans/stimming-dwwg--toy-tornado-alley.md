@@ -5,17 +5,17 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:51:09Z
+updated_at: 2026-11-17T16:10:34Z
 parent: stimming-oh7b
 ---
 
 Build Tornado alley from docs/plans/tornado.md (idea 364, Tom's add 2026-11-16). Size XXXL. It starts in the Lab. A wide, still, deadpan cinematic vista of the Oklahoma plains under a huge supercell. Several tornadoes at once; each carries an F-scale (F0 to F5) to set and play with.
 
 - [x] Task 1: blockout of the shot: plains, wheat, farmhouse, road, supercell; checkpoint with Tom
-- [ ] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob (framing blockout done; next: the hero ray-marched tornado with a continuous F-scale slider, per Tom)
-- [ ] Task 3: many tornadoes: place, set F-scale, paths, ropes out
+- [x] Task 2: one tornado: funnel volume, rotation, dust skirt, F-scale knob (framing blockout done; next: the hero ray-marched tornado with a continuous F-scale slider, per Tom)
+- [x] Task 3: many tornadoes: place, set F-scale, paths, ropes out
 - [ ] Task 4: storm: wall cloud, rain curtain, hail, lightning, light and grade
-- [ ] Task 5: debris and damage: wheat flattens, fence and barn debris
+- [x] Task 5: debris and damage: wheat flattens, fence and barn debris
 - [ ] Task 6: sound, Settings, Dev rows, QA at 1280 and 375 px
 - [x] toys.json entry and menu Lab entry with an icon and a GSAP hook
 - [ ] Tom sets the Dutch name
@@ -136,3 +136,115 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16, Tom: Dev row Cloud base (0.8 to 3.0 km, default 1.35; ?base for one load): the base is a uniform and every part hung from it follows (shelf, front deck, wall cloud 0.55 km lower, funnel tops and horns, whirls, deck bands, gloom, rain, cloudShade). The bottom-left strokes at 28 mm were foreground wheat ears; they now keep their 50 mm size and place at any lens.
 
 - 2026-11-16, sky pass 1, Tom: a sun globe with a lens flare: the globe and its glow sit in the sky, so the deck hides them; the flare is the runner's own (shared/flare.js), full in frame, a veil past the edge, off behind the eye or below the horizon, and dimmed softly when the sun's ray meets the deck (a JS copy of the storm's shape).
+
+- 2026-11-16: the backlit funnel read hollow: the gloom under the base was laid over the frame after the storm, along each ray's whole path, so the dark core took the sky's tone. Each storm sample now takes only the gloom in front of it; the sky behind takes the full gloom first. A backlit core is a dark silhouette with lit rims.
+
+- 2026-11-16, Tom: touchdown as a sequence: no whirl with no tornado; per tornado the whirl forms over about 8 s (reach tightens from 2.2×, arms wind 0.5 to 1.4, speed rises; the turn is summed on the CPU), the horn lowers at 60% formed, then the condensation descends (3 s) and the dust spins up halfway down. Rope-out runs in reverse; the tornado leaves when its whirl is gone. Each whirl has its own texture seed. Reduced motion starts formed.
+
+- 2026-11-16, Tom: (1) no fixed pit: with no tornado the base is plain; each tornado lowers its own pit (to 0.55 km as its whirl forms, radius with F), centred on its top, following it, leaving with it; funnel heights hang from the pits. (2) Dev Time of day 14:00 to 21:00 (?tod); the sun sets after about 19:40 into twilight. (3) Dev Wind and Wind dir (?wind, ?winddir): wheat, gusts, drift and each funnel's lean; the trunk bows downwind (thin up to 350 m, wedges 50 m) with the top anchored under its whirl and a slow gust swell.
+- [x] Tom: the funnel's twist, reach and bend follow the wind and move over time (started: Wind drives lean and bow).
+
+- 2026-11-17, Tom: 25 live Dev knobs in the scene (?dev; one table KNOBS in funnel.js; remembered as k_<id>; ?id=value for one load; Copy JSON and Reset): Funnel, Colour (Reflectivity, Sunlit weight, Ambient, Darkness, Haze on funnel, Top darkening, Dust tint), Shape, Dust, Deck whirl. Colour blending: a cool shade side from the sky and deck, the upper funnel darkened by the deck's shadow, dust brown and wheat bounce low down, sheath noise as tone, haze on the funnel by height.
+
+- 2026-11-17, Tom: Dev row Eye height (1 to 40 m, ?eye), default 8 m (was 1.25) for a more expansive view; the view stays level, so the horizon (0.382) and the road's vanishing point (0.618) hold; the near wheat reads from above.
+
+- 2026-11-17, Tom: an old water-pump windmill blockout in the left foreground wheat, about 38 m out: four tapering lattice legs with girts (13 m), an 18-blade wheel facing the wind and turning with Wind, a tail vane; dark weathered steel, hazed for its distance. Clear of the touchdown area and the road at 28 mm; cut at the left edge at 50 mm.
+
+- 2026-11-17: the power line's first pole stands 30 m out, so at 28 mm from 8 m it shows with its wires sagging between real poles; the near wheat shows drill rows, clumps with darker gaps and downwind ripples, fading out by pixel size. The deck now runs 150 km left and right and about 146 km ahead (one vast system, no edge at any lens), with a thin glow at the horizon under its far edge.
+
+- 2026-11-17, Tom: the far field is baked: past 16 km the deck is a half-size picture with no tornadoes; the live march stops at 16 km with a 14–16 km crossover. The bake renews on Time, Sun dir, Cloud base, Storm, Eye height, lens or size changes, in 8 strips on a running page. GPU, 3 × F4.5, 1828×984, 28 mm, minimum frame: 23.0 ms before, 16.2–17.1 ms after.
+
+- 2026-11-17: the far sky: a tight horizon glow, warmer toward the sun, under three thin ragged haze bands just over the horizon; only the strip under the deck's far edge shows, as a lit, layered glow.
+
+- 2026-11-17, Tom (the scene way too bright; the windmill out for now): the foreground windmill is out (its code is in a28e1e65); the sun's light 1.7× its colour curve (was 2.6), the sky fill about 20% lower, the wheat's albedo about 35% lower with softer gust sheen; the storm reads heavy and dark.
+
+- 2026-11-17, Tom (a weird green patch on the left): flat green tints came from the gloom colour, the rain curtain, the low haze bands and the storm core's tint; the gloom is now cool slate, the rain neutral, the bands warm dust, the core dark slate. Green returns only where light passes rain (the palette step).
+
+- 2026-11-17, Tom: cloud shadows on the plain: sunCover() follows the sun's ray to the base (the storm's bulk shades outright; the ragged fringe gives soft patches drifting downwind; a low sun stretches them into long bands); only the sun's share of light is taken. God rays can reuse sunCover.
+
+- 2026-11-17, Tom: Dev always on for now: tornado/index.html adds ?dev to its own address (remove that head script to hide Dev).
+
+- 2026-11-17, Tom: the Cloud tube is the new default funnel (Shells stays as a Dev choice). The taper, colour blend, spawn fixes, range limit and closer bands with distance apply to the tube first.
+
+- 2026-11-17, Tom (an F2 far too fat; no taper, no colour blend): Width 1.0 by default; the bell spans the top fifth of the funnel, at most about 2× its top radius. The pale ring was the horn's sides taking the sun at the base: the bell keeps the deck's slate there and takes the sun only by degrees down the bell; the deck's tone grows up a bell's height. Cool slate shade side, real falloff on the lit side, Ambient 1.1; torn sheath edges take the deck's tone. The far bake's key holds the full projection and bakes again 30 frames on, so the deck reaches the horizon on every load.
+
+- 2026-11-17: the Cloud tube gets the shells' scale, bell and colour (shared code); its core is denser (2.1 to 3.2), so it reads as condensation; its bands' torn edges take the deck's tone.
+
+- 2026-11-17, Tom (the Storm slider did nothing; spawn squiggles; instant spawn): Storm now reaches the whole sky (low: a higher, thinner, broken deck in rafts with sky between, no pits; 0.85 and up: the heavy deck as before); any bake-key change bakes the far field whole that frame, so near and far follow a moving slider together (also fixes the Time lag). The empty first bake was a texture feedback loop on unit 0, now fixed. Spawn: each whirl's reach and twist stay fixed (their ramp slid the log-polar texture fast); touchdown runs about 38 s (whirl 20 s, pit and horn 10 s from 15 s, funnel 12 s from 23 s, dust 4 s before contact); F eases over 5 s; rope-out reverses slowly. ?age=45 shows a full funnel.
+
+- 2026-11-17, Tom (the rain at the right, awful): the core's rain cylinder drew a hard dark block (its cover had no softening). Its sides are now ragged (noise eats up to 2 km), its cover linear and capped at 0.65, thinner near the ground, mixed 30–70% into the far haze; only a faint soft haze remains (in bce8db66).
+
+- 2026-11-17, Tom (grain; tops too dark, not blending): the tube's fine noise and Worley fade to their mean below a pixel (the main grain cause: aliasing); gentler tone gain and band threshold; history 0.35 while running, four jittered sub-draws for a still; the edge rag halved (no comb hairs); the deck's soft edge 2 steps wide. Tops: the turn-to tone is read from the deck beside the bell; the bell takes half the sun at the base; the tube's density fades over the whole bell while the horn takes over through a softer join; Top darkening 0.6. Seen, not yet touched: vertical streaks in the deck near the whirls.
+
+- 2026-11-17: deck streaks near whirls came from blending overlapping whirls' noise points; the two strongest whirls now read their own deck noise and blend values. Layers hug the core with distance (gap 0.2 near to 0.08 by 12 km; sub-pixel layers fade into the core), ending the hoops; the far dust drops sub-pixel octaves and the rain ring is wider and softer (the dotted far funnel). Dev rows Bake from (6–40 km, default 16; the tornado clamp follows) and Deck reach (20–200 km, default 146). GPU, 3 × F4.5 tubes, minimum frame: 17.3 ms at 8 km, 22.5 at 16, 25.6 at 30.
+
+- 2026-11-17, Tom: Storm drives the funnels (default 0.85 unchanged): a young storm gives paler, cleaner funnels with more sky light and less haze and density; a full one gives darker, dirtier funnels the deck's tone runs further down, with more rain wrap.
+
+- 2026-11-17, Tom: towers show at low Storm: the tower's radius, top and overshooting dome read max(Storm, 0.6), so a young cell stands as a towering, sunlit Cb over a thin, broken deck (default unchanged).
+
+- 2026-11-17, Tom: far breaks and sweeping god rays: deckOpen() opens holes in the deck from 10 km to full at 45 km, toward the sun's side, at every Storm (few and narrow at full storm), drifting downwind with the deck; the storm pass marches 12 jittered steps per ray and lights air whose sun ray crosses a break (haze by height, forward scatter); Dev row God rays (default 0.6, ?god). The far bake renews in strips while running so the far breaks move. Cheap cauliflower lumps on the tower top and dome. Shafts read as warm fans under the deck, best with the sun ahead; not yet crisp beams.
+
+- 2026-11-17, Tom (pancake clouds; the tower looks weird; hollow tube with the sun ahead): god rays stop where the ray turns half opaque, so they light only the air in front (the hollow V); below the default storm each raft gets its own height, domed Worley tops at two sizes, a heaving ragged base and slow drift; the tower is stacked, domain-warped Worley turrets growing softer with height, a boiling overshooting dome and a fibrous anvil edge, paid only near the tower. Known: fine stipple on far high cloud edges.
+
+- 2026-11-17, Tom (higher F, darker and more imposing): Darkness default 0.95 (was 0.55): albedo about 0.16× and sun about 0.5× at F5; F0–F1 pale (+15% albedo); F2 up a dirty brown-grey, full by F4; the deck's tone runs further down with F.
+
+- 2026-11-17, Tom: an opening build-up: the storm eases from 0 to its set level (0.85) on an in-out quart over 90 s (Dev row Build-up 20–300 s; ?buildup=0 for full at once); the Storm slider follows; touching it takes over. At 0.67 the first tornado spawns on the left golden line (0.355 across), 6.5 km out at a strong angle, and runs the slow touchdown. Reduced motion starts formed. QA loads with ?tor or ?storm skip it.
+
+- [ ] Later (Tom): volumetric rain haze: a cloud-noise texture of rain pouring down over the scene. Now stimming-u0iy.
+
+- 2026-11-17, Tom: the build-up takes 15 s by default (range 5–300; key buildUpS, the old saved 90 removed); during it the far field renews in strips, so no frame stalls.
+
+- 2026-11-17, Tom (god rays drew as horizontal bands): at dusk the true shafts run almost level, so each row integrated different breaks into bands. The march now runs only under the deck (30 km, stops at the first opaque body, 24 jittered steps); each step follows the shaft to the base, never flatter than 24°, so beams hang from the openings; bright at the opening, fading with depth. Openings: far breaks and a young deck's raft gaps. Also: the deck's finest lumps fade by pixel size (the cause of the stipple on upper edges); a young tower is a narrow column with no anvil until Storm 0.25–0.65.
+
+- 2026-11-17, Tom (build-up far too quick; the far bake steps): the build-up takes 180 s by default (30–600, key buildUpT) on easeInOutSine; the first tornado drops at Storm 0.67, about 2 min in. A third far target keeps the previous bake and each new bake fades in over it (2.5 s in the build-up, 0.25 s for a drag), so the far field moves without steps. Beams: soft, ragged sides, tapering toward the ground. Thick cloud hides the sun globe fully. A young cell's shelf is small so the tower stands clear; the dome boils at two scales.
+
+- 2026-11-17, Tom (no automatic layer falloff; top blend): Dev knob Layer gap (0.05–0.5, default 0.2, ?gap) sets one gap for every funnel at any distance; the distance logic is gone. The top's speckle came from the tube core's ragged edge under grazing rays in the flare: there the edge noise drops to 0.25×, the edge ramp widens 2.5× and the lump light gain eases to 0.6; the turn-to tone is read at one fixed point per tornado. A faint grain remains on the shade side at the join.
+
+- 2026-11-17, Tom (rhythmic frame lag; build-up in 45 s): the build-up is 45 s by default (10–600, key buildUpU); the first tornado drops about 31 s in. The hitch: the far field renewed one contiguous eighth per frame, and the band across the horizon cost several ms more, every 8th frame. Each slice is now every eighth row, so every frame bakes the same mix. One whole far bake costs about 8 ms. Also in this commit, unfinished: deckOpen as discrete holes and a beam split (safe, not yet tuned).
+
+- 2026-11-17, Tom (god rays must follow the sun, the real breaks and the sun's colour): shafts follow the true sun (no floor), lit only through openings the march draws (deckOpen far holes, raftGap gaps), blocked by the storm's bulk; a few soft ragged holes 3–8 km wide, 15–40 km out, drifting with the deck; each hole splits into two or three beams fading down their sun path; colour uSunCol tinted by the haze. At Tom's default (19.05, Sun dir 100, sun 4.7° up, side-on) no shafts read, which is honest; Time 17–18.5 or Sun dir 140–180 shows them.
+
+- 2026-11-17, Tom: the opening holds 7 s of sun at Storm 0 before the build-up, at any time of day. Cloud shadows follow the storm: sunCover = smoothstep(0.05, 0.85, Storm) × (1 − the deck's openings where the true sun ray crosses the base), using the same deckOpen/raftGap the deck draws; dark at full storm except under the breaks. Breaks across the whole sky (holes(): far big holes as before, plus sparse 1.2–3.2 km breaks overhead and in the foreground, 20% of 6 km cells at full storm, 40% at Storm 0), feeding the deck, the shadows and the god rays. deckOpen now runs per deck sample; cost not timed cleanly.
+
+- 2026-11-17, Tom: at most 4 tornadoes (roping ones count until they leave); at 4 a spawn does nothing (no despawn); + Tornado greys out and the click cursor shows not-allowed until one leaves. Lighting from Window seat and Railgun in stormLit(): a two-lobe cloud phase, a multiple-scatter tail, powder darkening on thin edges away from the sun, a silver lining toward the sun dimmed by haze, sky light by direction (zenith, warm low sky toward the sun, cool sky away), and warm ground bounce on the base scaled by uPlainLit; lightInit() sets the sun and sky once per pixel. The funnels' own light is unchanged. GPU not measured (shared GPU).
+
+- 2026-11-17, Tom's first scenes (triggered from the bar like the rest of the toy, not typed): (1) a crane-up with a dolly zoom: the eye rises slowly to a large height while the lens widens, the tornado holding its size; (2) a pickup rushes out of the action down the road; a little later two storm-chaser vehicles rush in toward the storm. Routed: camera to the main helper, vehicles to the ground session.
+
+- 2026-11-17, Tom (god rays from the edges; one large hazy one): one hole lights the shafts (beamHole(), a ragged 2.6 km disc placed in frame on the sun's side, clear of the shelf); the march reads only it; other breaks light ground patches only; a soft half-globe glow low on the sun's side. Perf pass (look unchanged): deckOpen skipped 1 km off the slab and held 0.3 km along a ray, probes reuse it, silver lining only facing the sun, behind 90% cover the last light is reused, nearEars reads sunCover only under an ear. 3 × F4.5 at Tom's base 2.65: 34.3 → 30.4 ms best; Tom's higher base roughly doubles the march under the deck.
+
+- 2026-11-17, Tom (scary green before the big dark clouds; bruised storm colours): uGreen (greenK()) rises from Storm 0.3 to 0.5 and sinks 0.62–0.85 (peaking about 20–28 s into the 45 s build-up, before the first drop); the deck's underside turns green-teal where rainAt() says rain falls (heaviest round the core, drifting downwind); light through rain glows green-teal (a trace at full storm); one gloomCol() for both passes (slate at full storm, green-teal in the phase; the never-green rule is replaced); haze and the sunlit plain turn sickly yellow-green in the phase. Shaded undersides take bruised violet and flanks slate, on the fill light only.
+
+- 2026-11-17, Tom (a cinematic pan-up button): Rise (bar action, key R): the eye cranes from its set height to Rise height (Dev, 10–80 m, default 35) over Rise time (6–30 s, default 15) on a soft ease while the lens widens 30%, holds 4 s, eases back; a press turns it round; level camera keeps the golden framing; far bakes keep their own lens (uFarFoc) and fade in. Not a true dolly zoom yet: the tornado shrinks by the widening; a true one needs the eye to travel toward it, which every ground file assumes is fixed at the origin.
+
+- 2026-11-17, Tom (rain slanting with the wind, reaching the ground, not only far and scattered): rain curtains as volumes from base to ground, densest at the foot, slanting downwind (rainSlant(): 0.15–0.85 km drift per km of fall) with gust sway, soft feathered sides and leaning streaks; rainAt() gives 1–3 km curtains with clear air between, a big curtain on each tornado's rear flank, the air round each funnel kept clear, light veils near the eye, main curtains 3–10 km, far ones baked; green-teal in the green phase. About +3 ms (35.1 vs 31.9 ms, three F4.5). Note: Tom's saved Wet glass (Window group) on High costs about 20 ms more.
+
+- 2026-11-17, Tom (distant cloud-to-ground lightning): boltStep() fires a burst every 8–30 s once Storm passes 0.5 (full by 0.75): two or three strokes over about 0.4 s, 15–50 km out, never near the eye; 70% cloud-to-ground (a jagged channel with a glow and short branches, behind rain and funnels), 30% in-cloud; the deck and rain glow round the stroke, a faint glow on the plain, a slight air flicker; reduced motion has none. Not yet seen in motion.
+
+- 2026-11-17: perf at defaults (Wet glass off): three F4.5, Storm 1, golden, 1870×962: 29.6 ms best (storm pass 20.9 ms, scene pass ~9 ms); Tom's live settings (Wet glass on, base 1.9, High) cost about 54 ms. Dev row Front edge (km, −6 to 15, default −6 = the old layout; ?front=): the deck runs from a ragged front edge to Deck reach; nearer the eye the plain is in full sun (bright foreground, dark storm ahead). Not automatic with Storm yet.
+
+- 2026-11-17, Tom (volumetric distance haze): one air model in the shared GLSL (airInit/airTo): a dust layer (450 m scale height, denser with Storm) and clean air (8 km, scatters blue); analytic optical depth by distance and climb; in-scatter from sky light (slate under the deck, warm toward the sun, cool away) plus the sun's dust lobe times the sunlit share from sunCover; deck, funnels, rain, the scene and the far bake share it. About +1 ms. plain.js's plainHaze() still uses the old mix (one-line follow-up for the destruction session).
+
+- 2026-11-17: tornadoes stay inside the live march: farMax() = max(1.5, Bake from − crossover − 0.5) km (13.5 km at 16); placement, drag, drift and ?near clamp to it; a tornado drifting out ropes out at the limit.
+
+- 2026-11-17, Tom (classic golden ratio): eye 1.25 m (key eyeGold) and a 35 mm lens (key lensGold; 28, 35, 50, 85 in Settings) by default, old saved keys removed; horizon at 0.383, road vanishing at 0.618, no deck edge at any lens with Front edge −6; the first tornado drops upwind so it meets the ground at about 0.368 across. Perf: three F4.5 now 33–36 ms best (3D farm, infra and damage field added about 4 ms; 35 mm funnels fill more pixels); the 30 ms target needs another pass.
+
+## Remote pickup (2026-11-17)
+
+Main holds all work from the five side sessions (cloud tube, power line, fields, ACES and Look, destruction). No branch holds unmerged tornado work.
+
+Open work, one bean each:
+
+| Bean | What | Needs |
+|---|---|---|
+| stimming-2ftc | Perf pass: three F4.5 under 30 ms (now 33 to 36 ms) | Ready |
+| stimming-u0iy | Volumetric rain haze to the ground, slanted with the wind | Ready |
+| stimming-uzgg | Rise: true dolly zoom or keep the widening | Tom |
+| stimming-2mtw | Easter eggs, wordless nods | Tom |
+| stimming-mnpe | Engine sound from havoc | Tom |
+| stimming-h8tu | Front edge recedes with Storm | Tom |
+| stimming-xk5e | Photoreal: road, albedos, wires; then the default | Tom |
+| stimming-ga26 | Fields: QA stills | Ready |
+
+Still open on this bean: Task 4 hail, Task 6 sound and QA at 1280 and 375 px, the Dutch name, the session cost.
+
+Start: `npm ci`, `npm run dev`, then http://localhost:8000/tornado/ (Dev is always on). Files: tornado/main.js (scene), funnel.js (storm pass), wheat.js, road.js, line.js, plain.js, traffic.js, farm.js, infra.js, damage.js, pane.js. Plan: docs/plans/tornado.md.

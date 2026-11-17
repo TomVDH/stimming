@@ -20,6 +20,11 @@ const STORM_VS = CLOUD_VS
 // The storm's lights, shared by the probe and the cloud pass.
 // The host declares uFl, uFlR, uStormK, uStormSoft and the storm chunk first.
 export const STORM_HOST = /* glsl */`
+// The card storms stand 85 to 200 km out: they take the rock's light four times further.
+// The cloud pass sets 1: its storms stand at true distances.
+#ifndef ROCK_REACH
+#define ROCK_REACH 4.0
+#endif
 // Lightning's colour inside cloud, as Window seat's.
 #define FLASH_C vec3(0.64, 0.72, 1.0)
 vec3 stormFlash(vec3 P) {
@@ -67,13 +72,14 @@ vec3 stormExtra(vec3 P, vec3 p, float powder, float Tl2) {
   // The passing bolt lights the cloud near its path.
   if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; L += cloudBoltC() * uBolt.w * 0.35 / (1.0 + dot(bd, bd) / 4.0e7); }
   if (uFill + uRockL.w < 0.001) return L;
-  // The rock reaches a storm four times further than a heap.
-  // A storm stands 50 to 150 km from the rock.
+  // The rock reaches a storm ROCK_REACH times further than a heap.
   vec3 rb = uRockL.xyz - P, Lr = normalize(rb);
-  float R4 = 4.0 * uRockR, rf = R4 * R4 / (dot(rb, rb) + R4 * R4);
+  float R4 = ROCK_REACH * uRockR, rf = R4 * R4 / (dot(rb, rb) + R4 * R4);
   float back = pow(max(dot(V, Lr), 0.0), 4.0);
   // The rock's fire fills the storm warm; the side toward the rock glows.
-  L += uAstC * uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2);
+  // The fill falls off with distance from the rock: a storm far off stays dark.
+  float fillK = 1.0 / (1.0 + dot(rb, rb) / 4.0e8);
+  L += uAstC * uFill * fillK * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2);
   // The rock's direct light: the faces toward it take it, its own body shades it.
   if (uRockL.w * rf > 0.004) {
     if (gRockSh < 0.0) gRockSh = exp(-1.8 * shapeTap(p + Lr * 2.2));
