@@ -382,7 +382,7 @@ export async function tube(host, span) {
     gl.useProgram(A.p);
     bind(gl, A, 'uNow', 0, glow[0]);
     bind(gl, A, 'uWas', 1, glow[1]);
-    gl.uniform3f(A.u.uKeep, ...GLOW.map(t => off ? 0 : Math.exp(-gap / t)));
+    gl.uniform3f(A.u.uKeep, .../** @type {[number, number, number]} */ (GLOW.map(t => off ? 0 : Math.exp(-gap / t))));
     tri(gl, glow[2], vao);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, glow[2].fb);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
