@@ -23,11 +23,12 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 
 ### Deal
 - The Clock deals twelve toys from a shuffled line. No toy comes back before every other toy had a turn.
-- Re-roll (key R) shows after 5 s, under the clock. It sends the old dozen back into blur in the comet's order, then runs the comet.
+- Re-roll (key R) shows after 5 s, inside the clock: low in the middle, under the motto, over the six o'clock toy. It scales with the clock. It sends the old dozen back into blur in the comet's order, then runs the comet.
 - The Clock has no link to `?all` or `?lab`. Both are flags.
 
 ### Middle
 - It shows the name and the motto of the toy in hand. With no toy in hand it is empty: no words, no picture, no counter.
+- The name's last line sits on one fixed line, a little above the centre. A longer name grows up; the hairline and the motto hang below.
 - The page keeps its own words for screen readers. It shows them if the tube fails to build.
 
 ### Tube

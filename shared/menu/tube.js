@@ -289,11 +289,11 @@ export async function tube(host, span) {
       if ('letterSpacing' in pen) pen.letterSpacing = `${0.02 * tagSize}px`;
       const tags = words.tag ? wrap(words.tag, face * 0.38 * k) : [];
       const nameStep = nameSize * 1.1, tagStep = tagSize * 1.45, gap = tags.length ? tagSize * 2.1 : 0;
-      const tall = names.length * nameStep + gap + tags.length * tagStep;
-      // Two passes: a dark shade keeps the words clear, then a soft white glow.
       // Plain white letters: the shader makes their band and their core.
       {
-        let y = mid - tall / 2;
+        // The name's last line sits on a fixed line above the middle (Tom).
+        // A longer name grows up; the motto hangs below.
+        let y = mid - nameSize * 0.3 - names.length * nameStep;
         pen.fillStyle = '#fff';
         if ('letterSpacing' in pen) pen.letterSpacing = '0px';
         for (const row of rows) {

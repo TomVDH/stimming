@@ -30,10 +30,10 @@ function start() {
   <p class="clock-tag"></p>
 </div>`;
   shelf.after(face);
-  // The Re-roll stands under the clock.
+  // The Re-roll stands in the clock, low in the middle.
   const button = Object.assign(document.createElement('button'), { type: 'button', className: 'clock-roll', title: 'Re-roll (R)' });
   button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="12.4" height="12.4" rx="3"/><circle cx="5.4" cy="5.4" r="1.1"/><circle cx="10.6" cy="10.6" r="1.1"/><circle cx="8" cy="8" r="1.1"/></svg>Re-roll';
-  face.after(button);
+  face.append(button);
   const title = face.querySelector('.clock-name'), tag = face.querySelector('.clock-tag');
 
   // The tube shows the toy's still in the middle; the Clock works without it.
