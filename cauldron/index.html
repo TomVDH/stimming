@@ -202,6 +202,7 @@ const ui = initPage({ id: 'cauldron', bar: {
     // Stirrer proposal: 0 spoon, 1 carved spoon, 2 iron ladle, 3 paddle.
     { type: 'slider', id: 'tool', label: 'Stirrer', min: 0, max: 3, step: 1, value: 0 },
     { type: 'slider', id: 'skinLook', label: 'Skin look', min: 0, max: 1, step: 0.01, value: 0 },
+    { type: 'slider', id: 'blend', label: 'Marble blend', min: 0, max: 20, step: 0.5, value: 5 },
   ],
   reset: () => act.reset(),
   quality: true,
@@ -843,7 +844,7 @@ const DYE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uDye, uAux, uVel;
-uniform float uDt, uExt, uTime, uConv, uRelax, uStir;
+uniform float uDt, uExt, uTime, uConv, uRelax, uStir, uBlend;
 uniform vec4 uMean;
 uniform vec4 uPlume[4];
 uniform int uNE;
@@ -910,6 +911,14 @@ void main() {
   vec2 o = vec2(0.09 / uExt * 0.5, 0.0);
   vec4 near = (texture(uDye, su + o) + texture(uDye, su - o) + texture(uDye, su + o.yx) + texture(uDye, su - o.yx)) * 0.25;
   d = mix(d, near, k);
+  // The marbling melts into the soup over time; thick soup holds it longer.
+  vec2 o2 = vec2(2.0 / float(textureSize(uDye, 0).x), 0.0);
+  vec4 nb = (texture(uDye, su + o2) + texture(uDye, su - o2) + texture(uDye, su + o2.yx) + texture(uDye, su - o2.yx)) * 0.25;
+  float bk = clamp(uDt * uBlend * mix(1.0, 0.35, T) * (0.5 + uConv), 0.0, 0.5);
+  d = mix(d, nb, bk);
+  // Fat and skin spread out into a thin film at half that rate.
+  vec4 na = (texture(uAux, su + o2) + texture(uAux, su - o2) + texture(uAux, su + o2.yx) + texture(uAux, su - o2.yx)) * 0.25;
+  a.rgb = mix(a.rgb, na.rgb, bk * 0.5);
   d = mix(d, uMean, uRelax);
   a.g *= 1.0 - 1.5 * k;
   a.r *= 1.0 - 0.3 * k;
@@ -3403,6 +3412,7 @@ function runDye(dt, src, dst, n = dyeN) {
   if (relaxT > 0.25) { relax = draining ? 0.25 : 0; relaxT = 0; }
   if (draining && draining.phase === 'down') relax = Math.max(relax, dt * 2.5);
   gl.uniform1f(dyeP.u('uRelax'), relax);
+  gl.uniform1f(dyeP.u('uBlend'), devV('blend', 5));
   const m = draining ? [BROTH[0], BROTH[1], BROTH[2], 1] : [mean[0], mean[1], mean[2], mean[3]];
   gl.uniform4f(dyeP.u('uMean'), ...m);
   const pl = new Float32Array(16);
