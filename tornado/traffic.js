@@ -130,6 +130,126 @@ export function trafficUniforms(T, simT) {
   });
 }
 
+/* ---------- the vehicles' shapes, as data ---------- */
+// Hulls and small parts live in tables: one loop traces them all.
+// So each traced call site stays small, and the shader compiles fast.
+// A plane with normal n through q: its unit normal and offset.
+const pq = (n, q) => { const l = Math.hypot(...n), u = n.map(v => v / l); return [...u, u[0] * q[0] + u[1] * q[1] + u[2] * q[2]]; };
+// The plane and its mirror across the vehicle's middle.
+const pqm = (n, q) => [pq(n, q), pq([-n[0], n[1], n[2]], [-q[0], q[1], q[2]])];
+// The windshield: a plane through the hood's back edge (y, z) with normal (0, ny, nz).
+const WS = [[1.32, 0.92, 0.802, 0.597], [1.08, 1.07, 0.75, 0.66], [1.15, 1.77, 0.55, 0.83]];
+const ws = k => pq([0, WS[k][2], WS[k][3]], [0, WS[k][0], WS[k][1]]);
+// Each kind's wheel arches: centre height, front z, rear z, radius; and the well's inner wall x.
+const ARCH = [[0.4, 1.8, -1.88, 0.52, 0.6], [0.38, 1.45, -1.45, 0.48, 0.58], [0.38, 1.8, -1.8, 0.49, 0.62]];
+// A hull: box centre, half size, edge cut, id, planes, arch cuts (1 front, 2 rear).
+const H = (c, h, e, id, pl, cut = 0) => ({ c, h, e, id, pl, cut });
+const B = (c, h, e, id) => ({ c, h, e, id });
+const mirrorB = b => B([-b.c[0], b.c[1], b.c[2]], b.h, b.e, b.id);
+const HULLS = [
+  [
+    // The pickup's front end: a tall face, a hood that falls a little to the nose.
+    // The nose narrows in plan, its corners round off; the fenders' shoulders roll over.
+    H([0, 0.88, 1.88], [1, 0.44, 0.96], 0.07, 1, [[0, 0.999, 0.0437, 1.36], pq([0, 1, 0.9], [0, 1.18, 2.84]), pq([0, -1, 0.8], [0, 0.5, 2.84]),
+      ...pqm([1, 0, 0.12], [1, 0, 2.2]), ...pqm([1, 0, 1], [0.9, 0, 2.84]), ...pqm([1, 1.2, 0], [1, 1.25, 0])], 1),
+    // The crew cab: raked windshield, sides that lean in above the belt, a rounded roof.
+    H([0, 1.19, -0.23], [1, 0.75, 1.15], 0.08, 2, [ws(0), ...pqm([1, 0.16, 0], [1, 1.32, 0]), ...pqm([0.6, 1, 0], [0.84, 1.94, 0]),
+      pq([0, 1, -0.8], [0, 1.92, -1.28]), pq([0, 0.05, -1], [0, 1.3, -1.38])], 2),
+    // The bed's side walls, flush with the cab's belt; a 7 cm gap stands between cab and bed.
+    H([0.965, 0.895, -2.2], [0.035, 0.435, 0.75], 0.02, 1, [], 2),
+    H([-0.965, 0.895, -2.2], [0.035, 0.435, 0.75], 0.02, 1, [], 2),
+    // A chrome bumper that wraps the corners.
+    H([0, 0.5, 2.86], [1, 0.13, 0.08], 0.04, 5, [...pqm([1, 0, 1], [0.88, 0, 2.94])]),
+  ],
+  [
+    // The wagon's nose: a hood that falls to a rounded front, fenders that roll over.
+    H([0, 0.73, 1.735], [0.95, 0.37, 0.735], 0.07, 1, [pq([0, 1, 0.14], [0, 1.08, 1.2]), pq([0, 1, 1.1], [0, 0.92, 2.36]), pq([0, -1, 0.9], [0, 0.5, 2.42]),
+      ...pqm([1, 0, 0.1], [0.95, 0, 1.6]), ...pqm([1, 0, 0.9], [0.84, 0, 2.47]), ...pqm([1, 1.1, 0], [0.95, 1, 0])], 1),
+    // The long body: raked windshield, sides that lean in, a hatch that leans in at the back.
+    H([0, 1.06, -0.725], [0.95, 0.7, 1.705], 0.08, 2, [ws(1), ...pqm([1, 0.22, 0], [0.95, 1.1, 0]), ...pqm([1, -0.35, 0], [0.95, 0.55, 0]),
+      ...pqm([0.55, 1, 0], [0.72, 1.76, 0]), pq([0, 1, 0.35], [0, 1.755, 0.25]), pq([0, 0.28, -1], [0, 1.1, -2.43]),
+      pq([0, 1, -0.7], [0, 1.75, -2.15]), pq([0, -1, -0.7], [0, 0.5, -2.38])], 3),
+    // Black bumpers that wrap the corners.
+    H([0, 0.5, 2.42], [0.96, 0.14, 0.08], 0.04, 3, [...pqm([1, 0, 1], [0.84, 0, 2.5])]),
+    H([0, 0.5, -2.4], [0.96, 0.13, 0.07], 0.04, 3, [...pqm([1, 0, -1], [0.84, 0, -2.47])]),
+  ],
+  [
+    // The van's short nose: a steep hood, a rounded front.
+    H([0, 0.78, 2.2], [1, 0.42, 0.55], 0.1, 1, [pq([0, 1, 0.32], [0, 1.18, 1.8]), pq([0, 1, 1.2], [0, 0.86, 2.68]), pq([0, -1, 0.8], [0, 0.48, 2.7]),
+      ...pqm([1, 0, 0.08], [1, 0, 1.9]), ...pqm([1, 0, 0.7], [0.86, 0, 2.75]), ...pqm([1, 1, 0], [1, 1.08, 0])], 1),
+    // The tall body: a high roof over the windshield, near-upright sides, rounded top edges.
+    H([0, 1.355, -0.535], [1, 0.995, 2.235], 0.14, 2, [ws(2), ...pqm([1, 0.05, 0], [1, 1.3, 0]), ...pqm([1, -0.3, 0], [1, 0.55, 0]),
+      ...pqm([0.7, 1, 0], [0.86, 2.35, 0]), pq([0, 1, 0.6], [0, 2.35, 0.85]), pq([0, 1, -0.5], [0, 2.35, -2.55]), pq([0, -1, -0.6], [0, 0.5, -2.72])], 3),
+    // A black bumper that wraps the corners.
+    H([0, 0.47, 2.74], [0.99, 0.13, 0.08], 0.04, 3, [...pqm([1, 0, 1], [0.86, 0, 2.82])]),
+  ],
+];
+// Small parts: plain boxes. ids as vHit's list.
+const pair = b => [b, mirrorB(b)];
+const BOXES = [
+  [
+    // The bed's bulkhead, tailgate, liner floor and wheel housings.
+    B([0, 1.09, -1.48], [0.93, 0.24, 0.02], 0.01, 1), B([0, 0.925, -2.91], [1, 0.405, 0.035], 0.025, 1),
+    B([0, 0.83, -2.2], [0.93, 0.03, 0.7], 0, 13), ...pair(B([0.78, 0.94, -1.88], [0.15, 0.1, 0.5], 0.06, 13)),
+    // The frame, an air dam, a chrome rear bumper, a hitch, running boards.
+    B([0, 0.42, -0.1], [0.6, 0.1, 2.6], 0, 3), B([0, 0.34, 2.78], [0.86, 0.04, 0.08], 0.02, 3),
+    B([0, 0.52, -2.98], [1, 0.1, 0.05], 0.035, 5), B([0, 0.46, -3.08], [0.04, 0.035, 0.07], 0.01, 3),
+    ...pair(B([1.04, 0.47, -0.05], [0.08, 0.022, 1.22], 0.01, 3)),
+    // Tall towing mirrors on short arms.
+    ...pair(B([1.18, 1.47, 0.72], [0.11, 0.13, 0.05], 0.03, 3)), ...pair(B([1.05, 1.41, 0.74], [0.05, 0.02, 0.02], 0, 3)),
+  ],
+  [
+    // A bright skid plate, the frame, running boards.
+    B([0, 0.34, 2.36], [0.5, 0.03, 0.12], 0.015, 5), B([0, 0.38, 0], [0.6, 0.07, 1.9], 0, 3),
+    ...pair(B([1, 0.42, 0], [0.07, 0.02, 0.85], 0.01, 3)),
+    // Roof rails, two cross bars, a black gear case, the amber bar at the front.
+    ...pair(B([0.68, 1.8, -0.95], [0.03, 0.035, 1.1], 0.01, 3)),
+    B([0, 1.85, -0.25], [0.72, 0.02, 0.03], 0, 3), B([0, 1.85, -1.65], [0.72, 0.02, 0.03], 0, 3),
+    B([0, 1.96, -1], [0.5, 0.09, 0.55], 0.05, 3), B([0, 1.85, 0.12], [0.6, 0.045, 0.07], 0.03, 4),
+    // Mirrors on short arms at the windshield's foot.
+    ...pair(B([1.06, 1.2, 0.86], [0.08, 0.075, 0.05], 0.025, 3)), ...pair(B([0.97, 1.17, 0.9], [0.04, 0.02, 0.02], 0, 3)),
+  ],
+  [
+    // The rear bumper, a step, the frame.
+    B([0, 0.47, -2.8], [0.99, 0.12, 0.06], 0.04, 3), B([0, 0.37, -2.88], [0.4, 0.02, 0.08], 0.01, 3),
+    B([0, 0.38, 0], [0.6, 0.06, 2.2], 0, 3),
+    // The roof rack: two rails, four cross bars; its instrument cases; the amber bar.
+    ...pair(B([0.8, 2.4, -0.7], [0.03, 0.03, 1.55], 0.01, 3)),
+    ...[0, 1, 2, 3].map(k => B([0, 2.42, 0.6 - k * 0.85], [0.8, 0.015, 0.025], 0, 3)),
+    B([0.42, 2.535, -0.3], [0.22, 0.1, 0.35], 0.03, 12), B([-0.4, 2.505, -1.1], [0.28, 0.07, 0.4], 0.03, 3),
+    B([0, 2.41, 0.55], [0.65, 0.05, 0.08], 0.02, 4),
+    // The mast's radiation shield, its cross-arm, the vane.
+    B([0, 3.1, -2.2], [0.08, 0.13, 0.08], 0.03, 12), B([0, 3.64, -2.2], [0.46, 0.015, 0.015], 0, 5),
+    B([-0.46, 3.68, -2.32], [0.004, 0.06, 0.12], 0, 3),
+    // Big mirrors at the windshield's foot.
+    ...pair(B([1.12, 1.5, 1.5], [0.08, 0.16, 0.05], 0.025, 3)), ...pair(B([1.03, 1.45, 1.53], [0.05, 0.02, 0.02], 0, 3)),
+  ],
+];
+const f5 = v => (Math.round(v * 1e5) / 1e5).toString().replace(/^(-?\d+)$/, '$1.0');
+const v4 = a => `vec4(${a.map(f5).join(', ')})`;
+// Per hull: (centre, edge cut), (half size, id), (first plane, plane count, arch cuts, 0).
+const VH = [], VP = [], VB = [], VK = [];
+HULLS.forEach((hs, k) => {
+  const h0 = VH.length / 3, b0 = VB.length / 2;
+  hs.forEach(h => {
+    VH.push(v4([...h.c, h.e]), v4([...h.h, h.id]), v4([VP.length, h.pl.length, h.cut, 0]));
+    h.pl.forEach(p => VP.push(v4(p)));
+  });
+  BOXES[k].forEach(b => VB.push(v4([...b.c, b.e]), v4([...b.h, b.id])));
+  VK.push(`ivec4(${h0}, ${hs.length}, ${b0}, ${BOXES[k].length})`);
+});
+const MAX_HULLS = Math.max(...HULLS.map(h => h.length)), MAX_PLANES = Math.max(...HULLS.flat().map(h => h.pl.length));
+const MAX_BOXES = Math.max(...BOXES.map(b => b.length));
+const VEH_DATA_GLSL = `
+const vec4 VH[${VH.length}] = vec4[](${VH.join(', ')});
+const vec4 VP[${VP.length}] = vec4[](${VP.join(', ')});
+const vec4 VB[${VB.length}] = vec4[](${VB.join(', ')});
+// Each kind: first hull, hull count, first box, box count.
+const ivec4 VK[3] = ivec4[](${VK.join(', ')});
+const vec4 VA[3] = vec4[](${ARCH.map(a => v4(a.slice(0, 4))).join(', ')});
+const float VAX[3] = float[](${ARCH.map(a => f5(a[4])).join(', ')});
+`;
+
 /* ---------- GLSL ---------- */
 // It reads main.js's CAMH, uFoc, uRain, WDIR, toWorld(), proj(), depthOf(), sunCover(), hazed(), th(), vn(),
 // line.js's put(), lineEnv() and ggx(), and road.js's envBRDF().
@@ -141,6 +261,7 @@ uniform vec4 uVeh[${MAX_VEH}], uVehB[${MAX_VEH}], uVehC[${MAX_VEH}];
 // The lamps' glow, added after the storm pass's picture.
 vec3 gVehGlow = vec3(0.0);
 
+${VEH_DATA_GLSL}
 /* ---------- convex hulls ---------- */
 // A hull is the space inside a set of planes; the ray enters at the last entry.
 // A pixel's width in metres at the vehicle, and the share of a pixel the hit thin part covers.
@@ -176,11 +297,81 @@ void hBox(vec3 ro, vec3 rd, vec3 c, vec3 h, float e) {
     hPl(o, rd, vec3(0.0, g.x, g.y) * R, (h.y + h.z - e) * R);
   }
 }
+// True when the held entry lies on a wheel arch's cut face.
+bool gHCut = false;
+// Cuts a wheel arch out of the held hull: a cylinder across the body, at (y, z) c, radius r.
+// Each side's cut stops at x0 from the centre, where the well's liner stands.
+void hCut(vec3 ro, vec3 rd, vec2 c, float r, float x0) {
+  vec2 o = ro.yz - c, d = rd.yz;
+  float A = dot(d, d), B = dot(o, d), D = B * B - A * (dot(o, o) - r * r);
+  if (D <= 0.0 || A < 1e-9) return;
+  float t0 = (-B - sqrt(D)) / A, t1 = (-B + sqrt(D)) / A;
+  for (int k = 0; k < 2; k++) {
+    float s = k == 0 ? 1.0 : -1.0, dx = s * rd.x, tx = (x0 - s * ro.x) / (abs(dx) > 1e-9 ? dx : 1e-9);
+    float a = t0, b = t1;
+    if (dx > 0.0) a = max(a, tx); else b = min(b, tx);
+    if (a >= b || hTn < a || hTn >= b) continue;
+    // The entry falls inside the cut: the ray enters where it leaves the cut.
+    hTn = b;
+    gHCut = true;
+    hN = b < t1 ? vec3(s, 0.0, 0.0) : vec3(0.0, -(o + d * b) / r);
+  }
+}
 // Closes a hull: a nearer hit replaces the one held.
+// An entry on a cut face is the wheel well (id 8).
 void hEnd(int myId, inout float t, inout vec3 n, inout int id) {
+  bool cut = gHCut;
+  gHCut = false;
   if (hTn > hTf || hTn <= 0.0 || hTn >= t) return;
-  t = hTn; n = hN; id = myId; gHitK = 1.0;
+  t = hTn; n = hN; id = cut ? 8 : myId; gHitK = 1.0;
   if (myId == 2) { gExT = hTf; gExN = hNf; }
+}
+// True when the ray meets the box at c, half size h, nearer than t.
+// Most rays miss most parts: this cheap test skips their planes.
+bool vSlab(vec3 ro, vec3 rd, vec3 c, vec3 h, float t) {
+  vec3 inv = 1.0 / rd, ta = (c - h - ro) * inv, tb = (c + h - ro) * inv;
+  vec3 mn = min(ta, tb), mx = max(ta, tb);
+  float t0 = max(max(mn.x, mn.y), mn.z), t1 = min(min(mx.x, mx.y), mx.z);
+  return t1 >= max(t0, 0.0) && t0 < t;
+}
+// A capsule from a to b, radius r0.
+// One thinner than a pixel is traced a pixel wide and covers only its share, as vRod.
+void vCap(vec3 ro, vec3 rd, vec3 a, vec3 b, float r0, int myId, inout float t, inout vec3 n, inout int id) {
+  float r = max(r0, gPxW * 0.6);
+  vec3 ba = b - a, oa = ro - a;
+  float baba = dot(ba, ba), bard = dot(ba, rd), baoa = dot(ba, oa), rdoa = dot(rd, oa), oaoa = dot(oa, oa);
+  float A = baba - bard * bard, B = baba * rdoa - baoa * bard, C = baba * oaoa - baoa * baoa - r * r * baba, D = B * B - A * C;
+  if (D < 0.0) return;
+  float tc = (-B - sqrt(D)) / A, y = baoa + tc * bard;
+  // The body; else the cap at the nearer end.
+  if (y <= 0.0 || y >= baba) {
+    vec3 oc = y <= 0.0 ? oa : ro - b;
+    float b2 = dot(rd, oc), c2 = dot(oc, oc) - r * r, h2 = b2 * b2 - c2;
+    if (h2 < 0.0) return;
+    tc = -b2 - sqrt(h2);
+  }
+  if (tc <= 0.0 || tc >= t) return;
+  vec3 p = ro + rd * tc, q = p - a;
+  t = tc; n = normalize(q - ba * clamp(dot(q, ba) / baba, 0.0, 1.0)); id = myId; gHitK = r0 / r;
+}
+// A dish: a spherical cap, vertex v, facing along axis ax, rim radius rr, sphere radius rs.
+// The concave face is id 15, the back 16.
+void vDish(vec3 ro, vec3 rd, vec3 v, vec3 ax, float rr, float rs, inout float t, inout vec3 n, inout int id) {
+  vec3 cs = v + ax * rs, oc = ro - cs;
+  float b = dot(rd, oc), h = b * b - dot(oc, oc) + rs * rs;
+  if (h < 0.0) return;
+  h = sqrt(h);
+  float ca = sqrt(1.0 - rr * rr / (rs * rs));
+  for (int k = 0; k < 2; k++) {
+    float tk = k == 0 ? -b - h : -b + h;
+    if (tk <= 0.0 || tk >= t) continue;
+    vec3 q = (ro + rd * tk - cs) / rs;
+    if (dot(q, -ax) < ca) continue;
+    // The back faces out of the sphere; the concave face looks in.
+    bool back = dot(q, rd) < 0.0;
+    t = tk; n = back ? q : -q; id = back ? 16 : 15; gHitK = 1.0;
+    return;
+  }
 }
 // A plain box, its edges cut back by e.
 void vBox(vec3 ro, vec3 rd, vec3 c, vec3 h, float e, int myId, inout float t, inout vec3 n, inout int id) {
@@ -223,148 +414,204 @@ void vRod(vec3 ro, vec3 rd, vec2 c, float r0, float y0, float y1, int myId, inou
   t = tn; n = normalize(vec3(q.x, 0.0, q.y)); id = myId; gHitK = r0 / r;
 }
 // Each kind's shape: half width, belt line, roof, front, rear; the wheels' radius, place and track.
-float vHW(int k) { return k == 1 ? 0.95 : k == 0 ? 0.99 : 1.0; }
-float vBelt(int k) { return k == 0 ? 1.14 : k == 1 ? 1.1 : 1.2; }
-float vRoof(int k) { return k == 0 ? 1.86 : k == 1 ? 1.76 : 2.35; }
-float vFront(int k) { return k == 0 ? 2.85 : k == 1 ? 2.47 : 2.75; }
-float vRear(int k) { return k == 0 ? -2.82 : k == 1 ? -2.43 : -2.77; }
-vec4 vWh(int k) { return k == 0 ? vec4(0.41, 1.72, 0.85, 0.15) : k == 1 ? vec4(0.38, 1.45, 0.8, 0.14) : vec4(0.38, 1.8, 0.84, 0.14); }
+// The pickup is a full-size crew cab: 5.95 m long, 2 m wide, 1.94 m tall, a 3.68 m wheelbase.
+float vHW(int k) { return k == 1 ? 0.95 : 1.0; }
+float vBelt(int k) { return k == 0 ? 1.32 : k == 1 ? 1.1 : 1.2; }
+float vRoof(int k) { return k == 0 ? 1.94 : k == 1 ? 1.76 : 2.35; }
+float vFront(int k) { return k == 0 ? 2.93 : k == 1 ? 2.47 : 2.75; }
+float vRear(int k) { return k == 0 ? -3.02 : k == 1 ? -2.43 : -2.77; }
+vec4 vWh(int k) { return k == 0 ? vec4(0.4, 1.84, 0.86, 0.14) : k == 1 ? vec4(0.38, 1.45, 0.8, 0.14) : vec4(0.38, 1.8, 0.84, 0.14); }
+// The axles' mid point along the body.
+float vWz(int k) { return k == 0 ? -0.04 : 0.0; }
 // The windshield: a plane through the hood's back edge (y, z) with normal (0, ny, nz).
-vec4 vWs(int k) { return k == 0 ? vec4(1.12, 1.0, 0.68, 0.74) : k == 1 ? vec4(1.08, 1.07, 0.75, 0.66) : vec4(1.15, 1.77, 0.55, 0.83); }
+vec4 vWs(int k) { return k == 0 ? vec4(1.32, 0.92, 0.802, 0.597) : k == 1 ? vec4(1.08, 1.07, 0.75, 0.66) : vec4(1.15, 1.77, 0.55, 0.83); }
 // The vehicle's parts, in its own frame: x across (right), y up, z forward. Returns the hit part's id.
 // ids: 1 hood and nose, 2 cabin and body, 3 black trim, 4 amber bar, 5 bright metal, 9 tyre, 10 bed liner,
 // 11 rim, 12 white plastic.
 int vHit(int kind, vec3 ro, vec3 rd, out float t, out vec3 n, float spin) {
   t = 1e9; n = vec3(0.0, 1.0, 0.0);
   int id = 0;
-  float hw = vHW(kind);
-  vec4 ws = vWs(kind);
-  vec3 wsN = vec3(0.0, ws.z, ws.w), wsQ = vec3(0.0, ws.x, ws.y);
-  if (kind == 0) {
-    // The nose and hood; the nose drops toward the bumper.
-    hBeg(); hBox(ro, rd, vec3(0.0, 0.77, 1.9), vec3(0.99, 0.35, 0.95), 0.1);
-    hPq(ro, rd, vec3(0.0, 1.0, 0.5), vec3(0.0, 1.12, 2.4)); hEnd(1, t, n, id);
-    // The cab: raked windshield, sides that lean in above the belt, a near-upright back.
-    hBeg(); hBox(ro, rd, vec3(0.0, 1.14, 0.2), vec3(0.99, 0.72, 0.8), 0.09);
-    hPq(ro, rd, wsN, wsQ);
-    hPq(ro, rd, vec3(1.0, 0.25, 0.0), vec3(0.99, 1.1, 0.0)); hPq(ro, rd, vec3(-1.0, 0.25, 0.0), vec3(-0.99, 1.1, 0.0));
-    hPq(ro, rd, vec3(0.0, 0.12, -1.0), vec3(0.0, 1.2, -0.6)); hEnd(2, t, n, id);
-    // The bed: two walls, a tailgate, and a black liner floor.
-    vBox(ro, rd, vec3(0.925, 0.81, -1.71), vec3(0.065, 0.39, 1.11), 0.03, 1, t, n, id);
-    vBox(ro, rd, vec3(-0.925, 0.81, -1.71), vec3(0.065, 0.39, 1.11), 0.03, 1, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.8, -2.76), vec3(0.99, 0.38, 0.06), 0.03, 1, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.57, -1.7), vec3(0.86, 0.15, 1.1), 0.0, 10, t, n, id);
-    // Chrome bumpers, black mirrors.
-    vBox(ro, rd, vec3(0.0, 0.45, 2.86), vec3(1.0, 0.11, 0.1), 0.04, 5, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.45, -2.88), vec3(1.0, 0.1, 0.09), 0.04, 5, t, n, id);
-    vBox(ro, rd, vec3(1.08, 1.27, 0.85), vec3(0.1, 0.08, 0.05), 0.02, 3, t, n, id);
-    vBox(ro, rd, vec3(-1.08, 1.27, 0.85), vec3(0.1, 0.08, 0.05), 0.02, 3, t, n, id);
-  } else if (kind == 1) {
-    hBeg(); hBox(ro, rd, vec3(0.0, 0.76, 1.75), vec3(0.95, 0.32, 0.72), 0.1);
-    hPq(ro, rd, vec3(0.0, 1.0, 0.5), vec3(0.0, 1.08, 2.05)); hEnd(1, t, n, id);
-    // The wagon's long body, its hatch leaning in at the back.
-    hBeg(); hBox(ro, rd, vec3(0.0, 1.1, -0.68), vec3(0.95, 0.66, 1.75), 0.1);
-    hPq(ro, rd, wsN, wsQ);
-    hPq(ro, rd, vec3(1.0, 0.3, 0.0), vec3(0.95, 1.1, 0.0)); hPq(ro, rd, vec3(-1.0, 0.3, 0.0), vec3(-0.95, 1.1, 0.0));
-    hPq(ro, rd, vec3(0.0, 0.3, -1.0), vec3(0.0, 1.2, -2.43)); hEnd(2, t, n, id);
-    // Roof bars, a black gear case, the amber bar at the front.
-    vBox(ro, rd, vec3(0.0, 1.8, -0.25), vec3(0.78, 0.025, 0.03), 0.0, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 1.8, -1.75), vec3(0.78, 0.025, 0.03), 0.0, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 1.92, -1.0), vec3(0.52, 0.1, 0.72), 0.06, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 1.84, 0.14), vec3(0.62, 0.05, 0.08), 0.02, 4, t, n, id);
-    // A short mast with a cup anemometer, and two whip aerials.
+  ivec4 r = VK[kind];
+  vec4 ar = VA[kind];
+  // The hulls: a box with cut edges, more planes, the wheel arches cut out.
+  for (int i = 0; i < ${MAX_HULLS}; i++) {
+    if (i >= r.y) break;
+    int j = (r.x + i) * 3;
+    vec4 a = VH[j], b = VH[j + 1], c = VH[j + 2];
+    if (!vSlab(ro, rd, a.xyz, b.xyz, t)) continue;
+    hBeg(); hBox(ro, rd, a.xyz, b.xyz, a.w);
+    int p0 = int(c.x), np = int(c.y), cut = int(c.z);
+    for (int k = 0; k < ${MAX_PLANES}; k++) {
+      if (k >= np) break;
+      vec4 pl = VP[p0 + k];
+      hPl(ro, rd, pl.xyz, pl.w);
+    }
+    if ((cut & 1) != 0) hCut(ro, rd, ar.xy, ar.w, VAX[kind]);
+    if ((cut & 2) != 0) hCut(ro, rd, ar.xz, ar.w, VAX[kind]);
+    hEnd(int(b.w + 0.5), t, n, id);
+  }
+  // The small parts: plain boxes.
+  for (int i = 0; i < ${MAX_BOXES}; i++) {
+    if (i >= r.w) break;
+    int j = (r.z + i) * 2;
+    vec4 a = VB[j], b = VB[j + 1];
+    if (!vSlab(ro, rd, a.xyz, b.xyz, t)) continue;
+    vBox(ro, rd, a.xyz, b.xyz, a.w, int(b.w + 0.5), t, n, id);
+  }
+  // The chasers' masts, aerials and spinning cups.
+  if (kind == 1) {
     vRod(ro, rd, vec2(0.55, -2.0), 0.018, 1.7, 2.62, 5, t, n, id);
     vRod(ro, rd, vec2(-0.7, -2.2), 0.006, 1.6, 2.75, 3, t, n, id);
     vRod(ro, rd, vec2(-0.5, -2.2), 0.006, 1.6, 2.6, 3, t, n, id);
-    for (int k = 0; k < 3; k++) {
-      float a = spin + float(k) * 2.0944;
-      vBox(ro, rd, vec3(0.55 + 0.11 * cos(a), 2.63, -2.0 + 0.11 * sin(a)), vec3(0.025), 0.01, 3, t, n, id);
-    }
-    vBox(ro, rd, vec3(0.0, 0.5, 2.48), vec3(0.96, 0.12, 0.07), 0.04, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.5, -2.46), vec3(0.96, 0.12, 0.06), 0.04, 3, t, n, id);
-    vBox(ro, rd, vec3(1.03, 1.2, 0.95), vec3(0.09, 0.08, 0.05), 0.02, 3, t, n, id);
-    vBox(ro, rd, vec3(-1.03, 1.2, 0.95), vec3(0.09, 0.08, 0.05), 0.02, 3, t, n, id);
-  } else {
-    hBeg(); hBox(ro, rd, vec3(0.0, 0.78, 2.25), vec3(0.98, 0.37, 0.5), 0.12);
-    hPq(ro, rd, vec3(0.0, 1.0, 0.6), vec3(0.0, 1.15, 2.45)); hEnd(1, t, n, id);
-    // The van's tall box body.
-    hBeg(); hBox(ro, rd, vec3(0.0, 1.38, -0.5), vec3(1.0, 0.97, 2.27), 0.13);
-    hPq(ro, rd, wsN, wsQ);
-    hPq(ro, rd, vec3(1.0, 0.08, 0.0), vec3(1.0, 1.3, 0.0)); hPq(ro, rd, vec3(-1.0, 0.08, 0.0), vec3(-1.0, 1.3, 0.0)); hEnd(2, t, n, id);
-    // The roof rack, its instrument cases, the amber bar.
-    vBox(ro, rd, vec3(0.0, 2.39, -0.7), vec3(0.85, 0.03, 1.55), 0.0, 3, t, n, id);
-    vBox(ro, rd, vec3(0.42, 2.52, -0.3), vec3(0.22, 0.1, 0.35), 0.03, 12, t, n, id);
-    vBox(ro, rd, vec3(-0.4, 2.49, -1.1), vec3(0.28, 0.07, 0.4), 0.03, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 2.42, 1.0), vec3(0.65, 0.05, 0.08), 0.02, 4, t, n, id);
-    // The instrument mast at the back: a radiation shield half way, a cross-arm, cups on one end, a vane on the other.
+  } else if (kind == 2) {
     vRod(ro, rd, vec2(0.0, -2.2), 0.035, 2.35, 3.68, 5, t, n, id);
-    vBox(ro, rd, vec3(0.0, 3.1, -2.2), vec3(0.08, 0.13, 0.08), 0.03, 12, t, n, id);
-    vBox(ro, rd, vec3(0.0, 3.64, -2.2), vec3(0.46, 0.015, 0.015), 0.0, 5, t, n, id);
     vRod(ro, rd, vec2(0.46, -2.2), 0.01, 3.62, 3.74, 5, t, n, id);
+    // A dish on a post: it looks up and out to the right.
+    vec3 dv = vec3(0.0, 2.8, -1.6), dx = normalize(vec3(0.55, 0.8, 0.15));
+    if (vSlab(ro, rd, vec3(0.1, 2.8, -1.6), vec3(0.5, 0.45, 0.5), t)) {
+      vDish(ro, rd, dv, dx, 0.42, 0.9, t, n, id);
+      // The feed arm from the rim's foot to the feed horn at the focus.
+      vec3 dn = normalize(vec3(0.0, -1.0, 0.0) - dx * dot(vec3(0.0, -1.0, 0.0), dx)), fo = dv + dx * 0.45;
+      vCap(ro, rd, dv + dx * 0.1 + dn * 0.4, fo, 0.018, 12, t, n, id);
+      vCap(ro, rd, fo - dx * 0.03, fo + dx * 0.04, 0.035, 12, t, n, id);
+      vBox(ro, rd, vec3(0.0, 2.72, -1.6), vec3(0.08, 0.06, 0.08), 0.02, 3, t, n, id);
+    }
+    vRod(ro, rd, vec2(0.0, -1.6), 0.03, 2.43, 2.68, 5, t, n, id);
+  }
+  if (kind != 0) {
+    // A cup anemometer: on the wagon's short mast, or one end of the van's cross-arm.
+    vec3 cc = kind == 1 ? vec3(0.55, 2.63, -2.0) : vec3(0.46, 3.74, -2.2);
+    float cr = kind == 1 ? 0.11 : 0.12, cs = kind == 1 ? 0.025 : 0.028;
     for (int k = 0; k < 3; k++) {
       float a = spin + float(k) * 2.0944;
-      vBox(ro, rd, vec3(0.46 + 0.12 * cos(a), 3.74, -2.2 + 0.12 * sin(a)), vec3(0.028), 0.012, 3, t, n, id);
+      vBox(ro, rd, cc + vec3(cr * cos(a), 0.0, cr * sin(a)), vec3(cs), cs * 0.43, 3, t, n, id);
     }
-    vBox(ro, rd, vec3(-0.46, 3.68, -2.32), vec3(0.004, 0.06, 0.12), 0.0, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.47, 2.78), vec3(0.99, 0.12, 0.07), 0.04, 3, t, n, id);
-    vBox(ro, rd, vec3(0.0, 0.47, -2.8), vec3(0.99, 0.12, 0.06), 0.04, 3, t, n, id);
-    vBox(ro, rd, vec3(1.08, 1.45, 1.55), vec3(0.09, 0.14, 0.05), 0.02, 3, t, n, id);
-    vBox(ro, rd, vec3(-1.08, 1.45, 1.55), vec3(0.09, 0.14, 0.05), 0.02, 3, t, n, id);
   }
   vec4 wh = vWh(kind);
   for (int k = 0; k < 4; k++) {
-    float wz = (k < 2 ? 1.0 : -1.0) * wh.y, wx = (k % 2 == 0 ? 1.0 : -1.0) * wh.z;
+    float wz = (k < 2 ? 1.0 : -1.0) * wh.y + vWz(kind), wx = (k % 2 == 0 ? 1.0 : -1.0) * wh.z;
     vWheel(ro, rd, vec2(wh.x, wz), wh.x, wx, wh.w, t, n, id);
   }
   return t < 1e8 ? id : 0;
 }
 // The part a body hit lands on: paint, glass, a lamp lens, grille or a wheel well.
 // Returns 2 glass, 6 head lamp, 7 tail lamp, 8 wheel well, 10 grille, 3 trim; else the id it was given.
-int vPart(int id, int kind, vec3 h, vec3 nl) {
+// The pickup's parts: 14 is mirror glass.
+int vPartP(int id, vec3 h, vec3 nl) {
+  // The mirror's glass faces back.
+  if (id == 3 && abs(h.x) > 1.08 && h.y > 1.35 && nl.z < -0.6) return 14;
   if (id != 1 && id != 2) return id;
-  vec4 wh = vWh(kind);
-  // Wheel wells: the side's cut-out round each wheel, with a black flare round its rim.
-  if (abs(nl.x) > 0.6) {
-    float dw = length(vec2(h.y - wh.x, abs(h.z) - wh.y));
-    if (dw < wh.x + 0.1) return 8;
-    if (dw < wh.x + 0.15 && h.y > wh.x * 0.6) return kind == 0 ? id : 3;
+  // Paint is 1 on every body panel; only glass is 2.
+  // A black flare round each wheel arch.
+  if (abs(nl.x) > 0.5 && h.y > 0.36 && h.y < 1.0) {
+    float dw = min(length(h.yz - vec2(0.4, 1.8)), length(h.yz - vec2(0.4, -1.88)));
+    if (dw < 0.585) return 3;
   }
-  float belt = vBelt(kind), roof = vRoof(kind), hw = vHW(kind), fr = vFront(kind), rr = vRear(kind);
-  // The front: lamps either side of the grille.
-  if (nl.z > 0.55 && id == 1) {
-    float ly = kind == 2 ? 0.92 : 0.88;
-    if (abs(h.y - ly) < 0.1 && abs(h.x) > hw * 0.55 && abs(h.x) < hw - 0.08) return 6;
-    if (abs(h.x) < hw * 0.53 && h.y > 0.56 && h.y < ly + 0.1) return 10;
+  // The front: tall lamps at the corners, a big grille between them.
+  if (nl.z > 0.5 && h.z > 2.6) {
+    float ax = abs(h.x);
+    if (ax > 0.6 && ax < 0.95 && h.y > 0.9 + 0.12 * smoothstep(0.75, 0.6, ax) && h.y < 1.15) return 6;
+    if (ax < 0.57 && h.y > 0.64 && h.y < 1.15) return 10;
+    return 1;
   }
-  // The back: tall tail lamps at the corners.
-  if (nl.z < -0.55 && abs(h.x) > hw - 0.22 && abs(h.x) < hw - 0.03 && h.y > 0.84 && h.y < (kind == 0 ? 1.16 : 1.26)) return 7;
-  if (id != 2 || h.y < belt + 0.02 || nl.y > 0.8 || h.y > roof - 0.07) return id;
-  vec4 ws = vWs(kind);
-  // How far the hit stands behind the windshield's plane, and its height over the belt.
-  float dWs = -dot(vec2(ws.z, ws.w), vec2(h.y - ws.x, h.z - ws.y));
+  // The back: tall tail lamps at the bed's corners.
+  if (nl.z < -0.5 && h.z < -2.8) return abs(h.x) > 0.85 && h.y > 0.86 && h.y < 1.28 ? 7 : 1;
+  if (id != 2 || h.y < 1.35 || h.y > 1.86 || nl.y > 0.85) return 1;
   // The windshield, between its pillars.
-  if (dWs < 0.03 && nl.z > 0.3) return abs(h.x) < hw * 0.8 - (h.y - belt) * 0.25 ? 2 : id;
-  // The side glass, cut by the pillars.
-  if (abs(nl.x) > 0.5) {
-    if (dWs < 0.09 || h.z < rr + 0.12) return id;
-    if (kind == 0) return h.z > -0.5 && abs(h.z - 0.18) > 0.06 ? 2 : id;
-    if (kind == 1) return abs(h.z + 0.25) > 0.06 && abs(h.z + 1.55) > 0.07 && h.z > rr + 0.3 ? 2 : id;
-    return h.z > 0.55 ? 2 : id;
+  float dWs = 0.92 - 1.344 * (h.y - 1.32) - h.z;
+  if (dWs < 0.03 && nl.z > 0.3) return abs(h.x) < 0.84 - (h.y - 1.32) * 0.2 ? 2 : 1;
+  // Two door windows each side; the B pillar and the C pillar split them.
+  if (abs(nl.x) > 0.5) return dWs > 0.09 && h.z > -1.26 && abs(h.z + 0.25) > 0.06 ? 2 : 1;
+  // The rear window.
+  if (nl.z < -0.3) return abs(h.x) < 0.76 && h.y > 1.4 && h.y < 1.84 ? 2 : 1;
+  return 1;
+}
+// The wagon's parts: black cladding along the sills, glass all round.
+int vPartW(int id, vec3 h, vec3 nl) {
+  if (id == 3 && abs(h.x) > 0.98 && h.y > 1.12 && nl.z < -0.6) return 14;
+  if (id != 1 && id != 2) return id;
+  if (abs(nl.x) > 0.5 && h.y > 0.34 && h.y < 0.95) {
+    float dw = min(length(h.yz - vec2(0.38, 1.45)), length(h.yz - vec2(0.38, -1.45)));
+    if (dw < 0.54) return 3;
   }
-  // The rear glass.
-  if (nl.z < -0.3 && abs(h.x) < hw * 0.75 && h.y > belt + (kind == 2 ? 0.25 : 0.06)) return kind == 2 && abs(h.x) < 0.04 ? id : 2;
-  return id;
+  if (abs(nl.x) > 0.3 && h.y < 0.5) return 3;
+  // The front: lamps at the corners, a grille between them.
+  if (nl.z > 0.5 && h.z > 2.2) {
+    float ax = abs(h.x);
+    if (ax > 0.5 && ax < 0.86 && h.y > 0.78 && h.y < 0.94) return 6;
+    if (ax < 0.47 && h.y > 0.56 && h.y < 0.9) return 10;
+    return 1;
+  }
+  // The back: tail lamps at the corners, the hatch's glass between them.
+  if (nl.z < -0.5 && h.z < -2.2) {
+    if (abs(h.x) > 0.7 && h.y > 0.92 && h.y < 1.3) return 7;
+    return abs(h.x) < 0.68 && h.y > 1.2 && h.y < 1.66 ? 2 : 1;
+  }
+  if (id != 2 || h.y < 1.12 || h.y > 1.7 || nl.y > 0.85) return 1;
+  vec4 ws = vWs(1);
+  float dWs = -dot(ws.zw, vec2(h.y - ws.x, h.z - ws.y));
+  if (dWs < 0.03 && nl.z > 0.3) return abs(h.x) < 0.78 - (h.y - 1.1) * 0.25 ? 2 : 1;
+  // Three windows each side; the B, C and D pillars split them.
+  if (abs(nl.x) > 0.5) return dWs > 0.09 && h.z > -2.12 && abs(h.z + 0.25) > 0.06 && abs(h.z + 1.5) > 0.07 ? 2 : 1;
+  return 1;
+}
+// The van's parts: glass only in the cab and the rear doors.
+int vPartV(int id, vec3 h, vec3 nl) {
+  if (id == 3 && abs(h.x) > 1.04 && h.y > 1.34 && nl.z < -0.6) return 14;
+  if (id != 1 && id != 2) return id;
+  if (abs(nl.x) > 0.5 && h.y > 0.34 && h.y < 0.95) {
+    float dw = min(length(h.yz - vec2(0.38, 1.8)), length(h.yz - vec2(0.38, -1.8)));
+    if (dw < 0.55) return 3;
+  }
+  if (nl.z > 0.45 && h.z > 2.35 && h.y < 1.0) {
+    float ax = abs(h.x);
+    if (ax > 0.56 && ax < 0.9 && h.y > 0.72 && h.y < 0.9) return 6;
+    if (ax < 0.53 && h.y > 0.5 && h.y < 0.85) return 10;
+    return 1;
+  }
+  // The back: tall tail lamps, a window in each rear door.
+  if (nl.z < -0.5 && h.z < -2.6) {
+    float ax = abs(h.x);
+    if (ax > 0.86 && h.y > 0.72 && h.y < 1.5) return 7;
+    return ax > 0.05 && ax < 0.8 && h.y > 1.45 && h.y < 2.05 ? 2 : 1;
+  }
+  if (id != 2 || h.y < 1.22 || h.y > 2.2 || nl.y > 0.85) return 1;
+  vec4 ws = vWs(2);
+  float dWs = -dot(ws.zw, vec2(h.y - ws.x, h.z - ws.y));
+  // The high roof's cap stands over the windshield.
+  if (dWs < 0.03 && nl.z > 0.3) return abs(h.x) < 0.86 && h.y < 2.08 ? 2 : 1;
+  if (abs(nl.x) > 0.5) return dWs > 0.09 && h.z > 0.72 && h.y < 1.98 ? 2 : 1;
+  return 1;
+}
+int vPart(int id, int kind, vec3 h, vec3 nl) {
+  return kind == 0 ? vPartP(id, h, nl) : kind == 1 ? vPartW(id, h, nl) : vPartV(id, h, nl);
+}
+// The share of sun a hit gets past the vehicle's own parts; the speed and age for the wheels.
+float gSh = 1.0, gSpd = 0.0, gAge = 0.0;
+// The sun's light off one GGX layer, per unit of the sun's light on the face.
+// Smith visibility and Schlick Fresnel; the diffuse term carries no 1/pi, so this takes pi.
+vec3 vLobe(vec3 N, vec3 V, vec3 L, float r, vec3 f0) {
+  vec3 H = normalize(L + V);
+  float nl = max(dot(N, L), 0.0), nv = max(dot(N, V), 1e-3), nh = max(dot(N, H), 0.0);
+  // The sun is a disc, and a sharp lobe sparkles: roughness stays above 0.16.
+  float rr = max(r, 0.16), k = rr * rr * 0.5;
+  float vis = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+  vec3 F = f0 + (1.0 - f0) * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+  return F * min(ggx(nh, rr) * vis, 12.0) * 3.14159 * nl;
 }
 // The colour of a hit, in world space. N is the world normal; h and nl the hit and normal in the vehicle's frame.
 // see is 1 where the glass looks out through the far window: the world behind shows, dimmed by two panes.
 vec3 vShade(int id, int kind, vec3 P, vec3 N, vec3 V, vec3 h, vec3 nl, float seed, float brake, float see) {
-  float sun = 1.0 - sunCover(P * 0.001);
+  // A shading normal never faces away from the eye: edge-on rows would reflect the ground.
+  N = normalize(N + V * max(0.08 - dot(N, V), 0.0));
+  float sun = (1.0 - sunCover(P * 0.001)) * gSh;
   vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), H = normalize(L + V);
   float nlight = max(dot(N, L), 0.0), nv = max(dot(N, V), 0.05);
-  // Paint: a faded white pickup, a dark green wagon, a white van. Clear-coated, so it holds the sky.
+  // Paint: a faded white pickup, a dark green wagon, a white van.
+  // A soft pigment layer under a clear coat: the coat holds the sky.
   vec3 paint = kind == 0 ? vec3(0.55, 0.54, 0.5) : kind == 1 ? vec3(0.05, 0.085, 0.07) : vec3(0.62, 0.62, 0.6);
   vec3 alb = paint, f0 = vec3(0.04), em = vec3(0.0);
-  float rough = mix(0.32, 0.12, uRain);
+  float rough = 0.45, coat = 1.0, cr = mix(0.14, 0.07, uRain);
   if (id == 2) {
     // Glass: the dim cab inside, and the sky in a strong Fresnel.
     alb = vec3(0.012); rough = 0.04;
@@ -374,13 +621,14 @@ vec3 vShade(int id, int kind, vec3 P, vec3 N, vec3 V, vec3 h, vec3 nl, float see
       if (bar > 0.0) { alb = vec3(0.02); rough = 0.5; f0 = vec3(0.04); }
     }
   }
-  if (id == 3) { alb = vec3(0.035); rough = 0.55; }
+  // Black plastic and rubber reflect little: low sun must not turn them tan.
+  if (id == 3) { alb = vec3(0.025); f0 = vec3(0.03); rough = 0.55; }
   // Chrome on the pickup; brushed aluminium on the chasers' masts.
   if (id == 5) { alb = vec3(0.0); f0 = vec3(0.72, 0.73, 0.75); rough = kind == 0 ? 0.14 : 0.35; }
   if (id == 6) { alb = vec3(0.05); f0 = vec3(0.3); rough = 0.05; em = vec3(1.0, 0.92, 0.8) * 4.0 * pow(max(nl.z, 0.0), 2.0); }
   if (id == 7) { alb = vec3(0.12, 0.01, 0.01); rough = 0.08; em = vec3(0.9, 0.04, 0.02) * (0.5 + 3.5 * brake) * pow(max(-nl.z, 0.0), 2.0); }
   if (id == 8) { alb = vec3(0.008); rough = 0.9; }
-  if (id == 9) { alb = vec3(0.025); rough = 0.85; }
+  if (id == 9) { alb = vec3(0.016); f0 = vec3(0.02); rough = 0.85; }
   if (id == 10) {
     // The grille: horizontal bars in a bright surround.
     float bar = step(0.55, fract(h.y * 16.0));
@@ -391,24 +639,79 @@ vec3 vShade(int id, int kind, vec3 P, vec3 N, vec3 V, vec3 h, vec3 nl, float see
   // The rims: bright alloy on the pickup, black steel on the chasers.
   if (id == 11) { alb = kind == 0 ? vec3(0.0) : vec3(0.03); f0 = kind == 0 ? vec3(0.62) : vec3(0.04); rough = 0.3; }
   if (id == 12) { alb = vec3(0.6, 0.6, 0.58); rough = 0.5; }
-  // Panel seams: a hair of shadow at the door edges.
+  // The bed liner: black textured plastic.
+  if (id == 13) { alb = vec3(0.022); rough = 0.8; }
+  // The dish: white fibreglass, its back a little greyer.
+  if (id == 15 || id == 16) { alb = vec3(id == 15 ? 0.6 : 0.5); rough = 0.55; }
+  // The mirror's glass.
+  if (id == 14) { alb = vec3(0.0); f0 = vec3(0.85); rough = 0.03; }
+  vec4 wh = vWh(kind);
+  float wz = h.z > vWz(kind) ? wh.y + vWz(kind) : -wh.y + vWz(kind);
+  vec2 q = vec2(h.y - wh.x, h.z - wz);
+  float qr = length(q) / wh.x;
+  if (id == 11) {
+    // Six spokes; at speed they blur to their mean.
+    float a = atan(q.y, q.x) - gAge * gSpd / wh.x;
+    float sp = smoothstep(-0.2, 0.3, cos(6.0 * a)), blur = clamp(1.0 - gSpd * 0.07, 0.0, 1.0);
+    sp = mix(0.55, sp, blur);
+    // The lip and the hub are solid.
+    sp = max(sp, step(0.5, qr) + step(qr, 0.12));
+    // Bright alloy on the pickup, dark grey alloy on the chasers.
+    alb = mix(vec3(0.012), vec3(0.0), sp); f0 = mix(vec3(0.02), vec3(kind == 0 ? 0.6 : 0.2), sp); rough = mix(0.8, 0.3, sp);
+  }
+  if (id == 9) {
+    // Tread: grooves run round the tyre; the sidewall bulges a little.
+    float u = (abs(h.x) - wh.z) / wh.w;
+    if (abs(nl.x) < 0.5) alb *= 1.0 - 0.6 * (1.0 - smoothstep(0.03, 0.09, abs(abs(u) - 0.4)));
+    else alb *= 1.0 + 0.5 * smoothstep(0.75, 0.85, qr) * smoothstep(1.0, 0.9, qr);
+  }
+  // Door cuts, the handles, the doors' lower edge and the hood's front seam.
+  // Each kind: three door cuts along z, two handles, the handles' height, the hood seam.
+  vec3 dz = kind == 0 ? vec3(0.86, -0.25, -1.3) : kind == 1 ? vec3(0.98, -0.25, -1.45) : vec3(1.62, 0.66, h.x > 0.0 ? -0.75 : 0.66);
+  vec2 hz = kind == 0 ? vec2(0.02, -1.12) : kind == 1 ? vec2(0.15, -1.1) : vec2(0.85, h.x > 0.0 ? 0.5 : 0.85);
+  float hy = kind == 0 ? 1.2 : kind == 1 ? 1.02 : 1.12, hs = kind == 0 ? 2.7 : kind == 1 ? 2.3 : 2.58;
   if ((id == 1 || id == 2) && abs(nl.x) > 0.5) {
-    float sz = kind == 0 ? min(abs(h.z - 1.0), abs(h.z + 0.55)) : kind == 1 ? min(abs(h.z - 1.05), abs(h.z + 0.25)) : min(abs(h.z - 1.75), abs(h.z - 0.55));
-    alb *= mix(0.45, 1.0, smoothstep(0.004, 0.012, sz));
+    float sz = min(min(abs(h.z - dz.x), abs(h.z - dz.y)), abs(h.z - dz.z));
+    float seam = 1.0 - (1.0 - smoothstep(0.003, 0.011, sz)) * step(0.5, h.y) * step(h.z, dz.x + 0.04) * step(dz.z - 0.04, h.z);
+    seam *= 1.0 - (1.0 - smoothstep(0.003, 0.011, abs(h.y - 0.53))) * step(dz.z, h.z) * step(h.z, dz.x);
+    float hd = max(1.0 - smoothstep(0.0, 0.01, max(abs(h.y - hy) - 0.018, abs(h.z - hz.x) - 0.1)), 1.0 - smoothstep(0.0, 0.01, max(abs(h.y - hy) - 0.018, abs(h.z - hz.y) - 0.1)));
+    alb *= mix(0.4, 1.0, seam) * (1.0 - 0.5 * hd);
+  }
+  if (id == 1 && nl.y > 0.6) alb *= mix(0.4, 1.0, smoothstep(0.003, 0.011, abs(h.z - hs)));
+  // The van's rear doors meet at the middle.
+  if (kind == 2 && id == 1 && nl.z < -0.5) alb *= mix(0.4, 1.0, smoothstep(0.003, 0.011, abs(h.x)));
+  if (id == 10 && kind == 0) {
+    // A chrome frame and a centre bar round a fine dark mesh.
+    float fr = max(max(step(0.51, abs(h.x)), step(1.1, h.y)), max(step(h.y, 0.69), step(abs(h.y - 0.9), 0.025)));
+    float mesh = step(0.45, fract(h.y * 24.0)) * step(0.35, fract(h.x * 14.0 + step(0.5, fract(h.y * 12.0)) * 0.5));
+    alb = mix(vec3(0.008), vec3(0.03), mesh); f0 = vec3(0.04); rough = 0.5;
+    if (fr > 0.0) { alb = vec3(0.0); f0 = vec3(0.7); rough = 0.15; }
   }
   // The lower body takes road grime; under the storm it is wet and darker.
-  if (id == 1 || id == 2) alb = mix(alb, vec3(0.12, 0.1, 0.075), smoothstep(0.8, 0.42, h.y) * (0.55 + 0.25 * uRain));
+  float grime = smoothstep(kind == 0 ? 0.7 : 0.8, 0.42, h.y) * (0.55 + 0.25 * uRain);
+  if (id == 1 || id == 2) alb = mix(alb, vec3(0.12, 0.1, 0.075), grime);
+  // Only paint has the coat; grime dulls it.
+  coat = id == 1 ? 1.0 - grime * 0.8 : 0.0;
+  // Rain wets every surface: rougher ones gloss up the most.
+  rough = mix(rough, rough * 0.6, uRain);
   // The underside and the wheel wells see little sky.
   float ao = mix(0.35, 1.0, smoothstep(-0.6, 0.3, nl.y)) * mix(0.55, 1.0, smoothstep(0.3, 0.75, h.y));
-  vec2 ab = envBRDF(rough, nv);
-  vec3 c = alb * (uSunCol * 0.9 * sun * nlight + uAmb * (0.45 + 0.25 * N.y) * ao);
-  c += lineEnv(reflect(-V, N)) * (f0 * ab.x + ab.y) * ao;
-  // The sun's highlight, capped: a thin bright part would sparkle from sample to sample.
-  c += uSunCol * sun * min(ggx(max(dot(N, H), 0.0), rough), 2.5) * nlight * (f0 + 0.02) * 1.2;
+  // Split-sum light: the sky's reflection and its share, for the base and the coat.
+  vec3 R = reflect(-V, N), env = lineEnv(R), E = uSunCol * 0.9 * sun;
+  vec2 ab = envBRDF(rough, nv), ac = envBRDF(cr, nv);
+  vec3 Fe = f0 * ab.x + ab.y;
+  float Fc = (0.04 * ac.x + ac.y) * coat;
+  // The diffuse layer takes only the light the specular layer passes.
+  vec3 c = alb * (1.0 - Fe) * (E * nlight + uAmb * (0.45 + 0.25 * N.y) * ao);
+  c += env * Fe * ao + E * vLobe(N, V, L, rough, f0);
+  // The clear coat on top: it passes what it does not reflect.
+  c = c * (1.0 - Fc) + env * ao * Fc + E * vLobe(N, V, L, cr, vec3(0.04)) * coat;
   // What lies behind: the bright haze at the horizon, dark ground below it, the deck above.
   vec3 back = mix(hazeCol(-V) * mix(1.0, 0.25, smoothstep(0.0, 0.2, -V.y)), uAmb * 0.03, smoothstep(0.0, -0.04, -V.y));
   // The wagon's rear glass is privacy-tinted.
-  if (id == 2) c += back * see * (kind == 1 ? 0.12 : 0.35) * (1.0 - ab.x * 0.04 - ab.y);
+  // The pickup's rear glass is tinted too; every cab is dim, not black.
+  if (id == 2) c += back * see * (kind == 1 ? 0.12 : kind == 0 ? 0.16 : 0.35) * (1.0 - ab.x * 0.04 - ab.y);
+  if (id == 2) c += vec3(0.05, 0.045, 0.04) * (uAmb * 0.5 + uSunCol * 0.3 * sun) * (1.0 - see) * (1.0 - ab.y);
   return c + em;
 }
 // A lamp's glow: a point of light at P facing along dir, of colour col.
@@ -449,14 +752,41 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
     // Streaks in the spray run back along the vehicle's path.
     float n = vn(q * vec2(2.3, 1.3) + vec2(fk * 3.1 + age * 0.9 * spd * 0.1, seed * 9.0 + sd));
     float al = mix(0.05, 0.5, wet) * (1.0 - fk / 6.0) * smoothstep(1.0, 0.2, d) * (0.45 + 0.7 * n) * smoothstep(3.0, 20.0, spd);
+    if (al <= 0.0) continue;
     // The tail lamps light the near spray red; harder under the brakes.
     vec3 col = mix(dust, mist, wet) + vec3(0.9, 0.05, 0.02) * (0.08 + 0.5 * brake) * exp(-fk * 0.6);
-    put(hazed(col, normalize(Pp - vec3(0.0, CAMH, 0.0)), zp), al, zp);
+    // hazed() sets up the pixel's air on its first call: it takes the pixel's own ray.
+    put(hazed(col, toWorld(normalize(vec3(s, -uFoc))), zp), al, zp);
   }
+}
+// The panels are not flat: a shading normal gives them their curves.
+// The sides roll in at the shoulder and tuck under low down; a crease runs along the pickup's waist.
+// The hood and roof crown; the pickup hood's raised centre catches the light at its edges.
+vec3 vBend(vec3 h, vec3 n, int id, int kind) {
+  if (id != 1 && id != 2) return n;
+  if (kind != 0) {
+    float belt = vBelt(kind);
+    if (abs(n.x) > 0.6 && h.y < belt + 0.05) {
+      n.y += smoothstep(belt - 0.25, belt, h.y) * 0.22 - smoothstep(0.7, 0.45, h.y) * 0.25;
+      n.z += sin(h.z * 1.7) * 0.03;
+    } else if (abs(n.x) > 0.6) n.y += (h.y - (belt + vRoof(kind)) * 0.5) * 0.06;
+    else if (n.y > 0.6) n.x += h.x * 0.08;
+    return normalize(n);
+  }
+  if (abs(n.x) > 0.6 && h.y < 1.34) {
+    n.y += smoothstep(1.1, 1.32, h.y) * 0.3 + smoothstep(1.06, 1.08, h.y) * 0.07 - smoothstep(0.75, 0.48, h.y) * 0.3;
+    // Each panel bows out a little along its length.
+    n.z += sin(h.z * 1.7) * 0.03;
+  } else if (n.y > 0.6) {
+    n.x += h.x * 0.09;
+    if (h.z > 0.9) { float ax = abs(h.x); n.x += sign(h.x) * (smoothstep(0.36, 0.44, ax) - smoothstep(0.44, 0.54, ax)) * 0.2; }
+    else n.z -= (h.z + 0.6) * 0.06;
+  } else if (n.z > 0.5) n.y += (h.y - 0.9) * 0.12;
+  return normalize(n);
 }
 // One vehicle, ray-traced at several moments in the shutter, each at its own spot in the pixel.
 // Edges take more samples, so silhouettes and panel lines stay smooth at any distance.
-// Far vehicles draw before the line, near ones after it.
+// Far vehicles draw before the infrastructure, near ones after it.
 void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   vec4 a = uVeh[i], b = uVehB[i], cV = uVehC[i];
   if (b.x <= 0.0) return;
@@ -471,15 +801,15 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   // The lamps: headlights ahead, tail lamps behind; the chasers' amber bar too.
   // Their glow reaches past the vehicle's screen box, so they come first, once per frame.
   if (!near) {
-    float hy = kind == 2 ? 0.92 : 0.88;
+    float hy = kind == 2 ? 0.82 : 0.88;
     for (int k = 0; k < 2; k++) {
       float sx = k == 0 ? -1.0 : 1.0;
       vLamp(s, C + rt * sx * (hw - 0.22) + vec3(0.0, hy, 0.0) + f * (fr + 0.01), f, vec3(1.0, 0.9, 0.75), px);
-      vLamp(s, C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.06, 0.0) + f * (rr - 0.01), -f, vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake), px);
+      vLamp(s, C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.1, 0.0) + f * (rr - 0.01), -f, vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake), px);
       if (kind != 0) {
         // The amber bar flashes left and right in turn.
         float on = step(0.5, fract(uT * 1.6 + (sx > 0.0 ? 0.5 : 0.0)));
-        vec3 Pb = C + rt * sx * 0.4 + vec3(0.0, kind == 1 ? 1.84 : 2.42, 0.0) + f * (kind == 1 ? 0.14 : 1.0);
+        vec3 Pb = C + rt * sx * 0.4 + vec3(0.0, kind == 1 ? 1.85 : 2.41, 0.0) + f * (kind == 1 ? 0.12 : 0.55);
         vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) - f), vec3(1.0, 0.45, 0.05) * on * 0.8, px);
         vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) + f), vec3(1.0, 0.45, 0.05) * on * 0.8, px);
       }
@@ -487,13 +817,39 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   }
   if ((z > 60.0) == near) return;
   vec3 eye = vec3(0.0, CAMH, 0.0);
+  float top = kind == 2 ? 3.8 : 2.8;
   // A short contact shadow under the vehicle, on the road.
   {
     float tg = CAMH / max(-rd.y, 1e-4);
     vec3 G = eye + rd * tg - C;
     vec2 q = vec2(dot(G, rt), dot(G, f) - (fr + rr) * 0.5) / vec2(hw + 0.2, (fr - rr) * 0.5 + 0.15);
-    float k = (1.0 - smoothstep(0.55, 1.0, length(q))) * 0.6;
+    float k = (1.0 - smoothstep(0.55, 1.0, length(q))) * 0.45;
     if (rd.y < 0.0 && k > 0.0) put(vec3(0.004), k, depthOf(C));
+    // The vehicle casts the low sun's long shadow on the road.
+    if (rd.y < 0.0 && uSun.y > 0.0) {
+      vec3 L = normalize(uSun), ls = vec3(dot(L, rt), L.y, dot(L, f));
+      vec3 gl = vec3(dot(G, rt), 0.0, dot(G, f));
+      // The vehicle's box first: most ground points see the sun past it.
+      vec3 inv = 1.0 / ls, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - gl) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - gl) * inv;
+      vec3 mn = min(ta, tb), mx = max(ta, tb);
+      if (min(min(mx.x, mx.y), mx.z) > max(max(max(mn.x, mn.y), mn.z), 0.0)) {
+        // Four rays over the pixel and the sun's disc: a soft, smooth edge.
+        float zg = depthOf(G + C), fp = px * zg / uFoc / max(-rd.y, 0.05), sh = 0.0, t;
+        vec3 n;
+        // A thin rod casts a shadow at least a ground pixel wide.
+        gPxW = fp;
+        for (int j = 0; j < 4; j++) {
+          vec2 o = (vec2(float(j & 1), float(j >> 1)) - 0.5) * 0.5;
+          vec3 lj = normalize(ls + vec3(o.x, 0.0, o.y) * 0.02);
+          sh += float(vHit(kind, gl + vec3(o.x, 0.0, o.y) * fp, lj, t, n, 0.0) != 0);
+        }
+        // The shadow takes away the sun's share of the road's light.
+        float sunL = dot(uSunCol, vec3(0.3, 0.6, 0.1)) * 0.55, ambL = dot(uAmb, vec3(0.3, 0.6, 0.1)) * 0.6;
+        // Near the horizon the road is too foreshortened to hold a clean edge: the shadow fades.
+        float ks = sh * 0.25 * sunL / max(sunL + ambL, 1e-4) * (1.0 - sunCover((G + C) * 0.001)) * smoothstep(0.006, 0.02, -rd.y);
+        if (ks > 0.0) put(vec3(0.0), ks, zg);
+      }
+    }
   }
   // Layers stack in call order: spray nearer the eye than the body lays down after it.
   bool sprayFront = depthOf(C - f * 4.0) < depthOf(C);
@@ -505,13 +861,15 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   // The body rolls and pitches on its springs: the road's small bumps, and the driver's braking and steering.
   float roll = 0.008 * sin(age * 2.3 + seed * 6.0) + 0.004 * sin(age * 5.1) + cV.z;
   float pitch = 0.004 * sin(age * 3.1 + seed * 3.0) + cV.y;
-  float spin = uT * 9.0 + seed * 6.0, top = kind == 2 ? 3.8 : 2.8;
+  float spin = uT * 9.0 + seed * 6.0;
   // The smear across the view in the shutter's 1/40 s, in metres at the vehicle.
   float lat = abs(dot(C, rt)) + 1.0;
   gPxW = max(px * z / uFoc, lat * spd / 40.0 / max(z, 1.0) * abs(dot(f, normalize(C))));
   // Four samples, six near; where they disagree (an edge, a lamp, a pane) sixteen.
   // Each sample is its own spot in the pixel and its own moment in the shutter.
   int nb = z < 25.0 ? 6 : 4, ns = 0, id0 = -1;
+  gSpd = spd; gAge = age; gSh = 1.0;
+  float shK = 1.0;
   bool mixed = false;
   float jit = th(gl_FragCoord.xy + fract(uT * 3.7) * 61.0), jit2 = th(gl_FragCoord.yx * 1.37 + 5.1);
   vec3 acc = vec3(0.0);
@@ -531,7 +889,7 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     lo.xy = mr * (lo.xy - vec2(0.0, 0.8)) + vec2(0.0, 0.8); ld.xy = mr * ld.xy;
     lo.yz = mp * (lo.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0); ld.yz = mp * ld.yz;
     // The whole vehicle's box first: most rays in the screen box miss it.
-    vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.2, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.2, top, fr + 0.15) - lo) * inv;
+    vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - lo) * inv;
     vec3 mn = min(ta, tb), mx = max(ta, tb);
     float t;
     vec3 n;
@@ -542,6 +900,29 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     mixed = mixed || id != id0 || gHitK < 1.0;
     if (id == 0) continue;
     vec3 hl = lo + ld * t;
+    float hk = gHitK;
+    {
+      // A ray to the sun from the hit: the body shades its own parts.
+      // Two samples trace it; the rest trace only where parts or shadows disagree.
+      // Past 40 m the vehicle is too small to show it.
+      vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), ls = vec3(dot(L, rt), L.y, dot(L, f));
+      ls.xy = mr * ls.xy; ls.yz = mp * ls.yz;
+      float sv = 1.0;
+      if (dot(n, ls) <= 0.0) sv = 0.0;
+      else if (id != 6 && id != 7 && z <= 40.0) {
+        if (k < 2 || mixed || id != id0) {
+          float tSh, sx = gExT;
+          vec3 nSh, sn = gExN;
+          int si = vHit(kind, hl + n * 0.004, ls, tSh, nSh, spin);
+          sv = si == 0 ? 1.0 : si == 2 ? 0.45 : 0.0;
+          gExT = sx; gExN = sn;
+        } else sv = shK;
+      }
+      if (k == 0) shK = sv;
+      if (k == 1 && sv != shK) mixed = true;
+      gSh = sv;
+      n = vBend(hl, n, id, kind);
+    }
     // Back out of the roll and pitch for the world normal.
     vec3 nb = n;
     nb.yz = transpose(mp) * nb.yz; nb.xy = transpose(mr) * nb.xy;
@@ -561,14 +942,14 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
     vec3 col = vShade(id, kind, P, N, -rw, hl, n, seed, brake, see);
     // The amber bar flashes, left and right in turn.
     if (id == 4) col = vec3(1.0, 0.45, 0.05) * (0.2 + 7.0 * step(0.5, fract(uT * 1.6 + (hl.x > 0.0 ? 0.5 : 0.0))));
-    acc += col * gHitK;
-    cov += gHitK;
+    acc += col * hk;
+    cov += hk;
     zHit = depthOf(P);
   }
   if (cov > 0.0) put(hazed(acc / cov, rd, zHit), cov / float(ns), zHit);
   if (sprayFront) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
 }
-// Every vehicle in one pass: far ones before the line, near ones after it.
+// Every vehicle in one pass: far ones before the infrastructure, near ones after it.
 void traffic(vec2 s, vec3 rd, float px, bool near) {
   for (int i = 0; i < ${MAX_VEH}; i++) vehicle(i, s, rd, px, near);
 }

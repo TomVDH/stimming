@@ -1094,11 +1094,12 @@ vec3 envScene(vec2 uv) {
   // The objects on the plain first: each one sorts itself behind or in front of the funnels.
   objInit(s);
   farm(c, s, rd, px);
-  // Vehicles far off lay down before the line; near ones after it, over it.
-  traffic(s, rd, px, false);
   linePoles(s, rd, px);
   wires(s, rd, px);
   plain(s, rd, px);
+  // A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
+  // So vehicles lay down after them: far ones before the infrastructure, near ones last.
+  traffic(s, rd, px, false);
   infra(s, rd, px);
   debris(s, rd, px);
   traffic(s, rd, px, true);
