@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T05:41:22Z
+updated_at: 2026-11-17T05:43:27Z
 parent: stimming-oh7b
 ---
 
@@ -106,3 +106,5 @@ Built; waits for the checkpoint with Tom.
 
 - 2026-11-16, Tom's lab defaults: Opacity 4.55, Sheaths 0.25, Core edge 0.23, Debris 0.58, deck Turn 0.08 (the rest unchanged).
 - [ ] Tom: the funnel's twist, reach and bend follow the wind and move over time (dynamic, not fixed knobs).
+
+- 2026-11-16, Tom's lab defaults (second set): Turbulence 0.63, Opacity 0.40, Sheaths 0.05, Core edge 0.80, Debris 0.58. Opacity grows with the log of F: × (1 + 1.5 ln(1 + F)). Opacity's slider goes down to 0.05, Core edge's up to 1.6.
