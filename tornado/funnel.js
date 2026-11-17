@@ -785,6 +785,8 @@ void main() {
   vec3 acc = vec3(0.0);
   float T = 1.0;
   int steps = 0;
+  // Where the ray turns half opaque: the sun's shafts stop there, in front of a funnel or the deck.
+  float tOpq = 1e9;
   // The tube's shorter steps need a longer march.
 #ifdef TUBE
   for (int i = 0; i < 480; i++) {
@@ -950,6 +952,7 @@ void main() {
     if (split) { acc += T * fAcc; T *= fT; acc += T * aV * cV; T *= 1.0 - aV; acc += T * fAcc2; T *= fT2; }
     else if (inward) { acc += T * aV * cV; T *= 1.0 - aV; acc += T * fAcc; T *= fT; }
     else { acc += T * fAcc; T *= fT; acc += T * aV * cV; T *= 1.0 - aV; }
+    if (T < 0.5 && tOpq > 1e8) tOpq = t;
     t += st;
   }
   vec4 now = vec4(acc, 1.0 - T);
@@ -961,7 +964,7 @@ void main() {
   // Twelve jittered steps to the base or the ground, 45 km at most; the history smooths them.
   // The breaks drift with the deck, so the shafts sweep slowly over the plain.
   if (uGod > 0.0 && uSun.y > 0.0) {
-    float tG = min(rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y, 45000.0), sh = 0.0;
+    float tG = min(min(rc.y > 0.0 ? (BASE * 1000.0 - CAMH) / rc.y : CAMH / -rc.y, 45000.0), tOpq), sh = 0.0;
     for (int i = 0; i < 12; i++) {
       vec3 w = (rd * ((float(i) + jit2) * tG / 12.0) + vec3(0.0, CAMH, 0.0)) * 0.001;
       // The sun's ray from this point crosses the base here: open sky there lights the point.

@@ -163,15 +163,31 @@ float stormShapeSun(vec3 p) {
   vec2 q = p.xz - TOWER - vec2(0.28, -0.12) * (p.y - BASE);
   float rT = mix(3.5, 7.0, gT) * (1.0 - 0.25 * smoothstep(BASE, 6.0, p.y) + 0.2 * smoothstep(top - 3.0, top, p.y));
   float tower = max(length(q) - rT, max(BASE + 0.1 - p.y, p.y - top));
+  // The tower is stacked turrets: Worley cells on a warped domain, larger and softer up high.
+  // The sunward side is rougher. Only points near the tower pay for it.
+  if (tower < 2.5) {
+    float hk = smoothstep(BASE, top, p.y);
+    vec3 pw = p + vec3(vn(p.yz * 0.7) - 0.5, 0.0, vn(p.xy * 0.7 + 3.0) - 0.5) * 0.8;
+    float sc = mix(0.55, 0.22, hk);
+    float sun = 0.75 + 0.5 * max(dot(normalize(vec2(q.x, q.y) + 1e-4), normalize(gSunC.xz + 1e-5)), 0.0);
+    tower -= ((W(pw * sc + 2.0) - 0.4) * mix(0.9, 1.7, hk) + (W(pw * sc * 2.7 + 5.0) - 0.4) * 0.45) * sun;
+  }
   // The base: a broad flat shelf, its underside level.
   vec2 b = (p.xz - SHELF) / (SHELF_R * mix(0.4, 1.0, g));
   float shelf = max((length(b) - 1.0) * SHELF_R.y * mix(0.4, 1.0, g), abs(p.y - (BASE + 0.6)) - 0.6);
+  // A young storm's shelf billows: domed Worley tops, not a flat lid.
+  float yk = 1.0 - stormK();
+  if (yk > 0.0 && shelf < 1.5 && p.y > BASE + 0.4) shelf -= yk * ((W(p * 0.35 + 4.7) - 0.4) * 1.2 + (W(p * 1.1 + 2.2) - 0.4) * 0.4);
   // The anvil: flat on top, thin at its edge, and streaming off to the right.
   vec3 a = p - vec3(TOWER.x + mix(2.0, 14.0, g), top - 0.5, TOWER.y - 2.0);
   float anvil = max((length(a / vec3(mix(6.0, 28.0, g), 1.7, mix(4.0, 9.0, g))) - 1.0) * 1.6, p.y - top - 0.5);
+  // The anvil's edge streams out in fibres along its spread.
+  if (anvil < 1.5) anvil -= (vn(vec2(a.z * 1.6, a.y * 3.0) + a.x * 0.08) - 0.5) * 0.9;
   // The overshooting top domes above the anvil, over the updraft.
   vec3 o = p - vec3(TOWER.x + 0.28 * (top - BASE), top + 0.4, TOWER.y - 0.12 * (top - BASE));
   float dome = length(o * vec3(1.0, 1.6, 1.0)) / 1.6 - mix(1.4, 2.8, gT);
+  // The overshooting top boils in big soft cells.
+  if (dome < 2.0) dome -= (W(o * 0.25 + 9.0) - 0.4) * 1.4;
   float d = smin(tower, shelf, 1.4);
   d = smin(d, dome, 1.2);
   d = smin(d, anvil, 2.2);
@@ -212,9 +228,19 @@ float stormShape(vec3 p) {
   // The slab runs from 6 km behind the eye to uReach ahead.
   vec2 q = vec2(abs(p.x) - 150.0, abs(p.z + 0.5 * (uReach - 6.0)) - 0.5 * (uReach + 6.0));
   // A young storm's deck is thin; a full one is a kilometre deep.
-  float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(under - p.y, p.y - (BASE + mix(0.35, 1.0, stormK()))));
+  float topY = BASE + mix(0.35, 1.0, stormK()), botY = under;
   // A young deck breaks into rafts with sky between; the gaps close as the storm grows.
-  if (stormK() < 1.0) {
+  // Each raft billows: its own height, domed lumpy tops in two sizes, a ragged base that heaves.
+  float yk = 1.0 - stormK();
+  if (yk > 0.0 && p.y > BASE - 0.6 && p.y < BASE + 3.0) {
+    vec3 pd = p + vec3(uT * 0.004, 0.0, uT * 0.002);
+    float hN = vn(pd.xz * 0.15 + 5.3);
+    float lumps = (W(pd * 0.35 + 1.3) - 0.4) * 0.9 + (W(pd * 1.1 + 7.1) - 0.4) * 0.35;
+    topY += yk * (hN * 1.1 + lumps);
+    botY -= yk * (vn(pd.xz * 0.6 + 2.0) - 0.5) * 0.3;
+  }
+  float front = max(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0), max(botY - p.y, p.y - topY));
+  if (yk > 0.0) {
     float n = vn(p.xz * 0.11 + 3.7) * 0.7 + vn(p.xz * 0.37 + 9.1) * 0.3;
     front += 1.6 * smoothstep(0.3 + 0.65 * stormK(), 0.5 + 0.65 * stormK(), n);
   }

@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T08:01:13Z
+updated_at: 2026-11-17T08:03:36Z
 parent: stimming-oh7b
 ---
 
@@ -183,3 +183,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-17, Tom: towers show at low Storm: the tower's radius, top and overshooting dome read max(Storm, 0.6), so a young cell stands as a towering, sunlit Cb over a thin, broken deck (default unchanged).
 
 - 2026-11-17, Tom: far breaks and sweeping god rays: deckOpen() opens holes in the deck from 10 km to full at 45 km, toward the sun's side, at every Storm (few and narrow at full storm), drifting downwind with the deck; the storm pass marches 12 jittered steps per ray and lights air whose sun ray crosses a break (haze by height, forward scatter); Dev row God rays (default 0.6, ?god). The far bake renews in strips while running so the far breaks move. Cheap cauliflower lumps on the tower top and dome. Shafts read as warm fans under the deck, best with the sun ahead; not yet crisp beams.
+
+- 2026-11-17, Tom (pancake clouds; the tower looks weird; hollow tube with the sun ahead): god rays stop where the ray turns half opaque, so they light only the air in front (the hollow V); below the default storm each raft gets its own height, domed Worley tops at two sizes, a heaving ragged base and slow drift; the tower is stacked, domain-warped Worley turrets growing softer with height, a boiling overshooting dome and a fibrous anvil edge, paid only near the tower. Known: fine stipple on far high cloud edges.
