@@ -10,6 +10,7 @@ import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_F
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL } from './plain.js';
+import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 mark('libs');
 
@@ -33,7 +34,7 @@ const fAt = (tab, f) => { const i = Math.min(4, Math.floor(f)), u = clamp(f - i)
 // The hour for each Time choice. The sun stands behind the camera.
 const HOURS = { afternoon: 16, golden: 18.3, dusk: 19.4 };
 /** @type {{ f: (v: string) => void, add: () => void, clear: () => void, storm: (v: number) => void, time: (v: string) => void, lens: (v: string) => void, expo: (v: number) => void, tone: (v: string) => void, look: (k: string, v: number | boolean) => void, sunAz: (v: number) => void, base: (v: number) => void, tod: (v: number) => void, wind: (v: number) => void, windDir: (v: number) => void, god: (v: number) => void, buildUp: (v: number) => void, bakeFrom: (v: number) => void, deckReach: (v: number) => void, knob: (id: string, v: number) => void, knobCopy: () => void, knobReset: () => void, eye: (v: number) => void, funnel: (v: string) => void }} */
-const act = { f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
+const act = { vehicles() {}, f() {}, add() {}, clear() {}, storm() {}, time() {}, lens() {}, expo() {}, tone() {}, look() {}, sunAz() {}, base() {}, tod() {}, wind() {}, windDir() {}, god() {}, buildUp() {}, bakeFrom() {}, deckReach() {}, knob() {}, knobCopy() {}, knobReset() {}, eye() {}, funnel() {} };
 const ui = initPage({ id: 'tornado', bar: {
   choice: { label: 'F-scale', display: 'stepper', value: 'F2', options: [0, 1, 2, 3, 4, 5].map(n => ({ value: `F${n}`, label: `F${n}`, key: String(n) })), onPick: v => act.f(v) },
   actions: [
@@ -92,6 +93,8 @@ const ui = initPage({ id: 'tornado', bar: {
       ], onPick: v => act.funnel(v) }] : []),
       { type: 'slider', group, id: 'k_' + id, label, min, max, step, value, persist: true, onInput: v => act.knob(id, v) },
     ]),
+    // The road scene: a pickup flees the storm, then two chasers rush in. Key V.
+    { type: 'button', group: 'Road', id: 'vehicles', label: 'Vehicles', text: 'Run', onClick: () => act.vehicles() },
     { type: 'button', group: 'Knobs', id: 'kCopy', label: 'Copy JSON', text: 'Copy', onClick: () => act.knobCopy() },
     { type: 'button', group: 'Knobs', id: 'kReset', label: 'Defaults', text: 'Reset', onClick: () => act.knobReset() },
   ],
@@ -892,6 +895,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 
 ${LINE_GLSL}
 ${PLAIN_GLSL}
+${TRAFFIC_GLSL}
 vec3 envScene(vec2 uv) {
   float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
   vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
@@ -904,9 +908,12 @@ vec3 envScene(vec2 uv) {
   objInit(s);
   gPutZ = 1500.0;
   farm(c, s, rd, px);
+  // Vehicles far off lay down before the line; near ones after it, over it.
+  traffic(s, rd, px, false);
   linePoles(s, rd, px);
   wires(s, rd, px);
   plain(s, rd, px);
+  traffic(s, rd, px, true);
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
@@ -977,6 +984,8 @@ vec3 envScene(vec2 uv) {
   c = c * (1.0 - gOF.a) + gOF.rgb;
   // Arcs and sparks on the line: their light shows through the dust, and lights it.
   c += sparks(s, px, tv.a);
+  // The vehicles' lamps glow through the dust.
+  c += gVehGlow * (1.0 - 0.6 * tv.a);
   nearEars(c, s, px, asp);
   // Near rain: the low sun at the eye's back lights the streaks against the storm.
   if (uRain > 0.0) {
@@ -1056,6 +1065,8 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 
 // The power line's state: leans, breaks and spark events.
 const line = lineState();
+// The vehicles on the road: a pickup fleeing, then two chasers rushing in.
+const traf = trafficState();
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
@@ -1070,7 +1081,7 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { lineUniforms(line, tors); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    before: (w, h) => { lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null) },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
@@ -1079,7 +1090,7 @@ try {
       uRain: () => rain, uRainDir: () => rainAim(),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uSwayPh: () => line.uSwayPh,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1471,6 +1482,7 @@ function step(dt) {
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   lineUniforms(line, tors);
+  trafficStep(traf, tors, simT);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   // A tornado that leaves frees a place: + Tornado and the click come back.
@@ -1484,7 +1496,7 @@ function step(dt) {
     if (!build.spawned && (storm >= Math.min(0.67, build.to) || k >= 1)) { build.spawned = true; if (!tors.length) heroDown(); }
     if (k >= 1) build = null;
   }
-  if (!asleep && !build && !tors.length && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
+  if (!asleep && !build && !tors.length && !trafficBusy(traf) && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
   lastInput = performance.now();
@@ -1580,10 +1592,12 @@ canvas.addEventListener('wheel', e => {
 const target = () => (hover && tors.includes(hover) ? hover : [...tors].reverse().find(t => !t.roping));
 stage.addEventListener('keydown', e => {
   if (e.key === '[' || e.key === ']') { const t = target(); if (t) setF(t, t.fT + (e.key === ']' ? 1 : -1)); return; }
+  if (e.key === 'v' || e.key === 'V') { act.vehicles(); return; }
   if (e.target !== stage || (e.key !== ' ' && e.key !== 'Enter')) return;
   e.preventDefault();
   act.add();
 });
+act.vehicles = () => { trafficRun(traf, simT); wake(); };
 
 act.f = v => {
   fLevel = +v.slice(1);
@@ -1759,7 +1773,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { traf, trafficRun, line, lineReset, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');
