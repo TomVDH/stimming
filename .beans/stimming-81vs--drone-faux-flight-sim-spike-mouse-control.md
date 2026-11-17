@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T21:13:01Z
-updated_at: 2026-11-17T22:24:37Z
+updated_at: 2026-11-17T22:29:44Z
 ---
 
 Question: can mouse control fly a heavy-lift quad as a faux drone sim that feels right?
@@ -70,4 +70,5 @@ Round 3 asks (14:16): the HUD responds as in real flight; the Gimbal view costs 
 
 - [x] Gimbal feed rebuilt light: one render and one pass (ACES, mono, fine grain, wide lens, sharpening); about 11 times faster than the NVG tube, no D3D notes
 - [x] HUD as in flight: a three-axis gimbal with lag, stops and motor buzz; horizon and ladder fixed to the world; a waterline at the nose; filtered values; trend bars on both tapes; the picture tears and fades on a crash
-- [x] Downwash clouds: billowing puffs that grow, turn and drift; the ripple ring stays
+- [x] Downwash clouds: billowing puffs that grow, turn and drift
+- [x] Pressed grass as noise blown outward, not rings (Tom, 14:26); no wash at idle, none on the pad or a roof
