@@ -723,6 +723,16 @@ vec3 wheatFar(vec2 xz, float fx, float fz) {
     float clump = vn(r2 * 2.3) * 0.6 + mix(0.5, vn(r1 * 7.1 + 11.0), detail(0.3, fm)) * 0.4;
     alb *= mix(1.0, (0.8 + 0.3 * clump) * (0.86 + 0.24 * rows) * (1.0 - 0.45 * smoothstep(0.38, 0.18, clump)), near);
   }
+  // The heads: lit clusters about 10 cm across with dark gaps, then single heads 4 cm apart.
+  // Each fades where a pixel no longer resolves it.
+  // The axes are the camera's, so the grain holds still on the ground.
+  vec2 va = toWorld(vec3(1.0, 0.0, 0.0)).xz, vd = toWorld(vec3(0.0, 0.0, -1.0)).xz;
+  vec2 hu = vec2(dot(xz, va), dot(xz, vd));
+  // Across the view it stays sharp; along it, it stretches up to four times, then fades out.
+  float h1 = vn(vec2(hu.x * 10.0, hu.y * clamp(0.025 / max(fz, 1e-4), 2.5, 10.0)));
+  float h2 = vn(vec2(hu.x * 25.0, hu.y * clamp(0.025 / max(fz, 1e-4), 6.25, 25.0)) + 5.0);
+  float hg = (h1 - 0.5) * detail(0.1, fx) * detail(0.4, fz) + 0.7 * (h2 - 0.5) * detail(0.04, fx) * detail(0.16, fz);
+  alb *= 1.0 + 0.8 * hg;
   // Toward the sun the tops glow: the light comes through the heads and awns.
   vec3 sunD = normalize(uSun + vec3(0.0, 0.02, 0.0));
   float back = pow(max(dot(gRd, sunD), 0.0), 3.0);
