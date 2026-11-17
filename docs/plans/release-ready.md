@@ -446,3 +446,15 @@ Batch 6, 2026-11-16 (Tom):
 | pool.2 | Leave hidden | N and P stay hidden keys |
 | putty.1 | Keep it bare | No new controls |
 | putty.2 | Soften it | The hard offset block shadow under the slab becomes a soft shadow |
+
+Batch 7, 2026-11-16 (Tom):
+
+| Q | Answer | What follows |
+|---|---|---|
+| scope.1 | Keep on screen | Spin and phosphor stay as tags on the scope's screen |
+| scope.2 | Keep spinning | Spin stays on by default. Tom accepts the idle motion (G4) |
+| walker.1 | Keep walking | The walk and breeze keep going. Tom accepts the idle motion (G4) |
+| walker.2 | Leave hidden | R stays a hidden key; Reset stays in Settings |
+| fire.1 | Keep in Settings | Temperature and Turbulence stay player settings |
+| fire.2 | Keep own row | Fire keeps its four-step Quality row (Low to High) |
+| rain.1 | Fog returns alone | No new control. The fog creeps back over a wiped pane by itself; Rain's chat checks the code and adds the creep if it is missing |
