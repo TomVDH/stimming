@@ -173,6 +173,9 @@ uniform sampler2D tFar;
 // The bake before the last, and how far the last has faded in over it, 0 to 1.
 uniform sampler2D tFarPrev;
 uniform float uFarK;
+// The lens each far picture was baked through: x for tFar, y for tFarPrev.
+// During the Rise the lens moves; the read reprojects each picture by its own lens.
+uniform vec2 uFarFoc;
 // The bake's slice: it draws only rows whose index mod 8 is this; -1 draws them all.
 uniform int uSlice;
 // Light through: how much sun passes through the funnel's own body, 0 to 1.
@@ -969,7 +972,9 @@ void main() {
   vec4 now = vec4(acc, 1.0 - T);
   if (bake) { outC = now; return; }
   // The baked far field lies behind the near field.
-  vec4 far = mix(texture(tFarPrev, gl_FragCoord.xy / uRes), texture(tFar, gl_FragCoord.xy / uRes), uFarK);
+  vec2 sf = vec2((gl_FragCoord.x / uRes.x - 0.5) * asp, gl_FragCoord.y / uRes.y - uHz) / uFoc;
+  vec2 uvA = vec2(sf.x * uFarFoc.x / asp + 0.5, sf.y * uFarFoc.x + uHz), uvC = vec2(sf.x * uFarFoc.y / asp + 0.5, sf.y * uFarFoc.y + uHz);
+  vec4 far = mix(texture(tFarPrev, uvC), texture(tFar, uvA), uFarK);
   now = vec4(acc + T * far.rgb, 1.0 - T * (1.0 - far.a));
   // Sun shafts: light through one large opening on the sun's side, along the true sun.
   // The march runs under the deck only, 30 km at most, and stops at anything opaque.
