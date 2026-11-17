@@ -388,7 +388,7 @@ export function buildWoods(pine: Pine): Woods {
 }
 
 // The page waits this long for the model.
-const PINE_WAIT_MS = 8000;
+const PINE_WAIT_MS = 5000;
 
 // The model, or a rejection after PINE_WAIT_MS.
 function pineInTime(): Promise<Pine> {

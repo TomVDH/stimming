@@ -9,7 +9,7 @@ Each module builds its part of the scene when it loads, so the order is fixed.
 The chain starts at `setup.ts`. `main.ts` imports the last module.
 A new module goes into the chain at the place it loads; never import a later module for its side effects.
 `world/woods.ts` waits for the pine model with a top-level await, so every later module waits with it.
-It waits 8 s at most.
+It waits 5 s at most, inside the shell's 6 s intro cap.
 A failed or slow model leaves the woods out, with one console warning; the page starts without them.
 `setup.ts` starts the star catalog first, so it loads beside the model.
 
@@ -18,7 +18,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 - A WebGL failure shows the stage's `.fail` line with its own WebGL 2 text.
 - Any other boot failure sets the line to "Observatory could not start.": an uncaught error or rejection, or a catalog that does not load. The boot ends when the stars are in.
 - A lost WebGL context shows the line too.
-- On `pagehide`, each module frees the GPU objects it registered with `onLeave`; then the renderer goes. A page back from the back-forward cache loads again.
+- On a real leave (`pagehide` without `persisted`), each module frees the GPU objects it registered with `onLeave`; then the renderer goes. A page in the back-forward cache keeps everything and carries on when it comes back.
 - `world/observatory.ts`, `world/hero.ts`, `world/hero-scope.ts` and `view/cuts.ts` register nothing yet.
 
 ## Modules

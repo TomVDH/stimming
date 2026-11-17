@@ -39,10 +39,19 @@ export function bootFail(err: unknown): void {
   fail('Observatory could not start.');
   console.error(err);
 }
-// Until the boot ends, any uncaught error is a boot failure.
-// preventDefault stops a second report of the same error.
-const onError = (e: ErrorEvent): void => { e.preventDefault(); bootFail(e.error ?? e.message); };
-const onRejection = (e: PromiseRejectionEvent): void => { e.preventDefault(); bootFail(e.reason); };
+// Until the boot ends, the first uncaught error is a boot failure.
+// preventDefault stops a second report of that error.
+// Later errors pass through to the console.
+const onError = (e: ErrorEvent): void => {
+  if (failed) return;
+  e.preventDefault();
+  bootFail(e.error ?? e.message);
+};
+const onRejection = (e: PromiseRejectionEvent): void => {
+  if (failed) return;
+  e.preventDefault();
+  bootFail(e.reason);
+};
 addEventListener('error', onError);
 addEventListener('unhandledrejection', onRejection);
 // main.ts ends the boot once the stars are in.
@@ -71,17 +80,17 @@ export const starFile = loadStars(new URL('../stars.bin', import.meta.url).href)
 // This handler stops an early report of it as unhandled.
 starFile.catch(() => {});
 
-/* ---------- leaving the page frees the GPU ---------- */
+/* ---------- a real leave frees the GPU ---------- */
 // Each module adds the GPU objects it owns with onLeave.
 const leaveFns: (() => void)[] = [];
 export const onLeave = (fn: () => void): void => { leaveFns.push(fn); };
-addEventListener('pagehide', () => {
+// A page that goes into the back-forward cache keeps everything.
+// It carries on when it comes back.
+addEventListener('pagehide', (e) => {
+  if (e.persisted) return;
   for (const fn of leaveFns) fn();
   renderer.dispose();
 });
-// A page back from the back-forward cache has no GPU objects left.
-// It loads again.
-addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
 
 // Frees every geometry, material and texture under root.
 export function disposeTree(root: Object3D): void {
