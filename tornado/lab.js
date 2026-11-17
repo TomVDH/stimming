@@ -215,10 +215,11 @@ float hornSlope(float s) {
   return gA * pow(sc, 0.6) * pow(1.0 - pow(sc, 1.6), -0.375) / (gDeck - gY0);
 }
 // The horn as a distance in lab metres: negative inside.
-// Low down it lies inside the funnel's body, so the deck shows only where the horn flares past the funnel.
+// Up most of its height it lies inside the funnel's body, which widens along the same outline.
+// It comes to the surface only near the deck, where the funnel has already taken the deck's tone.
 float hornDist(float y, float r) {
   float s, R = hornR(y, s), k = hornSlope(s);
-  R -= radiusAt(min(y, uH)) * 0.3;
+  R -= radiusAt(min(y, uH)) * mix(0.7, 0.0, smoothstep(0.55, 0.95, s));
   return max((r - R) / sqrt(1.0 + k * k), gY0 - y);
 }
 // Condensation density at p, 0 to about 2. u returns the height over the base.

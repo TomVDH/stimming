@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T00:03:13Z
+updated_at: 2026-11-17T00:38:46Z
 parent: stimming-oh7b
 ---
 
@@ -89,3 +89,5 @@ Built; waits for the checkpoint with Tom.
 - Shared lab: <https://claude.ai/artifact/4rQ7D568vJZ2DSwGnwRpFf> (private until Tom shares it). One page built from `tornado/lab.html`, `lab.js`, `shared/gl.js`, GRADE and OUTPUT; phones open with the knobs folded. Republish after a lab change.
 
 - Taper follows F, no puck (Tom, 2026-11-16: "the upper taper seems to stay as wide and doesnt seem to correspond with F scale", "we cant have a puck of taper on the cloud deck and then the funnel come from it"). The lowered wall-cloud block is gone; the deck is one flat base, DECK (0.3 storm km) over the funnel's top. The horn is now part of the storm's own shape (hornDist in stormShape, joined to the base by a smooth minimum), so the deck's lumps and light run down it with no edge. Its flare is a share of the funnel's top radius (1.4 at F0 to 0.8 at F5), so it widens step by step with F; its outline is a 1.6 superellipse, upright at the funnel, level at the deck. Low down it lies inside the funnel's body, so the deck shows only where the horn flares past the funnel. On the horn the base's ragged noise eases (most by the funnel) and the light is the underside's. F0 has no horn. The near storm and the shell overlap at their seam (shellOff). Checked F0 to F5 at 24, 50 and 85 mm and at noon; console clean. Left: faint arcs round the horn's rim at 24 mm, and a tone step where the light funnel enters the dark horn at 85 mm.
+
+- No shroud (Tom, 2026-11-16: "strange secondary shroud around tornado base"). The deck's horn showed as a darker cone round the funnel's middle wherever it flared past the funnel's bright body. Now it stays inside the funnel's body (0.7 of the funnel radius in) up to 55% of its height and reaches its full outline only near the deck, where the funnel has already taken the deck's tone; the funnel widens along the same outline, so they read as one body. Checked F0 to F5 at 24, 50 and 85 mm and at noon.
