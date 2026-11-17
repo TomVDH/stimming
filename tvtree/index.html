@@ -1509,6 +1509,103 @@ function stepWatch(dt) {
   return watch.on;
 }
 
+/* ---------- passing a picture: drop one set on another ---------- */
+// A spark carries the picture on an arc from screen to screen.
+const SPARK_N = 16, SPARK_T = 0.32;
+const pass = { on: false, from: null, to: null, ch: 0, k: 0, group: null, dots: [], halo: null, a: null, b: null, c: null };
+function buildSpark() {
+  const m = new THREE.MeshBasicMaterial({ color: col3(linear(0.96, 0.07, 85)).multiplyScalar(4), toneMapped: false, depthTest: false, transparent: true });
+  const geo = new THREE.SphereGeometry(0.026, 12, 8), g = new THREE.Group();
+  for (let i = 0; i < SPARK_N; i++) {
+    const o = new THREE.Mesh(geo, m);
+    o.renderOrder = 6;
+    g.add(o);
+    pass.dots.push(o);
+  }
+  // A soft halo rides the head: a radial falloff, no hard edge.
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const cx = cv.getContext('2d'), gr = cx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.2, 'rgba(255,255,255,0.4)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  cx.fillStyle = gr;
+  cx.fillRect(0, 0, 64, 64);
+  const hm = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), color: col3(linear(0.9, 0.1, 80)), toneMapped: false, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 });
+  pass.halo = new THREE.Sprite(hm);
+  pass.halo.renderOrder = 6;
+  g.add(pass.halo);
+  pass.a = v3(); pass.b = v3(); pass.c = v3();
+  pass.group = g;
+  return g;
+}
+// The spark lifts with a soft rising chirp.
+function sendSound(x) {
+  const a = live();
+  if (!a || voices >= MAXV) return;
+  const t = a.currentTime + LEAD, g = level(), d = bus(a, x);
+  burst(a, d, t, 'highpass', 4200, 0.7, 0.07 * g, 0.05, 0.25);
+  const [o, og] = tone(a, d, t, 520, 1560, SPARK_T, 0.07 * g, 'triangle');
+  track(o, og, d);
+}
+const shown = s => (s.next >= 0 ? s.next : s.ch);
+// The source keeps its picture; the target takes a copy.
+function passPicture(a, b) {
+  if (!a.power || pass.on || a === b) return;
+  const ch = shown(a);
+  // A target on that channel already only gets a knock.
+  if (b.power && shown(b) === ch) { b.twv += 0.8; clunk(panOf(b)); wake(); return; }
+  Object.assign(pass, { on: true, from: a, to: b, ch, k: reduce ? 1 : 0 });
+  if (!reduce) sendSound(panOf(a));
+  wake();
+}
+// A dark target switches on and shows the picture.
+function land() {
+  const b = pass.to;
+  pass.on = false;
+  pass.group.visible = false;
+  if (b.power) changeChannel(b, pass.ch, true);
+  else { b.next = pass.ch; b.hand = true; powerSet(b, true); }
+}
+const scrAt = (s, out) => out.set(s.sx, s.sy, s.sz).applyMatrix4(s.group.matrixWorld);
+function stepPass(dt) {
+  if (!pass.on) return false;
+  pass.k += dt / SPARK_T;
+  if (pass.k >= 1) { land(); return true; }
+  const A = scrAt(pass.from, pass.a), B = scrAt(pass.to, pass.b), C = pass.c;
+  // The arc bows up and toward the viewer.
+  C.addVectors(A, B).multiplyScalar(0.5);
+  C.y += 0.2 + 0.12 * A.distanceTo(B);
+  C.z += 0.35;
+  pass.dots.forEach((o, i) => {
+    const t = pass.k - i * 0.02, u = sstep(0, 1, clamp(t));
+    o.visible = t > 0;
+    const w = 1 - u;
+    o.position.set(w * w * A.x + 2 * w * u * C.x + u * u * B.x, w * w * A.y + 2 * w * u * C.y + u * u * B.y, w * w * A.z + 2 * w * u * C.z + u * u * B.z);
+    o.scale.setScalar((1 - i / SPARK_N) ** 1.4 * 1.2);
+  });
+  pass.halo.position.copy(pass.dots[0].position);
+  pass.halo.scale.setScalar(0.32);
+  pass.group.visible = true;
+  return true;
+}
+// Keyboard: C lifts the picked set's picture; C on another set drops it.
+let carried = null;
+function carry() {
+  const s = sets[picked];
+  if (!s) return;
+  if (!carried) {
+    if (!s.power) return;
+    carried = s;
+    s.twv += 0.6;
+    clunk(panOf(s));
+  } else {
+    if (s !== carried) passPicture(carried, s);
+    carried = null;
+  }
+  wake();
+}
+
 /* ---------- the lantern: a small warm light at the foot of the trunk ---------- */
 // It stands front left, by the roots, and lights the front of the tree.
 const lantern = { on: false, fade: 0, t: 0, x: -0.4, z: 0.4, group: null, glass: null, light: null };
@@ -1894,6 +1991,7 @@ function step(dt, now) {
   if (stepZoom(dt)) act = true;
   if (stepLantern(dt)) busy = true;
   if (stepWatch(dt)) act = true;
+  if (stepPass(dt)) act = true;
   syncActs();
   if (Math.abs(gaze.tx - gaze.x) + Math.abs(gaze.ty - gaze.y) > 0.004) {
     busy = true;
@@ -2067,10 +2165,12 @@ function planeHit(e, z) {
 }
 // A ray tests each set's box.
 // Touch also takes the nearest set.
-function pick(e) {
+// The skip set is the one in hand; a drop never lands on itself.
+function pick(e, skip = null) {
   const r = toNdc(e), o = v3(), d = v3();
   let best = null, bt = Infinity;
   for (const s of sets) {
+    if (s === skip) continue;
     inv.copy(s.group.matrixWorld).invert();
     o.copy(ray.ray.origin).applyMatrix4(inv);
     d.copy(ray.ray.direction).transformDirection(inv);
@@ -2089,6 +2189,7 @@ function pick(e) {
   if (!best && e.pointerType !== 'mouse') {
     let bd = 30;
     for (const s of sets) {
+      if (s === skip) continue;
       const p = ndcOf(s.sx, s.sy, s.sz, s.group.matrixWorld), dx = ((p.x - ndc.x) / 2) * r.width, dy = ((p.y - ndc.y) / 2) * r.height;
       const dd = Math.hypot(dx, dy);
       if (dd < bd) { bd = dd; best = s; }
@@ -2142,6 +2243,9 @@ panel.addEventListener('pointermove', e => {
   if (!held.drag) return;
   const s = held.s;
   if (s) {
+    // The set under a carried set lights, so the drop shows.
+    const h = pick(e, s);
+    if (h !== hover) hover = h;
     const p = planeHit(e, s.c[2]);
     if (p) s.drag = [p.x, p.y, s.c[2]];
     // A sideways flick spins the set on its cord.
@@ -2160,7 +2264,10 @@ function lift(e) {
   const s = held.s;
   if (s) {
     if (!held.drag && !held.long && e.type === 'pointerup') changeChannel(s);
+    // A set let go over another set passes its picture across.
+    else if (held.drag && e.type === 'pointerup') { const t = pick(e, s); if (t) passPicture(s, t); }
     s.drag = null;
+    hover = null;
   } else {
     sway.tgt = null;
     // A tap on the wood gives the tree a small knock.
@@ -2298,6 +2405,8 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
   const a = ACT_KEYS[e.key.toLowerCase()];
   if (a) { e.preventDefault(); ACTS[a](); wake(); }
+  else if (e.key.toLowerCase() === 'c' && picked >= 0) { e.preventDefault(); carry(); }
+  else if (e.key === 'Escape' && carried) carried = null;
   // Plus and minus zoom about the current view.
   else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomTo(zoom.goal * 1.25, zoom.gx, zoom.gy); }
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomTo(zoom.goal / 1.25, zoom.gx, zoom.gy); }
@@ -2456,7 +2565,7 @@ async function start() {
       uKey: TU.uKey, uKeyDir: TU.uKeyDir, uSky: TU.uSky, uGround: TU.uGround, uLanP: TU.uLanP, uLanC: TU.uLanC, uTvP: TU.uTvP, uTvC: TU.uTvC,
     },
   });
-  scene.add(bg, treeMesh, ground, buildShrubs(shrubMat), buildLantern());
+  scene.add(bg, treeMesh, ground, buildShrubs(shrubMat), buildLantern(), buildSpark());
 
   atlasRT = new THREE.WebGLRenderTarget(TW * TC, TH * TC, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const v4 = () => Array.from({ length: 16 }, () => new THREE.Vector4());
@@ -2507,6 +2616,8 @@ async function start() {
   renderer.setRenderTarget(null);
   await renderer.compileAsync(pre([bloom.materialHighPassFilter, ...bloom.separableBlurMaterials, bloom.compositeMaterial, bloom.blendMaterial]), camera);
   await renderer.compileAsync(pre([fin.material]), camera);
+  // The spark shows only in flight; it stays visible for the compile.
+  pass.group.visible = false;
   ready = true;
   step(0, performance.now());
   draw();
