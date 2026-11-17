@@ -5,7 +5,7 @@ status: in-progress
 type: spike
 priority: normal
 created_at: 2026-11-17T03:23:51Z
-updated_at: 2026-11-17T04:58:37Z
+updated_at: 2026-11-17T05:02:20Z
 parent: stimming-dwwg
 ---
 
@@ -47,3 +47,16 @@ Join spikes 1 and 2: shells for the funnel, the bake for the far storm and the n
 - The straight line down the shaded side: the core's light point was extrapolated back and clamped at -3 segments, a fixed geometry on every ray. It is now the ray's exact entry into the circle at the light depth, or its point nearest the axis.
 - The deck spirals into the wall cloud: its texture lies on angle and log distance, so the turn (90 s a lap) and the inflow (one e-fold in 40 s) are one slide, with no wind-up and no crossfade. Arms trail along the inflow; Spin sets the speed.
 - GPU time, 800×960, helper's timer queries before the spiral: lab 14.9 / 25 / 37.6 ms, shells 14.7 / 23 / 31 ms at F1 / 2.5 / 4.5. The swirl had doubled the near storm's cost; the spiral replaces it with one deck read. Not yet re-timed: the hidden pane stalls the shader compile.
+
+## Spikes 1 + 2 joined (tornado/spike-joined.*)
+- Built from spike-shells with the bake's patches (scratch script, not kept): the backdrop and, off the funnel's column, the near deck bake in 4 strips, one a frame, blended 0.6.
+- GPU time, same tab, 800×960 (this session's machine state runs about 2× the helper's absolute numbers; the ratios hold):
+
+| F | Lab | Shells | Joined |
+|---|---|---|---|
+| 1 | 36.3 | 30.7 | 20.6 ms |
+| 2.5 | 52.1 | 48.9 | 27.6 ms |
+| 4.5 | 78.3 | 57.6 | 41.2 ms |
+
+- Joined is about 1.8–1.9× faster than the lab.
+- Known gaps: the baked deck renews at about 7.5 Hz, so the spiral off the column may step; a grainy streak shows on a far cloud edge at the top left (march grain held by the bake).
