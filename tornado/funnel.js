@@ -666,13 +666,14 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
   float edge = mix(0.9, 1.0, fl) + uAmp * 0.45 * (nc - 0.5) * mix(1.0, 0.6, fl);
   float wC = 0.1 + uEdgeW * uAmp;
   float tp = clamp(tap - (nc - 0.5) * 0.7, 0.0, 1.0);
-  // Point samples read thinner than the shells' exact ramp: the core takes a little more.
-  float dC = 2.1 * smoothstep(0.0, 0.45, tp) * clamp((edge - x) / wC, 0.0, 1.0);
+  // Point samples read thinner than the shells' exact ramp: the core takes more.
+  // It reads as dense condensation, not thin smoke.
+  float dC = 3.2 * smoothstep(0.0, 0.45, tp) * clamp((edge - x) / wC, 0.0, 1.0);
   // Near the tip only the dense parts hold.
   if (tp < 1.0) dC *= mix(smoothstep(0.45, 0.7, nc), 1.0, smoothstep(0.35, 1.0, tp));
   // The rim thins where the ray grazes the core's edge.
   dC *= 1.0 - uRim * 0.75 * smoothstep(edge - wC, edge, x);
-  float s = funnelSig(dC, R);
+  float s = funnelSig(dC, R), sB = 0.0;
   // The bands: thin and spaced as the shells, but cut from the deck's cloud.
   float sw = 0.3 * gSp;
   for (int j = 0; j < SHEATHS; j++) {
@@ -686,15 +687,18 @@ void tubeSeg(vec3 pa, vec3 rd, float len, Geo ga, Geo gb, float xm, bool split, 
     float nb = j == 0 ? nc : tubeN(ang, ps.y, x, R, j + 1);
     // The lumps widen the noise's spread, so the cut sits higher than the shells'.
     float cov = mix(0.5, 0.72, fk);
-    s += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov, cov + 0.14, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
+    sB += funnelSig(mix(0.9, 0.35, fk), R) * I / len * smoothstep(cov, cov + 0.14, nb) * (0.6 + 0.4 * nb) * uSheathK * uTbBands * (1.0 - fl);
   }
-  s *= uDens * fade * live(ps.y);
+  // The bands' share of the step: their torn edges take the deck's tone.
+  float bk = sB / max(s + sB, 1e-6);
+  s = (s + sB) * uDens * fade * live(ps.y);
   if (s < 1e-7) return;
   // The deck's light: a step toward the sun finds thinner cloud on the lit side of a lump.
   vec3 pl = ps + gSunC * (0.3 * R);
   vec2 ql = pl.xz - axisAt(pl.y);
   float lit = clamp((nc - tubeN(atan(ql.y, ql.x), pl.y, length(ql) / Re, R, 0)) * 3.0 + 0.5, 0.0, 1.0);
   vec3 c = shellCol(q, ps.y, R, x * Re / R, cs + (1.0 - lit) * 0.6, ph0, ph1, skyH, topK, stC);
+  c = mix(c, stC, 0.45 * bk);
   sum += hazed(c, funnelHaze(ps.y)) * s;
   sig += s;
 }
