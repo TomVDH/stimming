@@ -177,7 +177,7 @@ function fitStage() {
  * @returns {{ sound: typeof sound } & Partial<BarUI>}
  */
 /** @param {InitOptions} options */
-export function initPage({ id, silent = false, home = '../index.html', bar = null }) {
+export function initPage({ id, silent = false, home = '../index.html', bar = null, signal = false }) {
   const stage = bar && /** @type {HTMLElement | null} */ (document.querySelector('.stage'));
   const ui = stage ? buildBar(stage, bar, { id, home }) : null;
   const shell = document.querySelector('header[data-shell]');
@@ -194,6 +194,13 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
   if (ui) {
     // toys.json gives the name, the tags and the legacy flag.
     toysData().then(toys => ui.applyToy(toys ? toys[id] : null));
+    // A toy that opts in gets the Signal bar; it draws over Bar v2, which still builds.
+    // ?bar=signal and ?bar=v2 pick one for a side-by-side check.
+    const want = new URLSearchParams(location.search).get('bar');
+    if (want === 'signal' || (signal && want !== 'v2')) {
+      document.documentElement.classList.add('stim-signal');
+      import('./signal.js').then(m => m.mountSignal(id, bar, ui));
+    }
   } else {
     legacyLink();
     mouseKeys();
@@ -215,6 +222,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {boolean} [silent] Hides the sound button.
  * @property {string} [home] The menu address for the back link.
  * @property {BarSpec | null} [bar] Bar v2 spec; without it the page keeps the v1 header.
+ * @property {boolean} [signal] Draws the Signal bar over Bar v2 (shared/signal.js). It needs a bar spec.
  */
 /**
  * One Bar v2 spec: every control the shell builds over the stage.

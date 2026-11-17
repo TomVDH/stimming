@@ -1,0 +1,203 @@
+/* Bar v3, the Signal bar. shared/signal.js adds this sheet when a toy opts in.
+   One bar at the foot, no boxes, the intro's flash beats (Tom, 2026-11-16 and 2026-11-17).
+   White is the flash: a press, or a thing that lands. The toy's ink is a state that holds.
+   Floors: a keyboard focus mark, 44 px controls, 4.5:1 text. */
+
+/* Bar v2 still builds and keeps its keys and handles; stim.css hides its layer. */
+
+@property --sg-split { syntax: "<percentage>"; inherits: true; initial-value: 50%; }
+.sg-ui {
+  position: absolute; inset: 0; z-index: 6; pointer-events: none;
+  /* The layer clips to the stage, so the glass keeps the stage's corners. */
+  overflow: hidden; border-radius: 18px;
+  --ink: oklch(0.05 0.01 275);
+  --sheet: oklch(0.12 0.012 275 / 0.98);
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --h: 44px; --pad: 12px; --edge: 3.5px;
+  font: 800 14px/1 "Iosevka Term Slab Nerd Font", var(--slab); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg);
+}
+.sg-ui > * { pointer-events: auto; }
+@media (pointer: coarse) { .sg-ui { --h: 46px; } }
+/* A toy that cannot run keeps only the monogram. */
+.sg-ui[data-bare] > :not(.sg-mono) { display: none; }
+
+/* ---------- the button: a word or an icon, no box ---------- */
+.sg-btn {
+  appearance: none; box-sizing: border-box; position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--h); min-width: var(--h); margin: 0; padding: 0 11px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; white-space: nowrap; text-decoration: none;
+  color: inherit; background: none; border: 0; border-radius: 0; cursor: pointer;
+  --sg-split: 50%; transition: --sg-split 0.1s steps(3, end);
+}
+.sg-btn > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.sg-btn svg { flex: none; width: 18px; height: 18px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--acc-ink); }
+.sg-btn svg .solid { fill: currentColor; stroke: none; }
+/* Option art keeps its own colours. */
+.sg-btn svg.sg-art { width: 22px; height: 22px; }
+.sg-ico { padding: 0; width: var(--h); text-transform: none; }
+.sg-snd[aria-pressed="true"] .off, .sg-snd[aria-pressed="false"] .on { display: none; }
+/* Sound that is off rests white. */
+.sg-snd[aria-pressed="false"] svg { color: var(--fg); opacity: 0.75; }
+.sg-caret { width: 0; height: 0; border: 4px solid transparent; border-bottom-color: currentColor; border-top: 0; }
+.sg-pick[aria-expanded="true"] .sg-caret { rotate: 180deg; }
+.sg-ui [data-disabled] { opacity: 0.4; pointer-events: none; }
+
+/* The flash box: white sides that close on the middle, as in the intro.
+   Difference blending turns the words under it dark, frame by frame. */
+.sg-box, .sg-btn::after {
+  content: ""; position: absolute; pointer-events: none; mix-blend-mode: difference;
+  background: linear-gradient(90deg, #fff calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #fff 0);
+}
+.sg-box { inset: 3px -10px; z-index: 2; }
+.sg-box--sheet { inset: 0; }
+.sg-btn::after { inset: 6px 2px; z-index: 1; transform: scale(var(--sg-k, 1)); }
+.sg-sheet .sg-btn::after { inset: 2px 0; }
+/* The white box is a press, an open sheet or a held action. */
+.sg-btn:is([aria-expanded="true"], .is-on, .is-cut) { --sg-split: 0%; }
+.sg-btn.is-cut { transition: none; }
+/* Hover (Tom's pick): the white box closes in from the sides. */
+@media (hover: hover) and (pointer: fine) {
+  .sg-btn:not([aria-pressed="true"]:not(.sg-snd)):hover { --sg-split: 0%; }
+  .sg-btn:not([aria-pressed="true"]:not(.sg-snd)):hover :is(svg, span) { color: var(--fg); }
+  .sg-btn:not([aria-pressed="true"]:not(.sg-snd)):hover svg.sg-art { filter: brightness(0) invert(1); }
+  /* The slider answers the pointer too: its thumb takes the ink. */
+  .sg-slider:hover input::-webkit-slider-thumb { background: var(--acc-ink); }
+  .sg-slider:hover input::-moz-range-thumb { background: var(--acc-ink); }
+}
+/* Keyboard focus: an ink bar at the control's foot, clear of the letters. Never a ring. */
+.sg-btn:not([aria-pressed="true"]:not(.sg-snd)):focus-visible {
+  background: var(--acc-img) 50% calc(100% - 3px) / calc(100% - 18px) 4px no-repeat, linear-gradient(var(--ink), var(--ink)) 50% calc(100% - 1px) / calc(100% - 14px) 8px no-repeat;
+}
+.sg-btn:is(.is-cut, [aria-expanded="true"], .is-on) { background-size: 0 0 !important; }
+/* Under the white box a mark is plain white, so the blend turns it dark. */
+.sg-btn:is([aria-expanded="true"], .is-on, .is-cut) :is(svg, span) { color: var(--fg); }
+.sg-btn:is([aria-expanded="true"], .is-on, .is-cut) svg.sg-art, .sg-ui .is-boxed svg.sg-art { filter: brightness(0) invert(1); }
+.sg-ui .is-boxed { --acc-img: linear-gradient(var(--fg), var(--fg)); --acc-fill: linear-gradient(var(--fg), var(--fg)); --acc-on: var(--fg); }
+.sg-ui .is-boxed :is(svg, span) { color: var(--fg) !important; }
+/* A pick that holds wears the toy's ink, as the intro's logo does at rest. */
+:is(.sg-opt, .sg-seg .sg-btn)[aria-pressed="true"] { color: var(--acc-on); background: var(--acc-fill); }
+:is(.sg-opt, .sg-seg .sg-btn)[aria-pressed="true"] :is(span, svg) { color: var(--acc-on); -webkit-text-stroke: 0; filter: none; }
+
+/* ---------- the bar ---------- */
+.sg-bar {
+  position: absolute; left: var(--pad); right: var(--pad); bottom: var(--pad); z-index: 2;
+  width: fit-content; max-width: calc(100% - 2 * var(--pad)); margin-inline: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  /* The bar is one blend group, so its flash box inverts only its own words. */
+  isolation: isolate; transform-origin: 50% 50%;
+}
+.sg-bar[data-off] { visibility: hidden; pointer-events: none; }
+.sg-grp { display: flex; align-items: center; }
+/* The slash of the breadcrumb parts the groups; a bar on two rows drops it. */
+.sg-grp + .sg-grp::before { content: "/"; margin: 0 8px; color: var(--fg); opacity: 0.6; font-weight: 500; -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill; }
+.sg-bar.is-wrapped .sg-grp + .sg-grp::before { display: none; }
+/* Each word carries a dark edge, so it reads on any scene. */
+.sg-bar :is(.sg-btn > span, .sg-slider > span) { -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill; }
+.sg-bar .sg-btn svg:not(.sg-art) { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)) drop-shadow(0 0 2px var(--ink)); }
+.sg-bar .sg-caret { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)); }
+.sg-seg { display: inline-flex; gap: 2px; }
+.sg-seg .sg-btn { height: calc(var(--h) - 10px); min-width: 36px; padding: 0 10px; }
+.sg-bar .sg-seg .sg-btn { height: calc(var(--h) - 8px); }
+
+/* The slider: a line with a dark casing; its fill is the toy's ink. */
+.sg-slider { box-sizing: border-box; display: inline-flex; align-items: center; gap: 10px; height: var(--h); padding: 0 11px; white-space: nowrap; }
+.sg-slider input {
+  -webkit-appearance: none; appearance: none; width: 124px; height: var(--h); margin: 0; cursor: pointer; background:
+    var(--acc-img) 0 50% / var(--v, 0%) 3px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.5), oklch(0.94 0.008 275 / 0.5)) 0 50% / 100% 3px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 7px no-repeat;
+}
+.sg-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 22px; background: var(--fg); border: 0; border-radius: 0; box-shadow: 0 0 0 2px var(--ink); }
+.sg-slider input::-moz-range-thumb { width: 10px; height: 22px; background: var(--fg); border: 0; border-radius: 0; box-shadow: 0 0 0 2px var(--ink); }
+/* The thumb answers the grip and the keyboard at once. */
+.sg-slider input:is(:active, :focus-visible)::-webkit-slider-thumb { height: 28px; background: var(--acc-ink); }
+.sg-slider input:is(:active, :focus-visible)::-moz-range-thumb { height: 28px; background: var(--acc-ink); }
+
+/* A narrow stage: the row of options folds into its list; the slider joins Settings. */
+.sg-narrow, .sg-row.sg-row--main { display: none; }
+@container stim (width < 640px) {
+  .sg-wide, .sg-grp.sg-main { display: none; }
+  .sg-narrow { display: inline-flex; }
+  .sg-row.sg-row--main { display: flex; }
+  .sg-grp + .sg-grp::before { margin: 0 2px; }
+  .sg-bar .sg-btn { padding: 0 9px; }
+  .sg-bar .sg-ico { padding: 0; width: 42px; min-width: 42px; }
+}
+
+/* The name of an icon button: a bare word above it. */
+.sg-tip {
+  position: absolute; bottom: calc(var(--pad) + var(--barh, var(--h)) + 2px); z-index: 4; transform: translateX(-50%);
+  font-size: 12px; letter-spacing: 0.1em; white-space: nowrap; pointer-events: none;
+  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
+}
+.sg-tip[hidden] { display: none; }
+
+/* ---------- sheets: no box; the rows stand on a soft glass with no edge ---------- */
+.sg-glass {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 0; z-index: 1; opacity: 0; pointer-events: none;
+  -webkit-backdrop-filter: blur(28px) brightness(0.34); backdrop-filter: blur(28px) brightness(0.34);
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent);
+  transition: opacity 0.1s steps(3, end);
+}
+.sg-glass[data-on] { opacity: 1; pointer-events: auto; }
+.sg-sheet {
+  position: absolute; z-index: 3; box-sizing: border-box; left: var(--pad); right: var(--pad); margin-inline: auto;
+  bottom: calc(var(--pad) + var(--barh, var(--h)) + 14px);
+  width: min(620px, calc(100% - 2 * var(--pad))); max-height: calc(100% - 2 * var(--pad) - var(--barh, var(--h)) - var(--h) - 60px);
+  overflow-y: auto; overscroll-behavior: contain; isolation: isolate; transform-origin: 50% 100%;
+}
+.sg-sheet--rows { width: min(420px, calc(100% - 2 * var(--pad))); }
+.sg-sheet[hidden] { display: none; }
+/* A closing sheet stays for its two frames. */
+.sg-sheet.is-closing { display: block !important; pointer-events: none; }
+.sg-sheet-hd { display: flex; align-items: center; height: 30px; padding: 0 10px; font-size: 11px; letter-spacing: 0.2em; }
+.sg-group { grid-column: 1 / -1; padding: 10px 10px 4px; font-size: 11px; letter-spacing: 0.2em; }
+.sg-rows > .sg-group { padding-inline: 0; }
+.sg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 0 4px; }
+.sg-opt { justify-content: flex-start; width: 100%; min-width: 0; height: calc(var(--h) - 6px); padding: 0 10px; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; }
+.sg-opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sg-rows { display: grid; padding: 0 10px; }
+.sg-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--h); height: auto; padding: 0; font-size: 13px; font-weight: 700; }
+.sg-word { height: calc(var(--h) - 6px); }
+/* A long choice steps: one name between two arrows. */
+.sg-step { display: inline-flex; align-items: center; }
+.sg-step .sg-ico { width: calc(var(--h) - 8px); min-width: 34px; height: calc(var(--h) - 8px); font-size: 20px; line-height: 1; }
+.sg-step-now { min-width: 104px; padding: 0 4px; text-align: center; white-space: nowrap; }
+/* How to play: one row per gesture or key. Keycaps show only here, and they are gentle. */
+.sg-how { display: grid; padding: 0 10px 4px; }
+.sg-how-row { display: flex; align-items: center; gap: 14px; min-height: calc(var(--h) - 10px); font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: none; }
+.sg-how kbd {
+  flex: none; min-width: 20px; text-align: center; font: 700 11px/1 "Iosevka Term Slab Nerd Font", var(--slab); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 4px 6px; color: var(--fg); border: 1px solid oklch(0.94 0.008 275 / 0.45);
+}
+
+/* ---------- the top left: the toy's icon as a monogram ---------- */
+/* It is the intro's flash box at rest: a white square with the emblem cut out dark. No shadow. */
+.sg-mono {
+  position: absolute; top: var(--pad); left: var(--pad); z-index: 2;
+  display: inline-flex; align-items: center; height: var(--h); padding: 0 10px 0 0;
+  color: var(--fg); text-decoration: none; cursor: pointer;
+}
+.sg-emblem {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden;
+  color: var(--bg); background: var(--fg); --sg-split: 0%;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+  mask-image: linear-gradient(90deg, #000 calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #000 0);
+  transition: --sg-split 0.1s steps(3, end), width 0s;
+}
+.sg-emblem i { display: block; width: 90%; height: 90%; background: currentColor; -webkit-mask: var(--emblem) center / contain no-repeat; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.sg-emblem b { font: 700 34px/1 "B612", var(--sans); }
+.sg-mono .mark { display: inline-flex; align-items: baseline; font: 700 30px/1 "B612", var(--sans); letter-spacing: -0.02em; text-transform: none; }
+/* At rest the logo holds no room. */
+.sg-mono .mark span { max-width: 0; opacity: 0; transition: max-width 0s, opacity 0s; }
+.sg-mono .s2-arrow { font: 800 24px/1 var(--slab); transition: width 0s, opacity 0s; }
+/* Pointing parts the square in three frames, as the intro's box parts.
+   Then the logo plays: the chevron, one letter per film frame, and the shell's colour wave. */
+.sg-mono:is(:hover, :focus-visible) .sg-emblem { --sg-split: 50%; width: 0; transition: --sg-split 0.1s steps(3, end), width 0s linear 0.1s; }
+.sg-mono:is(:hover, :focus-visible) .mark span { max-width: 1.5em; opacity: 1; transition-delay: calc(100ms + var(--i) * 33.333ms); animation-delay: calc(100ms + var(--i) * 33.333ms); }
+.sg-mono:is(:hover, :focus-visible) .s2-arrow { width: 0.8em; opacity: 1; transition-delay: 100ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-ui *, .sg-ui *::before, .sg-ui *::after { transition: none !important; animation: none !important; }
+}

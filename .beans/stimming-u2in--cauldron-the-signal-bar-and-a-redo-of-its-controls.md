@@ -20,6 +20,6 @@ First read of what to redo: + Thing sits beside an Add list: say once what adds.
 - [ ] Check it against the eight points in stimming-a5rs
 - [ ] Propose the redo to Tom before any change (hard rule 4)
 - [ ] Apply the redo to the toy's `bar` spec
-- [ ] Switch the toy to the Signal bar (needs stimming-hvtr)
+- [x] Switch the toy to the Signal bar: `signal: true` (2026-11-17, with stimming-hvtr)
 - [ ] 1280 px, 375 x 812 and 812 x 375; clean console
 - [ ] The toy's doc in `docs/toys/` says what is true
