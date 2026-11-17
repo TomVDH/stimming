@@ -14,7 +14,7 @@ import { complex } from './world/complex.ts';
 import { altAzDir, laser } from './world/laser.ts';
 import { trackingLamp } from './world/lamp.ts';
 import { lights } from './world/lights.ts';
-import { makeMachine } from './core/machine.ts';
+import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
 import { lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
@@ -48,11 +48,14 @@ const machine = makeMachine({ az: REST_AZ });
 // They are as heavy as the main dome, and slower still.
 // ax: the cupola's axis.
 // sh: the shutter, which takes as long as the main one.
-type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter };
+// alt: the tube's altitude, parked low as the main tube.
+type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter; alt: Axis };
 const turns: Turn[] = [
-  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0) },
-  { dome: complex.small[1], ax: makeAxis(REST_AZ), lim: { cap: 1.3, accel: 0.4, wrap: true }, delay: 3, sh: makeShutter(0) },
+  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
+  { dome: complex.small[1], ax: makeAxis(REST_AZ), lim: { cap: 1.3, accel: 0.4, wrap: true }, delay: 3, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
 ];
+// A small tube lifts and lowers slower than the main tube.
+const SMALL_TUBE: Limits = { cap: 1.2, accel: 0.4, wrap: false };
 // The small shutters want open after a pick.
 // Each dome reads the wish as it was its delay ago.
 const wishes: { t: number; open: boolean }[] = [{ t: -Infinity, open: false }];
@@ -92,7 +95,8 @@ function wishAgo(now: number, s: number): boolean {
 const leaderAz = () => (machine.phase === 'aim' && aimed ? aim.az : machine.cupolaAz);
 // A small shutter still has a way to go.
 const shutting = () => turns.some(d => !shutterAtRest(d.sh) || d.sh.p !== (wishes[wishes.length - 1].open ? 1 : 0));
-const turning = () => machine.moving || shutting() || turns.some(d => !atRest(d.ax) || azDelta(d.ax.pos, leaderAz()) !== 0);
+const turning = () => machine.moving || shutting()
+  || turns.some(d => !atRest(d.ax) || !atRest(d.alt) || azDelta(d.ax.pos, leaderAz()) !== 0);
 // The cuts, the crossfade or the lights still need frames.
 const showing = () => cuts.busy || light !== lightGoal(machine.phase);
 const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
@@ -104,8 +108,8 @@ function pose(): void {
   skyAt(clock.skyMs());
   for (const d of turns) {
     d.dome.setCupola(d.ax.pos);
-    // A shut dome parks its tube low, under the shutter.
-    d.dome.setTube({ alt: TUBE_PARK_ALT + (TUBE_REST_ALT - TUBE_PARK_ALT) * d.sh.value, az: d.ax.pos });
+    // The models never see a tube under its park.
+    d.dome.setTube({ alt: Math.max(TUBE_PARK_ALT, d.alt.pos), az: d.ax.pos });
     d.dome.setShutter(d.sh.value);
   }
   const m = machine;
@@ -167,11 +171,20 @@ function tick(now: number): void {
     while (wishes.length > 1 && wishes[1].t <= t - 3000) wishes.shift();
   }
   for (const d of turns) {
-    const goal = wishAgo(t, d.delay) ? 1 : 0;
-    if (shutterAtRest(d.sh) && d.sh.p === goal) continue;
-    // A shutter that turns back mid-way runs down first.
-    stepShutter(d.sh, goal, dt);
-    dirty = true;
+    const open = wishAgo(t, d.delay);
+    // The shutter stays open until the tube is low enough to clear it.
+    const goal = open || d.alt.pos >= TUBE_CLEAR_ALT ? 1 : 0;
+    if (!shutterAtRest(d.sh) || d.sh.p !== goal) {
+      // A shutter that turns back mid-way runs down first.
+      stepShutter(d.sh, goal, dt);
+      dirty = true;
+    }
+    // The tube lifts from the half-open shutter, and parks low in aim.
+    const lift = open && d.sh.value >= LIFT_AT ? TUBE_REST_ALT : TUBE_PARK_ALT;
+    if (!atRest(d.alt) || d.alt.pos !== lift) {
+      stepAxis(d.alt, lift, dt, SMALL_TUBE);
+      dirty = true;
+    }
   }
   // A slow track draws every few seconds, not every frame.
   if (machine.phase === 'track' && t - lastTrackDraw > TRACK_REDRAW_MS) dirty = true;
@@ -288,6 +301,18 @@ function brightOnScreen(n: number): { star: Star; x: number; y: number; alt: num
   return out.sort((x, y) => x.star.mag - y.star.mag).slice(0, n);
 }
 
+// The brightest catalog star of the southern sky now.
+// It stands at azimuth 100 to 260 and altitude 15 to 70.
+function brightestSouth(): Star | null {
+  let best: Star | null = null;
+  for (const s of sky.stars) {
+    if (!s.hip || (best && s.mag >= best.mag)) continue;
+    const p = targetPos(s);
+    if (p.az >= 100 && p.az <= 260 && p.alt >= 15 && p.alt <= 70) best = s;
+  }
+  return best;
+}
+
 /* ---------- the review switch, ?cuts ---------- */
 // Tom sees the cuts on the live site with it.
 // About 1 s in, it picks the brightest star on screen, as a tap would.
@@ -310,7 +335,8 @@ function review(): void {
   };
   void skyReady.then(() => setTimeout(() => {
     // A tap before the first pick keeps its own star.
-    star = machine.target ?? brightOnScreen(1)[0]?.star ?? null;
+    // With no bright star on screen, the review takes the south's brightest.
+    star = machine.target ?? brightOnScreen(1)[0]?.star ?? brightestSouth();
     if (star && !machine.target) play(star);
   }, 1000));
 }

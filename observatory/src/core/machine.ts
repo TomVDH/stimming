@@ -4,7 +4,7 @@
 // No phase change stops a part at once: each one runs down.
 import type { Star } from './catalog.ts';
 import {
-  atRest, azDelta, brakeAxis, makeAxis, makeShutter, moveTime, paceFor, shutterAtRest, stepAxis, stepShutter,
+  atRest, azDelta, brakeAxis, makeAxis, makeShutter, shutterAtRest, stepAxis, stepShutter,
   type Axis, type Limits, type Shutter,
 } from './dome.ts';
 
@@ -47,39 +47,40 @@ export const CUPOLA: Limits = { cap: 2, accel: 0.6, wrap: true };
 // It speeds up and slows down at 0.5 degrees a second squared.
 export const TUBE: Limits = { cap: 1.5, accel: 0.5, wrap: false };
 const TUBE_AZ: Limits = { ...TUBE, wrap: true };
-// Within this many degrees on every drive, the machine tracks.
-const ARRIVE = 0.2;
+// The tube parks low, so each pick lifts it from below into the slit.
+// world/observatory.ts takes this value from here.
+export const TUBE_PARK_ALT = 5;
+// The tube starts to lift when the shutter is half open.
+export const LIFT_AT = 0.5;
+// The shutter shuts only once the tube is under this altitude.
+export const TUBE_CLEAR_ALT = 20;
+// An axis this close to its target, and at rest, has arrived.
+const ARRIVE = 0.01;
 // The cupola waits until the star is this far off the slit, then steps after it.
 const CUPOLA_BAND = 1;
 // A tracking tube off by more than this goes back to slew.
 const LOSE_TRACK = 2;
 // A target under this altitude is lost.
 const MIN_ALT = 5;
-// The tube rests at 45 degrees with the shutter open, parks at 30 with it shut.
-// These match TUBE_REST_ALT and TUBE_PARK_ALT in world/observatory.ts.
-const REST_ALT = 45, PARK_ALT = 30;
-// A paced axis keeps at least this share of its limits.
-const MIN_PACE = 0.1;
 
 // An angle in 0 to 360 stays exact.
 // So a rest compares equal.
 const wrap360 = (x: number): number => (x >= 0 && x < 360 ? x : ((x % 360) + 360) % 360);
-// The share of its limits that makes an axis take t seconds.
-const pace = (d: number, lim: Limits, t: number): number => Math.max(MIN_PACE, paceFor(d, lim.cap, lim.accel, t));
+// True when an axis rests on its target.
+const on = (a: Axis, target: number, wrap: boolean): boolean =>
+  atRest(a) && Math.abs(wrap ? azDelta(a.pos, target) : target - a.pos) < ARRIVE;
 
 export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Machine {
   const sh = makeShutter(opts.shutter01 ?? 0);
   // The shutter's goal: 1 after a pick, 0 after shut().
   let goal = sh.p;
   const cup = makeAxis(opts.az ?? 0);
-  const alt = makeAxis(sh.p >= 1 ? REST_ALT : PARK_ALT);
+  const alt = makeAxis(TUBE_PARK_ALT);
   const az = makeAxis(opts.az ?? 0);
-  // In aim and open the tube az rides the cupola.
-  // off holds its lead over the cupola, and runs down to 0.
+  // Outside track the tube az rides the cupola, so it stays in the slit.
+  // off holds its lead over the cupola.
   const off = makeAxis(0);
   let riding = true;
-  // Each axis's share of its limits in a slew.
-  let kc = 1, ka = 1, kz = 1;
   // The cupola is stepping after a star that left the band.
   let catching = false;
 
@@ -94,12 +95,15 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
     az.pos = wrap360(cup.pos + off.pos); az.vel = cup.vel + off.vel;
     az.drv = wrap360(cup.drv + off.drv); az.dvel = cup.dvel + off.dvel;
   };
+  // The models never see the tube under its park.
+  // A lowering tube settles a hair below it, so this clamps that.
+  const tubeAlt = (): number => Math.max(TUBE_PARK_ALT, alt.pos);
 
   const m: Machine = {
     phase: 'aim',
     target: null,
     cupolaAz: cup.pos,
-    tubeAlt: alt.pos,
+    tubeAlt: tubeAlt(),
     tubeAz: az.pos,
     shutter01: sh.value,
     tracking: false,
@@ -137,55 +141,48 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
         // A slow sky starts the slew again in this same step.
         m.phase = 'slew';
       }
-      const rides = m.phase === 'aim' || m.phase === 'open';
+      const rides = m.phase !== 'track';
       if (rides && !riding) join();
       riding = rides;
-      if (m.phase !== 'slew' && m.phase !== 'track') kc = ka = kz = 1;
-      stepShutter(sh, goal, dt);
+      // The shutter stays open until the tube is low enough to clear it.
+      stepShutter(sh, goal === 0 && alt.pos >= TUBE_CLEAR_ALT ? 1 : goal, dt);
 
       switch (m.phase) {
         case 'aim': {
           if (ctx.aimAz !== undefined) stepAxis(cup, ctx.aimAz, dt, CUPOLA);
           else brakeAxis(cup, dt, CUPOLA);
-          stepAxis(alt, goal === 1 ? REST_ALT : PARK_ALT, dt, TUBE);
+          stepAxis(alt, TUBE_PARK_ALT, dt, TUBE);
           stepAxis(off, 0, dt, TUBE);
           break;
         }
         case 'open': {
-          // The cupola and the tube run down while the shutter opens.
+          // The cupola runs down while the shutter opens.
           brakeAxis(cup, dt, CUPOLA);
-          brakeAxis(alt, dt, TUBE);
+          // The tube lifts at its own pace from the half-open shutter.
+          if (sh.value >= LIFT_AT) stepAxis(alt, tAlt, dt, TUBE);
+          else brakeAxis(alt, dt, TUBE);
           stepAxis(off, 0, dt, TUBE);
           if (sh.p === 1) m.phase = 'slew';
           break;
         }
         case 'slew': {
-          // Each axis takes the time of the slowest, so all arrive together.
-          const dc = azDelta(cup.drv, tAz), da = tAlt - alt.drv, dz = azDelta(az.drv, tAz);
-          const t = Math.max(moveTime(dc, CUPOLA.cap, CUPOLA.accel), moveTime(da, TUBE.cap, TUBE.accel),
-            moveTime(dz, TUBE.cap, TUBE.accel));
-          kc = pace(dc, CUPOLA, t); ka = pace(da, TUBE, t); kz = pace(dz, TUBE, t);
-          stepAxis(cup, tAz, dt, CUPOLA, kc);
-          stepAxis(alt, tAlt, dt, TUBE, ka);
-          stepAxis(az, tAz, dt, TUBE_AZ, kz);
-          if (Math.abs(azDelta(cup.drv, tAz)) < ARRIVE && Math.abs(tAlt - alt.drv) < ARRIVE
-            && Math.abs(azDelta(az.drv, tAz)) < ARRIVE) {
-            // The cupola finishes its approach in track.
-            m.phase = 'track'; m.tracking = true; catching = true;
+          // The cupola and the tube altitude each run at their own limits.
+          // The tube az rides the cupola until both have arrived.
+          stepAxis(cup, tAz, dt, CUPOLA);
+          stepAxis(alt, tAlt, dt, TUBE);
+          stepAxis(off, 0, dt, TUBE);
+          if (on(cup, tAz, true) && on(alt, tAlt, false) && on(off, 0, false)) {
+            m.phase = 'track'; m.tracking = true;
           }
           break;
         }
         case 'track': {
-          // An axis keeps its slew pace until it rests.
-          // So it never surges near the star.
-          if (atRest(alt)) ka = 1;
-          if (atRest(az)) kz = 1;
-          if (atRest(cup)) kc = 1;
-          stepAxis(alt, tAlt, dt, TUBE, ka);
-          stepAxis(az, tAz, dt, TUBE_AZ, kz);
+          // The tube az leaves the cupola on the star, so it takes no step.
+          stepAxis(alt, tAlt, dt, TUBE);
+          stepAxis(az, tAz, dt, TUBE_AZ);
           if (Math.abs(azDelta(cup.pos, tAz)) > CUPOLA_BAND) catching = true;
           if (catching) {
-            stepAxis(cup, tAz, dt, CUPOLA, kc);
+            stepAxis(cup, tAz, dt, CUPOLA);
             if (atRest(cup)) catching = false;
           } else brakeAxis(cup, dt, CUPOLA);
           // A long sleep leaves the tube behind: slew to the star again.
@@ -197,21 +194,22 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
         case 'hold': {
           brakeAxis(cup, dt, CUPOLA);
           brakeAxis(alt, dt, TUBE);
-          brakeAxis(az, dt, TUBE_AZ);
+          brakeAxis(off, dt, TUBE);
           break;
         }
         case 'lost': {
-          stepAxis(alt, PARK_ALT, dt, TUBE);
+          // The tube lowers to its park.
           // The cupola and the tube az run down where they stand.
+          stepAxis(alt, TUBE_PARK_ALT, dt, TUBE);
           brakeAxis(cup, dt, CUPOLA);
-          brakeAxis(az, dt, TUBE_AZ);
+          brakeAxis(off, dt, TUBE);
           break;
         }
         default: break;
       }
       if (riding) ride();
       m.cupolaAz = cup.pos;
-      m.tubeAlt = alt.pos;
+      m.tubeAlt = tubeAlt();
       m.tubeAz = az.pos;
       m.shutter01 = sh.value;
     },
