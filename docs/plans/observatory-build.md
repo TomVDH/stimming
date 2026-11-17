@@ -108,6 +108,26 @@ test('stepAxis never beats the cap and lands', () => { let s = { pos: 350, vel: 
 - [ ] **Step 5: Gate.** Show Tom the two stills and the live page. Ask for the blockout sign-off and, in the same message, for the Lab menu entry.
 - [ ] **Step 6: Commit** the scene files; the `toys.json` and `index.html` hunks only after his yes. Tick "Blockout, signed off by Tom" in the bean.
 
+### Task 3b: Woods and the complex (Tom's blockout review, 2026-11-17)
+
+Tom on the first blockout: "we want woods and a view of the complex around it". The spec's "The outside view" holds the approved reading.
+
+**Files:**
+- Create: `observatory/src/world/woods.ts`, `observatory/src/world/complex.ts`
+- Modify: `observatory/src/world/hill.ts`, `observatory/src/world/observatory.ts`, `observatory/src/view/camera.ts`, `observatory/src/loop.ts`, `observatory/src/README.md`
+
+**Interfaces:**
+- Produces:
+  - `observatory.ts`: `buildDome(size: number): Dome`, where `Dome` is the object `buildObservatory` returned (`root`, `cupola`, `shutter`, `tube`, `setCupola`, `setShutter`, `setTube`, `slitTop`)
+  - `complex.ts`: `buildComplex(): { root: THREE.Group; main: Dome; small: [Dome, Dome] }`, with the stone building (lit windows), the roll-off shed and the road
+  - `woods.ts`: `buildWoods(): THREE.InstancedMesh`: conifers over the hill, a clearing at the top, a gap for the road
+
+- [ ] **Step 1:** Woods: instanced conifers (one draw call) over the hill, a clearing at the top.
+- [ ] **Step 2:** Complex: the main dome, two smaller domes at different angles to the camera, the stone building, the shed, the road up through the woods.
+- [ ] **Step 3:** Camera: from a nearby rise, a little above the treetops, about 300 m from the complex; sky the upper 60%; the complex reads at 375 px.
+- [ ] **Step 4:** The two small domes turn to the laser's azimuth a few seconds after the main dome (delays about 1.5 s and 3 s), each at its own cap (about 2.5°/s and 2°/s). The laser leaves the main dome.
+- [ ] **Step 5:** Stills at 1280 and 375, rest and aim; the gate as in Task 3, Steps 5 and 6.
+
 ### Task 4: The catalog (Tom's gate for the download)
 
 **Files:**
@@ -172,6 +192,30 @@ test('stepAxis never beats the cap and lands', () => { let s = { pos: 350, vel: 
 - [ ] **Step 5:** Wire it: a tap picks, a drag aims, the scene reads the machine each frame. The tracking light is a small lamp on the drum.
 - [ ] **Step 6: Commit.**
 
+### Task 6b: The pick sequence and the lights (Tom, 2026-11-17)
+
+Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
+
+**Files:**
+- Create: `observatory/src/core/sequence.ts`, `observatory/src/view/cuts.ts`, `observatory/src/world/lights.ts`
+- Modify: `observatory/src/loop.ts`, `observatory/src/view/camera.ts`, `observatory/src/world/complex.ts`
+- Test: `tests/observatory-sequence.test.mjs`
+
+**Interfaces:**
+- Consumes: `makeMachine` and `Phase` (Task 6).
+- Produces:
+  - `type Cut = { at: number; shot: 'edge' | 'slit' | 'roll' | 'gear'; dur: number }`
+  - `CUTS: Cut[]`: 3 or 4 cuts, 6 to 8 s in all
+  - `cutAt(t: number): Cut | null`: the cut that shows at sequence time t; null after the last cut (back to the wide shot)
+  - `lightLevel(phase: Phase, prev: number, dt: number): number`: 1 in `aim`, dims toward 0.35 in `open` and `slew`, 0 in `track`, `hold` and inside the telescope; it rises back to 1 over about 4 s
+  - `lights.ts`: `buildLights(complex): { set(level: number): void }` for windows, door lamps and road lamps
+
+- [ ] **Step 1: Write the failing tests:** `CUTS` covers 6 to 8 s with no gap; `cutAt(0)` is the `edge` cut; `cutAt(total + 0.01)` is null; `lightLevel('track', 1, 0.1)` falls toward 0 and reaches 0 within 3 s of steps; `lightLevel('aim', 0, 0.1)` reaches 1 within 4 to 5 s, not sooner than 3.5 s.
+- [ ] **Step 2: Run, expect FAIL.** **Step 3: Implement.** **Step 4: Run, expect PASS.**
+- [ ] **Step 5:** On load the main dome's shut slit faces the camera. A pick runs the cuts (each a close camera with a long lens, about 20 to 35° fov down to 8 to 12°, a slow drift inside each cut) while the shutter opens and the tube rolls through; then the wide shot, the turn and the hunt. Reduced motion: one crossfade to the wide shot, no cuts.
+- [ ] **Step 6:** Stills of each cut and the wide shot with lights at 1, 0.35 and 0; show Tom (a visible change).
+- [ ] **Step 7: Commit.**
+
 ### Task 7: The look (Tom's gate)
 
 **Files:**
@@ -183,6 +227,99 @@ test('stepAxis never beats the cap and lands', () => { let s = { pos: 350, vel: 
 - [ ] **Step 3:** Stills at 1280 and 375 next to a Railgun night still.
 - [ ] **Step 4: Gate.** Show Tom; change one thing at a time on his notes (memory: one visual change at a time).
 - [ ] **Step 5: Commit** with his words in the message.
+
+### Task 7b: The opening, dusk into night (Tom, 2026-11-17)
+
+**Files:**
+- Create: `observatory/src/core/opening.ts` (the opening's timeline: progress 0 to 1, sun depression, star magnitude limit, sky speed, play lock; no three.js), `tests/observatory-opening.test.mjs`
+- Modify: `observatory/src/sky/stars.ts`, `observatory/src/sky/haze.ts`, `observatory/src/world/*.ts`, `observatory/src/post/grade.ts`, `observatory/src/loop.ts`, `observatory/src/input.ts`, `observatory/src/core/clock.ts`
+
+- [ ] **Step 1:** Test then build `core/opening.ts`: 45 s from sun 4° below the horizon to 18° below; the star limit rises from about magnitude 0 to 6.5; the sky clock ends at real now at speed 1, under `TRAIL_SPEED` throughout; `skip()` reaches night in about 1.5 s; reduced motion starts at night.
+- [ ] **Step 2:** The dusk light: a warm west from tonight's sunset azimuth at 51° N, the sky from deep blue to slate, last light on the domes, the drum and the crowns; it eases into the Task 7 night look.
+- [ ] **Step 3:** The complex lights come on one by one as the sky darkens; the laser and picks unlock at full night.
+- [ ] **Step 4:** Stills at 1280 and 375 at 0 s, 15 s, 30 s and 45 s; frame time at 375.
+- [ ] **Step 5: Gate.** Show Tom. **Commit** locally with his words.
+
+### Task 7c: Far mountains (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/world/far.ts` (copied and trimmed from `railgun/src/world/farcountry.ts` where it fits). Modify `observatory/src/sky/haze.ts` only to receive the ridges.
+
+- [ ] **Step 1:** Two or three ridgelines on the southern horizon, 10 to 40 km out, 1 to 3° high; no hard horizon line left.
+- [ ] **Step 2:** They take the opening's light: warm toward the west at dusk, dark on the sky glow at night.
+- [ ] **Step 3:** Stills at 1280 and 375, dusk 0 s and night; frame time at 375. **Gate:** show Tom; commit locally with his words.
+
+### Task 7h: Trees from Tom's pine (Tom, 2026-11-17)
+
+**Files:** Create `observatory/models/pine.glb` (Tom's upload, unchanged), `observatory/src/world/impostor.ts` (the bake). Modify `observatory/src/world/woods.ts`, `CREDITS.md`.
+
+- [ ] **Step 1:** Load the GLB with `GLTFLoader` from `three/addons/` (three 0.170.0). Smooth texture filtering with mipmaps; alpha cut kept.
+- [ ] **Step 2:** Near trees as the instanced mesh; the rest as impostors baked at load from the same model (crossed cards). Keep the trim, the count, the starlit tops, dark bases, haze layers and per-tree variation.
+- [ ] **Step 3:** `CREDITS.md` row: Pine Tree - PS1 Low Poly by Wersaus33, Sketchfab, CC BY 4.0.
+- [ ] **Step 4:** Stills at 1280 and 375, dusk and night, plus a treeline crop; frame time at 375; load time. **Gate:** show Tom; commit locally with his words.
+
+### Task 7i: The hill · Task 7j: The complex · Task 7k: The telescope
+
+One change each, as in the spec section "Detail and trees". Each ends with stills and Tom's gate.
+
+### Task 7l: The laser like Railgun's (Tom, 2026-11-17)
+
+Tom: "the laser is thinner and more realistic like the rail gun targeting one". **Files:** Modify `observatory/src/world/laser.ts`, copied and trimmed from `railgun/src/gun/laser.ts` (credit the file).
+
+- [ ] **Step 1:** A thin beam with Railgun's look: its core, falloff and haze scatter. Still solid near the dome, fading with height. Aim, dusk lock and cuts unchanged.
+- [ ] **Step 2:** Stills at 1280 and 375 next to a Railgun still with its targeting laser. **Gate:** show Tom; commit locally with his words.
+
+### Task 7d: Distance haze (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/sky/haze.ts`, `observatory/src/world/far.ts`.
+
+- [ ] **Step 1:** Each ridge further back fades more into the sky; the valley haze runs out to the mountains.
+- [ ] **Step 2:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
+
+### Task 7e: Distant clouds (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/clouds/` (copied and trimmed from `railgun/src/clouds/`; credit each file). Railgun's cloud files must not change.
+
+- [ ] **Step 1:** A low raymarched cloud bank above the far ridges only; the sky over the hill stays clear.
+- [ ] **Step 2:** The clouds take the sunset at dusk and go dark at night; the pass renders only when the loop renders.
+- [ ] **Step 3:** Frame time at 1280 and 375 inside the budget (30 fps or better); a lower step on the slow-frame rung if needed.
+- [ ] **Step 4:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
+
+### Task 7m: Locked cuts (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: one fixed field of view per cut), `observatory/src/view/cuts.ts`, `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Test then change `CUTS`: each cut holds one camera and one field of view, no push, no zoom; hard cuts; each held a beat longer.
+- [ ] **Step 2:** Compose each frame so the slow machine move reads inside it: the shutter slides, the gear turns, the tube tilts.
+- [ ] **Step 3:** A contact sheet of each cut's first and last frame at 1280. **Gate:** show Tom; commit locally with his words.
+
+### Task 7n: The hero model for the cuts (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/world/hero.ts` (the detailed main dome and telescope, built at load, hidden outside the cuts). Modify `observatory/src/view/cuts.ts` (swap the hero in at the first cut, out at the wide shot), `observatory/src/world/observatory.ts` only to share dimensions and the machine pose.
+
+- [ ] **Step 1:** The dome: panel seams, shutter leaves on rails, a toothed ring gear and its drive, a catwalk with a rail, stone courses on the drum, the door and its lamp. The inside seen through the slit: the pier, the floor, a stair.
+- [ ] **Step 2:** The telescope: a long refractor tube with a dew shield, the objective cell and glass, a finder scope, a focuser, an equatorial mount on the pier, counterweights, setting circles.
+- [ ] **Step 3:** The hero follows the same machine pose (cupola, shutter, tube) as the light model, and takes the same light, haze and post. It draws only in the cuts; the wide shot's frame time and triangle count do not change.
+- [ ] **Step 4:** Stills of the hero from each current cut camera, plus two free beauty views. **Gate:** show Tom; ship to main.
+
+### Task 7o: The cuts recomposed (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts`, `observatory/src/view/cuts.ts`, `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Recompose every cut on the hero model: locked cameras, strong lines, clear negative space, the moving part crossing a fixed edge. The gear cut gives way to the tube lifting from its park.
+- [ ] **Step 2:** A contact sheet, first and last frame of each cut. **Gate:** show Tom; ship to main.
+
+### Task 7g: The lens cut (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
+- [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it, pivots slowly in place, stops, and the shot holds about 1.5 s before the cut back wide. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
+- [ ] **Step 3:** Reduced motion: a still of the lens inside the crossfade.
+- [ ] **Step 4:** Stills of the lens cut at 1280 and 375. **Gate:** show Tom; commit locally with his words.
+
+### Task 7f: Live trial of the pick sequence (Tom, 2026-11-17)
+
+- [ ] **Step 1:** Serve the branch on port 8037 and open it in Tom's tab; Tom plays the cuts. Changes from his notes, one at a time.
 
 ### Task 8: Fast time and trails
 
