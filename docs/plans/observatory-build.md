@@ -284,12 +284,20 @@ Tom: "the laser is thinner and more realistic like the rail gun targeting one". 
 - [ ] **Step 3:** Frame time at 1280 and 375 inside the budget (30 fps or better); a lower step on the slow-frame rung if needed.
 - [ ] **Step 4:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
 
+### Task 7m: Locked cuts (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: one fixed field of view per cut), `observatory/src/view/cuts.ts`, `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Test then change `CUTS`: each cut holds one camera and one field of view, no push, no zoom; hard cuts; each held a beat longer.
+- [ ] **Step 2:** Compose each frame so the slow machine move reads inside it: the shutter slides, the gear turns, the tube tilts.
+- [ ] **Step 3:** A contact sheet of each cut's first and last frame at 1280. **Gate:** show Tom; commit locally with his words.
+
 ### Task 7g: The lens cut (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
 
 - [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
-- [ ] **Step 2:** The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
+- [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
 - [ ] **Step 3:** Reduced motion: a still of the lens inside the crossfade.
 - [ ] **Step 4:** Stills of the lens cut at 1280 and 375. **Gate:** show Tom; commit locally with his words.
 
