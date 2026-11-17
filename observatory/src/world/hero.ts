@@ -1,7 +1,7 @@
 // Load order: world/dusk runs first.
 import './dusk.ts';
 import {
-  BoxGeometry, BufferGeometry, CanvasTexture, CylinderGeometry, Float32BufferAttribute, Group, InstancedMesh,
+  BackSide, BoxGeometry, BufferGeometry, CanvasTexture, CylinderGeometry, ExtrudeGeometry, Shape, Float32BufferAttribute, Group, InstancedMesh,
   Matrix3, Matrix4, Mesh, MeshStandardMaterial, NoColorSpace, RepeatWrapping, SRGBColorSpace, SphereGeometry,
   TorusGeometry, Vector3,
 } from 'three';
@@ -9,7 +9,7 @@ import type { Material, Object3D } from 'three';
 import { renderer } from '../setup.ts';
 import { complex } from './complex.ts';
 import { patch as duskPatch } from './dusk.ts';
-import { DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, type Dome } from './observatory.ts';
+import { DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
 
 /* ---------- the hero model: the main dome in full detail, for the cuts only ---------- */
 // The wide shot keeps the light model; the cuts swap this one in.
@@ -251,6 +251,16 @@ function onWall(a: number, y: number, out = 0, r = wallR(y)): Matrix4 {
   ).setPosition((r + out) * sn, y, -(r + out) * cs);
 }
 
+// A matrix that stands local +Y on a normal at a point.
+function onNormal(p: Vector3, n: Vector3): Matrix4 {
+  const y = n.clone().normalize();
+  const x = Math.abs(y.y) < 0.9 ? new Vector3(0, 1, 0).cross(y).normalize() : new Vector3(1, 0, 0).cross(y).normalize();
+  const z = x.clone().cross(y);
+  return new Matrix4().makeBasis(x, y, z).setPosition(p);
+}
+// Scratch matrix for the per-frame pose.
+const TM = new Matrix4();
+
 // An instanced copy of one shape at many matrices.
 function instances(g: Geo, m: Material, mats: Matrix4[]): InstancedMesh {
   const im = new InstancedMesh(g.build(), m, mats.length);
@@ -355,6 +365,94 @@ function stoneTex(): { map: CanvasTexture; normal: CanvasTexture } {
   return { map: tex(a, true), normal: tex(normalOf(h, 2.2), false) };
 }
 
+// Painted steel plate: a small raised dome per rivet head, for the height map.
+function rivetDots(hx: CanvasRenderingContext2D, ax: CanvasRenderingContext2D, pts: P2[], r: number): void {
+  for (const [x, y] of pts) {
+    const g = hx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.7, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    hx.fillStyle = g; hx.fillRect(x - r, y - r, 2 * r, 2 * r);
+    // Grime gathers round each head.
+    ax.strokeStyle = 'rgba(70,66,60,0.16)'; ax.lineWidth = 1;
+    ax.beginPath(); ax.arc(x, y, r * 0.8, 0, 2 * Math.PI); ax.stroke();
+  }
+}
+
+// One plate's lap: the upper plate's edge stands on the lower one.
+// The height map steps up at the edge, over a short bevel.
+function lap(hx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, up: number): void {
+  for (let i = 0; i < 3; i++) {
+    hx.fillStyle = `rgba(255,255,255,${up / 255 / 3})`;
+    hx.fillRect(x, y + i, w, h - i);
+  }
+}
+
+// The cupola's plate: two gores across, the equator to the zenith up.
+// Gore seams lie a quarter and three quarters across; ring seams every 15 degrees.
+const RINGS = [15, 30, 45, 60, 75];
+function domeTex(): { map: CanvasTexture; normal: CanvasTexture } {
+  const W = 512, H = 1024;
+  const [a, ax] = canvas(W, H), [h, hx] = canvas(W, H);
+  ax.fillStyle = '#dcdad3'; ax.fillRect(0, 0, W, H);
+  hx.fillStyle = '#606060'; hx.fillRect(0, 0, W, H);
+  const ys = [H, ...RINGS.map(l => Math.round(H * (1 - l / 90))), 0];
+  // Each panel takes its own tone; the upper plates lap over the lower.
+  for (let band = 0; band + 1 < ys.length; band++) {
+    const y1 = ys[band], y0 = ys[band + 1];
+    for (const [x0, x1, over] of [[128, 384, 1], [384, 640, 0]]) {
+      const tone = (rnd() - 0.5) * 9;
+      ax.fillStyle = `rgba(${tone > 0 ? 255 : 0},${tone > 0 ? 255 : 0},${tone > 0 ? 250 : 0},${Math.abs(tone) / 100})`;
+      for (const off of [0, -W]) {
+        ax.fillRect(x0 + off, y0, x1 - x0, y1 - y0);
+        lap(hx, x0 + off, y0, x1 - x0, y1 - y0, band * 10 + over * 8);
+      }
+    }
+    // Dirt sits in the lap under each ring seam.
+    const g = ax.createLinearGradient(0, y1, 0, y1 - 14);
+    g.addColorStop(0, 'rgba(60,56,50,0.22)'); g.addColorStop(1, 'rgba(60,56,50,0)');
+    ax.fillStyle = g; ax.fillRect(0, y1 - 14, W, 14);
+  }
+  // A thin shadow line at every seam.
+  ax.fillStyle = 'rgba(40,38,34,0.35)';
+  for (const y of ys.slice(1, -1)) ax.fillRect(0, y, W, 1);
+  for (const x of [128, 384]) ax.fillRect(x, 0, 1, H);
+  // Rivet rows: above each ring seam and beside each gore seam.
+  const pts: P2[] = [];
+  for (const y of ys.slice(1, -1)) for (let x = 8; x < W; x += 16) pts.push([x, y - 6]);
+  for (const x of [128, 384]) for (let y = 7; y < H; y += 14) pts.push([x + 6, y]);
+  rivetDots(hx, ax, pts, 3.2);
+  // Weather: soft streaks under the rivets, broad clouds of grime.
+  ax.fillStyle = 'rgba(80,76,68,0.035)';
+  for (let i = 0; i < 160; i++) { const x = rnd() * W, y = rnd() * H; ax.fillRect(x, y, 1.5, 20 + rnd() * 70); }
+  noise(ax, W, H, 8, 16, 0.07, 'multiply');
+  noise(ax, W, H, 64, 128, 0.05, 'overlay');
+  // The plate is not quite flat between its seams.
+  noise(hx, W, H, 6, 12, 0.10, 'overlay');
+  return { map: tex(a, true), normal: tex(normalOf(h, 4), false) };
+}
+
+// The shutter leaf's plate: laps across it, rivets at the laps and the edges.
+function leafTex(): { map: CanvasTexture; normal: CanvasTexture } {
+  const W = 256, H = 512;
+  const [a, ax] = canvas(W, H), [h, hx] = canvas(W, H);
+  ax.fillStyle = '#d9d7d0'; ax.fillRect(0, 0, W, H);
+  hx.fillStyle = '#606060'; hx.fillRect(0, 0, W, H);
+  const pts: P2[] = [];
+  for (let k = 0; k < 4; k++) {
+    const y0 = k * 128;
+    const tone = (rnd() - 0.5) * 8;
+    ax.fillStyle = `rgba(${tone > 0 ? 255 : 0},${tone > 0 ? 255 : 0},${tone > 0 ? 250 : 0},${Math.abs(tone) / 100})`;
+    ax.fillRect(0, y0, W, 128);
+    lap(hx, 0, y0, W, 128, 12 + (k % 2) * 10);
+    ax.fillStyle = 'rgba(40,38,34,0.32)'; ax.fillRect(0, y0, W, 1);
+    for (let x = 8; x < W; x += 16) pts.push([x, y0 + 6]);
+  }
+  for (const x of [14, W - 14]) for (let y = 7; y < H; y += 14) pts.push([x, y]);
+  rivetDots(hx, ax, pts, 3.2);
+  noise(ax, W, H, 4, 8, 0.06, 'multiply');
+  noise(hx, W, H, 4, 8, 0.10, 'overlay');
+  return { map: tex(a, true), normal: tex(normalOf(h, 4), false) };
+}
+
 /* ---------- materials ---------- */
 // Every hero material takes the dusk's last light, as the scene's do.
 const mats: Material[] = [];
@@ -363,6 +461,58 @@ function std(p: ConstructorParameters<typeof MeshStandardMaterial>[0]): MeshStan
   mats.push(m);
   return m;
 }
+
+/* ---------- the cupola's sphere, in slit space ---------- */
+// b: the angle across the slit; e: the angle along it, from the front foot.
+// The slit looks along local -Z, as in world/observatory.ts.
+function sp(r: number, b: number, e: number, out = new Vector3()): Vector3 {
+  return out.set(r * Math.sin(b), r * Math.cos(b) * Math.sin(e), -r * Math.cos(b) * Math.cos(e));
+}
+// Unit axes along b and along e at a point.
+const alongB = (b: number, e: number): Vector3 => new Vector3(Math.cos(b), -Math.sin(b) * Math.sin(e), Math.sin(b) * Math.cos(e));
+const alongE = (_b: number, e: number): Vector3 => new Vector3(0, Math.cos(e), Math.sin(e));
+
+// A patch of the sphere; inward turns its faces in.
+// uv gives the texture point for a unit direction and the grid point.
+function patch(g: Geo, r: number, b0: number, b1: number, e0: number, e1: number, nb: number, ne: number,
+  uv: (d: Vector3, i: number, j: number) => P2, inward = false): void {
+  const ids: number[][] = [], d = new Vector3();
+  for (let j = 0; j <= ne; j++) {
+    const row: number[] = [], e = e0 + (e1 - e0) * j / ne;
+    for (let i = 0; i <= nb; i++) {
+      const b = b0 + (b1 - b0) * i / nb;
+      sp(1, b, e, d);
+      const [s, t] = uv(d, i, j), k = inward ? -1 : 1;
+      row.push(g.v(d.x * r, d.y * r, d.z * r, k * d.x, k * d.y, k * d.z, s, t));
+    }
+    ids.push(row);
+  }
+  for (let j = 0; j < ne; j++) for (let i = 0; i < nb; i++) g.quad(ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]);
+}
+
+// The dome texture's point for a direction: 12 tiles round, the equator to the zenith up.
+const domeUV = (d: Vector3): P2 => [(Math.atan2(d.x, d.z) + Math.PI) / (2 * Math.PI) * 12, Math.asin(Math.max(-1, Math.min(1, d.y))) / (Math.PI / 2)];
+
+// Frames along the sphere at a fixed b, from e0 to e1; side +1 or -1 picks the outward side.
+function framesAlongE(r: number, b: number, e0: number, e1: number, n: number, side: number): Frame[] {
+  const out: Frame[] = [];
+  for (let j = 0; j <= n; j++) {
+    const e = e0 + (e1 - e0) * j / n, p = sp(r, b, e);
+    out.push({ p, s: alongB(b, e).multiplyScalar(side), u: p.clone().normalize() });
+  }
+  return out;
+}
+// Frames along the sphere at a fixed e, from b0 to b1; s points along +e.
+function framesAlongB(r: number, e: number, b0: number, b1: number, n: number): Frame[] {
+  const out: Frame[] = [];
+  for (let j = 0; j <= n; j++) {
+    const b = b0 + (b1 - b0) * j / n, p = sp(r, b, e);
+    out.push({ p, s: alongE(b, e), u: p.clone().normalize() });
+  }
+  return out;
+}
+// Metres to dome units for a profile.
+const um = (pts: P2[]): P2[] => pts.map(([a, b]) => [u(a), u(b)]);
 
 /* ---------- the hero ---------- */
 export type Hero = {
@@ -386,6 +536,7 @@ function buildHero(main: Dome): Hero {
   // Black-painted iron: rail, brackets, lamp cages.
   const iron = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
   const ironI = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
+  const deckMat = std({ color: 0x4d4f50, roughness: 0.6, metalness: 0.3 });
   // The doors: dark green paint over oak.
   const doorMat = std({ color: 0x2e4a3a, roughness: 0.45 });
   // The fanlight and the crack between the doors glow like the light model's door.
@@ -538,9 +689,11 @@ function buildHero(main: Dome): Hero {
 
   /* ---------- the catwalk round the drum ---------- */
   // A steel deck on brackets, a toe board, a rail with a knee rail.
-  ir.at().lathe([[DECK_IN - 0.02, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y], [DECK_IN - 0.02, DECK_Y]], 160, { closed: true });
+  // The deck is grey checker plate; the rest is black iron.
+  const deck = new Geo();
+  deck.lathe([[DECK_IN - 0.02, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y - u(0.03)], [DECK_OUT, DECK_Y], [DECK_IN - 0.02, DECK_Y]], 160, { closed: true });
   // The fascia channel at the deck's edge rises into a toe board.
-  ir.lathe([[DECK_OUT - u(0.01), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y + u(0.1)],
+  ir.at().lathe([[DECK_OUT - u(0.01), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y - u(0.16)], [DECK_OUT + u(0.012), DECK_Y + u(0.1)],
     [DECK_OUT - u(0.01), DECK_Y + u(0.1)]], 160, { closed: true });
   const RAIL_R = DECK_OUT - u(0.03);
   for (const [y, t] of [[DECK_Y + RAIL_H, u(0.024)], [DECK_Y + RAIL_H * 0.5, u(0.018)]] as P2[]) {
@@ -563,8 +716,195 @@ function buildHero(main: Dome): Hero {
   for (let k = 0; k < 36; k++) steps.push(new Matrix4().makeRotationY(-(5 + 10 * k) * DEG));
   const posts = instances(post, ironI, steps);
 
+  /* ---------- the cupola: gore plates, slit girders, the shutter ---------- */
+  const cupola = new Group();
+  cupola.position.y = DRUM_H;
+  const dome = domeTex(), leafT = leafTex();
+  // White paint over steel plate, a little worn.
+  const paint = std({ map: dome.map, normalMap: dome.normal, roughness: 0.55 });
+  const leafPaint = std({ map: leafT.map, normalMap: leafT.normal, roughness: 0.5 });
+  const plain = std({ color: 0xd9d7d0, roughness: 0.55 });
+  const plainI = std({ color: 0xd9d7d0, roughness: 0.55 });
+  // The inside of the plate, in shadow.
+  const inner = std({ color: 0x55534f, roughness: 0.85, side: BackSide });
+
+  // The shell: two halves beside the slit and the cap behind its end.
+  const shell = new Geo();
+  patch(shell, R, -Math.PI / 2, -SLIT_B, 0, Math.PI, 26, 96, domeUV);
+  patch(shell, R, SLIT_B, Math.PI / 2, 0, Math.PI, 26, 96, domeUV);
+  patch(shell, R, -SLIT_B, SLIT_B, SLIT_E, Math.PI, 6, 26, domeUV);
+  const shellGeo = shell.build();
+  cupola.add(new Mesh(shellGeo, paint), new Mesh(shellGeo, inner));
+
+  // The slit girders run from the front foot over the top to the back foot.
+  // Their top carries the leaf's rails; a lip over the slit sheds the wind and rain.
+  const GIRDER = um([[0, 0], [0.2, 0], [0.2, 0.012], [0.15, 0.012], [0.15, 0.22], [0.135, 0.235], [-0.045, 0.235],
+    [-0.045, 0.2], [-0.03, 0.2], [-0.03, 0.222], [0, 0.222]]);
+  const pl = new Geo();
+  for (const side of [-1, 1]) pl.sweep(GIRDER, framesAlongE(R, side * SLIT_B, 0, Math.PI, 120, side));
+  // A header closes the slit's top end.
+  const gB = u(0.2) / R;
+  pl.sweep(GIRDER, framesAlongB(R, SLIT_E, -SLIT_B - gB, SLIT_B + gB, 16));
+
+  // The leaf rides over the girders and slides over the back to open.
+  // It laps over the roll shutter below and the header above.
+  const leaf = new Group();
+  const rL = R + u(0.27), bL = SLIT_B + u(0.24) / R;
+  const eB = SPLIT_E - u(0.12) / R, eT = SLIT_E + u(0.2) / R;
+  const lg = new Geo(), lp = new Geo();
+  // Its plate: 2.4 m of texture along it.
+  patch(lg, rL, -bL, bL, eB, eT, 18, 44, (_d, i, j) => [i / 18, (eT - eB) * rL * SCALE * j / 44 / 2.4]);
+  patch(lp, rL - u(0.008), -bL, bL, eB, eT, 10, 30, () => [0, 0], true);
+  // Side skirts hang down outside the girders.
+  for (const side of [-1, 1]) {
+    lp.sweep(um([[0, 0], [0.007, 0], [0.007, -0.2], [0, -0.2]]), framesAlongE(rL, side * bL, eB, eT, 30, side));
+  }
+  // The weather lip at its foot hangs over the roll shutter.
+  lp.sweep(um([[0, 0], [0.007, 0], [-0.02, -0.15], [-0.027, -0.15]]), framesAlongB(rL, eB, -bL, bL, 16));
+  // Low angle ribs cross it every 70 cm; rivets stitch their feet.
+  const RIB = um([[-0.004, 0], [0.004, 0], [0.004, 0.045], [0.03, 0.045], [0.03, 0.054], [-0.03, 0.054], [-0.03, 0.045], [-0.004, 0.045]]);
+  const leafRiv: Matrix4[] = [], riv = (p: Vector3, n: Vector3, list: Matrix4[]) => list.push(onNormal(p, n));
+  const ribStep = u(0.7) / rL;
+  for (let e = eB + ribStep * 0.6; e < eT - ribStep * 0.3; e += ribStep) {
+    lp.sweep(RIB, framesAlongB(rL, e, -bL + u(0.03) / rL, bL - u(0.03) / rL, 16));
+    for (const off of [-1, 1]) {
+      const ee = e + off * u(0.045) / rL;
+      for (let b = -bL + u(0.06) / rL; b < bL - u(0.04) / rL; b += u(0.09) / rL) { const q = sp(rL, b, ee); riv(q, q.clone().normalize(), leafRiv); }
+    }
+  }
+  // Edge angles run along both sides of the plate.
+  for (const side of [-1, 1]) {
+    lp.sweep(um([[0, 0], [0.05, 0], [0.05, 0.006], [0.006, 0.006], [0.006, 0.05], [0, 0.05]]), framesAlongE(rL, side * (bL - u(0.055) / rL), eB, eT, 30, side));
+    for (let e = eB + u(0.05) / rL; e < eT; e += u(0.09) / rL) { const q = sp(rL, side * (bL - u(0.025) / rL), e); riv(q, q.clone().normalize(), leafRiv); }
+  }
+  // An open profile runs from the foot up, so its normals face out.
+  const rivet = new Geo().lathe(um([[0.011, 0], [0.0075, 0.0055], [0.0005, 0.007]]), 6, { smooth: true });
+  leaf.add(new Mesh(lg.build(), leafPaint), new Mesh(lp.build(), plain), instances(rivet, plainI, leafRiv));
+  cupola.add(leaf);
+
+  // The roll shutter: hinged slats that run down the slit into a box at its foot.
+  const NS = 18, DS = SPLIT_E / NS, rT = R + u(0.13), bT = SLIT_B + u(0.02) / R;
+  const slatH = DS * rT * SCALE;
+  const slat = new Geo().sweep(um([[0, -0.012], [0.012, -0.017], [slatH - 0.01, -0.015], [slatH, -0.009], [slatH, 0.004],
+    [slatH - 0.025, 0.012], [0.03, 0.014], [0.007, 0.011], [0, 0.002]]), framesAlongB(rT, 0, -bT, bT, 14));
+  const slats = new InstancedMesh(slat.build(), plainI, NS);
+  // The slats move, so their bounds change.
+  slats.frustumCulled = false;
+  cupola.add(slats);
+  // The box at the slit's foot: a rounded lip in front, a slot for the slats.
+  {
+    const box = new Shape();
+    const p0 = R - 0.12, lipIn = rT + u(0.03), lipOut = R + u(0.3), top = u(0.11);
+    box.moveTo(p0, -0.18);
+    box.lineTo(lipOut, -0.18);
+    box.lineTo(lipOut, top - u(0.06));
+    box.absarc((lipIn + lipOut) / 2, top - u(0.06), (lipOut - lipIn) / 2, 0, Math.PI, false);
+    box.lineTo(lipIn, -0.08);
+    box.lineTo(rT - u(0.04), -0.08);
+    box.lineTo(rT - u(0.04), u(0.02));
+    box.lineTo(p0, u(0.02));
+    const xB = R * Math.sin(SLIT_B) + u(0.24);
+    pl.at().add(new ExtrudeGeometry(box, { depth: 2 * xB, bevelEnabled: false, curveSegments: 10 }).rotateY(Math.PI / 2).translate(-xB, 0, 0));
+  }
+
+  // The skirt: a deep band round the cupola's foot, with a rolled bead.
+  pl.at().lathe([[R - 0.08, 0.01], [R + u(0.02), 0.01], [R + u(0.05), -0.005], [R + u(0.05), -0.15], [R + u(0.075), -0.16],
+    [R + u(0.075), -0.18], [R + u(0.05), -0.19], [R - 0.08, -0.19]], 180, { closed: true });
+
+  // Rivets on the shell: a row above the skirt and along each girder's foot.
+  const shellRiv: Matrix4[] = [];
+  const bClear = SLIT_B + u(0.24) / R;
+  for (let k = 0; k < 360; k++) {
+    const az = (k + 0.5) / 360 * 2 * Math.PI, x = Math.sin(az), z = -Math.cos(az);
+    // In slit space the slit covers small |x| at the front.
+    if (z < 0 && Math.abs(x) < Math.sin(bClear)) continue;
+    const q = new Vector3(x * R, u(0.035), z * R);
+    q.setLength(R);
+    riv(q, q.clone().normalize(), shellRiv);
+  }
+  for (const side of [-1, 1]) {
+    const b = side * (SLIT_B + u(0.18) / R);
+    for (let e = u(0.05) / R; e < Math.PI; e += u(0.09) / R) {
+      const q = sp(R + u(0.012), b, e);
+      riv(q, q.clone().normalize(), shellRiv);
+    }
+  }
+  cupola.add(new Mesh(pl.build(), plain), instances(rivet, plainI, shellRiv));
+
+  /* ---------- the drive: a toothed ring under the skirt, pinions on the catwalk ---------- */
+  // Machined steel, oiled; the drive housings wear grey-green enamel.
+  // No sky map lights the metal, so it keeps some diffuse to read at night.
+  const steel = std({ color: 0x55595d, roughness: 0.4, metalness: 0.45 });
+  const steelI = std({ color: 0x55595d, roughness: 0.4, metalness: 0.45 });
+  const enamel = std({ color: 0x3b4741, roughness: 0.45, metalness: 0.25 });
+  const brass = std({ color: 0xb08a48, roughness: 0.35, metalness: 0.8 });
+  // The ring gear's rim hangs under the skirt; its teeth face out.
+  const PITCH = u(0.063), RING_N = Math.round(2 * Math.PI * R / PITCH);
+  const G0 = -0.28, G1 = -0.2, TOOTH = u(0.045);
+  const cs = new Geo();
+  cs.lathe([[R - 0.1, G1], [R - TOOTH / 2, G1], [R - TOOTH / 2, G0], [R - 0.1, G0]], 240, { closed: true });
+  // Bogies under the rim ride on the track.
+  const bogie = new Geo();
+  bogie.box(0.13, 0.05, 0.09, mat(0, -0.305, -(R - 0.075)));
+  bogie.at(mat(0, -0.345, -(R - 0.075), 0, 0, Math.PI / 2)).add(new CylinderGeometry(0.034, 0.034, 0.05, 14));
+  const bogies: Matrix4[] = [];
+  for (let k = 0; k < 16; k++) bogies.push(new Matrix4().makeRotationY(-(k + 0.5) / 16 * 2 * Math.PI));
+  // One tooth: a trapezoid, wide at its root, pushed out along Y.
+  const tooth = (n: number, r: number, h0: number, h1: number): Geo => {
+    const p = 2 * Math.PI * r / n, g = new Geo();
+    prism(g, [[-0.28 * p, r - TOOTH / 2], [0.28 * p, r - TOOTH / 2], [0.15 * p, r + TOOTH / 2], [-0.15 * p, r + TOOTH / 2]], h0, h1, mat(0, 0, 0, -Math.PI / 2));
+    return g;
+  };
+  const teeth: Matrix4[] = [];
+  for (let k = 0; k < RING_N; k++) teeth.push(new Matrix4().makeRotationY(-k / RING_N * 2 * Math.PI));
+  cupola.add(new Mesh(cs.build(), steel), instances(tooth(RING_N, R, G0 + 0.004, G1 - 0.004), steelI, teeth), instances(bogie, steelI, bogies));
+
+  // Fixed on the wall's coping: the track ring, and a dark seal inside it.
+  const fx = new Geo();
+  fx.lathe([[R - 0.16, DRUM_H - 0.395], [R - 0.01, DRUM_H - 0.395], [R - 0.01, DRUM_H - 0.385], [R - 0.07, DRUM_H - 0.38],
+    [R - 0.06, DRUM_H - 0.36], [R - 0.12, DRUM_H - 0.36], [R - 0.11, DRUM_H - 0.38], [R - 0.16, DRUM_H - 0.385]], 240, { closed: true });
+  fx.lathe([[R - 0.17, DRUM_H - 0.39], [R - 0.155, DRUM_H - 0.39], [R - 0.155, DRUM_H - 0.215], [R - 0.17, DRUM_H - 0.215]], 120, { closed: true });
+
+  // Three drive units on the catwalk; each pinion meshes with the ring.
+  // One stands just east of the door, so the gear cut finds it.
+  const PIN_N = 14, rp = PIN_N * PITCH / (2 * Math.PI), rc = R + rp;
+  const DRIVES = [13, 133, 253].map(a => a * DEG);
+  const pinTeeth: Matrix4[] = [];
+  for (let k = 0; k < PIN_N; k++) pinTeeth.push(new Matrix4().makeRotationY(-k / PIN_N * 2 * Math.PI));
+  const pinGeo = new Geo();
+  for (const m of pinTeeth) {
+    const g = tooth(PIN_N, rp, G0 + 0.006, G1 - 0.006).build();
+    pinGeo.at(m).add(g);
+  }
+  pinGeo.at().add(new CylinderGeometry(rp - TOOTH / 2, rp - TOOTH / 2, G1 - G0 - 0.01, 24).translate(0, (G0 + G1) / 2, 0));
+  const pinG = pinGeo.build();
+  const pinions: Mesh[] = [];
+  const dv = new Geo(), dvBrass = new Geo();
+  const yb = DECK_Y, hb = DRUM_H + G0 - 0.12 - yb;
+  for (const a of DRIVES) {
+    const m = new Matrix4().makeRotationY(-a);
+    const p = new Mesh(pinG, steel);
+    p.position.set(rc * Math.sin(a), DRUM_H, -rc * Math.cos(a));
+    pinions.push(p);
+    // The gearbox stands under the pinion; the shaft rises through its lid.
+    dv.box(0.24, hb, 0.2, mat(0, yb + hb / 2, -rc).premultiply(m));
+    dv.box(0.28, 0.025, 0.24, mat(0, yb + hb + 0.012, -rc).premultiply(m));
+    steelBits(fx, m, rc, yb + hb, DRUM_H + G0);
+    // The motor lies along the wall, with cooling fins and a terminal box.
+    dv.at(mat(-0.22, yb + 0.1, -rc, 0, 0, Math.PI / 2).premultiply(m)).add(new CylinderGeometry(0.075, 0.075, 0.24, 20));
+    for (let f = 0; f < 6; f++) dv.at(mat(-0.13 - f * 0.035, yb + 0.1, -rc, 0, 0, Math.PI / 2).premultiply(m)).add(new CylinderGeometry(0.088, 0.088, 0.008, 20));
+    dv.box(0.08, 0.06, 0.07, mat(-0.24, yb + 0.2, -rc).premultiply(m));
+    // A brass rating plate and an oil cup.
+    dvBrass.box(0.06, 0.035, 0.004, mat(-0.22, yb + 0.1, -rc - 0.077).premultiply(m));
+    dvBrass.at(mat(0.06, yb + hb + 0.04, -rc - 0.05).premultiply(m)).add(new CylinderGeometry(0.012, 0.016, 0.03, 10));
+    // A bracket ties the unit to the wall.
+    dv.box(0.04, 0.16, wallR(yb) - (rc - 0.1) + 0.05, mat(0.1, yb + 0.08, -(rc - 0.1 + wallR(yb)) / 2 + 0.02).premultiply(m));
+  }
+  fx.at();
+
   const parts: Object3D[] = [
-    new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts,
+    new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
+    new Mesh(fx.build(), steel), new Mesh(dv.build(), enamel), new Mesh(dvBrass.build(), brass), ...pinions, new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts, cupola,
   ];
   root.add(...parts);
 
@@ -581,6 +921,24 @@ function buildHero(main: Dome): Hero {
       else root.removeFromParent();
     },
     follow(d) {
+      const P = d.pose;
+      cupola.rotation.y = -P.az * DEG;
+      leaf.rotation.x = P.open * UP_OPEN;
+      // The slats run down by the light model's lower-leaf angle.
+      // A slat wholly under the foot is rolled up in the box.
+      for (let i = 0; i < NS; i++) {
+        const a = i * DS + P.open * LOW_OPEN;
+        if (a + DS > -0.002) TM.makeRotationX(a);
+        else TM.makeScale(0, 0, 0);
+        slats.setMatrixAt(i, TM);
+      }
+      slats.instanceMatrix.needsUpdate = true;
+      // Each pinion turns one tooth for each tooth of the ring that passes.
+      // At a whole tooth count, a ring tooth sits in the pinion's gap.
+      DRIVES.forEach((a, i) => {
+        const teethPast = (a - P.az * DEG) * RING_N / (2 * Math.PI);
+        pinions[i].rotation.y = -(a + Math.PI + Math.PI / PIN_N + teethPast * 2 * Math.PI / PIN_N);
+      });
       glow.emissiveIntensity = d.door.emissiveIntensity;
     },
     stats() {
@@ -595,6 +953,13 @@ function buildHero(main: Dome): Hero {
       return { tris, calls, ms: Math.round(ms * 10) / 10 };
     },
   };
+}
+
+// A drive's shaft from its gearbox lid up to the pinion, with a collar.
+function steelBits(g: Geo, m: Matrix4, rc: number, y0: number, y1: number): void {
+  g.at(mat(0, (y0 + y1) / 2, -rc).premultiply(m)).add(new CylinderGeometry(0.025, 0.025, y1 - y0, 12));
+  g.at(mat(0, y0 + 0.03, -rc).premultiply(m)).add(new CylinderGeometry(0.05, 0.05, 0.04, 16));
+  g.at();
 }
 
 // A flat shape pushed out between two depths along local Z.
