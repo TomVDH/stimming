@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T06:16:45Z
+updated_at: 2026-11-17T06:32:10Z
 parent: stimming-oh7b
 ---
 
@@ -118,3 +118,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the scene draws the lab's tornado (tornado/funnel.js): the lab's shells, dust, F table and Tom's defaults, in a half-size pass scissored to the tornadoes' box, laid into envScene; the funnel's top hides behind the scene's cloud by the cover in front of it, so it rises into the base with no seam. Up to four tornadoes, rope-out kept. GPU, M3 Pro, 1828×984: frame 12.7 ms with no tornado, 15.8 ms with one F2.5, 19.5 ms with three F4.5 (minimums). Next: the lab's volumetric deck in the scene (Tom: the scene's deck is "the fake 2d one").
 
 - 2026-11-16: the lab's near deck draws round each tornado in the scene (the horn joined by smooth minimum, the spiral inflow, the deck's light, the fade-in above its floor); it rises with the scene's base away from the wall cloud and fades by where each ray passes the tornado's top, so no ellipse or vertical edges; the nearest tornado owns overlapping deck. About 2–4 ms more per tornado. Open: the rest of the scene's deck is still the old smooth shell, so the lab deck reads as a smooth dark zone round each funnel; three close tornadoes join into a flat dark band.
+
+- 2026-11-16: the scene's storm and funnels are one march (Tom: "merge them"): one half-size pass with history draws the deck (scene shapes, the lab's noise, lumps and light), each horn joined in by smooth minimum, and each funnel's shells and dust; envScene keeps the ground, road, poles and farm sharp and lays the storm on by its cover. Each tornado carries its own whirl in the deck, centred on its top, growing with F (Tom: the deck's swirls are the tornadoes' sources). The deck runs over and behind the eye (no edge in frame at 50 or 85 mm). Dev row Sun dir (default 20°). The crosshatch came from a pixel-locked dither; it is now per-frame noise. GPU, 1828×984, minimum frame: no tornado 9.6 ms, 1 × F1 12.2 ms, 3 × F4.5 18.0 ms. Unchecked: motion, rope-out, phone.
