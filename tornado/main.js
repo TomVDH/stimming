@@ -72,11 +72,10 @@ const SHARED = /* glsl */`
 precision highp sampler3D;
 uniform sampler3D tNoise;
 // The tornadoes; both passes set them. uTorOn is 1 while the funnel pass draws.
-// uTorZ: each foot and reach in camera km, and 1 when it draws.
+// uTorZ: each whirl's texture seed (two numbers), its twist, and 1 when it draws.
 // uTorN: each top in camera km, the near deck's reach, and the horn's top radius, in km.
-// uTorH: each horn's strength, 0 to 1; the near deck's height over the base; its whirl's reach in km and strength.
-// uWallSw: the wall cloud's own whirl, 0 to 1. It gives way as tornadoes take the deck's turn.
-uniform float uTorOn, uWallSw;
+// uTorH: each horn's strength, 0 to 1; its whirl's turn in radians, reach in km and strength.
+uniform float uTorOn;
 uniform vec4 uTorZ[${MAX_FUNNELS}], uTorN[${MAX_FUNNELS}], uTorH[${MAX_FUNNELS}];
 // The eye crouches just over the ears, 1.25 m up.
 const float CAMH = 1.25;
@@ -192,14 +191,15 @@ float hornUnder(vec3 p) {
 // It never winds up, and it moves with its centre.
 const float SP_TURN = 0.08, SP_IN = 0.025, SP_TWIST = 1.4, SP_R = 4.5;
 // One whirl's noise point at p, round centre c with reach R, in km. w returns its weight there.
-vec3 whirlPt(vec3 p, vec2 c, float R, out float w) {
+// turn is its angle, summed on the CPU, so a change of speed never jumps.
+// twist sets how tightly its arms wind; seed keeps two whirls apart.
+vec3 whirlPt(vec3 p, vec2 c, float R, float turn, float twist, vec2 seed, out float w) {
   vec2 q = p.xz - c;
   float r = max(length(q), 0.08);
   w = (1.0 - smoothstep(R * 0.55, R, r)) * (1.0 - smoothstep(BASE + 1.0, BASE + 2.6, p.y));
   float lr = log(r) + SP_IN * uT;
-  float ang = atan(q.y, q.x) + SP_TURN * uT - SP_TWIST * lr;
-  // The centre offsets the texture, so two whirls never look the same.
-  return vec3(cos(ang) * 2.2 + lr * 2.8 + c.x * 3.1, p.y, sin(ang) * 2.2 + c.y * 2.7);
+  float ang = atan(q.y, q.x) + turn - twist * lr;
+  return vec3(cos(ang) * 2.2 + lr * 2.8 + seed.x, p.y, sin(ang) * 2.2 + seed.y);
 }
 // One layer of the deck's texture. p sets the masks; pn is the noise point.
 // QA: the deck's noise reads on this pixel, counted for ?qa.
@@ -231,13 +231,13 @@ float deckN(vec3 p, vec3 pn, float calm) {
 // The deck's texture on a shape distance d. In a tornado's column the horn is in d already.
 // Where whirls meet, their noise points blend by weight, so no seam shows.
 float stormNoise(vec3 p, float d) {
+  // With no tornado the deck has no whirl.
   float calm = stormCalm(p), w, W = 0.0;
-  vec3 pw = whirlPt(p, WALL, SP_R, w) * (w * uWallSw);
-  W += w * uWallSw;
+  vec3 pw = vec3(0.0);
   if (uTorOn > 0.5) for (int i = 0; i < ${MAX_FUNNELS}; i++) {
-    vec4 h = uTorH[i];
-    if (uTorZ[i].w <= 0.0 || h.w <= 0.0) continue;
-    vec3 q = whirlPt(p, uTorN[i].xy, h.z, w);
+    vec4 h = uTorH[i], z = uTorZ[i];
+    if (z.w <= 0.0 || h.w <= 0.0) continue;
+    vec3 q = whirlPt(p, uTorN[i].xy, h.z, h.y, z.z, z.xy, w);
     pw += q * (w * h.w);
     W += w * h.w;
   }
@@ -708,7 +708,7 @@ try {
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
       uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => storm, uStorm: () => storm, uT: () => simT,
-      uBase: () => base, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0), uWallSw: () => (fun.on && fun.n ? pk.wall : 1),
+      uBase: () => base, uStormOn: () => (fun.on ? 1 : 0), uTorOn: () => (fun.on && fun.n ? 1 : 0),
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
     },
   });
@@ -829,8 +829,9 @@ function packFunnels(rw, rh) {
     const nr = [tx * 0.001, tz * 0.001, nearR, rTopKm];
     // The horn's strength, and the near deck's height over the base in km.
     // Its whirl in the deck grows with F and fades as it ropes out.
-    const whirl = (0.5 + 0.5 * f / 5) * (1 - clamp(t.rope)) * ss(0, 0.35, t.cond);
-    const horn = [ss(0, 0.35, t.cond), 0.45, 1.5 + 3 * f / 5, whirl];
+    // Its whirl in the deck: it forms first, wide and slow, and tightens to its F's reach.
+    const form = ss(0, 1, t.form), reachF = 1.5 + 3 * f / 5;
+    const horn = [ss(0, 0.35, t.cond), t.turn, reachF * (1 + 1.2 * (1 - form)), (0.5 + 0.5 * f / 5) * form];
     let bx0 = 1, by0 = 1, bx1 = 0, by1 = 0, behind = false;
     // The box on screen holds the funnel's column and the near deck's.
     for (const [ux, uz, R, y0b, y1b] of [[cx, cz, Rb, 0, deck + 60], [tx, tz, nrM, H - 200, topC]]) {
@@ -859,14 +860,12 @@ function packFunnels(rw, rh) {
   pk.Z.fill(0);
   pk.NR.fill(0);
   pk.H.fill(0);
-  pk.wall = 1;
   list.slice(0, MAX_FUNNELS).forEach(({ t, v, rb, nr, horn }, i) => {
     ['A', 'B', 'C', 'D', 'E', 'F'].forEach((k, j) => pk[k].set(v[j], i * 4));
     pk.ph.set(t.ph, i * 14);
-    pk.Z.set([v[0][0] * 0.001, v[0][1] * 0.001, rb * 0.001, 1], i * 4);
+    pk.Z.set([t.seed * 37.1, t.seed * 53.7, 1.4 * (0.35 + 0.65 * sstep(0, 1, t.form)), 1], i * 4);
     pk.NR.set(nr, i * 4);
     pk.H.set(horn, i * 4);
-    pk.wall = Math.min(pk.wall, 1 - 0.8 * horn[3]);
   });
   const pad = 3;
   pk.box = [Math.max(0, Math.floor(x0) - pad), Math.max(0, Math.floor(y0) - pad), Math.min(rw, Math.ceil(x1) + pad), Math.min(rh, Math.ceil(y1) + pad)];
@@ -909,7 +908,7 @@ function funnelPass(w, h) {
   for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
   gl.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
-  gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform1f(u.uWallSw, n ? pk.wall : 1); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
+  gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // The runner wants the context in its default state.
@@ -929,15 +928,23 @@ function live(t, dt) {
   // Each layer's spin and climb integrate here, so a new F only changes speed.
   const sp = spinLayers(t.ph, dt, t.f);
   t.zs = sp.zs; t.ds = sp.ds;
+  // Its whirl in the deck turns faster as it forms, and with F; the angle sums here, so it never jumps.
+  t.turn = (t.turn + 0.08 * (0.25 + (0.75 + 0.5 * t.f / 5) * t.form) * dt) % (Math.PI * 200);
   if (!t.roping) {
-    // Dust rises from the ground before the funnel reaches it.
-    t.dust = Math.min(1, t.dust + dt / 3);
-    if (t.age > 1.5) t.cond += (at('cond', t.f) - t.cond) * (1 - Math.exp(-dt / 2.2));
+    // Touchdown: the whirl converges over about 8 s, then the horn and the condensation lower.
+    t.form = Math.min(1, t.form + dt / 8);
+    const target = at('cond', t.f);
+    if (t.form > 0.6) t.cond += (target - t.cond) * (1 - Math.exp(-dt / 3));
+    // The dust spins up on the ground just before the funnel meets it.
+    if (t.cond > 0.5 * target) t.dust = Math.min(1, t.dust + dt / 2.5);
     if (t.age > t.life) t.roping = true;
   } else {
     // The rope bends out over 14 s, then breaks up and fades over 7 s.
-    t.rope += dt / (t.rope < 1 ? 14 : 7);
+    t.rope = Math.min(2, t.rope + dt / (t.rope < 1 ? 14 : 7));
     t.dust = Math.max(0, t.dust - dt / 4);
+    // The funnel lifts as it fades; then the whirl unwinds.
+    if (t.rope > 0.6) t.cond = Math.max(0, t.cond - dt / 10);
+    if (t.rope > 1.4) t.form = Math.max(0, t.form - dt / 6);
   }
   if (t !== drag) {
     const v = fAt(F_SPEED, t.f) * (1 - 0.6 * clamp(t.rope));
@@ -948,7 +955,8 @@ function live(t, dt) {
 function step(dt) {
   simT += dt;
   for (const t of tors) live(t, dt);
-  for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2) tors.splice(i, 1);
+  // A tornado leaves once its funnel has faded and its whirl has unwound.
+  for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
   if (!asleep && !tors.length && performance.now() - lastInput > 60000) { asleep = true; env.paused = true; }
 }
 function wake() {
@@ -974,7 +982,7 @@ function touchDown(x, z) {
   if (standing.length >= MAX_TOR - 1) standing[0].roping = true;
   if (tors.length >= MAX_TOR) tors.shift();
   const still = reduced();
-  tors.push({ x, z, f: fLevel, fT: fLevel, cond: still ? at('cond', fLevel) : 0, dust: still ? 1 : 0, rope: 0, roping: false, age: 0, life: F_LIFE[Math.round(fLevel)] * (0.85 + 0.3 * Math.random()), seed: Math.random(), ph: new Float32Array(14), zs: 28, ds: 20 });
+  tors.push({ x, z, f: fLevel, fT: fLevel, cond: still ? at('cond', fLevel) : 0, dust: still ? 1 : 0, form: still ? 1 : 0, turn: 0, rope: 0, roping: false, age: 0, life: F_LIFE[Math.round(fLevel)] * (0.85 + 0.3 * Math.random()), seed: Math.random(), ph: new Float32Array(14), zs: 28, ds: 20 });
   wake();
 }
 // The tornado nearest a screen point, if the point is near enough.
