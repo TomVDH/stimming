@@ -37,7 +37,7 @@ Success: the visitor plays first, with nothing in the way. A curious visitor fin
 
 ## Operating Context
 
-- Plain HTML and JS, no build step. GitHub Pages deploys every push to `main`.
+- Plain HTML and JS, moving to TypeScript one toy at a time; a TypeScript toy builds with esbuild in the Pages workflow. GitHub Pages deploys every push to `main`.
 - New toys start in the Lab (`?lab`). A toy reaches the main shelf only after Tom vets it.
 - One change goes to one toy first. Tom picks the toys that get it next.
 - Content authoring: Claude drafts each toy's content from its doc (`docs/toys/`) and its bean; Tom edits. One structured file per toy.

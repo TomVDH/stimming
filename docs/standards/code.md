@@ -5,7 +5,8 @@ When this file and the shipped code disagree on a fact, the code wins: fix this 
 
 ## Base
 
-- Plain HTML and JS. No build step. One folder per toy: `<id>/index.html`.
+- Plain HTML and JS, moving to TypeScript one toy at a time (Tom, 2026-11-16). One folder per toy: `<id>/index.html`.
+- A TypeScript toy keeps its source in `<id>/src/` (entry `main.ts`, strict, its own `tsconfig.json`). `tools/build.mjs` bundles it with esbuild to `<id>/dist/main.js` (git-ignored); the page loads that bundle. Bare imports stay on the importmap. Railgun is the pilot: `railgun/src/README.md`.
 - `package.json` holds dev tools only. The site loads nothing from `node_modules/`.
 - A toy page loads only from its own folder, `shared/`, jsDelivr and cdnjs.
 
@@ -121,7 +122,7 @@ Every toy page that uses them carries this importmap, word for word:
 - A toy id is its folder name and its `toys.json` key: lowercase, one word.
 - Script under about 800 lines stays inline in `index.html`. Past that, split into `<id>/main.js` and named modules. An old toy splits only when it is ported.
 - Dev pages: `spike-*.html`, `probe-*.html`, `lab.html`, all `noindex`. A probe page goes when its check ends. Pages does not publish them (`stimming-z9je` builds this).
-- `shared/*.js` files carry `// @ts-check` and JSDoc on their exports. `npm run check` runs `tsc --noEmit`. Toys opt in when ported.
+- `shared/*.js` files carry `// @ts-check` and JSDoc on their exports. `npm run check` runs `tsc --noEmit` on the site and on each TypeScript toy. Toys opt in when ported.
 - Prettier and ESLint (`stimming-chp1` sets them up) run only on files a chat creates or owns. Never reformat a shared or old file whole.
 
 ## Comments

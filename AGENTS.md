@@ -5,7 +5,7 @@ Read ADJUDANT.md first. It is generated; do not edit it.
 `stimming` · type: `coding` · vault: [[stimming/brief|stimming]]
 
 Small interactive desk toys for the office: one menu, and one self-contained page per toy on a shared shell.
-Plain HTML and JS. No build step. Terms: `GLOSSARY.md`.
+Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A TypeScript toy builds from `<id>/src/`; Railgun is the first. Terms: `GLOSSARY.md`.
 
 ## Hard rules
 
@@ -16,7 +16,7 @@ Plain HTML and JS. No build step. Terms: `GLOSSARY.md`.
 5. One thing at a time: one toy, one visual change. Never roll a change across all toys.
 6. New toys start in the Lab. Only Tom moves a toy to the main shelf, and only Tom signs a toy off (`data-done`).
 7. Use only the library set, at its pinned versions. Copy the importmap word for word from `docs/standards/code.md`.
-8. Publishing is a push to `main` (GitHub Pages). The claude.ai Artifact is retired: never publish to it.
+8. Publishing is a push to `main` (GitHub Pages; the workflow runs `npm run build` first). The claude.ai Artifact is retired: never publish to it.
 9. A change that makes a doc line false fixes it in the same commit. A standard changes only from Tom's own words.
 10. Sound is muted by default. Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
 11. Never use brand names for toys (exceptions: Domino Day, Strandbeest).
@@ -55,7 +55,8 @@ Plain HTML and JS. No build step. Terms: `GLOSSARY.md`.
 
 | Task | Command |
 |---|---|
-| Dev server | `python3 -m http.server 8000`, then <http://localhost:8000/> |
+| Dev server | `npm ci` once, then `npm run dev` (serves on port 8000, rebuilds TypeScript toys), then <http://localhost:8000/>. `python3 -m http.server 8000` works after `npm run build`. |
+| Build TypeScript toys | `npm run build` |
 | Type check | `npm run check` |
 | Bar v2 test | `tests/run.sh http://localhost:8000/tests/bar-v2.html` |
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" [--hunks <patch>] -- <paths>` |

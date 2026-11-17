@@ -66,7 +66,7 @@ Toy chats share one checkout and one git index.
 
 | Task | Command |
 |---|---|
-| Dev server | `python3 -m http.server 8000`, then <http://localhost:8000/> |
+| Dev server | `npm run dev` (port 8000, rebuilds TypeScript toys), then <http://localhost:8000/>. `python3 -m http.server 8000` works after `npm run build`. |
 | Type check | `npm run check` |
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" -- <paths>` |
 | Stills / loops | `npx -y -p playwright@1.63.0 node tools/stills.mjs [id ...]` (same for `tools/loops.mjs`) |
