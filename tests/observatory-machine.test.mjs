@@ -106,3 +106,31 @@ test('classify splits a tap from a drag', () => {
   assert.equal(classify(12, 0, 200), 'drag');
   assert.equal(classify(2, 2, 600), 'drag');
 });
+test('shut (the ?cuts review): back to aim, the shutter shuts in 4 s, the tube parks; a pick then opens it again', () => {
+  const m = makeMachine({ az: 100 });
+  const ctx = { targetAlt: 20, targetAz: 130, trails: false };
+  m.pick(star(1, 0, 0, 1));
+  run(m, 60, ctx);
+  assert.equal(m.shutter01, 1);
+  m.shut();
+  assert.equal(m.phase, 'aim');
+  assert.equal(m.target, null);
+  assert.ok(m.moving, 'the shutter moves');
+  run(m, 2, ctx);
+  assert.ok(m.shutter01 > 0 && m.shutter01 < 1, `shutter ${m.shutter01}`);
+  run(m, 2.1, ctx);
+  assert.equal(m.shutter01, 0);
+  run(m, 20, ctx);
+  assert.equal(m.tubeAlt, 30);
+  assert.equal(m.moving, false);
+  m.pick(star(1, 0, 0, 1));
+  assert.equal(m.phase, 'open');
+});
+test('without shut, aim keeps the shutter open', () => {
+  const m = makeMachine({ az: 100, shutter01: 1 });
+  m.pick(star(1, 0, 0, 1));
+  run(m, 5, { targetAlt: 20, targetAz: 130, trails: false });
+  m.release();
+  run(m, 10, { targetAlt: 20, targetAz: 130, trails: false });
+  assert.equal(m.shutter01, 1);
+});

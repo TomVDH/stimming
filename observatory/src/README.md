@@ -19,7 +19,7 @@ A failed model load shows the stage's `.fail` line.
 | `core/catalog.ts` | The star catalog decoder: `loadStars`, `Star` |
 | `core/clock.ts` | The sky clock: speed, trail threshold, the 1 s wake ease; injected time |
 | `core/dome.ts` | Pure dome maths: aim clamp, azimuth delta, axis stepper |
-| `core/machine.ts` | The telescope machine: shutter, main dome, tube; `makeMachine`, `Phase` |
+| `core/machine.ts` | The telescope machine: shutter, main dome, tube; `makeMachine`, `Phase`; `shut` for the `?cuts` review |
 | `core/pick.ts` | A tap picks the brightest star near it: `pickStar` |
 | `core/gesture.ts` | Tap or drag, from the move and the time: `classify` |
 | `core/opening.ts` | The opening, dusk into night: sun, star limit, sky lag and speed, lamps, play lock, skip; `sunsetAz` |
@@ -43,8 +43,18 @@ A failed model load shows the stage's `.fail` line.
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
 | `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the reduced-motion crossfade |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
-| `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; `window.__qa` |
+| `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
+
+## Review switch
+
+`?cuts` is a review switch for Tom, so he can see the pick sequence on the live site.
+The page opens at night, with motion on.
+About 1 s after the first frame, it picks the brightest star on screen, as a tap would.
+After the cuts, a tap anywhere shuts the dome.
+Once the shutter is shut, the cuts play again on the same star.
+Esc and a tap still skip the cuts.
+Without `?cuts`, nothing changes.
 
 ## Axes
 
