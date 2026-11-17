@@ -7,21 +7,29 @@ import type { AltAz } from '../core/sky.ts';
 /* ---------- one dome: stone drum, white cupola, slit, shutter, tube ---------- */
 const DEG = MathUtils.DEG2RAD;
 // Sizes in metres at size 1.
-const DRUM_R = 3.2, DRUM_H = 3.4;
-const DOME_R = 3.3;
+// world/hero shares these sizes.
+export const DRUM_R = 3.2, DRUM_H = 3.4;
+// The drum is this much wider at its foot.
+export const DRUM_BATTER = 1.04;
+export const DOME_R = 3.3;
 // The slit is 1.3 m wide.
-const SLIT_B = Math.asin(0.65 / DOME_R);
+export const SLIT_B = Math.asin(0.65 / DOME_R);
 // The slit runs from the front foot to 20 degrees past the zenith.
-const SLIT_E = 110 * DEG;
+export const SLIT_E = 110 * DEG;
 // The shutter has two leaves that part at 45 degrees.
-const SPLIT_E = 45 * DEG;
+export const SPLIT_E = 45 * DEG;
 // Open, the upper leaf slides over the back; the lower leaf drops down the drum.
-const UP_OPEN = Math.PI - SLIT_E - 3 * DEG;
-const LOW_OPEN = -SPLIT_E - 2 * DEG;
+export const UP_OPEN = Math.PI - SLIT_E - 3 * DEG;
+export const LOW_OPEN = -SPLIT_E - 2 * DEG;
 // The tube pivots this high over the dome's centre.
-const PIVOT_Y = 0.5;
+export const PIVOT_Y = 0.5;
 // The tube reaches 2.6 m forward, so it stays inside the dome at any altitude.
-const TUBE_FRONT = 2.6, TUBE_BACK = 1.4;
+export const TUBE_FRONT = 2.6, TUBE_BACK = 1.4;
+export const TUBE_R = 0.36;
+// The pier stands this tall under the drum's top.
+export const PIER_H = 1.6;
+// The door is 1 m wide; its arch springs at 1.6 m.
+export const DOOR_HALF = 0.5, DOOR_SPRING = 1.6;
 export const TUBE_REST_ALT = 45;
 // With the shutter shut, the tube parks low under the shutter line.
 export const TUBE_PARK_ALT = 30;
@@ -107,6 +115,10 @@ export const DOOR_GLOW = new Color(1.0, 0.55, 0.22);
 // Painted steel for the pier and the fork.
 const dark = () => new MeshLambertMaterial({ color: 0x2c2f33 });
 
+// The machine pose the setters last set.
+// az: the slit's azimuth; open: the shutter, 0 to 1; tube: alt and az.
+export type DomePose = { az: number; open: number; tube: AltAz };
+
 export type Dome = {
   root: Group;
   cupola: Group;
@@ -117,6 +129,9 @@ export type Dome = {
   setTube(a: AltAz): void;
   slitTop: Vector3;
   door: MeshLambertMaterial;
+  pose: DomePose;
+  // Shows or hides the dome's own shapes; the lamps on it stay.
+  show(on: boolean): void;
 };
 
 // size scales the whole dome; 1 is a 6.6 m cupola.
@@ -126,7 +141,7 @@ export function buildDome(size: number): Dome {
 
   // The stone drum, with a ledge where the dome sits.
   // About 24 blocks round the drum and 8 courses up.
-  const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * 1.04, DRUM_H, 48), new MeshLambertMaterial({ map: stoneMap(3, 1) }));
+  const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * DRUM_BATTER, DRUM_H, 48), new MeshLambertMaterial({ map: stoneMap(3, 1) }));
   drum.position.y = DRUM_H / 2;
   const ledge = new Mesh(new CylinderGeometry(DRUM_R + 0.18, DRUM_R + 0.18, 0.22, 48), lam(0x6d6862));
   ledge.position.y = DRUM_H - 0.11;
@@ -134,10 +149,10 @@ export function buildDome(size: number): Dome {
 
   // The door faces north, to the camera.
   const arch = new Shape();
-  arch.moveTo(-0.5, 0);
-  arch.lineTo(-0.5, 1.6);
-  arch.absarc(0, 1.6, 0.5, Math.PI, 0, true);
-  arch.lineTo(0.5, 0);
+  arch.moveTo(-DOOR_HALF, 0);
+  arch.lineTo(-DOOR_HALF, DOOR_SPRING);
+  arch.absarc(0, DOOR_SPRING, DOOR_HALF, Math.PI, 0, true);
+  arch.lineTo(DOOR_HALF, 0);
   const doorMat = new MeshLambertMaterial({ color: 0x3a2a1c, emissive: DOOR_GLOW, emissiveIntensity: 0 });
   const door = new Mesh(new ExtrudeGeometry(arch, { depth: 0.12, bevelEnabled: false, curveSegments: 16 }), doorMat);
   door.position.set(0, 0, -DRUM_R - 0.02);
@@ -167,8 +182,8 @@ export function buildDome(size: number): Dome {
   cupola.add(shutter);
 
   // The pier and the fork stand still; the fork turns in azimuth.
-  const pier = new Mesh(new CylinderGeometry(0.45, 0.55, 1.6, 24), dark());
-  pier.position.y = DRUM_H - 0.8;
+  const pier = new Mesh(new CylinderGeometry(0.45, 0.55, PIER_H, 24), dark());
+  pier.position.y = DRUM_H - PIER_H / 2;
   root.add(pier);
   const fork = new Group();
   fork.position.y = DRUM_H;
@@ -188,17 +203,21 @@ export function buildDome(size: number): Dome {
   fork.add(tube);
   // Brushed steel catches the door light and the sky.
   const steel = new MeshStandardMaterial({ color: 0xa8b0b8, metalness: 0.3, roughness: 0.42 });
-  const body = new Mesh(new CylinderGeometry(0.36, 0.36, TUBE_FRONT + TUBE_BACK, 24), steel);
+  const body = new Mesh(new CylinderGeometry(TUBE_R, TUBE_R, TUBE_FRONT + TUBE_BACK, 24), steel);
   body.rotation.x = -Math.PI / 2;
   body.position.z = -(TUBE_FRONT - TUBE_BACK) / 2;
   tube.add(body);
 
   const slitTop = new Vector3();
   const slitLocal = new Vector3(0, DOME_R * Math.sin(SLIT_E), -DOME_R * Math.cos(SLIT_E));
+  const pose: DomePose = { az: 0, open: 0, tube: { alt: 0, az: 0 } };
+  // The dome's own shapes; lamps that other modules add stay out.
+  const own: Object3D[] = [drum, ledge, door, cupola, pier, fork];
 
   // Turns the slit to face an azimuth in degrees.
   // The parents' world matrices must be current.
   function setCupola(az: number): void {
+    pose.az = az;
     cupola.rotation.y = -az * DEG;
     cupola.updateMatrixWorld(true);
     slitTop.copy(slitLocal).applyMatrix4(cupola.matrixWorld);
@@ -206,14 +225,17 @@ export function buildDome(size: number): Dome {
   // 0 is shut, 1 is open.
   function setShutter(open01: number): void {
     const k = Math.min(1, Math.max(0, open01));
+    pose.open = k;
     upper.rotation.x = k * UP_OPEN;
     lower.rotation.x = k * LOW_OPEN;
   }
   function setTube(a: AltAz): void {
+    pose.tube.alt = a.alt; pose.tube.az = a.az;
     fork.rotation.y = -a.az * DEG;
     tube.rotation.x = a.alt * DEG;
   }
   setShutter(1);
   setTube({ alt: TUBE_REST_ALT, az: 0 });
-  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, door: doorMat };
+  const show = (on: boolean): void => { for (const o of own) o.visible = on; };
+  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, door: doorMat, pose, show };
 }

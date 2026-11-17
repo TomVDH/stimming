@@ -31,17 +31,19 @@ A failed model load shows the stage's `.fail` line.
 | `post/chain.ts` | The post chain: render, bloom, grade, ACES output; `resizePost`, `renderPost` |
 | `world/far.ts` | The far mountains: three ridgelines on rings round the wide eye, 1 to 3° high; they fade into the sky behind them and melt into the haze at the foot; `far` |
 | `world/hill.ts` | The land: the observatory hill and its clearing, the camera's rise, far ridges; starlight; `hillHeight`, `SITE`, `EYE_H` |
-| `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; `buildDome(size)`, `stoneMap` |
+| `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; `buildDome(size)`, `stoneMap`; the dome sizes; `Dome.pose` and `Dome.show` for the hero model |
 | `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |
 | `world/woods.ts` | The pines over the hill from Tom's model, `../models/pine.glb`: near trees as the instanced mesh, the rest as impostor cards; a clearing and a gap for the road; trees the eye never sees are left out; `woods` |
 | `world/impostor.ts` | The impostor bake, once at load: three crossed cards, a colour atlas and a normal atlas, premultiplied; `bakeImpostor` |
 | `world/laser.ts` | The green aiming beam, lit by the haze; it fades in after the opening; `altAzDir` |
 | `world/lamp.ts` | The tracking lamp on the main dome's drum |
 | `world/lights.ts` | The complex lights: lit window panes, door lamps with their light, door glow, road lamps; one level for all, or one per lamp at dusk |
-| `world/dusk.ts` | The dusk look: sky, haze and starlight toward the night; the last light on high ground, added to every lit material; `setDusk` |
+| `world/dusk.ts` | The dusk look: sky, haze and starlight toward the night; the last light on high ground, added to every lit material; `setDusk`; `patch`, which world/hero adds to its own materials |
+| `world/hero.ts` | The hero model: the main dome in full detail, for the cuts only. Drum with plinth, ashlar courses and string course; the door, its fanlight and lamp cage; the catwalk; gore plates with seams and rivets; slit girders with a wind lip; the leaf and the roll shutter; the ring gear, track and three drive units; the inside: floor, pier, ladder, ribs, a red work lamp. It builds after the first frame in steps, then warms the GPU; `hero.ready`, `show`, `follow`, `glass`, `stats` |
+| `world/hero-scope.ts` | The hero telescope on the pier: `buildHeroScope(size)`, `HeroScope` with `root`, `glass`, `setTube(alt, az)`; now a stub with the light model's tube |
 | `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
-| `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade |
+| `view/cuts.ts` | The pick sequence: close long-lens cuts of the main dome, the letterbox, the dip to black back to the wide shot, the reduced-motion crossfade; the swap to the hero model in the close shots |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
 | `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size) and the first draw |
