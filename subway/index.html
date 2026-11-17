@@ -19,24 +19,6 @@
 }
 .stage--subway canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--subway canvas { transition: none; } }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 260 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -45,30 +27,9 @@
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--subway" id="stage" tabindex="0" role="application" aria-label="Close, still shots inside a dim subway cabin. Tunnel lamps pass the windows and sweep light and pole shadows over the floor and seats. Hold to brake.">
+    <div class="stage stage--subway" id="stage" tabindex="0" role="application" aria-label="Close, still shots inside a dim subway cabin. Tunnel lamps pass the windows and sweep light and pole shadows over the floor and seats. Hold to brake the train. Release to let the train run on. Press 1 to 5 to pick a shot.">
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="shots" role="group" aria-label="Shot">
-        <button class="chip" type="button" data-value="straps" aria-pressed="true">Straps</button>
-        <button class="chip" type="button" data-value="seats" aria-pressed="false">Seats</button>
-        <button class="chip" type="button" data-value="window" aria-pressed="false">Window</button>
-        <button class="chip" type="button" data-value="door" aria-pressed="false">Door</button>
-        <button class="chip" type="button" data-value="floor" aria-pressed="false">Floor</button>
-      </div>
-      <label class="slider"><span>Speed</span><input type="range" id="speed" min="0" max="1" step="0.01" value="0.45" aria-label="Speed: standing to fast"></label>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt>Hold</dt><dd>brake</dd></div>
-          <div class="fine"><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>shot</dd></div>
-        </dl>
-      </div>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -97,7 +58,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { initPage, choices, whenVisible, reduced, onReducedChange, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, onReducedChange, onQuality, audioKit } from '../shared/stim.js';
 import { detail } from '../shared/detail.js';
 import { intro as playIntro } from '../shared/intro.js';
 
@@ -107,16 +68,33 @@ const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
-initPage({ id: 'subway' });
 
 /* ---------- settings ---------- */
 // Settings persist per browser; storage is optional.
 const saved = k => { try { return localStorage.getItem(`stimming.subway.${k}`); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(`stimming.subway.${k}`, String(v)); } catch { /* storage is optional */ } };
+const SHOT_NAMES = ['straps', 'seats', 'window', 'door', 'floor'];
 const opts = {
-  shot: saved('shot') || 'straps',
+  shot: SHOT_NAMES.includes(saved('shot')) ? saved('shot') : 'straps',
   speed: saved('speed') != null ? +saved('speed') : 0.45,
 };
+// The shell builds every control from this one spec.
+// Handlers bind once the scene is up; early input does nothing.
+const act = { shot() {}, speed() {} };
+initPage({ id: 'subway', bar: {
+  choice: { label: 'Shot', value: opts.shot, options: [
+    { value: 'straps', label: 'Straps', key: '1' },
+    { value: 'seats', label: 'Seats', key: '2' },
+    { value: 'window', label: 'Window', key: '3' },
+    { value: 'door', label: 'Door', key: '4' },
+    { value: 'floor', label: 'Floor', key: '5' },
+  ], onPick: v => act.shot(v) },
+  slider: { label: 'Speed', min: 0, max: 1, step: 0.01, value: opts.speed, onInput: v => act.speed(v) },
+  quality: true,
+  keys: [['hold', 'brake the train'], ['1-5', 'pick a shot']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Brake the train'], ['release', 'Let the train run on'], ['1 2 3 4 5', 'Pick a shot']],
+} });
 // The Speed slider maps to cruise speed in metres per second.
 const cruise = v => v * 28;
 
@@ -933,31 +911,15 @@ stage.addEventListener('pointerup', endPress);
 stage.addEventListener('pointercancel', endPress);
 
 /* ---------- bar ---------- */
-function popover(box, btn) {
-  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
 // The detail driver resizes on a new quality choice first.
 onQuality(() => wake());
-
 // Each shot cuts straight to its camera.
-const shotChoice = choices(document.getElementById('shots'), v => { opts.shot = v; save('shot', v); S.setShot(v); if (ready) draw(); wake(); });
-shotChoice.set(opts.shot);
-S.setShot(opts.shot);
-const speedEl = document.getElementById('speed');
-speedEl.value = String(opts.speed);
-S.setSpeed(cruise(opts.speed));
-speedEl.addEventListener('input', () => { opts.speed = +speedEl.value; save('speed', opts.speed); S.setSpeed(cruise(opts.speed)); wake(); });
-const KEYS = { Digit1: 'straps', Digit2: 'seats', Digit3: 'window', Digit4: 'door', Digit5: 'floor' };
-addEventListener('keydown', e => {
-  if (e.target.closest?.('input, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (KEYS[e.code]) shotChoice.set(KEYS[e.code], true);
+Object.assign(act, {
+  shot: v => { opts.shot = v; save('shot', v); S.setShot(v); if (ready) draw(); wake(); },
+  speed: v => { opts.speed = v; save('speed', v); S.setSpeed(cruise(v)); wake(); },
 });
+S.setShot(opts.shot);
+S.setSpeed(cruise(opts.speed));
 
 /* ---------- start ---------- */
 onReducedChange(() => wake());
