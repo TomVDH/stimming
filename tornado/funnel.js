@@ -707,7 +707,7 @@ void main() {
   float jit2 = hash(fc.yx * 1.37 + fract(uT * 3.17) * 71.0);
   vec3 skyH = skyCol(normalize(vec3(rd.x, 0.0, rd.z)));
   gHzC = hazeCol(rd);
-  gGloom = uAmb * vec3(0.05, 0.085, 0.075);
+  gGloom = uAmb * vec3(0.06, 0.066, 0.078);
   gGl = cylinder(vec3(0.0, CAMH * 0.001, 0.0), rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
   // One march, in metres from the eye, through the whole storm: the deck and every funnel's column.
   vec3 eye = vec3(0.0, CAMH, 0.0);
