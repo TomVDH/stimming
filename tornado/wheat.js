@@ -1,7 +1,7 @@
 // Tornado alley: the near wheat, as a stand of stalks the ray walks through.
 // The ray steps cell by cell through a grid of stalks, front to back.
 // Each cell holds one stalk with its head; the ray meets it at its nearest pass.
-// It reads main.js's CAMH, ROAD_X, WHEAT_GAP, gust(), bend(), th() and vn().
+// It reads main.js's CAMH, ROAD_X, WHEAT_GAP, gust(), bend(), hurtAt(), dmgAt(), th() and vn().
 // The wind's waves and gusts come from gust(): xy the lean, z the sheen, w the gust.
 
 export const WHEAT_GLSL = /* glsl */`
@@ -75,7 +75,10 @@ vec4 wheatStand(vec3 rd, float px) {
   // The walk runs in leaned space, where every stalk stands straight.
   vec4 gw = gust(p0.xz, 0.0);
   float g = gw.w, wv = max(gw.z, 0.0);
-  vec2 L = WH_R * bend(gw, 1.0) / WH_CELL;
+  // A tornado's track, read once where the ray enters: x lodged, y scoured, z bare (main.js hurtAt()).
+  vec3 dm0 = dmgAt(p0.xz), hk = hurtAt(p0.xz);
+  // Lodged stalks lie along the tornado's wind, up to 60 degrees over.
+  vec2 L = WH_R * (bend(gw, 1.0) + normalize(dm0.yz + 1e-4) * 1.7 * hk.x) / WH_CELL;
   // Ripeness in patches: green-gold, ripe gold, and pale dead-ripe heads.
   // A patch spans metres, so the ray reads it once, where it enters.
   float rp0 = vn(p0.xz * 0.06 + 3.0) * 0.65 + vn(p0.xz * 0.5 + 8.0) * 0.35;
@@ -106,7 +109,7 @@ vec4 wheatStand(vec3 rd, float px) {
       // The walk's cells are leaned; the road test reads the foot.
       float inside = whInside(wxz);
       // Near the edge more cells stand empty; thin patches open here and there.
-      float dens = 0.92 * smoothstep(-0.05, WH_FEATHER, inside) * mix(0.35, 1.0, smoothstep(0.22, 0.48, vn(wxz * 0.6 + 11.0)));
+      float dens = 0.92 * smoothstep(-0.05, WH_FEATHER, inside) * mix(0.35, 1.0, smoothstep(0.22, 0.48, vn(wxz * 0.6 + 11.0))) * (1.0 - hk.z);
       if (th(c + 9.1) < dens) {
         vec3 h = vec3(th(c), th(c + 3.1), th(c + 7.7));
         // The stalk stands anywhere in its cell: no lattice shows.
@@ -115,6 +118,8 @@ vec4 wheatStand(vec3 rd, float px) {
         float top = 0.86 + 0.12 * vn(wxz * 0.9 + 5.0) + 0.05 * vn(wxz * 3.1 + 2.0) + 0.06 * (h.z - 0.5);
         top += 0.09 * step(0.96, th(c + 5.5)) - 0.1 * (1.0 - smoothstep(0.0, WH_FEATHER, inside));
         top = min(top, WH_TOP - 0.03);
+        // Lodged heads lie low; scoured stalks stand as short stubble with no head.
+        top = mix(mix(top, 0.3 + 0.15 * h.z, hk.x * 0.8), 0.12 + 0.06 * h.z, hk.y);
         // Each stalk tilts a few degrees its own way about its head, in cells per metre.
         vec2 tilt = (vec2(th(c + 4.4), th(c + 6.6)) - 0.5) * 3.2;
         // The head nods 10 to 30 degrees, mostly downwind; the awns follow it.
@@ -129,7 +134,7 @@ vec4 wheatStand(vec3 rd, float px) {
         float sh2 = clamp(-dot(Dh0, Dhv) / max(dot(Dhv, Dhv), 1e-8), sIn, sOut);
         float yh = p0.y + rd.y * sh2;
         // The head's pass counts where it falls on the head or its awns; else the stalk's.
-        bool onHead = yh > yb - 0.01;
+        bool onHead = yh > yb - 0.01 && hk.y < 0.5;
         float sc = onHead ? sh2 : ss;
         vec2 D = onHead ? Dh0 + Dhv * sc : Ds0 + Dsv * sc;
         float y = p0.y + rd.y * sc, d = length(D);
@@ -176,6 +181,8 @@ vec4 wheatStand(vec3 rd, float px) {
           // A bent stalk shows its pale side to the eye.
           // Behind a crest it swings back and shows its dark side.
           alb = mix(alb, vec3(0.55, 0.47, 0.3), (g * 0.2 + wv * 0.5) * (head ? 1.0 : 0.5));
+          // Lodged straw shows its pale length.
+          alb = mix(alb, vec3(0.45, 0.37, 0.2), hk.x * 0.35);
           alb *= 1.0 + 0.3 * min(gw.z, 0.0);
           // Thin tissue passes light: awns most, heads some, stalks a little.
           // Backlit, it glows warm and most at the rim, where the eye sees through the least.

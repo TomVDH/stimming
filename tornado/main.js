@@ -714,6 +714,17 @@ float band(float x, float w, float f) { return clamp((w - abs(x)) / f + 0.5, 0.0
 // A detail of size s fades out as the pixel's footprint f grows past it.
 float detail(float s, float f) { return 1.0 - smoothstep(0.25 * s, 0.7 * s, f); }
 /* ---------- the fields ---------- */
+// The damage field's peak wind and its direction: damage.js defines it further on.
+vec3 dmgAt(vec2 xz);
+// A tornado's track on the wheat at a point, from the peak wind in m/s.
+// x: lodged flat, from 30 m/s. y: scoured to stubble in the F3 core, from 80 m/s. z: bare soil, from 100 m/s.
+// The wind's reach wavers in 40 m patches, so the track's edges are ragged.
+vec3 hurtAt(vec2 xz) {
+  float v = dmgAt(xz).x;
+  if (v <= 0.0) return vec3(0.0);
+  v += 16.0 * (vn(xz * 0.025 + 3.0) - 0.5);
+  return vec3(smoothstep(30.0, 50.0, v), smoothstep(80.0, 95.0, v), smoothstep(100.0, 115.0, v));
+}
 // Quarter-mile squares (402 m) run out from both verges; a few are cut into strips.
 // Crops: 0 ripe wheat, 1 stubble, 2 fallow, 3 green; -1 is the verge and the road.
 const float QM = 402.3;
@@ -751,6 +762,14 @@ vec3 wheatFar(vec2 xz, float fx, float fz) {
   float patchN = vn(xz * vec2(0.012, 0.004)) * 0.6 + vn(xz * vec2(0.05, 0.015)) * 0.4;
   // Ripe wheat in storm light: a dull gold, not a blown one.
   vec3 alb = mix(vec3(0.17, 0.11, 0.045), vec3(0.3, 0.21, 0.085), patchN);
+  // Lodged by a tornado: the stalks lie combed along its wind and show their pale straw.
+  vec3 dm = dmgAt(xz);
+  float lodge = hurtAt(xz).x;
+  if (lodge > 0.0) {
+    vec2 ld = normalize(dm.yz + 1e-4);
+    float comb = vn(vec2(dot(xz, ld) * 0.4, dot(xz, vec2(-ld.y, ld.x)) * 6.0) + 7.0);
+    alb = mix(alb, vec3(0.33, 0.26, 0.14) * mix(1.0, 0.75 + 0.5 * comb, detail(0.3, fx)), lodge);
+  }
   // A bent stalk shows its pale side; behind a crest it swings back dark.
   vec4 gw = gust(xz, fx + 0.35 * fz);
   alb = mix(alb, vec3(0.36, 0.3, 0.19), max(gw.z, 0.0) * 0.45);
@@ -845,7 +864,12 @@ vec3 ground(vec3 rd, float px) {
     if (h >= CAMH) continue;
     float th_ = (CAMH - h) / -rd.y;
     vec2 Q = rd.xz * th_;
-    float edge, id, crop = cropAt(Q, edge, id), H = cropH(crop, edge);
+    float edge, id, crop = cropAt(Q, edge, id);
+    // A tornado's track: lodged wheat lies low, a stronger wind scours a crop to stubble, then to soil.
+    vec3 hk = crop >= 0.0 ? hurtAt(Q) : vec3(0.0);
+    if (hk.z > 0.5) crop = 2.0; else if (hk.y > 0.5) crop = 1.0;
+    float H = cropH(crop, edge);
+    if (crop == 0.0 && hk.x > 0.5) H = CROP_H.y;
     if (H < h - 0.01) { hPrev = h; continue; }
     hit = true;
     float fq = th_ * px / uFoc, fz = fq * th_ / (CAMH - h);
@@ -858,6 +882,9 @@ vec3 ground(vec3 rd, float px) {
       else col = lowField(crop, Q, edge, id, fq, fz) * 0.7;
     } else if (crop == 0.0 && edge >= MARGIN) col = wheatFar(Q, fq, fz);
     else col = lowField(crop, Q, edge, id, fq, fz);
+    // Scoured ground is torn: dark soil and shredded straw in clots, no rows.
+    float sc = max(hk.y, hk.z);
+    if (sc > 0.0) col = mix(col, mix(vec3(0.07, 0.05, 0.035), vec3(0.2, 0.16, 0.09), vn(Q * 1.7) * (1.0 - hk.z * 0.6)) * (uSunCol * 0.55 + uAmb * 0.6), sc * 0.7);
     break;
   }
   if (!hit) {
@@ -1288,8 +1315,9 @@ function stormShapeJS(x, y, z) {
   d = smin(d, anvil, 2.2);
   const under = B + 0.12 + 0.25 * sstep(-6, 4, z);
   const fx = Math.abs(x) - 150, fz = Math.abs(z + 0.5 * (deckReach + front)) - 0.5 * (deckReach - front);
-  const front = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
-  return smin(d, front, 0.8);
+  // The deck's slab, from its front edge to its reach.
+  const slab = Math.max(Math.hypot(Math.max(fx, 0), Math.max(fz, 0)) + Math.min(Math.max(fx, fz), 0), Math.max(under - y, y - (B + mixN(0.35, 1, clamp(g / 0.85)))));
+  return smin(d, slab, 0.8);
 }
 // The sun's flare through the lens: full in frame, a veil just past the edge, none behind the eye.
 // The storm hides it where the sun is behind the deck; its ragged edge makes the cover soft.
