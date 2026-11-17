@@ -8,6 +8,8 @@ Run `npm run dev` from the repo root, then open <http://localhost:8000/observato
 Each module builds its part of the scene when it loads, so the order is fixed.
 The chain starts at `setup.ts`. `main.ts` imports the last module.
 A new module goes into the chain at the place it loads; never import a later module for its side effects.
+`world/woods.ts` waits for the pine model with a top-level await, so every later module waits with it.
+A failed model load shows the stage's `.fail` line.
 
 ## Modules
 
@@ -31,7 +33,8 @@ A new module goes into the chain at the place it loads; never import a later mod
 | `world/hill.ts` | The land: the observatory hill and its clearing, the camera's rise, far ridges; starlight; `hillHeight`, `SITE`, `EYE_H` |
 | `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; `buildDome(size)`, `stoneMap` |
 | `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |
-| `world/woods.ts` | The conifers over the hill, one instanced draw; a clearing and a gap for the road; trees the eye never sees are left out |
+| `world/woods.ts` | The pines over the hill from Tom's model, `../models/pine.glb`: near trees as the instanced mesh, the rest as impostor cards; a clearing and a gap for the road; trees the eye never sees are left out; `woods` |
+| `world/impostor.ts` | The impostor bake, once at load: three crossed cards, a colour atlas and a normal atlas, premultiplied; `bakeImpostor` |
 | `world/laser.ts` | The green aiming beam, lit by the haze; it fades in after the opening; `altAzDir` |
 | `world/lamp.ts` | The tracking lamp on the main dome's drum |
 | `world/lights.ts` | The complex lights: lit window panes, door lamps with their light, door glow, road lamps; one level for all, or one per lamp at dusk |
