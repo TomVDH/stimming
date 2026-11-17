@@ -228,6 +228,82 @@
 .b-acts .b-btn.is-on { color: var(--bg); background: var(--fg); }
 [data-concept="tuck"] .b-row--main { display: flex; }
 
+/* ---------- Signal: one bar, no boxes, in the intro's beats ---------- */
+/* Tom's ingredients (2026-11-16): one bar, no boxes, flash beats, leave then return. */
+@property --sg-split { syntax: "<percentage>"; inherits: false; initial-value: 50%; }
+[data-concept="signal"] { --h: 40px; }
+.sg-bar {
+  position: absolute; left: var(--pad); right: var(--pad); bottom: var(--pad); z-index: 2;
+  width: fit-content; max-width: calc(100% - 2 * var(--pad)); margin-inline: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  /* The bar is one blend group, so its flash box inverts only its own words. */
+  isolation: isolate; transform-origin: 50% 50%;
+}
+.sg-bar[data-off] { visibility: hidden; pointer-events: none; }
+.sg-grp { display: flex; align-items: center; }
+/* The slash of the logo's breadcrumb parts the groups. */
+.sg-grp + .sg-grp::before { content: "/"; margin: 0 8px; color: var(--fg); opacity: 0.55; font-weight: 500; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+/* Each word carries a dark edge, so it reads on any scene. */
+.sg-bar :is(.b-btn > span, .b-slider > span, .b-info) { -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.sg-bar .b-btn svg { filter: drop-shadow(0 0 1px var(--ink)) drop-shadow(0 0 1.5px var(--ink)); }
+.sg-bar .b-caret { filter: drop-shadow(0 0 1px var(--ink)); }
+.sg-bar .b-btn kbd { background: var(--sheet); }
+.sg-bar .b-seg { border: 0; }
+.sg-bar .b-seg .b-btn { height: var(--h); border: 0; font-weight: 700; }
+/* The flash box: white sides that close on the middle, as in the intro.
+   Difference blending turns the words under it dark, frame by frame. */
+.sg-box, .sg-bar .b-btn::after {
+  content: ""; position: absolute; pointer-events: none; mix-blend-mode: difference;
+  background: linear-gradient(90deg, #fff calc(50% - var(--sg-split)), transparent 0 calc(50% + var(--sg-split)), #fff 0);
+}
+.sg-box { inset: 3px -10px; z-index: 2; }
+.sg-bar .b-btn::after { inset: 6px 2px; z-index: 1; --sg-split: 50%; transition: --sg-split 0.1s steps(3, end); }
+/* A pick, an open sheet, a held action and keyboard focus hold the box. */
+.sg-bar :is(.b-btn[aria-expanded="true"], .b-btn[aria-pressed="true"]:not(.b-snd), .b-btn.is-on, .b-btn:focus-visible)::after { --sg-split: 0%; }
+.sg-bar .b-btn:focus-visible { box-shadow: none; }
+@media (hover: hover) { .sg-bar .b-btn:hover::after { --sg-split: 0%; } }
+/* A press lands at once: the box is there on the first frame. */
+.sg-bar .b-btn:active::after { --sg-split: 0%; transition: none; }
+.sg-bar .b-main input {
+  background:
+    linear-gradient(currentColor, currentColor) 0 50% / var(--v, 0%) 2px no-repeat,
+    linear-gradient(oklch(0.94 0.008 275 / 0.45), oklch(0.94 0.008 275 / 0.45)) 0 50% / 100% 2px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) 0 50% / 100% 6px no-repeat;
+}
+.sg-bar .b-main input::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--ink); }
+.sg-bar .b-main input::-moz-range-thumb { box-shadow: 0 0 0 2px var(--ink); }
+@container stim (width < 640px) {
+  .sg-grp.b-main { display: none; }
+  .sg-grp + .sg-grp::before { margin: 0 2px; }
+  .sg-bar .b-btn { padding: 0 9px; }
+  .sg-bar .b-ico { padding: 0; width: 40px; min-width: 40px; }
+}
+/* The glass rises behind an open sheet, with a soft top and no edge. */
+.sg-glass {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 0; z-index: 1; opacity: 0; pointer-events: none;
+  -webkit-backdrop-filter: blur(28px) brightness(0.34); backdrop-filter: blur(28px) brightness(0.34);
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 96px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 96px), transparent);
+  transition: opacity 0.1s steps(3, end);
+}
+.sg-glass[data-on] { opacity: 1; pointer-events: auto; }
+/* A sheet has no box: its rows stand on the glass, above the bar. */
+[data-concept="signal"] .b-pop {
+  left: var(--pad); right: var(--pad); bottom: calc(var(--pad) + var(--barh, var(--h)) + 14px); margin-inline: auto;
+  width: min(560px, calc(100% - 2 * var(--pad))); max-height: calc(100% - 2 * var(--pad) - var(--barh, var(--h)) - var(--h) - 60px);
+  background: none; border: 0; transform-origin: 50% 100%;
+}
+[data-concept="signal"] .b-pop--set { width: min(380px, calc(100% - 2 * var(--pad))); }
+[data-concept="signal"] .b-pop.is-flash { background: var(--fg); }
+[data-concept="signal"] .b-pop.is-flash > * { visibility: hidden; }
+[data-concept="signal"] .b-pop-hd { height: 28px; padding: 0 10px; border: 0; color: var(--muted); font-size: 11px; font-weight: 500; }
+[data-concept="signal"] .b-x { display: none; }
+[data-concept="signal"] :is(.b-rows, .b-ft) { border: 0; padding-inline: 10px; }
+[data-concept="signal"] .b-seg, [data-concept="signal"] .b-edge { border-color: oklch(0.94 0.008 275 / 0.3); }
+[data-concept="signal"] .b-seg .b-btn + .b-btn { border-color: oklch(0.94 0.008 275 / 0.3); }
+[data-concept="signal"] .b-hints { bottom: calc(var(--pad) + var(--barh, var(--h)) + 10px); transition: none; }
+/* A bar on two rows drops its slashes. */
+.sg-bar.is-wrapped .sg-grp + .sg-grp::before { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
-  .bl-ui *, .bl-ui *::before { transition: none !important; }
+  .bl-ui *, .bl-ui *::before, .bl-ui *::after { transition: none !important; }
 }

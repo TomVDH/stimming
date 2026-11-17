@@ -12,6 +12,12 @@ export function initPage(opts) {
 }
 
 const COARSE = matchMedia('(pointer: coarse)');
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+// The Signal bar moves in film frames at 30 fps, as the intro does.
+// The lab's slow factor stretches each frame for a filmstrip.
+const FRAME = 1000 / 30;
+const slow = () => Number(window.frameElement?.dataset.slow) || 1;
+const fr = (n = 1) => new Promise(r => setTimeout(r, n * FRAME * slow()));
 const CARET = '<i class="b-caret" aria-hidden="true"></i>';
 // Askew gives each block its own tilt, as the wordmark does for its letters.
 const TILTS = [-2, 1.5, -1, 2.5, -1.5, 1, -2.5, 2];
@@ -49,6 +55,8 @@ function mount(id, spec, ui) {
   let toy = { name: id, accent: null };
   // Each draw fills these; a redraw empties them.
   let syncers = [], open = null, hints = null, hintTimer = 0, gestures = 0, relayout = null;
+  // Signal sets these: a sheet hook and the leave-and-return of its bar.
+  let popHook = null, presence = null, run = 0;
   const sync = () => syncers.forEach(fn => fn());
   const touch = () => COARSE.matches || (host?.dataset.size || 'full') !== 'full';
   const hasChoice = !!spec.choice?.options?.length;
@@ -103,6 +111,7 @@ function mount(id, spec, ui) {
         if (on) open = api; else if (open === api) open = null;
         // An open sheet takes the strip's place.
         if (on) showHints(false);
+        popHook?.(api, on);
       },
     };
     anchor.setAttribute('aria-expanded', 'false');
@@ -272,6 +281,84 @@ function mount(id, spec, ui) {
     layer.append(...[P.id, box('b-tr', P.snd), hints, box('b-drawer', tab, body)].filter(Boolean));
   };
 
+  // Signal: one bar with no boxes, in the intro's beats (Tom's ingredients, 2026-11-16).
+  // The bar is one object: a white flash box lands, parts down the middle and leaves bare words.
+  // It leaves while a pointer is down on the stage and returns when the stage is still.
+  const signal = P => {
+    const grp = (cls, ...kids) => { const k = kids.flat().filter(Boolean); return k.length ? box(`sg-grp ${cls}`.trim(), k) : null; };
+    const flash = h('i', 'sg-box');
+    const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.info), flash);
+    const glass = h('div', 'sg-glass');
+    layer.append(...[P.id, glass, hints, bar, P.pickPop?.el, P.setPop?.el].filter(Boolean));
+    let shown = false, downs = 0, backTimer = 0;
+    // One frame of the bar: its box, its size and whether it shows.
+    const set = ({ split = 50, sx = 1, sy = 1, off = false }) => {
+      flash.style.setProperty('--sg-split', `${split}%`);
+      bar.style.transform = sx === 1 && sy === 1 ? '' : `scale(${sx}, ${sy})`;
+      bar.toggleAttribute('data-off', off);
+      bar.inert = off;
+    };
+    // A newer sequence stops the one in flight.
+    const seq = async list => {
+      const me = ++run;
+      for (const [frame, hold = 1] of list) {
+        if (me !== run) return false;
+        set(frame);
+        await fr(hold);
+      }
+      return me === run;
+    };
+    const rest = () => { set({}); return true; };
+    // The first arrival is the intro's beat: the flash fills, snaps to size, holds, then parts.
+    const arrive = async first => {
+      shown = true;
+      if (RM.matches) return rest();
+      const land = first
+        ? [[{ split: 0, sx: 1.3, sy: 1.3 }, 2], [{ split: 0, sx: 0.95, sy: 0.95 }], [{ split: 0, sx: 1.03, sy: 1.03 }], [{ split: 0 }, 3]]
+        : [[{ split: 0, sy: 0.08 }], [{ split: 0 }]];
+      if (!await seq([...land, [{ split: 14 }], [{ split: 32 }]])) return false;
+      // The key strip joins on the first arrival only, as the box parts.
+      if (first) showHints(true);
+      return rest();
+    };
+    // The exit is the intro's wipe: the box drops to a line, then the line closes.
+    const leave = async () => {
+      shown = false;
+      showHints(false);
+      if (RM.matches) return set({ off: true });
+      if (await seq([[{ split: 0, sy: 0.3 }], [{ split: 0, sy: 0.08 }], [{ split: 0, sx: 0.4, sy: 0.08 }]])) set({ off: true });
+    };
+    presence = {
+      down() { downs++; clearTimeout(backTimer); if (shown) leave(); },
+      up() { downs = Math.max(0, downs - 1); if (!downs) presence.back(600); },
+      back(ms) { clearTimeout(backTimer); backTimer = setTimeout(() => { if (!downs && !shown) arrive(false); }, ms * slow()); },
+      wake() { clearTimeout(backTimer); if (!shown) arrive(false); },
+      stop() { clearTimeout(backTimer); },
+    };
+    // A sheet is one object too: its glass and its rows land together, from the bar up.
+    popHook = async (api, on) => {
+      glass.toggleAttribute('data-on', on);
+      if (!on) return;
+      glass.style.height = `${api.el.offsetHeight + bar.offsetHeight + 110}px`;
+      if (RM.matches) return;
+      const el = api.el;
+      for (const sy of [0.08, 0.6]) { el.style.transform = `scaleY(${sy})`; el.classList.add('is-flash'); await fr(); }
+      el.style.transform = '';
+      el.classList.remove('is-flash');
+    };
+    glass.addEventListener('pointerdown', () => open?.open(false));
+    // The strip and the sheets stand on the bar, however many rows it takes.
+    relayout = () => {
+      bar.classList.remove('is-wrapped');
+      bar.classList.toggle('is-wrapped', bar.offsetHeight > 1.5 * bar.firstElementChild.offsetHeight);
+      layer.style.setProperty('--barh', `${bar.offsetHeight}px`);
+    };
+    relayout();
+    document.fonts?.ready.then(() => relayout?.());
+    set({ off: true });
+    arrive(true);
+  };
+
   // The name shows whole or not at all; the top right corner sets its room.
   const fitName = () => {
     const idEl = layer.querySelector('.b-id'), tr = layer.querySelector('.b-tr');
@@ -281,12 +368,16 @@ function mount(id, spec, ui) {
     idEl.classList.toggle('is-tight', idEl.scrollWidth > room);
   };
   const draw = () => {
-    const c = host?.dataset.concept || 'dock';
+    const c = host?.dataset.concept || 'signal';
     clearTimeout(hintTimer);
     syncers = [];
     open = null;
     hints = null;
     relayout = null;
+    popHook = null;
+    presence?.stop();
+    presence = null;
+    run++;
     layer.replaceChildren();
     layer.removeAttribute('data-open');
     layer.dataset.concept = c;
@@ -297,18 +388,23 @@ function mount(id, spec, ui) {
     layer.style.setProperty('--acc-ink', toy.accent?.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)');
     if (c === 'today') return;
     const P = build();
-    (c === 'tuck' ? tuck : c === 'dock' ? dock : corners)(P);
+    (c === 'signal' ? signal : c === 'tuck' ? tuck : c === 'dock' ? dock : corners)(P);
     sync();
     fitName();
-    showHints(true);
+    if (c === 'signal') hints?.classList.add('is-faded'); else showHints(true);
   };
 
   // A press on the stage closes any open sheet and counts as a gesture.
   stage.addEventListener('pointerdown', () => {
+    presence?.down();
     open?.open(false);
     if (hints && !hints.classList.contains('is-faded') && ++gestures >= 3) showHints(false);
   });
   addEventListener('keydown', e => { if (e.key === 'Escape') open?.open(false); });
+  // The bar returns when every pointer is up, or at once for the keyboard.
+  for (const t of ['pointerup', 'pointercancel']) addEventListener(t, () => presence?.up(), true);
+  stage.addEventListener('wheel', () => { if (!presence) return; presence.down(); presence.up(); }, { passive: true });
+  addEventListener('keydown', e => { if (e.key === 'Tab') presence?.wake(); });
   // Keys and the toy itself can change a value; the lab layer follows.
   addEventListener('keyup', sync);
   setInterval(sync, 500);
