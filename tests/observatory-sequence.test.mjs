@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq,
+  CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq, cadence, CUT_FPS,
   OPEN_CUT, LIFT_CUT, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
 } from '../observatory/src/core/sequence.ts';
 import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
@@ -162,6 +162,47 @@ test('lens: a portrait frame aims tall and widens up to 1.5 times; landscape kee
   assert.equal(p.tall, true);
   assert.ok(p.fov > 10 && p.fov < 15, `fov ${p.fov}`);
   assert.deepEqual(lens(10, 0.2), { fov: 15, tall: true });
+});
+// Plays a display at hz for some seconds.
+// It returns the times the cadence renders.
+function beats(hz, secs, jitter = 0) {
+  const c = { acc: 1 / CUT_FPS }, at = [];
+  let t = 0;
+  for (let i = 0; i < hz * secs; i++) {
+    // A little jitter, as real frame times have.
+    const dt = 1 / hz + (i % 2 ? jitter : -jitter);
+    t += dt;
+    if (cadence(c, dt)) at.push(t);
+  }
+  return at;
+}
+test('cadence: the cuts render 24 frames a second at 60, 120 and 144 Hz', () => {
+  assert.equal(CUT_FPS, 24);
+  for (const hz of [60, 120, 144]) {
+    const at = beats(hz, 4);
+    const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
+    assert.ok(Math.abs(fps - 24) <= 1, `${hz} Hz: ${fps.toFixed(2)} fps`);
+    // Each gap is the beat, give or take one display frame.
+    for (let i = 1; i < at.length; i++) {
+      const gap = at[i] - at[i - 1];
+      assert.ok(Math.abs(gap - 1 / 24) <= 1 / hz + 1e-6, `${hz} Hz: gap ${(gap * 1000).toFixed(1)} ms`);
+    }
+  }
+});
+test('cadence: at 120 and 144 Hz every beat lands on the same spacing', () => {
+  for (const hz of [120, 144]) {
+    const at = beats(hz, 4);
+    for (let i = 1; i < at.length; i++) assert.ok(Math.abs(at[i] - at[i - 1] - 1 / 24) < 1e-6, `${hz} Hz gap ${at[i] - at[i - 1]}`);
+  }
+});
+test('cadence: jittered 60 Hz frames still give 24 a second; a long stall does not burst', () => {
+  const at = beats(60, 4, 0.0015);
+  const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
+  assert.ok(Math.abs(fps - 24) <= 1, `${fps}`);
+  const c = { acc: 0 };
+  assert.equal(cadence(c, 0.5), true);
+  // After the stall, the next frame waits for the next beat.
+  assert.equal(cadence(c, 1 / 60), false);
 });
 test('lightGoal: 1 at rest, 0.35 while it hunts, 0 for the survey', () => {
   assert.equal(lightGoal('aim'), 1);

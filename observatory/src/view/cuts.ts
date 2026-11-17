@@ -328,8 +328,8 @@ function toWide(): void {
 // Steps the dip: the last cut fades down, the wide shot fades up.
 function stepDip(dt: number): void {
   dipT += dt;
-  // The cuts' grain eases back as the black comes up.
-  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); cutGrain(1 - k); return; }
+  // The black and the grain change in frame(), on the film beat.
+  if (dipT < DIP_DOWN) return;
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
@@ -366,6 +366,9 @@ export const cuts = {
   },
   // Seconds since the pick.
   get time(): number { return seq.total; },
+  // True while the picture runs on the film beat.
+  // That is the five shots and the dip down.
+  get film(): boolean { return mode === 'cuts' || (mode === 'dip' && !dipWide); },
   // The loop hands over the catalog once it loads.
   setStars(s: readonly Star[]): void { stars = s; },
   // Starts the sequence.
@@ -442,8 +445,9 @@ export const cuts = {
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);
     cutFocus(s);
-    // The dip sets its own grain.
-    if (mode !== 'dip') cutGrain(1);
+    // The dip fades down to black, and the cuts' grain eases back.
+    if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
+    else cutGrain(1);
     beam(BEAM_CLOSE);
     showBars(true);
   },
