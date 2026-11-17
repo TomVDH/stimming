@@ -20,7 +20,7 @@ mark('build');
 /** @type {{ time: (v: string) => void, fog: (v: number) => void, storm: (v: number) => void, horn: () => void }} */
 const act = { time() {}, fog() {}, storm() {}, horn() {} };
 const ui = initPage({ id: 'foghorn', bar: {
-  choice: { label: 'Time', value: 'night', options: [
+  choice: { label: 'Time of day', value: 'night', options: [
     { value: 'dusk', label: 'Dusk', key: '1' },
     { value: 'night', label: 'Night', key: '2' },
     { value: 'dawn', label: 'Dawn', key: '3' },
@@ -31,7 +31,10 @@ const ui = initPage({ id: 'foghorn', bar: {
     { type: 'slider', id: 'storm', label: 'Storm', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.storm(v) },
   ],
   quality: true,
-  keys: [['click', 'sound the horn'], ['h', 'horn']],
+  keys: [['click', 'sound the horn'], ['H', 'sound the horn'], ['1 2 3', 'change the time of day']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Sound the horn'], ['H', 'Sound the horn'], ['space', 'Sound the horn'], ['enter', 'Sound the horn'],
+    ['1 2 3', 'Change the time of day']],
 } });
 
 /* ---------- the scene ---------- */
