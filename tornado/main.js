@@ -12,7 +12,8 @@ import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL } from './plain.js';
 import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
-import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex } from './damage.js';
+import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex, debrisUniforms } from './damage.js';
+import { FARM_GLSL, farmState, farmStep, farmUniforms } from './farm.js';
 mark('libs');
 
 const stage = document.getElementById('stage');
@@ -891,71 +892,14 @@ vec3 ground(vec3 rd, float px) {
 // Screen x and y of a world point in metres.
 vec2 proj(vec3 P) { vec3 c = toCam(P); return vec2(c.x, c.y - CAMH) / -c.z * uFoc; }
 float depthOf(vec3 P) { return -toCam(P).z; }
-// Lays a lit flat shape into the objects' layers at depth gPutZ. k is coverage.
+// Lays a lit flat shape z metres off into the objects' layers. k is coverage.
 // put() lives in line.js: it sorts each shape behind or in front of the funnels.
 void put(vec3 col, float k, float z);
-float gPutZ = 0.0;
-void over(inout vec3 c, vec3 col, float k) { put(col, k, gPutZ); }
-// Coverage of the box a..b in screen units, at pixel size px.
-float box(vec2 s, vec2 a, vec2 b, float px) {
-  vec2 lo = clamp((s - a) / px + 0.5, 0.0, 1.0), hi = clamp((b - s) / px + 0.5, 0.0, 1.0);
-  return lo.x * lo.y * hi.x * hi.y * min(1.0, (b.x - a.x) / px) * min(1.0, (b.y - a.y) / px);
-}
 // The haze over a thing t metres off, in direction d.
 vec3 hazed(vec3 col, vec3 d, float t) { return mix(col, hazeCol(d), 1.0 - exp(-t / 30000.0)); }
 
 // The telephone poles and their wires live in line.js.
-// The farm, about a mile off to the left: a house, a barn, a windmill, a shelterbelt.
-void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
-  float z = -1500.0, x = -420.0;
-  vec2 at = proj(vec3(x, 0.0, z));
-  if (abs(s.x - at.x) > 0.06 || s.y > at.y + 0.03) return;
-  // The farm stands in the deck's shade or out of it as one.
-  float fk = 1.0 - sunCover(vec3(x, 0.0, z) * 0.001);
-  // The trees behind the house: a dark ragged hedge.
-  vec2 t0 = proj(vec3(x - 60.0, 0.0, z - 40.0)), t1 = proj(vec3(x + 30.0, 0.0, z - 40.0));
-  if (s.x > t0.x && s.x < t1.x) {
-    float u = (s.x - t0.x) / (t1.x - t0.x);
-    float h = 9.0 + 6.0 * vn(vec2(u * 9.0, 1.3)) * (0.4 + 0.6 * sin(u * 3.14159));
-    float top = proj(vec3(x, h, z - 40.0)).y;
-    over(c, hazed(vec3(0.012, 0.016, 0.008) + (uSunCol * fk) * 0.012, rd, -z), clamp((top - s.y) / px + 0.5, 0.0, 1.0) * step(t0.y, s.y));
-  }
-  // The barn: red, with a gambrel roof.
-  {
-    float zb = z - 20.0;
-    vec2 a = proj(vec3(x - 35.0, 0.0, zb)), b = proj(vec3(x - 17.0, 7.0, zb));
-    vec3 red = (uSunCol * fk) * vec3(0.16, 0.035, 0.025) + uAmb * vec3(0.03, 0.01, 0.01);
-    float k = box(s, a, b, px);
-    float mid = (a.x + b.x) * 0.5, hw = (b.x - a.x) * 0.5, u = abs(s.x - mid) / hw;
-    float roof = proj(vec3(x - 26.0, mix(12.0, 7.0, u < 0.55 ? u * 0.45 : 0.25 + (u - 0.55) * 1.65), zb)).y;
-    k = max(k, clamp((roof - s.y) / px + 0.5, 0.0, 1.0) * step(b.y - px, s.y) * step(u, 1.0));
-    over(c, hazed(red, rd, -zb), k);
-  }
-  // The house: white boards, a dark gable roof.
-  {
-    vec2 a = proj(vec3(x - 3.0, 0.0, z)), b = proj(vec3(x + 9.0, 5.5, z));
-    over(c, hazed((uSunCol * fk) * 0.42 + uAmb * 0.12, rd, -z), box(s, a, b, px));
-    float mid = (a.x + b.x) * 0.5, hw = (b.x - a.x) * 0.5 * 1.1, u = abs(s.x - mid) / hw;
-    float roof = proj(vec3(x + 3.0, 5.5 + 3.2 * (1.0 - u), z)).y;
-    float k = clamp((roof - s.y) / px + 0.5, 0.0, 1.0) * step(b.y - px * 0.5, s.y) * step(u, 1.0);
-    over(c, hazed(uAmb * 0.05 + (uSunCol * fk) * 0.02, rd, -z), k);
-  }
-  // The windmill: a thin lattice tower and a wheel of blades that turns with the wind.
-  {
-    vec3 W = vec3(x + 25.0, 0.0, z + 30.0);
-    float zw = depthOf(W);
-    vec2 a = proj(W), tp = proj(W + vec3(0.0, 13.0, 0.0));
-    float w = mix(1.0, 0.25, clamp((s.y - a.y) / (tp.y - a.y), 0.0, 1.0)) / zw * uFoc;
-    vec3 steel = uAmb * 0.05 + (uSunCol * fk) * 0.03;
-    float k = box(s, vec2(a.x - w, a.y), vec2(a.x + w, tp.y), px) * 0.8;
-    vec2 r = s - tp;
-    float rad = 2.4 / zw * uFoc;
-    float ang = atan(r.y, r.x) + uT * (0.8 + 3.0 * uWind);
-    float blades = smoothstep(0.2, 0.6, abs(sin(ang * 9.0))) * 0.5 + 0.5;
-    k = max(k, clamp((rad - length(r)) / px + 0.5, 0.0, 1.0) * blades);
-    over(c, hazed(steel, rd, zw), k);
-  }
-}
+// The farm lives in farm.js.
 // The foreground: large ears a metre or two off, soft with defocus, swaying in the gusts.
 // They live in camera space; far ones draw first, so near ones cover them.
 float segD(vec2 p, vec2 a, vec2 b, out float u) {
@@ -1018,6 +962,7 @@ void nearEars(inout vec3 c, vec2 s, float px, float asp) {
 ${LINE_GLSL}
 ${DAMAGE_GLSL}
 ${PLAIN_GLSL}
+${FARM_GLSL}
 ${TRAFFIC_GLSL}
 // A cloud-to-ground channel on screen: a jagged bright line from the base to the ground,
 // with two or three short branches. Thin, with a soft glow; s is the screen point.
@@ -1054,13 +999,13 @@ vec3 envScene(vec2 uv) {
   vec3 c;
   // The objects on the plain first: each one sorts itself behind or in front of the funnels.
   objInit(s);
-  gPutZ = 1500.0;
   farm(c, s, rd, px);
   // Vehicles far off lay down before the line; near ones after it, over it.
   traffic(s, rd, px, false);
   linePoles(s, rd, px);
   wires(s, rd, px);
   plain(s, rd, px);
+  debris(s, rd, px);
   traffic(s, rd, px, true);
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
@@ -1245,6 +1190,8 @@ const line = lineState();
 const traf = trafficState();
 // The damage field: each ground point's peak wind, kept until the second Clear.
 const dmg = damageState();
+// The farm's buildings, each a site in the damage field.
+const farmS = farmState(dmg);
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
@@ -1259,7 +1206,7 @@ try {
     budget: 1.8e6,
     active: () => visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { damageTex(dmg, env.gl); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
     uniforms: {
       uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
@@ -1269,7 +1216,7 @@ try {
       uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
       uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
       uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uSwayPh: () => line.uSwayPh,
+      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uSwayPh: () => line.uSwayPh,
     },
   });
 } catch (err) {
@@ -1763,6 +1710,7 @@ function step(dt) {
   for (const t of tors) live(t, dt);
   lineStep(line, tors, dt, simT, wind, storm);
   damageStep(dmg, tors, simT);
+  farmStep(farmS, dmg, simT);
   lineUniforms(line, tors);
   trafficStep(traf, tors, simT, dt, line);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
@@ -1992,7 +1940,7 @@ if (qs.has('tor')) for (const f of qs.get('tor').split(',')) { fLevel = clamp(pa
 if (qs.has('near') && tors.length) { const [x, z] = toWorld(-900, -1000 * +qs.get('near')); Object.assign(tors[tors.length - 1], { x, z }); }
 // QA: ?line=1.6 puts the newest tornado 1.6 km out, left of the power line, drifting into it.
 if (qs.has('line') && tors.length) Object.assign(tors[tors.length - 1], { x: -400, z: -1000 * +qs.get('line') });
-const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); damageStep(dmg, tors, simT); } };
+const qaRun = sec => { for (let k = 0, n = sec * 20; k < n; k++) { simT += 0.05; tors.forEach(t => live(t, 0.05)); lineStep(line, tors, 0.05, simT, wind, storm); damageStep(dmg, tors, simT); farmStep(farmS, dmg, simT); } };
 if (qs.has('age')) qaRun(+qs.get('age'));
 // QA: ?rope=6 starts the rope-out, then runs 6 s on.
 if (qs.has('rope')) { tors.forEach(t => { t.roping = true; }); qaRun(+qs.get('rope')); }
@@ -2064,7 +2012,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, dmg, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trafficRun, line, lineReset, dmg, farmS, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 env.draw();
 canvas.classList.add('on');

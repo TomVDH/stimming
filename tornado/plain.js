@@ -166,6 +166,10 @@ void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
   float sun = 1.0 - sunCover(P * 0.001);
   vec3 lit = uSunCol * 0.5 * sun + uAmb * 0.5;
   float fl = s.x < b.x ? 1.0 : -1.0;
+  // The damage field: roofs go from about 45 m/s, walls from 60, bins blow away past 60.
+  float v = dmgAt(P.xz).x;
+  float roofK = 1.0 - clamp((v - 45.0) / 12.0, 0.0, 1.0), wallK = mix(1.0, 0.15, clamp((v - 60.0) / 25.0, 0.0, 1.0));
+  float binK = 1.0 - clamp((v - 58.0) / 12.0, 0.0, 1.0);
   // The trees behind the yard.
   for (int i = 0; i < 4; i++) {
     float fi = float(i);
@@ -176,7 +180,7 @@ void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
     float fi = float(i), r = 4.5 - 0.6 * fi;
     vec3 C = P + vec3(26.0 + 11.0 * fi, 0.0, 6.0);
     vec2 cb = proj(C);
-    float hw = r * m, bh = (9.0 - fi) * m, ch = 3.0 * m;
+    float hw = r * m, bh = (9.0 - fi) * m * binK, ch = 3.0 * m * binK;
     float u = (s.x - cb.x) / hw;
     float wall = pbox(s, cb - vec2(hw, 0.0), cb + vec2(hw, bh), px);
     float cone = clamp((cb.y + bh + ch * (1.0 - abs(u)) - s.y) / px + 0.5, 0.0, 1.0) * step(cb.y + bh - px, s.y) * step(abs(u), 1.0);
@@ -190,19 +194,19 @@ void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
   }
   // The barn: weathered red, a gambrel roof.
   {
-    vec2 a = proj(P + vec3(-16.0, 0.0, -4.0)), c = proj(P + vec3(0.0, 7.0, -4.0));
+    vec2 a = proj(P + vec3(-16.0, 0.0, -4.0)), c = proj(P + vec3(0.0, 7.0 * wallK, -4.0));
     float k = pbox(s, a, c, px);
     float mid = (a.x + c.x) * 0.5, hw = (c.x - a.x) * 0.5, u = abs(s.x - mid) / hw;
     float roof = c.y + m * (u < 0.55 ? 5.0 - u * 2.0 : 3.9 - (u - 0.55) * 8.6);
-    k = max(k, clamp((roof - s.y) / px + 0.5, 0.0, 1.0) * step(c.y - px, s.y) * step(u, 1.0));
+    k = max(k, clamp((roof - s.y) / px + 0.5, 0.0, 1.0) * step(c.y - px, s.y) * step(u, 1.0) * roofK);
     put(plainHaze(vec3(0.15, 0.04, 0.03) * lit, rd, z), k, z);
   }
   // The house: pale boards under a dark gable.
   {
-    vec2 a = proj(P + vec3(2.0, 0.0, 4.0)), c = proj(P + vec3(12.0, 5.0, 4.0));
+    vec2 a = proj(P + vec3(2.0, 0.0, 4.0)), c = proj(P + vec3(12.0, 5.0 * wallK, 4.0));
     put(plainHaze(vec3(0.42, 0.4, 0.36) * lit, rd, z), pbox(s, a, c, px), z);
     float mid = (a.x + c.x) * 0.5, hw = (c.x - a.x) * 0.55, u = abs(s.x - mid) / hw;
-    float k = clamp((c.y + m * 2.8 * (1.0 - u) - s.y) / px + 0.5, 0.0, 1.0) * step(c.y - px * 0.5, s.y) * step(u, 1.0);
+    float k = clamp((c.y + m * 2.8 * (1.0 - u) - s.y) / px + 0.5, 0.0, 1.0) * step(c.y - px * 0.5, s.y) * step(u, 1.0) * roofK;
     put(plainHaze(vec3(0.05, 0.045, 0.045) * lit, rd, z), k, z);
   }
 }
