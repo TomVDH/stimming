@@ -71,14 +71,29 @@ void belt(vec2 s, vec3 rd, float px, vec2 a, vec2 b, float h, float seed) {
   if (k <= 0.0) return;
   // Light shows through the thin crowns near the top; stripped crowns let it through all over.
   k *= mix(1.0, 0.75 + 0.25 * vn(vec2(L * 0.8, s.y * 900.0)), max(smoothstep(sy - 3.0 * px, sy, s.y), dm.x * 0.8));
-  vec3 col = mix(leafCol(P, vn(vec2(L * 0.1, seed))), vec3(0.06, 0.055, 0.04) * (uSunCol * 0.4 + uAmb * 0.5), dm.x * 0.6);
+  // Each tree's head is a dome: its top and its sunward side catch the light.
+  // Clumps of leaves break it up; their seams sit in shade.
+  float sun = 1.0 - sunCover(P * 0.001), vy = clamp((s.y - sb) / max(sy - sb, 1e-6), 0.0, 1.0);
+  vec3 Ls = toCam(normalize(uSun + vec3(0.0, 1e-3, 0.0)));
+  vec3 N = normalize(vec3((2.0 * tree - 1.0) * 0.8, vy * 1.4 - 0.4, 0.7));
+  float cl = vn(vec2(L * 0.7, s.y / px * 0.35 + seed));
+  float dif = clamp(dot(N, Ls) * 0.65 + 0.35, 0.0, 1.0) * (0.7 + 0.45 * cl);
+  vec3 alb = mix(vec3(0.04, 0.05, 0.024), vec3(0.06, 0.066, 0.034), vn(vec2(L * 0.1, seed)));
+  vec3 leaf = alb * (uSunCol * 0.95 * sun * dif + uAmb * (0.3 + 0.35 * vy) * (0.75 + 0.25 * cl));
+  vec3 col = mix(leaf, vec3(0.06, 0.055, 0.04) * (uSunCol * 0.4 + uAmb * 0.5), dm.x * 0.6);
   put(plainHaze(col, rd, z), k, z);
 }
-// A lone tree: a trunk, a few limbs, and a crown of lobes of radius r, its top h metres up.
+// A lone tree, by its seed one of three kinds: a spreading deciduous tree, a tall columnar poplar,
+// or a conical cedar. r is the deciduous crown's radius, h its top in metres.
+// Crowns shade as low-poly facets lit by the true sun, with a rim on the edge toward it.
 // The wind leans it; the damage field strips it, breaks it, or lays it down.
-void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h, float seed) {
+void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) {
   float z = depthOf(P);
   if (z < 50.0) return;
+  float tk = th(vec2(seed, 6.6));
+  int tp = tk < 0.3 ? 1 : tk < 0.55 ? 2 : 0;
+  // A poplar stands half again as tall and narrow; a cedar is a broad cone.
+  float h = tp == 1 ? h0 * 1.5 : h0;
   vec2 b = proj(P);
   float m = uFoc / z;
   // A fallen tree reaches along the ground: the screen box takes its whole height either way.
@@ -107,19 +122,27 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h, float seed) {
   float hy = clamp(ql.y / h, 0.0, 1.0);
   ql.x -= swX * hy * hy * (1.0 - dm.z);
   float sun = 1.0 - sunCover(P * 0.001);
+  // The sun in the camera's frame: x right, y up, z toward the eye.
+  vec3 Ls = toCam(normalize(uSun + vec3(0.0, 1e-3, 0.0)));
+  // Each kind's crown: its centre and half size, where the trunk ends, and its facets' size.
+  float W = tp == 1 ? r * 0.38 : tp == 2 ? r * 0.85 : r, y0 = tp == 1 ? 0.2 * h : tp == 2 ? 0.08 * h : h - 1.7 * r;
+  vec2 cc = tp == 0 ? vec2(0.0, h - r) : vec2(0.0, mix(y0, h, tp == 1 ? 0.5 : 0.36));
+  vec2 cr = tp == 0 ? vec2(r) : vec2(W, (h - y0) * 0.5);
+  float cy = tp == 0 ? h - r : y0 + 0.3 * (h - y0), fs = tp == 0 ? r * 0.38 : W * 0.7;
   // The bark: dark and wet; a stripped stump shows pale wood.
-  vec3 bark = mix(vec3(0.03, 0.025, 0.02), vec3(0.16, 0.13, 0.1), dm.w) * (uSunCol * 0.4 * sun + uAmb * 0.5);
-  float cy = h - r;
+  // The trunk is round: its sunward side is lit; under the crown it stands in shade.
+  float tw0 = 0.32 * (1.0 - 0.3 * hy), sxn = clamp(ql.x / tw0, -1.0, 1.0);
+  float tsun = max(dot(vec3(sxn, 0.0, sqrt(1.0 - sxn * sxn)), Ls), 0.0) * mix(1.0, 0.3, smoothstep(y0 - 0.5 * r, y0 + 0.5 * r, ql.y));
+  vec3 bark = mix(vec3(0.03, 0.025, 0.02), vec3(0.16, 0.13, 0.1), dm.w) * (uSunCol * 0.7 * sun * tsun + uAmb * 0.45);
   // The crown's carried away with the top in the strongest wind.
   float keep = above ? 1.0 - dm.w : 1.0;
   // The trunk, to the crown's heart; a broken top's trunk turns with it.
-  float tw = 0.32 * (1.0 - 0.3 * hy);
-  float kt = clamp((max(tw * m, px * 0.5) - abs(ql.x) * m) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * tw * m / px) * step(0.0, ql.y) * step(ql.y, cy) * keep;
+  float kt = clamp((max(tw0 * m, px * 0.5) - abs(ql.x) * m) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * tw0 * m / px) * step(0.0, ql.y) * step(ql.y, cy) * keep;
   if (!above && hb > 0.0) kt *= step(q.y, hb + 0.4 * abs(q.x * 3.0));
   // Four limbs from the trunk's top to the lobes, seen most once the leaves go.
   float kl = 0.0;
   for (int i = 0; i < 4; i++) {
-    if (!above) break;
+    if (!above || tp != 0) break;
     float fi = float(i), lx = (fi - 1.5) * 0.5 * r, ly = cy + (0.15 - 0.25 * abs(fi - 1.5)) * r;
     if (th(vec2(seed + fi, 5.5)) < dm.y * 0.8) continue;
     float sx, u;
@@ -128,28 +151,85 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h, float seed) {
   put(plainHaze(bark, rd, z), max(kt, kl * keep), z);
   // Below a break only the stump stands.
   if (!above) return;
-  // The crown: five lobes, each with a ragged edge; limbs lost take whole lobes.
-  float kc = 0.0, lit = 0.0;
-  for (int i = 0; i < 5; i++) {
-    float fi = float(i);
-    vec3 lb = i == 0 ? vec3(0.0, 0.25, 0.62) : i == 1 ? vec3(-0.5, -0.05, 0.55) : i == 2 ? vec3(0.5, 0.0, 0.55) : i == 3 ? vec3(0.1, 0.55, 0.48) : vec3(-0.2, -0.4, 0.5);
-    if (th(vec2(seed + fi, 3.9)) < dm.y * 0.75) continue;
-    // Each lobe flutters on its own beat.
-    vec2 c = vec2(lb.x * r + swX * 0.06 * sin(uT * 2.1 + fi * 1.7 + seed), cy + lb.y * r);
-    vec2 d = ql - c;
-    float an = atan(d.y, d.x);
-    float R = lb.z * r * (1.0 - 0.3 * dm.y) * (0.88 + 0.12 * vn(vec2(an * 2.5 + fi, seed)) + 0.07 * vn(vec2(an * 6.0, seed + fi)));
-    float k = clamp((R - length(d * vec2(1.0, 1.12))) * m / px + 0.5, 0.0, 1.0);
-    if (k > kc) { kc = k; lit = clamp(0.5 + 0.5 * dot(d / max(R, 1e-3), normalize(vec2(-uSun.x, 0.6))), 0.0, 1.0); }
+  // The crown's outline; the edge is leafy at three scales, and a scale under a pixel fades to its mean.
+  float fine = smoothstep(1.0, 3.0, W * m / px * 0.3), kc = 0.0;
+  vec3 Nd = vec3(0.0, 0.0, 1.0);
+  if (tp == 2) {
+    // A cedar: a cone from near the ground to its tip, its branches in ragged tiers.
+    float t = (ql.y - y0) / (h - y0), tier = fract(t * 7.0 + seed);
+    float hw = W * pow(max(1.0 - t, 0.0), 0.95) * (1.0 - 0.3 * dm.y) * (0.84 + 0.16 * smoothstep(0.0, 0.9, tier) + 0.06 * fine * (vn(vec2(ql.y * 3.0, seed)) - 0.5));
+    kc = clamp((hw - abs(ql.x)) * m / px + 0.5, 0.0, 1.0) * clamp((ql.y - y0) * m / px + 0.5, 0.0, 1.0);
+    float nx = clamp(ql.x / max(hw, 1e-3), -1.0, 1.0);
+    Nd = normalize(vec3(nx, 0.45, sqrt(1.0 - nx * nx)));
+  } else {
+    // Lobes: an elm's seven spread wide and a little low, a poplar's six stacked into a column.
+    // Each lobe is a dome toward the eye: the one standing highest here gives the normal.
+    float hgt = -1e9, cR = 1.0;
+    vec2 cn = vec2(0.0);
+    for (int i = 0; i < 7; i++) {
+      float fi = float(i);
+      vec3 lb;
+      if (tp == 1) {
+        if (i == 6) break;
+        float t = fi / 5.0;
+        lb = vec3((th(vec2(seed, fi + 0.3)) - 0.5) * 0.3 * W, mix(y0 + 0.6 * W, h - 0.7 * W, t), W * (0.6 + 0.4 * sin(3.14159 * mix(0.15, 0.9, t))) * (0.9 + 0.2 * th(vec2(seed + fi, 2.7))));
+      } else {
+        vec3 u = i == 0 ? vec3(0.0, 0.15, 0.58) : vec3((th(vec2(seed, fi + 0.3)) - 0.5) * 1.5, (th(vec2(fi + 0.7, seed)) - 0.4) * 0.9, 0.3 + 0.22 * th(vec2(seed + fi, 2.7)));
+        lb = vec3(u.x * r, cc.y + u.y * r, u.z * r);
+      }
+      if (th(vec2(seed + fi, 3.9)) < dm.y * 0.75) continue;
+      // Each lobe flutters on its own beat.
+      vec2 d = ql - vec2(lb.x + swX * 0.06 * sin(uT * 2.1 + fi * 1.7 + seed), lb.y);
+      float an = atan(d.y, d.x);
+      float R = lb.z * (1.0 - 0.3 * dm.y) * (0.86 + 0.14 * vn(vec2(an * 2.5 + fi, seed)) + 0.08 * vn(vec2(an * 6.0, seed + fi)) + 0.07 * fine * (vn(vec2(an * 15.0, seed * 3.0 + fi)) - 0.5));
+      vec2 de = d * vec2(1.0, tp == 1 ? 0.8 : 1.12);
+      float k = clamp((R - length(de)) * m / px + 0.5, 0.0, 1.0), hh = R * R - dot(de, de);
+      kc = max(kc, k);
+      if (hh > hgt) { hgt = hh; cn = de; cR = R; }
+    }
+    Nd = vec3(cn / cR, sqrt(max(1.0 - dot(cn, cn) / (cR * cR), 0.0)));
   }
   if (kc <= 0.0) return;
+  // Low-poly facets: each cell of the crown is flat, its normal the crown's shape at the cell's centre.
+  // Facets show once the crown is a few pixels wide; smaller, the smooth shape shades it.
+  float det = smoothstep(2.0, 6.0, W * m / px);
+  vec2 g = ql / fs + seed * 3.1, gi = floor(g), gf = fract(g), cv = vec2(0.0), ci = gi;
+  float d1 = 9.0, d2 = 9.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 o = vec2(float(x), float(y)), c = o + vec2(th(gi + o), th(gi + o + 17.3)) * 0.8 + 0.1 - gf;
+    float dd = dot(c, c);
+    if (dd < d1) { d2 = d1; d1 = dd; cv = c; ci = gi + o; } else if (dd < d2) d2 = dd;
+  }
+  vec2 e = (ql + cv * fs - cc) / cr;
+  vec3 Nf = tp == 2 ? normalize(vec3(clamp(e.x, -1.0, 1.0), 0.45, sqrt(max(1.0 - e.x * e.x, 0.05)))) : normalize(vec3(e, sqrt(max(1.0 - dot(e, e), 0.05))));
+  // Each facet tilts a little on its own.
+  Nf = normalize(Nf + (vec3(th(ci + 3.7), th(ci + 9.1), 0.0) - vec3(0.5, 0.5, 0.0)) * 0.5);
+  vec3 N = normalize(mix(Nd, Nf, det));
+  // A facet's edge, where two cells meet, sits a touch deeper in the crown.
+  float seam = mix(1.0, 0.82 + 0.18 * smoothstep(0.0, 0.25, sqrt(d2) - sqrt(d1)), det);
+  // Wrapped light: leaves scatter it, so the shade side is never black.
+  float dif = clamp(dot(N, Ls) * 0.65 + 0.35, 0.0, 1.0);
+  // The crown shades itself: the side away from the sun, the heart and the underside.
+  float away = dot((ql - cc) / cr, -normalize(Ls.xy + 1e-4));
+  float self = 1.0 - 0.55 * smoothstep(-0.3, 0.8, away);
+  float ao = mix(0.5, 1.0, clamp((ql.y - cc.y + 0.7 * cr.y) / (1.4 * cr.y), 0.0, 1.0)) * seam;
+  // Leaves differ a little from facet to facet: an elm mid green, a poplar yellow-green, a cedar dark blue-green.
+  vec3 a0 = tp == 1 ? vec3(0.05, 0.064, 0.026) : tp == 2 ? vec3(0.024, 0.038, 0.028) : vec3(0.04, 0.05, 0.024);
+  vec3 alb = a0 * mix(1.0, 0.85 + 0.35 * th(ci + seed), det);
+  vec3 leaf = alb * (uSunCol * 0.95 * sun * dif * self + uAmb * (0.35 + 0.3 * N.y) * ao);
+  // The rim: the crown's edge toward the sun catches it, most when the sun stands to the side or behind.
+  float rim = pow(1.0 - Nd.z, 3.0) * max(dot(normalize(Nd.xy + 1e-4), normalize(Ls.xy + 1e-4)), 0.0);
+  leaf += uSunCol * vec3(0.12, 0.11, 0.05) * sun * rim * (0.3 + 0.7 * clamp(1.0 - Ls.z, 0.0, 1.0));
   // Leaves go in holes first: light shows through, then the bare limbs.
   // The gaps scale with the crown and fade to their mean once smaller than a pixel: no checker.
   float hole = mix(0.5, vn(ql / r * 3.0 + seed * 7.0), smoothstep(1.5, 4.0, r * m / px / 3.0));
   kc *= mix(1.0, 0.12, smoothstep(0.85, 0.35, hole + 0.8 - dm.x * 0.9));
+  // Sky gaps in a healthy elm's crown, most toward its outside, where the limbs show through.
+  float gap = mix(0.5, vn(ql / r * 2.2 + seed * 13.0), fine);
+  if (tp == 0) kc *= 1.0 - 0.85 * smoothstep(0.66, 0.78, gap) * smoothstep(0.2, 0.75, length((ql - cc) / r));
   kc *= keep;
   // Torn leaves show their pale backs.
-  vec3 col = mix(leafCol(P, lit), vec3(0.09, 0.09, 0.06) * (uSunCol * 0.4 * sun + uAmb * 0.5), dm.x * 0.5);
+  vec3 col = mix(leaf, vec3(0.09, 0.09, 0.06) * (uSunCol * 0.4 * sun + uAmb * 0.5), dm.x * 0.5);
   put(plainHaze(col, rd, z), kc, z);
 }
 // Coverage of a box from screen point a to b, at pixel size px.
