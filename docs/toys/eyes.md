@@ -24,7 +24,7 @@ The eyes watch the pointer, blink, stare at a partner, get bored and get dizzy w
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`eyes/main.js:8`).
+Bar: v3, the Signal bar, over Bar v2 (`eyes/main.js:8`, `signal: true`).
 
 | Slot | Holds |
 |---|---|

@@ -5,7 +5,7 @@ import { intro as playIntro } from '../shared/intro.js';
 stage('libs');
 // The intro holds until the page, its font and the first frame are in.
 const introDone = playIntro({ ready: pageReady() });
-const ui = initPage({ id: 'eyes', bar: {
+const ui = initPage({ id: 'eyes', signal: true, bar: {
   actions: [
     { verb: 'shuffle', onPress: () => reshuffle() },
     { verb: 'shake', onPress: () => shake() },
