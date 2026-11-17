@@ -548,9 +548,8 @@ vec4 gust(vec2 xz, float fx) {
 }
 // How far a stalk's tip leans at height h, in metres.
 vec2 bend(vec4 gw, float h) { return gw.xy * h * h; }
-// The short forms: the gust alone, and a lean read at the point. g is not used.
+// The short form: the gust alone, 0 calm to 1 full.
 float gust(vec2 xz) { return gust(xz, 0.0).w; }
-vec2 bend(vec2 xz, float h, float g) { return bend(gust(xz, 0.0), h); }
 
 // The share of a lit colour left in shade: the sun's part goes, the sky's fill stays.
 vec3 shadeK(float cover) {
