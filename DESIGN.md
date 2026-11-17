@@ -523,6 +523,7 @@ Tom's rulings on the rows above, by date. A row with no ruling is still open.
 | 2026-11-17 | Tom on Window seat's copy: "Yes, apply". Wing light; Clouds: Clear, Broken, Overcast; Towns: Few, Some, Many; Seat in whole words; Settings in three groups (Outside, Cabin, Sights); fourteen help rows. | 19 |
 | 2026-11-17 | Tom on Fire's copy: "Yes, apply". Size for Intensity; Fuel for Base; Reset moves from the bar into Settings; ten help rows; add salt, not flick. | 19 |
 | 2026-11-17 | Tom on Googly eyes' copy: "Yes, apply". Shuffle, Shake and Blink stay; eleven help rows; a circle drawing for the dizzy gesture. | 19 |
+| 2026-11-17 | Tom on Prism: "Yes, sheet + copy". The Pieces palette is a Bar v3 sheet: no box, the soft glass, tap or drag. Fifteen help rows. | 19 |
 
 Effect of the 2026-11-16 ruling (Claude's reading; Tom has not confirmed it):
 - The seven bar rows wait for the redo. No one fixes them on the present bars.

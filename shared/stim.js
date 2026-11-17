@@ -265,6 +265,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} [label] Replaces the label the verb gives.
  * @property {string} [key] A shortcut key.
  * @property {boolean} [hold] Runs onDown on press and onUp on release.
+ * @property {{ title?: string, hint?: string, touchHint?: string, options: ChoiceOption[], onPick: (value: string) => void }} [tray] Bar v3 opens these options in a sheet; the handle gets `tray.open(on)` and `tray.isOpen`.
  * @property {() => void} [onPress]
  * @property {() => void} [onDown]
  * @property {() => void} [onUp]

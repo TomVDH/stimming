@@ -203,10 +203,29 @@ export function mountSignal(id, spec, ui) {
     });
     return el;
   };
-  const actionParts = () => (spec.actions || []).map(a => {
+  const actionParts = sheetPart => (spec.actions || []).map(a => {
     const b = btn('sg-act', `<span>${actLabel(a)}</span>`);
     const handle = ui.action(a.verb);
-    if (a.hold) {
+    if (a.tray) {
+      // A tray action opens its options in a sheet; a pick goes to the toy.
+      const sheet = sheetPart('sg-sheet--pick sg-tray', a.tray.title || actLabel(a), b);
+      const hint = touch() ? a.tray.touchHint || a.tray.hint : a.tray.hint;
+      if (hint) sheet.el.querySelector('.sg-sheet-hd').append(text('em', '', hint));
+      const grid = h('div', 'sg-grid');
+      for (const o of a.tray.options) {
+        const t = btn('sg-opt', optHTML(o));
+        // The value lets the toy start a drag from the option.
+        t.dataset.value = o.value;
+        t.addEventListener('click', async () => { a.tray.onPick(o.value); if (!RM.matches) await fr(2); sheet.open(false); });
+        grid.append(t);
+      }
+      sheet.el.append(grid);
+      // The toy opens and closes the sheet through the action's handle; no value toggles it.
+      if (handle) handle.tray = {
+        open(on = sheet.el.hidden) { if (on !== !sheet.el.hidden) sheet.open(on); },
+        get isOpen() { return !sheet.el.hidden; },
+      };
+    } else if (a.hold) {
       // A held action runs from press to release.
       const up = () => { if (b.classList.contains('is-on')) { b.classList.remove('is-on'); a.onUp?.(); } };
       b.addEventListener('pointerdown', e => {
@@ -309,7 +328,7 @@ export function mountSignal(id, spec, ui) {
       });
       play.push(seg, pick);
     }
-    play.push(...actionParts());
+    play.push(...actionParts(sheetPart));
     const slider = spec.slider ? rangePart(spec.slider.label, spec.slider, ui.slider) : null;
 
     const sys = [];

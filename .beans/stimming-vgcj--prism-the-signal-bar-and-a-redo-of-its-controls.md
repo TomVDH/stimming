@@ -19,12 +19,12 @@ First read of what to redo: Little: the names in the Light stepper.
 - [x] List every control and what it does (from the spec, the input code and stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Yes, sheet + copy")
 - [x] Switch the toy to the Signal bar: `signal: true` in `prism/index.html` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy and the tray sheet)
+- [x] The toy's doc in `docs/toys/` says what is true: Prism has no doc there, so no doc line is false
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Yes, sheet + copy")
 
 The rules are those of the seven toys before it: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 
@@ -80,3 +80,20 @@ Prism has its own palette: a boxed tray of eight pieces, tap or drag, that hangs
 - Shift and a drag also turns a piece; two fingers twist it on touch. The help has one row for the turn.
 - Prism has no doc in `docs/toys/`.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen. The drag of a piece out of the palette is not tested under Bar v3.
+
+## Applied on 2026-11-17
+
+Tom: "Yes, sheet + copy".
+
+The Pieces palette is a Bar v3 sheet:
+
+- A bar action may carry a tray: `tray: { title, hint, touchHint, options, onPick }` (`shared/stim.js`, the type; `shared/signal.js`, `actionParts`). Bar v3 opens the options in a sheet: no box, the soft glass, the flash beat, the white box under the pointer.
+- The action's handle gets `tray.open(on)` and `tray.isOpen`. Prism's `palette.toggle()` and `palette.close()` use them, so the A key and the end of a carry act on the sheet.
+- A drag from an option carries the piece out. In the carry the sheet and the glass step aside (`html[data-carry]` in `prism/index.html`), so the table is clear.
+- Bar v2 keeps the boxed palette; it shows with `?bar=v2`.
+
+Checked on the real page at 1280 px: a press on + Piece opens the sheet; a click on Convex lens adds the lens and shuts the sheet; a second press shuts it; A opens it; Escape shuts it; a drag of Mirror out of the sheet places a mirror and shuts the sheet. The console is clean.
+
+One row more than the proposal: a drag on the bare table moves the view ("Move the view").
+
+Not done: the round Remove button on a piece and the zoom chip keep the old look. The drag out of the sheet is not checked on a real touch screen.
