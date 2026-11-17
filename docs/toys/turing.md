@@ -22,14 +22,15 @@ The Stripes slider walks one reaction from leopard spots through mazes to zebra 
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`turing/index.html:109`).
+Bar: v3 (`turing/index.html:109`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | None |
 | Bottom left (actions) | `Shuffle` (S), `Clear` (C) |
 | Bottom right (slider) | `Stripes`, 0 to 1, default 0: the walk from spots to stripes |
-| Key strip | drag grow; click seed; right-drag wash; 1-4 coat |
+| Key strip | drag brush pigment; click add a seed; right-drag wash the skin; 1-4 change the coat |
+| How to play | Eight rows: drag, click, right-drag, two-finger drag, move (the lamp), 1 to 4, S, C |
 | Settings | `Coat` (stepper: Amber, Chalk, Reef, Ember; persists), `Pattern size` (2.5 to 6 CSS px a cell, 4; persists), `Growth` (0.3 to 1.6, 1; persists), Quality; Reset in the footer |
 | Dev (`?dev`) | `Relief` (0 to 2.5, 1), `Gloss` (0 to 2.5, 1), `Calm` (settle threshold, log10, -5.4), `Target` (Auto, Half, Byte) |
 <!-- /gen:bar -->
