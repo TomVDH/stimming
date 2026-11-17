@@ -31,21 +31,31 @@ const DOME_R1 = 3.3;
 // eye: the camera.
 // look: the point it aims at.
 // tall: the point a portrait frame aims at, when it differs.
+// inside: the eye stands inside the drum, on the observing floor.
 type Point = [number, number, number];
-type Plan = { eye: Point; look: Point; tall?: Point };
+type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean };
 const PLANS: Record<Shot, Plan> = {
-  // Low on the slit's left, tight on the leaves' seam.
-  // The dome's rim cuts the frame on a diagonal, with sky above.
+  // a. Low on the slit's left: the louvred leaf between its girders.
+  // The crown cuts the frame on a diagonal, with sky above.
+  // The leaf slides back over the crown and opens a black arch.
   edge: { eye: [2.2, -0.7, 0.1], look: [0.72, -0.05, 0.72] },
-  // Low and straight on: the whole dome, the slit up its middle.
-  slit: { eye: [5, 0, -0.6], look: [0.5, 0, 0.5] },
-  // The same axis, closer: the slit's foot on the ledge.
-  // The turn slides the slit and its leaf over the fixed stone.
-  // A portrait frame holds one slit edge and the stone beside it.
-  gear: { eye: [3.4, 0, -0.8], look: [1, 0, 0], tall: [1, 0.22, 0] },
-  // Low on the slit's right, long lens: the tube's mouth.
-  // A portrait frame holds the mouth at its centre.
-  roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.6], tall: [0.7, 0.05, 0.55] },
+  // b. Dead centre from the front, low, on a long lens.
+  // The lamp and the door sit under the slit, on one line.
+  // The lower leaf drops and the slit opens on the tube.
+  slit: { eye: [6.5, 0, -0.86], look: [0.3, 0, 0] },
+  // c. Inside, low, behind the mount, left of the slit.
+  // The pier and mount stand dark on the right.
+  // The wall lamp lights them red.
+  // The tube lifts on a diagonal toward the slit and its stars.
+  // The ring beam's curve runs along the foot of the frame.
+  // A portrait frame aims at the tube's middle.
+  lift: { eye: [-0.55, -0.45, -0.42], look: [0.45, 0, 0.22], tall: [0.25, -0.05, 0.12], inside: true },
+  // d. Outside, high on the slit's right, a long lens.
+  // The riveted gores fill the left.
+  // The slit is a dark band.
+  // The dew shield rises while the cupola carries the slit round.
+  // A portrait frame aims at the dew shield.
+  roll: { eye: [2.283, 0.742, 0.5], look: [0.72, 0.05, 0.3], tall: [0.72, -0.08, 0.33] },
 };
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
@@ -80,6 +90,21 @@ const tmp = new Vector3();
 // The cupola's radius in metres, set at the pick.
 let R = 1;
 
+// Inside the drum, the eye keeps clear of the hero's fixed parts.
+// The values come from world/hero.ts and world/hero-scope.ts.
+// They are in dome units, in the main dome's own frame.
+// The floor's height and the plastered wall's radius.
+const FLOOR_Y = 1.8, IN_R = 2.84;
+// [x, z, radius]: the pier, the ladder, the red work lamp.
+const KEEP_OUT: [number, number, number][] = [[0, 0.42, 0.6], [-0.99, 2.11, 0.5], [0.94, 2.58, 0.4]];
+const local = new Vector3();
+// True when an inside eye clears the wall, floor and parts.
+function clearInside(eye: Vector3): boolean {
+  complex.main.root.worldToLocal(local.copy(eye));
+  if (Math.hypot(local.x, local.z) > IN_R - 0.25 || local.y < FLOOR_Y + 0.15) return false;
+  return KEEP_OUT.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
+}
+
 // Everything in the complex that can stand between the eye and the dome.
 const blockers = (): Object3D[] => complex.root.children.filter(o => o !== complex.main.root);
 
@@ -109,6 +134,7 @@ function place(cut: Cut, az: number, aspect: number): Framed {
       eye.lerp(look, 1 - near);
       if (Math.hypot(eye.x, eye.z) > EYE_R) continue;
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
+      if (plan.inside && !clearInside(eye)) continue;
       ray.set(look, tmp.copy(eye).sub(look).normalize());
       ray.far = eye.distanceTo(look);
       if (ray.intersectObjects(blockers(), true).length) continue;

@@ -21,7 +21,7 @@ Status: active · Bean: `stimming-wqq9`
 - `core/` files: erasable TypeScript only (no `enum`, no parameter properties, no namespaces); relative imports end in `.ts`.
 - Place: latitude 51° N, longitude 0°. Both are Dev rows. The shot faces south.
 - Sky: tonight's real sky from the clock, always night, no moon.
-- The machine moves at real speed or slower: cupola cap 3°/s, tube cap 2°/s, shutter 4 s. Ease in and out.
+- The machine moves at real speed or slower, heavy and with inertia (Tom, 2026-11-17): cupola cap 2°/s with acceleration 0.6°/s², tube cap 1.5°/s with acceleration 0.5°/s², shutter 6 s on an S-curve; a damped settle at each stop; nothing snaps.
 - Sound muted by default, starts after a gesture. Idle: loop stops 60 s after the last input. Hidden: stop at once. Reduced motion: real speed only, no trails, crossfade instead of the flight.
 - Budgets: 30 fps or better, first frame under 3 s, toy files under 1 MB, catalog files under 300 KB.
 - Code comments: ASD-STE100, `.claude/rules/adjudant-code.md`. Prose: no em dashes.
@@ -331,6 +331,8 @@ Tom: "we want slowly more mechanical (with inertia) movement of all parts of the
 **Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
 
 Tom, 2026-11-17: "in that last cut -- as it is still pivoting up -- we want a closer cut on the telescope so its glass reflects the starry sky clearly (with distortion etc bc its glass...)". So the lens shot cuts in close while the tube is still pivoting up; the glass shows the real star field clearly, bent by the curve of the lens (stronger toward the rim), sliding across the glass as the tube moves; then the tube stops and the shot holds.
+
+Tom, 2026-11-17: "if anything -- in the final cut -- the telescope traverses up INTO frame of the final shot -- not past it". So the final shot's camera is locked on the place where the glass comes to rest. The glass rises into the frame from below, slows, stops in the frame, and the shot holds about 1.5 s; it never leaves the frame. The shot is timed to the tube's real arrival in altitude: it starts when the tube has about 6° left to lift. The camera sits in the cupola's turning frame (as if bolted to the dome), so the dome's turn does not carry the glass out of the frame. The shot before it (the tube rising in the slit) holds until then: at least 2.5 s, at most 9 s; for a longer lift the tube's altitude cap for that pick rises just enough to arrive in time.
 
 - [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
 - [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it, pivots slowly in place, stops, and the shot holds about 1.5 s before the cut back wide. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
