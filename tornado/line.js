@@ -1,0 +1,389 @@
+// Tornado alley: the power line along the road, and what a tornado does to it.
+// The CPU part keeps each pole's lean, each span's break and the spark events.
+// The GLSL part draws the poles, the wires and the sparks into the scene pass.
+import { at, KNOB } from './funnel.js';
+
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+
+/* ---------- the line ---------- */
+// The poles stand 9 m right of the road's centre, 55 m apart, the first 30 m out.
+// main.js ROAD_X is 3.4 m; the GLSL takes the same numbers.
+export const POLE_X = 3.4 + 9.0, POLE_Z0 = 30, POLE_GAP = 55, POLES = 48;
+// The wires' rest height at the cross-arm, in metres.
+const WIRE_Y = 9.2;
+// Gravity, m/s².
+const G = 9.8;
+// Spark events at once: the GLSL holds four.
+export const MAX_ARCS = 4;
+// The cascade's time from one pole to the next, in seconds.
+const CASC_STEP = 0.11;
+
+/* ---------- state ---------- */
+export function lineState() {
+  const L = {
+    // Each pole's lean in radians: positive leans toward +x, across the road.
+    lean: new Float32Array(POLES), vel: new Float32Array(POLES), down: new Uint8Array(POLES),
+    // Each span: break time (-1e4 when whole), wire mask, break place, its end's landing time.
+    span: new Float32Array(POLES * 4).fill(0),
+    // The spark events: place, start time, strength, seed, kind.
+    arcs: [],
+    // Faults the line can still take: the recloser opens after a few, then the line is dead.
+    charge: 4,
+    // The next fault may come no sooner than this time.
+    quiet: 0,
+    // The cascade: from the first fault, each pole toward the eye shorts in turn.
+    casc: { i0: -1, t0: -1e4, k: 0 },
+    // The packed uniforms.
+    uPole: new Float32Array(POLES), uSpan: new Float32Array(POLES * 4),
+    uArc: new Float32Array(MAX_ARCS * 4), uArcK: new Float32Array(MAX_ARCS * 4),
+    uFoot: new Float32Array(16), uCasc: new Float32Array(4),
+  };
+  lineReset(L);
+  return L;
+}
+// Mends the line: every pole stands, every wire is whole, the line is live.
+export function lineReset(L) {
+  L.lean.fill(0); L.vel.fill(0); L.down.fill(0); L.arcs.length = 0; L.charge = 4; L.quiet = 0;
+  L.casc.i0 = -1; L.casc.t0 = -1e4;
+  for (let i = 0; i < POLES; i++) L.span[i * 4] = -1e4;
+}
+
+/* ---------- the tornado's wind ---------- */
+// The wind speed, m/s, at distance d from a tornado's axis: a Rankine vortex.
+function windAt(t, d) {
+  const r = Math.max(8, at('r0', t.f) * KNOB.width), v = at('vmax', t.f) * (1 - clamp(t.rope)) * clamp(t.dust * 1.5);
+  // Past the core the wind falls as 1/d, and dies out past the dust.
+  const R = dustR(t), edge = clamp((1.6 * R - d) / (0.6 * R));
+  return (d < r ? v * d / r : v * r / d) * edge;
+}
+// The dust's ground radius, m: funnel.js debrisR() at the ground.
+const dustR = t => { const r0 = at('r0', t.f) * KNOB.width; return r0 * (2.2 + (1.18 - 2.2) * t.f / 5) + 20; };
+
+// A fault: an arc at a world point, with sparks. kind 0 is in the air, 1 on the ground.
+function fault(L, simT, x, y, z, k, kind) {
+  if (L.charge < 1 || simT < L.quiet) return;
+  L.charge -= 1;
+  L.quiet = simT + 0.6 + 1.4 * Math.random();
+  L.arcs.push({ x, y, z, t0: simT, k: clamp(k, 0.25, 1), seed: Math.random() * 100, kind });
+  if (L.arcs.length > MAX_ARCS) L.arcs.shift();
+  // A fault in the air sends a short down the line toward the eye, one at a time.
+  const i0 = Math.round((-z - POLE_Z0) / POLE_GAP);
+  if (kind === 0 && i0 > 0 && simT - L.casc.t0 > CASC_STEP * (L.casc.i0 + 1) + 4) Object.assign(L.casc, { i0, t0: simT, k: clamp(k, 0.4, 1) });
+}
+
+// One step of the line: wind loads, leans, falls, breaks and faults.
+export function lineStep(L, tors, dt, simT) {
+  // The recloser closes again slowly: one fault back every 20 s.
+  L.charge = Math.min(4, L.charge + dt / 20);
+  // Old events leave after their sparks cool.
+  while (L.arcs.length && simT - L.arcs[0].t0 > 3.5) L.arcs.shift();
+  for (let i = 0; i < POLES; i++) {
+    const pz = -(POLE_Z0 + POLE_GAP * i);
+    // The strongest wind at this pole, and its sign across the road.
+    let v = 0, sx = 0, F = 0;
+    for (const t of tors) {
+      const dx = POLE_X - t.x, dz = pz - t.z, d = Math.hypot(dx, dz);
+      const w = windAt(t, d);
+      if (w > v) {
+        // The vortex turns anticlockwise from above; its travel adds to the side it moves toward.
+        v = w; F = t.f;
+        sx = Math.sign(-dz / Math.max(d, 1) * w + 6) || 1;
+      }
+    }
+    const span = i * 4;
+    // Wind past 40 m/s leans a pole; past 58 m/s it goes over.
+    if (!L.down[i]) {
+      const want = clamp((v - 40) / 30) * 0.55 * sx;
+      if (Math.abs(want) > Math.abs(L.lean[i])) L.lean[i] += (want - L.lean[i]) * (1 - Math.exp(-dt / 0.7));
+      if (v > 58 && Math.abs(L.lean[i]) > 0.3) { L.down[i] = 1; L.vel[i] = 0.2 * Math.sign(L.lean[i]); }
+    } else if (L.down[i] === 1) {
+      // A falling pole topples about its foot: about 2 s from a lean to the ground.
+      const s = Math.sign(L.lean[i]);
+      L.vel[i] += s * 1.6 * Math.sin(Math.abs(L.lean[i])) * dt;
+      L.lean[i] += L.vel[i] * dt;
+      if (Math.abs(L.lean[i]) >= 1.47) {
+        L.lean[i] = 1.47 * s; L.vel[i] = 0; L.down[i] = 2;
+        // The wires short as the cross-arm hits the ground.
+        fault(L, simT, POLE_X + 9 * s, 0.4, pz, F / 5, 1);
+      }
+    }
+    // A span breaks where the wind is strong or a pole at its end leans hard.
+    if (i < POLES - 1 && L.span[span] < -1e3) {
+      const hard = Math.max(Math.abs(L.lean[i]), Math.abs(L.lean[i + 1]));
+      if (hard > 0.3 || v > 52) {
+        const mask = 1 + Math.floor(hash(i + simT) * 7);
+        const u = 0.3 + 0.4 * hash(i * 7.3 + simT);
+        L.span[span] = simT; L.span[span + 1] = mask; L.span[span + 2] = u; L.span[span + 3] = -1;
+        fault(L, simT, POLE_X, WIRE_Y, pz - POLE_GAP * u, F / 5, 0);
+      }
+    }
+    // A broken end lands about 1.4 s later and arcs on the ground once.
+    if (L.span[span] > -1e3 && L.span[span + 3] < 0 && simT - L.span[span] > Math.sqrt(2 * WIRE_Y / G)) {
+      L.span[span + 3] = simT;
+      if (hash(i * 3.1) < 0.6) fault(L, simT, POLE_X, 0.3, pz - POLE_GAP * L.span[span + 2] * 0.6, F / 5 * 0.7, 1);
+    }
+  }
+  // Dust at the wires makes them slap: an arc with no damage, now and then.
+  for (const t of tors) {
+    if (t.f < 0 || t.dust < 0.5 || t.rope > 1) continue;
+    const near = Math.abs(t.x - POLE_X) - dustR(t);
+    const along = -t.z - POLE_Z0;
+    if (near > 0 || along < 0 || along > POLE_GAP * POLES) continue;
+    if (Math.random() < dt * 0.5) {
+      // The arc stands at the dust's edge, toward the eye.
+      const r = dustR(t), dz = Math.sqrt(Math.max(r * r - (t.x - POLE_X) ** 2, 0));
+      fault(L, simT, POLE_X, WIRE_Y, t.z + dz * 0.9, 0.3 + 0.7 * t.f / 5, 0);
+    }
+  }
+}
+
+// Packs the line's state and the tornadoes' feet for the scene pass.
+export function lineUniforms(L, tors) {
+  L.uPole.set(L.lean);
+  L.uSpan.set(L.span);
+  L.uArc.fill(0); L.uArcK.fill(0);
+  L.arcs.forEach((a, i) => {
+    L.uArc.set([a.x, a.y, a.z, a.t0], i * 4);
+    L.uArcK.set([a.k, a.seed, a.kind, 1], i * 4);
+  });
+  L.uCasc.set([L.casc.i0, L.casc.t0, CASC_STEP, L.casc.k]);
+  L.uFoot.fill(0);
+  tors.slice(0, 4).forEach((t, i) => L.uFoot.set([t.x, t.z, dustR(t), 0.01 + t.f / 5 * (1 - clamp(t.rope - 1)) * clamp(t.dust * 2)], i * 4));
+}
+
+/* ---------- GLSL ---------- */
+// The scene pass's line: it reads main.js's ROAD_X, proj(), depthOf(), hazed(), sunCover(), shadeK(), gust(), th() and segD().
+export const LINE_GLSL = /* glsl */`
+/* ---------- the power line ---------- */
+uniform vec4 uPole[${POLES / 4}], uSpan[${POLES}], uArc[${MAX_ARCS}], uArcK[${MAX_ARCS}];
+// Each tornado's foot in world metres, its dust radius, and F over 5 (0 when off).
+uniform vec4 uFoot[4];
+// The cascade: its first pole, start time, time per pole and strength.
+uniform vec4 uCasc;
+const float POLE_X = ROAD_X + 9.0, POLE_Z0 = ${POLE_Z0}.0, POLE_GAP = ${POLE_GAP}.0;
+const int POLES = ${POLES};
+float poleLean(int i) { return i < 0 || i >= POLES ? 0.0 : uPole[i >> 2][i & 3]; }
+
+/* ---------- objects and the funnels ---------- */
+// Objects on the plain gather in two layers: behind a funnel, or in front of it.
+// envScene lays gOB under the storm pass's picture and gOF over it.
+vec4 gOB, gOF;
+// Each funnel's cover on this pixel's column, and its depth.
+float gFC[4], gFZ[4];
+void objInit(vec2 s) {
+  gOB = vec4(0.0); gOF = vec4(0.0);
+  for (int i = 0; i < 4; i++) {
+    gFC[i] = 0.0; gFZ[i] = 1e9;
+    vec4 f = uFoot[i];
+    if (f.w <= 0.0) continue;
+    vec3 P = vec3(f.x, 0.0, f.y);
+    float z = depthOf(P);
+    if (z < 50.0) continue;
+    float hw = f.z * 1.25 / z * uFoc, cx = proj(P).x;
+    gFC[i] = 1.0 - smoothstep(hw * 0.8, hw * 1.1, abs(s.x - cx));
+    gFZ[i] = z;
+  }
+}
+// How far behind a funnel a thing z metres off stands, 0 to 1.
+float behindF(float z) {
+  float w = 0.0;
+  for (int i = 0; i < 4; i++) w = max(w, gFC[i] * smoothstep(gFZ[i] - 40.0, gFZ[i] + 40.0, z));
+  return w;
+}
+// Lays a lit shape z metres off into its layer. k is coverage.
+void put(vec3 col, float k, float z) {
+  k = clamp(k, 0.0, 1.0);
+  if (k <= 0.0) return;
+  float b = behindF(z) * k, f = k - b;
+  gOB = gOB * (1.0 - b) + vec4(col, 1.0) * b;
+  gOF = gOF * (1.0 - f) + vec4(col, 1.0) * f;
+}
+
+// The wire's point at u along span i, as an offset in x and a height, in metres.
+// It takes the poles' leans, the sag, and a broken half falling and whipping.
+// A missing piece of wire returns a height below -50.
+vec2 wireAt(int i, int j, float u, float z) {
+  float ox = float(j - 1) * 1.1, wy = j == 1 ? 9.9 : 9.2;
+  float la = poleLean(i), lb = poleLean(i + 1);
+  // Each end hangs where its leaning pole holds it.
+  vec2 A = vec2(ox * cos(la) + wy * sin(la) - ox, wy * cos(la) - ox * sin(la));
+  vec2 B = vec2(ox * cos(lb) + wy * sin(lb) - ox, wy * cos(lb) - ox * sin(lb));
+  vec2 w = mix(A, B, u) - vec2(0.0, 0.8 * 4.0 * u * (1.0 - u));
+  vec4 sp = uSpan[i];
+  float ts = uT - sp.x;
+  if (sp.x < -1e3 || ts < 0.0 || mod(floor(sp.y / pow(2.0, float(j))), 2.0) < 0.5) return w;
+  // A broken wire: each half hangs from its own pole.
+  bool fromA = u < sp.z;
+  float Lh = (fromA ? sp.z : 1.0 - sp.z) * POLE_GAP, s = (fromA ? u : 1.0 - u) * POLE_GAP;
+  vec2 E = fromA ? A : B;
+  // The free end falls freely until it lands; the wire keeps its length.
+  float drop = min(4.9 * ts * ts, E.y);
+  float reach = sqrt(max(Lh * Lh - drop * drop, 0.0));
+  // Once down, the wire settles into a slope from the pole to the ground.
+  float land = sqrt(2.0 * max(E.y, 0.1) / 9.8), settle = smoothstep(0.0, 1.6, ts - land);
+  if (s > (ts > land ? Lh : reach)) return vec2(0.0, -99.0);
+  float yFall = E.y - drop * clamp(s / max(reach, 0.5), 0.0, 1.0);
+  float y = mix(yFall, max(E.y * (1.0 - s / (E.y * 1.3 + 2.0)), 0.0), settle);
+  // A whip runs from the free end back toward the pole and dies away.
+  float wk = exp(-ts / 1.4) * (s / Lh);
+  float whip = sin(s * 0.35 - ts * 9.0) * wk;
+  return vec2(E.x + whip * 1.6, max(y + whip * 0.8, 0.0));
+}
+// The wires: for each screen column, the place along the line where each wire crosses.
+void wires(vec2 s, vec3 rd, float px) {
+  vec3 wireC = uAmb * 0.05;
+  float sn = sin(uYaw), cs = cos(uYaw), k = s.x / uFoc;
+  float den = k * cs - sn;
+  if (abs(den) < 1e-5) return;
+  for (int j = 0; j < 3; j++) {
+    float wx = POLE_X + float(j - 1) * 1.1, dx = 0.0;
+    vec2 w = vec2(0.0);
+    float zz = 0.0;
+    bool hit = true;
+    // The plane at rest, then the plane moved by the sway found there.
+    for (int it = 0; it < 2; it++) {
+      float x = wx + dx;
+      float wz = -x * (cs + k * sn) / den;
+      zz = depthOf(vec3(x, 0.0, wz));
+      float L = -wz - POLE_Z0;
+      if (zz < 1.0 || L < 0.0 || L > POLE_GAP * float(POLES - 1)) { hit = false; break; }
+      int i = int(L / POLE_GAP);
+      w = wireAt(i, j, fract(L / POLE_GAP), wz);
+      dx = w.x;
+    }
+    if (!hit || w.y < -50.0) continue;
+    float sy = (w.y - CAMH) / zz * uFoc;
+    // A wire under the wheat's ears hides in the field.
+    float thick = 0.02 / zz * uFoc;
+    float a = clamp(1.0 - abs(s.y - sy) / (px * 0.8), 0.0, 1.0) * min(1.0, thick * 2.0 / px + 0.15) * smoothstep(0.7, 1.1, w.y);
+    put(hazed(wireC, rd, zz), a * 0.9, zz);
+  }
+}
+// The poles: each a leaning post with its cross-arm.
+void linePoles(vec2 s, vec3 rd, float px) {
+  vec3 wood = uSunCol * vec3(0.16, 0.1, 0.06) + uAmb * 0.03;
+  for (int i = 0; i < POLES; i++) {
+    vec3 P = vec3(POLE_X, 0.0, -(POLE_Z0 + POLE_GAP * float(i)));
+    float z = depthOf(P);
+    vec2 b = proj(P);
+    if (abs(s.x - b.x) > 12.0 / z * uFoc + px) continue;
+    float l = poleLean(i), sl = sin(l), cl = cos(l);
+    // A lying pole sinks into the wheat: only its top shows over the ears.
+    vec2 tp = proj(P + vec3(10.0 * sl, 10.0 * cl, 0.0));
+    float u, w = 0.15 / z * uFoc;
+    float d = segD(s, b, tp, u);
+    float k = clamp((w - d) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * w / px + 0.2);
+    // The cross-arm turns with the pole.
+    vec2 ca = proj(P + vec3(-1.2 * cl + 9.1 * sl, 9.1 * cl + 1.2 * sl, 0.0)), cb = proj(P + vec3(1.2 * cl + 9.25 * sl, 9.25 * cl - 1.2 * sl, 0.0));
+    float wa = 0.09 / z * uFoc;
+    k = max(k, clamp((wa - segD(s, ca, cb, u)) / px + 0.5, 0.0, 1.0) * min(1.0, 2.0 * wa / px + 0.2));
+    put(hazed(wood * shadeK(sunCover(P * 0.001)), rd, z), k, z);
+  }
+}
+
+/* ---------- sparks ---------- */
+// A shower of n sparks thrown from P, t seconds ago: they fall, bounce once and cool.
+vec3 shower(vec2 s, float px, vec3 P, float t, float seed, int n, float gain) {
+  vec3 add = vec3(0.0);
+  for (int i = 0; i < 22; i++) {
+    if (i >= n) break;
+    float fi = float(i);
+    vec3 h = vec3(th(vec2(seed, fi)), th(vec2(fi, seed + 1.3)), th(vec2(seed + fi, 4.1)));
+    float life = 0.8 + 1.8 * h.z;
+    float ts = t - 0.03 * fi * h.x;
+    if (ts < 0.0 || ts > life) continue;
+    float ang = h.x * 6.2832, sp = 2.0 + 7.0 * h.y;
+    vec3 v = vec3(cos(ang) * sp, (h.z - 0.3) * 6.0, sin(ang) * sp) + vec3(WDIR.x, 0.0, WDIR.y) * 3.0 * uWind;
+    // One bounce: the hit time on the ground, then a slower hop.
+    float tg = (v.y + sqrt(v.y * v.y + 19.6 * P.y)) / 9.8;
+    vec3 q, q0;
+    for (int k = 0; k < 2; k++) {
+      float tt = max(ts - float(k) * 0.035, 0.0);
+      vec3 r;
+      if (tt < tg) r = P + v * tt + vec3(0.0, -4.9 * tt * tt, 0.0);
+      else {
+        vec3 G = P + vec3(v.x, 0.0, v.z) * tg;
+        float vy = (9.8 * tg - v.y) * 0.3, tb = tt - tg;
+        r = G + vec3(v.x * 0.35, 0.0, v.z * 0.35) * tb + vec3(0.0, max(vy * tb - 4.9 * tb * tb, 0.0), 0.0);
+      }
+      if (k == 0) q = r; else q0 = r;
+    }
+    float u, d = segD(s, proj(q0), proj(q), u);
+    float age = ts / life;
+    // White hot for a moment, then orange, then a dull red.
+    vec3 hot = mix(vec3(1.0, 0.8, 0.5), vec3(1.0, 0.32, 0.05), smoothstep(0.02, 0.3, age)) * (1.0 - age) * (1.0 - age);
+    add += hot * 1.5 * gain * exp(-pow(d / (px * 0.7), 2.0));
+  }
+  return add;
+}
+// The light of every arc now: its glow on the screen and its flash on the air.
+// A fault arcs in two or three hard pulses, then its sparks fall.
+// The cascade then pops pole by pole toward the eye.
+// It returns light to add; dustA is the storm pass's cover here, which the flash lights.
+vec3 sparks(vec2 s, float px, float dustA) {
+  vec3 add = vec3(0.0);
+  for (int e = 0; e < ${MAX_ARCS}; e++) {
+    vec4 A = uArc[e], K = uArcK[e];
+    if (K.w <= 0.0) continue;
+    float t = uT - A.w;
+    if (t < 0.0 || t > 3.5) continue;
+    vec3 P = A.xyz;
+    float z = depthOf(P);
+    if (z < 2.0) continue;
+    vec2 c = proj(P);
+    float m = z / uFoc;
+    // The screen distance to the arc, in metres at its depth.
+    float dm = length(s - c) * m;
+    // Hard pulses: the arc strikes, drops and strikes again.
+    float seed = K.y;
+    float pulse = 0.0;
+    for (int p = 0; p < 3; p++) {
+      float tp = t - float(p) * (0.09 + 0.12 * th(vec2(seed, float(p))));
+      pulse += exp(-max(tp, 0.0) * 22.0) * step(0.0, tp) * (1.0 - 0.3 * float(p));
+    }
+    // The arc's blue-white light, and the flash on the dust and the air round it.
+    vec3 arcC = vec3(0.75, 0.88, 1.25);
+    // The flash lights dusty air more than clear air.
+    float near = 1.0 / (1.0 + dm * dm / 9.0) + (0.12 + 0.25 * dustA) / (1.0 + dm * dm / 900.0) + 0.03 * dustA * exp(-dm / 400.0);
+    add += arcC * pulse * K.x * near * 8.0;
+    // The arc's bolt: a jagged line about 3 m long, new each pulse.
+    if (pulse > 0.05 && dm < 6.0) {
+      float fl = floor(t * 30.0);
+      vec2 a = c, b = proj(P + vec3((th(vec2(seed, fl)) - 0.5) * 3.0, -1.5 - 2.0 * th(vec2(fl, seed)) * (1.0 - K.z), (th(vec2(fl + 3.0, seed)) - 0.5) * 3.0));
+      vec2 mid = mix(a, b, 0.5) + vec2(th(vec2(seed + fl, 1.0)) - 0.5, th(vec2(seed, fl + 1.0)) - 0.5) * 1.5 / m;
+      float u, d = min(segD(s, a, mid, u), segD(s, mid, b, u));
+      add += arcC * 30.0 * pulse * exp(-pow(d / (px * 0.9), 2.0));
+    }
+    // The sparks: molten bits thrown out, falling, bouncing once and cooling.
+    if (dm < 40.0) add += shower(s, px, P, t, seed, 22, K.x);
+  }
+  // The cascade: a short pops at each pole's cross-arm, in turn, toward the eye.
+  float tc = uT - uCasc.y;
+  if (uCasc.x > 0.0 && tc > 0.0) {
+    // The front's pole now, and the two poles behind it that still glow or drip.
+    float front = uCasc.x - floor(tc / uCasc.z);
+    for (int k = 0; k < 6; k++) {
+      float fi = front + float(k) - 1.0;
+      if (fi < 0.0 || fi > uCasc.x) continue;
+      float hs = th(vec2(fi, uCasc.y));
+      // Now and then a pole holds: no short there.
+      if (hs < 0.15) continue;
+      float tp = tc - (uCasc.x - fi) * uCasc.z - 0.03 * hs;
+      if (tp < 0.0 || tp > 0.55) continue;
+      int i = int(fi);
+      float l = poleLean(i);
+      vec3 P = vec3(POLE_X + 9.2 * sin(l) + (hs - 0.5) * 2.0, 9.2 * cos(l), -(POLE_Z0 + POLE_GAP * fi));
+      float z = depthOf(P);
+      if (z < 2.0) continue;
+      float dm = length(s - proj(P)) * z / uFoc;
+      float pulse = exp(-tp * 30.0) + 0.5 * exp(-max(tp - 0.05, 0.0) * 40.0) * step(0.05, tp);
+      vec3 arcC = vec3(0.75, 0.88, 1.25);
+      add += arcC * pulse * uCasc.w * (1.0 / (1.0 + dm * dm / 2.0) + (0.06 + 0.2 * dustA) / (1.0 + dm * dm / 400.0)) * 6.0;
+      // Its drip fades out before the front leaves it behind.
+      if (dm < 25.0) add += shower(s, px, P, tp, fi * 7.3 + uCasc.y, 7, uCasc.w * 0.7 * (1.0 - tp / 0.55));
+    }
+  }
+  return add;
+}
+`;

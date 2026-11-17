@@ -12,7 +12,7 @@ Status: active · Bean: `stimming-dwwg`
 
 **Composition (Tom, 2026-11-16):** golden ratio. The horizon sits 0.382 up the frame. The eye hangs partly over the road's left edge (the road centre runs 3.4 m to its right); the road vanishes on the right golden line (0.618 across) and its near end runs out of the frame at the bottom right. The wheat field lies left of the verge. Wheat fills the foreground and answers the wind.
 
-**Lens (Tom, 2026-11-16):** 50 mm ("50mm looks good"); 85 mm sits in Settings. The tornadoes are the centrepieces: the storm sits close, its dark base fills the sky over the sunlit wheat, the wall cloud hangs 8 km out on the left golden line, and tornadoes touch down 5 to 14 km out, under the base.
+**Lens (Tom, 2026-11-16):** 50 mm ("50mm looks good"); 85 mm sits in Settings. The tornadoes are the centrepieces: the storm sits close, its dark base fills the sky over the sunlit wheat, the wall cloud hangs 8 km out on the left golden line, and tornadoes touch down 1.2 to 14 km out, under the base. A tornado never comes nearer than about 1 km (more for a wide one).
 
 **Architecture:** One raw WebGL2 scene on the shared environment library, as Railgun is: `envScene` for the plains and far horizon, a ray-marched supercell (mesocyclone, wall cloud, anvil, rain curtain), and one volume per tornado (funnel, condensation, debris cloud, dust skirt) driven by a small set of per-tornado uniforms.
 
@@ -95,6 +95,7 @@ Each stage is one or more sessions and ends with a checkpoint with Tom.
 
 ### Stage 5: Debris and the land
 - [ ] Wheat that bends and flattens along each track, lofted debris, a damage track that stays.
+- [x] The power line (`line.js`, bean `stimming-o3o5`): a tornado's wind leans poles from 40 m/s and topples them past 58 m/s; spans break and their halves fall and whip. A fault arcs in hard blue-white pulses, throws sparks that fall and bounce, and lights the dust. From the first fault a short runs down the line toward the eye, pole by pole (Tom, 2026-11-17: "every pole shorts"). A recloser allows about four faults, then one more every 20 s. The second Clear mends the line. QA: `?tor=F4.5&line=1.5&age=40` puts the tornado 1.5 km out, left of the line.
 
 ### Stage 6: Finish and QA
 - [ ] Sound, Settings, Dev rows, the performance ladder. QA in the browser pane. Tick the bean, record the cost.
