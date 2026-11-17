@@ -135,4 +135,4 @@ ASD-STE100, double density: one fact per line, twelve words or fewer, active voi
 - No analytics, cookies or trackers. `localStorage` holds settings only.
 - Scripts come from jsDelivr and cdnjs only, at pinned versions. Each page carries a Content-Security-Policy meta tag (`stimming-oqrt` rolls it out).
 - Support: the latest Chrome desktop, Safari desktop, iOS Safari and Firefox.
-- Never use brand names for toys. Exceptions: Domino Day, Strandbeest.
+- Never use brand names for toys. Exceptions: Domino Day, Strandbeest, and Zena for now.

@@ -1,4 +1,4 @@
-// Drone: a faux drone sim over a dusk field. The module index.html loads.
+// Zena: a faux drone sim over a dusk field. The module index.html loads.
 // Flight: flight.js. Airframe: airframe.js. Input: input.js. Sound: sound.js. Onboard feed: feed.js.
 import {
   WebGLRenderer, Scene, PerspectiveCamera, Color, FogExp2, Mesh, SphereGeometry, ShaderMaterial, BackSide,

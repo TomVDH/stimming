@@ -19,7 +19,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 8. Publishing is a push to `main` (GitHub Pages; the workflow runs `npm run build` first). The claude.ai Artifact is retired: never publish to it.
 9. A change that makes a doc line false fixes it in the same commit. A standard changes only from Tom's own words.
 10. Sound is muted by default. Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
-11. Never use brand names for toys (exceptions: Domino Day, Strandbeest).
+11. Never use brand names for toys (exceptions: Domino Day, Strandbeest, and Zena for now).
 
 ## Read before work
 
