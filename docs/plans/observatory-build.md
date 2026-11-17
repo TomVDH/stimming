@@ -264,6 +264,15 @@ Spec: "The pick sequence and the lights" in [observatory.md](observatory.md).
 - [ ] **Step 3:** Frame time at 1280 and 375 inside the budget (30 fps or better); a lower step on the slow-frame rung if needed.
 - [ ] **Step 4:** Stills as in 7c. **Gate:** show Tom; commit locally with his words.
 
+### Task 7g: The lens cut (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
+- [ ] **Step 2:** The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
+- [ ] **Step 3:** Reduced motion: a still of the lens inside the crossfade.
+- [ ] **Step 4:** Stills of the lens cut at 1280 and 375. **Gate:** show Tom; commit locally with his words.
+
 ### Task 7f: Live trial of the pick sequence (Tom, 2026-11-17)
 
 - [ ] **Step 1:** Serve the branch on port 8037 and open it in Tom's tab; Tom plays the cuts. Changes from his notes, one at a time.

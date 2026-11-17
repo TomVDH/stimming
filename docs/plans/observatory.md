@@ -124,11 +124,12 @@ Tom, 2026-11-17: "we want faraway mountains -- distance haze -- clouds (railgun 
 Tom, 2026-11-17, on the second blockout: "the slit points at camera initially -- slowly opens -- (maybe we can do a cut close up of the animation -- sleek and with zoom lens, several cuts) -- as it opens, and the telescope rolls through -- then back to regular screen -- as the periscope hunts the lights around complex dim -- they go off when we do a survey". Tom approved this reading:
 
 1. **At rest.** On load, the main dome's shut slit faces the camera.
-2. **On a pick: a cut sequence.** About 6 to 8 s, 3 or 4 cuts, each a close-up on a long zoom lens: tight, shallow depth, slow, clean.
+2. **On a pick: a cut sequence.** About 6 to 8 s, 3 or 4 cuts (about 9.5 s with the lens cut), each a close-up on a long zoom lens: tight, shallow depth, slow, clean.
    1. The shutter starts to slide: tight on the slit edge.
    2. The shutter opens further: a wider close-up of the whole slit.
    3. The telescope rolls through the open slit, against the sky.
    4. Optional: the dome's ring gear or rail turning.
+   5. The lens (Tom, 2026-11-17: "the final cut of the sequence is a close up of the lens of the telescope with starry reflections on the glass / mirror itself -- this will be filmic as fuck"). About 2 s, the last cut: tight on the objective glass of a refractor, very shallow focus, a slow push in. Tonight's real stars reflect in the glass, slightly curved, the target star brightest near the centre. The slit edge crosses the reflection as a dark band. A faint green and magenta coating sheen moves as the tube tilts. The tube settles onto the star, the reflections drift and stop, then the cut goes back wide. Reduced motion: a still frame inside the crossfade. Approved ("Yes, queue it").
 3. **Back to the wide shot.** The domes turn to the star; the tube hunts for it.
 4. **The lights.** While the telescope hunts, the complex lights dim (windows, door lamps, road lamps). When it locks on and the survey starts, they go off. "Survey" is tracking and the time inside the telescope. Back to aim: the lights come up again, slowly.
 
