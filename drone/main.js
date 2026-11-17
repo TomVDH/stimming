@@ -249,7 +249,15 @@ scene.add(pad);
 const warmGlow = new SpriteMaterial({ map: glowTex, color: '#ffc27a', transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: .55 });
 const bulbM = new MeshBasicMaterial({ color: new Color('#ffd9a0').multiplyScalar(2.2) });
 const postM = new MeshStandardMaterial({ color: '#2a2b2d', roughness: .6, metalness: .4 });
-function lamp(x, z, h, glow) {
+// A lamp's warm pool on the ground: a flat glow, no real light, so it costs almost nothing.
+const poolTex = tex(128, (x, n) => {
+  const g = x.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  g.addColorStop(0, 'rgba(255,214,160,.9)'); g.addColorStop(.35, 'rgba(255,190,120,.4)'); g.addColorStop(1, 'rgba(255,170,100,0)');
+  x.fillStyle = g; x.fillRect(0, 0, n, n);
+});
+const poolM = new MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: .42,
+  polygonOffset: true, polygonOffsetFactor: -4 });
+function lamp(x, z, h, glow, pool) {
   const g = new Group();
   const post = new Mesh(new CylinderGeometry(.03 * h, .045 * h, h, 8), postM);
   post.position.y = h / 2; post.castShadow = true;
@@ -258,15 +266,21 @@ function lamp(x, z, h, glow) {
   const sp = new Sprite(warmGlow);
   sp.scale.setScalar(glow); sp.position.y = h;
   g.add(post, bulb, sp);
+  if (pool) {
+    const p = new Mesh(new CircleGeometry(pool, 32), poolM);
+    p.rotation.x = -Math.PI / 2;
+    p.position.y = .02;
+    g.add(p);
+  }
   g.position.set(x, 0, z);
   scene.add(g);
 }
-for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; lamp(Math.cos(a) * 3.5, Math.sin(a) * 3.5, .4, .9); }
+for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; lamp(Math.cos(a) * 3.5, Math.sin(a) * 3.5, .4, .9, 1.1); }
 
 /* ---------- obstacles: lamp poles, a container, a windsock, trees ---------- */
 const obstacles = [], boxes = [];
 for (const [x, z] of [[-14, -6], [16, -22], [-9, 24], [26, 10], [-30, -30], [6, -40]]) {
-  lamp(x, z, 7, 3.2);
+  lamp(x, z, 7, 3.2, 5);
   obstacles.push({ x, z, r: .14, h: 7.2 });
 }
 const corrugate = tex(256, (x, n) => {
@@ -316,21 +330,29 @@ const sock = new Group();
     for (let i = 0; i < 6 + rnd() * 10; i++) spots.push([cx + (rnd() - .5) * 18, cz + (rnd() - .5) * 18]);
   }
   const keep = spots.filter(([x, z]) => Math.hypot(x, z) > 30);
-  const crown = new InstancedMesh(new ConeGeometry(1, 1, 7), new MeshStandardMaterial({ color: '#33402a', roughness: 1, flatShading: true }), keep.length);
+  const crownM = new MeshStandardMaterial({ color: '#33402a', roughness: 1, flatShading: true });
+  const crown = new InstancedMesh(new ConeGeometry(1, 1, 7), crownM, keep.length);
+  const crownHi = new InstancedMesh(new ConeGeometry(1, 1, 7), crownM, keep.length);
   const trunk = new InstancedMesh(new CylinderGeometry(.6, 1, 1, 6), new MeshStandardMaterial({ color: '#3b3127', roughness: 1 }), keep.length);
   const o = new Object3D(), tint = new Color();
   keep.forEach(([x, z], i) => {
     const h = 7 + rnd() * 9, r = 1.6 + rnd() * 1.6, th = h * .28;
-    o.position.set(x, th + (h - th) / 2, z); o.scale.set(r, h - th, r); o.rotation.y = rnd() * 6; o.updateMatrix();
+    // The lower tier is wide; the upper tier is narrower and turned, so the cone reads as a fir.
+    const ch = h - th, rot = rnd() * 6;
+    o.position.set(x, th + ch * .33, z); o.scale.set(r, ch * .66, r); o.rotation.y = rot; o.updateMatrix();
     crown.setMatrixAt(i, o.matrix);
-    crown.setColorAt(i, tint.setHSL(.24 + rnd() * .06, .25 + rnd() * .12, .55 + rnd() * .3));
+    o.position.set(x, th + ch * .69, z); o.scale.set(r * .66, ch * .62, r * .66); o.rotation.y = rot + .45; o.updateMatrix();
+    crownHi.setMatrixAt(i, o.matrix);
+    tint.setHSL(.24 + rnd() * .06, .25 + rnd() * .12, .55 + rnd() * .3);
+    crown.setColorAt(i, tint);
+    crownHi.setColorAt(i, tint.clone().offsetHSL(0, 0, .06));
     o.position.set(x, th / 2, z); o.scale.set(.22, th, .22); o.updateMatrix();
     trunk.setMatrixAt(i, o.matrix);
     obstacles.push({ x, z, r: r * .7, h });
   });
-  crown.castShadow = trunk.castShadow = true;
-  crown.receiveShadow = true;
-  scene.add(crown, trunk);
+  crown.castShadow = crownHi.castShadow = trunk.castShadow = true;
+  crown.receiveShadow = crownHi.receiveShadow = true;
+  scene.add(crown, crownHi, trunk);
 }
 
 /* ---------- the craft and its sim ---------- */
@@ -370,13 +392,18 @@ const input = createInput(canvas, { cyc: document.getElementById('s-cyc'), col: 
 const kit = audioKit({ gain: .6 });
 const rotorSound = createRotorSound(kit, U.props.length);
 
+/* ---------- remembered settings ---------- */
+// The page keeps a few choices across visits, under stimming.drone.
+const recall = k => { try { return localStorage.getItem('stimming.drone.' + k); } catch { return null; } };
+const remember = (k, v) => { try { localStorage.setItem('stimming.drone.' + k, String(v)); } catch { /* Storage can be off. */ } };
+
 /* ---------- cameras ---------- */
 const cam = { mode: 'chase', dist: 4.5, gPitch: -12 * DEG, zoom: 1, yaw: START_YAW, pos: new Vector3(), look: new Vector3(), fr: 0, fp: 0 };
 const PILOT = new Vector3(3, 1.7, 9);
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   const k = Math.sign(e.deltaY);
-  if (cam.mode === 'chase') cam.dist = clamp(cam.dist * (1 + k * .12), 2.5, 16);
+  if (cam.mode === 'chase') { cam.dist = clamp(cam.dist * (1 + k * .12), 2.5, 16); remember('dist', cam.dist.toFixed(2)); }
   else if (cam.mode === 'gimbal') cam.gPitch = clamp(cam.gPitch - k * 4 * DEG, -70 * DEG, 10 * DEG);
   else cam.zoom = clamp(cam.zoom * (1 - k * .12), .4, 3);
   wake();
@@ -643,7 +670,7 @@ function setView(v) {
   wake();
 }
 let crashedAt = 0;
-act.mode = v => { S.mode = v; wake(); };
+act.mode = v => { S.mode = v; remember('mode', v); wake(); };
 act.view = v => setView(v);
 act.cycle = () => {
   const i = VIEWS.findIndex(o => o.value === cam.mode), next = VIEWS[(i + 1) % VIEWS.length].value;
@@ -651,8 +678,15 @@ act.cycle = () => {
   if (row) row.set(next, true); else setView(next);
 };
 act.reset = () => { sim.reset(0, 0, START_YAW); crashedAt = 0; place(); snapCam(); wake(); };
-act.wind = v => { FLIGHT.wind = v * 8; S.windOn = v > .01; wake(); };
-act.wind(ui?.slider?.value ?? (reduced() ? 0 : .4));
+act.wind = v => { FLIGHT.wind = v * 8; S.windOn = v > .01; remember('wind', v); wake(); };
+{
+  const m0 = recall('mode'), w0 = recall('wind'), d0 = +recall('dist');
+  if (['position', 'angle', 'acro'].includes(m0)) { if (ui?.choice) ui.choice.set(m0, true); else act.mode(m0); }
+  const w = w0 != null && isFinite(+w0) ? clamp(+w0, 0, 1) : (ui?.slider?.value ?? (reduced() ? 0 : .4));
+  if (ui?.slider) ui.slider.set(w, true); else act.wind(w);
+  act.wind(w);
+  if (d0 >= 2.5 && d0 <= 16) cam.dist = d0;
+}
 const saved = ui?.setting('view')?.value;
 if (saved && VIEWS.some(o => o.value === saved)) cam.mode = saved;
 
