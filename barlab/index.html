@@ -18,6 +18,10 @@ body { display: flex; flex-direction: column; }
 .strip button { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--muted); background: none; border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 8px 13px; cursor: pointer; }
 .strip button[aria-pressed="true"] { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 .strip button:focus-visible { outline: 2px solid oklch(0.84 0.13 205); outline-offset: 3px; }
+.strip select { font: 600 13px/1 "Gabarito", system-ui, sans-serif; color: var(--fg); background: var(--bg); border: 1px solid oklch(0.32 0.02 275); border-radius: 999px; padding: 7px 10px; }
+.strip input[type="color"] { width: 30px; height: 30px; padding: 0; border: 1px solid oklch(0.32 0.02 275); border-radius: 50%; background: none; cursor: pointer; }
+/* The accent, ink and presence knobs act on Signal only. */
+body:not([data-c="signal"]) .sig { opacity: 0.35; pointer-events: none; }
 .note { flex: none; margin: 0; padding: 0 16px 10px; text-align: center; font-size: 14px; color: var(--muted); min-height: 1.3em; }
 /* The toy runs in the frame at the picked size. */
 .well { flex: 1; min-height: 0; display: grid; place-items: start center; overflow: hidden; }
@@ -32,20 +36,45 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
     <button type="button" data-c="bare">Bare</button>
     <button type="button" data-c="today">Today</button>
   </div>
-  <div role="group" aria-label="Toy" id="toys"><span>Toy</span>
-    <button type="button" data-t="galaxy">Galaxy</button>
-    <button type="button" data-t="pendulum">Pendulum</button>
-    <button type="button" data-t="fire">Fire</button>
-    <button type="button" data-t="rain">Rain</button>
-    <button type="button" data-t="eyes">Eyes</button>
-    <button type="button" data-t="railgun">Railgun</button>
+  <div><span>Toy</span>
+    <select id="toy" aria-label="Toy">
+      <option value="galaxy">Galaxy: 16 options, slider</option>
+      <option value="cauldron">Cauldron: add, slider, toggle, Dev</option>
+      <option value="trainride">Train ride: stepper, long choice row</option>
+      <option value="railgun">Railgun: 30 rows of Settings</option>
+      <option value="window">Window seat: six choice rows</option>
+      <option value="carwash">Car wash: held action, ten sliders</option>
+      <option value="windmap">Wind map: three actions, choices</option>
+      <option value="frietkot">Frietkot: no actions, no slider</option>
+      <option value="pendulum">Pendulum: three actions</option>
+      <option value="fire">Fire: sliders and segments</option>
+      <option value="rain">Rain: choice and slider</option>
+      <option value="eyes">Eyes: actions only</option>
+    </select>
   </div>
   <div role="group" aria-label="Size" id="sizes"><span>Size</span>
     <button type="button" data-s="full">Full</button>
     <button type="button" data-s="phone">Phone</button>
     <button type="button" data-s="wide">Phone, wide</button>
   </div>
-  <div><button type="button" id="replay" title="Key R">Replay</button></div>
+  <div role="group" aria-label="Accent" id="accents" class="sig"><span>Accent</span>
+    <button type="button" data-a="toy">Toy</button>
+    <button type="button" data-a="series">Series</button>
+    <button type="button" data-a="mark">Wordmark</button>
+    <button type="button" data-a="white">White</button>
+    <input type="color" id="tint" value="#ffd24a" aria-label="Your own accent" title="Your own accent">
+  </div>
+  <div role="group" aria-label="Ink" id="inks" class="sig"><span>Ink</span>
+    <button type="button" data-k="marks">Marks</button>
+    <button type="button" data-k="words">Words</button>
+    <button type="button" data-k="flash">Flash</button>
+  </div>
+  <div role="group" aria-label="Presence" id="stays" class="sig"><span>Leaves</span>
+    <button type="button" data-p="idle">After 8 s idle</button>
+    <button type="button" data-p="stay">Never</button>
+    <button type="button" data-p="touch">On touch</button>
+  </div>
+  <div><button type="button" id="dev">Dev</button><button type="button" id="replay" title="Key R">Replay</button></div>
 </div>
 <p class="note" id="note"></p>
 <div class="well" id="well"><iframe id="frame" title="Toy with the picked bar"></iframe></div>
@@ -53,7 +82,7 @@ iframe { display: block; border: 0; width: 100%; height: 100%; background: var(-
 // A probe: other ways to do the toy bars. It changes no shell file.
 // The frame runs a real toy; shim.js stands in for shared/stim.js there.
 const NOTES = {
-  signal: 'Signal: one bar, no boxes, in the intro\'s beats. White is the flash; the toy\'s ink is what holds. It leaves while you touch the stage.',
+  signal: 'Signal: one bar, no boxes, in the intro\'s beats. It stays while you play and leaves after 8 s with no input. Accent, Ink and Leaves are knobs to explore.',
   bare: 'Bare: no boxes. Words and icons sit in the corners; a pick flashes white.',
   today: 'Today: Bar v2. Controls in four corners, on dark glass.',
 };
@@ -62,8 +91,13 @@ const state = {
   c: NOTES[q.get('c')] ? q.get('c') : 'signal',
   t: q.get('t') || 'galaxy',
   s: ['full', 'phone', 'wide'].includes(q.get('s')) ? q.get('s') : 'full',
+  a: q.get('a') || 'toy',
+  k: ['marks', 'words', 'flash'].includes(q.get('k')) ? q.get('k') : 'marks',
+  p: ['idle', 'stay', 'touch'].includes(q.get('p')) ? q.get('p') : 'idle',
+  dev: q.has('dev'),
 };
-const frame = document.getElementById('frame'), well = document.getElementById('well');
+let frame = document.getElementById('frame');
+const well = document.getElementById('well');
 const SIZES = { phone: [375, 812], wide: [812, 375] };
 
 // The toy page loads as text, so its import map can point stim.js at the shim.
@@ -81,8 +115,17 @@ async function load(toy) {
   if (found) html = html.replace(re, () => tag);
   // The intro leaves at once, so a switch of toy costs no wait.
   const skip = `<script>new MutationObserver((_, mo) => { const el = document.querySelector('.intro'); if (el) { el.remove(); mo.disconnect(); } }).observe(document.documentElement, { childList: true, subtree: true });<\/script>`;
-  html = html.replace(/<head[^>]*>/i, h => `${h}<base href="${dir.href}">${found ? '' : tag}${skip}`);
-  frame.srcdoc = html;
+  // The page takes the toy's own address, so code that reads location still works.
+  const home = `<script>history.replaceState(null, '', ${JSON.stringify(dir.href + (state.dev ? '?dev' : ''))});<\/script>`;
+  html = html.replace(/<head[^>]*>/i, h => `${h}<base href="${dir.href}">${home}${found ? '' : tag}${skip}`);
+  // A fresh frame per toy: the old toy's timers and GL context go with its window.
+  const next = frame.cloneNode(false);
+  frame.replaceWith(next);
+  frame = next;
+  const doc = frame.contentDocument;
+  doc.open();
+  doc.write(html);
+  doc.close();
 }
 
 // A size too tall for the well scales down to fit.
@@ -95,17 +138,31 @@ function fit() {
 }
 function show() {
   frame.dataset.concept = state.c;
+  frame.dataset.accent = state.a;
+  frame.dataset.ink = state.k;
+  frame.dataset.presence = state.p;
+  frame.dataset.dev = state.dev ? '1' : '0';
+  document.body.dataset.c = state.c;
+  document.getElementById('toy').value = state.t;
+  for (const b of document.querySelectorAll('[data-a]')) b.setAttribute('aria-pressed', String(b.dataset.a === state.a));
+  for (const b of document.querySelectorAll('[data-k]')) b.setAttribute('aria-pressed', String(b.dataset.k === state.k));
+  for (const b of document.querySelectorAll('[data-p]')) b.setAttribute('aria-pressed', String(b.dataset.p === state.p));
+  document.getElementById('dev').setAttribute('aria-pressed', String(state.dev));
   document.getElementById('note').textContent = NOTES[state.c];
   for (const b of document.querySelectorAll('[data-c]')) b.setAttribute('aria-pressed', String(b.dataset.c === state.c));
-  for (const b of document.querySelectorAll('[data-t]')) b.setAttribute('aria-pressed', String(b.dataset.t === state.t));
   for (const b of document.querySelectorAll('[data-s]')) b.setAttribute('aria-pressed', String(b.dataset.s === state.s));
   fit();
   // The address keeps the view, so a link opens the same one.
-  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}`);
+  history.replaceState(null, '', `?c=${state.c}&t=${state.t}&s=${state.s}&a=${encodeURIComponent(state.a)}&k=${state.k}&p=${state.p}${state.dev ? '&dev' : ''}${q.get('slow') ? `&slow=${q.get('slow')}` : ''}`);
   try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {}
 }
 document.getElementById('concepts').addEventListener('click', e => { const c = e.target.closest('[data-c]')?.dataset.c; if (c) { state.c = c; show(); } });
-document.getElementById('toys').addEventListener('click', e => { const t = e.target.closest('[data-t]')?.dataset.t; if (t && t !== state.t) { state.t = t; show(); load(t); } });
+document.getElementById('toy').addEventListener('change', e => { state.t = e.target.value; show(); load(state.t); });
+document.getElementById('accents').addEventListener('click', e => { const a = e.target.closest('[data-a]')?.dataset.a; if (a) { state.a = a; show(); } });
+document.getElementById('tint').addEventListener('input', e => { state.a = e.target.value; show(); });
+document.getElementById('inks').addEventListener('click', e => { const k = e.target.closest('[data-k]')?.dataset.k; if (k) { state.k = k; show(); } });
+document.getElementById('stays').addEventListener('click', e => { const v = e.target.closest('[data-p]')?.dataset.p; if (v) { state.p = v; show(); } });
+document.getElementById('dev').addEventListener('click', () => { state.dev = !state.dev; show(); });
 document.getElementById('sizes').addEventListener('click', e => { const s = e.target.closest('[data-s]')?.dataset.s; if (s) { state.s = s; show(); } });
 // Replay draws the direction again, so its arrival plays.
 const replay = () => { try { frame.contentWindow?.dispatchEvent(new Event('barlab')); } catch {} };

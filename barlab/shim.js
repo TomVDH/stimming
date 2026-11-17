@@ -19,6 +19,16 @@ const FRAME = 1000 / 30;
 const slow = () => Number(window.frameElement?.dataset.slow) || 1;
 const fr = (n = 1) => new Promise(r => setTimeout(r, n * FRAME * slow()));
 const CARET = '<i class="b-caret" aria-hidden="true"></i>';
+const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>';
+// The wordmark's eight letter hues, for the lab's Wordmark accent.
+const HUES = ['0.8 0.15 62', '0.72 0.2 318', '0.8 0.12 195', '0.7 0.19 32', '0.72 0.14 255', '0.82 0.11 345', '0.86 0.15 100', '0.78 0.16 150'];
+// An accent is one colour or a gradient; a fill needs an image, line work one colour.
+const setAcc = (el, acc) => {
+  const a = acc || 'var(--fg)';
+  el.style.setProperty('--acc', a);
+  el.style.setProperty('--acc-ink', acc?.includes('gradient(') ? (acc.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)') : a);
+  el.style.setProperty('--acc-img', a.includes('gradient(') ? a : `linear-gradient(${a}, ${a})`);
+};
 const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v4"/><circle class="solid" cx="8" cy="4.8" r="0.7"/></svg>';
 
 const h = (tag, cls = '', html = null) => {
@@ -56,6 +66,8 @@ function mount(id, spec, ui) {
   let syncers = [], open = null, hints = null, hintTimer = 0, gestures = 0, relayout = null;
   // Signal sets these: a sheet hook and the leave-and-return of its bar.
   let popHook = null, presence = null, run = 0, pickBeat = null, pickDone = null;
+  // Signal keeps the key strip with its bar: no timer and no gesture count.
+  let stayHints = false, series = null;
   const sync = () => syncers.forEach(fn => fn());
   const touch = () => COARSE.matches || (host?.dataset.size || 'full') !== 'full';
   const hasChoice = !!spec.choice?.options?.length;
@@ -152,13 +164,27 @@ function mount(id, spec, ui) {
     syncers.push(() => b.setAttribute('aria-pressed', String(stim.sound.on)));
     return b;
   };
+  // A long choice steps one name at a time, so its row never overflows.
+  const stepPart = (opts, get, set) => {
+    const at = () => Math.max(0, opts.findIndex(o => String(o.value) === String(get())));
+    const name = text('span', 'b-step-now', '');
+    const arrow = (d, glyph, label) => {
+      const b = btn('b-ico', glyph, label);
+      b.addEventListener('click', () => { set(opts[(at() + d + opts.length) % opts.length].value); sync(); });
+      return b;
+    };
+    syncers.push(() => { name.textContent = opts[at()].label; });
+    return box('b-step', arrow(-1, '\u2039', 'Previous'), name, arrow(1, '\u203A', 'Next'));
+  };
+  const choiceRow = (opts, get, set) => (opts.length <= 4 && opts.reduce((n, o) => n + String(o.label).length, 0) <= 24
+    ? segPart(opts, get, set) : stepPart(opts, get, set));
   const rowPart = row => {
     const handle = ui.setting(row.id);
     if (!handle) return null;
     if (row.type === 'slider') return rangePart(row.label, row, handle, 'b-row');
     const el = box('b-row', text('span', '', row.label));
     if (row.type === 'toggle') el.append(segPart([{ value: false, label: 'Off' }, { value: true, label: 'On' }], () => handle.value, v => handle.set(v, true)));
-    else if (row.type === 'choice') el.append(segPart(row.options, () => handle.value, v => handle.set(v, true)));
+    else if (row.type === 'choice') el.append(choiceRow(row.options, () => handle.value, v => handle.set(v, true)));
     else if (row.type === 'button') {
       const b = btn('b-edge', row.text ?? 'Go');
       b.addEventListener('click', () => row.onClick?.());
@@ -201,7 +227,7 @@ function mount(id, spec, ui) {
     hints.classList.toggle('is-faded', !on);
     clearTimeout(hintTimer);
     gestures = 0;
-    if (on) hintTimer = setTimeout(() => showHints(false), 8000);
+    if (on && !stayHints) hintTimer = setTimeout(() => showHints(false), 8000);
   };
 
   /* ---------- the shared set of parts for one draw ---------- */
@@ -223,6 +249,14 @@ function mount(id, spec, ui) {
       P.setPop = popPart('b-pop--set', 'Settings', P.set);
       P.setPop.el.append(rowsPart(), resetPart(() => P.setPop.open(false)) || '');
     }
+    // Dev rows show only with the lab's Dev switch, as ?dev does on a toy page.
+    if (spec.dev?.length && host?.dataset.dev === '1') {
+      P.dev = btn('b-ico b-dev', DEV_SVG, 'Dev');
+      P.devPop = popPart('b-pop--set b-pop--dev', 'Dev', P.dev);
+      const rows = h('div', 'b-rows');
+      spec.dev.forEach(row => { const r = rowPart(row); if (r) rows.append(r); });
+      P.devPop.el.append(rows);
+    }
     hints = hintsPart();
     if (hints) {
       P.info = btn('b-ico b-info', 'i', 'How to play');
@@ -234,26 +268,35 @@ function mount(id, spec, ui) {
   /* ---------- directions ---------- */
   // Bare: the name on top, play at the bottom, in every size.
   const corners = P => {
-    const tr = box('b-tr', P.snd, P.set, P.info), bl = box('b-bl', P.seg, P.pick, P.acts), br = box('b-br', P.slider);
-    layer.append(...[P.id, tr, bl, br, hints, P.pickPop?.el, P.setPop?.el].filter(Boolean));
+    const tr = box('b-tr', P.snd, P.set, P.dev, P.info), bl = box('b-bl', P.seg, P.pick, P.acts), br = box('b-br', P.slider);
+    layer.append(...[P.id, tr, bl, br, hints, P.pickPop?.el, P.setPop?.el, P.devPop?.el].filter(Boolean));
   };
   // Signal: one bar with no boxes, in the intro's beats (Tom's ingredients, 2026-11-16).
   // The bar is one object: a white flash box lands, parts down the middle and leaves bare words.
   // White is the flash, a thing that happens now; the toy's ink is a state that holds.
-  // The bar leaves while a pointer is down on the stage and returns when the stage is still.
+  // The bar stays while you play; it leaves after 8 s with no input and returns on the next one.
   const signal = P => {
     const grp = (cls, ...kids) => { const k = kids.flat().filter(Boolean); return k.length ? box(`sg-grp ${cls}`.trim(), k) : null; };
-    const flash = h('i', 'sg-box');
+    const flash = h('i', 'sg-box'), tint = h('i', 'sg-tint');
     if (P.info) P.info.innerHTML = INFO_SVG;
-    const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.info), flash);
+    const bar = box('sg-bar', grp('', P.seg, P.pick, P.acts), grp('b-main', P.slider), grp('', P.snd, P.set, P.dev, P.info), flash, tint);
     const glass = h('div', 'sg-glass');
-    const sheets = [P.pickPop, P.setPop].filter(Boolean);
-    sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet')));
+    const sheets = [P.pickPop, P.setPop, P.devPop].filter(Boolean);
+    sheets.forEach(sh => sh.el.append(h('i', 'sg-box sg-box--sheet'), h('i', 'sg-tint sg-tint--sheet')));
     layer.append(...[P.id, glass, hints, bar, ...sheets.map(sh => sh.el)].filter(Boolean));
-    let shown = false, downs = 0, backTimer = 0;
+    // The lab's Wordmark accent gives each control its own letter hue; a sheet takes its button's.
+    if (host?.dataset.accent === 'mark') {
+      [...bar.querySelectorAll('.b-btn, .b-slider')].forEach((el, i) => setAcc(el, `oklch(${HUES[i % HUES.length]})`));
+      sheets.forEach(sh => setAcc(sh.el, sh.anchor.style.getPropertyValue('--acc')));
+    }
+    // Presence: 'idle' leaves after 8 s with no input, 'stay' never leaves, 'touch' leaves on a press.
+    const mode = host?.dataset.presence || 'idle';
+    stayHints = mode !== 'touch';
+    let shown = false, downs = 0, backTimer = 0, idleTimer = 0, wanted = true;
     // One frame of the bar: its box, its size and whether it shows.
     const set = ({ split = 50, sx = 1, sy = 1, off = false }) => {
       flash.style.setProperty('--sg-split', `${split}%`);
+      tint.style.setProperty('--sg-split', `${split}%`);
       // While the box is on, the ink turns white, so the blend gives clean dark.
       bar.classList.toggle('is-boxed', split < 50);
       bar.style.transform = sx === 1 && sy === 1 ? '' : `scale(${sx}, ${sy})`;
@@ -270,7 +313,8 @@ function mount(id, spec, ui) {
       }
       return me === run;
     };
-    const rest = () => { set({}); return true; };
+    // The key strip is part of the bar: it comes and goes with it, unless (i) put it away.
+    const rest = () => { set({}); if (wanted) showHints(true); return true; };
     // The first arrival is the intro's beat: the flash fills, snaps to size, holds, then parts.
     const arrive = async first => {
       shown = true;
@@ -279,8 +323,6 @@ function mount(id, spec, ui) {
         ? [[{ split: 0, sx: 1.3, sy: 1.3 }, 2], [{ split: 0, sx: 0.95, sy: 0.95 }], [{ split: 0, sx: 1.03, sy: 1.03 }], [{ split: 0 }, 3]]
         : [[{ split: 0, sy: 0.08 }], [{ split: 0 }]];
       if (!await seq([...land, [{ split: 14 }], [{ split: 32 }]])) return false;
-      // The key strip joins on the first arrival only, as the box parts.
-      if (first) showHints(true);
       return rest();
     };
     // The exit is the intro's wipe: the box drops to a line, then the line closes.
@@ -290,13 +332,23 @@ function mount(id, spec, ui) {
       if (RM.matches) return set({ off: true });
       if (await seq([[{ split: 0, sy: 0.3 }], [{ split: 0, sy: 0.08 }], [{ split: 0, sx: 0.4, sy: 0.08 }]])) set({ off: true });
     };
-    presence = {
-      down() { downs++; clearTimeout(backTimer); if (shown) leave(); },
-      up() { downs = Math.max(0, downs - 1); if (!downs) presence.back(600); },
-      back(ms) { clearTimeout(backTimer); backTimer = setTimeout(() => { if (!downs && !shown) arrive(false); }, ms * slow()); },
-      wake() { clearTimeout(backTimer); if (!shown) arrive(false); },
-      stop() { clearTimeout(backTimer); },
+    // The bar never leaves under the pointer, under focus, or with a sheet open.
+    const busy = () => !!open || downs > 0 || bar.matches(':hover') || bar.contains(document.activeElement);
+    const arm = () => {
+      clearTimeout(idleTimer);
+      if (mode !== 'idle') return;
+      idleTimer = setTimeout(() => { if (busy()) return arm(); if (shown) leave(); }, 8000 * slow());
     };
+    presence = {
+      down() { downs++; if (mode !== 'touch') return presence.poke(); clearTimeout(backTimer); if (shown) leave(); },
+      up() { downs = Math.max(0, downs - 1); if (mode !== 'touch') return presence.poke(); if (!downs) presence.back(600); },
+      back(ms) { clearTimeout(backTimer); backTimer = setTimeout(() => { if (!downs && !shown) arrive(false); }, ms * slow()); },
+      // Any input brings the bar back and starts the 8 s again.
+      poke() { if (mode === 'touch') return; if (!shown) arrive(false); arm(); },
+      wake() { clearTimeout(backTimer); if (!shown) arrive(false); arm(); },
+      stop() { clearTimeout(backTimer); clearTimeout(idleTimer); },
+    };
+    P.info?.addEventListener('click', () => { wanted = !hints.classList.contains('is-faded'); });
     // A pick cuts in: the word's box lands oversize for one frame, holds at size, then parts.
     const cut = async el => {
       if (RM.matches || !el) return;
@@ -311,15 +363,21 @@ function mount(id, spec, ui) {
       el.classList.remove('is-cut');
     };
     bar.addEventListener('click', e => { const b = e.target.closest('.b-btn'); if (b && bar.contains(b)) cut(b); });
+    sheets.forEach(sh => sh.el.addEventListener('click', e => { const b = e.target.closest('.b-step .b-btn, .b-edge'); if (b) cut(b); }));
     // A picked row cuts in, holds one frame in the toy's ink, then the list leaves.
     pickBeat = async row => { await cut(row); await fr(); };
     pickDone = () => cut(P.pick);
     // A sheet is one object too: its box lands from the bar up and parts over its rows.
     // It grows from its own button; on the way out it drops to a line.
     popHook = async (api, on) => {
-      const el = api.el, box = el.querySelector('.sg-box--sheet');
+      const el = api.el, box = el.querySelector('.sg-box--sheet'), tnt = el.querySelector('.sg-tint--sheet');
       const me = el._run = (el._run || 0) + 1;
-      const frame = (split, sy) => { box.style.setProperty('--sg-split', `${split}%`); el.classList.toggle('is-boxed', split < 50); el.style.transform = sy === 1 ? '' : `scaleY(${sy})`; };
+      const frame = (split, sy) => {
+        box.style.setProperty('--sg-split', `${split}%`);
+        tnt.style.setProperty('--sg-split', `${split}%`);
+        el.classList.toggle('is-boxed', split < 50);
+        el.style.transform = sy === 1 ? '' : `scaleY(${sy})`;
+      };
       el.classList.remove('is-closing');
       glass.toggleAttribute('data-on', on);
       if (on) {
@@ -336,6 +394,9 @@ function mount(id, spec, ui) {
         if (me === el._run) frame(50, 1);
         return;
       }
+      // The strip returns when its sheet has gone.
+      if (wanted && shown) showHints(true);
+      arm();
       if (RM.matches) return;
       el.classList.add('is-closing');
       for (const [split, sy] of [[0, 0.4], [0, 0.06]]) {
@@ -355,7 +416,7 @@ function mount(id, spec, ui) {
     relayout();
     document.fonts?.ready.then(() => relayout?.());
     set({ off: true });
-    arrive(true);
+    arrive(true).then(ok => { if (ok) arm(); });
   };
 
   // The name shows whole or not at all; the top right corner sets its room.
@@ -384,12 +445,11 @@ function mount(id, spec, ui) {
     layer.dataset.concept = c;
     document.documentElement.classList.toggle('bl-on', c !== 'today');
     document.documentElement.classList.toggle('bl-touch', touch());
-    // The toy's accent inks Signal; a gradient gives its first stop to line work.
-    layer.style.setProperty('--acc', toy.accent || 'var(--fg)');
-    layer.style.setProperty('--acc-ink', toy.accent?.match(/oklch\([^)]*\)/)?.[0] || 'var(--fg)');
-    // A fill needs an image: a plain accent becomes a flat gradient.
-    const acc = toy.accent || 'var(--fg)';
-    layer.style.setProperty('--acc-img', acc.includes('gradient(') ? acc : `linear-gradient(${acc}, ${acc})`);
+    // The lab picks the accent's source and where the ink goes.
+    const src = host?.dataset.accent || 'toy';
+    setAcc(layer, src === 'white' || src === 'mark' ? null : src === 'series' ? (series?.[toy.series]?.color || toy.accent) : src[0] === '#' ? src : toy.accent);
+    layer.dataset.ink = host?.dataset.ink || 'marks';
+    stayHints = false;
     if (c === 'today') return;
     const P = build();
     (c === 'signal' ? signal : corners)(P);
@@ -402,13 +462,15 @@ function mount(id, spec, ui) {
   stage.addEventListener('pointerdown', () => {
     presence?.down();
     open?.open(false);
-    if (hints && !hints.classList.contains('is-faded') && ++gestures >= 3) showHints(false);
+    if (!stayHints && hints && !hints.classList.contains('is-faded') && ++gestures >= 3) showHints(false);
   });
   addEventListener('keydown', e => { if (e.key === 'Escape') open?.open(false); });
   // The bar returns when every pointer is up, or at once for the keyboard.
   for (const t of ['pointerup', 'pointercancel']) addEventListener(t, () => presence?.up(), true);
   stage.addEventListener('wheel', () => { if (!presence) return; presence.down(); presence.up(); }, { passive: true });
-  addEventListener('keydown', e => { if (e.key === 'Tab') presence?.wake(); });
+  addEventListener('keydown', () => presence?.wake());
+  // Any pointer move counts as input for the 8 s rule.
+  for (const t of ['pointermove', 'touchstart']) addEventListener(t, () => presence?.poke(), { passive: true, capture: true });
   // Keys and the toy itself can change a value; the lab layer follows.
   addEventListener('keyup', sync);
   setInterval(sync, 500);
@@ -416,5 +478,6 @@ function mount(id, spec, ui) {
   new ResizeObserver(() => { relayout?.(); fitName(); }).observe(frame);
   document.fonts?.ready.then(fitName);
   globalThis.__stimToys?.then(toys => { if (toys?.[id]) { toy = toys[id]; draw(); } });
+  fetch(new URL('../series.json', import.meta.url)).then(r => r.json()).then(j => { series = j; if (host?.dataset.accent === 'series') draw(); }).catch(() => {});
   draw();
 }
