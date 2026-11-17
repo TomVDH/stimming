@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T05:35:54Z
+updated_at: 2026-11-17T05:38:55Z
 parent: stimming-oh7b
 ---
 
@@ -101,3 +101,5 @@ Built; waits for the checkpoint with Tom.
 - 2026-11-16: the lab is now the joined build from spike stimming-az9d (shells for the funnel, the backdrop baked in strips, a log-polar deck whirl, every setting as a knob, Width 1.6 by default). Tom: "spike joined is good". About 1.8–1.9× less GPU time than the old march at the same size.
 
 - 2026-11-16 (Tom: thicker as in opaque, more ground connection at low F, a hard light edge in the base dust, a JSON copy): Opacity knob (default 2.2) on the core and sheaths; the tip's taper keeps its length when Width widens the funnel (it had thinned most of the body); the dust's self-shade uses three nested circles and a sun ray across the whole cloud; condensation reaches 0.65 / 0.92 down at F0 / F1 and the dust whirl stands 120 to 190 m at low F, so they meet; Copy JSON copies every knob, F and the part boxes.
+
+- 2026-11-16: the funnel's self-shade stopped 100 m over the funnel's top, which lit the flare above a hard elliptical ring (Tom: "sigh.."). The shade now runs up through the flare with a soft foot. Next in the scene: the sun and gentle sunlight patterns through gaps in the clouds, ready for god rays later (Tom).

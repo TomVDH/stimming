@@ -346,7 +346,10 @@ float chord(vec2 q, vec2 d, float a, float rho, float L) {
 float sunOD(vec2 q, float h, float R) {
   vec2 d = uSun.xz;
   float a = dot(d, d), L = max(R * 1.8, 16.0), od = 0.0;
-  if (h > uH * (1.0 - uCond) && h < uH + 100.0) {
+  // The funnel's own shade runs from its foot up through the flare, with soft ends.
+  // A cut 100 m over the top lit the flare above a hard ring.
+  float hb = uH * (1.0 - uCond), wf = smoothstep(hb - 60.0, hb + 60.0, h);
+  if (wf > 0.0) {
     // The core's mean edge is a ramp from 0.95 to 0.75: two circles give a soft terminator.
     od = funnelSig(1.6, R) * 0.5 * (chord(q, d, a, 0.75 * R, L) + chord(q, d, a, 0.95 * R, L));
     // A ring as wide as its Gaussian's area.
@@ -355,6 +358,7 @@ float sunOD(vec2 q, float h, float R) {
       float rho = sheathR(j) * R;
       od += funnelSig(mix(0.45, 0.12, float(j) / float(SHEATHS - 1)), R) * (chord(q, d, a, rho + w, L) - chord(q, d, a, max(rho - w, 0.0), L));
     }
+    od *= wf;
   }
   // The dust's own shade: three nested circles, so its shadow has no hard rim.
   // Its sun ray runs across the whole cloud, not the funnel's short reach.
