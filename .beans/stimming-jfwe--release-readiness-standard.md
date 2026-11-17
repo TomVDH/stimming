@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T01:52:44Z
-updated_at: 2026-11-17T01:55:53Z
+updated_at: 2026-11-17T02:03:44Z
 parent: stimming-3s8z
 ---
 
@@ -17,8 +17,8 @@ Doc: docs/plans/release-ready.md
 - [x] Write the standard (docs/plans/release-ready.md)
 - [x] New-toys section (the ~20 toys still to come)
 - [x] Commit the standard
-- [ ] Audit the 52 main-shelf toys: one table, read from code and docs
-- [ ] Question sheet per toy: bar today, open questions, attribution unknowns
-- [ ] Commit the audit
+- [x] Audit the 52 main-shelf toys: one table, read from code and docs
+- [x] Question sheet per toy: bar today, open questions, attribution unknowns
+- [x] Commit the audit
 - [ ] Ask Tom the first batch; write answers with the date
 - [ ] Commit each batch of answers
