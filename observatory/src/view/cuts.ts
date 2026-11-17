@@ -267,6 +267,10 @@ let stillT = 0, fadeT = 0, grab = false;
 // The time in the dip.
 // dipWide is true once the black hides the change to the wide shot.
 let dipT = 0, dipWide = false;
+// Seconds since the pick, for the dip into the first shot.
+// The wide shot fades down in DIP_DOWN.
+// The first shot fades up in DIP_UP.
+let inT = 0;
 // The shot the dip holds.
 let lastShot: Shot = 'glass';
 // The locked cameras: each cut sets its own on its first frame.
@@ -359,7 +363,8 @@ export const cuts = {
   // True while a close shot or the dip shows; a tap or Esc then skips.
   get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
   get shot(): Shot | null {
-    if (mode === 'cuts') return seq.shot;
+    // The wide shot still shows while it fades to black.
+    if (mode === 'cuts') return inT < DIP_DOWN ? null : seq.shot;
     if (mode === 'dip') return dipWide ? null : lastShot;
     return mode === 'still' ? 'glass' : null;
   },
@@ -385,6 +390,7 @@ export const cuts = {
     // Reduced motion waits in the wide shot until the tube rests.
     mode = reduced() ? 'wait' : 'cuts';
     stillT = 0;
+    inT = 0;
     locks.clear();
     useHero = hero.ready;
     cutShot = null;
@@ -405,6 +411,7 @@ export const cuts = {
     if (mode === 'off') return;
     view = v;
     if (mode === 'cuts') {
+      inT += dt;
       seq = stepSeq(seq, dt, v);
       if (seq.done) {
         lastShot = seq.shot;
@@ -429,7 +436,10 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    const close = mode === 'cuts' || mode === 'still' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
+    // A pick dips to black first.
+    // The wide shot fades down, then the first shot comes up.
+    const inDown = mode === 'cuts' && inT < DIP_DOWN;
+    const close = (mode === 'cuts' && !inDown) || mode === 'still' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
     // The dip holds the last cut until the frame is black.
     // The reduced-motion still is the glass shot.
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
@@ -438,7 +448,12 @@ export const cuts = {
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
-    if (!close) { cutFocus(null); cutGrain(0); return; }
+    if (!close) {
+      cutFocus(null);
+      cutGrain(0);
+      if (inDown) black((inT / DIP_DOWN) ** 2);
+      return;
+    }
     const s = locks.of(cutOf(shot));
     if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
@@ -447,6 +462,9 @@ export const cuts = {
     // The dip fades down to black, and the cuts' grain eases back.
     if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
     else cutGrain(1);
+    // The first shot fades up from the black.
+    // The camera and the hero swapped under it.
+    if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
     beam(BEAM_CLOSE);
     showBars(true);
   },

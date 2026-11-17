@@ -102,6 +102,30 @@ test('every lift plays all five shots: the roll at least 2.5 s, no flash, the gl
     assert.ok(of(r, 'glass').at >= SHUTTER_S - 0.02, `${deg} degrees: glass at ${of(r, 'glass').at}`);
   }
 });
+test('every pick plays leaf, slit, inside lift, roll and glass, each at its minimum', () => {
+  // Picks from rest, after an aim, low, mid or high, and ?cuts.
+  // Only the lift differs between them.
+  // Budgeted long lifts run faster.
+  const cases = [
+    ['no lift', () => ({ altLeft: 0, altEta: 0 })],
+    ...[2, 4, 8, 12, 15, 19, 24].map(d => [`${d} degrees`, lift(d).at]),
+    ['a budgeted 30 degrees', lift(30, SHUTTER_S / 2, 3, 0.5).at],
+  ];
+  for (const [name, view] of cases) {
+    const r = play(view);
+    assert.equal(names(r), 'edge,slit,lift,roll,glass', name);
+    assert.ok(Math.abs(of(r, 'edge').dur - OPEN_CUT) < 0.02, `${name}: edge ${of(r, 'edge').dur}`);
+    assert.ok(Math.abs(of(r, 'slit').dur - OPEN_CUT) < 0.02, `${name}: slit ${of(r, 'slit').dur}`);
+    assert.ok(of(r, 'lift').dur >= LIFT_CUT - 0.02, `${name}: lift ${of(r, 'lift').dur}`);
+    assert.ok(of(r, 'roll').dur >= ROLL_MIN - 0.02, `${name}: roll ${of(r, 'roll').dur}`);
+    assert.ok(of(r, 'glass').dur >= GLASS_HOLD - 0.02, `${name}: glass ${of(r, 'glass').dur}`);
+  }
+  // A pick on an open shutter has no shutter shots.
+  // Lift, roll and glass each keep their minimum.
+  const r = play(lift(10, 0).at, 'slew');
+  assert.equal(names(r), 'lift,roll,glass');
+  assert.ok(of(r, 'lift').dur >= LIFT_CUT - 0.02 && of(r, 'roll').dur >= ROLL_MIN - 0.02);
+});
 test('a short lift: the glass starts later, with a smaller entry, after the roll', () => {
   // 8 degrees: under 6 are left when the roll starts.
   const L = lift(8), r = play(L.at);
