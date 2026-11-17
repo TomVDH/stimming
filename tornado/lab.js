@@ -19,9 +19,9 @@ const TABLE = {
   flare: [6.0, 4.4, 3.0, 1.85, 1.3, 1.1],  // radius at the base over radius at the ground
   prof: [3.0, 2.3, 1.5, 1.15, 1.0, 0.9],  // where the flare starts: high is late, low is early
   vmax: [32, 45, 62, 82, 105, 130],       // peak wind, m/s
-  cond: [0, 0.55, 0.85, 1, 1, 1],          // how far the condensation reaches down: none at F0
-  debris: [0, 0.3, 0.55, 0.85, 1, 1],
-  dustH: [40, 90, 160, 260, 380, 480],     // debris cloud height, m
+  cond: [0.65, 0.92, 1, 1, 1, 1],          // how far the condensation reaches down
+  debris: [0.4, 0.55, 0.65, 0.85, 1, 1],    // a dust whirl at the foot even at F0
+  dustH: [120, 150, 190, 260, 380, 480],   // debris cloud height, m: tall at low F, to meet the funnel
   multi: [0, 0, 0, 0.5, 1, 1],             // satellite vortices
   rain: [0, 0, 0, 0.15, 0.55, 0.8],        // rain wrapped round the funnel
   dark: [0, 0.1, 0.3, 0.55, 0.75, 0.88],
@@ -79,7 +79,7 @@ uniform vec2 uRes, uJit;
 // 16 the deck's tone on the horn, 32 sheath noise, 64 dust and rain.
 uniform float uSkip;
 // Lab knobs: sheath density, core edge, and the deck's whirl.
-uniform float uSheathK, uEdgeW, uSpTurn, uSpIn, uSpTwist, uSpR;
+uniform float uWid, uDens, uSheathK, uEdgeW, uSpTurn, uSpIn, uSpTwist, uSpR;
 bool off(float b) { return mod(floor(uSkip / b), 2.0) > 0.5; }
 uniform float uTime, uFoc, uHz, uDist, uBlend, uSpin, uAmp, uFk, uDbg;
 uniform int uSteps;
@@ -317,7 +317,8 @@ Geo geo(vec3 p, float xn) {
   Geo g;
   g.q = p.xz - axisAt(p.y);
   g.R = hornR(p.y, g.sH);
-  float taperL = max(g.R * 4.0, 80.0);
+  // The tip's taper keeps its length when Width widens the funnel, so the body stays solid.
+  float taperL = max(g.R * 4.0 / uWid, 80.0);
   // The edge noise is read only near the lower edge, and only near the funnel.
   float top = uH * (1.0 - uCond) + 0.2 * uH * mix(1.0, 0.3, uCond) + taperL * 1.4;
   // The noisy edge eases into the flat one before xn, so x has no step there.
@@ -355,8 +356,11 @@ float sunOD(vec2 q, float h, float R) {
       od += funnelSig(mix(0.45, 0.12, float(j) / float(SHEATHS - 1)), R) * (chord(q, d, a, rho + w, L) - chord(q, d, a, max(rho - w, 0.0), L));
     }
   }
-  float Rd = debrisR(h);
-  od += uDebris * 0.6 * 0.012 * chord(q, d, a, Rd * 0.65, L) * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, h));
+  // The dust's own shade: three nested circles, so its shadow has no hard rim.
+  // Its sun ray runs across the whole cloud, not the funnel's short reach.
+  float Rd = debrisR(h), Ld = max(L, Rd * 2.0), dd = 0.0;
+  for (int c = 0; c < 3; c++) dd += chord(q, d, a, Rd * (0.35 + 0.3 * float(c)), Ld);
+  od += uDebris * 0.6 * 0.012 * dd / 3.0 * (1.0 - smoothstep(uDustH * 0.4, uDustH * 1.3, h));
   return od;
 }
 // A sheath's density factor at one point: its noise past the cover threshold.
@@ -650,7 +654,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       // One noise read gives one clean outline; the lab's per-step reads blurred it.
       // The soft edge widens by the noise's own swing instead.
       float wC = 0.1 + uEdgeW * uAmp;
-      od = funnelSig(d, R) * rampInt(xa, xb, len, edge, wC);
+      od = funnelSig(d, R) * rampInt(xa, xb, len, edge, wC) * uDens;
       // Light the core where the ray meets its ragged edge, so the relief shades.
       // The point stays outside the mean core, so a deep pocket is not black.
       float xt = max(edge - 0.5 * wC, 0.9);
@@ -698,7 +702,7 @@ void shellSeg(vec3 pa, vec3 rd, float len, float xa, float xb, float Rea, float 
       ph = pa + rd * (len * uk);
       q = ph.xz - axisAt(ph.y);
       // Thin crossings carry more cloud than the volume's mean, so the puffs read.
-      od = sMax * den * uSheathK;
+      od = sMax * den * uSheathK * uDens;
       xr = rk * mix(Rea, Reb, uk) / R;
     }
     if (od < 1e-4) continue;
@@ -1028,7 +1032,7 @@ const knob = id => {
   show();
   return () => +el.value;
 };
-const K = { width: knob('width'), flare: knob('flare'), lean: knob('lean'), sway: knob('sway'), reach: knob('reach'), dustH: knob('dustH'), sheath: knob('sheath'), edge: knob('edge'), spTurn: knob('spTurn'), spIn: knob('spIn'), spTwist: knob('spTwist'), spR: knob('spR'), strips: knob('strips'), bakeMix: knob('bakeMix'), spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
+const K = { dens: knob('dens'), width: knob('width'), flare: knob('flare'), lean: knob('lean'), sway: knob('sway'), reach: knob('reach'), dustH: knob('dustH'), sheath: knob('sheath'), edge: knob('edge'), spTurn: knob('spTurn'), spIn: knob('spIn'), spTwist: knob('spTwist'), spR: knob('spR'), strips: knob('strips'), bakeMix: knob('bakeMix'), spin: knob('spin'), amp: knob('amp'), deb: knob('deb'), dist: knob('dist'), lens: knob('lens'), tod: knob('tod'), az: knob('az'), steps: knob('steps'), res: knob('res') };
 const fEl = $('f');
 let f = +fEl.value, fShown = f, morph = false, paused = false, simT = 0;
 const showF = () => {
@@ -1039,6 +1043,17 @@ fEl.addEventListener('input', () => { f = +fEl.value; morph = false; $('morph').
 const toggle = (id, set) => $(id).addEventListener('click', () => { const on = $(id).getAttribute('aria-pressed') !== 'true'; $(id).setAttribute('aria-pressed', String(on)); set(on); });
 toggle('morph', on => { morph = on; });
 toggle('pause', on => { paused = on; });
+// Copy JSON: every knob, F and the part boxes, to paste as defaults.
+$('copy').addEventListener('click', async () => {
+  const out = { f: +$('f').value };
+  for (const el of document.querySelectorAll('.knobs input[type=range]')) out[el.id] = +el.value;
+  out.parts = Object.fromEntries([...document.querySelectorAll('[data-skip]')].map(el => [el.parentElement.textContent.trim(), el.checked]));
+  out.bake = $('bake').getAttribute('aria-pressed') === 'true';
+  const text = JSON.stringify(out, null, 2), btn = $('copy');
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
+  catch { console.log(text); btn.textContent = 'In console'; }
+  setTimeout(() => { btn.textContent = 'Copy JSON'; }, 1500);
+});
 toggle('bake', on => { baking = on; bakeAll = true; });
 // A knob change bakes the whole backdrop again.
 document.querySelector('.panel').addEventListener('input', () => { bakeAll = true; });
@@ -1128,7 +1143,7 @@ function draw(now) {
   let skip = +(qs.get('skip') || 0);
   for (const el of document.querySelectorAll('[data-skip]')) if (!el.checked && !(skip & +el.dataset.skip)) skip += +el.dataset.skip;
   set(sc, 'uSkip', skip);
-  set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
+  set(sc, 'uWid', K.width()); set(sc, 'uDens', K.dens()); set(sc, 'uSheathK', K.sheath()); set(sc, 'uEdgeW', K.edge());
   set(sc, 'uSpTurn', K.spTurn()); set(sc, 'uSpIn', K.spIn()); set(sc, 'uSpTwist', K.spTwist()); set(sc, 'uSpR', K.spR());
   set(sc, 'uDbg', qs.has('dbg') ? +qs.get('dbg') || 1 : 0);
   set(sc, 'uSpin', K.spin());
