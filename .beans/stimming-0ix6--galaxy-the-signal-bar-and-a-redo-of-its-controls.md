@@ -19,12 +19,12 @@ First read of what to redo: Little: confirm the order of the 16 options and the 
 - [x] List every control and what it does (from the spec, the input code and close-up stills of the real page; not a hands-on play session)
 - [x] Check it against the eight points in stimming-a5rs
 - [x] Propose the redo to Tom before any change (2026-11-17, below); Tom rules
-- [ ] Apply the redo to the toy's `bar` spec
+- [x] Apply the redo to the toy's `bar` spec (2026-11-17; Tom: "Yes, apply"), as proposed
 - [x] Switch the toy to the Signal bar: `signal: true` in `galaxy/index.html` (2026-11-17). Checked on the real page at 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] 1280 px, 375 x 812 and 812 x 375; clean console
-- [ ] The toy's doc in `docs/toys/` says what is true
+- [x] 1280 px, 375 x 812 and 812 x 375; clean console (2026-11-17, with the new copy)
+- [x] The toy's doc in `docs/toys/` says what is true (the Idea line, the bar block and the gesture table, by hand)
 
-## Review and copy rewrite of 2026-11-17 (proposal; no word is changed)
+## Review and copy rewrite of 2026-11-17 (applied the same day; Tom: "Yes, apply")
 
 The rules are those of Cauldron, Train ride and Railgun: one word for one thing; a label is a noun or one verb; a help row is one instruction with the verb first; the same action has the same words on every toy.
 
@@ -67,6 +67,6 @@ The 16 other options keep their names and their order: Star, Binary star, Pulsar
 ### Findings
 
 - Clear keeps one object: the heaviest (`clearAll`). The help row says "Clear the sky"; that is close, not exact.
-- The builder cannot draw a `+` keycap: it splits a key word on `+`. It needs a small fix with the apply.
+- The builder could not draw a `+` keycap: it split a key word on `+`. A lone `+` or `/` is now a key (`inputHTML` in `shared/signal.js`).
 - Space, the zoom keys and R act but show nowhere today.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen.

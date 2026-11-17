@@ -48,8 +48,8 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="Galaxy simulation. Drag to fling stars, tap to place the object chosen in Add: a star, binary, pulsar, supernova, white hole, magnetar, wormhole, nebula, comet, red giant, globular cluster, kilonova, gamma-ray burst, cosmic string, dark nebula, dark well or supermassive black hole. Hold to grow a star cluster and drag to throw it. Drag an object to move it. Scroll or pinch to zoom. Objects that meet merge, and seven merged objects collapse into a black hole. Space places one, C clears, R resets.">
-      <p class="fail" hidden>Galaxy needs WebGPU, which this browser doesn't have.</p>
+    <div class="stage stage--galaxy space" id="space" tabindex="0" role="application" aria-label="A galaxy of stars. Click to add the object from the Objects list. Hold to grow a star cluster. Drag to throw it. Drag an object to move it. Scroll to zoom the view. Objects that touch merge. Seven merged objects make a black hole. Press Space to add an object at the centre. Press C to clear the sky. Press R to reset the toy.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGPU.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -64,7 +64,7 @@ import { intro as playIntro } from '../shared/intro.js';
 stage('libs');
 // The intro holds until the page, its font and the first frame are in.
 playIntro({ ready: pageReady() });
-// The Add choice: what a click on the sky places.
+// The Objects choice: what a click on the sky adds.
 const KINDS = [
   { value: 'star', label: 'Star', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="8" cy="8" r="3.4"/><path d="M8 1.2v2M8 12.8v2M1.2 8h2M12.8 8h2"/></svg>' },
   { value: 'binary', label: 'Binary star', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="4.6" cy="9.6" r="2.4"/><circle class="solid" cx="11.4" cy="6.4" r="1.8"/><path d="M1.8 6.2a7 3.6 -24 0 1 12.8 -2.6M14.2 9.8a7 3.6 -24 0 1 -12.8 2.6"/></svg>' },
@@ -82,15 +82,15 @@ const KINDS = [
   { value: 'string', label: 'Cosmic string', icon: '<svg viewBox="0 0 16 16"><path d="M1.5 12.5c2-1 2.5-3.5 4.5-4.5s3 1 5-1 2.5-3.5 3.5-4.5"/></svg>' },
   { value: 'dark', label: 'Dark nebula', icon: '<svg viewBox="0 0 16 16"><path class="solid" d="M3.6 12c-2-0.2-2.4-3-0.6-3.6-0.2-2.8 3.2-3.8 4.6-1.8 1.2-2.6 5.4-1.6 4.8 1.4 2.2 0.4 2 3.8-0.2 4z"/></svg>' },
   { value: 'well', label: 'Dark well', icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3.2"/><circle class="solid" cx="8" cy="8" r="1"/></svg>' },
-  { value: 'super', label: 'Supermassive', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="8" cy="8" r="3"/><ellipse cx="8" cy="8" rx="7" ry="2.4" transform="rotate(-18 8 8)"/></svg>' },
+  { value: 'super', label: 'Black hole', icon: '<svg viewBox="0 0 16 16"><circle class="solid" cx="8" cy="8" r="3"/><ellipse cx="8" cy="8" rx="7" ry="2.4" transform="rotate(-18 8 8)"/></svg>' },
 ];
 // Clear and Reset bind once the sim exists.
 const act = { clear() {}, reset() {} };
 const ui = initPage({ id: 'galaxy', signal: true, bar: {
-  choice: { label: 'Add', display: 'tray', value: 'star', options: KINDS,
+  choice: { label: 'Objects', display: 'tray', value: 'star', options: KINDS,
     onPick: v => { pick = v; panel.focus({ preventScroll: true }); } },
-  // Gravity sets the pace of every orbit.
-  slider: { label: 'Gravity', min: 0.3, max: 1.2, step: 0.05, value: 0.3, onInput: v => { pace = v; } },
+  // Speed sets the pace of every orbit.
+  slider: { label: 'Speed', min: 0.3, max: 1.2, step: 0.05, value: 0.3, onInput: v => { pace = v; } },
   actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
   // Streaks set how long stars and effects linger; zero turns them off.
   settings: [
@@ -99,7 +99,10 @@ const ui = initPage({ id: 'galaxy', signal: true, bar: {
   ],
   reset: () => act.reset(),
   quality: true,
-  keys: [['click', 'place'], ['hold + drag', 'throw a cluster'], ['drag', 'move'], ['scroll', 'zoom']],
+  keys: [['click', 'add an object'], ['hold + drag', 'throw a star cluster'], ['drag', 'move an object'], ['scroll', 'zoom the view']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add an object'], ['hold', 'Grow a star cluster'], ['hold + drag', 'Throw the star cluster'], ['drag', 'Move an object'],
+    ['scroll', 'Zoom the view'], ['space', 'Add an object at the centre'], ['+ -', 'Zoom the view'], ['C', 'Clear the sky'], ['R', 'Reset the toy']],
 } });
 
 const panel = document.getElementById('space');
@@ -292,7 +295,7 @@ const STAR_TYPES = [
   { m: 9, col: oklchLinear(0.78, 0.16, 50) },
 ];
 const PULSAR_M = 8, WHITE_M = 14, NOVA_M = 16;
-// The sim runs at this share of real time until Gravity changes it.
+// The sim runs at this share of real time until Speed changes it.
 const PACE = 0.3;
 // A binary's two stars start this far apart.
 const BIN_D = 1.6;
@@ -342,7 +345,7 @@ const holeRadius = m => Math.min(0.55, HOLE_R * Math.sqrt(m / BH_M));
 let running = false, ready = false, shown = !document.querySelector('.intro');
 curtain.then(() => { shown = true; });
 let renderer = null, camera = null;
-// Object timelines (fuses, bursts) run on their own clock, apart from Gravity.
+// Object timelines (fuses, bursts) run on their own clock, apart from Speed.
 let clockT = 0;
 let simT = 0, ring = SEED, fling = null, hold = null, lowDpr = false, pick = 'star', pace = PACE;
 // Streak lengths in seconds: stars and objects, then effects.

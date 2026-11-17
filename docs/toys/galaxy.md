@@ -16,7 +16,7 @@
 
 ## Idea
 
-About 330,000 stars (about 200,000 on a phone) orbit a few heavy wells on a black panel. A tap places an object from the Add tray; a hold and drag flings a cluster of stars.
+About 330,000 stars (about 200,000 on a phone) orbit a few heavy wells on a black panel. A tap adds an object from the Objects list; a hold and drag flings a cluster of stars.
 Wells merge, and a merger can fall into a black hole with a lensed disk and jets. Without WebGPU, the panel shows one line.
 
 ## Controls
@@ -26,10 +26,11 @@ Bar: v3, the Signal bar, over Bar v2 (`galaxy/index.html:89`, `signal: true`). G
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Add`, tray, 17 icons, default `star` |
+| Top left (choice) | `Objects`, tray, 17 icons, default `star`; the last is `Black hole` |
 | Bottom left (actions) | `Clear` (C) |
-| Bottom right (slider) | `Gravity`, 0.3 to 1.2, default 0.3: the sim pace |
-| Key strip | click place; hold and drag throw a cluster; drag move; scroll zoom |
+| Bottom right (slider) | `Speed`, 0.3 to 1.2, default 0.3: the sim pace |
+| Key strip (Bar v2) | click add an object; hold and drag throw a star cluster; drag move an object; scroll zoom the view |
+| How to play (Bar v3) | Click: Add an object. Hold: Grow a star cluster. Hold and drag: Throw the star cluster. Drag: Move an object. Scroll: Zoom the view. Space: Add an object at the centre. + and -: Zoom the view. C: Clear the sky. R: Reset the toy. |
 | Settings | `Star streaks` (0 to 1, 0.18), `Effect streaks` (0 to 1.2, 0.18), Quality; Reset in the footer |
 | Dev (`?dev`) | None |
 <!-- /gen:bar -->

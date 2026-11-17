@@ -73,7 +73,8 @@ const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-cl
 function inputHTML(word, touch) {
   const w = word.toLowerCase().trim();
   let kind = KINDS.find(k => w.startsWith(k));
-  if (!kind) return w.split(/[\s/+]+/).filter(Boolean).map(k => `<kbd>${k}</kbd>`).join('');
+  // A lone + or / is a key; inside a longer word it parts two keys.
+  if (!kind) return w.split(/\s+/).flatMap(k => (k.length > 1 ? k.split(/[/+]+/) : [k])).filter(Boolean).map(k => `<kbd>${k}</kbd>`).join('');
   // A word after the gesture says what you do it on.
   const rest = w.slice(kind.length).trim();
   const twice = kind.startsWith('double') ? '<small>2×</small>' : '';
