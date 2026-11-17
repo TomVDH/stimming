@@ -17,21 +17,21 @@
 ## Idea
 
 One big iron pot of broth over a fire, seen from a little above, so the soup is the stage.
-A drag stirs it with a wooden spoon: the soup turns with weight, the middle dips, and the things ride round. A tap or `+ Thing` throws in the next thing (carrot, onion, fish, beetroot, rubber duck, peas, boot, star, tomato, mushroom). Each one splashes, bobs, cooks, breaks up and gives the soup its colour, so the colour and the thickness are a record of what went in.
+A drag stirs it with a wooden spoon: the soup turns with weight, the middle dips, and the things ride round. A tap or `+ Ingredients` throws in the next thing (carrot, onion, fish, beetroot, rubber duck, peas, boot, star, tomato, mushroom). Each one splashes, bobs, cooks, breaks up and gives the soup its colour, so the colour and the thickness are a record of what went in.
 
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`cauldron/index.html:105`).
+Bar: v3, the Signal bar, over Bar v2 (`signal: true` in `cauldron/index.html`). Copy rewritten 2026-11-17 (bean `stimming-u2in`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Add` tray: Mix (the old round), the ten things, and four liquids: cream, squid ink, chilli oil, saffron |
-| Bottom left (actions) | `+ Thing` (T), `Clear` (C) |
-| Bottom right (slider) | `Fire`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
-| Key strip | drag stir; click throw in; ← → stir |
+| Choice | `Ingredients` list: Any (the old round, no heading), then Solids (sixteen) and Liquids (cream, squid ink, chilli oil, saffron) |
+| Actions | `+ Ingredients` (T), `Throw out` (C) |
+| Slider | `Heat`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
+| How to play | Click: add an ingredient, push an ingredient down. Drag: stir the soup, move an ingredient, pour the liquid. ← →: stir the soup. T: add an ingredient. C: throw out the soup |
 | Settings | Simmer sound (toggle); Quality; Reset in the footer |
-| Dev (`?dev`) | Exposure, Bloom; Camera height and Camera turn (near 0 is a side view); Fire X, Fire Z, Fire height, Fire size, Fire power, Fire spread. The camera and fire rows keep no value |
+| Dev (`?dev`) | Look: Exposure, Bloom, Blur. Camera: Height, Turn (near 0 is a side view). Fire: X, Z, Height, Size, Power, Spread. The camera and fire rows keep no value |
 <!-- /gen:bar -->
 
 | Gesture | Does |
@@ -201,7 +201,7 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 |---|---|
 | Hands | Tap a thing to dunk it; drag a thing to pull it (it lifts, drips, leaves a wake); with a liquid picked, a drag pours along the path |
 | Things | 16 kinds: the ten, cleaner and chunkier, plus potato (cubes), leek (rings), garlic (cloves), chilli (sweats oil), bay leaf (never cooks through), noodles (melt) |
-| Tray | Mix, Things, Witchy, Odd and Liquids groups (the shell's opt-in `group`), four across, larger icons with no plate. Mix throws only the Things |
+| Tray | Any, then Solids, Witchy, Odd and Liquids groups in the Bar v3 Ingredients sheet. Any throws only the Solids |
 | Witchy and Odd | Tom, 2026-11-17: ten witchy and ten odd things, two of each per round, bean `stimming-bont`. All twenty are in. Each has its own step in `ACT`; `AIM` runs after the springs; `free()` names the things on the soup |
 | Frog | Kicks now and then (legs out, a shove, a wake). Sometimes it hops onto the rim at the sides or back, turns to face the soup, sits 2.5 to 5 s and jumps back in; a hotter pot makes hops likelier. It croaks on each jump. A tap makes it kick away. It never cooks |
 | Candle stub | Floats upright and burns down over 90 s, then melts away. Its wax leaves a film of fat. The flame lights the soup, the things and the iron near it, and glints in the soup. A tap puts it out with a hiss and a puff; it lights again after 2.5 s |

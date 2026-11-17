@@ -86,6 +86,23 @@ Four Tool-approved dioramas Tom wants next. Each has a draft bean. The sizes are
 | 58 | **Observatory** | C | L |
 | 60 | **Lantern lake** | C | M |
 
+## Tom's picks, 2026-11-17
+
+Three Tool-approved toys Tom wants next, each held to size S to M. Each has a bean; no plan exists yet.
+
+| # | Toy | Group | Bean | Note |
+|---|---|---|---|---|
+| 124 | **Chemical garden** | A | `stimming-eekd` | 3D (three.js), size M. Tom, 2026-11-17. |
+| 73 | **Water wheel** | E | `stimming-2s2a` | [toy-plan.md](toy-plan.md) rates it L and high risk. The plan must cut the scope to fit M. |
+| 117 | **Moire veils** | F | `stimming-p32r` | |
+
+Two new ideas from Tom, the same day. The interactions are open.
+
+| # | Toy | Group | Bean | Note |
+|---|---|---|---|---|
+| 365 | **Volcano** | C | `stimming-4wnw` (draft) | A volcano erupts. Size XXXXXL: a three.js parade piece at Railgun scale. Its own toy, apart from Lava coast (99). Not in the S to M batch. |
+| 366 | **Jet hover** | C | `stimming-ay6n` (draft) | A VTOL jet hovers on turbofans with the afterburner lit: heat glow, smoke, heat distortion and haze against the background. Size XXL. Tom chose the craft over a jet engine on a plinth. Apart from Night catapult (220). |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.

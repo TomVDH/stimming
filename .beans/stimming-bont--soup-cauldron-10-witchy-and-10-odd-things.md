@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-17T20:54:49Z
-updated_at: 2026-11-17T21:33:35Z
+updated_at: 2026-11-17T21:38:01Z
 parent: stimming-fskg
 ---
 
@@ -28,3 +28,7 @@ Built: Frog, Candle stub, Antimatter, Tiny black hole. Shared: a light list (`uG
 ## Rounds 2 to 5 (2026-11-17)
 
 Tom: "just focus on getting all ingredients in first, no per batch checking". All twenty are in, with a single still per set of five. Clean console. Frame time with the pane in the background (High, 1984 x 1440, 10 to 20 things): empty pot 43.2 ms, 20 kitchen things 40.8, 10 witchy 42.1, 10 odd 43.4; the machine was slower than in round 1 (20 ms then), so only the relative cost holds: the new things cost about what kitchen things cost.
+
+## Bar v3 (2026-11-17)
+
+Merged main's Bar v3 copy (Any, Solids, Liquids; grouped Dev rows). Witchy and Odd sit between Solids and Liquids. The Ingredients sheet is five across on the Cauldron (1000 px wide), so all 41 tiles fit at 1280 x 900 with no scroll; two across on a phone, long names wrap. My Dev rows join main's groups: Soup, Stirrer, Light.

@@ -292,12 +292,37 @@ Tom: "the laser is thinner and more realistic like the rail gun targeting one". 
 - [ ] **Step 2:** Compose each frame so the slow machine move reads inside it: the shutter slides, the gear turns, the tube tilts.
 - [ ] **Step 3:** A contact sheet of each cut's first and last frame at 1280. **Gate:** show Tom; commit locally with his words.
 
+### Task 7n: The hero model for the cuts (Tom, 2026-11-17)
+
+**Files:** Create `observatory/src/world/hero.ts` (the detailed main dome and telescope, built at load, hidden outside the cuts). Modify `observatory/src/view/cuts.ts` (swap the hero in at the first cut, out at the wide shot), `observatory/src/world/observatory.ts` only to share dimensions and the machine pose.
+
+- [ ] **Step 1:** The dome: panel seams, shutter leaves on rails, a toothed ring gear and its drive, a catwalk with a rail, stone courses on the drum, the door and its lamp. The inside seen through the slit: the pier, the floor, a stair.
+- [ ] **Step 2:** The telescope: a long refractor tube with a dew shield, the objective cell and glass, a finder scope, a focuser, an equatorial mount on the pier, counterweights, setting circles.
+- [ ] **Step 3:** The hero follows the same machine pose (cupola, shutter, tube) as the light model, and takes the same light, haze and post. It draws only in the cuts; the wide shot's frame time and triangle count do not change.
+- [ ] **Step 4:** Stills of the hero from each current cut camera, plus two free beauty views. **Gate:** show Tom; ship to main.
+
+### Task 7p: Heavy, mechanical motion (Tom, 2026-11-17)
+
+Tom: "we want slowly more mechanical (with inertia) movement of all parts of the observatory". **Files:** Modify `observatory/src/core/dome.ts`, `observatory/src/core/machine.ts`, `observatory/src/loop.ts` (small domes), `tests/observatory-machine.test.mjs`, `tests/observatory-sequence.test.mjs` if cut times move.
+
+- [ ] **Step 1:** Test then change the motion of every part: a slow start under a low acceleration, a long run-down, and a small damped settle at each stop. Cupola: cap 2°/s, acceleration 0.6°/s². Tube: cap 1.5°/s, acceleration 0.5°/s². Shutter: 6 s, eased at both ends, with a short settle at the end stops. The small domes follow slower still.
+- [ ] **Step 2:** No part ever snaps: `hold`, `lost`, a retarget and a release all run down under the same inertia.
+- [ ] **Step 3:** Keep the cut script true to the machine: the shutter cuts cover the 6 s; the slew cuts start when the slew starts.
+- [ ] **Step 4:** Check live on `?cuts` and in play. **Gate:** ship to main; Tom judges it in motion.
+
+### Task 7o: The cuts recomposed (Tom, 2026-11-17)
+
+**Files:** Modify `observatory/src/core/sequence.ts`, `observatory/src/view/cuts.ts`, `tests/observatory-sequence.test.mjs`.
+
+- [ ] **Step 1:** Recompose every cut on the hero model: locked cameras, strong lines, clear negative space, the moving part crossing a fixed edge. The gear cut gives way to the tube lifting from its park.
+- [ ] **Step 2:** A contact sheet, first and last frame of each cut. **Gate:** show Tom; ship to main.
+
 ### Task 7g: The lens cut (Tom, 2026-11-17)
 
 **Files:** Modify `observatory/src/core/sequence.ts` (`CUTS`: a fifth cut, about 2 s, after the roll), `observatory/src/view/cuts.ts`, `observatory/src/world/observatory.ts` (the objective glass), `tests/observatory-sequence.test.mjs`.
 
 - [ ] **Step 1:** Test then add the lens cut to `CUTS`; the sequence ends near 9.5 s; skip and Esc still land on the wide shot.
-- [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
+- [ ] **Step 2:** A locked frame on the open slit; the tube rises into frame from below until the objective glass fills it, pivots slowly in place, stops, and the shot holds about 1.5 s before the cut back wide. The objective glass: tonight's stars reflected and slightly curved, the target star brightest near the centre, the slit edge as a dark band, a green and magenta coating sheen; the tube settles and the reflections stop.
 - [ ] **Step 3:** Reduced motion: a still of the lens inside the crossfade.
 - [ ] **Step 4:** Stills of the lens cut at 1280 and 375. **Gate:** show Tom; commit locally with his words.
 

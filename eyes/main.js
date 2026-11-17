@@ -5,14 +5,18 @@ import { intro as playIntro } from '../shared/intro.js';
 stage('libs');
 // The intro holds until the page, its font and the first frame are in.
 const introDone = playIntro({ ready: pageReady() });
-const ui = initPage({ id: 'eyes', bar: {
+const ui = initPage({ id: 'eyes', signal: true, bar: {
   actions: [
     { verb: 'shuffle', onPress: () => reshuffle() },
     { verb: 'shake', onPress: () => shake() },
     { verb: 'blink', key: 'B', onPress: () => blinkAll() },
   ],
   quality: true,
-  keys: [['click', 'blink'], ['drag', 'move an eye'], ['drag round', 'dizzy'], ['space', 'shake']],
+  keys: [['click', 'blink an eye'], ['drag', 'move an eye'], ['drag round', 'make the eyes dizzy'], ['space', 'shake the eyes']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Blink an eye'], ['click', 'Blink all the eyes'], ['drag', 'Move an eye'], ['drag', 'Shake the eyes'], ['circle', 'Make the eyes dizzy'],
+    ['← → ↑ ↓', 'Move the point the eyes watch'], ['shift ← → ↑ ↓', 'Move an eye'], ['enter', 'Blink an eye'],
+    ['B', 'Blink all the eyes'], ['D', 'Make the eyes dizzy'], ['space', 'Shake the eyes']],
 } });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');

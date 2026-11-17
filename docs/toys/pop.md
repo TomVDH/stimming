@@ -22,25 +22,29 @@ Eighteen materials change the light, the burst, the sound and the feel. Popped c
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`pop/index.html:90`).
+Bar: v3, the Signal bar, over Bar v2 (`pop/index.html:90`, `signal: true`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Material`, stepper, 18 options, default `gloss` |
-| Bottom left (actions) | `Shuffle` (S), `Reset` (R) |
+| Top left (choice) | `Material`, stepper, 18 options, default `gloss`; `holo` shows as `Hologram`, `topo` as `Contours` |
+| Bottom left (actions) | `Shuffle` (S) |
 | Bottom right (slider) | None |
-| Key strip | click pop; drag sweep; hold burst a big one; arrows and space choose, pop |
-| Settings | Quality only |
+| Key strip (Bar v2) | click pop a bubble; drag pop a line of bubbles; hold burst a big bubble; arrows select a bubble |
+| How to play (Bar v3) | Click: Pop a bubble. Drag: Pop a line of bubbles. Hold: Burst a big bubble. Hold: Pop a bubble with more force. Move: Move the light. Arrows: Select a bubble. Space: Pop the bubble. Enter: Pop the bubble. S: Shuffle the sheet. R: Reset the toy. |
+| Settings | Quality; Reset in the footer |
 | Dev (`?dev`) | None |
+
+The sheet keeps clear of both bars: `bands` (`:771`) reads `ui.cover()`, and `ui.onCover` fits the sheet again.
+A new sheet grows out from the Bar v3 Shuffle button, or from the Bar v2 die and stepper under `?bar=v2`. The rolling die is on the Bar v2 chip only.
 <!-- /gen:bar -->
 
 | Gesture | Does |
 |---|---|
-| Click or tap | Squeak on press; pop on release, with force from the squeeze (`:1963`) |
+| Click or tap | Squeak on press; pop on release, with force from the squeeze (`:1969`) |
 | Drag | Past 0.45 of a cell radius, the press turns into a sweep that pops the path |
 | Hold | Charges a jumbo cell, then bursts it |
 | Hover | Leans the point light toward the pointer |
-| Keys | Arrows move a focus cell; Space or Enter holds, then pops (`:2025`) |
+| Keys | Arrows move a focus cell; Space or Enter holds, then pops (`:2033`); S shuffles; R resets, bound by the toy (`:2053`) |
 | Wheel | None. A scroll lets go of the hover |
 
 ## Renderer and libraries
@@ -88,7 +92,7 @@ Drift: none. Pop field is the reference port for the library set (`AGENTS.md`): 
 
 The camera is orthographic in CSS pixels, y down. Blending is premultiplied over.
 
-### Uniforms: `domeMat` (`:1596`)
+### Uniforms: `domeMat` (`:1811`)
 
 | Uniform | Type | Meaning | Range or default |
 |---|---|---|---|
@@ -107,17 +111,17 @@ Instanced attributes carry the palette stops (`aLo`, `aMi`, `aHi`, `aLi`) and th
 
 | | |
 |---|---|
-| Graph | `audioKit({ keys })` (`:852`) |
+| Graph | `audioKit({ keys })` (`:856`) |
 | Engine | Tone.js through `kit.tone()`, loaded on the first gesture |
 | Voices | `note` (PolySynth of MembraneSynth) and `ping` (PolySynth of Synth), 16 voices each; NoiseSynth bursts (crack, squeak, rattle, thump); `bloop`; `boom`; a creak that a squeeze opens |
-| Per material | The `SND` table (`:921`) tunes the voices |
+| Per material | The `SND` table (`:925`) tunes the voices |
 | Sleep | `kit.rest()` when the loop stops |
 
 ## Quality and performance
 
 | | |
 |---|---|
-| Pixel ratio | `pixelRatio(w, h, { budget: Infinity })` (`:791`): no pixel budget, no cap |
+| Pixel ratio | `pixelRatio(w, h, { budget: Infinity })` (`:792`): no pixel budget, no cap |
 | Slow-frame step | None |
 | Idle | The loop stops when nothing moves; a timer wakes it for the next refill |
 | Reduced motion | No entry inflation, no nudges or ripples, instant springs |

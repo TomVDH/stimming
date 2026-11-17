@@ -940,8 +940,8 @@ void main() {
           // Over the band the live march gives way to the baked far field, and the bake takes over.
           float wFar = smoothstep(farD - band, farD, t);
           cSig *= bake ? wFar : 1.0 - wFar;
-          // Behind nine tenths of cover a sample adds little: it keeps the last light.
-          if (T > 0.1 || cLit.x < 0.0) cLit = stormLit(pk, d);
+          // Behind seven tenths of cover a sample adds little: it keeps the last light.
+          if (T > 0.3 || cLit.x < 0.0) cLit = stormLit(pk, d);
           cCol = hazed(cLit, hzF);
         }
       }
