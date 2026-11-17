@@ -50,7 +50,8 @@ Question: which direction does the bar redo take?
   - Keycaps are small flash boxes (white, dark ink, a dark edge) on the strip, on actions and in sheets
   - (i) opens a How to play sheet: every gesture, every action key and every option key
 - [x] Tom, 2026-11-17: the round 3 underline clung to the letters; he wants controls for the hover treatments. The underline is gone. A Hover knob holds six: Ink bar (the default, at the very foot, clear of the letters), Line, White box, Ink box, Brackets, Ink word. A press is the white box in all six; keyboard focus is the ink bar in all six
-- [ ] Tom judges round 4 and picks a Hover
+- [x] Tom's pick (2026-11-17): Hover is the White box. The white flash box closes in from the sides when you point; a press lands it oversize for one frame. It is the lab's default
+- [ ] Tom judges the rest of round 4 (keycaps, How to play, the contrast fixes)
 - [ ] Not checked: 812 x 375, a real touch screen, keyboard-only use, a disabled control
 - [ ] Next, on Tom's yes only: Signal moves from the lab into the shell on one toy (hard rule 3: its own bean)
 
