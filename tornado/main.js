@@ -206,15 +206,16 @@ float stormCalm(vec3 p) {
   return c;
 }
 // How much of a horn hangs here, 0 to 1. A low sun reaches its sides under the base.
+// At the base the bell keeps the underside's slate; down the bell it takes the sun by degrees.
 float hornUnder(vec3 p) {
   if (uTorOn < 0.5) return 0.0;
   float lb = baseAt(p.xz), u = 0.0;
-  float hk = 1.0 - smoothstep(lb - 0.1, lb + 0.3, p.y);
+  float hk = smoothstep(lb, lb * 0.8, p.y);
   if (hk <= 0.0) return 0.0;
   for (int i = 0; i < ${MAX_FUNNELS}; i++) {
     if (uTorZ[i].w <= 0.0) continue;
     vec4 n = uTorN[i];
-    u = max(u, uTorH[i].x * (1.0 - smoothstep(n.w * 1.3, n.w * 2.4, length(p.xz - n.xy))) * hk);
+    u = max(u, uTorH[i].x * (1.0 - smoothstep(n.w * 0.8, n.w * 1.3, length(p.xz - n.xy))) * hk);
   }
   return u;
 }
@@ -793,7 +794,7 @@ const toWorld = (x, z, a = yaw()) => [x * Math.cos(a) + z * Math.sin(a), -x * Ma
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
-const fun = { n: 0, prog: null, progs: {}, mode: 'shells', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true };
+const fun = { n: 0, prog: null, progs: {}, mode: 'shells', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farN: 0, farAt: 0 };
 let env = null;
 try {
   env = environment(canvas, {
@@ -998,8 +999,11 @@ function packFunnels(rw, rh) {
 // It renews when the light, the base, the storm, the eye or the lens change, in strips over frames.
 const FAR_D = 16, FAR_STRIPS = 8;
 function bakeFar(u, rw, rh, n) {
-  const key = [S.hour, sunAz, base, storm, camH, lensMM, rw, rh].map(v => +(+v).toFixed(4)).join();
+  // The key holds the whole projection: a new aspect with the same buffer moves the deck on screen.
+  const key = [S.hour, sunAz, base, storm, camH, focal(), horizon(), yaw(), rw, rh].map(v => +(+v).toFixed(4)).join();
   const whole = !fun.farReady || fun.farHold;
+  // The first bake can come out empty while the page still loads: it bakes once more, 30 frames on.
+  if (fun.farN === 1 && fun.frame - fun.farAt > 30) { fun.farN = 2; fun.farKey = ''; }
   if (key !== fun.farKey) { fun.farKey = key; fun.farRow = 0; fun.farBusy = true; }
   if (!fun.farBusy) return;
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
@@ -1021,7 +1025,10 @@ function bakeFar(u, rw, rh, n) {
     gl.disable(gl.SCISSOR_TEST);
     fun.farRow++;
   }
-  if (fun.farRow >= FAR_STRIPS) { [fun.farA, fun.farB] = [fun.farB, fun.farA]; fun.farBusy = false; fun.farReady = true; }
+  if (fun.farRow >= FAR_STRIPS) {
+    [fun.farA, fun.farB] = [fun.farB, fun.farA]; fun.farBusy = false; fun.farReady = true;
+    if (!fun.farN) { fun.farN = 1; fun.farAt = fun.frame; }
+  }
   // The live draw that follows takes these back.
   gl.uniform1i(u.uN, n);
   gl.uniform1f(u.uTorOn, n ? 1 : 0);
