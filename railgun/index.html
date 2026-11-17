@@ -2225,7 +2225,8 @@ void main() {
     vec2 r2 = vec2(dot(Lr, vR), Lr.y);
     r2 = length(r2) > 1e-3 ? normalize(r2) : vec2(0.0, 1.0);
     float occR = max(body(X + r2 * H * 0.15), 0.0) + max(body(X + r2 * H * 0.4), 0.0);
-    float fall = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
+    // A storm takes the rock's light four times further, as the volumes do.
+    float rR = uRockR * (vS.z > 0.5 ? 4.0 : 1.0), fall = rR * rR / (dot(rb, rb) + rR * rR);
     float face = (0.08 + 0.92 * max(dot(N, Lr), 0.0)) * (0.25 + 0.75 * exp(-occR / (H * 0.3)));
     float glow = 0.6 * thin * pow(max(dot(V, Lr), 0.0), 4.0);
     col += uAstC * uRockL.w * fall * (face + glow) * (vS.z > 0.5 ? 1.6 : 1.0) * mix(1.0, 0.6, uStars);
@@ -2373,15 +2374,39 @@ vec3 stormSun(vec3 P) {
 vec3 stormSky(float h) { return uZenC * 0.5 + uHorC * 0.5 + uCloudAmb * 0.5; }
 // The sky's glow low on the sun's side.
 vec3 stormTwi() { return k2skyB(normalize(vec3(uSunD.x, 0.06, uSunD.z)), 0.0); }
-// The rock's fire lights the storm: its glowing sky fills it warm,
-// and the side toward the rock glows when the rock is behind it.
-// Its own body shades that light, so the storm keeps its form.
-vec3 stormExtra(vec3 P, float powder, float Tl2) {
-  if (uFill + uRockL.w < 0.001) return vec3(0.0);
-  vec3 rb = uRockL.xyz - P;
-  float rf = uRockR * uRockR / (dot(rb, rb) + uRockR * uRockR);
-  float back = pow(max(dot(normalize(P - cameraPosition), normalize(rb)), 0.0), 4.0);
-  return uAstC * (uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2) + uRockL.w * rf * (0.4 + 1.4 * powder * back));
+// The other lights on a storm: the blast, the bolt and the rock.
+// Each light takes one shade tap toward it, so the far side stays dark.
+// The tap runs once per ray, at the first cloud: a tap per step costs too much.
+float gHitSh = -1.0, gRockSh = -1.0;
+// p is P in storm units; powder is low at thin edges.
+vec3 stormExtra(vec3 P, vec3 p, float powder, float Tl2) {
+  vec3 L = vec3(0.0), V = normalize(P - cameraPosition);
+  float thin = 1.0 - powder;
+  // The blast: its flash, its afterglow and the shock rim, as on the cards.
+  if (uBk > 0.0) {
+    float rim; vec3 push;
+    vec3 hl = cloudHit(P, thin, rim, push);
+    if (dot(hl, hl) + rim > 1e-7) {
+      if (gHitSh < 0.0) gHitSh = exp(-1.8 * shapeTap(p + normalize(uHitP.xyz - P) * 2.2));
+      L += 1.76 * hl * (0.2 + 0.8 * gHitSh) + rim * (hl * 0.6 + 0.01);
+    }
+  }
+  // The passing bolt lights the cloud near its path.
+  if (uBolt.w > 0.001) { vec3 bd = P - uBolt.xyz; L += cloudBoltC() * uBolt.w * 0.35 / (1.0 + dot(bd, bd) / 4.0e7); }
+  if (uFill + uRockL.w < 0.001) return L;
+  // The rock reaches a storm four times further than a heap.
+  // A storm stands 50 to 150 km from the rock.
+  vec3 rb = uRockL.xyz - P, Lr = normalize(rb);
+  float R4 = 4.0 * uRockR, rf = R4 * R4 / (dot(rb, rb) + R4 * R4);
+  float back = pow(max(dot(V, Lr), 0.0), 4.0);
+  // The rock's fire fills the storm warm; the side toward the rock glows.
+  L += uAstC * uFill * (0.14 + 0.6 * back) * (0.2 + 0.8 * powder) * (0.3 + 0.7 * Tl2);
+  // The rock's direct light: the faces toward it take it, its own body shades it.
+  if (uRockL.w * rf > 0.004) {
+    if (gRockSh < 0.0) gRockSh = exp(-1.8 * shapeTap(p + Lr * 2.2));
+    L += uAstC * uRockL.w * rf * ((0.08 + 0.92 * gRockSh) * (0.3 + 0.7 * powder) + 0.6 * thin * back) * 1.6 * mix(1.0, 0.6, uStars);
+  }
+  return L;
 }
 ${STORM_MARCH}
 void main() {
@@ -2401,6 +2426,7 @@ void main() {
   // The same air as the ranges and the cards.
   col = aerial(col, Phit);
   // Far flashes punch through the haze, so distant storms still flicker blue-white.
+  // The blast, the bolt and the rock land here too, as on the cards.
   col += Flash / a * 0.85;
   gl_FragColor = vec4(col, a);
   // The depth of the first cloud on the ray, on the planet's curve.

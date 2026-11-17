@@ -218,10 +218,12 @@ void setGround(float base, float H) { sGround = -base / (H / 14.0); }`;
 //   vec3 stormSky(float h) the sky light at height share h (Window seat's dome);
 //   vec3 stormTwi() the sky's glow on the sun's side, low down;
 //   vec3 stormFlash(vec3 P) the in-cloud lightning at P, in Window seat's FLASH_C;
-//   vec3 stormExtra(vec3 P, float powder, float Tl2) any other light, such as the rock's fire;
+//   vec3 stormExtra(vec3 P, vec3 p, float powder, float Tl2) other light: the rock, the blast;
+//     p is P in storm units, for shade taps with shapeTap();
+//     this light lands after the air, as the cards' does.
 //   vec3 Ls, the key light's direction; float uStars, 0 day to 1 night.
 // It returns the colour and, in alpha, the cover; Phit is the first cloud.
-// Flash holds the lightning apart: the host adds it after the air, as Window seat does.
+// Flash holds the lightning and stormExtra apart: the host adds them after the air.
 export const STORM_MARCH = /* glsl */`
 // Two Henyey-Greenstein lobes, as Window seat's: a strong forward one, a soft back one.
 float stormHg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
@@ -273,12 +275,13 @@ vec4 marchStorm(vec3 ro, vec3 rd, vec3 C, float H, float t0, float t1, float jit
     S *= mix(1.0, 0.45, uStars);
     // The base is flat and dark; rain under it is darker still.
     S *= p.y < 0.0 ? 0.32 : mix(0.55, 1.0, smoothstep(0.0, 2.5, p.y));
-    S += stormExtra(P, 1.0 - exp(-5.0 * d), exp(-0.6 * od));
     // A soft storm is thinner at its rim: the light seeps further in.
     float al = 1.0 - exp(-7.0 * d * si / mix(1.0, uStormSoft, 0.5));
     col += Tc * S * al;
     // The flash is a soft ball of light inside the cloud, brightest deep in.
     Flash += Tc * stormFlash(P) * (1.0 - 0.6 * clamp(open, 0.0, 1.0)) * fBoost * al;
+    // The other lights join the flash: the host adds them after the air.
+    Flash += Tc * stormExtra(P, p, 1.0 - exp(-5.0 * d), exp(-0.6 * od)) * al;
     Tc *= 1.0 - al;
     if (Tc < 0.03) break;
     t += di * (0.75 + 0.5 * fract(jit + float(i) * 0.618));
