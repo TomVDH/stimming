@@ -11,14 +11,31 @@ const until = (phase, from, goal, dt = 0.1, max = 60) => {
   return { v, t };
 };
 
-test('CUTS holds 3 or 4 cuts that cover 6 to 8 s with no gap', () => {
-  assert.ok(CUTS.length === 3 || CUTS.length === 4, `got ${CUTS.length} cuts`);
-  assert.ok(total >= 6 && total <= 8, `total ${total}`);
+test('CUTS holds 4 cuts that run 7.5 to 8 s with no gap', () => {
+  // The lens cut joins later as a fifth cut of about 2 s.
+  assert.equal(CUTS.length, 4, `got ${CUTS.length} cuts`);
+  assert.ok(total >= 7.5 && total <= 8 + 1e-9, `total ${total}`);
   assert.equal(CUTS[0].at, 0);
   for (let i = 1; i < CUTS.length; i++) {
     assert.ok(Math.abs(CUTS[i].at - (CUTS[i - 1].at + CUTS[i - 1].dur)) < 1e-9, `gap before cut ${i}`);
   }
   assert.equal(cutsTotal, total);
+});
+test('each cut is a locked camera: one field of view, no zoom', () => {
+  for (const c of CUTS) {
+    assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number, got ${JSON.stringify(c.fov)}`);
+    assert.ok(Number.isFinite(c.fov) && c.fov >= 4 && c.fov <= 40, `${c.shot}: fov ${c.fov}`);
+  }
+});
+test('each cut holds a beat: 2 to 2.6 s', () => {
+  for (const c of CUTS) assert.ok(c.dur >= 2 - 1e-9 && c.dur <= 2.6, `${c.shot}: ${c.dur} s`);
+});
+test('the shutter opens over the first two cuts; the slew starts on the third', () => {
+  // The shutter takes 4 s from the pick.
+  // The slew starts then.
+  assert.equal(cutAt(3.99).shot, 'slit');
+  assert.equal(cutAt(4).shot, 'gear');
+  assert.equal(CUTS[CUTS.length - 1].shot, 'roll');
 });
 test('each shot shows once', () => {
   assert.equal(new Set(CUTS.map(c => c.shot)).size, CUTS.length);

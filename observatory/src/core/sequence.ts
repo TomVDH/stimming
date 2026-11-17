@@ -3,18 +3,21 @@
 import type { Phase } from './machine.ts';
 
 export type Shot = 'edge' | 'slit' | 'roll' | 'gear';
-export type Cut = { at: number; shot: Shot; dur: number };
+// Each cut is a locked camera.
+// fov: the vertical field of view in degrees, fixed for the cut.
+export type Cut = { at: number; shot: Shot; dur: number; fov: number };
 
 // The shutter opens from 0 to 4 s; the slew starts at 4 s.
 // edge: the shutter starts to slide, tight on the slit edge.
 // slit: the shutter opens further, the whole slit.
 // gear: the cupola starts to turn on its ring as the slew begins.
 // roll: the tube rolls in the open slit, against the sky.
+// The lens cut joins at the end later, as a fifth cut.
 export const CUTS: Cut[] = [
-  { at: 0, shot: 'edge', dur: 1.8 },
-  { at: 1.8, shot: 'slit', dur: 2 },
-  { at: 3.8, shot: 'gear', dur: 1.6 },
-  { at: 5.4, shot: 'roll', dur: 2 },
+  { at: 0, shot: 'edge', dur: 2, fov: 16 },
+  { at: 2, shot: 'slit', dur: 2, fov: 17 },
+  { at: 4, shot: 'gear', dur: 2, fov: 8 },
+  { at: 6, shot: 'roll', dur: 2, fov: 9 },
 ];
 export const cutsTotal = CUTS.reduce((s, c) => s + c.dur, 0);
 
