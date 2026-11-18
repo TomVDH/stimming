@@ -383,6 +383,35 @@ const TONES = {
 const R12 = [[-2, 4], [0, 4], [2, 4], [4, 2], [4, 0], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 0], [-4, 2]];
 const R14 = [[-4, 4], [-2, 4], [0, 4], [2, 4], [4, 4], [4, 2], [4, -2], [4, -4], [2, -4], [0, -4], [-2, -4], [-4, -4], [-4, -2], [-4, 2]];
 // Ten minis in an even ring: three top, three bottom, two each side.
+// The INVISIBLE portrait: a man in a beret, saluting. Denser marks are brighter.
+const SNAKE = [
+  '                            ....... .......           ...',
+  '                          ..  +****+        .          ....',
+  '                        ...*=-++=:. .:::.                  .',
+  '                      ....#==*+-:....::::',
+  '               ..     .. **#%##%%*=.  ..     .',
+  '               ........ %@@@@@@@@*.      .:  ..',
+  '               ......+%@@@@@@%+=-..:---===-.  :',
+  '                  +%@@@@@%#*=-::-=======----..=',
+  '         .     *%@@@@@%#*#+*+-.::::=-:::::--..+',
+  '            #@@@@@@%##**#*#@%=:..-%*---====-.:=.',
+  '      ...*@@@@@@@%#*+++--@%@@++**@@+=-=====-.:-',
+  ' +#*:.::-+++###**+++=:---***%%@#*%*=-:-==--.  ::',
+  '**=:.::-==+++++====--:::-+==*@@**+=::::-=-.   .-.',
+  '::..::::-::::=++--==-:::+=---##==+-----:::   ..-:.        .:',
+  '..........-:::-=::---:::==-*=-+=++-:::-:.   .:-:::....  .:::',
+  '........=*=-----:--:::::=*:+%+--=-:..     ::  ::::....::::::',
+  '.....:=*#=: ...:--==-:+##+:.=##+:.     .:--:    .....:::....',
+  '...:***+=:.........:::---:: :-=**=....:---:.        ...',
+  '.  .-:.:::..              . .---=-::...--::',
+  '          .                  .:::-:...::::.',
+  ' ...                          .::::...::::',
+  '..... .                   ..   .::.....::.',
+  '.     .                         .:.....:.',
+  '                                  ......         ..:...::.',
+  '                                   ...        :  :........',
+  '..                                  .                  .:',
+];
 const R10 = [[-2, 4], [0, 4], [2, 4], [4, 2], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 2]];
 const SONGS = {
   stars: {
@@ -653,6 +682,27 @@ const SONGS = {
     ],
     full: { 'Grand Piano': ['sample', 0, 41, 0] },
   },
+  // INVISIBLE: the e-piano's top line on the main scope; the drums take the bottom.
+  // At 5 s an ASCII portrait pixelates in, holds 5 s and fades.
+  invisible: {
+    url: 'invisible.mid', kit: 'invisible-kit',
+    title: 'Invisible', artist: 'Duran Duran · arr. horsecel', year: 2021, label: 'Tape Modern · BMG',
+    art: { rows: SNAKE, at: 5, hold: 5 },
+    main: { tracks: ['Electric Piano'], tone: 'soft', env: 'pad' },
+    pos: [[-2, 4], [2, 4], [4, 2], [4, -2], [2, -4], [-2, -4], [-4, -2], [-4, 2]],
+    parts: [
+      { tracks: ['Electric Piano'], tone: 'soft', env: 'pluck', decay: 0.8, lv: 0.8 },
+      { tracks: ['Synthesizer'], tone: 'saw', env: 'pad', lv: 0.6 },
+      { tracks: ['8-Bit Square'], tone: 'square', env: 'pad', lv: 0.5 },
+      { tracks: ['Pop Synth'], tone: 'soft', env: 'pad', lv: 0.6 },
+      { tracks: ['2023 Drum Kit'], keys: [39], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['2023 Drum Kit'], keys: [45], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['2023 Drum Kit'], keys: [55, 60], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['Slap Bass'], tone: 'bass', env: 'pad', lv: 1.6 },
+    ],
+    full: { 'Electric Piano': ['sample', 0, 43, 0], '2023 Drum Kit': ['sample', 0, 53, 0], 'Slap Bass': ['sample', 0, 29, 0],
+      'Pop Synth': ['sample', 0.15, 57, 0], 'Synthesizer': ['saws', -0.2], '8-Bit Square': ['square', 0.2] },
+  },
   // BEAT: doubled tracks share a mini; the drums take the bottom three.
   beat: {
     url: 'beat.mid', kit: 'beat-kit',
@@ -794,7 +844,7 @@ async function loadSong(id) {
   const trackPart = {};
   S.main.tracks.forEach(tr => { trackPart[tr] = -1; });
   S.parts.forEach((p, m) => p.tracks.forEach(tr => { trackPart[tr] ??= m; }));
-  return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, aside: S.aside, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
+  return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, aside: S.aside, art: S.art, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
 }
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE 1 keeps each figure still: a roll smears chords into a filled square.
@@ -1719,6 +1769,30 @@ const drop = t => { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); };
 const clearAcc = () => acc.forEach(a => { gl.bindFramebuffer(gl.FRAMEBUFFER, a.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); });
 
 /* ---------- the HUD: graticule, readouts and hints, all lit in phosphor ---------- */
+// The art's marks, darkest first.
+const RAMP = ' .:-=+*#%@', ART_IN = 1.2, ART_OUT = 1.2;
+// The art's look at song time s: its opacity and block size, or null when off.
+// The blocks step from 8 cells down to 1 as it comes in.
+function artLook(s) {
+  const A = tape.song.art, u = s - A.at;
+  if (u < 0 || u > ART_IN + A.hold + ART_OUT) return null;
+  const out = u < ART_IN + A.hold ? 1 : 1 - (u - ART_IN - A.hold) / ART_OUT;
+  if (reduced()) return { a: out, block: 1 };
+  const p = Math.min(1, u / ART_IN), steps = [8, 6, 4, 3, 2, 1];
+  return { a: u < ART_IN ? 0.4 + 0.6 * p : out, block: steps[Math.min(steps.length - 1, Math.floor(p * steps.length))] };
+}
+// The HUD repaints at 20 Hz while the art comes in or fades, and once at each edge.
+let artT = 0, artKey = '';
+function artMoving(t) {
+  const A = tape?.song?.art;
+  if (!A || !tape.t0) return false;
+  const u = t - tape.t0 - A.at, end = ART_IN + A.hold;
+  const ramp = (u >= 0 && u < ART_IN) || (u > end && u < end + ART_OUT);
+  const key = u < 0 ? 'pre' : u > end + ART_OUT ? 'post' : ramp ? 'ramp' : 'hold';
+  if (key !== artKey) { artKey = key; artT = t; return true; }
+  if (!ramp || t - artT < 0.05) return false;
+  artT = t; return true;
+}
 // A 2D canvas holds grey levels; the screen shader turns them into light.
 const hud = document.createElement('canvas'), hctx = hud.getContext('2d');
 const hudTex = gl.createTexture();
@@ -1824,6 +1898,27 @@ function paintHud() {
         g.font = `700 ${Math.max(10, fs - 3)}px ${MONO}`; g.fillStyle = grey(0.55 * ba);
         g.fillText(song.aside, 0, 0);
         g.restore();
+      }
+    }
+    // A song's art pixelates in at art.at seconds, holds art.hold seconds and fades.
+    const art = song?.art && tape.t0 ? artLook(tn - tape.t0) : null;
+    if (art) {
+      const R = song.art.rows, cols = Math.max(...R.map(r => r.length)), cw = 7 * d / cols, b = art.block;
+      g.font = `700 100px ${MONO}`;
+      const fs = 100 * cw / g.measureText('M').width;
+      g.font = `700 ${fs}px ${MONO}`; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillStyle = grey(0.8 * art.a);
+      const x0 = cx - cols * cw / 2, y0 = cy - R.length * cw;
+      for (let y = 0; y < R.length; y++) {
+        let row = '';
+        for (let x = 0; x < cols; x++) {
+          // A coarse block shows one mark: the mean level of its cells.
+          const by = y - y % b, bx = x - x % b;
+          let sum = 0, n = 0;
+          for (let yy = by; yy < Math.min(R.length, by + b); yy++) for (let xx = bx; xx < Math.min(cols, bx + b); xx++) { sum += Math.max(0, RAMP.indexOf(R[yy][xx] ?? ' ')); n++; }
+          row += RAMP[Math.round(sum / n)];
+        }
+        g.fillText(row, x0, y0 + (y + 0.5) * 2 * cw);
       }
     }
     // The main voice's volume: a horizontal bar under the main figure, filled from the left.
@@ -2242,7 +2337,7 @@ function frame() {
   const dt = clamp(t - lastFrame, 0, 0.25);
   lastFrame = t;
   traces = traces.filter(v => !v.dieAt || t < v.dieAt + FADE);
-  if (bezelMoving(t) || readoutsMoved(t)) paintHud();
+  if (bezelMoving(t) || readoutsMoved(t) || artMoving(t)) paintHud();
   const n = sweep(t), P0 = PHOS[phos];
   decayPass(dt);
   beamPass(n, 1, P0.slow);
@@ -2481,7 +2576,7 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, .s2-sheet')) return;
   const k = e.key.toLowerCase();
   // Typing a song's codeword plays it; the same word or Escape stops it.
-  if (k.length === 1) typed = (typed + k).slice(-8);
+  if (k.length === 1) typed = (typed + k).slice(-12);
   const word = WORDS.find(w => typed.endsWith(w)) || '';
   if (word) { typed = ''; const was = tape?.id; if (tape) changed(); if (was !== word) startTape(word); return; }
   if (k === 'escape' && tape) { changed(); return; }

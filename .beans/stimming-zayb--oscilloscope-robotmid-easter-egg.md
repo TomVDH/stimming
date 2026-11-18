@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T07:57:07Z
+updated_at: 2026-11-18T08:03:07Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -42,3 +42,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - 2026-11-18: songs now: stars, model, monday, around, beat, plastic, whirling, dota. STOP tag and X stop a song; a click does not. Every song starts on the scope voice.
 
 - [x] On start, the egg hint lists every codeword once (7 s), then cycles one word at a time.
+
+- [x] INVISIBLE (Duran Duran, arr. horsecel): eight minis; at 5 s an ASCII portrait pixelates in, holds 5 s and fades. Codeword buffer now 12 letters.
