@@ -51,6 +51,11 @@ iframe { flex: none; height: 60vh; border: 0; width: 100%; background: #000; }
 .stack { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); }
 .stack b { color: var(--dim); font-weight: 500; margin-right: 5px; }
 .stack span { color: var(--fg); }
+.stack i { font-style: normal; }
+[data-info] { cursor: help; }
+[data-info]:hover { color: var(--fg); text-decoration: underline dotted var(--dim); text-underline-offset: 3px; }
+#tip { position: fixed; z-index: 10; max-width: 320px; padding: 6px 9px; background: var(--panel); border: 1px solid var(--muted); color: var(--fg); font: 12px/1.4 "Gabarito", system-ui, sans-serif; pointer-events: none; }
+#tip[hidden] { display: none; }
 
 /* Logos: the live menu icon, the intro emblem, the accent. */
 .logos { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -242,6 +247,106 @@ const store = {
   drop(/** @type {string} */ id) { try { localStorage.removeItem(KEY + id); } catch {} },
 };
 
+
+// ---- What each item does: the hover box text. ----
+/** @type {Record<string, string>} */
+const INFO = {
+  // Libraries
+  'three': 'three.js: the 3D engine. Scenes, cameras, meshes, materials and lights, drawn with WebGL.',
+  'three/webgpu': 'three.js WebGPU build: the same engine on the newer WebGPU API, with a WebGL2 fallback.',
+  'three/tsl': 'Three Shading Language: three.js shaders written as JavaScript node graphs, for the WebGPU build.',
+  'culori': 'culori: colour maths. Converts and mixes colours in OKLCH and OKLab.',
+  'gsap': 'GSAP: a tween and timeline library for animating values and DOM.',
+  'simplex-noise': 'simplex-noise: smooth random noise in 2D, 3D and 4D, for organic motion and shapes.',
+  'tone': 'Tone.js: synths, effects and scheduling on top of Web Audio.',
+  'js-yaml': 'js-yaml: reads and writes YAML text.',
+  // three.js addons
+  'AfterImageNode': 'Addon (WebGPU): a fading trail of earlier frames over the picture.',
+  'BloomNode': 'Addon (WebGPU): bloom, a soft glow round bright parts of the picture.',
+  'BokehPass': 'Addon: depth of field. Things off the focus distance blur.',
+  'BokehShader2': 'Addon: a fuller depth-of-field shader with shaped bokeh discs.',
+  'Line2': 'Addon: a thick line object (with LineGeometry and LineMaterial).',
+  'BufferGeometryUtils': 'Addon: tools to merge geometries, weld vertices and build tangents.',
+  'CopyShader': 'Addon: a plain copy pass, used inside post-processing chains.',
+  'DragControls': 'Addon: drag 3D objects with the pointer.',
+  'EffectComposer': 'Addon: runs a chain of post-processing passes after the 3D render.',
+  'FXAAShader': 'Addon: fast approximate anti-aliasing on the final picture.',
+  'GLTFLoader': 'Addon: loads glTF / GLB 3D model files.',
+  'GTAOPass': 'Addon: ground-truth ambient occlusion, soft contact shadows in corners.',
+  'GaussianBlurNode': 'Addon (WebGPU): a Gaussian blur of a texture.',
+  'ImprovedNoise': 'Addon: Ken Perlin\'s improved noise in JavaScript.',
+  'LineGeometry': 'Addon: geometry for thick lines (pairs with LineMaterial).',
+  'LineMaterial': 'Addon: a material that draws lines wider than one pixel.',
+  'MeshSurfaceSampler': 'Addon: picks random points on a mesh surface, for scattering.',
+  'OrbitControls': 'Addon: orbit, pan and zoom a camera with the pointer.',
+  'OutputPass': 'Addon: the last post pass. Tone mapping and sRGB conversion.',
+  'Pass': 'Addon: the base class and full-screen quad for custom post passes.',
+  'RectAreaLightUniformsLib': 'Addon: the lookup tables that rectangular area lights need.',
+  'Reflector': 'Addon: a flat mirror that renders the scene reflected.',
+  'RenderPass': 'Addon: the first post pass. Renders the scene into the chain.',
+  'RoomEnvironment': 'Addon: a built-in studio room, used as an environment map for reflections.',
+  'RoundedBoxGeometry': 'Addon: a box with rounded edges.',
+  'ShaderPass': 'Addon: a post pass that runs one custom fragment shader.',
+  'UnrealBloomPass': 'Addon: bloom, a multi-scale glow round bright parts of the picture.',
+  'WebGPU': 'Addon: checks whether the browser supports WebGPU.',
+  'curlNoise': 'Addon (TSL): curl noise, a swirling flow field with no sinks.',
+  // Renderers
+  'WebGL2': 'Raw WebGL2: the toy draws with its own shaders on the GPU, often through shared/gl.js.',
+  'three WebGL': 'three.js with its WebGL renderer.',
+  'three WebGPU': 'three.js with its WebGPU renderer.',
+  'Canvas 2D': 'The browser\'s 2D canvas: paths, fills and images, drawn on the CPU. Often only for small textures.',
+  'DOM': 'Plain page elements and CSS; no canvas renderer found.',
+  'DOM/SVG': 'Page elements and inline SVG; no canvas renderer found.',
+  // Shared modules
+  'stim': 'shared/stim.js: the shell. Page setup, the bar, settings, sound kit, quality, idle.',
+  'intro': 'shared/intro.js: the intro. Emblem in a flash box, the name, hold until ready.',
+  'gl': 'shared/gl.js: raw WebGL2 plumbing. Programs, render targets, the full-screen triangle.',
+  'environment': 'shared/environment.js: the environment runner. Every shader bundle in one frame.',
+  'fire': 'shared/fire.js: fire and smoke, a 3D fluid on the GPU drawn as a lit volume (WebGPU).',
+  'daytime': 'shared/daytime.js: time of day. One hour drives sun, moon, light, stars and lamps.',
+  'detail': 'shared/detail.js: the detail driver. One quality level for shaders and canvas.',
+  'sky': 'shared/sky.js: the sky bundle. Sky by direction, stars, height haze.',
+  'water': 'shared/water.js: a water surface that never aliases.',
+  'wetglass': 'shared/wetglass.js: the wet window pane in one piece.',
+  'precip': 'shared/precip.js: rain and snow in the air, on the frame.',
+  'weather': 'shared/weather.js: one weather value drives the bundled shaders together.',
+  'flare': 'shared/flare.js: lens flare.',
+  'glow': 'shared/glow.js: glow orbs round lights, and a bloom chain for raw WebGL2.',
+  'grade': 'shared/grade.js: the grade. Tint, vignette and film grain on linear colour.',
+  'output': 'shared/output.js: the last step of a frame. Tone curve, sRGB and dither.',
+  'bokeh': 'shared/bokeh.js: disc bokeh.',
+  'air': 'shared/air.js: the air as single scatter, at any height.',
+  'glassrain': 'shared/glassrain.js: rain on a window pane, and pane fog.',
+  'rocket': 'shared/rocket.js: one rocket model in three sizes, and its flame.',
+  'signal': 'shared/signal.js: Bar v3, the Signal bar.',
+  'favicon': 'shared/favicon.js: the tab icon.',
+  // Bar, sound, TypeScript
+  'Signal bar': 'The toy gives the shell a bar spec; the shell builds the shared Signal bar.',
+  'Signal bar, no controls': 'The toy uses the shell (intro, settings) but gives it no controls.',
+  'own bar': 'The toy builds its own controls and does not use the shell.',
+  'Web Audio': 'Sound through the browser\'s Web Audio, mostly via the shell\'s audio kit.',
+  'Tone.js': 'Sound through Tone.js.',
+  'none': 'No sound code found.',
+  'yes': 'TypeScript: source in <id>/src/, bundled by esbuild to dist/main.js.',
+  'no': 'Plain JavaScript in the page.',
+  '0.170.0': 'three.js 0.170.0: the pinned version for the WebGL build.',
+  '0.186.1': 'three.js 0.186.1: the pinned version for the WebGPU build.',
+};
+const infoOf = (/** @type {string} */ k) => INFO[k] || INFO[k.replace(/^three\/addons:/, '')] || '';
+
+// One hover box serves every item that carries data-info.
+const tip = Object.assign(document.createElement('div'), { id: 'tip', role: 'tooltip' });
+document.body.append(tip);
+addEventListener('pointerover', e => {
+  const el = /** @type {HTMLElement} */ (e.target).closest?.('[data-info]');
+  if (!(el instanceof HTMLElement) || !el.dataset.info) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.info;
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  tip.style.left = `${Math.min(r.left, innerWidth - tip.offsetWidth - 8)}px`;
+  tip.style.top = `${r.bottom + 6 + tip.offsetHeight > innerHeight ? r.top - tip.offsetHeight - 6 : r.bottom + 6}px`;
+});
+
 // ---- Stack detection: reads the page and its local modules. ----
 
 // A specifier holds no spaces, brackets or template marks.
@@ -298,16 +403,28 @@ async function scan(/** @type {string} */ id, /** @type {string} */ build) {
 const stackOf = (/** @type {string} */ id, /** @type {string} */ build) => (stacks[`${id}:${build}`] ??= scan(id, build));
 
 function renderStack(/** @type {any} */ s) {
-  const part = (/** @type {string} */ k, /** @type {string} */ v) => `<div><b>${k}</b><span>${v || '–'}</span></div>`;
-  $('stack').innerHTML = [
-    part('render', s.renderer.join(', ')),
-    part('libs', s.libraries.join(', ') + (s.three ? ` (three ${s.three})` : '')),
-    part('shared', s.shared.join(', ')),
-    part('bar', s.bar),
-    part('sound', s.sound),
-    part('ts', s.typescript ? 'yes' : 'no'),
-    part('files', s.files.join(', ')),
-  ].join('');
+  const part = (/** @type {string} */ k, /** @type {string[]} */ items, info = true) => {
+    const div = document.createElement('div');
+    const span = document.createElement('span');
+    items.forEach((v, i) => {
+      const it = Object.assign(document.createElement('i'), { textContent: v });
+      const text = info ? infoOf(v) : '';
+      if (text) it.dataset.info = text;
+      span.append(...(i ? [', '] : []), it);
+    });
+    if (!items.length) span.textContent = '–';
+    div.append(Object.assign(document.createElement('b'), { textContent: k }), span);
+    return div;
+  };
+  $('stack').replaceChildren(
+    part('render', s.renderer),
+    part('libs', s.libraries.map((/** @type {string} */ l) => l.replace(/^three\/addons:/, ''))),
+    part('three', s.three ? [s.three] : []),
+    part('shared', s.shared),
+    part('bar', [s.bar]),
+    part('sound', [s.sound]),
+    part('ts', [s.typescript ? 'yes' : 'no']),
+    part('files', s.files, false));
 }
 
 // ---- Records. ----
@@ -632,6 +749,7 @@ async function overview() {
       d.innerHTML = '<summary class="mono"><span></span><span class="n"></span><span class="split"></span></summary><div class="toys"></div>';
       const [name, num, split] = d.querySelectorAll('summary span');
       name.textContent = k;
+      if (infoOf(k)) /** @type {HTMLElement} */ (name).dataset.info = infoOf(k);
       num.textContent = String(list.length);
       split.textContent = `${list.length - lab} main · ${lab} lab`;
       /** @type {HTMLElement} */ (d.querySelector('.toys')).append(...list.map(id => {
