@@ -10,8 +10,8 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 57 |
+| Stage | Beta |
 | Series | None (proposal: `poke`) |
 | Accent | `linear-gradient(100deg, oklch(0.72 0.055 172), oklch(0.84 0.13 85))` |
 | Sound | Yes |

@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | None yet |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 70 |
+| Stage | Alpha |
 | Series | None |
 | Accent | `linear-gradient(100deg, oklch(0.64 0.28 350), oklch(0.8 0.14 212), oklch(0.8 0.165 68))` (a new one waits in the handoff: neon red to sodium amber) |
 | Sound | Yes |

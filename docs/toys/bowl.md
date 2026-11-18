@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 61 |
+| Stage | Beta |
 | Series | None (proposal: `science`) |
 | Accent | `oklch(0.78 0.12 76)` |
 | Sound | Yes |

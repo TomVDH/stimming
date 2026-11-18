@@ -9,8 +9,8 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 58 |
+| Stage | Alpha |
 | Series | None |
 | Accent | `oklch(0.84 0.16 85)` (the box's traffic yellow) |
 | Sound | Yes |

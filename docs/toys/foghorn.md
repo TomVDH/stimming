@@ -5,7 +5,7 @@
 |---|---|
 | Dutch | Misthoorn /ˈmɪstˌɦoːrn/ |
 | Motto | None |
-| Shelf | Main, number 42 |
+| Shelf | Lab, tag "Stimming Lab" |
 | Stage | Beta |
 | Series | Vistas (`vistas`, Vergezichten) |
 | Accent | `oklch(0.78 0.07 225)` |

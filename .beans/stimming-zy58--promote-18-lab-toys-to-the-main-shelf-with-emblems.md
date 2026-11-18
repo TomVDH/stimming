@@ -67,11 +67,12 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 - [x] Emblems `shared/emblems/<id>.svg` and the `emblem` field for the 13 without one
   - [x] Done (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert, observatory, kintsugi, crossing, windfarm, harmono, carwash
   - [x] rupert: A of spike rupert-2 (2026-11-17)
-- [ ] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
-- [ ] `process.md:52` says Bar v3, not Bar v2
+- [x] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
+  - Left open: tag and tagNl null on all 18; nl and ipa null on postcard, kintsugi, crossing, rupert, bowl, nvg. No still yet for tornado and carwash.
+- [x] `process.md:52` says Bar v3, not Bar v2
 - [ ] Verify: check, build, bar tests, `?all` and `?lab`, each toy's intro and bar, reduced motion
 
 ## Added by Tom (2026-11-17, 16:43)
 
 - [ ] Pressure washer (`washer`, main shelf): new icon round; Tom picks.
-- [ ] Fog horn (`foghorn`, number 42): demote from the main shelf to the Lab (number null, version null, sub "Stimming Lab", tile back to the Lab).
+- [x] Fog horn (`foghorn`, number 42): demote from the main shelf to the Lab (number null, version null, sub "Stimming Lab", tile back to the Lab).

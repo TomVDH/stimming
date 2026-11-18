@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 60 |
+| Stage | Beta |
 | Series | None |
 | Accent | `linear-gradient(90deg, oklch(0.86 0.15 95), oklch(0.62 0.24 330), oklch(0.6 0.17 255), oklch(0.8 0.17 160))` (proposed, not yet in `toys.json`) |
 | Sound | Yes |

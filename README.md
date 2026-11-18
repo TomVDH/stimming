@@ -70,7 +70,6 @@ Rules for people and agents: [AGENTS.md](AGENTS.md). Terms: [GLOSSARY.md](GLOSSA
 | [Frietkot](https://tomvdh.github.io/stimming/frietkot/) | Frietkot |  |
 | [Railgun](https://tomvdh.github.io/stimming/railgun/) | Spoorkanon |  |
 | [Train Ride](https://tomvdh.github.io/stimming/trainride/) | Treinrit |  |
-| [Fog horn](https://tomvdh.github.io/stimming/foghorn/) | Misthoorn |  |
 | [Washing line](https://tomvdh.github.io/stimming/washline/) | Wasdraad |  |
 | [Soup cauldron](https://tomvdh.github.io/stimming/cauldron/) |  |  |
 | [Mesh ball](https://tomvdh.github.io/stimming/meshball/) |  |  |
@@ -82,4 +81,22 @@ Rules for people and agents: [AGENTS.md](AGENTS.md). Terms: [GLOSSARY.md](GLOSSA
 | [Schlieren candle](https://tomvdh.github.io/stimming/schlieren/) |  |  |
 | [Lichtenberg burn](https://tomvdh.github.io/stimming/lichtenberg/) | Bliksemhout |  |
 | [Steel wool](https://tomvdh.github.io/stimming/steelwool/) |  |  |
+| [East Van postcards](https://tomvdh.github.io/stimming/postcard/) |  |  |
+| [Lit motorway](https://tomvdh.github.io/stimming/motorway/) | Verlichte snelweg |  |
+| [Crinkle foil](https://tomvdh.github.io/stimming/foil/) | Kreukelfolie |  |
+| [Kintsugi](https://tomvdh.github.io/stimming/kintsugi/) |  |  |
+| [Crossing button](https://tomvdh.github.io/stimming/crossing/) |  |  |
+| [Marbling](https://tomvdh.github.io/stimming/marble/) | Marmeren |  |
+| [Rupert's drop](https://tomvdh.github.io/stimming/rupert/) |  |  |
+| [Singing bowl](https://tomvdh.github.io/stimming/bowl/) |  |  |
+| [Observatory](https://tomvdh.github.io/stimming/observatory/) | Sterrenwacht |  |
+| [Night vision](https://tomvdh.github.io/stimming/nvg/) |  |  |
+| [Plasma globe](https://tomvdh.github.io/stimming/plasma/) | Plasmabol |  |
+| [Zena](https://tomvdh.github.io/stimming/drone/) | Zena |  |
+| [Snow globe](https://tomvdh.github.io/stimming/snow/) | Sneeuwbol |  |
+| [Tornado alley](https://tomvdh.github.io/stimming/tornado/) | Tornadosteeg |  |
+| [Wind farm](https://tomvdh.github.io/stimming/windfarm/) | Windpark |  |
+| [Subway](https://tomvdh.github.io/stimming/subway/) | Metro |  |
+| [Car wash](https://tomvdh.github.io/stimming/carwash/) |  |  |
+| [Harmonograph](https://tomvdh.github.io/stimming/harmono/) | Harmonograaf |  |
 <!-- /gen:toys -->

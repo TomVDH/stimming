@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | Zena /ˈzeːna/ |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 65 |
+| Stage | Alpha |
 | Series | None |
 | Accent | `oklch(0.72 0.14 275)` |
 | Sound | Yes |
