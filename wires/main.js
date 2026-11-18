@@ -1,4 +1,4 @@
-// Crow wires: one East Van alley pole, seen from below at a tilt.
+// East Van Alley: one East Van alley pole, seen from below at a tilt.
 // The sky and the lane bake once per size and hour; only crows draw each frame.
 // The crows are the Murmuration sim (flock/index.html), bent into a highway.
 import { initPage, whenVisible, reduced, onReducedChange, linFit, stage as mark, pageReady } from '../shared/stim.js';
@@ -1185,7 +1185,7 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
   stage.querySelector('.fail').hidden = false;
   ui.hideControls();
   mark('first-frame');
-  throw new Error('Crow wires needs WebGL 2 with float targets.');
+  throw new Error('East Van Alley needs WebGL 2 with float targets.');
 }
 let P = null, vao = null, strokeVao = null, wireVao = null, strokeN = 0, ready = false, wireT = null;
 let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, wpT = null;
