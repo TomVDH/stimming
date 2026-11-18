@@ -2568,18 +2568,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="plasma" href="plasma/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <circle cx="64" cy="64" r="46" fill="url(#g-plasma)"/>
-                <g id="plasma-arcs" fill="none" stroke="oklch(0.86 0.14 330)" stroke-width="2.5" stroke-linecap="round">
-                  <path d="M64 64C58 50 70 40 62 22"/>
-                  <path d="M64 64C78 60 86 70 104 66"/>
-                  <path d="M64 64C60 78 48 84 40 100"/>
-                  <path d="M64 64C52 62 40 50 26 52"/>
-                </g>
-                <circle cx="64" cy="64" r="8" fill="oklch(0.94 0.08 320)"/>
-                <circle cx="64" cy="64" r="46" fill="url(#lit)"/>
-                <circle cx="64" cy="64" r="45" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
-              </svg>
+              <svg class="art" viewBox="0 0 128 128" data-box="24 9 80 106" aria-hidden="true"></svg>
             </span>
             <span class="name">Plasma globe</span>
           </a>
@@ -4332,17 +4321,158 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     rest: () => gsap.to(topBody, { rotation: 0, svgOrigin: '64 108', duration: 0.3, overwrite: true }),
   };
 
-  const arcs = $('plasma-arcs'), arcPaths = [...arcs.children];
-  toys.plasma = {
-    // Filaments turn about the core and flicker.
-    play: () => loop()
-      .to(arcs, { rotation: 360, svgOrigin: '64 64', duration: 4, ease: 'none' })
-      .to(arcPaths, { opacity: 0.3, duration: 0.1, yoyo: true, repeat: 39, stagger: { each: 0.07, from: 'random' } }, 0),
-    rest() {
-      gsap.to(arcs, { rotation: 0, svgOrigin: '64 64', duration: 0.4, overwrite: true });
-      gsap.to(arcPaths, { opacity: 1, duration: 0.2, overwrite: true });
-    },
-  };
+  // Plasma globe: violet glass on a lacquer base (icon spike plasma-1, A).
+  // Filaments wander from the core; the pointer pulls the nearest one.
+  {
+    const { f, clamp, lerp, lg, rg, rgU, blur, light, body, clock, hash, hook } = kit;
+    const svg = $('plasma').querySelector('svg'), u = 'plasma-';
+    const { sin, cos, atan2, hypot, PI } = Math;
+    // A tapered ribbon along a point list, from width w0 to w1.
+    const ribbon = (pts, w0, w1) => {
+      const n = pts.length, L = [], R = [];
+      for (let j = 0; j < n; j++) {
+        const a = pts[Math.max(0, j - 1)], b = pts[Math.min(n - 1, j + 1)];
+        const tx = b[0] - a[0], ty = b[1] - a[1], l = hypot(tx, ty) || 1;
+        const w = lerp(w0, w1, j / (n - 1)) / 2, nx = -ty / l * w, ny = tx / l * w;
+        L.push([pts[j][0] + nx, pts[j][1] + ny]); R.push([pts[j][0] - nx, pts[j][1] - ny]);
+      }
+      // The tip is round: a curve past the last point.
+      const e = pts[n - 1], p = pts[n - 2], el2 = hypot(e[0] - p[0], e[1] - p[1]) || 1;
+      const tip = [e[0] + (e[0] - p[0]) / el2 * w1, e[1] + (e[1] - p[1]) / el2 * w1];
+      // Straight joins make the rope jagged, as lightning is.
+      const line = (P, move) => (move ? 'M' : 'L') + P.map(q => `${f(q[0])} ${f(q[1])}`).join('L');
+      return line(L, true) + `Q${f(tip[0])} ${f(tip[1])} ${f(R[n - 1][0])} ${f(R[n - 1][1])}` + line(R.reverse(), false) + 'Z';
+    };
+    // The toy's tokens: violet glass, pink filaments with blue tips, black lacquer.
+    const GLASS = [[0, 'oklch(0.52 0.2 315)'], [0.42, 'oklch(0.33 0.16 304)'], [0.84, 'oklch(0.19 0.09 292)'], [0.95, 'oklch(0.3 0.14 298)'], [1, 'oklch(0.44 0.17 302)']];
+    const FIL = [[0, 'oklch(0.99 0.03 320)'], [0.32, 'oklch(0.9 0.12 325)'], [0.7, 'oklch(0.78 0.18 310)'], [1, 'oklch(0.74 0.16 275)']];
+    const FIL_GLOW = 'oklch(0.7 0.24 318)', TIP = 'oklch(0.8 0.15 280)', TOUCH = 'oklch(0.95 0.08 300)';
+    const CORE = [[0, '#fff'], [0.55, 'oklch(0.96 0.06 320)'], [1, 'oklch(0.82 0.15 320)']];
+    const HALO = [[0, 'oklch(0.85 0.2 320)', 0.9], [0.4, 'oklch(0.65 0.24 315)', 0.45], [1, 'oklch(0.5 0.22 305)', 0]];
+    const AURA = [[0, 'oklch(0.55 0.22 310)', 0.42], [0.6, 'oklch(0.45 0.2 300)', 0.14], [1, 'oklch(0.4 0.18 295)', 0]];
+    // Black lacquer: two specular bands, a violet bounce on the right.
+    const LACQUER = [[0, 'oklch(0.1 0.015 295)'], [0.14, 'oklch(0.24 0.04 300)'], [0.24, 'oklch(0.66 0.05 305)'], [0.32, 'oklch(0.2 0.03 298)'], [0.7, 'oklch(0.09 0.015 290)'], [0.88, 'oklch(0.3 0.09 305)'], [1, 'oklch(0.1 0.02 295)']];
+    const STEM = [[0, 'oklch(0.7 0.16 315)'], [1, 'oklch(0.24 0.08 300)']];
+    // Filament rest angles in degrees; the stem keeps the bottom clear.
+    const ANG = [-160, -121, -86, -52, -16, 24, 148];
+    const R_IN = 7, R_OUT = 37.5, STEPS = 9, FORK = 5;
+    const nz = (j, s, ph) => 0.55 * sin(j * 2.3 + s + ph * 1.3) + 0.45 * sin(j * 5.7 + 2 * s - ph * 2.1);
+    // One filament as a point list: the main rope and a fork.
+    const filament = (a, s, m, ph) => {
+      const main = [], fork = [];
+      for (let j = 0; j <= STEPS; j++) {
+        const t = j / STEPS, r = lerp(R_IN, R_OUT, t), env = sin(PI * t) ** 0.7;
+        const o = 2.6 * env * lerp(nz(j, s, 0), nz(j, s, ph), m);
+        main.push([cos(a) * r - sin(a) * o, sin(a) * r + cos(a) * o]);
+      }
+      const side = hash(s * 9) > 0.5 ? 1 : -1, b = a + side * 0.42;
+      fork.push(main[FORK]);
+      for (let k = 1; k <= 3; k++) {
+        const t = k / 3, r = lerp(lerp(R_IN, R_OUT, FORK / STEPS), R_OUT - 0.5, t), ang = lerp(a, b, t ** 0.7);
+        const o = 2.2 * sin(PI * t) * lerp(nz(k + 11, s, 0), nz(k + 11, s, ph), m);
+        fork.push([cos(ang) * r - sin(ang) * o, sin(ang) * r + cos(ang) * o]);
+      }
+      return { main, fork };
+    };
+    // The glass's reflection: a bold crescent at the top left.
+    const CRESCENT = 'M-32.9 12A35 35 0 0 1 12-32.9A44 44 0 0 0-32.9 12Z';
+    // The base: a collar, then a flared foot.
+    const CT = 35, CB = 43, CRX = 23, CRY = 5;
+    const COLLAR = `M${-CRX} ${CT}A${CRX} ${CRY} 0 0 0 ${CRX} ${CT}L${CRX} ${CB}A${CRX} ${CRY} 0 0 1 ${-CRX} ${CB}Z`;
+    const FOOT = 'M-20.5 42C-21 46-29.5 46-29.5 52L-30.5 60A30.5 6 0 0 0 30.5 60L29.5 52C29.5 46 21 46 20.5 42Z';
+    // The globe's centre; its glass radius is 40.
+    const G = { cx: 64, cy: 49 };
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}gb`, 1.8)}${blur(`${u}tb`, 1.6)}${blur(`${u}ab`, 3)}
+        ${rgU(`${u}glass`, GLASS, -6, -8, 50)}
+        ${rgU(`${u}fil`, FIL, 0, 0, 40)}
+        ${rg(`${u}core`, CORE, 'cx="0.38" cy="0.34" r="0.7"')}
+        ${rg(`${u}halo`, HALO)}
+        ${rg(`${u}aura`, AURA)}
+        ${rg(`${u}cup`, [[0, 'oklch(0.72 0.2 315)'], [1, 'oklch(0.3 0.12 300)']], 'cx="0.5" cy="0.3" r="0.7"')}
+        ${lg(`${u}lacq`, LACQUER, 'x1="0" y1="0" x2="1" y2="0"')}
+        ${lg(`${u}stem`, STEM)}
+        ${lg(`${u}cres`, [[0, '#fff', 0.05], [0.45, '#fff', 0.34], [1, '#fff', 0.04]], 'x1="0" y1="1" x2="1" y2="0"')}</defs>
+      <ellipse cx="64" cy="${G.cy + 66}" rx="34" ry="5" fill="oklch(0.05 0.01 290)" opacity="0.55" filter="url(#${u}ab)"/>
+      <circle cx="64" cy="${G.cy}" r="50" fill="url(#${u}aura)"/>
+      <g transform="translate(${G.cx} ${G.cy})">
+        ${body(FOOT, u, 'lacq')}
+        <ellipse cx="0" cy="${CT}" rx="${CRX}" ry="${CRY}" fill="url(#${u}cup)"/>
+        <circle r="40" fill="url(#${u}glass)"/>
+        <rect x="-2.2" y="2" width="4.4" height="36" rx="2" fill="url(#${u}stem)"/>
+        <g class="glow" filter="url(#${u}gb)" fill="${FIL_GLOW}" stroke="${FIL_GLOW}" stroke-width="2.4" stroke-linejoin="round"></g>
+        <g class="tips" fill="${TIP}" filter="url(#${u}tb)"></g>
+        <g class="fil" fill="url(#${u}fil)"></g>
+        <circle r="14" fill="url(#${u}halo)" class="halo"/>
+        <circle r="6.6" fill="url(#${u}core)"/>
+        <circle r="40" fill="url(#${u}lit)"/>
+        <path d="${CRESCENT}" fill="url(#${u}cres)"/>
+        <circle r="39" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        ${body(COLLAR, u, 'lacq')}
+        <path d="M${-CRX} ${CT}A${CRX} ${CRY} 0 0 0 ${CRX} ${CT}" fill="none" stroke="oklch(0.78 0.16 315)" stroke-opacity="0.75" stroke-width="2"/>
+      </g>`;
+    const q = s => svg.querySelector(s);
+    const glowG = q('.glow'), filG = q('.fil'), tipG = q('.tips'), halo = q('.halo');
+    const fils = ANG.map((deg, i) => ({
+      rest: (deg * PI) / 180, a: (deg * PI) / 180, s: hash(i + 3) * 6, w: 1, wTo: 1,
+      glow: el('path', {}, glowG), glowF: el('path', {}, glowG), body: el('path', {}, filG), fork: el('path', {}, filG),
+      tip: el('circle', { r: 2.6 }, tipG),
+    }));
+    const st = { ph: 0, m: 0, mTo: 0, live: false, p: null, t: 0, fl: 1 };
+    const draw = () => {
+      for (const F of fils) {
+        const { main, fork } = filament(F.a, F.s, st.m, st.ph + F.s);
+        const dm = ribbon(main, 4.4 * F.w, 1.9 * F.w), df = ribbon(fork, 2.8 * F.w, 1.6 * F.w);
+        F.body.setAttribute('d', dm); F.fork.setAttribute('d', df);
+        F.glow.setAttribute('d', dm); F.glowF.setAttribute('d', df);
+        const e = main[STEPS];
+        F.tip.setAttribute('cx', f(e[0])); F.tip.setAttribute('cy', f(e[1]));
+        F.tip.setAttribute('r', f(2.6 + 4.4 * (F.w - 1)));
+        F.tip.setAttribute('fill', F.w > 1.2 ? TOUCH : TIP);
+      }
+      glowG.setAttribute('opacity', f(0.75 * st.fl));
+      halo.setAttribute('r', f(14 + 3 * st.m * st.fl));
+    };
+    const tick = clock(time => {
+      const dt = Math.min(0.1, time - (st.t || time));
+      st.t = time;
+      st.m += (st.mTo - st.m) * 0.08;
+      st.ph += dt * 2.4 * st.m;
+      // The pointer's angle pulls the nearest filament.
+      // Its neighbours lean after it.
+      let pa = 0, touch = 0;
+      if (st.live && st.p) {
+        pa = atan2(st.p[1], st.p[0]);
+        touch = clamp((hypot(st.p[0], st.p[1]) - 6) / 26);
+      }
+      const diff = F => { let d = pa - F.rest; while (d > PI) d -= 2 * PI; while (d < -PI) d += 2 * PI; return d; };
+      let near = -1, best = 9;
+      if (touch > 0) fils.forEach((F, i) => { const d = Math.abs(diff(F)); if (d < best) { best = d; near = i; } });
+      fils.forEach((F, i) => {
+        const d = diff(F);
+        const to = i === near ? F.rest + d * touch : F.rest + d * touch * 0.28 * clamp(1 - Math.abs(d) / 1.2);
+        F.a += (to - F.a) * 0.16;
+        F.wTo = i === near ? 1 + 0.9 * touch : 1;
+        F.w += (F.wTo - F.w) * 0.14;
+      });
+      // The glow flickers while the globe is live.
+      st.fl = 1 + 0.18 * st.m * sin(time * 23) * sin(time * 7.3);
+      draw();
+      // A globe at rest stops its tick: an idle menu does no work.
+      const still = fils.every(F => Math.abs(F.a - F.rest) < 0.002 && Math.abs(F.w - 1) < 0.002);
+      if (!st.live && st.m < 0.01 && still) {
+        st.m = 0; st.fl = 1; fils.forEach(F => { F.a = F.rest; F.w = 1; }); draw(); tick.stop();
+      }
+    });
+    draw();
+    const toLocal = p => p && [p[0] - G.cx, p[1] - G.cy];
+    const c = {
+      enter(p) { st.live = true; st.mTo = 1; st.p = toLocal(p); tick.start(); },
+      move(p) { if (p) st.p = toLocal(p); },
+      leave() { st.live = false; st.mTo = 0; st.p = null; tick.start(); },
+    };
+    // The demo takes a finger round the glass.
+    hook('plasma', c, { period: 5, at: a => [G.cx + 30 * cos(a - PI / 2), G.cy + 30 * sin(a - PI / 2)] });
+  }
 
   // Marbling: the enamel tray, the ink and the comb (icon spike marble-1, A).
   // The pointer holds the comb: depth drags it, x shifts the tines.
