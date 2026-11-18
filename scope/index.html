@@ -485,15 +485,16 @@ const SONGS = {
     // Doubled tracks are dropped, so each part plays once.
     drop: ['Muted E-Guitar', 'Violin (Classic)', '8-Bit Triangle'],
     title: 'Plastic Love', artist: 'Mariya Takeuchi', year: 1984, label: 'Moon Records',
-    main: { tracks: ['Violin'], tone: 'warm', env: 'pad' },
+    // The synth pluck carries the tune; it takes the main scope and sings one note at a time.
+    main: { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pad' },
     pos: [[-2, 4], [0, 4], [2, 4], [4, 2], [4, 0], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 0], [-4, 2]],
     parts: [
       { tracks: ['Electric Guitar', 'Koto', 'Dist. Guitar (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
       { tracks: ['Grand Piano'], tone: 'soft', env: 'pluck', decay: 1 },
       { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
-      { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
-      { tracks: ['Trombone (Classic)'], tone: 'warm', env: 'pad', lv: 0.7 },
       { tracks: ['8-Bit Square', '8-Bit Sine', '8-Bit Sawtooth'], tone: 'square', env: 'pad', lv: 0.5 },
+      { tracks: ['Trombone (Classic)'], tone: 'warm', env: 'pad', lv: 0.7 },
+      { tracks: ['Violin'], tone: 'warm', env: 'pad', lv: 0.8 },
       { tracks: ['Electric Drum Kit'], keys: [42, 44, 46, 49, 51, 56, 57, 76], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
       { tracks: ['Electric Drum Kit'], keys: [38, 40], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
       { tracks: ['2023 Drum Kit', 'Electric Drum Kit'], keys: [27, 36], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
@@ -508,6 +509,30 @@ const SONGS = {
       'Dist. Guitar (Classic)': ['sample', -0.2, 38, 0], 'Cello': ['sample', -0.1, 45, 0], 'Violin': ['sample', 0.1, 46, 0], 'Bass': ['sample', 0, 48, 0],
       '8-Bit Triangle': ['tri', 0], '8-Bit Square': ['square', -0.2], '8-Bit Sine': ['sine8', 0.1], '8-Bit Sawtooth': ['saws', 0.2],
       'Electric Drum Kit': ['sample', 0.1, 31, 0, 24], 'Electric Drum Kit 2': ['sample', -0.1, 31, 0, 24], '2023 Drum Kit': ['sample', 0, 53, 0, 24],
+    },
+  },
+  // WHIRLING: a partial arrangement; the song ends with its last note.
+  whirling: {
+    url: 'whirling.mid', kit: 'whirling-kit',
+    title: 'Whirling-In-Rags 8 AM', artist: 'British Sea Power · arr. fallh0und', year: 2019, label: 'ZA/UM',
+    main: { tracks: ['Jazz Guitar'], tone: 'warm', env: 'pad' },
+    pos: R10,
+    parts: [
+      { tracks: ['Distortion Guitar'], tone: 'saw', env: 'pad', lv: 0.7 },
+      { tracks: ['Acoustic Guitar'], tone: 'warm', env: 'pluck', decay: 0.5 },
+      { tracks: ['Grand Piano'], tone: 'soft', env: 'pluck', decay: 1 },
+      { tracks: ['Rhodes'], tone: 'soft', env: 'pluck', decay: 1.2, lv: 0.8 },
+      { tracks: ['Violin', 'Cello'], tone: 'warm', env: 'pad', lv: 0.7 },
+      { tracks: ['Electric Drum Kit'], keys: [54], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['Electric Drum Kit'], keys: [50], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['Electric Drum Kit'], keys: [48], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Trombone', 'Lucent Choir'], tone: 'warm', env: 'pad', lv: 0.7 },
+      { tracks: ['Bass', 'Muted E-Guitar'], tone: 'bass', env: 'pad', lv: 1.6 },
+    ],
+    full: {
+      'Bass': ['sample', 0, 48, 0], 'Jazz Guitar': ['sample', 0, 32, 0], 'Acoustic Guitar': ['sample', -0.2, 58, 0],
+      'Grand Piano': ['sample', 0.15, 41, 0], 'Distortion Guitar': ['sample', 0.2, 44, 0], 'Violin': ['sample', -0.1, 46, 0],
+      'Rhodes': ['sample', -0.3, 62, 0], 'Cello': ['sample', -0.2, 45, 0], 'Trombone': ['sample', 0.1, 51, 0], 'Lucent Choir': ['sample', 0, 59, 0],
     },
   },
   // BEAT: doubled tracks share a mini; the drums take the bottom three.
@@ -626,7 +651,17 @@ async function loadSong(id) {
   // Across the scope voice a note plays once: the main voice first, then the parts in ring order.
   // A part whose notes another part already plays drops them, so layered tracks never comb.
   const seen = new Set(), once = (p, list) => (p.drum ? list : list.filter(([a, , k]) => { const id = `${a}:${k}`; if (seen.has(id)) return false; seen.add(id); return true; }));
-  const mainNotes = once(S.main, lift(S.main, msNotes(tracks, S.main.tracks)));
+  // The main voice sings its top note only: just those notes count as taken, so the rest of a chord reaches the minis.
+  const mainAll = lift(S.main, msNotes(tracks, S.main.tracks));
+  // One sweep in start order: a note stays if no sounding note sits above it when it starts.
+  const mainNotes = [];
+  let act = [];
+  for (const x of mainAll) {
+    act = act.filter(y => y[1] > x[0]);
+    if (!act.some(y => y[2] > x[2])) mainNotes.push(x);
+    act.push(x);
+  }
+  for (const [a, , k] of mainNotes) seen.add(`${a}:${k}`);
   // A part's lag, in seconds, delays its notes in the scope voice.
   const lag = (p, list) => (p.lag ? list.map(([a, b, k, v]) => [a + Math.round(p.lag * CR), b + Math.round(p.lag * CR), k, v]) : list);
   const parts = S.parts.map(p => ({ ...p, notes: lag(p, once(p, lift(p, msNotes(tracks, p.tracks, p)))) }));
@@ -640,7 +675,7 @@ async function loadSong(id) {
 }
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE 1 keeps each figure still: a roll smears chords into a filled square.
-const SLOTS = 3, DETUNE = 1;
+const SLOTS = 4, DETUNE = 1;
 // The main voice's right channel keeps the note's pitch and changes its harmonic recipe by pitch class.
 // Harmonics belong to the note, so the key holds, yet each note ties its own knot.
 const MAIN_HARM = [[1, 0, 0], [0.6, 0.5, 0], [0.5, 0, 0.5], [0.4, 0.4, 0.3], [0.7, 0.3, 0], [0.5, 0.2, 0.4],
@@ -2241,7 +2276,7 @@ addEventListener('keydown', e => {
   if (e.target.closest?.('input, textarea, select, .s2-sheet')) return;
   const k = e.key.toLowerCase();
   // Typing a song's codeword plays it; the same word or Escape stops it.
-  if (k.length === 1) typed = (typed + k).slice(-7);
+  if (k.length === 1) typed = (typed + k).slice(-8);
   const word = WORDS.find(w => typed.endsWith(w)) || '';
   if (word) { typed = ''; const was = tape?.id; if (tape) changed(); if (was !== word) startTape(word); return; }
   if (k === 'escape' && tape) { changed(); return; }
