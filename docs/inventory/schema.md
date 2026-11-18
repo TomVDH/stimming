@@ -25,7 +25,7 @@ Capture: `inventorylab/`. Its entry 0 is an overview of the libraries, renderers
     "controls": { "ok": true, "notes": "" }, "graphics": { "ok": true, "notes": "" },
     "sound": { "ok": true, "notes": "" }, "perf": { "ok": true, "notes": "" }
   },
-  "triage": { "priority": "next", "effort": "M", "risk": "low", "tags": "phone, perf" },
+  "triage": { "priority": "next", "effort": "M", "risk": "low", "heavy": false, "tags": "phone, perf" },
   "modular": { "toTypeScript": false, "bar": "none", "dropLegacy": false, "adopt": ["gl"], "extract": "", "notes": "" },
   "findings":   [ { "area": "bar", "kind": "bug", "severity": "minor", "text": "" } ],
   "expansions": [ { "area": "graphics", "size": "M", "text": "" } ],
@@ -43,7 +43,7 @@ Capture: `inventorylab/`. Its entry 0 is an overview of the libraries, renderers
 | `verdict` | `keep`, `polish`, `rework` or `cut`. Empty until Tom picks. |
 | `meta` | Tom's wanted name, Dutch name, IPA, mottos, accent and series. A value that differs from `snapshot` is an edit to make in `toys.json`. |
 | `areas` | Seven areas. `ok: false` marks an area that needs work. |
-| `triage` | `priority` (`now`, `next`, `later`, `never`), `effort` (`S`, `M`, `L`, `XL`), `risk` (`low`, `mid`, `high`), free `tags`. |
+| `triage` | `priority` (`now`, `next`, `later`, `never`), `effort` (`S`, `M`, `L`, `XL`), `risk` (`low`, `mid`, `high`), `heavy` (true when the toy needs a big GPU: intensive or poorly optimized), free `tags`. |
 | `modular` | Moves: `toTypeScript`, `bar` (`none` or `to-signal`: move to the shared Signal bar), `dropLegacy`. `adopt`: shared modules to adopt. `extract`: code to lift into `shared/`. |
 | `findings` | Bugs and gaffes. One row each. `area` can also be `meta`. |
 | `expansions` | Ideas that add to the toy. One row each. |

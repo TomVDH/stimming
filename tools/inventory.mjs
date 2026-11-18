@@ -34,6 +34,7 @@ const records = readdirSync(DIR).filter(f => f.endsWith('.json')).map(f => {
   word(id, 'priority', r.triage?.priority, PRIORITIES);
   word(id, 'effort', r.triage?.effort, EFFORTS);
   word(id, 'risk', r.triage?.risk, RISKS);
+  if (r.triage && typeof (r.triage.heavy ?? false) !== 'boolean') bad(id, 'triage.heavy is not true or false');
   for (const a of AREAS) if (typeof r.areas?.[a]?.ok !== 'boolean') bad(id, `area ${a} has no ok flag`);
   for (const x of r.findings ?? []) {
     word(id, 'finding area', x.area, ['meta', ...AREAS]);
@@ -68,6 +69,7 @@ for (const r of records) {
   tally(`verdict ${r.verdict || 'none'}`);
   tally(`priority ${r.triage.priority || 'none'}`);
   if (Object.keys(r.metaEdits).length) tally('meta edits');
+  if (r.triage.heavy) tally('needs big GPU');
   for (const f of r.findings) tally(f.severity);
   for (const x of r.expansions) tally(`expansion ${x.size}`);
 }
