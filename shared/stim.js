@@ -5,6 +5,8 @@
 import { converter, toGamut, formatRgb } from 'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm';
 // The intro shows the load; stage() reports it. A page imports the intro by this same address.
 import { progress } from './intro.js';
+// Every toy page gets the S favicon.
+import './favicon.js';
 const TONE_URL = 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
 
 /* ---------- storage ---------- */
