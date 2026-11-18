@@ -368,9 +368,10 @@ sndTag.addEventListener('click', () => sound.set(true));
 // One note draws a circle; a chord ties a steady Lissajous rosette.
 // The main scope plays the sung line; each mini in the ring plays one part, up to three notes.
 // The drums are a falling sine ring and soft bursts of noise.
+// Gentle harmonics keep every figure round: sharp upper partials draw squares and diamonds.
 const TONES = {
-  soft: [1, 0.15, 0.05], warm: [1, 0.3, 0.15], saw: [1, 0.5, 0.33, 0.25],
-  square: [1, 0, 0.33, 0, 0.2], tri: [1, 0, -0.11, 0, 0.04], bass: [1, 0.35, 0.1],
+  soft: [1, 0.1], warm: [1, 0.2, 0.05], saw: [1, 0.25, 0.08],
+  square: [1, 0, 0.12], tri: [1, 0, -0.06], bass: [1, 0.25, 0.05],
 };
 // Ten minis in an even ring: three top, three bottom, two each side.
 const R10 = [[-2, 4], [0, 4], [2, 4], [4, 2], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 2]];
@@ -457,14 +458,15 @@ const SONGS = {
   around: {
     url: 'around.mid', kit: 'around-kit', velDiv: 50, off: 24, octUp: 12,
     title: 'You Spin Me Round', artist: 'Dead or Alive', year: 1984, label: 'Epic Records',
-    main: { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pad' },
+    // The slap bass carries the song; it takes the main scope.
+    main: { tracks: ['Slap Bass'], tone: 'bass', env: 'pad' },
     pos: R10,
     parts: [
       { tracks: ['Smooth Synth (Classic)'], tone: 'tri', env: 'pad', lv: 0.8 },
       { tracks: ['Grand Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
       { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
       { tracks: ['Harpsichord'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
-      { tracks: ['Slap Bass'], tone: 'bass', env: 'pad', lv: 1.6 },
+      { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4, lv: 0.7 },
       { tracks: ['Electric Drum Kit'], keys: [42, 44, 46, 49], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
       { tracks: ['Electric Drum Kit'], keys: [38, 39, 40, 41], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
       { tracks: ['Electric Drum Kit'], keys: [35, 36], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
@@ -655,7 +657,8 @@ function partStep(P, c) {
   P.act.sort((a, b) => a[2] - b[2]);
   const n = P.p.drum ? Math.min(1, P.act.length) : P.act.length;
   for (let s = 0; s < SLOTS; s++) {
-    const v = P.slots[s], x = s >= n ? null : P.p.drum ? P.act[n - 1] : P.act[s];
+    // The main voice sings its top note only, so it draws one clean knot, never a filled box.
+    const v = P.slots[s], x = s >= n ? null : P.p.drum || P.isMain ? (s ? null : P.act[n - 1]) : P.act[s];
     if (x === v.note) continue;
     if (x) {
       const f = HZ[x[2]];
