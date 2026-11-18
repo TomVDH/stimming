@@ -3,6 +3,7 @@
 import { initPage, whenVisible, reduced, stage as mark, pageReady, buildSteps, idle } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { environmentReady } from '../shared/environment.js';
+import { loadWatch } from '../shared/loadwatch.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
 import { paneBlur, GLASS_STEP, PANE_HEAD } from './pane.js';
@@ -20,7 +21,10 @@ mark('libs');
 const stage = document.getElementById('stage');
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
-playIntro({ ready: pageReady(9000) });
+// The load watch shows each step, and the step a past load died in.
+const watch = loadWatch('tornado');
+// A slow GPU compiles for long: the intro holds, and the watch counts the seconds.
+playIntro({ ready: pageReady(120000) });
 mark('build');
 
 /* ---------- the F-scale ---------- */
@@ -1301,6 +1305,8 @@ const farmS = farmState(dmg);
 const inf = infraState(dmg);
 const canvas = document.createElement('canvas');
 stage.prepend(canvas);
+// A GPU reset shows as a failure, during the compile or later.
+canvas.addEventListener('webglcontextlost', e => { watch.fail('the GPU reset (WebGL context lost)'); e.preventDefault(); });
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
 const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farT: 0, farDur: 0 };
 // The load line: the scene link and the noise volume; the first frame ends it.
@@ -1310,12 +1316,14 @@ let booted = false;
 let env = null;
 try {
   // The scene shader is large: the driver links it while the intro plays.
+  watch.step('Compiling shaders');
   env = await environmentReady(canvas, {
     scene: SCENE,
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
-    budget: 1.8e6,
+    // After a load that died, the first try draws a third of the pixels.
+    budget: watch.crashed ? 0.6e6 : 1.8e6,
     active: () => booted && visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
     before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
@@ -1332,6 +1340,7 @@ try {
     },
   });
 } catch (err) {
+  watch.fail(err);
   /** @type {HTMLElement} */ (stage.querySelector('.fail')).hidden = false;
   ui.hideControls?.();
   mark('first-frame');
@@ -1459,6 +1468,7 @@ try { localStorage.removeItem('stimming.tornado.funnel'); } catch { /* no storag
 act.funnel(new URLSearchParams(location.search).get('funnel') || ui.setting('funnelMode')?.value || 'tube');
 // The storm's noise volume: the scene pass reads it from the first frame.
 // It is a CPU build; the wait lets the intro paint a frame first.
+watch.step('Building the storm');
 await idle();
 fun.noise = noiseVolume(gl);
 loadStep();
@@ -2171,7 +2181,10 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
 if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 booted = true;
+watch.step('Drawing the first frames', true);
 env.draw();
+// The first seconds of the loop count as load: a crash there shows next time.
+setTimeout(() => watch.done(), 4000);
 canvas.classList.add('on');
 mark('first-frame');
 // A hidden tab stops the loop and the clock.
