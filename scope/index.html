@@ -845,8 +845,9 @@ function tapeSample(t) {
 // Brightness follows the spot's speed; the minis fade in with their bezels.
 const MINI_FILL = 1.15;
 // Wave mode: each mini draws its left channel, about three cycles, from a rising zero crossing.
-// The trace scales to the mini's peak; a silent mini draws a dim flat line.
-const WAVE_MS = 0.02, WAVE_PTS = 96, WAVE_KEY = 'stimming.scope.miniwave';
+// The trace scales to the mini's peak and runs edge to edge, clipped by the bezel.
+// A silent mini draws a dim flat line.
+const WAVE_MS = 0.02, WAVE_PTS = 140, WAVE_KEY = 'stimming.scope.miniwave';
 let miniWave = store.get(WAVE_KEY) === '1';
 function miniWaves(t, n) {
   let o = n;
@@ -856,7 +857,7 @@ function miniWaves(t, n) {
   for (let m = 0; m < tape.parts.length && o + WAVE_PTS < MAXSEG; m++) {
     const fade = miniAlpha(m, t);
     if (!fade) continue;
-    const A = ch.M[m][0], P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K;
+    const A = ch.M[m][0], P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = r * 1.1;
     // The sweep shows about three cycles: rising crossings in the last 20 ms give the period.
     let cross = 0;
     for (let i = Math.max(1, Math.floor(at - win20)); i < Math.min(A.length, at); i++) if (A[i - 1] < 0 && A[i] >= 0) cross++;
@@ -866,13 +867,15 @@ function miniWaves(t, n) {
     let pk = 0;
     for (let q = 0; q <= WAVE_PTS; q++) pk = Math.max(pk, Math.abs(A[Math.min(A.length - 1, Math.floor(i0 + q / WAVE_PTS * win))]));
     tape.mpk[m] = Math.max(pk, (tape.mpk[m] || 0) * 0.97);
-    const g = 0.8 / Math.max(0.05, tape.mpk[m]), quiet = pk < 0.01;
+    const g = 0.7 / Math.max(0.05, tape.mpk[m]), quiet = pk < 0.01;
     let px = 0, py = 0;
     for (let q = 0; q <= WAVE_PTS; q++) {
       const u = q / WAVE_PTS, v = quiet ? 0 : spline(A, Math.min(A.length - 1, i0 + u * win));
-      const X = cx + (u * 2 - 1) * r * 0.9, Y = cy + clamp(v * g, -0.95, 0.95) * r;
+      const X = cx + (u * 2 - 1) * r * 1.15, Y = cy + v * g * r;
       if (q) {
-        const e = fade * IK * sigma * Math.hypot(X - px, Y - py) * (quiet ? 0.6 : 3), k5 = o * 5;
+        // The bezel masks the trace: a segment with an end outside it carries no light.
+        const out = Math.hypot(X - cx, Y - cy) > rm || Math.hypot(px - cx, py - cy) > rm;
+        const e = out ? 0 : fade * IK * sigma * Math.hypot(X - px, Y - py) * (quiet ? 0.5 : 1.5), k5 = o * 5;
         inst[k5] = px; inst[k5 + 1] = py; inst[k5 + 2] = X; inst[k5 + 3] = Y; inst[k5 + 4] = e;
         o++;
       }
