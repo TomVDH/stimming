@@ -433,7 +433,8 @@ const SONGS = {
       // The sequenced bass rides the iconic beat: each note strikes and dies, so it stays on the beat.
       { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pluck', decay: 0.12, lv: 2 },
       // The riff is written as 27 ms notes; a short ring keeps its 16ths crisp.
-      { tracks: ['Sitar', 'Church Organ (Classic)', 'Acoustic Gtr (Classic)'], tone: 'warm', env: 'pluck', decay: 0.1 },
+      // It strikes at once while the kick's punch builds, so it sits 12 ms late to land with it.
+      { tracks: ['Sitar', 'Church Organ (Classic)', 'Acoustic Gtr (Classic)'], tone: 'warm', env: 'pluck', decay: 0.1, lag: 0.012 },
       { tracks: ['Pop Synth (Classic)'], tone: 'soft', env: 'pad', lv: 0.8 },
       { tracks: ['8-Bit Sawtooth', '8-Bit Sine'], tone: 'saw', env: 'pad', lv: 0.5 },
       { tracks: ['Elec. Piano (Classic)', 'Smooth Synth (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
@@ -618,7 +619,9 @@ async function loadSong(id) {
   // A part whose notes another part already plays drops them, so layered tracks never comb.
   const seen = new Set(), once = (p, list) => (p.drum ? list : list.filter(([a, , k]) => { const id = `${a}:${k}`; if (seen.has(id)) return false; seen.add(id); return true; }));
   const mainNotes = once(S.main, lift(S.main, msNotes(tracks, S.main.tracks)));
-  const parts = S.parts.map(p => ({ ...p, notes: once(p, lift(p, msNotes(tracks, p.tracks, p))) }));
+  // A part's lag, in seconds, delays its notes in the scope voice.
+  const lag = (p, list) => (p.lag ? list.map(([a, b, k, v]) => [a + Math.round(p.lag * CR), b + Math.round(p.lag * CR), k, v]) : list);
+  const parts = S.parts.map(p => ({ ...p, notes: lag(p, once(p, lift(p, msNotes(tracks, p.tracks, p)))) }));
   // The full mix reads every note of every track, sorted by start.
   const all = [...tracks].flatMap(([tr, list]) => list.map(([t, e, k, v]) => ({ t, e, k, v, tr }))).sort((a, b) => a.t - b.t);
   // Each track knows its mini, so the full mix can follow the mini's volume.
