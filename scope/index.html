@@ -902,10 +902,19 @@ function muteTape() {
   for (const ch of tape.chunks.values()) ch.played = null;
   for (const ch of tape.full.values()) ch.played = null;
 }
-sound.onChange(on => { if (on) hearTape(); else muteTape(); });
+sound.onChange(on => {
+  // A change made by hand during a song is the listener's choice; the song keeps it.
+  if (tape && !autoSound) tape.wasMuted = null;
+  if (on) hearTape(); else muteTape();
+});
+// A song turns sound on by itself, and turns it back off when it ends if it was off before.
+let autoSound = false;
+function setSoundAuto(v) { autoSound = true; sound.set(v); autoSound = false; }
 async function startTape(id) {
   const rate = kit.ac?.sampleRate || 48000;
   const me = tape = { id, t0: 0, fullOn: !!SONGS[id].startFull, mainVol: SONGS[id].mainVol ?? MAIN_START, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], live: [], lastRead: [], full: new Map(), bus: null, vol: [], volT: [], rate };
+  me.wasMuted = !sound.on;
+  if (!sound.on) setSoundAuto(true);
   paintHud(); dirty = true; sync();
   try { me.song = await loadSong(id); } catch (err) { if (tape === me) changed(); return; }
   if (tape !== me) return;
@@ -970,6 +979,8 @@ function stopTape() {
 }
 function endTape(fade = false) {
   if (!tape) return;
+  // Sound goes back off after the fade, unless another song has started by then.
+  if (tape.wasMuted) setTimeout(() => { if (!tape && sound.on) setSoundAuto(false); }, (fade ? TAPE_OUT : 0) * 1000 + 100);
   const B = tape.bus, ac = B?.ac;
   if (fade && ac && ac.state === 'running') {
     const at = ac.currentTime;
@@ -1840,7 +1851,9 @@ function paintHud() {
   sndTag.hidden = sound.on;
   if (!sound.on) {
     const txt = FINE.matches ? '♪ SOUND OFF · CLICK' : '♪ SOUND OFF · TAP', y = top + big + small + 16;
-    g.fillStyle = grey(0.62); g.font = `700 ${small}px ${MONO}`;
+    // After power-on the reminder blinks a few times, then holds.
+    const bt = now() - sndBlink.t0, on = bt > SND_BLINK || Math.floor(bt / 0.35) % 2 === 0;
+    g.fillStyle = grey(on ? 0.62 : 0.2); g.font = `700 ${small}px ${MONO}`;
     g.fillText(txt, w - pad, y);
     const tw = g.measureText(txt).width;
     placeTag(sndTag, w - pad - tw, y, tw, small);
@@ -2335,9 +2348,16 @@ addEventListener('keydown', e => {
 onReducedChange(() => { if (reduced()) spinOn = false; changed(); });
 
 /* ---------- power-on ---------- */
+const SND_BLINK = 2.8, sndBlink = { t0: -1e9 };
 // The tube stays dark under the intro and switches on as it clears.
 let powerT0 = Infinity;
-function powerOn() { if (powerT0 === Infinity) { powerT0 = now(); poke(); } }
+function powerOn() { if (powerT0 === Infinity) { powerT0 = now(); poke(); blinkSound(); } }
+// The sound reminder blinks four times; the HUD repaints only while it blinks.
+function blinkSound() {
+  if (sound.on || reduced()) return;
+  sndBlink.t0 = now();
+  const iv = setInterval(() => { paintHud(); poke(); if (now() - sndBlink.t0 > SND_BLINK) clearInterval(iv); }, 175);
+}
 if (reduced() || !document.querySelector('.intro')) powerT0 = -1e9;
 else {
   const mo = new MutationObserver(() => { if (!document.querySelector('.intro')) { mo.disconnect(); powerOn(); } });
@@ -2346,6 +2366,8 @@ else {
 }
 
 /* ---------- start ---------- */
+// The scope always opens on the cube with sound off; the HUD reminder invites it on.
+if (sound.on) sound.set(false);
 document.fonts.ready.then(paintHud);
 FINE.addEventListener?.('change', paintHud);
 new ResizeObserver(layout).observe(stage);
