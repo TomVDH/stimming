@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T06:32:09Z
+updated_at: 2026-11-18T06:34:15Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -34,7 +34,7 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 
 ## Open (Tom, 2026-11-17, for a later session)
 
-- Beat: the vocal on the main scope keeps one shape. A single note always draws a circle; only chords change it. Give the main voice a shape that follows pitch or tone.
+- [x] Beat: the main voice's right channel now plays a consonant interval by pitch class, so each note ties its own knot (done 2026-11-17).
 - Identify the right main and mini voices for the songs other than stars and monday.
 - Full-mix synth tracks (Synthesizer and 8-bit parts) still play on page synths; tune them to the site's settings.
 - Shared bar: mode choices are 8 px shorter than actions, so their hover box is smaller (Tom to pick: all toys or scope only).

@@ -634,6 +634,9 @@ async function loadSong(id) {
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE 1 keeps each figure still: a roll smears chords into a filled square.
 const SLOTS = 3, DETUNE = 1;
+// The main voice's right channel plays a consonant interval picked by pitch class,
+// so each note ties its own knot and the shape follows the melody.
+const MAIN_RATIOS = [1, 3 / 2, 2, 4 / 3, 5 / 4, 5 / 3, 3 / 2, 2, 4 / 3, 5 / 4, 3, 6 / 5];
 function partState(p, i, kf) {
   const H = TONES[p.tone] || TONES.soft, norm = 1 / H.reduce((a, h) => a + Math.abs(h), 0);
   return { p, q: 0, act: [], minEnd: Infinity, lv: p.lv || 1, kD: kf(p.decay || 0.3), noise: 1 + i, lx: 0, ly: 0, H, norm,
@@ -659,6 +662,7 @@ function partStep(P, c) {
       // A struck note restarts its cycle, so its first peak lands on the beat.
       if (P.p.env !== 'pad') { v.ph = 0; v.ph2 = 0.25; }
       v.vel = x[3];
+      if (P.isMain) v.r = MAIN_RATIOS[x[2] % 12];
     }
     v.note = x;
   }
@@ -691,7 +695,7 @@ function partSample(P, rate, k) {
       else if (drum === 'snare') { x += v.a * (0.6 * cx + 0.9 * P.lx); y += v.a * (0.6 * cy + 0.9 * P.ly); }
       else { x += v.a * 1.4 * P.lx; y += v.a * 1.4 * P.ly; }
     } else {
-      v.ph2 = (v.ph2 + v.f * DETUNE / rate) % 1;
+      v.ph2 = (v.ph2 + v.f * (v.r || DETUNE) / rate) % 1;
       x += v.a * toneAt(P, v.ph); y += v.a * toneAt(P, v.ph2);
     }
   }
@@ -812,6 +816,7 @@ async function startTape(id) {
   const kf = tau => 1 - Math.exp(-1 / (tau * rate));
   me.k = { A: kf(0.01), R: kf(0.08), K: kf(0.04) };
   me.main = partState(me.song.main, 0, kf);
+  me.main.isMain = true;
   me.mainK = MAIN_SCALE / 5;
   me.main.spin = drifting() ? TAU / SPIN_T : 0;
   me.parts = me.song.parts.map((p, i) => partState(p, i + 1, kf));
