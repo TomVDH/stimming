@@ -682,6 +682,8 @@ const MAIN_START = 10 ** (-5 / 20);
 const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55, PART_MIX = 0.15;
 // Sixteen slots ring the face edge, two divisions apart, clockwise from top left.
 const MINI_POS = [[-4, 4], [-2, 4], [0, 4], [2, 4], [4, 4], [4, 2], [4, 0], [4, -2], [4, -4], [2, -4], [0, -4], [-2, -4], [-4, -4], [-4, -2], [-4, 0], [-4, 2]], MINI_R = 0.85;
+// The mini traces stop at the inner edge of the volume ring, about 0.085 divisions inside the bezel.
+const MINI_MASK = MINI_R * 1.1 - 0.085;
 // The bezels fade in over 0.8 s when the song starts and out over 0.5 s.
 const bezel = { on: false, t: -1e9, n: 0, pos: MINI_POS };
 const bezelAlpha = t => (reduced() ? +bezel.on : bezel.on ? clamp((t - bezel.t) / 0.8) : 1 - clamp((t - bezel.t) / 0.5));
@@ -1103,8 +1105,8 @@ function tapeSample(t) {
   const pv = tape.prev || (tape.prev = [pt[0], pt[1]]);
   const v = Math.hypot(pt[0] - pv[0], pt[1] - pv[1]) * SR;
   pv[0] = pt[0]; pv[1] = pt[1]; shown = null;
-  // A low floor: a slow or resting spot cannot overheat and bloom into a square.
-  return IK * sigma * Math.max(v, 300);
+  // Light follows the beam's travel with a near-zero floor: no cusp or resting spot can overheat and bloom into a square.
+  return IK * sigma * Math.max(v, 30);
 }
 
 // Each mini draws its part's shape at every beam step, as the main beam does.
@@ -1124,7 +1126,7 @@ function miniWaves(t, n) {
   for (let m = 0; m < tape.parts.length && o + WAVE_PTS < MAXSEG; m++) {
     const fade = miniAlpha(m, t);
     if (!fade) continue;
-    const A = ch.M[m][0], P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = r * 1.1;
+    const A = ch.M[m][0], P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = MINI_MASK * DIV * K;
     // The sweep shows about three cycles: rising crossings in the last 20 ms give the period.
     let cross = 0;
     for (let i = Math.max(1, Math.floor(at - win20)); i < Math.min(A.length, at); i++) if (A[i - 1] < 0 && A[i] >= 0) cross++;
@@ -1175,7 +1177,7 @@ function miniDraw(t1, n) {
   let o = n;
   const dt = n / SR, kE = 1 - Math.exp(-dt / MINI_EASE), kUp = 1 - Math.exp(-dt / 0.1);
   for (let m = 0; m < tape.parts.length; m++) {
-    const P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = r * 1.1, fade = miniAlpha(m, t1);
+    const P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = MINI_MASK * DIV * K, fade = miniAlpha(m, t1);
     if (!fade) continue;
     // The snare and hat bursts draw at half light.
     const noisy = tape.parts[m].p.drum === 'hat' || tape.parts[m].p.drum === 'snare';
@@ -1195,7 +1197,7 @@ function miniDraw(t1, n) {
       const pv = tape.mprev[m] || (tape.mprev[m] = [x, y]);
       const v = Math.hypot(x - pv[0], y - pv[1]) * SR;
       const out = Math.hypot(x - cx, y - cy) > rm || Math.hypot(pv[0] - cx, pv[1] - cy) > rm;
-      const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 200) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
+      const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 30) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
       raw += e;
       inst[q] = pv[0]; inst[q + 1] = pv[1]; inst[q + 2] = x; inst[q + 3] = y; inst[q + 4] = e;
       pv[0] = x; pv[1] = y; o++;
