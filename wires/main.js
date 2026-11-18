@@ -6,7 +6,7 @@ import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { program, linked, onContextLoss, nextFrame } from '../shared/gl.js';
 import { SKY } from '../shared/sky.js';
-import { dayAt, localHour } from '../shared/daytime.js';
+import { dayAt, dayClock, localHour } from '../shared/daytime.js';
 import { OUTPUT } from '../shared/output.js';
 import { GRADE } from '../shared/grade.js';
 
@@ -28,18 +28,48 @@ mark('build');
 const kept = store.get('hour');
 let follow = kept === null || kept === 'now';
 let hour = follow ? localHour() : clamp(+kept || 0, 0, 24);
+// The shared clock eases every change of hour; a held Now runs it on.
+const clock = dayClock({ hour, tau: 0.6, wrap: true });
+// The timelapse: hours per second, the hold's start, and whether it runs.
+const LAPSE_RATE = 2, HOLD_MS = 260;
+const lapse = { down: 0, on: false };
+// True after a fast bake, until the full bake replaces it.
+let liveBaked = false;
 
-const act = { hour() {}, now() {}, car() {}, scatter() {} };
+const act = { hour() {}, now() {}, car() {}, scatter() {}, relight() {}, repaint() {}, nowDown() {}, nowUp() {} };
+// Dev tuning: the sun's bearing and the shadow darkness.
+const look = { sunAz: 0, shade: 0.4 };
+// Dev post: tone map (1 AgX, 0 ACES), film look, contrast, exposure, grain, vignette.
+const grade = { tone: 1, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28 };
 const ui = initPage({ id: 'wires', signal: true, bar: {
   slider: { label: 'Time', min: 0, max: 24, step: 0.05, value: hour, onInput: v => act.hour(v) },
   actions: [
-    { verb: 'now', key: 'N', onPress: () => act.now() },
+    // A press goes back to the clock; a hold runs the timelapse.
+    { verb: 'now', key: 'N', hold: true, onDown: () => act.nowDown(), onUp: () => act.nowUp() },
     { verb: 'car', key: 'C', onPress: () => act.car() },
     { verb: 'scatter', key: 'S', onPress: () => act.scatter() },
   ],
   quality: true,
-  help: [['click', 'Startle the crows'], ['click', 'Pluck a wire'], ['click', 'Swing the sneakers'], ['scroll', 'Read about the crows']],
+  dev: [
+    // Turns the sun and the moon about the zenith, in degrees.
+    { type: 'slider', id: 'sunaz', group: 'Light', label: 'Sun bearing', min: -180, max: 180, step: 1, value: 0, persist: true, onInput: v => { look.sunAz = v; act.relight(); } },
+    // Less sky fill makes the unlit sides and cast shadows darker.
+    { type: 'slider', id: 'shade', group: 'Light', label: 'Shadow darkness', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { look.shade = v; act.relight(); } },
+    { type: 'choice', id: 'tone', group: 'Post', label: 'Tone map', display: 'stepper', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }], onPick: v => { grade.tone = v === 'aces' ? 0 : 1; act.repaint(); } },
+    // The film look: a Portra 400 grade over the tone map.
+    { type: 'slider', id: 'film', group: 'Post', label: 'Film look', min: 0, max: 1, step: 0.01, value: 1, persist: true, onInput: v => { grade.film = v; act.repaint(); } },
+    { type: 'slider', id: 'contrast', group: 'Post', label: 'Contrast', min: 0, max: 1, step: 0.01, value: 0.55, persist: true, onInput: v => { grade.contrast = v; act.repaint(); } },
+    { type: 'slider', id: 'expo', group: 'Post', label: 'Exposure', min: 0.4, max: 2.5, step: 0.01, value: 1, persist: true, onInput: v => { grade.expo = v; act.repaint(); } },
+    { type: 'slider', id: 'grain', group: 'Post', label: 'Grain', min: 0, max: 0.12, step: 0.005, value: 0.045, persist: true, onInput: v => { grade.grain = v; act.repaint(); } },
+    { type: 'slider', id: 'vig', group: 'Post', label: 'Vignette', min: 0, max: 0.6, step: 0.01, value: 0.28, persist: true, onInput: v => { grade.vig = v; act.repaint(); } },
+  ],
+  help: [['hold N', 'Timelapse'], ['click', 'Startle the crows'], ['click', 'Pluck a wire'], ['click', 'Swing the sneakers'], ['scroll', 'Read about the crows']],
 } });
+
+look.sunAz = +ui.setting('sunaz').value;
+look.shade = +ui.setting('shade').value;
+grade.tone = ui.setting('tone').value === 'aces' ? 0 : 1;
+for (const k of ['film', 'contrast', 'expo', 'grain', 'vig']) grade[k] = +ui.setting(k).value;
 
 /* ---------- the lane ---------- */
 // World metres: x east across the lane, y up, z north along it.
@@ -77,9 +107,10 @@ const box = (A, B, hw, hh, mat, o = {}) => part(BOX, A, B, hw, hw, mat, { hh, ..
 // A wire sags like a chain. It is cut where it passes behind the eye.
 // A light wire swings more than a heavy cable.
 let spans = 0;
-function wire(w0, w1, sag, r, mat = ALU) {
+function wire(w0, w1, sag, r, mat = ALU, lash = null) {
   const NEAR = 0.7, n = clamp(Math.ceil(Math.hypot(...sub(w1, w0)) / 0.5), 4, 60);
-  const phase = (++spans * 2.399) % 6.283, amp = sag < 0.3 ? 0.25 : clamp(0.0075 / r, 0.3, 1.1);
+  // A lashed cable moves with its strand: one phase, one swing.
+  const phase = lash ? lash.phase : (++spans * 2.399) % 6.283, amp = lash ? lash.amp : sag < 0.3 ? 0.25 : clamp(0.0075 / r, 0.3, 1.1);
   const dip = t => 4 * sag * t * (1 - t);
   const at = t => [lerp(w0[0], w1[0], t), lerp(w0[1], w1[1], t) - dip(t), lerp(w0[2], w1[2], t)];
   let prev = w0, pt = 0;
@@ -103,18 +134,26 @@ function wire(w0, w1, sag, r, mat = ALU) {
   return { at, rider, dip, phase, amp };
 }
 // A sneaker hangs by its lace from a point on a wire and swings there.
-// Every piece carries the pivot, and one number: its phase plus ten times
-// its pendulum length in cm. A negative sign marks it as a pendulum.
+// Each piece carries its pivot and a code: -1 the knot, -2 and -3 a shoe.
 // The shoe is one sculpted part from heel to toe; the shader shapes it.
-function shoe(piv, lace, ph, yaw) {
-  const sw = { sway: [...piv, -(ph + 10 * Math.round((lace + 0.12) * 100))] };
-  // It hangs toe down. Its top turns toward the sky.
-  const d = unit([Math.sin(yaw) * 0.5, -0.82, Math.cos(yaw) * 0.5]), top = unit(sub([0, 1, 0], d.map(v => v * d[1])));
-  // The lace ties to the eyelets on the instep.
+// The knot sits on the top eyelet. The mass centre comes from the shape.
+const SHOE_TIE = [0.095, 0.0915], SHOE_COM = [0.131, 0.047];
+const shoes = [];
+function shoe(piv, lace, yaw, ph) {
+  const sw = { sway: [...piv, -(2 + shoes.length)] };
+  // The toe tips down until the mass centre hangs under the knot.
+  const dx = SHOE_COM[0] - SHOE_TIE[0], dy = SHOE_COM[1] - SHOE_TIE[1], pitch = Math.atan2(dx, -dy);
+  const h = Math.cos(pitch), d = [Math.sin(yaw) * h, -Math.sin(pitch), Math.cos(yaw) * h];
+  const top = unit(sub([0, 1, 0], d.map(v => v * d[1])));
   const tie = add(piv, [0, -lace, 0]);
-  const heel = sub(sub(tie, d.map(v => v * 0.13)), top.map(v => v * 0.088));
+  const heel = sub(tie, add(d.map(v => v * SHOE_TIE[0]), top.map(v => v * SHOE_TIE[1])));
   part(SHOE, heel, add(heel, d.map(v => v * 0.29)), 0.19, 0.19, CANVAS, sw);
   part(WIRE, tie, piv, 0.0028, 0.0028, SOLE, sw);
+  // The bob is the mass centre, straight under the pivot at rest.
+  const L = lace + Math.hypot(dx, dy), b = add(piv, [0, -L, 0]);
+  // The collision capsule runs heel to toe along the foot, 45 mm thick.
+  const cap = k => sub(add(heel, add(d.map(v => v * k), top.map(v => v * 0.045))), piv);
+  shoes.push({ piv, L, ph, b, v: [0, 0, 0], tw: 0, tv: 0, c0: cap(0.06), c1: cap(0.24) });
 }
 // A polymer post insulator: a steel base, a grey core with thin sheds,
 // then a clamp that holds the conductor. It returns the conductor's place.
@@ -176,16 +215,19 @@ const LINES = [
   { at: [-ARM_X, A1Y + 0.05 + POST_H, A1Z], sag: 0.45, r: RW, mat: ALU, rod: true },
   { at: [ARM_X, A1Y + 0.05 + POST_H, A1Z], sag: 0.45, r: RW, mat: ALU, rod: true },
   { at: [0, NY, -0.245], sag: 0.55, r: 0.007, mat: ALU },
-  ...RACK.map((y, i) => ({ at: [0, y, -0.262], sag: 0.7, r: 0.0085, mat: RUBBER })),
+  ...RACK.map((y, i) => ({ at: [0, y, -0.262], sag: 0.95, r: 0.0085, mat: RUBBER })),
   // Each telecom cable hangs lashed under a steel strand.
-  { at: [-TEL_X, 4.7, 0], sag: 0.9, r: 0.0045, mat: ALU, strand: 1 },
-  { at: [-TEL_X, 4.672, 0], sag: 0.9, r: 0.022, mat: RUBBER },
-  { at: [-TEL_X, 4.3, 0], sag: 0.95, r: 0.004, mat: ALU, strand: 2 },
-  { at: [-TEL_X, 4.284, 0], sag: 0.95, r: 0.012, mat: RUBBER },
+  // A heavy cable pulls its strand into a deeper sag.
+  { at: [-TEL_X, 4.7, 0], sag: 1.35, r: 0.0045, mat: ALU, strand: 1 },
+  { at: [-TEL_X, 4.672, 0], sag: 1.35, r: 0.022, mat: RUBBER, lashed: true },
+  { at: [-TEL_X, 4.3, 0], sag: 1.15, r: 0.004, mat: ALU, strand: 2 },
+  { at: [-TEL_X, 4.284, 0], sag: 1.15, r: 0.012, mat: RUBBER, lashed: true },
 ];
 // Parts that cast shadows on the near pole: ends and radii.
 const casters = [], pluckable = [];
-let wireStart = 0, shoeHost = [0, 0, 0], shoePiv = null, shoeSide = [-1, 0, 0];
+let wireStart = 0, shoeHost = [0, 0, 0], shoePiv = null, shoeSide = [-1, 0, 0], shoeAlong = [-1, 0, 0];
+// Lace lengths in metres, from the wire to the knot.
+const SHOE_LACE = [0.64, 0.8];
 function buildLane() {
   spans = 0;
   pluckable.length = 0;
@@ -215,6 +257,15 @@ function buildLane() {
     for (const y of [4.7, 4.3]) {
       box(P(-TEL_X + 0.02, y, -0.07), P(-TEL_X + 0.02, y, 0.07), 0.04, 0.028, STEEL);
       round(P(-TEL_X - 0.02, y, 0), P(-TEL_X - 0.045, y, 0), 0.013, 0.013, STEEL);
+    }
+    // The next pole up the lane carries one can, on the side toward the eye.
+    if (z === POLE_Z[POLE_Z.indexOf(NEAR_Z) + 1]) {
+      const Y0 = 6.25, Y1 = 7.1, CR = 0.25, R0 = poleR(6.7) + 0.09 + CR, c = y => P(-R0, y);
+      round(c(Y0), c(Y1), CR, CR, PAINT);
+      round(c(Y1), c(Y1 + 0.022), CR + 0.012, CR + 0.012, PAINT);
+      round(c(Y1 + 0.022), c(Y1 + 0.05), CR + 0.004, CR * 0.6, PAINT);
+      for (const y of [Y0 + 0.14, Y1 - 0.12]) box(P(-R0 + CR - 0.01, y), P(-poleR(y) - 0.01, y), 0.032, 0.035, STEEL);
+      sheds(add(c(Y1 + 0.04), [0.1, 0, 0]), [0, 1, 0], 0.2, 0.05, 5, PORCELAIN);
     }
     if (!near) return;
     // Square-washer bolts: both arms, the braces, and a column lower down.
@@ -263,8 +314,14 @@ function buildLane() {
     const cans = [can(-1, 0, true), can(0.26, 0.966, false), can(1, 0, true)];
     box(P(-R0 - 0.06, Y0 + 0.3, -CR - 0.002), P(-R0 + 0.06, Y0 + 0.3, -CR - 0.002), 0.002, 0.04, ALU);
     // A lead droops from each fuse to its can; black cables go to the rack.
-    cuts.forEach((c, i) => wire(c.bot, cans[i].hv, 0.14, 0.0042, RUBBER));
-    cans.forEach((c, i) => c.lv.forEach((p, j) => wire(p, P(i ? 0.03 : -0.03, RACK[j + (i ? 1 : 0)], -0.262), 0.28, 0.007, RUBBER)));
+    // A shallow sag keeps the back lead off the lid of the side can.
+    cuts.forEach((c, i) => wire(c.bot, cans[i].hv, 0.05, 0.0042, RUBBER));
+    // A lead drops clear of its can first, then swings in to the rack.
+    cans.forEach((c, i) => c.lv.forEach((p, j) => {
+      const drop = [p[0], Y0 - 0.12, p[2]];
+      wire(p, drop, 0.01, 0.007, RUBBER);
+      wire(drop, P(i ? 0.03 : -0.03, RACK[j + (i ? 1 : 0)], -0.262), 0.2, 0.007, RUBBER);
+    }));
     // A moulding covers the ground wire down the pole; staples hold it.
     box(P(0.085, 0, -poleR(0) - 0.004), P(0.085, TOP - 0.2, -poleR(TOP - 0.2) - 0.004), 0.011, 0.006, PVC);
     for (let y = 2.4; y < TOP - 0.3; y += 0.55) box(P(0.06, y, -poleR(y) - 0.011), P(0.11, y, -poleR(y) - 0.011), 0.0025, 0.004, STEEL);
@@ -286,16 +343,16 @@ function buildLane() {
   });
   group = POLE_Z.length;
   const ni = POLE_Z.indexOf(NEAR_Z);
-  for (const { at, sag, r, mat, rod, strand } of LINES) {
+  // The last strand's span per bay; the cable under it is lashed to it.
+  const strands = [];
+  for (const { at, sag, r, mat, rod, strand, lashed } of LINES) {
     for (let i = 0; i + 1 < POLE_Z.length; i++) {
-      const w = wire([POLE_X + at[0], at[1], POLE_Z[i] + at[2]], [POLE_X + at[0], at[1], POLE_Z[i + 1] + at[2]], sag, r, mat);
+      const w = wire([POLE_X + at[0], at[1], POLE_Z[i] + at[2]], [POLE_X + at[0], at[1], POLE_Z[i + 1] + at[2]], sag, r, mat, lashed ? strands[i] : null);
+      if (strand) strands[i] = Object.assign(w, { strand });
       if (i !== ni) continue;
-      if (strand === 1) {
-        // A splice case hangs under the strand, on two steel bands.
-        w.rider(0.03, 0.055, 0.07, RUBBER, 0.085);
-        w.rider(0.034, 0.0355, 0.074, ALU, 0.085);
-        w.rider(0.0495, 0.051, 0.074, ALU, 0.085);
-      }
+      // A splice case closes round the upper cable, on its axis.
+      // It draws after the cable, so the cable enters at its ends.
+      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.042, RUBBER);
       if (strand === 2) {
         // The telecom drop leaves from a clamp on the lower strand.
         w.rider(0.011, 0.014, 0.012, ALU);
@@ -306,7 +363,7 @@ function buildLane() {
     if (rod) for (const z of POLE_Z) wire([POLE_X + at[0], at[1], z + at[2] - 0.45], [POLE_X + at[0], at[1], z + at[2] + 0.45], 0.002, r * 1.6, mat);
   }
   // Two service drops leave the hooks for the houses, each in a wedge clamp.
-  for (const [sx, to, sg] of [[1, [14, 4.9, 6.5], 0.4], [-1, [-12, 4.8, 5], 0.5]]) {
+  for (const [sx, to, sg] of [[1, [14, 4.9, 6.5], 0.6], [-1, [-12, 4.8, 5], 0.7]]) {
     const w = wire([POLE_X + sx * 0.06, HOOK_Y, NEAR_Z - poleR(HOOK_Y) - 0.05], to, sg, 0.011, RUBBER);
     w.rider(0.004, 0.016, 0.017, ALU);
     if (sx > 0) continue;
@@ -315,14 +372,15 @@ function buildLane() {
     shoePiv = w.at(t);
     shoeHost = [w.dip(t), w.phase, w.amp];
     shoeSide = unit(cross(sub(to, from), [0, 1, 0]));
+    shoeAlong = unit(sub(to, from));
     // The two laces are tied into one string, thrown over the cable.
     // So one shoe hangs on each side of it, one lower than the other.
     const over = k => add(shoePiv, shoeSide.map(v => v * k));
-    shoe(over(0.014), 0.36, 1.3, 2.5);
-    shoe(over(-0.014), 0.55, 3.7, 3.9);
-    part(WIRE, add(over(0.014), [0, 0.013, 0]), add(over(-0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...add(shoePiv, [0, 0.013, 0]), -(0.5 + 10 * 5)] });
-    part(WIRE, over(0.014), add(over(0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...over(0.014), -(0.5 + 10 * 5)] });
-    part(WIRE, over(-0.014), add(over(-0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...over(-0.014), -(0.5 + 10 * 5)] });
+    shoe(over(0.014), SHOE_LACE[0], 2.5, 1.3);
+    shoe(over(-0.014), SHOE_LACE[1], 3.9, 3.7);
+    part(WIRE, add(over(0.014), [0, 0.013, 0]), add(over(-0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...add(shoePiv, [0, 0.013, 0]), -1] });
+    part(WIRE, over(0.014), add(over(0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...over(0.014), -1] });
+    part(WIRE, over(-0.014), add(over(-0.014), [0, 0.013, 0]), 0.0028, 0.0028, SOLE, { sway: [...over(-0.014), -1] });
   }
   // Far poles draw first. In a group, the pole draws before its fittings.
   const rank = g => (g === POLE_Z.length ? 1e3 : -POLE_Z[g]);
@@ -471,8 +529,11 @@ ${ROT}
 out vec2 vPx;
 flat out vec4 vA, vB, vM, vS;
 flat out vec3 vK;
-uniform vec4 uShoe;
-uniform vec3 uPluck, uShoeS;
+// A sneaker's own up: its frame turns with it, so it never flips.
+flat out vec3 vU;
+// The CPU swings the shoes: a turn per shoe and the knot's ride.
+uniform mat3 uShoeR[2];
+uniform vec3 uPluck, uShoeAt;
 // How far the wind turns a span about the line between its ends.
 // Gusts run north along the lane.
 float gust(float ph, float amp, float z) {
@@ -483,33 +544,21 @@ float gust(float ph, float amp, float z) {
 vec3 swing(vec3 p, float s, vec3 side, float th) {
   return p + s * (sin(th) * side + (1.0 - cos(th)) * vec3(0.0, 1.0, 0.0));
 }
-// Turns d about the unit axis k by the angle a.
-vec3 turn(vec3 d, vec3 k, float a) {
-  return d * cos(a) + cross(k, d) * sin(a) + k * dot(k, d) * (1.0 - cos(a));
-}
 void main() {
   float ppu = 0.5 * uRes.y, kind = iC.w;
   // Each program draws its own kinds; the rest leave the screen.
   int mine = kind < 0.5 ? 0 : kind < 2.5 ? 1 : 2;
   if (mine != uPass) { gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
   vec3 pa = iA.xyz, pb = iB.xyz;
+  vU = vec3(0.0, 1.0, 0.0);
   if (iM.y < 0.0) {
-    // uShoe: the host wire's sag, phase and swing, then the tap's kick.
-    // The piece's own number holds its phase and its lace length in cm.
-    float v = -iM.y, ph = mod(v, 10.0), len = floor(v / 10.0) / 100.0;
-    float th = gust(uShoe.y, uShoe.z, iC.z);
-    vec3 at = swing(iC.xyz, uShoe.x, uShoeS, th);
-    // A pendulum beats slower on a longer lace.
-    float w = sqrt(9.8 / max(len, 0.05));
-    // Gusts come and go; each one leans the shoe and feeds its swing.
-    float g = 0.5 + 0.5 * sin(uTime * 0.31 + ph * 1.3) * sin(uTime * 0.17 + ph);
-    float a1 = uWind * (0.12 * g + (0.04 + 0.13 * g + uShoe.w) * sin(uTime * w + ph) + 0.5 * th);
-    float a2 = uWind * (0.03 + 0.05 * g + 0.4 * uShoe.w) * sin(uTime * w * 0.87 + ph * 2.1);
-    // The lace lets the shoe turn slowly one way and then back.
-    float tw = uWind * (0.7 * sin(uTime * 0.53 + ph) + 0.35 * sin(uTime * 1.31 + ph * 3.0) + 1.5 * uShoe.w * sin(uTime * 2.2 + ph));
-    vec3 along = normalize(cross(vec3(0.0, 1.0, 0.0), uShoeS));
-    pa = at + turn(turn(turn(pa - iC.xyz, vec3(0.0, 1.0, 0.0), tw), along, a1), uShoeS, a2);
-    pb = at + turn(turn(turn(pb - iC.xyz, vec3(0.0, 1.0, 0.0), tw), along, a1), uShoeS, a2);
+    int k = int(-iM.y + 0.5) - 2;
+    mat3 R = k == 0 ? uShoeR[0] : k == 1 ? uShoeR[1] : mat3(1.0);
+    vec3 at = iC.xyz + uShoeAt;
+    pa = at + R * (pa - iC.xyz);
+    pb = at + R * (pb - iC.xyz);
+    // The rest up matches shoe() on the CPU.
+    if (kind > 2.5) { vec3 d0 = normalize(iB.xyz - iA.xyz); vU = R * normalize(vec3(0.0, 1.0, 0.0) - d0 * d0.y); }
   } else if (kind < 0.5) {
     vec3 side = normalize(cross(pb - pa, vec3(0.0, 1.0, 0.0)) + 1e-5);
     float th = gust(iC.z, iM.y, pa.z);
@@ -556,13 +605,17 @@ uniform vec3 uEye, uFw, uRt, uUp, uKey, uKeyC, uSun, uZen, uMid, uBand, uAnti, u
 uniform vec4 uOcA[4], uOcB[4];
 // A passing car: its headlights (place and power), its beam, its tail lights.
 uniform vec4 uCar, uTail;
-uniform vec3 uCarD;
+// The headlight beam's way and the tail lights' way.
+uniform vec3 uCarD, uTailD;
+// The sky fill's gain: lower is darker shade.
+uniform float uFill;
 // The bake runs four times; uJit moves the ray inside the pixel.
 uniform vec2 uJit;
 ${SKY}
 in vec2 vPx;
 flat in vec4 vA, vB, vM, vS;
 flat in vec3 vK;
+flat in vec3 vU;
 out vec4 o;
 float hash(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float noise(vec2 p) {
@@ -654,7 +707,7 @@ Surf surface(float mat, vec2 q, vec3 n, vec3 tx, vec3 ty, vec3 p, float seed, bo
     if (cap) {
       // End grain: growth rings and a dark heart.
       float r = length(q);
-      s.alb = mix(vec3(0.3, 0.24, 0.17), vec3(0.46, 0.4, 0.31), 0.5 + 0.5 * sin(r * 420.0 + noise(q * 30.0) * 4.0));
+      s.alb = 0.45 * mix(vec3(0.3, 0.24, 0.17), vec3(0.46, 0.4, 0.31), 0.5 + 0.5 * sin(r * 420.0 + noise(q * 30.0) * 4.0));
       s.rough = 0.9;
       return s;
     }
@@ -662,24 +715,25 @@ Surf surface(float mat, vec2 q, vec3 n, vec3 tx, vec3 ty, vec3 p, float seed, bo
     float h = woodH(q, seed, k), hx = woodH(q + vec2(e, 0.0), seed, k2), hy = woodH(q + vec2(0.0, e * 12.0), seed, k2);
     // Bump: the checks and the raised grain tilt the normal.
     float fb = noise(vec2(q.x * 700.0, q.y * 30.0)), fbx = noise(vec2((q.x + e) * 700.0, q.y * 30.0));
-    s.n = normalize(n - 0.016 * ((hx - h) / e * tx + (hy - h) / (e * 12.0) * ty) - 0.0009 * (fbx - fb) / e * tx);
+    s.n = normalize(n - 0.026 * ((hx - h) / e * tx + (hy - h) / (e * 12.0) * ty) - 0.0011 * (fbx - fb) / e * tx);
     // Weather turns a pole silver up high; the treatment stays brown below.
     // Rain streaks and old stains run down the grain.
     float streak = noise(vec2(q.x * 18.0 + seed * 9.0, q.y * 0.3));
     float blot = noise(vec2(q.x * 3.5, q.y * 0.5 + 4.0));
     // A sawn arm is newer wood: tan, with little grey yet.
     float up = mat < 0.5 ? smoothstep(1.5, 8.0, p.y) * 0.7 : 0.12;
-    vec3 brown = vec3(0.19, 0.13, 0.07), sand = mat < 0.5 ? vec3(0.34, 0.3, 0.17) : vec3(0.5, 0.38, 0.22), silver = vec3(0.38, 0.36, 0.32);
+    vec3 brown = vec3(0.19, 0.13, 0.07), sand = mat < 0.5 ? vec3(0.34, 0.3, 0.17) : vec3(0.5, 0.38, 0.22), silver = vec3(0.26, 0.24, 0.2);
     vec3 base = mix(mix(brown, sand, blot), silver, up * (0.35 + 0.65 * streak));
     base = mix(base, brown * 0.7, 0.45 * smoothstep(0.55, 0.8, noise(vec2(q.x * 7.0 + 2.0, q.y * 0.22))));
     base = mix(base, vec3(0.07, 0.045, 0.03), k);
-    s.alb = base * (0.4 + 0.6 * smoothstep(0.15, 0.95, h)) * (0.8 + 0.4 * noise(q * vec2(240.0, 5.0)));
+    // Old creosote keeps the wood dark.
+    s.alb = 0.45 * base * (0.4 + 0.6 * smoothstep(0.15, 0.95, h)) * (0.8 + 0.4 * noise(q * vec2(240.0, 5.0)));
     // Roughness: raw fibre in the checks, worn ridges smoother.
     // Knots hold resin and old treatment oil lies in patches: both shine a little.
     float oil = smoothstep(0.55, 0.8, noise(vec2(q.x * 7.0 + 2.0, q.y * 0.22))) * (1.0 - up);
-    s.rough = mix(0.97, 0.66, smoothstep(0.3, 0.95, h));
+    s.rough = mix(0.95, 0.68, smoothstep(0.3, 0.95, h));
     s.rough = mix(s.rough, 0.42, max(k * 0.8, oil * 0.6));
-    s.rough = clamp(s.rough + 0.12 * (fb - 0.5), 0.3, 1.0);
+    s.rough = clamp(s.rough + 0.1 * (fb - 0.5), 0.3, 1.0);
     // A check is a deep slot: little sky or sun reaches its floor.
     s.ao = 0.25 + 0.75 * smoothstep(0.1, 0.85, h);
   } else if (mat < 2.5) {
@@ -760,10 +814,10 @@ vec3 shade(Surf s, vec3 v, vec3 p) {
   vec3 c = lightOn(s, v, uKey, f0) * uKeyC * shadow(p + n * 0.01, uKey, 1e4) * (0.5 + 0.5 * s.ao);
   // Fill: the sky from above, a dim bounce from the lane below.
   vec3 skyC = mix(uZen, uMid, 0.5) * 1.5, ground = skyC * 0.22 + uKeyC * 0.05;
-  c += dif * mix(ground, skyC, 0.5 + 0.5 * n.y) * s.ao;
+  c += dif * mix(ground, skyC, 0.5 + 0.5 * n.y) * s.ao * uFill;
   vec3 r = reflect(-v, n);
   vec3 env = r.y > 0.0 ? skDusk(r, uSun, uZen, uMid, uBand, uAnti) : ground;
-  c += env * (f0 + (1.0 - f0) * pow(1.0 - nv, 5.0)) * (1.0 - s.rough * 0.8) * s.ao;
+  c += env * (f0 + (1.0 - f0) * pow(1.0 - nv, 5.0)) * (1.0 - s.rough * 0.8) * s.ao * uFill;
   if (uCar.w > 0.0) {
     // Headlights: a wide warm beam from low in the lane, with hard shadows.
     vec3 lv = uCar.xyz - p;
@@ -773,10 +827,11 @@ vec3 shade(Surf s, vec3 v, vec3 p) {
     if (beam > 0.0) c += lightOn(s, v, l, f0) * vec3(1.0, 0.85, 0.6) * uCar.w * beam / (d * d) * shadow(p + n * 0.01, l, d);
   }
   if (uTail.w > 0.0) {
-    // Tail lights: a dim red glow once the car has passed.
     vec3 lv = uTail.xyz - p;
     float d = length(lv);
-    c += lightOn(s, v, lv / d, f0) * vec3(1.0, 0.04, 0.02) * uTail.w / (d * d);
+    // Tail lights: a red beam behind the car, the far side of its headlights.
+    float back = smoothstep(-0.1, 0.6, dot(-lv / d, uTailD));
+    if (back > 0.0) c += lightOn(s, v, lv / d, f0) * vec3(1.0, 0.04, 0.02) * uTail.w * back / (d * d) * shadow(p + n * 0.01, lv / d, d);
   }
   return c;
 }
@@ -797,7 +852,21 @@ void main() {
     vec3 rd = normalize(uFw + (p.x * uRt + p.y * uUp) / (ppu * uF));
     vec3 side = normalize(n2.x * uRt + n2.y * uUp);
     vec3 P = mix(A, B, t);
-    Surf s = surface(mat, vec2(across * 0.01, t), normalize(side * across - rd * sqrt(1.0 - across * across)), side, ax, P, seed, false);
+    vec3 N = normalize(side * across - rd * sqrt(1.0 - across * across));
+    Surf s = surface(mat, vec2(across * 0.01, t), N, side, ax, P, seed, false);
+    // Metres along the wire and the angle round it.
+    float along = t * length(B - A), ang = asin(across);
+    if (mat > 5.5 && mat < 6.5 || mat > 1.5 && mat < 2.5) {
+      // Bare conductor: seven strands laid in a helix tilt the normal.
+      float lay = sin(ang * 6.0 + along / max(vA.w, 0.002) * 1.4);
+      s.n = normalize(N + ax * 0.45 * lay);
+      s.rough = 0.32 + 0.12 * noise(vec2(along * 3.0, seed * 9.0));
+    } else if (mat > 4.5 && mat < 5.5) {
+      // Rubber jacket: grey dust on top, worn glossier in streaks.
+      float dust = smoothstep(0.2, 0.9, N.y) * (0.5 + 0.5 * noise(vec2(along * 1.5, seed * 7.0)));
+      s.alb = mix(vec3(0.03, 0.03, 0.033), vec3(0.11, 0.105, 0.1), dust * 0.6);
+      s.rough = mix(0.38, 0.75, dust) + 0.1 * (noise(vec2(along * 6.0, 3.0 + seed)) - 0.5);
+    }
     float z = dot(P - uEye, uFw);
     vec3 c = mix(shade(s, -rd, P), uHaze, 1.0 - exp(-z / 260.0));
     o = vec4(c * cov, cov);
@@ -805,7 +874,11 @@ void main() {
   }
 #else
   // A frame on the part: ax along it, bx and cx across.
+#if PASS == 2
+  vec3 ref = vU;
+#else
   vec3 ref = abs(ax.y) > 0.9 ? vec3(0.0, 0.0, -1.0) : vec3(0.0, 1.0, 0.0);
+#endif
   vec3 cx = normalize(ref - ax * dot(ref, ax)), bx = cross(cx, ax);
   vec3 mid = 0.5 * (A + B);
   float hl = 0.5 * length(B - A);
@@ -874,7 +947,7 @@ void main() {
       if (mat < 0.5 && !cap) {
         // Displacement: a check sinks the surface, so the outline breaks too.
         float kk;
-        float sink = 1.0 - 0.06 * (1.0 - smoothstep(0.3, 0.9, woodH(q, seed, kk)));
+        float sink = 1.0 - 0.1 * (1.0 - smoothstep(0.3, 0.9, woodH(q, seed, kk)));
         vec3 n2;
         float t2 = iCone(uEye, rd, A, B, vA.w * sink, vB.w * sink, n2);
         if (t2 < 0.0) discard;
@@ -900,6 +973,9 @@ void main() {
     Surf s = surface(mat, q, n, tx, ty, P, seed, cap);
     vec3 c = shade(s, -rd, P);
     float z = dot(P - uEye, uFw);
+    // A far pole reads as a dark, flat cut-out against the sky.
+    float far = smoothstep(14.0, 28.0, z);
+    c = mix(c, vec3(dot(c, vec3(0.3, 0.5, 0.2))) * 0.35 + uHaze * 0.06, 0.75 * far);
     o = vec4(mix(c, uHaze, 1.0 - exp(-z / 260.0)), 1.0);
     gl_FragDepth = clamp(z / 400.0, 0.0, 0.9999);
   }
@@ -910,7 +986,9 @@ void main() {
 const ADD_FS = `${HEAD}
 uniform sampler2D uTex;
 out vec4 o;
-void main() { o = texelFetch(uTex, ivec2(gl_FragCoord.xy), 0) * 0.25; }`;
+// uGain: one over the number of jittered passes.
+uniform float uGain;
+void main() { o = texelFetch(uTex, ivec2(gl_FragCoord.xy), 0) * uGain; }`;
 
 // Each bird adds its velocity, a count and its alarm to one cell.
 const SPLAT_VS = `${HEAD}
@@ -1155,9 +1233,41 @@ const COMP_FS = `${HEAD}
 uniform sampler2D uSky, uScene, uBirds, uWires, uCloud;
 uniform float uExpo, uT;
 uniform vec3 uInk;
+// Post: x tone map (1 AgX), y film look, z contrast, w grain.
+uniform vec4 uPost;
+uniform float uVig;
 ${GRADE}
 ${OUTPUT}
 out vec4 o;
+// AgX, as three.js fits it: Rec.2020 in, a log encode, a sigmoid, then out.
+vec3 agxCurve(vec3 x) {
+  vec3 x2 = x * x, x4 = x2 * x2;
+  return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+vec3 agx(vec3 c) {
+  const mat3 toRec = mat3(0.6274, 0.0691, 0.0164, 0.3293, 0.9195, 0.0880, 0.0433, 0.0113, 0.8956);
+  const mat3 toSrgb = mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187);
+  const mat3 inset = mat3(0.856627153315983, 0.0951212405381588, 0.0482516061458583, 0.137318972929847, 0.761241990602591, 0.101439036467562, 0.11189821299995, 0.0767994186031903, 0.811302368396859);
+  const mat3 outset = mat3(1.1271005818144368, -0.11060664309660323, -0.016493938717834573, -0.1413297634984383, 1.157823702216272, -0.016493938717834257, -0.14132976349843826, -0.11060664309660294, 1.2519364065950405);
+  c = inset * (toRec * c);
+  c = clamp((log2(max(c, 1e-10)) + 12.47393) / 16.500999, 0.0, 1.0);
+  c = outset * agxCurve(c);
+  c = pow(max(c, 0.0), vec3(2.2));
+  return clamp(toSrgb * c, 0.0, 1.0);
+}
+// Portra 400 on display colour: filmic contrast, warm lifted blacks,
+// cream highlights, pastel cyan-leaning blues, a little less saturation.
+vec3 portra(vec3 c, float k, float con) {
+  const vec3 lw = vec3(0.2126, 0.7152, 0.0722);
+  float l = dot(c, lw);
+  vec3 f = mix(c, c * c * (3.0 - 2.0 * c), con);
+  f = f * 0.965 + vec3(0.035, 0.027, 0.02);
+  f *= mix(vec3(1.0), vec3(1.03, 1.0, 0.93), smoothstep(0.45, 1.0, l));
+  float blue = clamp((c.b - max(c.r, c.g)) * 3.0, 0.0, 1.0);
+  f *= mix(vec3(1.0), vec3(0.93, 1.02, 0.98), blue * 0.7);
+  f = mix(vec3(dot(f, lw)), f, 0.9);
+  return mix(c, f, k);
+}
 void main() {
   ivec2 fc = ivec2(gl_FragCoord.xy);
   vec2 res = vec2(textureSize(uScene, 0)), uv = gl_FragCoord.xy / res;
@@ -1173,8 +1283,10 @@ void main() {
   col = col * (1.0 - S.a) + S.rgb;
   vec4 Wr = texelFetch(uWires, fc, 0);
   col = col * (1.0 - Wr.a) + Wr.rgb;
-  col = gdGrade(col, uv, res.x / res.y, gl_FragCoord.xy + floor(fract(uT) * 97.0), vec3(0.0), 0.28, 0.45, 0.035);
-  o = vec4(ouFilmAces(col, uExpo, gl_FragCoord.xy), 1.0);
+  col = gdGrade(col, uv, res.x / res.y, gl_FragCoord.xy + floor(fract(uT) * 97.0), vec3(0.0), uVig, 0.45, uPost.w);
+  if (uPost.x < 0.5) { o = vec4(ouFilmAces(col, uExpo, gl_FragCoord.xy), 1.0); return; }
+  vec3 d = ouSrgb(agx(col * uExpo));
+  o = vec4(ouDither(portra(d, uPost.y, uPost.z), gl_FragCoord.xy), 1.0);
 }`;
 
 /* ---------- GL ---------- */
@@ -1329,11 +1441,14 @@ function lightAt(h) {
   // The shared sun crosses the south, behind the eye: it lights the pole's face.
   // A sun at or under the horizon still lights from just above it.
   const lift = v => unit([v[0], Math.max(v[1], 0.06), v[2]]);
-  const key = lift(d.sunUp > 0.5 || d.day > 0.3 ? d.sun : d.moon);
+  const a = look.sunAz * D2R, ca = Math.cos(a), sa = Math.sin(a), spin = v => [v[0] * ca + v[2] * sa, v[1], v[2] * ca - v[0] * sa];
+  const sun = spin(d.sun), key = lift(d.sunUp > 0.5 || d.day > 0.3 ? sun : spin(d.moon));
   const keyC = d.light.map(c => c * d.level * 1.05);
   // Night needs more exposure, but never so much it looks like day.
   const expo = lerp(4, 0.95, Math.sqrt(d.day));
-  return { d, sun: d.sun, key, keyC, s, expo, haze: s.mid };
+  // The fill falls as the shadow darkness rises; 0.4 keeps the first look.
+  const fill = 2 ** (-(look.shade - 0.4) * 3);
+  return { d, sun, key, keyC, s, expo, haze: s.mid, fill };
 }
 
 const JITTER = [[-0.125, -0.375], [0.375, -0.125], [-0.375, 0.125], [0.125, 0.375]];
@@ -1415,23 +1530,25 @@ function partUniforms() {
     if (U.uOcA) { gl.uniform4fv(U.uOcA, ocA); gl.uniform4fv(U.uOcB, ocB); }
     gl.uniform4fv(U.uCar, car.head);
     gl.uniform4fv(U.uTail, car.tail);
-    gl.uniform3fv(U.uCarD, CAR_DIR);
-    gl.uniform4f(U.uShoe, shoeHost[0], shoeHost[1], shoeHost[2], shoeKick);
+    gl.uniform3fv(U.uCarD, car.beam);
+    gl.uniform3fv(U.uTailD, car.back);
+    gl.uniform1f(U.uFill, light.fill);
+    gl.uniformMatrix3fv(U.uShoeR, false, shoeR);
+    gl.uniform3fv(U.uShoeAt, shoeRide);
     gl.uniform3f(U.uPluck, pluck.phase, pluck.age, pluck.amp);
-    gl.uniform3fv(U.uShoeS, shoeSide);
   });
 }
 // Sets one float on some of the part programs.
 const partSet = (progs, name, v) => { for (const q of progs) { gl.useProgram(q.p); gl.uniform1f(q.u[name], v); } };
 // Draws parts in four jittered passes and sums them into a target.
 // The still parts write depth; the moving parts only test against it.
-function partPasses(into, pass, vaoP, count, still, progs) {
+function partPasses(into, pass, vaoP, count, still, progs, jits = JITTER) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, into.fb);
   gl.viewport(0, 0, into.w, into.h);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND);
-  for (const [jx, jy] of JITTER) {
+  for (const [jx, jy] of jits) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, pass.fb);
     gl.clearDepth(1);
     gl.clear(still ? gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT : gl.COLOR_BUFFER_BIT);
@@ -1451,6 +1568,7 @@ function partPasses(into, pass, vaoP, count, still, progs) {
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.useProgram(P.add.p);
     gl.uniform1i(P.add.u.uTex, 10);
+    gl.uniform1f(P.add.u.uGain, 1 / jits.length);
     bindTex(10, pass.tex);
     gl.bindVertexArray(vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1459,15 +1577,29 @@ function partPasses(into, pass, vaoP, count, still, progs) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 // The still lane: the poles and all their fittings.
-function bakeParts() {
+// Fast: one centred pass in place of four, for a moving hour.
+function bakeParts(fast = false) {
   partUniforms();
   // The short leads on the pole bake still.
   partSet([P.solid, P.wire], 'uWind', 0);
-  partPasses(sceneT, passT, strokeVao, wireStart, true, [P.solid, P.wire]);
+  partPasses(sceneT, passT, strokeVao, wireStart, true, [P.solid, P.wire], fast ? [[0, 0]] : JITTER);
+}
+// A moving hour relights the scene cheaply; the clouds take every other frame.
+function bakeLive(n) {
+  light = lightAt(hour);
+  flying = crowsAt(hour);
+  ui.action('car').disabled = light.d.day >= 0.35;
+  bakeSky();
+  if (n % 2 === 0) bakeClouds();
+  bakeParts(true);
 }
 // A new hour or a new size bakes the sky, the clouds and the lane.
 function bake() {
   light = lightAt(hour);
+  // The car is only its headlights, so it drives after dark only.
+  const night = light.d.day < 0.35;
+  ui.action('car').disabled = !night;
+  if (!night && car.on) { car.on = false; car.head[3] = car.tail[3] = 0; }
   flying = crowsAt(hour);
   bakeSky();
   bakeClouds();
@@ -1582,25 +1714,30 @@ function draw() {
   bindTex(7, skyT.tex);
   bindTex(8, wireT.tex);
   bindTex(9, cloudT.tex);
-  gl.uniform1f(P.comp.u.uExpo, light.expo);
+  gl.uniform1f(P.comp.u.uExpo, light.expo * grade.expo);
+  gl.uniform4f(P.comp.u.uPost, grade.tone, grade.film, grade.contrast, grade.grain);
+  gl.uniform1f(P.comp.u.uVig, grade.vig);
   gl.uniform1f(P.comp.u.uT, simT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 /* ---------- the car, the shoes, a plucked wire ---------- */
-// A car drives north up the lane, under the eye. Its lights sweep the poles.
-const CAR_DIR = unit([0.04, 0.3, 1]), CAR_SPEED = 9, CAR_FROM = -45, CAR_TO = 150;
-const car = { z: 0, on: false, next: 0, head: [0, 0, 0, 0], tail: [0, 0, 0, 0] };
+// A car passes at night: up the lane, or across it under the shoe wire.
+// Each pass picks its route, its way along it and its speed.
+// Headlights throw a white beam ahead; tail lights throw a red one behind.
+const car = { s: 0, len: 0, v: 9, from: [0, 0, 0], dir: [0, 0, 1], on: false, next: 0,
+  head: [0, 0, 0, 0], tail: [0, 0, 0, 0], beam: [0, 0.3, 1], back: [0, 0.3, -1] };
 function carStep(dt, now) {
   // After dark a car passes now and then by itself.
   if (!car.on && light.d.day < 0.35 && car.next && now > car.next) startCar();
   if (!car.on) return false;
-  car.z += CAR_SPEED * dt;
+  car.s += car.v * dt;
   // The lamps fade in and out at the ends of the run.
-  const k = clamp((car.z - CAR_FROM) / 8) * clamp((CAR_TO - car.z) / 30);
-  car.head = [-1.3, 0.7, car.z, 26 * k];
-  car.tail = [-1.3, 0.8, car.z - 4.2, 1.6 * k];
-  if (car.z > CAR_TO) {
+  const k = clamp(car.s / 8) * clamp((car.len - car.s) / 30);
+  const at = d => add(car.from, car.dir.map(v => v * (car.s + d)));
+  car.head = [...add(at(0), [0, 0.7, 0]), 26 * k];
+  car.tail = [...add(at(-4.2), [0, 0.8, 0]), 6 * k];
+  if (car.s > car.len) {
     car.on = false;
     car.head[3] = car.tail[3] = 0;
     car.next = now + rand(35000, 80000);
@@ -1609,10 +1746,130 @@ function carStep(dt, now) {
 }
 function startCar() {
   if (car.on) return;
+  let dir, mid;
+  if (Math.random() < 0.5 || !shoePiv) {
+    // Up the lane, in line with the poles, at either side of it.
+    dir = [0, 0, 1];
+    mid = [-1.3, 0, NEAR_Z];
+  } else {
+    // Across, under the shoe wire, along its line on the ground.
+    dir = unit([shoeAlong[0], 0, shoeAlong[2]]);
+    mid = [shoePiv[0], 0, shoePiv[2]];
+  }
+  if (Math.random() < 0.5) dir = dir.map(v => -v);
+  car.dir = dir;
+  car.from = sub(mid, dir.map(v => v * 20));
+  car.len = 90;
+  car.s = 0;
+  car.v = rand(5, 14);
+  car.beam = unit([dir[0], 0.3, dir[2]]);
+  car.back = unit([-dir[0], 0.25, -dir[2]]);
   car.on = true;
-  car.z = CAR_FROM;
 }
-let shoeKick = 0;
+// The shoes: each a pendulum on its lace, under gravity, drag and gusts.
+// Steps of 1/120 s or less keep explicit velocity, so a frame's length can vary.
+// The lace is a fixed length from the knot.
+const GRAV = 9.8, DRAG = 0.35, TWIST_K = 2.2, TWIST_DRAG = 0.5;
+const shoeR = new Float32Array(18);
+let shoeRide = [0, 0, 0];
+for (let i = 0; i < 2; i++) shoeR.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+// The host wire's turn in the wind, as gust() in the vertex shader.
+function shoeRideAt(t, wind) {
+  const ph = shoeHost[1] - shoePiv[2] * 0.06, amp = shoeHost[2], sag = shoeHost[0];
+  const th = wind * amp * (0.2 * Math.sin(t * 0.7 + ph) + 0.09 * Math.sin(t * 1.7 + ph * 2.3) + 0.035 * Math.sin(t * 3.9 + ph * 5.1) + 0.12);
+  const at = add(shoeSide.map(v => v * sag * Math.sin(th)), [0, sag * (1 - Math.cos(th)), 0]);
+  // A pluck on the host wire moves the knot as the vertex shader moves the wire.
+  const age = pluck.age - (windT - t);
+  if (pluck.amp > 0 && Math.abs(pluck.phase - shoeHost[1]) < 0.001 && age >= 0) {
+    const k = pluck.amp * Math.exp(-age * 1.2) * Math.sin(age * (7 + 9 * amp)) * sag;
+    return add(at, [shoeSide[0] * 0.25 * k, 0.5 * k, shoeSide[2] * 0.25 * k]);
+  }
+  return at;
+}
+// The gust's push on one shoe, in m/s². Calm spells come and go.
+function shoeGust(t, ph) {
+  const g = 0.5 + 0.5 * Math.sin(t * 0.31 + ph * 1.3) * Math.sin(t * 0.17 + ph);
+  return g * (0.9 + 0.5 * Math.sin(t * 1.9 + ph) + 0.35 * Math.sin(t * 3.4 + ph * 2.0) + 0.2 * Math.sin(t * 5.3 + ph * 3.1));
+}
+// Rodrigues: the row-major 3x3 that turns unit a onto unit b.
+function rotTo(a, b) {
+  const v = cross(a, b), c = dot(a, b), k = 1 / (1 + c);
+  return [v[0] * v[0] * k + c, v[0] * v[1] * k - v[2], v[0] * v[2] * k + v[1],
+    v[1] * v[0] * k + v[2], v[1] * v[1] * k + c, v[1] * v[2] * k - v[0],
+    v[2] * v[0] * k - v[1], v[2] * v[1] * k + v[0], v[2] * v[2] * k + c];
+}
+// A shoe's turn: about the rest hang line first, then the swing. Row-major.
+function shoeRot(s, piv) {
+  const A = rotTo([0, -1, 0], unit(sub(s.b, piv))), c = Math.cos(s.tw), sn = Math.sin(s.tw);
+  const B = [c, 0, sn, 0, 1, 0, -sn, 0, c], M = [];
+  for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) M.push(A[r * 3] * B[q] + A[r * 3 + 1] * B[3 + q] + A[r * 3 + 2] * B[6 + q]);
+  return M;
+}
+const mul3 = (M, v) => [M[0] * v[0] + M[1] * v[1] + M[2] * v[2], M[3] * v[0] + M[4] * v[1] + M[5] * v[2], M[6] * v[0] + M[7] * v[1] + M[8] * v[2]];
+// The closest points of two segments: Ericson, Real-Time Collision Detection 5.1.9.
+function segClose(p1, q1, p2, q2) {
+  const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2);
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r), c = dot(d1, r), b = dot(d1, d2), den = a * e - b * b;
+  let s = den > 1e-9 ? clamp((b * f - c * e) / den) : 0, t = (b * s + f) / e;
+  if (t < 0) { t = 0; s = clamp(-c / a); } else if (t > 1) { t = 1; s = clamp((b - c) / a); }
+  return [add(p1, d1.map(v => v * s)), add(p2, d2.map(v => v * t))];
+}
+const SHOE_R = 0.045;
+// Two shoes that touch push apart at their contact point.
+// The bobs move by the lever ratio; the lace then holds their length.
+function shoeBump(piv) {
+  const [s0, s1] = shoes, M0 = shoeRot(s0, piv[0]), M1 = shoeRot(s1, piv[1]);
+  const w = (s, M, p, k) => add(p, mul3(M, s[k]));
+  const [a, b] = segClose(w(s0, M0, piv[0], 'c0'), w(s0, M0, piv[0], 'c1'), w(s1, M1, piv[1], 'c0'), w(s1, M1, piv[1], 'c1'));
+  const gap = sub(b, a), dist = Math.hypot(...gap), pen = 2 * SHOE_R - dist;
+  if (pen <= 0 || dist < 1e-6) return;
+  const n = gap.map(v => v / dist);
+  s0.b = sub(s0.b, n.map(v => v * pen * 0.5 * s0.L / Math.max(0.1, Math.hypot(...sub(a, piv[0])))));
+  s1.b = add(s1.b, n.map(v => v * pen * 0.5 * s1.L / Math.max(0.1, Math.hypot(...sub(b, piv[1])))));
+  // A glancing knock turns each shoe a little on its lace.
+  s0.tv -= pen * 20;
+  s1.tv += pen * 20;
+}
+function shoeStep(dt) {
+  if (!shoes.length || dt <= 0) return;
+  const wind = reduced() ? 0 : 1, n = Math.ceil(dt * 120), h = dt / n;
+  const along = unit(cross([0, 1, 0], shoeSide));
+  for (let j = 1; j <= n; j++) {
+    const t = windT - dt + j * h;
+    shoeRide = shoeRideAt(t, wind);
+    const piv = shoes.map(s => add(s.piv, shoeRide)), was = shoes.map(s => s.b);
+    // The lace holds the bob at its length from the riding knot.
+    const hold = (s, i) => { s.b = add(piv[i], unit(sub(s.b, piv[i])).map(v => v * s.L)); };
+    shoes.forEach((s, i) => {
+      const f = wind * shoeGust(t, s.ph), f2 = wind * 0.3 * Math.sin(t * 0.83 + s.ph * 2.0);
+      const acc = [shoeSide[0] * f + along[0] * f2, -GRAV, shoeSide[2] * f + along[2] * f2];
+      const keep = 1 - DRAG * h;
+      s.v = s.v.map((v, k) => v * keep + acc[k] * h);
+      s.b = add(s.b, s.v.map(v => v * h));
+      hold(s, i);
+      // The lace twists and untwists slowly.
+      s.tv += (-TWIST_K * s.tw - TWIST_DRAG * s.tv + wind * 0.4 * Math.sin(t * 0.53 + s.ph)) * h;
+      s.tw += s.tv * h;
+    });
+    if (shoes.length === 2) { shoeBump(piv); shoes.forEach(hold); }
+    // The velocity follows the moves, so a bump carries on as a swing.
+    shoes.forEach((s, i) => { s.v = sub(s.b, was[i]).map(v => v / h); });
+  }
+  const piv = shoes.map(s => add(s.piv, shoeRide));
+  shoes.forEach((s, i) => {
+    // Out column-major for the shader.
+    const M = shoeRot(s, piv[i]);
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) shoeR[i * 9 + q * 3 + r] = M[r * 3 + q];
+  });
+}
+// A tap throws both shoes across the wire and spins them a little.
+function shoeKick() {
+  for (const s of shoes) {
+    const v = rand(0.7, 1.1) * (Math.random() < 0.5 ? -1 : 1);
+    s.v = add(s.v, shoeSide.map(x => x * v));
+    s.tv += rand(-1.5, 1.5);
+  }
+}
 const pluck = { phase: -1, age: 0, amp: 0 };
 
 /* ---------- one loop ---------- */
@@ -1624,7 +1881,8 @@ function frame(now) {
   raf = 0;
   if (!ready || !visible) return;
   const raw = Math.max(0, (now - last) / 1000);
-  if (startleT <= 0 && raw < 1 / 32) { raf = requestAnimationFrame(frame); return; }
+  // A held timelapse runs at full rate, like a startle.
+  if (startleT <= 0 && !lapse.on && raw < 1 / 32) { raf = requestAnimationFrame(frame); return; }
   last = now;
   // A car in the lane keeps the scene awake until it has gone.
   if (car.on) lastInput = Math.max(lastInput, now - (SLEEP - 3) * 1000);
@@ -1634,12 +1892,28 @@ function frame(now) {
     startleT = Math.max(0, startleT - raw);
     simT += dt;
     windT += dt;
-    shoeKick *= Math.exp(-dt / 2.5);
+    shoeStep(dt);
     pluck.age += dt;
     if (pluck.age > 6) pluck.amp = 0;
     if (dt > 0) simStep(dt);
     const lit = carStep(dt, now);
-    if (dirty) { dirty = false; bake(); } else {
+    if (lapse.down && !lapse.on && now - lapse.down > HOLD_MS) lapse.on = true;
+    if (lapse.on) {
+      lastInput = now;
+      clock.to(clock.target + raw * LAPSE_RATE);
+    }
+    if (clock.step(raw)) {
+      hour = clock.hour;
+      bakeLive(tickNo++);
+      if (lapse.on) ui.slider.set(hour);
+      liveBaked = true;
+    } else if (liveBaked) {
+      // The hour has settled: one full bake at full quality.
+      liveBaked = false;
+      hour = clock.hour;
+      dirty = true;
+    }
+    if (dirty) { dirty = false; bake(); } else if (!clock.moving) {
       // The lane rebakes only while the car's lights move over it.
       if (lit || car.dark) bakeParts();
       // The clouds redraw every third frame: about ten times a second.
@@ -1717,8 +1991,8 @@ canvas.addEventListener('pointerdown', e => {
   const [sx, sy] = toScene(e);
   // The shoes first, then a wire; a tap on open sky startles the crows.
   if (shoePiv) {
-    const q = project(add(shoePiv, [0, -0.45, 0]));
-    if (Math.hypot(sx - q[0], sy - q[1]) < 0.13) { shoeKick = Math.min(1.2, shoeKick + 0.7); poke(); return; }
+    const q = project(add(shoePiv, [0, -0.85, 0]));
+    if (Math.hypot(sx - q[0], sy - q[1]) < 0.15) { shoeKick(); poke(); return; }
   }
   const w = wireAt(sx, sy);
   if (w) { pluck.phase = w.phase; pluck.age = 0; pluck.amp = 0.32; poke(); return; }
@@ -1736,11 +2010,31 @@ stage.addEventListener('keydown', e => {
 // A scatter starts in the middle of the stream.
 act.scatter = () => startle(HW[0] * rand(-0.3, 0.3) - HW[1] * HW_MID, HW[1] * rand(-0.3, 0.3) + HW[0] * HW_MID);
 // A new hour bakes on the next frame. With no loop, it bakes at once.
+// The clock eases to h; reduced motion and a hidden page jump at once.
 function setHour(h) {
-  hour = h;
+  clock.to(h);
+  if (!ready || reduced() || !visible) { clock.snap(); hour = clock.hour; }
   if (!ready) return;
-  if (reduced() || !visible) { bake(); draw(); } else { dirty = true; poke(); }
+  if (reduced() || !visible) { bake(); draw(); } else poke();
 }
+act.repaint = () => { if (ready) { draw(); poke(); } };
+act.relight = () => { if (!ready) return; if (reduced() || !visible) { bake(); draw(); } else { dirty = true; poke(); } };
+act.nowDown = () => {
+  if (reduced()) return;
+  lapse.down = performance.now();
+  follow = false;
+  poke();
+};
+// A short press is Now; the end of a hold keeps the hour it reached.
+act.nowUp = () => {
+  const held = lapse.on;
+  lapse.down = 0;
+  lapse.on = false;
+  if (!held) { act.now(); return; }
+  clock.to(clock.hour);
+  store.set('hour', clock.hour);
+  ui.slider.set(clock.hour);
+};
 act.hour = v => {
   follow = false;
   store.set('hour', v);
@@ -1752,14 +2046,16 @@ act.now = () => {
   ui.slider.set(localHour());
   setHour(localHour());
 };
-act.car = () => { if (ready && !reduced()) { startCar(); poke(); } };
+act.car = () => { if (ready && !reduced() && light.d.day < 0.35) { startCar(); poke(); } };
 // Now re-reads the clock once a minute and moves the slider with it.
 setInterval(() => {
   if (!ready || !visible || !follow) return;
   const h = localHour();
   if (Math.abs(h - hour) < 0.05) return;
   ui.slider.set(h);
-  hour = h;
+  clock.to(h);
+  clock.snap();
+  hour = clock.hour;
   bake();
   draw();
 }, 60000);
