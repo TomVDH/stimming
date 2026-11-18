@@ -425,7 +425,7 @@ const SONGS = {
   // Its notes sound an octave above their MIDI numbers, so the scope voice lifts them (octUp).
   // MONDAY: Blue Monday; doubled tracks share a mini; the 909 kit maps GM notes back to kit notes.
   monday: {
-    url: 'monday.mid', kit: 'monday-kit', velDiv: 50, off: 24, octUp: 12,
+    url: 'monday.mid', kit: 'monday-kit', velDiv: 50, off: 24, octUp: 12, snap: true,
     title: 'Blue Monday', artist: 'New Order', year: 1983, label: 'Factory Records',
     main: { tracks: ['Scifi'], tone: 'warm', env: 'pad' },
     pos: R10,
@@ -585,8 +585,9 @@ function readMidi(buf) {
     for (const [t0, d, k, v] of tr.notes) { const t = sec(t0), e = sec(t0 + d); list.push([t, e, k, v / 127]); dur = Math.max(dur, e); }
     tracks.set(tr.name, list);
   }
-  return { tracks, dur: dur + 1 };
+  return { tracks, dur: dur + 1, beat: tempo[0][1] / 1e6 };
 }
+const SNAP = 0.15;
 // Each part keeps its notes in milliseconds, sorted by start.
 // A part may keep only some keys, or skip some, to split one drum track.
 const msNotes = (tracks, names, p) => names.flatMap(nm => tracks.get(nm) || [])
@@ -598,7 +599,15 @@ async function loadSong(id) {
   if (songCache[id]) return songCache[id];
   const S = SONGS[id], res = await fetch(S.url);
   if (!res.ok) throw new Error(`no ${S.url}`);
-  const { tracks, dur } = readMidi(await res.arrayBuffer()), n = Math.ceil(dur * CR);
+  const { tracks, dur, beat } = readMidi(await res.arrayBuffer()), n = Math.ceil(dur * CR);
+  // A snapped song pulls each note within SNAP of a 16th onto the grid, so spread chords land on the beat.
+  if (S.snap) {
+    const g = beat / 4;
+    for (const list of tracks.values()) for (const x of list) {
+      const q = Math.round(x[0] / g) * g, dt = q - x[0];
+      if (Math.abs(dt) <= SNAP * g) { x[0] = q; x[1] += dt; }
+    }
+  }
   // Volumes scale to the 0..76 range the other songs use.
   for (const name of S.drop || []) tracks.delete(name);
   const vk = 76 / (S.velDiv || 76);
