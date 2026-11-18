@@ -442,11 +442,13 @@ const SONGS = {
   // PLASTIC: an Online Sequencer export; doubled tracks share a mini; twelve minis, no corners.
   plastic: {
     url: 'plastic.mid', kit: 'plastic-kit', velDiv: 50,
+    // Doubled tracks are dropped, so each part plays once.
+    drop: ['Muted E-Guitar', 'Violin (Classic)', '8-Bit Triangle'],
     title: 'Plastic Love', artist: 'Mariya Takeuchi', year: 1984, label: 'Moon Records',
-    main: { tracks: ['Violin (Classic)'], tone: 'warm', env: 'pad' },
+    main: { tracks: ['Violin'], tone: 'warm', env: 'pad' },
     pos: [[-2, 4], [0, 4], [2, 4], [4, 2], [4, 0], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 0], [-4, 2]],
     parts: [
-      { tracks: ['Electric Guitar', 'Muted E-Guitar', 'Koto', 'Dist. Guitar (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
+      { tracks: ['Electric Guitar', 'Koto', 'Dist. Guitar (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
       { tracks: ['Grand Piano'], tone: 'soft', env: 'pluck', decay: 1 },
       { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
       { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
@@ -457,7 +459,7 @@ const SONGS = {
       { tracks: ['2023 Drum Kit', 'Electric Drum Kit'], keys: [27, 36], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
       { tracks: ['Electric Drum Kit', 'Electric Drum Kit 2'], keys: [41, 43, 45, 47, 48, 50], drum: 'kick', env: 'hit', decay: 0.18 },
       { tracks: ['Pizzicato', 'Cello'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
-      { tracks: ['Bass', '8-Bit Triangle'], tone: 'bass', env: 'pad', lv: 1.6 },
+      { tracks: ['Bass'], tone: 'bass', env: 'pad', lv: 1.6 },
     ],
     full: {
       'Elec. Piano (Classic)': ['sample', -0.15, 0, 0], 'Grand Piano': ['sample', 0.15, 41, 0], 'Violin (Classic)': ['sample', 0, 11, 0],
@@ -564,6 +566,7 @@ async function loadSong(id) {
   if (!res.ok) throw new Error(`no ${S.url}`);
   const { tracks, dur } = readMidi(await res.arrayBuffer()), n = Math.ceil(dur * CR);
   // Volumes scale to the 0..76 range the other songs use.
+  for (const name of S.drop || []) tracks.delete(name);
   const vk = 76 / (S.velDiv || 76);
   if (vk !== 1) for (const list of tracks.values()) for (const x of list) x[3] = Math.min(1, x[3] * vk);
   const parts = S.parts.map(p => ({ ...p, notes: msNotes(tracks, p.tracks, p) }));
