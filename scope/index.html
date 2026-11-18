@@ -81,7 +81,7 @@ const fromHz = f => Math.round(1000 * Math.log10(f / 40));
 const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {}, look() {}, phos() {} };
 // The screen draws its own legend, so the key strip stays off.
 const ui = initPage({ id: 'scope', bar: {
-  choice: { label: 'Mode', value: 'pen', options: [{ value: 'pen', label: 'Pen' }, { value: 'knot', label: 'Knot' }], onPick: v => act.mode(v) },
+  choice: { label: 'Mode', value: 'knot', options: [{ value: 'pen', label: 'Pen' }, { value: 'knot', label: 'Knot' }], onPick: v => act.mode(v) },
   slider: { label: 'Pitch', min: 0, max: 1000, step: 1, value: fromHz(110), onInput: v => act.pitch(v) },
   actions: [
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
@@ -274,7 +274,7 @@ function knotPerim(k) {
 // The phosphor choice comes back on the next visit.
 const PHOS_KEY = 'stimming.scope.phosphor';
 const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage is off */ } } };
-let mode = 'pen', presetIdx = 0, pitch = 110, phos = 0;
+let mode = 'knot', presetIdx = 0, pitch = 110, phos = 0;
 let pen = PRESETS[0]();
 let knot = { a: 3, b: 2 }, pickCell = [3, 2];
 // The figure turns while spin is on and a solid or knot is up.
@@ -2177,7 +2177,16 @@ canvas.addEventListener('pointermove', e => {
 });
 canvas.addEventListener('pointerleave', () => { if (tape && tape.hover !== -1) { tape.hover = -1; paintHud(); poke(); } });
 // Scrolling on a mini sets its volume, 0 to 1; the arc and a dB readout show it.
+// Without a song, scrolling in Knot mode steps the pitch a semitone per notch.
+let wheelAcc = 0;
 canvas.addEventListener('wheel', e => {
+  if (!tape && mode === 'knot') {
+    e.preventDefault();
+    // A mouse notch reports about 100 px or 3 lines: one semitone.
+    wheelAcc += e.deltaMode ? e.deltaY * 33 : e.deltaY;
+    while (Math.abs(wheelAcc) >= 100) { stepPitch(wheelAcc < 0 ? 1 : -1); wheelAcc -= Math.sign(wheelAcc) * 100; }
+    return;
+  }
   if (!tape?.t0) return;
   const p = toDiv(e), m = tape.song.pos.findIndex(([x, y]) => Math.hypot(p[0] - x, p[1] - y) <= MINI_R * 1.1);
   // The main scope's area, inside the ring, sets the main voice's volume.
@@ -2293,9 +2302,9 @@ function toggleSpin() {
   spinOn = !spinOn; setTheta(th);
   paintHud(); dirty = true; sync(); poke();
 }
-// Reset returns to the first visit: the cube, Pen, 110 hertz, teal, turning.
+// Reset returns to the first visit: Knot 3:2 (the cube waits in Pen), 110 hertz, teal, turning.
 function resetAll() {
-  mode = 'pen'; ui.choice.set('pen');
+  mode = 'knot'; ui.choice.set('knot');
   presetIdx = 0; pen = PRESETS[0](); knot = { a: 3, b: 2 }; pickCell = [3, 2];
   setPhosphor(PHOS_DEFAULT);
   spinOn = !reduced(); setTheta(0);
