@@ -81,6 +81,37 @@ All four:
 - The toy's own corners fade in the first quarter of the travel.
 - Reduced motion: a plain scroll.
 
+### Tom's pick: H · Flash cut (2026-11-16)
+
+Two more directions came after the first four: G · Lead figure (the stage shrinks into the article's first picture) and H · Flash cut.
+Tom picked H and parked the rest. The lab opens on H; the parked directions stay on the switch.
+
+H · Flash cut:
+- The stage stays fixed and dims to 0.62. The zone rises over it as a dark sheet.
+- At rest the toy fills the whole screen, with 18 px round corners (Tom, 2026-11-16: the full toy). The cue takes no room: one quiet hint floats on the toy, bottom centre, the word `About` and a small chevron. It fades in the first fifth of the travel. No line, no border, no lip (Tom, 2026-11-16: a hard border is ugly, in every direction).
+- The toy's key strip rises 22 px, so the hint has the bottom edge to itself. The shell build must measure this collision.
+- The title block lands in the intro's beats at 30 fps: lead 3 frames, the big logo box 3, the logo box and the name box at size 11, then rest. Each small line then cuts in: hidden, two frames inverted, rest.
+- Down the page each part heading cuts in the same way.
+- The title block has the Signal intro's voice: the emblem in the toy's ink, Gabarito 800 for the name, B612 for the small lines.
+- Tom's ruling: the rhythm of the flashes and the size flashes belong here; a full white card on a dark site does not. The first build of H was a white panel in difference blend; it is gone.
+
+Title block layouts, first set (Stack, Poster, Ledger, Centre, Side): Tom rejected all five on 2026-11-16. His reasons: too ordinary, and the wrong ingredients. His lead: the emblem.
+
+Second set, `?v=a..d`, keys 1 to 4. The emblem leads in each. The block holds the emblem, both names with IPA, and the motto; the facts (number, series, build, sound) sit with the credits.
+
+| | Layout |
+|---|---|
+| 1 · Window | The emblem is a hole in the sheet. The toy plays on behind it, and the hole moves over the toy as the page scrolls. The names sit under it. |
+| 2 · Giant | The emblem is up to 600 px and runs off the left edge. It leans to the pointer. The names stand at its lower right. |
+| 3 · Echo | The emblem repeats four times at falling sizes and strengths. On landing the flash runs down the row. |
+| 4 · Orbit | Both names run in a ring round the emblem, in the slab face. The ring turns with the scroll. All centred. |
+
+Tom rejected this set too (2026-11-16): "all are so trite". The title block is open. Bean `stimming-465y` holds the handoff: every ruling, every verdict and the advice for the next try.
+
+Test sheet: `annexlab/sheet.html` shows every transition and layout live, one card each, with Tom's verdict.
+
+Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
+
 ### The content kit
 
 One kit for every toy, in this order (Tom, 2026-11-16: making-of, idea, notes, attribution).
