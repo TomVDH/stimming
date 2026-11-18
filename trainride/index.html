@@ -4018,7 +4018,8 @@ const curveAt = x => {
 };
 // brK is 1 on a rail bridge and ovK 1 under a road deck; the sound and the cabin light read them.
 // cant is the carriage's roll on a curve; sway is the head's lean from the curve's pull.
-let brK = 0, ovK = 0, cant = 0, sway = 0;
+// swingV is the view's swing on a curve, eased like the roll.
+let brK = 0, ovK = 0, cant = 0, sway = 0, swingV = 0;
 
 /* Train sides: the oncoming train and the trains standing at Zurich HB share one look. */
 // The quad runs from the rails at -2.5 to 2.7 m, so the bogies and the roof gear fit on it.
@@ -5341,7 +5342,8 @@ const proj = new THREE.Vector3();
 const MAJOR = new Set(['Zürich Enge', 'Thalwil', 'Horgen', 'Wädenswil', 'Richterswil', 'Pfäffikon SZ', 'Lachen SZ', 'Ziegelbrücke']);
 // Rural halts: the small stations on the upper lake, the Linth plain and the Walensee.
 const HALT = new Set(['Au ZH', 'Bäch SZ', 'Freienbach SBB', 'Altendorf', 'Siebnen-Wangen', 'Schübelbach-Buttikon', 'Reichenburg', 'Bilten', 'Weesen', 'Mühlehorn', 'Murg']);
-function place() {
+// dt eases the roll and the swing; 0 snaps them, for a jump or the first frame.
+function place(dt = 0) {
   // The carriage bumps on each joint and rolls a little on the curve.
   // Leaned back, the seat damps the ride; by the glass the bumps come through.
   const near = nearK(eye.z), bk = 0.4 + 0.75 * near;
@@ -5354,9 +5356,13 @@ function place() {
   // The roll is about the line, so for a camera looking out sideways it is a pitch.
   const cv = curveAt(camX);
   // Real cant tops out near 150 mm, some 0.1 rad; a little less reads better in a window.
-  cant = THREE.MathUtils.clamp(cv * 60, -0.06, 0.06);
+  // A soft limit and a 2 s ease taper the roll in and out of each curve.
+  const cantT = 0.06 * Math.tanh(cv * 1000), swingT = 0.06 * Math.tanh(cv * 25 / 0.06);
   // The view swings back on a curve toward the window side, forward on one away from it.
-  const swing = THREE.MathUtils.clamp(cv * 25, -0.06, 0.06);
+  const ease = dt > 0 ? 1 - Math.exp(-dt / 2) : 1;
+  cant += (cantT - cant) * ease;
+  swingV += (swingT - swingV) * ease;
+  const swing = swingV;
   // The pull the cant leaves over sways the head: off the glass toward the window side's curve, onto it on the other.
   sway += (THREE.MathUtils.clamp((speed * speed * cv - 9.81 * cant) * 0.006, -0.03, 0.03) - sway) * 0.04;
   bed.rotation.x = -cant;
@@ -5684,7 +5690,7 @@ function update(dt, pace) {
   // The lake's height in the route column at the eye.
   OUTU.uLakeY.value = THREE.DataUtils.fromHalfFloat(ROUTE.lk[Math.floor((((camX % TILE) + TILE) % TILE) / TILE * ROUTE.w) % ROUTE.w]);
   eye.lerp(eyeT, Math.min(1, dt * 7));
-  place();
+  place(dt);
 }
 place();
 return {
