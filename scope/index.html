@@ -525,9 +525,10 @@ const SONGS = {
   },
 };
 // Chunks of CH seconds; control steps every millisecond.
-// The main voice's standard level is 67 % of its first level; the bar calls that 100 %.
+// The main voice starts at MAIN_START on its bar, -5 dB, in every song.
 // The main figure fills MAIN_SCALE divisions, inside the ring of minis.
-const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55 * 0.67, PART_MIX = 0.15;
+const MAIN_START = 10 ** (-5 / 20);
+const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55, PART_MIX = 0.15;
 // Sixteen slots ring the face edge, two divisions apart, clockwise from top left.
 const MINI_POS = [[-4, 4], [-2, 4], [0, 4], [2, 4], [4, 4], [4, 2], [4, 0], [4, -2], [4, -4], [2, -4], [0, -4], [-2, -4], [-4, -4], [-4, -2], [-4, 0], [-4, 2]], MINI_R = 0.85;
 // The bezels fade in over 0.8 s when the song starts and out over 0.5 s.
@@ -634,9 +635,10 @@ async function loadSong(id) {
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE 1 keeps each figure still: a roll smears chords into a filled square.
 const SLOTS = 3, DETUNE = 1;
-// The main voice's right channel plays a consonant interval picked by pitch class,
-// so each note ties its own knot and the shape follows the melody.
-const MAIN_RATIOS = [1, 3 / 2, 2, 4 / 3, 5 / 4, 5 / 3, 3 / 2, 2, 4 / 3, 5 / 4, 3, 6 / 5];
+// The main voice's right channel keeps the note's pitch and changes its harmonic recipe by pitch class.
+// Harmonics belong to the note, so the key holds, yet each note ties its own knot.
+const MAIN_HARM = [[1, 0, 0], [0.6, 0.5, 0], [0.5, 0, 0.5], [0.4, 0.4, 0.3], [0.7, 0.3, 0], [0.5, 0.2, 0.4],
+  [0.3, 0.7, 0], [0.6, 0, 0.3], [0.4, 0.5, 0.2], [0.8, 0, 0.2], [0.3, 0.3, 0.5], [0.5, 0.5, 0.5]];
 function partState(p, i, kf) {
   const H = TONES[p.tone] || TONES.soft, norm = 1 / H.reduce((a, h) => a + Math.abs(h), 0);
   return { p, q: 0, act: [], minEnd: Infinity, lv: p.lv || 1, kD: kf(p.decay || 0.3), noise: 1 + i, lx: 0, ly: 0, H, norm,
@@ -662,7 +664,7 @@ function partStep(P, c) {
       // A struck note restarts its cycle, so its first peak lands on the beat.
       if (P.p.env !== 'pad') { v.ph = 0; v.ph2 = 0.25; }
       v.vel = x[3];
-      if (P.isMain) v.r = MAIN_RATIOS[x[2] % 12];
+      if (P.isMain) v.h = MAIN_HARM[x[2] % 12];
     }
     v.note = x;
   }
@@ -695,8 +697,10 @@ function partSample(P, rate, k) {
       else if (drum === 'snare') { x += v.a * (0.6 * cx + 0.9 * P.lx); y += v.a * (0.6 * cy + 0.9 * P.ly); }
       else { x += v.a * 1.4 * P.lx; y += v.a * 1.4 * P.ly; }
     } else {
-      v.ph2 = (v.ph2 + v.f * (v.r || DETUNE) / rate) % 1;
-      x += v.a * toneAt(P, v.ph); y += v.a * toneAt(P, v.ph2);
+      v.ph2 = (v.ph2 + v.f * DETUNE / rate) % 1;
+      x += v.a * toneAt(P, v.ph);
+      if (v.h) { const h = v.h; y += v.a * (h[0] * sine((v.ph + 0.25) % 1) + h[1] * sine((2 * v.ph + 0.25) % 1) + h[2] * sine((3 * v.ph + 0.25) % 1)) / (h[0] + h[1] + h[2]); }
+      else y += v.a * toneAt(P, v.ph2);
     }
   }
   P.x = x; P.y = y;
@@ -809,7 +813,7 @@ function muteTape() {
 sound.onChange(on => { if (on) hearTape(); else muteTape(); });
 async function startTape(id) {
   const rate = kit.ac?.sampleRate || 48000;
-  const me = tape = { id, t0: 0, fullOn: !!SONGS[id].startFull, mainVol: SONGS[id].mainVol ?? 1, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], live: [], lastRead: [], full: new Map(), bus: null, vol: [], volT: [], rate };
+  const me = tape = { id, t0: 0, fullOn: !!SONGS[id].startFull, mainVol: SONGS[id].mainVol ?? MAIN_START, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], live: [], lastRead: [], full: new Map(), bus: null, vol: [], volT: [], rate };
   paintHud(); dirty = true; sync();
   try { me.song = await loadSong(id); } catch (err) { if (tape === me) changed(); return; }
   if (tape !== me) return;
@@ -1153,7 +1157,7 @@ async function renderFull(song, j, rate) {
     if (!buses.has(n.tr)) {
       // A track takes the volume set on its mini; the change reaches the full mix within a chunk or two.
       const p = c.createStereoPanner(), v = c.createGain(), m = song.trackPart?.[n.tr];
-      p.pan.value = ins[1]; v.gain.value = m === -1 ? 0.67 * (tape?.mainVol ?? 1) : m == null ? 1 : tape?.vol[m] ?? 1;
+      p.pan.value = ins[1]; v.gain.value = m === -1 ? tape?.mainVol ?? MAIN_START : m == null ? 1 : tape?.vol[m] ?? 1;
       p.connect(v); v.connect(master); buses.set(n.tr, p);
     }
     if (ins[0] === 'sample') { if (K) sampleNote(c, buses.get(n.tr), K, ins, n.k, n.v, n.t - t0, n.e - n.t, song.off ?? 36); }
