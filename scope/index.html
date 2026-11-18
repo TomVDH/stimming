@@ -634,6 +634,25 @@ const SONGS = {
       'Violin (Classic)': ['sample', -0.3, 11, 0], 'Vibraphone': ['sample', 0.3, 34, 0], 'Concert Harp': ['sample', 0.25, 18, 0],
     },
   },
+  // CHOPIN: one piano; the right hand's top line on the main scope, eight minis by register.
+  // Its aside, a small note, runs up the left edge.
+  chopin: {
+    url: 'chopin.mid', kit: 'chopin-kit', aside: '<3 B',
+    title: 'Minute Waltz, Op. 64 No. 1', artist: 'Frédéric Chopin · arr. BrayKen2010', year: 1847, label: 'public domain',
+    main: { tracks: ['Grand Piano'], tone: 'soft', env: 'pad' },
+    pos: [[-2, 4], [2, 4], [4, 2], [4, -2], [2, -4], [-2, -4], [-4, -2], [-4, 2]],
+    parts: [
+      { tracks: ['Grand Piano'], range: [92, 127], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [87, 91], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [82, 86], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [78, 81], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [74, 77], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [69, 73], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [62, 68], tone: 'soft', env: 'pluck', decay: 1, lv: 0.8 },
+      { tracks: ['Grand Piano'], range: [0, 61], tone: 'bass', env: 'pluck', decay: 1, lv: 1.3 },
+    ],
+    full: { 'Grand Piano': ['sample', 0, 41, 0] },
+  },
   // BEAT: doubled tracks share a mini; the drums take the bottom three.
   beat: {
     url: 'beat.mid', kit: 'beat-kit',
@@ -773,7 +792,7 @@ async function loadSong(id) {
   const trackPart = {};
   S.main.tracks.forEach(tr => { trackPart[tr] = -1; });
   S.parts.forEach((p, m) => p.tracks.forEach(tr => { trackPart[tr] ??= m; }));
-  return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
+  return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, aside: S.aside, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
 }
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE 1 keeps each figure still: a roll smears chords into a filled square.
@@ -1796,6 +1815,14 @@ function paintHud() {
       g.fillText(song.artist.toUpperCase(), 0, fs * 0.7);
       if (song.year) { g.fillStyle = grey(0.42 * ba); g.fillText(`${song.year} · ${song.label}`.toUpperCase(), 0, fs * 1.8); }
       g.restore();
+      // A song's aside runs up the left edge, small, turned the same way.
+      if (song.aside) {
+        g.save(); g.translate(cx - 6.6 * d, cy); g.rotate(-Math.PI / 2);
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = `700 ${Math.max(10, fs - 3)}px ${MONO}`; g.fillStyle = grey(0.55 * ba);
+        g.fillText(song.aside, 0, 0);
+        g.restore();
+      }
     }
     // The main voice's volume: a horizontal bar under the main figure, filled from the left.
     if (tape?.t0) {
