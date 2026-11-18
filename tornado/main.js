@@ -1,8 +1,8 @@
 // Tornado alley: the toy's module, loaded by index.html.
 // The shot, the bar, the supercell, and the lab's tornado (funnel.js) in its own pass.
-import { initPage, whenVisible, reduced, stage as mark, pageReady } from '../shared/stim.js';
+import { initPage, whenVisible, reduced, stage as mark, pageReady, buildSteps, idle } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
-import { environment } from '../shared/environment.js';
+import { environmentReady } from '../shared/environment.js';
 import { program, linked, target as glTarget, free, TRI_VS } from '../shared/gl.js';
 import { SKY, skyAt } from '../shared/sky.js';
 import { paneBlur, GLASS_STEP, PANE_HEAD } from './pane.js';
@@ -1303,15 +1303,20 @@ const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
 const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farT: 0, farDur: 0 };
+// The load line: the scene link and the noise volume; the first frame ends it.
+const loadStep = buildSteps(2);
+// The build waits twice; no frame draws until the whole module has run.
+let booted = false;
 let env = null;
 try {
-  env = environment(canvas, {
+  // The scene shader is large: the driver links it while the intro plays.
+  env = await environmentReady(canvas, {
     scene: SCENE,
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
     budget: 1.8e6,
-    active: () => visible && !qaHold,
+    active: () => booted && visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
     before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
     textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
@@ -1332,6 +1337,7 @@ try {
   mark('first-frame');
   throw err;
 }
+loadStep();
 const S = env.state;
 // No pane, no rain in the air, no water: the plain under a clear sky behind the eye.
 Object.assign(S.on, { glass: false, water: false, air: false, flare: false, sky: false });
@@ -1452,7 +1458,10 @@ try { localStorage.removeItem('stimming.tornado.funnel'); } catch { /* no storag
 // QA: ?funnel=shells picks the Shells for one load.
 act.funnel(new URLSearchParams(location.search).get('funnel') || ui.setting('funnelMode')?.value || 'tube');
 // The storm's noise volume: the scene pass reads it from the first frame.
+// It is a CPU build; the wait lets the intro paint a frame first.
+await idle();
 fun.noise = noiseVolume(gl);
+loadStep();
 // The scene pass reads the volume on unit 0, its sampler's default: the runner binds only 2D textures there.
 function bindNoise() {
   gl.activeTexture(gl.TEXTURE0);
@@ -1700,6 +1709,8 @@ function funnelPass(w, h) {
   // The storm GLSL reads every tornado too: the horns' calm and shade.
   gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
+  // The first bake is whole: that frame skips the extra still draws.
+  const first = !fun.farReady;
   bakeFar(u, rw, rh, n);
   gl.uniform1i(u.uMode, 0);
   gl.uniform1f(u.uFarD, farD);
@@ -1709,7 +1720,7 @@ function funnelPass(w, h) {
   gl.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
-  const subs = hist ? 1 : 4;
+  const subs = hist || first ? 1 : 4;
   for (let k = 0; k < subs; k++) {
     if (k) { [fun.A, fun.B] = [fun.B, fun.A]; gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); }
     const j = hist ? fr : k, on = hist || k > 0;
@@ -2159,6 +2170,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
 }
 if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
+booted = true;
 env.draw();
 canvas.classList.add('on');
 mark('first-frame');
