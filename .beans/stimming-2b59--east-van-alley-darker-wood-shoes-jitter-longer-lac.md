@@ -5,7 +5,7 @@ status: completed
 type: bug
 priority: normal
 created_at: 2026-11-18T02:03:44Z
-updated_at: 2026-11-18T03:00:35Z
+updated_at: 2026-11-18T03:07:22Z
 parent: stimming-guw5
 ---
 
@@ -66,3 +66,8 @@ East Van Alley (`wires/main.js`), pushed in 03932273, 73482b5d, f96f8dc3 and d21
 - Sky: physical Rayleigh and Mie with ozone and Earth's shadow; moonlit night with city glow; the palette only as a twilight glow.
 
 - [x] Tom (19:54): the shoes hang askew, one high and one low: laces 0.54 and 0.84 m
+
+- [x] Tom (20:01): car light shadows soft: each jittered pass casts from another point across the car's front
+
+- [x] Tom (20:03): a crescent moon disc that crosses the north sky in view; the sun bearing no longer turns it
+- [x] Tom (20:05): darker night: night exposure 4 to 2.8, moonlit air 40% weaker

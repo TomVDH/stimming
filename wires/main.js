@@ -442,7 +442,7 @@ float n3(vec3 x) {
 // It bakes at half size when the hour changes.
 const SKY_FS = `${HEAD}
 uniform vec2 uRes;
-uniform float uF, uStars, uSkyI, uMoonI;
+uniform float uF, uStars, uSkyI, uMoonI, uNight;
 uniform vec3 uFw, uRt, uUp, uSun, uKeyC, uZen, uMid, uBand, uAnti, uMoon, uCity;
 ${ROT}
 ${SKY}
@@ -496,6 +496,23 @@ void main() {
   vec3 col = atm(dd, uSun) * uSkyI + skSky(d, uSun, uZen, uMid, uBand, uAnti, uStars, 0.0);
   // After dark: moonlit air and the city's glow low down.
   if (uMoonI > 0.0) col += atm(dd, uMoon) * uMoonI + uCity * exp(-dd.y * 5.0);
+  // The moon: a crescent disc, about 1 degree across, lit from the sun's side.
+  float mr = 0.009, ma = acos(clamp(dot(d, uMoon), -1.0, 1.0));
+  if (uNight > 0.0 && uMoon.y > 0.0 && ma < mr * 1.2) {
+    vec3 mx = normalize(cross(uMoon, vec3(0.0, 1.0, 0.0)) + 1e-5), my = cross(mx, uMoon);
+    vec2 q = vec2(dot(d, mx), dot(d, my)) / mr;
+    float r = length(q), edge = 1.0 - smoothstep(0.9, 1.0, r);
+    // The disc as a sphere; z points back at the eye.
+    vec3 n = vec3(q, sqrt(max(1.0 - r * r, 0.0)));
+    // The light comes 135 degrees round from the eye: a waxing crescent.
+    vec2 sd = normalize(vec2(dot(uSun, mx), dot(uSun, my)) + 1e-4);
+    vec3 L = vec3(sd * 0.707, -0.707);
+    float lit = smoothstep(-0.03, 0.08, dot(n, L));
+    // Grey seas, and faint earthshine on the dark side.
+    float sea = 0.78 + 0.22 * skN(q * 2.6 + 7.0);
+    vec3 mc = vec3(1.0, 0.96, 0.88) * (0.9 * lit * sea + 0.012);
+    col = mix(col, mc, edge * uNight);
+  }
   // The sun's disc and its glare, when it stands above the horizon.
   float sd = dot(d, uSun);
   col += uKeyC * step(0.0, uSun.y) * (12.0 * smoothstep(0.99996, 0.99999, sd) + 0.25 * pow(max(sd, 0.0), 300.0) + 0.06 * pow(max(sd, 0.0), 12.0));
@@ -865,16 +882,20 @@ vec3 shade(Surf s, vec3 v, vec3 p) {
   vec3 r = reflect(-v, n);
   vec3 env = r.y > 0.0 ? skDusk(r, uSun, uZen, uMid, uBand, uAnti) : ground;
   c += env * (f0 + (1.0 - f0) * pow(1.0 - nv, 5.0)) * (1.0 - s.rough * 0.8) * s.ao * uFill;
+  // The car's lamps are wide and near, so their shadows are soft.
+  // Each jittered pass casts from another point across the car's front.
+  vec3 carR = normalize(cross(uCarD, vec3(0.0, 1.0, 0.0)) + 1e-5);
+  vec3 lamp = carR * uJit.x * 2.0 + vec3(0.0, uJit.y * 0.5, 0.0);
   if (uCar.w > 0.0) {
-    // Headlights: a wide warm beam from low in the lane, with hard shadows.
-    vec3 lv = uCar.xyz - p;
+    // Headlights: a wide warm beam from low in the lane.
+    vec3 lv = uCar.xyz + lamp - p;
     float d = length(lv);
     vec3 l = lv / d;
     float beam = smoothstep(0.05, 0.7, dot(-l, uCarD));
     if (beam > 0.0) c += lightOn(s, v, l, f0) * vec3(1.0, 0.85, 0.6) * uCar.w * beam / (d * d) * shadow(p + n * 0.01, l, d);
   }
   if (uTail.w > 0.0) {
-    vec3 lv = uTail.xyz - p;
+    vec3 lv = uTail.xyz + lamp - p;
     float d = length(lv);
     // Tail lights: a red beam behind the car, the far side of its headlights.
     float back = smoothstep(-0.1, 0.6, dot(-lv / d, uTailD));
@@ -1517,7 +1538,7 @@ function atmJS(d, s) {
 }
 const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 // Moonlight is the same scattering, much weaker.
-const MOON_I = SKY_I * 0.025;
+const MOON_I = SKY_I * 0.015;
 // The city's sodium and LED glow on the low sky after dark, linear colour.
 const CITY = [0.022, 0.016, 0.011];
 // The palette's colours, much less saturated, as a twilight glow only.
@@ -1538,15 +1559,18 @@ function lightAt(h) {
   // A sun at or under the horizon still lights from just above it.
   const lift = v => unit([v[0], Math.max(v[1], 0.06), v[2]]);
   const a = look.sunAz * D2R, ca = Math.cos(a), sa = Math.sin(a), spin = v => [v[0] * ca + v[2] * sa, v[1], v[2] * ca - v[0] * sa];
-  const sun = spin(d.sun), key = lift(d.sunUp > 0.5 || d.day > 0.3 ? sun : spin(d.moon));
+  // The shared moon crosses the south, behind the eye; here it crosses the north, in view.
+  // The sun bearing turns the sun only, so the moon stays in view.
+  const sun = spin(d.sun), moonN = [d.moon[0], d.moon[1], -d.moon[2]];
+  const key = lift(d.sunUp > 0.5 || d.day > 0.3 ? sun : moonN);
   const keyC = d.light.map(c => c * d.level * 1.05);
   // Night needs more exposure, but never so much it looks like day.
-  const expo = lerp(4, 0.95, Math.sqrt(d.day));
+  const expo = lerp(2.8, 0.95, Math.sqrt(d.day));
   // The fill falls as the shadow darkness rises; 0.4 keeps the first look.
   const fill = 2 ** (-(look.shade - 0.4) * 3);
   // The sky's colours: the physical sky at four places, plus the twilight glow.
   const tw = twilight(s, sun), up = [0, 1, 0], hs = unit([sun[0], 0.04, sun[2]]), ha = unit([-sun[0], 0.04, -sun[2]]), hm = unit([-sun[2], 0.35, sun[0]]);
-  const moon = spin(d.moon), night = nightOf(sun);
+  const moon = moonN, night = nightOf(sun);
   const at = (dir, k) => {
     const c = add(add(atmJS(dir, sun), atmJS(dir, moon).map(v => v * MOON_I / SKY_I * night)), tw[k]);
     return add(c, CITY.map(v => v * night * Math.exp(-Math.max(dir[1], 0) * 5)));
@@ -1576,6 +1600,7 @@ function bakeSky() {
   gl.uniform3fv(K.uKeyC, keyC);
   gl.uniform1f(K.uSkyI, SKY_I);
   gl.uniform1f(K.uMoonI, MOON_I * light.night);
+  gl.uniform1f(K.uNight, light.night);
   gl.uniform3fv(K.uMoon, light.moon);
   gl.uniform3fv(K.uCity, CITY.map(v => v * light.night));
   gl.uniform3fv(K.uZen, tw.zen);
