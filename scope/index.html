@@ -561,6 +561,19 @@ const SONGS = {
     ],
     full: { 'Drum Kit': ['sample', 0, 2, 0], 'Bass Guitar (Classic)': ['sample', 0, 5, 0], 'Acoustic Gtr (Classic)': ['sample', 0.15, 1, 0], 'Jazz Guitar': ['sample', -0.15, 32, 0] },
   },
+  // SOVIET: one piano track; the main scope sings its top line, four minis split the rest by register.
+  soviet: {
+    url: 'soviet.mid', kit: 'soviet-kit',
+    title: 'Soviet March', artist: 'James Hannigan · Red Alert 3', year: 2008, label: 'Electronic Arts',
+    main: { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pad' },
+    pos: [[-2, 4], [2, 4], [2, -4], [-2, -4]],
+    parts: [
+      { tracks: ['Elec. Piano (Classic)'], range: [80, 127], tone: 'soft', env: 'pluck', decay: 0.8 },
+      { tracks: ['Elec. Piano (Classic)'], range: [70, 79], tone: 'soft', env: 'pluck', decay: 0.8 },
+      { tracks: ['Elec. Piano (Classic)'], range: [60, 69], tone: 'warm', env: 'pluck', decay: 0.8 },
+      { tracks: ['Elec. Piano (Classic)'], range: [0, 59], tone: 'bass', env: 'pad', lv: 1.6 },
+    ],
+  },
   // BEAT: doubled tracks share a mini; the drums take the bottom three.
   beat: {
     url: 'beat.mid', kit: 'beat-kit',
@@ -652,9 +665,9 @@ function readMidi(buf) {
 }
 const SNAP = 0.15;
 // Each part keeps its notes in milliseconds, sorted by start.
-// A part may keep only some keys, or skip some, to split one drum track.
+// A part may keep only some keys, skip some, or keep a pitch range, to split one track.
 const msNotes = (tracks, names, p) => names.flatMap(nm => tracks.get(nm) || [])
-  .filter(([, , k]) => (!p?.keys || p.keys.includes(k)) && (!p?.skip || !p.skip.includes(k)))
+  .filter(([, , k]) => (!p?.keys || p.keys.includes(k)) && (!p?.skip || !p.skip.includes(k)) && (!p?.range || (k >= p.range[0] && k <= p.range[1])))
   .map(([t, e, k, v]) => [Math.round(t * CR), Math.max(Math.round(t * CR) + 1, Math.round(e * CR)), k, v]).sort((a, b) => a[0] - b[0] || a[2] - b[2])
   // Layered tracks repeat a note; one copy plays, so copies do not comb or flam.
   .filter((x, i, a) => !i || a[i - 1][0] !== x[0] || a[i - 1][2] !== x[2]);
