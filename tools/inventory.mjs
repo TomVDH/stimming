@@ -15,7 +15,7 @@ const MOVES = ['none', 'to-main', 'to-lab'];
 const PRIORITIES = ['now', 'next', 'later', 'never', ''];
 const EFFORTS = ['S', 'M', 'L', 'XL', ''];
 const RISKS = ['low', 'mid', 'high', ''];
-const META = ['name', 'nl', 'ipa', 'tag', 'tagNl', 'series'];
+const META = ['name', 'nl', 'ipa', 'tag', 'tagNl', 'accent', 'series'];
 
 /** @type {string[]} */
 const errors = [];

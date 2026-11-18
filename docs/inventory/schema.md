@@ -1,7 +1,7 @@
 # Toy inventory (schema 2)
 
 Tom's verdict on each toy, in one fixed format. The master improvement plan reads it.
-Capture: `inventorylab/`. Records: `docs/inventory/<id>.json`. Collate: `node tools/inventory.mjs` writes `docs/inventory.json`.
+Capture: `inventorylab/`. Its entry 0 is an overview of the libraries, renderers and shared modules across every toy. Records: `docs/inventory/<id>.json`. Collate: `node tools/inventory.mjs` writes `docs/inventory.json`.
 `docs/toys/<id>.md` says how a toy works. This record says what Tom thinks of it.
 
 ## Record
@@ -41,7 +41,7 @@ Capture: `inventorylab/`. Records: `docs/inventory/<id>.json`. Collate: `node to
 | `snapshot` | The `toys.json` entry and the sign-off at capture time. The record stands alone. |
 | `stack` | Read from the page and its local modules at save time. Tom does not edit it. `bar` is `Signal bar`, `Signal bar, no controls` or `own bar`. |
 | `verdict` | `keep`, `polish`, `rework` or `cut`. Empty until Tom picks. |
-| `meta` | Tom's wanted name, Dutch name, IPA, mottos and series. A value that differs from `snapshot` is an edit to make in `toys.json`. |
+| `meta` | Tom's wanted name, Dutch name, IPA, mottos, accent and series. A value that differs from `snapshot` is an edit to make in `toys.json`. |
 | `areas` | Seven areas. `ok: false` marks an area that needs work. |
 | `triage` | `priority` (`now`, `next`, `later`, `never`), `effort` (`S`, `M`, `L`, `XL`), `risk` (`low`, `mid`, `high`), free `tags`. |
 | `modular` | Moves: `toTypeScript`, `bar` (`none` or `to-signal`: move to the shared Signal bar), `dropLegacy`. `adopt`: shared modules to adopt. `extract`: code to lift into `shared/`. |

@@ -31,6 +31,7 @@ nav header { padding: 10px; display: grid; gap: 8px; }
 nav .filters { display: flex; gap: 3px; }
 nav .count { font: 500 10px/1 var(--mono); color: var(--muted); }
 nav ol { list-style: none; margin: 0; padding: 0 0 10px; overflow-y: auto; flex: 1; }
+nav #list0 { flex: none; padding: 0; border-bottom: 1px solid var(--line); }
 nav li button { all: unset; box-sizing: border-box; display: flex; gap: 8px; align-items: center; width: 100%; padding: 4px 10px; cursor: pointer; color: var(--muted); }
 nav li button:hover { color: var(--fg); background: var(--panel); }
 nav li button[aria-current="true"] { color: var(--fg); background: var(--panel); box-shadow: inset 2px 0 var(--fg); }
@@ -51,6 +52,40 @@ iframe { flex: none; height: 60vh; border: 0; width: 100%; background: #000; }
 .stack b { color: var(--dim); font-weight: 500; margin-right: 5px; }
 .stack span { color: var(--fg); }
 
+/* Logos: the live menu icon, the intro emblem, the accent. */
+.logos { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.logos figure { margin: 0; display: grid; gap: 5px; justify-items: start; }
+.logos figcaption { font: 500 10px/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.tile { width: 128px; height: 128px; position: relative; overflow: hidden; background: oklch(0.12 0.006 275); border: 1px solid var(--line); display: grid; place-items: center; }
+.tile.small { width: 60px; height: 60px; }
+/* Same mask as the intro: black parts of the SVG cut holes. */
+.tile i { display: block; width: 70%; aspect-ratio: 1; background: #fff; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.tile.flash { background: #fff; }
+.tile.flash i { background: oklch(0.12 0.006 275); }
+.tile .none { color: var(--dim); font: 500 10px/1.3 var(--mono); text-align: center; padding: 8px; }
+/* The menu loads wide once, off screen, then shrinks to one tile. */
+#menuFrame { border: 0; background: transparent; position: fixed; left: -4000px; top: 0; width: 1280px; height: 900px; visibility: hidden; }
+#menuFrame.on { position: absolute; inset: 0; left: 0; width: 128px; height: 128px; visibility: visible; }
+.accent { display: grid; grid-template-columns: 28px auto; gap: 8px; align-items: stretch; }
+.accent .bar { width: 28px; height: 128px; border: 1px solid var(--line); }
+.accent .chips { display: grid; gap: 6px; align-content: start; }
+.accent .chip { width: 96px; height: 20px; border: 1px solid var(--line); }
+.accent code { font: 500 10px/1.3 var(--mono); color: var(--muted); max-width: 260px; word-break: break-all; }
+/* Overview: every library and module across all toys. */
+#overview { padding: 12px 16px 24px; display: grid; gap: 18px; }
+#overview h2 { margin: 0; font-size: 14px; font-weight: 600; }
+#overview .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px 28px; align-items: start; }
+#overview section { display: grid; gap: 0; }
+#overview details { border: 0; border-top: 1px solid var(--line); }
+#overview details > summary { padding: 5px 0; display: grid; grid-template-columns: 1fr 40px 90px; gap: 8px; }
+#overview details > summary::before { display: none; }
+#overview details > summary .n { text-align: right; color: var(--fg); }
+#overview details > summary .split { color: var(--dim); }
+#overview .toys { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 0 8px; }
+#overview .toys button { padding: 1px 6px; font-size: 12px; }
+#overview .toys button.lab { border-style: dashed; }
+main.ov > :is(iframe, .stack, .logos, form), main.ov #builds, main.ov #open { display: none; }
+main:not(.ov) #overview { display: none; }
 form { padding: 12px 16px 0; display: grid; gap: 18px; }
 section { display: grid; gap: 8px; }
 .quick { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: end; }
@@ -101,6 +136,7 @@ details > .body { display: grid; gap: 6px; padding: 4px 10px 10px; }
     </div>
     <span class="count" id="count"></span>
   </header>
+  <ol id="list0"><li><button type="button" data-id="overview"><span class="dot"></span><span class="n">0</span><span>Overview: libraries</span></button></li></ol>
   <ol id="list"></ol>
 </nav>
 
@@ -113,8 +149,17 @@ details > .body { display: grid; gap: 6px; padding: 4px 10px 10px; }
     </div>
     <a class="label" id="open" target="_blank" rel="noopener">Open tab</a>
   </header>
+  <div id="overview" aria-live="polite"></div>
   <iframe id="frame" title="Toy" allow="autoplay; fullscreen; gyroscope; accelerometer"></iframe>
   <div class="stack mono" id="stack" aria-label="Detected stack"></div>
+  <div class="logos" aria-label="Logos">
+    <figure><div class="tile" id="iconTile"><iframe id="menuFrame" title="Menu icon" tabindex="-1"></iframe><span class="none" id="iconNone">Loading the menu…</span></div><figcaption>Menu icon</figcaption></figure>
+    <figure><div class="tile" id="embTile"></div><figcaption>Intro emblem</figcaption></figure>
+    <figure><div class="tile small flash" id="flashTile"></div><figcaption>Flash</figcaption></figure>
+    <figure class="accent"><div class="bar" id="accBar"></div>
+      <div class="chips"><figcaption>Accent</figcaption><div class="chip" id="accChip"></div><code id="accVal"></code>
+        <figcaption>Series</figcaption><div class="chip" id="serChip"></div><code id="serVal"></code></div></figure>
+  </div>
 
   <form id="form" autocomplete="off">
     <section class="quick" aria-label="Verdict and triage">
@@ -152,7 +197,7 @@ const SCHEMA = 2;
 const KEY = 'stimming.inventory.';
 const AREAS = ['icon', 'intro', 'bar', 'controls', 'graphics', 'sound', 'perf'];
 const FINDING_AREAS = ['meta', ...AREAS];
-const META = [['name', 'Name'], ['nl', 'Dutch'], ['ipa', 'IPA'], ['tag', 'Motto'], ['tagNl', 'Motto NL']];
+const META = [['name', 'Name'], ['nl', 'Dutch'], ['ipa', 'IPA'], ['tag', 'Motto'], ['tagNl', 'Motto NL'], ['accent', 'Accent']];
 const VERDICTS = ['keep', 'polish', 'rework', 'cut'];
 const KINDS = ['bug', 'gaffe'];
 const SEVERITIES = ['blocker', 'major', 'minor', 'polish'];
@@ -199,20 +244,23 @@ const store = {
 
 // ---- Stack detection: reads the page and its local modules. ----
 
-const IMPORT = /(?:from\s*|import\s*\(\s*|import\s+)['"]([^'"]+)['"]/g;
+// A specifier holds no spaces, brackets or template marks.
+const IMPORT = /\b(?:from\s*|import\s*\(\s*|import\s+)['"]([\w@./:+-]+)['"]/g;
 const SRC = /<script[^>]*\ssrc=["']([^"']+)["']/g;
 
 async function scan(/** @type {string} */ id, /** @type {string} */ build) {
   const base = new URL(`../${id}/`, location.href);
   const entry = new URL(build === 'classic' ? 'legacy.html' : 'index.html', base).href;
   const queue = [entry], seen = new Set(queue), libs = new Set(), shared = new Set(), files = [];
-  let text = '', three = '';
+  let text = '', three = '', ts = false;
   while (queue.length && files.length < 16) {
     const url = /** @type {string} */ (queue.shift());
     const body = await load(url, 'text');
     if (!body) continue;
     files.push(url.slice(base.href.length));
     text += body;
+    // A TypeScript toy's page loads its esbuild bundle from dist/.
+    if (url === entry) ts = /dist\/main\.js/.test(body);
     three ||= (body.match(/"three":\s*"[^"]*three@([\d.]+)/) || [])[1] || '';
     // A script src is always a path; an import without ./ is a bare name.
     const specs = [...[...body.matchAll(IMPORT)].map(m => m[1]),
@@ -242,7 +290,7 @@ async function scan(/** @type {string} */ id, /** @type {string} */ build) {
     renderer,
     bar: !shared.has('stim') ? 'own bar' : has(/\bbar\s*:/) ? 'Signal bar' : 'Signal bar, no controls',
     sound: has(/from\s*['"]tone['"]/) ? 'Tone.js' : has(/audioKit|AudioContext/) ? 'Web Audio' : 'none',
-    typescript: files.some(f => f.startsWith('dist/')),
+    typescript: ts,
     files,
   };
 }
@@ -266,7 +314,7 @@ function renderStack(/** @type {any} */ s) {
 
 function snapshot(/** @type {string} */ id) {
   const t = toys[id];
-  return { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, shelf: t.number == null ? 'lab' : 'main',
+  return { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, accent: t.accent, emblem: t.emblem, shelf: t.number == null ? 'lab' : 'main',
     number: t.number, series: t.series, stage: t.stage, version: t.version, sound: t.sound, legacy: t.legacy, done: done.has(id) };
 }
 
@@ -275,7 +323,7 @@ function blank(/** @type {string} */ id) {
   return {
     schema: SCHEMA, id, date: '', build: 'fresh', snapshot: snapshot(id), stack: null,
     verdict: '', summary: '',
-    meta: { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, series: t.series ?? '', notes: '' },
+    meta: { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, accent: t.accent, series: t.series ?? '', notes: '' },
     areas: Object.fromEntries(AREAS.map(a => [a, { ok: true, notes: '' }])),
     triage: { priority: '', effort: '', risk: '', tags: '' },
     modular: { toTypeScript: false, bar: 'none', dropLegacy: false, adopt: [], extract: '', notes: '' },
@@ -333,15 +381,19 @@ function renderList() {
 }
 
 function select(/** @type {string} */ id) {
+  if (id === 'overview') return overview();
+  document.querySelector('main')?.classList.remove('ov');
+  $('list0').querySelector('button')?.removeAttribute('aria-current');
   current = id;
   rec = recordFor(id);
   rec.snapshot = snapshot(id);
   const t = toys[id];
-  $('title').replaceChildren(t.name, Object.assign(document.createElement('small'), { textContent: `${id} · v${t.version}` }));
+  $('title').replaceChildren(t.name, Object.assign(document.createElement('small'), { textContent: t.version ? `${id} · v${t.version}` : id }));
   $('builds').hidden = !t.legacy;
   if (!t.legacy) rec.build = 'fresh';
   showFrame();
   renderForm();
+  showIcon();
   renderList();
   try { history.replaceState(null, '', `#${id}`); } catch {}
   document.querySelector(`nav [data-id="${id}"]`)?.scrollIntoView({ block: 'nearest' });
@@ -490,12 +542,13 @@ function renderForm() {
         rec.meta[k] = v;
         input.dataset.changed = String(v !== (snap[k] ?? ''));
         summaries();
+        paintLogos();
       }, true));
       input.dataset.changed = String((rec.meta[k] ?? '') !== (snap[k] ?? ''));
       input.title = `toys.json: ${snap[k] ?? ''}`;
       return field(label, input);
     }),
-    field('Series', pickList(['', ...Object.keys(series)], rec.meta.series ?? '', v => { rec.meta.series = v; summaries(); })),
+    field('Series', pickList(['', ...Object.keys(series)], rec.meta.series ?? '', v => { rec.meta.series = v; summaries(); paintLogos(); })),
     field('Shelf', seg(MOVES, rec.shelfMove, w => { rec.shelfMove = w; }, false)),
     field('Notes', text(rec.meta.notes, 'Name, emblem, series fit', v => { rec.meta.notes = v; })),
     metaItems);
@@ -519,7 +572,162 @@ function renderForm() {
     field('Extract', text(md.extract, 'Code to lift into shared/', v => { md.extract = v; })),
     field('Notes', text(md.notes, 'Split, drift, dead code', v => { md.notes = v; })));
   summaries();
+  paintLogos();
   status();
+}
+
+// ---- Overview. ----
+
+let ovRun = 0;
+async function overview() {
+  const run = ++ovRun;
+  document.querySelector('main')?.classList.add('ov');
+  // The hidden toy stops, so the overview does no per-frame work.
+  /** @type {HTMLIFrameElement} */ ($('frame')).src = 'about:blank';
+  $('list0').querySelector('button')?.setAttribute('aria-current', 'true');
+  for (const b of document.querySelectorAll('#list [aria-current]')) b.removeAttribute('aria-current');
+  $('title').replaceChildren('Overview', Object.assign(document.createElement('small'), { textContent: 'libraries and modules, every toy' }));
+  try { history.replaceState(null, '', '#overview'); } catch {}
+  const out = $('overview');
+  // Eight pages at a time; each toy is read once per visit.
+  let n = 0;
+  /** @type {Record<string, any>} */
+  const all = {};
+  const queue = [...ids];
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    while (queue.length) {
+      const id = /** @type {string} */ (queue.shift());
+      all[id] = await stackOf(id, 'fresh');
+      if (run !== ovRun) return;
+      out.textContent = `Reading ${++n} of ${ids.length} toys…`;
+    }
+  }));
+  if (run !== ovRun) return;
+
+  /** @type {(pick: (s: any) => string[]) => [string, string[]][]} */
+  const group = pick => {
+    /** @type {Map<string, string[]>} */
+    const m = new Map();
+    for (const id of ids) for (const k of pick(all[id])) m.set(k, [...(m.get(k) || []), id]);
+    return [...m].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  };
+  const lib = (/** @type {string} */ l) => (l.startsWith('three/addons:') ? null : l);
+  const tables = [
+    ['Libraries', group(s => s.libraries.map(lib).filter(Boolean))],
+    ['three.js versions', group(s => (s.three ? [s.three] : []))],
+    ['three.js addons', group(s => s.libraries.filter((/** @type {string} */ l) => l.startsWith('three/addons:')).map((/** @type {string} */ l) => l.slice(13)))],
+    ['Renderer', group(s => s.renderer)],
+    ['Shared modules', group(s => s.shared)],
+    ['Bar', group(s => [s.bar])],
+    ['Sound', group(s => [s.sound])],
+    ['TypeScript', group(s => [s.typescript ? 'yes' : 'no'])],
+  ];
+
+  const sec = (/** @type {string} */ title, /** @type {[string, string[]][]} */ rows) => {
+    const el = document.createElement('section');
+    el.append(Object.assign(document.createElement('span'), { className: 'label', textContent: `${title} · ${rows.length}` }));
+    for (const [k, list] of rows) {
+      const d = document.createElement('details');
+      const lab = list.filter(id => toys[id].number == null).length;
+      d.innerHTML = '<summary class="mono"><span></span><span class="n"></span><span class="split"></span></summary><div class="toys"></div>';
+      const [name, num, split] = d.querySelectorAll('summary span');
+      name.textContent = k;
+      num.textContent = String(list.length);
+      split.textContent = `${list.length - lab} main · ${lab} lab`;
+      /** @type {HTMLElement} */ (d.querySelector('.toys')).append(...list.map(id => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = toys[id].name;
+        if (toys[id].number == null) b.className = 'lab';
+        b.onclick = () => select(id);
+        return b;
+      }));
+      el.append(d);
+    }
+    return el;
+  };
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+  grid.append(...tables.map(([t, rows]) => sec(/** @type {string} */ (t), /** @type {any} */ (rows))));
+  out.replaceChildren(
+    Object.assign(document.createElement('span'), { className: 'mono', textContent: `${ids.length} toys read · main shelf solid, Lab dashed · click a row for its toys` }),
+    grid);
+}
+
+// ---- Logos. ----
+
+function paintLogos() {
+  const emb = toys[current].emblem;
+  for (const id of ['embTile', 'flashTile']) {
+    const tile = $(id);
+    if (emb) {
+      const i = document.createElement('i');
+      i.style.setProperty('--emblem', `url(../${emb})`);
+      tile.replaceChildren(i);
+    } else tile.replaceChildren(Object.assign(document.createElement('span'), { className: 'none', textContent: id === 'embTile' ? 'No emblem' : '–' }));
+  }
+  const acc = rec.meta.accent || '';
+  $('accBar').style.background = acc;
+  $('accChip').style.background = acc;
+  $('accVal').textContent = acc || '–';
+  const ser = series[rec.meta.series];
+  $('serChip').style.background = ser?.color || 'none';
+  $('serVal').textContent = ser ? `${ser.name} · ${ser.color}` : '–';
+}
+
+// The live menu runs in one frame; only the current toy's tile shows.
+// A tile keeps its own listeners and gradients, so its hover is the menu's own.
+const menuFrame = /** @type {HTMLIFrameElement} */ ($('menuFrame'));
+/** @type {Document|null} */
+let menuDoc = null;
+/** @type {[HTMLElement, string][]} */
+let touched = [];
+const NAKED = 'display: block !important; position: static !important; transform: none !important; filter: none !important; opacity: 1 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; animation: none !important; transition: none !important; contain: none !important; width: auto !important; height: auto !important; min-height: 0 !important;';
+
+function restyle(/** @type {HTMLElement} */ el, /** @type {string} */ css) {
+  touched.push([el, el.style.cssText]);
+  el.style.cssText += `; ${css}`;
+}
+
+function showIcon() {
+  if (!menuDoc) return;
+  for (const [el, css] of touched) el.style.cssText = css;
+  touched = [];
+  const a = /** @type {HTMLElement|null} */ (menuDoc.querySelector(`a.toy#${CSS.escape(current)}`));
+  $('iconNone').hidden = !!a;
+  $('iconNone').textContent = 'Not on the menu';
+  menuFrame.style.visibility = a ? '' : 'hidden';
+  if (!a) return;
+  const chain = new Set();
+  for (let n = a.parentElement; n && n !== menuDoc.documentElement; n = n.parentElement) chain.add(n);
+  for (const n of chain) {
+    for (const c of /** @type {HTMLElement[]} */ ([...n.children])) {
+      if (c !== a && !chain.has(c) && !c.matches('svg.defs, script, style, link')) restyle(c, 'display: none !important;');
+    }
+    restyle(/** @type {HTMLElement} */ (n), NAKED);
+  }
+  for (const c of /** @type {HTMLElement[]} */ ([...a.children])) if (!c.matches('.obj')) restyle(c, 'display: none !important;');
+  restyle(a, 'position: absolute !important; inset: 0 !important; display: grid !important; place-items: center !important; width: 128px !important; height: 128px !important; margin: 0 !important; padding: 0 !important; opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important;');
+}
+
+async function loadMenu() {
+  menuFrame.src = '../index.html?lab';
+  await new Promise(r => { menuFrame.addEventListener('load', r, { once: true }); setTimeout(r, 6000); });
+  // The menu's script fits each icon at full width first.
+  await new Promise(r => setTimeout(r, 900));
+  menuDoc = menuFrame.contentDocument;
+  if (!menuDoc) { $('iconNone').textContent = 'Menu did not load'; return; }
+  const css = menuDoc.createElement('style');
+  css.textContent = `
+    html, body { background: transparent !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; }
+    a.toy .obj { width: 100% !important; height: 100% !important; max-width: none !important; }
+    a.toy .obj svg { width: 90% !important; height: 90% !important; }
+    a.toy .obj .series, a.toy .obj::after { display: none !important; }`;
+  menuDoc.head.append(css);
+  // A click plays with the icon; it never opens the toy.
+  menuDoc.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+  menuFrame.classList.add('on');
+  showIcon();
 }
 
 // The closed sections say what they hold.
@@ -591,6 +799,7 @@ async function save() {
 
 // ---- Wiring. ----
 
+$('list0').addEventListener('click', () => overview());
 $('list').addEventListener('click', e => {
   const b = /** @type {HTMLElement} */ (e.target).closest('button');
   if (b?.dataset.id) select(b.dataset.id);
@@ -641,5 +850,7 @@ addEventListener('keydown', e => {
 
 const start = decodeURIComponent(location.hash.slice(1));
 select(toys[start] ? start : ids[0]);
+if (start === 'overview') overview();
+loadMenu();
 probeSaved().then(() => { rec = recordFor(current); rec.snapshot = snapshot(current); renderForm(); });
 </script>
