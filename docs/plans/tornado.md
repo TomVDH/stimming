@@ -12,7 +12,7 @@ Status: active · Bean: `stimming-dwwg`
 
 **Composition (Tom, 2026-11-16):** golden ratio. The horizon sits 0.382 up the frame. The eye hangs partly over the road's left edge (the road centre runs 3.4 m to its right); the road vanishes on the right golden line (0.618 across) and its near end runs out of the frame at the bottom right. The wheat field lies left of the verge. Wheat fills the foreground and answers the wind.
 
-**Lens (Tom, 2026-11-16):** 50 mm ("50mm looks good"); 85 mm sits in Settings. The tornadoes are the centrepieces: the storm sits close, its dark base fills the sky over the sunlit wheat, the wall cloud hangs 8 km out on the left golden line, and tornadoes touch down 1.2 to 14 km out, under the base. A tornado never comes nearer than about 1 km (more for a wide one).
+**Lens (Tom, 2026-11-16):** 50 mm ("50mm looks good"); 85 mm sits in Settings. The tornadoes are the centrepieces: the storm sits close, its dark base fills the sky over the sunlit wheat, the wall cloud hangs 8 km out on the left golden line, and tornadoes touch down 0.5 to 14 km out, under the base. A tornado never comes nearer than 500 m (more for a wide one: 100 m past its dust). A press on a funnel holds it; it walks slowly toward the pointer, 12 to 45 m/s with F, and drifts with the wind again once it arrives (Tom, 2026-11-17, bean `stimming-grp4`).
 
 **Architecture:** One raw WebGL2 scene on the shared environment library, as Railgun is: `envScene` for the plains and far horizon, a ray-marched supercell (mesocyclone, wall cloud, anvil, rain curtain), and one volume per tornado (funnel, condensation, debris cloud, dust skirt) driven by a small set of per-tornado uniforms.
 

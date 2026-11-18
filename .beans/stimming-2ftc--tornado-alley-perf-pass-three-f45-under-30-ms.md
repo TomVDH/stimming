@@ -102,3 +102,7 @@ Candidates, biggest first:
 3. The bake strip less often: one strip every 2 to 4 frames, not every frame (about 17 % now). The far breaks drift more slowly.
 4. A sun cover map: sunCover() depends only on where the sun's ray meets the deck, so a 2D map at deck height is exact. 28 call sites (every ground pixel, every vehicle sample, trees, fence, farm) become one texture read: about 3 to 7 %.
 5. The far plain into the far-field bake: about 0 %; not worth it.
+
+## Tom, 2026-11-17
+
+Performance is awful and needs work. Priority stays high. The storm pass (funnel.js) is the first target. A 500 m near limit (stimming-grp4) puts larger funnels on screen; measure with one funnel at 500 m too.
