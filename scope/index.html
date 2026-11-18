@@ -622,6 +622,7 @@ async function loadSong(id) {
   const all = [...tracks].flatMap(([tr, list]) => list.map(([t, e, k, v]) => ({ t, e, k, v, tr }))).sort((a, b) => a.t - b.t);
   // Each track knows its mini, so the full mix can follow the mini's volume.
   const trackPart = {};
+  S.main.tracks.forEach(tr => { trackPart[tr] = -1; });
   S.parts.forEach((p, m) => p.tracks.forEach(tr => { trackPart[tr] ??= m; }));
   return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
 }
@@ -753,7 +754,7 @@ function playChunk(j, full = false) {
   ch.played = ac;
   const buf = ac.createBuffer(2, ch.AL.length, ch.rate);
   buf.copyToChannel(ch.AL, 0); buf.copyToChannel(ch.AR, 1);
-  const src = ac.createBufferSource(); src.buffer = buf; src.connect(tapeBus(ac, full));
+  const src = ac.createBufferSource(); src.buffer = buf; src.connect(full ? tapeBus(ac, true) : mainGain(ac));
   const when = Math.max(at, ac.currentTime), off = Math.max(0, ac.currentTime - at);
   src.start(when, off);
   tape.srcs.add(src); src.onended = () => tape?.srcs.delete(src);
@@ -766,6 +767,11 @@ function playChunk(j, full = false) {
     ps.start(when, off);
     tape.srcs.add(ps); ps.onended = () => tape?.srcs.delete(ps);
   });
+}
+// The main voice has its own live gain, set by scrolling on the main scope.
+function mainGain(ac) {
+  if (tape.mg0?.context !== ac) { const g = ac.createGain(); g.gain.value = tape.mainVol ?? 1; g.connect(tapeBus(ac, false)); tape.mg0 = g; }
+  return tape.mg0;
 }
 // A mini's level: its part level times the volume set on it, from 0 to 1.
 const partLevel = m => tape.parts[m].lv * PART_MIX * (tape.vol[m] ?? 1);
@@ -830,7 +836,10 @@ function readoutsMoved(t) {
     if (k) tape.lastRead[m] = `${noteOf(HZ[k])} ${Math.round(HZ[k])}`;
     return !p || !autoHide() || tape.live[m]?.on ? tape.lastRead[m] || '' : '';
   });
-  const moved = reads.join() !== tape.reads?.join() || tape.live.some(L => L && t - L.t < 0.8);
+  // A mini with no note now is silent; its steady dot is drawn on the HUD.
+  const quiet = ch.K.slice(0, tape.parts.length).map(K => (K[ki] ? 0 : 1)).join('');
+  const moved = reads.join() !== tape.reads?.join() || quiet !== tape.quiet || tape.live.some(L => L && t - L.t < 0.8);
+  tape.quiet = quiet;
   tape.reads = reads;
   return moved;
 }
@@ -909,13 +918,8 @@ function miniWaves(t, n) {
     for (let q = 0; q <= WAVE_PTS; q++) pk = Math.max(pk, Math.abs(A[Math.min(A.length - 1, Math.floor(i0 + q / WAVE_PTS * win))]));
     // A fixed scale: the trace's height is the part's own loudness.
     const g = WAVE_GAIN, quiet = pk < 0.01;
-    // A silent mini rests as a centre dot, as in curve mode.
-    if (quiet) {
-      const k5 = o * 5;
-      inst[k5] = cx; inst[k5 + 1] = cy; inst[k5 + 2] = cx; inst[k5 + 3] = cy; inst[k5 + 4] = fade * IDOT * sigma * sigma * 0.45 * n / SR;
-      o++;
-      continue;
-    }
+    // A silent mini draws nothing here; its centre dot lives on the HUD.
+    if (quiet) continue;
     let px = 0, py = 0;
     for (let q = 0; q <= WAVE_PTS; q++) {
       const u = q / WAVE_PTS, v = quiet ? 0 : spline(A, Math.min(A.length - 1, i0 + u * win));
@@ -983,12 +987,6 @@ function miniDraw(t1, n) {
     const L = tape.mlit[m] = L0 + (tgt - L0) * (tgt > L0 ? kUp : kE);
     const sc = raw > 0 ? fade * L / raw : 0;
     for (let q = o0; q < o; q++) inst[q * 5 + 4] *= sc;
-    // The centre dot stays lit at a steady level, as the big scope's resting spot does.
-    if (o < MAXSEG) {
-      const q = o * 5;
-      inst[q] = cx; inst[q + 1] = cy; inst[q + 2] = cx; inst[q + 3] = cy; inst[q + 4] = fade * IDOT * sigma * sigma * 0.45 * dt;
-      o++;
-    }
   }
   return o - n;
 }
@@ -1143,7 +1141,7 @@ async function renderFull(song, j, rate) {
     if (!buses.has(n.tr)) {
       // A track takes the volume set on its mini; the change reaches the full mix within a chunk or two.
       const p = c.createStereoPanner(), v = c.createGain(), m = song.trackPart?.[n.tr];
-      p.pan.value = ins[1]; v.gain.value = m == null ? 1 : tape?.vol[m] ?? 1;
+      p.pan.value = ins[1]; v.gain.value = m === -1 ? tape?.mainVol ?? 1 : m == null ? 1 : tape?.vol[m] ?? 1;
       p.connect(v); v.connect(master); buses.set(n.tr, p);
     }
     if (ins[0] === 'sample') { if (K) sampleNote(c, buses.get(n.tr), K, ins, n.k, n.v, n.t - t0, n.e - n.t, song.off ?? 36); }
@@ -1565,6 +1563,14 @@ function paintHud() {
       g.beginPath(); g.arc(cx + mx * d, cy - my * d, MINI_R * d * 1.1, 0, TAU);
       g.fillStyle = `rgba(0, 0, 0, ${a})`; g.fill();
       g.strokeStyle = grey(0.35 * a); g.stroke();
+      // The hovered mini wears a very faint glow ring just outside its bezel.
+      if (tape?.hover === m) {
+        g.save(); g.shadowColor = grey(0.5 * a); g.shadowBlur = d * 0.25;
+        g.beginPath(); g.arc(cx + mx * d, cy - my * d, MINI_R * d * 1.1 + 3, 0, TAU);
+        g.strokeStyle = grey(0.22 * a); g.lineWidth = 2; g.stroke(); g.restore(); g.lineWidth = 1;
+      }
+      // A silent mini shows a steady dot at its centre, on the HUD, so no flare elsewhere moves it.
+      if (tape?.quiet?.[m] === '1') { g.beginPath(); g.arc(cx + mx * d, cy - my * d, Math.max(1.5, d * 0.035), 0, TAU); g.fillStyle = grey(0.6 * a); g.fill(); }
       // The volume: a thick arc inside the bezel, clockwise from the top; full ring at full volume.
       const vol = tape?.vol?.[m] ?? 1, hot = tape && tn - (tape.volT?.[m] ?? -9) < 1.5, lw = Math.max(2.5, d * 0.07);
       if (vol > 0.001) {
@@ -1585,20 +1591,32 @@ function paintHud() {
       if (song.year) { g.fillStyle = grey(0.42 * ba); g.fillText(`${song.year} · ${song.label}`.toUpperCase(), 0, fs * 1.8); }
       g.restore();
     }
+    // The main voice's volume: a horizontal bar under the main figure, filled from the left.
+    if (tape?.t0) {
+      const bw = 3.2 * d, bh = Math.max(2.5, d * 0.07), bx = cx - bw / 2, by = cy + 2.85 * d, mv = tape.mainVol ?? 1, hot = tn - (tape.mainVolT ?? -9) < 1.5;
+      g.fillStyle = grey(0.12 * ba); g.fillRect(bx, by, bw, bh);
+      g.fillStyle = grey((hot ? 0.75 : 0.32) * ba); g.fillRect(bx, by, bw * mv, bh);
+    }
     // Each mini's readout sits outside the ring: above, below, or to the side.
-    // The main voice reads out above the middle of the bottom row.
+    // The main voice reads out under its figure, above its volume bar.
     if (tape?.reads) {
       const fs = Math.round(clamp(d * 0.34, 12, 18)), gap = 0.2 * d + fs * 0.6;
       g.font = `700 ${fs}px ${MONO}`; g.textBaseline = 'middle';
       tape.reads.forEach((txt, m) => {
-        if (!txt && !(m < bezel.n && tn - (tape.volT?.[m] ?? -9) < 1.5)) return;
-        if (m === bezel.n) { g.fillStyle = grey(0.85 * ba); g.textAlign = 'center'; g.fillText(`▸ ${txt}`, cx, cy + 4 * d - MINI_R * 1.1 * d - gap); return; }
+        if (!txt && !(m < bezel.n && tn - (tape.volT?.[m] ?? -9) < 1.5) && !(m === bezel.n && tn - (tape.mainVolT ?? -9) < 1.5)) return;
+        if (m === bezel.n) {
+          // While its volume moves, the main voice reads out in dB.
+          if (tn - (tape.mainVolT ?? -9) < 1.5) { const v = tape.mainVol ?? 1; txt = v < 0.001 ? 'MUTE' : `${(20 * Math.log10(v)).toFixed(0)} dB`; }
+          if (txt) { g.fillStyle = grey(0.85 * ba); g.textAlign = 'center'; g.fillText(`▸ ${txt}`, cx, cy + 2.5 * d); }
+          return;
+        }
         g.fillStyle = grey(0.8 * miniAlpha(m, tn));
         // While its volume moves, a mini reads out in dB.
         if (tn - (tape.volT?.[m] ?? -9) < 1.5) { const v = tape.vol[m] ?? 1; txt = v < 0.001 ? 'MUTE' : `${(20 * Math.log10(v)).toFixed(0)} dB`; }
         const [mx, my] = bezel.pos[m], ex = MINI_R * 1.1 * d, x = cx + mx * d, y = cy - my * d;
         if (my === 4) { g.textAlign = 'center'; g.fillText(txt, x, y - ex - gap); }
-        else if (my === -4) { g.textAlign = 'center'; g.fillText(txt, x, y + ex + gap); }
+        // The bottom corners read out to the side; the rest of the bottom row reads below.
+        else if (my === -4 && Math.abs(mx) < 4) { g.textAlign = 'center'; g.fillText(txt, x, y + ex + gap); }
         else { g.textAlign = mx < 0 ? 'right' : 'left'; g.fillText(txt, x + (mx < 0 ? -1 : 1) * (ex + 0.15 * d), y); }
       });
     }
@@ -2005,13 +2023,32 @@ function pick(p) {
   changed();
 }
 let strokeLen = 0, lastBuild = 0, before = null;
+// One wheel notch moves a volume by 5 %; a trackpad's small steps move it less.
+const wheelStep = e => Math.sign(e.deltaY) * Math.min(0.05, Math.abs(e.deltaY) * (e.deltaMode ? 0.02 : 0.0005));
+// Hovering a mini lights a faint ring round it, to show it answers the pointer.
+canvas.addEventListener('pointermove', e => {
+  if (!tape?.t0 || e.buttons) return;
+  const p = toDiv(e), m = tape.song.pos.findIndex(([x, y]) => Math.hypot(p[0] - x, p[1] - y) <= MINI_R * 1.1);
+  const h = m >= 0 && m < tape.parts.length ? m : -1;
+  if (h !== tape.hover) { tape.hover = h; paintHud(); poke(); }
+});
+canvas.addEventListener('pointerleave', () => { if (tape && tape.hover !== -1) { tape.hover = -1; paintHud(); poke(); } });
 // Scrolling on a mini sets its volume, 0 to 1; the arc and a dB readout show it.
 canvas.addEventListener('wheel', e => {
   if (!tape?.t0) return;
   const p = toDiv(e), m = tape.song.pos.findIndex(([x, y]) => Math.hypot(p[0] - x, p[1] - y) <= MINI_R * 1.1);
+  // The main scope's area, inside the ring, sets the main voice's volume.
+  if (m < 0 && Math.abs(p[0]) <= 2.9 && Math.abs(p[1]) <= 2.9) {
+    e.preventDefault();
+    tape.mainVol = clamp((tape.mainVol ?? 1) - wheelStep(e)); tape.mainVolT = now();
+    tape.mg0?.gain.setTargetAtTime(tape.mainVol, tape.mg0.context.currentTime, 0.03);
+    paintHud(); poke();
+    clearTimeout(tape.volTimer); tape.volTimer = setTimeout(() => { paintHud(); poke(); }, 1600);
+    return;
+  }
   if (m < 0 || m >= tape.parts.length) return;
   e.preventDefault();
-  const v = clamp((tape.vol[m] ?? 1) - e.deltaY * 0.0015);
+  const v = clamp((tape.vol[m] ?? 1) - wheelStep(e));
   tape.vol[m] = v; tape.volT[m] = now();
   const g = tape.pg?.[m];
   if (g) g.gain.setTargetAtTime(partLevel(m), g.context.currentTime, 0.03);
