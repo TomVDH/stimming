@@ -193,8 +193,8 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
     soundBtn.addEventListener('click', () => sound.toggle());
   }
   document.documentElement.dataset.toy = id;
-  // A toy with an emblem shows it as the favicon.
-  toysData().then(toys => { const t = toys?.[id]; if (t?.emblem) toyFavicon(new URL('../' + t.emblem, import.meta.url).href, t.accent || '#fff'); });
+  // A toy shows its own menu icon as the favicon.
+  toyFavicon(new URL(`favicons/${id}.png`, import.meta.url).href);
   if (ui) {
     // toys.json gives the name, the tags and the legacy flag.
     toysData().then(toys => ui.applyToy(toys ? toys[id] : null));

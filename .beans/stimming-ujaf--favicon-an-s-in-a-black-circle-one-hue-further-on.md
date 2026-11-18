@@ -17,4 +17,4 @@ Tom, 2026-11-17: "an S in a black circle that rotates through the colours upon r
 
 ## Toy favicons (Tom, 2026-11-17 17:02)
 
-- [x] A toy page with an emblem shows that emblem in its accent in the black circle; the menu keeps the S. One image load and one canvas pass per page.
+- [x] Tom, 17:07: a toy page shows its full-colour menu icon instead. tools/favicons.mjs renders each menu icon at rest to shared/favicons/<id>.png (64 px). Re-run it after a menu icon changes. The menu keeps the S.

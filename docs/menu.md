@@ -126,3 +126,9 @@ Rules for drawing icons: `icons/AGENTS.md`.
 ## Workbench
 
 `menulab/` tries other menu concepts in a frame: Dozen, Clock, Dial, Drum. A menu concept must stay usable first.
+
+## Favicon
+
+- The menu shows an S in a black circle; it moves one hue of twelve on each load (`shared/favicon.js`).
+- A toy page shows its full-colour menu icon, from `shared/favicons/<id>.png`.
+- After a menu icon changes, run `node tools/favicons.mjs <base-url> <id>` against a local server, and commit the PNG.
