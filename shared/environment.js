@@ -6,6 +6,7 @@
 //
 // Use:
 //   const env = environment(canvas, { scene: `vec3 envScene(vec2 uv) { ... }` });
+//   const env = await environmentReady(canvas, { ... });   // links off the main thread
 //   env.state.hour = 19.5;            // any value in ENV_DEFAULTS
 //   env.state.on.glass = false;       // switch a bundle off
 //   env.state.tone = 'aces';          // the fitted ACES curve; 'film' is the default
@@ -189,23 +190,68 @@ void main() {
  * @param {HTMLCanvasElement} canvas
  * @param {EnvOptions} options
  */
-export function environment(canvas, { scene, uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, glass = GLASS_MOD, pane = {}, before = null, share = null, maxDpr = 2, budget = 2.6e6 }) {
-  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
-  const hdr = !!gl.getExtension('EXT_color_buffer_float');
-  function compile(fs) {
-    const p = gl.createProgram();
-    for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]]) {
-      const s = gl.createShader(type);
+export function environment(canvas, options) {
+  const gl = envContext(canvas);
+  const set = startPrograms(gl, options);
+  return runner(canvas, gl, options, set.map(q => finishProgram(gl, q)));
+}
+
+/**
+ * Like environment(), but the driver links the programs off the main thread.
+ * The promise settles when every program is ready.
+ * Use it for a large scene: the page and the intro keep their frames.
+ * @param {HTMLCanvasElement} canvas
+ * @param {EnvOptions} options
+ */
+export async function environmentReady(canvas, options) {
+  const gl = envContext(canvas);
+  const set = startPrograms(gl, options);
+  // A timer poll, not a frame poll: a background tab still finishes.
+  const wait = () => new Promise(r => setTimeout(r, 30));
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  if (par) while (!gl.isContextLost() && !set.every(q => gl.getProgramParameter(q.p, par.COMPLETION_STATUS_KHR))) await wait();
+  // Without the extension the check blocks; one wait lets the intro paint first.
+  else await wait();
+  return runner(canvas, gl, options, set.map(q => finishProgram(gl, q)));
+}
+
+function envContext(canvas) {
+  return /** @type {WebGL2RenderingContext} */ (canvas.getContext('webgl2', { antialias: false, alpha: false }));
+}
+// Sends the five programs to the driver. It reads no status, so it does not block.
+/** @param {WebGL2RenderingContext} gl @param {EnvOptions} options */
+function startPrograms(gl, { scene, glass = GLASS_MOD, pane = {} }) {
+  return [sceneFS(scene), DOWN_FS, BOK_FS, paneFS(glass, pane.head), FINAL_FS].map(fs => {
+    const p = gl.createProgram(), sh = [];
+    for (const [type, src] of /** @type {[number, string][]} */ ([[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]])) {
+      const s = /** @type {WebGLShader} */ (gl.createShader(type));
       gl.shaderSource(s, src);
       gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       gl.attachShader(p, s);
+      sh.push(s);
     }
     gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
-    const locs = new Map();
-    return { p, loc: n => (locs.has(n) ? locs.get(n) : (locs.set(n, gl.getUniformLocation(p, n)), locs.get(n))) };
+    return { p, sh };
+  });
+}
+// Reads the link result. It blocks until the driver is done.
+function finishProgram(gl, { p, sh }) {
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    const bad = sh.find(s => !gl.getShaderParameter(s, gl.COMPILE_STATUS));
+    throw new Error(bad ? gl.getShaderInfoLog(bad) : gl.getProgramInfoLog(p));
   }
+  const locs = new Map();
+  return { p, loc: n => (locs.has(n) ? locs.get(n) : (locs.set(n, gl.getUniformLocation(p, n)), locs.get(n))) };
+}
+
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {WebGL2RenderingContext} gl
+ * @param {EnvOptions} options
+ * @param {{ p: WebGLProgram, loc: (n: string) => WebGLUniformLocation | null }[]} progs
+ */
+function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, pane = {}, before = null, share = null, maxDpr = 2, budget = 2.6e6 }, progs) {
+  const hdr = !!gl.getExtension('EXT_color_buffer_float');
   // Half-float targets keep bright lights; without them the frame clips early.
   function target() {
     const tex = gl.createTexture(), fbo = gl.createFramebuffer();
@@ -223,7 +269,7 @@ export function environment(canvas, { scene, uniforms = {}, textures = {}, anima
     return t;
   }
   const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target(), rtPane = target();
-  const progScene = compile(sceneFS(scene)), progDown = compile(DOWN_FS), progBok = compile(BOK_FS), progPane = compile(paneFS(glass, pane.head)), progFinal = compile(FINAL_FS);
+  const [progScene, progDown, progBok, progPane, progFinal] = progs;
   const bloom = bloomChain(gl);
   // The scene's own pictures. Each loads once; until then it is one clear pixel.
   const pics = Object.entries(textures).map(([name, src], i) => {
