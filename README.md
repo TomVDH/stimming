@@ -99,4 +99,5 @@ Rules for people and agents: [AGENTS.md](AGENTS.md). Terms: [GLOSSARY.md](GLOSSA
 | [Subway](https://tomvdh.github.io/stimming/subway/) | Metro |  |
 | [Car wash](https://tomvdh.github.io/stimming/carwash/) |  |  |
 | [Harmonograph](https://tomvdh.github.io/stimming/harmono/) | Harmonograaf |  |
+| [East Van Alley](https://tomvdh.github.io/stimming/wires/) | Kraaiendraden |  |
 <!-- /gen:toys -->
