@@ -33,7 +33,7 @@ function draw(link, hue) {
 }
 
 const hue = (nextStep() * 360) / HUES + 20;
-const link = document.querySelector('link[rel="icon"]') ?? document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'icon' }));
+const link = /** @type {HTMLLinkElement} */ (document.querySelector('link[rel="icon"]') ?? document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'icon' })));
 link.type = 'image/png';
 draw(link, hue);
 // Draw again once Gabarito loads; the first draw may use a fallback face.
