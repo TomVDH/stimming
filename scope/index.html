@@ -853,9 +853,9 @@ function tapeSample(t) {
 // Brightness follows the spot's speed; the minis fade in with their bezels.
 const MINI_FILL = 1.15;
 // Wave mode: each mini draws its left channel, about three cycles, from a rising zero crossing.
-// The trace scales to the mini's peak and runs edge to edge, clipped by the bezel.
+// The trace shows the part's real loudness and runs edge to edge, clipped by the bezel.
 // A silent mini draws a dim flat line.
-const WAVE_MS = 0.02, WAVE_PTS = 140, WAVE_KEY = 'stimming.scope.miniwave';
+const WAVE_MS = 0.02, WAVE_PTS = 140, WAVE_GAIN = 1.6, WAVE_KEY = 'stimming.scope.miniwave';
 let miniWave = store.get(WAVE_KEY) === '1';
 function miniWaves(t, n) {
   let o = n;
@@ -874,8 +874,8 @@ function miniWaves(t, n) {
     for (let i = Math.floor(at - win); i > i0; i--) if (A[i - 1] < 0 && A[i] >= 0) { i0 = i; break; }
     let pk = 0;
     for (let q = 0; q <= WAVE_PTS; q++) pk = Math.max(pk, Math.abs(A[Math.min(A.length - 1, Math.floor(i0 + q / WAVE_PTS * win))]));
-    tape.mpk[m] = Math.max(pk, (tape.mpk[m] || 0) * 0.97);
-    const g = 0.7 / Math.max(0.05, tape.mpk[m]), quiet = pk < 0.01;
+    // A fixed scale: the trace's height is the part's own loudness.
+    const g = WAVE_GAIN, quiet = pk < 0.01;
     let px = 0, py = 0;
     for (let q = 0; q <= WAVE_PTS; q++) {
       const u = q / WAVE_PTS, v = quiet ? 0 : spline(A, Math.min(A.length - 1, i0 + u * win));
