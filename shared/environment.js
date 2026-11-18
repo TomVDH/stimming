@@ -238,7 +238,7 @@ function startPrograms(gl, { scene, glass = GLASS_MOD, pane = {} }) {
 function finishProgram(gl, { p, sh }) {
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
     const bad = sh.find(s => !gl.getShaderParameter(s, gl.COMPILE_STATUS));
-    throw new Error(bad ? gl.getShaderInfoLog(bad) : gl.getProgramInfoLog(p));
+    throw new Error((bad ? gl.getShaderInfoLog(bad) : gl.getProgramInfoLog(p)) || 'the shader did not link');
   }
   const locs = new Map();
   return { p, loc: n => (locs.has(n) ? locs.get(n) : (locs.set(n, gl.getUniformLocation(p, n)), locs.get(n))) };

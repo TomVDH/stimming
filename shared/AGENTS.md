@@ -19,6 +19,7 @@ Code every toy uses. A change here reaches every page.
 | `fire.js` | Fire and smoke (three.js 0.186.1, WebGPU, TSL). It imports nothing; the toy passes the namespaces. Fire is the reference. |
 | `wetglass.js`, `water.js`, `precip.js`, `sky.js`, `flare.js`, `glow.js`, `grade.js`, `output.js`, `weather.js`, `detail.js` | Shader bundles. Each has a card in `fxlab/`. Glass effects stay one group. |
 | `intro.js`, `intro.css` | The intro. Signal ships (`DEFAULT_VARIETY`). |
+| `loadwatch.js` | Load watch for heavy toys: a visible, stored load step. A load that died shows on the next open. Opt-in per toy. |
 | `menu/` | The Clock. Rules: `docs/menu.md`. |
 | `series/shots.js` | Series shots and `shotIcon()`. |
 | `fonts/` | Gabarito, B612, Iosevka Term Slab. A page off the shell links `fonts/fonts.css`. |
