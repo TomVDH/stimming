@@ -16,7 +16,7 @@ Capture: `inventorylab/`. Records: `docs/inventory/<id>.json`. Collate: `node to
                 "shelf": "main", "number": 2, "series": "poke", "stage": null, "version": "1.5",
                 "sound": true, "legacy": true, "done": true },
   "stack": { "renderer": ["three WebGL"], "libraries": ["culori", "three"], "three": "0.170.0",
-             "shared": ["intro", "stim"], "bar": "shell", "sound": "Web Audio", "typescript": false, "files": ["index.html"] },
+             "shared": ["intro", "stim"], "bar": "Signal bar", "sound": "Web Audio", "typescript": false, "files": ["index.html"] },
   "verdict": "polish",
   "summary": "One line.",
   "meta": { "name": "Pop field", "nl": "Bubbelplastiek", "ipa": "…", "tag": "…", "tagNl": "…", "series": "poke", "notes": "" },
@@ -39,12 +39,12 @@ Capture: `inventorylab/`. Records: `docs/inventory/<id>.json`. Collate: `node to
 |---|---|
 | `build` | The build Tom judged: `fresh` (`index.html`) or `classic` (`legacy.html`). |
 | `snapshot` | The `toys.json` entry and the sign-off at capture time. The record stands alone. |
-| `stack` | Read from the page and its local modules at save time. Tom does not edit it. |
+| `stack` | Read from the page and its local modules at save time. Tom does not edit it. `bar` is `Signal bar`, `Signal bar, no controls` or `own bar`. |
 | `verdict` | `keep`, `polish`, `rework` or `cut`. Empty until Tom picks. |
 | `meta` | Tom's wanted name, Dutch name, IPA, mottos and series. A value that differs from `snapshot` is an edit to make in `toys.json`. |
 | `areas` | Seven areas. `ok: false` marks an area that needs work. |
 | `triage` | `priority` (`now`, `next`, `later`, `never`), `effort` (`S`, `M`, `L`, `XL`), `risk` (`low`, `mid`, `high`), free `tags`. |
-| `modular` | Moves: `toTypeScript`, `bar` (`none` or `to-shell`), `dropLegacy`. `adopt`: shared modules to adopt. `extract`: code to lift into `shared/`. |
+| `modular` | Moves: `toTypeScript`, `bar` (`none` or `to-signal`: move to the shared Signal bar), `dropLegacy`. `adopt`: shared modules to adopt. `extract`: code to lift into `shared/`. |
 | `findings` | Bugs and gaffes. One row each. `area` can also be `meta`. |
 | `expansions` | Ideas that add to the toy. One row each. |
 | `shelfMove` | `none`, `to-main` or `to-lab`. A wish only; Tom moves toys. |
