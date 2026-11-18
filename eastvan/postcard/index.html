@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>East Van postcards</title>
 <link rel="stylesheet" href="../../shared/stim.css">
+<link rel="stylesheet" href="../../shared/intro.css">
 <style>
 :root { --stage: oklch(0.1 0.01 275); }
 .stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; opacity: 0; transition: opacity 0.35s ease; }
@@ -15,6 +16,10 @@
 </style>
 </head>
 <body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">East Van postcards</span></div></div>
+</div>
+
 <div class="wrap">
   <main>
     <div class="stage" id="stage" tabindex="0" role="application" aria-label="Postcards of East Vancouver. Press 1 to 9 to pick a postcard. Press the left arrow to show the last postcard. Press the right arrow to show the next postcard.">
@@ -38,6 +43,7 @@
 </script>
 <script type="module">
 import { initPage } from '../../shared/stim.js';
+import { intro as playIntro } from '../../shared/intro.js';
 import { start } from './kit.js';
 import * as lot from './scenes/lot.js';
 import * as drive from './scenes/drive.js';
@@ -50,6 +56,16 @@ import * as station from './scenes/station.js';
 import * as coaster from './scenes/coaster.js';
 import * as pool from './scenes/pool.js';
 import * as snow from './scenes/snow.js';
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+// The kit marks the canvas "on" after its first drawn frame.
+const firstFrame = new Promise(r => {
+  const mo = new MutationObserver(() => { if (document.querySelector('#stage canvas.on')) { mo.disconnect(); r(); } });
+  mo.observe(document.getElementById('stage'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+});
+// The intro holds until the page, the font and the first frame are ready.
+const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
+playIntro({ id: 'postcard', ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
 
 const MODS = [lot, drive, alley, cut, store, port, lake, station, coaster, pool, snow];
 // The kit lists the cards in this same order.
