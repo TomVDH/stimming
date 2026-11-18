@@ -412,15 +412,16 @@ const SONGS = {
     kit: 'messages-kit',
     title: 'Messages from the Stars', artist: 'The Rah Band · arr. Wezz', year: 1983, label: 'TMT Records',
   },
-  // Das Model, codeword MODEL: the site's own render is its full mix, and it starts on it.
+  // Das Model, codeword MODEL: the site's own render is its full mix (O); it starts on the scope voice like every song.
   // Eight minis in an even ring; the kick and the snare split one drum track.
   model: {
-    url: 'model.mid', mp3: 'model.mp3', startFull: true,
-    main: { tracks: ['8-Bit Triangle'], tone: 'tri', env: 'pad' },
+    url: 'model.mid', mp3: 'model.mp3',
+    // The smooth synth carries the tune; it takes the main scope.
+    main: { tracks: ['Smooth Synth (Classic)'], tone: 'soft', env: 'pad' },
     pos: [[-2, 4], [2, 4], [4, 2], [4, -2], [2, -4], [-2, -4], [-4, -2], [-4, 2]],
     parts: [
       { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pad', lv: 1.6 },
-      { tracks: ['Smooth Synth (Classic)'], tone: 'tri', env: 'pad', lv: 0.8 },
+      { tracks: ['8-Bit Triangle'], tone: 'tri', env: 'pad', lv: 0.8 },
       { tracks: ['Muted E-Guitar'], tone: 'warm', env: 'pluck', decay: 0.3 },
       { tracks: ['Koto'], tone: 'soft', env: 'pluck', decay: 0.6, lv: 0.6 },
       { tracks: ['Electric Drum Kit'], keys: [47], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
@@ -997,7 +998,8 @@ function tapeSample(t) {
   const pv = tape.prev || (tape.prev = [pt[0], pt[1]]);
   const v = Math.hypot(pt[0] - pv[0], pt[1] - pv[1]) * SR;
   pv[0] = pt[0]; pv[1] = pt[1]; shown = null;
-  return IK * sigma * Math.max(v, 2000);
+  // A low floor: a slow or resting spot cannot overheat and bloom into a square.
+  return IK * sigma * Math.max(v, 300);
 }
 
 // Each mini draws its part's shape at every beam step, as the main beam does.
@@ -1088,7 +1090,7 @@ function miniDraw(t1, n) {
       const pv = tape.mprev[m] || (tape.mprev[m] = [x, y]);
       const v = Math.hypot(x - pv[0], y - pv[1]) * SR;
       const out = Math.hypot(x - cx, y - cy) > rm || Math.hypot(pv[0] - cx, pv[1] - cy) > rm;
-      const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 600) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
+      const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 200) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
       raw += e;
       inst[q] = pv[0]; inst[q + 1] = pv[1]; inst[q + 2] = x; inst[q + 3] = y; inst[q + 4] = e;
       pv[0] = x; pv[1] = y; o++;
