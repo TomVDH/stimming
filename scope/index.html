@@ -2680,13 +2680,23 @@ function showEgg() {
   // Each later showing names one codeword, in turn.
   if (!egg.all) egg.word = WORDS[egg.n++ % WORDS.length];
   egg.t0 = now();
-  const T = egg.all ? EGG_LIST_T : EGG_T;
   const iv = setInterval(() => {
-    if (now() - egg.t0 > T) { clearInterval(iv); egg.t0 = -1; egg.all = false; paintHud(); scheduleEgg(); return; }
+    if (now() - egg.t0 > (egg.all ? EGG_LIST_T : EGG_T)) { clearInterval(iv); egg.t0 = -1; egg.all = false; paintHud(); scheduleEgg(); return; }
     paintHud(); poke();
   }, 70);
 }
 scheduleEgg(2500);
+// Typing "hint" lists every codeword again, while no song plays.
+function hintEgg() {
+  if (tape) return;
+  egg.all = true;
+  if (egg.t0 >= 0) { egg.t0 = now(); return; }
+  egg.t0 = now();
+  const iv = setInterval(() => {
+    if (now() - egg.t0 > EGG_LIST_T) { clearInterval(iv); egg.t0 = -1; egg.all = false; paintHud(); return; }
+    paintHud(); poke();
+  }, 70);
+}
 phosTag.addEventListener('click', nextPhosphor);
 Object.assign(act, { shuffle, clear, reset: resetAll, look: () => { paintHud(); poke(); } });
 // The shell binds S and C; the page binds the arrows, Space and P.
@@ -2699,6 +2709,7 @@ addEventListener('keydown', e => {
   if (k.length === 1) typed = (typed + k).slice(-12);
   const word = WORDS.find(w => typed.endsWith(w)) || '';
   if (word) { typed = ''; const was = tape?.id; if (tape) changed(); if (was !== word) startTape(word); return; }
+  if (typed.endsWith('hint')) { typed = ''; hintEgg(); return; }
   if (k === 'escape' && tape) { changed(); return; }
   // O fades between the scope voice and the full mix while the song plays.
   if (k === 'o' && tape) { toggleFull(); return; }

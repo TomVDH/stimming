@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T08:09:53Z
+updated_at: 2026-11-18T09:05:45Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -46,3 +46,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - [x] INVISIBLE (Duran Duran, arr. horsecel): eight minis; at 5 s an ASCII portrait pixelates in, holds 5 s and fades. Codeword buffer now 12 letters.
 
 - [x] YAKUZA (Baka Mitai, arr. RiceLover423): twelve minis, Kiryu portrait at 5 s. Portraits are 100 columns, each level its own brightness; the scopes, minis and bezels ease out under them.
+
+- [x] Typing 'hint' lists every codeword again (7 s) while no song plays.
