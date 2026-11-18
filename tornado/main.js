@@ -1092,31 +1092,130 @@ float boltChannel(vec2 s, float px) {
   // The foot fades a little into the dust; the top into the base.
   return k * smoothstep(0.0, 0.06, u) * (0.7 + 0.3 * smoothstep(1.0, 0.85, u));
 }
-vec3 envScene(vec2 uv) {
-  float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
-  vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
-  vec3 rc = normalize(vec3(s, -uFoc));
-  vec3 rd = toWorld(rc);
+/* ---------- the layer passes ---------- */
+// The scene draws in passes, each its own small program (stimming-azxj).
+// The D3D11 compiler cannot finish the whole scene as one program.
+// tLayB and tLayF: objects behind and in front of the funnels, premultiplied.
+// tLayG: the vehicles' lamp glow, added. tLayX: the ground, or the storm's march.
+uniform sampler2D tLayB, tLayF, tLayG, tLayX;
+// Sets up a pixel as the composite does: its screen point, rays and light.
+void pixStart(vec2 uv, out vec2 s, out vec3 rc, out vec3 rd, out float px) {
+  float asp = uRes.x / uRes.y;
+  px = 1.0 / uRes.y;
+  s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
+  rc = normalize(vec3(s, -uFoc));
+  rd = toWorld(rc);
   lightInit(rc);
   gPx = px;
-  vec3 c;
-  // The objects on the plain first: each one sorts itself behind or in front of the funnels.
+}
+// Hands one object group's layers to the runner.
+void objOut(out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  b = gOB; f = gOF; g = vec4(gVehGlow, 0.0); x = vec4(0.0);
+}
+// The objects on the plain: each one sorts itself behind or in front of the funnels.
+// The passes run in this order; each lays over the ones before it.
+void passFarm(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
   objInit(s);
+  // farm() can write c; the composite sets c itself.
+  vec3 c = vec3(0.0);
   farm(c, s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPoles(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   linePoles(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passWires(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   wires(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlain(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   plain(s, rd, px);
-  // A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
-  // So vehicles lay down after them: far ones before the infrastructure, near ones last.
+  objOut(b, f, g, x);
+}
+// A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
+// So vehicles lay down after them: far ones before the infrastructure, near ones last.
+void passCarsFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   traffic(s, rd, px, false);
+  objOut(b, f, g, x);
+}
+void passInfra(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   infra(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passDebris(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   debris(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passTrees(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   treesFly(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passCarsNear(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   traffic(s, rd, px, true);
+  objOut(b, f, g, x);
+}
+// The ground under the horizon, opaque. The sky's pixels stay clear.
+void passGround(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  b = vec4(0.0); f = vec4(0.0); g = vec4(0.0); x = vec4(0.0);
+  if (rd.y < -1e-4) x = vec4(ground(rd, px), 1.0);
+}
+// Until the storm pass builds, the sky marches the storm here, premultiplied.
+void passStorm(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  b = vec4(0.0); f = vec4(0.0); g = vec4(0.0); x = vec4(0.0);
+  if (rd.y < -1e-4 || uStormOn > 0.5) return;
+  // White noise per pixel, new each frame: it reads as film grain, not a pattern.
+  float jit = th(gl_FragCoord.xy + fract(uT * 7.31) * 113.0);
+  float tHit;
+  vec4 st = storm(rc, jit, tHit);
+  // The far storm sinks into the haze.
+  float h = 1.0 - exp(-tHit / 70.0);
+  x = vec4(mix(st.rgb, hazeCol(rd) * st.a, h * 0.8), st.a);
+}
+
+// The composite: sky, ground and storm, with the passes' layers laid in.
+vec3 envScene(vec2 uv) {
+  float asp = uRes.x / uRes.y;
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  vec3 c;
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 gOB = texelFetch(tLayB, ip, 0), gOF = texelFetch(tLayF, ip, 0), back = texelFetch(tLayX, ip, 0);
+  vec3 gVehGlow = texelFetch(tLayG, ip, 0).rgb;
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
-    c = ground(rd, px);
+    c = back.rgb;
     c = c * (1.0 - gOB.a) + gOB.rgb;
     c = c * (1.0 - tv.a) + tv.rgb;
   } else {
@@ -1168,13 +1267,8 @@ vec3 envScene(vec2 uv) {
       c = mix(mix(c, gloom, glK), rainC, rnK);
       c = c * (1.0 - tv.a) + tv.rgb;
     } else {
-      // White noise per pixel, new each frame: it reads as film grain, not a pattern.
-      float jit = th(gl_FragCoord.xy + fract(uT * 7.31) * 113.0);
-      float tHit;
-      vec4 st = storm(rc, jit, tHit);
-      // The far storm sinks into the haze.
-      float h = 1.0 - exp(-tHit / 70.0);
-      c = c * (1.0 - st.a) + mix(st.rgb, hazeCol(rd) * st.a, h * 0.8);
+      // passStorm marched the storm for this pixel.
+      c = c * (1.0 - back.a) + back.rgb;
       c = mix(mix(c, gloom, glK), rainC, rnK);
     }
   }
@@ -1319,6 +1413,9 @@ try {
   watch.step('Compiling shaders');
   env = await environmentReady(canvas, {
     scene: SCENE,
+    // The scene compiles in parts: one program per pass, then the composite.
+    layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
+    passes: ['passGround', 'passStorm', 'passFarm', 'passPoles', 'passWires', 'passPlain', 'passCarsFar', 'passInfra', 'passDebris', 'passTrees', 'passCarsNear'],
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,

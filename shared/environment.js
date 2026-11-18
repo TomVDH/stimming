@@ -31,6 +31,7 @@ import { GRADE } from './grade.js';
 import { OUTPUT } from './output.js';
 import { weather } from './weather.js';
 import { detail } from './detail.js';
+import { pruneGLSL } from './glsl-prune.js';
 
 // What a scene can read. The runner sets each one every frame.
 export const ENV_UNIFORMS = /* glsl */`
@@ -55,13 +56,24 @@ const VS = `#version 300 es
 out vec2 vUv;
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
 const HEAD = '#version 300 es\nprecision highp float;\nout vec4 outC;\n';
-// The scene pass: the toy's scene, then rain or snow in the air.
-const sceneFS = scene => HEAD + ENV_UNIFORMS + `
+// What the scene and its passes can call.
+const BUNDLES = `
 ${GLASS_RAIN}
 ${WATER}
 ${SKY}
 ${PRECIP}
-${GLOW}
+${GLOW}`;
+// A layer pass: one scene function writes each layer, premultiplied.
+// The runner blends the passes in order, so each one lays over the last.
+const passFS = (scene, fn, n) => {
+  const outs = Array.from({ length: n }, (_, k) => `layout(location = ${k}) out vec4 outL${k};\n`).join('');
+  const args = Array.from({ length: n }, (_, k) => `outL${k}`).join(', ');
+  return pruneGLSL('#version 300 es\nprecision highp float;\n' + outs + ENV_UNIFORMS + BUNDLES + `
+${scene}
+void main() { ${fn}(gl_FragCoord.xy / uRes, ${args}); }`);
+};
+// The scene pass: the toy's scene, then rain or snow in the air.
+const sceneFS = scene => HEAD + ENV_UNIFORMS + BUNDLES + `
 ${scene}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
@@ -168,6 +180,12 @@ void main() {
 //   before    called with (w, h) before each frame's passes, on the same context.
 //             It must leave the context in its default state.
 //   share     another runner: this one uses its state, clock, motion and detail.
+//   layers    sampler names for the passes' layers: ['tLayA', 'tLayB'].
+//             The scene declares each one as a sampler2D and reads it.
+//   passes    scene functions that fill the layers, drawn in order before the scene:
+//             void fn(vec2 uv, out vec4 a, out vec4 b), one out per layer, premultiplied.
+//             Each pass is its own program, so a large scene compiles in parts.
+//             With passes, each program keeps only the functions it calls.
 /**
  * The options for environment(); the list above gives each meaning.
  * @typedef {object} EnvOptions
@@ -184,6 +202,8 @@ void main() {
  * @property {{ state: object, clock: object, motion: object, detail: object } | null} [share] Another runner.
  * @property {number} [maxDpr]
  * @property {number} [budget]
+ * @property {string[]} [layers] Sampler names for the passes' layers.
+ * @property {string[]} [passes] Scene functions that fill the layers, in draw order.
  */
 /**
  * Runs one raw WebGL2 environment scene with every shared bundle wired in.
@@ -218,10 +238,13 @@ export async function environmentReady(canvas, options) {
 function envContext(canvas) {
   return /** @type {WebGL2RenderingContext} */ (canvas.getContext('webgl2', { antialias: false, alpha: false }));
 }
-// Sends the five programs to the driver. It reads no status, so it does not block.
+// Sends the programs to the driver. It reads no status, so it does not block.
+// The five runner programs come first; the layer passes follow.
 /** @param {WebGL2RenderingContext} gl @param {EnvOptions} options */
-function startPrograms(gl, { scene, glass = GLASS_MOD, pane = {} }) {
-  return [sceneFS(scene), DOWN_FS, BOK_FS, paneFS(glass, pane.head), FINAL_FS].map(fs => {
+function startPrograms(gl, { scene, glass = GLASS_MOD, pane = {}, layers = [], passes = [] }) {
+  const sceneSrc = passes.length ? pruneGLSL(sceneFS(scene)) : sceneFS(scene);
+  const passSrc = passes.map(fn => passFS(scene, fn, layers.length));
+  return [sceneSrc, DOWN_FS, BOK_FS, paneFS(glass, pane.head), FINAL_FS, ...passSrc].map(fs => {
     const p = gl.createProgram(), sh = [];
     for (const [type, src] of /** @type {[number, string][]} */ ([[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]])) {
       const s = /** @type {WebGLShader} */ (gl.createShader(type));
@@ -250,7 +273,7 @@ function finishProgram(gl, { p, sh }) {
  * @param {EnvOptions} options
  * @param {{ p: WebGLProgram, loc: (n: string) => WebGLUniformLocation | null }[]} progs
  */
-function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, pane = {}, before = null, share = null, maxDpr = 2, budget = 2.6e6 }, progs) {
+function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, active = () => true, onFrame = null, onLevel = null, pane = {}, before = null, share = null, maxDpr = 2, budget = 2.6e6, layers = [], passes = [] }, progs) {
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   // Half-float targets keep bright lights; without them the frame clips early.
   function target() {
@@ -269,7 +292,32 @@ function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, ac
     return t;
   }
   const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target(), rtPane = target();
-  const [progScene, progDown, progBok, progPane, progFinal] = progs;
+  const [progScene, progDown, progBok, progPane, progFinal, ...progPass] = progs;
+  // The passes' layers: one framebuffer, one texture per layer.
+  const lay = layers.length ? layerTargets() : null;
+  function layerTargets() {
+    const fbo = gl.createFramebuffer(), texs = [];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    for (let k = 0; k < layers.length; k++) {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      for (const [p, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, p, v);
+      gl.texImage2D(gl.TEXTURE_2D, 0, hdr ? gl.RGBA16F : gl.RGBA8, 1, 1, 0, gl.RGBA, hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + k, gl.TEXTURE_2D, tex, 0);
+      texs.push(tex);
+    }
+    gl.drawBuffers(layers.map((_, k) => gl.COLOR_ATTACHMENT0 + k));
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const t = { fbo, texs, w: 0, h: 0, size(w, h) {
+      if (t.w === w && t.h === h) return;
+      t.w = w; t.h = h;
+      for (const tex of texs) {
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, hdr ? gl.RGBA16F : gl.RGBA8, w, h, 0, gl.RGBA, hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+      }
+    } };
+    return t;
+  }
   const bloom = bloomChain(gl);
   // The scene's own pictures. Each loads once; until then it is one clear pixel.
   const pics = Object.entries(textures).map(([name, src], i) => {
@@ -356,6 +404,7 @@ function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, ac
     // Size every target here: a resize binds its texture, which must not happen between passes.
     rtScene.size(w, h); rt4.size(Math.ceil(w / 4), Math.ceil(h / 4)); rt8.size(Math.ceil(w / 8), Math.ceil(h / 8)); rtBok.size(Math.ceil(w * gq.bokehScale), Math.ceil(h * gq.bokehScale));
     rtPane.size(w, h);
+    lay?.size(w, h);
     // The toy's own pass, before the runner's passes.
     before?.(w, h);
     // sky.js: the hour sets the palette, the sun and the daylight.
@@ -371,27 +420,61 @@ function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, ac
     gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     gl.activeTexture(gl.TEXTURE0);
-    let u = progScene.loc;
-    gl.useProgram(progScene.p);
-    gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), S.light[0], S.light[1]); gl.uniform3fv(u('uLampCol'), lamp);
-    gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
-    gl.uniform1f(u('uCloud'), S.clouds); gl.uniform3fv(u('uCloudLit'), sk.cloudLit); gl.uniform3fv(u('uCloudShade'), sk.cloudShade); gl.uniform1i(u('uCloudOct'), skyDetail(D.level).cloudOctaves);
-    gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
     const fall = precipDir(motion.speed, S.snow > 0.5), aq = precipDetail(D.level);
-    gl.uniform1f(u('uAir'), S.on.air ? S.air : 0); gl.uniform1f(u('uSnow'), S.snow); gl.uniform2f(u('uFall'), fall[0], fall[1]); gl.uniform1i(u('uAirN'), S.snow > 0.5 ? aq.snow : aq.rain);
-    gl.uniform1f(u('uOrbs'), S.on.glow ? S.orbs : 0);
-    gl.uniform1i(u('uOct'), wq.octaves); gl.uniform1i(u('uRingN'), wq.ringLayers); gl.uniform1i(u('uTapN'), D.level > 0 ? 3 : 2);
-    gl.uniform1f(u('uTime'), clock.time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
-    gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
-    // The scene's own uniforms: a number, or an array of two to four.
-    setOwn(uniforms, u);
-    for (const pic of pics) {
-      gl.activeTexture(gl.TEXTURE0 + pic.unit);
-      gl.bindTexture(gl.TEXTURE_2D, pic.live ? pic.live() : pic.tex);
-      gl.uniform1i(u(pic.name), pic.unit);
+    // The scene's uniforms and pictures, for the scene and for each layer pass.
+    const sceneParts = pr => {
+      const u = pr.loc;
+      gl.useProgram(pr.p);
+      gl.uniform2f(u('uRes'), w, h); gl.uniform2f(u('uLamp'), S.light[0], S.light[1]); gl.uniform3fv(u('uLampCol'), lamp);
+      gl.uniform1f(u('uSkyOn'), S.on.sky ? 1 : 0); gl.uniform1f(u('uStars'), sk.stars * S.stars); gl.uniform1f(u('uHazeD'), S.haze * 0.0008); gl.uniform1f(u('uDay'), day);
+      gl.uniform1f(u('uCloud'), S.clouds); gl.uniform3fv(u('uCloudLit'), sk.cloudLit); gl.uniform3fv(u('uCloudShade'), sk.cloudShade); gl.uniform1i(u('uCloudOct'), skyDetail(D.level).cloudOctaves);
+      gl.uniform3fv(u('uZen'), sk.zen); gl.uniform3fv(u('uMid'), sk.mid); gl.uniform3fv(u('uBand'), sk.band); gl.uniform3fv(u('uAnti'), sk.anti); gl.uniform3fv(u('uSunD'), sk.sun);
+      gl.uniform1f(u('uAir'), S.on.air ? S.air : 0); gl.uniform1f(u('uSnow'), S.snow); gl.uniform2f(u('uFall'), fall[0], fall[1]); gl.uniform1i(u('uAirN'), S.snow > 0.5 ? aq.snow : aq.rain);
+      gl.uniform1f(u('uOrbs'), S.on.glow ? S.orbs : 0);
+      gl.uniform1i(u('uOct'), wq.octaves); gl.uniform1i(u('uRingN'), wq.ringLayers); gl.uniform1i(u('uTapN'), D.level > 0 ? 3 : 2);
+      gl.uniform1f(u('uTime'), clock.time); gl.uniform1f(u('uWaterOn'), S.on.water ? 1 : 0);
+      gl.uniform1f(u('uSwell'), S.swell); gl.uniform1f(u('uChop'), S.chop); gl.uniform1f(u('uSets'), S.sets); gl.uniform1f(u('uRings'), S.rings);
+      // The scene's own uniforms: a number, or an array of two to four.
+      setOwn(uniforms, u);
+      for (const pic of pics) {
+        gl.activeTexture(gl.TEXTURE0 + pic.unit);
+        gl.bindTexture(gl.TEXTURE_2D, pic.live ? pic.live() : pic.tex);
+        gl.uniform1i(u(pic.name), pic.unit);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+    };
+    // The layer passes: each lays its shapes over the last, premultiplied.
+    // Their units follow the pictures; units 0 and 1 belong to the runner.
+    const layUnit = 4 + pics.length;
+    if (lay) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, lay.fbo);
+      gl.viewport(0, 0, w, h);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      for (const pr of progPass) {
+        sceneParts(pr);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      gl.disable(gl.BLEND);
     }
-    gl.activeTexture(gl.TEXTURE0);
+    sceneParts(progScene);
+    let u = progScene.loc;
+    if (lay) {
+      lay.texs.forEach((tex, k) => {
+        gl.activeTexture(gl.TEXTURE0 + layUnit + k);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.uniform1i(u(layers[k]), layUnit + k);
+      });
+      gl.activeTexture(gl.TEXTURE0);
+    }
     run(progScene, rtScene);
+    // A layer stays unbound while a pass draws into it.
+    if (lay) {
+      lay.texs.forEach((_, k) => { gl.activeTexture(gl.TEXTURE0 + layUnit + k); gl.bindTexture(gl.TEXTURE_2D, null); });
+      gl.activeTexture(gl.TEXTURE0);
+    }
     if (S.on.glass) {
       // bokeh.js: two 4x4 box steps to an eighth, then the disc gather at half size.
       u = progDown.loc;
