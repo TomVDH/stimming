@@ -582,7 +582,8 @@ const SONGS = {
   kino: {
     url: 'kino.mid', kit: 'kino-kit',
     title: 'Группа крови (Blood Type)', artist: 'Кино (Kino) · arr. 166femm', year: 1988, label: 'Self-released (magnitizdat)',
-    main: { tracks: ['Distortion Guitar'], tone: 'saw', env: 'pad' },
+    // The lead guitar plays power chords: the main voice sings all three notes.
+    main: { tracks: ['Distortion Guitar'], tone: 'saw', env: 'pad', poly: 3 },
     pos: R12,
     parts: [
       { tracks: ['Acoustic Guitar'], range: [75, 127], tone: 'warm', env: 'pluck', decay: 0.5 },
@@ -723,12 +724,12 @@ async function loadSong(id) {
   const seen = new Set(), once = (p, list) => (p.drum ? list : list.filter(([a, , k]) => { const id = `${a}:${k}`; if (seen.has(id)) return false; seen.add(id); return true; }));
   // The main voice sings its top note only: just those notes count as taken, so the rest of a chord reaches the minis.
   const mainAll = lift(S.main, msNotes(tracks, S.main.tracks));
-  // One sweep in start order: a note stays if no sounding note sits above it when it starts.
-  const mainNotes = [];
+  // One sweep in start order: a note stays if fewer than POLY sounding notes sit above it when it starts.
+  const poly = S.main.poly || 1, mainNotes = [];
   let act = [];
   for (const x of mainAll) {
     act = act.filter(y => y[1] > x[0]);
-    if (!act.some(y => y[2] > x[2])) mainNotes.push(x);
+    if (act.filter(y => y[2] > x[2]).length < poly) mainNotes.push(x);
     act.push(x);
   }
   for (const [a, , k] of mainNotes) seen.add(`${a}:${k}`);
@@ -766,8 +767,9 @@ function partStep(P, c) {
   P.act.sort((a, b) => a[2] - b[2]);
   const n = P.p.drum ? Math.min(1, P.act.length) : P.act.length;
   for (let s = 0; s < SLOTS; s++) {
-    // The main voice sings its top note only, so it draws one clean knot, never a filled box.
-    const v = P.slots[s], x = s >= n ? null : P.p.drum || P.isMain ? (s ? null : P.act[n - 1]) : P.act[s];
+    // The main voice sings its top POLY notes; one by default, so it draws one clean knot.
+    const top = P.isMain ? P.p.poly || 1 : 0;
+    const v = P.slots[s], x = s >= n ? null : P.p.drum ? (s ? null : P.act[n - 1]) : top ? (s < top && n - 1 - s >= 0 ? P.act[n - 1 - s] : null) : P.act[s];
     if (x === v.note) continue;
     if (x) {
       const f = HZ[x[2]];
