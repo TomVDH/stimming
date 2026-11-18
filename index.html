@@ -2584,17 +2584,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="snow" href="snow/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <path d="M34 94H94L102 114H26Z" fill="url(#g-wood)"/>
-                <g id="snow-globe">
-                  <circle cx="64" cy="56" r="38" fill="url(#g-globe)"/>
-                  <ellipse cx="64" cy="86" rx="30" ry="7" fill="oklch(0.96 0.01 240)"/>
-                  <path d="M64 50L76 80H52Z" fill="oklch(0.6 0.13 155)"/>
-                  <g id="snow-flakes" fill="oklch(0.98 0.005 240)"></g>
-                  <circle cx="64" cy="56" r="38" fill="url(#lit)"/>
-                  <circle cx="64" cy="56" r="37" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
-                </g>
-              </svg>
+              <svg class="art" viewBox="0 0 128 128" data-box="24 9 80 106" aria-hidden="true"></svg>
             </span>
             <span class="name">Snow globe</span>
           </a>
@@ -4769,20 +4759,153 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     setTimeout(idle, 4000);
   }
 
-  // Snow drifts down inside the dome after a shake.
-  const globe = $('snow-globe');
-  const flakes = Array.from({ length: 12 }, (_, k) => el('circle', {
-    cx: (40 + ((k * 37) % 48)).toFixed(1), cy: (28 + ((k * 23) % 40)).toFixed(1), r: k % 3 ? 1.6 : 2.4,
-  }, $('snow-flakes')));
-  toys.snow = {
-    play: () => loop()
-      .fromTo(globe, { rotation: -6, svgOrigin: '64 104' }, { rotation: 0, svgOrigin: '64 104', duration: 0.6, ease: 'elastic.out(1, 0.4)' })
-      .fromTo(flakes, { y: -10, x: 0, opacity: 0 }, { y: 14, x: 'random(-6, 6)', opacity: 1, duration: 2.2, ease: 'sine.inOut', stagger: 0.12 }, 0),
-    rest() {
-      gsap.to(globe, { rotation: 0, svgOrigin: '64 104', duration: 0.3, overwrite: true });
-      gsap.to(flakes, { y: 0, x: 0, opacity: 1, duration: 0.3, overwrite: true });
-    },
-  };
+  // Snow globe: a night scene in glass on gold and walnut (icon spike snow-1, A).
+  // The pointer rocks the globe; the snow swirls, then falls.
+  {
+    const { f, clamp, poly, lg, rg, blur, light, body, clock, hash, hook } = kit;
+    const svg = $('snow').querySelector('svg'), u = 'snow-';
+    const { sin, hypot, sqrt } = Math;
+    // The toy's tokens: night glass, snow, pine, a red cabin, gold and walnut.
+    const NIGHT = [[0, 'oklch(0.34 0.15 302)'], [0.5, 'oklch(0.3 0.12 280)'], [1, 'oklch(0.42 0.1 245)']];
+    const SNOW = [[0, 'oklch(0.99 0.006 240)'], [1, 'oklch(0.82 0.05 252)']];
+    const SNOW_BACK = [[0, 'oklch(0.9 0.03 255)'], [1, 'oklch(0.72 0.06 262)']];
+    const PINE = [[0, 'oklch(0.6 0.12 150)'], [0.45, 'oklch(0.44 0.1 158)'], [1, 'oklch(0.28 0.07 168)']];
+    const CABIN = [[0, 'oklch(0.64 0.17 30)'], [1, 'oklch(0.44 0.15 24)']];
+    const WARM = 'oklch(0.9 0.14 85)', DOOR = 'oklch(0.32 0.08 30)', BARK = 'oklch(0.36 0.06 50)';
+    // Gold and walnut take two specular bands and a cool right edge.
+    const GOLD = [[0, 'oklch(0.5 0.09 68)'], [0.2, 'oklch(0.95 0.09 92)'], [0.36, 'oklch(0.74 0.13 80)'], [0.78, 'oklch(0.44 0.09 62)'], [0.92, 'oklch(0.7 0.08 230)'], [1, 'oklch(0.45 0.08 65)']];
+    const WOOD = [[0, 'oklch(0.28 0.06 42)'], [0.2, 'oklch(0.6 0.1 58)'], [0.3, 'oklch(0.72 0.09 66)'], [0.4, 'oklch(0.5 0.09 52)'], [0.78, 'oklch(0.27 0.06 42)'], [0.93, 'oklch(0.5 0.07 235)'], [1, 'oklch(0.3 0.05 45)']];
+    // The base in the globe's units: a gold collar, then a walnut foot.
+    const CT = 33, CB = 41, CRX = 28, CRY = 5.5;
+    const COLLAR = `M${-CRX} ${CT}A${CRX} ${CRY} 0 0 0 ${CRX} ${CT}L${CRX} ${CB}A${CRX} ${CRY} 0 0 1 ${-CRX} ${CB}Z`;
+    const FOOT = 'M-27 40C-36 44-37.5 55-33 60A33 6 0 0 0 33 60C37.5 55 36 44 27 40Z';
+    const GROOVE = 'M-40 50A40 6.5 0 0 0 40 50L40 54A40 6.5 0 0 1-40 54Z';
+    // The glass's reflection: a bold crescent at the top left.
+    const CRESCENT = 'M-32.9 12A35 35 0 0 1 12-32.9A44 44 0 0 0-32.9 12Z';
+    // The scene: a far drift, a near drift, three pines and a cabin.
+    const BACK = 'M-42 6C-30-2-18 2-8 6C4 10 18 0 42 4V44H-42Z';
+    const FRONT = 'M-42 23C-28 15-10 17 2 23C14 29 28 19 42 21V44H-42Z';
+    const ground = x => 12 + 3 * sin(x * 0.09);
+    // A pine as three tiers; a snow cap sits on each tier.
+    const pineTiers = (x, base, h, w) => [2, 1, 0].map(i => {
+      const y0 = base - h + i * h * 0.26, y1 = y0 + h * 0.46, hw = w * (0.32 + 0.17 * i), th = y1 - y0;
+      return { tier: poly([[x, y0], [x + hw, y1], [x - hw, y1]]), cap: poly([[x, y0], [x + hw * 0.4, y0 + th * 0.4], [x + hw * 0.08, y0 + th * 0.3], [x - hw * 0.16, y0 + th * 0.42], [x - hw * 0.4, y0 + th * 0.4]]) };
+    });
+    const pine = (x, base, h, w) => `<rect x="${f(x - 1.8)}" y="${f(base - h * 0.2)}" width="3.6" height="${f(h * 0.2)}" fill="${BARK}"/>` +
+      pineTiers(x, base, h, w).map(p => `<path d="${p.tier}" fill="url(#${u}pine)"/><path d="${p.tier}" fill="url(#${u}lit)"/><path d="${p.cap}" fill="url(#${u}snow)"/>`).join('');
+    // As in the toy: a big pine left, one right, a small one front left.
+    const PINES = [[23, 9, 30, 15], [-21, 19, 43, 24], [-5, 29, 19, 11]];
+    const ROOF = poly([[-12.5, 2.5], [1, -9.5], [14.5, 2.5]]);
+    const CAB = poly([[-9, 1], [11, 1], [11, 14], [-9, 14]]);
+    const cabin = `<circle cx="5.5" cy="7.5" r="9" fill="${WARM}" opacity="0.4" filter="url(#${u}wb)"/>
+      <path d="${CAB}" fill="url(#${u}cabin)"/><path d="${CAB}" fill="url(#${u}lit)"/>
+      <rect x="3" y="4.5" width="5.5" height="5.5" rx="0.8" fill="${WARM}"/>
+      <rect x="-5.5" y="6" width="5" height="8" fill="${DOOR}"/>
+      <rect x="7" y="-8" width="4" height="7" fill="oklch(0.42 0.12 28)"/><rect x="6.4" y="-9.4" width="5.2" height="2.4" rx="1" fill="oklch(0.97 0.01 240)"/>
+      <path d="${ROOF}" fill="url(#${u}snow)"/><path d="M1-9.5L14.5 2.5H1Z" fill="oklch(0.78 0.05 255)" opacity="0.55"/>`;
+    // Flake homes sit in the sky on a jittered grid; each is [x, y, r].
+    const HOME = [[-20, -22], [-4, -30], [12, -27], [26, -14], [-30, -6], [-12, -12], [6, -16], [20, -2], [-24, 4], [32, 2], [-6, -2]]
+      .map(([x, y], i) => [x + (hash(i + 1) - 0.5) * 4, y + (hash(i + 40) - 0.5) * 4, 2 + hash(i + 80) * 1]);
+    // The globe's centre and the rock's pivot; the glass radius is 40.
+    const G = { cx: 64, cy: 49, pivot: 66 };
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}wb`, 3)}${blur(`${u}ab`, 3)}
+        <clipPath id="${u}in"><circle r="38.6"/></clipPath>
+        <clipPath id="${u}fc"><path d="${FOOT}"/></clipPath>
+        ${lg(`${u}night`, NIGHT)}
+        ${lg(`${u}snow`, SNOW)}
+        ${lg(`${u}back`, SNOW_BACK)}
+        ${lg(`${u}pine`, PINE, 'x1="0" y1="0" x2="1" y2="0.3"')}
+        ${lg(`${u}cabin`, CABIN, 'x1="0" y1="0" x2="1" y2="1"')}
+        ${lg(`${u}gold`, GOLD, 'x1="0" y1="0" x2="1" y2="0"')}
+        ${lg(`${u}wood`, WOOD, 'x1="0" y1="0" x2="1" y2="0"')}
+        ${rg(`${u}warm`, [[0, WARM, 0.3], [1, WARM, 0]])}
+        ${rg(`${u}aura`, [[0, 'oklch(0.6 0.12 270)', 0.32], [0.6, 'oklch(0.5 0.12 280)', 0.1], [1, 'oklch(0.5 0.12 280)', 0]])}
+        ${lg(`${u}cres`, [[0, '#fff', 0.05], [0.45, '#fff', 0.36], [1, '#fff', 0.04]], 'x1="0" y1="1" x2="1" y2="0"')}</defs>
+      <ellipse cx="64" cy="${G.cy + 66}" rx="38" ry="5" fill="oklch(0.05 0.01 290)" opacity="0.55" filter="url(#${u}ab)"/>
+      <circle cx="64" cy="${G.cy}" r="50" fill="url(#${u}aura)"/>
+      <g transform="translate(${G.cx} ${G.cy})"><g class="rot">
+        ${body(FOOT, u, 'wood')}<path d="${GROOVE}" fill="oklch(0.2 0.05 40)" opacity="0.45" clip-path="url(#${u}fc)"/>
+        <ellipse cx="0" cy="${CT}" rx="${CRX}" ry="${CRY}" fill="oklch(0.42 0.08 66)"/>
+        <circle r="40" fill="url(#${u}night)"/>
+        <g clip-path="url(#${u}in)">
+          <circle cx="2" cy="4" r="30" fill="url(#${u}warm)"/>
+          <path d="${BACK}" fill="url(#${u}back)"/>
+          ${pine(...PINES[0])}
+          ${cabin}
+          ${pine(...PINES[1])}
+          <path d="${FRONT}" fill="url(#${u}snow)"/>
+          ${pine(...PINES[2])}
+          <g class="flakes" fill="oklch(0.99 0.005 240)"></g>
+        </g>
+        <circle r="40" fill="url(#${u}lit)"/>
+        <path d="${CRESCENT}" fill="url(#${u}cres)"/>
+        <circle r="39" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        ${body(COLLAR, u, 'gold')}
+      </g></g>`;
+    const rot = svg.querySelector('.rot'), flakeG = svg.querySelector('.flakes');
+    const fl = HOME.map(([hx, hy, r], i) => ({ hx, hy, x: hx, y: hy, vx: 0, vy: 0, i, t: 0, el: el('circle', { r: f(r) }, flakeG) }));
+    const st = { th: 0, w: 0, live: false, last: null, t: 0 };
+    const draw = () => {
+      rot.setAttribute('transform', `rotate(${f(st.th)} 0 ${G.pivot})`);
+      for (const p of fl) { p.el.setAttribute('cx', f(p.x)); p.el.setAttribute('cy', f(p.y)); }
+    };
+    // A landed flake falls again from the top.
+    const respawn = p => { p.x = (hash(p.i + p.t * 7) - 0.5) * 50; p.y = -sqrt(34 * 34 - p.x * p.x) + 3; p.vx = 0; p.vy = 2; p.t += 1; };
+    const tick = clock(time => {
+      const dt = Math.min(0.1, time - (st.t || time));
+      st.t = time;
+      // A damped spring rights the globe.
+      st.w += (-90 * st.th - 7 * st.w) * dt;
+      st.th = clamp(st.th + st.w * dt, -10, 10);
+      for (const p of fl) {
+        if (st.live) {
+          // The water lags the glass; the flakes sink and sway.
+          p.vx += (5 * sin(time * 1.7 + p.hx) - 0.5 * st.w) * dt;
+          p.vy += 13 * dt;
+          const k = 1 - 1.4 * dt;
+          p.vx *= k; p.vy *= k;
+          p.x += p.vx * dt; p.y += p.vy * dt;
+          const d = hypot(p.x, p.y);
+          if (d > 35) { p.x *= 35 / d; p.y *= 35 / d; p.vx *= -0.4; p.vy *= -0.4; }
+          if (p.y > ground(p.x)) respawn(p);
+        } else {
+          // At rest each flake drifts home.
+          p.x += (p.hx - p.x) * 0.07; p.y += (p.hy - p.y) * 0.07; p.vx = p.vy = 0;
+        }
+      }
+      draw();
+      // A globe at rest stops its tick: an idle menu does no work.
+      if (!st.live && Math.abs(st.th) + Math.abs(st.w) * 0.1 < 0.03 && fl.every(p => Math.abs(p.x - p.hx) + Math.abs(p.y - p.hy) < 0.05)) {
+        st.th = st.w = 0; fl.forEach(p => { p.x = p.hx; p.y = p.hy; }); draw(); tick.stop();
+      }
+    });
+    draw();
+    const toLocal = p => p && [p[0] - G.cx, p[1] - G.cy];
+    const c = {
+      enter(p) {
+        st.live = true;
+        const q = toLocal(p);
+        // The entry shakes the globe away from the pointer's side.
+        st.w += q && q[0] > 0 ? -70 : 70;
+        fl.forEach((p2, i) => { p2.vx = (hash(i + 7 + st.t) - 0.5) * 40; p2.vy = -4 - hash(i + 9) * 18; });
+        st.last = q; tick.start();
+      },
+      // A sideways pointer rocks the globe and stirs the snow.
+      move(p) {
+        const q = toLocal(p);
+        if (!q) return;
+        if (st.last) {
+          const dx = clamp(q[0] - st.last[0], -8, 8);
+          st.w = clamp(st.w + dx * 7, -140, 140);
+          fl.forEach(p2 => { p2.vx += dx * 1.6; p2.vy -= Math.abs(dx) * 0.8; });
+        }
+        st.last = q;
+      },
+      leave() { st.live = false; st.last = null; tick.start(); },
+    };
+    // The demo rocks the globe from side to side.
+    hook('snow', c, { period: 3, at: a => [64 + 20 * sin(a), 60] });
+  }
 
   // A lit train crosses the viaduct while snow falls.
   const vTrain = $('viaduct-train');
