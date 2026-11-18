@@ -228,7 +228,8 @@ const LINES = [
 const casters = [], pluckable = [];
 let wireStart = 0, shoeHost = [0, 0, 0], shoePiv = null, shoeSide = [-1, 0, 0], shoeAlong = [-1, 0, 0];
 // Lace lengths in metres, from the wire to the knot.
-const SHOE_LACE = [0.64, 0.8];
+// One shoe hangs clearly higher; their bodies still overlap enough to bump.
+const SHOE_LACE = [0.54, 0.84];
 function buildLane() {
   spans = 0;
   pluckable.length = 0;

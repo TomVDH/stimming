@@ -5,7 +5,7 @@ status: completed
 type: bug
 priority: normal
 created_at: 2026-11-18T02:03:44Z
-updated_at: 2026-11-18T02:53:21Z
+updated_at: 2026-11-18T03:00:35Z
 parent: stimming-guw5
 ---
 
@@ -64,3 +64,5 @@ East Van Alley (`wires/main.js`), pushed in 03932273, 73482b5d, f96f8dc3 and d21
 - Car: night only, random routes (lane or under the shoe wire), alley speeds, red rear beam, the first one soon after dark.
 - Hold Now for a timelapse on the shared clock; Dev rows for sun bearing, shadow darkness and post (AgX, Portra 400 look).
 - Sky: physical Rayleigh and Mie with ozone and Earth's shadow; moonlit night with city glow; the palette only as a twilight glow.
+
+- [x] Tom (19:54): the shoes hang askew, one high and one low: laces 0.54 and 0.84 m
