@@ -352,7 +352,7 @@ function buildLane() {
       if (i !== ni) continue;
       // A splice case closes round the upper cable, on its axis.
       // It draws after the cable, so the cable enters at its ends.
-      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.042, RUBBER);
+      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.065, RUBBER);
       if (strand === 2) {
         // The telecom drop leaves from a clamp on the lower strand.
         w.rider(0.011, 0.014, 0.012, ALU);
@@ -1869,9 +1869,10 @@ function startCar() {
   if (Math.random() < 0.5) dir = dir.map(v => -v);
   car.dir = dir;
   car.from = sub(mid, dir.map(v => v * 20));
-  car.len = 90;
+  car.len = 60;
   car.s = 0;
-  car.v = rand(5, 14);
+  // Cars roll through the alley: about 9 to 20 km/h.
+  car.v = rand(2.5, 5.5);
   car.beam = unit([dir[0], 0.3, dir[2]]);
   car.back = unit([-dir[0], 0.25, -dir[2]]);
   car.on = true;
