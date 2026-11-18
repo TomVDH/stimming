@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T09:21:18Z
+updated_at: 2026-11-18T09:46:45Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -56,3 +56,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - [x] TASCHENRECHNER added; DENTAKU main sings synth melody and trombone vocal; TOUR main is the synth pluck tune and plays twice; minis dim near their centre (no hot squares); mini volume up to 150 % with a second ring.
 
 - [x] AUTOBAHN added (arr. richz, 10 min): lead lines on main, cello by register, 14 minis.
+
+- [x] DOTA moved to the Blubbpaule arrangement; ANNA added (Boten Anna, plays twice); a main voice takes keys, skip and range filters.

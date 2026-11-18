@@ -886,6 +886,19 @@ const SONGS = {
       'Koto': ['sample', -0.25, 33, 0], 'Sitar': ['sample', 0.2, 22, 0], 'Trombone (Classic)': ['sample', -0.15, 10, 0], 'Flute (Classic)': ['sample', 0.1, 23, 0],
       'Electric Guitar': ['sample', -0.2, 4, 0], 'Concert Harp': ['sample', 0, 18, 0], '8-Bit Triangle': ['tri', 0] },
   },
+  // ANNA: one electric piano; its tune sings on the main scope, its bass on two minis below.
+  // The arrangement is 24 beats; it plays twice.
+  anna: {
+    url: 'anna.mid', kit: 'anna-kit', loop: [24 * 60 / 110, 2],
+    title: 'Boten Anna', artist: 'Basshunter · arr. anonymous', year: 2006, label: 'Warner Music Sweden',
+    main: { tracks: ['Elec. Piano (Classic)'], range: [63, 127], tone: 'warm', env: 'pad' },
+    pos: [[-3, -4], [3, -4]],
+    parts: [
+      { tracks: ['Elec. Piano (Classic)'], range: [0, 47], tone: 'bass', env: 'pluck', decay: 0.4, lv: 1.4 },
+      { tracks: ['Elec. Piano (Classic)'], range: [48, 62], tone: 'soft', env: 'pluck', decay: 0.4, lv: 0.9 },
+    ],
+    full: { 'Elec. Piano (Classic)': ['sample', 0, 0, 0] },
+  },
   // BEAT: doubled tracks share a mini; the drums take the bottom three.
   beat: {
     url: 'beat.mid', kit: 'beat-kit',
@@ -1019,7 +1032,8 @@ async function loadSong(id) {
   // A part whose notes another part already plays drops them, so layered tracks never comb.
   const seen = new Set(), once = (p, list) => (p.drum ? list : list.filter(([a, , k]) => { const id = `${a}:${k}`; if (seen.has(id)) return false; seen.add(id); return true; }));
   // The main voice sings its top note only: just those notes count as taken, so the rest of a chord reaches the minis.
-  const mainAll = lift(S.main, msNotes(tracks, S.main.tracks));
+  // The main voice takes the same note filters as a part: keys, skip and range.
+  const mainAll = lift(S.main, msNotes(tracks, S.main.tracks, S.main));
   // One sweep in start order: a note stays if fewer than POLY sounding notes sit above it when it starts.
   // Notes that start together are taken highest first, so a chord's lower notes never count as the top.
   const poly = S.main.poly || 1, mainNotes = [];
