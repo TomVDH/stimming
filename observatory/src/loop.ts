@@ -16,7 +16,7 @@ import { trackingLamp } from './world/lamp.ts';
 import { lights } from './world/lights.ts';
 import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
-import { lightGoal, lightLevel } from './core/sequence.ts';
+import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { cuts } from './view/cuts.ts';
 import { hero } from './world/hero.ts';
@@ -84,6 +84,8 @@ if (!opening.done) driveClock(opening, clock);
 let intro = document.querySelector('.intro') !== null;
 // True once a frame shows the night look after the opening.
 let nightSet = false;
+// The cuts' film beat.
+const film = { acc: 1 / CUT_FPS };
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
 // Draws so far, for QA: a slow track draws every few seconds.
 let draws = 0;
@@ -217,7 +219,14 @@ function tick(now: number): void {
     stepAxis(d.ax, target, dt, d.lim);
     dirty = true;
   }
-  if (dirty) draw();
+  // The cuts render on a 24 fps beat.
+  // The machine, the clock and the cuts stepped above, on real time.
+  if (dirty) {
+    // Outside the cuts the beat stands primed.
+    // So a cut's first frame renders at once.
+    if (!cuts.film) { film.acc = 1 / CUT_FPS; draw(); }
+    else if (cadence(film, dt)) draw();
+  }
   if (awake()) raf = requestAnimationFrame(tick);
   else lastT = 0;
 }
@@ -409,6 +418,8 @@ window.__qa = {
   hero(on: boolean) { cuts.hold(on); draw(); },
   // The hero's triangles, draw calls and build time.
   get heroStats() { return hero.stats(); },
+  // The shader programs on the GPU: no cut may add one.
+  get programs() { return renderer.info.programs?.length ?? 0; },
   // The opening's time and state.
   get opening() {
     const o = opening;

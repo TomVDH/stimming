@@ -1,6 +1,6 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Matrix4, Raycaster, Vector3 } from 'three';
+import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
@@ -14,7 +14,7 @@ import { complex } from '../world/complex.ts';
 import { hero } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
-import { cutFocus } from '../post/chain.ts';
+import { cutFocus, cutGrain } from '../post/chain.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
@@ -57,12 +57,11 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // The ring beam's curve runs along the foot of the frame.
   // A portrait frame aims at the tube's middle.
   lift: { eye: [-0.55, -0.45, -0.42], look: [0.35, 0, 0.24], tall: [0.25, -0.05, 0.14], inside: true, aperture: 0.012 },
-  // d. Outside, high on the slit's right, a long lens.
-  // The riveted gores fill the left.
-  // The slit is a dark band.
-  // The dew shield rises while the cupola carries the slit round.
+  // d. Low and far on the slit's right, a narrow lens.
+  // The dome's plates fill the left and the middle.
+  // The open slit stands on the right, the tube rising inside it.
   // A portrait frame aims at the dew shield.
-  roll: { eye: [2.283, 0.742, 0.5], look: [0.74, 0.04, 0.25], tall: [0.74, -0.04, 0.27], aperture: 0.01 },
+  roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.4], tall: [0.72, 0, 0.3], aperture: 0.01 },
 };
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
@@ -268,6 +267,10 @@ let stillT = 0, fadeT = 0, grab = false;
 // The time in the dip.
 // dipWide is true once the black hides the change to the wide shot.
 let dipT = 0, dipWide = false;
+// Seconds since the pick, for the dip into the first shot.
+// The wide shot fades down in DIP_DOWN.
+// The first shot fades up in DIP_UP.
+let inT = 0;
 // The shot the dip holds.
 let lastShot: Shot = 'glass';
 // The locked cameras: each cut sets its own on its first frame.
@@ -302,13 +305,22 @@ let stars: readonly Star[] | null = null, starsSet = false;
 function feedGlass(show: boolean): void {
   const sc = hero.scope;
   if (!sc) return;
-  if (stars && !starsSet) { sc.setStars(stars); starsSet = true; }
+  if (stars && !starsSet) {
+    sc.setStars(stars);
+    starsSet = true;
+    // The star map goes to the GPU now, not in the glass shot.
+    // Before the hero's warm-up, the warm-up uploads it.
+    const u = (renderer.properties.get(sc.glass.material) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+    const map = u?.uStars?.value;
+    if (map instanceof Texture) renderer.initTexture(map);
+  }
   if (show && sky.points) sc.setSky(sky.points.matrix);
 }
 
 function toWide(): void {
   mode = 'off';
   cutFocus(null);
+  cutGrain(0);
   showBars(false);
   black(0);
   still.style.display = 'none';
@@ -319,7 +331,8 @@ function toWide(): void {
 // Steps the dip: the last cut fades down, the wide shot fades up.
 function stepDip(dt: number): void {
   dipT += dt;
-  if (dipT < DIP_DOWN) { const k = dipT / DIP_DOWN; black(k * k); return; }
+  // The black and the grain change in frame(), on the film beat.
+  if (dipT < DIP_DOWN) return;
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
@@ -329,6 +342,7 @@ function stepDip(dt: number): void {
     // This frame shows full black.
     black(1);
     cutFocus(null);
+    cutGrain(0);
     return;
   }
   const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
@@ -349,12 +363,16 @@ export const cuts = {
   // True while a close shot or the dip shows; a tap or Esc then skips.
   get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
   get shot(): Shot | null {
-    if (mode === 'cuts') return seq.shot;
+    // The wide shot still shows while it fades to black.
+    if (mode === 'cuts') return inT < DIP_DOWN ? null : seq.shot;
     if (mode === 'dip') return dipWide ? null : lastShot;
     return mode === 'still' ? 'glass' : null;
   },
   // Seconds since the pick.
   get time(): number { return seq.total; },
+  // True while the picture runs on the film beat.
+  // That is the five shots and the dip down.
+  get film(): boolean { return mode === 'cuts' || (mode === 'dip' && !dipWide); },
   // The loop hands over the catalog once it loads.
   setStars(s: readonly Star[]): void { stars = s; },
   // Starts the sequence.
@@ -372,6 +390,7 @@ export const cuts = {
     // Reduced motion waits in the wide shot until the tube rests.
     mode = reduced() ? 'wait' : 'cuts';
     stillT = 0;
+    inT = 0;
     locks.clear();
     useHero = hero.ready;
     cutShot = null;
@@ -392,6 +411,7 @@ export const cuts = {
     if (mode === 'off') return;
     view = v;
     if (mode === 'cuts') {
+      inT += dt;
       seq = stepSeq(seq, dt, v);
       if (seq.done) {
         lastShot = seq.shot;
@@ -416,7 +436,10 @@ export const cuts = {
   },
   // Sets the camera for the current shot. The loop calls it before each render.
   frame(): void {
-    const close = mode === 'cuts' || mode === 'still' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
+    // A pick dips to black first.
+    // The wide shot fades down, then the first shot comes up.
+    const inDown = mode === 'cuts' && inT < DIP_DOWN;
+    const close = (mode === 'cuts' && !inDown) || mode === 'still' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
     // The dip holds the last cut until the frame is black.
     // The reduced-motion still is the glass shot.
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
@@ -425,12 +448,23 @@ export const cuts = {
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
-    if (!close) { cutFocus(null); return; }
+    if (!close) {
+      cutFocus(null);
+      cutGrain(0);
+      if (inDown) black((inT / DIP_DOWN) ** 2);
+      return;
+    }
     const s = locks.of(cutOf(shot));
     if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     applyShot(camera.aspect, s.eye, s.aim, s.fov);
     cutFocus(s);
+    // The dip fades down to black, and the cuts' grain eases back.
+    if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
+    else cutGrain(1);
+    // The first shot fades up from the black.
+    // The camera and the hero swapped under it.
+    if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
     beam(BEAM_CLOSE);
     showBars(true);
   },

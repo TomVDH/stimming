@@ -2,7 +2,7 @@
 import '../setup.ts';
 // The haze amount is copied from railgun/src/sky/k2-haze.glsl.
 // The night colours come from railgun/src/sky/sun.ts.
-import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector3 } from 'three';
+import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector2, Vector3 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the night air: a moonless sky, a faint horizon glow, low haze ---------- */
@@ -59,15 +59,21 @@ scene.fog = fog;
 // At night they hold the night values.
 // uWarm is the sunset glow, black at night.
 // uSun points at the sunset on the horizon.
+// uGlow shapes the glow: x is its spread round the sun, in radians.
+// y is how fast it fades with height.
+// The golden hour spreads it wider and higher.
+// uRidge is the late sun on the far ridges, black after the golden hour.
 export const skyU = {
   uZen: { value: ZENITH.clone() }, uHor: { value: HORIZON.clone() },
   uWarm: { value: new Color(0, 0, 0) }, uSun: { value: new Vector3(-1, 0, 0) },
+  uGlow: { value: new Vector2(0.75, 10) }, uRidge: { value: new Color(0, 0, 0) },
 };
 // The sky's colour in direction d.
 // The far ridges share it.
 // So they fade into the sky behind them.
 export const SKY_GLSL = /* glsl */`
 uniform vec3 uZen, uHor, uWarm, uSun;
+uniform vec2 uGlow;
 vec3 skyColor(vec3 d) {
   float up = max(d.y, 0.0);
   vec3 col = mix(uHor, uZen, pow(up, 0.45));
@@ -79,7 +85,7 @@ vec3 skyColor(vec3 d) {
     // The guard keeps the zenith free of a zero-length vector.
     vec2 h = d.xz / max(length(d.xz), 1e-4);
     float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
-    col += uWarm * exp(-away / 0.75) * exp(-up * 10.0);
+    col += uWarm * exp(-away / uGlow.x) * exp(-up * uGlow.y);
   }
   return col;
 }`;

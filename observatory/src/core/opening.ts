@@ -1,34 +1,71 @@
-// The opening: dusk into night before play.
+// The opening: the golden hour into night before play.
 // The module is pure.
 // A test steps it by hand.
 // Times are in seconds from the page load.
 import type { Clock } from './clock.ts';
 
-// Dusk to full night takes this long.
-export const OPENING_S = 45;
+// The golden hour to full night takes this long.
+export const OPENING_S = 10;
 // A tap or Esc reaches night in this time.
-export const SKIP_S = 1.5;
+export const SKIP_S = 0.8;
 // After night, the beam fades in over this time.
 export const BEAM_S = 1;
-// The sun sinks from 4 to 18 degrees below the horizon.
+// The sun sinks from 3 degrees above the horizon to 18 below.
+// The western ridge hides it, so only its light shows.
 // At 18 degrees below, the night is full.
-export const SUN_START = -4, SUN_END = -18;
-// The faintest star that shows rises from magnitude 0 to 6.5.
-export const MAG_START = 0, MAG_END = 6.5;
+export const SUN_START = 3, SUN_END = -18;
+// The faintest star that shows rises from magnitude -2.5 to 6.5.
+// At -2.5 no star shows.
+export const MAG_START = -2.5, MAG_END = 6.5;
+// The first stars show from this time.
+// The limit reaches MAG_END at STARS_TO.
+const STARS_FROM = 2, STARS_TO = 8.5;
 // The sky clock's top speed, in sky seconds per real second.
 // It stays under the trail speed, 120.
-export const PEAK_SPEED = 100;
+export const PEAK_SPEED = 110;
+// The clock holds its top speed until HOLD_S.
+// Then it eases to speed 1 at full night.
+export const HOLD_S = 8.5;
+// A streak shows the sky's turn over this many real seconds.
+// Only the turn past real time counts.
+// So a streak is zero at speed 1.
+// It does not follow the opening's length.
+export const EXPOSURE_S = 8;
 // The lamps come on between these times.
 // Each lamp takes LAMP_RAMP seconds to reach full.
-export const LAMP_FROM = 14, LAMP_TO = 38, LAMP_RAMP = 1.2;
+export const LAMP_FROM = 5, LAMP_TO = 8.5, LAMP_RAMP = 0.3;
 
 const END = OPENING_S + BEAM_S;
+// The sky turns this many degrees per second at speed 1.
+const SIDEREAL = 360 / 86164.0905;
+// The clock's ease from the peak to speed 1 takes this long.
+const EASE_S = OPENING_S - HOLD_S;
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
 const ease = (k: number): number => k * k * (3 - 2 * k);
-// The area under 1 - ease from u to 1.
+// The inverse of ease on 0 to 1.
+const unease = (y: number): number => 0.5 - Math.sin(Math.asin(1 - 2 * clamp01(y)) / 3);
+// The clock's ease is smoother at its ends.
+// So the streaks settle without a jerk.
+const smoother = (k: number): number => k * k * k * (k * (6 * k - 15) + 10);
+// The area under 1 - smoother from u to 1.
 // It is 0.5 at u = 0.
 // It is 0 at u = 1.
-const easeRest = (u: number): number => 0.5 - u + u * u * u - u * u * u * u / 2;
+const smootherRest = (u: number): number => 0.5 - u + u ** 4 * (2.5 - 3 * u + u * u);
+
+// The clock's speed above 1, as a share of the peak's, at time t.
+function fast(t: number): number {
+  return t <= HOLD_S ? 1 : 1 - smoother(clamp01((t - HOLD_S) / EASE_S));
+}
+const speedAt = (t: number): number => 1 + (PEAK_SPEED - 1) * fast(t);
+// The streak at time t, in degrees of the sky's turn.
+const streakAt = (t: number): number => (speedAt(t) - 1) * EXPOSURE_S * SIDEREAL;
+
+// The streak for a dusk w, in degrees of the sky's turn.
+// The sun follows ease, so w gives the time back.
+// The renderer reads dusk() alone, so it uses this.
+export function streakForDusk(w: number): number {
+  return w <= 0 ? 0 : streakAt(OPENING_S * unease(1 - w));
+}
 
 export type Opening = {
   // Seconds on the opening's timeline.
@@ -47,11 +84,14 @@ export type Opening = {
   seek(t: number): void;
   sunAlt(): number;
   // 1 at the start, 0 at full night.
+  // It is linear in the sun's altitude.
   dusk(): number;
   magLimit(): number;
   speed(): number;
   // How far the sky runs behind real time, in ms.
   lagMs(): number;
+  // The star streak, in degrees of the sky's turn.
+  streak(): number;
   // Lamp i of n: 0 off, 1 full.
   lamp(i: number, n: number): number;
   beam(): number;
@@ -61,10 +101,15 @@ export function makeOpening(reduced: boolean): Opening {
   // Reduced motion opens at night.
   let t = reduced ? END : 0;
   let skipping = false, skipFrom = 0, skipK = 0;
-  // Progress through the dusk, linear in time.
+  // Progress through the opening, linear in time.
   const p = (): number => clamp01(t / OPENING_S);
   // The sun's descent eases in and out.
   const e = (): number => ease(p());
+  // The stars come out fast, then slower.
+  const stars = (): number => {
+    const q = clamp01((t - STARS_FROM) / (STARS_TO - STARS_FROM));
+    return 1 - (1 - q) ** 3;
+  };
 
   return {
     get t() { return t; },
@@ -94,11 +139,16 @@ export function makeOpening(reduced: boolean): Opening {
     },
     sunAlt: () => SUN_START + (SUN_END - SUN_START) * e(),
     dusk: () => 1 - e(),
-    magLimit: () => MAG_START + (MAG_END - MAG_START) * e(),
-    speed: () => 1 + (PEAK_SPEED - 1) * (1 - e()),
+    magLimit: () => MAG_START + (MAG_END - MAG_START) * stars(),
+    speed: () => speedAt(t),
     // The lag is what the fast clock still gains before night.
     // So the sky reaches real time at full night.
-    lagMs: () => (PEAK_SPEED - 1) * OPENING_S * 1000 * easeRest(p()),
+    lagMs: () => {
+      const hold = Math.max(0, HOLD_S - t);
+      const rest = EASE_S * smootherRest(clamp01((t - HOLD_S) / EASE_S));
+      return (PEAK_SPEED - 1) * (hold + rest) * 1000;
+    },
+    streak: () => streakAt(t),
     lamp(i, n) {
       const at = n > 1 ? LAMP_FROM + (LAMP_TO - LAMP_FROM) * i / (n - 1) : LAMP_FROM;
       return clamp01((t - at) / LAMP_RAMP);
