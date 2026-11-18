@@ -432,7 +432,8 @@ const SONGS = {
     parts: [
       // The sequenced bass rides the iconic beat: each note strikes and dies, so it stays on the beat.
       { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pluck', decay: 0.12, lv: 2 },
-      { tracks: ['Sitar', 'Church Organ (Classic)', 'Acoustic Gtr (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
+      // The riff is written as 27 ms notes; a short ring keeps its 16ths crisp.
+      { tracks: ['Sitar', 'Church Organ (Classic)', 'Acoustic Gtr (Classic)'], tone: 'warm', env: 'pluck', decay: 0.1 },
       { tracks: ['Pop Synth (Classic)'], tone: 'soft', env: 'pad', lv: 0.8 },
       { tracks: ['8-Bit Sawtooth', '8-Bit Sine'], tone: 'saw', env: 'pad', lv: 0.5 },
       { tracks: ['Elec. Piano (Classic)', 'Smooth Synth (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
@@ -446,7 +447,7 @@ const SONGS = {
     full: {
       'Scifi': ['sample', 0.3, 7, 0], 'Sitar': ['sample', -0.2, 22, 0], 'Pop Synth (Classic)': ['sample', 0.2, 30, 0],
       'Church Organ (Classic)': ['sample', 0.1, 28, 0], 'Acoustic Gtr (Classic)': ['sample', -0.1, 1, 0], 'Bass Guitar (Classic)': ['sample', 0, 5, 0],
-      '8-Bit Sine': ['sine8', 0.1], '8-Bit Sawtooth': ['saws', 0.2],
+      '8-Bit Sine': ['sine8', 0.1], '8-Bit Sawtooth': ['saw8', 0.2],
       '909 Drum Kit': ['sample', 0, 42, 0, 24, { 35: 5, 36: 4, 38: 8, 41: 9, 43: 10, 45: 11, 47: 12, 48: 13, 50: 14, 37: 15, 39: 16, 42: 18, 46: 20, 49: 21, 59: 22 },
         { 35: 1.4, 45: 2, 38: 1.8, 42: 1.8 }],
     },
@@ -473,7 +474,7 @@ const SONGS = {
   },
   // PLASTIC: an Online Sequencer export; doubled tracks share a mini; twelve minis, no corners.
   plastic: {
-    url: 'plastic.mid', kit: 'plastic-kit', velDiv: 50, off: 24, octUp: 12,
+    url: 'plastic.mid', kit: 'plastic-kit', velDiv: 50, off: 24, octUp: 12, snap: true,
     // Doubled tracks are dropped, so each part plays once.
     drop: ['Muted E-Guitar', 'Violin (Classic)', '8-Bit Triangle'],
     title: 'Plastic Love', artist: 'Mariya Takeuchi', year: 1984, label: 'Moon Records',
@@ -1083,7 +1084,9 @@ function fullNote(c, out, noise, kind, k, v, t, d) {
     }
     case 'bit': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 3500, 0.5, out), t, 0.005, v * 0.35, d, 0.08); fosc(c, 'square', f, t, e, g); return; }
     case 'square': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 2800, 0.5, out), t, 0.005, v * 0.35, d, 0.1); fosc(c, 'square', f, t, e, g); return; }
-    case 'sine8': { const [g, e] = fheld(c, out, t, 0.005, v * 0.35, d, 0.08); fosc(c, 'sine', f, t, e, g); return; }
+    // The site's 8-bit voices: a hard 2 ms start and a 30 ms tail, so short notes stay short.
+    case 'saw8': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 3200, 0.5, out), t, 0.002, v * 0.3, d, 0.03); fosc(c, 'sawtooth', f, t, e, g); return; }
+    case 'sine8': { const [g, e] = fheld(c, out, t, 0.002, v * 0.35, d, 0.03); fosc(c, 'sine', f, t, e, g); return; }
     case 'tri': { const [g, e] = fheld(c, out, t, 0.005, v * 0.6, d, 0.15); fosc(c, 'triangle', f, t, e, g); return; }
     case 'fart': {
       const lp = ffilt(c, 'lowpass', 300, 4, out), [g, e] = fheld(c, lp, t, 0.005, v * 0.7, d, 0.06);
