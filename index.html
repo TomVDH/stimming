@@ -2587,14 +2587,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         <li>
           <a class="toy" id="marble" href="marble/index.html">
             <span class="obj">
-              <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
-                <rect x="16" y="16" width="96" height="96" rx="14" fill="url(#g-marble)"/>
-                <g id="marble-swirl" fill="none" stroke-width="5" stroke-linecap="round">
-                  <path d="M28 46C46 30 60 62 78 46S100 40 98 56" stroke="oklch(0.5 0.15 262)"/>
-                  <path d="M28 66C46 50 60 82 78 66S100 60 98 76" stroke="oklch(0.6 0.18 28)"/>
-                  <path d="M28 86C46 70 60 102 78 86S100 80 98 96" stroke="oklch(0.78 0.15 80)"/>
-                </g>
-              </svg>
+              <svg class="art" viewBox="0 0 128 128" data-box="9 9 110 92" aria-hidden="true"></svg>
             </span>
             <span class="name">Marbling</span>
           </a>
@@ -4351,12 +4344,154 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     },
   };
 
-  const swirl = [...$('marble-swirl').children];
-  toys.marble = {
-    // The comb drags each ink line in turn.
-    play: () => loop({ yoyo: true }).to(swirl, { x: 6, skewX: -8, duration: 0.9, ease: 'sine.inOut', stagger: 0.15 }),
-    rest: () => gsap.to(swirl, { x: 0, skewX: 0, duration: 0.3, overwrite: true }),
-  };
+  // Marbling: the enamel tray, the ink and the comb (icon spike marble-1, A).
+  // The pointer holds the comb: depth drags it, x shifts the tines.
+  // Each tine carries ink at its tip; calm ink settles back.
+  {
+    const { f, clamp, poly, lg, blur, light, body, clock, hook } = kit;
+    const svg = $('marble').querySelector('svg'), u = 'marble-';
+    const { sin, exp, PI } = Math;
+    // The toy's tokens: its four inks on a cream size bath.
+    const NAVY = 'oklch(0.38 0.13 266)', RED = 'oklch(0.56 0.18 26)', OCHRE = 'oklch(0.8 0.145 78)', TEAL = 'oklch(0.55 0.1 198)';
+    const CREAM = 'oklch(0.95 0.03 88)';
+    // The bands from far to near; cream gaps part the inks.
+    const BANDS = [OCHRE, NAVY, CREAM, RED, TEAL, CREAM, NAVY, OCHRE];
+    // The tray is navy enamel; the comb is walnut and steel.
+    const ENAMEL = [[0, 'oklch(0.56 0.12 252)'], [0.55, 'oklch(0.4 0.12 262)'], [1, 'oklch(0.3 0.1 266)']];
+    const WALL = [[0, 'oklch(0.36 0.11 262)'], [1, 'oklch(0.22 0.08 268)']];
+    const BATH = [[0, 'oklch(0.97 0.025 92)'], [1, 'oklch(0.88 0.045 80)']];
+    const WOOD = [[0, 'oklch(0.62 0.11 48)'], [0.6, 'oklch(0.44 0.1 38)'], [1, 'oklch(0.32 0.08 34)']];
+    const STEEL = [[0, 'oklch(0.8 0.015 250)'], [0.45, 'oklch(0.55 0.025 255)'], [1, 'oklch(0.34 0.03 260)']];
+    // The tray seen from the front and above, in a light perspective.
+    // Model units: u across from the middle, v from far to near.
+    const PA = (uu, v) => { const s = 0.8 + 0.2 * (v + 9) / 67; return [64 + uu * s, 36 + v * 0.74]; };
+    // A rounded rectangle in model units, traced and projected.
+    const pRect = (u0, v0, u1, v1, r, dy = 0) => {
+      const pts = [], arc = (cu, cv, a0) => { for (let i = 0; i <= 6; i++) { const a = a0 + (i / 6) * (PI / 2); pts.push([cu + r * Math.cos(a), cv + r * Math.sin(a)]); } };
+      arc(u1 - r, v0 + r, -PI / 2); arc(u1 - r, v1 - r, 0); arc(u0 + r, v1 - r, PI / 2); arc(u0 + r, v0 + r, PI);
+      return poly(pts.map(([a, b]) => { const q = PA(a, b); return [q[0], q[1] + dy]; }));
+    };
+    // A tine: a bar with a round tip.
+    const tine = (x, top, tip, w) => `M${f(x - w)} ${f(top)}L${f(x + w)} ${f(top)}L${f(x + w)} ${f(tip - w)}Q${f(x + w)} ${f(tip)} ${f(x)} ${f(tip)}Q${f(x - w)} ${f(tip)} ${f(x - w)} ${f(tip - w)}Z`;
+    const TINES = [-36, -18, 0, 18, 36], LIFT = 12, BOARD = 12;
+    const cfg = {
+      bath: [-47, 47, 0, 49], wave: 1.8, fade: 70, rest: 10, range: [2, 34],
+      hold: p => [(p[1] + LIFT + BOARD / 2 - 36) / 0.74, (p[0] - 64) * 0.12],
+      comb(c, sx) {
+        const L = PA(-51 + sx, c), R = PA(51 + sx, c), Lb = PA(-51 + sx, c - 4), Rb = PA(51 + sx, c - 4);
+        const up = (q, k) => [q[0], q[1] - k];
+        // The board: a front face and a lit top strip.
+        return {
+          spine: poly([up(L, LIFT), up(R, LIFT), up(R, LIFT + BOARD), up(L, LIFT + BOARD)]),
+          top: poly([up(L, LIFT + BOARD), up(R, LIFT + BOARD), up(Rb, LIFT + BOARD), up(Lb, LIFT + BOARD)]),
+          tines: TINES.map(t => { const q = PA(t + sx, c); return tine(q[0], q[1] - LIFT - 1, q[1], 3); }).join(''),
+          shadow: poly([PA(-46 + sx, c + 1), PA(46 + sx, c + 1), PA(46 + sx, c + 6), PA(-46 + sx, c + 6)]) + TINES.map(t => { const q = PA(t + sx + 2, c + 3); return tine(q[0], q[1] - 6, q[1] + 1, 2.8); }).join(''),
+        };
+      },
+    };
+    // Each band boundary is a curve v(u); each tine pulls it.
+    // The pull fades with distance from the comb.
+    const SIG = 3.8;
+    const pull = (uu, sx) => TINES.reduce((s, t) => s + exp(-(((uu - t - sx) / SIG) ** 2)), 0);
+    const edge = (v0, i, uu, c, drag) => {
+      const base = v0 + cfg.wave * sin(uu * 0.11 + i * 1.7);
+      const g = Math.min(1, pull(uu, 0));
+      // In front of the comb a boundary stretches into a tongue.
+      if (base > c) return base - (base - c) * 0.9 * drag * g * exp(-(base - c) / cfg.fade);
+      // Behind the comb a boundary gets a small push.
+      return base - 3 * drag * g * exp(-(c - base) / 6);
+    };
+    // The rest boundaries: one row of v per sampled u, 2 units apart.
+    const [u0, u1, v0, v1] = cfg.bath, n = BANDS.length, step = (v1 - v0) / n;
+    const us = [];
+    for (let x = u0 - 2; x <= u1 + 2.01; x += 2) us.push(x);
+    const rest = [];
+    for (let i = 1; i < n; i++) rest.push(us.map(x => edge(v0 + i * step, i, x, cfg.rest, 0.85)));
+    const rows = rest.map(r => r.slice());
+    // Each band fills from its far boundary to past the near edge.
+    // Later bands paint over earlier ones, so crossed curves stay clean.
+    const near = [PA(u1 + 6, v1 + 6), PA(u0 - 6, v1 + 6)];
+    const inkPaths = () => BANDS.map((_, i) => {
+      const a = i === 0 ? [PA(u0 - 6, v0 - 6), PA(u1 + 6, v0 - 6)] : us.map((x, k) => PA(x, rows[i - 1][k]));
+      return 'M' + [...a, ...near].map(q => `${f(q[0])} ${f(q[1])}`).join('L') + 'Z';
+    });
+    // The tray's slab: the wall below, then the top face.
+    const TOP = pRect(-55, -9, 55, 58, 12), SLAB = pRect(-55, -9, 55, 58, 12, 12);
+    // The bath's pit, then its surface a little lower and nearer.
+    const PIT = pRect(-47, -1, 47, 49, 6), BATHP = pRect(-47, 4, 47, 49, 6);
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}s`, 2.4)}${blur(`${u}cs`, 1.8)}
+        ${lg(`${u}enamel`, ENAMEL, 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+        ${lg(`${u}wall`, WALL)}
+        ${lg(`${u}bath`, BATH, 'x1="0" y1="0" x2="1" y2="1"')}
+        ${lg(`${u}wood`, WOOD)}
+        ${lg(`${u}steel`, STEEL, 'x1="0" y1="0" x2="1" y2="0"')}
+        ${lg(`${u}gloss`, [[0, '#fff', 0.5], [0.4, '#fff', 0.08], [1, '#fff', 0]], 'x1="0" y1="0" x2="0.5" y2="1"')}
+        <clipPath id="${u}bc"><path d="${BATHP}"/></clipPath></defs>
+      <ellipse cx="64" cy="94" rx="58" ry="8" fill="oklch(0.05 0.01 290)" opacity="0.55" filter="url(#${u}s)"/>
+      <path d="${SLAB}" fill="url(#${u}wall)"/>
+      ${body(TOP, u, 'enamel')}
+      <path d="${PIT}" fill="oklch(0.24 0.09 266)"/>
+      <path d="${BATHP}" fill="url(#${u}bath)"/>
+      <g clip-path="url(#${u}bc)">
+        ${BANDS.map(c => `<path class="band" fill="${c}"/>`).join('')}
+        <path d="${BATHP}" fill="url(#${u}gloss)"/>
+        <path class="cshadow" fill="oklch(0.15 0.05 266)" opacity="0.35" filter="url(#${u}cs)"/>
+      </g>
+      <path class="tines" fill="url(#${u}steel)"/><path class="tines" fill="url(#${u}lit)"/>
+      <path class="tines" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+      <path class="spine" fill="url(#${u}wood)"/><path class="spine" fill="url(#${u}lit)"/>
+      <path class="spine-top" fill="oklch(0.68 0.1 52)"/>
+      <path class="spine" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+    const bandEls = [...svg.querySelectorAll('.band')];
+    const spineEls = svg.querySelectorAll('.spine'), tineEls = svg.querySelectorAll('.tines');
+    const topEl = svg.querySelector('.spine-top'), shadow = svg.querySelector('.cshadow');
+    const st = { c: cfg.rest, cTo: cfg.rest, sx: 0, sxTo: 0, t: 0, live: false, sway: 0, swayTo: 0 };
+    const draw = () => {
+      inkPaths().forEach((d, i) => bandEls[i].setAttribute('d', d));
+      const cm = cfg.comb(st.c, st.sx + st.sway * 1.6 * sin(st.t * 5));
+      spineEls.forEach(e => e.setAttribute('d', cm.spine));
+      tineEls.forEach(e => e.setAttribute('d', cm.tines));
+      topEl.setAttribute('d', cm.top);
+      shadow.setAttribute('d', cm.shadow);
+    };
+    const tick = clock(time => {
+      st.t = time;
+      const c0 = st.c;
+      st.c += (st.cTo - st.c) * 0.14;
+      st.sx += (st.sxTo - st.sx) * 0.12;
+      st.sway += (st.swayTo - st.sway) * 0.06;
+      const dc = st.c - c0, sx = st.sx + st.sway * 1.6 * sin(st.t * 5);
+      let off = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i], r0 = rest[i];
+        for (let k = 0; k < us.length; k++) {
+          // A tine carries ink near its tip along with the comb.
+          if (dc) { const w = exp(-(((r[k] - c0) / 3.2) ** 2)); r[k] += dc * 0.94 * Math.min(1, pull(us[k], sx)) * w; }
+          // Calm ink drifts back to the rest pattern.
+          if (!st.live) r[k] += (r0[k] - r[k]) * 0.07;
+          off += Math.abs(r0[k] - r[k]);
+        }
+      }
+      draw();
+      // The tick stops once the comb and the ink rest.
+      if (!st.live && Math.abs(st.c - cfg.rest) + Math.abs(st.sx) + st.sway + off * 0.01 < 0.03) {
+        Object.assign(st, { c: cfg.rest, sx: 0, sway: 0 }); rest.forEach((r0, i) => rows[i].splice(0, r0.length, ...r0)); draw(); tick.stop();
+      }
+    });
+    draw();
+    const c = {
+      enter(p) { st.live = true; st.swayTo = 1; tick.start(); c.move(p); },
+      move(p) {
+        if (!p) return;
+        const [cc, s] = cfg.hold(p);
+        st.cTo = clamp(cc, cfg.range[0], cfg.range[1]);
+        st.sxTo = clamp(s, -5, 5);
+      },
+      leave() { st.live = false; st.cTo = cfg.rest; st.sxTo = 0; st.swayTo = 0; tick.start(); },
+    };
+    // The demo drags the comb back and forth through the bath.
+    hook('marble', c, { period: 3.6, at: a => [64 + 20 * sin(a), 30.5 - 9.5 * Math.cos(a)] });
+  }
 
   {
     const blobs = [...$('lava-blobs').children], glow = [...$('lava-glow').children], halo = $('lava-halo');
