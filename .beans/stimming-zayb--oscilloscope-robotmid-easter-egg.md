@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T05:50:15Z
+updated_at: 2026-11-18T05:51:19Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -27,4 +27,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - Minis: brightness limiter, eased centre pips, graticule masked inside; Dev toggle Hide idle minis.
 - Phosphors: P1, P2 TEAL (default), P11, P19, P22, P39. Ghost pass after Sonar.
 - Files: five MIDI files and five sample kits in `scope/`, about 13 MB.
-- Open: the title of around.mid; the shared bar hover for mode choices (Tom to pick).
+- around.mid is You Spin Me Round (Dead or Alive, 1984, Epic).
+- Open: the shared bar hover for mode choices (Tom to pick).
