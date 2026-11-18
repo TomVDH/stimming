@@ -77,7 +77,7 @@ mark('libs');
 const toHz = v => 40 * 10 ** (v / 1000);
 const fromHz = f => Math.round(1000 * Math.log10(f / 40));
 // The handlers bind once the scope exists.
-const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {}, look() {} };
+const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {}, look() {}, phos() {} };
 // The screen draws its own legend, so the key strip stays off.
 const ui = initPage({ id: 'scope', bar: {
   choice: { label: 'Mode', value: 'pen', options: [{ value: 'pen', label: 'Pen' }, { value: 'knot', label: 'Knot' }], onPick: v => act.mode(v) },
@@ -86,6 +86,10 @@ const ui = initPage({ id: 'scope', bar: {
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
   ],
+  // The phosphor lives in Settings; it shares its stored key with the P shortcut.
+  settings: [{ type: 'choice', id: 'phosphor', label: 'Phosphor', persist: true, onPick: v => act.phos(v),
+    value: (() => { try { return localStorage.getItem('stimming.scope.phosphor') ?? '5'; } catch { return '5'; } })(),
+    options: ['P31 Green', 'P7 Radar', 'P3 Amber', 'P4 White', 'P1 Green', 'P2 Teal', 'P11 Blue', 'P19 Orange', 'P22 Red', 'P39 Long'].map((label, i) => ({ value: String(i), label })) }],
   // Dev: idle minis can hide after QUIET seconds; off keeps every mini up.
   dev: [{ type: 'toggle', id: 'autohide', label: 'Hide idle minis', value: false, persist: true, onToggle: () => act.look() }],
   reset: () => act.reset(),
@@ -708,6 +712,24 @@ function partSample(P, rate, k) {
   }
   P.x = x; P.y = y;
 }
+// Loudness levelling: each path's level is measured per chunk before it plays, and gained toward LOUD_RMS.
+// The level rises fast and falls slowly, so a quiet intro is not pumped up; the gain stays within 0.15x to 3x.
+const LOUD_RMS = 0.08;
+function meanSq(A, B) {
+  let e = 0;
+  for (let i = 0; i < A.length; i += 8) e += A[i] * A[i] + B[i] * B[i];
+  return e / (2 * Math.ceil(A.length / 8));
+}
+function level(T, k, rms) {
+  if (rms < 1e-4) return;
+  T.loud ||= {}; T.norm ||= {};
+  const first = !T.loud[k], L0 = T.loud[k] || rms;
+  T.loud[k] = rms > L0 ? 0.5 * L0 + 0.5 * rms : 0.92 * L0 + 0.08 * rms;
+  T.norm[k] = clamp(LOUD_RMS / T.loud[k], 0.15, 3);
+  const g = T.bus?.[k === 's' ? 'sNorm' : 'mNorm'];
+  if (g && first) g.gain.setValueAtTime(T.norm[k], g.context.currentTime);
+  else if (g) g.gain.setTargetAtTime(T.norm[k], g.context.currentTime, 1);
+}
 // The tape renders its next chunk a slice at a time, BUDGET samples per frame.
 // The voice state carries across, so joins stay smooth.
 const BUDGET = 4000;
@@ -743,6 +765,10 @@ function renderStep(T, budget) {
   W.i = end;
   if (end < len) return false;
   T.chunks.set(T.next, { L: W.L, R: W.R, AL: W.AL, AR: W.AR, M: W.M, K: W.K, rate });
+  // The scope voice's loudness: the main voice plus each part at its base level.
+  let e = meanSq(W.AL, W.AR);
+  W.M.forEach(([X, Y], m) => { const l = T.parts[m].lv * PART_MIX; e += l * l * meanSq(X, Y); });
+  level(T, 's', Math.sqrt(e));
   T.work = null; T.next++;
   return true;
 }
@@ -1176,7 +1202,7 @@ function feedFull(j) {
   for (let i = j; i <= j + 2 && i * CH < me.song.dur; i++) {
     if (me.full.has(i)) continue;
     me.full.set(i, {});
-    renderFull(me.song, i, me.rate).then(ch => { if (tape !== me) return; me.full.set(i, ch); playChunk(i, true); });
+    renderFull(me.song, i, me.rate).then(ch => { if (tape !== me) return; me.full.set(i, ch); if (ch.AL) level(me, 'm', Math.sqrt(meanSq(ch.AL, ch.AR))); playChunk(i, true); });
   }
   for (const i of me.full.keys()) if (i < j - 1) me.full.delete(i);
 }
@@ -1187,8 +1213,12 @@ function tapeBus(ac, full) {
     scope.gain.value = tape.fullOn ? 0 : 1; mix.gain.value = tape.fullOn ? 1 : 0;
     // A low shelf lifts the bass of both, BASS_DB below about 150 Hz.
     const shelf = to => { const f = ac.createBiquadFilter(); f.type = 'lowshelf'; f.frequency.value = 150; f.gain.value = BASS_DB; f.connect(to); return f; };
-    scope.connect(shelf(tapeIn(ac))); mix.connect(shelf(ensureChain(ac).in));
-    tape.bus = { ac, scope, mix };
+    // Each path has a level gain that evens loudness across songs.
+    const sNorm = ac.createGain(), mNorm = ac.createGain();
+    sNorm.gain.value = tape.norm?.s ?? 1; mNorm.gain.value = tape.norm?.m ?? 1;
+    scope.connect(sNorm); mix.connect(mNorm);
+    sNorm.connect(shelf(tapeIn(ac))); mNorm.connect(shelf(ensureChain(ac).in));
+    tape.bus = { ac, scope, mix, sNorm, mNorm };
   }
   return full ? tape.bus.mix : tape.bus.scope;
 }
@@ -1680,21 +1710,21 @@ function paintHud() {
   // A mouse screen adds each tag's key as a keycap.
   g.font = `700 ${small}px ${MONO}`;
   const tagY = [top + big + 8, top + big + small + 18], kc = small - 3;
-  const spinTxt = reduced() ? '⟳ SPIN —' : spinOn ? '⟳ SPIN ON' : '⟳ SPIN OFF', phosTxt = `◐ ${PHOS[phos].name}`;
-  g.fillStyle = grey(spinOn && !reduced() ? 0.85 : 0.45); g.fillText(spinTxt, pad, tagY[0]);
-  g.fillStyle = grey(0.6); g.fillText(phosTxt, pad, tagY[1]);
-  let sw = g.measureText(spinTxt).width, pw = g.measureText(phosTxt).width;
-  if (FINE.matches) {
-    if (!reduced()) sw += 10 + keycap(g, 'SPACE', pad + sw + 10, tagY[0], kc);
-    pw += 10 + keycap(g, 'P', pad + pw + 10, tagY[1], kc);
+  // The phosphor sits in Settings; the spin tag hides while a song plays.
+  phosTag.hidden = true;
+  spinTag.hidden = !!tape?.t0;
+  if (!tape?.t0) {
+    const spinTxt = reduced() ? '⟳ SPIN —' : spinOn ? '⟳ SPIN ON' : '⟳ SPIN OFF';
+    g.fillStyle = grey(spinOn && !reduced() ? 0.85 : 0.45); g.fillText(spinTxt, pad, tagY[0]);
+    let sw = g.measureText(spinTxt).width;
+    if (FINE.matches && !reduced()) sw += 10 + keycap(g, 'SPACE', pad + sw + 10, tagY[0], kc);
+    placeTag(spinTag, pad, tagY[0], sw, small);
+    spinTag.setAttribute('aria-pressed', String(spinOn && !reduced()));
   }
-  placeTag(spinTag, pad, tagY[0], sw, small);
-  placeTag(phosTag, pad, tagY[1], pw, small);
-  spinTag.setAttribute('aria-pressed', String(spinOn && !reduced()));
   // While a song plays, a third tag switches the scope voice and the full mix.
   fullTag.hidden = !tape?.t0;
   if (tape?.t0) {
-    const fy = tagY[1] + small + 10, ft = tape.fullOn ? '◑ FULL MIX' : '◑ SCOPE VOICE';
+    const fy = tagY[0], ft = tape.fullOn ? '◑ FULL MIX' : '◑ SCOPE VOICE';
     g.fillStyle = grey(0.75); g.fillText(ft, pad, fy);
     let fw = g.measureText(ft).width;
     if (FINE.matches) fw += 10 + keycap(g, 'O', pad + fw + 10, fy, kc);
@@ -1704,7 +1734,7 @@ function paintHud() {
   // A fourth tag switches the minis between curves and waves.
   waveTag.hidden = !tape?.t0;
   if (tape?.t0) {
-    const wy = tagY[1] + 2 * (small + 10), wt = miniWave ? '∿ MINI WAVES' : '◇ MINI CURVES';
+    const wy = tagY[1], wt = miniWave ? '∿ MINI WAVES' : '◇ MINI CURVES';
     g.fillStyle = grey(0.75); g.fillText(wt, pad, wy);
     let ww = g.measureText(wt).width;
     if (FINE.matches) ww += 10 + keycap(g, 'W', pad + ww + 10, wy, kc);
@@ -2159,11 +2189,14 @@ function clear() {
   if (mode === 'pen') pen = null; else knot = null;
   changed();
 }
-function nextPhosphor() {
-  phos = (phos + 1) % PHOS.length;
+function setPhosphor(i) {
+  phos = clamp(Math.floor(Number(i) || 0), 0, PHOS.length - 1);
   store.set(PHOS_KEY, String(phos));
+  if (ui.setting('phosphor')?.value !== String(phos)) ui.setting('phosphor')?.set(String(phos));
   paintHud(); poke();
 }
+const nextPhosphor = () => setPhosphor((phos + 1) % PHOS.length);
+act.phos = setPhosphor;
 // Spin freezes the figure where it stands, or sets it turning again.
 function toggleSpin() {
   if (reduced()) return;
@@ -2175,7 +2208,7 @@ function toggleSpin() {
 function resetAll() {
   mode = 'pen'; ui.choice.set('pen');
   presetIdx = 0; pen = PRESETS[0](); knot = { a: 3, b: 2 }; pickCell = [3, 2];
-  phos = PHOS_DEFAULT; store.set(PHOS_KEY, String(PHOS_DEFAULT));
+  setPhosphor(PHOS_DEFAULT);
   spinOn = !reduced(); setTheta(0);
   ui.slider.set(fromHz(110));
   setPitch(110);
