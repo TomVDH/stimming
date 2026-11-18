@@ -24,7 +24,9 @@
 .vignette figure svg { background: oklch(0.13 0.01 265); }
 .vignette figure .grid { stroke: oklch(0.26 0.014 265); stroke-width: 1; fill: none; }
 .vignette figure .axis { stroke: oklch(0.36 0.016 265); stroke-width: 3; fill: none; }
-.vignette figure .trace { stroke: oklch(0.9 0.2 145); stroke-width: 4; fill: none; stroke-linejoin: round; }
+.vignette figure .trace { stroke: oklch(0.9 0.14 175); stroke-width: 4; fill: none; stroke-linejoin: round; }
+/* The bar is teal, the scope's standard colour; the logo keeps its green from toys.json. */
+.sg-ui { --acc-ink: oklch(0.88 0.14 175) !important; --acc-img: linear-gradient(oklch(0.88 0.14 175), oklch(0.88 0.14 175)) !important; --acc-fill: linear-gradient(oklch(0.88 0.14 175), oklch(0.88 0.14 175)) !important; }
 .vignette figure .wave { stroke: var(--muted); stroke-width: 2; fill: none; stroke-linejoin: round; }
 .vignette figure text { fill: var(--muted); font: 700 13px var(--sans); }
 </style>
@@ -41,6 +43,7 @@
       <button class="snd-tag" id="snd-tag" type="button" aria-label="Turn sound on" hidden></button>
       <button class="snd-tag" id="spin-tag" type="button" aria-label="Spin" aria-keyshortcuts="Space"></button>
       <button class="snd-tag" id="phos-tag" type="button" aria-label="Change the phosphor" aria-keyshortcuts="P"></button>
+      <button class="snd-tag" id="full-tag" type="button" aria-label="Switch between the scope voice and the full mix" aria-keyshortcuts="O" hidden></button>
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
@@ -73,7 +76,7 @@ mark('libs');
 const toHz = v => 40 * 10 ** (v / 1000);
 const fromHz = f => Math.round(1000 * Math.log10(f / 40));
 // The handlers bind once the scope exists.
-const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {} };
+const act = { mode() {}, pitch() {}, shuffle() {}, clear() {}, reset() {}, look() {} };
 // The screen draws its own legend, so the key strip stays off.
 const ui = initPage({ id: 'scope', bar: {
   choice: { label: 'Mode', value: 'pen', options: [{ value: 'pen', label: 'Pen' }, { value: 'knot', label: 'Knot' }], onPick: v => act.mode(v) },
@@ -82,6 +85,8 @@ const ui = initPage({ id: 'scope', bar: {
     { verb: 'shuffle', key: 'S', onPress: () => act.shuffle() },
     { verb: 'clear', key: 'C', onPress: () => act.clear() },
   ],
+  // Dev: idle minis can hide after QUIET seconds; off keeps every mini up.
+  dev: [{ type: 'toggle', id: 'autohide', label: 'Hide idle minis', value: false, persist: true, onToggle: () => act.look() }],
   reset: () => act.reset(),
   quality: true,
   keys: false,
@@ -97,7 +102,7 @@ const now = () => performance.now() / 1000;
 mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const sndTag = document.getElementById('snd-tag');
-const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag');
+const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag'), fullTag = document.getElementById('full-tag');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); throw new Error('no webgl2'); };
 if (!gl) fail();
@@ -314,6 +319,7 @@ function knotWave(k, sr) {
   return { L, R, len, pitch };
 }
 function signal(sr) {
+  if (tape) return null;
   if (mode === 'pen') return pen ? penWave(pen, sr) : null;
   return knot ? knotWave(knot, sr) : null;
 }
@@ -353,12 +359,689 @@ sndTag.addEventListener('click', () => sound.set(true));
 // The first gesture wakes the context; the voice joins once it runs.
 ['pointerup', 'keydown'].forEach(type => addEventListener(type, () => setTimeout(sync, 0), { passive: true }));
 
+/* ---------- the tape: a song on the scope's own voice ---------- */
+// Every note plays a curve as its waveform, as Pen mode plays a shape.
+// The shape runs one lap per cycle: x to the left ear, y to the right.
+// Each voice is a soft analogue tone: a few harmonics, no harsh edges.
+// The left ear gets the tone; the right ear gets it a quarter turn on, a hair sharp.
+// One note draws an ellipse that slowly rolls; a chord ties a Lissajous rosette.
+// The main scope plays the sung line; each mini in the ring plays one part, up to three notes.
+// The drums are a falling sine ring and soft bursts of noise.
+const TONES = {
+  soft: [1, 0.15, 0.05], warm: [1, 0.3, 0.15], saw: [1, 0.5, 0.33, 0.25],
+  square: [1, 0, 0.33, 0, 0.2], tri: [1, 0, -0.11, 0, 0.04], bass: [1, 0.35, 0.1],
+};
+// Ten minis in an even ring: three top, three bottom, two each side.
+const R10 = [[-2, 4], [0, 4], [2, 4], [4, 2], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 2]];
+const SONGS = {
+  stars: {
+    url: 'messages.mid',
+    main: { tracks: ['Strings MAIN VOCALS'], tone: 'warm', env: 'pad' },
+    // The ring runs clockwise from the top left, the busiest parts first.
+    // Levels: bright and high parts sit lower, so the mix stays easy on the ear.
+    // The three drums sit in the middle of the bottom row.
+    parts: [
+      { tracks: ['Synthesizer MAIN SAW CHORDS'], tone: 'saw', env: 'pad' },
+      { tracks: ['Bass Guitar MAIN FART BASS'], tone: 'saw', env: 'pad' },
+      { tracks: ['Synthesizer BASS SLINE'], tone: 'bass', env: 'pad', lv: 2.2 },
+      { tracks: ['Smooth Synth MAIN CHORDS'], tone: 'tri', env: 'pad' },
+      { tracks: ['Rhodes MAIN CHORDS'], tone: 'soft', env: 'pluck', decay: 1.2, lv: 0.8 },
+      { tracks: ['Synthesizer VOCAL WAW SAW'], tone: 'saw', env: 'pad', lv: 0.8 },
+      { tracks: ['Synthesizer SOLO BIT'], tone: 'tri', env: 'pad', lv: 0.6 },
+      { tracks: ['Steel Drums MAIN'], tone: 'soft', env: 'pluck', decay: 0.4, lv: 0.55 },
+      { tracks: ['Scifi MAIN'], tone: 'soft', env: 'pad', lv: 0.6 },
+      { tracks: ['909 Drum Kit HI', '909 Drum Kit OPEN'], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['909 Drum Kit SNS', 'Electric Drum Kit EXTRAS'], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['Electric Drum Kit KICKS', 'Electric Drum Kit TOMS', '2023 Drum Kit TOMS'], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Synthesizer MAIN TRI HIG NOTES'], tone: 'tri', env: 'pad', lv: 0.55 },
+      { tracks: ['Vibraphone MAIN SHORTS'], tone: 'soft', env: 'pluck', decay: 0.8, lv: 0.6 },
+      { tracks: ['Synthesizer SQUARE LICKS'], tone: 'square', env: 'pad', lv: 0.6 },
+      { tracks: ['Xylophone MAIN'], tone: 'soft', env: 'pluck', decay: 0.25, lv: 0.5 },
+    ],
+    kit: 'messages-kit',
+    title: 'Messages from the Stars', artist: 'The Rah Band · arr. Wezz', year: 1983, label: 'TMT Records',
+  },
+  // Das Model, codeword MONDAY: eight minis in an even ring; the kick and the snare split one drum track.
+  monday: {
+    url: 'model.mid',
+    main: { tracks: ['8-Bit Triangle'], tone: 'tri', env: 'pad' },
+    pos: [[-2, 4], [2, 4], [4, 2], [4, -2], [2, -4], [-2, -4], [-4, -2], [-4, 2]],
+    parts: [
+      { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pad', lv: 1.6 },
+      { tracks: ['Smooth Synth (Classic)'], tone: 'tri', env: 'pad', lv: 0.8 },
+      { tracks: ['Muted E-Guitar'], tone: 'warm', env: 'pluck', decay: 0.3 },
+      { tracks: ['Koto'], tone: 'soft', env: 'pluck', decay: 0.6, lv: 0.6 },
+      { tracks: ['Electric Drum Kit'], keys: [47], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Electric Drum Kit'], skip: [47], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['Flute (Classic)'], tone: 'soft', env: 'pad', lv: 0.7 },
+      { tracks: ['Trombone (Classic)'], tone: 'warm', env: 'pad', lv: 0.7 },
+    ],
+    kit: 'model-kit',
+    title: 'Das Model', artist: 'Kraftwerk · arr. gurkin4', year: 1978, label: 'Kling Klang / EMI',
+  },
+  // AROUND: an Online Sequencer export; its MIDI volumes run to 50, its drums sit 24 above the kit.
+  around: {
+    url: 'around.mid', kit: 'around-kit', velDiv: 50,
+    main: { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pad' },
+    pos: R10,
+    parts: [
+      { tracks: ['Smooth Synth (Classic)'], tone: 'tri', env: 'pad', lv: 0.8 },
+      { tracks: ['Grand Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
+      { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
+      { tracks: ['Harpsichord'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
+      { tracks: ['Slap Bass'], tone: 'bass', env: 'pad', lv: 1.6 },
+      { tracks: ['Electric Drum Kit'], keys: [42, 44, 46, 49], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['Electric Drum Kit'], keys: [38, 39, 40, 41], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['Electric Drum Kit'], keys: [35, 36], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Ragtime Piano'], tone: 'soft', env: 'pluck', decay: 0.6, lv: 0.7 },
+      { tracks: ['Trombone (Classic)'], tone: 'warm', env: 'pad', lv: 0.7 },
+    ],
+    full: { 'Electric Drum Kit': ['sample', 0, 31, 0, 24] },
+  },
+  // PLASTIC: an Online Sequencer export; doubled tracks share a mini; twelve minis, no corners.
+  plastic: {
+    url: 'plastic.mid', kit: 'plastic-kit', velDiv: 50,
+    title: 'Plastic Love', artist: 'Mariya Takeuchi', year: 1984, label: 'Moon Records',
+    main: { tracks: ['Violin (Classic)'], tone: 'warm', env: 'pad' },
+    pos: [[-2, 4], [0, 4], [2, 4], [4, 2], [4, 0], [4, -2], [2, -4], [0, -4], [-2, -4], [-4, -2], [-4, 0], [-4, 2]],
+    parts: [
+      { tracks: ['Electric Guitar', 'Muted E-Guitar', 'Koto', 'Dist. Guitar (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
+      { tracks: ['Grand Piano'], tone: 'soft', env: 'pluck', decay: 1 },
+      { tracks: ['Elec. Piano (Classic)'], tone: 'soft', env: 'pluck', decay: 1 },
+      { tracks: ['Synth Pluck (Classic)'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
+      { tracks: ['Trombone (Classic)'], tone: 'warm', env: 'pad', lv: 0.7 },
+      { tracks: ['8-Bit Square', '8-Bit Sine', '8-Bit Sawtooth'], tone: 'square', env: 'pad', lv: 0.5 },
+      { tracks: ['Electric Drum Kit'], keys: [42, 44, 46, 49, 51, 56, 57, 76], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['Electric Drum Kit'], keys: [38, 40], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['2023 Drum Kit', 'Electric Drum Kit'], keys: [27, 36], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Electric Drum Kit', 'Electric Drum Kit 2'], keys: [41, 43, 45, 47, 48, 50], drum: 'kick', env: 'hit', decay: 0.18 },
+      { tracks: ['Pizzicato', 'Cello'], tone: 'warm', env: 'pluck', decay: 0.5, lv: 0.7 },
+      { tracks: ['Bass', '8-Bit Triangle'], tone: 'bass', env: 'pad', lv: 1.6 },
+    ],
+    full: {
+      'Elec. Piano (Classic)': ['sample', -0.15, 0, 0], 'Grand Piano': ['sample', 0.15, 41, 0], 'Violin (Classic)': ['sample', 0, 11, 0],
+      'Synth Pluck (Classic)': ['sample', 0.1, 6, 0], 'Electric Guitar': ['sample', -0.25, 4, 0], 'Muted E-Guitar': ['sample', 0.25, 35, 0],
+      'Trombone (Classic)': ['sample', 0.1, 10, 0], 'Koto': ['sample', 0.3, 33, 0], 'Pizzicato': ['sample', -0.3, 20, 0],
+      'Dist. Guitar (Classic)': ['sample', -0.2, 38, 0], 'Cello': ['sample', -0.1, 45, 0], 'Violin': ['sample', 0.1, 46, 0], 'Bass': ['sample', 0, 48, 0],
+      '8-Bit Triangle': ['tri', 0], '8-Bit Square': ['square', -0.2], '8-Bit Sine': ['sine8', 0.1], '8-Bit Sawtooth': ['saws', 0.2],
+      'Electric Drum Kit': ['sample', 0.1, 31, 0, 24], 'Electric Drum Kit 2': ['sample', -0.1, 31, 0, 24], '2023 Drum Kit': ['sample', 0, 53, 0, 24],
+    },
+  },
+  // BEAT: doubled tracks share a mini; the drums take the bottom three.
+  beat: {
+    url: 'beat.mid', kit: 'beat-kit',
+    title: 'Smalltown Boy', artist: 'Bronski Beat · arr. Wezz', year: 1984, label: 'London Records',
+    main: { tracks: ['Synth Pluck VOCAL'], tone: 'warm', env: 'pad' },
+    pos: R10,
+    parts: [
+      { tracks: ['Bass Guitar MAIN', 'Synth Bass MAIN', 'Pop Synth BASS'], tone: 'bass', env: 'pad', lv: 1.6 },
+      { tracks: ['Smooth Synth MAIN', 'Clean Guitar M'], tone: 'tri', env: 'pad', lv: 0.8 },
+      { tracks: ['Pop Synth M'], tone: 'saw', env: 'pad', lv: 0.7 },
+      { tracks: ['Scifi MAIN'], tone: 'soft', env: 'pad', lv: 0.6 },
+      { tracks: ['Xylophone MAIN'], tone: 'soft', env: 'pluck', decay: 0.25, lv: 0.5 },
+      { tracks: ['Electric Drum Kit H', '909 Drum Kit H', 'Electric Drum Kit TAM'], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
+      { tracks: ['909 Drum Kit SNARE', '2013 Drum Kit SNARE', 'Electric Drum Kit SNARE'], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
+      { tracks: ['Electric Drum Kit KICK', '909 Drum Kit KICK'], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.5 },
+      { tracks: ['Electric Drum Kit TOM'], drum: 'kick', env: 'hit', decay: 0.18 },
+      { tracks: ['Flute VOCAL', '8-Bit Sine VOCAL'], tone: 'soft', env: 'pad', lv: 0.6 },
+    ],
+  },
+};
+// Chunks of CH seconds; control steps every millisecond.
+// The main figure fills MAIN_SCALE divisions, inside the ring of minis.
+const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55, PART_MIX = 0.15;
+// Sixteen slots ring the face edge, two divisions apart, clockwise from top left.
+const MINI_POS = [[-4, 4], [-2, 4], [0, 4], [2, 4], [4, 4], [4, 2], [4, 0], [4, -2], [4, -4], [2, -4], [0, -4], [-2, -4], [-4, -4], [-4, -2], [-4, 0], [-4, 2]], MINI_R = 0.85;
+// The bezels fade in over 0.8 s when the song starts and out over 0.5 s.
+const bezel = { on: false, t: -1e9, n: 0, pos: MINI_POS };
+const bezelAlpha = t => (reduced() ? +bezel.on : bezel.on ? clamp((t - bezel.t) / 0.8) : 1 - clamp((t - bezel.t) / 0.5));
+const bezelMoving = t => !reduced() && t - bezel.t < (bezel.on ? 0.8 : 0.5);
+// Minis keep every MS-th sample for the beam.
+const MS = 2;
+// A sine table with linear steps is cheaper than Math.sin per sample.
+const SIN = Float32Array.from({ length: 4097 }, (_, i) => Math.sin(TAU * i / 4096));
+const sine = ph => { const x = ph * 4096, i = x | 0; return SIN[i] + (SIN[i + 1] - SIN[i]) * (x - i); };
+const HZ = Array.from({ length: 128 }, (_, k) => 440 * 2 ** ((k - 69) / 12));
+let tape = null, typed = '';
+// The codewords are the song keys.
+const WORDS = Object.keys(SONGS);
+const songCache = {};
+// A small reader for a type 0 or 1 MIDI file: notes in seconds, by track name.
+function readMidi(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  const ntrk = dv.getUint16(10), div = dv.getUint16(12), tempo = [], raw = [];
+  let p = 14;
+  for (let n = 0; n < ntrk; n++) {
+    let q = p + 8, tick = 0, run = 0, name = '';
+    const end = q + dv.getUint32(p + 4), on = new Map(), notes = [];
+    p = end;
+    const vlq = () => { let v = 0, b; do { b = u8[q++]; v = v * 128 + (b & 127); } while (b & 128); return v; };
+    const close = (key, at) => { const o = on.get(key); if (o) { on.delete(key); notes.push([o[0], at - o[0], key % 128, o[1]]); } };
+    while (q < end) {
+      tick += vlq();
+      const b = u8[q];
+      if (b === 0xff) {
+        const ty = u8[q + 1]; q += 2;
+        const l = vlq();
+        if (ty === 3) name = String.fromCharCode(...u8.subarray(q, q + l)).trim();
+        if (ty === 0x51) tempo.push([tick, (u8[q] << 16) | (u8[q + 1] << 8) | u8[q + 2]]);
+        q += l; continue;
+      }
+      if (b === 0xf0 || b === 0xf7) { q++; q += vlq(); continue; }
+      if (b & 128) { run = b; q++; }
+      const st = run & 0xf0, key = (run & 15) * 128 + u8[q], vel = u8[q + 1];
+      q += st === 0xc0 || st === 0xd0 ? 1 : 2;
+      if (st === 0x90 && vel) { close(key, tick); on.set(key, [tick, vel]); }
+      else if (st === 0x80 || st === 0x90) close(key, tick);
+    }
+    raw.push({ name, notes });
+  }
+  tempo.sort((a, b) => a[0] - b[0]);
+  if (!tempo.length || tempo[0][0]) tempo.unshift([0, 500000]);
+  const sec = tk => {
+    let s = 0, i = 0;
+    for (; i + 1 < tempo.length && tempo[i + 1][0] <= tk; i++) s += (tempo[i + 1][0] - tempo[i][0]) * tempo[i][1];
+    return (s + (tk - tempo[i][0]) * tempo[i][1]) / div / 1e6;
+  };
+  const tracks = new Map();
+  let dur = 0;
+  for (const tr of raw) {
+    const list = tracks.get(tr.name) || [];
+    for (const [t0, d, k, v] of tr.notes) { const t = sec(t0), e = sec(t0 + d); list.push([t, e, k, v / 127]); dur = Math.max(dur, e); }
+    tracks.set(tr.name, list);
+  }
+  return { tracks, dur: dur + 1 };
+}
+// Each part keeps its notes in milliseconds, sorted by start.
+// A part may keep only some keys, or skip some, to split one drum track.
+const msNotes = (tracks, names, p) => names.flatMap(nm => tracks.get(nm) || [])
+  .filter(([, , k]) => (!p?.keys || p.keys.includes(k)) && (!p?.skip || !p.skip.includes(k)))
+  .map(([t, e, k, v]) => [Math.round(t * CR), Math.max(Math.round(t * CR) + 1, Math.round(e * CR)), k, v]).sort((a, b) => a[0] - b[0]);
+async function loadSong(id) {
+  if (songCache[id]) return songCache[id];
+  const S = SONGS[id], res = await fetch(S.url);
+  if (!res.ok) throw new Error(`no ${S.url}`);
+  const { tracks, dur } = readMidi(await res.arrayBuffer()), n = Math.ceil(dur * CR);
+  // Volumes scale to the 0..76 range the other songs use.
+  const vk = 76 / (S.velDiv || 76);
+  if (vk !== 1) for (const list of tracks.values()) for (const x of list) x[3] = Math.min(1, x[3] * vk);
+  const parts = S.parts.map(p => ({ ...p, notes: msNotes(tracks, p.tracks, p) }));
+  // The full mix reads every note of every track, sorted by start.
+  const all = [...tracks].flatMap(([tr, list]) => list.map(([t, e, k, v]) => ({ t, e, k, v, tr }))).sort((a, b) => a.t - b.t);
+  return (songCache[id] = { dur, n, parts, all, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, year: S.year, label: S.label, full: S.full, main: { ...S.main, notes: msNotes(tracks, S.main.tracks) } });
+}
+// A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
+// DETUNE sets how fast an ellipse rolls: a 200 Hz note turns once in about 3 s.
+const SLOTS = 3, DETUNE = 1.0015;
+function partState(p, i, kf) {
+  const H = TONES[p.tone] || TONES.soft, norm = 1 / H.reduce((a, h) => a + Math.abs(h), 0);
+  return { p, q: 0, act: [], minEnd: Infinity, lv: p.lv || 1, kD: kf(p.decay || 0.3), noise: 1 + i, lx: 0, ly: 0, H, norm,
+    slots: Array.from({ length: SLOTS }, () => ({ note: null, f: 0, target: 0, a: 0, ph: 0, ph2: 0.25, vel: 0 })), x: 0, y: 0 };
+}
+// The active notes at control step c, sorted by pitch, fill the slots.
+// A pad dips and swells on a new note; a pluck or a hit strikes.
+function partStep(P, c) {
+  const N = P.p.notes;
+  let grew = false;
+  while (P.q < N.length && N[P.q][0] <= c) { const x = N[P.q++]; P.act.push(x); P.minEnd = Math.min(P.minEnd, x[1]); grew = true; }
+  if (P.minEnd <= c) { P.act = P.act.filter(x => x[1] > c); P.minEnd = P.act.reduce((m, x) => Math.min(m, x[1]), Infinity); grew = true; }
+  if (!grew) return;
+  P.act.sort((a, b) => a[2] - b[2]);
+  const n = P.p.drum ? Math.min(1, P.act.length) : P.act.length;
+  for (let s = 0; s < SLOTS; s++) {
+    const v = P.slots[s], x = s >= n ? null : P.p.drum ? P.act[n - 1] : P.act[s];
+    if (x === v.note) continue;
+    if (x) {
+      const f = HZ[x[2]];
+      v.target = f; v.f = P.p.drum === 'kick' ? f * 3 : f;
+      v.a = P.p.env === 'pad' ? v.a * 0.3 : x[3];
+      v.vel = x[3];
+    }
+    v.note = x;
+  }
+}
+// The tone at phase ph: its harmonics, summed and scaled to a peak near one.
+function toneAt(P, ph) {
+  const H = P.H;
+  let y = 0;
+  for (let h = 0; h < H.length; h++) if (H[h]) y += H[h] * sine(((h + 1) * ph) % 1);
+  return y * P.norm;
+}
+// One sample of one part: it sets the spot P.x, P.y in full scale units.
+function partSample(P, rate, k) {
+  const env = P.p.env, drum = P.p.drum;
+  let x = 0, y = 0;
+  for (const v of P.slots) {
+    if (!v.f) continue;
+    if (v.note) { if (env === 'pad') v.a += (v.vel - v.a) * k.A; else v.a -= v.a * P.kD; }
+    else v.a -= v.a * (env === 'pad' ? k.R : P.kD);
+    if (v.a < 1e-4) continue;
+    if (drum === 'kick') v.f += (v.target * 0.6 - v.f) * k.K;
+    v.ph = (v.ph + v.f / rate) % 1;
+    if (drum) {
+      // The kick is a ring that shrinks as its pitch falls; the snare and hat are soft noise.
+      P.noise = (P.noise * 16807) % 2147483647; const r1 = P.noise / 1073741823.5 - 1;
+      P.noise = (P.noise * 16807) % 2147483647; const r2 = P.noise / 1073741823.5 - 1;
+      P.lx += (r1 - P.lx) * 0.3; P.ly += (r2 - P.ly) * 0.3;
+      const cx = sine(v.ph), cy = sine((v.ph + 0.25) % 1);
+      if (drum === 'kick') { x += v.a * cx; y += v.a * cy; }
+      else if (drum === 'snare') { x += v.a * (0.6 * cx + 0.9 * P.lx); y += v.a * (0.6 * cy + 0.9 * P.ly); }
+      else { x += v.a * 1.4 * P.lx; y += v.a * 1.4 * P.ly; }
+    } else {
+      v.ph2 = (v.ph2 + v.f * DETUNE / rate) % 1;
+      x += v.a * toneAt(P, v.ph); y += v.a * toneAt(P, v.ph2);
+    }
+  }
+  P.x = x; P.y = y;
+}
+// The tape renders its next chunk a slice at a time, BUDGET samples per frame.
+// The voice state carries across, so joins stay smooth.
+const BUDGET = 4000;
+function renderStep(T, budget) {
+  const S = T.song, rate = T.rate, len = Math.round(CH * rate), nm = T.parts.length;
+  let W = T.work;
+  if (!W) {
+    W = T.work = { i: 0, L: new Float32Array(len), R: new Float32Array(len), AL: new Float32Array(len), AR: new Float32Array(len),
+      M: T.parts.map(() => [new Float32Array(Math.ceil(len / MS)), new Float32Array(Math.ceil(len / MS))]),
+      // The readouts keep each voice's lowest note every 10 ms; index nm is the main voice.
+      K: Array.from({ length: T.parts.length + 1 }, () => new Uint8Array(CH * 100)) };
+  }
+  const t0 = T.next * CH, k = T.k, end = Math.min(len, W.i + budget), main = T.main;
+  for (let i = W.i; i < end; i++) {
+    const c = Math.min(S.n - 1, Math.floor((t0 + i / rate) * CR));
+    if (c !== T.lastC) {
+      T.lastC = c; partStep(main, c);
+      for (const P of T.parts) partStep(P, c);
+      const ki = Math.floor((c - Math.round(t0 * CR)) / 10);
+      if (ki >= 0 && ki < CH * 100) [...T.parts, main].forEach((P, m) => { W.K[m][ki] = P.slots[0].note?.[2] || 0; });
+    }
+    partSample(main, rate, k);
+    W.L[i] = main.x; W.R[i] = main.y;
+    let al = MAIN_MIX * main.x, ar = MAIN_MIX * main.y;
+    for (let m = 0; m < nm; m++) {
+      const P = T.parts[m];
+      partSample(P, rate, k);
+      if (i % MS === 0) { W.M[m][0][i / MS] = P.x; W.M[m][1][i / MS] = P.y; }
+      al += P.x * P.lv * PART_MIX; ar += P.y * P.lv * PART_MIX;
+    }
+    W.AL[i] = al; W.AR[i] = ar;
+  }
+  W.i = end;
+  if (end < len) return false;
+  T.chunks.set(T.next, { L: W.L, R: W.R, AL: W.AL, AR: W.AR, M: W.M, K: W.K, rate });
+  T.work = null; T.next++;
+  return true;
+}
+// The tape keeps two chunks ahead and drops the old ones.
+function feedTape(t) {
+  if (!tape.t0) return;
+  const s = t - tape.t0, j = Math.floor(s / CH), me = tape;
+  if (s > me.song.dur) { setTimeout(() => { if (tape === me) changed(); }, 0); return; }
+  if (me.next <= j + 2 && me.next * CH < me.song.dur && renderStep(me, BUDGET)) playChunk(me.next - 1);
+  feedFull(j);
+  for (const i of me.chunks.keys()) if (i < j - 1) me.chunks.delete(i);
+}
+// The tape runs through its own soft low pass before the shared chain.
+let tapeLp = null;
+function tapeIn(ac) {
+  if (tapeLp?.context !== ac) { tapeLp = ac.createBiquadFilter(); tapeLp.type = 'lowpass'; tapeLp.frequency.value = 2600; tapeLp.Q.value = 0.5; tapeLp.connect(ensureChain(ac).in); }
+  return tapeLp;
+}
+// Chunk j plays at a fixed offset from one audio anchor, so the joins are seamless.
+function playChunk(j, full = false) {
+  const ch = full ? tape?.full.get(j) : tape?.chunks.get(j), ac = kit.live(), A = tape?.anchor;
+  if (!ch?.AL || !ac || A?.ac !== ac || ch.played === ac) return;
+  const at = A.a0 + j * CH;
+  if (at + CH <= ac.currentTime) return;
+  ch.played = ac;
+  const buf = ac.createBuffer(2, ch.AL.length, ch.rate);
+  buf.copyToChannel(ch.AL, 0); buf.copyToChannel(ch.AR, 1);
+  const src = ac.createBufferSource(); src.buffer = buf; src.connect(tapeBus(ac, full));
+  src.start(Math.max(at, ac.currentTime), Math.max(0, ac.currentTime - at));
+  tape.srcs.add(src); src.onended = () => tape?.srcs.delete(src);
+}
+// Sound on: the tape joins at the current song time.
+function hearTape() {
+  if (!tape?.t0 || !sound.on) return;
+  const ac = kit.live();
+  if (!ac) { if (kit.ac) kit.ac.addEventListener('statechange', hearTape, { once: true }); return; }
+  if (tape.anchor?.ac === ac) return;
+  tape.anchor = { ac, a0: ac.currentTime - (now() - tape.t0) };
+  for (const j of tape.chunks.keys()) playChunk(j);
+  for (const j of tape.full.keys()) playChunk(j, true);
+}
+function muteTape() {
+  if (!tape) return;
+  for (const s of tape.srcs) { try { s.stop(); } catch (err) { /* the source already stopped */ } }
+  tape.srcs.clear(); tape.anchor = null;
+  for (const ch of tape.chunks.values()) ch.played = null;
+  for (const ch of tape.full.values()) ch.played = null;
+}
+sound.onChange(on => { if (on) hearTape(); else muteTape(); });
+async function startTape(id) {
+  const rate = kit.ac?.sampleRate || 48000;
+  const me = tape = { id, t0: 0, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], mq: [], mpip: [], live: [], lastRead: [], full: new Map(), fullOn: false, bus: null, rate };
+  paintHud(); dirty = true; sync();
+  try { me.song = await loadSong(id); } catch (err) { if (tape === me) changed(); return; }
+  if (tape !== me) return;
+  const kf = tau => 1 - Math.exp(-1 / (tau * rate));
+  me.k = { A: kf(0.01), R: kf(0.08), K: kf(0.04) };
+  me.main = partState(me.song.main, 0, kf);
+  me.mainK = MAIN_SCALE / 5;
+  me.main.spin = drifting() ? TAU / SPIN_T : 0;
+  me.parts = me.song.parts.map((p, i) => partState(p, i + 1, kf));
+  renderStep(me, Infinity); renderStep(me, Infinity);
+  bezel.on = true; bezel.t = now(); bezel.n = me.parts.length; bezel.pos = me.song.pos;
+  me.t0 = now();
+  paintHud(); hearTape(); poke();
+}
+// The readouts follow the song ten times a second; a change repaints the HUD.
+let readT = 0;
+function readoutsMoved(t) {
+  if (!tape?.t0 || t - readT < 0.1) return false;
+  readT = t;
+  const s = t - tape.t0, j = Math.floor(s / CH), ch = tape.chunks.get(j);
+  if (!ch?.K) return false;
+  const ki = clamp(Math.floor((s - j * CH) * 100), 0, CH * 100 - 1);
+  const reads = ch.K.map((K, m) => {
+    const k = K[ki], p = m < tape.parts.length ? tape.parts[m].p : null;
+    // A mini wakes on its first note and sleeps after QUIET seconds without one.
+    if (p) {
+      const L = tape.live[m] || (tape.live[m] = { on: false, t: -1e9, last: -1e9 });
+      if (k) { L.last = t; if (!L.on) { L.on = true; L.t = t; } }
+      else if (L.on && t - L.last > QUIET) { L.on = false; L.t = t; }
+    }
+    // A readout holds its last note while its mini is awake, so it never blinks.
+    if (p?.drum) return '';
+    if (k) tape.lastRead[m] = `${noteOf(HZ[k])} ${Math.round(HZ[k])}`;
+    return !p || !autoHide() || tape.live[m]?.on ? tape.lastRead[m] || '' : '';
+  });
+  const moved = reads.join() !== tape.reads?.join() || tape.live.some(L => L && t - L.t < 0.8);
+  tape.reads = reads;
+  return moved;
+}
+// With Hide idle minis on, a mini fades in over 0.8 s as it wakes and out over 0.5 s as it sleeps.
+const QUIET = 5;
+const autoHide = () => !!ui.setting('autohide')?.value;
+function miniAlpha(m, t) {
+  if (!autoHide()) return tape ? bezelAlpha(t) : 0;
+  const L = tape?.live[m];
+  if (!L) return 0;
+  const a = reduced() ? +L.on : L.on ? clamp((t - L.t) / 0.8) : 1 - clamp((t - L.t) / 0.5);
+  return a * bezelAlpha(t);
+}
+function endTape() {
+  if (!tape) return;
+  muteTape(); tape = null;
+  if (bezel.on) { bezel.on = false; bezel.t = now(); }
+  paintHud();
+}
+// The beam reads the main voice: left drives x, right drives y.
+// Brightness follows the beam's speed, as in Pen mode.
+function tapeSample(t) {
+  let x = 0, y = 0;
+  const s = t - tape.t0, j = Math.floor(s / CH), ch = tape.t0 ? tape.chunks.get(j) : null;
+  if (ch) {
+    const i = Math.min(ch.L.length - 1, Math.max(0, Math.floor((s - j * CH) * ch.rate)));
+    // A slow peak follower keeps stacked notes inside MAIN_SCALE divisions.
+    const pk = Math.max(Math.abs(ch.L[i]), Math.abs(ch.R[i]));
+    tape.mainPk = Math.max(pk, (tape.mainPk || 1) * (1 - 0.5 / SR));
+    const g = 5 * tape.mainK / Math.max(1, tape.mainPk);
+    x = ch.L[i] * g; y = ch.R[i] * g;
+  }
+  pt[0] = (CX + clamp(x, -5, 5) * DIV) * K;
+  pt[1] = (CY + clamp(y, -5, 5) * DIV) * K;
+  const pv = tape.prev || (tape.prev = [pt[0], pt[1]]);
+  const v = Math.hypot(pt[0] - pv[0], pt[1] - pv[1]) * SR;
+  pv[0] = pt[0]; pv[1] = pt[1]; shown = null;
+  return IK * sigma * Math.max(v, 2000);
+}
+
+// Each mini draws its part's shape at every beam step, as the main beam does.
+// A peak follower scales each shape to fill its circle; it may run past the edge.
+// The bezel masks all outside it: those segments carry no light.
+// Brightness follows the spot's speed; the minis fade in with their bezels.
+const MINI_FILL = 1.15;
+// A Catmull-Rom spline through the stored samples: the beam bends, as a real beam does.
+function spline(A, fi) {
+  const i = fi | 0, t = fi - i, n = A.length - 1;
+  const p0 = A[Math.max(0, i - 1)], p1 = A[i], p2 = A[Math.min(n, i + 1)], p3 = A[Math.min(n, i + 2)];
+  return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+}
+// Each mini's light per frame eases toward its raw light over about 0.25 s.
+// A ceiling stops any mini outshining a small steady circle, so nothing strobes.
+// The centre pip shows after QUIET_PIP seconds of silence and eases in and out.
+const MINI_EASE = 0.25, QUIET_PIP = 0.25;
+function miniDraw(t1, n) {
+  if (!tape?.t0) return 0;
+  let o = n;
+  const dt = n / SR, kE = 1 - Math.exp(-dt / MINI_EASE), kP = 1 - Math.exp(-dt / 0.3);
+  for (let m = 0; m < tape.parts.length; m++) {
+    const P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = r * 1.1, fade = miniAlpha(m, t1);
+    if (!fade) continue;
+    // The snare and hat bursts draw at half light.
+    const noisy = tape.parts[m].p.drum === 'hat' || tape.parts[m].p.drum === 'snare';
+    const o0 = o;
+    let raw = 0, loud = 0;
+    for (let k = 1; k <= n && o < MAXSEG - 1; k++) {
+      const s = t1 + k / SR - tape.t0, j = Math.floor(s / CH), ch = tape.chunks.get(j);
+      if (!ch) continue;
+      const A = ch.M[m], fi = clamp((s - j * CH) * ch.rate / MS, 0, A[0].length - 1);
+      const lx = spline(A[0], fi), ly = spline(A[1], fi), pk = Math.max(Math.abs(lx), Math.abs(ly));
+      // The peak rises at once and falls over about a second.
+      // The size eases toward it over about 0.4 s, so no shape jumps.
+      tape.mpk[m] = Math.max(pk, (tape.mpk[m] || 0) * (1 - 1 / SR));
+      const gt = MINI_FILL / Math.max(0.05, tape.mpk[m]);
+      tape.mg[m] = tape.mg[m] ? tape.mg[m] + (gt - tape.mg[m]) * (2.5 / SR) : gt;
+      const g = tape.mg[m], x = cx + lx * g * r, y = cy + ly * g * r;
+      const pv = tape.mprev[m] || (tape.mprev[m] = [x, y]);
+      const v = Math.hypot(x - pv[0], y - pv[1]) * SR;
+      const out = Math.hypot(x - cx, y - cy) > rm || Math.hypot(pv[0] - cx, pv[1] - cy) > rm;
+      const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 600) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
+      if (pk >= 0.01) loud++;
+      raw += e;
+      inst[q] = pv[0]; inst[q + 1] = pv[1]; inst[q + 2] = x; inst[q + 3] = y; inst[q + 4] = e;
+      pv[0] = x; pv[1] = y; o++;
+    }
+    // The limiter: ease the frame's light, cap it, and scale this mini's segments to match.
+    const cap = IK * sigma * TAU * r * 150 * 0.6 * dt;
+    const L = tape.mlit[m] = (tape.mlit[m] || 0) + (Math.min(raw, cap) - (tape.mlit[m] || 0)) * kE;
+    const sc = raw > 0 ? fade * L / raw : 0;
+    for (let q = o0; q < o; q++) inst[q * 5 + 4] *= sc;
+    // The pip: silence for QUIET_PIP seconds brings it in; any note takes it out.
+    tape.mq[m] = loud ? 0 : (tape.mq[m] || 0) + dt;
+    const pipTo = tape.mq[m] > QUIET_PIP ? 1 : 0;
+    tape.mpip[m] = (tape.mpip[m] || 0) + (pipTo - (tape.mpip[m] || 0)) * kP;
+    if (tape.mpip[m] > 0.01 && o < MAXSEG) {
+      const q = o * 5;
+      inst[q] = cx; inst[q + 1] = cy; inst[q + 2] = cx; inst[q + 3] = cy; inst[q + 4] = fade * tape.mpip[m] * IDOT * sigma * sigma * 0.6 * dt;
+      o++;
+    }
+  }
+  return o - n;
+}
+
+/* ---------- the full mix: every track of the MIDI, on proper instruments ---------- */
+// O fades between the scope voice and this mix; both run on one clock.
+// Chunks render offline, each from the start of any note still held at its edge.
+const FULL_GAIN = 0.3, FULL_FADE = 0.8, BASS_DB = 6;
+// Each track: an instrument and a pan. The Proton wobble is left out.
+// A sampled track plays the sequencer's own recordings: [kind, pan, kit id, detune in semitones].
+// The Synthesizer tracks are the sequencer's live synth; they play on page synths.
+const FULL = {
+  'Synthesizer MAIN SAW CHORDS': ['saws', -0.2], 'Synthesizer SOLO BIT': ['bit', 0.1],
+  'Synthesizer SQUARE LICKS': ['square', -0.25], 'Synthesizer MAIN TRI HIG NOTES': ['tri', 0.25],
+  'Synthesizer BASS SLINE': ['bass', 0], 'Synthesizer VOCAL WAW SAW': ['wah', -0.1],
+  'Smooth Synth MAIN CHORDS': ['sample', 0.2, 52, 0], 'Rhodes MAIN CHORDS': ['sample', -0.3, 62, 0], 'Scifi MAIN': ['sample', 0.3, 7, 0],
+  'Bass Guitar MAIN FART BASS': ['sample', 0, 54, -12], 'Strings MAIN VOCALS': ['sample', 0, 47, 0],
+  'Vibraphone MAIN SHORTS': ['sample', 0.35, 34, 0], 'Xylophone MAIN': ['sample', -0.35, 19, 0], 'Steel Drums MAIN': ['sample', 0.3, 21, 0],
+  'Electric Drum Kit KICKS': ['sample', 0, 31, 0], 'Electric Drum Kit TOMS': ['sample', -0.3, 31, 0], '2023 Drum Kit TOMS': ['sample', 0.3, 53, 0],
+  'Electric Drum Kit EXTRAS': ['sample', 0.1, 31, 0], '909 Drum Kit HI': ['sample', 0.3, 42, 0], '909 Drum Kit OPEN': ['sample', 0.3, 42, 0],
+  '909 Drum Kit SNS': ['sample', 0, 42, 1],
+  'Synth Bass (Classic)': ['sample', 0, 27, 0], 'Smooth Synth (Classic)': ['sample', 0.2, 3, 0], 'Muted E-Guitar': ['sample', -0.25, 35, 0],
+  'Electric Drum Kit': ['sample', 0, 31, 0], '8-Bit Triangle': ['tri', 0], 'Koto': ['sample', 0.3, 33, 0],
+  'Flute (Classic)': ['sample', -0.1, 23, 0], 'Trombone (Classic)': ['sample', 0.1, 10, 0],
+  'Harpsichord': ['sample', -0.2, 17, 0], 'Synth Pluck (Classic)': ['sample', 0.1, 6, 0], 'Slap Bass': ['sample', 0, 29, 0],
+  'Grand Piano (Classic)': ['sample', 0.15, 8, 0], 'Elec. Piano (Classic)': ['sample', -0.15, 0, 0], 'Ragtime Piano': ['sample', 0.25, 25, 0],
+  'Bass Guitar MAIN': ['sample', 0, 54, 0], 'Synth Bass MAIN': ['sample', 0, 56, 0], 'Pop Synth BASS': ['sample', 0, 57, 0],
+  '909 Drum Kit H': ['sample', 0.3, 42, 0], 'Electric Drum Kit H': ['sample', 0.3, 31, 0], 'Electric Drum Kit TAM': ['sample', 0.25, 31, 0],
+  'Flute VOCAL': ['sample', -0.1, 23, 0], '8-Bit Sine VOCAL': ['sine8', 0.1], 'Synth Pluck VOCAL': ['sample', 0, 6, 0],
+  '909 Drum Kit SNARE': ['sample', 0, 42, 0], '2013 Drum Kit SNARE': ['sample', 0, 40, 0], 'Electric Drum Kit SNARE': ['sample', 0, 31, 0],
+  '909 Drum Kit KICK': ['sample', 0, 42, 0], 'Electric Drum Kit KICK': ['sample', 0, 31, 0], 'Electric Drum Kit TOM': ['sample', -0.3, 31, 0],
+  'Smooth Synth MAIN': ['sample', 0.2, 52, 0], 'Clean Guitar M': ['sample', -0.2, 49, 0], 'Pop Synth M': ['sample', 0.15, 57, 0],
+  'Violin L': ['sample', -0.4, 46, 0],
+};
+// Each song's sample kit: one bundle of the notes it uses, and its index.
+// The index gives, per kit and note: bundle start, length, semitone shift, weight.
+const sampleKits = new Map();
+function loadKit(name) {
+  if (!name) return Promise.resolve(null);
+  if (!sampleKits.has(name)) sampleKits.set(name, Promise.all([
+    fetch(`${name}.json`).then(r => r.json()),
+    fetch(`${name}.mp3`).then(r => r.arrayBuffer()).then(b => new OfflineAudioContext(2, 1, 44100).decodeAudioData(b)),
+  ]).then(([index, buf]) => ({ index, buf })).catch(() => null));
+  return sampleKits.get(name);
+}
+// The song file holds key + 24 below the sequencer's note numbers, less the track's detune.
+// The sequencer's MIDI velocity scale is 76, so v * 127 / 76 is its note volume.
+function sampleNote(c, out, K, ins, k, v, t, d) {
+  // The fifth field moves the note base for files whose drums sit elsewhere.
+  // The sixth field maps GM drum notes back to kit notes for a kit with its own drum map.
+  const [, , kid, det, off = 36, map] = ins, kit = K.index[kid], e = kit?.notes[map?.[k] ?? k - off - det];
+  if (!e) return;
+  const [start, len, shift, wgt] = e, src = c.createBufferSource(), g = c.createGain();
+  src.buffer = K.buf; src.detune.value = (shift + det) * 100;
+  g.gain.value = Math.min(3, v * 127 / 76 * kit.volume * (wgt || 1));
+  if (kit.sustained) g.gain.setTargetAtTime(0, t + d, kit.fade || 0.1);
+  src.connect(g); g.connect(out); src.start(t, start, len);
+}
+function fosc(c, type, f, t, end, dest, detune = 0) {
+  const o = c.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = detune;
+  o.connect(dest); o.start(t); o.stop(end); return o;
+}
+// A hit decays from its peak; a held note ramps in, holds, and releases.
+function fhit(c, dest, t, peak, dec) {
+  const g = c.createGain(); g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.0005, t + dec);
+  g.connect(dest); return g;
+}
+function fheld(c, dest, t, a, peak, d, rel) {
+  const g = c.createGain(), h = Math.max(a, d);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a);
+  g.gain.setValueAtTime(peak, t + h); g.gain.linearRampToValueAtTime(0, t + h + rel);
+  g.connect(dest); return [g, t + h + rel + 0.01];
+}
+function ffilt(c, type, f, q, dest) {
+  const b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; b.connect(dest); return b;
+}
+// The hiss offset comes from the start time, so every chunk renders the same hiss.
+function fhiss(c, noise, t, end, dest) {
+  const s = c.createBufferSource(); s.buffer = noise; s.loop = true;
+  s.connect(dest); s.start(t, (t * 7.13 + 0.37) % 0.9); s.stop(end);
+}
+// One note of one instrument, at time t for d seconds, at level v.
+function fullNote(c, out, noise, kind, k, v, t, d) {
+  const f = HZ[k];
+  switch (kind) {
+    case 'saws': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 2400, 0.7, out), t, 0.01, v * 0.5, d, 0.12); fosc(c, 'sawtooth', f, t, e, g, -7); fosc(c, 'sawtooth', f, t, e, g, 7); return; }
+    case 'smooth': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 2000, 0.5, out), t, 0.03, v * 0.6, d, 0.2); fosc(c, 'triangle', f, t, e, g); fosc(c, 'sine', f * 2, t, e, g); return; }
+    case 'rhodes': { fosc(c, 'sine', f, t, t + 1.5, fhit(c, out, t, v * 0.7, 1.4)); fosc(c, 'sine', f * 2, t, t + 0.5, fhit(c, out, t, v * 0.25, 0.4)); return; }
+    case 'scifi': {
+      const [g, e] = fheld(c, out, t, 0.05, v * 0.5, d, 0.3), o = fosc(c, 'sine', f, t, e, g);
+      const lfo = c.createOscillator(), dep = c.createGain(); lfo.frequency.value = 5.5; dep.gain.value = 8;
+      lfo.connect(dep); dep.connect(o.detune); lfo.start(t); lfo.stop(e); return;
+    }
+    case 'bit': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 3500, 0.5, out), t, 0.005, v * 0.35, d, 0.08); fosc(c, 'square', f, t, e, g); return; }
+    case 'square': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 2800, 0.5, out), t, 0.005, v * 0.35, d, 0.1); fosc(c, 'square', f, t, e, g); return; }
+    case 'sine8': { const [g, e] = fheld(c, out, t, 0.005, v * 0.35, d, 0.08); fosc(c, 'sine', f, t, e, g); return; }
+    case 'tri': { const [g, e] = fheld(c, out, t, 0.005, v * 0.6, d, 0.15); fosc(c, 'triangle', f, t, e, g); return; }
+    case 'fart': {
+      const lp = ffilt(c, 'lowpass', 300, 4, out), [g, e] = fheld(c, lp, t, 0.005, v * 0.7, d, 0.06);
+      lp.frequency.setValueAtTime(1400, t); lp.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+      fosc(c, 'sawtooth', f, t, e, g); return;
+    }
+    case 'bass': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 900, 0.8, out), t, 0.005, v * 0.8, d, 0.06); fosc(c, 'sawtooth', f, t, e, g); fosc(c, 'sine', f / 2, t, e, g); return; }
+    case 'strings': { const [g, e] = fheld(c, ffilt(c, 'lowpass', 3200, 0.5, out), t, 0.08, v * 0.45, d, 0.35); fosc(c, 'sawtooth', f, t, e, g, -6); fosc(c, 'sawtooth', f, t, e, g, 6); return; }
+    case 'wah': {
+      const bp = ffilt(c, 'bandpass', 500, 4, out), [g, e] = fheld(c, bp, t, 0.02, v * 0.9, d, 0.1);
+      bp.frequency.setValueAtTime(500, t); bp.frequency.linearRampToValueAtTime(1800, t + Math.max(0.05, d));
+      fosc(c, 'sawtooth', f, t, e, g); return;
+    }
+    case 'vibe': { fosc(c, 'sine', f, t, t + 1.3, fhit(c, out, t, v * 0.6, 1.2)); fosc(c, 'sine', f * 4, t, t + 0.4, fhit(c, out, t, v * 0.12, 0.3)); return; }
+    case 'xylo': { fosc(c, 'sine', f, t, t + 0.4, fhit(c, out, t, v * 0.6, 0.35)); fosc(c, 'sine', f * 3.93, t, t + 0.15, fhit(c, out, t, v * 0.15, 0.1)); return; }
+    case 'steel': { fosc(c, 'sine', f, t, t + 0.7, fhit(c, out, t, v * 0.6, 0.6)); fosc(c, 'sine', f * 2, t, t + 0.3, fhit(c, out, t, v * 0.2, 0.25)); fosc(c, 'sine', f * 3.01, t, t + 0.2, fhit(c, out, t, v * 0.1, 0.15)); return; }
+    case 'kick': { const o = fosc(c, 'sine', 150, t, t + 0.45, fhit(c, out, t, v * 1.2, 0.4)); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); return; }
+    case 'tom': { const o = fosc(c, 'sine', f * 2, t, t + 0.35, fhit(c, out, t, v * 0.7, 0.3)); o.frequency.exponentialRampToValueAtTime(f * 0.8, t + 0.2); return; }
+    case 'clap': { for (const dt of [0, 0.012, 0.024]) fhiss(c, noise, t + dt, t + dt + 0.1, ffilt(c, 'bandpass', 1200, 1.5, fhit(c, out, t + dt, v * 0.5, 0.08))); return; }
+    case 'hat': { fhiss(c, noise, t, t + 0.06, ffilt(c, 'highpass', 7000, 0.7, fhit(c, out, t, v * 0.25, 0.05))); return; }
+    case 'open': { fhiss(c, noise, t, t + 0.4, ffilt(c, 'highpass', 7000, 0.7, fhit(c, out, t, v * 0.25, 0.35))); return; }
+    case 'snare': { fhiss(c, noise, t, t + 0.2, ffilt(c, 'bandpass', 1800, 0.8, fhit(c, out, t, v * 0.6, 0.18))); fosc(c, 'triangle', 185, t, t + 0.1, fhit(c, out, t, v * 0.4, 0.08)); return; }
+  }
+}
+// Renders full chunk j: the notes of the window, kept from j*CH.
+async function renderFull(song, j, rate) {
+  const from = j * CH, all = song.all, K = await loadKit(song.kit);
+  let pre = 1.5;
+  for (const n of all) { if (n.t >= from) break; if (n.e > from) pre = Math.max(pre, from - n.t + 0.1); }
+  pre = Math.min(pre, 15);
+  const t0 = from - pre, c = new OfflineAudioContext(2, Math.ceil((CH + pre) * rate), rate);
+  const noise = c.createBuffer(1, rate, rate), nd = noise.getChannelData(0);
+  for (let i = 0, x = 1; i < nd.length; i++) { x = (x * 16807) % 2147483647; nd[i] = x / 1073741823.5 - 1; }
+  const master = c.createGain(); master.gain.value = FULL_GAIN; master.connect(c.destination);
+  const buses = new Map();
+  let lo = 0, hi = all.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (all[m].t < t0) lo = m + 1; else hi = m; }
+  for (let i = lo; i < all.length && all[i].t < from + CH; i++) {
+    const n = all[i], ins = song.full?.[n.tr] || FULL[n.tr];
+    if (!ins) continue;
+    if (!buses.has(n.tr)) { const p = c.createStereoPanner(); p.pan.value = ins[1]; p.connect(master); buses.set(n.tr, p); }
+    if (ins[0] === 'sample') { if (K) sampleNote(c, buses.get(n.tr), K, ins, n.k, n.v, n.t - t0, n.e - n.t); }
+    else fullNote(c, buses.get(n.tr), noise, ins[0], n.k, n.v, n.t - t0, n.e - n.t);
+  }
+  const buf = await c.startRendering(), a = Math.round(pre * rate);
+  return { AL: buf.getChannelData(0).slice(a), AR: buf.getChannelData(1).slice(a), rate };
+}
+// The full mix keeps two chunks ahead while sound is on.
+function feedFull(j) {
+  const me = tape;
+  if (!sound.on) return;
+  for (let i = j; i <= j + 2 && i * CH < me.song.dur; i++) {
+    if (me.full.has(i)) continue;
+    me.full.set(i, {});
+    renderFull(me.song, i, me.rate).then(ch => { if (tape !== me) return; me.full.set(i, ch); playChunk(i, true); });
+  }
+  for (const i of me.full.keys()) if (i < j - 1) me.full.delete(i);
+}
+// Two buses: the scope voice and the full mix; O crossfades their gains.
+function tapeBus(ac, full) {
+  if (tape.bus?.ac !== ac) {
+    const scope = ac.createGain(), mix = ac.createGain();
+    scope.gain.value = tape.fullOn ? 0 : 1; mix.gain.value = tape.fullOn ? 1 : 0;
+    // A low shelf lifts the bass of both, BASS_DB below about 150 Hz.
+    const shelf = to => { const f = ac.createBiquadFilter(); f.type = 'lowshelf'; f.frequency.value = 150; f.gain.value = BASS_DB; f.connect(to); return f; };
+    scope.connect(shelf(tapeIn(ac))); mix.connect(shelf(ensureChain(ac).in));
+    tape.bus = { ac, scope, mix };
+  }
+  return full ? tape.bus.mix : tape.bus.scope;
+}
+function toggleFull() {
+  if (!tape?.t0) return;
+  tape.fullOn = !tape.fullOn;
+  paintHud();
+  const B = tape.bus, ac = B?.ac;
+  if (!ac) return;
+  const at = ac.currentTime, T = reduced() ? 0.05 : FULL_FADE;
+  for (const [g, to] of [[B.scope.gain, tape.fullOn ? 0 : 1], [B.mix.gain, tape.fullOn ? 1 : 0]]) {
+    g.cancelScheduledValues(at); g.setValueAtTime(g.value, at); g.linearRampToValueAtTime(to, at + T);
+  }
+}
+
 /* ---------- the beam's signal ---------- */
 // Traces crossfade like the voices; each one knows its own shape.
 let traces = [];
 const weight = (v, t) => clamp((t - v.born) / FADE) * (v.dieAt ? clamp(1 - (t - v.dieAt) / FADE) : 1);
 // Every change of shape goes through here: the beam and the voice follow.
 function changed({ first = false } = {}) {
+  endTape();
   const t = now();
   traces.forEach(v => { if (!v.dieAt) v.dieAt = t; });
   const born = first ? t - FADE : t;
@@ -380,8 +1063,18 @@ const PHOS = [
   { name: 'P7 RADAR', flash: lin([0.88, 0.1, 250]), glow: lin([0.8, 0.17, 105]), tf: 0.03, ts: 1.5, slow: 0.05, gain: [0.9, 0.7, 0.3] },
   { name: 'P3 AMBER', flash: lin([0.86, 0.15, 72]), glow: lin([0.6, 0.17, 52]), tf: 0.05, ts: 0.35, slow: 0.12, gain: [1, 0.9, 0.34] },
   { name: 'P4 WHITE', flash: lin([0.95, 0.03, 240]), glow: lin([0.62, 0.09, 258]), tf: 0.05, ts: 0.28, slow: 0.1, gain: [1, 0.9, 0.3] },
+  // Six more classic phosphors: colour from the tube type, decay from its persistence.
+  { name: 'P1 GREEN', flash: lin([0.88, 0.2, 135]), glow: lin([0.62, 0.17, 140]), tf: 0.05, ts: 0.6, slow: 0.15, gain: [1, 0.9, 0.34] },
+  { name: 'P2 TEAL', flash: lin([0.9, 0.14, 175]), glow: lin([0.65, 0.13, 170]), tf: 0.06, ts: 1.2, slow: 0.2, gain: [1, 0.9, 0.34] },
+  { name: 'P11 BLUE', flash: lin([0.82, 0.15, 255]), glow: lin([0.5, 0.17, 262]), tf: 0.03, ts: 0.2, slow: 0.08, gain: [1, 0.9, 0.3] },
+  { name: 'P19 ORANGE', flash: lin([0.85, 0.16, 60]), glow: lin([0.6, 0.16, 45]), tf: 0.06, ts: 2, slow: 0.2, gain: [1, 0.9, 0.34] },
+  { name: 'P22 RED', flash: lin([0.75, 0.2, 28]), glow: lin([0.5, 0.18, 25]), tf: 0.04, ts: 0.3, slow: 0.1, gain: [1, 0.9, 0.34] },
+  { name: 'P39 LONG', flash: lin([0.9, 0.18, 140]), glow: lin([0.7, 0.16, 140]), tf: 0.08, ts: 2.5, slow: 0.25, gain: [1, 0.9, 0.34] },
 ];
-phos = clamp(Math.floor(Number(store.get(PHOS_KEY)) || 0), 0, PHOS.length - 1);
+// P2 TEAL is the scope's standard colour.
+const PHOS_DEFAULT = PHOS.findIndex(p => p.name === 'P2 TEAL');
+const savedPhos = store.get(PHOS_KEY);
+phos = savedPhos === null ? PHOS_DEFAULT : clamp(Math.floor(Number(savedPhos) || 0), 0, PHOS.length - 1);
 // The tube bulges a little; the pointer maps through the same curve.
 const WARP = 0.045;
 // Colour fringing grows with distance from the centre.
@@ -397,6 +1090,13 @@ precision highp float;
 in vec2 vUv; out vec4 o;
 uniform sampler2D uSrc; uniform vec2 uDecay; uniform float uEps;
 void main() { o = vec4(max(texture(uSrc, vUv).rg * uDecay - uEps, 0.0), 0.0, 1.0); }`;
+// Ghosting, after Sonar: the face keeps the brighter of now and a fading past.
+// It leaves a soft trail and evens out flicker between frames.
+const GHOST = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 o;
+uniform sampler2D uSrc, uOld; uniform float uK;
+void main() { o = vec4(max(texture(uSrc, vUv).rg, texture(uOld, vUv).rg * uK), 0.0, 1.0); }`;
 // One quad per sample step; it covers the segment plus the beam's spread.
 const BEAM_VS = `#version 300 es
 in vec2 aCorner; in vec4 aSeg; in float aE;
@@ -589,6 +1289,7 @@ function program(vs, fs, attrs) {
 }
 const P = {
   decay: program(QUAD_VS, DECAY, ['aPos']),
+  ghost: program(QUAD_VS, GHOST, ['aPos']),
   beam: program(BEAM_VS, BEAM_FS, ['aCorner', 'aSeg', 'aE']),
   down: program(QUAD_VS, DOWN, ['aPos']),
   blur: program(QUAD_VS, BLUR, ['aPos']),
@@ -604,7 +1305,7 @@ gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 // Segment data: a then b in pixels, then energy.
-const MAXSEG = 9000;
+const MAXSEG = 18000;
 const inst = new Float32Array(MAXSEG * 5);
 const beamVao = gl.createVertexArray();
 gl.bindVertexArray(beamVao);
@@ -700,6 +1401,48 @@ function paintHud() {
       g.fillRect(cx - tl, cy + s - 0.5, 2 * tl, 1);
     }
   }
+  // While a song with minis plays, each mini gets a thin round bezel.
+  const ba = bezelAlpha(now());
+  if (ba > 0) {
+    const tn = now();
+    g.lineWidth = 1;
+    bezel.pos.slice(0, bezel.n).forEach(([mx, my], m) => {
+      const a = miniAlpha(m, tn);
+      if (!a) return;
+      // The mini blacks out the graticule inside it, then draws its bezel.
+      g.beginPath(); g.arc(cx + mx * d, cy - my * d, MINI_R * d * 1.1, 0, TAU);
+      g.fillStyle = `rgba(0, 0, 0, ${a})`; g.fill();
+      g.strokeStyle = grey(0.35 * a); g.stroke();
+    });
+    // The song's title and artist run up the right edge of the face, turned a quarter.
+    const song = tape?.song;
+    if (song?.title) {
+      const fs = Math.round(clamp(d * 0.34, 12, 18));
+      g.save(); g.translate(cx + 6.6 * d, cy); g.rotate(-Math.PI / 2);
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `800 ${fs}px Gabarito, system-ui, sans-serif`; g.fillStyle = grey(0.8 * ba);
+      g.fillText(song.title.toUpperCase(), 0, -fs * 0.6);
+      g.font = `700 ${Math.max(10, fs - 3)}px ${MONO}`; g.fillStyle = grey(0.55 * ba);
+      g.fillText(song.artist.toUpperCase(), 0, fs * 0.7);
+      if (song.year) { g.fillStyle = grey(0.42 * ba); g.fillText(`${song.year} · ${song.label}`.toUpperCase(), 0, fs * 1.8); }
+      g.restore();
+    }
+    // Each mini's readout sits outside the ring: above, below, or to the side.
+    // The main voice reads out above the middle of the bottom row.
+    if (tape?.reads) {
+      const fs = Math.round(clamp(d * 0.34, 12, 18)), gap = 0.2 * d + fs * 0.6;
+      g.font = `700 ${fs}px ${MONO}`; g.textBaseline = 'middle';
+      tape.reads.forEach((txt, m) => {
+        if (!txt) return;
+        if (m === bezel.n) { g.fillStyle = grey(0.85 * ba); g.textAlign = 'center'; g.fillText(`▸ ${txt}`, cx, cy + 4 * d - MINI_R * 1.1 * d - gap); return; }
+        g.fillStyle = grey(0.8 * miniAlpha(m, tn));
+        const [mx, my] = bezel.pos[m], ex = MINI_R * 1.1 * d, x = cx + mx * d, y = cy - my * d;
+        if (my === 4) { g.textAlign = 'center'; g.fillText(txt, x, y - ex - gap); }
+        else if (my === -4) { g.textAlign = 'center'; g.fillText(txt, x, y + ex + gap); }
+        else { g.textAlign = mx < 0 ? 'right' : 'left'; g.fillText(txt, x + (mx < 0 ? -1 : 1) * (ex + 0.15 * d), y); }
+      });
+    }
+  }
   const arm = d * 0.55, bt = clamp(d * 0.09, 2.5, 5), e = 5 * d;
   g.fillStyle = grey(0.55);
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
@@ -709,7 +1452,7 @@ function paintHud() {
   }
   // In Knot mode the face is a five by five picker with numbered edges.
   const big = Math.round(clamp(d * 0.5, 17, 28)), small = Math.round(clamp(d * 0.28, 11, 15));
-  if (mode === 'knot') {
+  if (mode === 'knot' && !tape) {
     if (knot && picking) {
       g.fillStyle = grey(0.07);
       g.fillRect(cx + (-5 + 2 * (pickCell[0] - 1)) * d, cy + (5 - 2 * pickCell[1]) * d, 2 * d, 2 * d);
@@ -729,9 +1472,9 @@ function paintHud() {
   const pad = 18, top = hudTop;
   g.textBaseline = 'top'; g.textAlign = 'left';
   g.fillStyle = grey(0.92); g.font = `800 ${big}px Gabarito, system-ui, sans-serif`;
-  const label = mode === 'pen' ? 'PEN' : 'KNOT';
+  const label = tape ? (tape.fullOn ? 'FULL' : 'TAPE') : mode === 'pen' ? 'PEN' : 'KNOT';
   g.fillText(label, pad, top);
-  if (mode === 'knot' && knot) {
+  if (mode === 'knot' && knot && !tape) {
     const lw = g.measureText(`${label} `).width;
     g.font = `700 ${big}px ${MONO}`;
     g.fillText(`${knot.a}:${knot.b}`, pad + lw, top);
@@ -751,6 +1494,16 @@ function paintHud() {
   placeTag(spinTag, pad, tagY[0], sw, small);
   placeTag(phosTag, pad, tagY[1], pw, small);
   spinTag.setAttribute('aria-pressed', String(spinOn && !reduced()));
+  // While a song plays, a third tag switches the scope voice and the full mix.
+  fullTag.hidden = !tape?.t0;
+  if (tape?.t0) {
+    const fy = tagY[1] + small + 10, ft = tape.fullOn ? '◑ FULL MIX' : '◑ SCOPE VOICE';
+    g.fillStyle = grey(0.75); g.fillText(ft, pad, fy);
+    let fw = g.measureText(ft).width;
+    if (FINE.matches) fw += 10 + keycap(g, 'O', pad + fw + 10, fy, kc);
+    placeTag(fullTag, pad, fy, fw, small);
+    fullTag.setAttribute('aria-pressed', String(tape.fullOn));
+  }
   g.textAlign = 'right';
   g.fillStyle = grey(0.92); g.font = `700 ${big}px ${MONO}`;
   g.fillText(`${Math.round(pitch)} Hz`, w - pad, top);
@@ -776,11 +1529,21 @@ function paintHud() {
     placeTag(sndTag, w - pad - tw, y, tw, small);
   }
   // A hint sits at the top of the face until the gesture is used.
-  const hint = mode === 'pen' ? (!taught.pen || !pen ? 'DRAG ANYWHERE TO DRAW' : '') : (!taught.knot || !knot ? 'DRAG ACROSS THE GRID TO TIE A KNOT' : '');
+  const hint = tape ? '' : mode === 'pen' ? (!taught.pen || !pen ? 'DRAG ANYWHERE TO DRAW' : '') : (!taught.knot || !knot ? 'DRAG ACROSS THE GRID TO TIE A KNOT' : '');
   if (hint && !stroke) {
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = grey(0.7); g.font = `700 ${small}px ${MONO}`;
     g.fillText(`▸ ${hint}`, cx, cy - 4.55 * d);
+  }
+  // The easter egg hint glitches in at the bottom left, holds, and glitches away.
+  if (egg.t0 >= 0 && !tape) {
+    const p = (now() - egg.t0) / EGG_T, word = `>/ "${egg.word}"`, still = reduced();
+    const rough = still ? 0 : p < 0.15 ? 1 - p / 0.15 : p > 0.7 ? (p - 0.7) / 0.3 : Math.random() < 0.05 ? 0.5 : 0;
+    const txt = [...word].map(ch => (ch !== ' ' && Math.random() < rough * 0.6 ? GLYPHS[Math.random() * GLYPHS.length | 0] : ch)).join('');
+    const jx = rough ? (Math.random() - 0.5) * 0.4 * d * rough : 0;
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 ${small}px ${MONO}`;
+    g.fillStyle = grey(0.7 * (rough && Math.random() < rough * 0.5 ? 0.3 : 1));
+    g.fillText(txt, cx - 4.6 * d + jx, cy + 4.55 * d);
   }
   gl.bindTexture(gl.TEXTURE_2D, hudTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -796,7 +1559,8 @@ function paintHud() {
 /* ---------- layout ---------- */
 // The face is square and sits between the bar's strips; the screen runs full bleed.
 // Face geometry is in device pixels, y up.
-let acc = [], blm = [], ai = 0, dpr = 1, CX = 0, CY = 0, DIV = 1, K = 1, sigma = 1;
+const GHOST_K = 0.55;
+let acc = [], blm = [], ghost = [], gi = 0, ai = 0, dpr = 1, CX = 0, CY = 0, DIV = 1, K = 1, sigma = 1;
 let cssC = [0, 0], cssDiv = 1, hudTop = 18, sizeKey = '';
 // The bar's top and foot strips, in stage pixels, at the last layout.
 let barTop = 0, barBot = 0;
@@ -823,8 +1587,9 @@ function layout() {
   const AW = Math.max(16, Math.round(W * K)), AH = Math.max(16, Math.round(H * K));
   K = AW / W;
   sigma = 1.5 * dpr * K * clamp(cssDiv / 70, 0.85, 1.35);
-  [...acc, ...blm].forEach(drop);
+  [...acc, ...blm, ...ghost].forEach(drop);
   acc = [target(AW, AH), target(AW, AH)];
+  ghost = [target(AW, AH), target(AW, AH)]; gi = 0;
   const BW = Math.max(4, Math.round(AW / 4)), BH = Math.max(4, Math.round(AH / 4));
   blm = [target(BW, BH), target(BW, BH)];
   ai = 0;
@@ -891,7 +1656,18 @@ function quadPass(prog, dst, src, set) {
 }
 let drew = false;
 function present(t) {
-  const src = acc[ai];
+  // The ghost pass keeps the brighter of now and the past at GHOST_K; reduced motion skips the trail.
+  const gNew = ghost[1 - gi];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, gNew.fb); gl.viewport(0, 0, gNew.w, gNew.h);
+  gl.useProgram(P.ghost.p); gl.bindVertexArray(quadVao);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, acc[ai].tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ghost[gi].tex);
+  gl.uniform1i(P.ghost.u.uSrc, 0); gl.uniform1i(P.ghost.u.uOld, 1);
+  gl.uniform1f(P.ghost.u.uK, reduced() ? 0 : GHOST_K);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.activeTexture(gl.TEXTURE0);
+  gi = 1 - gi;
+  const src = gNew;
   quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
   // Two blur rounds, the second wider, keep hot spots round.
   for (const s of [1, 2.2]) {
@@ -930,6 +1706,7 @@ let ph = 0;
 let sn = 0, shown = null, lastG = -1, ctG = 1, stG = 0;
 const xy = [0, 0];
 function sample(phase, t) {
+  if (tape) return tapeSample(t);
   const r = (Math.floor(sn++ / 64) * 0.6180339887) % 1;
   let total = 0;
   for (const v of traces) total += weight(v, t);
@@ -966,7 +1743,7 @@ function sample(phase, t) {
 let tS = 0, last = [0, 0];
 function sweep(t) {
   if (t - tS > 0.1) { tS = t - 0.1; sample(ph, tS); last = [pt[0], pt[1]]; }
-  const n = Math.min(MAXSEG, Math.floor((t - tS) * SR)), step = pitch / SR;
+  const n = Math.min(4000, Math.floor((t - tS) * SR)), step = pitch / SR, t1 = tS;
   for (let k = 0; k < n; k++) {
     ph += step;
     if (ph >= 3600) ph -= 3600;
@@ -975,7 +1752,7 @@ function sweep(t) {
     last[0] = pt[0]; last[1] = pt[1];
   }
   tS += n / SR;
-  return n;
+  return tape ? n + miniDraw(t1, n) : n;
 }
 
 // At rest the face shows the steady glow of one full lap.
@@ -1013,12 +1790,14 @@ function frame() {
   const dt = clamp(t - lastFrame, 0, 0.25);
   lastFrame = t;
   traces = traces.filter(v => !v.dieAt || t < v.dieAt + FADE);
+  if (bezelMoving(t) || readoutsMoved(t)) paintHud();
   const n = sweep(t), P0 = PHOS[phos];
   decayPass(dt);
   beamPass(n, 1, P0.slow);
   present(t);
+  if (tape) feedTape(t);
   if (!visible) return;
-  if (busy || drifting() || traces.length > 1 || t - lastInput < STILL) raf = requestAnimationFrame(frame);
+  if (tape || busy || drifting() || traces.length > 1 || t - lastInput < STILL) raf = requestAnimationFrame(frame);
   else settle();
 }
 function poke() {
@@ -1031,7 +1810,7 @@ function poke() {
 whenVisible(stage, v => {
   visible = v;
   if (v) { if (kit.ac) kit.wake(); dirty = true; sync(); poke(); }
-  else { cancelAnimationFrame(raf); raf = 0; silence(); kit.ac?.suspend()?.catch(() => {}); }
+  else { cancelAnimationFrame(raf); raf = 0; if (tape) changed(); silence(); kit.ac?.suspend()?.catch(() => {}); }
 });
 
 /* ---------- pointer ---------- */
@@ -1059,6 +1838,7 @@ let strokeLen = 0, lastBuild = 0, before = null;
 canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
+  if (tape) changed();
   const p = toDiv(e);
   if (mode === 'pen') { before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0; }
   else { picking = true; pick(p); }
@@ -1146,24 +1926,48 @@ function toggleSpin() {
   spinOn = !spinOn; setTheta(th);
   paintHud(); dirty = true; sync(); poke();
 }
-// Reset returns to the first visit: the cube, Pen, 110 hertz, green, turning.
+// Reset returns to the first visit: the cube, Pen, 110 hertz, teal, turning.
 function resetAll() {
   mode = 'pen'; ui.choice.set('pen');
   presetIdx = 0; pen = PRESETS[0](); knot = { a: 3, b: 2 }; pickCell = [3, 2];
-  phos = 0; store.set(PHOS_KEY, '0');
+  phos = PHOS_DEFAULT; store.set(PHOS_KEY, String(PHOS_DEFAULT));
   spinOn = !reduced(); setTheta(0);
   ui.slider.set(fromHz(110));
   setPitch(110);
   changed();
 }
 spinTag.addEventListener('click', toggleSpin);
+fullTag.addEventListener('click', toggleFull);
+// The egg hint shows every 45 to 90 s, for EGG_T seconds, while no song plays; it names each codeword in turn.
+// Its HUD repaints only while it shows.
+const EGG_T = 2.6, GLYPHS = '#%&/<>_|01';
+const egg = { t0: -1, n: Math.floor(Math.random() * 5), word: 'stars' };
+function scheduleEgg(ms = 45000 + Math.random() * 45000) { setTimeout(showEgg, ms); }
+function showEgg() {
+  if (!visible || tape || document.hidden) { scheduleEgg(); return; }
+  // Each showing names one codeword, in turn.
+  egg.word = WORDS[egg.n++ % WORDS.length];
+  egg.t0 = now();
+  const iv = setInterval(() => {
+    if (now() - egg.t0 > EGG_T) { clearInterval(iv); egg.t0 = -1; scheduleEgg(); }
+    paintHud(); poke();
+  }, 70);
+}
+scheduleEgg(20000 + Math.random() * 20000);
 phosTag.addEventListener('click', nextPhosphor);
-Object.assign(act, { shuffle, clear, reset: resetAll });
+Object.assign(act, { shuffle, clear, reset: resetAll, look: () => { paintHud(); poke(); } });
 // The shell binds S and C; the page binds the arrows, Space and P.
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat && !e.key.startsWith('Arrow')) return;
   if (e.target.closest?.('input, textarea, select, .s2-sheet')) return;
   const k = e.key.toLowerCase();
+  // Typing a song's codeword plays it; the same word or Escape stops it.
+  if (k.length === 1) typed = (typed + k).slice(-7);
+  const word = WORDS.find(w => typed.endsWith(w)) || '';
+  if (word) { typed = ''; const was = tape?.id; if (tape) changed(); if (was !== word) startTape(word); return; }
+  if (k === 'escape' && tape) { changed(); return; }
+  // O fades between the scope voice and the full mix while the song plays.
+  if (k === 'o' && tape) { toggleFull(); return; }
   if ((k === 'arrowup' || k === 'arrowdown') && document.activeElement === stage) { e.preventDefault(); stepPitch(k === 'arrowup' ? 1 : -1); }
   else if (k === 'p') nextPhosphor();
   else if (k === ' ' && !e.target.closest?.('button, a')) { e.preventDefault(); toggleSpin(); }
