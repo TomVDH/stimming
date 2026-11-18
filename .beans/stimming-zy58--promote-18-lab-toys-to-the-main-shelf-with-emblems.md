@@ -60,8 +60,13 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 - [ ] Bar spec port, then v3 copy: foil, marble, plasma, snow, windfarm, subway, harmono
 - [ ] East Van postcards: Tom decides the bar
 - [ ] Icon walkthrough page `icons/spike-promote-1.html`: current icon beside its emblem, one toy at a time
-- [ ] Icon rounds: subway, bowl, rupert, carwash, postcard; picks in `icons/picks.json`; menu tiles updated
-- [ ] Emblems `shared/emblems/<id>.svg` and the `emblem` field for the 13 without one
+- [x] Icon rounds: subway, bowl, rupert, carwash, postcard; picks in `icons/picks.json`; menu tiles updated
+  - [x] Menu tiles on their A icon (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert. Observatory has icon 1 of spike observatory-2 (from main)
+  - [x] Current icon kept, by Tom: carwash, windfarm, harmono, kintsugi, crossing
+  - [x] rupert: A of spike rupert-2 (2026-11-17)
+- [x] Emblems `shared/emblems/<id>.svg` and the `emblem` field for the 13 without one
+  - [x] Done (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert, observatory, kintsugi, crossing, windfarm, harmono, carwash
+  - [x] rupert: A of spike rupert-2 (2026-11-17)
 - [ ] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
 - [ ] `process.md:52` says Bar v3, not Bar v2
 - [ ] Verify: check, build, bar tests, `?all` and `?lab`, each toy's intro and bar, reduced motion
