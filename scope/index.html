@@ -1769,7 +1769,10 @@ function paintHud() {
     // The edge numbers light the picked cell, or the knot's own ratio.
     const lit = picking ? pickCell : knot ? [knot.a, knot.b] : [0, 0];
     g.font = `700 ${small}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    // A dense grid labels every second or third cell, and always the lit ones.
+    const every = KG > 16 ? 3 : KG > 10 ? 2 : 1;
     for (let n = 1; n <= KG; n++) {
+      if (n % every && n !== 1 && n !== lit[0] && n !== lit[1]) continue;
       const at = -5 + (n - 0.5) * KC;
       g.fillStyle = grey(lit[0] === n ? 0.85 : 0.32);
       g.fillText(String(n), cx + at * d, cy + 4.7 * d);
@@ -1788,6 +1791,13 @@ function paintHud() {
     const lw = g.measureText(`${label} `).width;
     g.font = `700 ${big}px ${MONO}`;
     g.fillText(`${knot.a}:${knot.b}`, pad + lw, top);
+  }
+  // In Knot mode the grid size reads out small after the ratio.
+  if (mode === 'knot' && !tape) {
+    const rw = g.measureText(knot ? `${label} ${knot.a}:${knot.b} ` : `${label} `).width + 6;
+    g.font = `700 ${small}px ${MONO}`; g.fillStyle = grey(0.5);
+    g.fillText(`${KG}×${KG}`, pad + rw, top + (big - small) * 0.6);
+    g.fillStyle = grey(0.92);
   }
   // Two tappable tags sit under the mode: spin, then the phosphor.
   // A mouse screen adds each tag's key as a keycap.
@@ -2156,7 +2166,15 @@ function toDiv(e) {
 }
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 // The ratio picker splits the face into KG by KG cells, KC divisions wide.
-const KG = 9, KC = 10 / KG;
+// Horizontal scroll steps KG through KGRIDS.
+const KGRIDS = [5, 9, 12, 24];
+let KG = 9, KC = 10 / KG;
+function stepGrid(dir) {
+  const i = clamp(KGRIDS.indexOf(KG) + dir, 0, KGRIDS.length - 1);
+  if (KGRIDS[i] === KG) return;
+  KG = KGRIDS[i]; KC = 10 / KG;
+  paintHud(); poke();
+}
 // A ratio such as 4:2 ties the same knot as 2:1.
 function pick(p) {
   const ca = 1 + clamp(Math.floor((p[0] + 5) / KC), 0, KG - 1), cb = 1 + clamp(Math.floor((p[1] + 5) / KC), 0, KG - 1);
@@ -2180,8 +2198,15 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerleave', () => { if (tape && tape.hover !== -1) { tape.hover = -1; paintHud(); poke(); } });
 // Scrolling on a mini sets its volume, 0 to 1; the arc and a dB readout show it.
 // Without a song, scrolling in Knot mode steps the pitch a semitone per notch.
-let wheelAcc = 0;
+// Scrolling sideways steps the picker's grid.
+let wheelAcc = 0, wheelAccX = 0;
 canvas.addEventListener('wheel', e => {
+  if (!tape && mode === 'knot' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    e.preventDefault();
+    wheelAccX += e.deltaMode ? e.deltaX * 33 : e.deltaX;
+    while (Math.abs(wheelAccX) >= 100) { stepGrid(wheelAccX > 0 ? 1 : -1); wheelAccX -= Math.sign(wheelAccX) * 100; }
+    return;
+  }
   if (!tape && mode === 'knot') {
     e.preventDefault();
     // A mouse notch reports about 100 px or 3 lines: one semitone.
