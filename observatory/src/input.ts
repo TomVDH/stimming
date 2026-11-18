@@ -31,7 +31,8 @@ let press: { id: number; x: number; y: number; t: number } | null = null;
 const aim = (e: PointerEvent) => { const a = pointerAltAz(e.clientX, e.clientY); for (const fn of aimFns) fn(a); };
 
 stageEl.addEventListener('pointerdown', e => {
-  if (e.button > 0 || press) return;
+  // A press on the bar, a sheet or a button is not a tap on the sky.
+  if (e.button > 0 || press || !(e.target instanceof HTMLCanvasElement)) return;
   stageEl.setPointerCapture(e.pointerId);
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
   aim(e);

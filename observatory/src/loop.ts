@@ -7,7 +7,7 @@ import {
   type Axis, type Limits, type Shutter,
 } from './core/dome.ts';
 import { Vector3 } from 'three';
-import { camera, renderer, stageEl } from './setup.ts';
+import { camHooks, camera, renderer, stageEl, ui } from './setup.ts';
 import { renderPost } from './post/chain.ts';
 import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
 import { complex } from './world/complex.ts';
@@ -18,7 +18,8 @@ import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
 import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
-import { cuts } from './view/cuts.ts';
+import { camDev, cuts, type CamKey } from './view/cuts.ts';
+import type { Shot } from './core/sequence.ts';
 import { hero } from './world/hero.ts';
 import { onAim, onEsc, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
@@ -41,7 +42,8 @@ const REST_AZ = (Math.atan2(eye.x - mainAt.x, -(eye.z - mainAt.z)) * 180 / Math.
 // The cupola turns after the beam only once the pointer has moved.
 let aimed = false;
 // The machine owns the main dome: cupola, tube and shutter. It starts shut.
-const machine = makeMachine({ az: REST_AZ });
+// The ?dev shot replay builds a fresh machine, so this is let.
+let machine = makeMachine({ az: REST_AZ });
 // The small domes start 1.5 s and 3 s after the leader.
 // In aim the leader is the beam; after a pick it is the main dome's cupola.
 // They rest shut, open that long after a pick, and shut that long after aim.
@@ -118,6 +120,8 @@ const liftView = () => ({
 });
 const skyMoving = () => clock.easing() || clock.speed > 1;
 
+// The laser's mouth, reused each frame.
+const mouth = new Vector3();
 function pose(): void {
   skyAt(clock.skyMs());
   for (const d of turns) {
@@ -140,7 +144,9 @@ function pose(): void {
   // At dusk each lamp comes on alone.
   lights.set(light, opening.done ? undefined : opening.lamp);
   // The beam follows the pointer in aim; after a pick it follows the tube.
-  laser.aim(complex.main.slitTop, m.phase === 'aim' || m.phase === 'lost' ? aim : { alt: m.tubeAlt, az: m.tubeAz });
+  // After a pick it leaves the laser on the tube.
+  const free = m.phase === 'aim' || m.phase === 'lost';
+  laser.aim(free ? complex.main.slitTop : complex.main.laserMouth(mouth), free ? aim : { alt: m.tubeAlt, az: m.tubeAz });
 }
 
 export function draw(): void {
@@ -156,6 +162,8 @@ export function draw(): void {
 function tick(now: number): void {
   raf = 0;
   if (!visible) { lastT = 0; return; }
+  // A pause stops the loop; the resume frame steps by 0.
+  if (paused) { lastT = 0; return; }
   frames++;
   // A long gap, such as a background tab, counts as 0.1 s.
   const dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0;
@@ -179,6 +187,8 @@ function tick(now: number): void {
   if (machine.moving || machine.phase !== before) dirty = true;
   cuts.step(dt, liftView());
   if (cuts.busy) dirty = true;
+  if (pauseBtn) pauseBtn.hidden = !cuts.showing;
+  camRows();
   const lv = lightLevel(machine.phase, light, dt);
   if (lv !== light) { light = lv; dirty = true; }
   // The small shutters follow the main dome after their delays.
@@ -276,6 +286,8 @@ onTap(tap);
 // A pick from rest or lost plays the cuts; a re-pick only slews.
 function pick(s: Star): void {
   const from = machine.phase;
+  // The ?dev shot replay starts again from this state.
+  if (from === 'aim' || from === 'lost') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s };
   machine.pick(s);
   // An open shutter plays only the slew cuts.
   if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s));
@@ -288,7 +300,8 @@ function skipOpening(): void {
 }
 onEsc(() => { if (opening.locked) skipOpening(); });
 // A skip by tap or Esc draws the wide shot on the next frame.
-cuts.onSkip(() => { dirty = true; wake(); });
+// A skip also ends a pause.
+cuts.onSkip(() => { setPaused(false); dirty = true; wake(); });
 
 // A hidden page stops the loop at once.
 whenVisible(stageEl, (vis: boolean) => {
@@ -316,25 +329,26 @@ function starScreen(hip: number): { x: number; y: number; alt: number; az: numbe
   return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, alt: p.alt, az: p.az };
 }
 // The brightest catalog stars that stand on the canvas now, above 8 degrees.
-function brightOnScreen(n: number): { star: Star; x: number; y: number; alt: number; az: number }[] {
+// minAlt: the lowest altitude in degrees a star may stand at.
+function brightOnScreen(n: number, minAlt = 8): { star: Star; x: number; y: number; alt: number; az: number }[] {
   const out: { star: Star; x: number; y: number; alt: number; az: number }[] = [];
   const r = stageEl.getBoundingClientRect();
   for (const s of sky.stars) {
     if (!s.hip || s.mag > 3) continue;
     const p = starScreen(s.hip);
-    if (p && p.alt > 8 && p.x > r.left + 20 && p.x < r.right - 20 && p.y > r.top + 20 && p.y < r.bottom - 20) out.push({ star: s, ...p });
+    if (p && p.alt > minAlt && p.x > r.left + 20 && p.x < r.right - 20 && p.y > r.top + 20 && p.y < r.bottom - 20) out.push({ star: s, ...p });
   }
   return out.sort((x, y) => x.star.mag - y.star.mag).slice(0, n);
 }
 
 // The brightest catalog star of the southern sky now.
-// It stands at azimuth 100 to 260 and altitude 15 to 70.
+// It stands at azimuth 100 to 260 and altitude 35 to 70.
 function brightestSouth(): Star | null {
   let best: Star | null = null;
   for (const s of sky.stars) {
     if (!s.hip || (best && s.mag >= best.mag)) continue;
     const p = targetPos(s);
-    if (p.az >= 100 && p.az <= 260 && p.alt >= 15 && p.alt <= 70) best = s;
+    if (p.az >= 100 && p.az <= 260 && p.alt >= 35 && p.alt <= 70) best = s;
   }
   return best;
 }
@@ -361,14 +375,151 @@ function review(): void {
     if (!shutting) { shutting = true; machine.shut(); dirty = true; wake(); replay(); }
     return true;
   };
-  void skyReady.then(() => setTimeout(() => {
+  // The first pick waits for the hero, so the first cut shows it.
+  // The wait ends after HERO_WAIT_MS anyway.
+  const HERO_WAIT_MS = 8000, REVIEW_ALT = 35, t0 = performance.now();
+  const first = (): void => {
+    if (!hero.ready && performance.now() - t0 < HERO_WAIT_MS) { setTimeout(first, 100); return; }
     // A tap before the first pick keeps its own star.
     // With no bright star on screen, the review takes the south's brightest.
-    star = machine.target ?? brightOnScreen(1)[0]?.star ?? brightestSouth();
+    // The review's star stands at least REVIEW_ALT high, so the tube's lift reads.
+    star = machine.target ?? brightOnScreen(1, REVIEW_ALT)[0]?.star ?? brightestSouth();
     if (star && !machine.target) play(star);
-  }, 1000));
+  };
+  void skyReady.then(() => setTimeout(first, 1000));
 }
 if (REVIEW) review();
+
+/* ---------- the dev pause, ?dev ---------- */
+// A button in the middle of the stage pauses the cuts.
+// It shows only with ?dev, and only while the cuts show.
+// The pause freezes the machine and the cuts, so the shot holds.
+let paused = false;
+const DEV = new URLSearchParams(location.search).has('dev');
+const pauseBtn = DEV ? document.createElement('button') : null;
+function setPaused(on: boolean): void {
+  if (paused === on) return;
+  paused = on;
+  if (pauseBtn) {
+    pauseBtn.textContent = on ? 'Play' : 'Pause';
+    pauseBtn.setAttribute('aria-pressed', String(on));
+  }
+  syncStrip();
+  if (!on) wake();
+}
+
+/* ---------- the shot replay, ?dev ---------- */
+// The state at the last pick from rest: cupola, shutter, star.
+let pickStart: { az: number; shutter: number; star: Star } | null = null;
+// The fast-forward steps at this rate and stops after REPLAY_MAX_S.
+const REPLAY_DT = 1 / 60, REPLAY_MAX_S = 60;
+// Replays the cuts from one shot's start.
+// A fresh machine at the pick's state picks the same star again.
+// The machine and the cuts then run unseen to the shot.
+// The small domes and the sky do not take part.
+// A pause holds: the shot's first frame shows, and Play runs it.
+function replayShot(shot: Shot): void {
+  if (!pickStart) return;
+  const { az, shutter, star } = pickStart, held = paused;
+  cuts.skip();
+  machine = makeMachine({ az, shutter01: shutter });
+  pick(star);
+  for (let i = 0; i < REPLAY_MAX_S / REPLAY_DT && cuts.shot !== shot; i++) {
+    const tp = targetPos(star);
+    machine.step(REPLAY_DT, { targetAlt: tp.alt, targetAz: tp.az, trails: false });
+    cuts.step(REPLAY_DT, liftView());
+  }
+  setPaused(held);
+  camShot = null;
+  camRows();
+  dirty = true;
+  draw();
+  wake();
+}
+
+/* ---------- the Dev camera rows, ?dev ---------- */
+// The rows edit the shot that shows, and the frame redraws at once.
+// A new shot sets the rows to its values.
+let camShot: Shot | null = null;
+const CAM_KEYS: CamKey[] = ['ex', 'ey', 'ez', 'lx', 'ly', 'lz', 'fov', 'blur'];
+function camRows(): void {
+  const shot = cuts.showing ? cuts.shot : null;
+  if (!DEV || shot === camShot) return;
+  camShot = shot;
+  if (!shot) return;
+  ui.setting('cam-shot')?.set(shot);
+  syncStrip();
+  const v = camDev.get(shot);
+  for (const k of CAM_KEYS) {
+    const h = ui.setting(`cam-${k}`);
+    if (!h) continue;
+    // The glass shot takes only its lens.
+    h.disabled = v[k] === undefined;
+    if (v[k] !== undefined) h.set(v[k]);
+  }
+}
+camHooks.set = (key, v) => {
+  if (!camShot) return;
+  camDev.set(camShot, key as CamKey, v);
+  draw();
+};
+// A pick in the Shot row replays the cuts from that shot's start.
+camHooks.shot = (shot) => replayShot(shot as Shot);
+camHooks.copy = () => {
+  if (!camShot) return;
+  const text = camDev.line(camShot);
+  console.info(text);
+  void navigator.clipboard?.writeText(text).catch(() => {});
+};
+if (pauseBtn) {
+  pauseBtn.type = 'button';
+  pauseBtn.className = 'cut-pause';
+  pauseBtn.textContent = 'Pause';
+  pauseBtn.setAttribute('aria-pressed', 'false');
+  pauseBtn.hidden = true;
+  // The stage takes a press as a tap, and a tap skips the cuts.
+  pauseBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  pauseBtn.addEventListener('pointerup', e => e.stopPropagation());
+  pauseBtn.addEventListener('click', () => setPaused(!paused));
+  stageEl.append(pauseBtn);
+}
+
+/* ---------- DEV COMPOSITING STRIP: temporary, strip with .dev-shots in index.html ---------- */
+// A row over the bar: previous, shots 1 to 5, next, replay, pause.
+// A shot button replays the cuts from that shot's start.
+const SHOTS: Shot[] = ['edge', 'slit', 'lift', 'roll', 'glass'];
+// The shot the strip last showed or replayed.
+let stripShot: Shot = 'edge';
+const strip = DEV ? document.createElement('div') : null;
+const stripBtns: HTMLButtonElement[] = [];
+let stripPause: HTMLButtonElement | null = null;
+function syncStrip(): void {
+  if (!strip) return;
+  if (camShot) stripShot = camShot;
+  stripBtns.forEach((b, i) => b.setAttribute('aria-pressed', String(SHOTS[i] === stripShot && camShot !== null)));
+  if (stripPause) stripPause.textContent = paused ? 'Play' : 'Pause';
+}
+if (strip) {
+  strip.className = 'dev-shots';
+  const add = (text: string, fn: () => void): HTMLButtonElement => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.addEventListener('pointerdown', e => e.stopPropagation());
+    b.addEventListener('click', fn);
+    strip.append(b);
+    return b;
+  };
+  const go = (shot: Shot): void => { stripShot = shot; replayShot(shot); };
+  const step = (d: number): void => go(SHOTS[(SHOTS.indexOf(stripShot) + d + SHOTS.length) % SHOTS.length]);
+  add('◀', () => step(-1));
+  SHOTS.forEach((s, i) => stripBtns.push(add(String(i + 1), () => go(s))));
+  add('▶', () => step(1));
+  add('Replay', () => go(stripShot));
+  stripPause = add('Pause', () => setPaused(!paused));
+  stageEl.append(strip);
+  syncStrip();
+}
 
 // Test hooks for QA scripts.
 declare global { interface Window { __qa?: Record<string, unknown> } }

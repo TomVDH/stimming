@@ -9,6 +9,7 @@ import {
 import type { Material, Object3D } from 'three';
 import { camera, renderer, scene } from '../setup.ts';
 import { complex } from './complex.ts';
+import { slitOffset } from '../core/mount.ts';
 import { patch as duskPatch } from './dusk.ts';
 import { buildHeroScope, type HeroScope } from './hero-scope.ts';
 import { DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
@@ -1116,7 +1117,9 @@ function buildHero(main: Dome, tx: Painted): Built {
     },
     follow(d) {
       const P = d.pose;
-      cupola.rotation.y = -P.az * DEG;
+      // The slit turns past the cupola's azimuth, so the off-axis tube sits centred.
+      const az = heroSlitAz(d);
+      cupola.rotation.y = -az * DEG;
       leaf.rotation.x = P.open * UP_OPEN;
       // The slats run down by the light model's lower-leaf angle.
       // A slat wholly under the foot is rolled up in the box.
@@ -1130,7 +1133,7 @@ function buildHero(main: Dome, tx: Painted): Built {
       // Each pinion turns one tooth per ring tooth that passes.
       // At a whole tooth count, a ring tooth sits in a pinion gap.
       DRIVES.forEach((a, i) => {
-        const teethPast = (a - P.az * DEG) * RING_N / (2 * Math.PI);
+        const teethPast = (a - az * DEG) * RING_N / (2 * Math.PI);
         pinions[i].rotation.y = -(a + Math.PI + Math.PI / PIN_N + teethPast * 2 * Math.PI / PIN_N);
       });
       scope.setTube(P.tube.alt, P.tube.az);
@@ -1245,6 +1248,8 @@ function start(): void {
 }
 setTimeout(start, 0);
 
+// The hero's slit azimuth: the cupola's, plus the German mount's offset.
+export const heroSlitAz = (d: Dome): number => d.pose.az + slitOffset(d.pose.tube.alt, d.pose.tube.az);
 export const hero = {
   // True once the model is built and on the GPU.
   get ready(): boolean { return ready; },

@@ -203,8 +203,8 @@ export function leadOf(a: Axis, base: Axis, out: Axis): void {
 }
 
 /* ---------- a heavy shutter ---------- */
-// Tom, 2026-11-17: a shutter travels in 6 s, eased at both ends.
-export const SHUTTER_S = 6;
+// Tom, 2026-11-17: a shutter travels in 10 s, eased at both ends.
+export const SHUTTER_S = 10;
 // A turn back mid-way reverses the travel speed in this many seconds.
 const TURN_S = 2;
 // At each end stop the shutter bounces back 1 percent.

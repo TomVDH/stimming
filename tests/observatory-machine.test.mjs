@@ -74,7 +74,7 @@ test("Tom's limits: the cupola 2°/s at 0.6°/s², the tube 1.5°/s at 0.5°/s²
   }
 });
 test('a pick on a shut shutter opens it over 6 s, then slews', () => {
-  assert.equal(SHUTTER_S, 6);
+  assert.equal(SHUTTER_S, 10);
   const m = makeMachine({ az: 100 });
   const ctx = { targetAlt: 50, targetAz: 130, trails: false };
   m.pick(star(1, 0, 0, 1));
@@ -349,12 +349,23 @@ test('shut (the ?cuts review): the tube lowers first, the shutter shuts once it 
     if (shut === null && m.shutter01 === 0 && m.shutter.bs === 0) shut = t;
   }
   assert.ok(under > 5, `under 20° at ${under}`);
-  // 6 s of travel, then the bounce at the end stop.
-  assert.ok(shut - under > 6 && shut - under < 6.6, `shut ${shut - under} s after`);
+  // SHUTTER_S of travel, then the bounce at the end stop.
+  assert.ok(shut - under > SHUTTER_S && shut - under < SHUTTER_S + 0.6, `shut ${shut - under} s after`);
   assert.equal(m.tubeAlt, 5);
   assert.equal(m.moving, false);
   m.pick(star(1, 0, 0, 1));
   assert.equal(m.phase, 'open');
+});
+test('the cupola turns to the star while the shutter opens', () => {
+  const m = makeMachine({ az: 100 });
+  const ctx = { targetAlt: 40, targetAz: 130, trails: false };
+  m.pick(star(1, 0, 0, 1));
+  assert.equal(m.phase, 'open');
+  // Half the shutter's travel: the cupola is on its way.
+  run(m, SHUTTER_S / 2, ctx);
+  assert.equal(m.phase, 'open');
+  assert.ok(m.cupolaAz > 105 && m.cupolaAz < 130, `cupola at ${m.cupolaAz}`);
+  assert.ok(Math.abs(azDelta(m.cupolaAz, m.tubeAz)) < 0.5, 'the tube az rides the cupola');
 });
 test('without shut, aim keeps the shutter open', () => {
   const m = makeMachine({ az: 100, shutter01: 1 });

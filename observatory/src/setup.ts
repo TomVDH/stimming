@@ -8,10 +8,32 @@ import { loadStars } from './core/catalog.ts';
 // initPage waits for the intro, so the element goes first.
 if (new URLSearchParams(location.search).has('cuts')) document.querySelector('.intro')?.remove();
 
-// The Dev rows come in a later task.
+// The Dev rows' hooks; view/cuts and loop.ts fill them after load.
+// key: one CamKey of view/cuts.ts.
+export const camHooks: { set?(key: string, v: number): void; copy?(): void; shot?(shot: string): void } = {};
+// One Dev slider for the cuts' camera.
+const camRow = (key: string, label: string, min: number, max: number, step: number) =>
+  ({ type: 'slider' as const, id: `cam-${key}`, group: 'Cut camera', label, min, max, step, value: 0, onInput: (v: number) => camHooks.set?.(key, v) });
+
 export const ui = initPage({
   id: 'observatory',
   bar: {
+    // Dev: the camera of the shot that shows, with ?dev.
+    // Pause a shot, then move a row; Copy gives the lines for the code.
+    dev: [
+      // The shot that shows, 1 to 5; a pick replays the cuts from that shot.
+      { type: 'choice', id: 'cam-shot', group: 'Cut camera', label: 'Shot', display: 'segments', value: 'edge',
+        options: ['edge', 'slit', 'lift', 'roll', 'glass'].map((v, i) => ({ value: v, label: String(i + 1) })), onPick: (v: string) => camHooks.shot?.(v) },
+      camRow('ex', 'Eye forward', -2, 10, 0.05),
+      camRow('ey', 'Eye right', -6, 6, 0.05),
+      camRow('ez', 'Eye up', -2, 4, 0.05),
+      camRow('lx', 'Look forward', -1.5, 1.5, 0.01),
+      camRow('ly', 'Look right', -1.5, 1.5, 0.01),
+      camRow('lz', 'Look up', -1.5, 1.5, 0.01),
+      camRow('fov', 'Lens (fov)', 3, 60, 0.5),
+      camRow('blur', 'Blur', 0, 0.03, 0.001),
+      { type: 'button', id: 'cam-copy', group: 'Cut camera', label: 'Shot lines', text: 'Copy', onClick: () => camHooks.copy?.() },
+    ],
     // Bar v3 lists every input in How to play: one instruction per row.
     help: [
       ['move', 'Aim the beam'],

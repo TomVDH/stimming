@@ -9,7 +9,7 @@ export type Shot = 'edge' | 'slit' | 'lift' | 'roll' | 'glass';
 // phase: the machine phase the cut shows.
 export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 
-// edge: the upper leaf slides back off the seam, over the crown.
+// edge: low and close, the dome on the stars; it turns while the leaves part.
 // slit: the lower leaf drops.
 // The slit opens on the tube.
 // lift: inside, the tube lifts toward the slit and the stars.
@@ -18,7 +18,7 @@ export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 // glass: close on the objective glass, with tonight's stars in it.
 // The glass rises into the frame, stops and holds.
 export const CUTS: Cut[] = [
-  { shot: 'edge', fov: 8, phase: 'open' },
+  { shot: 'edge', fov: 18, phase: 'open' },
   { shot: 'slit', fov: 10, phase: 'open' },
   { shot: 'lift', fov: 34, phase: 'slew' },
   { shot: 'roll', fov: 9, phase: 'slew' },

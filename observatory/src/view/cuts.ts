@@ -11,7 +11,7 @@ import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
-import { hero } from '../world/hero.ts';
+import { hero, heroSlitAz } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
 import { cutFocus, cutGrain } from '../post/chain.ts';
@@ -41,10 +41,9 @@ const DOME_R1 = 3.3;
 type Point = [number, number, number];
 type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean; aperture: number };
 const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
-  // a. From the slit's left, a long lens on the louvred leaf.
-  // Its leading edge slides up past the girder's fixed line.
-  // The leaf leaves the girder arch over a black slit.
-  edge: { eye: [3, -0.5, 0.2], look: [0.62, -0.1, 0.78], aperture: 0.008 },
+  // a. Low and close on the slit's right: the dome looms, its crown on the stars.
+  // The locked camera holds while the cupola turns and the leaves slowly part.
+  edge: { eye: [2.2, 1.6, -0.35], look: [0.3, 0.15, 0.62], aperture: 0.008 },
   // b. Dead centre from the front, low, on a long lens.
   // Only the slit, the dome's face and the catwalk rail show.
   // The door lamp's glow lights the rail from below.
@@ -75,8 +74,16 @@ const STILL_S = 2.6, FADE_S = 1.2;
 // The last cut fades down in DIP_DOWN seconds.
 // The wide shot fades up in DIP_UP seconds.
 const DIP_DOWN = 0.35, DIP_UP = 0.45;
-// The letterbox bars, as a share of the stage height.
-const BAR = 0.055;
+// The cuts show on a 2.39:1 film frame, between letterbox bars.
+// A stage wider than the film shows no bars.
+const FILM = 2.39;
+// The film frame's share of the stage height.
+const band = (aspect: number): number => Math.min(1, aspect / FILM);
+// The film frame's aspect: each shot is framed for it.
+const filmAspect = (aspect: number): number => Math.max(aspect, FILM);
+// The render lens that puts a film lens of fov degrees in the band.
+const renderFov = (fov: number, aspect: number): number =>
+  2 * Math.atan(Math.tan(fov * DEG / 2) / band(aspect)) / DEG;
 // The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
 const BEAM_CLOSE = 0.1;
 
@@ -122,7 +129,8 @@ function slitPoint(p: Point, a: number, out: Vector3): Vector3 {
 }
 
 // The slit's azimuth in degrees, read from the posed cupola.
-const slitNow = (): number => -complex.main.cupola.rotation.y / DEG;
+// The cuts frame the hero's slit, which turns past the light model's.
+const slitNow = (): number => heroSlitAz(complex.main);
 
 // Places the eye of one cut so nothing blocks the dome.
 // az: the slit's azimuth in degrees.
@@ -227,7 +235,7 @@ function glassEye(s: Framed, v: View): void {
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
 const bars = [0, 1].map(i => {
   const b = document.createElement('div');
-  b.style.cssText = `position:absolute;left:0;right:0;${i ? 'bottom' : 'top'}:0;height:${BAR * 100}%;background:#000;pointer-events:none;display:none`;
+  b.style.cssText = `position:absolute;left:0;right:0;${i ? 'bottom' : 'top'}:0;height:0;background:#000;pointer-events:none;display:none`;
   return b;
 });
 const still = document.createElement('canvas');
@@ -245,8 +253,10 @@ function black(k: number): void {
 
 function beam(k: number): void { laser.mesh.scale.x = laser.mesh.scale.z = k; }
 
+// The bars follow the stage's aspect, so a resize keeps the film frame.
 function showBars(on: boolean, opacity = 1): void {
-  for (const b of bars) { b.style.display = on ? 'block' : 'none'; b.style.opacity = String(opacity); }
+  const h = `${(1 - band(camera.aspect)) / 2 * 100}%`;
+  for (const b of bars) { b.style.display = on ? 'block' : 'none'; b.style.opacity = String(opacity); b.style.height = h; }
 }
 
 /* ---------- the player ---------- */
@@ -277,7 +287,7 @@ let lastShot: Shot = 'glass';
 // The cupola can turn after the pick.
 // So each cut frames the slit where it stands at the cut.
 // The aspect is fixed then too: a resize keeps the aim and the lens.
-const locks = makeLocks(cut => place(cut, slitNow(), camera.aspect));
+const locks = makeLocks(cut => place(cut, slitNow(), filmAspect(camera.aspect)));
 
 // The hero model shows in the close shots only.
 // The wide shot keeps the light model, so nothing changes there.
@@ -287,6 +297,8 @@ let heroOn = false, held = false;
 // It changes only at a hard cut, so no locked shot swaps its model.
 // A hero that gets ready late joins at the next cut.
 let useHero = false, cutShot: Shot | null = null;
+// The hero laser's mouth, reused each frame.
+const mouthAt = new Vector3();
 function swap(on: boolean): void {
   if (on !== heroOn) {
     heroOn = on;
@@ -444,10 +456,14 @@ export const cuts = {
     // The reduced-motion still is the glass shot.
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
-    if (mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready; }
+    // The choice waits for the cut's first close frame, after the dip.
+    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready; }
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
+    // The close shots come after a pick, so the beam leaves the hero's laser.
+    const sc = hero.scope;
+    if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
     if (!close) {
       cutFocus(null);
       cutGrain(0);
@@ -457,7 +473,8 @@ export const cuts = {
     const s = locks.of(cutOf(shot));
     if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
-    applyShot(camera.aspect, s.eye, s.aim, s.fov);
+    // The film lens fills the band between the bars.
+    applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
     cutFocus(s);
     // The dip fades down to black, and the cuts' grain eases back.
     if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
@@ -482,6 +499,43 @@ export const cuts = {
     still.style.display = 'block';
     beam(1);
     applyCamera(camera.aspect);
+  },
+};
+
+/* ---------- the Dev camera, ?dev ---------- */
+// The Dev rows edit the shot that shows, live.
+// eye and look are in the slit's frame, in cupola radii: f, r, u.
+// The glass shot takes only its lens.
+export type CamKey = 'ex' | 'ey' | 'ez' | 'lx' | 'ly' | 'lz' | 'fov' | 'blur';
+export const camDev = {
+  // The values of a shot, for the rows.
+  get(shot: Shot): Partial<Record<CamKey, number>> {
+    const fov = cutOf(shot).fov;
+    if (shot === 'glass') return { fov };
+    const p = PLANS[shot];
+    return { ex: p.eye[0], ey: p.eye[1], ez: p.eye[2], lx: p.look[0], ly: p.look[1], lz: p.look[2], fov, blur: p.aperture };
+  },
+  // Sets one value; the shot re-locks its camera on the next frame.
+  set(shot: Shot, key: CamKey, v: number): void {
+    if (key === 'fov') cutOf(shot).fov = v;
+    else if (shot !== 'glass') {
+      const p = PLANS[shot];
+      if (key === 'blur') p.aperture = v;
+      else (key[0] === 'e' ? p.eye : p.look)['xyz'.indexOf(key[1])] = v;
+    } else return;
+    locks.clear();
+  },
+  // The shot's lines for PLANS and CUTS, to paste into the code.
+  line(shot: Shot): string {
+    const r = (n: number): number => Math.round(n * 1000) / 1000;
+    const pt = (a: Point): string => `[${a.map(r).join(', ')}]`;
+    const c = cutOf(shot);
+    const cut = `{ shot: '${shot}', fov: ${r(c.fov)}, phase: '${c.phase}' },`;
+    if (shot === 'glass') return cut;
+    const p = PLANS[shot];
+    const tall = p.tall ? `, tall: ${pt(p.tall)}` : '';
+    const inside = p.inside ? ', inside: true' : '';
+    return `${shot}: { eye: ${pt(p.eye)}, look: ${pt(p.look)}${tall}${inside}, aperture: ${r(p.aperture)} },\n${cut}`;
   },
 };
 

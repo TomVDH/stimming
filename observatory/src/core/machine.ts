@@ -217,8 +217,8 @@ export function makeMachine(opts: { az?: number; shutter01?: number } = {}): Mac
           break;
         }
         case 'open': {
-          // The cupola runs down while the shutter opens.
-          brakeAxis(cup, dt, CUPOLA);
+          // Tom, 2026-11-17: the cupola turns to the star while the shutter opens.
+          stepAxis(cup, tAz, dt, CUPOLA, 1, rAz);
           // The tube lifts at its own pace from the half-open shutter.
           if (sh.value >= LIFT_AT) stepAxis(alt, tAlt, dt, lift);
           else brakeAxis(alt, dt, lift);

@@ -137,14 +137,14 @@ test('moveTime and paceFor: a paced move from rest takes the time asked', () => 
   }
   assert.equal(paceFor(20, 1.5, 0.5, 1), 1);
 });
-test('the shutter: 6 s on an S-curve, then a 1% bounce at the end stop; the value stays in 0 to 1', () => {
-  assert.equal(SHUTTER_S, 6);
+test('the shutter: 10 s on an S-curve, then a 1% bounce at the end stop; the value stays in 0 to 1', () => {
+  assert.equal(SHUTTER_S, 10);
   for (const dt of FPS) {
     for (const [from, goal] of [[0, 1], [1, 0]]) {
       const sh = makeShutter(from);
       assert.equal(sh.value, from);
       let t = 0, reached = null, deep = 0, back = null, prevV = 0, prev = sh.value;
-      while (t < 9) {
+      while (t < 13) {
         stepShutter(sh, goal, dt);
         t += dt;
         assert.ok(sh.value >= 0 && sh.value <= 1, `dt ${dt}: value ${sh.value}`);

@@ -27,6 +27,9 @@ export const PIVOT_Y = 0.5;
 // The tube reaches 2.6 m forward, so it stays inside the dome at any altitude.
 export const TUBE_FRONT = 2.6, TUBE_BACK = 1.4;
 export const TUBE_R = 0.36;
+// The laser: radius, length, its axis's distance from the tube's axis.
+// Its mouth stands LASER_BACK behind the tube's front.
+const LASER_R = 0.07, LASER_L = 1, LASER_D = TUBE_R + 0.12, LASER_BACK = 0.3;
 // The pier stands this tall under the drum's top.
 export const PIER_H = 1.6;
 // The door is 1 m wide; its arch springs at 1.6 m.
@@ -130,6 +133,8 @@ export type Dome = {
   setShutter(open01: number): void;
   setTube(a: AltAz): void;
   slitTop: Vector3;
+  // The laser's mouth in world space; a dome with no laser gives the slit top.
+  laserMouth(out: Vector3): Vector3;
   door: MeshLambertMaterial;
   pose: DomePose;
   // Shows or hides the dome's own shapes; the lamps on it stay.
@@ -137,7 +142,8 @@ export type Dome = {
 };
 
 // size scales the whole dome; 1 is a 6.6 m cupola.
-export function buildDome(size: number): Dome {
+// laser: a cylinder on the tube, the laser's stand-in.
+export function buildDome(size: number, laser = false): Dome {
   const root = new Group();
   root.scale.setScalar(size);
 
@@ -209,6 +215,15 @@ export function buildDome(size: number): Dome {
   body.rotation.x = -Math.PI / 2;
   body.position.z = -(TUBE_FRONT - TUBE_BACK) / 2;
   tube.add(body);
+  // The laser rides on the tube's upper west side, near the front.
+  // A plain cylinder stands in until the laser has a model.
+  const mouth = new Vector3(-LASER_D * Math.SQRT1_2, LASER_D * Math.SQRT1_2, -TUBE_FRONT + LASER_BACK);
+  if (laser) {
+    const can = new Mesh(new CylinderGeometry(LASER_R, LASER_R, LASER_L, 12), dark());
+    can.rotation.x = -Math.PI / 2;
+    can.position.set(mouth.x, mouth.y, mouth.z + LASER_L / 2);
+    tube.add(can);
+  }
 
   const slitTop = new Vector3();
   const slitLocal = new Vector3(0, DOME_R * Math.sin(SLIT_E), -DOME_R * Math.cos(SLIT_E));
@@ -239,5 +254,10 @@ export function buildDome(size: number): Dome {
   setShutter(1);
   setTube({ alt: TUBE_REST_ALT, az: 0 });
   const show = (on: boolean): void => { for (const o of own) o.visible = on; };
-  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, door: doorMat, pose, show };
+  function laserMouth(out: Vector3): Vector3 {
+    if (!laser) return out.copy(slitTop);
+    tube.updateWorldMatrix(true, false);
+    return tube.localToWorld(out.copy(mouth));
+  }
+  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, laserMouth, door: doorMat, pose, show };
 }

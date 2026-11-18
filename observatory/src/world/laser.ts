@@ -42,7 +42,7 @@ export function altAzDir(a: AltAz, out = new Vector3()): Vector3 {
   return out.set(c * Math.sin(a.az * DEG), Math.sin(a.alt * DEG), -c * Math.cos(a.az * DEG));
 }
 
-export type Laser = { mesh: Mesh; aim(from: Vector3, a: AltAz): void; level(k: number): void; visible: boolean };
+export type Laser = { mesh: Mesh; aim(from: Vector3, a: AltAz): void; foot(p: Vector3): void; level(k: number): void; visible: boolean };
 
 const f = (x: number): string => x.toFixed(4);
 
@@ -135,6 +135,11 @@ export function buildLaser(): Laser {
       mesh.position.copy(from);
       mat.uniforms.uFoot.value = from.y;
       mesh.quaternion.setFromUnitVectors(up, altAzDir(a, dir));
+    },
+    // Moves the foot and keeps the direction.
+    foot(p) {
+      mesh.position.copy(p);
+      mat.uniforms.uFoot.value = p.y;
     },
     // 0 hides the beam.
     // 1 shows it in full.

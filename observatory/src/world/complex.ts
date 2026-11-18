@@ -131,7 +131,7 @@ export function buildComplex(): Complex {
   root.position.copy(SITE);
   // The main dome holds the big refractor.
   // The laser leaves it.
-  const main = buildDome(1.5);
+  const main = buildDome(1.5, true);
   main.root.position.set(-6, 0, -2);
   // One small dome stands alone to the east.
   // One sits on the hall's roof.
