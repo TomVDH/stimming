@@ -8,18 +8,21 @@ import type { MeshStandardMaterial, Texture } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { buildSteps, stage } from '../../../shared/stim.js';
-import { renderer, scene, stageEl, ui } from '../setup.ts';
+import { disposeTree, onLeave, renderer, scene } from '../setup.ts';
 import { CLEAR, EYE_H, RISE, TOP, hillHeight } from './hill.ts';
 import { roadDist } from './complex.ts';
 import { bakeImpostor } from './impostor.ts';
 
 /* ---------- the woods: dark pines over the hill, in two draw calls ---------- */
-// Trees stand on a jittered 7 m grid in the land the camera sees.
+// Trees stand on a jittered 7 m grid.
+// The grid covers the land the camera sees.
 const STEP = 7;
 const AREA = { x0: -760, x1: 760, z0: -330, z1: 760 };
-// No trees within this distance of the camera's foot, the clearing or the road.
+// No tree stands inside these gaps, in metres.
+// The gaps are round the eye's foot, the clearing and the road.
 const EYE_GAP = 75, CLEAR_GAP = 6, ROAD_GAP = 6;
-// The hilltop is bare above this height, so the treetops stay under the complex.
+// The hilltop is bare above this height.
+// The treetops then stay under the complex.
 const TREELINE = TOP - 17;
 
 // Every tree this near the complex stays.
@@ -78,10 +81,11 @@ function hash(x: number, z: number): number {
 const PINE_URL = new URL('../models/pine.glb', import.meta.url).href;
 // The model's own alpha cut.
 const PINE_CUT = 0.486;
-// The bark fills the texture's top-left corner, to v 0.523.
+// The bark fills the texture's top-left square, to u and v 0.523.
 // The trunk's foot and top strips sit at v 0.52.
-const BARK_V = 0.53;
-const isBark = (u: number, v: number) => u < 0.5 && v < BARK_V;
+// One bound serves the vertex test and the bark recolour.
+const BARK_UV = 0.53;
+const isBark = (u: number, v: number) => u < BARK_UV && v < BARK_UV;
 // The crown's reach is measured in this many height bands.
 const BANDS = 10;
 
@@ -133,7 +137,8 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   const mean = new Color(0, 0, 0);
   let n = 0;
   // The branches fill the rows under the bark.
-  const barkRows = Math.ceil(BARK_V * h);
+  // The bound scales by each side, so any texture aspect works.
+  const barkRows = Math.ceil(BARK_UV * h), barkCols = Math.ceil(BARK_UV * w);
   for (let i = barkRows * w; i < w * h; i++) {
     if (img.data[i * 4 + 3] < 128) continue;
     mean.r += toLinear(img.data[i * 4] / 255);
@@ -147,7 +152,7 @@ function pineTexture(image: CanvasImageSource & { width: number; height: number 
   const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const meanL = lum(mean.r, mean.g, mean.b);
   for (let y = 0; y < barkRows; y++) {
-    for (let x = 0; x < barkRows * w / h; x++) {
+    for (let x = 0; x < barkCols; x++) {
       const i = (y * w + x) * 4;
       const k = lum(toLinear(img.data[i] / 255), toLinear(img.data[i + 1] / 255), toLinear(img.data[i + 2] / 255)) / meanL;
       img.data[i] = toSrgb(mean.r * k * BARK[0]) * 255;
@@ -322,7 +327,8 @@ const MESH_SITE = 110;
 // Trees this near the wide eye are the full mesh too.
 const MESH_EYE = 150;
 
-export type Woods = { root: Group; near: InstancedMesh; far: InstancedMesh; bakeMs: number };
+// dispose frees the meshes, the materials, the texture and the atlases.
+export type Woods = { root: Group; near: InstancedMesh; far: InstancedMesh; bakeMs: number; dispose(): void };
 
 export function buildWoods(pine: Pine): Woods {
   const rand = rng(51);
@@ -349,13 +355,15 @@ export function buildWoods(pine: Pine): Woods {
   const far = new InstancedMesh(imp.cards, woodsMaterial(imp.albedo, true, imp.normal), farSpots.length);
   const o = new Object3D(), c = new Color();
   const place = (mesh: InstancedMesh, list: [number, number, number][]) => list.forEach(([x, z, r], i) => {
-    // A second number per tree, from its place, keeps the trim unchanged.
-    const q = hash(x, z), q2 = hash(z, x);
+    // More numbers per tree, from its place, keep the trim unchanged.
+    // q2 picks the tint and the brown trees.
+    // qw sets the width alone, so brown trees are not always broad.
+    const q = hash(x, z), q2 = hash(z, x), qw = hash(x * 1.618 + 31.4, z * 0.618 - 27.1);
     // The crown height h starts 1 m over the ground.
     const h = (12 + 8 * r) * (0.82 + 0.26 * q);
     o.position.set(x, hillHeight(x, z), z);
     // Some crowns are slim spires, some are broad.
-    const w = h * (0.3 + 0.12 * q2) / pine.R;
+    const w = h * (0.3 + 0.12 * qw) / pine.R;
     o.scale.set(w, h + 1, w * (0.9 + 0.2 * q));
     o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();
@@ -374,22 +382,41 @@ export function buildWoods(pine: Pine): Woods {
   place(far, farSpots);
   const root = new Group();
   root.add(near, far);
-  return { root, near, far, bakeMs: imp.ms };
+  // The impostor frees its own atlases.
+  const dispose = (): void => { disposeTree(root); imp.dispose(); };
+  return { root, near, far, bakeMs: imp.ms, dispose };
+}
+
+// The page waits this long for the model.
+const PINE_WAIT_MS = 5000;
+
+// The model, or a rejection after PINE_WAIT_MS.
+function pineInTime(): Promise<Pine> {
+  let timer = 0;
+  const late = new Promise<never>((_, no) => {
+    timer = window.setTimeout(() => no(new Error(`pine.glb took over ${PINE_WAIT_MS} ms`)), PINE_WAIT_MS);
+  });
+  return Promise.race([loadPine(), late]).finally(() => clearTimeout(timer));
 }
 
 // The page's load line counts the model and the bake.
-// A failed load or bake shows the stage's fail line.
-async function grow(): Promise<Woods> {
+// A failed or slow model leaves the woods out.
+// The page then starts without them.
+async function grow(): Promise<Woods | null> {
   stage('build');
   const step = buildSteps(2);
   try {
-    const pine = step(await loadPine());
+    const pine = step(await pineInTime());
     return step(buildWoods(pine));
   } catch (err) {
-    stageEl.querySelector<HTMLElement>('.fail')!.hidden = false;
-    ui.hideControls();
-    throw err;
+    // A known warning: the page runs on without the woods.
+    console.warn('Observatory: the woods are left out.', err);
+    return null;
   }
 }
+// setup.ts started the star catalog, so it loads meanwhile.
 export const woods = await grow();
-scene.add(woods.root);
+if (woods) {
+  scene.add(woods.root);
+  onLeave(woods.dispose);
+}

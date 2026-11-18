@@ -1,7 +1,8 @@
 // Load order: post/bloom runs first.
 import './bloom.ts';
-// Copied from railgun/src/post/grade.ts; only the base grade and grain stay.
-import * as THREE from 'three';
+// Copied from railgun/src/post/grade.ts.
+// Only the base grade and grain stay.
+import { Vector2, Vector3 } from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 /* ---------- grade ---------- */
@@ -12,12 +13,14 @@ export function makeGrade({ tint, vig, vigIn, grain }: GradeLook) {
   return new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uRes: { value: new THREE.Vector2(1, 1) },
-      uTint: { value: new THREE.Vector3(...tint) },
+      uRes: { value: new Vector2(1, 1) },
+      uTint: { value: new Vector3(...tint) },
       uVig: { value: vig },
       uVigIn: { value: vigIn },
       uGrain: { value: grain },
       uSeed: { value: 0 },
+      // The grain's cell in device pixels: 1 is one hash per pixel.
+      uCell: { value: 1 },
       // Contrast power, saturation and brightness: Railgun's defaults.
       uCon: { value: 0.24 }, uSat: { value: 1.06 }, uBri: { value: 0.78 },
     },
@@ -26,7 +29,7 @@ export function makeGrade({ tint, vig, vigIn, grain }: GradeLook) {
     uniform sampler2D tDiffuse;
     uniform vec2 uRes;
     uniform vec3 uTint;
-    uniform float uVig, uVigIn, uGrain, uSeed, uCon, uSat, uBri;
+    uniform float uVig, uVigIn, uGrain, uSeed, uCell, uCon, uSat, uBri;
     varying vec2 vUv;
     float h(vec2 p) {
       uvec2 q = uvec2(p);
@@ -49,9 +52,9 @@ export function makeGrade({ tint, vig, vigIn, grain }: GradeLook) {
       c += vec3(0.004, 0.0045, 0.006) * (1.0 - smoothstep(0.0, 0.05, lc));
       vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
       c *= 1.0 - uVig * smoothstep(uVigIn, 1.1, length(q));
-      // Grain: one hash per device pixel, strongest in the shadows.
+      // Grain: one hash per cell, strongest in the shadows.
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      vec2 gp = gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0);
+      vec2 gp = floor(gl_FragCoord.xy / uCell) + vec2(uSeed * 37.0, uSeed * 91.0);
       c *= 1.0 + (h(gp) - 0.5) * uGrain * (1.2 - 0.6 * smoothstep(0.0, 0.3, lum)) * 2.0;
       gl_FragColor = vec4(max(c, 0.0), 1.0);
     }`,

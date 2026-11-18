@@ -2,7 +2,10 @@
 import './input.ts';
 import { reduced, whenVisible } from '../../shared/stim.js';
 import type { AltAz } from './core/sky.ts';
-import { azDelta, clampAim, stepAxis } from './core/dome.ts';
+import {
+  atRest, azDelta, clampAim, makeAxis, makeShutter, shutterAtRest, stepAxis, stepShutter,
+  type Axis, type Limits, type Shutter,
+} from './core/dome.ts';
 import { Vector3 } from 'three';
 import { camera, renderer, stageEl } from './setup.ts';
 import { renderPost } from './post/chain.ts';
@@ -11,9 +14,9 @@ import { complex } from './world/complex.ts';
 import { altAzDir, laser } from './world/laser.ts';
 import { trackingLamp } from './world/lamp.ts';
 import { lights } from './world/lights.ts';
-import { makeMachine } from './core/machine.ts';
+import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
-import { lightGoal, lightLevel } from './core/sequence.ts';
+import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { cuts } from './view/cuts.ts';
 import { hero } from './world/hero.ts';
@@ -39,20 +42,25 @@ const REST_AZ = (Math.atan2(eye.x - mainAt.x, -(eye.z - mainAt.z)) * 180 / Math.
 let aimed = false;
 // The machine owns the main dome: cupola, tube and shutter. It starts shut.
 const machine = makeMachine({ az: REST_AZ });
-// The small domes start 1.5 s and 3 s after the leader, and turn slower.
+// The small domes start 1.5 s and 3 s after the leader.
 // In aim the leader is the beam; after a pick it is the main dome's cupola.
 // They rest shut, open that long after a pick, and shut that long after aim.
-// p: shutter progress, 0 to 1; open: the eased shutter.
-type Turn = { dome: Dome; pos: number; vel: number; cap: number; accel: number; delay: number; p: number; open: number };
+// They are as heavy as the main dome, and slower still.
+// ax: the cupola's axis.
+// sh: the shutter, which takes as long as the main one.
+// alt: the tube's altitude, parked low as the main tube.
+type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter; alt: Axis };
 const turns: Turn[] = [
-  { dome: complex.small[0], pos: REST_AZ, vel: 0, cap: 2.5, accel: 1.2, delay: 1.5, p: 0, open: 0 },
-  { dome: complex.small[1], pos: REST_AZ, vel: 0, cap: 2, accel: 1, delay: 3, p: 0, open: 0 },
+  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
+  { dome: complex.small[1], ax: makeAxis(REST_AZ), lim: { cap: 1.3, accel: 0.4, wrap: true }, delay: 3, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
 ];
-// A small shutter takes as long as the main one.
-const SHUTTER_S = 4;
-const ease = (k: number): number => k * k * (3 - 2 * k);
-// The small shutters want open after a pick; the time the wish changed.
-let wantOpen = false, wantT = 0;
+// A small tube lifts and lowers slower than the main tube.
+const SMALL_TUBE: Limits = { cap: 1.2, accel: 0.4, wrap: false };
+// The small shutters want open after a pick.
+// Each dome reads the wish as it was its delay ago.
+// The histories keep one entry older than the longest delay.
+const KEEP_MS = Math.max(...turns.map(d => d.delay)) * 1000;
+const wishes: { t: number; open: boolean }[] = [{ t: -Infinity, open: false }];
 // The complex lights: 1 full, 0.35 dim, 0 off.
 let light = 1;
 // Recent leader azimuths, so a late dome can read the leader of 3 s ago.
@@ -71,34 +79,52 @@ const REVIEW = new URLSearchParams(location.search).has('cuts');
 const opening = makeOpening(reduced() || REVIEW);
 // The sky starts behind real time and runs fast to catch up.
 if (!opening.done) driveClock(opening, clock);
+// True while the shared intro shows.
+// Once it is gone, the loop stops looking.
+let intro = document.querySelector('.intro') !== null;
 // True once a frame shows the night look after the opening.
 let nightSet = false;
+// The cuts' film beat.
+const film = { acc: 1 / CUT_FPS };
 let raf = 0, lastT = 0, lastInput = -Infinity, visible = true, dirty = true, frames = 0;
+// Draws so far, for QA: a slow track draws every few seconds.
+let draws = 0;
 
 // The aim azimuth as it was some seconds ago.
 function azAgo(now: number, s: number): number {
   for (let i = seen.length - 1; i >= 0; i--) if (seen[i].t <= now - s * 1000) return seen[i].az;
   return seen[0].az;
 }
+// The small shutters' wish as it was some seconds ago.
+function wishAgo(now: number, s: number): boolean {
+  for (let i = wishes.length - 1; i >= 0; i--) if (wishes[i].t <= now - s * 1000) return wishes[i].open;
+  return wishes[0].open;
+}
 // The leader's azimuth: the beam in aim, the main cupola after a pick.
 const leaderAz = () => (machine.phase === 'aim' && aimed ? aim.az : machine.cupolaAz);
 // A small shutter still has a way to go.
-const shutting = () => turns.some(d => d.p !== (wantOpen ? 1 : 0));
-const turning = () => machine.moving || shutting() || turns.some(d => d.vel !== 0 || azDelta(d.pos, leaderAz()) !== 0);
+const shutting = () => turns.some(d => !shutterAtRest(d.sh) || d.sh.p !== (wishes[wishes.length - 1].open ? 1 : 0));
+const turning = () => machine.moving || shutting()
+  || turns.some(d => !atRest(d.ax) || !atRest(d.alt) || azDelta(d.ax.pos, leaderAz()) !== 0);
 // The cuts, the crossfade or the lights still need frames.
 const showing = () => cuts.busy || light !== lightGoal(machine.phase);
 const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
 // Where the target stands now.
 const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LON), LAT);
+// What the pick sequence reads: the tube and its lift.
+const liftView = () => ({
+  altLeft: machine.altLeft(), altEta: machine.altEta(), tubeAlt: machine.tubeAlt, tubeAz: machine.tubeAz,
+  restAlt: machine.target ? targetPos(machine.target).alt : machine.tubeAlt, shutter: machine.shutter01,
+});
 const skyMoving = () => clock.easing() || clock.speed > 1;
 
 function pose(): void {
   skyAt(clock.skyMs());
   for (const d of turns) {
-    d.dome.setCupola(d.pos);
-    // A shut dome parks its tube low, under the shutter.
-    d.dome.setTube({ alt: TUBE_PARK_ALT + (TUBE_REST_ALT - TUBE_PARK_ALT) * d.open, az: d.pos });
-    d.dome.setShutter(d.open);
+    d.dome.setCupola(d.ax.pos);
+    // The models never see a tube under its park.
+    d.dome.setTube({ alt: Math.max(TUBE_PARK_ALT, d.alt.pos), az: d.ax.pos });
+    d.dome.setShutter(d.sh.value);
   }
   const m = machine;
   complex.main.setCupola(m.cupolaAz);
@@ -124,6 +150,7 @@ export function draw(): void {
   renderPost();
   cuts.afterRender();
   dirty = false;
+  draws++;
 }
 
 function tick(now: number): void {
@@ -135,7 +162,10 @@ function tick(now: number): void {
   lastT = now;
   // Input times come from the same clock.
   const t = performance.now();
-  if (!opening.done) {
+  // The opening starts when the shared intro ends.
+  // The shell removes the .intro element then.
+  if (intro) intro = document.querySelector('.intro') !== null;
+  if (!opening.done && !intro) {
     opening.step(dt);
     driveClock(opening, clock);
     dirty = true;
@@ -147,19 +177,32 @@ function tick(now: number): void {
   const before = machine.phase;
   machine.step(dt, { targetAlt: tp.alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
   if (machine.moving || machine.phase !== before) dirty = true;
-  cuts.step(dt);
+  cuts.step(dt, liftView());
   if (cuts.busy) dirty = true;
   const lv = lightLevel(machine.phase, light, dt);
   if (lv !== light) { light = lv; dirty = true; }
   // The small shutters follow the main dome after their delays.
   const want = machine.phase !== 'aim';
-  if (want !== wantOpen) { wantOpen = want; wantT = t; }
+  if (want !== wishes[wishes.length - 1].open) {
+    wishes.push({ t, open: want });
+    // Keep one wish older than the longest delay.
+    while (wishes.length > 1 && wishes[1].t <= t - KEEP_MS) wishes.shift();
+  }
   for (const d of turns) {
-    const goal = wantOpen ? 1 : 0;
-    if (d.p === goal || t - wantT < d.delay * 1000) continue;
-    d.p = wantOpen ? Math.min(1, d.p + dt / SHUTTER_S) : Math.max(0, d.p - dt / SHUTTER_S);
-    d.open = ease(d.p);
-    dirty = true;
+    const open = wishAgo(t, d.delay);
+    // The shutter stays open until the tube clears it.
+    const goal = open || d.alt.pos >= TUBE_CLEAR_ALT ? 1 : 0;
+    if (!shutterAtRest(d.sh) || d.sh.p !== goal) {
+      // A shutter that turns back mid-way runs down first.
+      stepShutter(d.sh, goal, dt);
+      dirty = true;
+    }
+    // The tube lifts from the half-open shutter, and parks low in aim.
+    const lift = open && d.sh.value >= LIFT_AT ? TUBE_REST_ALT : TUBE_PARK_ALT;
+    if (!atRest(d.alt) || d.alt.pos !== lift) {
+      stepAxis(d.alt, lift, dt, SMALL_TUBE);
+      dirty = true;
+    }
   }
   // A slow track draws every few seconds, not every frame.
   if (machine.phase === 'track' && t - lastTrackDraw > TRACK_REDRAW_MS) dirty = true;
@@ -168,16 +211,22 @@ function tick(now: number): void {
   const lead = leaderAz();
   if (lead !== seen[seen.length - 1].az) {
     seen.push({ t, az: lead });
-    while (seen.length > 1 && seen[1].t <= t - 3000) seen.shift();
+    while (seen.length > 1 && seen[1].t <= t - KEEP_MS) seen.shift();
   }
   for (const d of turns) {
     const target = azAgo(t, d.delay);
-    if (d.vel === 0 && azDelta(d.pos, target) === 0) continue;
-    const s = stepAxis(d.pos, target, d.vel, dt, d.cap, d.accel, true);
-    d.pos = s.pos; d.vel = s.vel;
+    if (atRest(d.ax) && azDelta(d.ax.pos, target) === 0) continue;
+    stepAxis(d.ax, target, dt, d.lim);
     dirty = true;
   }
-  if (dirty) draw();
+  // The cuts render on a 24 fps beat.
+  // The machine, the clock and the cuts stepped above, on real time.
+  if (dirty) {
+    // Outside the cuts the beat stands primed.
+    // So a cut's first frame renders at once.
+    if (!cuts.film) { film.acc = 1 / CUT_FPS; draw(); }
+    else if (cadence(film, dt)) draw();
+  }
   if (awake()) raf = requestAnimationFrame(tick);
   else lastT = 0;
 }
@@ -202,7 +251,7 @@ function input(a: AltAz): void {
   if (machine.phase === 'aim') {
     seen.push({ t: lastInput, az: aim.az });
     // Keep one sample older than the longest delay.
-    while (seen.length > 1 && seen[1].t <= lastInput - 3000) seen.shift();
+    while (seen.length > 1 && seen[1].t <= lastInput - KEEP_MS) seen.shift();
   }
   dirty = true;
   wake();
@@ -229,7 +278,7 @@ function pick(s: Star): void {
   const from = machine.phase;
   machine.pick(s);
   // An open shutter plays only the slew cuts.
-  if (from === 'aim' || from === 'lost') cuts.start(machine.phase);
+  if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s));
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -254,7 +303,8 @@ whenVisible(stageEl, (vis: boolean) => {
 });
 
 // The catalog arrives after the first frame: draw the stars in.
-void skyReady.then(() => draw());
+// The hero's glass takes the catalog too.
+void skyReady.then(() => { cuts.setStars(sky.stars); draw(); });
 
 // A star's place on the canvas in CSS pixels, or null when it stands behind the camera.
 function starScreen(hip: number): { x: number; y: number; alt: number; az: number } | null {
@@ -277,6 +327,18 @@ function brightOnScreen(n: number): { star: Star; x: number; y: number; alt: num
   return out.sort((x, y) => x.star.mag - y.star.mag).slice(0, n);
 }
 
+// The brightest catalog star of the southern sky now.
+// It stands at azimuth 100 to 260 and altitude 15 to 70.
+function brightestSouth(): Star | null {
+  let best: Star | null = null;
+  for (const s of sky.stars) {
+    if (!s.hip || (best && s.mag >= best.mag)) continue;
+    const p = targetPos(s);
+    if (p.az >= 100 && p.az <= 260 && p.alt >= 15 && p.alt <= 70) best = s;
+  }
+  return best;
+}
+
 /* ---------- the review switch, ?cuts ---------- */
 // Tom sees the cuts on the live site with it.
 // About 1 s in, it picks the brightest star on screen, as a tap would.
@@ -287,7 +349,10 @@ function review(): void {
   // As a tap on the star: the beam aims at it, then the pick.
   const play = (s: Star): void => { input(targetPos(s)); pick(s); };
   const replay = (): void => {
-    if (machine.shutter01 > 0) { setTimeout(replay, 100); return; }
+    // The shutter is shut once its bounce at the stop ends.
+    // The tube parks too.
+    // So the replay lifts as far as the first run.
+    if (machine.shutter01 > 0 || !shutterAtRest(machine.shutter) || machine.altLeft() > 0) { setTimeout(replay, 100); return; }
     shutting = false;
     if (star) play(star);
   };
@@ -298,7 +363,8 @@ function review(): void {
   };
   void skyReady.then(() => setTimeout(() => {
     // A tap before the first pick keeps its own star.
-    star = machine.target ?? brightOnScreen(1)[0]?.star ?? null;
+    // With no bright star on screen, the review takes the south's brightest.
+    star = machine.target ?? brightOnScreen(1)[0]?.star ?? brightestSouth();
     if (star && !machine.target) play(star);
   }, 1000));
 }
@@ -309,10 +375,18 @@ declare global { interface Window { __qa?: Record<string, unknown> } }
 window.__qa = {
   get running() { return raf !== 0; },
   get frames() { return frames; },
+  get draws() { return draws; },
   // Dome 0 is the main dome, read from the machine.
+  // vel: the cupola's speed on screen.
   get domes() {
-    return [{ pos: machine.cupolaAz, vel: machine.moving ? 1 : 0, open: machine.shutter01 },
-      ...turns.map(d => ({ pos: d.pos, vel: d.vel, open: d.open }))];
+    return [{ pos: machine.cupolaAz, vel: machine.axes.cupola.vel, open: machine.shutter01 },
+      ...turns.map(d => ({ pos: d.ax.pos, vel: d.ax.vel, open: d.sh.value }))];
+  },
+  // The main dome's axes and shutter: the load's speed, the drive's speed.
+  get motion() {
+    const a = machine.axes;
+    const ax = (x: Axis) => ({ pos: x.pos, vel: x.vel, dvel: x.dvel });
+    return { cupola: ax(a.cupola), alt: ax(a.alt), az: ax(a.az), shutter: { ...machine.shutter }, moving: machine.moving };
   },
   get phase() { return machine.phase; },
   get target() { return machine.target ? (machine.target.name || `HIP ${machine.target.hip}`) : null; },
@@ -333,7 +407,7 @@ window.__qa = {
   // A test view; a resize restores the default.
   look(v: View) { const c = renderer.domElement; applyCamera(c.width / c.height, v); draw(); },
   // Dome i: 0 main, 1 east, 2 roof.
-  shutter(i: number, k: number) { if (i > 0) { turns[i - 1].p = k; turns[i - 1].open = ease(k); } draw(); },
+  shutter(i: number, k: number) { if (i > 0) Object.assign(turns[i - 1].sh, makeShutter(k)); draw(); },
   get restAz() { return REST_AZ; },
   get light() { return light; },
   // The sequence: the shot that shows, its time, and true while it owns the camera.
@@ -344,6 +418,8 @@ window.__qa = {
   hero(on: boolean) { cuts.hold(on); draw(); },
   // The hero's triangles, draw calls and build time.
   get heroStats() { return hero.stats(); },
+  // The shader programs on the GPU: no cut may add one.
+  get programs() { return renderer.info.programs?.length ?? 0; },
   // The opening's time and state.
   get opening() {
     const o = opening;

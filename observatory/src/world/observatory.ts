@@ -3,6 +3,7 @@ import './far.ts';
 import { BackSide, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FrontSide, Group, MathUtils, Mesh, MeshLambertMaterial, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, Shape, Vector3 } from 'three';
 import type { Object3D, Side } from 'three';
 import type { AltAz } from '../core/sky.ts';
+import { TUBE_PARK_ALT as PARK } from '../core/machine.ts';
 
 /* ---------- one dome: stone drum, white cupola, slit, shutter, tube ---------- */
 const DEG = MathUtils.DEG2RAD;
@@ -31,8 +32,9 @@ export const PIER_H = 1.6;
 // The door is 1 m wide; its arch springs at 1.6 m.
 export const DOOR_HALF = 0.5, DOOR_SPRING = 1.6;
 export const TUBE_REST_ALT = 45;
-// With the shutter shut, the tube parks low under the shutter line.
-export const TUBE_PARK_ALT = 30;
+// The tube parks low under the shutter line.
+// core/machine.ts holds the value.
+export const TUBE_PARK_ALT = PARK;
 
 // A piece of the dome's sphere in slit coordinates.
 // b: angle across the slit, from -90 to 90 degrees.

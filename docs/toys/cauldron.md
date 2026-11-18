@@ -184,6 +184,9 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Oil film | Fat runs out across the broth at four times the colour blend. A thin film calms the small ripples into a glassy slick, adds a golden sheen with a trace of rainbow, and shows a fine bright line at its edge. Dev row `oilFilm` (0 is off) |
 | Lamp | The key lamp sits lower (height 0.45, was 0.68) and dimmer (0.8), so its reflection lies on the far rim, not across the soup. Dev group Light: `keyUp` (height), `keyTurn` (bearing, degrees), `keyI` (strength), `keyWarm` (0 cool white, 0.5 today, 1 amber), `room` (the room's ambient and reflected light) |
 | Stiffness | The ripple field carries a held shape in z, apart from the waves. In thick soup a dent or a spoon stroke presses into it, with the pushed soup heaped round the edge; it levels out over about 6 s, in thin broth at once. Thick soup also rings less. Dev row `stiff` (0 is off) |
+| Skin rafts | Calm cream sets a skin; a stir tears it into rafts along cracks, and calm heals it. The skin is a yellowed matte layer with a sharp edge, irregular folds (ridged noise on a warped, turned grid, so no square pattern shows) and a raised lip (Tom, 2026-11-17: Look 1). Dev row `skinLook`, 0 the old glossy skin |
+| Skin holes | A bubble that bursts through set skin punches a hole 1.3 times its size; the skin it pushes aside piles up at the edge. The wet broth shows through, glossy, until calm soup grows the skin back over it (a few seconds on thick soup) |
+| Stirrer | A wooden paddle (Tom, 2026-11-17): a flat blade 17 cm wide and 41 cm long on a thick round shaft, its tip scorched dark. The spoon, carved spoon and iron ladle proposals are gone |
 | Reflections | The soup mirrors what stands over it: the inner iron wall (a dark band at the far side), the floating things and the stirrer's handle; the room otherwise. The gloss reads a little stronger than true Fresnel. The things show only at a glancing view (Fresnel over 0.05), so steep views skip their march. Dev toggle `mirror` |
 | Fat beads | Round eyes of oil, drawn from two jittered grids that turn with the soup (`spin`). Fresh, stirred soup shows the small grid; calm soup fades it out and grows the large one, so the eyes merge. Thin oil gives fewer eyes, not smaller ones. Each is a low glossy dome with a lamp spot, a dark meniscus and a bright lip. Dev row `beads` |
 | Bursts | A big pop throws a crown of six drops round its edge and a jet up the middle; any pop over 4.5 cm sends spatter wide. A drop that lands on the rim leaves a wet spot that dries to a pale crust ring in about 4 s and lasts about 20 s (`spats`, 12 at most). Thick soup keeps a crater where a glop burst. Drops show the soup's colour; the lamp's core is capped on them so they never bloom into sparks |
@@ -232,7 +235,6 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 
 - The fire grid is coarse (0.08 cells); fine flame detail comes from Fire's simplex detail noise in the march.
 - Frame time after the fire solver and the PBR iron is not measured with the pane in view.
-- `probe-gpu.html` (noindex) runs Fire's own WebGPU engine under a matching pot, for comparison; it is not linked.
 
 - Things push each other as circles of their half-width, so two long things can overlap a little. The wall test uses each thing's true length.
 - The steam layer runs at half the CSS size; on a large High-quality screen it reads soft.

@@ -1,13 +1,14 @@
 // Load order: post/chain runs first.
 import '../post/chain.ts';
 import { BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, HemisphereLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the land: the observatory hill, the camera's rise, far ridges ---------- */
 // Scene axes: +Y is up, -Z is north, +X is east.
 // Azimuth runs from north through east, as in core/sky.ts.
 
-// The complex stands in a flat clearing on the hilltop at the origin.
+// The complex stands in a flat clearing on the hilltop.
+// The clearing's centre is the origin.
 export const CLEAR = 46;
 // The camera's rise lies north of the hill, across a wooded valley.
 export const RISE = { x: 0, z: -300 };
@@ -28,7 +29,8 @@ export const TOP = land(0, 0);
 // Ground height in metres at a point.
 export function hillHeight(x: number, z: number): number {
   const r = Math.hypot(x, z);
-  // The clearing is flat; it rounds over into the slope by 80 m.
+  // The clearing is flat.
+  // It rounds over into the slope by 80 m.
   const k = Math.min(1, Math.max(0, (r - CLEAR) / 34));
   const s = k * k * (3 - 2 * k);
   return TOP + (land(x, z) - TOP) * s;
@@ -40,7 +42,8 @@ export const SITE = new Vector3(0, TOP, 0);
 // Dark grass and earth under starlight.
 const ground = new MeshLambertMaterial({ color: new Color(0.06, 0.066, 0.05) });
 
-// Grid lines from lo to hi, dense at 0 and sparse at the ends.
+// Grid lines from lo to hi.
+// They are dense at 0 and sparse at the ends.
 // n0 and n1 are the steps on each side of 0.
 function axis(lo: number, hi: number, n0: number, n1: number): number[] {
   // Spacing at 0 is a third of the mean spacing.
@@ -52,7 +55,8 @@ function axis(lo: number, hi: number, n0: number, n1: number): number[] {
 }
 
 // One mesh holds all the land in view.
-// Steps are about 4 m at the complex and grow to 30 m at the edges.
+// Steps are about 4 m at the complex.
+// They grow to 30 m at the edges.
 function landMesh(): BufferGeometry {
   const xs = axis(-1000, 1000, 80, 80), zs = axis(-700, 1900, 50, 150);
   const p: number[] = [], idx: number[] = [];
@@ -77,6 +81,7 @@ scene.add(hill);
 const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), ground);
 flat.position.y = -0.5;
 scene.add(flat);
+onLeave(() => { disposeTree(hill); disposeTree(flat); });
 
 // Starlight: a cold, dim sky over a black ground.
 // The dusk raises it.

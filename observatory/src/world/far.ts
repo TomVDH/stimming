@@ -1,15 +1,16 @@
 // Load order: world/hill runs first.
-import './hill.ts';
+import { EYE_H, RISE, hillHeight } from './hill.ts';
 // Crest noise ported from ridge2 in railgun/ranges.js.
 // Foot melt copied from railgun/src/world/farcountry.ts, trimmed to one term.
 import { BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, ShaderMaterial } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { SKY_GLSL, fog, skyU } from '../sky/haze.ts';
-import { EYE_H, RISE, hillHeight } from './hill.ts';
 
 /* ---------- the far view: ridgelines on the southern horizon ---------- */
-// The camera never moves far, so each ridge is a ring round the wide eye.
-// A ring stands inside the sky shell but shows the angles of far ranges.
+// The camera never moves far.
+// So each ridge is a ring round the wide eye.
+// A ring stands inside the sky shell.
+// It still shows the angles of far ranges.
 // Each ridge's crest height is an angle over the horizon, in degrees.
 
 // One ridge: ring radius in metres, crest angles, feature scale, fade.
@@ -29,6 +30,10 @@ const FOOT_Y = -80;
 const DEG = Math.PI / 180;
 // The share the crests lose straight behind the complex.
 const SADDLE = 0.3;
+// A crest that falls this many degrees per degree west is a full west face.
+const WEST_SLOPE = 0.25;
+// The late sun lights a west face this many degrees down from its crest.
+const WEST_DEPTH = 0.3;
 
 // A hash of a lattice point and a seed, in [0, 1).
 function hash(i: number, j: number, s: number): number {
@@ -46,7 +51,7 @@ function noise(x: number, y: number, s: number): number {
   return n0 + (n1 - n0) * b;
 }
 
-// Sharp ridges in [0, 1]: lines of 1 with a narrow V between.
+// Sharp ridges in [0, 1]: lines of 1, narrow Vs between.
 function ridge2(x: number, y: number, s: number): number {
   let sum = 0, amp = 0.5, w = 1;
   for (let i = 0; i < 3; i++) {
@@ -60,7 +65,8 @@ function ridge2(x: number, y: number, s: number): number {
 }
 
 // The crest angle of a ridge at an azimuth, in degrees.
-// The noise runs round a circle, so the ring closes without a seam.
+// The noise runs round a circle.
+// So the ring closes without a seam.
 function crest(k: Ridge, az: number): number {
   const x = Math.sin(az * DEG) * k.f / (2 * Math.PI), z = Math.cos(az * DEG) * k.f / (2 * Math.PI);
   // Broad swells carry the sharp ridges.
@@ -76,7 +82,7 @@ function crest(k: Ridge, az: number): number {
 const EYE = { x: RISE.x, y: hillHeight(RISE.x, RISE.z) + EYE_H, z: RISE.z };
 
 function ridgeMesh(): BufferGeometry {
-  const p: number[] = [], alt: number[] = [], fade: number[] = [], idx: number[] = [];
+  const p: number[] = [], alt: number[] = [], fade: number[] = [], west: number[] = [], idx: number[] = [];
   for (const k of RIDGES) {
     const base = p.length / 3;
     const footAlt = Math.atan((FOOT_Y - EYE.y) / k.r) / DEG;
@@ -86,6 +92,11 @@ function ridgeMesh(): BufferGeometry {
       p.push(x, EYE.y + Math.tan(a * DEG) * k.r, z, x, FOOT_Y, z);
       alt.push(a, footAlt);
       fade.push(k.fade, k.fade);
+      // Azimuth grows to the west in the south.
+      // So a crest that falls as azimuth grows faces west.
+      const slope = (crest(k, az + 0.25) - crest(k, az - 0.25)) / 0.5;
+      const w = Math.min(1, Math.max(0, -slope / WEST_SLOPE));
+      west.push(w, a, w, a);
     }
     for (let i = 0; i < STEPS; i++) {
       const t = base + i * 2;
@@ -96,36 +107,49 @@ function ridgeMesh(): BufferGeometry {
   g.setAttribute('position', new Float32BufferAttribute(p, 3));
   g.setAttribute('aAlt', new Float32BufferAttribute(alt, 1));
   g.setAttribute('aFade', new Float32BufferAttribute(fade, 1));
+  g.setAttribute('aWest', new Float32BufferAttribute(west, 2));
   g.setIndex(idx);
   return g;
 }
 
-// The ridges take the sky's own colours, so the dusk drives them too.
+// The ridges take the sky's own colours.
+// So the dusk drives them too.
 const farMat = new ShaderMaterial({
   uniforms: { ...skyU, uFog: { value: fog.color } },
   // The eye sees the rings from inside.
   side: DoubleSide,
   vertexShader: /* glsl */`
   attribute float aAlt, aFade;
+  // x: how much the face looks west, y: its crest angle.
+  attribute vec2 aWest;
   varying vec3 vP;
   varying float vAlt, vFade;
+  varying vec2 vWest;
   void main() {
-    vAlt = aAlt; vFade = aFade;
+    vAlt = aAlt; vFade = aFade; vWest = aWest;
     vP = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
   }`,
   fragmentShader: /* glsl */`
   ${SKY_GLSL}
-  uniform vec3 uFog;
+  uniform vec3 uFog, uRidge;
   varying vec3 vP;
   varying float vAlt, vFade;
+  varying vec2 vWest;
   void main() {
     vec3 d = normalize(vP - cameraPosition);
-    vec2 h = d.xz / max(length(d.xz), 1e-4);
-    float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
     // The rock is a dark slate of the horizon.
+    vec3 body = uHor * 0.4;
     // Toward the sunset it holds a little warm light.
-    vec3 body = uHor * 0.4 + uWarm * exp(-away / 0.75) * 0.12;
+    // At night uWarm is black, so the night frame skips this branch.
+    if (uWarm != vec3(0.0)) {
+      vec2 h = d.xz / max(length(d.xz), 1e-4);
+      float away = acos(clamp(dot(h, uSun.xz), -1.0, 1.0));
+      body += uWarm * exp(-away / 0.75) * 0.12;
+      // In the golden hour the late sun lights the west faces.
+      // The light fades from the crest down.
+      body += uRidge * vWest.x * exp(-(vWest.y - vAlt) / ${WEST_DEPTH.toFixed(2)});
+    }
     // Each range fades by its distance into the sky behind it.
     vec3 col = mix(body, skyColor(d), vFade);
     // The foot melts into the valley haze, so no seam shows.
@@ -136,3 +160,4 @@ const farMat = new ShaderMaterial({
 
 export const far = new Mesh(ridgeMesh(), farMat);
 scene.add(far);
+onLeave(() => disposeTree(far));

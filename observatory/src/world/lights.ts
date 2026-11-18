@@ -1,7 +1,7 @@
 // Load order: world/lamp runs first.
 import './lamp.ts';
 import { BoxGeometry, Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, PointLight, SphereGeometry, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { hillHeight } from './hill.ts';
 import { ROAD, complex, type Complex } from './complex.ts';
 
@@ -13,7 +13,8 @@ import { ROAD, complex, type Complex } from './complex.ts';
 // Only the door lamps cast light.
 // No light casts a shadow.
 
-// Linear colours; values over 2 cross the bloom threshold.
+// Linear colours.
+// Values over 2 cross the bloom threshold.
 const PANE_OFF = new Color(0.012, 0.012, 0.013), PANE_ON = new Color(1.6, 0.95, 0.45);
 const LAMP_OFF = new Color(0.02, 0.02, 0.02), LAMP_ON = new Color(6, 3.6, 1.6);
 // The door lamp's light on the drum and the ground, in candela.
@@ -24,7 +25,7 @@ const DOOR_GLOW_K = 0.9;
 // Indices into ROAD, whose points stand 2.3 m apart.
 // The lamps stand about 16 m apart.
 const ROAD_LAMPS = [3, 10, 17, 24, 31, 38];
-// A road lamp stands this far to the side of the centre line.
+// A road lamp stands this far from the road's centre line.
 const ROAD_SIDE = 3.6;
 const POST_H = 4;
 
@@ -40,11 +41,14 @@ export function buildLights(c: Complex): Lights {
   const on = [PANE_ON, LAMP_ON];
 
   // A lamp over each dome door, in the dome's own scale.
-  // The drum radius is 3.2; the door arch tops out at 2.1.
+  // The drum radius is 3.2.
+  // The door arch tops out at 2.1.
   const bulb = new SphereGeometry(0.16, 10, 6);
+  const bulbs: Mesh[] = [];
   const doors: Lamp[] = domes.map((d) => {
     const mat = new MeshBasicMaterial({ color: LAMP_ON });
     const m = new Mesh(bulb, mat);
+    bulbs.push(m);
     m.position.set(0, 2.5, -3.28);
     // The lamp's light reaches about 12 m at size 1.
     const pl = new PointLight(LAMP_ON.clone().multiplyScalar(1 / 6), DOOR_CD, 12 * d.root.scale.x, 2);
@@ -73,6 +77,7 @@ export function buildLights(c: Complex): Lights {
     return glow(mat, 1);
   });
   scene.add(road);
+  onLeave(() => { disposeTree(road); for (const m of bulbs) disposeTree(m); });
 
   const panes = c.windows.map(m => glow(m, 0));
   // The order they come on at dusk.
