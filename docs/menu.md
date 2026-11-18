@@ -64,14 +64,16 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 
 ### Fit
 - In the Clock view the wordmark, tagline, gaps and clock scale with the window height (`--pad`, `--gap`, `--title`, `--tag`, `--clk` in `clock.css`).
-- The clock takes the height that is left: at most 660 px and 92% of the width, at least 200 px. Below that the page scrolls. The footer may lie below the fold.
+- The clock takes the height that is left after the blocks above and the footer below: at least 200 px, at most 92% of the width and 1200 px. The footer's margin, chip and foot scale with the window height too, so the whole page fits the window. Below 200 px the page scrolls.
+- The page fills the window: the footer and its glow stand on the bottom edge, with no band under them.
+- A phone in portrait (640 px wide at most) shows the dozen as a grid of three with names, like the whole shelf: no dial, comet, tube or wait dot. A tap opens the toy. The Re-roll stands under the grid and shows at once. On load and on a Re-roll the dozen comes in out of a grainy blur, one toy after another, as the old menu did.
 - Phones, portrait up to 640 px: the dial keeps 24 px clear of each edge. The page never pans sideways.
 - Touch: the first tap on a toy shows it, a tap on another toy moves there, a tap away puts it down, a second tap on the same toy opens it. The check reads focus from before the tap.
 
 ### Footer
 - The glow is `mesh.js` (raw WebGL2 on `shared/gl.js`, 0.4 of its CSS size): slow noise picks from six hues (magenta, violet, cyan, green, amber, red) mixed in OKLab, rising as a low horizon (340 px at most), dimmer at the foot.
 - The pointer stirs and brightens it. It moves for 2.6 s after the last pointer move, then rests on one frame. Reduced motion draws one frame. Without WebGL2 the CSS glow stays.
-- The credit chip sits alone in the middle. On hover or focus its bands light and "onnøzelaer" rises in under it, letter by letter, out of a blur, in a kept place. Under that: "Made with AI." in small plain type.
+- The credit chip sits in the middle. On hover or focus its bands light and "onnøzelaer" rises in under it, letter by letter, out of a blur, in a kept place. Under that, one row of quips in lower-case mono: "some of these are very wonky and may suffer from *ss performance", a faded dash, "made with the help of ai". A phone stacks them and drops the dash.
 - The Clock shows no site version. `?all` keeps it.
 - `clock.js` builds the footer from its own markup.
 - Never clip on the root: the body then clips at its 8 px margin and boxes the glow.
@@ -89,6 +91,8 @@ Numbers: `docs/plans/loading.md`. The menu opens in stages and never holds for a
 - Fonts load from `shared/fonts/`. No page links a font host for Gabarito or B612.
 - At a click, the toy's tile shows the intro hairline under its icon (`.go`) after 0.25 s until the toy's page comes. Reduced motion gets a still line. A page from the history shows none.
 - While the page loads, the comet head waits at twelve and breathes (`main::before` in `clock.css`, after 0.4 s). `clock.js` sets `data-clock="wait"` at the deal and `"on"` as the comet starts. Reduced motion gets a still dot.
+- The view script and `clock.css` load in the head, so no paint shows the plain shelf before the Clock.
+- All menu motion runs at 30 fps: GSAP through `gsap.ticker.fps(30)`, the tube and the glow through a 30 fps step in their frame loops.
 - `clock.js`, `tube.js` and `gl.js` preload from the head. The credit line waits for `data-clock`.
 - The Clock waits for the whole page, because the icon script draws some icons.
 

@@ -88,6 +88,8 @@ export async function mesh(credit) {
   // The pointer's place in the canvas, 0 to 1 from the left and from the foot; it eases.
   const ptr = { x: 0.5, y: 0.2 }, want = { x: 0.5, y: 0.2 };
   let time = Math.random() * 40, stir = 0, until = 0, raf = 0, last = 0, gone = false;
+  // One frame each 1/30 s; 2 ms less absorbs timer jitter.
+  const FRAME = 1000 / 30 - 2;
   function draw() {
     if (gone) return;
     const w = Math.max(2, Math.round(canvas.clientWidth * SCALE)), h = Math.max(2, Math.round(canvas.clientHeight * SCALE));
@@ -102,6 +104,8 @@ export async function mesh(credit) {
     tri(gl, null, vao);
   }
   function frame(now) {
+    // The menu draws at 30 fps, as its GSAP motion does.
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
     raf = 0;
     const dt = Math.min((now - last) / 1000, 0.1), awake = now < until;
     last = now;

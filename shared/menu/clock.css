@@ -12,9 +12,16 @@
   /* A phone has height to spare, so its wordmark may grow with the width. */
   --title: clamp(32px, min(12vw, 8svh), 100px);
   --tag: clamp(12px, min(1.6vw, 1.75svh), 17px);
-  /* The clock takes the height that is left: the window less the blocks above and below it.
-     Below 200 px the page scrolls instead. */
-  --clk: max(200px, min(92vw, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px)));
+  /* The footer scales with the window height too: its top margin, the chip and its foot. */
+  --foot-gap: clamp(8px, 2.6svh, 64px);
+  --chip: clamp(24px, 3.2svh, 40px);
+  --foot-pad: clamp(8px, 1.8svh, 28px);
+  /* The footer's height: the margin, the chip, the hover name, the quips and the foot. */
+  --foot: calc(var(--gap) + var(--foot-gap) + var(--chip) + 58px + var(--foot-pad));
+  /* The clock takes the height that is left: the window less the blocks above and the footer below.
+     So the whole page fits the window. Below 200 px the page scrolls instead. */
+  --free: calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px);
+  --clk: max(200px, min(92vw, 1200px, calc(var(--free) - var(--foot))));
 }
 /* Phones: the dial keeps 24 px clear of each edge, so a held toy never meets it.
    The gaps open up, since a phone has height to spare. */
@@ -26,6 +33,10 @@
   }
 }
 :root[data-view="clock"] .wrap { padding-block-start: var(--pad); gap: var(--gap); }
+/* The page fills the window, and the footer and its glow stand on the bottom edge. */
+/* The body keeps its 8 px margin, so the wrap is 16 px short of the window. */
+:root[data-view="clock"] .wrap { box-sizing: border-box; min-height: calc(100svh - 16px); grid-template-rows: auto auto auto 1fr; }
+:root[data-view="clock"] .credit { align-self: end; margin-top: var(--foot-gap); }
 :root[data-view="clock"] .title { font-size: var(--title); }
 :root[data-view="clock"] .tagline { font-size: var(--tag); margin-top: calc(-0.6 * var(--gap)); }
 :root[data-view="clock"] main { gap: var(--gap); }
@@ -146,14 +157,14 @@
 .clock-roll svg circle { fill: currentColor; stroke: none; }
 .clock-roll:active svg { rotate: 180deg; }
 
-/* The footer of the Clock: the chip alone in the middle, the name under it on hover, then the disclaimer. */
+/* The footer of the Clock: the chip in the middle, the name under it on hover, then the warning and the disclaimer in one row. */
 /* The credit waits until clock.js builds the footer, so nothing jumps. The glow stays. */
 :root[data-view="clock"]:not([data-clock]) .credit > * { visibility: hidden; }
-:root[data-view="clock"] .credit[data-inline] { flex-direction: column; align-items: center; gap: 6px; padding-bottom: 24px; }
+:root[data-view="clock"] .credit[data-inline] { flex-direction: column; align-items: center; gap: 6px; padding-bottom: var(--foot-pad); }
 .clock-sig { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; cursor: default; }
 .clock-sig:focus-visible { outline: none; }
 .clock-mark { display: inline-flex; }
-:root[data-view="clock"] .clock-mark .onno svg { height: 34px; transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+:root[data-view="clock"] .clock-mark .onno svg { height: var(--chip); transition: translate 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 :root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno svg { translate: 0 -2px; }
 /* Hover or focus lights the chip's bands, as its own hover does on the menu. */
 :root[data-view="clock"] .clock-sig:is(:hover, :focus-visible, :focus) .onno .cm-capsule { fill: oklch(0.16 0.012 275); stroke: oklch(0.95 0.008 275); }
@@ -172,6 +183,11 @@
 }
 .clock-sig:is(:hover, :focus-visible, :focus) .clock-label span { opacity: 1; translate: 0 0; filter: none; transition-delay: calc(var(--i) * 28ms); }
 /* The disclaimer: an attribution, not a boast. Small, plain and quiet. */
+/* The quips: one row in lower-case mono, parted by a faded dash. A phone stacks them and drops the dash. */
+.clock-notes { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 4px 14px; margin-top: 4px; text-align: center; }
+.clock-notes .clock-note { font: 500 11px/1.5 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.06em; text-transform: lowercase; color: color-mix(in oklch, var(--fg) 58%, transparent); }
+.clock-dash { font: 400 11px/1.5 var(--sans); color: color-mix(in oklch, var(--fg) 22%, transparent); }
+@media (max-width: 640px) { .clock-notes { flex-direction: column; align-items: center; } .clock-dash { display: none; } }
 .clock-note { font: 400 11px/1.4 var(--sans); letter-spacing: 0.01em; color: color-mix(in oklch, var(--fg) 46%, transparent); }
 /* The glow is a shader (mesh.js): light that rises from below the edge and flows. It replaces the CSS glow. */
 .clock-mesh { position: absolute; z-index: -1; left: 50%; bottom: -28px; width: 100vw; height: min(38vh, 340px); translate: -50% 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; }
@@ -181,6 +197,26 @@
 /* The credit line stands on the light, so it is brighter here and has a soft shade. */
 :root[data-view="clock"] .credit[data-mesh] { color: color-mix(in oklch, var(--fg) 86%, transparent); text-shadow: 0 1px 10px oklch(0.14 0.02 275 / 0.7); }
 :root[data-view="clock"] .credit[data-mesh]::before { opacity: 0; }
+
+/* Phones in portrait: the dozen stands in a grid of three with names, as the whole shelf does.
+   No dial, comet, tube or wait dot. The Re-roll stands under the grid (Tom, 2026-11-17). */
+@media (max-width: 640px) and (orientation: portrait) {
+  :root[data-view="clock"] main > .shelf {
+    grid-area: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%; max-width: 420px; aspect-ratio: auto; gap: 22px 12px; pointer-events: auto;
+  }
+  :root[data-view="clock"] main > .shelf > li { position: static; width: auto; }
+  :root[data-view="clock"] main > .shelf > li:is(:hover, :focus-within, [data-held]) { scale: none; }
+  :root[data-view="clock"] main > .shelf .name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+  /* The face gives up its box, so the Re-roll becomes the next row of the page. */
+  :root[data-view="clock"] .clock-face { display: contents; }
+  :root[data-view="clock"] :is(.clock-comet, .clock-mid), :root[data-view="clock"] main::before { display: none; }
+  :root[data-view="clock"] .clock-roll {
+    position: static; translate: none; justify-self: center;
+    min-height: 36px; padding: 8px 16px; gap: 8px; font-size: 12px;
+  }
+  :root[data-view="clock"] .clock-roll svg { width: 14px; height: 14px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .clock-label span { transition: none; }

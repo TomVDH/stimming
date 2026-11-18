@@ -18,8 +18,11 @@ function start() {
   // GSAP comes from the menu's own script tag.
   const gsap = /** @type {any} */ (window).gsap;
   const still = matchMedia('(prefers-reduced-motion: reduce)');
-  // No motion with reduced motion, without GSAP, or in a hidden tab.
-  const calm = () => !gsap || still.matches || document.visibilityState !== 'visible';
+  // A phone in portrait shows the dozen as a grid, with no dial, comet or tube (Tom, 2026-11-17).
+  const flatQ = matchMedia('(max-width: 640px) and (orientation: portrait)');
+  const flat = () => flatQ.matches;
+  // No motion with reduced motion, without GSAP, in a hidden tab, or in the grid.
+  const calm = () => !gsap || still.matches || document.visibilityState !== 'visible' || flat();
 
   // The face lies under the toys: the comet and the middle.
   const face = Object.assign(document.createElement('div'), { className: 'clock-face' });
@@ -38,7 +41,8 @@ function start() {
 
   // The tube shows the toy's still in the middle; the Clock works without it.
   let bg = null;
-  const tubeReady = import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')), () => face.clientWidth)).then(t => {
+  // The grid has no tube, so a phone builds no shader for it.
+  const tubeReady = flat() ? Promise.resolve() : import('./tube.js').then(m => m.tube(/** @type {HTMLElement} */ (face.querySelector('.clock-plate')), () => face.clientWidth)).then(t => {
     bg = t;
     if (!bg) return;
     // The tube draws the words itself; the page's own words stay for screen readers.
@@ -145,7 +149,8 @@ function start() {
   }, true);
   shelf.addEventListener('click', e => {
     const li = tile(e.target);
-    if (!li || poke !== 'touch') return;
+    // In the grid a tap opens the toy at once.
+    if (!li || poke !== 'touch' || flat()) return;
     const link = /** @type {HTMLElement} */ (li.querySelector('a.toy'));
     if (before === link) return;
     e.preventDefault();
@@ -222,7 +227,8 @@ function start() {
   }
   function arrive(first = false) {
     const lis = dozen();
-    // With no motion the dozen simply shows.
+    // The grid fades its dozen in; with no motion the dozen simply shows.
+    if (flat() && !still.matches && first) { root.dataset.clock = 'on'; fadeIn(); return; }
     if (calm()) { root.dataset.clock = 'on'; lis.forEach(li => hold(li, false)); return; }
     lis.forEach(li => hold(li, true));
     shy = true;
@@ -263,8 +269,22 @@ function start() {
     live(true);
     show(li);
   }
+  // The grid's dozen comes in as the old menu's did: out of a grainy blur, one after another.
+  function fadeIn() {
+    const lis = dozen();
+    lis.forEach(li => hold(li, true));
+    // Two frames let the held state paint, so the fade runs.
+    requestAnimationFrame(() => requestAnimationFrame(() => lis.forEach((li, i) => hold(li, false, i * 0.05))));
+  }
   function roll() {
     if (busy) return;
+    if (flat() && !still.matches && document.visibilityState === 'visible') {
+      // The old dozen blurs out, the new one blurs in.
+      busy = true;
+      dozen().forEach((li, i) => hold(li, true, i * 0.02));
+      setTimeout(() => { deal(); fadeIn(); busy = false; }, 420);
+      return;
+    }
     if (calm()) return deal();
     busy = true;
     // The old dozen goes back into its blur in the comet's order, so the face clears round the dial.
@@ -272,11 +292,11 @@ function start() {
     setTimeout(() => { deal(); arrive(); busy = false; }, HOURS * 30 + 420);
   }
   button.addEventListener('click', roll);
-  // The Re-roll stays away for the first five seconds.
-  setTimeout(() => button.setAttribute('data-on', ''), 5000);
+  // The Re-roll stays away for the first five seconds; under the grid it shows at once.
+  setTimeout(() => button.setAttribute('data-on', ''), flat() ? 0 : 5000);
   addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey) roll(); });
-  // The footer: the chip alone in the middle (Tom). On hover or focus the name onnøzelaer
-  // appears under it, letter by letter. Under that, "Made with AI." is a plain disclaimer.
+  // The footer: the chip in the middle, then the warning and the disclaimer in one row (Tom). On hover or focus the name onnøzelaer
+  // appears under it, letter by letter. Under that, the quips: the warning and "made with the help of ai".
   // The Clock shows no version.
   const credit = /** @type {HTMLElement | null} */ (document.querySelector('.credit'));
   const words0 = credit?.querySelector('span'), mark = credit?.querySelector('.onno'), version = credit?.querySelector('.ver');
@@ -299,7 +319,12 @@ function start() {
     sig.append(seal, reveal);
     words0.replaceWith(sig);
     version?.remove();
-    if (note) sig.after(Object.assign(document.createElement('span'), { className: 'clock-note', textContent: note[0].toUpperCase() + note.slice(1) + '.' }));
+    // Under the chip, one row in lower case: Tom's warning, a faded dash, the disclaimer (2026-11-17).
+    const notes = Object.assign(document.createElement('span'), { className: 'clock-notes' });
+    const quip = (/** @type {string} */ text) => Object.assign(document.createElement('span'), { className: 'clock-note', textContent: text });
+    notes.append(quip('some of these are very wonky and may suffer from *ss performance'));
+    if (note) notes.append(Object.assign(document.createElement('span'), { className: 'clock-dash', textContent: '\u2014', ariaHidden: 'true' }), quip(note.toLowerCase()));
+    sig.after(notes);
     credit.setAttribute('data-inline', '');
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
     // It starts after the intro, so its shader build does not stall the comet.
@@ -323,7 +348,7 @@ function start() {
     if (solo) { solo = false; rest(); }
   }
   function alone() {
-    if (still.matches || face.hasAttribute('data-live')) return;
+    if (still.matches || flat() || face.hasAttribute('data-live')) return;
     solo = true;
     at = -1;
     beats = 0;

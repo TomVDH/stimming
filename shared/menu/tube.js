@@ -330,6 +330,8 @@ export async function tube(host, span) {
   // The power: where it is and where it goes, 0 off to 1 on. Snow is a set with no picture.
   let powerTo = 0, snow = 0, /** @type {(() => void) | null} */ done = null;
   let mix = 0, power = 0, time = 0, hot = false, raf = 0, last = 0, drawn = 0, src = '', gone = false;
+  // One frame each 1/30 s; 2 ms less absorbs timer jitter.
+  const FRAME = 1000 / 30 - 2;
   // moved: when the picture last moved. fresh: the next frame drops the trail.
   let moved = 0, fresh = true;
   /** @type {Words | null} */
@@ -397,6 +399,8 @@ export async function tube(host, span) {
   const settle = () => { pics.reverse(); caps.reverse(); has = [1, 0]; mix = 0; };
   const wake = () => { if (!raf && !gone) { last = performance.now(); raf = requestAnimationFrame(frame); } };
   function frame(now) {
+    // The menu draws at 30 fps, as its GSAP motion does.
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
     raf = 0;
     const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
     last = now;
