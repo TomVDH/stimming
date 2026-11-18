@@ -430,7 +430,8 @@ const SONGS = {
     main: { tracks: ['Scifi'], tone: 'warm', env: 'pad' },
     pos: R10,
     parts: [
-      { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pad', lv: 1.6 },
+      // The sequenced bass rides the iconic beat: each note strikes and dies, so it stays on the beat.
+      { tracks: ['Synth Bass (Classic)'], tone: 'bass', env: 'pluck', decay: 0.12, lv: 2 },
       { tracks: ['Sitar', 'Church Organ (Classic)', 'Acoustic Gtr (Classic)'], tone: 'warm', env: 'pluck', decay: 0.4 },
       { tracks: ['Pop Synth (Classic)'], tone: 'soft', env: 'pad', lv: 0.8 },
       { tracks: ['8-Bit Sawtooth', '8-Bit Sine'], tone: 'saw', env: 'pad', lv: 0.5 },
@@ -637,6 +638,8 @@ function partStep(P, c) {
       const f = HZ[x[2]];
       v.target = f; v.f = P.p.drum === 'kick' ? f * 3 : f;
       v.a = P.p.env === 'pad' ? v.a * 0.3 : x[3];
+      // A struck note restarts its cycle, so its first peak lands on the beat.
+      if (P.p.env !== 'pad') { v.ph = 0; v.ph2 = 0.25; }
       v.vel = x[3];
     }
     v.note = x;
@@ -852,7 +855,7 @@ function tapeSample(t) {
 // The bezel masks all outside it: those segments carry no light.
 // Brightness follows the spot's speed; the minis fade in with their bezels.
 const MINI_FILL = 1.15;
-// Wave mode: each mini draws its left channel, about three cycles, from a rising zero crossing.
+// Wave mode: each mini draws its left channel, about three cycles, centred on a rising zero crossing.
 // The trace shows the part's real loudness and runs edge to edge, clipped by the bezel.
 // A silent mini draws a dim flat line.
 const WAVE_MS = 0.02, WAVE_PTS = 140, WAVE_GAIN = 1.6, WAVE_KEY = 'stimming.scope.miniwave';
@@ -870,8 +873,10 @@ function miniWaves(t, n) {
     let cross = 0;
     for (let i = Math.max(1, Math.floor(at - win20)); i < Math.min(A.length, at); i++) if (A[i - 1] < 0 && A[i] >= 0) cross++;
     const win = cross >= 3 ? 3 * win20 / cross : win20;
-    let i0 = Math.max(1, Math.floor(at - 2 * win));
-    for (let i = Math.floor(at - win); i > i0; i--) if (A[i - 1] < 0 && A[i] >= 0) { i0 = i; break; }
+    // The trigger, a rising zero crossing, sits at the middle; the wave spreads both ways.
+    let trig = Math.max(1, Math.floor(at - 1.5 * win));
+    for (let i = Math.floor(at - win / 2); i > trig; i--) if (A[i - 1] < 0 && A[i] >= 0) { trig = i; break; }
+    const i0 = Math.max(0, trig - win / 2);
     let pk = 0;
     for (let q = 0; q <= WAVE_PTS; q++) pk = Math.max(pk, Math.abs(A[Math.min(A.length - 1, Math.floor(i0 + q / WAVE_PTS * win))]));
     // A fixed scale: the trace's height is the part's own loudness.
