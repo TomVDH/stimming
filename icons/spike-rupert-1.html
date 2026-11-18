@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Rupert's drop 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; align-items: center; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.emb > .mono { width: 28px; height: 28px; background: var(--bg); color: var(--fg); }
+.emb > .mono i { width: 28px; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Rupert's drop 1</h1>
+<p class="lede">Rupert's drop, round 1: one bold glass drop with a thick tail that ends in a round tip, its stress fringes lit in the polariser's colours. No thin lines. A: free on the ground. D: on a block of black acrylic that mirrors it.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const lerp2 = (p, q, t) => [lerp(p[0], q[0], t), lerp(p[1], q[1], t)];
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The toy's tokens: clear glass, the polariser's fringe colours, frost.
+  const GLASS = [[0, 'oklch(0.86 0.03 238)'], [0.42, 'oklch(0.5 0.06 258)'], [1, 'oklch(0.3 0.06 268)']];
+  const FRINGE = ['oklch(0.86 0.15 95)', 'oklch(0.62 0.24 330)', 'oklch(0.6 0.17 255)', 'oklch(0.8 0.17 160)'];
+  const FROST = 'oklch(0.95 0.015 250)', FRONT_C = 'oklch(0.99 0.04 225)';
+  const HEAT = [[0, 'oklch(0.94 0.15 95)'], [0.45, 'oklch(0.76 0.19 55)'], [1, 'oklch(0.56 0.2 35)']];
+  const { sin, cos, PI } = Math;
+  const hash = i => { const x = sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+  // The drop: a round head on the left, a thick tail that curls up.
+  // The tail ends in a round tip about 6 wide, never a hairline.
+  const DROP = 'M38 40C52 40 60 50 72 54C88 59 101 52 110 33Q113 29 116.5 31.5Q118.5 34 117 37C110 60 92 68 72 71C60 73 53 88 38 88A24 24 0 0 1 38 40Z';
+  const HEADC = [36, 64], FOOT = [38, 88], SNIP = 104;
+  // Stress fringes follow the outline: the drop, scaled to the head.
+  const FR = [0.74, 0.5, 0.27];
+  const fringe = k => `translate(${f(HEADC[0] * (1 - k))} ${f(HEADC[1] * (1 - k))}) scale(${k})`;
+  // The frost front: a ragged edge at x, with fingers of fixed length.
+  const frostPts = x => { const pts = [[130, 26]]; for (let i = 0; i <= 9; i++) pts.push([x + (hash(i) - 0.3) * 10 * (i % 2 ? 1 : 0.4), 26 + i * 7.2]); pts.push([130, 92.8]); return pts; };
+
+  // The core drawing lives in defs; uses show it whole or snipped.
+  const dropDefs = u => `${light(u)}${blur(`${u}fb`, 1.4)}
+    <radialGradient id="${u}glass" gradientUnits="userSpaceOnUse" cx="30" cy="54" r="88">${GLASS.map(([o, c]) => `<stop offset="${o}" style="stop-color: ${c}"/>`).join('')}</radialGradient>
+    ${lg(`${u}heat`, HEAT, 'x1="0" y1="0" x2="1" y2="0.4"')}
+    <clipPath id="${u}dc"><path d="${DROP}"/></clipPath>
+    <clipPath id="${u}keep"><rect x="0" y="0" width="${SNIP}" height="128"/></clipPath>
+    <clipPath id="${u}tipc"><rect x="${SNIP}" y="0" width="30" height="128"/></clipPath>
+    <g id="${u}core">
+      <path d="${DROP}" fill="url(#${u}glass)"/>
+      <g clip-path="url(#${u}dc)">
+        <g class="bands" fill="none" stroke-width="5" stroke-linejoin="round">
+          ${FR.map((k, i) => `<path d="${DROP}" transform="${fringe(k)}" stroke="${FRINGE[i]}" stroke-width="${f(4.6 / k)}" opacity="0.66"/>`).join('')}
+        </g>
+        <path class="frost" fill="${FROST}" opacity="0.94"/>
+        <path class="front" fill="none" stroke="${FRONT_C}" stroke-width="3.2" stroke-linejoin="round"/>
+        <path class="heat" d="${DROP}" fill="url(#${u}heat)" opacity="0"/>
+      </g>
+      <path d="${DROP}" fill="url(#${u}lit)"/>
+      <path d="M19 60A19 19 0 0 1 35 44.5" fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round" opacity="0.85"/>
+      <path d="M62 57C74 62.5 90 63 100 56" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.45"/>
+      <path d="M24 79A19 19 0 0 0 40 84.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+      <path d="${DROP}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+    </g>`;
+  // The live drop; inside the core it reads the pointer in drop units.
+  const dropMarkup = u => `
+    <g class="drop">
+      <use class="whole" href="#${u}core"/>
+      <use class="keep" href="#${u}core" clip-path="url(#${u}keep)" visibility="hidden"/>
+      <use class="tip" href="#${u}core" clip-path="url(#${u}tipc)" visibility="hidden"/>
+      <ellipse class="flash" cx="${HEADC[0]}" cy="${HEADC[1]}" fill="none" stroke="#fff" stroke-width="3.5" opacity="0"/>
+    </g>`;
+  // g.tf places the drop: translate t, rotate r, scale s, about point o.
+  const dropTf = g => g.tf ? `translate(${g.tf.t[0]} ${g.tf.t[1]}) rotate(${g.tf.r}) scale(${g.tf.s}) translate(${-g.tf.o[0]} ${-g.tf.o[1]})` : '';
+  const toDrop = (g, p) => {
+    if (!g.tf) return p;
+    const a = (-g.tf.r * PI) / 180, x = p[0] - g.tf.t[0], y = p[1] - g.tf.t[1];
+    return [(x * cos(a) - y * sin(a)) / g.tf.s + g.tf.o[0], (x * sin(a) + y * cos(a)) / g.tf.s + g.tf.o[1]];
+  };
+  const rupertDrop = (svg, u, g) => {
+    const $q = s => svg.querySelector(s);
+    const drop = $q('.drop'), whole = $q('.whole'), keep = $q('.keep'), tip = $q('.tip'), flash = $q('.flash');
+    const frost = $q('.frost'), front = $q('.front'), heat = $q('.heat'), bands = [...svg.querySelectorAll('.bands path')];
+    // px: the pointer along the drop. b: time into a burst, or -1.
+    const st = { px: null, t: 0, live: false, ring: 0, nextTap: 0, trem: 0, tremTo: 0, b: -1, cool: 0 };
+    const draw = () => {
+      // A tap squashes the drop on its foot; the fringes flare.
+      const sq = 1 - 0.07 * st.ring * Math.abs(sin(st.ring * 9));
+      const tr = st.trem * sin(st.t * 46) * 0.9;
+      drop.setAttribute('transform', `rotate(${f(tr)} ${HEADC[0]} ${HEADC[1]}) translate(0 ${f(FOOT[1] * (1 - sq))}) scale(1 ${f(sq)})`);
+      flash.setAttribute('opacity', f(st.ring * 0.9));
+      flash.setAttribute('rx', f(26 + 14 * (1 - st.ring))); flash.setAttribute('ry', f(26 + 14 * (1 - st.ring)));
+      bands.forEach((b, i) => b.setAttribute('opacity', f(0.66 + 0.34 * st.ring * (i % 2 ? 1 : 0.6))));
+      // The burst: the tip falls, frost runs up to the head, a hot drop renews it.
+      const b = st.b, snipped = b >= 0 && b < 2.2;
+      whole.setAttribute('visibility', snipped ? 'hidden' : 'visible');
+      keep.setAttribute('visibility', snipped ? 'visible' : 'hidden');
+      tip.setAttribute('visibility', snipped ? 'visible' : 'hidden');
+      const fall = clamp(b / 0.5), back = clamp((b - 1.7) / 0.5);
+      tip.setAttribute('transform', `translate(${f(4 * fall)} ${f(30 * fall * fall)}) rotate(${f(40 * fall)} ${SNIP} 40)`);
+      tip.setAttribute('opacity', f(b < 1.7 ? 1 - fall : back));
+      const run = b < 0 ? 0 : clamp((b - 0.15) / 0.85);
+      const fx = 120 - run * 112;
+      frost.setAttribute('d', poly(frostPts(fx)));
+      const fade = b < 0 ? 0 : 1 - clamp((b - 1.5) / 0.4);
+      frost.setAttribute('opacity', f(0.94 * fade * (run > 0 ? 1 : 0)));
+      front.setAttribute('d', 'M' + frostPts(fx).slice(1, -1).map(p => `${f(p[0])} ${f(p[1])}`).join('L'));
+      front.setAttribute('opacity', f(run > 0 && run < 1 ? 1 : 0));
+      heat.setAttribute('opacity', f(b < 1.5 ? 0 : 0.85 * (1 - clamp((b - 1.9) / 0.9))));
+    };
+    const loop = clock(time => {
+      const dt = Math.min(0.1, time - (st.t || time));
+      st.t = time;
+      st.ring = Math.max(0, st.ring - dt * 2.2);
+      st.trem += (st.tremTo - st.trem) * 0.2;
+      const px = st.live ? st.px : null;
+      if (st.b >= 0) { st.b += dt; if (st.b > 2.8) { st.b = -1; st.cool = 0.4; } }
+      st.cool = Math.max(0, st.cool - dt);
+      // On the head, the hammer taps; on the tail, the glass trembles.
+      if (px != null && st.b < 0) {
+        if (px < 64 && time > st.nextTap) { st.ring = 1; st.nextTap = time + 0.9; }
+        st.tremTo = px >= 64 ? clamp((px - 64) / 40) : 0;
+        if (px >= 100 && st.cool <= 0) { st.b = 0; st.tremTo = 0; }
+      } else st.tremTo = 0;
+      draw();
+      if (!st.live && st.b < 0 && st.ring + st.trem < 0.01) { Object.assign(st, { ring: 0, trem: 0 }); draw(); loop.stop(); }
+    });
+    draw();
+    return {
+      enter(p) { st.live = true; st.nextTap = 0; loop.start(); this.move(p); },
+      move(p) { if (p) st.px = toDrop(g, p)[0]; },
+      // A press on the tail snips it at once.
+      down(p) { if (p && toDrop(g, p)[0] >= 64 && st.b < 0) { st.b = 0; loop.start(); } },
+      leave() { st.live = false; st.px = null; loop.start(); },
+    };
+  };
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover script.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg, u) {
+      const D0 = 'M40 44C50 44 56 50 62 55C72 61 88 62 100 61C106 60 110 56 112 50C112.6 48.5 114.2 48.8 113.8 50.4C112 58 106 64 100 65C88 67 72 68 62 72C56 78 50 84 40 84A20 20 0 0 1 40 44Z';
+      svg.innerHTML = `<defs>
+          <radialGradient id="${u}glass" cx="34" cy="58" r="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.42 0.09 275)"/><stop offset="0.65" stop-color="oklch(0.2 0.05 275)"/><stop offset="1" stop-color="oklch(0.12 0.03 275)"/></radialGradient>
+          <linearGradient id="${u}heat" x1="20" y1="44" x2="114" y2="84" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="oklch(0.94 0.15 95)"/><stop offset="0.45" stop-color="oklch(0.76 0.19 55)"/><stop offset="1" stop-color="oklch(0.56 0.2 35)"/></linearGradient>
+          <clipPath id="${u}clip"><path d="${D0}"/></clipPath>
+        </defs>
+        <use href="#${u}drop" transform="matrix(1 0 0 -1 0 168)" opacity="0.22"/>
+        <g id="${u}drop">
+          <path d="${D0}" fill="url(#${u}glass)" stroke="oklch(0.78 0.06 255)" stroke-width="0.9" stroke-opacity="0.55"/>
+          <g clip-path="url(#${u}clip)">
+            <ellipse cx="40" cy="70" rx="17" ry="3.4" fill="oklch(0.62 0.12 270)" opacity="0.75"/>
+            <rect class="frost" x="92" y="40" width="0" height="48" fill="oklch(0.94 0.015 250)" opacity="0.92"/>
+            <rect class="front" x="92" y="40" width="3" height="48" fill="oklch(0.99 0.04 225)" opacity="0"/>
+            <rect class="hot" x="18" y="40" width="98" height="48" fill="url(#${u}heat)" opacity="0"/>
+          </g>
+          <path d="M25 73A16.5 16.5 0 0 0 38 82.6" fill="none" stroke="oklch(0.97 0.01 250)" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M30 49A17 17 0 0 1 45 45.2" fill="none" stroke="oklch(0.97 0.01 250)" stroke-width="1.4" stroke-linecap="round" opacity="0.8"/>
+          <path d="M63 56.5C74 61.5 88 62.5 100 61.5" fill="none" stroke="oklch(0.97 0.01 250)" stroke-width="0.9" opacity="0.7"/>
+          <circle cx="58" cy="65" r="3.2" fill="oklch(0.9 0.12 80)" opacity="0.35"/>
+          <path d="M58 61.2L58.7 64.3L61.8 65L58.7 65.7L58 68.8L57.3 65.7L54.2 65L57.3 64.3Z" fill="oklch(0.99 0.02 90)"/>
+        </g>
+        <g class="dust"></g>
+        <circle class="flash" cx="40" cy="44" r="5" fill="oklch(0.99 0.01 90)" opacity="0"/>
+        <g class="pliers" opacity="0">
+          <g class="arm"><path d="M92 63.6L98.6 48.7L101.2 50.5Z" fill="oklch(0.5 0.02 260)"/><path d="M101.2 50.5L104 20" stroke="oklch(0.66 0.19 42)" stroke-width="4.5" stroke-linecap="round"/></g>
+          <g class="arm"><path d="M92 63.6L101.2 50.5L103.8 52.3Z" fill="oklch(0.38 0.02 260)"/><path d="M101.2 50.5L117 24" stroke="oklch(0.66 0.19 42)" stroke-width="4.5" stroke-linecap="round"/></g>
+          <circle cx="101.2" cy="50.5" r="2.4" fill="oklch(0.7 0.02 260)"/>
+        </g>
+        <g class="hammer" opacity="0">
+          <path d="M46 31L104 6" stroke="oklch(0.66 0.19 42)" stroke-width="5" stroke-linecap="round"/>
+          <rect x="31" y="20" width="18" height="24" rx="3" fill="oklch(0.55 0.02 260)"/>
+          <rect x="32" y="21" width="4.5" height="22" rx="2" fill="oklch(0.86 0.02 250)" opacity="0.7"/>
+        </g>`;
+      const $q = s => svg.querySelector(s);
+      const drop = svg.getElementById(`${u}drop`), frost = $q('.frost'), front = $q('.front'), hot = $q('.hot');
+      const flash = $q('.flash'), hammer = $q('.hammer'), pliers = $q('.pliers');
+      const arms = [...svg.querySelectorAll('.arm')], dustG = $q('.dust');
+      const WRIST = '104 6', PIV = '101.2 50.5', FOOT0 = '40 84', TAIL = 62;
+      const rnd = Math.random;
+      const D = Array.from({ length: 64 }, (_, i) => {
+        let x0, y0;
+        if (i < 42) { const a = rnd() * PI * 2, r = 17 * Math.sqrt(rnd()); x0 = 40 + cos(a) * r; y0 = 64 + sin(a) * r; }
+        else { x0 = 58 + rnd() * 34; y0 = 63.5 + (rnd() - 0.5) * (x0 < 66 ? 7 : 2.5); }
+        const dx = x0 - 40, dy = y0 - 64, d = Math.hypot(dx, dy) || 1, k = i < 42 ? 6 + rnd() * 15 : 2 + rnd() * 5;
+        const x1 = x0 + dx / d * k + (rnd() - 0.5) * 4, y1 = y0 + dy / d * k * 0.8 - rnd() * 5;
+        return { x0, y0, x1, y1, x2: x1 + (rnd() - 0.5) * 6, y2: 83.5 + rnd() * 3, r: 0.55 + rnd() * 1.05, tint: rnd() < 0.35 };
+      });
+      const dots = D.map(o => el('circle', { r: o.r.toFixed(2), fill: o.tint ? `oklch(0.9 0.12 ${Math.round(rnd() * 360)})` : 'oklch(0.97 0.01 250)', opacity: 0 }, dustG));
+      const REST = () => {
+        gsap.set(hammer, { opacity: 0, rotation: 40, svgOrigin: WRIST });
+        gsap.set(pliers, { opacity: 0, x: 18, y: -18 });
+        gsap.set(arms, { rotation: 0, svgOrigin: PIV });
+        gsap.set(drop, { opacity: 1, y: 0, scaleY: 1, svgOrigin: FOOT0 });
+        gsap.set(frost, { attr: { x: 92, width: 0 } });
+        gsap.set([front, hot, flash], { opacity: 0 });
+        gsap.set(dots, { opacity: 0 });
+      };
+      REST();
+      const knock = k => gsap.timeline()
+        .fromTo(flash, { opacity: k, scale: 0.4, svgOrigin: '40 44' }, { opacity: 0, scale: 1.8, svgOrigin: '40 44', duration: 0.28, ease: 'power2.out', immediateRender: false }, 0)
+        .fromTo(drop, { scaleY: 1 - 0.05 * k, svgOrigin: FOOT0 }, { scaleY: 1, svgOrigin: FOOT0, duration: 0.4, ease: 'elastic.out(1, 0.35)', immediateRender: false }, 0);
+      const strike = () => gsap.timeline()
+        .set(hammer, { opacity: 1, rotation: 40, svgOrigin: WRIST })
+        .to(hammer, { rotation: 0, svgOrigin: WRIST, duration: 0.34, ease: 'power2.in' })
+        .add(knock(1))
+        .to(hammer, { rotation: 6, svgOrigin: WRIST, duration: 0.17, ease: 'power2.out' }, '<')
+        .to(hammer, { rotation: 0, svgOrigin: WRIST, duration: 0.17, ease: 'power2.in' })
+        .add(knock(0.45))
+        .to(hammer, { rotation: 1.5, svgOrigin: WRIST, duration: 0.08, ease: 'power2.out' }, '<')
+        .to(hammer, { rotation: 0, svgOrigin: WRIST, duration: 0.08, ease: 'power2.in' })
+        .to(hammer, { rotation: 40, opacity: 0, svgOrigin: WRIST, duration: 0.5, ease: 'power2.inOut' }, '+=0.05');
+      const burst = () => gsap.timeline()
+        .to(hammer, { rotation: 40, opacity: 0, svgOrigin: WRIST, duration: 0.3, ease: 'power2.out' }, 0)
+        .set(pliers, { opacity: 1, x: 18, y: -18 }, 0)
+        .set(arms, { rotation: i => (i ? 14 : -14), svgOrigin: PIV })
+        .to(pliers, { x: 0, y: 0, duration: 0.3, ease: 'power2.out' })
+        .to(arms, { rotation: 0, svgOrigin: PIV, duration: 0.1, ease: 'power3.in' })
+        .set(front, { opacity: 1 })
+        .fromTo(frost, { attr: { x: 92, width: 0 } }, { attr: { x: 18, width: 74 }, duration: 1.1, ease: 'none', immediateRender: false })
+        .fromTo(front, { attr: { x: 92 } }, { attr: { x: 18 }, duration: 1.1, ease: 'none', immediateRender: false }, '<')
+        .to(drop, { opacity: 0, duration: 0.18 })
+        .set(dots, { opacity: 1, attr: { cx: i => D[i].x0, cy: i => D[i].y0 } }, '<')
+        .to(dots, { attr: { cx: i => D[i].x1, cy: i => D[i].y1 }, duration: 1.4, ease: 'power3.out' }, '<')
+        .to(dots, { opacity: () => 0.35 + rnd() * 0.65, duration: 0.18, stagger: { each: 0.02, from: 'random', repeat: 5, yoyo: true } }, '<0.2')
+        .to(pliers, { x: 18, y: -18, opacity: 0, duration: 0.5, ease: 'power2.in' }, '<0.5')
+        .to(dots, { attr: { cx: i => D[i].x2, cy: i => D[i].y2 }, duration: 0.6, ease: 'power2.in', stagger: { each: 0.006, from: 'random' } }, '+=0.1')
+        .set(frost, { attr: { x: 92, width: 0 } })
+        .set(front, { opacity: 0 })
+        .set(hot, { opacity: 1 })
+        .fromTo(drop, { opacity: 1, y: -70 }, { y: 0, duration: 0.45, ease: 'power2.in', immediateRender: false }, '+=0.25')
+        .fromTo(drop, { scaleY: 0.86, svgOrigin: FOOT0 }, { scaleY: 1, svgOrigin: FOOT0, duration: 0.6, ease: 'elastic.out(1, 0.4)', immediateRender: false })
+        .to(dots, { opacity: 0, duration: 0.5 }, '<')
+        .to(hot, { opacity: 0, duration: 1.3, ease: 'power1.in' }, '<');
+      let tl = null, mode = null, px = null;
+      const run = m => {
+        tl?.kill();
+        mode = m;
+        if (m === 'demo') tl = gsap.timeline({ repeat: -1, repeatDelay: 0.5 }).add(strike()).add(strike(), '+=0.2').add(burst(), '+=0.3');
+        else if (m === 'taps') tl = gsap.timeline({ repeat: -1, repeatDelay: 0.25 }).add(strike());
+        else tl = burst().eventCallback('onComplete', () => run(px != null && px < TAIL ? 'taps' : 'burst'));
+      };
+      return {
+        enter() { REST(); px = null; run('demo'); },
+        move(p) {
+          if (!p || !mode) return;
+          px = p[0];
+          if (px >= TAIL && mode !== 'burst') run('burst');
+          else if (px < TAIL && mode === 'demo') run('taps');
+        },
+        leave() { tl?.kill(); tl = null; mode = null; px = null; REST(); },
+      };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // One big glass drop, free on the ground, its fringes lit by the polariser.
+  const A = { tf: null };
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [13, 29, 106, 60],
+    idea: 'One big glass drop, free on the ground: a round head and a thick tail that curls up to a round tip. Under the polariser the stress shows as bold fringes in the toy\'s four colours, following the outline. On the head the pointer is the hammer: taps squash the drop and the fringes flare, and nothing breaks. Along the tail the glass trembles more and more; at the tip the tail snaps off, frost runs up into the head and the white drop renews as a hot new drop that cools.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${dropDefs(u)}${blur(`${u}h`, 2.4)}</defs>
+        <ellipse cx="62" cy="91" rx="46" ry="4.5" fill="oklch(0.05 0.01 270)" opacity="0.6" filter="url(#${u}h)"/>
+        ${dropMarkup(u)}`;
+      return rupertDrop(svg, u, A);
+    },
+    emblem: `${EMB_HEAD}<path d="${DROP}" transform="matrix(1 0 0 -0.4 0 123.2)" fill="#5a5a5a"/><path d="${DROP}" fill="#fff"/></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The drop lies on a block of black acrylic that mirrors it.
+  const CY = 74, HALF = 30, T = 12;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const D_TOP = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]].map(([x, y]) => iso(x, y));
+  const [N, E, S, W] = D_TOP;
+  const down = p => [p[0], p[1] + T];
+  const D = { tf: { t: [62, 80], r: -20, s: 0.66, o: [66, 88] } };
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [12, 26, 104, 90],
+    idea: 'The drop lies on a block of black acrylic, as in the toy\'s graphite studio: a glossy dark top that mirrors the drop, mid left face, dark right face, a rim on the top edges. The drop is the A drop with its fringes. The pointer taps the head, makes the tail tremble, and at the tip snaps it: frost runs up the drop and a hot new drop renews it.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${dropDefs(u)}${blur(`${u}s`, 2.6)}${blur(`${u}h`, 1.6)}
+          ${lg(`${u}top`, [[0, 'oklch(0.46 0.014 262)'], [1, 'oklch(0.24 0.014 268)']], 'x1="0.2" y1="0" x2="0.7" y2="1"')}
+          <clipPath id="${u}tc"><path d="${poly(D_TOP)}"/></clipPath></defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 290)" opacity="0.5" filter="url(#${u}s)" transform="translate(0 4)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="oklch(0.27 0.014 264)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="oklch(0.17 0.012 268)"/>
+        <path d="${poly(D_TOP)}" fill="url(#${u}top)"/>
+        <g clip-path="url(#${u}tc)"><g transform="${dropTf(D)}"><use href="#${u}core" transform="matrix(1 0 0 -1 0 176)" opacity="0.3"/></g></g>
+        <path d="${poly(D_TOP)}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <g transform="${dropTf(D)}">
+          <ellipse cx="62" cy="88" rx="44" ry="3" fill="oklch(0.04 0.01 270)" opacity="0.7" filter="url(#${u}h)"/>
+          ${dropMarkup(u)}
+        </g>`;
+      return rupertDrop(svg, u, D);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly(D_TOP)}" fill="#8a8a8a"/><g transform="${dropTf(D)}"><path d="${DROP}" fill="#fff"/></g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const ID = 'rupert', NAME = "Rupert's drop";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = `row-${ID}`;
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `${ID}-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div><div class="mono"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      // A press is a strike, where the icon has one.
+      if (c.down) tileEl.addEventListener('pointerdown', e => c.down(local(svg, e)));
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
