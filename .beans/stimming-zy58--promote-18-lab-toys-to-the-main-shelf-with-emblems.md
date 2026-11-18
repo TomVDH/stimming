@@ -70,3 +70,8 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 - [ ] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
 - [ ] `process.md:52` says Bar v3, not Bar v2
 - [ ] Verify: check, build, bar tests, `?all` and `?lab`, each toy's intro and bar, reduced motion
+
+## Added by Tom (2026-11-17, 16:43)
+
+- [ ] Pressure washer (`washer`, main shelf): new icon round; Tom picks.
+- [ ] Fog horn (`foghorn`, number 42): demote from the main shelf to the Lab (number null, version null, sub "Stimming Lab", tile back to the Lab).
