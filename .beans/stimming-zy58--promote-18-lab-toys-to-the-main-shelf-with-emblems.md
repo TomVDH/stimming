@@ -1,11 +1,11 @@
 ---
 # stimming-zy58
 title: Promote 18 Lab toys to the main shelf, with emblems and Bar v3
-status: in-progress
+status: completed
 type: feature
 priority: normal
 created_at: 2026-11-17T23:27:53Z
-updated_at: 2026-11-17T23:32:14Z
+updated_at: 2026-11-18T01:39:29Z
 parent: stimming-ft0e
 ---
 
@@ -55,11 +55,11 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 
 ## Checklist
 
-- [ ] PR #80 (Bar v3 default) merged; pull main
-- [ ] Bar v3 copy: rupert, bowl, tornado, observatory (check what #80 did)
-- [ ] Bar spec port, then v3 copy: foil, marble, plasma, snow, windfarm, subway, harmono
-- [ ] East Van postcards: Tom decides the bar
-- [ ] Icon walkthrough page `icons/spike-promote-1.html`: current icon beside its emblem, one toy at a time
+- [x] PR #80 (Bar v3 default) merged; pull main
+- [x] Bar v3 copy: rupert, bowl, tornado, observatory (check what #80 did)
+- [x] Bar spec port, then v3 copy: foil, marble, plasma, snow, windfarm, subway, harmono
+- [x] East Van postcards: Tom decides the bar
+- [x] Icon walkthrough page `icons/spike-promote-1.html`: current icon beside its emblem, one toy at a time
 - [x] Icon rounds: subway, bowl, rupert, carwash, postcard; picks in `icons/picks.json`; menu tiles updated
   - [x] Menu tiles on their A icon (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert. Observatory has icon 1 of spike observatory-2 (from main)
   - [x] Current icon kept, by Tom: carwash, windfarm, harmono, kintsugi, crossing
@@ -70,9 +70,20 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 - [x] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
   - Left open: tag and tagNl null on all 18; nl and ipa null on postcard, kintsugi, crossing, rupert, bowl, nvg. No still yet for tornado and carwash.
 - [x] `process.md:52` says Bar v3, not Bar v2
-- [ ] Verify: check, build, bar tests, `?all` and `?lab`, each toy's intro and bar, reduced motion
+- [x] Verify: check, build, node tests 157/157, headless smoke of `/`, `?all`, `?lab` and toy pages. Not run: the Bar v2 browser test, reduced motion, phone sizes.
 
 ## Added by Tom (2026-11-17, 16:43)
 
-- [ ] Pressure washer (`washer`, main shelf): new icon round; Tom picks.
+- [x] Pressure washer (`washer`, main shelf): new icon round; Tom picks.
 - [x] Fog horn (`foghorn`, number 42): demote from the main shelf to the Lab (number null, version null, sub "Stimming Lab", tile back to the Lab).
+
+## Summary of Changes
+
+PR #93 merged on 2026-11-17 (it carries all of PR #80, Bar v3 as the default bar). Then direct pushes to main.
+
+- Main shelf: 18 Lab toys join as 54 to 71, East Van Alley (formerly Crow wires) as 72; Fog horn goes back to the Lab.
+- Bar v3 on every toy; foil, marble, plasma, snow, windfarm, subway, oilslick and East Van postcards ported to a bar spec; postcards plays the shared intro.
+- New menu icons (Tom's picks): subway, bowl, marble, plasma, snow, postcard, rupert, washer. Emblems for every promoted toy; Oil slick's emblem matches its drop.
+- Stills for all promoted toys; Tornado's is cropped from a real-GPU QA capture, Car wash's and East Van Alley's come from the ANGLE OpenGL backend.
+- Favicon (stimming-ujaf): the S in a black circle on the menu; each toy shows its own full-colour menu icon.
+- Site version 0.9.0, set by Tom.
