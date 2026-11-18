@@ -1755,7 +1755,8 @@ function live(t, dt) {
   }
   // The condensation reaches down as the descent goes; a new F moves its reach.
   t.cond = clamp(at('cond', t.f) + KNOB.reach) * sstep(0, 1, t.desc);
-  if (t !== drag) {
+  if (t.goal) walkTo(t, dt);
+  else {
     const v = fAt(F_SPEED, t.f) * (1 - 0.6 * clamp(t.rope));
     t.x += windDir[0] * v * dt; t.z += windDir[1] * v * dt;
     // A tornado that drifts out to the far limit ropes out there.
@@ -1763,8 +1764,19 @@ function live(t, dt) {
   }
   keepOff(t);
 }
-// A tornado comes no nearer than its dust's reach plus a margin, and never under the eye.
-const nearMin = t => Math.max(1000, 2.2 * at('r0', t.f) * KNOB.width + 300);
+// A tornado comes as near as 500 m; a big one stops 100 m past its dust.
+const nearMin = t => { const r0 = at('r0', t.f) * KNOB.width; return Math.max(500, r0 * (2.2 - 1.02 * t.f / 5) + 120); };
+// A held tornado walks to its goal, slow and heavy: 12 to 45 m/s with F.
+// It eases in over 2 s and slows over its last 150 m.
+function walkTo(t, dt) {
+  const g = t.goal, dx = g.x - t.x, dz = g.z - t.z, d = Math.hypot(dx, dz);
+  const top = 12 + 6.6 * t.f, want = Math.min(top, top * d / 150);
+  t.v = (t.v || 0) + (want - (t.v || 0)) * (1 - Math.exp(-dt / 2));
+  const k = Math.min(1, t.v * dt / Math.max(d, 1e-3));
+  t.x += dx * k; t.z += dz * k;
+  // Released and arrived, it drifts with the wind again.
+  if (t !== drag && d < 20) { t.goal = null; t.v = 0; }
+}
 // The farthest a tornado stands, in metres: inside the live march.
 // It stays half a kilometre short of the crossover to the baked far field.
 const farMax = () => Math.max(1500, farD * 1000 - Math.max(750, 125 * farD) - 500);
@@ -1866,9 +1878,9 @@ function groundAt(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   const asp = r.width / r.height, foc = focal();
   const sx = ((clientX - r.left) / r.width - 0.5) * asp, sy = (1 - (clientY - r.top) / r.height) - horizon();
-  // Funnels stay in the live march: 1.2 km out at the nearest, farMax() at the most.
+  // Funnels stay in the live march: 500 m out at the nearest, farMax() at the most.
   const far = farMax();
-  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 1200, far) : far;
+  const dist = sy < -1e-4 ? clamp(camH * Math.hypot(foc, sx) / -sy, 500, far) : far;
   const [x, z] = toWorld(dist * sx / Math.hypot(foc, sx), -dist * foc / Math.hypot(foc, sx));
   return { x, z };
 }
@@ -1888,7 +1900,7 @@ const full = () => tors.length >= MAX_TOR;
 function capUI() {
   const a = ui.action?.('add');
   if (a && a.disabled !== full()) a.disabled = full();
-  const c = full() && !hover && !drag ? 'not-allowed' : '';
+  const c = drag ? 'grabbing' : hover && !hover.roping ? 'grab' : full() ? 'not-allowed' : '';
   if (canvas.style.cursor !== c) canvas.style.cursor = c;
 }
 function touchDown(x, z) {
@@ -1904,7 +1916,7 @@ function tornadoAt(clientX, clientY) {
   let best = null, bd = Infinity;
   for (const t of tors) {
     const d = Math.hypot(t.x - g.x, t.z - g.z);
-    if (d < bd && d < Math.max(1200, at('r0', t.fT) * KNOB.width * 3.2, Math.hypot(t.x, t.z) * 0.09)) { bd = d; best = t; }
+    if (d < bd && d < Math.max(300, at('r0', t.fT) * KNOB.width * 3.2, Math.hypot(t.x, t.z) * 0.09)) { bd = d; best = t; }
   }
   return best;
 }
@@ -1922,16 +1934,15 @@ canvas.addEventListener('pointerdown', e => {
   const g = groundAt(e.clientX, e.clientY);
   // A press near a funnel's foot steers it; elsewhere it touches one down.
   const near = tornadoAt(e.clientX, e.clientY);
-  if (near) { drag = near; canvas.setPointerCapture(e.pointerId); wake(); return; }
+  if (near && !near.roping) { drag = near; drag.goal = { x: drag.x, z: drag.z }; canvas.setPointerCapture(e.pointerId); capUI(); wake(); return; }
   touchDown(g.x, g.z);
 });
 canvas.addEventListener('pointermove', e => {
   hover = tornadoAt(e.clientX, e.clientY);
   capUI();
   if (!drag) return;
-  const g = groundAt(e.clientX, e.clientY);
-  drag.x = g.x; drag.z = g.z;
-  keepOff(drag);
+  // The pointer sets the goal; the funnel follows at its own pace.
+  drag.goal = groundAt(e.clientX, e.clientY);
   wake();
 });
 const endDrag = () => { drag = null; capUI(); };
