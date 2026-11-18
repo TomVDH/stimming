@@ -1,14 +1,15 @@
 ---
 # stimming-zy58
 title: Promote 18 Lab toys to the main shelf, with emblems and Bar v3
-status: todo
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-17T23:27:53Z
-updated_at: 2026-11-17T23:27:53Z
+updated_at: 2026-11-17T23:32:14Z
 parent: stimming-ft0e
 ---
 
-Tom asked on 2026-11-17 to promote these toys from the Lab to the main shelf. Each gets an intro emblem (the luminance mask), Bar v3 and, where needed, an icon round. The work is parked: Tom pauses stimming for some months.
+Tom asked on 2026-11-17 to promote these toys from the Lab to the main shelf. Each gets an intro emblem (the luminance mask), Bar v3 and, where needed, an icon round. Tom wants this done now, before a pause of some months.
 
 Plan: `C:\Users\tmlns\.claude\plans\can-we-promote-and-federated-mccarthy.md` (local). The template is `stimming-0mq6`. The rule is `docs/standards/process.md:52-55`.
 
@@ -29,11 +30,11 @@ Plan: `C:\Users\tmlns\.claude\plans\can-we-promote-and-federated-mccarthy.md` (l
 | plasma | Plasma globe | full (null) | dark | no | v1 |
 | drone | Zena | alpha | none, by Tom's word | yes | v3 copy on hvtr |
 | snow | Snow globe | full (null) | wild | no | v1 |
-| tornado | Tornado alley | ask | vistas | yes | v2 spec |
-| windfarm | Wind farm | ask | vistas | no | v1 |
-| subway | Subway | ask | vistas | no | v1 |
+| tornado | Tornado alley | beta | vistas | yes | v2 spec |
+| windfarm | Wind farm | alpha | vistas | no | v1 |
+| subway | Subway | alpha | vistas | no | v1 |
 | carwash | Car wash | alpha | vistas | no | v3 copy on hvtr |
-| harmono | Harmonograph | ask | maths | no | v1 |
+| harmono | Harmonograph | full (null) | maths | no | v1 |
 
 East Van itself stays in the Lab. Only East Van postcards moves.
 
@@ -48,8 +49,8 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 
 - Harmonograph has an open retire bean, `stimming-9ld8`. Tom's promote request replaces it. Scrap `stimming-9ld8` when this work starts.
 - PR #80 was in progress in another session on 2026-11-17. That session had uncommitted Bar v3 copy for bowl, rupert and observatory. Check that it landed before step 2.
-- Ask Tom for the stage of Tornado alley, Wind farm, Subway and Harmonograph.
-- Ask Tom whether East Van postcards gets Bar v3 or keeps its own shell.
+- Stages: all set by Tom (2026-11-17).
+- East Van postcards gets Bar v3 (Tom, 2026-11-17).
 - Ask Tom for the shelf order (numbers 54 to 71).
 
 ## Checklist
