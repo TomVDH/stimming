@@ -48,6 +48,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | `shared/daytime.js` | Time of day: hour presets, sun and moon, key light, lamps, an eased clock. Plan: `docs/plans/daytime.md` |
 | `icons/` | Icon workbench and the icon sheet |
 | `barlab/`, `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
+| `inventorylab/`, `docs/inventory/` | Toy inventory: Tom's verdict per toy, one JSON record each. Format: `docs/inventory/schema.md` |
 | `tools/` | `commit.sh`, capture scripts, checks |
 | `tests/` | `bar-v2.html` and node tests |
 | `docs/` | Standards, menu, toy docs, plans, QA captures |
@@ -61,6 +62,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | Type check | `npm run check` |
 | Bar v2 test | `tests/run.sh http://localhost:8000/tests/bar-v2.html` |
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" [--hunks <patch>] -- <paths>` |
+| Collate the toy inventory | `node tools/inventory.mjs` (writes `docs/inventory.json`) |
 | Work items | `beans prime` |
 
 ## Where things live

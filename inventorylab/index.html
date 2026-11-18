@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Toy inventory</title>
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+:root {
+  --bg: oklch(0.16 0.012 275); --panel: oklch(0.2 0.014 275); --line: oklch(0.3 0.02 275);
+  --fg: oklch(0.95 0.008 275); --muted: oklch(0.62 0.02 275); --accent: oklch(0.84 0.13 205);
+  --warn: oklch(0.78 0.15 60); --bad: oklch(0.7 0.18 25); --good: oklch(0.8 0.15 150);
+  --mono: "Iosevka Term Slab", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 "Gabarito", system-ui, sans-serif; }
+body { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+button:hover { border-color: var(--fg); }
+button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.label { font: 500 11px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* Left: the toy list. */
+nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+nav header { padding: 12px; display: grid; gap: 8px; }
+nav .filters { display: flex; gap: 4px; }
+nav .count { font: 500 11px/1 var(--mono); color: var(--muted); }
+nav ol { list-style: none; margin: 0; padding: 0 0 12px; overflow-y: auto; flex: 1; }
+nav li button { all: unset; box-sizing: border-box; display: flex; gap: 8px; align-items: center; width: 100%; padding: 5px 12px; cursor: pointer; }
+nav li button:hover { background: var(--panel); }
+nav li button[aria-current="true"] { background: var(--panel); box-shadow: inset 3px 0 var(--accent); }
+nav li .dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--muted); flex: none; }
+nav li[data-state="draft"] .dot { background: var(--warn); border-color: var(--warn); }
+nav li[data-state="saved"] .dot { background: var(--good); border-color: var(--good); }
+nav li .n { font: 500 11px/1 var(--mono); color: var(--muted); width: 22px; text-align: right; flex: none; }
+
+/* Middle: the toy. */
+main { display: flex; flex-direction: column; min-width: 0; overflow-y: auto; }
+main header { position: sticky; top: 0; z-index: 1; background: var(--bg); display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+main header h1 { font-size: 16px; margin: 0 auto 0 0; }
+main header h1 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+/* The toy sits on top; the form follows under it. */
+iframe { flex: none; height: 62vh; border: 0; width: 100%; background: #000; }
+
+/* Right: the form. */
+form { border-top: 1px solid var(--line); padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px 24px; align-content: start; }
+form .actions { grid-column: 1 / -1; }
+.col { display: grid; gap: 14px; align-content: start; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+legend { padding: 0; margin-bottom: 6px; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+input[type="text"], textarea, select { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+textarea { resize: vertical; min-height: 34px; }
+.area { display: grid; grid-template-columns: 84px 1fr; gap: 6px; align-items: start; }
+.area button { padding: 5px 0; }
+.area button[data-ok="false"] { color: var(--bad); border-color: var(--bad); }
+.rows { display: grid; gap: 8px; }
+.row { display: grid; grid-template-columns: 1fr 1fr 1fr 28px; gap: 4px; background: var(--panel); border-radius: 8px; padding: 6px; }
+.row.x { grid-template-columns: 1fr 1fr 28px; }
+.row textarea { grid-column: 1 / -1; }
+.row .del { padding: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: sticky; bottom: 0; background: var(--bg); padding: 10px 0; border-top: 1px solid var(--line); }
+.status { font: 500 11px/1.3 var(--mono); color: var(--muted); }
+.keys { font: 500 11px/1.3 var(--mono); color: var(--muted); }
+</style>
+<body>
+<nav aria-label="Toys">
+  <header>
+    <span class="label">Inventory</span>
+    <div class="filters" role="group" aria-label="Shelf">
+      <button type="button" data-f="all" aria-pressed="true">All</button>
+      <button type="button" data-f="main">Main</button>
+      <button type="button" data-f="lab">Lab</button>
+      <button type="button" data-f="open">Open</button>
+    </div>
+    <span class="count" id="count"></span>
+  </header>
+  <ol id="list"></ol>
+</nav>
+
+<main>
+  <header>
+    <h1 id="title">Toy</h1>
+    <div class="seg" role="group" aria-label="Build" id="builds">
+      <button type="button" data-b="fresh" aria-pressed="true">Fresh</button>
+      <button type="button" data-b="classic">Classic</button>
+    </div>
+    <a class="label" id="open" target="_blank" rel="noopener">Open tab</a>
+  </header>
+  <iframe id="frame" title="Toy" allow="autoplay; fullscreen; gyroscope; accelerometer"></iframe>
+
+<form id="form" autocomplete="off">
+  <div class="col">
+  <fieldset>
+    <legend class="label">Verdict</legend>
+    <div class="seg" id="verdict"></div>
+    <input type="text" id="summary" placeholder="One line on the toy">
+  </fieldset>
+  <fieldset>
+    <legend class="label">Areas (click to flag)</legend>
+    <div id="areas" class="rows"></div>
+  </fieldset>
+  </div>
+  <div class="col">
+  <fieldset>
+    <legend class="label">Bugs and gaffes</legend>
+    <div id="findings" class="rows"></div>
+    <button type="button" id="addFinding">+ Finding</button>
+  </fieldset>
+  <fieldset>
+    <legend class="label">Expansions</legend>
+    <div id="expansions" class="rows"></div>
+    <button type="button" id="addExpansion">+ Expansion</button>
+  </fieldset>
+  <fieldset>
+    <legend class="label">Shelf wish</legend>
+    <div class="seg" id="shelfMove"></div>
+  </fieldset>
+  </div>
+  <div class="actions">
+    <button type="button" id="save">Save file</button>
+    <button type="button" id="exportAll">Export all</button>
+    <button type="button" id="clear">Clear</button>
+    <span class="status" id="status"></span>
+    <span class="keys">Alt+J next · Alt+K previous</span>
+  </div>
+</form>
+</main>
+
+<script type="module">
+// @ts-check
+// Inventory workbench: one schema-1 record per toy. Format: docs/inventory/schema.md.
+const SCHEMA = 1;
+const KEY = 'stimming.inventory.';
+const AREAS = ['meta', 'icon', 'bar', 'controls', 'graphics', 'sound', 'perf'];
+const VERDICTS = ['keep', 'polish', 'rework', 'cut'];
+const KINDS = ['bug', 'gaffe'];
+const SEVERITIES = ['blocker', 'major', 'minor', 'polish'];
+const SIZES = ['S', 'M', 'L'];
+const MOVES = ['none', 'to-main', 'to-lab'];
+
+const $ = (/** @type {string} */ id) => /** @type {HTMLElement} */ (document.getElementById(id));
+
+// Fetch failures leave an empty value, never a thrown error.
+const load = (/** @type {string} */ url, /** @type {'json'|'text'} */ as) =>
+  fetch(url, { cache: 'no-store' }).then(r => (r.ok ? r[as]() : null)).catch(() => null);
+
+const toys = (await load('../toys.json', 'json')) || {};
+const menu = (await load('../index.html', 'text')) || '';
+const doc = new DOMParser().parseFromString(menu, 'text/html');
+const done = new Set([...doc.querySelectorAll('li[data-done] a.toy')].map(a => a.id));
+
+// Main shelf first by number, then the Lab in file order.
+const ids = Object.keys(toys).sort((a, b) => (toys[a].number ?? 1e4) - (toys[b].number ?? 1e4));
+
+/** @type {Record<string, 'saved'|'draft'|undefined>} */
+const state = {};
+/** @type {Record<string, any>} */
+const saved = {};
+let current = '';
+let filter = 'all';
+/** @type {any} */
+let dirHandle = null;
+
+const store = {
+  get(/** @type {string} */ id) { try { return JSON.parse(localStorage.getItem(KEY + id) || 'null'); } catch { return null; } },
+  set(/** @type {string} */ id, /** @type {any} */ v) { try { localStorage.setItem(KEY + id, JSON.stringify(v)); } catch {} },
+  drop(/** @type {string} */ id) { try { localStorage.removeItem(KEY + id); } catch {} },
+};
+
+function snapshot(/** @type {string} */ id) {
+  const t = toys[id];
+  return { name: t.name, nl: t.nl, shelf: t.number == null ? 'lab' : 'main', number: t.number, series: t.series,
+    stage: t.stage, version: t.version, sound: t.sound, legacy: t.legacy, done: done.has(id) };
+}
+
+function blank(/** @type {string} */ id) {
+  return { schema: SCHEMA, id, date: '', build: 'fresh', snapshot: snapshot(id), verdict: '', summary: '',
+    areas: Object.fromEntries(AREAS.map(a => [a, { ok: true, notes: '' }])),
+    findings: [], expansions: [], shelfMove: 'none' };
+}
+
+// A local draft wins over the saved file when it is newer.
+function recordFor(/** @type {string} */ id) {
+  const local = store.get(id);
+  const file = saved[id];
+  if (local && (!file || (local.edited || 0) > (file.edited || 0))) return local;
+  return file ? structuredClone(file) : blank(id);
+}
+
+// The local server lists the folder, so only existing files are fetched.
+async function probeSaved() {
+  const listing = (await load('../docs/inventory/', 'text')) || '';
+  const found = [...listing.matchAll(/href="([\w-]+)\.json"/g)].map(m => m[1]).filter(id => toys[id]);
+  await Promise.all(found.map(async id => {
+    const r = await load(`../docs/inventory/${id}.json`, 'json');
+    if (r) saved[id] = r;
+  }));
+  for (const id of ids) state[id] = store.get(id) && !isSame(id) ? 'draft' : saved[id] ? 'saved' : undefined;
+  renderList();
+}
+
+function isSame(/** @type {string} */ id) {
+  const local = store.get(id);
+  return !!saved[id] && !!local && strip(local) === strip(saved[id]);
+}
+const strip = (/** @type {any} */ r) => JSON.stringify({ ...r, edited: 0, date: '' });
+
+function renderList() {
+  const ol = $('list');
+  const shown = ids.filter(id => filter === 'all' || (filter === 'main' ? toys[id].number != null
+    : filter === 'lab' ? toys[id].number == null : !state[id]));
+  ol.replaceChildren(...shown.map(id => {
+    const li = document.createElement('li');
+    if (state[id]) li.dataset.state = state[id];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.id = id;
+    if (id === current) b.setAttribute('aria-current', 'true');
+    b.innerHTML = `<span class="dot"></span><span class="n">${toys[id].number ?? 'L'}</span><span></span>`;
+    /** @type {HTMLElement} */ (b.lastChild).textContent = toys[id].name;
+    li.append(b);
+    return li;
+  }));
+  const n = ids.filter(id => state[id]).length;
+  $('count').textContent = `${n} of ${ids.length} started`;
+}
+
+/** @type {any} */
+let rec;
+
+function select(/** @type {string} */ id) {
+  current = id;
+  rec = recordFor(id);
+  rec.snapshot = snapshot(id);
+  const t = toys[id];
+  $('title').innerHTML = '';
+  $('title').append(t.name, Object.assign(document.createElement('small'), { textContent: `${id} · ${t.nl}` }));
+  $('builds').hidden = !t.legacy;
+  if (!t.legacy) rec.build = 'fresh';
+  showFrame();
+  renderForm();
+  renderList();
+  try { history.replaceState(null, '', `#${id}`); } catch {}
+  document.querySelector(`nav [data-id="${id}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+
+function showFrame() {
+  const url = `../${current}/${rec.build === 'classic' ? 'legacy.html' : ''}`;
+  /** @type {HTMLIFrameElement} */ ($('frame')).src = url;
+  /** @type {HTMLAnchorElement} */ ($('open')).href = url;
+  for (const b of $('builds').querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.b === rec.build));
+}
+
+function seg(/** @type {HTMLElement} */ host, /** @type {string[]} */ words, /** @type {string} */ value, /** @type {(w: string) => void} */ pick) {
+  host.replaceChildren(...words.map(w => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = w;
+    b.setAttribute('aria-pressed', String(w === value));
+    b.onclick = () => { pick(w === value && host.id === 'verdict' ? '' : w); renderForm(); touch(); };
+    return b;
+  }));
+}
+
+function select$(/** @type {string[]} */ words, /** @type {string} */ value, /** @type {(v: string) => void} */ set) {
+  const s = document.createElement('select');
+  s.append(...words.map(w => new Option(w, w, false, w === value)));
+  s.onchange = () => { set(s.value); touch(); };
+  return s;
+}
+
+function text(/** @type {string} */ value, /** @type {string} */ hint, /** @type {(v: string) => void} */ set) {
+  const t = document.createElement('textarea');
+  t.rows = 1;
+  t.value = value;
+  t.placeholder = hint;
+  t.oninput = () => { set(t.value); touch(); };
+  return t;
+}
+
+function renderForm() {
+  seg($('verdict'), VERDICTS, rec.verdict, w => { rec.verdict = w; });
+  /** @type {HTMLInputElement} */ ($('summary')).value = rec.summary;
+  seg($('shelfMove'), MOVES, rec.shelfMove, w => { rec.shelfMove = w; });
+
+  $('areas').replaceChildren(...AREAS.map(a => {
+    const row = document.createElement('div');
+    row.className = 'area';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = a;
+    b.dataset.ok = String(rec.areas[a].ok);
+    b.title = 'Flag this area as needing work';
+    b.onclick = () => { rec.areas[a].ok = !rec.areas[a].ok; b.dataset.ok = String(rec.areas[a].ok); touch(); };
+    row.append(b, text(rec.areas[a].notes, `${a} notes`, v => { rec.areas[a].notes = v; }));
+    return row;
+  }));
+
+  $('findings').replaceChildren(...rec.findings.map((/** @type {any} */ f, /** @type {number} */ i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.append(
+      select$(AREAS, f.area, v => { f.area = v; }),
+      select$(KINDS, f.kind, v => { f.kind = v; }),
+      select$(SEVERITIES, f.severity, v => { f.severity = v; }),
+      del(() => rec.findings.splice(i, 1)),
+      text(f.text, 'What goes wrong', v => { f.text = v; }));
+    return row;
+  }));
+
+  $('expansions').replaceChildren(...rec.expansions.map((/** @type {any} */ x, /** @type {number} */ i) => {
+    const row = document.createElement('div');
+    row.className = 'row x';
+    row.append(
+      select$(AREAS, x.area, v => { x.area = v; }),
+      select$(SIZES, x.size, v => { x.size = v; }),
+      del(() => rec.expansions.splice(i, 1)),
+      text(x.text, 'What it adds', v => { x.text = v; }));
+    return row;
+  }));
+  status();
+}
+
+function del(/** @type {() => void} */ fn) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'del';
+  b.textContent = '×';
+  b.setAttribute('aria-label', 'Remove row');
+  b.onclick = () => { fn(); renderForm(); touch(); };
+  return b;
+}
+
+// Every edit writes the draft to localStorage.
+function touch() {
+  rec.edited = Date.now();
+  store.set(current, rec);
+  state[current] = isSame(current) ? 'saved' : 'draft';
+  const li = document.querySelector(`nav [data-id="${current}"]`)?.parentElement;
+  if (li) li.dataset.state = /** @type {string} */ (state[current]);
+  status();
+}
+
+function status(/** @type {string} */ msg = '') {
+  $('status').textContent = msg || (state[current] === 'draft' ? 'Draft, not saved to a file' : state[current] === 'saved' ? 'Saved' : 'Not started');
+}
+
+function finished() {
+  const r = structuredClone(rec);
+  r.date = new Date().toISOString().slice(0, 10);
+  r.findings = r.findings.filter((/** @type {any} */ f) => f.text.trim());
+  r.expansions = r.expansions.filter((/** @type {any} */ x) => x.text.trim());
+  return r;
+}
+
+function download(/** @type {string} */ name, /** @type {any} */ data) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// File System Access writes into docs/inventory/; other browsers get a download.
+async function save() {
+  const r = finished();
+  const pick = /** @type {any} */ (window).showDirectoryPicker;
+  if (pick) {
+    try {
+      dirHandle ??= await pick({ id: 'stimming-inventory', mode: 'readwrite' });
+      const fh = await dirHandle.getFileHandle(`${current}.json`, { create: true });
+      const w = await fh.createWritable();
+      await w.write(JSON.stringify(r, null, 2) + '\n');
+      await w.close();
+      saved[current] = r;
+      rec = structuredClone(r);
+      store.set(current, rec);
+      state[current] = 'saved';
+      renderList();
+      return status(`Written to ${dirHandle.name}/${current}.json`);
+    } catch (e) {
+      if (/** @type {any} */ (e)?.name === 'AbortError') return status('Save cancelled');
+    }
+  }
+  download(`${current}.json`, r);
+  status(`Downloaded ${current}.json; move it to docs/inventory/`);
+}
+
+$('list').addEventListener('click', e => {
+  const b = /** @type {HTMLElement} */ (e.target).closest('button');
+  if (b?.dataset.id) select(b.dataset.id);
+});
+for (const b of document.querySelectorAll('[data-f]')) {
+  b.addEventListener('click', () => {
+    filter = /** @type {string} */ (/** @type {HTMLElement} */ (b).dataset.f);
+    for (const o of document.querySelectorAll('[data-f]')) o.setAttribute('aria-pressed', String(o === b));
+    renderList();
+  });
+}
+for (const b of $('builds').querySelectorAll('button')) {
+  b.addEventListener('click', () => { rec.build = b.dataset.b; showFrame(); touch(); });
+}
+$('summary').addEventListener('input', e => { rec.summary = /** @type {HTMLInputElement} */ (e.target).value; touch(); });
+$('addFinding').onclick = () => { rec.findings.push({ area: 'graphics', kind: 'bug', severity: 'minor', text: '' }); renderForm(); touch(); };
+$('addExpansion').onclick = () => { rec.expansions.push({ area: 'graphics', size: 'M', text: '' }); renderForm(); touch(); };
+$('save').onclick = save;
+$('exportAll').onclick = () => {
+  const all = ids.map(id => (state[id] ? (id === current ? finished() : recordFor(id)) : null)).filter(Boolean);
+  download('inventory-export.json', all);
+  status(`Exported ${all.length} records`);
+};
+$('clear').onclick = () => {
+  if (!confirm(`Clear the draft for ${toys[current].name}? A saved file stays.`)) return;
+  store.drop(current);
+  rec = saved[current] ? structuredClone(saved[current]) : blank(current);
+  state[current] = saved[current] ? 'saved' : undefined;
+  renderForm();
+  renderList();
+};
+$('form').addEventListener('submit', e => e.preventDefault());
+
+// Alt+J and Alt+K step through the visible list; the toy keeps plain keys.
+addEventListener('keydown', e => {
+  if (!e.altKey || !['KeyJ', 'KeyK'].includes(e.code)) return;
+  e.preventDefault();
+  const shown = [...document.querySelectorAll('nav [data-id]')].map(b => /** @type {HTMLElement} */ (b).dataset.id);
+  const i = shown.indexOf(current);
+  const next = shown[(i + (e.code === 'KeyJ' ? 1 : -1) + shown.length) % shown.length];
+  if (next) select(next);
+});
+
+const start = decodeURIComponent(location.hash.slice(1));
+select(toys[start] ? start : ids[0]);
+probeSaved().then(() => { rec = recordFor(current); rec.snapshot = snapshot(current); renderForm(); });
+</script>
