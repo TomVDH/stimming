@@ -51,27 +51,41 @@ iframe { flex: none; height: 60vh; border: 0; width: 100%; background: #000; }
 .stack b { color: var(--dim); font-weight: 500; margin-right: 5px; }
 .stack span { color: var(--fg); }
 
-form { padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px 28px; align-content: start; }
-.col { display: grid; gap: 16px; align-content: start; }
-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 5px; }
-legend { padding: 0; margin-bottom: 6px; }
+form { padding: 12px 16px 0; display: grid; gap: 18px; }
+section { display: grid; gap: 8px; }
+.quick { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: end; }
+.quick .grp { display: grid; gap: 4px; }
+.quick .wide { flex: 1 1 260px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 18px 28px; align-items: start; }
+.side { display: grid; gap: 10px; }
 .seg { display: flex; flex-wrap: wrap; gap: 3px; }
 input[type="text"], textarea, select { width: 100%; background: var(--panel); border: 1px solid var(--line); padding: 4px 7px; }
 input[type="text"]:hover, textarea:hover, select:hover { border-color: var(--dim); }
 textarea { resize: vertical; min-height: 28px; }
-.field { display: grid; grid-template-columns: 84px 1fr; gap: 6px; align-items: center; }
+.field { display: grid; grid-template-columns: 76px 1fr; gap: 6px; align-items: center; }
 .field > span { color: var(--muted); }
 /* A meta field that differs from toys.json shows a left rule. */
 .field input[data-changed="true"] { box-shadow: inset 2px 0 var(--draft); }
-.area { display: grid; grid-template-columns: 84px 1fr; gap: 6px; align-items: start; }
-.area button { padding: 4px 0; }
-.area button[data-ok="false"] { color: var(--flag); border-color: var(--flag); }
-.rows { display: grid; gap: 6px; }
-.row { display: grid; grid-template-columns: 1fr 1fr 1fr 24px; gap: 3px; border: 1px solid var(--line); padding: 5px; }
-.row.x { grid-template-columns: 1fr 1fr 24px; }
-.row textarea { grid-column: 1 / -1; }
-.row .del { padding: 0; }
-.actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; border-top: 1px solid var(--line); }
+/* One block per area: flag, notes, then its bugs and ideas. */
+.area { display: grid; grid-template-columns: 76px 1fr auto; gap: 4px 6px; align-items: start; padding: 6px 0; border-top: 1px solid var(--line); }
+.area > .flag { padding: 4px 0; }
+.area > .flag[data-ok="false"] { color: var(--flag); border-color: var(--flag); }
+.area > .add { display: flex; gap: 3px; }
+.area > .items { grid-column: 2 / -1; display: grid; gap: 3px; }
+.area > .items:empty { display: none; }
+.item { display: grid; grid-template-columns: 64px 76px 1fr 24px; gap: 3px; }
+.item.idea { grid-template-columns: 64px 76px 1fr 24px; }
+.item .tag { align-self: center; color: var(--muted); }
+.item.bug .tag { color: var(--flag); }
+.item .del { padding: 0; }
+details { border: 1px solid var(--line); }
+details > summary { cursor: pointer; padding: 7px 10px; list-style: none; display: flex; gap: 10px; align-items: baseline; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "+"; color: var(--dim); width: 10px; }
+details[open] > summary::before { content: "–"; }
+details > summary .sum { color: var(--muted); font: 500 11px/1.3 var(--mono); }
+details > .body { display: grid; gap: 6px; padding: 4px 10px 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; border-top: 1px solid var(--line); }
 .status, .keys { font: 500 10px/1.3 var(--mono); color: var(--muted); }
 .keys { margin-left: auto; color: var(--dim); }
 </style>
@@ -103,37 +117,23 @@ textarea { resize: vertical; min-height: 28px; }
   <div class="stack mono" id="stack" aria-label="Detected stack"></div>
 
   <form id="form" autocomplete="off">
-    <div class="col">
-      <fieldset>
-        <legend class="label">Verdict</legend>
-        <div class="seg" id="verdict"></div>
-        <input type="text" id="summary" placeholder="One line on the toy">
-      </fieldset>
-      <fieldset id="meta">
-        <legend class="label">Meta (edits against toys.json)</legend>
-      </fieldset>
-      <fieldset>
-        <legend class="label">Areas (click to flag)</legend>
-        <div id="areas" class="rows"></div>
-      </fieldset>
-    </div>
-    <div class="col">
-      <fieldset id="triage">
-        <legend class="label">Triage</legend>
-      </fieldset>
-      <fieldset id="modular">
-        <legend class="label">Modularize</legend>
-      </fieldset>
-      <fieldset>
-        <legend class="label">Bugs and gaffes</legend>
-        <div id="findings" class="rows"></div>
-        <div><button type="button" id="addFinding">+ Finding</button></div>
-      </fieldset>
-      <fieldset>
-        <legend class="label">Expansions</legend>
-        <div id="expansions" class="rows"></div>
-        <div><button type="button" id="addExpansion">+ Expansion</button></div>
-      </fieldset>
+    <section class="quick" aria-label="Verdict and triage">
+      <div class="grp"><span class="label">Verdict</span><div class="seg" id="verdict"></div></div>
+      <div class="grp"><span class="label">Priority</span><div class="seg" id="priority"></div></div>
+      <div class="grp"><span class="label">Effort</span><div class="seg" id="effort"></div></div>
+      <div class="grp"><span class="label">Risk</span><div class="seg" id="risk"></div></div>
+      <div class="grp wide"><span class="label">Summary</span><input type="text" id="summary" placeholder="One line on the toy"></div>
+    </section>
+    <div class="cols">
+      <section aria-label="Notes by area">
+        <span class="label">Notes by area · click a name to flag it</span>
+        <div id="areas"></div>
+      </section>
+      <div class="side">
+        <details id="metaBox" data-key="meta"><summary><span class="label">Meta</span><span class="sum" id="metaSum"></span></summary><div class="body" id="meta"></div></details>
+        <details id="modBox" data-key="mod"><summary><span class="label">Modularize</span><span class="sum" id="modSum"></span></summary><div class="body" id="modular"></div></details>
+        <label class="field"><span>Tags</span><input type="text" id="tags" placeholder="phone, perf, needs-asset"></label>
+      </div>
     </div>
     <div class="actions">
       <button type="button" id="save">Save file</button>
@@ -415,93 +415,121 @@ function del(/** @type {() => void} */ fn) {
   return b;
 }
 
-function replaceFields(/** @type {string} */ id, /** @type {Node[]} */ nodes) {
-  const host = $(id);
-  host.replaceChildren(/** @type {Node} */ (host.querySelector('legend')), ...nodes);
+function setSeg(/** @type {string} */ id, /** @type {string[]} */ words, /** @type {string} */ value, /** @type {(w: string) => void} */ pick) {
+  $(id).replaceWith(Object.assign(seg(words, value, pick), { id }));
+}
+
+function item(/** @type {'bug'|'idea'} */ kind, /** @type {any} */ x, /** @type {any[]} */ list, /** @type {number} */ i) {
+  const row = document.createElement('div');
+  row.className = `item ${kind}`;
+  row.append(
+    kind === 'bug' ? pickList(KINDS, x.kind, v => { x.kind = v; }) : Object.assign(document.createElement('span'), { className: 'tag mono', textContent: 'idea' }),
+    kind === 'bug' ? pickList(SEVERITIES, x.severity, v => { x.severity = v; }) : pickList(SIZES, x.size, v => { x.size = v; }),
+    text(x.text, kind === 'bug' ? 'What goes wrong' : 'What it adds', v => { x.text = v; }),
+    del(() => list.splice(i, 1)));
+  return row;
+}
+
+function addButton(/** @type {string} */ area, /** @type {string} */ label, /** @type {() => void} */ add) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.onclick = () => {
+    add();
+    renderForm();
+    touch();
+    // The redraw replaces the button, so find the area by name.
+    const rows = document.querySelectorAll(`.area[data-area="${area}"] .item textarea`);
+    /** @type {HTMLElement|undefined} */ (rows[rows.length - 1])?.focus();
+  };
+  return b;
 }
 
 function renderForm() {
-  $('verdict').replaceWith(Object.assign(seg(VERDICTS, rec.verdict, w => { rec.verdict = w; }), { id: 'verdict' }));
+  const tr = rec.triage;
+  setSeg('verdict', VERDICTS, rec.verdict, w => { rec.verdict = w; });
+  setSeg('priority', PRIORITIES, tr.priority, w => { tr.priority = w; });
+  setSeg('effort', EFFORTS, tr.effort, w => { tr.effort = w; });
+  setSeg('risk', RISKS, tr.risk, w => { tr.risk = w; });
   /** @type {HTMLInputElement} */ ($('summary')).value = rec.summary;
+  /** @type {HTMLInputElement} */ ($('tags')).value = tr.tags;
 
+  // Areas: each block holds its flag, notes, bugs and ideas.
+  $('areas').replaceChildren(...AREAS.map(a => {
+    const box = document.createElement('div');
+    box.className = 'area';
+    box.dataset.area = a;
+    const flag = document.createElement('button');
+    flag.type = 'button';
+    flag.className = 'flag';
+    flag.textContent = a;
+    flag.dataset.ok = String(rec.areas[a].ok);
+    flag.title = 'Flag this area as needing work';
+    flag.onclick = () => { rec.areas[a].ok = !rec.areas[a].ok; flag.dataset.ok = String(rec.areas[a].ok); touch(); };
+    const add = document.createElement('div');
+    add.className = 'add';
+    add.append(
+      addButton(a, '+ bug', () => rec.findings.push({ area: a, kind: 'bug', severity: 'minor', text: '' })),
+      addButton(a, '+ idea', () => rec.expansions.push({ area: a, size: 'M', text: '' })));
+    const items = document.createElement('div');
+    items.className = 'items';
+    rec.findings.forEach((/** @type {any} */ f, /** @type {number} */ i) => { if (f.area === a) items.append(item('bug', f, rec.findings, i)); });
+    rec.expansions.forEach((/** @type {any} */ x, /** @type {number} */ i) => { if (x.area === a) items.append(item('idea', x, rec.expansions, i)); });
+    box.append(flag, text(rec.areas[a].notes, `${a} notes`, v => { rec.areas[a].notes = v; }), add, items);
+    return box;
+  }));
+
+  // Meta: edits against toys.json, the shelf wish, and meta bugs.
   const snap = rec.snapshot;
-  replaceFields('meta', [
+  const metaItems = document.createElement('div');
+  metaItems.className = 'items';
+  rec.findings.forEach((/** @type {any} */ f, /** @type {number} */ i) => { if (f.area === 'meta') metaItems.append(item('bug', f, rec.findings, i)); });
+  $('meta').replaceChildren(
     ...META.map(([k, label]) => {
       const input = /** @type {HTMLInputElement} */ (text(rec.meta[k] ?? '', snap[k] ?? '', v => {
         rec.meta[k] = v;
         input.dataset.changed = String(v !== (snap[k] ?? ''));
+        summaries();
       }, true));
       input.dataset.changed = String((rec.meta[k] ?? '') !== (snap[k] ?? ''));
       input.title = `toys.json: ${snap[k] ?? ''}`;
       return field(label, input);
     }),
-    field('Series', pickList(['', ...Object.keys(series)], rec.meta.series ?? '', v => { rec.meta.series = v; })),
-    field('Shelf wish', seg(MOVES, rec.shelfMove, w => { rec.shelfMove = w; }, false)),
+    field('Series', pickList(['', ...Object.keys(series)], rec.meta.series ?? '', v => { rec.meta.series = v; summaries(); })),
+    field('Shelf', seg(MOVES, rec.shelfMove, w => { rec.shelfMove = w; }, false)),
     field('Notes', text(rec.meta.notes, 'Name, emblem, series fit', v => { rec.meta.notes = v; })),
-  ]);
+    metaItems);
 
-  $('areas').replaceChildren(...AREAS.map(a => {
-    const row = document.createElement('div');
-    row.className = 'area';
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = a;
-    b.dataset.ok = String(rec.areas[a].ok);
-    b.title = 'Flag this area as needing work';
-    b.onclick = () => { rec.areas[a].ok = !rec.areas[a].ok; b.dataset.ok = String(rec.areas[a].ok); touch(); };
-    row.append(b, text(rec.areas[a].notes, `${a} notes`, v => { rec.areas[a].notes = v; }));
-    return row;
-  }));
-
-  const tr = rec.triage;
-  replaceFields('triage', [
-    field('Priority', seg(PRIORITIES, tr.priority, w => { tr.priority = w; })),
-    field('Effort', seg(EFFORTS, tr.effort, w => { tr.effort = w; })),
-    field('Risk', seg(RISKS, tr.risk, w => { tr.risk = w; })),
-    field('Tags', text(tr.tags, 'phone, perf, needs-asset', v => { tr.tags = v; }, true)),
-  ]);
-
+  // Modularize: moves, shared modules to adopt, code to extract.
   const md = rec.modular;
+  const moves = document.createElement('div');
+  moves.className = 'seg';
+  moves.append(
+    check(md.toTypeScript, 'to TypeScript', v => { md.toTypeScript = v; }),
+    check(md.bar === 'to-signal', 'to Signal bar', v => { md.bar = v ? 'to-signal' : 'none'; }),
+    ...(toys[current].legacy ? [check(md.dropLegacy, 'drop Classic', v => { md.dropLegacy = v; })] : []));
   const adopt = document.createElement('div');
   adopt.className = 'seg';
   adopt.append(...SHARED.map(m => check(md.adopt.includes(m), m, on => {
     md.adopt = on ? [...md.adopt, m] : md.adopt.filter((/** @type {string} */ x) => x !== m);
   })));
-  replaceFields('modular', [
-    field('Moves', Object.assign(document.createElement('div'), { className: 'seg' })),
+  $('modular').replaceChildren(
+    field('Moves', moves),
     field('Adopt', adopt),
     field('Extract', text(md.extract, 'Code to lift into shared/', v => { md.extract = v; })),
-    field('Notes', text(md.notes, 'Split, drift, dead code', v => { md.notes = v; })),
-  ]);
-  /** @type {HTMLElement} */ ($('modular').querySelector('.field .seg')).append(
-    check(md.toTypeScript, 'to TypeScript', v => { md.toTypeScript = v; }),
-    check(md.bar === 'to-signal', 'to Signal bar', v => { md.bar = v ? 'to-signal' : 'none'; }),
-    ...(toys[current].legacy ? [check(md.dropLegacy, 'drop Classic', v => { md.dropLegacy = v; })] : []),
-  );
-
-  $('findings').replaceChildren(...rec.findings.map((/** @type {any} */ f, /** @type {number} */ i) => {
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.append(
-      pickList(FINDING_AREAS, f.area, v => { f.area = v; }),
-      pickList(KINDS, f.kind, v => { f.kind = v; }),
-      pickList(SEVERITIES, f.severity, v => { f.severity = v; }),
-      del(() => rec.findings.splice(i, 1)),
-      text(f.text, 'What goes wrong', v => { f.text = v; }));
-    return row;
-  }));
-
-  $('expansions').replaceChildren(...rec.expansions.map((/** @type {any} */ x, /** @type {number} */ i) => {
-    const row = document.createElement('div');
-    row.className = 'row x';
-    row.append(
-      pickList(FINDING_AREAS, x.area, v => { x.area = v; }),
-      pickList(SIZES, x.size, v => { x.size = v; }),
-      del(() => rec.expansions.splice(i, 1)),
-      text(x.text, 'What it adds', v => { x.text = v; }));
-    return row;
-  }));
+    field('Notes', text(md.notes, 'Split, drift, dead code', v => { md.notes = v; })));
+  summaries();
   status();
+}
+
+// The closed sections say what they hold.
+function summaries() {
+  const snap = rec.snapshot, md = rec.modular;
+  const edits = META.map(([k]) => k).concat('series').filter(k => (rec.meta[k] ?? '') !== (snap[k] ?? ''));
+  $('metaSum').textContent = [edits.length ? `${edits.length} edit${edits.length > 1 ? 's' : ''}` : 'no edits',
+    rec.shelfMove !== 'none' && rec.shelfMove].filter(Boolean).join(' · ');
+  const moves = [md.toTypeScript && 'to TS', md.bar === 'to-signal' && 'to Signal bar', md.dropLegacy && 'drop Classic', ...md.adopt];
+  $('modSum').textContent = moves.filter(Boolean).join(' · ') || 'nothing';
 }
 
 // Every edit writes the draft to localStorage.
@@ -578,8 +606,13 @@ for (const b of $('builds').querySelectorAll('button')) {
   b.addEventListener('click', () => { rec.build = b.dataset.b; showFrame(); touch(); });
 }
 $('summary').addEventListener('input', e => { rec.summary = /** @type {HTMLInputElement} */ (e.target).value; touch(); });
-$('addFinding').onclick = () => { rec.findings.push({ area: 'graphics', kind: 'bug', severity: 'minor', text: '' }); renderForm(); touch(); };
-$('addExpansion').onclick = () => { rec.expansions.push({ area: 'graphics', size: 'M', text: '' }); renderForm(); touch(); };
+$('tags').addEventListener('input', e => { rec.triage.tags = /** @type {HTMLInputElement} */ (e.target).value; touch(); });
+// Open sections stay open from toy to toy.
+for (const d of document.querySelectorAll('details[data-key]')) {
+  const k = `stimming.inventorylab.open.${/** @type {HTMLElement} */ (d).dataset.key}`;
+  try { /** @type {HTMLDetailsElement} */ (d).open = localStorage.getItem(k) === '1'; } catch {}
+  d.addEventListener('toggle', () => { try { localStorage.setItem(k, /** @type {HTMLDetailsElement} */ (d).open ? '1' : '0'); } catch {} });
+}
 $('save').onclick = save;
 $('exportAll').onclick = async () => {
   const all = await Promise.all(ids.filter(id => state[id]).map(id => finished(id === current ? rec : recordFor(id))));
