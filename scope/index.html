@@ -1759,21 +1759,22 @@ function paintHud() {
     g.fillRect(sx < 0 ? x : x - arm, sy < 0 ? y : y - bt, arm, bt);
     g.fillRect(sx < 0 ? x : x - bt, sy < 0 ? y : y - arm, bt, arm);
   }
-  // In Knot mode the face is a five by five picker with numbered edges.
+  // In Knot mode the face is a KG by KG picker with numbered edges.
   const big = Math.round(clamp(d * 0.5, 17, 28)), small = Math.round(clamp(d * 0.28, 11, 15));
   if (mode === 'knot' && !tape) {
     if (knot && picking) {
       g.fillStyle = grey(0.07);
-      g.fillRect(cx + (-5 + 2 * (pickCell[0] - 1)) * d, cy + (5 - 2 * pickCell[1]) * d, 2 * d, 2 * d);
+      g.fillRect(cx + (-5 + KC * (pickCell[0] - 1)) * d, cy + (5 - KC * pickCell[1]) * d, KC * d, KC * d);
     }
     // The edge numbers light the picked cell, or the knot's own ratio.
     const lit = picking ? pickCell : knot ? [knot.a, knot.b] : [0, 0];
     g.font = `700 ${small}px ${MONO}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    for (let n = 1; n <= 5; n++) {
+    for (let n = 1; n <= KG; n++) {
+      const at = -5 + (n - 0.5) * KC;
       g.fillStyle = grey(lit[0] === n ? 0.85 : 0.32);
-      g.fillText(String(n), cx + (-6 + 2 * n) * d, cy + 4.7 * d);
+      g.fillText(String(n), cx + at * d, cy + 4.7 * d);
       g.fillStyle = grey(lit[1] === n ? 0.85 : 0.32);
-      g.fillText(String(n), cx - 4.7 * d, cy - (-6 + 2 * n) * d);
+      g.fillText(String(n), cx - 4.7 * d, cy - at * d);
     }
   }
   // Readouts: the mode on the left, the pitch and its note on the right.
@@ -2154,10 +2155,11 @@ function toDiv(e) {
   return [clamp((x - cssC[0]) / cssDiv, -5, 5), clamp((cssC[1] - y) / cssDiv, -5, 5)];
 }
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
-// The ratio picker splits the face into five by five cells.
+// The ratio picker splits the face into KG by KG cells, KC divisions wide.
+const KG = 9, KC = 10 / KG;
 // A ratio such as 4:2 ties the same knot as 2:1.
 function pick(p) {
-  const ca = 1 + clamp(Math.floor((p[0] + 5) / 2), 0, 4), cb = 1 + clamp(Math.floor((p[1] + 5) / 2), 0, 4);
+  const ca = 1 + clamp(Math.floor((p[0] + 5) / KC), 0, KG - 1), cb = 1 + clamp(Math.floor((p[1] + 5) / KC), 0, KG - 1);
   const g = gcd(ca, cb), a = ca / g, b = cb / g;
   taught.knot = true;
   if (pickCell[0] !== ca || pickCell[1] !== cb) { pickCell = [ca, cb]; paintHud(); }
@@ -2277,7 +2279,7 @@ function shuffle() {
     setTheta(0);
   } else {
     const pairs = [];
-    for (let a = 1; a <= 5; a++) for (let b = 1; b <= 5; b++) if (gcd(a, b) === 1 && !(knot && knot.a === a && knot.b === b)) pairs.push([a, b]);
+    for (let a = 1; a <= KG; a++) for (let b = 1; b <= KG; b++) if (gcd(a, b) === 1 && !(knot && knot.a === a && knot.b === b)) pairs.push([a, b]);
     const [a, b] = pairs[Math.floor(Math.random() * pairs.length)];
     knot = { a, b };
   }
