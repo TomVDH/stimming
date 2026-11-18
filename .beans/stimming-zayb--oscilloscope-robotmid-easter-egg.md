@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T09:08:23Z
+updated_at: 2026-11-18T09:11:28Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -50,3 +50,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - [x] Typing 'hint' lists every codeword again (7 s) while no song plays.
 
 - [x] DENTAKU (Kraftwerk, anonymous arr.): trombone vocal on main, eight minis.
+
+- [x] DENTAKU moved to the final mix (5749966); TOUR added (Tour de France, arr. Arustyteakettle) without its breathing.
