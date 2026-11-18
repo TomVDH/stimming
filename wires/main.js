@@ -128,7 +128,8 @@ function wire(w0, w1, sag, r, mat = ALU, lash = null) {
     part(WIRE, a, b, r, r, mat, { sway: [dip(ta), dip(tb), phase, amp] });
   }
   // A rider is a thick piece that hangs on the wire and swings with it.
-  const rider = (t0, t1, rr, m, drop = 0) => part(WIRE, add(at(t0), [0, -drop, 0]), add(at(t1), [0, -drop, 0]), rr, rr, m, { sway: [dip(t0), dip(t1), phase, amp] });
+  // A short wide rider is a traced cylinder (ROUND): a flat strip reads as a pill.
+  const rider = (t0, t1, rr, m, drop = 0, kind = WIRE) => part(kind, add(at(t0), [0, -drop, 0]), add(at(t1), [0, -drop, 0]), rr, rr, m, { sway: [dip(t0), dip(t1), phase, amp] });
   // A long span can be plucked: keep its line for the tap test.
   if (sag >= 0.3 && group === POLE_Z.length) pluckable.push({ phase, pts: Array.from({ length: 25 }, (_, i) => at(i / 24)) });
   return { at, rider, dip, phase, amp };
@@ -352,7 +353,7 @@ function buildLane() {
       if (i !== ni) continue;
       // A splice case closes round the upper cable, on its axis.
       // It draws after the cable, so the cable enters at its ends.
-      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.065, RUBBER);
+      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.065, RUBBER, 0, ROUND);
       if (strand === 2) {
         // The telecom drop leaves from a clamp on the lower strand.
         w.rider(0.011, 0.014, 0.012, ALU);
@@ -603,7 +604,8 @@ void main() {
     pb = at + R * (pb - iC.xyz);
     // The rest up matches shoe() on the CPU.
     if (kind > 2.5) { vec3 d0 = normalize(iB.xyz - iA.xyz); vU = R * normalize(vec3(0.0, 1.0, 0.0) - d0 * d0.y); }
-  } else if (kind < 0.5) {
+  } else if (kind < 0.5 || kind < 1.5 && iC.x + iC.y > 0.0) {
+    // A wire, or a round part that rides a wire: both sway with the span.
     vec3 side = normalize(cross(pb - pa, vec3(0.0, 1.0, 0.0)) + 1e-5);
     float th = gust(iC.z, iM.y, pa.z);
     pa = swing(pa, iC.x, side, th);
@@ -1810,9 +1812,9 @@ function draw() {
   gl.disable(gl.BLEND);
   // The wires and the shoes move, so they draw each frame.
   partUniforms();
-  partSet([P.wire, P.shoe], 'uTime', windT);
-  partSet([P.wire, P.shoe], 'uWind', reduced() ? 0 : 1);
-  partPasses(wireT, wpT, wireVao, strokeN - wireStart, false, [P.wire, P.shoe]);
+  partSet([P.wire, P.solid, P.shoe], 'uTime', windT);
+  partSet([P.wire, P.solid, P.shoe], 'uWind', reduced() ? 0 : 1);
+  partPasses(wireT, wpT, wireVao, strokeN - wireStart, false, [P.wire, P.solid, P.shoe]);
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, cw, ch);
   gl.useProgram(P.comp.p);

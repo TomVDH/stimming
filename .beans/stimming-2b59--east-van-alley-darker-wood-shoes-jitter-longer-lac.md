@@ -43,6 +43,7 @@ Tom (2026-11-17): darken wood -- also the shoes jitter and glitch -- strings can
 - [x] Tom (19:40): the first car comes 1.5 to 6 s after dark
 - [x] Tom (19:45): thicker splice case (65 mm)
 - [x] Tom (19:46): cars roll through the alley at 2.5 to 5.5 m/s
+- [x] Tom (19:50): the case as a neat cylinder: a traced ROUND part that sways with its span
 - [ ] Tom sees it; commit
 
 ## Cause
