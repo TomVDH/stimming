@@ -811,8 +811,8 @@ const SONGS = {
       { tracks: ['Violin L'], tone: 'warm', env: 'pad', lv: 0.7 },
       { tracks: ['Electric Drum Kit H', '909 Drum Kit H'], drum: 'hat', env: 'hit', decay: 0.05, lv: 0.3 },
       { tracks: ['909 Drum Kit SNARE', '2013 Drum Kit SNARE', 'Electric Drum Kit SNARE'], drum: 'snare', env: 'hit', decay: 0.12, lv: 0.85 },
-      // The kick is a low thud, 150 Hz falling to 48 Hz; its key would make it a zap.
-      { tracks: ['Electric Drum Kit KICK', '909 Drum Kit KICK'], drum: 'kick', env: 'hit', decay: 0.3, lv: 1.1, sweep: [150, 48] },
+      // The kick clicks at 320 Hz and drops to a 48 Hz thud within 12 ms, so it lands on the beat.
+      { tracks: ['Electric Drum Kit KICK', '909 Drum Kit KICK'], drum: 'kick', env: 'hit', decay: 0.25, lv: 1.2, sweep: [320, 48, 0.012] },
       { tracks: ['Electric Drum Kit TOM'], drum: 'kick', env: 'hit', decay: 0.18 },
       { tracks: ['Electric Drum Kit TAM'], drum: 'hat', env: 'hit', decay: 0.08, lv: 0.35 },
       { tracks: ['Flute VOCAL', '8-Bit Sine VOCAL'], tone: 'soft', env: 'pad', lv: 0.6 },
@@ -950,7 +950,7 @@ const MAIN_HARM = [[1, 0, 0], [0.6, 0.5, 0], [0.5, 0, 0.5], [0.4, 0.4, 0.3], [0.
   [0.3, 0.7, 0], [0.6, 0, 0.3], [0.4, 0.5, 0.2], [0.8, 0, 0.2], [0.3, 0.3, 0.5], [0.5, 0.5, 0.5]];
 function partState(p, i, kf) {
   const H = TONES[p.tone] || TONES.soft, norm = 1 / H.reduce((a, h) => a + Math.abs(h), 0);
-  return { p, q: 0, act: [], minEnd: Infinity, lv: p.lv || 1, kD: kf(p.decay || 0.3), noise: 1 + i, lx: 0, ly: 0, H, norm,
+  return { p, q: 0, act: [], minEnd: Infinity, lv: p.lv || 1, kD: kf(p.decay || 0.3), kS: p.sweep?.[2] ? kf(p.sweep[2]) : 0, noise: 1 + i, lx: 0, ly: 0, H, norm,
     slots: Array.from({ length: SLOTS }, () => ({ note: null, f: 0, target: 0, a: 0, ph: 0, ph2: 0.25, vel: 0 })), x: 0, y: 0 };
 }
 // The active notes at control step c, sorted by pitch, fill the slots.
@@ -972,6 +972,7 @@ function partStep(P, c) {
       const f = HZ[x[2]];
       v.target = f; v.f = P.p.drum === 'kick' ? f * 3 : f;
       // A kick with a sweep falls from its first pitch to its second, whatever the key.
+      // Its third value is the fall time in seconds.
       if (P.p.sweep) { v.f = P.p.sweep[0]; v.target = P.p.sweep[1] / 0.6; }
       v.a = P.p.env === 'pad' ? v.a * 0.3 : x[3];
       // A struck note restarts its cycle, so its first peak lands on the beat.
@@ -998,7 +999,7 @@ function partSample(P, rate, k) {
     if (v.note) { if (env === 'pad') v.a += (v.vel - v.a) * k.A; else v.a -= v.a * P.kD; }
     else v.a -= v.a * (env === 'pad' ? k.R : P.kD);
     if (v.a < 1e-4) continue;
-    if (drum === 'kick') v.f += (v.target * 0.6 - v.f) * k.K;
+    if (drum === 'kick') v.f += (v.target * 0.6 - v.f) * (P.kS || k.K);
     v.ph = (v.ph + v.f / rate) % 1;
     if (drum) {
       // The kick is a ring that shrinks as its pitch falls; the snare and hat are soft noise.
