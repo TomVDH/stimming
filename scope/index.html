@@ -771,9 +771,17 @@ function miniAlpha(m, t) {
   const a = reduced() ? +L.on : L.on ? clamp((t - L.t) / 0.8) : 1 - clamp((t - L.t) / 0.5);
   return a * bezelAlpha(t);
 }
-function endTape() {
+// A fade ramps both buses down over TAPE_OUT seconds, then stops the sources.
+const TAPE_OUT = 0.5;
+function endTape(fade = false) {
   if (!tape) return;
-  muteTape(); tape = null;
+  const B = tape.bus, ac = B?.ac;
+  if (fade && ac && ac.state === 'running') {
+    const at = ac.currentTime;
+    for (const g of [B.scope.gain, B.mix.gain]) { g.cancelScheduledValues(at); g.setValueAtTime(g.value, at); g.linearRampToValueAtTime(0, at + TAPE_OUT); }
+    for (const s of tape.srcs) { try { s.stop(at + TAPE_OUT + 0.02); } catch (err) { /* the source already stopped */ } }
+  } else muteTape();
+  tape = null;
   if (bezel.on) { bezel.on = false; bezel.t = now(); }
   paintHud();
 }
@@ -1839,7 +1847,13 @@ let strokeLen = 0, lastBuild = 0, before = null;
 canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
-  if (tape) changed();
+  // A press during a song fades it out to an empty, silent face; it draws nothing.
+  if (tape) {
+    endTape(true);
+    if (mode === 'pen') pen = null; else knot = null;
+    changed();
+    return;
+  }
   const p = toDiv(e);
   if (mode === 'pen') { before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0; }
   else { picking = true; pick(p); }
