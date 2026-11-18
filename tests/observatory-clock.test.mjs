@@ -54,6 +54,15 @@ test('wake after 3 h eases the sky to real time over 1 s', () => {
   assert.equal(c.easing(), false);
 });
 
+test('a wake before the first step does nothing', () => {
+  // The boot can take seconds before the loop's first step.
+  const r = fake(), c = makeClock(r.now);
+  r.add(3000);
+  c.wake();
+  assert.equal(c.easing(), false);
+  assert.ok(Math.abs(c.skyMs() - r.now()) <= 1);
+});
+
 test('a wake while the loop runs does nothing', () => {
   const r = fake(), c = makeClock(r.now);
   r.add(16); c.step(0.016);

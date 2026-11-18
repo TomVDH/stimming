@@ -36,7 +36,8 @@ stageEl.addEventListener('pointerdown', e => {
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
   aim(e);
 });
-// A mouse aims on a move; a finger aims on a drag.
+// A mouse aims on a move.
+// A finger aims on a drag.
 stageEl.addEventListener('pointermove', e => {
   if (e.pointerType === 'touch' && (!press || press.id !== e.pointerId)) return;
   aim(e);

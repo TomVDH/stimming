@@ -1,4 +1,5 @@
-// Star catalog decoder. Source: HYG v4.4 (CC BY-SA 4.0), cut by tools/hyg-cut.mjs.
+// The star catalog decoder.
+// The source is HYG v4.4 (CC BY-SA 4.0), cut by tools/hyg-cut.mjs.
 
 export type Star = {
   hip: number; // Hipparcos id, 0 when the star has none
@@ -18,8 +19,13 @@ export type StarMeta = {
   spect: string[];
 };
 
-// One record: ra f32, dec f32, mag i16 (x100), ci i16 (x1000, -32768 = unknown),
-// dist f32 (NaN = unknown), hip u32, spect u16 (index into meta.spect). Little endian.
+// One record is STAR_BYTES long, little endian:
+// ra f32 and dec f32, in degrees.
+// mag i16, times 100.
+// ci i16, times 1000, or CI_UNKNOWN when unknown.
+// dist f32 in parsecs, or NaN when unknown.
+// hip u32.
+// spect u16, an index into meta.spect.
 export const STAR_BYTES = 22;
 export const CI_UNKNOWN = -32768;
 
@@ -45,11 +51,25 @@ export function decodeStars(bin: ArrayBuffer, meta: StarMeta): Star[] {
   return out;
 }
 
+// One catalog file.
+// A failed request or a failed status rejects with the file's address.
+async function get(url: string): Promise<Response> {
+  let r: Response;
+  try {
+    r = await fetch(url);
+  } catch (err) {
+    throw new Error(`Observatory could not load ${url}`, { cause: err });
+  }
+  if (!r.ok) throw new Error(`Observatory could not load ${url}: HTTP ${r.status}`);
+  return r;
+}
+
+// The catalog: stars.bin and stars.json from the folder of url.
 export async function loadStars(url: string): Promise<Star[]> {
   const base = url.replace(/[^/]*$/, '');
   const [bin, meta] = await Promise.all([
-    fetch(`${base}stars.bin`).then((r) => r.arrayBuffer()),
-    fetch(`${base}stars.json`).then((r) => r.json() as Promise<StarMeta>),
+    get(`${base}stars.bin`).then((r) => r.arrayBuffer()),
+    get(`${base}stars.json`).then((r) => r.json() as Promise<StarMeta>),
   ]);
   return decodeStars(bin, meta);
 }

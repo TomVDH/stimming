@@ -1,4 +1,5 @@
-// Tap or drag. The input code feeds it the pointer's travel and press time.
+// Tap or drag.
+// The input code feeds it the pointer's travel and press time.
 
 // A tap moves less than this many pixels.
 const TAP_PX = 8;

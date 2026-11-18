@@ -73,7 +73,7 @@ test('play stays locked until full night; then the beam comes on', () => {
 test('the sky clock runs fast, stays under the trail speed and ends on real now at speed 1', () => {
   const r = fake(), c = makeClock(r.now), op = makeOpening(false);
   driveClock(op, c);
-  // The sky starts behind real time, by the time the fast clock gains.
+  // The sky starts behind real time by what the fast clock gains.
   assert.ok(r.now() - c.skyMs() > 10 * 60 * 1000, `lag ${(r.now() - c.skyMs()) / 1000} s`);
   let peak = 0, prevSky = c.skyMs();
   while (!op.done) {

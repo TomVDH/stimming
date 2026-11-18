@@ -1,13 +1,15 @@
 // Load order: world/observatory runs first.
 import './observatory.ts';
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Vector3 } from 'three';
-import { scene } from '../setup.ts';
+import { disposeTree, onLeave, scene } from '../setup.ts';
 import { SITE, hillHeight } from './hill.ts';
 import { buildDome, stoneMap, type Dome } from './observatory.ts';
 
 /* ---------- the complex: three domes, the stone building, the shed, the road ---------- */
-// Positions are in metres from the clearing's centre; +X is east, -Z is north.
-// The camera looks south, so east is on the left of the frame.
+// Positions are in metres from the clearing's centre.
+// +X is east and -Z is north.
+// The camera looks south.
+// So east is on the left of the frame.
 
 const lam = (color: number) => new MeshLambertMaterial({ color });
 
@@ -44,7 +46,7 @@ function roadMesh(): Mesh {
   g.setAttribute('position', new Float32BufferAttribute(p, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  // Pale gravel reads under starlight.
+  // The gravel is about as dark as the grass, a little warmer.
   const m = new MeshLambertMaterial({ color: 0x4c4842, polygonOffset: true, polygonOffsetFactor: -2 });
   return new Mesh(g, m);
 }
@@ -55,17 +57,38 @@ const box = (w: number, h: number, d: number, color: number | MeshLambertMateria
   return m;
 };
 
-// The long, low stone building, with a row of windows on its north face.
-// It is 30 m long, 9 m deep and 5 m high, with a flat roof.
+// The long, low stone building.
+// A row of windows runs along its north face.
+// It is 30 m long, 9 m deep and 5 m high.
+// It has a flat roof.
 const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
 // Each lit pane has its own material.
 // Then each pane can come on alone.
 // world/lights sets their colours.
 const litPanes = [new MeshBasicMaterial(), new MeshBasicMaterial(), new MeshBasicMaterial()];
+// Scales a box's UVs to each face's own size.
+// The texture repeat then fits the w by h faces.
+// Every other face keeps the same stone size.
+// BoxGeometry's face order: +x, -x, +y, -y, +z, -z.
+// Each face has four corners.
+// The x faces run d across.
+// The y faces run d up.
+function evenUvs(g: BufferGeometry, w: number, h: number, d: number): void {
+  const uv = g.getAttribute('uv');
+  const scale = [[d / w, 1], [d / w, 1], [1, d / h], [1, d / h], [1, 1], [1, 1]];
+  for (let i = 0; i < uv.count; i++) {
+    const [su, sv] = scale[Math.floor(i / 4)];
+    uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  }
+}
+
 function hall(): Group {
   const g = new Group();
   // The stone blocks match the drums: about 1 m by 0.4 m.
-  g.add(box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z));
+  const walls = box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z);
+  // The end walls take the same block size as the long walls.
+  evenUvs(walls.geometry, HALL.w, HALL.h, HALL.d);
+  g.add(walls);
   // A dark tarred roof slab.
   g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x26272a, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
@@ -79,7 +102,8 @@ function hall(): Group {
   return g;
 }
 
-// A shed with a roll-off roof; the roof stands rolled off to the west on its rails.
+// A shed with a roll-off roof.
+// The roof stands rolled off to the west on its rails.
 function shed(): Group {
   const g = new Group();
   const x = -30, z = 9;
@@ -98,25 +122,32 @@ function shed(): Group {
 }
 
 // windows: the lit panes' materials, west to east.
-export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[] };
+// own: the hall and the shed.
+// world/observatory owns the domes.
+export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[]; own: Group[] };
 
 export function buildComplex(): Complex {
   const root = new Group();
   root.position.copy(SITE);
-  // The main dome holds the big refractor; the laser leaves it.
+  // The main dome holds the big refractor.
+  // The laser leaves it.
   const main = buildDome(1.5);
   main.root.position.set(-6, 0, -2);
-  // One small dome stands alone to the east; one sits on the hall's roof.
+  // One small dome stands alone to the east.
+  // One sits on the hall's roof.
   const east = buildDome(0.8);
   east.root.position.set(40, 0, 2);
   const roof = buildDome(0.75);
   roof.root.position.set(HALL.x + 8, HALL.h + 0.4, HALL.z);
-  root.add(main.root, east.root, roof.root, hall(), shed());
+  const own = [hall(), shed()];
+  root.add(main.root, east.root, roof.root, ...own);
   root.updateMatrixWorld(true);
-  return { root, main, small: [east, roof], windows: litPanes };
+  return { root, main, small: [east, roof], windows: litPanes, own };
 }
 
 export const complex = buildComplex();
 scene.add(complex.root);
 // The road lies in world space.
-scene.add(roadMesh());
+const road = roadMesh();
+scene.add(road);
+onLeave(() => { for (const g of complex.own) disposeTree(g); disposeTree(road); });
