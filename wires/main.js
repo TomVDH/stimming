@@ -1723,7 +1723,7 @@ function bakeParts(fast = false) {
 function bakeLive(n) {
   light = lightAt(hour);
   flying = crowsAt(hour);
-  ui.action('car').disabled = light.d.day >= 0.35;
+  ui.action('car').disabled = !carDark();
   bakeSky();
   if (n % 2 === 0) bakeClouds();
   bakeParts(true);
@@ -1732,7 +1732,7 @@ function bakeLive(n) {
 function bake() {
   light = lightAt(hour);
   // The car is only its headlights, so it drives after dark only.
-  const night = light.d.day < 0.35;
+  const night = carDark();
   ui.action('car').disabled = !night;
   if (!night && car.on) { car.on = false; car.head[3] = car.tail[3] = 0; }
   flying = crowsAt(hour);
@@ -1862,16 +1862,19 @@ function draw() {
 // Headlights throw a white beam ahead; tail lights throw a red one behind.
 const car = { s: 0, len: 0, v: 9, from: [0, 0, 0], dir: [0, 0, 1], on: false, next: 0,
   head: [0, 0, 0, 0], tail: [0, 0, 0, 0], beam: [0, 0.3, 1], back: [0, 0.3, -1] };
+// Cars drive once the sun is well down, by the sky the eye sees.
+const carDark = () => light.night > 0.5;
 function carStep(dt, now) {
   // After dark a car passes now and then by itself, the first one soon.
-  const dark = light.d.day < 0.35;
+  const dark = carDark();
   if (!dark) car.next = 0;
   else if (!car.on && !car.next) car.next = now + rand(1500, 6000);
   if (!car.on && dark && car.next && now > car.next) startCar();
   if (!car.on) return false;
   car.s += car.v * dt;
   // The lamps fade in and out at the ends of the run.
-  const k = clamp(car.s / 8) * clamp((car.len - car.s) / 30);
+  // The lamps also fade as the day comes up during a pass.
+  const k = clamp(car.s / 8) * clamp((car.len - car.s) / 30) * sstep(0.2, 0.6, light.night);
   const at = d => add(car.from, car.dir.map(v => v * (car.s + d)));
   car.head = [...add(at(0), [0, 0.7, 0]), 26 * k];
   car.tail = [...add(at(-4.2), [0, 0.8, 0]), 6 * k];
@@ -2185,7 +2188,7 @@ act.now = () => {
   ui.slider.set(localHour());
   setHour(localHour());
 };
-act.car = () => { if (ready && !reduced() && light.d.day < 0.35) { startCar(); poke(); } };
+act.car = () => { if (ready && !reduced() && carDark()) { startCar(); poke(); } };
 // Now re-reads the clock once a minute and moves the slider with it.
 setInterval(() => {
   if (!ready || !visible || !follow) return;

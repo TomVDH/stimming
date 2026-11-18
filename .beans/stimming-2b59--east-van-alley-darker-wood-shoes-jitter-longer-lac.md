@@ -5,7 +5,7 @@ status: completed
 type: bug
 priority: normal
 created_at: 2026-11-18T02:03:44Z
-updated_at: 2026-11-18T03:07:22Z
+updated_at: 2026-11-18T03:13:20Z
 parent: stimming-guw5
 ---
 
@@ -71,3 +71,5 @@ East Van Alley (`wires/main.js`), pushed in 03932273, 73482b5d, f96f8dc3 and d21
 
 - [x] Tom (20:03): a crescent moon disc that crosses the north sky in view; the sun bearing no longer turns it
 - [x] Tom (20:05): darker night: night exposure 4 to 2.8, moonlit air 40% weaker
+
+- [x] Tom (20:09): headlights by day: cars gate on the sun's height (about 18:45 to 05:30); lamps fade as day comes up
