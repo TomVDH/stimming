@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T06:16:23Z
+updated_at: 2026-11-18T06:32:09Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -31,3 +31,10 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - Open: the shared bar hover for mode choices (Tom to pick).
 
 - 2026-11-17 later: scroll on a mini sets its volume (thick inner arc, dB readout); each part plays through its own live gain. Silent minis rest as a steady centre dot in both modes. Open: identify the right main and mini voices for the other songs (Tom: later).
+
+## Open (Tom, 2026-11-17, for a later session)
+
+- Beat: the vocal on the main scope keeps one shape. A single note always draws a circle; only chords change it. Give the main voice a shape that follows pitch or tone.
+- Identify the right main and mini voices for the songs other than stars and monday.
+- Full-mix synth tracks (Synthesizer and 8-bit parts) still play on page synths; tune them to the site's settings.
+- Shared bar: mode choices are 8 px shorter than actions, so their hover box is smaller (Tom to pick: all toys or scope only).

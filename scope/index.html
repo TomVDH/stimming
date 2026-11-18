@@ -508,8 +508,6 @@ const SONGS = {
   beat: {
     url: 'beat.mid', kit: 'beat-kit',
     title: 'Smalltown Boy', artist: 'Bronski Beat · arr. Wezz', year: 1984, label: 'London Records',
-    // The vocal sits 6 dB down by default.
-    mainVol: 0.5,
     main: { tracks: ['Synth Pluck VOCAL'], tone: 'warm', env: 'pad' },
     pos: R10,
     parts: [
@@ -527,8 +525,9 @@ const SONGS = {
   },
 };
 // Chunks of CH seconds; control steps every millisecond.
+// The main voice's standard level is 67 % of its first level; the bar calls that 100 %.
 // The main figure fills MAIN_SCALE divisions, inside the ring of minis.
-const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55, PART_MIX = 0.15;
+const CH = 3, CR = 1000, MAIN_SCALE = 2.6, MAIN_MIX = 0.55 * 0.67, PART_MIX = 0.15;
 // Sixteen slots ring the face edge, two divisions apart, clockwise from top left.
 const MINI_POS = [[-4, 4], [-2, 4], [0, 4], [2, 4], [4, 4], [4, 2], [4, 0], [4, -2], [4, -4], [2, -4], [0, -4], [-2, -4], [-4, -4], [-4, -2], [-4, 0], [-4, 2]], MINI_R = 0.85;
 // The bezels fade in over 0.8 s when the song starts and out over 0.5 s.
@@ -1149,7 +1148,7 @@ async function renderFull(song, j, rate) {
     if (!buses.has(n.tr)) {
       // A track takes the volume set on its mini; the change reaches the full mix within a chunk or two.
       const p = c.createStereoPanner(), v = c.createGain(), m = song.trackPart?.[n.tr];
-      p.pan.value = ins[1]; v.gain.value = m === -1 ? tape?.mainVol ?? 1 : m == null ? 1 : tape?.vol[m] ?? 1;
+      p.pan.value = ins[1]; v.gain.value = m === -1 ? 0.67 * (tape?.mainVol ?? 1) : m == null ? 1 : tape?.vol[m] ?? 1;
       p.connect(v); v.connect(master); buses.set(n.tr, p);
     }
     if (ins[0] === 'sample') { if (K) sampleNote(c, buses.get(n.tr), K, ins, n.k, n.v, n.t - t0, n.e - n.t, song.off ?? 36); }
