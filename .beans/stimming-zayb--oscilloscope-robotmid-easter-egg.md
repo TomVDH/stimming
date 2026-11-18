@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T05:51:19Z
+updated_at: 2026-11-18T06:16:23Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -29,3 +29,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - Files: five MIDI files and five sample kits in `scope/`, about 13 MB.
 - around.mid is You Spin Me Round (Dead or Alive, 1984, Epic).
 - Open: the shared bar hover for mode choices (Tom to pick).
+
+- 2026-11-17 later: scroll on a mini sets its volume (thick inner arc, dB readout); each part plays through its own live gain. Silent minis rest as a steady centre dot in both modes. Open: identify the right main and mini voices for the other songs (Tom: later).

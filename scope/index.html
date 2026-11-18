@@ -620,7 +620,10 @@ async function loadSong(id) {
   const parts = S.parts.map(p => ({ ...p, notes: once(p, lift(p, msNotes(tracks, p.tracks, p))) }));
   // The full mix reads every note of every track, sorted by start.
   const all = [...tracks].flatMap(([tr, list]) => list.map(([t, e, k, v]) => ({ t, e, k, v, tr }))).sort((a, b) => a.t - b.t);
-  return (songCache[id] = { dur, n, parts, all, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
+  // Each track knows its mini, so the full mix can follow the mini's volume.
+  const trackPart = {};
+  S.parts.forEach((p, m) => p.tracks.forEach(tr => { trackPart[tr] ??= m; }));
+  return (songCache[id] = { dur, n, parts, all, trackPart, kit: S.kit, pos: S.pos || MINI_POS, title: S.title, artist: S.artist, year: S.year, label: S.label, full: S.full, mp3: S.mp3, startFull: S.startFull, off: S.off, main: { ...S.main, notes: mainNotes } });
 }
 // A part voice: up to SLOTS notes, lowest in slot 0, each with its own envelope.
 // DETUNE sets how fast an ellipse rolls: a 200 Hz note turns once in about 3 s.
@@ -711,12 +714,12 @@ function renderStep(T, budget) {
     }
     partSample(main, rate, k);
     W.L[i] = main.x; W.R[i] = main.y;
-    let al = MAIN_MIX * main.x, ar = MAIN_MIX * main.y;
+    // Each part plays from its own stored buffer through its own gain, so its volume is live.
+    const al = MAIN_MIX * main.x, ar = MAIN_MIX * main.y;
     for (let m = 0; m < nm; m++) {
       const P = T.parts[m];
       partSample(P, rate, k);
       if (i % MS === 0) { W.M[m][0][i / MS] = P.x; W.M[m][1][i / MS] = P.y; }
-      al += P.x * P.lv * PART_MIX; ar += P.y * P.lv * PART_MIX;
     }
     W.AL[i] = al; W.AR[i] = ar;
   }
@@ -751,8 +754,25 @@ function playChunk(j, full = false) {
   const buf = ac.createBuffer(2, ch.AL.length, ch.rate);
   buf.copyToChannel(ch.AL, 0); buf.copyToChannel(ch.AR, 1);
   const src = ac.createBufferSource(); src.buffer = buf; src.connect(tapeBus(ac, full));
-  src.start(Math.max(at, ac.currentTime), Math.max(0, ac.currentTime - at));
+  const when = Math.max(at, ac.currentTime), off = Math.max(0, ac.currentTime - at);
+  src.start(when, off);
   tape.srcs.add(src); src.onended = () => tape?.srcs.delete(src);
+  if (full) return;
+  // The minis: each part's stored shape is its sound, at half rate, through its own gain.
+  ch.M.forEach(([X, Y], m) => {
+    const pb = ac.createBuffer(2, X.length, ch.rate / MS);
+    pb.copyToChannel(X, 0); pb.copyToChannel(Y, 1);
+    const ps = ac.createBufferSource(); ps.buffer = pb; ps.connect(partGain(ac, m));
+    ps.start(when, off);
+    tape.srcs.add(ps); ps.onended = () => tape?.srcs.delete(ps);
+  });
+}
+// A mini's level: its part level times the volume set on it, from 0 to 1.
+const partLevel = m => tape.parts[m].lv * PART_MIX * (tape.vol[m] ?? 1);
+function partGain(ac, m) {
+  tape.pg ||= [];
+  if (tape.pg[m]?.context !== ac) { const g = ac.createGain(); g.gain.value = partLevel(m); g.connect(tapeBus(ac, false)); tape.pg[m] = g; }
+  return tape.pg[m];
 }
 // Sound on: the tape joins at the current song time.
 function hearTape() {
@@ -774,7 +794,7 @@ function muteTape() {
 sound.onChange(on => { if (on) hearTape(); else muteTape(); });
 async function startTape(id) {
   const rate = kit.ac?.sampleRate || 48000;
-  const me = tape = { id, t0: 0, fullOn: !!SONGS[id].startFull, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], mq: [], mpip: [], live: [], lastRead: [], full: new Map(), bus: null, rate };
+  const me = tape = { id, t0: 0, fullOn: !!SONGS[id].startFull, next: 0, lastC: -1, work: null, chunks: new Map(), srcs: new Set(), anchor: null, prev: null, mprev: [], mpk: [], mg: [], mlit: [], live: [], lastRead: [], full: new Map(), bus: null, vol: [], volT: [], rate };
   paintHud(); dirty = true; sync();
   try { me.song = await loadSong(id); } catch (err) { if (tape === me) changed(); return; }
   if (tape !== me) return;
@@ -866,7 +886,6 @@ function tapeSample(t) {
 const MINI_FILL = 1.15;
 // Wave mode: each mini draws its left channel, about three cycles, centred on a rising zero crossing.
 // The trace shows the part's real loudness and runs edge to edge, clipped by the bezel.
-// A silent mini draws a dim flat line.
 const WAVE_MS = 0.02, WAVE_PTS = 140, WAVE_GAIN = 1.6, WAVE_KEY = 'stimming.scope.miniwave';
 let miniWave = store.get(WAVE_KEY) === '1';
 function miniWaves(t, n) {
@@ -890,6 +909,13 @@ function miniWaves(t, n) {
     for (let q = 0; q <= WAVE_PTS; q++) pk = Math.max(pk, Math.abs(A[Math.min(A.length - 1, Math.floor(i0 + q / WAVE_PTS * win))]));
     // A fixed scale: the trace's height is the part's own loudness.
     const g = WAVE_GAIN, quiet = pk < 0.01;
+    // A silent mini rests as a centre dot, as in curve mode.
+    if (quiet) {
+      const k5 = o * 5;
+      inst[k5] = cx; inst[k5 + 1] = cy; inst[k5 + 2] = cx; inst[k5 + 3] = cy; inst[k5 + 4] = fade * IDOT * sigma * sigma * 0.45 * n / SR;
+      o++;
+      continue;
+    }
     let px = 0, py = 0;
     for (let q = 0; q <= WAVE_PTS; q++) {
       const u = q / WAVE_PTS, v = quiet ? 0 : spline(A, Math.min(A.length - 1, i0 + u * win));
@@ -917,22 +943,21 @@ function spline(A, fi) {
   const p0 = A[Math.max(0, i - 1)], p1 = A[i], p2 = A[Math.min(n, i + 1)], p3 = A[Math.min(n, i + 2)];
   return p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
 }
-// Each mini's light per frame eases toward its raw light over about 0.25 s.
+// Each mini's light per frame rises in 0.1 s and falls over 0.6 s, so it never breathes with each note.
 // A ceiling stops any mini outshining a small steady circle, so nothing strobes.
-// The centre pip shows after QUIET_PIP seconds of silence and eases in and out.
-const MINI_EASE = 0.25, QUIET_PIP = 0.25;
+const MINI_EASE = 0.6;
 function miniDraw(t1, n) {
   if (!tape?.t0) return 0;
   if (miniWave) return miniWaves(t1 + n / SR, n);
   let o = n;
-  const dt = n / SR, kE = 1 - Math.exp(-dt / MINI_EASE), kP = 1 - Math.exp(-dt / 0.3);
+  const dt = n / SR, kE = 1 - Math.exp(-dt / MINI_EASE), kUp = 1 - Math.exp(-dt / 0.1);
   for (let m = 0; m < tape.parts.length; m++) {
     const P0 = tape.song.pos[m], cx = (CX + P0[0] * DIV) * K, cy = (CY + P0[1] * DIV) * K, r = MINI_R * DIV * K, rm = r * 1.1, fade = miniAlpha(m, t1);
     if (!fade) continue;
     // The snare and hat bursts draw at half light.
     const noisy = tape.parts[m].p.drum === 'hat' || tape.parts[m].p.drum === 'snare';
     const o0 = o;
-    let raw = 0, loud = 0;
+    let raw = 0;
     for (let k = 1; k <= n && o < MAXSEG - 1; k++) {
       const s = t1 + k / SR - tape.t0, j = Math.floor(s / CH), ch = tape.chunks.get(j);
       if (!ch) continue;
@@ -948,23 +973,20 @@ function miniDraw(t1, n) {
       const v = Math.hypot(x - pv[0], y - pv[1]) * SR;
       const out = Math.hypot(x - cx, y - cy) > rm || Math.hypot(pv[0] - cx, pv[1] - cy) > rm;
       const e = out || pk < 0.01 ? 0 : IK * sigma * Math.max(v, 600) * (noisy ? 0.3 : 0.6) / SR, q = o * 5;
-      if (pk >= 0.01) loud++;
       raw += e;
       inst[q] = pv[0]; inst[q + 1] = pv[1]; inst[q + 2] = x; inst[q + 3] = y; inst[q + 4] = e;
       pv[0] = x; pv[1] = y; o++;
     }
     // The limiter: ease the frame's light, cap it, and scale this mini's segments to match.
     const cap = IK * sigma * TAU * r * 150 * 0.6 * dt;
-    const L = tape.mlit[m] = (tape.mlit[m] || 0) + (Math.min(raw, cap) - (tape.mlit[m] || 0)) * kE;
+    const tgt = Math.min(raw, cap), L0 = tape.mlit[m] || 0;
+    const L = tape.mlit[m] = L0 + (tgt - L0) * (tgt > L0 ? kUp : kE);
     const sc = raw > 0 ? fade * L / raw : 0;
     for (let q = o0; q < o; q++) inst[q * 5 + 4] *= sc;
-    // The pip: silence for QUIET_PIP seconds brings it in; any note takes it out.
-    tape.mq[m] = loud ? 0 : (tape.mq[m] || 0) + dt;
-    const pipTo = tape.mq[m] > QUIET_PIP ? 1 : 0;
-    tape.mpip[m] = (tape.mpip[m] || 0) + (pipTo - (tape.mpip[m] || 0)) * kP;
-    if (tape.mpip[m] > 0.01 && o < MAXSEG) {
+    // The centre dot stays lit at a steady level, as the big scope's resting spot does.
+    if (o < MAXSEG) {
       const q = o * 5;
-      inst[q] = cx; inst[q + 1] = cy; inst[q + 2] = cx; inst[q + 3] = cy; inst[q + 4] = fade * tape.mpip[m] * IDOT * sigma * sigma * 0.6 * dt;
+      inst[q] = cx; inst[q + 1] = cy; inst[q + 2] = cx; inst[q + 3] = cy; inst[q + 4] = fade * IDOT * sigma * sigma * 0.45 * dt;
       o++;
     }
   }
@@ -1118,7 +1140,12 @@ async function renderFull(song, j, rate) {
   for (let i = lo; i < all.length && all[i].t < from + CH; i++) {
     const n = all[i], ins = song.full?.[n.tr] || FULL[n.tr];
     if (!ins) continue;
-    if (!buses.has(n.tr)) { const p = c.createStereoPanner(); p.pan.value = ins[1]; p.connect(master); buses.set(n.tr, p); }
+    if (!buses.has(n.tr)) {
+      // A track takes the volume set on its mini; the change reaches the full mix within a chunk or two.
+      const p = c.createStereoPanner(), v = c.createGain(), m = song.trackPart?.[n.tr];
+      p.pan.value = ins[1]; v.gain.value = m == null ? 1 : tape?.vol[m] ?? 1;
+      p.connect(v); v.connect(master); buses.set(n.tr, p);
+    }
     if (ins[0] === 'sample') { if (K) sampleNote(c, buses.get(n.tr), K, ins, n.k, n.v, n.t - t0, n.e - n.t, song.off ?? 36); }
     else fullNote(c, buses.get(n.tr), noise, ins[0], n.k, n.v, n.t - t0, n.e - n.t);
   }
@@ -1538,6 +1565,12 @@ function paintHud() {
       g.beginPath(); g.arc(cx + mx * d, cy - my * d, MINI_R * d * 1.1, 0, TAU);
       g.fillStyle = `rgba(0, 0, 0, ${a})`; g.fill();
       g.strokeStyle = grey(0.35 * a); g.stroke();
+      // The volume: a thick arc inside the bezel, clockwise from the top; full ring at full volume.
+      const vol = tape?.vol?.[m] ?? 1, hot = tape && tn - (tape.volT?.[m] ?? -9) < 1.5, lw = Math.max(2.5, d * 0.07);
+      if (vol > 0.001) {
+        g.beginPath(); g.arc(cx + mx * d, cy - my * d, MINI_R * d * 1.1 - lw / 2 - 1, -Math.PI / 2, -Math.PI / 2 + TAU * vol);
+        g.lineWidth = lw; g.strokeStyle = grey((hot ? 0.75 : 0.28) * a); g.stroke(); g.lineWidth = 1;
+      }
     });
     // The song's title and artist run up the right edge of the face, turned a quarter.
     const song = tape?.song;
@@ -1558,9 +1591,11 @@ function paintHud() {
       const fs = Math.round(clamp(d * 0.34, 12, 18)), gap = 0.2 * d + fs * 0.6;
       g.font = `700 ${fs}px ${MONO}`; g.textBaseline = 'middle';
       tape.reads.forEach((txt, m) => {
-        if (!txt) return;
+        if (!txt && !(m < bezel.n && tn - (tape.volT?.[m] ?? -9) < 1.5)) return;
         if (m === bezel.n) { g.fillStyle = grey(0.85 * ba); g.textAlign = 'center'; g.fillText(`▸ ${txt}`, cx, cy + 4 * d - MINI_R * 1.1 * d - gap); return; }
         g.fillStyle = grey(0.8 * miniAlpha(m, tn));
+        // While its volume moves, a mini reads out in dB.
+        if (tn - (tape.volT?.[m] ?? -9) < 1.5) { const v = tape.vol[m] ?? 1; txt = v < 0.001 ? 'MUTE' : `${(20 * Math.log10(v)).toFixed(0)} dB`; }
         const [mx, my] = bezel.pos[m], ex = MINI_R * 1.1 * d, x = cx + mx * d, y = cy - my * d;
         if (my === 4) { g.textAlign = 'center'; g.fillText(txt, x, y - ex - gap); }
         else if (my === -4) { g.textAlign = 'center'; g.fillText(txt, x, y + ex + gap); }
@@ -1970,6 +2005,19 @@ function pick(p) {
   changed();
 }
 let strokeLen = 0, lastBuild = 0, before = null;
+// Scrolling on a mini sets its volume, 0 to 1; the arc and a dB readout show it.
+canvas.addEventListener('wheel', e => {
+  if (!tape?.t0) return;
+  const p = toDiv(e), m = tape.song.pos.findIndex(([x, y]) => Math.hypot(p[0] - x, p[1] - y) <= MINI_R * 1.1);
+  if (m < 0 || m >= tape.parts.length) return;
+  e.preventDefault();
+  const v = clamp((tape.vol[m] ?? 1) - e.deltaY * 0.0015);
+  tape.vol[m] = v; tape.volT[m] = now();
+  const g = tape.pg?.[m];
+  if (g) g.gain.setTargetAtTime(partLevel(m), g.context.currentTime, 0.03);
+  paintHud(); poke();
+  clearTimeout(tape.volTimer); tape.volTimer = setTimeout(() => { paintHud(); poke(); }, 1600);
+}, { passive: false });
 canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
