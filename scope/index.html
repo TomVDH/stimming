@@ -1981,14 +1981,20 @@ function paintHud() {
     g.fillText(`▸ ${hint}`, cx, cy - 4.55 * d);
   }
   // The easter egg hint glitches in at the bottom left, holds, and glitches away.
+  // The first showing lists every codeword, one per line, bottom up.
   if (egg.t0 >= 0 && !tape) {
-    const p = (now() - egg.t0) / EGG_T, word = `>/ "${egg.word}"`, still = reduced();
-    const rough = still ? 0 : p < 0.15 ? 1 - p / 0.15 : p > 0.7 ? (p - 0.7) / 0.3 : Math.random() < 0.05 ? 0.5 : 0;
-    const txt = [...word].map(ch => (ch !== ' ' && Math.random() < rough * 0.6 ? GLYPHS[Math.random() * GLYPHS.length | 0] : ch)).join('');
-    const jx = rough ? (Math.random() - 0.5) * 0.4 * d * rough : 0;
+    const lines = egg.all ? WORDS.slice().reverse() : [egg.word], T = egg.all ? EGG_LIST_T : EGG_T;
     g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 ${small}px ${MONO}`;
-    g.fillStyle = grey(0.7 * (rough && Math.random() < rough * 0.5 ? 0.3 : 1));
-    g.fillText(txt, cx - 4.6 * d + jx, cy + 4.55 * d);
+    lines.forEach((w, i) => {
+      // Each line starts a little later than the line below it.
+      const p = (now() - egg.t0 - i * 0.06) / (T - (lines.length - 1) * 0.06);
+      if (p < 0) return;
+      const rough = reduced() ? 0 : p < 0.15 ? 1 - p / 0.15 : p > 0.7 ? Math.min(1, (p - 0.7) / 0.3) : Math.random() < 0.05 ? 0.5 : 0;
+      const txt = [...`>/ "${w}"`].map(ch => (ch !== ' ' && Math.random() < rough * 0.6 ? GLYPHS[Math.random() * GLYPHS.length | 0] : ch)).join('');
+      const jx = rough ? (Math.random() - 0.5) * 0.4 * d * rough : 0;
+      g.fillStyle = grey(0.7 * (rough && Math.random() < rough * 0.5 ? 0.3 : 1));
+      g.fillText(txt, cx - 4.6 * d + jx, cy + 4.55 * d - i * small * 1.35);
+    });
   }
   gl.bindTexture(gl.TEXTURE_2D, hudTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -2449,20 +2455,24 @@ stopTag.addEventListener('click', () => stopTape());
 waveTag.addEventListener('click', toggleWave);
 // The egg hint shows every 45 to 90 s, for EGG_T seconds, while no song plays; it names each codeword in turn.
 // Its HUD repaints only while it shows.
-const EGG_T = 2.6, GLYPHS = '#%&/<>_|01';
-const egg = { t0: -1, n: Math.floor(Math.random() * 5), word: 'stars' };
+// The first showing, soon after start, lists all codewords for EGG_LIST_T seconds.
+const EGG_T = 2.6, EGG_LIST_T = 7, GLYPHS = '#%&/<>_|01';
+const egg = { t0: -1, n: Math.floor(Math.random() * 5), word: 'stars', all: true };
 function scheduleEgg(ms = 45000 + Math.random() * 45000) { setTimeout(showEgg, ms); }
 function showEgg() {
-  if (!visible || tape || document.hidden) { scheduleEgg(); return; }
-  // Each showing names one codeword, in turn.
-  egg.word = WORDS[egg.n++ % WORDS.length];
+  // The list waits until the tube has been on for 1.5 s.
+  if (egg.all && !(now() - powerT0 > 1.5)) { scheduleEgg(500); return; }
+  if (!visible || tape || document.hidden) { scheduleEgg(egg.all ? 3000 : undefined); return; }
+  // Each later showing names one codeword, in turn.
+  if (!egg.all) egg.word = WORDS[egg.n++ % WORDS.length];
   egg.t0 = now();
+  const T = egg.all ? EGG_LIST_T : EGG_T;
   const iv = setInterval(() => {
-    if (now() - egg.t0 > EGG_T) { clearInterval(iv); egg.t0 = -1; scheduleEgg(); }
+    if (now() - egg.t0 > T) { clearInterval(iv); egg.t0 = -1; egg.all = false; paintHud(); scheduleEgg(); return; }
     paintHud(); poke();
   }, 70);
 }
-scheduleEgg(20000 + Math.random() * 20000);
+scheduleEgg(2500);
 phosTag.addEventListener('click', nextPhosphor);
 Object.assign(act, { shuffle, clear, reset: resetAll, look: () => { paintHud(); poke(); } });
 // The shell binds S and C; the page binds the arrows, Space and P.
