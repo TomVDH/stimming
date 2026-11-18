@@ -38,6 +38,9 @@ Tom (2026-11-17): darken wood -- also the shoes jitter and glitch -- strings can
 - [ ] Tom (19:27): bake the clouds, five cloudiness levels
 - [x] Tom (19:30): car speed varies; red tail beam behind; routes up the lane or under the shoe wire, either way, at random
 - [x] Tom (19:32): AgX, filmic contrast, Portra 400 look
+- [x] Tom (19:38): sky too colourful; physical Rayleigh and Mie sky, palette only as twilight glow
+- [x] Tom (19:40): photoreal night (moonlit air, city glow, dim clouds) and smooth dusk and dawn blends
+- [x] Tom (19:40): the first car comes 1.5 to 6 s after dark
 - [ ] Tom sees it; commit
 
 ## Cause

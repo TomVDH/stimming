@@ -440,16 +440,60 @@ float n3(vec3 x) {
 // It bakes at half size when the hour changes.
 const SKY_FS = `${HEAD}
 uniform vec2 uRes;
-uniform float uF, uStars;
-uniform vec3 uFw, uRt, uUp, uSun, uKeyC, uZen, uMid, uBand, uAnti;
+uniform float uF, uStars, uSkyI, uMoonI;
+uniform vec3 uFw, uRt, uUp, uSun, uKeyC, uZen, uMid, uBand, uAnti, uMoon, uCity;
 ${ROT}
 ${SKY}
+// A physical sky: single Rayleigh and Mie scattering, ozone, Earth's shadow.
+const float R_E = 6371e3, R_A = 6471e3, H_R = 8e3, H_M = 1.2e3, G_M = 0.76, B_M = 21e-6;
+const vec3 B_R = vec3(5.5e-6, 13.0e-6, 22.4e-6), B_O = vec3(0.65e-6, 1.881e-6, 0.085e-6);
+vec2 rsi(vec3 o, vec3 d, float r) {
+  float b = dot(o, d), c = dot(o, o) - r * r, h = b * b - c;
+  if (h < 0.0) return vec2(1e5, -1e5);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+vec3 atm(vec3 d, vec3 s) {
+  vec3 o = vec3(0.0, R_E + 2.0, 0.0);
+  float tEnd = rsi(o, d, R_A).y;
+  vec2 g = rsi(o, d, R_E);
+  if (g.x > 0.0) tEnd = min(tEnd, g.x);
+  float ds = tEnd / 16.0, mu = dot(d, s), gg = G_M * G_M;
+  float pr = 3.0 / (16.0 * 3.14159) * (1.0 + mu * mu);
+  float pm = 3.0 / (8.0 * 3.14159) * ((1.0 - gg) * (mu * mu + 1.0)) / (pow(1.0 + gg - 2.0 * mu * G_M, 1.5) * (2.0 + gg));
+  vec3 tr = vec3(0.0), tm = vec3(0.0);
+  float odR = 0.0, odM = 0.0;
+  for (int i = 0; i < 16; i++) {
+    vec3 p = o + d * (ds * (float(i) + 0.5));
+    float h = length(p) - R_E, dr = exp(-h / H_R) * ds, dm = exp(-h / H_M) * ds;
+    odR += dr;
+    odM += dm;
+    float dl = rsi(p, s, R_A).y / 8.0, lR = 0.0, lM = 0.0;
+    bool lit = true;
+    for (int j = 0; j < 8; j++) {
+      float hl = length(p + s * (dl * (float(j) + 0.5))) - R_E;
+      // Earth's shadow: the light ray meets the ground.
+      if (hl < 0.0) { lit = false; break; }
+      lR += exp(-hl / H_R) * dl;
+      lM += exp(-hl / H_M) * dl;
+    }
+    if (!lit) continue;
+    vec3 a = exp(-((B_R + B_O) * (odR + lR) + B_M * 1.1 * (odM + lM)));
+    tr += dr * a;
+    tm += dm * a;
+  }
+  return pr * B_R * tr + pm * B_M * tm;
+}
 out vec4 o;
 void main() {
   vec2 c = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
   vec2 s = rot(c, -uRoll);
   vec3 d = normalize(uFw + (s.x * uRt + s.y * uUp) / uF);
-  vec3 col = skSky(d, uSun, uZen, uMid, uBand, uAnti, uStars, 0.0);
+  // The physical sky, plus the palette's twilight glow; uZen and the rest carry only that.
+  vec3 dd = normalize(vec3(d.x, max(d.y, 0.002), d.z));
+  vec3 col = atm(dd, uSun) * uSkyI + skSky(d, uSun, uZen, uMid, uBand, uAnti, uStars, 0.0);
+  // After dark: moonlit air and the city's glow low down.
+  if (uMoonI > 0.0) col += atm(dd, uMoon) * uMoonI + uCity * exp(-dd.y * 5.0);
   // The sun's disc and its glare, when it stands above the horizon.
   float sd = dot(d, uSun);
   col += uKeyC * step(0.0, uSun.y) * (12.0 * smoothstep(0.99996, 0.99999, sd) + 0.25 * pow(max(sd, 0.0), 300.0) + 0.06 * pow(max(sd, 0.0), 12.0));
@@ -1434,6 +1478,55 @@ function gridUniforms(q) {
 }
 
 /* ---------- light ---------- */
+// The CPU twin of atm() in the sky shader, for the fill, haze and mirror colours.
+const SKY_I = 30;
+function atmJS(d, s) {
+  const R_E = 6371e3, R_A = 6471e3, H_R = 8e3, H_M = 1.2e3, G_M = 0.76, B_M = 21e-6;
+  const B_R = [5.5e-6, 13.0e-6, 22.4e-6], B_O = [0.65e-6, 1.881e-6, 0.085e-6];
+  const rsi = (o, dd, r) => { const b = dot(o, dd), c = dot(o, o) - r * r, h = b * b - c; if (h < 0) return [1e5, -1e5]; const q = Math.sqrt(h); return [-b - q, -b + q]; };
+  const o = [0, R_E + 2, 0], g = rsi(o, d, R_E);
+  let tEnd = rsi(o, d, R_A)[1];
+  if (g[0] > 0) tEnd = Math.min(tEnd, g[0]);
+  const ds = tEnd / 16, mu = dot(d, s), gg = G_M * G_M;
+  const pr = 3 / (16 * Math.PI) * (1 + mu * mu), pm = 3 / (8 * Math.PI) * ((1 - gg) * (mu * mu + 1)) / ((1 + gg - 2 * mu * G_M) ** 1.5 * (2 + gg));
+  const tr = [0, 0, 0], tm = [0, 0, 0];
+  let odR = 0, odM = 0;
+  for (let i = 0; i < 16; i++) {
+    const p = add(o, d.map(v => v * ds * (i + 0.5))), h = Math.hypot(...p) - R_E, dr = Math.exp(-h / H_R) * ds, dm = Math.exp(-h / H_M) * ds;
+    odR += dr;
+    odM += dm;
+    const dl = rsi(p, s, R_A)[1] / 8;
+    let lR = 0, lM = 0, lit = true;
+    for (let j = 0; j < 8; j++) {
+      const hl = Math.hypot(...add(p, s.map(v => v * dl * (j + 0.5)))) - R_E;
+      if (hl < 0) { lit = false; break; }
+      lR += Math.exp(-hl / H_R) * dl;
+      lM += Math.exp(-hl / H_M) * dl;
+    }
+    if (!lit) continue;
+    for (let k = 0; k < 3; k++) {
+      const a = Math.exp(-((B_R[k] + B_O[k]) * (odR + lR) + B_M * 1.1 * (odM + lM)));
+      tr[k] += dr * a;
+      tm[k] += dm * a;
+    }
+  }
+  return [0, 1, 2].map(k => (pr * B_R[k] * tr[k] + pm * B_M * tm[k]) * SKY_I);
+}
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+// Moonlight is the same scattering, much weaker.
+const MOON_I = SKY_I * 0.025;
+// The city's sodium and LED glow on the low sky after dark, linear colour.
+const CITY = [0.022, 0.016, 0.011];
+// The palette's colours, much less saturated, as a twilight glow only.
+// Single scattering goes dark too soon after sunset; this stands in for the rest.
+// It swells as the sun sets and fades again toward full night.
+function twilight(s, sun) {
+  const w = sstep(0.04, -0.06, sun[1]) * sstep(-0.32, -0.14, sun[1]);
+  const soft = c => { const l = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; return c.map(v => (l + (v - l) * 0.4) * w); };
+  return { zen: soft(s.zen), mid: soft(s.mid), band: soft(s.band), anti: soft(s.anti) };
+}
+// How much night there is: 0 by day, 1 once the sun is well down.
+const nightOf = sun => sstep(-0.02, -0.25, sun[1]);
 // The key light is the sun by day and the moon by night.
 let light = null;
 function lightAt(h) {
@@ -1448,13 +1541,21 @@ function lightAt(h) {
   const expo = lerp(4, 0.95, Math.sqrt(d.day));
   // The fill falls as the shadow darkness rises; 0.4 keeps the first look.
   const fill = 2 ** (-(look.shade - 0.4) * 3);
-  return { d, sun, key, keyC, s, expo, haze: s.mid, fill };
+  // The sky's colours: the physical sky at four places, plus the twilight glow.
+  const tw = twilight(s, sun), up = [0, 1, 0], hs = unit([sun[0], 0.04, sun[2]]), ha = unit([-sun[0], 0.04, -sun[2]]), hm = unit([-sun[2], 0.35, sun[0]]);
+  const moon = spin(d.moon), night = nightOf(sun);
+  const at = (dir, k) => {
+    const c = add(add(atmJS(dir, sun), atmJS(dir, moon).map(v => v * MOON_I / SKY_I * night)), tw[k]);
+    return add(c, CITY.map(v => v * night * Math.exp(-Math.max(dir[1], 0) * 5)));
+  };
+  const sk = { ...s, zen: at(up, 'zen'), mid: at(hm, 'mid'), band: at(hs, 'band'), anti: at(ha, 'anti') };
+  return { d, sun, moon, night, key, keyC, s: sk, tw, expo, haze: sk.mid, fill };
 }
 
 const JITTER = [[-0.125, -0.375], [0.375, -0.125], [-0.375, 0.125], [0.125, 0.375]];
 // The sky bakes at half size when the hour changes.
 function bakeSky() {
-  const { s, keyC, sun } = light;
+  const { s, keyC, sun, tw } = light;
   gl.disable(gl.BLEND);
   gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, skyT.fb);
@@ -1470,10 +1571,14 @@ function bakeSky() {
   gl.uniform3fv(K.uUp, UP);
   gl.uniform3fv(K.uSun, sun);
   gl.uniform3fv(K.uKeyC, keyC);
-  gl.uniform3fv(K.uZen, s.zen);
-  gl.uniform3fv(K.uMid, s.mid);
-  gl.uniform3fv(K.uBand, s.band);
-  gl.uniform3fv(K.uAnti, s.anti);
+  gl.uniform1f(K.uSkyI, SKY_I);
+  gl.uniform1f(K.uMoonI, MOON_I * light.night);
+  gl.uniform3fv(K.uMoon, light.moon);
+  gl.uniform3fv(K.uCity, CITY.map(v => v * light.night));
+  gl.uniform3fv(K.uZen, tw.zen);
+  gl.uniform3fv(K.uMid, tw.mid);
+  gl.uniform3fv(K.uBand, tw.band);
+  gl.uniform3fv(K.uAnti, tw.anti);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // Each visit gets its own sky: a random place in the cloud field and a random cover.
@@ -1497,9 +1602,11 @@ function bakeClouds() {
   gl.uniform3fv(K.uRt, RT);
   gl.uniform3fv(K.uUp, UP);
   gl.uniform3fv(K.uKey, key);
-  gl.uniform3fv(K.uKeyC, keyC);
-  gl.uniform3fv(K.uZen, s.zen);
-  gl.uniform3fv(K.uMid, s.mid);
+  // At night the moon lights the clouds weakly; the city lights them from below.
+  const n = light.night, city = CITY.map(v => v * n * 2.5);
+  gl.uniform3fv(K.uKeyC, keyC.map(v => v * (1 - 0.8 * n)));
+  gl.uniform3fv(K.uZen, add(s.zen.map(v => v * (1 - 0.5 * n)), city));
+  gl.uniform3fv(K.uMid, add(s.mid.map(v => v * (1 - 0.5 * n)), city));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 // The uniforms every part program shares: the eye, the light, the car.
@@ -1728,8 +1835,11 @@ function draw() {
 const car = { s: 0, len: 0, v: 9, from: [0, 0, 0], dir: [0, 0, 1], on: false, next: 0,
   head: [0, 0, 0, 0], tail: [0, 0, 0, 0], beam: [0, 0.3, 1], back: [0, 0.3, -1] };
 function carStep(dt, now) {
-  // After dark a car passes now and then by itself.
-  if (!car.on && light.d.day < 0.35 && car.next && now > car.next) startCar();
+  // After dark a car passes now and then by itself, the first one soon.
+  const dark = light.d.day < 0.35;
+  if (!dark) car.next = 0;
+  else if (!car.on && !car.next) car.next = now + rand(1500, 6000);
+  if (!car.on && dark && car.next && now > car.next) startCar();
   if (!car.on) return false;
   car.s += car.v * dt;
   // The lamps fade in and out at the ends of the run.
