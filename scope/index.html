@@ -45,6 +45,7 @@
       <button class="snd-tag" id="phos-tag" type="button" aria-label="Change the phosphor" aria-keyshortcuts="P"></button>
       <button class="snd-tag" id="full-tag" type="button" aria-label="Switch between the scope voice and the full mix" aria-keyshortcuts="O" hidden></button>
       <button class="snd-tag" id="wave-tag" type="button" aria-label="Switch the mini scopes between curves and waves" aria-keyshortcuts="W" hidden></button>
+      <button class="snd-tag" id="stop-tag" type="button" aria-label="Stop the song" aria-keyshortcuts="X" hidden></button>
       <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
@@ -107,7 +108,7 @@ const now = () => performance.now() / 1000;
 mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
 const sndTag = document.getElementById('snd-tag');
-const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag'), fullTag = document.getElementById('full-tag'), waveTag = document.getElementById('wave-tag');
+const spinTag = document.getElementById('spin-tag'), phosTag = document.getElementById('phos-tag'), fullTag = document.getElementById('full-tag'), waveTag = document.getElementById('wave-tag'), stopTag = document.getElementById('stop-tag');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); throw new Error('no webgl2'); };
 if (!gl) fail();
@@ -959,6 +960,13 @@ function miniAlpha(m, t) {
 }
 // A fade ramps both buses down over TAPE_OUT seconds, then stops the sources.
 const TAPE_OUT = 0.5;
+// Stop fades the song out to an empty, silent face.
+function stopTape() {
+  if (!tape) return;
+  endTape(true);
+  if (mode === 'pen') pen = null; else knot = null;
+  changed();
+}
 function endTape(fade = false) {
   if (!tape) return;
   const B = tape.bus, ac = B?.ac;
@@ -1802,6 +1810,15 @@ function paintHud() {
     placeTag(waveTag, pad, wy, ww, small);
     waveTag.setAttribute('aria-pressed', String(miniWave));
   }
+  // A fifth tag stops the song: it fades out to an empty, silent face.
+  stopTag.hidden = !tape?.t0;
+  if (tape?.t0) {
+    const sy = tagY[1] + small + 10, st = '✕ STOP';
+    g.fillStyle = grey(0.75); g.fillText(st, pad, sy);
+    let sw2 = g.measureText(st).width;
+    if (FINE.matches) sw2 += 10 + keycap(g, 'X', pad + sw2 + 10, sy, kc);
+    placeTag(stopTag, pad, sy, sw2, small);
+  }
   g.textAlign = 'right';
   g.fillStyle = grey(0.92); g.font = `700 ${big}px ${MONO}`;
   g.fillText(`${Math.round(pitch)} Hz`, w - pad, top);
@@ -2169,13 +2186,8 @@ canvas.addEventListener('wheel', e => {
 canvas.addEventListener('pointerdown', e => {
   if (e.button > 0) return;
   canvas.setPointerCapture(e.pointerId);
-  // A press during a song fades it out to an empty, silent face; it draws nothing.
-  if (tape) {
-    endTape(true);
-    if (mode === 'pen') pen = null; else knot = null;
-    changed();
-    return;
-  }
+  // A press during a song does nothing; the STOP tag or X ends it.
+  if (tape) return;
   const p = toDiv(e);
   if (mode === 'pen') { before = pen; stroke = [p]; strokeLen = 0; lastBuild = 0; }
   else { picking = true; pick(p); }
@@ -2278,6 +2290,7 @@ function resetAll() {
 }
 spinTag.addEventListener('click', toggleSpin);
 fullTag.addEventListener('click', toggleFull);
+stopTag.addEventListener('click', () => stopTape());
 waveTag.addEventListener('click', toggleWave);
 // The egg hint shows every 45 to 90 s, for EGG_T seconds, while no song plays; it names each codeword in turn.
 // Its HUD repaints only while it shows.
@@ -2309,6 +2322,8 @@ addEventListener('keydown', e => {
   if (k === 'escape' && tape) { changed(); return; }
   // O fades between the scope voice and the full mix while the song plays.
   if (k === 'o' && tape) { toggleFull(); return; }
+  // X stops the song.
+  if (k === 'x' && tape?.t0) { stopTape(); return; }
   // W switches the minis between curves and waves.
   if (k === 'w' && tape) { toggleWave(); return; }
   if ((k === 'arrowup' || k === 'arrowdown') && document.activeElement === stage) { e.preventDefault(); stepPitch(k === 'arrowup' ? 1 : -1); }
