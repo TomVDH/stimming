@@ -1,8 +1,8 @@
 // @ts-check
 // Bar v3, the Signal bar: one bar at the foot of the stage, no boxes, in the intro's beats.
 // Spec: docs/plans/bar-v3.md.
-// A toy opts in with initPage({ signal: true }). Bar v2 still builds, hidden.
-// Bar v2 comes out when Tom has signed off Bar v3 on every toy (Tom, 2026-11-17).
+// It is the bar of every toy with a bar spec; no toy sets a flag (Tom, 2026-11-17).
+// Bar v2 still builds, hidden. It comes out when the rollout is done.
 // Signal draws from the same bar spec and acts through the Bar v2 handles.
 // So the spec, the keys, the stored values and the toy's code stay as they are.
 // Tom's rulings, 2026-11-16 and 2026-11-17: DESIGN.md (Rulings), barlab/AGENTS.md.
@@ -70,16 +70,27 @@ const GESTURE = {
 // On a touch screen each mouse gesture has one touch gesture, as in keyWord.
 const TOUCH = { release: 'touch-release', click: 'tap', 'double-click': 'double-tap', 'right-click': 'long-press', drag: 'touch-drag', 'right-drag': 'two-finger drag', hold: 'long-press', 'hold + drag': 'touch-hold-drag', scroll: 'pinch', circle: 'touch-circle', move: 'touch-drag' };
 const KINDS = ['release', 'hold + drag', 'right-drag', 'right-click', 'double-click', 'two-finger drag', 'long-press', 'double-tap', 'click', 'tap', 'drag', 'hold', 'scroll', 'pinch', 'circle', 'move'];
+// Old key strip words: the arrow keys, typing, a hover, a swipe, a press.
+const OLD_WORDS = { arrows: '← → ↑ ↓', type: 'a-z', hover: 'move', swipe: 'drag', press: 'click' };
 /**
  * The icon for one How to play entry: a gesture drawing, or keycaps for a key.
  * @param {string} word The spec's word, such as 'drag', 'drag a thing' or 'T'.
  * @param {boolean} touch
  */
 function inputHTML(word, touch) {
-  const w = word.toLowerCase().trim();
+  let w = word.toLowerCase().trim();
+  // A modifier with a gesture: its keycap, then the drawing.
+  const mod = w.match(/^(shift|ctrl|alt|cmd)\s*\+\s*(.+)$/);
+  if (mod && KINDS.some(k => mod[2].startsWith(k))) return `<kbd>${mod[1]}</kbd>${inputHTML(mod[2], touch)}`;
+  // The words of the old key strip that have no drawing of their own.
+  w = w.replace(/^(arrows|type|hover|swipe|press)\b/, m => OLD_WORDS[m]);
   let kind = KINDS.find(k => w.startsWith(k));
   // A lone + or / is a key; inside a longer word it parts two keys.
-  if (!kind) return w.split(/\s+/).flatMap(k => (k.length > 1 ? k.split(/[/+]+/) : [k])).filter(Boolean).map(k => `<kbd>${k}</kbd>`).join('');
+  // A + between two keys only joins them, so it draws no keycap.
+  if (!kind) {
+    const keys = w.split(/\s+/).flatMap(k => (k.length > 1 ? k.split(/[/+]+/) : [k])).filter(Boolean);
+    return keys.filter((k, i) => !(k === '+' && i > 0 && i < keys.length - 1)).map(k => `<kbd>${k}</kbd>`).join('');
+  }
   // A word after the gesture says what you do it on.
   const rest = w.slice(kind.length).trim();
   const twice = kind.startsWith('double') ? '<small>2×</small>' : '';

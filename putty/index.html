@@ -33,14 +33,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/putty.svg)"></span><span class="intro-name">Heat putty</span><span class="intro-sub">Stimming No. 18</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/putty.svg)"></span><span class="intro-name">Heat putty</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--putty" id="stage" tabindex="0" role="application" aria-label="A bar of heat-sensitive putty. Drag to push and smear it; the warm trail changes colour and cools back slowly. Hold still to press a handprint. Keys 1 to 3 change the putty; C clears it.">
+    <div class="stage stage--putty" id="stage" tabindex="0" role="application" aria-label="A bar of heat-sensitive putty on a table. Drag to smear the putty. The warm trail changes colour. It cools back slowly. Click to press a dent. Hold still to press a handprint. Press 1 to 3 to change the putty. Press C to clear the putty.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Heat putty needs WebGL 2 with float textures, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2 with float targets.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Heat putty</h1><div class="vignette" hidden></div></section>
@@ -73,16 +73,17 @@ const OPTS = PUTTY.map((P, i) => ({ value: String(i), label: P.name, key: String
   dot: `linear-gradient(135deg, ${lch(P.cold)} 50%, ${lch(P.hot)} 50%)` }));
 // Handlers bind once the slab exists.
 const act = { pick() {}, clear() {} };
-const ui = initPage({ id: 'putty', signal: true, bar: {
+const ui = initPage({ id: 'putty', bar: {
   choice: { label: 'Putty', value: first, options: OPTS, onPick: v => act.pick(v) },
   actions: [{ verb: 'clear', key: 'C', onPress: () => act.clear() }],
   quality: true,
-  keys: [['drag', 'smear'], ['hold', 'handprint'], ['1 2 3', 'putty'], ['c', 'clear']],
+  keys: [['drag', 'smear the putty'], ['hold', 'press a handprint'], ['1 2 3', 'change the putty'], ['c', 'clear the putty']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Smear the putty'], ['click', 'Press a dent'], ['hold', 'Press a handprint'], ['1 2 3', 'Change the putty'], ['C', 'Clear the putty']],
 } });
 
 mark('build');
 const stage = document.getElementById('stage'), canvas = stage.querySelector('canvas');
-const layer = document.querySelector('.stim-ui');
 const gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: false });
 const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); throw new Error('no webgl2'); };
 if (!gl || !gl.getExtension('EXT_color_buffer_float')) fail();
@@ -378,19 +379,19 @@ function grid(w, h) {
 }
 
 /* ---------- layout ---------- */
-// The slab sits inset on the stage, clear of the corner controls.
+// The slab sits inset on the stage, clear of the bar.
 let slab = { x: 0, y: 0, w: 1, h: 1 }, css = { w: 1, h: 1 }, dev = { W: 1, H: 1 }, dpr = 1;
+// The strips that the last fit kept clear, in CSS pixels.
+let barTop = 0, barFoot = 0;
 function fit() {
   const f = fitCanvas(canvas, { budget: 2.2e6 });
   css = { w: f.w, h: f.h }; dev = { W: f.W, H: f.H }; dpr = f.W / f.w;
   const m = Math.round(Math.min(40, Math.max(14, Math.min(f.w, f.h) * 0.04)));
-  // The slab keeps a gap from the top and bottom corner rows.
-  // Offsets ignore the entrance slide, so the slab never jumps.
-  const rows = [...layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')].filter(el => el.offsetParent);
-  const top = Math.max(0, ...rows.filter(el => el.offsetTop < f.h / 2).map(el => el.offsetTop + el.offsetHeight));
-  const foot = Math.min(f.h, ...rows.filter(el => el.offsetTop >= f.h / 2).map(el => el.offsetTop));
-  const above = Math.max(m, top + 10), below = Math.max(m, f.h - foot + 10);
-  // A stage too short for the gaps lets the slab run under the corners.
+  // The slab keeps a gap from the strips that hold the bar's parts.
+  const c = ui.cover();
+  barTop = Math.ceil(c.top); barFoot = Math.ceil(c.bottom);
+  const above = Math.max(m, barTop + 10), below = Math.max(m, barFoot + 10);
+  // A stage too short for the gaps lets the slab run under the bar.
   const sh = f.h - above - below >= 160 ? f.h - above - below : f.h - 2 * m;
   slab = { x: m, y: sh === f.h - 2 * m ? m : above, w: f.w - 2 * m, h: sh };
   // The grid keeps about one texel per 1.5 CSS pixels, 720 at most.
@@ -596,8 +597,11 @@ act.clear = () => { knead(); hb = 0; render(); ui.action('clear').disabled = tru
 ui.action('clear').disabled = true;
 
 new ResizeObserver(fit).observe(stage);
-// The corners change size when the shell moves controls on a phone.
-layer.querySelectorAll(':scope > div').forEach(el => new ResizeObserver(fit).observe(el));
+// Bar v3 mounts late and can wrap; new strips refit the slab.
+ui.onCover(() => {
+  const c = ui.cover();
+  if (Math.ceil(c.top) !== barTop || Math.ceil(c.bottom) !== barFoot) fit();
+});
 onQuality(fit);
 fit();
 </script>

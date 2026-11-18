@@ -50,7 +50,7 @@ Toy chats share one checkout and one git index.
 ## Shelves and sign-off
 
 - New toys start in the Lab (`tools/new-toy.mjs`, bean `stimming-wrxq`). A toy reaches the main shelf only after Tom vets it.
-- A move to the main shelf is one commit with: a number in `toys.json`, toy version `"1.5"`, a still, Bar v2, a menu icon in the menu language, a series.
+- A move to the main shelf is one commit with: a number in `toys.json`, toy version `"1.5"`, a still, Bar v3, a menu icon in the menu language, a series.
 - Before Tom signs a toy off (`data-done`), it passes: the QA checks above, the perf budget in `docs/standards/code.md`, a complete `docs/toys/<id>.md`, a fresh still and a loop if a good one exists.
 - Only Tom gives `data-done`. A sign-off steps the site version (`docs/menu.md`).
 

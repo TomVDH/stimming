@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Harmonograph 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Harmonograph 1</h1>
+<p class="lede">Harmonograph, round 1: the toy's own stage and its figure of violet light, with the pen and the two pendulum bobs as white-hot points. A: a round sheet at a tilt. D: the stage as the block.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+
+  // The toy's tokens: violet light on its near-black stage.
+  // The pen and the bobs are white-hot points.
+  const INK = 'oklch(0.7 0.21 302)', HOT = 'oklch(0.97 0.03 300)', PINK = 'oklch(0.74 0.2 335)';
+  const SHEET = [[0, 'oklch(0.27 0.05 286)'], [0.55, 'oklch(0.18 0.03 283)'], [1, 'oklch(0.13 0.022 282)']];
+  // The stage's edge is dark violet glass, lit from inside.
+  const EDGE = [[0, 'oklch(0.36 0.09 298)'], [0.3, 'oklch(0.5 0.13 302)'], [0.7, 'oklch(0.26 0.07 292)'], [1, 'oklch(0.18 0.04 286)']];
+  const { sin, cos, exp, PI } = Math;
+  const spline = (pts, close = true) => {
+    const P = close ? [pts[pts.length - 1], ...pts, pts[0], pts[1]] : [pts[0], ...pts, pts[pts.length - 1]];
+    let d = `M${f(P[1][0])} ${f(P[1][1])}`;
+    for (let i = 1; i < P.length - 2; i++) {
+      const p0 = P[i - 1], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2];
+      d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+    }
+    return d + (close ? 'Z' : '');
+  };
+  const line = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+
+  // The toy's figure: two damped pendulums near unison, on a turning table.
+  // Each swing draws a tilted ellipse; the table turns it on.
+  const T_END = 6 * PI, NPTS = 300, DAMP = 0.028, TURN = 0.17, REST_PH = 0.6;
+  // The pendulum swings at t, before the table turns them.
+  const swing = (ph, t) => { const e = exp(-DAMP * t); return [e * sin(t + ph), e * sin(t)]; };
+  const figure = (ph, rot, upTo = 1) => {
+    const pts = [], n = Math.max(2, Math.round(NPTS * upTo));
+    for (let i = 0; i < n; i++) {
+      const t = (i / (NPTS - 1)) * T_END, [x, y] = swing(ph, t), a = rot + TURN * t;
+      pts.push([x * cos(a) - y * sin(a), x * sin(a) + y * cos(a)]);
+    }
+    return pts;
+  };
+
+  // The sheet's live layers: old figure, glow, line, hot trail.
+  const penMarkup = u => `
+      <path class="ghost" fill="none" stroke="${INK}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0"/>
+      <path class="glow" fill="none" stroke="${INK}" stroke-width="8" stroke-linejoin="round" stroke-linecap="round" opacity="0.6" filter="url(#${u}gb)"/>
+      <path class="ink" fill="none" stroke="url(#${u}ink)" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+      <path class="hot" fill="none" stroke="${HOT}" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+  // A point of light: a halo and a white-hot core.
+  const spark = (cls, u, r) => `<circle class="${cls}-h" r="${f(r * 2.8)}" fill="url(#${u}pen)" filter="url(#${u}gb)"/><circle class="${cls}" r="${r}" fill="${HOT}"/>`;
+  const hDefs = u => `${light(u)}${blur(`${u}gb`, 2.2)}${blur(`${u}s`, 2.6)}
+    ${rg(`${u}sheet`, SHEET, 'cx="0.4" cy="0.34" r="0.8"')}
+    ${lg(`${u}edge`, EDGE, 'x1="0" y1="0" x2="1" y2="0"')}
+    ${lg(`${u}ink`, [[0, PINK], [0.45, INK], [1, 'oklch(0.66 0.19 288)']], 'x1="0" y1="0" x2="1" y2="1"')}
+    ${rg(`${u}pen`, [[0, HOT, 1], [0.35, INK, 0.75], [1, INK, 0]])}
+    ${rg(`${u}pool`, [[0, INK, 0.4], [0.6, INK, 0.12], [1, INK, 0]])}`;
+
+  // The harmonograph as a live model.
+  // g.proj maps figure units to the sheet; g.bobs places the bobs.
+  const harmono = (svg, u, g) => {
+    const $q = s => svg.querySelector(s);
+    const ghost = $q('.ghost'), glow = $q('.glow'), ink = $q('.ink'), hot = $q('.hot');
+    const dots = ['pen', 'bl', 'br'].map(c => [$q(`.${c}`), $q(`.${c}-h`)]);
+    const st = { ph: REST_PH, phTo: REST_PH, rot: 0, rotTo: 0, prog: 1, hold: 0, gh: 0, live: false, t: 0, pulse: 0 };
+    const put = ([c, h], p, o) => { for (const e of [c, h]) { e.setAttribute('cx', f(p[0])); e.setAttribute('cy', f(p[1])); } h.setAttribute('opacity', f(o)); };
+    const draw = () => {
+      const pts = figure(st.ph, st.rot, st.prog).map(g.proj);
+      const d = line(pts);
+      glow.setAttribute('d', d); ink.setAttribute('d', d);
+      // The fresh line stays hot behind the pen.
+      hot.setAttribute('d', line(pts.slice(Math.max(0, pts.length - 30))));
+      hot.setAttribute('opacity', f(st.live && st.prog < 1 ? 0.95 : 0));
+      ghost.setAttribute('opacity', f(st.gh));
+      put(dots[0], pts[pts.length - 1], 0.55 + 0.45 * st.pulse);
+      // The bobs swing with the pen: each one carries one axis.
+      const [sx, sy] = swing(st.ph, ((st.prog * NPTS - 1) / (NPTS - 1)) * T_END);
+      const [bl, br] = g.bobs(sx, sy);
+      put(dots[1], bl, 0.5 + 0.4 * st.pulse); put(dots[2], br, 0.5 + 0.4 * st.pulse);
+    };
+    const loop = clock(time => {
+      const dt = Math.min(0.1, time - (st.t || time));
+      st.t = time;
+      st.ph += (st.phTo - st.ph) * Math.min(1, dt * 3);
+      st.gh = Math.max(0, st.gh - dt * 0.6);
+      if (st.live) {
+        // The table turns while the pen draws.
+        st.rot += dt * 0.3;
+        if (st.prog < 1) st.prog = Math.min(1, st.prog + dt * 0.3);
+        else if ((st.hold += dt) > 0.9) { ghost.setAttribute('d', ink.getAttribute('d')); st.gh = 0.5; st.prog = 0.02; st.hold = 0; }
+        st.pulse = st.prog < 1 ? 1 : 0.4;
+      } else {
+        st.prog = Math.min(1, st.prog + dt * 0.9);
+        st.rot += (st.rotTo - st.rot) * Math.min(1, dt * 2.5);
+        st.pulse = Math.max(0, st.pulse - dt * 2);
+      }
+      draw();
+      if (!st.live && st.prog >= 1 && st.gh <= 0 && st.pulse <= 0 && Math.abs(st.rot - st.rotTo) + Math.abs(st.ph - st.phTo) < 0.003) {
+        Object.assign(st, { rot: st.rotTo, ph: st.phTo }); draw(); loop.stop();
+      }
+    });
+    draw();
+    return {
+      // On enter the pen starts a new figure; the old one fades.
+      enter(p) {
+        if (!st.live) { ghost.setAttribute('d', ink.getAttribute('d')); st.gh = 0.5; st.prog = 0.02; st.hold = 0; }
+        st.live = true; loop.start();
+        if (p) this.move(p);
+      },
+      // x sets the phase between the pendulums: the ellipses open or close.
+      move(p) { if (p) st.phTo = REST_PH + clamp((p[0] - 64) / 50, -1, 1) * 0.75; },
+      leave() {
+        st.live = false; st.phTo = REST_PH;
+        // The table turns back by the short way.
+        st.rotTo = Math.round(st.rot / (2 * PI)) * 2 * PI;
+        loop.start();
+      },
+    };
+  };
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover loop.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<path class="hp" d="M75.8 101.3L87.2 103.6L96.2 97L101.7 83L103.4 64.8L101.1 46.7L95 32.5L85.7 25.6L74.3 27.4L62 37.4L49.9 53.3L39.3 71.5L31.4 87.8L26.8 98.7L26.1 101.7L29.2 96.1L35.9 83.4L45.4 66.4L56.7 49L68.7 35.2L80.2 27.9L89.9 28.8L96.9 37.7L100.4 52.3L100.3 69.5L96.4 85.3L89.2 96.2L79.5 99.7L68.3 95.2L56.8 83.7L46 67.8L37.2 51.2L31.1 37.6L28.5 30.1L29.5 30.3L34 38L41.6 51.6L51.4 67.8L62.4 83L73.5 93.8L83.6 97.9L91.5 94.2L96.6 83.8L98.4 69L96.6 53.2L91.5 40L83.6 32.3L73.8 31.7L63 38.5L52.4 50.9L43.1 66.2L36 80.8L31.8 91.6L30.9 96L33.4 93.2L39 83.9L47.1 70.1L56.9 55.1L67.4 42.2L77.4 34.3L86 33.2L92.3 39L95.6 50.4L95.7 64.7L92.6 78.8L86.5 89.4L78.2 94.2L68.5 92.2L58.4 83.8L49 71.1L41.1 56.8L35.7 44.3L33.1 36.3L33.8 34.7L37.5 39.6L43.9 50L52.3 63.4L61.9 76.9L71.6 87.4L80.4 92.5L87.6 91.1L92.2 83.7L94 71.9L92.6 58.4L88.4 46.3L81.7 38.3L73.2 36.1L63.9 40.2L54.6 49.7L46.3 62.3L40 75.2L36.1 85.4L35.1 90.8L37.1 90.1L41.8 83.5L48.7 72.6L57.2 59.8L66.3 48.1L75.1 40.1L82.7 37.5L88.3 40.9L91.4 49.5L91.7 61.2L89.2 73.5L84.1 83.6L77 89.1L68.6 89L59.8 83.2L51.5 73.2L44.5 61.1L39.6 49.9L37.2 41.9L37.5 38.9L40.6 41.6L46 49.4L53.2 60.3L61.5 72L70 81.8L77.8 87.5L84.1 87.9L88.4 82.9L90.1 73.6L89.1 62.3L85.6 51.5L79.9 43.5L72.6 40.3L64.5 42.4L56.4 49.3L49.1 59.5L43.4 70.6L39.8 80.2L38.8 86L40.3 86.8L44.2 82.5L50.2 74L57.5 63.4L65.4 53L73.1 45.1L79.8 41.6L84.9 43.1L87.8 49.4L88.2 58.8L86.2 69.4L81.9 78.6L75.8 84.5L68.6 85.7L60.9 82.1L53.6 74.3L47.4 64.4L43 54.4L40.7 46.7L40.8 42.9L43.3 43.9L47.9 49.4L54.1 58.2L61.3 68.2L68.7 77.2L75.6 83.1L81.2 84.7L85 81.6L86.7 74.6L86 65.2L83.1 55.7L78.3 48.1L72 44.1L65 44.7L57.9 49.6L51.5 57.7L46.4 67.1L43.1 75.8L42 81.7L43.2 83.6L46.5 81.1L51.5 74.7L57.8 66L64.7 56.9L71.4 49.5L77.4 45.4L81.9 45.5L84.6 49.8L85.2 57.3L83.6 66.2L80 74.5L74.8 80.4L68.5 82.6L61.8 80.6L55.4 74.8L49.9 66.7L45.9 58L43.8 50.8L43.7 46.5L45.7 46.3L49.6 50L54.9 56.9L61.2 65.3L67.6 73.3L73.7 79.2L78.7 81.6L82.1 80L83.7 74.8L83.3 67.3L80.9 59L76.8 52L71.4 47.7L65.3 47.1L59.1 50.3L53.4 56.6L48.9 64.5L45.9 72.2L44.8 78L45.7 80.6L48.4 79.5L52.7 74.8L58.2 67.8L64.1 60L70.1 53.1L75.3 48.8L79.4 47.9L81.9 50.6L82.5 56.4L81.2 63.8L78.2 71.2L73.7 76.9L68.3 79.7L62.5 78.9L56.9 74.8L52 68.3L48.4 60.8L46.4 54.2L46.3 49.8L47.9 48.7L51.2 51L55.7 56.2L61.1 63.1L66.7 70.2L72 75.8L76.5 78.7L79.6 78.3L81.2 74.7L80.9 68.6L79 61.6L75.5 55.2L70.8 50.8L65.5 49.5L60.1 51.4L55.1 56.1L51.1 62.6L48.4 69.3L47.3 74.8L47.9 77.8L50.2 77.7L53.9 74.5L58.5 69L63.7 62.4L68.9 56.2L73.6 51.8L77.2 50.2L79.5 51.7L80.1 56L79.1 62L76.6 68.5L72.8 73.8L68.1 76.9L63.1 77.1L58.2 74.3L53.8 69.2L50.6 63L48.8 57.1L48.5 52.7L49.8 51L52.6 52.1L56.5 56L61.1 61.6L66 67.7L70.7 72.9L74.6 76.1L77.5 76.5L78.9 74.1L78.8 69.5L77.2 63.6L74.3 57.9L70.3 53.6L65.7 51.7L61 52.6L56.6 56L53 61.2L50.5 67L49.5 72.1L49.9 75.3L51.8 75.9L54.9 73.9L58.9 69.6L63.4 64.1L68 58.7L72.1 54.4L75.3 52.4L77.4 53L78.1 56L77.3 60.9L75.2 66.4L72 71.3L67.9 74.5L63.5 75.4L59.2 73.6L55.4 69.8L52.5 64.6L50.8 59.4L50.5 55.2L51.5 53.1L53.8 53.4L57.2 56.1L61.2 60.6L65.4 65.8L69.5 70.5L73 73.8L75.6 74.8L76.9 73.4L77 69.8L75.7 65L73.2 60L69.8 56L65.8 53.8L61.7 53.8L57.8 56.2L54.6 60.3L52.4 65.2L51.4 69.8L51.7 73.1L53.2 74.2L55.8 73.1L59.3 69.9L63.2 65.4L67.2 60.7L70.8 56.7L73.7 54.4L75.6 54.3L76.3 56.4L75.7 60.1L73.9 64.8L71.2 69.2L67.7 72.4L63.9 73.7L60.1 72.8L56.7 69.9L54.1 65.8L52.6 61.2L52.2 57.4L53 55L54.9 54.7L57.8 56.5L61.3 60L65 64.3L68.6 68.5L71.7 71.7L74 73.1L75.2 72.5L75.3 69.9L74.3 66L72.2 61.7L69.3 58L65.8 55.6L62.2 55.2L58.8 56.7L56 59.8L54 63.9L53 68L53.2 71.1L54.4 72.6L56.7 72.2L59.6 69.9L63 66.3L66.5 62.2L69.7 58.6L72.3 56.2L74 55.6L74.7 56.9L74.3 59.8L72.8 63.6L70.5 67.4L67.5 70.5L64.1 72.1L60.8 71.8L57.9 69.8L55.5 66.5L54.1 62.7L53.7 59.1L54.3 56.8L55.9 56" pathLength="1" fill="none" stroke="oklch(0.76 0.15 300)" stroke-width="1.4" stroke-linejoin="round"/>`;
+      const hPath = svg.querySelector('.hp');
+      gsap.set(hPath, { strokeDasharray: 1 });
+      let tl = null;
+      return {
+        enter() {
+          tl?.kill();
+          tl = gsap.timeline({ repeat: -1, repeatDelay: 0.4 }).fromTo(hPath, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 2.6, ease: 'power1.inOut' });
+        },
+        move() {},
+        leave() { tl?.kill(); tl = null; gsap.to(hPath, { strokeDashoffset: 0, duration: 0.3, overwrite: true }); },
+      };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The toy's stage as a round sheet of dark glass, at a tilt.
+  // The two bobs ride the left and right rim, as in the toy.
+  const AC = [64, 66], ARX = 52, ARY = 34, ADEP = 10, AFIG = 0.74;
+  const ell = (c, rx, ry) => `M${f(c[0] - rx)} ${f(c[1])}A${rx} ${ry} 0 1 0 ${f(c[0] + rx)} ${f(c[1])}A${rx} ${ry} 0 1 0 ${f(c[0] - rx)} ${f(c[1])}Z`;
+  const drum = (c, rx, ry, dep) => `M${f(c[0] - rx)} ${f(c[1])}A${rx} ${ry} 0 0 0 ${f(c[0] + rx)} ${f(c[1])}V${f(c[1] + dep)}A${rx} ${ry} 0 0 1 ${f(c[0] - rx)} ${f(c[1] + dep)}Z`;
+  const A = {
+    proj: ([x, y]) => [AC[0] + x * ARX * AFIG, AC[1] + y * ARY * AFIG],
+    bobs: (sx, sy) => [[AC[0] - ARX + 1, AC[1] + sx * 9], [AC[0] + ARX - 1, AC[1] + sy * 9]],
+  };
+  const A_END = A.proj(figure(REST_PH, 0, 1).pop());
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [6, 24, 116, 88],
+    idea: 'The toy\'s own scene as one object: its near-black stage as a round sheet of dark glass at a tilt, the violet edge lit from inside. On it the toy\'s figure in violet light: tilted ellipses that shrink as the swing dies, each turned on by the table, pink where they cross, a soft glow under them. The pen and the two pendulum bobs are white-hot points, as in the toy; the bobs ride the left and right rim and swing with the pen. On enter the pen draws a new figure while the old one fades and the table turns; pointer x sets the phase, so the ellipses open or close. On leave the pen finishes and the table turns back.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${hDefs(u)}<clipPath id="${u}sc"><path d="${ell(AC, ARX, ARY)}"/></clipPath></defs>
+        <ellipse cx="${AC[0]}" cy="${AC[1] + ADEP + 7}" rx="${ARX - 4}" ry="${ARY - 12}" fill="oklch(0.05 0.01 290)" opacity="0.55" filter="url(#${u}s)"/>
+        <ellipse cx="${AC[0]}" cy="${AC[1]}" rx="${ARX + 4}" ry="${ARY + 12}" fill="url(#${u}pool)"/>
+        ${body(drum(AC, ARX, ARY, ADEP), u, 'edge')}
+        ${body(ell(AC, ARX, ARY), u, 'sheet')}
+        <g clip-path="url(#${u}sc)">${penMarkup(u)}</g>
+        ${spark('bl', u, 3.6)}${spark('br', u, 3.6)}${spark('pen', u, 3.4)}`;
+      return harmono(svg, u, A);
+    },
+    emblem: `${EMB_HEAD}<path d="${drum(AC, ARX, ARY, ADEP)}" fill="#fff"/><path d="${ell(AC, ARX, ARY)}" fill="#fff"/>`
+      + `<path d="M${AC[0] - ARX} ${AC[1]}A${ARX} ${ARY} 0 0 0 ${AC[0] + ARX} ${AC[1]}" fill="none" stroke="#000" stroke-width="3.6"/>`
+      + `<path d="${spline(figure(REST_PH, 0, 1).map(A.proj), false)}" fill="none" stroke="#000" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/>`
+      + `<circle cx="${f(A_END[0])}" cy="${f(A_END[1])}" r="6" fill="#000"/></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The block is the toy's stage, with violet glass faces.
+  // The figure lies flat on top; the bobs sit at the corners.
+  const CY = 74, HALF = 30, T = 16;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const D_TOP = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]].map(([x, y]) => iso(x, y));
+  const [N, E, S, W] = D_TOP;
+  const down = (p, t = T) => [p[0], p[1] + t];
+  const D = {
+    proj: ([x, y]) => iso(x * HALF * 0.74, y * HALF * 0.74),
+    bobs: (sx, sy) => [[W[0] + 5, W[1] - 5 + sx * 7], [E[0] - 5, E[1] - 5 + sy * 7]],
+  };
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [10, 38, 108, 82],
+    idea: 'The block is the toy\'s stage: the dark sheet on the top, violet glass faces lit from inside, a rim on the top edges. The live figure lies flat on the top in violet light; the pen and the two bobs are white-hot points, the bobs over the side corners. The pen redraws on enter, the sheet turns as it draws, and pointer x opens or closes the ellipses.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${hDefs(u)}<clipPath id="${u}sc"><path d="${poly(D_TOP)}"/></clipPath>
+          ${lg(`${u}top`, [[0, 'oklch(0.3 0.055 288)'], [1, 'oklch(0.18 0.03 283)']], 'x1="0.3" y1="0" x2="0.6" y2="1"')}</defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 290)" opacity="0.5" filter="url(#${u}s)" transform="translate(0 4)"/>
+        <ellipse cx="64" cy="${CY + 4}" rx="56" ry="40" fill="url(#${u}pool)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="oklch(0.3 0.08 296)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="oklch(0.2 0.05 290)"/>
+        <path d="${poly([W, S, down(S, 3), down(W, 3)])}" fill="oklch(0.6 0.16 302)" opacity="0.7"/>
+        <path d="${poly([S, E, down(E, 3), down(S, 3)])}" fill="oklch(0.45 0.13 300)" opacity="0.7"/>
+        <path d="${poly(D_TOP)}" fill="url(#${u}top)"/>
+        <path d="${poly(D_TOP)}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <g clip-path="url(#${u}sc)">${penMarkup(u)}</g>
+        ${spark('bl', u, 3.4)}${spark('br', u, 3.4)}${spark('pen', u, 3.2)}`;
+      return harmono(svg, u, D);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly(D_TOP)}" fill="#8a8a8a"/>`
+      + `<path d="${spline(figure(REST_PH, 0, 1).map(D.proj), false)}" fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Harmonograph';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-harmono';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `harmono-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

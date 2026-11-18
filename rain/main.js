@@ -33,13 +33,15 @@
 import { initPage, sound, onQuality, pixelRatio, stage, idle, oklchLinear } from '../shared/stim.js';
 stage('libs');
 // Space steps the weather; arrows wipe stripes. The page binds both below.
-const ui = initPage({ id: 'rain', signal: true, bar: {
+const ui = initPage({ id: 'rain', bar: {
   choice: { label: 'Weather', value: 'rain',
     options: [{ value: 'drizzle', label: 'Drizzle' }, { value: 'rain', label: 'Rain' }, { value: 'storm', label: 'Storm' }],
     onPick: v => { wx = WEATHER[v]; rainLevel(); } },
   slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: 0, onInput: v => { windGoal = v; rainLevel(); } },
   quality: true,
-  keys: [['drag', 'wipe the fog'], ['arrows', 'wipe a stripe'], ['space', 'next weather']],
+  keys: [['click', 'wipe a spot'], ['drag', 'wipe the fog'], ['arrows', 'wipe a stripe'], ['space', 'select the next weather']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Wipe a spot'], ['drag', 'Wipe the fog'], ['← → ↑ ↓', 'Wipe a stripe'], ['space', 'Select the next weather']],
 } });
 const panel = document.getElementById('pane'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');

@@ -28,67 +28,17 @@
 .stage--windfarm::before { top: 0; }
 .stage--windfarm::after { bottom: 0; }
 .stage--windfarm.letterbox::before, .stage--windfarm.letterbox::after { height: var(--lb, 0px); }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.012 275 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Wind farm</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Wind farm</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. The Wind slider sets their speed; tap or press Space to send a gust down the rows; hold for a storm; drag to look around.">
-      <p class="fail" hidden>Wind farm needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="view" role="group" aria-label="View">
-        <button class="chip" type="button" data-value="Rows" aria-pressed="true">Rows</button>
-        <button class="chip" type="button" data-value="Across" aria-pressed="false">Across</button>
-      </div>
-      <label class="slider"><span>Wind</span><input type="range" id="wind" min="0" max="30" step="0.1" value="9" aria-label="Wind"></label>
-      <div class="actions">
-        <button class="chip" id="gust" type="button">Gust</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings">
-            <div class="group"><span>Fog</span><div class="choices" id="fog" role="group" aria-label="Fog">
-              <button class="chip" type="button" data-value="light" aria-pressed="false">Light</button>
-              <button class="chip" type="button" data-value="thick" aria-pressed="true">Thick</button>
-            </div></div>
-            <div class="group"><span>Letterbox</span><div class="choices" id="lbox" role="group" aria-label="Letterbox">
-              <button class="chip" type="button" data-value="off" aria-pressed="true">Off</button>
-              <button class="chip" type="button" data-value="on" aria-pressed="false">On</button>
-            </div></div>
-          </div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>send a gust down the rows</dd></div>
-          <div><dt>Hold</dt><dd>a storm builds; let go to calm it</dd></div>
-          <div><dt>Drag</dt><dd>look around</dd></div>
-          <div class="fine"><dt>Space</dt><dd>a gust; hold for a storm</dd></div>
-        </dl>
-      </div>
+    <div class="stage stage--windfarm" id="stage" tabindex="0" role="application" aria-label="Offshore wind turbines in night fog, red lights blinking. Click to send a gust down the rows. Hold to build a storm. Release to calm the storm. Drag to look around. Press Space to send a gust. Hold Space to build a storm. Press the left and right arrow keys to change the view.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -110,7 +60,7 @@
 }
 </script>
 <script type="module">
-import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, qualitySetting, onQuality, pixelRatio } from '../shared/stim.js';
+import { initPage, audioKit, sound, whenVisible, reduced, onReducedChange, onQuality, pixelRatio } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -123,9 +73,6 @@ const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(8000)])]) });
-initPage({ id: 'windfarm' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
 
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -143,8 +90,33 @@ const opts = {
   view: 0,
   wind: (() => { const v = +saved('wind'); return saved('wind') == null || isNaN(v) ? 9 : clamp(v, 0, 30); })(),
   fog: saved('fog') === 'light' ? 'light' : 'thick',
-  lbox: saved('lbox') === 'on' ? 'on' : 'off',
+  // The old bar stored 'on'; the shell stores '1'.
+  lbox: ['on', '1'].includes(saved('lbox')),
 };
+// The shell builds every control from this one spec.
+// Handlers bind once the scene is up; early input does nothing.
+const act = { view() {}, wind() {}, gust() {}, fog() {}, lbox() {} };
+const ui = initPage({ id: 'windfarm', bar: {
+  choice: { label: 'View', value: 'Rows', options: [
+    { value: 'Rows', label: 'Rows' },
+    { value: 'Across', label: 'Across' },
+  ], onPick: v => act.view(v) },
+  slider: { label: 'Wind', min: 0, max: 30, step: 0.1, value: opts.wind, onInput: v => act.wind(v) },
+  actions: [{ verb: 'gust', onPress: () => act.gust() }],
+  settings: [
+    { type: 'choice', id: 'fog', label: 'Fog', value: opts.fog, persist: true, options: [
+      { value: 'light', label: 'Light' }, { value: 'thick', label: 'Thick' },
+    ], onPick: v => act.fog(v) },
+    { type: 'toggle', id: 'lbox', label: 'Letterbox', value: opts.lbox, persist: true, onToggle: v => act.lbox(v) },
+  ],
+  quality: true,
+  keys: [['click', 'send a gust'], ['hold', 'build a storm'], ['drag', 'look around'], ['space', 'send a gust']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Send a gust down the rows'], ['hold', 'Build a storm'], ['release', 'Calm the storm'], ['drag', 'Look around'],
+    ['space', 'Send a gust'], ['space', 'Hold to build a storm'], ['← →', 'Change the view']],
+} });
+opts.fog = ui.setting('fog').value;
+opts.lbox = ui.setting('lbox').value;
 let reduce = reduced();
 // Scene tuning: each value scales one part of the look; ?tune opens a panel.
 const TUNE0 = { focus: 1, aperture: 1, blades: 0, oval: 1, rim: 0, cat: 0, lampW: 30, lampT: 0.25, strikes: 1, strikeR: 1, bloom: 0.45, streaks: 1, exposure: 1, grain: 1, fog: 1, wakes: 1 };
@@ -1463,16 +1435,14 @@ function gust(pan = 0, auto = false) {
   gustSound(pan);
   if (!auto) wake();
 }
-const viewChips = [...document.querySelectorAll('#view .chip')];
 function setView(i) {
   if (i === (cut.next >= 0 ? cut.next : opts.view)) return;
-  viewChips.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === VIEWS[i])));
+  if (PICKS.includes(VIEWS[i])) ui.choice.set(VIEWS[i]);
   if (!ready) { opts.view = i; aimCamera(); return; }
   cut.next = i; cut.t = 0;
   look.toYaw = 0; look.toPitch = 0;
   wake();
 }
-viewChips.forEach(b => b.addEventListener('click', () => setView(VIEWS.indexOf(b.dataset.value))));
 
 // Pointer: a press turns into a drag after 8 px, or a hold after 260 ms; else it is a tap.
 const pt = { down: false, drag: false, x: 0, y: 0, yaw0: 0, pitch0: 0, t0: 0, id: -1, timer: 0 };
@@ -1544,26 +1514,14 @@ stage.addEventListener('keyup', e => {
 stage.addEventListener('blur', () => { spaceDown = false; if (!pt.down) endStorm(); });
 
 /* ---------- bar ---------- */
-function popover(boxEl, btn) {
-  const set = on => { boxEl.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!boxEl.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!boxEl.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-function chipGroup(el, value, onPick) {
-  const btns = [...el.querySelectorAll('button')];
-  const set = v => btns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.value === v)));
-  btns.forEach(b => b.addEventListener('click', () => { set(b.dataset.value); onPick(b.dataset.value); }));
-  set(value);
-}
-chipGroup(document.getElementById('fog'), opts.fog, v => { opts.fog = v; save('fog', v); wake(); });
-chipGroup(document.getElementById('lbox'), opts.lbox, v => { opts.lbox = v; save('lbox', v); stage.classList.toggle('letterbox', v === 'on'); });
-stage.classList.toggle('letterbox', opts.lbox === 'on');
-const windEl = document.getElementById('wind');
-windEl.value = opts.wind;
-windEl.addEventListener('input', () => { opts.wind = +windEl.value; save('wind', opts.wind); wake(); });
-document.getElementById('gust').addEventListener('click', () => gust(0));
+Object.assign(act, {
+  view: v => setView(VIEWS.indexOf(v)),
+  wind: v => { opts.wind = v; save('wind', v); wake(); },
+  gust: () => gust(0),
+  fog: v => { opts.fog = v; wake(); },
+  lbox: v => { opts.lbox = v; stage.classList.toggle('letterbox', v); },
+});
+stage.classList.toggle('letterbox', opts.lbox);
 onReducedChange(v => { reduce = v; wake(); });
 sound.onChange(on => { if (on) wake(); });
 

@@ -77,7 +77,7 @@ export let FRAME = 1000 / 30;
 export const act: { press: PressFn; release: ReleaseFn } = { press() {}, release() {} };
 // The far ranges' pass: the bake, or the live march with ?far=live.
 export const FAR_MODE = new URLSearchParams(location.search).get('far') === 'live' ? 'live' : 'bake';
-export const ui = initPage({ id: 'railgun', signal: true, bar: {
+export const ui = initPage({ id: 'railgun', bar: {
   // Time runs from a starry night to a high noon sun.
   slider: { label: 'Time of day', min: 0, max: 1, step: 0.002, value: opts.sun, onInput: v => { opts.sun = v; store.set('time', v); setSun(); } },
   // Settings: what anyone playing with the toy may want.

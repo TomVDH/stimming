@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 61 |
+| Stage | Beta |
 | Series | None (proposal: `science`) |
 | Accent | `oklch(0.78 0.12 76)` |
 | Sound | Yes |
@@ -21,16 +21,16 @@ A heavy hammered bronze bowl with a little water stands on a dark table, seen fr
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3 (the default; the old bar still builds, hidden).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | Bowl, segments: Small, Medium, Large (keys 1 to 3) |
-| Bottom left (actions) | Strike (key S), Hush (key H) |
-| Bottom right (slider) | None |
-| Key strip | `[DRAG] circle the rim` · `[CLICK] strike` · `[HOLD] damp` · `[← →] circle` |
+| Choice | Bowl, segments: Small, Medium, Large (keys 1 to 3) |
+| Actions | Strike (key S), Hush (key H) |
+| Key strip (old bar) | `[DRAG] circle the rim` · `[CLICK] strike the bowl` · `[HOLD] damp the bowl` · `[← →] circle the rim` |
+| How to play (`help`) | Circle: Circle the rim. Click: Strike the bowl. Hold: Damp the bowl. ← →: Circle the rim. Enter: Strike the bowl. Space: Strike the bowl. S: Strike the bowl. H: Hush the bowl. 1 2 3: Change the size of the bowl |
 | Settings | Quality (site) |
-| Dev (`?dev`) | Eye height, Eye turn, Eye distance, Field of view, Exposure, Ripples, Room (sliders, not persisted) |
+| Dev (`?dev`) | Eye: Height, Turn, Distance, Field of view. Look: Exposure, Ripples. Sound: Room (sliders, not persisted) |
 <!-- /gen:bar -->
 
 | Gesture | Does |

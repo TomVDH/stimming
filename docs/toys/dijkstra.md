@@ -22,14 +22,15 @@ A hand moves the pins, jams or walls off streets with a drag, and blacks out a b
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`dijkstra/main.js:28`).
+Bar: v3 (`dijkstra/main.js:28`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | `Search`, stepper: Dijkstra (default), Districts, A*, Greedy, BFS, DFS, Two-way. Kept in `stimming.dijkstra.algo` |
 | Bottom left (actions) | Shuffle (S), Remap (M), Clear (C) |
 | Bottom right (slider) | None |
-| Key strip | click source; hold destination; drag pin or jam; double-click blackout. Districts changes the words to add district and move, drop or jam |
+| Key strip | click set the source; hold set the destination; drag jam the streets; double-click black out a spot. Districts changes the first to add a district and hides the second |
+| How to play (`help`) | Set the source; Set the destination; Move a pin; Jam the streets; Black out a spot; S Shuffle the pins; M Build a new map; C Clear the streets; T Show and hide the tree; Space Play the search again |
 | Settings | Map (Streets, Cells, Circuit, Roots), Tree (on or off), Glow (0 to 1.5, default 0.5), Quality, Reset |
 | Dev (`?dev`) | None |
 <!-- /gen:bar -->

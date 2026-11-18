@@ -25,13 +25,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Bench</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Bench</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--bench" id="stage" tabindex="0" role="application" aria-label="A glass beaker, lit from behind. Electrolysis: hold to switch the current on; drag to stir. Clock: hold to pour the second liquid; drag to stir.">
-      <p class="fail" hidden>Bench needs WebGL 2, which this browser has turned off.</p>
+    <div class="stage stage--bench" id="stage" tabindex="0" role="application" aria-label="A glass beaker, lit from behind. In Electrolysis, hold to switch the current on. In Electrolysis, click to pulse the current. In Clock, hold to pour the second liquid. In Clock, click to add a splash. Drag to stir the beaker. Hold Space to do what a hold does. Press S to stir the beaker. Press R to reset the toy.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -65,9 +65,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // Each experiment keeps its own slider value and liquid level.
 const EXP = {
   electro: { slider: 'Current', value: 0.6, level: 0.8,
-    keys: [['hold', 'current on'], ['click', 'pulse'], ['drag', 'stir'], ['space', 'hold']] },
+    keys: [['hold', 'switch the current on'], ['click', 'pulse the current'], ['drag', 'stir the beaker'], ['space', 'switch the current on']] },
   clock: { slider: 'Delay', value: 0.35, level: 0.45,
-    keys: [['hold', 'pour'], ['drag', 'stir'], ['space', 'hold']] },
+    keys: [['hold', 'pour the second liquid'], ['drag', 'stir the beaker'], ['space', 'pour the second liquid']] },
 };
 let mode = 'electro';
 // The handlers bind once the GL exists.
@@ -77,7 +77,8 @@ const ui = initPage({ id: 'bench', bar: {
     { value: 'electro', label: 'Electrolysis' }, { value: 'clock', label: 'Clock' },
   ], onPick: v => act.mode(v) },
   slider: { label: 'Current', min: 0, max: 1, step: 0.01, value: EXP.electro.value, onInput: v => { EXP[mode].value = v; } },
-  actions: [{ verb: 'stir', key: 'S', onPress: () => act.stir() }, { verb: 'reset', key: 'R', onPress: () => act.reset() }],
+  actions: [{ verb: 'stir', key: 'S', onPress: () => act.stir() }],
+  reset: () => act.reset(),
   settings: [
     { type: 'choice', id: 'indicator', label: 'Indicator', value: 'universal', persist: true,
       options: [{ value: 'universal', label: 'Universal' }, { value: 'cabbage', label: 'Cabbage' }], onPick: v => act.indicator(v) },
@@ -86,6 +87,10 @@ const ui = initPage({ id: 'bench', bar: {
   ],
   quality: true,
   keys: EXP.electro.keys,
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Switch the current on'], ['click', 'Pulse the current'], ['hold', 'Pour the second liquid'],
+    ['click', 'Add a splash of the second liquid'], ['drag', 'Stir the beaker'], ['space', 'Switch the current on'],
+    ['space', 'Pour the second liquid'], ['S', 'Stir the beaker'], ['R', 'Reset the toy']],
 } });
 let bubbleSize = ui.setting('bubbles')?.value ?? 'fine';
 
@@ -1238,6 +1243,12 @@ act.mode = v => {
 };
 act.stir = () => { stirT = 0; stirHalf = -1; live(); };
 act.reset = () => resetBeaker();
+// Reset in Settings has no key of its own, so R binds here.
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); act.reset(); }
+});
 act.indicator = v => { if (!P) { indicator = v; return; } setIndicator(v); still(); };
 
 /* ---------- boot ---------- */

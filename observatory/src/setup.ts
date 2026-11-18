@@ -8,8 +8,18 @@ import { loadStars } from './core/catalog.ts';
 // initPage waits for the intro, so the element goes first.
 if (new URLSearchParams(location.search).has('cuts')) document.querySelector('.intro')?.remove();
 
-// The Bar v2 spec and the Dev rows come in later tasks.
-export const ui = initPage({ id: 'observatory', bar: {} });
+// The Dev rows come in a later task.
+export const ui = initPage({
+  id: 'observatory',
+  bar: {
+    // Bar v3 lists every input in How to play: one instruction per row.
+    help: [
+      ['move', 'Aim the beam'],
+      ['click', 'Select a star'],
+      ['esc', 'Skip ahead'],
+    ],
+  },
+});
 
 // The intro holds until the page, its font and the first frame are in.
 // The cap keeps a failed boot from holding the intro.

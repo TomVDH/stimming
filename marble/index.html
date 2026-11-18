@@ -24,28 +24,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Marbling</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Marbling</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--marble" id="stage" tabindex="0" role="application" aria-label="A marbling tray of floating ink. Tap to drop ink and hold to grow it; drag to swirl. Space drops ink at random, arrow keys swirl, C combs and P prints.">
+    <div class="stage stage--marble" id="stage" tabindex="0" role="application" aria-label="A marbling tray of floating ink. Click to drop ink. Hold to grow a drop. Drag to swirl the ink. Press Space to drop ink at random. Press the arrow keys to swirl the ink. Press C to comb the ink. Press P to print the ink.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Marbling needs WebGL 2 with float targets, which this browser lacks.</p>
-    </div>
-    <div class="bar">
-      <div class="actions">
-        <button class="chip" id="comb" type="button" aria-keyshortcuts="C">Comb</button>
-        <button class="chip" id="print" type="button" aria-keyshortcuts="P">Print</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>drop ink</dd></div>
-        <div><dt>Drag</dt><dd>swirl</dd></div>
-        <div class="fine"><dt><kbd>C</kbd></dt><dd>comb</dd></div>
-        <div class="fine"><dt><kbd>P</kbd></dt><dd>print</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>random drop</dd></div>
-      </dl>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2 with float targets.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Marbling</h1><div class="vignette" hidden></div></section>
@@ -53,9 +39,18 @@
 
 <script type="module">
 import { initPage, sound } from '../shared/stim.js';
-initPage({ id: 'marble' });
+// The comb and the print are declared below; the bar calls them on input.
+const ui = initPage({ id: 'marble', bar: {
+  actions: [
+    { verb: 'comb', key: 'C', onPress: () => startComb() },
+    { verb: 'print', key: 'P', onPress: () => startPrint() },
+  ],
+  keys: [['click', 'drop ink'], ['drag', 'swirl the ink'], ['space', 'drop ink at random'], ['arrows', 'swirl the ink']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Drop ink'], ['hold', 'Grow a drop of ink'], ['drag', 'Swirl the ink'], ['click', 'Send the print away sooner'],
+    ['space', 'Drop ink at random'], ['space', 'Send the print away sooner'], ['← → ↑ ↓', 'Swirl the ink'], ['C', 'Comb the ink'], ['P', 'Print the ink']],
+} });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
-const combB = document.getElementById('comb'), printB = document.getElementById('print');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
 RM.addEventListener?.('change', e => { reduce = e.matches; });
@@ -1261,9 +1256,8 @@ addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
   if (e.target.closest?.('input, textarea, select, [contenteditable]')) return;
   const k = e.key;
-  if (k === 'c' || k === 'C') { if (!e.repeat) startComb(); }
-  else if (k === 'p' || k === 'P') { if (!e.repeat) startPrint(); }
-  else if (k === ' ') {
+  // The bar binds C and P to Comb and Print.
+  if (k === ' ') {
     // Buttons and links keep Space for themselves.
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
@@ -1282,12 +1276,10 @@ function letGo() {
 }
 addEventListener('keyup', e => { if (e.key === ' ') letGo(); });
 addEventListener('blur', letGo);
-combB.addEventListener('click', startComb);
-printB.addEventListener('click', startPrint);
 function chips() {
   const off = !ready || !!sheet;
-  printB.setAttribute('aria-disabled', String(off));
-  combB.setAttribute('aria-disabled', String(off || !!comb));
+  ui.action('print').disabled = off;
+  ui.action('comb').disabled = off || !!comb;
 }
 chips();
 sound.onChange(on => {

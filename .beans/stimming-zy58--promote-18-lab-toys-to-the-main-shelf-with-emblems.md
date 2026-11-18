@@ -60,8 +60,19 @@ East Van itself stays in the Lab. Only East Van postcards moves.
 - [ ] Bar spec port, then v3 copy: foil, marble, plasma, snow, windfarm, subway, harmono
 - [ ] East Van postcards: Tom decides the bar
 - [ ] Icon walkthrough page `icons/spike-promote-1.html`: current icon beside its emblem, one toy at a time
-- [ ] Icon rounds: subway, bowl, rupert, carwash, postcard; picks in `icons/picks.json`; menu tiles updated
-- [ ] Emblems `shared/emblems/<id>.svg` and the `emblem` field for the 13 without one
-- [ ] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
-- [ ] `process.md:52` says Bar v3, not Bar v2
+- [x] Icon rounds: subway, bowl, rupert, carwash, postcard; picks in `icons/picks.json`; menu tiles updated
+  - [x] Menu tiles on their A icon (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert. Observatory has icon 1 of spike observatory-2 (from main)
+  - [x] Current icon kept, by Tom: carwash, windfarm, harmono, kintsugi, crossing
+  - [x] rupert: A of spike rupert-2 (2026-11-17)
+- [x] Emblems `shared/emblems/<id>.svg` and the `emblem` field for the 13 without one
+  - [x] Done (2026-11-17): subway, bowl, marble, plasma, snow, postcard, rupert, observatory, kintsugi, crossing, windfarm, harmono, carwash
+  - [x] rupert: A of spike rupert-2 (2026-11-17)
+- [x] Promotion commit: numbers, version 1.5, sub null, stages, tag/tagNl, nl/ipa gaps, stills, menu tiles, AGENTS.md shelf lists, intro fallback text
+  - Left open: tag and tagNl null on all 18; nl and ipa null on postcard, kintsugi, crossing, rupert, bowl, nvg. No still yet for tornado and carwash.
+- [x] `process.md:52` says Bar v3, not Bar v2
 - [ ] Verify: check, build, bar tests, `?all` and `?lab`, each toy's intro and bar, reduced motion
+
+## Added by Tom (2026-11-17, 16:43)
+
+- [ ] Pressure washer (`washer`, main shelf): new icon round; Tom picks.
+- [x] Fog horn (`foghorn`, number 42): demote from the main shelf to the Lab (number null, version null, sub "Stimming Lab", tile back to the Lab).

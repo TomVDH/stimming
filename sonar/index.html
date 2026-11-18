@@ -39,13 +39,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Sonar</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Sonar</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active, tap a bearing to ping it, hold to charge a power ping and drag to turn the boat. In Listen, drag to aim the ear; the waterfall and the sound follow that bearing. Tap to knock the hull. Double-tap to lock a target; the ear follows it.">
-      <p class="fail" hidden>Sonar needs WebGL2, which this browser has turned off.</p>
+    <div class="stage stage--sonar" id="stage" tabindex="0" role="application" aria-label="A red sonar console. In Active, click a bearing to ping it. Click the centre to ping all round. Hold to charge a power ping. Drag to turn the boat. Press Left and Right to turn the boat. Press Space to ping all round. In Listen, drag to aim the ear. The waterfall and the sound follow that bearing. Click to knock the hull. Press Left and Right to aim the ear. Press Space to knock the hull. Double-click a target to lock it. The ear follows a locked target.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -81,6 +81,10 @@ const ui = initPage({ id: 'sonar', bar: {
   ],
   quality: true,
   keys: false,
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Ping a bearing'], ['click centre', 'Ping all round'], ['hold', 'Charge a power ping'], ['drag', 'Turn the boat'],
+    ['drag', 'Aim the ear'], ['click', 'Knock the hull'], ['double-click', 'Lock a target'],
+    ['← →', 'Turn the boat'], ['← →', 'Aim the ear'], ['space enter', 'Ping all round'], ['space enter', 'Knock the hull']],
 } });
 
 // The Sounder is parked: its chip is off until Tom brings it back.
@@ -140,7 +144,7 @@ const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; setStage('first-frame'); throw new Error('no webgl2'); };
+const fail = () => { stage.querySelector('.fail').hidden = false; ui.hideControls(); setStage('first-frame'); throw new Error('no webgl2'); };
 if (!gl) fail();
 // Half floats keep the afterglow smooth; bytes are the fallback.
 const FLOAT = !!gl.getExtension('EXT_color_buffer_float');
@@ -1349,22 +1353,11 @@ const pad3 = n => String(Math.round(n) % 360).padStart(3, '0');
 let W = 1, H = 1, dpr = 1, safe = 0, hudTop = 0;
 const scope = { cx: 0, cy: 0, rad: 100 };
 const box = { x0: 0, y0: 0, x1: 1, y1: 1 };
-// The corners' boxes in stage pixels; offsets ignore the entrance slide.
-function corners() {
-  let top = 0, bot = 0;
-  if (!shell) return { top, bot };
-  const h = shell.clientHeight;
-  for (const el of shell.children) {
-    if (!el.offsetParent || !/^s2-(tl|tr|bl|br)$/.test(el.className)) continue;
-    if (/t[lr]$/.test(el.className)) top = Math.max(top, el.offsetTop + el.offsetHeight);
-    else bot = Math.max(bot, h - el.offsetTop);
-  }
-  return { top, bot };
-}
 function measure() {
-  const cn = corners();
-  // The legend sits above the bottom corners; the readouts start under the top ones.
-  safe = clamp(cn.bot + 4, 0, stage.clientHeight * 0.4) * dpr;
+  // The shell reports the strips that the bar parts cover.
+  const cn = ui.cover();
+  // The legend sits above the bottom strip; the readouts start under the top strip.
+  safe = clamp(cn.bottom + 4, 0, stage.clientHeight * 0.4) * dpr;
   hudTop = clamp(cn.top, 0, stage.clientHeight * 0.3) * dpr;
   const lab = 30 * dpr, keys = keysH() * dpr;
   const availH = H - safe - keys - hudTop - 20 * dpr;
@@ -2035,13 +2028,8 @@ sound.onChange(v => { if (v) wake(); });
 shuffle();
 syncSlider();
 new ResizeObserver(() => resize()).observe(stage);
-// The corners resize or move when the shell refits; the console follows.
-if (shell) {
-  const refit = () => { if (!ready) return; measure(); hudDirty = true; render(); wake(); };
-  const ro = new ResizeObserver(refit);
-  [...shell.children].forEach(el => ro.observe(el));
-  new MutationObserver(refit).observe(shell.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
-}
+// The console fits again when the bar parts change.
+ui.onCover(() => { if (!ready) return; measure(); hudDirty = true; render(); wake(); });
 // High renders the tube at the screen's own resolution.
 onQuality(() => resize());
 resize();

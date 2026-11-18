@@ -46,7 +46,8 @@
 }
 .stage--fireworks canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--fireworks canvas { transition: none; } }
-/* The bill: a cheeky running cost of the show, under the top-right cluster. */
+/* The bill: a cheeky running cost of the show, under the top bar parts. */
+/* Script sets top from ui.cover(); this rule is the fallback. */
 .bill {
   position: absolute; top: calc(12px + var(--chip, 26px) + 12px); right: 14px; z-index: 3; padding: 5px 10px; border: 0; border-radius: 999px;
   font: 700 15px/1 inherit; font-family: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
@@ -61,13 +62,13 @@
 </head>
 <body>
 <div class="intro" data-done aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/fireworks.svg)"></span><span class="intro-name">Fireworks</span><span class="intro-sub">Stimming No. 37</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/fireworks.svg)"></span><span class="intro-name">Fireworks</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--fireworks" id="stage" tabindex="0" role="application" aria-label="A dark bay at night. Press the sky to launch a shell.">
-      <p class="fail" hidden>Fireworks needs WebGL 2, which this browser has turned off.</p>
+    <div class="stage stage--fireworks" id="stage" tabindex="0" role="application" aria-label="A dark bay at night. Click the sky to launch a shell. Hold to launch a bigger shell. Drag to move the launch point. Press Space to launch a random shell. Press the arrow keys to select the next shell. Press S to start Showtime.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -3216,14 +3217,21 @@ const ui = initPage({ id: 'fireworks', bar: {
   slider: { label: 'Distance', min: 0, max: 1, step: 0.01, value: opts.dist, onInput: setDist },
   actions: [{ verb: 'showtime', label: 'Showtime', key: 'S', onPress: () => showtime() }],
   settings: [
-    { type: 'choice', id: 'weather', label: 'Sky', value: opts.sky, options: [{ value: 'drift', label: 'Drift' }, { value: 'clear', label: 'Clear' }, { value: 'cloud', label: 'Cloud' }], onPick: v => { setSky(v); save('weather', v); updateLights(); draw(); } },
+    { type: 'choice', id: 'weather', label: 'Sky', value: opts.sky, options: [{ value: 'drift', label: 'Changing' }, { value: 'clear', label: 'Clear' }, { value: 'cloud', label: 'Cloud' }], onPick: v => { setSky(v); save('weather', v); updateLights(); draw(); } },
     { type: 'choice', id: 'smoke', label: 'Smoke', value: opts.smoke, options: [{ value: 'thin', label: 'Thin' }, { value: 'thick', label: 'Thick' }], onPick: setSmoke },
     { type: 'choice', id: 'water', label: 'Water', value: 'calm', options: [{ value: 'calm', label: 'Calm' }, { value: 'ripple', label: 'Ripple' }], onPick: setWater },
     { type: 'choice', id: 'bill', label: 'Bill', value: saved('bill') === 'on' ? 'on' : 'off', options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }], onPick: setBill },
   ],
   quality: true,
-  keys: [['click', 'launch'], ['hold', 'bigger shell'], ['space', 'random shell'], ['← →', 'shell']],
+  keys: [['click', 'launch a shell'], ['hold', 'launch a bigger shell'], ['space', 'launch a random shell'], ['← →', 'select the next shell']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Launch a shell'], ['hold', 'Launch a bigger shell'], ['drag', 'Move the launch point'],
+    ['space', 'Launch a random shell'], ['← →', 'Select the next shell'], ['S', 'Start Showtime']],
 } });
+// The bill sits 12 px under the top bar parts.
+const placeBill = () => { billEl.style.top = `${ui.cover().top + 12}px`; };
+placeBill();
+ui.onCover(placeBill);
 placeBarges();
 SU.uSmokeK.value = opts.smoke === 'thick' ? 1.15 : 0.75;
 /* ---------- weather ---------- */

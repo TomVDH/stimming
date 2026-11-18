@@ -24,4 +24,5 @@ Method, as for Tornado alley and Zena: the emblem is the white silhouette of the
 
 - [ ] Main shelf seven
 - [ ] Lab toys with a picked icon
+  - [x] stimming-zy58, 2026-11-17: Subway, Singing bowl, Marbling, Plasma globe, Snow globe, East Van postcards, Rupert's drop (A icons); Observatory (from main); Kintsugi, Crossing button, Wind farm, Harmonograph, Car wash (traced from Current)
 - [ ] Lab toys that need an icon round first

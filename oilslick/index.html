@@ -20,61 +20,17 @@
 }
 .stage--oilslick canvas.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .stage--oilslick canvas { transition: none; } }
-/* Settings opens a column of tweaks at the right edge. */
-.adder { position: relative; }
-.add {
-  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 20;
-  display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 10px;
-  background: oklch(0.19 0.01 250 / 0.94); border: 1px solid var(--line); border-radius: 14px;
-  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  opacity: 0; visibility: hidden; transform: translateY(4px);
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.adder.is-open .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
-@media (hover: hover) { .adder:hover .add { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; } }
-.sets .group { display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 13px; color: var(--muted); }
-.sets .group .choices { gap: 4px; flex-wrap: nowrap; }
-.sets .group .chip { padding: 4px 9px; }
-#setBtn svg { stroke-linecap: round; }
-/* Settings and the (i) sit together at the right edge. */
-.edge { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Oil slick</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Oil slick</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--oilslick" id="stage" tabindex="0" role="application" aria-label="A dark puddle under a thin film of oil. Drag to swirl the rainbow bands; hold to thin the film.">
-      <p class="fail" hidden>Oil slick needs WebGL2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" id="sky" role="group" aria-label="Sky">
-        <button class="chip" type="button" data-value="grey" aria-pressed="true"><span class="dot" style="background:oklch(0.82 0.02 240)"></span>Grey</button>
-        <button class="chip" type="button" data-value="dusk" aria-pressed="false"><span class="dot" style="background:oklch(0.72 0.13 50)"></span>Dusk</button>
-        <button class="chip" type="button" data-value="lamp" aria-pressed="false"><span class="dot" style="background:oklch(0.86 0.09 85)"></span>Lamp</button>
-      </div>
-      <label class="slider"><span>Film</span><input type="range" id="film" min="0" max="1" step="0.01" value="0.45" aria-label="Film: thin to thick"></label>
-      <div class="actions">
-        <button class="chip" id="drop" type="button">+ Drop</button>
-        <button class="chip" id="shuffle" type="button"><svg viewBox="0 0 16 16" aria-hidden="true" width="14" height="14" style="vertical-align:-2px;margin-right:5px"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.6" cy="5.6" r="1.1" fill="currentColor"/><circle cx="10.4" cy="10.4" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/></svg>Shuffle</button>
-        <button class="chip" id="clear" type="button">Clear</button>
-      </div>
-      <div class="edge">
-        <div class="adder" id="setter">
-          <button class="chip icon" id="setBtn" type="button" aria-expanded="false" aria-controls="sets" aria-label="Settings" title="Settings"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h7M12 4.5h2M2 11.5h2M7 11.5h7"/><circle cx="10.5" cy="4.5" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/></svg></button>
-          <div class="add sets" id="sets" role="group" aria-label="Settings"></div>
-        </div>
-        <dl class="how" aria-label="How to play">
-          <div><dt>Drag</dt><dd>swirl the bands</dd></div>
-          <div><dt>Hold</dt><dd>thin the film</dd></div>
-          <div><dt>+ Drop</dt><dd>add oil</dd></div>
-        </dl>
-      </div>
+    <div class="stage stage--oilslick" id="stage" tabindex="0" role="application" aria-label="A dark puddle under a thin film of oil. Drag to swirl the bands. Hold to thin the film. Press Space to add a drop.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name">
@@ -96,7 +52,7 @@
 }
 </script>
 <script type="module">
-import { initPage, choices, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, qualitySetting, onQuality, audioKit } from '../shared/stim.js';
+import { initPage, fitCanvas, whenVisible, reduced, onReducedChange, linFit, quality, onQuality, audioKit } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -105,9 +61,6 @@ const firstFrame = new Promise(r => (markReady = r));
 // The intro holds until the page, the font and the first frame are ready.
 const loaded = new Promise(r => (document.readyState === 'complete' ? r() : addEventListener('load', r, { once: true })));
 playIntro({ ready: Promise.all([loaded, document.fonts.ready, Promise.race([firstFrame, wait(6000)])]) });
-initPage({ id: 'oilslick' });
-// Settings holds the site-wide Quality choice.
-qualitySetting(document.getElementById('sets'));
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -131,6 +84,30 @@ const SKIES = {
 };
 // The first slick: one seed and a vortex pair from an old drag.
 const slick = { seed: 11, swA: [-0.3, 0.1], swB: [-0.08, -0.12] };
+
+/* ---------- bar ---------- */
+// The sky and the film keep their own stored keys.
+const ui = initPage({ id: 'oilslick', bar: {
+  choice: {
+    label: 'Sky', value: opts.sky,
+    options: [
+      { value: 'grey', label: 'Grey', dot: 'oklch(0.82 0.02 240)' },
+      { value: 'dusk', label: 'Dusk', dot: 'oklch(0.72 0.13 50)' },
+      { value: 'lamp', label: 'Lamp', dot: 'oklch(0.86 0.09 85)' },
+    ],
+    onPick: v => { opts.sky = v; save('sky', v); if (ready && !raf) render(); },
+  },
+  slider: { label: 'Film', min: 0, max: 1, step: 0.01, value: opts.film, onInput: v => { opts.film = v; save('film', v); if (ready && !raf) render(); } },
+  actions: [
+    { verb: 'add', noun: 'Drop', onPress: () => addDrop() },
+    { verb: 'shuffle', onPress: () => shuffle() },
+    { verb: 'clear', onPress: () => clearAll() },
+  ],
+  quality: true,
+  keys: [['drag', 'swirl the bands'], ['hold', 'thin the film'], ['space', 'add a drop']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Swirl the bands'], ['hold', 'Thin the film'], ['space', 'Add a drop'], ['enter', 'Add a drop']],
+} });
 
 /* ---------- spectrum ---------- */
 // Sixteen wavelengths span the visible band.
@@ -161,7 +138,14 @@ const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-const fail = () => { stage.querySelector('.fail').hidden = false; markReady(); throw new Error('no webgl2'); };
+// Without WebGL 2 the bar stays, but its controls take no input.
+const fail = () => {
+  stage.querySelector('.fail').hidden = false;
+  ui.choice.disabled = ui.slider.disabled = true;
+  for (const v of ['add', 'shuffle', 'clear']) ui.action(v).disabled = true;
+  markReady();
+  throw new Error('no webgl2');
+};
 if (!gl) fail();
 if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) fail();
 function renderable(fmt) {
@@ -754,21 +738,9 @@ function resize(force = false) {
   render();
 }
 
-/* ---------- bar ---------- */
-function popover(box, btn) {
-  const set = on => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
-  btn.addEventListener('click', () => set(!box.classList.contains('is-open')));
-  document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) set(false); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
-}
-popover(document.getElementById('setter'), document.getElementById('setBtn'));
-const filmEl = document.getElementById('film');
-filmEl.value = String(opts.film);
-filmEl.addEventListener('input', () => { opts.film = +filmEl.value; save('film', opts.film); if (!raf) render(); });
-choices(document.getElementById('sky'), v => { opts.sky = v; save('sky', v); if (ready && !raf) render(); }).set(opts.sky);
-document.getElementById('drop').addEventListener('click', () => addDrop());
-// Shuffle pours a new slick; Clear leaves the bare puddle.
-document.getElementById('shuffle').addEventListener('click', () => {
+/* ---------- shuffle and clear ---------- */
+// Shuffle pours a new slick.
+function shuffle() {
   slick.seed = rand(0, 100);
   slick.swA = [rand(-0.5, 0), rand(-0.25, 0.25)];
   slick.swB = [slick.swA[0] + rand(0.15, 0.3), slick.swA[1] + rand(-0.25, 0.25)];
@@ -776,12 +748,13 @@ document.getElementById('shuffle').addEventListener('click', () => {
   [vel.r, vel.w, pres.r, pres.w].forEach(wipe);
   seed();
   poke();
-});
-document.getElementById('clear').addEventListener('click', () => {
+}
+// Clear leaves the bare puddle.
+function clearAll() {
   drops.length = 0;
   [film.r, film.w, vel.r, vel.w, pres.r, pres.w].forEach(wipe);
   poke();
-});
+}
 
 /* ---------- start ---------- */
 new ResizeObserver(() => resize()).observe(stage);

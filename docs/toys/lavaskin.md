@@ -22,16 +22,17 @@ A press breaks the skin, a hold lets fresh lava well up and spread, a drag tears
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`lavaskin/index.html:107`).
+Bar: v3 (`lavaskin/index.html:104`).
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | None |
 | Bottom left (actions) | `Surge` (Space): seams open and three vents break out; `Shuffle` (S): new plates, new flow line |
 | Bottom right (slider) | `Heat`: seam activity, glow, creep speed, cooling time |
-| Key strip | click break; hold well up; drag tear; space surge |
+| Key strip | click break the skin; hold let fresh lava well up; drag tear the skin open; space surge the lava |
+| How to play | Click: Break the skin; Hold: Let fresh lava well up; Drag: Tear the skin open; Space: Surge the lava; S: Shuffle the plates |
 | Settings | Heat shimmer (On, Off); Quality; Reset |
-| Dev (`?dev`) | Glow, Sheen, Bloom, Plate size, Grain |
+| Dev (`?dev`) | Light: Glow, Sheen, Bloom; Lava: Plate size; Frame: Grain |
 <!-- /gen:bar -->
 
 | Gesture | Does |

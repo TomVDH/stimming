@@ -48,7 +48,7 @@ const ui = initPage({ id: 'tornado', bar: {
   ],
   slider: { label: 'Storm', min: 0, max: 1, step: 0.01, value: 0.85, onInput: v => act.storm(v) },
   settings: [
-    { type: 'choice', id: 'time', label: 'Time', value: 'golden', persist: true, options: [
+    { type: 'choice', id: 'time', label: 'Time of day', value: 'golden', persist: true, options: [
       { value: 'afternoon', label: 'Afternoon' },
       { value: 'golden', label: 'Golden hour' },
       { value: 'dusk', label: 'Dusk' },
@@ -62,35 +62,36 @@ const ui = initPage({ id: 'tornado', bar: {
     ], onPick: v => act.lens(v) },
   ],
   dev: [
-    { type: 'slider', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
-    { type: 'choice', id: 'preset', label: 'Look', value: 'stimming', persist: true, options: [
+    // Keep each group's rows together: a heading shows at each change.
+    { type: 'slider', group: 'Image', id: 'expo', label: 'Exposure', min: 0.4, max: 2, step: 0.01, value: 1, persist: true, onInput: v => act.expo(v) },
+    { type: 'choice', group: 'Image', id: 'preset', label: 'Look', value: 'stimming', persist: true, options: [
       { value: 'stimming', label: 'Stimming' },
       { value: 'photoreal', label: 'Photoreal' },
     ], onPick: v => act.preset(v) },
-    { type: 'choice', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [
+    { type: 'choice', group: 'Image', id: 'tone', label: 'Tone map', value: 'aces', persist: true, options: [
       { value: 'film', label: 'Film' },
       { value: 'aces', label: 'ACES' },
     ], onPick: v => act.tone(v) },
-    { type: 'slider', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
-    { type: 'slider', id: 'windDir', label: 'Wind dir', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
-    { type: 'slider', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
+    { type: 'slider', group: 'Image', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
+    { type: 'slider', group: 'Sky', id: 'wind', label: 'Wind', min: 0, max: 1, step: 0.01, value: 0.85, persist: true, onInput: v => act.wind(v) },
+    { type: 'slider', group: 'Sky', id: 'windDir', label: 'Wind direction', min: -180, max: 180, step: 1, value: 19, persist: true, onInput: v => act.windDir(v) },
+    { type: 'slider', group: 'Sky', id: 'tod', label: 'Time of day', min: 14, max: 21, step: 0.05, value: 18.3, persist: true, onInput: v => act.tod(v) },
+    { type: 'slider', group: 'Sky', id: 'sunAz', label: 'Sun direction', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
+    { type: 'slider', group: 'Sky', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
     // A new key: a height saved under the old one does not hold back the 1.25 m default.
-    { type: 'slider', id: 'eyeGold', label: 'Eye height', min: 1, max: 40, step: 0.25, value: 1.25, persist: true, onInput: v => act.eye(v) },
+    { type: 'slider', group: 'Camera', id: 'eyeGold', label: 'Eye height', min: 1, max: 40, step: 0.25, value: 1.25, persist: true, onInput: v => act.eye(v) },
     // Rise: how long the crane takes each way, and how high it goes.
-    { type: 'slider', id: 'riseDur', label: 'Rise time (s)', min: 6, max: 30, step: 1, value: 15, persist: true, onInput: v => act.riseDur(v) },
-    { type: 'slider', id: 'riseTop', label: 'Rise height (m)', min: 10, max: 80, step: 1, value: 35, persist: true, onInput: v => act.riseTop(v) },
-    { type: 'slider', id: 'base', label: 'Cloud base', min: 0.8, max: 3, step: 0.05, value: 1.35, persist: true, onInput: v => act.base(v) },
-    { type: 'slider', id: 'sunAz', label: 'Sun dir', min: -180, max: 180, step: 1, value: 20, persist: true, onInput: v => act.sunAz(v) },
-    // Where the live march stops and the baked far field begins, and how far the deck runs.
-    { type: 'slider', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
+    { type: 'slider', group: 'Camera', id: 'riseDur', label: 'Rise time (s)', min: 6, max: 30, step: 1, value: 15, persist: true, onInput: v => act.riseDur(v) },
+    { type: 'slider', group: 'Camera', id: 'riseTop', label: 'Rise height (m)', min: 10, max: 80, step: 1, value: 35, persist: true, onInput: v => act.riseTop(v) },
     // The opening build-up's length: the storm grows from nothing over this many seconds.
     // Its key is new, so an old saved length gives way to the 45 s default.
-    { type: 'slider', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
-    { type: 'slider', id: 'god', label: 'God rays', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.god(v) },
-    { type: 'slider', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
+    { type: 'slider', group: 'Storm', id: 'buildUpU', label: 'Build-up (s)', min: 10, max: 600, step: 5, value: 45, persist: true, onInput: v => act.buildUp(v) },
+    // Where the live march stops and the baked far field begins, and how far the deck runs.
+    { type: 'slider', group: 'Storm', id: 'bakeFrom', label: 'Bake from (km)', min: 6, max: 40, step: 1, value: 16, persist: true, onInput: v => act.bakeFrom(v) },
+    { type: 'slider', group: 'Storm', id: 'deckReach', label: 'Deck reach (km)', min: 20, max: 200, step: 5, value: 146, persist: true, onInput: v => act.deckReach(v) },
     // Where the deck's front edge stands, km ahead of the eye; below 0 it runs on behind the eye.
     // Ahead of the eye, the sun behind it lights a bright plain under a dark storm.
-    { type: 'slider', id: 'front', label: 'Front edge (km)', min: -6, max: 15, step: 0.5, value: -6, persist: true, onInput: v => act.front(v) },
+    { type: 'slider', group: 'Storm', id: 'front', label: 'Front edge (km)', min: -6, max: 15, step: 0.5, value: -6, persist: true, onInput: v => act.front(v) },
     // The window, rain in the air and grain. The defaults keep the shot as it was.
     { type: 'toggle', group: 'Window', id: 'glass', label: 'Glass', value: false, persist: true, onToggle: v => act.look('glass', v) },
     { type: 'slider', group: 'Window', id: 'wet', label: 'Drops', min: 0, max: 1, step: 0.01, value: 0.6, persist: true, onInput: v => act.look('wet', v) },
@@ -115,7 +116,11 @@ const ui = initPage({ id: 'tornado', bar: {
     { type: 'button', group: 'Knobs', id: 'kReset', label: 'Defaults', text: 'Reset', onClick: () => act.knobReset() },
   ],
   quality: true,
-  keys: [['click', 'touch down'], ['drag', 'steer'], ['0-5', 'F-scale']],
+  keys: [['click', 'add a tornado'], ['drag', 'steer a tornado'], ['0-5', 'set the F-scale']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Add a tornado'], ['drag', 'Steer a tornado'], ['double-click', 'Rope out a tornado'], ['right-click', 'Rope out a tornado'],
+    ['scroll', 'Change the F-scale of a tornado'], ['[ ]', 'Change the F-scale of a tornado'], ['0 1 2 3 4 5', 'Set the F-scale'],
+    ['T', 'Add a tornado'], ['space', 'Add a tornado'], ['enter', 'Add a tornado'], ['C', 'Clear the plain'], ['R', 'Raise and lower the view'], ['V', 'Run the vehicles']],
 } });
 
 /* ---------- the scene ---------- */

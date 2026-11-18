@@ -10,8 +10,8 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 57 |
+| Stage | Beta |
 | Series | None (proposal: `poke`) |
 | Accent | `linear-gradient(100deg, oklch(0.72 0.055 172), oklch(0.84 0.13 85))` |
 | Sound | Yes |
@@ -28,16 +28,16 @@ The old gold stays. Each break takes new lines, so after a few rounds every bowl
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2.
+Bar: v3.
 
 | Slot | Holds |
 |---|---|
 | Top left (choice) | Glaze, segments: Celadon (1), Tenmoku (2), Shino (3), Indigo (4), each with a colour dot |
 | Bottom left (actions) | None |
 | Bottom right (slider) | None |
-| Key strip | `[CLICK] break`, `[MOVE] turn the light`, `[SPACE] break`; touch: `[TAP] break` |
+| Key strip | `[CLICK] break the bowl`, `[MOVE] turn the light`, `[SPACE] break the bowl`; touch: `[TAP] break the bowl` |
 | Settings | Site Quality, Reset (a new bowl with no breaks; the glaze stays) |
-| Dev (`?dev`) | Pitch, Yaw, Field of view, Distance, Exposure, Light size, Vein width (all stored) |
+| Dev (`?dev`) | Camera: Pitch, Yaw, Field of view, Distance. Light: Exposure, Size. Gold: Vein width. All stored. |
 <!-- /gen:bar -->
 
 | Gesture | Does |

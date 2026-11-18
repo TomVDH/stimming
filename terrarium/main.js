@@ -28,7 +28,9 @@ const ui = initPage({ id: 'terrarium', bar: {
     { type: 'slider', id: 'fogback', label: 'Fog return', min: 0, max: 1, step: 0.01, value: 0.5, persist: true, onInput: v => act.fogBack(v) },
   ],
   quality: true,
-  keys: [['hold', 'mist'], ['drag', 'wipe'], ['click', 'poke']],
+  keys: [['hold', 'mist the jar'], ['drag', 'wipe the glass'], ['click', 'poke the garden']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Mist the jar'], ['M', 'Mist the jar'], ['drag', 'Wipe the glass'], ['click', 'Poke the garden'], ['1 2 3', 'Choose the plants']],
 } });
 
 /* ---------- the scene ---------- */

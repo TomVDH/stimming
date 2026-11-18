@@ -49,8 +49,8 @@
 
 <div class="wrap">
   <main>
-    <div class="stage stage--tvtree" id="stage" tabindex="0" role="application" aria-label="A tree hung with little TVs. Tap a TV to change its channel, drag it to swing, let it go over another TV to pass its picture, hold it to switch it off, tap the lantern to light it, and drag the trunk to shake the tree. Arrow keys pick a TV, Enter changes its channel, holding Enter switches it off, C passes a picture from one TV to another, Shift with an arrow swings it, Space shakes the tree, O turns every TV off or on, and L lights the lantern.">
-      <p class="fail" hidden>TV tree needs WebGL 2, which this browser has turned off.</p>
+    <div class="stage stage--tvtree" id="stage" tabindex="0" role="application" aria-label="A tree at night, hung with little TVs. Each TV shows a channel. Click a TV to change its channel. Hold a TV to switch it on and off. Drag a TV to move it. Release it over another TV to pass its picture. Click the lantern to switch it on and off. Drag the tree to shake it. Scroll to zoom the view. Press the arrow keys to select a TV. Press Enter to change its channel. Hold Enter to switch it on and off. Press Shift and an arrow key to swing it. Press C on two TVs to pass a picture. Press Space to shake the tree. Press S to shuffle the channels. Press E to show the eyes. Press O to switch every TV on and off. Press L to switch the lantern on and off.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">TV tree</h1><div class="vignette" hidden></div></section>
@@ -62,7 +62,7 @@ stage('libs');
 import { LIB, BIG, GROUPS, groupOf, SNOW, CH_LIGHT, BIG_OF, NCH } from './channels.js';
 // Each action runs only once the tree is ready.
 const run = k => () => { if (ready) { ACTS[k](); wake(); } };
-const ui = initPage({ id: 'tvtree', signal: true, bar: {
+const ui = initPage({ id: 'tvtree', bar: {
   actions: [
     { verb: 'shuffle', key: 'S', onPress: run('shuffle') },
     { verb: 'eyes', key: 'E', onPress: run('eyes') },
@@ -74,10 +74,16 @@ const ui = initPage({ id: 'tvtree', signal: true, bar: {
     { type: 'link', id: 'channels', label: 'Channels', text: `All ${NCH - 1}`, href: 'channels.html', title: 'Every channel on one sheet' },
   ],
   quality: true,
-  keys: [['click', 'change channel'], ['drag', 'swing or pass'], ['hold', 'power off'], ['scroll', 'zoom']],
+  keys: [['click', 'change the channel of a TV'], ['drag', 'move a TV'], ['hold', 'switch a TV on and off'], ['scroll', 'zoom the view']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['click', 'Change the channel of a TV'], ['hold', 'Switch a TV on and off'], ['drag', 'Move a TV'], ['release', 'Pass the picture to another TV'],
+    ['click', 'Switch the lantern on and off'], ['drag', 'Shake the tree'], ['click', 'Knock on the tree'], ['scroll', 'Zoom the view'], ['move', 'Move the point the eyes watch'],
+    ['← → ↑ ↓', 'Select a TV'], ['enter', 'Change the channel'], ['enter', 'Hold to switch the TV on and off'], ['shift ← → ↑ ↓', 'Swing the TV'],
+    ['C', 'Pass the picture to the TV you select next'], ['esc', 'Release the picture'], ['space', 'Shake the tree'], ['+ -', 'Zoom the view'],
+    ['S', 'Shuffle the channels'], ['E', 'Show the eyes'], ['O', 'Switch every TV on and off'], ['L', 'Switch the lantern on and off']],
 } });
 const panel = document.getElementById('stage');
-// The shell layer lies over the stage; its corners hold the controls.
+// The shell layer lies over the stage; it holds the old bar's chips.
 const layer = panel.parentElement?.querySelector(':scope > .stim-ui');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -2023,23 +2029,14 @@ function draw() {
   renderer.setRenderTarget(null);
   composer.render();
 }
-// The top and foot bands hold the corners and the key strip.
+// The top and foot bands hold every bar part.
 // Each band is a share of the stage height.
-// Offsets ignore the corners' slide-in transform.
+let lastBands = [0, 0];
 function bands() {
   const h = panel.clientHeight;
-  if (!layer || !h) return [0, 0];
-  let top = 0, foot = 0;
-  for (const el of layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
-    if (!el.offsetHeight || !el.childElementCount) continue;
-    const y0 = el.offsetTop, y1 = y0 + el.offsetHeight;
-    if (y1 < h / 2) top = Math.max(top, y1);
-    else foot = Math.max(foot, h - y0);
-  }
-  // The keycaps reach about 6 px above the strip's own box.
-  const keys = layer.querySelector(':scope > .s2-keys');
-  if (keys?.offsetHeight) foot = Math.max(foot, h - keys.offsetTop + 6);
-  return [clamp(top / h, 0, 0.2), clamp(foot / h, 0, 0.3)];
+  if (!h) return [0, 0];
+  const c = ui.cover();
+  return [clamp(c.top / h, 0, 0.2), clamp(c.bottom / h, 0, 0.3)];
 }
 // The camera frames the whole tree, wide or tall.
 const treeShape = A => (A < 1.1 ? [0.82, clamp(0.95 / A, 1.12, 1.6)] : [1.42, 1]);
@@ -2051,7 +2048,7 @@ function fit(w, h) {
   const x0 = -2.0 * KX, x1 = 2.0 * KX, y0 = -0.12, y1 = 3.3 * KY, t = Math.tan((FOV * D2R) / 2);
   // The tree stands back in the dark with room around it.
   // It sits between the bands; a band's own padding is its margin.
-  const [a, b] = bands(), m = (y1 - y0) * 0.08, lo = b > 0 ? y0 : y0 - m, hi = a > 0 ? y1 + m * 0.5 : y1 + m;
+  const [a, b] = (lastBands = bands()), m = (y1 - y0) * 0.08, lo = b > 0 ? y0 : y0 - m, hi = a > 0 ? y1 + m * 0.5 : y1 + m;
   const halfH = Math.max((hi - lo) / 2 / (1 - a - b), (((x1 - x0) / 2) * (portrait ? 1.06 : 1.14)) / A), cy = (lo + hi) / 2 - halfH * (b - a);
   camera.aspect = A;
   camera.updateProjectionMatrix();
@@ -2465,6 +2462,7 @@ sound.onChange(on => {
 /* ---------- start: WebGL setup in idle slices ---------- */
 function failed() {
   panel.querySelector('.fail').hidden = false;
+  ui.hideControls();
 }
 async function start() {
   let EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, RoomEnvironment;
@@ -2606,13 +2604,14 @@ async function start() {
   panel.prepend(canvas);
   await premesh(panel.clientWidth || 16, panel.clientHeight || 9);
   fitRenderer(renderer, panel, 2, onSize, 1.4e6);
-  // Corners that move, resize or stack refit the tree.
-  if (layer) {
-    const refit = () => { if (sized && panel.clientWidth && panel.clientHeight) onSize(panel.clientWidth, panel.clientHeight); };
-    const ro = new ResizeObserver(refit);
-    layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br, .s2-keys)').forEach(el => ro.observe(el));
-    new MutationObserver(refit).observe(layer.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack', 'data-tight'] });
-  }
+  // A bar that arrives, wraps or moves refits the tree.
+  ui.onCover(() => {
+    if (!sized || !panel.clientWidth || !panel.clientHeight) return;
+    const [top, foot] = bands();
+    // A plain resize already has its fit from the renderer.
+    if (top === lastBands[0] && foot === lastBands[1]) return;
+    onSize(panel.clientWidth, panel.clientHeight);
+  });
   // A panel with no size yet still gets a frame.
   if (!sized) onSize(16, 9);
   quiet = false;

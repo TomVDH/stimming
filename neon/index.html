@@ -26,7 +26,7 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm">
 <style>
-/* Neon Hum: the wall fills the stage under the corner controls. */
+/* Neon Hum: the wall fills the stage under the bar. */
 :root { --stage: oklch(0.15 0.02 30); }
 .stage { cursor: crosshair; }
 .stage canvas {
@@ -39,14 +39,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true" data-done>
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/neon.svg)"></span><span class="intro-name">Neon Hum</span><span class="intro-sub">Stimming No. 10</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/neon.svg)"></span><span class="intro-name">Neon Hum</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night. Drag to bend a neon tube; Shift and drag, or turn on Straight tubes in Settings, for straight runs with round corners; click a tube to switch it off or on; double-click a tube for the next gas; click the bare wall to knock on it and shake the tubes. Arrow keys draw, Shift with arrows moves the pen, Space ends a stroke or switches the nearest tube, Backspace undoes, C clears, Settings resets the sign.">
+    <div class="stage stage--neon" id="stage" tabindex="0" role="application" aria-label="A wall at night with a neon sign. Drag to draw a tube. Hold Shift and drag to draw a straight tube. Straight tubes in Settings makes every drag straight. Click a tube to switch it on and off. Double-click a tube to change its gas. Click the wall to knock on it. Hold the arrow keys to draw a tube. Hold Shift and the arrow keys to move the pen. Press Space to end the tube. Press Space to switch the nearest tube on and off. Press Backspace to remove the last tube. Press C to clear the wall.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Neon Hum needs WebGL 2, which this browser has turned off.</p>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Neon Hum</h1><div class="vignette" hidden></div></section>
@@ -92,8 +92,8 @@ const GAS_SPEC = [
   ['Violet', 0.56, 0.26, 302, 1.15, 2.2],
   ['Pink', 0.64, 0.29, 350, 1.0, 0],
   ['White', 0.95, 0.035, 80, 0.55, 2.0],
-  // Two trick tubes: Prism runs a rainbow, Candy twists stripes.
-  ['Prism', 0.85, 0.05, 260, 0.75, 0, 1],
+  // Two trick tubes: Rainbow runs every hue, Candy twists stripes.
+  ['Rainbow', 0.85, 0.05, 260, 0.75, 0, 1],
   ['Candy', 0.64, 0.29, 350, 1.0, 0, 2],
 ];
 // Each gas is normalised to full strength, then balanced.
@@ -116,13 +116,13 @@ const WALLS = [
 ];
 /* ---------- the bar: one spec for the shell ---------- */
 // The Gas choice: one option per gas, then Mix.
-// Prism, Candy and Mix show their stripes in the dot.
+// Rainbow, Candy and Mix show their stripes in the dot.
 const GAS_DOTS = {
   10: 'linear-gradient(90deg, oklch(0.7 0.22 25), oklch(0.88 0.18 100), oklch(0.82 0.2 150), oklch(0.7 0.16 230), oklch(0.6 0.24 300))',
   11: 'repeating-linear-gradient(135deg, oklch(0.66 0.26 350) 0 2px, oklch(0.96 0.02 350) 2px 4px)',
   12: 'linear-gradient(90deg, oklch(0.66 0.22 30) 0 25%, oklch(0.86 0.18 100) 0 50%, oklch(0.8 0.2 150) 0 75%, oklch(0.6 0.2 266) 0)',
 };
-const ui = initPage({ id: 'neon', signal: true, bar: {
+const ui = initPage({ id: 'neon', bar: {
   choice: { label: 'Gas', display: 'stepper', value: 6, onPick: v => setGas(v),
     options: [...GAS_SPEC, ['Mix']].map(([label, L, C, h], i) => ({ value: i, label, dot: GAS_DOTS[i] || css([L, C * 0.92, h]) })) },
   actions: [
@@ -130,7 +130,7 @@ const ui = initPage({ id: 'neon', signal: true, bar: {
     { verb: 'clear', key: 'C', onPress: () => clearAll() },
   ],
   settings: [
-    { type: 'choice', id: 'lights', label: 'Lights', value: '0', onPick: v => setShow(+v),
+    { type: 'choice', id: 'lights', label: 'Light show', value: '0', onPick: v => setShow(+v),
       options: ['Off', 'Chase', 'Rave', 'Storm'].map((label, i) => ({ value: String(i), label })) },
     { type: 'choice', id: 'wall', label: 'Wall', value: '0', persist: true, onPick: v => setWall(+v),
       options: WALLS.map(({ name: label }, i) => ({ value: String(i), label })) },
@@ -139,7 +139,10 @@ const ui = initPage({ id: 'neon', signal: true, bar: {
   ],
   reset: () => resetSign(),
   quality: true,
-  keys: [['drag', 'bend a tube'], ['click', 'switch a tube'], ['double-click', 'change gas'], ['shift + drag', 'straight run']],
+  keys: [['drag', 'draw a tube'], ['shift + drag', 'draw a straight tube'], ['click', 'switch a tube on and off'], ['double-click', 'change the gas of a tube']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Draw a tube'], ['shift + drag', 'Draw a straight tube'], ['click', 'Switch a tube on and off'], ['double-click', 'Change the gas of a tube'], ['click', 'Knock on the wall'],
+    ['← → ↑ ↓', 'Draw a tube'], ['shift ← → ↑ ↓', 'Move the pen'], ['space', 'End the tube'], ['space', 'Switch the nearest tube on and off'], ['backspace', 'Remove the last tube'], ['C', 'Clear the wall']],
 } });
 const AMB = scale(linFit(0.62, 0.07, 255), 0.26), KEY = scale(linFit(0.9, 0.03, 245), 0.7);
 // The night light comes from the upper left; y points up.
@@ -572,7 +575,10 @@ function sign() {
 // The sign fits the stage and sits a touch above centre.
 function seedSign() {
   const { parts, w, h, cx } = sign();
-  const k = Math.min(1, (0.8 * W) / S / w, (0.62 * H) / S / h), dy = -0.035 * Math.min(1, H / S);
+  // The sign stays two tube radii above the bar.
+  const foot = ui.cover().bottom, room = Math.max(H - foot - 4 * R, 0.4 * H);
+  const k = Math.min(1, (0.8 * W) / S / w, (0.62 * H) / S / h, room / S / h);
+  const dy = Math.min(-0.035 * Math.min(S, H), H / 2 - foot - (k * h * S) / 2 - 2 * R) / S;
   for (const [pts, r, gas] of parts) {
     const t = makeTube(bent(pts, r).map(([x, y]) => [(x - cx) * k, y * k + dy]), gas, false);
     t.seed = true;
@@ -1189,7 +1195,7 @@ void main() {
   vec4 gas = uGas[vId];
   vec3 gc = gas.rgb;
   float fx = uFx[vId];
-  // Prism gas runs the rainbow along the tube.
+  // Rainbow gas runs every hue along the tube.
   if (fx > 0.5 && fx < 1.5) gc = hueLin(0.75, 0.2, a / (uR * 6.5) + uHue) * 0.9;
   // Candy gas twists pink and white stripes round the tube.
   else if (fx > 1.5) gc = mix(gas.rgb, vec3(0.62, 0.58, 0.55), smoothstep(-0.04, 0.04, abs(fract((a + s * uR * 1.8) / (uR * 7.0)) - 0.5) - 0.25));
@@ -2119,7 +2125,7 @@ function setWall(i) {
 // Persisted rows come back before the first frame.
 setWall(+ui.setting('wall').value);
 let straightOn = ui.setting('straight').value;
-// Reduced motion stops the show and rests the Lights row.
+// Reduced motion stops the show and rests the Light show row.
 function motionPref() {
   ui.setting('lights').disabled = reduce;
   if (reduce) setShow(0);
@@ -2200,6 +2206,14 @@ async function boot() {
   seedSign();
   syncActs();
   reshape();
+  // Bar v3 mounts late; an untouched, unlit sign seeds again.
+  const seeded = tubes.length;
+  const stopCover = ui.onCover(() => {
+    if (draft || tubes.length !== seeded || tubes.some(t => !t.seed || t.on)) return;
+    tubes.length = 0;
+    seedSign();
+    reshape();
+  });
   try { await initGL(); } catch (err) { console.error(err); failed(); return; }
   allocTargets();
   ready = true;
@@ -2209,6 +2223,7 @@ async function boot() {
   new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(panel);
   document.addEventListener('visibilitychange', sync);
   await curtain;
+  stopCover();
   // The seeded tubes strike one by one, left to right, frame last.
   const now = performance.now() / 1000;
   tubes.filter(t => t.seed && !t.on).forEach((t, i) => strike(t, now + (reduce ? 0 : i * 0.22), reduce));

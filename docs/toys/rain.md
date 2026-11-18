@@ -24,15 +24,16 @@ A finger or the arrow keys wipe the fog away, and the glass squeaks. The Wind sl
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`rain/main.js:36`).
+Bar: v3, the Signal bar, over Bar v2 (`rain/main.js:36`). Copy rewritten 2026-11-17.
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Weather`, segments: Drizzle, Rain (default), Storm |
-| Bottom left (actions) | None |
-| Bottom right (slider) | `Wind`, 0 to 1, default 0 |
-| Key strip | drag wipe the fog; arrows wipe a stripe; space next weather |
-| Settings | Quality only |
+| Choice | `Weather`, segments: Drizzle, Rain (default), Storm |
+| Actions | None |
+| Slider | `Wind`, 0 to 1, default 0 |
+| How to play (`help`) | click: Wipe a spot; drag: Wipe the fog; ← → ↑ ↓: Wipe a stripe; space: Select the next weather |
+| Key strip (Bar v2, `keys`) | click wipe a spot; drag wipe the fog; arrows wipe a stripe; space select the next weather |
+| Settings | Quality only. No Reset |
 | Dev (`?dev`) | None |
 <!-- /gen:bar -->
 

@@ -5,8 +5,8 @@
 |---|---|
 | Dutch | None yet (Tom sets it) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
+| Shelf | Main, number 60 |
+| Stage | Beta |
 | Series | None |
 | Accent | `linear-gradient(90deg, oklch(0.86 0.15 95), oklch(0.62 0.24 330), oklch(0.6 0.17 255), oklch(0.8 0.17 160))` (proposed, not yet in `toys.json`) |
 | Sound | Yes |
@@ -24,15 +24,15 @@ The look follows real drops and real high-speed footage (Tom, 2026-11-16: the fi
 ## Controls
 
 <!-- gen:bar -->
-Bar: v2 (`rupert/index.html:104`).
+Bar: v3 (`rupert/index.html:101`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Light`, segments: Clear (1), Polarised (2), default Clear |
-| Bottom left (actions) | `Reset` (R): a new drop drips and quenches |
-| Bottom right (slider) | `Time`, 0 to 1: scrubs the slow motion. Disabled until a snip. On phones it moves into Settings |
-| Key strip | click head hammer; click tail snip; h hammer; s snip |
-| Settings | `Replay speed` (0.4 to 2, 1), Quality |
+| Choice | `Light`, segments: Clear (1), Polarised (2), default Clear |
+| Slider | `Time`, 0 to 1: scrubs the slow motion. Disabled until a snip. On phones it moves into Settings |
+| Key strip (`?bar=v2`) | click head hammer the head; click tail snip the tail; h hammer the head; s snip the tail |
+| How to play | 9 rows: each click, H, S, 1 2, R |
+| Settings | `Replay speed` (0.4 to 2, 1), Quality, Reset (R): a new drop drips and quenches |
 | Dev (`?dev`) | `Exposure` (0.4 to 2.5, 1.15), `Bloom` (0 to 1, 0.3), `Stress` (600 to 5000 nm, 2600), `Dispersion` (0 to 0.06, 0.014) |
 <!-- /gen:bar -->
 

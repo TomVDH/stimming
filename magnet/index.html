@@ -22,7 +22,7 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
 <style>
-/* Magnet balls: the table fills the stage under the Bar v2 corners. */
+/* Magnet balls: the table fills the stage under the bar. */
 :root { --stage: oklch(0.185 0.014 268); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%;
@@ -36,13 +36,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/magnet.svg)"></span><span class="intro-name">Magnet balls</span><span class="intro-sub">Stimming No. 11</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/magnet.svg)"></span><span class="intro-name">Magnet balls</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-keyshortcuts="F ArrowUp ArrowDown ArrowLeft ArrowRight" aria-label="Magnet balls on a table. Drag a ball to pull its chain. Hold the empty table to raise a magnet. Double-click a ball to flip its poles, or the bare table to blast. F shows the field, R forms a ring, H forms a hex sheet, S shuffles, arrow keys nudge the nearest cluster.">
-      <p class="fail" hidden>Magnet balls need WebGL, which this browser has turned off.</p>
+    <div class="stage stage--magnet table" id="table" tabindex="0" role="application" aria-keyshortcuts="F ArrowUp ArrowDown ArrowLeft ArrowRight" aria-label="Magnet balls on a table. The balls snap into chains. Drag a ball to move it. Release a ball in motion to throw it. Hold the bare table to raise a magnet. Drag the magnet to pull the balls. Double-click a ball to flip its poles. Double-click the bare table to blast the balls apart. Press F to show and hide the field lines. Press R to form a ring. Press H to form a hex sheet. Press S to shuffle the balls. Press the arrow keys to push the nearest cluster.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Magnet balls</h1><div class="vignette" hidden></div></section>
@@ -51,17 +51,21 @@
 <script type="module">
 import { initPage, sound, oklchLinear, onQuality, pixelRatio, stage, idle } from '../shared/stim.js';
 stage('libs');
-// Ring, Hex and Shuffle are one-shot verbs; Field lines sits in Settings.
-const ui = initPage({ id: 'magnet', signal: true, bar: {
+// Ring, Hexagon and Shuffle are one-shot verbs; Field lines sits in Settings.
+const ui = initPage({ id: 'magnet', bar: {
   actions: [
     { verb: 'ring', label: 'Ring', key: 'R', onPress: () => makeRing() },
-    { verb: 'hex', label: 'Hex', key: 'H', onPress: () => makeHex() },
+    { verb: 'hex', label: 'Hexagon', key: 'H', onPress: () => makeHex() },
     { verb: 'shuffle', key: 'S', onPress: () => scatter() },
   ],
   settings: [{ type: 'toggle', id: 'field', label: 'Field lines', value: true, persist: true, onToggle: v => setField(v) }],
   reset: () => restart(),
   quality: true,
-  keys: [['drag', 'pull a chain'], ['hold', 'raise a magnet'], ['double-click', 'flip or blast'], ['f', 'field lines']],
+  keys: [['drag', 'move a ball'], ['hold', 'raise a magnet'], ['double-click', 'flip a ball'], ['f', 'show and hide the field lines']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Move a ball'], ['release', 'Throw the ball'], ['hold', 'Raise a magnet'], ['hold + drag', 'Move the magnet'],
+    ['double-click', 'Flip a ball'], ['double-click', 'Blast the balls apart'], ['F', 'Show and hide the field lines'],
+    ['R', 'Form a ring'], ['H', 'Form a hex sheet'], ['S', 'Shuffle the balls'], ['← → ↑ ↓', 'Push the nearest cluster']],
 } });
 const panel = document.getElementById('table');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
@@ -808,7 +812,7 @@ function makeRing() {
   guide = g;
   wake();
 }
-// Hex: the balls pack into a flat hex sheet that grows from the middle.
+// Hexagon: the balls pack into a flat hex sheet that grows from the middle.
 function makeHex() {
   if (!ready) return;
   drop();
@@ -933,7 +937,7 @@ function setField(on) {
   wake();
 }
 let ray = null, plane = null, ndc = null, hitV = null, tmp = null;
-let ready = false, kbd = false, aim = -1, hoverPt = null, ptrId = -1, trail = [], gx = 0, gz = 0;
+let ready = false, seeded = false, kbd = false, aim = -1, hoverPt = null, ptrId = -1, trail = [], gx = 0, gz = 0;
 // The camera looks down at 56 degrees; margins keep spheres in frame.
 const EL = (56 * Math.PI) / 180, SIDE = 1.1, NEAR = 1.3, FAR = 1.1 + 1 / Math.tan(EL);
 let lowDpr = false;
@@ -1028,26 +1032,23 @@ function corner(sx, sy) {
   const t = (1 - camera.position.y) / tmp.y;
   return [camera.position.x + tmp.x * t, camera.position.z + tmp.z * t];
 }
-// The camera backs off until a full ring fits.
-// The corner rows cover the stage edges, so the table stops short of them.
+// The bar covers the stage edges, so the table stops short of them.
 // It returns the bottom and top screen edges of the open table.
 function pads(h) {
-  const layer = panel.parentElement?.querySelector('.stim-ui');
-  let top = 0, bot = h;
-  if (layer) for (const s of layer.querySelectorAll(':scope > :is(.s2-tl, .s2-tr, .s2-bl, .s2-br)')) {
-    if (!s.offsetHeight) continue;
-    if (s.matches('.s2-tl, .s2-tr')) top = Math.max(top, s.offsetTop + s.offsetHeight);
-    else bot = Math.min(bot, s.offsetTop);
-  }
+  // The shell gives both strips, for either bar.
+  const c = ui.cover();
   // Pads never take more than a third of a short stage.
-  top = Math.min(top, h / 3);
-  bot = Math.max(bot, (h * 2) / 3);
+  const top = Math.min(c.top, h / 3), bot = Math.max(h - c.bottom, (h * 2) / 3);
   return [-1 + (2 * (h - bot)) / h, 1 - (2 * top) / h];
 }
+// The last fit's pads show if a bar change needs a refit.
+let lastPads = [-1, 1];
+// The camera backs off until a full ring fits.
 function fit(w, h) {
   camera.aspect = w / h;
   orbit(1);
-  const [yb, yt] = pads(h);
+  lastPads = pads(h);
+  const [yb, yt] = lastPads;
   const bl = corner(-1, yb), tl = corner(-1, yt), need = 2 * RING_R + 2.4;
   orbit(Math.max((need / 2 + SIDE) / -bl[0], (need + NEAR + FAR) / (bl[1] - tl[1])));
   const c = [corner(-1, yb), corner(1, yb), corner(-1, yt), corner(1, yt)];
@@ -1515,17 +1516,23 @@ void main() {
     fit(w, h);
     if (ready) { draw(); wake(); }
   }, 2e6);
-  // A corner that drops down or stacks re-fits the table.
-  new MutationObserver(() => {
+  // A bar that arrives, wraps or moves re-fits the table.
+  ui.onCover(() => {
     const w = panel.clientWidth, h = panel.clientHeight;
     if (!w || !h) return;
+    // A plain resize already has its fit from the renderer.
+    const [yb, yt] = pads(h);
+    if (yb === lastPads[0] && yt === lastPads[1]) return;
     fit(w, h);
     if (ready) { draw(); wake(); }
-  }).observe(panel.parentElement, { attributes: true, attributeFilter: ['data-narrow', 'data-stack'] });
+    // Before the first frame, the clumps go to the new table.
+    else if (seeded) { cutAll(); seed(); aim = pick(...at(0, 0), Infinity); }
+  });
   // A panel with no size yet still gets walls.
   if (!walls.length) fit(16, 9);
   await idle();
   seed();
+  seeded = true;
   aim = pick(...at(0, 0), Infinity);
   // Async compile keeps the physical-material build off the main thread.
   await renderer.compileAsync(scene, camera);

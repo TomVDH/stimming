@@ -24,28 +24,14 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Plasma globe</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Plasma globe</span></div></div>
 </div>
 
 <div class="wrap">
-  <header data-shell></header>
   <main>
-    <div class="stage stage--plasma" id="stage" tabindex="0" role="application" aria-label="A plasma globe on a dark base. Touch or click the glass to pull an arc, and tap it for a crackle. Arrow keys move a touch point, Space crackles and Escape lets go.">
+    <div class="stage stage--plasma" id="stage" tabindex="0" role="application" aria-label="A plasma globe on a dark base. Hold the glass to pull an arc. Drag on the glass to move the arc. Click the glass to make a crackle. Press the arrow keys to move a touch point. Press Space to make a crackle. Press Escape to let go.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Plasma globe needs WebGL 2, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Palette">
-        <button class="chip" type="button" data-pal="violet" aria-pressed="true">Violet</button>
-        <button class="chip" type="button" data-pal="ice" aria-pressed="false">Ice</button>
-        <button class="chip" type="button" data-pal="ember" aria-pressed="false">Ember</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Touch the glass</dt><dd>pull an arc</dd></div>
-        <div><dt><span class="fine">Click</span><span class="touch">Tap</span></dt><dd>crackle</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>crackle</dd></div>
-        <div class="fine"><dt><kbd>Arrows</kbd></dt><dd>move the touch</dd></div>
-      </dl>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Plasma globe</h1><div class="vignette" hidden></div></section>
@@ -53,7 +39,18 @@
 
 <script type="module">
 import { initPage, sound } from '../shared/stim.js';
-initPage({ id: 'plasma' });
+// The palette is declared below; the bar calls setPal on input.
+const ui = initPage({ id: 'plasma', bar: {
+  choice: {
+    label: 'Palette', value: 'violet',
+    options: [{ value: 'violet', label: 'Violet' }, { value: 'ice', label: 'Ice' }, { value: 'ember', label: 'Ember' }],
+    onPick: v => setPal(v),
+  },
+  keys: [['hold', 'pull an arc'], ['click', 'make a crackle'], ['space', 'make a crackle'], ['arrows', 'move the touch']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['hold', 'Pull an arc'], ['drag', 'Move the arc'], ['click', 'Make a crackle'],
+    ['← → ↑ ↓', 'Move the touch point'], ['space', 'Make a crackle'], ['esc', 'Let go of the touch point']],
+} });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -1302,7 +1299,6 @@ addEventListener('keydown', e => {
   }
 });
 
-const chips = [...document.querySelectorAll('.chip[data-pal]')];
 function setPal(name) {
   if (name === palName) return;
   palFrom = copyPal(pal);
@@ -1310,12 +1306,10 @@ function setPal(name) {
   palName = name;
   palK = reduce ? 1 : 0;
   mixPal();
-  chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.pal === name)));
   for (const f of fils) f.flare = Math.max(f.flare, 0.35);
   crackle(0.5, 0.25, 'amb');
   wake();
 }
-chips.forEach(c => c.addEventListener('click', () => setPal(c.dataset.pal)));
 sound.onChange(on => {
   if (on) audio();
   else if (ac) ac.suspend()?.catch(() => {});
@@ -1327,9 +1321,9 @@ function failed() {
   sync();
   canvas.hidden = true;
   const p = panel.querySelector('.fail');
-  if (noFloat) p.textContent = 'Plasma globe needs WebGL 2 float targets, which this browser lacks.';
+  if (noFloat) p.textContent = 'This toy cannot run in this browser. It needs WebGL 2 with float targets.';
   p.hidden = false;
-  chips.forEach(c => { c.disabled = true; });
+  ui.choice.disabled = true;
 }
 canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; sync(); });
 canvas.addEventListener('webglcontextrestored', async () => {

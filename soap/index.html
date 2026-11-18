@@ -22,7 +22,7 @@
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
 <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/environments/RoomEnvironment.js">
 <style>
-/* Soap cutting: the board fills the stage under the corner controls. */
+/* Soap cutting: the board fills the stage under the bar. */
 :root { --stage: oklch(0.21 0.008 265); }
 .stage canvas {
   position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: crosshair;
@@ -34,13 +34,13 @@
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/soap.svg)"></span><span class="intro-name">Soap cutting</span><span class="intro-sub">Stimming No. 12</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/soap.svg)"></span><span class="intro-name">Soap cutting</span></div></div>
 </div>
 
 <div class="wrap">
   <main>
-    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line previews each cut. Drag across the soap to score it; drag the same line again, or saw back and forth, to cut deeper until it parts. Shift-drag, or a drag in from the mat, slices right through. Fallen pieces cut too. Tap a scored cube on top to pop it; hold to spread the crack; Ctrl-click pops the whole grid. Space makes the next cut, Enter pops the grid, B blows the shavings away, N brings a new bar, 1 to 6 pick the soap.">
-      <p class="fail" hidden>Soap cutting needs WebGL, which this browser has turned off.</p>
+    <div class="stage stage--soap table" id="table" tabindex="0" role="application" aria-label="A bar of soap on a cutting mat. A dashed line shows where a cut lands. Drag across the soap to score it. Drag back and forth to cut deeper. Hold Shift and drag to slice through. Drag in from the mat to slice through. Fallen pieces cut too. Click a scored cube to pop it. Hold a scored cube to spread the crack. Hold Ctrl and click a scored cube to pop the whole grid. Press Space to make the next cut. Press Enter to pop the whole grid. Press B to blow the small pieces off the mat. Press N to start a new bar. Press 1 to 6 to change the soap.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Soap cutting</h1><div class="vignette" hidden></div></section>
@@ -111,7 +111,7 @@ function setSoap(i) {
   if (ready) newBar();
 }
 const coarse = matchMedia('(pointer: coarse)').matches;
-const ui = initPage({ id: 'soap', signal: true, bar: {
+const ui = initPage({ id: 'soap', bar: {
   choice: { label: 'Soap', value: String(soapAt),
     options: SOAPS.map((v, i) => ({ value: String(i), label: v.name, key: String(i + 1), dot: swatchCss(v) })),
     onPick: v => setSoap(+v) },
@@ -121,8 +121,13 @@ const ui = initPage({ id: 'soap', signal: true, bar: {
   ],
   quality: true,
   keys: coarse
-    ? [['drag', 'score, saw deeper'], ['drag from the mat', 'slice through'], ['tap a cube', 'pop'], ['hold a cube', 'spread the crack']]
-    : [['drag', 'score, saw deeper'], ['shift + drag', 'slice through'], ['ctrl + click', 'pop the grid'], ['space', 'next cut']],
+    ? [['drag', 'score the soap'], ['drag from the mat', 'slice through the soap'], ['tap a cube', 'pop a scored cube'], ['hold a cube', 'spread the crack']]
+    : [['drag', 'score the soap'], ['shift + drag', 'slice through the soap'], ['ctrl + click', 'pop the whole grid'], ['space', 'make the next cut']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Score the soap'], ['drag back and forth', 'Cut a score deeper'], ['drag from the mat', 'Slice through the soap'],
+    ['shift + drag', 'Slice through the soap'], ['click', 'Pop a scored cube'], ['hold', 'Spread the crack'], ['release', 'Pop the cracked cubes'],
+    ['ctrl + click', 'Pop the whole grid'], ['space', 'Make the next cut'], ['enter', 'Pop the whole grid'],
+    ['B', 'Blow the small pieces off the mat'], ['N', 'Start a new bar'], ['1 2 3 4 5 6', 'Change the soap']],
 } });
 // A pointer pick on a corner control hands the keys back to the stage.
 document.querySelector('.stim-ui')?.addEventListener('click', e => {
@@ -2180,13 +2185,20 @@ function aimAt(d) {
   camera.lookAt(tgt);
   camera.updateMatrixWorld();
 }
+// The picture keeps at least this strip clear at the top and the foot.
+const CLEAR_MIN = 56;
+// The last fit's strips show if a bar change needs a refit.
+let clearTop = CLEAR_MIN, clearFoot = CLEAR_MIN;
 // The camera backs off until the bar and its landing room fit.
 function fit(w, h) {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   const k = clamp((w / h - 0.8) / 0.98), X = lerp(10.5, 14, k), Z0 = -6.5, Z1 = lerp(8.5, 8, k);
-  // The corner rows take about 56 px at the top and the bottom.
-  const my = Math.min(0.92, 1 - 112 / h);
+  // The shell says how much of the stage its bar covers.
+  const c = ui.cover();
+  clearTop = Math.max(CLEAR_MIN, c.top);
+  clearFoot = Math.max(CLEAR_MIN, c.bottom);
+  const yTop = Math.min(0.92, 1 - (2 * clearTop) / h), yFoot = Math.min(0.92, 1 - (2 * clearFoot) / h);
   let lo = 8, hi = 300;
   for (let it = 0; it < 28; it++) {
     const d = (lo + hi) / 2;
@@ -2194,7 +2206,7 @@ function fit(w, h) {
     let ok = true;
     for (const x of [-X, X]) for (const y of [0, 8.6]) for (const z of [Z0, Z1]) {
       vtmp.set(x, y, z).project(camera);
-      if (Math.abs(vtmp.x) > 0.95 || Math.abs(vtmp.y) > my) ok = false;
+      if (Math.abs(vtmp.x) > 0.95 || vtmp.y > yTop || vtmp.y < -yFoot) ok = false;
     }
     if (ok) hi = d; else lo = d;
   }
@@ -2770,6 +2782,13 @@ async function start() {
     fit(w, h);
     if (ready) { renderer.render(scene, camera); wake(); }
   }, 1.4e6);
+  // Bar v3 mounts after the first fit, and a bar may wrap to more rows.
+  ui.onCover(() => {
+    const c = ui.cover(), w = panel.clientWidth, h = panel.clientHeight;
+    if (!w || !h || (Math.max(CLEAR_MIN, c.top) === clearTop && Math.max(CLEAR_MIN, c.bottom) === clearFoot)) return;
+    fit(w, h);
+    if (ready) { renderer.render(scene, camera); wake(); }
+  });
   if (!camera.aspect) fit(16, 9);
   await idle();
   // Async compile keeps the shader build off the main thread.

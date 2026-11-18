@@ -17,39 +17,20 @@
   opacity: 0; transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stage canvas.on { opacity: 1; }
-/* Each swatch shows its light. */
-.sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
 @media (prefers-reduced-motion: reduce) { .stage canvas { transition: none; } }
 </style>
 </head>
 <body>
 <div class="intro" aria-hidden="true">
-  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Harmonograph</span><span class="intro-sub">Stimming Lab</span></div></div>
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Harmonograph</span></div></div>
 </div>
 
 <div class="wrap">
   <header data-shell></header>
   <main>
-    <div class="stage stage--harmono" id="stage" tabindex="0" role="application" aria-label="A harmonograph that draws in light: two pendulums swing a glowing pen across the dark. Drag a glowing dot aside and let go to draw; Space releases a random swing, arrow keys pull the dots, C clears the drawing.">
+    <div class="stage stage--harmono" id="stage" tabindex="0" role="application" aria-label="A harmonograph draws in light. Two pendulums swing a glowing pen. Drag a dot to pull it aside. Release the dot to draw. Press Space to start a random swing. Press the arrow keys to pull the dots. Press C to clear the drawing.">
       <canvas aria-hidden="true"></canvas>
-      <p class="fail" hidden>Harmonograph needs canvas drawing, which this browser has turned off.</p>
-    </div>
-    <div class="bar">
-      <div class="choices" role="group" aria-label="Light">
-        <button class="chip" type="button" data-ink="0" aria-pressed="true"><span class="sw" style="--c: oklch(0.7 0.21 302)" aria-hidden="true"></span>Violet</button>
-        <button class="chip" type="button" data-ink="1" aria-pressed="false"><span class="sw" style="--c: oklch(0.76 0.17 32)" aria-hidden="true"></span>Coral</button>
-        <button class="chip" type="button" data-ink="2" aria-pressed="false"><span class="sw" style="--c: oklch(0.86 0.15 168)" aria-hidden="true"></span>Mint</button>
-        <button class="chip" type="button" data-ink="3" aria-pressed="false"><span class="sw" style="--c: oklch(0.96 0.02 260)" aria-hidden="true"></span>White</button>
-      </div>
-      <div class="actions">
-        <button class="chip" id="sheet" type="button" aria-keyshortcuts="C">Clear</button>
-      </div>
-      <dl class="how" aria-label="How to play">
-        <div><dt>Drag a dot</dt><dd>pull</dd></div>
-        <div><dt>Let go</dt><dd>draw</dd></div>
-        <div class="fine"><dt><kbd>Space</kbd></dt><dd>random swing</dd></div>
-        <div class="fine"><dt><kbd>C</kbd></dt><dd>clear</dd></div>
-      </dl>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs Canvas.</p>
     </div>
   </main>
   <section class="about" aria-labelledby="toy-name"><h1 class="display" id="toy-name">Harmonograph</h1><div class="vignette" hidden></div></section>
@@ -57,7 +38,6 @@
 
 <script type="module">
 import { initPage, sound } from '../shared/stim.js';
-initPage({ id: 'harmono' });
 const panel = document.getElementById('stage'), canvas = panel.querySelector('canvas');
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 let reduce = RM.matches;
@@ -723,7 +703,6 @@ function setInk(i) {
   colFrom = inkI;
   inkI = i;
   colT = 0;
-  chips.forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.ink === i)));
   sfxInk();
   wake();
 }
@@ -965,7 +944,7 @@ addEventListener('keydown', e => {
     if (e.target.closest?.('button, a')) return;
     e.preventDefault();
     if (!e.repeat) randomSwing();
-  } else if (key === 'c' || key === 'C' || key === 'n' || key === 'N') {
+  } else if (key === 'n' || key === 'N') {
     if (!e.repeat) clearSheet();
   } else if (ARROWS[key]) {
     e.preventDefault();
@@ -984,10 +963,20 @@ addEventListener('keyup', e => {
 });
 addEventListener('blur', () => { P.forEach((p, k) => { if (p.key) letGo(k, false); }); wake(); });
 
-const chips = [...document.querySelectorAll('[data-ink]')];
-chips.forEach(c => c.addEventListener('click', () => setInk(+c.dataset.ink)));
-const sheetB = document.getElementById('sheet');
-sheetB.addEventListener('click', clearSheet);
+// The bar mounts after every function and state it calls exists.
+const ui = initPage({ id: 'harmono', bar: {
+  choice: { label: 'Light', value: String(inkI), onPick: v => setInk(+v), options: [
+    { value: '0', label: 'Violet', dot: 'oklch(0.7 0.21 302)' },
+    { value: '1', label: 'Coral', dot: 'oklch(0.76 0.17 32)' },
+    { value: '2', label: 'Mint', dot: 'oklch(0.86 0.15 168)' },
+    { value: '3', label: 'White', dot: 'oklch(0.96 0.02 260)' },
+  ] },
+  actions: [{ verb: 'clear', key: 'C', onPress: () => clearSheet() }],
+  keys: [['drag', 'pull a dot'], ['release', 'draw'], ['space', 'start a random swing'], ['C', 'clear the drawing']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Pull a dot'], ['release', 'Draw'], ['space', 'Start a random swing'],
+    ['← →', 'Pull the left dot'], ['↑ ↓', 'Pull the right dot'], ['C', 'Clear the drawing']],
+} });
 sound.onChange(on => {
   if (on) audio();
   else if (ac) { hush(); ac.suspend()?.catch(() => {}); }
@@ -1052,7 +1041,7 @@ function failed() {
   ready = false;
   canvas.hidden = true;
   panel.querySelector('.fail').hidden = false;
-  [...chips, sheetB].forEach(b => { b.disabled = true; });
+  ui.hideControls();
 }
 async function boot() {
   await idle();
