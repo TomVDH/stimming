@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-18T04:28:50Z
-updated_at: 2026-11-18T09:05:45Z
+updated_at: 2026-11-18T09:08:23Z
 ---
 
 Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence risk and removes a song if it causes trouble.
@@ -48,3 +48,5 @@ Tom (2026-11-17): the scope plays songs as easter eggs. Tom accepts the licence 
 - [x] YAKUZA (Baka Mitai, arr. RiceLover423): twelve minis, Kiryu portrait at 5 s. Portraits are 100 columns, each level its own brightness; the scopes, minis and bezels ease out under them.
 
 - [x] Typing 'hint' lists every codeword again (7 s) while no song plays.
+
+- [x] DENTAKU (Kraftwerk, anonymous arr.): trombone vocal on main, eight minis.
