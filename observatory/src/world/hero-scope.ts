@@ -11,6 +11,7 @@ import type { Star } from '../core/catalog.ts';
 import { HEMI_I, hemi } from './hill.ts';
 import { buildStarEnv, lensGeometry, makeGlassMaterial, type LensShape } from './hero-glass.ts';
 import { TUBE_REST_ALT } from './observatory.ts';
+import { flipPose, type Pose } from '../core/clearance.ts';
 
 /* ---------- the hero scope: a long refractor on a German equatorial mount ---------- */
 // Only the cuts show this model.
@@ -21,7 +22,12 @@ import { TUBE_REST_ALT } from './observatory.ts';
 export type HeroScope = {
   root: Group;
   glass: Mesh;
-  setTube(alt: number, az: number): void;
+  // Returns true when a flip over the pole starts.
+  setTube(alt: number, az: number): boolean;
+  // Advances a running flip. Returns true while it still runs.
+  step(now: number): boolean;
+  // The joint groups, for the clearance check.
+  parts: { mount: Group; polar: Group; ra: Group; dec: Group; tube: Group; worm: Group; knob: Group };
   // m: the sky matrix from sky/stars.ts, catalog frame to world.
   setSky(m: Matrix4 | Matrix3): void;
   // dir: the target star's world direction.
@@ -53,9 +59,17 @@ const AXES_Y = DRUM_H + 0.35;
 const DEC_FACE = 0.165;
 // The saddle plate's thickness on that flange.
 const PLATE = 0.03;
-// The mount keeps one side for every pose.
-// 1: the tube rides east of the pier on the meridian.
-const SIDE = 1;
+// The flip over the pole takes this long, in milliseconds.
+const FLIP_MS = 1600;
+// The worm's place on the polar housing.
+// The worm's thread reaches 0.027 m out; at 0.25 m it clears the wheel's teeth.
+const WORM_Y = -0.905, WORM_Z = 0.25;
+// Worm turns per wheel turn: a stylised ratio, not the real one.
+const WORM_RATIO = 12;
+// Dec hand wheel turns per dec turn: a stylised ratio, not the real one.
+const KNOB_RATIO = 8;
+// Wraps an angle to the range -PI to PI.
+const wrapTurn = (x: number): number => x - 2 * Math.PI * Math.round(x / (2 * Math.PI));
 // The polar axis points at the pole: north, LAT degrees up.
 const POLE = new Vector3(0, Math.sin(LAT * DEG), -Math.cos(LAT * DEG));
 // The equator crosses the meridian in the south along this line.
@@ -767,7 +781,7 @@ function buildDec(k: Kit, M: Mats, Pc: Pieces): void {
 
 /* ---------- the right ascension axis: the head turns on the polar axis ---------- */
 // +Y runs up the polar axis to the pole.
-function buildRa(k: Kit, M: Mats, Pc: Pieces): void {
+function buildRa(k: Kit, M: Mats, Pc: Pieces, hk: Kit): void {
   // The collar turns on the housing's top bearing.
   // A slim neck rises from it, so the tube's saddle sits close.
   k.add(M.cast, turn([
@@ -800,9 +814,10 @@ function buildRa(k: Kit, M: Mats, Pc: Pieces): void {
   // The declination slow motion: a gearbox and a hand wheel.
   k.add(M.cast, chamferBox(0.06, 0.065, 0.08, 0.007).translate(-0.165, -0.105, 0.045));
   k.add(M.darkSteel, new CylinderGeometry(0.007, 0.007, 0.07, 10).rotateX(Math.PI / 2).translate(-0.165, -0.105, 0.115));
+  // The hand wheel sits on its own axis, so its group can spin it.
   const dw = handWheel(0.05);
-  k.add(M.darkSteel, dw.steel.rotateX(Math.PI / 2).translate(-0.165, -0.105, 0.15));
-  k.add(M.brass, dw.brass.rotateX(Math.PI / 2).translate(-0.165, -0.105, 0.15));
+  hk.add(M.darkSteel, dw.steel.rotateX(Math.PI / 2));
+  hk.add(M.brass, dw.brass.rotateX(Math.PI / 2));
   // The shaft's lower end carries the worm wheel and the hour circle.
   k.add(M.darkSteel, turn([[[0.05, -1.0], [0.05, -0.86]], [[0.05, -1.0], [0.0, -1.0]].reverse() as P[]], 40));
   k.add(M.cast, turn([
@@ -815,7 +830,8 @@ function buildRa(k: Kit, M: Mats, Pc: Pieces): void {
   const teeth = 150, axis = new Vector3(0, 1, 0);
   for (let i = 0; i < teeth; i++) {
     const a = (i / teeth) * Math.PI * 2;
-    const out = new Vector3(Math.cos(a), 0, Math.sin(a)), tan = new Vector3(-Math.sin(a), 0, Math.cos(a));
+    // The basis is right-handed, so no tooth renders inside out.
+    const out = new Vector3(Math.cos(a), 0, Math.sin(a)), tan = new Vector3(Math.sin(a), 0, -Math.cos(a));
     // Teeth nearly touch, so the rim reads as filled.
     k.put(Pc.tooth, M.brass, boxAt(out.clone().multiplyScalar(0.2155).setY(-0.905), tan, axis, out, 0.0082, 0.042, 0.008));
   }
@@ -827,7 +843,7 @@ function buildRa(k: Kit, M: Mats, Pc: Pieces): void {
 }
 
 /* ---------- the polar axis housing and the drive: fixed to the pier ---------- */
-function buildPolar(k: Kit, M: Mats, Pc: Pieces): void {
+function buildPolar(k: Kit, M: Mats, Pc: Pieces, wk: Kit): void {
   // The housing: two bearing bosses and a cast barrel.
   k.add(M.cast, turn([
     [[0.06, -0.86], [0.182, -0.86]],
@@ -854,14 +870,15 @@ function buildPolar(k: Kit, M: Mats, Pc: Pieces): void {
     }
   }
   // The worm crosses the wheel's upper side, away from the pier.
-  const wy = -0.905, wz = 0.243;
-  k.add(M.steel, along(turn([[[0.011, -0.25], [0.011, 0.2]]], 16), Y_TO_X, 0, wy, wz));
+  const wy = WORM_Y, wz = WORM_Z;
+  // The worm's parts sit on their axis, for spinning.
+  wk.add(M.steel, along(turn([[[0.011, -0.25], [0.011, 0.2]]], 16), Y_TO_X, 0, 0, 0));
   const thread: P[] = [];
   for (let i = 0; i <= 40; i++) {
     const x = -0.065 + 0.13 * (i / 40);
     thread.push([0.021 + 0.006 * Math.cos(i * Math.PI / 2.5), x]);
   }
-  k.add(M.steel, along(turn([thread], 20), Y_TO_X, 0, wy, wz));
+  wk.add(M.steel, along(turn([thread], 20), Y_TO_X, 0, 0, 0));
   // Two bearing blocks hold the worm.
   for (const x of [-0.095, 0.095]) k.add(M.cast, chamferBox(0.03, 0.07, 0.07, 0.006).translate(x, wy, wz + 0.012));
   // A cover shields the worm from above.
@@ -881,12 +898,16 @@ function buildPolar(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.pier, chamferBox(0.04, 0.03, 0.04, 0.004).translate(0.11, wy, wz + 0.14));
   // The hand wheel for the slow motion in right ascension.
   const hw = handWheel(0.07);
-  k.add(M.darkSteel, hw.steel.rotateZ(Math.PI / 2).translate(-0.27, wy, wz));
-  k.add(M.brass, hw.brass.rotateZ(Math.PI / 2).translate(-0.27, wy, wz));
+  // The RA hand wheel rides on the worm's shaft, so it turns with the worm.
+  wk.add(M.darkSteel, hw.steel.rotateZ(Math.PI / 2).translate(-0.27, 0, 0));
+  wk.add(M.brass, hw.brass.rotateZ(Math.PI / 2).translate(-0.27, 0, 0));
   // The hour circle's index on a bracket from the lower boss.
-  k.add(M.cast, chamferBox(0.03, 0.12, 0.012, 0.003).translate(0, -0.9, -0.188));
-  k.add(M.brass, new BoxGeometry(0.008, 0.012, 0.03).translate(0, -0.958, -0.175));
-  k.put(Pc.socket, M.zinc, stand(new Vector3(0, -0.88, -0.194), new Vector3(0, 0, -1)));
+  // The bracket runs outside the wheel's rim, above and below the wheel.
+  k.add(M.cast, chamferBox(0.03, 0.012, 0.062, 0.003).translate(0, -0.85, -0.209));
+  k.add(M.cast, chamferBox(0.03, 0.1, 0.012, 0.003).translate(0, -0.9, -0.24));
+  k.add(M.brass, new BoxGeometry(0.008, 0.012, 0.064).translate(0, -0.958, -0.202));
+  // A cap screw on the drop's outer face, clear of the wheel.
+  k.put(Pc.socket, M.zinc, stand(new Vector3(0, -0.9, -0.246), new Vector3(0, 0, -1)));
 }
 
 /* ---------- the pier head and the pier: they never move ---------- */
@@ -962,34 +983,113 @@ export function buildHeroScope(size: number): HeroScope {
   // The axes' crossing stays over the dome's centre at every pose.
   mount.position.set(0, AXES_Y, 0);
   const kits = [new Kit(), new Kit(), new Kit(), new Kit(), new Kit()];
+  const wormKit = new Kit(), knobKit = new Kit();
   buildPier(kits[0], M, Pc);
-  buildPolar(kits[1], M, Pc);
-  buildRa(kits[2], M, Pc);
+  buildPolar(kits[1], M, Pc, wormKit);
+  buildRa(kits[2], M, Pc, knobKit);
   buildDec(kits[3], M, Pc);
   // The objective's glass reflects the stars once they arrive.
   const G = makeGlassMaterial(null, LENS);
   const glass = buildTube(kits[4], M, Pc, G.material);
   [mount, polar, ra, dec, tube].forEach((g, i) => kits[i].build(g));
   tube.add(glass);
+  // The worm spins in its own group, on the polar housing.
+  const worm = new Group();
+  worm.position.set(0, WORM_Y, WORM_Z);
+  polar.add(worm);
+  wormKit.build(worm);
+  // The dec slow motion's hand wheel spins in its own group, on the RA head.
+  const knob = new Group();
+  knob.position.set(-0.165, -0.105, 0.15);
+  ra.add(knob);
+  knobKit.build(knob);
 
   const t = new Vector3();
+  // The pose on screen: RA unwrapped, the dec angle, and the side in use.
+  // Side +1 puts the tube east of the pier, -1 west.
+  let pose = { ra: 0, dec: 0, side: 0 };
+  let flip: { from: Pose; to: Pose; t0: number } | null = null;
+  let started = false;
+  // Writes a pose to the joints and the worm.
+  function apply(p: Pose): void {
+    ra.rotation.y = p.ra;
+    dec.rotation.x = p.dec;
+    worm.rotation.x = -p.ra * WORM_RATIO;
+    knob.rotation.z = -p.dec * KNOB_RATIO;
+  }
+  // The pose on screen now; mid-flip, it lies on the path between the two poses.
+  function current(now: number): Pose {
+    if (!flip) return pose;
+    const s = Math.min(1, (now - flip.t0) / FLIP_MS);
+    return flipPose(flip.from, flip.to, s);
+  }
   // Points the tube at alt and az in degrees, as Dome.setTube does.
   // Azimuth runs from north through east.
-  // The mount never changes sides, so every joint moves smoothly.
-  function setTube(alt: number, az: number): void {
+  // The tube rides on the side of the target's hour angle.
+  // A change of side flips the mount over the pole, over FLIP_MS.
+  // Returns true while the flip runs.
+  function setTube(alt: number, az: number): boolean {
     const a = alt * DEG, z = az * DEG;
     t.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
     // Hour angle and declination for the site's latitude.
-    // The hour angle wraps due north, under the pole.
+    // The hour angle wraps at the meridian, so the side changes there.
     const ha = Math.atan2(-t.x, t.dot(EQ));
     const decl = Math.asin(Math.min(1, Math.max(-1, t.dot(POLE))));
-    ra.rotation.y = -(SIDE > 0 ? ha : ha + Math.PI);
-    dec.rotation.x = -(SIDE > 0 ? decl : Math.PI - decl);
+    const side = ha < 0 ? 1 : -1;
+    const now = performance.now();
+    const from = started ? current(now) : null;
+    // The RA angle is unwrapped near the pose on screen, so it never jumps.
+    const near = from ? from.ra : 0;
+    const to: Pose = {
+      ra: near + wrapTurn(-(side > 0 ? ha : ha + Math.PI) - near),
+      dec: -(side > 0 ? decl : Math.PI - decl),
+      side,
+    };
+    if (!started) {
+      started = true;
+      pose = to;
+      apply(to);
+      return false;
+    }
+    // A flip that has run its time ends here.
+    if (flip && now - flip.t0 >= FLIP_MS) {
+      pose = flip.to;
+      flip = null;
+    }
+    // Same side: the flip keeps its start and follows the target.
+    if (flip && side === flip.to.side) {
+      flip.to = to;
+      apply(current(now));
+      return true;
+    }
+    if (!flip && side === pose.side) {
+      pose = to;
+      apply(to);
+      return false;
+    }
+    // A new side starts a flip from the pose on screen.
+    const start = current(now);
+    flip = { from: start, to, t0: now };
+    pose = { ...to };
+    apply(start);
+    return true;
+  }
+  // Advances a running flip. Returns true while it still runs.
+  function step(now: number): boolean {
+    if (!flip) return false;
+    if (now - flip.t0 >= FLIP_MS) {
+      pose = flip.to;
+      flip = null;
+      apply(pose);
+      return false;
+    }
+    apply(current(now));
+    return true;
   }
   setTube(TUBE_REST_ALT, 0);
   let env: Texture | null = null;
   return {
-    root, glass, setTube,
+    root, glass, setTube, step, parts: { mount, polar, ra, dec, tube, worm, knob },
     laserMouth(out) {
       tube.updateWorldMatrix(true, false);
       return tube.localToWorld(out.copy(LASER_MOUTH));
