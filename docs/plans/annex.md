@@ -110,11 +110,11 @@ Tom rejected this set too (2026-11-16): "all are so trite". The title block is o
 
 Test sheet: `annexlab/sheet.html` shows every transition and layout, one card each, with Tom's verdict. Each card shows the toy's still; a click loads the lab with `?still=1`, which puts the still in place of the live toy (Tom, 2026-11-22: live toys crashed the sheet).
 
-Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
+Parked (Tom, 2026-11-22): a border that fits each toy. Round 3 tried it as S · Seam; Tom abandoned toy-specific transitions for now. The content comes after the layout pick.
 
 ### Round 3: S · Seam (2026-11-22)
 
-Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`, `&t=<id>` for the toy. Status: six seams built, Tom judges.
+Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`, `&t=<id>` for the toy. Status: parked. Tom (2026-11-22): "we're for now abandoning toy specific transitions". The lab keeps the six seams.
 
 - The border between toy and content comes from the toy's own material. Glass breaks as a star from one hit: nine spokes, an inner ring and an outer ring.
 - The pieces fall in beats, not in a slide. Each fallen piece takes the sheet's dark ground. Beats at `--p` 0.03, 0.2, 0.36, 0.54 and 0.72.

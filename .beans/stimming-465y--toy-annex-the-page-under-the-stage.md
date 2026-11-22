@@ -57,7 +57,7 @@ Lab: annexlab/round2.html, in the shell's own look, on the live Glass toy. Detai
 - [x] Tom rejected the second set too (2026-11-16): "all are so trite"
 - [x] Test sheet: annexlab/sheet.html
 - [ ] A title block Tom accepts (see Handoff)
-- [ ] A border between toy and content that fits each toy (Tom, 2026-11-16)
+- [-] A border between toy and content that fits each toy (Tom, 2026-11-16). Parked: Tom abandoned toy-specific transitions for now (2026-11-22)
 - [ ] The content, after the layout
 - [ ] Real stills for the picture blocks
 
@@ -194,7 +194,7 @@ Lab keys and URL:
 - [ ] Tom tests on `annexlab/sheet.html` and judges the floating hint
 - [ ] Ask Tom which parts belong in the title block, and for a reference
 - [ ] One new proposal for the title block, as a sequence in time on the intro's beats
-- [ ] A border between toy and content that fits each toy
+- [-] A border between toy and content that fits each toy. Parked (Tom, 2026-11-22)
 - [ ] The content kit and its file format, after the layout
 - [ ] Then the shell build below
 
@@ -208,8 +208,8 @@ Tom said yes to one idea: the toy breaks its own frame. The border between toy a
 - [x] Tom's verdict on Seam: "cool concept" (2026-11-22). He asked for five more on random toys, with Soup cauldron.
 - [x] Five more seams (`&t=<id>`): Lichtenberg burn (char with an ember rim), Crossing button (the sixteen-LED ring ticks out), Pop field (bubbles pop), Dijkstra (routes, then the grid by distance), Soup cauldron (goo rises). Checked at three sizes; clean console.
 - [x] The sheet shows each toy's still and loads a frame only on a click, with `?still=1`: no live toy on the sheet (Tom, 2026-11-22: live toys crashed the page on scroll).
-- [ ] Tom picks among the six, or asks for changes
-- [ ] Then a seam data shape for the shell, and the content
+- [x] Tom's verdict (2026-11-22): "we're for now abandoning toy specific transitions". The Seam is parked; the lab keeps the six.
+- [-] A seam data shape for the shell. Dropped with the Seam
 
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)
