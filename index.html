@@ -2504,6 +2504,14 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           </a>
         </li>
         <li>
+          <a class="toy" id="calmjar" href="calmjar/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="13.38 18.88 101.24 101.24" aria-hidden="true"></svg>
+            </span>
+            <span class="name">Calm jar</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="chocolate" href="chocolate/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -3975,6 +3983,96 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     };
     return { f, clamp, lerp, lerp2, poly, lg, rg, rgU, blur, light, body, clock, hash, hook };
   })();
+
+  // Calm jar: a squat glass jar, glitter in three layers at its foot (icon spike calmjar-1, A).
+  // The pointer stirs it: the glitter lifts, tumbles and flashes, then settles big flakes first.
+  {
+    const { f, clamp, lerp, poly, lg, blur, light, body, clock, hook } = kit;
+    const svg = $('calmjar').querySelector('svg'), u = 'calmjar-';
+    // The toy's tokens: clear glass, a tin lid, three kinds of glitter.
+    const GLASS = [[0, 'oklch(0.9 0.03 250)', 0.42], [0.3, 'oklch(0.7 0.03 260)', 0.1], [0.75, 'oklch(0.7 0.03 260)', 0.1], [1, 'oklch(0.9 0.03 250)', 0.36]];
+    const TIN = [[0, 'oklch(0.9 0.01 250)'], [1, 'oklch(0.55 0.015 250)']];
+    // The layers, big flakes at the foot: silver, holo, gold dust.
+    const BANDS = [['oklch(0.84 0.01 250)', 0.0, 0.12], ['oklch(0.72 0.16 330)', 0.12, 0.23], ['oklch(0.86 0.12 85)', 0.23, 0.31]];
+    const KIND = [{ size: 7, sides: 6, w: 0.07, settle: 0.06 }, { size: 5.8, sides: 6, w: 0.18, settle: 0.035 }, { size: 4.2, sides: 4, w: 0.27, settle: 0.016 }];
+    const NF = 18, BOT = 108, H = 56, HW = 30;
+    const JAR = 'M30 56Q30 46 42 45V40H86V45Q98 46 98 56V100Q98 112 86 112H42Q30 112 30 100Z';
+    const LID = 'M40 40V31Q40 27 44 27H84Q88 27 88 31V40Z';
+    const flakeD = n => poly(Array.from({ length: n }, (_, k) => { const a = (k / n) * Math.PI * 2 + Math.PI / n; return [Math.cos(a), Math.sin(a)]; }));
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.4)}
+        ${lg(`${u}glass`, GLASS, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}tin`, TIN)}
+        <clipPath id="${u}in"><path d="${JAR}"/></clipPath></defs>
+      <ellipse cx="64" cy="113" rx="40" ry="4" fill="oklch(0.05 0.01 280)" opacity="0.6" filter="url(#${u}b)"/>
+      <g clip-path="url(#${u}in)">
+        <rect x="28" y="42" width="72" height="72" fill="oklch(0.42 0.12 300)" opacity="0.6"/>
+        ${BANDS.map(([c, a, b], j) => `<path d="M28 ${f(BOT - H * b)}Q46 ${f(BOT - H * b - 1.6)} 64 ${f(BOT - H * b)}T100 ${f(BOT - H * b)}V${f(BOT - H * a + (j ? 0 : 6))}H28Z" fill="${c}"/>`).join('')}
+        <g>${Array.from({ length: NF }, (_, i) => `<path class="fl" d="${flakeD(KIND[i % 3].sides)}"/>`).join('')}</g>
+      </g>
+      <path d="${JAR}" fill="url(#${u}glass)"/>
+      <path d="${JAR}" fill="url(#${u}lit)"/>
+      <path d="M35 62Q35 54 40 52V96Q35 94 35 88Z" fill="#fff" opacity="0.26"/>
+      <path d="${JAR}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+      ${body(LID, u, 'tin')}
+      <path d="M40 33H88V35.4H40Z" fill="oklch(0.5 0.015 250)" opacity="0.5"/>`;
+    const els = [...svg.querySelectorAll('.fl')];
+    // Each flake has a home in its layer and an orbit in the swirl.
+    const F = Array.from({ length: NF }, (_, i) => {
+      const kind = i % 3, k = Math.floor(i / 3);
+      const rest = kind === 2 ? 0.5 + 0.45 * ((i * 0.29) % 1) : kind === 1 && (i * 0.43) % 1 > 0.5 ? 0.55 : 0;
+      return {
+        kind, i, rest, lift: rest,
+        home: [-0.8 + (k / 5) * 1.6 + (kind - 1) * 0.08, ((i * 0.37) % 1) * 1.6 - 0.8, KIND[kind].w],
+        rho: 0.3 + ((i * 0.53) % 1) * 0.55, th: i * 2.4, hw: 0.28 + ((i * 0.61) % 1) * 0.62, spin: i * 1.1,
+      };
+    });
+    const st = { E: 0, live: false, last: null, t: 0 };
+    const pos = fl => {
+      const o = [fl.rho * Math.cos(fl.th), fl.rho * Math.sin(fl.th), fl.hw + 0.04 * Math.sin(st.t * 2 + fl.i)];
+      return [0, 1, 2].map(j => lerp(fl.home[j], o[j], fl.lift));
+    };
+    // A flake flashes as its face turns to the light.
+    const colour = (fl) => {
+      const flash = Math.pow(Math.max(0, Math.cos(fl.spin)), 10);
+      if (fl.kind === 0) return `oklch(${f(0.82 + 0.17 * flash)} 0.01 250)`;
+      if (fl.kind === 1) return `oklch(${f(0.76 + 0.2 * flash)} 0.18 ${f((fl.i * 47 + fl.spin * 70) % 360)})`;
+      return `oklch(${f(0.82 + 0.15 * flash)} 0.12 85)`;
+    };
+    const draw = () => F.forEach((fl, j) => {
+      const [x, d, w] = pos(fl), k = 0.85 + 0.25 * (d + 1) / 2;
+      const kd = KIND[fl.kind], sx = Math.max(0.22, Math.abs(Math.cos(fl.spin)));
+      els[j].setAttribute('transform', `translate(${f(64 + x * HW)} ${f(BOT - w * H)}) rotate(${f((fl.spin * 40 + fl.i * 33) % 360)}) scale(${f(kd.size * k * sx)} ${f(kd.size * k)})`);
+      els[j].setAttribute('fill', colour(fl));
+      els[j].setAttribute('opacity', f(0.5 + 0.5 * Math.min(1, fl.lift * 3)));
+    });
+    // The pointer's speed stirs the jar; big flakes settle first, dust last.
+    const tick = clock(time => {
+      st.t = time;
+      st.E *= st.live ? 0.985 : 0.95;
+      let busy = st.E;
+      F.forEach(fl => {
+        const aim = Math.max(fl.rest, clamp(st.E * 1.6, 0, 1));
+        fl.lift += (aim - fl.lift) * (aim > fl.lift ? 0.12 : KIND[fl.kind].settle);
+        fl.th += (0.012 + 0.07 * st.E) * fl.lift;
+        fl.spin += (0.05 + 0.25 * st.E) * fl.lift;
+        busy += Math.abs(fl.lift - fl.rest);
+      });
+      draw();
+      // A settled jar stops its tick: an idle menu does no work.
+      if (!st.live && busy < 0.01) { F.forEach(fl => { fl.lift = fl.rest; }); st.E = 0; draw(); tick.stop(); }
+    });
+    draw();
+    const c = {
+      enter(p) { st.live = true; st.last = p; st.E = Math.max(st.E, 0.45); tick.start(); },
+      move(p) {
+        if (!p) return;
+        if (st.last) st.E = Math.min(1, st.E + Math.hypot(p[0] - st.last[0], p[1] - st.last[1]) * 0.012);
+        st.last = p;
+      },
+      leave() { st.live = false; st.last = null; tick.start(); },
+    };
+    // The demo stirs the jar in a slow circle.
+    hook('calmjar', c, { period: 2.4, at: a => [64 + 22 * Math.sin(a), 80 + 12 * Math.cos(a)] });
+  }
 
   // Pendulum wave: an isometric rail block; the bobs swing out of its side.
   // Bob k makes 8 + k swings in PEND_T, so the loop is seamless.

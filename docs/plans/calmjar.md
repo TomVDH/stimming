@@ -1,6 +1,6 @@
 # Calm jar (`calmjar`) implementation plan
 
-Status: active · Bean: `stimming-tvg4`
+Status: built as a Lab MVP on 2026-11-22, on Bar v3 (not Bar v2); the toy doc is `docs/toys/calmjar.md` · Bean: `stimming-tvg4`
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
