@@ -119,7 +119,7 @@ void waterTower(vec2 s, vec3 rd, float px) {
   vec2 ql = fallFrame(q, 0.22 * lean + 1.35 * down, screenAlong(P, dir), 7.0 * down);
   // The legs splay from the tank to the ground; the bracing is too fine to see from here.
   float k = 0.0, sx, u;
-  for (int i = 0; i < 2; i++) {
+  for (int i = ROLL0; i < 2; i++) {
     float sg = i == 0 ? -1.0 : 1.0;
     k = max(k, segCover(ql * m, vec2(5.5 * sg, 0.0) * m, vec2(3.8 * sg, 30.0) * m, 0.35 * m, px, sx, u));
   }
@@ -146,7 +146,7 @@ void billboard(vec2 s, vec3 rd, float px) {
   vec2 dir = length(st.yz) > 0.01 ? normalize(st.yz) : vec2(1.0, 0.0);
   vec2 ql = fallFrame(q, 1.3 * bend, screenAlong(P, dir), 0.0);
   float k = 0.0, sx, u;
-  for (int i = 0; i < 2; i++) k = max(k, segCover(ql * m, vec2(3.5 * float(2 * i - 1), 0.0) * m, vec2(3.5 * float(2 * i - 1), 9.0) * m, 0.18 * m, px, sx, u));
+  for (int i = ROLL0; i < 2; i++) k = max(k, segCover(ql * m, vec2(3.5 * float(2 * i - 1), 0.0) * m, vec2(3.5 * float(2 * i - 1), 9.0) * m, 0.18 * m, px, sx, u));
   put(plainHaze(paintLit(vec3(0.12, 0.12, 0.12), P, 0.5), rd, z), k, z);
   // The panel: eight strips; each goes at its own wind.
   float strip = floor((ql.x + 6.0) / 1.5);
@@ -166,7 +166,7 @@ void pivot(vec2 s, vec3 rd, float px) {
   if (abs(s.y - proj(C).y) > 8.0 * mc + 2.0 * px) return;
   vec2 ad = vec2(cos(PIVOT_ANG), sin(PIVOT_ANG)), nd = vec2(-ad.y, ad.x);
   vec3 steel = paintLit(vec3(0.38, 0.39, 0.4), C, 0.6);
-  for (int i = 0; i < SPANS; i++) {
+  for (int i = ROLL0; i < SPANS; i++) {
     float fi = float(i);
     vec2 a = PIVOTC + ad * SPAN * fi, b = PIVOTC + ad * SPAN * (fi + 1.0), mid = (a + b) * 0.5;
     vec2 pm = proj(vec3(mid.x, 0.0, mid.y));
@@ -181,14 +181,14 @@ void pivot(vec2 s, vec3 rd, float px) {
     vec3 A = vec3(a.x, 4.5 * hk, a.y), B = vec3(b.x + tw.x, 4.5 * hk, b.y + tw.y);
     k = max(k, segCover(s, proj(A), proj(B), 0.09 * m, px, sx, u));
     // The lower chord: a shallow arch under the pipe.
-    for (int j = 0; j < 4; j++) {
+    for (int j = ROLL0; j < 4; j++) {
       float u0 = float(j) / 4.0, u1 = float(j + 1) / 4.0;
       vec3 L0 = mix(A, B, u0) - vec3(0.0, 1.6 * hk * sin(3.14159 * u0), 0.0), L1 = mix(A, B, u1) - vec3(0.0, 1.6 * hk * sin(3.14159 * u1), 0.0);
       k = max(k, segCover(s, proj(L0), proj(L1), 0.04 * m, px, sx, u) * 0.8);
     }
     // The tower at the span's far end: an A-frame to the ground.
     vec3 T = vec3(b.x + tw.x, 0.0, b.y + tw.y);
-    for (int j = 0; j < 2; j++) {
+    for (int j = ROLL0; j < 2; j++) {
       vec3 F = T + vec3(nd.x, 0.0, nd.y) * (j == 0 ? -1.6 : 1.6) * (1.0 - flip * 0.6);
       k = max(k, segCover(s, proj(F), proj(B), 0.08 * m, px, sx, u));
     }
@@ -198,7 +198,7 @@ void pivot(vec2 s, vec3 rd, float px) {
 // The round bales: straw, 1.5 m across and 1.2 m long, lying on their sides.
 // Seen end-on a bale is a disc with its spiral; side-on a squarish drum with its wrap.
 void bales(vec2 s, vec3 rd, float px) {
-  for (int i = 0; i < ${BALES}; i++) {
+  for (int i = ROLL0; i < ${BALES}; i++) {
     vec4 a = uBale[i], b = uBaleB[i];
     if (b.x <= 0.0) continue;
     vec3 P = vec3(a.x, a.z + 0.75, a.y);
@@ -223,11 +223,17 @@ void bales(vec2 s, vec3 rd, float px) {
     put(plainHaze(paintLit(alb, P, lit), rd, z), k, z);
   }
 }
-// Every piece of infrastructure, laid into the objects' layers.
-void infra(vec2 s, vec3 rd, float px) {
+// Every piece of infrastructure, laid into the objects' layers, in two passes.
+// One program would not compile on D3D11; the passes keep this order.
+// The pivot, then the water tower.
+void infraTall(vec2 s, vec3 rd, float px) {
   if (s.y < -0.4 || s.y > 0.08) return;
   pivot(s, rd, px);
   waterTower(s, rd, px);
+}
+// The billboard, then the bales.
+void infraLow(vec2 s, vec3 rd, float px) {
+  if (s.y < -0.4 || s.y > 0.08) return;
   billboard(s, rd, px);
   bales(s, rd, px);
 }
