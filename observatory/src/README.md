@@ -36,7 +36,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `core/mount.ts` | The slit's offset for the hero's German mount: where the off-axis tube's line of sight leaves the dome; it fades out above 60° and stays within 12°; `slitAzFor`, `slitOffset` |
 | `core/sequence.ts` | The pick sequence's five shots; their timing from the shutter and the tube's lift, `startSeq`, `stepSeq`; the camera locks, `makeLocks`; the complex lights' level per phase, `lightLevel` |
 | `setup.ts` | The page shell call, the renderer, the scene, the camera, the stage; the fail line, `fail` and `bootFail`; the star catalog's early start, `starFile`; `onLeave` and `disposeTree` |
-| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the sunset glow, which the golden hour spreads wider and higher; the height haze in every fog chunk; `SKY_GLSL`, the sky colour the far ridges share |
+| `sky/haze.ts` | The night air: the sky shell with its faint horizon glow and the sunset glow, which the golden hour spreads wider and higher; the height haze in every fog chunk, which holds a faint cool moonlight at night so the valley mist shows; `SKY_GLSL`, the sky colour the far ridges share |
 | `post/bloom.ts` | Bloom with lens dirt and halation, copied from Railgun |
 | `post/grade.ts` | The grade: split tone, contrast, vignette, grain, copied from Railgun |
 | `post/chain.ts` | The post chain: render, bloom, grade, ACES output; `resizePost`, `renderPost` |
