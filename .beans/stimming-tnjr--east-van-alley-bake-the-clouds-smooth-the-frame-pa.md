@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-18T02:53:21Z
-updated_at: 2026-11-22T09:12:19Z
+updated_at: 2026-11-22T09:47:57Z
 parent: stimming-guw5
 ---
 
@@ -27,6 +27,6 @@ Carried over from stimming-2b59 (Tom, 2026-11-17).
 
 Tom (01:07), queued, one at a time:
 - [ ] Post settings in Dev: the Post group has six; ask Tom which to add
-- [ ] Rendering polish ideas for Tom
-- [ ] Redo the shoes (needs Tom's direction and a reference)
+- [x] Rendering polish ideas for Tom (listed; wire glints done in stimming-09z6)
+- [x] Redo the shoes (done in stimming-bnbi)
 - [ ] Splice case: the cable shows behind the near end, not through it (moved to stimming-bntl)
