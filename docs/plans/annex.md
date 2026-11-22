@@ -114,7 +114,7 @@ Open (Tom, 2026-11-16): the border between the toy and the content must fit each
 
 ### Round 3: S · Seam (2026-11-22)
 
-Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`. Status: built for Glass, Tom judges.
+Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`, `&t=<id>` for the toy. Status: six seams built, Tom judges.
 
 - The border between toy and content comes from the toy's own material. Glass breaks as a star from one hit: nine spokes, an inner ring and an outer ring.
 - The pieces fall in beats, not in a slide. Each fallen piece takes the sheet's dark ground. Beats at `--p` 0.03, 0.2, 0.36, 0.54 and 0.72.
@@ -128,7 +128,20 @@ Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`. 
 - The title block lands centred, in the intro's shape: the emblem over the name, then the lines.
 - The sheet stays hidden until the last piece falls. No straight edge shows.
 - Reduced motion: a plain scroll, no cracks.
-- A seam per toy is the next step if Tom keeps it: Oscilloscope its trace, Tornado alley a debris front.
+- Tom (2026-11-22): "cool concept". He asked for five more, on a random set of toys with Soup cauldron.
+
+Five more seams, `?d=s&t=<id>` (the lab switch lists them). A seam is a set of pieces, each with the beat it falls on.
+
+| Toy | Material | Beats |
+|---|---|---|
+| Lichtenberg burn | Discharge trees from seven points on the screen edge, toward the hit. | 1 the bolts; 2 the trunks char; 3 and 4 the char widens, with an ember rim in the accent. |
+| Crossing button | The ring of sixteen LEDs round the button. | 1 the ring and its dots; 2 to 4 the sectors tick out clockwise, each with its dot; 5 the button. |
+| Pop field | A hex sheet of bubbles. | 1 the bubbles show; 2 to 4 they pop from the edge in, with noise. |
+| Dijkstra | A street grid with a search from the hit. | 1 the routes from the four corners and the grid; 2 to 4 the blocks go dark by distance, farthest first. |
+| Soup cauldron | Goo blobs with a rim of broth. | 1 bubbles break the surface; 2 to 4 the soup rises from the bottom. |
+
+- The lab shows copy for Glass only. The other toys show the title block, Also try and the footer.
+- The Soup cauldron page belongs to another chat. The lab only frames it.
 
 ### The content kit
 

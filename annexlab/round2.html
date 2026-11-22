@@ -335,13 +335,31 @@ html.rm .ax-ring { rotate: none; }
    The pieces fall out on the beats, from the edge in. No straight edge shows. */
 .ax-seam { display: none; position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
 html.seam:not(.rm):not(.read) .ax-seam.on { display: block; }
-.seam-fill path { fill: none; }
+/* Each toy sets its ink and its line colour. */
+.ax-seam { --seam-ink: oklch(1 0 0 / 0.7); --seam-line: oklch(1 0 0 / 0.55); }
+.seam-fill .cell { fill: none; }
 /* A fallen piece takes the sheet's ground, so the landing has no seam. */
-.seam-fill path.gone { fill: var(--bg); stroke: var(--bg); stroke-width: 1; }
-.seam-line path { fill: none; stroke: oklch(1 0 0 / 0.55); stroke-width: 1.25; stroke-linejoin: miter; }
-.seam-line path.gone { display: none; }
-/* On each beat the live cracks show white and thick for two frames. */
-.ax-seam.flash .seam-line path { stroke: #fff; stroke-width: 3; }
+.seam-fill .cell.gone { fill: var(--bg); stroke: var(--bg); stroke-width: 1; }
+/* Char, ember and blob show only once their beat has passed. */
+.seam-fill :is(.char, .ember, .blob):not(.gone) { display: none; }
+.seam-fill :is(.char, .ember) { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.seam-fill .char { stroke: var(--bg); }
+.seam-fill .ember { stroke: var(--seam-ink); opacity: 0.85; }
+.seam-fill .blob { fill: var(--bg); }
+.seam-fill .blob.rim { fill: var(--seam-ink); }
+.seam-line path { fill: none; stroke: var(--seam-line); stroke-width: 1.25; stroke-linejoin: miter; }
+.seam-line .gone { display: none; }
+.seam-line :is(.route, .bolt, .bub) { stroke: var(--seam-ink); }
+.seam-line .route { stroke-width: 2.5; stroke-linejoin: round; }
+.seam-line .bolt { stroke-width: 1.5; stroke-linejoin: round; }
+.seam-line .led { fill: var(--seam-ink); stroke: none; }
+/* On each beat the live lines show white and thick for two frames. */
+.ax-seam.flash .seam-line path:not(.led) { stroke: #fff; stroke-width: 3; }
+.ax-seam.flash .seam-line .led { fill: #fff; }
+/* The lab holds copy for Glass only. Other toys show the title block. */
+html:not([data-toy="glass"]) :is(.ax-sec:not(#try), .ax-index) { display: none; }
+.lab-seg a { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; text-decoration: none; }
+.lab-seg a[aria-current="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 /* The sheet stays hidden until the last piece falls. */
 html.seam:not(.rm):not(.land) .ax-body { visibility: hidden; }
 /* The landing has the intro's shape: the emblem over the name, centred. */
@@ -395,10 +413,19 @@ html.rm * { transition: none !important; }
   <!-- The player: the live toy in a frame. The shell build has no frame. -->
   <div class="ax-scene" id="scene">
     <div class="ax-stage" id="stage">
-      <iframe id="toy" src="../glass/" title="Glass, the toy"></iframe>
+      <iframe id="toy" title="The toy"></iframe>
       <div class="ax-shade"></div>
     </div>
-    <svg class="ax-seam" id="seam" aria-hidden="true"><g class="seam-fill"></g><g class="seam-line"></g></svg>
+    <svg class="ax-seam" id="seam" aria-hidden="true">
+      <defs>
+        <!-- Goo: a blur, then a hard alpha step, so near blobs merge. -->
+        <filter id="goo" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
+          <feGaussianBlur stdDeviation="14"/>
+          <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"/>
+        </filter>
+      </defs>
+      <g class="seam-fill"></g><g class="seam-line"></g>
+    </svg>
   </div>
 
   <main class="ax-annex" id="annex" aria-labelledby="ax-name">
@@ -593,6 +620,8 @@ html.rm * { transition: none !important; }
       <button data-d="f" aria-pressed="false">F · Tide (parked)</button>
       <button data-d="g" aria-pressed="false">G · Lead figure (parked)</button>
     </div>
+    <p class="lab-h">Seam · toy</p>
+    <div class="lab-seg" id="lab-toys"></div>
     <p>Keys 1 to 4 switch the layout. The copy is a draft. In this lab the toy runs on under the sheet; the shell build stops it.</p>
     <p><a href="./">Round 1: wireframes</a></p>
   </div>
@@ -643,18 +672,77 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// The star: spokes from the hit, an inner ring and an outer ring.
-// Each spoke point: 0 inner ring, 2 outer ring, 5 far past the screen.
+// Path helpers: a closed polygon, an open line and a circle.
+const poly = pts => 'M' + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z';
+const line = pts => 'M' + pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L');
+const circle = (x, y, r) => `M${(x - r).toFixed(1)} ${y.toFixed(1)}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+
+// One seam per toy. A piece falls when the level reaches its k.
+// Types: cell (fills dark), mark (a line that goes), char (a dark stroke), blob (goo).
+// k 1 never falls; k 5 falls on the landing beat.
+const SEAMS = {
+  glass: { line: 'oklch(1 0 0 / 0.55)', build: seamGlass },
+  lichtenberg: { ink: 'oklch(0.8 0.15 55)', line: 'oklch(1 0 0 / 0)', build: seamBurn },
+  crossing: { ink: 'oklch(0.84 0.16 85)', line: 'oklch(1 0 0 / 0.3)', build: seamTicks },
+  pop: { line: 'oklch(1 0 0 / 0.5)', build: seamBubbles },
+  dijkstra: { ink: 'oklch(0.86 0.17 80)', line: 'oklch(0.86 0.17 80 / 0.22)', build: seamFlood },
+  cauldron: { ink: 'oklch(0.72 0.19 45)', line: 'oklch(1 0 0 / 0)', build: seamGoo },
+};
+const TOY = /^[a-z0-9]+$/.test(q.get('t') || '') ? q.get('t') : 'glass';
+html.dataset.toy = TOY;
+
 function buildSeam() {
   seamFill.textContent = seamLine.textContent = '';
   seamPieces = [];
   if (state.dir !== 's') return;
-  const r = rng(13), w = html.clientWidth, h = innerHeight;
+  const w = html.clientWidth, h = innerHeight;
   const b = document.querySelector('.ax-badge').getBoundingClientRect();
   // The hit is the emblem's centre at the landing beat.
-  const cx = b.left + b.width / 2, cy = b.top + b.height / 2 + scrollY - SEAM_LAND * travel;
-  const r1 = b.width * 0.8, r2 = r1 * 2.7, far = Math.hypot(w, h) * 1.5, n = 9;
-  const at = (a, d) => [cx + Math.cos(a) * d, cy + Math.sin(a) * d];
+  const c = { w, h, r: rng(13), r1: b.width * 0.8, far: Math.hypot(w, h) * 1.5 };
+  c.cx = b.left + b.width / 2;
+  c.cy = b.top + b.height / 2 + scrollY - SEAM_LAND * travel;
+  c.at = (a, d) => [c.cx + Math.cos(a) * d, c.cy + Math.sin(a) * d];
+  const kind = SEAMS[TOY] || SEAMS.glass;
+  seam.style.setProperty('--seam-ink', kind.ink || '');
+  seam.style.setProperty('--seam-line', kind.line || '');
+  const pieces = kind.build(c);
+  // The whole screen falls on the last beat, so no gap stays.
+  pieces.push({ k: 5, d: `M0 0H${w}V${h}H0Z`, edge: '' });
+  const ns = 'http://www.w3.org/2000/svg';
+  const make = (parent, tag, attrs, cls) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [a, v] of Object.entries(attrs)) el.setAttribute(a, v);
+    el.setAttribute('class', cls);
+    parent.append(el);
+    return el;
+  };
+  // The goo groups sit under the other fills.
+  const gooRim = make(seamFill, 'g', { filter: 'url(#goo)' }, 'goo');
+  const gooBody = make(seamFill, 'g', { filter: 'url(#goo)' }, 'goo');
+  for (const o of pieces) {
+    const type = o.type || 'cell';
+    o.els = [];
+    if (type === 'cell') {
+      o.els.push(make(seamFill, 'path', { d: o.d }, 'cell'));
+      if (o.edge !== '') o.els.push(make(seamLine, 'path', { d: o.edge || o.d }, 'edge'));
+    } else if (type === 'mark') {
+      o.els.push(make(seamLine, 'path', { d: o.d }, o.cls || 'edge'));
+    } else if (type === 'char') {
+      o.els.push(make(seamFill, 'path', { d: o.d, 'stroke-width': o.sw + o.glow }, 'ember'));
+      o.els.push(make(seamFill, 'path', { d: o.d, 'stroke-width': o.sw }, 'char'));
+    } else if (type === 'blob') {
+      o.els.push(make(gooRim, 'circle', { cx: o.x, cy: o.y, r: o.rad + 9 }, 'blob rim'));
+      o.els.push(make(gooBody, 'circle', { cx: o.x, cy: o.y, r: o.rad }, 'blob'));
+    }
+  }
+  seamPieces = pieces;
+  seamLevel = -1;
+}
+
+// Glass: a star from one hit, an inner ring and an outer ring.
+// Each spoke point: 0 inner ring, 2 outer ring, 5 far past the screen.
+function seamGlass({ r, r1, far, cx, cy, at }) {
+  const r2 = r1 * 2.7, n = 9;
   const angles = [...Array(n)].map((_, i) => (i + (r() - 0.5) * 0.5) / n * Math.PI * 2 + 0.3);
   const spokes = angles.map(a => [r1 * (0.85 + r() * 0.3), r1 * 1.9, r2 * (0.85 + r() * 0.3), r2 * 1.8, r2 * 3.2, far]
     .map((d, k) => at(k === 1 || k === 3 || k === 4 ? a + (r() - 0.5) * 0.16 : a, d)));
@@ -673,18 +761,143 @@ function buildSeam() {
     pieces.push({ k: i % 2 ? 3 : 2, pts: [s[2], s[3], s[4], s[5], t[5], t[4], t[3], t[2], m2] });
   }
   pieces.push({ k: 5, pts: inner });
-  const ns = 'http://www.w3.org/2000/svg';
-  for (const o of pieces) {
-    const d = 'M' + o.pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z';
-    o.fill = document.createElementNS(ns, 'path');
-    o.line = document.createElementNS(ns, 'path');
-    o.fill.setAttribute('d', d);
-    o.line.setAttribute('d', d);
-    seamFill.append(o.fill);
-    seamLine.append(o.line);
+  return pieces.map(o => ({ k: o.k, d: poly(o.pts) }));
+}
+
+// Lichtenberg burn: discharge trees burn in from the edges toward the hit.
+// The char widens on each beat, with an ember rim in the toy's accent.
+function seamBurn({ r, r1, w, h, cx, cy }) {
+  const stop = r1 * 2.3, step = Math.max(18, Math.min(w, h) / 32), trees = [];
+  // A branch keeps a heading and zigzags about it, so each step is a kink.
+  // A trunk turns toward the hit; a side branch drifts. Both fork.
+  const grow = (x, y, a, len, depth, goal) => {
+    const pts = [[x, y]];
+    for (let s = 0; s < len; s++) {
+      if (goal) {
+        const want = Math.atan2(cy - y, cx - x);
+        a += Math.atan2(Math.sin(want - a), Math.cos(want - a)) * 0.3;
+      } else a += (r() - 0.5) * 0.25;
+      const kink = a + (r() - 0.5) * 1.4, d = step * (0.5 + r() * 0.7);
+      x += Math.cos(kink) * d;
+      y += Math.sin(kink) * d;
+      pts.push([x, y]);
+      if (Math.hypot(cx - x, cy - y) < stop) break;
+      if (depth < 2 && r() < (depth ? 0.12 : 0.2)) {
+        grow(x, y, a + (r() < 0.5 ? -1 : 1) * (0.5 + r() * 0.5), Math.round(len * (0.12 + r() * 0.16)), depth + 1, false);
+      }
+    }
+    trees.push({ depth, pts });
+  };
+  const n = 7, perim = 2 * (w + h);
+  for (let i = 0; i < n; i++) {
+    // Each root sits on the screen edge, spread round the perimeter.
+    let t = ((i + 0.3 + r() * 0.4) / n) * perim, x, y;
+    if (t < w) { x = t; y = 0; } else if ((t -= w) < h) { x = w; y = t; } else if ((t -= h) < w) { x = w - t; y = h; } else { x = 0; y = h - (t - w); }
+    grow(x, y, Math.atan2(cy - y, cx - x), 200, 0, true);
   }
-  seamPieces = pieces;
-  seamLevel = -1;
+  const all = trees.map(b => line(b.pts)).join('');
+  const trunks = trees.filter(b => b.depth === 0).map(b => line(b.pts)).join('');
+  return [
+    // The bolts go once the char is wide; then the ember rim is the edge.
+    { type: 'mark', k: 3, d: all, cls: 'bolt' },
+    { type: 'char', k: 2, d: trunks, sw: r1 * 0.18, glow: r1 * 0.1 },
+    { type: 'char', k: 3, d: all, sw: r1 * 0.7, glow: r1 * 0.12 },
+    { type: 'char', k: 4, d: all, sw: r1 * 2, glow: r1 * 0.14 },
+  ];
+}
+
+// Crossing button: the ring of sixteen LEDs. Each tick knocks a sector out, clockwise.
+// The button in the middle goes last.
+function seamTicks({ r1, far, cx, cy, at }) {
+  const n = 16, pieces = [], led = Math.max(3, r1 * 0.05);
+  for (let i = 0; i < n; i++) {
+    const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2, a1 = a0 + Math.PI * 2 / n;
+    const arc = [0, 1, 2, 3, 4].map(s => at(a0 + (a1 - a0) * s / 4, r1));
+    const k = i < 5 ? 2 : i < 10 ? 3 : 4;
+    pieces.push({ k, d: poly([...arc, at(a1, far), at(a0, far)]) });
+    const [x, y] = at((a0 + a1) / 2, r1 * 1.45);
+    pieces.push({ type: 'mark', k, d: circle(x, y, led), cls: 'led' });
+  }
+  pieces.push({ k: 5, d: circle(cx, cy, r1) });
+  return pieces;
+}
+
+// Pop field: a hex sheet of bubbles. They pop from the edge in.
+function seamBubbles({ r, r1, w, h, cx, cy }) {
+  const p = Math.max(52, Math.min(84, w / 18)), rh = p * 0.866, hex = p / Math.sqrt(3), cells = [];
+  for (let j = -1; j * rh < h + rh; j++) {
+    for (let i = -1; i * p < w + p; i++) {
+      const x = i * p + (j % 2 ? p / 2 : 0), y = j * rh, d = Math.hypot(x - cx, y - cy);
+      cells.push({ x, y, d, s: d + r() * p * 1.6 });
+    }
+  }
+  const top = Math.max(...cells.map(o => o.s));
+  return cells.map(o => {
+    const f = o.s / top;
+    const k = o.d < r1 * 1.1 ? 5 : f > 0.66 ? 2 : f > 0.4 ? 3 : 4;
+    const pts = [0, 1, 2, 3, 4, 5].map(v => [o.x + Math.cos(Math.PI / 6 + v * Math.PI / 3) * hex, o.y + Math.sin(Math.PI / 6 + v * Math.PI / 3) * hex]);
+    return { k, d: poly(pts), edge: circle(o.x, o.y, p * 0.4) };
+  });
+}
+
+// Dijkstra: a street grid. The routes from the four corners snap on first.
+// Then the blocks go dark by search distance, farthest first.
+function seamFlood({ r, r1, w, h, cx, cy }) {
+  const s = Math.max(28, Math.min(48, w / 30)), cols = Math.ceil(w / s), rows = Math.ceil(h / s), n = cols * rows;
+  const cost = Float32Array.from({ length: n }, () => 1 + r() * 2.5);
+  const dist = new Float32Array(n).fill(Infinity), from = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+  const hc = Math.min(cols - 1, Math.max(0, Math.floor(cx / s))), hr = Math.min(rows - 1, Math.max(0, Math.floor(cy / s)));
+  dist[hr * cols + hc] = 0;
+  // A plain scan for the nearest open node: the grid is small.
+  for (let it = 0; it < n; it++) {
+    let u = -1;
+    for (let v = 0; v < n; v++) if (!done[v] && (u < 0 || dist[v] < dist[u])) u = v;
+    if (u < 0 || dist[u] === Infinity) break;
+    done[u] = 1;
+    const ux = u % cols, uy = (u / cols) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = ux + dx, y = uy + dy;
+      if (x < 0 || y < 0 || x >= cols || y >= rows) continue;
+      const v = y * cols + x, nd = dist[u] + cost[v];
+      if (nd < dist[v]) { dist[v] = nd; from[v] = u; }
+    }
+  }
+  let top = 0;
+  for (let v = 0; v < n; v++) if (dist[v] > top) top = dist[v];
+  const bands = { 2: '', 3: '', 4: '', 5: '' };
+  for (let v = 0; v < n; v++) {
+    const x = (v % cols) * s, y = ((v / cols) | 0) * s, f = dist[v] / top;
+    const k = Math.hypot(x + s / 2 - cx, y + s / 2 - cy) < r1 ? 5 : f > 0.62 ? 2 : f > 0.34 ? 3 : 4;
+    bands[k] += `M${x} ${y}h${s}v${s}h${-s}Z`;
+  }
+  const pieces = Object.entries(bands).map(([k, d]) => ({ k: Number(k), d }));
+  // Each route follows the search tree from a corner back to the hit.
+  for (const v0 of [0, cols - 1, (rows - 1) * cols, n - 1]) {
+    const pts = [];
+    for (let v = v0; v >= 0; v = from[v]) pts.push([(v % cols) * s + s / 2, ((v / cols) | 0) * s + s / 2]);
+    pieces.push({ type: 'mark', k: 5, d: line(pts), cls: 'route' });
+  }
+  return pieces;
+}
+
+// Soup cauldron: the soup boils up from the bottom in blobs, with a rim of broth.
+function seamGoo({ r, r1, w, h, cx, cy }) {
+  const g = Math.max(56, Math.min(104, w / 14)), pieces = [];
+  for (let y = -g / 2; y < h + g; y += g * 0.8) {
+    for (let x = -g / 2; x < w + g; x += g * 0.8) {
+      const bx = x + (r() - 0.5) * g * 0.5, by = y + (r() - 0.5) * g * 0.5, rad = g * (0.5 + r() * 0.3);
+      if (Math.hypot(bx - cx, by - cy) < r1 * 1.4 + rad) continue;
+      // The level rises from the bottom, with a wobble.
+      const f = (h - by) / h + (r() - 0.5) * 0.18;
+      pieces.push({ type: 'blob', k: f < 0.36 ? 2 : f < 0.68 ? 3 : 4, x: bx.toFixed(1), y: by.toFixed(1), rad });
+    }
+  }
+  // Beat 1: a few bubbles break the surface of the toy.
+  for (let i = 0; i < 9; i++) {
+    const x = r() * w, y = h * (0.6 + r() * 0.35);
+    pieces.push({ type: 'mark', k: 2, d: circle(x, y, 5 + r() * 12), cls: 'bub' });
+  }
+  return pieces;
 }
 // The level is the count of beats passed. A step up flashes the cracks.
 function seamTo(p) {
@@ -695,10 +908,7 @@ function seamTo(p) {
   const up = seamLevel >= 0 && level > seamLevel;
   seamLevel = level;
   seam.classList.toggle('on', level > 0);
-  seamPieces.forEach(o => {
-    o.fill.classList.toggle('gone', o.k <= level);
-    o.line.classList.toggle('gone', o.k <= level);
-  });
+  seamPieces.forEach(o => o.els.forEach(el => el.classList.toggle('gone', o.k <= level)));
   if (!up) return;
   seam.classList.add('flash');
   clearTimeout(seamFlash);
@@ -881,6 +1091,13 @@ addEventListener('pointermove', e => {
   html.style.setProperty('--mx', (e.clientX / innerWidth * 2 - 1).toFixed(3));
   html.style.setProperty('--my', (e.clientY / innerHeight * 2 - 1).toFixed(3));
 }, { passive: true });
+// ?t picks the toy for Seam. The frame and the emblem follow it.
+toy.src = `../${TOY}/`;
+const emblemUrl = `url(../shared/emblems/${TOY}.svg)`;
+html.style.setProperty('--ax-emblem', emblemUrl);
+badge.querySelector('.ax-emblem').style.setProperty('--e', emblemUrl);
+$('lab-toys').innerHTML = Object.keys(SEAMS)
+  .map(id => `<a href="?d=s&t=${id}" aria-current="${id === TOY}">${id}</a>`).join('');
 // A reload starts at the toy, or at ?y.
 history.scrollRestoration = 'manual';
 if (q.get('lab') === '1') tab.click();
@@ -891,12 +1108,21 @@ if (!Number.isNaN(y)) { scrollTo(0, y * travel); drive(); }
 // The title block and the facts read toys.json and series.json; the markup is the fallback.
 try {
   const [toys, series] = await Promise.all(['../toys.json', '../series.json'].map(u => fetch(u).then(r => r.json())));
-  const t = toys.glass, s = t && series[t.series];
+  const t = toys[TOY], s = t && series[t.series];
   if (t) {
     const fill = { name: t.name, nl: t.nl, ipa: t.ipa, tag: t.tag, tagNl: t.tagNl, number: t.number, no: 'No. ' + t.number, series: s && s.name };
-    document.querySelectorAll('[data-f]').forEach(el => { if (fill[el.dataset.f] != null) el.textContent = fill[el.dataset.f]; });
-    ring(`${t.name} · ${t.nl} · `);
-    if (t.accent && !t.accent.includes('gradient')) html.style.setProperty('--ax-accent', t.accent);
+    document.querySelectorAll('[data-f]').forEach(el => { el.textContent = fill[el.dataset.f] ?? ''; });
+    // A toy with no Dutch name, IPA or motto hides that line.
+    document.querySelector('.ax-nl').hidden = !t.nl;
+    document.querySelector('[data-f="ipa"]').parentElement.hidden = !t.ipa;
+    document.querySelector('.ax-tag').hidden = !t.tag;
+    document.querySelectorAll('.ax-back, .ax-play').forEach(b => { b.lastChild.textContent = b.classList.contains('ax-play') ? `Back to ${t.name}` : t.name; });
+    toy.title = `${t.name}, the toy`;
+    lip.setAttribute('aria-label', `Read about ${t.name}`);
+    ring(`${t.name} · ${t.nl || t.name} · `);
+    // A gradient accent gives its first stop.
+    const accent = t.accent && (t.accent.includes('gradient') ? (t.accent.match(/oklch\([^)]*\)/) || [])[0] : t.accent);
+    if (accent) html.style.setProperty('--ax-accent', accent);
     if (s) {
       html.style.setProperty('--ax-series', s.color);
       const { shotIcon } = await import('../shared/series/shots.js');
