@@ -132,7 +132,7 @@ export function buildComplex(): Complex {
   root.position.copy(SITE);
   // The main dome holds the big refractor.
   // The laser leaves it.
-  // It is the big Keck-style enclosure: 25 m across, 19.6 m to the top.
+  // It is the big Keck-style enclosure: 25 m across, 22.2 m to the top.
   const main = buildDome(3.64, true, true);
   main.root.position.set(-12, 0, -6);
   // One small dome stands alone to the east.

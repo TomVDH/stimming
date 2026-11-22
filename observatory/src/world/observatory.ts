@@ -169,7 +169,7 @@ export type Dome = {
 // Source: ESO's dome size chart on Wikimedia Commons, Keck pair measured.
 // A low fixed base carries a turning skirt and a near-hemisphere cap.
 // The opening is about 45% of the dome's width.
-export const BIG_BASE_H = 1.0, BIG_SKIRT_H = 1.1;
+export const BIG_BASE_H = 1.7, BIG_SKIRT_H = 1.1;
 export const BIG_SLIT_B = Math.asin(1.5 / DOME_R);
 // The base's radius, a little wider than the dome.
 export const BIG_WALL_R = DOME_R * 1.04;
