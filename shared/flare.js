@@ -18,6 +18,15 @@
 //   flWarm(col, warmth)                 pull a colour to orange or to cream
 // Each part returns a weight. Multiply it by a colour and a gain.
 // fxlab/ shows each toy's copy against these parts.
+//
+// The Buoy Business flare (Havoc lensflare.js and orbNode), in one call:
+//   c += flBuoy(uv, src, asp, col, size, vec3(orb, streak, ghost), FL_BB, warmth);
+// It adds light in linear colour, before bloom and tone mapping.
+// orb, streak and ghost are Buoy Business panel values times the master.
+// size widens the orb only. FL_BB holds thinness, length, orb fall, spread.
+// flLine(d, thin, len) is its streak; flOrb(d, fall) is its orb.
+// flRingTap() gives the nine depth taps for the toy's own cover test.
+// flarePass() is the same flare as a three.js ShaderPass, for many lights.
 
 export const FLARE = /* glsl */`
 const vec3 FL_VEIL = vec3(0.025, 0.08, 0.4);
@@ -77,7 +86,138 @@ vec3 flFlare(vec2 uv, vec2 src, float asp, vec3 col, float size, vec3 k) {
   add += mix(col, col * FL_ORANGE, 0.4) * flGhosts(uv, src, asp, size, 1.0, 1.0) * 0.12 * k.z;
   return add;
 }
+
+// Buoy Business: streak thinness, streak length, orb fall, ghost spread.
+// Orb fall 20 is the panel's Orb size 0.05.
+const vec4 FL_BB = vec4(209.0, 0.22, 20.0, 1.0);
+// Havoc's streak gain: its look's 1.4 times its pass's 4.
+const float FL_BB_STREAK = 5.6;
+// Havoc's ghost gain: its look's 2.2 times its pass's 1.5.
+const float FL_BB_GHOST = 3.3;
+// The depth ring's radius, in frame heights.
+const float FL_RING = 0.012;
+
+// The orb: one soft glow, squashed sideways. A low fall is a wide orb.
+float flOrb(vec2 d, float fall) {
+  return exp(-length(vec2(d.x * 0.6, d.y)) * fall);
+}
+// The thin streak: a bright line in a soft sheath, tapered over len.
+float flLine(vec2 d, float thin, float len) {
+  float ay = abs(d.y);
+  return (exp(-ay * thin) + 0.3 * exp(-ay * thin * 0.08)) * exp(-abs(d.x) / len);
+}
+// Depth tap k of nine: 0 is the light, 1 to 8 a ring round it.
+// The toy counts the taps that see the light; cover is that share.
+vec2 flRingTap(vec2 src, float asp, int k) {
+  if (k == 0) return src;
+  float a = float(k - 1) * 0.7853982;
+  return clamp(src + vec2(cos(a), sin(a)) * FL_RING / vec2(asp, 1.0), 0.0, 1.0);
+}
+// The Buoy Business flare. k holds the orb, streak and ghost strengths.
+// look is FL_BB, or the toy's own four values in that order.
+// The orb keeps the light's colour; streak and ghosts stay warm.
+vec3 flBuoy(vec2 uv, vec2 src, float asp, vec3 col, float size, vec3 k, vec4 look, float warmth) {
+  vec2 d = flOffset(uv, src, asp, 1.0);
+  vec3 w = flWarm(col, warmth);
+  vec3 add = col * flOrb(d, look.z / size) * k.x;
+  add += w * flLine(d, look.x, look.y) * FL_BB_STREAK * k.y;
+  add += w * flGhosts(uv, src, asp, 1.0, look.w, 0.0) * FL_BB_GHOST * k.z;
+  return add;
+}
 `;
+
+// Buoy Business's tuned values (Havoc lab/ocean/panel-schema.js).
+// master multiplies every lamp. reach is the fade distance in metres.
+// halo is the lamp halo's night opacity; lamp strengths scale by it too.
+// Each lamp holds its orb, streak and ghost strengths.
+// The sun takes no halo, a gain over a bright sky, and a wide orb.
+export const FLARE_BUOY = Object.freeze({
+  thin: 209, length: 0.22, orbSize: 0.05, master: 3, reach: 370, halo: 0.34,
+  searchlight: Object.freeze({ orb: 2, streak: 0.69, ghost: 0.81 }),
+  nav: Object.freeze({ orb: 0.37, streak: 0, ghost: 0 }),
+  buoy: Object.freeze({ orb: 0.4, streak: 0.06, ghost: 0 }),
+  sun: Object.freeze({ orb: 0.5, streak: 0.4, ghost: 0.3, gain: 6, size: 2.5 }),
+});
+
+/**
+ * Distance fade: bold up close, faint far off.
+ * @param {number} dist Metres from the camera to the light.
+ * @param {number} [reach] Fade distance in metres.
+ * @returns {number} 0 to 1.
+ */
+export function flareFade(dist, reach = FLARE_BUOY.reach) {
+  return Math.exp(-dist / Math.max(5, reach));
+}
+
+/**
+ * Edge fade for a light near the frame edge, as Buoy Business does it.
+ * @param {number} u Frame place, 0 to 1.
+ * @param {number} v Frame place, 0 to 1.
+ * @returns {number} 1 well inside the frame, 0 past 10 % outside.
+ */
+export function flareEdge(u, v) {
+  const e = Math.max(Math.abs(u * 2 - 1), Math.abs(v * 2 - 1));
+  const t = Math.min(1, Math.max(0, (e - 1.2) / (0.95 - 1.2)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Slots for Buoy Business flares, as flat arrays for vec4 uniform arrays.
+ * pos holds u, v, size, spread. k holds orb, streak, ghost, warmth.
+ * col holds r, g, b and 0.
+ * @param {number} n Slot count.
+ */
+export function buoySlots(n) {
+  const pos = new Float32Array(n * 4), k = new Float32Array(n * 4), col = new Float32Array(n * 4);
+  return {
+    n, pos, k, col, used: 0,
+    clear() { pos.fill(0); k.fill(0); col.fill(0); this.used = 0; },
+    /**
+     * Returns false when every slot is taken.
+     * @param {number} u @param {number} v
+     * @param {ArrayLike<number>} rgb Light colour, linear.
+     * @param {{orb?: number, streak?: number, ghost?: number, size?: number, spread?: number, warmth?: number}} s
+     */
+    add(u, v, rgb, { orb = 0, streak = 0, ghost = 0, size = 1, spread = 1, warmth = 0 } = {}) {
+      if (this.used >= n) return false;
+      const i = this.used++ * 4;
+      pos[i] = u; pos[i + 1] = v; pos[i + 2] = size; pos[i + 3] = spread;
+      k[i] = orb; k[i + 1] = streak; k[i + 2] = ghost; k[i + 3] = warmth;
+      col[i] = rgb[0]; col[i + 1] = rgb[1]; col[i + 2] = rgb[2]; col[i + 3] = 0;
+      return true;
+    },
+  };
+}
+
+/**
+ * The Buoy Business flare as a three.js pass: give it to `new ShaderPass()`.
+ * Run it before bloom. It adds light; it does not screen.
+ * The pass reads the slot arrays live: fill them each frame.
+ * A ShaderPass keeps typed arrays by reference, so the toy's slots drive it.
+ * @param {{ slots: ReturnType<typeof buoySlots>, look?: number[] }} o
+ * look is thinness, length, orb fall, as FL_BB.
+ */
+export function flarePass({ slots, look = [FLARE_BUOY.thin, FLARE_BUOY.length, 1 / FLARE_BUOY.orbSize] }) {
+  const n = slots.n;
+  return {
+    uniforms: {
+      tDiffuse: { value: null }, uAsp: { value: 1 }, uLook: { value: look },
+      uFP: { value: slots.pos }, uFK: { value: slots.k }, uFC: { value: slots.col },
+    },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D tDiffuse; uniform float uAsp; uniform vec3 uLook;
+uniform vec4 uFP[${n}], uFK[${n}], uFC[${n}]; varying vec2 vUv;
+${FLARE}
+void main() {
+  vec3 c = texture(tDiffuse, vUv).rgb;
+  for (int i = 0; i < ${n}; i++) {
+    if (uFK[i].x + uFK[i].y + uFK[i].z <= 0.0) continue;
+    c += flBuoy(vUv, uFP[i].xy, uAsp, uFC[i].rgb, uFP[i].z, uFK[i].xyz, vec4(uLook, uFP[i].w), uFK[i].w);
+  }
+  gl_FragColor = vec4(c, 1.0);
+}`,
+  };
+}
 
 // Slots for several lights, as two flat arrays for vec4 uniform arrays.
 // pos holds u, v, gain, size. col holds r, g, b and the streak share.
