@@ -40,7 +40,7 @@ const act = { hour() {}, now() {}, car() {}, scatter() {}, relight() {}, repaint
 // Dev tuning: the sun's bearing and the shadow darkness.
 const look = { sunAz: 0, shade: 0.4 };
 // Dev post: tone map (1 AgX, 0 ACES), film, contrast, exposure, grain, vignette, bloom.
-const grade = { tone: 1, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28, bloom: 0.4 };
+const grade = { tone: 0, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28, bloom: 0.4 };
 const ui = initPage({ id: 'wires', signal: true, bar: {
   slider: { label: 'Time', min: 0, max: 24, step: 0.05, value: hour, onInput: v => act.hour(v) },
   actions: [
@@ -55,7 +55,7 @@ const ui = initPage({ id: 'wires', signal: true, bar: {
     { type: 'slider', id: 'sunaz', group: 'Light', label: 'Sun bearing', min: -180, max: 180, step: 1, value: 0, persist: true, onInput: v => { look.sunAz = v; act.relight(); } },
     // Less sky fill makes the unlit sides and cast shadows darker.
     { type: 'slider', id: 'shade', group: 'Light', label: 'Shadow darkness', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { look.shade = v; act.relight(); } },
-    { type: 'choice', id: 'tone', group: 'Post', label: 'Tone map', display: 'stepper', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }], onPick: v => { grade.tone = v === 'aces' ? 0 : 1; act.repaint(); } },
+    { type: 'choice', id: 'tone', group: 'Post', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }], onPick: v => { grade.tone = v === 'aces' ? 0 : 1; act.repaint(); } },
     // The film look: a Portra 400 grade over the tone map.
     { type: 'slider', id: 'film', group: 'Post', label: 'Film look', min: 0, max: 1, step: 0.01, value: 1, persist: true, onInput: v => { grade.film = v; act.repaint(); } },
     { type: 'slider', id: 'contrast', group: 'Post', label: 'Contrast', min: 0, max: 1, step: 0.01, value: 0.55, persist: true, onInput: v => { grade.contrast = v; act.repaint(); } },
