@@ -65,12 +65,21 @@ ${PRECIP}
 ${GLOW}`;
 // A layer pass: one scene function writes each layer, premultiplied.
 // The runner blends the passes in order, so each one lays over the last.
+// The program has one output; the runner draws it once per layer, and uLay names the layer.
+// D3D11 compiles a program with several outputs again at its first draw, on the GPU's one thread.
 const passFS = (scene, fn, n) => {
-  const outs = Array.from({ length: n }, (_, k) => `layout(location = ${k}) out vec4 outL${k};\n`).join('');
-  const args = Array.from({ length: n }, (_, k) => `outL${k}`).join(', ');
-  return pruneGLSL('#version 300 es\nprecision highp float;\n' + outs + ENV_UNIFORMS + BUNDLES + `
+  const vars = Array.from({ length: n }, (_, k) => `l${k}`);
+  const pick = vars.slice(0, -1).reduceRight((rest, v, k) => `uLay == ${k} ? ${v} : ${rest}`, vars[n - 1]);
+  return pruneGLSL('#version 300 es\nprecision highp float;\nout vec4 outL;\nuniform int uLay;\n' + ENV_UNIFORMS + BUNDLES + `
 ${scene}
-void main() { ${fn}(gl_FragCoord.xy / uRes, ${args}); }`);
+void main() { vec4 ${vars.join(', ')}; ${fn}(gl_FragCoord.xy / uRes, ${vars.join(', ')}); outL = ${pick}; }`);
+};
+// A pass is a function name, or { fn, layers }: the layers it fills, by sampler name.
+// A pass that names its layers skips the draws for the others.
+/** @param {string | { fn: string, layers?: string[] }} pass @param {string[]} layers */
+const passOf = (pass, layers) => {
+  const { fn, layers: own = layers } = typeof pass === 'string' ? { fn: pass } : pass;
+  return { fn, ks: own.map(name => layers.indexOf(name)).filter(k => k >= 0) };
 };
 // The scene pass: the toy's scene, then rain or snow in the air.
 const sceneFS = scene => HEAD + ENV_UNIFORMS + BUNDLES + `
@@ -186,6 +195,7 @@ void main() {
 //             void fn(vec2 uv, out vec4 a, out vec4 b), one out per layer, premultiplied.
 //             Each pass is its own program, so a large scene compiles in parts.
 //             With passes, each program keeps only the functions it calls.
+//             A pass may be { fn, layers: ['tLayA'] }: it then draws only those layers.
 /**
  * The options for environment(); the list above gives each meaning.
  * @typedef {object} EnvOptions
@@ -203,7 +213,7 @@ void main() {
  * @property {number} [maxDpr]
  * @property {number} [budget]
  * @property {string[]} [layers] Sampler names for the passes' layers.
- * @property {string[]} [passes] Scene functions that fill the layers, in draw order.
+ * @property {(string | { fn: string, layers?: string[] })[]} [passes] Scene functions that fill the layers, in draw order.
  */
 /**
  * Runs one raw WebGL2 environment scene with every shared bundle wired in.
@@ -243,7 +253,7 @@ function envContext(canvas) {
 /** @param {WebGL2RenderingContext} gl @param {EnvOptions} options */
 function startPrograms(gl, { scene, glass = GLASS_MOD, pane = {}, layers = [], passes = [] }) {
   const sceneSrc = passes.length ? pruneGLSL(sceneFS(scene)) : sceneFS(scene);
-  const passSrc = passes.map(fn => passFS(scene, fn, layers.length));
+  const passSrc = passes.map(pass => passFS(scene, passOf(pass, layers).fn, layers.length));
   return [sceneSrc, DOWN_FS, BOK_FS, paneFS(glass, pane.head), FINAL_FS, ...passSrc].map(fs => {
     const p = gl.createProgram(), sh = [];
     for (const [type, src] of /** @type {[number, string][]} */ ([[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]])) {
@@ -293,22 +303,25 @@ function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, ac
   }
   const rtScene = target(), rt4 = target(), rt8 = target(), rtBok = target(), rtPane = target();
   const [progScene, progDown, progBok, progPane, progFinal, ...progPass] = progs;
-  // The passes' layers: one framebuffer, one texture per layer.
+  // The passes' layers: one texture and one framebuffer per layer.
   const lay = layers.length ? layerTargets() : null;
+  // Each pass's program and the layers it fills.
+  const passList = passes.map((pass, i) => ({ ...passOf(pass, layers), pr: progPass[i] }));
   function layerTargets() {
-    const fbo = gl.createFramebuffer(), texs = [];
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    const fbos = [], texs = [];
     for (let k = 0; k < layers.length; k++) {
       const tex = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tex);
       for (const [p, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, p, v);
       gl.texImage2D(gl.TEXTURE_2D, 0, hdr ? gl.RGBA16F : gl.RGBA8, 1, 1, 0, gl.RGBA, hdr ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + k, gl.TEXTURE_2D, tex, 0);
+      const fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      fbos.push(fbo);
       texs.push(tex);
     }
-    gl.drawBuffers(layers.map((_, k) => gl.COLOR_ATTACHMENT0 + k));
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const t = { fbo, texs, w: 0, h: 0, size(w, h) {
+    const t = { fbos, texs, w: 0, h: 0, size(w, h) {
       if (t.w === w && t.h === h) return;
       t.w = w; t.h = h;
       for (const tex of texs) {
@@ -447,15 +460,22 @@ function runner(canvas, gl, { uniforms = {}, textures = {}, animated = false, ac
     // Their units follow the pictures; units 0 and 1 belong to the runner.
     const layUnit = 4 + pics.length;
     if (lay) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, lay.fbo);
       gl.viewport(0, 0, w, h);
       gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      for (const fbo of lay.fbos) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-      for (const pr of progPass) {
+      // Each pass draws once per layer it fills; each layer takes the passes in order.
+      for (const { pr, ks } of passList) {
         sceneParts(pr);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        for (const k of ks) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, lay.fbos[k]);
+          gl.uniform1i(pr.loc('uLay'), k);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
       }
       gl.disable(gl.BLEND);
     }

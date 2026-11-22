@@ -1484,6 +1484,8 @@ const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // A GPU reset shows as a failure, during the compile or later.
 canvas.addEventListener('webglcontextlost', e => { watch.fail('the GPU reset (WebGL context lost)'); e.preventDefault(); });
+// An object pass fills the layers behind and in front of the funnels.
+const OBJ = fn => ({ fn, layers: ['tLayB', 'tLayF'] });
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
 const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farT: 0, farDur: 0 };
 // The load line: the scene link and the noise volume; the first frame ends it.
@@ -1499,7 +1501,14 @@ try {
     // The scene compiles in parts: one program per pass, then the composite.
     layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
     // On Windows the vehicles' passes stay out: see CARS.
-    passes: ['passGround', 'passStorm', 'passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires', 'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads', 'passCarLamps', 'passCarsFar', 'passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'].filter(p => CARS || !/^passCar/.test(p)),
+    // Each pass names the layers it fills: the runner draws it once for each.
+    passes: [
+      { fn: 'passGround', layers: ['tLayX'] }, { fn: 'passStorm', layers: ['tLayX'] },
+      ...['passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires',
+        'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads'].map(OBJ),
+      { fn: 'passCarLamps', layers: ['tLayG'] }, OBJ('passCarsFar'),
+      ...['passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'].map(OBJ),
+    ].filter(p => CARS || !/^passCar/.test(p.fn)),
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,

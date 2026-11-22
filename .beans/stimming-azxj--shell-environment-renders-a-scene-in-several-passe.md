@@ -16,7 +16,7 @@ Tornado alley's one scene shader does not compile on Windows (stimming-kg00). Th
 - [ ] Vehicles under 15 s: moved to meshes (Tom, 2026-11-22), see the mesh bean
 - [ ] Funnel program under 15 s
 - [x] Edge on D3D11 reaches the first frame: 32 s in the app pane, vehicles off on Windows
-- [ ] No freeze after it: the funnel's link stalls the tab about 2 min
+- [x] No freeze after it: one output per program, so no second compile at the first draw
 - [x] Same frame on ANGLE GL, before and after (`tools/fxc/same.mjs`)
 - [ ] /code-review, then the PR
 
@@ -119,6 +119,13 @@ Every layer pass has four outputs, so every pass compiles twice, and the second 
 Binding a four-target framebuffer during the link does not help (12.2 s link, 12.7 s draw).
 
 Fix: one output per pass program. The runner draws a pass once per layer it fills (`uLay`); a pass may name its layers.
-This needs an edit in `shared/environment.js` (waiting for Tom's go).
+Tom's go for the `shared/environment.js` edit: 2026-11-22.
 
 The wheat was black on the branch: `skDusk()` returned NaN at the anti-sun direction (stimming-3l13, fixed).
+
+## Live check three, 2026-11-22 (app pane, ANGLE D3D11, cold cache)
+
+Each pass program has one output; the runner draws an object pass twice (behind, front), ground and storm once, lamps once.
+First frame at 25 s. A GL call answers in 0 to 2 ms at 32, 45 and 67 s: no freeze. Console clean.
+Warm load (program cache): first frame at 1 s.
+Same frame on headless ANGLE GL: 13 px of 938,000 differ, the far vehicles' masts, at most 23/255.
