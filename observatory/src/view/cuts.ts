@@ -7,6 +7,7 @@ import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift
 import type { Phase } from '../core/machine.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
+import { azDelta } from '../core/dome.ts';
 import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
@@ -62,6 +63,9 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // A portrait frame aims at the dew shield.
   roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.4], tall: [0.72, 0, 0.3], aperture: 0.01 },
 };
+// The edge shot locks up to this many degrees ahead of the slit.
+// The slit then turns through the frame, not out of it.
+const EDGE_LEAD = 4.5;
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
@@ -263,7 +267,8 @@ function showBars(on: boolean, opacity = 1): void {
 // The loop hands the cuts the tube and its lift each frame.
 // restAlt: the altitude the tube lifts to.
 // shutter: the shutter's travel, 1 when open.
-export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number };
+// cupAz and cupGoal: the cupola's azimuth and the azimuth it turns to.
+export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number; cupAz: number; cupGoal: number };
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
 // mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
@@ -272,7 +277,7 @@ let redraw: () => void = () => {};
 let mode: 'off' | 'cuts' | 'dip' | 'wait' | 'still' | 'fade' = 'off';
 let seq: Seq = startSeq('open', { altLeft: 0, altEta: 0 });
 // The tube as the loop last reported it.
-let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0 };
+let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0, cupAz: 0, cupGoal: 0 };
 let stillT = 0, fadeT = 0, grab = false;
 // The time in the dip.
 // dipWide is true once the black hides the change to the wide shot.
@@ -287,7 +292,12 @@ let lastShot: Shot = 'glass';
 // The cupola can turn after the pick.
 // So each cut frames the slit where it stands at the cut.
 // The aspect is fixed then too: a resize keeps the aim and the lens.
-const locks = makeLocks(cut => place(cut, slitNow(), filmAspect(camera.aspect)));
+const locks = makeLocks(cut => place(cut, slitNow() + (cut.shot === 'edge' ? edgeLead() : 0), filmAspect(camera.aspect)));
+// The edge lock's lead: half the turn to come, toward the star.
+function edgeLead(): number {
+  const d = azDelta(view.cupAz, view.cupGoal);
+  return Math.sign(d) * Math.min(Math.abs(d) / 2, EDGE_LEAD);
+}
 
 // The hero model shows in the close shots only.
 // The wide shot keeps the light model, so nothing changes there.

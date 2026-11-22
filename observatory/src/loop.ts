@@ -117,6 +117,7 @@ const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LO
 const liftView = () => ({
   altLeft: machine.altLeft(), altEta: machine.altEta(), tubeAlt: machine.tubeAlt, tubeAz: machine.tubeAz,
   restAlt: machine.target ? targetPos(machine.target).alt : machine.tubeAlt, shutter: machine.shutter01,
+  cupAz: machine.cupolaAz, cupGoal: machine.target ? targetPos(machine.target).az : machine.cupolaAz,
 });
 const skyMoving = () => clock.easing() || clock.speed > 1;
 
