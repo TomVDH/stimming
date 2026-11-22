@@ -1,6 +1,7 @@
 // The heap layer: one raymarched shell of heaps, after Window seat's deck.
 // The ray finds each heap at its true distance, so size and perspective are true.
 // The host declares uVol, uCloudC, uLayerCut, uLayerEdge, uLayerWind, uSunD, layerSun(P, h) and layerSky().
+// The host pastes CLOUDS (shared/clouds.js) first, for clPhase.
 
 // The shell, in metres over the curved ground.
 const float LY_LO = 1600.0, LY_HI = 3900.0;
@@ -16,9 +17,6 @@ float lyShell(vec3 ro, vec3 rd, float H) {
 }
 // Height over the curved ground at p: the ground falls away as d squared over 2R.
 float lyH(vec3 ro, vec3 p) { vec2 d = p.xz - ro.xz; return p.y + dot(d, d) / (2.0 * LY_R); }
-float lyHG(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
-// A strong forward lobe for the silver lining, a soft back lobe.
-float lyPhase(float mu) { return mix(lyHG(mu, 0.72), lyHG(mu, -0.2), 0.35); }
 // The last sample's shape terms, for the crease light.
 float gLySh = 0.0, gLyA = 1.0, gLyFb = 0.0;
 // Density at p and height h, from 0 to 1.
@@ -78,7 +76,7 @@ vec4 lyMarch(vec3 ro, vec3 rd, float tEnd) {
   // Plain random jitter: an even pattern shows as a hatch at reduced resolution.
   float t = t0 + ds * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
   vec3 L = uSunD;
-  float phase = lyPhase(dot(rd, L)) + 1.5;
+  float phase = clPhase(dot(rd, L)) + 1.5;
   vec3 col = vec3(0.0), sky = layerSky();
   float Tc = 1.0;
   bool inside = false;
