@@ -84,8 +84,6 @@ const filmAspect = (aspect: number): number => Math.max(aspect, FILM);
 // The render lens that puts a film lens of fov degrees in the band.
 const renderFov = (fov: number, aspect: number): number =>
   2 * Math.atan(Math.tan(fov * DEG / 2) / band(aspect)) / DEG;
-// The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
-const BEAM_CLOSE = 0.1;
 
 const ease = (k: number): number => k * k * (3 - 2 * k);
 
@@ -251,7 +249,8 @@ function black(k: number): void {
   dip.style.opacity = String(k);
 }
 
-function beam(k: number): void { laser.mesh.scale.x = laser.mesh.scale.z = k; }
+// The cuts hide the beam; the wide shot shows it.
+function beam(on: boolean): void { laser.mesh.visible = on; }
 
 // The bars follow the stage's aspect, so a resize keeps the film frame.
 function showBars(on: boolean, opacity = 1): void {
@@ -336,7 +335,7 @@ function toWide(): void {
   showBars(false);
   black(0);
   still.style.display = 'none';
-  beam(1);
+  beam(true);
   applyCamera(camera.aspect);
 }
 
@@ -349,7 +348,7 @@ function stepDip(dt: number): void {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
     showBars(false);
-    beam(1);
+    beam(true);
     applyCamera(camera.aspect);
     // This frame shows full black.
     black(1);
@@ -482,12 +481,12 @@ export const cuts = {
     // The first shot fades up from the black.
     // The camera and the hero swapped under it.
     if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
-    beam(BEAM_CLOSE);
+    beam(false);
     showBars(true);
   },
   // QA: keeps the hero model in outside the cuts, for stills.
-  // The beam thins as in the close shots.
-  hold(on: boolean): void { held = on; beam(on ? BEAM_CLOSE : 1); },
+  // The beam hides as in the close shots.
+  hold(on: boolean): void { held = on; beam(!on); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     if (!grab) return;
@@ -497,7 +496,7 @@ export const cuts = {
     still.getContext('2d')!.drawImage(c, 0, 0);
     still.style.opacity = '1';
     still.style.display = 'block';
-    beam(1);
+    beam(true);
     applyCamera(camera.aspect);
   },
 };

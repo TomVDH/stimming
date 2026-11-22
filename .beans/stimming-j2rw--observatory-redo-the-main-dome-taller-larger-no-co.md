@@ -3,8 +3,9 @@
 title: 'Observatory: redo the main dome, taller, larger, no cobblestone drum'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-22T09:43:50Z
-updated_at: 2026-11-22T09:43:50Z
+updated_at: 2026-11-22T11:14:03Z
 parent: stimming-wqq9
 ---
 
@@ -24,3 +25,6 @@ Redo the main dome of the observatory in observatory/src/world/observatory.ts an
 
 DOME_R stays 3.3 because core/mount.ts and view/cuts.ts copy it.
 The size grows through the main dome's scale (1.5 to 1.7) and a lower DRUM_H.
+
+
+- [x] The cuts hide the laser beam (Tom, 2026-11-22); the wide shot keeps it
