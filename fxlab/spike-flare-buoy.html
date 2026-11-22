@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Flare sheet</title>
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+  :root { color-scheme: dark; --bg: #0c0d10; --ink: #e8e6e1; --dim: #8d8a84; --line: #24262c; --ok: #8fd18f; --warn: #e3b25c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Gabarito, system-ui, sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+  p.lead { color: var(--dim); margin: 0 0 20px; max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: 150px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+  .head { font-weight: 600; padding: 4px 0; }
+  .head small { display: block; color: var(--dim); font-weight: 400; }
+  .row { color: var(--dim); padding-top: 6px; }
+  .row b { color: var(--ink); display: block; font-weight: 600; }
+  canvas { width: 100%; aspect-ratio: 16 / 9; display: block; border: 1px solid var(--line); border-radius: 4px; background: #000; }
+  .diff { font: 12px/1.4 'Iosevka Term Slab', ui-monospace, monospace; color: var(--dim); margin-top: 4px; }
+  .diff.ok { color: var(--ok); } .diff.bad { color: var(--warn); }
+  .notes { margin-top: 28px; color: var(--dim); max-width: 80ch; }
+  .notes li { margin: 4px 0; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } .row { padding-top: 16px; } .head:not(:first-child) { display: none; } canvas::before { content: attr(data-col); } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lens flare: Buoy Business, shared now, shared new</h1>
+  <p class="lead">One backdrop per row, the same light in every column. Each column adds its flare in linear light; one ACES curve maps all three.
+    Column A is Havoc's flare code written out line by line. Column C is the new <code>flBuoy()</code> in <code>shared/flare.js</code>; the line under it gives its largest difference from A.</p>
+  <div class="grid" id="grid">
+    <div></div>
+    <div class="head">A · Buoy Business<small>Havoc lensflare.js and orbNode, its panel values</small></div>
+    <div class="head">B · shared now<small>flFlare(), as the runner calls it</small></div>
+    <div class="head">C · shared new<small>flBuoy(), Buoy Business values</small></div>
+  </div>
+  <ul class="notes">
+    <li>B is the Beach walker flare: a wide veil, a thick three-band streak across most of the frame, cool streak, faint ghosts, screen blend.</li>
+    <li>A and C: one tight orb, a razor line in a soft sheath that stops short, warm streak and ghosts, added before tone mapping.</li>
+    <li>Strengths follow the Buoy Business panel: master 3 times the night halo 0.34; searchlight orb 2, streak 0.69, ghosts 0.81, seen from inside its beam; sun orb 0.5, streak 0.4, ghosts 0.3 at gain 6 and size 2.5; running lamp orb 0.37 only.</li>
+    <li>Old calls to <code>flFlare()</code> draw the same frame as before. No toy changes until Tom picks.</li>
+  </ul>
+</main>
+<script type="module">
+import { FLARE, FLARE_BUOY as BB } from '../shared/flare.js';
+import { OUTPUT } from '../shared/output.js';
+
+// Each row: a backdrop, a light place and colour, and per-column strengths.
+// A lamp's strength: halo opacity, master, distance fade.
+const fade = BB.halo * BB.master * Math.exp(-30 / BB.reach);
+const lamp = (o) => [o.orb * fade, o.streak * fade, o.ghost * fade];
+const ROWS = [
+  { name: 'Searchlight', note: 'Night, 30 m off', scene: 0, src: [0.68, 0.62], col: [1.0, 0.85, 0.57], size: 1, k: lamp(BB.searchlight), bSize: 1, bGain: 1 },
+  { name: 'Sun', note: 'Dusk, low over the sea', scene: 1, src: [0.3, 0.53], col: [1.0, 0.72, 0.42], size: BB.sun.size,
+    k: [BB.sun.orb * BB.sun.gain, BB.sun.streak * BB.sun.gain, BB.sun.ghost * BB.sun.gain], bSize: 1, bGain: 1 },
+  { name: 'Running lamp', note: 'Night, a green sidelight', scene: 0, src: [0.42, 0.47], col: [0.25, 1.0, 0.45], size: 1, k: lamp(BB.nav), bSize: 0.3, bGain: 1 },
+];
+
+const VS = `#version 300 es
+void main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }`;
+
+const FS = `#version 300 es
+precision highp float;
+uniform vec2 uRes, uSrc;
+uniform vec3 uCol, uK;
+uniform float uSize, uMode, uScene, uBSize, uBGain;
+out vec4 o;
+${FLARE}
+${OUTPUT}
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+// The backdrop: sky, a horizon, sea with a glitter path under the light.
+vec3 backdrop(vec2 uv, float asp) {
+  float hz = 0.46;
+  vec3 c;
+  if (uScene < 0.5) {
+    vec3 zen = vec3(0.004, 0.006, 0.016), low = vec3(0.02, 0.026, 0.045);
+    c = uv.y > hz ? mix(low, zen, smoothstep(hz, 1.0, uv.y)) : vec3(0.004, 0.007, 0.012);
+  } else {
+    vec3 zen = vec3(0.05, 0.07, 0.16), low = vec3(0.9, 0.42, 0.16);
+    c = uv.y > hz ? mix(low, zen, pow(smoothstep(hz, 1.0, uv.y), 0.55)) : vec3(0.03, 0.035, 0.05);
+  }
+  if (uv.y < hz) {
+    float depth = (hz - uv.y) / hz;
+    float rip = vn(vec2(uv.x * 40.0 / (0.15 + depth), uv.y * 260.0 / (0.15 + depth)));
+    float path = exp(-pow((uv.x - uSrc.x) * asp / (0.03 + 0.25 * depth), 2.0));
+    c += uCol * smoothstep(0.62, 0.95, rip) * path * (uScene < 0.5 ? 0.25 : 0.8) * (1.0 - depth * 0.6);
+  }
+  // The light itself: a small hot disc.
+  vec2 d = (uv - uSrc) * vec2(asp, 1.0);
+  float r = uScene < 0.5 ? 0.004 : 0.012;
+  c += uCol * (uScene < 0.5 ? 30.0 : 8.0) * smoothstep(r, r * 0.6, length(d));
+  return c;
+}
+// A: Havoc's flare, line by line, in its own frame (y runs down).
+vec3 havoc(vec2 suv, vec2 pos, float aspect, vec3 colour, float size, vec3 k) {
+  const float FLARE_K = 1.4, GHOSTS = 2.2, LEN = 0.22, THIN = 209.0, WARMTH = 0.0, ORB_FALL = 20.0;
+  vec3 tint = mix(colour, WARMTH > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(WARMTH), 0.0, 1.0));
+  vec3 t = max(tint, 0.0);
+  float g = min(t.y, t.x);
+  vec3 col = vec3(t.x, g, min(t.z, g));
+  vec2 d = suv - pos;
+  float ax = d.x * aspect, ay = d.y;
+  float line = exp(abs(ay) * -THIN) + exp(abs(ay) * (THIN * -0.08)) * 0.3;
+  vec3 acc = col * line * exp(-(abs(ax) / LEN)) * (FLARE_K * 4.0) * k.y;
+  vec2 toCentre = (vec2(0.5) - pos) * 1.0;
+  vec3 gh[3]; gh[0] = vec3(0.7, 0.05, 0.9); gh[1] = vec3(1.4, 0.09, 0.6); gh[2] = vec3(2.2, 0.15, 0.4);
+  for (int i = 0; i < 3; i++) {
+    vec2 q = (suv - (pos + toCentre * gh[i].x)) * vec2(aspect, 1.0);
+    acc += col * exp(dot(q, q) / -(gh[i].y * gh[i].y)) * (GHOSTS * gh[i].z * 1.5) * k.z;
+  }
+  float r = length(vec2(d.x * aspect * 0.6, d.y));
+  acc += colour * k.x * exp(-(r * ORB_FALL / size));
+  return acc;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y;
+  vec3 c = backdrop(uv, asp);
+  if (uMode < 0.5) c += havoc(vec2(uv.x, 1.0 - uv.y), vec2(uSrc.x, 1.0 - uSrc.y), asp, uCol, uSize, uK);
+  else if (uMode < 1.5) c = flScreen(c, flFlare(uv, uSrc, asp, uCol, uBSize, vec3(1.0)) * uBGain);
+  else c += flBuoy(uv, uSrc, asp, uCol, uSize, uK, FL_BB, 0.0);
+  // No dither: A and C must compare bit for bit.
+  o = vec4(ouSrgb(ouAcesFit(c / 0.6)), 1.0);
+}`;
+
+const grid = document.getElementById('grid');
+const W = 960, H = 540;
+for (const row of ROWS) {
+  const label = document.createElement('div');
+  label.className = 'row';
+  label.innerHTML = `<b>${row.name}</b>${row.note}`;
+  grid.append(label);
+  const pix = [];
+  const cells = [];
+  for (let mode = 0; mode < 3; mode++) {
+    const cell = document.createElement('div');
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    cv.dataset.col = 'ABC'[mode];
+    cell.append(cv);
+    grid.append(cell);
+    cells.push(cell);
+    pix.push(draw(cv, row, mode));
+  }
+  // The largest A to C difference, in 8-bit steps.
+  let max = 0, over = 0;
+  for (let i = 0; i < pix[0].length; i += 4) {
+    const d = Math.max(Math.abs(pix[0][i] - pix[2][i]), Math.abs(pix[0][i + 1] - pix[2][i + 1]), Math.abs(pix[0][i + 2] - pix[2][i + 2]));
+    if (d > max) max = d;
+    if (d > 1) over++;
+  }
+  const out = document.createElement('div');
+  out.className = 'diff ' + (max <= 1 ? 'ok' : 'bad');
+  out.textContent = `C vs A: largest step ${max} / 255, ${over} px over 1`;
+  out.id = 'diff-' + row.name.toLowerCase().replace(/\s+/g, '-');
+  cells[2].append(out);
+}
+
+function draw(cv, row, mode) {
+  const gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  gl.useProgram(p);
+  const u = (n) => gl.getUniformLocation(p, n);
+  gl.uniform2f(u('uRes'), W, H); gl.uniform2fv(u('uSrc'), row.src); gl.uniform3fv(u('uCol'), row.col); gl.uniform3fv(u('uK'), row.k);
+  gl.uniform1f(u('uSize'), row.size); gl.uniform1f(u('uMode'), mode); gl.uniform1f(u('uScene'), row.scene);
+  gl.uniform1f(u('uBSize'), row.bSize); gl.uniform1f(u('uBGain'), row.bGain);
+  gl.viewport(0, 0, W, H);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint8Array(W * H * 4);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  return px;
+}
+</script>
+</body>
+</html>
