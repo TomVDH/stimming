@@ -9,6 +9,7 @@ import { SKY } from '../shared/sky.js';
 import { dayAt, dayClock, localHour } from '../shared/daytime.js';
 import { OUTPUT } from '../shared/output.js';
 import { GRADE } from '../shared/grade.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
 import { CLOUDS, CLOUD_FIELD_SHAFTS, clShaftGate } from '../shared/clouds.js';
 
 const stage = document.getElementById('stage');
@@ -1513,46 +1514,10 @@ void main() {
   col = col * (1.0 - Wr.a) + Wr.rgb;
   o = vec4(col, 1.0);
 }`;
-// Bloom, after Jimenez (SIGGRAPH 2014): 13-tap downsamples, tent upsamples.
-// The first downsample weighs each group by 1 / (1 + luma): no fireflies.
-const BLOOM_N = 6;
-const BLOOM_DOWN_FS = `${HEAD}
-uniform sampler2D uSrc;
-uniform vec2 uPx, uRes;
-uniform float uFirst;
-out vec4 o;
-vec3 tap(vec2 uv, float x, float y) { return min(texture(uSrc, uv + vec2(x, y) * uPx).rgb, vec3(64.0)); }
-float kw(vec3 c) { return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722))); }
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 a = tap(uv, -2.0, 2.0), b = tap(uv, 0.0, 2.0), c = tap(uv, 2.0, 2.0);
-  vec3 d = tap(uv, -2.0, 0.0), e = tap(uv, 0.0, 0.0), f = tap(uv, 2.0, 0.0);
-  vec3 g = tap(uv, -2.0, -2.0), h = tap(uv, 0.0, -2.0), i = tap(uv, 2.0, -2.0);
-  vec3 j = tap(uv, -1.0, 1.0), k = tap(uv, 1.0, 1.0), l = tap(uv, -1.0, -1.0), m = tap(uv, 1.0, -1.0);
-  if (uFirst < 0.5) {
-    o = vec4(e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125, 1.0);
-    return;
-  }
-  vec3 g0 = (j + k + l + m) * 0.25, g1 = (a + b + d + e) * 0.25, g2 = (b + c + e + f) * 0.25, g3 = (d + e + g + h) * 0.25, g4 = (e + f + h + i) * 0.25;
-  float w0 = kw(g0) * 0.5, w1 = kw(g1) * 0.125, w2 = kw(g2) * 0.125, w3 = kw(g3) * 0.125, w4 = kw(g4) * 0.125;
-  o = vec4((g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
-}`;
-// Each upsample adds a 3x3 tent of the smaller level onto the larger one.
-const BLOOM_UP_FS = `${HEAD}
-uniform sampler2D uSrc;
-uniform vec2 uPx, uRes;
-out vec4 o;
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 s = texture(uSrc, uv).rgb * 4.0;
-  s += (texture(uSrc, uv + vec2(0.0, uPx.y)).rgb + texture(uSrc, uv - vec2(0.0, uPx.y)).rgb + texture(uSrc, uv + vec2(uPx.x, 0.0)).rgb + texture(uSrc, uv - vec2(uPx.x, 0.0)).rgb) * 2.0;
-  s += texture(uSrc, uv + uPx).rgb + texture(uSrc, uv - uPx).rgb + texture(uSrc, uv + vec2(uPx.x, -uPx.y)).rgb + texture(uSrc, uv + vec2(-uPx.x, uPx.y)).rgb;
-  o = vec4(s / 16.0, 1.0);
-}`;
 // The bloom mixes in, then the shared grade and the tone map.
 const OUT_FS = `${HEAD}
 uniform sampler2D uHdr, uBloom;
-uniform float uExpo, uT, uBloomK;
+uniform float uExpo, uT, uBloomK, uBloomN;
 // Post: x tone map (1 AgX), y film look, z contrast, w grain.
 uniform vec4 uPost;
 uniform float uVig;
@@ -1591,8 +1556,8 @@ vec3 portra(vec3 c, float k, float con) {
 void main() {
   vec2 res = vec2(textureSize(uHdr, 0)), uv = gl_FragCoord.xy / res;
   vec3 col = texelFetch(uHdr, ivec2(gl_FragCoord.xy), 0).rgb;
-  // The upsamples sum BLOOM_N levels, so the mix divides by that.
-  if (uBloomK > 0.0) col = mix(col, texture(uBloom, uv).rgb / ${BLOOM_N}.0, uBloomK);
+  // The shared chain sums uBloomN levels, so the mix divides by that.
+  if (uBloomK > 0.0) col = mix(col, texture(uBloom, uv).rgb / uBloomN, uBloomK);
   col = gdGrade(col, uv, res.x / res.y, gl_FragCoord.xy + floor(fract(uT) * 97.0), vec3(0.0), uVig, 0.45, uPost.w);
   if (uPost.x < 0.5) { o = vec4(ouFilmAces(col, uExpo, gl_FragCoord.xy), 1.0); return; }
   vec3 d = ouSrgb(agx(col * uExpo));
@@ -1613,8 +1578,8 @@ let P = null, vao = null, strokeVao = null, wireVao = null, strokeN = 0, ready =
 let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, shaftT = null, wpT = null;
 // True while shaftT holds the last cloud bake's sun rays.
 let shaftBaked = false;
-// The linear frame and the bloom levels, half size and smaller.
-let hdrT = null, bloomT = [];
+// The linear frame; the shared chain (shared/glow.js) keeps its own levels.
+let hdrT = null, glow = null;
 let rows = 8, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0, W = 0, H = 0, A = 16 / 9;
 const GMIN = [0, 0, 0];
 
@@ -1650,7 +1615,6 @@ async function buildGL() {
     sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), shaft: program(gl, TRI, SHAFT_FS), cfield: program(gl, TRI, FIELD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
     splat: program(gl, SPLAT_VS, SPLAT_FS), blur: program(gl, TRI, BLUR_FS), upd: program(gl, TRI, UPDATE_FS),
     bird: program(gl, BIRD_VS, BIRD_FS), comp: program(gl, TRI, COMP_FS), out: program(gl, TRI, OUT_FS),
-    bdown: program(gl, TRI, BLOOM_DOWN_FS), bup: program(gl, TRI, BLOOM_UP_FS),
   });
   // Samplers keep fixed units: state 0-1, field 3-4, birds 5, scene 6, sky 7, sun rays 10.
   for (const q of [P.splat, P.upd, P.bird]) { gl.useProgram(q.p); gl.uniform1i(q.u.uPos, 0); gl.uniform1i(q.u.uVel, 1); }
@@ -1672,7 +1636,6 @@ async function buildGL() {
   gl.useProgram(P.out.p);
   gl.uniform1i(P.out.u.uHdr, 12);
   gl.uniform1i(P.out.u.uBloom, 13);
-  for (const q of [P.bdown, P.bup]) { gl.useProgram(q.p); gl.uniform1i(q.u.uSrc, 12); }
   vao = gl.createVertexArray();
   S = [0, 1].map(() => {
     const pos = tex(TW, rows, gl.RGBA32F, gl.NEAREST), vel = tex(TW, rows, gl.RGBA32F, gl.NEAREST);
@@ -1700,7 +1663,8 @@ async function buildGL() {
   gl.bindVertexArray(null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = shaftT = wpT = hdrT = null;
-  bloomT = [];
+  // A new context needs a new chain.
+  glow = bloomChain(gl);
   fieldA = 0;
   bakeCloudField();
 }
@@ -1756,7 +1720,7 @@ function allocField() {
 function allocTargets() {
   const cw = canvas.width, ch = canvas.height;
   if (birdT && birdT.w === cw && birdT.h === ch) return;
-  [birdT, sceneT, skyT, passT, cloudT, shaftT, wireT, hdrT, ...bloomT].forEach(freeT);
+  [birdT, sceneT, skyT, passT, cloudT, shaftT, wireT, hdrT].forEach(freeT);
   if (wpT) { gl.deleteFramebuffer(wpT.fb); gl.deleteTexture(wpT.tex); }
   const mk = (w, h, filter) => { const t = tex(w, h, gl.RGBA16F, filter); return { tex: t, fb: fbo([t]), w, h }; };
   birdT = mk(cw, ch, gl.NEAREST);
@@ -1779,7 +1743,6 @@ function allocTargets() {
   shaftBaked = false;
   skyT = mk(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.LINEAR);
   hdrT = mk(cw, ch, gl.LINEAR);
-  bloomT = Array.from({ length: BLOOM_N }, (_, i) => mk(Math.max(1, Math.ceil(cw / 2 ** (i + 1))), Math.max(1, Math.ceil(ch / 2 ** (i + 1))), gl.LINEAR));
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 function gridUniforms(q) {
@@ -2193,42 +2156,23 @@ function draw() {
   }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // The Bloom setting runs 0 to 1; 1 mixes in 12 percent.
-  const k = grade.bloom * 0.12;
-  if (k > 0) bloom();
+  // A tiny threshold turns on the chain's cap of 64: the sun disc stays tame.
+  const k = grade.bloom * 0.12, levels = glowDetail(D.level).levels;
+  const bloomTex = k > 0 ? glow.render(hdrT.tex, cw, ch, { threshold: 1e-3, cap: 64, levels }) : hdrT.tex;
+  gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cw, ch);
   const O = P.out.u;
   gl.useProgram(P.out.p);
   bindTex(12, hdrT.tex);
-  bindTex(13, bloomT[0].tex);
+  bindTex(13, bloomTex);
   gl.uniform1f(O.uBloomK, k);
+  gl.uniform1f(O.uBloomN, levels);
   gl.uniform1f(O.uExpo, light.expo * grade.expo);
   gl.uniform4f(O.uPost, grade.tone, grade.film, grade.contrast, grade.grain);
   gl.uniform1f(O.uVig, grade.vig);
   gl.uniform1f(O.uT, simT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-// Down the levels from the linear frame, then back up, summing.
-function bloom() {
-  const pass = (q, src, dst) => {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
-    gl.viewport(0, 0, dst.w, dst.h);
-    bindTex(12, src.tex);
-    gl.uniform2f(q.u.uPx, 1 / src.w, 1 / src.h);
-    gl.uniform2f(q.u.uRes, dst.w, dst.h);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  };
-  gl.disable(gl.BLEND);
-  gl.useProgram(P.bdown.p);
-  bloomT.forEach((dst, i) => {
-    gl.uniform1f(P.bdown.u.uFirst, i === 0 ? 1 : 0);
-    pass(P.bdown, i ? bloomT[i - 1] : hdrT, dst);
-  });
-  gl.useProgram(P.bup.p);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE);
-  for (let i = BLOOM_N - 2; i >= 0; i--) pass(P.bup, bloomT[i + 1], bloomT[i]);
-  gl.disable(gl.BLEND);
 }
 
 /* ---------- the car, the shoes, a plucked wire ---------- */
