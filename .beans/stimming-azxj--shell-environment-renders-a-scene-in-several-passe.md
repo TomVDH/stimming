@@ -13,12 +13,12 @@ Tornado alley's one scene shader does not compile on Windows (stimming-kg00). Th
 - [x] shared/glsl-prune.js: each pass program keeps only the functions it calls (tests/glsl-prune.test.mjs)
 - [x] Tornado alley moves its object groups into passes (11 passes and the composite)
 - [x] Plain, farm, poles, infra, storm: ordered passes and one call site per heavy function, each under 15 s
-- [ ] Vehicles under 15 s: moved to meshes (Tom, 2026-11-22), see the mesh bean
-- [ ] Funnel program under 15 s
+- [x] Vehicles under 15 s: meshes (stimming-wx3m), body 0.1 s; the mist passes 14.9 s
+- [ ] Funnel program under 15 s: march 24.4 s, post 1.8 s (links off the main thread, no freeze)
 - [x] Edge on D3D11 reaches the first frame: 32 s in the app pane, vehicles off on Windows
 - [x] No freeze after it: one output per program, so no second compile at the first draw
 - [x] Same frame on ANGLE GL, before and after (`tools/fxc/same.mjs`)
-- [ ] /code-review, then the PR
+- [x] /code-review (fresh reviewer and /code-review high), then the PR
 
 ## State, 2026-11-17
 
