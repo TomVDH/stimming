@@ -13,6 +13,10 @@ uniform float u_spikes;
 uniform float u_spikeAxes;
 // The achromat's violet halo, as a share of the light.
 uniform float u_halo;
+// Out of focus, a star becomes a disc of this radius in px.
+uniform float u_defocus;
+// The secondary's shadow, as a share of the disc's radius.
+uniform float u_obstr;
 out vec4 o;
 const float PI = 3.14159265;
 
@@ -30,6 +34,14 @@ void main() {
     // Star, in px: x Moffat width, y quad half size, z spike length.
     float a = v_shape.x;
     float core = (u_beta - 1.0) / (PI * a * a) * pow(1.0 + r2 / (a * a), -u_beta);
+    if (u_defocus > 0.0) {
+      float D = u_defocus, r = sqrt(r2), soft = 0.5 + 0.5 * a;
+      float disc = smoothstep(D + soft, D - soft, r) * smoothstep(u_obstr * D - soft, u_obstr * D + soft, r);
+      // The four vanes cast thin shadows across the disc.
+      disc *= smoothstep(0.0, 0.03 * D + 0.6, min(abs(v_off.x), abs(v_off.y)));
+      float donut = disc / (PI * D * D * (1.0 - u_obstr * u_obstr));
+      core = mix(core, donut, smoothstep(0.6 * a, 2.0 * a, D));
+    }
     // Scattered light makes a faint wide wing.
     float wing = 0.01 / (PI * 16.0 * a * a) * pow(1.0 + r2 / (16.0 * a * a), -1.5);
     c = col * (core + wing);

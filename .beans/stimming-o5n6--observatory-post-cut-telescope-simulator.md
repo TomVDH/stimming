@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T19:27:07Z
+updated_at: 2026-11-22T19:39:22Z
 parent: stimming-wqq9
 ---
 
@@ -63,6 +63,22 @@ Checked with the other chats: the main dome holds the hero refractor (hero-scope
 - [x] 1 m reflector mode: f/3 camera (23.5 x 15.7 mm sensor, 27' x 18'), four-vane spikes, deep layer to mag 25 (11,656 galaxies in one Draco frame)
 - [x] High-redshift spectra: [O II], Lyα, the 400 nm break, the Lyman forest and limit; lookback time and distance (flat ΛCDM)
 - [x] Fixes: round glare (ring taps on mips), TiO no longer found in hot stars
-- [ ] Operator screen for the 1 m (Tom: a faux OS, real capture-software feel, zoom and crop)
+- [x] Operator screen for the 1 m (Tom: a faux OS, real capture-software feel, zoom and crop)
 
 Note: the building redo moves the dome scale to 1.7; the refractor would then be about 47 cm.
+
+## Round 4: the 1 m's operator screen (Tom, 2026-11-22)
+
+- [x] System bar: host, roof, weather mast, UTC and LST, Night (red screen)
+- [x] Image viewer: Fit, 1:1, zoom at the cursor, drag to pan; the crop re-renders at sensor resolution, sensor pixels show as blocks past 1:1; a zoom keeps the stack
+- [x] Overlays: crosshair, detected stars with HFR, labels, compass (N up, E left), scale bar
+- [x] Camera: loop, exposure, filter wheel L R G B Hα (mono), live stack, cooler, ADU statistics and histogram
+- [x] Mount: hold-to-jog N S E W with four rates, Go To by name or RA and Dec, eased slews, 10° limit, double-click to slew, tracking
+- [x] Focuser: drift with temperature, out-of-focus donuts with vane shadows, autofocus (9 points, hyperbola fit, V-curve)
+- [x] Guider: error graph and RMS; unguided, the periodic error smears the stack
+- [x] Log strip; check 0 errors; checked in the browser pane
+
+### Open for Tom (round 4)
+
+- The look of the operator screen, and the app name "Observatory Control".
+- The camera loops at 4 fps while it waits for a sub, and pauses after 10 minutes without input.
