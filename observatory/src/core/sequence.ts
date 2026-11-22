@@ -28,7 +28,9 @@ export const cutOf = (shot: Shot): Cut => CUTS.find(c => c.shot === shot)!;
 
 /* ---------- the timing: from the machine's own lift ---------- */
 // The two shutter shots share its travel.
-export const OPEN_CUT = SHUTTER_S / 2;
+// The edge shot takes the larger share, so the cupola's turn reads.
+export const EDGE_CUT = SHUTTER_S * 0.65;
+export const SLIT_CUT = SHUTTER_S - EDGE_CUT;
 // The lift shot holds this many seconds.
 // The slew starts from rest, so a shot needs time.
 export const LIFT_CUT = 2.5;
@@ -88,8 +90,8 @@ export function stepSeq(s: Seq, dt: number, m: Lift): Seq {
   if (s.done) return s;
   const n: Seq = { ...s, t: s.t + dt, total: s.total + dt };
   switch (s.shot) {
-    case 'edge': return n.t >= OPEN_CUT ? enter(n, 'slit') : n;
-    case 'slit': return n.t >= OPEN_CUT ? enter(n, 'lift') : n;
+    case 'edge': return n.t >= EDGE_CUT ? enter(n, 'slit') : n;
+    case 'slit': return n.t >= SLIT_CUT ? enter(n, 'lift') : n;
     case 'lift': return n.t >= LIFT_CUT ? enter(n, 'roll') : n;
     case 'roll':
       // The roll never gives way early.

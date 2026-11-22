@@ -8,6 +8,7 @@ import { D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
 import type { Phase } from '../core/machine.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
+import { azDelta } from '../core/dome.ts';
 import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { hillHeight } from '../world/hill.ts';
@@ -63,6 +64,9 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // A portrait frame aims at the dew shield.
   roll: { eye: [6, 0.6, -0.8], look: [0.7, 0.25, 0.4], tall: [0.72, 0, 0.3], aperture: 0.01 },
 };
+// The edge shot locks up to this many degrees ahead of the slit.
+// The slit then turns through the frame, not out of it.
+const EDGE_LEAD = 4.5;
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
@@ -85,8 +89,6 @@ const filmAspect = (aspect: number): number => Math.max(aspect, FILM);
 // The render lens that puts a film lens of fov degrees in the band.
 const renderFov = (fov: number, aspect: number): number =>
   2 * Math.atan(Math.tan(fov * DEG / 2) / band(aspect)) / DEG;
-// The beam is 0.5 m wide to show from the rise; close up it is 5 cm.
-const BEAM_CLOSE = 0.1;
 
 const ease = (k: number): number => k * k * (3 - 2 * k);
 
@@ -246,7 +248,8 @@ function black(k: number): void {
   dip.style.opacity = String(k);
 }
 
-function beam(k: number): void { laser.mesh.scale.x = laser.mesh.scale.z = k; }
+// The cuts hide the beam; the wide shot shows it.
+function beam(on: boolean): void { laser.mesh.visible = on; }
 
 // The bars follow the stage's aspect, so a resize keeps the film frame.
 function showBars(on: boolean, opacity = 1): void {
@@ -258,7 +261,8 @@ function showBars(on: boolean, opacity = 1): void {
 // The loop hands the cuts the tube and its lift each frame.
 // restAlt: the altitude the tube lifts to.
 // shutter: the shutter's travel, 1 when open.
-export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number };
+// cupAz and cupGoal: the cupola's azimuth and the azimuth it turns to.
+export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number; cupAz: number; cupGoal: number };
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
 // mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
@@ -267,7 +271,7 @@ let redraw: () => void = () => {};
 let mode: 'off' | 'cuts' | 'dip' | 'wait' | 'still' | 'fade' = 'off';
 let seq: Seq = startSeq('open', { altLeft: 0, altEta: 0 });
 // The tube as the loop last reported it.
-let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0 };
+let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0, cupAz: 0, cupGoal: 0 };
 let stillT = 0, fadeT = 0, grab = false;
 // The time in the dip.
 // dipWide is true once the black hides the change to the wide shot.
@@ -282,7 +286,12 @@ let lastShot: Shot = 'glass';
 // The cupola can turn after the pick.
 // So each cut frames the slit where it stands at the cut.
 // The aspect is fixed then too: a resize keeps the aim and the lens.
-const locks = makeLocks(cut => place(cut, slitNow(), filmAspect(camera.aspect)));
+const locks = makeLocks(cut => place(cut, slitNow() + (cut.shot === 'edge' ? edgeLead() : 0), filmAspect(camera.aspect)));
+// The edge lock's lead: half the turn to come, toward the star.
+function edgeLead(): number {
+  const d = azDelta(view.cupAz, view.cupGoal);
+  return Math.sign(d) * Math.min(Math.abs(d) / 2, EDGE_LEAD);
+}
 
 // The hero model shows in the close shots only.
 // The wide shot keeps the light model, so nothing changes there.
@@ -331,7 +340,7 @@ function toWide(): void {
   showBars(false);
   black(0);
   still.style.display = 'none';
-  beam(1);
+  beam(true);
   applyCamera(camera.aspect);
 }
 
@@ -344,7 +353,7 @@ function stepDip(dt: number): void {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
     showBars(false);
-    beam(1);
+    beam(true);
     applyCamera(camera.aspect);
     // This frame shows full black.
     black(1);
@@ -477,12 +486,12 @@ export const cuts = {
     // The first shot fades up from the black.
     // The camera and the hero swapped under it.
     if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
-    beam(BEAM_CLOSE);
+    beam(false);
     showBars(true);
   },
   // QA: keeps the hero model in outside the cuts, for stills.
-  // The beam thins as in the close shots.
-  hold(on: boolean): void { held = on; beam(on ? BEAM_CLOSE : 1); },
+  // The beam hides as in the close shots.
+  hold(on: boolean): void { held = on; beam(!on); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     if (!grab) return;
@@ -492,7 +501,7 @@ export const cuts = {
     still.getContext('2d')!.drawImage(c, 0, 0);
     still.style.opacity = '1';
     still.style.display = 'block';
-    beam(1);
+    beam(true);
     applyCamera(camera.aspect);
   },
 };

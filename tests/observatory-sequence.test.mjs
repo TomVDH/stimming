@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq, cadence, CUT_FPS,
-  OPEN_CUT, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
+  EDGE_CUT, SLIT_CUT, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
 } from '../observatory/src/core/sequence.ts';
 import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
 import { SHUTTER_S } from '../observatory/src/core/dome.ts';
@@ -58,10 +58,12 @@ test('five shots in order, each a locked camera with one lens', () => {
   }
 });
 test('the two shutter shots share its travel; the slew starts with the lift shot', () => {
-  assert.equal(OPEN_CUT * 2, SHUTTER_S);
+  assert.ok(Math.abs(EDGE_CUT + SLIT_CUT - SHUTTER_S) < 1e-9);
+  // The edge shot holds longer: the cupola turns in it.
+  assert.ok(EDGE_CUT > SLIT_CUT && SLIT_CUT >= MIN_SHOT);
   const r = play(lift(15).at);
   assert.equal(names(r), 'edge,slit,lift,roll,glass');
-  assert.ok(Math.abs(of(r, 'slit').at - OPEN_CUT) < 0.02);
+  assert.ok(Math.abs(of(r, 'slit').at - EDGE_CUT) < 0.02);
   assert.ok(Math.abs(of(r, 'lift').at - SHUTTER_S) < 0.02);
   assert.ok(Math.abs(of(r, 'lift').dur - LIFT_CUT) < 0.02);
 });
@@ -114,8 +116,8 @@ test('every pick plays leaf, slit, inside lift, roll and glass, each at its mini
   for (const [name, view] of cases) {
     const r = play(view);
     assert.equal(names(r), 'edge,slit,lift,roll,glass', name);
-    assert.ok(Math.abs(of(r, 'edge').dur - OPEN_CUT) < 0.02, `${name}: edge ${of(r, 'edge').dur}`);
-    assert.ok(Math.abs(of(r, 'slit').dur - OPEN_CUT) < 0.02, `${name}: slit ${of(r, 'slit').dur}`);
+    assert.ok(Math.abs(of(r, 'edge').dur - EDGE_CUT) < 0.02, `${name}: edge ${of(r, 'edge').dur}`);
+    assert.ok(Math.abs(of(r, 'slit').dur - SLIT_CUT) < 0.02, `${name}: slit ${of(r, 'slit').dur}`);
     assert.ok(of(r, 'lift').dur >= LIFT_CUT - 0.02, `${name}: lift ${of(r, 'lift').dur}`);
     assert.ok(of(r, 'roll').dur >= ROLL_MIN - 0.02, `${name}: roll ${of(r, 'roll').dur}`);
     assert.ok(of(r, 'glass').dur >= GLASS_HOLD - 0.02, `${name}: glass ${of(r, 'glass').dur}`);
