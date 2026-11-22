@@ -984,8 +984,13 @@ void main() {
     if (mat > 5.5 && mat < 6.5 || mat > 1.5 && mat < 2.5) {
       // Bare conductor: seven strands laid in a helix tilt the normal.
       float lay = sin(ang * 6.0 + along / max(vA.w, 0.002) * 1.4);
-      s.n = normalize(N + ax * 0.45 * lay);
+      // Helix cycles per pixel, along the wire and across it.
+      float fa = 1.4 / max(vA.w, 0.002) * length(B - A) / max(length(ba), 1e-3) / 6.283, fc = 1.5 / re;
+      // A helix finer than a pixel fades; its spread roughens the wire instead.
+      float res = 1.0 - smoothstep(0.15, 0.5, max(fa, fc));
+      s.n = normalize(N + ax * 0.45 * lay * res);
       s.rough = 0.32 + 0.12 * noise(vec2(along * 3.0, seed * 9.0));
+      s.rough = mix(sqrt(s.rough * s.rough + 0.2), s.rough, res);
     } else if (mat > 4.5 && mat < 5.5) {
       // Rubber jacket: grey dust on top, worn glossier in streaks.
       float dust = smoothstep(0.2, 0.9, N.y) * (0.5 + 0.5 * noise(vec2(along * 1.5, seed * 7.0)));
