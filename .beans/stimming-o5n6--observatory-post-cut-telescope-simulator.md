@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T19:56:26Z
+updated_at: 2026-11-22T20:16:30Z
 parent: stimming-wqq9
 ---
 
@@ -98,3 +98,9 @@ Tom: simplify; make the 1 m's software diegetic (we look at a computer screen); 
 
 - The look of the monitor and the room; LCD now, a CRT is a shader swap.
 - What the toy keeps: these are realistic first passes; concessions later.
+
+## Round 6: a DOS-era program on the LCD (Tom, 2026-11-22)
+
+- [x] The 1 m's software is a text-mode program: 120 x 42 cells, VGA colours, double-line boxes, a cyan title bar, a function-key bar (F2 slew, F3 expose, F4 filter, F6 focus, F8 guide, F9 night), keys 1-6 for targets, block progress bar
+- [x] Boxes: IMAGE (stats on its border), LOG, TELESCOPE (RA, Dec, HA, alt, az, air mass, tracking, seeing, guiding), CAMERA, FOCUS (V-curve), TARGETS, SPECTROGRAPH (teff and class, or z, lookback and distance)
+- [x] The LCD monitor shader stays; panel.ts keeps only the element rows

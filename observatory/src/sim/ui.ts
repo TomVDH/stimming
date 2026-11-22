@@ -1,42 +1,41 @@
-// The 1 m's control software, drawn into a canvas the monitor's size.
-// The renderer lays it over the camera image.
-// The monitor pass then shows both.
+// The 1 m's control software: a DOS-era text-mode program, 120 by 42 cells.
+// It draws into a canvas the monitor's size; the renderer lays it over the image.
 import { rig, guideRms, type Filter } from './rig.ts';
-import { histPlot, rows, spectrumPlot } from './panel.ts';
-import type { Found, Run } from './spectrum.ts';
+import { rows as elementRows } from './panel.ts';
+import { BINS, L0, L1, isFound, lambdaAt, wavelengthRGB, type Found, type Run } from './spectrum.ts';
 
 // The virtual monitor in pixels.
 export const SW = 1440;
 export const SH = 900;
-// The camera image's place on the monitor.
-export const IMG = { x: 0, y: 32, w: 1060, h: 700 };
-const LOG = { x: 0, y: 732, w: 1060, h: 168 };
-const PANEL = { x: 1060, y: 32, w: 380, h: 868 };
+// One text cell, and the grid's top margin.
+const CW = 12, CH = 21, COLS = 120, ROWS = 42, OY = 9;
+// The camera image's place on the monitor: inside the IMAGE box.
+export const IMG = { x: CW * 1, y: OY + CH * 2, w: CW * 82, h: CH * 30 };
 
-const C = {
-  bg: '#14151a', panel: '#191a1f', head: '#1f2126', line: '#2b2d34', btn: '#262830', btnHover: '#30333c',
-  ink: '#d8dbe0', dim: '#8a909b', faint: '#5c626d', accent: '#4f9be0', ok: '#59bf77', warn: '#dfa443', bad: '#dc5f52', warm: '#e6b26a',
+// The VGA palette.
+const V = {
+  black: '#000000', blue: '#0000aa', cyan: '#00aaaa', grey: '#aaaaaa', dark: '#555555',
+  bcyan: '#55ffff', yellow: '#ffff55', green: '#55ff55', red: '#ff5555', white: '#ffffff', magenta: '#ff55ff',
 };
-const SANS = '"Segoe UI", system-ui, sans-serif';
-const MONO = 'Consolas, "Cascadia Mono", monospace';
+const FONT = '18px "Lucida Console", Consolas, "Courier New", monospace';
 
 export type Target = { name: string; note: string };
 export type View = {
-  clock: string; lst: string;
+  clock: string; lst: string; ha: string;
   ra: string; dec: string; alt: string; az: string; air: string;
   state: string; progress: number; subs: number; temp: string;
-  zoom: string; stars: number; hfr: number;
+  zoom: string; stars: number; hfr: number; seeing: string;
   stats: { mean: number; med: number; sd: number; max: number; hist: number[] };
   targets: Target[];
   // The image overlay, in monitor px.
   centre: [number, number]; detected: [number, number][]; box: [number, number] | null;
-  bar: { px: number; label: string }; banner: string;
+  bar: { px: number; label: string }; banner: string; time: number; still: boolean;
   sel: { name: string; info: string; run: Run | null; found: Found[]; lines: string[] } | null;
 };
 export type Actions = {
   fit(): void; one(): void; zoom(f: number): void;
   goto(i: number): void; startStop(): void; exposure(dir: number): void; filter(f: Filter): void; reset(): void;
-  autofocus(): void; guide(): void; night(): void;
+  autofocus(): void; guide(): void; night(): void; stars(): void; slewSelected(): void;
 };
 
 /* ---------- the log ---------- */
@@ -53,6 +52,9 @@ export function log(text: string, cls = ''): void {
 export const af = { points: [] as [number, number][], fit: null as null | { a: number; b: number; c: number } };
 
 type Hit = { x: number; y: number; w: number; h: number; act: () => void };
+
+const cx = (c: number): number => c * CW;
+const cy = (r: number): number => OY + r * CH;
 
 export class Screen {
   readonly canvas = document.createElement('canvas');
@@ -79,271 +81,206 @@ export class Screen {
     return null;
   }
 
-  private over(x: number, y: number, w: number, h: number): boolean {
+  private over(c: number, r: number, n: number): boolean {
     const [hx, hy] = this.hover;
-    return hx >= x && hx < x + w && hy >= y && hy < y + h;
+    return hx >= cx(c) && hx < cx(c + n) && hy >= cy(r) && hy < cy(r + 1);
   }
 
-  // A flat button; on marks a pressed toggle.
-  private button(x: number, y: number, w: number, h: number, label: string, act: () => void, style: { on?: boolean; primary?: boolean; stop?: boolean } = {}): void {
+  // Text in cells: one glyph per cell, as a text mode draws it.
+  private put(c: number, r: number, s: string, fg: string = V.grey, bg?: string): void {
     const g = this.g;
-    const hot = this.over(x, y, w, h);
-    g.fillStyle = style.stop ? (hot ? '#6a2b26' : '#5a2420') : style.primary ? (hot ? '#255a8e' : '#1f4a75') : style.on ? '#24364a' : hot ? C.btnHover : C.btn;
-    g.fillRect(x, y, w, h);
-    g.strokeStyle = style.on ? C.accent : style.primary ? '#2e6aa6' : style.stop ? '#8a3a33' : '#3a3d46';
-    g.lineWidth = 1;
-    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    g.fillStyle = style.on || style.primary || style.stop ? '#fff' : C.ink;
-    g.font = `13px ${SANS}`;
+    const chars = [...s];
+    if (bg) {
+      g.fillStyle = bg;
+      g.fillRect(cx(c), cy(r), chars.length * CW, CH);
+    }
+    g.fillStyle = fg;
+    g.font = FONT;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(label, x + w / 2, y + h / 2 + 1);
+    chars.forEach((ch, i) => {
+      if (ch !== ' ') g.fillText(ch, cx(c + i) + CW / 2, cy(r) + CH / 2 + 1);
+    });
     g.textAlign = 'left';
     g.textBaseline = 'alphabetic';
-    this.hits.push({ x, y, w, h, act });
   }
 
-  private head(y: number, title: string, right = ''): number {
+  // A clickable label: inverse video under the pointer, or when on.
+  private key(c: number, r: number, s: string, act: () => void, on = false, fg: string = V.white): number {
+    const n = [...s].length;
+    const hot = this.over(c, r, n);
+    this.put(c, r, s, hot || on ? V.black : fg, hot ? V.bcyan : on ? V.cyan : undefined);
+    this.hits.push({ x: cx(c), y: cy(r), w: n * CW, h: CH, act });
+    return c + n;
+  }
+
+  // A double-line box on cell centres, with a title on its top edge.
+  private box(c0: number, r0: number, c1: number, r1: number, title = '', colour: string = V.cyan): void {
     const g = this.g;
-    g.fillStyle = C.head;
-    g.fillRect(PANEL.x, y, PANEL.w, 24);
-    g.fillStyle = C.line;
-    g.fillRect(PANEL.x, y + 24, PANEL.w, 1);
-    g.fillStyle = C.dim;
-    g.font = `600 11px ${SANS}`;
-    g.fillText(title.toUpperCase().split('').join(String.fromCharCode(8202)), PANEL.x + 12, y + 16);
-    if (right) {
-      g.font = `12px ${MONO}`;
-      g.textAlign = 'right';
-      g.fillText(right, PANEL.x + PANEL.w - 12, y + 16);
-      g.textAlign = 'left';
+    const x0 = cx(c0) + CW / 2, y0 = cy(r0) + CH / 2, x1 = cx(c1) + CW / 2, y1 = cy(r1) + CH / 2;
+    g.strokeStyle = colour;
+    g.lineWidth = 2;
+    for (const d of [-2, 2]) {
+      g.strokeRect(Math.round(x0 + d) + 0.5, Math.round(y0 + d) + 0.5, Math.round(x1 - x0 - 2 * d), Math.round(y1 - y0 - 2 * d));
     }
-    return y + 25;
-  }
-
-  private text(x: number, y: number, s: string, colour = C.ink, font = `13px ${SANS}`): void {
-    this.g.fillStyle = colour;
-    this.g.font = font;
-    this.g.fillText(s, x, y);
+    if (title) this.put(c0 + 2, r0, ` ${title} `, V.black, colour);
   }
 
   draw(v: View, a: Actions): void {
     const g = this.g;
     this.hits = [];
     g.clearRect(0, 0, SW, SH);
-    // Everything but the image is opaque software chrome.
-    g.fillStyle = C.bg;
+    // Text mode: black everywhere but the image.
+    g.fillStyle = V.black;
     g.fillRect(0, 0, SW, IMG.y);
-    g.fillRect(IMG.x + IMG.w, IMG.y, SW - IMG.w, SH - IMG.y);
-    g.fillRect(0, IMG.y + IMG.h, IMG.w, SH - IMG.y - IMG.h);
-    this.topBar(v, a);
-    this.overlay(v, a);
-    this.logArea();
-    this.panel(v, a);
+    g.fillRect(0, IMG.y, IMG.x, IMG.h);
+    g.fillRect(IMG.x + IMG.w, IMG.y, SW - IMG.x - IMG.w, IMG.h);
+    g.fillRect(0, IMG.y + IMG.h, SW, SH - IMG.y - IMG.h);
+    this.titleBar(v);
+    this.imageBox(v, a);
+    this.logBox();
+    this.telescope(v);
+    this.camera(v, a);
+    this.focus(v, a);
+    this.targets(v, a);
+    this.spectrum(v, a);
+    this.keyBar(a);
   }
 
-  private topBar(v: View, a: Actions): void {
-    const g = this.g;
-    g.fillStyle = '#0e0f12';
-    g.fillRect(0, 0, SW, IMG.y);
-    g.fillStyle = C.line;
-    g.fillRect(0, IMG.y - 1, SW, 1);
-    this.text(12, 21, 'Observatory Control', C.ink, `600 14px ${SANS}`);
-    this.text(160, 21, '1 m f/3 RC  ·  obs-ctl-01', C.dim);
-    const dot = (x: number, colour: string): void => {
-      g.fillStyle = colour;
-      g.beginPath();
-      g.arc(x, 16, 4, 0, Math.PI * 2);
-      g.fill();
-    };
-    dot(760, C.ok);
-    this.text(770, 21, 'Roof open', C.dim);
-    dot(860, C.ok);
-    this.text(870, 21, 'Weather safe', C.dim);
-    this.text(990, 21, `UTC ${v.clock}   LST ${v.lst}`, C.ink, `13px ${MONO}`);
-    this.button(SW - 76, 5, 64, 22, 'Night', a.night, { on: this.night });
+  private titleBar(v: View): void {
+    this.put(0, 0, ' '.repeat(COLS), V.black, V.cyan);
+    this.put(1, 0, 'OBSCTL 3.2', V.black, V.cyan);
+    this.put(13, 0, '│ 1.0 m f/3 Ritchey-Chretien · cooled CCD · obs-ctl-01', V.black, V.cyan);
+    this.put(78, 0, `UTC ${v.clock}  LST ${v.lst}`, V.black, V.cyan);
+    this.put(106, 0, 'ROOF:OPEN', V.blue, V.cyan);
   }
 
-  private overlay(v: View, a: Actions): void {
+  private imageBox(v: View, a: Actions): void {
     const g = this.g;
+    this.box(0, 1, 83, 32, `IMAGE · ${rig.filter} · ${rig.exposure} s · stack ${v.subs}`);
+    // Zoom and overlay keys on the top border, right side.
+    let c = 42;
+    c = this.key(c, 1, '[Fit]', a.fit) + 1;
+    c = this.key(c, 1, '[1:1]', a.one) + 1;
+    c = this.key(c, 1, '[-]', () => a.zoom(1 / 1.5)) + 1;
+    c = this.key(c, 1, '[+]', () => a.zoom(1.5)) + 1;
+    this.put(c, 1, ` ${v.zoom} `.padEnd(10), V.yellow, V.black);
+    this.key(74, 1, '[Stars]', a.stars, rig.overlay.stars);
+    // Statistics on the bottom border.
+    const s = v.stats;
+    this.put(2, 32, ` MEAN ${s.mean.toFixed(0).padStart(5)}  MED ${s.med.toFixed(0).padStart(5)}  SD ${s.sd.toFixed(1).padStart(6)}  MAX ${s.max.toFixed(0).padStart(5)}  HFR ${v.hfr.toFixed(2)}  STARS ${String(v.stars).padStart(4)} `, V.yellow, V.black);
+    // The overlay, in graphics.
     const { x: x0, y: y0, w, h } = IMG;
     g.save();
     g.beginPath();
     g.rect(x0, y0, w, h);
     g.clip();
-    const [cx, cy] = v.centre;
-    if (rig.overlay.cross) {
-      g.strokeStyle = 'rgba(225, 80, 70, 0.55)';
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(x0, Math.round(cy) + 0.5); g.lineTo(x0 + w, Math.round(cy) + 0.5);
-      g.moveTo(Math.round(cx) + 0.5, y0); g.lineTo(Math.round(cx) + 0.5, y0 + h);
-      g.stroke();
-      g.beginPath();
-      g.arc(cx, cy, 30, 0, Math.PI * 2);
-      g.stroke();
-    }
+    const [ox, oy] = v.centre;
+    g.strokeStyle = 'rgba(255, 85, 85, 0.6)';
+    g.lineWidth = 1;
+    g.setLineDash([6, 4]);
+    g.beginPath();
+    g.moveTo(x0, Math.round(oy) + 0.5); g.lineTo(x0 + w, Math.round(oy) + 0.5);
+    g.moveTo(Math.round(ox) + 0.5, y0); g.lineTo(Math.round(ox) + 0.5, y0 + h);
+    g.stroke();
+    g.setLineDash([]);
+    g.strokeRect(Math.round(ox) - 20.5, Math.round(oy) - 20.5, 41, 41);
     if (rig.overlay.stars) {
-      g.strokeStyle = 'rgba(89, 191, 119, 0.85)';
-      for (const [x, y] of v.detected.slice(0, 500)) {
-        g.beginPath();
-        g.arc(x, y, 7, 0, Math.PI * 2);
-        g.stroke();
-      }
+      g.strokeStyle = V.green;
+      for (const [x, y] of v.detected.slice(0, 500)) g.strokeRect(Math.round(x) - 6.5, Math.round(y) - 6.5, 13, 13);
     }
     if (v.box) {
-      g.strokeStyle = 'rgba(230, 178, 106, 0.95)';
-      g.strokeRect(v.box[0] - 14, v.box[1] - 14, 28, 28);
-    }
-    g.restore();
-    // The view's tools sit in the image's top left corner.
-    let x = x0 + 10;
-    const y = y0 + 10;
-    for (const [label, act, wd] of [['Fit', a.fit, 40], ['1:1', a.one, 40], ['−', () => a.zoom(1 / 1.5), 28], ['+', () => a.zoom(1.5), 28]] as const) {
-      this.button(x, y, wd, 24, label, act);
-      x += wd + 4;
-    }
-    g.fillStyle = 'rgba(10, 11, 14, 0.75)';
-    g.fillRect(x, y, 78, 24);
-    this.text(x + 8, y + 17, v.zoom, C.ink, `13px ${MONO}`);
-    x += 82;
-    this.button(x, y, 56, 24, 'Stars', () => { rig.overlay.stars = !rig.overlay.stars; }, { on: rig.overlay.stars });
-    // The compass: north up, east left.
-    const ox = x0 + w - 30, oy = y0 + 46;
-    g.strokeStyle = 'rgba(216, 219, 224, 0.85)';
-    g.beginPath();
-    g.moveTo(ox, oy); g.lineTo(ox, oy - 24);
-    g.moveTo(ox, oy); g.lineTo(ox - 24, oy);
-    g.stroke();
-    this.text(ox - 4, oy - 29, 'N', C.ink, `12px ${SANS}`);
-    this.text(ox - 38, oy + 4, 'E', C.ink, `12px ${SANS}`);
-    // The scale bar.
-    g.fillStyle = 'rgba(216, 219, 224, 0.85)';
-    g.fillRect(x0 + 14, y0 + h - 18, v.bar.px, 2);
-    this.text(x0 + 14, y0 + h - 25, v.bar.label, C.ink, `12px ${SANS}`);
-    // The mount's position, bottom right.
-    g.fillStyle = 'rgba(10, 11, 14, 0.7)';
-    g.fillRect(x0 + w - 300, y0 + h - 50, 292, 42);
-    this.text(x0 + w - 290, y0 + h - 33, `RA  ${v.ra}   Dec ${v.dec}`, C.ink, `12px ${MONO}`);
-    this.text(x0 + w - 290, y0 + h - 15, `Alt ${v.alt}   Az ${v.az}   X ${v.air}`, C.dim, `12px ${MONO}`);
-    if (v.banner) {
-      g.font = `600 15px ${SANS}`;
-      g.fillStyle = v.banner === 'SLEWING' ? C.warn : C.accent;
-      g.textAlign = 'center';
-      g.fillText(v.banner, x0 + w / 2, y0 + 28);
-      g.textAlign = 'left';
-    }
-  }
-
-  private logArea(): void {
-    const g = this.g;
-    g.fillStyle = '#0c0d10';
-    g.fillRect(LOG.x, LOG.y, LOG.w, LOG.h);
-    g.fillStyle = C.line;
-    g.fillRect(LOG.x, LOG.y, LOG.w, 1);
-    const show = lines.slice(-8);
-    show.forEach((l, i) => {
-      const y = LOG.y + 22 + i * 19;
-      this.text(12, y, l.t, C.faint, `12px ${MONO}`);
-      this.text(84, y, l.text, l.cls === 'w' ? C.warn : l.cls === 'ok' ? C.ok : C.dim, `12px ${MONO}`);
-    });
-  }
-
-  private panel(v: View, a: Actions): void {
-    const g = this.g;
-    g.fillStyle = C.panel;
-    g.fillRect(PANEL.x, PANEL.y, PANEL.w, PANEL.h);
-    g.fillStyle = C.line;
-    g.fillRect(PANEL.x, PANEL.y, 1, PANEL.h);
-    const L = PANEL.x + 12, R = PANEL.x + PANEL.w - 12;
-
-    // Targets: a click slews the mount.
-    let y = this.head(PANEL.y, 'Targets', 'click to slew');
-    v.targets.forEach((t, i) => {
-      const ry = y + 4 + i * 24;
-      const hot = this.over(PANEL.x, ry, PANEL.w, 24);
-      if (hot) {
-        g.fillStyle = C.btnHover;
-        g.fillRect(PANEL.x + 1, ry, PANEL.w - 1, 24);
+      g.strokeStyle = V.yellow;
+      const [bx, by] = v.box;
+      g.beginPath();
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        g.moveTo(bx + sx * 16, by + sy * 8); g.lineTo(bx + sx * 16, by + sy * 16); g.lineTo(bx + sx * 8, by + sy * 16);
       }
-      this.text(L, ry + 17, t.name, C.ink);
-      g.textAlign = 'right';
-      this.text(R, ry + 17, t.note, C.dim, `12px ${MONO}`);
-      g.textAlign = 'left';
-      this.hits.push({ x: PANEL.x, y: ry, w: PANEL.w, h: 24, act: () => a.goto(i) });
-    });
-    y += 8 + v.targets.length * 24;
-
-    // Camera.
-    y = this.head(y, 'Camera', v.temp);
-    this.text(L, y + 20, v.state, rig.looping ? C.ink : C.dim);
-    g.fillStyle = '#0b0c0e';
-    g.fillRect(L, y + 28, R - L, 4);
-    g.fillStyle = C.accent;
-    g.fillRect(L, y + 28, (R - L) * v.progress, 4);
-    const ry = y + 42;
-    this.button(L, ry, 26, 26, '−', () => a.exposure(-1));
-    g.fillStyle = '#0b0c0e';
-    g.fillRect(L + 30, ry, 58, 26);
-    g.textAlign = 'center';
-    this.text(L + 59, ry + 18, `${rig.exposure} s`, C.ink, `13px ${MONO}`);
-    g.textAlign = 'left';
-    this.button(L + 92, ry, 26, 26, '+', () => a.exposure(1));
-    const fs: Filter[] = ['L', 'R', 'G', 'B', 'Hα'];
-    fs.forEach((f, i) => this.button(L + 134 + i * 45, ry, 42, 26, f, () => a.filter(f), { on: rig.filter === f }));
-    const ry2 = ry + 34;
-    this.button(L, ry2, 80, 26, rig.looping ? 'Stop' : 'Start', a.startStop, rig.looping ? { stop: true } : { primary: true });
-    this.text(L + 92, ry2 + 18, `Stack ${v.subs}`, C.ink, `13px ${MONO}`);
-    this.button(R - 64, ry2, 64, 26, 'Reset', a.reset);
-    y = ry2 + 36;
-
-    // Focus.
-    y = this.head(y, 'Focus', `HFR ${v.hfr.toFixed(2)} px`);
-    this.text(L, y + 22, `Position ${Math.round(rig.focus).toLocaleString()}`, C.ink, `13px ${MONO}`);
-    this.button(R - 100, y + 6, 100, 26, rig.autofocus ? 'Focusing…' : 'Autofocus', a.autofocus, { primary: !rig.autofocus });
-    this.vcurve(L, y + 40, R - L, 56);
-    y += 106;
-
-    // Guiding.
-    const [, , tot] = guideRms();
-    y = this.head(y, 'Guiding', rig.guiding ? `RMS ${tot.toFixed(2)}″` : 'off');
-    this.guidePlot(L, y + 8, R - L - 90, 44);
-    this.button(R - 80, y + 16, 80, 26, rig.guiding ? 'Guiding' : 'Guide', a.guide, { on: rig.guiding });
-    y += 60;
-
-    // Spectrum of the picked target.
-    y = this.head(y, 'Spectrum', v.sel ? '' : 'click a star or galaxy');
-    if (v.sel) {
-      this.text(L, y + 19, v.sel.name, C.warm, `600 14px ${SANS}`);
-      this.text(L, y + 37, v.sel.info, C.dim, `12px ${SANS}`);
-      spectrumPlot(g, L, y + 46, R - L, 104, v.sel.run, v.sel.found);
-      v.sel.lines.forEach((l, i) => this.text(L, y + 168 + i * 17, l, C.ink, `12px ${SANS}`));
-      const found = rows(v.sel.found).filter((r) => r.found).map((r) => r.label);
-      this.text(L, y + 168 + v.sel.lines.length * 17, found.length ? `Found: ${found.join(', ')}` : 'Found: nothing yet', C.dim, `12px ${SANS}`);
+      g.stroke();
     }
-    y += 230;
-
-    // Image statistics.
-    y = this.head(y, 'Image', `${v.stars} stars`);
-    histPlot(g, L, y + 8, R - L, 40, v.stats.hist);
-    this.text(L, y + 66, `Mean ${v.stats.mean.toFixed(0)}  Med ${v.stats.med.toFixed(0)}  σ ${v.stats.sd.toFixed(1)}  Max ${v.stats.max.toFixed(0)}`, C.dim, `12px ${MONO}`);
+    // The scale bar, bottom left.
+    g.fillStyle = V.white;
+    g.fillRect(x0 + 12, y0 + h - 14, Math.round(v.bar.px), 2);
+    g.restore();
+    this.put(1, 30, ` ${v.bar.label} `, V.white);
+    this.put(77, 2, 'N ↑', V.white);
+    this.put(77, 3, 'E ←', V.white);
+    if (v.banner && (v.still || Math.floor(v.time * 2) % 2 === 0)) {
+      const t = `*** ${v.banner} ***`;
+      this.put(42 - Math.floor(t.length / 2), 3, t, V.yellow, V.black);
+    }
   }
 
-  private vcurve(x: number, y: number, w: number, h: number): void {
+  private logBox(): void {
+    this.box(0, 33, 83, 40, 'LOG');
+    lines.slice(-6).forEach((l, i) => {
+      const fg = l.cls === 'w' ? V.yellow : l.cls === 'ok' ? V.green : V.grey;
+      this.put(2, 34 + i, l.t, V.dark);
+      this.put(11, 34 + i, l.text.slice(0, 71), fg);
+    });
+  }
+
+  private telescope(v: View): void {
+    this.box(84, 1, 119, 7, 'TELESCOPE');
+    const [, , tot] = guideRms();
+    this.put(86, 2, 'RA ', V.grey); this.put(89, 2, v.ra, V.yellow);
+    this.put(104, 2, 'HA ', V.grey); this.put(107, 2, v.ha, V.yellow);
+    this.put(86, 3, 'DEC', V.grey); this.put(90, 3, v.dec, V.yellow);
+    this.put(86, 4, 'ALT', V.grey); this.put(90, 4, v.alt.padStart(6), V.yellow);
+    this.put(98, 4, 'AZ', V.grey); this.put(101, 4, v.az.padStart(6), V.yellow);
+    this.put(109, 4, 'X', V.grey); this.put(111, 4, v.air, V.yellow);
+    this.put(86, 5, 'TRACK', V.grey); this.put(92, 5, rig.slew ? 'SLEWING' : rig.tracking ? 'SIDEREAL' : 'OFF', rig.slew ? V.yellow : V.green);
+    this.put(104, 5, 'SEEING', V.grey); this.put(111, 5, v.seeing, V.yellow);
+    this.put(86, 6, 'GUIDE', V.grey);
+    this.put(92, 6, rig.guiding ? `ON  RMS ${tot.toFixed(2)}"` : 'OFF  open loop', rig.guiding ? V.green : V.red);
+  }
+
+  private camera(v: View, a: Actions): void {
+    this.box(84, 8, 119, 14, 'CAMERA');
+    this.put(86, 9, v.state.slice(0, 32).padEnd(32), rig.looping ? V.white : V.grey);
+    // A block progress bar, 30 cells.
+    const n = Math.round(v.progress * 30);
+    this.put(86, 10, '█'.repeat(n) + '░'.repeat(30 - n), V.cyan);
+    this.put(86, 11, 'EXP', V.grey);
+    const c = this.key(90, 11, '<', () => a.exposure(-1));
+    this.put(c, 11, ` ${String(rig.exposure).padStart(2)} s `, V.yellow);
+    this.key(c + 6, 11, '>', () => a.exposure(1));
+    this.put(101, 11, 'STACK', V.grey);
+    this.put(107, 11, String(v.subs).padStart(3), V.yellow);
+    this.key(111, 11, '[Rst]', a.reset);
+    this.put(86, 12, 'FILTER', V.grey);
+    let fc = 93;
+    for (const f of ['L', 'R', 'G', 'B', 'Hα'] as Filter[]) fc = this.key(fc, 12, f === 'Hα' ? ' Hα ' : ` ${f} `, () => a.filter(f), rig.filter === f, V.white) + 1;
+    this.put(86, 13, 'CCD', V.grey);
+    this.put(90, 13, v.temp, V.yellow);
+    this.key(108, 13, rig.looping ? '[ STOP]' : '[START]', a.startStop, false, rig.looping ? V.red : V.green);
+  }
+
+  private focus(v: View, a: Actions): void {
     const g = this.g;
-    g.fillStyle = '#0b0c0e';
+    this.box(84, 15, 119, 19, 'FOCUS');
+    this.put(86, 16, 'POS', V.grey);
+    this.put(90, 16, String(Math.round(rig.focus)).padStart(6), V.yellow);
+    this.put(98, 16, 'HFR', V.grey);
+    this.put(102, 16, `${v.hfr.toFixed(2)}`, V.yellow);
+    this.key(108, 16, rig.autofocus ? '[ ... ]' : '[AUTO ]', a.autofocus, rig.autofocus);
+    // The V-curve, in graphics, two rows high.
+    const x = cx(86), y = cy(17) + 2, w = cx(118) - x, h = CH * 2 - 4;
+    g.fillStyle = '#000';
     g.fillRect(x, y, w, h);
+    g.strokeStyle = V.dark;
+    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     if (!af.points.length) {
-      this.text(x + 8, y + h / 2 + 4, 'Autofocus draws its V-curve here', C.faint, `12px ${SANS}`);
+      this.put(88, 17, 'no V-curve: press F6', V.dark);
       return;
     }
     const xs = af.points.map((p) => p[0]), ys = af.points.map((p) => p[1]);
-    const a0 = Math.min(...xs) - 30, a1 = Math.max(...xs) + 30, top = Math.max(...ys) * 1.15;
-    const X = (p: number): number => x + 4 + ((p - a0) / (a1 - a0)) * (w - 8);
-    const Y = (q: number): number => y + h - 4 - (q / top) * (h - 8);
+    const a0 = Math.min(...xs) - 30, a1 = Math.max(...xs) + 30, top = Math.max(...ys) * 1.1;
+    const X = (p: number): number => x + 3 + ((p - a0) / (a1 - a0)) * (w - 6);
+    const Y = (q: number): number => y + h - 3 - (q / top) * (h - 6);
     const f = af.fit;
     if (f) {
-      g.strokeStyle = C.accent;
+      g.strokeStyle = V.bcyan;
       g.beginPath();
       for (let i = 0; i <= 60; i++) {
         const p = a0 + ((a1 - a0) * i) / 60;
@@ -352,37 +289,103 @@ export class Screen {
         else g.lineTo(X(p), Y(q));
       }
       g.stroke();
-      g.strokeStyle = C.ok;
-      g.beginPath();
-      g.moveTo(X(f.b), y + 2);
-      g.lineTo(X(f.b), y + h - 2);
-      g.stroke();
+      g.fillStyle = V.green;
+      g.fillRect(Math.round(X(f.b)), y + 2, 1, h - 4);
     }
-    g.fillStyle = C.warm;
-    for (const [p, q] of af.points) g.fillRect(X(p) - 2, Y(q) - 2, 5, 5);
+    g.fillStyle = V.yellow;
+    for (const [p, q] of af.points) g.fillRect(Math.round(X(p)) - 2, Math.round(Y(q)) - 2, 4, 4);
   }
 
-  private guidePlot(x: number, y: number, w: number, h: number): void {
+  private targets(v: View, a: Actions): void {
+    this.box(84, 20, 119, 27, 'TARGETS · key 1-6');
+    v.targets.slice(0, 6).forEach((t, i) => {
+      const r = 21 + i;
+      const hot = this.over(85, r, 34);
+      if (hot) this.put(85, r, ' '.repeat(34), V.black, V.bcyan);
+      const fg = hot ? V.black : V.white;
+      this.put(86, r, `${i + 1}`, hot ? V.black : V.yellow, hot ? V.bcyan : undefined);
+      this.put(88, r, t.name.slice(0, 17), fg, hot ? V.bcyan : undefined);
+      this.put(118 - t.note.length, r, t.note, hot ? V.black : V.grey, hot ? V.bcyan : undefined);
+      this.hits.push({ x: cx(85), y: cy(r), w: 34 * CW, h: CH, act: () => a.goto(i) });
+    });
+  }
+
+  private spectrum(v: View, a: Actions): void {
     const g = this.g;
-    g.fillStyle = '#0b0c0e';
+    this.box(84, 28, 119, 40, 'SPECTROGRAPH');
+    const s = v.sel;
+    if (!s) {
+      this.put(86, 30, 'No target.', V.grey);
+      this.put(86, 31, 'Click a star or a galaxy', V.dark);
+      this.put(86, 32, 'in the image to observe it.', V.dark);
+      return;
+    }
+    this.put(86, 29, s.name.slice(0, 22), V.white);
+    this.key(110, 29, '[SLEW]', a.slewSelected);
+    this.put(86, 30, s.info.slice(0, 32), V.grey);
+    // The plot: a colour strip, then the trace, in graphics.
+    const x = cx(86), y = cy(31) + 3, w = cx(118) - x, h = CH * 4 - 6;
+    const stripH = 12, top = y + stripH + 3, ph = h - stripH - 3;
+    g.fillStyle = '#000';
     g.fillRect(x, y, w, h);
-    const mid = y + h / 2, k = (h / 2 - 3) / 4;
-    g.fillStyle = '#3a3d46';
-    g.fillRect(x, Math.round(mid), w, 1);
-    const hist = rig.history;
-    const line = (i: 0 | 1, colour: string): void => {
-      g.strokeStyle = colour;
+    const X = (l: number): number => x + ((l - L0) / (L1 - L0)) * w;
+    if (s.run && s.run.time > 0) {
+      const sp = s.run.now;
+      for (let px = 0; px < w; px++) {
+        const i = Math.min(BINS - 1, Math.round((px / w) * (BINS - 1)));
+        const [r, gg, b] = wavelengthRGB(lambdaAt(i));
+        const val = Math.max(0, Math.min(1, sp[i]));
+        g.fillStyle = `rgb(${(r * val * 255) | 0},${(gg * val * 255) | 0},${(b * val * 255) | 0})`;
+        g.fillRect(x + px, y, 1, stripH);
+      }
+      // Found lines first, so the trace draws over them.
+      for (const f of s.found.filter(isFound)) {
+        g.fillStyle = f.emission ? V.magenta : f.el === 'O₂' ? V.dark : V.cyan;
+        g.fillRect(Math.round(X(f.l)), top, 1, ph);
+      }
+      g.strokeStyle = V.yellow;
+      g.lineWidth = 1;
       g.beginPath();
-      hist.forEach((v, n) => {
-        const px = x + w - (hist.length - 1 - n) * (w / 119);
-        const py = mid - Math.max(-4.2, Math.min(4.2, v[i])) * k;
-        if (n === 0) g.moveTo(px, py);
+      for (let i = 0; i < BINS; i += 2) {
+        const px = X(lambdaAt(i)), py = top + ph - (Math.max(0, Math.min(1.15, sp[i])) / 1.15) * ph;
+        if (i === 0) g.moveTo(px, py);
         else g.lineTo(px, py);
-      });
+      }
       g.stroke();
+    }
+    g.strokeStyle = V.dark;
+    g.strokeRect(x + 0.5, top + 0.5, w - 1, ph - 1);
+    // Each wavelength label sits on its own column of the plot.
+    for (const l of [400, 500, 600, 700]) this.put(86 + Math.round(((l - L0) / (L1 - L0)) * 32) - 1, 35, String(l), V.dark);
+    s.lines.slice(0, 3).forEach((l, i) => this.put(86, 36 + i, l.slice(0, 32), i === 0 ? V.grey : V.white));
+    const found = elementRows(s.found).filter((r) => r.found).map((r) => r.el);
+    this.put(86, 39, `FOUND ${found.length ? found.join(' ') : '-'}`.slice(0, 32), V.green);
+  }
+
+  private keyBar(a: Actions): void {
+    let c = 0;
+    const r = ROWS - 1;
+    this.put(0, r, ' '.repeat(COLS), V.black, V.black);
+    // The labels sit on cyan, as in the old file managers.
+    const bar = (num: string, label: string, act: () => void): void => {
+      this.put(c, r, num, V.white, V.black);
+      c += num.length;
+      const n = label.length;
+      const hot = this.over(c, r, n);
+      this.put(c, r, label, V.black, hot ? V.bcyan : V.cyan);
+      this.hits.push({ x: cx(c), y: cy(r), w: n * CW, h: CH, act });
+      c += n + 1;
     };
-    line(0, C.accent);
-    line(1, C.bad);
+    bar('F2', 'Slew    ', a.slewSelected);
+    bar('F3', rig.looping ? 'Stop    ' : 'Expose  ', a.startStop);
+    bar('F4', 'Filter  ', () => {
+      const fs: Filter[] = ['L', 'R', 'G', 'B', 'Hα'];
+      a.filter(fs[(fs.indexOf(rig.filter) + 1) % fs.length]);
+    });
+    bar('F6', 'Focus   ', a.autofocus);
+    bar('F8', rig.guiding ? 'Unguide ' : 'Guide   ', a.guide);
+    bar('F9', this.night ? 'Day     ' : 'Night   ', a.night);
+    this.put(c + 1, r, '+/- zoom  F fit  Z 1:1  1-6 go to', V.grey);
   }
 }
 

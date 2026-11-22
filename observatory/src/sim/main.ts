@@ -565,10 +565,11 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
   let sel = null;
   if (selected) {
     const found = run ? run.lines() : [];
-    const lines: string[] = run ? [`${run.time.toFixed(0)} s · S/N ${Math.round(run.snr)}${run.snr >= SNR_CAP ? ' · done' : inView ? '' : ' · out of view'}`] : [];
+    // Each line fits the 32 columns of the program's box.
+    const lines: string[] = run ? [`T+${run.time.toFixed(0)}s  S/N ${Math.round(run.snr)}${run.snr >= SNR_CAP ? '  DONE' : inView ? '' : '  OUT OF VIEW'}`] : [];
     if (run && selected.galaxy === 'none') {
       const te = run.teff();
-      if (te && run.snr > 4) lines[0] += ` · ${Math.round(te.T / 50) * 50} ± ${Math.round(te.err / 10) * 10} K · ${classFromTeff(te.T)}`;
+      if (te && run.snr > 4) lines.push(`TEFF ${Math.round(te.T / 50) * 50}±${Math.round(te.err / 10) * 10} K  CLASS ${classFromTeff(te.T)}`);
     } else if (run) {
       // A redshift needs a line from the galaxy itself, not from our air.
       const own = found.filter((f) => isFound(f) && f.el !== 'O₂');
@@ -577,17 +578,22 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
         const z = Math.max(0, selected.redshift + zDraw * err * 0.5);
         const c = cosmology(z);
         const best = [...own].sort((p, q) => q.depth / q.sigma - p.depth / p.sigma)[0];
-        const ago = c.lookback < 1 ? `${Math.round(c.lookback * 1000)} million` : `${c.lookback.toFixed(1)} billion`;
-        lines.push(`z = ${z.toFixed(z < 0.1 ? 4 : 3)} ± ${err.toFixed(z < 0.1 ? 4 : 3)} from ${best.id}; light left ${ago} years ago`);
-      } else lines.push('No galaxy line yet: keep integrating');
+        const ago = c.lookback < 1 ? `${Math.round(c.lookback * 1000)} Myr` : `${c.lookback.toFixed(1)} Gyr`;
+        lines.push(`z ${z.toFixed(z < 0.1 ? 4 : 3)}±${err.toFixed(z < 0.1 ? 4 : 3)} ${best.id}`);
+        lines.push(`LOOKBACK ${ago}  D ${Math.round(c.distance)} Mpc`);
+      } else lines.push('NO GALAXY LINE YET');
     }
     const kind = selected.galaxy === 'none' ? `Star · ${selected.spect}` : `${selected.galaxy === 'spiral' ? 'Spiral' : 'Elliptical'} galaxy`;
     sel = { name: selected.name, info: `${kind} · mag ${selected.mag.toFixed(1)}`, run, found, lines };
   }
   const state = rig.slew ? 'Slewing' : rig.autofocus ? 'Autofocus running' : !rig.looping ? 'Idle'
     : `Exposing ${subClock.toFixed(1)} / ${rig.exposure} s · ${rig.filter}`;
+  // The hour angle: how far the target has turned past the meridian.
+  const haH = ((((lstDeg - rd.ra) / 15) % 24) + 36) % 24 - 12;
+  const ha = `${haH < 0 ? '-' : '+'}${p2(Math.floor(Math.abs(haH)))}:${p2(Math.floor((Math.abs(haH) % 1) * 60))}`;
   screen.draw({
-    clock: `${p2(now.getUTCHours())}:${p2(now.getUTCMinutes())}:${p2(now.getUTCSeconds())}`, lst: fmtLst(lstDeg),
+    clock: `${p2(now.getUTCHours())}:${p2(now.getUTCMinutes())}:${p2(now.getUTCSeconds())}`, lst: fmtLst(lstDeg), ha,
+    seeing: `${fwhm().toFixed(1)}"`, time: performance.now() / 1000, still: reduced.matches,
     ra: fmtRa(rd.ra), dec: fmtDec(rd.dec), alt: `${pose.alt.toFixed(1)}°`, az: `${pose.az.toFixed(1)}°`, air: airmass(pose.alt).toFixed(2),
     state, progress: rig.looping ? Math.min(1, subClock / rig.exposure) : 0, subs,
     temp: `${rig.sensorTemp >= 0 ? '+' : '−'}${Math.abs(rig.sensorTemp).toFixed(1)} °C · ${Math.round(rig.coolerPower)}%`,
@@ -601,10 +607,10 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
 
 // Bright named stars and deep fields the mount can reach now.
 const DEEP_FIELDS = [
-  { name: 'Deep field · Draco', ra: 240, dec: 60 },
-  { name: 'Deep field · Lockman Hole', ra: 161.25, dec: 57.5 },
-  { name: 'Deep field · Boötes', ra: 218, dec: 34.5 },
-  { name: 'Deep field · Pegasus', ra: 345, dec: 20 },
+  { name: 'Draco deep field', ra: 240, dec: 60 },
+  { name: 'Lockman Hole', ra: 161.25, dec: 57.5 },
+  { name: 'Boötes deep field', ra: 218, dec: 34.5 },
+  { name: 'Pegasus field', ra: 345, dec: 20 },
 ];
 let lastTargets = -1e9;
 
@@ -695,6 +701,11 @@ const actions = {
     log(rig.guiding ? 'Guiding started' : 'Guiding stopped: the mount runs open loop', rig.guiding ? 'ok' : 'w');
   },
   night: (): void => { screen.night = !screen.night; },
+  stars: (): void => { rig.overlay.stars = !rig.overlay.stars; },
+  slewSelected: (): void => {
+    if (selected) slewTo({ x: selected.x, y: selected.y, z: selected.z }, selected.name);
+    else log('Slew: click a target in the image first', 'w');
+  },
 };
 
 /* ---------- picking ---------- */
@@ -800,10 +811,20 @@ driveBtn.addEventListener('click', () => {
 
 stage.addEventListener('keydown', (e) => {
   if (mode === 'camera') {
-    if (e.key === '+' || e.key === '=') zoomAt(1.5);
+    // The program's keys, as its function-key bar shows them.
+    const fkeys: Record<string, () => void> = {
+      F2: actions.slewSelected, F3: actions.startStop, F6: actions.autofocus, F8: actions.guide, F9: actions.night,
+      F4: () => {
+        const fs: Filter[] = ['L', 'R', 'G', 'B', 'Hα'];
+        actions.filter(fs[(fs.indexOf(rig.filter) + 1) % fs.length]);
+      },
+    };
+    if (fkeys[e.key]) fkeys[e.key]();
+    else if (/^[1-6]$/.test(e.key)) actions.goto(Number(e.key) - 1);
+    else if (e.key === '+' || e.key === '=') zoomAt(1.5);
     else if (e.key === '-') zoomAt(1 / 1.5);
     else if (e.key === 'f' || e.key === 'F') actions.fit();
-    else if (e.key === '1') actions.one();
+    else if (e.key === 'z' || e.key === 'Z') actions.one();
     else if (e.key === ' ') actions.startStop();
     else if (e.key.startsWith('Arrow')) {
       // Arrows nudge the mount by a tenth of the view.
