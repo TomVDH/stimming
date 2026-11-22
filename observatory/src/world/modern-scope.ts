@@ -67,8 +67,10 @@ const STACK_END = 1.55;
 const WRAP_X = -0.73, WRAP_IN = 0.2, WRAP_OUT = 0.3, WRAP_A = (150 * Math.PI) / 180, LINK = 0.034;
 // The loop keeps 40 degrees of slack at both ends of the altitude range.
 const WRAP_LEN = WRAP_OUT * (Math.PI / 2) + (WRAP_IN + WRAP_OUT) * 0.7 + (Math.PI * (WRAP_OUT - WRAP_IN)) / 2;
-// The mirror covers: eight petals hinged at the rim, closed just in front of the primary.
-const PETALS = 8, PETAL_Z = 0.32, PETAL_IN = 0.125, PETAL_OUT = 0.5;
+// The mirror covers: sixteen petals hinged at the rim, closed just in front of the primary.
+// A petal is flat, so its corners reach past the rim when it stands open.
+// Sixteen keep those corners at 0.512, inside the lining at 0.517.
+const PETALS = 16, PETAL_Z = 0.32, PETAL_IN = 0.125, PETAL_OUT = 0.5;
 // The covers take this long to travel, in seconds.
 const COVER_S = 3;
 
@@ -550,9 +552,9 @@ function materials(env: CanvasTexture): Mats {
     accent: std('accent', { map: accentWear.map, roughness: 1, roughnessMap: accentWear.rough, metalness: 0.1 }),
     // Satin graphite on the arms' cover plates: a step off the black.
     graphite: std('graphite', { map: graphiteWear.map, roughness: 1, roughnessMap: graphiteWear.rough, metalness: 0.25 }),
-    // The mirror covers' petals: the white coat on both faces.
+    // The mirror covers' petals: satin black on both faces, so open ones vanish into the bore.
     petal: std('petal', {
-      map: whiteWear.map, roughness: 1, roughnessMap: whiteWear.rough, metalness: 0, side: DoubleSide,
+      map: blackWear.map, roughness: 1, roughnessMap: blackWear.rough, metalness: 0.25, side: DoubleSide,
     }),
     // The shroud's seam: a woven tape, and its stitches.
     webbing: std('webbing', { color: 0x1d1e21, metalness: 0, roughness: 0.85 }),
@@ -716,7 +718,8 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
 function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   /* the centre section: a black anodised ring that carries the trunnions */
   k.add(M.black, along(turn(ringProfile(MIRROR_R + 0.02, CELL_R, SECTION_Z0, SECTION_Z1, 0.01), 160), Y_TO_Z));
-  k.add(M.flock, cylZOpen(MIRROR_R + 0.02, SECTION_Z0, CELL_Z1, 160));
+  // The flock lining sits just inside the wall, so the two surfaces never fight.
+  k.add(M.flock, cylZOpen(MIRROR_R + 0.017, SECTION_Z0, CELL_Z1, 160));
   k.add(M.stainless, along(turn(ringProfile(CELL_R, CELL_R + 0.005, SECTION_Z0 + 0.04, SECTION_Z0 + 0.07, 0.002), 160), Y_TO_Z));
   // The trunnions: short shafts out to the fork's bearings.
   k.add(M.black, cylX(0.13, CELL_R - 0.02, ARM_X - ARM_T / 2, 64), cylX(0.13, -ARM_X + ARM_T / 2, -CELL_R + 0.02, 64));
@@ -795,7 +798,7 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
 
   /* the top cage: a black ring with a white lip, the spider and the secondary */
   k.add(M.black, along(turn(ringProfile(CAGE_R - 0.04, CAGE_R + 0.04, CAGE_Z - 0.07, CAGE_Z + 0.07, 0.01), 160), Y_TO_Z));
-  k.add(M.flock, cylZOpen(CAGE_R - 0.04, CAGE_Z - 0.07, CAGE_Z + 0.07, 160));
+  k.add(M.flock, cylZOpen(CAGE_R - 0.043, CAGE_Z - 0.07, CAGE_Z + 0.07, 160));
   k.add(M.accent, along(turn(ringProfile(CAGE_R - 0.04, CAGE_R + 0.044, CAGE_Z - 0.085, CAGE_Z - 0.07, 0.004), 160), Y_TO_Z));
   // The secondary housing, its focus motor and its baffle.
   k.add(M.black, cylZ(0.21, CAGE_Z - 0.12, SEC_Z - 0.01, 96), cylZ(0.08, CAGE_Z - 0.2, CAGE_Z - 0.12, 48));
@@ -904,7 +907,7 @@ function wrapAt(s: number, alt: number, p: Vector3, t: Vector3): void {
 // A cover petal: a ring sector, hinged at the rim on its local Y axis.
 // It reaches along local +X toward the axis and faces local -Z, the front.
 function petalGeometry(): BufferGeometry {
-  const half = Math.PI / PETALS + 0.035;
+  const half = Math.PI / PETALS + 0.022;
   return new RingGeometry(PETAL_IN, PETAL_OUT, 24, 1, Math.PI - half, half * 2).translate(PETAL_OUT, 0, 0);
 }
 
@@ -1009,7 +1012,11 @@ export function buildModernScope(size: number): ModernScope {
   const placeCovers = (): void => {
     // A smoothstep eases the swing at both ends.
     const e = cover * cover * (3 - 2 * cover);
-    for (const h of hinges) h.rotation.y = e * (Math.PI / 2) * 0.97;
+    // Fully open, the petals lie in their recess, out of sight from the front.
+    for (const h of hinges) {
+      h.rotation.y = e * (Math.PI / 2) * 0.97;
+      h.visible = cover < 1;
+    }
   };
 
   // The cell's fan rotors: they spin only while the fans run.
