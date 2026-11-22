@@ -149,7 +149,7 @@ Lab keys and URL:
 | Key | Does |
 |---|---|
 | `?d=h` | The transition: `a`, `d`, `e`, `f`, `g` or `h`. The lab opens on `h`. |
-| `?v=a..d` | The title layout of Flash cut. Keys 1 to 4. |
+| `?v=a..e` | The title layout of Flash cut. Keys 1 to 5. `e` is 5 · Scrub. |
 | `?y=0.5` | Scrolls half the travel on load. `?y=1` lands on the zone. |
 | `?rm=1` | Reduced motion: a plain scroll. |
 | `?lab=1` | Opens the lab panel. `R` replays the beats. |
@@ -193,7 +193,8 @@ Lab keys and URL:
 
 - [ ] Tom tests on `annexlab/sheet.html` and judges the floating hint
 - [ ] Ask Tom which parts belong in the title block, and for a reference
-- [ ] One new proposal for the title block, as a sequence in time on the intro's beats
+- [x] One new proposal for the title block, as a sequence in time on the intro's beats: 5 · Scrub, `?d=h&v=e` (2026-11-22). Tom said yes to the build
+- [ ] Tom judges 5 · Scrub
 - [-] A border between toy and content that fits each toy. Parked (Tom, 2026-11-22)
 - [ ] The content kit and its file format, after the layout
 - [ ] Then the shell build below

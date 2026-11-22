@@ -64,7 +64,7 @@ Notes show the last three, with "Show all N notes".
 ## Round 2 (2026-11-16)
 
 Tom asked for more iterations and an Awwwards-level transition. Status: open, Tom picks.
-Lab: `annexlab/round2.html` (noindex). `?d=a|d|e|f` picks a direction; keys 1 to 4 switch. `?rm=1` shows reduced motion. `?y=0.5` scrolls half the travel. `?still=1` shows the toy's still, not the live toy.
+Lab: `annexlab/round2.html` (noindex). `?d=a|d|e|f` picks a direction; keys 1 to 4 switch. `?rm=1` shows reduced motion. `?y=0.5` scrolls half the travel. `?v=e` is 5 · Scrub. `?still=1` shows the toy's still, not the live toy.
 Round 2 has the shell's own look and the live Glass toy in a frame. Round 1 was a grayscale wireframe.
 
 | | Transition | The cue under the stage | Risk |
@@ -107,6 +107,19 @@ Second set, `?v=a..d`, keys 1 to 4. The emblem leads in each. The block holds th
 | 4 · Orbit | Both names run in a ring round the emblem, in the slab face. The ring turns with the scroll. All centred. |
 
 Tom rejected this set too (2026-11-16): "all are so trite". The title block is open. Bean `stimming-465y` holds the handoff: every ruling, every verdict and the advice for the next try.
+
+#### 5 · Scrub (2026-11-22)
+
+One idea, not a set. Tom said yes to the build. Lab: `round2.html?d=h&v=e`, key 5. Status: built, Tom judges.
+
+- The toy's Signal intro plays again under the toy, and the scroll is the playhead. One step of scroll is one film frame at 30 fps: hard cuts, no tween.
+- The beats are Signal's, from `shared/intro.js`: lead 4 frames (the glass comes on), pop 9 (the flash box fills the eye), flash 16 (the box at size), then the lines unfurl 5 frames apart, 12 frames each. 56 frames in all.
+- The scene is two screens tall, so one frame is about 30 px of scroll. The frames run from `--p` 0.04 to 0.96.
+- The column holds still on the screen while it plays. At `--p` 1 it lets go and scrolls on with the page: the last frame is the title block. The dark sheet starts one screen under it.
+- Scroll back and the frames play in reverse.
+- The ingredients are the intro's own: emblem, name, Flemish name with IPA, motto in both languages. The sizes come from `shared/intro.css`.
+- The name is in Gabarito, as in the intro. It overrides the shell's B612 heading trial for this layout only.
+- Reduced motion: the last frame, no glass, a plain scroll.
 
 Test sheet: `annexlab/sheet.html` shows every transition and layout, one card each, with Tom's verdict. Each card shows the toy's still; a click loads the lab with `?still=1`, which puts the still in place of the live toy (Tom, 2026-11-22: live toys crashed the sheet).
 
