@@ -2899,9 +2899,24 @@ float beamAt(vec3 da, out float s) {
   float dist = length(w0 + da * tr - a * s), r = s * 0.36;
   return smoothstep(r, r * 0.15, dist) * smoothstep(0.3, 2.5, s) * smoothstep(45.0, 12.0, s);
 }
+// The outside buffer is smaller than the screen; plain bilinear blurs it.
+// Catmull-Rom in five bilinear taps keeps edges crisp.
+// The floor at zero stops dark rings round bright edges.
+vec3 outSharp(vec2 uv) {
+  vec2 size = vec2(textureSize(uOut, 0)), sp = uv * size, tc = floor(sp - 0.5) + 0.5, f = sp - tc;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, t0 = (tc - 1.0) / size, t3 = (tc + 2.0) / size, t12 = (tc + w2 / w12) / size;
+  vec3 c = texture(uOut, vec2(t12.x, t0.y)).rgb * (w12.x * w0.y) + texture(uOut, vec2(t0.x, t12.y)).rgb * (w0.x * w12.y)
+    + texture(uOut, t12).rgb * (w12.x * w12.y) + texture(uOut, vec2(t3.x, t12.y)).rgb * (w3.x * w12.y)
+    + texture(uOut, vec2(t12.x, t3.y)).rgb * (w12.x * w3.y);
+  float ws = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+  return max(c / ws, 0.0);
+}
 vec3 glass(vec3 da, vec2 px) {
+  // Alpha marks open sky; it keeps the plain bilinear fetch.
   vec4 out1 = texture(uOut, px / uRes);
-  vec3 view = out1.rgb;
+  vec3 view = outSharp(px / uRes);
   vec3 d = toWorld(da);
   // Point sources draw at full size; pass 1 says where sky shows.
   if (out1.a > 0.001) view += out1.a * (stars(d) + disc(d) + meteor(d));
