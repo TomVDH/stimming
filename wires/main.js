@@ -881,7 +881,12 @@ vec3 shade(Surf s, vec3 v, vec3 p) {
   c += dif * mix(ground, skyC, 0.5 + 0.5 * n.y) * s.ao * uFill;
   vec3 r = reflect(-v, n);
   vec3 env = r.y > 0.0 ? skDusk(r, uSun, uZen, uMid, uBand, uAnti) : ground;
-  c += env * (f0 + (1.0 - f0) * pow(1.0 - nv, 5.0)) * (1.0 - s.rough * 0.8) * s.ao * uFill;
+  // A rough surface mirrors a blur of the sky, near the fill colour.
+  env = mix(env, mix(ground, skyC, 0.5 + 0.5 * n.y), smoothstep(0.2, 0.8, s.rough));
+  // Karis's fitted split-sum term: rough grazing faces mirror little.
+  vec4 rr = s.rough * vec4(-1.0, -0.0275, -0.572, 0.022) + vec4(1.0, 0.0425, 1.04, -0.04);
+  vec2 ab = vec2(-1.04, 1.04) * (min(rr.x * rr.x, exp2(-9.28 * nv)) * rr.x + rr.y) + rr.zw;
+  c += env * (f0 * ab.x + ab.y) * s.ao * uFill;
   // The car's lamps are wide and near, so their shadows are soft.
   // Each jittered pass casts from another point across the car's front.
   vec3 carR = normalize(cross(uCarD, vec3(0.0, 1.0, 0.0)) + 1e-5);
