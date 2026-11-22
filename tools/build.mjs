@@ -49,10 +49,22 @@ const options = (toy) => ({
 
 if (!toys.length) console.log('No TypeScript toys found.');
 
+// A toy may build more pages than main.ts: each extra entry writes <toy>/dist/<name>.js.
+const extras = { observatory: ['viewer'] };
+const extraOptions = (toy, name) => ({
+  ...options(toy),
+  entryPoints: [join(root, toy, 'src', `${name}.ts`)],
+  outfile: join(root, toy, 'dist', `${name}.js`),
+});
+const builds = [
+  ...toys.map((toy) => options(toy)),
+  ...Object.entries(extras).flatMap(([toy, names]) => names.map((name) => extraOptions(toy, name))),
+];
+
 if (!dev) {
-  await Promise.all(toys.map((toy) => esbuild.build(options(toy))));
+  await Promise.all(builds.map((o) => esbuild.build(o)));
 } else {
-  const contexts = await Promise.all(toys.map((toy) => esbuild.context(options(toy))));
+  const contexts = await Promise.all(builds.map((o) => esbuild.context(o)));
   await Promise.all(contexts.map((c) => c.watch()));
   // One context serves the whole repo; every context writes its bundle to disk.
   const first = contexts[0] ?? (await esbuild.context({ logLevel: 'info' }));
