@@ -202,7 +202,7 @@ None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live sha
 
 ## Known issues
 
-- Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height, seat distance and grain sit at the end of their ranges. The stills above predate this change. `stimming-auj3`
+- Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height and grain sit at the end of their ranges. Since 2026-11-22 the seat is further back (distance 0.32, range to 0.4) with a wider view (1.08), from Tom's ask; a stored Distance or Field of view overrides it until View Reset. `stimming-mnpv` The stills above predate this change. `stimming-auj3`
 - The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9.
 - NVIDIA (D3D11 and GL): `pow()` of a negative base gives NaN, and the bloom turns each NaN pixel into a flare. The page clamps its bases: `mitters()` and `cloth()` (`sin` of 3.1416 goes below 0) and the Fresnel terms; `skDusk()` in `shared/sky.js` clamps its anti-sun line. `stimming-4uc8`, `stimming-wehv`
