@@ -131,6 +131,46 @@ sweep.addEventListener('change', () => {
   sweepRaf = requestAnimationFrame(sweepTick);
 });
 
+/* ---------- covers and fans ---------- */
+// Two toggles: the mirror covers, and the cell's fans.
+const check = (label: string, id: string): HTMLInputElement => {
+  const wrap = document.createElement('label');
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.id = id;
+  wrap.append(box, label);
+  panel.append(wrap);
+  return box;
+};
+const covers = check(' Covers closed', 'scope-covers');
+const fans = check(' Fans', 'scope-fans');
+
+// The loop runs only while the scope reports motion.
+// Reduced motion snaps the covers and keeps the fans still.
+let animRaf = 0, last = 0;
+const animate = (t: number): void => {
+  const dt = last ? Math.min(0.1, (t - last) / 1000) : 0;
+  last = t;
+  const more = scope.step(dt);
+  draw();
+  animRaf = more ? requestAnimationFrame(animate) : 0;
+  if (!more) last = 0;
+};
+const wake = (): void => {
+  if (!animRaf) animRaf = requestAnimationFrame(animate);
+};
+covers.addEventListener('change', () => {
+  scope.setCovers(!covers.checked);
+  if (reduced) {
+    scope.step(60);
+    draw();
+  } else wake();
+});
+fans.addEventListener('change', () => {
+  scope.setFans(fans.checked && !reduced);
+  wake();
+});
+
 /* ---------- size and first frame ---------- */
 function resize(): void {
   const w = stageEl.clientWidth || 1;

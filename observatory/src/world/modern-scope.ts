@@ -4,7 +4,7 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CircleGeometry, CylinderGeometry, DoubleSide,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
   MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
-  SphereGeometry, TorusGeometry, TubeGeometry, Vector2, Vector3,
+  TorusGeometry, TubeGeometry, Vector2, Vector3,
 } from 'three';
 import type { Material, MeshStandardMaterialParameters } from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
@@ -22,6 +22,13 @@ export type ModernScope = {
   // Points the tube at alt and az in degrees.
   // Azimuth runs from north through east.
   setTube(alt: number, az: number): void;
+  // Opens or closes the mirror covers; step() moves them.
+  setCovers(open: boolean): void;
+  // Turns the cell's fans on or off; step() spins them.
+  setFans(on: boolean): void;
+  // Advances the covers and the fans by dt seconds.
+  // It returns true while anything still moves.
+  step(dt: number): boolean;
 };
 
 const DEG = Math.PI / 180;
@@ -55,6 +62,15 @@ const NODE_BACK_R = 0.6, NODE_FRONT_R = 0.55, NODE_BACK_Z = SECTION_Z0, NODE_FRO
 const SHROUD_Z0 = SECTION_Z0 - 0.06, SHROUD_Z1 = CAGE_Z + 0.1;
 // The back of the instrument stack.
 const STACK_END = 1.55;
+// The altitude cable wrap: a rolling loop round the bearing, between the west arm and the tube.
+// Its inner run lies on a track fixed to the arm, its outer run on a track fixed to the tube.
+const WRAP_X = -0.73, WRAP_IN = 0.2, WRAP_OUT = 0.3, WRAP_A = (150 * Math.PI) / 180, LINK = 0.034;
+// The loop keeps 40 degrees of slack at both ends of the altitude range.
+const WRAP_LEN = WRAP_OUT * (Math.PI / 2) + (WRAP_IN + WRAP_OUT) * 0.7 + (Math.PI * (WRAP_OUT - WRAP_IN)) / 2;
+// The mirror covers: eight petals hinged at the rim, closed just in front of the primary.
+const PETALS = 8, PETAL_Z = 0.32, PETAL_IN = 0.125, PETAL_OUT = 0.5;
+// The covers take this long to travel, in seconds.
+const COVER_S = 3;
 
 /* ---------- geometry helpers ---------- */
 type P = [number, number];
@@ -235,7 +251,7 @@ class Kit {
 }
 
 /* ---------- small repeated parts ---------- */
-type Pieces = Record<'bolt' | 'socket' | 'box' | 'led' | 'beam', BufferGeometry>;
+type Pieces = Record<'bolt' | 'socket' | 'box' | 'led' | 'bezel' | 'beam', BufferGeometry>;
 function pieces(): Pieces {
   return {
     // A hex bolt head.
@@ -245,7 +261,9 @@ function pieces(): Pieces {
     // The unit box: rack teeth, clamps, fan bars, vanes.
     box: new BoxGeometry(1, 1, 1),
     // A status lamp's dome.
-    led: new SphereGeometry(0.01, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+    led: new CylinderGeometry(0.0045, 0.0045, 0.003, 20).translate(0, 0.0015, 0),
+    // The lamp's black bezel: the lens sits a hair proud of it.
+    bezel: new CylinderGeometry(0.008, 0.008, 0.002, 24).translate(0, 0.001, 0),
     // The unit cylinder every truss member stretches.
     beam: new CylinderGeometry(1, 1, 1, 16),
   };
@@ -466,7 +484,7 @@ function domeEnv(): CanvasTexture {
 /* ---------- materials ---------- */
 type MatKey = 'white' | 'black' | 'accent' | 'stainless' | 'darkSteel' | 'zinc' | 'flock' | 'rubber' | 'carbon'
   | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA'
-  | 'graphite' | 'webbing' | 'stitch';
+  | 'graphite' | 'webbing' | 'stitch' | 'petal';
 type Mats = Record<MatKey, MeshStandardMaterial>;
 
 // The hero's convention: the env map adds reflections only.
@@ -491,7 +509,7 @@ function materials(env: CanvasTexture): Mats {
   const accentWear = wearMaps(13, '#eeeff2', '#b0b5bc', '#a9aeb5', 125);
   const clothWear = wearMaps(17, '#121215', '#2c2e33', '#24262b', 255, 3);
   const led = (c: number, key: MatKey): MeshStandardMaterial =>
-    std(key, { color: c, emissive: c, emissiveIntensity: 2.5, roughness: 0.3 });
+    std(key, { color: c, emissive: c, emissiveIntensity: 1.3, roughness: 0.12 });
   return {
     // White powder coat on the pier and the cell: matte, dimpled, a little grimy.
     white: std('white', {
@@ -503,6 +521,10 @@ function materials(env: CanvasTexture): Mats {
     accent: std('accent', { map: accentWear.map, roughness: 1, roughnessMap: accentWear.rough, metalness: 0.1 }),
     // Satin graphite on the arms' cover plates: a step off the black.
     graphite: std('graphite', { map: graphiteWear.map, roughness: 1, roughnessMap: graphiteWear.rough, metalness: 0.25 }),
+    // The mirror covers' petals: the white coat on both faces.
+    petal: std('petal', {
+      map: whiteWear.map, roughness: 1, roughnessMap: whiteWear.rough, metalness: 0, side: DoubleSide,
+    }),
     // The shroud's seam: a woven tape, and its stitches.
     webbing: std('webbing', { color: 0x1d1e21, metalness: 0, roughness: 0.85 }),
     stitch: std('stitch', { color: 0x4a4e55, metalness: 0, roughness: 0.9 }),
@@ -536,9 +558,9 @@ function materials(env: CanvasTexture): Mats {
     lan: std('lan', { color: 0xcfd2d7, metalness: 0, roughness: 0.6 }),
     // A small status screen: dark glass with a faint white glow.
     display: std('display', { color: 0x101214, emissive: 0x8a9098, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0 }),
-    ledG: led(0x39ff7a, 'ledG'),
-    ledB: led(0x3aa0ff, 'ledB'),
-    ledA: led(0xffb23a, 'ledA'),
+    ledG: led(0x4fd98a, 'ledG'),
+    ledB: led(0x5aa8f0, 'ledB'),
+    ledA: led(0xe9a646, 'ledA'),
   };
 }
 
@@ -573,6 +595,12 @@ function chain(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][], sid
   }
 }
 
+// A status lamp: a small flush lens in a black bezel.
+function lamp(k: Kit, M: Mats, Pc: Pieces, mat: Material, m: Matrix4): void {
+  k.put(Pc.bezel, M.black, m);
+  k.put(Pc.led, mat, m);
+}
+
 /* ---------- the pier: it never moves ---------- */
 function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   // A steel base plate, with a levelling bolt at each corner.
@@ -599,7 +627,7 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.black, chamferBox(0.36, 0.42, 0.16, 0.014).translate(0, 0.6, 0.52));
   k.add(M.display, new BoxGeometry(0.22, 0.09, 0.006).translate(0, 0.69, 0.603));
   for (let i = 0; i < 3; i++) {
-    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(-0.06 + i * 0.06, 0.56, 0.6), Z, 0, 1));
+    lamp(k, M, Pc, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(-0.06 + i * 0.06, 0.56, 0.6), Z, 0, 1));
   }
   for (const dx of [-0.1, 0, 0.1]) k.put(Pc.socket, M.stainless, stand(new Vector3(dx, 0.392, 0.52), new Vector3(0, -1, 0), 0, 1.6));
   // A service hatch on the north face, leaning with the taper, with vent slots.
@@ -615,7 +643,7 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   }
   // The azimuth encoder's read head, beside the band, with its lamp.
   k.add(M.black, chamferBox(0.05, 0.07, 0.12, 0.006).translate(0.88, DRUM_Y0 + 0.07, 0));
-  k.put(Pc.led, M.ledG, stand(new Vector3(0.905, DRUM_Y0 + 0.09, 0), X, 0, 0.7));
+  lamp(k, M, Pc, M.ledG, stand(new Vector3(0.905, DRUM_Y0 + 0.09, 0), X, 0, 0.7));
   // Mains and data rise from the box into the drum.
   bundle(k, M, Pc, [[0.08, 0.81, 0.56], [0.12, 0.9, 0.62], [0.2, 0.97, 0.74], [0.24, 1.06, 0.83]]);
 }
@@ -650,7 +678,7 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
     k.add(M.accent, cylX(0.22, Math.min(xc, s * x1), Math.max(xc, s * x1), 96).translate(0, AXIS_Y, 0));
     // The altitude encoder's read head sits on top of the housing.
     k.add(M.black, chamferBox(0.1, 0.05, 0.09, 0.006).translate(s * (x0 + 0.08), AXIS_Y + 0.445, 0));
-    k.put(Pc.led, M.ledG, stand(new Vector3(s * (x0 + 0.08), AXIS_Y + 0.47, 0.046), Z, 0, 0.7));
+    lamp(k, M, Pc, M.ledG, stand(new Vector3(s * (x0 + 0.08), AXIS_Y + 0.47, 0.046), Z, 0, 0.7));
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
       k.put(Pc.socket, M.stainless, stand(new Vector3(s * x1, AXIS_Y + Math.cos(a) * 0.37, Math.sin(a) * 0.37), new Vector3(s, 0, 0), a, 1));
@@ -660,7 +688,11 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
   // A drag chain carries them up the arm's inner face into the bearing.
   k.add(M.black, cylY(0.055, TABLE_Y1, TABLE_Y1 + 0.02, 32).translate(-0.72, 0, 0.34));
   k.add(M.stainless, turn(ringProfile(0.055, 0.062, TABLE_Y1, TABLE_Y1 + 0.022, 0.002), 32).translate(-0.72, 0, 0.34));
-  chain(k, M, Pc, [[-0.73, TABLE_Y1 + 0.03, 0.34], [-0.73, 2.0, 0.34], [-0.73, 2.9, 0.3], [-0.73, AXIS_Y - 0.25, 0.15], [-0.73, AXIS_Y, 0]], X);
+  const ay = AXIS_Y + WRAP_IN * Math.cos(WRAP_A), az0 = WRAP_IN * Math.sin(WRAP_A);
+  chain(k, M, Pc, [[WRAP_X, TABLE_Y1 + 0.03, 0.34], [WRAP_X, 2.0, 0.34], [WRAP_X, 2.9, 0.28], [WRAP_X, ay - 0.12, az0 + 0.06], [WRAP_X, ay, az0]], X);
+  // The wrap's fixed track: a black plate on the arm's inner face, and the anchor block.
+  k.add(M.black, cylX(WRAP_OUT + 0.06, -ARM_X + ARM_T / 2 - 0.012, -ARM_X + ARM_T / 2, 96).translate(0, AXIS_Y, 0));
+  k.add(M.black, chamferBox(0.04, 0.05, 0.06, 0.005).translate(WRAP_X - 0.03, ay, az0));
 }
 
 /* ---------- the tube: it tilts on the altitude axis ---------- */
@@ -699,7 +731,7 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
     k.add(M.black, g);
     for (let i = 0; i < 3; i++) {
       const p = c.clone().addScaledVector(t, -0.06 + i * 0.06).setZ((CELL_Z0 + CELL_Z1) / 2 + 0.13);
-      k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(p, Z, 0, 0.8));
+      lamp(k, M, Pc, [M.ledG, M.ledB, M.ledA][i], stand(p, Z, 0, 0.8));
     }
   }
 
@@ -792,7 +824,7 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.black, cylZ(0.2, STACK_END - 0.02, STACK_END, 96));
   for (let i = 0; i < 3; i++) {
     const a = Math.PI / 2 + (i - 1) * 0.35;
-    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(Math.cos(a) * 0.15, Math.sin(a) * 0.15, STACK_END), Z, 0, 1));
+    lamp(k, M, Pc, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(Math.cos(a) * 0.15, Math.sin(a) * 0.15, STACK_END), Z, 0, 1));
   }
   // The camera's cable runs from the top box down the back plate, between the fans, to the wheel's motor.
   bundle(k, M, Pc, [[0.05, CELL_R + 0.1, CELL_Z1 - 0.02], [0.05, 0.66, 0.9], [0.05, 0.45, 0.89], [0.05, 0.34, 0.95], [0.05, 0.33, 1.07]]);
@@ -808,7 +840,52 @@ function buildBaffle(k: Kit, M: Mats): void {
 // The tube's cable: from the west trunnion over the cell to the top box.
 // Its frame is the altitude axis, so its start stays put as the tube tilts.
 function buildAxis(k: Kit, M: Mats, Pc: Pieces): void {
-  bundle(k, M, Pc, [[-0.74, 0, 0], [-0.7, 0.2, 0.25], [-0.52, 0.56, 0.5], [-0.15, CELL_R + 0.1, 0.62]]);
+  // The wrap's moving end: a bracket on the centre section.
+  const by = WRAP_OUT * Math.cos(WRAP_A), bz = WRAP_OUT * Math.sin(WRAP_A);
+  k.add(M.black, chamferBox(0.1, 0.05, 0.06, 0.005).translate(-0.69, by, bz));
+  bundle(k, M, Pc, [[-0.69, by + 0.02, bz], [-0.7, 0.05, 0.38], [-0.55, 0.5, 0.55], [-0.15, CELL_R + 0.1, 0.62]]);
+}
+
+// A point on the cable wrap, s metres from its fixed end, in the fork's frame.
+// The inner run turns back from the anchor, a U-turn joins the runs, the outer run ends on the tube.
+// alt: the tube's altitude in radians.
+function wrapAt(s: number, alt: number, p: Vector3, t: Vector3): void {
+  const d = WRAP_OUT - WRAP_IN, h = d / 2, mid = (WRAP_IN + WRAP_OUT) / 2;
+  const tail = WRAP_LEN - Math.PI * h;
+  const phiB = WRAP_A + alt;
+  const phiU = (WRAP_IN * WRAP_A + WRAP_OUT * phiB - tail) / (WRAP_IN + WRAP_OUT);
+  const l1 = WRAP_IN * (WRAP_A - phiU), l2 = Math.PI * h;
+  if (s <= l1) {
+    const psi = WRAP_A - s / WRAP_IN;
+    p.set(WRAP_X, AXIS_Y + WRAP_IN * Math.cos(psi), WRAP_IN * Math.sin(psi));
+    t.set(0, Math.sin(psi), -Math.cos(psi));
+  } else if (s <= l1 + l2) {
+    // The U-turn bulges past phiU, toward lower angles.
+    const b = ((s - l1) / l2) * Math.PI, ry = Math.cos(phiU), rz = Math.sin(phiU);
+    const radial = mid - h * Math.cos(b), tang = -h * Math.sin(b);
+    p.set(WRAP_X, AXIS_Y + radial * ry - tang * rz, radial * rz + tang * ry);
+    t.set(0, Math.sin(b) * ry + Math.cos(b) * rz, Math.sin(b) * rz - Math.cos(b) * ry).normalize();
+  } else {
+    const psi = phiU + (s - l1 - l2) / WRAP_OUT;
+    p.set(WRAP_X, AXIS_Y + WRAP_OUT * Math.cos(psi), WRAP_OUT * Math.sin(psi));
+    t.set(0, -Math.sin(psi), Math.cos(psi));
+  }
+}
+
+// A cover petal: a ring sector, hinged at the rim on its local Y axis.
+// It reaches along local +X toward the axis and faces local -Z, the front.
+function petalGeometry(): BufferGeometry {
+  const half = Math.PI / PETALS + 0.035;
+  return new RingGeometry(PETAL_IN, PETAL_OUT, 24, 1, Math.PI - half, half * 2).translate(PETAL_OUT, 0, 0);
+}
+
+// A fan rotor: five blades round a hub, about Z.
+function rotorGeometry(): BufferGeometry {
+  const gs: BufferGeometry[] = [new CylinderGeometry(0.024, 0.024, 0.008, 24).rotateX(Math.PI / 2)];
+  for (let i = 0; i < 5; i++) {
+    gs.push(new BoxGeometry(0.022, 0.05, 0.003).rotateY(0.35).translate(0, 0.045, 0).rotateZ((i / 5) * Math.PI * 2));
+  }
+  return mergeGeos(gs);
 }
 
 /* ---------- the model ---------- */
@@ -857,13 +934,86 @@ export function buildModernScope(size: number): ModernScope {
   secondary.position.z = SEC_Z;
   alt.add(primary, secondary);
 
+  // The cable wrap's links and their pins: instances that move with the tube.
+  const nLinks = Math.floor(WRAP_LEN / LINK) + 1;
+  const links = new InstancedMesh(Pc.box, M.rubber, nLinks), pins = new InstancedMesh(Pc.socket, M.zinc, nLinks * 2);
+  az.add(links, pins);
+  const wp = new Vector3(), wt = new Vector3(), wu = new Vector3(), ws = new Vector3();
+  function placeWrap(altRad: number): void {
+    for (let i = 0; i < nLinks; i++) {
+      wrapAt(Math.min(i * LINK, WRAP_LEN), altRad, wp, wt);
+      wu.crossVectors(X, wt).normalize();
+      ws.crossVectors(wt, wu).normalize();
+      links.setMatrixAt(i, boxAt(wp, ws, wu, wt, 0.07, 0.04, 0.03));
+      for (const d of [0, 1]) {
+        const sg = d ? 1 : -1;
+        pins.setMatrixAt(i * 2 + d, stand(wp.clone().addScaledVector(ws, sg * 0.036), ws.clone().multiplyScalar(sg), 0, 0.6));
+      }
+    }
+    links.instanceMatrix.needsUpdate = true;
+    pins.instanceMatrix.needsUpdate = true;
+    links.computeBoundingSphere();
+    pins.computeBoundingSphere();
+  }
+
+  // The mirror covers: each petal swings on a hinge at the rim.
+  // Alternate petals sit a little forward, so their overlaps never fight.
+  const hinges: Group[] = [], pg = petalGeometry();
+  for (let i = 0; i < PETALS; i++) {
+    const a = (i / PETALS) * Math.PI * 2;
+    const at = new Group(), hinge = new Group();
+    at.position.set(Math.cos(a) * PETAL_OUT, Math.sin(a) * PETAL_OUT, PETAL_Z - (i % 2) * 0.004);
+    // Local +X points in toward the axis.
+    at.rotation.z = a + Math.PI;
+    hinge.add(new Mesh(pg, M.petal));
+    at.add(hinge);
+    alt.add(at);
+    hinges.push(hinge);
+  }
+  // Open is 1, closed is 0; the covers start open.
+  let cover = 1, coverTo = 1;
+  const placeCovers = (): void => {
+    // A smoothstep eases the swing at both ends.
+    const e = cover * cover * (3 - 2 * cover);
+    for (const h of hinges) h.rotation.y = e * (Math.PI / 2) * 0.97;
+  };
+
+  // The cell's fan rotors: they spin only while the fans run.
+  const rotors: Mesh[] = [], rg = rotorGeometry();
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + (i / 4) * Math.PI * 2;
+    const m = new Mesh(rg, M.black);
+    m.position.set(Math.cos(a) * 0.38, Math.sin(a) * 0.38, CELL_Z1 + 0.03 + 0.018);
+    m.rotation.z = i;
+    alt.add(m);
+    rotors.push(m);
+  }
+  let fans = false;
+
   // Azimuth turns by -az, so east is +X.
   // Altitude tilts the tube up from the horizon.
   // Both axes are plain rotations, so the sweep never flips the tube.
+  // The cable wrap rolls with the altitude.
   function setTube(altDeg: number, azDeg: number): void {
     alt.rotation.x = altDeg * DEG;
     az.rotation.y = -azDeg * DEG;
+    placeWrap(Math.min(90, Math.max(0, altDeg)) * DEG);
   }
+  function step(dt: number): boolean {
+    if (cover !== coverTo) {
+      const v = dt / COVER_S;
+      cover = coverTo > cover ? Math.min(coverTo, cover + v) : Math.max(coverTo, cover - v);
+      placeCovers();
+    }
+    // About four turns a second: a blur, not a strobe.
+    if (fans) for (const r of rotors) r.rotation.z -= dt * 26;
+    return fans || cover !== coverTo;
+  }
+  placeCovers();
   setTube(45, 0);
-  return { root, setTube };
+  return {
+    root, setTube, step,
+    setCovers(open) { coverTo = open ? 1 : 0; },
+    setFans(on) { fans = on; },
+  };
 }
