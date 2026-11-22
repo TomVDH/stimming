@@ -2856,6 +2856,14 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           </a>
         </li>
         <li>
+          <a class="toy" id="rainstick" href="rainstick/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="3.49 15.49 121.02 121.02" aria-hidden="true"></svg>
+            </span>
+            <span class="name">Rain stick</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="musicbox" href="musicbox/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -6197,6 +6205,106 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     };
     // The demo swings the bend from side to side.
     hook('subway', c, { period: 3.6, at: a => [64 + 40 * sin(a), 60] });
+  }
+
+  // Rain stick: a glass tube rocks on a brass post over a walnut plinth (icon spike rainstick-1, D).
+  // The pointer presses an end down; the beads trickle through the pins and light them.
+  {
+    const { f, clamp, poly, lg, rg, blur, light, body, clock, hook } = kit;
+    const svg = $('rainstick').querySelector('svg'), u = 'rainstick-';
+    // The toy's tokens: clear glass, walnut caps, brass pins, bright glass beads.
+    const GLASS = [[0, 'oklch(0.9 0.03 220)', 0.42], [0.35, 'oklch(0.7 0.03 220)', 0.08], [0.75, 'oklch(0.7 0.03 220)', 0.08], [1, 'oklch(0.9 0.03 220)', 0.38]];
+    const WOOD = [[0, 'oklch(0.58 0.08 55)'], [1, 'oklch(0.34 0.06 45)']];
+    const PIN = 'oklch(0.7 0.11 80)', PIN_LIT = 'oklch(0.94 0.13 88)';
+    const BEADS = [['oklch(0.82 0.15 75)', 'oklch(0.6 0.16 55)'], ['oklch(0.8 0.12 190)', 'oklch(0.52 0.12 210)'], ['oklch(0.78 0.16 25)', 'oklch(0.55 0.17 20)'], ['oklch(0.95 0.03 90)', 'oklch(0.74 0.04 80)']];
+    const NB = 14, len = 104, wid = 21;
+    // The stick in its own frame: the axis runs along x.
+    const h = len / 2, r = wid / 2, cap = wid * 0.62;
+    const tubeD = `M${-h + cap} ${-r}H${h - cap}V${r}H${-h + cap}Z`;
+    const capD = s => { const x0 = s < 0 ? -h : h - cap - 2; return `M${x0 + (s < 0 ? r * 0.5 : 0)} ${-r - 2}H${x0 + cap + 2 - (s > 0 ? r * 0.5 : 0)}${s > 0 ? `Q${h} ${-r - 2} ${h} ${-r * 0.4}V${r * 0.4}Q${h} ${r + 2} ${h - r * 0.5} ${r + 2}` : `V${r + 2}`}H${x0 + (s < 0 ? r * 0.5 : 0)}${s < 0 ? `Q${-h} ${r + 2} ${-h} ${r * 0.4}V${-r * 0.4}Q${-h} ${-r - 2} ${-h + r * 0.5} ${-r - 2}` : `V${-r - 2}`}Z`; };
+    // Pins stand in two staggered rows.
+    const pins = Array.from({ length: 9 }, (_, i) => [-h + cap + 8 + i * ((len - 2 * cap - 16) / 8), (i % 2 ? 1 : -1) * r * 0.42]);
+    // The plinth: an isometric block under a brass post.
+    const CY = 94, HALF = 20, T = 14, PIVOT = [64, 52], REST = -24, MAX = 28;
+    const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+    const TOP = [[-HALF, -HALF], [HALF, -HALF], [HALF, HALF], [-HALF, HALF]].map(([x, y]) => iso(x, y));
+    const [N, E, S, W] = TOP;
+    const down = p => [p[0], p[1] + T];
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}
+        ${lg(`${u}top`, [[0, 'oklch(0.56 0.08 55)'], [1, 'oklch(0.44 0.07 50)']], 'x1="0" y1="0" x2="0.4" y2="1"')}
+        ${lg(`${u}brass`, [[0, 'oklch(0.86 0.11 85)'], [1, 'oklch(0.58 0.11 70)']], 'x1="0" y1="0" x2="1" y2="0"')}
+        ${lg(`${u}glass`, GLASS)}${lg(`${u}wood`, WOOD)}
+        ${BEADS.map(([a, b], i) => rg(`${u}b${i}`, [[0, a], [1, b]], 'cx="0.36" cy="0.32" r="0.7"')).join('')}
+        ${rg(`${u}pg`, [[0, PIN_LIT, 0.9], [1, PIN_LIT, 0]])}
+        <clipPath id="${u}tc"><path d="${tubeD}"/></clipPath></defs>
+      <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 4)"/>
+      <path d="${poly([W, S, down(S), down(W)])}" fill="oklch(0.42 0.07 50)"/>
+      <path d="${poly([S, E, down(E), down(S)])}" fill="oklch(0.3 0.055 45)"/>
+      <path d="${poly(TOP)}" fill="url(#${u}top)"/>
+      <path d="${poly(TOP)}" fill="url(#${u}lit)"/>
+      <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <ellipse cx="64" cy="${CY}" rx="7" ry="4" fill="oklch(0.62 0.1 75)"/>
+      ${body(`M60.5 ${CY}V${PIVOT[1] + 2}H67.5V${CY}Z`, u, 'brass')}
+      <g class="stick">
+        <path d="${tubeD}" fill="oklch(0.16 0.02 240)" opacity="0.55"/>
+        <g clip-path="url(#${u}tc)">
+          ${pins.map(([x, y]) => `<circle class="pg" cx="${f(x)}" cy="${f(y)}" r="7" fill="url(#${u}pg)" opacity="0"/>`).join('')}
+          ${pins.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="2.1" fill="${PIN}"/>`).join('')}
+          ${Array.from({ length: NB }, (_, i) => `<circle class="bd" r="${f(r * 0.34)}" fill="url(#${u}b${i % 4})"/>`).join('')}
+        </g>
+        <path d="${tubeD}" fill="url(#${u}glass)"/>
+        <path d="${tubeD}" fill="url(#${u}lit)"/>
+        <path d="M${-h + cap + 4} ${f(-r + 2.6)}H${h - cap - 4}" stroke="#fff" stroke-opacity="0.45" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="${tubeD}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        ${[-1, 1].map(s => body(capD(s), u, 'wood')).join('')}
+      </g>
+      <circle cx="${PIVOT[0]}" cy="${PIVOT[1]}" r="4.2" fill="url(#${u}brass)"/>`;
+    const stick = svg.querySelector('.stick');
+    const beads = [...svg.querySelectorAll('.bd')], pg = [...svg.querySelectorAll('.pg')];
+    const lo = -h + cap + r * 0.4, hi = h - cap - r * 0.4, sp = r * 0.62;
+    // A bead's slot in the heap: two lanes, stacked back from the end.
+    const slot = (k, dir) => (dir > 0 ? hi - Math.floor(k / 2) * sp : lo + Math.floor(k / 2) * sp);
+    const lane = k => (k % 2 ? 1 : -1) * r * 0.3 + (Math.floor(k / 2) % 2 ? 0.8 : -0.8);
+    const B = beads.map((el, i) => ({ el, x: slot(i, -1), y: lane(i), v: 0 }));
+    const glow = pg.map(() => 0);
+    const st = { deg: REST, to: REST, live: false };
+    const draw = () => {
+      stick.setAttribute('transform', `translate(${PIVOT[0]} ${PIVOT[1]}) rotate(${f(st.deg)})`);
+      B.forEach(b => { b.el.setAttribute('cx', f(b.x)); b.el.setAttribute('cy', f(b.y)); });
+      pg.forEach((g, i) => g.setAttribute('opacity', f(glow[i])));
+    };
+    const tick = clock(() => {
+      st.deg += (st.to - st.deg) * 0.1;
+      const a = Math.sin((st.deg * Math.PI) / 180), dir = a >= 0 ? 1 : -1;
+      // Rank the beads from the low end, so each takes the next slot in the heap.
+      const order = B.slice().sort((p, q) => dir * (q.x - p.x));
+      let moving = 0;
+      order.forEach((b, k) => {
+        const target = slot(k, dir), ty = lane(k);
+        b.v = (b.v + a * 0.16) * 0.94;
+        b.x += b.v;
+        if ((dir > 0 && b.x > target) || (dir < 0 && b.x < target)) { b.x = target; b.v = 0; }
+        const free = Math.abs(b.x - target) > 0.5;
+        if (free) moving++;
+        // Pins knock a running bead from side to side and light up.
+        b.y += ((free ? r * 0.32 * Math.sin(b.x * 0.55 + k) : ty) - b.y) * 0.25;
+        if (free) pins.forEach(([px, py], i) => { if (Math.hypot(px - b.x, py - b.y) < r * 0.62) glow[i] = 1; });
+      });
+      for (let i = 0; i < glow.length; i++) glow[i] *= 0.9;
+      draw();
+      // A stick at rest stops its tick: an idle menu does no work.
+      if (!st.live && Math.abs(st.deg - st.to) < 0.1 && !moving && glow.every(g => g < 0.02)) { glow.fill(0); draw(); tick.stop(); }
+    });
+    draw();
+    const c = {
+      enter(p) { st.live = true; tick.start(); c.move(p); },
+      // The pointer presses its end down: the beads run toward it.
+      move(p) { if (p) st.to = clamp((p[0] - 64) / 34, -1, 1) * MAX; },
+      leave() { st.live = false; st.to = REST; tick.start(); },
+    };
+    // The demo tips the stick from end to end.
+    hook('rainstick', c, { period: 4.4, at: a => [64 + 38 * Math.sin(a), 60] });
   }
 
   // Wind map: a gloss globe with silk strands; the pointer drags the storm.
