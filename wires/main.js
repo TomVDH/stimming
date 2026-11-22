@@ -129,7 +129,8 @@ function wire(w0, w1, sag, r, mat = ALU, lash = null) {
   }
   // A rider is a thick piece that hangs on the wire and swings with it.
   // A short wide rider is a traced cylinder (ROUND): a flat strip reads as a pill.
-  const rider = (t0, t1, rr, m, drop = 0, kind = WIRE) => part(kind, add(at(t0), [0, -drop, 0]), add(at(t1), [0, -drop, 0]), rr, rr, m, { sway: [dip(t0), dip(t1), phase, amp] });
+  // A ROUND rider on a cable takes the cable's radius as hh.
+  const rider = (t0, t1, rr, m, drop = 0, kind = WIRE, hh = 0) => part(kind, add(at(t0), [0, -drop, 0]), add(at(t1), [0, -drop, 0]), rr, rr, m, { hh, sway: [dip(t0), dip(t1), phase, amp] });
   // A long span can be plucked: keep its line for the tap test.
   if (sag >= 0.3 && group === POLE_Z.length) pluckable.push({ phase, pts: Array.from({ length: 25 }, (_, i) => at(i / 24)) });
   return { at, rider, dip, phase, amp };
@@ -354,7 +355,7 @@ function buildLane() {
       if (i !== ni) continue;
       // A splice case closes round the upper cable, on its axis.
       // It draws after the cable, so the cable enters at its ends.
-      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.065, RUBBER, 0, ROUND);
+      if (lashed && strands[i].strand === 1) w.rider(0.03, 0.055, 0.065, RUBBER, 0, ROUND, r);
       if (strand === 2) {
         // The telecom drop leaves from a clamp on the lower strand.
         w.rider(0.011, 0.014, 0.012, ALU);
@@ -1062,6 +1063,17 @@ void main() {
     if (kind < 1.5) {
       t = iCone(uEye, rd, A, B, vA.w, vB.w, n);
       if (t < 0.0) discard;
+      // The moving layer writes no depth, so a case gives way to its cable.
+      // Where the ray meets the cable first, outside the case, the cable shows.
+      if (vM.z > 0.0) {
+        vec3 oc = uEye - A;
+        float ca = dot(ax, rd), co = dot(ax, oc), ka = 1.0 - ca * ca, kb = dot(oc, rd) - co * ca;
+        float kh = kb * kb - ka * (dot(oc, oc) - co * co - vM.z * vM.z);
+        if (kh > 0.0) {
+          float tc = (-kb - sqrt(kh)) / ka, yc = co + tc * ca;
+          if (tc > 0.0 && tc < t && (yc < 0.0 || yc > 2.0 * hl)) discard;
+        }
+      }
       vec3 d = uEye + rd * t - A;
       float y = dot(d, ax);
       vec3 rad = d - ax * y;

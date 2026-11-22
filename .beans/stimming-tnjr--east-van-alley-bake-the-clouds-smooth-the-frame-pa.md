@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-18T02:53:21Z
-updated_at: 2026-11-22T09:08:58Z
+updated_at: 2026-11-22T09:12:19Z
 parent: stimming-guw5
 ---
 
@@ -29,4 +29,4 @@ Tom (01:07), queued, one at a time:
 - [ ] Post settings in Dev: the Post group has six; ask Tom which to add
 - [ ] Rendering polish ideas for Tom
 - [ ] Redo the shoes (needs Tom's direction and a reference)
-- [ ] Splice case: the cable shows behind the near end, not through it
+- [ ] Splice case: the cable shows behind the near end, not through it (moved to stimming-bntl)
