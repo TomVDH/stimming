@@ -23,6 +23,9 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 // The load watch shows each step, and the step a past load died in.
 const watch = loadWatch('tornado');
+// Windows browsers compile WebGL through D3D11, and its compiler takes minutes on the vehicles' pass.
+// Until the vehicles are meshes, Windows runs without them (Tom, 2026-11-22).
+const CARS = !/Windows/.test(navigator.userAgent);
 // A slow GPU compiles for long: the intro holds, and the watch counts the seconds.
 playIntro({ ready: pageReady(120000) });
 mark('build');
@@ -115,7 +118,7 @@ const ui = initPage({ id: 'tornado', bar: {
       { type: 'slider', group, id: 'k_' + id, label, min, max, step, value, persist: true, onInput: v => act.knob(id, v) },
     ]),
     // The road scene: a pickup flees the storm, then two chasers rush in. Key V.
-    { type: 'button', group: 'Road', id: 'vehicles', label: 'Vehicles', text: 'Run', onClick: () => act.vehicles() },
+    ...(CARS ? [{ type: 'button', group: 'Road', id: 'vehicles', label: 'Vehicles', text: 'Run', onClick: () => act.vehicles() }] : []),
     { type: 'button', group: 'Knobs', id: 'kCopy', label: 'Copy JSON', text: 'Copy', onClick: () => act.knobCopy() },
     { type: 'button', group: 'Knobs', id: 'kReset', label: 'Defaults', text: 'Reset', onClick: () => act.knobReset() },
   ],
@@ -1494,7 +1497,8 @@ try {
     scene: SCENE,
     // The scene compiles in parts: one program per pass, then the composite.
     layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
-    passes: ['passGround', 'passStorm', 'passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires', 'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads', 'passCarLamps', 'passCarsFar', 'passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'],
+    // On Windows the vehicles' passes stay out: see CARS.
+    passes: ['passGround', 'passStorm', 'passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires', 'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads', 'passCarLamps', 'passCarsFar', 'passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'].filter(p => CARS || !/^passCar/.test(p)),
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
@@ -2051,7 +2055,7 @@ function step(dt) {
   farmStep(farmS, dmg, simT);
   infraStep(inf, dmg, tors, dt, simT, traf);
   lineUniforms(line, tors);
-  trafficStep(traf, tors, simT, dt, line);
+  if (CARS) trafficStep(traf, tors, simT, dt, line);
   shakeFrame(dt);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
@@ -2169,7 +2173,7 @@ stage.addEventListener('keydown', e => {
   e.preventDefault();
   act.add();
 });
-act.vehicles = () => { trafficRun(traf, simT); wake(); };
+act.vehicles = () => { if (!CARS) return; trafficRun(traf, simT); wake(); };
 
 act.f = v => {
   fLevel = +v.slice(1);

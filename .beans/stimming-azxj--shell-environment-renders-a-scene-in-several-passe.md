@@ -15,7 +15,8 @@ Tornado alley's one scene shader does not compile on Windows (stimming-kg00). Th
 - [x] Plain, farm, poles, infra, storm: ordered passes and one call site per heavy function, each under 15 s
 - [ ] Vehicles under 15 s: moved to meshes (Tom, 2026-11-22), see the mesh bean
 - [ ] Funnel program under 15 s
-- [ ] Edge on D3D11 reaches the first frame
+- [x] Edge on D3D11 reaches the first frame: 32 s in the app pane, vehicles off on Windows
+- [ ] No freeze after it: the funnel's link stalls the tab about 2 min
 - [x] Same frame on ANGLE GL, before and after (`tools/fxc/same.mjs`)
 - [ ] /code-review, then the PR
 
@@ -98,3 +99,9 @@ Main against main: 0 px differ. Branch against main, F3 tornado at 3 km: 11 px o
 With the vehicles near the eye a close pass shakes the camera, and two runs of main differ in the sky; the vehicle region matches main as closely as main matches itself.
 
 Next for the funnel: the rain batch and the sun shafts in a second program after the march (without the rain batch: 20 s less).
+
+## Live check, 2026-11-22 (app pane, ANGLE D3D11, RTX 3070)
+
+Windows runs without the vehicles until they are meshes (`CARS` in main.js; Tom, 2026-11-22: 'do all').
+The scene's programs link in parallel: the first frame shows at 32 s, the console stays clean, the context lives.
+Then the funnel program links, and the tab does not answer for about 2 minutes. The frame comes back after it.
