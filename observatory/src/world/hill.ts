@@ -60,31 +60,39 @@ const angDiff = (a: number, b: number): number => {
 // The north-east arête is broad; the road climbs beside it.
 const ARETES = [[62, 0.5, 0.5], [195, 0.25, 0.2], [285, 0.25, 0.22]].map(([a, w, k]) => ({ a: a * Math.PI / 180, w, k }));
 // The peak: height, the rounding radius of its top, foot radius.
-const PEAK = 300, CAP = 45, FOOT = 330;
+// A broad top gives the complex room; the flanks run at about 34 degrees.
+const PEAK = 220, CAP = 90, FOOT = 520;
 
-// The land before the platform, the buttress and the road.
-function base(x: number, z: number): number {
+// The camera's ridge runs east-west to the north.
+const northShape = (x: number, z: number): number => Math.exp(-(((z + 580) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
+
+// The land without the camera's ridge.
+function lowLand(x: number, z: number): number {
   const r = Math.hypot(x, z), th = Math.atan2(x, -z);
   let ar = 0;
   for (const A of ARETES) ar = Math.max(ar, A.k * Math.exp(-((angDiff(th, A.a) / A.w) ** 2)));
   // The top rounds over smoothly, so the summit is a crest, not a plateau.
   const rr = r * (1 - ar), d = Math.sqrt(rr * rr + CAP * CAP) - CAP;
   const peak = PEAK * Math.max(0, 1 - d / FOOT) ** 1.6;
-  // The camera's ridge runs east-west to the north.
-  // Its crest stands about level with the summit.
-  const north = 275 * Math.exp(-(((z + 580) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
   // The peak stands alone: deep land surrounds it on the east, south and west.
   // The camera's ridge to the north stays.
   const north01 = Math.exp(-((th / 0.9) ** 2));
-  const moat = -110 * Math.exp(-(((r - 360) / 140) ** 2)) * (1 - north01);
+  const moat = -100 * Math.exp(-(((r - 560) / 160) ** 2)) * (1 - north01);
   // A wide valley lies between the camera's ridge and the peak.
-  const valley = -90 * Math.exp(-(((z + 330) / 110) ** 2)) * Math.exp(-((x / 900) ** 2));
+  const valley = -60 * Math.exp(-(((z + 340) / 110) ** 2)) * Math.exp(-((x / 900) ** 2));
   // Rock ribs and gullies cover the slopes, not the summit.
-  const rough = 26 * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(50, 130, r);
+  const rough = 26 * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(80, 180, r);
   const fine = 5 * (vnoise(x / 22, z / 22, 3) - 0.5);
   // Rock knolls break up the summit between the pads.
-  const crag = 5 * ridged(x / 28 + 1, z / 28 + 2, 4) * (1 - sstep(70, 110, r));
-  return peak + north + moat + valley + rough + fine + crag;
+  const crag = 4 * ridged(x / 28 + 1, z / 28 + 2, 4) * (1 - sstep(100, 140, r));
+  return peak + moat + valley + rough + fine + crag;
+}
+// The ridge's crest stands this far under the summit.
+// The eye, EYE_H over it, then sees the summit on the horizon.
+const RIDGE_UNDER = 26;
+const NORTH_A = (lowLand(0, 0) - RIDGE_UNDER - lowLand(RISE.x, RISE.z)) / northShape(RISE.x, RISE.z);
+function base(x: number, z: number): number {
+  return lowLand(x, z) + NORTH_A * northShape(x, z);
 }
 const TOP0 = base(0, 0);
 
@@ -228,7 +236,7 @@ const MEADOW = new Color(0.05, 0.058, 0.042), ROCK = new Color(0.1, 0.098, 0.096
 const SCREE = new Color(0.085, 0.08, 0.072), SNOW = new Color(0.2, 0.215, 0.25), GRAVEL = new Color(0.13, 0.13, 0.128);
 const BANK = new Color(0.12, 0.11, 0.095);
 // Rock shows above this height; meadow and forest below.
-export const TREELINE = TOP - 22;
+export const TREELINE = TOP - 35;
 
 // Grid lines from lo to hi.
 // They are dense at 0 and sparse at the ends.
@@ -271,7 +279,8 @@ function landMesh(): BufferGeometry {
     // Snow lies in the north gullies high on the peak.
     // The gullies run downhill, so the noise stretches up and down the slope.
     const gully = vnoise(x / 6, (y + z * 0.2) / 26, 9);
-    const snow = sstep(TREELINE + 12, TOP - 8, y) * sstep(-0.2, -0.55, nz) * sstep(0.62, 0.74, gully) * sstep(0.35, 0.6, ny);
+    // The summit round the complex stays clear of snow.
+    const snow = sstep(70, 120, Math.hypot(x, z)) * sstep(TREELINE + 12, TOP - 8, y) * sstep(-0.2, -0.55, nz) * sstep(0.62, 0.74, gully) * sstep(0.35, 0.6, ny);
     c.lerp(SNOW, snow * 0.7);
     // The road's cut banks show bare earth, so the switchbacks read from afar.
     const bank = 1 - sstep(ROAD_W / 2, REACH, nearRoad(x, z).d);
