@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T18:43:57Z
-updated_at: 2026-11-22T19:12:21Z
+updated_at: 2026-11-22T19:16:16Z
 parent: stimming-ssrh
 ---
 
@@ -19,11 +19,11 @@ shared/clouds.js holds cloud light as GLSL strings and a small JS helper. The sh
 - [x] shared/clouds.js: clPhase (two-lobe HG 0.72, -0.2, 0.35)
 - [x] shared/clouds.js: shaft look (veil, low-sun gate, cool then dim shade, sunward glow)
 - [x] shared/clouds.js: baked 3D density occlusion source
-- [ ] Typing and include helper for three.js and TypeScript
-- [ ] Railgun adopts it, same frame (tools/clouds-check.mjs)
-- [ ] East Van Alley adopts it: shafts from the baked field, Dev slider for strength
-- [ ] East Van Alley checked at dawn, late afternoon, dusk; sun as is and Dev Sun bearing 180
-- [ ] Before-and-after sheets to Tom
+- [x] Typing and include helper for three.js and TypeScript
+- [x] Railgun adopts it, same frame (tools/clouds-check.mjs)
+- [x] East Van Alley adopts it: shafts from the baked field, Dev slider for strength
+- [x] East Van Alley checked at dawn, late afternoon, dusk; sun as is and Dev Sun bearing 180
+- [x] Before-and-after sheets to Tom
 - [x] docs/plans/shared-shaders.md light-shafts row updated
 - [ ] PR with /code-review, merged
 
@@ -31,3 +31,10 @@ shared/clouds.js holds cloud light as GLSL strings and a small JS helper. The sh
 
 - Window seat (window/shader.js:1349 two-lobe phase copy)
 - Tornado alley (tornado/main.js:477 two-lobe phase copy)
+
+## Notes
+
+- Typing: Railgun imports shared/clouds.js as JS with JSDoc (allowJs); npm run check passes. No include helper was needed: ShaderMaterial pastes the GLSL strings.
+- Same frame, Railgun: grain off, seeded Math.random, six suns at 1280 x 800. Before vs after differs on about 660 pixels, the same as before vs before (sparks).
+- tools/clouds-check.mjs cannot judge this on Tom's Windows PC: main fails it with the same 20 checks (grain on, goldens from another machine). It needs ANGLE GL and a playwright junction to start at all.
+- East Van Alley: ACES is the standard tone map (Tom, 2026-11-22).

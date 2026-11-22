@@ -1,10 +1,8 @@
 // The march through one storm cell, after Window seat's tower march, in kilometres.
 // The host defines cell.glsl, the storm host (stormSun, stormSky, stormTwi, stormFlash, stormExtra),
 // Ls, uStars, uStormSoft and CELL_R, the planet's radius in metres, before this chunk.
+// The host pastes CLOUDS (shared/clouds.js) first, for clPhase.
 
-// Two Henyey-Greenstein lobes: a strong forward one, a soft back one.
-float cellHg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
-float cellPhase(float mu) { return mix(cellHg(mu, 0.72), cellHg(mu, -0.2), 0.35); }
 // The march's stride in km near the eye; it grows with distance.
 const float CELL_STEP = 0.45;
 
@@ -28,7 +26,7 @@ vec2 cellSpan(int i, vec3 ro, vec3 rd) {
 // It returns the colour and, in alpha, the cover; Phit is the first cloud.
 // Flash holds the lightning and the storm host's other lights: the host adds them after the air.
 vec4 marchCell(vec3 ro, vec3 rd, float t0, float t1, float jit, out vec3 Phit, out vec3 Flash) {
-  float mu = dot(rd, Ls), phase = cellPhase(mu);
+  float mu = dot(rd, Ls), phase = clPhase(mu);
   // Far flashes punch through the haze, so distant storms still flicker.
   float fBoost = 1.0 + clamp(t0 / 120000.0, 0.0, 1.5);
   vec3 twi = stormTwi();
