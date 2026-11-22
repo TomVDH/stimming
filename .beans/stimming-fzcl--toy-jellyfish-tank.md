@@ -17,7 +17,7 @@ Build Jellyfish tank (idea 80, group F) as a Lab toy: an MVP at high fidelity, B
 - [x] Tap the glass: a thump through the water; near jellies contract and drift away, then settle back
 - [x] Sound: finished, muted by default
 - [x] Bar v3 spec and copy
-- [ ] Icon round spike-jellyfish-1 (Current, A, D), emblems, sheet row
+- [x] Icon round spike-jellyfish-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/jellyfish.md
 - [ ] Commit and push
