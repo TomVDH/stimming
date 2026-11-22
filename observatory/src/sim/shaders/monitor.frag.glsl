@@ -6,6 +6,8 @@ uniform vec2 u_res;
 uniform vec4 u_rect;
 uniform float u_radius;
 uniform float u_bezel;
+// The room's share of the screen's glow; 0 when the panel fills the view.
+uniform float u_room;
 uniform float u_levels;
 // 1 when the software runs its red night mode.
 uniform float u_night;
@@ -33,9 +35,13 @@ void main() {
   float d = box(px - c, hs, u_radius);
   // The screen's mean light glows on everything round it.
   vec3 avg = night(textureLod(u_screen, vec2(0.5), u_levels - 1.0).rgb);
-  vec3 bezel = vec3(0.026, 0.027, 0.03) + avg * 0.3 * exp(-max(d, 0.0) / (u_bezel * 0.3));
-  // A hair of light on the bezel's lip, brighter on top.
-  bezel += vec3(0.022) * smoothstep(u_bezel - 2.5, u_bezel - 0.5, d) * smoothstep(u_bezel + 0.5, u_bezel - 0.5, d) * (px.y < c.y ? 1.0 : 0.35);
+  // With no bezel, the panel's edge meets black.
+  vec3 bezel = vec3(0.0);
+  if (u_bezel > 0.0) {
+    bezel = vec3(0.026, 0.027, 0.03) + avg * 0.3 * exp(-max(d, 0.0) / (u_bezel * 0.3));
+    // A hair of light on the bezel's lip, brighter on top.
+    bezel += vec3(0.022) * smoothstep(u_bezel - 2.5, u_bezel - 0.5, d) * smoothstep(u_bezel + 0.5, u_bezel - 0.5, d) * (px.y < c.y ? 1.0 : 0.35);
+  }
   vec3 col;
   if (d < 1.0) {
     vec2 uv = (px - u_rect.xy) / (u_rect.zw - u_rect.xy);
@@ -59,7 +65,7 @@ void main() {
     // The dark room; the desk below the monitor catches more of its light.
     float fall = exp(-(d - u_bezel) / (hs.y * 0.5));
     float desk = smoothstep(u_rect.w + u_bezel, u_rect.w + u_bezel + 30.0, px.y);
-    col = avg * fall * (0.05 + 0.1 * desk);
+    col = avg * fall * (0.05 + 0.1 * desk) * u_room;
   }
   // Dither hides banding in the dark gradients.
   col += (hash(px) - 0.5) / 255.0;

@@ -456,8 +456,7 @@ function frame(t: number): void {
     if (fresh) drawScreen(L, lstDeg, inView);
     renderer.ui(fresh ? screen.canvas : null);
     uiDirty = false;
-    const W = renderer.cw, H = renderer.ch;
-    renderer.monitor({ u_rect: glass, u_radius: 3 * (window.devicePixelRatio || 1), u_bezel: 22 * (window.devicePixelRatio || 1), u_night: screen.night ? 1 : 0, u_res2: [W, H] });
+    renderer.monitor({ u_rect: glass, u_radius: 0, u_bezel: 0, u_room: 0, u_night: screen.night ? 1 : 0 });
   }
   const integrating = !!run && inView && run.snr < SNR_CAP;
   const exposing = camera && (rig.looping || rig.autofocus) && t - lastInput < CAMERA_IDLE;
@@ -943,11 +942,9 @@ function resize(): void {
   if (mode === 'eye') renderer.resize(cw, ch, cw, ch);
   else {
     renderer.resize(cw, ch, SW, SH);
-    // The monitor fills most of the view, a little above centre.
-    const bez = 22 * dpr;
-    const w = Math.min(cw * 0.94 - 2 * bez, (ch * 0.9 - 2 * bez) * (SW / SH));
-    const h = w * (SH / SW);
-    const x0 = (cw - w) / 2, y0 = Math.max(bez + 4 * dpr, (ch - h) / 2 - ch * 0.02);
+    // The panel fills the view; black bars take up any difference in shape.
+    const w = Math.min(cw, ch * (SW / SH)), h = w * (SH / SW);
+    const x0 = (cw - w) / 2, y0 = (ch - h) / 2;
     glass = [x0, y0, x0 + w, y0 + h];
   }
   clampPan();
