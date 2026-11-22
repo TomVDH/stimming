@@ -21,7 +21,7 @@ Build Wrecking ball (idea 72, group E, a machine) as a Lab toy: an MVP at high f
 - [x] Icon round spike-wreckingball-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/wreckingball.md
-- [ ] Commit and push
+- [x] Commit and push
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
