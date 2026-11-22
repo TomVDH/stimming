@@ -1,4 +1,4 @@
-// Jet hover effects: the plumes, the spray, the heat field and the post passes.
+// Jet hover effects: the plumes, the jet-core heat and the post passes.
 // Each program stays small, so the Windows D3D11 link stays fast.
 import * as THREE from 'three';
 
@@ -78,26 +78,6 @@ void main() {
   gl_FragColor = vec4(s * edge, 0.0, 0.0, 1.0);
 }`;
 
-/* ---------- heat over the ground: an upright sheet at each pool ---------- */
-const SHEET_VS = /* glsl */`
-uniform vec3 uC;
-uniform vec2 uSize;
-varying vec2 vQ;
-void main() {
-  vec3 fwd = cameraPosition - uC; fwd.y = 0.0; fwd = normalize(fwd);
-  vec3 side = vec3(fwd.z, 0.0, -fwd.x);
-  vec3 P = uC + side * position.x * uSize.x + vec3(0.0, (position.y + 0.5) * uSize.y, 0.0);
-  vQ = vec2(position.x * 2.0, position.y + 0.5);
-  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
-}`;
-const SHEET_FS = /* glsl */`
-uniform float uK;
-varying vec2 vQ;
-void main() {
-  float s = exp(-vQ.x * vQ.x * 3.0) * exp(-vQ.y * 3.2) * smoothstep(0.0, 0.04, vQ.y) * uK;
-  gl_FragColor = vec4(s, 0.0, 0.0, 1.0);
-}`;
-
 export function makePlumes(count) {
   const geo = new THREE.PlaneGeometry(2, 1, 1, 56);
   const plumes = [], heats = [];
@@ -125,155 +105,40 @@ export function makePlumes(count) {
   return { plumes, heats };
 }
 
-export function makeSheet() {
-  const U = { uC: { value: new THREE.Vector3() }, uSize: { value: new THREE.Vector2(9, 3.5) }, uK: { value: 0 } };
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
-    vertexShader: SHEET_VS, fragmentShader: SHEET_FS, uniforms: U,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  }));
-  m.frustumCulled = false;
-  return m;
-}
-
-/* ---------- spray and smoke: soft points thrown along the ground ---------- */
-const SPRAY_VS = /* glsl */`
-attribute vec4 aData;
-uniform float uPx;
-uniform vec4 uHot[3];
-uniform vec3 uHotCol;
-varying vec3 vCol;
-varying float vA;
-varying float vSeed;
-varying float vHeat;
-void main() {
-  vHeat = aData.z;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = min(aData.x * uPx / -mv.z, 700.0);
-  // Light: the cool sky, the hot pools close by, and the gas's own heat.
-  vec3 c = vec3(0.045, 0.055, 0.09);
-  for (int i = 0; i < 3; i++) {
-    vec3 d = position - uHot[i].xyz;
-    c += uHotCol * uHot[i].w * 0.9 / (1.0 + dot(d, d) * 0.3);
-  }
-  c += vec3(1.0, 0.45, 0.15) * aData.z * 1.6;
-  vCol = c;
-  vA = aData.y;
-  vSeed = aData.w;
-}`;
-const SPRAY_FS = /* glsl */`
-${NOISE}
-varying vec3 vCol;
-varying float vA;
-varying float vSeed;
-void main() {
-  vec2 q = gl_PointCoord * 2.0 - 1.0;
-  float r2 = dot(q, q);
-  if (r2 > 1.0) discard;
-  float lump = 0.65 + 0.7 * vn(q * 2.2 + vSeed * 31.0);
-  float a = (1.0 - r2) * (1.0 - r2) * vA * lump;
-  gl_FragColor = vec4(vCol * a, a);
-}`;
-const SPRAY_HEAT_FS = /* glsl */`
-varying float vA;
-varying float vHeat;
-void main() {
-  vec2 q = gl_PointCoord * 2.0 - 1.0;
-  float r2 = dot(q, q);
-  if (r2 > 1.0) discard;
-  gl_FragColor = vec4((1.0 - r2) * (vA * 0.08 + vHeat * 0.25), 0.0, 0.0, 1.0);
-}`;
-
-export function makeSpray(max, hotU) {
-  const pos = new Float32Array(max * 3), data = new Float32Array(max * 4);
-  const geo = new THREE.BufferGeometry();
-  const aPos = new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage);
-  const aData = new THREE.BufferAttribute(data, 4).setUsage(THREE.DynamicDrawUsage);
-  geo.setAttribute('position', aPos);
-  geo.setAttribute('aData', aData);
-  geo.setDrawRange(0, 0);
-  const U = { uPx: { value: 400 }, uHot: hotU.uHot, uHotCol: hotU.uHotCol };
-  const points = new THREE.Points(geo, new THREE.ShaderMaterial({
-    vertexShader: SPRAY_VS, fragmentShader: SPRAY_FS, uniforms: U, transparent: true, depthWrite: false,
-    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
-  }));
-  points.frustumCulled = false;
-  points.renderOrder = 3;
-  const heat = new THREE.Points(geo, new THREE.ShaderMaterial({
-    vertexShader: SPRAY_VS, fragmentShader: SPRAY_HEAT_FS, uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-  }));
-  heat.frustumCulled = false;
-
-  // The particle store: plain arrays, oldest first.
-  const P = [];
-  const rnd = (a, b) => a + Math.random() * (b - a);
-  const s = {
-    points, heat, U, P, max,
-    // A burst along the ground from a pool: n particles at a power.
-    emit(c, n, power, cold) {
-      for (let i = 0; i < n; i++) {
-        if (P.length >= max) P.shift();
-        const a = Math.random() * Math.PI * 2, v = rnd(5, 15) * (0.4 + 0.8 * power) * (cold ? 0.7 : 1);
-        P.push({
-          x: c.x + Math.cos(a) * 0.5, y: rnd(0.1, 0.5), z: c.z + Math.sin(a) * 0.5,
-          vx: Math.cos(a) * v, vy: rnd(0.2, 1.6), vz: Math.sin(a) * v,
-          age: 0, life: rnd(1.6, 3.6), s0: rnd(0.5, 1.1), grow: rnd(1.4, 2.6),
-          heat: cold ? 0 : power * rnd(0.3, 1), buoy: cold ? rnd(0.1, 0.5) : rnd(0.6, 1.6), seed: Math.random(),
-          k: cold ? 0.55 : 1,
-        });
-      }
-    },
-    step(dt) {
-      const drag = Math.exp(-dt * 1.5);
-      for (let i = P.length - 1; i >= 0; i--) {
-        const p = P[i];
-        p.age += dt;
-        if (p.age > p.life) { P.splice(i, 1); continue; }
-        p.vx *= drag; p.vz *= drag;
-        p.vy += (p.buoy - p.vy) * dt * 0.9;
-        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-        if (p.y < 0.15) { p.y = 0.15; p.vy = Math.abs(p.vy) * 0.3; }
-      }
-    },
-    upload() {
-      const n = P.length;
-      for (let i = 0; i < n; i++) {
-        const p = P[i], u = p.age / p.life;
-        pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
-        const fade = Math.min(1, p.age / 0.12) * (1 - u) ** 1.6;
-        data[i * 4] = p.s0 + p.age * p.grow;
-        data[i * 4 + 1] = fade * 0.36 * p.k;
-        data[i * 4 + 2] = p.heat * Math.exp(-p.age * 3.5);
-        data[i * 4 + 3] = p.seed;
-      }
-      geo.setDrawRange(0, n);
-      aPos.needsUpdate = true; aData.needsUpdate = true;
-    },
-  };
-  return s;
-}
-
-/* ---------- post: heat refraction, then the grade ---------- */
+/* ---------- post: heat refraction and the gas, then the grade ---------- */
 export const REFRACT = {
-  uniforms: { tDiffuse: { value: null }, tHeat: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uAmp: { value: 1 } },
+  uniforms: {
+    tDiffuse: { value: null }, tHeat: { value: null }, tVol: { value: null }, tVolHeat: { value: null },
+    uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uAmp: { value: 1 }, uBend: { value: 45 },
+  },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: /* glsl */`
     ${NOISE}
-    uniform sampler2D tDiffuse, tHeat;
+    uniform sampler2D tDiffuse, tHeat, tVol, tVolHeat;
     uniform vec2 uRes;
-    uniform float uTime, uAmp;
+    uniform float uTime, uAmp, uBend;
     varying vec2 vUv;
     void main() {
-      float s = texture2D(tHeat, vUv).r;
       vec2 uv = vUv;
+      // The hot gas in the volume: light bends along the gradient of its shimmer.
+      vec2 px = 2.0 / uRes;
+      float hx = texture2D(tVolHeat, vUv + vec2(px.x, 0.0)).g - texture2D(tVolHeat, vUv - vec2(px.x, 0.0)).g;
+      float hy = texture2D(tVolHeat, vUv + vec2(0.0, px.y)).g - texture2D(tVolHeat, vUv - vec2(0.0, px.y)).g;
+      vec2 off = vec2(hx, hy) * uBend * uAmp;
+      // A long grazing path over the pad must not tear the frame.
+      off *= min(1.0, 5.0 * uAmp / max(length(off), 1e-4));
+      uv += off / uRes;
+      // The jet cores: fine cells along each plume.
+      float s = texture2D(tHeat, vUv).r;
       if (s > 0.002) {
-        // Cells of hot air rise and wobble; the scale is in screen pixels.
-        vec2 q = vUv * uRes / (16.0 * uAmp);
-        vec2 o = vec2(vn(q + vec2(0.0, -uTime * 2.6)) - 0.5, vn(q * 1.3 + vec2(7.1, -uTime * 3.3)) - 0.5);
-        o += 0.5 * vec2(vn(q * 2.7 + vec2(3.0, -uTime * 5.0)) - 0.5, vn(q * 2.4 + vec2(1.0, -uTime * 4.4)) - 0.5);
-        uv += o * min(s, 1.0) * 9.0 * uAmp / uRes;
+        vec2 q = vUv * uRes / (12.0 * uAmp);
+        vec2 o = vec2(vn(q + vec2(0.0, uTime * 6.0)) - 0.5, vn(q * 1.3 + vec2(7.1, uTime * 7.0)) - 0.5);
+        uv += o * min(s, 1.0) * 6.0 * uAmp / uRes;
       }
-      gl_FragColor = vec4(texture2D(tDiffuse, uv).rgb, 1.0);
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      // The lit gas lies over the bent scene.
+      vec4 g = texture2D(tVol, uv);
+      gl_FragColor = vec4(c * (1.0 - g.a) + g.rgb, 1.0);
     }`,
 };
 

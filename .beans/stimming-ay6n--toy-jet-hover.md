@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-22T13:04:58Z
+updated_at: 2026-11-22T20:05:22Z
 parent: stimming-oh7b
 ---
 
@@ -41,6 +41,8 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 - [x] Lab entry: toys.json, menu tile and hook
 - [x] QA Q1 to Q10 at 1280 px and 375 px
 - [x] Toy doc docs/toys/jethover.md
+- [x] Fidelity pass on steam, smoke and heat haze: K3 (Fire's volume fluid) ported to WebGL2 in jethover/fluid.js (Tom, 2026-11-22: "consult the fire toy fire shader")
+- [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
 - [ ] Tom's sign-off
 

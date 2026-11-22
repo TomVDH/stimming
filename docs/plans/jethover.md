@@ -9,9 +9,9 @@ Tom chose the craft over a jet engine on a plinth. The toy stays apart from Nigh
 ## The hero moment: the hover
 
 1. The first frame: a jet holds in the hover over a damp pad at blue hour. Two nozzles point down; the afterburner is lit.
-2. Hold on the stage (or Space): the throttle goes to full. The engines spool up over a second. The plumes lengthen and whiten, the shock diamonds stand out, the craft climbs a little, and the ground spray throws out wider.
+2. Hold on the stage (or Space): the throttle goes to full. The engines spool up over a second. The plumes lengthen and whiten, the shock diamonds stand out, the craft climbs a little, and the steam off the pad throws out wider and billows up.
 3. Drag while you hold: the craft drifts toward the pointer and yaws a little to face it.
-4. Let go: the throttle comes back to the hover setting. The craft settles back to its spot, the plumes calm, the spray thins.
+4. Let go: the throttle comes back to the hover setting. The craft settles back to its spot, the plumes calm, the steam thins and drifts up.
 5. A click: a short blip of throttle.
 
 The heat carries the shot: the plumes glow, the air over the pad shimmers and bends the far lights and the horizon, and the haze holds the glow.
@@ -24,17 +24,17 @@ The heat carries the shot: the plumes glow, the air over the pad shimmers and be
 | Setting | An open plain, a damp concrete pad, a low far ridge and a row of far lights. No buildings, no props. | The far lights and the horizon are what the shimmer bends. The damp pad takes the glow. The Look rule: few shapes, light and haze carry it. |
 | Time of day | Blue hour, just after sunset. The camera looks toward the last light. | The exhaust is the brightest thing in the scene, and it lights the underside warm. The sky still parts the dark craft from the ground, with a cool rim. |
 | The craft | A generic twin-engine VTOL: a blended body, a delta wing, two canted fins, two swivel nozzles under the rear body, a lift-fan door behind the canopy, gear down. Plain dark grey, no markings. | Hard rule 11. It reads as a jet in the hover without any real aircraft's shape or livery. |
-| The hand | Throttle. Hold for full reheat, drag to drift and yaw, release to settle. Slider: Throttle, the hover setting. | The throttle drives every part of the show: glow, diamonds, shimmer, spray, sound. Drift is the one extra motion, and only while you hold. |
+| The hand | Throttle. Hold for full reheat, drag to drift and yaw, release to settle. Slider: Throttle, the hover setting. | The throttle drives every part of the show: glow, diamonds, shimmer, steam, sound. Drift is the one extra motion, and only while you hold. |
 | Sound | Turbine whine and roar while the hand works the throttle, and through the spool-down after. Then it fades and the context sleeps. | An office toy: a jet that roars for a minute after one click is too much. The sound has a visible cause, the throttle. |
 
 ## Renderer
 
 - three.js 0.170 with small ShaderMaterials. Each program stays small, for the Windows D3D11 link.
-- Passes: the scene (MSAA, half float), a heat pass into a half-size buffer, a refraction pass that bends the scene by the heat, bloom with a threshold, a grade.
+- Passes: the scene (MSAA, half float), jet-core heat and craft depth at half size, the gas step and its volume at half size, a refraction and composite pass, bloom with a threshold, a grade.
 - The craft: a few extruded shapes, MeshStandardMaterial, a sky environment from PMREM. Two warm point lights at the nozzles and one on the pad light it from below.
 - The plumes: view-facing ribbons along each nozzle axis. A core, a sheath, and shock diamonds as bright cells along the axis that fade one by one.
 - The pad: a shader with damp concrete, a hot glow pool and a scorch under each plume, and a fake wet reflection of the plumes.
-- Spray and smoke: soft points, lit by the plume glow, thrown out along the ground, rising and spreading.
+- Steam, smoke and heat: K3, Fire's volume fluid, ported to WebGL2 (`fluid.js`). The jets drive a 3D gas grid; a half-size ray march lights the steam from the hot pools and sums the heat that bends the background. Tom asked for this pass on 2026-11-22 ("consult the fire toy fire shader").
 
 ## Physical details (the pizazz)
 
@@ -47,7 +47,7 @@ The heat carries the shot: the plumes glow, the air over the pad shimmers and be
 ## Frame loop
 
 - Lively while the hand holds, the engines spool, or the craft moves. Full frame rate.
-- Drifting in the hover: the flame flickers and the spray runs, at 30 fps.
+- Drifting in the hover: the flame flickers and the gas runs, at 30 fps.
 - Asleep: 60 s after the last input, time eases to a stop over 2 s and the loop stops. Any input wakes it.
 - Hidden: the loop and the sim clock stop at once.
 - Reduced motion: no flicker and no shake while idle; the hover holds still. The throttle still answers, more softly.
@@ -64,7 +64,7 @@ The heat carries the shot: the plumes glow, the air over the pad shimmers and be
 ## Tasks
 
 1. Blockout on the stage, screenshot at 1280 x 800.
-2. Scene, craft, plumes, pad, spray, heat pass, bloom and grade.
+2. Scene, craft, plumes, pad, gas (K3 port), heat, bloom and grade.
 3. Interaction: throttle, drift, blip; the frame loop.
 4. Sound: whine, roar, crackle.
 5. Bar v3, the toy doc.

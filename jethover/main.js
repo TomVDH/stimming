@@ -1,5 +1,5 @@
 // Jet hover: a jet holds in the hover at blue hour; the hand works the throttle.
-// three.js 0.170: scene, heat field, refraction, bloom, grade.
+// three.js 0.170: scene, gas sim and volume, heat refraction, bloom, grade.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -10,7 +10,8 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { buildScene, NOZ, FAN, NOZ_R } from './scene.js';
-import { makePlumes, makeSheet, makeSpray, REFRACT, GRADE } from './fx.js';
+import { makePlumes, REFRACT, GRADE } from './fx.js';
+import { makeFluid } from './fluid.js';
 import { jetSound } from './sound.js';
 mark('libs');
 
@@ -51,7 +52,7 @@ const snd = jetSound(kit);
 
 /* ---------- three ---------- */
 let renderer = null, composer = null, bloom = null, refract = null, grade = null, S = null, camera = null;
-let heatScene = null, heatRT = null, occl = null, P = null, sheet = null, spray = null;
+let heatScene = null, heatRT = null, occl = null, P = null, gas = null;
 let cssW = 1, cssH = 1;
 const AIM = new THREE.Vector3(0, 4.7, 0);
 const D = detail({ maxDpr: 1.5, budget: 2.2e6, steps: 3, settle: 2, onChange: () => resize(true) });
@@ -72,13 +73,10 @@ async function setup() {
   P.plumes.forEach(m => S.scene.add(m));
   P.plumes[2].material.uniforms.uCold.value = 1;
   P.plumes[2].material.uniforms.uR.value = 0.6;
-  spray = makeSpray(1100, S.padU);
-  S.scene.add(spray.points);
-  // The heat field: the jets, the hot air over the pools, the hot gas.
+  gas = makeFluid(renderer);
+  // The jet cores' fine heat; its depth also stops the gas march at the craft.
   heatScene = new THREE.Scene();
-  sheet = makeSheet();
   P.heats.forEach(m => heatScene.add(m));
-  heatScene.add(sheet, spray.heat);
   // The craft hides the heat behind it: it writes depth only.
   occl = S.craft.grp.clone();
   const om = new THREE.MeshBasicMaterial({ colorWrite: false });
@@ -86,11 +84,14 @@ async function setup() {
   occl.renderOrder = -1;
   heatScene.add(occl);
   heatRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: true });
+  heatRT.depthTexture = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(S.scene, camera));
   refract = new ShaderPass(REFRACT);
   refract.uniforms.tHeat.value = heatRT.texture;
+  refract.uniforms.tVol.value = gas.col;
+  refract.uniforms.tVolHeat.value = gas.heat;
   composer.addPass(refract);
   bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.55, 0.82);
   composer.addPass(bloom);
@@ -131,19 +132,20 @@ function resize(force = false) {
   const bk = D.rung >= 2 ? 0.25 : 0.5;
   bloom.resolution.set(Math.round(w * bk), Math.round(h * bk));
   heatRT.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+  gas.resize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+  gas.VU.uSteps.value = D.rung >= 3 ? 36 : 64;
   refract.uniforms.uRes.value.set(w, h);
   refract.uniforms.uAmp.value = dpr * Math.max(0.6, Math.min(1.4, cssW / 1280));
   grade.uniforms.uAsp.value = cssW / cssH;
   frame3();
-  spray.U.uPx.value = (h * camera.projectionMatrix.elements[5]) / 2;
-  spray.max = D.rung >= 3 ? 500 : 1100;
   wake();
 }
 
 /* ---------- state ---------- */
 let clock = 0, lastInput = performance.now(), timeK = 1, shake = 0, flick = 1;
 let visible = true, raf = 0, timer = 0, last = 0, frameNo = 0;
-const emitAcc = [0, 0, 0];
+let simAcc = 0;
+const SIM_DT = 1 / 60;
 const tmp = new THREE.Vector3(), axis = new THREE.Vector3();
 const jets = [0, 1, 2].map(() => ({ n: new THREE.Vector3(), c: new THREE.Vector3(), a: new THREE.Vector3(0, -1, 0) }));
 const throttle = () => (eng.hand || eng.key || eng.blip > 0 ? 1 : eng.base);
@@ -170,20 +172,9 @@ function step(dt) {
   flick = frozen && !busy ? 1 : 0.92 + 0.08 * Math.sin(clock * 37.0) * Math.sin(clock * 23.0 + 1.3) + 0.04 * Math.sin(clock * 61.0);
   shake = Math.max(0, eng.rpm - 0.8) * (frozen ? 0 : 1);
   pose(tdt);
-  // Spray: each pool throws out gas in proportion to its power.
-  if (tdt > 0) {
-    jets.forEach((j, i) => {
-      const cold = i === 2;
-      const h = j.n.y;
-      const near = clamp(1.6 - h / 8, 0.2, 1.2);
-      const rate = (cold ? 28 : 55) * (0.3 + eng.rpm) * near;
-      emitAcc[i] += rate * tdt;
-      const n = Math.floor(emitAcc[i]);
-      emitAcc[i] -= n;
-      if (n > 0) spray.emit(j.c, n, eng.rpm * near, cold);
-    });
-    spray.step(tdt);
-  }
+  // The gas steps on a fixed clock, two steps a frame at most.
+  simAcc = Math.min(simAcc + tdt, SIM_DT * 2);
+  while (simAcc >= SIM_DT) { gas.step(SIM_DT); simAcc -= SIM_DT; }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
   return busy;
 }
@@ -212,6 +203,10 @@ function pose(tdt) {
       u.uN.value.copy(j.n); u.uAxis.value.copy(axis); u.uLen.value = len;
       u.uThr.value = i === 2 ? eng.rpm : thr; u.uTime.value = clock;
     }
+    // The gas: each jet drives its core down; the hot ones heat it.
+    gas.jetU.uJetP.value[i].set(j.n.x, j.n.y, j.n.z, i === 2 ? 0.75 : 0.6);
+    gas.jetU.uJetA.value[i].set(axis.x, axis.y, axis.z, len);
+    gas.jetU.uJetK.value[i].set((i === 2 ? 9 : 15) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : 6 + 14 * eng.rpm, (i === 2 ? 1.2 : 4) * (0.3 + eng.rpm), 0);
     // The pad: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.padU.uHot.value[i].set(j.c.x, 0, j.c.z, hot);
@@ -226,8 +221,9 @@ function pose(tdt) {
   S.lamps[2].position.set(tmp.x, 0.6, tmp.z + 0.6);
   S.lamps[2].intensity = (2 + 14 * thr * thr) * flick;
   S.craft.glowU.uGlow.value = (0.5 + 1.6 * thr) * flick;
-  sheet.material.uniforms.uC.value.copy(tmp);
-  sheet.material.uniforms.uK.value = 0.25 + 0.6 * eng.rpm;
+  // The gas takes its light from the pools, just over the pad.
+  gas.VU.uLightP.value.set(tmp.x, 1.4, tmp.z);
+  gas.VU.uLightC.value.setRGB(1.0, 0.42, 0.13).multiplyScalar((0.5 + 1.8 * thr * thr) * flick);
   void tdt;
 }
 
@@ -240,7 +236,6 @@ function render() {
     base.z,
   );
   camera.lookAt(AIM.x + craft.x * 0.35, AIM.y + (craft.y - HOVER_Y) * 0.4, AIM.z);
-  spray.upload();
   refract.uniforms.uTime.value = clock;
   grade.uniforms.uGrain.value = frozen ? 0 : frameNo % 97;
   bloom.strength = 0.45 + 0.35 * eng.rpm;
@@ -248,6 +243,7 @@ function render() {
   renderer.setClearColor(0x000000, 1);
   renderer.clear();
   renderer.render(heatScene, camera);
+  gas.draw(camera, heatRT.depthTexture, frameNo);
   renderer.setRenderTarget(null);
   composer.render();
 }
@@ -340,14 +336,14 @@ onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
 // ?qa hands the state to a test script.
-if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, spray: () => spray, D, get frames() { return frameNo; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, gas: () => gas, refract: () => refract, D, get frames() { return frameNo; } };
 
 mark('build');
 try {
   await setup();
   resize(true);
-  // The pools and the spray run for a while, so the first frame is a picture.
-  for (let i = 0; i < 150; i++) step(1 / 30);
+  // The gas runs for five seconds, so the first frame is a picture.
+  for (let i = 0; i < 300; i++) step(1 / 60);
   render();
   await renderer.compileAsync(S.scene, camera);
   await renderer.compileAsync(heatScene, camera);

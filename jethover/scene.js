@@ -277,7 +277,7 @@ export function buildCraft(env) {
   // Wingtip lights: red to port, green to starboard.
   const dot = new THREE.SphereGeometry(0.045, 8, 6);
   for (const [z, col] of [[-5.72, 0xff2a1a], [5.72, 0x2aff6a]]) {
-    const m = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.2) }));
+    const m = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(1.3) }));
     m.position.set(-3.9, -0.04, z);
     grp.add(m);
   }
