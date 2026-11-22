@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Pi walk 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Pi walk 1</h1>
+<p class="lede">Pi walk, round 1. No pick yet; A goes on the menu until Tom picks. A: sixteen digits of pi walked as a glossy tube of light, ten directions like a dial, coloured from indigo at the start to coral at the white-hot head. D: the same walk glowing flat on a dark block.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The walk: sixteen digits of pi, from the 1,658th on (the 3 is the first).
+  // Each digit is a step 36 d degrees clockwise from up.
+  // This run of digits walks a clear meander that never crosses itself.
+  const Q = new URLSearchParams(location.search);
+  const DIGITS = Q.get('d') || '1573525521334757';
+  const STEPS = +(Q.get('n') || DIGITS.length);
+  const WALK = [[0, 0]];
+  for (const ch of DIGITS.slice(0, STEPS)) {
+    const a = +ch * Math.PI / 5, p = WALK[WALK.length - 1];
+    WALK.push([p[0] + Math.sin(a), p[1] - Math.cos(a)]);
+  }
+  const XS = WALK.map(p => p[0]), YS = WALK.map(p => p[1]);
+  const WB = [Math.min(...XS), Math.min(...YS), Math.max(...XS), Math.max(...YS)];
+  // The toy's ramp: indigo, blue, sea teal, pale gold, coral.
+  const STOPS = [[0.5, 0.17, 285], [0.6, 0.16, 258], [0.74, 0.12, 200], [0.86, 0.13, 100], [0.76, 0.16, 42]];
+  const ramp = (t, dl = 0, dc = 0) => {
+    const x = Math.min(0.9999, Math.max(0, t)) * (STOPS.length - 1), j = Math.floor(x), k = x - j;
+    const a = STOPS[j], b = STOPS[j + 1];
+    return `oklch(${f(lerp(a[0], b[0], k) + dl)} ${f(Math.max(0, lerp(a[1], b[1], k) + dc))} ${f(lerp(a[2], b[2], k))})`;
+  };
+  const HEAD = [[0, '#fff', 1], [0.3, 'oklch(0.95 0.06 60)', 0.95], [1, 'oklch(0.76 0.16 42)', 0]];
+  // Walk units to the tile: S per step, centred on cx, cy.
+  const place = (S, cx, cy) => WALK.map(([x, y]) => [cx + (x - (WB[0] + WB[2]) / 2) * S, cy + (y - (WB[1] + WB[3]) / 2) * S]);
+  const line = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+
+  // The walk as markup: a glow, then each step as a glossy tube, then the head.
+  // k scales every width.
+  const walkMarkup = (u, P, k = 1) => {
+    const n = P.length - 1;
+    let segs = '', gloss = '';
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1), a = P[i], b = P[i + 1];
+      const d = `M${f(a[0])} ${f(a[1])}L${f(b[0])} ${f(b[1])}`;
+      segs += `<path class="seg" d="${d}" stroke="${ramp(t, -0.08, 0.02)}" stroke-width="${f(10 * k)}" stroke-linecap="round"/>`;
+      gloss += `<path class="seg" d="${d}" stroke="${ramp(t, 0.1, -0.04)}" stroke-width="${f(4.4 * k)}" stroke-linecap="round" transform="translate(${f(-1.2 * k)} ${f(-1.4 * k)})"/>`;
+    }
+    const e = P[n];
+    return `<path class="glow" d="${line(P)}" fill="none" stroke="oklch(0.7 0.13 220)" stroke-width="${f(14 * k)}" stroke-linejoin="round" stroke-linecap="round" opacity="0.35" filter="url(#${u}g)"/>
+      <g fill="none">${segs}</g><g fill="none" opacity="0.85">${gloss}</g>
+      <g class="head" transform="translate(${f(e[0])} ${f(e[1])})"><circle r="${f(13 * k)}" fill="url(#${u}head)"/><circle r="${f(4.8 * k)}" fill="#fff"/></g>`;
+  };
+
+  // The shared motion: play walks the digits again, one step at a time.
+  // The head leads; at the end it holds, then the walk starts over.
+  // Rest draws the rest of the walk at once and the clock stops.
+  const run = (svg, P) => {
+    const segs = [...svg.querySelectorAll('.seg')], head = svg.querySelector('.head');
+    const n = P.length - 1;
+    const st = { t: n, live: false, last: 0 };
+    const paint = () => {
+      const k = Math.floor(st.t), fr = st.t - k;
+      segs.forEach((s, i) => s.setAttribute('opacity', (i % n) < k ? '1' : '0'));
+      const a = P[Math.min(n, k)], b = P[Math.min(n, k + 1)];
+      head.setAttribute('transform', `translate(${f(lerp(a[0], b[0], fr))} ${f(lerp(a[1], b[1], fr))})`);
+    };
+    const loop = clock(time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      if (st.live) {
+        // Twelve steps a second, then a hold of one second at the end.
+        st.t += dt * 12;
+        if (st.t > n + 12) st.t = 0;
+      } else {
+        st.t += dt * 40;
+        if (st.t >= n) { st.t = n; paint(); st.last = 0; loop.stop(); return; }
+      }
+      paint();
+    });
+    return {
+      enter() { st.live = true; st.t = 0; loop.start(); },
+      move() {},
+      leave() { st.live = false; st.t = Math.min(st.t, n); loop.start(); },
+    };
+  };
+
+  /* ================= Current ================= */
+
+  // Pi walk is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The walk stands face on, a glossy tube of light from indigo to coral.
+  const AS = Math.min(96 / (WB[2] - WB[0]), 96 / (WB[3] - WB[1]));
+  const AP = place(AS, 64, 64);
+  const ABOX = (() => {
+    const xs = AP.map(p => p[0]), ys = AP.map(p => p[1]);
+    const x0 = Math.min(...xs) - 7, y0 = Math.min(...ys) - 7;
+    return [x0, y0, Math.max(...xs) + 7 - x0, Math.max(...ys) + 7 - y0];
+  })();
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: ABOX,
+    idea: `Sixteen digits of pi, from the 1,658th on, walked: each digit takes one step, 0 up and each next digit 36 degrees clockwise, like the hours on a dial. The walk is a glossy tube of light, deep indigo at the start through blue and sea teal to pale gold and coral, and a white-hot head at its end. The pointer walks the digits again, one step at a time, and the head leads; at the end it holds and starts over. When the pointer leaves, the rest of the walk draws at once.`,
+    art(svg, u) {
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}g`, 3.4)}${blur(`${u}h`, 9)}${rg(`${u}head`, HEAD)}</defs>
+        <ellipse cx="64" cy="64" rx="40" ry="36" fill="oklch(0.5 0.12 240)" opacity="0.2" filter="url(#${u}h)"/>
+        ${walkMarkup(u, AP)}`;
+      return run(svg, AP);
+    },
+    // The emblem: the walk as one bold line, and the head.
+    emblem: `${EMB_HEAD}<path d="${line(AP)}" fill="none" stroke="#fff" stroke-width="13" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${f(AP[AP.length - 1][0])}" cy="${f(AP[AP.length - 1][1])}" r="12" fill="#fff"/></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A dark slab at 30 degrees; the walk glows flat on its top.
+  const CY = 44, HX = 31, HY = 31, T = 14;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HX, -HY), E = iso(HX, -HY), S = iso(HX, HY), W = iso(-HX, HY);
+  const down = (p, k = 1) => [p[0], p[1] + T * k];
+  // The top plane: grid units to the tile, by one matrix.
+  const ISO_M = `matrix(0.866 0.5 -0.866 0.5 64 ${CY})`;
+  const DSC = Math.min(56 / (WB[2] - WB[0]), 56 / (WB[3] - WB[1]));
+  const DP = place(DSC, 0, 0);
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [10, 11, 108, 80],
+    idea: 'A slab of dark blue-black glass at 30 degrees: light top, mid left face, dark right face, a rim on the top edges. The walk lies flat on the top and glows there, indigo to coral, with its white-hot head. The pointer walks the digits again, one step at a time.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}${blur(`${u}g`, 2.4)}${blur(`${u}h`, 6)}${rg(`${u}head`, HEAD)}
+          ${lg(`${u}top`, [[0, 'oklch(0.3 0.03 262)'], [1, 'oklch(0.17 0.025 266)']], 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, [[0, 'oklch(0.26 0.03 262)'], [1, 'oklch(0.19 0.028 264)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.17 0.022 264)'], [1, 'oklch(0.11 0.02 266)']])}</defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <ellipse cx="64" cy="${CY}" rx="27" ry="14" fill="oklch(0.55 0.12 240)" opacity="0.22" filter="url(#${u}h)"/>
+        <g transform="${ISO_M}">${walkMarkup(u, DP, 0.62)}</g>
+        <path d="${top}" fill="url(#${u}lit)" opacity="0.6"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>`;
+      return run(svg.querySelector('g[transform^="matrix"]'), DP);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, E, S, W])}" fill="#202020"/><g transform="${ISO_M}"><path d="${line(DP)}" fill="none" stroke="#fff" stroke-width="7.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${f(DP[DP.length - 1][0])}" cy="${f(DP[DP.length - 1][1])}" r="7" fill="#fff"/></g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Pi walk';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-piwalk';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `piwalk-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
