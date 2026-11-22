@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T19:39:22Z
+updated_at: 2026-11-22T19:56:26Z
 parent: stimming-wqq9
 ---
 
@@ -82,3 +82,19 @@ Note: the building redo moves the dome scale to 1.7; the refractor would then be
 
 - The look of the operator screen, and the app name "Observatory Control".
 - The camera loops at 4 fps while it waits for a sub, and pauses after 10 minutes without input.
+
+## Round 5: two ways of seeing (Tom, 2026-11-22)
+
+Tom: simplify; make the 1 m's software diegetic (we look at a computer screen); the refractor is optical, with chromatic aberration and lens flaws; the two do not share a style.
+
+- [x] 1 m: the control software is drawn in a 1440 x 900 canvas, laid over the camera image on a virtual monitor, then shown through a monitor shader (LCD black level, backlight bleed, panel bloom, matte sheen, bezel and desk lit by the screen). Clicks map through the glass.
+- [x] 1 m software simplified: targets list (slew on click), camera, focus with autofocus, guiding, spectrum, image stats; log under the image. DOM panels and os.ts removed.
+- [x] Refractor: full-bleed eyepiece, no software; an eyepiece case (55, 40, 25, 12 mm, grating), a clock drive switch, scroll to focus.
+- [x] Refractor optics: per-colour focus (achromat secondary spectrum, f/2000), coloured rims out of focus, coma and astigmatism off axis, pincushion, lateral colour, dust shadows on the field lens, ghosts and glare.
+- [x] Grating: every bright star shows its first-order spectrum from a temperature atlas; Balmer lines show in Vega.
+- [x] Seeing drifts on its own (random walk around 2.2 arcsec).
+
+### Open for Tom (round 5)
+
+- The look of the monitor and the room; LCD now, a CRT is a shader swap.
+- What the toy keeps: these are realistic first passes; concessions later.

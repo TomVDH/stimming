@@ -7,327 +7,63 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Telescope simulator</title>
 <style>
-/* Telescope simulator workbench: the great refractor and the 1 m reflector. */
-/* The 1 m runs on an operator screen: capture software, maximised. */
-:root {
-  color-scheme: dark;
-  --bg: #111214; --panel: #191a1d; --head: #202125; --well: #0b0c0e; --line: #2c2e33; --line2: #3a3d44;
-  --ink: #dcdfe4; --dim: #8b919c; --faint: #5d636e;
-  --accent: #5aa2e6; --ok: #5cc27a; --warn: #e0a64a; --bad: #e06456; --warm: #e8b46a;
-  --mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
-}
+/* Telescope simulator workbench: two telescopes, two ways of seeing. */
+:root { color-scheme: dark; --ink: #d9d2c4; --dim: #8a8276; --brass: #c79a52; --felt: #121110; }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); }
-body { font: 400 12px/1.35 "Segoe UI", system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-button, select, input { font: inherit; color: var(--ink); }
-button, select { background: #26282d; border: 1px solid var(--line2); border-radius: 3px; padding: 3px 8px; cursor: pointer; }
-button:hover, select:hover { background: #2f3238; }
-button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
-button[aria-pressed="true"] { background: #243447; border-color: var(--accent); color: #fff; }
-button.primary { background: #1f4a75; border-color: #2e6aa6; color: #fff; }
-button.primary:hover { background: #255a8e; }
-button.stop { background: #5a2420; border-color: #8a3a33; color: #fff; }
-input[type="text"], input[type="number"] { background: var(--well); border: 1px solid var(--line2); border-radius: 3px; padding: 3px 6px; }
-input[type="range"] { accent-color: var(--accent); }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-
-/* System bar */
-.sys { display: flex; align-items: center; gap: 14px; height: 34px; padding: 0 10px; background: #0d0e10; border-bottom: 1px solid var(--line); flex: none; white-space: nowrap; overflow: hidden; }
-.seg { display: inline-flex; border: 1px solid var(--line2); border-radius: 3px; overflow: hidden; }
-.seg label { padding: 3px 10px; cursor: pointer; color: var(--dim); }
-.seg input { position: absolute; opacity: 0; pointer-events: none; }
-.seg label:has(input:checked) { background: #2a2d33; color: var(--ink); }
-.seg label:has(input:focus-visible) { outline: 1px solid var(--accent); outline-offset: -1px; }
-.sys .app { color: var(--dim); }
-.sys .app b { color: var(--ink); font-weight: 600; }
-.sys .stat { color: var(--dim); }
-.sys .grow { flex: 1; }
-.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 5px; vertical-align: 0; }
-.dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.off { background: var(--faint); }
-
-/* Work area */
-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: auto minmax(0, 1fr) auto; }
-.tools { grid-column: 1; display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--head); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.tools .sep { width: 1px; height: 18px; background: var(--line2); margin: 0 4px; }
-.tools .zoom { min-width: 52px; text-align: center; color: var(--dim); }
-#stage { grid-column: 1; position: relative; min-height: 0; background: #000; touch-action: none; outline: none; }
-body[data-mode="camera"] #stage { background: #08090a; cursor: crosshair; }
-body[data-mode="camera"] #stage.pan { cursor: grab; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--ink); overflow: hidden; }
+body { font: 400 13px/1.3 "Segoe UI", system-ui, sans-serif; }
+#stage { position: fixed; inset: 0; outline: none; touch-action: none; }
 body[data-mode="eye"] #stage { cursor: grab; }
-#stage:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+body[data-mode="camera"] #stage { cursor: default; }
 #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#readout { position: absolute; left: 12px; top: 10px; margin: 0; font: 11px/1.5 var(--mono); color: rgba(200, 205, 215, 0.55); white-space: pre; pointer-events: none; }
 .status, .fail { position: absolute; left: 50%; top: 50%; translate: -50% -50%; margin: 0; color: var(--dim); }
-.fail { color: var(--bad); }
-.controls { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
-.controls label { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); }
-.controls input[type="range"] { width: 130px; }
-.log { grid-column: 1; height: 112px; overflow-y: auto; margin: 0; padding: 4px 10px; background: var(--well); border-top: 1px solid var(--line); font: 11px/1.55 var(--mono); color: var(--dim); }
-.log div { white-space: pre; }
-.log .t { color: var(--faint); }
-.log .w { color: var(--warn); }
-.log .ok { color: var(--ok); }
+.fail { color: #e06456; }
 
-/* Docked panels */
-aside { grid-column: 2; grid-row: 1 / -1; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
-details { border-bottom: 1px solid var(--line); }
-summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--head); cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim); user-select: none; }
-summary::-webkit-details-marker { display: none; }
-summary::before { content: "▸"; font-size: 9px; color: var(--faint); transition: transform 0.12s; }
-details[open] > summary::before { transform: rotate(90deg); }
-summary .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
-.body { padding: 8px 10px 10px; display: grid; gap: 8px; }
-.grid2 { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 3px 8px; align-items: baseline; }
-.grid2 dt { color: var(--dim); }
-.grid2 dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.row label { color: var(--dim); display: inline-flex; align-items: center; gap: 6px; }
-.bar { height: 4px; background: var(--well); border-radius: 2px; overflow: hidden; }
-.bar > span { display: block; height: 100%; width: 0; background: var(--accent); }
-.filters { display: inline-flex; border: 1px solid var(--line2); border-radius: 3px; overflow: hidden; }
-.filters button { border: 0; border-radius: 0; border-right: 1px solid var(--line2); padding: 3px 9px; background: #222429; }
-.filters button:last-child { border-right: 0; }
-.pad { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 28px); gap: 3px; }
-.pad button { padding: 0; font-weight: 600; }
-.pad .n { grid-area: 1 / 2; } .pad .w { grid-area: 2 / 1; } .pad .stopb { grid-area: 2 / 2; font-size: 10px; } .pad .e { grid-area: 2 / 3; } .pad .s { grid-area: 3 / 2; }
-.mount { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
-.goto { display: flex; gap: 4px; }
-.goto input { flex: 1; min-width: 0; }
-canvas.plot { width: 100%; display: block; background: var(--well); border-radius: 2px; }
-#vcurve { height: 90px; }
-#guide-plot { height: 80px; }
-#histogram { height: 60px; }
-#spectrum { height: 140px; }
-.hint { color: var(--faint); font-size: 11px; margin: 0; }
-#target-name { font-size: 14px; font-weight: 600; color: var(--warm); margin: 0; }
-#target-info, #spec-info { color: var(--dim); white-space: pre-line; margin: 0; }
-#composition { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
-#composition li { display: grid; grid-template-columns: 1fr 70px 40px; align-items: center; gap: 8px; color: var(--faint); }
-#composition li.found { color: var(--ink); }
-#composition .bar2 { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--warm) var(--w), #26282d var(--w)); }
-#composition .v { text-align: right; font-size: 11px; }
+/* The telescope switch sits outside the scene, top left. */
+.switch { position: fixed; left: 12px; top: 12px; z-index: 5; display: inline-flex; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 999px; overflow: hidden; background: rgba(0, 0, 0, 0.55); }
+.switch label { padding: 5px 12px; cursor: pointer; color: #8f939a; }
+.switch input { position: absolute; opacity: 0; pointer-events: none; }
+.switch label:has(input:checked) { background: rgba(255, 255, 255, 0.12); color: #e8e9eb; }
+.switch label:has(input:focus-visible) { outline: 1px solid #8ab4e8; outline-offset: -2px; }
 
-/* The refractor keeps the plain view. */
-body[data-mode="eye"] .cam-only, body[data-mode="camera"] .eye-only { display: none !important; }
-body[data-mode="eye"] main { grid-template-rows: minmax(0, 1fr) auto; }
-body[data-mode="eye"] #stage { grid-row: 1; }
-
-/* Night mode: the whole screen goes red, as at a real telescope. */
-.night { position: fixed; inset: 0; pointer-events: none; background: #ff2a10; mix-blend-mode: multiply; display: none; z-index: 50; }
-body.is-night .night { display: block; }
-
-@media (max-width: 900px) {
-  body { height: auto; overflow: auto; }
-  main { grid-template-columns: 1fr; grid-template-rows: auto; }
-  #stage { height: 60vh; }
-  aside { grid-column: 1; grid-row: auto; border-left: 0; border-top: 1px solid var(--line); }
-  .sys { flex-wrap: wrap; height: auto; padding: 6px 10px; }
-}
+/* The eyepiece case: felt, brass rings, engraved numbers. */
+.case { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--felt); border: 1px solid #26231f; border-radius: 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+.case button { width: 54px; height: 54px; border-radius: 50%; border: 0; cursor: pointer; color: var(--dim); font: 600 13px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: 0.02em;
+  background: radial-gradient(circle at 50% 42%, #1d1c1b 0 44%, #0b0b0b 46% 58%, #2a2621 60% 70%, #15130f 72%); box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.05); }
+.case button small { display: block; font-weight: 400; font-size: 9px; margin-top: 2px; opacity: 0.8; }
+.case button[aria-pressed="true"] { color: #f0dcb4; background: radial-gradient(circle at 50% 42%, #24221f 0 44%, #0b0b0b 46% 56%, var(--brass) 58% 68%, #5a4524 70%); }
+.case button:focus-visible { outline: 1px solid var(--brass); outline-offset: 2px; }
+.case .sep { width: 1px; height: 40px; background: #2a2622; }
+.case button.drive, .case button.drive[aria-pressed] { width: auto; height: 34px; padding: 0 12px; border-radius: 6px; background: #1a1816; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); font-weight: 500; }
+.case button.drive[aria-pressed="true"] { color: #f0dcb4; }
+.case .drive::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; background: #3a3530; vertical-align: 0; }
+.case .drive[aria-pressed="true"]::before { background: #d4583a; box-shadow: 0 0 6px #d4583a; }
+.hint { position: fixed; left: 50%; bottom: 92px; translate: -50% 0; z-index: 5; margin: 0; color: rgba(217, 210, 196, 0.35); font-size: 12px; pointer-events: none; }
+body[data-mode="camera"] .eye-only { display: none; }
 </style>
 </head>
 <body data-mode="eye">
-<div class="night" aria-hidden="true"></div>
+<div id="stage" tabindex="0" role="application" aria-label="The view through the telescope. Arrow keys move it.">
+  <canvas id="view"></canvas>
+  <p class="status" id="status">Loading the star catalog…</p>
+  <p class="fail" id="fail" hidden></p>
+</div>
 
-<header class="sys">
-  <div class="seg" role="radiogroup" aria-label="Telescope">
-    <label><input type="radio" name="scope" value="small" checked>Great refractor</label>
-    <label><input type="radio" name="scope" value="big">1 m reflector</label>
-  </div>
-  <span class="app eye-only">41 cm f/12 · eyepiece · drag to move · tap a star to measure it</span>
-  <span class="app cam-only"><b>Observatory Control</b> · obs-ctl-01 · 1 m f/3 RC</span>
-  <span class="grow"></span>
-  <span class="stat cam-only"><span class="dot"></span>Roof open</span>
-  <span class="stat cam-only" id="weather"><span class="dot"></span>Safe</span>
-  <span class="stat cam-only num" id="clock">UTC --:--:--</span>
-  <button class="cam-only" id="night" type="button" aria-pressed="false" title="Red screen for dark-adapted eyes">Night</button>
-</header>
+<div class="switch" role="radiogroup" aria-label="Telescope">
+  <label><input type="radio" name="scope" value="small" checked>Great refractor</label>
+  <label><input type="radio" name="scope" value="big">1 m reflector</label>
+</div>
 
-<main>
-  <div class="tools cam-only" role="toolbar" aria-label="Image view">
-    <button id="z-fit" type="button" title="Show the whole sensor (F)">Fit</button>
-    <button id="z-one" type="button" title="One sensor pixel per screen pixel (1)">1:1</button>
-    <button id="z-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
-    <span class="zoom num" id="z-read">Fit</span>
-    <button id="z-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
-    <span class="sep"></span>
-    <button id="o-cross" type="button" aria-pressed="true">Crosshair</button>
-    <button id="o-stars" type="button" aria-pressed="false" title="Circle the detected stars with their HFR">Stars</button>
-    <button id="o-labels" type="button" aria-pressed="false">Labels</button>
-    <span class="sep"></span>
-    <span class="hint">Wheel zooms · drag pans · double-click slews there · click picks a target</span>
-  </div>
-
-  <div id="stage" tabindex="0" role="application" aria-label="The telescope's view. Arrow keys move the tube.">
-    <canvas id="view"></canvas>
-    <canvas id="hud"></canvas>
-    <pre id="readout" class="eye-only"></pre>
-    <p class="status" id="status">Loading the star catalog…</p>
-    <p class="fail" id="fail" hidden></p>
-  </div>
-
-  <div class="controls eye-only">
-    <div class="pad" role="group" aria-label="Move the tube">
-      <button class="n" id="up" type="button" aria-label="Tube up">▲</button>
-      <button class="w" id="left" type="button" aria-label="Tube left">◀</button>
-      <button class="e" id="right" type="button" aria-label="Tube right">▶</button>
-      <button class="s" id="down" type="button" aria-label="Tube down">▼</button>
-    </div>
-    <label>Alt <input id="alt" type="range" min="10" max="88" step="0.1" value="40"></label>
-    <label>Az <input id="az" type="range" min="0" max="359.9" step="0.1" value="180"></label>
-    <label>Eyepiece
-      <select id="eyepiece">
-        <option value="0" selected>55 mm</option>
-        <option value="1">40 mm</option>
-        <option value="2">25 mm</option>
-        <option value="3">12 mm</option>
-      </select>
-    </label>
-    <label>Seeing
-      <select id="seeing">
-        <option value="1.2">Excellent</option>
-        <option value="2" selected>Good</option>
-        <option value="3">Average</option>
-        <option value="4.5">Poor</option>
-      </select>
-    </label>
-    <label><input id="track" type="checkbox" checked> Tracking</label>
-    <button id="centre" type="button">Centre target</button>
-  </div>
-
-  <pre class="log cam-only" id="log" aria-live="polite"></pre>
-
-  <aside>
-    <details class="cam-only" open>
-      <summary>Camera <span class="right num" id="cam-state">Idle</span></summary>
-      <div class="body">
-        <div class="bar"><span id="cam-progress"></span></div>
-        <div class="row">
-          <label>Exposure
-            <select id="exposure">
-              <option value="2">2 s</option>
-              <option value="5" selected>5 s</option>
-              <option value="10">10 s</option>
-              <option value="30">30 s</option>
-              <option value="60">60 s</option>
-            </select>
-          </label>
-          <div class="filters" role="group" aria-label="Filter wheel" id="filters">
-            <button type="button" data-f="L" aria-pressed="true">L</button>
-            <button type="button" data-f="R" aria-pressed="false">R</button>
-            <button type="button" data-f="G" aria-pressed="false">G</button>
-            <button type="button" data-f="B" aria-pressed="false">B</button>
-            <button type="button" data-f="Hα" aria-pressed="false">Hα</button>
-          </div>
-        </div>
-        <div class="row">
-          <button id="loop" type="button" class="stop">Stop</button>
-          <label><input id="livestack" type="checkbox" checked> Live stack</label>
-          <span class="num" id="stack-count">0 subs</span>
-          <button id="restack" type="button">Reset</button>
-        </div>
-        <dl class="grid2">
-          <dt>Sensor</dt><dd id="cam-temp">+8.0 °C</dd>
-          <dt>Set</dt><dd>−10.0 °C</dd>
-          <dt>Cooler</dt><dd id="cam-power">0%</dd>
-          <dt>Scale</dt><dd id="cam-scale">0.26″/px</dd>
-        </dl>
-      </div>
-    </details>
-
-    <details class="cam-only" open>
-      <summary>Mount <span class="right num" id="mount-state">Tracking</span></summary>
-      <div class="body">
-        <dl class="grid2">
-          <dt>RA</dt><dd id="m-ra">--</dd>
-          <dt>Alt</dt><dd id="m-alt">--</dd>
-          <dt>Dec</dt><dd id="m-dec">--</dd>
-          <dt>Az</dt><dd id="m-az">--</dd>
-          <dt>LST</dt><dd id="m-lst">--</dd>
-          <dt>Air</dt><dd id="m-air">--</dd>
-        </dl>
-        <div class="mount">
-          <div class="pad" role="group" aria-label="Jog the mount: hold a button">
-            <button class="n" type="button" data-jog="N" title="North (hold)">N</button>
-            <button class="w" type="button" data-jog="W" title="West (hold)">W</button>
-            <button class="stopb" type="button" id="m-stop" title="Stop all motion">STOP</button>
-            <button class="e" type="button" data-jog="E" title="East (hold)">E</button>
-            <button class="s" type="button" data-jog="S" title="South (hold)">S</button>
-          </div>
-          <div style="display: grid; gap: 6px;">
-            <label class="row">Rate
-              <select id="jog-rate">
-                <option value="0.0042">Guide 1×</option>
-                <option value="0.033" selected>Centre 8×</option>
-                <option value="0.27">Find 64×</option>
-                <option value="2">Slew 2°/s</option>
-              </select>
-            </label>
-            <label class="row"><input id="m-track" type="checkbox" checked> Sidereal tracking</label>
-          </div>
-        </div>
-        <form class="goto" id="goto" autocomplete="off">
-          <input id="goto-in" type="text" list="goto-list" placeholder="Go to: Vega, or 16 00 00 +60 00" aria-label="Go to an object or RA and Dec">
-          <button type="submit" class="primary">Slew</button>
-        </form>
-        <datalist id="goto-list"></datalist>
-        <button id="slew-target" type="button">Slew to selected target</button>
-      </div>
-    </details>
-
-    <details class="cam-only" open>
-      <summary>Focuser <span class="right num" id="foc-state">--</span></summary>
-      <div class="body">
-        <div class="row">
-          <button type="button" data-foc="-100">−100</button>
-          <button type="button" data-foc="-10">−10</button>
-          <span class="num" id="foc-pos">25 000</span>
-          <button type="button" data-foc="10">+10</button>
-          <button type="button" data-foc="100">+100</button>
-          <button id="autofocus" type="button" class="primary">Autofocus</button>
-        </div>
-        <canvas class="plot" id="vcurve"></canvas>
-      </div>
-    </details>
-
-    <details class="cam-only" open>
-      <summary>Guider <span class="right num" id="guide-state">--</span></summary>
-      <div class="body">
-        <canvas class="plot" id="guide-plot"></canvas>
-        <div class="row">
-          <button id="guide" type="button" aria-pressed="true">Guiding</button>
-          <span class="hint"><span style="color: var(--accent)">RA</span> · <span style="color: var(--bad)">Dec</span> error, last 2 min, ±4″</span>
-        </div>
-      </div>
-    </details>
-
-    <details class="cam-only" open>
-      <summary>Image <span class="right num" id="img-state">--</span></summary>
-      <div class="body">
-        <canvas class="plot" id="histogram"></canvas>
-        <label class="row">Stretch <input id="stretch" type="range" min="1" max="12" step="0.5" value="4"></label>
-        <dl class="grid2">
-          <dt>Mean</dt><dd id="s-mean">--</dd>
-          <dt>HFR</dt><dd id="s-hfr">--</dd>
-          <dt>Median</dt><dd id="s-med">--</dd>
-          <dt>Stars</dt><dd id="s-stars">--</dd>
-          <dt>σ</dt><dd id="s-sd">--</dd>
-          <dt>Max</dt><dd id="s-max">--</dd>
-        </dl>
-      </div>
-    </details>
-
-    <details open>
-      <summary>Target · spectrograph</summary>
-      <div class="body">
-        <p id="target-name">No target</p>
-        <p id="target-info"></p>
-        <canvas class="plot" id="spectrum"></canvas>
-        <p id="spec-info"></p>
-        <ul id="composition"></ul>
-      </div>
-    </details>
-  </aside>
-</main>
+<div class="case eye-only" role="group" aria-label="Eyepiece case">
+  <button type="button" data-ep="0" aria-pressed="true" title="55 mm: 89×">55<small>mm</small></button>
+  <button type="button" data-ep="1" aria-pressed="false" title="40 mm: 122×">40<small>mm</small></button>
+  <button type="button" data-ep="2" aria-pressed="false" title="25 mm: 196×">25<small>mm</small></button>
+  <button type="button" data-ep="3" aria-pressed="false" title="12 mm: 408×">12<small>mm</small></button>
+  <button type="button" data-ep="grating" aria-pressed="false" title="25 mm with a grating: every star shows its spectrum">⁂<small>grating</small></button>
+  <span class="sep"></span>
+  <button type="button" class="drive" id="drive" aria-pressed="true" title="The clock drive turns the tube with the sky">Clock drive</button>
+</div>
+<p class="hint eye-only">Drag to move the tube · scroll to focus</p>
 
 <script type="module" src="./dist/sim/main.js"></script>
 </body>

@@ -5,6 +5,7 @@ in vec2 v_off;
 flat in vec4 v_col;
 flat in vec4 v_shape;
 flat in float v_kind;
+flat in vec2 v_pos;
 // The Moffat power: lower means wider seeing wings.
 uniform float u_beta;
 // Spike gain, 0 for a clear aperture.
@@ -13,12 +14,49 @@ uniform float u_spikes;
 uniform float u_spikeAxes;
 // The achromat's violet halo, as a share of the light.
 uniform float u_halo;
-// Out of focus, a star becomes a disc of this radius in px.
+// Defocus in px for green light, signed: a star becomes a disc.
 uniform float u_defocus;
+// The achromat's red and blue focus apart from green, in px of blur.
+// Mirrors need none: 0.
+uniform float u_chroma;
+// Off-axis coma and astigmatism grow toward the field's edge.
+uniform vec2 u_axis;
+uniform float u_field;
+uniform float u_coma;
 // The secondary's shadow, as a share of the disc's radius.
 uniform float u_obstr;
+// The grating's spectra: rows of temperature, columns of wavelength.
+uniform sampler2D u_atlas;
 out vec4 o;
 const float PI = 3.14159265;
+
+// The colour of one wavelength in nm, dim at the ends of sight.
+vec3 wavelengthRGB(float l) {
+  vec3 c = l < 440.0 ? vec3((440.0 - l) / 60.0, 0.0, 1.0)
+    : l < 490.0 ? vec3(0.0, (l - 440.0) / 50.0, 1.0)
+    : l < 510.0 ? vec3(0.0, 1.0, (510.0 - l) / 20.0)
+    : l < 580.0 ? vec3((l - 510.0) / 70.0, 1.0, 0.0)
+    : l < 645.0 ? vec3(1.0, (645.0 - l) / 65.0, 0.0)
+    : vec3(1.0, 0.0, 0.0);
+  float k = l < 420.0 ? 0.3 + 0.7 * (l - 380.0) / 40.0 : l > 700.0 ? 0.3 + 0.7 * (760.0 - l) / 60.0 : 1.0;
+  return clamp(c, 0.0, 1.0) * k;
+}
+
+// One colour's star image: a seeing disc, or a defocused disc.
+float psf(float r2, vec2 off, float a, float D) {
+  float core = (u_beta - 1.0) / (PI * a * a) * pow(1.0 + r2 / (a * a), -u_beta);
+  if (D > 0.3) {
+    float r = sqrt(r2), soft = 0.5 + 0.5 * a;
+    float disc = smoothstep(D + soft, D - soft, r) * smoothstep(u_obstr * D - soft, u_obstr * D + soft, r);
+    // A refractor's disc has a bright rim from diffraction.
+    disc *= 1.0 + (u_obstr > 0.0 ? 0.0 : 0.6 * smoothstep(0.55 * D, D, r));
+    // Four vanes cast thin shadows across a reflector's disc.
+    if (u_obstr > 0.0) disc *= smoothstep(0.0, 0.03 * D + 0.6, min(abs(off.x), abs(off.y)));
+    float donut = disc / (PI * D * D * (1.0 - u_obstr * u_obstr) * (u_obstr > 0.0 ? 1.0 : 1.25));
+    core = mix(core, donut, smoothstep(0.6 * a, 2.0 * a, D));
+  }
+  return core;
+}
 
 vec2 turn(vec2 p, float a) {
   float c = cos(a), s = sin(a);
@@ -33,15 +71,25 @@ void main() {
   if (v_kind < 0.5) {
     // Star, in px: x Moffat width, y quad half size, z spike length.
     float a = v_shape.x;
-    float core = (u_beta - 1.0) / (PI * a * a) * pow(1.0 + r2 / (a * a), -u_beta);
-    if (u_defocus > 0.0) {
-      float D = u_defocus, r = sqrt(r2), soft = 0.5 + 0.5 * a;
-      float disc = smoothstep(D + soft, D - soft, r) * smoothstep(u_obstr * D - soft, u_obstr * D + soft, r);
-      // The four vanes cast thin shadows across the disc.
-      disc *= smoothstep(0.0, 0.03 * D + 0.6, min(abs(v_off.x), abs(v_off.y)));
-      float donut = disc / (PI * D * D * (1.0 - u_obstr * u_obstr));
-      core = mix(core, donut, smoothstep(0.6 * a, 2.0 * a, D));
+    // Off axis, the star smears outward: coma's tail and astigmatism's stretch.
+    vec2 off = v_off;
+    float k = 1.0;
+    if (u_coma > 0.0) {
+      vec2 rel = v_pos - u_axis;
+      float e = dot(rel, rel) / (u_field * u_field);
+      vec2 dir = length(rel) > 1.0 ? normalize(rel) : vec2(1.0, 0.0);
+      float rad = dot(off, dir), tan_ = dot(off, vec2(-dir.y, dir.x));
+      float shift = rad - 1.2 * a * e * u_coma;
+      k = 1.0 + e * u_coma * (shift > 0.0 ? 2.4 : 0.8);
+      off = vec2(shift / k, tan_ / (1.0 + 0.5 * e * u_coma));
     }
+    float rr = dot(off, off);
+    vec3 core;
+    if (u_chroma != 0.0) {
+      // Each colour focuses apart: green sharp, red and blue soft, or the reverse.
+      core = vec3(psf(rr, off, a * 1.05, abs(u_defocus + u_chroma)), psf(rr, off, a, abs(u_defocus)), psf(rr, off, a * 1.1, abs(u_defocus + 1.15 * u_chroma)));
+    } else core = vec3(psf(rr, off, a, abs(u_defocus)));
+    core /= k;
     // Scattered light makes a faint wide wing.
     float wing = 0.01 / (PI * 16.0 * a * a) * pow(1.0 + r2 / (16.0 * a * a), -1.5);
     c = col * (core + wing);
@@ -84,6 +132,13 @@ void main() {
       lit = exp(-R / re2) / (2.0 * PI * q * re2 * re2);
     }
     o = vec4(col * F * lit, 1.0);
+  } else if (v_kind > 2.5) {
+    // Grating spectrum: x length, y width, w the temperature row.
+    float t = v_off.x / v_shape.x + 0.5;
+    float I = texture(u_atlas, vec2(t, v_shape.w)).r;
+    float s = v_shape.y;
+    float across = exp(-0.5 * v_off.y * v_off.y / (s * s)) / (2.5066 * s);
+    o = vec4(wavelengthRGB(380.0 + 380.0 * t) * I * F * across * 2.2 / v_shape.x, 1.0);
   } else {
     // Ghost ring, in px: x radius, y ring width.
     float d = sqrt(r2), rad = v_shape.x, w = v_shape.y;
