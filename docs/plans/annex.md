@@ -64,7 +64,7 @@ Notes show the last three, with "Show all N notes".
 ## Round 2 (2026-11-16)
 
 Tom asked for more iterations and an Awwwards-level transition. Status: open, Tom picks.
-Lab: `annexlab/round2.html` (noindex). `?d=a|d|e|f` picks a direction; keys 1 to 4 switch. `?rm=1` shows reduced motion. `?y=0.5` scrolls half the travel.
+Lab: `annexlab/round2.html` (noindex). `?d=a|d|e|f` picks a direction; keys 1 to 4 switch. `?rm=1` shows reduced motion. `?y=0.5` scrolls half the travel. `?still=1` shows the toy's still, not the live toy.
 Round 2 has the shell's own look and the live Glass toy in a frame. Round 1 was a grayscale wireframe.
 
 | | Transition | The cue under the stage | Risk |
@@ -108,7 +108,7 @@ Second set, `?v=a..d`, keys 1 to 4. The emblem leads in each. The block holds th
 
 Tom rejected this set too (2026-11-16): "all are so trite". The title block is open. Bean `stimming-465y` holds the handoff: every ruling, every verdict and the advice for the next try.
 
-Test sheet: `annexlab/sheet.html` shows every transition and layout live, one card each, with Tom's verdict.
+Test sheet: `annexlab/sheet.html` shows every transition and layout, one card each, with Tom's verdict. Each card shows the toy's still; a click loads the lab with `?still=1`, which puts the still in place of the live toy (Tom, 2026-11-22: live toys crashed the sheet).
 
 Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
 

@@ -207,7 +207,7 @@ Tom said yes to one idea: the toy breaks its own frame. The border between toy a
 - [x] Checked at 1280 x 720, 375 x 812 and 812 x 375; no sideways scroll; clean console; reduced motion is a plain scroll.
 - [x] Tom's verdict on Seam: "cool concept" (2026-11-22). He asked for five more on random toys, with Soup cauldron.
 - [x] Five more seams (`&t=<id>`): Lichtenberg burn (char with an ember rim), Crossing button (the sixteen-LED ring ticks out), Pop field (bubbles pop), Dijkstra (routes, then the grid by distance), Soup cauldron (goo rises). Checked at three sizes; clean console.
-- [x] The sheet loads a frame only on a click, one frame live at a time (Tom, 2026-11-22: auto-load crashed the page on scroll).
+- [x] The sheet shows each toy's still and loads a frame only on a click, with `?still=1`: no live toy on the sheet (Tom, 2026-11-22: live toys crashed the page on scroll).
 - [ ] Tom picks among the six, or asks for changes
 - [ ] Then a seam data shape for the shell, and the content
 
