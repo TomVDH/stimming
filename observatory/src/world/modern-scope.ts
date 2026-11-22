@@ -255,7 +255,7 @@ class Kit {
 }
 
 /* ---------- small repeated parts ---------- */
-type Pieces = Record<'bolt' | 'socket' | 'box' | 'led' | 'bezel' | 'beam', BufferGeometry>;
+type Pieces = Record<'bolt' | 'socket' | 'box' | 'led' | 'bezel' | 'beam' | 'boot' | 'nut' | 'clip', BufferGeometry>;
 function pieces(): Pieces {
   return {
     // A hex bolt head.
@@ -270,6 +270,12 @@ function pieces(): Pieces {
     bezel: new CylinderGeometry(0.008, 0.008, 0.002, 24).translate(0, 0.001, 0),
     // The unit cylinder every truss member stretches.
     beam: new CylinderGeometry(1, 1, 1, 16),
+    // A loom's moulded boot: it tapers from the connector to the sleeve.
+    boot: new CylinderGeometry(0.013, 0.017, 0.03, 20).translate(0, 0.015, 0),
+    // The connector's coupling nut, at the end of the boot.
+    nut: new CylinderGeometry(0.02, 0.02, 0.012, 12).translate(0, 0.036, 0),
+    // A P-clip: a stainless band round the loom, its axis along the loom.
+    clip: new TorusGeometry(0.0135, 0.0022, 6, 20).rotateX(Math.PI / 2),
   };
 }
 
@@ -403,6 +409,25 @@ function brushedMap(base: number): CanvasTexture {
   return tex(c, false, 2);
 }
 
+// A braided sleeve, as a bump map: crossed diagonal strands.
+// A tube's u runs along it, so the map repeats often along u.
+function braidMap(): CanvasTexture {
+  const S = 64;
+  const [c, x] = canvas(S, S);
+  x.fillStyle = '#808080';
+  x.fillRect(0, 0, S, S);
+  x.lineWidth = 3;
+  for (let i = -S; i < 2 * S; i += 8) {
+    x.strokeStyle = 'rgba(255,255,255,0.5)';
+    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + S, S); x.stroke();
+    x.strokeStyle = 'rgba(0,0,0,0.5)';
+    x.beginPath(); x.moveTo(i + S, 0); x.lineTo(i, S); x.stroke();
+  }
+  const t = tex(c, false);
+  t.repeat.set(120, 2);
+  return t;
+}
+
 // A weave, as a bump map: a twill for carbon, a fine plain weave for cloth.
 function weaveMap(cell: number, repeat: number): CanvasTexture {
   const S = 128;
@@ -487,7 +512,7 @@ function domeEnv(): CanvasTexture {
 
 /* ---------- materials ---------- */
 type MatKey = 'white' | 'black' | 'accent' | 'stainless' | 'darkSteel' | 'zinc' | 'flock' | 'rubber' | 'carbon'
-  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA'
+  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'braid' | 'display' | 'ledG' | 'ledB' | 'ledA'
   | 'graphite' | 'webbing' | 'stitch' | 'petal';
 type Mats = Record<MatKey, MeshStandardMaterial>;
 
@@ -559,8 +584,8 @@ function materials(env: CanvasTexture): Mats {
     // Dark-coated fins on the camera's heat sink.
     fin: std('fin', { map: blackWear.map, metalness: 0.3, roughness: 0.65 }),
     cable: std('cable', { color: 0x111113, metalness: 0, roughness: 0.75 }),
-    fibre: std('fibre', { color: 0xc96a1f, metalness: 0, roughness: 0.6 }),
-    lan: std('lan', { color: 0xcfd2d7, metalness: 0, roughness: 0.6 }),
+    // The looms' braided sleeve: black, with a fine crossed weave.
+    braid: std('braid', { color: 0x18191c, metalness: 0.05, roughness: 0.62, bumpMap: braidMap(), bumpScale: 0.7 }),
     // A small status screen: dark glass with a faint white glow.
     display: std('display', { color: 0x101214, emissive: 0x8a9098, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0 }),
     ledG: led(0x4fd98a, 'ledG'),
@@ -570,33 +595,23 @@ function materials(env: CanvasTexture): Mats {
 }
 
 
-// A cable bundle: a black lead, an orange fibre and a white data line.
-// Clamps hold it at every third point.
-function bundle(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][]): void {
-  const runs: [MeshStandardMaterial, number, number][] = [[M.cable, 0, 0], [M.fibre, 0.014, 0.006], [M.lan, -0.012, 0.009]];
-  for (const [mat, dx, dy] of runs) {
-    const curve = new CatmullRomCurve3(pts.map(([x, y, z]) => new Vector3(x + dx, y + dy, z)));
-    k.add(mat, new TubeGeometry(curve, 96, 0.009, 8, false));
-  }
-  for (let i = 1; i < pts.length - 1; i += 3) {
-    const [x, y, z] = pts[i];
-    k.put(Pc.box, M.black, boxAt(new Vector3(x, y, z), X, Y, Z, 0.06, 0.035, 0.025));
-  }
-}
-
-// A drag chain: hinged plastic links that carry the cables round a moving joint.
-// side: the direction the links' pins run in.
-function chain(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][], side: Vector3): void {
+// A cable loom: one braided sleeve on a smooth path close to its surface.
+// A boot and a coupling nut end it at each connector.
+// Stainless P-clips hold it about every 15 cm.
+function loom(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][]): void {
   const curve = new CatmullRomCurve3(pts.map(([x, y, z]) => new Vector3(x, y, z)));
-  const n = Math.max(2, Math.floor(curve.getLength() / 0.034));
-  for (let i = 0; i <= n; i++) {
-    const p = curve.getPointAt(i / n), t = curve.getTangentAt(i / n);
-    const up = new Vector3().crossVectors(side, t).normalize(), sd = new Vector3().crossVectors(t, up).normalize();
-    k.put(Pc.box, M.rubber, boxAt(p, sd, up, t, 0.07, 0.04, 0.03));
-    // Each link shows a pin head on both side plates.
-    for (const d of [-1, 1]) {
-      k.put(Pc.socket, M.zinc, stand(p.clone().addScaledVector(sd, d * 0.036), sd.clone().multiplyScalar(d), 0, 0.6));
-    }
+  const len = curve.getLength();
+  k.add(M.braid, new TubeGeometry(curve, Math.max(24, Math.ceil(len / 0.015)), 0.011, 12, false));
+  for (const u of [0, 1]) {
+    const t = curve.getTangentAt(u).multiplyScalar(u ? 1 : -1);
+    const m = stand(curve.getPointAt(u), t);
+    k.put(Pc.boot, M.rubber, m);
+    k.put(Pc.nut, M.stainless, m);
+  }
+  const n = Math.floor(len / 0.15);
+  for (let i = 1; i <= n; i++) {
+    const u = i / (n + 1);
+    k.put(Pc.clip, M.stainless, stand(curve.getPointAt(u), curve.getTangentAt(u)));
   }
 }
 
@@ -650,7 +665,8 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.black, chamferBox(0.05, 0.07, 0.12, 0.006).translate(0.88, DRUM_Y0 + 0.07, 0));
   lamp(k, M, Pc, M.ledG, stand(new Vector3(0.905, DRUM_Y0 + 0.09, 0), X, 0, 0.7));
   // Mains and data rise from the box into the drum.
-  bundle(k, M, Pc, [[0.08, 0.81, 0.56], [0.12, 0.9, 0.62], [0.2, 0.97, 0.74], [0.24, 1.06, 0.83]]);
+  // The loom rises from the box's top, flat to the column, into the flange.
+  loom(k, M, Pc, [[0.08, 0.83, 0.5], [0.08, 0.86, 0.44], [0.08, 0.9, 0.418], [0.08, 0.94, 0.412]]);
 }
 
 /* ---------- the fork: it turns in azimuth ---------- */
@@ -689,12 +705,8 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
       k.put(Pc.socket, M.stainless, stand(new Vector3(s * x1, AXIS_Y + Math.cos(a) * 0.37, Math.sin(a) * 0.37), new Vector3(s, 0, 0), a, 1));
     }
   }
-  // The cables leave the turntable by a grommet at the west arm's foot.
-  // A drag chain carries them up the arm's inner face into the bearing.
-  k.add(M.black, cylY(0.055, TABLE_Y1, TABLE_Y1 + 0.02, 32).translate(-0.72, 0, 0.34));
-  k.add(M.stainless, turn(ringProfile(0.055, 0.062, TABLE_Y1, TABLE_Y1 + 0.022, 0.002), 32).translate(-0.72, 0, 0.34));
+  // The cables run up inside the west arm and come out at the cable wrap.
   const ay = AXIS_Y + WRAP_IN * Math.cos(WRAP_A), az0 = WRAP_IN * Math.sin(WRAP_A);
-  chain(k, M, Pc, [[WRAP_X, TABLE_Y1 + 0.03, 0.34], [WRAP_X, 2.0, 0.34], [WRAP_X, 2.9, 0.28], [WRAP_X, ay - 0.12, az0 + 0.06], [WRAP_X, ay, az0]], X);
   // The wrap's fixed track: a black plate on the arm's inner face, and the anchor block.
   k.add(M.black, cylX(WRAP_OUT + 0.06, -ARM_X + ARM_T / 2 - 0.012, -ARM_X + ARM_T / 2, 96).translate(0, AXIS_Y, 0));
   k.add(M.black, chamferBox(0.04, 0.05, 0.06, 0.005).translate(WRAP_X - 0.03, ay, az0));
@@ -833,7 +845,10 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
     lamp(k, M, Pc, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(Math.cos(a) * 0.15, Math.sin(a) * 0.15, STACK_END), Z, 0, 1));
   }
   // The camera's cable runs from the top box down the back plate, between the fans, to the wheel's motor.
-  bundle(k, M, Pc, [[0.05, CELL_R + 0.1, CELL_Z1 - 0.02], [0.05, 0.66, 0.9], [0.05, 0.45, 0.89], [0.05, 0.34, 0.95], [0.05, 0.33, 1.07]]);
+  loom(k, M, Pc, [
+    [0.05, CELL_R + 0.05, CELL_Z0 + 0.33], [0.05, CELL_R + 0.016, CELL_Z1], [0.05, 0.6, CELL_Z1 + 0.042],
+    [0.05, 0.45, CELL_Z1 + 0.042], [0.05, 0.4, 0.9], [0.05, 0.33, 0.98], [0.05, 0.31, 1.045],
+  ]);
 }
 
 // The primary baffle: a flocked black tube that runs forward from the hole.
@@ -849,7 +864,15 @@ function buildAxis(k: Kit, M: Mats, Pc: Pieces): void {
   // The wrap's moving end: a bracket on the centre section.
   const by = WRAP_OUT * Math.cos(WRAP_A), bz = WRAP_OUT * Math.sin(WRAP_A);
   k.add(M.black, chamferBox(0.1, 0.05, 0.06, 0.005).translate(-0.69, by, bz));
-  bundle(k, M, Pc, [[-0.69, by + 0.02, bz], [-0.7, 0.05, 0.38], [-0.55, 0.5, 0.55], [-0.15, CELL_R + 0.1, 0.62]]);
+  // From the bracket, the loom winds up round the section and the cell, flat to them.
+  const pts: [number, number, number][] = [[-0.69, by, bz]];
+  for (let i = 0; i <= 8; i++) {
+    const th = ((201 - (91 * i) / 8) * Math.PI) / 180, z = 0.2 + (0.38 * i) / 8;
+    pts.push([Math.cos(th) * (CELL_R + 0.014), Math.sin(th) * (CELL_R + 0.014), z]);
+  }
+  // It turns in to meet the top box's side face square on.
+  pts.push([-0.2, CELL_R + 0.045, 0.62], [-0.155, CELL_R + 0.05, 0.62]);
+  loom(k, M, Pc, pts);
 }
 
 // A point on the cable wrap, s metres from its fixed end, in the fork's frame.
@@ -940,26 +963,31 @@ export function buildModernScope(size: number): ModernScope {
   secondary.position.z = SEC_Z;
   alt.add(primary, secondary);
 
-  // The cable wrap's links and their pins: instances that move with the tube.
+  // The cable wrap's links: two side plates and two crossbars each, pinned to the next.
+  // The cables show between the bars. Every part moves with the tube.
   const nLinks = Math.floor(WRAP_LEN / LINK) + 1;
-  const links = new InstancedMesh(Pc.box, M.rubber, nLinks), pins = new InstancedMesh(Pc.socket, M.zinc, nLinks * 2);
-  az.add(links, pins);
-  const wp = new Vector3(), wt = new Vector3(), wu = new Vector3(), ws = new Vector3();
+  const plates = new InstancedMesh(Pc.box, M.rubber, nLinks * 2), bars = new InstancedMesh(Pc.box, M.rubber, nLinks * 2);
+  const pins = new InstancedMesh(Pc.socket, M.zinc, nLinks * 2), inside = new InstancedMesh(Pc.box, M.braid, nLinks);
+  az.add(plates, bars, pins, inside);
+  const wp = new Vector3(), wt = new Vector3(), wu = new Vector3(), ws = new Vector3(), q = new Vector3();
   function placeWrap(altRad: number): void {
     for (let i = 0; i < nLinks; i++) {
       wrapAt(Math.min(i * LINK, WRAP_LEN), altRad, wp, wt);
       wu.crossVectors(X, wt).normalize();
       ws.crossVectors(wt, wu).normalize();
-      links.setMatrixAt(i, boxAt(wp, ws, wu, wt, 0.07, 0.04, 0.03));
       for (const d of [0, 1]) {
         const sg = d ? 1 : -1;
-        pins.setMatrixAt(i * 2 + d, stand(wp.clone().addScaledVector(ws, sg * 0.036), ws.clone().multiplyScalar(sg), 0, 0.6));
+        // A side plate overlaps the next link's, as the real links nest.
+        plates.setMatrixAt(i * 2 + d, boxAt(q.copy(wp).addScaledVector(ws, sg * 0.031), ws, wu, wt, 0.005, 0.036, LINK * 1.15));
+        bars.setMatrixAt(i * 2 + d, boxAt(q.copy(wp).addScaledVector(wu, sg * 0.016), ws, wu, wt, 0.062, 0.005, 0.012));
+        pins.setMatrixAt(i * 2 + d, stand(q.copy(wp).addScaledVector(ws, sg * 0.0335), ws.clone().multiplyScalar(sg), 0, 0.55));
       }
+      inside.setMatrixAt(i, boxAt(wp, ws, wu, wt, 0.05, 0.022, LINK * 1.02));
     }
-    links.instanceMatrix.needsUpdate = true;
-    pins.instanceMatrix.needsUpdate = true;
-    links.computeBoundingSphere();
-    pins.computeBoundingSphere();
+    for (const im of [plates, bars, pins, inside]) {
+      im.instanceMatrix.needsUpdate = true;
+      im.computeBoundingSphere();
+    }
   }
 
   // The mirror covers: each petal swings on a hinge at the rim.
