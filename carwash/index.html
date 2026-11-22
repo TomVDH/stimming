@@ -2520,9 +2520,22 @@ function lens() {
 }
 // The camera from the Dev rows: the eye in the car's frame, and a turn, pitch then yaw.
 const cam = { eye: new Float32Array(3), rot: new Float32Array(9) };
+// The head turns a little after the mouse, in degrees, on a spring.
+const sway = { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 };
+const SWAY_YAW = 1.5, SWAY_PITCH = 0.8;
+function stepSway(dt) {
+  if (reduced()) { Object.assign(sway, { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 }); return; }
+  // Damping under critical gives a small overshoot: the wobble.
+  const k = 40, c = 7;
+  sway.vx += (k * (sway.tx - sway.x) - c * sway.vx) * dt;
+  sway.vy += (k * (sway.ty - sway.y) - c * sway.vy) * dt;
+  sway.x += sway.vx * dt;
+  sway.y += sway.vy * dt;
+}
+const swaying = () => Math.abs(sway.tx - sway.x) + Math.abs(sway.ty - sway.y) + Math.abs(sway.vx) + Math.abs(sway.vy) > 1e-3;
 function camera() {
   cam.eye.set([val('eyeX', VIEW.eyeX), val('eyeY', VIEW.eyeY), val('eyeZ', VIEW.eyeZ)]);
-  const p = val('pitch', VIEW.pitch) * D2R, y = val('yaw', VIEW.yaw) * D2R, cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y);
+  const p = (val('pitch', VIEW.pitch) + sway.y) * D2R, y = (val('yaw', VIEW.yaw) + sway.x) * D2R, cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y);
   // Column-major: yaw about y after pitch about x.
   cam.rot.set([cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp]);
 }
@@ -3424,7 +3437,7 @@ function soundRest() {
 let raf = 0, last = 0, visible = true, ready = false, lastShot = 0;
 // The car holds a moment in the desert, then the film cuts back to the shot.
 const HOLD = 3.5;
-const busy = () => phase === 'shot' || car.mode === 'rolling' || car.mode === 'done' || wip.mode !== 'rest' || wip.a > PARK + 1e-4 || !!fading;
+const busy = () => phase === 'shot' || swaying() || car.mode === 'rolling' || car.mode === 'done' || wip.mode !== 'rest' || wip.a > PARK + 1e-4 || !!fading;
 let stillFor = 0, fading = null;
 function wake() {
   if (!raf && visible && ready && !reduced()) { last = performance.now(); raf = requestAnimationFrame(frame); }
@@ -3442,6 +3455,7 @@ function frame(now) {
   const dt = clamp(raw, 0, 0.05);
   stillFor += dt;
   stepFade(dt);
+  stepSway(dt);
   if (phase === 'shot') time += dt;
   else {
     advance(dt);
@@ -3466,6 +3480,7 @@ function stepFade(dt) {
   if (k >= 1) { fading = null; fade = 1; }
 }
 function toEntry() {
+  Object.assign(sway, { x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0 });
   car.s = lastS = S0; car.v = 0; car.mode = 'parked'; car.t = 0; car.stopAt = -1;
   brush.y = 0.95 - 1.2; brush.rate = 0; wrap.rate = 0; blowY.y = 0.6;
   initGlass();
@@ -3576,6 +3591,16 @@ canvas.addEventListener('pointermove', e => {
   if (!ptr.drag && Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y) > 8) { ptr.drag = true; if (phase === 'run') wip.mode = 'hand'; }
   if (ptr.drag && phase === 'run') { wip.target = angleAt(paneAt(e)); stillFor = 0; wake(); }
 });
+// A mouse over the glass turns the head toward it; leaving lets it settle.
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || phase !== 'run' || reduced()) return;
+  const r = canvas.getBoundingClientRect();
+  // A positive yaw turns left, so the mouse's x flips.
+  sway.tx = clamp(1 - ((e.clientX - r.left) / r.width) * 2, -1, 1) * SWAY_YAW;
+  sway.ty = clamp(1 - ((e.clientY - r.top) / r.height) * 2, -1, 1) * SWAY_PITCH;
+  wake();
+});
+canvas.addEventListener('pointerleave', () => { sway.tx = sway.ty = 0; wake(); });
 function release(e) {
   if (!ptr || (e && e.pointerId !== ptr.id)) return;
   const tap = !ptr.drag && e?.type === 'pointerup';

@@ -82,6 +82,7 @@ Bar: v3 (the default; the old bar still builds, hidden).
 |---|---|
 | Click, tap, Enter or Space | On the shot: Proceed. On the run: one wiper stroke |
 | Drag | On the run: the wiper blades follow the hand round their pivots |
+| Mouse move | On the run: the head turns toward the pointer, 1.5 degrees across and 0.8 up and down at most, on a spring with a small overshoot. Not on touch, not with reduced motion |
 | Wheel, pinch, tilt | None |
 
 ## Renderer and libraries

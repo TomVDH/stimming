@@ -13,7 +13,7 @@ Move the seat and widen the field of view a little.
 A mouse move sways the camera a little, for life.
 
 - [x] Seat back and a wider field of view, a little (0.32, 1.08)
-- [ ] Mouse sway on the camera (off for reduced motion)
+- [x] Mouse sway on the camera (off for touch and reduced motion)
 - [ ] Tom picks which blobs to redo
 - [ ] Redo the water and foam on the glass
 - [ ] Captures for Tom
