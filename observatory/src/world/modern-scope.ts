@@ -465,7 +465,7 @@ function domeEnv(): CanvasTexture {
 
 /* ---------- materials ---------- */
 type MatKey = 'white' | 'black' | 'accent' | 'stainless' | 'darkSteel' | 'zinc' | 'flock' | 'rubber' | 'carbon'
-  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA' | 'ledW'
+  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA'
   | 'graphite' | 'webbing' | 'stitch';
 type Mats = Record<MatKey, MeshStandardMaterial>;
 
@@ -539,8 +539,6 @@ function materials(env: CanvasTexture): Mats {
     ledG: led(0x39ff7a, 'ledG'),
     ledB: led(0x3aa0ff, 'ledB'),
     ledA: led(0xffb23a, 'ledA'),
-    // The lamp rings: a cool white line.
-    ledW: std('ledW', { color: 0xf2f6ff, emissive: 0xeef3ff, emissiveIntensity: 1.6, roughness: 0.3 }),
   };
 }
 
@@ -595,9 +593,8 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
     k.put(Pc.bolt, M.stainless, stand(new Vector3(Math.cos(a) * 0.6, DRUM_Y0, Math.sin(a) * 0.6), UP, a, 1.1));
   }
   k.add(M.black, turn(ringProfile(0, 0.85, DRUM_Y0, DRUM_Y1, 0.01), 128));
-  // The encoder band: a polished ring round the drum, with a white lamp line.
+  // The encoder band: a polished ring round the drum.
   k.add(M.stainless, turn(ringProfile(0.85, 0.856, DRUM_Y0 + 0.05, DRUM_Y0 + 0.09, 0.002), 160));
-  k.add(M.ledW, turn(ringProfile(0.85, 0.853, DRUM_Y0 + 0.11, DRUM_Y0 + 0.118, 0.001), 160));
   // The control box on the column's south face, with a status screen and lamps.
   k.add(M.black, chamferBox(0.36, 0.42, 0.16, 0.014).translate(0, 0.6, 0.52));
   k.add(M.display, new BoxGeometry(0.22, 0.09, 0.006).translate(0, 0.69, 0.603));
@@ -648,10 +645,9 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
     const lo = s > 0 ? x0 : -x1, hi = s > 0 ? x1 : -x0;
     k.add(M.black, cylX(0.42, lo, hi, 128).translate(0, AXIS_Y, 0));
     k.add(M.stainless, cylX(0.425, s > 0 ? x0 + 0.06 : -x0 - 0.1, s > 0 ? x0 + 0.1 : -x0 - 0.06, 128).translate(0, AXIS_Y, 0));
-    // The cover: a white cap, a lamp ring and a ring of screws.
+    // The cover: a white cap and a ring of screws.
     const xc = s * (x1 + 0.01);
     k.add(M.accent, cylX(0.22, Math.min(xc, s * x1), Math.max(xc, s * x1), 96).translate(0, AXIS_Y, 0));
-    k.add(M.ledW, new RingGeometry(0.3, 0.312, 128).rotateY(s * Math.PI / 2).translate(s * (x1 + 0.002), AXIS_Y, 0));
     // The altitude encoder's read head sits on top of the housing.
     k.add(M.black, chamferBox(0.1, 0.05, 0.09, 0.006).translate(s * (x0 + 0.08), AXIS_Y + 0.445, 0));
     k.put(Pc.led, M.ledG, stand(new Vector3(s * (x0 + 0.08), AXIS_Y + 0.47, 0.046), Z, 0, 0.7));
