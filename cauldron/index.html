@@ -288,16 +288,24 @@ void main() {
   vUv = p;
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
+// Links run on the driver's threads; linked() waits for them all.
+const parallel = gl.getExtension('KHR_parallel_shader_compile');
+const linking = [];
 function program(fs) {
   const p = gl.createProgram();
   gl.attachShader(p, shader(gl.VERTEX_SHADER, VS));
   gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  linking.push(p);
   // Uniform locations are looked up once, on first use.
   const loc = {};
   p.u = name => (name in loc ? loc[name] : (loc[name] = gl.getUniformLocation(p, name)));
   return p;
+}
+// D3D11 takes seconds to link each scene pass: the page waits here, not frozen.
+async function linked() {
+  if (parallel) while (linking.some(p => !gl.getProgramParameter(p, parallel.COMPLETION_STATUS_KHR))) await new Promise(r => setTimeout(r, 50));
+  for (const p of linking.splice(0)) if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
 }
 function texture(w, h, internal, format, data = null) {
   const t = gl.createTexture();
@@ -320,8 +328,14 @@ const vao = gl.createVertexArray();
 
 /* ---------- GLSL: shared maths ---------- */
 // Array sizes: things, bubbles, droplets, puffs, sparks.
-const NB = 24, NBUB = 20, ND = 24, NP = 12, NS = 20;
+const NB = 24, NBUB = 64, ND = 24, NP = 12, NS = 20;
+// The boil's bubbles take the first 20 bubble slots; the paddle's trail takes the rest.
+const NBOIL = 20;
+// The paddle's wake: the most eddies at once.
+const NED = 12;
 const COMMON = `
+// One minus x, kept in 0 to 1: pow() of a negative base is NaN, and NaN blooms into a star.
+float om(float x) { return clamp(1.0 - x, 0.0, 1.0); }
 #define PI 3.14159265
 float hash12(vec2 p) { vec3 q = fract(p.xyx * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
@@ -419,7 +433,9 @@ vec4 S3(sampler2D t, vec3 g) {
   vec2 inv = 1.0 / vec2(GN.xy * ivec2(TC, TR));
   vec2 ua = (g.xy + vec2(float((a % TC) * GN.x), float((a / TC) * GN.y))) * inv;
   vec2 ub = (g.xy + vec2(float((b % TC) * GN.x), float((b / TC) * GN.y))) * inv;
-  return mix(texture(t, ua), texture(t, ub), z - z0);
+  // The atlas has no mipmaps, so level 0 is exact.
+  // A gradient read in a march loop makes D3D11 unroll the loop.
+  return mix(textureLod(t, ua, 0.0), textureLod(t, ub, 0.0), z - z0);
 }
 `;
 // The pot is a solid in the flow: the gas runs round its belly.
@@ -979,54 +995,57 @@ vec2 sdCloud(vec3 p) {
 // pieces 22 potato cube, 23 leek ring, 24 garlic clove,
 // then the pieces: 10 carrot coin, 11 onion ring, 12 fish bones, 13 beet cube, 14 tomato chunk, 15 mushroom slice.
 vec2 sdKind(int k, vec3 p, float s) {
+  // One return: D3D11 compiles a switch of many returns very slowly.
+  vec2 r;
   switch (k) {
-    case 0: return sdCarrot(p, s);
-    case 1: return sdOnion(p, s);
-    case 2: return sdFish(p, s);
-    case 3: return sdBeet(p, s);
-    case 4: return sdDuck(p);
-    case 5: return vec2(length(p) - 0.04 - s, 0.0);
-    case 6: return sdBoot(p, s);
-    case 7: return sdStar(p, s);
-    case 8: return sdTomato(p, s);
-    case 9: return sdMush(p, s);
-    case 10: return vec2(sdCyl(p, 0.075, 0.016) - 0.006, 0.0);
-    case 11: return vec2(sdTor(p, 0.1, 0.017), 0.0);
-    case 12: return sdBones(p);
-    case 13: return vec2(sdRBox(p, vec3(0.042), 0.012), 0.0);
-    case 14: return vec2(max(length(p) - 0.07, p.y - 0.018), 0.0);
-    case 16: return sdPotato(p, s);
-    case 17: return sdLeek(p, s);
-    case 18: return sdGarlic(p, s);
-    case 19: return sdChilli(p, s);
-    case 20: return sdBay(p, s);
-    case 21: return sdNoodles(p, s);
-    case 22: return vec2(sdRBox(p, vec3(0.04), 0.014) - s, 0.0);
-    case 23: return vec2(sdTor(p, 0.052, 0.017), 0.0);
-    case 24: return vec2(smin(sdEll(p, vec3(0.05, 0.03, 0.034)), sdRCone(p, vec3(0.02, 0.0, 0.0), vec3(0.065, 0.0, 0.0), 0.02, 0.004), 0.02), 0.0);
-    case 25: return sdFrog(p, s);
-    case 26: return sdCandle(p, s, 1.0);
-    case 27: return vec2(length(p) - 0.034 * (1.0 + 0.06 * sin(uTime * 31.0)), 0.0);
-    case 28: return sdHole(p);
-    case 29: return sdCandle(p, s, 0.0);
-    case 30: return sdEye(p);
-    case 31: return sdToad(p, s);
-    case 32: return sdMoon(p);
-    case 33: return vec2(sdRBox(p, vec3(0.055 - s), 0.012), 0.0);
-    case 34: return sdBone(p);
-    case 35: return sdMandrake(p);
-    case 36: return vec2(length(p) - 0.05 - 0.002 * sin(uTime * 7.0 + p.x * 90.0), 0.0);
-    case 37: return sdCloud(p);
-    case 38: return sdBat(p);
-    case 39: return sdNewt(p, s);
-    case 40: return sdPrism(p);
-    case 41: return sdClock(p);
-    case 42: return sdFeather(p);
-    case 43: return vec2(sdEll(p, vec3(0.065, 0.035, 0.045)), 0.0);
-    case 44: return sdMagnet(p);
-    case 45: return sdLift(p);
+    case 0: r = sdCarrot(p, s); break;
+    case 1: r = sdOnion(p, s); break;
+    case 2: r = sdFish(p, s); break;
+    case 3: r = sdBeet(p, s); break;
+    case 4: r = sdDuck(p); break;
+    case 5: r = vec2(length(p) - 0.04 - s, 0.0); break;
+    case 6: r = sdBoot(p, s); break;
+    case 7: r = sdStar(p, s); break;
+    case 8: r = sdTomato(p, s); break;
+    case 9: r = sdMush(p, s); break;
+    case 10: r = vec2(sdCyl(p, 0.075, 0.016) - 0.006, 0.0); break;
+    case 11: r = vec2(sdTor(p, 0.1, 0.017), 0.0); break;
+    case 12: r = sdBones(p); break;
+    case 13: r = vec2(sdRBox(p, vec3(0.042), 0.012), 0.0); break;
+    case 14: r = vec2(max(length(p) - 0.07, p.y - 0.018), 0.0); break;
+    case 16: r = sdPotato(p, s); break;
+    case 17: r = sdLeek(p, s); break;
+    case 18: r = sdGarlic(p, s); break;
+    case 19: r = sdChilli(p, s); break;
+    case 20: r = sdBay(p, s); break;
+    case 21: r = sdNoodles(p, s); break;
+    case 22: r = vec2(sdRBox(p, vec3(0.04), 0.014) - s, 0.0); break;
+    case 23: r = vec2(sdTor(p, 0.052, 0.017), 0.0); break;
+    case 24: r = vec2(smin(sdEll(p, vec3(0.05, 0.03, 0.034)), sdRCone(p, vec3(0.02, 0.0, 0.0), vec3(0.065, 0.0, 0.0), 0.02, 0.004), 0.02), 0.0); break;
+    case 25: r = sdFrog(p, s); break;
+    case 26: r = sdCandle(p, s, 1.0); break;
+    case 27: r = vec2(length(p) - 0.034 * (1.0 + 0.06 * sin(uTime * 31.0)), 0.0); break;
+    case 28: r = sdHole(p); break;
+    case 29: r = sdCandle(p, s, 0.0); break;
+    case 30: r = sdEye(p); break;
+    case 31: r = sdToad(p, s); break;
+    case 32: r = sdMoon(p); break;
+    case 33: r = vec2(sdRBox(p, vec3(0.055 - s), 0.012), 0.0); break;
+    case 34: r = sdBone(p); break;
+    case 35: r = sdMandrake(p); break;
+    case 36: r = vec2(length(p) - 0.05 - 0.002 * sin(uTime * 7.0 + p.x * 90.0), 0.0); break;
+    case 37: r = sdCloud(p); break;
+    case 38: r = sdBat(p); break;
+    case 39: r = sdNewt(p, s); break;
+    case 40: r = sdPrism(p); break;
+    case 41: r = sdClock(p); break;
+    case 42: r = sdFeather(p); break;
+    case 43: r = vec2(sdEll(p, vec3(0.065, 0.035, 0.045)), 0.0); break;
+    case 44: r = sdMagnet(p); break;
+    case 45: r = sdLift(p); break;
+    default: r = vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
   }
-  return vec2(extrude(sliceShape(p.xz), p.y, 0.012, 0.008), 0.0);
+  return r;
 }
 `;
 
@@ -1059,6 +1078,9 @@ uniform vec4 uMean;
 uniform vec4 uPlume[4];
 uniform int uNE;
 uniform vec4 uE[32];
+// The paddle's wake: eddy centre, strength and core radius, in soup units.
+uniform int uNEd;
+uniform vec4 uEddy[${NED}];
 layout(location = 0) out vec4 oDye;
 layout(location = 1) out vec4 oAux;
 ${COMMON}
@@ -1075,7 +1097,16 @@ vec2 flow(vec2 p) {
   // A fine curl that wakes with the stir: it pulls colours into thin threads.
   vec2 r = p * 7.0 + vec2(-uTime * 0.11, uTime * 0.09);
   float m0 = noise2(r), mx = noise2(r + vec2(e, 0.0)), my = noise2(r + vec2(0.0, e));
-  return v + (0.012 + 0.05 * uStir) * vec2(my - m0, m0 - mx) / e;
+  v += (0.012 + 0.05 * uStir) * vec2(my - m0, m0 - mx) / e;
+  // The paddle's eddies: Lamb-Oseen vortices that fold the colours behind a quick stroke.
+  for (int i = 0; i < ${NED}; i++) {
+    if (i >= uNEd) break;
+    vec4 ed = uEddy[i];
+    vec2 d = p - ed.xy;
+    float r2 = dot(d, d) + 1e-6;
+    v += ed.z * (1.0 - exp(-r2 / (ed.w * ed.w))) / (6.2832 * r2) * vec2(-d.y, d.x);
+  }
+  return v;
 }
 // A sharp read: Catmull-Rom over the texels, clamped to the four nearest,
 // so the colours keep their edges instead of blurring each frame.
@@ -1526,7 +1557,20 @@ uniform vec4 uSpA, uSpB;
 uniform int uMarch;
 // The background blur's widest disc, in back-layer texels.
 uniform float uDof;
+// The scene runs as five passes: D3D11 cannot compile it as one program.
+// PASS_G finds what each pixel's ray hits: uG holds depth, the depth before the things, kind and index.
+// PASS_T shades the things' surfaces into uX0 to uX2; PASS_S marches the soup's two rays into the same three.
+// PASS_L looks up each soup ray's thing into uY0 and uY1; the last pass lights everything.
+uniform highp sampler2D uG, uX0, uX1, uX2, uY0, uY1;
+// PASS_L: 0 for the thing under the soup, 1 for the thing in the mirror.
+uniform int uWhich;
+#if defined(PASS_T) || defined(PASS_S)
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 o1;
+layout(location = 2) out vec4 o2;
+#else
 out vec4 o;
+#endif
 ${COMMON}
 ${POT}
 ${GRID}
@@ -1536,7 +1580,7 @@ vec2 soupUV(vec2 xz) { return xz / uRS / uExt * 0.5 + 0.5; }
 // The stir dips the middle and lifts the edge; the funnel deepens the centre.
 float dipAt(float r) { return uDip * (r * r - 0.5) - uFunnel * (1.0 / (1.0 + r * r * 14.0) - 0.19); }
 float surfH(vec2 xz) {
-  vec2 r = texture(uRip, soupUV(xz)).xz;
+  vec2 r = textureLod(uRip, soupUV(xz), 0.0).xz;
   float h = uLevel + dipAt(min(length(xz) / uRS, 1.0)) + r.x + r.y + dot(uTide, xz);
   // A black hole pulls a dip with two spiral arms that wind in.
   if (uHole.z > 0.0) {
@@ -1551,7 +1595,7 @@ float soupT(vec3 ro, vec3 rd) {
   for (int i = 0; i < 3; i++) t = (surfH((ro + rd * t).xz) - ro.y) / rd.y;
   return t;
 }
-vec3 soupCol(vec2 xz) { vec4 d = texture(uDye, soupUV(xz)); return max(lab2lin(d.rgb / max(d.a, 1e-3)), 0.0); }
+vec3 soupCol(vec2 xz) { vec4 d = textureLod(uDye, soupUV(xz), 0.0); return max(lab2lin(d.rgb / max(d.a, 1e-3)), 0.0); }
 
 /* the things */
 // The rotation's w comes back from xyz; the w slot holds the wet mark.
@@ -1570,18 +1614,25 @@ int gNc = 0;
 float sdAll(vec3 p, out int id, out float m) {
   float d = 1e9;
   id = -1; m = 0.0;
-  for (int k = 0; k < NC; k++) {
-    if (k >= gNc) break;
+  // A live bound keeps the loop: an unrolled loop holds eight copies of sdKind.
+  for (int k = 0; k < gNc; k++) {
     int i = gCl[k];
     float mm, di = sdBody(i, p, mm);
     if (di < d) { d = di; id = i; m = mm; }
   }
   return d;
 }
+// Four taps through one call site: D3D11 inlines each call site in full.
+// The loop start is not a constant, so the compiler keeps the loop.
 vec3 bodyN(int i, vec3 p) {
-  const vec2 e = vec2(1.0, -1.0) * 0.0012;
+  vec3 n = vec3(0.0);
   float m;
-  return normalize(e.xyy * sdBody(i, p + e.xyy, m) + e.yyx * sdBody(i, p + e.yyx, m) + e.yxy * sdBody(i, p + e.yxy, m) + e.xxx * sdBody(i, p + e.xxx, m));
+  for (int j = min(gNc, 0); j < 4; j++) {
+    // The taps go xyy, yyx, yxy, xxx, with x = 1 and y = -1.
+    vec3 e = 2.0 * vec3(((j + 3) >> 1) & 1, (j >> 1) & 1, j & 1) - 1.0;
+    n += e * sdBody(i, p + e * 0.0012, m);
+  }
+  return normalize(n);
 }
 
 /* light */
@@ -1602,10 +1653,10 @@ vec3 litSurf(vec3 n, vec3 v, vec3 alb, float rough, float f0) {
   vec3 h = normalize(uKeyDir + v);
   float nl = max(dot(n, uKeyDir), 0.0), nh = max(dot(n, h), 0.0);
   float sh = 2.0 / max(rough * rough * rough * rough, 1e-4) - 2.0;
-  float F = f0 + (1.0 - f0) * pow(1.0 - max(dot(h, v), 0.0), 5.0);
+  float F = f0 + (1.0 - f0) * pow(om(max(dot(h, v), 0.0)), 5.0);
   vec3 col = alb * (uKeyCol * nl + skyAmb(n) * 3.0);
   col += uKeyCol * pow(nh, sh) * (sh + 8.0) / 25.13 * F * nl;
-  float Fv = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+  float Fv = f0 + (1.0 - f0) * pow(om(max(dot(n, v), 0.0)), 5.0);
   return col + env(reflect(-v, n), rough) * Fv;
 }
 // GGX with Smith-Schlick shadowing and Schlick Fresnel; the result includes n.l.
@@ -1615,7 +1666,7 @@ vec3 ggx(vec3 n, vec3 v, vec3 l, float rough, vec3 f0) {
   float a = max(rough * rough, 0.002), a2 = a * a, d = nh * nh * (a2 - 1.0) + 1.0;
   float k = (rough + 1.0) * (rough + 1.0) / 8.0;
   float G = nl / (nl * (1.0 - k) + k) * nv / (nv * (1.0 - k) + k);
-  return a2 / (PI * d * d) * G * (f0 + (1.0 - f0) * pow(1.0 - vh, 5.0)) / (4.0 * nv);
+  return a2 / (PI * d * d) * G * (f0 + (1.0 - f0) * pow(om(vh), 5.0)) / (4.0 * nv);
 }
 // The split-sum lookup, fitted (Karis): scale and bias on f0.
 vec3 envBRDF(vec3 f0, float rough, float nv) {
@@ -1759,28 +1810,39 @@ float glint(vec2 xz, float g, vec3 n, vec3 v) {
 }
 vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, out vec3 emit);
 float sdTool(vec3 p, out float part);
-// Small bubbles rise through thin broth: three depth slices, one bubble a cell.
+// Small bubbles rise through thin broth: three depth slices, a bubble in some cells.
+// Each slice turns, scales and shifts its own grid, so no lattice shows.
 vec3 risers(vec3 p, vec3 rr, vec3 sig, float heat) {
   vec3 acc = vec3(0.0);
   for (int k = 0; k < 3; k++) {
-    float ds = 0.03 + 0.05 * float(k);
-    vec2 g = (p + rr * (ds / max(-rr.y, 0.2))).xz * 13.0, c = floor(g), f = fract(g) - 0.5;
-    float h = hash12(c + float(k) * 31.7);
+    float fk = float(k), ds = 0.03 + 0.05 * fk;
+    float an = 0.7 + 2.1 * fk, ca = cos(an), sa = sin(an);
+    vec2 g = mat2(ca, sa, -sa, ca) * (p + rr * (ds / max(-rr.y, 0.2))).xz * (11.0 + 3.0 * fk) + vec2(0.37, 0.71) * fk;
+    vec2 c = floor(g), f = fract(g) - 0.5;
+    float h = hash12(c + fk * 31.7);
     // The heat sets how many cells carry a bubble.
     if (h > heat) continue;
     float dep = 0.16 * (1.0 - fract(uTime * (0.5 + 0.6 * h) + h * 7.0));
     float on = exp(-pow((dep - ds) / 0.025, 2.0));
-    vec2 o = (vec2(hash12(c + 3.3), hash12(c + 9.1)) - 0.5) * 0.5;
-    float r = 0.1 + 0.12 * hash12(c + 5.5), d = length(f - o) / r;
-    // A thin bright rim and a glint on the upper side.
-    float rim = smoothstep(1.0, 0.75, d) * (0.35 + 0.65 * smoothstep(0.5, 0.95, d));
-    float gl = smoothstep(0.35, 0.0, length(f - o - vec2(-0.3, 0.3) * r) / r);
-    acc += uKeyCol * (0.35 * rim + 0.9 * gl) * on * exp(-sig * ds * 2.0);
+    // A bubble sits anywhere in its cell, clear of the cell's edge.
+    vec2 o = (vec2(hash12(c + 3.3), hash12(c + 9.1)) - 0.5) * 0.6;
+    float r = 0.06 + 0.05 * hash12(c + 5.5), d = length(f - o) / r;
+    // A soft disc, a faint rim and a soft sheen on the upper side: no points of light.
+    // Deeper bubbles blur more.
+    float body = exp(-d * d * 2.2);
+    float rim = smoothstep(1.35 + 0.15 * fk, 0.8 - 0.15 * fk, d) * smoothstep(0.3, 0.95, d);
+    float gl = exp(-pow(length(f - o - vec2(-0.3, 0.3) * r) / r, 2.0) * 6.0);
+    acc += uKeyCol * (0.12 * body + 0.22 * rim + 0.3 * gl) * on * exp(-sig * ds * 2.0);
   }
   return acc;
 }
 float iCapsule(vec3 ro, vec3 rd, vec3 pa, vec3 pb, float r);
+// The thing in the soup's mirror: index, part and hit point; -1 for none.
+int gMid = -1;
+float gMm = 0.0;
+vec3 gMq = vec3(0.0);
 // What the soup mirrors: the iron wall and rim, the things, the stirrer; else the room.
+// PASS_S finds the thing it meets; PASS_L shades it; the last pass reads it from uY1.
 vec3 mirror(vec3 p, vec3 r, float rough, float F) {
   vec3 c = env(r, rough);
   if (uMirror < 0.5) return c;
@@ -1805,6 +1867,7 @@ vec3 mirror(vec3 p, vec3 r, float rough, float F) {
   }
   // The things, seen from below: their lit colour, darker on the underside.
   // Only a glancing view shows them, so steep views skip the march.
+#ifdef PASS_S
   if (gNc > 0 && F > 0.05) {
     float t = 0.01;
     for (int s = 0; s < 12; s++) {
@@ -1812,17 +1875,18 @@ vec3 mirror(vec3 p, vec3 r, float rough, float F) {
       vec3 q = p + r * t;
       int id; float m;
       float d = sdAll(q, id, m);
-      if (d < 0.003) {
-        vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
-        float ro_; vec3 em;
-        vec3 a = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
-        c = a * (uKeyCol * 0.25 + skyAmb(vec3(0.0, -1.0, 0.0)) * 3.0 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.35) + em;
-        break;
-      }
+      if (d < 0.003) { gMid = id; gMm = m; gMq = q; break; }
       t += max(d, 0.006);
     }
   }
+#else
+  if (gMid >= 0) c = texelFetch(uY1, ivec2(gl_FragCoord.xy), 0).rgb;
+#endif
   return c;
+}
+// The colour of a thing the mirror shows, lit from below: PASS_L.
+vec3 mirrorThing(vec3 a, vec3 em) {
+  return a * (uKeyCol * 0.25 + skyAmb(vec3(0.0, -1.0, 0.0)) * 3.0 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.35) + em;
 }
 // Skin folds: ridged noise on a warped, turned grid, so no square pattern shows.
 float wrinkle(vec2 q) {
@@ -1831,13 +1895,26 @@ float wrinkle(vec2 q) {
   float b = 1.0 - abs(2.0 * noise2(mat2(0.8, 0.6, -0.6, 0.8) * q * 2.3 + 1.7) - 1.0);
   return a * a + 0.2 * b * b;
 }
-vec3 shadeSoup(vec3 p, vec3 rd) {
+// The soup is shaded in four stages, each a function, all reading one Soup.
+// The soup at one surface point: what every later stage reads.
+struct Soup {
+  // aux: glitter, fat, skin, freshness.
+  vec4 ax;
+  vec3 alb, n, v, sig, rr;
+  float T, skin, slick, fedge, fat, rough, nv, F, mx, dens, tb, tEnd;
+};
+// Stage 1, the surface: colour, thickness, films, the normal and the depth.
+Soup soupSurface(vec3 p, vec3 rd) {
+  Soup s;
   vec2 uv = soupUV(p.xz);
   vec4 dy = texture(uDye, uv), ax = texture(uAux, uv);
+  s.ax = ax;
   vec3 alb = max(lab2lin(dy.rgb / max(dy.a, 1e-3)), 0.0);
   // A soup boiled down turns darker and browner.
   alb = mix(alb, alb * vec3(0.72, 0.52, 0.34), uReduce * 0.55);
+  s.alb = alb;
   float T = clamp((dy.a - 1.0) * 0.3, 0.0, 1.0);
+  s.T = T;
   // The normal: the dip, the ripples and the bubbles' rings.
   // Two ripple texels each way: smoother normals, no facets.
   float e = uRS * uExt * 4.0 / 256.0;
@@ -1858,8 +1935,8 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   }
   vec3 n = normalize(vec3(-hx, 2.0 * e, -hz));
   // A thin oil film calms the small ripples into a slick.
-  float slick = smoothstep(0.02, 0.12, ax.g) * uFilmK;
-  n = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.65 * slick));
+  s.slick = smoothstep(0.02, 0.12, ax.g) * uFilmK;
+  n = normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.65 * s.slick));
   // Thick soup shows its swirls as low ridges.
   // A wide stencil keeps each step between two soups a soft slope.
   float e2 = 4.0 / 512.0;
@@ -1875,65 +1952,53 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   n = normalize(n - (vec3(wx, 0.0, wz) * 0.05 + vec3(lx, 0.0, lz) * (0.03 + 0.05 * T)) * relief);
   // The skin wrinkles as the soup under it moves.
   float skin = smoothstep(mix(0.15, 0.3, uSkinK), mix(0.6, 0.42, uSkinK), ax.b);
+  s.skin = skin;
   // A raft's torn edge stands up as a low lip.
   vec4 axp = texture(uAux, uv + vec2(e2, 0.0)), axm = texture(uAux, uv - vec2(e2, 0.0));
   vec4 azp = texture(uAux, uv + vec2(0.0, e2)), azm = texture(uAux, uv - vec2(0.0, e2));
   float sx = axp.b - axm.b, sz = azp.b - azm.b;
   // The oil film's edge: where the fat thins out fast.
-  float fedge = smoothstep(0.01, 0.06, length(vec2(axp.g - axm.g, azp.g - azm.g))) * uFilmK;
+  s.fedge = smoothstep(0.01, 0.06, length(vec2(axp.g - axm.g, azp.g - azm.g))) * uFilmK;
   n = normalize(n - vec3(sx, 0.0, sz) * mix(0.15, 0.5, uSkinK));
   if (skin > 0.01) {
     vec2 wq = mat2(0.87, 0.5, -0.5, 0.87) * p.xz * 20.0;
     float w0 = wrinkle(wq), wxk = wrinkle(wq + vec2(0.12, 0.0)) - w0, wzk = wrinkle(wq + vec2(0.0, 0.12)) - w0;
     n = normalize(n - vec3(wxk, 0.0, wzk) * mix(0.3, 0.5, uSkinK) * skin);
   }
-  vec3 v = -rd;
-  float nv = max(dot(n, v), 0.0);
-  float F = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
-  // The body: lit from above and warm from its own heat.
-  vec3 body = alb * (uKeyCol * 0.4 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42 + vec3(0.02, 0.022, 0.03));
+  s.n = n;
+  s.v = -rd;
+  s.nv = max(dot(n, s.v), 0.0);
+  s.F = 0.02 + 0.98 * pow(om(s.nv), 5.0);
   // Light dies with depth in the soup: thin broth shows what lies under it.
   // The soup's own hue sets the tint; thick soup, skin and fat close it up.
-  float mx = max(max(alb.r, alb.g), max(alb.b, 1e-3));
-  float dens = uClear * mix(9.0, 90.0, T) * (1.0 + 5.0 * skin + 1.5 * smoothstep(0.3, 0.6, ax.g)) * (1.0 + uReduce);
-  vec3 sig = dens * (0.35 + 0.8 * -log(clamp(alb / mx, 0.04, 1.0)));
-  vec3 rr = refract(rd, n, 0.75);
-  // The ray ends on the iron, or on a thing or the spoon's bowl on its way.
-  float tb = iEll(p, rr, vec3(0.0, BCY, 0.0), RI).y;
-  tb = tb > 0.0 ? tb : 1.0;
-  float tEnd = min(tb, 4.0 / max(dens * 0.35, 1e-3));
-  vec3 uAlb = vec3(0.016, 0.015, 0.014);
-  float tu = tb;
-  if (gNc > 0 || uSpB.w > 0.0) {
-    float t = 0.004;
-    for (int s = 0; s < 14; s++) {
-      if (t > tEnd) break;
-      vec3 q = p + rr * t;
-      int id = -1; float m = 0.0, d = 1e9;
-      if (gNc > 0) d = sdAll(q, id, m);
-      float tp, ds = uSpB.w > 0.0 ? sdTool(q, tp) : 1e9;
-      if (min(d, ds) < 0.002) {
-        tu = t;
-        if (ds < d) uAlb = lch(0.5, 0.07, 65.0);
-        else {
-          vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
-          float ro_; vec3 em;
-          uAlb = thingLook(int(M.x), m, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
-          uAlb = mix(uAlb, alb, smoothstep(1.0, 1.8, M.y));
-        }
-        break;
-      }
-      t += max(min(d, ds) * 0.9, 0.006);
-    }
-  }
+  s.mx = max(max(alb.r, alb.g), max(alb.b, 1e-3));
+  s.dens = uClear * mix(9.0, 90.0, T) * (1.0 + 5.0 * skin + 1.5 * smoothstep(0.3, 0.6, ax.g)) * (1.0 + uReduce);
+  s.sig = s.dens * (0.35 + 0.8 * -log(clamp(alb / s.mx, 0.04, 1.0)));
+  s.rr = refract(rd, n, 0.75);
+  // The ray under the surface ends on the iron, or sooner where the soup closes up.
+  float tb = iEll(p, s.rr, vec3(0.0, BCY, 0.0), RI).y;
+  s.tb = tb > 0.0 ? tb : 1.0;
+  s.tEnd = min(s.tb, 4.0 / max(s.dens * 0.35, 1e-3));
+  // Three films, three roughnesses: glassy fat, wet broth, a matte skin.
+  s.fat = smoothstep(0.3, 0.42, ax.g);
+  s.rough = mix(mix(0.045, 0.09, T) * (1.0 - 0.45 * s.fat), 0.34, skin * (1.0 - s.fat));
+  return s;
+}
+// Stage 2, light through the soup: the thing under it, caustics, the fire's glow, risers, the skin.
+// tu is how far the ray under the surface went; uAlb is the colour it met.
+vec3 soupBody(Soup s, vec3 p, float tu, vec3 uAlb) {
+  vec3 alb = s.alb, n = s.n;
+  float T = s.T, skin = s.skin;
+  // The body: lit from above and warm from its own heat.
+  vec3 body = alb * (uKeyCol * 0.4 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42 + vec3(0.02, 0.022, 0.03));
   // Light reaches the hidden thing down from the top, then climbs back to the eye.
-  vec3 qu = p + rr * tu;
-  vec3 Tr = exp(-sig * (tu + max(p.y - qu.y, 0.0)));
+  vec3 qu = p + s.rr * tu;
+  vec3 Tr = exp(-s.sig * (tu + max(p.y - qu.y, 0.0)));
   vec3 uLit = uAlb * (uKeyCol * 0.45 + uSoupK * vec3(1.0, 0.82, 0.62) * 0.5);
   // Light through the moving surface gathers into bright, wavy lines below it.
   // Clear broth shows them in its body; things under it catch them too.
   if (uCaus > 0.0 && T < 0.95) {
-    vec2 cq = (tu < tb ? qu.xz : p.xz) + uKeyDir.xz * 0.08;
+    vec2 cq = (tu < s.tb ? qu.xz : p.xz) + uKeyDir.xz * 0.08;
     float ce = 0.012, h0 = surfH(cq);
     float lap = surfH(cq + vec2(ce, 0.0)) + surfH(cq - vec2(ce, 0.0)) + surfH(cq + vec2(0.0, ce)) + surfH(cq - vec2(0.0, ce)) - 4.0 * h0;
     float foc = clamp(-lap * 900.0, -0.5, 1.5);
@@ -1952,32 +2017,40 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   // The soup's hue filters the glow; thick soup hides it.
   float hot = 0.35 * exp(-dot(p.xz, p.xz) / 0.3);
   for (int i = 0; i < 4; i++) { vec2 d = p.xz - uPlumeS[i].xy; hot += uPlumeS[i].z * exp(-dot(d, d) / 0.07); }
-  vec3 glowC = uFireCol * mix(vec3(1.0), alb / mx, 0.6);
-  body += glowC * uFlick * hot * exp(-dens * 0.05) * uGlowK;
-  if (uFire > 0.05) body += risers(p, rr, sig, min(hot * uFire, 1.0) * 0.6);
+  vec3 glowC = uFireCol * mix(vec3(1.0), alb / s.mx, 0.6);
+  body += glowC * uFlick * hot * exp(-s.dens * 0.05) * uGlowK;
+  if (uFire > 0.05) body += risers(p, s.rr, s.sig, min(hot * uFire, 1.0) * 0.6);
   // A set skin is paler and duller than the broth under it.
   body = mix(body, body * 1.18 + alb * 0.03, skin * 0.6);
   // As its own layer, the skin is a yellowed, matte film lit from above.
   vec3 skinC = mix(alb, lch(0.86, 0.07, 88.0), 0.55);
   vec3 skinB = skinC * (uKeyCol * 0.55 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.85, 0.65) * 0.38 + skyAmb(n) * 2.0);
-  body = mix(body, skinB, skin * 0.9 * uSkinK);
-  vec3 col = body * (1.0 - F);
-  // Three films, three roughnesses: glassy fat, wet broth, a matte skin.
-  float fat = smoothstep(0.3, 0.42, ax.g);
-  float rough = mix(mix(0.045, 0.09, T) * (1.0 - 0.45 * fat), 0.34, skin * (1.0 - fat));
+  return mix(body, skinB, skin * 0.9 * uSkinK);
+}
+// Stage 3, gloss: the mirror, fat pools, the thin film and its edge, the glitter.
+vec3 soupGloss(Soup s, vec3 p, vec3 rd, vec3 col) {
+  vec3 n = s.n;
   // The gloss reads a touch stronger than true Fresnel, so the surface looks wet.
-  vec3 refl = mirror(p, reflect(rd, n), rough, F);
-  col += refl * (F + 0.025 + 0.04 * uMirror) * (1.0 - mix(0.5, 0.85, uSkinK) * skin);
+  vec3 refl = mirror(p, reflect(rd, n), s.rough, s.F);
+  col += refl * (s.F + 0.025 + 0.04 * uMirror) * (1.0 - mix(0.5, 0.85, uSkinK) * s.skin);
   // Fat floats in golden, glassy pools; thin oil shows a faint rainbow at a glance.
-  vec3 film = 0.5 + 0.5 * cos(6.2832 * (ax.g * 2.2 + (1.0 - nv) * 1.4) + vec3(0.0, 2.1, 4.2));
-  col += fat * (refl * (0.2 + F) * mix(vec3(1.0), film, 0.35) + alb * vec3(1.0, 0.85, 0.4) * 0.05);
+  vec3 film = 0.5 + 0.5 * cos(6.2832 * (s.ax.g * 2.2 + (1.0 - s.nv) * 1.4) + vec3(0.0, 2.1, 4.2));
+  col += s.fat * (refl * (0.2 + s.F) * mix(vec3(1.0), film, 0.35) + s.alb * vec3(1.0, 0.85, 0.4) * 0.05);
   // A thin film: a golden mirror sheen with a trace of oil rainbow.
-  float thin = slick * (1.0 - fat);
-  vec3 bow = 0.5 + 0.5 * cos(6.2832 * (ax.g * 6.0 + (1.0 - nv) * 0.8) + vec3(0.0, 2.1, 4.2));
-  col += thin * env(reflect(rd, n), 0.015) * (0.05 + F) * mix(vec3(1.0, 0.82, 0.5), bow, 0.3);
+  float thin = s.slick * (1.0 - s.fat);
+  vec3 bow = 0.5 + 0.5 * cos(6.2832 * (s.ax.g * 6.0 + (1.0 - s.nv) * 0.8) + vec3(0.0, 2.1, 4.2));
+  col += thin * env(reflect(rd, n), 0.015) * (0.05 + s.F) * mix(vec3(1.0, 0.82, 0.5), bow, 0.3);
   // The film's edge shows as a fine bright line.
-  col += fedge * env(reflect(rd, normalize(n + vec3(0.0, 0.3, 0.0))), 0.03) * 0.25;
-  col += lch(0.9, 0.12, 88.0) * glint(p.xz, ax.r, n, v);
+  col += s.fedge * env(reflect(rd, normalize(n + vec3(0.0, 0.3, 0.0))), 0.03) * 0.25;
+  return col + lch(0.9, 0.12, 88.0) * glint(p.xz, s.ax.r, n, s.v);
+}
+// Stage 4, details on top: fat beads, the ring round each thing, the meniscus, wall foam,
+// frost, the prism's spectrum, the moonstone and the things' lights.
+// ring is the distance to the nearest floating thing; -1 for none near.
+vec3 soupDetail(Soup s, vec3 p, vec3 rd, vec3 col, float ring) {
+  vec3 alb = s.alb, n = s.n, v = s.v;
+  vec4 ax = s.ax;
+  float T = s.T, skin = s.skin;
   // Fat beads: round eyes of oil that turn with the soup.
   // A stir splits them small; calm soup merges them into fewer, bigger eyes.
   float fz = smoothstep(0.02, 0.2, ax.g) * uBeads * (1.0 - skin);
@@ -2004,7 +2077,7 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
           // A low dome: the normal leans out toward the bead's edge.
           vec2 lo = -o / max(r, 1e-3);
           vec3 bn = normalize(n + vec3(lo.x, 0.0, lo.y) * 0.9 * d);
-          float bF = 0.04 + 0.96 * pow(1.0 - max(dot(bn, v), 0.0), 5.0);
+          float bF = 0.04 + 0.96 * pow(om(max(dot(bn, v), 0.0)), 5.0);
           vec3 hb = normalize(uKeyDir + v);
           vec3 c = alb * vec3(1.05, 0.88, 0.5) * 0.12 + env(reflect(rd, bn), 0.02) * (bF + 0.08);
           c += uKeyCol * pow(max(dot(bn, hb), 0.0), 300.0) * 3.0;
@@ -2019,11 +2092,9 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
     col = mix(col, bc + col * 0.55, bw * 0.85);
   }
   // A dark ring hugs each floating thing, then a thin bright lip.
-  if (gNc > 0) {
-    int id; float m;
-    float d = max(sdAll(p, id, m), 0.0);
-    col *= 1.0 - 0.45 * exp(-d / 0.02);
-    col += env(reflect(rd, normalize(n + vec3(0.0, -0.6, 0.0))), 0.05) * 0.4 * exp(-d / 0.006);
+  if (ring >= 0.0) {
+    col *= 1.0 - 0.45 * exp(-ring / 0.02);
+    col += env(reflect(rd, normalize(n + vec3(0.0, -0.6, 0.0))), 0.05) * 0.4 * exp(-ring / 0.006);
   }
   // The meniscus at the iron wall.
   float rw = length(p.xz) / uRS;
@@ -2069,17 +2140,64 @@ vec3 shadeSoup(vec3 p, vec3 rd) {
   if (uNG > 0) col += alb * glowAt(p, n) * 0.8 + glowSpec(p, reflect(rd, n));
   return col;
 }
+// The soup. PASS_S marches its two rays and measures the ring; the last pass lights it.
+vec3 shadeSoup(vec3 p, vec3 rd) {
+  Soup s = soupSurface(p, rd);
+#ifdef PASS_S
+  // The ray under the surface: hid is -2 for no hit, -1 for the stirrer, else the thing.
+  float tu = s.tb, hm = 0.0;
+  int hid = -2;
+  vec3 hq = p;
+  if (gNc > 0 || uSpB.w > 0.0) {
+    float t = 0.004;
+    for (int i = 0; i < 14; i++) {
+      if (t > s.tEnd) break;
+      vec3 q = p + s.rr * t;
+      int id = -1; float m = 0.0, d = 1e9;
+      if (gNc > 0) d = sdAll(q, id, m);
+      float tp, ds = uSpB.w > 0.0 ? sdTool(q, tp) : 1e9;
+      if (min(d, ds) < 0.002) {
+        tu = t; hm = m; hq = q;
+        hid = ds < d ? -1 : id;
+        break;
+      }
+      t += max(min(d, ds) * 0.9, 0.006);
+    }
+  }
+  // The mirror's march, and the distance to the nearest floating thing.
+  mirror(p, reflect(rd, s.n), s.rough, s.F);
+  float ring = -1.0;
+  if (gNc > 0) { int id; float m; ring = max(sdAll(p, id, m), 0.0); }
+  o = vec4(tu, float(hid), hm, ring);
+  o1 = vec4(hq, float(gMid));
+  o2 = vec4(gMq, gMm);
+  return vec3(0.0);
+#else
+  vec4 X0 = texelFetch(uX0, ivec2(gl_FragCoord.xy), 0), X1 = texelFetch(uX1, ivec2(gl_FragCoord.xy), 0);
+  int hid = int(X0.y + (X0.y < 0.0 ? -0.5 : 0.5));
+  gMid = int(X1.w + (X1.w < 0.0 ? -0.5 : 0.5));
+  vec3 uAlb = vec3(0.016, 0.015, 0.014);
+  if (hid == -1) uAlb = lch(0.5, 0.07, 65.0);
+  else if (hid >= 0) uAlb = mix(texelFetch(uY0, ivec2(gl_FragCoord.xy), 0).rgb, s.alb, smoothstep(1.0, 1.8, uB[hid * 3 + 2].y));
+  vec3 col = soupBody(s, p, X0.x, uAlb) * (1.0 - s.F);
+  col = soupGloss(s, p, rd, col);
+  return soupDetail(s, p, rd, col, X0.w);
+#endif
+}
 vec3 shadeBubble(vec3 p, vec3 n, vec3 rd, vec4 b) {
   vec3 alb = soupCol(p.xz);
   vec3 v = -rd;
-  float nv = max(dot(n, v), 0.0), F = 0.03 + 0.97 * pow(1.0 - nv, 4.0);
+  float nv = max(dot(n, v), 0.0), F = 0.03 + 0.97 * pow(om(nv), 4.0);
   // The skin is soup, thinned and paler at the crown; round, so it catches the lamp.
   float up = clamp((p.y - surfH(b.xy)) / max(b.w, 1e-3), 0.0, 1.0);
   vec3 skin = mix(alb, alb * 1.25 + 0.03, up * up);
   vec3 body = skin * (uKeyCol * 0.45 * max(dot(n, uKeyDir), 0.0) + uSoupK * vec3(1.0, 0.82, 0.62) * 0.42);
   vec3 h = normalize(uKeyDir + v);
-  vec3 col = body * (1.0 - F) + env(reflect(rd, n), 0.03) * (F + 0.04);
-  col += uKeyCol * pow(max(dot(n, h), 0.0), 500.0) * 6.0;
+  // The lamp's mirror image is capped, as on a drop: a small dome must not bloom into a star.
+  vec3 col = body * (1.0 - F) + min(env(reflect(rd, n), 0.12), vec3(0.5)) * (F + 0.04);
+  // A soft sheen, not a pinpoint: many hot bubbles must not read as stars.
+  float nh = max(dot(n, h), 0.0);
+  col += uKeyCol * (pow(nh, 60.0) * 0.6 + pow(nh, 8.0) * 0.06);
   // The base sits in a thin dark ring.
   return col * (1.0 - 0.22 * smoothstep(0.25, 0.0, up));
 }
@@ -2350,16 +2468,29 @@ vec3 thingLook(int k, float m, vec3 p, float cook, float sd, out float rough, ou
   }
   return c;
 }
+// PASS_T: a thing's normal, colour, roughness and light, into uX0 to uX2.
+void lookThing(int i, float m, vec3 p) {
+  vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
+  vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
+  float rough;
+  vec3 emit;
+  vec3 alb = thingLook(int(M.x), m, lp, clamp(M.y, 0.0, 1.0), M.z, rough, emit);
+#ifdef PASS_T
+  o = vec4(bodyN(i, p), rough);
+  o1 = vec4(alb, 0.0);
+  o2 = vec4(emit, 0.0);
+#endif
+}
 vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   vec4 A = uB[i * 3], Q = uB[i * 3 + 1], M = uB[i * 3 + 2];
   vec3 lp = qrot(vec4(-Q.xyz, qw(Q)), p - A.xyz) / M.w;
-  vec3 n = bodyN(i, p);
-  float rough;
-  vec3 emit;
+  // PASS_T wrote the normal, colour, roughness and light.
+  vec4 X0 = texelFetch(uX0, ivec2(gl_FragCoord.xy), 0);
+  vec3 n = X0.xyz, alb = texelFetch(uX1, ivec2(gl_FragCoord.xy), 0).rgb, emit = texelFetch(uX2, ivec2(gl_FragCoord.xy), 0).rgb;
+  float rough = X0.w;
   // M.y runs 0 to 1 while a thing cooks, then 1 to 2 while it melts away.
   float cook = clamp(M.y, 0.0, 1.0), melt = clamp(M.y - 1.0, 0.0, 1.0);
   int k = int(M.x);
-  vec3 alb = thingLook(k, m, lp, cook, M.z, rough, emit);
   // Flame, antimatter and the hole give light; they take none.
   if ((k == 26 && m > 1.5) || k == 27 || k == 36 || k == 45) return emit * (1.0 - melt);
   if (k == 28) return emit + env(reflect(rd, n), 0.02) * 0.06 * (1.0 - m);
@@ -2401,7 +2532,7 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
   col += alb * soup * uSoupK * 0.6 * max(0.3 - n.y, 0.0) * (1.0 - smoothstep(0.0, 0.2, hA));
   col += alb * glowAt(p, n);
   // A feather's barbs shine blue-violet at a slant.
-  if (k == 42 && m < 0.5) col += mix(lch(0.5, 0.16, 255.0), lch(0.45, 0.2, 305.0), max(dot(n, v), 0.0)) * 0.35 * pow(1.0 - max(dot(n, v), 0.0), 2.0);
+  if (k == 42 && m < 0.5) col += mix(lch(0.5, 0.16, 255.0), lch(0.45, 0.2, 305.0), max(dot(n, v), 0.0)) * 0.35 * pow(om(max(dot(n, v), 0.0)), 2.0);
   // Glass passes the soup's light: a bright, clear sheen over it.
   if (k == 40) col += soup * 0.5 + env(reflect(rd, n), 0.03) * 0.5;
   return col + emit;
@@ -2409,7 +2540,7 @@ vec3 shadeThing(int i, float m, vec3 p, vec3 rd) {
 vec3 shadeDrop(vec3 p, vec3 n, vec3 rd, vec4 own) {
   vec3 alb = mix(soupCol(p.xz), own.rgb, own.a);
   vec3 v = -rd;
-  float F = 0.03 + 0.97 * pow(1.0 - max(dot(n, v), 0.0), 4.0);
+  float F = 0.03 + 0.97 * pow(om(max(dot(n, v), 0.0)), 4.0);
   vec3 h = normalize(uKeyDir + v);
   // The lamp's core is capped: a small drop must not bloom into a spark.
   vec3 col = alb * (uKeyCol * 0.5 * max(dot(n, uKeyDir), 0.0) + uSoupK * 0.4) * (1.0 - F) + min(env(reflect(rd, n), 0.1), vec3(0.3)) * F;
@@ -2476,40 +2607,47 @@ vec3 shadeTool(vec3 p, vec3 n, vec3 rd, float part) {
   return litSurf(n, v, alb, mix(rough, 0.12, wet), 0.04);
 }
 
+// The things a ray can reach: each bound sphere it meets before tPre + 0.3.
+// It fills gCl, so each march step tests only those; it returns where the march starts.
+float clusters(vec3 ro, vec3 rd, float tPre) {
+  float t0 = 1e9;
+  for (int i = 0; i < ${NB}; i++) {
+    if (i >= uNB) break;
+    vec4 A = uB[i * 3];
+    vec3 oc = ro - A.xyz;
+    float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + A.w * A.w;
+    if (h > 0.0) {
+      float ta = -bb - sqrt(h);
+      if (ta < tPre + 0.3 && gNc < NC) { gCl[gNc] = i; gNc++; t0 = min(t0, max(ta, 0.0)); }
+    }
+  }
+  return t0;
+}
+// A leg's two ends: three stubby legs stand the pot in the fire.
+void legEnds(int i, out vec3 la, out vec3 lb) {
+  float a = 0.5236 + float(i) * 2.0944;
+  vec3 dir = vec3(cos(a), 0.0, sin(a));
+  la = dir * 0.72 + vec3(0.0, -1.3, 0.0);
+  lb = dir * 0.97 + vec3(0.0, GROUND + 0.04, 0.0);
+}
 void main() {
   vec2 fc = gl_FragCoord.xy;
   vec3 ro = uCam, rd = normalize(uFwd + uRight * ((fc.x - uPP.x) / uFocal) + uUp * ((fc.y - uPP.y) / uFocal));
   vec2 su = fc / uRes;
-  // The background, blurred by its own depth: a disc that grows away from the pot.
-  vec4 bk = texture(uBack, su);
-  vec3 col = bk.rgb;
-  if (bk.a > 0.02) {
-    vec2 bt = uDof / vec2(textureSize(uBack, 0));
-    float wsum = 1.0;
-    for (int i = 0; i < 12; i++) {
-      float fi = float(i) + 0.5, ang = fi * 2.39996, rad = sqrt(fi / 12.0) * bk.a;
-      vec4 tp = texture(uBack, su + vec2(cos(ang), sin(ang)) * rad * bt);
-      // A sharp neighbour does not smear into a blurred one.
-      float w = smoothstep(0.0, 0.4, tp.a);
-      col += tp.rgb * w; wsum += w;
-    }
-    col /= wsum;
-  }
+#ifdef PASS_G
   float tHit = 1e9;
-  int mat = 0;
+  int mat = 0, idx = 0;
+  float mv = 0.0;
   // The outer belly, below the rim.
   vec2 eo = iEll(ro, rd, vec3(0.0, BCY, 0.0), RO);
   if (eo.x > 0.0 && ro.y + rd.y * eo.x < RY) { tHit = eo.x; mat = 1; }
   float tr = traceRim(ro, rd, tHit);
   if (tr > 0.0) { tHit = tr; mat = 2; }
-  // Three stubby legs stand the pot in the fire.
-  vec3 legA = vec3(0.0), legB = vec3(0.0);
   for (int i = 0; i < 3; i++) {
-    float a = 0.5236 + float(i) * 2.0944;
-    vec3 dir = vec3(cos(a), 0.0, sin(a));
-    vec3 la = dir * 0.72 + vec3(0.0, -1.3, 0.0), lb = dir * 0.97 + vec3(0.0, GROUND + 0.04, 0.0);
+    vec3 la, lb;
+    legEnds(i, la, lb);
     float tl = iCapsule(ro, rd, la, lb, 0.075);
-    if (tl > 0.0 && tl < tHit) { tHit = tl; mat = 9; legA = la; legB = lb; }
+    if (tl > 0.0 && tl < tHit) { tHit = tl; mat = 9; idx = i; }
   }
   // Through the opening: the soup, or the inner wall above it.
   float tO = (RY - ro.y) / rd.y;
@@ -2521,8 +2659,6 @@ void main() {
     else if (tS < tHit) { tHit = tS; mat = 4; }
   }
   // Bubbles: caps of spheres that stand on the surface.
-  vec3 bubN = vec3(0.0, 1.0, 0.0);
-  vec4 bub = vec4(0.0);
   if (mat == 4) {
     for (int i = 0; i < ${NBUB}; i++) {
       if (i >= uNBub) break;
@@ -2534,37 +2670,24 @@ void main() {
       if (h > 0.0) {
         float t = -bb - sqrt(h);
         vec3 q = ro + rd * t;
-        if (t > 0.0 && t < tHit && q.y > by) { tHit = t; mat = 5; bubN = (q - c) / R; bub = b; }
+        if (t > 0.0 && t < tHit && q.y > by) { tHit = t; mat = 5; idx = i; }
       }
     }
   }
   // Things: a ray tests each bound sphere, then marches only those it passes.
-  float t0 = 1e9;
-  for (int i = 0; i < ${NB}; i++) {
-    if (i >= uNB) break;
-    vec4 A = uB[i * 3];
-    vec3 oc = ro - A.xyz;
-    float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + A.w * A.w;
-    if (h > 0.0) {
-      float ta = -bb - sqrt(h);
-      if (ta < tHit + 0.3 && gNc < NC) { gCl[gNc] = i; gNc++; t0 = min(t0, max(ta, 0.0)); }
-    }
-  }
-  int hitId = -1;
-  float hitM = 0.0;
+  float tPre = tHit;
+  float t0 = clusters(ro, rd, tPre);
   if (gNc > 0) {
     float t = t0;
     for (int s = 0; s < 72; s++) {
       if (s >= uMarch || t > tHit) break;
       int id;
       float m, d = sdAll(ro + rd * t, id, m);
-      if (d < 0.0004 * t) { tHit = t; mat = 6; hitId = id; hitM = m; break; }
+      if (d < 0.0004 * t) { tHit = t; mat = 6; idx = id; mv = m; break; }
       t += d * 0.85;
     }
   }
   // Droplets thrown up by a splash.
-  vec3 dropN = vec3(0.0, 1.0, 0.0);
-  int dropI = 0;
   for (int i = 0; i < ${ND}; i++) {
     if (i >= uND) break;
     vec4 dp = uDrop[i];
@@ -2572,12 +2695,10 @@ void main() {
     float bb = dot(oc, rd), h = bb * bb - dot(oc, oc) + dp.w * dp.w;
     if (h > 0.0) {
       float t = -bb - sqrt(h);
-      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; dropN = (ro + rd * t - dp.xyz) / dp.w; dropI = i; }
+      if (t > 0.0 && t < tHit) { tHit = t; mat = 7; idx = i; }
     }
   }
   // The spoon's handle.
-  vec3 spN = vec3(0.0, 1.0, 0.0);
-  float toolPart = -1.0;
   if (uSpB.w > 0.0) {
     // March the stirrer inside a capsule that bounds it.
     vec3 ax = normalize(uSpB.xyz - uSpA.xyz);
@@ -2586,13 +2707,54 @@ void main() {
       float t = tb;
       for (int i = 0; i < 64; i++) {
         float pt, d = sdTool(ro + rd * t, pt);
-        if (d < 0.0006 * t) { tHit = t; mat = 8; toolPart = pt; spN = toolN(ro + rd * t); break; }
+        if (d < 0.0006 * t) { tHit = t; mat = 8; mv = pt; break; }
         t += d * 0.9;
         if (t > tHit) break;
       }
     }
   }
+  // Depth, depth before the things, kind and index, then the thing's part or the spoon's.
+  o = vec4(tHit, tPre, float(mat * 64 + idx), mv);
+#else
+  vec4 gb = texelFetch(uG, ivec2(fc), 0);
+  float tHit = gb.x;
+  int code = int(gb.z + 0.5), mat = code / 64, idx = code - mat * 64;
   vec3 p = ro + rd * tHit, v = -rd;
+#if defined(PASS_T)
+  if (mat != 6) discard;
+  lookThing(idx, gb.w, p);
+#elif defined(PASS_S)
+  if (mat != 4) discard;
+  clusters(ro, rd, gb.y);
+  shadeSoup(p, rd);
+#elif defined(PASS_L)
+  o = vec4(0.0);
+  if (mat != 4) return;
+  vec4 X0 = texelFetch(uX0, ivec2(fc), 0), X1 = texelFetch(uX1, ivec2(fc), 0), X2 = texelFetch(uX2, ivec2(fc), 0);
+  float fid = uWhich == 0 ? X0.y : X1.w;
+  int id = int(fid + (fid < 0.0 ? -0.5 : 0.5));
+  if (id < 0) return;
+  vec3 q = uWhich == 0 ? X1.xyz : X2.xyz;
+  vec4 A = uB[id * 3], Q = uB[id * 3 + 1], M = uB[id * 3 + 2];
+  float ro_; vec3 em;
+  vec3 a = thingLook(int(M.x), uWhich == 0 ? X0.z : X2.w, qrot(vec4(-Q.xyz, qw(Q)), q - A.xyz) / M.w, clamp(M.y, 0.0, 1.0), M.z, ro_, em);
+  o = vec4(uWhich == 0 ? a : mirrorThing(a, em), 1.0);
+#else
+  // The background, blurred by its own depth: a disc that grows away from the pot.
+  vec4 bk = texture(uBack, su);
+  vec3 col = bk.rgb;
+  if (bk.a > 0.02) {
+    vec2 bt = uDof / vec2(textureSize(uBack, 0));
+    float wsum = 1.0;
+    for (int i = 0; i < 12; i++) {
+      float fi = float(i) + 0.5, ang = fi * 2.39996, rad = sqrt(fi / 12.0) * bk.a;
+      vec4 tp = textureLod(uBack, su + vec2(cos(ang), sin(ang)) * rad * bt, 0.0);
+      // A sharp neighbour does not smear into a blurred one.
+      float w = smoothstep(0.0, 0.4, tp.a);
+      col += tp.rgb * w; wsum += w;
+    }
+    col /= wsum;
+  }
   if (mat == 1) col = shadeIron(p, normalize((p - vec3(0.0, BCY, 0.0)) / (RO * RO)), v, 0.0, 0);
   else if (mat == 2) {
     vec3 q = p - vec3(0.0, RY, 0.0);
@@ -2618,11 +2780,18 @@ void main() {
   }
   else if (mat == 3) col = shadeWall(p, -normalize((p - vec3(0.0, BCY, 0.0)) / (RI * RI)), v);
   else if (mat == 4) col = shadeSoup(p, rd);
-  else if (mat == 5) col = shadeBubble(p, bubN, rd, bub);
-  else if (mat == 6) col = shadeThing(hitId, hitM, p, rd);
-  else if (mat == 7) col = shadeDrop(p, dropN, rd, uDropC[dropI]);
-  else if (mat == 8) col = shadeTool(p, spN, rd, toolPart);
+  else if (mat == 5) {
+    vec4 b = uBub[idx];
+    float R = (b.z * b.z + b.w * b.w) / (2.0 * b.w);
+    float by = uLevel + dipAt(length(b.xy) / uRS);
+    col = shadeBubble(p, (p - vec3(b.x, by + b.w - R, b.y)) / R, rd, b);
+  }
+  else if (mat == 6) col = shadeThing(idx, gb.w, p, rd);
+  else if (mat == 7) col = shadeDrop(p, (p - uDrop[idx].xyz) / uDrop[idx].w, rd, uDropC[idx]);
+  else if (mat == 8) col = shadeTool(p, toolN(p), rd, gb.w);
   else if (mat == 9) {
+    vec3 legA, legB;
+    legEnds(idx, legA, legB);
     vec3 ba = legB - legA;
     float k = clamp(dot(p - legA, ba) / dot(ba, ba), 0.0, 1.0);
     col = shadeIron(p, normalize(p - legA - ba * k), v, 0.0, 3);
@@ -2653,6 +2822,8 @@ void main() {
   vec4 fr = texture(uFront, su) * 0.4 + (texture(uFront, su + vec2(lt.x, lt.y) * 0.9) + texture(uFront, su + vec2(-lt.x, lt.y) * 0.9)
     + texture(uFront, su + vec2(lt.x, -lt.y) * 0.9) + texture(uFront, su - lt * 0.9)) * 0.15;
   o = vec4(col * (1.0 - fr.a) + fr.rgb, 1.0);
+#endif
+#endif
 }`;
 
 /* ---------- GLSL: out to the screen ---------- */
@@ -2677,7 +2848,11 @@ void main() {
 }`;
 
 const dyeInitP = program(DYE_INIT_FS), dyeP = program(DYE_FS), ripP = program(RIP_FS);
-const layerP = program(LAYER_FS), sceneP = program(SCENE_FS), outP = program(OUT_FS);
+const layerP = program(LAYER_FS), outP = program(OUT_FS);
+// The scene in five passes from one source: D3D11 cannot compile it as one program.
+const scenePart = d => program(SCENE_FS.replace('#version 300 es\n', `#version 300 es\n#define ${d}\n`));
+const sceneG = scenePart('PASS_G'), sceneT = scenePart('PASS_T'), sceneS = scenePart('PASS_S'), sceneL = scenePart('PASS_L');
+const sceneP = program(SCENE_FS);
 
 /* ---------- the fire: Fire's solver on the GPU ---------- */
 const curlP = program(CURL_FS), fvelP = program(VEL_FS), divP = program(DIV_FS);
@@ -2870,14 +3045,21 @@ function fit(w, h) {
 const D = detail({ maxDpr: 2, budget: 2.2e6, onChange: () => resize() });
 const DN = [384, 512], RN = 256, FN = 64;
 let size = { w: 1, h: 1, dpr: 1, W: 1, H: 1, aw: 1, ah: 1 }, dyeN = 0;
-let hdr = null, layer = null;
+let hdr = null, layer = null, hit = null;
 const dye = [null, null], rip = [null, null];
 let di = 0, ri = 0;
 function frameTargets() {
-  for (const t of [hdr, layer]) if (t) { gl.deleteFramebuffer(t.fb); t.tex.forEach(x => gl.deleteTexture(x)); }
-  const make = (w, h, n) => { const tex = Array.from({ length: n }, () => texture(w, h, gl.RGBA16F, gl.RGBA)); return { tex, fb: target(tex), w, h }; };
+  for (const t of [hdr, layer, ...(hit ? [hit.g, hit.x, hit.y0, hit.y1] : [])]) if (t) { gl.deleteFramebuffer(t.fb); t.tex.forEach(x => gl.deleteTexture(x)); }
+  const make = (w, h, n, f = gl.RGBA16F) => {
+    const tex = Array.from({ length: n }, () => texture(w, h, f, gl.RGBA));
+    // The scene's buffers are read with texelFetch: float32 needs no filtering.
+    if (f === gl.RGBA32F) tex.forEach(t => { gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); });
+    return { tex, fb: target(tex), w, h };
+  };
   hdr = make(size.W, size.H, 1);
   layer = make(size.aw, size.ah, 2);
+  // The scene passes' buffers: what each ray hits; the things and soup rays; the soup rays' things.
+  hit = { g: make(size.W, size.H, 1, gl.RGBA32F), x: make(size.W, size.H, 3, gl.RGBA32F), y0: make(size.W, size.H, 1), y1: make(size.W, size.H, 1) };
 }
 // The dye map's size follows the detail level; a change keeps the colours.
 function dyeTargets() {
@@ -3300,13 +3482,16 @@ function stepBubbles(dt) {
   bubAcc += rate * dt;
   while (bubAcc >= 1 && !reduced()) {
     bubAcc -= 1;
-    if (bubbles.length >= NBUB) break;
+    if (bubbles.length >= NBOIL) break;
     const pl = plumes[Math.floor(Math.random() * plumes.length)];
-    let x = pl.x + rand(-0.22, 0.22), z = pl.z + rand(-0.22, 0.22);
-    if (Math.random() < 0.35) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.85; x = Math.cos(a) * r; z = Math.sin(a) * r; }
+    let x = pl.x + rand(-0.35, 0.35), z = pl.z + rand(-0.35, 0.35);
+    // Over half rise anywhere, so a rolling boil spreads over the whole pot.
+    if (Math.random() < 0.55) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * 0.85; x = Math.cos(a) * r; z = Math.sin(a) * r; }
     if (Math.hypot(x, z) > 0.88) continue;
     if (frost && Math.hypot(x - frost.x, z - frost.z) * soupR(level) < frost.r) continue;
     const rMax = rand(0.025, 0.06) * (1 + 0.7 * T) * (0.8 + 0.3 * heat);
+    // A new bubble keeps clear of the others: no clumps.
+    if (bubbles.some(o => Math.hypot(o.x - x, o.z - z) < 2.5 * (rMax + o.rMax))) continue;
     bubbles.push({ x, z, r: 0, h: 0, rMax, age: 0, life: rand(0.5, 1.1) * (1 + 1.6 * T) });
   }
   if (reduced()) bubAcc = 0;
@@ -3320,6 +3505,72 @@ function stepBubbles(dt) {
     b.z += sampleF(fv, b.x, b.z) * dt;
     if (s >= 1 || Math.hypot(b.x, b.z) > 0.95) { bubbles.splice(i, 1); pop(b); }
   }
+}
+/* ---------- the paddle's wake ---------- */
+// A quick stroke sheds eddies behind the blade, one side then the other, as an oar does.
+// The dye shader adds their swirl, so the stroke folds the colours into marbling.
+// Each eddy: centre in soup units, strength (signed), core radius and age.
+const EDDY_LIFE = 3.5;
+const eddies = [], eddyU = new Float32Array(NED * 4);
+let eddyRun = 0, eddySide = 1;
+// The trail's small bubbles: air the blade pulls under, riding the eddies.
+const froth = [];
+// The eddies' swirl at a point: Lamb-Oseen vortices, as uEddy[] in DYE_FS.
+function eddyVel(x, z) {
+  let vx = 0, vz = 0;
+  for (const e of eddies) {
+    const dx = x - e.x, dz = z - e.z, r2 = dx * dx + dz * dz + 1e-6;
+    const k = e.g * (1 - Math.exp(-r2 / (e.c * e.c))) / (TAU * r2);
+    vx -= dz * k; vz += dx * k;
+  }
+  return [vx, vz];
+}
+function stepWake(dt) {
+  const T = thick();
+  for (const e of eddies) {
+    e.age += dt;
+    // An eddy drifts with the soup, spreads and fades; thick soup damps it sooner.
+    e.x += sampleF(fu, e.x, e.z) * dt; e.z += sampleF(fv, e.x, e.z) * dt;
+    e.g = e.g0 * Math.exp(-e.age / (1.4 - 0.8 * T));
+    e.c = Math.sqrt(e.c0 * e.c0 + (0.0015 + 0.004 * T) * e.age);
+  }
+  while (eddies.length && eddies[0].age > EDDY_LIFE) eddies.shift();
+  for (let i = froth.length - 1; i >= 0; i--) {
+    const f = froth[i];
+    f.age += dt;
+    const [ex, ez] = eddyVel(f.x, f.z);
+    let vx = sampleF(fu, f.x, f.z) + ex, vz = sampleF(fv, f.x, f.z) + ez;
+    // Light bubbles slip in toward the nearest eddy's heart and gather there.
+    let near = null, nd = 1e9;
+    for (const e of eddies) { const d = Math.hypot(f.x - e.x, f.z - e.z); if (d < nd) { nd = d; near = e; } }
+    if (near && nd < 4 * near.c) { const k = 0.6 * Math.abs(near.g) / (near.c + nd); vx += (near.x - f.x) * k; vz += (near.z - f.z) * k; }
+    f.x += vx * dt; f.z += vz * dt;
+    const s = f.age / f.life;
+    // A dome that swells in, then sinks as it pops.
+    f.h = f.r * 0.55 * smooth(0, 0.12, s) * (1 - smooth(0.8, 1, s));
+    if (s >= 1 || Math.hypot(f.x, f.z) > 0.93) { froth.splice(i, 1); imps.push([f.x, f.z, f.r * 0.8, -f.r * 0.04]); }
+  }
+  if (!spoon.on || reduced() || draining) { eddyRun = 0; return; }
+  const sp = Math.hypot(spoon.vx, spoon.vz);
+  // Only a quick stroke sheds eddies: a slow one just pushes the soup.
+  if (sp < 0.7) { eddyRun = 0; return; }
+  eddyRun += sp * dt;
+  // One eddy for each 8 cm of stroke.
+  if (eddyRun < 0.08) return;
+  eddyRun = 0;
+  const ux = spoon.vx / sp, uz = spoon.vz / sp, nx = -uz, nz = ux, w = 0.075, k = Math.min(sp, 3);
+  const bx = spoon.x - ux * 0.05, bz = spoon.z - uz * 0.05;
+  // The blade drags the soup on both sides: the eddy on the left turns one way, on the right the other.
+  eddies.push({ x: bx + nx * w * eddySide, z: bz + nz * w * eddySide, g0: eddySide * 0.16 * k, g: eddySide * 0.16 * k, c0: 0.03, c: 0.03, age: 0 });
+  if (eddies.length > NED) eddies.shift();
+  eddySide = -eddySide;
+  // Air pulled under at the blade's edges comes up as a scatter of small bubbles.
+  const n = Math.round(2 + k * 1.5);
+  for (let i = 0; i < n; i++) {
+    const a = rand(-1, 1), b = rand(-0.03, 0.05);
+    froth.push({ x: bx + nx * w * a - ux * b, z: bz + nz * w * a - uz * b, r: rand(0.006, 0.016) * (1 + 0.4 * T), h: 0, age: 0, life: rand(1.2, 3) * (1 + 1.5 * T) });
+  }
+  while (froth.length > NBUB - NBOIL) froth.shift();
 }
 // A burst: a ring on the surface, a puff of steam, spatter if big, and a blop.
 function pop(b) {
@@ -4476,7 +4727,7 @@ function stepDrain(dt) {
     level = LOW * t * t * (3 - 2 * t);
     for (const b of bodies) if (!b.fly) { b.sink += dt * 0.12 * t; b.gone = Math.max(b.gone, smooth(0.5, 1, t) * 0.99 + 1e-3); }
     if (t >= 1) {
-      bodies.length = bubbles.length = 0;
+      bodies.length = bubbles.length = eddies.length = froth.length = 0;
       fillBroth();
       clearRipples();
       clearFlow();
@@ -4510,7 +4761,7 @@ function clearRipples() {
 }
 // The opening pot: broth with a carrot and an onion, simmering.
 function starter() {
-  bodies.length = bubbles.length = drops.length = puffs.length = 0;
+  bodies.length = bubbles.length = drops.length = puffs.length = eddies.length = froth.length = 0;
   const c = makeBody('carrot', -0.3, 0.12, { cook: 0.22 });
   c.yaw = 0.5;
   const o = makeBody('onion', 0.32, -0.22, { cook: 0.18 });
@@ -4539,6 +4790,9 @@ function runDye(dt, src, dst, n = dyeN) {
   gl.uniform1f(dyeP.u('uTime'), time);
   gl.uniform1f(dyeP.u('uConv'), reduced() ? 0 : fire * (draining ? 0 : 1));
   gl.uniform1f(dyeP.u('uStir'), clamp(Math.abs(omega) * 0.35 + (spoon.on ? 0.4 : 0)));
+  eddies.forEach((e, i) => eddyU.set([e.x, e.z, e.g, e.c], i * 4));
+  gl.uniform1i(dyeP.u('uNEd'), eddies.length);
+  gl.uniform4fv(dyeP.u('uEddy'), eddyU);
   // A slow stir from below evens the pot out, in steps half floats can hold.
   let relax = 0;
   relaxT += dt;
@@ -4676,44 +4930,42 @@ function layerPass() {
 const plumeS = new Float32Array(16);
 const glowU = new Float32Array(24), glowCU = new Float32Array(24);
 const bodyU = new Float32Array(NB * 12), bubU = new Float32Array(NBUB * 4), dropU = new Float32Array(ND * 4), dropCU = new Float32Array(ND * 4), spatU = new Float32Array(NSP * 4);
-function scenePass() {
-  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fb);
-  gl.viewport(0, 0, hdr.w, hdr.h);
-  gl.useProgram(sceneP);
-  camU(sceneP, size.dpr, hdr.h);
+// The scene's uniforms and textures, for each of its five programs.
+function sceneU(P) {
+  camU(P, size.dpr, hdr.h);
   const rs = soupR(level);
-  gl.uniform2f(sceneP.u('uRes'), hdr.w, hdr.h);
-  gl.uniform1f(sceneP.u('uTime'), time);
-  gl.uniform1f(sceneP.u('uFire'), fire);
-  gl.uniform1f(sceneP.u('uFlick'), flick);
-  gl.uniform1f(sceneP.u('uLevel'), level);
-  gl.uniform1f(sceneP.u('uReduce'), reduce);
-  gl.uniform1f(sceneP.u('uCaus'), devV('caustics', 0.6));
-  gl.uniform1f(sceneP.u('uRS'), rs);
-  gl.uniform3f(sceneP.u('uBedP'), ...bedP());
-  gl.uniform1f(sceneP.u('uDip'), dip);
-  gl.uniform1f(sceneP.u('uFunnel'), funnel);
-  gl.uniform1f(sceneP.u('uExt'), FE);
-  gl.uniform1f(sceneP.u('uSoupK'), 0.75 + 0.35 * fire);
-  gl.uniform1f(sceneP.u('uClear'), devV('clarity', 1));
-  gl.uniform1f(sceneP.u('uSkinK'), devV('skinLook', 1));
-  gl.uniform1f(sceneP.u('uFilmK'), devV('oilFilm', 1));
-  gl.uniform1f(sceneP.u('uGlowK'), 0.22 * devV('soupGlow', 1));
+  gl.uniform2f(P.u('uRes'), hdr.w, hdr.h);
+  gl.uniform1f(P.u('uTime'), time);
+  gl.uniform1f(P.u('uFire'), fire);
+  gl.uniform1f(P.u('uFlick'), flick);
+  gl.uniform1f(P.u('uLevel'), level);
+  gl.uniform1f(P.u('uReduce'), reduce);
+  gl.uniform1f(P.u('uCaus'), devV('caustics', 0.6));
+  gl.uniform1f(P.u('uRS'), rs);
+  gl.uniform3f(P.u('uBedP'), ...bedP());
+  gl.uniform1f(P.u('uDip'), dip);
+  gl.uniform1f(P.u('uFunnel'), funnel);
+  gl.uniform1f(P.u('uExt'), FE);
+  gl.uniform1f(P.u('uSoupK'), 0.75 + 0.35 * fire);
+  gl.uniform1f(P.u('uClear'), devV('clarity', 1));
+  gl.uniform1f(P.u('uSkinK'), devV('skinLook', 1));
+  gl.uniform1f(P.u('uFilmK'), devV('oilFilm', 1));
+  gl.uniform1f(P.u('uGlowK'), 0.22 * devV('soupGlow', 1));
   plumes.forEach((p, i) => plumeS.set([p.x * rs, p.z * rs, fire, 0], i * 4));
-  gl.uniform4fv(sceneP.u('uPlumeS'), plumeS);
+  gl.uniform4fv(P.u('uPlumeS'), plumeS);
   const kt = devV('keyTurn', 0) * Math.PI / 180, kc = Math.cos(kt), ks = Math.sin(kt);
-  gl.uniform3f(sceneP.u('uKeyDir'), ...norm([KEY[0] * kc - KEY[2] * ks, devV('keyUp', 0.45), KEY[0] * ks + KEY[2] * kc]));
+  gl.uniform3f(P.u('uKeyDir'), ...norm([KEY[0] * kc - KEY[2] * ks, devV('keyUp', 0.45), KEY[0] * ks + KEY[2] * kc]));
   const ki = devV('keyI', 0.8), kw = devV('keyWarm', 0.5);
   // Cool white, today's warm lamp, deep amber.
   const kcol = kw < 0.5 ? [1.02, 1.02, 1.08].map((v, i) => lerp(v, [1.2, 1.02, 0.82][i], kw * 2)) : [1.2, 1.02, 0.82].map((v, i) => lerp(v, [1.3, 0.88, 0.5][i], kw * 2 - 1));
-  gl.uniform3f(sceneP.u('uKeyCol'), kcol[0] * ki, kcol[1] * ki, kcol[2] * ki);
-  gl.uniform1f(sceneP.u('uRoomK'), devV('room', 1));
-  gl.uniform1f(sceneP.u('uBeads'), devV('beads', 1));
-  gl.uniform1f(sceneP.u('uSpin'), spin);
-  gl.uniform1f(sceneP.u('uMirror'), devV('mirror', true) ? 1 : 0);
-  gl.uniform3f(sceneP.u('uFireCol'), ...fireCol);
-  gl.uniform1i(sceneP.u('uMarch'), D.level > 0 ? 56 : 36);
-  gl.uniform1f(sceneP.u('uDof'), devV('dof', 7));
+  gl.uniform3f(P.u('uKeyCol'), kcol[0] * ki, kcol[1] * ki, kcol[2] * ki);
+  gl.uniform1f(P.u('uRoomK'), devV('room', 1));
+  gl.uniform1f(P.u('uBeads'), devV('beads', 1));
+  gl.uniform1f(P.u('uSpin'), spin);
+  gl.uniform1f(P.u('uMirror'), devV('mirror', true) ? 1 : 0);
+  gl.uniform3f(P.u('uFireCol'), ...fireCol);
+  gl.uniform1i(P.u('uMarch'), D.level > 0 ? 56 : 36);
+  gl.uniform1f(P.u('uDof'), devV('dof', 7));
   // Things: centre and bound, rotation, then kind, cook, seed and scale.
   let n = 0;
   for (const b of bodies) {
@@ -4734,8 +4986,8 @@ function scenePass() {
     bodyU.set([wx, b.y, wz, b.K.bound * sc, q[0], q[1], q[2], mark, b.kind === 'candle' && b.out ? 29 : b.K.k, b.gone ? 1 + smooth(0, 1, b.gone) : Math.min(b.cook, 1), b.seed, sc], n * 12);
     n++;
   }
-  gl.uniform1i(sceneP.u('uNB'), n);
-  gl.uniform4fv(sceneP.u('uB'), bodyU);
+  gl.uniform1i(P.u('uNB'), n);
+  gl.uniform4fv(P.u('uB'), bodyU);
   // Lights from the things: flashes first, then flames, beads and the hole's ring.
   let ng = 0;
   const glow = (x, y, z, w, c, reach) => { if (ng >= 6) return; glowU.set([x, y, z, w], ng * 4); glowCU.set([...c, reach], ng * 4); ng++; };
@@ -4752,37 +5004,54 @@ function scenePass() {
     else if (b.kind === 'sun') glow(wx, b.y, wz, 1.4 * shrink, [1.2, 0.6, 0.2], 1.2);
     else if (b.kind === 'lift') glow(wx, b.y, wz, 0.35 * shrink, [0.4, 1.1, 0.8], 0.3);
   }
-  gl.uniform1i(sceneP.u('uNG'), ng);
-  gl.uniform4fv(sceneP.u('uGlow'), glowU);
-  gl.uniform4fv(sceneP.u('uGlowC'), glowCU);
-  gl.uniform4f(sceneP.u('uHole'), holeDip[0], holeDip[1], holeDip[2], holeDip[3]);
-  gl.uniform2f(sceneP.u('uTide'), tide[0], tide[1]);
+  gl.uniform1i(P.u('uNG'), ng);
+  gl.uniform4fv(P.u('uGlow'), glowU);
+  gl.uniform4fv(P.u('uGlowC'), glowCU);
+  gl.uniform4f(P.u('uHole'), holeDip[0], holeDip[1], holeDip[2], holeDip[3]);
+  gl.uniform2f(P.u('uTide'), tide[0], tide[1]);
   const pz = bodies.find(b => b.kind === 'prism' && !b.fly), st = bodies.find(b => b.kind === 'stone' && !b.fly);
-  gl.uniform4f(sceneP.u('uPrism'), pz ? pz.x * rs : 0, pz ? pz.z * rs : 0, 0, pz ? smooth(0, 1, pz.age) * (pz.gone ? 1 - smooth(0, 1, pz.gone) : 1) : 0);
-  gl.uniform4f(sceneP.u('uStone'), st ? st.x * rs : 0, st ? st.y : 0, st ? st.z * rs : 0, st ? smooth(0, 1.5, st.age) * (st.gone ? 1 - smooth(0, 1, st.gone) : 1) : 0);
-  gl.uniform4f(sceneP.u('uFrost'), frost ? frost.x * rs : 0, frost ? frost.z * rs : 0, frost ? frost.r : 0, frost && frost.r > 0 ? frost.a : 0);
+  gl.uniform4f(P.u('uPrism'), pz ? pz.x * rs : 0, pz ? pz.z * rs : 0, 0, pz ? smooth(0, 1, pz.age) * (pz.gone ? 1 - smooth(0, 1, pz.gone) : 1) : 0);
+  gl.uniform4f(P.u('uStone'), st ? st.x * rs : 0, st ? st.y : 0, st ? st.z * rs : 0, st ? smooth(0, 1.5, st.age) * (st.gone ? 1 - smooth(0, 1, st.gone) : 1) : 0);
+  gl.uniform4f(P.u('uFrost'), frost ? frost.x * rs : 0, frost ? frost.z * rs : 0, frost ? frost.r : 0, frost && frost.r > 0 ? frost.a : 0);
   const hb = holeB && !holeB.gone ? holeB : null;
-  gl.uniform4f(sceneP.u('uHoleP'), hb ? hb.wx ?? hb.x * rs : 0, hb ? hb.y : 0, hb ? hb.wz ?? hb.z * rs : 0, hb ? hb.hs : 0);
+  gl.uniform4f(P.u('uHoleP'), hb ? hb.wx ?? hb.x * rs : 0, hb ? hb.y : 0, hb ? hb.wz ?? hb.z * rs : 0, hb ? hb.hs : 0);
   bubbles.forEach((b, i) => bubU.set([b.x * rs, b.z * rs, Math.max(b.r, 1e-3), Math.max(b.h, 1e-4)], i * 4));
-  gl.uniform1i(sceneP.u('uNBub'), bubbles.length);
-  gl.uniform4fv(sceneP.u('uBub'), bubU);
+  froth.forEach((f, i) => bubU.set([f.x * rs, f.z * rs, Math.max(f.r, 1e-3), Math.max(f.h, 1e-4)], (bubbles.length + i) * 4));
+  gl.uniform1i(P.u('uNBub'), bubbles.length + froth.length);
+  gl.uniform4fv(P.u('uBub'), bubU);
   drops.forEach((d, i) => { dropU.set([d.x, d.y, d.z, d.r], i * 4); dropCU.set(d.c ? [...d.c, 1] : [0, 0, 0, 0], i * 4); });
-  gl.uniform4fv(sceneP.u('uDropC'), dropCU);
-  gl.uniform1i(sceneP.u('uND'), drops.length);
-  gl.uniform4fv(sceneP.u('uDrop'), dropU);
+  gl.uniform4fv(P.u('uDropC'), dropCU);
+  gl.uniform1i(P.u('uND'), drops.length);
+  gl.uniform4fv(P.u('uDrop'), dropU);
   spats.forEach((p, i) => spatU.set([p.x, p.y, p.z, p.age + Math.floor(p.r * 1000)], i * 4));
-  gl.uniform1i(sceneP.u('uNSp'), spats.length);
-  gl.uniform4fv(sceneP.u('uSpat'), spatU);
+  gl.uniform1i(P.u('uNSp'), spats.length);
+  gl.uniform4fv(P.u('uSpat'), spatU);
   const sw = spoonWorld();
-  gl.uniform4f(sceneP.u('uSpA'), ...sw.a, 0.042);
-  gl.uniform4f(sceneP.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
+  gl.uniform4f(P.u('uSpA'), ...sw.a, 0.042);
+  gl.uniform4f(P.u('uSpB'), ...sw.b, sw.show ? 1 : 0);
   [dye[di].tex[0], dye[di].tex[1], rip[ri].tex, layer.tex[0], layer.tex[1], fsim.dye[fsim.di].tex, velTex].forEach((t, i) => {
     gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, t);
   });
-  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD', 'uVel'].forEach((u, i) => gl.uniform1i(sceneP.u(u), i));
-  gl.bindVertexArray(vao);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  ['uDye', 'uAux', 'uRip', 'uBack', 'uFront', 'uFD', 'uVel', 'uG', 'uX0', 'uX1', 'uX2', 'uY0', 'uY1'].forEach((u, i) => gl.uniform1i(P.u(u), i));
+}
+function scenePass() {
+  // Each pass, the buffer it writes, and for PASS_L which soup ray it shades.
+  const steps = [[sceneG, hit.g], [sceneT, hit.x], [sceneS, hit.x], [sceneL, hit.y0, 0], [sceneL, hit.y1, 1], [sceneP, hdr]];
+  for (const [P, out, which] of steps) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, out.fb);
+    gl.viewport(0, 0, hdr.w, hdr.h);
+    gl.useProgram(P);
+    sceneU(P);
+    // A pass never reads the buffer it writes.
+    [hit.g, hit.x, hit.x, hit.x, hit.y0, hit.y1].forEach((t, i) => {
+      gl.activeTexture(gl.TEXTURE7 + i);
+      gl.bindTexture(gl.TEXTURE_2D, t === out ? null : t.tex[i >= 1 && i <= 3 ? i - 1 : 0]);
+    });
+    if (which !== undefined) gl.uniform1i(P.u('uWhich'), which);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
 }
 // The key lamp hangs high behind the pot, a little to the left.
 // The lamp's bearing; its height and strength come from Dev rows.
@@ -4901,6 +5170,7 @@ function frame(now) {
     stepBodies(dt);
     stepPours(dt);
     stepBubbles(dt);
+    stepWake(dt);
     stepDrops(dt);
     stepSpats(dt);
     stepPuffs(dt);
@@ -4944,6 +5214,7 @@ act.reset = () => {
 
 /* ---------- ready ---------- */
 // The intro holds until the shaders compile and the first frame draws.
+await linked();
 resize();
 starter();
 // A kept WebGPU pick loads after the first frame; the WebGL fire shows until then.

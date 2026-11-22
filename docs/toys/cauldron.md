@@ -56,7 +56,7 @@ What breaks into what: carrot into coins, onion into rings, fish into its bones,
 | Importmap | Word for word |
 <!-- /gen:stack -->
 
-One ray per pixel draws the whole scene in one shader, so three.js would add a scene graph and gain nothing (`docs/stack.md`, decision 1).
+One ray per pixel draws the whole scene from one shader source, so three.js would add a scene graph and gain nothing (`docs/stack.md`, decision 1). The source compiles as five programs: on Windows the D3D11 compiler cannot finish it as one.
 
 ## Shared modules
 
@@ -92,7 +92,7 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 | 3. Ripples | RG16F, 256² | `RIP_FS` (`:493`) | A wave field, two steps a frame at 60 fps; splashes, pops and the spoon push it |
 | 4. Fire | Five RGBA16F atlases, 384 × 336: a 48 × 56 × 48 grid of 0.08 cells cut into z slices | `SOLID_FS` (once), `CURL_FS`, `VEL_FS`, `DIV_FS`, `JAC_FS` (12 sweeps), `PROJ_FS`, `FDYE_FS` | Fire's solver (`fire/index.html`), one or two steps a frame: buoyancy, curl-noise turbulence, vorticity confinement, a gas-expansion source, wind at high fire, a coal bed that feeds heat and smoke. The belly (up to the rim) and the legs are solids, baked once into an R16F mask; hot gas clings to the iron and climbs it. After 20 s at Fire 0 the solver rests |
 | 5. Layers | Two RGBA16F maps (MRT), half the CSS size (a third on Low) | `LAYER_FS` | Back: the haze and the flagstone floor, lit through a bump normal (one Voronoi pass, an analytic slope) and by the solver's heat. Front: Fire's volume, marched 24 steps (16 on Low) with Fire's wood ramp, emission and smoke light, sparks, and the steam with Fire's smoke light; the steam skips its noise outside the column and the puffs. The march stops at the belly, the rim and the far inner wall |
-| 6. Scene | RGBA16F, full size | `SCENE_FS` (`:712`) | Ray cast: belly, rim, legs, inner wall, the soup heightfield, bubble caps, the things (an SDF march over a short candidate list), droplets, the spoon |
+| 6. Scene | RGBA32F hit buffers, then RGBA16F, full size | `SCENE_FS` in five programs (`PASS_G`, `PASS_T`, `PASS_S`, `PASS_L`, then the last) | G: the ray cast (belly, rim, legs, inner wall, the soup heightfield, bubble caps, the things by an SDF march over a short candidate list, droplets, the spoon) into a hit buffer. T: each thing pixel's normal and look. S: each soup pixel's rays under the surface and in its mirror, and the dark ring's distance. L: the look of the thing each soup ray met, drawn twice. Last: all the light, from the buffers |
 | 7. Bloom | Half size chain | `bloomChain` | Threshold 0.9 |
 | 8. Out | Canvas | `OUT_FS` (`:1191`) | `GRADE` (tint, vignette, grain), then `OUTPUT` (film curve, sRGB, dither) |
 
@@ -125,6 +125,15 @@ The CPU runs first each frame: the stir field (stable fluids, 64 × 64, `:1352`)
 | Idle | A hand at work draws at up to 60 fps; the simmer draws at 30 fps; the frame gate keeps 2 ms of slack for rAF jitter; the CPU fluid sleeps when the soup is calm; a hidden pot stops (`whenVisible`, `:2481`) |
 | Reduced motion | No simmer loop, no bubbles, sparks, droplets or steam puffs, no flicker, no boil currents, a fixed grain. A stir or a throw still moves, then the loop sleeps |
 | Measured | 2026-11-15, laptop, built-in browser pane, Quality High: first frame 91 ms after navigation. 14 things at Fire 1, 2.2 M pixels: about 14 ms a frame. Empty pot: the 30 fps simmer at 120 Hz with no long frames |
+
+### Windows compile (2026-11-22, `stimming-h4a1`)
+
+Edge on ANGLE D3D11, RTX 3070. As one program the scene linked for 94 s, then failed, and the context was lost. As five programs the links take 2.1, 1.9, 9.4, 1.3 and 8.0 s. They run on the driver's threads (`KHR_parallel_shader_compile`), and the page waits without blocking: first frame at about 20 s with a cold shader cache. The browser keeps the compiled programs, so a second visit is faster.
+Offline, `d3dcompiler_47` at ANGLE's level times each pass the same as the browser; the tools are on `feature/stimming-azxj` in `tools/fxc/`.
+Surface bubbles spawn 55% anywhere and keep clear of each other; their caps carry a soft sheen, not a pinpoint (`stimming-asdf`).
+The star field had a second cause: `pow(1.0 - x, n)` with x a hair over 1 is NaN, and the bloom clamped each NaN into white glare round a black dot. Every Fresnel term now uses `om(x)`, clamped to 0 to 1.
+`shadeSoup` runs in four stages on one `Soup` record: `soupSurface` (colour, films, normal, depth), `soupBody` (light through the soup), `soupGloss` (mirror, fat, film, glitter) and `soupDetail` (beads, rings, meniscus, foam, frost, prism, moonstone, thing lights).
+The fire volume reads its atlas with `textureLod`: the old gradient read in the march loop was undefined, and on some drivers it dimmed the flames.
 
 ### Performance pass (2026-11-16, `stimming-mbpi`)
 
@@ -175,10 +184,12 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 | Boil | The heat drives the ripple field: a calm shiver everywhere at low fire, rolling heaves over the plumes near Fire 1 (heat cubed). Dev row Boil scales both |
 | Viscosity | The ripple field reads the local thickness: thick soup waves at a third of the speed, keeps less of each swing and holds a dent longer; thin broth rings as before |
 | Wall foam | Above Fire 0.35 a pale foam line gathers at the wall in slow clumps, thicker in thick soup |
-| Rising bubbles | Small bubbles rise through thin broth over the hot spots: three depth slices, a rim and a glint, dimmed by the depth absorption; more with Fire |
+| Rising bubbles | Small bubbles rise through thin broth over the hot spots: three depth slices, each on its own turned, scaled and shifted grid, so no lattice shows. Soft discs with a faint rim and a soft sheen, softer deeper down, dimmed by the depth absorption; more with Fire |
 | Waterline | The soup climbs each thing in a thin film with a lit lip; a thing that bobbed up keeps a wet, soup-tinted band that dries down at 2 cm a second. The mark rides in the rotation's w slot; the shader rebuilds w from xyz |
 | Swept glints | While the soup moves, the normal averages five taps along the flow (14 cm span at full speed), so the lamp's glints sweep along the swirl; calm soup keeps its crisp ripples |
 | Soft seams | The ridges between soups read over a 4-texel stencil from the capped thickness, not the raw weight, so a heavy pour has no crater or cliff |
+| Paddle wake | A quick stroke (over 0.7 soup units a second) sheds an eddy each 8 cm behind the blade, one side then the other, as an oar does. The eddies drift with the soup, spread and fade in about 1.4 s, sooner in thick soup. The dye field adds their swirl, so the colours fold into marbling along the stroke (`eddies`, 12 at most) |
+| Trail bubbles | Air pulled under at the blade's edges comes up as small domes, 6 to 16 mm. They ride the eddies, gather in their hearts and pop with a small ring; thick soup holds them longer (`froth`, 44 at most, after the boil's 20) |
 | Settling | Freshness rides in aux a: a pour or a stir sets it, it fades over about 4 s and moves with the soup. The marbling's relief follows it down to a tenth, so old swirls lie flat and keep only their colour |
 | Marble blend | The dye field blurs each frame with its four neighbours, so streaks melt into the broth over about a minute. Thick soup blends at a third of the rate; skin and glitter creep at half of it. Dev row `blend` (0 is off) |
 | Oil film | Fat runs out across the broth at four times the colour blend. A thin film calms the small ripples into a glassy slick, adds a golden sheen with a trace of rainbow, and shows a fine bright line at its edge. Dev row `oilFilm` (0 is off) |
