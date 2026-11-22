@@ -1807,9 +1807,10 @@ vec3 nearFog(vec3 c, vec3 d, float tEnd) {
   for (int i = 0; i < 16; i++) {
     if (t >= t1) break;
     float dn = wispDens(d * t + uWisp);
-    // The strobe and nav light bloom thickly in fog round the tip.
+    // The strobe flash fills the bank; the steady nav light glows only round the tip.
+    // The nav light falls off as the square of distance, softened by a 2 m core.
     float ft = length(d * t - uTip);
-    vec3 L = air + (vec3(0.9, 0.95, 1.0) * uFogLamp.a * 3.0 + uFogLamp.rgb * 0.25) * exp(-ft / 6.0);
+    vec3 L = air + vec3(0.9, 0.95, 1.0) * uFogLamp.a * 3.0 * exp(-ft / 6.0) + uFogLamp.rgb * 0.03 / (1.0 + ft * ft / 4.0);
     float a = 1.0 - exp(-0.22 * dn * min(dt, t1 - t));
     col += T * L * a;
     T *= 1.0 - a;

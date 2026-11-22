@@ -149,7 +149,9 @@ varying vec3 vFogW, vSurf;`)
       float bank = texture(uFogN, p / vec3(408.0, 80.0, 26.0) + 0.71).b;
       float dn = max(smoothstep(0.64 - 0.16 * uFogLvl, 0.78 - 0.14 * uFogLvl, n), smoothstep(0.62 - 0.2 * uFogLvl, 0.76 - 0.2 * uFogLvl, bank) * 0.85) * smoothstep(0.05, 0.5, uFogLvl);
       float a = 1.0 - exp(-0.22 * dn * dt);
-      glow += T * a * (vec3(0.9, 0.95, 1.0) * uStrobeL * 3.0 + uNavL * 0.25) * exp(-length(pw - uTipP) / 6.0);
+      // shader.js nearFog uses the same two falloffs.
+      float ft = length(pw - uTipP);
+      glow += T * a * (vec3(0.9, 0.95, 1.0) * uStrobeL * 3.0 * exp(-ft / 6.0) + uNavL * 0.03 / (1.0 + ft * ft / 4.0));
       T *= 1.0 - a;
     }
     fogFactor = max(fogFactor, 1.0 - T);
