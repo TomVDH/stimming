@@ -518,29 +518,80 @@ void main() {
   col += uKeyC * step(0.0, uSun.y) * (12.0 * smoothstep(0.99996, 0.99999, sd) + 0.25 * pow(max(sd, 0.0), 300.0) + 0.06 * pow(max(sd, 0.0), 12.0));
   o = vec4(col, 1.0);
 }`;
-// The clouds: soft cumulus volumes, marched at a third of the size.
-// They redraw a few times a second as they drift, so the march is short.
-// Out: the light the cloud sends, and how much sky it hides.
-const CLOUD_FS = `${HEAD}
-uniform vec2 uRes, uOff, uSeed;
-uniform float uF, uCover;
-uniform vec3 uFw, uRt, uUp, uKey, uKeyC, uZen, uMid;
-${ROT}
+// The cloud field bakes once at load into one 3D texture.
+// Each of five cover levels holds CL_H heights through the deck.
+// The field repeats every CL_L km, so it slides with no end.
+const CL_N = 512, CL_H = 12, CL_LV = [0.11, 0.17, 0.23, 0.29, 0.35], CL_L = 400 / 9;
+// Cumulus lie in a deck from 1.5 to 2.7 km; units are km.
+const DECK = `
+const float BASE = 1.5, TOP = 2.7, CL_L = ${CL_L.toFixed(6)};
+`;
+// One slice of the field: one cover level at one height.
+// Lattice periods fit CL_L, so the noise tiles.
+const FIELD_FS = `${HEAD}
+uniform vec2 uSeed;
+uniform float uCover, uH;
 ${SKY}
 ${NOISE3}
+${DECK}
 out vec4 o;
-// Cumulus lie in a deck from 1.5 to 2.7 km; units are km.
-const float BASE = 1.5, TOP = 2.7;
-float density(vec3 p, int oct) {
-  float h = (p.y - BASE) / (TOP - BASE);
+// The seed joins the hash after the wrap, so each visit gets new values.
+float n3p(vec3 x, float per, vec2 so) {
+  vec3 i = floor(x), j = i + 1.0, f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  i.xz = mod(i.xz, per) + so;
+  j.xz = mod(j.xz, per) + so;
+  return mix(mix(mix(h3(i), h3(vec3(j.x, i.y, i.z)), f.x), mix(h3(vec3(i.x, j.y, i.z)), h3(vec3(j.x, j.y, i.z)), f.x), f.y),
+    mix(mix(h3(vec3(i.x, i.y, j.z)), h3(vec3(j.x, i.y, j.z)), f.x), mix(h3(vec3(i.x, j.y, j.z)), h3(j), f.x), f.y), f.z);
+}
+float snp(vec2 x, float per, vec2 so) {
+  vec2 i = floor(x), j = i + 1.0, f = fract(x), u = f * f * (3.0 - 2.0 * f);
+  i = mod(i, per) + so;
+  j = mod(j, per) + so;
+  return mix(mix(skH(i), skH(vec2(j.x, i.y)), u.x), mix(skH(vec2(i.x, j.y)), skH(j), u.x), u.y);
+}
+void main() {
+  vec3 p = vec3(gl_FragCoord.x, 0.0, gl_FragCoord.y) * (CL_L / ${CL_N}.0);
+  p.y = BASE + uH * (TOP - BASE);
   // Flat bases and rounded tops.
-  float prof = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.35, h);
-  // The field drifts with the wind; uSeed gives each visit its own sky.
-  vec3 q = (p + vec3(uOff.x, 0.0, uOff.y)) * 0.55 + vec3(uSeed.x, 0.0, uSeed.y);
-  float n = n3(q) * 0.62 + n3(q * 2.1 + 7.0) * 0.26;
-  if (oct > 2) n += n3(q * 4.3 + 3.0) * 0.12;
-  float c = skFbm((p.xz + uOff) * 0.09 + uSeed, 3) * 1.25 - 0.22;
-  return clamp((n * prof + c - 1.08 + uCover) * 3.0, 0.0, 1.0);
+  float prof = smoothstep(0.0, 0.12, uH) * smoothstep(1.0, 0.35, uH);
+  // uSeed gives each visit its own sky.
+  vec2 so = floor(uSeed);
+  vec3 q = p * (24.0 / CL_L);
+  float n = n3p(q, 24.0, so) * 0.62 + n3p(q * (51.0 / 24.0) + 7.0, 51.0, so) * 0.26 + n3p(q * (105.0 / 24.0) + 3.0, 105.0, so) * 0.12;
+  // The broad cover pattern: three octaves, periods 4, 8 and 16.
+  vec2 x = p.xz * (4.0 / CL_L);
+  float c = 0.0, a = 0.5, per = 4.0;
+  for (int k = 0; k < 3; k++) {
+    c += a * snp(x, per, so);
+    x = x * 2.0 + vec2(17.1, 9.2);
+    per *= 2.0;
+    a *= 0.5;
+  }
+  c = c * 1.25 - 0.22;
+  o = vec4(clamp((n * prof + c - 1.08 + uCover) * 3.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+}`;
+// The clouds: the baked field, marched at a third of the size.
+// The march slides the field with the wind and relights it each time.
+// Out: the light the cloud sends, and how much sky it hides.
+const CLOUD_FS = `${HEAD}
+precision highp sampler3D;
+uniform vec2 uRes, uOff;
+uniform float uF, uLvA, uLvF;
+uniform vec3 uFw, uRt, uUp, uKey, uKeyC, uZen, uMid;
+uniform sampler3D uField;
+${ROT}
+${DECK}
+out vec4 o;
+// Two cover levels mix, so the cover breathes smoothly.
+float density(vec3 p) {
+  float h = (p.y - BASE) / (TOP - BASE);
+  if (h <= 0.0 || h >= 1.0) return 0.0;
+  vec2 uv = (p.xz + uOff) / CL_L;
+  float z = h * ${CL_H - 1}.0 + 0.5, D = ${CL_H * CL_LV.length}.0;
+  float a = texture(uField, vec3(uv, (uLvA * ${CL_H}.0 + z) / D)).r;
+  float b = texture(uField, vec3(uv, (uLvA * ${CL_H}.0 + ${CL_H}.0 + z) / D)).r;
+  return mix(a, b, uLvF);
 }
 // Henyey-Greenstein phase.
 float hg(float c, float g) { return (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * c, 1.5) * 0.0796; }
@@ -559,11 +610,11 @@ void main() {
   float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   for (int i = 0; i < N; i++) {
     vec3 p = d * (t0 + (float(i) + jit) * ds);
-    float den = density(p, 3);
+    float den = density(p);
     if (den < 0.003) continue;
     // Three steps toward the light measure how much cloud shades this point.
     float od = 0.0;
-    for (int j = 1; j <= 3; j++) od += density(p + uKey * 0.22 * float(j), 2);
+    for (int j = 1; j <= 3; j++) od += density(p + uKey * 0.22 * float(j));
     float tl = exp(-od * 0.22 * 7.0);
     float h = clamp((p.y - BASE) / (TOP - BASE), 0.0, 1.0);
     vec3 e = uKeyC * tl * (ph * 12.0 + 0.5) * (1.0 - exp(-den * 4.0)) + amb * (0.25 + 0.75 * h);
@@ -1406,7 +1457,7 @@ const freeT = t => { if (!t) return; gl.deleteFramebuffer(t.fb); gl.deleteTextur
 
 async function buildGL() {
   P = await linked(gl, {
-    sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
+    sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), cfield: program(gl, TRI, FIELD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
     splat: program(gl, SPLAT_VS, SPLAT_FS), blur: program(gl, TRI, BLUR_FS), upd: program(gl, TRI, UPDATE_FS),
     bird: program(gl, BIRD_VS, BIRD_FS), comp: program(gl, TRI, COMP_FS),
   });
@@ -1453,6 +1504,37 @@ async function buildGL() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = wpT = null;
   fieldA = 0;
+  bakeCloudField();
+}
+// The cloud field: CL_LV.length cover levels of CL_H slices, R8.
+// It sits on texture unit 11 for the life of the context.
+function bakeCloudField() {
+  const depth = CL_H * CL_LV.length, t = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE11);
+  gl.bindTexture(gl.TEXTURE_3D, t);
+  gl.texStorage3D(gl.TEXTURE_3D, 1, gl.R8, CL_N, CL_N, depth);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer(), K = P.cfield.u;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.disable(gl.BLEND);
+  gl.viewport(0, 0, CL_N, CL_N);
+  gl.useProgram(P.cfield.p);
+  gl.uniform2fv(K.uSeed, SKY_SEED);
+  gl.bindVertexArray(vao);
+  for (let z = 0; z < depth; z++) {
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, t, 0, z);
+    gl.uniform1f(K.uCover, CL_LV[Math.floor(z / CL_H)]);
+    gl.uniform1f(K.uH, (z % CL_H) / (CL_H - 1));
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.useProgram(P.cloud.p);
+  gl.uniform1i(P.cloud.u.uField, 11);
 }
 // The field grid spans the frame, so its width follows the aspect.
 function allocField() {
@@ -1625,10 +1707,14 @@ function bakeClouds() {
   gl.viewport(0, 0, cloudT.w, cloudT.h);
   gl.useProgram(P.cloud.p);
   gl.uniform2f(K.uRes, cloudT.w, cloudT.h);
-  gl.uniform2f(K.uOff, -windT * 0.01, -windT * 0.004);
-  gl.uniform2fv(K.uSeed, SKY_SEED);
+  // The offset wraps with the field, so float precision holds for hours.
+  gl.uniform2f(K.uOff, -(windT * 0.01 % CL_L), -(windT * 0.004 % CL_L));
   // The cover breathes slowly, so clouds form and thin out.
-  gl.uniform1f(K.uCover, COVER + 0.05 * Math.sin(windT * 0.021 + SKY_SEED[0]));
+  // It falls between two baked levels; the shader mixes them.
+  const cover = COVER + 0.05 * Math.sin(windT * 0.021 + SKY_SEED[0]);
+  const lv = clamp((cover - CL_LV[0]) / (CL_LV[1] - CL_LV[0]), 0, CL_LV.length - 1), lvA = Math.min(Math.floor(lv), CL_LV.length - 2);
+  gl.uniform1f(K.uLvA, lvA);
+  gl.uniform1f(K.uLvF, lv - lvA);
   gl.uniform1f(K.uRoll, ROLL);
   gl.uniform1f(K.uF, F);
   gl.uniform3fv(K.uFw, FW);
