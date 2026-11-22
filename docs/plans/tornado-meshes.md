@@ -50,6 +50,8 @@ Meshes give each object a small shader: seconds to compile on any GPU, and less 
 | Motion blur | Four draws at four moments in the shutter, averaged; with 4x multisampling that matches today's 4 to 16 samples. |
 | Lamps, spray, trail | Stay GLSL in their own small passes, behind and in front of the body pass. |
 
+Done 2026-11-22: the vehicles draw as meshes on every platform (`vshape.js`, `vmesh.js`, `vdraw.js`).
+
 ### Then, one group at a time
 
 Farm buildings, poles and fence, pivot, tower, billboard and bales, then the far plain (belts, lone and far trees, steads).

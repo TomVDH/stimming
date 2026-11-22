@@ -702,6 +702,8 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
   float sun = 1.0 - sunCover(C * 0.001);
   vec3 mist = vec3(0.6, 0.62, 0.65) * (uAmb * 0.95 + uSunCol * 0.25 * sun);
   vec3 dust = mix(vec3(0.3, 0.25, 0.19), vec3(0.4), 0.3) * (uSunCol * 0.4 * sun + uAmb * 0.6);
+  // The pixel's air, set once from its own ray, as hazed() sets it: not pasted into the loop.
+  if (!gAirOn) airInit(toWorld(normalize(vec3(s, -uFoc))));
   for (int k = ROLL0; k < 12; k++) {
     float fk = float(k >> 1), sd = (k & 1) == 0 ? 1.0 : -1.0;
     float back = rear + 0.4 + fk * (1.1 + spd * 0.05);
@@ -720,8 +722,7 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
     if (al <= 0.0) continue;
     // The tail lamps light the near spray red; harder under the brakes.
     vec3 col = mix(dust, mist, wet) + vec3(0.9, 0.05, 0.02) * (0.08 + 0.5 * brake) * exp(-fk * 0.6);
-    // hazed() sets up the pixel's air on its first call: it takes the pixel's own ray.
-    put(hazed(col, toWorld(normalize(vec3(s, -uFoc))), zp), al, zp);
+    put(airTo(col, zp), al, zp);
   }
 }
 // The water trail: in rain, the spray hangs in the air where the wheels threw it.
@@ -830,10 +831,10 @@ void vehLamps(int i, vec2 s, float px) {
     vLamp(s, P, dir, col, px, sd, cV.w);
   }
 }
-// One vehicle, ray-traced at several moments in the shutter, each at its own spot in the pixel.
-// Edges take more samples, so silhouettes and panel lines stay smooth at any distance.
-// Far vehicles draw before the infrastructure, near ones after it.
-void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
+// One part of one vehicle's mist: its trail or its spray, behind its body or in front of it.
+// Behind: the trail, then the spray. In front: the spray, then the trail.
+// The body is a mesh (vdraw.js); traffic() lays its picture in between.
+void vehicleFx(int i, vec2 s, vec3 rd, float px, bool near, bool front, int part) {
   vec4 a = uVeh[i], b = uVehB[i], cV = uVehC[i];
   if (b.x <= 0.0) return;
   int kind = int(a.w + 0.5);
@@ -845,187 +846,33 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   // Past the eye, only its water trail still hangs in view, in the near pass.
   bool past = z < 0.3;
   if (past ? !near : (z > 60.0) == near) return;
-  float fr = vFront(kind), rr = vRear(kind), hw = vHW(kind);
-  vec3 eye = vec3(0.0, CAMH, 0.0);
-  float top = kind == 2 ? 3.8 : 2.8;
-  // Layers stack in call order: spray nearer the eye than the body lays down after it.
+  // Spray nearer the eye than the body lays down after it.
   bool sprayFront = past || depthOf(C - f * 4.0) < depthOf(C);
-  // The screen box: the body draws only inside it.
-  vec2 c0 = proj(C + vec3(0.0, 1.4, 0.0));
-  float R = (4.2 + spd * 0.02) / z * uFoc;
-  bool inBox = !past && !(z > 2.0 && (abs(s.x - c0.x) > R || abs(s.y - c0.y) > R));
-  // The road under the vehicle, and the sun in the vehicle's frame.
-  float tg = CAMH / max(-rd.y, 1e-4);
-  vec3 G = eye + rd * tg - C;
-  vec3 Lw = normalize(uSun), lsG = vec3(dot(Lw, rt), Lw.y, dot(Lw, f));
-  vec3 gl = vec3(dot(G, rt), 0.0, dot(G, f));
-  float zg = depthOf(G + C), fp = px * zg / uFoc / max(-rd.y, 0.05);
-  // The body rolls and pitches on its springs: the road's small bumps, and the driver's braking and steering.
-  float roll = 0.008 * sin(age * 2.3 + seed * 6.0) + 0.004 * sin(age * 5.1) + cV.z;
-  float pitch = 0.004 * sin(age * 3.1 + seed * 3.0) + cV.y;
-  float spin = uT * 9.0 + seed * 6.0;
-  mat2 mr = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)), mp = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch));
-  // The sun in the body's frame, rolled and pitched.
-  vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), ls = vec3(dot(L, rt), L.y, dot(L, f));
-  ls.xy = mr * ls.xy; ls.yz = mp * ls.yz;
-  // The body's samples: four, six near; where they disagree (an edge, a lamp, a pane) sixteen.
-  // Each sample is its own spot in the pixel and its own moment in the shutter.
-  int nb = z < 25.0 ? 6 : 4, ns = 0, id0 = -1;
-  float shK = 1.0;
-  bool mixed = false;
-  float jit = th(gl_FragCoord.xy + fract(uT * 3.7) * 61.0), jit2 = th(gl_FragCoord.yx * 1.37 + 5.1);
-  vec3 acc = vec3(0.0);
-  float cov = 0.0, zHit = z;
-  // In order: the road shadow, the trail and the spray behind, the body, the spray and the trail in front.
-  // One loop holds one call to each: D3D11 pastes each call whole.
-  for (int ph = ROLL0; ph < 6; ph++) {
-    if (ph == 1 || ph == 2 || ph == 4 || ph == 5) {
-      if ((ph < 3) == sprayFront) continue;
-      if (ph == 1 || ph == 5) vTrail(rd, C, f, kind, spd, age, seed, brake);
-      else if (!past) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
-      continue;
-    }
-    bool shadow = ph == 0;
-    if (past || (!shadow && !inBox)) continue;
-    if (shadow) {
-      // A short contact shadow under the vehicle, on the road.
-      vec2 q = vec2(dot(G, rt), dot(G, f) - (fr + rr) * 0.5) / vec2(hw + 0.2, (fr - rr) * 0.5 + 0.15);
-      float k = (1.0 - smoothstep(0.55, 1.0, length(q))) * 0.45;
-      if (rd.y < 0.0 && k > 0.0) put(vec3(0.004), k, depthOf(C));
-      // The vehicle casts the low sun's long shadow on the road.
-      if (!(rd.y < 0.0 && uSun.y > 0.0)) continue;
-      // The vehicle's box first: most ground points see the sun past it.
-      vec3 inv = 1.0 / lsG, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - gl) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - gl) * inv;
-      vec3 mn = min(ta, tb), mx = max(ta, tb);
-      if (!(min(min(mx.x, mx.y), mx.z) > max(max(max(mn.x, mn.y), mn.z), 0.0))) continue;
-      // A thin rod casts a shadow at least a ground pixel wide.
-      gPxW = fp;
-    } else {
-      // The smear across the view in the shutter's 1/40 s, in metres at the vehicle.
-      float lat = abs(dot(C, rt)) + 1.0;
-      gPxW = max(px * z / uFoc, lat * spd / 40.0 / max(z, 1.0) * abs(dot(f, normalize(C))));
-      gSpd = spd; gAge = age; gSh = 1.0;
-    }
-    // The rays: the shadow's four; or per body sample, a view ray, then maybe a ray to the sun.
-    // Each body hit is stored; a second loop shades them, in order: D3D11 compiles that far faster.
-    vec3 sP[16], sN[16], sV[16], sH[16], sB[16];
-    float sSee[16], sSv[16], sHk[16];
-    int sId[16];
-    int nh = 0;
-    float sh = 0.0;
-    int k = 0;
-    bool toSun = false;
-    vec3 lo, ld, rw, Ck, hl, n;
-    float t, hk;
-    int id;
-    for (int it = ROLL0; it < 36; it++) {
-      vec3 ro, dir;
-      bool miss = false;
-      float sx = gExT;
-      vec3 sn = gExN;
-      if (shadow) {
-        // Four rays over the pixel and the sun's disc: a soft, smooth edge.
-        if (it == 4) break;
-        vec2 o = (vec2(float(it & 1), float(it >> 1)) - 0.5) * 0.5;
-        ro = gl + vec3(o.x, 0.0, o.y) * fp; dir = normalize(lsG + vec3(o.x, 0.0, o.y) * 0.02);
-      } else if (!toSun) {
-        if (k == 16 || (k == nb && !mixed)) break;
-        ns++;
-        float fk = fract(float(k) * 0.618034 + jit);
-        vec2 so = s + (fract(vec2(0.7548777, 0.5698403) * float(k) + vec2(jit, jit2)) - 0.5) * px;
-        rw = toWorld(normalize(vec3(so, -uFoc)));
-        // The shutter is open 1/40 s: the vehicle moves within it.
-        Ck = C + f * spd * (fk - 0.5) / 40.0;
-        vec3 o = eye - Ck;
-        // Into the vehicle's frame, with its roll about f and its pitch about rt (nose down for positive pitch).
-        lo = vec3(dot(o, rt), o.y, dot(o, f)); ld = vec3(dot(rw, rt), rw.y, dot(rw, f));
-        lo.xy = mr * (lo.xy - vec2(0.0, 0.8)) + vec2(0.0, 0.8); ld.xy = mr * ld.xy;
-        lo.yz = mp * (lo.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0); ld.yz = mp * ld.yz;
-        // The whole vehicle's box first: most rays in the screen box miss it.
-        vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - lo) * inv;
-        vec3 mn = min(ta, tb), mx = max(ta, tb);
-        miss = min(min(mx.x, mx.y), mx.z) < max(max(max(mn.x, mn.y), mn.z), 0.0);
-        ro = lo; dir = ld;
-        gHitK = 1.0;
-      } else {
-        // A ray to the sun from the hit: the body shades its own parts.
-        ro = hl + n * 0.004; dir = ls;
-      }
-      float tr;
-      vec3 nr;
-      int hit = miss ? 0 : vHit(kind, ro, dir, tr, nr, shadow ? 0.0 : spin);
-      if (shadow) { sh += float(hit != 0); continue; }
-      float sv = 1.0;
-      if (toSun) {
-        sv = hit == 0 ? 1.0 : hit == 2 ? 0.45 : 0.0;
-        gExT = sx; gExN = sn;
-        toSun = false;
-      } else {
-        t = tr; n = nr;
-        id = hit;
-        if (id != 0) id = vPart(id, kind, lo + ld * t, n);
-        if (id0 < 0) id0 = id;
-        mixed = mixed || id != id0 || gHitK < 1.0;
-        if (id == 0) { k++; continue; }
-        hl = lo + ld * t;
-        hk = gHitK;
-        // Two samples trace the sun ray; the rest trace only where parts or shadows disagree.
-        // Past 40 m the vehicle is too small to show it.
-        if (dot(n, ls) <= 0.0) sv = 0.0;
-        else if (near && id != 6 && id != 7 && z <= 40.0) {
-          if (k < 2 || mixed || id != id0) { toSun = true; continue; }
-          sv = shK;
-        }
-      }
-      if (k == 0) shK = sv;
-      if (k == 1 && sv != shK) mixed = true;
-      vec3 nl = vBend(hl, n, id, kind);
-      // Back out of the roll and pitch for the world normal.
-      vec3 nw = nl;
-      nw.yz = transpose(mp) * nw.yz; nw.xy = transpose(mr) * nw.xy;
-      vec3 N = normalize(rt * nw.x + vec3(0.0, nw.y, 0.0) + f * nw.z);
-      vec3 P = Ck + rt * hl.x + vec3(0.0, hl.y, 0.0) + f * hl.z;
-      // Glass in a cab with windows all round shows the world through the far window.
-      float see = 0.0;
-      if (id == 2 && kind != 2) {
-        vec3 xp = lo + ld * gExT;
-        see = float(vPart(2, kind, xp, gExN) == 2);
-        // Seat backs with rounded shoulders, and a rounded headrest over each, block the lower window.
-        float bx = abs(abs(xp.x) - 0.42), by = xp.y - vBelt(kind);
-        float back = step(by, 0.16 - 0.5 * max(bx - 0.18, 0.0));
-        float rest = step(length(vec2(bx / 0.12, (by - 0.3) / 0.09)), 1.0);
-        see *= 1.0 - max(back, rest);
-      }
-      sP[nh] = P; sN[nh] = N; sV[nh] = -rw; sH[nh] = hl; sB[nh] = nl;
-      sSee[nh] = see; sSv[nh] = sv; sHk[nh] = hk; sId[nh] = id;
-      nh++;
-      k++;
-    }
-    if (!shadow) for (int q = ROLL0; q < 16; q++) {
-      if (q >= nh) continue;
-      gSh = sSv[q];
-      vec3 col = vShade(sId[q], kind, sP[q], sN[q], sV[q], sH[q], sB[q], seed, brake, sSee[q]);
-      // The amber bar flashes, left and right in turn.
-      if (sId[q] == 4) col = vec3(1.0, 0.45, 0.05) * (0.2 + 7.0 * step(0.5, fract(uT * 1.6 + (sH[q].x > 0.0 ? 0.5 : 0.0))));
-      acc += col * sHk[q];
-      cov += sHk[q];
-      zHit = depthOf(sP[q]);
-    }
-    if (shadow) {
-      // The shadow takes away the sun's share of the road's light.
-      float sunL = dot(uSunCol, vec3(0.3, 0.6, 0.1)) * 0.55, ambL = dot(uAmb, vec3(0.3, 0.6, 0.1)) * 0.6;
-      // Near the horizon the road is too foreshortened to hold a clean edge: the shadow fades.
-      float ks = sh * 0.25 * sunL / max(sunL + ambL, 1e-4) * (1.0 - sunCover((G + C) * 0.001)) * smoothstep(0.006, 0.02, -rd.y);
-      if (ks > 0.0) put(vec3(0.0), ks, zg);
-    } else if (cov > 0.0) put(hazed(acc / cov, rd, zHit), cov / float(ns), zHit);
-  }
+  if (front != sprayFront) return;
+  if ((part == 0) != front) vTrail(rd, C, f, kind, spd, age, seed, brake);
+  else if (!past) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
 }
 // Every vehicle's lamps, in their own pass.
 void trafficLamps(vec2 s, float px) {
   for (int i = ROLL0; i < ${MAX_VEH}; i++) vehLamps(i, s, px);
 }
+// The vehicles' mesh pictures (vdraw.js): far and near, behind and in front of the funnels.
+uniform sampler2D tCarFB, tCarFF, tCarNB, tCarNF;
 // Every vehicle in one pass: far ones before the infrastructure, near ones after it.
+// The mists behind the bodies, the bodies' picture, then the mists in front.
+// One flat loop of jobs: D3D11 compiles nested loops far slower.
 void traffic(vec2 s, vec3 rd, float px, bool near) {
-  for (int i = ROLL0; i < ${MAX_VEH}; i++) vehicle(i, s, rd, px, near);
+  for (int j = ROLL0; j < ${4 * MAX_VEH + 1}; j++) {
+    if (j == ${2 * MAX_VEH}) {
+      ivec2 ip = ivec2(gl_FragCoord.xy);
+      vec4 mb = near ? texelFetch(tCarNB, ip, 0) : texelFetch(tCarFB, ip, 0), mf = near ? texelFetch(tCarNF, ip, 0) : texelFetch(tCarFF, ip, 0);
+      gOB = gOB * (1.0 - mb.a) + mb;
+      gOF = gOF * (1.0 - mf.a) + mf;
+      continue;
+    }
+    bool front = j > ${2 * MAX_VEH};
+    int k = front ? j - ${2 * MAX_VEH + 1} : j, i = k / 2;
+    vehicleFx(i, s, rd, px, near, front, k - i * 2);
+  }
 }
 `;

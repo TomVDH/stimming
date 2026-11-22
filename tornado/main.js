@@ -11,6 +11,7 @@ import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_F
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL, treesState, treesStep, treesUniforms } from './plain.js';
+import { vehDraw } from './vdraw.js';
 import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy, trafficShake } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex, debrisUniforms } from './damage.js';
@@ -23,10 +24,6 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 // The load watch shows each step, and the step a past load died in.
 const watch = loadWatch('tornado');
-// Windows browsers compile WebGL through D3D11, and its compiler takes minutes on the vehicles' pass.
-// Until the vehicles are meshes, Windows runs without them (Tom, 2026-11-22).
-// QA: ?cars keeps them on, for a same-frame check on this PC.
-const CARS = !/Windows/.test(navigator.userAgent) || new URLSearchParams(location.search).has('cars');
 // A slow GPU compiles for long: the intro holds, and the watch counts the seconds.
 playIntro({ ready: pageReady(120000) });
 mark('build');
@@ -119,7 +116,7 @@ const ui = initPage({ id: 'tornado', bar: {
       { type: 'slider', group, id: 'k_' + id, label, min, max, step, value, persist: true, onInput: v => act.knob(id, v) },
     ]),
     // The road scene: a pickup flees the storm, then two chasers rush in. Key V.
-    ...(CARS ? [{ type: 'button', group: 'Road', id: 'vehicles', label: 'Vehicles', text: 'Run', onClick: () => act.vehicles() }] : []),
+    { type: 'button', group: 'Road', id: 'vehicles', label: 'Vehicles', text: 'Run', onClick: () => act.vehicles() },
     { type: 'button', group: 'Knobs', id: 'kCopy', label: 'Copy JSON', text: 'Copy', onClick: () => act.knobCopy() },
     { type: 'button', group: 'Knobs', id: 'kReset', label: 'Defaults', text: 'Reset', onClick: () => act.knobReset() },
   ],
@@ -1493,6 +1490,19 @@ const loadStep = buildSteps(2);
 // The build waits twice; no frame draws until the whole module has run.
 let booted = false;
 let env = null;
+// The scene's uniforms: the passes and the vehicles' meshes both read them.
+const envU = {
+  uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
+  uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
+  uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+  uRain: () => rain, uRainDir: () => rainAim(),
+  uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
+  uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
+  uGust: fieldGust, uTorF: torFeet,
+  uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uFly: () => trees.uFly, uFlyB: () => trees.uFlyB, uInfra: () => inf.uInfra, uBale: () => inf.uBale, uBaleB: () => inf.uBaleB, uSwayPh: () => line.uSwayPh,
+};
+// The vehicles' mesh renderer (vdraw.js); it builds once the context exists.
+let vd = null;
 try {
   // The scene shader is large: the driver links it while the intro plays.
   watch.step('Compiling shaders');
@@ -1500,7 +1510,6 @@ try {
     scene: SCENE,
     // The scene compiles in parts: one program per pass, then the composite.
     layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
-    // On Windows the vehicles' passes stay out: see CARS.
     // Each pass names the layers it fills: the runner draws it once for each.
     passes: [
       { fn: 'passGround', layers: ['tLayX'] }, { fn: 'passStorm', layers: ['tLayX'] },
@@ -1508,7 +1517,7 @@ try {
         'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads'].map(OBJ),
       { fn: 'passCarLamps', layers: ['tLayG'] }, OBJ('passCarsFar'),
       ...['passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'].map(OBJ),
-    ].filter(p => CARS || !/^passCar/.test(p.fn)),
+    ],
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
@@ -1516,18 +1525,9 @@ try {
     budget: watch.crashed ? 0.6e6 : 1.8e6,
     active: () => booted && visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
-    textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
-    uniforms: {
-      uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
-      uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
-      uRain: () => rain, uRainDir: () => rainAim(),
-      uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
-      uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
-      uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uFly: () => trees.uFly, uFlyB: () => trees.uFlyB, uInfra: () => inf.uInfra, uBale: () => inf.uBale, uBaleB: () => inf.uBaleB, uSwayPh: () => line.uSwayPh,
-    },
+    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); vd?.draw(w, h, traf, simT); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex, tCarFB: () => vd?.tex('far', 0) ?? null, tCarFF: () => vd?.tex('far', 1) ?? null, tCarNB: () => vd?.tex('near', 0) ?? null, tCarNF: () => vd?.tex('near', 1) ?? null },
+    uniforms: envU,
   });
 } catch (err) {
   watch.fail(err);
@@ -1637,6 +1637,7 @@ function sunFlare() {
 // The tornadoes draw at this share of the frame's size, into their own target.
 const FUN_RES = 0.5;
 const gl = env.gl;
+vd = vehDraw(gl, { scene: SCENE, uniforms: envU, textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex }, hour: () => S.hour });
 // The pane's drops, out of focus: the focus is on the far plain.
 const drops = paneBlur(gl);
 // The pass compiles beside the first frames; until then the plain shows no funnel.
@@ -2094,7 +2095,7 @@ function step(dt) {
   farmStep(farmS, dmg, simT);
   infraStep(inf, dmg, tors, dt, simT, traf);
   lineUniforms(line, tors);
-  if (CARS) trafficStep(traf, tors, simT, dt, line);
+  trafficStep(traf, tors, simT, dt, line);
   shakeFrame(dt);
   // A tornado leaves once its funnel has faded and its whirl has unwound.
   for (let i = tors.length - 1; i >= 0; i--) if (tors[i].rope >= 2 && tors[i].form <= 0) tors.splice(i, 1);
@@ -2212,7 +2213,7 @@ stage.addEventListener('keydown', e => {
   e.preventDefault();
   act.add();
 });
-act.vehicles = () => { if (!CARS) return; trafficRun(traf, simT); wake(); };
+act.vehicles = () => { trafficRun(traf, simT); wake(); };
 
 act.f = v => {
   fLevel = +v.slice(1);
