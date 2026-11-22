@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-22T20:09:30Z
-updated_at: 2026-11-22T20:40:18Z
+updated_at: 2026-11-22T20:41:16Z
 parent: stimming-oh7b
 ---
 
@@ -21,7 +21,7 @@ Build Geoboard (idea 24, group D, a fidget) as a Lab toy: an MVP at high fidelit
 - [x] Icon round spike-geoboard-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/geoboard.md
-- [ ] Commit and push
+- [x] Commit and push
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
