@@ -101,8 +101,8 @@ flowchart LR
 - **Plumes.** One view-facing ribbon per nozzle, from the nozzle to the pad, under the gas. A hot throat, a body that runs orange to violet blue, and shock diamonds: rhombs on the axis, spaced wider with more throttle, each dimmer than the one above. The cold lift-fan jet shows only in the gas it drives.
 - **Pad.** Damp concrete with slab joints and soot, light from the nozzles and a hot pool under each plume, a wet mirror of the sky and a streak of each plume, then haze.
 - **Gas.** K3, the volume fluid of Fire (`shared/fire.js`), ported from WebGPU to WebGL2 fragment passes. A 64 x 28 x 64 grid of 0.375 m cells covers 24 x 10.5 x 24 m over the pad; its y slices lie as tiles in one 448 x 256 texture. Each step: curl, advection with buoyancy, drifting turbulence and vorticity confinement, divergence, 20 Jacobi sweeps, projection, then dye transport. Each jet drives its core down its axis and the hot jets heat it. The pad is a solid floor; the far walls and the roof are open. Steam flashes off the damp pad where a jet lands, and the wall jet tears more off where it runs fast. Steam is warm, so it rises; hot gas rises faster.
-- **Volume.** A half-size ray march through the grid, 64 steps, stopped at the craft by the jet-core pass's depth. Fire's method: a velocity-warped lookup, cloud erosion by three noise octaves, light from the hot pools through three self-shadow taps with Beer and multi-scatter terms, a powder term and a Henyey-Greenstein phase, cool sky light from above, interleaved gradient noise on the start, then a light blur.
-- **Heat.** The same march sums the heat along each ray, times rising noise cells in world space. The composite bends the scene along the gradient of that sum, capped at 5 px, so the shimmer sits where the hot gas really is and keeps its perspective. A fine ribbon heat along each jet core adds the near shimmer; the craft writes depth there, so heat behind it does not bend it.
+- **Volume.** A half-size ray march through the grid, 64 steps, stopped at the craft by the jet-core pass's depth. Fire's method: a velocity-warped lookup, cloud erosion by three noise octaves, light from the hot pools through three self-shadow taps with Beer and multi-scatter terms, a powder term and a Henyey-Greenstein phase, the plumes as a line light so the steam round them glows and the jets read through it, cool sky light from above, interleaved gradient noise on the start, then a light blur.
+- **Heat.** The same march sums the heat along each ray, times rising noise cells in world space. The cells are about 20 cm and rise fast; the hot core saturates, so the plumes stay readable. The composite bends the scene along the gradient of that sum, capped at 4 px, so the shimmer sits where the hot gas really is and keeps its perspective. A fine ribbon heat along each jet core adds the near shimmer; the craft writes depth there, so heat behind it does not bend it.
 - **Frames.** Scene with MSAA, jet-core heat and depth, gas step and volume, refraction and composite, bloom with a threshold, grade, ACES output.
 
 ## Frame loop
@@ -134,7 +134,7 @@ Headless Chromium with `--use-angle=gl`. Captures: `docs/qa/jethover/`.
 | Q7 bar | 2 controls (Reheat, Throttle); 4 How rows |
 | Q8 keys | Space held runs the engine to 0.95; release spools back to the hover |
 | Q9 sound | The context runs during the gesture and is suspended 9 s after release |
-| Q10 frames | 16.7 ms median, 16.7 ms p90 during a hold and drag, on Tom's PC through ANGLE GL (vsync bound); about 580 fps unthrottled at 1280 x 800 with the gas on |
+| Q10 frames | 16.7 ms median, 16.7 ms p90 during a hold and drag, on Tom's PC through ANGLE GL (vsync bound); about 565 fps unthrottled at 1280 x 800 and 350 at 1920 x 1080, with the gas on |
 
 ## Open for Tom
 

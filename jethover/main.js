@@ -206,7 +206,7 @@ function pose(tdt) {
     // The gas: each jet drives its core down; the hot ones heat it.
     gas.jetU.uJetP.value[i].set(j.n.x, j.n.y, j.n.z, i === 2 ? 0.75 : 0.6);
     gas.jetU.uJetA.value[i].set(axis.x, axis.y, axis.z, len);
-    gas.jetU.uJetK.value[i].set((i === 2 ? 9 : 15) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : 6 + 14 * eng.rpm, (i === 2 ? 1.2 : 4) * (0.3 + eng.rpm), 0);
+    gas.jetU.uJetK.value[i].set((i === 2 ? 9 : 15) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : 6 + 14 * eng.rpm, (i === 2 ? 0.5 : 5) * (0.3 + eng.rpm), 0);
     // The pad: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.padU.uHot.value[i].set(j.c.x, 0, j.c.z, hot);
@@ -224,6 +224,10 @@ function pose(tdt) {
   // The gas takes its light from the pools, just over the pad.
   gas.VU.uLightP.value.set(tmp.x, 1.4, tmp.z);
   gas.VU.uLightC.value.setRGB(1.0, 0.42, 0.13).multiplyScalar((0.5 + 1.8 * thr * thr) * flick);
+  // The plumes light the gas round them, from the nozzles to the pad.
+  gas.VU.uJetA0.value.copy(jets[0].n).add(jets[1].n).multiplyScalar(0.5);
+  gas.VU.uJetA1.value.copy(tmp).setY(0.3);
+  gas.VU.uJetC.value.setRGB(1.0, 0.5, 0.32).multiplyScalar((0.15 + 0.9 * thr) * flick);
   void tdt;
 }
 

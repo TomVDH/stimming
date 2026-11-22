@@ -126,14 +126,14 @@ export const REFRACT = {
       float hy = texture2D(tVolHeat, vUv + vec2(0.0, px.y)).g - texture2D(tVolHeat, vUv - vec2(0.0, px.y)).g;
       vec2 off = vec2(hx, hy) * uBend * uAmp;
       // A long grazing path over the pad must not tear the frame.
-      off *= min(1.0, 5.0 * uAmp / max(length(off), 1e-4));
+      off *= min(1.0, 4.0 * uAmp / max(length(off), 1e-4));
       uv += off / uRes;
       // The jet cores: fine cells along each plume.
       float s = texture2D(tHeat, vUv).r;
       if (s > 0.002) {
         vec2 q = vUv * uRes / (12.0 * uAmp);
         vec2 o = vec2(vn(q + vec2(0.0, uTime * 6.0)) - 0.5, vn(q * 1.3 + vec2(7.1, uTime * 7.0)) - 0.5);
-        uv += o * min(s, 1.0) * 6.0 * uAmp / uRes;
+        uv += o * min(s, 1.0) * 2.5 * uAmp / uRes;
       }
       vec3 c = texture2D(tDiffuse, uv).rgb;
       // The lit gas lies over the bent scene.

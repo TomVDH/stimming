@@ -201,7 +201,7 @@ const VOLUME = /* glsl */`${HEAD}
 uniform sampler2D tDye, tVel, tDepth;
 uniform vec2 uRes;
 uniform mat4 uInvProj, uCamWorld;
-uniform vec3 uCam, uFwd, uBoxMax, uLightP, uLightC, uAmb, uAlbedo;
+uniform vec3 uCam, uFwd, uBoxMax, uLightP, uLightC, uAmb, uAlbedo, uJetA0, uJetA1, uJetC;
 uniform float uNear, uFar, uTime, uFrame, uSigma, uAbs, uG, uHeatGlow;
 uniform int uSteps;
 layout(location = 0) out vec4 oCol;
@@ -234,15 +234,16 @@ void main() {
     vec3 vw = S(tVel, c).xyz;
     s = S(tDye, c - vw * 0.05 / CELL);
     // Heat bends light: the march sums it, with moving cells for the shimmer.
-    float rise = uTime * 2.2;
+    // Fine fast cells; the hot core saturates, so the plume stays readable.
+    float hot = min(s.g, 2.5);
     hSum += s.g * ds;
-    hNoise += s.g * (vn3(p * vec3(2.3, 1.4, 2.3) + vec3(0.0, -rise, 0.0)) - 0.5) * ds;
+    hNoise += hot * (vn3(p * vec3(5.0, 3.0, 5.0) + vec3(0.0, -uTime * 4.5, 0.0)) - 0.5) * ds;
     // Billows: coarse lumps, then fine wisps that age away.
     vec3 q = p - vw * 0.08 + vec3(0.0, -s.b * 0.6 - uTime * 0.25, 0.0);
     // Cloud erosion: the grid gives the body, three octaves cut its edges.
     float fb = vn3(q * 1.1) * 0.55 + vn3(q * 2.5 + 7.3) * 0.3 + vn3(q * 5.7 + vec3(uTime * 0.4, 0.0, 0.0)) * 0.15;
     float body = min(s.r, 3.0);
-    float den = body * smoothstep(0.38, 0.68, fb + min(body, 1.0) * 0.12) * 2.6;
+    float den = body * smoothstep(0.42, 0.62, fb + min(body, 1.0) * 0.12) * 2.6;
     if (den < 0.003) continue;
     // Light from the hot pools, through two short shadow taps.
     vec3 L = uLightP - p;
@@ -254,7 +255,13 @@ void main() {
     float powder = 1.0 - exp(-den * 4.0);
     // Cool sky light from above, dimmed by the gas over this point.
     float up = exp(-S(tDye, c + vec3(0.0, 1.5 / CELL, 0.0)).r * uAbs * 0.8);
-    vec3 Li = uAmb * (0.35 + 1.3 * up) + uLightC * lt * (0.4 + 0.6 * powder) * hg(dot(dir, L), uG) * 12.566 * (0.35 + 0.65 * smoothstep(0.2, 2.0, dl)) / (1.0 + dl * dl * 0.14);
+    vec3 Li = uAmb * (0.35 + 1.3 * up) + uLightC * lt * (0.4 + 0.6 * powder) * hg(dot(dir, L), uG) * 12.566 * (0.35 + 0.65 * smoothstep(0.2, 2.0, dl)) / (1.0 + dl * dl * 0.2);
+    // The plumes are a line light: the gas round them takes their glow.
+    vec3 ab = uJetA1 - uJetA0;
+    vec3 cp = uJetA0 + ab * clamp(dot(p - uJetA0, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+    vec3 J = cp - p;
+    float dj = length(J);
+    Li += uJetC * hg(dot(dir, J / max(dj, 1e-3)), 0.2) * 12.566 / (1.0 + dj * dj * 1.2);
     // Hot gas glows a little by itself near the jets.
     vec3 Le = vec3(1.0, 0.38, 0.12) * s.g * s.g * uHeatGlow;
     float al = 1.0 - exp(-den * uSigma * ds);
@@ -302,7 +309,7 @@ export function makeFluid(renderer) {
   const U = {
     uDt: { value: 1 / 60 }, uTime: { value: 0 },
     uBuoy: { value: 3.0 }, uWeight: { value: -2.6 }, uTurb: { value: 70 }, uVort: { value: 30 }, uDamp: { value: 0.6 },
-    uDiss: { value: 0.09 }, uCool: { value: 0.35 }, uPick: { value: 0.2 },
+    uDiss: { value: 0.16 }, uCool: { value: 0.35 }, uPick: { value: 0.2 },
   };
   const mCurl = raw(CURL, { tVel: { value: null } });
   const mAdvV = raw(ADVECT_VEL, { ...jetU, tVel: { value: null }, tDye: { value: null }, tCurl: { value: curl.texture }, uDt: U.uDt, uTime: U.uTime, uBuoy: U.uBuoy, uWeight: U.uWeight, uTurb: U.uTurb, uVort: U.uVort, uDamp: U.uDamp });
@@ -347,7 +354,8 @@ export function makeFluid(renderer) {
     uInvProj: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() },
     uCam: { value: new THREE.Vector3() }, uFwd: { value: new THREE.Vector3() }, uBoxMax: { value: BOX_MAX.clone() },
     uLightP: { value: new THREE.Vector3() }, uLightC: { value: new THREE.Color() },
-    uAmb: { value: new THREE.Color(0.04, 0.045, 0.07) }, uAlbedo: { value: new THREE.Color(0.9, 0.86, 0.8) },
+    uJetA0: { value: new THREE.Vector3() }, uJetA1: { value: new THREE.Vector3() }, uJetC: { value: new THREE.Color() },
+    uAmb: { value: new THREE.Color(0.032, 0.046, 0.09) }, uAlbedo: { value: new THREE.Color(0.9, 0.86, 0.8) },
     uNear: { value: 0.5 }, uFar: { value: 2000 }, uTime: { value: 0 }, uFrame: { value: 0 },
     uSigma: { value: 2.4 }, uAbs: { value: 2.2 }, uG: { value: 0.35 }, uHeatGlow: { value: 0.01 }, uSteps: { value: 64 },
   };
