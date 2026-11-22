@@ -3,7 +3,8 @@
 // Three vehicles stand in place: one far and two near, or all three near ('near').
 // Usage: node same.mjs <url with ?qa&buildup=0> <out-prefix> [frames] [near]
 // It writes <out>.raw (RGBA rows, bottom first), <out>.json (size) and <out>.png.
-import { chromium } from 'file:///C:/Users/tmlns/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs';
+// The repo's pinned Playwright 1.63.0, from the npx cache: its headless shell runs main on ANGLE GL; Edge's does not.
+import { chromium } from 'file:///C:/Users/tmlns/AppData/Local/npm-cache/_npx/6bcb61ec6d5aea22/node_modules/playwright/index.mjs';
 import { writeFileSync } from 'node:fs';
 const [url, out, frames, scene] = process.argv.slice(2);
 const init = ([N, near]) => {

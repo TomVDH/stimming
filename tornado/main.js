@@ -25,7 +25,8 @@ const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 const watch = loadWatch('tornado');
 // Windows browsers compile WebGL through D3D11, and its compiler takes minutes on the vehicles' pass.
 // Until the vehicles are meshes, Windows runs without them (Tom, 2026-11-22).
-const CARS = !/Windows/.test(navigator.userAgent);
+// QA: ?cars keeps them on, for a same-frame check on this PC.
+const CARS = !/Windows/.test(navigator.userAgent) || new URLSearchParams(location.search).has('cars');
 // A slow GPU compiles for long: the intro holds, and the watch counts the seconds.
 playIntro({ ready: pageReady(120000) });
 mark('build');
@@ -1637,9 +1638,38 @@ function useFunnel(mode) {
   if (fun.progs[mode]) { fun.prog = fun.progs[mode]; fun.fresh = true; env.touch(); return; }
   if (fun.progs[mode] === null) return;
   fun.progs[mode] = null;
-  linked(gl, { f: program(gl, TRI_VS, funnelFS(SKY, SHARED, mode === 'tube')) }, { wait: () => new Promise(r => setTimeout(r, 30)) })
-    .then(set => { fun.progs[mode] = set.f; if (fun.mode === mode) { fun.prog = set.f; fun.fresh = true; } env.touch(); })
+  // D3D11 compiles the march and the rest far faster apart; an integer target carries the march's result.
+  const fs = part => program(gl, TRI_VS, funnelFS(SKY, SHARED, mode === 'tube', part));
+  const set = { m: fs('march'), r: fs('post') };
+  linked(gl, set, { wait: () => new Promise(r => setTimeout(r, 30)) })
+    .then(set => { const P = funPair(set); fun.progs[mode] = P; if (fun.mode === mode) { fun.prog = P; fun.fresh = true; } env.touch(); })
     .catch(err => { delete fun.progs[mode]; console.error('funnel pass:', err); });
+}
+// The funnel's programs: the march (m) and the rest (r).
+// P.u maps a uniform's name to its place in each program that has it.
+function funPair({ m, r }) {
+  const u = new Proxy({}, { get: (_, name) => [m, r].filter(q => q.u[name] != null).map(q => [q.p, q.u[name]]) });
+  // The march's result sits on unit 9.
+  gl.useProgram(r.p);
+  gl.uniform1i(r.u.tMarch, 9);
+  return { m, r, u };
+}
+// Sets one uniform in each funnel program that has it: funU.uniform1f(u.uT, simT).
+const funU = new Proxy({}, { get: (_, fn) => (at, ...v) => { for (const [prog, loc] of at) { gl.useProgram(prog); gl[fn](loc, ...v); } } });
+// Draws the funnel into fb, at the viewport already set.
+// The march draws into its own target first; the rest reads it.
+function funDraw(fb) {
+  const P = fun.prog;
+  // The target is made on unit 9, its own: it must not unbind a picture the draw reads.
+  gl.activeTexture(gl.TEXTURE9);
+  if (!fun.M || fun.M.w !== fun.w || fun.M.h !== fun.h) { free(gl, fun.M); fun.M = glTarget(gl, fun.w, fun.h, { format: gl.RGBA32UI, filter: gl.NEAREST }); }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.M.fb);
+  gl.useProgram(P.m.p);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.bindTexture(gl.TEXTURE_2D, fun.M.tex);
+  gl.useProgram(P.r.p);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 act.funnel = v => useFunnel(v === 'shells' ? 'shells' : 'tube');
 // The old key held the old default; it goes.
@@ -1809,25 +1839,25 @@ function bakeFar(u, rw, rh, n) {
   if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
   // A bake keeps the lens it started with through all its strips.
   if (fun.farRow === 0) fun.farLens = [focal(), yaw()];
-  gl.uniform1f(u.uFoc, fun.farLens[0]);
-  gl.uniform1f(u.uYaw, fun.farLens[1]);
+  funU.uniform1f(u.uFoc, fun.farLens[0]);
+  funU.uniform1f(u.uYaw, fun.farLens[1]);
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
-  gl.uniform1i(u.uMode, 1);
-  gl.uniform1f(u.uFarD, farD);
-  gl.uniform1i(u.uN, 0);
-  gl.uniform1f(u.uTorOn, 0);
-  gl.uniform1f(u.uBlend, 1);
-  gl.uniform2f(u.uJit, 0, 0);
+  funU.uniform1i(u.uMode, 1);
+  funU.uniform1f(u.uFarD, farD);
+  funU.uniform1i(u.uN, 0);
+  funU.uniform1f(u.uTorOn, 0);
+  funU.uniform1f(u.uBlend, 1);
+  funU.uniform2f(u.uJit, 0, 0);
   // tFar points away from the target: on unit 0 it could meet farB and make a feedback loop.
   // That loop drops the draw, and the far field came out empty on the first load.
-  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
-  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); funU.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); funU.uniform1i(u.tFarPrev, 8);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
   gl.viewport(0, 0, rw, rh);
   // The first bake, or a still page, bakes whole; a running page bakes one slice a frame.
   // A slice is every eighth row, not a band: a band across the horizon cost far more and hitched.
-  if (whole) { gl.uniform1i(u.uSlice, -1); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
-  else { gl.uniform1i(u.uSlice, fun.farRow); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow++; }
+  if (whole) { funU.uniform1i(u.uSlice, -1); funDraw(fun.farB.fb); fun.farRow = FAR_STRIPS; }
+  else { funU.uniform1i(u.uSlice, fun.farRow); funDraw(fun.farB.fb); fun.farRow++; }
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
@@ -1837,10 +1867,10 @@ function bakeFar(u, rw, rh, n) {
     fun.farBusy = false; fun.farReady = true;
   }
   // The live draw that follows takes these back.
-  gl.uniform1f(u.uFoc, focal());
-  gl.uniform1f(u.uYaw, yaw());
-  gl.uniform1i(u.uN, n);
-  gl.uniform1f(u.uTorOn, n ? 1 : 0);
+  funU.uniform1f(u.uFoc, focal());
+  funU.uniform1f(u.uYaw, yaw());
+  funU.uniform1i(u.uN, n);
+  funU.uniform1f(u.uTorOn, n ? 1 : 0);
 }
 // Draws every tornado into the funnel target. The runner calls it before its passes.
 function funnelPass(w, h) {
@@ -1860,68 +1890,68 @@ function funnelPass(w, h) {
   // A still page bakes the far field whole, at once.
   fun.farHold = !hist;
   const P = fun.prog, u = P.u;
-  gl.useProgram(P.p);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
   gl.viewport(0, 0, rw, rh);
   gl.disable(gl.BLEND);
   gl.disable(gl.SCISSOR_TEST);
   // Units 0 to 4 belong to the runner; the pass uses 5 and 6.
-  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); gl.uniform1i(u.tPrev, 5);
-  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, fun.noise); gl.uniform1i(u.tNoise, 6);
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); funU.uniform1i(u.tPrev, 5);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, fun.noise); funU.uniform1i(u.tNoise, 6);
   const sk = skyAt(S.hour);
-  gl.uniform2f(u.uRes, rw, rh);
+  funU.uniform2f(u.uRes, rw, rh);
   const fr = fun.frame++;
-  gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
-  gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uGap, KNOB.gap); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
-  gl.uniform1f(u.uAlb, KNOB.alb); gl.uniform1f(u.uSunK, KNOB.sunK); gl.uniform1f(u.uAmbK, KNOB.ambK);
-  gl.uniform1f(u.uHazeK, KNOB.hazeK); gl.uniform1f(u.uTopDark, KNOB.topK); gl.uniform1f(u.uDustK, KNOB.dustK);
-  gl.uniform1f(u.uSpIn, KNOB.spIn);
-  if (P === fun.progs.tube) { gl.uniform1f(u.uTbBands, KNOB.tbBands); gl.uniform1f(u.uTbCount, KNOB.tbCount); gl.uniform1f(u.uTbStretch, KNOB.tbStretch); }
-  gl.uniform3fv(u.uSun, sun); gl.uniform3fv(u.uSunCol, sunCol); gl.uniform3fv(u.uAmb, amb);
-  gl.uniform3fv(u.uZen, sk.zen); gl.uniform3fv(u.uMid, sk.mid); gl.uniform3fv(u.uBand, sk.band); gl.uniform3fv(u.uAnti, sk.anti);
-  gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
-  gl.uniform1i(u.uN, n);
-  gl.uniform1f(u.uBase, baseNow());
-  gl.uniform1f(u.uReach, deckReach);
-  gl.uniform1f(u.uFront, front);
-  gl.uniform1f(u.uGod, god);
-  gl.uniform1f(u.uPlainLit, plainLit());
-  gl.uniform1f(u.uGreen, greenK());
-  gl.uniform3fv(u.uBoltT, bolt.top);
-  gl.uniform4fv(u.uBolt, bolt.u);
-  gl.uniform3fv(u.uBeam, beamSpot());
-  gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
-  gl.uniform1f(u.uCamH, camH);
-  gl.uniform2f(u.uWindC, windC[0], windC[1]);
-  gl.uniform1f(u.uWind, wind);
-  for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
-  gl.uniform2fv(u.uPhs, pk.ph);
+  funU.uniform1f(u.uTrans, KNOB.trans); funU.uniform1f(u.uRim, KNOB.rim);
+  funU.uniform1f(u.uWid, KNOB.width); funU.uniform1f(u.uGap, KNOB.gap); funU.uniform1f(u.uSheathK, KNOB.sheath); funU.uniform1f(u.uEdgeW, KNOB.edge); funU.uniform1f(u.uAmp, KNOB.amp);
+  funU.uniform1f(u.uAlb, KNOB.alb); funU.uniform1f(u.uSunK, KNOB.sunK); funU.uniform1f(u.uAmbK, KNOB.ambK);
+  funU.uniform1f(u.uHazeK, KNOB.hazeK); funU.uniform1f(u.uTopDark, KNOB.topK); funU.uniform1f(u.uDustK, KNOB.dustK);
+  funU.uniform1f(u.uSpIn, KNOB.spIn);
+  if (P === fun.progs.tube) { funU.uniform1f(u.uTbBands, KNOB.tbBands); funU.uniform1f(u.uTbCount, KNOB.tbCount); funU.uniform1f(u.uTbStretch, KNOB.tbStretch); }
+  funU.uniform3fv(u.uSun, sun); funU.uniform3fv(u.uSunCol, sunCol); funU.uniform3fv(u.uAmb, amb);
+  funU.uniform3fv(u.uZen, sk.zen); funU.uniform3fv(u.uMid, sk.mid); funU.uniform3fv(u.uBand, sk.band); funU.uniform3fv(u.uAnti, sk.anti);
+  funU.uniform1f(u.uFoc, focal()); funU.uniform1f(u.uHz, horizon()); funU.uniform1f(u.uYaw, yaw()); funU.uniform1f(u.uStorm, storm); funU.uniform1f(u.uT, simT);
+  funU.uniform1i(u.uN, n);
+  funU.uniform1f(u.uBase, baseNow());
+  funU.uniform1f(u.uReach, deckReach);
+  funU.uniform1f(u.uFront, front);
+  funU.uniform1f(u.uGod, god);
+  funU.uniform1f(u.uPlainLit, plainLit());
+  funU.uniform1f(u.uGreen, greenK());
+  funU.uniform3fv(u.uBoltT, bolt.top);
+  funU.uniform4fv(u.uBolt, bolt.u);
+  funU.uniform3fv(u.uBeam, beamSpot());
+  funU.uniform2f(u.uWDir, windDir[0], windDir[1]);
+  funU.uniform1f(u.uCamH, camH);
+  funU.uniform2f(u.uWindC, windC[0], windC[1]);
+  funU.uniform1f(u.uWind, wind);
+  for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) funU.uniform4fv(u['uT' + k], pk[k]);
+  funU.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
-  gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
+  funU.uniform1f(u.uTorOn, n ? 1 : 0); funU.uniform4fv(u.uTorZ, pk.Z); funU.uniform4fv(u.uTorN, pk.NR); funU.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
   // The first bake is whole: that frame skips the extra still draws.
   const first = !fun.farReady;
   bakeFar(u, rw, rh, n);
-  gl.uniform1i(u.uMode, 0);
-  gl.uniform1f(u.uFarD, farD);
-  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
-  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
-  gl.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
-  gl.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
+  funU.uniform1i(u.uMode, 0);
+  funU.uniform1f(u.uFarD, farD);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); funU.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); funU.uniform1i(u.tFarPrev, 8);
+  funU.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
+  funU.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
   const subs = hist || first ? 1 : 4;
   for (let k = 0; k < subs; k++) {
     if (k) { [fun.A, fun.B] = [fun.B, fun.A]; gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); }
     const j = hist ? fr : k, on = hist || k > 0;
-    gl.uniform2f(u.uJit, on ? ((j * 0.618) % 1) - 0.5 : 0, on ? ((j * 0.382) % 1) - 0.5 : 0);
-    gl.uniform1f(u.uBlend, hist ? 0.35 : 1 / (k + 1));
+    funU.uniform2f(u.uJit, on ? ((j * 0.618) % 1) - 0.5 : 0, on ? ((j * 0.382) % 1) - 0.5 : 0);
+    funU.uniform1f(u.uBlend, hist ? 0.35 : 1 / (k + 1));
     gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
     gl.viewport(0, 0, rw, rh);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    funDraw(fun.B.fb);
   }
   // The runner wants the context in its default state.
   gl.bindTexture(gl.TEXTURE_3D, null);
+  gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   [fun.A, fun.B] = [fun.B, fun.A];

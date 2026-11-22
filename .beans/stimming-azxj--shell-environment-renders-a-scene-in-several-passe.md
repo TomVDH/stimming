@@ -105,3 +105,20 @@ Next for the funnel: the rain batch and the sun shafts in a second program after
 Windows runs without the vehicles until they are meshes (`CARS` in main.js; Tom, 2026-11-22: 'do all').
 The scene's programs link in parallel: the first frame shows at 32 s, the console stays clean, the context lives.
 Then the funnel program links, and the tab does not answer for about 2 minutes. The frame comes back after it.
+
+## Live check two, 2026-11-22
+
+The funnel draws in two programs: the march (24.4 s), then rain, far field, bolt, shafts and history (1.8 s).
+The march sends its result in one RGBA32UI output: colour as float bits, transmittance in 16 bits, the opaque distance as a half in km.
+The frame matches main (`?cars` keeps the vehicles on for the check): 13 px of 938,000 differ, at the far vehicles.
+
+The freeze after the first frame is not the funnel. ANGLE on D3D11 compiles a program with several outputs twice:
+at the link, off the main thread, for its first output only; then again at the first draw, on the GPU thread, which blocks the tab.
+Measured in the app pane, the poles pass: 13.6 s link, then 12.4 s at its first draw. With one output: 12.0 s link, 1 ms draw.
+Every layer pass has four outputs, so every pass compiles twice, and the second compiles run one after another: about 110 s.
+Binding a four-target framebuffer during the link does not help (12.2 s link, 12.7 s draw).
+
+Fix: one output per pass program. The runner draws a pass once per layer it fills (`uLay`); a pass may name its layers.
+This needs an edit in `shared/environment.js` (waiting for Tom's go).
+
+The wheat was black on the branch: `skDusk()` returned NaN at the anti-sun direction (stimming-3l13, fixed).

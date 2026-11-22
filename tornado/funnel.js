@@ -154,11 +154,24 @@ export const MAX_FUNNELS = 4;
  * @param {string} sky  shared/sky.js SKY: skyCol() needs skDusk().
  * @param {string} storm  The scene's shared GLSL: camera, sky, haze, the supercell.
  * @param {boolean} [tube]  True builds the Cloud tube in place of the shells.
+ * @param {'' | 'march' | 'post'} [part]  The march alone, the rest alone, or both.
+ *   D3D11 compiles the two halves far faster than the whole.
  */
-export const funnelFS = (sky, storm, tube = false) => /* glsl */`#version 300 es
+export const funnelFS = (sky, storm, tube = false, part = '') => /* glsl */`#version 300 es
 ${tube ? '#define TUBE' : ''}
+${part === 'march' ? '#define FUN_MARCH' : part === 'post' ? '#define FUN_POST' : ''}
 precision highp float;
+#ifdef FUN_MARCH
+// The march's result in one output: D3D11 compiles a program with two again at its first draw.
+// x, y, z: the colour's float bits. w: transmittance in 16 bits, the opaque distance in km as a half.
+layout(location = 0) out uvec4 outM;
+#else
 out vec4 outC;
+#endif
+#ifdef FUN_POST
+// The march's result, read at this pixel.
+uniform highp usampler2D tMarch;
+#endif
 // The storm GLSL below declares tNoise, the noise volume.
 uniform sampler2D tPrev;
 uniform vec2 uRes, uJit;
@@ -821,6 +834,17 @@ void main() {
   airInit(rd);
   gGloom = gloomCol();
   gGl = cylinder(vec3(0.0, CAMH * 0.001, 0.0), rc, SHELF, SHELF_R.y * mix(0.4, 0.95, uStorm), 0.0, BASE + 0.2);
+#ifdef FUN_POST
+  bool bake = uMode == 1;
+  float farD = uFarD * 1000.0, band = max(750.0, 0.125 * farD);
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  uvec4 m = texelFetch(tMarch, ip, 0);
+  vec3 acc = uintBitsToFloat(m.xyz);
+  float T = float(m.w & 0xffffu) / 65535.0, tOpq = unpackHalf2x16(m.w >> 16).x * 1000.0;
+  // QA: the march sends its work counts in the colour.
+  int steps = int(acc.g);
+  gWork = int(acc.r);
+#else
   // One march, in metres from the eye, through the whole storm: the deck and every funnel's column.
   vec3 eye = vec3(0.0, CAMH, 0.0);
   // Only a ray that climbs can reach the deck; one that falls meets only the funnels' feet.
@@ -1056,6 +1080,12 @@ void main() {
     if (T < 0.5 && tOpq > 1e8) tOpq = t;
     t += st;
   }
+#endif
+#ifdef FUN_MARCH
+  if (uCount == 1) acc = vec3(float(gWork), float(steps), 0.0);
+  // No opaque body leaves tOpq at 1e9: as a half it turns infinite, and min() still ignores it.
+  outM = uvec4(floatBitsToUint(acc), uint(clamp(T, 0.0, 1.0) * 65535.0 + 0.5) | (packHalf2x16(vec2(tOpq * 0.001, 0.0)) << 16));
+#else
   vec4 now = vec4(acc, 1.0 - T);
   // Rain lies under the base, in front of the first opaque body.
   // A sky ray runs to the base, a falling ray to the ground. The bake draws it past the crossover.
@@ -1106,4 +1136,5 @@ void main() {
   // A short history blend: steady frames lose their march noise.
   outC = mix(texture(tPrev, gl_FragCoord.xy / uRes), now, uBlend);
   if (uCount == 1) outC = vec4(float(gWork), float(steps), 0.0, 1.0);
+#endif
 }`;
