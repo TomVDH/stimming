@@ -205,7 +205,8 @@ None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live sha
 - Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height, seat distance and grain sit at the end of their ranges. The stills above predate this change. `stimming-auj3`
 - The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9.
-- Windows (NVIDIA, D3D11 and GL): `pow()` of a negative base gives NaN, and the bloom turns each NaN pixel into a flare. `mitters()` (`pow(round1, 14.0)`, 3.1416 is past pi) fills large blocks with NaN from the entry to the soak; `cloth()`, the sky's anti-sun line in `skDusk()` (`shared/sky.js`) and one canopy bulb give single pixels. Guards wait for Tom's yes. `stimming-4uc8`
+- NVIDIA (D3D11 and GL): `pow()` of a negative base gives NaN, and the bloom turns each NaN pixel into a flare. The page clamps its bases: `mitters()` and `cloth()` (`sin` of 3.1416 goes below 0) and the Fresnel terms. `stimming-4uc8`
+- The sky's anti-sun line in `skDusk()` (`shared/sky.js`) still gives single NaN pixels, also in reflections such as the canopy fascia. The shared guard waits for Tom's yes. `stimming-wehv`
 - Which arrow bulbs live comes from a hash of the bulb's place. The compiler's rounding can flip one bulb, so the pattern can differ between platforms and builds.
 
 ## Legacy build

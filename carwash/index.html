@@ -1000,7 +1000,7 @@ vec3 wall(vec3 H, vec3 D, float s, float t) {
   }
   // Wet block mirrors a little at a glance.
   vec3 R = vec3(-D.x, D.y, D.z);
-  float F = 0.04 + 0.96 * pow(1.0 - abs(D.x), 5.0);
+  float F = 0.04 + 0.96 * pow(max(1.0 - abs(D.x), 0.0), 5.0);
   c += emitRay(H + n * 0.003, R, 0.03) * F * 0.12 * (0.3 + damp);
   // The corners hold shadow.
   return c * (0.55 + 0.45 * smoothstep(0.0, 0.5, H.y) * smoothstep(CH, CH - 0.6, H.y));
@@ -1337,7 +1337,7 @@ vec3 carBody(vec3 P, vec3 D, inout float t, vec3 col) {
   vec3 nn = normalize(vec3(carD(p + e.xyy) - carD(p - e.xyy), carD(p + e.yxy) - carD(p - e.yxy), carD(p + e.yyx) - carD(p - e.yyx)));
   vec3 L = outLight(W + nn * 0.02, nn);
   vec3 R = reflect(D, nn);
-  float fr = 0.04 + 0.96 * pow(1.0 - max(dot(-D, nn), 0.0), 5.0);
+  float fr = 0.04 + 0.96 * pow(clamp(1.0 - dot(-D, nn), 0.0, 1.0), 5.0);
   vec3 env = farView(R) + glareAlong(W, R) * 0.15;
   vec3 c = uPaint * L * 0.45 + env * fr * 0.9;
   // Glass all round the cabin; chrome on the bumpers and a spear down the side.
@@ -1617,7 +1617,7 @@ vec3 bonnet(vec3 d, vec3 Dw, inout float t, vec3 col) {
   vec3 Lb = anyLight(W, n);
   if (orb) return mir * 0.85 + Lb * 0.12;
   // The paint: a little diffuse light and a clear coat that mirrors the place.
-  float fr = 0.04 + 0.96 * pow(1.0 - max(dot(-d, n), 0.0), 5.0);
+  float fr = 0.04 + 0.96 * pow(clamp(1.0 - dot(-d, n), 0.0, 1.0), 5.0);
   vec3 c = uPaint * Lb * 0.35;
   c += mir * fr * (0.6 + 0.4 * uGloss);
   // A chrome strip runs down the middle of the bonnet.
@@ -1656,7 +1656,7 @@ vec4 cloth(float x, float a, float rr, float seed, vec3 light, vec3 back) {
   float round1 = sin(sf * 3.1416), round2 = sin(sf2 * 3.1416);
   // Each strip flaps on its own; the spin smears it round the drum.
   float flap = cwN(vec2(si * 3.7, a * 1.2 - uTime * 2.0 + si));
-  float sheen = pow(round1, 10.0) * (0.3 + 0.9 * flap);
+  float sheen = pow(max(round1, 0.0), 10.0) * (0.3 + 0.9 * flap);
   vec3 front = dye * light * (0.2 + 0.8 * round1) * (0.75 + 0.5 * flap) + light * 0.55 * sheen;
   vec3 behind = dye2 * light * 0.4 * (0.3 + 0.7 * round2);
   float gap = smoothstep(0.0, 0.12, sf) * smoothstep(1.0, 0.88, sf);
@@ -1767,7 +1767,7 @@ vec4 mitters(vec3 d, float tG, float t) {
   // Wet felt in a deep blue: each strip rounded across, a sheen down its middle.
   float round1 = sin(clamp(lf / 0.77, 0.0, 1.0) * 3.1416);
   vec3 c = MITT_FELT * L * 2.0 * (0.3 + 0.7 * round1) * (0.8 + 0.4 * cwN(vec2(X * 14.0, Y * 1.5)));
-  c += L * 0.15 * pow(round1, 14.0) * (0.6 + 0.6 * cwN(vec2(X * 9.0, Y * 3.0 - uTime)));
+  c += L * 0.15 * pow(max(round1, 0.0), 14.0) * (0.6 + 0.6 * cwN(vec2(X * 9.0, Y * 3.0 - uTime)));
   // The tunnel's light behind rims each strip's edges.
   c += back * 0.22 * (1.0 - round1) * strip;
   // In the gaps a second row of strips hangs behind, in shadow.

@@ -18,7 +18,7 @@ Route (Tom chose it for Soup cauldron and Tornado alley): split the scene shader
 - [x] Split the scene into passes by #define; parallel links and an async wait before the first frame
 - [x] Every pass compiles under 10 s offline
 - [x] Same frame before and after (headless Chromium, ANGLE GL, seeded random, fixed clock): see Findings for three rounding cases
-- [ ] Tom: guard the NaN sources (Windows shows black blocks and flares)
+- [x] Guard the NaN sources in the page (Tom: yes, 2026-11-22); the shared sky goes to stimming-wehv
 - [x] First frame in the app pane on D3D11, no freeze; console clean
 - [x] Toy doc updated
 - [ ] Tom checks it live
@@ -55,6 +55,6 @@ Same frame (headless Chromium, ANGLE GL, seeded random, no free clock; the shot,
 Pre-existing on Windows (NVIDIA, GL and D3D11), in the old build too: `pow()` of a negative base is NaN, and bloom makes each NaN a flare.
 - `mitters()`: `round1 = sin(clamp(lf / 0.77, 0.0, 1.0) * 3.1416)` dips below 0. `pow(round1, 14.0)` fills large blocks from the entry to the soak. `max(round1, 0.0)` clears them.
 - `cloth()` `pow(round1, 10.0)`: single pixels on the brushes.
-- `shared/sky.js` `skDusk()`: `pow(0.5 + 0.5 * az, 3.0)` on the anti-sun line. Shared: its own bean.
-- One canopy bulb core; the bonnet and wall Fresnel bases can go just below 0.
+- `shared/sky.js` `skDusk()`: `pow(0.5 + 0.5 * az, 3.0)` on the anti-sun line, also in reflections (canopy fascia). Shared: `stimming-wehv`.
+- The bonnet and wall Fresnel bases can go just below 0.
 
