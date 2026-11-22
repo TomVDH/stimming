@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.012 245); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deep vent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="../shared/gl.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm">
+<style>
+/* Deep vent: a black smoker in black water; the pointer carries the only light. */
+:root { --stage: oklch(0.07 0.012 245); }
+.stage--deepvent { background: var(--stage); cursor: none; }
+.stage--deepvent canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none; outline: none;
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+}
+.stage--deepvent canvas.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .stage--deepvent canvas { transition: none; } }
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/deepvent.svg)"></span><span class="intro-name">Deep vent</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--deepvent" id="stage">
+      <canvas tabindex="0" role="application" aria-label="A black smoker vent on the sea floor, in the dark. Your pointer carries a lure light; it shows the chimney, the smoke and the falling snow it reaches. Move the pointer to move the light. Click to flash the light. Press the arrow keys to move the light. Press F to flash. Press R to bring the light back."></canvas>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Deep vent</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="module">
+import { initPage, whenVisible, fitCanvas, pageReady, stage as mark, reduced, onReducedChange, onQuality, quality, audioKit } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { TRI_VS, program, linked, target, free, bind, tri, to, onContextLoss } from '../shared/gl.js';
+mark('libs');
+playIntro({ ready: pageReady() });
+
+const stageEl = document.getElementById('stage');
+const canvas = stageEl.querySelector('canvas');
+const fail = stageEl.querySelector('.fail');
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const jit = x => 1 + (Math.random() * 2 - 1) * x;
+
+/* ---------- the scene, in metres ---------- */
+// The floor is y = 0. The chimney mouth is the one fixed hot point.
+const MOUTH = [0.3, 3.6, 0];
+// The lure moves on this plane, in front of the chimney.
+const LURE_Z = -1.4;
+// The light rests here on arrival, beside the chimney's left flank.
+const HOME = [-0.5, 2.3, LURE_Z];
+// Water takes red first; these are its extinction per metre.
+const SIG = [0.17, 0.065, 0.05];
+// The lure is bioluminescent: a cool white with a blue cast.
+const LURE_C = [0.86, 0.94, 1.0];
+// Scene buffer scale against the canvas, per quality tier.
+const SCALE = { standard: 0.5, high: 0.7 };
+// Snow flake counts per quality tier.
+const FLAKES = { standard: 2600, high: 4200 };
+
+/* ---------- shaders ---------- */
+const NOISE_GLSL = /* glsl */`
+uniform highp sampler3D uN;
+float n3(vec3 p) { return texture(uN, p).r * 2.0 - 1.0; }
+float fbm2(vec3 p) { return n3(p) * 0.65 + n3(p * 2.03 + 0.37) * 0.35; }
+float fbm3(vec3 p) { return n3(p) * 0.55 + n3(p * 2.03 + 0.37) * 0.3 + n3(p * 4.11 + 0.71) * 0.15; }
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+`;
+
+const SCENE_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform vec3 uCam, uFw, uRt, uUp, uL, uLc;
+uniform vec2 uTan;
+uniform float uI, uT, uE, uFrame;
+${NOISE_GLSL}
+const vec3 SIG = vec3(${SIG.map(v => v.toFixed(3)).join(', ')});
+const vec3 M = vec3(${MOUTH.map(v => v.toFixed(2)).join(', ')});
+const vec3 EMBER = vec3(1.0, 0.32, 0.06);
+
+float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+
+// One spire: a tapered column that leans as it rises.
+float spire(vec3 p, vec3 b, float H, float r0, float r1, float lean) {
+  vec3 q = p - b;
+  float h = clamp(q.y / H, 0.0, 1.0);
+  q.x -= lean * h * h;
+  float bulge = 0.16 * r0 * n3(vec3(b.x * 0.37, p.y * 0.3, b.z * 0.37 + 0.5));
+  float d = length(q.xz) - mix(r0, r1, pow(h, 0.7)) - bulge;
+  return max(d, q.y - H);
+}
+// One flange: a flat ledge that droops at its lip.
+float ledge(vec3 p, vec3 c, float R, float th) {
+  vec3 q = p - c;
+  float dr = length(q.xz) - R;
+  float dy = abs(q.y + 0.1 * dot(q.xz, q.xz)) - th;
+  return min(max(dr, dy), 0.0) + length(max(vec2(dr, dy), 0.0));
+}
+// The chimney, its two side spires, two flanges and the mound.
+float vent(vec3 p) {
+  float far = length(p.xz - vec2(0.45, 0.1)) - 2.7;
+  if (far > 0.4 || p.y > 3.9) return max(far, p.y - 3.8);
+  float d = spire(p, vec3(0.45, 0.0, 0.0), 3.6, 0.85, 0.3, -0.15);
+  d = smin(d, spire(p, vec3(1.35, 0.0, 0.5), 2.1, 0.55, 0.18, 0.12), 0.22);
+  d = smin(d, spire(p, vec3(-0.45, 0.0, -0.3), 1.25, 0.45, 0.16, -0.06), 0.2);
+  d = smin(d, ledge(p, vec3(1.0, 1.3, -0.2), 0.62, 0.06), 0.1);
+  d = smin(d, ledge(p, vec3(-0.08, 2.4, -0.18), 0.46, 0.05), 0.08);
+  vec3 m = (p - vec3(0.45, -0.6, 0.15)) / vec3(2.0, 1.05, 1.7);
+  d = smin(d, (length(m) - 1.0) * 1.05, 0.25);
+  // The mouth: a shallow throat at the top of the main spire.
+  d = max(d, -(max(length(p.xz - M.xz) - 0.1, M.y - 0.2 - p.y)));
+  // Knobs, crumbs and vertical fluting break the clean shapes.
+  if (d < 0.3) d += 0.09 * fbm2(p * 0.55) + 0.016 * n3(p * 1.9) + 0.035 * n3(vec3(p.x * 1.3, p.y * 0.22, p.z * 1.3));
+  return d;
+}
+float ground(vec3 p) {
+  return p.y + 0.28 * n3(vec3(p.x * 0.05, 0.31, p.z * 0.05)) + 0.07 * n3(vec3(p.x * 0.3, 0.71, p.z * 0.3));
+}
+float map(vec3 p) { return smin(vent(p), ground(p), 0.35); }
+
+vec3 normalAt(vec3 p) {
+  const vec2 k = vec2(1.0, -1.0) * 0.004;
+  return normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
+}
+float shadow(vec3 p, vec3 l, float far) {
+  float s = 1.0, t = 0.04;
+  for (int i = 0; i < 20; i++) {
+    if (t > far) break;
+    float h = map(p + l * t);
+    s = min(s, 9.0 * h / t);
+    if (s < 0.01) break;
+    t += clamp(h, 0.05, 0.4);
+  }
+  return clamp(s, 0.0, 1.0);
+}
+
+// The plume: billows rise from the mouth, widen and bend with the current.
+float plume(vec3 p, out float heat) {
+  heat = 0.0;
+  float h = p.y - M.y;
+  if (h < 0.0 || h > 6.4) return 0.0;
+  float bend = 0.07 * h * h + 0.06 * h;
+  vec2 d = p.xz - vec2(M.x - bend, M.z + 0.04 * h);
+  float R = 0.1 + 0.27 * h + 0.02 * h * h;
+  float r = length(d) / R;
+  if (r > 1.9) return 0.0;
+  // The billows turn slowly as they rise.
+  float a = uT * 0.25 + h * 0.5;
+  d = mat2(cos(a), -sin(a), sin(a), cos(a)) * d;
+  vec3 q = vec3(d.x / sqrt(R + 0.03), (h - uT * 0.5) * 0.9, d.y / sqrt(R + 0.03)) * 0.32;
+  float n = fbm3(q + vec3(0.0, 0.0, 0.13));
+  float rr = r * (1.0 - 0.75 * n);
+  float base = exp(-rr * rr * 2.2);
+  float dens = base * (0.7 + 2.4 * n);
+  dens *= (0.3 + 0.7 * exp(-h * 0.3)) * smoothstep(6.4, 4.0, h);
+  // A dense black jet stands just above the mouth.
+  float jet = exp(-r * r * 4.0) * exp(-h * 2.2);
+  heat = jet * exp(-h * 2.0);
+  return max(dens + jet * 1.4, 0.0);
+}
+
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 ro = uCam;
+  vec3 rd = normalize(uFw + ndc.x * uTan.x * uRt + ndc.y * uTan.y * uUp);
+  float jit = hash12(gl_FragCoord.xy + fract(uFrame * 0.618) * 97.0);
+
+  // March the solid scene.
+  float t = 0.5, tHit = 28.0;
+  bool hit = false;
+  for (int i = 0; i < 110; i++) {
+    vec3 p = ro + rd * t;
+    float d = map(p);
+    if (d < 0.0015 * t) { hit = true; tHit = t; break; }
+    t += d * 0.75;
+    if (t > 28.0) break;
+  }
+
+  vec3 col = vec3(0.0);
+  if (hit) {
+    vec3 p = ro + rd * tHit;
+    vec3 n = normalAt(p);
+    float isVent = smoothstep(-0.05, 0.25, ground(p) - vent(p));
+    // Sulfide black, rust and ochre bands, and pale mats on the ledges.
+    // Rust runs down in streaks; ochre sits in blotches.
+    float band = smoothstep(0.05, 0.45, n3(vec3(p.x * 0.9, p.y * 0.12, p.z * 0.9) + 0.2)) * smoothstep(-0.2, 0.3, n3(p * 0.45 + 1.7));
+    float ochre = smoothstep(0.2, 0.55, n3(p * 0.6 + 3.1));
+    vec3 alb = vec3(0.035, 0.032, 0.03);
+    alb = mix(alb, vec3(0.24, 0.07, 0.025), band * 0.8);
+    alb = mix(alb, vec3(0.2, 0.11, 0.045), ochre * 0.45);
+    float mat = smoothstep(0.6, 0.9, n.y) * smoothstep(0.0, 0.4, n3(p * 0.5 + 7.0)) * smoothstep(0.6, 1.2, p.y);
+    alb = mix(alb, vec3(0.38, 0.36, 0.32), mat * 0.6);
+    vec3 sed = vec3(0.1, 0.092, 0.08) * (0.85 + 0.3 * n3(vec3(p.x * 0.6, 0.4, p.z * 0.6)));
+    alb = mix(sed, alb, isVent);
+
+    vec3 lv = uL - p;
+    float dl = length(lv);
+    vec3 l = lv / dl;
+    float ndl = max(dot(n, l), 0.0);
+    float sh = ndl > 0.0 ? shadow(p + n * 0.015, l, dl - 0.05) : 0.0;
+    vec3 att = exp(-SIG * (dl + tHit)) / (dl * dl + 0.04);
+    vec3 Li = uLc * uI * att * sh;
+    col = alb * ndl * Li;
+    // Wet sheen, and brassy sulfide crystals that glint.
+    vec3 hv = normalize(l - rd);
+    float nh = max(dot(n, hv), 0.0);
+    float glint = step(0.993, hash12(floor(p.xy * 55.0) + floor(p.z * 55.0) * 7.13)) * isVent;
+    col += Li * ndl * (pow(nh, 24.0) * 0.06 + glint * pow(nh, 120.0) * 4.0 * vec3(1.0, 0.78, 0.42));
+    // The mouth's dull ember warms the rim.
+    vec3 le = M + vec3(0.0, 0.08, 0.0) - p;
+    float de = length(le);
+    col += alb * max(dot(n, le / de), 0.0) * uE * EMBER * exp(-SIG * (de + tHit)) / (de * de + 0.015);
+  }
+
+  // Backscatter: the water glows round the lure, a single-scatter line integral.
+  vec3 v = uL - ro;
+  float b = dot(v, rd);
+  float h2 = max(dot(v, v) - b * b, 1e-5);
+  float hh = sqrt(h2);
+  float glow = (atan((tHit - b) / hh) - atan(-b / hh)) / hh;
+  vec3 scat = uLc * uI * 0.005 * glow * exp(-SIG * (clamp(b, 0.0, tHit) + hh) - 0.12 * hh);
+  // The lure itself: a small hot core.
+  if (b > 0.0 && b < tHit) scat += uLc * (uI * 0.25) * (exp(-h2 / 0.0003) * 6.0 + exp(-h2 / 0.003) * 0.25);
+
+  // March the plume through its box, front to back.
+  vec3 bmin = vec3(-5.2, M.y - 0.05, -2.4), bmax = vec3(1.7, 10.2, 2.4);
+  vec3 inv = 1.0 / rd;
+  vec3 ta = (bmin - ro) * inv, tb = (bmax - ro) * inv;
+  vec3 tlo = min(ta, tb), thi = max(ta, tb);
+  float t0 = max(max(tlo.x, tlo.y), max(tlo.z, 0.0)), t1 = min(min(thi.x, thi.y), min(thi.z, tHit));
+  float T = 1.0, zOpaque = tHit;
+  vec3 smoke = vec3(0.0);
+  if (t1 > t0) {
+    const int N = 44;
+    float dt = (t1 - t0) / float(N);
+    float tt = t0 + dt * jit;
+    for (int i = 0; i < N; i++) {
+      vec3 p = ro + rd * tt;
+      float heat;
+      float dens = plume(p, heat);
+      if (dens > 0.004) {
+        float tr = exp(-dens * 7.0 * dt);
+        vec3 lv = uL - p;
+        float dl = length(lv);
+        vec3 ln = lv / dl;
+        float hx;
+        float occ = plume(p + ln * min(0.35, dl), hx);
+        vec3 Li = uLc * uI * exp(-SIG * (dl + tt)) / (dl * dl + 0.05) * exp(-occ * 1.1);
+        // Henyey-Greenstein: smoke scatters forward, so a light behind it rims the billows.
+        float g = 0.45, c = dot(ln, rd);
+        float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * c, 1.5);
+        vec3 S = Li * ph * vec3(0.22, 0.2, 0.18) + EMBER * uE * heat * 6.0 * exp(-SIG * tt);
+        smoke += T * S * (1.0 - tr);
+        T *= tr;
+        if (T < 0.5 && zOpaque == tHit) zOpaque = tt;
+        if (T < 0.02) break;
+      }
+      tt += dt;
+    }
+  }
+  col = col * T + scat * mix(T, 1.0, 0.45) + smoke;
+  o = vec4(col, min(tHit, zOpaque));
+}`;
+
+// Marine snow: each flake falls on its own path, set by its seed alone.
+const SNOW_VS = /* glsl */`#version 300 es
+precision highp float;
+in vec4 aSeed;
+uniform vec3 uCam, uFw, uRt, uUp, uL, uLc;
+uniform vec2 uTan;
+uniform float uI, uT, uFocal, uFocus;
+out vec3 vCol;
+out float vDist;
+const vec3 SIG = vec3(${SIG.map(v => v.toFixed(3)).join(', ')});
+void main() {
+  vec3 box0 = vec3(-6.0, -0.4, -5.2), box = vec3(12.0, 9.5, 11.5);
+  vec3 p = box0 + aSeed.xyz * box;
+  p.y = box0.y + mod(aSeed.y * box.y - uT * (0.05 + 0.08 * aSeed.w), box.y);
+  p.x += sin(uT * 0.31 + aSeed.w * 31.0) * 0.12;
+  p.z += cos(uT * 0.23 + aSeed.w * 17.0) * 0.12;
+  vec3 v = p - uCam;
+  float z = dot(v, uFw);
+  vDist = length(v);
+  if (z < 0.25) { gl_Position = vec4(2.0, 2.0, 0.0, 1.0); gl_PointSize = 0.0; vCol = vec3(0.0); return; }
+  gl_Position = vec4(dot(v, uRt) / (z * uTan.x), dot(v, uUp) / (z * uTan.y), 0.0, 1.0);
+  // A flake is 2 to 6 mm; near and far ones blur out of focus.
+  float r = (0.002 + 0.004 * aSeed.w) * uFocal / z;
+  float coc = 0.09 * abs(1.0 / z - 1.0 / uFocus) * uFocal;
+  float s = max(r, coc) + 0.6;
+  gl_PointSize = min(2.0 * s, 72.0);
+  vec3 lv = uL - p;
+  float dl2 = dot(lv, lv);
+  // Forward scatter: flakes between the light and the eye glow most.
+  float g = 0.55, c = dot(lv / sqrt(dl2), normalize(v));
+  float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * c, 1.5) * 0.25;
+  float spread = (r + 0.6) * (r + 0.6) / (s * s);
+  vCol = uLc * uI * exp(-SIG * (sqrt(dl2) + vDist)) / (dl2 + 0.02) * ph * spread * (0.5 + aSeed.w) * 0.55;
+}`;
+const SNOW_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vDist;
+uniform sampler2D uScene;
+uniform vec2 uRes;
+out vec4 o;
+void main() {
+  vec2 c = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(c, c);
+  if (r2 > 1.0) discard;
+  // A flake behind rock or thick smoke does not show.
+  float z = texture(uScene, gl_FragCoord.xy / uRes).a;
+  float vis = smoothstep(0.05, -0.15, vDist - z);
+  o = vec4(vCol * (1.0 - r2) * (1.0 - r2) * vis, 0.0);
+}`;
+
+// Bloom: a bright pass, then a two-way blur at quarter size.
+const BRIGHT_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc, uSnow;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb + texture(uSnow, vUv).rgb;
+  float l = max(c.r, max(c.g, c.b));
+  o = vec4(c * smoothstep(0.35, 1.6, l), 1.0);
+}`;
+const BLUR_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+out vec4 o;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb * 0.227;
+  c += (texture(uSrc, vUv + uDir * 1.38).rgb + texture(uSrc, vUv - uDir * 1.38).rgb) * 0.316;
+  c += (texture(uSrc, vUv + uDir * 3.23).rgb + texture(uSrc, vUv - uDir * 3.23).rgb) * 0.07;
+  o = vec4(c, 1.0);
+}`;
+const COMP_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene, uSnow, uBloom;
+uniform vec2 uMouth, uRes;
+uniform float uAsp, uT, uFrame, uExpo;
+out vec4 o;
+float hash12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+void main() {
+  vec2 uv = vUv;
+  // Heat shimmer: hot water over the mouth bends what is behind it.
+  float dy = uv.y - uMouth.y, dx = (uv.x - uMouth.x) * uAsp;
+  float w = 0.02 + max(dy, 0.0) * 0.35;
+  float hm = exp(-dx * dx / (w * w)) * smoothstep(-0.01, 0.02, dy) * exp(-max(dy, 0.0) * 7.0);
+  uv += hm * 0.0035 * vec2(sin(uv.y * 160.0 - uT * 9.0 + sin(uv.x * 70.0)), cos(uv.y * 120.0 - uT * 7.0));
+  vec3 c = texture(uScene, uv).rgb + texture(uSnow, vUv).rgb + texture(uBloom, vUv).rgb * 0.55;
+  c *= uExpo;
+  // Filmic shoulder; the dark keeps its depth.
+  c = c * (2.51 * c + 0.03) / (c * (2.43 * c + 0.59) + 0.14);
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.9;
+  c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+  // Grain and dither keep the dark gradients from banding.
+  float g = hash12(gl_FragCoord.xy + fract(uFrame * 0.618) * 131.0) - 0.5;
+  c += g * (2.2 / 255.0) + g * 0.012 * (1.0 - c);
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------- noise volume ---------- */
+// Periodic gradient noise: 64 voxels a side, 8 lattice cells, so it tiles.
+function bakeNoise(N = 64, P = 8) {
+  let s = 0x9e3779b9;
+  const rnd = () => { s |= 0; s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const G = new Float32Array(P * P * P * 3);
+  for (let i = 0; i < P * P * P; i++) {
+    const z = rnd() * 2 - 1, a = rnd() * Math.PI * 2, r = Math.sqrt(1 - z * z);
+    G[i * 3] = r * Math.cos(a); G[i * 3 + 1] = r * Math.sin(a); G[i * 3 + 2] = z;
+  }
+  const out = new Uint8Array(N * N * N), k = P / N;
+  const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+  const dg = (ix, iy, iz, fx, fy, fz) => {
+    const g = (((iz % P) * P + (iy % P)) * P + (ix % P)) * 3;
+    return G[g] * fx + G[g + 1] * fy + G[g + 2] * fz;
+  };
+  let o = 0;
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const px = x * k, py = y * k, pz = z * k;
+    const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
+    const fx = px - ix, fy = py - iy, fz = pz - iz;
+    const u = fade(fx), v = fade(fy), w = fade(fz);
+    const l = (a, b, t) => a + (b - a) * t;
+    const n = l(
+      l(l(dg(ix, iy, iz, fx, fy, fz), dg(ix + 1, iy, iz, fx - 1, fy, fz), u), l(dg(ix, iy + 1, iz, fx, fy - 1, fz), dg(ix + 1, iy + 1, iz, fx - 1, fy - 1, fz), u), v),
+      l(l(dg(ix, iy, iz + 1, fx, fy, fz - 1), dg(ix + 1, iy, iz + 1, fx - 1, fy, fz - 1), u), l(dg(ix, iy + 1, iz + 1, fx, fy - 1, fz - 1), dg(ix + 1, iy + 1, iz + 1, fx - 1, fy - 1, fz - 1), u), v), w);
+    out[o++] = clamp(Math.round(128 + n * 175), 0, 255);
+  }
+  return out;
+}
+const NOISE = bakeNoise();
+
+/* ---------- state ---------- */
+const lure = { x: HOME[0], y: HOME[1], vx: 0, vy: 0, tx: HOME[0], ty: HOME[1] };
+let flash = 0, simT = 0, amb = 1, frameN = 0, lastInput = performance.now(), lastDraw = 0, lastT = performance.now();
+let visible = true, raf = 0, timer = 0, reduce = reduced();
+let gl = null, P = null, vao = null, snowVao = null, noiseTex = null, T = {}, flakeCount = 0;
+let cam = null, rung = 0, slowFor = 0, runFor = 0, avgDt = 1 / 60;
+
+const ui = initPage({ id: 'deepvent', bar: {
+  slider: { label: 'Light', min: 0, max: 1, step: 0.01, value: 0.55, onInput: () => { poke(); } },
+  actions: [{ verb: 'flash', label: 'Flash', key: 'F', onPress: () => doFlash() }],
+  quality: true,
+  reset: () => resetLight(),
+  keys: [['move', 'move the light'], ['click', 'flash'], ['← → ↑ ↓', 'move the light']],
+  help: [['move', 'Move the light'], ['drag', 'Move the light'], ['click', 'Flash the light'],
+    ['← → ↑ ↓', 'Move the light'], ['F', 'Flash the light'], ['R', 'Bring the light back']],
+} });
+const lightLevel = () => ui.slider?.value ?? 0.55;
+
+/* ---------- camera ---------- */
+// The shot recomposes on a narrow stage: a wider lens and a higher aim.
+function camera(w, h) {
+  const asp = w / h;
+  const tanX = Math.max(0.55 * asp, 0.47), tanY = tanX / asp;
+  const narrow = asp < 1;
+  const eye = [narrow ? 0.15 : -0.1, narrow ? 2.1 : 1.75, narrow ? -5.3 : -6.6];
+  const look = [narrow ? 0.05 : -0.35, narrow ? 4.0 : 2.75, 0];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const fw = norm(sub(look, eye)), rt = norm(cross([0, 1, 0], fw)), up = cross(fw, rt);
+  return { eye, fw, rt, up, tan: [tanX, tanY], asp };
+}
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// World point to stage uv, 0 to 1 from the bottom left.
+function project(c, p) {
+  const v = [p[0] - c.eye[0], p[1] - c.eye[1], p[2] - c.eye[2]], z = dot(v, c.fw);
+  return [0.5 + 0.5 * dot(v, c.rt) / (z * c.tan[0]), 0.5 + 0.5 * dot(v, c.up) / (z * c.tan[1])];
+}
+// Stage point to a lure position on its plane.
+function lureAt(clientX, clientY) {
+  const r = canvas.getBoundingClientRect(), c = cam;
+  const nx = ((clientX - r.left) / r.width) * 2 - 1, ny = 1 - ((clientY - r.top) / r.height) * 2;
+  const d = [0, 1, 2].map(i => c.fw[i] + nx * c.tan[0] * c.rt[i] + ny * c.tan[1] * c.up[i]);
+  const t = (LURE_Z - c.eye[2]) / d[2];
+  return [clamp(c.eye[0] + d[0] * t, -4.5, 3.2), clamp(c.eye[1] + d[1] * t, 0.25, 7.5)];
+}
+
+/* ---------- GL setup ---------- */
+async function setup() {
+  gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('no webgl2');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('no float targets');
+  P = await linked(gl, {
+    scene: program(gl, TRI_VS, SCENE_FS),
+    snow: program(gl, SNOW_VS, SNOW_FS, ['aSeed']),
+    bright: program(gl, TRI_VS, BRIGHT_FS),
+    blur: program(gl, TRI_VS, BLUR_FS),
+    comp: program(gl, TRI_VS, COMP_FS),
+  });
+  vao = gl.createVertexArray();
+  noiseTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, 64, 64, 64, 0, gl.RED, gl.UNSIGNED_BYTE, NOISE);
+  for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_3D, p, gl.LINEAR);
+  for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.REPEAT);
+  buildSnow();
+  T = {};
+}
+function buildSnow() {
+  const n = Math.round(FLAKES[quality()] * (rung >= 3 ? 0.5 : 1));
+  if (n === flakeCount && snowVao) return;
+  flakeCount = n;
+  const seeds = new Float32Array(n * 4);
+  for (let i = 0; i < seeds.length; i++) seeds[i] = Math.random();
+  if (snowVao) gl.deleteVertexArray(snowVao);
+  snowVao = gl.createVertexArray();
+  gl.bindVertexArray(snowVao);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+}
+// Targets follow the canvas size, the quality and the slow-frame rung.
+function fit() {
+  const { w, h, W, H } = fitCanvas(canvas, { maxDpr: rung >= 1 ? 1 : 2 });
+  cam = camera(w, h);
+  const s = SCALE[quality()] * (rung >= 2 ? 0.75 : 1);
+  const sw = Math.max(2, Math.round(W * s)), sh = Math.max(2, Math.round(H * s));
+  if (!T.scene || T.scene.w !== sw || T.scene.h !== sh) {
+    for (const k of Object.keys(T)) free(gl, T[k]);
+    T.scene = target(gl, sw, sh, { format: gl.RGBA16F, filter: gl.LINEAR });
+    T.snow = target(gl, sw, sh, { format: gl.RGBA16F, filter: gl.LINEAR });
+    const bw = Math.max(2, sw >> 2), bh = Math.max(2, sh >> 2);
+    T.b1 = target(gl, bw, bh, { format: gl.RGBA16F });
+    T.b2 = target(gl, bw, bh, { format: gl.RGBA16F });
+  }
+  return { W, H };
+}
+
+/* ---------- draw ---------- */
+function camUniforms(u) {
+  gl.uniform3fv(u.uCam, cam.eye); gl.uniform3fv(u.uFw, cam.fw); gl.uniform3fv(u.uRt, cam.rt); gl.uniform3fv(u.uUp, cam.up);
+  gl.uniform2fv(u.uTan, cam.tan);
+  gl.uniform3f(u.uL, lure.x, lure.y + bob(), LURE_Z);
+  gl.uniform3fv(u.uLc, flash > 0 ? LURE_C.map((c, i) => c + (1 - c) * flash * 0.6) : LURE_C);
+  gl.uniform1f(u.uI, intensity());
+}
+// The light bobs a little on its line.
+const bob = () => Math.sin(simT * 0.9) * 0.025;
+const intensity = () => (1.2 + 5.5 * lightLevel() ** 1.3) * (1 + flash * 5);
+
+function draw() {
+  const { W, H } = fit();
+  frameN++;
+  // Scene: rock, floor, plume and the water's glow.
+  gl.disable(gl.BLEND);
+  to(gl, T.scene);
+  gl.useProgram(P.scene.p);
+  let u = P.scene.u;
+  camUniforms(u);
+  gl.uniform1f(u.uT, simT);
+  gl.uniform1f(u.uE, 0.035);
+  gl.uniform1f(u.uFrame, frameN);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+  gl.uniform1i(u.uN, 0);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // Snow draws into its own target; the scene alpha gives the depth.
+  to(gl, T.snow);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P.snow.p);
+  u = P.snow.u;
+  camUniforms(u);
+  gl.uniform1f(u.uT, simT);
+  gl.uniform1f(u.uFocal, (T.scene.h * 0.5) / cam.tan[1]);
+  gl.uniform1f(u.uFocus, 6.6);
+  gl.uniform2f(u.uRes, T.scene.w, T.scene.h);
+  bind(gl, P.snow, 'uScene', 1, T.scene.tex);
+  gl.bindVertexArray(snowVao);
+  gl.drawArrays(gl.POINTS, 0, flakeCount);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(vao);
+  // Bloom.
+  gl.useProgram(P.bright.p);
+  bind(gl, P.bright, 'uSrc', 0, T.scene);
+  bind(gl, P.bright, 'uSnow', 1, T.snow);
+  tri(gl, T.b1);
+  gl.useProgram(P.blur.p);
+  bind(gl, P.blur, 'uSrc', 0, T.b1);
+  gl.uniform2f(P.blur.u.uDir, 1 / T.b1.w, 0);
+  tri(gl, T.b2);
+  bind(gl, P.blur, 'uSrc', 0, T.b2);
+  gl.uniform2f(P.blur.u.uDir, 0, 1 / T.b1.h);
+  tri(gl, T.b1);
+  // Composite to the screen.
+  gl.useProgram(P.comp.p);
+  u = P.comp.u;
+  bind(gl, P.comp, 'uScene', 0, T.scene);
+  bind(gl, P.comp, 'uSnow', 1, T.snow);
+  bind(gl, P.comp, 'uBloom', 2, T.b1);
+  gl.uniform2fv(u.uMouth, project(cam, MOUTH));
+  gl.uniform1f(u.uAsp, cam.asp);
+  gl.uniform1f(u.uT, simT);
+  gl.uniform1f(u.uFrame, frameN);
+  gl.uniform1f(u.uExpo, 1.25);
+  tri(gl, null);
+}
+
+/* ---------- frame loop ---------- */
+// Lively: input, a moving light or a flash. Drifting: plume and snow at 30 fps.
+const moving = () => Math.abs(lure.tx - lure.x) + Math.abs(lure.ty - lure.y) + Math.abs(lure.vx) + Math.abs(lure.vy) > 1e-3;
+const lively = now => now - lastInput < 1200 || moving() || flash > 0.002;
+const asleep = now => now - lastInput > 60000;
+function frame(now) {
+  raf = 0;
+  if (!visible || !gl) return;
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  const live = lively(now);
+  lastT = now;
+  let go = true;
+  try {
+    step(dt, now);
+    draw();
+    watchdog(now - lastDraw, live);
+    lastDraw = now;
+  } finally {
+    go = visible && (lively(now) || amb > 0.001);
+    if (!go) settle();
+    else if (lively(now)) raf = requestAnimationFrame(frame);
+    // Drifting waits on a timer, so it asks for 30 frames a second at most.
+    else timer = setTimeout(() => { timer = 0; raf = requestAnimationFrame(frame); }, Math.max(0, 33 - (performance.now() - now)));
+  }
+}
+function step(dt, now) {
+  // Ambient motion eases to a stop when asleep or under reduced motion.
+  const ambTo = reduce || asleep(now) ? 0 : 1;
+  amb += (ambTo - amb) * Math.min(1, dt * 2.2);
+  if (Math.abs(ambTo - amb) < 0.001) amb = ambTo;
+  simT += dt * amb;
+  // The lure trails the pointer on a soft spring, like a lure on a line.
+  const k = reduce ? 60 : 26, c = 2 * Math.sqrt(k) * (reduce ? 1 : 0.82);
+  lure.vx += ((lure.tx - lure.x) * k - lure.vx * c) * dt;
+  lure.vy += ((lure.ty - lure.y) * k - lure.vy * c) * dt;
+  lure.x += lure.vx * dt;
+  lure.y += lure.vy * dt;
+  if (!moving()) { lure.x = lure.tx; lure.y = lure.ty; lure.vx = lure.vy = 0; }
+  flash = flash > 0.002 ? flash * Math.exp(-dt * 2.4) : 0;
+  sound(dt);
+}
+function wake() {
+  // Input cuts a drifting wait short, so a gesture answers next frame.
+  if (timer) { clearTimeout(timer); timer = 0; }
+  if (raf || !visible || !gl) return;
+  lastT = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+function poke() { lastInput = performance.now(); wake(); }
+
+// Slow frames step quality down one rung; it never steps back up.
+function watchdog(ms, live) {
+  if (!live || rung >= 3 || ms <= 0 || ms > 200) return;
+  runFor += ms;
+  avgDt += (ms / 1000 - avgDt) * 0.1;
+  if (runFor < 4000) return;
+  slowFor = avgDt > 1 / 38 ? slowFor + ms : 0;
+  if (slowFor > 2000) { rung++; slowFor = 0; runFor = 2000; if (rung >= 3) buildSnow(); }
+}
+
+/* ---------- input ---------- */
+// A press is a drag after 8 px, a hold after 260 ms; otherwise a tap.
+let press = null;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture?.(e.pointerId);
+  press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), drag: false, hold: false };
+  press.timer = setTimeout(() => { if (press) press.hold = true; }, 260);
+  if (e.pointerType !== 'mouse') aim(e);
+  poke();
+});
+canvas.addEventListener('pointermove', e => {
+  if (press && e.pointerId === press.id && !press.drag && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) press.drag = true;
+  // A mouse moves the light on hover; touch moves it while pressed.
+  if (e.pointerType === 'mouse' || press) aim(e);
+});
+const endPress = tap => {
+  if (!press) return;
+  clearTimeout(press.timer);
+  if (tap && !press.drag && !press.hold) doFlash();
+  press = null;
+};
+canvas.addEventListener('pointerup', e => { if (press && e.pointerId === press.id) endPress(true); });
+canvas.addEventListener('pointercancel', () => endPress(false));
+canvas.addEventListener('lostpointercapture', () => endPress(false));
+function aim(e) {
+  if (!cam) return;
+  const [x, y] = lureAt(e.clientX, e.clientY);
+  lure.tx = x; lure.ty = y;
+  poke();
+}
+canvas.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+  if (!d) return;
+  e.preventDefault();
+  lure.tx = clamp(lure.tx + d[0] * 0.3, -4.5, 3.2);
+  lure.ty = clamp(lure.ty + d[1] * 0.3, 0.25, 7.5);
+  poke();
+});
+// Reset sits in Settings; the toy binds its R key.
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented) return;
+  if (e.target.closest?.('input, textarea, select, [contenteditable], .s2-sheet')) return;
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); resetLight(); }
+});
+function doFlash() {
+  flash = reduce ? 0.5 : 1;
+  ping();
+  poke();
+}
+function resetLight() {
+  lure.tx = HOME[0]; lure.ty = HOME[1];
+  poke();
+}
+
+/* ---------- sound ---------- */
+// The vent roars low under a hiss. The moving light whooshes. A flash rings.
+const kit = audioKit({ keys: new Set(['f', 'F', 'r', 'R', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) });
+let A = null;
+function voices() {
+  const ac = kit.live();
+  if (!ac || !kit.noise) return null;
+  if (A) return A;
+  const src = rate => { const s = ac.createBufferSource(); s.buffer = kit.noise; s.loop = true; s.playbackRate.value = rate; s.start(); return s; };
+  const filt = (type, f, q) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const gain = v => { const g = ac.createGain(); g.gain.value = v; return g; };
+  const ventG = gain(0), ventPan = ac.createStereoPanner();
+  src(0.37).connect(filt('lowpass', 95, 0.9)).connect(filt('lowpass', 160, 0.7)).connect(gain(2.6)).connect(ventG);
+  src(1.13).connect(filt('bandpass', 1500, 0.7)).connect(gain(0.05)).connect(ventG);
+  ventG.connect(ventPan).connect(kit.out);
+  const swishF = filt('bandpass', 500, 1.4), swishG = gain(0), swishPan = ac.createStereoPanner();
+  src(0.8).connect(swishF).connect(swishG).connect(swishPan).connect(kit.out);
+  // A soft watery echo for the flash.
+  const echo = ac.createDelay(1), fb = gain(0.32), damp = filt('lowpass', 1600, 0.5);
+  echo.delayTime.value = 0.29;
+  echo.connect(damp).connect(fb).connect(echo);
+  damp.connect(gain(0.6)).connect(kit.out);
+  A = { ac, ventG, ventPan, swishF, swishG, swishPan, echo };
+  return A;
+}
+function sound(dt) {
+  const v = voices();
+  if (!v) return;
+  const t = v.ac.currentTime, sp = Math.hypot(lure.vx, lure.vy);
+  const near = clamp(1 - Math.hypot(lure.x - MOUTH[0], lure.y - 2) / 4);
+  v.ventG.gain.setTargetAtTime(0.32 * amb * (0.65 + 0.35 * near) * (0.9 + 0.1 * Math.sin(simT * 1.7)), t, 0.25);
+  v.ventPan.pan.setTargetAtTime(clamp((project(cam, MOUTH)[0] - 0.5) * 1.6, -1, 1), t, 0.3);
+  v.swishG.gain.setTargetAtTime(Math.min(0.22, sp * 0.05), t, 0.06);
+  v.swishF.frequency.setTargetAtTime(260 + Math.min(sp, 10) * 110, t, 0.06);
+  v.swishPan.pan.setTargetAtTime(clamp((project(cam, [lure.x, lure.y, LURE_Z])[0] - 0.5) * 1.8, -1, 1), t, 0.06);
+}
+function ping() {
+  const v = voices();
+  if (!v) return;
+  const ac = v.ac, t = ac.currentTime + 0.004, f = 560 * jit(0.07), lvl = 0.16 * jit(0.2);
+  const g = ac.createGain(), pan = ac.createStereoPanner();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(lvl, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.9);
+  pan.pan.value = clamp((project(cam, [lure.x, lure.y, LURE_Z])[0] - 0.5) * 1.8, -1, 1);
+  g.connect(pan).connect(kit.out);
+  pan.connect(v.echo);
+  for (const [mul, a] of [[1, 1], [2.76, 0.28], [5.4, 0.08]]) {
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.frequency.value = f * mul * jit(0.004);
+    og.gain.value = a;
+    o.connect(og).connect(g);
+    o.start(t); o.stop(t + 2);
+  }
+}
+// The loop has stopped: hush the voices and let the context sleep.
+function settle() {
+  if (A) { const t = A.ac.currentTime; A.ventG.gain.setTargetAtTime(0, t, 0.3); A.swishG.gain.setTargetAtTime(0, t, 0.05); }
+  kit.rest(() => !raf && !timer);
+}
+
+/* ---------- life cycle ---------- */
+whenVisible(stageEl, on => {
+  visible = on;
+  if (on) wake();
+  else { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; settle(); }
+});
+onReducedChange(v => { reduce = v; poke(); });
+onQuality(() => { if (gl) { buildSnow(); poke(); } });
+new ResizeObserver(() => { if (gl && !raf && !timer) draw(); }).observe(stageEl);
+onContextLoss(canvas, {
+  lost: () => { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; gl = null; },
+  restored: async () => { snowVao = null; flakeCount = 0; await setup(); poke(); },
+  failed: () => fail.removeAttribute('hidden'),
+});
+
+mark('build');
+try {
+  await setup();
+  // Under reduced motion the plume and snow stand still from the start.
+  if (reduce) amb = 0;
+  // One frame and a finish, so no compile work lands after the intro.
+  draw();
+  gl.finish();
+  canvas.classList.add('on');
+  mark('first-frame');
+  poke();
+} catch (err) {
+  console.error(err);
+  fail.removeAttribute('hidden');
+  ui.hideControls?.();
+  mark('first-frame');
+}
+</script>
+</body>
+</html>
