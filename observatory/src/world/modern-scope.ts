@@ -4,7 +4,7 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CircleGeometry, CylinderGeometry, DoubleSide,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
   MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
-  SphereGeometry, TubeGeometry, Vector2, Vector3,
+  SphereGeometry, TorusGeometry, TubeGeometry, Vector2, Vector3,
 } from 'three';
 import type { Material, MeshStandardMaterialParameters } from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
@@ -368,7 +368,8 @@ function domeEnv(): CanvasTexture {
 
 /* ---------- materials ---------- */
 type MatKey = 'white' | 'black' | 'accent' | 'stainless' | 'darkSteel' | 'zinc' | 'flock' | 'rubber' | 'carbon'
-  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA' | 'ledW';
+  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA' | 'ledW'
+  | 'graphite' | 'webbing' | 'stitch';
 type Mats = Record<MatKey, MeshStandardMaterial>;
 
 // The hero's convention: the env map adds reflections only.
@@ -395,6 +396,11 @@ function materials(env: CanvasTexture): Mats {
     black: std('black', { color: 0x16181c, metalness: 0.55, roughness: 0.32, roughnessMap: grain }),
     // White anodised nodes, caps and trim: brighter and glossier than the powder coat.
     accent: std('accent', { color: 0xf4f5f7, metalness: 0.25, roughness: 0.22 }),
+    // Satin graphite on the arms' cover plates: a step off the gloss black.
+    graphite: std('graphite', { color: 0x2a2d32, metalness: 0.35, roughness: 0.55, roughnessMap: grain }),
+    // The shroud's seam: a woven tape, and its stitches.
+    webbing: std('webbing', { color: 0x1d1e21, metalness: 0, roughness: 0.85 }),
+    stitch: std('stitch', { color: 0x4a4e55, metalness: 0, roughness: 0.9 }),
     // Polished stainless rings and bands.
     stainless: std('stainless', { color: 0xd0d4d9, metalness: 1, roughness: 0.14 }),
     darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.9, roughness: 0.38 }),
@@ -446,6 +452,22 @@ function bundle(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][]): v
   }
 }
 
+// A drag chain: hinged plastic links that carry the cables round a moving joint.
+// side: the direction the links' pins run in.
+function chain(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][], side: Vector3): void {
+  const curve = new CatmullRomCurve3(pts.map(([x, y, z]) => new Vector3(x, y, z)));
+  const n = Math.max(2, Math.floor(curve.getLength() / 0.034));
+  for (let i = 0; i <= n; i++) {
+    const p = curve.getPointAt(i / n), t = curve.getTangentAt(i / n);
+    const up = new Vector3().crossVectors(side, t).normalize(), sd = new Vector3().crossVectors(t, up).normalize();
+    k.put(Pc.box, M.rubber, boxAt(p, sd, up, t, 0.07, 0.04, 0.03));
+    // Each link shows a pin head on both side plates.
+    for (const d of [-1, 1]) {
+      k.put(Pc.socket, M.zinc, stand(p.clone().addScaledVector(sd, d * 0.036), sd.clone().multiplyScalar(d), 0, 0.6));
+    }
+  }
+}
+
 /* ---------- the pier: it never moves ---------- */
 function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   // A steel base plate, with a levelling bolt at each corner.
@@ -454,7 +476,9 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
     k.add(M.stainless, cylY(0.035, 0.06, 0.1, 6).translate(x, 0, z), cylY(0.012, 0.1, 0.16, 12).translate(x, 0, z));
   }
   // The column: a tapered octagon in white powder coat, faceted.
-  const col = new CylinderGeometry(0.42, 0.56, PIER_TOP - 0.06, 8).translate(0, (PIER_TOP + 0.06) / 2, 0).toNonIndexed();
+  // A turn of an eighth puts a flat face on each axis.
+  const col = new CylinderGeometry(0.42, 0.56, PIER_TOP - 0.06, 8).rotateY(Math.PI / 8)
+    .translate(0, (PIER_TOP + 0.06) / 2, 0).toNonIndexed();
   col.computeVertexNormals();
   k.add(M.white, col);
   // The top flange and the fixed azimuth drum.
@@ -468,14 +492,28 @@ function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.stainless, turn(ringProfile(0.85, 0.856, DRUM_Y0 + 0.05, DRUM_Y0 + 0.09, 0.002), 160));
   k.add(M.ledW, turn(ringProfile(0.85, 0.853, DRUM_Y0 + 0.11, DRUM_Y0 + 0.118, 0.001), 160));
   // The control box on the column's south face, with a status screen and lamps.
-  k.add(M.black, chamferBox(0.36, 0.42, 0.16, 0.014).translate(0, 0.6, 0.56));
-  k.add(M.display, new BoxGeometry(0.22, 0.09, 0.006).translate(0, 0.69, 0.643));
+  k.add(M.black, chamferBox(0.36, 0.42, 0.16, 0.014).translate(0, 0.6, 0.52));
+  k.add(M.display, new BoxGeometry(0.22, 0.09, 0.006).translate(0, 0.69, 0.603));
   for (let i = 0; i < 3; i++) {
-    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(-0.06 + i * 0.06, 0.56, 0.64), Z, 0, 1));
+    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(-0.06 + i * 0.06, 0.56, 0.6), Z, 0, 1));
   }
-  for (const dx of [-0.1, 0, 0.1]) k.put(Pc.socket, M.stainless, stand(new Vector3(dx, 0.392, 0.56), new Vector3(0, -1, 0), 0, 1.6));
+  for (const dx of [-0.1, 0, 0.1]) k.put(Pc.socket, M.stainless, stand(new Vector3(dx, 0.392, 0.52), new Vector3(0, -1, 0), 0, 1.6));
+  // A service hatch on the north face, leaning with the taper, with vent slots.
+  const tilt = Math.atan((0.14 / (PIER_TOP - 0.06)) * Math.cos(Math.PI / 8));
+  const hatch = new Matrix4().makeRotationX(tilt).setPosition(0, 0.45, -0.467);
+  k.add(M.white, chamferBox(0.3, 0.46, 0.012, 0.004).applyMatrix4(hatch));
+  for (let i = 0; i < 6; i++) {
+    k.add(M.flock, new BoxGeometry(0.18, 0.012, 0.004).translate(0, -0.08 + i * 0.03, -0.007).applyMatrix4(hatch));
+  }
+  const hn = new Vector3(0, Math.sin(tilt), -Math.cos(tilt));
+  for (const [x, y] of [[-0.125, -0.2], [0.125, -0.2], [-0.125, 0.2], [0.125, 0.2]] as P[]) {
+    k.put(Pc.socket, M.stainless, stand(new Vector3(x, y, -0.006).applyMatrix4(hatch), hn, 0, 0.9));
+  }
+  // The azimuth encoder's read head, beside the band, with its lamp.
+  k.add(M.black, chamferBox(0.05, 0.07, 0.12, 0.006).translate(0.88, DRUM_Y0 + 0.07, 0));
+  k.put(Pc.led, M.ledG, stand(new Vector3(0.905, DRUM_Y0 + 0.09, 0), X, 0, 0.7));
   // Mains and data rise from the box into the drum.
-  bundle(k, M, Pc, [[0.08, 0.81, 0.6], [0.12, 0.9, 0.66], [0.2, 0.97, 0.76], [0.24, 1.06, 0.83]]);
+  bundle(k, M, Pc, [[0.08, 0.81, 0.56], [0.12, 0.9, 0.62], [0.2, 0.97, 0.74], [0.24, 1.06, 0.83]]);
 }
 
 /* ---------- the fork: it turns in azimuth ---------- */
@@ -490,8 +528,14 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
   // The two arms.
   for (const s of [-1, 1]) {
     k.add(M.black, armGeometry().translate(s * ARM_X + ARM_T / 2 - 0.012, 0, 0));
-    // A white trim line down the arm's outer face.
-    k.add(M.accent, chamferBox(0.006, AXIS_Y - TABLE_Y1 - 0.5, 0.03, 0.002).translate(s * (ARM_X + ARM_T / 2 + 0.003), (AXIS_Y + TABLE_Y1) / 2 - 0.15, 0.2));
+    // A white trim line down the arm's outer face, near its front edge.
+    k.add(M.accent, chamferBox(0.006, AXIS_Y - TABLE_Y1 - 0.5, 0.03, 0.002).translate(s * (ARM_X + ARM_T / 2 + 0.003), (AXIS_Y + TABLE_Y1) / 2 - 0.15, 0.31));
+    // A satin cover plate over the arm's cable run, held by six screws.
+    const px = s * (ARM_X + ARM_T / 2 + 0.005);
+    k.add(M.graphite, chamferBox(0.008, 1.2, 0.46, 0.003).translate(px, 2.15, 0));
+    for (const y of [1.6, 2.15, 2.7]) {
+      for (const z of [-0.2, 0.2]) k.put(Pc.socket, M.stainless, stand(new Vector3(px + s * 0.004, y, z), new Vector3(s, 0, 0), 0, 0.9));
+    }
     // The direct-drive housing on the arm's outer face, centred on the axis.
     const x0 = ARM_X + ARM_T / 2, x1 = x0 + 0.16;
     const lo = s > 0 ? x0 : -x1, hi = s > 0 ? x1 : -x0;
@@ -501,13 +545,19 @@ function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
     const xc = s * (x1 + 0.01);
     k.add(M.accent, cylX(0.22, Math.min(xc, s * x1), Math.max(xc, s * x1), 96).translate(0, AXIS_Y, 0));
     k.add(M.ledW, new RingGeometry(0.3, 0.312, 128).rotateY(s * Math.PI / 2).translate(s * (x1 + 0.002), AXIS_Y, 0));
+    // The altitude encoder's read head sits on top of the housing.
+    k.add(M.black, chamferBox(0.1, 0.05, 0.09, 0.006).translate(s * (x0 + 0.08), AXIS_Y + 0.445, 0));
+    k.put(Pc.led, M.ledG, stand(new Vector3(s * (x0 + 0.08), AXIS_Y + 0.47, 0.046), Z, 0, 0.7));
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
       k.put(Pc.socket, M.stainless, stand(new Vector3(s * x1, AXIS_Y + Math.cos(a) * 0.37, Math.sin(a) * 0.37), new Vector3(s, 0, 0), a, 1));
     }
   }
-  // The cable climbs the west arm's inner face to the altitude axis.
-  bundle(k, M, Pc, [[0, TABLE_Y1, 0], [-0.4, TABLE_Y1 + 0.05, 0.2], [-0.72, TABLE_Y1 + 0.4, 0.3], [-0.74, 2.4, 0.26], [-0.74, AXIS_Y - 0.3, 0.1], [-0.74, AXIS_Y, 0]]);
+  // The cables leave the turntable by a grommet at the west arm's foot.
+  // A drag chain carries them up the arm's inner face into the bearing.
+  k.add(M.black, cylY(0.055, TABLE_Y1, TABLE_Y1 + 0.02, 32).translate(-0.72, 0, 0.34));
+  k.add(M.stainless, turn(ringProfile(0.055, 0.062, TABLE_Y1, TABLE_Y1 + 0.022, 0.002), 32).translate(-0.72, 0, 0.34));
+  chain(k, M, Pc, [[-0.73, TABLE_Y1 + 0.03, 0.34], [-0.73, 2.0, 0.34], [-0.73, 2.9, 0.3], [-0.73, AXIS_Y - 0.25, 0.15], [-0.73, AXIS_Y, 0]], X);
 }
 
 /* ---------- the tube: it tilts on the altitude axis ---------- */
@@ -580,6 +630,15 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   k.add(M.cloth, shroudGeometry(SHROUD_Z0, SHROUD_Z1, CELL_R + 0.008, NODE_FRONT_R + 0.06));
   k.add(M.rubber, along(turn(ringProfile(CELL_R - 0.01, CELL_R + 0.016, SHROUD_Z0 - 0.02, SHROUD_Z0 + 0.02, 0.008), 160), Y_TO_Z));
   k.add(M.rubber, along(turn(ringProfile(NODE_FRONT_R + 0.04, NODE_FRONT_R + 0.068, SHROUD_Z1 - 0.02, SHROUD_Z1 + 0.02, 0.008), 160), Y_TO_Z));
+  // The seam: a tape down the underside, stitched along both edges.
+  const r0 = CELL_R + 0.008, r1 = NODE_FRONT_R + 0.06, steps = 80;
+  const len = Math.abs(SHROUD_Z1 - SHROUD_Z0) / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = (i + 0.5) / steps, z = SHROUD_Z0 + (SHROUD_Z1 - SHROUD_Z0) * t;
+    const r = r0 + (r1 - r0) * t - 0.008 * Math.sin(Math.PI * t) + 0.002;
+    k.put(Pc.box, M.webbing, boxAt(new Vector3(0, -r, z), X, Y, Z, 0.03, 0.003, len * 1.01));
+    for (const x of [-0.011, 0.011]) k.put(Pc.box, M.stitch, boxAt(new Vector3(x, -r - 0.0018, z), X, Y, Z, 0.0018, 0.0012, len * 0.55));
+  }
 
   /* the top cage: a black ring with a white lip, the spider and the secondary */
   k.add(M.black, along(turn(ringProfile(CAGE_R - 0.04, CAGE_R + 0.04, CAGE_Z - 0.07, CAGE_Z + 0.07, 0.01), 160), Y_TO_Z));
@@ -594,7 +653,23 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
     const a = (i / 4) * Math.PI * 2;
     const n = new Vector3(Math.cos(a), Math.sin(a), 0), t = new Vector3(-n.y, n.x, 0);
     const p = n.clone().multiplyScalar((0.21 + CAGE_R - 0.04) / 2).setZ(CAGE_Z - 0.04);
-    k.put(Pc.box, M.black, boxAt(p, t, n, Z, 0.006, CAGE_R - 0.04 - 0.21, 0.1));
+    k.put(Pc.box, M.black, boxAt(p, t, n, Z, 0.003, CAGE_R - 0.04 - 0.21, 0.07));
+    // Two tension screws pull each vane taut from the ring's outside.
+    for (const dz of [-0.02, 0.02]) {
+      k.put(Pc.socket, M.stainless, stand(n.clone().multiplyScalar(CAGE_R + 0.04).setZ(CAGE_Z - 0.04 + dz), n, 0, 1.1));
+    }
+  }
+  // The secondary focuser's cable runs along the top vane.
+  k.add(M.cable, new TubeGeometry(new CatmullRomCurve3([
+    new Vector3(0.006, 0.22, CAGE_Z - 0.01), new Vector3(0.006, 0.4, CAGE_Z), new Vector3(0.006, CAGE_R - 0.05, CAGE_Z + 0.01),
+  ]), 24, 0.006, 8, false));
+  // A white ring caps the housing's front.
+  k.add(M.accent, cylZ(0.214, CAGE_Z - 0.128, CAGE_Z - 0.116, 96));
+  // Two lifting eyes stand on top of the ring.
+  for (const x of [-0.2, 0.2]) {
+    const ey = Math.sqrt(Math.max(0, (CAGE_R + 0.04) ** 2 - x * x));
+    k.add(M.stainless, new TorusGeometry(0.03, 0.008, 10, 28).rotateY(Math.PI / 2).translate(x, ey + 0.045, CAGE_Z));
+    k.add(M.stainless, cylY(0.018, ey - 0.005, ey + 0.016, 16).translate(x, 0, CAGE_Z));
   }
 
   /* the Cassegrain stack: rotator, focuser, filter wheel, cooled camera */
@@ -616,8 +691,8 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
     const a = Math.PI / 2 + (i - 1) * 0.35;
     k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(Math.cos(a) * 0.15, Math.sin(a) * 0.15, STACK_END), Z, 0, 1));
   }
-  // The camera's cable runs from the top box down to the stack.
-  bundle(k, M, Pc, [[0.08, CELL_R + 0.1, CELL_Z1 - 0.05], [0.14, 0.56, 1.0], [0.16, 0.34, 1.2], [0.12, 0.24, 1.32]]);
+  // The camera's cable runs from the top box down the back plate, between the fans, to the wheel's motor.
+  bundle(k, M, Pc, [[0.05, CELL_R + 0.1, CELL_Z1 - 0.02], [0.05, 0.66, 0.9], [0.05, 0.45, 0.89], [0.05, 0.34, 0.95], [0.05, 0.33, 1.07]]);
 }
 
 // The primary baffle: a flocked black tube that runs forward from the hole.
