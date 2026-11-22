@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HULLS } from '../tornado/vshape.js';
-import { hullMesh, rayHull } from '../tornado/vmesh.js';
+import { HULLS, ARCH } from '../tornado/vshape.js';
+import { hullMesh, rayHull, vehicleMesh } from '../tornado/vmesh.js';
+import { vHitJS } from './vhit.mjs';
 
 // The nearest triangle a ray meets, Moller-Trumbore; Infinity on a miss.
 function rayMesh(pos, ro, rd) {
@@ -59,4 +60,57 @@ test('the mesh and the ray test agree on 2000 rays per hull', () => {
       assert.ok(a === b || Math.abs(a - b) < 1e-4, `hull id ${hl.id}: mesh ${a}, ray ${b}`);
     }
   }
+});
+
+// The nearest triangle that faces the ray, and its part id: the raster's view of the mesh.
+function rayMeshId(m, ro, rd) {
+  const P = m.pos;
+  let best = Infinity, id = 0;
+  for (let i = 0; i < P.length; i += 9) {
+    const ax = P[i], ay = P[i + 1], az = P[i + 2];
+    const e1x = P[i + 3] - ax, e1y = P[i + 4] - ay, e1z = P[i + 5] - az;
+    const e2x = P[i + 6] - ax, e2y = P[i + 7] - ay, e2z = P[i + 8] - az;
+    // Back faces stay out, as the raster culls them.
+    const fx = e1y * e2z - e1z * e2y, fy = e1z * e2x - e1x * e2z, fz = e1x * e2y - e1y * e2x;
+    if (fx * rd[0] + fy * rd[1] + fz * rd[2] >= 0) continue;
+    const px = rd[1] * e2z - rd[2] * e2y, py = rd[2] * e2x - rd[0] * e2z, pz = rd[0] * e2y - rd[1] * e2x;
+    const det = e1x * px + e1y * py + e1z * pz;
+    if (Math.abs(det) < 1e-12) continue;
+    const sx = ro[0] - ax, sy = ro[1] - ay, sz = ro[2] - az;
+    const u = (sx * px + sy * py + sz * pz) / det;
+    if (u < -1e-9 || u > 1 + 1e-9) continue;
+    const qx = sy * e1z - sz * e1y, qy = sz * e1x - sx * e1z, qz = sx * e1y - sy * e1x;
+    const v = (rd[0] * qx + rd[1] * qy + rd[2] * qz) / det;
+    if (v < -1e-9 || u + v > 1 + 1e-9) continue;
+    const t = (e2x * qx + e2y * qy + e2z * qz) / det;
+    if (t > 1e-9 && t < best) { best = t; id = m.id[i / 3]; }
+  }
+  return { t: best, id };
+}
+
+test('each kind matches vHit on 5000 rays: same id, t within 5 mm; at most 0.3% differ', () => {
+  for (const kind of [0, 1, 2]) {
+    const m = vehicleMesh(kind), r = rng(11 + kind);
+    let bad = 0;
+    const N = 5000;
+    for (let k = 0; k < N; k++) {
+      const th = r() * Math.PI * 2, ph = (r() - 0.3) * Math.PI * 0.8;
+      const ro = [14 * Math.cos(ph) * Math.cos(th), 1.5 + 14 * Math.sin(ph), 14 * Math.cos(ph) * Math.sin(th)];
+      const at = [(r() * 2 - 1) * 1.2, r() * 3.9, (r() * 2 - 1) * 3.2];
+      const d = at.map((v, i) => v - ro[i]), l = Math.hypot(...d), rd = d.map(v => v / l);
+      const a = rayMeshId(m, ro, rd), b = vHitJS(kind, ro, rd);
+      const same = a.id === b.id && (a.t === b.t || Math.abs(a.t - b.t) < 5e-3);
+      if (!same) bad++;
+    }
+    assert.ok(bad <= N * 0.003, `kind ${kind}: ${bad} of ${N} rays differ`);
+  }
+});
+
+test('an arch cut leaves the well (id 8) inside the cylinder', () => {
+  const [cy, cz, , r] = ARCH[0];
+  // From the right side, between the tyre's top (0.8 m) and the arch's top.
+  // A slight slant: a ray straight along x has no cylinder test.
+  const l = Math.hypot(1, 0.08), ro = [6, cy + r * 0.9, cz - 0.4], rd = [-1 / l, 0, 0.08 / l];
+  assert.equal(vHitJS(0, ro, rd).id, 8);
+  assert.equal(rayMeshId(vehicleMesh(0), ro, rd).id, 8);
 });
