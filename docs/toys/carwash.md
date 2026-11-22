@@ -95,6 +95,7 @@ Bar: v3 (the default; the old bar still builds, hidden).
 <!-- /gen:stack -->
 
 One full-screen pass per stage of the frame draws the whole view. Two cameras share the scene shader: the establishing shot (`uShot` 1, its own position and turn) and the driver's seat.
+The scene shader is one source in nine programs (`#define PASS_x`), because D3D11 cannot compile it as one program (`stimming-4uc8`): see Render pipeline. The links run in parallel (`KHR_parallel_shader_compile`); `linked()` waits for them before the first frame, and the page does not freeze.
 The windscreen is a bowed plane that leans back 31 degrees: its cowl edge is 1.15 m ahead of the eye and 0.34 m down, its header 0.4 m ahead and 0.12 m up. Every view ray meets it (`glassHit()`), which gives glass coordinates in metres. The glass map, the drops and runs, the lather and the wipers work in those metres and reach the screen through a 2 x 2 Jacobian per pixel.
 
 The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, the exit at z 19, the car toward +z). `exterior()` draws everything outside and hands rays through the front door to `tunnelFrom()`; `desertBeyond()` is the world past the exit door. The car from outside is a small sphere-traced SDF, drawn only in the shot. GLSL has no recursion, so mirrors use cheaper paths: `emitRay()` inside, `outEmit()` outside, `farLite()` for their sky.
@@ -124,7 +125,7 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 3459 | The page: shell, shaders, sim, timeline, strange moments, sound, input |
+| `index.html` | 3621 | The page: shell, shaders, sim, timeline, strange moments, sound, input |
 <!-- /gen:files -->
 
 ## Render pipeline
@@ -132,7 +133,13 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 | Pass | Target | Shader or material | Does |
 |---|---|---|---|
 | Glass | Two RGBA16F maps, ping-pong, 400 x 263 on Standard | `SIM_FS` | Foam depth, sheet water, beads, foam tint, the foam's offset, soap film, cloth and blade smear. Skipped on the shot |
-| Scene | Full size, RGBA16F | `SCENE_FS` | The shot: the lot, the building, the pylon, the car, the sky. The seat: the same world through the door, the tunnel and its stations, the bonnet, the desert past the exit; mist, moths and dust in the light |
+| Scene | Full size: two RGBA32F buffers in turn, then RGBA16F | `SCENE_FS`, seven programs a frame | The shot: the lot, the building, the pylon, the car, the sky. The seat: the same world through the door, the tunnel and its stations, the bonnet, the desert past the exit; mist, moths and dust in the light. The passes follow |
+| Scene D, or E then F | RGBA32F: colour, distance | `PASS_D`; `PASS_E`, `PASS_F` | The desert past the exit; E and F (the entrance past the exit) run in its place for Exit is entrance. Only pixels whose ray gets there |
+| Scene T | RGBA32F | `PASS_T` | The tunnel, with the desert from the pass before. Rays that start in the desert keep it |
+| Scene O, P | RGBA32F | `PASS_O`, `PASS_P` | Outside: O the ground, the building, the office, the canopy; P the booth, the lamp, the pylon, the sky, the poles, the car. Rays that start inside keep the pass before |
+| Scene L | RGBA32F | `PASS_L` | The arches, the figure, the bonnet |
+| Scene M | RGBA32F: colour, the lens's depth | `PASS_M` | The blower, then the curtains, the wax mist, the brushes, the mitters, the foam fall |
+| Scene N | `rtScene`, RGBA16F | `PASS_N` | The mitters on the glass, light in the air, snow, spray |
 | Down | 1/4, 1/8, 1/32, 1/128 | `DOWN_FS` | Box steps; the two small ones light the foam. Skipped on the shot |
 | Lens | Two targets, half or quarter size | `BOK_FS` (`bokeh.js`) | The eye focuses on the glass from the soak to the blower; before and after, it looks out. Skipped on the shot |
 | Pane | Full size | `PANE_FS` (`wetglass.js`) | The wet glass, the lather, the blower's air line, the wipers, then the car round the glass. On the shot it passes the scene through |
@@ -189,6 +196,8 @@ The world is analytic: boxes, pipes and planes in tunnel metres (door at z 0, th
 
 ## Tests and QA
 
+Windows, 2026-11-22 (`stimming-4uc8`): every scene pass compiles in 6 s or less with d3dcompiler_47 at ANGLE's level (the one program before: over 300 s). In the app pane on D3D11, RTX 3070: the first frame at 9.5 s, no freeze, console clean, 8 ms frames in the run.
+Same frame, before and after the split: headless Chromium on ANGLE GL, seeded `Math.random`, no free-running clock, the shot, every stop and six strange moments. The HDR scene matches to half-float precision, except thin poles' edge pixels, one arrow bulb (see Known issues) and NaN pixels on the anti-sun line (one more in the shot's sky, one fewer at the blower).
 None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live shaders, defaults read through an in-page stub so stored Dev values do not apply): the shot at 1280 x 720, 375 x 812 and 812 x 375; every station; the first frame after Proceed; the Proceed flow driven through `frame()` (shot, dip, run, the button hidden); a drag on the glass; the sound graph built and rendered on an offline context through every phase. Each strange moment forced from its Dev handler and shot as a still, with the shot on return after Snow and Someone. Reduced motion, stubbed in the probe: the shot is a still, Proceed steps through every stop with the button kept, and the desert returns to the shot. Not checked: the look in motion with the pane in front, sound by ear, and the cues' timing by ear.
 
 ## Known issues
@@ -196,6 +205,8 @@ None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live sha
 - Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, seat distance 0.25, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height, seat distance and grain sit at the end of their ranges. The stills above predate this change. `stimming-auj3`
 - The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9.
+- Windows (NVIDIA, D3D11 and GL): `pow()` of a negative base gives NaN, and the bloom turns each NaN pixel into a flare. `mitters()` (`pow(round1, 14.0)`, 3.1416 is past pi) fills large blocks with NaN from the entry to the soak; `cloth()`, the sky's anti-sun line in `skDusk()` (`shared/sky.js`) and one canopy bulb give single pixels. Guards wait for Tom's yes. `stimming-4uc8`
+- Which arrow bulbs live comes from a hash of the bulb's place. The compiler's rounding can flip one bulb, so the pattern can differ between platforms and builds.
 
 ## Legacy build
 
