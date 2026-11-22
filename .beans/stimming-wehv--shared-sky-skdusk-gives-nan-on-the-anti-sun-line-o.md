@@ -1,7 +1,7 @@
 ---
 # stimming-wehv
 title: 'Shared sky: skDusk() gives NaN on the anti-sun line on NVIDIA'
-status: draft
+status: completed
 type: bug
 created_at: 2026-11-22T18:46:18Z
 updated_at: 2026-11-22T18:46:18Z
@@ -18,7 +18,7 @@ Fix: `pow(max(0.5 + 0.5 * az, 0.0), 3.0)`. No visible change where the base is p
 
 Rule 3: a change in `shared/` needs Tom's yes before the edit.
 
-- [ ] Tom says yes
-- [ ] Guard the base in `skDusk()`
-- [ ] Check Car wash: the flare dot in the shot's sky goes
-- [ ] Commit through `tools/commit.sh`
+- [x] Tom says yes (2026-11-22)
+- [x] Guard the base in `skDusk()`
+- [x] Check Car wash: no NaN at any stop; breakers, foghorn, lanterns, terrarium load clean
+- [x] Commit through `tools/commit.sh`
