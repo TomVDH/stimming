@@ -125,14 +125,19 @@ varying vec3 vFogW, vSurf;`)
       // St Elmo's fire: a violet corona flickers on the leading edges and the tips.
       // It burns after the fog, so it glows through the bank.
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-  if (uElmo > 0.001) {
-    // The view's axes mirror, but they stay orthogonal: the transpose turns normals back.
-    vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
-    float sp = dot(vFogW, uSpanW);
-    // Leading and trailing edges both carry it; the mirror can flip the normal's sign.
-    float edge = smoothstep(0.5, 0.9, abs(nW.x)) + 0.8 * smoothstep(22.0, 25.0, sp);
-    float fl = 0.5 + 0.5 * sin(uElmoT * 37.0 + vFogW.x * 9.0 + sp * 3.1) * sin(uElmoT * 23.0 - sp * 5.3 + vFogW.y * 7.0);
-    gl_FragColor.rgb += vec3(0.5, 0.42, 1.0) * uElmo * edge * (0.25 + 0.75 * fl * fl) * 0.12;
+  if (uElmo > 0.001 && vSurf.z > 0.0) {
+    // Charge leaves at sharp edges: the trailing edge and the winglet top.
+    // The blunt leading edge stays dark.
+    float cs = vSurf.x, sp = vSurf.y, ch = vSurf.z;
+    float ed = min((1.0 - cs) * ch, max(28.1 - sp, 0.0));
+    // A thin sheath on the edge, with a faint wider skirt.
+    // Far off, the sheath keeps about 1.5 px and dims to match.
+    float w = max(0.16, 1.5 * fwidth(ed));
+    float edge = (exp(-ed / w) * sqrt(0.16 / w) + 0.2 * exp(-ed / 0.6)) * smoothstep(15.0, 23.0, sp);
+    // Tufts about a metre long crawl along the edge and flicker.
+    float n = texture(uFogN, vec3(sp * 0.05 - uElmoT * 0.06, ed * 0.25, uElmoT * 0.2)).r;
+    float fl = smoothstep(0.45, 0.8, n);
+    gl_FragColor.rgb += vec3(0.5, 0.45, 1.0) * uElmo * edge * (0.05 + 0.95 * fl) * 0.18;
   }`)
       .replace('#include <fog_fragment>', `#ifdef USE_FOG
   float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
@@ -306,6 +311,29 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
     return [...ss.map(s => pt(s, 1)), ...ss.slice(1, -1).reverse().map(s => pt(s, -1))];
   })));
 
+  // Static wicks: thin rods aft of the outer trailing edges.
+  // They bleed charge into the air, so St Elmo's fire burns at their tips.
+  const WICK = 0.18;
+  const wickTips = [];
+  const wick = (base, parent = air) => {
+    const g = new THREE.CylinderGeometry(0.003, 0.005, WICK, 6);
+    g.rotateZ(Math.PI / 2);
+    g.translate(base.x - WICK / 2 + 0.03, base.y, base.z);
+    add(g, dark, parent);
+    const tipM = new THREE.Object3D();
+    tipM.position.set(base.x - WICK + 0.03, base.y, base.z);
+    parent.add(tipM); wickTips.push(tipM);
+  };
+  // The aileron carries three; they turn with it.
+  const ail = hinged.find(h => h.role === 'aileron').piv;
+  [18.6, 20.4, 22.2].forEach(z => {
+    const te = at(1, z, 1).lerp(at(1, z, -1), 0.5).add(V(0, -0.016, 0));
+    wick(te.sub(ail.position), ail);
+  });
+  // One on the fixed tip, three up the winglet's trailing edge.
+  wick(at(1, 24.3, 1).lerp(at(1, 24.3, -1), 0.5));
+  [0.4, 0.7, 0.97].forEach(u => { const w = WINGLET(u); wick(V(w.le - w.c, w.y, w.z)); });
+
   // The nacelle hangs on a pylon, clear of the lower skin.
   const nz = NAC.a[2], low = at(0.15, nz, -1).y;
   const ny = low - 0.45 - NAC.r, L = NAC.b[0] - NAC.a[0] + 1.2, nx = NAC.a[0] + 0.6;
@@ -342,6 +370,47 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
 
   const scene = new THREE.Scene();
   scene.add(air);
+  // St Elmo's fire at the wick tips: a hot point and a ragged violet brush.
+  // It adds light and leaves alpha alone, so the cabin pass still sees no sky.
+  const brushPos = new Float32Array(wickTips.length * 3);
+  const brushGeo = new THREE.BufferGeometry();
+  brushGeo.setAttribute('position', new THREE.BufferAttribute(brushPos, 3));
+  brushGeo.setAttribute('aSeed', new THREE.Float32BufferAttribute(wickTips.map((_, i) => i * 1.37 + 0.4), 1));
+  const BRUSH = { uElmo: { value: 0 }, uT: { value: 0 }, uPx: { value: 300 } };
+  const brushes = new THREE.Points(brushGeo, new THREE.ShaderMaterial({
+    uniforms: BRUSH, transparent: true, depthWrite: false, fog: false, toneMapped: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+    blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    vertexShader: `uniform float uPx; attribute float aSeed; varying float vSeed;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  // The sprite spans 0.7 m, and never less than 4 px.
+  gl_PointSize = clamp(uPx * 0.7 / max(-mv.z, 0.5), 4.0, 96.0);
+  vSeed = aSeed;
+}`,
+    fragmentShader: `uniform float uElmo, uT; varying float vSeed;
+void main() {
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r = length(q), a = atan(q.y, q.x);
+  // A few filaments fan out and wander.
+  float fil = 0.5 + 0.5 * sin(a * 5.0 + vSeed * 7.0 + 2.0 * sin(uT * 9.0 + vSeed)) * sin(a * 3.0 - uT * 13.0 + vSeed * 3.0);
+  // Each wick sputters on its own, about 24 times a second.
+  float flick = fract(sin(dot(vec2(floor(uT * 24.0), vSeed), vec2(12.9898, 78.233))) * 43758.5453);
+  // Each wick also lights and dies over a few seconds; a strike lights them all.
+  float act = 0.5 + 0.5 * sin(uT * 0.9 + vSeed * 5.1) * sin(uT * 0.37 + vSeed * 2.3);
+  float on = max(smoothstep(0.35, 0.75, act), smoothstep(1.0, 1.5, uElmo));
+  float core = exp(-r * r * 40.0);
+  float g = core * 0.7 + exp(-r * 4.5) * (0.25 + 0.75 * fil) * smoothstep(1.0, 0.4, r) * 0.5;
+  vec3 col = mix(vec3(0.55, 0.5, 1.0), vec3(0.85, 0.85, 1.0), core);
+  gl_FragColor = vec4(col * g * on * (0.4 + 0.6 * flick) * uElmo * 0.5, 0.0);
+}`,
+  }));
+  brushes.frustumCulled = false; brushes.visible = false;
+  // The brushes draw after the outside pass, which fills every bare pixel.
+  // The wing's depth still hides a brush behind it.
+  const glow = new THREE.Scene();
+  glow.add(brushes);
   const sun = new THREE.DirectionalLight(0xffffff, 0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -418,7 +487,7 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
   }
 
   return {
-    scene, cam,
+    scene, cam, glow,
     // Poses the aircraft and the lights for this frame, in the outside pass's view.
     // strobe and lamp scale the tip lights on skin and fog.
     // fogSun is the sun's share of the fog's light.
@@ -525,6 +594,23 @@ export function createWing3({ renderer, ST, flex, WINGLET, NAC, FAIRS, noiseTex,
       navL.position.copy(tw).add(V(0.35, 0.3, -0.25)); navL.intensity = 0.4 * lamp;
       wingL.intensity = beam * WING_LIGHT.k;
       FOG_U.uElmo.value = elmo; FOG_U.uElmoT.value = t;
+      // The brushes ride the wick tips, bent with the wing as the shader bends it.
+      brushes.visible = elmo > 0.001;
+      if (brushes.visible) {
+        air.updateMatrixWorld(true);
+        const up = FOG_U.uUpW.value, sw = FOG_U.uSpanW.value, p = V(0, 0, 0);
+        wickTips.forEach((m, i) => {
+          m.getWorldPosition(p);
+          const s = Math.min(1.1, Math.max(0, (p.dot(sw) - 1.2) / 24));
+          p.addScaledVector(up, mo.f[0] * s * s + mo.f[1] * s * s * (1 - s) * 4);
+          brushPos.set([p.x, p.y, p.z], i * 3);
+        });
+        brushGeo.attributes.position.needsUpdate = true;
+        // The sprite's size follows the target the wing draws into.
+        const rt = renderer.getRenderTarget();
+        BRUSH.uPx.value = cam.projectionMatrix.elements[5] * (rt ? rt.height : H) / 2;
+        BRUSH.uElmo.value = elmo; BRUSH.uT.value = t;
+      }
       return [bend.x, bend.y, bend.z];
     },
   };
