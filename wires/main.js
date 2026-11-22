@@ -139,7 +139,8 @@ function wire(w0, w1, sag, r, mat = ALU, lash = null) {
 // Each piece carries its pivot and a code: -1 the knot, -2 and -3 a shoe.
 // The shoe is one sculpted part from heel to toe; the shader shapes it.
 // The knot sits on the top eyelet. The mass centre comes from the shape.
-const SHOE_TIE = [0.095, 0.0915], SHOE_COM = [0.131, 0.047];
+// The tie is the top eyelet; the sole carries most of the mass.
+const SHOE_TIE = [0.103, 0.148], SHOE_COM = [0.135, 0.041];
 const shoes = [];
 function shoe(piv, lace, yaw, ph) {
   const sw = { sway: [...piv, -(2 + shoes.length)] };
@@ -151,6 +152,13 @@ function shoe(piv, lace, yaw, ph) {
   const heel = sub(tie, add(d.map(v => v * SHOE_TIE[0]), top.map(v => v * SHOE_TIE[1])));
   part(SHOE, heel, add(heel, d.map(v => v * 0.29)), 0.19, 0.19, CANVAS, sw);
   part(WIRE, tie, piv, 0.0028, 0.0028, SOLE, sw);
+  // Two loose lace ends drape over the collar and dangle by its sides.
+  const side = cross(d, top);
+  for (const [k, len] of [[1, 0.15], [-1, 0.11]]) {
+    const a = add(tie, side.map(v => v * k * 0.012)), m = add(tie, add(side.map(v => v * k * 0.055), [0, -0.03, 0]));
+    part(WIRE, a, m, 0.0024, 0.0024, SOLE, sw);
+    part(WIRE, m, add(m, add(side.map(v => v * k * 0.008), [0, -len, 0])), 0.0024, 0.0024, SOLE, sw);
+  }
   // The bob is the mass centre, straight under the pivot at rest.
   const L = lace + Math.hypot(dx, dy), b = add(piv, [0, -L, 0]);
   // The collision capsule runs heel to toe along the foot, 45 mm thick.
@@ -790,27 +798,62 @@ float woodH(vec2 q, float seed, out float k) {
   return clamp(0.2 * fib + 0.8 * (1.0 - max(crack, fine)) - 0.3 * k, 0.0, 1.0);
 }
 // The sneaker, in its own frame: x from heel to toe, y up, z across.
-// It returns the distance; m is 1 on the canvas upper and 0 on the sole.
-float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// shoeD returns the distance; m is 0 on the sole, 1 the upper, 2 a lace.
+// A canvas high-top, 290 mm, from a side photo: Commons, Converse_red.JPG.
+// Collar 160 mm; top eyelet at 103 mm, 148 mm up; toe cap from 225 mm.
+const float SH_EYE = 0.103, SH_CAP = 0.225, SH_SOLE = 0.03;
+// The toe springs up off the ground.
+float shoeSpring(float x) { return 0.012 * smoothstep(0.19, 0.29, x); }
+// The top of the upper over the length: collar, lace line, toe cap.
+float shoeTop(float x) {
+  if (x < SH_EYE) return mix(0.16, 0.15, x / SH_EYE);
+  if (x < SH_CAP) return mix(0.148, 0.07, (x - SH_EYE) / (SH_CAP - SH_EYE));
+  return SH_SOLE + 0.04 * sqrt(max(1.0 - pow((x - SH_CAP) / 0.066, 2.0), 0.0));
+}
+float smax(float a, float b, float k) { float h = clamp(0.5 - 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) + k * h * (1.0 - h); }
 float sdCap(vec3 p, vec3 a, vec3 b, float r) { vec3 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - r; }
+// Seven eyelet rows run from 112 to 216 mm; row 0 is at the collar.
+const float SH_ROW0 = 0.112, SH_ROWS = 0.104 / 6.0;
+// Half the throat's width: wide at the collar, narrow toward the toe.
+float shoeGap(float x) { return mix(0.016, 0.007, clamp((x - 0.105) / 0.11, 0.0, 1.0)); }
+// The plan: an uneven capsule from a heel circle to a toe circle (Quilez).
+float shoePlan(vec2 p) {
+  const float ax = 0.036, r1 = 0.034, h = 0.21, r2 = 0.044, b = (r1 - r2) / h;
+  float a = sqrt(1.0 - b * b), px = p.x - ax, pz = abs(p.y), k = a * px - b * pz;
+  if (k < 0.0) return length(vec2(px, pz)) - r1;
+  if (k > a * h) return length(vec2(px - h, pz)) - r2;
+  return pz * a + px * b - r1;
+}
 float shoeD(vec3 p, out float m) {
-  // The toe lifts a little off the ground.
-  p.y -= 0.014 * smoothstep(0.18, 0.29, p.x);
-  // The sole: a stadium in plan, wider at the ball, 24 mm thick.
-  float w = mix(0.039, 0.047, smoothstep(0.04, 0.19, p.x)) * (1.0 - 0.18 * smoothstep(0.22, 0.29, p.x));
-  float plan = length(p.xz - vec2(clamp(p.x, 0.045, 0.245), 0.0)) - w;
-  vec2 e = vec2(plan, abs(p.y - 0.012) - 0.012);
+  p.y -= shoeSpring(p.x);
+  float pl = shoePlan(p.xz);
+  // The sole: 30 mm, 4 mm proud of the upper, edges rounded 3 mm.
+  vec2 e = vec2(pl - 0.001, abs(p.y - 0.015) - 0.012);
   float sole = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - 0.003;
-  // The upper: the foot, the toe box and a high collar, blended smooth.
-  float foot = sdCap(p, vec3(0.055, 0.052, 0.0), vec3(0.2, 0.046, 0.0), 0.038);
-  float toe = length((p - vec3(0.236, 0.04, 0.0)) * vec3(1.0, 1.3, 1.0)) - 0.038;
-  float collar = sdCap(p, vec3(0.058, 0.06, 0.0), vec3(0.074, 0.152, 0.0), 0.04);
-  float up = smin(smin(foot, toe, 0.022), collar, 0.028);
-  // The opening where the foot goes in.
-  up = max(up, -sdCap(p, vec3(0.068, 0.105, 0.0), vec3(0.082, 0.23, 0.0), 0.03));
-  up = max(up, 0.021 - p.y);
-  m = up < sole ? 1.0 : 0.0;
-  return min(up, sole);
+  // The upper: the plan, drawn in toward the top; the side profile caps it.
+  // The collar's edge rounds tight; the vamp domes wide.
+  float T = shoeTop(p.x), u = clamp((p.y - SH_SOLE) / max(T - SH_SOLE, 0.01), 0.0, 1.0);
+  float up = smax(pl + 0.007 * u * u, (p.y - T) / 1.2, mix(0.005, 0.03, smoothstep(0.08, 0.2, p.x)));
+  up = max(up, 0.026 - p.y);
+  // The foot opening: a stadium from 29 to 101 mm, down to 85 mm up.
+  float op = length(vec2(max(abs(p.x - 0.065) - 0.012, 0.0), p.z)) - 0.024;
+  up = max(up, -max(op, 0.085 - p.y));
+  // The throat: a slot down the lace line shows the tongue 6 mm below.
+  up = max(up, -max(max(abs(p.z) - shoeGap(p.x), abs(p.x - 0.16) - 0.056), T - 0.006 - p.y));
+  // The laces cross between each pair of rows; a straight bar closes row 6.
+  float row = (p.x - SH_ROW0) / SH_ROWS, lace = 1e3;
+  for (int j = -1; j <= 0; j++) {
+    float x0 = SH_ROW0 + clamp(floor(row) + float(j), 0.0, 5.0) * SH_ROWS, x1 = x0 + SH_ROWS;
+    vec3 a0 = vec3(x0, shoeTop(x0) - 0.001, 0.0), a1 = vec3(x1, shoeTop(x1) - 0.001, 0.0);
+    vec3 e0 = vec3(0.0, 0.0, shoeGap(x0) + 0.005), e1 = vec3(0.0, 0.0, shoeGap(x1) + 0.005);
+    lace = min(lace, min(sdCap(p, a0 - e0, a1 + e1, 0.0024), sdCap(p, a0 + e0, a1 - e1, 0.0024)));
+  }
+  float x6 = SH_ROW0 + 6.0 * SH_ROWS;
+  vec3 a6 = vec3(x6, shoeTop(x6) - 0.001, 0.0), e6 = vec3(0.0, 0.0, shoeGap(x6) + 0.005);
+  lace = min(lace, sdCap(p, a6 - e6, a6 + e6, 0.0024));
+  float d = min(up, sole);
+  m = lace < d ? 2.0 : up < sole ? 1.0 : 0.0;
+  return min(d, lace);
 }
 // ao: 1 in the open, less down in a crack.
 struct Surf { vec3 alb; float rough, metal; vec3 n; float ao; };
@@ -1019,7 +1062,8 @@ void main() {
     vec3 rd = normalize(uFw + (px.x * uRt + px.y * uUp) / (ppu * uF));
     vec3 ro = vec3(dot(uEye - A, ax), dot(uEye - A, cx), dot(uEye - A, bx)), rl = vec3(dot(rd, ax), dot(rd, cx), dot(rd, bx));
     float t = max(dot(mid - uEye, rd) - 0.3, 0.0), far = t + 0.7, m = 0.0, d = 1.0;
-    for (int i = 0; i < 56; i++) {
+    // The profile's distance is a low bound, so the march takes more steps.
+    for (int i = 0; i < 90; i++) {
       d = shoeD(ro + rl * t, m);
       if (d < 0.0005 || t > far) break;
       t += d * 0.9;
@@ -1029,26 +1073,51 @@ void main() {
     vec2 e = vec2(0.0008, 0.0);
     float mm;
     vec3 nl = normalize(vec3(shoeD(q + e.xyy, mm) - shoeD(q - e.xyy, mm), shoeD(q + e.yxy, mm) - shoeD(q - e.yxy, mm), shoeD(q + e.yyx, mm) - shoeD(q - e.yyx, mm)));
-    q.y -= 0.014 * smoothstep(0.18, 0.29, q.x);
+    q.y -= shoeSpring(q.x);
     Surf s = Surf(vec3(0.6, 0.58, 0.53), 0.6, 0.0, nl.x * ax + nl.y * cx + nl.z * bx, 1.0);
-    if (m < 0.5) {
-      // The sole: dark tread below, a white wall with one dark pinstripe.
-      if (nl.y < -0.5) s.alb = vec3(0.09, 0.085, 0.08) * (0.7 + 0.6 * step(0.5, fract(q.x * 70.0 + q.z * 40.0)));
-      else if (abs(q.y - 0.017) < 0.0016) s.alb = vec3(0.05);
-    } else {
-      bool cap = q.x > 0.232, wall = q.y < 0.033;
-      bool hole = q.y > 0.1 && length(q.xz - vec2(0.072, 0.0)) < 0.031;
-      // White laces cross the tongue; steel eyelets flank them.
-      float lx = fract((q.x - 0.095) * 62.0);
-      bool lace = nl.y > 0.25 && q.x > 0.095 && q.x < 0.2 && abs(q.z) < 0.02 && lx < 0.5;
-      bool eyelet = nl.y > 0.1 && q.x > 0.095 && q.x < 0.2 && abs(abs(q.z) - 0.023) < 0.0035 && abs(lx - 0.25) < 0.2;
-      if (hole) { s.alb = vec3(0.03, 0.025, 0.025); s.rough = 0.95; }
-      else if (cap || wall || lace) { s.alb = vec3(0.6, 0.58, 0.53) * (0.85 + 0.2 * noise(q.xz * 300.0)); s.rough = lace ? 0.9 : 0.5; }
-      else if (eyelet) { s.alb = vec3(0.6, 0.61, 0.62); s.metal = 1.0; s.rough = 0.35; }
+    // Old white rubber: scuffed, greyer toward the ground.
+    vec3 rubber = vec3(0.62, 0.6, 0.55) * (0.8 + 0.25 * noise(q.xz * 300.0));
+    if (m > 1.5) {
+      // A lace: flat cotton, greyer where hands and dirt touched it.
+      s.alb = vec3(0.6, 0.58, 0.53) * (0.82 + 0.2 * noise(q.xz * 500.0));
+      s.rough = 0.9;
+    } else if (m < 0.5) {
+      if (nl.y < -0.5) {
+        // Diamond tread; the ball and the heel are worn nearly smooth.
+        vec2 g = abs(fract(vec2(q.x + q.z, q.x - q.z) * 55.0) - 0.5);
+        float worn = max(1.0 - smoothstep(0.02, 0.05, length(vec2(q.x - 0.2, q.z * 1.4))), 1.0 - smoothstep(0.015, 0.04, length(vec2(q.x - 0.05, q.z))));
+        float groove = smoothstep(0.4, 0.47, max(g.x, g.y)) * (1.0 - 0.8 * worn);
+        s.alb = mix(vec3(0.1, 0.095, 0.09), vec3(0.04, 0.038, 0.036), groove);
+        s.rough = mix(0.7, 0.5, worn);
+      } else if (abs(q.y - 0.023) < 0.0018) s.alb = vec3(0.04, 0.04, 0.05);
       else {
-        // Faded red canvas: a coarse weave and a seam round the collar.
+        // White foxing; the toe bumper carries fine vertical ribs.
+        float rib = q.x > 0.25 && q.y > 0.005 && q.y < 0.019 ? 0.85 + 0.15 * step(0.5, fract(q.z * 330.0)) : 1.0;
+        s.alb = rubber * rib * mix(0.72, 1.0, smoothstep(0.0, 0.02, q.y));
+      }
+      if (nl.y >= -0.5) s.rough = 0.65;
+    } else {
+      float top = shoeTop(q.x), row = (q.x - SH_ROW0) / SH_ROWS, rf = fract(row + 0.5) - 0.5;
+      // The toe cap is rubber; a white tab covers the heel seam.
+      bool cap = q.x > SH_CAP + 0.004, tab = q.x < 0.012 && q.y < 0.075;
+      // Inside the collar: the cream lining.
+      bool lining = q.y > 0.075 && length(vec2(max(abs(q.x - 0.065) - 0.012, 0.0), q.z)) < 0.026;
+      // The tongue lies in the throat, 6 mm under the top.
+      bool tongue = q.y < top - 0.003 && abs(q.z) < shoeGap(q.x) + 0.001 && abs(q.x - 0.16) < 0.056;
+      // Each eyelet: a steel ring round a dark hole.
+      float er = length(vec2(rf * SH_ROWS, abs(q.z) - shoeGap(q.x) - 0.005));
+      bool eye = row > -0.5 && row < 6.5 && q.y > top - 0.012 && er < 0.0036;
+      // Stitches: a row behind the toe cap, one along the throat, one round the collar.
+      bool stitch = (abs(q.x - SH_CAP + 0.002) < 0.0008 || abs(abs(q.z) - shoeGap(q.x) - 0.011) < 0.0007 && abs(q.x - 0.16) < 0.056 || abs(q.y - (top - 0.012)) < 0.0007 && q.x < SH_EYE) && fract((q.x + q.y + abs(q.z)) * 420.0) < 0.55;
+      if (lining) { s.alb = vec3(0.5, 0.47, 0.4); s.rough = 0.95; s.ao = 0.4; }
+      else if (cap || tab) { s.alb = rubber; s.rough = 0.5; }
+      else if (eye) { s.alb = er < 0.0019 ? vec3(0.03) : vec3(0.6, 0.61, 0.62); s.metal = er < 0.0019 ? 0.0 : 1.0; s.rough = 0.35; }
+      else {
+        // Faded red canvas: a coarse weave, bleached on top, dirtier low down.
         float weave = 0.75 + 0.25 * noise(q.xy * 900.0) + 0.12 * sin(q.x * 2200.0) * sin(q.y * 2200.0);
-        s.alb = vec3(0.4, 0.04, 0.035) * weave * (abs(q.y - 0.138) < 0.002 ? 0.5 : 1.0);
+        vec3 red = mix(vec3(0.4, 0.04, 0.035), vec3(0.46, 0.12, 0.1), 0.5 * smoothstep(0.2, 0.9, nl.y) * noise(q.xz * 40.0));
+        s.alb = red * weave * mix(0.7, 1.0, smoothstep(0.03, 0.055, q.y)) * (stitch ? 1.6 : 1.0) * (tongue ? 0.8 : 1.0);
+        if (tongue) s.ao = 0.55;
         s.rough = 0.93;
       }
     }
