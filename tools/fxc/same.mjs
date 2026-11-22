@@ -1,9 +1,11 @@
-// Renders one exact Tornado alley frame on ANGLE GL, for a same-frame check.
+// Renders one exact Tornado alley frame on ANGLE GL.
 // Math.random has a fixed seed; the clock steps 1/60 s per frame.
-// Three vehicles stand in place: one far and two near, or all three near ('near').
+// Three vehicles stand in place: one far and two near.
+// With 'near' all three stand near.
 // Usage: node same.mjs <url with ?qa&buildup=0> <out-prefix> [frames] [near]
 // It writes <out>.raw (RGBA rows, bottom first), <out>.json (size) and <out>.png.
-// The repo's pinned Playwright 1.63.0, from the npx cache: its headless shell runs main on ANGLE GL; Edge's does not.
+// The repo's pinned Playwright 1.63.0, from the npx cache.
+// Its headless shell runs main on ANGLE GL; Edge does not.
 import { chromium } from 'file:///C:/Users/tmlns/AppData/Local/npm-cache/_npx/6bcb61ec6d5aea22/node_modules/playwright/index.mjs';
 import { writeFileSync } from 'node:fs';
 const [url, out, frames, scene] = process.argv.slice(2);
@@ -16,7 +18,8 @@ const init = ([N, near]) => {
   let queue = [];
   let ready = 0;
   const tick = () => {
-    // The funnel links on a timer: the frames wait for it, then 3 s more for late parts.
+    // The funnel links on a timer: frames wait for it.
+    // Then they wait 3 s more for late parts.
     if (window.__qa && n < 0) {
       if (!window.__qa.fun.prog) { raf(tick); return; }
       if (!ready) ready = Date.now();
@@ -38,7 +41,7 @@ const init = ([N, near]) => {
     if (n >= N) { queue = q; return; }
     for (const cb of q) cb(now);
     if (n >= 0 && ++n === N) {
-      // Read the frame in the task that drew it: the buffer is still whole.
+      // Read the frame in the task that drew it, while it is whole.
       const c = document.querySelector('canvas'), gl = c.getContext('webgl2');
       const fb = gl.getParameter(gl.FRAMEBUFFER_BINDING);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);

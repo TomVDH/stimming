@@ -1,5 +1,6 @@
 // Tornado alley: the vehicles drawn as meshes, into the toy's own targets.
-// Each group (far, near) draws twice: its share behind the funnels, then its share in front.
+// Each group, far and near, draws twice.
+// First its share behind the funnels, then its share in front.
 // The layer passes passCarsFar and passCarsNear lay the pictures in (main.js).
 // Every program here has one output: D3D11 compiles a multi-output program twice.
 import { ENV_UNIFORMS } from '../shared/environment.js';
@@ -9,12 +10,12 @@ import { SKY, skyAt } from '../shared/sky.js';
 import { PRECIP } from '../shared/precip.js';
 import { GLOW } from '../shared/glow.js';
 import { pruneGLSL } from '../shared/glsl-prune.js';
-import { program, linked, target, msTarget, free } from '../shared/gl.js';
+import { program, linked, target, free } from '../shared/gl.js';
 import { HULLS } from './vshape.js';
 import { vehicleMesh, hullPlanes } from './vmesh.js';
 
-// The vehicle's frame from its uniforms: x, z, heading, kind; seed, brake, speed, age.
-// The shutter's offset in metres, spin, group (1 far), 0; base pitch and roll.
+// uVA: x, z, heading, kind. uVB: seed, brake, speed, age.
+// uVC: shutter offset in metres, spin, group (1 far). uVD: pitch, roll.
 const VEH_U = /* glsl */`
 uniform vec4 uVA, uVB, uVC, uVD;
 mat2 vRollM() {
@@ -25,13 +26,14 @@ mat2 vPitchM() {
   float p = 0.004 * sin(uVB.w * 3.1 + uVB.x * 3.0) + uVD.x;
   return mat2(cos(p), -sin(p), sin(p), cos(p));
 }
-// A point in the body's frame, back to the unrotated frame: pitch then roll undone.
+// A body-frame point in the unrotated frame: pitch, then roll, undone.
 vec3 vUnrot(vec3 q) {
   q.yz = transpose(vPitchM()) * (q.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0);
   q.xy = transpose(vRollM()) * (q.xy - vec2(0.0, 0.8)) + vec2(0.0, 0.8);
   return q;
 }
-// A cup turns round its hub: aCup holds its offset at spin 0, and 1.
+// A cup turns round its hub.
+// aCup holds its offset at spin 0, and 1 for a cup.
 vec3 vCupSpin(vec3 p, vec3 cup) {
   if (cup.z < 0.5) return p;
   float s = sin(uVC.y), c = cos(uVC.y);
@@ -39,18 +41,19 @@ vec3 vCupSpin(vec3 p, vec3 cup) {
   return p;
 }
 `;
-// The camera, as main.js's SHARED has it: the eye at CAMH, turned by uYaw.
+// The camera as in main.js SHARED: the eye at CAMH, turned by uYaw.
 const CAM_VS = /* glsl */`
 uniform float uYaw, uFoc, uHz, uCamH;
 uniform vec2 uRes;
 vec3 toCamV(vec3 w) { float s = sin(uYaw), k = cos(uYaw); return vec3(w.x * k - w.z * s, w.y, w.x * s + w.z * k); }
-// A world point to clip space: the scene's screen point s = (c.x, c.y - CAMH) / -c.z * uFoc.
+// A world point in clip space.
+// It keeps the scene's screen point: s = (c.x, c.y - CAMH) / -c.z * uFoc.
 vec4 clipOf(vec3 w) {
   vec3 c = toCamV(w);
   float asp = uRes.x / uRes.y, d = -c.z, n = 0.2, f = 30000.0;
   return vec4(2.0 * uFoc * c.x / asp, 2.0 * uFoc * (c.y - uCamH) + (2.0 * uHz - 1.0) * d, (f + n) / (f - n) * d - 2.0 * f * n / (f - n), d);
 }
-// True when this vehicle belongs to the group being drawn, and stands before the eye.
+// True when the vehicle is in this group and before the eye.
 bool inGroup() {
   float z = -toCamV(vec3(uVA.x, 1.0, uVA.y)).z;
   return z >= 0.3 && (z > 60.0) == (uVC.z > 0.5);
@@ -63,6 +66,8 @@ layout(location = 1) in vec3 aNrm;
 layout(location = 2) in float aId;
 layout(location = 3) in vec3 aCup;
 ${VEH_U}${CAM_VS}
+// The depth pass and the shading pass must give the same depth.
+invariant gl_Position;
 out vec3 vH, vN, vW;
 flat out float vId;
 void main() {
@@ -79,7 +84,7 @@ flat in float vId;
 ${VEH_U}
 // 1 lays the share behind the funnels, 0 the share in front.
 uniform float uShare;
-// The cab's planes, for the glass's exit point, as vHit() keeps it in gExT.
+// The cab's planes give the glass's exit point, as gExT in vHit().
 uniform vec4 uCab[32];
 uniform int uCabN;
 ${'${SM_FS}'}
@@ -99,18 +104,19 @@ void main() {
   lo.yz = mp * (lo.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0); ld.yz = mp * ld.yz;
   vec3 hl = vH, n = normalize(vN);
   int id = vPart(int(vId + 0.5), kind, hl, n);
-  // The body shades its own parts: the sun's shadow map in place of the sun ray.
+  // The body shades its own parts.
+  // A shadow map from the sun replaces the sun ray.
   vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), ls = vec3(dot(L, rt), L.y, dot(L, f));
   ls.xy = mr * ls.xy; ls.yz = mp * ls.yz;
   float sv = 1.0;
   if (dot(n, ls) <= 0.0) sv = 0.0;
-  else if (uVC.z < 0.5 && id != 6 && id != 7 && z <= 40.0) sv = smLight(hl + n * 0.004);
+  else if (uSun.y > 0.0 && uVC.z < 0.5 && id != 6 && id != 7 && z <= 40.0) sv = smLight(hl + n * 0.004);
   gSh = sv; gSpd = spd; gAge = age;
   vec3 nl = vBend(hl, n, id, kind), nb = nl;
   nb.yz = transpose(mp) * nb.yz; nb.xy = transpose(mr) * nb.xy;
   vec3 N = normalize(rt * nb.x + vec3(0.0, nb.y, 0.0) + f * nb.z);
   vec3 P = Ck + rt * hl.x + vec3(0.0, hl.y, 0.0) + f * hl.z;
-  // Glass in a cab with windows all round shows the world through the far window.
+  // Glass in a cab with windows all round shows the far window.
   float see = 0.0;
   if (id == 2 && kind != 2) {
     float tf = 1e9;
@@ -122,7 +128,7 @@ void main() {
     }
     vec3 xp = lo + ld * tf;
     see = float(vPart(2, kind, xp, nf) == 2);
-    // Seat backs with rounded shoulders, and a rounded headrest over each, block the lower window.
+    // Seat backs and headrests block the lower window.
     float bx = abs(abs(xp.x) - 0.42), by = xp.y - vBelt(kind);
     float back = step(by, 0.16 - 0.5 * max(bx - 0.18, 0.0));
     float rest = step(length(vec2(bx / 0.12, (by - 0.3) / 0.09)), 1.0);
@@ -137,17 +143,19 @@ void main() {
   // Four moments in the shutter add up to one.
   outC = vec4(col, 1.0) * share * 0.25;
 }`;
-// The sun's shadow map, in the body's frame: an orthographic view along the sun.
-// tSMD holds depth; tSMF is 1 where the nearest part is the cab (its glass lets 0.45 through).
+// The sun's shadow map: an orthographic view along the sun, in the body frame.
+// tSMD holds depth. tSMF is 1 where the nearest part is the cab.
+// The cab's glass lets 0.45 of the sun through.
 const SM_FS = /* glsl */`
 uniform highp sampler2D tSMD, tSMF;
 uniform vec3 uLX, uLY, uLZ;
-// The view's centre on the sun's plane, its half size, and the depth's centre and half range.
+// uLB: the view's centre on the sun's plane, its half size, the depth's centre.
 uniform vec4 uLB;
 vec3 smAt(vec3 p) {
   return vec3((vec2(dot(p, uLX), dot(p, uLY)) - uLB.xy) / uLB.z * 0.5 + 0.5, 0.5 - (dot(p, uLZ) - uLB.w) / 10.0);
 }
-// The sun's share at a body point: 1 open, 0.45 behind the cab, 0 behind another part.
+// The sun's share at a body point.
+// 1 in the open, 0.45 behind the cab, 0 behind another part.
 // Four texels, so the edge is soft.
 float smLight(vec3 p) {
   vec3 q = smAt(p);
@@ -187,8 +195,10 @@ precision highp float;
 flat in float vId;
 out vec4 outC;
 void main() { outC = vec4(abs(vId - 2.0) < 0.5 ? 1.0 : 0.0); }`;
-// The road under a vehicle, and its shadow's reach away from the sun; the fragment does the work.
-// A 3.8 m roof under a sun 1 degree up casts about 220 m: the strip runs 400 m at most.
+// A strip of road: under the vehicle and along its shadow.
+// The fragment shader does the work.
+// A sun 1 degree up casts a 3.8 m roof 220 m long.
+// The strip stops at 400 m.
 const GND_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aQ;
@@ -196,11 +206,13 @@ uniform vec3 uSun;
 ${VEH_U}${CAM_VS}
 void main() {
   vec2 g = length(uSun.xz) > 1e-4 ? -normalize(uSun.xz) : vec2(0.0, 1.0), side = vec2(-g.y, g.x);
-  float len = min(4.0 / max(uSun.y, 0.01), 400.0);
+  // With the sun down, only the contact shadow is left.
+  float len = uSun.y > 0.0 ? min(4.0 / max(uSun.y, 0.01), 400.0) : 0.0;
   vec2 xz = vec2(uVA.x, uVA.y) + g * mix(-8.0, len + 8.0, aQ.x * 0.5 + 0.5) + side * aQ.y * 8.0;
   gl_Position = inGroup() ? clipOf(vec3(xz.x, 0.0, xz.y)) : vec4(2.0, 2.0, 2.0, 1.0);
 }`;
-// The contact shadow and the sun's shadow on the road, as vehicle()'s shadow phase lays them.
+// The contact shadow and the sun's shadow on the road.
+// They match the old shadow phase of vehicle().
 const GND_MAIN = /* glsl */`
 ${VEH_U}
 uniform float uShare;
@@ -311,10 +323,23 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   gl.bindTexture(gl.TEXTURE_2D, null);
 
+  // A multisampled colour target with depth and stencil.
+  function msPair(w, h, samples, fmt) {
+    const fb = gl.createFramebuffer(), color = gl.createRenderbuffer(), depth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, color);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, fmt, w, h);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+    gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH24_STENCIL8, w, h);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, depth);
+    return { fb, color, depth, w, h };
+  }
   // A program's active 2D samplers, read once.
   const samplers2D = P => P.s2 || (P.s2 = Array.from({ length: gl.getProgramParameter(P.p, gl.ACTIVE_UNIFORMS) }, (_, i) => gl.getActiveUniform(P.p, i))
     .filter(a => a.type === gl.SAMPLER_2D).map(a => a.name));
-  // The scene's uniforms and pictures on one program: the toy's, the sky's, and every sampler.
+  // Sets the toy's uniforms, the sky's, and every sampler on one program.
   function sceneUniforms(P, w, h) {
     const u = P.u, sk = skyAt(hour());
     gl.useProgram(P.p);
@@ -328,18 +353,20 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
       else if (v.length === 3) gl.uniform3fv(at, v);
       else gl.uniform4fv(at, v);
     }
-    // Units 10 to 15 are the meshes': the toy's pictures, the shadow map, then a blank for the rest.
+    // Units 10 to 15 are for the meshes.
+    // The toy's pictures, then the shadow map, then a blank.
     let unit = 10;
     for (const [name, get] of Object.entries(textures)) {
       if (u[name] == null) continue;
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, get() || blank); gl.uniform1i(u[name], unit++);
     }
-    // Every other 2D sampler reads a blank: on unit 0 it would clash with the 3D noise.
+    // Every other 2D sampler reads a blank.
+    // On unit 0 it would clash with the 3D noise.
     gl.activeTexture(gl.TEXTURE15); gl.bindTexture(gl.TEXTURE_2D, blank);
     for (const name of samplers2D(P)) if (!(name in textures) && name !== 'tSMD' && name !== 'tSMF') gl.uniform1i(u[name], 15);
     gl.activeTexture(gl.TEXTURE0);
   }
-  // One vehicle's uniforms from traffic.js's packed arrays; false when the slot is empty.
+  // Sets one vehicle's uniforms; false when its slot is empty.
   function vehUniforms(P, traf, i, shut, spin, far) {
     const a = traf.u, b = traf.uB, c = traf.uC, k = i * 4;
     if (b[k] <= 0) return false;
@@ -350,7 +377,7 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
     gl.uniform4f(u.uVD, c[k + 1], c[k + 2], 0, 0);
     return true;
   }
-  // The sun's view of one vehicle, in its body frame; sets the light uniforms on P.
+  // The sun's view of one vehicle, in its body frame.
   function lightBasis(traf, i) {
     const a = traf.u, b = traf.uB, c = traf.uC, k = i * 4, sun = uniforms.uSun();
     const hd = b[k + 3], f = [Math.sin(hd), 0, Math.cos(hd)], rt = [-f[2], 0, f[0]];
@@ -388,9 +415,10 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
     if (w !== w0 || h !== h0) {
       free(gl, ms); for (const g of ['far', 'near']) out[g].forEach(t => free(gl, t));
       // The resolve keeps the multisampled format: a blit cannot change it.
-      let fmt = gl.RGBA16F;
-      ms = msTarget(gl, w, h, 4);
-      if (!ms.ok) { free(gl, ms); fmt = gl.RGBA8; ms = msTarget(gl, w, h, 4, { format: fmt }); }
+      // Half floats when the driver allows; up to 4 samples.
+      const half = !!gl.getExtension('EXT_color_buffer_float'), fmt = half ? gl.RGBA16F : gl.RGBA8;
+      const samples = Math.min(4, ...gl.getInternalformatParameter(gl.RENDERBUFFER, fmt, gl.SAMPLES));
+      ms = msPair(w, h, samples, fmt);
       for (const g of ['far', 'near']) out[g] = [0, 1].map(() => target(gl, w, h, { format: fmt, filter: gl.NEAREST }));
       w0 = w; h0 = h;
     }
@@ -400,9 +428,12 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
     gl.useProgram(set.smap.p);
     gl.enable(gl.DEPTH_TEST);
     gl.viewport(0, 0, SM, SM);
+    // No shadow map with the sun down: nothing reads one.
+    const sunUp = uniforms.uSun()[1] > 0;
     for (let i = 0; i < n; i++) {
       if (!live[i]) continue;
       lights[i] = lightBasis(traf, i);
+      if (!sunUp) continue;
       gl.bindFramebuffer(gl.FRAMEBUFFER, smaps[i].fb);
       gl.clearColor(0, 0, 0, 0); gl.clearDepth(1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -422,19 +453,39 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
         // The bodies: four moments in the shutter, each depth-sorted, summed.
         gl.useProgram(set.body.p);
         gl.uniform1f(set.body.u.uShare, share === 0 ? 1 : 0);
-        // The vehicle's frame (right, up, forward) is left-handed: its outward faces wind clockwise.
+        // The vehicle's frame is left-handed: outward faces wind clockwise.
         gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CW);
         gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+        // A sum does not sort by depth.
+        // Each moment lays its depth first, then shades the nearest face.
+        // A stencil lets each sample take one face per moment.
+        // So faces that meet at one depth add once.
+        gl.enable(gl.STENCIL_TEST);
         for (let s = 0; s < 4; s++) {
-          gl.clear(gl.DEPTH_BUFFER_BIT);
-          for (let i = 0; i < n; i++) {
-            if (!live[i] || !vehUniforms(set.body, traf, i, (s + 0.5) / 4 - 0.5, spin, far)) continue;
-            gl.uniform4fv(set.body.u.uCab, cab[kinds[i]]); gl.uniform1i(set.body.u.uCabN, cab[kinds[i]].length / 4);
-            setLight(set.body, lights[i]); bindSmap(set.body, i);
-            gl.bindVertexArray(vaos[kinds[i]].vao);
-            gl.drawArrays(gl.TRIANGLES, 0, vaos[kinds[i]].count);
+          // A clear obeys the depth mask: the shading pass left it off.
+          gl.depthMask(true);
+          gl.clear(gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+          for (const pass of [0, 1]) {
+            gl.colorMask(pass === 1, pass === 1, pass === 1, pass === 1);
+            gl.depthMask(pass === 0);
+            gl.depthFunc(pass === 0 ? gl.LESS : gl.LEQUAL);
+            gl.stencilFunc(pass === 0 ? gl.ALWAYS : gl.EQUAL, 0, 0xff);
+            gl.stencilOp(gl.KEEP, gl.KEEP, pass === 0 ? gl.KEEP : gl.INCR);
+            for (let i = 0; i < n; i++) {
+              if (!live[i] || !vehUniforms(set.body, traf, i, (s + 0.5) / 4 - 0.5, spin, far)) continue;
+              // Both passes bind the map.
+              // A sampler left on unit 0 would meet the 3D noise.
+              bindSmap(set.body, i);
+              if (pass === 1) {
+                gl.uniform4fv(set.body.u.uCab, cab[kinds[i]]); gl.uniform1i(set.body.u.uCabN, cab[kinds[i]].length / 4);
+                setLight(set.body, lights[i]);
+              }
+              gl.bindVertexArray(vaos[kinds[i]].vao);
+              gl.drawArrays(gl.TRIANGLES, 0, vaos[kinds[i]].count);
+            }
           }
         }
+        gl.colorMask(true, true, true, true); gl.depthMask(true); gl.depthFunc(gl.LESS); gl.disable(gl.STENCIL_TEST);
         // The road's shadows lie under the bodies.
         gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.frontFace(gl.CCW);
         gl.blendFunc(gl.ONE_MINUS_DST_ALPHA, gl.ONE);
@@ -465,6 +516,8 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
   return {
     st, draw,
     /** The group's picture: far or near, behind (0) or in front (1). @param {'far' | 'near'} g @param {0 | 1} share */
-    tex: (g, share) => (out[g][share] ? out[g][share].tex : null),
+    // Until the first draw, a clear picture.
+    // An unbound texture reads as opaque black.
+    tex: (g, share) => (out[g][share] ? out[g][share].tex : blank),
   };
 }

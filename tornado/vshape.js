@@ -1,4 +1,5 @@
-// Tornado alley: the vehicles' shapes, as data. traffic.js traces them; vmesh.js builds meshes from them.
+// Tornado alley: the vehicles' shapes, as data.
+// traffic.js traces them; vmesh.js builds meshes from them.
 // Pure: no browser and no GL, so node tests can read it.
 // A plane with normal n through q: its unit normal and offset.
 export const pq = (n, q) => { const l = Math.hypot(...n), u = n.map(v => v / l); return [...u, u[0] * q[0] + u[1] * q[1] + u[2] * q[2]]; };
@@ -92,14 +93,18 @@ export const BOXES = [
     ...pair(B([1.12, 1.5, 1.5], [0.08, 0.16, 0.05], 0.025, 3)), ...pair(B([1.03, 1.45, 1.53], [0.05, 0.02, 0.02], 0, 3)),
   ],
 ];
-// Each kind's wheels: radius, axle z from the middle, track half width, tyre half width; axles' mid point.
+// Each kind's wheels: radius, axle z, track half width.
+// Then the tyre's half width and the axles' mid point.
 export const WHEELS = [[0.4, 1.84, 0.86, 0.14, -0.04], [0.38, 1.45, 0.8, 0.14, 0], [0.38, 1.8, 0.84, 0.14, 0]];
-// The chasers' masts and aerials, three per kind 1 and 2: x, z, radius, foot, top, id.
+// The chasers' masts and aerials, three per kind 1 and 2.
+// Each: x, z, radius, foot, top, id.
 export const RODS = [
   [0.55, -2.0, 0.018, 1.7, 2.62, 5], [-0.7, -2.2, 0.006, 1.6, 2.75, 3], [-0.5, -2.2, 0.006, 1.6, 2.6, 3],
   [0.0, -2.2, 0.035, 2.35, 3.68, 5], [0.46, -2.2, 0.01, 3.62, 3.74, 5], [0.0, -1.6, 0.03, 2.43, 2.68, 5],
 ];
-// The cup anemometer on kinds 1 and 2: hub, arm length, cup half size. The cups turn with spin.
+// The cup anemometer on kinds 1 and 2: hub, arm, cup half size.
+// The cups turn with spin.
 export const CUPS = [null, { c: [0.55, 2.63, -2.0], r: 0.11, s: 0.025 }, { c: [0.46, 3.74, -2.2], r: 0.12, s: 0.028 }];
-// The van's dish: vertex, axis, rim radius, sphere radius; its post (a box, id 3).
+// The van's dish: vertex, axis, rim radius, sphere radius.
+// Its post is a box, id 3.
 export const DISH = { v: [0.0, 2.8, -1.6], ax: [0.55, 0.8, 0.15], rr: 0.42, rs: 0.9, post: { c: [0.0, 2.72, -1.6], h: [0.08, 0.06, 0.08], e: 0.02, id: 3 } };

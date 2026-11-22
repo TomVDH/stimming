@@ -2398,7 +2398,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { vd, tod: act.tod, bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 booted = true;
 watch.step('Drawing the first frames', true);

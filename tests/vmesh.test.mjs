@@ -51,7 +51,7 @@ test('the mesh and the ray test agree on 2000 rays per hull', () => {
   for (const hs of HULLS) for (const hl of hs) {
     const m = hullMesh(hl.c, hl.h, hl.e, hl.pl);
     for (let k = 0; k < 2000; k++) {
-      // From a point 12 m off, toward a point in the hull's box.
+      // From 12 m off, toward a point in the hull's box.
       const th = r() * Math.PI * 2, ph = (r() - 0.5) * Math.PI;
       const ro = [hl.c[0] + 12 * Math.cos(ph) * Math.cos(th), hl.c[1] + 12 * Math.sin(ph), hl.c[2] + 12 * Math.cos(ph) * Math.sin(th)];
       const at = hl.c.map((v, i) => v + (r() * 2 - 1) * hl.h[i]);
@@ -62,7 +62,8 @@ test('the mesh and the ray test agree on 2000 rays per hull', () => {
   }
 });
 
-// The nearest triangle that faces the ray, and its part id: the raster's view of the mesh.
+// The nearest triangle that faces the ray, and its part id.
+// That is the raster's view of the mesh.
 function rayMeshId(m, ro, rd) {
   const P = m.pos;
   let best = Infinity, id = 0;
@@ -108,7 +109,7 @@ test('each kind matches vHit on 5000 rays: same id, t within 5 mm; at most 0.3% 
 
 test('an arch cut leaves the well (id 8) inside the cylinder', () => {
   const [cy, cz, , r] = ARCH[0];
-  // From the right side, between the tyre's top (0.8 m) and the arch's top.
+  // From the right, between the tyre's top and the arch's top.
   // A slight slant: a ray straight along x has no cylinder test.
   const l = Math.hypot(1, 0.08), ro = [6, cy + r * 0.9, cz - 0.4], rd = [-1 / l, 0, 0.08 / l];
   assert.equal(vHitJS(0, ro, rd).id, 8);

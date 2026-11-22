@@ -1,4 +1,4 @@
-// Tornado alley: meshes for the vehicles, built from the shape tables in vshape.js.
+// Tornado alley: the vehicles' meshes, from the tables in vshape.js.
 // Pure: no browser and no GL, so node tests can run it.
 // The mesh matches vHit() in traffic.js: the same parts, ids and normals.
 import { HULLS, BOXES, ARCH, WHEELS, RODS, CUPS, DISH } from './vshape.js';
@@ -10,7 +10,8 @@ const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = a => mul(a, 1 / Math.hypot(...a));
-// The round parts' facets: fine enough that a facet lies within about 1 mm of the true curve.
+// Facets per round part.
+// Each facet lies within about 1 mm of the true curve.
 const SEG = { arch: 48, wheel: 48, rod: 12, cap: 16, dish: 24 };
 
 /**
@@ -35,7 +36,8 @@ export function hullPlanes(c, h, e, planes) {
   return [...out, ...planes];
 }
 
-// Clips one convex polygon to dot(n, p) <= w; also returns the points on the plane.
+// Clips a convex polygon to dot(n, p) <= w.
+// It also returns the points on the plane.
 function clip(poly, n, w) {
   const out = [], cut = [];
   for (let i = 0; i < poly.length; i++) {
@@ -59,7 +61,7 @@ function clip(poly, n, w) {
  * @returns {{ pl: object, p: number[][] }[]}
  */
 function pieceFaces(planes, c) {
-  // Start from a cube far larger than any vehicle; each plane cuts it.
+  // A cube far larger than any vehicle; each plane cuts it.
   const S = 50, v = (x, y, z) => [c[0] + x * S, c[1] + y * S, c[2] + z * S];
   const box = (n, p) => ({ pl: { n, id: 0, skip: true }, p });
   let faces = [
@@ -102,7 +104,7 @@ function sink() {
     m.id.push(id, id, id);
     m.cup.push(...cup, ...cup, ...cup);
   };
-  // A face as a fan, wound so its geometric normal agrees with n.
+  // A face as a fan, wound to agree with n.
   m.fan = (p, n, id, nf = null, cup) => {
     for (let i = 1; i + 1 < p.length; i++) {
       let a = p[0], b = p[i], c = p[i + 1];
@@ -113,7 +115,8 @@ function sink() {
   return m;
 }
 // Adds a convex piece's faces; skipped planes leave no face.
-// A cut face shows only where it borders the cut: inside the cut's later planes (clipBy).
+// A cut face shows only where it borders the cut.
+// That part lies inside the cut's later planes (clipBy).
 function addPiece(m, planes, c, cup) {
   for (const f of pieceFaces(planes, c)) {
     if (f.pl.skip) continue;
@@ -150,8 +153,10 @@ export function rayHull(ro, rd, c, h, e, planes) {
   return tn > tf || tn <= 0 ? Infinity : tn;
 }
 
-// A wheel arch's cut on one side s: the cylinder round x at (y, z) c, radius r, beyond x0.
-// As planes: the x0 wall, the cylinder's box, then its facets, inside where dot(n, p) <= w.
+// A wheel arch's cut on side s.
+// The cylinder round x at (y, z) c, radius r, beyond x0.
+// Its planes: the x0 wall, the cylinder's box, then its facets.
+// Inside is where dot(n, p) <= w.
 // The box comes first, so the pieces round the arch stay small.
 function archCut(c, r, x0, s) {
   const list = [{ n: [-s, 0, 0], w: -x0 }];
@@ -163,13 +168,15 @@ function archCut(c, r, x0, s) {
   }
   return { list, c, r, x0, s };
 }
-// The well's normal at a point: toward the arch's axis, as hCut() gives it.
+// The well's normal points to the arch's axis, as in hCut().
 const wellNormal = (c, s) => p => {
   const d = [0, c[0] - p[1], c[1] - p[2]];
   return Math.hypot(d[1], d[2]) < 1e-9 ? [s, 0, 0] : norm(d);
 };
-// Takes the arch cut out of each piece: the part outside each cut plane, inside the ones before.
-// A face on a cut plane is the well (id 8) where it borders the cut; the planes before leave no face.
+// Takes the arch cut out of each piece.
+// Each new piece is outside one cut plane and inside the ones before.
+// A face on a cut plane is the well (id 8) where it borders the cut.
+// The planes before leave no face.
 function subtract(pieces, cut) {
   const out = [];
   const bound = [cut.s * cut.x0, cut.c[0] - cut.r, cut.c[1] - cut.r, cut.c[0] + cut.r, cut.c[1] + cut.r];
@@ -190,7 +197,8 @@ function subtract(pieces, cut) {
   return out;
 }
 
-// A closed wheel: a 48-sided drum round x, the rim's disc inside 0.62 of the radius (id 11).
+// A closed wheel: a 48-sided drum round x.
+// The rim's disc (id 11) fills 0.62 of the radius.
 function wheel(m, c, r, x, w) {
   const N = SEG.wheel, ring = (k, f) => { const a = (k / N) * 2 * Math.PI; return [0, c[0] + Math.cos(a) * r * f, c[1] + Math.sin(a) * r * f]; };
   for (let k = 0; k < N; k++) {
@@ -204,7 +212,7 @@ function wheel(m, c, r, x, w) {
     }
   }
 }
-// An upright rod at (x, z) from y0 to y1: its side only, as vRod() traces it.
+// An upright rod at (x, z), y0 to y1: its side only, as vRod().
 function rod(m, x, z, r, y0, y1, id) {
   const N = SEG.rod;
   for (let k = 0; k < N; k++) {
@@ -214,11 +222,12 @@ function rod(m, x, z, r, y0, y1, id) {
       norm([Math.cos((a0 + a1) / 2), 0, Math.sin((a0 + a1) / 2)]), id, q => norm([q[0] - x, 0, q[2] - z]));
   }
 }
-// A capsule from a to b, radius r: a tube and two half balls, as a grid of latitude rings.
+// A capsule from a to b, radius r.
+// A tube and two half balls, as rings of latitude.
 function capsule(m, a, b, r, id) {
   const N = SEG.cap, H = 6, ax = norm(sub(b, a));
   const u = norm(cross(ax, Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), v = cross(ax, u);
-  // Rings from the far pole at a to the far pole at b.
+  // Rings from the pole at a to the pole at b.
   const rings = [];
   for (let i = 0; i <= H; i++) { const t = (i / H) * Math.PI / 2; rings.push([a, -Math.cos(t), Math.sin(t)]); }
   for (let i = 0; i <= H; i++) { const t = (i / H) * Math.PI / 2; rings.push([b, Math.sin(t), Math.cos(t)]); }
@@ -231,12 +240,13 @@ function capsule(m, a, b, r, id) {
     fix(p00, p11, p10, n00, n11, n10);
   }
 }
-// The van's dish: a cap of a sphere, its back (id 16) outward, its face (id 15) toward the centre.
+// The van's dish: a cap of a sphere.
+// Its back (id 16) faces out; its face (id 15) faces the centre.
 function dish(m) {
   const ax = norm(DISH.ax), cs = add(DISH.v, mul(ax, DISH.rs)), rs = DISH.rs;
   const top = Math.asin(DISH.rr / rs), N = SEG.dish, H = 8;
   const u = norm(cross(ax, [0, 1, 0])), v = cross(ax, u);
-  // A point on the sphere at polar angle t from -ax, and its outward unit normal.
+  // A sphere point at polar angle t from -ax, and its outward normal.
   const at = (t, k) => { const g = (k / N) * 2 * Math.PI, d = add(mul(ax, -Math.cos(t)), mul(add(mul(u, Math.cos(g)), mul(v, Math.sin(g))), Math.sin(t))); return [add(cs, mul(d, rs)), d]; };
   for (let i = 0; i < H; i++) for (let k = 0; k < N; k++) {
     const t0 = (i / H) * top, t1 = ((i + 1) / H) * top;

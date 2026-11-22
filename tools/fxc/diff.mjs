@@ -1,4 +1,4 @@
-// Compares two frames from same.mjs: counts the pixels that differ, by how much.
+// Compares two frames from same.mjs: the pixels that differ, and how much.
 // Usage: node diff.mjs <a-prefix> <b-prefix> [diff.png]
 // The PNG shows each pixel's largest channel change, times 16.
 import { readFileSync, writeFileSync } from 'node:fs';

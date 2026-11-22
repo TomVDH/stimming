@@ -1,4 +1,5 @@
-// A JS port of traffic.js's vHit(), for the mesh tests: the nearest part and its distance.
+// A JS port of traffic.js's vHit() for the mesh tests.
+// It returns the nearest part and its distance.
 // gPxW is 0 here: rods and capsules keep their own radius.
 import { HULLS, BOXES, ARCH, WHEELS, RODS, CUPS, DISH } from '../tornado/vshape.js';
 import { hullPlanes } from '../tornado/vmesh.js';
@@ -20,7 +21,7 @@ function hull(ro, rd, planes) {
   }
   return [tn, tf];
 }
-// hCut(): an entry inside the arch moves to where the ray leaves the cut.
+// hCut(): an entry in the arch moves to the cut's exit.
 function cut(ro, rd, c, r, x0, tn) {
   const o = [ro[1] - c[0], ro[2] - c[1]], d = [rd[1], rd[2]];
   const A = d[0] * d[0] + d[1] * d[1], B = o[0] * d[0] + o[1] * d[1], D = B * B - A * (o[0] * o[0] + o[1] * o[1] - r * r);
