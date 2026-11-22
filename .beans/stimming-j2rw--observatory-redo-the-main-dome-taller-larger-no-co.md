@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T09:43:50Z
-updated_at: 2026-11-22T11:14:03Z
+updated_at: 2026-11-22T11:24:00Z
 parent: stimming-wqq9
 ---
 
@@ -28,3 +28,15 @@ The size grows through the main dome's scale (1.5 to 1.7) and a lower DRUM_H.
 
 
 - [x] The cuts hide the laser beam (Tom, 2026-11-22); the wide shot keeps it
+
+
+## Keck direction (Tom, 2026-11-22)
+
+Tom: a big scientific observatory, like the Keck telescopes.
+
+- [x] Light model: big Keck-style enclosure (base, turning skirt, vents, wide opening, shutter rails), 25 m across, 19.6 m tall
+- [x] Door lamp and tracking lamp sit on the big base
+- [x] Hero build skipped while the main dome is big; cuts use the light model
+- [ ] Tom approves the size and the look
+- [ ] Keck-style hero model for the cuts (and cut cameras retuned)
+- [ ] Open truss telescope visible through the opening

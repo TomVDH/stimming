@@ -61,7 +61,7 @@ const box = (w: number, h: number, d: number, color: number | MeshLambertMateria
 // A row of windows runs along its north face.
 // It is 24 m long, 8 m deep and 4.5 m high.
 // It has a flat roof.
-const HALL = { x: 14, z: 7, w: 24, d: 8, h: 4.5 };
+const HALL = { x: 18, z: 7, w: 24, d: 8, h: 4.5 };
 // Each lit pane has its own material.
 // Then each pane can come on alone.
 // world/lights sets their colours.
@@ -132,8 +132,9 @@ export function buildComplex(): Complex {
   root.position.copy(SITE);
   // The main dome holds the big refractor.
   // The laser leaves it.
-  const main = buildDome(1.7, true);
-  main.root.position.set(-6, 0, -2);
+  // It is the big Keck-style enclosure: 25 m across, 19.6 m to the top.
+  const main = buildDome(3.64, true, true);
+  main.root.position.set(-12, 0, -6);
   // One small dome stands alone to the east.
   // One sits on the hall's roof.
   const east = buildDome(0.6);

@@ -1235,7 +1235,9 @@ function start(): void {
     }, 0);
   }, 0);
 }
-setTimeout(start, 0);
+// The big enclosure has no hero model yet.
+// The hero then never gets ready, so the cuts keep the light model.
+if (!complex.main.big) setTimeout(start, 0);
 
 // The hero's slit azimuth: the cupola's, plus the German mount's offset.
 export const heroSlitAz = (d: Dome): number => d.pose.az + slitOffset(d.pose.tube.alt, d.pose.tube.az);
