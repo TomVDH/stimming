@@ -19,7 +19,7 @@ Build Hook and loop (idea 62, group D, a fidget) as a Lab toy: an MVP at high fi
 - [x] Icon round spike-hookloop-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/hookloop.md
-- [ ] Commit and push
+- [x] Commit and push
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
