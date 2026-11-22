@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T19:28:32Z
-updated_at: 2026-11-22T19:47:01Z
+updated_at: 2026-11-22T19:54:32Z
 parent: stimming-wqq9
 ---
 
@@ -21,5 +21,6 @@ Tom (2026-11-22): redo the hill, the hills, the woods and the access road. Refer
 - [x] Summit is a rounded crest with stepped pads, not a flat plateau (Tom)
 - [x] Camera ridge moved to 550 m north: a horizon crest shot (Tom)
 - [x] Peak less extreme and wider: 220 m high, 520 m foot, broad top with room (Tom: realism)
+- [x] Depth: deep hazy valley behind the summit, two receding mid ridges, far ranges paler with distance (Tom)
 - [ ] Tom approves the look
 - [x] Dusk opening checked on the new land (golden hour not checked)

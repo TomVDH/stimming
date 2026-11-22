@@ -18,11 +18,12 @@ import { SKY_GLSL, fog, skyU } from '../sky/haze.ts';
 // Further ranges show smaller features and fade more into the sky.
 type Ridge = { r: number; lo: number; hi: number; f: number; fade: number; seed: number };
 // Back to front: about 38 km, 22 km and 12 km out.
+// Each range takes more of the sky's colour with distance, so it reads far.
 // The back range is alpine and snow-capped; the front ranges are boreal forest.
 const RIDGES: Ridge[] = [
-  { r: 3400, lo: 2.2, hi: 5.2, f: 44, fade: 0.55, seed: 31 },
-  { r: 3200, lo: 1.6, hi: 3.4, f: 26, fade: 0.3, seed: 17 },
-  { r: 3000, lo: 1.1, hi: 2.3, f: 15, fade: 0.08, seed: 5 },
+  { r: 3400, lo: 2.2, hi: 5.2, f: 44, fade: 0.74, seed: 31 },
+  { r: 3200, lo: 1.6, hi: 3.4, f: 26, fade: 0.52, seed: 17 },
+  { r: 3000, lo: 1.1, hi: 2.3, f: 15, fade: 0.3, seed: 5 },
 ];
 // Snow caps the back range's crests over this angle, in degrees.
 const SNOW_ALT = 3.6;
