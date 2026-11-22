@@ -1,17 +1,18 @@
 // Load order: none.
 // The module builds nothing until a caller asks for the modern scope.
 import {
-  BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CylinderGeometry,
+  BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CircleGeometry, CylinderGeometry, DoubleSide,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
-  MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape, SphereGeometry,
-  TorusGeometry, TubeGeometry, Vector2, Vector3,
+  MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
+  SphereGeometry, TubeGeometry, Vector2, Vector3,
 } from 'three';
 import type { Material, MeshStandardMaterialParameters } from 'three';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
-/* ---------- the modern scope: a shrouded 1 m Ritchey-Chretien on a tall fork ---------- */
-// A closed thermal shroud hides the truss.
-// The front aperture shows the secondary and its vanes.
-// The rear mirror cell and the Cassegrain stack stay in the open.
+/* ---------- the modern scope: a 1 m Ritchey-Chretien on a direct-drive fork ---------- */
+// References: Wikimedia Commons, "24 inch PlaneWave CDK at the WestRock Observatory.png"
+// and "MPIA 50 cm July 2023.jpg": a Serrurier truss with anodised nodes,
+// a large mirror cell with a primary baffle, a white tapered pier.
 // Sizes are in metres at size 1, as in world/hero-scope.ts.
 // +Y is up, -Z is north, +X is east.
 // The tube's front, the secondary end, points -Z at rest.
@@ -24,36 +25,36 @@ export type ModernScope = {
 };
 
 const DEG = Math.PI / 180;
-// The altitude axis, high over the yoke.
-// It clears the rear end at the zenith.
-const AXIS_Y = 4.5;
-// The tube's balance point: the altitude axis sits this far behind its centre.
-const PIVOT_Z = 0.6;
-// The yoke's tines stand at this x.
-const TINE_X = 0.95;
-// The top face of the azimuth drive.
-const AZ_TOP = 1.65;
-// The yoke's base crossbar sits between these heights.
-const YOKE_Y0 = 1.85, YOKE_Y1 = 2.1;
 
-// The shroud runs from its front flange to the rear joint.
-const FRONT_Z = -1.42, SHROUD_BACK = 1.3, SHROUD_R = 0.64;
-// The front aperture's radius.
-const APERTURE_R = 0.5;
-// The truss: its rails meet the front flange and the rear cell.
-const R_CELL = 0.6;
-// The primary: its face, its radius, and the hole for the Cassegrain port.
-const CELL_Z = 1.3, CELL_BACK = 1.62, MIRROR_Z = 1.3, MIRROR_R = 0.5, HOLE_R = 0.13;
-// The secondary: its face and its radius on the axis.
-const SEC_Z = -1.2, SEC_R = 0.16;
-// Radii of curvature: the primary is concave at f/8, and the secondary is convex.
-const PRIMARY_R = 16, SEC_CONVEX_R = 0.9;
-// The shroud's door: an arc round +X, from DOOR_Z0 to DOOR_Z1.
-const DOOR_Z0 = -0.9, DOOR_Z1 = -0.2, DOOR_HALF = 0.42;
-// The camera's last face, in tube coordinates.
-const CAM_END = 2.82;
-// The guide scope's axis height above the shroud.
-const GUIDE_Y = SHROUD_R + 0.07;
+/* ---------- sizes ---------- */
+// The pier: a base plate, a tapered octagonal column, a flange.
+const PIER_TOP = 0.95;
+// The fixed azimuth drum, then the turntable that carries the fork.
+const DRUM_Y0 = 1.02, DRUM_Y1 = 1.18, TABLE_Y1 = 1.34;
+// The altitude axis: the rear end clears the turntable at the zenith.
+const AXIS_Y = 3.3;
+// The fork arms: centre x and thickness.
+const ARM_X = 0.86, ARM_T = 0.16;
+
+// The tube's own frame: Z is the optical axis, the front is -Z.
+// Its origin is on the altitude axis.
+// The centre section carries the trunnions; the mirror cell bolts behind it.
+const CELL_R = 0.64;
+const SECTION_Z0 = -0.18, SECTION_Z1 = 0.42;
+const CELL_Z0 = 0.42, CELL_Z1 = 0.82;
+// The primary: 1 m across, f/3, so R = 2f = 6 m.
+// Its rim lies at MIRROR_Z; its centre sits deeper by the sag.
+const MIRROR_Z = 0.5, MIRROR_R = 0.5, HOLE_R = 0.12, BLANK_T = 0.1, PRIMARY_RC = 6;
+const SAG = (MIRROR_R * MIRROR_R) / (2 * PRIMARY_RC);
+// The top cage and the convex secondary, which faces the primary.
+const CAGE_Z = -1.95, CAGE_R = 0.58;
+const SEC_Z = -1.78, SEC_R = 0.17;
+// The truss nodes: four at the centre section, four at the cage.
+const NODE_BACK_R = 0.6, NODE_FRONT_R = 0.55, NODE_BACK_Z = SECTION_Z0, NODE_FRONT_Z = CAGE_Z + 0.07;
+// The cloth shroud runs between the nodes.
+const SHROUD_Z0 = SECTION_Z0 - 0.06, SHROUD_Z1 = CAGE_Z + 0.1;
+// The back of the instrument stack.
+const STACK_END = 1.55;
 
 /* ---------- geometry helpers ---------- */
 type P = [number, number];
@@ -89,45 +90,51 @@ function mergeGeos(gs: BufferGeometry[]): BufferGeometry {
 
 // Turns profile runs of [radius, height] about the Y axis.
 // A run goes up the outside, so its normals face out.
-// phi0 and phiLen turn only part of the way round.
-function turn(runs: P[][], segs = 72, phi0 = 0, phiLen = Math.PI * 2): BufferGeometry {
-  return mergeGeos(runs.map(r => new LatheGeometry(r.map(([x, y]) => new Vector2(x, y)), segs, phi0, phiLen)));
+function turn(runs: P[][], segs = 72): BufferGeometry {
+  return mergeGeos(runs.map(r => new LatheGeometry(r.map(([x, y]) => new Vector2(x, y)), segs)));
 }
 // A polyline as runs of one edge each: every corner is sharp.
 const edges = (pts: P[]): P[][] => pts.slice(1).map((p, i) => [pts[i], p]);
-// A smooth arc from angle a0 to a1, in radians.
-function arc(cx: number, cy: number, r: number, a0: number, a1: number, n: number): P[] {
-  const out: P[] = [];
-  for (let i = 0; i <= n; i++) {
-    const a = a0 + (a1 - a0) * (i / n);
-    out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-  }
-  return out;
-}
 // A flanged ring: a rectangle in [radius, height] with small chamfers.
 function ringProfile(r0: number, r1: number, h0: number, h1: number, c: number): P[][] {
   return edges([[r0, h0], [r1 - c, h0], [r1, h0 + c], [r1, h1 - c], [r1 - c, h1], [r0, h1], [r0, h0]]);
 }
 
-// A mirror face: a polar grid lifted onto a sphere, so reflections bend across it.
-// The sag is r squared over 2R, the sphere's exact sag near the axis.
-// facing: -1 for a face that looks along -Z, +1 for one that looks along +Z.
-function mirrorFace(rIn: number, rOut: number, z0: number, R: number, facing: number, rings = 32, segs = 192): BufferGeometry {
-  const pos: number[] = [], uv: number[] = [];
-  for (let i = 0; i <= rings; i++) {
-    const r = rIn + ((rOut - rIn) * i) / rings;
-    for (let j = 0; j <= segs; j++) {
-      const t = (j / segs) * Math.PI * 2;
-      const x = r * Math.cos(t), y = r * Math.sin(t);
-      pos.push(x, y, z0 - (r * r) / (2 * R));
-      uv.push(x / (2 * rOut) + 0.5, y / (2 * rOut) + 0.5);
-    }
-  }
+// The lathe's Y axis turns onto Z, the tube's axis.
+const Y_TO_Z = new Matrix4().makeRotationX(Math.PI / 2);
+// The lathe's Y axis turns onto X, the altitude axis.
+const Y_TO_X = new Matrix4().makeRotationZ(-Math.PI / 2);
+const along = (g: BufferGeometry, m: Matrix4, x = 0, y = 0, z = 0): BufferGeometry => g.applyMatrix4(m).translate(x, y, z);
+
+// Cylinders along each axis, from a to b.
+const cylY = (r: number, a: number, b: number, segs = 48): BufferGeometry =>
+  new CylinderGeometry(r, r, b - a, segs).translate(0, (a + b) / 2, 0);
+const cylZ = (r: number, a: number, b: number, segs = 48): BufferGeometry =>
+  new CylinderGeometry(r, r, b - a, segs).rotateX(Math.PI / 2).translate(0, 0, (a + b) / 2);
+// The same cylinder with no caps: a skin.
+const cylZOpen = (r: number, a: number, b: number, segs = 96): BufferGeometry =>
+  new CylinderGeometry(r, r, b - a, segs, 1, true).rotateX(Math.PI / 2).translate(0, 0, (a + b) / 2);
+const cylX = (r: number, a: number, b: number, segs = 48): BufferGeometry =>
+  new CylinderGeometry(r, r, b - a, segs).rotateZ(-Math.PI / 2).translate((a + b) / 2, 0, 0);
+
+// A box with chamfered edges, centred on the origin.
+function chamferBox(w: number, h: number, d: number, c: number): BufferGeometry {
+  const s = new Shape();
+  const x = w / 2 - c, y = h / 2 - c;
+  s.moveTo(-x, -y); s.lineTo(x, -y); s.lineTo(x, y); s.lineTo(-x, y); s.lineTo(-x, -y);
+  const g = new ExtrudeGeometry(s, { depth: d - 2 * c, bevelEnabled: true, bevelThickness: c, bevelSize: c, bevelSegments: 2, curveSegments: 1 });
+  return g.translate(0, 0, -(d - 2 * c) / 2);
+}
+
+// Builds an indexed grid from rows of points, then gives it normals.
+// The grid flips its winding when its normals face the wrong way.
+// out(p, n) is true when the normal n at point p faces the right way.
+function gridGeometry(pos: number[], uv: number[], rows: number, cols: number, out: (p: Vector3, n: Vector3) => boolean): BufferGeometry {
   const quads = (flip: boolean): number[] => {
     const idx: number[] = [];
-    for (let i = 0; i < rings; i++) {
-      for (let j = 0; j < segs; j++) {
-        const a = i * (segs + 1) + j, b = a + segs + 1;
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const a = i * (cols + 1) + j, b = a + cols + 1;
         if (flip) idx.push(a, a + 1, b, b, a + 1, b + 1);
         else idx.push(a, b, a + 1, b, b + 1, a + 1);
       }
@@ -139,65 +146,46 @@ function mirrorFace(rIn: number, rOut: number, z0: number, R: number, facing: nu
   g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
   g.setIndex(quads(false));
   g.computeVertexNormals();
-  // The winding sets the normal's sign: flip it when the face looks the wrong way.
-  const nz = g.getAttribute('normal').getZ(segs / 2 + (segs + 1));
-  if (nz * facing < 0) {
+  // A vertex one row in, away from any seam, tells the side.
+  const k = cols + 1 + Math.floor(cols / 4);
+  const p = new Vector3().fromBufferAttribute(g.getAttribute('position'), k);
+  const n = new Vector3().fromBufferAttribute(g.getAttribute('normal'), k);
+  if (!out(p, n)) {
     g.setIndex(quads(true));
     g.computeVertexNormals();
   }
   return g;
 }
 
-// The lathe's Y axis turns onto Z, the tube's axis.
-const Y_TO_Z = new Matrix4().makeRotationX(Math.PI / 2);
-// The lathe's Y axis turns onto X, the altitude axis.
-const Y_TO_X = new Matrix4().makeRotationZ(-Math.PI / 2);
-const along = (g: BufferGeometry, m: Matrix4, x = 0, y = 0, z = 0): BufferGeometry => g.applyMatrix4(m).translate(x, y, z);
 
-// Cylinders along each axis, from a to b.
-const cylZ = (r: number, a: number, b: number, segs = 48): BufferGeometry =>
-  new CylinderGeometry(r, r, b - a, segs).rotateX(Math.PI / 2).translate(0, 0, (a + b) / 2);
-// The same cylinder with no caps: a skin.
-const cylZOpen = (r: number, a: number, b: number, segs = 128): BufferGeometry =>
-  new CylinderGeometry(r, r, b - a, segs, 1, true).rotateX(Math.PI / 2).translate(0, 0, (a + b) / 2);
-const cylX = (r: number, a: number, b: number, segs = 48): BufferGeometry =>
-  new CylinderGeometry(r, r, b - a, segs).rotateZ(-Math.PI / 2).translate((a + b) / 2, 0, 0);
-
-// A box with chamfered edges, centred on the origin.
-function chamferBox(w: number, h: number, d: number, c: number): BufferGeometry {
-  const s = new Shape();
-  const x = w / 2 - c, y = h / 2 - c;
-  s.moveTo(-x, -y); s.lineTo(x, -y); s.lineTo(x, y); s.lineTo(-x, y); s.lineTo(-x, -y);
-  const g = new ExtrudeGeometry(s, { depth: d - 2 * c, bevelEnabled: true, bevelThickness: c, bevelSize: c, bevelSegments: 1, curveSegments: 1 });
-  return g.translate(0, 0, -(d - 2 * c) / 2);
+// The light shroud: black cloth stretched over the truss.
+// It sags between the eight struts and draws in a little at mid-length.
+function shroudGeometry(z0: number, z1: number, r0: number, r1: number): BufferGeometry {
+  const rows = 48, segs = 256, pos: number[] = [], uv: number[] = [];
+  for (let i = 0; i <= rows; i++) {
+    const t = i / rows, mid = Math.sin(Math.PI * t);
+    const rr = r0 + (r1 - r0) * t - 0.008 * mid;
+    for (let j = 0; j <= segs; j++) {
+      const a = (j / segs) * Math.PI * 2;
+      const r = rr - 0.012 * (0.5 - 0.5 * Math.cos(8 * a)) * (0.4 + 0.6 * mid);
+      pos.push(Math.cos(a) * r, Math.sin(a) * r, z0 + (z1 - z0) * t);
+      uv.push((j / segs) * 8, t * 4);
+    }
+  }
+  return gridGeometry(pos, uv, rows, segs, (p, n) => n.x * p.x + n.y * p.y > 0);
 }
 
-// A knurled knob: a ridged disc about Y.
-function knurl(r: number, h: number, ridges: number): BufferGeometry {
+// A fork arm: a tapered plate, round at the top about the altitude axis.
+// The shape lies in z and y; the extrusion turns onto X.
+function armGeometry(): BufferGeometry {
   const s = new Shape();
-  for (let i = 0; i <= ridges * 2; i++) {
-    const a = (i / (ridges * 2)) * Math.PI * 2, rr = i % 2 ? r : r * 0.955;
-    if (i === 0) s.moveTo(rr * Math.cos(a), rr * Math.sin(a));
-    else s.lineTo(rr * Math.cos(a), rr * Math.sin(a));
-  }
-  // The extrusion runs along Z, so it turns to stand along Y.
-  return new ExtrudeGeometry(s, { depth: h, bevelEnabled: false }).rotateX(-Math.PI / 2);
-}
-
-// A spoked hand wheel about Y, rim radius r.
-function handWheel(r: number): { steel: BufferGeometry; brass: BufferGeometry } {
-  const rim = new TorusGeometry(r, r * 0.09, 8, 40).rotateX(Math.PI / 2);
-  const parts: BufferGeometry[] = [rim, new CylinderGeometry(r * 0.2, r * 0.2, r * 0.35, 16)];
-  for (let i = 0; i < 4; i++) {
-    const spoke = new CylinderGeometry(r * 0.05, r * 0.07, r, 8).rotateZ(Math.PI / 2).translate(r / 2, 0, 0);
-    parts.push(spoke.rotateY((i / 4) * Math.PI * 2 + Math.PI / 4));
-  }
-  // The handle stands off the rim, parallel to the axle.
-  const grip = mergeGeos([
-    new CylinderGeometry(r * 0.04, r * 0.04, r * 0.3, 8).translate(r, r * 0.15, 0),
-    new CylinderGeometry(r * 0.09, r * 0.11, r * 0.45, 12).translate(r, r * 0.52, 0),
-  ]);
-  return { steel: mergeGeos(parts), brass: grip };
+  s.moveTo(-0.45, TABLE_Y1);
+  s.lineTo(0.45, TABLE_Y1);
+  s.lineTo(0.3, AXIS_Y);
+  s.absarc(0, AXIS_Y, 0.3, 0, Math.PI, false);
+  s.lineTo(-0.45, TABLE_Y1);
+  const g = new ExtrudeGeometry(s, { depth: ARM_T - 0.024, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2, curveSegments: 32 });
+  return g.rotateY(-Math.PI / 2);
 }
 
 // Stands a piece at p with its axis along dir.
@@ -218,21 +206,7 @@ function beamM(a: Vector3, b: Vector3, r: number): Matrix4 {
   const q = new Quaternion().setFromUnitVectors(UP, d.clone().normalize());
   return new Matrix4().compose(new Vector3().addVectors(a, b).multiplyScalar(0.5), q, new Vector3(r, d.length(), r));
 }
-
-// A cable bundle: a black lead, an orange fibre and a blue data line.
-// Each run has a sleeve ring at its start.
-function bundle(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][]): void {
-  const runs: [MeshStandardMaterial, number, number][] = [[M.cable, 0, 0], [M.fibre, 0.012, 0.006], [M.lan, -0.01, 0.008]];
-  for (const [mat, dx, dy] of runs) {
-    const curve = new CatmullRomCurve3(pts.map(([x, y, z]) => new Vector3(x + dx, y + dy, z)));
-    k.add(mat, new TubeGeometry(curve, 96, 0.008, 8, false));
-  }
-  // Clamps hold the bundle every third point.
-  for (let i = 1; i < pts.length - 1; i += 3) {
-    const [x, y, z] = pts[i];
-    k.put(Pc.tooth, M.darkSteel, boxAt(new Vector3(x, y, z), new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1), 0.05, 0.03, 0.02));
-  }
-}
+const X = new Vector3(1, 0, 0), Y = new Vector3(0, 1, 0), Z = new Vector3(0, 0, 1);
 
 // One rigid group's parts: merged by material, small parts instanced.
 class Kit {
@@ -261,21 +235,19 @@ class Kit {
 }
 
 /* ---------- small repeated parts ---------- */
-type Pieces = Record<'bolt' | 'socket' | 'rivet' | 'tooth' | 'led' | 'beam', BufferGeometry>;
+type Pieces = Record<'bolt' | 'socket' | 'box' | 'led' | 'beam', BufferGeometry>;
 function pieces(): Pieces {
   return {
     // A hex bolt head.
     bolt: new CylinderGeometry(0.014, 0.014, 0.01, 6).translate(0, 0.005, 0),
     // A socket cap screw.
-    socket: new CylinderGeometry(0.01, 0.01, 0.01, 14).translate(0, 0.005, 0),
-    // A domed rivet head.
-    rivet: new SphereGeometry(0.009, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.55, 1),
-    // The unit box: a rack tooth, a clamp, a louvre.
-    tooth: new BoxGeometry(1, 1, 1),
+    socket: new CylinderGeometry(0.009, 0.009, 0.009, 16).translate(0, 0.0045, 0),
+    // The unit box: rack teeth, clamps, fan bars, vanes.
+    box: new BoxGeometry(1, 1, 1),
     // A status lamp's dome.
-    led: new SphereGeometry(0.012, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+    led: new SphereGeometry(0.01, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
     // The unit cylinder every truss member stretches.
-    beam: new CylinderGeometry(1, 1, 1, 10),
+    beam: new CylinderGeometry(1, 1, 1, 16),
   };
 }
 
@@ -299,22 +271,22 @@ function tex(c: HTMLCanvasElement, srgb: boolean, repeat = 1): CanvasTexture {
   return t;
 }
 
-// Fine grain for the anodised roughness: a grey noise field.
+// Fine grain for anodised and powder-coat roughness: a grey noise field.
 function grainMap(): CanvasTexture {
   const S = 256, r = rng(11);
   const [c, x] = canvas(S, S);
   const img = x.createImageData(S, S);
   for (let i = 0; i < S * S; i++) {
-    const v = 200 + r() * 55;
+    const v = 205 + r() * 50;
     img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
   }
   x.putImageData(img, 0, 0);
   return tex(c, false, 3);
 }
 
-// A twill weave, as a bump map for the carbon truss.
-function weaveMap(): CanvasTexture {
-  const S = 128, cell = 8;
+// A weave, as a bump map: a twill for carbon, a fine plain weave for cloth.
+function weaveMap(cell: number, repeat: number): CanvasTexture {
+  const S = 128;
   const [c, x] = canvas(S, S);
   const img = x.createImageData(S, S);
   for (let j = 0; j < S; j++) {
@@ -328,127 +300,66 @@ function weaveMap(): CanvasTexture {
     }
   }
   x.putImageData(img, 0, 0);
-  return tex(c, false, 10);
+  return tex(c, false, repeat);
 }
 
-// The shroud's paint: a dark graphite coat with soft tone and bare chips.
-// The green channel of the second map holds the roughness.
-function paintMaps(): { map: CanvasTexture; rough: CanvasTexture } {
-  const S = 512, r = rng(23);
-  const [c, x] = canvas(S, S), [c2, y] = canvas(S, S);
-  x.fillStyle = '#2b2f36';
-  x.fillRect(0, 0, S, S);
-  y.fillStyle = 'rgb(170,170,170)';
-  y.fillRect(0, 0, S, S);
-  // Soft clouds of tone: the coat ages unevenly.
-  for (let i = 0; i < 160; i++) {
-    const px = r() * S, py = r() * S, rad = 20 + r() * 70;
-    const col = r() < 0.5 ? '90,96,104' : '20,22,26';
-    const g = x.createRadialGradient(px, py, 0, px, py, rad);
-    g.addColorStop(0, `rgba(${col},0.08)`);
-    g.addColorStop(1, `rgba(${col},0)`);
-    x.fillStyle = g;
-    x.fillRect(px - rad, py - rad, rad * 2, rad * 2);
-  }
-  // Chips show bare metal: lighter, and shinier.
-  for (let i = 0; i < 90; i++) {
-    const px = r() * S, py = r() * S, s = 0.8 + r() ** 3 * 2;
-    x.fillStyle = 'rgb(104,110,118)';
-    x.beginPath(); x.arc(px, py, s, 0, Math.PI * 2); x.fill();
-    y.fillStyle = 'rgb(60,60,60)';
-    y.beginPath(); y.arc(px, py, s, 0, Math.PI * 2); y.fill();
-  }
-  return { map: tex(c, true), rough: tex(c2, false) };
-}
-
-// Sand-cast iron under paint: a fine grain and a soft mottle.
-function castMap(): CanvasTexture {
-  const S = 256, r = rng(5);
-  const [c, x] = canvas(S, S);
-  const img = x.createImageData(S, S);
-  for (let i = 0; i < S * S; i++) {
-    const v = 255 - r() * 12;
-    img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
-  }
-  x.putImageData(img, 0, 0);
-  for (let i = 0; i < 60; i++) {
-    const px = r() * S, py = r() * S, rad = 8 + r() * 24;
-    const g = x.createRadialGradient(px, py, 0, px, py, rad);
-    g.addColorStop(0, 'rgba(120,120,110,0.035)');
-    g.addColorStop(1, 'rgba(120,120,110,0)');
-    x.fillStyle = g;
-    x.fillRect(px - rad, py - rad, rad * 2, rad * 2);
-  }
-  return tex(c, true, 4);
-}
-
-// A scale face: turned satin metal, engraved ticks, and a label at each major mark.
-// label(i) gives the text for tick i.
-function scaleMap(ticks: number, major: number, label: (i: number) => string): CanvasTexture {
-  const S = 1024, C = S / 2, r = rng(ticks);
-  const [c, x] = canvas(S, S);
-  x.fillStyle = '#d9dde2';
-  x.fillRect(0, 0, S, S);
-  // Fine turning rings catch the light unevenly.
-  for (let rr = 4; rr < C; rr += 3) {
-    x.strokeStyle = `rgba(60,64,70,${0.03 + r() * 0.06})`;
-    x.lineWidth = 1.5;
-    x.beginPath(); x.arc(C, C, rr, 0, Math.PI * 2); x.stroke();
-  }
-  x.strokeStyle = '#17191e';
-  x.fillStyle = '#17191e';
-  x.lineWidth = 3;
-  x.beginPath(); x.arc(C, C, C * 0.965, 0, Math.PI * 2); x.stroke();
-  x.beginPath(); x.arc(C, C, C * 0.83, 0, Math.PI * 2); x.stroke();
-  for (let i = 0; i < ticks; i++) {
-    const a = (i / ticks) * Math.PI * 2 - Math.PI / 2;
-    const len = i % major === 0 ? 0.12 : i % (major / 2) === 0 ? 0.085 : 0.05;
-    x.lineWidth = i % major === 0 ? 3.2 : 2;
-    x.beginPath();
-    x.moveTo(C + Math.cos(a) * C * 0.965, C + Math.sin(a) * C * 0.965);
-    x.lineTo(C + Math.cos(a) * C * (0.965 - len), C + Math.sin(a) * C * (0.965 - len));
-    x.stroke();
-  }
-  x.font = 'bold 40px Georgia, "Times New Roman", serif';
-  x.textAlign = 'center';
-  x.textBaseline = 'middle';
-  for (let i = 0; i < ticks; i += major) {
-    const a = (i / ticks) * Math.PI * 2 - Math.PI / 2;
-    x.save();
-    x.translate(C + Math.cos(a) * C * 0.75, C + Math.sin(a) * C * 0.75);
-    x.rotate(a + Math.PI / 2);
-    x.fillText(label(i), 0, 0);
-    x.restore();
-  }
-  return tex(c, true);
-}
-
-// Metal reflects this: a dark sky, a dim floor and one soft box.
-function studioEnv(): CanvasTexture {
-  const W = 512, H = 256;
+// The dome the scope stands in, as an equirect map.
+// Metal reflects it, and the mirrors see it round their own structure.
+// A pale ribbed shell, an open slit of night sky, warm lamps on the drum wall.
+function domeEnv(): CanvasTexture {
+  const W = 1024, H = 512, r = rng(31);
   const [c, x] = canvas(W, H);
-  // Sky: deep blue overhead, a pale band at the horizon, a dark ground.
-  const g = x.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#1d2638');
-  g.addColorStop(0.42, '#55657e');
-  g.addColorStop(0.5, '#c9d3e0');
-  g.addColorStop(0.56, '#2a2e36');
-  g.addColorStop(1, '#070809');
+  const g = x.createLinearGradient(0, 0, 0, H / 2);
+  g.addColorStop(0, '#7f8895');
+  g.addColorStop(1, '#c4cbd5');
   x.fillStyle = g;
-  x.fillRect(0, 0, W, H);
-  // Soft light panels round the horizon: every mirror angle catches one.
-  for (let i = 0; i < 6; i++) {
-    const cx = W * (0.08 + i * 0.17), cy = H * (0.22 + (i % 2) * 0.08);
-    const pg = x.createRadialGradient(cx, cy, 2, cx, cy, W * 0.07);
-    pg.addColorStop(0, '#ffffff');
-    pg.addColorStop(0.6, 'rgba(235,242,255,0.9)');
-    pg.addColorStop(1, 'rgba(235,242,255,0)');
-    x.fillStyle = pg;
-    x.fillRect(cx - W * 0.08, cy - W * 0.08, W * 0.16, W * 0.16);
+  x.fillRect(0, 0, W, H / 2);
+  const f = x.createLinearGradient(0, H / 2, 0, H);
+  f.addColorStop(0, '#3a3f47');
+  f.addColorStop(0.15, '#1b1e23');
+  f.addColorStop(1, '#0c0d10');
+  x.fillStyle = f;
+  x.fillRect(0, H / 2, W, H / 2);
+  // Ribs: 24 meridians of the shell.
+  x.strokeStyle = 'rgba(56,62,72,0.6)';
+  x.lineWidth = 3;
+  for (let i = 0; i < 24; i++) {
+    const u = (i / 24) * W;
+    x.beginPath(); x.moveTo(u, 0); x.lineTo(u, H / 2); x.stroke();
   }
-  // A dark scrim between two panels, so the pattern reads.
-  x.fillStyle = '#0d0f13';
-  for (let i = 0; i < 4; i++) x.fillRect(W * (0.6 + i * 0.03), H * 0.5, W * 0.01, H * 0.2);
+  // Panel seams: rings of latitude.
+  x.strokeStyle = 'rgba(66,72,82,0.45)';
+  x.lineWidth = 2;
+  for (const v of [0.12, 0.24, 0.36, 0.45]) {
+    x.beginPath(); x.moveTo(0, v * H); x.lineTo(W, v * H); x.stroke();
+  }
+  // The open slit: night sky from the zenith to the horizon, with stars.
+  const s = x.createLinearGradient(0, 0, 0, H / 2);
+  s.addColorStop(0, '#04060c');
+  s.addColorStop(1, '#16203a');
+  x.fillStyle = s;
+  x.fillRect(W * 0.46, 0, W * 0.08, H * 0.5);
+  for (let i = 0; i < 160; i++) {
+    x.fillStyle = `rgba(255,255,255,${0.35 + r() * 0.65})`;
+    x.fillRect(W * 0.46 + r() * W * 0.08, r() * H * 0.48, 1.5, 1.5);
+  }
+  // Warm work lamps on the drum wall.
+  for (let i = 0; i < 8; i++) {
+    const cx = (i / 8 + 0.03) * W, cy = H * 0.54;
+    const lg = x.createRadialGradient(cx, cy, 0, cx, cy, 26);
+    lg.addColorStop(0, 'rgba(255,236,200,1)');
+    lg.addColorStop(1, 'rgba(255,236,200,0)');
+    x.fillStyle = lg;
+    x.fillRect(cx - 26, cy - 26, 52, 52);
+  }
+  // Two soft panels high on the shell.
+  for (const u of [0.18, 0.78]) {
+    const pg = x.createLinearGradient(0, H * 0.1, 0, H * 0.3);
+    pg.addColorStop(0, 'rgba(255,255,255,0.95)');
+    pg.addColorStop(1, 'rgba(235,242,255,0.6)');
+    x.fillStyle = pg;
+    x.fillRect(W * u, H * 0.1, W * 0.07, H * 0.2);
+  }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   t.mapping = EquirectangularReflectionMapping;
@@ -456,9 +367,8 @@ function studioEnv(): CanvasTexture {
 }
 
 /* ---------- materials ---------- */
-type MatKey = 'anodised' | 'paint' | 'cast' | 'carbon' | 'fin' | 'dialAz' | 'dialAlt' | 'steel' | 'darkSteel'
-  | 'zinc' | 'brass' | 'rubber' | 'mirror' | 'ceramic' | 'cable' | 'fibre' | 'lan' | 'filter'
-  | 'ledG' | 'ledB' | 'ledA';
+type MatKey = 'white' | 'black' | 'accent' | 'stainless' | 'darkSteel' | 'zinc' | 'flock' | 'rubber' | 'carbon'
+  | 'cloth' | 'zerodur' | 'fin' | 'cable' | 'fibre' | 'lan' | 'display' | 'ledG' | 'ledB' | 'ledA' | 'ledW';
 type Mats = Record<MatKey, MeshStandardMaterial>;
 
 // The hero's convention: the env map adds reflections only.
@@ -472,294 +382,255 @@ function reflectOnly<M extends MeshStandardMaterial>(m: M, key: string): M {
   return m;
 }
 
-function materials(): Mats {
-  const env = studioEnv();
+function materials(env: CanvasTexture): Mats {
   const std = (key: string, p: MeshStandardMaterialParameters): MeshStandardMaterial =>
     reflectOnly(new MeshStandardMaterial({ envMap: env, ...p }), key);
-  const grain = grainMap(), weave = weaveMap(), paint = paintMaps(), cast = castMap();
-  const az = scaleMap(360, 30, i => String(i));
-  const alt = scaleMap(360, 30, i => { const d = i % 180; return String(d <= 90 ? d : 180 - d); });
+  const grain = grainMap();
   const led = (c: number, key: MatKey): MeshStandardMaterial =>
     std(key, { color: c, emissive: c, emissiveIntensity: 2.5, roughness: 0.3 });
   return {
-    // Grey anodised aluminium with a fine grain.
-    anodised: std('anodised', { color: 0x8d939b, metalness: 0.4, roughness: 0.34, roughnessMap: grain }),
-    // The shroud's graphite paint, with chips and wear.
-    paint: std('paint', { color: 0xffffff, map: paint.map, roughness: 1, roughnessMap: paint.rough, metalness: 0.15 }),
-    // Sand-cast iron under a grey-green coat.
-    cast: std('cast', { color: 0x6b7466, roughness: 0.58, metalness: 0, map: cast }),
-    // Matte black carbon with a twill weave.
-    carbon: std('carbon', { color: 0x0b0b0d, metalness: 0, roughness: 0.6, bumpMap: weave, bumpScale: 0.6 }),
-    // Dark-coated fins: a dull black, so the heat sink reads as one block.
-    fin: std('fin', { color: 0x17191d, metalness: 0.3, roughness: 0.55 }),
-    // Satin scales: engraved ticks on bright metal, labelled in degrees.
-    dialAz: std('dialAz', { color: 0xffffff, metalness: 0.9, roughness: 0.35, map: az }),
-    dialAlt: std('dialAlt', { color: 0xffffff, metalness: 0.9, roughness: 0.35, map: alt }),
-    steel: std('steel', { color: 0xb8bcc0, metalness: 1, roughness: 0.22 }),
+    // White powder coat on the pier and the cell.
+    white: std('white', { color: 0xe8eaed, roughness: 0.48, metalness: 0, roughnessMap: grain }),
+    // Black hard anodising on the fork, the drums and the cage.
+    black: std('black', { color: 0x16181c, metalness: 0.55, roughness: 0.32, roughnessMap: grain }),
+    // White anodised nodes, caps and trim: brighter and glossier than the powder coat.
+    accent: std('accent', { color: 0xf4f5f7, metalness: 0.25, roughness: 0.22 }),
+    // Polished stainless rings and bands.
+    stainless: std('stainless', { color: 0xd0d4d9, metalness: 1, roughness: 0.14 }),
     darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.9, roughness: 0.38 }),
     zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 0.42 }),
-    // Turned brass for the hand wheel's grips.
-    brass: std('brass', { color: 0xc9a467, metalness: 1, roughness: 0.3 }),
+    // Flock black inside the tube and the baffles: it eats stray light.
+    flock: std('flock', { color: 0x040405, metalness: 0, roughness: 1 }),
     rubber: std('rubber', { color: 0x101012, metalness: 0, roughness: 0.9 }),
-    // The primary and secondary: a bright, nearly perfect metal.
-    // Coated aluminium with a faint thin-film tint, so the glint carries colour.
-    mirror: reflectOnly(new MeshPhysicalMaterial({
-      envMap: env, color: 0xe6ebf2, metalness: 1, roughness: 0.03,
-      iridescence: 0.12, iridescenceIOR: 1.3, iridescenceThicknessRange: [180, 320], envMapIntensity: 1.1,
-    }), 'mirror'),
-    // The primary's blank: dark ceramic, so the mirror edge reads as glass.
-    ceramic: std('ceramic', { color: 0x1c1f24, metalness: 0.1, roughness: 0.7 }),
+    // Carbon struts under a clear coat.
+    carbon: reflectOnly(new MeshPhysicalMaterial({
+      envMap: env, color: 0x0e0e10, metalness: 0.2, roughness: 0.45,
+      bumpMap: weaveMap(8, 10), bumpScale: 0.5, clearcoat: 1, clearcoatRoughness: 0.08,
+    }), 'carbon'),
+    // The shroud's black cloth: a soft sheen at grazing angles.
+    cloth: reflectOnly(new MeshPhysicalMaterial({
+      envMap: env, color: 0x111114, metalness: 0, roughness: 0.95,
+      sheen: 1, sheenColor: 0x4a505a, sheenRoughness: 0.55, bumpMap: weaveMap(2, 30), bumpScale: 0.35,
+      // The aperture shows the cloth's inside face too.
+      side: DoubleSide,
+    }), 'cloth'),
+    // The primary's blank: an amber glass-ceramic.
+    zerodur: std('zerodur', { color: 0x8a5a2a, metalness: 0, roughness: 0.12 }),
+    // Dark-coated fins on the camera's heat sink.
+    fin: std('fin', { color: 0x1a1c20, metalness: 0.4, roughness: 0.5 }),
     cable: std('cable', { color: 0x111113, metalness: 0, roughness: 0.8 }),
     fibre: std('fibre', { color: 0xd9731f, metalness: 0, roughness: 0.5 }),
-    lan: std('lan', { color: 0x2f6fd6, metalness: 0, roughness: 0.5 }),
-    // A coated filter: a blue glass disc.
-    filter: std('filter', { color: 0x2a4a7a, metalness: 0.2, roughness: 0.06 }),
+    lan: std('lan', { color: 0xd8dbe0, metalness: 0, roughness: 0.5 }),
+    // A small status screen: dark glass with a faint white glow.
+    display: std('display', { color: 0x101214, emissive: 0x8a9098, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0 }),
     ledG: led(0x39ff7a, 'ledG'),
     ledB: led(0x3aa0ff, 'ledB'),
     ledA: led(0xffb23a, 'ledA'),
+    // The lamp rings: a cool white line.
+    ledW: std('ledW', { color: 0xf2f6ff, emissive: 0xeef3ff, emissiveIntensity: 1.6, roughness: 0.3 }),
   };
+}
+
+
+// A cable bundle: a black lead, an orange fibre and a white data line.
+// Clamps hold it at every third point.
+function bundle(k: Kit, M: Mats, Pc: Pieces, pts: [number, number, number][]): void {
+  const runs: [MeshStandardMaterial, number, number][] = [[M.cable, 0, 0], [M.fibre, 0.014, 0.006], [M.lan, -0.012, 0.009]];
+  for (const [mat, dx, dy] of runs) {
+    const curve = new CatmullRomCurve3(pts.map(([x, y, z]) => new Vector3(x + dx, y + dy, z)));
+    k.add(mat, new TubeGeometry(curve, 96, 0.009, 8, false));
+  }
+  for (let i = 1; i < pts.length - 1; i += 3) {
+    const [x, y, z] = pts[i];
+    k.put(Pc.box, M.black, boxAt(new Vector3(x, y, z), X, Y, Z, 0.06, 0.035, 0.025));
+  }
 }
 
 /* ---------- the pier: it never moves ---------- */
 function buildPier(k: Kit, M: Mats, Pc: Pieces): void {
-  // The plinth: a wide cast base with a chamfered top and anchor bolts.
-  k.add(M.cast, turn(edges([[0, 0.02], [1.2, 0.02], [1.2, 0.22], [1.12, 0.3], [0, 0.3]])));
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    k.put(Pc.bolt, M.zinc, stand(new Vector3(Math.cos(a) * 1.08, 0.3, Math.sin(a) * 1.08), UP, a, 1.6));
+  // A steel base plate, with a levelling bolt at each corner.
+  k.add(M.darkSteel, chamferBox(1.5, 0.06, 1.5, 0.01).translate(0, 0.03, 0));
+  for (const [x, z] of [[-0.66, -0.66], [0.66, -0.66], [-0.66, 0.66], [0.66, 0.66]] as P[]) {
+    k.add(M.stainless, cylY(0.035, 0.06, 0.1, 6).translate(x, 0, z), cylY(0.012, 0.1, 0.16, 12).translate(x, 0, z));
   }
-  // The column, with two rolled ribs.
-  k.add(M.anodised, turn([[[0.4, 0.3], [0.4, 1.35]]]));
-  k.add(M.anodised, turn(ringProfile(0.4, 0.43, 0.6, 0.63, 0.006)), turn(ringProfile(0.4, 0.43, 1.0, 1.03, 0.006)));
-  // The azimuth drive housing, with a bolt ring at its foot.
-  k.add(M.anodised, turn(edges([[0.4, 1.3], [0.95, 1.35], [0.95, 1.55], [0.85, AZ_TOP], [0, AZ_TOP]])));
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    k.put(Pc.socket, M.zinc, stand(new Vector3(Math.cos(a) * 0.9, 1.36, Math.sin(a) * 0.9), new Vector3(0, -1, 0), a, 1.2));
-  }
-  // The azimuth scale: a labelled face on the drive.
-  k.add(M.dialAz, new RingGeometry(0.001, 0.94, 160, 1).rotateX(-Math.PI / 2).translate(0, AZ_TOP + 0.001, 0));
-  // The azimuth hand wheel: a boss on the housing's south face.
-  k.add(M.darkSteel, cylZ(0.12, 0.9, 1.06).translate(0, 1.5, 0));
-  const hw = handWheel(0.22);
-  k.add(M.darkSteel, hw.steel.rotateX(Math.PI / 2).translate(0, 1.5, 1.1));
-  k.add(M.brass, hw.brass.rotateX(Math.PI / 2).translate(0, 1.5, 1.1));
-  // The cable tray: a plate and two lips behind the column.
-  k.add(M.anodised,
-    chamferBox(0.2, 1.0, 0.02, 0.004).translate(0, 0.85, -0.5),
-    chamferBox(0.02, 1.0, 0.12, 0.004).translate(-0.1, 0.85, -0.44),
-    chamferBox(0.02, 1.0, 0.12, 0.004).translate(0.1, 0.85, -0.44));
-  // The power and data box on the plinth.
-  k.add(M.anodised, chamferBox(0.34, 0.26, 0.3, 0.02).translate(0.7, 0.44, 0));
-  for (const dy of [-0.06, 0.06]) k.put(Pc.socket, M.zinc, stand(new Vector3(0.872, 0.44 + dy, 0), new Vector3(1, 0, 0), 0, 1.4));
-  for (let i = 0; i < 3; i++) {
-    const p = new Vector3(0.6 + i * 0.05, 0.5, 0.152);
-    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(p, new Vector3(0, 0, 1), 0, 1.2));
-  }
-  // Four screws hold the box lid.
-  for (const [x, z] of [[0.55, 0.12], [0.85, 0.12], [0.55, -0.12], [0.85, -0.12]] as P[]) {
-    k.put(Pc.socket, M.zinc, stand(new Vector3(x, 0.572, z), UP, 0, 1));
-  }
-  // The mains and data run up the tray, behind the column.
-  bundle(k, M, Pc, [
-    [0.87, 0.44, 0], [0.7, 0.3, -0.12], [0.3, 0.3, -0.5], [0, 0.5, -0.6],
-    [0, 1.0, -0.62], [0, 1.3, -0.5], [0, 1.5, -0.2], [0, 1.6, 0],
-  ]);
-}
-
-/* ---------- the yoke: it turns in azimuth ---------- */
-// The yoke's frame has the pier at its origin.
-// Its altitude axis runs along X at AXIS_Y.
-function buildYoke(k: Kit, M: Mats, Pc: Pieces): void {
-  // The base disc sits on the drive, with its bolt ring.
-  k.add(M.cast, turn(edges([[0, AZ_TOP], [1.0, AZ_TOP], [1.0, YOKE_Y0], [0, YOKE_Y0]])));
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    k.put(Pc.socket, M.zinc, stand(new Vector3(Math.cos(a) * 0.85, YOKE_Y0, Math.sin(a) * 0.85), UP, a, 1.1));
-  }
-  // The crossbar joins the two tines at the foot.
-  k.add(M.cast, chamferBox(2 * TINE_X + 0.2, YOKE_Y1 - YOKE_Y0, 0.7, 0.03).translate(0, (YOKE_Y0 + YOKE_Y1) / 2, 0));
-  for (const s of [-1, 1]) {
-    const x = s * TINE_X;
-    // A tine: a fork arm up to the altitude axis.
-    k.add(M.cast, chamferBox(0.14, AXIS_Y + 0.35 - YOKE_Y1, 0.55, 0.01).translate(x, (AXIS_Y + 0.35 + YOKE_Y1) / 2, 0));
-    // Two gussets stiffen each tine on its outer face.
-    for (const y of [2.4, 3.2]) {
-      k.add(M.cast, chamferBox(0.05, 0.12, 0.5, 0.01).translate(s * (TINE_X + 0.085), y, 0));
-    }
-    // A cast collar on the tine's outer face, centred on the axis.
-    k.add(M.cast, cylX(0.2, s > 0 ? 1.02 : -1.06, s > 0 ? 1.06 : -1.02).translate(0, AXIS_Y, 0));
-  }
-  // The direct-drive stator: a ring on the east side, bolted to the tine.
-  k.add(M.cast, turn(ringProfile(0.3, 0.45, 1.05, 1.12, 0.008), 128).applyMatrix4(Y_TO_X).translate(0, AXIS_Y, 0));
+  // The column: a tapered octagon in white powder coat, faceted.
+  const col = new CylinderGeometry(0.42, 0.56, PIER_TOP - 0.06, 8).translate(0, (PIER_TOP + 0.06) / 2, 0).toNonIndexed();
+  col.computeVertexNormals();
+  k.add(M.white, col);
+  // The top flange and the fixed azimuth drum.
+  k.add(M.white, turn(edges([[0, PIER_TOP], [0.66, PIER_TOP], [0.66, DRUM_Y0], [0, DRUM_Y0]]), 96));
   for (let i = 0; i < 16; i++) {
     const a = (i / 16) * Math.PI * 2;
-    k.put(Pc.bolt, M.zinc, stand(new Vector3(1.12, AXIS_Y + Math.cos(a) * 0.38, Math.sin(a) * 0.38), new Vector3(1, 0, 0), a, 1.2));
+    k.put(Pc.bolt, M.stainless, stand(new Vector3(Math.cos(a) * 0.6, DRUM_Y0, Math.sin(a) * 0.6), UP, a, 1.1));
   }
-  // The altitude encoder's read head on a bracket, west side.
-  k.add(M.cast,
-    chamferBox(0.26, 0.08, 0.1, 0.006).translate(-1.15, AXIS_Y + 0.42, 0),
-    chamferBox(0.08, 0.12, 0.08, 0.006).translate(-1.2, AXIS_Y + 0.52, 0));
-  // The cable from the pier climbs the west tine's gap to the tube.
-  bundle(k, M, Pc, [[0, 1.6, 0], [-0.3, 1.95, 0], [-0.7, 2.6, 0], [-0.85, 3.6, 0], [-0.85, AXIS_Y, 0]]);
+  k.add(M.black, turn(ringProfile(0, 0.85, DRUM_Y0, DRUM_Y1, 0.01), 128));
+  // The encoder band: a polished ring round the drum, with a white lamp line.
+  k.add(M.stainless, turn(ringProfile(0.85, 0.856, DRUM_Y0 + 0.05, DRUM_Y0 + 0.09, 0.002), 160));
+  k.add(M.ledW, turn(ringProfile(0.85, 0.853, DRUM_Y0 + 0.11, DRUM_Y0 + 0.118, 0.001), 160));
+  // The control box on the column's south face, with a status screen and lamps.
+  k.add(M.black, chamferBox(0.36, 0.42, 0.16, 0.014).translate(0, 0.6, 0.56));
+  k.add(M.display, new BoxGeometry(0.22, 0.09, 0.006).translate(0, 0.69, 0.643));
+  for (let i = 0; i < 3; i++) {
+    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(-0.06 + i * 0.06, 0.56, 0.64), Z, 0, 1));
+  }
+  for (const dx of [-0.1, 0, 0.1]) k.put(Pc.socket, M.stainless, stand(new Vector3(dx, 0.392, 0.56), new Vector3(0, -1, 0), 0, 1.6));
+  // Mains and data rise from the box into the drum.
+  bundle(k, M, Pc, [[0.08, 0.81, 0.6], [0.12, 0.9, 0.66], [0.2, 0.97, 0.76], [0.24, 1.06, 0.83]]);
+}
+
+/* ---------- the fork: it turns in azimuth ---------- */
+function buildFork(k: Kit, M: Mats, Pc: Pieces): void {
+  // The turntable, with a polished band.
+  k.add(M.black, turn(ringProfile(0, 0.9, DRUM_Y1, TABLE_Y1, 0.012), 128));
+  k.add(M.stainless, turn(ringProfile(0.9, 0.905, DRUM_Y1 + 0.06, DRUM_Y1 + 0.1, 0.002), 160));
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    k.put(Pc.socket, M.stainless, stand(new Vector3(Math.cos(a) * 0.82, TABLE_Y1, Math.sin(a) * 0.82), UP, a, 1));
+  }
+  // The two arms.
+  for (const s of [-1, 1]) {
+    k.add(M.black, armGeometry().translate(s * ARM_X + ARM_T / 2 - 0.012, 0, 0));
+    // A white trim line down the arm's outer face.
+    k.add(M.accent, chamferBox(0.006, AXIS_Y - TABLE_Y1 - 0.5, 0.03, 0.002).translate(s * (ARM_X + ARM_T / 2 + 0.003), (AXIS_Y + TABLE_Y1) / 2 - 0.15, 0.2));
+    // The direct-drive housing on the arm's outer face, centred on the axis.
+    const x0 = ARM_X + ARM_T / 2, x1 = x0 + 0.16;
+    const lo = s > 0 ? x0 : -x1, hi = s > 0 ? x1 : -x0;
+    k.add(M.black, cylX(0.42, lo, hi, 128).translate(0, AXIS_Y, 0));
+    k.add(M.stainless, cylX(0.425, s > 0 ? x0 + 0.06 : -x0 - 0.1, s > 0 ? x0 + 0.1 : -x0 - 0.06, 128).translate(0, AXIS_Y, 0));
+    // The cover: a white cap, a lamp ring and a ring of screws.
+    const xc = s * (x1 + 0.01);
+    k.add(M.accent, cylX(0.22, Math.min(xc, s * x1), Math.max(xc, s * x1), 96).translate(0, AXIS_Y, 0));
+    k.add(M.ledW, new RingGeometry(0.3, 0.312, 128).rotateY(s * Math.PI / 2).translate(s * (x1 + 0.002), AXIS_Y, 0));
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      k.put(Pc.socket, M.stainless, stand(new Vector3(s * x1, AXIS_Y + Math.cos(a) * 0.37, Math.sin(a) * 0.37), new Vector3(s, 0, 0), a, 1));
+    }
+  }
+  // The cable climbs the west arm's inner face to the altitude axis.
+  bundle(k, M, Pc, [[0, TABLE_Y1, 0], [-0.4, TABLE_Y1 + 0.05, 0.2], [-0.72, TABLE_Y1 + 0.4, 0.3], [-0.74, 2.4, 0.26], [-0.74, AXIS_Y - 0.3, 0.1], [-0.74, AXIS_Y, 0]]);
 }
 
 /* ---------- the tube: it tilts on the altitude axis ---------- */
-// The tube's own frame: its axis is Z, its front is -Z.
-// Its origin sits PIVOT_Z in front of the altitude axis.
 function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
-  /* the shroud: a closed skin from the front flange to the rear joint */
-  k.add(M.paint, cylZOpen(SHROUD_R, FRONT_Z, SHROUD_BACK));
-  // The front flange: a ring round the aperture, bolted to the skin.
-  k.add(M.anodised, along(turn(ringProfile(APERTURE_R, SHROUD_R + 0.01, FRONT_Z - 0.03, FRONT_Z + 0.03, 0.008), 128), Y_TO_Z));
-  for (let i = 0; i < 24; i++) {
-    const a = (i / 24) * Math.PI * 2;
-    k.put(Pc.socket, M.zinc, stand(new Vector3(Math.cos(a) * 0.58, Math.sin(a) * 0.58, FRONT_Z - 0.03), new Vector3(0, 0, -1), a, 1));
-  }
-  // Stiffener rings round the skin.
-  for (const z of [-1.1, 0.5]) {
-    k.add(M.anodised, along(turn(ringProfile(SHROUD_R, SHROUD_R + 0.025, z, z + 0.03, 0.005), 128), Y_TO_Z));
-  }
-  // Panel seams: rows of domed rivets along the skin.
-  for (const z of [-1.25, 0.1, 0.5, 1.2]) {
-    for (let i = 0; i < 32; i++) {
-      const a = (i / 32) * Math.PI * 2;
-      k.put(Pc.rivet, M.zinc, stand(new Vector3(Math.cos(a) * SHROUD_R, Math.sin(a) * SHROUD_R, z), new Vector3(Math.cos(a), Math.sin(a), 0), 0, 1));
-    }
-  }
-  // The access door: an arc of skin round +X, with a rivet seam and a handle.
-  k.add(M.anodised, along(turn([[[SHROUD_R + 0.008, DOOR_Z0], [SHROUD_R + 0.008, DOOR_Z1]]], 48, Math.PI / 2 - DOOR_HALF, DOOR_HALF * 2), Y_TO_Z));
-  for (let j = 0; j <= 9; j++) {
-    const th = -DOOR_HALF + (j / 9) * DOOR_HALF * 2;
-    for (const z of [DOOR_Z0, DOOR_Z1]) {
-      k.put(Pc.rivet, M.zinc, stand(new Vector3(Math.cos(th) * (SHROUD_R + 0.008), Math.sin(th) * (SHROUD_R + 0.008), z), new Vector3(Math.cos(th), Math.sin(th), 0), 0, 0.8));
-    }
-  }
-  k.add(M.darkSteel, cylZ(0.012, DOOR_Z0 + 0.1, DOOR_Z1 - 0.1, 16).translate(SHROUD_R + 0.03, 0, 0));
-  for (const z of [DOOR_Z0 + 0.1, DOOR_Z1 - 0.1]) k.add(M.darkSteel, cylX(0.008, SHROUD_R + 0.005, SHROUD_R + 0.03, 12).translate(0, 0, z));
-  // The louvres: two rows of slats at the top of the skin, angled outward.
-  for (const z of [0.8, 1.0]) {
-    for (let i = 0; i < 15; i++) {
-      const th = Math.PI / 2 + (i - 7) * 0.09;
-      const n = new Vector3(Math.cos(th), Math.sin(th), 0), t = new Vector3(-Math.sin(th), Math.cos(th), 0);
-      k.put(Pc.tooth, M.darkSteel, boxAt(n.clone().multiplyScalar(SHROUD_R + 0.004).setZ(z), t, n, new Vector3(0, 0, 1), 0.05, 0.008, 0.06));
-    }
-  }
-  // The nameplate: a small satin plate, blank, on the shroud's flank.
-  k.add(M.zinc, new RingGeometry(0.001, 0.03, 24, 1).rotateX(-Math.PI / 2).translate(0, SHROUD_R + 0.004, 0.9));
+  /* the centre section: a black anodised ring that carries the trunnions */
+  k.add(M.black, along(turn(ringProfile(MIRROR_R + 0.02, CELL_R, SECTION_Z0, SECTION_Z1, 0.01), 160), Y_TO_Z));
+  k.add(M.flock, cylZOpen(MIRROR_R + 0.02, SECTION_Z0, CELL_Z1, 160));
+  k.add(M.stainless, along(turn(ringProfile(CELL_R, CELL_R + 0.005, SECTION_Z0 + 0.04, SECTION_Z0 + 0.07, 0.002), 160), Y_TO_Z));
+  // The trunnions: short shafts out to the fork's bearings.
+  k.add(M.black, cylX(0.13, CELL_R - 0.02, ARM_X - ARM_T / 2, 64), cylX(0.13, -ARM_X + ARM_T / 2, -CELL_R + 0.02, 64));
+  for (const s of [-1, 1]) k.add(M.stainless, cylX(0.14, s > 0 ? CELL_R : -CELL_R - 0.03, s > 0 ? CELL_R + 0.03 : -CELL_R, 64));
 
-  /* the truss, inside the skin: rails to the front ring, with a zigzag of diagonals */
-  const front: Vector3[] = [], rear: Vector3[] = [];
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    front.push(new Vector3(Math.cos(a) * APERTURE_R, Math.sin(a) * APERTURE_R, FRONT_Z));
-    rear.push(new Vector3(Math.cos(a) * R_CELL, Math.sin(a) * R_CELL, CELL_Z));
+  /* the mirror cell: white, with a back plate, fans and two electronics boxes */
+  k.add(M.white, along(turn(ringProfile(MIRROR_R + 0.02, CELL_R, CELL_Z0, CELL_Z1, 0.012), 160), Y_TO_Z));
+  k.add(M.white, along(turn(ringProfile(HOLE_R + 0.06, CELL_R, CELL_Z1, CELL_Z1 + 0.03, 0.008), 160), Y_TO_Z));
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    k.put(Pc.socket, M.stainless, stand(new Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.6, CELL_Z1 + 0.03), Z, a, 1));
   }
-  for (let i = 0; i < 6; i++) {
-    k.put(Pc.beam, M.carbon, beamM(front[i], rear[i], 0.022));
-    k.put(Pc.beam, M.carbon, beamM(front[i], rear[(i + 1) % 6], 0.016));
-    k.put(Pc.beam, M.carbon, beamM(rear[i], front[(i + 1) % 6], 0.016));
-  }
-
-  /* the mirror cell: an anodised ring round the primary, with gussets and a back plate */
-  k.add(M.anodised, along(turn(ringProfile(MIRROR_R, R_CELL + 0.06, CELL_Z, CELL_BACK, 0.01), 128), Y_TO_Z));
-  k.add(M.anodised, along(turn(ringProfile(HOLE_R, R_CELL + 0.06, CELL_BACK, CELL_BACK + 0.04, 0.01), 128), Y_TO_Z));
-  // Twelve radial gussets stiffen the back plate.
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    const n = new Vector3(Math.cos(a), Math.sin(a), 0);
-    const p = n.clone().multiplyScalar(0.38).setZ(CELL_BACK + 0.07);
-    k.put(Pc.tooth, M.anodised, boxAt(p, new Vector3(-Math.sin(a), Math.cos(a), 0), n, new Vector3(0, 0, 1), 0.02, 0.24, 0.06));
-  }
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    k.put(Pc.bolt, M.zinc, stand(new Vector3(Math.cos(a) * 0.62, Math.sin(a) * 0.62, CELL_BACK + 0.04), new Vector3(0, 0, 1), a));
-  }
-  // The primary's blank, and its mirror face turned to the secondary.
-  k.add(M.ceramic, along(turn(ringProfile(HOLE_R, MIRROR_R, MIRROR_Z, MIRROR_Z + 0.12, 0.01), 128), Y_TO_Z));
-  k.add(M.mirror, mirrorFace(HOLE_R, MIRROR_R, MIRROR_Z - 0.002, PRIMARY_R, -1));
-
-  /* the Cassegrain stack behind the cell: focuser, filter wheel, camera, fins, lamps */
-  const fz = CELL_BACK + 0.04;
-  k.add(M.anodised, cylZ(0.2, fz, fz + 0.18), chamferBox(0.16, 0.14, 0.2, 0.012).translate(0.24, 0, fz + 0.09));
-  k.add(M.steel, cylZ(0.13, fz + 0.18, fz + 0.36));
-  k.add(M.darkSteel, new BoxGeometry(0.02, 0.02, 0.3).translate(0.13, 0, fz + 0.27));
-  for (let i = 0; i < 12; i++) {
-    k.put(Pc.tooth, M.darkSteel, boxAt(new Vector3(0.14, 0, fz + 0.14 + i * 0.02), new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1), 0.008, 0.02, 0.006));
-  }
-  k.add(M.anodised, along(knurl(0.05, 0.03, 28), Y_TO_Z, 0, 0, fz + 0.04));
-  k.add(M.anodised, cylZ(0.17, fz + 0.36, fz + 0.48), cylZ(0.19, fz + 0.42, fz + 0.44));
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2;
-    k.add(M.filter, cylZ(0.04, fz + 0.44, fz + 0.46, 24).translate(Math.cos(a) * 0.1, Math.sin(a) * 0.1, 0));
-  }
-  k.add(M.anodised, cylZ(0.19, fz + 0.48, 2.36));
-  k.add(M.rubber, cylZ(0.2, 2.2, 2.28));
-  // The fin block: fourteen dark-coated fins round a core.
-  const fins: P[][] = [];
-  for (let i = 0; i < 14; i++) {
-    const z = 2.36 + i * 0.03;
-    fins.push(...ringProfile(0.22, 0.3, z, z + 0.012, 0.003));
-  }
-  k.add(M.fin, along(turn(fins, 96), Y_TO_Z), cylZ(0.22, 2.36, 2.78));
-  k.add(M.anodised, cylZ(0.22, 2.78, CAM_END));
-  // Three connectors on the camera's back, and the status lamps.
-  for (let i = 0; i < 3; i++) {
-    const a = 0.6 + i * 2.1;
-    k.add(M.darkSteel, cylZ(0.03, CAM_END, CAM_END + 0.02, 16).translate(Math.cos(a) * 0.14, Math.sin(a) * 0.14, 0));
-  }
-  const lamps: [MatKey, number][] = [['ledG', 0], ['ledB', 2.094], ['ledA', 4.189]];
-  for (const [key, a] of lamps) {
-    k.put(Pc.led, M[key], stand(new Vector3(Math.cos(a) * 0.09, Math.sin(a) * 0.09, CAM_END), new Vector3(0, 0, 1), 0, 1.2));
-  }
-
-  /* the secondary: a convex mirror in its cell, held by four vanes from the ring */
-  k.add(M.mirror, mirrorFace(0, SEC_R, SEC_Z + 0.002, SEC_CONVEX_R, 1));
-  k.add(M.anodised, along(turn(ringProfile(SEC_R, SEC_R + 0.04, SEC_Z - 0.03, SEC_Z + 0.03, 0.006), 64), Y_TO_Z));
+  // Four fans pull air across the back of the mirror.
+  const fz = CELL_Z1 + 0.03;
   for (let i = 0; i < 4; i++) {
-    const a = Math.PI / 4 + (i / 4) * Math.PI * 2;
-    k.put(Pc.beam, M.darkSteel, beamM(new Vector3(Math.cos(a) * APERTURE_R, Math.sin(a) * APERTURE_R, FRONT_Z), new Vector3(0, 0, SEC_Z), 0.014));
+    const a = Math.PI / 4 + (i / 4) * Math.PI * 2, cx = Math.cos(a) * 0.38, cy = Math.sin(a) * 0.38;
+    k.add(M.black, along(turn(ringProfile(0.075, 0.092, fz, fz + 0.03, 0.004), 48), Y_TO_Z, cx, cy, 0));
+    k.add(M.flock, cylZ(0.075, fz, fz + 0.012, 48).translate(cx, cy, 0));
+    k.add(M.black, cylZ(0.026, fz, fz + 0.034, 24).translate(cx, cy, 0));
+    for (const [w, h] of [[0.15, 0.008], [0.008, 0.15]] as P[]) {
+      k.put(Pc.box, M.black, boxAt(new Vector3(cx, cy, fz + 0.03), X, Y, Z, w, h, 0.006));
+    }
   }
-  /* the dust cover: a motor on the front flange, the cover parked beside the tube */
-  const cz = FRONT_Z - 0.12;
-  k.add(M.anodised, chamferBox(0.14, 0.14, 0.16, 0.01).translate(0.6, 0, cz), cylX(0.02, 0.66, 0.88, 16).translate(0, 0, cz));
-  k.add(M.anodised, cylX(0.56, 0.88, 0.9, 96).translate(0, 0, cz));
+  // Electronics boxes on the cell's top and its west side.
+  for (const a of [Math.PI / 2, Math.PI * 1.1]) {
+    const n = new Vector3(Math.cos(a), Math.sin(a), 0), t = new Vector3(-Math.sin(a), Math.cos(a), 0);
+    const c = n.clone().multiplyScalar(CELL_R + 0.05).setZ((CELL_Z0 + CELL_Z1) / 2);
+    const g = chamferBox(0.28, 0.1, 0.26, 0.012).applyMatrix4(new Matrix4().makeBasis(t, n, Z)).translate(c.x, c.y, c.z);
+    k.add(M.black, g);
+    for (let i = 0; i < 3; i++) {
+      const p = c.clone().addScaledVector(t, -0.06 + i * 0.06).setZ((CELL_Z0 + CELL_Z1) / 2 + 0.13);
+      k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(p, Z, 0, 0.8));
+    }
+  }
 
-  /* the guide scope rides on a bar along the shroud top */
-  k.add(M.anodised, chamferBox(0.1, 0.04, 2.8, 0.004).translate(0, SHROUD_R + 0.02, 0));
-  k.add(M.anodised, chamferBox(0.12, 0.1, 0.12, 0.006).translate(0, SHROUD_R - 0.02, -1.4), chamferBox(0.12, 0.1, 0.12, 0.006).translate(0, SHROUD_R - 0.02, 1.4));
-  for (const z of [-0.9, 0.9]) {
-    k.add(M.anodised, along(turn(ringProfile(0.07, 0.09, z - 0.03, z + 0.03, 0.004), 48), Y_TO_Z, 0, GUIDE_Y, 0));
+  /* the primary's blank: amber glass-ceramic, seen at its edge through the truss */
+  k.add(M.zerodur, cylZOpen(MIRROR_R, MIRROR_Z, MIRROR_Z + BLANK_T, 160));
+  k.add(M.zerodur, along(turn(ringProfile(HOLE_R, MIRROR_R, MIRROR_Z + BLANK_T - 0.01, MIRROR_Z + BLANK_T, 0.004), 160), Y_TO_Z));
+
+  /* the truss: eight carbon struts in four V pairs, on white nodes */
+  const back: Vector3[] = [], front: Vector3[] = [];
+  for (let i = 0; i < 4; i++) {
+    const ab = Math.PI / 4 + (i / 4) * Math.PI * 2, af = (i / 4) * Math.PI * 2;
+    back.push(new Vector3(Math.cos(ab) * NODE_BACK_R, Math.sin(ab) * NODE_BACK_R, NODE_BACK_Z));
+    front.push(new Vector3(Math.cos(af) * NODE_FRONT_R, Math.sin(af) * NODE_FRONT_R, NODE_FRONT_Z));
   }
-  k.add(M.anodised, cylZ(0.07, -1.2, 0.6, 48).translate(0, GUIDE_Y, 0));
-  k.add(M.filter, cylZ(0.066, -1.204, -1.2, 48).translate(0, GUIDE_Y, 0));
-  k.add(M.anodised, cylZ(0.06, 0.6, 0.7, 40).translate(0, GUIDE_Y, 0));
+  for (let i = 0; i < 4; i++) {
+    for (const f of [front[i], front[(i + 1) % 4]]) {
+      k.put(Pc.beam, M.carbon, beamM(back[i], f, 0.022));
+      // Stainless end fittings at both ends of each strut.
+      const d = new Vector3().subVectors(f, back[i]).normalize();
+      k.put(Pc.beam, M.stainless, beamM(back[i].clone().addScaledVector(d, 0.04), back[i].clone().addScaledVector(d, 0.1), 0.025));
+      k.put(Pc.beam, M.stainless, beamM(f.clone().addScaledVector(d, -0.1), f.clone().addScaledVector(d, -0.04), 0.025));
+    }
+  }
+  for (const p of [...back, ...front]) {
+    const n = new Vector3(p.x, p.y, 0).normalize(), t = new Vector3(-n.y, n.x, 0);
+    k.put(Pc.box, M.accent, boxAt(p, t, n, Z, 0.11, 0.06, 0.09));
+    k.put(Pc.socket, M.stainless, stand(p.clone().addScaledVector(n, 0.03), n, 0, 1.2));
+  }
+
+  /* the cloth shroud over the truss, with elastic hems */
+  k.add(M.cloth, shroudGeometry(SHROUD_Z0, SHROUD_Z1, CELL_R + 0.008, NODE_FRONT_R + 0.06));
+  k.add(M.rubber, along(turn(ringProfile(CELL_R - 0.01, CELL_R + 0.016, SHROUD_Z0 - 0.02, SHROUD_Z0 + 0.02, 0.008), 160), Y_TO_Z));
+  k.add(M.rubber, along(turn(ringProfile(NODE_FRONT_R + 0.04, NODE_FRONT_R + 0.068, SHROUD_Z1 - 0.02, SHROUD_Z1 + 0.02, 0.008), 160), Y_TO_Z));
+
+  /* the top cage: a black ring with a white lip, the spider and the secondary */
+  k.add(M.black, along(turn(ringProfile(CAGE_R - 0.04, CAGE_R + 0.04, CAGE_Z - 0.07, CAGE_Z + 0.07, 0.01), 160), Y_TO_Z));
+  k.add(M.flock, cylZOpen(CAGE_R - 0.04, CAGE_Z - 0.07, CAGE_Z + 0.07, 160));
+  k.add(M.accent, along(turn(ringProfile(CAGE_R - 0.04, CAGE_R + 0.044, CAGE_Z - 0.085, CAGE_Z - 0.07, 0.004), 160), Y_TO_Z));
+  // The secondary housing, its focus motor and its baffle.
+  k.add(M.black, cylZ(0.21, CAGE_Z - 0.12, SEC_Z - 0.01, 96), cylZ(0.08, CAGE_Z - 0.2, CAGE_Z - 0.12, 48));
+  k.add(M.flock, cylZOpen(0.205, SEC_Z - 0.01, SEC_Z + 0.09, 96));
+  k.add(M.black, cylZOpen(0.215, SEC_Z - 0.01, SEC_Z + 0.09, 96));
+  // Four thin vanes hold the housing in the cage.
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const n = new Vector3(Math.cos(a), Math.sin(a), 0), t = new Vector3(-n.y, n.x, 0);
+    const p = n.clone().multiplyScalar((0.21 + CAGE_R - 0.04) / 2).setZ(CAGE_Z - 0.04);
+    k.put(Pc.box, M.black, boxAt(p, t, n, Z, 0.006, CAGE_R - 0.04 - 0.21, 0.1));
+  }
+
+  /* the Cassegrain stack: rotator, focuser, filter wheel, cooled camera */
+  const z0 = CELL_Z1 + 0.03;
+  k.add(M.black, cylZ(0.3, z0, z0 + 0.08, 96));
+  k.add(M.accent, cylZ(0.305, z0 + 0.035, z0 + 0.045, 96));
+  k.add(M.black, cylZ(0.16, z0 + 0.08, z0 + 0.22, 64));
+  k.add(M.stainless, cylZ(0.165, z0 + 0.14, z0 + 0.16, 64));
+  k.add(M.black, cylZ(0.3, z0 + 0.22, z0 + 0.3, 96), chamferBox(0.14, 0.12, 0.08, 0.01).translate(0, 0.3, z0 + 0.26));
+  k.add(M.stainless, cylZ(0.21, z0 + 0.3, z0 + 0.52, 96));
+  const fins: P[][] = [];
+  for (let i = 0; i < 9; i++) {
+    const z = z0 + 0.52 + i * 0.022;
+    fins.push(...ringProfile(0.17, 0.25, z, z + 0.01, 0.003));
+  }
+  k.add(M.fin, along(turn(fins, 96), Y_TO_Z), cylZ(0.17, z0 + 0.52, STACK_END - 0.02, 64));
+  k.add(M.black, cylZ(0.2, STACK_END - 0.02, STACK_END, 96));
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + (i - 1) * 0.35;
+    k.put(Pc.led, [M.ledG, M.ledB, M.ledA][i], stand(new Vector3(Math.cos(a) * 0.15, Math.sin(a) * 0.15, STACK_END), Z, 0, 1));
+  }
+  // The camera's cable runs from the top box down to the stack.
+  bundle(k, M, Pc, [[0.08, CELL_R + 0.1, CELL_Z1 - 0.05], [0.14, 0.56, 1.0], [0.16, 0.34, 1.2], [0.12, 0.24, 1.32]]);
 }
 
-// The altitude axis's own parts: the trunnions, the bosses, the rotor and the encoder.
-// Their frame has the altitude axis along X at the origin.
+// The primary baffle: a flocked black tube that runs forward from the hole.
+function buildBaffle(k: Kit, M: Mats): void {
+  k.add(M.black, cylZOpen(0.11, -0.3, MIRROR_Z + SAG, 64));
+  k.add(M.flock, cylZOpen(0.105, -0.3, MIRROR_Z + SAG, 64));
+  k.add(M.black, along(turn(ringProfile(0.105, 0.12, -0.32, -0.3, 0.003), 64), Y_TO_Z));
+}
+
+// The tube's cable: from the west trunnion over the cell to the top box.
+// Its frame is the altitude axis, so its start stays put as the tube tilts.
 function buildAxis(k: Kit, M: Mats, Pc: Pieces): void {
-  // The trunnions reach from the truss's rails out to the tines, at the balance point.
-  k.add(M.cast, cylX(0.1, 0.42, 1.06), cylX(0.1, -1.06, -0.42));
-  // Trunnion bosses bolt onto the skin on each side.
-  for (const s of [-1, 1]) {
-    k.add(M.cast, cylX(0.19, s > 0 ? SHROUD_R - 0.02 : -SHROUD_R - 0.04, s > 0 ? SHROUD_R + 0.04 : -SHROUD_R + 0.02, 64));
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      k.put(Pc.bolt, M.zinc, stand(new Vector3(s * (SHROUD_R + 0.04), Math.cos(a) * 0.15, Math.sin(a) * 0.15), new Vector3(s, 0, 0), a, 0.8));
-    }
-  }
-  // The direct-drive rotor: a hub inside the stator's bore.
-  k.add(M.anodised, cylX(0.28, 1.06, 1.14, 64));
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    k.put(Pc.bolt, M.zinc, stand(new Vector3(1.14, Math.cos(a) * 0.2, Math.sin(a) * 0.2), new Vector3(1, 0, 0), a, 0.9));
-  }
-  // The altitude encoder: a labelled scale on the west side.
-  k.add(M.darkSteel, cylX(0.42, -1.14, -1.08, 96));
-  k.add(M.dialAlt, new RingGeometry(0.001, 0.42, 160, 1).rotateY(-Math.PI / 2).translate(-1.145, 0, 0));
-  // The tube's cable: from the west trunnion down the skin to the camera.
-  bundle(k, M, Pc, [[-0.85, 0, 0], [-0.85, -0.3, 0.4], [-0.8, -0.6, 1.0], [-0.6, -0.7, 1.6], [-0.35, -0.6, 2.0], [-0.12, -0.4, 2.2], [-0.04, -0.2, 2.25]]);
+  bundle(k, M, Pc, [[-0.74, 0, 0], [-0.7, 0.2, 0.25], [-0.52, 0.56, 0.5], [-0.15, CELL_R + 0.1, 0.62]]);
 }
 
 /* ---------- the model ---------- */
@@ -767,25 +638,46 @@ function buildAxis(k: Kit, M: Mats, Pc: Pieces): void {
 export function buildModernScope(size: number): ModernScope {
   const root = new Group();
   root.scale.setScalar(size);
-  const M = materials();
+  const env = domeEnv();
+  const M = materials(env);
   const Pc = pieces();
   // pier: fixed. az: turns on the pier's axis. alt: turns on the altitude axis.
-  // tubeG: the tube, offset so the altitude axis sits PIVOT_Z behind its centre.
-  const pier = new Group(), az = new Group(), alt = new Group(), tubeG = new Group();
+  const pier = new Group(), az = new Group(), alt = new Group();
   alt.position.set(0, AXIS_Y, 0);
-  tubeG.position.set(0, 0, -PIVOT_Z);
-  alt.add(tubeG);
   az.add(alt);
   root.add(pier, az);
-  const kPier = new Kit(), kYoke = new Kit(), kAxis = new Kit(), kTube = new Kit();
+  const kPier = new Kit(), kFork = new Kit(), kTube = new Kit(), kAxis = new Kit();
   buildPier(kPier, M, Pc);
-  buildYoke(kYoke, M, Pc);
-  buildAxis(kAxis, M, Pc);
+  buildFork(kFork, M, Pc);
   buildTube(kTube, M, Pc);
+  buildBaffle(kTube, M);
+  buildAxis(kAxis, M, Pc);
   kPier.build(pier);
-  kYoke.build(az);
+  kFork.build(az);
+  kTube.build(alt);
   kAxis.build(alt);
-  kTube.build(tubeG);
+
+  // The mirrors: planar reflectors, so each one shows the scene with true parallax.
+  // The primary's dish is too shallow to bend the view: its sag is 21 mm.
+  // While a mirror renders, the dome map stands in for the dome.
+  const mirror = (geo: BufferGeometry, res: number): Reflector => {
+    const m = new Reflector(geo, { color: 0xdde2ea, textureWidth: res, textureHeight: res, clipBias: 0.003 });
+    const base = m.onBeforeRender.bind(m);
+    m.onBeforeRender = (r, s, c, g, mat, grp) => {
+      const bg = s.background;
+      s.background = env;
+      base(r, s, c, g, mat, grp);
+      s.background = bg;
+    };
+    return m;
+  };
+  // Both faces build facing +Z; the primary turns round to face the front.
+  const primary = mirror(new RingGeometry(HOLE_R, MIRROR_R, 160, 1), 1024);
+  primary.rotation.y = Math.PI;
+  primary.position.z = MIRROR_Z + SAG / 2;
+  const secondary = mirror(new CircleGeometry(SEC_R, 64), 512);
+  secondary.position.z = SEC_Z;
+  alt.add(primary, secondary);
 
   // Azimuth turns by -az, so east is +X.
   // Altitude tilts the tube up from the horizon.

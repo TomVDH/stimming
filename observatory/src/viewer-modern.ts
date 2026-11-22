@@ -35,6 +35,7 @@ const controls = new OrbitControls(cam, renderer.domElement);
 // The idle page does no per-frame work.
 controls.addEventListener('change', () => draw());
 
+// The mirrors render what they see inside this call.
 function draw(): void {
   renderer.render(scene, cam);
 }
