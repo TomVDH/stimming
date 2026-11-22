@@ -271,17 +271,114 @@ function tex(c: HTMLCanvasElement, srgb: boolean, repeat = 1): CanvasTexture {
   return t;
 }
 
-// Fine grain for anodised and powder-coat roughness: a grey noise field.
-function grainMap(): CanvasTexture {
-  const S = 256, r = rng(11);
-  const [c, x] = canvas(S, S);
-  const img = x.createImageData(S, S);
-  for (let i = 0; i < S * S; i++) {
-    const v = 205 + r() * 50;
-    img.data[i * 4] = v; img.data[i * 4 + 1] = v; img.data[i * 4 + 2] = v; img.data[i * 4 + 3] = 255;
+// Wear on a coat: tone clouds, scuffs, fine scratches, hand smudges and dust.
+// base: the coat's colour; mark: what scratches show; grime: the clouds and the dust.
+// The second map's green channel is the roughness: smudges are glossier, scratches rougher.
+// One texel is about a millimetre on a flat part, whose uv is in metres.
+type Wear = { map: CanvasTexture; rough: CanvasTexture };
+function wearMaps(seed: number, base: string, mark: string, grime: string, rough: number, repeat = 1): Wear {
+  const S = 1024, r = rng(seed);
+  const [c, x] = canvas(S, S), [c2, y] = canvas(S, S);
+  x.fillStyle = base;
+  x.fillRect(0, 0, S, S);
+  y.fillStyle = `rgb(${rough},${rough},${rough})`;
+  y.fillRect(0, 0, S, S);
+  // Each soft mark draws at its wrapped copies too, so the tile has no seam.
+  const wrap = (px: number, py: number, rad: number, f: (cx: number, cy: number) => void): void => {
+    for (const dx of [-S, 0, S]) {
+      for (const dy of [-S, 0, S]) {
+        const cx = px + dx, cy = py + dy;
+        if (cx + rad > 0 && cx - rad < S && cy + rad > 0 && cy - rad < S) f(cx, cy);
+      }
+    }
+  };
+  const blob = (ctx: CanvasRenderingContext2D, cx: number, cy: number, rad: number, col: string, a: number): void => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, `rgba(${col},${a})`);
+    g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+  };
+  const gr = grime.match(/\w\w/g)!.map(h => parseInt(h, 16)).join(',');
+  const mk = mark.match(/\w\w/g)!.map(h => parseInt(h, 16)).join(',');
+  // Grime gathers in soft clouds; the roughness rises a little with it.
+  for (let i = 0; i < 140; i++) {
+    const px = r() * S, py = r() * S, rad = 40 + r() * 180, a = 0.05 + r() * 0.08;
+    wrap(px, py, rad, (cx, cy) => {
+      blob(x, cx, cy, rad, gr, a);
+      blob(y, cx, cy, rad, '255,255,255', a * 0.6);
+    });
   }
-  x.putImageData(img, 0, 0);
-  return tex(c, false, 3);
+  // Hand smudges: oval patches with a lower roughness.
+  for (let i = 0; i < 50; i++) {
+    const px = r() * S, py = r() * S, rad = 10 + r() * 28;
+    wrap(px, py, rad, (cx, cy) => blob(y, cx, cy, rad, '40,40,40', 0.22));
+  }
+  // Scuffs: short soft strokes.
+  x.lineCap = 'round';
+  for (let i = 0; i < 90; i++) {
+    const px = r() * S, py = r() * S, a = r() * Math.PI, len = 8 + r() * 40;
+    x.strokeStyle = `rgba(${mk},${0.05 + r() * 0.08})`;
+    x.lineWidth = 3 + r() * 7;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); x.stroke();
+  }
+  // Fine scratches: thin lines, mostly in one direction, as from a cloth wipe.
+  for (let i = 0; i < 420; i++) {
+    const px = r() * S, py = r() * S, len = 6 + r() ** 2 * 90;
+    const a = (r() < 0.7 ? 0.2 : r() * Math.PI) + (r() - 0.5) * 0.4;
+    const ex = px + Math.cos(a) * len, ey = py + Math.sin(a) * len;
+    x.strokeStyle = `rgba(${mk},${0.12 + r() * 0.35})`;
+    x.lineWidth = 0.5 + r() * 0.9;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(ex, ey); x.stroke();
+    y.strokeStyle = 'rgba(235,235,235,0.5)';
+    y.lineWidth = 0.6 + r();
+    y.beginPath(); y.moveTo(px, py); y.lineTo(ex, ey); y.stroke();
+  }
+  // Dust: fine specks.
+  for (let i = 0; i < 1800; i++) {
+    x.fillStyle = `rgba(${gr},${0.2 + r() * 0.4})`;
+    x.fillRect(r() * S, r() * S, 1 + r(), 1 + r());
+  }
+  return { map: tex(c, true, repeat), rough: tex(c2, false, repeat) };
+}
+
+// Orange peel: the soft dimpled face of a powder coat, as a bump map.
+function peelMap(): CanvasTexture {
+  const S = 512, r = rng(19);
+  const [c, x] = canvas(S, S);
+  x.fillStyle = '#808080';
+  x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) {
+    const px = r() * S, py = r() * S, rad = 3 + r() * 7, v = r() < 0.5 ? '255,255,255' : '0,0,0';
+    const g = x.createRadialGradient(px, py, 0, px, py, rad);
+    g.addColorStop(0, `rgba(${v},0.12)`);
+    g.addColorStop(1, `rgba(${v},0)`);
+    x.fillStyle = g;
+    x.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+  }
+  return tex(c, false, 4);
+}
+
+// Brushed metal: fine streaks along one direction, and a few scratches across them.
+// It serves as the roughness map and the bump map.
+function brushedMap(base: number): CanvasTexture {
+  const S = 512, r = rng(41 + base);
+  const [c, x] = canvas(S, S);
+  x.fillStyle = `rgb(${base},${base},${base})`;
+  x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 3000; i++) {
+    const py = r() * S, px = r() * S, len = 30 + r() * 300, v = base + (r() - 0.5) * 70;
+    x.fillStyle = `rgba(${v | 0},${v | 0},${v | 0},0.35)`;
+    x.fillRect(px, py, len, 1);
+    x.fillRect(px - S, py, len, 1);
+  }
+  for (let i = 0; i < 60; i++) {
+    const px = r() * S, py = r() * S, a = r() * Math.PI, len = 10 + r() * 50;
+    x.strokeStyle = 'rgba(230,230,230,0.5)';
+    x.lineWidth = 0.7;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); x.stroke();
+  }
+  return tex(c, false, 2);
 }
 
 // A weave, as a bump map: a twill for carbon, a fine plain weave for cloth.
@@ -386,47 +483,57 @@ function reflectOnly<M extends MeshStandardMaterial>(m: M, key: string): M {
 function materials(env: CanvasTexture): Mats {
   const std = (key: string, p: MeshStandardMaterialParameters): MeshStandardMaterial =>
     reflectOnly(new MeshStandardMaterial({ envMap: env, ...p }), key);
-  const grain = grainMap();
+  const peel = peelMap(), brushed = brushedMap(110), brushedDark = brushedMap(150);
+  // Each coat has its own wear: a pale coat shows grime, a dark one shows scratches.
+  const whiteWear = wearMaps(3, '#e4e6e9', '#a3a8b0', '#bdc1c7', 165);
+  const blackWear = wearMaps(7, '#17191d', '#565b63', '#33363c', 140);
+  const graphiteWear = wearMaps(11, '#2b2e33', '#62676f', '#3c3f45', 175);
+  const accentWear = wearMaps(13, '#eeeff2', '#b0b5bc', '#a9aeb5', 125);
+  const clothWear = wearMaps(17, '#121215', '#2c2e33', '#24262b', 255, 3);
   const led = (c: number, key: MatKey): MeshStandardMaterial =>
     std(key, { color: c, emissive: c, emissiveIntensity: 2.5, roughness: 0.3 });
   return {
-    // White powder coat on the pier and the cell.
-    white: std('white', { color: 0xe8eaed, roughness: 0.48, metalness: 0, roughnessMap: grain }),
-    // Black hard anodising on the fork, the drums and the cage.
-    black: std('black', { color: 0x16181c, metalness: 0.55, roughness: 0.32, roughnessMap: grain }),
-    // White anodised nodes, caps and trim: brighter and glossier than the powder coat.
-    accent: std('accent', { color: 0xf4f5f7, metalness: 0.25, roughness: 0.22 }),
-    // Satin graphite on the arms' cover plates: a step off the gloss black.
-    graphite: std('graphite', { color: 0x2a2d32, metalness: 0.35, roughness: 0.55, roughnessMap: grain }),
+    // White powder coat on the pier and the cell: matte, dimpled, a little grimy.
+    white: std('white', {
+      map: whiteWear.map, roughness: 1, roughnessMap: whiteWear.rough, metalness: 0, bumpMap: peel, bumpScale: 0.6,
+    }),
+    // Black hard anodising on the fork, the drums and the cage: satin, scratched by use.
+    black: std('black', { map: blackWear.map, roughness: 1, roughnessMap: blackWear.rough, metalness: 0.25 }),
+    // White anodised nodes, caps and trim: a touch glossier than the powder coat.
+    accent: std('accent', { map: accentWear.map, roughness: 1, roughnessMap: accentWear.rough, metalness: 0.1 }),
+    // Satin graphite on the arms' cover plates: a step off the black.
+    graphite: std('graphite', { map: graphiteWear.map, roughness: 1, roughnessMap: graphiteWear.rough, metalness: 0.25 }),
     // The shroud's seam: a woven tape, and its stitches.
     webbing: std('webbing', { color: 0x1d1e21, metalness: 0, roughness: 0.85 }),
     stitch: std('stitch', { color: 0x4a4e55, metalness: 0, roughness: 0.9 }),
-    // Polished stainless rings and bands.
-    stainless: std('stainless', { color: 0xd0d4d9, metalness: 1, roughness: 0.14 }),
-    darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.9, roughness: 0.38 }),
-    zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 0.42 }),
+    // Brushed stainless rings and bands: streaked, not mirror bright.
+    stainless: std('stainless', {
+      color: 0xc6cad0, metalness: 1, roughness: 1, roughnessMap: brushed, bumpMap: brushed, bumpScale: 0.25,
+    }),
+    darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.85, roughness: 1, roughnessMap: brushedDark }),
+    zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 1, roughnessMap: brushedDark }),
     // Flock black inside the tube and the baffles: it eats stray light.
     flock: std('flock', { color: 0x040405, metalness: 0, roughness: 1 }),
     rubber: std('rubber', { color: 0x101012, metalness: 0, roughness: 0.9 }),
-    // Carbon struts under a clear coat.
+    // Carbon struts under a satin clear coat.
     carbon: reflectOnly(new MeshPhysicalMaterial({
-      envMap: env, color: 0x0e0e10, metalness: 0.2, roughness: 0.45,
-      bumpMap: weaveMap(8, 10), bumpScale: 0.5, clearcoat: 1, clearcoatRoughness: 0.08,
+      envMap: env, color: 0x0e0e10, metalness: 0.1, roughness: 0.55,
+      bumpMap: weaveMap(8, 10), bumpScale: 0.5, clearcoat: 0.6, clearcoatRoughness: 0.3,
     }), 'carbon'),
-    // The shroud's black cloth: a soft sheen at grazing angles.
+    // The shroud's black cloth: a soft sheen at grazing angles, with lint and dust.
     cloth: reflectOnly(new MeshPhysicalMaterial({
-      envMap: env, color: 0x111114, metalness: 0, roughness: 0.95,
-      sheen: 1, sheenColor: 0x4a505a, sheenRoughness: 0.55, bumpMap: weaveMap(2, 30), bumpScale: 0.35,
+      envMap: env, map: clothWear.map, metalness: 0, roughness: 0.95,
+      sheen: 0.8, sheenColor: 0x41464f, sheenRoughness: 0.6, bumpMap: weaveMap(2, 30), bumpScale: 0.35,
       // The aperture shows the cloth's inside face too.
       side: DoubleSide,
     }), 'cloth'),
     // The primary's blank: an amber glass-ceramic.
-    zerodur: std('zerodur', { color: 0x8a5a2a, metalness: 0, roughness: 0.12 }),
+    zerodur: std('zerodur', { color: 0x8a5a2a, metalness: 0, roughness: 0.15 }),
     // Dark-coated fins on the camera's heat sink.
-    fin: std('fin', { color: 0x1a1c20, metalness: 0.4, roughness: 0.5 }),
-    cable: std('cable', { color: 0x111113, metalness: 0, roughness: 0.8 }),
-    fibre: std('fibre', { color: 0xd9731f, metalness: 0, roughness: 0.5 }),
-    lan: std('lan', { color: 0xd8dbe0, metalness: 0, roughness: 0.5 }),
+    fin: std('fin', { map: blackWear.map, metalness: 0.3, roughness: 0.65 }),
+    cable: std('cable', { color: 0x111113, metalness: 0, roughness: 0.75 }),
+    fibre: std('fibre', { color: 0xc96a1f, metalness: 0, roughness: 0.6 }),
+    lan: std('lan', { color: 0xcfd2d7, metalness: 0, roughness: 0.6 }),
     // A small status screen: dark glass with a faint white glow.
     display: std('display', { color: 0x101214, emissive: 0x8a9098, emissiveIntensity: 0.6, roughness: 0.08, metalness: 0 }),
     ledG: led(0x39ff7a, 'ledG'),
