@@ -17,7 +17,7 @@ import { bakeImpostor } from './impostor.ts';
 // Trees stand on a jittered 6 m grid.
 // The grid covers the land the camera sees.
 const STEP = 6;
-const AREA = { x0: -760, x1: 760, z0: -330, z1: 760 };
+const AREA = { x0: -760, x1: 760, z0: -620, z1: 760 };
 // No tree stands inside these gaps, in metres.
 // The gaps are round the eye's foot, the clearing and the road.
 const EYE_GAP = 75, CLEAR_GAP = 6, ROAD_GAP = 6;

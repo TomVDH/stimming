@@ -2,11 +2,11 @@
 import './observatory.ts';
 import { BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group, LatheGeometry, Mesh, MeshBasicMaterial, MeshLambertMaterial, RepeatWrapping, SRGBColorSpace, SphereGeometry, Vector2, Vector3 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
-import { ROAD, ROAD_W, SITE, hillHeight, roadDist } from './hill.ts';
+import { PADS, ROAD, ROAD_W, SITE, TOP, hillHeight, roadDist, type Pad } from './hill.ts';
 import { buildDome, type Dome } from './observatory.ts';
 
 /* ---------- the complex: three domes, the operations building, the dish, the mast, the road ---------- */
-// Positions are in metres from the platform's centre.
+// Positions are in metres from the summit's top.
 // +X is east and -Z is north.
 // The camera looks south.
 // So east is on the left of the frame.
@@ -196,14 +196,19 @@ export function buildComplex(): Complex {
   // The main dome holds the big refractor.
   // The laser leaves it.
   // It is the big Keck-style enclosure: 25 m across, 22.2 m to the top.
+  // Each building stands on its own pad in world/hill.
+  const on = (p: Pad): number => p.y - TOP;
   const main = buildDome(3.64, true, true);
-  main.root.position.set(-12, 0, -6);
+  main.root.position.set(PADS.main.x, on(PADS.main), PADS.main.z);
   // Two small modern enclosures stand to the east.
   const east = buildDome(0.75, false, true);
-  east.root.position.set(42, 0, 2);
+  east.root.position.set(PADS.east.x, on(PADS.east), PADS.east.z);
   const north = buildDome(0.62, false, true);
-  north.root.position.set(36, 0, -16);
+  north.root.position.set(PADS.north.x, on(PADS.north), PADS.north.z);
   const own = [ops(), dish(), mast()];
+  own[0].position.y = on(PADS.ops);
+  own[1].position.y = on(PADS.dish);
+  own[2].position.y = on(PADS.mast);
   root.add(main.root, east.root, north.root, ...own);
   root.updateMatrixWorld(true);
   return { root, main, small: [east, north], windows: litPanes, own };

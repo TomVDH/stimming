@@ -11,16 +11,13 @@ import { disposeTree, onLeave, scene } from '../setup.ts';
 // Source: Wikimedia Commons photos of the observatory and its peak.
 // Boreal forest covers the slopes up to a ragged treeline.
 
-// The complex stands on a flat platform on the summit.
-// The platform's centre is the origin.
-// Its half-sizes east-west and north-south, in metres.
-const PLAT_A = 54, PLAT_B = 30, PLAT_Z = -3;
-// The platform's edge rounds over into the slope in this many metres.
-const PLAT_EDGE = 10;
-// Other modules keep clear of the platform within this radius.
+// The complex stands on level pads cut into the summit's rock.
+// The summit's top is the origin.
+// Other modules keep clear of the summit within this radius.
 export const CLEAR = 54;
-// The camera's ridge lies north of the peak, across a deep valley.
-export const RISE = { x: 0, z: -300 };
+// The camera's ridge lies far north of the peak, across a wide forested valley.
+// From there the summit stands on the horizon.
+export const RISE = { x: 0, z: -550 };
 // The wide eye stands this high over the ridge.
 export const EYE_H = 27;
 
@@ -62,28 +59,32 @@ const angDiff = (a: number, b: number): number => {
 // The peak's arêtes: azimuth, width in radians, strength.
 // The north-east arête is broad; the road climbs beside it.
 const ARETES = [[62, 0.5, 0.5], [195, 0.25, 0.2], [285, 0.25, 0.22]].map(([a, w, k]) => ({ a: a * Math.PI / 180, w, k }));
-// The peak: height, flat cap radius, foot radius.
-const PEAK = 300, CAP = 40, FOOT = 330;
+// The peak: height, the rounding radius of its top, foot radius.
+const PEAK = 300, CAP = 45, FOOT = 330;
 
 // The land before the platform, the buttress and the road.
 function base(x: number, z: number): number {
   const r = Math.hypot(x, z), th = Math.atan2(x, -z);
   let ar = 0;
   for (const A of ARETES) ar = Math.max(ar, A.k * Math.exp(-((angDiff(th, A.a) / A.w) ** 2)));
-  const d = Math.max(0, r * (1 - ar) - CAP);
+  // The top rounds over smoothly, so the summit is a crest, not a plateau.
+  const rr = r * (1 - ar), d = Math.sqrt(rr * rr + CAP * CAP) - CAP;
   const peak = PEAK * Math.max(0, 1 - d / FOOT) ** 1.6;
   // The camera's ridge runs east-west to the north.
-  const north = 240 * Math.exp(-(((z + 330) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
+  // Its crest stands about level with the summit.
+  const north = 275 * Math.exp(-(((z + 580) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
   // The peak stands alone: deep land surrounds it on the east, south and west.
   // The camera's ridge to the north stays.
   const north01 = Math.exp(-((th / 0.9) ** 2));
   const moat = -110 * Math.exp(-(((r - 360) / 140) ** 2)) * (1 - north01);
-  // A deep valley lies between the camera's ridge and the peak.
-  const valley = -80 * Math.exp(-(((z + 185) / 60) ** 2)) * Math.exp(-((x / 900) ** 2));
+  // A wide valley lies between the camera's ridge and the peak.
+  const valley = -90 * Math.exp(-(((z + 330) / 110) ** 2)) * Math.exp(-((x / 900) ** 2));
   // Rock ribs and gullies cover the slopes, not the summit.
   const rough = 26 * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(50, 130, r);
   const fine = 5 * (vnoise(x / 22, z / 22, 3) - 0.5);
-  return peak + north + moat + valley + rough + fine;
+  // Rock knolls break up the summit between the pads.
+  const crag = 5 * ridged(x / 28 + 1, z / 28 + 2, 4) * (1 - sstep(70, 110, r));
+  return peak + north + moat + valley + rough + fine + crag;
 }
 const TOP0 = base(0, 0);
 
@@ -94,16 +95,36 @@ function raw(x: number, z: number): number {
   const apron = TOP0 - 6 - 0.6 * Math.max(0, -z - 30);
   return h + mask * Math.max(0, apron - h);
 }
-// The platform's height.
+// The summit's height: the complex's origin.
 export const TOP = raw(0, 0);
 
-// 0 on the platform, 1 past its rounded edge.
-function platK(x: number, z: number): number {
-  const e = Math.hypot(x / PLAT_A, (z - PLAT_Z) / PLAT_B);
-  return sstep(1, 1 + PLAT_EDGE / PLAT_B, e);
+/* ---------- the building pads ---------- */
+// Each building stands on its own level pad.
+// A pad takes the rock's height at its centre, so the pads step down the crest.
+// x, z: the centre; ax, az: half-sizes in metres; y: the pad's height.
+export type Pad = { x: number; z: number; ax: number; az: number; y: number };
+const pad = (x: number, z: number, ax: number, az: number): Pad => ({ x, z, ax, az, y: Math.round(raw(x, z) * 2) / 2 });
+export const PADS = {
+  main: pad(-12, -6, 16, 16), ops: pad(18, 7, 15, 7.5), east: pad(42, 2, 5, 5),
+  north: pad(36, -16, 4.5, 4.5), dish: pad(-36, 9, 6.5, 6.5), mast: pad(4, -21, 3, 3),
+};
+const PAD_LIST = Object.values(PADS);
+// A pad's edge runs out into the rock over this many metres.
+const PAD_EDGE = 5;
+// 1 on a pad, 0 off it.
+function padW(p: Pad, x: number, z: number): number {
+  const e = ((Math.abs(x - p.x) / p.ax) ** 4 + (Math.abs(z - p.z) / p.az) ** 4) ** 0.25;
+  return 1 - sstep(1, 1 + PAD_EDGE / Math.min(p.ax, p.az), e);
+}
+function onPad(x: number, z: number): number {
+  let w = 0;
+  for (const p of PAD_LIST) w = Math.max(w, padW(p, x, z));
+  return w;
 }
 function landNoRoad(x: number, z: number): number {
-  return TOP + (raw(x, z) - TOP) * platK(x, z);
+  let h = raw(x, z);
+  for (const p of PAD_LIST) { const w = padW(p, x, z); if (w > 0) h += (p.y - h) * w; }
+  return h;
 }
 
 /* ---------- the road: switchbacks up the buttress ---------- */
@@ -112,7 +133,7 @@ function landNoRoad(x: number, z: number): number {
 // Under the last leg the road runs down the valley to the west.
 export const ROAD_W = 5;
 // The legs: count, top height, drop per leg, west end, east end.
-const LEGS = 6, LEG_H0 = 286, LEG_DH = 19, LEG_XA = 45, LEG_XB = 165;
+const LEGS = 6, LEG_DH = 19, LEG_XA = 45, LEG_XB = 165;
 
 // The z of the crest at this x: the highest point north of the summit.
 function crestZ(x: number): number {
@@ -120,6 +141,8 @@ function crestZ(x: number): number {
   for (let z = -10; z >= -160; z -= 2) { const h = raw(x, z); if (h > bh) { bh = h; bz = z; } }
   return bz;
 }
+// The first leg starts a little under the crest at its west end.
+const LEG_H0 = raw(LEG_XA, crestZ(LEG_XA)) - 8;
 // The z on the north face where the land stands at height h.
 function faceZ(x: number, h: number): number {
   let lo = crestZ(x), hi = -280;
@@ -129,8 +152,8 @@ function faceZ(x: number, h: number): number {
 
 function roadKnots(): Vector3[] {
   const k: Vector3[] = [];
-  // From the platform's north-east edge.
-  k.push(new Vector3(26, TOP, -26), new Vector3(40, TOP - 2, -42));
+  // From the operations pad, down off the crest to the north-east.
+  k.push(new Vector3(8, PADS.ops.y, -1), new Vector3(24, raw(24, -20), -20), new Vector3(38, raw(38, -38), -38));
   for (let i = 0; i < LEGS; i++) {
     const east = i % 2 === 0, xa = LEG_XA + 4 * i, xb = LEG_XB + 4 * i;
     for (let j = 0; j <= 4; j++) {
@@ -195,7 +218,7 @@ export function hillHeight(x: number, z: number): number {
   return h + (r.y - h) * w;
 }
 
-// The centre of the platform.
+// The summit's top: the complex's origin.
 export const SITE = new Vector3(0, TOP, 0);
 
 /* ---------- the ground's colours ---------- */
@@ -253,8 +276,8 @@ function landMesh(): BufferGeometry {
     // The road's cut banks show bare earth, so the switchbacks read from afar.
     const bank = 1 - sstep(ROAD_W / 2, REACH, nearRoad(x, z).d);
     c.lerp(BANK, bank * 0.75);
-    // The platform is poured concrete.
-    c.lerp(GRAVEL, 1 - platK(x, z));
+    // The pads are poured concrete.
+    c.lerp(GRAVEL, onPad(x, z));
     col.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new Float32BufferAttribute(col, 3));
