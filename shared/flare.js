@@ -23,7 +23,8 @@
 //   c += flBuoy(uv, src, asp, col, size, vec3(orb, streak, ghost), FL_BB, warmth);
 // It adds light in linear colour, before bloom and tone mapping.
 // orb, streak and ghost are Buoy Business panel values times the master.
-// size widens the orb only. FL_BB holds thinness, length, orb fall, spread.
+// size widens the orb only.
+// FL_BB holds thinness, length, orb fall and spread.
 // flLine(d, thin, len) is its streak; flOrb(d, fall) is its orb.
 // flRingTap() gives the nine depth taps for the toy's own cover test.
 // flarePass() is the same flare as a three.js ShaderPass, for many lights.
@@ -109,7 +110,7 @@ float flLine(vec2 d, float thin, float len) {
 // Depth tap k of nine: 0 is the light, 1 to 8 a ring round it.
 // The toy counts the taps that see the light; cover is that share.
 vec2 flRingTap(vec2 src, float asp, int k) {
-  if (k == 0) return src;
+  if (k == 0) return clamp(src, 0.0, 1.0);
   float a = float(k - 1) * 0.7853982;
   return clamp(src + vec2(cos(a), sin(a)) * FL_RING / vec2(asp, 1.0), 0.0, 1.0);
 }
@@ -119,7 +120,7 @@ vec2 flRingTap(vec2 src, float asp, int k) {
 vec3 flBuoy(vec2 uv, vec2 src, float asp, vec3 col, float size, vec3 k, vec4 look, float warmth) {
   vec2 d = flOffset(uv, src, asp, 1.0);
   vec3 w = flWarm(col, warmth);
-  vec3 add = col * flOrb(d, look.z / size) * k.x;
+  vec3 add = col * flOrb(d, look.z / max(size, 1e-3)) * k.x;
   add += w * flLine(d, look.x, look.y) * FL_BB_STREAK * k.y;
   add += w * flGhosts(uv, src, asp, 1.0, look.w, 0.0) * FL_BB_GHOST * k.z;
   return add;
@@ -128,7 +129,8 @@ vec3 flBuoy(vec2 uv, vec2 src, float asp, vec3 col, float size, vec3 k, vec4 loo
 
 // Buoy Business's tuned values (Havoc lab/ocean/panel-schema.js).
 // master multiplies every lamp. reach is the fade distance in metres.
-// halo is the lamp halo's night opacity; lamp strengths scale by it too.
+// halo is the lamp halo's opacity at night.
+// Lamp strengths scale by the halo too.
 // Each lamp holds its orb, streak and ghost strengths.
 // The sun takes no halo, a gain over a bright sky, and a wide orb.
 export const FLARE_BUOY = Object.freeze({
@@ -175,7 +177,7 @@ export function buoySlots(n) {
     /**
      * Returns false when every slot is taken.
      * @param {number} u @param {number} v
-     * @param {ArrayLike<number>} rgb Light colour, linear.
+     * @param {ArrayLike<number> | {r: number, g: number, b: number}} rgb Light colour, linear: an array or a three.js Color.
      * @param {{orb?: number, streak?: number, ghost?: number, size?: number, spread?: number, warmth?: number}} s
      */
     add(u, v, rgb, { orb = 0, streak = 0, ghost = 0, size = 1, spread = 1, warmth = 0 } = {}) {
@@ -183,7 +185,7 @@ export function buoySlots(n) {
       const i = this.used++ * 4;
       pos[i] = u; pos[i + 1] = v; pos[i + 2] = size; pos[i + 3] = spread;
       k[i] = orb; k[i + 1] = streak; k[i + 2] = ghost; k[i + 3] = warmth;
-      col[i] = rgb[0]; col[i + 1] = rgb[1]; col[i + 2] = rgb[2]; col[i + 3] = 0;
+      col[i] = rgb.r ?? rgb[0]; col[i + 1] = rgb.g ?? rgb[1]; col[i + 2] = rgb.b ?? rgb[2]; col[i + 3] = 0;
       return true;
     },
   };
@@ -193,11 +195,13 @@ export function buoySlots(n) {
  * The Buoy Business flare as a three.js pass: give it to `new ShaderPass()`.
  * Run it before bloom. It adds light; it does not screen.
  * The pass reads the slot arrays live: fill them each frame.
- * A ShaderPass keeps typed arrays by reference, so the toy's slots drive it.
+ * A ShaderPass keeps typed arrays by reference.
+ * Set uniforms.uAsp.value to width over height on each resize.
  * @param {{ slots: ReturnType<typeof buoySlots>, look?: number[] }} o
  * look is thinness, length, orb fall, as FL_BB.
  */
 export function flarePass({ slots, look = [FLARE_BUOY.thin, FLARE_BUOY.length, 1 / FLARE_BUOY.orbSize] }) {
+  if (slots.n < 1) throw new Error('flarePass needs one slot or more');
   const n = slots.n;
   return {
     uniforms: {

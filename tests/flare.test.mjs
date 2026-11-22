@@ -43,3 +43,10 @@ test('the pass shares the slot arrays and sizes its uniform arrays', () => {
 test('the GLSL holds the Buoy Business parts with the fl prefix', () => {
   for (const name of ['flBuoy(', 'flOrb(', 'flLine(', 'flRingTap(', 'FL_BB ', 'FL_BB_STREAK', 'FL_BB_GHOST', 'flFlare(']) assert.ok(FLARE.includes(name), name);
 });
+
+test('slots take a three.js-style colour, and the pass refuses zero slots', () => {
+  const s = buoySlots(1);
+  s.add(0.5, 0.5, { r: 0.2, g: 0.4, b: 0.6 }, { orb: 1 });
+  assert.deepEqual([...s.col.slice(0, 3)].map(x => +x.toFixed(4)), [0.2, 0.4, 0.6]);
+  assert.throws(() => flarePass({ slots: buoySlots(0) }));
+});
