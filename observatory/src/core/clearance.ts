@@ -16,6 +16,12 @@ export const CELL = 0.02;
 export const LAT = 51;
 // The dec angle with the tube on the pole, in the joint's convention.
 export const POLE_DEC = -Math.PI / 2;
+// The tube's axis runs this far from the polar axis, in metres.
+// world/hero-scope.ts and view/cuts.ts read it from here.
+export const D_OFF = 0.4275;
+// The tube sits this far forward in its rings, toward the objective.
+// The shorter rear clears the RA drive and the pier.
+export const TUBE_SHIFT = 0.45;
 
 // A joint pose: RA unwrapped, the dec angle, and the side in use.
 export type Pose = { ra: number; dec: number; side: number };
@@ -161,14 +167,16 @@ const EQ: V = [0, Math.cos(LAT * DEG), Math.sin(LAT * DEG)];
 const wrapTurn = (x: number): number => x - 2 * Math.PI * Math.round(x / (2 * Math.PI));
 
 // The pose that points the tube at alt and az, in degrees.
-// The side follows the hour angle, unless force names one.
-// near is the RA the unwrap starts from.
+// The side keeps the counterweight down, as on a real German mount.
+// An east target rides with the tube west of the pier, and the reverse.
+// In this joint frame, the tube is up when sin(ra) <= 0.
+// force names a side instead. near is the RA the unwrap starts from.
 export function targetPose(alt: number, az: number, near: number, force?: number): Pose {
   const a = alt * DEG, z = az * DEG;
   const t: V = [Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a)];
   const ha = Math.atan2(-t[0], dot(t, EQ));
   const decl = Math.asin(Math.min(1, Math.max(-1, dot(t, POLE))));
-  const side = force ?? (ha < 0 ? 1 : -1);
+  const side = force ?? (ha < 0 ? -1 : 1);
   const raW = -(side > 0 ? ha : ha + Math.PI);
   return { ra: near + wrapTurn(raW - near), dec: -(side > 0 ? decl : Math.PI - decl), side };
 }
@@ -176,10 +184,46 @@ export function targetPose(alt: number, az: number, near: number, force?: number
 // Eases a fraction from 0 to 1 at both ends.
 const ease = (u: number): number => u * u * (3 - 2 * u);
 
-// The flip at fraction s: down to the pole, RA turns, then down the far side.
-// The tube stays high at the pole, so it clears the pier.
+// While RA turns in a flip, the tube stays this far off the pole, in radians.
+// On the pole, the tube's rear runs along the RA drive.
+export const FLIP_TILT = 0.25;
+// The flip crosses the pole at this RA, modulo a turn: clear of the drive.
+export const FLIP_CROSS = -2.0;
+
+// The value of x, modulo a turn, inside lo to hi; NaN when there is none.
+function inRange(x: number, lo: number, hi: number): number {
+  const v = x + 2 * Math.PI * Math.ceil((lo - x) / (2 * Math.PI));
+  return v <= hi ? v : NaN;
+}
+
+// The flip's end RA: to.ra plus whole turns, so the turn passes FLIP_CROSS.
+// Of those, the shortest turn wins.
+export function flipRa(from: Pose, to: Pose): number {
+  let best = to.ra, len = Infinity;
+  for (let k = -2; k <= 2; k++) {
+    const t = to.ra + 2 * Math.PI * k;
+    const passes = !Number.isNaN(inRange(FLIP_CROSS, Math.min(from.ra, t), Math.max(from.ra, t)));
+    if (passes && Math.abs(t - from.ra) < len) { best = t; len = Math.abs(t - from.ra); }
+  }
+  return best;
+}
+
+// The flip at fraction s, in five steps.
+// 1: dec moves to FLIP_TILT off the pole, on the start's side.
+// 2: RA turns to FLIP_CROSS.
+// 3: dec crosses the pole to FLIP_TILT on the far side.
+// 4: RA turns the rest of the way.
+// 5: dec settles on the target.
 export function flipPose(from: Pose, to: Pose, s: number): Pose {
-  if (s < 0.35) return { ra: from.ra, dec: from.dec + (POLE_DEC - from.dec) * ease(s / 0.35), side: to.side };
-  if (s < 0.65) return { ra: from.ra + (to.ra - from.ra) * ease((s - 0.35) / 0.3), dec: POLE_DEC, side: to.side };
-  return { ra: to.ra, dec: POLE_DEC + (to.dec - POLE_DEC) * ease((s - 0.65) / 0.35), side: to.side };
+  const raEnd = flipRa(from, to);
+  const cross = inRange(FLIP_CROSS, Math.min(from.ra, raEnd), Math.max(from.ra, raEnd));
+  const rc = Number.isNaN(cross) ? (from.ra + raEnd) / 2 : cross;
+  const da = POLE_DEC + FLIP_TILT * (from.dec >= POLE_DEC ? 1 : -1);
+  const db = POLE_DEC + FLIP_TILT * (to.dec >= POLE_DEC ? 1 : -1);
+  const seg = (s0: number, s1: number): number => ease(Math.min(1, Math.max(0, (s - s0) / (s1 - s0))));
+  if (s < 0.25) return { ra: from.ra, dec: from.dec + (da - from.dec) * seg(0, 0.25), side: to.side };
+  if (s < 0.45) return { ra: from.ra + (rc - from.ra) * seg(0.25, 0.45), dec: da, side: to.side };
+  if (s < 0.55) return { ra: rc, dec: da + (db - da) * seg(0.45, 0.55), side: to.side };
+  if (s < 0.75) return { ra: rc + (raEnd - rc) * seg(0.55, 0.75), dec: db, side: to.side };
+  return { ra: raEnd, dec: db + (to.dec - db) * seg(0.75, 1), side: to.side };
 }

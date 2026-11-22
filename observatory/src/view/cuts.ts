@@ -4,6 +4,7 @@ import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
+import { D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
 import type { Phase } from '../core/machine.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
@@ -167,8 +168,6 @@ function place(cut: Cut, az: number, aspect: number): Framed {
 const AXES_Y = 3.75;
 // The site's latitude in degrees.
 const LAT = 51;
-// The tube's axis runs this far from the polar axis.
-const D_OFF = 0.3775;
 // The glass's face, along the tube from the declination axis.
 const GLASS_Z = 2.27;
 // The glass's diameter.
@@ -184,8 +183,6 @@ const GLASS_UNDER = 4 * DEG;
 const GLASS_APERTURE = 0.016;
 // The picked star shines this much brighter in the glass.
 const TARGET_K = 1.5;
-const POLE = new Vector3(0, Math.sin(LAT * DEG), -Math.cos(LAT * DEG));
-const EQ = new Vector3(0, Math.cos(LAT * DEG), Math.sin(LAT * DEG));
 const gm = new Matrix4(), gr = new Matrix4();
 const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 
@@ -194,15 +191,13 @@ const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 // The maths follow the mount in world/hero-scope.ts.
 // The real model never moves for it.
 function glassAt(alt: number, az: number): void {
-  const a = alt * DEG, z = az * DEG;
-  tmp.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
-  const ha = Math.atan2(-tmp.x, tmp.dot(EQ));
-  const decl = Math.asin(Math.min(1, Math.max(-1, tmp.dot(POLE))));
+  // The joint angles come from core/clearance.ts, as the hero's do.
+  const p = targetPose(alt, az, 0);
   gm.makeTranslation(0, AXES_Y, 0)
     .multiply(gr.makeRotationX(LAT * DEG - Math.PI / 2))
-    .multiply(gr.makeRotationY(-ha))
-    .multiply(gr.makeRotationX(-decl))
-    .multiply(gr.makeTranslation(D_OFF, 0, 0))
+    .multiply(gr.makeRotationY(p.ra))
+    .multiply(gr.makeRotationX(p.dec))
+    .multiply(gr.makeTranslation(D_OFF, 0, TUBE_SHIFT))
     .premultiply(complex.main.root.matrixWorld);
   gp.set(0, 0, GLASS_Z).applyMatrix4(gm);
   ga.set(0, 0, 1).transformDirection(gm);

@@ -4,14 +4,14 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CylinderGeometry,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
   MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape,
-  SphereGeometry, TorusGeometry, Vector2, Vector3,
+  SphereGeometry, TorusGeometry, TubeGeometry, Vector2, Vector3, Curve,
 } from 'three';
 import type { Material, Matrix3, MeshStandardMaterialParameters, Texture } from 'three';
 import type { Star } from '../core/catalog.ts';
 import { HEMI_I, hemi } from './hill.ts';
 import { buildStarEnv, lensGeometry, makeGlassMaterial, type LensShape } from './hero-glass.ts';
 import { TUBE_REST_ALT } from './observatory.ts';
-import { flipPose, type Pose } from '../core/clearance.ts';
+import { D_OFF, flipPose, targetPose, TUBE_SHIFT, type Pose } from '../core/clearance.ts';
 
 /* ---------- the hero scope: a long refractor on a German equatorial mount ---------- */
 // Only the cuts show this model.
@@ -56,16 +56,20 @@ const LAT = 51;
 // Nothing below the polar axis ever moves.
 const AXES_Y = DRUM_H + 0.35;
 // The declination flange's outer face, out from the polar axis.
-const DEC_FACE = 0.165;
+// The dec axis is long enough that the saddle clears the RA housing.
+const DEC_FACE = 0.215;
 // The saddle plate's thickness on that flange.
 const PLATE = 0.03;
 // The flip over the pole takes this long, in milliseconds.
 const FLIP_MS = 1600;
 // The worm's place on the polar housing.
-// The worm's thread reaches 0.027 m out; at 0.25 m it clears the wheel's teeth.
+// The thread reaches 0.026 m; at 0.25 m it clears the teeth.
 const WORM_Y = -0.905, WORM_Z = 0.25;
-// Worm turns per wheel turn: a stylised ratio, not the real one.
-const WORM_RATIO = 12;
+// A single-start worm: one turn moves the wheel one tooth.
+// 150 teeth, so the worm turns 150 times per RA turn.
+const WORM_RATIO = 150;
+// Thread pitch equals tooth pitch, so thread and teeth travel together.
+const WORM_PITCH = (2 * Math.PI * 0.2155) / WORM_RATIO;
 // Dec hand wheel turns per dec turn: a stylised ratio, not the real one.
 const KNOB_RATIO = 8;
 // Wraps an angle to the range -PI to PI.
@@ -76,6 +80,23 @@ const POLE = new Vector3(0, Math.sin(LAT * DEG), -Math.cos(LAT * DEG));
 const EQ = new Vector3(0, Math.cos(LAT * DEG), Math.sin(LAT * DEG));
 
 /* ---------- geometry helpers ---------- */
+// A helix round the X axis, centred on the origin.
+// r: its radius. len: its length. turns: its turns over that length.
+class Helix extends Curve<Vector3> {
+  readonly r: number;
+  readonly len: number;
+  readonly turns: number;
+  constructor(r: number, len: number, turns: number) {
+    super();
+    this.r = r;
+    this.len = len;
+    this.turns = turns;
+  }
+  getPoint(t: number, out = new Vector3()): Vector3 {
+    const a = t * this.turns * Math.PI * 2;
+    return out.set(-this.len / 2 + this.len * t, this.r * Math.cos(a), this.r * Math.sin(a));
+  }
+}
 type P = [number, number];
 
 // Joins geometries that share position, normal and uv into one.
@@ -371,6 +392,42 @@ function castMap(): CanvasTexture {
   return t;
 }
 
+// Worn metal as roughness: turning marks, smooth smudges, bright scratches.
+// The map is grey, so the shader's green channel carries it.
+// Its mean is about 0.78.
+function metalWear(): CanvasTexture {
+  const S = 256, r = rng(31);
+  const [c, x] = canvas(S, S);
+  // Turning marks run round each part: rows of constant v.
+  for (let y = 0; y < S; y++) {
+    const v = Math.round(188 + r() * 24);
+    x.fillStyle = `rgb(${v},${v},${v})`;
+    x.fillRect(0, y, S, 1);
+  }
+  // Smudges where hands touch are smoother.
+  for (let i = 0; i < 40; i++) {
+    const px = r() * S, py = r() * S, rad = 6 + r() * 26;
+    const g = x.createRadialGradient(px, py, 0, px, py, rad);
+    g.addColorStop(0, 'rgba(110,110,110,0.35)');
+    g.addColorStop(1, 'rgba(110,110,110,0)');
+    x.fillStyle = g;
+    x.fillRect(px - rad, py - rad, rad * 2, rad * 2);
+  }
+  // Fine scratches are rougher.
+  x.lineWidth = 1;
+  for (let i = 0; i < 140; i++) {
+    const px = r() * S, py = r() * S, a = r() * Math.PI, len = 4 + r() * 22;
+    x.strokeStyle = `rgba(250,250,250,${0.2 + r() * 0.3})`;
+    x.beginPath();
+    x.moveTo(px, py);
+    x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len);
+    x.stroke();
+  }
+  const t = tex(c, false);
+  t.repeat.set(2, 2);
+  return t;
+}
+
 // A setting circle's face: turned brass, engraved ticks filled black.
 // ticks: marks round the circle.
 // major: marks per labelled step.
@@ -460,7 +517,7 @@ function materials(): Mats {
   const env = nightEnv();
   const std = (key: string, p: MeshStandardMaterialParameters): MeshStandardMaterial =>
     reflectOnly(new MeshStandardMaterial({ envMap: env, ...p }), key);
-  const wear = enamelMaps(), cast = castMap();
+  const wear = enamelMaps(), cast = castMap(), worn = metalWear();
   const hours = circleMap(288, 12, i => String(i));
   // Declination runs 0 at the equator to 90 at each pole.
   const decs = circleMap(360, 10, i => String(10 * (i % 18 <= 9 ? i % 18 : 18 - (i % 18))));
@@ -474,21 +531,26 @@ function materials(): Mats {
   }`;
   return {
     // Cream enamel.
+    // The map's blue is metal: zero on paint, so paint is dielectric.
     // Chips show metal through the map.
-    enamel: std('paint', { color: 0xddd6c4, roughness: 0.4, metalness: 0, map: wear.map, roughnessMap: wear.orm, metalnessMap: wear.orm }),
+    // Its green is about 0.44, so the paint's roughness is about 0.37.
+    enamel: std('paint', { color: 0xddd6c4, roughness: 0.85, metalness: 1, map: wear.map, roughnessMap: wear.orm, metalnessMap: wear.orm }),
     // Grey-green enamel on the castings.
-    cast: std('cast', { color: 0x6b7466, roughness: 0.58, metalness: 0, map: cast }),
+    // The sand-cast grain shows through the paint as a fine bump.
+    cast: std('cast', { color: 0x6b7466, roughness: 0.58, metalness: 0, map: cast, bumpMap: cast, bumpScale: 0.6 }),
     // The pier wears a darker coat.
-    pier: std('pier', { color: 0x3d433d, roughness: 0.68, metalness: 0, map: cast }),
-    darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.9, roughness: 0.38 }),
-    steel: std('steel', { color: 0xb8bcc0, metalness: 1, roughness: 0.22 }),
+    pier: std('pier', { color: 0x3d433d, roughness: 0.68, metalness: 0, map: cast, bumpMap: cast, bumpScale: 0.6 }),
+    // Each metal's roughness is its target over the map mean, 0.78.
+    darkSteel: std('darkSteel', { color: 0x40444a, metalness: 1, roughness: 0.49, roughnessMap: worn }),
+    steel: std('steel', { color: 0xb8bcc0, metalness: 1, roughness: 0.28, roughnessMap: worn }),
     // Zinc-plated bolts and screws.
-    zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 0.42 }),
-    brass: std('brass', brass),
+    zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 0.54, roughnessMap: worn }),
+    brass: std('brass', { ...brass, roughness: 0.38, roughnessMap: worn }),
     // The circles' satin face blurs what they reflect, so the ticks read.
     hourCircle: std('hourCircle', { ...brass, roughness: 0.42, map: hours }),
     decCircle: std('decCircle', { ...brass, roughness: 0.42, map: decs }),
-    anodised: std('anodised', { color: 0x1b1c1f, metalness: 0.5, roughness: 0.38 }),
+    // Black anodised aluminium is a metal under a dyed oxide.
+    anodised: std('anodised', { color: 0x1b1c1f, metalness: 1, roughness: 0.4 }),
     matte: std('matte', { color: 0x09090a, metalness: 0, roughness: 0.92 }),
     rubber: std('rubber', { color: 0x101010, metalness: 0, roughness: 0.85 }),
     lens: reflectOnly(new MeshStandardMaterial({ color: 0x050607, metalness: 0, roughness: 0.04, envMap: env, envMapIntensity: 4 }), 'lens', coat),
@@ -515,12 +577,9 @@ const SHIELD_OUT = SHIELD_R + 0.006;
 // The field slides fast across the centre as the tube turns.
 // The rim crowds the sky together.
 const LENS: LensShape = { radius: GLASS_R, edge: GLASS_Z, a: 0.1, b: 0.4 };
-// The shield keeps this much room to each slit edge.
-const SLIT_ROOM = 0.085;
-// The tube's axis runs this far from the polar axis.
-// On the meridian the tube sits this far off the slit's centre.
-// So D_OFF and the shield fill the slit, less SLIT_ROOM each side.
-const D_OFF = SLIT_HALF - SLIT_ROOM - SHIELD_OUT;
+// The tube's axis runs D_OFF from the polar axis; core/clearance.ts holds it.
+// On the meridian the tube sits that far off the slit's centre.
+// So the shield keeps SLIT_HALF - SHIELD_OUT - D_OFF to each slit edge: 0.035 m.
 // The finder rides at this angle round the tube, toward the top.
 const FINDER_A = 50 * DEG, FINDER_D = 0.27;
 // The laser rides opposite the finder, toward the top.
@@ -872,13 +931,12 @@ function buildPolar(k: Kit, M: Mats, Pc: Pieces, wk: Kit): void {
   // The worm crosses the wheel's upper side, away from the pier.
   const wy = WORM_Y, wz = WORM_Z;
   // The worm's parts sit on their axis, for spinning.
-  wk.add(M.steel, along(turn([[[0.011, -0.25], [0.011, 0.2]]], 16), Y_TO_X, 0, 0, 0));
-  const thread: P[] = [];
-  for (let i = 0; i <= 40; i++) {
-    const x = -0.065 + 0.13 * (i / 40);
-    thread.push([0.021 + 0.006 * Math.cos(i * Math.PI / 2.5), x]);
-  }
-  wk.add(M.steel, along(turn([thread], 20), Y_TO_X, 0, 0, 0));
+  wk.add(M.steel, along(turn([[[0.011, -0.12], [0.011, 0.29]]], 16), Y_TO_X, 0, 0, 0));
+  // The worm's core, then one helical thread round it.
+  // A helix shows its turn; a ring of bumps looks still.
+  wk.add(M.steel, along(turn([[[0.018, -0.065], [0.018, 0.065]]], 24), Y_TO_X, 0, 0, 0));
+  const turns = 0.13 / WORM_PITCH;
+  wk.add(M.steel, new TubeGeometry(new Helix(0.0215, 0.13, turns), Math.round(turns * 24), 0.0042, 6, false));
   // Two bearing blocks hold the worm.
   for (const x of [-0.095, 0.095]) k.add(M.cast, chamferBox(0.03, 0.07, 0.07, 0.006).translate(x, wy, wz + 0.012));
   // A cover shields the worm from above.
@@ -899,8 +957,9 @@ function buildPolar(k: Kit, M: Mats, Pc: Pieces, wk: Kit): void {
   // The hand wheel for the slow motion in right ascension.
   const hw = handWheel(0.07);
   // The RA hand wheel rides on the worm's shaft, so it turns with the worm.
-  wk.add(M.darkSteel, hw.steel.rotateZ(Math.PI / 2).translate(-0.27, 0, 0));
-  wk.add(M.brass, hw.brass.rotateZ(Math.PI / 2).translate(-0.27, 0, 0));
+  // It sits past the motor, where the tube never reaches.
+  wk.add(M.darkSteel, hw.steel.rotateZ(-Math.PI / 2).translate(0.27, 0, 0));
+  wk.add(M.brass, hw.brass.rotateZ(-Math.PI / 2).translate(0.27, 0, 0));
   // The hour circle's index on a bracket from the lower boss.
   // The bracket runs outside the wheel's rim, above and below the wheel.
   k.add(M.cast, chamferBox(0.03, 0.012, 0.062, 0.003).translate(0, -0.85, -0.209));
@@ -980,6 +1039,7 @@ export function buildHeroScope(size: number): HeroScope {
   dec.add(tube);
   polar.rotation.x = LAT * DEG - Math.PI / 2;
   tube.position.x = D_OFF;
+  tube.position.z = TUBE_SHIFT;
   // The axes' crossing stays over the dome's centre at every pose.
   mount.position.set(0, AXES_Y, 0);
   const kits = [new Kit(), new Kit(), new Kit(), new Kit(), new Kit()];
@@ -1029,22 +1089,12 @@ export function buildHeroScope(size: number): HeroScope {
   // A change of side flips the mount over the pole, over FLIP_MS.
   // Returns true while the flip runs.
   function setTube(alt: number, az: number): boolean {
-    const a = alt * DEG, z = az * DEG;
-    t.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
-    // Hour angle and declination for the site's latitude.
-    // The hour angle wraps at the meridian, so the side changes there.
-    const ha = Math.atan2(-t.x, t.dot(EQ));
-    const decl = Math.asin(Math.min(1, Math.max(-1, t.dot(POLE))));
-    const side = ha < 0 ? 1 : -1;
     const now = performance.now();
     const from = started ? current(now) : null;
     // The RA angle is unwrapped near the pose on screen, so it never jumps.
-    const near = from ? from.ra : 0;
-    const to: Pose = {
-      ra: near + wrapTurn(-(side > 0 ? ha : ha + Math.PI) - near),
-      dec: -(side > 0 ? decl : Math.PI - decl),
-      side,
-    };
+    // The side keeps the counterweight down; core/clearance.ts holds the rule.
+    const to = targetPose(alt, az, from ? from.ra : 0);
+    const side = to.side;
     if (!started) {
       started = true;
       pose = to;

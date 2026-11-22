@@ -2,7 +2,7 @@
 import './setup.ts';
 import { renderer, stageEl, onLeave, disposeTree } from './setup.ts';
 import { Box3, Color, DirectionalLight, HemisphereLight, InstancedMesh, Matrix4, Mesh, Object3D, PerspectiveCamera, PMREMGenerator, Scene, Vector3 } from 'three';
-import { clashReport, flipPose, targetPose, TriIndex, type Pose, type Tri } from './core/clearance.ts';
+import { clashReport, flipPose, POLE_DEC, targetPose, TriIndex, type Pose, type Tri } from './core/clearance.ts';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildHeroScope } from './world/hero-scope.ts';
@@ -245,9 +245,10 @@ function clearancePoses(): { label: string; pose: Pose }[] {
   const out: { label: string; pose: Pose }[] = [];
   for (let alt = 0; alt <= 90; alt += 15)
     for (let az = 0; az < 360; az += 30) out.push({ label: `sky ${alt}/${az}`, pose: targetPose(alt, az, 0) });
-  for (const alt of [30, 45, 60, 75]) {
-    const a = targetPose(alt, 90, 0), b = targetPose(alt, 270, a.ra);
-    for (let i = 0; i <= 10; i++) out.push({ label: `flip ${alt} ${i / 10}`, pose: flipPose(a, b, i / 10) });
+  // Four meridian crossings, south and north, sampled every 2.5 per cent.
+  for (const [alt, az0, az1] of [[30, 178, 182], [60, 178, 182], [45, 2, 358], [70, 2, 358]]) {
+    const a = targetPose(alt, az0, 0), b = targetPose(alt, az1, a.ra);
+    for (let i = 0; i <= 40; i++) out.push({ label: `flip ${alt}/${az0}>${az1} ${i / 40}`, pose: flipPose(a, b, i / 40) });
   }
   return out;
 }
@@ -269,6 +270,13 @@ function runClearance(): void {
       const w = clearanceAt(targetPose(alt, az, 0, -1), parts).pairs;
       sides.push(`side ${alt}/${az}: east ${e}, west ${w}, rule ${targetPose(alt, az, 0).side > 0 ? 'east' : 'west'}`);
     }
+  }
+  // The tube on the pole, RA all the way round: every flip passes here.
+  const pole: string[] = [];
+  // The tube rides on top, so RA runs from -180 to 0 degrees.
+  for (let deg = -180; deg <= 0; deg += 15) {
+    const r = clearanceAt({ ra: (deg * Math.PI) / 180, dec: POLE_DEC, side: 1 }, parts);
+    pole.push(`pole ra ${deg}: ${r.pairs} pairs, depth ${(r.depth * 1000).toFixed(2)} mm, at ${JSON.stringify(r.at?.map((v) => +v.toFixed(3)))}, meshes ${r.meshes.join(' ')}`);
   }
   // The meshes the ids name, with their size and place at the rest pose.
   clearanceAt(targetPose(45, 0, 0), parts);
@@ -298,7 +306,7 @@ function runClearance(): void {
   const report = [
     `clearance: ${parts.moving.length} moving, ${parts.fixed.length} fixed meshes`,
     ...lines, `total pairs: ${total}`, ...drives, `mirrored instance sets: ${mirrored.length}`, ...mirrored,
-    ...sides, ...legend(parts.fixed, 'f'), ...legend(parts.moving, 'm'),
+    ...pole, ...sides, ...legend(parts.fixed, 'f'), ...legend(parts.moving, 'm'),
   ].join('\n');
   console.info(report);
   const pre = document.createElement('pre');

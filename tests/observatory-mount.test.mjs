@@ -11,13 +11,16 @@ test('the slit offset stays small, finite and smooth across the sky', () => {
       assert.ok(Number.isFinite(o) && Math.abs(o) <= 12, `${alt}/${az}: ${o}`);
       // Near the pole the mount swings fast, as a real one does.
       const nearPole = Math.abs(alt - 51) < 15 && (az < 25 || az > 335);
-      if (prev !== null && az > 0 && !nearPole) assert.ok(Math.abs(o - prev) < 3, `${alt}/${az}: jump ${o - prev}`);
+      // At the meridian the mount flips sides, so the offset jumps there.
+      const meridian = Math.abs(az - 180) <= 2 || az <= 2 || az >= 358;
+      if (prev !== null && az > 0 && !nearPole && !meridian) assert.ok(Math.abs(o - prev) < 3, `${alt}/${az}: jump ${o - prev}`);
       prev = o;
     }
   }
 });
-test('on the southern meridian the tube rides east, so the slit turns east', () => {
-  const o = slitOffset(40, 180);
-  assert.ok(o < -2 && o > -10, `offset ${o}`);
-  assert.ok(slitAzFor(40, 180) < 180);
+test('the counterweight stays down: east targets put the tube west, so the slit turns west', () => {
+  const east = slitOffset(40, 150), west = slitOffset(40, 210);
+  assert.ok(east > 2 && east <= 12, `east target, offset ${east}`);
+  assert.ok(west < -2 && west >= -12, `west target, offset ${west}`);
+  assert.ok(slitAzFor(40, 150) > 150 && slitAzFor(40, 210) < 210);
 });
