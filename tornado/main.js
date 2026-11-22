@@ -181,14 +181,19 @@ uniform float uGreen;
 float gFine = 1.0;
 float gPx;
 
+// D3D11 pastes a whole function at each call, and in each unrolled loop pass.
+// So a heavy function has one call site, in a loop the compiler cannot unroll.
+// ROLL0 is 0, but the compiler cannot know it.
+#define ROLL0 int(min(gl_FragCoord.x, 0.0))
 float th(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
 float vn(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(th(i), th(i + vec2(1, 0)), u.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), u.x), u.y);
 }
 // The volume holds 64 cells per unit: a sixteenth makes one unit four cells wide.
-float N(vec3 p) { return texture(tNoise, p * 0.0625).r; }
-float W(vec3 p) { return texture(tNoise, p * 0.0625).g; }
+// The volume has one level: level 0 is exact, and D3D11 keeps loops round it.
+float N(vec3 p) { return textureLod(tNoise, p * 0.0625, 0.0).r; }
+float W(vec3 p) { return textureLod(tNoise, p * 0.0625, 0.0).g; }
 // The storm's noise: one cell per km.
 float vn3(vec3 p) { return N(p * 0.25); }
 float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * vn3(p * 4.1 + 3.7); }
@@ -464,9 +469,14 @@ float stormNoise(vec3 p, float d) {
   }
   float W = w1 + w2, wS = clamp(W, 0.0, 1.0);
   // The still deck and each whirl read only where they show.
-  float n0 = wS < 1.0 ? deckN(p, p, calm) : 0.0;
-  float n1 = w1 > 1e-4 ? deckN(p, p1, calm) : 0.0;
-  float n2 = w2 > 0.02 ? deckN(p, p2, calm) : n1;
+  // One loop holds the one deckN() call: D3D11 pastes each call whole.
+  float n0 = 0.0, n1 = 0.0, n2 = 0.0;
+  for (int k = ROLL0; k < 3; k++) {
+    if (k == 0 ? wS >= 1.0 : k == 1 ? w1 <= 1e-4 : w2 <= 0.02) continue;
+    float n = deckN(p, k == 0 ? p : k == 1 ? p1 : p2, calm);
+    if (k == 0) n0 = n; else if (k == 1) n1 = n; else n2 = n;
+  }
+  if (w2 <= 0.02) n2 = n1;
   float nw = W > 1e-4 ? (n1 * w1 + n2 * w2) / W : 0.0;
   return d + mix(n0, nw, wS);
 }
@@ -520,11 +530,16 @@ vec3 stormLit(vec3 p, float d) {
   float fine = gFine;
   gFine = 0.0;
   gOpenHold = gOpen;
-  float ds = stormD(p + gSunC * 0.9);
+  // Then a step up: deeper cloud above means an underside, out of the sun.
+  // One loop holds the one stormD() call: D3D11 pastes each call whole.
+  float ds = 0.0, du = 0.0;
+  for (int k = ROLL0; k < 2; k++) {
+    float dk = stormD(p + (k == 0 ? gSunC * 0.9 : vec3(0.0, 0.4, 0.0)));
+    if (k == 0) ds = dk; else du = dk;
+  }
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
-  // A step up: deeper cloud above means an underside, out of the sun.
   // A horn hangs below the base: its sides take the low sun as the funnel does, not the underside's shade.
-  float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
+  float under = clamp((d - du) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
   gFine = fine;
   gOpenHold = -1.0;
   // A young deck is thin: its underside takes more light.
@@ -1114,13 +1129,33 @@ void objOut(out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
 }
 // The objects on the plain: each one sorts itself behind or in front of the funnels.
 // The passes run in this order; each lays over the ones before it.
-void passFarm(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+// The farm takes four passes: farm.js says why.
+void passFarmGround(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   vec2 s; vec3 rc, rd; float px;
   pixStart(uv, s, rc, rd, px);
   objInit(s);
-  // farm() can write c; the composite sets c itself.
-  vec3 c = vec3(0.0);
-  farm(c, s, rd, px);
+  farmGround(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmHedge(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmHedge(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmYard(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmYard(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmMill(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmMill(s, rd, px);
   objOut(b, f, g, x);
 }
 void passPoles(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
@@ -1137,15 +1172,52 @@ void passWires(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   wires(s, rd, px);
   objOut(b, f, g, x);
 }
-void passPlain(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+// The far plain takes five passes: plain.js says why.
+void passPlainFence(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   vec2 s; vec3 rc, rd; float px;
   pixStart(uv, s, rc, rd, px);
   objInit(s);
-  plain(s, rd, px);
+  plainFence(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainBelts(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainBelts(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainFar(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainTrees(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainTrees(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainSteads(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainSteads(s, rd, px);
   objOut(b, f, g, x);
 }
 // A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
 // So vehicles lay down after them: far ones before the infrastructure, near ones last.
+// The vehicles' lamps only add glow: their own pass, in any place.
+void passCarLamps(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  trafficLamps(s, px);
+  objOut(b, f, g, x);
+}
 void passCarsFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   vec2 s; vec3 rc, rd; float px;
   pixStart(uv, s, rc, rd, px);
@@ -1153,11 +1225,18 @@ void passCarsFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   traffic(s, rd, px, false);
   objOut(b, f, g, x);
 }
-void passInfra(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+void passInfraTall(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
   vec2 s; vec3 rc, rd; float px;
   pixStart(uv, s, rc, rd, px);
   objInit(s);
-  infra(s, rd, px);
+  infraTall(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passInfraLow(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  infraLow(s, rd, px);
   objOut(b, f, g, x);
 }
 void passDebris(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
@@ -1415,7 +1494,7 @@ try {
     scene: SCENE,
     // The scene compiles in parts: one program per pass, then the composite.
     layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
-    passes: ['passGround', 'passStorm', 'passFarm', 'passPoles', 'passWires', 'passPlain', 'passCarsFar', 'passInfra', 'passDebris', 'passTrees', 'passCarsNear'],
+    passes: ['passGround', 'passStorm', 'passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires', 'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads', 'passCarLamps', 'passCarsFar', 'passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'],
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,

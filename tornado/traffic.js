@@ -305,7 +305,7 @@ void hBox(vec3 ro, vec3 rd, vec3 c, vec3 h, float e) {
   hPl(o, rd, vec3(0.0, 0.0, 1.0), h.z); hPl(o, rd, vec3(0.0, 0.0, -1.0), h.z);
   if (e <= 0.0) return;
   const float R = 0.70710678;
-  for (int i = 0; i < 4; i++) {
+  for (int i = ROLL0; i < 4; i++) {
     vec2 g = vec2(i % 2 == 0 ? 1.0 : -1.0, i < 2 ? 1.0 : -1.0);
     hPl(o, rd, vec3(g.x, g.y, 0.0) * R, (h.x + h.y - e) * R);
     hPl(o, rd, vec3(g.x, 0.0, g.y) * R, (h.x + h.z - e) * R);
@@ -321,7 +321,7 @@ void hCut(vec3 ro, vec3 rd, vec2 c, float r, float x0) {
   float A = dot(d, d), B = dot(o, d), D = B * B - A * (dot(o, o) - r * r);
   if (D <= 0.0 || A < 1e-9) return;
   float t0 = (-B - sqrt(D)) / A, t1 = (-B + sqrt(D)) / A;
-  for (int k = 0; k < 2; k++) {
+  for (int k = ROLL0; k < 2; k++) {
     float s = k == 0 ? 1.0 : -1.0, dx = s * rd.x, tx = (x0 - s * ro.x) / (abs(dx) > 1e-9 ? dx : 1e-9);
     float a = t0, b = t1;
     if (dx > 0.0) a = max(a, tx); else b = min(b, tx);
@@ -377,7 +377,7 @@ void vDish(vec3 ro, vec3 rd, vec3 v, vec3 ax, float rr, float rs, inout float t,
   if (h < 0.0) return;
   h = sqrt(h);
   float ca = sqrt(1.0 - rr * rr / (rs * rs));
-  for (int k = 0; k < 2; k++) {
+  for (int k = ROLL0; k < 2; k++) {
     float tk = k == 0 ? -b - h : -b + h;
     if (tk <= 0.0 || tk >= t) continue;
     vec3 q = (ro + rd * tk - cs) / rs;
@@ -387,10 +387,6 @@ void vDish(vec3 ro, vec3 rd, vec3 v, vec3 ax, float rr, float rs, inout float t,
     t = tk; n = back ? q : -q; id = back ? 16 : 15; gHitK = 1.0;
     return;
   }
-}
-// A plain box, its edges cut back by e.
-void vBox(vec3 ro, vec3 rd, vec3 c, vec3 h, float e, int myId, inout float t, inout vec3 n, inout int id) {
-  hBeg(); hBox(ro, rd, c, h, e); hEnd(myId, t, n, id);
 }
 // A ray against a wheel: a cylinder across the vehicle, at height and place c (y, z), radius r, half width w at x.
 // The outer disc shows the rim (id 11) inside the tyre (id 9).
@@ -443,67 +439,90 @@ vec4 vWs(int k) { return k == 0 ? vec4(1.32, 0.92, 0.802, 0.597) : k == 1 ? vec4
 // The vehicle's parts, in its own frame: x across (right), y up, z forward. Returns the hit part's id.
 // ids: 1 hood and nose, 2 cabin and body, 3 black trim, 4 amber bar, 5 bright metal, 9 tyre, 10 bed liner,
 // 11 rim, 12 white plastic.
+// The chasers' masts and aerials, three per kind: x and z, radius, foot; top and id.
+const vec4 VROD[6] = vec4[6](vec4(0.55, -2.0, 0.018, 1.7), vec4(-0.7, -2.2, 0.006, 1.6), vec4(-0.5, -2.2, 0.006, 1.6),
+  vec4(0.0, -2.2, 0.035, 2.35), vec4(0.46, -2.2, 0.01, 3.62), vec4(0.0, -1.6, 0.03, 2.43));
+const vec2 VROD2[6] = vec2[6](vec2(2.62, 5.0), vec2(2.75, 3.0), vec2(2.6, 3.0), vec2(3.68, 5.0), vec2(3.74, 5.0), vec2(2.68, 5.0));
+// Each heavy test has one call site in a rolled loop: D3D11 pastes each call whole.
+// The nearest hit wins, so the order of the parts does not change it.
 int vHit(int kind, vec3 ro, vec3 rd, out float t, out vec3 n, float spin) {
   t = 1e9; n = vec3(0.0, 1.0, 0.0);
   int id = 0;
   ivec4 r = VK[kind];
   vec4 ar = VA[kind];
-  // The hulls: a box with cut edges, more planes, the wheel arches cut out.
-  for (int i = 0; i < ${MAX_HULLS}; i++) {
-    if (i >= r.y) break;
-    int j = (r.x + i) * 3;
-    vec4 a = VH[j], b = VH[j + 1], c = VH[j + 2];
-    if (!vSlab(ro, rd, a.xyz, b.xyz, t)) continue;
-    hBeg(); hBox(ro, rd, a.xyz, b.xyz, a.w);
-    int p0 = int(c.x), np = int(c.y), cut = int(c.z);
-    for (int k = 0; k < ${MAX_PLANES}; k++) {
-      if (k >= np) break;
-      vec4 pl = VP[p0 + k];
-      hPl(ro, rd, pl.xyz, pl.w);
+  // The hulls, then the plain boxes, then the cups and the van's dish post.
+  // A box is a hull with no more planes and no arches cut out.
+  int nh = r.y + r.w, nx = kind == 0 ? 0 : kind == 1 ? 3 : 4;
+  for (int i = ROLL0; i < ${MAX_HULLS + MAX_BOXES + 4}; i++) {
+    if (i >= nh + nx) break;
+    vec4 a, b;
+    int p0 = 0, np = 0, cut = 0;
+    if (i < r.y) {
+      int j = (r.x + i) * 3;
+      a = VH[j]; b = VH[j + 1];
+      vec4 c = VH[j + 2];
+      p0 = int(c.x); np = int(c.y); cut = int(c.z);
+    } else if (i < nh) {
+      int j = (r.z + i - r.y) * 2;
+      a = VB[j]; b = VB[j + 1];
+    } else if (i < nh + 3) {
+      // A cup anemometer: on the wagon's short mast, or one end of the van's cross-arm.
+      vec3 cc = kind == 1 ? vec3(0.55, 2.63, -2.0) : vec3(0.46, 3.74, -2.2);
+      float cr = kind == 1 ? 0.11 : 0.12, cs = kind == 1 ? 0.025 : 0.028;
+      float an = spin + float(i - nh) * 2.0944;
+      a = vec4(cc + vec3(cr * cos(an), 0.0, cr * sin(an)), cs * 0.43); b = vec4(vec3(cs), 3.0);
+    } else {
+      // The post under the van's dish.
+      a = vec4(0.0, 2.72, -1.6, 0.02); b = vec4(0.08, 0.06, 0.08, 3.0);
     }
-    if ((cut & 1) != 0) hCut(ro, rd, ar.xy, ar.w, VAX[kind]);
-    if ((cut & 2) != 0) hCut(ro, rd, ar.xz, ar.w, VAX[kind]);
+    if (!vSlab(ro, rd, a.xyz, b.xyz, t)) continue;
+    // Every plane, in hBox() order: six faces, twelve cut edges, then the table's planes.
+    // One loop holds the one hPl() call: D3D11 pastes each call whole.
+    hBeg();
+    vec3 o = ro - a.xyz, hh = b.xyz;
+    float e = a.w;
+    const float R = 0.70710678;
+    for (int k = ROLL0; k < ${18 + MAX_PLANES}; k++) {
+      if (k >= 18 + np) break;
+      if (k >= 6 && k < 18 && e <= 0.0) continue;
+      vec3 pn, po = o;
+      float pw;
+      if (k < 6) {
+        int ax = k >> 1;
+        float sg = (k & 1) == 0 ? 1.0 : -1.0;
+        pn = vec3(ax == 0 ? sg : 0.0, ax == 1 ? sg : 0.0, ax == 2 ? sg : 0.0);
+        pw = ax == 0 ? hh.x : ax == 1 ? hh.y : hh.z;
+      } else if (k < 18) {
+        int c = k - 6, j = c / 3, w = c - j * 3;
+        vec2 g = vec2(j % 2 == 0 ? 1.0 : -1.0, j < 2 ? 1.0 : -1.0);
+        pn = (w == 0 ? vec3(g.x, g.y, 0.0) : w == 1 ? vec3(g.x, 0.0, g.y) : vec3(0.0, g.x, g.y)) * R;
+        pw = (w == 0 ? hh.x + hh.y - e : w == 1 ? hh.x + hh.z - e : hh.y + hh.z - e) * R;
+      } else {
+        vec4 pl = VP[p0 + k - 18];
+        pn = pl.xyz; pw = pl.w; po = ro;
+      }
+      hPl(po, rd, pn, pw);
+    }
+    for (int k = ROLL0; k < 2; k++) if ((cut & (1 << k)) != 0) hCut(ro, rd, k == 0 ? ar.xy : ar.xz, ar.w, VAX[kind]);
     hEnd(int(b.w + 0.5), t, n, id);
   }
-  // The small parts: plain boxes.
-  for (int i = 0; i < ${MAX_BOXES}; i++) {
-    if (i >= r.w) break;
-    int j = (r.z + i) * 2;
-    vec4 a = VB[j], b = VB[j + 1];
-    if (!vSlab(ro, rd, a.xyz, b.xyz, t)) continue;
-    vBox(ro, rd, a.xyz, b.xyz, a.w, int(b.w + 0.5), t, n, id);
+  // The chasers' masts and aerials.
+  if (kind != 0) for (int k = ROLL0; k < 3; k++) {
+    int q = (kind - 1) * 3 + k;
+    vRod(ro, rd, VROD[q].xy, VROD[q].z, VROD[q].w, VROD2[q].x, int(VROD2[q].y), t, n, id);
   }
-  // The chasers' masts, aerials and spinning cups.
-  if (kind == 1) {
-    vRod(ro, rd, vec2(0.55, -2.0), 0.018, 1.7, 2.62, 5, t, n, id);
-    vRod(ro, rd, vec2(-0.7, -2.2), 0.006, 1.6, 2.75, 3, t, n, id);
-    vRod(ro, rd, vec2(-0.5, -2.2), 0.006, 1.6, 2.6, 3, t, n, id);
-  } else if (kind == 2) {
-    vRod(ro, rd, vec2(0.0, -2.2), 0.035, 2.35, 3.68, 5, t, n, id);
-    vRod(ro, rd, vec2(0.46, -2.2), 0.01, 3.62, 3.74, 5, t, n, id);
-    // A dish on a post: it looks up and out to the right.
+  // A dish on a post: it looks up and out to the right.
+  if (kind == 2) {
     vec3 dv = vec3(0.0, 2.8, -1.6), dx = normalize(vec3(0.55, 0.8, 0.15));
     if (vSlab(ro, rd, vec3(0.1, 2.8, -1.6), vec3(0.5, 0.45, 0.5), t)) {
       vDish(ro, rd, dv, dx, 0.42, 0.9, t, n, id);
-      // The feed arm from the rim's foot to the feed horn at the focus.
+      // The feed arm from the rim's foot to the feed horn at the focus, then the horn.
       vec3 dn = normalize(vec3(0.0, -1.0, 0.0) - dx * dot(vec3(0.0, -1.0, 0.0), dx)), fo = dv + dx * 0.45;
-      vCap(ro, rd, dv + dx * 0.1 + dn * 0.4, fo, 0.018, 12, t, n, id);
-      vCap(ro, rd, fo - dx * 0.03, fo + dx * 0.04, 0.035, 12, t, n, id);
-      vBox(ro, rd, vec3(0.0, 2.72, -1.6), vec3(0.08, 0.06, 0.08), 0.02, 3, t, n, id);
-    }
-    vRod(ro, rd, vec2(0.0, -1.6), 0.03, 2.43, 2.68, 5, t, n, id);
-  }
-  if (kind != 0) {
-    // A cup anemometer: on the wagon's short mast, or one end of the van's cross-arm.
-    vec3 cc = kind == 1 ? vec3(0.55, 2.63, -2.0) : vec3(0.46, 3.74, -2.2);
-    float cr = kind == 1 ? 0.11 : 0.12, cs = kind == 1 ? 0.025 : 0.028;
-    for (int k = 0; k < 3; k++) {
-      float a = spin + float(k) * 2.0944;
-      vBox(ro, rd, cc + vec3(cr * cos(a), 0.0, cr * sin(a)), vec3(cs), cs * 0.43, 3, t, n, id);
+      for (int k = ROLL0; k < 2; k++) vCap(ro, rd, k == 0 ? dv + dx * 0.1 + dn * 0.4 : fo - dx * 0.03, k == 0 ? fo : fo + dx * 0.04, k == 0 ? 0.018 : 0.035, 12, t, n, id);
     }
   }
   vec4 wh = vWh(kind);
-  for (int k = 0; k < 4; k++) {
+  for (int k = ROLL0; k < 4; k++) {
     float wz = (k < 2 ? 1.0 : -1.0) * wh.y + vWz(kind), wx = (k % 2 == 0 ? 1.0 : -1.0) * wh.z;
     vWheel(ro, rd, vec2(wh.x, wz), wh.x, wx, wh.w, t, n, id);
   }
@@ -756,7 +775,7 @@ void vLamp(vec2 s, vec3 P, vec3 dir, vec3 col, float px, float seed, float tw) {
   float g = k * face - 0.3;
   if (g <= 0.0) return;
   vec2 cc = vec2(0.0, 0.5 - uHz), a = lp - cc;
-  for (int i = 0; i < 5; i++) {
+  for (int i = ROLL0; i < 5; i++) {
     float q = length(s - cc - a * GT[i]) / GR[i];
     if (q > 1.0) continue;
     float disc = smoothstep(1.0, 0.6, q) * (0.55 + 0.45 * smoothstep(0.3, 0.9, q));
@@ -774,7 +793,7 @@ void vSpray(vec2 s, vec3 C, vec3 f, vec3 rt, int kind, float spd, float age, flo
   float sun = 1.0 - sunCover(C * 0.001);
   vec3 mist = vec3(0.6, 0.62, 0.65) * (uAmb * 0.95 + uSunCol * 0.25 * sun);
   vec3 dust = mix(vec3(0.3, 0.25, 0.19), vec3(0.4), 0.3) * (uSunCol * 0.4 * sun + uAmb * 0.6);
-  for (int k = 0; k < 12; k++) {
+  for (int k = ROLL0; k < 12; k++) {
     float fk = float(k >> 1), sd = (k & 1) == 0 ? 1.0 : -1.0;
     float back = rear + 0.4 + fk * (1.1 + spd * 0.05);
     // The plume climbs and spreads out as it falls behind; the wind takes it.
@@ -825,7 +844,7 @@ void vTrail(vec3 rd, vec3 C, vec3 f, int kind, float spd, float age, float seed,
   t0 = max(t0, 0.5); t1 = min(t1, 600.0);
   if (t1 <= t0) return;
   float dt = (t1 - t0) / 8.0, j = th(gl_FragCoord.xy), tau = 0.0, tw = 0.0, red = 0.0;
-  for (int k = 0; k < 8; k++) {
+  for (int k = ROLL0; k < 8; k++) {
     float t = t0 + (float(k) + j) * dt;
     vec3 P = eye + rd * t;
     float u = clamp(dot(P - A, ax) / La, 0.0, 1.0), r = r0 + 2.6 * u;
@@ -871,6 +890,37 @@ vec3 vBend(vec3 h, vec3 n, int id, int kind) {
   } else if (n.z > 0.5) n.y += (h.y - 0.9) * 0.12;
   return normalize(n);
 }
+// One vehicle's lamps: headlights ahead, tail lamps behind; the chasers' amber bar too.
+// The glow only adds, so the lamps draw in their own pass, before the bodies.
+void vehLamps(int i, vec2 s, float px) {
+  vec4 a = uVeh[i], b = uVehB[i], cV = uVehC[i];
+  if (b.x <= 0.0) return;
+  int kind = int(a.w + 0.5);
+  float seed = b.y, brake = cV.x;
+  vec3 C = vec3(a.x, 0.0, a.y);
+  // Past the eye, no lamp shows.
+  if (depthOf(C + vec3(0.0, 1.0, 0.0)) < 0.3) return;
+  vec3 f = vec3(sin(b.w), 0.0, cos(b.w)), rt = vec3(-f.z, 0.0, f.x);
+  float fr = vFront(kind), rr = vRear(kind), hw = vHW(kind), hy = kind == 2 ? 0.82 : 0.88;
+  // Each side: the head lamp, the tail lamp, then the amber bar's two faces.
+  for (int q = ROLL0; q < 8; q++) {
+    int l = q & 3;
+    if (l > 1 && kind == 0) continue;
+    float sx = q < 4 ? -1.0 : 1.0, sd;
+    vec3 P, dir, col;
+    if (l == 0) {
+      P = C + rt * sx * (hw - 0.22) + vec3(0.0, hy, 0.0) + f * (fr + 0.01); dir = f; col = vec3(1.0, 0.9, 0.75); sd = seed + sx * 7.0;
+    } else if (l == 1) {
+      P = C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.1, 0.0) + f * (rr - 0.01); dir = -f; col = vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake); sd = seed + sx * 9.0 + 2.0;
+    } else {
+      // The amber bar flashes left and right in turn.
+      float on = step(0.5, fract(uT * 1.6 + (sx > 0.0 ? 0.5 : 0.0)));
+      P = C + rt * sx * 0.4 + vec3(0.0, kind == 1 ? 1.85 : 2.41, 0.0) + f * (kind == 1 ? 0.12 : 0.55);
+      dir = normalize(vec3(0.0, 0.2, 0.0) + (l == 2 ? -f : f)); col = vec3(1.0, 0.45, 0.05) * on * 0.8; sd = seed + (l == 2 ? 4.0 : 5.0);
+    }
+    vLamp(s, P, dir, col, px, sd, cV.w);
+  }
+}
 // One vehicle, ray-traced at several moments in the shutter, each at its own spot in the pixel.
 // Edges take more samples, so silhouettes and panel lines stay smooth at any distance.
 // Far vehicles draw before the infrastructure, near ones after it.
@@ -883,162 +933,190 @@ void vehicle(int i, vec2 s, vec3 rd, float px, bool near) {
   float z = depthOf(C + vec3(0.0, 1.0, 0.0));
   // The heading: f forward, rt to the right.
   vec3 f = vec3(sin(b.w), 0.0, cos(b.w)), rt = vec3(-f.z, 0.0, f.x);
-  // Past the eye, only its water trail still hangs in view.
-  if (z < 0.3) { if (near) vTrail(rd, C, f, kind, spd, age, seed, brake); return; }
+  // Past the eye, only its water trail still hangs in view, in the near pass.
+  bool past = z < 0.3;
+  if (past ? !near : (z > 60.0) == near) return;
   float fr = vFront(kind), rr = vRear(kind), hw = vHW(kind);
-  // The lamps: headlights ahead, tail lamps behind; the chasers' amber bar too.
-  // Their glow reaches past the vehicle's screen box, so they come first, once per frame.
-  if (!near) {
-    float hy = kind == 2 ? 0.82 : 0.88;
-    for (int k = 0; k < 2; k++) {
-      float sx = k == 0 ? -1.0 : 1.0;
-      vLamp(s, C + rt * sx * (hw - 0.22) + vec3(0.0, hy, 0.0) + f * (fr + 0.01), f, vec3(1.0, 0.9, 0.75), px, seed + sx * 7.0, cV.w);
-      vLamp(s, C + rt * sx * (hw - 0.14) + vec3(0.0, kind == 0 ? 0.98 : 1.1, 0.0) + f * (rr - 0.01), -f, vec3(0.9, 0.06, 0.03) * (0.4 + 1.6 * brake), px, seed + sx * 9.0 + 2.0, cV.w);
-      if (kind != 0) {
-        // The amber bar flashes left and right in turn.
-        float on = step(0.5, fract(uT * 1.6 + (sx > 0.0 ? 0.5 : 0.0)));
-        vec3 Pb = C + rt * sx * 0.4 + vec3(0.0, kind == 1 ? 1.85 : 2.41, 0.0) + f * (kind == 1 ? 0.12 : 0.55);
-        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) - f), vec3(1.0, 0.45, 0.05) * on * 0.8, px, seed + 4.0, cV.w);
-        vLamp(s, Pb, normalize(vec3(0.0, 0.2, 0.0) + f), vec3(1.0, 0.45, 0.05) * on * 0.8, px, seed + 5.0, cV.w);
-      }
-    }
-  }
-  if ((z > 60.0) == near) return;
   vec3 eye = vec3(0.0, CAMH, 0.0);
   float top = kind == 2 ? 3.8 : 2.8;
-  // A short contact shadow under the vehicle, on the road.
-  {
-    float tg = CAMH / max(-rd.y, 1e-4);
-    vec3 G = eye + rd * tg - C;
-    vec2 q = vec2(dot(G, rt), dot(G, f) - (fr + rr) * 0.5) / vec2(hw + 0.2, (fr - rr) * 0.5 + 0.15);
-    float k = (1.0 - smoothstep(0.55, 1.0, length(q))) * 0.45;
-    if (rd.y < 0.0 && k > 0.0) put(vec3(0.004), k, depthOf(C));
-    // The vehicle casts the low sun's long shadow on the road.
-    if (rd.y < 0.0 && uSun.y > 0.0) {
-      vec3 L = normalize(uSun), ls = vec3(dot(L, rt), L.y, dot(L, f));
-      vec3 gl = vec3(dot(G, rt), 0.0, dot(G, f));
-      // The vehicle's box first: most ground points see the sun past it.
-      vec3 inv = 1.0 / ls, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - gl) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - gl) * inv;
-      vec3 mn = min(ta, tb), mx = max(ta, tb);
-      if (min(min(mx.x, mx.y), mx.z) > max(max(max(mn.x, mn.y), mn.z), 0.0)) {
-        // Four rays over the pixel and the sun's disc: a soft, smooth edge.
-        float zg = depthOf(G + C), fp = px * zg / uFoc / max(-rd.y, 0.05), sh = 0.0, t;
-        vec3 n;
-        // A thin rod casts a shadow at least a ground pixel wide.
-        gPxW = fp;
-        for (int j = 0; j < 4; j++) {
-          vec2 o = (vec2(float(j & 1), float(j >> 1)) - 0.5) * 0.5;
-          vec3 lj = normalize(ls + vec3(o.x, 0.0, o.y) * 0.02);
-          sh += float(vHit(kind, gl + vec3(o.x, 0.0, o.y) * fp, lj, t, n, 0.0) != 0);
-        }
-        // The shadow takes away the sun's share of the road's light.
-        float sunL = dot(uSunCol, vec3(0.3, 0.6, 0.1)) * 0.55, ambL = dot(uAmb, vec3(0.3, 0.6, 0.1)) * 0.6;
-        // Near the horizon the road is too foreshortened to hold a clean edge: the shadow fades.
-        float ks = sh * 0.25 * sunL / max(sunL + ambL, 1e-4) * (1.0 - sunCover((G + C) * 0.001)) * smoothstep(0.006, 0.02, -rd.y);
-        if (ks > 0.0) put(vec3(0.0), ks, zg);
-      }
-    }
-  }
   // Layers stack in call order: spray nearer the eye than the body lays down after it.
-  bool sprayFront = depthOf(C - f * 4.0) < depthOf(C);
-  if (!sprayFront) { vTrail(rd, C, f, kind, spd, age, seed, brake); vSpray(s, C, f, rt, kind, spd, age, seed, brake); }
-  // The screen box: nothing more to do outside it.
+  bool sprayFront = past || depthOf(C - f * 4.0) < depthOf(C);
+  // The screen box: the body draws only inside it.
   vec2 c0 = proj(C + vec3(0.0, 1.4, 0.0));
   float R = (4.2 + spd * 0.02) / z * uFoc;
-  if (z > 2.0 && (abs(s.x - c0.x) > R || abs(s.y - c0.y) > R)) { if (sprayFront) { vSpray(s, C, f, rt, kind, spd, age, seed, brake); vTrail(rd, C, f, kind, spd, age, seed, brake); } return; }
+  bool inBox = !past && !(z > 2.0 && (abs(s.x - c0.x) > R || abs(s.y - c0.y) > R));
+  // The road under the vehicle, and the sun in the vehicle's frame.
+  float tg = CAMH / max(-rd.y, 1e-4);
+  vec3 G = eye + rd * tg - C;
+  vec3 Lw = normalize(uSun), lsG = vec3(dot(Lw, rt), Lw.y, dot(Lw, f));
+  vec3 gl = vec3(dot(G, rt), 0.0, dot(G, f));
+  float zg = depthOf(G + C), fp = px * zg / uFoc / max(-rd.y, 0.05);
   // The body rolls and pitches on its springs: the road's small bumps, and the driver's braking and steering.
   float roll = 0.008 * sin(age * 2.3 + seed * 6.0) + 0.004 * sin(age * 5.1) + cV.z;
   float pitch = 0.004 * sin(age * 3.1 + seed * 3.0) + cV.y;
   float spin = uT * 9.0 + seed * 6.0;
-  // The smear across the view in the shutter's 1/40 s, in metres at the vehicle.
-  float lat = abs(dot(C, rt)) + 1.0;
-  gPxW = max(px * z / uFoc, lat * spd / 40.0 / max(z, 1.0) * abs(dot(f, normalize(C))));
-  // Four samples, six near; where they disagree (an edge, a lamp, a pane) sixteen.
+  mat2 mr = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)), mp = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch));
+  // The sun in the body's frame, rolled and pitched.
+  vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), ls = vec3(dot(L, rt), L.y, dot(L, f));
+  ls.xy = mr * ls.xy; ls.yz = mp * ls.yz;
+  // The body's samples: four, six near; where they disagree (an edge, a lamp, a pane) sixteen.
   // Each sample is its own spot in the pixel and its own moment in the shutter.
   int nb = z < 25.0 ? 6 : 4, ns = 0, id0 = -1;
-  gSpd = spd; gAge = age; gSh = 1.0;
   float shK = 1.0;
   bool mixed = false;
   float jit = th(gl_FragCoord.xy + fract(uT * 3.7) * 61.0), jit2 = th(gl_FragCoord.yx * 1.37 + 5.1);
   vec3 acc = vec3(0.0);
   float cov = 0.0, zHit = z;
-  for (int k = 0; k < 16; k++) {
-    if (k == nb && !mixed) break;
-    ns++;
-    float fk = fract(float(k) * 0.618034 + jit);
-    vec2 so = s + (fract(vec2(0.7548777, 0.5698403) * float(k) + vec2(jit, jit2)) - 0.5) * px;
-    vec3 rw = toWorld(normalize(vec3(so, -uFoc)));
-    // The shutter is open 1/40 s: the vehicle moves within it.
-    vec3 Ck = C + f * spd * (fk - 0.5) / 40.0;
-    vec3 o = eye - Ck;
-    // Into the vehicle's frame, with its roll about f and its pitch about rt (nose down for positive pitch).
-    vec3 lo = vec3(dot(o, rt), o.y, dot(o, f)), ld = vec3(dot(rw, rt), rw.y, dot(rw, f));
-    mat2 mr = mat2(cos(roll), sin(roll), -sin(roll), cos(roll)), mp = mat2(cos(pitch), -sin(pitch), sin(pitch), cos(pitch));
-    lo.xy = mr * (lo.xy - vec2(0.0, 0.8)) + vec2(0.0, 0.8); ld.xy = mr * ld.xy;
-    lo.yz = mp * (lo.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0); ld.yz = mp * ld.yz;
-    // The whole vehicle's box first: most rays in the screen box miss it.
-    vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - lo) * inv;
-    vec3 mn = min(ta, tb), mx = max(ta, tb);
-    float t;
-    vec3 n;
-    gHitK = 1.0;
-    int id = min(min(mx.x, mx.y), mx.z) < max(max(max(mn.x, mn.y), mn.z), 0.0) ? 0 : vHit(kind, lo, ld, t, n, spin);
-    if (id != 0) id = vPart(id, kind, lo + ld * t, n);
-    if (id0 < 0) id0 = id;
-    mixed = mixed || id != id0 || gHitK < 1.0;
-    if (id == 0) continue;
-    vec3 hl = lo + ld * t;
-    float hk = gHitK;
-    {
-      // A ray to the sun from the hit: the body shades its own parts.
-      // Two samples trace it; the rest trace only where parts or shadows disagree.
-      // Past 40 m the vehicle is too small to show it.
-      vec3 L = normalize(uSun + vec3(0.0, 1e-3, 0.0)), ls = vec3(dot(L, rt), L.y, dot(L, f));
-      ls.xy = mr * ls.xy; ls.yz = mp * ls.yz;
+  // In order: the road shadow, the trail and the spray behind, the body, the spray and the trail in front.
+  // One loop holds one call to each: D3D11 pastes each call whole.
+  for (int ph = ROLL0; ph < 6; ph++) {
+    if (ph == 1 || ph == 2 || ph == 4 || ph == 5) {
+      if ((ph < 3) == sprayFront) continue;
+      if (ph == 1 || ph == 5) vTrail(rd, C, f, kind, spd, age, seed, brake);
+      else if (!past) vSpray(s, C, f, rt, kind, spd, age, seed, brake);
+      continue;
+    }
+    bool shadow = ph == 0;
+    if (past || (!shadow && !inBox)) continue;
+    if (shadow) {
+      // A short contact shadow under the vehicle, on the road.
+      vec2 q = vec2(dot(G, rt), dot(G, f) - (fr + rr) * 0.5) / vec2(hw + 0.2, (fr - rr) * 0.5 + 0.15);
+      float k = (1.0 - smoothstep(0.55, 1.0, length(q))) * 0.45;
+      if (rd.y < 0.0 && k > 0.0) put(vec3(0.004), k, depthOf(C));
+      // The vehicle casts the low sun's long shadow on the road.
+      if (!(rd.y < 0.0 && uSun.y > 0.0)) continue;
+      // The vehicle's box first: most ground points see the sun past it.
+      vec3 inv = 1.0 / lsG, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - gl) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - gl) * inv;
+      vec3 mn = min(ta, tb), mx = max(ta, tb);
+      if (!(min(min(mx.x, mx.y), mx.z) > max(max(max(mn.x, mn.y), mn.z), 0.0))) continue;
+      // A thin rod casts a shadow at least a ground pixel wide.
+      gPxW = fp;
+    } else {
+      // The smear across the view in the shutter's 1/40 s, in metres at the vehicle.
+      float lat = abs(dot(C, rt)) + 1.0;
+      gPxW = max(px * z / uFoc, lat * spd / 40.0 / max(z, 1.0) * abs(dot(f, normalize(C))));
+      gSpd = spd; gAge = age; gSh = 1.0;
+    }
+    // The rays: the shadow's four; or per body sample, a view ray, then maybe a ray to the sun.
+    // Each body hit is stored; a second loop shades them, in order: D3D11 compiles that far faster.
+    vec3 sP[16], sN[16], sV[16], sH[16], sB[16];
+    float sSee[16], sSv[16], sHk[16];
+    int sId[16];
+    int nh = 0;
+    float sh = 0.0;
+    int k = 0;
+    bool toSun = false;
+    vec3 lo, ld, rw, Ck, hl, n;
+    float t, hk;
+    int id;
+    for (int it = ROLL0; it < 36; it++) {
+      vec3 ro, dir;
+      bool miss = false;
+      float sx = gExT;
+      vec3 sn = gExN;
+      if (shadow) {
+        // Four rays over the pixel and the sun's disc: a soft, smooth edge.
+        if (it == 4) break;
+        vec2 o = (vec2(float(it & 1), float(it >> 1)) - 0.5) * 0.5;
+        ro = gl + vec3(o.x, 0.0, o.y) * fp; dir = normalize(lsG + vec3(o.x, 0.0, o.y) * 0.02);
+      } else if (!toSun) {
+        if (k == 16 || (k == nb && !mixed)) break;
+        ns++;
+        float fk = fract(float(k) * 0.618034 + jit);
+        vec2 so = s + (fract(vec2(0.7548777, 0.5698403) * float(k) + vec2(jit, jit2)) - 0.5) * px;
+        rw = toWorld(normalize(vec3(so, -uFoc)));
+        // The shutter is open 1/40 s: the vehicle moves within it.
+        Ck = C + f * spd * (fk - 0.5) / 40.0;
+        vec3 o = eye - Ck;
+        // Into the vehicle's frame, with its roll about f and its pitch about rt (nose down for positive pitch).
+        lo = vec3(dot(o, rt), o.y, dot(o, f)); ld = vec3(dot(rw, rt), rw.y, dot(rw, f));
+        lo.xy = mr * (lo.xy - vec2(0.0, 0.8)) + vec2(0.0, 0.8); ld.xy = mr * ld.xy;
+        lo.yz = mp * (lo.yz - vec2(0.8, 0.0)) + vec2(0.8, 0.0); ld.yz = mp * ld.yz;
+        // The whole vehicle's box first: most rays in the screen box miss it.
+        vec3 inv = 1.0 / ld, ta = (vec3(-hw - 0.32, 0.0, rr - 0.15) - lo) * inv, tb = (vec3(hw + 0.32, top, fr + 0.15) - lo) * inv;
+        vec3 mn = min(ta, tb), mx = max(ta, tb);
+        miss = min(min(mx.x, mx.y), mx.z) < max(max(max(mn.x, mn.y), mn.z), 0.0);
+        ro = lo; dir = ld;
+        gHitK = 1.0;
+      } else {
+        // A ray to the sun from the hit: the body shades its own parts.
+        ro = hl + n * 0.004; dir = ls;
+      }
+      float tr;
+      vec3 nr;
+      int hit = miss ? 0 : vHit(kind, ro, dir, tr, nr, shadow ? 0.0 : spin);
+      if (shadow) { sh += float(hit != 0); continue; }
       float sv = 1.0;
-      if (dot(n, ls) <= 0.0) sv = 0.0;
-      else if (id != 6 && id != 7 && z <= 40.0) {
-        if (k < 2 || mixed || id != id0) {
-          float tSh, sx = gExT;
-          vec3 nSh, sn = gExN;
-          int si = vHit(kind, hl + n * 0.004, ls, tSh, nSh, spin);
-          sv = si == 0 ? 1.0 : si == 2 ? 0.45 : 0.0;
-          gExT = sx; gExN = sn;
-        } else sv = shK;
+      if (toSun) {
+        sv = hit == 0 ? 1.0 : hit == 2 ? 0.45 : 0.0;
+        gExT = sx; gExN = sn;
+        toSun = false;
+      } else {
+        t = tr; n = nr;
+        id = hit;
+        if (id != 0) id = vPart(id, kind, lo + ld * t, n);
+        if (id0 < 0) id0 = id;
+        mixed = mixed || id != id0 || gHitK < 1.0;
+        if (id == 0) { k++; continue; }
+        hl = lo + ld * t;
+        hk = gHitK;
+        // Two samples trace the sun ray; the rest trace only where parts or shadows disagree.
+        // Past 40 m the vehicle is too small to show it.
+        if (dot(n, ls) <= 0.0) sv = 0.0;
+        else if (near && id != 6 && id != 7 && z <= 40.0) {
+          if (k < 2 || mixed || id != id0) { toSun = true; continue; }
+          sv = shK;
+        }
       }
       if (k == 0) shK = sv;
       if (k == 1 && sv != shK) mixed = true;
-      gSh = sv;
-      n = vBend(hl, n, id, kind);
+      vec3 nl = vBend(hl, n, id, kind);
+      // Back out of the roll and pitch for the world normal.
+      vec3 nw = nl;
+      nw.yz = transpose(mp) * nw.yz; nw.xy = transpose(mr) * nw.xy;
+      vec3 N = normalize(rt * nw.x + vec3(0.0, nw.y, 0.0) + f * nw.z);
+      vec3 P = Ck + rt * hl.x + vec3(0.0, hl.y, 0.0) + f * hl.z;
+      // Glass in a cab with windows all round shows the world through the far window.
+      float see = 0.0;
+      if (id == 2 && kind != 2) {
+        vec3 xp = lo + ld * gExT;
+        see = float(vPart(2, kind, xp, gExN) == 2);
+        // Seat backs with rounded shoulders, and a rounded headrest over each, block the lower window.
+        float bx = abs(abs(xp.x) - 0.42), by = xp.y - vBelt(kind);
+        float back = step(by, 0.16 - 0.5 * max(bx - 0.18, 0.0));
+        float rest = step(length(vec2(bx / 0.12, (by - 0.3) / 0.09)), 1.0);
+        see *= 1.0 - max(back, rest);
+      }
+      sP[nh] = P; sN[nh] = N; sV[nh] = -rw; sH[nh] = hl; sB[nh] = nl;
+      sSee[nh] = see; sSv[nh] = sv; sHk[nh] = hk; sId[nh] = id;
+      nh++;
+      k++;
     }
-    // Back out of the roll and pitch for the world normal.
-    vec3 nb = n;
-    nb.yz = transpose(mp) * nb.yz; nb.xy = transpose(mr) * nb.xy;
-    vec3 N = normalize(rt * nb.x + vec3(0.0, nb.y, 0.0) + f * nb.z);
-    vec3 P = Ck + rt * hl.x + vec3(0.0, hl.y, 0.0) + f * hl.z;
-    // Glass in a cab with windows all round shows the world through the far window.
-    float see = 0.0;
-    if (id == 2 && kind != 2) {
-      vec3 xp = lo + ld * gExT;
-      see = float(vPart(2, kind, xp, gExN) == 2);
-      // Seat backs with rounded shoulders, and a rounded headrest over each, block the lower window.
-      float bx = abs(abs(xp.x) - 0.42), by = xp.y - vBelt(kind);
-      float back = step(by, 0.16 - 0.5 * max(bx - 0.18, 0.0));
-      float rest = step(length(vec2(bx / 0.12, (by - 0.3) / 0.09)), 1.0);
-      see *= 1.0 - max(back, rest);
+    if (!shadow) for (int q = ROLL0; q < 16; q++) {
+      if (q >= nh) continue;
+      gSh = sSv[q];
+      vec3 col = vShade(sId[q], kind, sP[q], sN[q], sV[q], sH[q], sB[q], seed, brake, sSee[q]);
+      // The amber bar flashes, left and right in turn.
+      if (sId[q] == 4) col = vec3(1.0, 0.45, 0.05) * (0.2 + 7.0 * step(0.5, fract(uT * 1.6 + (sH[q].x > 0.0 ? 0.5 : 0.0))));
+      acc += col * sHk[q];
+      cov += sHk[q];
+      zHit = depthOf(sP[q]);
     }
-    vec3 col = vShade(id, kind, P, N, -rw, hl, n, seed, brake, see);
-    // The amber bar flashes, left and right in turn.
-    if (id == 4) col = vec3(1.0, 0.45, 0.05) * (0.2 + 7.0 * step(0.5, fract(uT * 1.6 + (hl.x > 0.0 ? 0.5 : 0.0))));
-    acc += col * hk;
-    cov += hk;
-    zHit = depthOf(P);
+    if (shadow) {
+      // The shadow takes away the sun's share of the road's light.
+      float sunL = dot(uSunCol, vec3(0.3, 0.6, 0.1)) * 0.55, ambL = dot(uAmb, vec3(0.3, 0.6, 0.1)) * 0.6;
+      // Near the horizon the road is too foreshortened to hold a clean edge: the shadow fades.
+      float ks = sh * 0.25 * sunL / max(sunL + ambL, 1e-4) * (1.0 - sunCover((G + C) * 0.001)) * smoothstep(0.006, 0.02, -rd.y);
+      if (ks > 0.0) put(vec3(0.0), ks, zg);
+    } else if (cov > 0.0) put(hazed(acc / cov, rd, zHit), cov / float(ns), zHit);
   }
-  if (cov > 0.0) put(hazed(acc / cov, rd, zHit), cov / float(ns), zHit);
-  if (sprayFront) { vSpray(s, C, f, rt, kind, spd, age, seed, brake); vTrail(rd, C, f, kind, spd, age, seed, brake); }
+}
+// Every vehicle's lamps, in their own pass.
+void trafficLamps(vec2 s, float px) {
+  for (int i = ROLL0; i < ${MAX_VEH}; i++) vehLamps(i, s, px);
 }
 // Every vehicle in one pass: far ones before the infrastructure, near ones after it.
 void traffic(vec2 s, vec3 rd, float px, bool near) {
-  for (int i = 0; i < ${MAX_VEH}; i++) vehicle(i, s, rd, px, near);
+  for (int i = ROLL0; i < ${MAX_VEH}; i++) vehicle(i, s, rd, px, near);
 }
 `;

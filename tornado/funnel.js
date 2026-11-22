@@ -552,14 +552,16 @@ float deckD(vec3 pk, bool horn, vec3 pl, float soft) {
 // A high sun is cut off by the storm overhead; a low one slips under the base.
 float cloudShade(vec3 p) {
   float od = 0.0;
-  od += smoothstep(0.06, -0.06, stormShapeSun(toKm(p + gSunC * 80.0))) * 80.0;
-  od += smoothstep(0.06, -0.06, stormShapeSun(toKm(p + gSunC * 260.0))) * 180.0;
   float L = (max(gDeck - p.y, 0.0) + 60.0) / max(gSunC.y, 0.03);
   // Far under the base the sun slips past the deck: its shade fades out, with no step.
   float far = 1.0 - smoothstep(12000.0, 20000.0, L);
-  if (far > 0.0) {
-    od += far * smoothstep(0.06, -0.06, stormShapeSun(toKm(p + gSunC * L))) * 300.0;
-    od += far * smoothstep(0.06, -0.06, stormShapeSun(toKm(p + gSunC * (L + 400.0)))) * 300.0;
+  // Two near probes, then two at the deck when it is near enough.
+  // One loop holds the one stormShapeSun() call: D3D11 pastes each call whole.
+  for (int k = ROLL0; k < 4; k++) {
+    if (k > 1 && far <= 0.0) break;
+    float at = k == 0 ? 80.0 : k == 1 ? 260.0 : k == 2 ? L : L + 400.0;
+    float v = smoothstep(0.06, -0.06, stormShapeSun(toKm(p + gSunC * at)));
+    od += k > 1 ? far * v * 300.0 : v * (k == 0 ? 80.0 : 180.0);
   }
   return od * 0.006;
 }
@@ -918,63 +920,82 @@ void main() {
     }
     vec3 sum = vec3(0.0);
     float sig = 0.0;
-    // The deck keeps its own sample spacing: the funnel's short steps reuse its last sample.
-    if (sky) {
-      if (t >= tDn) {
-        // The finest noise fades out far off, where it is under a pixel.
-        // It fades by the pixel's size there: the fine lumps stippled every far edge.
-        gFine = 1.0 - smoothstep(6.0, 18.0, t / (uRes.y * uFoc));
-        // The soft edge and the inner step grow with distance: crisp near, smooth far.
-        // A soft edge of two steps: a thinner one is met by chance and stipples the lumps' rims.
-        float inStep = 30.0 + 0.006 * t, soft = 2.0 * inStep * 0.001;
-        float d = deckD(pk, inA, p, soft);
-        // The first step into the cloud is a random part of a step: no contour bands.
-        if (d < soft && outside && !inA) { outside = false; t += inStep * jit; continue; }
-        if (d < soft) outside = false;
-        // Outside the cloud, step by its distance; a step scale per pixel keeps rays off one lattice.
-        tDn = t + (d < soft ? inStep : (d * 750.0 + 0.01 * t) * (0.85 + 0.3 * jit));
-        cSig = 0.0;
-        if (d < soft) {
-          // A full step through dense cloud covers 0.8 of what lies behind it.
-          cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
-          // Over the band the live march gives way to the baked far field, and the bake takes over.
-          float wFar = smoothstep(farD - band, farD, t);
-          cSig *= bake ? wFar : 1.0 - wFar;
-          // Behind seven tenths of cover a sample adds little: it keeps the last light.
-          if (T > 0.3 || cLit.x < 0.0) cLit = stormLit(pk, d);
-          cCol = hazed(cLit, hzF);
-        }
-      }
-      // Inside the onion the funnel's step wins; up the flare the deck's step wins.
-      if (!(inA && g0.x < xOut) || (inA && p.y > gY0)) st = min(st, max(tDn - t, 0.5));
-      sum += cCol * cSig;
-      sig += cSig;
-    }
     // The funnel's layers on this segment, front to back among themselves.
     // A split segment keeps its second half apart, so the volume goes between.
     vec3 fAcc = vec3(0.0), fAcc2 = vec3(0.0);
     float fT = 1.0, fT2 = 1.0;
     bool inward = false, split = false;
-    if (inA) {
-      Geo g1 = geo(p + rc * st, xOut + 0.6);
-      inward = g1.x < g0.x;
-      float sHm = 0.5 * (g0.sH + g1.sH);
-      if (min(g0.x, g1.x) < xOut + 0.3 && sHm < 1.0) {
-        vec3 pm = p + rc * (st * 0.5);
+    // Two stages share one deckD() and one stormLit() call: D3D11 pastes each call whole.
+    // Stage 0 is the deck's own sample on this ray; stage 1 the deck's tone over the horn.
+    // The calls keep their order: deckD() moves the deck's openness cache.
+    Geo g1;
+    bool seg = false, skip = false;
+    vec3 pm = vec3(0.0);
+    float sHm = 0.0, topK = 0.0, inStep = 0.0, soft = 0.0;
+    for (int q = ROLL0; q < 2; q++) {
+      vec3 dk, dl;
+      bool dh;
+      float ds;
+      if (q == 0) {
+        // The deck keeps its own sample spacing: the funnel's short steps reuse its last sample.
+        if (!sky || t < tDn) continue;
+        // The finest noise fades out far off, where it is under a pixel.
+        // It fades by the pixel's size there: the fine lumps stippled every far edge.
+        gFine = 1.0 - smoothstep(6.0, 18.0, t / (uRes.y * uFoc));
+        // The soft edge and the inner step grow with distance: crisp near, smooth far.
+        // A soft edge of two steps: a thinner one is met by chance and stipples the lumps' rims.
+        inStep = 30.0 + 0.006 * t; soft = 2.0 * inStep * 0.001;
+        dk = pk; dh = inA; dl = p; ds = soft;
+      } else {
+        if (sky) {
+          // Inside the onion the funnel's step wins; up the flare the deck's step wins.
+          if (!(inA && g0.x < xOut) || (inA && p.y > gY0)) st = min(st, max(tDn - t, 0.5));
+          sum += cCol * cSig;
+          sig += cSig;
+        }
+        if (!inA) continue;
+        g1 = geo(p + rc * st, xOut + 0.6);
+        inward = g1.x < g0.x;
+        sHm = 0.5 * (g0.sH + g1.sH);
+        seg = min(g0.x, g1.x) < xOut + 0.3 && sHm < 1.0;
+        if (!seg) continue;
+        pm = p + rc * (st * 0.5);
         if (csF < 0.0) csF = cloudShade(pm);
         // Below F1 the horn is a lowering of the base: it takes the storm's tone all the way down.
-        float topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
+        topK = max(topKAt(pm.y), 1.0 - smoothstep(0.0, 0.5, uCond));
         // The deck's light just over the horn, for the join.
         // The sheaths' torn edges take this tone too, so every column reads it once.
         // It is read beside the bell, on the eye's side, where the deck shows its own tone.
         // Inside the bell the horn's underside read darker than the deck round it.
-        if (stC.x < 0.0) {
-          vec2 tc = topXZ(), toEye = normalize(-gFoot.xz - tc + 1e-3);
-          // One fixed point per tornado: read at each pixel's own height, its lumps speckled the top.
-          vec3 pb = vec3(tc.x + toEye.x * gRtopKm * 1300.0, gDeck - 120.0, tc.y + toEye.y * gRtopKm * 1300.0);
-          vec3 pt = toKm(pb);
-          stC = stormLit(pt, deckD(pt, true, pb, 1e3));
-        }
+        if (stC.x >= 0.0) continue;
+        vec2 tc = topXZ(), toEye = normalize(-gFoot.xz - tc + 1e-3);
+        // One fixed point per tornado: read at each pixel's own height, its lumps speckled the top.
+        dl = vec3(tc.x + toEye.x * gRtopKm * 1300.0, gDeck - 120.0, tc.y + toEye.y * gRtopKm * 1300.0);
+        dk = toKm(dl); dh = true; ds = 1e3;
+      }
+      float d = deckD(dk, dh, dl, ds);
+      if (q == 0) {
+        // The first step into the cloud is a random part of a step: no contour bands.
+        if (d < soft && outside && !inA) { outside = false; t += inStep * jit; skip = true; break; }
+        if (d < soft) outside = false;
+        // Outside the cloud, step by its distance; a step scale per pixel keeps rays off one lattice.
+        tDn = t + (d < soft ? inStep : (d * 750.0 + 0.01 * t) * (0.85 + 0.3 * jit));
+        cSig = 0.0;
+        if (d >= soft) continue;
+        // A full step through dense cloud covers 0.8 of what lies behind it.
+        cSig = clamp(0.5 - d / soft, 0.0, 1.0) * 1.609 / inStep;
+        // Over the band the live march gives way to the baked far field, and the bake takes over.
+        float wFar = smoothstep(farD - band, farD, t);
+        cSig *= bake ? wFar : 1.0 - wFar;
+        // Behind seven tenths of cover a sample adds little: it keeps the last light.
+        if (!(T > 0.3 || cLit.x < 0.0)) { cCol = hazed(cLit, hzF); continue; }
+      }
+      vec3 lit = stormLit(dk, d);
+      if (q == 0) { cLit = lit; cCol = hazed(cLit, hzF); } else stC = lit;
+    }
+    if (skip) continue;
+    if (inA) {
+      if (seg) {
         // The tone it turns to is the deck's own light right here, where the deck has cloud.
         // Above the horn's surface the ray's one deck point stands in.
         vec3 tone = cSig > 0.0 && cLit.x >= 0.0 ? cLit : stC;
@@ -1000,8 +1021,12 @@ void main() {
       // Dust and rain: two random points in the segment, one in each half, so coarse steps leave no rings.
       if (inDust || uRain > 0.01) {
         float d, w, d2, w2;
-        vol(p + rc * (st * 0.5 * jit2), d, w, 4);
-        vol(p + rc * (st * 0.5 * (1.0 + fract(jit2 + 0.5))), d2, w2, 4);
+        // One loop holds the one vol() call: D3D11 pastes each call whole.
+        for (int h = ROLL0; h < 2; h++) {
+          float dh, wh;
+          vol(p + rc * (st * 0.5 * (h == 0 ? jit2 : 1.0 + fract(jit2 + 0.5))), dh, wh, 4);
+          if (h == 0) { d = dh; w = wh; } else { d2 = dh; w2 = wh; }
+        }
         d = 0.5 * (d + d2);
         w = 0.5 * (w + w2);
         float sd = d * 0.014, sw2 = w * 0.0012;

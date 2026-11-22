@@ -6,6 +6,8 @@ from ctypes import c_void_p, c_size_t, c_char_p, c_uint, POINTER, byref
 FLAGS = {
     'level1': 0,
     'level0': 1 << 14,
+    'level3': 1 << 15,
+    'level2': (1 << 14) | (1 << 15),
     'skipopt': 1 << 2,
     'avoidflow': 1 << 9,
     'preferflow': 1 << 10,

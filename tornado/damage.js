@@ -144,7 +144,8 @@ uniform sampler2D tDmg;
 vec3 dmgAt(vec2 xz) {
   vec2 uv = (xz - vec2(${DMG_X0}.0, ${DMG_Z0}.0)) / ${DMG_N * DMG_CELL}.0;
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec3(0.0);
-  vec4 d = texture(tDmg, uv);
+  // One level, so level 0 is exact; D3D11 cannot keep a loop round a gradient read.
+  vec4 d = textureLod(tDmg, uv, 0.0);
   return vec3(d.r * 127.5, d.gb * 2.0 - 1.0);
 }
 /* ---------- debris ---------- */
