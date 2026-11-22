@@ -461,7 +461,7 @@ function materials(): Mats {
   return {
     // Cream enamel.
     // Chips show metal through the map.
-    enamel: std('paint', { color: 0xddd6c4, roughness: 1, metalness: 1, map: wear.map, roughnessMap: wear.orm, metalnessMap: wear.orm }),
+    enamel: std('paint', { color: 0xddd6c4, roughness: 0.4, metalness: 0, map: wear.map, roughnessMap: wear.orm, metalnessMap: wear.orm }),
     // Grey-green enamel on the castings.
     cast: std('cast', { color: 0x6b7466, roughness: 0.58, metalness: 0, map: cast }),
     // The pier wears a darker coat.
@@ -816,7 +816,8 @@ function buildRa(k: Kit, M: Mats, Pc: Pieces): void {
   for (let i = 0; i < teeth; i++) {
     const a = (i / teeth) * Math.PI * 2;
     const out = new Vector3(Math.cos(a), 0, Math.sin(a)), tan = new Vector3(-Math.sin(a), 0, Math.cos(a));
-    k.put(Pc.tooth, M.brass, boxAt(out.clone().multiplyScalar(0.2155).setY(-0.905), tan, axis, out, 0.0045, 0.042, 0.008));
+    // Teeth nearly touch, so the rim reads as filled.
+    k.put(Pc.tooth, M.brass, boxAt(out.clone().multiplyScalar(0.2155).setY(-0.905), tan, axis, out, 0.0082, 0.042, 0.008));
   }
   // The hour circle faces south and down, under the wheel.
   const hy = -0.962;

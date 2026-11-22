@@ -81,6 +81,12 @@ turn.type = 'checkbox';
 turn.id = 'scope-turn';
 turnWrap.append(turn, ' Turn');
 panel.append(turnWrap);
+const sweepWrap = document.createElement('label');
+const sweep = document.createElement('input');
+sweep.type = 'checkbox';
+sweep.id = 'scope-sweep';
+sweepWrap.append(sweep, ' Sweep azimuth');
+panel.append(sweepWrap);
 document.body.append(panel);
 
 // Each tube change redraws the model.
@@ -104,6 +110,25 @@ const tick = (t: number): void => {
 turn.addEventListener('change', () => {
   if (turn.checked && !reduced) spin = requestAnimationFrame(tick);
   if (!turn.checked) cancelAnimationFrame(spin);
+});
+
+// The sweep turns the azimuth at a fixed altitude.
+// The hour angle and the declination change, so the gears turn.
+// One turn takes about nine seconds.
+let sweepStart = 0, sweepRaf = 0;
+const sweepTick = (t: number): void => {
+  if (!sweep.checked) return;
+  const deg = ((t - sweepStart) / 1000) * 40;
+  az.value = String(Math.round(deg % 360));
+  az.dispatchEvent(new Event('input'));
+  sweepRaf = requestAnimationFrame(sweepTick);
+};
+sweep.addEventListener('change', () => {
+  cancelAnimationFrame(sweepRaf);
+  if (!sweep.checked || reduced) return;
+  // The sweep resumes from the azimuth the slider shows.
+  sweepStart = performance.now() - (Number(az.value) / 40) * 1000;
+  sweepRaf = requestAnimationFrame(sweepTick);
 });
 
 /* ---------- size and first frame ---------- */
