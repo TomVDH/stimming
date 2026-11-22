@@ -27,7 +27,7 @@ Defaults (chosen in this chat, stated for Tom): flat side elevation, a section t
 - [x] toys.json entry and Lab li with GSAP hook
 - [x] QA Q1 to Q10 at 1280 px and 375 px
 - [x] Toy doc docs/toys/waterwheel.md
-- [ ] Commit and push
+- [x] Commit and push (17489eb5 toy, 560cb2d7 menu)
 - [ ] Tom's sign-off
 
 ## Notes
