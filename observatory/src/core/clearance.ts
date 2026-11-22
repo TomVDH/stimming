@@ -16,6 +16,9 @@ export const CELL = 0.02;
 export const LAT = 51;
 // The dec angle with the tube on the pole, in the joint's convention.
 export const POLE_DEC = -Math.PI / 2;
+// The mount's axes cross this far over the cupola's turn height, in dome units.
+// world/hero-scope.ts, core/mount.ts and view/cuts.ts read it from here.
+export const AXES_UP = 0.35;
 // The tube's axis runs this far from the polar axis, in metres.
 // world/hero-scope.ts and view/cuts.ts read it from here.
 export const D_OFF = 0.4275;

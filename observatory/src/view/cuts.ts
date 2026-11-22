@@ -4,7 +4,7 @@ import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
-import { D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
+import { AXES_UP, D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
 import type { Phase } from '../core/machine.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
@@ -166,8 +166,6 @@ function place(cut: Cut, az: number, aspect: number): Framed {
 
 /* ---------- the glass shot: locked on the glass's place of rest ---------- */
 // Copied from world/hero-scope.ts, in dome units.
-// The axes cross this high over the drum's foot.
-const AXES_Y = 3.75;
 // The site's latitude in degrees.
 const LAT = 51;
 // The glass's face, along the tube from the declination axis.
@@ -195,7 +193,7 @@ const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 function glassAt(alt: number, az: number): void {
   // The joint angles come from core/clearance.ts, as the hero's do.
   const p = targetPose(alt, az, 0);
-  gm.makeTranslation(0, AXES_Y, 0)
+  gm.makeTranslation(0, complex.main.turnY + AXES_UP, 0)
     .multiply(gr.makeRotationX(LAT * DEG - Math.PI / 2))
     .multiply(gr.makeRotationY(p.ra))
     .multiply(gr.makeRotationX(p.dec))

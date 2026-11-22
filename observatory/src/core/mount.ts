@@ -4,13 +4,11 @@
 // Sizes are in dome units at size 1, as in world/hero-scope.ts.
 // +Y is up, -Z is north, +X is east. Angles are in degrees.
 
-import { D_OFF, targetPose } from './clearance.ts';
+import { AXES_UP, D_OFF, targetPose } from './clearance.ts';
 
 const DEG = Math.PI / 180;
 // Copied from world/hero-scope.ts: the site's latitude.
 const LAT = 51;
-// Copied from world/hero-scope.ts: the axes cross 0.35 over the drum top.
-const AXES_UP = 0.35;
 // Copied from world/observatory.ts: the cupola's radius.
 const DOME_R = 3.3;
 
