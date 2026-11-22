@@ -2314,7 +2314,7 @@ function shoeKick() {
 const pluck = { phase: -1, age: 0, amp: 0 };
 
 /* ---------- one loop ---------- */
-// The stream drifts at 30 fps; a startle runs at full rate.
+// The stream drifts at 30 fps; a startle or a scrub runs at full rate.
 // A minute after the last input the scene slows to a stop.
 let raf = 0, last = 0, visible = true, lastInput = 0, startleT = 0, ease = 1, dirty = false, tickNo = 0;
 const SLEEP = 60;
@@ -2322,8 +2322,8 @@ function frame(now) {
   raf = 0;
   if (!ready || !visible) return;
   const raw = Math.max(0, (now - last) / 1000);
-  // A held timelapse runs at full rate, like a startle.
-  if (startleT <= 0 && !lapse.on && raw < 1 / 32) { raf = requestAnimationFrame(frame); return; }
+  // A held timelapse and a moving hour run at full rate, like a startle.
+  if (startleT <= 0 && !lapse.on && !clock.moving && raw < 1 / 32) { raf = requestAnimationFrame(frame); return; }
   last = now;
   // A car in the lane keeps the scene awake until it has gone.
   if (car.on) lastInput = Math.max(lastInput, now - (SLEEP - 3) * 1000);

@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-18T02:53:21Z
-updated_at: 2026-11-22T09:47:57Z
+updated_at: 2026-11-22T10:44:12Z
 parent: stimming-guw5
 ---
 
@@ -30,3 +30,6 @@ Tom (01:07), queued, one at a time:
 - [x] Rendering polish ideas for Tom (listed; wire glints done in stimming-09z6)
 - [x] Redo the shoes (done in stimming-bnbi)
 - [ ] Splice case: the cable shows behind the near end, not through it (moved to stimming-bntl)
+
+
+- 2026-11-22 (Tom: cheaper scrubbing): measured one scrub frame at 2 Mpx: rebake 1.3 ms and draw 2.0 ms (ANGLE GL), 2.3 and 4.0 ms (D3D11). No throttle needed. The real fault: a moving hour ran at the 30 fps drift rate. It now runs at full rate (59 fps while scrubbing, was 30); the loop returns to 30 fps once the hour settles.
