@@ -1,9 +1,9 @@
 // Load order: none.
 // The module builds nothing until a caller asks for the modern scope.
 import {
-  BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CircleGeometry, CylinderGeometry,
+  BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, CatmullRomCurve3, CylinderGeometry,
   EquirectangularReflectionMapping, ExtrudeGeometry, Group, InstancedMesh, LatheGeometry, Matrix4, Mesh,
-  MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape, SphereGeometry,
+  MeshPhysicalMaterial, MeshStandardMaterial, Quaternion, RepeatWrapping, RingGeometry, SRGBColorSpace, Shape, SphereGeometry,
   TorusGeometry, TubeGeometry, Vector2, Vector3,
 } from 'three';
 import type { Material, MeshStandardMaterialParameters } from 'three';
@@ -46,6 +46,8 @@ const R_CELL = 0.6;
 const CELL_Z = 1.3, CELL_BACK = 1.62, MIRROR_Z = 1.3, MIRROR_R = 0.5, HOLE_R = 0.13;
 // The secondary: its face and its radius on the axis.
 const SEC_Z = -1.2, SEC_R = 0.16;
+// Radii of curvature: the primary is concave at f/8, and the secondary is convex.
+const PRIMARY_R = 16, SEC_CONVEX_R = 0.9;
 // The shroud's door: an arc round +X, from DOOR_Z0 to DOOR_Z1.
 const DOOR_Z0 = -0.9, DOOR_Z1 = -0.2, DOOR_HALF = 0.42;
 // The camera's last face, in tube coordinates.
@@ -105,6 +107,45 @@ function arc(cx: number, cy: number, r: number, a0: number, a1: number, n: numbe
 // A flanged ring: a rectangle in [radius, height] with small chamfers.
 function ringProfile(r0: number, r1: number, h0: number, h1: number, c: number): P[][] {
   return edges([[r0, h0], [r1 - c, h0], [r1, h0 + c], [r1, h1 - c], [r1 - c, h1], [r0, h1], [r0, h0]]);
+}
+
+// A mirror face: a polar grid lifted onto a sphere, so reflections bend across it.
+// The sag is r squared over 2R, the sphere's exact sag near the axis.
+// facing: -1 for a face that looks along -Z, +1 for one that looks along +Z.
+function mirrorFace(rIn: number, rOut: number, z0: number, R: number, facing: number, rings = 32, segs = 192): BufferGeometry {
+  const pos: number[] = [], uv: number[] = [];
+  for (let i = 0; i <= rings; i++) {
+    const r = rIn + ((rOut - rIn) * i) / rings;
+    for (let j = 0; j <= segs; j++) {
+      const t = (j / segs) * Math.PI * 2;
+      const x = r * Math.cos(t), y = r * Math.sin(t);
+      pos.push(x, y, z0 - (r * r) / (2 * R));
+      uv.push(x / (2 * rOut) + 0.5, y / (2 * rOut) + 0.5);
+    }
+  }
+  const quads = (flip: boolean): number[] => {
+    const idx: number[] = [];
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = i * (segs + 1) + j, b = a + segs + 1;
+        if (flip) idx.push(a, a + 1, b, b, a + 1, b + 1);
+        else idx.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    }
+    return idx;
+  };
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  g.setIndex(quads(false));
+  g.computeVertexNormals();
+  // The winding sets the normal's sign: flip it when the face looks the wrong way.
+  const nz = g.getAttribute('normal').getZ(segs / 2 + (segs + 1));
+  if (nz * facing < 0) {
+    g.setIndex(quads(true));
+    g.computeVertexNormals();
+  }
+  return g;
 }
 
 // The lathe's Y axis turns onto Z, the tube's axis.
@@ -384,17 +425,30 @@ function scaleMap(ticks: number, major: number, label: (i: number) => string): C
 
 // Metal reflects this: a dark sky, a dim floor and one soft box.
 function studioEnv(): CanvasTexture {
-  const W = 128, H = 64;
+  const W = 512, H = 256;
   const [c, x] = canvas(W, H);
+  // Sky: deep blue overhead, a pale band at the horizon, a dark ground.
   const g = x.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#5a6678');
-  g.addColorStop(0.45, '#2a303b');
-  g.addColorStop(0.55, '#15171c');
-  g.addColorStop(1, '#0b0c0e');
+  g.addColorStop(0, '#1d2638');
+  g.addColorStop(0.42, '#55657e');
+  g.addColorStop(0.5, '#c9d3e0');
+  g.addColorStop(0.56, '#2a2e36');
+  g.addColorStop(1, '#070809');
   x.fillStyle = g;
   x.fillRect(0, 0, W, H);
-  x.fillStyle = '#e8eef8';
-  x.fillRect(W * 0.18, H * 0.12, W * 0.12, H * 0.14);
+  // Soft light panels round the horizon: every mirror angle catches one.
+  for (let i = 0; i < 6; i++) {
+    const cx = W * (0.08 + i * 0.17), cy = H * (0.22 + (i % 2) * 0.08);
+    const pg = x.createRadialGradient(cx, cy, 2, cx, cy, W * 0.07);
+    pg.addColorStop(0, '#ffffff');
+    pg.addColorStop(0.6, 'rgba(235,242,255,0.9)');
+    pg.addColorStop(1, 'rgba(235,242,255,0)');
+    x.fillStyle = pg;
+    x.fillRect(cx - W * 0.08, cy - W * 0.08, W * 0.16, W * 0.16);
+  }
+  // A dark scrim between two panels, so the pattern reads.
+  x.fillStyle = '#0d0f13';
+  for (let i = 0; i < 4; i++) x.fillRect(W * (0.6 + i * 0.03), H * 0.5, W * 0.01, H * 0.2);
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   t.mapping = EquirectangularReflectionMapping;
@@ -429,7 +483,7 @@ function materials(): Mats {
     std(key, { color: c, emissive: c, emissiveIntensity: 2.5, roughness: 0.3 });
   return {
     // Grey anodised aluminium with a fine grain.
-    anodised: std('anodised', { color: 0x7a818b, metalness: 0.3, roughness: 0.42, roughnessMap: grain }),
+    anodised: std('anodised', { color: 0x8d939b, metalness: 0.4, roughness: 0.34, roughnessMap: grain }),
     // The shroud's graphite paint, with chips and wear.
     paint: std('paint', { color: 0xffffff, map: paint.map, roughness: 1, roughnessMap: paint.rough, metalness: 0.15 }),
     // Sand-cast iron under a grey-green coat.
@@ -448,7 +502,11 @@ function materials(): Mats {
     brass: std('brass', { color: 0xc9a467, metalness: 1, roughness: 0.3 }),
     rubber: std('rubber', { color: 0x101012, metalness: 0, roughness: 0.9 }),
     // The primary and secondary: a bright, nearly perfect metal.
-    mirror: std('mirror', { color: 0xdfe6ee, metalness: 1, roughness: 0.04 }),
+    // Coated aluminium with a faint thin-film tint, so the glint carries colour.
+    mirror: reflectOnly(new MeshPhysicalMaterial({
+      envMap: env, color: 0xe6ebf2, metalness: 1, roughness: 0.03,
+      iridescence: 0.12, iridescenceIOR: 1.3, iridescenceThicknessRange: [180, 320], envMapIntensity: 1.1,
+    }), 'mirror'),
     // The primary's blank: dark ceramic, so the mirror edge reads as glass.
     ceramic: std('ceramic', { color: 0x1c1f24, metalness: 0.1, roughness: 0.7 }),
     cable: std('cable', { color: 0x111113, metalness: 0, roughness: 0.8 }),
@@ -619,7 +677,7 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   }
   // The primary's blank, and its mirror face turned to the secondary.
   k.add(M.ceramic, along(turn(ringProfile(HOLE_R, MIRROR_R, MIRROR_Z, MIRROR_Z + 0.12, 0.01), 128), Y_TO_Z));
-  k.add(M.mirror, new RingGeometry(HOLE_R, MIRROR_R, 160, 1).rotateY(Math.PI).translate(0, 0, MIRROR_Z - 0.002));
+  k.add(M.mirror, mirrorFace(HOLE_R, MIRROR_R, MIRROR_Z - 0.002, PRIMARY_R, -1));
 
   /* the Cassegrain stack behind the cell: focuser, filter wheel, camera, fins, lamps */
   const fz = CELL_BACK + 0.04;
@@ -656,7 +714,7 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   }
 
   /* the secondary: a convex mirror in its cell, held by four vanes from the ring */
-  k.add(M.mirror, new CircleGeometry(SEC_R, 64).translate(0, 0, SEC_Z));
+  k.add(M.mirror, mirrorFace(0, SEC_R, SEC_Z + 0.002, SEC_CONVEX_R, 1));
   k.add(M.anodised, along(turn(ringProfile(SEC_R, SEC_R + 0.04, SEC_Z - 0.03, SEC_Z + 0.03, 0.006), 64), Y_TO_Z));
   for (let i = 0; i < 4; i++) {
     const a = Math.PI / 4 + (i / 4) * Math.PI * 2;
