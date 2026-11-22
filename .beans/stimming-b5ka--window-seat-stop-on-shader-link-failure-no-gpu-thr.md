@@ -1,20 +1,21 @@
 ---
 # stimming-b5ka
 title: 'Window seat: stop on shader link failure, no GPU thrash'
-status: in-progress
+status: completed
 type: bug
 priority: normal
 created_at: 2026-11-10T17:27:19Z
-updated_at: 2026-11-10T17:27:28Z
+updated_at: 2026-11-22T08:54:43Z
 parent: stimming-w1nd
 ---
+
 
 A visitor's GPU failed to link the window shaders (empty log), then the context was lost and restored in a loop.
 
 - [x] renderer.debug.onShaderError stops the loop and shows a message
 - [x] context loss stops the loop; restore wakes it only if nothing broke
 - [x] injected link error tested: message shows, canvas hides
-- [ ] find the visitor's device and lighten the shader for it
+- [x] ~~find the visitor's device and lighten the shader for it~~ (dropped: the device is unknown; the stand-in covers slow links)
 - [x] Stand-in: a light outside pass (sky, haze, flat land) draws while the full pass compiles in the background
 - [x] Swap: the full pass takes over when it is ready; the stand-in fades out over 1.5 s
 - [x] A full pass that fails to link keeps the stand-in instead of stopping the toy
@@ -57,3 +58,11 @@ Options for Tom:
 
 - 60 fps while the full pass compiles: the page never blocks.
 
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- A failed link stops the loop and shows a message; context loss stops the loop.
+- A light stand-in draws first; the full pass fades in when its compile ends (062ee6c2).
+- A cold Direct3D start shows its first frame in about 8 s, not 37 s.

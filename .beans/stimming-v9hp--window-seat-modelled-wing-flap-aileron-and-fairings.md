@@ -1,22 +1,23 @@
 ---
 # stimming-v9hp
 title: 'Window seat: modelled wing flap, aileron and fairings'
-status: todo
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:33:34Z
+updated_at: 2026-11-22T08:54:45Z
 parent: stimming-w1nd
 ---
+
 
 Round 5, phase 4b. Tom picked "modelled, cruise": the flaps stay stowed.
 Today the wing is one flat quad with a painted flap seam.
 
-- [ ] Split the wing quad: main box, inboard flap, outboard aileron, spoiler panels
-- [ ] Real seams and gap shadows between the panels
-- [ ] Three flap-track fairings ("canoes") poke out past the trailing edge
-- [ ] The aileron and spoilers twitch a degree or so in turbulence
-- [ ] Screenshots to Tom: Dusk and Dawn, wing in full view
+- [x] Split the wing quad: main box, inboard flap, outboard aileron, spoiler panels
+- [x] Real seams and gap shadows between the panels
+- [x] Three flap-track fairings ("canoes") poke out past the trailing edge
+- [x] The aileron and spoilers twitch a degree or so in turbulence
+- [x] Screenshots to Tom: Dusk and Dawn, wing in full view
 
 ## Notes
 
@@ -31,3 +32,11 @@ Wing after the 787 planform: LE swept 28 deg, root chord 10.7 m to tip 1.6 m, st
 Paint: matte satin when dry (roughness 0.66, clear coat 0.1). Rain wets it to a gloss over a few seconds; it dries over about 30 s. Winglet: Boeing blended type. A 0.6 m bend turns it up to 85 degrees, then a straight blade. Leading edge swept 38 degrees, chord 1.25 m to 0.55 m, root 35 cm aft on the tip.
 
 Turbulence (Tom: make the flex real): one smooth gust field replaces the random kicks. Vertical and sideways gusts are each a slow swell (2 s) plus a fast chop (0.35 s), about 3.5 m/s at full. The plane's climb rate follows the gust about 1.1 s late; that lag jolts the eye. The gust's lift drives the wing's two modes (1.1 Hz, 3.2 Hz): an updraft lifts the tip about 12 cm per m/s, in step with the cabin's lurch.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- `window/wing3.js` models the main box, flap, flaperon, aileron, spoilers and flap-track fairings.
+- The hinged parts answer the bank and twitch in turbulence.
+- The screenshots fell under later wing rounds and the sign-off.

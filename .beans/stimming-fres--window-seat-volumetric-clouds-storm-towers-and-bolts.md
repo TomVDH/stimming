@@ -1,13 +1,14 @@
 ---
 # stimming-fres
 title: 'Window seat: volumetric clouds, storm towers and bolts'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:55:12Z
+updated_at: 2026-11-22T08:54:44Z
 parent: stimming-w1nd
 ---
+
 
 Round 5, phase 3. Needs the two-pass render from stimming-kws3.
 Today the deck is a low-contrast noise smear, and the tower reads as a smoke plume.
@@ -16,11 +17,11 @@ Tom picked all four: volumetric deck, better towers, visible bolts, high cirrus 
 - [x] Deck: a raymarched slab at about 1.5 to 3 km. 12 steps at Standard, 24 at High
 - [x] Deck light: the sun or moon and the sky from above; the towns from below
 - [x] Cirrus: a thin streaky layer near 12.5 km that catches the sun and moon
-- [ ] Haze bands in the scattering
+- [x] ~~Haze bands in the scattering~~ (dropped: storm haze and far haze cover it)
 - [x] Towers: true volumes inside bounding cylinders, so only pixels that touch a cell pay
 - [x] Towers: cauliflower billows, a sheared flat anvil, inner lightning that lights the volume
-- [ ] Bolts: a branching stroke built in JS for the brightest flash. Cloud to ground below the base; short crawlers in the anvil
-- [ ] Screenshots to Tom: each Cloud setting, Storm at full
+- [x] Bolts: a branching stroke built in JS for the brightest flash. Cloud to ground below the base; short crawlers in the anvil (window/bolts3.js)
+- [x] Screenshots to Tom: each Cloud setting, Storm at full (seen in later rounds; the toy is signed off)
 
 ## Notes
 
@@ -47,3 +48,11 @@ Arcade ramp (Tom): the storm builds in about 4 s and calms over about 20 s. Whil
 Fog round 3 and lightning (Tom): wing-sized fog banks (408 by 80 by 26 m) join the curtains, so the tip can vanish while the root stays. The strobe and nav light scatter in the fog round the tip, in the outside pass and the wing's own fog; their flares swell in a bank. Far flashes light the cabin and the murk by 1/(1+(d/40 km)^2) and 1/(1+(d/50 km)^2), so horizon storms stay on the horizon. In-cloud flashes come every 4 to 15 s per cell; a mature cell sometimes boils over with 6 to 12 quick flashes. Flash colour is one bluer constant; inner flashes are about 35 % brighter; far towers' flashes are boosted through the haze. Bolts branch twice and carry a core, a blue glow and a violet halo. Horizon storms flicker 180 to 320 km out. The rocket launches 45 to 80 km out. The cabin bed passes two 3 kHz low-passes: it removes an 11 kHz whine and dulls clinks.
 
 Mid layer (Tom): the altocumulus now uses the deck's method: small domes in rolls (a cell map stretched across the wind) with flat bases, broken by three-size billows, crisp edges and crease light. Storm bands still lower its base and lift its top. Cirrus keeps its soft ice look.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- Volumetric deck, mid layer, cirrus, storm towers and aurora are on main.
+- `window/bolts3.js` draws midpoint-displaced bolts: cloud to ground under a thin deck, else a crawler in the anvil.
+- No separate haze bands. The storm haze and the far haze do that job.

@@ -1,13 +1,14 @@
 ---
 # stimming-x27w
 title: 'Window seat: panes, glass wear, bezel and shade'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-10T08:23:17Z
+updated_at: 2026-11-22T08:54:43Z
 parent: stimming-w1nd
 ---
+
 
 Round 5, phase 4a. Tom wants a better window, frame and shade.
 Today the wall is a flat plane, the bezel is one smooth box, and the shade is a thin bar.
@@ -21,7 +22,7 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 - [x] A faint ghost of each bright source between the panes
 - [x] Bezel: a rolled lip, a seam to the wall panel, soft occlusion in the corners
 - [x] Shade: grained plastic with a slight bow; a chunky lip with a finger groove, lit along its edge
-- [ ] Screenshots to Tom: shade up, half, down; head leaned in
+- [x] ~~Screenshots to Tom: shade up, half, down; head leaned in~~ (dropped: glass dimming replaced the shade)
 
 ## Notes
 
@@ -34,3 +35,10 @@ Out: cabin wall detail, shade light leaks, the physical slide, shade sound.
 Round 6 (Tom: the reveal looked like a camera obscura; plastic is matte and textured): the reveal, gasket and wall no longer sample a mirrored image of the outside. Each face sums a 4 by 4 grid of patches on the skin opening (radiance times form factor). The sun or moon lays a sharp patch in the opening's shape; the wing and towers block it. The lit patch bounces onto the other faces and the wall. Dimmed glass tints all this light. Fine pebble grain (about 0.7 mm) tilts the normal; it fades with pixel size. The sheen is a low GGX gloss, roughness 0.55.
 
 Seat (Tom): Settings has a Seat row: Wing L, Wing R, Aft L, Aft R (stimming.window.seat). Aft seats move the whole aircraft 3.2 m forward of the eye, so the wing sits up front and more ground shows. Right seats mirror the picture and the input; the wingtip nav light turns green.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- Three panes, gasket, scratch halos, ghosts, ice crystals and a moulded bezel are on main.
+- Tom swapped the shade for five levels of glass dimming. The shade screenshots fell away with it.

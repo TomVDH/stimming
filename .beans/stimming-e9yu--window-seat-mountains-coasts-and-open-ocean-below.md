@@ -1,13 +1,14 @@
 ---
 # stimming-e9yu
 title: 'Window seat: mountains, coasts and open ocean below'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-10T08:47:55Z
-updated_at: 2026-11-10T09:49:00Z
+updated_at: 2026-11-22T08:54:43Z
 parent: stimming-w1nd
 ---
+
 
 Tom wants more geography under the wing: mountain ranges with relief and snow, coastlines, open ocean.
 Branch claude/window-terrain-a0002d; Tom decides on merge. A/B with ?land=0 (old) and ?land=1 (new).
@@ -19,7 +20,7 @@ Branch claude/window-terrain-a0002d; Tom decides on merge. A/B with ?land=0 (old
 - [x] Ocean: swell normals, wind roughness, sun and moon glint paths
 - [x] Towns and airports avoid sea and peaks; towns favour coasts and valleys
 - [x] Screenshots: Noon, Golden hour, Midnight at Clear
-- [ ] Tom reviews the branch and decides on merge
+- [x] Tom reviews the branch and decides on merge (merged in 853a7e00)
 
 ## Notes
 
@@ -71,3 +72,11 @@ Tom asked for his favourite flight-sim world under the plane as a personal easte
 - Roughness (Cox-Munk), whitecaps (Monahan), wind-sea wavelength scale with it. A gale (9 to 22 m/s) lengthens and steepens the swell, evens out the gust patches, lays foam in long streaks and greys the water.
 - Whitecaps cap at a fifth of the sea; foam caps at 70 percent, so a gale never turns the sea into cloud-like blotches.
 - Seen at 6, 14, 20 and 28 m/s, and under the storm slider at 0.6 and 1.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- Relief land, fjord coasts and open sea are on main (853a7e00).
+- `?land=0` keeps the old flat country. The Ode world (`?ode`) is on main too.
+- The Vancouver map is now the default world (stimming-d0rd).

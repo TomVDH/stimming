@@ -1,13 +1,14 @@
 ---
 # stimming-kws3
 title: 'Window seat: physical sky, sun, moon and two-pass render'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-04T23:30:00Z
-updated_at: 2026-11-08T10:09:53Z
+updated_at: 2026-11-22T08:54:44Z
 parent: stimming-w1nd
 ---
+
 
 Round 5, phase 1. Tom approved the direction on 2026-11-04 and parked the build for budget.
 Look: cinematic. Physics drives the scene; the grade gives the mood.
@@ -30,7 +31,7 @@ Decisions:
 - [x] Sun: colour from transmittance, limb darkening, refraction squash near the horizon
 - [x] Moon: a proper disc with faint maria and a halo (no phase, no earthshine)
 - [x] Flare scales to its source: a shorter streak, full only when the whole disc clears the frame
-- [ ] Screenshots to Tom: Dusk, Midnight, Dawn at 1280 px
+- [x] Screenshots to Tom: Dusk, Midnight, Dawn at 1280 px (seen in later rounds; the toy is signed off)
 
 ## Notes
 
@@ -38,3 +39,10 @@ Decisions:
 - Pass 1 draws only pixels that can reach the pane. Its alpha marks open sky, so pass 2 draws stars, sun and moon at full size.
 - The flare also hides behind the wing and the storm towers.
 - The pink band lies on the anti-sun side, outside the window at these bearings.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- Two-pass render, the baked Rayleigh, Mie and ozone sky, sun, moon and flare are on main.
+- The hour chips grew to eight hours on the Signal bar (stimming-8sfe).

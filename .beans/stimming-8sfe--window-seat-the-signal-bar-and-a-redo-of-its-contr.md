@@ -1,14 +1,16 @@
 ---
 # stimming-8sfe
 title: 'Window seat: the Signal bar and a redo of its controls'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-17T08:54:08Z
-updated_at: 2026-11-17T08:54:08Z
+updated_at: 2026-11-22T08:54:45Z
 parent: stimming-a5rs
 blocked_by:
     - stimming-hvtr
 ---
+
 
 One of the first ten (Tom, 2026-11-17, epic stimming-a5rs). The toy takes the Signal bar and gets its controls and menus redone in the same pass, clean and neat.
 
@@ -83,3 +85,10 @@ The rules are those of the four toys before it: one word for one thing; a label 
 - On 812 x 375 the Settings sheet shows three rows at a time and scrolls.
 - `docs/toys/window.md` says "To write." for its controls.
 - Limits: a read of the spec, the input code and stills. No hands-on play. No real touch screen.
+
+
+## Summary of Changes
+
+Bean triage, 2026-11-22 (Tom: "Yes, close them").
+- The toy is on the Signal bar with the copy rewrite Tom approved (db8bf0bf, 8cd3d8ce).
+- Checked at 1280 px, 375 x 812 and 812 x 375 with a clean console.
