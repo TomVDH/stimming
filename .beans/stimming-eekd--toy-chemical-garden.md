@@ -40,7 +40,7 @@ Plan: `docs/plans/chemgarden.md`. Batch 2 of the Lab toy runs (MVP at high fidel
 - [x] toys.json entry, Lab li and GSAP hook
 - [x] QA Q1 to Q10, frame times
 - [x] Toy doc docs/toys/chemgarden.md
-- [ ] Commits pushed
+- [x] Commits pushed
 - [ ] Tom's look at the blockout and the build
 - [ ] Tom sets the Dutch name and IPA (draft given)
 - [ ] Tom's sign-off
