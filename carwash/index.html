@@ -442,10 +442,35 @@ void main() {
   // Pre-soak: the curtain's line climbs the rake; water lands on it and spreads down.
   if (between(g.y, uC1.x, uC1.y + 0.03)) { sheet = max(sheet, 0.9 + 0.3 * n1); beads = 1.0; }
   beads = max(beads, uMist.x * smoothstep(0.55, 0.8, cwN(g * 90.0 + uTime * 3.0)));
-  // Foam: the fall lays a thick coat in three dyes, which then sags and creeps.
-  if (between(g.y, uC1.z, uC1.w + 0.04)) {
-    float lump = cwFbm(g * vec2(12.0, 18.0) + 11.0);
-    float f = (0.85 + 0.65 * lump) * (0.8 + 0.2 * cwN(vec2(g.x * 14.0, 3.0)));
+  // Foam: the fall's clumps slap onto the glass, each when the line crosses its middle.
+  // Only while the line is on the glass: a wiper's stroke stays clear after.
+  if (max(uC1.z, uC1.w) > -0.5 && min(uC1.z, uC1.w) < 2.5) {
+    // A fresh clump spreads: thick foam pushes into thinner foam round it.
+    vec2 tx = 1.0 / uSimRes;
+    vec4 nE = texture(tS0, su + vec2(tx.x, 0.0)), nW = texture(tS0, su - vec2(tx.x, 0.0));
+    vec4 nN = texture(tS0, su + vec2(0.0, tx.y)), nS = texture(tS0, su - vec2(0.0, tx.y));
+    vec4 nb = nE.r > nW.r ? nE : nW;
+    nb = nN.r > nb.r ? nN : nb;
+    nb = nS.r > nb.r ? nS : nb;
+    // Each texel out loses some height, so a clump stops at a ragged rim.
+    float spread = (nb.r - 0.09 - 0.1 * fn) * smoothstep(0.55, 0.9, nb.r);
+    if (spread > foam) { if (foam < 0.05) hue = nb.a; foam = spread; }
+    float f = 0.0;
+    vec2 sp = g * 13.0, si = floor(sp);
+    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+      vec2 c = si + vec2(x, y);
+      vec3 h = vec3(cwH(c), cwH(c + 7.3), cwH(c + 13.1));
+      if (!between((c.y + h.y) / 13.0, uC1.z, uC1.w + 0.04)) continue;
+      // Clumps come in all sizes: many small, a few big.
+      float r = 0.2 + 0.8 * h.z * h.z;
+      // A torn rim, a little long down the rake, lacy at its edge.
+      float d = length((c + h.xy - sp) * vec2(1.0, 0.8)) / r + (cwFbm(g * 28.0 + c * 1.7) - 0.5) * 0.9;
+      float lace = smoothstep(0.55, 1.0, d) * smoothstep(0.45, 0.7, cwN(g * 150.0 + c));
+      f = max(f, smoothstep(1.0, 0.8, d) * (0.9 + 0.6 * h.z) * (1.0 - 0.75 * lace));
+    }
+    // Flecks thrown out round the slaps, laid along the line itself.
+    if (between(g.y, uC1.z, uC1.w + 0.04)) f = max(f, smoothstep(0.8, 0.9, cwN(g * 110.0 + 5.0)) * 0.6);
+    f *= 0.85 + 0.65 * cwFbm(g * vec2(12.0, 18.0) + 11.0);
     if (f > foam) {
       // Three streams lay three bands across the glass; they marble where they meet.
       float xw = g.x + 0.14 * (cwFbm(g * vec2(5.0, 9.0) + 2.0) - 0.5) + 0.04 * sin(g.y * 24.0 + cwN(g * 7.0) * 6.0);
@@ -1847,7 +1872,8 @@ vec3 curtain(vec3 E, vec3 D, float tG, float t, float a, vec3 lc, float k, vec3 
   vec3 lit = lc * 0.35 + lightAt(H, vec3(0.0, 0.0, -1.0)) * 1.2;
   return col * (1.0 - 0.12 * k * top) + lit * (thread * top + drops * 0.2) * k * 0.18;
 }
-// The foam fall: thick ropes of dyed foam drop from a slot across the tunnel.
+// The foam fall: a sheet of lather leaves a slot across the tunnel and tears.
+// Lower down it hangs in ropes of mixed widths, which break into clumps.
 vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
   if (on <= 0.0) return col;
   float tc = (A_FOAM + 0.22 - E.z) / D.z;
@@ -1859,22 +1885,30 @@ vec3 foamFall(vec3 E, vec3 D, float tG, float t, float on, vec3 col) {
   float reach = 2.86 - (2.86 - floorY) * on;
   if (abs(H.x) > 1.92 || H.y > 2.86 || H.y < reach) return col;
   float drop = 2.86 - H.y;
-  float fy = drop - uTime * 2.4;
-  // Nine nozzles along the slot; each pours its own stream, which wobbles and swells.
-  float cov = 0.0, shade = 0.0, si = 0.0;
-  float base = floor((H.x + 1.9) / 0.3);
+  // The sheet under the slot: its torn edge creeps along the slot.
+  float edge = 0.1 + 0.42 * cwFbm(vec2(H.x * 2.2, uTime * 0.35));
+  float cov = smoothstep(edge, edge - 0.07, drop);
+  // Holes open in the sheet as it thins toward the edge.
+  cov *= smoothstep(0.32, 0.48, cwFbm(vec2(H.x * 7.0, drop * 5.0 - uTime * 2.0)) + 0.4 * (1.0 - drop / edge));
+  float shade = 0.85, fy = drop - uTime * 2.4;
+  // Ropes hang from the edge at uneven places; each falls at its own speed.
+  float base = floor((H.x + 1.92) / 0.19);
   for (int j = -1; j <= 1; j++) {
     float i = base + float(j);
-    if (i < 0.0 || i > 12.0) continue;
-    float cx = (i + 0.5) * 0.3 - 1.9 + (cwN(vec2(i * 3.7, fy * 0.8)) - 0.5) * 0.07 * (0.3 + drop);
-    // A string of lather swells into gobs as it falls, and snaps between them lower down.
-    float gp = fract(fy * 2.6 + cwH(vec2(i, 9.0)));
-    float gob = smoothstep(0.5, 0.18, abs(gp - 0.45));
-    float hw = (0.022 + 0.06 * gob * smoothstep(0.1, 0.9, drop)) * (0.8 + 0.4 * cwH(vec2(i, 1.0)));
-    float dx = abs(H.x - cx) / hw + (cwN(vec2(H.x * 40.0, fy * 6.0)) - 0.5) * 0.25;
-    float b = smoothstep(1.0, 0.65, dx);
-    b *= mix(1.0, smoothstep(0.15, 0.35, gob), smoothstep(0.5, 1.5, drop));
-    if (b > cov) { cov = b; si = i; shade = 0.7 + 0.3 * (1.0 - dx * dx); }
+    vec3 h = vec3(cwH(vec2(i, 2.0)), cwH(vec2(i, 5.0)), cwH(vec2(i, 8.0)));
+    // Some places on the slot pour no rope.
+    if (h.z < 0.18) continue;
+    float ry = drop - uTime * (1.9 + 1.4 * h.y) + h.x * 9.0;
+    float cx = (i + 0.2 + 0.6 * h.x) * 0.19 - 1.92 + (cwN(vec2(i * 3.7, ry * 0.7)) - 0.5) * 0.06 * (0.3 + drop);
+    // The rope swells and pinches along its length, never in a beat.
+    float thick = cwN(vec2(i * 7.1, ry * (1.3 + h.z))) * 0.75 + cwN(vec2(i * 3.3 + 50.0, ry * 4.0)) * 0.25;
+    // Lower down a pinch snaps, so the rope falls as clumps.
+    float pinch = smoothstep(0.15, 1.3, drop) * (0.5 + 0.25 * h.y);
+    float body = smoothstep(pinch - 0.06, pinch + 0.1, thick);
+    float hw = (0.012 + 0.055 * thick * thick * (0.5 + h.z)) * (1.0 + 0.6 * smoothstep(0.2, 1.5, drop));
+    float dx = abs(H.x - cx) / hw + (cwN(vec2(H.x * 40.0, ry * 6.0)) - 0.5) * 0.35;
+    float b = smoothstep(1.0, 0.6, dx) * body;
+    if (b > cov) { cov = b; shade = 0.7 + 0.3 * (1.0 - dx * dx); fy = ry; }
   }
   if (cov <= 0.0) return col;
   // Lumps tumble down each stream; the fall smears them into streaks.

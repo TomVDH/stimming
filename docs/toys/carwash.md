@@ -43,6 +43,7 @@ The toy opens on an establishing shot: the place from across the road at night, 
 | Inside | Painted block walls (sea-green dado under cream, flaking), rust from the pipe brackets, a corrugated ceiling; arches of plain galvanised pipe with spray bars and nozzles; old twin tubes (one stutters, one runs dim, one is dead) and bulbs in wire cages; green motors with belts; small hand-painted signs; the chain in its slot; drain grates; moths at every lit lamp; mist that glows in the lamp light |
 | The car | Seen from outside in the shot: a long, low sedan with fins, chrome and lit tail lamps, in the Paint setting. From inside: a chrome strip down the bonnet, an ornament on the nose, a painted dash with a chrome trim. Low beams light the lot and the desert; the driver turns them off in the tunnel |
 | Suds | White, a touch warm or cool: soft heaped froth with a fine grain, a few clear bubbles of many sizes, lace where it drains. No coloured triple foam: that came decades later |
+| Foam fall | A sheet of lather leaves the slot with a torn edge and holes; under it hang ropes of mixed widths at uneven places, each at its own speed, which swell, pinch and break into clumps lower down. On the glass the clumps land whole, each as the fall's line crosses its middle, in all sizes with torn, lacy rims; while the line is on the glass, thick foam spreads into thin, so the glass fills to white. Tom, 2026-11-22 (`stimming-mnpv`) |
 
 ## Strange (Tom, 2026-11-16: "strange things do happen when you go through it sometimes")
 
@@ -204,7 +205,6 @@ None in `tests/`. Checked on 2026-11-16 in a probe tab (stills from the live sha
 ## Known issues
 
 - Tom's Dev values are the defaults since 2026-11-16 (`VIEW` and `LOOK` in the page): eye height -0.12, eye side -0.01, pitch -0.5, exposure 1.12, bloom 1.07, grain 0.12. Eye height and grain sit at the end of their ranges. Since 2026-11-22 the seat is further back (distance 0.32, range to 0.4) with a wider view (1.08), from Tom's ask; a stored Distance or Field of view overrides it until View Reset. `stimming-mnpv` The stills above predate this change. `stimming-auj3`
-- The soak curtain through the lens reads as rows of bright pills. `stimming-auj3`
 - The passenger blade's arc is mostly out of frame on 16:9.
 - NVIDIA (D3D11 and GL): `pow()` of a negative base gives NaN, and the bloom turns each NaN pixel into a flare. The page clamps its bases: `mitters()` and `cloth()` (`sin` of 3.1416 goes below 0) and the Fresnel terms; `skDusk()` in `shared/sky.js` clamps its anti-sun line. `stimming-4uc8`, `stimming-wehv`
 - Which arrow bulbs live comes from a hash of the bulb's place. The compiler's rounding can flip one bulb, so the pattern can differ between platforms and builds.
