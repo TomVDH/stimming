@@ -728,6 +728,8 @@ const partFS = pass => `${HEAD}
 uniform vec2 uRes;
 uniform float uF;
 uniform vec3 uEye, uFw, uRt, uUp, uKey, uKeyC, uSun, uZen, uMid, uBand, uAnti, uHaze;
+// The second key: the moon, which cross-fades with the sun.
+uniform vec3 uKey2, uKeyC2;
 uniform vec4 uOcA[4], uOcB[4];
 // A passing car: its headlights (place and power), its beam, its tail lights.
 uniform vec4 uCar, uTail;
@@ -888,7 +890,8 @@ Surf surface(float mat, vec2 q, vec3 n, vec3 tx, vec3 ty, vec3 p, float seed, bo
     base = mix(base, brown * 0.7, 0.45 * smoothstep(0.55, 0.8, noise(vec2(q.x * 7.0 + 2.0, q.y * 0.22))));
     base = mix(base, vec3(0.07, 0.045, 0.03), k);
     // Old creosote keeps the wood dark.
-    s.alb = 0.45 * base * (0.4 + 0.6 * smoothstep(0.15, 0.95, h)) * (0.8 + 0.4 * noise(q * vec2(240.0, 5.0)));
+    // Deep checks hold dirt and shadow: they read near black.
+    s.alb = 0.45 * base * (0.15 + 0.85 * smoothstep(0.2, 0.95, h)) * (0.75 + 0.5 * noise(q * vec2(240.0, 5.0)));
     // Roughness: raw fibre in the checks, worn ridges smoother.
     // Knots hold resin and old treatment oil lies in patches: both shine a little.
     float oil = smoothstep(0.55, 0.8, noise(vec2(q.x * 7.0 + 2.0, q.y * 0.22))) * (1.0 - up);
@@ -965,16 +968,22 @@ vec3 lightOn(Surf s, vec3 v, vec3 l, vec3 f0) {
   float a = s.rough * s.rough, a2 = a * a, dd = nh * nh * (a2 - 1.0) + 1.0;
   float D = a2 / (3.14159 * dd * dd), k = (s.rough + 1.0) * (s.rough + 1.0) / 8.0;
   float G = (nl / (nl * (1.0 - k) + k)) * (nv / (nv * (1.0 - k) + k));
-  vec3 Fr = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
-  return (s.alb * (1.0 - s.metal) * (1.0 - Fr) + D * G * Fr / (4.0 * nl * nv + 1e-3) * 3.14159) * nl;
+  // Rough faces lose the Fresnel rise: no waxy sheen at grazing angles.
+  vec3 Fr = f0 + (max(vec3(1.0 - s.rough), f0) - f0) * pow(1.0 - vh, 5.0);
+  // Oren-Nayar diffuse, Fujii's form: a rough face reads flat and chalky.
+  float sg = s.rough * s.rough, lv = dot(l, v) - nl * nv, on = 3.14159 * (1.0 + sg * lv / (lv > 0.0 ? max(nl, nv) : 1.0)) / (3.14159 + 0.9041 * sg);
+  return (s.alb * (1.0 - s.metal) * (1.0 - Fr) * on + D * G * Fr / (4.0 * nl * nv + 1e-3) * 3.14159) * nl;
 }
 // The key light, the sky as fill and mirror, then the car's lights.
 vec3 shade(Surf s, vec3 v, vec3 p) {
   vec3 n = s.n, f0 = mix(vec3(0.04), s.alb, s.metal), dif = s.alb * (1.0 - s.metal);
   float nv = max(dot(n, v), 1e-3);
   vec3 c = lightOn(s, v, uKey, f0) * uKeyC * shadow(p + n * 0.01, uKey, 1e4) * (0.5 + 0.5 * s.ao);
+  if (uKeyC2.r + uKeyC2.g + uKeyC2.b > 0.0) c += lightOn(s, v, uKey2, f0) * uKeyC2 * shadow(p + n * 0.01, uKey2, 1e4) * (0.5 + 0.5 * s.ao);
   // Fill: the sky from above, a dim bounce from the lane below.
-  vec3 skyC = mix(uZen, uMid, 0.5) * 1.5, ground = skyC * 0.22 + uKeyC * 0.05;
+  // The alley's houses and trees hide about half the sky from the pole.
+  // The lane reflects about 15 percent of the light that falls on it.
+  vec3 skyC = mix(uZen, uMid, 0.5) * 0.75, ground = skyC * 0.22 + (uKeyC * max(uKey.y, 0.0) + uKeyC2 * max(uKey2.y, 0.0)) * 0.15;
   c += dif * mix(ground, skyC, 0.5 + 0.5 * n.y) * s.ao * uFill;
   vec3 r = reflect(-v, n);
   vec3 env = r.y > 0.0 ? skDusk(r, uSun, uZen, uMid, uBand, uAnti) : ground;
@@ -1157,14 +1166,14 @@ void main() {
       cap = abs(dot(n, ax)) > 0.9;
       if (cap) q = vec2(dot(rad, bx), dot(rad, cx));
       if (mat < 0.5 && !cap) {
-        // Displacement: a check sinks the surface, so the outline breaks too.
+        // Displacement: a check sinks the surface.
+        // A ray that misses the sunk surface keeps the outer one.
+        // A discard there left a see-through, waxy fringe on the outline.
         float kk;
         float sink = 1.0 - 0.1 * (1.0 - smoothstep(0.3, 0.9, woodH(q, seed, kk)));
         vec3 n2;
         float t2 = iCone(uEye, rd, A, B, vA.w * sink, vB.w * sink, n2);
-        if (t2 < 0.0) discard;
-        t = t2;
-        n = n2;
+        if (t2 > 0.0) { t = t2; n = n2; }
       }
       tx = normalize(cross(ax, n) + 1e-5);
       ty = ax;
@@ -1786,17 +1795,34 @@ function twilight(s, sun) {
 const nightOf = sun => sstep(-0.02, -0.25, sun[1]);
 // The key light is the sun by day and the moon by night.
 let light = null;
+// The clouds' key hands over from the sun to the moon at zero strength.
+// The sun fades from sun height hi down to lo; there the moon takes over.
+// The moon reaches full strength at sun height mlo.
+function handOver(sun, moon, lo, hi, mlo) {
+  const up = sun[1] > lo, v = up ? sun : moon;
+  // Light from the horizon itself grazes the lane; keep it a little above.
+  return { up, dir: unit([v[0], Math.max(v[1], 0.02), v[2]]), k: up ? sstep(lo, hi, sun[1]) : sstep(lo, mlo, sun[1]) };
+}
+// Moonlight's colour: the shared light at midnight is the moon alone.
+const MOON_C = (() => { const n = dayAt(0); return n.light.map(c => c * n.level * 1.05); })();
 function lightAt(h) {
   const d = dayAt(h), s = d.sky;
   // The shared sun crosses the south, behind the eye: it lights the pole's face.
-  // A sun at or under the horizon still lights from just above it.
-  const lift = v => unit([v[0], Math.max(v[1], 0.06), v[2]]);
   const a = look.sunAz * D2R, ca = Math.cos(a), sa = Math.sin(a), spin = v => [v[0] * ca + v[2] * sa, v[1], v[2] * ca - v[0] * sa];
   // The shared moon crosses the south, behind the eye; here it crosses the north, in view.
   // The sun bearing turns the sun only, so the moon stays in view.
   const sun = spin(d.sun), moonN = [d.moon[0], d.moon[1], -d.moon[2]];
-  const key = lift(d.sunUp > 0.5 || d.day > 0.3 ? sun : moonN);
-  const keyC = d.light.map(c => c * d.level * 1.05);
+  // The shared colour already moves from sun to moon; sunC is its full strength.
+  const sunC = d.light.map(c => c * d.level * 1.05);
+  // The shared colour stays sunlight until last light; the moon uses its own.
+  const tint = h => (h.up ? sunC : MOON_C.map(c => c * d.moonUp)).map(c => c * h.k);
+  // The parts take two keys, the sun and the moon, and cross-fade them.
+  // Each fades over its last 9 degrees down to 3 under the horizon.
+  const above = v => unit([v[0], Math.max(v[1], 0.02), v[2]]);
+  const key = above(sun), keyC = sunC.map(c => c * sstep(-0.05, 0.1, sun[1]));
+  const key2 = above(moonN), keyC2 = MOON_C.map(c => c * sstep(-0.05, 0.1, moonN[1]));
+  // Clouds high up keep the sun a while after sunset, then hand over.
+  const ck = handOver(sun, moonN, -0.08, 0.02, -0.2), cloudKey = ck.dir, cloudC = tint(ck);
   // Night needs more exposure, but never so much it looks like day.
   const expo = lerp(2.8, 0.95, Math.sqrt(d.day));
   // The fill falls as the shadow darkness rises; 0.4 keeps the first look.
@@ -1809,13 +1835,13 @@ function lightAt(h) {
     return add(c, CITY.map(v => v * night * Math.exp(-Math.max(dir[1], 0) * 5)));
   };
   const sk = { ...s, zen: at(up, 'zen'), mid: at(hm, 'mid'), band: at(hs, 'band'), anti: at(ha, 'anti') };
-  return { d, sun, moon, night, key, keyC, s: sk, tw, expo, haze: sk.mid, fill };
+  return { d, sun, moon, night, key, keyC, key2, keyC2, sunC, cloudKey, cloudC, s: sk, tw, expo, haze: sk.mid, fill };
 }
 
 const JITTER = [[-0.125, -0.375], [0.375, -0.125], [-0.375, 0.125], [0.125, 0.375]];
 // The sky bakes at half size when the hour changes.
 function bakeSky() {
-  const { s, keyC, sun, tw } = light;
+  const { s, sunC, sun, tw } = light;
   gl.disable(gl.BLEND);
   gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, skyT.fb);
@@ -1830,7 +1856,7 @@ function bakeSky() {
   gl.uniform3fv(K.uRt, RT);
   gl.uniform3fv(K.uUp, UP);
   gl.uniform3fv(K.uSun, sun);
-  gl.uniform3fv(K.uKeyC, keyC);
+  gl.uniform3fv(K.uKeyC, sunC);
   gl.uniform1f(K.uSkyI, SKY_I);
   gl.uniform1f(K.uMoonI, MOON_I * light.night);
   gl.uniform1f(K.uNight, light.night);
@@ -1846,7 +1872,7 @@ function bakeSky() {
 const SKY_SEED = [rand(0, 60), rand(0, 60)], COVER = rand(0.16, 0.3);
 // The clouds drift east and a little north, about 10 m each second.
 function bakeClouds() {
-  const { s, key, keyC } = light, K = P.cloud.u;
+  const { s, cloudKey, cloudC } = light, K = P.cloud.u;
   gl.disable(gl.BLEND);
   gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, cloudT.fb);
@@ -1866,10 +1892,10 @@ function bakeClouds() {
   gl.uniform3fv(K.uFw, FW);
   gl.uniform3fv(K.uRt, RT);
   gl.uniform3fv(K.uUp, UP);
-  gl.uniform3fv(K.uKey, key);
+  gl.uniform3fv(K.uKey, cloudKey);
   // At night the moon lights the clouds weakly; the city lights them from below.
   const n = light.night, city = CITY.map(v => v * n * 2.5);
-  gl.uniform3fv(K.uKeyC, keyC.map(v => v * (1 - 0.8 * n)));
+  gl.uniform3fv(K.uKeyC, cloudC.map(v => v * (1 - 0.8 * n)));
   gl.uniform3fv(K.uZen, add(s.zen.map(v => v * (1 - 0.5 * n)), city));
   gl.uniform3fv(K.uMid, add(s.mid.map(v => v * (1 - 0.5 * n)), city));
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1892,6 +1918,8 @@ function partUniforms() {
     gl.uniform3fv(U.uUp, UP);
     gl.uniform3fv(U.uKey, key);
     gl.uniform3fv(U.uKeyC, keyC);
+    gl.uniform3fv(U.uKey2, light.key2);
+    gl.uniform3fv(U.uKeyC2, light.keyC2);
     gl.uniform3fv(U.uSun, sun);
     gl.uniform3fv(U.uZen, s.zen);
     gl.uniform3fv(U.uMid, s.mid);
