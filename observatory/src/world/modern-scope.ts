@@ -213,8 +213,12 @@ function stand(p: Vector3, dir: Vector3, spin = 0, s = 1): Matrix4 {
   return new Matrix4().compose(p, qa, sc.setScalar(s));
 }
 // A box piece at p, sized along three given axes.
+// A left-handed set of axes would mirror the box and turn it inside out.
+// The box is symmetric, so the first axis flips instead.
 function boxAt(p: Vector3, xa: Vector3, ya: Vector3, za: Vector3, sx: number, sy: number, sz: number): Matrix4 {
-  return new Matrix4().makeBasis(xa.clone().multiplyScalar(sx), ya.clone().multiplyScalar(sy), za.clone().multiplyScalar(sz)).setPosition(p);
+  const x = xa.clone();
+  if (x.clone().cross(ya).dot(za) < 0) x.negate();
+  return new Matrix4().makeBasis(x.multiplyScalar(sx), ya.clone().multiplyScalar(sy), za.clone().multiplyScalar(sz)).setPosition(p);
 }
 // A unit cylinder stretched from a to b, with radius r.
 function beamM(a: Vector3, b: Vector3, r: number): Matrix4 {
@@ -535,7 +539,8 @@ function materials(env: CanvasTexture): Mats {
     darkSteel: std('darkSteel', { color: 0x40444a, metalness: 0.85, roughness: 1, roughnessMap: brushedDark }),
     zinc: std('zinc', { color: 0x9da1a5, metalness: 1, roughness: 1, roughnessMap: brushedDark }),
     // Flock black inside the tube and the baffles: it eats stray light.
-    flock: std('flock', { color: 0x040405, metalness: 0, roughness: 1 }),
+    // The linings are open skins seen from inside, so both faces draw.
+    flock: std('flock', { color: 0x040405, metalness: 0, roughness: 1, side: DoubleSide }),
     rubber: std('rubber', { color: 0x101012, metalness: 0, roughness: 0.9 }),
     // Carbon struts under a satin clear coat.
     carbon: reflectOnly(new MeshPhysicalMaterial({
@@ -727,7 +732,8 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces): void {
   for (const a of [Math.PI / 2, Math.PI * 1.1]) {
     const n = new Vector3(Math.cos(a), Math.sin(a), 0), t = new Vector3(-Math.sin(a), Math.cos(a), 0);
     const c = n.clone().multiplyScalar(CELL_R + 0.05).setZ((CELL_Z0 + CELL_Z1) / 2);
-    const g = chamferBox(0.28, 0.1, 0.26, 0.012).applyMatrix4(new Matrix4().makeBasis(t, n, Z)).translate(c.x, c.y, c.z);
+    // The tangent runs backward here, so the basis stays right-handed.
+    const g = chamferBox(0.28, 0.1, 0.26, 0.012).applyMatrix4(new Matrix4().makeBasis(t.clone().negate(), n, Z)).translate(c.x, c.y, c.z);
     k.add(M.black, g);
     for (let i = 0; i < 3; i++) {
       const p = c.clone().addScaledVector(t, -0.06 + i * 0.06).setZ((CELL_Z0 + CELL_Z1) / 2 + 0.13);
