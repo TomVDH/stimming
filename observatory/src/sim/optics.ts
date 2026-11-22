@@ -17,19 +17,55 @@ export const LON = 0;
 export const ALT_MIN = 10;
 export const ALT_MAX = 88;
 
-// The simulated refractor: aperture and focal length in mm.
-export const APERTURE_MM = 150;
-export const FOCAL_MM = 1200;
+// The main dome's great refractor, from world/hero-scope.ts at the dome's 1.5 scale.
+// The objective is 0.276 m at size 1; the tube is about 3.4 m.
+export const APERTURE_MM = 410;
+export const FOCAL_MM = 4900;
+
+// Two instruments share one sky.
+// The great refractor is analog: an eyepiece.
+// The modern reflector is digital: a cooled camera at Cassegrain focus.
+export type Scope = {
+  id: 'small' | 'big';
+  aperture: number;
+  // The camera's field in degrees, width by height.
+  field: { w: number; h: number };
+  // Sky brightness in magnitudes per square arcsec.
+  sky: number;
+  // Exposure choices in s.
+  exposures: number[];
+  // Spike arms come in axes: 0 for none, 2 for four vanes, 3 for a hexagonal pupil.
+  spikeAxes: number;
+  // The faintest magnitude worth drawing.
+  limit: number;
+};
+
+export const SMALL: Scope = {
+  id: 'small', aperture: APERTURE_MM, field: { w: 0, h: 0 }, sky: 21, exposures: [], spikeAxes: 0, limit: 0,
+};
+
+// The modern telescope from world/modern-scope.ts: a 1 m f/3 Ritchey-Chretien.
+// Four thin vanes hold its secondary, so bright stars get a cross.
+// The camera's sensor is 23.5 by 15.7 mm at 3 m focal length.
+export const BIG: Scope = {
+  id: 'big', aperture: 1000,
+  field: { w: 2 * Math.atan(11.75 / 3000) / RAD, h: 2 * Math.atan(7.85 / 3000) / RAD },
+  sky: 21, exposures: [2, 5, 10, 30, 60], spikeAxes: 2, limit: 25,
+};
+
+// Light gathered, relative to the refractor.
+export const gather = (s: Scope): number => (s.aperture / APERTURE_MM) ** 2;
+
+// The diffraction limit in arcsec: the Airy disc's FWHM for red light.
+export const diffraction = (s: Scope): number => (1.03 * 700e-9 / (s.aperture * 1e-3)) / RAD * 3600;
 
 export const EYEPIECES: readonly Eyepiece[] = [
+  { label: '55 mm', mm: 55, afov: 68 },
   { label: '40 mm', mm: 40, afov: 52 },
-  { label: '20 mm', mm: 20, afov: 52 },
-  { label: '10 mm', mm: 10, afov: 60 },
-  { label: '6 mm', mm: 6, afov: 52 },
+  { label: '25 mm', mm: 25, afov: 52 },
+  { label: '12 mm', mm: 12, afov: 60 },
 ];
 
-// The camera's sensor in mm, an APS-C size.
-export const SENSOR = { w: 23.5, h: 15.6 };
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -39,11 +75,6 @@ export const magnification = (e: Eyepiece): number => FOCAL_MM / e.mm;
 // True field in degrees: the apparent field over the magnification.
 export const trueField = (e: Eyepiece): number => e.afov / magnification(e);
 
-// The sensor's field in degrees, width and height.
-export const sensorField = (): { w: number; h: number } => ({
-  w: 2 * Math.atan(SENSOR.w / 2 / FOCAL_MM) / RAD,
-  h: 2 * Math.atan(SENSOR.h / 2 / FOCAL_MM) / RAD,
-});
 
 // The faintest star the eye sees in this aperture, under a dark sky.
 export const EYE_LIMIT = 2.7 + 5 * Math.log10(APERTURE_MM);
@@ -63,8 +94,6 @@ export const extinction = (alt: number): number => 0.2 * (airmass(alt) - 1);
 // Seeing in arcsec grows toward the horizon.
 export const seeingAt = (zenith: number, alt: number): number => zenith * Math.pow(airmass(alt), 0.6);
 
-// The diffraction limit in arcsec: the Airy disc's FWHM for green light.
-export const DIFFRACTION = (1.03 * 550e-9 / (APERTURE_MM * 1e-3)) / RAD * 3600;
 
 // Clamps the tube's altitude and wraps its azimuth to 0 to 360.
 export function clampPose(alt: number, az: number): Pose {

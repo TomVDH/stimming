@@ -21,8 +21,6 @@ export type Body = {
 };
 
 const RAD = Math.PI / 180;
-// Cell size in degrees.
-const CELL = 0.5;
 // The catalog's faint limit; procedural stars start here.
 const MAG0 = 6.5;
 // Procedural stars stop at this magnitude.
@@ -81,97 +79,148 @@ export function setCatalog(stars: readonly Star[]): void {
 export const catalogBodies = (): readonly Body[] => catalog;
 
 /* ---------- procedural cells ---------- */
-const BANDS = Math.round(180 / CELL);
-const perBand = (i: number): number => {
-  const dec = -90 + (i + 0.5) * CELL;
-  return Math.max(1, Math.round((360 * Math.cos(dec * RAD)) / CELL));
+// A grid of equal-area cells: bands of declination, split in RA.
+type CellBox = { s0: number; s1: number; ra0: number; span: number; area: number; b: number; key: number };
+type Grid = { size: number; bands: number; cache: Map<number, Body[]>; grow: (cell: CellBox, r: () => number) => Body[] };
+
+const perBand = (g: Grid, i: number): number => {
+  const dec = -90 + (i + 0.5) * g.size;
+  return Math.max(1, Math.round((360 * Math.cos(dec * RAD)) / g.size));
 };
 
-const cache = new Map<number, Body[]>();
-
 // The bodies in one cell, grown from its seed.
-function cell(i: number, j: number): Body[] {
-  const key = i * 4096 + j;
-  const hit = cache.get(key);
+function cell(g: Grid, i: number, j: number): Body[] {
+  const key = i * 16384 + j;
+  const hit = g.cache.get(key);
   if (hit) return hit;
-  if (cache.size > 600) cache.clear();
-  const n = perBand(i);
-  const dec0 = -90 + i * CELL, dec1 = dec0 + CELL;
+  if (g.cache.size > 600) g.cache.clear();
+  const n = perBand(g, i);
+  const dec0 = -90 + i * g.size, dec1 = dec0 + g.size;
   const span = 360 / n, ra0 = j * span;
   const s0 = Math.sin(dec0 * RAD), s1 = Math.sin(dec1 * RAD);
-  const area = (s1 - s0) * span * RAD / (RAD * RAD);
-  const mid = shellDir(ra0 + span / 2, (dec0 + dec1) / 2);
-  const b = Math.abs(galLat(mid));
-  const r = rng(key * 2654435761 + 12345);
-  const out: Body[] = [];
-
-  const place = (): { ra: number; dec: number; d: Vec3 } => {
-    const dec = Math.asin(s0 + r() * (s1 - s0)) / RAD, ra = ra0 + r() * span;
-    return { ra, dec, d: shellDir(ra, dec) };
-  };
-
-  // Stars: denser toward the galactic plane.
-  const g = 0.35 + 2.6 * Math.exp(-b / 12);
-  const top = Math.pow(10, SLOPE * (MAG_GEN - MAG0)) - 1;
-  const mean = DENS0 * top * area * g;
-  const count = Math.max(0, Math.round(mean + normal(r) * Math.sqrt(mean)));
-  for (let k = 0; k < count; k++) {
-    const { ra, dec, d } = place();
-    // Inverse of the cumulative count, so faint stars dominate.
-    const mag = MAG0 + Math.log10(1 + r() * top) / SLOPE;
-    const u = r();
-    const bv = Math.max(-0.3, Math.min(2.0, u < 0.7 ? 0.9 + 0.35 * normal(r) : u < 0.9 ? 0.45 + 0.2 * normal(r) : 1.5 + 0.2 * normal(r)));
-    const teff = bvToTeff(bv);
-    out.push({
-      ...d, mag, teff, spect: `${classFromTeff(teff)}V`, name: designation('FS', ra, dec),
-      catalog: false, galaxy: 'none', re: 0, q: 1, pa: 0, redshift: 0, rgb: starRGB(teff),
-    });
-  }
-
-  // Galaxies: few, and fewer behind the Milky Way's dust.
-  const gg = 1 - 0.95 * Math.exp(-b / 15);
-  const ng = Math.round(2.5 * area * gg + r() - 0.5);
-  for (let k = 0; k < ng; k++) {
-    const { ra, dec, d } = place();
-    const mag = 10.5 + Math.log10(1 + r() * (Math.pow(10, 0.6 * 5.5) - 1)) / 0.6;
-    const re = 30 * Math.pow(10, -0.2 * (mag - 12)) * (0.6 + 0.8 * r());
-    const spiral = r() < 0.6;
-    out.push({
-      ...d, mag, teff: 4800, spect: spiral ? 'Sc' : 'E', name: designation('GX', ra, dec),
-      catalog: false, galaxy: spiral ? 'spiral' : 'elliptical',
-      re, q: spiral ? 0.2 + 0.8 * r() : 0.55 + 0.45 * r(), pa: r() * Math.PI,
-      redshift: 0.003 * Math.pow(10, 0.2 * (mag - 11)) * (0.8 + 0.4 * r()),
-      rgb: starRGB(spiral ? 5600 : 4600),
-    });
-  }
-  cache.set(key, out);
+  const area = (s1 - s0) * span / RAD;
+  const b = Math.abs(galLat(shellDir(ra0 + span / 2, (dec0 + dec1) / 2)));
+  const out = g.grow({ s0, s1, ra0, span, area, b, key }, rng(key * 2654435761 + g.bands * 7919 + 12345));
+  g.cache.set(key, out);
   return out;
 }
 
-// Every body within radius degrees of the direction c.
-export function bodiesNear(c: Vec3, radius: number): Body[] {
-  const cosR = Math.cos(radius * RAD);
-  const out: Body[] = [];
-  for (const s of catalog) if (s.x * c.x + s.y * c.y + s.z * c.z > cosR) out.push(s);
+function place(c: CellBox, r: () => number): { ra: number; dec: number; d: Vec3 } {
+  const dec = Math.asin(c.s0 + r() * (c.s1 - c.s0)) / RAD, ra = c.ra0 + r() * c.span;
+  return { ra, dec, d: shellDir(ra, dec) };
+}
+
+// A Poisson-like count with this mean.
+const countOf = (mean: number, r: () => number): number => Math.max(0, Math.round(mean + normal(r) * Math.sqrt(mean)));
+
+// A magnitude from m0 to m1; counts grow by 10^slope per magnitude.
+function magIn(m0: number, m1: number, slope: number, r: () => number): number {
+  return m0 + Math.log10(1 + r() * (Math.pow(10, slope * (m1 - m0)) - 1)) / slope;
+}
+
+// Stars per square degree from MAG0 to MAG_GEN, by galactic latitude.
+const starsPerDeg2 = (b: number): number => DENS0 * (Math.pow(10, SLOPE * (MAG_GEN - MAG0)) - 1) * (0.35 + 2.6 * Math.exp(-b / 12));
+
+// Dust hides galaxies near the galactic plane.
+const clearView = (b: number): number => 1 - 0.95 * Math.exp(-b / 15);
+
+function fieldStar(ra: number, dec: number, d: Vec3, mag: number, r: () => number): Body {
+  const u = r();
+  const bv = Math.max(-0.3, Math.min(2.0, u < 0.7 ? 0.9 + 0.35 * normal(r) : u < 0.9 ? 0.45 + 0.2 * normal(r) : 1.5 + 0.2 * normal(r)));
+  const teff = bvToTeff(bv);
+  return {
+    ...d, mag, teff, spect: `${classFromTeff(teff)}V`, name: designation('FS', ra, dec),
+    catalog: false, galaxy: 'none', re: 0, q: 1, pa: 0, redshift: 0, rgb: starRGB(teff),
+  };
+}
+
+// A galaxy: fainter ones lie farther, so their redshift grows.
+function galaxy(ra: number, dec: number, d: Vec3, mag: number, r: () => number): Body {
+  const z = 0.003 * Math.pow(10, 0.2 * (mag - 11)) * (0.6 + 0.9 * r());
+  const spiral = r() < (z > 1 ? 0.75 : 0.55);
+  // Far galaxies shrink less than their light suggests.
+  const re = Math.max(0.25, 30 * Math.pow(10, -0.2 * (mag - 12))) * (0.6 + 0.8 * r());
+  const zc = Math.min(z, 1.5) / 1.5;
+  return {
+    ...d, mag, teff: 4800, spect: spiral ? 'Sc' : 'E', name: designation('GX', ra, dec),
+    catalog: false, galaxy: spiral ? 'spiral' : 'elliptical',
+    re, q: spiral ? 0.2 + 0.8 * r() : 0.55 + 0.45 * r(), pa: r() * Math.PI, redshift: z,
+    rgb: starRGB(spiral ? 7000 - 2500 * zc : 4400 - 1400 * zc),
+  };
+}
+
+// The shallow layer: both instruments see it.
+const SHALLOW: Grid = {
+  size: 0.5, bands: 360, cache: new Map(),
+  grow(c, r) {
+    const out: Body[] = [];
+    const n = countOf(starsPerDeg2(c.b) * c.area, r);
+    for (let k = 0; k < n; k++) {
+      const { ra, dec, d } = place(c, r);
+      out.push(fieldStar(ra, dec, d, magIn(MAG0, MAG_GEN, SLOPE, r), r));
+    }
+    const ng = Math.round(2.5 * c.area * clearView(c.b) + r() - 0.5);
+    for (let k = 0; k < ng; k++) {
+      const { ra, dec, d } = place(c, r);
+      out.push(galaxy(ra, dec, d, magIn(10.5, 16, 0.6, r), r));
+    }
+    return out;
+  },
+};
+
+// The deep layer reaches magnitude 25: only the 1 m reflector sees it.
+export const MAG_DEEP = 25;
+// Deep galaxies per square degree brighter than m.
+const galCount = (m: number): number => 600 * Math.pow(10, 0.45 * (m - 20));
+
+const DEEP: Grid = {
+  size: 0.05, bands: 3600, cache: new Map(),
+  grow(c, r) {
+    const out: Body[] = [];
+    // Faint star counts flatten: the galaxy's halo thins out.
+    const ns = countOf(starsPerDeg2(c.b) * (Math.pow(10, 0.15 * (25 - MAG_GEN)) - 1) * c.area, r);
+    for (let k = 0; k < ns; k++) {
+      const { ra, dec, d } = place(c, r);
+      out.push(fieldStar(ra, dec, d, magIn(MAG_GEN, 25, 0.15, r), r));
+    }
+    const ng = countOf((galCount(MAG_DEEP) - galCount(16)) * c.area * clearView(c.b), r);
+    for (let k = 0; k < ng; k++) {
+      const { ra, dec, d } = place(c, r);
+      out.push(galaxy(ra, dec, d, magIn(16, MAG_DEEP, 0.45, r), r));
+    }
+    return out;
+  },
+};
+
+function scan(g: Grid, c: Vec3, radius: number, cosR: number, out: Body[]): void {
   const dec = Math.asin(Math.max(-1, Math.min(1, c.z))) / RAD;
   const ra = ((Math.atan2(-c.y, c.x) / RAD) % 360 + 360) % 360;
-  const i0 = Math.max(0, Math.floor((dec - radius + 90) / CELL));
-  const i1 = Math.min(BANDS - 1, Math.floor((dec + radius + 90) / CELL));
+  const i0 = Math.max(0, Math.floor((dec - radius + 90) / g.size));
+  const i1 = Math.min(g.bands - 1, Math.floor((dec + radius + 90) / g.size));
   for (let i = i0; i <= i1; i++) {
-    const n = perBand(i);
-    const edge = Math.max(Math.abs(-90 + i * CELL), Math.abs(-90 + (i + 1) * CELL));
+    const n = perBand(g, i);
+    const edge = Math.max(Math.abs(-90 + i * g.size), Math.abs(-90 + (i + 1) * g.size));
     const cosE = Math.cos(Math.min(89.9, edge) * RAD);
-    const wide = edge > 89 || radius / cosE >= 180;
     const span = 360 / n;
-    const half = wide ? 180 : radius / cosE + span;
+    const half = edge > 89 || radius / cosE >= 180 ? 180 : radius / cosE + span;
     const j0 = Math.floor((ra - half) / span), j1 = Math.floor((ra + half) / span);
     const seen = new Set<number>();
     for (let jj = j0; jj <= j1; jj++) {
       const j = ((jj % n) + n) % n;
       if (seen.has(j)) continue;
       seen.add(j);
-      for (const s of cell(i, j)) if (s.x * c.x + s.y * c.y + s.z * c.z > cosR) out.push(s);
+      for (const s of cell(g, i, j)) if (s.x * c.x + s.y * c.y + s.z * c.z > cosR) out.push(s);
     }
   }
+}
+
+// Every body within radius degrees of the direction c.
+// deep adds the faint layer that the big mirror reaches.
+export function bodiesNear(c: Vec3, radius: number, deep = false): Body[] {
+  const cosR = Math.cos(radius * RAD);
+  const out: Body[] = [];
+  for (const s of catalog) if (s.x * c.x + s.y * c.y + s.z * c.z > cosR) out.push(s);
+  scan(SHALLOW, c, radius, cosR, out);
+  if (deep) scan(DEEP, c, radius, cosR, out);
   return out;
 }

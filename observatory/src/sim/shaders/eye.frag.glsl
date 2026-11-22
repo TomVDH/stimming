@@ -13,6 +13,17 @@ uniform float u_grain;
 uniform float u_time;
 out vec4 o;
 
+// One mip level, read as a ring of taps so the glow stays round.
+vec3 glow(vec2 uv, float lod) {
+  vec2 px = exp2(lod) / u_res;
+  vec3 s = textureLod(u_tex, uv, lod).rgb;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.7853982;
+    s += textureLod(u_tex, uv + vec2(cos(a), sin(a)) * px * 1.2, lod).rgb;
+  }
+  return s / 9.0;
+}
+
 void main() {
   vec2 px = pxAt();
   vec2 d = px - u_center;
@@ -31,7 +42,7 @@ void main() {
   s.r = textureLod(u_tex, uv + dir * k, lod).r;
   s.g = textureLod(u_tex, uv, lod).g;
   s.b = textureLod(u_tex, uv - dir * k, lod).b;
-  vec3 glare = textureLod(u_tex, uv, 3.0).rgb * 0.5 + textureLod(u_tex, uv, 5.0).rgb * 0.3 + textureLod(u_tex, uv, 7.0).rgb * 0.2;
+  vec3 glare = glow(uv, 3.0) * 0.5 + glow(uv, 5.0) * 0.3 + glow(uv, 7.0) * 0.2;
   vec3 v = (s + glare * u_glare + u_bg + milkyWay(dirAt(px))) * u_gain;
   // The eye saturates softly on brightness, so hue survives.
   float vin = max(dot(v, vec3(0.2126, 0.7152, 0.0722)), 1e-6);

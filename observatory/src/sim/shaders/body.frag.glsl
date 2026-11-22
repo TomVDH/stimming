@@ -7,8 +7,10 @@ flat in vec4 v_shape;
 flat in float v_kind;
 // The Moffat power: lower means wider seeing wings.
 uniform float u_beta;
-// Spider-vane spikes, 0 for a clear aperture.
+// Spike gain, 0 for a clear aperture.
 uniform float u_spikes;
+// Spike axes: 2 for a cross, 3 for a hexagonal pupil's six arms.
+uniform float u_spikeAxes;
 // The achromat's violet halo, as a share of the light.
 uniform float u_halo;
 out vec4 o;
@@ -35,14 +37,19 @@ void main() {
     c += vec3(0.45, 0.25, 1.0) * u_halo / (PI * h * h) * exp(-r2 / (h * h));
     if (u_spikes > 0.0 && v_shape.z > 0.0) {
       float L = v_shape.z, w = 0.45 * a;
-      vec2 q = abs(v_off);
-      // Each arm dies off fast, so stretched frames keep short spikes.
-      vec2 t = 1.0 / ((1.0 + q / L) * (1.0 + q / L));
-      float s = t.x * exp(-q.x / L - q.y * q.y / (w * w)) + t.y * exp(-q.y / L - q.x * q.x / (w * w));
-      c += col * u_spikes * s / (4.0 * L * w * 1.7725);
+      float s = 0.0;
+      for (int i = 0; i < 3; i++) {
+        if (float(i) >= u_spikeAxes) break;
+        // One axis carries two arms; the first axis is vertical.
+        vec2 q = abs(turn(v_off, 1.5707963 + float(i) * 3.1415927 / u_spikeAxes));
+        // Each arm dies off fast, so stretched frames keep short spikes.
+        float t = 1.0 / ((1.0 + q.x / L) * (1.0 + q.x / L));
+        s += t * exp(-q.x / L - q.y * q.y / (w * w));
+      }
+      c += col * u_spikes * s / (2.0 * u_spikeAxes * L * w * 1.7725);
     }
     // Light fades out inside the quad, so no square edge shows.
-    float fade = 1.0 - smoothstep(0.75, 1.0, max(abs(v_off.x), abs(v_off.y)) / v_shape.y);
+    float fade = 1.0 - smoothstep(0.7, 1.0, sqrt(r2) / v_shape.y);
     o = vec4(c * F * fade, 1.0);
   } else if (v_kind < 1.5) {
     // Galaxy: x scale length in px, y axis ratio, z angle.

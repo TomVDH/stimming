@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T11:33:10Z
+updated_at: 2026-11-22T19:27:07Z
 parent: stimming-wqq9
 ---
 
@@ -54,3 +54,15 @@ Tom asked for a quasi-realistic eyepiece and a digital camera view, with shaders
 - The look of both views; the spike and ghost strength; galaxy density.
 - Stellar flares (an M dwarf flaring with Hα emission) are not built; ask before adding.
 - The QA hook window.__sim stays for review; remove before shipping.
+
+## Round 3: the family's two telescopes (Tom, 2026-11-22)
+
+Checked with the other chats: the main dome holds the hero refractor (hero-scope.ts: 0.276 m objective at size 1, the dome's 1.5 scale gives about 41 cm, f/12). The modern-scope branch builds a 1 m f/3 Ritchey-Chretien on a direct-drive fork with four vanes and a cooled camera.
+
+- [x] Great refractor mode: 41 cm f/12, eyepieces 55/40/25/12 mm, no spikes
+- [x] 1 m reflector mode: f/3 camera (23.5 x 15.7 mm sensor, 27' x 18'), four-vane spikes, deep layer to mag 25 (11,656 galaxies in one Draco frame)
+- [x] High-redshift spectra: [O II], Lyα, the 400 nm break, the Lyman forest and limit; lookback time and distance (flat ΛCDM)
+- [x] Fixes: round glare (ring taps on mips), TiO no longer found in hot stars
+- [ ] Operator screen for the 1 m (Tom: a faux OS, real capture-software feel, zoom and crop)
+
+Note: the building redo moves the dome scale to 1.7; the refractor would then be about 47 cm.

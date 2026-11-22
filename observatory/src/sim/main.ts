@@ -3,14 +3,14 @@
 // Then it sleeps.
 import { loadStars } from '../core/catalog.ts';
 import { lst, shellDir } from '../core/sky.ts';
-import { bodiesNear, catalogBodies, galLat, setCatalog, MAG_GEN, type Body } from './field.ts';
+import { bodiesNear, catalogBodies, galLat, setCatalog, type Body } from './field.ts';
 import {
-  DIFFRACTION, EYEPIECES, EYE_LIMIT, LAT, LON, airmass, clampPose, dirOf, extinction, flux,
-  magnification, seeingAt, sensorField, shellFrame, shellToPose, skyRows, toShell, trueField,
-  type Eyepiece, type Pose,
+  BIG, EYEPIECES, EYE_LIMIT, LAT, LON, SMALL, airmass, clampPose, diffraction, dirOf, extinction, flux,
+  gather, magnification, seeingAt, shellFrame, shellToPose, skyRows, toShell, trueField,
+  type Eyepiece, type Pose, type Scope,
 } from './optics.ts';
 import { Renderer, STRIDE } from './render.ts';
-import { Run, classFromTeff } from './spectrum.ts';
+import { Run, classFromTeff, cosmology, isFound } from './spectrum.ts';
 import { drawHistogram, drawSpectrum, rows } from './panel.ts';
 import type { Vec3 } from '../core/sky.ts';
 
@@ -25,19 +25,16 @@ const ARCSEC = RAD / 3600;
 // The Moffat power for the seeing profile.
 const BETA = 3;
 // Electrons per light unit per second, for the camera.
-const EGAIN = 4000;
+// A magnitude 20 star gives about 35 e- per s through the 1 m.
+const EGAIN = 59000;
 const READ = 3;
-const FULL = 20000;
+const FULL = 50000;
 // The spectrograph's S/N after 1 s grows with this power of the light.
 // A true square root would finish bright stars in one frame.
 const SPEC_POW = 0.25;
 const SPEC_GAIN = 4;
 // The measurement stops here, so the loop can sleep.
 const SNR_CAP = 300;
-// Sky brightness in magnitudes per square arcsec: a dark rural site.
-const SKY_MAG = 21;
-// Arrow keys move the tube this far in degrees; Shift divides by ten.
-const STEP = 1;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
 /* ---------- elements ---------- */
@@ -54,7 +51,6 @@ const trackIn = $<HTMLInputElement>('track');
 const expIn = $<HTMLSelectElement>('exposure');
 const stretchIn = $<HTMLInputElement>('stretch');
 const colourIn = $<HTMLInputElement>('colour');
-const spikesIn = $<HTMLInputElement>('spikes');
 const readout = $<HTMLElement>('readout');
 const camBar = $<HTMLElement>('cambar');
 const camText = $<HTMLElement>('camtext');
@@ -70,6 +66,7 @@ const histBox = $<HTMLElement>('histbox');
 /* ---------- state ---------- */
 type Mode = 'eye' | 'camera';
 let mode: Mode = 'eye';
+let scope: Scope = SMALL;
 let eyepiece: Eyepiece = EYEPIECES[0];
 let pose: Pose = clampPose(40, 180);
 // With tracking, the aim holds still on the sky in shell axes.
@@ -107,14 +104,17 @@ function layout(): Layout {
     const radius = 0.46 * Math.min(W, H), half = trueField(eyepiece) / 2;
     return { cx, cy, radius, scale: radius / Math.tan(half * RAD), rect: [0, 0, W, H], cull: half * 1.15 + 0.02 };
   }
-  const sf = sensorField(), aspect = sf.w / sf.h;
+  const sf = scope.field, aspect = sf.w / sf.h;
   const rw = Math.min(W * 0.97, H * 0.97 * aspect), rh = rw / aspect;
   const rect: [number, number, number, number] = [cx - rw / 2, cy - rh / 2, cx + rw / 2, cy + rh / 2];
   return { cx, cy, radius: rw / 2, scale: rw / 2 / Math.tan((sf.w / 2) * RAD), rect, cull: Math.hypot(sf.w, sf.h) / 2 * 1.05 };
 }
 
 // The seeing disc's FWHM in arcsec at the tube's altitude.
-const fwhm = (): number => Math.hypot(seeingAt(Number(seeingIn.value), pose.alt), DIFFRACTION);
+const fwhm = (): number => Math.hypot(seeingAt(Number(seeingIn.value), pose.alt), diffraction(scope));
+
+// Arrow keys move the tube this far in degrees; Shift divides by ten.
+const step = (): number => (scope.id === 'big' ? 2 / 60 : 0.25);
 
 /* ---------- pointing ---------- */
 const skyMs = (): number => Date.now();
@@ -141,8 +141,7 @@ function raDec(s: Vec3): { ra: number; dec: number } {
 /* ---------- the frame ---------- */
 // The radius in px where a star's light falls below a floor.
 // The terms match body.frag.glsl.
-function reach(a: number, F: number): number {
-  const floor = 2e-4;
+function reach(a: number, F: number, floor: number): number {
   const core = a * Math.sqrt(Math.max(0, Math.cbrt(((BETA - 1) / (Math.PI * a * a)) * F / floor) - 1));
   const k = 0.01 / (Math.PI * 16 * a * a);
   const wing = 4 * a * Math.sqrt(Math.max(0, Math.pow((k * F) / floor, 2 / 3) - 1));
@@ -155,10 +154,13 @@ function build(L: Layout, lstDeg: number): number {
   const ext = extinction(pose.alt);
   const seeing = fwhm() * (mode === 'eye' ? 1 + 0.12 * breath : 1.1);
   const alpha = Math.max(mode === 'eye' ? 0.8 : 0.9, (seeing * ARCSEC * L.scale) / 1.0196);
-  const limit = mode === 'eye' ? EYE_LIMIT + 0.6 : MAG_GEN;
-  const spikes = mode === 'camera' && spikesIn.checked;
+  const limit = mode === 'eye' ? EYE_LIMIT + 0.6 : scope.limit;
+  const spikes = scope.spikeAxes > 0;
+  const light = gather(scope);
+  // The faintest light worth a quad: the eye's floor, or a share of the sky.
+  const floor = mode === 'eye' ? 2e-4 : skyGlow(L) * light * 0.02;
   const dpr = window.devicePixelRatio || 1;
-  const near = bodiesNear(fr.f, L.cull);
+  const near = bodiesNear(fr.f, L.cull, scope.id === 'big');
   let n = 0;
   shown = [];
   const push = (vals: number[]): void => {
@@ -178,11 +180,11 @@ function build(L: Layout, lstDeg: number): number {
     const px = L.cx + X * L.scale + jx, py = L.cy - Y * L.scale + jy;
     const mag = b.mag + ext;
     if (mag > limit) continue;
-    const F = flux(mag);
+    const F = flux(mag) * light;
     const [r, g, bl] = b.rgb;
     if (b.galaxy === 'none') {
-      const spike = spikes ? Math.min(L.radius * 0.25, 1.2 * Math.pow(F, 0.4)) : 0;
-      const half = Math.min(600, Math.max(3, reach(alpha, F), spike * 4));
+      const spike = spikes ? Math.min(L.radius * 0.25, 0.25 * Math.pow(F, 0.4)) : 0;
+      const half = Math.min(600, Math.max(3, reach(alpha, F, floor), spike * 4));
       push([px, py, half, 0, r, g, bl, F, alpha, half, spike, 0]);
       // Bright stars throw a faint ghost ring, mirrored through the field centre.
       if (F > 400) {
@@ -205,7 +207,7 @@ function build(L: Layout, lstDeg: number): number {
 // Sky glow per device px per second, from the sky's surface brightness.
 function skyGlow(L: Layout): number {
   const arcsecPerPx = 1 / (L.scale * ARCSEC);
-  return flux(SKY_MAG) * arcsecPerPx * arcsecPerPx;
+  return flux(scope.sky) * arcsecPerPx * arcsecPerPx;
 }
 
 function frame(t: number): void {
@@ -239,7 +241,7 @@ function frame(t: number): void {
   }
   const n = build(L, lstDeg);
   const fr = shellFrame(pose, lstDeg);
-  const glow = skyGlow(L);
+  const glow = skyGlow(L) * gather(scope);
   const b = Math.abs(galLat(fr.f));
   const common = {
     u_center: [L.cx, L.cy], u_scale: L.scale,
@@ -248,7 +250,8 @@ function frame(t: number): void {
   };
   renderer.bodies(data, n, {
     u_beta: BETA,
-    u_spikes: mode === 'camera' && spikesIn.checked ? 0.008 : 0,
+    u_spikes: scope.spikeAxes > 0 ? 0.008 : 0,
+    u_spikeAxes: Math.max(1, scope.spikeAxes),
     u_halo: mode === 'eye' ? 0.06 : 0.015,
   });
   if (mode === 'eye') {
@@ -370,7 +373,7 @@ function panel(L: Layout, lstDeg: number, inView: boolean): void {
   const rd = raDec(aim);
   const field = mode === 'eye'
     ? `${trueField(eyepiece).toFixed(2)}° · ${Math.round(magnification(eyepiece))}×`
-    : `${sensorField().w.toFixed(2)}° × ${sensorField().h.toFixed(2)}°`;
+    : `${(scope.field.w * 60).toFixed(1)}′ × ${(scope.field.h * 60).toFixed(1)}′`;
   const h = lstDeg / 15;
   readout.textContent = [
     `RA ${fmtRa(rd.ra)}  Dec ${fmtDec(rd.dec)}`,
@@ -406,10 +409,18 @@ function panel(L: Layout, lstDeg: number, inView: boolean): void {
   if (b.galaxy === 'none') {
     const te = run.teff();
     if (te && run.snr > 4) lines.push(`Colour temperature ${Math.round(te.T / 50) * 50} ± ${Math.round(te.err / 10) * 10} K · class ≈ ${classFromTeff(te.T)}`);
-  } else if (run.snr > 6) {
-    const err = 0.02 / run.snr;
-    const z = b.redshift + zDraw * err * 0.5;
-    lines.push(`Redshift z = ${z.toFixed(4)} ± ${err.toFixed(4)} · ${Math.round((z * 299792) / 70)} Mpc`);
+  } else {
+    // A redshift needs a line from the galaxy itself, not from our air.
+    const own = found.filter((f) => isFound(f) && f.el !== 'O₂');
+    if (own.length) {
+      const err = (0.02 * (1 + b.redshift)) / run.snr;
+      const z = Math.max(0, b.redshift + zDraw * err * 0.5);
+      const c = cosmology(z);
+      const best = [...own].sort((p, q) => q.depth / q.sigma - p.depth / p.sigma)[0];
+      const ago = c.lookback < 1 ? `${Math.round(c.lookback * 1000)} million` : `${c.lookback.toFixed(1)} billion`;
+      lines.push(`Redshift z = ${z.toFixed(z < 0.1 ? 4 : 3)} ± ${err.toFixed(z < 0.1 ? 4 : 3)}, from ${best.id}`);
+      lines.push(`Its light left ${ago} years ago · ${Math.round(c.distance).toLocaleString()} Mpc`);
+    } else lines.push('Redshift: no galaxy line yet');
   }
   specInfo.textContent = lines.join('\n');
   compList.replaceChildren(...rows(found).map((r) => {
@@ -435,7 +446,7 @@ let zDraw = 0;
 function select(b: Body | null): void {
   selected = b;
   zDraw = gauss();
-  run = b ? new Run({ teff: b.teff, galaxy: b.galaxy, redshift: b.redshift }, SPEC_GAIN * Math.pow(flux(b.mag + extinction(pose.alt)), SPEC_POW)) : null;
+  run = b ? new Run({ teff: b.teff, galaxy: b.galaxy, redshift: b.redshift }, SPEC_GAIN * Math.pow(flux(b.mag + extinction(pose.alt)) * gather(scope), SPEC_POW)) : null;
   lastPanel = 0;
   wake(true);
 }
@@ -456,15 +467,19 @@ function pickAt(x: number, y: number): Body | null {
 }
 
 /* ---------- input ---------- */
-function setMode(m: Mode): void {
-  mode = m;
-  document.body.dataset.mode = m;
+// The great refractor takes an eyepiece; the 1 m reflector takes a camera.
+function setScope(s: Scope): void {
+  scope = s;
+  mode = s.id === 'small' ? 'eye' : 'camera';
+  document.body.dataset.mode = mode;
   restack = true;
+  // The new aperture changes the spectrograph's speed.
+  if (selected) select(selected);
   wake(true);
 }
 
-for (const el of document.querySelectorAll<HTMLInputElement>('input[name="mode"]')) {
-  el.addEventListener('change', () => setMode(el.value === 'camera' ? 'camera' : 'eye'));
+for (const el of document.querySelectorAll<HTMLInputElement>('input[name="scope"]')) {
+  el.addEventListener('change', () => setScope(el.value === 'big' ? BIG : SMALL));
 }
 altIn.addEventListener('input', () => setPose(Number(altIn.value), pose.az));
 azIn.addEventListener('input', () => setPose(pose.alt, Number(azIn.value)));
@@ -472,7 +487,7 @@ eyepieceIn.addEventListener('change', () => {
   eyepiece = EYEPIECES[Number(eyepieceIn.value)] ?? EYEPIECES[0];
   wake(true);
 });
-for (const el of [seeingIn, expIn, colourIn, spikesIn, trackIn]) {
+for (const el of [seeingIn, expIn, colourIn, trackIn]) {
   el.addEventListener('change', () => {
     restack = true;
     wake(true);
@@ -483,10 +498,10 @@ $<HTMLButtonElement>('restack').addEventListener('click', () => {
   restack = true;
   wake(true);
 });
-$<HTMLButtonElement>('left').addEventListener('click', () => nudge(0, -STEP));
-$<HTMLButtonElement>('right').addEventListener('click', () => nudge(0, STEP));
-$<HTMLButtonElement>('up').addEventListener('click', () => nudge(STEP, 0));
-$<HTMLButtonElement>('down').addEventListener('click', () => nudge(-STEP, 0));
+$<HTMLButtonElement>('left').addEventListener('click', () => nudge(0, -step()));
+$<HTMLButtonElement>('right').addEventListener('click', () => nudge(0, step()));
+$<HTMLButtonElement>('up').addEventListener('click', () => nudge(step(), 0));
+$<HTMLButtonElement>('down').addEventListener('click', () => nudge(-step(), 0));
 $<HTMLButtonElement>('centre').addEventListener('click', () => {
   if (!selected) return;
   aim = { x: selected.x, y: selected.y, z: selected.z };
@@ -496,7 +511,7 @@ $<HTMLButtonElement>('centre').addEventListener('click', () => {
 
 // Arrow keys nudge the tube; Shift makes the step a tenth.
 stage.addEventListener('keydown', (e) => {
-  const k = e.shiftKey ? STEP / 10 : STEP;
+  const k = e.shiftKey ? step() / 10 : step();
   const moves: Record<string, [number, number]> = {
     ArrowLeft: [0, -k], ArrowRight: [0, k], ArrowUp: [k, 0], ArrowDown: [-k, 0],
   };
@@ -584,6 +599,11 @@ function brightest(): Body | null {
   goto: (ra: number, dec: number): void => {
     const p = shellToPose(shellDir(ra, dec), rowsNow());
     setPose(p.alt, p.az);
+  },
+  scope: (id: 'small' | 'big'): void => {
+    const el = document.querySelector<HTMLInputElement>(`input[name="scope"][value="${id}"]`);
+    if (el) el.checked = true;
+    setScope(id === 'big' ? BIG : SMALL);
   },
   pick: (name: string): boolean => {
     const s = shown.find((v) => v.b.name === name);

@@ -122,6 +122,9 @@ const EMISSION: readonly Line[] = [
   { id: '[O III]', el: 'O', l: 500.7, w: 0.8, peak: 0, spread: 0, depth: 0.45 },
   { id: 'Hβ', el: 'H', l: 486.13, w: 0.8, peak: 0, spread: 0, depth: 0.25 },
   { id: '[S II]', el: 'S', l: 671.6, w: 0.8, peak: 0, spread: 0, depth: 0.18 },
+  { id: '[O II]', el: 'O', l: 372.7, w: 0.8, peak: 0, spread: 0, depth: 0.5 },
+  // Young stars light their hydrogen: Lyα is the strongest line of all.
+  { id: 'Lyα', el: 'H', l: 121.57, w: 0.9, peak: 0, spread: 0, depth: 2.5 },
 ];
 
 // Titanium oxide band heads: they mark the cool M stars.
@@ -165,6 +168,10 @@ export function model(t: Target): Float32Array {
         a *= 1 - tio * (x >= 0 ? Math.exp(-x / 12) : Math.exp(x / 0.6));
       }
     }
+    // Old stars leave a step at 400 nm rest.
+    if (t.galaxy !== 'none' && lr < 400) a *= t.galaxy === 'elliptical' ? 0.55 : 0.85;
+    // Hydrogen between us and the galaxy eats light blueward of Lyα.
+    if (lr < 121.57) a *= lr < 91.2 ? 0.03 : 0.5;
     let e = 0;
     if (t.galaxy === 'spiral') for (const ln of EMISSION) e += ln.depth * gauss(lr - ln.l, ln.w);
     for (const ln of TELLURIC) a *= 1 - ln.depth * gauss(l - ln.l, ln.w);
@@ -267,10 +274,13 @@ export class Run {
     // TiO: light drops across a band head, blue side to red.
     if (this.target.galaxy === 'none') {
       for (const h of [615.9, 705.4]) {
+        // Two blue windows give the continuum's slope; the red side should follow it.
+        const [far] = mean(this.now, h - 14, h - 8);
         const [blue] = mean(this.now, h - 7, h - 1);
         const [red, nr] = mean(this.now, h + 0.5, h + 8);
-        if (blue <= 0) continue;
-        out.push({ id: 'TiO', el: 'TiO', l: h, depth: 1 - red / blue, sigma: noise * Math.sqrt(2 / nr) / Math.sqrt(blue), emission: false });
+        const expect = blue + ((blue - far) / 7) * 8.25;
+        if (expect <= 0) continue;
+        out.push({ id: 'TiO', el: 'TiO', l: h, depth: 1 - red / expect, sigma: noise * Math.sqrt(3 / nr) / Math.sqrt(expect), emission: false });
       }
     }
     for (const ln of TELLURIC) test(ln, 1, false);
@@ -288,3 +298,18 @@ export class Run {
 
 // A line counts as found above three sigma and a floor depth.
 export const isFound = (f: Found): boolean => f.depth > Math.max(3 * f.sigma, 0.03);
+
+/* ---------- cosmology ---------- */
+// Lookback time in Gyr and comoving distance in Mpc, for flat ΛCDM.
+// H0 70, matter 0.3, dark energy 0.7.
+export function cosmology(z: number): { lookback: number; distance: number } {
+  const E = (x: number): number => Math.sqrt(0.3 * (1 + x) ** 3 + 0.7);
+  const n = 200;
+  let dc = 0, tl = 0;
+  for (let i = 0; i < n; i++) {
+    const x = ((i + 0.5) / n) * z;
+    dc += 1 / E(x);
+    tl += 1 / ((1 + x) * E(x));
+  }
+  return { distance: (dc * z / n) * (299792.458 / 70), lookback: (tl * z / n) * (977.8 / 70) };
+}
