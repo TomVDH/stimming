@@ -5,8 +5,9 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-09T09:37:22Z
-updated_at: 2026-11-16T09:44:56Z
+updated_at: 2026-11-22T09:00:24Z
 ---
+
 
 
 Wireframe the annex a visitor scrolls into under a toy's stage, and the transition into it. Successor to the parked section.about.
@@ -196,6 +197,16 @@ Lab keys and URL:
 - [ ] A border between toy and content that fits each toy
 - [ ] The content kit and its file format, after the layout
 - [ ] Then the shell build below
+
+## Round 3 (2026-11-22)
+
+Tom said yes to one idea: the toy breaks its own frame. The border between toy and content comes from the toy's material and lands in beats.
+
+- [x] S · Seam in the lab (`?d=s`), on Glass only: a star fracture from one hit. Cracks show on beat 1; outer wedges fall on beats 2 and 3, the middle ring on beat 4, the hit on beat 5. Each beat flashes the live cracks for two frames.
+- [x] The hit is where the emblem lands. The title block lands centred, in the intro's shape, with the Flash cut beats.
+- [x] Checked at 1280 x 720, 375 x 812 and 812 x 375; no sideways scroll; clean console; reduced motion is a plain scroll.
+- [ ] Tom's verdict on Seam
+- [ ] If yes: one seam per toy (a data shape for the shell), then the content
 
 ## Build (next)
 - [ ] Annex shell in shared/ (fixed stage, sheet, exit timeline, JS fallback, reduced motion)

@@ -112,6 +112,24 @@ Test sheet: `annexlab/sheet.html` shows every transition and layout live, one ca
 
 Open (Tom, 2026-11-16): the border between the toy and the content must fit each toy, not only the shell. The content comes after the layout pick.
 
+### Round 3: S · Seam (2026-11-22)
+
+Tom said yes to one idea: the toy breaks its own frame. Lab: `round2.html?d=s`. Status: built for Glass, Tom judges.
+
+- The border between toy and content comes from the toy's own material. Glass breaks as a star from one hit: nine spokes, an inner ring and an outer ring.
+- The pieces fall in beats, not in a slide. Each fallen piece takes the sheet's dark ground. Beats at `--p` 0.03, 0.2, 0.36, 0.54 and 0.72.
+  1. The cracks show.
+  2. Every other outer wedge falls.
+  3. The other outer wedges fall.
+  4. The middle ring falls.
+  5. The hit falls, and the title block lands in the Flash cut beats.
+- On each beat the live cracks show white and 3 px thick for two frames. No piece flashes white.
+- The hit is the emblem's centre at the landing beat, so the last piece gives way to the emblem.
+- The title block lands centred, in the intro's shape: the emblem over the name, then the lines.
+- The sheet stays hidden until the last piece falls. No straight edge shows.
+- Reduced motion: a plain scroll, no cracks.
+- A seam per toy is the next step if Tom keeps it: Oscilloscope its trace, Tornado alley a debris front.
+
 ### The content kit
 
 One kit for every toy, in this order (Tom, 2026-11-16: making-of, idea, notes, attribution).

@@ -330,6 +330,26 @@ html.rm .ax-ring { rotate: none; }
   html[data-v="c"] .ax-echo i:nth-child(4) { display: none; }
 }
 
+/* ---------- S · Seam: the toy breaks along its own material, in beats ---------- */
+/* Glass breaks as a star from one hit. The hit is where the emblem lands.
+   The pieces fall out on the beats, from the edge in. No straight edge shows. */
+.ax-seam { display: none; position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+html.seam:not(.rm):not(.read) .ax-seam.on { display: block; }
+.seam-fill path { fill: none; }
+/* A fallen piece takes the sheet's ground, so the landing has no seam. */
+.seam-fill path.gone { fill: var(--bg); stroke: var(--bg); stroke-width: 1; }
+.seam-line path { fill: none; stroke: oklch(1 0 0 / 0.55); stroke-width: 1.25; stroke-linejoin: miter; }
+.seam-line path.gone { display: none; }
+/* On each beat the live cracks show white and thick for two frames. */
+.ax-seam.flash .seam-line path { stroke: #fff; stroke-width: 3; }
+/* The sheet stays hidden until the last piece falls. */
+html.seam:not(.rm):not(.land) .ax-body { visibility: hidden; }
+/* The landing has the intro's shape: the emblem over the name, centred. */
+html.seam .ax-title { text-align: center; }
+html.seam :is(.ax-title > div > *, .ax-tag span) { margin-left: auto; margin-right: auto; }
+html.seam .ax-badge { width: clamp(96px, 13vw, 168px); }
+html.seam .ax-index { justify-content: center; }
+
 /* ---------- reduced motion: a plain scroll ---------- */
 html.rm .ax-title { transform: none; }
 html.rm .ax-shade { opacity: 0; }
@@ -378,6 +398,7 @@ html.rm * { transition: none !important; }
       <iframe id="toy" src="../glass/" title="Glass, the toy"></iframe>
       <div class="ax-shade"></div>
     </div>
+    <svg class="ax-seam" id="seam" aria-hidden="true"><g class="seam-fill"></g><g class="seam-line"></g></svg>
   </div>
 
   <main class="ax-annex" id="annex" aria-labelledby="ax-name">
@@ -564,6 +585,7 @@ html.rm * { transition: none !important; }
     <label><input type="checkbox" id="opt-rm"> Reduced motion</label>
     <p class="lab-h">Transition</p>
     <div class="lab-seg" role="group" aria-label="Direction">
+      <button data-d="s" aria-pressed="false">S · Seam (new)</button>
       <button data-d="h" aria-pressed="true">H · Flash cut (Tom's pick)</button>
       <button data-d="a" aria-pressed="false">A · Recede (parked)</button>
       <button data-d="d" aria-pressed="false">D · Drum (parked)</button>
@@ -585,7 +607,7 @@ const scene = $('scene'), toy = $('toy'), lip = $('lip'), lab = $('lab'), tab = 
 const tide = $('tide'), tideFill = tide.querySelector('.tide-fill'), tideLine = tide.querySelector('.tide-line');
 const osReduced = matchMedia('(prefers-reduced-motion: reduce)');
 const stage = $('stage'), lead = $('lead');
-const DIRS = ['a', 'd', 'e', 'f', 'g', 'h'], LAYOUTS = ['a', 'b', 'c', 'd'];
+const DIRS = ['a', 'd', 'e', 'f', 'g', 'h', 's'], LAYOUTS = ['a', 'b', 'c', 'd'];
 
 // URL keys: d direction, v title layout, rm reduced motion, y scroll in stage heights, lab panel.
 const state = {
@@ -605,14 +627,92 @@ function measure() {
   html.style.setProperty('--ax-ratio', ratio.toFixed(4));
   const col = document.querySelector('.ax-col'), body = document.querySelector('.ax-body');
   html.style.setProperty('--win-x', (col.getBoundingClientRect().left - body.getBoundingClientRect().left).toFixed(1) + 'px');
+  buildSeam();
+}
+
+// Seam: the beats, as scroll progress. The last beat lands the title block.
+const seam = $('seam'), seamFill = seam.querySelector('.seam-fill'), seamLine = seam.querySelector('.seam-line');
+const SEAM_AT = [0.03, 0.2, 0.36, 0.54, 0.72], SEAM_LAND = SEAM_AT[SEAM_AT.length - 1];
+let seamLevel = -1, seamPieces = [], seamFlash = 0;
+// A seeded random, so each build breaks the pane the same way.
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// The star: spokes from the hit, an inner ring and an outer ring.
+// Each spoke point: 0 inner ring, 2 outer ring, 5 far past the screen.
+function buildSeam() {
+  seamFill.textContent = seamLine.textContent = '';
+  seamPieces = [];
+  if (state.dir !== 's') return;
+  const r = rng(13), w = html.clientWidth, h = innerHeight;
+  const b = document.querySelector('.ax-badge').getBoundingClientRect();
+  // The hit is the emblem's centre at the landing beat.
+  const cx = b.left + b.width / 2, cy = b.top + b.height / 2 + scrollY - SEAM_LAND * travel;
+  const r1 = b.width * 0.8, r2 = r1 * 2.7, far = Math.hypot(w, h) * 1.5, n = 9;
+  const at = (a, d) => [cx + Math.cos(a) * d, cy + Math.sin(a) * d];
+  const angles = [...Array(n)].map((_, i) => (i + (r() - 0.5) * 0.5) / n * Math.PI * 2 + 0.3);
+  const spokes = angles.map(a => [r1 * (0.85 + r() * 0.3), r1 * 1.9, r2 * (0.85 + r() * 0.3), r2 * 1.8, r2 * 3.2, far]
+    .map((d, k) => at(k === 1 || k === 3 || k === 4 ? a + (r() - 0.5) * 0.16 : a, d)));
+  // A ring bends a little between two spokes.
+  const ringMid = (i, k) => {
+    const j = (i + 1) % n, a0 = angles[i], a1 = angles[j] + (j === 0 ? Math.PI * 2 : 0);
+    const d = (Math.hypot(spokes[i][k][0] - cx, spokes[i][k][1] - cy) + Math.hypot(spokes[j][k][0] - cx, spokes[j][k][1] - cy)) / 2;
+    return at((a0 + a1) / 2, d * (0.9 + r() * 0.12));
+  };
+  const inner = [], pieces = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, s = spokes[i], t = spokes[j], m1 = ringMid(i, 0), m2 = ringMid(i, 2);
+    inner.push(s[0], m1);
+    pieces.push({ k: 4, pts: [s[0], s[1], s[2], m2, t[2], t[1], t[0], m1] });
+    // The outer wedges fall in two beats, every other one first.
+    pieces.push({ k: i % 2 ? 3 : 2, pts: [s[2], s[3], s[4], s[5], t[5], t[4], t[3], t[2], m2] });
+  }
+  pieces.push({ k: 5, pts: inner });
+  const ns = 'http://www.w3.org/2000/svg';
+  for (const o of pieces) {
+    const d = 'M' + o.pts.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join('L') + 'Z';
+    o.fill = document.createElementNS(ns, 'path');
+    o.line = document.createElementNS(ns, 'path');
+    o.fill.setAttribute('d', d);
+    o.line.setAttribute('d', d);
+    seamFill.append(o.fill);
+    seamLine.append(o.line);
+  }
+  seamPieces = pieces;
+  seamLevel = -1;
+}
+// The level is the count of beats passed. A step up flashes the cracks.
+function seamTo(p) {
+  const on = state.dir === 's' && !state.rm;
+  const level = on ? SEAM_AT.filter(t => p >= t).length : 0;
+  html.classList.toggle('land', on && level === SEAM_AT.length);
+  if (level === seamLevel) return;
+  const up = seamLevel >= 0 && level > seamLevel;
+  seamLevel = level;
+  seam.classList.toggle('on', level > 0);
+  seamPieces.forEach(o => {
+    o.fill.classList.toggle('gone', o.k <= level);
+    o.line.classList.toggle('gone', o.k <= level);
+  });
+  if (!up) return;
+  seam.classList.add('flash');
+  clearTimeout(seamFlash);
+  seamFlash = setTimeout(() => seam.classList.remove('flash'), 67);
 }
 
 // Flash cut: the beats play once per arrival, when the title block is well in view.
+// Seam plays them on its last beat.
 let played = false;
 function beats(p) {
-  if (state.dir !== 'h' || state.rm) { html.classList.remove('h-arm', 'h-play'); played = false; return; }
-  if (!played && p >= 0.55) { played = true; html.classList.add('h-play'); }
-  else if (played && p < 0.15) { played = false; html.classList.remove('h-play'); }
+  if ((state.dir !== 'h' && state.dir !== 's') || state.rm) { html.classList.remove('h-arm', 'h-play'); played = false; return; }
+  const [on, off] = state.dir === 's' ? [SEAM_LAND, SEAM_LAND - 0.04] : [0.55, 0.15];
+  if (!played && p >= on) { played = true; html.classList.add('h-play'); }
+  else if (played && p < off) { played = false; html.classList.remove('h-play'); }
   html.classList.toggle('h-arm', !played);
 }
 
@@ -661,6 +761,7 @@ function drive() {
   html.classList.toggle('stuck', scrollY >= travel - 0.5);
   if (state.dir === 'f') drawTide(p);
   dock(p);
+  seamTo(p);
   beats(p);
   if (p !== lastP) { fadeCorners(p); lastP = p; }
 }
@@ -668,9 +769,11 @@ addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimat
 addEventListener('resize', () => { measure(); drive(); });
 
 function apply() {
-  html.dataset.dir = state.dir;
-  // The layouts belong to Flash cut; a parked direction keeps the Stack.
-  html.dataset.v = state.dir === 'h' ? state.v : 'a';
+  // Seam builds on Flash cut: it takes its sheet, its hint and its beats.
+  html.dataset.dir = state.dir === 's' ? 'h' : state.dir;
+  html.classList.toggle('seam', state.dir === 's');
+  // The layouts belong to Flash cut; Seam has its own; a parked direction keeps the Stack.
+  html.dataset.v = state.dir === 'h' ? state.v : state.dir === 's' ? 's' : 'a';
   html.classList.toggle('rm', state.rm);
   optRm.checked = state.rm;
   tab.textContent = 'Lab · ' + (state.dir === 'h' ? LAYOUTS.indexOf(state.v) + 1 : state.dir.toUpperCase());
@@ -731,7 +834,7 @@ tab.addEventListener('click', () => {
 lab.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => { state.dir = b.dataset.d; apply(); }));
 // A new layout plays the beats again, so each one shows its landing.
 const replay = () => {
-  if (state.dir !== 'h' || state.rm || !played) return;
+  if ((state.dir !== 'h' && state.dir !== 's') || state.rm || !played) return;
   html.classList.remove('h-play');
   void html.offsetWidth;
   html.classList.add('h-play');
