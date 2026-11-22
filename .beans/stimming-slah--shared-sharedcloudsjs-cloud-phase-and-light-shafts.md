@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T18:43:57Z
-updated_at: 2026-11-22T19:16:16Z
+updated_at: 2026-11-22T19:18:44Z
 parent: stimming-ssrh
 ---
 
@@ -31,6 +31,7 @@ shared/clouds.js holds cloud light as GLSL strings and a small JS helper. The sh
 
 - Window seat (window/shader.js:1349 two-lobe phase copy)
 - Tornado alley (tornado/main.js:477 two-lobe phase copy)
+- Railgun storm lab (railgun/stormcells.js:213 two-lobe phase copy, loaded by celllab.html)
 
 ## Notes
 

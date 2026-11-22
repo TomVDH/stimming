@@ -1,19 +1,21 @@
 // @ts-check
-// Shared GLSL and JS: cloud light. The cloud phase, and light shafts under clouds.
+// Shared GLSL and JS: cloud light.
+// The cloud phase, and light shafts under clouds.
 // Paste CLOUDS into a fragment shader. It declares no uniforms.
 // It compiles in raw WebGL2 and in a three.js ShaderMaterial.
 //
 // Phase, for any cloud march:
 //   float ph = clPhase(dot(rd, sun));    // isotropic is 1; toward the sun about 14
 //
-// Light shafts: a dust veil in the low air, shaded by the clouds.
+// Light shafts: a dust veil in the low air, under cloud shade.
 // The look is common; each toy gives its own occlusion source.
 // A source returns vec2(lit, depth): the ray's lit share, 0 to 1,
 // and its length in the veil, in metres.
 //   vec2 sh = <the toy's source>(...);
 //   c = clShaftLook(c, rd, sh, sun, glowC, k);
 // k is the strength: clShaftGate() in JS times the toy's gain.
-// glowC is the sun's glow colour on the sky. sun is the unit direction to the sun.
+// glowC is the sun's glow colour on the sky.
+// sun is the unit direction to the sun.
 //
 // Two sources:
 //   Analytic: the toy computes vec2(lit, depth) itself (Railgun: ellipsoids, a trail).
@@ -26,7 +28,7 @@
 export const CLOUDS = /* glsl */`
 // Henyey-Greenstein phase, not normalised: isotropic is 1.
 float clHg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * mu, 1.5); }
-// Two lobes: a strong forward one for the silver lining, a soft back one.
+// A strong forward lobe gives the silver lining; a soft back lobe.
 float clPhase(float mu) { return mix(clHg(mu, 0.72), clHg(mu, -0.2), 0.35); }
 // The ray's length in the veil from t0 to t1.
 // The veil is even from the ground to height top.
@@ -35,7 +37,8 @@ float clVeil(vec3 ro, vec3 rd, float t0, float t1, float top) {
   return max(t1 - t0, 0.0);
 }
 // Shadow bands dim the sky; lit dust adds a sunward glow.
-// sh: the ray's lit share and its veil depth in metres. k: the strength.
+// sh: the ray's lit share and its veil depth in metres.
+// k: the strength.
 vec3 clShaftLook(vec3 c, vec3 rd, vec2 sh, vec3 sun, vec3 glowC, float k) {
   if (k < 0.001) return c;
   float cs = dot(rd, sun), g = 0.62;
@@ -52,12 +55,15 @@ vec3 clShaftLook(vec3 c, vec3 rd, vec2 sh, vec3 sun, vec3 glowC, float k) {
 `;
 
 export const CLOUD_FIELD_SHAFTS = /* glsl */`
-// The veil is the air under a cloud deck from base to top.
+// The veil is the air under a cloud deck.
+// The deck runs from base to top.
 // Points along the view ray test the deck toward the sun.
 // ext: extinction per unit density per unit length.
-// reach: the longest sun path through the deck; a low sun is not all shade.
+// reach: the longest sun path through the deck.
+// With it, a low sun is not all shade.
 // jit: 0 to 1, a per-pixel offset that hides the step bands.
-// It returns the ray's lit share and its veil depth, in host units.
+// It returns the ray's lit share and its veil depth.
+// The units are the host's.
 vec2 clShaftsField(vec3 ro, vec3 rd, float tMax, float base, float top, vec3 sun, float ext, float reach, float jit) {
   float L = clVeil(ro, rd, 0.0, tMax, base);
   // A sun under the deck's horizon lights it from below: no shade.

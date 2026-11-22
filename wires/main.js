@@ -1611,6 +1611,8 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
 }
 let P = null, vao = null, strokeVao = null, wireVao = null, strokeN = 0, ready = false, wireT = null;
 let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, shaftT = null, wpT = null;
+// True while shaftT holds the last cloud bake's sun rays.
+let shaftBaked = false;
 // The linear frame and the bloom levels, half size and smaller.
 let hdrT = null, bloomT = [];
 let rows = 8, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0, W = 0, H = 0, A = 16 / 9;
@@ -1774,6 +1776,7 @@ function allocTargets() {
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, passT.depth);
   cloudT = mk(Math.ceil(cw / 3), Math.ceil(ch / 3), gl.LINEAR);
   shaftT = mk(Math.ceil(cw / 3), Math.ceil(ch / 3), gl.LINEAR);
+  shaftBaked = false;
   skyT = mk(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.LINEAR);
   hdrT = mk(cw, ch, gl.LINEAR);
   bloomT = Array.from({ length: BLOOM_N }, (_, i) => mk(Math.max(1, Math.ceil(cw / 2 ** (i + 1))), Math.max(1, Math.ceil(ch / 2 ** (i + 1))), gl.LINEAR));
@@ -1940,7 +1943,8 @@ function bakeClouds() {
     gl.uniform3fv(q.u.uUp, UP);
   };
   // The sun rays bake with the clouds, from the same field.
-  if (shaftK() > 0.001) {
+  shaftBaked = shaftK() > 0.001;
+  if (shaftBaked) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, shaftT.fb);
     gl.useProgram(P.shaft.p);
     field(P.shaft);
@@ -2174,7 +2178,8 @@ function draw() {
   bindTex(8, wireT.tex);
   bindTex(9, cloudT.tex);
   bindTex(10, shaftT.tex);
-  const C = P.comp.u, sk = shaftK();
+  // An unbaked ray texture would read as full shade: skip the look.
+  const C = P.comp.u, sk = shaftBaked ? shaftK() : 0;
   gl.uniform1f(C.uShaft, sk);
   if (sk > 0.001) {
     gl.uniform1f(C.uRoll, ROLL);
@@ -2183,7 +2188,7 @@ function draw() {
     gl.uniform3fv(C.uRt, RT);
     gl.uniform3fv(C.uUp, UP);
     gl.uniform3fv(C.uSun, light.sun);
-    // The glow fades as the sun sinks 10 degrees under the horizon, as in Railgun.
+    // As in Railgun, the glow fades over 10 degrees under the horizon.
     gl.uniform3fv(C.uGlowC, light.sunC.map(c => c * sstep(-0.174, 0, light.sun[1])));
   }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
