@@ -2563,6 +2563,14 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           </a>
         </li>
         <li>
+          <a class="toy" id="aquarium" href="aquarium/index.html">
+            <span class="obj">
+              <svg class="art" viewBox="6.98 10.98 114.04 114.04" aria-hidden="true"></svg>
+            </span>
+            <span class="name">Aquarium</span>
+          </a>
+        </li>
+        <li>
           <a class="toy" id="chocolate" href="chocolate/index.html">
             <span class="obj">
               <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
@@ -4218,6 +4226,108 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     };
     // The demo stirs the jar in a slow circle.
     hook('calmjar', c, { period: 2.4, at: a => [64 + 22 * Math.sin(a), 80 + 12 * Math.cos(a)] });
+  }
+
+  // Aquarium: a planted tank from the front, three bright fish (icon spike aquarium-1, A).
+  // The pointer is food: the fish rise to it. A quick sweep taps the glass: they scatter.
+  {
+    const { f, clamp, lg, rg, blur, light, clock, hook } = kit;
+    const svg = $('aquarium').querySelector('svg'), u = 'aquarium-';
+    // The toy's tokens: green-teal water, sand, plants, three bright fish.
+    const WATER = [[0, 'oklch(0.62 0.1 195)'], [1, 'oklch(0.34 0.08 225)']];
+    const GLASS = [[0, 'oklch(0.9 0.03 200)', 0.38], [0.3, 'oklch(0.7 0.03 200)', 0.06], [0.75, 'oklch(0.7 0.03 200)', 0.06], [1, 'oklch(0.9 0.03 200)', 0.32]];
+    const SAND = [[0, 'oklch(0.84 0.06 85)'], [1, 'oklch(0.66 0.06 70)']];
+    const LEAF = [[0, 'oklch(0.78 0.17 138)'], [1, 'oklch(0.46 0.13 150)']];
+    const TRIM = 'oklch(0.24 0.01 250)', SURF = 'oklch(0.92 0.05 195)';
+    const FISH = [
+      { s: 1.15, body: ['oklch(0.84 0.16 62)', 'oklch(0.64 0.19 40)'], fin: 'oklch(0.96 0.04 80)', home: [-0.35, 0.58, 0.2] },
+      { s: 0.8, body: ['oklch(0.78 0.13 225)', 'oklch(0.52 0.16 255)'], fin: 'oklch(0.86 0.12 200)', home: [0.42, 0.38, -0.3] },
+      { s: 0.72, body: ['oklch(0.9 0.14 100)', 'oklch(0.7 0.16 80)'], fin: 'oklch(0.96 0.05 100)', home: [0.3, 0.72, 0.5] },
+    ];
+    // A fish faces right: a round body, a forked tail, one bold eye.
+    const F_BODY = 'M-8 0Q-3 -7.2 5 -4.2Q9.6 -2 9.6 0Q9.6 2 5 4.2Q-3 7.2 -8 0Z';
+    const F_TAIL = 'M-6.5 0L-13.5 -6Q-12 0 -13.5 6Z';
+    const F_FIN = 'M-1 -5.4Q2 -9.6 5 -4.6Z';
+    const fishMarkup = i => `<g class="fish">${rg(`${u}f${i}`, FISH[i].body.map((c, k) => [k, c]), 'cx="0.4" cy="0.35" r="0.75"')}
+        <g class="tail"><path d="${F_TAIL}" fill="${FISH[i].fin}" opacity="0.9"/></g>
+        <path d="${F_FIN}" fill="${FISH[i].fin}" opacity="0.9"/>
+        <path d="${F_BODY}" fill="url(#${u}f${i})"/><path d="${F_BODY}" fill="url(#${u}lit)"/>
+        <circle cx="5.2" cy="-1.2" r="1.7" fill="oklch(0.16 0.02 250)"/></g>`;
+    // A plant: a few long blades from one root, drawn up from 0 0.
+    const blade = (dx, h, w, lean) => `M${f(-w / 2)} 0Q${f(dx * 0.4 - w)} ${f(-h * 0.55)} ${f(dx + lean)} ${f(-h)}Q${f(dx * 0.4 + w)} ${f(-h * 0.5)} ${f(w / 2)} 0Z`;
+    const plant = scale => `<path d="${[[-6, 30, 5, -3], [2, 40, 6, 2], [9, 26, 5, 5]].map(([dx, h, w, l]) => blade(dx * scale, h * scale, w * scale, l * scale)).join('')}" fill="url(#${u}leaf)"/>`;
+    const L = 16, R = 112, T = 30, B = 106, SURF_Y = 37, SAND_Y = 94;
+    const TANK = `M${L} ${T + 4}Q${L} ${T} ${L + 4} ${T}H${R - 4}Q${R} ${T} ${R} ${T + 4}V${B - 4}Q${R} ${B} ${R - 4} ${B}H${L + 4}Q${L} ${B} ${L} ${B - 4}Z`;
+    const SAND_D = `M${L} ${SAND_Y}Q${L + 24} ${SAND_Y - 5} 64 ${SAND_Y - 1}T${R} ${SAND_Y - 3}V${B}H${L}Z`;
+    // Tank space: x and z in -1..1, y up 0..1.
+    const toScreen = ([x, y]) => [64 + x * 44, SAND_Y - 4 - y * (SAND_Y - 4 - SURF_Y - 2)];
+    const toTank = p => [(p[0] - 64) / 44, (SAND_Y - 4 - p[1]) / (SAND_Y - 4 - SURF_Y - 2)];
+    svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.4)}
+        ${lg(`${u}water`, WATER)}${lg(`${u}glass`, GLASS, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}sand`, SAND)}${lg(`${u}leaf`, LEAF)}
+        <clipPath id="${u}in"><path d="${TANK}"/></clipPath></defs>
+      <ellipse cx="64" cy="${B + 2}" rx="50" ry="3.6" fill="oklch(0.05 0.01 240)" opacity="0.6" filter="url(#${u}b)"/>
+      <g clip-path="url(#${u}in)">
+        <rect x="${L}" y="${SURF_Y}" width="${R - L}" height="${B - SURF_Y}" fill="url(#${u}water)"/>
+        <rect x="${L}" y="${T}" width="${R - L}" height="${SURF_Y - T}" fill="oklch(0.7 0.04 200)" opacity="0.25"/>
+        <g class="plants">
+          <g data-at="translate(32 ${SAND_Y})" transform="translate(32 ${SAND_Y})">${plant(1.1)}</g>
+          <g data-at="translate(94 ${SAND_Y - 2})" transform="translate(94 ${SAND_Y - 2})">${plant(0.8)}</g>
+        </g>
+        ${FISH.map((_, i) => fishMarkup(i)).join('')}
+        <path d="${SAND_D}" fill="url(#${u}sand)"/>
+        <path d="M${L} ${SURF_Y}H${R}" stroke="${SURF}" stroke-width="2.4" opacity="0.7"/>
+      </g>
+      <path d="${TANK}" fill="url(#${u}glass)"/>
+      <path d="${TANK}" fill="url(#${u}lit)"/>
+      <path d="M${L} ${T + 4}Q${L} ${T} ${L + 4} ${T}H${R - 4}Q${R} ${T} ${R} ${T + 4}V${T + 5}H${L}Z" fill="${TRIM}"/>
+      <path d="M${L} ${B - 6}H${R}V${B - 4}Q${R} ${B} ${R - 4} ${B}H${L + 4}Q${L} ${B} ${L} ${B - 4}Z" fill="${TRIM}"/>
+      <path d="${TANK}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>`;
+    const els = [...svg.querySelectorAll('.fish')], plants = [...svg.querySelectorAll('.plants > g')];
+    const place = (el, fi, wag) => {
+      const [x, y] = toScreen(fi.p), s = fi.s * (1 + fi.p[2] * 0.12);
+      el.setAttribute('transform', `translate(${f(x)} ${f(y)}) scale(${f(fi.dir * s)} ${f(s)}) rotate(${f(fi.tilt)})`);
+      el.querySelector('.tail').setAttribute('transform', `rotate(${f(wag)} -7 0)`);
+    };
+    const F = FISH.map((d, i) => ({ ...d, i, p: [...d.home], v: [0, 0, 0], dir: i === 1 ? -1 : 1, tilt: 0 }));
+    const st = { live: false, food: null, scare: 0, last: null };
+    const tick = clock(time => {
+      st.scare *= 0.95;
+      let still = !st.live;
+      F.forEach((fi, k) => {
+        let tg = fi.home;
+        if (st.live && st.food) {
+          const a = k * 2.1 + time * 0.8;
+          tg = [st.food[0] + 0.18 * Math.cos(a), st.food[1] - 0.08 - 0.06 * k, 0.4 * Math.sin(a)];
+          // Scared, a fish darts away from the tap.
+          if (st.scare > 0.25) tg = [fi.p[0] + Math.sign(fi.p[0] - st.food[0] || 1) * 0.9, fi.p[1] + (fi.p[1] - st.food[1]) * 0.8, fi.p[2]];
+        } else if (st.live) {
+          tg = [fi.home[0] + 0.25 * Math.sin(time * 0.7 + k), fi.home[1] + 0.06 * Math.sin(time * 1.1 + k), fi.home[2]];
+        }
+        const pull = st.scare > 0.25 ? 0.02 : 0.006;
+        for (let j = 0; j < 3; j++) { fi.v[j] = (fi.v[j] + (tg[j] - fi.p[j]) * pull) * 0.9; fi.p[j] += fi.v[j]; }
+        fi.p[0] = clamp(fi.p[0], -0.82, 0.82); fi.p[1] = clamp(fi.p[1], 0.16, 0.86); fi.p[2] = clamp(fi.p[2], -0.8, 0.8);
+        if (Math.abs(fi.v[0]) > 0.002) fi.dir = Math.sign(fi.v[0]);
+        fi.tilt += (clamp(-fi.v[1] * 900, -24, 24) * fi.dir - fi.tilt) * 0.2;
+        if (Math.hypot(fi.p[0] - fi.home[0], fi.p[1] - fi.home[1], fi.p[2] - fi.home[2]) > 0.01 || Math.hypot(fi.v[0], fi.v[1]) > 0.0005) still = false;
+      });
+      F.forEach((fi, k) => place(els[k], fi, Math.sin(time * (8 + 30 * Math.hypot(fi.v[0], fi.v[1]))) * 14));
+      plants.forEach((pl, k) => pl.setAttribute('transform', pl.dataset.at + ` rotate(${f(st.live ? 4 * Math.sin(time * 1.3 + k) : 0)})`));
+      // A tank at rest stops its tick: an idle menu does no work.
+      if (still) { F.forEach(fi => { fi.p = [...fi.home]; fi.v = [0, 0, 0]; fi.tilt = 0; place(els[fi.i], fi, 0); }); tick.stop(); }
+    });
+    F.forEach((fi, k) => place(els[k], fi, 0));
+    const c = {
+      enter(p) { st.live = true; st.last = null; tick.start(); if (p) c.move(p); },
+      move(p) {
+        if (!p) return;
+        const q = toTank(p);
+        if (st.last && Math.hypot(q[0] - st.last[0], q[1] - st.last[1]) > 0.22) st.scare = 1;
+        st.last = q; st.food = q;
+      },
+      leave() { st.live = false; st.food = null; tick.start(); },
+    };
+    // The demo drifts the food along under the surface.
+    hook('aquarium', c, { period: 3.2, at: a => [64 + 28 * Math.sin(a), 50 + 6 * Math.cos(a * 2)] });
   }
 
   // Pendulum wave: an isometric rail block; the bobs swing out of its side.
