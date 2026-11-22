@@ -39,8 +39,8 @@ let liveBaked = false;
 const act = { hour() {}, now() {}, car() {}, scatter() {}, relight() {}, repaint() {}, nowDown() {}, nowUp() {} };
 // Dev tuning: the sun's bearing and the shadow darkness.
 const look = { sunAz: 0, shade: 0.4 };
-// Dev post: tone map (1 AgX, 0 ACES), film look, contrast, exposure, grain, vignette.
-const grade = { tone: 1, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28 };
+// Dev post: tone map (1 AgX, 0 ACES), film, contrast, exposure, grain, vignette, bloom.
+const grade = { tone: 1, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28, bloom: 0.4 };
 const ui = initPage({ id: 'wires', signal: true, bar: {
   slider: { label: 'Time', min: 0, max: 24, step: 0.05, value: hour, onInput: v => act.hour(v) },
   actions: [
@@ -62,6 +62,8 @@ const ui = initPage({ id: 'wires', signal: true, bar: {
     { type: 'slider', id: 'expo', group: 'Post', label: 'Exposure', min: 0.4, max: 2.5, step: 0.01, value: 1, persist: true, onInput: v => { grade.expo = v; act.repaint(); } },
     { type: 'slider', id: 'grain', group: 'Post', label: 'Grain', min: 0, max: 0.12, step: 0.005, value: 0.045, persist: true, onInput: v => { grade.grain = v; act.repaint(); } },
     { type: 'slider', id: 'vig', group: 'Post', label: 'Vignette', min: 0, max: 0.6, step: 0.01, value: 0.28, persist: true, onInput: v => { grade.vig = v; act.repaint(); } },
+    // Bright light spills into a soft glow round the sun, the moon and the lamps.
+    { type: 'slider', id: 'bloom', group: 'Post', label: 'Bloom', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { grade.bloom = v; act.repaint(); } },
   ],
   help: [['hold N', 'Timelapse'], ['click', 'Startle the crows'], ['click', 'Pluck a wire'], ['click', 'Swing the sneakers'], ['scroll', 'Read about the crows']],
 } });
@@ -69,7 +71,7 @@ const ui = initPage({ id: 'wires', signal: true, bar: {
 look.sunAz = +ui.setting('sunaz').value;
 look.shade = +ui.setting('shade').value;
 grade.tone = ui.setting('tone').value === 'aces' ? 0 : 1;
-for (const k of ['film', 'contrast', 'expo', 'grain', 'vig']) grade[k] = +ui.setting(k).value;
+for (const k of ['film', 'contrast', 'expo', 'grain', 'vig', 'bloom']) grade[k] = +ui.setting(k).value;
 
 /* ---------- the lane ---------- */
 // World metres: x east across the lane, y up, z north along it.
@@ -1438,11 +1440,68 @@ void main() {
   o = vec4(cov, cov * vK.z, 0.0, 0.0);
 }`;
 // The sky, the crows in front of it, the lane in front of them.
-// Then the shared grade and the fitted ACES output.
+// Out: linear light, before the bloom and the grade.
 const COMP_FS = `${HEAD}
 uniform sampler2D uSky, uScene, uBirds, uWires, uCloud;
-uniform float uExpo, uT;
 uniform vec3 uInk;
+out vec4 o;
+void main() {
+  ivec2 fc = ivec2(gl_FragCoord.xy);
+  vec2 res = vec2(textureSize(uScene, 0)), uv = gl_FragCoord.xy / res;
+  vec3 col = texture(uSky, uv).rgb;
+  vec4 Cl = texture(uCloud, uv);
+  col = col * (1.0 - Cl.a) + Cl.rgb;
+  vec4 B = texelFetch(uBirds, fc, 0), S = texelFetch(uScene, fc, 0);
+  if (B.r > 1e-3) {
+    // Far crows take on the sky's haze.
+    vec3 ink = mix(uInk, col * 0.7, clamp(B.g / B.r, 0.0, 1.0));
+    col = mix(ink, col, exp(-3.4 * B.r));
+  }
+  col = col * (1.0 - S.a) + S.rgb;
+  vec4 Wr = texelFetch(uWires, fc, 0);
+  col = col * (1.0 - Wr.a) + Wr.rgb;
+  o = vec4(col, 1.0);
+}`;
+// Bloom, after Jimenez (SIGGRAPH 2014): 13-tap downsamples, tent upsamples.
+// The first downsample weighs each group by 1 / (1 + luma): no fireflies.
+const BLOOM_N = 6;
+const BLOOM_DOWN_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uPx, uRes;
+uniform float uFirst;
+out vec4 o;
+vec3 tap(vec2 uv, float x, float y) { return min(texture(uSrc, uv + vec2(x, y) * uPx).rgb, vec3(64.0)); }
+float kw(vec3 c) { return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722))); }
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 a = tap(uv, -2.0, 2.0), b = tap(uv, 0.0, 2.0), c = tap(uv, 2.0, 2.0);
+  vec3 d = tap(uv, -2.0, 0.0), e = tap(uv, 0.0, 0.0), f = tap(uv, 2.0, 0.0);
+  vec3 g = tap(uv, -2.0, -2.0), h = tap(uv, 0.0, -2.0), i = tap(uv, 2.0, -2.0);
+  vec3 j = tap(uv, -1.0, 1.0), k = tap(uv, 1.0, 1.0), l = tap(uv, -1.0, -1.0), m = tap(uv, 1.0, -1.0);
+  if (uFirst < 0.5) {
+    o = vec4(e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125, 1.0);
+    return;
+  }
+  vec3 g0 = (j + k + l + m) * 0.25, g1 = (a + b + d + e) * 0.25, g2 = (b + c + e + f) * 0.25, g3 = (d + e + g + h) * 0.25, g4 = (e + f + h + i) * 0.25;
+  float w0 = kw(g0) * 0.5, w1 = kw(g1) * 0.125, w2 = kw(g2) * 0.125, w3 = kw(g3) * 0.125, w4 = kw(g4) * 0.125;
+  o = vec4((g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
+}`;
+// Each upsample adds a 3x3 tent of the smaller level onto the larger one.
+const BLOOM_UP_FS = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uPx, uRes;
+out vec4 o;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 s = texture(uSrc, uv).rgb * 4.0;
+  s += (texture(uSrc, uv + vec2(0.0, uPx.y)).rgb + texture(uSrc, uv - vec2(0.0, uPx.y)).rgb + texture(uSrc, uv + vec2(uPx.x, 0.0)).rgb + texture(uSrc, uv - vec2(uPx.x, 0.0)).rgb) * 2.0;
+  s += texture(uSrc, uv + uPx).rgb + texture(uSrc, uv - uPx).rgb + texture(uSrc, uv + vec2(uPx.x, -uPx.y)).rgb + texture(uSrc, uv + vec2(-uPx.x, uPx.y)).rgb;
+  o = vec4(s / 16.0, 1.0);
+}`;
+// The bloom mixes in, then the shared grade and the tone map.
+const OUT_FS = `${HEAD}
+uniform sampler2D uHdr, uBloom;
+uniform float uExpo, uT, uBloomK;
 // Post: x tone map (1 AgX), y film look, z contrast, w grain.
 uniform vec4 uPost;
 uniform float uVig;
@@ -1479,20 +1538,10 @@ vec3 portra(vec3 c, float k, float con) {
   return mix(c, f, k);
 }
 void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  vec2 res = vec2(textureSize(uScene, 0)), uv = gl_FragCoord.xy / res;
-  vec3 col = texture(uSky, uv).rgb;
-  vec4 Cl = texture(uCloud, uv);
-  col = col * (1.0 - Cl.a) + Cl.rgb;
-  vec4 B = texelFetch(uBirds, fc, 0), S = texelFetch(uScene, fc, 0);
-  if (B.r > 1e-3) {
-    // Far crows take on the sky's haze.
-    vec3 ink = mix(uInk, col * 0.7, clamp(B.g / B.r, 0.0, 1.0));
-    col = mix(ink, col, exp(-3.4 * B.r));
-  }
-  col = col * (1.0 - S.a) + S.rgb;
-  vec4 Wr = texelFetch(uWires, fc, 0);
-  col = col * (1.0 - Wr.a) + Wr.rgb;
+  vec2 res = vec2(textureSize(uHdr, 0)), uv = gl_FragCoord.xy / res;
+  vec3 col = texelFetch(uHdr, ivec2(gl_FragCoord.xy), 0).rgb;
+  // The upsamples sum BLOOM_N levels, so the mix divides by that.
+  if (uBloomK > 0.0) col = mix(col, texture(uBloom, uv).rgb / ${BLOOM_N}.0, uBloomK);
   col = gdGrade(col, uv, res.x / res.y, gl_FragCoord.xy + floor(fract(uT) * 97.0), vec3(0.0), uVig, 0.45, uPost.w);
   if (uPost.x < 0.5) { o = vec4(ouFilmAces(col, uExpo, gl_FragCoord.xy), 1.0); return; }
   vec3 d = ouSrgb(agx(col * uExpo));
@@ -1511,6 +1560,8 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
 }
 let P = null, vao = null, strokeVao = null, wireVao = null, strokeN = 0, ready = false, wireT = null;
 let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, wpT = null;
+// The linear frame and the bloom levels, half size and smaller.
+let hdrT = null, bloomT = [];
 let rows = 8, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0, W = 0, H = 0, A = 16 / 9;
 const GMIN = [0, 0, 0];
 
@@ -1545,7 +1596,8 @@ async function buildGL() {
   P = await linked(gl, {
     sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), cfield: program(gl, TRI, FIELD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
     splat: program(gl, SPLAT_VS, SPLAT_FS), blur: program(gl, TRI, BLUR_FS), upd: program(gl, TRI, UPDATE_FS),
-    bird: program(gl, BIRD_VS, BIRD_FS), comp: program(gl, TRI, COMP_FS),
+    bird: program(gl, BIRD_VS, BIRD_FS), comp: program(gl, TRI, COMP_FS), out: program(gl, TRI, OUT_FS),
+    bdown: program(gl, TRI, BLOOM_DOWN_FS), bup: program(gl, TRI, BLOOM_UP_FS),
   });
   // Samplers keep fixed units: state 0-1, field 3-4, birds 5, scene 6, sky 7.
   for (const q of [P.splat, P.upd, P.bird]) { gl.useProgram(q.p); gl.uniform1i(q.u.uPos, 0); gl.uniform1i(q.u.uVel, 1); }
@@ -1562,6 +1614,11 @@ async function buildGL() {
   gl.uniform1i(P.comp.u.uWires, 8);
   gl.uniform1i(P.comp.u.uCloud, 9);
   gl.uniform3fv(P.comp.u.uInk, linFit(0.13, 0.01, 270));
+  // The output reads the linear frame on 12 and the bloom on 13.
+  gl.useProgram(P.out.p);
+  gl.uniform1i(P.out.u.uHdr, 12);
+  gl.uniform1i(P.out.u.uBloom, 13);
+  for (const q of [P.bdown, P.bup]) { gl.useProgram(q.p); gl.uniform1i(q.u.uSrc, 12); }
   vao = gl.createVertexArray();
   S = [0, 1].map(() => {
     const pos = tex(TW, rows, gl.RGBA32F, gl.NEAREST), vel = tex(TW, rows, gl.RGBA32F, gl.NEAREST);
@@ -1588,7 +1645,8 @@ async function buildGL() {
   lay(wireStart);
   gl.bindVertexArray(null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = wpT = null;
+  FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = wpT = hdrT = null;
+  bloomT = [];
   fieldA = 0;
   bakeCloudField();
 }
@@ -1645,7 +1703,7 @@ function allocField() {
 function allocTargets() {
   const cw = canvas.width, ch = canvas.height;
   if (birdT && birdT.w === cw && birdT.h === ch) return;
-  [birdT, sceneT, skyT, passT, cloudT, wireT].forEach(freeT);
+  [birdT, sceneT, skyT, passT, cloudT, wireT, hdrT, ...bloomT].forEach(freeT);
   if (wpT) { gl.deleteFramebuffer(wpT.fb); gl.deleteTexture(wpT.tex); }
   const mk = (w, h, filter) => { const t = tex(w, h, gl.RGBA16F, filter); return { tex: t, fb: fbo([t]), w, h }; };
   birdT = mk(cw, ch, gl.NEAREST);
@@ -1665,6 +1723,8 @@ function allocTargets() {
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, passT.depth);
   cloudT = mk(Math.ceil(cw / 3), Math.ceil(ch / 3), gl.LINEAR);
   skyT = mk(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.LINEAR);
+  hdrT = mk(cw, ch, gl.LINEAR);
+  bloomT = Array.from({ length: BLOOM_N }, (_, i) => mk(Math.max(1, Math.ceil(cw / 2 ** (i + 1))), Math.max(1, Math.ceil(ch / 2 ** (i + 1))), gl.LINEAR));
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 function gridUniforms(q) {
@@ -2019,6 +2079,7 @@ function draw() {
   partSet([P.wire, P.solid, P.shoe], 'uWind', reduced() ? 0 : 1);
   partPasses(wireT, wpT, wireVao, strokeN - wireStart, false, [P.wire, P.solid, P.shoe]);
   gl.bindVertexArray(vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdrT.fb);
   gl.viewport(0, 0, cw, ch);
   gl.useProgram(P.comp.p);
   bindTex(5, birdT.tex);
@@ -2026,11 +2087,44 @@ function draw() {
   bindTex(7, skyT.tex);
   bindTex(8, wireT.tex);
   bindTex(9, cloudT.tex);
-  gl.uniform1f(P.comp.u.uExpo, light.expo * grade.expo);
-  gl.uniform4f(P.comp.u.uPost, grade.tone, grade.film, grade.contrast, grade.grain);
-  gl.uniform1f(P.comp.u.uVig, grade.vig);
-  gl.uniform1f(P.comp.u.uT, simT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // The Bloom setting runs 0 to 1; 1 mixes in 12 percent.
+  const k = grade.bloom * 0.12;
+  if (k > 0) bloom();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cw, ch);
+  const O = P.out.u;
+  gl.useProgram(P.out.p);
+  bindTex(12, hdrT.tex);
+  bindTex(13, bloomT[0].tex);
+  gl.uniform1f(O.uBloomK, k);
+  gl.uniform1f(O.uExpo, light.expo * grade.expo);
+  gl.uniform4f(O.uPost, grade.tone, grade.film, grade.contrast, grade.grain);
+  gl.uniform1f(O.uVig, grade.vig);
+  gl.uniform1f(O.uT, simT);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// Down the levels from the linear frame, then back up, summing.
+function bloom() {
+  const pass = (q, src, dst) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    bindTex(12, src.tex);
+    gl.uniform2f(q.u.uPx, 1 / src.w, 1 / src.h);
+    gl.uniform2f(q.u.uRes, dst.w, dst.h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  gl.disable(gl.BLEND);
+  gl.useProgram(P.bdown.p);
+  bloomT.forEach((dst, i) => {
+    gl.uniform1f(P.bdown.u.uFirst, i === 0 ? 1 : 0);
+    pass(P.bdown, i ? bloomT[i - 1] : hdrT, dst);
+  });
+  gl.useProgram(P.bup.p);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  for (let i = BLOOM_N - 2; i >= 0; i--) pass(P.bup, bloomT[i + 1], bloomT[i]);
+  gl.disable(gl.BLEND);
 }
 
 /* ---------- the car, the shoes, a plucked wire ---------- */
