@@ -100,7 +100,7 @@ Two new ideas from Tom, the same day. The interactions are open.
 
 | # | Toy | Group | Bean | Note |
 |---|---|---|---|---|
-| 365 | **Volcano** | C | `stimming-4wnw` (draft) | A volcano erupts. Size XXXXXL: a three.js parade piece at Railgun scale. Its own toy, apart from Lava coast (99). Not in the S to M batch. |
+| 365 | **Volcano** | C | `stimming-4wnw` | A volcano erupts. Size XXXXXL: a three.js parade piece at Railgun scale. Its own toy, apart from Lava coast (99). Not in the S to M batch. The MVP (one shot, one eruption) is in the Lab; the plan names the later stages. |
 | 366 | **Jet hover** | C | `stimming-ay6n` (draft) | A VTOL jet hovers on turbofans with the afterburner lit: heat glow, smoke, heat distortion and haze against the background. Size XXL. Tom chose the craft over a jet engine on a plinth. Apart from Night catapult (220). |
 
 ## Built outside the pool
