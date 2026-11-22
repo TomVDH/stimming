@@ -5,11 +5,12 @@ import type { Object3D, Side } from 'three';
 import type { AltAz } from '../core/sky.ts';
 import { TUBE_PARK_ALT as PARK } from '../core/machine.ts';
 
-/* ---------- one dome: stone drum, white cupola, slit, shutter, tube ---------- */
+/* ---------- one dome: render drum, white cupola, slit, shutter, tube ---------- */
 const DEG = MathUtils.DEG2RAD;
 // Sizes in metres at size 1.
 // world/hero shares these sizes.
-export const DRUM_R = 3.2, DRUM_H = 3.4;
+// The main dome is size 1.7: 10.8 m across, 6.9 m drum, 12.5 m to the top.
+export const DRUM_R = 3.18, DRUM_H = 4.06;
 // The drum is this much wider at its foot.
 export const DRUM_BATTER = 1.04;
 export const DOME_R = 3.3;
@@ -147,9 +148,9 @@ export function buildDome(size: number, laser = false): Dome {
   const root = new Group();
   root.scale.setScalar(size);
 
-  // The stone drum, with a ledge where the dome sits.
-  // About 24 blocks round the drum and 8 courses up.
-  const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * DRUM_BATTER, DRUM_H, 48), new MeshLambertMaterial({ map: stoneMap(3, 1) }));
+  // The render drum, with a ledge where the dome sits.
+  // The drum is plain render, with no block courses.
+  const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * DRUM_BATTER, DRUM_H, 48), lam(0xd8d3c6));
   drum.position.y = DRUM_H / 2;
   const ledge = new Mesh(new CylinderGeometry(DRUM_R + 0.18, DRUM_R + 0.18, 0.22, 48), lam(0x6d6862));
   ledge.position.y = DRUM_H - 0.11;

@@ -42,7 +42,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `post/chain.ts` | The post chain: render, bloom, grade, ACES output; `resizePost`, `renderPost` |
 | `world/far.ts` | The far mountains: three ridgelines on rings round the wide eye, 1 to 3° high; they fade into the sky behind them and melt into the haze at the foot; in the golden hour the late sun lights their west faces; `far` |
 | `world/hill.ts` | The land: the observatory hill and its clearing, the camera's rise, far ridges; starlight; `hillHeight`, `SITE`, `EYE_H` |
-| `world/observatory.ts` | One dome: stone drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; on the main dome, a plain cylinder on the tube stands in for the laser (`laserMouth`); `buildDome(size, laser)`, `stoneMap`; the dome sizes; `Dome.pose` and `Dome.show` for the hero model |
+| `world/observatory.ts` | One dome: render drum, lit door, white cupola with its slit and shutter, the steel tube on its fork; on the main dome, a plain cylinder on the tube stands in for the laser (`laserMouth`); `buildDome(size, laser)`, `stoneMap`; the dome sizes; `Dome.pose` and `Dome.show` for the hero model |
 | `world/complex.ts` | The main dome, two small domes, the stone hall, the roll-off shed, the road |
 | `world/woods.ts` | The pines over the hill from Tom's model, `../models/pine.glb`: near trees as the instanced mesh, the rest as impostor cards; a clearing and a gap for the road; trees the eye never sees are left out; `woods` |
 | `world/impostor.ts` | The impostor bake, once at load: three crossed cards, a colour atlas and a normal atlas, premultiplied, with clear gutters between the cells; the bake targets go after a texel copy; `bakeImpostor` |

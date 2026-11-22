@@ -32,16 +32,14 @@ const u = (metres: number): number => metres / SCALE;
 // The drum leans in a little as it rises.
 const wallR = (y: number): number => DRUM_R * (DRUM_BATTER - (DRUM_BATTER - 1) * y / DRUM_H);
 // Heights from the ground.
-// The ashlar courses start at the plinth's top.
+// The render plinth stands to this height.
 const PLINTH_Y = 0.55;
 // The drum wall stops here.
 // The track and the gear sit on top.
 const WALL_TOP = DRUM_H - 0.44;
-// Six courses fill the wall between the plinth and the top.
+// Six course lines divide the wall; the door's cut stops on one.
 const COURSES = 6;
 const COURSE_H = (WALL_TOP - PLINTH_Y) / COURSES;
-// The string course marks the observing floor, three courses up.
-const STRING_Y = PLINTH_Y + 3 * COURSE_H;
 // The catwalk's deck is 0.9 m deep.
 // It lies 0.9 m under the cupola's foot.
 const DECK_Y = DRUM_H - 0.6;
@@ -602,7 +600,7 @@ function buildHero(main: Dome, tx: Painted): Built {
   root.name = 'hero';
 
   const stone = tx.stone;
-  // The stone matches the light model's drum: a pale, warm limestone.
+  // The door surround is pale, warm limestone.
   const stoneMat = std({ map: stone.map, normalMap: stone.normal, roughness: 0.92 });
   // Black-painted iron: rail, brackets, lamp cages.
   const iron = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
@@ -615,37 +613,30 @@ function buildHero(main: Dome, tx: Painted): Built {
   const glow = std({ color: 0x000000, emissive: DOOR_GLOW, emissiveIntensity: 0, roughness: 0.3 });
 
   /* ---------- the drum ---------- */
-  const st = new Geo(), ir = new Geo(), dr = new Geo(), gl = new Geo();
-  // The door's opening in azimuth, at the courses it cuts.
+  const st = new Geo(), ir = new Geo(), dr = new Geo(), gl = new Geo(), rd = new Geo();
+  // The door's opening in azimuth, at the wall it cuts.
   // The gap stays inside the jambs, so no cut end shows.
   const DOOR_W = DOOR_HALF + 0.17;
   const doorA = DOOR_W / wallR(1);
   const DOOR_TOP = DOOR_SPRING + DOOR_HALF + 0.24;
-  // Ashlar texture: 24 blocks round the drum, so six tiles.
-  const stoneUV = (row: number, y0: number, y1: number) => (a: number, _r: number, y: number): P2 =>
-    [a / (2 * Math.PI) * 6, row * 0.5 + 0.5 * (y - y0) / (y1 - y0)];
-
-  // The plinth: one tall course that stands proud, with a sloped top.
+  // The door's cut stops on a course line above the door.
+  const cutTop = PLINTH_Y + Math.ceil((DOOR_TOP - PLINTH_Y) / COURSE_H) * COURSE_H;
+  // The drum is plain render: the plinth, the wall and the coping.
+  const renderMat = std({ color: 0xd8d3c6, roughness: 0.9 });
+  // The plinth stands proud of the wall.
   const pr = wallR(0) + u(0.12);
-  st.lathe([[wallR(0) - 0.3, 0], [pr, 0], [pr, PLINTH_Y - u(0.09)], [wallR(PLINTH_Y) - 0.005, PLINTH_Y], [wallR(0) - 0.3, PLINTH_Y]], 144,
-    { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(0, 0, PLINTH_Y + 0.3) });
-  // The courses: each face has a small chamfer at its joints.
-  const J = u(0.012), C = u(0.025);
-  for (let k = 0; k < COURSES; k++) {
-    const y0 = PLINTH_Y + k * COURSE_H, y1 = y0 + COURSE_H;
-    const cut = y0 < DOOR_TOP;
-    st.lathe([[wallR(y0) - J, y0], [wallR(y0 + C), y0 + C], [wallR(y1 - C), y1 - C], [wallR(y1) - J, y1]], 144,
-      { a0: cut ? doorA : 0, a1: cut ? 2 * Math.PI - doorA : 2 * Math.PI, uv: stoneUV(k % 2, y0, y1) });
-  }
-  // The string course: a weathered band with a drip under it.
-  const sy = STRING_Y, sr = wallR(sy);
-  st.lathe([[sr - 0.02, sy - u(0.12)], [sr + u(0.09), sy - u(0.10)], [sr + u(0.11), sy - u(0.07)], [sr + u(0.11), sy + u(0.02)],
-    [sr + u(0.05), sy + u(0.08)], [sr - 0.02, sy + u(0.09)]], 144,
-  { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(1, sy - 0.3, sy + 0.3) });
+  rd.lathe([[wallR(0) - 0.3, 0], [pr, 0], [pr, PLINTH_Y - u(0.09)], [wallR(PLINTH_Y) - 0.005, PLINTH_Y], [wallR(0) - 0.3, PLINTH_Y]], 144,
+    { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA });
+  // The wall below the cut top has the door's gap.
+  rd.lathe([[wallR(PLINTH_Y), PLINTH_Y], [wallR(cutTop), cutTop]], 144, { a0: doorA, a1: 2 * Math.PI - doorA });
+  // The wall above the cut top runs all round.
+  rd.lathe([[wallR(cutTop), cutTop], [wallR(WALL_TOP), WALL_TOP]], 144);
+  // The joint's depth sets the spandrels back from the wall.
+  const J = u(0.012);
   // The coping on the wall's top, under the track.
   const cr = wallR(WALL_TOP);
-  st.lathe([[DRUM_R - 0.36, WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP + u(0.04)],
-    [cr + u(0.03), WALL_TOP + u(0.07)], [DRUM_R - 0.36, WALL_TOP + u(0.07)]], 144, { closed: true, uv: stoneUV(0, WALL_TOP - 0.3, WALL_TOP + 0.3) });
+  rd.lathe([[DRUM_R - 0.36, WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP + u(0.04)],
+    [cr + u(0.03), WALL_TOP + u(0.07)], [DRUM_R - 0.36, WALL_TOP + u(0.07)]], 144, { closed: true });
 
   /* ---------- the door: a stone surround, two leaves, a lit fanlight ---------- */
   // The surround is drawn flat in door space.
@@ -671,9 +662,7 @@ function buildHero(main: Dome, tx: Painted): Built {
     prism(w, shape, PROUD - 0.2, PROUD + (key ? u(0.03) : 0), ID);
     st.wrap(w.build(), false, true);
   }
-  // The courses stop at the door.
   // The spandrels fill round the arch.
-  const cutTop = PLINTH_Y + Math.ceil((DOOR_TOP - PLINTH_Y) / COURSE_H) * COURSE_H;
   {
     // It sits a joint's depth back and fills only the gap.
     // A fine grid keeps it on the curve of the wall.
@@ -1079,7 +1068,7 @@ function buildHero(main: Dome, tx: Painted): Built {
   cupola.add(new Mesh(rb.build(), ribMat));
 
   const parts: Object3D[] = [
-    new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
+    new Mesh(rd.build(), renderMat), new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
     new Mesh(fx.build(), steel), new Mesh(dv.build(), enamel), new Mesh(dvBrass.build(), brass), ...pinions,
     new Mesh(inWall.build(), plaster), new Mesh(fl.build(), floorMat), new Mesh(fix.build(), lampMat), new Mesh(lad.build(), wood), redBulb, new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts, cupola,
   ];

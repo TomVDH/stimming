@@ -59,9 +59,9 @@ const box = (w: number, h: number, d: number, color: number | MeshLambertMateria
 
 // The long, low stone building.
 // A row of windows runs along its north face.
-// It is 30 m long, 9 m deep and 5 m high.
+// It is 24 m long, 8 m deep and 4.5 m high.
 // It has a flat roof.
-const HALL = { x: 14, z: 7, w: 30, d: 9, h: 5 };
+const HALL = { x: 14, z: 7, w: 24, d: 8, h: 4.5 };
 // Each lit pane has its own material.
 // Then each pane can come on alone.
 // world/lights sets their colours.
@@ -84,7 +84,7 @@ function evenUvs(g: BufferGeometry, w: number, h: number, d: number): void {
 
 function hall(): Group {
   const g = new Group();
-  // The stone blocks match the drums: about 1 m by 0.4 m.
+  // The stone blocks are about 1 m by 0.4 m.
   const walls = box(HALL.w, HALL.h, HALL.d, new MeshLambertMaterial({ map: stoneMap(4, 1.5) }), HALL.x, 0, HALL.z);
   // The end walls take the same block size as the long walls.
   evenUvs(walls.geometry, HALL.w, HALL.h, HALL.d);
@@ -92,11 +92,12 @@ function hall(): Group {
   // A dark tarred roof slab.
   g.add(box(HALL.w + 0.6, 0.4, HALL.d + 0.6, 0x26272a, HALL.x, HALL.h, HALL.z));
   // Three of the seven windows are lit.
-  const lit = [1, 2, 5], dark = lam(0x121315);
+  // The seven windows keep a 3 m margin at each end of the hall.
+  const lit = [1, 2, 5], dark = lam(0x121315), step = (HALL.w - 6) / 6;
   for (let i = 0; i < 7; i++) {
     const k = lit.indexOf(i);
     const w = new Mesh(new BoxGeometry(1.4, 1.8, 0.1), k < 0 ? dark : litPanes[k]);
-    w.position.set(HALL.x - 12 + i * 4, 2.2, HALL.z - HALL.d / 2 - 0.05);
+    w.position.set(HALL.x - 3 * step + i * step, 2.2, HALL.z - HALL.d / 2 - 0.05);
     g.add(w);
   }
   return g;
@@ -131,13 +132,13 @@ export function buildComplex(): Complex {
   root.position.copy(SITE);
   // The main dome holds the big refractor.
   // The laser leaves it.
-  const main = buildDome(1.5, true);
+  const main = buildDome(1.7, true);
   main.root.position.set(-6, 0, -2);
   // One small dome stands alone to the east.
   // One sits on the hall's roof.
-  const east = buildDome(0.8);
+  const east = buildDome(0.6);
   east.root.position.set(40, 0, 2);
-  const roof = buildDome(0.75);
+  const roof = buildDome(0.55);
   roof.root.position.set(HALL.x + 8, HALL.h + 0.4, HALL.z);
   const own = [hall(), shed()];
   root.add(main.root, east.root, roof.root, ...own);
