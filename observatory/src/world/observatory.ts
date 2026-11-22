@@ -137,8 +137,8 @@ export function stoneMap(rx: number, ry: number): CanvasTexture {
   t.repeat.set(rx, ry);
   return t;
 }
-// The door glows warm from the room behind it; the lights set its strength.
-export const DOOR_GLOW = new Color(1.0, 0.55, 0.22);
+// The door glows cool white from the room behind it; the lights set its strength.
+export const DOOR_GLOW = new Color(0.75, 0.86, 1.0);
 // Painted steel for the pier and the fork.
 const dark = () => new MeshLambertMaterial({ color: 0x2c2f33 });
 

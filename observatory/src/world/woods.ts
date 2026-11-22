@@ -9,21 +9,22 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { buildSteps, stage } from '../../../shared/stim.js';
 import { disposeTree, onLeave, renderer, scene } from '../setup.ts';
-import { CLEAR, EYE_H, RISE, TOP, hillHeight } from './hill.ts';
+import { CLEAR, EYE_H, RISE, TREELINE, hillHeight, vnoise } from './hill.ts';
 import { roadDist } from './complex.ts';
 import { bakeImpostor } from './impostor.ts';
 
-/* ---------- the woods: dark pines over the hill, in two draw calls ---------- */
-// Trees stand on a jittered 7 m grid.
+/* ---------- the woods: boreal spruce over the slopes, in two draw calls ---------- */
+// Trees stand on a jittered 6 m grid.
 // The grid covers the land the camera sees.
-const STEP = 7;
+const STEP = 6;
 const AREA = { x0: -760, x1: 760, z0: -330, z1: 760 };
 // No tree stands inside these gaps, in metres.
 // The gaps are round the eye's foot, the clearing and the road.
 const EYE_GAP = 75, CLEAR_GAP = 6, ROAD_GAP = 6;
-// The hilltop is bare above this height.
-// The treetops then stay under the complex.
-const TREELINE = TOP - 17;
+// The treeline is ragged by this many metres either way.
+const TREELINE_JAG = 14;
+// No tree stands on ground steeper than this slope, rise over run.
+const MAX_SLOPE = 1.45;
 
 // Every tree this near the complex stays.
 // The close cuts look out over these trees.
@@ -339,7 +340,12 @@ export function buildWoods(pine: Pine): Woods {
       // The clearing's edge is ragged.
       if (Math.hypot(tx, tz) < CLEAR + CLEAR_GAP + rand() * 8) continue;
       if (Math.hypot(tx - RISE.x, tz - RISE.z) < EYE_GAP) continue;
-      if (Math.hypot(tx, tz) < 200 && hillHeight(tx, tz) > TREELINE - rand() * 4) continue;
+      const gh = hillHeight(tx, tz);
+      // Rock and snow lie over the treeline; it climbs higher in the gullies.
+      if (gh > TREELINE + (vnoise(tx / 40, tz / 40, 5) - 0.5) * 2 * TREELINE_JAG - rand() * 6) continue;
+      // Cliffs and rock ribs stay bare.
+      const sl = Math.hypot(hillHeight(tx + 2, tz) - hillHeight(tx - 2, tz), hillHeight(tx, tz + 2) - hillHeight(tx, tz - 2)) / 4;
+      if (sl > MAX_SLOPE) continue;
       if (roadDist(tx, tz) < ROAD_GAP + rand() * 2) continue;
       const r = rand();
       // Trees the camera never sees are left out.
@@ -362,8 +368,8 @@ export function buildWoods(pine: Pine): Woods {
     // The crown height h starts 1 m over the ground.
     const h = (12 + 8 * r) * (0.82 + 0.26 * q);
     o.position.set(x, hillHeight(x, z), z);
-    // Some crowns are slim spires, some are broad.
-    const w = h * (0.3 + 0.12 * qw) / pine.R;
+    // Boreal spruce: most crowns are slim spires.
+    const w = h * (0.22 + 0.1 * qw) / pine.R;
     o.scale.set(w, h + 1, w * (0.9 + 0.2 * q));
     o.rotation.set((q - 0.5) * 0.06, r * 6.28, (q2 - 0.5) * 0.06);
     o.updateMatrix();

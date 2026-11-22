@@ -16,8 +16,8 @@ import { BIG_DOOR_K, BIG_WALL_R } from './observatory.ts';
 
 // Linear colours.
 // Values over 2 cross the bloom threshold.
-const PANE_OFF = new Color(0.012, 0.012, 0.013), PANE_ON = new Color(1.6, 0.95, 0.45);
-const LAMP_OFF = new Color(0.02, 0.02, 0.02), LAMP_ON = new Color(6, 3.6, 1.6);
+const PANE_OFF = new Color(0.012, 0.012, 0.013), PANE_ON = new Color(0.95, 1.1, 1.35);
+const LAMP_OFF = new Color(0.02, 0.02, 0.02), LAMP_ON = new Color(4.4, 4.8, 5.6);
 // The door lamp's light on the drum and the ground, in candela.
 const DOOR_CD = 2.5;
 // The door glow at full light.

@@ -1,46 +1,211 @@
 // Load order: post/chain runs first.
 import '../post/chain.ts';
-import { BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, HemisphereLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
+import { BufferGeometry, CatmullRomCurve3, Color, DirectionalLight, Float32BufferAttribute, HemisphereLight, Mesh, MeshLambertMaterial, PlaneGeometry, Vector3 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
 
-/* ---------- the land: the observatory hill, the camera's rise, far ridges ---------- */
+/* ---------- the land: an alpine peak in boreal forest, the camera's ridge, the road ---------- */
 // Scene axes: +Y is up, -Z is north, +X is east.
 // Azimuth runs from north through east, as in core/sky.ts.
+// The peak follows the Pic du Midi de Bigorre: a rock pyramid with arêtes.
+// It stands alone, over deep land on three sides.
+// Source: Wikimedia Commons photos of the observatory and its peak.
+// Boreal forest covers the slopes up to a ragged treeline.
 
-// The complex stands in a flat clearing on the hilltop.
-// The clearing's centre is the origin.
-export const CLEAR = 46;
-// The camera's rise lies north of the hill, across a wooded valley.
+// The complex stands on a flat platform on the summit.
+// The platform's centre is the origin.
+// Its half-sizes east-west and north-south, in metres.
+const PLAT_A = 54, PLAT_B = 30, PLAT_Z = -3;
+// The platform's edge rounds over into the slope in this many metres.
+const PLAT_EDGE = 10;
+// Other modules keep clear of the platform within this radius.
+export const CLEAR = 54;
+// The camera's ridge lies north of the peak, across a deep valley.
 export const RISE = { x: 0, z: -300 };
-// The wide eye stands this high over the rise.
+// The wide eye stands this high over the ridge.
 export const EYE_H = 27;
 
-function land(x: number, z: number): number {
-  const r = Math.hypot(x, z);
-  const hill = 62 / (1 + (r / 110) ** 2);
-  const rise = 32 / (1 + (Math.hypot(x - RISE.x, z - RISE.z) / 90) ** 2);
-  // Low ridges far to the south sit under the complex's skyline.
-  const far = 42 * Math.exp(-(((z - 1150) / 260) ** 2)) * (0.75 + 0.25 * Math.sin(x * 0.0041 + 0.6));
-  const swell = 3 * Math.sin(x * 0.013 + 0.4) * Math.sin(z * 0.011 + 1.1);
-  return hill + rise + far + swell;
+const sstep = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+// A hash of a lattice point and a seed, in [0, 1).
+function hash(i: number, j: number, s: number): number {
+  const h = Math.sin(i * 127.1 + j * 311.7 + s * 74.7) * 43758.5453;
+  return h - Math.floor(h);
 }
-export const TOP = land(0, 0);
+// Smooth value noise in [0, 1).
+export function vnoise(x: number, y: number, s: number): number {
+  const i = Math.floor(x), j = Math.floor(y), u = x - i, v = y - j;
+  const a = u * u * (3 - 2 * u), b = v * v * (3 - 2 * v);
+  const n0 = hash(i, j, s) + (hash(i + 1, j, s) - hash(i, j, s)) * a;
+  const n1 = hash(i, j + 1, s) + (hash(i + 1, j + 1, s) - hash(i, j + 1, s)) * a;
+  return n0 + (n1 - n0) * b;
+}
+// Sharp ridges in [0, 1]: rock ribs with gullies between.
+function ridged(x: number, y: number, s: number): number {
+  let sum = 0, amp = 0.5, w = 1;
+  for (let i = 0; i < 4; i++) {
+    const n = 1 - Math.abs(vnoise(x, y, s) * 2 - 1);
+    sum += amp * n * n * w;
+    w = Math.min(1, n * 1.6);
+    x = x * 2.03 + 13.7; y = y * 2.03 + 5.3; amp *= 0.5;
+  }
+  return sum / 0.94;
+}
+const angDiff = (a: number, b: number): number => {
+  let d = (a - b) % (2 * Math.PI);
+  if (d > Math.PI) d -= 2 * Math.PI;
+  if (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+};
+
+// The peak's arêtes: azimuth, width in radians, strength.
+// The north-east arête is broad; the road climbs beside it.
+const ARETES = [[62, 0.5, 0.5], [195, 0.25, 0.2], [285, 0.25, 0.22]].map(([a, w, k]) => ({ a: a * Math.PI / 180, w, k }));
+// The peak: height, flat cap radius, foot radius.
+const PEAK = 300, CAP = 40, FOOT = 330;
+
+// The land before the platform, the buttress and the road.
+function base(x: number, z: number): number {
+  const r = Math.hypot(x, z), th = Math.atan2(x, -z);
+  let ar = 0;
+  for (const A of ARETES) ar = Math.max(ar, A.k * Math.exp(-((angDiff(th, A.a) / A.w) ** 2)));
+  const d = Math.max(0, r * (1 - ar) - CAP);
+  const peak = PEAK * Math.max(0, 1 - d / FOOT) ** 1.6;
+  // The camera's ridge runs east-west to the north.
+  const north = 240 * Math.exp(-(((z + 330) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
+  // The peak stands alone: deep land surrounds it on the east, south and west.
+  // The camera's ridge to the north stays.
+  const north01 = Math.exp(-((th / 0.9) ** 2));
+  const moat = -110 * Math.exp(-(((r - 360) / 140) ** 2)) * (1 - north01);
+  // A deep valley lies between the camera's ridge and the peak.
+  const valley = -80 * Math.exp(-(((z + 185) / 60) ** 2)) * Math.exp(-((x / 900) ** 2));
+  // Rock ribs and gullies cover the slopes, not the summit.
+  const rough = 26 * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(50, 130, r);
+  const fine = 5 * (vnoise(x / 22, z / 22, 3) - 0.5);
+  return peak + north + moat + valley + rough + fine;
+}
+const TOP0 = base(0, 0);
+
+// A buttress on the north face carries the switchbacks at about 30 degrees.
+function raw(x: number, z: number): number {
+  const h = base(x, z);
+  const mask = Math.exp(-(((x - 115) / 90) ** 2)) * sstep(-10, -40, z);
+  const apron = TOP0 - 6 - 0.6 * Math.max(0, -z - 30);
+  return h + mask * Math.max(0, apron - h);
+}
+// The platform's height.
+export const TOP = raw(0, 0);
+
+// 0 on the platform, 1 past its rounded edge.
+function platK(x: number, z: number): number {
+  const e = Math.hypot(x / PLAT_A, (z - PLAT_Z) / PLAT_B);
+  return sstep(1, 1 + PLAT_EDGE / PLAT_B, e);
+}
+function landNoRoad(x: number, z: number): number {
+  return TOP + (raw(x, z) - TOP) * platK(x, z);
+}
+
+/* ---------- the road: switchbacks up the buttress ---------- */
+// Each leg follows the slope at its own height.
+// Hairpins join the legs at their ends.
+// Under the last leg the road runs down the valley to the west.
+export const ROAD_W = 5;
+// The legs: count, top height, drop per leg, west end, east end.
+const LEGS = 6, LEG_H0 = 286, LEG_DH = 19, LEG_XA = 45, LEG_XB = 165;
+
+// The z of the crest at this x: the highest point north of the summit.
+function crestZ(x: number): number {
+  let bz = -10, bh = -1e9;
+  for (let z = -10; z >= -160; z -= 2) { const h = raw(x, z); if (h > bh) { bh = h; bz = z; } }
+  return bz;
+}
+// The z on the north face where the land stands at height h.
+function faceZ(x: number, h: number): number {
+  let lo = crestZ(x), hi = -280;
+  for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2; if (raw(x, m) > h) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+
+function roadKnots(): Vector3[] {
+  const k: Vector3[] = [];
+  // From the platform's north-east edge.
+  k.push(new Vector3(26, TOP, -26), new Vector3(40, TOP - 2, -42));
+  for (let i = 0; i < LEGS; i++) {
+    const east = i % 2 === 0, xa = LEG_XA + 4 * i, xb = LEG_XB + 4 * i;
+    for (let j = 0; j <= 4; j++) {
+      const t = j / 4, x = east ? xa + (xb - xa) * t : xb - (xb - xa) * t, h = LEG_H0 - LEG_DH * (i + t);
+      k.push(new Vector3(x, h, faceZ(x, h)));
+    }
+    // The hairpin bulges past the leg's end.
+    if (i < LEGS - 1) {
+      const x = east ? xb + 12 : xa - 12, h = LEG_H0 - LEG_DH * (i + 1);
+      k.push(new Vector3(x, h, faceZ(x, h) - 4));
+    }
+  }
+  // Down the valley to the west, out of view.
+  for (const [x, z] of [[10, -232], [-80, -240], [-220, -232], [-420, -215], [-700, -200]]) k.push(new Vector3(x, raw(x, z), z));
+  return k;
+}
+// The road's centre line, about every 3 m, with its height.
+export const ROAD: Vector3[] = (() => {
+  const c = new CatmullRomCurve3(roadKnots(), false, 'centripetal');
+  return c.getSpacedPoints(Math.round(c.getLength() / 3));
+})();
+
+// Road segments sorted into 24 m cells, so a lookup checks few segments.
+const CELL = 24, REACH = ROAD_W / 2 + 12;
+const cells = new Map<number, number[]>();
+const cellKey = (i: number, j: number): number => (i + 1000) * 4000 + (j + 1000);
+for (let s = 0; s + 1 < ROAD.length; s++) {
+  const a = ROAD[s], b = ROAD[s + 1];
+  const i0 = Math.floor((Math.min(a.x, b.x) - REACH) / CELL), i1 = Math.floor((Math.max(a.x, b.x) + REACH) / CELL);
+  const j0 = Math.floor((Math.min(a.z, b.z) - REACH) / CELL), j1 = Math.floor((Math.max(a.z, b.z) + REACH) / CELL);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const key = cellKey(i, j), list = cells.get(key);
+    if (list) list.push(s); else cells.set(key, [s]);
+  }
+}
+// The nearest road point within REACH: its distance and the road's height there.
+function nearRoad(x: number, z: number): { d: number; y: number } {
+  const list = cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL)));
+  let best = Infinity, y = 0;
+  if (!list) return { d: best, y };
+  for (const s of list) {
+    const a = ROAD[s], b = ROAD[s + 1];
+    const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
+    const t = Math.min(1, Math.max(0, ((x - a.x) * dx + (z - a.z) * dz) / l2));
+    const px = a.x + dx * t - x, pz = a.z + dz * t - z, d = Math.hypot(px, pz);
+    if (d < best) { best = d; y = a.y + (b.y - a.y) * t; }
+  }
+  return { d: best, y };
+}
+// Distance in metres from a point to the road's centre line.
+// Points far from the road give Infinity.
+export function roadDist(x: number, z: number): number {
+  return nearRoad(x, z).d;
+}
 
 // Ground height in metres at a point.
+// The road cuts a flat bench into the slope; its banks run out over 10 m.
 export function hillHeight(x: number, z: number): number {
-  const r = Math.hypot(x, z);
-  // The clearing is flat.
-  // It rounds over into the slope by 80 m.
-  const k = Math.min(1, Math.max(0, (r - CLEAR) / 34));
-  const s = k * k * (3 - 2 * k);
-  return TOP + (land(x, z) - TOP) * s;
+  const h = landNoRoad(x, z), r = nearRoad(x, z);
+  if (r.d > REACH) return h;
+  const w = 1 - sstep(ROAD_W / 2 + 0.8, REACH - 1, r.d);
+  return h + (r.y - h) * w;
 }
 
-// The centre of the clearing.
+// The centre of the platform.
 export const SITE = new Vector3(0, TOP, 0);
 
-// Dark grass and earth under starlight.
-const ground = new MeshLambertMaterial({ color: new Color(0.06, 0.066, 0.05) });
+/* ---------- the ground's colours ---------- */
+// Linear colours under starlight.
+// Forest floor and meadow, rock, snow, the platform's concrete, the road's banks.
+const MEADOW = new Color(0.05, 0.058, 0.042), ROCK = new Color(0.1, 0.098, 0.096);
+const SCREE = new Color(0.085, 0.08, 0.072), SNOW = new Color(0.2, 0.215, 0.25), GRAVEL = new Color(0.13, 0.13, 0.128);
+const BANK = new Color(0.12, 0.11, 0.095);
+// Rock shows above this height; meadow and forest below.
+export const TREELINE = TOP - 22;
 
 // Grid lines from lo to hi.
 // They are dense at 0 and sparse at the ends.
@@ -55,10 +220,10 @@ function axis(lo: number, hi: number, n0: number, n1: number): number[] {
 }
 
 // One mesh holds all the land in view.
-// Steps are about 4 m at the complex.
+// Steps are about 3 m at the summit.
 // They grow to 30 m at the edges.
 function landMesh(): BufferGeometry {
-  const xs = axis(-1000, 1000, 80, 80), zs = axis(-700, 1900, 50, 150);
+  const xs = axis(-1000, 1000, 110, 110), zs = axis(-700, 1900, 70, 170);
   const p: number[] = [], idx: number[] = [];
   for (const z of zs) for (const x of xs) p.push(x, hillHeight(x, z), z);
   const row = xs.length;
@@ -72,13 +237,35 @@ function landMesh(): BufferGeometry {
   g.setAttribute('position', new Float32BufferAttribute(p, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
+  // Each vertex takes a colour from its slope, height and facing.
+  const n = g.getAttribute('normal'), col: number[] = [], c = new Color();
+  for (let i = 0; i < n.count; i++) {
+    const x = p[3 * i], y = p[3 * i + 1], z = p[3 * i + 2], ny = n.getY(i), nz = n.getZ(i);
+    const ragged = (vnoise(x / 18, z / 18, 7) - 0.5) * 24;
+    // Steep ground and ground over the treeline is rock.
+    const rock = Math.max(sstep(0.8, 0.62, ny), sstep(TREELINE - 6, TREELINE + 10, y + ragged));
+    c.copy(MEADOW).lerp(SCREE, sstep(0.88, 0.72, ny) * 0.6).lerp(ROCK, rock);
+    // Snow lies in the north gullies high on the peak.
+    // The gullies run downhill, so the noise stretches up and down the slope.
+    const gully = vnoise(x / 6, (y + z * 0.2) / 26, 9);
+    const snow = sstep(TREELINE + 12, TOP - 8, y) * sstep(-0.2, -0.55, nz) * sstep(0.62, 0.74, gully) * sstep(0.35, 0.6, ny);
+    c.lerp(SNOW, snow * 0.7);
+    // The road's cut banks show bare earth, so the switchbacks read from afar.
+    const bank = 1 - sstep(ROAD_W / 2, REACH, nearRoad(x, z).d);
+    c.lerp(BANK, bank * 0.75);
+    // The platform is poured concrete.
+    c.lerp(GRAVEL, 1 - platK(x, z));
+    col.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new Float32BufferAttribute(col, 3));
   return g;
 }
+const ground = new MeshLambertMaterial({ vertexColors: true });
 export const hill = new Mesh(landMesh(), ground);
 scene.add(hill);
 
 // Flat land past the mesh hides the stars below the horizon.
-const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), ground);
+const flat = new Mesh(new PlaneGeometry(9000, 9000).rotateX(-Math.PI / 2), new MeshLambertMaterial({ color: MEADOW }));
 flat.position.y = -0.5;
 scene.add(flat);
 onLeave(() => { disposeTree(hill); disposeTree(flat); });

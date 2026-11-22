@@ -18,11 +18,16 @@ import { SKY_GLSL, fog, skyU } from '../sky/haze.ts';
 // Further ranges show smaller features and fade more into the sky.
 type Ridge = { r: number; lo: number; hi: number; f: number; fade: number; seed: number };
 // Back to front: about 38 km, 22 km and 12 km out.
+// The back range is alpine and snow-capped; the front ranges are boreal forest.
 const RIDGES: Ridge[] = [
-  { r: 3400, lo: 1.5, hi: 3.0, f: 44, fade: 0.55, seed: 31 },
-  { r: 3200, lo: 1.2, hi: 2.5, f: 26, fade: 0.3, seed: 17 },
-  { r: 3000, lo: 1.0, hi: 2.0, f: 15, fade: 0.08, seed: 5 },
+  { r: 3400, lo: 2.2, hi: 5.2, f: 44, fade: 0.55, seed: 31 },
+  { r: 3200, lo: 1.6, hi: 3.4, f: 26, fade: 0.3, seed: 17 },
+  { r: 3000, lo: 1.1, hi: 2.3, f: 15, fade: 0.08, seed: 5 },
 ];
+// Snow caps the back range's crests over this angle, in degrees.
+const SNOW_ALT = 3.6;
+// The snow reaches this many degrees down from a crest.
+const SNOW_DEPTH = 0.45;
 // Crest points per ridge: one every tenth of a degree.
 const STEPS = 3600;
 // The ring's foot lies under the flat land.
@@ -150,6 +155,10 @@ const farMat = new ShaderMaterial({
       // The light fades from the crest down.
       body += uRidge * vWest.x * exp(-(vWest.y - vAlt) / ${WEST_DEPTH.toFixed(2)});
     }
+    // Snow caps the highest crests of the back range.
+    float snow = step(0.5, vFade) * smoothstep(${SNOW_ALT.toFixed(2)}, ${(SNOW_ALT + 0.8).toFixed(2)}, vWest.y)
+      * (1.0 - smoothstep(0.0, ${SNOW_DEPTH.toFixed(2)}, vWest.y - vAlt));
+    body = mix(body, uHor * 1.5, snow * 0.7);
     // Each range fades by its distance into the sky behind it.
     vec3 col = mix(body, skyColor(d), vFade);
     // The foot melts into the valley haze, so no seam shows.
