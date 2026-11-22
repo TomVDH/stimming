@@ -33,7 +33,7 @@ Plan: docs/plans/deepvent.md. Toy id `deepvent`. Batch 1 of the 14 Lab builds.
 - [x] Lab entry: toys.json, menu li and GSAP hook
 - [x] QA Q1 to Q10
 - [x] docs/toys/deepvent.md
-- [ ] Commit and push
+- [x] Commit and push (0c145793, 875cbc6b)
 - [ ] Tom's sign-off
 
 ## Notes
