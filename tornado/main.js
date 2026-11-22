@@ -1960,7 +1960,7 @@ function funnelPass(w, h) {
     funDraw(fun.B.fb);
   }
   // The runner wants the context in its default state.
-  gl.bindTexture(gl.TEXTURE_3D, null);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, null);
   gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);

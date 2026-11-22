@@ -417,7 +417,8 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
       // The resolve keeps the multisampled format: a blit cannot change it.
       // Half floats when the driver allows; up to 4 samples.
       const half = !!gl.getExtension('EXT_color_buffer_float'), fmt = half ? gl.RGBA16F : gl.RGBA8;
-      const samples = Math.min(4, ...gl.getInternalformatParameter(gl.RENDERBUFFER, fmt, gl.SAMPLES));
+      const allowed = gl.getInternalformatParameter(gl.RENDERBUFFER, fmt, gl.SAMPLES);
+      const samples = allowed && allowed.length ? Math.min(4, allowed[0]) : 0;
       ms = msPair(w, h, samples, fmt);
       for (const g of ['far', 'near']) out[g] = [0, 1].map(() => target(gl, w, h, { format: fmt, filter: gl.NEAREST }));
       w0 = w; h0 = h;
@@ -445,7 +446,13 @@ export function vehDraw(gl, { scene, uniforms, textures, hour }) {
     sceneUniforms(set.body, w, h);
     sceneUniforms(set.gnd, w, h);
     gl.viewport(0, 0, w, h);
+    // Each live vehicle's group, as inGroup() decides it; a group with none only clears.
+    const yaw = uniforms.uYaw(), zs = kinds.map((_, i) => -(traf.u[i * 4] * Math.sin(yaw) + traf.u[i * 4 + 1] * Math.cos(yaw)));
     for (const [g, far] of [['far', true], ['near', false]]) {
+      if (!zs.some((z, i) => live[i] && z >= 0.3 && (z > 60) === far)) {
+        for (const t of out[g]) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+        continue;
+      }
       for (let share = 0; share < 2; share++) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, ms.fb);
         gl.clearColor(0, 0, 0, 0);
