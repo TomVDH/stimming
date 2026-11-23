@@ -4,6 +4,7 @@ import { BoxGeometry, Color, CylinderGeometry, Group, Mesh, MeshBasicMaterial, M
 import { disposeTree, onLeave, scene } from '../setup.ts';
 import { hillHeight } from './hill.ts';
 import { ROAD, complex, type Complex } from './complex.ts';
+import { BIG_DOOR_K, BIG_WALL_R } from './observatory.ts';
 
 /* ---------- the complex lights: window panes, door lamps, road lamps ---------- */
 // Each lamp has its own material.
@@ -15,8 +16,8 @@ import { ROAD, complex, type Complex } from './complex.ts';
 
 // Linear colours.
 // Values over 2 cross the bloom threshold.
-const PANE_OFF = new Color(0.012, 0.012, 0.013), PANE_ON = new Color(1.6, 0.95, 0.45);
-const LAMP_OFF = new Color(0.02, 0.02, 0.02), LAMP_ON = new Color(6, 3.6, 1.6);
+const PANE_OFF = new Color(0.012, 0.012, 0.013), PANE_ON = new Color(0.95, 1.1, 1.35);
+const LAMP_OFF = new Color(0.02, 0.02, 0.02), LAMP_ON = new Color(4.4, 4.8, 5.6);
 // The door lamp's light on the drum and the ground, in candela.
 const DOOR_CD = 2.5;
 // The door glow at full light.
@@ -41,18 +42,20 @@ export function buildLights(c: Complex): Lights {
   const on = [PANE_ON, LAMP_ON];
 
   // A lamp over each dome door, in the dome's own scale.
-  // The drum radius is 3.2.
-  // The door arch tops out at 2.1.
+  // The classic drum radius is 3.2; its door arch tops out at 2.1.
+  // The big dome's door is smaller, on its base.
   const bulb = new SphereGeometry(0.16, 10, 6);
   const bulbs: Mesh[] = [];
   const doors: Lamp[] = domes.map((d) => {
     const mat = new MeshBasicMaterial({ color: LAMP_ON });
     const m = new Mesh(bulb, mat);
     bulbs.push(m);
-    m.position.set(0, 2.5, -3.28);
+    const k = d.big ? BIG_DOOR_K : 1, z = d.big ? -BIG_WALL_R - 0.03 : -3.28;
+    m.position.set(0, 2.5 * k, z);
+    m.scale.setScalar(k);
     // The lamp's light reaches about 12 m at size 1.
-    const pl = new PointLight(LAMP_ON.clone().multiplyScalar(1 / 6), DOOR_CD, 12 * d.root.scale.x, 2);
-    pl.position.set(0, 2.6, -3.9);
+    const pl = new PointLight(LAMP_ON.clone().multiplyScalar(1 / 6), DOOR_CD, 12 * d.root.scale.x * k, 2);
+    pl.position.set(0, 2.6 * k, z - 0.62 * k);
     d.root.add(m, pl);
     const bulbLamp = glow(mat, 1);
     return (k) => { bulbLamp(k); d.door.emissiveIntensity = DOOR_GLOW_K * k; pl.intensity = DOOR_CD * k; };
