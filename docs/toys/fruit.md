@@ -8,7 +8,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 
 | Key | Fruit | Inside |
 |---|---|---|
-| 1 | Kiwi | Green flesh with pale rays, black seeds in a jelly ring of juice beads, a cream core |
+| 1 | Kiwi | Flesh drawn at two depths, wandering pale rays; 38 spokes of jelly cells, each a juice bead round a black seed; a raised fibrous core. Fuzz with rubbed short patches |
 | 2 | Pomegranate | 380 arils as real geometry: long teardrops pressed flat against their neighbours, juice lit through to a seed inside; some sliced flat at the cut. Open chambers between spongy pith walls; a crown with dry stamens |
 | 3 | Blood orange | Ten segments of juice sacs drawn per pixel, the red flush in patches |
 | 4 | Peach | Gold flesh, red at the stone; a ridged stone in one half, its hollow in the other |
@@ -41,6 +41,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 
 | Part | File | Method |
 |---|---|---|
+| Depth | `half.js` | The cut-face shader passes the view ray's slide per unit depth (`gPar`); a fruit samples its flesh again below the cut. |
 | Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio (key, rim, fill and top softboxes) blurred by roughness; Schlick Fresnel |
 | Halves | `half.js` | A lathe skin per half, the cut face at x = 0. Skin colour, specks and pores run in fruit space, so the seam does not show. |
 | Cut face | `half.js` | A disc that follows the fruit's outline (a crease, a star), or a ring round a pit. Each fruit gives its colour and a relief; the relief bends a wet film that reflects the studio. |

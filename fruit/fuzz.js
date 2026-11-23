@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import { LIGHT, DENT } from './glsl.js';
+import { createNoise3D } from 'simplex-noise';
 import { rng } from './half.js';
 
 const SEG = 5;
@@ -11,7 +12,8 @@ const COUNT = [7000, 17000, 30000];
 
 const VERT = /* glsl */`
 ${DENT}
-uniform float uLen, uWidth, uRuffle, uTime, uPx, uSide, uLift, uCurl;
+uniform float uLen, uWidth, uRuffle, uTime, uPx, uSide, uLift, uCurl, uPatch;
+attribute float aPatch;
 uniform vec3 uFlow, uGrav;
 attribute float aT, aSide;
 attribute vec3 aRoot, aNrm;
@@ -34,10 +36,11 @@ void main() {
   float sw = aRnd.y * 6.2832;
   vec3 side = normalize(cross(n, comb + vec3(1e-4, 2e-4, 0.0)));
   comb = normalize(normalize(comb + vec3(1e-4)) * 0.8 + side * (sin(sw) * 0.9 + sin(aRoot.y * 23.0 + aRoot.z * 17.0) * 0.5));
-  float len = uLen * (0.55 + 0.75 * aRnd.x);
+  // Rubbed patches: the hairs there are short and lie flat.
+  float len = uLen * (0.55 + 0.75 * aRnd.x) * (1.0 - uPatch * aPatch);
   // A ruffle: each hair lifts and twists while the fruit squeezes.
   float ru = uRuffle * (0.6 + 0.8 * fract(aRnd.w * 7.3));
-  vec3 lift = n * (uLift + 0.3 * aRnd.z + ru * 0.7);
+  vec3 lift = n * (uLift + 0.3 * aRnd.z + ru * 0.7) * (1.0 - 0.6 * uPatch * aPatch);
   vec3 p0 = dent(aRoot);
   vec3 p1 = p0 + (lift * 0.9 + comb * 0.25) * len * 0.33;
   vec3 p2 = p1 + (lift * 0.45 + comb * 0.8 + side * aRnd.z * 0.4 + uFlow * 0.5) * len * 0.36;
@@ -115,7 +118,8 @@ export function makeFuzz(halves, L, F) {
     const skin = hf.userData.skin;
     const sampler = new MeshSurfaceSampler(skin).setRandomGenerator(rng(91 + hi * 7)).build();
     const R = rng(5 + hi * 13);
-    const root = new Float32Array(n * 3), nrm = new Float32Array(n * 3), rnd = new Float32Array(n * 4);
+    const root = new Float32Array(n * 3), nrm = new Float32Array(n * 3), rnd = new Float32Array(n * 4), patch = new Float32Array(n);
+    const pn = createNoise3D(rng(77));
     const p = new THREE.Vector3(), q = new THREE.Vector3();
     for (let i = 0; i < n; i++) {
       // Roots keep clear of the cut edge, so no hair crosses the face.
@@ -123,16 +127,20 @@ export function makeFuzz(halves, L, F) {
       root.set([p.x, p.y, p.z], i * 3);
       nrm.set([q.x, q.y, q.z], i * 3);
       rnd.set([R(), R(), R(), R()], i * 4);
+      // The patch field runs in fruit space, so both halves agree at the seam.
+      const s = hi ? -1 : 1, pv = pn(p.x * s * 2.2, p.y * 2.2, p.z * s * 2.2);
+      patch[i] = Math.min(1, Math.max(0, (pv - 0.15) / 0.5));
     }
     const g = strip();
     g.setAttribute('aRoot', new THREE.InstancedBufferAttribute(root, 3));
     g.setAttribute('aNrm', new THREE.InstancedBufferAttribute(nrm, 3));
     g.setAttribute('aRnd', new THREE.InstancedBufferAttribute(rnd, 4));
+    g.setAttribute('aPatch', new THREE.InstancedBufferAttribute(patch, 1));
     g.instanceCount = COUNT[1];
     const su = skin.material.uniforms;
     const U = {
       ...L, uDent: su.uDent, uJig: su.uJig, uJigT: su.uJigT,
-      uSide: su.uSide, uRoot0: v3(Z.root[0]), uRoot1: v3(Z.root[1]), uTip: v3(Z.tip), uTrans: v3(Z.trans), uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uLift: { value: Z.lift ?? 0.38 }, uCurl: { value: Z.curl ?? 0 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
+      uSide: su.uSide, uRoot0: v3(Z.root[0]), uRoot1: v3(Z.root[1]), uTip: v3(Z.tip), uTrans: v3(Z.trans), uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uLift: { value: Z.lift ?? 0.38 }, uPatch: { value: Z.patch ?? 0 }, uCurl: { value: Z.curl ?? 0 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
       uFlow: { value: new THREE.Vector3() }, uGrav: { value: new THREE.Vector3(0, -1, 0) },
     };
     const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, alphaToCoverage: true, transparent: false });

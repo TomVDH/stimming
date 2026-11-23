@@ -157,12 +157,16 @@ export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap =
       varying vec3 vW, vN, vL;
       varying vec2 vF;
       varying vec3 vTy, vTz;
+      // The view ray's slide across the face per unit of depth, in face units.
+      // A fruit reads it to draw flesh below the cut, for depth.
+      vec2 gPar;
       ${bed}
       void main() {
         float r = length(vF);
         float a = atan(vF.y, vF.x);
         vec3 n = normalize(vN);
         vec3 v = normalize(cameraPosition - vW);
+        gPar = vec2(dot(v, vTy), dot(v, vTz)) / max(dot(v, n), 0.25);
         float glow = 0.0;
         vec3 col = bed(vF, r, a, glow);
         // The cut is wet: its relief breaks a film of juice.
@@ -183,7 +187,7 @@ export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap =
 
 // Juice beads: instanced turbid ellipsoids, lit through their chords.
 // Each bead: { p: [x, y, z], ph (turn about x), s: [sx, sy, sz], col, sig, seed }.
-export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet = 0.9 } = {}) {
+export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet = 0.9, behind = 1 } = {}) {
   const m = new THREE.ShaderMaterial({
     uniforms: { ...U, uSeedCol: { value: new THREE.Vector3(...seedCol) } },
     vertexShader: /* glsl */`
@@ -244,7 +248,7 @@ export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet
           col += uSeedCol * (uKeyCol * (0.25 + 0.6 * sl) + hemi(n) * 0.4) * through;
         } else {
           // Light from the bed behind: brightest at the thin rims.
-          col += (vCol * uRimCol * uGlow * 0.6 + vCol * uKeyCol * 0.35) * through;
+          col += (vCol * uRimCol * uGlow * 0.6 + vCol * uKeyCol * 0.35) * through * ${behind.toFixed(2)};
         }
         // A wet skin of juice: the studio, mirrored.
         col += studio(reflect(-vw, n), 0.03) * fresnel(max(dot(n, vw), 0.0), 0.025) * ${wet.toFixed(2)};

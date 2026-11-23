@@ -19,6 +19,7 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Realism 1 | Studio reflections, wrap diffuse, wet film on a per-fruit relief, specks, pores; bead chord sign fixed (the march never ran before) |
 | Ten fruits | Six new fruits on the shared parts |
 | Pomegranate | Arils as packed teardrop meshes, some sliced; open chambers in a spongy pith; skin patches, streaks and scars; a big crown with stamens |
+| Kiwi | Seeds in jelly cells along 38 spokes; flesh at two depths; wandering rays; fibrous core; fuzz patches; a stem scar |
 
 ## Next: one fruit at a time
 
