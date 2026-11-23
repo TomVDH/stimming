@@ -409,10 +409,11 @@ export function createFire({
       const d = worldPos.xz.sub(land.xz);
       const rr = d.length().add(1e-3);
       const hgt = worldPos.y.sub(floorY);
-      const band = float(1.0).sub(smoothstep(0.25, 1.4, hgt)).mul(smoothstep(0.2, 1.0, rr)).mul(rr.div(4.5).negate().exp());
-      // A soft wall jet: the steam rolls out, it is not thrown.
-      const out = vec3(d.x.div(rr), 0.15, d.y.div(rr)).mul(K.x.mul(0.6));
-      newVel.assign(mix(newVel, out, band.mul(relax).mul(0.45)));
+      // The jet turns flat on the floor: a thin sheet runs out radially.
+      const band = float(1.0).sub(smoothstep(0.3, 1.0, hgt)).mul(smoothstep(0.15, 0.8, rr)).mul(float(1.0).sub(smoothstep(2.5, 4.5, rr)));
+      const out = vec3(d.x.div(rr), 0.04, d.y.div(rr)).mul(K.x.mul(0.65));
+      newVel.assign(mix(newVel, out, band.mul(relax).mul(0.6)));
+      // Past 4.5 m the sheet runs free; its shear rolls it into billows.
     }
 
     // Velocity fades near the box walls.
@@ -483,7 +484,7 @@ export function createFire({
     const gridDims = vec3(GX, GY, GZ);
     const nearestUVW = floor(prevPos.mul(gridDims)).add(0.5).div(gridDims);
     const age = dyeTexNode.sample(nearestUVW).level(0).b.add(u.dt).toVar();
-    // Jet hover: hot jets heat their cores; steam flashes off the damp floor.
+    // Jet hover: hot jets heat their cores and smoke the floor; steam flashes off it.
     const wp = uvw.sub(0.5).mul(u.size).add(vec3(CX, CY, CZ));
     const floorY = float(CY - SY / 2);
     for (let j = 0; j < 3; j++) {
@@ -499,6 +500,10 @@ export function createFire({
       const land = P.add(A.mul(L));
       const rr = wp.xz.distance(land.xz);
       const hgt = wp.y.sub(floorY);
+      // The exhaust strikes the floor and carries smoke out in the sheet.
+      const imp = float(1.0).sub(smoothstep(0.5, 2.5, rr)).mul(float(1.0).sub(smoothstep(0.2, 1.2, hgt)));
+      density.addAssign(K.y.mul(0.09).mul(imp).mul(u.dt));
+      temperature.addAssign(K.y.mul(0.04).mul(imp).mul(u.dt));
       const ring = smoothstep(0.4, 1.4, rr).mul(float(1.0).sub(smoothstep(2.0, 6.5, rr))).mul(float(1.0).sub(smoothstep(0.15, 0.9, hgt)));
       const patch = smoothstep(0.45, 0.8, mx_noise_float(wp.mul(vec3(1.3, 0.0, 1.3)).add(vec3(u.time.mul(0.35), 0.0, u.time.mul(-0.2)))).mul(0.5).add(0.5));
       density.addAssign(K.z.mul(ring).mul(patch.mul(1.6).add(0.1)).mul(u.dt));

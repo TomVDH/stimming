@@ -2,13 +2,80 @@
 // Units are metres. The pad centre is the origin; y points up.
 // three.js 0.186 WebGPU; every shader is TSL.
 import * as THREE from 'three/webgpu';
+import { HOURS } from '../shared/daytime.js';
 import {
   Fn, vec2, vec3, float, uniform, positionWorld, positionLocal, positionWorldDirection, cameraPosition,
   normalize, mix, smoothstep, exp, max, min, abs, fract, floor, sin, cos, dot, atan, fwidth, mx_noise_float, reflect,
 } from 'three/tsl';
 
-// The last light lies behind the craft, low in the west (-z).
+// The dusk sun lies behind the craft, low in the west (-z).
 export const SUN = new THREE.Vector3(0.18, -0.05, -1).normalize();
+
+/* ---------- four times of day ---------- */
+// Each key sets the sky, the ranges, the apron light, the lights, the grade and the gas.
+// sun: the key light's direction; at night it is the moon.
+// zen, hor, low: the sky from zenith to the horizon. glow, wide, halo: light round the sun.
+// flank, crest: a range's foot and top. lights: far lights. E, sunE: apron sky and sun light.
+const TOD = {
+  dawn: {
+    sun: [-0.12, 0.03, -1], zen: [0.025, 0.04, 0.085], hor: [0.09, 0.08, 0.1], low: [0.04, 0.045, 0.07],
+    glow: [0.5, 0.22, 0.08], glowW: 0.03, wide: [0.08, 0.05, 0.06], halo: 0.9, stars: 0,
+    flank: [0.015, 0.018, 0.03], crest: [0.06, 0.045, 0.05], lights: 0.35,
+    E: [0.06, 0.065, 0.09], sunE: [2.0, 1.2, 0.7], haze: 0.0045,
+    hemiSky: [0.54, 0.56, 0.69], hemiGround: [0.13, 0.11, 0.11], hemiI: 1.1, rimCol: [1.0, 0.72, 0.56], rimI: 2.0,
+    expo: 0.85, key: [0.95, 0.92, 1.0], pull: 0.25, smoke: [0.1, 0.1, 0.13], plume: 0.9,
+  },
+  day: {
+    sun: [-0.45, 0.62, -0.65], zen: [0.22, 0.32, 0.5], hor: [0.62, 0.56, 0.48], low: [0.1, 0.09, 0.07],
+    glow: [0.25, 0.2, 0.12], glowW: 0.08, wide: [0.15, 0.12, 0.08], halo: 0, stars: 0,
+    flank: [0.18, 0.17, 0.17], crest: [0.32, 0.29, 0.26], lights: 0,
+    E: [0.55, 0.6, 0.7], sunE: [1.6, 1.45, 1.2], haze: 0.004,
+    hemiSky: [0.72, 0.77, 0.85], hemiGround: [0.35, 0.31, 0.28], hemiI: 1.4, rimCol: [1.0, 0.94, 0.86], rimI: 3.0,
+    expo: 0.75, key: [1.04, 0.99, 0.9], pull: 0.22, smoke: [0.5, 0.49, 0.47], plume: 0.75,
+  },
+  dusk: {
+    sun: [0.18, -0.05, -1], zen: [0.003, 0.006, 0.02], hor: [0.016, 0.026, 0.052], low: [0.012, 0.02, 0.036],
+    glow: [0.16, 0.06, 0.02], glowW: 0.02, wide: [0.03, 0.026, 0.04], halo: 0, stars: 0,
+    flank: [0.006, 0.008, 0.014], crest: [0.03, 0.022, 0.03], lights: 1,
+    E: [0.02, 0.028, 0.052], sunE: [0, 0, 0], haze: 0.0026,
+    hemiSky: [0.23, 0.3, 0.47], hemiGround: [0.05, 0.04, 0.04], hemiI: 0.95, rimCol: [1.0, 0.71, 0.54], rimI: 1.4,
+    expo: 0.9, key: [0.8, 0.9, 1.06], pull: 0.3, smoke: [0.035, 0.05, 0.09], plume: 1,
+  },
+  night: {
+    sun: [0.5, 0.45, -0.75], zen: [0.001, 0.0015, 0.004], hor: [0.006, 0.008, 0.014], low: [0.006, 0.007, 0.01],
+    glow: [0.02, 0.014, 0.01], glowW: 0.03, wide: [0.004, 0.005, 0.008], halo: 0, stars: 1,
+    flank: [0.002, 0.0025, 0.004], crest: [0.006, 0.007, 0.011], lights: 1.6,
+    E: [0.006, 0.008, 0.014], sunE: [0.03, 0.035, 0.05], haze: 0.0022,
+    hemiSky: [0.11, 0.15, 0.25], hemiGround: [0.02, 0.02, 0.02], hemiI: 0.5, rimCol: [0.62, 0.7, 0.88], rimI: 0.6,
+    expo: 1.0, key: [0.75, 0.88, 1.1], pull: 0.4, smoke: [0.01, 0.014, 0.024], plume: 1.1,
+  },
+};
+export const TIMES = /** @type {const} */ (['dawn', 'day', 'dusk', 'night']);
+const KEYS = TIMES.map(n => ({ h: HOURS[n], ...TOD[n] }));
+const v3 = a => new THREE.Vector3(...a);
+const c3 = a => new THREE.Color(...a);
+// The shaders read these; tod() writes them.
+const T = {
+  sun: uniform(SUN.clone()), zen: uniform(c3(TOD.dusk.zen)), hor: uniform(c3(TOD.dusk.hor)), low: uniform(c3(TOD.dusk.low)),
+  glow: uniform(c3(TOD.dusk.glow)), glowW: uniform(TOD.dusk.glowW), wide: uniform(c3(TOD.dusk.wide)), halo: uniform(0), stars: uniform(0),
+  flank: uniform(c3(TOD.dusk.flank)), crest: uniform(c3(TOD.dusk.crest)), lights: uniform(1),
+  E: uniform(c3(TOD.dusk.E)), sunE: uniform(c3(TOD.dusk.sunE)),
+};
+// Blends the two keys round the hour, on the 24-hour circle.
+export function blendTod(hour) {
+  let i = KEYS.length - 1;
+  for (let k = 0; k < KEYS.length; k++) if (KEYS[k].h <= hour) i = k;
+  const a = KEYS[i], b = KEYS[(i + 1) % KEYS.length];
+  const span = (b.h - a.h + 24) % 24 || 24;
+  const t = ((hour - a.h + 24) % 24) / span;
+  const f = t * t * (3 - 2 * t);
+  const out = {};
+  for (const k of Object.keys(a)) {
+    const x = a[k], y = b[k];
+    out[k] = Array.isArray(x) ? x.map((v, j) => v + (y[j] - v) * f) : x + (y - x) * f;
+  }
+  return out;
+}
 // The apron: wet concrete slabs round the pad, out to this radius.
 export const APRON_R = 260;
 
@@ -16,18 +83,25 @@ export const APRON_R = 260;
 const h11 = p => fract(sin(p.mul(127.1)).mul(43758.5453));
 const h21 = p => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
 const n2 = p => mx_noise_float(p).mul(0.5).add(0.5);
-const SX = normalize(vec2(SUN.x, SUN.z));
 
-// Blue hour: a deep zenith, a cold band, the last warm light toward the sun.
+// The sky: a zenith over a horizon, a warm band toward the sun, stars at night.
 export const skyCol = Fn(([d]) => {
   const el = d.y;
-  const ca = dot(normalize(d.xz.add(1e-5)), SX).mul(0.5).add(0.5);
+  const ca = dot(normalize(d.xz.add(1e-5)), normalize(T.sun.xz.add(1e-5))).mul(0.5).add(0.5);
   const e0 = max(el, 0.0);
-  const c = mix(vec3(0.016, 0.026, 0.052), vec3(0.003, 0.006, 0.02), e0.clamp(0.0, 1.0).sqrt()).toVar();
-  // The last light: a thin warm band under a cold, wide glow.
-  c.addAssign(vec3(0.16, 0.06, 0.02).mul(exp(e0.div(-0.02))).mul(ca.pow(6.0)));
-  c.addAssign(vec3(0.03, 0.026, 0.04).mul(exp(e0.div(-0.12))).mul(ca.pow(2.0)));
-  c.addAssign(vec3(0.012, 0.02, 0.036).mul(exp(e0.div(-0.06))));
+  const c = mix(T.hor, T.zen, e0.clamp(0.0, 1.0).sqrt()).toVar();
+  // A thin band toward the sun under a wide glow.
+  c.addAssign(T.glow.mul(exp(e0.div(T.glowW).negate())).mul(ca.pow(6.0)));
+  c.addAssign(T.wide.mul(exp(e0.div(-0.12))).mul(ca.pow(2.0)));
+  c.addAssign(T.low.mul(exp(e0.div(-0.06))));
+  // A halo round a sun below the ranges.
+  const cs = dot(d, T.sun);
+  c.addAssign(T.glow.mul(exp(float(1.0).sub(cs).mul(-300.0)).mul(2.0).add(exp(float(1.0).sub(cs).mul(-30.0)).mul(0.5))).mul(T.halo));
+  // Stars: one point in a few cells, faint near the horizon.
+  const sc = vec2(atan(d.x, d.z.negate()), el).mul(900.0);
+  const ci = floor(sc), fp = fract(sc).sub(0.5);
+  const star = smoothstep(0.99, 0.993, h21(ci)).mul(exp(dot(fp, fp).mul(-30.0))).mul(h21(ci.add(3.0)).mul(0.5).add(0.1));
+  c.addAssign(vec3(0.8, 0.85, 1.0).mul(star).mul(T.stars).mul(smoothstep(0.02, 0.12, el)));
   return c;
 });
 // The haze colour at the horizon in a direction.
@@ -68,7 +142,7 @@ export const farCountry = Fn(([d]) => {
     const haze = 1 - Math.exp((-D / 1000) * k);
     // The flank darkens toward its foot; the crest takes the last light.
     const flank = smoothstep(top.sub(0.004), top, el);
-    const col = mix(vec3(0.006, 0.008, 0.014), vec3(0.03, 0.022, 0.03), flank).mul(1 - haze).add(hz.mul(haze));
+    const col = mix(T.flank, T.crest, flank).mul(1 - haze).add(hz.mul(haze));
     c.assign(mix(c, col, on));
   }
   // Far lights at the foot of the near range: a sparse row of sodium and white.
@@ -79,7 +153,7 @@ export const farCountry = Fn(([d]) => {
   const pa = max(fwidth(az), 1e-6);
   const dd = lx.mul(lx).div(pa.mul(pa)).add(ly.mul(ly).div(px.mul(px)));
   const lc = mix(vec3(1.0, 0.6, 0.26), vec3(0.85, 0.9, 1.0), smoothstep(0.69, 0.71, h11(ci.add(5.0))));
-  c.addAssign(lc.mul(has).mul(exp(dd.mul(-0.8))).mul(h11(ci.add(9.0)).mul(2.5).add(1.2)));
+  c.addAssign(lc.mul(has).mul(exp(dd.mul(-0.8))).mul(h11(ci.add(9.0)).mul(2.5).add(1.2)).mul(T.lights));
   return c;
 });
 
@@ -108,7 +182,7 @@ function apronMaterial(U) {
     for (let i = 0; i < 2; i++) { const q = p.sub(U.hot[i].xz); soot.addAssign(exp(dot(q, q).div(-2.4))); }
     alb.mulAssign(float(1.0).sub(soot.clamp(0.0, 1.0).mul(0.6).mul(apron)));
     // Light: the sky above, then the nozzles and the hot pools.
-    const E = vec3(0.02, 0.028, 0.052).toVar();
+    const E = T.E.add(T.sunE.mul(max(T.sun.y, 0.0))).toVar();
     const hot = vec3(0.0).toVar();
     for (let i = 0; i < 3; i++) {
       const L = U.noz[i].xyz.sub(P);
@@ -319,5 +393,20 @@ export function buildScene() {
     scene.add(l);
     return l;
   });
-  return { scene, apron, U, craft, lamps, hemi, rim };
+  // Sets the sky, the light and the haze for an hour; returns the blend for main.
+  const tod = hour => {
+    const k = blendTod(hour);
+    const sun = v3(k.sun).normalize();
+    T.sun.value.copy(sun);
+    for (const n of ['zen', 'hor', 'low', 'glow', 'wide', 'flank', 'crest', 'E', 'sunE']) T[n].value.setRGB(...k[n]);
+    T.glowW.value = k.glowW; T.halo.value = k.halo; T.stars.value = k.stars; T.lights.value = k.lights;
+    U.haze.value = k.haze;
+    // Light colours are sRGB, as the hex values were.
+    hemi.color.setRGB(...k.hemiSky, THREE.SRGBColorSpace); hemi.groundColor.setRGB(...k.hemiGround, THREE.SRGBColorSpace);
+    hemi.intensity = k.hemiI;
+    rim.color.setRGB(...k.rimCol, THREE.SRGBColorSpace); rim.intensity = k.rimI;
+    rim.position.set(sun.x * 30, Math.max(sun.y * 30, 4), sun.z * 30);
+    return k;
+  };
+  return { scene, apron, U, craft, lamps, hemi, rim, tod };
 }

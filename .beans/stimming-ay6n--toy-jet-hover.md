@@ -45,6 +45,9 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 - [x] WebGPU move: three.js 0.186.1, Fire's fluid and volume copied into jethover/gas.js for steam and exhaust (Tom, 2026-11-23: "truster will become webgpu", "fire shader for smoke and exhaust")
 - [x] Villeneuve shot: long lens from 150 m at eye height, far ranges in haze (Tom, 2026-11-23: "more villeneuveian the camera and positioning")
 - [x] Slow billows: the gas clock at 0.55 of real time, a soft wall jet, more steam (Tom, 2026-11-23: "Slower, like Fire")
+- [x] Billows from the jet: the exhaust smokes the floor and spreads out as a thin sheet that rolls into billows (Tom, 2026-11-23: "the billows also come form the jet")
+- [x] Time of day: Dawn, Day, Dusk, Night from the Bar, eased by dayClock (Tom, 2026-11-23: "lets add ToD -- 4 times of day")
+- [x] Tight lens beside the wide shot (L): the plumes against the far country, the bend scaled to the zoom (Tom, 2026-11-23: "Yes, tight lens")
 - [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
 - [ ] Tom's sign-off

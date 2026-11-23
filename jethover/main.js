@@ -6,7 +6,8 @@ import { snoise, snoiseVec3 } from 'three/addons/tsl/math/curlNoise.js';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { buildScene, NOZ, FAN, EYE } from './scene.js';
+import { HOURS, dayClock } from '../shared/daytime.js';
+import { buildScene, NOZ, FAN, EYE, TIMES } from './scene.js';
 import { makePlumes, makePost } from './fx.js';
 import { createFire } from './gas.js';
 import { jetSound } from './sound.js';
@@ -31,18 +32,53 @@ const HOVER_Y = 6.1;
 const YAW0 = -Math.PI / 2 + 0.32;
 const craft = { y: HOVER_Y, vy: 0, x: 0, vx: 0, tx: 0, yaw: 0 };
 
+/* ---------- time of day ---------- */
+const timeSaved = saved('time');
+const time0 = TIMES.includes(timeSaved) ? timeSaved : 'dusk';
+// The clock eases the hour over about two seconds.
+const clockT = dayClock({ hour: HOURS[time0], tau: 0.6 });
+function pickTime(v) {
+  clockT.to(v);
+  save('time', v);
+  if (frozen) clockT.snap();
+  if (ready) applyTime();
+  touch();
+}
+
+/* ---------- the lens ---------- */
+// Wide: the long shot of the craft. Tight: the plumes against the far country.
+const lens = { tight: saved('lens') === 'tight', k: 0 };
+lens.k = lens.tight ? 1 : 0;
+function toggleLens() {
+  lens.tight = !lens.tight;
+  save('lens', lens.tight ? 'tight' : 'wide');
+  if (frozen) { lens.k = lens.tight ? 1 : 0; if (ready) frame3(); }
+  touch();
+}
+
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
-  actions: [{ verb: 'reheat', label: 'Reheat', key: 'Space', hold: true, onDown: () => keyBurn(true), onUp: () => keyBurn(false) }],
+  choice: { label: 'Time of day', value: time0, options: [
+    { value: 'dawn', label: 'Dawn', key: '1' },
+    { value: 'day', label: 'Day', key: '2' },
+    { value: 'dusk', label: 'Dusk', key: '3' },
+    { value: 'night', label: 'Night', key: '4' },
+  ], onPick: v => pickTime(v) },
+  actions: [
+    { verb: 'reheat', label: 'Reheat', key: 'Space', hold: true, onDown: () => keyBurn(true), onUp: () => keyBurn(false) },
+    { verb: 'lens', label: 'Lens', key: 'L', onPress: () => toggleLens() },
+  ],
   slider: { label: 'Throttle', min: 0.2, max: 0.75, step: 0.01, value: eng.base, onInput: v => { eng.base = v; save('throttle', v); touch(); } },
   quality: true,
   reset: () => { eng.base = BASE0; save('throttle', BASE0); ui.slider?.set?.(BASE0); craft.tx = 0; touch(); },
-  keys: [['hold', 'full reheat'], ['drag', 'drift'], ['space', 'full reheat']],
+  keys: [['hold', 'full reheat'], ['drag', 'drift'], ['1 2 3 4', 'change the time of day'], ['L', 'tight or wide lens']],
   help: [
     ['hold', 'Hold for full reheat'],
     ['drag', 'Drag while you hold to let the jet drift'],
     ['click', 'Click for a short burst of throttle'],
     ['space', 'Hold Space for full reheat'],
+    ['1 2 3 4', 'Change the time of day'],
+    ['L', 'Switch between the wide shot and a tight lens on the plumes'],
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
@@ -108,14 +144,29 @@ async function setup() {
 }
 
 // The lens: long, from a standing eye far out on the apron, as Villeneuve shoots scale.
-// The craft sits small in the middle; the far ranges loom behind it in the haze.
+// Wide: the craft sits small in the middle; the far ranges loom behind it in the haze.
+// Tight: from the same place, the frame holds the plumes and the pad blast.
+const TIGHT_W = 10;
+let gasScale = 0.5;
 function frame3() {
   const asp = cssW / cssH;
-  const vfov = asp < 1 ? 17 : 9;
-  const hHalf = Math.atan(Math.tan((vfov * Math.PI) / 360) * asp);
+  const wide = asp < 1 ? 17 : 9;
+  const hHalf = Math.atan(Math.tan((wide * Math.PI) / 360) * asp);
   // Landscape stands 150 m off; a tall stage backs off until 30 m of width fits.
   const dist = asp < 1 ? 15 / Math.tan(hHalf) : 150;
+  // The tight frame is TIGHT_W metres across at the plumes, 6 m on a tall stage.
+  const tw = asp < 1 ? 6 : TIGHT_W;
+  const tight = (2 * Math.atan(tw / 2 / dist / asp) * 180) / Math.PI;
+  const vfov = wide + (tight - wide) * lens.k;
   camera.fov = vfov;
+  // The heat bend grows with the zoom; so does its cap.
+  const zoom = wide / vfov;
+  post.U.bend.value = 45 * Math.sqrt(zoom);
+  post.U.cap.value = 3 * zoom ** 0.75;
+  post.U.tap.value = 3 * zoom;
+  // The tight lens draws the gas and heat at three quarters size.
+  const rs = lens.k > 0.5 ? 0.75 : 0.5;
+  if (gasScale !== rs) { gasScale = rs; post.volPass.setResolutionScale(rs); post.heatPass.setResolutionScale(rs); }
   camera.aspect = asp;
   camera.updateProjectionMatrix();
   base.set(AIM.x + dist * 0.05, EYE, AIM.z + dist);
@@ -169,7 +220,14 @@ function step(dt) {
   craft.x += craft.vx * live;
   craft.yaw += (clamp(craft.tx * 0.05, -0.22, 0.22) - craft.yaw) * (1 - Math.exp(-live * 1.2));
   // Time for the flame runs while the scene drifts or the hand acts.
-  const busy = eng.hand || eng.key || eng.blip > 0 || Math.abs(tgt - eng.rpm) > 0.015 || Math.abs(craft.vx) + Math.abs(craft.vy) > 0.006;
+  // The hour eases toward the picked time of day.
+  const dawning = clockT.step(live);
+  if (dawning) applyTime();
+  // The lens zooms over about a second.
+  const lt = lens.tight ? 1 : 0;
+  const zooming = Math.abs(lt - lens.k) > 0.001;
+  if (zooming) { lens.k += (lt - lens.k) * (1 - Math.exp(-live / 0.3)); if (Math.abs(lt - lens.k) <= 0.001) lens.k = lt; frame3(); }
+  const busy = dawning || zooming || eng.hand || eng.key || eng.blip > 0 || Math.abs(tgt - eng.rpm) > 0.015 || Math.abs(craft.vx) + Math.abs(craft.vy) > 0.006;
   const tdt = busy ? live : amb;
   clock += tdt;
   flick = frozen && !busy ? 1 : 0.92 + 0.08 * Math.sin(clock * 37.0) * Math.sin(clock * 23.0 + 1.3) + 0.04 * Math.sin(clock * 61.0);
@@ -185,6 +243,16 @@ function step(dt) {
   }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
   return busy;
+}
+
+// Hands the hour to the sky, exposure, grade, gas light and plumes.
+function applyTime() {
+  const k = S.tod(clockT.hour);
+  renderer.toneMappingExposure = k.expo;
+  post.U.key.value.setRGB(...k.key);
+  post.U.pull.value = k.pull;
+  gas.u.ambient.value.setRGB(...k.smoke);
+  for (const p of P) p.U.gain.value = k.plume;
 }
 
 // Places the craft, then the jets, pools and lamps from its nozzles.
@@ -232,14 +300,23 @@ function pose() {
 }
 
 function render() {
-  const sh = shake * 0.4;
-  const sway = frozen ? 0 : 1;
+  // The tight lens magnifies the shake and the sway; they shrink with it.
+  const calm = 1 - 0.75 * lens.k;
+  const sh = shake * 0.4 * calm;
+  const sway = frozen ? 0 : calm;
   camera.position.set(
     base.x + craft.x * 0.2 + Math.sin(clock * 0.21) * 0.25 * sway + (Math.random() - 0.5) * sh,
     base.y + Math.sin(clock * 0.17 + 1) * 0.04 * sway + (Math.random() - 0.5) * sh * 0.5,
     base.z,
   );
-  camera.lookAt(AIM.x + craft.x * 0.7, AIM.y + (craft.y - HOVER_Y) * 0.5, AIM.z);
+  // Wide aims past the craft; tight aims at the midpoint of the two hot pools.
+  const px = (S.U.hot[0].value.x + S.U.hot[1].value.x) / 2, pz = (S.U.hot[0].value.z + S.U.hot[1].value.z) / 2;
+  const k = lens.k;
+  camera.lookAt(
+    AIM.x + craft.x * 0.7 + (px - AIM.x - craft.x * 0.7) * k,
+    AIM.y + (craft.y - HOVER_Y) * 0.5 + (2.4 - AIM.y - (craft.y - HOVER_Y) * 0.5) * k,
+    AIM.z + (pz - AIM.z) * k,
+  );
   post.U.time.value = clock;
   post.U.seed.value = frozen ? 0 : frameNo % 97;
   post.U.grain.value = frozen ? 0 : 1;
@@ -342,6 +419,7 @@ mark('build');
 try {
   await setup();
   ready = true;
+  applyTime();
   resize(true);
   // The gas runs for five seconds, so the first frame is a picture.
   for (let i = 0; i < Math.round(300 / GAS_K); i++) step(1 / 60);

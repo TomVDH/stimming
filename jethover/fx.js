@@ -101,19 +101,20 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   heatPass.setResolutionScale(0.5);
   const U = {
     res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
-    vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6),
+    vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3),
     key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
   };
   const heat = heatPass.getTextureNode();
   const blurred = gaussianBlur(volPass, 0.6, 1);
   // The hot gas bends the frame along the gradient of its summed shimmer.
   const bentUV = Fn(() => {
-    const px = vec2(3.0).div(U.res);
+    // The gradient taps widen with the zoom, so the bend stays smooth.
+    const px = vec2(U.tap).div(U.res);
     const hx = heat.sample(screenUV.add(vec2(px.x, 0.0))).r.sub(heat.sample(screenUV.sub(vec2(px.x, 0.0))).r);
     const hy = heat.sample(screenUV.add(vec2(0.0, px.y))).r.sub(heat.sample(screenUV.sub(vec2(0.0, px.y))).r);
     const off = vec2(hx, hy).mul(U.bend).mul(U.amp).toVar();
-    // A long path through hot gas must not tear the frame: the bend caps at 3 px.
-    off.mulAssign(min(1.0, U.amp.mul(3.0).div(max(off.length(), 1e-4))));
+    // A long path through hot gas must not tear the frame: the bend caps at cap px.
+    off.mulAssign(min(1.0, U.amp.mul(U.cap).div(max(off.length(), 1e-4))));
     return screenUV.add(off.div(U.res));
   })();
   const sceneCol = scenePass.getTextureNode().sample(bentUV);
