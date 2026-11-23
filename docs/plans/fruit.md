@@ -21,6 +21,7 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Pomegranate | Arils as packed teardrop meshes, some sliced; open chambers in a spongy pith; skin patches, streaks and scars; a big crown with stamens |
 | Kiwi | Seeds in jelly cells along 38 spokes; flesh at two depths; wandering rays; fibrous core; fuzz patches; a stem scar |
 | Passion fruit | Pulp of soft jelly sacs on the shared aril builder (`arils.js`); spongy pith and lining; wrinkled, dimpled shell |
+| Blood orange | Vesicles as long teardrop meshes, one stretch each, sliced lengthwise; per-pixel sacs on the floor; membranes, albedo, oil-gland peel; streaked flush on the skin |
 
 ## Next: one fruit at a time
 

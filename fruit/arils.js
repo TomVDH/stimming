@@ -19,10 +19,12 @@ const DEF = {
   stretch: [1.38, 0.86], point: 0.3, lumpy: 0.04, soft: 0.25,
   seedK: 0.3, rs: 0.2, seedCol: [0.7, 0.45, 0.4], seedCut: [[0.62, 0.55, 0.45], [0.42, 0.24, 0.18]],
   cut: 0.004, scale: 1.2, scatter: 0.45, behind: 1, deep: [-0.11, -0.01], deepShade: 0.45,
+  // Mesh detail, and the bead-space bound: it must hold the longest stretch.
+  detail: 3, bound: 1.45, nearK: 1.5,
 };
 
 // The aril shader: light through the juice, a seed seen inside, a sliced cap.
-const vert = () => /* glsl */`
+const vert = o => /* glsl */`
 ${DENT}
 attribute vec3 aC, aSeed, aCol;
 attribute float aR, aAo, aCut, aSig;
@@ -31,11 +33,11 @@ varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vSeed, vCapN, vL;
 varying float vAo, vCut, vSig;
 void main() {
   // Bead space: the teardrop stays inside the unit sphere.
-  vP = (position - aC) / (aR * 1.45);
-  vEye = (uCamL - aC) / (aR * 1.45);
+  vP = (position - aC) / (aR * ${f(o.bound)});
+  vEye = (uCamL - aC) / (aR * ${f(o.bound)});
   vKey = uKeyL;
   vRim = uRimL;
-  vSeed = (aSeed - aC) / (aR * 1.45);
+  vSeed = (aSeed - aC) / (aR * ${f(o.bound)});
   vec3 hp = position + dent(aC) - aC;
   vL = position;
   vec4 wp = modelMatrix * vec4(hp, 1.0);
@@ -102,7 +104,7 @@ const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; retu
 // Build the arils of list [{ c, r, loose }] as one mesh. o sets their look.
 export function makeArils(U, list, R, opts = {}) {
   const o = { ...DEF, ...opts };
-  const base = mergeVertices(new THREE.IcosahedronGeometry(1, 3).deleteAttribute('normal').deleteAttribute('uv'));
+  const base = mergeVertices(new THREE.IcosahedronGeometry(1, o.detail).deleteAttribute('normal').deleteAttribute('uv'));
   const BP = base.attributes.position, nv = BP.count, ni = base.index.count;
   const n = list.length;
   const pos = new Float32Array(n * nv * 3), cen = new Float32Array(n * nv * 3), sed = new Float32Array(n * nv * 3), col = new Float32Array(n * nv * 3);
@@ -112,7 +114,7 @@ export function makeArils(U, list, R, opts = {}) {
   const noise = createNoise3D(rng(23));
   list.forEach((a, i) => {
     axis.copy(o.axis(a, R));
-    const near = list.filter(q => q !== a && q.c.distanceTo(a.c) < (q.r + a.r) * 1.5);
+    const near = list.filter(q => q !== a && q.c.distanceTo(a.c) < (q.r + a.r) * o.nearK);
     const sliced = o.cut !== null && !a.loose && a.c.x + a.r * 0.95 > o.cut;
     const colr = o.color(R);
     const sg = o.sig(R);
@@ -121,7 +123,8 @@ export function makeArils(U, list, R, opts = {}) {
       u.fromBufferAttribute(BP, v).normalize();
       // A long teardrop: an oval along the stalk, narrowing to a soft point at it.
       const ax = u.dot(axis);
-      let rr = a.r / Math.sqrt((ax / o.stretch[0]) ** 2 + (1 - ax * ax) / o.stretch[1] ** 2);
+      // An item may carry its own stretch along the stalk.
+      let rr = a.r / Math.sqrt((ax / (a.stretch ?? o.stretch[0])) ** 2 + (1 - ax * ax) / o.stretch[1] ** 2);
       rr *= (1 - o.point * Math.max(ax, 0) ** 3) * (1 + o.lumpy * noise(u.x * 2 + i, u.y * 2, u.z * 2));
       const r0 = rr;
       // Pressed flat where a neighbour pushes back.
@@ -162,7 +165,7 @@ export function makeArils(U, list, R, opts = {}) {
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeVertexNormals();
   const AU = { ...U, uCamL: { value: new THREE.Vector3() }, uKeyL: { value: new THREE.Vector3() }, uRimL: { value: new THREE.Vector3() } };
-  const mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: AU, vertexShader: vert(), fragmentShader: frag(o) }));
+  const mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: AU, vertexShader: vert(o), fragmentShader: frag(o) }));
   // The camera and the lights, in the half's own space, before each draw.
   const inv = new THREE.Matrix4(), m3 = new THREE.Matrix3();
   mesh.onBeforeRender = (r, s, cam) => {
