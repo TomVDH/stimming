@@ -1,11 +1,12 @@
-// Solar loop: the sun's edge in extreme-ultraviolet light.
-// Loops rise, brighten and drain; a tap flares a region; a drag turns the sun.
+// Solar loop: the sun's edge at a vast scale, graded like film.
+// Loops rise and drain; giant prominences stand over the limb.
+// A tap flares a region or lifts a prominence off; a drag turns the sun.
 // Plan: docs/plans/solarloop.md. Toy doc: docs/toys/solarloop.md.
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BANDS, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE } from './sun.js';
+import { R, BANDS, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -40,12 +41,13 @@ const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1 };
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
-  view.hw = narrow ? 112 : asp < 1.2 ? 165 : 215;
+  // Wide enough that the limb reads as a dome and the prominences tower.
+  view.hw = narrow ? 260 : asp < 1.2 ? 380 : 520;
   view.hh = view.hw / asp;
   const free = Math.max(0.4 * h, h - top - bottom);
   const m = 2 * view.hh / h;
   // The limb stands a third of the way up the free part of the stage.
-  const yb = bottom + (narrow ? 0.34 : 0.3) * free;
+  const yb = bottom + (narrow ? 0.3 : 0.26) * free;
   view.cx = 0;
   view.cy = R + view.hh - yb * m;
 }
@@ -70,7 +72,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, flare: i => flareAt(sun.regions[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
@@ -91,7 +93,7 @@ const ui = initPage({ id: ID, bar: {
   quality: true,
   keys: [['click', 'flare'], ['drag', 'turn']],
   help: [
-    ['click', 'Tap a region to flare it'],
+    ['click', 'Tap a region to flare it, or a prominence to lift it off'],
     ['drag', 'Drag to turn the sun'],
   ],
 } });
@@ -141,14 +143,29 @@ function flareNext() {
     return;
   }
 }
+// A tap on a giant prominence lifts it off into space.
+function eruptAt(p) {
+  if (!p || p.erupt >= 0) return;
+  startEruption(p);
+  snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.band, calm ? 0.7 : 1);
+  poke();
+}
 function flareNear(x, y) {
-  let best = null, bd = Infinity;
+  let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
     const [px, py] = toCss(regionPoint(rg).v);
     const d = Math.hypot(px - x, py - y);
-    if (d < bd) { bd = d; best = rg; }
+    if (d < bd) { bd = d; best = rg; prom = false; }
   }
-  flareAt(best);
+  for (const p of sun.proms) {
+    const v = toView(promApex(p));
+    if (hidden(v) || p.erupt >= 0) continue;
+    const [px, py] = toCss(v);
+    // A prominence is large: it wins a tap anywhere near its body.
+    const d = Math.hypot(px - x, py - y) * 0.6;
+    if (d < bd) { bd = d; best = p; prom = true; }
+  }
+  if (prom) eruptAt(best); else flareAt(best);
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -156,6 +173,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(20), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
+  centre: new Float32Array(2), earth: new Float32Array(4), shimmer: 0,
 };
 function makeFrame() {
   const f = frameState;
@@ -190,6 +208,14 @@ function makeFrame() {
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
   f.sc = Math.max(1, view.H / 900);
+  // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
+  f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
+  // The earth to scale, 12.7 Mm across, in the glow under the tall arch.
+  const top = view.cy + view.hh;
+  const ex = view.cx + view.hw * 0.42, ey = R + (top - R) * 0.24;
+  const ppm = view.H / (2 * view.hh);
+  f.earth.set([((ex - view.cx) / view.hw * 0.5 + 0.5) * view.W, ((ey - view.cy) / view.hh * 0.5 + 0.5) * view.H, 6.35 * ppm, 1]);
+  f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
   return f;
 }
 function draw() {
@@ -211,11 +237,13 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
     stepFlares(sun, dt * (calm ? 0.8 : 1));
+    stepProms(sun, dt * (calm ? 0.8 : 1));
     for (const fl of sun.flares) cueArcade(fl);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = sun.flares.length > 0 || pointer.drag;
+    lively = sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    if (drifting > 0) snd.hum(st.band);
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.

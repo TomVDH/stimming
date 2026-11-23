@@ -28,27 +28,36 @@ function hash(a, b = 0, c = 0) {
 const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * Math.cos(beta), Math.sin(beta)];
 
 /* ---------- bands ---------- */
-// Each band sees its own temperatures. The response is in log10 of kelvin.
-// disk: base, network contrast, limb brightening, corona at the limb.
-// disk2: corona scale height, spicule fringe, moss, region haze.
+// Each band is a film grade over two channels: hot plasma and cool plasma.
+// The response is in log10 of kelvin.
+// row: the band's pair of colour ramps. hotW, coolW: channel weights.
+// disk: base light, texture, limb mix (0 darkens, 1 brightens), corona at the limb.
+// disk2: corona scale height, chromosphere and spicules, moss, region haze.
+// prom: prominence light. rays: light shaft gain. hal: halation tint. streak: lens streak tint.
 export const BANDS = {
+  // Gold: molten gold to white, the sun as a furnace.
   gold: {
-    lut: [1, 0, 0], expo: 1,
+    row: 0, expo: 1, hotW: 1, coolW: 1.15, prom: 1, rays: 0.9,
+    hal: [1, 0.42, 0.12], streak: [1, 0.7, 0.34],
     resp: lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3),
-    rope: 0.7, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, loop: 1,
-    disk: [0.12, 0.22, 0.5, 0.075], disk2: [48, 0.2, 0.8, 0.1],
+    rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, loop: 1,
+    disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12],
   },
+  // Teal: cold steel and sand, nearly one colour.
   teal: {
-    lut: [0, 1, 0], expo: 1.15,
+    row: 1, expo: 1.05, hotW: 1, coolW: 0.9, prom: 0.75, rays: 0.4,
+    hal: [0.5, 0.72, 0.8], streak: [0.5, 0.8, 1],
     resp: lt => 0.9 * gauss(lt, 5.62, 0.17) + 1.3 * gauss(lt, 7.05, 0.2),
     rope: 0.9, ribbon: 2.2, rain: 0.35, sat: 1.35, bubble: 0.3, wave: 0.3, loop: 1.1,
-    disk: [0.05, 0.2, 0.35, 0.03], disk2: [60, 0.04, 0.45, 0.07],
+    disk: [1.1, 0.6, 0.75, 0.3], disk2: [65, 0.35, 0.5, 0.1],
   },
+  // Red: crimson cool plasma, the prominences at their brightest.
   red: {
-    lut: [0, 0, 1], expo: 0.9,
+    row: 2, expo: 0.95, hotW: 0.85, coolW: 1.35, prom: 1.5, rays: 0.5,
+    hal: [1, 0.25, 0.12], streak: [1, 0.45, 0.3],
     resp: lt => gauss(lt, 4.85, 0.28) + 0.3 * gauss(lt, 6.2, 0.22),
     rope: 1.6, ribbon: 2.4, rain: 2.2, sat: 0.7, bubble: 0.08, wave: 0.65, loop: 0.75,
-    disk: [0.4, 0.32, 0.12, 0.05], disk2: [22, 1, 0.5, 0.04],
+    disk: [1.5, 0.9, 0.3, 0.2], disk2: [30, 1.6, 0.5, 0.06],
   },
 };
 
@@ -56,20 +65,38 @@ export const BANDS = {
 // psi: angle round the limb from its top. beta: toward the viewer (+) or behind (-).
 // theta: the bipole axis, 0 along the limb. span: half the footpoint gap.
 const REGION_DEFS = [
-  { psi: -0.115, beta: 0.03, theta: 0.12, span: [8, 46], len: 64, hk: 1.05, n: 16, lt: 5.95 },
-  { psi: 0.1, beta: -0.07, theta: -0.35, span: [14, 64], len: 56, hk: 1.15, n: 14, lt: 6.0 },
-  { psi: 0.26, beta: 0.16, theta: 1.1, span: [7, 28], len: 40, hk: 0.95, n: 10, lt: 5.9 },
-  { psi: -0.3, beta: -0.02, theta: 0.55, span: [10, 38], len: 50, hk: 1.0, n: 12, lt: 5.95 },
-  { psi: 0.01, beta: 0.2, theta: 0.3, span: [7, 26], len: 45, hk: 0.9, n: 10, lt: 5.9 },
+  { psi: -0.17, beta: 0.03, theta: 0.12, span: [12, 69], len: 96, hk: 1.05, n: 16, lt: 5.95 },
+  { psi: 0.15, beta: -0.07, theta: -0.35, span: [21, 96], len: 84, hk: 1.15, n: 14, lt: 6.0 },
+  { psi: 0.42, beta: 0.16, theta: 1.1, span: [10, 42], len: 60, hk: 0.95, n: 10, lt: 5.9 },
+  { psi: -0.45, beta: -0.02, theta: 0.55, span: [15, 57], len: 75, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 0.015, beta: 0.2, theta: 0.3, span: [10, 39], len: 68, hk: 0.9, n: 10, lt: 5.9 },
 ];
 
+/* ---------- giant prominences ---------- */
+// Cool plasma held high in the corona: far larger than the loops.
+// len: the footprint along the limb; h: the height, both in Mm.
+const PROM_DEFS = [
+  // A hedgerow: a curtain of fine upright threads.
+  { type: 'hedge', psi: -0.3, beta: 0.015, theta: 0, len: 260, h: 165, n: 80 },
+  // An arch: a twisted rope that rises from behind the limb.
+  { type: 'arch', psi: 0.3, beta: -0.035, theta: 0.08, len: 270, h: 205, n: 18 },
+];
+// An eruption lifts the prominence off; it forms again by this time.
+export const PROM_END = 46;
+
+// A frame on the sphere: centre c, axis e along the bipole, f across it.
+function basis(psi, beta, theta) {
+  const c = sphere(psi, beta);
+  const t1 = norm(cross(c, [0, 0, 1]));
+  const t2 = cross(t1, c);
+  const e = norm(add(scale(t1, Math.cos(theta)), t2, Math.sin(theta)));
+  return { c, e, f: cross(c, e) };
+}
+
 export function makeSun() {
+  const proms = PROM_DEFS.map((d, pi) => ({ ...d, ...basis(d.psi, d.beta, d.theta), id: pi + 1, erupt: -1 }));
   const regions = REGION_DEFS.map((d, ri) => {
-    const c = sphere(d.psi, d.beta);
-    const t1 = norm(cross(c, [0, 0, 1]));
-    const t2 = cross(t1, c);
-    const e = norm(add(scale(t1, Math.cos(d.theta)), t2, Math.sin(d.theta)));
-    const f = cross(c, e);
+    const { c, e, f } = basis(d.psi, d.beta, d.theta);
     const bundles = [];
     for (let i = 0; i < d.n; i++) {
       const h = k => hash(ri * 97 + i, k, 3);
@@ -104,7 +131,7 @@ export function makeSun() {
     }
     return { ...d, ri, c, e, f, bundles, lastFlare: -1e9 };
   });
-  return { regions, flares: [] };
+  return { regions, proms, flares: [] };
 }
 
 /* ---------- strands ---------- */
@@ -139,7 +166,8 @@ export const flareCurve = {
   sep: (t, rg) => (0.12 + 0.5 * (1 - Math.exp(-t / 9))) * rg.span[1],
   ribbon: t => sstep(0, 0.1, t) * (0.3 + 0.7 * Math.exp(-t / 2.2)) * Math.exp(-t / 16) * (1 - sstep(30, 42, t)),
   kernel: t => sstep(0, 0.05, t) * Math.exp(-t / 1.5),
-  ropeH: (t, h0) => h0 + 22 * t + 42 * t * t,
+  // Slow and vast: the rope fills the frame over about six seconds.
+  ropeH: (t, h0) => h0 + 14 * t + 10 * t * t,
   // The region's own loops: a burst as they reconnect, gone, then back.
   ambient: t => (1 + 1.6 * Math.exp(-t / 0.45)) * (1 - 0.88 * sstep(0.4, 3, t)) + 0.88 * sstep(28, 44, t),
   // Arcade loop j forms at this time: low loops first, then higher.
@@ -203,9 +231,56 @@ export function strands(sun, time, { band, activity }, out) {
       for (let k = 0; k < 5; k++) n = put(out, n, A, h0, Bf, 0, 1.3, B.rope * 0.07 * rest, k, 0, 2.5, 1.3, k * 1.2566 + time * 0.05, 2);
     }
   }
+  for (const p of sun.proms) n = promStrands(p, B, time, out, n);
   for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
   return n;
 }
+
+// The prominence's growth, light and kind over its eruption clock.
+function promPhase(p) {
+  const t = p.erupt;
+  if (t < 0) return { grow: 0, fade: 1, kind: 3 };
+  // It lifts with growing speed, fades as it leaves, then forms again.
+  if (t < 17) return { grow: 0.05 * t + 0.012 * t * t, fade: 1 - sstep(10, 17, t), kind: p.type === 'arch' ? 4 : 3 };
+  return { grow: 0, fade: sstep(24, PROM_END - 2, t), kind: 3 };
+}
+
+function promStrands(p, B, time, out, n) {
+  const { grow, fade, kind } = promPhase(p);
+  if (fade <= 0.002) return n;
+  const I0 = B.prom * fade;
+  const fp = (de, df) => foot(p, de, df);
+  for (let i = 0; i < p.n; i++) {
+    const q = m => hash(p.id * 131 + i, m, 5);
+    if (p.type === 'hedge') {
+      const u = (i / (p.n - 1) - 0.5) * p.len + (q(1) - 0.5) * 4;
+      const prof = Math.pow(Math.max(0, 1 - (2 * u / p.len) ** 2), 0.6);
+      if (prof <= 0.02) continue;
+      const hgt = p.h * prof * (0.55 + 0.45 * q(2)) * (1 + 0.07 * Math.sin(time * 0.06 + i * 1.7)) * (1 + grow * (0.6 + 0.8 * q(3)));
+      const half = 1.2 + 2.5 * q(4);
+      const lean = (q(5) - 0.5) * 0.25 + grow * 0.15 * Math.sign(u);
+      n = put(out, n, fp(u, -half), hgt, fp(u, half), lean, 0.7 + 1.6 * q(6) ** 2,
+        I0 * (0.35 + 0.65 * q(7)) * 0.3 * Math.sqrt(prof), q(12) * 7, 0,
+        1.5 + 3 * q(8), 1 + 2 * q(9), q(11) * 6.28 + time * 0.05 * (q(10) - 0.5), kind);
+    } else {
+      const A = fp(p.len / 2 + (q(1) - 0.5) * 24, (q(2) - 0.5) * 20);
+      const Bf = fp(-p.len / 2 + (q(3) - 0.5) * 24, (q(4) - 0.5) * 20);
+      const hgt = p.h * (0.85 + 0.3 * q(5)) * (1 + 0.04 * Math.sin(time * 0.05 + i)) * (1 + grow);
+      n = put(out, n, A, hgt, Bf, 0.15 + (q(9) - 0.5) * 0.2, 1.2 + 3 * q(10) ** 2,
+        I0 * (0.4 + 0.6 * q(11)) * 0.22, q(12) * 7, 0,
+        (6 + 16 * q(6)) * (1 + grow * 1.5), 1.2 + 0.8 * q(7), q(8) * 6.28 + time * 0.025, kind);
+    }
+  }
+  return n;
+}
+
+/* ---------- prominence eruptions ---------- */
+export function startEruption(p) { p.erupt = 0; }
+export function stepProms(sun, dt) {
+  for (const p of sun.proms) if (p.erupt >= 0) { p.erupt += dt; if (p.erupt >= PROM_END) p.erupt = -1; }
+}
+// The point a prominence shows to a tap: part way up its body.
+export const promApex = p => scale(p.c, R + p.h * 0.6);
 
 function flareStrands(fl, B, out, n) {
   const { rg, t } = fl;
@@ -226,12 +301,12 @@ function flareStrands(fl, B, out, n) {
   // The rope lifts off with growing speed and leaves the frame.
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
-  const ropeI = B.rope * (0.4 + 2.2 * Math.exp(-t / 0.9)) * sstep(0, 0.15, t) * (1 - sstep(380, 760, hr)) * fl.k;
+  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(500, 900, hr)) * fl.k;
   if (ropeI > 0.002) {
     const A = footT(rg, ROPE_TURN, 0, -rg.len * 0.6), Bf = footT(rg, ROPE_TURN, 0, rg.len * 0.6);
     const twR = 2.5 + 0.2 * (hr - h0);
-    for (let k = 0; k < 7; k++) {
-      n = put(out, n, A, hr, Bf, 0.08 * Math.sin(k), 1.4 + 0.008 * hr, ropeI * 0.16, k, 0, twR, 0.9, k * 0.8976 + t * 0.7, 2);
+    for (let k = 0; k < 12; k++) {
+      n = put(out, n, A, hr * (0.94 + 0.012 * k), Bf, 0.08 * Math.sin(k), 1.4 + 0.008 * hr, ropeI * 0.12, k, 0, twR * (0.7 + 0.05 * k), 0.9, k * 0.5236 + t * 0.4, 2);
     }
   }
   // The arcade: loops snap in over the ribbons, each born hot, then cooling.

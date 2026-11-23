@@ -3,6 +3,7 @@
 // A flare: a crack, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
+// Awake, a deep hum swells and fades; flares and eruptions land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -80,12 +81,102 @@ export function makeSound(kit) {
     g.connect(s).connect(hallOf(ac));
   }
 
+  // A soft clip gives the blast its brass edge.
+  let clip = null;
+  function clipOf(ac) {
+    if (clip && clip.context === ac) return clip;
+    clip = ac.createWaveShaper();
+    const c = new Float32Array(1024);
+    for (let i = 0; i < c.length; i++) { const x = i / 511.5 - 1; c[i] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
+    clip.curve = c;
+    return clip;
+  }
+  // The blast: stacked saws an octave and a fifth apart, a filter that opens and closes.
+  function braam(ac, t, pan, band, K, len = 6) {
+    const root = (ROOT[band] || 220) / 4;
+    const g = voice(ac, pan * 0.3);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.2 * K, t + 0.22);
+    g.gain.setTargetAtTime(0.0001, t + 1.1, len / 4);
+    const lp = filt(ac, 'lowpass', 110, 3);
+    lp.frequency.setValueAtTime(110, t);
+    lp.frequency.exponentialRampToValueAtTime(260 + 700 * K, t + 0.45);
+    lp.frequency.exponentialRampToValueAtTime(140, t + len);
+    const sh = ac.createGain();
+    sh.gain.value = 0.5;
+    sh.connect(clipOf(ac)).connect(lp);
+    lp.connect(g);
+    for (const m of [0.5, 1, 1.004, 1.498, 2, 2.996]) osc(ac, 'sawtooth', root * m * jit(0.002), t, len + 1).connect(sh);
+    send(ac, g, 0.7);
+  }
+
+  // The hum: a deep chord that swells and fades while the toy is awake.
+  let drone = null;
+  function hum(band) {
+    const ac = kit.live();
+    if (!ac) return;
+    if (drone && drone.ac === ac && drone.band === band) return;
+    const t = ac.currentTime + 0.01;
+    if (drone && drone.ac === ac) {
+      drone.g.gain.setTargetAtTime(0, t, 0.8);
+      for (const o of drone.os) { try { o.stop(t + 4); } catch { /* stopped */ } }
+    }
+    const root = (ROOT[band] || 220) / 4;
+    const g = voice(ac, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 5);
+    const lp = filt(ac, 'lowpass', 150, 0.7);
+    lp.connect(g);
+    // A slow swell: the filter breathes about every twenty seconds.
+    const lfo = osc(ac, 'sine', 0.05, t, 1e5);
+    const lg = ac.createGain();
+    lg.gain.value = 70;
+    lfo.connect(lg).connect(lp.frequency);
+    const os = [lfo];
+    for (const [m, ty] of [[0.5, 'sine'], [1, 'sawtooth'], [1.003, 'sawtooth'], [1.5, 'triangle'], [2.002, 'sawtooth']]) {
+      const o = osc(ac, ty, root * m, t, 1e5);
+      o.connect(lp);
+      os.push(o);
+    }
+    send(ac, g, 0.5);
+    drone = { ac, band, g, os };
+  }
+
+  // A prominence lifts off: the blast, a long rising rush, a tone that bends up.
+  function rise(pan, band, k = 1) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t = ac.currentTime + 0.005;
+    const K = clamp(k, 0.3, 1);
+    braam(ac, t, pan, band, K, 9);
+    const r = voice(ac, pan * 0.6);
+    r.gain.setValueAtTime(0, t);
+    r.gain.linearRampToValueAtTime(0.12 * K, t + 6);
+    r.gain.exponentialRampToValueAtTime(0.0002, t + 15);
+    const bp = filt(ac, 'bandpass', 90, 1.2);
+    bp.frequency.setValueAtTime(90, t);
+    bp.frequency.exponentialRampToValueAtTime(2200, t + 13);
+    noise(ac, t, 15.2, 0.6).connect(bp).connect(r);
+    send(ac, r, 0.7);
+    const root = (ROOT[band] || 220) / 2;
+    const tg = voice(ac, pan * 0.4);
+    tg.gain.setValueAtTime(0, t + 1);
+    tg.gain.linearRampToValueAtTime(0.05 * K, t + 7);
+    tg.gain.exponentialRampToValueAtTime(0.0002, t + 18);
+    const o = osc(ac, 'triangle', root, t + 1, 17.5);
+    o.frequency.setValueAtTime(root, t + 1);
+    o.frequency.exponentialRampToValueAtTime(root * 1.498, t + 14);
+    o.connect(tg);
+    send(ac, tg, 0.6);
+  }
+
   // The flare: every layer starts now or later on the audio clock.
   function flare(pan, band, k = 1) {
     const ac = kit.live();
     if (!ac || !kit.noise) return;
     const t = ac.currentTime + 0.005;
     const K = clamp(k, 0.3, 1);
+    braam(ac, t, pan, band, K * 0.7, 6);
     // The crack: a burst of bright noise on a falling thump.
     const c = voice(ac, pan);
     env(c, t, 0.32 * K * jit(0.15), 0.003, 0.32 * jit(0.2));
@@ -189,7 +280,8 @@ export function makeSound(kit) {
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     wind = null;
+    drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

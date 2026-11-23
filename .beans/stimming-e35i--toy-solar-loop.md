@@ -20,6 +20,8 @@ Build Solar loop (idea 238, group C, a cinematic diorama) as a Lab toy: an MVP a
 - [x] Icon round spike-solarloop-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/solarloop.md
+- [x] Cinema pass (Tom, 2026-11-23): film grades, cosmic scale, giant prominences, light rays, lens, hum and blast
+- [ ] Long lens (Tom, 2026-11-23): a tight frame on a quarter arc, Mercury in transit, layered haze
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
 

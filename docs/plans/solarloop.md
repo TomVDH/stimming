@@ -1,6 +1,6 @@
 # Solar loop (`solarloop`)
 
-Status: done as an MVP, 2026-11-23; waits on Tom. Bean `stimming-e35i`. Toy doc: `docs/toys/solarloop.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
+Status: done as an MVP, 2026-11-23; the cinema pass (below) done the same day; the long lens next. Bean `stimming-e35i`. Toy doc: `docs/toys/solarloop.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
 
 ## The hero moment
 
@@ -43,6 +43,24 @@ Choice Band (Gold, Teal, Red; keys 1 to 3). Slider Activity. Action Flare (Space
 - TRACE, 171, coronal loops over the eastern limb, 6 November 1999: fans of fine threads, bright feet at the limb, a dark mottled disk.
 - SDO, 131, 171 and 304, the limb flare of May 2013: a saturated core with a diagonal diffraction cross and a vertical bleed line; the colour tables of the three bands.
 - Papers on flare-driven coronal rain: rain shows best in 304; in 171 it shows as knots and dark strands.
+
+## The cinema pass (Tom, 2026-11-23)
+
+Tom's words: inspired by Danny Boyle's *Sunshine* with a spritz of Villeneuve; better shaders, better LUTs, better effects, far more cosmic scale and feeling for the prominences.
+
+| | Was | Now |
+|---|---|---|
+| Frame | 430 Mm across, a gentle arc | 1040 Mm across: the limb is a dome, half the frame is black sky |
+| Prominences | None; only loops and the flare's rope | A hedgerow 165 Mm tall and an arch 205 Mm high, both tappable: each erupts and forms again |
+| Scale | None | The earth at true size under the arch |
+| Image | One intensity channel, log stretch, a detector's colour table | Two channels (hot, cool), a film tone curve, a colour ramp per channel per band |
+| Effects | Bloom; a diffraction cross and a bleed line | Bloom, light rays and shafts, heat shimmer, colour split, halation, an anamorphic streak, lens ghosts, film grain |
+| Disk | EUV mottle | Boiling granules, slow swirls, dark filaments |
+| Sound | Crack, rush, roar, notes, rain | Plus a deep hum while awake and a low brass blast on each flare and eruption |
+
+## Next: the long lens (Tom, 2026-11-23)
+
+A long lens, a tight frame on a quarter arc of the sun (a crop of its top half), Mercury loosely visible in transit, layering and haze: the scale should feel creepy.
 
 ## Tasks
 
