@@ -10,7 +10,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 |---|---|---|
 | 1 | Kiwi | Flesh drawn at two depths, wandering pale rays; 38 spokes of jelly cells, each a juice bead round a black seed; a raised fibrous core. Fuzz with rubbed short patches |
 | 2 | Pomegranate | 380 arils as real geometry: long teardrops pressed flat against their neighbours, juice lit through to a seed inside; some sliced flat at the cut. Open chambers between spongy pith walls; a crown with dry stamens |
-| 3 | Blood orange | Ten segments of juice sacs drawn per pixel, the red flush in patches |
+| 3 | Blood orange | Ten segments of long vesicles as real geometry, pointing out to the peel and opened down their length by the cut, orange to crimson in patches; one continuous juicy face of finer sacs drawn per pixel under them; membranes, core and albedo fade into it over soft gradients; a peel dotted with oil glands |
 | 4 | Peach | Gold flesh, red at the stone; a ridged stone in one half, its hollow in the other |
 | 5 | Dragon fruit | White flesh speckled with black seeds in clear gel; curled bracts on the skin |
 | 6 | Rambutan | Glassy white flesh round a brown seed; long hooked spines (the fuzz ribbons) |
@@ -45,7 +45,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 | Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio (key, rim, fill and top softboxes) blurred by roughness; Schlick Fresnel |
 | Halves | `half.js` | A lathe skin per half, the cut face at x = 0. Skin colour, specks and pores run in fruit space, so the seam does not show. |
 | Cut face | `half.js` | A disc that follows the fruit's outline (a crease, a star), or a ring round a pit. Each fruit gives its colour and a relief; the relief bends a wet film that reflects the studio. |
-| Arils | `arils.js` (pomegranate, passion fruit) | Each aril is its own mesh: a teardrop whose radius is capped by a smooth minimum against the plane to each neighbour, and by the cut plane. Shading runs in the aril's own sphere space: the view chord, the seed, Beer-Lambert, a sharp studio reflection. Contact and depth darken it. |
+| Arils | `arils.js` (pomegranate, passion fruit, blood orange) | Each aril is its own mesh: a teardrop whose radius is capped by a smooth minimum against the plane to each neighbour, and by the cut plane. Shading runs in the aril's own sphere space: the view chord, the seed, Beer-Lambert, a sharp studio reflection. Contact and depth darken it. |
 | Juice beads | `half.js` | Instanced ellipsoids. Four steps along the view chord in the bead's own space, a chord to each light from every step, Beer-Lambert per channel. A seed inside ends the view ray: seen through the juice. |
 | Fuzz | `fuzz.js` | Instanced ribbons on four control points with fibre wrap light. Per fruit: count, length, width, lift and curl (the rambutan's spines). |
 | Fruits | `kiwi.js` to `fig.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |

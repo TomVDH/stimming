@@ -56,6 +56,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - The voids are expansive stretches, as in Tornado alley (Tom, 2026-11-23): in a void the eye sees to the horizon, 1,600 km, where floor and ceiling meet. Towers gather in clusters and lines with open plains between; some join floor and ceiling, some rise as plumes, some hang. Rain curtains hang from the ceilings; a rare twister drops at a curtain's edge (Tom, 2026-11-23).
 - Light gets into the clouds (Tom, 2026-11-23): under the deck tops it comes down through the ceiling, slanted to the sun's side; thin parts glow, cores go dark.
 - Each void's ceiling is a storm base after Tornado alley's (Tom, 2026-11-23): folded lumps on a warped field, broad rolls, scud; the lit floor lights the crests, the folds go black.
+- God rays and scale (Tom, 2026-11-23): ragged breaks 20 to 40 km across cut through each void's ceiling and the deck above. Light falls through them in slanted shafts that glow in the gas, brightest toward the light, and lands in soft pools on the floors and towers; the rest lies in shade. From above, a break opens onto the lit void below.
 - Each layer tints the light. The light fades slowly through the abyss and fails under the last deck. The eye opens up to 8 times as the light fails; flashes dim to match.
 - The outer pane carries the weather: frost high up, drops that bead and race up in the decks, veils of hue and brightness in the air, heat shimmer deep down.
 - Inside a deck, wisps tear past the glass in three layers and flashes come three times as often.
@@ -97,7 +98,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `bolts.js` | Lightning timing |
 | `sound.js` | Web Audio |
 
-Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23): Go to any layer; Pitch and Yaw past the drag's limits; Sun azimuth and elevation, Exposure, Eye gain cap, Light into cloud, Ambient from above, Floor bounce, Haze reach, Flash strength; Reset. The values persist.
+Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23): Go to any layer; Pitch and Yaw past the drag's limits; Sun azimuth and elevation, Exposure, Eye gain cap, Light into cloud, Ambient from above, Floor bounce, Haze reach, Flash strength, God rays; Reset. The values persist.
 
 Links: `?alt=-14` starts at that height; `?out` shows the outside with no cabin; `?qa` exposes the state as `__gg` and times each shader link.
 

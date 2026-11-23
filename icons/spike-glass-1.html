@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Glass 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Glass 1</h1>
+<p class="lede">Glass, round 1 of the every-toy pass. Tom kept Current (the shaded pane redo). A: a thick sheet of float glass at a three-quarter turn, a spider-web fracture round a crushed white point, green cut edges in every crack. D: the same pane standing in a slot of the toy's sea-green sill, which is the block. On both, the pointer knocks shards out; they fall and lie in front; leave rewinds them, as the toy does.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The menu tile's ids take the tile prefix, so three copies can live.
+  const ids = (m, u) => m.replace(/id="([^"]+)"/g, `id="${u}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${u}$1)`).replace(/href="#([^"]+)"/g, `href="#${u}$1"`);
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover loop.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    box: 'bbox',
+    art(svg, u) {
+      svg.innerHTML = ids(`<defs><clipPath id="glass-clip"><rect x="14" y="14" width="100" height="100" rx="8"/></clipPath><linearGradient id="glass-sheen" gradientUnits="userSpaceOnUse" x1="18" y1="18" x2="110" y2="110"><stop offset="0.16" stop-color="#fff" stop-opacity="0"/><stop offset="0.34" stop-color="#fff" stop-opacity="0.55"/><stop offset="0.46" stop-color="#fff" stop-opacity="0.04"/><stop offset="0.6" stop-color="#fff" stop-opacity="0.24"/><stop offset="0.7" stop-color="#fff" stop-opacity="0"/></linearGradient><radialGradient id="glass-hit" gradientUnits="userSpaceOnUse" cx="70" cy="54" r="30"><stop offset="0" stop-color="#fff" stop-opacity="0.75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect x="19" y="19" width="100" height="100" rx="8" fill="oklch(0.09 0.02 250 / 0.7)"/><rect x="14" y="14" width="100" height="100" rx="8" fill="oklch(0.12 0.03 270)"/><g clip-path="url(#glass-clip)"><g class="shard" data-a="0.502" data-b="0"><path d="M73.3 54.4L75.0 54.6L79.8 56.2L82.2 56.2L77.4 58.8L77.0 64.3L75.3 62.5L72.9 58.1L72.8 57.9L72.7 56.1Z" fill="oklch(0.66 0.085 212)"/><path d="M73.3 54.4L75.0 54.6L79.8 56.2L82.2 56.2L77.4 58.8L77.0 64.3L75.3 62.5L72.9 58.1L72.8 57.9L72.7 56.1Z" fill="url(#glass-sheen)"/><path d="M73.3 54.4L75.0 54.6L79.8 56.2L82.2 56.2L77.4 58.8L77.0 64.3L75.3 62.5L72.9 58.1L72.8 57.9L72.7 56.1Z" fill="url(#glass-hit)"/><path d="M73.3 54.4L75.0 54.6L79.8 56.2L82.2 56.2L77.4 58.8L77.0 64.3L75.3 62.5L72.9 58.1L72.8 57.9L72.7 56.1Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M74.2 55.6L75.3 56.0L78.4 56.8L80.8 56.6L76.1 58.0L76.8 62.8L75.5 61.0L74.4 58.0L74.3 57.9L74.0 56.8Z" fill="none" stroke="oklch(0.97 0.020 212 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="0.502" data-b="1"><path d="M82.2 56.2L86.9 56.1L95.7 57.0L94.2 69.1L85.0 77.1L84.5 76.8L80.2 67.6L77.0 64.3L77.4 58.8Z" fill="oklch(0.55 0.085 212)"/><path d="M82.2 56.2L86.9 56.1L95.7 57.0L94.2 69.1L85.0 77.1L84.5 76.8L80.2 67.6L77.0 64.3L77.4 58.8Z" fill="url(#glass-sheen)"/><path d="M82.2 56.2L86.9 56.1L95.7 57.0L94.2 69.1L85.0 77.1L84.5 76.8L80.2 67.6L77.0 64.3L77.4 58.8Z" fill="url(#glass-hit)"/><path d="M82.2 56.2L86.9 56.1L95.7 57.0L94.2 69.1L85.0 77.1L84.5 76.8L80.2 67.6L77.0 64.3L77.4 58.8Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M82.7 57.6L86.5 57.5L94.5 57.9L92.8 68.5L84.9 75.6L84.6 75.3L81.5 66.8L78.5 64.4L78.5 59.7Z" fill="none" stroke="oklch(0.97 0.020 212 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="0.502" data-b="2"><path d="M95.7 57.0L96.8 57.1L110.0 56.0L114.0 56.3L114.0 107.7L104.2 100.8L94.6 85.6L85.0 77.1L94.2 69.1Z" fill="oklch(0.53 0.085 212)"/><path d="M95.7 57.0L96.8 57.1L110.0 56.0L114.0 56.3L114.0 107.7L104.2 100.8L94.6 85.6L85.0 77.1L94.2 69.1Z" fill="url(#glass-sheen)"/><path d="M95.7 57.0L96.8 57.1L110.0 56.0L114.0 56.3L114.0 107.7L104.2 100.8L94.6 85.6L85.0 77.1L94.2 69.1Z" fill="url(#glass-hit)"/><path d="M95.7 57.0L96.8 57.1L110.0 56.0L114.0 56.3L114.0 107.7L104.2 100.8L94.6 85.6L85.0 77.1L94.2 69.1Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M96.1 58.4L97.2 58.6L109.3 57.3L113.1 57.5L113.5 106.3L104.0 99.3L95.3 84.2L86.4 76.9L95.4 70.0Z" fill="none" stroke="oklch(0.97 0.020 212 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="1.338" data-b="0"><path d="M72.2 57.1L72.9 58.1L75.3 62.5L79.2 66.5L72.7 72.8L63.9 71.0L64.1 69.9L67.5 63.7L69.3 59.0L69.5 57.5L70.8 56.7Z" fill="oklch(0.68 0.085 237)"/><path d="M72.2 57.1L72.9 58.1L75.3 62.5L79.2 66.5L72.7 72.8L63.9 71.0L64.1 69.9L67.5 63.7L69.3 59.0L69.5 57.5L70.8 56.7Z" fill="url(#glass-sheen)"/><path d="M72.2 57.1L72.9 58.1L75.3 62.5L79.2 66.5L72.7 72.8L63.9 71.0L64.1 69.9L67.5 63.7L69.3 59.0L69.5 57.5L70.8 56.7Z" fill="url(#glass-hit)"/><path d="M72.2 57.1L72.9 58.1L75.3 62.5L79.2 66.5L72.7 72.8L63.9 71.0L64.1 69.9L67.5 63.7L69.3 59.0L69.5 57.5L70.8 56.7Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M71.9 58.6L72.3 59.4L73.8 62.7L77.8 66.0L72.4 71.3L64.9 69.9L65.2 68.9L68.9 63.4L69.8 60.4L69.8 59.0L70.8 58.2Z" fill="none" stroke="oklch(0.97 0.020 237 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="1.338" data-b="1"><path d="M79.2 66.5L80.2 67.6L84.5 76.8L90.0 81.6L76.2 80.0L62.4 78.2L63.9 71.0L72.7 72.8Z" fill="oklch(0.52 0.085 237)"/><path d="M79.2 66.5L80.2 67.6L84.5 76.8L90.0 81.6L76.2 80.0L62.4 78.2L63.9 71.0L72.7 72.8Z" fill="url(#glass-sheen)"/><path d="M79.2 66.5L80.2 67.6L84.5 76.8L90.0 81.6L76.2 80.0L62.4 78.2L63.9 71.0L72.7 72.8Z" fill="url(#glass-hit)"/><path d="M79.2 66.5L80.2 67.6L84.5 76.8L90.0 81.6L76.2 80.0L62.4 78.2L63.9 71.0L72.7 72.8Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M78.6 67.9L79.4 68.9L83.1 76.3L88.7 80.9L76.2 78.5L63.8 77.8L65.3 71.4L74.1 73.4Z" fill="none" stroke="oklch(0.97 0.020 237 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="1.134" data-b="2"><path d="M90.0 81.6L94.6 85.6L104.2 100.8L114.0 107.7L114.0 114.0L77.6 114.0L76.2 80.0Z" fill="oklch(0.57 0.085 231)"/><path d="M90.0 81.6L94.6 85.6L104.2 100.8L114.0 107.7L114.0 114.0L77.6 114.0L76.2 80.0Z" fill="url(#glass-sheen)"/><path d="M90.0 81.6L94.6 85.6L104.2 100.8L114.0 107.7L114.0 114.0L77.6 114.0L76.2 80.0Z" fill="url(#glass-hit)"/><path d="M90.0 81.6L94.6 85.6L104.2 100.8L114.0 107.7L114.0 114.0L77.6 114.0L76.2 80.0Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M90.5 83.0L94.7 87.0L102.8 100.3L112.7 107.0L112.9 113.0L78.8 113.0L77.3 81.0Z" fill="none" stroke="oklch(0.97 0.020 231 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="1.543" data-b="2"><path d="M76.2 80.0L77.6 114.0L41.1 114.0L45.9 106.7L53.7 90.5L62.1 79.8L62.4 78.2Z" fill="oklch(0.60 0.085 243)"/><path d="M76.2 80.0L77.6 114.0L41.1 114.0L45.9 106.7L53.7 90.5L62.1 79.8L62.4 78.2Z" fill="url(#glass-sheen)"/><path d="M76.2 80.0L77.6 114.0L41.1 114.0L45.9 106.7L53.7 90.5L62.1 79.8L62.4 78.2Z" fill="url(#glass-hit)"/><path d="M76.2 80.0L77.6 114.0L41.1 114.0L45.9 106.7L53.7 90.5L62.1 79.8L62.4 78.2Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M75.1 81.0L76.6 112.9L42.1 112.9L47.0 105.8L55.0 91.4L61.8 81.3L62.2 79.6Z" fill="none" stroke="oklch(0.97 0.020 243 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="2.184" data-b="1"><path d="M69.5 58.0L69.3 59.0L67.5 63.7L65.7 67.1L62.6 62.6L60.1 57.9L60.7 57.6L65.5 56.3L66.0 56.0L67.5 57.4Z" fill="oklch(0.62 0.085 233)"/><path d="M69.5 58.0L69.3 59.0L67.5 63.7L65.7 67.1L62.6 62.6L60.1 57.9L60.7 57.6L65.5 56.3L66.0 56.0L67.5 57.4Z" fill="url(#glass-sheen)"/><path d="M69.5 58.0L69.3 59.0L67.5 63.7L65.7 67.1L62.6 62.6L60.1 57.9L60.7 57.6L65.5 56.3L66.0 56.0L67.5 57.4Z" fill="url(#glass-hit)"/><path d="M69.5 58.0L69.3 59.0L67.5 63.7L65.7 67.1L62.6 62.6L60.1 57.9L60.7 57.6L65.5 56.3L66.0 56.0L67.5 57.4Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M68.1 58.6L67.9 59.2L66.8 62.3L65.6 65.6L63.6 61.5L61.5 58.3L62.1 58.2L65.5 57.8L65.8 57.5L66.5 58.5Z" fill="none" stroke="oklch(0.97 0.020 233 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="2.184" data-b="2"><path d="M65.7 67.1L64.1 69.9L62.1 79.8L53.7 90.5L45.9 106.7L41.1 114.0L14.0 114.0L14.0 103.2L23.3 88.4L35.8 74.7L45.8 65.9L54.5 60.9L60.1 57.9L62.6 62.6Z" fill="oklch(0.71 0.085 233)"/><path d="M65.7 67.1L64.1 69.9L62.1 79.8L53.7 90.5L45.9 106.7L41.1 114.0L14.0 114.0L14.0 103.2L23.3 88.4L35.8 74.7L45.8 65.9L54.5 60.9L60.1 57.9L62.6 62.6Z" fill="url(#glass-sheen)"/><path d="M65.7 67.1L64.1 69.9L62.1 79.8L53.7 90.5L45.9 106.7L41.1 114.0L14.0 114.0L14.0 103.2L23.3 88.4L35.8 74.7L45.8 65.9L54.5 60.9L60.1 57.9L62.6 62.6Z" fill="url(#glass-hit)"/><path d="M65.7 67.1L64.1 69.9L62.1 79.8L53.7 90.5L45.9 106.7L41.1 114.0L14.0 114.0L14.0 103.2L23.3 88.4L35.8 74.7L45.8 65.9L54.5 60.9L60.1 57.9L62.6 62.6Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M64.5 68.0L62.9 70.8L60.6 80.1L52.7 89.5L45.9 105.2L41.3 112.5L15.1 112.9L15.3 102.4L24.8 88.0L36.9 75.6L45.8 67.4L53.9 62.3L59.4 59.2L61.7 63.8Z" fill="none" stroke="oklch(0.97 0.020 233 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="2.953" data-b="0"><path d="M65.6 56.2L65.5 56.3L60.7 57.6L54.5 60.9L54.5 60.9L57.2 57.5L55.7 53.4L60.0 53.2L65.0 53.4L66.4 53.6L65.8 54.8Z" fill="oklch(0.81 0.085 209)"/><path d="M65.6 56.2L65.5 56.3L60.7 57.6L54.5 60.9L54.5 60.9L57.2 57.5L55.7 53.4L60.0 53.2L65.0 53.4L66.4 53.6L65.8 54.8Z" fill="url(#glass-sheen)"/><path d="M65.6 56.2L65.5 56.3L60.7 57.6L54.5 60.9L54.5 60.9L57.2 57.5L55.7 53.4L60.0 53.2L65.0 53.4L66.4 53.6L65.8 54.8Z" fill="url(#glass-hit)"/><path d="M65.6 56.2L65.5 56.3L60.7 57.6L54.5 60.9L54.5 60.9L57.2 57.5L55.7 53.4L60.0 53.2L65.0 53.4L66.4 53.6L65.8 54.8Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M64.1 56.2L64.0 56.2L61.0 56.2L55.7 60.0L55.7 60.1L58.6 57.0L57.1 54.1L60.5 54.7L63.8 54.3L65.0 54.2L64.4 55.2Z" fill="none" stroke="oklch(0.97 0.020 209 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="2.953" data-b="1"><path d="M54.5 60.9L45.8 65.9L40.6 70.4L46.6 61.2L42.6 51.0L43.2 51.0L53.0 53.5L55.7 53.4L57.2 57.5Z" fill="oklch(0.77 0.085 209)"/><path d="M54.5 60.9L45.8 65.9L40.6 70.4L46.6 61.2L42.6 51.0L43.2 51.0L53.0 53.5L55.7 53.4L57.2 57.5Z" fill="url(#glass-sheen)"/><path d="M54.5 60.9L45.8 65.9L40.6 70.4L46.6 61.2L42.6 51.0L43.2 51.0L53.0 53.5L55.7 53.4L57.2 57.5Z" fill="url(#glass-hit)"/><path d="M54.5 60.9L45.8 65.9L40.6 70.4L46.6 61.2L42.6 51.0L43.2 51.0L53.0 53.5L55.7 53.4L57.2 57.5Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M53.1 60.3L46.3 64.5L41.5 69.2L47.5 60.0L43.6 52.1L44.1 52.2L52.0 54.7L54.5 54.3L55.7 57.7Z" fill="none" stroke="oklch(0.97 0.020 209 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="2.953" data-b="2"><path d="M40.6 70.4L35.8 74.7L23.3 88.4L14.0 103.2L14.0 50.6L30.2 49.8L42.6 51.0L46.6 61.2Z" fill="oklch(0.82 0.085 209)"/><path d="M40.6 70.4L35.8 74.7L23.3 88.4L14.0 103.2L14.0 50.6L30.2 49.8L42.6 51.0L46.6 61.2Z" fill="url(#glass-sheen)"/><path d="M40.6 70.4L35.8 74.7L23.3 88.4L14.0 103.2L14.0 50.6L30.2 49.8L42.6 51.0L46.6 61.2Z" fill="url(#glass-hit)"/><path d="M40.6 70.4L35.8 74.7L23.3 88.4L14.0 103.2L14.0 50.6L30.2 49.8L42.6 51.0L46.6 61.2Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M39.1 70.1L34.8 73.5L23.8 87.0L14.7 101.9L15.0 51.7L30.3 51.3L41.8 52.2L45.3 61.9Z" fill="none" stroke="oklch(0.97 0.020 209 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="3.732" data-b="1"><path d="M66.3 53.6L65.0 53.4L60.0 53.2L58.0 53.3L63.2 46.4L63.3 37.7L63.7 38.2L65.5 45.1L67.5 49.7L68.3 51.1L67.1 52.2Z" fill="oklch(0.80 0.085 201)"/><path d="M66.3 53.6L65.0 53.4L60.0 53.2L58.0 53.3L63.2 46.4L63.3 37.7L63.7 38.2L65.5 45.1L67.5 49.7L68.3 51.1L67.1 52.2Z" fill="url(#glass-sheen)"/><path d="M66.3 53.6L65.0 53.4L60.0 53.2L58.0 53.3L63.2 46.4L63.3 37.7L63.7 38.2L65.5 45.1L67.5 49.7L68.3 51.1L67.1 52.2Z" fill="url(#glass-hit)"/><path d="M66.3 53.6L65.0 53.4L60.0 53.2L58.0 53.3L63.2 46.4L63.3 37.7L63.7 38.2L65.5 45.1L67.5 49.7L68.3 51.1L67.1 52.2Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M65.7 52.2L64.8 51.9L61.0 52.1L59.2 52.4L63.9 47.7L63.5 39.2L63.8 39.7L65.0 46.5L66.1 49.2L67.0 50.3L66.2 51.0Z" fill="none" stroke="oklch(0.97 0.020 201 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="3.508" data-b="2"><path d="M58.0 53.3L53.0 53.5L43.2 51.0L30.2 49.8L14.0 50.6L14.0 14.0L23.9 14.0L63.2 46.4Z" fill="oklch(0.87 0.085 195)"/><path d="M58.0 53.3L53.0 53.5L43.2 51.0L30.2 49.8L14.0 50.6L14.0 14.0L23.9 14.0L63.2 46.4Z" fill="url(#glass-sheen)"/><path d="M58.0 53.3L53.0 53.5L43.2 51.0L30.2 49.8L14.0 50.6L14.0 14.0L23.9 14.0L63.2 46.4Z" fill="url(#glass-hit)"/><path d="M58.0 53.3L53.0 53.5L43.2 51.0L30.2 49.8L14.0 50.6L14.0 14.0L23.9 14.0L63.2 46.4Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M56.7 52.6L51.8 52.6L42.4 49.8L31.2 48.7L15.4 50.1L15.0 15.1L24.5 15.3L61.7 46.1Z" fill="none" stroke="oklch(0.97 0.020 195 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="3.956" data-b="2"><path d="M63.2 46.4L23.9 14.0L51.2 14.0L53.3 17.6L57.0 30.4L63.3 37.7Z" fill="oklch(0.85 0.085 207)"/><path d="M63.2 46.4L23.9 14.0L51.2 14.0L53.3 17.6L57.0 30.4L63.3 37.7Z" fill="url(#glass-sheen)"/><path d="M63.2 46.4L23.9 14.0L51.2 14.0L53.3 17.6L57.0 30.4L63.3 37.7Z" fill="url(#glass-hit)"/><path d="M63.2 46.4L23.9 14.0L51.2 14.0L53.3 17.6L57.0 30.4L63.3 37.7Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M62.4 45.1L25.2 14.6L51.3 15.5L53.1 19.1L55.7 29.5L62.2 36.7Z" fill="none" stroke="oklch(0.97 0.020 207 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="4.305" data-b="1"><path d="M68.3 51.1L67.5 49.7L65.5 45.1L63.7 38.2L57.0 30.4L54.6 21.9L59.7 15.3L62.4 14.0L67.7 14.0L67.7 14.1L65.4 27.4L65.3 37.7L66.6 44.6L68.7 49.2L68.9 49.9L68.7 50.5Z" fill="oklch(0.81 0.085 215)"/><path d="M68.3 51.1L67.5 49.7L65.5 45.1L63.7 38.2L57.0 30.4L54.6 21.9L59.7 15.3L62.4 14.0L67.7 14.0L67.7 14.1L65.4 27.4L65.3 37.7L66.6 44.6L68.7 49.2L68.9 49.9L68.7 50.5Z" fill="url(#glass-sheen)"/><path d="M68.3 51.1L67.5 49.7L65.5 45.1L63.7 38.2L57.0 30.4L54.6 21.9L59.7 15.3L62.4 14.0L67.7 14.0L67.7 14.1L65.4 27.4L65.3 37.7L66.6 44.6L68.7 49.2L68.9 49.9L68.7 50.5Z" fill="url(#glass-hit)"/><path d="M68.3 51.1L67.5 49.7L65.5 45.1L63.7 38.2L57.0 30.4L54.6 21.9L59.7 15.3L62.4 14.0L67.7 14.0L67.7 14.1L65.4 27.4L65.3 37.7L66.6 44.6L68.7 49.2L68.9 49.9L68.7 50.5Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M68.0 49.6L67.2 48.2L65.4 43.6L64.2 36.8L58.3 31.1L55.5 23.0L60.1 16.7L62.6 15.5L67.5 15.5L67.5 15.5L65.3 28.9L65.1 36.2L66.3 43.1L68.3 47.7L68.5 48.4L68.3 49.1Z" fill="none" stroke="oklch(0.97 0.020 215 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="4.305" data-b="2"><path d="M54.6 21.9L53.3 17.6L51.2 14.0L62.4 14.0L59.7 15.3Z" fill="oklch(0.89 0.085 215)"/><path d="M54.6 21.9L53.3 17.6L51.2 14.0L62.4 14.0L59.7 15.3Z" fill="url(#glass-sheen)"/><path d="M54.6 21.9L53.3 17.6L51.2 14.0L62.4 14.0L59.7 15.3Z" fill="url(#glass-hit)"/><path d="M54.6 21.9L53.3 17.6L51.2 14.0L62.4 14.0L59.7 15.3Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M55.0 20.5L54.8 17.1L52.5 14.7L61.0 14.6L58.3 15.8Z" fill="none" stroke="oklch(0.97 0.020 215 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="4.954" data-b="0"><path d="M68.9 50.0L68.7 49.2L66.6 44.6L65.6 39.6L71.2 45.2L78.9 46.4L77.4 47.3L73.4 50.4L72.7 51.1L70.7 50.9Z" fill="oklch(0.81 0.085 235)"/><path d="M68.9 50.0L68.7 49.2L66.6 44.6L65.6 39.6L71.2 45.2L78.9 46.4L77.4 47.3L73.4 50.4L72.7 51.1L70.7 50.9Z" fill="url(#glass-sheen)"/><path d="M68.9 50.0L68.7 49.2L66.6 44.6L65.6 39.6L71.2 45.2L78.9 46.4L77.4 47.3L73.4 50.4L72.7 51.1L70.7 50.9Z" fill="url(#glass-hit)"/><path d="M68.9 50.0L68.7 49.2L66.6 44.6L65.6 39.6L71.2 45.2L78.9 46.4L77.4 47.3L73.4 50.4L72.7 51.1L70.7 50.9Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M69.9 49.0L69.9 48.4L67.9 45.4L66.5 40.8L71.3 46.7L77.5 46.6L75.9 47.3L72.6 49.1L72.2 49.7L71.0 49.4Z" fill="none" stroke="oklch(0.97 0.020 235 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="4.954" data-b="1"><path d="M65.6 39.6L65.3 37.7L65.4 27.4L66.9 19.1L86.0 19.7L103.9 26.6L101.8 29.8L89.4 35.3L83.6 43.8L78.9 46.4L71.2 45.2Z" fill="oklch(0.79 0.085 235)"/><path d="M65.6 39.6L65.3 37.7L65.4 27.4L66.9 19.1L86.0 19.7L103.9 26.6L101.8 29.8L89.4 35.3L83.6 43.8L78.9 46.4L71.2 45.2Z" fill="url(#glass-sheen)"/><path d="M65.6 39.6L65.3 37.7L65.4 27.4L66.9 19.1L86.0 19.7L103.9 26.6L101.8 29.8L89.4 35.3L83.6 43.8L78.9 46.4L71.2 45.2Z" fill="url(#glass-hit)"/><path d="M65.6 39.6L65.3 37.7L65.4 27.4L66.9 19.1L86.0 19.7L103.9 26.6L101.8 29.8L89.4 35.3L83.6 43.8L78.9 46.4L71.2 45.2Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M67.0 39.1L66.7 37.3L66.8 28.0L67.9 20.2L85.4 21.1L102.4 27.1L100.3 30.0L88.0 35.0L83.0 42.4L79.0 44.9L72.1 44.0Z" fill="none" stroke="oklch(0.97 0.020 235 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="4.954" data-b="2"><path d="M66.9 19.1L67.7 14.1L67.7 14.0L112.3 14.0L112.2 14.2L103.9 26.6L86.0 19.7Z" fill="oklch(0.81 0.085 235)"/><path d="M66.9 19.1L67.7 14.1L67.7 14.0L112.3 14.0L112.2 14.2L103.9 26.6L86.0 19.7Z" fill="url(#glass-sheen)"/><path d="M66.9 19.1L67.7 14.1L67.7 14.0L112.3 14.0L112.2 14.2L103.9 26.6L86.0 19.7Z" fill="url(#glass-hit)"/><path d="M66.9 19.1L67.7 14.1L67.7 14.0L112.3 14.0L112.2 14.2L103.9 26.6L86.0 19.7Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M68.4 19.0L69.2 14.3L69.2 14.2L110.8 14.2L110.7 14.4L102.6 25.9L87.0 18.6Z" fill="none" stroke="oklch(0.97 0.020 235 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g><g class="shard" data-a="5.917" data-b="2"><path d="M73.1 50.7L73.4 50.4L77.4 47.3L83.6 43.8L89.4 35.3L101.8 29.8L112.2 14.2L112.3 14.0L114.0 14.0L114.0 56.3L110.0 56.0L96.8 57.1L86.9 56.1L79.8 56.2L75.0 54.6L73.4 54.4L72.8 52.6Z" fill="oklch(0.60 0.085 232)"/><path d="M73.1 50.7L73.4 50.4L77.4 47.3L83.6 43.8L89.4 35.3L101.8 29.8L112.2 14.2L112.3 14.0L114.0 14.0L114.0 56.3L110.0 56.0L96.8 57.1L86.9 56.1L79.8 56.2L75.0 54.6L73.4 54.4L72.8 52.6Z" fill="url(#glass-sheen)"/><path d="M73.1 50.7L73.4 50.4L77.4 47.3L83.6 43.8L89.4 35.3L101.8 29.8L112.2 14.2L112.3 14.0L114.0 14.0L114.0 56.3L110.0 56.0L96.8 57.1L86.9 56.1L79.8 56.2L75.0 54.6L73.4 54.4L72.8 52.6Z" fill="url(#glass-hit)"/><path d="M73.1 50.7L73.4 50.4L77.4 47.3L83.6 43.8L89.4 35.3L101.8 29.8L112.2 14.2L112.3 14.0L114.0 14.0L114.0 56.3L110.0 56.0L96.8 57.1L86.9 56.1L79.8 56.2L75.0 54.6L73.4 54.4L72.8 52.6Z" fill="none" stroke="oklch(0.14 0.03 250)" stroke-width="1.5" stroke-linejoin="round"/><path d="M74.5 50.1L74.8 49.8L78.8 46.9L85.1 43.7L89.7 36.7L100.9 30.9L111.3 15.4L111.4 15.2L113.1 15.2L112.7 55.6L108.7 55.2L96.2 55.7L87.3 54.7L80.7 55.1L76.2 53.7L74.6 53.6L74.2 51.9Z" fill="none" stroke="oklch(0.97 0.020 232 / 0.55)" stroke-width="0.7" stroke-linejoin="round"/></g></g>`, u);
+      const shards = [...svg.querySelectorAll('.shard')], sheen = svg.querySelector(`#${u}glass-sheen`);
+      let tl = null;
+      return {
+        // Shards drift out from the impact, the outer ones furthest, then close up.
+        enter() {
+          tl?.kill();
+          tl = gsap.timeline({ repeat: -1, yoyo: true, repeatDelay: 0.2 }).to(shards, {
+            x: i => Math.cos(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+            y: i => Math.sin(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+            duration: 0.6, ease: 'power3.out',
+          }).to(sheen, { attr: { x1: 42, y1: 42, x2: 134, y2: 134 }, duration: 0.6, ease: 'power2.out' }, 0);
+        },
+        move() {},
+        leave() {
+          tl?.kill(); tl = null;
+          gsap.to(shards, { x: 0, y: 0, duration: 0.3, overwrite: true });
+          gsap.to(sheen, { attr: { x1: 18, y1: 18, x2: 110, y2: 110 }, duration: 0.3, overwrite: true });
+        },
+      };
+    },
+  });
+
+  /* ================= The pane ================= */
+
+  const { sin, cos, PI, hypot } = Math;
+  // A fixed hash: the same fracture on every load.
+  const hash = i => { const x = sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+  // The toy's tokens: aqua float glass, green cut edges, white crushed glass.
+  const FACE = [[0, 'oklch(0.95 0.035 188)'], [0.45, 'oklch(0.79 0.075 198)'], [1, 'oklch(0.5 0.09 222)']];
+  const EDGE = [[0, 'oklch(0.86 0.15 160)'], [0.55, 'oklch(0.66 0.14 165)'], [1, 'oklch(0.46 0.1 175)']];
+  const CRUSH = 'oklch(0.97 0.012 200)';
+  const area = P => P.reduce((s, p, i) => { const q = P[(i + 1) % P.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0) / 2;
+  const centroid = P => { let x = 0, y = 0; P.forEach(p => { x += p[0]; y += p[1]; }); return [x / P.length, y / P.length]; };
+  const inside = (P, q) => {
+    let c = false;
+    for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+      if ((P[i][1] > q[1]) !== (P[j][1] > q[1]) && q[0] < ((P[j][0] - P[i][0]) * (q[1] - P[i][1])) / (P[j][1] - P[i][1]) + P[i][0]) c = !c;
+    }
+    return c;
+  };
+  // Clip a polygon to the pane, [0, W] x [0, H].
+  const clipRect = (P, W, H) => {
+    const sides = [
+      [p => p[0] >= 0, (a, b) => a[0] / (a[0] - b[0])], [p => p[0] <= W, (a, b) => (a[0] - W) / (a[0] - b[0])],
+      [p => p[1] >= 0, (a, b) => a[1] / (a[1] - b[1])], [p => p[1] <= H, (a, b) => (a[1] - H) / (a[1] - b[1])],
+    ];
+    for (const [ok, t] of sides) {
+      const out = [];
+      for (let i = 0; i < P.length; i++) {
+        const a = P[i], b = P[(i + 1) % P.length], ia = ok(a), ib = ok(b);
+        if (ia) out.push(a);
+        if (ia !== ib) { const k = t(a, b); out.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]); }
+      }
+      P = out;
+      if (!P.length) break;
+    }
+    return P;
+  };
+  // A spider-web fracture in pane units: radials from the hit, rings across them.
+  // Cell k 0 is the crushed point; the last ring runs out to the pane's edge.
+  const fracture = g => {
+    const { W, H, c, n, R, s } = g;
+    const ang = Array.from({ length: n }, (_, i) => -PI / 2 + ((i + (hash(s + i) - 0.5) * 0.55) / n) * 2 * PI);
+    const at = (i, r, j) => { const a = ang[i % n] + (hash(s + 40 + i * 7 + j) - 0.5) * 0.18; return [c[0] + cos(a) * r, c[1] + sin(a) * r]; };
+    // Each crossing of a radial and a ring jitters in radius.
+    const P = ang.map((_, i) => R.map((r, k) => at(i, r * (0.84 + 0.32 * hash(s + 90 + i * 5 + k)), k)));
+    // A ring segment bows in toward the hit, as real concentric cracks do.
+    const mid = (i, k) => {
+      const a = P[i][k], b = P[(i + 1) % n][k], q = 0.1 + 0.1 * hash(s + 200 + i * 3 + k);
+      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      return [m[0] + (c[0] - m[0]) * q, m[1] + (c[1] - m[1]) * q];
+    };
+    const far = i => at(i, 4 * Math.max(W, H), 9);
+    const cells = [], last = R.length - 1;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      cells.push({ k: 0, P: [c, P[i][0], mid(i, 0), P[j][0]] });
+      for (let k = 1; k <= last; k++) cells.push({ k, P: [P[i][k - 1], P[i][k], mid(i, k), P[j][k], P[j][k - 1], mid(i, k - 1)] });
+      cells.push({ k: R.length, P: [P[i][last], far(i), far(j), P[j][last], mid(i, last)] });
+    }
+    return cells.map(cl => ({ ...cl, P: clipRect(cl.P, W, H) })).filter(cl => cl.P.length > 2 && Math.abs(area(cl.P)) > 1);
+  };
+  // Inset a polygon: crack edges move in by d, so the cracks open; pane edges stay.
+  const inset = (S, keep, d) => {
+    const m = S.length, sg = Math.sign(area(S)) || 1, C = centroid(S);
+    const L = S.map((p, i) => {
+      const q = S[(i + 1) % m], dx = q[0] - p[0], dy = q[1] - p[1], len = hypot(dx, dy) || 1, o = keep[i] ? 0 : d;
+      return [p[0] - (sg * dy / len) * o, p[1] + (sg * dx / len) * o, dx, dy];
+    });
+    return S.map((p, i) => {
+      const A = L[(i - 1 + m) % m], B = L[i], den = A[2] * B[3] - A[3] * B[2];
+      if (Math.abs(den) < 1e-3 * hypot(A[2], A[3]) * hypot(B[2], B[3])) return [B[0], B[1]];
+      const t = ((B[0] - A[0]) * B[3] - (B[1] - A[1]) * B[2]) / den, x = [A[0] + A[2] * t, A[1] + A[3] * t];
+      // A sharp tip would shoot out; it moves toward the centre instead.
+      if (hypot(x[0] - p[0], x[1] - p[1]) > 3 * d) { const v = [C[0] - p[0], C[1] - p[1]], l = hypot(...v) || 1; return [p[0] + (v[0] / l) * d, p[1] + (v[1] / l) * d]; }
+      return x;
+    });
+  };
+  // The shards on screen: face polygon, the glass's thickness behind it, the centroid.
+  const shardsOf = g => {
+    const on = (a, b) => (Math.abs(a[0]) < 0.01 && Math.abs(b[0]) < 0.01) || (Math.abs(a[0] - g.W) < 0.01 && Math.abs(b[0] - g.W) < 0.01) || (Math.abs(a[1]) < 0.01 && Math.abs(b[1]) < 0.01) || (Math.abs(a[1] - g.H) < 0.01 && Math.abs(b[1] - g.H) < 0.01);
+    const out = [];
+    for (const cl of fracture(g)) {
+      const keep = cl.P.map((p, i) => on(p, cl.P[(i + 1) % cl.P.length]));
+      const raw = cl.P.map(p => g.map(p[0], p[1])), S = inset(raw, keep, cl.k ? g.gap : g.gap * 0.4);
+      if (Math.sign(area(S)) !== Math.sign(area(raw)) || Math.abs(area(S)) < 2.5) continue;
+      // The thickness: each edge swept along e, every quad wound the same way.
+      const side = S.map((p, i) => {
+        const q = S[(i + 1) % S.length], Q = [p, q, [q[0] + g.e[0], q[1] + g.e[1]], [p[0] + g.e[0], p[1] + g.e[1]]];
+        return poly(area(Q) < 0 ? Q.reverse() : Q);
+      }).join('');
+      out.push({ k: cl.k, S, d: poly(S), side, c: centroid(S) });
+    }
+    return out;
+  };
+  // The picture in the glass: aqua body, two sheen bands, the shared lit.
+  // It rides in a pattern, so a falling shard carries its piece of the picture.
+  const paneDefs = (u, g) => {
+    const [x0, y0] = g.map(0, 0), [x1, y1] = g.map(g.W, g.H), box = `x="${f(Math.min(x0, x1))}" y="${f(y0)}" width="${f(Math.abs(x1 - x0) + 1)}" height="${f(y1 - y0 + 1)}"`;
+    const band = (a, w) => poly([[a, -40], [a + w, -40], [a + w - 260, 220], [a - 260, 220]]);
+    const userTL = `gradientUnits="userSpaceOnUse" x1="${f(x0)}" y1="${f(y0)}" x2="${f(x1)}" y2="${f(y1)}"`;
+    return `${light(u)}
+      ${lg(`${u}face`, FACE, userTL)}
+      ${lg(`${u}prim`, [[0, '#fff', 0.7], [0.5, '#fff', 0]], userTL)}
+      ${lg(`${u}edge`, EDGE, 'x1="0" y1="0" x2="1" y2="1"')}
+      ${rg(`${u}cau`, [[0, 'oklch(0.85 0.1 190)', 0.4], [1, 'oklch(0.85 0.1 190)', 0]])}
+      ${blur(`${u}hb`, 2.4)}
+      <pattern id="${u}pic" patternUnits="userSpaceOnUse" x="0" y="0" width="300" height="300">
+        <rect width="300" height="300" fill="url(#${u}face)"/>
+        <path d="${band(g.sheen[0], 15)}" fill="#fff" opacity="0.34"/>
+        <path d="${band(g.sheen[1], 6)}" fill="#fff" opacity="0.22"/>
+        <rect ${box} fill="url(#${u}lit)"/>
+      </pattern>
+      <pattern id="${u}crush" patternUnits="userSpaceOnUse" x="0" y="0" width="300" height="300">
+        <rect width="300" height="300" fill="${CRUSH}"/>
+        <rect ${box} fill="url(#${u}lit)"/>
+      </pattern>`;
+  };
+  const paneMarkup = (u, g) => `<g class="sides"></g><g class="faces"></g><g class="fly"></g>`;
+
+  // The live pane. Enter strikes the hit: the crushed star drops out.
+  // The pointer knocks out each shard it crosses; the shards fall and lie in front.
+  // Leave rewinds them into the pane, as the toy's Rewind does.
+  const pane = (svg, u, g) => {
+    const $q = s => svg.querySelector(s);
+    const sideL = $q('.sides'), faceL = $q('.faces'), flyL = $q('.fly');
+    const hit = g.map(g.c[0], g.c[1]);
+    const S = shardsOf(g).map(sh => {
+      // Crushed glass is frosted white; it shows no green edge.
+      const sg = el('path', { d: sh.k ? sh.side : 'M0 0', fill: `url(#${u}edge)` }, sideL);
+      const fg = el('g', {}, faceL);
+      el('path', { d: sh.d, fill: `url(#${u}${sh.k === 0 ? 'crush' : 'pic'})` }, fg);
+      el('path', { d: sh.d, fill: 'none', stroke: `url(#${u}prim)`, 'stroke-width': 2, 'stroke-linejoin': 'round' }, fg);
+      const dx = sh.c[0] - hit[0], dy = sh.c[1] - hit[1], l = hypot(dx, dy) || 1;
+      return { ...sh, sg, fg, out: [dx / l, dy / l], x: 0, y: 0, r: 0, vx: 0, vy: 0, vr: 0, sc: 1, sy: 1, mode: 0, wait: 0, dz: 0 };
+    });
+    const st = { live: false, q: 0, t: 0, last: -9, order: [] };
+    const put = s => {
+      const cx = s.c[0], cy = s.c[1], qx = s.mode ? 0 : s.out[0] * st.q * 1.6, qy = s.mode ? 0 : s.out[1] * st.q * 1.6;
+      const tr = `translate(${f(cx + s.x + qx)} ${f(cy + s.y + qy)}) scale(${f(s.sc)} ${f(s.sc * s.sy)}) rotate(${f(s.r)}) translate(${f(-cx)} ${f(-cy)})`;
+      s.sg.setAttribute('transform', tr); s.fg.setAttribute('transform', tr);
+    };
+    const knock = (s, from) => {
+      if (s.mode) return;
+      const dx = s.c[0] - from[0], dy = s.c[1] - from[1], l = hypot(dx, dy) || 1;
+      Object.assign(s, { mode: 1, vx: (dx / l) * (26 + 30 * Math.random()), vy: -40 - 50 * Math.random() + (dy / l) * 20, vr: (Math.random() - 0.5) * 520, sc: 1.18, dz: g.dz[0] + Math.random() * (g.dz[1] - g.dz[0]) });
+      flyL.append(s.sg, s.fg);
+      st.order.push(s);
+      st.q = Math.max(st.q, 0.7);
+    };
+    const loop = clock(time => {
+      const dt = Math.min(0.1, time - (st.t || time));
+      st.t = time;
+      st.q *= 0.8;
+      let busy = st.q > 0.01;
+      for (const s of S) {
+        if (s.mode === 1) {
+          s.vy += 460 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.r += s.vr * dt; s.sc += (1 - s.sc) * 0.12;
+          const X = s.c[0] + s.x;
+          if (X < g.xr[0] || X > g.xr[1]) { s.x = clamp(X, g.xr[0], g.xr[1]) - s.c[0]; s.vx *= -0.3; }
+          const floor = g.ground(s.c[0] + s.x) + s.dz - s.c[1];
+          if (s.y >= floor) {
+            s.y = floor;
+            if (s.vy > 80) { s.vy *= -0.3; s.vx *= 0.5; s.vr *= 0.5; } else s.mode = 2;
+          }
+          busy = true;
+        } else if (s.mode === 2) {
+          // A shard that lands lies flat: it squashes, slides a little and stops.
+          s.sy += (0.42 - s.sy) * 0.3; s.x += s.vx * dt; s.vx *= 0.75; s.r += s.vr * dt; s.vr *= 0.7; s.sc += (1 - s.sc) * 0.3;
+          if (Math.abs(s.sy - 0.42) > 0.01 || Math.abs(s.vx) > 1) busy = true;
+        } else if (s.mode === 3) {
+          busy = true;
+          if ((s.wait -= dt) > 0) continue;
+          // Rewind: the shard flies back up into its place.
+          s.x *= 0.72; s.y *= 0.72; s.r *= 0.72; s.sy += (1 - s.sy) * 0.3; s.sc = 1 + 0.12 * Math.min(1, hypot(s.x, s.y) / 30);
+          if (Math.abs(s.x) + Math.abs(s.y) + Math.abs(s.r) < 0.2) {
+            Object.assign(s, { mode: 0, x: 0, y: 0, r: 0, sy: 1, sc: 1 });
+            sideL.append(s.sg); faceL.append(s.fg);
+          }
+        }
+        put(s);
+      }
+      if (!busy) loop.stop();
+    });
+    S.forEach(put);
+    const strike = p => {
+      st.live = true; st.q = 1;
+      S.filter(s => s.k === 0).forEach(s => knock(s, hit));
+      if (p) move(p, true);
+      loop.start();
+    };
+    const move = (p, now) => {
+      if (!p || !st.live) return;
+      if (!now && st.t - st.last < 0.09) return;
+      const s = S.find(s => !s.mode && inside(s.S, p));
+      if (s) { knock(s, p); st.last = st.t; loop.start(); }
+    };
+    return {
+      enter: strike,
+      move: p => move(p, false),
+      leave() {
+        st.live = false;
+        // The last shard out goes back first.
+        st.order.reverse().forEach((s, i) => { if (s.mode) Object.assign(s, { mode: 3, wait: Math.min(0.6, i * 0.04) }); });
+        st.order = [];
+        loop.start();
+      },
+    };
+  };
+
+  /* ================= A: Shaded object ================= */
+
+  // A thick sheet of float glass at a three-quarter turn, standing on its edge.
+  const AX = 21, AY = 12, AW = 88, AH = 84, ASL = 0.2;
+  const A = {
+    W: AW, H: AH, c: [AW * 0.44, AH * 0.42], n: 7, R: [9, 17, 31], s: 3, gap: 1.35, e: [2.6, 2.2],
+    map: (pu, pv) => [AX + pu * 0.95, AY + pu * ASL + pv],
+    sheen: [70, 92],
+    // Shards land on the ground in front of the pane's foot.
+    ground: x => AY + AH + ((x - AX) / 0.95) * ASL, dz: [3, 9], xr: [AX + 4, AX + AW * 0.95 - 2],
+  };
+  const aFoot = [A.map(0, AH), A.map(AW, AH)];
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [AX, AY, f(AW * 0.95 + A.e[0]), f(AH + AW * ASL + A.e[1])],
+    idea: 'A thick sheet of float glass at a three-quarter turn, standing on its edge, with a spider-web fracture: seven radials from a crushed white star and two rings across them. Every crack shows the green of the cut glass. The pane carries an aqua body and two broad sheen bands; a soft caustic lies on the ground. Enter strikes the pane: it flinches and the crushed star drops out. The pointer knocks out each shard it crosses; the shard pops toward you, spins, falls, bounces and lies flat in front, still carrying its piece of the picture. Leave rewinds the shards into the pane, last out first back.',
+    art(svg, u) {
+      const mid = [(aFoot[0][0] + aFoot[1][0]) / 2, (aFoot[0][1] + aFoot[1][1]) / 2];
+      svg.innerHTML = `<defs>${paneDefs(u, A)}</defs>
+        <ellipse cx="${f(mid[0])}" cy="${f(mid[1] + 5)}" rx="48" ry="8" fill="url(#${u}cau)" filter="url(#${u}hb)" transform="rotate(${f((Math.atan(ASL / 0.95) * 180) / PI)} ${f(mid[0])} ${f(mid[1] + 5)})"/>
+        ${paneMarkup(u, A)}`;
+      return pane(svg, u, A);
+    },
+    emblem: `${EMB_HEAD}${shardsOf(A).filter(s => s.k).map(s => `<path d="${s.side}" fill="#8a8a8a"/>`).join('')}${shardsOf(A).map(s => `<path d="${s.d}" fill="#fff"/>`).join('')}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The block is the toy's sea-green sill; the pane stands in a slot along it.
+  const CY = 81.5, HX = 36, HY = 14, T = 13, PW = 64, PH = 56, PG = -2;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const D_TOP = [[-HX, -HY], [HX, -HY], [HX, HY], [-HX, HY]].map(([x, y]) => iso(x, y));
+  const [N, E, S_, W_] = D_TOP;
+  const down = p => [p[0], p[1] + T];
+  const SLOT = poly([iso(-HX + 2, PG - 1.6), iso(HX - 2, PG - 1.6), iso(HX - 2, PG + 1.8), iso(-HX + 2, PG + 1.8)]);
+  const D = {
+    W: PW, H: PH, c: [PW * 0.4, PH * 0.44], n: 7, R: [7, 13, 25], s: 11, gap: 1.2, e: [2.6, -1.5],
+    map: (pu, pv) => { const b = iso(-PW / 2 + pu, PG); return [b[0], b[1] - PH + pv]; },
+    sheen: [70, 86],
+    // Shards land on the sill's top, in front of the pane.
+    // At screen x, a point one unit in front of the slot lies at this y.
+    ground: x => CY + ((x - 64) / 0.866 + 2) * 0.5, dz: [1, 6], xr: [iso(-HX + 4, 1)[0], iso(HX - 4, 7)[0]],
+  };
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [f(W_[0]), f(D.map(0, 0)[1]), f(E[0] - W_[0]), f(down(S_)[1] - D.map(0, 0)[1])],
+    idea: 'The block is the toy\'s sea-green window sill at 30 degrees: light top, mid left face, dark right face, a rim on the top edges, a dark slot along the top. The same cracked float-glass pane stands in the slot, its green cut edges in every crack. Enter strikes the pane and the crushed star drops out; the pointer knocks out each shard it crosses, and the shards fall onto the sill and lie flat there. Leave rewinds them into the pane.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${paneDefs(u, D)}${blur(`${u}s`, 2.6)}
+          ${lg(`${u}sill`, [[0, 'oklch(0.74 0.06 168)'], [1, 'oklch(0.6 0.065 172)']], 'x1="0.3" y1="0" x2="0.6" y2="1"')}</defs>
+        <path d="${poly([E, S_, W_, down(W_), down(S_), down(E)])}" fill="oklch(0.05 0.01 290)" opacity="0.5" filter="url(#${u}s)" transform="translate(0 4)"/>
+        <path d="${poly([W_, S_, down(S_), down(W_)])}" fill="oklch(0.5 0.06 170)"/>
+        <path d="${poly([S_, E, down(E), down(S_)])}" fill="oklch(0.36 0.05 175)"/>
+        <path d="${poly(D_TOP)}" fill="url(#${u}sill)"/>
+        <path d="${poly(D_TOP)}" fill="url(#${u}lit)"/>
+        <path d="${SLOT}" fill="oklch(0.26 0.03 190)"/>
+        <path d="M${f(W_[0])} ${f(W_[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W_[0])} ${f(W_[1])}L${f(S_[0])} ${f(S_[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${paneMarkup(u, D)}`;
+      return pane(svg, u, D);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W_, S_, down(S_), down(W_)])}" fill="#5a5a5a"/><path d="${poly([S_, E, down(E), down(S_)])}" fill="#3a3a3a"/><path d="${poly(D_TOP)}" fill="#8a8a8a"/><path d="${SLOT}" fill="#333"/>${shardsOf(D).filter(s => s.k).map(s => `<path d="${s.side}" fill="#9a9a9a"/>`).join('')}${shardsOf(D).map(s => `<path d="${s.d}" fill="#fff"/>`).join('')}</svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = "Glass";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-glass';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `glass-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      // A menu tile with no data-box fits its drawn bounds, as the menu does.
+      const bb = D.box === "bbox" && svg.getBBox();
+      fitIcon(svg, bb ? [bb.x, bb.y, bb.width, bb.height] : D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

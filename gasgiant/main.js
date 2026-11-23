@@ -40,7 +40,7 @@ const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
 /* ---------- dev tuning ---------- */
 // ?dev shows the Dev sheet: jump to a layer, look freely, tune the light.
-const TUNE_DEF = { expo: 1, gainMax: 8, ms: 0.38, amb: 1, bounce: 0.3, haze: 1, flash: 1, sunAz: SUN_AZ, sunEl: SUN_EL, devPitch: 0, devYaw: 0 };
+const TUNE_DEF = { expo: 1, gainMax: 8, ms: 0.38, amb: 1, bounce: 0.3, haze: 1, flash: 1, rays: 1, sunAz: SUN_AZ, sunEl: SUN_EL, devPitch: 0, devYaw: 0 };
 const TUNE = { ...TUNE_DEF };
 let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const tune = (id, v) => { TUNE[id] = v; if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl); touch(); };
@@ -68,6 +68,7 @@ const DEV = [
   slider('Light', 'bounce', 'Floor bounce', 0, 1.5, 0.01),
   slider('Light', 'haze', 'Haze reach', 0.2, 4, 0.01),
   slider('Light', 'flash', 'Flash strength', 0, 3, 0.01),
+  slider('Light', 'rays', 'God rays', 0, 4, 0.01),
   { type: 'button', group: 'Light', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
 ];
 
@@ -294,6 +295,7 @@ function render(dt) {
   gl.useProgram(P.march.p);
   sunTo(P.march);
   gl.uniform4f(P.march.u.uTune, TUNE.ms, TUNE.amb, TUNE.bounce, TUNE.haze);
+  gl.uniform1f(P.march.u.uRays, TUNE.rays);
   const u = P.march.u;
   bind(gl, P.march, 'uMap', 0, T.map);
   bind(gl, P.march, 'uLut', 1, { tex: lut });
