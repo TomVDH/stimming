@@ -12,6 +12,7 @@ import { complex } from './complex.ts';
 import { slitOffset } from '../core/mount.ts';
 import { patch as duskPatch } from './dusk.ts';
 import { buildHeroScope, type HeroScope } from './hero-scope.ts';
+import { buildModernScope } from './modern-scope.ts';
 import { BIG_BASE_H, BIG_SKIRT_H, BIG_SLIT_B, BIG_WALL_R, DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
 
 /* ---------- the hero model: the main dome in full detail, for the cuts only ---------- */
@@ -585,9 +586,15 @@ function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
 // The textures, painted in their own step before the build.
 type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof domeTex>; leaf: ReturnType<typeof leafTex>; panel: ReturnType<typeof panelTex> };
 
+// The big dome's reflector gives the glass shot its rest pose by maths.
+// p: the primary's centre. axis: out of the tube. up: across it, skyward.
+// aperture: the front ring's diameter in world units.
+export type RestGlass = { restGlass(alt: number, az: number, p: Vector3, axis: Vector3, up: Vector3): void; readonly aperture: number };
+export type CutScope = HeroScope & Partial<RestGlass>;
+
 type Built = {
   root: Group;
-  scope: HeroScope;
+  scope: CutScope;
   textures: CanvasTexture[];
   // Puts the hero under the main dome's root, or takes it away.
   show(on: boolean): void;
@@ -1188,6 +1195,48 @@ function onSphere(r: number, b: number, e: number): Matrix4 {
   return new Matrix4().makeBasis(alongB(b, e), alongE(b, e), sp(1, b, e)).setPosition(sp(r, b, e));
 }
 
+/* ---------- the big dome's telescope: the 1 m reflector on its fork ---------- */
+// Copied from world/modern-scope.ts, in its own units.
+// The altitude axis stands M_AXIS_Y over the root.
+// The primary's face lies M_MIRROR_Z behind the axis.
+// The front ring lies M_CAGE_Z along the tube, M_CAGE_R across.
+const M_AXIS_Y = 3.3, M_MIRROR_Z = 0.5, M_CAGE_Z = -1.95, M_CAGE_R = 0.58;
+// The fork stands on the floor at this size.
+// Any larger, the swept tube hits the cupola.
+const M_SIZE = 0.75;
+const mp = new Vector3(), md = new Vector3();
+// floorY: the observing floor's height in dome units.
+function bigScope(main: Dome, floorY: number): CutScope {
+  const m = buildModernScope(M_SIZE);
+  m.root.position.y = floorY;
+  // The altitude axis and the tube's front direction, in the hero's frame.
+  const line = (alt: number, az: number): void => {
+    const a = alt * DEG, z = az * DEG;
+    md.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
+    mp.set(0, floorY + M_AXIS_Y * M_SIZE, 0);
+  };
+  let tAlt = 45, tAz = 0;
+  // A reflector has no objective glass; this hidden mesh stands in.
+  const glass = new Mesh();
+  glass.visible = false;
+  return {
+    root: m.root, glass,
+    setTube(alt, az) { tAlt = alt; tAz = az; m.setTube(alt, az); },
+    setSky() {}, setTarget() {}, setSlit() {}, setStars() {},
+    laserMouth(out) {
+      line(tAlt, tAz);
+      return main.root.localToWorld(out.copy(mp).addScaledVector(md, -M_CAGE_Z * M_SIZE));
+    },
+    restGlass(alt, az, p, axis, up) {
+      line(alt, az);
+      main.root.localToWorld(p.copy(mp).addScaledVector(md, -M_MIRROR_Z * M_SIZE));
+      axis.copy(md).transformDirection(main.root.matrixWorld);
+      up.set(0, 1, 0).addScaledVector(axis, -axis.y).normalize();
+    },
+    get aperture() { return 2 * M_CAGE_R * M_SIZE * main.root.scale.x; },
+  };
+}
+
 function buildBigHero(main: Dome, tx: Painted): Built {
   const root = new Group();
   root.name = 'hero';
@@ -1444,11 +1493,8 @@ function buildBigHero(main: Dome, tx: Painted): Built {
   ];
   root.add(...parts);
 
-  // The telescope stands on its pier, from world/hero-scope.ts.
-  // Its axes sit 0.35 over a cupola foot at 3.4.
-  // So its root drops to this cupola's foot.
-  const scope = buildHeroScope(1);
-  scope.root.position.y = BIG_TURN - 3.4;
+  // The 1 m reflector stands on the observing floor.
+  const scope = bigScope(main, BH + 0.01);
   root.add(scope.root);
   const seen = new Set<Material>(mats);
   scope.root.traverse((o) => {
@@ -1590,14 +1636,15 @@ function start(): void {
 setTimeout(start, 0);
 
 // The hero's slit azimuth: the cupola's, plus the German mount's offset.
-export const heroSlitAz = (d: Dome): number => d.pose.az + slitOffset(d.pose.tube.alt, d.pose.tube.az);
+// The big dome's fork stands on the axis, so it needs no offset.
+export const heroSlitAz = (d: Dome): number => d.pose.az + (d.big ? 0 : slitOffset(d.pose.tube.alt, d.pose.tube.az));
 export const hero = {
   // True once the model is built and on the GPU.
   get ready(): boolean { return ready; },
   // The objective glass: the lens cut puts the star reflections on it.
   get glass(): Mesh | null { return built ? built.scope.glass : null; },
   // The telescope: the cuts hand its glass the stars and the sky.
-  get scope(): HeroScope | null { return built ? built.scope : null; },
+  get scope(): CutScope | null { return built ? built.scope : null; },
   show(on: boolean): void { built?.show(on); },
   follow(d: Dome): void { built?.follow(d); },
   // Triangles, draw calls, and the time of each build step in ms.

@@ -10,7 +10,7 @@ import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
 import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
-import { hillHeight } from '../world/hill.ts';
+import { CLEAR, TREELINE, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
 import { hero, heroSlitAz } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
@@ -66,12 +66,15 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
 // The edge shot locks up to this many degrees ahead of the slit.
 // The slit then turns through the frame, not out of it.
 const EDGE_LEAD = 4.5;
+// The big dome's floor lies a third of a radius under the centre.
+// Its lift shot stands higher, behind the fork, on the tube's middle.
+if (complex.main.big) Object.assign(PLANS.lift, { eye: [-0.55, -0.45, -0.2], look: [0.2, 0, 0.5], tall: [0.15, 0, 0.45] });
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
 const NEAR = [1, 0.8, 0.65];
-// The eye stays inside the clearing; the trees start at about 45 m.
-const EYE_R = 42;
+// Out of the summit's clearing, the eye stands over the treetops.
+const TREE_TOP = TREELINE + 10;
 // Reduced motion: one still shot, then one crossfade to the wide shot.
 const STILL_S = 2.6, FADE_S = 1.2;
 // After the last cut, a quick dip to black leads to the wide shot.
@@ -105,19 +108,23 @@ const tmp = new Vector3();
 // The cupola's radius in metres, set at the pick.
 let R = 1;
 
-// Inside the drum, the eye keeps clear of the hero's fixed parts.
+// Inside the dome, the eye keeps clear of the hero's fixed parts.
 // The values come from world/hero.ts and world/hero-scope.ts.
 // They are in dome units, in the main dome's own frame.
-// The floor's height and the plastered wall's radius.
-const FLOOR_Y = 1.8, IN_R = 2.84;
-// [x, z, radius]: the pier, the ladder, the red work lamp.
-const KEEP_OUT: [number, number, number][] = [[0, 0.42, 0.6], [-0.99, 2.11, 0.5], [0.94, 2.58, 0.4]];
+// floor: the floor's height. wall: the inner wall's radius.
+// keep: [x, z, radius] of each part to clear.
+type Room = { floor: number; wall: number; keep: [number, number, number][] };
+// The classic drum: the pier, the ladder, the red work lamp.
+const CLASSIC: Room = { floor: 1.8, wall: 2.84, keep: [[0, 0.42, 0.6], [-0.99, 2.11, 0.5], [0.94, 2.58, 0.4]] };
+// The big dome: the reflector's fork, the red work lamp.
+const BIG: Room = { floor: 1.71, wall: 3.15, keep: [[0, 0, 0.9], [1.09, 2.99, 0.4]] };
 const local = new Vector3();
 // True when an inside eye clears the wall, floor and parts.
 function clearInside(eye: Vector3): boolean {
+  const room = complex.main.big ? BIG : CLASSIC;
   complex.main.root.worldToLocal(local.copy(eye));
-  if (Math.hypot(local.x, local.z) > IN_R - 0.25 || local.y < FLOOR_Y + 0.15) return false;
-  return KEEP_OUT.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
+  if (Math.hypot(local.x, local.z) > room.wall - 0.25 || local.y < room.floor + 0.15) return false;
+  return room.keep.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
 }
 
 // Everything in the complex that can stand between the eye and the dome.
@@ -149,7 +156,7 @@ function place(cut: Cut, az: number, aspect: number): Framed {
     for (const turn of TURNS) {
       slitPoint(plan.eye, (az + turn) * DEG, eye);
       eye.lerp(look, 1 - near);
-      if (Math.hypot(eye.x, eye.z) > EYE_R) continue;
+      if (Math.hypot(eye.x, eye.z) > CLEAR && eye.y < TREE_TOP) continue;
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
       if (plan.inside && !clearInside(eye)) continue;
       ray.set(look, tmp.copy(eye).sub(look).normalize());
@@ -196,6 +203,9 @@ const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 // The maths follow the mount in world/hero-scope.ts.
 // The real model never moves for it.
 function glassAt(alt: number, az: number): void {
+  // The big dome's reflector gives its own pose.
+  const sc = hero.scope;
+  if (sc?.restGlass) { sc.restGlass(alt, az, gp, ga, gu); return; }
   const a = alt * DEG, z = az * DEG;
   tmp.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
   const ha = Math.atan2(-tmp.x, tmp.dot(EQ));
@@ -216,7 +226,8 @@ function glassAt(alt: number, az: number): void {
 // A landscape frame holds the glass at GLASS_FILL of its height.
 // A portrait frame holds it at GLASS_FILL_TALL of its width.
 function placeGlass(cut: Cut, aspect: number): Framed {
-  const d = GLASS_D * complex.main.root.scale.x;
+  // The reflector frames its front ring; the refractor, its glass.
+  const d = hero.scope?.aperture ?? GLASS_D * complex.main.root.scale.x;
   const dist = d / GLASS_FILL / 2 / Math.tan(cut.fov * DEG / 2);
   const fov = aspect < 1 ? 2 * Math.atan(d / GLASS_FILL_TALL / aspect / 2 / dist) / DEG : cut.fov;
   return { eye: new Vector3(), aim: new Vector3(), fov, focus: dist, aperture: GLASS_APERTURE, glass: { dist } };
