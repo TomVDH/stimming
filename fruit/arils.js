@@ -20,7 +20,7 @@ const DEF = {
   seedK: 0.3, rs: 0.2, seedCol: [0.7, 0.45, 0.4], seedCut: [[0.62, 0.55, 0.45], [0.42, 0.24, 0.18]],
   cut: 0.004, scale: 1.2, scatter: 0.45, behind: 1, deep: [-0.11, -0.01], deepShade: 0.45,
   // Mesh detail, and the bead-space bound: it must hold the longest stretch.
-  detail: 3, bound: 1.45, nearK: 1.5,
+  detail: 3, bound: 1.45, nearK: 1.5, aoMin: 0.5,
 };
 
 // The aril shader: light through the juice, a seed seen inside, a sliced cap.
@@ -147,7 +147,7 @@ export function makeArils(U, list, R, opts = {}) {
       col.set(colr, j * 3);
       rad[j] = a.r;
       // Faces pressed against a neighbour get less light.
-      ao[j] = isCut ? 1 : 0.5 + 0.5 * Math.min(1, Math.max(0, (rr / r0 - 0.7) / 0.3));
+      ao[j] = isCut ? 1 : o.aoMin + (1 - o.aoMin) * Math.min(1, Math.max(0, (rr / r0 - 0.7) / 0.3));
       cut[j] = isCut;
       sig[j] = sg;
     }

@@ -10,7 +10,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 |---|---|---|
 | 1 | Kiwi | Flesh drawn at two depths, wandering pale rays; 38 spokes of jelly cells, each a juice bead round a black seed; a raised fibrous core. Fuzz with rubbed short patches |
 | 2 | Pomegranate | 380 arils as real geometry: long teardrops pressed flat against their neighbours, juice lit through to a seed inside; some sliced flat at the cut. Open chambers between spongy pith walls; a crown with dry stamens |
-| 3 | Blood orange | Ten segments of long vesicles as real geometry, pointing out to the peel and opened down their length by the cut, orange to crimson in patches; more sacs drawn per pixel on the juice floor between them; thin membranes, a white albedo, a peel dotted with oil glands |
+| 3 | Blood orange | Ten segments of long vesicles as real geometry, pointing out to the peel and opened down their length by the cut, orange to crimson in patches; one continuous juicy face of finer sacs drawn per pixel under them; membranes, core and albedo fade into it over soft gradients; a peel dotted with oil glands |
 | 4 | Peach | Gold flesh, red at the stone; a ridged stone in one half, its hollow in the other |
 | 5 | Dragon fruit | White flesh speckled with black seeds in clear gel; curled bracts on the skin |
 | 6 | Rambutan | Glassy white flesh round a brown seed; long hooked spines (the fuzz ribbons) |

@@ -26,46 +26,39 @@ float wallD(float a, float r) {
   return d;
 }
 vec2 sponge(vec2 f) { return cellEdge(f * 55.0); }
-float relief(vec2 f) { return 0.0012 * smoothstep(0.0, 0.25, sponge(f).x); }
+// Sacs drawn per pixel: the juicy face under and between the vesicles.
+vec2 sac(float r, float a) { return cellEdge(vec2(a * r * 7.0, r * 9.0 - sin(a * 30.0) * 0.1) * vec2(4.0, 1.0)); }
+float relief(vec2 f) { return 0.001 * smoothstep(0.0, 0.25, sponge(f).x); }
 vec3 bed(vec2 f, float r, float a, inout float glow) {
-  // Thin, and thinner in places: the width wanders along the membrane.
-  float ww = 0.0035 + 0.0035 * vn(vec3(r * 9.0, a * 2.0, 5.0));
-  float wall = 1.0 - smoothstep(ww, ww + 0.004, wallD(a, r));
-  float core = 1.0 - smoothstep(${CORE.toFixed(3)} - 0.01, ${CORE.toFixed(3)} + 0.005, r - 0.012 * sin(a * 10.0));
-  float alb = smoothstep(${(ALB - 0.012).toFixed(3)}, ${ALB.toFixed(3)}, r + 0.006 * sin(a * 37.0));
-  // The segments are open: the vesicles show down to the juice below.
-  if (max(max(wall * smoothstep(0.05, 0.1, r), core), alb) < 0.5) discard;
-  // Pith: a soft white sponge, tinged where the juice has stained it.
+  // The juice: orange to crimson in patches, each sac a little different.
+  float fk = smoothstep(0.3, 0.75, vn(vec3(f * 2.6, 7.0)));
+  vec2 s = sac(r, a);
+  vec3 juice = mix(vec3(0.55, 0.13, 0.008), vec3(0.28, 0.008, 0.012), clamp(fk + (s.y - 0.5) * 0.35, 0.0, 1.0));
+  vec3 col = mix(juice * 1.35, juice, smoothstep(0.0, 0.35, s.x)) * 0.85;
+  // Pith: a soft white sponge, stained pink where the juice has soaked in.
   vec2 sp = sponge(f);
   vec3 pith = mix(vec3(0.62, 0.54, 0.42), vec3(0.7, 0.62, 0.48), vn(vec3(f * 16.0, 2.0)));
-  pith *= 0.85 + 0.15 * smoothstep(0.0, 0.25, sp.x);
-  vec3 col = mix(pith, vec3(0.6, 0.3, 0.2), smoothstep(0.3, 0.8, vn(vec3(f * 3.0, 9.0))) * 0.25);
-  // Membranes: thin and wet, so the red juice shows through them.
-  vec3 juiceTint = mix(vec3(0.6, 0.2, 0.06), vec3(0.4, 0.04, 0.03), smoothstep(0.3, 0.75, vn(vec3(f * 2.6, 7.0))));
-  float thin = 1.0 - smoothstep(0.0, ww + 0.004, wallD(a, r)) * 0.4;
-  col = mix(col, mix(col, juiceTint, 0.6 * thin), wall * (1.0 - alb) * (1.0 - core));
-  // The flavedo: the thin coloured peel, oil glands dotted in it.
-  float peel = smoothstep(0.95, 0.957, r);
+  pith *= 0.88 + 0.12 * smoothstep(0.0, 0.25, sp.x);
+  // Membranes: thin and wet, wide soft edges; the juice shows through them.
+  float ww = 0.003 + 0.004 * vn(vec3(r * 9.0, a * 2.0, 5.0));
+  float wall = (1.0 - smoothstep(0.0, ww * 2.5, wallD(a, r))) * smoothstep(0.06, 0.14, r);
+  vec3 membrane = mix(pith, juice * 1.3, 0.5);
+  col = mix(col, membrane, wall * 0.7);
+  // The core: a soft pale star that fades into the flesh.
+  float core = 1.0 - smoothstep(${CORE.toFixed(3)} - 0.03, ${CORE.toFixed(3)} + 0.02, r - 0.012 * sin(a * 10.0));
+  col = mix(col, mix(pith, juice, 0.45) * 0.9, core * 0.85);
+  // The albedo: juice stains its inner edge, which wanders and fades.
+  float edge = r + 0.008 * sin(a * 37.0) + 0.012 * (vn(vec3(a * 6.0, 1.0, 2.0)) - 0.5);
+  float alb = smoothstep(${(ALB - 0.03).toFixed(3)}, ${(ALB + 0.006).toFixed(3)}, edge);
+  vec3 stained = mix(pith, juice * 1.4, (1.0 - smoothstep(${ALB.toFixed(3)}, ${(ALB + 0.035).toFixed(3)}, edge)) * 0.45);
+  col = mix(col, stained, alb);
+  // The flavedo: the thin coloured peel, oil glands dotted in it; it fades in.
+  float peel = smoothstep(0.94, 0.958, r);
   vec3 fl = mix(vec3(0.6, 0.14, 0.005), vec3(0.42, 0.05, 0.008), vn(vec3(f * 6.0, 4.0)));
-  fl = mix(fl, vec3(0.75, 0.3, 0.02), (1.0 - smoothstep(0.1, 0.25, cells(f * 120.0).x)) * 0.6);
+  fl = mix(fl, vec3(0.75, 0.3, 0.02), (1.0 - smoothstep(0.1, 0.25, cells(f * 120.0).x)) * 0.5);
   col = mix(col, fl, peel);
-  // Where the pith drops into a segment, its lip sits in the vesicles' shade.
-  col *= 0.6 + 0.4 * smoothstep(0.5, 0.95, max(max(wall, core), alb));
-  glow = 0.2 * (1.0 - peel);
+  glow = (1.0 - alb) * (1.0 - wall * 0.5) * 0.8 + 0.15 * (1.0 - peel) * alb;
   return col;
-}`;
-
-// The floor under the gaps: more sacs, drawn per pixel, lying deeper.
-const FLOOR = /* glsl */`
-vec2 sac(float r, float a) { return cellEdge(vec2(a * r * 7.0, r * 9.0 - sin(a * 30.0) * 0.1) * vec2(4.0, 1.0)); }
-float relief(vec2 f) { return 0.0; }
-vec3 bed(vec2 f, float r, float a, inout float glow) {
-  vec2 s = sac(r, a);
-  float k = clamp(smoothstep(0.3, 0.75, vn(vec3(f * 2.6, 7.0))) + (s.y - 0.5) * 0.4, 0.0, 1.0);
-  vec3 juice = mix(vec3(0.55, 0.13, 0.008), vec3(0.28, 0.008, 0.012), k);
-  vec3 col = mix(juice * 1.5, juice, smoothstep(0.0, 0.3, s.x));
-  glow = 0.8;
-  return col * 0.8;
 }`;
 
 export const orange = {
@@ -107,7 +100,6 @@ export const orange = {
   },
   face(U, g, R) {
     const bed = bedMesh(U, this, BED, { bumpK: 1, wet: 0.9, depth: 0.004 });
-    const floor = bedMesh(U, this, FLOOR, { depth: 0.16, wet: 0.4 });
     // Vesicles: in each segment, rows from the core out to the albedo.
     const list = [];
     const flush = createNoise3D(rng(31));
@@ -143,15 +135,15 @@ export const orange = {
         return Rr => {
           const v = list[k++];
           const p = flush(v.c.y * 2.2, v.c.z * 2.2, 0.3);
-          const t = Math.min(1, Math.max(0, 0.5 + p * 0.9 + (Rr() - 0.5) * 0.35));
+          const t = Math.min(1, Math.max(0, 0.5 + p * 0.9 + (Rr() - 0.5) * 0.12));
           return [0.97 - t * 0.33, 0.4 - t * 0.38, 0.03 + t * 0.02];
         };
       })(),
       sig: Rr => 0.6 + Rr() * 0.35,
       seedK: 0, rs: 0, cut: CUT, scale: 1.0, scatter: 0.6, behind: 1.0,
-      deep: [-0.06, 0.0], deepShade: 0.8, detail: 2, bound: 5.3, nearK: 5.4,
+      deep: [-0.06, 0.0], deepShade: 0.92, aoMin: 0.82, detail: 2, bound: 5.3, nearK: 5.4,
     });
-    g.add(bed, floor, pulp);
-    return { bed, parts: [bed, floor, pulp] };
+    g.add(bed, pulp);
+    return { bed, parts: [bed, pulp] };
   },
 };
