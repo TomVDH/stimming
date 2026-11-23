@@ -189,6 +189,8 @@ export const pomegranate = {
       roughAdd += scar * 0.5 + 0.12 * vn(fp * 3.0 + 2.0);`,
   },
   fuzz: { k: 0, root: [[0.18, 0.015, 0.015], [0.3, 0.03, 0.025]], tip: [0.45, 0.1, 0.07], trans: [0.6, 0.14, 0.1], len: 0.07, width: 1 },
+  // Loose arils: ruby teardrops, a pale seed in each.
+  bits: { s: [0.04, 0.058, 0.042], color: R => { const t = R(); return [0.74 + t * 0.2, 0.004 + t * 0.02, 0.05 + t * 0.05]; }, sig: 1.0, seed: 0.32, seedCol: [0.6, 0.42, 0.34], scale: 14, n: 14 },
   juice: [0.85, 0.05, 0.12],
   glow: 0.45,
   tip(U, g, mat, e) {

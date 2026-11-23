@@ -124,6 +124,8 @@ export const kiwi = {
     sheen: [0.18, 0.11, 0.048], tipDark: 0.3,
   },
   fuzz: { k: 0.6, patch: 0.65, root: [[0.03, 0.016, 0.006], [0.07, 0.038, 0.014]], tip: [0.125, 0.075, 0.03], trans: [0.5, 0.32, 0.13], len: 0.07, width: 1 },
+  // Loose seeds: small black teardrops in a film of jelly.
+  bits: { s: [0.011, 0.02, 0.012], color: () => [0.07, 0.09, 0.02], sig: 2.5, seed: 0.85, seedCol: [0.006, 0.005, 0.004], scale: 30, n: 14 },
   juice: [0.42, 0.88, 0.08],
   glow: 0.55,
   // The stem end: a sunken, wrinkled scar. The blossom end: a small dark point.

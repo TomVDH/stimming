@@ -30,13 +30,14 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | Hold a half | That half squashes and drips juice from its face; release: it springs back and squirts. |
 | Drag the background | The lights swing round the fruit. From behind, light comes through the skin and the flesh. |
 | Swipe across a half or a wedge | It splits lengthwise, along the swipe: two wedges open like a book, each with a lengthwise cut face. Wedges split again while they are wide enough. |
+| Flick a half or a wedge | A quick short drag: it jolts, and its loose bits tumble out of the face: arils, pulp sacs or seeds. They bounce, roll and rest on the floor until the next fruit. |
 | Tap the gap | Join: every piece slides back, the wedges become the two halves, which meet with a thunk. |
 | Pick a fruit | The fruit on stage rolls off to the left; the new one rolls in from the right. |
-| Keys | 1 to 0 pick a fruit, Space slices or joins, hold S squeezes |
+| Keys | 1 to 0 pick a fruit, Space slices or joins, F flicks every piece (or slices a whole fruit), hold S squeezes |
 
 ## Bar v3
 
-Choice Fruit (ten options, a stepper; keys 1 to 0). Actions Slice (Space) and Squeeze (S, hold). Slider Fuzz, kept per fruit: any fruit can grow fuzz. Quality in Settings.
+Choice Fruit (ten options, a stepper; keys 1 to 0). Actions Slice (Space), Flick (F) and Squeeze (S, hold). Slider Fuzz, kept per fruit: any fruit can grow fuzz. Quality in Settings.
 
 ## How it works
 
@@ -55,6 +56,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 | Juice beads | `half.js` | Instanced ellipsoids. Four steps along the view chord in the bead's own space, a chord to each light from every step, Beer-Lambert per channel. A seed inside ends the view ray: seen through the juice. |
 | Fuzz | `fuzz.js` | Instanced ribbons on four control points with fibre wrap light. Per fruit: count, length, width, lift and curl (the rambutan's spines). |
 | Fruits | `kiwi.js` to `fig.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |
+| Bits | `bits.js` | Up to 90 loose bits as instanced teardrop juice beads (the cut faces' optics, a seed inside). Gravity, a damped bounce, floor friction that turns into a roll, pushes between bits and off the fruit's pieces, rest once still. Per fruit: pomegranate arils, passion fruit sacs, kiwi, dragon fruit and starfruit seeds. A hard landing ticks. |
 | Puddle | `puddle.js` | Landed drops splat into a float texture over the floor (depth, and colour times depth). Juice flows from deep to shallow while it is thicker than a thin film, so the edge holds and colours mix. The floor draws it with a rim normal from the depth gradient, the floor tinted under it, and a planar reflection: the scene rendered from a mirror camera below the floor, at half size, only while there is juice. It flows for six seconds after the last drop, then rests; a new fruit drains it. |
 | Juice | `juice.js` | Up to 120 drops with the bead optics, stretched along their flight |
 | Finish | `post.js` | Depth of field (disc gather), bloom, ACES, vignette, grain |

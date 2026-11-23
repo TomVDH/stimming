@@ -73,6 +73,8 @@ export const passion = {
       }`,
   },
   fuzz: { k: 0, root: [[0.05, 0.01, 0.04], [0.15, 0.04, 0.1]], tip: [0.35, 0.25, 0.3], trans: [0.6, 0.4, 0.5], len: 0.07, width: 1 },
+  // Loose pulp: golden jelly sacs, a black seed in each.
+  bits: { s: [0.05, 0.056, 0.05], color: R => { const t = R(); return [0.97, 0.52 + t * 0.2, 0.03]; }, sig: 0.95, seed: 0.4, seedCol: [0.015, 0.012, 0.01], scale: 12, n: 10 },
   juice: [0.98, 0.66, 0.08],
   glow: 0.6,
   tip(U, g, mat, e) {

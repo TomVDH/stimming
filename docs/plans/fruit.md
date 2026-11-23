@@ -31,8 +31,9 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Floor, seams, halves, light | Exact floor contact; no seams; halves squeeze, drip and wobble on their own; light through the fruit with a light drag |
 | Juice puddle | Drops pool into one glossy puddle that spreads, holds its edge, mixes colours and mirrors the fruit |
 | Wedges | A swipe across a half or wedge splits it lengthwise along the swipe; pieces are sectors of the half; lengthwise faces from each fruit's pattern |
+| Loose seeds | Flick a piece (or press F): arils, sacs or seeds tumble out, bounce, roll and rest |
 
-Ideas waiting: loose seeds that tumble out, tear open or peel, a bite.
+Ideas waiting: tear open or peel, a bite.
 
 ## Next: one fruit at a time
 

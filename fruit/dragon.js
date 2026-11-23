@@ -138,6 +138,8 @@ export const dragon = {
       roughAdd += 0.15 * smoothstep(0.4, 0.8, vn(fp * 3.0 + 4.0));`,
   },
   fuzz: { k: 0, root: [[0.4, 0.01, 0.12], [0.6, 0.03, 0.2]], tip: [0.35, 0.45, 0.08], trans: [0.8, 0.3, 0.4], len: 0.07, width: 1 },
+  // Loose seeds: tiny black specks in clear gel.
+  bits: { s: [0.009, 0.014, 0.01], color: () => [0.7, 0.7, 0.68], sig: 0.3, seed: 0.72, seedCol: [0.006, 0.005, 0.005], scale: 30, n: 18 },
   juice: [0.85, 0.82, 0.8],
   glow: 0.45,
   tip(U, g, mat, e) {

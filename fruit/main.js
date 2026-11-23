@@ -8,6 +8,7 @@ import { makeHalf, longFaceMesh } from './half.js';
 import { FRUITS } from './fruits.js';
 import { makeFuzz } from './fuzz.js';
 import { makeJuice } from './juice.js';
+import { makeBits } from './bits.js';
 import { makePost } from './post.js';
 import { makePuddle, makeMirror, RECT } from './puddle.js';
 import { LIGHT } from './glsl.js';
@@ -55,6 +56,7 @@ const ui = initPage({ id: ID, bar: {
   },
   actions: [
     { verb: 'slice', label: 'Slice', key: 'Space', onPress: () => toggle() },
+    { verb: 'flick', label: 'Flick', key: 'f', onPress: () => { flickAll(); touch(); } },
     { verb: 'squeeze', label: 'Squeeze', key: 's', hold: true, onDown: () => { st.keySqueeze = true; touch(); }, onUp: () => { st.keySqueeze = false; touch(); } },
   ],
   slider: { label: 'Fuzz', min: 0, max: 1, step: 0.01, value: st.fuzz, onInput: v => { st.fuzz = v; save(`fuzz.${F.id}`, v); touch(); } },
@@ -65,16 +67,17 @@ const ui = initPage({ id: ID, bar: {
     ['press', 'Press the fruit to squish it; it springs back'],
     ['swipe', 'Swipe across it to slice it in two'],
     ['hold', 'Hold a half to squeeze its juice out; tap the gap to join them'],
+    ['flick', 'Flick a half or a wedge to shake its seeds out; F shakes them all'],
     ['drag', 'Drag the background to swing the light round; from behind, the fruit glows'],
     ['space', 'Space slices or joins, hold S to squeeze, 1 to 0 pick a fruit'],
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
-const kit = audioKit({ keys: new Set([' ', 's', 'S', ...'1234567890']), sleepMs: 1500 });
+const kit = audioKit({ keys: new Set([' ', 's', 'S', 'f', 'F', ...'1234567890']), sleepMs: 1500 });
 const snd = fruitSound(kit);
 
 /* ---------- three ---------- */
-let renderer = null, scene = null, camera = null, post = null, fuzz = null, juice = null, puddle = null, mirror = null;
+let renderer = null, scene = null, camera = null, post = null, fuzz = null, juice = null, puddle = null, mirror = null, bits = null;
 let root = null, halves = [], floor = null, sky = null;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 
@@ -251,6 +254,10 @@ function build(f) {
   if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
   juice.setTint(F.juice);
   puddle?.wipe();
+  // Loose bits: this fruit's arils, sacs or seeds; the old ones go.
+  if (bits) { if (bits.mesh) scene.remove(bits.mesh); bits.dispose(); }
+  bits = makeBits(halfU(1), F, v => snd.tick(v));
+  if (bits.mesh) scene.add(bits.mesh);
   L.uGlow.value = F.glow;
   st.fuzz = fuzzOf(F);
   ui.slider?.set?.(st.fuzz);
@@ -359,6 +366,15 @@ function step(dt) {
   L.uFuzz.value = st.fuzz;
   juice.step(dt, FLOOR_Y, (p, r) => puddle.splat(p.x, p.z, r, F.juice));
   puddle.step(dt);
+  // The bits bounce off the floor and off the fruit's pieces.
+  if (bits.busy) {
+    spheres.length = 0;
+    for (const hf of halves) {
+      hf.updateMatrixWorld(true);
+      spheres.push({ c: new THREE.Vector3(-F.A * 0.45, 0, 0).applyMatrix4(hf.matrixWorld), r: F.B * 0.7 });
+    }
+  }
+  bits.step(dt, FLOOR_Y, spheres);
   fuzz.step(dt, st);
   snd.update(dt, st);
   const lively = Math.abs(st.openV) > 0.01 || Math.abs(st.open - st.openTo) > 0.002 || Math.abs(st.sqV) > 0.01 || Math.abs(st.sq - (squeezing ? 0.72 : 1)) > 0.002
@@ -367,7 +383,7 @@ function step(dt) {
     || halves.some(hf => { const pc = hf.userData.piece; return Math.abs(pc.offV) > 0.01 || Math.abs(pc.rotV) > 0.01 || Math.abs(pc.off - (st.openTo ? pc.offTo : 0)) > 0.002; })
     || halves.some(hf => { const b = hf.userData.body; return b.squeeze || Math.abs(b.sqV) > 0.01 || Math.abs(b.sq - 1) > 0.002 || Math.abs(b.hopV) > 0.01; })
     || Math.abs(lightAzTo - lightAz) > 0.002
-    || juice.busy || fuzz.busy || puddle.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
+    || juice.busy || fuzz.busy || puddle.busy || bits.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
   return { lively };
 }
 
@@ -558,6 +574,31 @@ function squirtFrom(hf, n, speed) {
   juice.squirt(FO, FN, F.B * 0.55, n, speed);
 }
 const whole = () => !st.openTo && st.open < 0.05;
+const spheres = [];
+// A flick: the piece jolts, and its loose bits tumble out of its face along dir.
+function flickPiece(hf, dir) {
+  const b = hf.userData.body;
+  b.hopV += 2.6; b.sqV -= 1.4;
+  hf.updateMatrixWorld(true);
+  FO.set(0.02, 0, 0).applyMatrix4(hf.matrixWorld);
+  FN.set(1, 0, 0).applyMatrix3(M3.getNormalMatrix(hf.matrixWorld)).normalize();
+  const k = Math.min(1, hf.userData.piece.span / Math.PI);
+  bits.spawn(FO, FN, F.B * 0.45, dir, Math.round((F.bits?.n ?? 0) * (frozen ? 0.5 : 1) * Math.max(0.35, k)));
+  juice.squirt(FO, FN, F.B * 0.4, frozen ? 3 : 8, 0.9);
+  snd.squish(0.5);
+}
+// The Flick button: a whole fruit is cut first; open pieces all shake.
+function flickAll() {
+  if (!st.openTo) { slice(1); return; }
+  for (const hf of halves) flickPiece(hf, new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize());
+}
+// A screen drag as a direction across the floor.
+function floorDir(dx, dy) {
+  const r = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+  const fw = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
+  r.y = 0; fw.y = 0;
+  return r.normalize().multiplyScalar(dx).addScaledVector(fw.normalize(), -dy).normalize();
+}
 const TAU = Math.PI * 2;
 
 /* ---------- wedges ---------- */
@@ -711,7 +752,7 @@ function release(hit) {
     }
   }
 }
-let down = false, pid = null, at0 = null, atN = null, tN = 0, moved = false, held = false, holdT = 0, hit0 = null, crossed = 0, path = [], cutFrom = null;
+let down = false, pid = null, at0 = null, atN = null, tN = 0, moved = false, held = false, holdT = 0, hit0 = null, crossed = 0, path = [], cutFrom = null, t0 = 0, didCut = false;
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !renderer || !started || (e.target !== renderer.domElement && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
@@ -720,6 +761,8 @@ stage.addEventListener('pointerdown', e => {
   path = [at0];
   crossed = 0;
   cutFrom = null;
+  t0 = performance.now();
+  didCut = false;
   clearTimeout(holdT);
   if (hit0) { press(hit0, 0.05); snd.squish(0.4); }
   // A hold on the fruit squeezes it flat.
@@ -767,6 +810,7 @@ stage.addEventListener('pointermove', e => {
       if (h && !cutFrom) cutFrom = { hf: h.half, p };
       else if (!h && cutFrom && cutFrom.hf.parent && swipeLong() && cutFrom.hf.userData.piece.span > 0.5) {
         splitPiece(cutFrom.hf, cutAngle(cutFrom.hf, cutFrom.p, p));
+        didCut = true;
         release(null);
         cutFrom = null;
         path = [p];
@@ -796,6 +840,11 @@ function end(e) {
     b.sqV += 3.2; b.hopV += 2.2;
     squirtFrom(hf, frozen ? 6 : 18, 1.2);
     snd.boing(0.9);
+  }
+  // A quick short flick on an open piece shakes its bits out.
+  if (moved && !didCut && hit0 && st.openTo && performance.now() - t0 < 320 && path.length > 1) {
+    const a = path[0], z = path[path.length - 1];
+    flickPiece(hit0.half, floorDir((z[0] - a[0]) / cssW, (z[1] - a[1]) / cssH));
   }
   if (!moved && !held) {
     // A tap: wobble the half under it, a few drops from an open one; a tap in the gap joins.

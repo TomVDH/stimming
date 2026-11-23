@@ -272,7 +272,8 @@ export function longFaceMesh(U, F, src, phi, e) {
 
 // Juice beads: instanced turbid ellipsoids, lit through their chords.
 // Each bead: { p: [x, y, z], ph (turn about x), s: [sx, sy, sz], col, sig, seed }.
-export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet = 0.9, behind = 1 } = {}) {
+// geo replaces the unit sphere, for a bead of another shape.
+export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet = 0.9, behind = 1, geo = null } = {}) {
   const m = new THREE.ShaderMaterial({
     uniforms: { ...U, uSeedCol: { value: new THREE.Vector3(...seedCol) } },
     vertexShader: /* glsl */`
@@ -342,7 +343,7 @@ export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const sph = new THREE.SphereGeometry(1, 18, 12);
+  const sph = geo ?? new THREE.SphereGeometry(1, 18, 12);
   const n = beads.length;
   const aCol = new Float32Array(n * 3), aSig = new Float32Array(n), aSeed = new Float32Array(n);
   const mesh = new THREE.InstancedMesh(sph, m, n);

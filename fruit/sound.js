@@ -72,6 +72,12 @@ export function fruitSound(kit) {
         burst(ac, { f: 1800 + Math.random() * 2500, q: 6, dur: 0.035, lvl: 0.05 + Math.random() * 0.05, at, p: Math.random() * 1.6 - 0.8, atk: 0.002 });
       }
     },
+    // A seed or an aril lands: a small wet tick, louder for a harder fall.
+    tick(v = 1) {
+      const ac = live(); if (!ac) return;
+      const k = Math.min(1, v / 3);
+      burst(ac, { f: 2800 + Math.random() * 2400, q: 5, dur: 0.03, lvl: 0.03 + 0.06 * k, p: Math.random() * 1.2 - 0.6, atk: 0.001 });
+    },
     // The halves meet: a soft thunk.
     join(at = 0) {
       const ac = live(); if (!ac) return;

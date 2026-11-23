@@ -43,6 +43,8 @@ export const starfruit = {
     sheen: [0.05, 0.04, 0.01], tipDark: 0.3,
   },
   fuzz: { k: 0, root: [[0.5, 0.35, 0.02], [0.7, 0.5, 0.04]], tip: [0.8, 0.7, 0.2], trans: [0.9, 0.8, 0.3], len: 0.07, width: 1 },
+  // Loose seeds: a few flat brown seeds.
+  bits: { s: [0.02, 0.034, 0.012], color: () => [0.42, 0.24, 0.08], sig: 3.0, seed: 0, seedCol: [0, 0, 0], scale: 20, n: 4 },
   juice: [0.95, 0.85, 0.15],
   glow: 0.8,
   tip(U, g, mat, e) {
