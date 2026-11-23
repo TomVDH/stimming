@@ -83,6 +83,7 @@ export const orange = {
       * (1 + 0.012 * t * nz(Math.cos(ph) * 2, Math.sin(ph) * 2, t * 2 + (e > 0 ? 4 : 0)));
   })(),
   look: {
+    thru: [1.0, 0.42, 0.04], thruK: 2.5,
     skinA: [0.55, 0.11, 0.006], skinB: [0.76, 0.2, 0.01], mottle: 6,
     blush: [0.3, 0.02, 0.012], blushK: 0.5, blushDir: [0.3, 0.7, 0.3],
     pores: 0.38, poreScale: 85, rough: 0.26, f0: 0.05, wrap: 0.35, sss: [0.8, 0.3, 0.0],

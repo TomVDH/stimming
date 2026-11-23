@@ -34,10 +34,9 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
 
 export const starfruit = {
   id: 'starfruit', label: 'Starfruit', A, B, C,
-  // It lies on two ridges, so its middle sits low.
-  rest: B * 0.62,
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.45) * (1 + e * t * 0.2) * star(ph),
   look: {
+    thru: [1.0, 0.8, 0.16], thruK: 1.9,
     skinA: [0.6, 0.4, 0.015], skinB: [0.78, 0.58, 0.04], mottle: 5,
     blush: [0.32, 0.42, 0.03], blushK: 0.3, blushDir: [0, -1, 0],
     pores: 0.02, poreScale: 40, rough: 0.18, f0: 0.05, wrap: 0.5, sss: [0.9, 0.7, 0.1],

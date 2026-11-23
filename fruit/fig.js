@@ -36,6 +36,7 @@ export const fig = {
   // The stem half draws in to a neck; the other half stays round.
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), e > 0 ? 0.3 : 0.45) * (e > 0 ? 1 - 0.72 * Math.pow(t, 1.2) : 1 + 0.06 * t),
   look: {
+    thru: [0.6, 0.1, 0.18], thruK: 3,
     skinA: [0.035, 0.01, 0.03], skinB: [0.12, 0.03, 0.08], mottle: 4,
     blush: [0.09, 0.13, 0.035], blushK: 0.45, blushDir: [1, 0, 0],
     pores: 0.04, poreScale: 35, rough: 0.5, f0: 0.035, wrap: 0.25,

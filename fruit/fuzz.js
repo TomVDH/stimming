@@ -123,7 +123,7 @@ export function makeFuzz(halves, L, F) {
     const p = new THREE.Vector3(), q = new THREE.Vector3();
     for (let i = 0; i < n; i++) {
       // Roots keep clear of the cut edge, so no hair crosses the face.
-      do sampler.sample(p, q); while (p.x > -0.004);
+      do sampler.sample(p, q); while (p.x > -0.0008);
       root.set([p.x, p.y, p.z], i * 3);
       nrm.set([q.x, q.y, q.z], i * 3);
       rnd.set([R(), R(), R(), R()], i * 4);

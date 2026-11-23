@@ -27,6 +27,7 @@ export const rambutan = {
   id: 'rambutan', label: 'Rambutan', A, B, C,
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.5) * (1 + e * t * 0.25),
   look: {
+    thru: [0.9, 0.15, 0.05], thruK: 3,
     skinA: [0.2, 0.008, 0.006], skinB: [0.38, 0.02, 0.01], mottle: 4,
     blush: [0.42, 0.2, 0.02], blushK: 0.2, blushDir: [0, -1, 0.2],
     pores: 0.35, poreScale: 14, rough: 0.55, f0: 0.035, wrap: 0.3, sss: [0.5, 0.05, 0.02],

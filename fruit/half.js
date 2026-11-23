@@ -12,7 +12,8 @@ export function rng(seed) {
 
 export const VERT_HEAD = /* glsl */`
 ${DENT}
-varying vec3 vW, vN, vL;
+uniform vec3 uKeyDir, uRimDir;
+varying vec3 vW, vN, vL, vKeyL, vRimL;
 `;
 
 // A dented point and its normal, by finite steps along the surface.
@@ -26,6 +27,9 @@ vL = position;
 vec4 wp = modelMatrix * vec4(p0, 1.0);
 vW = wp.xyz;
 vN = normalize(mat3(modelMatrix) * nD);
+// The lights in the half's own space, for light through the fruit.
+vKeyL = normalize(transpose(mat3(modelMatrix)) * uKeyDir);
+vRimL = normalize(transpose(mat3(modelMatrix)) * uRimDir);
 gl_Position = projectionMatrix * viewMatrix * wp;
 `;
 
@@ -50,6 +54,12 @@ export function skinGeometry(F, e) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
+  // The join ring: its normals lie in the cut plane, so both halves shade alike at the seam.
+  const N = g.attributes.normal;
+  for (let j = 0; j <= NC; j++) {
+    const ny = N.getY(j), nz = N.getZ(j), l = Math.hypot(ny, nz) || 1;
+    N.setXYZ(j, 0, ny / l, nz / l);
+  }
   return g;
 }
 
@@ -59,6 +69,8 @@ const LOOK = {
   blush: [0, 0, 0], blushK: 0, blushDir: [0, 1, 0],
   pores: 0, poreScale: 60, rough: 0.7, f0: 0.04, wrap: 0.25, sss: [0, 0, 0],
   speck: [2, 80, 0], speckCol: [0, 0, 0],
+  // Light through the fruit: its colour, and how fast the flesh dims it per unit.
+  thru: [0.9, 0.35, 0.1], thruK: 3,
   sheen: [0.22, 0.14, 0.06], tipDark: 0.25,
 };
 export function skinMaterial(U, look) {
@@ -70,15 +82,16 @@ export function skinMaterial(U, look) {
       uSkinA: v3(L.skinA), uSkinB: v3(L.skinB), uMottle: { value: L.mottle },
       uBlush: v3(L.blush), uBlushK: { value: L.blushK }, uBlushDir: v3(L.blushDir),
       uPores: { value: L.pores }, uPoreScale: { value: L.poreScale }, uRough: { value: L.rough }, uF0: { value: L.f0 }, uWrap: { value: L.wrap }, uSss: v3(L.sss),
-      uSpeck: v3(L.speck), uSpeckCol: v3(L.speckCol),
+      uSpeck: v3(L.speck), uSpeckCol: v3(L.speckCol), uThru: v3(L.thru), uThruK: { value: L.thruK },
       uSheen: v3(L.sheen), uTipDark: { value: L.tipDark },
     },
     vertexShader: `${VERT_HEAD}\nvoid main() {\n${DENTED}\n}`,
     fragmentShader: /* glsl */`
       ${LIGHT}
       uniform float uFuzz, uSide, uMottle, uBlushK, uPores, uPoreScale, uRough, uF0, uWrap, uTipDark;
-      uniform vec3 uSkinA, uSkinB, uBlush, uBlushDir, uSheen, uSss, uSpeck, uSpeckCol;
-      varying vec3 vW, vN, vL;
+      uniform vec3 uSkinA, uSkinB, uBlush, uBlushDir, uSheen, uSss, uSpeck, uSpeckCol, uThru, uAbc;
+      uniform float uThruK, uCut;
+      varying vec3 vW, vN, vL, vKeyL, vRimL;
       void main() {
         vec3 n = normalize(vN);
         vec3 v = normalize(cameraPosition - vW);
@@ -108,6 +121,24 @@ export function skinMaterial(U, look) {
         float nv = clamp(dot(n, v), 0.0, 1.0);
         // Velvet: fine fuzz lights up at grazing angles.
         float sheen = pow(1.0 - nv, 2.4);
+        // Light through the fruit: the path a light's ray runs inside before it reaches
+        // this point, through the fruit's ellipsoid; a half's cut face lets light in early.
+        {
+          vec3 q = vL / uAbc;
+          vec3 back = vec3(0.0);
+          for (int i = 0; i < 2; i++) {
+            vec3 Lw = i == 0 ? uRimDir : uKeyDir;
+            vec3 Ll = normalize(i == 0 ? vRimL : vKeyL);
+            vec3 dl = Ll / uAbc;
+            float a2 = dot(dl, dl), b2 = dot(q, dl), c2 = dot(q, q) - 1.0;
+            float t = (-b2 + sqrt(max(b2 * b2 - a2 * c2, 0.0))) / a2;
+            if (uCut > 0.5 && Ll.x > 0.001) t = min(t, max(-vL.x / Ll.x, 0.0));
+            // Forward scattering: brightest looking toward the light.
+            float ph = 0.15 + 1.4 * pow(max(dot(-v, Lw), 0.0), 3.0);
+            back += (i == 0 ? uRimCol : uKeyCol) * exp(-uThruK * t) * ph * smoothstep(-0.2, 0.3, -dot(n, Lw));
+          }
+          col += uThru * back * 1.8 * (1.0 - 0.7 * uFuzz);
+        }
         col += uSheen * sheen * (uKeyCol * (0.25 + 0.6 * max(dot(n, uKeyDir), 0.0)) + uRimCol * 0.9 * max(dot(n, uRimDir) + 0.3, 0.0)) * (0.5 + 0.5 * uFuzz);
         gl_FragColor = vec4(col, 1.0);
       }`,
@@ -175,8 +206,8 @@ export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap =
         vec3 nw = normalize(n - (vTy * (hy - h0) + vTz * (hz - h0)) / e * ${bumpK.toFixed(2)});
         // A cut face tips up into the key; flesh holds less light than paint.
         vec3 lit = shade(col * 0.72, nw, v, ${rough.toFixed(2)}, ${wrap.toFixed(2)}, col * 0.45, 0.0);
-        // Glow: the rim light soaks through the thin flesh.
-        lit += col * uRimCol * uGlow * 0.35 * glow;
+        // Glow: the back light soaks through the thin flesh, most when we look toward it.
+        lit += col * uRimCol * uGlow * glow * (0.2 + 1.1 * pow(max(dot(-v, uRimDir), 0.0), 2.0));
         float nv = clamp(dot(nw, v), 0.0, 1.0);
         lit += studio(reflect(-v, nw), 0.04) * fresnel(nv, 0.025) * ${wet.toFixed(2)};
         gl_FragColor = vec4(lit, 1.0);

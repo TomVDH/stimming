@@ -106,6 +106,7 @@ export const kiwi = {
       * (1 + 0.025 * t * nz(Math.cos(ph) * 1.3, Math.sin(ph) * 1.3, t * 1.4 + (e > 0 ? 3 : 0)));
   })(),
   look: {
+    thru: [0.12, 0.08, 0.025], thruK: 9,
     // Under the fuzz the skin is a dark green-brown, with small pale lenticels.
     skinA: [0.03, 0.022, 0.008], skinB: [0.075, 0.05, 0.018], mottle: 6,
     blush: [0.05, 0.045, 0.012], blushK: 0.3, blushDir: [0, -1, 0],

@@ -127,6 +127,7 @@ export const dragon = {
   // An egg, the crowned end a little narrower.
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.5) * (1 + e * t * 0.4),
   look: {
+    thru: [0.9, 0.08, 0.3], thruK: 2.5,
     skinA: [0.2, 0.003, 0.045], skinB: [0.36, 0.01, 0.085], mottle: 3,
     blush: [0.42, 0.1, 0.05], blushK: 0.2, blushDir: [0, -1, 0.2],
     pores: 0.04, poreScale: 40, rough: 0.42, f0: 0.04, wrap: 0.3, sss: [0.6, 0.05, 0.18],

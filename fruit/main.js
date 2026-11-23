@@ -62,7 +62,8 @@ const ui = initPage({ id: ID, bar: {
   help: [
     ['press', 'Press the fruit to squish it; it springs back'],
     ['swipe', 'Swipe across it to slice it in two'],
-    ['tap', 'Tap a half to make it wobble; tap the gap to join them'],
+    ['hold', 'Hold a half to squeeze its juice out; tap the gap to join them'],
+    ['drag', 'Drag the background to swing the light round; from behind, the fruit glows'],
     ['space', 'Space slices or joins, hold S to squeeze, 1 to 0 pick a fruit'],
   ],
 } });
@@ -75,7 +76,9 @@ let renderer = null, scene = null, camera = null, post = null, fuzz = null, juic
 let root = null, halves = [], floor = null, sky = null;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 
-// The light rig, shared by every material.
+// The light rig, shared by every material. A drag on the background swings it round.
+const KEY0 = new THREE.Vector3(-0.55, 0.78, 0.62).normalize(), RIM0 = new THREE.Vector3(0.45, 0.5, -0.78).normalize();
+let lightAz = 0, lightAzTo = 0;
 const L = {
   uKeyDir: { value: new THREE.Vector3(-0.55, 0.78, 0.62).normalize() },
   uKeyCol: { value: new THREE.Color(1.0, 0.93, 0.80).multiplyScalar(1.55) },
@@ -87,7 +90,7 @@ const L = {
   uFuzz: { value: st.fuzz },
   uGlow: { value: 0.55 },
 };
-const halfU = side => ({ ...L, uSide: { value: side }, uDent: { value: new THREE.Vector4(0, 0, 0, 0) }, uJig: { value: new THREE.Vector4(0, 0, 0, 0) }, uJigT: { value: 9 } });
+const halfU = side => ({ ...L, uSide: { value: side }, uAbc: { value: new THREE.Vector3(1, 1, 1) }, uCut: { value: 0 }, uDent: { value: new THREE.Vector4(0, 0, 0, 0) }, uJig: { value: new THREE.Vector4(0, 0, 0, 0) }, uJigT: { value: 9 } });
 const FLOOR_Y = -0.815;
 
 function makeFloor() {
@@ -185,12 +188,23 @@ function build(f) {
   }
   F = f;
   halves = [0, 1].map(i => {
-    const h = makeHalf(F, halfU(i ? -1 : 1), i ? 0.035 : -0.035, 17 + i * 31);
+    const hu = halfU(i ? -1 : 1);
+    hu.uAbc.value.set(F.A, F.B, F.C);
+    const h = makeHalf(F, hu, i ? 0.035 : -0.035, 17 + i * 31);
     h.userData.i = i;
     h.userData.dent = { depth: 0, v: 0, to: 0 };
+    // Each half's own body: a squash, a hop, a squeeze, and juice to drip.
+    h.userData.body = { sq: 1, sqV: 0, hop: 0, hopV: 0, squeeze: false, drip: 0 };
+    // A hull: every third skin point, and the whole join ring, to find what touches the floor.
+    const P = h.userData.skin.geometry.attributes.position, hull = [];
+    for (let k = 0; k < P.count; k++) if (k % 3 === 0 || k <= 96) hull.push(P.getX(k), P.getY(k), P.getZ(k));
+    h.userData.hull = new Float32Array(hull);
+    h.matrixAutoUpdate = false;
     root.add(h);
     return h;
   });
+  // The rest height: the whole fruit's lowest skin point sits on the floor.
+  restY = -Math.min(...halves.map(h => { let m = 0; const a = h.userData.hull; for (let k = 1; k < a.length; k += 3) m = Math.min(m, a[k]); return m; }));
   fuzz = makeFuzz(halves, L, F);
   fuzz.setLevel(D.level, D.rung);
   if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
@@ -221,7 +235,7 @@ function spring(x, v, to, k, z, dt) {
   v += a * dt;
   return [x + v * dt, v];
 }
-let openX = 0.78;
+let openX = 0.78, restY = 0.8;
 const OPEN_Z = 0.2, OPEN_YAW = 1.0, OPEN_TILT = 0.42;
 let simT = 0, amb = 0;
 const M4 = new THREE.Matrix4(), S4 = new THREE.Matrix4(), T4 = new THREE.Matrix4(), R4 = new THREE.Matrix4();
@@ -245,6 +259,9 @@ function step(dt) {
       st.tilt[ax] = r[0]; st.tiltV[ax] = r[1];
     }
     for (const hf of halves) {
+      const b = hf.userData.body;
+      [b.sq, b.sqV] = spring(b.sq, b.sqV, b.squeeze ? 0.74 : 1, b.squeeze ? 90 : 170, b.squeeze ? 0.7 : 0.15, h);
+      [b.hop, b.hopV] = spring(b.hop, b.hopV, 0, 120, 0.3, h);
       const u = hf.userData.skin.material.uniforms;
       const d = hf.userData.dent;
       [d.depth, d.v] = spring(d.depth, d.v, d.to, 140, 0.32, h);
@@ -270,10 +287,23 @@ function step(dt) {
       if (was > 0.05 && st.rollX <= 0.05 && st.rollV < -1) { st.sqV -= 2.2; snd.join(0); }
     }
   }
+  // A squeezed half drips juice from its face.
+  for (const hf of halves) {
+    const b = hf.userData.body;
+    if (!b.squeeze || st.open < 0.5) continue;
+    b.drip += dt * 30;
+    if (b.drip >= 1) { squirtFrom(hf, Math.floor(b.drip), 0.5); b.drip %= 1; }
+  }
   st.sliceT += dt;
   simT += dt;
   // Ambient drift: a slow breath, off in reduced motion.
   amb += frozen ? 0 : dt * timeK;
+  // The lights ease round to where the drag left them.
+  lightAz += (lightAzTo - lightAz) * Math.min(1, dt * 6);
+  // Swung behind the fruit, the key light also drops low, so it shines through it.
+  const behind = (1 - Math.cos(lightAz)) / 2;
+  L.uKeyDir.value.copy(KEY0).setY(KEY0.y * (1 - 0.6 * behind)).normalize().applyAxisAngle(UP, lightAz);
+  L.uRimDir.value.copy(RIM0).applyAxisAngle(UP, lightAz);
   L.uTime.value = simT;
   L.uFuzz.value = st.fuzz;
   juice.step(dt, FLOOR_Y);
@@ -282,17 +312,21 @@ function step(dt) {
   const lively = Math.abs(st.openV) > 0.01 || Math.abs(st.open - st.openTo) > 0.002 || Math.abs(st.sqV) > 0.01 || Math.abs(st.sq - (squeezing ? 0.72 : 1)) > 0.002
     || Math.abs(st.hopV) > 0.01 || st.tiltV.length() > 0.01 || st.tilt.length() > 0.002 || squeezing || down
     || halves.some(hf => Math.abs(hf.userData.dent.v) > 0.01 || Math.abs(hf.userData.dent.depth - hf.userData.dent.to) > 0.001 || hf.userData.skin.material.uniforms.uJig.value.w > 0.001)
+    || halves.some(hf => { const b = hf.userData.body; return b.squeeze || Math.abs(b.sqV) > 0.01 || Math.abs(b.sq - 1) > 0.002 || Math.abs(b.hopV) > 0.01; })
+    || Math.abs(lightAzTo - lightAz) > 0.002
     || juice.busy || fuzz.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
   return { lively };
 }
 
-const V1 = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
+const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), Q1 = new THREE.Quaternion(), E1 = new THREE.Euler();
+const M5 = new THREE.Matrix4(), M6 = new THREE.Matrix4(), T5 = new THREE.Matrix4();
 function place() {
   // The root: a breath, a hop, a lean, then squash along the vertical.
   const breath = frozen ? 0 : Math.sin(amb * 1.3) * 0.012;
   const s = st.sq * (1 + breath), w = 1 / Math.sqrt(s);
   // The squash keeps the bottom on the floor.
-  T4.makeTranslation(st.rollX, FLOOR_Y + (F.rest ?? F.B) * s + st.hop * 0.35, 0);
+  T4.makeTranslation(st.rollX, FLOOR_Y + restY * s + st.hop * 0.35, 0);
   // A roll turns it about its own middle as it travels.
   R4.makeRotationFromEuler(new THREE.Euler(st.tilt.y * 0.35, 0, -st.tilt.x * 0.35 - st.rollX / F.B));
   S4.makeScale(w, s, w);
@@ -304,15 +338,29 @@ function place() {
   // Whole, the cut faces hide: a dent must not show them through the skin.
   const faces = st.openTo > 0 || o > 0.02;
   for (const hf of halves) for (const p of hf.userData.faceParts) p.visible = faces;
+  // Open, light can enter a half through its cut face.
+  for (const hf of halves) hf.userData.skin.material.uniforms.uCut.value = faces ? 1 : 0;
   // Whole, the fruit turns its stem end a little toward the eye.
   root.matrix.multiply(R4.makeRotationY(-0.45 * (1 - c)));
   // Open, each half swings its face to the eye and rests tilted back.
+  // Its lowest point is found in its new pose, so it sits on the floor, never in it.
   const tilt = OPEN_TILT * c;
-  const lift = Math.sqrt((F.A * Math.sin(tilt)) ** 2 + (F.B * Math.cos(tilt)) ** 2) - F.B;
-  halves[0].position.set(-openX * o, lift, OPEN_Z * o);
-  halves[0].rotation.set(0, -OPEN_YAW * o, tilt);
-  halves[1].position.set(openX * o, lift, OPEN_Z * o);
-  halves[1].rotation.set(0, Math.PI + OPEN_YAW * o, tilt);
+  halves.forEach((hf, i) => {
+    const b = hf.userData.body;
+    E1.set(0, i ? Math.PI + OPEN_YAW * o : -OPEN_YAW * o, tilt);
+    Q1.setFromEuler(E1);
+    const a = hf.userData.hull;
+    let minY = 0;
+    for (let k = 0; k < a.length; k += 3) { V2.set(a[k], a[k + 1], a[k + 2]).applyQuaternion(Q1); if (V2.y < minY) minY = V2.y; }
+    // Its own squash keeps that lowest point on the floor; the hop lifts it.
+    const hs = b.sq, hw = 1 / Math.sqrt(hs);
+    M5.makeRotationFromQuaternion(Q1);
+    M6.makeScale(hw, hs, hw);
+    M5.premultiply(M6);
+    T5.makeTranslation((i ? 1 : -1) * openX * o, -restY - minY * hs + b.hop * 0.25, OPEN_Z * o);
+    hf.matrix.copy(T5).multiply(M5);
+    hf.matrixWorldNeedsUpdate = true;
+  });
   // A soft contact shadow under each half.
   const sh = floor.material.uniforms.uShadow.value;
   halves.forEach((hf, i) => {
@@ -435,6 +483,15 @@ function toggle() { (st.openTo ? join : slice)(1); touch(); }
 // Press squishes; a fast swipe across the fruit slices it; a tap wobbles.
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// Juice out of a half's cut face.
+const FO = new THREE.Vector3(), FN = new THREE.Vector3(), M3 = new THREE.Matrix3();
+function squirtFrom(hf, n, speed) {
+  hf.updateMatrixWorld(true);
+  FO.set(0.01, 0, 0).applyMatrix4(hf.matrixWorld);
+  FN.set(1, 0, 0).applyMatrix3(M3.getNormalMatrix(hf.matrixWorld)).normalize();
+  juice.squirt(FO, FN, F.B * 0.55, n, speed);
+}
+const whole = () => !st.openTo && st.open < 0.05;
 function hitAt(x, y) {
   ndc.set((x / cssW) * 2 - 1, -(y / cssH) * 2 + 1);
   ray.setFromCamera(ndc, camera);
@@ -442,20 +499,26 @@ function hitAt(x, y) {
   if (!hs.length) return null;
   const o = hs[0].object;
   const hf = halves.find(h => h.userData.skin === o || h.userData.bed === o);
-  return { half: hf, p: hf.worldToLocal(hs[0].point.clone()) };
+  return { half: hf, w: hs[0].point.clone(), p: hf.worldToLocal(hs[0].point.clone()) };
 }
+// The halves a press reaches: both while the fruit is whole, so the seam never shows.
+const reach = hit => (whole() ? halves : [hit.half]);
 // A dent at a point on a half; depth in half units.
 function press(hit, depth) {
-  const d = hit.half.userData.dent;
-  hit.half.userData.skin.material.uniforms.uDent.value.set(hit.p.x, hit.p.y, hit.p.z, d.depth);
-  d.to = depth;
+  for (const hf of reach(hit)) {
+    const d = hf.userData.dent, p = hf.worldToLocal(hit.w.clone());
+    hf.userData.skin.material.uniforms.uDent.value.set(p.x, p.y, p.z, d.depth);
+    d.to = depth;
+  }
 }
 function release(hit) {
   for (const hf of halves) hf.userData.dent.to = 0;
   if (hit) {
-    const u = hit.half.userData.skin.material.uniforms;
-    u.uJig.value.set(hit.p.x, hit.p.y, hit.p.z, frozen ? 0.006 : 0.016);
-    u.uJigT.value = 0;
+    for (const hf of reach(hit)) {
+      const u = hf.userData.skin.material.uniforms, p = hf.worldToLocal(hit.w.clone());
+      u.uJig.value.set(p.x, p.y, p.z, frozen ? 0.006 : 0.016);
+      u.uJigT.value = 0;
+    }
   }
 }
 let down = false, pid = null, at0 = null, atN = null, tN = 0, moved = false, held = false, holdT = 0, hit0 = null, crossed = 0, path = [];
@@ -473,6 +536,7 @@ stage.addEventListener('pointerdown', e => {
     if (!down || moved) return;
     held = true;
     if (hit0 && !st.openTo) { st.squeeze = true; press(hit0, 0.16); snd.squish(1); }
+    else if (hit0 && st.openTo) { hit0.half.userData.body.squeeze = true; press(hit0, 0.12); snd.squish(1); }
     touch();
   }, 260);
   touch();
@@ -491,6 +555,8 @@ stage.addEventListener('pointermove', e => {
     // A drag pulls the whole fruit; it leans after the pointer.
     const dx = (p[0] - atN[0]) / cssW, dy = (p[1] - atN[1]) / cssH;
     const now = performance.now(), dt = Math.max(1, now - tN) / 1000;
+    // A drag that starts off the fruit swings the lights round it.
+    if (!hit0) lightAzTo += dx * Math.PI * 1.6;
     st.tiltV.x += clamp(dx / dt, -6, 6) * 0.6;
     st.tiltV.y += clamp(dy / dt, -6, 6) * 0.3;
     atN = p; tN = now;
@@ -520,9 +586,19 @@ function end(e) {
   const wasSqueeze = st.squeeze;
   st.squeeze = false;
   if (wasSqueeze) { st.sqV += 3.5; st.hopV += 2.5; snd.boing(1); }
+  // A squeezed half springs back and squirts once more.
+  for (const hf of halves) {
+    const b = hf.userData.body;
+    if (!b.squeeze) continue;
+    b.squeeze = false;
+    b.sqV += 3.2; b.hopV += 2.2;
+    squirtFrom(hf, frozen ? 6 : 18, 1.2);
+    snd.boing(0.9);
+  }
   if (!moved && !held) {
-    // A tap: wobble the half under it; a tap in the gap joins.
-    if (hit0) { st.sqV -= 1.6; snd.boing(0.5); }
+    // A tap: wobble the half under it, a few drops from an open one; a tap in the gap joins.
+    if (hit0 && whole()) { st.sqV -= 1.6; snd.boing(0.5); }
+    else if (hit0) { const b = hit0.half.userData.body; b.sqV -= 1.8; b.hopV += 1.2; squirtFrom(hit0.half, frozen ? 3 : 8, 0.8); snd.boing(0.5); }
     else if (st.openTo) join();
   }
   release(hit0);
@@ -541,7 +617,7 @@ whenVisible(stage, on => {
 onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
-if (qa.has('qa')) globalThis.__fruit = { st, get halves() { return halves; }, get F() { return F; }, swap, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
+if (qa.has('qa')) globalThis.__fruit = { st, light: a => { lightAzTo = a; touch(); }, get halves() { return halves; }, get F() { return F; }, swap, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
 
 mark('build');
 try {

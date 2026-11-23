@@ -36,6 +36,7 @@ export const peach = {
     return Math.pow(Math.max(0, 1 - t * t), 0.46) * (1 + e * t * 0.4) * (1 - crease);
   },
   look: {
+    thru: [1.0, 0.45, 0.2], thruK: 2.2,
     skinA: [0.72, 0.33, 0.05], skinB: [0.86, 0.47, 0.09], mottle: 5,
     blush: [0.48, 0.025, 0.02], blushK: 0.9, blushDir: [0.25, 0.85, 0.45],
     pores: 0.04, poreScale: 40, rough: 0.8, f0: 0.03, wrap: 0.45, sss: [0.9, 0.35, 0.15],

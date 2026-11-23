@@ -156,6 +156,7 @@ export const pomegranate = {
     };
   })(),
   look: {
+    thru: [0.9, 0.06, 0.05], thruK: 3,
     skinA: [0.13, 0.004, 0.01], skinB: [0.34, 0.016, 0.022], mottle: 2.6,
     blush: [0.34, 0.09, 0.05], blushK: 0.2, blushDir: [0.2, -0.8, 0.4],
     pores: 0.03, poreScale: 55, rough: 0.24, f0: 0.045, wrap: 0.25, sss: [0.55, 0.06, 0.05],

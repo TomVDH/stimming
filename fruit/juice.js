@@ -70,6 +70,23 @@ export function makeJuice(L) {
         drops.push({ p, v, r: 0.012 + Math.pow(Math.random(), 3) * 0.045, life: 0, flat: 0 });
       }
     },
+    // Juice from a cut face: n drops from a disc at O, of radius rad, facing N.
+    squirt(O, N, rad, n, speed = 1) {
+      const S = new THREE.Vector3(), T = new THREE.Vector3();
+      S.set(0, 1, 0).cross(N);
+      if (S.lengthSq() < 1e-4) S.set(1, 0, 0);
+      S.normalize();
+      T.crossVectors(N, S);
+      for (let i = 0; i < n && drops.length < MAX; i++) {
+        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * rad;
+        const p = O.clone().addScaledVector(S, Math.cos(a) * r).addScaledVector(T, Math.sin(a) * r).addScaledVector(N, 0.01);
+        const v = N.clone().multiplyScalar((0.4 + Math.random() * 1.4) * speed);
+        v.y += (0.3 + Math.random() * 1.2) * speed;
+        v.x += (Math.random() - 0.5) * 0.8 * speed;
+        v.z += (Math.random() - 0.5) * 0.8 * speed;
+        drops.push({ p, v, r: 0.008 + Math.pow(Math.random(), 3) * 0.03, life: 0, flat: 0 });
+      }
+    },
     step(dt, floorY) {
       if (!drops.length) { mesh.count = 0; return; }
       for (let i = drops.length - 1; i >= 0; i--) {

@@ -41,6 +41,7 @@ export const mangosteen = {
   id: 'mangosteen', label: 'Mangosteen', A, B, C,
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.55) * (1 + e * t * 0.15),
   look: {
+    thru: [0.35, 0.02, 0.12], thruK: 5,
     skinA: [0.05, 0.006, 0.02], skinB: [0.13, 0.018, 0.05], mottle: 4,
     blush: [0.18, 0.05, 0.035], blushK: 0.25, blushDir: [0, -1, 0],
     pores: 0.03, poreScale: 30, rough: 0.3, f0: 0.045, wrap: 0.2,

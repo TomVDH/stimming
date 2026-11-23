@@ -39,6 +39,7 @@ export const passion = {
   id: 'passion', label: 'Passion fruit', A, B, C,
   shape: (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.5) * (1 + e * t * 0.2),
   look: {
+    thru: [0.5, 0.12, 0.25], thruK: 4,
     skinA: [0.025, 0.004, 0.02], skinB: [0.09, 0.014, 0.06], mottle: 3,
     blush: [0.11, 0.02, 0.045], blushK: 0.3, blushDir: [0.3, 0.8, 0.2],
     rough: 0.36, f0: 0.04, wrap: 0.25, sss: [0.4, 0.05, 0.25],
