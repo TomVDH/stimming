@@ -5,11 +5,12 @@ import type { Object3D, Side } from 'three';
 import type { AltAz } from '../core/sky.ts';
 import { TUBE_PARK_ALT as PARK } from '../core/machine.ts';
 
-/* ---------- one dome: stone drum, white cupola, slit, shutter, tube ---------- */
+/* ---------- one dome: render drum, white cupola, slit, shutter, tube ---------- */
 const DEG = MathUtils.DEG2RAD;
 // Sizes in metres at size 1.
 // world/hero shares these sizes.
-export const DRUM_R = 3.2, DRUM_H = 3.4;
+// The main dome is size 1.7: 10.8 m across, 6.9 m drum, 12.5 m to the top.
+export const DRUM_R = 3.18, DRUM_H = 4.06;
 // The drum is this much wider at its foot.
 export const DRUM_BATTER = 1.04;
 export const DOME_R = 3.3;
@@ -68,6 +69,27 @@ function domePatch(r: number, b0: number, b1: number, e0: number, e1: number, nb
   return g;
 }
 
+// A rail's side wall: a band at angle b across the slit, from r0 out to r1.
+// It runs the full arc, front foot to back foot.
+function railWall(b: number, r0: number, r1: number): BufferGeometry {
+  const p: number[] = [], n: number[] = [], idx: number[] = [];
+  const NE = 48, nx = Math.cos(b), sb = Math.sin(b);
+  for (let j = 0; j <= NE; j++) {
+    const e = Math.PI * j / NE, cb = Math.cos(b);
+    for (const r of [r0, r1]) {
+      p.push(r * sb, r * cb * Math.sin(e), -r * cb * Math.cos(e));
+      // The wall faces across the slit.
+      n.push(nx, -sb * Math.sin(e), sb * Math.cos(e));
+    }
+    if (j) idx.push(2 * j - 2, 2 * j - 1, 2 * j, 2 * j - 1, 2 * j + 1, 2 * j);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(p, 3));
+  g.setAttribute('normal', new Float32BufferAttribute(n, 3));
+  g.setIndex(idx);
+  return g;
+}
+
 // Joins patches into one geometry.
 function merge(parts: BufferGeometry[]): BufferGeometry {
   const p: number[] = [], n: number[] = [], idx: number[] = [];
@@ -115,8 +137,8 @@ export function stoneMap(rx: number, ry: number): CanvasTexture {
   t.repeat.set(rx, ry);
   return t;
 }
-// The door glows warm from the room behind it; the lights set its strength.
-export const DOOR_GLOW = new Color(1.0, 0.55, 0.22);
+// The door glows cool white from the room behind it; the lights set its strength.
+export const DOOR_GLOW = new Color(0.75, 0.86, 1.0);
 // Painted steel for the pier and the fork.
 const dark = () => new MeshLambertMaterial({ color: 0x2c2f33 });
 
@@ -139,20 +161,42 @@ export type Dome = {
   pose: DomePose;
   // Shows or hides the dome's own shapes; the lamps on it stay.
   show(on: boolean): void;
+  // True for the Keck-style enclosure.
+  big: boolean;
+  // The cupola's turn height over the dome's root, at size 1.
+  turnY: number;
 };
+
+// The big enclosure follows the Keck domes on Mauna Kea.
+// Source: ESO's dome size chart on Wikimedia Commons, Keck pair measured.
+// A low fixed base carries a turning skirt and a near-hemisphere cap.
+// The opening is about 45% of the dome's width.
+export const BIG_BASE_H = 1.7, BIG_SKIRT_H = 1.1;
+export const BIG_SLIT_B = Math.asin(1.5 / DOME_R);
+// The base's radius, a little wider than the dome.
+export const BIG_WALL_R = DOME_R * 1.04;
+// The big dome's door and lamps keep a human size.
+export const BIG_DOOR_K = 0.42;
 
 // size scales the whole dome; 1 is a 6.6 m cupola.
 // laser: a cylinder on the tube, the laser's stand-in.
-export function buildDome(size: number, laser = false): Dome {
+// big: the Keck-style enclosure in place of the classic drum.
+export function buildDome(size: number, laser = false, big = false): Dome {
   const root = new Group();
   root.scale.setScalar(size);
+  // The cupola turns at this height.
+  const turnY = big ? BIG_BASE_H + BIG_SKIRT_H : DRUM_H;
+  const slitB = big ? BIG_SLIT_B : SLIT_B;
+  const wallR = big ? BIG_WALL_R : DRUM_R;
 
-  // The stone drum, with a ledge where the dome sits.
-  // About 24 blocks round the drum and 8 courses up.
-  const drum = new Mesh(new CylinderGeometry(DRUM_R, DRUM_R * DRUM_BATTER, DRUM_H, 48), new MeshLambertMaterial({ map: stoneMap(3, 1) }));
-  drum.position.y = DRUM_H / 2;
-  const ledge = new Mesh(new CylinderGeometry(DRUM_R + 0.18, DRUM_R + 0.18, 0.22, 48), lam(0x6d6862));
-  ledge.position.y = DRUM_H - 0.11;
+  // The classic dome has a render drum with a ledge where the dome sits.
+  // The big dome has a low concrete base with a track ring on top.
+  const drumH = big ? BIG_BASE_H : DRUM_H;
+  const drum = new Mesh(new CylinderGeometry(wallR, big ? wallR : DRUM_R * DRUM_BATTER, drumH, 64), lam(big ? 0xb4b1aa : 0xd8d3c6));
+  drum.position.y = drumH / 2;
+  const ledgeR = big ? DOME_R + 0.08 : DRUM_R + 0.18;
+  const ledge = new Mesh(new CylinderGeometry(ledgeR, ledgeR, 0.22, 64), lam(0x6d6862));
+  ledge.position.y = drumH - 0.11;
   root.add(drum, ledge);
 
   // The door faces north, to the camera.
@@ -163,38 +207,71 @@ export function buildDome(size: number, laser = false): Dome {
   arch.lineTo(DOOR_HALF, 0);
   const doorMat = new MeshLambertMaterial({ color: 0x3a2a1c, emissive: DOOR_GLOW, emissiveIntensity: 0 });
   const door = new Mesh(new ExtrudeGeometry(arch, { depth: 0.12, bevelEnabled: false, curveSegments: 16 }), doorMat);
-  door.position.set(0, 0, -DRUM_R - 0.02);
+  door.position.set(0, 0, -wallR - 0.02);
   door.rotation.y = Math.PI;
+  if (big) door.scale.setScalar(BIG_DOOR_K);
   root.add(door);
 
   // The cupola turns on the ledge.
   const cupola = new Group();
-  cupola.position.y = DRUM_H;
+  cupola.position.y = turnY;
   root.add(cupola);
   const shell = merge([
-    domePatch(DOME_R, -Math.PI / 2, -SLIT_B, 0, Math.PI, 24, 48),
-    domePatch(DOME_R, SLIT_B, Math.PI / 2, 0, Math.PI, 24, 48),
-    domePatch(DOME_R, -SLIT_B, SLIT_B, SLIT_E, Math.PI, 4, 20),
+    domePatch(DOME_R, -Math.PI / 2, -slitB, 0, Math.PI, 24, 48),
+    domePatch(DOME_R, slitB, Math.PI / 2, 0, Math.PI, 24, 48),
+    domePatch(DOME_R, -slitB, slitB, SLIT_E, Math.PI, 4, 20),
   ]);
-  // The inside reads dark through the slit.
   // White paint outside; the inside reads dark through the slit.
   cupola.add(new Mesh(shell, lam(0xe4e2dc)), new Mesh(shell, lam(0x111111, BackSide)));
+  if (big) {
+    // The skirt turns with the cap.
+    const skirt = new CylinderGeometry(DOME_R, DOME_R, BIG_SKIRT_H, 96, 1, true).translate(0, -BIG_SKIRT_H / 2, 0);
+    cupola.add(new Mesh(skirt, lam(0xe4e2dc)), new Mesh(skirt, lam(0x111111, BackSide)));
+    // Two raised shutter rails arch over the dome beside the opening.
+    // They run down the skirt to the base.
+    const railMat = lam(0xcfcdc7, DoubleSide), RAIL_H = 0.16, RAIL_W = 0.07;
+    for (const s of [-1, 1]) {
+      const b0 = s < 0 ? -slitB - RAIL_W : slitB, b1 = b0 + RAIL_W;
+      const bEdge = s < 0 ? -slitB : slitB, bOut = s < 0 ? b0 : b1;
+      cupola.add(new Mesh(domePatch(DOME_R + RAIL_H, b0, b1, 0, Math.PI, 2, 48), railMat));
+      cupola.add(new Mesh(railWall(bEdge, DOME_R, DOME_R + RAIL_H), railMat), new Mesh(railWall(bOut, DOME_R, DOME_R + RAIL_H), railMat));
+      // The rail's leg on the skirt, at the front and at the back.
+      for (const z of [-1, 1]) {
+        const x = Math.sin((b0 + b1) / 2) * (DOME_R + RAIL_H / 2);
+        const leg = new Mesh(new BoxGeometry(RAIL_W * DOME_R, BIG_SKIRT_H, RAIL_H), railMat);
+        leg.position.set(x, -BIG_SKIRT_H / 2, z * Math.cos((b0 + b1) / 2) * (DOME_R + RAIL_H / 2));
+        cupola.add(leg);
+      }
+    }
+    // A ring of round vents runs along the skirt, clear of the opening.
+    const vent = new CylinderGeometry(0.13, 0.13, 0.04, 16).rotateX(Math.PI / 2);
+    const ventMat = lam(0x2a2c2f);
+    for (let i = 0; i < 28; i++) {
+      const a = (i + 0.5) / 28 * 2 * Math.PI;
+      if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < slitB + 0.12) continue;
+      const v = new Mesh(vent, ventMat);
+      v.position.set(Math.sin(a) * (DOME_R + 0.01), -BIG_SKIRT_H * 0.45, -Math.cos(a) * (DOME_R + 0.01));
+      v.rotation.y = -a;
+      cupola.add(v);
+    }
+  }
 
   // The shutter covers the slit.
   // Each leaf turns about the dome's east-west axis.
   const shutter = new Group();
   const leafMat = lam(0xd6d4ce, DoubleSide);
-  const leaf = (e0: number, e1: number) => new Mesh(domePatch(DOME_R + 0.06, -SLIT_B - 0.04, SLIT_B + 0.04, e0, e1, 4, 24), leafMat);
-  const upper = leaf(SPLIT_E, SLIT_E), lower = leaf(0, SPLIT_E);
+  const leaf = (r: number, e0: number, e1: number) => new Mesh(domePatch(r, -slitB - 0.04, slitB + 0.04, e0, e1, 4, 24), leafMat);
+  // The big dome's lower leaf rides inside, so it drops behind the skirt.
+  const upper = leaf(DOME_R + 0.06, SPLIT_E, SLIT_E), lower = leaf(big ? DOME_R - 0.06 : DOME_R + 0.06, 0, SPLIT_E);
   shutter.add(upper, lower);
   cupola.add(shutter);
 
   // The pier and the fork stand still; the fork turns in azimuth.
   const pier = new Mesh(new CylinderGeometry(0.45, 0.55, PIER_H, 24), dark());
-  pier.position.y = DRUM_H - PIER_H / 2;
+  pier.position.y = turnY - PIER_H / 2;
   root.add(pier);
   const fork = new Group();
-  fork.position.y = DRUM_H;
+  fork.position.y = turnY;
   root.add(fork);
   const base = new Mesh(new CylinderGeometry(0.7, 0.7, 0.2, 24), dark());
   base.position.y = 0.1;
@@ -259,5 +336,5 @@ export function buildDome(size: number, laser = false): Dome {
     tube.updateWorldMatrix(true, false);
     return tube.localToWorld(out.copy(mouth));
   }
-  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, laserMouth, door: doorMat, pose, show };
+  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, laserMouth, door: doorMat, pose, show, big, turnY };
 }

@@ -11,8 +11,8 @@ import { camera, renderer, scene } from '../setup.ts';
 import { complex } from './complex.ts';
 import { slitOffset } from '../core/mount.ts';
 import { patch as duskPatch } from './dusk.ts';
-import { buildHeroScope, type HeroScope } from './hero-scope.ts';
-import { DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
+import { buildHeroScope, SCOPE_TURN, type HeroScope } from './hero-scope.ts';
+import { BIG_BASE_H, BIG_SKIRT_H, BIG_SLIT_B, BIG_WALL_R, DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
 
 /* ---------- the hero model: the main dome in full detail, for the cuts only ---------- */
 // The wide shot keeps the light model.
@@ -32,16 +32,14 @@ const u = (metres: number): number => metres / SCALE;
 // The drum leans in a little as it rises.
 const wallR = (y: number): number => DRUM_R * (DRUM_BATTER - (DRUM_BATTER - 1) * y / DRUM_H);
 // Heights from the ground.
-// The ashlar courses start at the plinth's top.
+// The render plinth stands to this height.
 const PLINTH_Y = 0.55;
 // The drum wall stops here.
 // The track and the gear sit on top.
 const WALL_TOP = DRUM_H - 0.44;
-// Six courses fill the wall between the plinth and the top.
+// Six course lines divide the wall; the door's cut stops on one.
 const COURSES = 6;
 const COURSE_H = (WALL_TOP - PLINTH_Y) / COURSES;
-// The string course marks the observing floor, three courses up.
-const STRING_Y = PLINTH_Y + 3 * COURSE_H;
 // The catwalk's deck is 0.9 m deep.
 // It lies 0.9 m under the cupola's foot.
 const DECK_Y = DRUM_H - 0.6;
@@ -585,7 +583,7 @@ function inside(m: MeshStandardMaterial, occ: number): MeshStandardMaterial {
 
 /* ---------- the hero ---------- */
 // The textures, painted in their own step before the build.
-type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof domeTex>; leaf: ReturnType<typeof leafTex> };
+type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof domeTex>; leaf: ReturnType<typeof leafTex>; panel: ReturnType<typeof panelTex> };
 
 type Built = {
   root: Group;
@@ -602,7 +600,7 @@ function buildHero(main: Dome, tx: Painted): Built {
   root.name = 'hero';
 
   const stone = tx.stone;
-  // The stone matches the light model's drum: a pale, warm limestone.
+  // The door surround is pale, warm limestone.
   const stoneMat = std({ map: stone.map, normalMap: stone.normal, roughness: 0.92 });
   // Black-painted iron: rail, brackets, lamp cages.
   const iron = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
@@ -615,37 +613,30 @@ function buildHero(main: Dome, tx: Painted): Built {
   const glow = std({ color: 0x000000, emissive: DOOR_GLOW, emissiveIntensity: 0, roughness: 0.3 });
 
   /* ---------- the drum ---------- */
-  const st = new Geo(), ir = new Geo(), dr = new Geo(), gl = new Geo();
-  // The door's opening in azimuth, at the courses it cuts.
+  const st = new Geo(), ir = new Geo(), dr = new Geo(), gl = new Geo(), rd = new Geo();
+  // The door's opening in azimuth, at the wall it cuts.
   // The gap stays inside the jambs, so no cut end shows.
   const DOOR_W = DOOR_HALF + 0.17;
   const doorA = DOOR_W / wallR(1);
   const DOOR_TOP = DOOR_SPRING + DOOR_HALF + 0.24;
-  // Ashlar texture: 24 blocks round the drum, so six tiles.
-  const stoneUV = (row: number, y0: number, y1: number) => (a: number, _r: number, y: number): P2 =>
-    [a / (2 * Math.PI) * 6, row * 0.5 + 0.5 * (y - y0) / (y1 - y0)];
-
-  // The plinth: one tall course that stands proud, with a sloped top.
+  // The door's cut stops on a course line above the door.
+  const cutTop = PLINTH_Y + Math.ceil((DOOR_TOP - PLINTH_Y) / COURSE_H) * COURSE_H;
+  // The drum is plain render: the plinth, the wall and the coping.
+  const renderMat = std({ color: 0xd8d3c6, roughness: 0.9 });
+  // The plinth stands proud of the wall.
   const pr = wallR(0) + u(0.12);
-  st.lathe([[wallR(0) - 0.3, 0], [pr, 0], [pr, PLINTH_Y - u(0.09)], [wallR(PLINTH_Y) - 0.005, PLINTH_Y], [wallR(0) - 0.3, PLINTH_Y]], 144,
-    { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(0, 0, PLINTH_Y + 0.3) });
-  // The courses: each face has a small chamfer at its joints.
-  const J = u(0.012), C = u(0.025);
-  for (let k = 0; k < COURSES; k++) {
-    const y0 = PLINTH_Y + k * COURSE_H, y1 = y0 + COURSE_H;
-    const cut = y0 < DOOR_TOP;
-    st.lathe([[wallR(y0) - J, y0], [wallR(y0 + C), y0 + C], [wallR(y1 - C), y1 - C], [wallR(y1) - J, y1]], 144,
-      { a0: cut ? doorA : 0, a1: cut ? 2 * Math.PI - doorA : 2 * Math.PI, uv: stoneUV(k % 2, y0, y1) });
-  }
-  // The string course: a weathered band with a drip under it.
-  const sy = STRING_Y, sr = wallR(sy);
-  st.lathe([[sr - 0.02, sy - u(0.12)], [sr + u(0.09), sy - u(0.10)], [sr + u(0.11), sy - u(0.07)], [sr + u(0.11), sy + u(0.02)],
-    [sr + u(0.05), sy + u(0.08)], [sr - 0.02, sy + u(0.09)]], 144,
-  { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA, uv: stoneUV(1, sy - 0.3, sy + 0.3) });
+  rd.lathe([[wallR(0) - 0.3, 0], [pr, 0], [pr, PLINTH_Y - u(0.09)], [wallR(PLINTH_Y) - 0.005, PLINTH_Y], [wallR(0) - 0.3, PLINTH_Y]], 144,
+    { closed: true, caps: true, a0: doorA, a1: 2 * Math.PI - doorA });
+  // The wall below the cut top has the door's gap.
+  rd.lathe([[wallR(PLINTH_Y), PLINTH_Y], [wallR(cutTop), cutTop]], 144, { a0: doorA, a1: 2 * Math.PI - doorA });
+  // The wall above the cut top runs all round.
+  rd.lathe([[wallR(cutTop), cutTop], [wallR(WALL_TOP), WALL_TOP]], 144);
+  // The joint's depth sets the spandrels back from the wall.
+  const J = u(0.012);
   // The coping on the wall's top, under the track.
   const cr = wallR(WALL_TOP);
-  st.lathe([[DRUM_R - 0.36, WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP + u(0.04)],
-    [cr + u(0.03), WALL_TOP + u(0.07)], [DRUM_R - 0.36, WALL_TOP + u(0.07)]], 144, { closed: true, uv: stoneUV(0, WALL_TOP - 0.3, WALL_TOP + 0.3) });
+  rd.lathe([[DRUM_R - 0.36, WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP - u(0.02)], [cr + u(0.07), WALL_TOP + u(0.04)],
+    [cr + u(0.03), WALL_TOP + u(0.07)], [DRUM_R - 0.36, WALL_TOP + u(0.07)]], 144, { closed: true });
 
   /* ---------- the door: a stone surround, two leaves, a lit fanlight ---------- */
   // The surround is drawn flat in door space.
@@ -671,9 +662,7 @@ function buildHero(main: Dome, tx: Painted): Built {
     prism(w, shape, PROUD - 0.2, PROUD + (key ? u(0.03) : 0), ID);
     st.wrap(w.build(), false, true);
   }
-  // The courses stop at the door.
   // The spandrels fill round the arch.
-  const cutTop = PLINTH_Y + Math.ceil((DOOR_TOP - PLINTH_Y) / COURSE_H) * COURSE_H;
   {
     // It sits a joint's depth back and fills only the gap.
     // A fine grid keeps it on the curve of the wall.
@@ -1079,17 +1068,17 @@ function buildHero(main: Dome, tx: Painted): Built {
   cupola.add(new Mesh(rb.build(), ribMat));
 
   const parts: Object3D[] = [
-    new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
+    new Mesh(rd.build(), renderMat), new Mesh(st.build(), stoneMat), new Mesh(ir.build(), iron), new Mesh(deck.build(), deckMat),
     new Mesh(fx.build(), steel), new Mesh(dv.build(), enamel), new Mesh(dvBrass.build(), brass), ...pinions,
     new Mesh(inWall.build(), plaster), new Mesh(fl.build(), floorMat), new Mesh(fix.build(), lampMat), new Mesh(lad.build(), wood), redBulb, new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), posts, cupola,
   ];
   root.add(...parts);
 
   // The telescope stands on the pier.
-  // Another module builds it.
-  // Its root sits where the dome's root sits.
-  // So it takes size 1 here.
+  // Another module builds it, at size 1.
+  // Its root drops to this drum's turn height.
   const scope = buildHeroScope(1);
+  scope.root.position.y = DRUM_H - SCOPE_TURN;
   root.add(scope.root);
   // It takes the inside light, but its glass keeps its own look.
   const seen = new Set<Material>(mats);
@@ -1136,6 +1125,357 @@ function buildHero(main: Dome, tx: Painted): Built {
         const teethPast = (a - az * DEG) * RING_N / (2 * Math.PI);
         pinions[i].rotation.y = -(a + Math.PI + Math.PI / PIN_N + teethPast * 2 * Math.PI / PIN_N);
       });
+      scope.setTube(P.tube.alt, P.tube.az);
+      glow.emissiveIntensity = d.door.emissiveIntensity;
+    },
+  };
+}
+
+/* ---------- the big hero: the Keck-style enclosure in full detail ---------- */
+// It follows the light model's big dome in world/observatory.ts.
+// A panelled base carries a turning skirt and a plated cap.
+// Two shutter rails arch over the cap beside the wide opening.
+const BIG_TURN = BIG_BASE_H + BIG_SKIRT_H;
+// The rails: their width in radians across the slit, their height off the plate.
+const RAIL_B = 0.07, RAIL_UP = 0.16;
+
+// Painted wall panels: four across, two up.
+// One panel is 1.2 m wide and 3 m high.
+// So the texture covers 4.8 m by 6 m.
+function panelTex(): { map: CanvasTexture; normal: CanvasTexture } {
+  const W = 512, H = 640, PW = W / 4, PH = H / 2;
+  const [a, ax] = canvas(W, H), [h, hx] = canvas(W, H);
+  ax.fillStyle = '#e2e0da'; ax.fillRect(0, 0, W, H);
+  hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 4; col++) {
+    const tone = (rnd() - 0.5) * 10;
+    ax.fillStyle = `rgba(${tone > 0 ? '255,255,250' : '0,0,0'},${Math.abs(tone) / 100})`;
+    ax.fillRect(col * PW, row * PH, PW, PH);
+    // Each panel is a shallow tray; its edges fold back to the joint.
+    for (let s = 0; s < 4; s++) {
+      const g = 128 + s * 14;
+      hx.fillStyle = `rgb(${g},${g},${g})`;
+      hx.fillRect(col * PW + 2 + s, row * PH + 2 + s, PW - 4 - 2 * s, PH - 4 - 2 * s);
+    }
+  }
+  // Dark joints between the panels.
+  ax.fillStyle = 'rgba(40,38,34,0.45)';
+  for (let col = 0; col <= 4; col++) ax.fillRect(col * PW - 1, 0, 2, H);
+  for (let row = 0; row <= 2; row++) ax.fillRect(0, row * PH - 1, W, 2);
+  // A fixing sits near each panel corner.
+  const pts: P2[] = [];
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 4; col++) {
+    for (const [dx, dy] of [[8, 8], [PW - 8, 8], [8, PH - 8], [PW - 8, PH - 8]]) pts.push([col * PW + dx, row * PH + dy]);
+  }
+  rivetDots(hx, ax, pts, 3);
+  // Rain streaks and soft grime.
+  ax.fillStyle = 'rgba(80,76,68,0.04)';
+  for (let i = 0; i < 120; i++) { const x = rnd() * W, y = rnd() * H; ax.fillRect(x, y, 1.5, 30 + rnd() * 90); }
+  noise(ax, W, H, 8, 10, 0.05, 'multiply');
+  noise(hx, W, H, 6, 8, 0.08, 'overlay');
+  return { map: tex(a, true), normal: tex(normalOf(h, 3), false) };
+}
+
+// A frame on a round wall of radius r, at azimuth a and height y.
+// X runs right as seen from outside; Z points out of the wall.
+function onRing(a: number, y: number, r: number): Matrix4 {
+  const sn = Math.sin(a), cs = Math.cos(a);
+  return new Matrix4().makeBasis(new Vector3(-cs, 0, -sn), new Vector3(0, 1, 0), new Vector3(sn, 0, -cs)).setPosition(r * sn, y, -r * cs);
+}
+
+// A frame on the sphere at (b, e): X along b, Y along e, Z out.
+function onSphere(r: number, b: number, e: number): Matrix4 {
+  return new Matrix4().makeBasis(alongB(b, e), alongE(b, e), sp(1, b, e)).setPosition(sp(r, b, e));
+}
+
+function buildBigHero(main: Dome, tx: Painted): Built {
+  const root = new Group();
+  root.name = 'hero';
+  const WR = BIG_WALL_R, BH = BIG_BASE_H, SH = BIG_SKIRT_H, SB = BIG_SLIT_B;
+  const panel = tx.panel, dome = tx.dome, leafT = tx.leaf;
+  // The base wears light grey panels; the enclosure wears white paint.
+  const baseMat = std({ map: panel.map, normalMap: panel.normal, color: 0xc4c1ba, roughness: 0.8 });
+  const skirtMat = std({ map: panel.map, normalMap: panel.normal, roughness: 0.55 });
+  const paint = std({ map: dome.map, normalMap: dome.normal, roughness: 0.55 });
+  const leafPaint = std({ map: leafT.map, normalMap: leafT.normal, roughness: 0.5 });
+  const plain = std({ color: 0xd9d7d0, roughness: 0.55 });
+  const plainI = std({ color: 0xd9d7d0, roughness: 0.55 });
+  const grey = std({ color: 0x8f918f, roughness: 0.6, metalness: 0.2 });
+  const iron = std({ color: 0x1c1e20, roughness: 0.55, metalness: 0.35 });
+  const steel = std({ color: 0x55595d, roughness: 0.4, metalness: 0.45 });
+  const steelI = std({ color: 0x55595d, roughness: 0.4, metalness: 0.45 });
+  // The doors: grey painted steel.
+  const doorMat = std({ color: 0x6c7174, roughness: 0.45, metalness: 0.3 });
+  const glow = std({ color: 0x000000, emissive: DOOR_GLOW, emissiveIntensity: 0, roughness: 0.3 });
+  const hole = std({ color: 0x141517, roughness: 0.8 });
+  const holeI = std({ color: 0x141517, roughness: 0.8 });
+  const inner = std({ color: 0x55534f, roughness: 0.85, side: BackSide });
+  // Panel texture points: whole panels round the ring, 6 m of texture up.
+  const panelUV = (r: number) => {
+    const n = Math.max(1, Math.round(2 * Math.PI * r * SCALE / 4.8));
+    return (a: number, _r: number, y: number): P2 => [a / (2 * Math.PI) * n, y * SCALE / 6];
+  };
+
+  /* ---------- the base ---------- */
+  const bs = new Geo(), fr = new Geo(), dr = new Geo(), gl = new Geo(), sk = new Geo();
+  // A proud plinth with a sloped top runs round the foot.
+  const PL = u(0.6), PO = u(0.12);
+  bs.lathe([[WR + PO, 0], [WR + PO, PL], [WR, PL + PO]], 192, { uv: panelUV(WR) });
+  // Reveals run round the wall every 3 m, on the panel joints.
+  // The cornice stands out at the top and carries the track.
+  const CH = u(0.55), CO = u(0.28), g = u(0.025), dpt = u(0.035);
+  const wall: P2[] = [[WR, PL + PO]];
+  for (let y = u(3); y < BH - CH - u(0.4); y += u(3)) wall.push([WR, y - g], [WR - dpt, y - g], [WR - dpt, y + g], [WR, y + g]);
+  wall.push([WR, BH - CH], [WR + CO, BH - CH + u(0.12)], [WR + CO, BH], [R - 0.2, BH]);
+  bs.lathe(wall, 192, { uv: panelUV(WR) });
+  // A drip bead lines the cornice's lower edge.
+  fr.lathe([[WR + CO - u(0.02), BH - CH + u(0.1)], [WR + CO + u(0.03), BH - CH + u(0.1)], [WR + CO + u(0.03), BH - CH + u(0.16)], [WR + CO - u(0.02), BH - CH + u(0.16)]], 192, { closed: true });
+
+  // The main door faces north, to the camera.
+  // A steel frame, two leaves with vision panels, a canopy and a step.
+  {
+    const m = onRing(0, 0, WR + u(0.02));
+    const DW = u(1.8), DH = u(2.4), FW = u(0.12), FD = u(0.16);
+    for (const sx of [-1, 1]) fr.box(FW, DH + FW, FD, mat(sx * (DW / 2 + FW / 2), (DH + FW) / 2, FD / 2).premultiply(m));
+    fr.box(DW + 2 * FW, FW, FD, mat(0, DH + FW / 2, FD / 2).premultiply(m));
+    for (const sx of [-1, 1]) {
+      const cx = sx * DW / 4;
+      dr.box(DW / 2 - u(0.02), DH - u(0.02), u(0.05), mat(cx, DH / 2, u(0.03)).premultiply(m));
+      // The vision panel glows from the hall behind.
+      gl.box(u(0.22), u(0.55), u(0.02), mat(cx, DH * 0.68, u(0.06)).premultiply(m));
+      // A push bar runs across each leaf.
+      fr.box(DW / 2 - u(0.2), u(0.04), u(0.05), mat(cx, u(1.0), u(0.09)).premultiply(m));
+    }
+    // The canopy: a thin slab on two hangers.
+    fr.box(DW + u(1.0), u(0.12), u(1.1), mat(0, DH + u(0.45), u(0.55)).premultiply(m));
+    for (const sx of [-1, 1]) {
+      const p0 = new Vector3(sx * (DW / 2 + u(0.4)), DH + u(1.3), 0), p1 = new Vector3(sx * (DW / 2 + u(0.4)), DH + u(0.5), u(1.0));
+      const l = p0.distanceTo(p1);
+      fr.box(u(0.03), l, u(0.03), mat(p0.x, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2, Math.atan2(p1.z - p0.z, p0.y - p1.y)).premultiply(m));
+    }
+    // The step.
+    bs.at(mat(0, u(0.08), u(0.5)).premultiply(m)).add(new BoxGeometry(DW + u(0.8), u(0.16), u(1.0)));
+    bs.at();
+  }
+  // The loading door: a roll-up door under a hood, east of the main door.
+  {
+    const m = onRing(58 * DEG, 0, WR + u(0.02));
+    const LW = u(4.2), LH = u(4.6);
+    for (const sx of [-1, 1]) fr.box(u(0.2), LH + u(0.3), u(0.2), mat(sx * (LW / 2 + u(0.1)), (LH + u(0.3)) / 2, u(0.1)).premultiply(m));
+    // The hood holds the rolled door.
+    fr.at(mat(0, LH + u(0.35), u(0.25), 0, 0, Math.PI / 2).premultiply(m)).add(new CylinderGeometry(u(0.32), u(0.32), LW + u(0.4), 20));
+    fr.at();
+    for (let y = u(0.1); y < LH; y += u(0.2)) dr.box(LW, u(0.17), u(0.06), mat(0, y + u(0.085), u(0.05), -0.12).premultiply(m));
+  }
+  // Two louvre grilles flank the main door, high on the wall.
+  for (const a of [-22 * DEG, 22 * DEG]) {
+    const m = onRing(a, 0, WR + u(0.02)), LW = u(1.4), LH = u(1.1), y0 = u(3.6);
+    for (const sx of [-1, 1]) fr.box(u(0.08), LH, u(0.12), mat(sx * LW / 2, y0 + LH / 2, u(0.06)).premultiply(m));
+    for (const sy of [0, 1]) fr.box(LW + u(0.08), u(0.08), u(0.12), mat(0, y0 + sy * LH, u(0.06)).premultiply(m));
+    sk.box(LW, LH, u(0.02), mat(0, y0 + LH / 2, u(0.01)).premultiply(m));
+    for (let k = 1; k < 7; k++) fr.box(LW, u(0.03), u(0.14), mat(0, y0 + LH * k / 7, u(0.07), -0.6).premultiply(m));
+  }
+  // The lamps from world/lights and world/lamp get wall packs.
+  for (const b of main.root.children) {
+    if (!(b instanceof Mesh) || !(b.geometry instanceof SphereGeometry)) continue;
+    const r = b.geometry.parameters.radius * b.scale.x, bp = b.position;
+    const m = onRing(Math.atan2(bp.x, -bp.z), bp.y, WR);
+    fr.box(r * 3, r * 2.2, r * 1.6, mat(0, r * 0.4, r * 0.8).premultiply(m));
+    fr.box(r * 3.4, r * 0.3, r * 2.6, mat(0, r * 1.6, r * 1.3).premultiply(m));
+  }
+
+  /* ---------- the track: a steel ring and bogies in the gap under the skirt ---------- */
+  const GAP = u(0.1);
+  const trk = new Geo();
+  trk.lathe([[R - 0.22, BH], [R - 0.02, BH], [R - 0.02, BH + u(0.05)], [R - 0.22, BH + u(0.05)]], 192, { closed: true });
+  const bogie = new Geo();
+  bogie.box(u(0.5), u(0.06), u(0.35), mat(0, BH + GAP - u(0.03), -(R - 0.1)));
+  const bogies: Matrix4[] = [];
+  for (let k = 0; k < 40; k++) bogies.push(new Matrix4().makeRotationY(-(k + 0.5) / 40 * 2 * Math.PI));
+
+  /* ---------- the enclosure: skirt, cap, rails, shutters ---------- */
+  const cupola = new Group();
+  cupola.position.y = BIG_TURN;
+  // The skirt turns with the cap.
+  const sGeo = new Geo();
+  const skirtUV = panelUV(R);
+  sGeo.lathe([[R, -SH + GAP], [R, 0]], 192, { uv: (a, r, y) => skirtUV(a, r, y + BIG_TURN) });
+  const skirtG = sGeo.build();
+  cupola.add(new Mesh(skirtG, skirtMat), new Mesh(skirtG, inner));
+  const pl = new Geo();
+  // A rolled bead runs along the skirt's foot.
+  pl.lathe([[R - 0.03, -SH + GAP], [R + u(0.06), -SH + GAP], [R + u(0.08), -SH + GAP + u(0.04)], [R + u(0.08), -SH + GAP + u(0.12)], [R, -SH + GAP + u(0.14)]], 192, { closed: true });
+  // A band at the cap's foot covers the joint with the skirt.
+  pl.lathe([[R, -u(0.12)], [R + u(0.05), -u(0.1)], [R + u(0.05), u(0.04)], [R, u(0.06)]], 192, { closed: true });
+
+  // The vents: a ring of round louvred openings on the skirt.
+  // None sits under the opening.
+  const vRim = new Geo(), vHole = new Geo();
+  const VR = 0.13;
+  vRim.add(new TorusGeometry(VR, u(0.05), 6, 28));
+  for (const y of [-VR * 0.5, 0, VR * 0.5]) vRim.box(VR * 1.8 * Math.sqrt(1 - (y / VR) ** 2), u(0.04), u(0.08), mat(0, y, -u(0.02), -0.6));
+  vHole.at(mat(0, 0, -u(0.04), Math.PI / 2)).add(new CylinderGeometry(VR, VR, u(0.02), 28));
+  vHole.at();
+  const vents: Matrix4[] = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (i + 0.5) / 28 * 2 * Math.PI;
+    if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < SB + 0.12) continue;
+    vents.push(onRing(a, -SH * 0.45, R + 0.005));
+  }
+
+  // The cap: two halves beside the opening, a cap behind its end.
+  const shell = new Geo();
+  patch(shell, R, -Math.PI / 2, -SB, 0, Math.PI, 30, 120, domeUV);
+  patch(shell, R, SB, Math.PI / 2, 0, Math.PI, 30, 120, domeUV);
+  patch(shell, R, -SB, SB, SLIT_E, Math.PI, 12, 26, domeUV);
+  const shellGeo = shell.build();
+  cupola.add(new Mesh(shellGeo, paint), new Mesh(shellGeo, inner));
+
+  // The shutter rails: deep box girders with a flange on top.
+  // They run from the skirt's foot over the cap to the back.
+  const RW = RAIL_B * R, RH = RAIL_UP, FL = u(0.1), FT = u(0.06);
+  const RAIL: P2[] = [[0, 0], [RW, 0], [RW, RH - FT], [RW + FL, RH - FT], [RW + FL, RH], [-FL, RH], [-FL, RH - FT], [0, RH - FT]];
+  for (const side of [-1, 1]) {
+    const b = side * SB;
+    pl.sweep(RAIL, framesAlongE(R, b, 0, Math.PI, 140, side));
+    // The legs drop down the skirt at the front and the back.
+    for (const back of [false, true]) {
+      const zs = back ? 1 : -1, sn = Math.sin(b), cs = Math.cos(b);
+      const legs: Frame[] = [-SH + GAP, 0].map(y => ({
+        p: new Vector3(R * sn, y, zs * R * cs),
+        s: new Vector3(cs, 0, -zs * sn).multiplyScalar(side),
+        u: new Vector3(sn, 0, zs * cs),
+      }));
+      pl.sweep(RAIL, legs);
+    }
+    // Stiffener plates stand on the rail's outer face every 2 m.
+    const step = u(2) / R;
+    for (let e = step / 2; e < Math.PI; e += step) {
+      pl.box(u(0.03), u(0.06), RH * 0.8, mat(0, 0, RH * 0.4).premultiply(onSphere(R, side * (SB + RAIL_B), e)));
+    }
+  }
+  // A header girder closes the opening's top end.
+  pl.sweep([[-u(0.35), 0], [u(0.35), 0], [u(0.35), RH * 0.8], [-u(0.35), RH * 0.8]], framesAlongB(R, SLIT_E, -SB - RAIL_B, SB + RAIL_B, 20));
+
+  // A service ladder runs up the cap beside each rail.
+  // Two stringers on stand-offs, a rung every 30 cm.
+  const lad = new Geo();
+  for (const side of [-1, 1]) {
+    const bc = side * (SB + RAIL_B + u(0.7) / R), e0 = 0.03, e1 = 1.45;
+    for (const off of [-1, 1]) {
+      const bs2 = bc + off * u(0.25) / R;
+      lad.sweep(um([[-0.025, 0.12], [0.025, 0.12], [0.025, 0.2], [-0.025, 0.2]]), framesAlongE(R, bs2, e0, e1, 60, side));
+      for (let e = e0 + 0.02; e < e1; e += u(1.5) / R) lad.box(u(0.04), u(0.04), u(0.12), mat(0, 0, u(0.06)).premultiply(onSphere(R, bs2, e)));
+    }
+    for (let e = e0 + 0.01; e < e1; e += u(0.3) / R) lad.box(u(0.5), u(0.03), u(0.03), mat(0, 0, u(0.16)).premultiply(onSphere(R, bc, e)));
+  }
+
+  // The upper shutter rides between the rails.
+  // To open, it slides over the back.
+  const leaf = new Group();
+  const rL = R + u(0.28), bL = SB - u(0.04) / R;
+  const eB = SPLIT_E - u(0.2) / R, eT = SLIT_E + u(0.35) / R;
+  const lg = new Geo(), lp = new Geo();
+  patch(lg, rL, -bL, bL, eB, eT, 24, 60, (_d, i, j) => [i / 24 * 2, (eT - eB) * rL * SCALE * j / 60 / 2.4]);
+  patch(lp, rL - u(0.01), -bL, bL, eB, eT, 10, 30, () => [0, 0], true);
+  // Ribs cross it every 1.2 m.
+  const RIB = um([[-0.006, 0], [0.006, 0], [0.006, 0.08], [0.05, 0.08], [0.05, 0.095], [-0.05, 0.095], [-0.05, 0.08], [-0.006, 0.08]]);
+  for (let e = eB + u(0.6) / rL; e < eT - u(0.3) / rL; e += u(1.2) / rL) lp.sweep(RIB, framesAlongB(rL, e, -bL + u(0.05) / rL, bL - u(0.05) / rL, 20));
+  // Its side skirts hang inside the rails.
+  // A weather lip hangs at its foot.
+  for (const side of [-1, 1]) lp.sweep(um([[0, 0], [0.01, 0], [0.01, -0.3], [0, -0.3]]), framesAlongE(rL, side * bL, eB, eT, 40, side));
+  lp.sweep(um([[0, 0], [0.01, 0], [-0.03, -0.25], [-0.04, -0.25]]), framesAlongB(rL, eB, -bL, bL, 20));
+  leaf.add(new Mesh(lg.build(), leafPaint), new Mesh(lp.build(), plain));
+  cupola.add(leaf);
+
+  // The lower windscreen rides inside the opening.
+  // To open, it drops behind the skirt.
+  const wind = new Group();
+  const ws = new Geo(), wp = new Geo(), rW = R - u(0.25), bW = SB + u(0.1) / R;
+  patch(ws, rW, -bW, bW, 0, SPLIT_E + u(0.3) / rW, 24, 30, (_d, i, j) => [i / 24 * 2, SPLIT_E * rW * SCALE * j / 30 / 2.4]);
+  for (let e = u(0.6) / rW; e < SPLIT_E; e += u(1.2) / rW) wp.sweep(RIB, framesAlongB(rW, e, -bW + u(0.05) / rW, bW - u(0.05) / rW, 20));
+  wind.add(new Mesh(ws.build(), leafPaint), new Mesh(wp.build(), plain));
+  cupola.add(wind);
+
+  /* ---------- the inside, seen through the opening ---------- */
+  const floorMat = inside(std({ color: 0x3a3632, roughness: 0.75 }), 0.12);
+  const ribMat = inside(std({ color: 0x6b6d6e, roughness: 0.7 }), 0.35);
+  const lampMat = inside(std({ color: 0x3b4741, roughness: 0.45, metalness: 0.25 }), 0.14);
+  inside(inner, 0.35);
+  const fl = new Geo(), rb = new Geo(), fix = new Geo();
+  // The observing floor lies on the base's top.
+  fl.lathe([[R - 0.15, BH + 0.01], [0, BH + 0.01]], 96);
+  // Ribs climb the inside of the cap every 15 degrees.
+  // Box girders line the opening.
+  // A ring beam runs round the cap's foot.
+  const inSlit = (p: Vector3): boolean => {
+    const r = p.length(), b = Math.asin(p.x / r), e = Math.atan2(p.y, -p.z);
+    return Math.abs(b) < SB + u(0.4) / R && e < SLIT_E + u(0.4) / R;
+  };
+  const RIBP = um([[-0.01, -0.03], [0.01, -0.03], [0.01, -0.4], [0.1, -0.4], [0.1, -0.43], [-0.1, -0.43], [-0.1, -0.4], [-0.01, -0.4]]);
+  for (let k = 0; k < 24; k++) {
+    const az = (7.5 + 15 * k) * DEG, f: Frame[] = [];
+    for (let L = 0; L <= 88; L += 2) {
+      const p = new Vector3(Math.cos(L * DEG) * Math.sin(az), Math.sin(L * DEG), -Math.cos(L * DEG) * Math.cos(az)).multiplyScalar(R - 0.005);
+      if (inSlit(p)) break;
+      f.push({ p, s: new Vector3(Math.cos(az), 0, Math.sin(az)), u: p.clone().normalize() });
+    }
+    if (f.length > 1) rb.sweep(RIBP, f);
+  }
+  const INBOX = um([[0, -0.03], [0.4, -0.03], [0.4, -0.6], [0, -0.6]]);
+  for (const side of [-1, 1]) rb.sweep(INBOX, framesAlongE(R - 0.004, side * SB, 0, SLIT_E + u(0.4) / R, 70, side));
+  rb.sweep(INBOX, framesAlongB(R - 0.004, SLIT_E, -SB, SB, 12));
+  rb.lathe([[R - 0.01, u(0.3)], [R - u(0.4), u(0.3)], [R - u(0.4), u(0.26)], [R - u(0.05), u(0.26)], [R - u(0.05), u(0.04)],
+    [R - u(0.4), u(0.04)], [R - u(0.4), 0], [R - 0.01, 0]], 120, { closed: true });
+  cupola.add(new Mesh(rb.build(), ribMat));
+  // The red work lamp sits low on the skirt's inner wall, at the back.
+  const LAMP_A = 160 * DEG, LAMP_R = R - 0.12;
+  const lampP = new Vector3(LAMP_R * Math.sin(LAMP_A), BH + 0.5, -LAMP_R * Math.cos(LAMP_A));
+  main.root.localToWorld(RED.uRedP.value.copy(lampP));
+  fix.box(0.12, 0.1, 0.07, mat((LAMP_R + 0.07) * Math.sin(LAMP_A), lampP.y + 0.03, -(LAMP_R + 0.07) * Math.cos(LAMP_A), 0, -LAMP_A));
+  const redBulb = new Mesh(new SphereGeometry(0.03, 10, 6), new MeshBasicMaterial({ color: new Color(0.32, 0.02, 0.01) }));
+  redBulb.position.copy(lampP);
+
+  cupola.add(new Mesh(pl.build(), plain), new Mesh(lad.build(), iron), instances(vRim, plainI, vents), instances(vHole, holeI, vents));
+  const parts: Object3D[] = [
+    new Mesh(bs.build(), baseMat), new Mesh(fr.build(), grey), new Mesh(dr.build(), doorMat), new Mesh(gl.build(), glow), new Mesh(sk.build(), hole),
+    new Mesh(trk.build(), steel), instances(bogie, steelI, bogies),
+    new Mesh(fl.build(), floorMat), new Mesh(fix.build(), lampMat), redBulb, cupola,
+  ];
+  root.add(...parts);
+
+  // The telescope stands on its pier, from world/hero-scope.ts.
+  // Its root drops to this cupola's turn height.
+  const scope = buildHeroScope(1);
+  scope.root.position.y = BIG_TURN - SCOPE_TURN;
+  root.add(scope.root);
+  const seen = new Set<Material>(mats);
+  scope.root.traverse((o) => {
+    if (!(o instanceof Mesh) || o === scope.glass) return;
+    const m = o.material as Material;
+    if (seen.has(m) || !(m instanceof MeshStandardMaterial)) return;
+    seen.add(m);
+    mats.push(inside(m, 0.7));
+  });
+  if (scope.glass.material instanceof MeshStandardMaterial) mats.push(scope.glass.material);
+  for (const m of mats) duskPatch(m);
+
+  let shown = false;
+  return {
+    root,
+    scope,
+    textures: [panel.map, panel.normal, dome.map, dome.normal, leafT.map, leafT.normal],
+    show(on) {
+      if (on === shown) return;
+      shown = on;
+      if (on) main.root.add(root);
+      else root.removeFromParent();
+    },
+    follow(d) {
+      const P = d.pose;
+      cupola.rotation.y = -heroSlitAz(d) * DEG;
+      leaf.rotation.x = P.open * UP_OPEN;
+      wind.rotation.x = P.open * LOW_OPEN;
       scope.setTube(P.tube.alt, P.tube.az);
       glow.emissiveIntensity = d.door.emissiveIntensity;
     },
@@ -1230,9 +1570,9 @@ function upload(b: Built, done: () => void): void {
 }
 
 function start(): void {
-  const tx = timed('paint', () => ({ stone: stoneTex(), dome: domeTex(), leaf: leafTex() }));
+  const tx = timed('paint', () => ({ stone: stoneTex(), dome: domeTex(), leaf: leafTex(), panel: panelTex() }));
   setTimeout(() => {
-    const b = built = timed('build', () => buildHero(complex.main, tx));
+    const b = built = timed('build', () => (complex.main.big ? buildBigHero : buildHero)(complex.main, tx));
     setTimeout(() => {
       const rt = warmTarget(), t = performance.now();
       renderer.setRenderTarget(rt);

@@ -11,7 +11,7 @@ import type { Star } from '../core/catalog.ts';
 import { HEMI_I, hemi } from './hill.ts';
 import { buildStarEnv, lensGeometry, makeGlassMaterial, type LensShape } from './hero-glass.ts';
 import { TUBE_REST_ALT } from './observatory.ts';
-import { D_OFF, flipPose, targetPose, TUBE_SHIFT, type Pose } from '../core/clearance.ts';
+import { AXES_UP, D_OFF, flipPose, targetPose, TUBE_SHIFT, type Pose } from '../core/clearance.ts';
 
 /* ---------- the hero scope: a long refractor on a German equatorial mount ---------- */
 // Only the cuts show this model.
@@ -44,8 +44,9 @@ export type HeroScope = {
 };
 
 const DEG = Math.PI / 180;
-// Copied from world/observatory.ts, DRUM_H: the drum's height.
-const DRUM_H = 3.4;
+// The scope's frame puts the cupola's turn height here.
+// A host lifts the scope's root by its own turn height less this.
+export const SCOPE_TURN = 3.4;
 // Copied from world/observatory.ts, TUBE_FRONT: the mouth's reach forward.
 const TUBE_FRONT = 2.6;
 // Copied from world/observatory.ts, SLIT_B: the slit is 1.3 m wide.
@@ -54,7 +55,7 @@ const SLIT_HALF = 0.65;
 const LAT = 51;
 // The axes cross over the dome's centre, 0.35 over the drum top.
 // Nothing below the polar axis ever moves.
-const AXES_Y = DRUM_H + 0.35;
+const AXES_Y = SCOPE_TURN + AXES_UP;
 // The declination flange's outer face, out from the polar axis.
 // The dec axis is long enough that the saddle clears the RA housing.
 const DEC_FACE = 0.215;
