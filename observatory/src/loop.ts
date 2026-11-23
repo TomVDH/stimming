@@ -48,12 +48,11 @@ let aimed = false;
 // The machine owns the bound dome: cupola, tube and shutter. It starts shut.
 // The ?dev shot replay builds a fresh machine, so this is let.
 let machine = makeMachine({ az: REST_AZ });
-// The 1 m stands in the main dome.
-// The great refractor stands in the classic dome.
-// The west small dome stands in for the classic dome for now.
-const SCOPE_DOME: Record<Scope, Dome> = { reflector: complex.main, refractor: complex.small[0] };
+// The great refractor stands in the classic dome, complex.main.
+// The 1 m stands in the big Keck-style dome, complex.big.
+const SCOPE_DOME: Record<Scope, Dome> = { refractor: complex.main, reflector: complex.big };
 // The scope the machine drives; the other telescope dome follows, shut.
-let bound: Scope = 'reflector';
+let bound: Scope = 'refractor';
 // The selector: hover, lock, then a choice of telescope.
 const sel = makeSelector();
 // The faintest star the sky shows; the City light row sets it.
@@ -76,9 +75,9 @@ let swinging = false;
 // scope: set on a telescope dome; it follows only while the machine drives the other.
 type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter; alt: Axis; scope?: Scope };
 const turns: Turn[] = [
-  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'refractor' },
+  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'reflector' },
   { dome: complex.small[1], ax: makeAxis(REST_AZ), lim: { cap: 1.3, accel: 0.4, wrap: true }, delay: 3, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
-  { dome: complex.main, ax: makeAxis(REST_AZ), lim: CUPOLA, delay: 0.75, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'reflector' },
+  { dome: complex.main, ax: makeAxis(REST_AZ), lim: CUPOLA, delay: 0.75, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'refractor' },
 ];
 // The domes that follow now: every dome but the bound one.
 const followers = (): Turn[] => turns.filter(d => d.scope !== bound);
@@ -374,12 +373,11 @@ function bind(scope: Scope): void {
 function pick(s: Star): void {
   const from = machine.phase;
   // The ?dev shot replay starts again from this state.
-  // The replay plays cuts, so it keeps only the 1 m's picks.
-  if ((from === 'aim' || from === 'lost') && bound === 'reflector') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s };
+  if (from === 'aim' || from === 'lost') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s, scope: bound };
   machine.pick(s);
   // An open shutter plays only the slew cuts.
-  // The cuts frame the main dome; the classic dome's cuts wait for obs-cuts.
-  if ((from === 'aim' || from === 'lost') && bound === 'reflector') cuts.start(machine.phase, liftView(), targetPos(s));
+  // The cuts frame the chosen dome; liftView reads its machine.
+  if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s), SCOPE_DOME[bound]);
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -519,8 +517,8 @@ setSite(String(ui.setting('site')?.value ?? 'home'), false, true);
 function review(): void {
   let star: Star | null = null, shutting = false;
   // As a tap on the star: the beam aims at it, then the pick.
-  // The review plays cuts, so it sends the 1 m.
-  const play = (s: Star): void => { release(sel); bind('reflector'); input(targetPos(s)); pick(s); };
+  // The review sends the refractor, whose close model it waits for.
+  const play = (s: Star): void => { release(sel); bind('refractor'); input(targetPos(s)); pick(s); };
   const replay = (): void => {
     // The shutter is shut once its bounce at the stop ends.
     // The tube parks too.
@@ -568,8 +566,8 @@ function setPaused(on: boolean): void {
 }
 
 /* ---------- the shot replay, ?dev ---------- */
-// The state at the last pick from rest: cupola, shutter, star.
-let pickStart: { az: number; shutter: number; star: Star } | null = null;
+// The state at the last pick from rest: cupola, shutter, star, telescope.
+let pickStart: { az: number; shutter: number; star: Star; scope: Scope } | null = null;
 // The fast-forward steps at this rate and stops after REPLAY_MAX_S.
 const REPLAY_DT = 1 / 60, REPLAY_MAX_S = 60;
 // Replays the cuts from one shot's start.
@@ -579,9 +577,9 @@ const REPLAY_DT = 1 / 60, REPLAY_MAX_S = 60;
 // A pause holds: the shot's first frame shows, and Play runs it.
 function replayShot(shot: Shot): void {
   if (!pickStart) return;
-  const { az, shutter, star } = pickStart, held = paused;
+  const { az, shutter, star, scope } = pickStart, held = paused;
   cuts.skip();
-  bind('reflector');
+  bind(scope);
   machine = makeMachine({ az, shutter01: shutter });
   pick(star);
   for (let i = 0; i < REPLAY_MAX_S / REPLAY_DT && cuts.shot !== shot; i++) {

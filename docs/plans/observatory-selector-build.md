@@ -106,7 +106,7 @@ Status: active · Bean: `stimming-iv1u`
 
 - `input` (aim): hover with `nearStar`; the beam stays off before a pick (stimming-hben).
 - `tap`: after the opening and cuts guards, `tapSel`. A lock wakes the loop; a release redraws.
-- A choice: `reflector` calls today's `pick(s)` on `complex.main`. `refractor` binds the machine to the classic dome, today `complex.small[0]` as a stand-in, and the bound dome leaves the `turns` list while bound. The cuts play for the reflector only until the switchable hero lands (obs-cuts).
+- A choice binds the machine to that scope's dome (`refractor`: `complex.main`, `reflector`: `complex.big`, after the integration 357658dd), and the bound dome leaves the `turns` list while bound. The cuts play for the reflector only until the switchable hero lands (obs-cuts).
 - A switch of telescope while tracking: the old dome shuts and joins the followers again.
 - Esc while locked: release.
 - `__qa` gets `selector` (mode, star hip, last) and `choose(scope)`.

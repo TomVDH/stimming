@@ -41,8 +41,8 @@ Tom can change any of these.
 
 ## Depends on
 
-- **The classic dome.** The building session (`claude/obs-building-e2c560`) builds the smaller classic dome for the great refractor. Until it lands, the selector's refractor hairline ends at the west small dome as a stand-in.
-- **The switchable hero dome.** `view/cuts.ts`, `core/sequence.ts` and `loop.ts` assume one hero, `complex.main`. The obs-cuts session owns those files. This bean asks that session to make the hero a parameter, or makes the change with its yes.
+- **The classic dome.** The building session built it: `complex.main` is the classic dome with the great refractor; `complex.big` is the Keck-style dome with the 1 m.
+- **The switchable hero dome.** The obs-cuts session made the dome a parameter: `cuts.start(phase, view, target, dome)`, each dome's close model from `hero.of(dome)`. The selector passes the chosen dome (integration 357658dd, 2026-11-23).
 
 ## Non-goals
 
