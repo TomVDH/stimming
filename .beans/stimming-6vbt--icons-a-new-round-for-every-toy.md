@@ -5,7 +5,7 @@ status: in-progress
 type: epic
 priority: normal
 created_at: 2026-11-23T08:46:34Z
-updated_at: 2026-11-23T10:26:02Z
+updated_at: 2026-11-23T21:45:00Z
 ---
 
 Tom, 2026-11-23: "we want to have all our current toys have a one by one pass for new icons -- this is a new subsession we work chunked there -- ensure we involve our sheet".
@@ -21,7 +21,8 @@ Overlaps to tell Tom: Railgun has an open menu icon bean (stimming-yrcx, waits o
 ## Chunks
 - [x] 1 lava eyes shadyos chamber ink frietkot railgun trainride motorway kintsugi (stimming-0h67)
 - [x] 2 crossing observatory nvg morpher pop domino pins galaxy kaleido ferro (stimming-ij6k, df8c2427)
-- [ ] 3 to 7 the rest of the main shelf, then the Lab with no round
+- [ ] 3 soap magnet glass chladni pendulum (pushed), pool scope walker fire rain (to start) (stimming-zzyu)
+- [ ] 4 to 7 the rest of the main shelf, then the Lab with no round
 - [ ] 8 to 14 the Lab
 - [ ] 15 the last of the Lab; ask Tom about Prism, Fidget board and Heat putty
 
