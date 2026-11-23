@@ -27,39 +27,69 @@ function hash(a, b = 0, c = 0) {
 }
 const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * Math.cos(beta), Math.sin(beta)];
 
-/* ---------- bands ---------- */
-// Each band is a film grade over two channels: hot plasma and cool plasma.
-// The response is in log10 of kelvin.
-// row: the band's pair of colour ramps. hotW, coolW: channel weights.
+/* ---------- stars ---------- */
+// The model runs in star units: the star's radius is always R.
+// rsun: the star's radius in suns; a scale body's size follows from it.
+// row: the star's pair of colour ramps. hotW, coolW: channel weights.
 // disk: base light, texture, limb mix (0 darkens, 1 brightens), corona at the limb.
 // disk2: corona scale height, chromosphere and spicules, moss, region haze.
-// prom: prominence light. rays: light shaft gain. hal: halation tint. streak: lens streak tint.
-export const BANDS = {
-  // Gold: molten gold to white, the sun as a furnace.
-  gold: {
-    row: 0, expo: 1, hotW: 1, coolW: 1.15, prom: 1, rays: 0.9,
+// tex: granule scale, swirl scale, network weight, limb darkening power.
+// loop, prom: loop and prominence light. dust: a clumpy envelope of ejecta.
+// rays: light shaft gain. hal: halation tint. streak: lens streak tint.
+// wide, long: the scale body beside the limb and the one in transit.
+const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5 };
+export const STARS = {
+  // Our sun: a yellow dwarf, the furnace in gold and white.
+  sun: {
+    ...FLARE, row: 0, rsun: 1, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 1, dust: 0, rays: 0.9,
     hal: [1, 0.42, 0.12], streak: [1, 0.7, 0.34],
-    resp: lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3),
-    rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, loop: 1,
-    disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12],
+    disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],
+    wide: 'earth', long: 'mercury', root: 220,
   },
-  // Teal: cold steel and sand, nearly one colour.
-  teal: {
-    row: 1, expo: 1.05, hotW: 1, coolW: 0.9, prom: 0.75, rays: 0.4,
-    hal: [0.5, 0.72, 0.8], streak: [0.5, 0.8, 1],
-    resp: lt => 0.9 * gauss(lt, 5.62, 0.17) + 1.3 * gauss(lt, 7.05, 0.2),
-    rope: 0.9, ribbon: 2.2, rain: 0.35, sat: 1.35, bubble: 0.3, wave: 0.3, loop: 1.1,
-    disk: [1.1, 0.6, 0.75, 0.3], disk2: [65, 0.35, 0.5, 0.1],
+  // Proxima: a small red flare star; the earth is a seventh of its width.
+  proxima: {
+    ...FLARE, ribbon: 2.4, sat: 1.4, bubble: 0.3, wave: 0.7,
+    row: 1, rsun: 0.154, expo: 1, hotW: 1, coolW: 1.2, loop: 0.8, prom: 0.9, dust: 0, rays: 0.7,
+    hal: [1, 0.3, 0.1], streak: [1, 0.5, 0.3],
+    disk: [1.7, 0.8, 0.1, 0.45], disk2: [40, 1.2, 0.7, 0.15], tex: [120, 12, 0.2, 0.7],
+    wide: 'earth', long: 'planet', root: 261.63,
   },
-  // Red: crimson cool plasma, the prominences at their brightest.
-  red: {
-    row: 2, expo: 0.95, hotW: 0.85, coolW: 1.35, prom: 1.5, rays: 0.5,
-    hal: [1, 0.25, 0.12], streak: [1, 0.45, 0.3],
-    resp: lt => gauss(lt, 4.85, 0.28) + 0.3 * gauss(lt, 6.2, 0.22),
-    rope: 1.6, ribbon: 2.4, rain: 2.2, sat: 0.7, bubble: 0.08, wave: 0.65, loop: 0.75,
-    disk: [1.5, 0.9, 0.3, 0.2], disk2: [30, 1.6, 0.5, 0.06],
+  // Rigel: a blue supergiant, 79 suns wide; the sun is a bead beside it.
+  rigel: {
+    ...FLARE, rain: 0.3,
+    row: 2, rsun: 78.9, expo: 1, hotW: 1, coolW: 0.8, loop: 0.55, prom: 0.55, dust: 0, rays: 1.1,
+    hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [60, 8, 0.1, 0.4],
+    wide: 'sun', long: 'sun', root: 329.63,
+  },
+  // Betelgeuse: a red supergiant, 760 suns wide, with a handful of giant cells.
+  betelgeuse: {
+    ...FLARE, ribbon: 1.2, bubble: 0.15,
+    row: 3, rsun: 764, expo: 1, hotW: 1, coolW: 1.1, loop: 0.3, prom: 0.65, dust: 0.45, rays: 0.8,
+    hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
+    disk: [1.9, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
+    wide: 'sun', long: 'sun', root: 164.81,
+  },
+  // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
+  vycma: {
+    ...FLARE, ribbon: 1, bubble: 0.12, wave: 0.3,
+    row: 4, rsun: 1420, expo: 0.95, hotW: 1, coolW: 1.1, loop: 0.18, prom: 0.55, dust: 1, rays: 0.75,
+    hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
+    disk: [1.9, 1.5, 0, 0.32], disk2: [230, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
+    wide: 'sun', long: 'sun', root: 110,
   },
 };
+// Every star weights its loops by one temperature response.
+export const resp = lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3);
+// Scale bodies: diameter in km; bright bodies shine, dark ones block light.
+export const BODIES = {
+  earth: { km: 12742, bright: false },
+  mercury: { km: 4879, bright: false },
+  planet: { km: 13600, bright: false },
+  sun: { km: 1392700, bright: true },
+};
+// A body's diameter in star units, where the star's radius is R.
+export const bodySize = (star, body) => BODIES[body].km / 1000 / star.rsun;
 
 /* ---------- regions ---------- */
 // psi: angle round the limb from its top. beta: toward the viewer (+) or behind (-).
@@ -80,6 +110,8 @@ const PROM_DEFS = [
   { type: 'hedge', psi: -0.3, beta: 0.015, theta: 0, len: 260, h: 165, n: 80 },
   // An arch: a twisted rope that rises from behind the limb.
   { type: 'arch', psi: 0.3, beta: -0.035, theta: 0.08, len: 270, h: 205, n: 18 },
+  // A tall curtain: the wall that fills the long lens's sky.
+  { type: 'hedge', psi: 0.68, beta: 0.01, theta: 0, len: 140, h: 240, n: 46 },
 ];
 // An eruption lifts the prominence off; it forms again by this time.
 export const PROM_END = 46;
@@ -186,8 +218,8 @@ function ropeRest(rg, time) {
  * Writes every strand for the given clock into out.
  * @returns {number} The strand count.
  */
-export function strands(sun, time, { band, activity }, out) {
-  const B = BANDS[band];
+export function strands(sun, time, { star, activity }, out) {
+  const B = STARS[star];
   let n = 0;
   const act = clamp(activity);
   for (const rg of sun.regions) {
@@ -209,7 +241,7 @@ export function strands(sun, time, { band, activity }, out) {
       const sh = b.shear + (j(3) - 0.5) * 10;
       const tilt = b.tilt + (j(4) - 0.5) * 0.35;
       const lt = b.lt + (j(5) - 0.5) * 0.18;
-      const I0 = B.resp(lt) * B.loop * L.vis * alive * amb * (0.55 + 0.45 * act) * (0.6 + 0.8 * j(6) * j(6)) * (b.faint || 1);
+      const I0 = resp(lt) * B.loop * L.vis * alive * amb * (0.55 + 0.45 * act) * (0.6 + 0.8 * j(6) * j(6)) * (b.faint || 1);
       const h = a * rg.hk * b.tall * L.rise;
       for (let k = 0; k < b.threads; k++) {
         const q = m => hash(b.id * 7 + k, cyc, m + 10);
@@ -319,7 +351,7 @@ function flareStrands(fl, B, out, n) {
     const lt = Math.log10(0.9e6 + 21e6 * Math.exp(-tau / 1.6));
     const em = sstep(0, 0.25, tau) * Math.exp(-tau / 30) * (1 - sstep(30, 40, tau));
     // Every band sees the snap; then each sees the loop at its own temperature.
-    const I = (B.resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k;
+    const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k;
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
     const drain = clamp((tau - 12) / 13);
@@ -351,8 +383,8 @@ export function stepFlares(sun, dt) {
  * wave: front angle (rad) and light. bubble: centre height, radius, light.
  * kernel: the saturating core, at a point just above the surface.
  */
-export function flareView(fl, band) {
-  const B = BANDS[band], C = flareCurve, rg = fl.rg, t = fl.t;
+export function flareView(fl, star) {
+  const B = STARS[star], C = flareCurve, rg = fl.rg, t = fl.t;
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
   return {

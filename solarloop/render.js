@@ -15,18 +15,24 @@ const NS = 56;
 // Steps in the light ray march.
 const RAY_N = 40;
 
-/* ---------- colour ramps: two per band, hot then cool ---------- */
+/* ---------- colour ramps: two per star, hot then cool ---------- */
 // Each stop is an sRGB colour and its place on the tone axis.
 const LUTS = [
-  // Gold: warm black, ember, amber, gold, white.
+  // Sun: warm black, ember, amber, gold, white.
   [['000000', 0], ['0c0503', 0.08], ['2e1004', 0.22], ['7a2f06', 0.4], ['cf6a0c', 0.58], ['ffa22c', 0.74], ['ffd47a', 0.87], ['fff3d6', 0.96], ['ffffff', 1]],
   [['000000', 0], ['140402', 0.1], ['4a0e03', 0.28], ['a8300a', 0.48], ['f2661a', 0.66], ['ffa04a', 0.8], ['ffd9a8', 0.92], ['fff8f0', 1]],
-  // Teal: cold steel, with sand for the cool plasma.
-  [['000000', 0], ['030607', 0.1], ['0b1a1e', 0.26], ['24484f', 0.44], ['5e8c8f', 0.62], ['a6c4c0', 0.78], ['dfeae4', 0.9], ['fbfcf8', 1]],
-  [['000000', 0], ['0d0805', 0.12], ['33200f', 0.3], ['7a5430', 0.5], ['c29a68', 0.68], ['e9d4aa', 0.84], ['fffaf0', 1]],
-  // Red: crimson to a pink white.
-  [['000000', 0], ['120201', 0.1], ['3e0703', 0.26], ['8c1406', 0.44], ['d8320c', 0.62], ['ff7134', 0.78], ['ffb995', 0.9], ['fff0e8', 1]],
+  // Proxima: deep orange to a peach white; crimson prominences.
+  [['000000', 0], ['120302', 0.1], ['3d0a03', 0.26], ['8a2205', 0.44], ['d64a0e', 0.62], ['ff8030', 0.78], ['ffc28a', 0.9], ['fff0e0', 1]],
   [['000000', 0], ['160104', 0.1], ['4c0410', 0.3], ['a00c1c', 0.5], ['e8302a', 0.68], ['ff7a62', 0.82], ['ffc8bc', 0.93], ['fff2ee', 1]],
+  // Rigel: cold blue steel to white; lilac prominences.
+  [['000000', 0], ['02060d', 0.1], ['0a1a33', 0.26], ['1f4a80', 0.44], ['5a8fd0', 0.62], ['a8ccf5', 0.78], ['e2f0ff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['0a0710', 0.12], ['2a1f3d', 0.3], ['5e4e86', 0.5], ['9e93c8', 0.68], ['d8d2f0', 0.84], ['fbfaff', 1]],
+  // Betelgeuse: rust, orange, a dusty peach.
+  [['000000', 0], ['100302', 0.1], ['360b04', 0.26], ['7a1e06', 0.44], ['c2430c', 0.62], ['f07a2a', 0.78], ['ffbc7a', 0.9], ['fff0dc', 1]],
+  [['000000', 0], ['120203', 0.1], ['3e0608', 0.3], ['8a1410', 0.5], ['d0401e', 0.68], ['f88a5a', 0.84], ['fff0e4', 1]],
+  // VY Canis Majoris: blood red with brown shadows.
+  [['000000', 0], ['0c0201', 0.1], ['2a0603', 0.28], ['5e1006', 0.46], ['a0240c', 0.64], ['d8501c', 0.8], ['ffa070', 0.92], ['ffe6d6', 1]],
+  [['000000', 0], ['0e0304', 0.12], ['300a0c', 0.3], ['6a1a18', 0.5], ['a8402c', 0.68], ['e08050', 0.84], ['fff0e0', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -77,7 +83,8 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2;
+uniform vec4 uDisk, uDisk2, uTex;
+uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
 in vec2 vUv;
@@ -95,20 +102,20 @@ void main() {
     vec3 n = vec3(P / R, mu);
     vec3 q = uToSun * n;
     // Granules boil: bright cells, dark lanes, drifting through time.
-    float gran = smoothstep(0.0, 0.4, cells(q * 170.0 + vec3(0.0, 0.0, tb * 2.0)));
+    float gran = smoothstep(0.0, 0.6, cells(q * uTex.x + vec3(0.0, 0.0, tb * 2.0)));
     // Swirls of plasma: noise bent by noise, slowly turning.
-    vec3 wq = q * 26.0;
+    vec3 wq = q * uTex.y * 1.6;
     vec3 warp = vec3(fbm(wq + tb * 0.1), fbm(wq + 5.1), fbm(wq + 9.3));
-    float turb = fbm(q * 16.0 + warp * 1.7 + vec3(0.0, 0.0, tb * 0.25));
+    float turb = fbm(q * uTex.y + warp * 1.7 + vec3(0.0, 0.0, tb * 0.25));
     // The supergranule network, warped so it never reads as tiles.
     vec3 w = q * 22.0 + 0.8 * vec3(vn(q * 9.0), vn(q * 9.0 + 5.2), vn(q * 9.0 + 9.7));
     float net = smoothstep(0.25, 0.0, cells(w + tb * 0.2));
     float mot = fbm(q * 14.0 + vec3(0.0, tb * 0.3, 0.0));
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
-    float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.6 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * 0.15) - 0.55 * fil;
+    float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil;
     // The photosphere darkens to the limb; the corona brightens.
-    float dark = pow(max(mu, 0.02), 0.55);
+    float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
     hot = uDisk.x * max(tex, 0.08) * mix(dark, bright, uDisk.z);
     for (int k = 0; k < ${NR}; k++) {
@@ -126,6 +133,8 @@ void main() {
     }
     // The chromosphere glows red at the very edge.
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
+    // Dust in front of the disk dims it in slow patches.
+    hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(vec3(P * 0.006, 5.0 + tb * 0.05)));
   } else {
     float h = r - R;
     // Streamers: broad rays in the corona, and fine ones.
@@ -135,6 +144,15 @@ void main() {
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
     float sh = 3.0 + 9.0 * pow(vn(vec3(ang * 300.0, uTime * 0.05, 0.5)), 2.0);
     cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(vec3(ang * 900.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
+    if (uDust > 0.0) {
+      // The envelope: arcs and knots of ejected dust, lit by the star.
+      float warp = fbm(vec3(P * 0.006, 1.0));
+      float arcs = fbm(vec3(ang * 5.0, h * 0.006, 7.0) + 0.6 * warp);
+      float knots = pow(fbm(vec3(P * 0.012, 3.0 + tb * 0.05)), 3.0);
+      float env = exp(-h / 260.0);
+      cool += uDust * env * (0.3 * smoothstep(0.45, 0.8, arcs) + 1.4 * knots);
+      hot += uDust * 0.1 * exp(-h / 500.0) * (0.5 + warp);
+    }
   }
   // A haze over each region: unresolved loops.
   for (int k = 0; k < ${NR}; k++) {
@@ -297,10 +315,11 @@ void main() {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut;
 uniform vec4 uSat[2];
-uniform vec4 uView, uMix, uEarth;
+uniform vec4 uView, uMix, uBodyA, uBodyB;
+uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 uniform vec2 uRes, uC;
-uniform float uFrame, uTime, uExpo, uSc, uRow;
+uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -323,11 +342,30 @@ vec2 sig(vec2 uv, float kx) {
 }
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
-  float t = 1.0 - exp(-I * uExpo);
+  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.2 * uLens));
+  // The long lens presses the tones: a darker, harder curve.
+  t = pow(t, 1.0 + 0.3 * uLens);
   float fr = s.y / max(I, 1e-5);
-  vec3 a = texture(uLut, vec2(t, (uRow * 2.0 + 0.5) / 6.0)).rgb;
-  vec3 b = texture(uLut, vec2(t, (uRow * 2.0 + 1.5) / 6.0)).rgb;
+  vec3 a = texture(uLut, vec2(t, (uRow * 2.0 + 0.5) / ${LUTS.length.toFixed(1)})).rgb;
+  vec3 b = texture(uLut, vec2(t, (uRow * 2.0 + 1.5) / ${LUTS.length.toFixed(1)})).rgb;
   return mix(a, b, fr);
+}
+// One scale body: b is x, y, radius in pixels, and weight.
+vec3 body(vec3 c, vec2 fc, vec4 b, float bright) {
+  if (b.w <= 0.0) return c;
+  vec2 e = fc - b.xy;
+  float r = max(b.z, 0.7);
+  float d = length(e) / r;
+  if (bright > 0.5) {
+    // A star too small to resolve still shines: a core and a halo.
+    float core = smoothstep(1.0, 0.6, d) + exp(-dot(e, e) / (2.0 * (r + 1.2) * (r + 1.2)));
+    float halo = exp(-length(e) / (4.0 + r * 1.5)) * 0.5;
+    return c + vec3(1.0, 0.93, 0.78) * (core + halo) * b.w;
+  }
+  float disc = smoothstep(1.0, 0.86, d);
+  float face = 0.5 + 0.5 * dot(normalize(e + 1e-4), normalize(uC * uRes - b.xy));
+  float rim = exp(-pow((d - 0.97) / 0.07, 2.0)) * (0.05 + 0.95 * face * face * face);
+  return c * (1.0 - 0.97 * disc * b.w) + vec3(0.45, 0.66, 1.0) * rim * 0.55 * b.w;
 }
 void main() {
   vec2 uv = vUv;
@@ -366,17 +404,24 @@ void main() {
       c += tint * disc * 0.05 * S;
     }
   }
-  // A small dark world for scale, lit at its rim by the sun behind it.
-  if (uEarth.w > 0.0) {
-    vec2 e = gl_FragCoord.xy - uEarth.xy;
-    float d = length(e) / uEarth.z;
-    float disc = smoothstep(1.0, 0.86, d);
-    float face = 0.5 + 0.5 * dot(normalize(e + 1e-4), normalize(uC * uRes - uEarth.xy));
-    float rim = exp(-pow((d - 0.97) / 0.07, 2.0)) * (0.05 + 0.95 * face * face * face);
-    c = c * (1.0 - 0.97 * disc * uEarth.w) + vec3(0.45, 0.66, 1.0) * rim * 0.55 * uEarth.w;
+  // The scale bodies: a dark world lit at its rim, or a star that shines.
+  vec2 fc = uv * uRes;
+  c = body(c, fc, uBodyA, uBodyK.x);
+  c = body(c, fc, uBodyB, uBodyK.y);
+  // Haze in layers: veils at three depths drift at three speeds.
+  if (uHaze > 0.0) {
+    vec2 sp = gl_FragCoord.xy / uRes.y;
+    float hz = fbm(vec3(sp * 0.8 + vec2(uTime * 0.003, 0.0), 1.0)) * 0.5
+             + fbm(vec3(sp * 1.9 + vec2(uTime * 0.008, 0.0), 2.0)) * 0.35
+             + fbm(vec3(sp * 4.2 + vec2(uTime * 0.016, 0.0), 3.0)) * 0.2;
+    hz = smoothstep(0.32, 0.85, hz);
+    vec3 lit = texture(uBloom, uv).rgb + texture(uRays, uv).rgb;
+    float ll = lit.r * uMix.y + lit.g * uMix.z;
+    vec3 hc = grade(vec2(0.12 + ll * 0.5, 0.04 + ll * 0.1));
+    c = mix(c, hc, uHaze * hz * 0.45) + hc * hz * uHaze * 0.35;
   }
   vec2 v = vUv - 0.5;
-  c *= clamp(1.0 - 0.55 * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.3, 1.0);
+  c *= clamp(1.0 - (0.55 + 0.25 * uLens) * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.2, 1.0);
   // Film grain, strongest in the mid tones.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
   float gr = (hash(gl_FragCoord.xy + uFrame * 17.0) + hash(gl_FragCoord.xy * 1.7 + uFrame * 5.0) - 1.0);
@@ -425,7 +470,7 @@ export async function makeRender(gl) {
     hdr = target(gl, W, H);
     rays = target(gl, Math.max(2, W >> 1), Math.max(2, H >> 1));
   }
-  // v: view, rot, toSun, time, band, regs, flares, sat, count, bloomLevels, frameNo, sun centre, earth.
+  // v: view, rot, toSun, time, band (the star), regs, flares, sat, count, bloom, frame, centre, bodies, lens.
   function frame(v) {
     if (!hdr) return;
     gl.disable(gl.BLEND);
@@ -436,6 +481,8 @@ export async function makeRender(gl) {
     gl.uniform1f(s.u.uTime, v.time % 4000);
     gl.uniform4fv(s.u.uDisk, v.band.disk);
     gl.uniform4fv(s.u.uDisk2, v.band.disk2);
+    gl.uniform4fv(s.u.uTex, v.band.tex);
+    gl.uniform1f(s.u.uDust, v.band.dust);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);
@@ -481,7 +528,11 @@ export async function makeRender(gl) {
     gl.uniform4fv(f.u.uSat, v.sat);
     gl.uniform4fv(f.u.uView, v.view);
     gl.uniform4f(f.u.uMix, B.rays, B.hotW, B.coolW, v.shimmer);
-    gl.uniform4fv(f.u.uEarth, v.earth);
+    gl.uniform4fv(f.u.uBodyA, v.bodyA);
+    gl.uniform4fv(f.u.uBodyB, v.bodyB);
+    gl.uniform2fv(f.u.uBodyK, v.bodyK);
+    gl.uniform1f(f.u.uLens, v.lens);
+    gl.uniform1f(f.u.uHaze, Math.max(v.lens, v.band.dust * 0.7));
     gl.uniform3fv(f.u.uHal, B.hal);
     gl.uniform3fv(f.u.uStreak, B.streak);
     gl.uniform2f(f.u.uRes, W, H);

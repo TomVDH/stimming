@@ -9,7 +9,8 @@ const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // A minor pentatonic over two octaves: each arcade loop sounds one step higher.
 const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
-const ROOT = { gold: 220, teal: 293.66, red: 164.81 };
+// The key falls as the star grows: the hypergiant hums lowest.
+const ROOT = { sun: 220, proxima: 261.63, rigel: 329.63, betelgeuse: 164.81, vycma: 110 };
 
 export function makeSound(kit) {
   let pending = 0;
