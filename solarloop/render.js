@@ -92,7 +92,7 @@ uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam;
-uniform float uDust;
+uniform float uDust, uFull;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
 in vec2 vUv;
@@ -151,6 +151,26 @@ void main() {
     float st = fbm(vec3(ang * 7.0, h * 0.002 - tb * 0.1, 1.3));
     float fine = fbm(vec3(ang * 48.0, h * 0.006 - tb * 0.3, 4.1));
     hot = uDisk.w * (exp(-h / uDisk2.x) * (0.6 + 0.8 * fine) + 0.3 * exp(-h / 360.0) * (0.4 + 1.2 * st * st));
+    // The full view: a sweeping corona out to several radii.
+    if (uFull > 0.0) {
+      float x = r / R;
+      float lx = log(x);
+      // Streamers bend as they climb, like helmet streamers swept toward the equator.
+      float a = ang + 0.42 * sin(ang * 2.0 + 0.6) * lx + tb * 0.02;
+      float rays = fbm(vec3(a * 64.0, lx * 0.7 - tb * 0.05, 3.3));
+      rays = 0.3 + 1.3 * rays * rays;
+      float lobes = 0.0;
+      for (int k = 0; k < 5; k++) {
+        float c = k == 0 ? 0.95 : k == 1 ? 2.35 : k == 2 ? -1.15 : k == 3 ? -2.6 : 0.1;
+        float len = k == 1 || k == 3 ? 1.2 : 0.8;
+        // Each streamer narrows to a long ray as it leaves the star.
+        float w = (0.42 + 0.15 * float(k == 2)) / pow(x, 0.85);
+        float da = sin((a - c) * 0.5) * 2.0;
+        lobes += exp(-da * da / (w * w)) * len * (0.4 + 1.0 * fbm(vec3(a * 9.0, lx * 2.0, float(k))));
+      }
+      float near = pow(x, -3.0), far = pow(x, -0.95);
+      hot += uFull * uDisk.w * 4.2 * (near * 0.5 * rays + far * lobes * (0.35 + 0.5 * rays) + far * 0.05 * rays);
+    }
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
     float sh = 3.0 + 9.0 * pow(vn(vec3(ang * 300.0, uTime * 0.05, 0.5)), 2.0);
     cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(vec3(ang * 900.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
@@ -448,7 +468,7 @@ uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 uniform vec2 uRes, uC;
-uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze;
+uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -473,7 +493,8 @@ vec2 sig(vec2 uv, float kx) {
 }
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
-  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.15 * uLens));
+  // The full view shows the whole bright disk, so it takes less exposure.
+  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull));
   // The long lens presses the tones: a slightly darker, harder curve.
   t = pow(t, 1.0 + 0.15 * uLens);
   float fr = s.y / max(I, 1e-5);
@@ -663,6 +684,7 @@ export async function makeRender(gl) {
     gl.uniform4fv(s.u.uDisk2, v.band.disk2);
     gl.uniform4fv(s.u.uTex, v.band.tex);
     gl.uniform1f(s.u.uDust, v.band.dust);
+    gl.uniform1f(s.u.uFull, v.full);
     gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
@@ -735,6 +757,7 @@ export async function makeRender(gl) {
     gl.uniform4fv(f.u.uBodyB, v.bodyB);
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
     gl.uniform1f(f.u.uLens, v.lens);
+    gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform1f(f.u.uHaze, Math.min(1, 0.4 + 0.6 * v.lens + 0.3 * v.band.dust));

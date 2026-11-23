@@ -68,6 +68,7 @@ Stack type: Shader, raw WebGL2 (shared/gl.js, bloom from shared/glow.js). No sha
 - L steps three views: long lens, wide, full star.
 - A raymarched haze and dust volume with Fire's smoke shading (K3 from cloudbottle) replaces the flat haze layers.
 - The film touch is light: fine grain, soft colour split, faint lens dirt.
+- Full view: a sweeping corona of bent streamers and fine rays; half the exposure.
 
 ## Reference
 
@@ -95,3 +96,4 @@ TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, b
 - be04ba72: five stars and the long lens.
 - cc31bb1b: the long lens is the default.
 - ace6477f: the corner, haze layers, eight stars, film post.
+- 9bb873e0: the still long lens, activity all round, the full view, the volume, a lighter film.

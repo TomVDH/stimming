@@ -71,7 +71,8 @@ function fitView(w, h, top = 0, bottom = 0) {
   fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi };
   // The full star: the whole disk, its prominences and some sky round it.
   const free2 = Math.max(0.4 * h, h - top - bottom);
-  const hhF = narrow ? 1.2 * R / asp : 1.32 * R * h / free2;
+  // Pulled back, so the corona has room to stretch out.
+  const hhF = narrow ? 1.45 * R / asp : 1.6 * R * h / free2;
   const hwF = hhF * asp;
   fit.full = { cx: 0, cy: (top - bottom) * hhF / h * -1 + 0, hw: hwF };
   fit.full.cy = -(bottom - top) * hhF / h;
@@ -232,7 +233,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4,
+  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0,
 };
 function makeFrame() {
   const f = frameState;
@@ -303,6 +304,7 @@ function makeFrame() {
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust);
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust);
   f.lens = weight('long');
+  f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
   return f;
 }

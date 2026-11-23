@@ -22,7 +22,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 - The first frame is a picture: every loop at its own stage of life.
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
 - The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The star fills the frame; its limb runs from the middle of the foot to the middle of the left side, and the bottom left corner is open space with its own regions and prominences. The camera never moves there. Loops and prominences draw brighter; the tone curve presses a little darker and harder; the vignette deepens.
-- The full view fits the whole star with sky round it.
+- The full view fits the whole star with sky round it. The view pulls back to 3.2 radii tall, and a sweeping corona stretches out to the frame's edges: five streamers that bend as they climb and narrow to long rays, fine rays between them, light falling as the radius to the power 0.95 far out and 3 near the limb. The exposure halves, so the whole disk shows its surface.
 
 ## The stars
 
