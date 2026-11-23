@@ -144,6 +144,32 @@ Tom marked these eight on 2026-11-23 ("cool -- mark these"). Each grows a pool i
 | 207 | **Funfair** | C | 10 | A fair at night. Tap a ride (wheel, carousel, drop tower) to spin it into light streaks; the stall music blurs. |
 | 205 | **Night terminal** | C | 10 | A container port in drizzle. Tap a crane to lift a box; floodlights cut the rain, straddle carriers wheel below. |
 
+### Traffic and urban engineering
+
+Tom asked for toys in the register of Lit motorway and Traffic wave, 2026-11-23. He picked three, in this order: "3 - 1 - 5". Each starts in the Lab.
+
+| # | Toy | Group | Bean | Idea |
+|---|---|---|---|---|
+| 373 | **Interchange trails** | B | `stimming-hjsw` | Night, from straight above, long exposure. Headlight trails draw the flow through a motorway interchange. Swap the design (cloverleaf, turbine, four-level stack, diverging diamond); the trails rebuild and the jams knot. |
+| 374 | **Hump yard** | C | `stimming-6e2q` | A shunting yard under floodlights. A freight train is pushed over the hump; each wagon rolls alone and you throw the points to one of eight sorting tracks. Retarders squeal and spark, wagons couple with a clank, the sorted trains leave. |
+| 375 | **Green wave** | E | `stimming-ke8w` | One avenue, ten sets of lights. A slider sets the offset between them. Right: car platoons glide through on green. Wrong: stop-and-go and brake lights. |
+
+Parked the same day. No beans.
+
+| # | Toy | Group | Idea |
+|---|---|---|---|
+| 376 | **Road zipper** | E | A barrier transfer machine lifts the concrete lane divider through its S-shaped conveyor and puts it down one lane over. Rush-hour traffic flows into the new lane. Tap to reverse it. |
+| 377 | **Signal box** | D | Big levers under a lit track diagram. Pull levers to set a route; the interlocking blocks a conflicting lever with a clunk. The signal clears and a train runs. |
+| 378 | **Bascule bridge** | C | A bridge on a Belgian canal lifts for a barge. Bells, barriers, the road queue grows, the leaf comes down. |
+| 379 | **Tunnel boring machine** | C | A cutaway under a city. The cutter head turns, the machine places tunnel rings behind it, spoil runs back on a belt. |
+| 380 | **Scramble crossing** | B | A junction from above where all walk lights go green at once. Crowds from four corners form lanes and stream through each other. Tap a corner for a bigger crowd. |
+| 381 | **Robot car park** | E | A cutaway of an automated parking tower. Pallets slide like a tile puzzle; ask for a car and the tower shuffles it to the exit. |
+| 382 | **Track renewal train** | C | A night machine on a rail line: old sleepers and rails out at the front, ballast levelled, new sleepers and rails down at the back, without a stop. |
+| 383 | **Storm drains** | A | A cutaway of a city block in heavy rain. Gutters, drains, sewers, a storm overflow. More rain fills the pipes and opens the overflow to the river. |
+| 384 | **Plough convoy** | C | Snowploughs in a diagonal echelon on a night motorway, snow thrown in one long wave from lane to lane. |
+
+Container terminal was also proposed; it is Night terminal (205).
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
