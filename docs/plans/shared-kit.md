@@ -48,6 +48,7 @@ Every copy is a fork of a neighbour, so a family drifts one toy at a time. Examp
 | `bokeh.js` | 34 | GLSL | `bk` | 2: carwash, trainride |
 | `wetglass.js` | 75 | GLSL + JS | `wg`, `wetGlassMotion` | 2: carwash, tornado (terrarium through the runner) |
 | `precip.js` | 76 | GLSL + JS | `pp` | 2: carwash, tornado |
+| `precipfield.js` | 121 | GLSL + JS | `pf`, `PF_SNOW` | 1: whiteout |
 | `rocket.js` | 328 | three.js 0.170 | `makeRocket`, `makeFlame` | 2: ascent, launch |
 | `air.js` | 101 | JS | `AIR`, `sunLight` | 1: ascent |
 | `weather.js` | 37 | JS | `weather()` | 1: foghorn |
