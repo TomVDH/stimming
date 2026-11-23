@@ -257,7 +257,8 @@ section > .row, section > .dirs { display: contents !important; }
 const ALL_CSS = `
 html, body { background: transparent !important; }
 body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
-body > :not(#every) { display: none !important; }
+/* The page hides only after the grid exists, so each gallery fits its icons first. */
+body.every > :not(#every) { display: none !important; }
 #every { display: grid; grid-template-columns: repeat(auto-fill, var(--tile)); gap: 10px var(--gap); align-items: start; }
 .pick2 { position: relative; display: grid; gap: 4px; width: var(--tile); cursor: pointer; }
 .pick2 > .t128, .pick2 > .t128 svg, .pick2 > .s128, .pick2 > .s128 svg { display: block !important; width: var(--tile) !important; height: var(--tile) !important; outline: none !important; border-radius: 14px; }
@@ -600,7 +601,20 @@ async function mountAll(sec) {
     grid.append(cell);
   }
   if (!grid.children.length) { frame.remove(); alts.querySelector('.slot').textContent = `${r} · no cards`; return; }
+  // Paint servers outside the cards go into the grid in a zero-size box.
+  // A hidden gradient paints nothing, so old cards that share defs went blank.
+  const PAINT = 'defs, symbol, linearGradient, radialGradient, pattern, filter, clipPath, mask, marker';
+  const box = doc.createElement('div');
+  box.style.cssText = 'position: absolute; width: 0; height: 0; overflow: hidden;';
+  for (const p of doc.querySelectorAll(PAINT)) {
+    if (grid.contains(p) || box.contains(p) || p.parentElement?.closest(PAINT)) continue;
+    const s = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.append(p);
+    box.append(s);
+  }
+  grid.append(box);
   doc.body.append(grid);
+  doc.body.classList.add('every');
   docs.push(doc);
   doc.addEventListener('click', onClick);
   doc.addEventListener('keydown', onKey);
