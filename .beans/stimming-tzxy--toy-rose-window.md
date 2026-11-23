@@ -20,7 +20,7 @@ Build Rose window (idea 226, group F, quiet to use and rich to look at) as a Lab
 - [x] Icon round spike-rosewindow-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/rosewindow.md
-- [ ] Commit and push
+- [x] Commit and push
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -38,3 +38,4 @@ Build Rose window (idea 226, group F, quiet to use and rich to look at) as a Lab
 - QA (headless Edge, D3D11, RTX 3070): Q1 node --check on the four modules and the menu scripts; Q2 clean console on the toy and the menu with the tile hovered; Q4 drifting 31.5 rAF a second, none once asleep; Q5 none while hidden; Q6 reduced motion settles to no frames, the Day run steps by quarter hours; Q7 three controls (Day, Now, Sun), four How to play rows; Q8 arrows, Space, N each work; Q9 the context runs after a gesture and is suspended at the end.
 - Q10: 7.6 ms median frame through a Day run at 1280 x 800 (light map rebuilt each frame). First frame 0.78 s cold.
 
+- Commits on origin/main: 8f977f23 (toy, toys.json hunk, plan, toy doc, QA captures, intro emblem, favicon, bean), 99af0f18 (menu Lab tile and hook, icon round rosewindow-1, emblems, sheet row).
