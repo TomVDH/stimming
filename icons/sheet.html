@@ -68,6 +68,13 @@ h3 span { color: var(--faint); }
 .all .alts .slot { grid-column: 1; }
 .all .cols .two { display: block; }
 .all .alts iframe { height: calc(var(--tile) + 24px); }
+/* Earlier menu tiles are stills from the commit each one lived in. */
+.past { display: grid; grid-template-columns: repeat(auto-fill, var(--tile)); gap: 10px var(--gap); }
+.past > div { display: grid; gap: 4px; width: var(--tile); cursor: pointer; }
+.past img { display: block; width: var(--tile); height: var(--tile); border-radius: 14px; background: var(--panel); object-fit: contain; }
+.past p { margin: 0; overflow: hidden; color: oklch(0.6 0.02 275); font-size: 10px; line-height: 1.3; letter-spacing: 0.04em; white-space: nowrap; text-overflow: ellipsis; }
+.past p b { color: var(--fg); font-weight: 700; }
+.past .marked img { outline: 2px solid var(--mark); outline-offset: -2px; }
 .cell { position: relative; display: grid; gap: 6px; width: var(--tile); border-radius: 14px; cursor: pointer; }
 .tile, .logo, .slot { width: var(--tile); aspect-ratio: 1; border-radius: 14px; }
 /* The Current column sits on its own panel. */
@@ -279,6 +286,8 @@ const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
 // Tom's cut directions stay off the sheet; the slot says "cut".
 const archived = await fetch('archive/cut.json').then(r => r.json()).catch(() => ({ cut: {} }));
 const gone = new Set(Object.entries(archived.cut || {}).flatMap(([id, ls]) => ls.map(l => `${id}-${l.toLowerCase()}`)));
+// Earlier menu tiles per toy, oldest first. The note in the file says how they were made.
+const past = ALL ? await fetch('history/menu.json').then(r => r.json()).then(j => j.tiles || {}).catch(() => ({})) : {};
 
 // The menu gives the toy list and the Current icons.
 // It loads off screen at full width first, because its script fits each icon.
@@ -310,6 +319,17 @@ const keyOf = (id, l, r) => `${id}-${l}@${r}`;
 const slot = (id, l, s, r) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${keyOf(id, l, r)}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}, round ${r}">${wordOf(id, s, r)}</div>`;
 // The All view knows its cards only once the gallery loads; it holds one waiting slot.
 const alts = (id, r) => (ALL ? `<div class="alts"><div class="slot load">${r}</div></div>` : `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`);
+// Earlier menu tiles: one still each, newest first, under the rounds.
+const day = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const span = t => (t.from === t.to ? day(t.from) : `${day(t.from)} to ${day(t.to)}`);
+const hist = id => (past[id]?.length ? `<section class="row old" data-toy="${id}" data-round="">
+    <h2><small>menu, earlier</small></h2>
+    <div class="none"></div>
+    <div class="alts"><div class="past">${past[id].map((t, i) => [t, i + 1]).reverse().map(([t, n]) => `<div data-key="${id}-menu${n}@menu" tabindex="0" role="button" aria-label="${nameOf(id)}, menu tile ${n}, ${span(t)}">
+      <img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">
+      <p><b>Menu ${n}</b> · ${span(t)}</p>
+    </div>`).join('')}</div></div>
+  </section>` : '');
 const row = ({ id }) => {
   const emb = names[id]?.emblem, rs = rounds(id), r = rs.at(-1);
   return `<section class="row" id="row-${id}" data-toy="${id}" data-round="${r ?? ''}">
@@ -323,7 +343,7 @@ const row = ({ id }) => {
     <h2><small>${o}</small></h2>
     <div class="none"></div>
     ${alts(id, o)}
-  </section>`).join('');
+  </section>`).join('') + hist(id);
 };
 const group = (title, list) => (list.length ? `<h3>${title} <span>· ${list.length}</span></h3>${list.map(row).join('')}` : '');
 $('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
@@ -377,7 +397,8 @@ const place = () => {
 };
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
 const older = toys.reduce((n, t) => n + Math.max(0, rounds(t.id).length - 1), 0);
-$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}`;
+const pastN = toys.reduce((n, t) => n + (past[t.id]?.length || 0), 0);
+$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}${pastN ? ` · <b>${pastN}</b> earlier menu tiles` : ''}`;
 
 // The tile size fits three columns; the name moves above them on phones.
 const layout = () => {
@@ -400,7 +421,8 @@ const output = () => {
     for (const k of marks) {
       const m = k.startsWith(`${id}-`) && k.slice(id.length + 1).match(/^(.+)@(.+)$/);
       if (!m) continue;
-      const word = COLS.find(c => c[0] === m[1])?.[1] || m[1].toUpperCase();
+      const n = m[1].match(/^menu(\d+)$/)?.[1], t = n && past[id]?.[n - 1];
+      const word = t ? `Menu tile ${n}, ${t.from} to ${t.to}, ${t.sha}` : COLS.find(c => c[0] === m[1])?.[1] || m[1].toUpperCase();
       ls.push(`${word}${titles.get(k) ? ` · ${titles.get(k)}` : ''} (${m[2]})`);
     }
     if (ls.length) o[id] = ls;
