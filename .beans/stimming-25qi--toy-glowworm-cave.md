@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T11:34:17Z
-updated_at: 2026-11-23T12:09:35Z
+updated_at: 2026-11-23T12:10:48Z
 parent: stimming-oh7b
 ---
 
@@ -20,7 +20,7 @@ Build Glowworm cave (idea 351, group F, quiet to use and rich to look at) as a L
 - [x] Icon round spike-glowworm-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/glowworm.md
-- [ ] Commit and push
+- [x] Commit and push (add2dc01, 875d882c)
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
