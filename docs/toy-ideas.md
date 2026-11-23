@@ -103,6 +103,17 @@ Two new ideas from Tom, the same day. The interactions are open.
 | 365 | **Volcano** | C | `stimming-4wnw` | A volcano erupts. Size XXXXXL: a three.js parade piece at Railgun scale. Its own toy, apart from Lava coast (99). Not in the S to M batch. The MVP (one shot, one eruption) is in the Lab; the plan names the later stages. |
 | 366 | **Jet hover** | C | `stimming-ay6n` (draft) | A VTOL jet hovers on turbofans with the afterburner lit: heat glow, smoke, heat distortion and haze against the background. Size XXL. Tom chose the craft over a jet engine on a plinth. Apart from Night catapult (220). |
 
+## Tom's picks, 2026-11-23
+
+Four parade pieces, size XXL and up. Tom: "Gas Giant, Ship Launc, Steelworks and Hurricane eye". Each gets its own session that plans first (plan mode). Two grow pool ideas: Steelworks from Furnace tap (204), Ship launch from Slipway (222).
+
+| # | Toy | Group | Size | Idea |
+|---|---|---|---|---|
+| 367 | **Gas giant dive** | C | XXXL | Fall from orbit past the rings into the cloud bands. A great storm turns, lightning flashes deep down, and the light fails as the pressure builds. |
+| 222 | **Ship launch** | C | XXXL | A shipyard launch. Cut the rope; the hull rumbles down the ways, drag chains throw rust and dust, it hits the water sideways and a wall of wave crosses the harbour. |
+| 204 | **Steelworks** | C | XXL | A steel mill at night. Tap the blast furnace; molten iron runs the channels and lights the hall, a ladle tips into the converter, flame and sparks reach the roof. |
+| 368 | **Hurricane eye** | C | XXXL | Fly a weather plane through the eyewall: rain and slamming turbulence, then the eye opens, a sunlit stadium of cloud above a churning sea. |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
