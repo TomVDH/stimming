@@ -3,6 +3,7 @@
 import { HUT, HUT_ANG, DOOR, WIN, LAMP_LOCAL, LAMP, LAMP_DIR, WALL_N, WALL_D, MAST, GUYS, WIND, MOON } from './world.js';
 import { GRADE } from '../shared/grade.js';
 import { FLARE } from '../shared/flare.js';
+import { PRECIPFIELD, PF_SNOW, pfFloat } from '../shared/precipfield.js';
 
 const f = x => (Number.isInteger(x) ? x.toFixed(1) : String(+x.toFixed(6)));
 const v3 = a => `vec3(${a.map(f).join(', ')})`;
@@ -388,43 +389,34 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-/* ---------- the snow: instanced streaks ---------- */
+/* ---------- the snow: instanced streaks on shared/precipfield.js ---------- */
+const S = PF_SNOW, pf = pfFloat;
 export const FLAKE_VS = `${HEAD}
 ${SET}
+${PRECIPFIELD}
 uniform float uWindS, uFallS, uT, uVel, uExpo, uSigNow, uFocus, uAper, uCount;
 uniform vec2 uRes;
 uniform vec3 uAmb, uLampCol;
 out vec2 vQ;
 out vec3 vCol;
 out float vLen, vW, vDist;
-float h1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
-vec3 h3(float n) { return vec3(h1(n), h1(n + 17.31), h1(n + 41.77)); }
-// Clip space to pixels.
-vec2 toPx(vec4 c) { return (c.xy / c.w * 0.5 + 0.5) * uRes; }
 vec4 project(vec3 p) {
   vec3 v = transpose(uCamRot) * (p - uCamPos);
   return vec4(v.x / uLens.x, v.y / uLens.y + uLens.z * -v.z, 0.0, -v.z);
 }
 void main() {
   float id = float(gl_InstanceID);
-  vec3 r = h3(id * 1.37 + 0.5);
-  vec3 r2 = h3(id * 2.91 + 7.0);
+  vec3 r = pfHash3(id * 1.37 + 0.5);
+  vec3 r2 = pfHash3(id * 2.91 + 7.0);
   // Two crowds: one fills the view, one gathers round the lamp's cone.
   bool near = id < uCount * 0.5;
   vec3 lo, size;
   if (near) { lo = vec3(-15.0, 0.0, -18.0); size = vec3(34.0, 10.0, 42.0); }
   else { lo = LAMP + vec3(-7.5, -2.55, -2.0); size = vec3(12.0, 3.4, 7.0); }
   float spd = 0.75 + 0.5 * r2.x;
-  vec3 p = lo + r * size;
-  p.xz += WIND.xz * uWindS * spd;
-  p.y -= uFallS * (0.6 + 0.8 * r2.y);
-  // Flutter: each flake wanders on its own small loop.
-  float w1 = 1.3 + 2.1 * r2.z, ph = r2.x * 6.283;
-  vec3 fl = vec3(sin(uT * w1 + ph), sin(uT * w1 * 1.3 + ph * 2.0) * 0.7, cos(uT * w1 * 0.8 + ph)) * 0.35;
-  p += fl;
-  p = lo + mod(p - lo, size);
-  vec3 vel = WIND * uVel * spd + vec3(0.0, -1.1 * (0.6 + 0.8 * r2.y), 0.0)
-           + vec3(cos(uT * w1 + ph), cos(uT * w1 * 1.3 + ph * 2.0) * 0.91, -sin(uT * w1 * 0.8 + ph) * 0.8) * 0.35 * w1;
+  float w1 = ${pf(S.rate)} + ${pf(S.rateVar)} * r2.z, ph = r2.x * 6.283;
+  vec3 p = pfPlace(r, lo, size, WIND.xz * uWindS * spd, uFallS * (0.6 + 0.8 * r2.y), pfFlutter(uT, w1, ph, ${pf(S.flutter)}));
+  vec3 vel = WIND * uVel * spd + vec3(0.0, -${pf(S.fall)} * (0.6 + 0.8 * r2.y), 0.0) + pfFlutterVel(uT, w1, ph, ${pf(S.flutter)});
   vec3 pp = p - vel * uExpo;
   vec4 c1 = project(p), c0 = project(pp);
   float dist = length(p - uCamPos);
@@ -434,38 +426,23 @@ void main() {
   float d2 = dot(dl, dl);
   vec3 l = dl * inversesqrt(d2);
   vec3 v = normalize(uCamPos - p);
-  float E = lampBeam(l) * lampFront(p) / (d2 + 0.015) * exp(-uSigNow * sqrt(d2));
-  vec3 rad = (near ? uAmb * 9.0 : vec3(0.0)) + uLampCol * E * hg(dot(l, v), 0.55) * 12.566 * 2.0;
+  float E = pfPoint(lampBeam(l) * lampFront(p), d2, 0.015, uSigNow);
+  vec3 rad = (near ? uAmb * 9.0 : vec3(0.0)) + uLampCol * E * pfPhase(dot(l, v), ${pf(S.lobe)}) * 12.566 * 2.0;
   float Tc = exp(-uSigNow * dist) * smoothstep(2.0, 5.0, dist);
   // The lamp crowd thins out away from the cone, so its box never shows.
   float wgt = near ? 1.0 : exp(-pow((dot(dl.xz, WIND.xz) - 1.2) / 3.6, 2.0)) * smoothstep(0.0, 0.5, p.y - lo.y) * smoothstep(0.0, 0.5, lo.y + size.y - p.y);
-  if (c1.w < 0.3 || c0.w < 0.3) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-  vec2 s1 = toPx(c1), s0 = toPx(c0);
-  // Size in pixels: the flake, then its blur off the focus plane.
+  if (c1.w < 0.3 || c0.w < 0.3) { gl_Position = pfOff; return; }
   float pxPerM = uRes.y / (2.0 * uLens.y * c1.w);
-  float rad0 = (0.0018 + 0.0016 * r.x) * pxPerM;
-  float coc = uAper * abs(1.0 - uFocus / dist) * uRes.y;
-  float w = max(0.7, rad0 + min(coc, 26.0));
-  vec2 ax = s1 - s0;
-  float L = length(ax);
-  vec2 dir = L > 1e-3 ? ax / L : vec2(1.0, 0.0);
-  vec2 nrm = vec2(-dir.y, dir.x);
-  int k = gl_VertexID;
-  // Two triangles: corners along the streak and across it.
-  const float US[6] = float[6](0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
-  const float SS[6] = float[6](-1.0, -1.0, 1.0, 1.0, -1.0, 1.0);
-  float u = US[k], s = SS[k];
-  vec2 at = mix(s0 - dir * w, s1 + dir * w, u) + nrm * s * w;
-  vQ = vec2(mix(-w, L + w, u), s * w);
-  vLen = L; vW = w;
-  // The light spreads over the streak and the blur disc.
-  float area = (L + 2.0 * w) * 2.0 * w;
-  float energy = max(rad0 * rad0, 0.04) * 3.1416;
-  vCol = rad * Tc * wgt * min(energy / area, 1.0) * 9.0;
-  gl_Position = vec4(at / uRes * 2.0 - 1.0, 0.0, 1.0);
+  float rad0 = (${pf(S.radius)} + ${pf(S.radiusVar)} * r.x) * pxPerM;
+  float w = pfWidth(rad0, pfCoc(dist, uFocus, uAper, uRes.y), 26.0);
+  PfStreak s = pfStreak(pfPx(c0, uRes), pfPx(c1, uRes), w, pfCorner(gl_VertexID), uRes, 0.0);
+  vQ = s.q; vLen = s.len; vW = s.w;
+  vCol = rad * Tc * wgt * pfSpread(rad0, s.len, s.w) * 9.0;
+  gl_Position = s.pos;
 }`;
 
 export const FLAKE_FS = `${HEAD}
+${PRECIPFIELD}
 uniform sampler2D uA;
 in vec2 vQ;
 in vec3 vCol;
@@ -474,10 +451,7 @@ out vec4 o;
 void main() {
   float t = texelFetch(uA, ivec2(gl_FragCoord.xy), 0).w;
   if (vDist > t) discard;
-  float x = clamp(vQ.x, 0.0, vLen);
-  float d = length(vec2(vQ.x - x, vQ.y));
-  // Blur discs fade softly to their edge; sharp flakes keep a one-pixel edge.
-  float a = 1.0 - smoothstep(vW - max(0.9, vW * 0.7), vW, d);
+  float a = pfCover(vQ, vLen, vW);
   if (a <= 0.0) discard;
   o = vec4(vCol * a, 1.0);
 }`;

@@ -45,7 +45,7 @@ A small orange hut stands on an ice field at night, in a blizzard. A mast with t
 - Rime: white feathers on faces that meet the wind (the hut's windward side, the mast). The door and the lamp face the lee.
 - The haze: a half-size march, 34 fine steps to 42 m and 10 long ones to 170 m, then an even tail to the surface. Fire's smoke lighting (K3 lighting in `shaders.js`: Beer, multiple scatter, powder) shades the lamp's light; a Henyey-Greenstein lobe gives the cone its forward glow and the moon its glow in the upper right. A five-tap blur on both axes hides the dither.
 - The guy wires: analytic segments in the light pass with pixel coverage, rimed white, fading into the haze.
-- The snow: instanced streaks, lit in the vertex shader (sky, and the lamp with a forward lobe), dimmed by the haze, and tested against the surface depth.
+- The snow: instanced streaks on `shared/precipfield.js` (`PF_SNOW`), lit in the vertex shader (sky, and the lamp with a forward lobe), dimmed by the haze, and tested against the surface depth.
 - Post: bloom (`shared/glow.js`), the lamp flare (`shared/flare.js`: veil, orb and ghosts, no long streak), the grade (`shared/grade.js`).
 - The light pass runs up to 1.5 times larger than the canvas while the pixel budget allows (2.2 million), so the wires stay clean.
 
