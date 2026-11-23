@@ -31,7 +31,7 @@ export const ui = initPage({
       options: NIGHTS.map(n => ({ value: n.id, label: n.label })),
       onPick: (v: string) => skyHooks.night?.(v),
     },
-    // Look through: into the chosen telescope; view/through.ts names the observatory.
+    // Look through: the way in; view/through.ts names the observatory.
     actions: [{ verb: 'look', label: 'Look through', key: 'L', onPress: () => lookHooks.go?.() }],
     // City light: the Bortle class, 1 a pristine sky, 9 a city sky.
     slider: { label: 'City light', min: 1, max: 9, step: 1, value: 2, onInput: (v: number) => skyHooks.sky?.(v) },
@@ -61,7 +61,7 @@ export const ui = initPage({
       ['move', 'Find a star'],
       ['click', 'Hold a star, then choose an observatory'],
       ['1 2', 'Choose Little or Big Observatory'],
-      ['l', 'Look through the telescope'],
+      ['l', 'Look through, at the chosen observatory'],
       ['esc', 'Let go, or skip ahead'],
     ],
   },
