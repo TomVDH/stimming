@@ -22,6 +22,6 @@ A motorway interchange at night, from straight above, as a long exposure. Headli
 
 ## Next, each after Tom's look
 
-1. Tom's look at the three designs and the trail colours.
+1. Tom's look at the four designs and the trail colours.
 2. The diverging diamond: the east-west road becomes an arterial on a bridge, with two signals where it crosses over.
 3. Menu tile, icon round and favicon.
