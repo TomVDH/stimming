@@ -16,7 +16,7 @@ The fog rolls and swirls in the side light. Squeeze again: the stopper goes home
 | Space | 3D, a fixed camera a little above the jug, three-quarter light | The fog is a volume; only 3D shows it fill the round jug and catch the light from the side. |
 | Renderer | Raw WebGL2 on `shared/gl.js`: a fog pass at half size and its blur, a bench pass, a scene pass, bloom from `shared/glow.js`, the grade from `shared/grade.js` | Small programs link fast on D3D11. Signed distances draw the jug, stopper, hose and bulb. |
 | Fog shading | Fire's smoke shading (`shared/fire.js`), copied as `K3 lighting` | Tom, 2026-11-22: "fire toy smoke shader -- always". |
-| Fog motion | Fire's fluid, ported to raw WebGL2 in `fluid.js` | Tom, 2026-11-23: yes to the port. |
+| Fog motion | Fire's fluid, ported to raw WebGL2 in `fluid.js`, with billows on advected material coordinates | Tom, 2026-11-23: yes to the port, then "stronger motion". Image change in 0.5 s, against the first port: drift 1.9 times, after a pop 2.5 times. |
 | Vessel | A large round glass jug with a short neck | The classic lecture demonstration (reference). Glass gives crisp edge light that frames the fog. |
 | Pump | A rubber squeeze bulb on the bench, on a hose to the stopper | A pump in frame makes each stroke visible; a bulb is one bold shape, no prop. |
 | Light | Black room; one cool key from the back left, a faint warm rim from the right | Fog scatters forward: a back side light makes it glow white on black, as in lecture photos. |

@@ -115,8 +115,9 @@ void main() {
   v += cross(eta / (length(eta) + 1e-5), wC.xyz) * uVort * CELL * uDt;
   v *= max(1.0 - uDamp * uDt, 0.0);
   // A squeeze blows air from the stopper down the neck.
-  float jet = uJet * smoothstep(0.011, 0.004, length(P.xz)) * smoothstep(TOP - 0.11, TOP - 0.06, P.y);
-  v = mix(v, vec3(0.0, -0.75, 0.0), jet * 0.8);
+  // The jet reaches past the shoulder and spreads as it slows.
+  float jet = uJet * smoothstep(0.016, 0.004, length(P.xz)) * smoothstep(TOP - 0.2, TOP - 0.08, P.y);
+  v = mix(v, vec3(0.0, -1.3, 0.0), jet * 0.85);
   o = vec4(v, 0.0);
 }`;
 
@@ -180,7 +181,7 @@ void main() {
 const ADVECT_DYE = `${HEAD}
 uniform sampler2D tVel, tDye;
 uniform sampler3D uNoise;
-uniform float uDt, uFill, uWall, uEvap, uCool;
+uniform float uDt, uFill, uWall, uEvap, uCool, uJet;
 void main() {
   ivec3 c = cellOf(gl_FragCoord.xy);
   if (!wet(c)) {
@@ -201,16 +202,37 @@ void main() {
   heat *= max(1.0 - uCool * uDt, 0.0);
   // Warm gas takes its droplets back up as vapour.
   fog *= max(1.0 - max(heat, 0.0) * uEvap * uDt, 0.0);
+  // The squeeze's jet is clear air: it bores into the cloud and mixes in.
+  float jet = uJet * smoothstep(0.012, 0.003, length(P.xz)) * smoothstep(TOP - 0.05, TOP - 0.02, P.y);
+  fog *= 1.0 - min(jet * uDt * 30.0, 0.9);
   // A pop lights the nuclei: dense patches and thin gaps.
   if (uFill > 0.0) {
     float puff = texture(uNoise, P * 3.4).g;
     float big = texture(uNoise, P * 1.3 + vec3(0.3, 0.0, 0.0)).r;
-    float b = clamp(puff * 0.6 + big * 0.45 - 0.15, 0.0, 1.0);
-    fog = mix(fog, 0.18 + 1.9 * b * b, uFill);
+    float b = clamp(puff * 0.8 + big * 0.6 - 0.35, 0.0, 1.0);
+    fog = mix(fog, 0.04 + 2.2 * b * b, uFill);
     heat = mix(heat, 0.0, uFill);
   }
   o = vec4(fog, heat, 0.0, 0.0);
 }`;
+
+// Material coordinates: where the gas in each cell started, stored as an offset.
+// Small offsets keep half floats precise; noise read there curls with the flow.
+const ADVECT_UVW = `${HEAD}
+uniform sampler2D tVel, tUvw;
+uniform float uDt, uReset;
+void main() {
+  ivec3 c = cellOf(gl_FragCoord.xy);
+  vec3 pc = vec3(c) + 0.5, P = BMIN + pc * CELL;
+  if (uReset > 0.5 || !wet(c)) { o = vec4(0.0); return; }
+  // A smoothed velocity: a one-cell ripple would crease the coordinates.
+  vec3 v = 0.4 * F(tVel, c).xyz + 0.1 * (F(tVel, c + ivec3(1, 0, 0)).xyz + F(tVel, c - ivec3(1, 0, 0)).xyz
+         + F(tVel, c + ivec3(0, 1, 0)).xyz + F(tVel, c - ivec3(0, 1, 0)).xyz
+         + F(tVel, c + ivec3(0, 0, 1)).xyz + F(tVel, c - ivec3(0, 0, 1)).xyz);
+  o = vec4(S(tUvw, pc - v * uDt / CELL).xyz - v * uDt, 0.0);
+}`;
+// Each coordinate field resets once a period, half a period apart.
+const PERIOD = 1.6;
 
 /** The fluid's programs, for one linked() call with the scene's. */
 export function fluidPrograms(gl) {
@@ -222,6 +244,7 @@ export function fluidPrograms(gl) {
     fJac: program(gl, TRI_VS, JACOBI_FS),
     fProj: program(gl, TRI_VS, PROJECT),
     fDye: program(gl, TRI_VS, ADVECT_DYE),
+    fUvw: program(gl, TRI_VS, ADVECT_UVW),
   };
 }
 
@@ -233,6 +256,9 @@ export function makeFluid(gl, P, empty, noise) {
   const grid = () => target(gl, AW, AH, { clear: true });
   const mask = target(gl, AW, AH, { filter: gl.NEAREST, clear: true });
   const vel = [grid(), grid()], dye = [grid(), grid()], pr = [grid(), grid()], div = grid(), curl = grid();
+  const uvA = [grid(), grid()], uvB = [grid(), grid()];
+  // The sim clock for the coordinate resets; -1 resets both on the first step.
+  let simT = 0, lastA = -1, lastB = -1;
   const swap = a => { const t = a[0]; a[0] = a[1]; a[1] = t; };
   const set = (p, name, v) => { if (p.u[name] != null) gl.uniform1f(p.u[name], v); };
   const use = (p, open) => {
@@ -261,9 +287,9 @@ export function makeFluid(gl, P, empty, noise) {
       bind(gl, p, 'tDye', 1, dye[0]);
       bind(gl, p, 'tCurl', 2, curl);
       set(p, 'uDt', dt); set(p, 'uTime', s.t);
-      set(p, 'uBuoy', 0.04); set(p, 'uWeight', 0.0015);
-      set(p, 'uTurb', s.turb); set(p, 'uTurbF', 26);
-      set(p, 'uVort', 1.0); set(p, 'uDamp', 0.25);
+      set(p, 'uBuoy', 0.09); set(p, 'uWeight', 0.0015);
+      set(p, 'uTurb', s.turb); set(p, 'uTurbF', 16);
+      set(p, 'uVort', 1.0); set(p, 'uDamp', 0.12);
       set(p, 'uJet', s.jet);
       tri(gl, vel[1], empty);
       swap(vel);
@@ -289,6 +315,20 @@ export function makeFluid(gl, P, empty, noise) {
       bind(gl, p, 'tVel', 1, vel[0]);
       tri(gl, vel[1], empty);
       swap(vel);
+
+      simT += dt;
+      const a = Math.floor(simT / PERIOD), b = Math.floor(simT / PERIOD + 0.5);
+      p = P.fUvw;
+      use(p, s.open);
+      bind(gl, p, 'tVel', 0, vel[0]);
+      set(p, 'uDt', dt);
+      for (const [f, reset] of [[uvA, a !== lastA], [uvB, b !== lastB]]) {
+        bind(gl, p, 'tUvw', 1, f[0]);
+        set(p, 'uReset', reset ? 1 : 0);
+        tri(gl, f[1], empty);
+        swap(f);
+      }
+      lastA = a; lastB = b;
     }
     const p = P.fDye;
     use(p, s.open);
@@ -302,6 +342,7 @@ export function makeFluid(gl, P, empty, noise) {
     set(p, 'uWall', s.wall);
     set(p, 'uEvap', 0.05);
     set(p, 'uCool', 0.35);
+    set(p, 'uJet', s.jet);
     tri(gl, dye[1], empty);
     gl.bindTexture(gl.TEXTURE_3D, null);
     swap(dye);
@@ -311,6 +352,18 @@ export function makeFluid(gl, P, empty, noise) {
     step,
     dye: () => dye[0],
     vel: () => vel[0],
-    free() { [mask, div, curl, ...vel, ...dye, ...pr].forEach(t => free(gl, t)); },
+    uvA: () => uvA[0],
+    uvB: () => uvB[0],
+    // The weight of field A: zero when it resets, one when B resets.
+    wA: () => 1 - Math.abs(2 * ((simT / PERIOD) % 1) - 1),
+    // QA: reads one atlas back as floats.
+    read(which = 'dye') {
+      const t = (which === 'vel' ? vel : dye)[0];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+      const out = new Float32Array(AW * AH * 4);
+      gl.readPixels(0, 0, AW, AH, gl.RGBA, gl.FLOAT, out);
+      return { out, AW, AH, NX, NY, NZ, TC };
+    },
+    free() { [mask, div, curl, ...vel, ...dye, ...pr, ...uvA, ...uvB].forEach(t => free(gl, t)); },
   };
 }

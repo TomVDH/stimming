@@ -49,7 +49,7 @@ let gl = null, scene = null, raf = 0, timer = 0, visible = true, last = 0, frame
 let cssW = 1, cssH = 1, dpr = 1, started = false, pace = 1, lastInput = 0;
 const cam = makeCamera();
 const hose = new Float32Array(39);
-if (new URLSearchParams(location.search).has('qa')) globalThis.__cloud = { jar, cam, squeeze: () => squeeze(), release: () => release(), get loop() { return { raf, timer, busy: busy(), snd: snd.busy, pace }; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__cloud = { jar, cam, squeeze: () => squeeze(), release: () => release(), read: w => scene.read(w), get loop() { return { raf, timer, busy: busy(), snd: snd.busy, pace }; } };
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
@@ -112,7 +112,7 @@ function squeeze() {
   jar.p = clamp(jar.p + dp, 0, 0.9);
   snd.squeeze(pan, jar.p);
   // Pressure warms the air: droplets evaporate.
-  if (jar.fog > 0.002) { jar.fogTo *= 0.45; jar.spinV += calm ? 0 : 0.6; jar.roll = Math.min(1.2, jar.roll + (calm ? 0 : 0.35)); }
+  if (jar.fog > 0.002) { jar.fogTo *= 0.6; jar.spinV += calm ? 0 : 0.6; jar.roll = Math.min(2, jar.roll + (calm ? 0 : 0.6)); }
   // The air goes in down the stopper; compression warms the gas past the glass.
   jar.jet = calm ? 0 : 1;
   jar.chill = Math.max(-0.5, jar.chill - 0.3);
@@ -150,7 +150,7 @@ function pop(dp) {
     jar.plume = calm ? 0 : 0.6 * frac * (0.3 + 0.7 * jar.smoke);
     jar.plumeT = 0;
     jar.spinV = calm ? 0 : 0.5 + 0.8 * k;
-    jar.roll = calm ? 0 : 1.2;
+    jar.roll = calm ? 0 : 2;
     // The cold gas meets warmer glass.
     jar.chill = Math.max(jar.chill, 0.4 + 0.6 * frac);
   }
@@ -201,11 +201,11 @@ function step(dt) {
   const drift = calm || j.fog <= 0 ? 0 : 0.07;
   j.spinV = drift + (j.spinV - drift) * Math.exp(-dt / 1.6);
   j.chill *= Math.exp(-dt / 20);
-  j.jet *= Math.exp(-dt / 0.2);
+  j.jet *= Math.exp(-dt / 0.3);
   if (j.jet < 0.01) j.jet = 0;
   j.expand *= Math.exp(-dt / 0.1);
   if (j.expand < 0.01) j.expand = 0;
-  j.roll = Math.max(calm || j.fog <= 0 ? 0 : 0.25, j.roll * Math.exp(-dt / 3));
+  j.roll = Math.max(calm || j.fog <= 0 ? 0 : 0.45, j.roll * Math.exp(-dt / 4));
   j.plumeT += dt;
   j.plume *= Math.exp(-dt / 0.9);
   if (j.plume < 0.003) j.plume = 0;
@@ -243,7 +243,7 @@ function sim(dt) {
   const j = jar;
   scene.sim({
     dt: calm ? 0 : dt, t: j.t, open: !j.seated, fill: j.fill, wall: j.chill,
-    turb: 0.05 * (0.4 + 1.6 * j.roll), jet: j.jet, expand: 0.0012 * j.expand,
+    turb: 0.24 * (0.4 + 1.6 * j.roll), jet: j.jet, expand: 0.004 * j.expand,
   });
   j.fill = 0;
 }

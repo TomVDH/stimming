@@ -102,10 +102,12 @@ vec3 env(vec3 d) {
 const FOG = `${COMMON}
 ${ATLAS}
 uniform sampler3D uNoise;
-uniform sampler2D tDye, tVel;
+uniform sampler2D tDye, tVel, tUvA, tUvB;
 uniform vec2 uRes;
-uniform float uFog, uForm, uT, uPlume, uPlumeT, uFrame;
+uniform float uFog, uForm, uT, uPlume, uPlumeT, uFrame, uWA;
 const float SIG = 11.0;
+// A tent in y: level rays would show any one-cell ripple as stripes.
+vec4 SY(sampler2D t, vec3 c) { return 0.5 * (S(t, c + vec3(0.0, 0.5, 0.0)) + S(t, c - vec3(0.0, 0.5, 0.0))); }
 float dens(vec3 p, out float plume) {
   plume = 0.0;
   float d = 0.0;
@@ -113,16 +115,23 @@ float dens(vec3 p, out float plume) {
   if (m < 0.0 && p.y > WATER) {
     // Fire's split: the fluid grid gives the body, fine noise cuts its edges.
     vec3 c = (p - BMIN) / CELL;
-    float body = S(tDye, c).r;
-    // The flow carries the fine noise, so the edges streak with it.
-    vec3 q = p - S(tVel, c).xyz * 0.12 + vec3(0.0, -uT * 0.003, 0.0);
-    float fine = texture(uNoise, q * 9.5).r;
-    float b = sqrt(max(body - 0.18, 0.0) / 1.9);
+    float body = SY(tDye, c).r;
+    // The noise reads the fluid's material coordinates, so it curls with the eddies.
+    // Two fields reset in turn; each one's weight is zero as it resets.
+    float w1 = uWA;
+    // Half the travel: full travel shears the billows into streaks.
+    vec3 q1 = p + SY(tUvA, c).xyz * 0.5, q2 = p + SY(tUvB, c).xyz * 0.5 + vec3(0.37, 0.11, 0.53);
+    // Fine grain stays in world space: on the coordinates it creases at each slice.
+    float fine = texture(uNoise, p * 9.5 + vec3(0.0, -uT * 0.01, 0.0)).r;
+    // Billows: puffy cells a few centimetres wide, carried by the flow.
+    float puff = texture(uNoise, q1 * 4.2).g * w1 + texture(uNoise, q2 * 4.2).g * (1.0 - w1);
+    // A linear map: a root here bands the cloud at each grid slice.
+    float b = clamp((body - 0.04) / 1.2, 0.0, 1.0);
     // Formation: the densest nuclei light first, then the whole jug fills.
-    float th = 1.15 - uForm * 1.0;
+    float th = 1.15 - uForm * 1.3;
     float cover = smoothstep(th, th + 0.28, b + 0.12 + (fine - 0.5) * 0.3);
-    float ero = smoothstep(0.15, 0.6, fine * 0.55 + min(body, 1.0) * 0.45);
-    d = uFog * cover * body * (0.45 + 0.75 * ero) * smoothstep(0.0, 0.0015, -m);
+    float ero = smoothstep(0.3, 0.68, puff * 0.6 + fine * 0.3 + min(body, 1.0) * 0.3);
+    d = uFog * cover * pow(max(body, 0.0), 1.3) * 1.6 * (0.15 + 1.3 * ero) * smoothstep(0.0, 0.0015, -m);
   }
   if (uPlume > 0.0 && p.y > TOP - 0.01) {
     // The wisp rises out of the mouth, spreads and thins.
@@ -140,7 +149,7 @@ float dens(vec3 p, out float plume) {
 // The light taps read the fluid grid alone.
 float densLite(vec3 p) {
   if (jugInner(p) > 0.0 || p.y < WATER) return 0.0;
-  return uFog * S(tDye, (p - BMIN) / CELL).r * smoothstep(0.0, 0.3, uForm);
+  return uFog * SY(tDye, (p - BMIN) / CELL).r * smoothstep(0.0, 0.3, uForm);
 }
 /* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
 // A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
@@ -476,6 +485,9 @@ export async function makeScene(gl) {
     const g = v.fog;
     bind(gl, f, 'tDye', 1, fluid.dye());
     bind(gl, f, 'tVel', 2, fluid.vel());
+    bind(gl, f, 'tUvA', 3, fluid.uvA());
+    bind(gl, f, 'tUvB', 4, fluid.uvB());
+    gl.uniform1f(f.u.uWA, fluid.wA());
     gl.uniform1f(f.u.uFog, g.dens);
     gl.uniform1f(f.u.uForm, g.form);
     gl.uniform1f(f.u.uT, g.t);
@@ -516,5 +528,5 @@ export async function makeScene(gl) {
   }
 
   // One fluid time step; see makeFluid for the fields.
-  return { resize, frame, sim: s => fluid.step(s) };
+  return { resize, frame, sim: s => fluid.step(s), read: w => fluid.read(w) };
 }
