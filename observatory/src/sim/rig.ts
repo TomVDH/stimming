@@ -28,6 +28,16 @@ export const FILTERS: Record<Filter, [number, number, number]> = {
   'Hα': [0.012, 0, 0],
 };
 
+// The software shows each filter's picture in that filter's colour.
+// L stays grey: it passes all the light.
+export const TINTS: Record<Filter, [number, number, number]> = {
+  L: [1, 1, 1],
+  R: [1, 0.32, 0.26],
+  G: [0.34, 1, 0.4],
+  B: [0.38, 0.56, 1],
+  'Hα': [1, 0.2, 0.28],
+};
+
 export const rig = {
   /* camera */
   looping: true,

@@ -13,9 +13,9 @@ import {
 } from './optics.ts';
 import { Renderer, STRIDE } from './render.ts';
 import { BINS, Run, classFromTeff, cosmology, isFound, model } from './spectrum.ts';
-import { FILTERS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
+import { FILTERS, TINTS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
 import { IMG, SH, SW, Screen, TIP_COLS, af, fitV, log, logText, type Target } from './ui.ts';
-import { ADVICE, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
+import { ADVICE, FILTER_SAYS, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -128,6 +128,8 @@ let tipsOn = true;
 let tipId: string | null = null;
 let tipSince = 0;
 let tipTimer = 0;
+// A click opens a tip even with tips off.
+let tipPinned = false;
 // A tip shows after the pointer rests this long, in ms.
 const TIP_DWELL = 450;
 // The advisor: when each condition last spoke, and if it cleared since.
@@ -553,7 +555,7 @@ function cameraFrame(t: number, L: Layout, common: Record<string, number | numbe
   const sigma = sub / Math.sqrt(rig.liveStack ? Math.max(1, subs) : 1);
   const black = Math.max(0, skyE - 2 * sigma), soft = Math.max(1e-6, sigma * 4);
   const white = FULL * area;
-  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white });
+  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white, u_tint: TINTS[rig.filter] });
   if (fresh && t - lastStats > 150) {
     lastStats = t;
     readStats(L, black, soft, white, area);
@@ -663,9 +665,9 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
   }
   // The help window shows once the pointer rests on one region.
   let tip = null;
-  if (tipsOn && tipId && performance.now() - tipSince >= TIP_DWELL) {
+  if ((tipsOn || tipPinned) && tipId && performance.now() - tipSince >= TIP_DWELL) {
     const tp = programTip(tipId, tipCtx(lstDeg));
-    if (tp) tip = { title: tp.title, lines: wrap(tp.text, TIP_COLS), at: screen.hover };
+    if (tp) tip = { title: tp.title, lines: wrap(tp.text, TIP_COLS), tries: tp.try ? wrap(`Try: ${tp.try}`, TIP_COLS) : [], at: screen.hover };
   }
   const state = rig.slew ? 'Slewing' : rig.autofocus ? 'Autofocus running' : !rig.looping ? 'Idle'
     : `Exposing ${subClock.toFixed(1)} / ${rig.exposure} s · ${rig.filter}`;
@@ -747,6 +749,8 @@ async function autofocus(): Promise<void> {
 }
 
 const EXPOSURES = [2, 5, 10, 30, 60];
+// One focuser click, in steps of 1 µm.
+const FOCUS_STEP = 25;
 // The cooler's set points in °C.
 const COOLER_SETS = [-25, -20, -15, -10, -5, 0];
 const actions = {
@@ -770,7 +774,7 @@ const actions = {
   },
   filter: (f: Filter): void => {
     if (f === rig.filter) return;
-    log(`Filter wheel: ${rig.filter} → ${f}`);
+    log(`Filter ${f}: ${FILTER_SAYS[f]}`);
     rig.filter = f;
     restack = 'reset';
   },
@@ -800,6 +804,14 @@ const actions = {
     if (COOLER_SETS[i] === rig.coolerSet) return;
     rig.coolerSet = COOLER_SETS[i];
     log(`Cooler set point: ${rig.coolerSet} °C`);
+  },
+  // One click moves the focuser 25 steps, a fortieth of a millimetre.
+  focusStep: (dir: number): void => {
+    if (rig.autofocus) return;
+    rig.focus += dir * FOCUS_STEP;
+    hfrNow = hfrAt(rig.focus, fwhm());
+    log(`Focuser ${dir < 0 ? 'in' : 'out'} to ${Math.round(rig.focus).toLocaleString('en')}: stars ${hfrNow.toFixed(2)} px`);
+    restack = 'reset';
   },
   tips: (): void => {
     tipsOn = !tipsOn;
@@ -922,6 +934,11 @@ function showPageTip(el: HTMLElement): void {
   const p = document.createElement('span');
   p.textContent = t.text;
   tipEl.replaceChildren(b, p);
+  if (t.try) {
+    const em = document.createElement('em');
+    em.textContent = t.try;
+    tipEl.append(em);
+  }
   tipEl.hidden = false;
   // Above the control, inside the window.
   const r = el.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight;
@@ -974,6 +991,8 @@ stage.addEventListener('keydown', (e) => {
     else if (e.key === ' ') actions.startStop();
     else if (e.key === 't' || e.key === 'T') actions.track();
     else if (e.key === 'h' || e.key === 'H') actions.tips();
+    else if (e.key === '[') actions.focusStep(-1);
+    else if (e.key === ']') actions.focusStep(1);
     else if (e.key.startsWith('Arrow')) {
       // Arrows nudge the mount by a tenth of the view.
       // Shift makes the nudge a fiftieth.
@@ -1021,6 +1040,7 @@ stage.addEventListener('pointermove', (e) => {
       const id = screen.tipAt(m[0], m[1]);
       if (id !== tipId) {
         tipId = id;
+        tipPinned = false;
         tipSince = performance.now();
         clearTimeout(tipTimer);
         if (id && tipsOn) tipTimer = window.setTimeout(() => { uiDirty = true; wake(true); }, TIP_DWELL + 20);
@@ -1064,6 +1084,13 @@ stage.addEventListener('pointerup', (e) => {
     } else if (!drag.moved && performance.now() - drag.t0 < 400 && m && screen.inImage(m[0], m[1])) {
       const b = pickAt(m[0], m[1]);
       if (b && b !== selected) select(b);
+    } else if (!drag.moved && m && screen.tipAt(m[0], m[1])) {
+      // A click on a readout opens its tip at once.
+      tipId = screen.tipAt(m[0], m[1]);
+      tipSince = performance.now() - TIP_DWELL;
+      tipPinned = true;
+      uiDirty = true;
+      wake(true);
     }
   }
   drag = null;

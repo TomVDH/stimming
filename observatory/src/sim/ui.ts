@@ -32,17 +32,18 @@ export type View = {
   bar: { px: number; label: string }; banner: string; time: number; still: boolean;
   sel: { name: string; info: string; run: Run | null; found: Found[]; lines: string[] } | null;
   // The help window under the pointer, in monitor px, or null.
-  tip: { title: string; lines: string[]; at: [number, number] } | null;
+  // tries: the lines of its Try, drawn apart in yellow.
+  tip: { title: string; lines: string[]; tries: string[]; at: [number, number] } | null;
   tipsOn: boolean;
 };
 export type Actions = {
   fit(): void; one(): void; zoom(f: number): void;
   goto(i: number): void; startStop(): void; exposure(dir: number): void; filter(f: Filter): void; reset(): void;
   autofocus(): void; guide(): void; night(): void; stars(): void; slewSelected(): void;
-  track(): void; cooler(dir: number): void; tips(): void;
+  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void;
 };
 // The help window's text width in cells.
-export const TIP_COLS = 40;
+export const TIP_COLS = 44;
 
 /* ---------- the log ---------- */
 const lines: { t: string; text: string; cls: string }[] = [];
@@ -179,7 +180,8 @@ export class Screen {
   // The help window: white on blue, with a shadow, as old DOS help drew it.
   private help(t: NonNullable<View['tip']>): void {
     const g = this.g;
-    const w = TIP_COLS + 4, h = t.lines.length + 2;
+    const extra = t.tries.length ? t.tries.length + 1 : 0;
+    const w = TIP_COLS + 4, h = t.lines.length + extra + 2;
     const pc = Math.floor(t.at[0] / CW), pr = Math.floor((t.at[1] - OY) / CH);
     // Below and right of the pointer; else left of it, or above it.
     let c = pc + 2, r = pr + 1;
@@ -192,6 +194,8 @@ export class Screen {
     this.box(c, r, c + w - 1, r + h - 1, '', V.white);
     this.put(c + 2, r, ` ${t.title} `, V.yellow, V.blue);
     t.lines.forEach((l, i) => this.put(c + 2, r + 1 + i, l, V.white, V.blue));
+    // The Try sits after a blank row, in yellow.
+    t.tries.forEach((l, i) => this.put(c + 2, r + 2 + t.lines.length + i, l, V.yellow, V.blue));
   }
 
   private titleBar(v: View): void {
@@ -335,7 +339,10 @@ export class Screen {
     const g = this.g;
     this.box(84, 15, 119, 19, 'FOCUS');
     this.put(86, 16, 'POS', V.grey);
+    // The focuser moves by hand with < and >.
+    this.key(89, 16, '<', () => a.focusStep(-1), false, V.white, 'focus');
     this.put(90, 16, String(Math.round(rig.focus)).padStart(6), V.yellow);
+    this.key(96, 16, '>', () => a.focusStep(1), false, V.white, 'focus');
     this.put(98, 16, 'HFR', V.grey);
     this.put(102, 16, `${v.hfr.toFixed(2)}`, V.yellow);
     this.tip(86, 16, 21, 'focus');

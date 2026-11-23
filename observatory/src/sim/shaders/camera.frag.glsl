@@ -6,6 +6,8 @@ uniform vec4 u_rect;
 uniform float u_black;
 uniform float u_soft;
 uniform float u_white;
+// The software tints each filter's picture in that filter's colour.
+uniform vec3 u_tint;
 out vec4 o;
 
 void main() {
@@ -17,5 +19,5 @@ void main() {
   vec3 v = texelFetch(u_acc, ivec2(gl_FragCoord.xy), 0).rgb;
   vec3 x = max(v - u_black, 0.0);
   vec3 y = asinh(x / u_soft) / asinh((u_white - u_black) / u_soft);
-  o = vec4(clamp(y, 0.0, 1.0), 1.0);
+  o = vec4(clamp(y, 0.0, 1.0) * u_tint, 1.0);
 }
