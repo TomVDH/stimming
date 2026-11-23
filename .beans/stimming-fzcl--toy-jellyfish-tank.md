@@ -22,6 +22,7 @@ Build Jellyfish tank (idea 80, group F) as a Lab toy: an MVP at high fidelity, B
 - [x] QA Q1 to Q10, docs/toys/jellyfish.md
 - [x] Commit and push
 - [x] Tom, 2026-11-23: other kinds of jelly, colours, a starfield of small ones (Vancouver Aquarium)
+- [x] Tom, 2026-11-23: icon round spike-jellyfish-2 in the new colours
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -36,3 +37,4 @@ Build Jellyfish tank (idea 80, group F) as a Lab toy: an MVP at high fidelity, B
 - Icons: no pick in icons/picks.json, so A of spike jellyfish-1 is on the menu. The intro emblem is A's emblem at 128, scaled to fill: a white bell with the four rings cut, white arms and fringe. The favicon shared/favicons/jellyfish.png comes from the menu tile.
 - Open for Tom: 3D or flat and the presentation (round window by default), the Dutch name (draft Kwallentank), the icon pick.
 - 2026-11-23 pass: four kinds (two sea nettles, two moon jellies, a purple-striped and an egg-yolk jelly) and a starfield of 700 small jellies (420 narrow) in soft mixed colours; darker water so the colours read. No photo of the aquarium's small-jelly tank was found; the starfield is a reading of Tom's words. The icons still show a moon jelly.
+- Icon round jellyfish-2 (Tom's yes, 2026-11-23): A is a Pacific sea nettle (amber bell, rust bands and tentacles, cream arms); D is a dark water block with the nettle and five small jellies in soft colours. Emblems jellyfish2-a.svg and jellyfish2-d.svg. The menu and the intro emblem keep round 1 A until Tom picks.
