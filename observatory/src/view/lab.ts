@@ -101,7 +101,7 @@ export async function initLab(api: LabApi): Promise<void> {
   btn('Copy plan', 'Copy the shot lines for this framing (P)', copyPlan);
   const sheetBtn = btn('Sheet', 'Contact sheet of every shot (K)', () => toggleSheet());
   const scopeBtns = (['refractor', 'reflector'] as Scope[]).map(s =>
-    btn(s === 'refractor' ? 'Classic' : 'Keck', `The ${s}'s dome`, () => { void buildSheet(s); }));
+    btn(s === 'refractor' ? 'Little' : 'Big', `The ${s === 'refractor' ? 'Little' : 'Big'} Observatory`, () => { void buildSheet(s); }));
   panel.append(note);
   stageEl.append(panel, sheet);
   const syncScope = (): void => scopeBtns.forEach((b, i) => press(b, (i ? 'reflector' : 'refractor') === api.scope));
@@ -182,7 +182,7 @@ export async function initLab(api: LabApi): Promise<void> {
       // The page stays live between the stills.
       await new Promise(r => setTimeout(r, 0));
     }
-    say(`${scope === 'reflector' ? 'Keck' : 'Classic'} dome`);
+    say(`${scope === 'reflector' ? 'Big' : 'Little'} Observatory`);
   }
 
   // The free camera eats its own pointer, so the stage takes no tap.

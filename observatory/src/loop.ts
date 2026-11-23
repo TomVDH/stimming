@@ -138,7 +138,7 @@ const shutting = () => followers().some(d => !shutterAtRest(d.sh) || d.sh.p !== 
 const turning = () => machine.moving || shutting()
   || followers().some(d => !atRest(d.ax) || !atRest(d.alt) || azDelta(d.ax.pos, leaderAz()) !== 0);
 // The cuts, the crossfade or the lights still need frames.
-const showing = () => cuts.busy || light !== lightGoal(machine.phase);
+const showing = () => (cuts.busy && !cuts.away) || light !== lightGoal(machine.phase);
 const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
 // Where the target stands now.
 const targetPos = (s: Star): AltAz => toAltAz(s.ra, s.dec, lst(clock.skyMs(), LON), LAT);
@@ -237,7 +237,8 @@ function tick(now: number): void {
   machine.step(dt, { targetAlt: alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
   if (machine.moving || machine.phase !== before) dirty = true;
   cuts.step(dt, liftView());
-  if (cuts.busy) dirty = true;
+  // Behind the view through the telescope, the scene draws no frames.
+  if (cuts.busy && !cuts.away) dirty = true;
   if (pauseBtn) pauseBtn.hidden = !cuts.showing;
   camRows();
   const lv = lightLevel(machine.phase, light, dt);

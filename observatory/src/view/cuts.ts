@@ -88,12 +88,8 @@ const STILL_S = 2.6, FADE_S = 1.2;
 // The last cut fades down in DIP_DOWN seconds.
 // The wide shot fades up in DIP_UP seconds.
 const DIP_DOWN = 0.35, DIP_UP = 0.45;
-// With a view to open, the glass shot pushes into the glass instead.
-// The push lasts PUSH_S seconds.
-// The eye ends at PUSH_END of its distance.
-const PUSH_S = 1.8, PUSH_END = 0.08;
-// The push speeds up into the glass.
-const pushIn = (k: number): number => 1 - (1 - PUSH_END) * k ** 2.4;
+// With a view to open, the same dip leads into the telescope instead.
+// Tom, 2026-11-23: the cuts stream into it with the smooth black wipe.
 // The cuts show on a 2.39:1 film frame, between letterbox bars.
 // A stage wider than the film shows no bars.
 const FILM = 2.39;
@@ -276,10 +272,9 @@ function placeGlass(cut: Cut, aspect: number): Framed {
 // Its azimuth is the one it has now.
 // So the eye turns with the tube and the dome.
 // The glass rises into the frame and stops at its centre.
-// push: the share of the eye's distance left, 1 outside the push.
-function glassEye(s: Framed, v: View, push = 1): void {
+function glassEye(s: Framed, v: View): void {
   glassAt(v.restAlt, v.tubeAz);
-  const d = s.glass!.dist * push;
+  const d = s.glass!.dist;
   s.focus = d;
   s.eye.copy(gp).addScaledVector(ga, d * Math.cos(GLASS_UNDER)).addScaledVector(gu, -d * Math.sin(GLASS_UNDER));
   s.aim.copy(gp);
@@ -380,17 +375,6 @@ function black(k: number): void {
   dip.style.opacity = String(k);
 }
 
-// The glass on the stage in CSS px: its centre and radius.
-const gEdge = new Vector3();
-function glassOnStage(): Circle {
-  camera.updateMatrixWorld();
-  const w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
-  const c = gEdge.copy(gp).project(camera);
-  const x = (c.x + 1) / 2 * w, y = (1 - c.y) / 2 * h;
-  const e = gEdge.copy(gp).addScaledVector(gu, GLASS_D * dome.root.scale.x / 2).project(camera);
-  return { x, y, r: Math.hypot((e.x + 1) / 2 * w - x, (1 - e.y) / 2 * h - y) };
-}
-
 // The bars follow the stage's aspect, so a resize keeps the film frame.
 function showBars(on: boolean, opacity = 1): void {
   const h = `${(1 - band(camera.aspect)) / 2 * 100}%`;
@@ -409,12 +393,11 @@ let redraw: () => void = () => {};
 export type Circle = { x: number; y: number; r: number };
 // The view that the glass shot opens into, from the loop.
 export type Through = {
-  // The push starts.
+  // The dip into the view starts.
   begin(): void;
-  // k: 0 to 1 through the push.
-  // c: the glass on the stage, or null for reduced motion.
-  step(k: number, c: Circle | null): void;
-  // The push is over; the view fills the stage.
+  // Unused since the dip replaced the push; view/through.ts drops it.
+  step?(k: number, c: Circle | null): void;
+  // The frame is black; the view fades up over the stage.
   done(): void;
   // A skip drops the view.
   cancel(): void;
@@ -423,11 +406,12 @@ export type Through = {
 };
 let thru: Through | null = null;
 // mode: 'off', 'cuts' (hard cuts), 'dip' (the dip to black).
-// 'push' goes into the glass; 'away' holds while the view shows.
+// 'away' holds the black while the view shows.
 // Reduced motion: 'wait', 'still', then 'fade'.
 // 'wait' keeps the wide shot while the tube lifts.
-let mode: 'off' | 'cuts' | 'dip' | 'wait' | 'still' | 'fade' | 'push' | 'away' = 'off';
-let pushT = 0;
+let mode: 'off' | 'cuts' | 'dip' | 'wait' | 'still' | 'fade' | 'away' = 'off';
+// True while the dip leads into the view, not to the wide shot.
+let into = false;
 let seq: Seq = startSeq('open', { altLeft: 0, altEta: 0 });
 // The tube as the loop last reported it.
 let view: View = { altLeft: 0, altEta: 0, tubeAlt: 0, tubeAz: 0, restAlt: 0, shutter: 0, cupAz: 0, cupGoal: 0 };
@@ -496,6 +480,7 @@ function feedGlass(show: boolean): void {
 
 function toWide(): void {
   mode = 'off';
+  into = false;
   starLift(false);
   dropBeats();
   cutFocus(null);
@@ -512,6 +497,7 @@ function stepDip(dt: number): void {
   dipT += dt;
   // The black and the grain change in frame(), on the film beat.
   if (dipT < DIP_DOWN) return;
+  if (into) { goAway(); return; }
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
@@ -530,10 +516,13 @@ function stepDip(dt: number): void {
   if (k >= 1) toWide();
 }
 
-function startPush(): void {
-  mode = 'push';
-  pushT = 0;
-  thru!.begin();
+// The frame is black: the view takes over the stage.
+function goAway(): void {
+  into = false;
+  mode = 'away';
+  dropBeats();
+  black(1);
+  thru!.done();
 }
 
 function startFade(): void {
@@ -546,19 +535,22 @@ function startFade(): void {
 export const cuts = {
   // True while the cuts, the dip or the crossfade run.
   get busy(): boolean { return mode !== 'off'; },
+  // True while the view through the telescope holds the stage; the scene sleeps.
+  get away(): boolean { return mode === 'away'; },
   // True while a close shot or the dip shows; a tap or Esc then skips.
-  get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still' || mode === 'push'; },
+  get showing(): boolean { return mode === 'cuts' || mode === 'dip' || mode === 'still'; },
   get shot(): Shot | null {
     // The wide shot still shows while it fades to black.
     if (mode === 'cuts') return inT < DIP_DOWN ? null : seq.shot;
     if (mode === 'dip') return dipWide ? null : lastShot;
-    return mode === 'still' || mode === 'push' || mode === 'away' ? 'glass' : null;
+    if (mode === 'away') return lastShot;
+    return mode === 'still' ? 'glass' : null;
   },
   // Seconds since the pick.
   get time(): number { return seq.total; },
   // True while the picture runs on the film beat.
-  // That is the shots, the push and the dip down.
-  get film(): boolean { return mode === 'cuts' || mode === 'push' || (mode === 'dip' && !dipWide); },
+  // That is the shots and the dip down.
+  get film(): boolean { return mode === 'cuts' || (mode === 'dip' && !dipWide); },
   // The loop hands over the catalog once it loads.
   setStars(s: readonly Star[]): void { stars = s; },
   // Starts the sequence.
@@ -592,7 +584,7 @@ export const cuts = {
   skip(): void {
     thru?.cancel();
     // A skip in the dip lands on the wide shot at once.
-    if (mode === 'cuts' || mode === 'dip' || mode === 'wait' || mode === 'push') { seq = skipSeq(seq); toWide(); }
+    if (mode === 'cuts' || mode === 'dip' || mode === 'wait') { seq = skipSeq(seq); toWide(); }
     else if (mode === 'still') startFade();
     else return;
     redraw();
@@ -619,24 +611,21 @@ export const cuts = {
       seq = stepSeq(seq, dt, v);
       if (seq.done) {
         lastShot = seq.shot;
-        // The glass opens into the view, if the loop has one.
-        if (thru?.has() && lastShot === 'glass') startPush();
-        else {
-          mode = 'dip';
-          dipT = 0; dipWide = false;
-          stepDip(0);
-        }
+        // The dip leads into the view, if the loop has one.
+        mode = 'dip';
+        dipT = 0; dipWide = false;
+        into = !!thru?.has();
+        if (into) thru!.begin();
+        stepDip(0);
       }
-    } else if (mode === 'push') {
-      pushT += dt;
-      if (pushT >= PUSH_S) { mode = 'away'; thru!.done(); }
     } else if (mode === 'dip') stepDip(dt);
     else if (mode === 'wait') {
       // The still shows the settled glass in the open slit.
       if (v.altLeft <= 0 && v.shutter >= 1) { mode = 'still'; stillT = 0; }
     } else if (mode === 'still') {
       stillT += dt;
-      if (stillT >= STILL_S) { if (thru?.has()) startPush(); else startFade(); }
+      // Reduced motion goes into the view with no dip.
+      if (stillT >= STILL_S) { if (thru?.has()) { thru.begin(); goAway(); } else startFade(); }
     } else if (mode === 'fade' && !grab) {
       fadeT += dt;
       const k = Math.min(1, fadeT / FADE_S);
@@ -650,11 +639,10 @@ export const cuts = {
     // A pick dips to black first.
     // The wide shot fades down, then the first shot comes up.
     const inDown = mode === 'cuts' && inT < DIP_DOWN;
-    const through = mode === 'push' || mode === 'away';
-    const close = (mode === 'cuts' && !inDown) || mode === 'still' || through || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
+    const close = (mode === 'cuts' && !inDown) || mode === 'still' || mode === 'away' || (mode === 'dip' && !dipWide) || (mode === 'fade' && grab);
     // The dip holds the last cut until the frame is black.
     // The reduced-motion still is the glass shot.
-    const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
+    const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' || mode === 'away' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
     // The choice waits for the cut's first close frame, after the dip.
     if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = heroReady(); }
@@ -673,10 +661,8 @@ export const cuts = {
     const s = locks.of(cutOf(shot));
     // Only the mirror shot lifts the stars.
     starLift(!!s.mirror);
-    // Reduced motion opens the view with no push.
-    const k = mode === 'away' ? 1 : Math.min(1, pushT / PUSH_S);
     if (s.mirror) mirrorEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH);
-    else if (s.glass) glassEye(s, view, through && !reduced() ? pushIn(k) : 1);
+    else if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     // The film lens fills the band between the bars.
     applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
@@ -689,7 +675,6 @@ export const cuts = {
     // The camera and the hero swapped under it.
     if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
     showBars(true);
-    if (mode === 'push') thru!.step(k, reduced() ? null : glassOnStage());
   },
   // Fades the older beat as the next comes due.
   // k: the share of the beat gone, 0 to 1.
