@@ -3,8 +3,9 @@ import '../world/hero.ts';
 import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { MIRROR_PUSH, cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
+import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
 import type { Phase } from '../core/machine.ts';
+import type { Dome } from '../world/observatory.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
@@ -68,7 +69,9 @@ const PLANS: Record<Exclude<Shot, 'glass' | 'mirror'>, Plan> = {
 const EDGE_LEAD = 4.5;
 // The big dome's floor lies a third of a radius under the centre.
 // Its lift shot stands higher, behind the fork, on the tube's middle.
-if (complex.main.big) Object.assign(PLANS.lift, { eye: [-0.55, -0.45, -0.2], look: [0.2, 0, 0.5], tall: [0.15, 0, 0.45] });
+const BIG_LIFT: Plan = { eye: [-0.55, -0.45, -0.2], look: [0.2, 0, 0.5], tall: [0.15, 0, 0.45], inside: true, aperture: 0.012 };
+// A shot's plan in the dome the cuts show.
+const planOf = (shot: Exclude<Shot, 'glass' | 'mirror'>): Plan => (shot === 'lift' && dome.big ? BIG_LIFT : PLANS[shot]);
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
@@ -100,13 +103,18 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 // glass: the glass shot's eye distance, in metres.
 // Its eye follows the glass's place of rest each frame.
 // focus: metres from the eye to the sharp plane.
-type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; push?: boolean };
+type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; mirror?: boolean };
 
 const centre = new Vector3();
 const ray = new Raycaster();
 const tmp = new Vector3();
 // The cupola's radius in metres, set at the pick.
 let R = 1;
+// The dome the cuts show, set at the pick.
+// The hero model stands in only for the main dome.
+let dome: Dome = complex.main;
+// The hero's telescope, when the cuts show the main dome.
+const heroScope = () => (dome === complex.main ? hero.scope : null);
 
 // Inside the dome, the eye keeps clear of the hero's fixed parts.
 // The values come from world/hero.ts and world/hero-scope.ts.
@@ -121,14 +129,14 @@ const BIG: Room = { floor: 1.71, wall: 3.15, keep: [[0, 0, 0.9], [1.09, 2.99, 0.
 const local = new Vector3();
 // True when an inside eye clears the wall, floor and parts.
 function clearInside(eye: Vector3): boolean {
-  const room = complex.main.big ? BIG : CLASSIC;
-  complex.main.root.worldToLocal(local.copy(eye));
+  const room = dome.big ? BIG : CLASSIC;
+  dome.root.worldToLocal(local.copy(eye));
   if (Math.hypot(local.x, local.z) > room.wall - 0.25 || local.y < room.floor + 0.15) return false;
   return room.keep.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
 }
 
 // Everything in the complex that can stand between the eye and the dome.
-const blockers = (): Object3D[] => complex.root.children.filter(o => o !== complex.main.root);
+const blockers = (): Object3D[] => complex.root.children.filter(o => o !== dome.root);
 
 // A point of the slit's frame in world space.
 // a: the frame's azimuth in radians.
@@ -139,7 +147,7 @@ function slitPoint(p: Point, a: number, out: Vector3): Vector3 {
 
 // The slit's azimuth in degrees, read from the posed cupola.
 // The cuts frame the hero's slit, which turns past the light model's.
-const slitNow = (): number => heroSlitAz(complex.main);
+const slitNow = (): number => heroSlitAz(dome);
 
 // Places the eye of one cut so nothing blocks the dome.
 // az: the slit's azimuth in degrees.
@@ -147,7 +155,7 @@ const slitNow = (): number => heroSlitAz(complex.main);
 // The look point turns with the slit, not with the eye.
 function place(cut: Cut, az: number, aspect: number): Framed {
   if (cut.shot === 'glass' || cut.shot === 'mirror') return placeGlass(cut, aspect);
-  const plan = PLANS[cut.shot];
+  const plan = planOf(cut.shot);
   const look = slitPoint(plan.look, az * DEG, new Vector3());
   const { fov, tall } = lens(cut.fov, aspect);
   const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
@@ -204,7 +212,7 @@ const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 // The real model never moves for it.
 function glassAt(alt: number, az: number): void {
   // The big dome's reflector gives its own pose.
-  const sc = hero.scope;
+  const sc = heroScope();
   if (sc?.restGlass) { sc.restGlass(alt, az, gp, ga, gu); return; }
   const a = alt * DEG, z = az * DEG;
   tmp.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
@@ -215,7 +223,7 @@ function glassAt(alt: number, az: number): void {
     .multiply(gr.makeRotationY(-ha))
     .multiply(gr.makeRotationX(-decl))
     .multiply(gr.makeTranslation(D_OFF, 0, 0))
-    .premultiply(complex.main.root.matrixWorld);
+    .premultiply(dome.root.matrixWorld);
   gp.set(0, 0, GLASS_Z).applyMatrix4(gm);
   ga.set(0, 0, 1).transformDirection(gm);
   // Up lies across the axis, toward the sky.
@@ -227,10 +235,10 @@ function glassAt(alt: number, az: number): void {
 // A portrait frame holds it at GLASS_FILL_TALL of its width.
 function placeGlass(cut: Cut, aspect: number): Framed {
   // The reflector frames its front ring; the refractor, its glass.
-  const d = hero.scope?.aperture ?? GLASS_D * complex.main.root.scale.x;
+  const d = heroScope()?.aperture ?? GLASS_D * dome.root.scale.x;
   const dist = d / GLASS_FILL / 2 / Math.tan(cut.fov * DEG / 2);
   const fov = aspect < 1 ? 2 * Math.atan(d / GLASS_FILL_TALL / aspect / 2 / dist) / DEG : cut.fov;
-  return { eye: new Vector3(), aim: new Vector3(), fov, focus: dist, aperture: GLASS_APERTURE, glass: { dist }, push: cut.shot === 'mirror' };
+  return { eye: new Vector3(), aim: new Vector3(), fov, focus: dist, aperture: GLASS_APERTURE, glass: { dist }, mirror: cut.shot === 'mirror' };
 }
 
 // Puts the glass shot's eye before the glass's place of rest.
@@ -245,46 +253,36 @@ function glassEye(s: Framed, v: View): void {
   s.aim.copy(gp);
 }
 
-/* ---------- the mirror shot: a push down the reflector's tube ---------- */
-// The push ends with the primary at MIRROR_FILL of the band's height.
+/* ---------- the mirror shot: close on the reflector's primary ---------- */
+// Tom, 2026-11-23: the shot cuts in; it does not push down the tube.
+// The primary fills MIRROR_FILL of the band's height.
 const MIRROR_FILL = 0.95;
-// The lens widens to MIRROR_FOV degrees as the eye pushes in.
-const MIRROR_FOV = 40;
 const side = new Vector3(), off = new Vector3();
-// t: seconds in the shot.
-// The push starts on the glass shot's last frame.
-// The eye keeps off the axis, midway between the housing and the ring.
-// It turns from under the axis to between two vanes before it reaches them.
-// So the secondary crests over the camera and the vanes pass beside it.
-// It returns the push's eased share, 0 to 1.
-function pushEye(s: Framed, v: View, t: number): number {
-  const sc = hero.scope;
-  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined) { glassEye(s, v); return 0; }
+// The eye stands inside the tube, past the secondary.
+// It sits off the axis, between two vanes, midway between the housing and the ring.
+// So the secondary's silhouette shows in the mirror, and no vane cuts the frame.
+function mirrorEye(s: Framed, v: View): void {
+  const sc = heroScope();
+  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined) { glassEye(s, v); return; }
   sc.restGlass(v.restAlt, v.tubeAz, gp, ga, gu);
-  const k = ease(Math.min(1, t / MIRROR_PUSH));
-  const fov0 = cutOf('mirror').fov;
-  const d0 = s.glass!.dist, d1 = sc.mirrorR / MIRROR_FILL / Math.tan(MIRROR_FOV * DEG / 2);
-  const d = d0 + (d1 - d0) * k;
-  s.fov = fov0 + (MIRROR_FOV - fov0) * k;
-  const o = Math.max(d * Math.tan(GLASS_UNDER), (sc.secR + sc.aperture / 2) / 2);
-  const turn = Math.min(1, k * 2) * Math.PI / 4;
+  s.fov = cutOf('mirror').fov;
+  const d = sc.mirrorR / MIRROR_FILL / Math.tan(s.fov * DEG / 2);
+  const o = (sc.secR + sc.aperture / 2) / 2;
   side.crossVectors(ga, gu);
-  off.copy(gu).multiplyScalar(-Math.cos(turn)).addScaledVector(side, Math.sin(turn));
+  off.copy(gu).multiplyScalar(-Math.SQRT1_2).addScaledVector(side, Math.SQRT1_2);
   s.eye.copy(gp).addScaledVector(ga, d).addScaledVector(off, o);
   s.aim.copy(gp);
   s.focus = s.eye.distanceTo(gp);
-  return k;
 }
 
-// Tom, 2026-11-23: lift the stars in the mirror shot.
-// At full push the stars draw LIFT_SIZE times as large, LIFT_GAIN times as bright.
-const LIFT_SIZE = 2.6, LIFT_GAIN = 2.2;
-let lifted = 0;
-// k: 0 draws the stars as they are, 1 lifts them in full.
-function starLift(k: number): void {
-  if (k === lifted) return;
-  lifted = k;
-  setStarLift(1 + (LIFT_SIZE - 1) * k, 1 + (LIFT_GAIN - 1) * k);
+// Tom, 2026-11-23: realistic stars in the mirror.
+// The stars keep their true size; the mirror shot draws them LIFT_GAIN times as bright.
+const LIFT_GAIN = 1.5;
+let lifted = false;
+function starLift(on: boolean): void {
+  if (on === lifted) return;
+  lifted = on;
+  setStarLift(1, on ? LIFT_GAIN : 1);
 }
 
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
@@ -425,7 +423,7 @@ function feedGlass(show: boolean): void {
 
 function toWide(): void {
   mode = 'off';
-  starLift(0);
+  starLift(false);
   dropBeats();
   cutFocus(null);
   cutGrain(0);
@@ -489,20 +487,21 @@ export const cuts = {
   // An open shutter starts with the lift shot.
   // v: the tube and its lift.
   // target: the picked star.
-  start(phase: Phase, v: View, target: AltAz): void {
-    const main = complex.main;
-    main.root.updateMatrixWorld(true);
-    main.cupola.getWorldPosition(centre);
-    R = DOME_R1 * main.root.scale.x;
+  // d: the dome the cuts show; the main dome by default.
+  start(phase: Phase, v: View, target: AltAz, d: Dome = complex.main): void {
+    dome = d;
+    d.root.updateMatrixWorld(true);
+    d.cupola.getWorldPosition(centre);
+    R = DOME_R1 * d.root.scale.x;
     view = v;
     // The reflector adds the mirror shot.
-    seq = startSeq(phase, v, hero.ready && !!hero.scope?.restGlass);
+    seq = startSeq(phase, v, hero.ready && !!heroScope()?.restGlass);
     // Reduced motion waits in the wide shot until the tube rests.
     mode = reduced() ? 'wait' : 'cuts';
     stillT = 0;
     inT = 0;
     locks.clear();
-    useHero = hero.ready;
+    useHero = hero.ready && d === complex.main;
     cutShot = null;
     hero.scope?.setTarget(altAzDir(target), TARGET_K);
   },
@@ -555,7 +554,7 @@ export const cuts = {
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
     // The choice waits for the cut's first close frame, after the dip.
-    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready; }
+    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready && dome === complex.main; }
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && hero.ready);
     feedGlass(close ? useHero : held);
@@ -564,7 +563,7 @@ export const cuts = {
     if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
     rendered = close ? shot : null;
     if (!close) {
-      starLift(0);
+      starLift(false);
       cutFocus(null);
       cutGrain(0);
       if (inDown) black((inT / DIP_DOWN) ** 2);
@@ -572,8 +571,9 @@ export const cuts = {
     }
     const s = locks.of(cutOf(shot));
     // Only the mirror shot lifts the stars.
-    starLift(s.push ? pushEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH) : 0);
-    if (!s.push && s.glass) glassEye(s, view);
+    starLift(!!s.mirror);
+    if (s.mirror) mirrorEye(s, view);
+    else if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     // The film lens fills the band between the bars.
     applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
@@ -623,14 +623,14 @@ export const camDev = {
   get(shot: Shot): Partial<Record<CamKey, number>> {
     const fov = cutOf(shot).fov;
     if (shot === 'glass' || shot === 'mirror') return { fov };
-    const p = PLANS[shot];
+    const p = planOf(shot);
     return { ex: p.eye[0], ey: p.eye[1], ez: p.eye[2], lx: p.look[0], ly: p.look[1], lz: p.look[2], fov, blur: p.aperture };
   },
   // Sets one value; the shot re-locks its camera on the next frame.
   set(shot: Shot, key: CamKey, v: number): void {
     if (key === 'fov') cutOf(shot).fov = v;
     else if (shot !== 'glass' && shot !== 'mirror') {
-      const p = PLANS[shot];
+      const p = planOf(shot);
       if (key === 'blur') p.aperture = v;
       else (key[0] === 'e' ? p.eye : p.look)['xyz'.indexOf(key[1])] = v;
     } else return;
@@ -643,7 +643,7 @@ export const camDev = {
     const c = cutOf(shot);
     const cut = `{ shot: '${shot}', fov: ${r(c.fov)}, phase: '${c.phase}' },`;
     if (shot === 'glass' || shot === 'mirror') return cut;
-    const p = PLANS[shot];
+    const p = planOf(shot);
     const tall = p.tall ? `, tall: ${pt(p.tall)}` : '';
     const inside = p.inside ? ', inside: true' : '';
     return `${shot}: { eye: ${pt(p.eye)}, look: ${pt(p.look)}${tall}${inside}, aperture: ${r(p.aperture)} },\n${cut}`;

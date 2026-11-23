@@ -18,15 +18,14 @@ export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 // glass: close on the objective glass, with tonight's stars in it.
 // The glass rises into the frame, stops and holds.
 // mirror: the reflector's extra shot, after the glass shot.
-// The camera pushes down the tube, under the secondary.
-// It ends close on the primary, with the starry sky in it.
+// It cuts in close on the primary, with the starry sky in it.
 export const CUTS: Cut[] = [
   { shot: 'edge', fov: 18, phase: 'open' },
   { shot: 'slit', fov: 10, phase: 'open' },
   { shot: 'lift', fov: 34, phase: 'slew' },
   { shot: 'roll', fov: 9, phase: 'slew' },
   { shot: 'glass', fov: 20, phase: 'slew' },
-  { shot: 'mirror', fov: 20, phase: 'slew' },
+  { shot: 'mirror', fov: 40, phase: 'slew' },
 ];
 export const cutOf = (shot: Shot): Cut => CUTS.find(c => c.shot === shot)!;
 
@@ -66,9 +65,8 @@ export type Lift = { altLeft: number; altEta: number };
 // settled: seconds since the tube came to rest, in the glass shot.
 // extra: the mirror shot follows the glass shot.
 export type Seq = { shot: Shot; t: number; total: number; settled: number; done: boolean; extra: boolean };
-// The mirror shot pushes in for MIRROR_PUSH seconds.
-// Then it holds on the primary until MIRROR_S.
-export const MIRROR_PUSH = 4.5, MIRROR_S = 6.5;
+// The mirror shot holds on the primary for MIRROR_S seconds.
+export const MIRROR_S = 5;
 
 // Seconds until the glass shot is due.
 // It is due with GLASS_ENTER degrees left to lift.
