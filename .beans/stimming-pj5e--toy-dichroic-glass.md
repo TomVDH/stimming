@@ -19,7 +19,7 @@ Build Dichroic glass (idea 39, group F, quiet to use and rich to look at) as a L
 - [x] Icon round spike-dichroic-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/dichroic.md
-- [ ] Commit and push
+- [x] Commit and push
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
