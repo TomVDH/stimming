@@ -129,6 +129,21 @@ Tom queued these eight on 2026-11-23 ("Yes, queue them"), after the Tool-approve
 | 238 | **Solar loop** | C | 8 | Plasma loops rise off the sun's edge; tap for a flare. |
 | 209 | **Whiteout** | C | 8 | A polar hut in a blizzard; tap the door lamp. |
 
+### Batches 9 and 10
+
+Tom marked these eight on 2026-11-23 ("cool -- mark these"). Each grows a pool idea to size XXL. They are not started.
+
+| # | Toy | Group | Batch | Idea |
+|---|---|---|---|---|
+| 240 | **Ice breach** | C | 9 | Arctic night. A submarine's sail breaks up through pack ice; slabs tilt and slide, a snow plume rises, black water floods the floe. |
+| 214 | **Whale pass** | C | 9 | Deep blue. A 30 m whale crosses overhead and dims the sun shafts; tap to call, it sings and turns. |
+| 220 | **Night catapult** | C | 9 | A carrier deck in night swell. Steam whips over the deck, the afterburner lights, the catapult fires. Uses Jet hover's gas. |
+| 203 | **Boat lift** | C | 9 | A giant concrete boat lift at dusk. A barge in its tub rises 70 m, counterweights fall, water spills at the top. |
+| 223 | **Chimney fall** | C | 10 | A brick stack is blown; it folds and breaks in mid-air, and a dust cloud in Fire's smoke shading rolls over all. |
+| 211 | **Airship hangar** | C | 10 | Dawn. The doors part; an airship noses out into ground fog, the crew on its lines. |
+| 207 | **Funfair** | C | 10 | A fair at night. Tap a ride (wheel, carousel, drop tower) to spin it into light streaks; the stall music blurs. |
+| 205 | **Night terminal** | C | 10 | A container port in drizzle. Tap a crane to lift a box; floodlights cut the rain, straddle carriers wheel below. |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
