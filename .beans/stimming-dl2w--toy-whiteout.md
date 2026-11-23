@@ -55,3 +55,9 @@ Photo searches for polar huts in blizzards: Scott's hut in a whiteout (blue-grey
 - Load: first frame 774 ms after navigation, shader links included.
 - tools/fxc could not time these shaders: its HLSL stub reports a redefinition of the PS_OUTPUT members. The load time stands in.
 - Captures: docs/qa/whiteout/.
+
+## Commits
+
+- a8c999cf: the toy, toys.json entry, plan, toy doc, QA captures, intro emblem, favicon, bean.
+- 6d027bcb: the menu Lab tile and hook, icon round whiteout-1, emblems, sheet row.
+- Both pushed to origin/main on 2026-11-23; `git log origin/main..main` listed only these two.
