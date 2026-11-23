@@ -44,10 +44,10 @@ const ui = initPage({ id: ID, bar: {
   slider: { label: 'Ice', min: 0.6, max: 2.6, step: 0.1, value: thick, onInput: v => setIce(v) },
   quality: true,
   reset: () => resetAll(),
-  keys: [['hold', 'surface'], ['tap', 'dive'], ['drag', 'look round'], ['space', 'surface']],
+  keys: [['tap', 'surface or dive'], ['hold', 'push slowly'], ['drag', 'look round'], ['space', 'surface']],
   help: [
-    ['hold', 'Hold to surface: the ice bulges, cracks and breaks'],
-    ['tap', 'Tap to dive again'],
+    ['tap', 'Tap or click Surface: she comes up through the ice; tap again to dive'],
+    ['hold', 'Hold to push slowly: the ice bulges and cracks; let go before it breaks and she sinks'],
     ['drag', 'Drag to look round'],
     ['space', 'Hold Space to surface; D dives; R lays fresh ice'],
   ],
@@ -237,12 +237,19 @@ const restY = () => F.bot - 2.5 - sailH();
 const UP_Y = 0.2;
 let bulge = 0, front = 0, broken = false, mastK = 0;
 const events = [];
+let pressAt = 0;
 function holdOn() {
+  pressAt = performance.now();
   SUBS.held = true;
   if (SUBS.phase === 'rest' || SUBS.phase === 'dive') { SUBS.phase = 'rise'; snd.blow(); }
   touch();
 }
-function holdOff() { SUBS.held = false; if (SUBS.phase === 'rise') SUBS.phase = 'dive'; touch(); }
+// A short press surfaces her all the way; a long hold let go before the breach sinks her.
+function holdOff() {
+  SUBS.held = false;
+  if (SUBS.phase === 'rise' && performance.now() - pressAt > 400) SUBS.phase = 'dive';
+  touch();
+}
 function dive() {
   if (SUBS.phase === 'rest' || SUBS.phase === 'dive') return;
   SUBS.phase = 'dive';
@@ -297,7 +304,11 @@ function stepSub(dt) {
     if (Math.floor(front / 3) > Math.floor(was2 / 3)) snd.crack(0.35 + 0.5 * k, Math.random() * 0.6 - 0.3);
     if (bulge >= brk) breakIce();
     else if (was > 0 && bulge === 0) snd.groan(0);
-  } else snd.groan(0);
+  } else {
+    snd.groan(0);
+    // Broken ice gives no fight: she comes straight up through the loose slabs.
+    if (SUBS.phase === 'rise') { SUBS.phase = 'breach'; breakAt = simT; U.uWet.value = 1; }
+  }
   // The masts come up once she is up, and go down for the dive.
   const mk = SUBS.phase === 'up' ? 1 : 0;
   mastK += Math.sign(mk - mastK) * Math.min(Math.abs(mk - mastK), dt / 4);
@@ -515,7 +526,8 @@ stage.addEventListener('pointerdown', e => {
 stage.addEventListener('pointermove', e => {
   if (e.pointerId !== pid) return;
   const dx = e.clientX - px0;
-  if (!moved && Math.hypot(dx, e.clientY - py0) > 8) { moved = true; dragging = true; if (SUBS.held) holdOff(); }
+  // A drag looks round: it cancels the press, so she does not come up.
+  if (!moved && Math.hypot(dx, e.clientY - py0) > 8) { moved = true; dragging = true; if (SUBS.held) { SUBS.held = false; if (SUBS.phase === 'rise') SUBS.phase = 'dive'; } }
   if (moved) { yawGoal = Math.max(-0.12, Math.min(0.12, yaw0 - (dx / cssW) * 0.25)); touch(); }
 });
 function end(e) {

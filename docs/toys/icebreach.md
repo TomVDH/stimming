@@ -20,7 +20,7 @@ Idea 240, batch 9, grown to XXL: Tom's pick of 2026-11-23. Bean `stimming-ri97`.
 
 - One fixed shot, one sub, one floe. Metres and seconds.
 - Before the breach the floe is whole: the slabs pose on a cone over the sail and the cracks open in a star. It gives once the sail top reaches the ice top: the sail lurches through and throws the slabs over it off to both sides. After the breach every slab is a rigid body: buoyancy, the hull's push, the pack's pull back home, slab on slab.
-- A release before the breach sends her down again. After the breach she comes up by herself; a tap dives.
+- A tap, or a click on Surface, brings her all the way up. A hold pushes slowly; let go before the breach and she sinks. Through ice still broken from the last time she comes straight up. Once she is through, a tap dives.
 - The slabs lock seven seconds after the sub stops, up or down. With the sub down, the hole freezes over in 50 s; then the floe heals whole.
 
 ## Direction
@@ -39,14 +39,14 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 | Slot | Holds |
 |---|---|
-| Actions | Surface (hold, Space): she rises, the floe bulges and breaks. Dive (D) |
+| Actions | Surface (Space): a click brings her up through the ice; held, it pushes slowly. Dive (D) |
 | Slider | Ice: the ice under the snow, 0.6 to 2.6 m; stored as `stimming.icebreach.ice`. It takes effect while she is down |
 | Settings | Quality (shared), Reset (fresh ice, the sub down) |
 
 | Input | Does |
 |---|---|
-| Hold the stage | Surfaces her; let go before the breach and she goes down |
-| Tap the stage | Dives, once she is through |
+| Tap the stage | Surfaces her; once she is through, dives |
+| Hold the stage | Pushes her up slowly; let go before the breach and she goes down |
 | Drag | Turns the head a little; it eases back |
 | Space, D, R | Surface (hold), dive, fresh ice |
 
