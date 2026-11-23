@@ -2,7 +2,7 @@
 import './observatory.ts';
 import { BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group, LatheGeometry, Mesh, MeshBasicMaterial, MeshLambertMaterial, RepeatWrapping, SRGBColorSpace, SphereGeometry, Vector2, Vector3 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
-import { PADS, ROAD, ROAD_W, SITE, TOP, hillHeight, roadDist, type Pad } from './hill.ts';
+import { PADS, ROAD, ROAD_W, SITE, SPURS, SPUR_W, TOP, hillHeight, roadDist, type Pad } from './hill.ts';
 import { buildDome, type Dome } from './observatory.ts';
 
 /* ---------- the complex: three domes, the operations building, the dish, the mast, the road ---------- */
@@ -56,6 +56,21 @@ function roadMesh(): Group {
   const wm = new MeshLambertMaterial({ color: 0x8a857d, side: DoubleSide });
   const out = new Group();
   out.add(new Mesh(g, m), new Mesh(wg, wm));
+  // The summit's spur tracks: gravel ribbons on their own benches, without walls.
+  for (const sp of SPURS) {
+    const q: number[] = [], qi: number[] = [];
+    sp.forEach((c, i) => {
+      const a = sp[Math.max(0, i - 1)], b = sp[Math.min(sp.length - 1, i + 1)];
+      side.set(-(b.z - a.z), 0, b.x - a.x).normalize();
+      for (const s of [-1, 1]) q.push(c.x + s * side.x * SPUR_W / 2, c.y + 0.1, c.z + s * side.z * SPUR_W / 2);
+      if (i) qi.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+    });
+    const sg = new BufferGeometry();
+    sg.setAttribute('position', new Float32BufferAttribute(q, 3));
+    sg.setIndex(qi);
+    sg.computeVertexNormals();
+    out.add(new Mesh(sg, m));
+  }
   return out;
 }
 
@@ -200,13 +215,13 @@ export function buildComplex(): Complex {
   // The pick, the laser and the cuts follow the main dome.
   // Each building stands on its own pad in world/hill.
   const on = (p: Pad): number => p.y - TOP;
-  // The analog great refractor stands in a classic dome, about 9.5 m across.
+  // The analog great refractor stands in a classic dome, about 9.5 m across, on the east side.
   const main = buildDome(1.5, true);
   main.root.position.set(PADS.classic.x, on(PADS.classic), PADS.classic.z);
   // The big Keck-style enclosure holds the big reflector: 25 m across, 22.2 m to the top.
   const big = buildDome(3.64, false, true);
   big.root.position.set(PADS.big.x, on(PADS.big), PADS.big.z);
-  // Two small modern enclosures stand to the east.
+  // One small modern enclosure stands east, behind the classic dome; one stands west.
   const east = buildDome(0.75, false, true);
   east.root.position.set(PADS.east.x, on(PADS.east), PADS.east.z);
   const north = buildDome(0.62, false, true);

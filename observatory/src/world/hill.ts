@@ -63,6 +63,11 @@ const ARETES = [[62, 0.5, 0.5], [195, 0.25, 0.2], [285, 0.25, 0.22]].map(([a, w,
 // A broad top gives the complex room; the flanks run at about 34 degrees.
 const PEAK = 220, CAP = 90, FOOT = 520;
 
+// Knolls on the summit crest: x, z, height and width in metres.
+// The big dome takes the highest; the classic dome a lower one to the east.
+// A saddle between them holds the ops building; a shoulder to the west holds the dish.
+const KNOLLS: [number, number, number, number][] = [[-12, -6, 7, 26], [42, -12, 3.5, 16], [18, 6, -4, 14], [-40, 4, 1.5, 18]];
+
 // The camera's ridge runs east-west to the north.
 const northShape = (x: number, z: number): number => Math.exp(-(((z + 580) / 120) ** 2)) * Math.exp(-((x / 700) ** 2));
 
@@ -72,7 +77,9 @@ function lowLand(x: number, z: number): number {
   let ar = 0;
   for (const A of ARETES) ar = Math.max(ar, A.k * Math.exp(-((angDiff(th, A.a) / A.w) ** 2)));
   // The top rounds over smoothly, so the summit is a crest, not a plateau.
-  const rr = r * (1 - ar), d = Math.sqrt(rr * rr + CAP * CAP) - CAP;
+  // Near the top the crest runs east-west, as on La Silla's ridge.
+  const sx = 1 - 0.45 * Math.exp(-((r / 220) ** 2));
+  const rr = Math.hypot(x * sx, z) * (1 - ar), d = Math.sqrt(rr * rr + CAP * CAP) - CAP;
   const peak = PEAK * Math.max(0, 1 - d / FOOT) ** 1.6;
   // The peak stands alone: deep land surrounds it on the east, south and west.
   // The camera's ridge to the north stays.
@@ -84,8 +91,12 @@ function lowLand(x: number, z: number): number {
   // The back country takes broader, deeper ribs.
   const rough = (26 + 16 * sstep(700, 1500, z)) * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(80, 180, r);
   const fine = 5 * (vnoise(x / 22, z / 22, 3) - 0.5);
-  // Rock knolls break up the summit between the pads.
-  const crag = 4 * ridged(x / 28 + 1, z / 28 + 2, 4) * (1 - sstep(100, 140, r));
+  // Knolls along the crest carry the domes; the ops building sits in the saddle.
+  let knolls = 0;
+  for (const [kx, kz, kh, kw] of KNOLLS) knolls += kh * Math.exp(-(((x - kx) ** 2 + (z - kz) ** 2) / (kw * kw)));
+  knolls *= 1 - sstep(110, 150, r);
+  // Rock outcrops break up the summit between the pads.
+  const crag = 6 * ridged(x / 22 + 1, z / 22 + 2, 4) ** 2 * (1 - sstep(100, 140, r));
   // Two forested ridges recede behind the peak, out of the valley mist.
   // The height haze fills the deep land between them, so each ridge reads as a layer.
   const edge = 1 - sstep(1150, 1550, Math.abs(x));
@@ -94,7 +105,7 @@ function lowLand(x: number, z: number): number {
   const crest = 0.6 + 0.55 * ridged(x / 330 + 11, z / 330 + 3, 21);
   const mid1 = 105 * Math.exp(-(((z - 1350) / 170) ** 2)) * (0.7 + 0.3 * Math.sin(x / 310 + 1.3)) * crest * edge;
   const mid2 = 170 * Math.exp(-(((z - 2350) / 240) ** 2)) * (0.65 + 0.35 * Math.sin(x / 430 + 2.4)) * crest * edge;
-  return peak + moat + valley + rough + fine + crag + mid1 + mid2;
+  return peak + moat + valley + rough + fine + knolls + crag + mid1 + mid2;
 }
 // The ridge's crest stands this far under the summit.
 // The eye, EYE_H over it, then sees the summit on the horizon.
@@ -122,12 +133,13 @@ export const TOP = raw(0, 0);
 export type Pad = { x: number; z: number; ax: number; az: number; y: number };
 const pad = (x: number, z: number, ax: number, az: number): Pad => ({ x, z, ax, az, y: Math.round(raw(x, z) * 2) / 2 });
 export const PADS = {
-  big: pad(-12, -6, 16, 16), classic: pad(-36, -16, 8, 8), ops: pad(18, 7, 15, 7.5), east: pad(42, 2, 5, 5),
-  north: pad(36, -16, 4.5, 4.5), dish: pad(-36, 9, 6.5, 6.5), mast: pad(4, -21, 3, 3),
+  big: pad(-12, -6, 16, 16), classic: pad(42, -12, 8, 8), ops: pad(18, 7, 15, 7.5), east: pad(42, 6, 5, 5),
+  north: pad(-36, -16, 4.5, 4.5), dish: pad(-36, 9, 6.5, 6.5), mast: pad(4, -21, 3, 3),
 };
 const PAD_LIST = Object.values(PADS);
 // A pad's edge runs out into the rock over this many metres.
-const PAD_EDGE = 5;
+// A short edge gives a crisp cut face above a pad and a fill bank below it.
+const PAD_EDGE = 2.5;
 // 1 on a pad, 0 off it.
 function padW(p: Pad, x: number, z: number): number {
   const e = ((Math.abs(x - p.x) / p.ax) ** 4 + (Math.abs(z - p.z) / p.az) ** 4) ** 0.25;
@@ -193,32 +205,55 @@ export const ROAD: Vector3[] = (() => {
   return c.getSpacedPoints(Math.round(c.getLength() / 3));
 })();
 
-// Road segments sorted into 24 m cells, so a lookup checks few segments.
-const CELL = 24, REACH = ROAD_W / 2 + 12;
-const cells = new Map<number, number[]>();
-const cellKey = (i: number, j: number): number => (i + 1000) * 4000 + (j + 1000);
-for (let s = 0; s + 1 < ROAD.length; s++) {
-  const a = ROAD[s], b = ROAD[s + 1];
-  const i0 = Math.floor((Math.min(a.x, b.x) - REACH) / CELL), i1 = Math.floor((Math.max(a.x, b.x) + REACH) / CELL);
-  const j0 = Math.floor((Math.min(a.z, b.z) - REACH) / CELL), j1 = Math.floor((Math.max(a.z, b.z) + REACH) / CELL);
-  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-    const key = cellKey(i, j), list = cells.get(key);
-    if (list) list.push(s); else cells.set(key, [s]);
-  }
+/* ---------- the summit's spur tracks ---------- */
+// Gravel tracks branch from the road to the pads, as on real summits.
+export const SPUR_W = 4;
+// A track through x, z points, from height y0 to y1, eased along its length.
+function spur(pts: [number, number][], y0: number, y1: number): Vector3[] {
+  const c = new CatmullRomCurve3(pts.map(([x, z]) => new Vector3(x, 0, z)), false, 'centripetal');
+  const out = c.getSpacedPoints(Math.max(2, Math.round(c.getLength() / 2)));
+  out.forEach((p, i) => { const t = i / (out.length - 1); p.y = y0 + (y1 - y0) * t * t * (3 - 2 * t); });
+  return out;
 }
-// The nearest road point within REACH: its distance and the road's height there.
-function nearRoad(x: number, z: number): { d: number; y: number } {
+export const SPURS: Vector3[][] = [
+  // To the classic dome on its east knoll.
+  spur([[10, -3], [24, -7], [35, -11]], PADS.ops.y, PADS.classic.y),
+  // Along the big dome's north side to the west enclosure.
+  spur([[4, -24], [-12, -27], [-28, -24], [-35, -18]], PADS.mast.y, PADS.north.y),
+  // Down the west shoulder to the dish.
+  spur([[-38, -12], [-42, -2], [-38, 4]], PADS.north.y, PADS.dish.y),
+];
+
+// Road and track segments sorted into 24 m cells, so a lookup checks few segments.
+// Each entry is a track index and a segment index.
+const TRACKS: { pts: Vector3[]; w: number }[] = [{ pts: ROAD, w: ROAD_W }, ...SPURS.map(pts => ({ pts, w: SPUR_W }))];
+const CELL = 24, REACH = ROAD_W / 2 + 12;
+const cells = new Map<number, [number, number][]>();
+const cellKey = (i: number, j: number): number => (i + 1000) * 4000 + (j + 1000);
+TRACKS.forEach((tr, k) => {
+  for (let s = 0; s + 1 < tr.pts.length; s++) {
+    const a = tr.pts[s], b = tr.pts[s + 1];
+    const i0 = Math.floor((Math.min(a.x, b.x) - REACH) / CELL), i1 = Math.floor((Math.max(a.x, b.x) + REACH) / CELL);
+    const j0 = Math.floor((Math.min(a.z, b.z) - REACH) / CELL), j1 = Math.floor((Math.max(a.z, b.z) + REACH) / CELL);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const key = cellKey(i, j), list = cells.get(key);
+      if (list) list.push([k, s]); else cells.set(key, [[k, s]]);
+    }
+  }
+});
+// The nearest road or track point within REACH: its distance, the track's height there and its width.
+function nearRoad(x: number, z: number): { d: number; y: number; w: number } {
   const list = cells.get(cellKey(Math.floor(x / CELL), Math.floor(z / CELL)));
-  let best = Infinity, y = 0;
-  if (!list) return { d: best, y };
-  for (const s of list) {
-    const a = ROAD[s], b = ROAD[s + 1];
+  let best = Infinity, y = 0, w = ROAD_W;
+  if (!list) return { d: best, y, w };
+  for (const [k, s] of list) {
+    const pts = TRACKS[k].pts, a = pts[s], b = pts[s + 1];
     const dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1;
     const t = Math.min(1, Math.max(0, ((x - a.x) * dx + (z - a.z) * dz) / l2));
     const px = a.x + dx * t - x, pz = a.z + dz * t - z, d = Math.hypot(px, pz);
-    if (d < best) { best = d; y = a.y + (b.y - a.y) * t; }
+    if (d < best) { best = d; y = a.y + (b.y - a.y) * t; w = TRACKS[k].w; }
   }
-  return { d: best, y };
+  return { d: best, y, w };
 }
 // Distance in metres from a point to the road's centre line.
 // Points far from the road give Infinity.
@@ -228,10 +263,12 @@ export function roadDist(x: number, z: number): number {
 
 // Ground height in metres at a point.
 // The road cuts a flat bench into the slope; its banks run out over 10 m.
+// A track's narrower bench runs out over 6 m.
 export function hillHeight(x: number, z: number): number {
   const h = landNoRoad(x, z), r = nearRoad(x, z);
   if (r.d > REACH) return h;
-  const w = 1 - sstep(ROAD_W / 2 + 0.8, REACH - 1, r.d);
+  const reach = r.w === ROAD_W ? REACH - 1 : r.w / 2 + 6.5;
+  const w = 1 - sstep(r.w / 2 + 0.6, reach, r.d);
   return h + (r.y - h) * w;
 }
 
