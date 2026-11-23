@@ -4,7 +4,10 @@ import { HUT, HUT_ANG, DOOR, WIN, LAMP_LOCAL, LAMP, LAMP_DIR, WALL_N, WALL_D, MA
 import { GRADE } from '../shared/grade.js';
 import { FLARE } from '../shared/flare.js';
 import { PRECIPFIELD, PF_SNOW, pfFloat } from '../shared/precipfield.js';
+import { SMOKE, smConsts } from '../shared/smoke.js';
 
+// The haze's smoke look: Whiteout's own, tuned for a storm at night.
+const SMOKE_LOOK = { absorb: 1.6, ambient: 0.12, powder: 0.5, multi: 1.0, g: 0.62 };
 const f = x => (Number.isInteger(x) ? x.toFixed(1) : String(+x.toFixed(6)));
 const v3 = a => `vec3(${a.map(f).join(', ')})`;
 
@@ -48,7 +51,6 @@ float lampBeam(vec3 l) {
 // The lamp lights only the side in front of the door wall.
 float lampFront(vec3 p) { return smoothstep(0.0, 0.1, dot(p, WALL_N) + WALL_D); }
 // Henyey-Greenstein, normalised over the sphere.
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
 `;
 
 /* ---------- the surfaces: one march, once per size ---------- */
@@ -218,25 +220,17 @@ uniform float uFrame;
 uniform int uZero;
 in vec2 vUv;
 out vec4 o;
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the light, Beer plus a multiple-scatter lobe,
-// the powder term, and an ambient floor. The phase multiplies outside.
-const float ABSORB = 1.6, AMBIENT = 0.12, POWDER = 0.5, MULTI = 1.0;
+${SMOKE}
+${smConsts(SMOKE_LOOK)}
+// Fire's smoke light (shared/smoke.js) after a short self-shadow march.
 float lightT(vec3 p, vec3 toL, float g) {
   float sum = 0.0;
   for (int i = uZero; i < 3; i++) {
     float s = 0.35 * exp2(float(i) * 1.4);
     sum += dens(p + toL * s, g) * s * 0.7;
   }
-  float tau = sum * ABSORB;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT, 0.0, 1.0);
+  return smLight(sum * smAbsorb, smMulti, smPowder, smAmbient);
 }
-/* ---------- end K3 lighting ---------- */
 void main() {
   vec3 ro = uCamPos, rd = camRay(vUv);
   float tS = texture(uA, vUv).w;
@@ -260,13 +254,13 @@ void main() {
     // The haze takes the sky's colour; the moon lobe narrows in thin air.
     float sig = uSig * (1.0 + uGustK * g);
     vec3 Li = uAmb;
-    Li += uMoonCol * hg(dot(MOON, rd), mix(0.72, 0.4, clamp(g * 0.7, 0.0, 1.0))) * 12.566 * exp(-sig * 22.0);
+    Li += uMoonCol * smPhase(dot(MOON, rd), mix(0.72, 0.4, clamp(g * 0.7, 0.0, 1.0))) * 12.566 * exp(-sig * 22.0);
     if (lampOn > 0.0 && i < NA) {
       vec3 dl = p - LAMP;
       float d2 = dot(dl, dl);
       vec3 l = dl * inversesqrt(d2);
       float E = lampBeam(l) * lampFront(p) / (d2 + 0.06);
-      if (E > 2e-4) Li += uLampCol * E * lightT(p, -l, g) * hg(dot(l, -rd), 0.62) * 12.566;
+      if (E > 2e-4) Li += uLampCol * E * lightT(p, -l, g) * smPhase(dot(l, -rd), smG) * 12.566;
     }
     float al = 1.0 - exp(-d * dt);
     S += T * al * Li;
@@ -277,7 +271,7 @@ void main() {
     float g = gSum / float(NA + NB);
     float sig = uSig * (1.0 + uGustK * g) * 0.85;
     float Tt = exp(-sig * (min(tS, 3000.0) - tB));
-    vec3 Li = uAmb + uMoonCol * hg(dot(MOON, rd), mix(0.72, 0.4, clamp(g * 0.7, 0.0, 1.0))) * 12.566 * exp(-sig * 22.0);
+    vec3 Li = uAmb + uMoonCol * smPhase(dot(MOON, rd), mix(0.72, 0.4, clamp(g * 0.7, 0.0, 1.0))) * 12.566 * exp(-sig * 22.0);
     S += T * (1.0 - Tt) * Li;
     T *= Tt;
   }

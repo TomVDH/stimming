@@ -16,6 +16,7 @@ Code every toy uses. A change here reaches every page.
 | `stim.js`, `stim.css` | The shell. The JSDoc in `stim.js` is the API reference. |
 | `gl.js` | Raw WebGL2 kit. It never imports three.js. Bismuth is the reference. |
 | `environment.js` | Environment runner: a toy gives `vec3 envScene(vec2 uv)`. Start a new Environment toy here. |
+| `smoke.js` | Fire's smoke light in GLSL: Beer, the scatter lobe, powder, the ambient floor, the phase. Each toy keeps its shadow taps. Whiteout is the reference; no `fxlab/` card. |
 | `fire.js` | Fire and smoke (three.js 0.186.1, WebGPU, TSL). It imports nothing; the toy passes the namespaces. Fire is the reference. |
 | `wetglass.js`, `water.js`, `precip.js`, `sky.js`, `flare.js`, `glow.js`, `grade.js`, `output.js`, `weather.js`, `detail.js` | Shader bundles. Each has a card in `fxlab/`. Glass effects stay one group. |
 | `precipfield.js` | Rain and snow as particles in the world, lit by lamps: streaks, blur discs, the forward lobe. Each toy keeps its crowds, lights and depth test. Whiteout is the reference; no `fxlab/` card. |
