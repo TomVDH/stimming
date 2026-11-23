@@ -5,7 +5,9 @@ import { AdditiveBlending, BufferAttribute, BufferGeometry, DoubleSide, MathUtil
 import { reduced } from '../../../shared/stim.js';
 import { HAZE_H } from '../sky/haze.ts';
 import type { AltAz } from '../core/sky.ts';
-import { disposeTree, onLeave, scene } from '../setup.ts';
+import { camera, disposeTree, onLeave } from '../setup.ts';
+import { beamScene } from '../post/chain.ts';
+import { tappedDepth } from '../post/mist.ts';
 
 /* ---------- the aiming laser: a thin green beam into the sky ---------- */
 const DEG = MathUtils.DEG2RAD;
@@ -59,8 +61,13 @@ export function buildLaser(): Laser {
     // uK fades the beam in after the opening.
     // uRes is the canvas in CSS pixels.
     // uT moves the shimmer.
-    uniforms: { uFoot: { value: 0 }, uK: { value: 1 }, uRes: { value: new Vector2(1, 1) }, uT: { value: 0 } },
-    transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
+    uniforms: {
+      uFoot: { value: 0 }, uK: { value: 1 }, uRes: { value: new Vector2(1, 1) }, uT: { value: 0 },
+      // The scene's depth, its size in pixels, and the camera's planes.
+      tDepth: { value: null }, uDepthRes: { value: new Vector2(1, 1) }, uNear: { value: 0.1 }, uFar: { value: 5000 },
+    },
+    // It draws after the mist, over a target with no scene depth, so it tests depth itself.
+    transparent: true, depthTest: false, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
     vertexShader: /* glsl */`
     attribute float aE, aS;
     uniform vec2 uRes;
@@ -92,7 +99,9 @@ export function buildLaser(): Laser {
       gl_Position = p;
     }`,
     fragmentShader: /* glsl */`
-    uniform float uFoot, uK, uT;
+    uniform float uFoot, uK, uT, uNear, uFar;
+    uniform sampler2D tDepth;
+    uniform vec2 uDepthRes;
     varying float vE, vX, vH, vN, vW;
     varying vec3 vP;
     void main() {
@@ -112,6 +121,12 @@ export function buildLaser(): Laser {
       float k = (${f(CORE_LOW)} * low + ${f(CORE_HIGH)} * high) * core + ${f(GLOW_LOW)} * low * glow;
       // The far beam dims with range and ends soft.
       k *= exp(-s / ${f(FADE)}) * (1.0 - smoothstep(0.55, 1.0, vE)) * smoothstep(0.0, ${f(START)}, s);
+      // Land and domes in front of the beam hide it.
+      vec2 su = gl_FragCoord.xy / uDepthRes;
+      float zs = texture2D(tDepth, su).x;
+      float zb = gl_FragCoord.z;
+      float ls = uNear * uFar / (uFar - zs * (uFar - uNear)), lb = uNear * uFar / (uFar - zb * (uFar - uNear));
+      k *= zs >= 0.99999 ? 1.0 : smoothstep(-1.5, 0.5, ls - lb);
       gl_FragColor = vec4(vec3(${GREEN}) * k * sh * uK, 1.0);
     }`,
   });
@@ -125,6 +140,11 @@ export function buildLaser(): Laser {
   // The idle page draws no frames, so the shimmer rests.
   // Reduced motion holds the shimmer still.
   mesh.onBeforeRender = (r) => {
+    // The tapped depth from the scene's own render.
+    const d = tappedDepth();
+    // The composer's targets match the drawing buffer, in device pixels.
+    if (d) { mat.uniforms.tDepth.value = d; r.getDrawingBufferSize(mat.uniforms.uDepthRes.value); }
+    mat.uniforms.uNear.value = camera.near; mat.uniforms.uFar.value = camera.far;
     r.getSize(mat.uniforms.uRes.value);
     if (!reduced()) mat.uniforms.uT.value = (performance.now() / 1000) % 1000;
   };
@@ -153,5 +173,5 @@ export function buildLaser(): Laser {
 }
 
 export const laser = buildLaser();
-scene.add(laser.mesh);
+beamScene.add(laser.mesh);
 onLeave(() => disposeTree(laser.mesh));

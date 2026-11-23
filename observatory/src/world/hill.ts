@@ -122,7 +122,7 @@ export const TOP = raw(0, 0);
 export type Pad = { x: number; z: number; ax: number; az: number; y: number };
 const pad = (x: number, z: number, ax: number, az: number): Pad => ({ x, z, ax, az, y: Math.round(raw(x, z) * 2) / 2 });
 export const PADS = {
-  main: pad(-12, -6, 16, 16), ops: pad(18, 7, 15, 7.5), east: pad(42, 2, 5, 5),
+  big: pad(-12, -6, 16, 16), classic: pad(-36, -16, 8, 8), ops: pad(18, 7, 15, 7.5), east: pad(42, 2, 5, 5),
   north: pad(36, -16, 4.5, 4.5), dish: pad(-36, 9, 6.5, 6.5), mast: pad(4, -21, 3, 3),
 };
 const PAD_LIST = Object.values(PADS);

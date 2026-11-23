@@ -188,18 +188,24 @@ function mast(): Group {
 // windows: the lit panes' materials, west to east.
 // own: the operations building, the dish and the mast.
 // world/observatory owns the domes.
-export type Complex = { root: Group; main: Dome; small: [Dome, Dome]; windows: MeshBasicMaterial[]; own: Group[] };
+// main: the classic dome; the pick, the laser and the cuts follow it.
+// big: the Keck-style enclosure with the big reflector.
+// small: the two domes world/loop turns on their own.
+// domes: every dome, for the door lamps.
+export type Complex = { root: Group; main: Dome; big: Dome; small: [Dome, Dome]; domes: Dome[]; windows: MeshBasicMaterial[]; own: Group[] };
 
 export function buildComplex(): Complex {
   const root = new Group();
   root.position.copy(SITE);
-  // The main dome holds the big refractor.
-  // The laser leaves it.
-  // It is the big Keck-style enclosure: 25 m across, 22.2 m to the top.
+  // The pick, the laser and the cuts follow the main dome.
   // Each building stands on its own pad in world/hill.
   const on = (p: Pad): number => p.y - TOP;
-  const main = buildDome(3.64, true, true);
-  main.root.position.set(PADS.main.x, on(PADS.main), PADS.main.z);
+  // The analog great refractor stands in a classic dome, about 9.5 m across.
+  const main = buildDome(1.5, true);
+  main.root.position.set(PADS.classic.x, on(PADS.classic), PADS.classic.z);
+  // The big Keck-style enclosure holds the big reflector: 25 m across, 22.2 m to the top.
+  const big = buildDome(3.64, false, true);
+  big.root.position.set(PADS.big.x, on(PADS.big), PADS.big.z);
   // Two small modern enclosures stand to the east.
   const east = buildDome(0.75, false, true);
   east.root.position.set(PADS.east.x, on(PADS.east), PADS.east.z);
@@ -209,9 +215,10 @@ export function buildComplex(): Complex {
   own[0].position.y = on(PADS.ops);
   own[1].position.y = on(PADS.dish);
   own[2].position.y = on(PADS.mast);
-  root.add(main.root, east.root, north.root, ...own);
+  root.add(main.root, big.root, east.root, north.root, ...own);
   root.updateMatrixWorld(true);
-  return { root, main, small: [east, north], windows: litPanes, own };
+  // The big dome and the east enclosure turn on their own; the north one rests.
+  return { root, main, big, small: [big, east], domes: [main, big, east, north], windows: litPanes, own };
 }
 
 export const complex = buildComplex();

@@ -12,6 +12,7 @@ import { complex } from './complex.ts';
 import { slitOffset } from '../core/mount.ts';
 import { patch as duskPatch } from './dusk.ts';
 import { buildHeroScope, type HeroScope } from './hero-scope.ts';
+import { buildModernScope, type ModernScope } from './modern-scope.ts';
 import { BIG_BASE_H, BIG_SKIRT_H, BIG_SLIT_B, BIG_WALL_R, DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
 
 /* ---------- the hero model: the main dome in full detail, for the cuts only ---------- */
@@ -587,7 +588,10 @@ type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof dom
 
 type Built = {
   root: Group;
-  scope: HeroScope;
+  // The refractor; the big dome's model has none.
+  scope: HeroScope | null;
+  // The big reflector, in the big dome's model only.
+  modern?: ModernScope;
   textures: CanvasTexture[];
   // Puts the hero under the main dome's root, or takes it away.
   show(on: boolean): void;
@@ -1138,6 +1142,8 @@ function buildHero(main: Dome, tx: Painted): Built {
 const BIG_TURN = BIG_BASE_H + BIG_SKIRT_H;
 // The rails: their width in radians across the slit, their height off the plate.
 const RAIL_B = 0.07, RAIL_UP = 0.16;
+// The big reflector's size in metres: a 2 m class telescope.
+const MODERN_M = 2;
 
 // Painted wall panels: four across, two up.
 // One panel is 1.2 m wide and 3 m high.
@@ -1189,6 +1195,12 @@ function onSphere(r: number, b: number, e: number): Matrix4 {
 }
 
 function buildBigHero(main: Dome, tx: Painted): Built {
+  // This dome has its own scale, so metres turn into its own units.
+  const S = main.root.scale.x;
+  const u = (metres: number): number => metres / S;
+  const um = (pts: P2[]): P2[] => pts.map(([a, b]) => [u(a), u(b)]);
+  // Only this build's materials take the dusk patch below.
+  const m0 = mats.length;
   const root = new Group();
   root.name = 'hero';
   const WR = BIG_WALL_R, BH = BIG_BASE_H, SH = BIG_SKIRT_H, SB = BIG_SLIT_B;
@@ -1212,8 +1224,8 @@ function buildBigHero(main: Dome, tx: Painted): Built {
   const inner = std({ color: 0x55534f, roughness: 0.85, side: BackSide });
   // Panel texture points: whole panels round the ring, 6 m of texture up.
   const panelUV = (r: number) => {
-    const n = Math.max(1, Math.round(2 * Math.PI * r * SCALE / 4.8));
-    return (a: number, _r: number, y: number): P2 => [a / (2 * Math.PI) * n, y * SCALE / 6];
+    const n = Math.max(1, Math.round(2 * Math.PI * r * S / 4.8));
+    return (a: number, _r: number, y: number): P2 => [a / (2 * Math.PI) * n, y * S / 6];
   };
 
   /* ---------- the base ---------- */
@@ -1376,7 +1388,7 @@ function buildBigHero(main: Dome, tx: Painted): Built {
   const rL = R + u(0.28), bL = SB - u(0.04) / R;
   const eB = SPLIT_E - u(0.2) / R, eT = SLIT_E + u(0.35) / R;
   const lg = new Geo(), lp = new Geo();
-  patch(lg, rL, -bL, bL, eB, eT, 24, 60, (_d, i, j) => [i / 24 * 2, (eT - eB) * rL * SCALE * j / 60 / 2.4]);
+  patch(lg, rL, -bL, bL, eB, eT, 24, 60, (_d, i, j) => [i / 24 * 2, (eT - eB) * rL * S * j / 60 / 2.4]);
   patch(lp, rL - u(0.01), -bL, bL, eB, eT, 10, 30, () => [0, 0], true);
   // Ribs cross it every 1.2 m.
   const RIB = um([[-0.006, 0], [0.006, 0], [0.006, 0.08], [0.05, 0.08], [0.05, 0.095], [-0.05, 0.095], [-0.05, 0.08], [-0.006, 0.08]]);
@@ -1392,7 +1404,7 @@ function buildBigHero(main: Dome, tx: Painted): Built {
   // To open, it drops behind the skirt.
   const wind = new Group();
   const ws = new Geo(), wp = new Geo(), rW = R - u(0.25), bW = SB + u(0.1) / R;
-  patch(ws, rW, -bW, bW, 0, SPLIT_E + u(0.3) / rW, 24, 30, (_d, i, j) => [i / 24 * 2, SPLIT_E * rW * SCALE * j / 30 / 2.4]);
+  patch(ws, rW, -bW, bW, 0, SPLIT_E + u(0.3) / rW, 24, 30, (_d, i, j) => [i / 24 * 2, SPLIT_E * rW * S * j / 30 / 2.4]);
   for (let e = u(0.6) / rW; e < SPLIT_E; e += u(1.2) / rW) wp.sweep(RIB, framesAlongB(rW, e, -bW + u(0.05) / rW, bW - u(0.05) / rW, 20));
   wind.add(new Mesh(ws.build(), leafPaint), new Mesh(wp.build(), plain));
   cupola.add(wind);
@@ -1444,27 +1456,28 @@ function buildBigHero(main: Dome, tx: Painted): Built {
   ];
   root.add(...parts);
 
-  // The telescope stands on its pier, from world/hero-scope.ts.
-  // Its axes sit 0.35 over a cupola foot at 3.4.
-  // So its root drops to this cupola's foot.
-  const scope = buildHeroScope(1);
-  scope.root.position.y = BIG_TURN - 3.4;
-  root.add(scope.root);
+  // The big reflector from world/modern-scope.ts stands on the observing floor.
+  // At MODERN_M it reads as a 2 m class telescope in the enclosure.
+  const modern = buildModernScope(MODERN_M / S);
+  modern.root.position.y = BH;
+  modern.setCovers(true);
+  root.add(modern.root);
   const seen = new Set<Material>(mats);
-  scope.root.traverse((o) => {
-    if (!(o instanceof Mesh) || o === scope.glass) return;
+  modern.root.traverse((o) => {
+    if (!(o instanceof Mesh)) return;
     const m = o.material as Material;
     if (seen.has(m) || !(m instanceof MeshStandardMaterial)) return;
     seen.add(m);
+    // The tube stands in the opening, so it sees much of the sky.
     mats.push(inside(m, 0.7));
   });
-  if (scope.glass.material instanceof MeshStandardMaterial) mats.push(scope.glass.material);
-  for (const m of mats) duskPatch(m);
+  for (const m of mats.slice(m0)) duskPatch(m);
 
   let shown = false;
   return {
     root,
-    scope,
+    scope: null,
+    modern,
     textures: [panel.map, panel.normal, dome.map, dome.normal, leafT.map, leafT.normal],
     show(on) {
       if (on === shown) return;
@@ -1477,10 +1490,16 @@ function buildBigHero(main: Dome, tx: Painted): Built {
       cupola.rotation.y = -heroSlitAz(d) * DEG;
       leaf.rotation.x = P.open * UP_OPEN;
       wind.rotation.x = P.open * LOW_OPEN;
-      scope.setTube(P.tube.alt, P.tube.az);
+      modern.setTube(P.tube.alt, P.tube.az);
       glow.emissiveIntensity = d.door.emissiveIntensity;
     },
   };
+}
+
+// The big dome's close model, with the big reflector.
+// The selector builds it when the big dome takes the cuts.
+export function makeBigHero(d: Dome): Built {
+  return buildBigHero(d, { stone: stoneTex(), dome: domeTex(), leaf: leafTex(), panel: panelTex() });
 }
 
 // A drive's shaft from its gearbox lid to the pinion.
@@ -1595,9 +1614,9 @@ export const hero = {
   // True once the model is built and on the GPU.
   get ready(): boolean { return ready; },
   // The objective glass: the lens cut puts the star reflections on it.
-  get glass(): Mesh | null { return built ? built.scope.glass : null; },
+  get glass(): Mesh | null { return built?.scope?.glass ?? null; },
   // The telescope: the cuts hand its glass the stars and the sky.
-  get scope(): HeroScope | null { return built ? built.scope : null; },
+  get scope(): HeroScope | null { return built?.scope ?? null; },
   show(on: boolean): void { built?.show(on); },
   follow(d: Dome): void { built?.follow(d); },
   // Triangles, draw calls, and the time of each build step in ms.
