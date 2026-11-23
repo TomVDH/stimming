@@ -81,6 +81,18 @@ Tom's words: no camera movement possible in the arc crop; I said bottom left; la
 | Stars | Added a neutron star (pulsar beams, ticks, field lines, bent light; Phobos for scale), Sirius B (a white dwarf smaller than the earth; the moon in transit) and Sirius (our sun beside it) |
 | Film | Coarse and fine grain, colour noise in the shadows, gate weave, an exposure flicker, lens dirt, burnt-out highlights, a stronger colour split |
 
+## Held still, active all round, a full view, real volume (Tom, 2026-11-23)
+
+Tom's words: I asked for no camera movement; the bottom left does not feature activity, only the top half of the star; add a camera angle that is just the full star; any use of the smoke shader from the Fire toy, or raymarched volumetrics; the screen filter is too fierce, this is a cinematic vista, not a feed.
+
+| | Choice |
+|---|---|
+| Long lens | The camera holds still: no drag, no turn. The star no longer turns to bring the top's prominences round |
+| Activity | Fourteen regions and eight prominences all round the limb, five regions and three prominences on the bottom left limb |
+| Full view | A third framing: the whole star with sky round it. L steps long, wide, full |
+| Volume | A raymarched haze and dust shell lit with Fire's smoke shading (the K3 section from `cloudbottle/scene.js`), replacing the flat haze layers |
+| Film | Fine grain only, a soft colour split, faint lens dirt; no weave, no flicker, no colour noise |
+
 ## Tasks
 
 1. Blockout: disk, limb, corona, a few loops, camera. Screenshot.

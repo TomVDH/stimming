@@ -4,12 +4,11 @@
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
 import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
-import { R, STRIDE, MAX_STRANDS } from './sun.js';
+import { R, STRIDE, MAX_STRANDS, NR } from './sun.js';
 
 const HEAD = `#version 300 es
 precision highp float;
 `;
-const NR = 5;
 // Samples along each strand.
 const NS = 56;
 // Steps in the light ray march.
@@ -161,7 +160,7 @@ void main() {
       float arcs = fbm(vec3(ang * 5.0, h * 0.006, 7.0) + 0.6 * warp);
       float knots = pow(fbm(vec3(P * 0.012, 3.0 + tb * 0.05)), 3.0);
       float env = exp(-h / 260.0);
-      cool += uDust * env * (0.3 * smoothstep(0.45, 0.8, arcs) + 1.4 * knots);
+      cool += uDust * env * (0.15 * smoothstep(0.45, 0.8, arcs) + 0.3 * knots);
       hot += uDust * 0.1 * exp(-h / 500.0) * (0.5 + warp);
     }
   }
@@ -268,7 +267,7 @@ void main() {
 }`;
 
 const STRAND_FS = `${HEAD}
-uniform float uTime, uRain;
+uniform float uTime, uRain, uGain;
 in float vV, vS, vI, vDrain, vPh, vKind, vHgt;
 in vec3 vP;
 out vec4 o;
@@ -305,7 +304,7 @@ void main() {
     I *= 0.35 + 1.1 * kn * kn;
   }
   float cf = vKind >= 3.0 ? 1.0 : vKind == 2.0 ? 0.8 : vKind == 1.0 ? 0.5 : 0.0;
-  float L = I * prof * vis * feet;
+  float L = I * prof * vis * feet * uGain;
   o = vec4(L * (1.0 - cf), L * cf, 0.0, 1.0);
 }`;
 
@@ -338,9 +337,112 @@ void main() {
   o = vec4(s / float(${RAY_N}) * sh, 1.0);
 }`;
 
-/* ---------- final: heat bend, grade, haze layers, bodies, lens, film ---------- */
+/* ---------- volume: raymarched dust and haze round the star ---------- */
+// Orthographic rays run toward the star from in front of it.
+// The march stops at the star's surface, or far behind it.
+const NOISE_N = 64;
+const VOL = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise;
+uniform vec4 uView;
+uniform float uTime, uDens, uDust, uLight;
+in vec2 vUv;
+out vec4 o;
+const float R = ${R.toFixed(1)};
+const float SIG = 0.0022;
+float nz(vec3 p) { return texture(uNoise, p).r; }
+float fbm3(vec3 p) { return nz(p) * 0.5 + nz(p * 2.03 + 0.31) * 0.25 + nz(p * 4.01 + 0.67) * 0.125 + nz(p * 8.03 + 0.13) * 0.0625; }
+// The density: a shell of haze round the star, and clouds of dust in it.
+float dens(vec3 p, bool lite) {
+  float r = length(p);
+  if (r < R) return 0.0;
+  // One noise cell is about 90 units; the texture repeats every 64 cells.
+  vec3 q = p / 5800.0 + vec3(uTime * 0.00012, 0.0, uTime * 0.00006);
+  vec3 w = vec3(nz(q * 0.6), nz(q * 0.6 + 0.37), nz(q * 0.6 + 0.71)) - 0.5;
+  float f = lite ? nz(q + w * 0.6) * 0.7 + nz(q * 2.03 + w + 0.31) * 0.3 : fbm3(q + w * 0.6);
+  float h = r - R;
+  float shell = exp(-h / (320.0 + 160.0 * uDust));
+  float cl = smoothstep(0.48 - 0.04 * uDust, 0.76, f);
+  // Less haze straight in front of the disk, so the star's face stays clear.
+  float face = 1.0 - 0.5 * smoothstep(0.2 * R, 1.2 * R, p.z) * smoothstep(1.1 * R, 0.6 * R, length(p.xy));
+  return uDens * face * (shell * (0.08 + 2.4 * cl) + uDust * 0.15 * cl * smoothstep(3.5 * R, R, r));
+}
+/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
+// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
+// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
+// The key is the star itself: at each point the light comes from its centre.
+const float ABSORB = 2.0, AMBIENT = 0.12, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+float lightT(vec3 p) {
+  vec3 k = -normalize(p);
+  float sum = dens(p + k * 40.0, true) * 40.0 + dens(p + k * 110.0, true) * 70.0 + dens(p + k * 260.0, true) * 150.0;
+  float tau = sum * SIG * ABSORB * 0.5;
+  float beer = exp(-tau);
+  float ms = exp(-tau * 0.25) * 0.5;
+  float base = mix(beer, beer + ms, MULTI);
+  float powder = 1.0 - exp(-tau * 2.0);
+  float fin = mix(base, base * powder, POWDER);
+  return clamp(fin + AMBIENT, 0.0, 1.0);
+}
+/* ---------- end K3 lighting ---------- */
+void main() {
+  vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
+  float r = length(P);
+  float z1 = r < R ? sqrt(R * R - r * r) : -2.0 * R;
+  float z0 = 2.2 * R;
+  const int N = 32;
+  float dt = (z0 - z1) / float(N);
+  // Interleaved gradient noise, fixed in place; the blur hides it.
+  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float T = 1.0;
+  float acc = 0.0;
+  for (int i = 0; i < N; i++) {
+    vec3 p = vec3(P, z0 - dt * (float(i) + j));
+    float d = dens(p, false);
+    if (d < 0.002) continue;
+    float rr = length(p);
+    // The light falls with the square of the distance; it travels outward from the star.
+    float Ls = uLight * R * R / (rr * rr);
+    float ph = hg(normalize(p).z, G_HG) * 12.56637;
+    float al = 1.0 - exp(-d * SIG * dt);
+    // Dust absorbs as well as scatters: an albedo below one, so lanes darken the light.
+    acc += T * al * 0.6 * Ls * lightT(p) * ph;
+    T *= 1.0 - al;
+    if (T < 0.02) break;
+  }
+  o = vec4(acc, 0.0, 0.0, T);
+}`;
+
+// A three-tap blur along one axis: it hides the march dither, as in Fire.
+const BLUR = `${HEAD}
+uniform sampler2D uSrc;
+uniform vec2 uStep;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 s = uStep / vec2(textureSize(uSrc, 0));
+  o = texture(uSrc, vUv) * 0.4 + (texture(uSrc, vUv + s) + texture(uSrc, vUv - s)) * 0.2 + (texture(uSrc, vUv + 2.0 * s) + texture(uSrc, vUv - 2.0 * s)) * 0.1;
+}`;
+
+// A tiling value-noise volume, smoothed once so its cells do not show.
+function noiseVolume(n) {
+  const raw = new Float32Array(n * n * n);
+  let seed = 1234567;
+  for (let i = 0; i < raw.length; i++) { seed = (seed * 1664525 + 1013904223) >>> 0; raw[i] = seed / 4294967296; }
+  const out = new Uint8Array(n * n * n);
+  const at = (x, y, z) => raw[((z + n) % n) * n * n + ((y + n) % n) * n + ((x + n) % n)];
+  for (let z = 0; z < n; z++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    let sum = 0;
+    for (let c = -1; c <= 1; c++) for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) sum += at(x + a, y + b, z + c);
+    // Stretch the smoothed values back toward the full range.
+    out[z * n * n + y * n + x] = Math.max(0, Math.min(255, Math.round((sum / 27 - 0.5) * 3.2 * 255 + 127.5)));
+  }
+  return out;
+}
+
+/* ---------- final: heat bend, grade, volume, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
-uniform sampler2D uHdr, uBloom, uRays, uLut;
+uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm;
 uniform vec2 uBodyK;
@@ -364,14 +466,16 @@ float kern(vec2 fc) {
   return s;
 }
 vec2 sig(vec2 uv, float kx) {
-  vec3 h = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * 0.38 + texture(uRays, uv).rgb * uMix.x;
-  return vec2(h.r * uMix.y + kx, h.g * uMix.z);
+  vec4 v = texture(uVol, uv);
+  // The volume dims what lies behind it and adds the star light it scatters.
+  vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x) * v.a + texture(uBloom, uv).rgb * 0.38;
+  return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15);
 }
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
-  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.35 * uLens));
-  // The long lens presses the tones: a darker, harder curve.
-  t = pow(t, 1.0 + 0.35 * uLens);
+  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.15 * uLens));
+  // The long lens presses the tones: a slightly darker, harder curve.
+  t = pow(t, 1.0 + 0.15 * uLens);
   float fr = s.y / max(I, 1e-5);
   vec3 a = texture(uLut, vec2(t, (uRow * 2.0 + 0.5) / ${LUTS.length.toFixed(1)})).rgb;
   vec3 b = texture(uLut, vec2(t, (uRow * 2.0 + 1.5) / ${LUTS.length.toFixed(1)})).rgb;
@@ -441,7 +545,7 @@ void main() {
   vec2 wob = vec2(vn(vec3(P * 0.05, uTime * 0.3)), vn(vec3(P * 0.05 + 7.7, uTime * 0.3))) - 0.5;
   uv += wob * hz * uMix.w / uRes;
   // The lens splits colour toward the frame's edge.
-  vec2 ca = (uv - 0.5) * (0.004 + 0.003 * uLens);
+  vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens);
   float kx = kern(gl_FragCoord.xy);
   vec3 c;
   c.r = grade(sig(uv + ca, kx)).r;
@@ -470,66 +574,26 @@ void main() {
       c += tint * disc * 0.05 * S;
     }
   }
-  // The scale bodies stand behind the haze, so the haze veils them.
+  // The scale bodies.
   vec2 fc = uv * uRes;
   c = body(c, fc, uBodyA, uBodyK.x);
   c = body(c, fc, uBodyB, uBodyK.y);
-  // Haze in layers, lit by the star; nearer layers slide further as the camera pans.
-  vec2 sp = gl_FragCoord.xy / uRes.y;
-  vec2 cam = uCam.xy;
-  vec2 to = normalize(uC * vec2(uRes.x / uRes.y, 1.0) - sp + 1e-4);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
-  if (uHaze > 0.0) {
-    // Far veils: broad and slow.
-    float far = smoothstep(0.3, 0.85, fbm(vec3(sp * 0.7 + cam * 0.15 + vec2(uTime * 0.002, 0.0), 1.0)));
-    // Middle clouds: billows, lit on the side toward the star.
-    vec2 q = sp * 1.6 + cam * 0.45 + vec2(uTime * 0.006, 0.0);
-    vec3 w = vec3(fbm(vec3(q, 4.0)), fbm(vec3(q + 3.3, 4.0)), 0.0);
-    float d1 = fbm(vec3(q + w.xy * 0.8, 6.0));
-    float d2 = fbm(vec3(q + w.xy * 0.8 + to * 0.06, 6.0));
-    float cloud = smoothstep(0.42, 0.8, d1);
-    float lit = clamp(0.5 + (d1 - d2) * 9.0, 0.0, 1.0);
-    // Near dust: dark wisps across the light, with bright edges.
-    vec2 nq = sp * 3.2 + cam * 1.1 + vec2(uTime * 0.014, uTime * 0.004);
-    float dust = smoothstep(0.55, 0.8, fbm(vec3(nq + 0.5 * fbm(vec3(nq * 0.7, 8.0)), 9.0)));
-    float H = uHaze;
-    // Over the bright disk the veils darken and shape the light rather than milk it.
-    float sky = smoothstep(0.98, 0.6, sl);
-    c = mix(c, hc * 0.7, H * far * 0.25 * sky) + hc * far * H * 0.12 * sl * sky;
-    c = mix(c, c * (0.55 + 0.7 * lit), H * cloud * 0.5 * (1.0 - sky));
-    c = mix(c, hc * (0.25 + 1.1 * lit), H * cloud * 0.38 * sky);
-    c *= 1.0 - H * dust * 0.5;
-    c += hc * H * dust * 0.25 * sl * pow(clamp(1.0 - abs(dust - 0.5) * 2.0, 0.0, 1.0), 2.0);
-    // Motes: a few specks very close, soft and out of focus, catching the light.
-    vec2 mq = sp * 9.0 + cam * 2.4 + vec2(uTime * 0.03, -uTime * 0.012);
-    vec2 mc = floor(mq), mf = fract(mq) - 0.5;
-    float mh = hash(mc);
-    vec2 mo = (vec2(hash(mc + 3.1), hash(mc + 7.7)) - 0.5) * 0.6;
-    float mote = mh > 0.985 ? smoothstep(0.09, 0.04, length(mf - mo)) : 0.0;
-    c += hc * mote * H * 0.18 * (0.3 + sl);
-  }
   // Lens dirt: smudges on the glass that glow where bright light falls.
   float dirt = smoothstep(0.55, 0.85, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
              + smoothstep(0.8, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
   c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z;
-  // Highlights burn out to white, as on overexposed film.
+  // Highlights roll off to white, as on film.
   float lum = dot(c, vec3(0.3, 0.55, 0.15));
-  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.82, 1.05, lum) * 0.6);
-  // Exposure flicker: the light breathes from frame to frame.
-  c *= 1.0 + uFilm.w * (hash(vec2(uFrame, 3.7)) - 0.5);
+  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.85, 1.05, lum) * 0.35);
   vec2 v = vUv - 0.5;
   c *= clamp(1.0 - (0.6 + 0.25 * uLens) * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
-  // Film grain: coarse clumps and fine grain, strongest in the mid tones.
+  // Fine film grain, strongest in the mid tones: a light touch.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
-  vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 700.0));
-  float fine = hash(g2 + uFrame * 17.0) + hash(g2 * 1.7 + uFrame * 5.0) - 1.0;
-  float clump = vn(vec3(gl_FragCoord.xy * 0.45, uFrame * 7.3)) - 0.5;
-  float gr = fine * 0.7 + clump * 0.9;
-  c += gr * uFilm.x * (0.35 + 3.2 * l * (1.0 - l));
-  // Chroma noise in the shadows: the stock's colour layers part in the dark.
-  vec3 cn = vec3(hash(g2 + uFrame * 3.1), hash(g2 + uFrame * 5.3 + 9.0), hash(g2 + uFrame * 7.7 + 4.0)) - 0.5;
-  c += cn * uFilm.x * 0.6 * (1.0 - smoothstep(0.0, 0.35, l));
+  vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 900.0));
+  float gr = hash(g2 + uFrame * 17.0) + hash(g2 * 1.7 + uFrame * 5.0) - 1.0;
+  c += gr * uFilm.x * (0.3 + 3.0 * l * (1.0 - l));
   o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
@@ -539,6 +603,8 @@ export async function makeRender(gl) {
     sky: program(gl, TRI_VS, SKY),
     strand: program(gl, STRAND_VS, STRAND_FS),
     rays: program(gl, TRI_VS, RAYS),
+    vol: program(gl, TRI_VS, VOL),
+    blur: program(gl, TRI_VS, BLUR),
     final: program(gl, TRI_VS, FINAL),
   });
   const empty = gl.createVertexArray();
@@ -565,14 +631,24 @@ export async function makeRender(gl) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const lutT = { tex: lut };
+  // The noise volume the march samples.
+  const noise = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, noise);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, NOISE_N, NOISE_N, NOISE_N, 0, gl.RED, gl.UNSIGNED_BYTE, noiseVolume(NOISE_N));
+  for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-  let hdr = null, rays = null, W = 0, H = 0;
+  let hdr = null, rays = null, volA = null, volB = null, W = 0, H = 0;
   function resize(w, h) {
     W = Math.max(2, w); H = Math.max(2, h);
     gl.canvas.width = W; gl.canvas.height = H;
-    free(gl, hdr); free(gl, rays);
+    free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB);
     hdr = target(gl, W, H);
     rays = target(gl, Math.max(2, W >> 1), Math.max(2, H >> 1));
+    // The volume marches at a quarter of the size; the blur and the lerp hide it.
+    volA = target(gl, Math.max(2, W >> 2), Math.max(2, H >> 2));
+    volB = target(gl, Math.max(2, W >> 2), Math.max(2, H >> 2));
   }
   // v: view, rot, toSun, time, band (the star), regs, flares, sat, count, bloom, frame, centre, bodies, lens.
   function frame(v) {
@@ -602,6 +678,7 @@ export async function makeRender(gl) {
       gl.uniform2f(p.u.uRes, W, H);
       gl.uniform1f(p.u.uTime, v.time % 4000);
       gl.uniform1f(p.u.uRain, v.band.rain);
+      gl.uniform1f(p.u.uGain, 1 + 0.9 * v.lens);
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, v.data, 0, v.count * STRIDE);
       gl.enable(gl.BLEND);
@@ -623,12 +700,33 @@ export async function makeRender(gl) {
     gl.uniform1f(r.u.uTime, v.time % 4000);
     tri(gl, rays, empty);
 
+    const vp = P.vol;
+    gl.useProgram(vp.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(vp.u.uNoise, 0);
+    gl.uniform4fv(vp.u.uView, v.view);
+    gl.uniform1f(vp.u.uTime, v.time % 4000);
+    gl.uniform1f(vp.u.uDens, v.volDens);
+    gl.uniform1f(vp.u.uDust, v.band.dust);
+    gl.uniform1f(vp.u.uLight, v.volLight);
+    tri(gl, volA, empty);
+    const bp = P.blur;
+    gl.useProgram(bp.p);
+    bind(gl, bp, 'uSrc', 0, volA);
+    gl.uniform2f(bp.u.uStep, 1, 0);
+    tri(gl, volB, empty);
+    bind(gl, bp, 'uSrc', 0, volB);
+    gl.uniform2f(bp.u.uStep, 0, 1);
+    tri(gl, volA, empty);
+
     const f = P.final;
     gl.useProgram(f.p);
     bind(gl, f, 'uHdr', 0, hdr);
     bind(gl, f, 'uBloom', 1, bt);
     bind(gl, f, 'uRays', 2, rays);
     bind(gl, f, 'uLut', 3, lutT);
+    bind(gl, f, 'uVol', 4, volA);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
     gl.uniform4fv(f.u.uView, v.view);

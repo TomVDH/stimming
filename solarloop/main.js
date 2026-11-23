@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, STARS, PROM_PSI, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, STARS, NR, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -29,8 +29,6 @@ const st = {
   // The ambient clock: it runs while the toy drifts and stops asleep.
   time: 34,
   pitch: 0, yaw: 0,
-  // The long lens pans along the limb: a roll of the star about the line of sight.
-  pan: 0,
   next: 0,
 };
 const sun = makeSun();
@@ -40,11 +38,17 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
-// Two framings: the wide dome, and a long lens on a quarter of the limb.
-const fit = { wide: { cx: 0, cy: R, hw: 520 }, long: { cx: 0, cy: R, hw: 280, psi: 0.5 } };
+// Three framings: the long lens on the bottom left limb, the wide dome, the full star.
+const VIEWS = ['long', 'wide', 'full'];
+const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
 // The long lens is the default (Tom, 2026-11-23).
-const lens = { long: store.get('lens') !== 'wide', k: 0 };
-lens.k = lens.long ? 1 : 0;
+const saved = store.get('lens');
+// cam eases from one framing to the next; t runs from 0 to 1.
+const cam = { mode: VIEWS.includes(saved) ? saved : 'long', from: '', t: 1 };
+cam.from = cam.mode;
+const ease = t => t * t * (3 - 2 * t);
+// How much of a framing is in the current view, from 0 to 1.
+const weight = name => { const k = ease(cam.t); return (cam.from === name ? 1 - k : 0) + (cam.mode === name ? k : 0); };
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
@@ -64,39 +68,43 @@ function fitView(w, h, top = 0, bottom = 0) {
   const psi = -Math.PI + (narrow ? 0.6 : Math.atan2(hhL, hwL));
   const nx = Math.sin(psi), ny = Math.cos(psi);
   const d = 0.5 * (hwL * -nx + hhL * -ny);
-  // The star turns so its prominences stand in the corner.
-  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi, roll: PROM_PSI - psi };
+  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi };
+  // The full star: the whole disk, its prominences and some sky round it.
+  const free2 = Math.max(0.4 * h, h - top - bottom);
+  const hhF = narrow ? 1.2 * R / asp : 1.32 * R * h / free2;
+  const hwF = hhF * asp;
+  fit.full = { cx: 0, cy: (top - bottom) * hhF / h * -1 + 0, hw: hwF };
+  fit.full.cy = -(bottom - top) * hhF / h;
   applyView();
 }
 // Eases between the framings; the width moves on a log scale, as a zoom does.
 function applyView() {
-  const k = lens.k * lens.k * (3 - 2 * lens.k);
-  const a = fit.wide, b = fit.long;
+  const k = ease(cam.t);
+  const a = fit[cam.from], b = fit[cam.mode];
   view.cx = a.cx + (b.cx - a.cx) * k;
   view.cy = a.cy + (b.cy - a.cy) * k;
   view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
   view.hh = view.hw / view.asp;
   setRot();
 }
+// L steps through the framings: long lens, wide dome, full star.
 function toggleLens() {
-  lens.long = !lens.long;
-  store.set('lens', lens.long ? 'long' : 'wide');
-  if (!started || calm) { lens.k = lens.long ? 1 : 0; applyView(); }
+  // A step during a zoom starts from wherever the view now stands.
+  if (cam.t < 1) { cam.from = cam.t < 0.5 ? cam.from : cam.mode; }
+  else cam.from = cam.mode;
+  cam.mode = VIEWS[(VIEWS.indexOf(cam.mode) + 1) % VIEWS.length];
+  cam.t = !started || calm ? 1 : 0;
+  store.set('lens', cam.mode);
+  applyView();
   poke();
 }
-// Rotation, star frame to view frame: a roll about z after a pitch about x after a yaw about y.
-// The roll grows with the lens, so the long lens sees the star turned.
+// Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-const mul = (a, b) => a.map(row => [0, 1, 2].map(c => row[0] * b[0][c] + row[1] * b[1][c] + row[2] * b[2][c]));
 function setRot() {
-  const k = lens.k * lens.k * (3 - 2 * lens.k);
-  const roll = k * ((fit.long.roll || 0) + st.pan);
   const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
-  const cr = Math.cos(roll), sr = Math.sin(roll);
   const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-  const rz = [[cr, -sr, 0], [sr, cr, 0], [0, 0, 1]];
-  M = mul(rz, mul(rx, ry));
+  M = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
 }
 const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
 // A view point to stage CSS pixels, y down.
@@ -110,7 +118,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, lens, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
@@ -136,11 +144,11 @@ const ui = initPage({ id: ID, bar: {
   ],
   slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
   quality: true,
-  keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'wide or long lens']],
+  keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
-    ['drag', 'Drag to turn the star; on the long lens, to pan along its edge'],
-    ['L', 'Switch between the wide view and a long lens on a quarter of the limb'],
+    ['drag', 'Drag to turn the star (the long lens holds still)'],
+    ['L', 'Step through the long lens, the wide view and the full star'],
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
@@ -178,13 +186,17 @@ function flareAt(rg) {
   fl.snapped = 0;
   poke();
 }
-// Space flares each region in turn, the ones in view first.
-const ORDER = [0, 1, 3, 2, 4];
+// Space flares each region in view in turn.
 function flareNext() {
-  for (let i = 0; i < ORDER.length; i++) {
-    const rg = sun.regions[ORDER[(st.next + i) % ORDER.length]];
+  const seen = sun.regions.filter(rg => {
+    const [x, y] = toCss(regionPoint(rg).v);
+    return x > 0 && x < cssW && y > 0 && y < cssH;
+  });
+  const list = seen.length ? seen : sun.regions;
+  for (let i = 0; i < list.length; i++) {
+    const rg = list[(st.next + i) % list.length];
     if (sun.flares.some(f => f.rg === rg && f.t < 12)) continue;
-    st.next = (st.next + i + 1) % ORDER.length;
+    st.next = (st.next + i + 1) % list.length;
     flareAt(rg);
     return;
   }
@@ -217,10 +229,10 @@ function flareNear(x, y) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(20), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4),
+  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4,
 };
 function makeFrame() {
   const f = frameState;
@@ -267,7 +279,7 @@ function makeFrame() {
   // A body too big for the sky hangs in the top right corner, cut by the frame.
   if (rA > 0.12 * wh) { ex = w.cx + w.hw * 0.72 + rA * 0.45; ey = w.cy + wh * 0.5 + rA * 0.35; }
   const [ax, ay] = px(ex, ey);
-  f.bodyA.set([ax, ay, rA * ppm, 1 - lens.k]);
+  f.bodyA.set([ax, ay, rA * ppm, 1 - weight('long')]);
   const L = fit.long, lh = L.hw / view.asp;
   const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
   // The transit runs along a chord across the disk, over about five minutes.
@@ -278,16 +290,19 @@ function makeFrame() {
   const bx = depth * Math.sin(L.psi) - tx * s0, by = depth * Math.cos(L.psi) - ty * s0;
   const [qx, qy] = px(bx, by);
   const on = star.long === 'none' ? 0 : Math.min(1, Math.max(0, (R - Math.hypot(bx, by)) / 6));
-  f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, lens.k * on]);
+  // The transit shows on the long lens and on the full star.
+  f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
-  f.cam.set([st.pan + st.yaw, st.pitch, star.lensing, 0]);
-  // Film: grain, gate weave in pixels, lens dirt, exposure flicker.
-  const still = calm ? 0 : 1;
-  f.film.set([0.06, 0.6 * still * view.W / cssW, 1, 0.035 * still]);
-  f.lens = lens.k;
+  f.cam.set([st.yaw, st.pitch, star.lensing, 0]);
+  // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
+  f.film.set([0.018, 0, 0.35, 0]);
+  // The volume: denser on the long lens and round the dusty giants; lit by the star.
+  f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust);
+  f.volLight = 1.3 * star.disk[0] / (1 + star.dust);
+  f.lens = weight('long');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
   return f;
 }
@@ -310,11 +325,10 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
     // The lens zooms over about two seconds.
-    const lt = lens.long ? 1 : 0;
-    const zooming = lens.k !== lt;
+    const zooming = cam.t < 1;
     if (zooming) {
-      lens.k += (lt - lens.k) * (1 - Math.exp(-dt / 0.45));
-      if (Math.abs(lt - lens.k) < 0.002) lens.k = lt;
+      cam.t = Math.min(1, cam.t + dt / 2);
+      if (cam.t >= 1) cam.from = cam.mode;
       applyView();
     }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
@@ -369,13 +383,13 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0, n0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw, n0: st.pan });
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
   poke();
 });
 stage.addEventListener('pointermove', e => {
@@ -389,14 +403,10 @@ stage.addEventListener('pointermove', e => {
   snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
   const k = 0.75 / Math.max(320, cssH);
-  if (lens.long) {
-    // The long lens pans along the limb; up and down tilt the star a little.
-    st.pan = clamp(pointer.n0 + (x - pointer.x0 - (y - pointer.y0)) * k * 0.6, -1.3, 1.3);
-    st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k * 0.4, -0.2, 0.2);
-  } else {
-    st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
-    st.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
-  }
+  // The long lens holds still: the camera never moves there.
+  if (cam.mode === 'long') return;
+  st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
+  st.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
   setRot();
   poke();
 });

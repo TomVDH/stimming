@@ -6,7 +6,7 @@
 
 export const R = 696;
 export const STRIDE = 16;
-export const MAX_STRANDS = 960;
+export const MAX_STRANDS = 2048;
 export const MAX_FLARES = 2;
 // A flare runs this long, then the region is calm again.
 export const FLARE_END = 50;
@@ -100,7 +100,7 @@ export const STARS = {
     ...FLARE, ribbon: 1, bubble: 0.12, wave: 0.3,
     row: 4, rsun: 1420, expo: 0.95, hotW: 1, coolW: 1.1, loop: 0.18, prom: 0.55, dust: 1, rays: 0.75,
     hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
-    disk: [1.9, 1.5, 0, 0.32], disk2: [230, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
+    disk: [1.9, 1.5, 0, 0.16], disk2: [140, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
     wide: 'sun', long: 'sun', root: 110,
   },
 };
@@ -142,7 +142,20 @@ const REGION_DEFS = [
   { psi: 0.42, beta: 0.16, theta: 1.1, span: [10, 42], len: 60, hk: 0.95, n: 10, lt: 5.9 },
   { psi: -0.45, beta: -0.02, theta: 0.55, span: [15, 57], len: 75, hk: 1.0, n: 12, lt: 5.95 },
   { psi: 0.015, beta: 0.2, theta: 0.3, span: [10, 39], len: 68, hk: 0.9, n: 10, lt: 5.9 },
+  // The bottom left limb: the long lens's corner.
+  { psi: -2.35, beta: 0.04, theta: 0.2, span: [12, 66], len: 90, hk: 1.1, n: 16, lt: 5.95 },
+  { psi: -2.62, beta: -0.06, theta: -0.3, span: [18, 90], len: 80, hk: 1.15, n: 14, lt: 6.0 },
+  { psi: -2.85, beta: 0.12, theta: 0.9, span: [10, 45], len: 60, hk: 0.95, n: 10, lt: 5.9 },
+  { psi: -2.1, beta: 0.1, theta: 0.5, span: [12, 50], len: 70, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: -2.5, beta: 0.22, theta: 0.3, span: [10, 40], len: 65, hk: 0.9, n: 10, lt: 5.9 },
+  // The rest of the limb, so the full star is active all round.
+  { psi: 1.5, beta: 0.05, theta: 0.4, span: [12, 55], len: 70, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 2.3, beta: -0.04, theta: -0.2, span: [10, 48], len: 60, hk: 1.05, n: 10, lt: 5.95 },
+  { psi: -1.35, beta: 0.06, theta: 0.7, span: [12, 52], len: 66, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 2.95, beta: 0.1, theta: 0.1, span: [10, 44], len: 60, hk: 0.95, n: 10, lt: 5.9 },
 ];
+// The number of regions: the disk pass takes one uniform each.
+export const NR = REGION_DEFS.length;
 
 /* ---------- giant prominences ---------- */
 // Cool plasma held high in the corona: far larger than the loops.
@@ -154,9 +167,14 @@ const PROM_DEFS = [
   { type: 'arch', psi: 0.3, beta: -0.035, theta: 0.08, len: 270, h: 205, n: 18 },
   // A tall curtain: the wall that fills the long lens's sky.
   { type: 'hedge', psi: 0.68, beta: 0.01, theta: 0, len: 140, h: 240, n: 46 },
+  // The bottom left limb, framed by the long lens.
+  { type: 'arch', psi: -2.5, beta: -0.03, theta: 0.06, len: 250, h: 220, n: 18 },
+  { type: 'hedge', psi: -2.2, beta: 0.015, theta: 0, len: 200, h: 150, n: 60 },
+  { type: 'hedge', psi: -2.85, beta: 0.01, theta: 0, len: 150, h: 230, n: 46 },
+  // The sides, for the full star.
+  { type: 'arch', psi: 1.55, beta: -0.03, theta: 0.1, len: 200, h: 160, n: 14 },
+  { type: 'hedge', psi: -1.4, beta: 0.01, theta: 0, len: 180, h: 120, n: 50 },
 ];
-// The middle of the prominences round the limb: the long lens turns it into the corner.
-export const PROM_PSI = 0.5;
 // An eruption lifts the prominence off; it forms again by this time.
 export const PROM_END = 46;
 

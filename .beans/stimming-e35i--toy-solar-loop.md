@@ -62,6 +62,13 @@ Stack type: Shader, raw WebGL2 (shared/gl.js, bloom from shared/glow.js). No sha
 - Scale bodies are shaded spheres: the earth with land, sea, cloud and a blue rim; the moon; Phobos.
 - Film post after *Sunshine*: heavy grain, shadow colour noise, gate weave, flicker, lens dirt, burnt highlights.
 
+## Held still, active all round, full view, volume (Tom, 2026-11-23)
+
+- The long lens holds still; activity all round the limb, with its own regions and prominences on the bottom left limb.
+- L steps three views: long lens, wide, full star.
+- A raymarched haze and dust volume with Fire's smoke shading (K3 from cloudbottle) replaces the flat haze layers.
+- The film touch is light: fine grain, soft colour split, faint lens dirt.
+
 ## Reference
 
 TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, bright feet, a dark mottled disk. SDO 131, 171 and 304, the limb flare of May 2013: a saturated core with a diagonal diffraction cross and a vertical bleed line; the three colour tables. Papers on flare-driven coronal rain: rain shows best in 304.
@@ -87,3 +94,4 @@ TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, b
 - 69ca056c: the cinema pass.
 - be04ba72: five stars and the long lens.
 - cc31bb1b: the long lens is the default.
+- ace6477f: the corner, haze layers, eight stars, film post.
