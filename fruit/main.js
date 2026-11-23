@@ -9,6 +9,8 @@ import { FRUITS } from './fruits.js';
 import { makeFuzz } from './fuzz.js';
 import { makeJuice } from './juice.js';
 import { makePost } from './post.js';
+import { makePuddle, makeMirror, RECT } from './puddle.js';
+import { LIGHT } from './glsl.js';
 import { fruitSound } from './sound.js';
 mark('libs');
 
@@ -72,7 +74,7 @@ const kit = audioKit({ keys: new Set([' ', 's', 'S', ...'1234567890']), sleepMs:
 const snd = fruitSound(kit);
 
 /* ---------- three ---------- */
-let renderer = null, scene = null, camera = null, post = null, fuzz = null, juice = null;
+let renderer = null, scene = null, camera = null, post = null, fuzz = null, juice = null, puddle = null, mirror = null;
 let root = null, halves = [], floor = null, sky = null;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 
@@ -97,11 +99,18 @@ function makeFloor() {
   const g = new THREE.PlaneGeometry(400, 400);
   g.rotateX(-Math.PI / 2);
   const m = new THREE.ShaderMaterial({
-    uniforms: { ...L, uShadow: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uBg: { value: new THREE.Color() } },
+    uniforms: {
+      ...L, uShadow: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uBg: { value: new THREE.Color() },
+      uPud: { value: null }, uRefl: { value: null }, uTexMat: { value: new THREE.Matrix4() }, uRect: { value: RECT }, uJuicy: { value: 0 },
+    },
     vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: /* glsl */`
-      uniform vec3 uKeyCol, uSky, uBg;
-      uniform vec4 uShadow[2];
+      ${LIGHT}
+      uniform vec3 uBg;
+      uniform vec4 uShadow[2], uRect;
+      uniform sampler2D uPud, uRefl;
+      uniform mat4 uTexMat;
+      uniform float uJuicy;
       varying vec3 vW;
       void main() {
         float d = length(vW.xz * vec2(0.8, 1.0));
@@ -113,6 +122,31 @@ function makeFloor() {
           sh *= 1.0 - 0.8 * exp(-dot(q, q) * 1.6);
         }
         col *= sh;
+        // The puddle: juice over the floor, its rim curved, its top a wet mirror.
+        vec2 pu = (vW.xz - uRect.xy) / uRect.zw;
+        if (uJuicy > 0.5 && pu.x > 0.0 && pu.x < 1.0 && pu.y > 0.0 && pu.y < 1.0) {
+          vec4 P = texture2D(uPud, pu);
+          float h = P.r;
+          float cover = smoothstep(0.0005, 0.0025, h);
+          if (cover > 0.001) {
+            vec3 tint = P.gba / max(h, 1e-5);
+            float e = 1.5 / 320.0;
+            float hx = texture2D(uPud, pu + vec2(e, 0.0)).r - texture2D(uPud, pu - vec2(e, 0.0)).r;
+            float hz = texture2D(uPud, pu + vec2(0.0, e)).r - texture2D(uPud, pu - vec2(0.0, e)).r;
+            // The rim bends steeply, the middle lies flat: surface tension.
+            vec3 n = normalize(vec3(-hx * 26.0, 1.0, -hz * 26.0));
+            vec3 v = normalize(cameraPosition - vW);
+            float nv = max(dot(n, v), 0.0);
+            float fr = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+            vec4 tc = uTexMat * vec4(vW, 1.0);
+            vec3 refl = texture2D(uRefl, tc.xy / tc.w + n.xz * 0.04).rgb;
+            // Under the juice the floor takes its colour; deeper juice glows with the light.
+            float depth = smoothstep(0.0, 0.012, h);
+            vec3 under = col * mix(vec3(1.0), tint * 1.3, depth) + tint * (uKeyCol * 0.008 + uRimCol * 0.02) * depth;
+            vec3 wet = under * (1.0 - fr) + (refl + studio(reflect(-v, n), 0.01) * 0.8) * fr;
+            col = mix(col, wet, cover);
+          }
+        }
         col = mix(col, uBg, smoothstep(2.5, 9.0, d));
         gl_FragColor = vec4(col, 1.0);
       }`,
@@ -173,6 +207,9 @@ async function setup() {
   scene.add(root);
   juice = makeJuice(L);
   scene.add(juice.mesh);
+  puddle = makePuddle(renderer);
+  mirror = makeMirror(renderer);
+  floor.material.uniforms.uRefl.value = mirror.texture;
   post = makePost(renderer, L);
   build(F);
 }
@@ -209,6 +246,7 @@ function build(f) {
   fuzz.setLevel(D.level, D.rung);
   if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
   juice.setTint(F.juice);
+  puddle?.wipe();
   L.uGlow.value = F.glow;
   st.fuzz = fuzzOf(F);
   ui.slider?.set?.(st.fuzz);
@@ -306,7 +344,8 @@ function step(dt) {
   L.uRimDir.value.copy(RIM0).applyAxisAngle(UP, lightAz);
   L.uTime.value = simT;
   L.uFuzz.value = st.fuzz;
-  juice.step(dt, FLOOR_Y);
+  juice.step(dt, FLOOR_Y, (p, r) => puddle.splat(p.x, p.z, r, F.juice));
+  puddle.step(dt);
   fuzz.step(dt, st);
   snd.update(dt, st);
   const lively = Math.abs(st.openV) > 0.01 || Math.abs(st.open - st.openTo) > 0.002 || Math.abs(st.sqV) > 0.01 || Math.abs(st.sq - (squeezing ? 0.72 : 1)) > 0.002
@@ -314,7 +353,7 @@ function step(dt) {
     || halves.some(hf => Math.abs(hf.userData.dent.v) > 0.01 || Math.abs(hf.userData.dent.depth - hf.userData.dent.to) > 0.001 || hf.userData.skin.material.uniforms.uJig.value.w > 0.001)
     || halves.some(hf => { const b = hf.userData.body; return b.squeeze || Math.abs(b.sqV) > 0.01 || Math.abs(b.sq - 1) > 0.002 || Math.abs(b.hopV) > 0.01; })
     || Math.abs(lightAzTo - lightAz) > 0.002
-    || juice.busy || fuzz.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
+    || juice.busy || fuzz.busy || puddle.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
   return { lively };
 }
 
@@ -401,6 +440,7 @@ function resize(force = false) {
   renderer.setPixelRatio(dpr);
   renderer.setSize(cssW, cssH, false);
   post.resize(w, h, D.level, D.rung);
+  mirror.resize(w, h);
   fuzz.setLevel(D.level, D.rung);
   frame3();
   fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h);
@@ -419,6 +459,11 @@ function render() {
   camera.position.set(eye.x + look.x * 0.35, eye.y + look.y * 0.2, eye.z);
   camera.lookAt(aim);
   camera.updateMatrixWorld();
+  // The puddle's reflection: the scene from below the floor, only while there is juice.
+  const fu = floor.material.uniforms;
+  fu.uJuicy.value = puddle.juicy ? 1 : 0;
+  fu.uPud.value = puddle.texture;
+  if (puddle.juicy) { mirror.render(scene, camera, FLOOR_Y, aim, [floor]); fu.uTexMat.value.copy(mirror.matrix); }
   post.render(scene, camera, { frame: frozen ? 0 : frameNo, focus: camera.position.distanceTo(aim) - 0.5 - 0.2 * st.open, aperture: 0.03 });
 }
 
@@ -439,7 +484,8 @@ function frame(now) {
     lively = s.lively || look.distanceTo(lookTo) > 0.002;
     place();
     render();
-    D.frame(dt);
+    // Only full-rate frames count: the 30 fps drift is chosen, not slow.
+    if (lively) D.frame(dt);
     frameNo++;
     again = lively || (!frozen && timeK > 0);
   } finally {
@@ -617,7 +663,7 @@ whenVisible(stage, on => {
 onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
-if (qa.has('qa')) globalThis.__fruit = { st, light: a => { lightAzTo = a; touch(); }, get halves() { return halves; }, get F() { return F; }, swap, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
+if (qa.has('qa')) globalThis.__fruit = { st, puddle: () => puddle, mirror: () => mirror, floor: () => floor, light: a => { lightAzTo = a; touch(); }, get halves() { return halves; }, get F() { return F; }, swap, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
 
 mark('build');
 try {

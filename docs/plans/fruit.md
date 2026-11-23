@@ -24,6 +24,15 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Dragon fruit | After the reference photo (Commons, Pitaya cross section): crinkled wet flesh with seeds in halos; thick two-sided bracts in a spiral, a crown; deeper skin. Bracts could blend into the skin more |
 | Blood orange | Tried vesicles as geometry: read as a petal mosaic (Tom: not realistic). Now one wet face: dark flesh, sac-scale round domes under a sharp reflection for crinkled glints, faint walls, narrow albedo, thick rind (reference: Commons, Silentcynic, CC BY 3.0) |
 
+## Interaction (Tom, 2026-11-23)
+
+| Pass | What |
+|---|---|
+| Floor, seams, halves, light | Exact floor contact; no seams; halves squeeze, drip and wobble on their own; light through the fruit with a light drag |
+| Juice puddle | Drops pool into one glossy puddle that spreads, holds its edge, mixes colours and mirrors the fruit |
+
+Ideas waiting: wedges along the swipe, loose seeds that tumble out, tear open or peel, a bite.
+
 ## Next: one fruit at a time
 
 For each fruit, against its reference photos:

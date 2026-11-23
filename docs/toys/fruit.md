@@ -53,6 +53,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 | Juice beads | `half.js` | Instanced ellipsoids. Four steps along the view chord in the bead's own space, a chord to each light from every step, Beer-Lambert per channel. A seed inside ends the view ray: seen through the juice. |
 | Fuzz | `fuzz.js` | Instanced ribbons on four control points with fibre wrap light. Per fruit: count, length, width, lift and curl (the rambutan's spines). |
 | Fruits | `kiwi.js` to `fig.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |
+| Puddle | `puddle.js` | Landed drops splat into a float texture over the floor (depth, and colour times depth). Juice flows from deep to shallow while it is thicker than a thin film, so the edge holds and colours mix. The floor draws it with a rim normal from the depth gradient, the floor tinted under it, and a planar reflection: the scene rendered from a mirror camera below the floor, at half size, only while there is juice. It flows for six seconds after the last drop, then rests; a new fruit drains it. |
 | Juice | `juice.js` | Up to 120 drops with the bead optics, stretched along their flight |
 | Finish | `post.js` | Depth of field (disc gather), bloom, ACES, vignette, grain |
 
@@ -64,7 +65,7 @@ Raw Web Audio on the shared kit, muted by default: a squelch, a boing, a knife s
 
 ## Frame loop
 
-Lively at full rate while anything moves; drifting at 30 fps; asleep 60 s after the last input. A swap compiles the new shaders at once and restarts the slow-frame watch. Reduced motion: no drift, a smaller burst, no roll (the fruit swaps in place).
+Lively at full rate while anything moves; drifting at 30 fps (the slow-frame watch counts only full-rate frames); asleep 60 s after the last input. A swap compiles the new shaders at once and restarts the slow-frame watch. Reduced motion: no drift, a smaller burst, no roll (the fruit swaps in place).
 QA on D3D11 (RTX 3070, headless Edge, 1280 x 800): every fruit 7.6 to 7.8 ms median during a slice; no quality step after nine swaps.
 
 ## Known

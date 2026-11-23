@@ -87,7 +87,8 @@ export function makeJuice(L) {
         drops.push({ p, v, r: 0.008 + Math.pow(Math.random(), 3) * 0.03, life: 0, flat: 0 });
       }
     },
-    step(dt, floorY) {
+    // onLand(p, r) hears each drop that reaches the floor; the puddle takes it in.
+    step(dt, floorY, onLand = null) {
       if (!drops.length) { mesh.count = 0; return; }
       for (let i = drops.length - 1; i >= 0; i--) {
         const d = drops[i];
@@ -96,13 +97,14 @@ export function makeJuice(L) {
           // A landed drop spreads, then shrinks away.
           d.flat = Math.min(1, d.flat + dt * 6);
           d.r *= Math.exp(-dt * 1.6);
-          if (d.life > 2.2 || d.r < 0.004) drops.splice(i, 1);
+          // A landed drop joins the puddle; it shows only a moment as a bead.
+          if (d.flat > 0.9 || d.r < 0.004) drops.splice(i, 1);
           continue;
         }
         d.v.y -= 9.8 * dt;
         d.v.multiplyScalar(Math.exp(-dt * 0.3));
         d.p.addScaledVector(d.v, dt);
-        if (d.p.y < floorY + d.r * 0.3) { d.p.y = floorY + d.r * 0.25; d.flat = 0.01; d.v.set(0, 0, 0); }
+        if (d.p.y < floorY + d.r * 0.3) { d.p.y = floorY + d.r * 0.25; d.flat = 0.01; d.v.set(0, 0, 0); onLand?.(d.p, d.r); }
         if (d.p.length() > 30) drops.splice(i, 1);
       }
       drops.forEach((d, i) => {
