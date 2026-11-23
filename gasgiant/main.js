@@ -1,6 +1,6 @@
 // Gas giant dive: the plunge. Hold to fall from over the cloud tops into the dark.
 // Raw WebGL2 in five passes, one output each: map, march, composite, bloom, final.
-import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
+import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound, idle } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { TRI_VS, program, linked, target, bind, tri, free, onContextLoss } from '../shared/gl.js';
@@ -9,7 +9,7 @@ import { loadWatch } from '../shared/loadwatch.js';
 import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
-import { BAKE_FS, MARCH_FS } from './clouds.js';
+import { BAKE_FS, marchFS, zoneFor } from './clouds.js';
 import { COMPOSITE_FS, FINAL_FS } from './post.js';
 import { CABIN_FS } from './cabin.js';
 import { makeBolts, stepBolts, flashUniform, busyBolts } from './bolts.js';
@@ -33,6 +33,27 @@ const B = makeBolts();
 if (QS.has('qa')) globalThis.__gg = { S, B };
 // ?alt=-70 starts at that height, for checks.
 if (QS.has('alt')) S.alt = clamp(Number(QS.get('alt')) || ALT_TOP, ALT_DEEP, ALT_TOP);
+
+/* ---------- resume ---------- */
+// A reload or a lost GPU context puts the eye back where it was, within 30 minutes.
+// The spot lives in this tab only: a new visit starts at the top.
+const RESUME = 'stimming.gasgiant.resume';
+function saveSpot() {
+  try { sessionStorage.setItem(RESUME, JSON.stringify({ alt: S.alt, yaw: S.yaw, pitch: S.pitch, at: Date.now() })); } catch { /* storage blocked */ }
+}
+function loadSpot() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(RESUME) || 'null');
+    if (r && Date.now() - r.at < 1.8e6 && Number.isFinite(r.alt)) return r;
+  } catch { /* storage blocked */ }
+  return null;
+}
+if (!QS.has('alt')) {
+  const r = loadSpot();
+  if (r) { S.alt = clamp(r.alt, ALT_DEEP, ALT_TOP); S.yaw = clamp(+r.yaw || 0, -25, 25); S.pitch = clamp(+r.pitch || 0, -15, 15); }
+}
+addEventListener('pagehide', saveSpot);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveSpot(); });
 S.lum = luma(lightAt(S.alt));
 
 const depthOf = alt => (ALT_TOP - alt) / (ALT_TOP - ALT_DEEP);
@@ -79,7 +100,7 @@ const ui = initPage({ id: ID, bar: {
   slider: { label: 'Depth', min: 0, max: 1, step: 0.001, value: depthOf(S.alt), onInput: v => { S.slideTo = altOf(v); slideAt = performance.now(); touch(); } },
   quality: true,
   dev: DEV,
-  reset: () => { S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.yaw = 0; S.pitch = 0; B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); touch(); },
+  reset: () => { S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.yaw = 0; S.pitch = 0; B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); saveSpot(); touch(); },
   keys: [['hold', 'dive'], ['drag', 'look'], ['space', 'dive']],
   help: [
     ['hold', 'Hold to dive into the clouds'],
@@ -113,14 +134,32 @@ function marchCut() {
   return { scale: r >= 2 ? 0.34 : 0.5, steps: r >= 3 ? 96 : D.level >= 2 ? 190 : 150, fine: r >= 3 ? 0 : 1 };
 }
 
+// The march programs by zone; the deeper ones link after the first frame.
+const MZ = { top: null, mid: null, deep: null };
+// Links the other zones in the background, nearest first, one at a time.
+async function linkRest() {
+  const order = { top: ['mid', 'deep'], mid: ['top', 'deep'], deep: ['mid', 'top'] }[zoneFor(S.alt)];
+  for (const z of order) {
+    if (MZ[z]) continue;
+    await idle(2000);
+    if (gl.isContextLost()) return;
+    const a = performance.now();
+    MZ[z] = (await linked(gl, { m: program(gl, TRI_VS, pruneGLSL(marchFS(z))) })).m;
+    link['march_' + z] = Math.round(performance.now() - a);
+  }
+  watch.step('zones');
+}
+
 async function setup() {
   if (!gl || !gl.getExtension('EXT_color_buffer_float')) throw new Error('no float targets');
   gl.getExtension('OES_texture_float_linear');
   vao = gl.createVertexArray();
   watch.step('link');
   const t0 = performance.now();
+  // Only the march zone the eye starts in links before the first frame.
+  const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, map: MAP_FS, march: MARCH_FS, comp: COMPOSITE_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -130,6 +169,7 @@ async function setup() {
     P = set;
   } else P = await linked(gl, set);
   link.all = Math.round(performance.now() - t0);
+  MZ[zone] = P.march;
   if (QS.has('qa')) globalThis.__gg.link = link;
   watch.step('bake');
   bakeVolume(64);
@@ -216,7 +256,7 @@ function aimOnDeck(b) {
 }
 
 /* ---------- step ---------- */
-let timeK = 1, lastInput = performance.now();
+let timeK = 1, lastInput = performance.now(), saveT = 0;
 function step(dt) {
   const sdt = dt * timeK;
   // The fall: fast through the empty sky, slow in the decks, a glide through the voids.
@@ -231,9 +271,14 @@ function step(dt) {
     S.v += (want - S.v) * (1 - Math.exp(-dt / (S.diving ? 1.1 : 1.0)));
     if (Math.abs(S.v) < 0.002) S.v = 0;
   }
-  S.alt = clamp(S.alt - S.v * dt, ALT_DEEP, ALT_TOP);
+  const next = clamp(S.alt - S.v * dt, ALT_DEEP, ALT_TOP);
+  // A zone whose program has not linked yet holds the capsule at its edge.
+  if (MZ[zoneFor(next)] || !P) S.alt = next;
+  else S.v = 0;
   if (S.alt <= ALT_DEEP && S.v > 0) S.v = 0;
   if (performance.now() - slideAt > 300) ui.slider?.set(depthOf(S.alt));
+  saveT += dt;
+  if (saveT > 2 && S.v !== 0) { saveT = 0; saveSpot(); }
   // Time runs fast high up, so the storm turns; slow in the decks, so near clouds do not blur.
   const k = 4 + 26 * smooth(-20, 120, S.alt);
   S.tMap += sdt * k * (frozen && !S.diving && !S.v ? 0 : 1);
@@ -294,13 +339,15 @@ function render(dt) {
   }
   // Pass 3: the march.
   const m = marchCut();
-  gl.useProgram(P.march.p);
-  sunTo(P.march);
-  gl.uniform4f(P.march.u.uTune, TUNE.ms, TUNE.amb, TUNE.bounce, TUNE.haze);
-  gl.uniform1f(P.march.u.uRays, TUNE.rays);
-  const u = P.march.u;
-  bind(gl, P.march, 'uMap', 0, T.map);
-  bind(gl, P.march, 'uLut', 1, { tex: lut });
+  // The march for the eye's zone; until it links, the start zone's.
+  const M = MZ[zoneFor(S.alt)] || P.march;
+  gl.useProgram(M.p);
+  sunTo(M);
+  gl.uniform4f(M.u.uTune, TUNE.ms, TUNE.amb, TUNE.bounce, TUNE.haze);
+  gl.uniform1f(M.u.uRays, TUNE.rays);
+  const u = M.u;
+  bind(gl, M, 'uMap', 0, T.map);
+  bind(gl, M, 'uLut', 1, { tex: lut });
   gl.activeTexture(gl.TEXTURE2);
   gl.bindTexture(gl.TEXTURE_3D, vol);
   gl.uniform1i(u.uVol, 2);
@@ -462,7 +509,8 @@ whenVisible(stage, on => {
 onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); else snd.cancel(); });
 new ResizeObserver(() => resize()).observe(stage);
-onContextLoss(canvas, { lost: halt, restored: () => location.reload(), failed: () => { fail.hidden = false; } });
+// A lost context saves the spot; the reload resumes there.
+onContextLoss(canvas, { lost: () => { saveSpot(); halt(); }, restored: () => location.reload(), failed: () => { fail.hidden = false; } });
 
 mark('build');
 try {
@@ -476,6 +524,7 @@ try {
   mark('first-frame');
   watch.done();
   wake();
+  linkRest().catch(err => console.error(err));
 } catch (err) {
   console.error(err);
   watch.fail(err);

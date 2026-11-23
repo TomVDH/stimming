@@ -212,6 +212,18 @@ Next (Tom, 2026-11-23): "let's focus on above dive, first touch with gas giant a
 
 One capture at 36 km lost the WebGL context (a GPU reset); a second load and the bench did not repeat it.
 
+### Loading in stages, resuming on reload (Tom, 2026-11-23: "Yes, loading first")
+
+Tom asked if the toy is WebGPU with passes like Tornado alley, and what big things need to load gracefully and keep state. It is WebGL2 on `shared/gl.js`, with passes, as Tornado alley is.
+
+| Part | Change |
+|---|---|
+| Zones | The march is three programs, cut from one source by `// @seg` markers (`marchFS(zone)` in clouds.js). Top: 42 to -92 km (haze lid to the water deck). Mid: 22 to -262 km (ammonia to indigo). Deep: -140 to -505 km (veil to the last deck). Each holds its layers and the decks the eye sees from them. |
+| Swap | `zoneFor(h)`: top above -20 km, mid to -245 km, deep below. The edges lie where both programs show the same thing, so a swap shows no seam. |
+| Staged link | Before the first frame, only the start zone's march links (top: about 1.0 s on D3D11; the one program took 2.0 s). After the first frame the other zones link in idle time, nearest first, through `KHR_parallel_shader_compile`, so no frame stalls. Until a zone links, the capsule holds at its edge. |
+| Resume | The depth and the look live in this tab's session storage, saved every 2 s while moving, on hide and on a lost context. A reload or a restored context resumes there within 30 minutes; a new visit starts at the top. |
+| Checks | First frame 1.7 to 2.8 s from load. A slide from the top to -300 km crossed both edges with no hold. A lost and restored context reloaded at the same depth (8.8 km). A start at -300 km links the deep zone first. |
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech

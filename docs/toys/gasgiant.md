@@ -81,6 +81,11 @@ Bar v3, from the `bar` spec in `initPage()`.
 | Click | A short sink |
 | Space (hold) | The same as a hold |
 
+## Loading and state
+
+- The march links in three zones (top, mid, deep). Only the start zone links before the first frame; the others link after it, in the background. The capsule holds at a zone's edge until that zone has linked.
+- A reload or a lost GPU context resumes at the same depth and look, within 30 minutes, in the same tab.
+
 ## Sound
 
 Web Audio on the shared kit, muted by default. Wind through a low-pass that falls with pressure, buffets in the dive, a low hum that climbs with depth. Thunder from flashes within 45 km, late by distance at 1.2 km/s, scheduled on the audio clock. Mute and a hidden tab stop every pending sound; the context sleeps after the last one.
@@ -93,7 +98,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `main.js` | Bar, capsule and eye, gestures, frame loop, ladder |
 | `world.js` | Planet, decks, light table, ring profile, palette, shared GLSL |
 | `map.js` | Pass 1: bands, the storm, its wake |
-| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano) |
+| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into three zone programs |
 | `sky.js` | Space, sun, rings, limb haze |
 | `post.js` | Pass 4: the composite. The final grade |
 | `cabin.js` | The capsule: wall, bezel, liner, panes and the glass weather |

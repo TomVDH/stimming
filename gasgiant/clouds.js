@@ -45,7 +45,7 @@ uniform float uZ;
 ${VOL_NOISE}
 void main() { o = volAt(vec3(vUv, uZ)); }`;
 
-export const MARCH_FS = /* glsl */`#version 300 es
+const MARCH_SRC = /* glsl */`#version 300 es
 precision highp float;
 precision highp sampler3D;
 in vec2 vUv;
@@ -63,6 +63,8 @@ ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
 const float TOP = 42.0, BOT = -505.0;
+// This program's zone: it holds only the layers in it.
+const float ZLO = 0.0, ZHI = 0.0;
 const vec3 FLASH_C = vec3(0.64, 0.74, 1.0);
 const vec3 SKY_C = vec3(0.07, 0.14, 0.17);
 vec4 lut(float h) { return textureLod(uLut, vec2(clamp((h - LUT_LO) / (LUT_HI - LUT_LO), 0.0, 1.0), 0.5), 0.0); }
@@ -214,7 +216,7 @@ float dens(vec3 p, float lod, float fine, float full) {
   gOpen = 0.0;
   gUnder = 0.0;
   gDeep = -1.0;
-  if (h < TOP && h > BOT) {
+  if (h < min(TOP, ZHI) && h > max(BOT, ZLO)) {
     vec4 m = mapAt(p.xz);
     // A slow, wide warp breaks the noise lattice; the fine octave turns off its axes.
     vec4 nw = textureLod(uVol, vec3(p.x, h, p.z) / 1300.0 + vec3(0.3, 0.1, 0.7), 0.0);
@@ -243,6 +245,7 @@ float dens(vec3 p, float lod, float fine, float full) {
     // A void sets vd (floor, ceiling, seed, hue) and vk (storm cell km, twister share, curtain share, ceiling hue).
     vec4 vd = vec4(0.0);
     vec4 vk = vec4(0.0);
+    // @seg ammonia
     if (h > 0.0) {
       // The ammonia deck: tops follow the map; billows stand on them; a lumpy ceiling below.
       // Billows stand taller in the zones and the storm, where the cloud is thick.
@@ -284,21 +287,30 @@ float dens(vec3 p, float lod, float fine, float full) {
         float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * 0.015 * band(h, 22.0, 40.0, 2.0);
         if (hz > d) { d = hz; gAlb = mix(pal(0.45), vec3(0.9), 0.5); gOpen = 1.0; }
       }
-    } else if (h > -24.0) {
+    } else
+    // @end
+    // @seg upper
+    if (h > -24.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
       d = tower(p, h, -24.0, 2.0, 3.1, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.5 + 0.3 * n1.a), pal(0.1), f);
       gOpen = f;
       vd = vec4(-24.0, 2.0, 3.1, 0.5);
       vk = vec4(70.0, 0.12, 0.35, 0.05);
-    } else if (h > -38.0) {
+    } else
+    // @end
+    // @seg brown
+    if (h > -38.0) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
       float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
       float sh = min(-24.0 + 4.0 * (nb - 0.5) - h, (h + 40.0) * 0.8);
       d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85 * (1.0 - breakAt(p.xz, 7.7, 0.0));
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
       gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
-    } else if (h > -64.0) {
+    } else
+    // @end
+    // @seg mushball
+    if (h > -64.0) {
       // The mushball fall: darker towers, and slush hail falling in streaks.
       d = tower(p, h, -64.0, -38.0, 7.7, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
@@ -312,7 +324,10 @@ float dens(vec3 p, float lod, float fine, float full) {
       }
       vd = vec4(-64.0, -38.0, 7.7, 0.95);
       vk = vec4(60.0, 0.15, 0.4, 0.45);
-    } else if (h > -92.0) {
+    } else
+    // @end
+    // @seg water
+    if (h > -92.0) {
       // The water deck, heaped where the storm's wake churns.
       float top = -64.0 + 22.0 * m.a * n1.a + 5.0 * (nb - 0.5);
       float sh = min(top - h, (h + 92.0) * 0.8);
@@ -320,25 +335,37 @@ float dens(vec3 p, float lod, float fine, float full) {
       d = smoothstep(0.0, 1.6 + lod, sh) * (0.5 + 0.5 * n1.b) * cov;
       gAlb = mix(vec3(0.72, 0.66, 0.84), pal(0.9), 0.4 * n1.a);
       gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
-    } else if (h > -140.0) {
+    } else
+    // @end
+    // @seg shelves
+    if (h > -140.0) {
       // The shelves: violet sheets 16 km apart, some whole, some lace.
       vec3 id;
       d = sheets(h, -140.0, 16.0, 1.6, nb, nc.a, lod, id) * (0.5 + 0.5 * n1.b);
       gAlb = pal(0.9 + 0.3 * id.x + 0.1 * n1.a);
       gOpen = 0.6 + 0.4 * id.y;
-    } else if (h > -158.0) {
+    } else
+    // @end
+    // @seg veil
+    if (h > -158.0) {
       // The veil: a thin purple gauze, combed into streaks.
       d = 0.14 * smoothstep(0.35, 0.75, nb) * band(h, -158.0, -140.0, 3.0);
       gAlb = mix(pal(1.0), pal(1.15), n1.a);
       gOpen = 0.5;
-    } else if (h > -230.0) {
+    } else
+    // @end
+    // @seg nave
+    if (h > -230.0) {
       // The nave: a forest of columns 72 km tall, close set.
       d = tower(p, h, -230.0, -158.0, 11.3, nb, 64.0, 0.75, f) * (0.55 + 0.45 * n1.b);
       gAlb = mix(pal(0.55 + 0.1 * n1.a), pal(0.95), f);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-230.0, -158.0, 11.3, 0.55);
       vk = vec4(110.0, 0.1, 0.3, 1.05);
-    } else if (h > -262.0) {
+    } else
+    // @end
+    // @seg indigo
+    if (h > -262.0) {
       // The indigo deck: heaped on top, pouches hang from its base.
       float pop = max(n2.b - 0.4, 0.0) / 0.6;
       float top = -230.0 + 6.0 * (nb - 0.5) + 5.0 * pop * pop;
@@ -348,7 +375,10 @@ float dens(vec3 p, float lod, float fine, float full) {
       d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov * (1.0 - breakAt(p.xz, 5.9, 0.0)) * (1.0 - gyreEye(p.xz));
       gAlb = mix(vec3(0.36, 0.34, 0.74), pal(0.5), 0.35 * n1.a);
       gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
-    } else if (h > -360.0) {
+    } else
+    // @end
+    // @seg gyre
+    if (h > -360.0) {
       // The gyre: colossal towers, floating shelves, and a vast eyewall far ahead.
       d = tower(p, h, -360.0, -262.0, 5.9, nb, 150.0, 0.45, f) * (0.55 + 0.45 * n1.b);
       vec3 id;
@@ -360,7 +390,10 @@ float dens(vec3 p, float lod, float fine, float full) {
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-360.0, -262.0, 5.9, 0.15);
       vk = vec4(150.0, 0.18, 0.35, 0.8);
-    } else if (h > -385.0) {
+    } else
+    // @end
+    // @seg salt
+    if (h > -385.0) {
       // The salt deck: pale jade, flat, its top in long wave rows.
       float top = -360.0 + 3.0 * sin(qr.x / 9.0 + 4.0 * n1.r) * (0.6 + 0.4 * nb);
       float base = -388.0;
@@ -368,20 +401,29 @@ float dens(vec3 p, float lod, float fine, float full) {
       d = smoothstep(0.0, 1.0 + lod, sh) * (0.6 + 0.4 * n1.b) * smoothstep(0.12, 0.3, nc.a + 0.1);
       gAlb = mix(pal(0.08), pal(0.25), n1.a);
       gOpen = clamp(1.0 - (top - h) / 5.0, 0.0, 1.0);
-    } else if (h > -425.0) {
+    } else
+    // @end
+    // @seg nest
+    if (h > -425.0) {
       // The lightning nest: thin towers lit from inside by discharge.
       d = tower(p, h, -425.0, -385.0, 9.4, nb, 40.0, 0.6, f) * (0.55 + 0.45 * n1.b);
       gAlb = mix(pal(0.6), pal(1.0), f);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-425.0, -385.0, 9.4, 0.6);
       vk = vec4(60.0, 0.0, 0.25, 0.1);
-    } else if (h > -470.0) {
+    } else
+    // @end
+    // @seg stairs
+    if (h > -470.0) {
       // The stairs: thin laminae 9 km apart, teal and violet by turns.
       vec3 id;
       d = sheets(h, -470.0, 9.0, 0.9, nb, nc.a + 0.15, lod, id) * (0.55 + 0.45 * n1.b);
       gAlb = pal(mod(floor((h + 470.0) / 9.0), 2.0) < 0.5 ? 0.5 + 0.15 * id.x : 0.95 + 0.15 * id.x);
       gOpen = 0.6 + 0.4 * id.y;
-    } else {
+    } else
+    // @end
+    // @seg last
+    {
       // The last deck: dark magenta, churned, with tall heads.
       float pop = max(n2.b - 0.4, 0.0) / 0.6;
       float top = -470.0 + 10.0 * (nb - 0.5) + 8.0 * pop;
@@ -390,6 +432,8 @@ float dens(vec3 p, float lod, float fine, float full) {
       gAlb = mix(pal(1.12), pal(0.95), n1.a) * 0.8;
       gOpen = clamp(1.0 - (top - h) / 10.0, 0.0, 1.0);
     }
+    // @end
+    {}
     // One call for every void: the storms in it.
     if (full > 0.5 && vk.x > 0.0) {
       // The ceiling is a storm base, after Tornado alley's: deep folded lumps on a warped field,
@@ -556,6 +600,7 @@ void main() {
           gs = gs * 0.55 + lut(vo.x + 6.0).rgb * sh * mix(1.0, clPhase(dot(rd, lg)), 0.8) * 4.0 * uRays;
         }
         col += T * gs * ag;
+        // @seg nest
         // In the lightning nest the bolts show: a jagged channel floor to ceiling, and its glow.
         float nk = band(hg, -425.0, -385.0, 2.0);
         if (nk > 0.0) for (int k = 0; k < 4; k++) {
@@ -566,6 +611,7 @@ void main() {
           vec3 fq = fl.xyz - p;
           col += T * FLASH_C * fl.w * nk * (2.0 * exp(-dot(cq, cq) / 0.8) + 0.15 * exp(-dot(fq, fq) / 400.0)) * ds * 0.5;
         }
+        // @end
         T *= 1.0 - ag;
       }
       t += ds * (dn > 0.003 ? 1.0 : 1.6);
@@ -596,3 +642,21 @@ void main() {
   }
   o = res;
 }`;
+
+// The march in three zone programs, so each links fast and the deeper ones link in the background.
+// Each zone holds its layers and the ones the eye sees from it: the deck above, the deck below.
+export const ZONES = {
+  top: { lo: -92, hi: 42, segs: ['ammonia', 'upper', 'brown', 'mushball', 'water'] },
+  mid: { lo: -262, hi: 22, segs: ['ammonia', 'upper', 'brown', 'mushball', 'water', 'shelves', 'veil', 'nave', 'indigo'] },
+  deep: { lo: -505, hi: -140, segs: ['veil', 'nave', 'indigo', 'gyre', 'salt', 'nest', 'stairs', 'last'] },
+};
+/** The zone the eye at altitude h needs. */
+export const zoneFor = h => (h > -20 ? 'top' : h > -245 ? 'mid' : 'deep');
+/** The march source for one zone: the segments it holds and its height range. */
+export function marchFS(zone) {
+  const z = ZONES[zone];
+  return MARCH_SRC
+    .replace(/[ ]*\/\/ @seg (\w+)\n([\s\S]*?)[ ]*\/\/ @end\n/g, (m, name, body) => (z.segs.includes(name) ? body : ''))
+    .replace('const float ZLO = 0.0, ZHI = 0.0;', `const float ZLO = ${z.lo.toFixed(1)}, ZHI = ${z.hi.toFixed(1)};`);
+}
+
