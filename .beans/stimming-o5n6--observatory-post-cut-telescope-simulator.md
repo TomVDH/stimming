@@ -116,6 +116,6 @@ Tom: integrate it into the toy for now; an overview with a sweeping scene, a sle
 - [x] A skip during the cuts or the push drops the view; reduced motion fades the view in with no push
 - [ ] Tom sees the push and the iris in the pane
 - [x] The sweeping overview: the opening (golden hour to night, 10 s) starts toward the sunset, the dome low on the left, and pans and tilts down onto the dome; it lands on the wide shot (view/camera.ts applySweep). It stays on the rise: the woods and the land are built for that view only
-- [ ] Open: an orbit round the summit needs land and woods past the rise's view (obs-building's files)
+- [x] Tom keeps the pan, not an orbit round the summit (2026-11-23)
 - [ ] Open: what "medium fidelity" trims from the sim
 - [ ] Open: optics.ts still says a 41 cm refractor; at the main dome's scale 3.64 the hero glass is about 1 m
