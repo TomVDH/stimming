@@ -55,6 +55,8 @@ uniform sampler3D uVol;
 uniform vec3 uCam, uFwd, uRight, uUp;
 uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
 uniform vec4 uFlash[4];
+// Dev tuning: multiple scatter, ambient, bounce, haze reach.
+uniform vec4 uTune;
 ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
@@ -70,6 +72,10 @@ vec4 mapAt(vec2 xz) {
 }
 vec3 gAlb = vec3(1.0);
 float gOpen = 0.0;
+// gUnder: 1 on a void's ceiling, where the floor's light bounces up.
+float gUnder = 0.0;
+// The floor's colour, for the light it bounces up.
+vec3 gBounceC = vec3(1.0);
 vec3 th3(vec2 c) { vec3 p = vec3(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)), dot(c, vec2(419.2, 371.9))); return fract(sin(p) * 43758.5453); }
 // A tower in a void: one per cs km cell at most.
 // Towers gather in clusters and lines, as convection does; open plains lie between.
@@ -158,6 +164,7 @@ float dens(vec3 p, float lod, float fine) {
   float d = 0.0;
   gAlb = vec3(0.9);
   gOpen = 0.0;
+  gUnder = 0.0;
   if (h < TOP && h > BOT) {
     vec4 m = mapAt(p.xz);
     // A slow, wide warp breaks the noise lattice; the fine octave turns off its axes.
@@ -184,9 +191,9 @@ float dens(vec3 p, float lod, float fine) {
     // Wide cells break each deck here and there.
     vec4 nc = textureLod(uVol, vec3(0.6 * q.x + 0.8 * q.z, h * 4.0, 0.8 * q.x - 0.6 * q.z) / 157.0 + vec3(0.11, 0.0, 0.53), 0.0);
     float f = 0.0;
-    // A void sets vd (floor, ceiling, seed, hue) and vk (storm cell km, twister share, curtain share).
+    // A void sets vd (floor, ceiling, seed, hue) and vk (storm cell km, twister share, curtain share, ceiling hue).
     vec4 vd = vec4(0.0);
-    vec3 vk = vec3(0.0);
+    vec4 vk = vec4(0.0);
     if (h > 0.0) {
       // The ammonia deck: tops follow the map; billows stand on them; a lumpy ceiling below.
       // Billows stand taller in the zones and the storm, where the cloud is thick.
@@ -203,7 +210,8 @@ float dens(vec3 p, float lod, float fine) {
       rel += 4.0 * rg * rg * rg - 1.4;
       rel *= fine * (0.4 + 0.6 * m.r);
       top += rel;
-      float base = 2.0 + 3.0 * (nb - 0.5);
+      // The underside belongs to the void below: the deck runs down to 0.
+      float base = -1.0 + 2.0 * (nb - 0.5);
       float sh = min(top - h, (h - base) * 0.7);
       // Holes open in the low belts; zones and the storm stay closed.
       float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
@@ -221,11 +229,11 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.5 + 0.3 * n1.a), pal(0.1), f);
       gOpen = f;
       vd = vec4(-24.0, 2.0, 3.1, 0.5);
-      vk = vec3(70.0, 0.12, 0.35);
+      vk = vec4(70.0, 0.12, 0.35, 0.05);
     } else if (h > -38.0) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
       float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
-      float sh = min(-24.0 + 4.0 * (nb - 0.5) - h, (h + 38.0 + 3.0 * (nb - 0.5)) * 0.8);
+      float sh = min(-24.0 + 4.0 * (nb - 0.5) - h, (h + 40.0) * 0.8);
       d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85;
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
       gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
@@ -235,7 +243,7 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
       gOpen = f;
       vd = vec4(-64.0, -38.0, 7.7, 0.95);
-      vk = vec3(60.0, 0.15, 0.4);
+      vk = vec4(60.0, 0.15, 0.4, 0.45);
     } else if (h > -92.0) {
       // The water deck, heaped where the storm's wake churns.
       float top = -64.0 + 22.0 * m.a * n1.a + 5.0 * (nb - 0.5);
@@ -261,12 +269,12 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.55 + 0.1 * n1.a), pal(0.95), f);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-230.0, -158.0, 11.3, 0.55);
-      vk = vec3(110.0, 0.1, 0.3);
+      vk = vec4(110.0, 0.1, 0.3, 1.05);
     } else if (h > -262.0) {
       // The indigo deck: heaped on top, pouches hang from its base.
       float pop = max(n2.b - 0.4, 0.0) / 0.6;
       float top = -230.0 + 6.0 * (nb - 0.5) + 5.0 * pop * pop;
-      float base = -262.0 + 3.0 * (nb - 0.5) - 6.0 * pop * pop;
+      float base = -265.0;
       float sh = min(top - h, (h - base) * 0.8);
       float cov = smoothstep(0.22, 0.42, nc.a + 0.12);
       d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov;
@@ -281,7 +289,7 @@ float dens(vec3 p, float lod, float fine) {
       d = max(d, sv * 0.8);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-360.0, -262.0, 5.9, 0.15);
-      vk = vec3(150.0, 0.18, 0.35);
+      vk = vec4(150.0, 0.18, 0.35, 0.8);
     } else if (h > -385.0) {
       // The salt deck: pale jade, flat, its top in long wave rows.
       float top = -360.0 + 3.0 * sin(qr.x / 9.0 + 4.0 * n1.r) * (0.6 + 0.4 * nb);
@@ -307,6 +315,35 @@ float dens(vec3 p, float lod, float fine) {
     }
     // One call for every void: the storms in it.
     if (vk.x > 0.0) {
+      // The ceiling is a storm base, after Tornado alley's: deep folded lumps on a warped field,
+      // broad rolls, billows on the skin, ragged scud under it.
+      // The lumps come from flat maps, so each keeps its shape through its depth.
+      float cb = vd.y - 1.0;
+      float sc = 0.0, ex = 0.0;
+      if (h > cb - 9.0) {
+        vec3 lq = vec3(p.x, 0.0, p.z);
+        vec4 wq = textureLod(uVol, lq / 90.0 + vec3(0.0, vd.z * 0.1 + uT * 0.0002, 0.0), 0.0);
+        // A strong warp folds the lumps into each other.
+        lq += (wq.xyz - 0.5) * 34.0;
+        float roll = textureLod(uVol, vec3(lq.x / 160.0, vd.z * 0.1 + 0.5, lq.z / 60.0), 0.0).a;
+        float l1 = textureLod(uVol, lq / 48.0 + vec3(0.0, vd.z * 0.1 + 0.25, 0.0), 0.0).b;
+        float l2 = textureLod(uVol, lq / 16.0 + vec3(0.5, vd.z * 0.1 + 0.75, 0.2), 0.0).b;
+        float k1 = smoothstep(0.3, 0.95, l1), k2 = smoothstep(0.4, 0.95, l2);
+        float drop = 3.0 * (roll - 0.5) + 4.5 * k1 * k1 + 1.5 * k2 * fine + 0.6 * (n2.r - 0.5) * fine;
+        cb -= drop;
+        // How far the skin hangs: crests catch the floor's light, folds go black.
+        ex = clamp((drop + 1.0) / 7.0, 0.0, 1.0);
+        sc = smoothstep(0.6, 0.8, n2.r + 0.2 * (n1.b - 0.5)) * band(h, cb - 3.0, cb - 0.3, 0.6) * 0.45;
+      }
+      float dc = smoothstep(0.0, 0.25 + 0.5 * lod, h - cb) * (0.7 + 0.3 * n1.b);
+      float dd = max(dc, sc);
+      if (dd > d) {
+        d = dd;
+        gAlb = mix(pal(vk.w + 0.08 * n1.a), vec3(0.8), 0.25);
+        gOpen = 0.1;
+        gUnder = (1.0 - smoothstep(cb + 0.3, cb + 1.6, h)) * (0.06 + 1.4 * ex * ex);
+        gBounceC = pal(vd.w);
+      }
       float sd = stormsIn(p, h, vd.x, vd.y, vd.z, vk.x, vk.y, vk.z);
       if (sd > d) {
         d = sd;
@@ -350,16 +387,30 @@ void main() {
     float t = t0 + (0.3 + 0.006 * t0) * fract(sin(dot(gl_FragCoord.xy + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
+    // sk shrinks the steps after the first hit, so a crisp skin is not stepped over.
+    float sk = 1.0;
+    bool refined = false;
     int n = int(uSteps);
     for (int i = 0; i < 256; i++) {
       if (i >= n || t > t1 || T < 0.02) break;
       vec3 p = ro + rd * t;
-      float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t);
+      float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t) * sk;
+      sk = min(1.0, sk * 1.3);
       float lod = clamp(log2(1.0 + t / 120.0), 0.0, 4.0);
       float dn = dens(p, lod, uFine * (1.0 - smoothstep(1.5, 3.0, lod)));
+      // At the first hit in a deck, step back and come in again at a fifth of the step.
+      if (inWin && dn > 0.003 && !refined && ds > 0.5) {
+        refined = true;
+        // The loop's end adds this step back, so step back two.
+        t -= ds * 3.2;
+        sk = 0.2;
+        dn = 0.0;
+      }
       if (dn > 0.003) {
         vec3 alb = gAlb;
         float open = gOpen;
+        float under = gUnder;
+        vec3 bc = gBounceC;
         if (tHit < 0.0) tHit = t;
         float h = altOf(p);
         vec4 L = lut(h);
@@ -371,16 +422,18 @@ void main() {
         float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
         float beer = exp(-tau);
         // The multiple-scatter term carries the light into the cloud, so thin parts glow.
-        float lit = beer + 0.38 * exp(-0.22 * tau);
+        float lit = beer + uTune.x * exp(-0.22 * tau);
         float powder = 1.0 - exp(-2.0 * tau - 0.6);
         lit = mix(lit, lit * powder, 0.35) + 0.025;
         float ring = ringShadow(p);
         vec3 sun = L.rgb * L.a * lit * ph * ring * 0.85;
         // The light from above lights what it reaches; it glows forward when the eye looks toward it.
         float phD = mix(1.0, clPhase(dot(rd, ld)), 0.4);
-        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.07 + 0.45 * open * open + 1.0 * lit * phD);
+        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.07 + 0.45 * open * open + 1.0 * lit * phD) * uTune.y;
         vec3 sky = SKY_C * L.a * (0.25 + 0.75 * open) * (0.6 + 0.4 * ring);
-        vec3 Lc = alb * (sun + diffuse + sky);
+        // The lit floor bounces its light up onto the ceiling's underside.
+        vec3 bounce = L.rgb * mix(vec3(1.0), bc * 1.3, 0.5) * (1.0 - L.a) * uTune.z * 2.0 * under;
+        vec3 Lc = alb * (sun + diffuse + sky + bounce);
         // Flashes light the cloud round them, with no shadow.
         for (int k = 0; k < 4; k++) {
           vec4 f = uFlash[k];
@@ -401,7 +454,7 @@ void main() {
         float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 300.0 * band(hg, -24.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -38.0, 3.0)
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -385.0, 6.0) + 40.0 * step(hg, -500.0);
-        float sg = 1.0 / mfp;
+        float sg = 1.0 / (mfp * uTune.w);
         float ag = 1.0 - exp(-sg * ds * 1.6);
         col += T * lut(hg).rgb * vec3(0.38, 0.42, 0.44) * ag;
         T *= 1.0 - ag;

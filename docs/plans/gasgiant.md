@@ -162,6 +162,17 @@ Tom: "we need subsurface / lighting that can penetrate some of the clouds -- les
 | Towers | They gather in clusters and lines from a wide noise field; plains lie between. Sizes vary by 2.8 times. A third join floor and ceiling, a third rise as plumes with an anvil, a third hang from the ceiling to a tip. |
 | Twisters | Only at the edge of a rain curtain, in 10 to 18 percent of storm cells; storms gather where the towers do. |
 
+### Storm ceilings, the layer diagram, the dev sheet (Tom, 2026-11-23)
+
+Tom: "take inspo from the look of the storm deck in tornado alley -- esp from the bottom looking up (storm ceiling) -- that's what we want between each void too -- let's also come up with a small lo fi diagram of all the possible layers we can have before going to sudden crush". Then: "we'd need a config tool as well (dev mode) where we can go straight to any of the stages in the layers too to tweak lighting etc". Then: "look at the storm ceiling in tornado alley -- seriously look at it -- there's so many undulations and relief in the cloud layer".
+
+| Part | Change |
+|---|---|
+| Ceilings | Each void draws its ceiling as a storm base: a warped field of lumps 12 km across and up to 4.5 km deep, small lumps on them, broad rolls, billows on the skin, scud under it. The deck above runs down to the void's top. Crests catch the floor's light in its colour; folds go black. First pass: it has not yet reached Tornado alley's sculpted relief (`docs/qa/tornado-scene/deck-F2.5.jpg`). |
+| March | At the first hit in a deck the march steps back and comes in at a fifth of the step, so a crisp skin is not stepped over. |
+| Diagram | `gasgiant-layers.svg` (and `.png`): the fourteen built layers, and eight that could go in, to the crush at 640 km. |
+| Dev | `?dev`: Go to a layer, free pitch and yaw, sun direction, exposure, eye gain cap, light into cloud, ambient, floor bounce, haze reach, flash strength. The sun is a uniform now. |
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech

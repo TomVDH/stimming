@@ -7,7 +7,7 @@ import { TRI_VS, program, linked, target, bind, tri, free, onContextLoss } from 
 import { bloomChain } from '../shared/glow.js';
 import { loadWatch } from '../shared/loadwatch.js';
 import { pruneGLSL } from '../shared/glsl-prune.js';
-import { R, SUN, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
+import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, MARCH_FS } from './clouds.js';
 import { COMPOSITE_FS, FINAL_FS } from './post.js';
@@ -38,12 +38,46 @@ S.lum = luma(lightAt(S.alt));
 const depthOf = alt => (ALT_TOP - alt) / (ALT_TOP - ALT_DEEP);
 const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
+/* ---------- dev tuning ---------- */
+// ?dev shows the Dev sheet: jump to a layer, look freely, tune the light.
+const TUNE_DEF = { expo: 1, gainMax: 8, ms: 0.38, amb: 1, bounce: 0.3, haze: 1, flash: 1, sunAz: SUN_AZ, sunEl: SUN_EL, devPitch: 0, devYaw: 0 };
+const TUNE = { ...TUNE_DEF };
+let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
+const tune = (id, v) => { TUNE[id] = v; if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl); touch(); };
+// Each layer's middle; a void's view sits a third of the way down.
+const GOTO = [{ value: 'top', label: 'Top, 260 km' }, ...LAYERS.map(l => ({ value: l.id, label: `${l.id[0].toUpperCase()}${l.id.slice(1)}, ${-l.top} to ${-l.bot} km` }))];
+function goTo(id) {
+  const l = LAYERS.find(x => x.id === id);
+  S.alt = l ? (l.kind === 'void' ? l.top - (l.top - l.bot) * 0.35 : (l.top + l.bot) / 2) : ALT_TOP;
+  S.v = 0; S.slideTo = null; S.diving = false; B.strokes.length = 0; snd.cancel();
+  S.lum = luma(lightAt(S.alt));
+  ui.slider?.set(depthOf(S.alt));
+  touch();
+}
+const slider = (group, id, label, min, max, step) => ({ type: 'slider', group, id: 'gg_' + id, label, min, max, step, value: TUNE_DEF[id], persist: true, onInput: v => tune(id, v) });
+const DEV = [
+  { type: 'choice', group: 'Go to', id: 'gg_goto', label: 'Layer', value: 'top', options: GOTO, onPick: goTo },
+  slider('Camera', 'devPitch', 'Pitch', -60, 60, 1),
+  slider('Camera', 'devYaw', 'Yaw', -180, 180, 1),
+  slider('Light', 'sunAz', 'Sun azimuth', -180, 180, 1),
+  slider('Light', 'sunEl', 'Sun elevation', 2, 60, 1),
+  slider('Light', 'expo', 'Exposure', 0.25, 4, 0.01),
+  slider('Light', 'gainMax', 'Eye gain cap', 1, 30, 0.5),
+  slider('Light', 'ms', 'Light into cloud', 0, 1.2, 0.01),
+  slider('Light', 'amb', 'Ambient from above', 0, 3, 0.01),
+  slider('Light', 'bounce', 'Floor bounce', 0, 1.5, 0.01),
+  slider('Light', 'haze', 'Haze reach', 0.2, 4, 0.01),
+  slider('Light', 'flash', 'Flash strength', 0, 3, 0.01),
+  { type: 'button', group: 'Light', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
+];
+
 /* ---------- bar ---------- */
 let keyDown = false, slideAt = -1e9;
 const ui = initPage({ id: ID, bar: {
   actions: [{ verb: 'dive', label: 'Dive', key: 'Space', hold: true, onDown: () => press('key'), onUp: () => release('key') }],
   slider: { label: 'Depth', min: 0, max: 1, step: 0.001, value: depthOf(S.alt), onInput: v => { S.slideTo = altOf(v); slideAt = performance.now(); touch(); } },
   quality: true,
+  dev: DEV,
   reset: () => { S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.yaw = 0; S.pitch = 0; B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); touch(); },
   keys: [['hold', 'dive'], ['drag', 'look'], ['space', 'dive']],
   help: [
@@ -53,6 +87,9 @@ const ui = initPage({ id: ID, bar: {
     ['space', 'Hold Space to dive; Depth takes you back up'],
   ],
 } });
+// Saved dev values hold from the last visit.
+for (const id of Object.keys(TUNE_DEF)) { const v = ui.setting?.('gg_' + id)?.value; if (typeof v === 'number') TUNE[id] = v; }
+sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ sleepMs: 1500, keys: new Set([' ']) });
 const snd = diveSound(kit);
@@ -154,7 +191,7 @@ function basis() {
   // The eye sits left of the window and looks across it, as in Window seat.
   // A narrow stage eases the angle and moves the eye back, so the whole window shows.
   const wide = QS.has('out') ? 0 : smooth(0.6, 1.4, W / H);
-  const ly = (S.yaw + 21 * wide) * DEG, lp = (S.pitch - 3) * DEG;
+  const ly = (S.yaw + 21 * wide + TUNE.devYaw) * DEG, lp = (S.pitch - 3 - TUNE.devPitch) * DEG;
   const cy = Math.cos(ly), sy = Math.sin(ly), cp = Math.cos(lp), sp = Math.sin(lp);
   const look = [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp];
   const col = i => [look[i], look[3 + i], look[6 + i]];
@@ -227,7 +264,7 @@ function step(dt) {
 // How far into a void the eye is: 0 in the decks, the sky and the dark.
 const voidAt = h => (1 - deckAt(h)) * (1 - smooth(-6, 0, h)) * smooth(-505, -495, h);
 // The eye's gain: it opens as the light fails, up to 8 times.
-const gainAt = lum => clamp(Math.pow(Math.max(lum, 1e-7), -0.5), 1, 8);
+const gainAt = lum => clamp(Math.pow(Math.max(lum, 1e-7), -0.5), 1, TUNE.gainMax);
 // How deep in a deck the eye is: 0 in the air and the voids, 1 inside cloud.
 const bump = (a, b, x) => smooth(a - 1, a + 2, x) * (1 - smooth(b - 2, b + 1, x));
 // Decks and the veil count whole; sheets count in part.
@@ -235,6 +272,8 @@ const DECK_K = { deck: 1, haze: 1, sheets: 0.4 };
 const deckAt = h => Math.min(1, LAYERS.reduce((a, l) => a + (DECK_K[l.kind] || 0) * bump(l.bot + (l.id === 'ammonia' ? 2 : 0), l.top, h), 0));
 
 /* ---------- render ---------- */
+// Sets the sun on a program that reads it.
+const sunTo = pr => { if (pr.u.uSun) gl.uniform3fv(pr.u.uSun, sunV); };
 let frameNo = 0, mapAge = 1e9;
 function render(dt) {
   const b = basis();
@@ -246,12 +285,15 @@ function render(dt) {
   if (mapAge > 1 / 30 || frameNo === 0) {
     mapAge = 0;
     gl.useProgram(P.map.p);
+    sunTo(P.map);
     gl.uniform1f(P.map.u.uT, S.tMap);
     tri(gl, T.map, vao);
   }
   // Pass 3: the march.
   const m = marchCut();
   gl.useProgram(P.march.p);
+  sunTo(P.march);
+  gl.uniform4f(P.march.u.uTune, TUNE.ms, TUNE.amb, TUNE.bounce, TUNE.haze);
   const u = P.march.u;
   bind(gl, P.march, 'uMap', 0, T.map);
   bind(gl, P.march, 'uLut', 1, { tex: lut });
@@ -270,12 +312,13 @@ function render(dt) {
   gl.uniform1f(u.uSeed, frameNo % 64);
   flashUniform(B, flash);
   // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.
-  const fk = Math.min(1, 2.2 / gainAt(S.lum));
+  const fk = Math.min(1, 2.2 / gainAt(S.lum)) * TUNE.flash;
   for (let i = 3; i < 16; i += 4) flash[i] *= fk;
   gl.uniform4fv(u.uFlash, flash);
   tri(gl, T.march, vao);
   // Pass 4: the composite.
   gl.useProgram(P.comp.p);
+  sunTo(P.comp);
   bind(gl, P.comp, 'uClouds', 0, T.march);
   gl.uniform3fv(P.comp.u.uCam, cam);
   gl.uniform3fv(P.comp.u.uFwd, b.fwd); gl.uniform3fv(P.comp.u.uRight, b.right); gl.uniform3fv(P.comp.u.uUp, b.up);
@@ -284,6 +327,7 @@ function render(dt) {
   const bl = bloom.render(T.scene.tex, W, H, { threshold: 1.1, cap: 8, levels: D.level > 0 ? 5 : 3 });
   gl.bindVertexArray(vao);
   gl.useProgram(P.cabin.p);
+  sunTo(P.cabin);
   const c = P.cabin.u;
   bind(gl, P.cabin, 'uScene', 0, T.scene);
   bind(gl, P.cabin, 'uBloom', 1, { tex: bl });
@@ -310,7 +354,7 @@ function render(dt) {
   gl.useProgram(P.fin.p);
   // ?out shows the outside alone, for look work.
   bind(gl, P.fin, 'uScene', 0, QS.has('out') ? T.scene : T.cabin);
-  gl.uniform1f(P.fin.u.uExp, 0.3 * gainAt(S.lum));
+  gl.uniform1f(P.fin.u.uExp, 0.3 * gainAt(S.lum) * TUNE.expo);
   gl.uniform1f(P.fin.u.uSeed, frameNo % 97);
   gl.uniform1f(P.fin.u.uAsp, W / H);
   tri(gl, null, vao);

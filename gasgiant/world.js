@@ -11,8 +11,13 @@ const norm = a => { const l = Math.hypot(...a); return a.map(x => x / l); };
 // A low sun at the side of the view: 65 degrees east of north, 10 degrees up.
 // Its long light throws the heads' shadows across the deck.
 // It stands 14 degrees over the ring plane, so the rings still show their unlit face.
-const AZ = 65 * Math.PI / 180, EL = 10 * Math.PI / 180;
-export const SUN = norm([Math.sin(AZ) * Math.cos(EL), Math.sin(EL), -Math.cos(AZ) * Math.cos(EL)]);
+export const SUN_AZ = 65, SUN_EL = 10;
+/** The sun's direction from its azimuth and elevation in degrees. */
+export const sunDir = (az, el) => {
+  const a = az * Math.PI / 180, e = el * Math.PI / 180;
+  return norm([Math.sin(a) * Math.cos(e), Math.sin(e), -Math.cos(a) * Math.cos(e)]);
+};
+export const SUN = sunDir(SUN_AZ, SUN_EL);
 
 // The descent column, km. The hull fails at about 1,000 bar, 640 km down.
 export const ALT_TOP = 260, ALT_DEEP = -640;
@@ -111,7 +116,9 @@ vec3 pal(float t) {
 const float R = ${R.toFixed(1)};
 const vec3 PC = vec3(0.0, -R, 0.0);
 const vec3 AXIS = vec3(${AXIS.map(v => v.toFixed(6)).join(', ')});
-const vec3 SUN = vec3(${SUN.map(v => v.toFixed(6)).join(', ')});
+// The sun is a uniform, so the dev panel can move it.
+uniform vec3 uSun;
+#define SUN uSun
 const vec2 MAP_C = vec2(${MAP_C[0].toFixed(1)}, ${MAP_C[1].toFixed(1)});
 const vec2 ST_C = vec2(${STORM.c[0].toFixed(1)}, ${STORM.c[1].toFixed(1)});
 const vec2 ST_AX = vec2(${STORM.ax[0].toFixed(1)}, ${STORM.ax[1].toFixed(1)});
