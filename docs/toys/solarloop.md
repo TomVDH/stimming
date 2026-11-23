@@ -78,6 +78,10 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 | Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
 
+## Fluid probe (`?fluid`, spike `stimming-8gez`)
+
+Only with `?fluid` in the address. A prominence eruption or a flare's rope runs as Fire's 3D fluid (`solarloop/fluid.js`, a trimmed copy of the K3 fluid in `cloudbottle/fluid.js`): a 32 x 48 x 32 box of 12.5-unit cells stands on the site, radial up, the star's surface its floor and every other side open. It fills with a rope of plasma, the foot feeds it for 5 s, heat and a lift that grows with time throw it out; Fire's turbulence and vorticity curl it. A march through the box at half size adds it to the light as cool plasma before bloom. The strands of that eruption hide while it runs; it ends at 24 s. Captures 27 to 29.
+
 ## Frame loop
 
 - Lively while a flare or an eruption runs, or the lens zooms, or a drag turns the star.

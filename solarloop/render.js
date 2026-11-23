@@ -5,6 +5,7 @@
 import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
 import { R, STRIDE, MAX_STRANDS, NR } from './sun.js';
+import { fluidPrograms, makeFluid } from './fluid.js';
 
 const HEAD = `#version 300 es
 precision highp float;
@@ -631,7 +632,8 @@ void main() {
   o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
-export async function makeRender(gl) {
+// opts.fluid: the fluid probe (?fluid) builds its programs and grid.
+export async function makeRender(gl, opts = {}) {
   if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('no float targets');
   const P = await linked(gl, {
     sky: program(gl, TRI_VS, SKY),
@@ -640,9 +642,11 @@ export async function makeRender(gl) {
     vol: program(gl, TRI_VS, VOL),
     blur: program(gl, TRI_VS, BLUR),
     final: program(gl, TRI_VS, FINAL),
+    ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
   const empty = gl.createVertexArray();
   const bloom = bloomChain(gl, { max: 5 });
+  const fluid = opts.fluid ? makeFluid(gl, P, empty) : null;
   // The strand data: four vec4 per instance.
   const data = new Float32Array(MAX_STRANDS * STRIDE);
   const vbo = gl.createBuffer();
@@ -689,6 +693,7 @@ export async function makeRender(gl) {
   function frame(v) {
     if (!hdr) return;
     gl.disable(gl.BLEND);
+    if (fluid && v.fluid) fluid.step(v.fluid.step);
     const s = P.sky;
     gl.useProgram(s.p);
     gl.uniform4fv(s.u.uView, v.view);
@@ -726,6 +731,8 @@ export async function makeRender(gl) {
       gl.disable(gl.BLEND);
     }
 
+    // The fluid probe's plasma joins the light before bloom, so it glows.
+    if (fluid && v.fluid) fluid.draw(v.fluid, W, H, hdr);
     const bt = bloom.render(hdr.tex, W, H, { threshold: 0.9, cap: 6, levels: v.bloomLevels });
     const r = P.rays;
     gl.useProgram(r.p);

@@ -94,7 +94,7 @@ Tom's words: I asked for no camera movement; the bottom left does not feature ac
 | Film | Fine grain only, a soft colour split, faint lens dirt; no weave, no flicker, no colour noise |
 | Full view (Tom: a more sweeping corona; it is very bright) | Half the exposure. The corona is raymarched in 3D (Tom: can it be raymarched or made 3D): streamers on a warped equatorial sheet, a spiral bend, polar plumes, radial rays |
 | Dev (Tom: give us controls for that in dev mode) | Bar v3 dev rows behind `?dev`: eleven post knobs and four volume knobs, stored, with Reset |
-| Fire's fluid (Tom asked where it could serve) | Proposed, not built: an eruption as Fire's 3D fluid in a box at the flaring region, the rope's plasma billowing out |
+| Fire's fluid (Tom asked where it could serve; then: probe it, we may not like it) | Probed behind `?fluid` (spike `stimming-8gez`): an eruption as Fire's 3D fluid in a box at the site. It billows like a smoke plume more than threaded plasma; waits on Tom's verdict |
 
 ## Tasks
 

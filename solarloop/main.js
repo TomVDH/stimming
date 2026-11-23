@@ -32,6 +32,15 @@ const st = {
   next: 0,
 };
 const sun = makeSun();
+// The fluid probe (spike stimming-8gez): an eruption as Fire's fluid, only with ?fluid.
+const FLUID = new URLSearchParams(location.search).has('fluid');
+// The running fluid eruption: its clock, the site and its owner, or null.
+let fluidRun = null;
+function startFluid(owner, site, span) {
+  if (fluidRun) fluidRun.owner.fluid = false;
+  owner.fluid = true;
+  fluidRun = { t: 0, dt: 0, owner, site, span, first: true };
+}
 
 let gl = null, ren = null, raf = 0, timer = 0, visible = true, last = 0, frameNo = 0, calm = reduced();
 let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
@@ -209,6 +218,7 @@ function resize(force = false) {
 function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
+  if (FLUID) startFluid(fl, rg, rg.len * 0.5);
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   fl.snapped = 0;
@@ -233,6 +243,7 @@ function flareNext() {
 function eruptAt(p) {
   if (!p || p.erupt >= 0) return;
   startEruption(p);
+  if (FLUID) startFluid(p, p, p.len * 0.45);
   snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
   poke();
 }
@@ -337,6 +348,7 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
+  f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');
   f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
@@ -345,6 +357,23 @@ function makeFrame() {
 function draw() {
   if (!ren) return;
   ren.frame(makeFrame());
+}
+
+// The fluid's step and draw for this frame: the box stands on the site, radial up.
+function fluidFrame(r) {
+  const { c, e, f: g } = r.site;
+  const t = r.t;
+  const out = {
+    step: { dt: r.dt, t, reset: r.first, fill: r.first ? 1 : 0, emit: t < 5 ? 1 : 0, lift: 8 + 9 * t, span: r.span },
+    view: frameState.view, toSun: frameState.toSun,
+    box: new Float32Array([...e, ...c, ...g]),
+    boxT: new Float32Array([e[0], c[0], g[0], e[1], c[1], g[1], e[2], c[2], g[2]]),
+    origin: new Float32Array(c.map(x => x * R)),
+    gain: 0.012 * (1 - Math.min(1, Math.max(0, (t - 16) / 8))),
+  };
+  r.first = false;
+  r.dt = 0;
+  return out;
 }
 
 /* ---------- frame loop ---------- */
@@ -369,11 +398,16 @@ function frame(now) {
     }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
+    if (fluidRun) {
+      fluidRun.dt = Math.min(dt, 1 / 30) * (calm ? 0.8 : 1);
+      fluidRun.t += fluidRun.dt;
+      if (fluidRun.t > 24) { fluidRun.owner.fluid = false; fluidRun = null; }
+    }
     for (const fl of sun.flares) cueArcade(fl);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || !!fluidRun || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
@@ -470,7 +504,7 @@ ui.onCover?.(() => resize());
 async function setup() {
   gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('no webgl2');
-  ren = await makeRender(gl);
+  ren = await makeRender(gl, { fluid: FLUID });
   sizeKey = '';
 }
 onContextLoss(canvas, {
