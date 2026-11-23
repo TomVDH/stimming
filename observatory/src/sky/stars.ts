@@ -9,8 +9,15 @@ import { dirAltAz, lst, shellDir, skyRows, turn, type AltAz } from '../core/sky.
 import type { Star } from '../core/catalog.ts';
 
 /* ---------- tonight's real sky: the catalog stars at the site, by sidereal time ---------- */
-// The site: 51 N, 0 E.
-export const LAT = 51, LON = 0;
+// The site: 51 N, 0 E at first.
+// A named site moves the latitude; the hill stays.
+export let LAT = 51;
+export const LON = 0;
+// Sets the site's latitude and turns the sky at the last sky time.
+export function setLat(deg: number): void {
+  LAT = deg;
+  skyAt(lastMs);
+}
 // The star shell stays inside the camera far plane.
 const RADIUS = 4000;
 // A star fades in over this many magnitudes past the limit.

@@ -25,7 +25,7 @@ import { onAim, onEsc, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
 import { driveClock, makeOpening } from './core/opening.ts';
 import { setDusk } from './world/dusk.ts';
-import { sky, skyAt, skyReady, starAltAz, LAT, LON } from './sky/stars.ts';
+import { sky, skyAt, skyReady, starAltAz, setLat, LAT, LON } from './sky/stars.ts';
 import { lst, toAltAz } from './core/sky.ts';
 import type { Star } from './core/catalog.ts';
 
@@ -556,7 +556,9 @@ window.__qa = {
   // A star's alt and az at a sky time, read back through the sky matrix.
   starAltAz(hip: number, ms: number = clock.skyMs()) { return starAltAz(hip, ms); },
   lst(ms: number = clock.skyMs()) { return lst(ms, 0); },
-  lat: LAT,
+  get lat() { return LAT; },
+  // Moves the site's latitude, as a named site does.
+  setLat(deg: number) { setLat(deg); draw(); },
   skyReady,
   // A test view; a resize restores the default.
   look(v: View) { const c = renderer.domElement; applyCamera(c.width / c.height, v); draw(); },
