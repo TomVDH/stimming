@@ -195,29 +195,29 @@ function beats(hz, secs, jitter = 0) {
   }
   return at;
 }
-test('cadence: the cuts render 24 frames a second at 60, 120 and 144 Hz', () => {
-  assert.equal(CUT_FPS, 24);
+test('cadence: the cuts render 30 frames a second at 60, 120 and 144 Hz', () => {
+  assert.equal(CUT_FPS, 30);
   for (const hz of [60, 120, 144]) {
     const at = beats(hz, 4);
     const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
-    assert.ok(Math.abs(fps - 24) <= 1, `${hz} Hz: ${fps.toFixed(2)} fps`);
+    assert.ok(Math.abs(fps - CUT_FPS) <= 1, `${hz} Hz: ${fps.toFixed(2)} fps`);
     // Each gap is the beat, give or take one display frame.
     for (let i = 1; i < at.length; i++) {
       const gap = at[i] - at[i - 1];
-      assert.ok(Math.abs(gap - 1 / 24) <= 1 / hz + 1e-6, `${hz} Hz: gap ${(gap * 1000).toFixed(1)} ms`);
+      assert.ok(Math.abs(gap - 1 / CUT_FPS) <= 1 / hz + 1e-6, `${hz} Hz: gap ${(gap * 1000).toFixed(1)} ms`);
     }
   }
 });
-test('cadence: at 120 and 144 Hz every beat lands on the same spacing', () => {
-  for (const hz of [120, 144]) {
+test('cadence: at 60 and 120 Hz every beat lands on the same spacing', () => {
+  for (const hz of [60, 120]) {
     const at = beats(hz, 4);
-    for (let i = 1; i < at.length; i++) assert.ok(Math.abs(at[i] - at[i - 1] - 1 / 24) < 1e-6, `${hz} Hz gap ${at[i] - at[i - 1]}`);
+    for (let i = 1; i < at.length; i++) assert.ok(Math.abs(at[i] - at[i - 1] - 1 / CUT_FPS) < 1e-6, `${hz} Hz gap ${at[i] - at[i - 1]}`);
   }
 });
-test('cadence: jittered 60 Hz frames still give 24 a second; a long stall does not burst', () => {
+test('cadence: jittered 60 Hz frames still give 30 a second; a long stall does not burst', () => {
   const at = beats(60, 4, 0.0015);
   const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
-  assert.ok(Math.abs(fps - 24) <= 1, `${fps}`);
+  assert.ok(Math.abs(fps - CUT_FPS) <= 1, `${fps}`);
   const c = { acc: 0 };
   assert.equal(cadence(c, 0.5), true);
   // After the stall, the next frame waits for the next beat.

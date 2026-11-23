@@ -230,7 +230,7 @@ function tick(now: number): void {
     stepAxis(d.ax, target, dt, d.lim);
     dirty = true;
   }
-  // The cuts render on a 24 fps beat.
+  // The cuts render on a 30 fps beat.
   // The machine, the clock and the cuts stepped above, on real time.
   if (dirty) {
     // Outside the cuts the beat stands primed.
@@ -238,6 +238,8 @@ function tick(now: number): void {
     if (!cuts.film) { film.acc = 1 / CUT_FPS; draw(); }
     else if (cadence(film, dt)) draw();
   }
+  // Between beats, the older beat fades out over the newer one.
+  if (cuts.film) cuts.blend(film.acc * CUT_FPS);
   if (awake()) raf = requestAnimationFrame(tick);
   else lastT = 0;
 }

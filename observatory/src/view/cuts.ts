@@ -256,7 +256,37 @@ still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-
 // The dip's black lies over the frame and the bars.
 const dip = document.createElement('div');
 dip.style.cssText = 'position:absolute;inset:0;background:#000;pointer-events:none;display:none';
-renderer.domElement.after(still, ...bars, dip);
+
+/* ---------- frame blending: each beat fades in over the one before ---------- */
+// Tom, 2026-11-23: blend the 30 fps beats, so the motion runs smoother.
+// Two canvases hold the last two beats.
+// The older one lies over the frame and fades out until the next beat.
+// A hard cut never blends: the new shot shows at once.
+const beats = [0, 1].map(() => {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
+  return c;
+});
+// beatN: the beats kept since the last drop.
+// beatShot: the newest beat's shot. blending: the older beat shows.
+let beatN = 0, beatShot: Shot | null = null, blending = false;
+// Keeps the frame just rendered; the beat before it goes on top.
+function keepBeat(shot: Shot): void {
+  const c = renderer.domElement, now = beats[beatN % 2], prev = beats[(beatN + 1) % 2];
+  if (now.width !== c.width || now.height !== c.height) { now.width = c.width; now.height = c.height; }
+  now.getContext('2d')!.drawImage(c, 0, 0);
+  now.style.display = 'none';
+  blending = beatN > 0 && shot === beatShot && prev.width === c.width && prev.height === c.height;
+  prev.style.display = blending ? 'block' : 'none';
+  prev.style.opacity = '1';
+  beatShot = shot;
+  beatN++;
+}
+function dropBeats(): void {
+  for (const b of beats) b.style.display = 'none';
+  beatN = 0; beatShot = null; blending = false;
+}
+renderer.domElement.after(...beats, still, ...bars, dip);
 
 // k: 0 clear, 1 black.
 function black(k: number): void {
@@ -296,6 +326,8 @@ let dipT = 0, dipWide = false;
 // The wide shot fades down in DIP_DOWN.
 // The first shot fades up in DIP_UP.
 let inT = 0;
+// The shot the last frame rendered, or null for the wide shot.
+let rendered: Shot | null = null;
 // The shot the dip holds.
 let lastShot: Shot = 'glass';
 // The locked cameras: each cut sets its own on its first frame.
@@ -351,6 +383,7 @@ function feedGlass(show: boolean): void {
 
 function toWide(): void {
   mode = 'off';
+  dropBeats();
   cutFocus(null);
   cutGrain(0);
   showBars(false);
@@ -368,6 +401,7 @@ function stepDip(dt: number): void {
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
+    dropBeats();
     showBars(false);
     beam(true);
     applyCamera(camera.aspect);
@@ -484,6 +518,7 @@ export const cuts = {
     // The close shots come after a pick, so the beam leaves the hero's laser.
     const sc = hero.scope;
     if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
+    rendered = close ? shot : null;
     if (!close) {
       cutFocus(null);
       cutGrain(0);
@@ -505,11 +540,20 @@ export const cuts = {
     beam(false);
     showBars(true);
   },
+  // Fades the older beat as the next comes due.
+  // k: the share of the beat gone, 0 to 1.
+  blend(k: number): void {
+    if (blending) beats[beatN % 2].style.opacity = String(Math.max(0, 1 - k));
+  },
   // QA: keeps the hero model in outside the cuts, for stills.
   // The beam hides as in the close shots.
   hold(on: boolean): void { held = on; beam(!on); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
+    // A film beat is kept for the blend.
+    const film = mode === 'cuts' || (mode === 'dip' && !dipWide);
+    if (rendered && film && !reduced()) keepBeat(rendered);
+    else if (beatN) dropBeats();
     if (!grab) return;
     grab = false;
     const c = renderer.domElement;
