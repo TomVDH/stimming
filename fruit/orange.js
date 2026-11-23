@@ -18,7 +18,9 @@ const W = Array.from({ length: NS }, (_, i) => wallA(i).toFixed(4));
 const CORE = 0.075, ALB = 0.86;
 
 const BED = /* glsl */`
+// A membrane wanders a little along its length.
 float wallD(float a, float r) {
+  a += 0.022 * sin(r * 13.0 + a * 3.0) / max(r, 0.15) + 0.012 * (vn(vec3(r * 18.0, a * 4.0, 3.0)) - 0.5);
   float d = 9.0;
   ${W.map(w => `d = min(d, abs(mod(a - ${w} + 9.4248, 6.2832) - 3.1416) * r);`).join('\n  ')}
   return d;
@@ -26,7 +28,9 @@ float wallD(float a, float r) {
 vec2 sponge(vec2 f) { return cellEdge(f * 55.0); }
 float relief(vec2 f) { return 0.0012 * smoothstep(0.0, 0.25, sponge(f).x); }
 vec3 bed(vec2 f, float r, float a, inout float glow) {
-  float wall = 1.0 - smoothstep(0.006, 0.011, wallD(a, r));
+  // Thin, and thinner in places: the width wanders along the membrane.
+  float ww = 0.0035 + 0.0035 * vn(vec3(r * 9.0, a * 2.0, 5.0));
+  float wall = 1.0 - smoothstep(ww, ww + 0.004, wallD(a, r));
   float core = 1.0 - smoothstep(${CORE.toFixed(3)} - 0.01, ${CORE.toFixed(3)} + 0.005, r - 0.012 * sin(a * 10.0));
   float alb = smoothstep(${(ALB - 0.012).toFixed(3)}, ${ALB.toFixed(3)}, r + 0.006 * sin(a * 37.0));
   // The segments are open: the vesicles show down to the juice below.
@@ -36,8 +40,10 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
   vec3 pith = mix(vec3(0.62, 0.54, 0.42), vec3(0.7, 0.62, 0.48), vn(vec3(f * 16.0, 2.0)));
   pith *= 0.85 + 0.15 * smoothstep(0.0, 0.25, sp.x);
   vec3 col = mix(pith, vec3(0.6, 0.3, 0.2), smoothstep(0.3, 0.8, vn(vec3(f * 3.0, 9.0))) * 0.25);
-  // Membranes: thin, so a little of the red juice shows through them.
-  col = mix(col, col * vec3(0.95, 0.7, 0.6), wall * (1.0 - alb) * 0.5);
+  // Membranes: thin and wet, so the red juice shows through them.
+  vec3 juiceTint = mix(vec3(0.6, 0.2, 0.06), vec3(0.4, 0.04, 0.03), smoothstep(0.3, 0.75, vn(vec3(f * 2.6, 7.0))));
+  float thin = 1.0 - smoothstep(0.0, ww + 0.004, wallD(a, r)) * 0.4;
+  col = mix(col, mix(col, juiceTint, 0.6 * thin), wall * (1.0 - alb) * (1.0 - core));
   // The flavedo: the thin coloured peel, oil glands dotted in it.
   float peel = smoothstep(0.95, 0.957, r);
   vec3 fl = mix(vec3(0.6, 0.14, 0.005), vec3(0.42, 0.05, 0.008), vn(vec3(f * 6.0, 4.0)));
@@ -113,7 +119,8 @@ export const orange = {
         // The last row shortens to end at the albedo.
         const len = Math.min(wid * 4.6, (ALB - rr) * 0.55);
         const c = rr + len * 0.8;
-        const pad = 0.01 / c;
+        // Vesicles reach over the membranes' edges, as in the fruit.
+        const pad = 0.006 / c;
         const span = a1 - a0 - pad * 2;
         const n = Math.max(1, Math.round((span * c) / (wid * 1.4)));
         for (let j = 0; j < n; j++) {
