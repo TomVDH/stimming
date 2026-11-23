@@ -48,8 +48,9 @@ let aimed = false;
 // The machine owns the bound dome: cupola, tube and shutter. It starts shut.
 // The ?dev shot replay builds a fresh machine, so this is let.
 let machine = makeMachine({ az: REST_AZ });
-// The telescope domes: the 1 m in the main dome, the great refractor in the classic dome.
-// The west small dome stands in for the classic dome until it is built.
+// The 1 m stands in the main dome.
+// The great refractor stands in the classic dome.
+// The west small dome stands in for the classic dome for now.
 const SCOPE_DOME: Record<Scope, Dome> = { reflector: complex.main, refractor: complex.small[0] };
 // The scope the machine drives; the other telescope dome follows, shut.
 let bound: Scope = 'reflector';
@@ -59,12 +60,14 @@ const sel = makeSelector();
 let skyLimit = NIGHT_MAG;
 // A night or a site eases the sky over this many seconds.
 const SWING_S = 3;
+// The machine loses a target under this altitude, as core/machine does.
+const LOST_ALT = 5;
 // The site's latitude eases from lat0 to lat1; latK runs 0 to 1.
 let lat0 = LAT, lat1 = LAT, latK = 1;
 // True while a swing draws streaks, so the end clears them once.
 let swinging = false;
 // The small domes start 1.5 s and 3 s after the leader.
-// In aim the leader is the beam; after a pick it is the main dome's cupola.
+// In aim the leader is the aim; after a pick it is the bound dome's cupola.
 // They rest shut, open that long after a pick, and shut that long after aim.
 // They are as heavy as the main dome, and slower still.
 // ax: the cupola's axis.
@@ -125,7 +128,7 @@ function wishAgo(now: number, s: number): boolean {
   for (let i = wishes.length - 1; i >= 0; i--) if (wishes[i].t <= now - s * 1000) return wishes[i].open;
   return wishes[0].open;
 }
-// The leader's azimuth: the beam in aim, the main cupola after a pick.
+// The leader's azimuth: the aim, or the bound cupola after a pick.
 const leaderAz = () => (machine.phase === 'aim' && aimed ? aim.az : machine.cupolaAz);
 // A small shutter still has a way to go.
 const shutting = () => followers().some(d => !shutterAtRest(d.sh) || d.sh.p !== (wishes[wishes.length - 1].open ? 1 : 0));
@@ -189,7 +192,7 @@ const toStage = (v: Vector3): { x: number; y: number } | null => {
 function drawSelector(): void {
   if (cuts.busy || opening.locked || !sel.star) { selectorView.hide(); return; }
   const p = targetPos(sel.star);
-  if (p.alt <= 5) { release(sel); selectorView.hide(); return; }
+  if (p.alt <= 5 && !swingNow()) { release(sel); selectorView.hide(); return; }
   const star = toStage(altAzDir(p).multiplyScalar(1000).add(camera.position));
   const r = toStage(SCOPE_DOME.refractor.slitTop), f = toStage(SCOPE_DOME.reflector.slitTop);
   if (!star || !r || !f) { selectorView.hide(); return; }
@@ -232,7 +235,10 @@ function tick(now: number): void {
   // The machine reads the sky as it is now.
   const tp = machine.target ? targetPos(machine.target) : { alt: 0, az: 0 };
   const before = machine.phase;
-  machine.step(dt, { targetAlt: tp.alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
+  // A swing can pass the target under the horizon on its way.
+  // The machine holds it, and the end place decides.
+  const alt = swingNow() ? Math.max(tp.alt, LOST_ALT) : tp.alt;
+  machine.step(dt, { targetAlt: alt, targetAz: tp.az, trails: clock.trails(), aimAz: aimed ? aim.az : undefined });
   if (machine.moving || machine.phase !== before) dirty = true;
   cuts.step(dt, liftView());
   if (cuts.busy) dirty = true;
@@ -320,12 +326,20 @@ function input(a: AltAz): void {
   wake();
 }
 onAim(input);
+// A mouse that leaves the stage clears the hover; a lock stays.
+stageEl.addEventListener('pointerleave', e => {
+  if (e.pointerType !== 'mouse' || sel.mode !== 'hover') return;
+  hover(sel, null);
+  dirty = true;
+  wake();
+});
 
 // The ?cuts review takes a tap after the cuts; it gives true then.
 let reviewTap = (): boolean => false;
 
-// A tap picks the brightest star within 3 degrees of the tap. An empty patch changes nothing.
-// A tap during the cuts skips to the wide shot and picks nothing.
+// A tap locks the nearest visible star within 1.5 degrees.
+// A tap on empty sky lets go of a lock.
+// A tap during the cuts skips to the wide shot and locks nothing.
 function tap(a: AltAz): void {
   // A tap at dusk skips to night.
   if (opening.locked) { skipOpening(); return; }
@@ -360,7 +374,8 @@ function bind(scope: Scope): void {
 function pick(s: Star): void {
   const from = machine.phase;
   // The ?dev shot replay starts again from this state.
-  if (from === 'aim' || from === 'lost') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s };
+  // The replay plays cuts, so it keeps only the 1 m's picks.
+  if ((from === 'aim' || from === 'lost') && bound === 'reflector') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s };
   machine.pick(s);
   // An open shutter plays only the slew cuts.
   // The cuts frame the main dome; the classic dome's cuts wait for obs-cuts.
@@ -452,6 +467,8 @@ function stepSwing(dt: number): void {
     swinging = false;
   }
 }
+// True while a night or a site moves the sky.
+function swingNow(): boolean { return clock.shifting() || latK < 1; }
 // A night eases the sky to its sidereal time; Tonight eases back to real time.
 function setNight(id: string): void {
   const n = NIGHTS.find(x => x.id === id);
@@ -465,12 +482,13 @@ function setNight(id: string): void {
 }
 // A site eases the latitude; the hill stays.
 // The swing tilts the sky, so it draws no streak.
-function setSite(id: string, ease = !reduced()): void {
+// boot: the stored site at load, which is not input.
+function setSite(id: string, ease = !reduced(), boot = false): void {
   const s = SITES.find(x => x.id === id);
   if (!s) return;
   lat0 = LAT; lat1 = s.lat; latK = ease ? 0 : 1;
   if (!ease) setLat(s.lat);
-  lastInput = performance.now();
+  if (!boot) lastInput = performance.now();
   dirty = true;
   wake();
 }
@@ -491,7 +509,7 @@ skyHooks.site = id => setSite(id);
 skyHooks.sky = setCityLight;
 // The rows' first values: Tonight, class 2, the stored site.
 setCityLight(2);
-setSite(String(ui.setting('site')?.value ?? 'home'), false);
+setSite(String(ui.setting('site')?.value ?? 'home'), false, true);
 
 /* ---------- the review switch, ?cuts ---------- */
 // Tom sees the cuts on the live site with it.
@@ -501,7 +519,8 @@ setSite(String(ui.setting('site')?.value ?? 'home'), false);
 function review(): void {
   let star: Star | null = null, shutting = false;
   // As a tap on the star: the beam aims at it, then the pick.
-  const play = (s: Star): void => { input(targetPos(s)); pick(s); };
+  // The review plays cuts, so it sends the 1 m.
+  const play = (s: Star): void => { release(sel); bind('reflector'); input(targetPos(s)); pick(s); };
   const replay = (): void => {
     // The shutter is shut once its bounce at the stop ends.
     // The tube parks too.
@@ -562,6 +581,7 @@ function replayShot(shot: Shot): void {
   if (!pickStart) return;
   const { az, shutter, star } = pickStart, held = paused;
   cuts.skip();
+  bind('reflector');
   machine = makeMachine({ az, shutter01: shutter });
   pick(star);
   for (let i = 0; i < REPLAY_MAX_S / REPLAY_DT && cuts.shot !== shot; i++) {

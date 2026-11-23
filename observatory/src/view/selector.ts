@@ -141,7 +141,8 @@ function layout(): void {
   const cx = left ? Math.max(star.x - GAP, need) : Math.min(star.x + GAP, w - need);
   root.classList.toggle('is-left', left);
   text.style.left = `${cx}px`;
-  text.style.top = `${star.y}px`;
+  // The text stays clear of the stage's top edge.
+  text.style.top = `${Math.max(star.y, 16)}px`;
   const box = root.getBoundingClientRect();
   // A chip's hairline starts at its edge that faces the dome.
   const chipStart = (scope: Scope): Pt => {

@@ -32,7 +32,8 @@ export function pickStar(stars: Star[], aim: AltAz, lstDeg: number, latDeg: numb
 const MAG_WEIGHT = 0.1;
 
 // The star a hover shows and a tap locks.
-// The lowest score of distance plus a weighted magnitude wins, above 5 degrees.
+// The lowest score wins: distance plus a weighted magnitude.
+// The star must stand above 5 degrees.
 // It gives null when no star stands within radiusDeg.
 // A star fainter than maxMag does not show, so it is skipped.
 export function nearStar(stars: Star[], aim: AltAz, lstDeg: number, latDeg: number, radiusDeg = 1.5, maxMag = 99): Star | null {
