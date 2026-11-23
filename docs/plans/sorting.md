@@ -1,6 +1,6 @@
 # Sorting sounds (`sorting`) implementation plan
 
-Status: built as a Lab MVP (2026-11-22) · Bean: `stimming-98c1` · Toy doc: [sorting.md](../toys/sorting.md)
+Status: on the main shelf, 2026-11-23 (number 74, Maths class, alpha, version 1.5); built as a Lab MVP on 2026-11-22 · Bean: `stimming-98c1` · Toy doc: [sorting.md](../toys/sorting.md)
 
 **Goal:** Pick an algorithm. A row of bars sorts itself; each compare and each move lights up and sounds as a tone whose pitch follows the bar's height. A sweep plays the rising scale when the row is sorted.
 
@@ -73,3 +73,4 @@ What this toy does instead: bars are physical rods that glide and never copy; th
 - [x] Bar v3, pointer (tap, strum), keys
 - [x] Icons, intro emblem, favicon, Lab tile, toys.json
 - [x] QA Q1 to Q10, toy doc
+- [x] Main shelf (Tom, 2026-11-23): number 74, series maths, a still; bean `stimming-l7t5`

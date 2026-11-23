@@ -4,9 +4,8 @@
 |---|---|
 | Dutch | Sorteerklanken /sɔrˈteːrˌklɑŋkə(n)/ (draft) |
 | Motto | None |
-| Shelf | Lab, tag "Stimming Lab" |
-| Stage | None |
-| Series | None |
+| Shelf | Main, number 74, series Maths class (since 2026-11-23) |
+| Stage | Alpha, version 1.5 |
 | Accent | `oklch(0.78 0.15 20)` |
 | Sound | Yes |
 | Legacy build | No |
@@ -14,7 +13,7 @@
 
 ## Idea
 
-Idea 9, group B: pick an algorithm; the bars sort themselves, each swap a tone. Bean `stimming-98c1`. Plan: [sorting.md](../plans/sorting.md), an MVP.
+Idea 9, group B: pick an algorithm; the bars sort themselves, each swap a tone. Bean `stimming-98c1`. Plan: [sorting.md](../plans/sorting.md), an MVP. Tom moved it to the main shelf on 2026-11-23: "lets make sorting sounds main too -- promote" (bean `stimming-l7t5`).
 
 ## Rules
 
@@ -73,6 +72,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 | `sorting/render.js` | Rods, reflections, floor light, bloom, grade |
 | `sorting/sound.js` | Notes, voices, limiter, room |
 | `shared/emblems/sorting.svg`, `shared/favicons/sorting.png` | Intro emblem and favicon |
+| `shared/stills/sorting.webp` | The menu's hover still: Quick mid-sort, 512 px |
 | `icons/spike-sorting-1.html` | Icon round: Current, A, D |
 
 QA captures: `docs/qa/sorting/`.
