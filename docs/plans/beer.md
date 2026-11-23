@@ -152,3 +152,42 @@ On a slate table stand the beer's own glass, full and backlit, and its bottle. T
 
 - [ ] Real label art from Tom; glass prints (wordmarks, gold rims).
 - [ ] Performance ladder; Q1 to Q10 in the pane; record the cost.
+
+## Refinement pass (2026-11-23)
+
+Status: active · Bean: `stimming-tptn` (task, under `stimming-fvs3`)
+
+Tom, 2026-11-23: "we'd like to spin up the beer pour toy and really refine and bring about all new shader improvements there".
+The effect families and their best toys come from [shared-kit.md](shared-kit.md).
+
+| # | Lift | From | Status |
+|---|---|---|---|
+| 1 | Condensation: fog, beads, stick-slip runs on the glass below the cold beer | `shared/glassrain.js`, `shared/wetglass.js` (imported) | Done |
+| 2 | Light through the head with Fire's smoke shading; round bubbles pressed on the glass; lacing rings after each sip | `cloudbottle/scene.js` `K3 lighting` (marked copy) | Done |
+| 3 | Bubbles as gas lenses: dark rim, bright core, key glint | The drop lens in `shared/glassrain.js` (`grLens`) | Done |
+| 4 | Finish: `ouAces`, grain from `gdHash`, a lens flare from the lamp | `shared/output.js`, `shared/grade.js`, `shared/flare.js` (`flBuoy`) | Done |
+| 5 | Sound, muted by default | `beer/sound.js`, after `milkcrown/sound.js` | Done |
+
+Also: the jet carries capillary ripples that grow into beads as it falls. Cold glass is on by default.
+
+- [x] Lifts 1 to 5, checked at 1280 x 800, 375 x 812, 812 x 375 and in reduced motion; idle sleep holds.
+- [x] Tom's look at the captures (`docs/qa/beer/r00` to `r07`): "Yes, push it".
+- [ ] Tom's answer on the brand names below.
+
+### Brand names and trade dress (hard rule 11)
+
+Tom's 2026-11-09 exception allows real beer names in this toy; the toy's own name stays generic. AGENTS.md does not list that exception. What shows today:
+
+| # | What shows | Where | Generic replacement, if Tom wants one |
+|---|---|---|---|
+| 1 | 25 real beer names in the stepper | `catalogue.js`, the Beer choice | A style name per beer: Strong golden, Coachman amber, Abbey blond, Trappist tripel, Old kriek |
+| 2 | Wordmarks printed on the glass: "Duvel" in red italic serif, "Pauwel Kwak" in white script, "AVERBODE" with a compass star | `LOGOS` in `index.html` | No print, or a plain etched mark (a ring or a star) |
+| 3 | Bottle labels with the beer's name in capitals | `drawLabel()` | The style name on a plain label in the beer's colours |
+| 4 | Glass and bottle outlines measured from product photos; Kwak's coachman glass in its wooden stand | `data/silhouettes.json`, `data/bottles.json`, `buildStand()` | Keep the shapes (glass types are generic) and drop only the names, or soften the most recognisable ones |
+
+Nothing is removed until Tom answers.
+
+### Shared modules (no edit here; hard rule 3)
+
+- `shared/wetglass.js`: `wgPane` takes a fixed light direction for the bead glint. A curved glass would want the light per pixel; a `L` argument would help.
+- The `K3 lighting` copy is the tenth; `shared/volume.js` (shared-kit.md, item 1) would end it.
