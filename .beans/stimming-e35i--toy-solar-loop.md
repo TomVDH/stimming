@@ -53,3 +53,8 @@ TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, b
 - Q10: frame times through a flare: median 7.5 ms, p95 8.1 ms. Build to first frame 1.0 s.
 - Captures: docs/qa/solarloop/.
 
+
+## Commits
+
+- 7826b742: the toy, toys.json entry, plan, toy doc, QA captures, intro emblem, favicon, bean.
+- a9d61361: menu Lab tile and hook, icon round solarloop-1, emblems, sheet row.
