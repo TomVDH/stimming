@@ -20,7 +20,14 @@ Build Tablecloth yank (idea 112, group E, a physics loop) as a Lab toy: an MVP a
 - [x] Icon round spike-tablecloth-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/tablecloth.md
-- [ ] Commit and push
+- [x] Commit and push (9eab8ab6, e2b0b261)
+- [ ] Pass 2, in Tom's words: "improve the look of the models and the assets, incl no collision clipping on the fabric sim; when the candle falls, things light up in fire (fire toy shaders)"
+  - [x] Cloth: no table corner through the cloth; pieces stay on the cloth's face
+  - [x] Models and materials: table, cutlery, candle, cloth, room
+  - [x] A fallen candle sets the cloth alight; the fire spreads and burns holes
+  - [x] Fire and smoke drawn with Fire's method (K3 port to three.js 0.170 WebGL2)
+  - [x] Fire sound; reset puts the fire out
+  - [x] QA captures and doc update
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -35,4 +42,4 @@ Build Tablecloth yank (idea 112, group E, a physics loop) as a Lab toy: an MVP a
 - Q10: 10.1 ms mean frame through a Space yank (headless Edge, D3D11, RTX 3070). Sim step about 2 ms. Tom checks on a real screen.
 - Icons: no pick in icons/picks.json, so A of spike tablecloth-1 is on the menu. The intro emblem is A's emblem. The favicon shared/favicons/tablecloth.png comes from the menu tile.
 - Open for Tom: 3D or flat (3D by default), a closer shot, the Dutch name (draft Tafelkleedtruc), the icon pick.
-
+- Pass 2 (2026-11-23): captures 11 to 17. Embers: a fallen flame alone lit the cloth in half the runs, as the candle often lands past the hem; a spray of burning wax as it lands lights it in 10 of 10 slow drags. Fire costs 7.8 ms mean a frame with over 900 particles burning (headless Edge, RTX 3070). The yank outcomes moved: 6 m/s all stand, 4 m/s all stand, 3 m/s one or two fall, 2 m/s about five fall.

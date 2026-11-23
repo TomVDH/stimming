@@ -1,7 +1,7 @@
 // Tablecloth yank: the sim. A Verlet cloth and the rigid pieces of a set table.
 // Units are metres and seconds. Y is up; the table runs along x; the pull end is +x.
 // Rigid contacts follow Wrecking ball: sphere sets and impulses with friction.
-import { TOP, TABLE, CLOTH, SETTING, BREAKS, FILL, RIM, shardPlan } from './shapes.js';
+import { TOP, TABLE, CLOTH, CANDLE, SETTING, BREAKS, FILL, RIM, shardPlan } from './shapes.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const G = 9.81;
@@ -100,7 +100,7 @@ function home(b) {
   b.y = TOP + CLOTH.thick + c[1];
   b.z = s.z + R[6] * c[0] + R[7] * c[1] + R[8] * c[2];
   b.vx = b.vy = b.vz = b.wx = b.wy = b.wz = 0;
-  b.awake = false; b.still = 0; b.gone = false; b.scale = 1; b.kicked = false; b.onCloth = false;
+  b.awake = false; b.still = 0; b.gone = false; b.scale = 1; b.kicked = false; b.onCloth = false; b.cside = 1;
   spheres(b);
 }
 
@@ -221,17 +221,23 @@ function makeCloth() {
     P, Q, W, C: new Int32Array(C), CL: rest(C), D: new Int32Array(D), DL: rest(D), B: new Int32Array(B), BL: rest(B),
     rest: null, awake: true, still: 0, speed: 0, onTop: NP, slip: 0, flying: 0,
     grid: new Map(), from: null,
+    // Fire: heat and fuel per particle; cut marks a particle burnt through.
+    heat: new Float32Array(NP), fuel: new Float32Array(NP).fill(1), cut: new Uint8Array(NP),
   };
 }
-function links(P, W, C, CL, k) {
+// Burning cloth shrinks and curls: each particle scales the rest length of its links.
+const SHRINK = new Float32Array(NP).fill(1);
+function links(P, W, C, CL, k, cut) {
   const ks = k * 0.25;
   for (let c = 0, n = CL.length; c < n; c++) {
     const ia = C[c * 2], ib = C[c * 2 + 1];
+    // A link with a burnt-through end holds nothing.
+    if (cut[ia] | cut[ib]) continue;
     const wa = W[ia], wb = W[ib], ws = wa + wb;
     if (ws === 0) continue;
     const a = ia * 3, b = ib * 3;
     const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
-    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1e-9, r = CL[c];
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1e-9, r = CL[c] * Math.min(SHRINK[ia], SHRINK[ib]);
     // Cloth resists stretch hard and squash softly.
     const s = (d - r) / (d * ws) * (d > r ? k : ks);
     const sa = s * wa, sb = s * wb;
@@ -264,9 +270,94 @@ function tether(sim) {
     }
   }
 }
+/* ---------- cloth grid ---------- */
+// A flat 3D grid of the particles, 5 cm cells, rebuilt each cloth step.
+const GC = 0.05, GX0 = -1.6, GY0 = -0.05, GZ0 = -1.3, GXN = 110, GYN = 38, GZN = 52;
+const ghead = new Int32Array(GXN * GYN * GZN), gnext = new Int32Array(NP);
+const gi = (v, o, n) => Math.min(n - 1, Math.max(0, Math.floor((v - o) / GC)));
+function grid3(P) {
+  ghead.fill(-1);
+  for (let p = 0; p < NP; p++) {
+    const c = (gi(P[p * 3], GX0, GXN) * GYN + gi(P[p * 3 + 1], GY0, GYN)) * GZN + gi(P[p * 3 + 2], GZ0, GZN);
+    gnext[p] = ghead[c]; ghead[c] = p;
+  }
+}
+// Calls f(p) for each particle in the cells round a sphere.
+function near(x, y, z, r, f) {
+  const i0 = gi(x - r, GX0, GXN), i1 = gi(x + r, GX0, GXN), j0 = gi(y - r, GY0, GYN), j1 = gi(y + r, GY0, GYN), k0 = gi(z - r, GZ0, GZN), k1 = gi(z + r, GZ0, GZN);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) for (let k = k0; k <= k1; k++) {
+    for (let p = ghead[(i * GYN + j) * GZN + k]; p >= 0; p = gnext[p]) f(p);
+  }
+}
+// The cloth's normal at each particle: its top side faces up on the table.
+const PN = new Float32Array(NP * 3);
+function normals(P) {
+  for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+    const a = idx(Math.min(NX - 1, i + 1), j) * 3, b = idx(Math.max(0, i - 1), j) * 3, c = idx(i, Math.min(NZ - 1, j + 1)) * 3, d = idx(i, Math.max(0, j - 1)) * 3;
+    const ex = P[a] - P[b], ey = P[a + 1] - P[b + 1], ez = P[a + 2] - P[b + 2];
+    const fx = P[c] - P[d], fy = P[c + 1] - P[d + 1], fz = P[c + 2] - P[d + 2];
+    let nx = fy * ez - fz * ey, ny = fz * ex - fx * ez, nz = fx * ey - fy * ex;
+    const l = Math.hypot(nx, ny, nz) || 1, k = idx(i, j) * 3;
+    PN[k] = nx / l; PN[k + 1] = ny / l; PN[k + 2] = nz / l;
+  }
+}
+// The four legs, as upright cylinders under the block.
+const LEG_R = 0.03, LEGS = [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([a, b]) => [a * (TABLE.hx - 0.07), b * (TABLE.hz - 0.07)]);
+function legPush(P, k, r) {
+  const x = P[k], z = P[k + 2];
+  if (P[k + 1] > BY0 + 0.02) return;
+  for (const [lx, lz] of LEGS) {
+    const dx = x - lx, dz = z - lz, d2 = dx * dx + dz * dz, R = LEG_R + r;
+    if (d2 >= R * R) continue;
+    const d = Math.sqrt(d2) || 1e-9;
+    P[k] = lx + dx / d * R; P[k + 2] = lz + dz / d * R;
+  }
+}
+// A link or a quad between particles must not cut the table's rounded edge.
+// The particles alone pass that test while their chord cuts the corner.
+const QN = (NX - 1) * (NZ - 1);
+function chords(P) {
+  const lo = BY0 - 0.04, hx = TABLE.hx + 0.03, hz = TABLE.hz + 0.03;
+  const push = (ks, n, x, y, z) => {
+    if (y > TOP + 0.03 || y < lo || Math.abs(x) > hx || Math.abs(z) > hz) return;
+    const d = block(x, y, z) - CR;
+    if (d >= 0) return;
+    for (let m = 0; m < n; m++) { const k = ks[m]; P[k] -= N3[0] * d; P[k + 1] -= N3[1] * d; P[k + 2] -= N3[2] * d; }
+  };
+  const ks = [0, 0, 0, 0];
+  for (let i = 0; i + 1 < NX; i++) for (let j = 0; j + 1 < NZ; j++) {
+    const a = idx(i, j) * 3, b = idx(i + 1, j) * 3, c = idx(i + 1, j + 1) * 3, d = idx(i, j + 1) * 3;
+    ks[0] = a; ks[1] = b;
+    push(ks, 2, (P[a] + P[b]) / 2, (P[a + 1] + P[b + 1]) / 2, (P[a + 2] + P[b + 2]) / 2);
+    ks[1] = d;
+    push(ks, 2, (P[a] + P[d]) / 2, (P[a + 1] + P[d + 1]) / 2, (P[a + 2] + P[d + 2]) / 2);
+    ks[1] = b; ks[2] = c; ks[3] = d;
+    push(ks, 4, (P[a] + P[b] + P[c] + P[d]) / 4, (P[a + 1] + P[b + 1] + P[c + 1] + P[d + 1]) / 4, (P[a + 2] + P[b + 2] + P[c + 2] + P[d + 2]) / 4);
+  }
+}
+// Cloth layers keep a gap, so a heap on the floor does not pass through itself.
+const SELF = 0.016;
+function selfCollide(P, W) {
+  for (let p = 0; p < NP; p++) {
+    if (W[p] === 0) continue;
+    const k = p * 3, pi = (p / NZ) | 0, pj = p - pi * NZ;
+    near(P[k], P[k + 1], P[k + 2], SELF, q => {
+      if (q <= p) return;
+      const qi = (q / NZ) | 0, qj = q - qi * NZ;
+      // Grid neighbours keep their own rest lengths.
+      if (Math.abs(qi - pi) < 3 && Math.abs(qj - pj) < 3) return;
+      const m = q * 3, dx = P[m] - P[k], dy = P[m + 1] - P[k + 1], dz = P[m + 2] - P[k + 2], d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= SELF * SELF) return;
+      const d = Math.sqrt(d2) || 1e-6, s = (SELF - d) / d * 0.5;
+      P[k] -= dx * s; P[k + 1] -= dy * s; P[k + 2] -= dz * s;
+      P[m] += dx * s; P[m + 1] += dy * s; P[m + 2] += dz * s;
+    });
+  }
+}
 function collide(sim, flyCheck) {
   const cl = sim.cloth, P = cl.P, Q = cl.Q;
   let onTop = 0;
+  chords(P);
   for (let p = 0; p < NP; p++) {
     const k = p * 3;
     let x = P[k], y = P[k + 1], z = P[k + 2];
@@ -282,6 +373,7 @@ function collide(sim, flyCheck) {
       }
       if (N3[1] > 0.7 && d < 0.004) onTop++;
     }
+    legPush(P, k, CR);
     if (y < CR + 0.0005) {
       P[k + 1] = y = Math.max(y, CR);
       // Cloth on the boards holds still once it slows: static friction.
@@ -291,24 +383,31 @@ function collide(sim, flyCheck) {
     }
   }
   cl.onTop = onTop;
-  // Flying cloth slides round the pieces, not through them.
-  if (!flyCheck) return;
+  // The cloth goes round the pieces, on its own side of each.
   for (const b of sim.bodies) {
-    if (b.gone) continue;
-    for (let p = 0; p < NP; p++) {
+    if (b.gone || (!b.awake && !flyCheck)) continue;
+    const S = b.S, L = b.L, side = b.cside || 1;
+    near(b.x, b.y, b.z, b.br + 0.02, p => {
       const k = p * 3, x = P[k], y = P[k + 1], z = P[k + 2];
-      if (y < TOP + 0.012 && y > TOP - 0.03 && Math.abs(x) < TABLE.hx && Math.abs(z) < TABLE.hz) continue;
-      const dx = x - b.x, dy = y - b.y, dz = z - b.z;
-      if (dx * dx + dy * dy + dz * dz > (b.br + CR) ** 2) continue;
-      const S = b.S, L = b.L;
+      // Cloth flat on the top lies under a piece; the slab holds it there.
+      if (y < TOP + 0.012 && y > TOP - 0.03 && Math.abs(x) < TABLE.hx && Math.abs(z) < TABLE.hz) return;
+      const nx = PN[k] * side, ny = PN[k + 1] * side, nz = PN[k + 2] * side;
       for (let s = 0; s < L.length; s++) {
-        const ex = P[k] - S[s * 3], ey = P[k + 1] - S[s * 3 + 1], ez = P[k + 2] - S[s * 3 + 2], r = L[s][3] + CR + 0.004;
+        const ex = P[k] - S[s * 3], ey = P[k + 1] - S[s * 3 + 1], ez = P[k + 2] - S[s * 3 + 2], r = L[s][3] + CR + 0.003;
         const d2 = ex * ex + ey * ey + ez * ez;
         if (d2 >= r * r) continue;
-        const d = Math.sqrt(d2) || 1e-9, m = (r - d) / d;
-        P[k] += ex * m; P[k + 1] += ey * m; P[k + 2] += ez * m;
+        const dn = ex * nx + ey * ny + ez * nz;
+        if (dn > 0) {
+          // The particle passed the piece: it goes back under, at the same offset.
+          const tx = ex - nx * dn, ty = ey - ny * dn, tz = ez - nz * dn;
+          const m = -dn - Math.sqrt(Math.max(0, r * r - (tx * tx + ty * ty + tz * tz)));
+          P[k] += nx * m; P[k + 1] += ny * m; P[k + 2] += nz * m;
+        } else {
+          const d = Math.sqrt(d2) || 1e-9, m = (r - d) / d;
+          P[k] += ex * m; P[k + 1] += ey * m; P[k + 2] += ez * m;
+        }
       }
-    }
+    });
   }
 }
 // A grid of the particles on the table, for the cloth under a piece.
@@ -372,15 +471,18 @@ function clothStep(sim, h, damp = 0.9965, iters = ITERS) {
       if (d < 0) { P[k] -= N3[0] * d; P[k + 1] -= N3[1] * d; P[k + 2] -= N3[2] * d; }
     }
   }
-  const fly = cl.flying > 0 || sim.bodies.some(b => b.awake && b.y < TOP - 0.02);
+  const fly = cl.flying > 0;
+  grid3(P);
+  normals(P);
   for (let it = 0; it < iters; it++) {
-    links(P, W, cl.C, cl.CL, 1);
-    links(P, W, cl.D, cl.DL, 0.8);
-    if (it & 1) links(P, W, cl.B, cl.BL, 0.35);
+    links(P, W, cl.C, cl.CL, 1, cl.cut);
+    links(P, W, cl.D, cl.DL, 0.8, cl.cut);
+    if (it & 1) links(P, W, cl.B, cl.BL, 0.35, cl.cut);
     if (hand.pins) tether(sim);
     // Collision runs on two passes of six; the last one sets the shape.
-    if (it === 2 || it === iters - 1) collide(sim, fly && it === iters - 1);
+    if (it === 2 || it === iters - 1) collide(sim, fly);
   }
+  if (cl.onTop < NP * 0.9) { grid3(P); selfCollide(P, W); }
   cl.speed = Math.sqrt(vmax) / h;
 }
 
@@ -427,11 +529,13 @@ export function makeSim() {
   const sim = {
     t: 0, acc: 0, calm: false, events: [], bodies, shards: [], drops: [], glitter: [], puddles: [],
     cloth: makeCloth(), hand: { pins: null, x: 0, y: 0, x0: 0, y0: 0, tx: 0, ty: 0, vx: 0, vy: 0, follow: false, auto: 0, drop: 0 },
-    quiet: 0, reset: null, dirty: false, flame: { lean: 0, v: 0, out: 0 }, wind: 0, yankV: 0, clear: 0,
+    quiet: 0, reset: null, dirty: false, flame: { lean: 0, v: 0, out: 0, down: 0, touch: 0 }, wind: 0, yankV: 0, clear: 0,
+    burning: 0, fireT: 0, fireC: [0, 0, 0], embers: [],
   };
   // The cloth falls onto the table and drapes before the first frame.
   settle(sim, 2.4);
   sim.cloth.rest = Float32Array.from(sim.cloth.P);
+  regrid(sim);
   return sim;
 }
 function settle(sim, secs) {
@@ -529,6 +633,11 @@ function handStep(sim, h, f) {
     sim.events.push({ type: 'clear', v: sim.yankV });
   }
 }
+// The grids follow a cloth that moved while it slept: after a settle or a reset.
+function regrid(sim) {
+  const P = sim.cloth.P;
+  grid3(P); normals(P); hashCloth(sim);
+}
 function wakeCloth(sim) {
   const cl = sim.cloth;
   if (!cl.awake) { cl.Q.set(cl.P); cl.awake = true; }
@@ -550,9 +659,134 @@ function normal(a, cx, cy, cz, nx, ny, nz, e, first) {
   apply(a, null, j * nx, j * ny, j * nz, rax, ray, raz, 0, 0, 0);
   return j;
 }
+/* ---------- the cloth's surface for a piece ---------- */
+// The quads round a piece, gathered once per contact pass.
+const SF = { on: false, best: 1, sgn: 0, F: null };
+const SN = [0, 0, 0], SV = [0, 0, 0], CP = [0, 0, 0];
+const STAMP = new Int32Array(QN);
+let stampN = 0;
+const T_SURF = CR + 0.002;
+function onTopAt(P, k) { return P[k + 1] < TOP + 0.012 && P[k + 1] > TOP - 0.03 && Math.abs(P[k]) < TABLE.hx - 0.01 && Math.abs(P[k + 2]) < TABLE.hz - 0.01; }
+// Each piece keeps its list of quads for one cloth step; its reach covers the drift.
+function gather(sim, b) {
+  SF.best = 1; SF.sgn = 0;
+  let F = b.sfc;
+  if (!F) F = b.sfc = { n: 0, at: -1, q: new Int32Array(256), c: new Float32Array(256 * 4), top: new Uint8Array(256) };
+  SF.F = F;
+  if (F.at === sim.tick) { SF.on = F.n > 0; return; }
+  F.at = sim.tick; F.n = 0;
+  const P = sim.cloth.P, cut = sim.cloth.cut;
+  stampN++;
+  near(b.x, b.y, b.z, b.br + 0.04, p => {
+    const i = (p / NZ) | 0, j = p - i * NZ;
+    for (let qi = i - 1; qi <= i; qi++) for (let qj = j - 1; qj <= j; qj++) {
+      if (qi < 0 || qj < 0 || qi >= NX - 1 || qj >= NZ - 1 || F.n >= 256) continue;
+      const q = qi * (NZ - 1) + qj;
+      if (STAMP[q] === stampN) continue;
+      STAMP[q] = stampN;
+      const a = idx(qi, qj), c = idx(qi + 1, qj + 1), e = idx(qi + 1, qj), d = idx(qi, qj + 1);
+      if (cut[a] | cut[c] | cut[e] | cut[d]) continue;
+      const ka = a * 3, kb = e * 3, kc = c * 3, kd = d * 3;
+      const cx = (P[ka] + P[kb] + P[kc] + P[kd]) / 4, cy = (P[ka + 1] + P[kb + 1] + P[kc + 1] + P[kd + 1]) / 4, cz = (P[ka + 2] + P[kb + 2] + P[kc + 2] + P[kd + 2]) / 4;
+      const r = Math.sqrt(Math.max(
+        (P[ka] - cx) ** 2 + (P[ka + 1] - cy) ** 2 + (P[ka + 2] - cz) ** 2, (P[kb] - cx) ** 2 + (P[kb + 1] - cy) ** 2 + (P[kb + 2] - cz) ** 2,
+        (P[kc] - cx) ** 2 + (P[kc + 1] - cy) ** 2 + (P[kc + 2] - cz) ** 2, (P[kd] - cx) ** 2 + (P[kd + 1] - cy) ** 2 + (P[kd + 2] - cz) ** 2));
+      const o = F.n * 4;
+      F.c[o] = cx; F.c[o + 1] = cy; F.c[o + 2] = cz; F.c[o + 3] = r;
+      F.top[F.n] = onTopAt(P, ka) && onTopAt(P, kb) && onTopAt(P, kc) && onTopAt(P, kd) ? 1 : 0;
+      F.q[F.n++] = q;
+    }
+  });
+  SF.on = F.n > 0;
+}
+// Closest point on triangle abc to p (Ericson); writes CP, returns the squared distance.
+function closest(P, a, b, c, px, py, pz) {
+  const ax = P[a], ay = P[a + 1], az = P[a + 2];
+  const abx = P[b] - ax, aby = P[b + 1] - ay, abz = P[b + 2] - az, acx = P[c] - ax, acy = P[c + 1] - ay, acz = P[c + 2] - az;
+  const apx = px - ax, apy = py - ay, apz = pz - az;
+  const d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz;
+  let u, v;
+  if (d1 <= 0 && d2 <= 0) { u = 0; v = 0; }
+  else {
+    const bpx = px - P[b], bpy = py - P[b + 1], bpz = pz - P[b + 2];
+    const d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz;
+    const cpx = px - P[c], cpy = py - P[c + 1], cpz = pz - P[c + 2];
+    const d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz;
+    const vc = d1 * d4 - d3 * d2, vb = d5 * d2 - d1 * d6, va = d3 * d6 - d5 * d4;
+    if (d3 >= 0 && d4 <= d3) { u = 1; v = 0; }
+    else if (d6 >= 0 && d5 <= d6) { u = 0; v = 1; }
+    else if (vc <= 0 && d1 >= 0 && d3 <= 0) { u = d1 / (d1 - d3); v = 0; }
+    else if (vb <= 0 && d2 >= 0 && d6 <= 0) { u = 0; v = d2 / (d2 - d6); }
+    else if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) { const w = (d4 - d3) / ((d4 - d3) + (d5 - d6)); u = 1 - w; v = w; }
+    else { const dn = 1 / (va + vb + vc); u = vb * dn; v = vc * dn; }
+  }
+  CP[0] = ax + abx * u + acx * v; CP[1] = ay + aby * u + acy * v; CP[2] = az + abz * u + acz * v;
+  BW[0] = 1 - u - v; BW[1] = u; BW[2] = v;
+  return (px - CP[0]) ** 2 + (py - CP[1]) ** 2 + (pz - CP[2]) ** 2;
+}
+const BW = [0, 0, 0], BEST = { d2: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, vx: 0, vy: 0, vz: 0, top: 0 };
+// A sphere against the cloth near it. Returns the depth past the cloth's skin, or 0.
+// The piece keeps to its own side of the cloth; side flips only while the two are apart.
+function surfaceAt(sim, b, s, x, y, z, r) {
+  const cl = sim.cloth, P = cl.P, Q = cl.Q, reach = r + T_SURF + 0.03;
+  let best = reach * reach, hit = false;
+  const F = SF.F;
+  for (let m = 0; m < F.n; m++) {
+    const o = m * 4, ex = x - F.c[o], ey = y - F.c[o + 1], ez = z - F.c[o + 2], R = F.c[o + 3] + reach;
+    if (ex * ex + ey * ey + ez * ez > R * R) continue;
+    const q = F.q[m], qi = (q / (NZ - 1)) | 0, qj = q - qi * (NZ - 1);
+    const a = idx(qi, qj) * 3, e = idx(qi + 1, qj) * 3, c = idx(qi + 1, qj + 1) * 3, d = idx(qi, qj + 1) * 3;
+    for (let t = 0; t < 2; t++) {
+      const t0 = a, t1 = t ? c : e, t2 = t ? d : c;
+      const d2 = closest(P, t0, t1, t2, x, y, z);
+      if (d2 >= best) continue;
+      best = d2; hit = true;
+      // The top side: z run crossed with x run.
+      const ix = t ? P[c] - P[d] : P[e] - P[a], iy = t ? P[c + 1] - P[d + 1] : P[e + 1] - P[a + 1], iz = t ? P[c + 2] - P[d + 2] : P[e + 2] - P[a + 2];
+      const jx = t ? P[d] - P[a] : P[c] - P[e], jy = t ? P[d + 1] - P[a + 1] : P[c + 1] - P[e + 1], jz = t ? P[d + 2] - P[a + 2] : P[c + 2] - P[e + 2];
+      let nx = jy * iz - jz * iy, ny = jz * ix - jx * iz, nz = jx * iy - jy * ix;
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      BEST.nx = nx / nl; BEST.ny = ny / nl; BEST.nz = nz / nl;
+      BEST.x = CP[0]; BEST.y = CP[1]; BEST.z = CP[2]; BEST.top = F.top[m];
+      const k = 1 / (2 * H);
+      BEST.vx = ((P[t0] - Q[t0]) * BW[0] + (P[t1] - Q[t1]) * BW[1] + (P[t2] - Q[t2]) * BW[2]) * k;
+      BEST.vy = ((P[t0 + 1] - Q[t0 + 1]) * BW[0] + (P[t1 + 1] - Q[t1 + 1]) * BW[1] + (P[t2 + 1] - Q[t2 + 1]) * BW[2]) * k;
+      BEST.vz = ((P[t0 + 2] - Q[t0 + 2]) * BW[0] + (P[t1 + 2] - Q[t1 + 2]) * BW[1] + (P[t2 + 2] - Q[t2 + 2]) * BW[2]) * k;
+    }
+  }
+  if (!hit) return 0;
+  const dist = Math.sqrt(best), ox = x - BEST.x, oy = y - BEST.y, oz = z - BEST.z;
+  const along = ox * BEST.nx + oy * BEST.ny + oz * BEST.nz;
+  if (dist - r < SF.best) { SF.best = dist - r; SF.sgn = Math.sign(along) || SF.sgn; }
+  // Cloth flat on the top, and all cloth over the top, belongs to the slab contact.
+  if (BEST.top || (y > TOP - 0.03 && Math.abs(x) < TABLE.hx + 0.005 && Math.abs(z) < TABLE.hz + 0.005)) return 0;
+  const side = b.cside || 1;
+  let pen;
+  if (along * side < -1e-4) {
+    // A centre just past the cloth goes back to its side.
+    // Far past, the side is in doubt: no push.
+    if (dist > 0.012) return 0;
+    pen = dist + r + T_SURF;
+    SN[0] = BEST.nx * side; SN[1] = BEST.ny * side; SN[2] = BEST.nz * side;
+  } else {
+    pen = r + T_SURF - dist;
+    if (dist > 1e-5) { SN[0] = ox / dist; SN[1] = oy / dist; SN[2] = oz / dist; }
+    else { SN[0] = BEST.nx * side; SN[1] = BEST.ny * side; SN[2] = BEST.nz * side; }
+  }
+  if (pen <= 0) return 0;
+  // A deep pass is a tunnel through a fold, not a contact: cap the push.
+  pen = Math.min(pen, 0.02);
+  // The normal pass ignores the cloth's speed; friction takes its tangent part.
+  const vn = BEST.vx * SN[0] + BEST.vy * SN[1] + BEST.vz * SN[2];
+  SV[0] = BEST.vx - vn * SN[0]; SV[1] = BEST.vy - vn * SN[1]; SV[2] = BEST.vz - vn * SN[2];
+  return pen;
+}
 function contacts(sim, b, h, events) {
   const S = b.S, L = b.L, shard = b.kind === 'shard';
   let n = 0, deep = 0, dx = 0, dy = 0, dz = 0, under = false, cv = 0;
+  SF.on = false;
+  // A shard meets the cloth only near the floor, where it lies in a heap.
+  if (!shard || b.y < 0.25) gather(sim, b);
   for (let s = 0; s < L.length && n < 64; s++) {
     const x = S[s * 3], y = S[s * 3 + 1], z = S[s * 3 + 2], r = L[s][3];
     if (y < TOP + 0.06 && y > TOP - 0.1 && Math.abs(x) < TABLE.hx + 0.05 && Math.abs(z) < TABLE.hz + 0.05) {
@@ -568,18 +802,26 @@ function contacts(sim, b, h, events) {
         if (-d > deep) { deep = -d; dx = nx; dy = ny; dz = nz; }
       }
     }
-    // Below the top, a piece meets the cloth where it hangs down a face.
-    if (!shard && y < TOP - 0.03 && y > BY0 && Math.abs(x) < TABLE.hx + 0.04 && Math.abs(z) < TABLE.hz + 0.04 && n < 64) {
-      let d = block(x, y, z) - r - CLOTH.thick - CR;
-      if (d < 0) {
-        const nx = N3[0], ny = N3[1], nz = N3[2];
-        const C = clothUnder(sim, x, z, h, y);
-        if (C) {
-          const o = n++ * 11;
-          CT[o] = x - nx * r; CT[o + 1] = y - ny * r; CT[o + 2] = z - nz * r; CT[o + 3] = nx; CT[o + 4] = ny; CT[o + 5] = nz;
-          CT[o + 6] = C[0]; CT[o + 7] = C[2]; CT[o + 8] = 0.35; CT[o + 9] = 0.05; CT[o + 10] = C[1];
-          if (-d > deep) { deep = -d; dx = nx; dy = ny; dz = nz; }
-        }
+    // Off the top, a piece meets the cloth's own surface: a hanging face, a heap, a flying sheet.
+    if (n < 64 && SF.on) {
+      const pen = surfaceAt(sim, b, s, x, y, z, r);
+      if (pen > 0) {
+        const o = n++ * 11;
+        CT[o] = x - SN[0] * r; CT[o + 1] = y - SN[1] * r; CT[o + 2] = z - SN[2] * r; CT[o + 3] = SN[0]; CT[o + 4] = SN[1]; CT[o + 5] = SN[2];
+        CT[o + 6] = SV[0]; CT[o + 7] = SV[2]; CT[o + 8] = 0.3; CT[o + 9] = 0.05; CT[o + 10] = SV[1];
+        if (pen > deep) { deep = pen; dx = SN[0]; dy = SN[1]; dz = SN[2]; }
+        if (SN[1] > 0.3) { under = true; cv = Math.max(cv, Math.hypot(SV[0], SV[2])); }
+      }
+    }
+    // The legs stand in the way of a falling piece.
+    if (y < BY0 + 0.02 && n < 64) {
+      for (const [lx, lz] of LEGS) {
+        const ex = x - lx, ez = z - lz, R = LEG_R + r, d2 = ex * ex + ez * ez;
+        if (d2 >= R * R) continue;
+        const d = Math.sqrt(d2) || 1e-9, o = n++ * 11, nx = ex / d, nz = ez / d;
+        CT[o] = x - nx * r; CT[o + 1] = y; CT[o + 2] = z - nz * r; CT[o + 3] = nx; CT[o + 4] = 0; CT[o + 5] = nz;
+        CT[o + 6] = 0; CT[o + 7] = 0; CT[o + 8] = MU_WOOD; CT[o + 9] = E_WOOD; CT[o + 10] = 0;
+        if (R - d > deep) { deep = R - d; dx = nx; dy = 0; dz = nz; }
       }
     }
     if (y - r < 0 && n < 64) {
@@ -589,13 +831,16 @@ function contacts(sim, b, h, events) {
       if (r - y > deep) { deep = r - y; dx = 0; dy = 1; dz = 0; }
     }
   }
+  // Apart from the cloth, a piece learns which side of it it is on.
+  if (SF.on && SF.best > 0.02 && SF.sgn) b.cside = SF.sgn;
   if (n) {
     // The closing speed before any impulse drives sound and breaks.
     let hit = 0, hx = 0, hz = 0, floor = false;
     for (let c = 0; c < n; c++) {
       const o = c * 11, rax = CT[o] - b.x, ray = CT[o + 1] - b.y, raz = CT[o + 2] - b.z;
       const vn = (b.vx + b.wy * raz - b.wz * ray) * CT[o + 3] + (b.vy + b.wz * rax - b.wx * raz) * CT[o + 4] + (b.vz + b.wx * ray - b.wy * rax) * CT[o + 5];
-      if (-vn > hit) { hit = -vn; hx = CT[o]; hz = CT[o + 2]; floor = CT[o + 1] === 0 && CT[o + 4] === 1; }
+      // Cloth on the boards pads a fall no more than the boards do.
+      if (-vn > hit) { hit = -vn; hx = CT[o]; hz = CT[o + 2]; floor = CT[o + 1] < 0.03 && CT[o + 4] > 0.7; }
     }
     let J = 0;
     for (let it = 0; it < 3; it++) for (let c = 0; c < n; c++) {
@@ -711,9 +956,10 @@ function shatter(sim, b, events) {
     const s = {
       kind: 'shard', sub: b.kind, plan: n, owner: b, m: 0.03, im: 1 / 0.03, IX: 1 / 1.5e-5, IY: 1 / 2.5e-5, IZ: 1 / 1.5e-5,
       L: pl.pts.map(([x, y, z]) => [x - pl.c[0], y - pl.c[1], z - pl.c[2], 0.0025]),
-      S: new Float64Array(pl.pts.length * 3), R: new Float64Array(9), br: 0.15,
+      S: new Float64Array(pl.pts.length * 3), R: new Float64Array(9),
+      br: Math.max(...pl.pts.map(([x, y, z]) => Math.hypot(x - pl.c[0], y - pl.c[1], z - pl.c[2]))) + 0.003,
       x: b.x + R[0] * lx + R[1] * ly + R[2] * lz, y: Math.max(0.006, b.y + R[3] * lx + R[4] * ly + R[5] * lz), z: b.z + R[6] * lx + R[7] * ly + R[8] * lz,
-      qx, qy, qz, qw, awake: true, still: 0, gone: false, age: 0, fade: 1,
+      qx, qy, qz, qw, awake: true, still: 0, gone: false, age: 0, fade: 1, cside: b.cside,
     };
     // Pieces burst out across the boards, the base pieces least.
     const dx = s.x - at.x, dz = s.z - at.z, dl = Math.hypot(dx, dz) || 1, base = n === 0;
@@ -773,6 +1019,8 @@ export function step(sim, dt) {
     const cl = sim.cloth;
     // The cloth steps at 120 Hz; the pieces at 240 Hz.
     sim.n = (sim.n || 0) + 1;
+    // Quad lists last two substeps.
+    if (sim.n & 1) sim.tick = (sim.tick || 0) + 1;
     if (cl.awake && (sim.n & 1)) {
       clothStep(sim, H * 2);
       hashCloth(sim);
@@ -816,6 +1064,8 @@ export function step(sim, dt) {
   pours(sim, h, events);
   particles(sim, h, events);
   flame(sim, h);
+  if (sim.embers.length) embers(sim, h);
+  if (sim.fireT) { douse(sim); burn(sim, h); }
   settleTest(sim, h);
 }
 function pours(sim, h, events) {
@@ -860,7 +1110,18 @@ function particles(sim, h, events) {
   }
   for (const p of sim.puddles) if (p.r < p.max) p.r = Math.min(p.max, p.r + (p.max - p.r) * h * 3 + h * 0.01);
 }
-// The candle flame leans in the wind of the passing cloth and goes out if it falls.
+// The candle flame leans in the wind of the passing cloth.
+// A fallen candle burns on for a few seconds and lights any cloth at its flame.
+const FP = [0, 0, 0];
+function flamePoint(b) {
+  const R = b.R, ly = CANDLE.y1 + 0.014 - b.c[1];
+  FP[0] = b.x + R[1] * ly;
+  FP[1] = b.y + R[4] * ly;
+  FP[2] = b.z + R[7] * ly;
+  // The flame rises from the wick, whatever the candle's lean.
+  FP[1] += 0.008 * (1 - Math.max(0, R[4]));
+  return FP;
+}
 function flame(sim, h) {
   const st = sim.bodies.find(b => b.kind === 'stick'), F = sim.flame;
   const cl = sim.cloth;
@@ -869,20 +1130,148 @@ function flame(sim, h) {
   sim.wind = wind;
   F.v += (-90 * (F.lean - wind) - 9 * F.v) * h;
   F.lean = clamp(F.lean + F.v * h, -0.9, 0.9);
-  if (st && (st.gone || st.R[4] < 0.55) && !F.out) { F.out = 1e-3; sim.events.push({ type: 'snuff', x: st.x, y: st.y, z: st.z }); }
-  if (F.out) F.out = Math.min(1, F.out + h * 3.5);
+  if (!st || F.out) { if (F.out) F.out = Math.min(1, F.out + h * 3.5); return; }
+  const down = st.gone || st.R[4] < 0.55;
+  F.down = down ? F.down + h : 0;
+  // A hard fall or a long wait puts it out; so does the fire it lit.
+  const hard = down && Math.hypot(st.vx, st.vy, st.vz) > 3.2;
+  if (st.gone || hard || F.down > 5 || (sim.burning > 6 && F.down > 1.5)) {
+    F.out = 1e-3; sim.events.push({ type: 'snuff', x: st.x, y: st.y, z: st.z });
+    return;
+  }
+  const [fx, fy, fz] = flamePoint(st);
+  // As it lands, the candle throws burning wax: a spray of embers round the flame.
+  if (F.down > 0.12 && !F.spat) {
+    F.spat = true;
+    for (let i = 0; i < 16; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.5 + Math.random() * 1.8;
+      sim.embers.push({ x: fx, y: fy + 0.01, z: fz, vx: Math.cos(a) * sp + st.vx * 0.5, vy: 0.6 + Math.random() * 1.6, vz: Math.sin(a) * sp + st.vz * 0.5, life: 1, s: 0.0025 + Math.random() * 0.003 });
+    }
+    sim.events.push({ type: 'spit', x: fx, y: fy, z: fz });
+  }
+  // The flame lights cloth that touches it; an upright flame needs a longer touch.
+  let best = -1, bd = (down ? 0.07 : 0.025) ** 2;
+  const P = cl.P;
+  near(fx, fy, fz, 0.07, p => {
+    if (cl.cut[p] || cl.fuel[p] < 0.5) return;
+    const d = (P[p * 3] - fx) ** 2 + (P[p * 3 + 1] - fy) ** 2 + (P[p * 3 + 2] - fz) ** 2;
+    if (d < bd) { bd = d; best = p; }
+  });
+  F.touch = best >= 0 ? F.touch + h : 0;
+  if (best >= 0 && F.touch > (down ? 0.05 : 0.6) && cl.heat[best] < 1) {
+    cl.heat[best] = 1.4;
+    if (!sim.fireT) sim.events.push({ type: 'ignite', x: fx, y: fy, z: fz });
+    sim.fireT = sim.fireT || 1e-3;
+    wakeCloth(sim);
+  }
+}
+
+/* ---------- fire ---------- */
+// Each particle holds heat and fuel. Heat past 1 lights it.
+// A lit particle burns its fuel in about BURN_T seconds and heats its neighbours.
+// Cloth above a flame catches fast; cloth below catches slowly.
+// Spent fuel cuts the particle out of the cloth: a hole with a glowing edge.
+const BURN_T = 6, SPREAD = 0.9, UPHILL = 7;
+const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+// Embers fly, bounce low and die; one that lands on cloth lights it.
+function embers(sim, h) {
+  const E = sim.embers, cl = sim.cloth, P = cl.P;
+  for (let i = E.length - 1; i >= 0; i--) {
+    const e = E[i];
+    e.vy -= G * h; e.x += e.vx * h; e.y += e.vy * h; e.z += e.vz * h;
+    e.life -= h / 1.8;
+    const onTable = Math.abs(e.x) < TABLE.hx && Math.abs(e.z) < TABLE.hz && e.y > TOP - 0.05;
+    const floorY = onTable ? TOP + 0.003 : 0.003;
+    if (e.y < floorY) { e.y = floorY; e.vy *= -0.25; e.vx *= 0.5; e.vz *= 0.5; }
+    let hit = -1;
+    near(e.x, e.y, e.z, 0.035, p => {
+      if (hit < 0 && !cl.cut[p] && cl.fuel[p] > 0.5 && (P[p * 3] - e.x) ** 2 + (P[p * 3 + 1] - e.y) ** 2 + (P[p * 3 + 2] - e.z) ** 2 < 0.035 * 0.035) hit = p;
+    });
+    if (hit >= 0 && e.life < 0.97) {
+      if (cl.heat[hit] < 1) {
+        cl.heat[hit] = 1.4;
+        if (!sim.fireT) sim.events.push({ type: 'ignite', x: e.x, y: e.y, z: e.z });
+        sim.fireT = sim.fireT || 1e-3;
+        wakeCloth(sim);
+      }
+      E.splice(i, 1);
+      continue;
+    }
+    if (e.life <= 0) E.splice(i, 1);
+  }
+}
+function burn(sim, h) {
+  const cl = sim.cloth, P = cl.P, heat = cl.heat, fuel = cl.fuel, cut = cl.cut;
+  let n = 0, sx = 0, sy = 0, sz = 0;
+  for (let p = 0; p < NP; p++) {
+    if (cut[p]) continue;
+    if (heat[p] < 1 || fuel[p] <= 0) {
+      // Warm cloth cools slowly.
+      if (heat[p] > 0) heat[p] = Math.max(0, heat[p] - h * 0.12);
+      continue;
+    }
+    n++;
+    const k = p * 3, x = P[k], y = P[k + 1], z = P[k + 2];
+    sx += x; sy += y; sz += z;
+    // Each patch burns at its own pace, so the front stays ragged.
+    fuel[p] -= h / BURN_T * (0.7 + 0.6 * ((p * 0.618) % 1));
+    SHRINK[p] = 0.82 + 0.18 * Math.max(0, fuel[p]);
+    if (fuel[p] <= 0) { fuel[p] = 0; cut[p] = 1; continue; }
+    const i = (p / NZ) | 0, j = p - i * NZ;
+    // A young flame spreads slower than a full one.
+    const g = SPREAD * h * Math.min(1, (1 - fuel[p]) * 4 + 0.25);
+    for (const [di, dj] of NB) {
+      const a = i + di, b = j + dj;
+      if (a < 0 || b < 0 || a >= NX || b >= NZ) continue;
+      const q = a * NZ + b;
+      if (cut[q] || fuel[q] <= 0 || heat[q] >= 1) continue;
+      const dy = P[q * 3 + 1] - y, dl = Math.hypot(P[q * 3] - x, dy, P[q * 3 + 2] - z) || 1;
+      const up = dy / dl, f = up > 0 ? 1 + UPHILL * up * up : 1 + 0.6 * up;
+      heat[q] += g * f / (di && dj ? 1.4 : 1);
+    }
+  }
+  // Rising heat lights cloth that hangs over a fire, though it is no neighbour.
+  // A tenth of the fire looks up each frame.
+  if (n) {
+    const off = (sim.burnScan = ((sim.burnScan || 0) + 1) % 10);
+    for (let p = off; p < NP; p += 10) {
+      if (cut[p] || heat[p] < 1 || fuel[p] <= 0) continue;
+      const k = p * 3;
+      near(P[k], P[k + 1] + 0.09, P[k + 2], 0.08, q => {
+        if (cut[q] || fuel[q] <= 0 || heat[q] >= 1 || P[q * 3 + 1] < P[k + 1] + 0.02) return;
+        heat[q] += h * 22;
+      });
+    }
+  }
+  sim.burning = n;
+  if (n) { sim.fireC[0] = sx / n; sim.fireC[1] = sy / n; sim.fireC[2] = sz / n; }
+  // Smoke lingers after the last flame; the sim stays busy for it.
+  sim.fireT = n ? 1e-3 : sim.fireT + h;
+  if (sim.fireT > 7) sim.fireT = 0;
+  if (n && !cl.awake) wakeCloth(sim);
+}
+// Wine and water put out the cloth they soak.
+function douse(sim) {
+  const cl = sim.cloth, P = cl.P;
+  for (const d of sim.puddles) {
+    if (d.r < 0.02) continue;
+    near(d.x, d.y, d.z, d.r, p => {
+      const k = p * 3;
+      if (Math.abs(P[k + 1] - d.y) < 0.03 && Math.hypot(P[k] - d.x, P[k + 2] - d.z) < d.r * 0.85) cl.heat[p] = Math.min(cl.heat[p], 0.2);
+    });
+  }
 }
 function settleTest(sim, h) {
   const cl = sim.cloth, hand = sim.hand;
   // The cloth sleeps when no particle moves 3 mm in a quarter second.
   // A cloth that has left the table sleeps 2 s later, once it lies low.
   cl.offT = cl.awake && !hand.pins && cl.onTop === 0 ? (cl.offT || 0) + h : 0;
-  if (cl.offT > 2) {
+  if (cl.offT > 2 && !sim.burning) {
     let top = 0;
     for (let i = 1; i < cl.P.length; i += 3) top = Math.max(top, cl.P[i]);
     if (top < 0.35) { cl.awake = false; cl.Q.set(cl.P); cl.offT = 0; }
   }
-  if (cl.awake && !hand.pins) {
+  if (cl.awake && !hand.pins && !sim.burning) {
     cl.still += h;
     if (!cl.snap) cl.snap = Float32Array.from(cl.P);
     if (cl.still > 0.25) {
@@ -928,10 +1317,10 @@ function settleTest(sim, h) {
 /* ---------- state ---------- */
 // The sim needs frames while anything moves.
 export function busy(sim) {
-  if (sim.reset || sim.hand.pins || sim.cloth.awake || sim.drops.length) return true;
+  if (sim.reset || sim.hand.pins || sim.cloth.awake || sim.drops.length || sim.fireT || sim.embers.length) return true;
   if (sim.bodies.some(b => b.awake) || sim.shards.some(s => s.awake) || sim.glitter.some(g => !g.still)) return true;
   if (sim.puddles.some(p => p.r < p.max - 1e-4)) return true;
-  if (Math.abs(sim.flame.lean) > 0.002 || Math.abs(sim.flame.v) > 0.01 || (sim.flame.out > 0 && sim.flame.out < 1)) return true;
+  if (Math.abs(sim.flame.lean) > 0.002 || Math.abs(sim.flame.v) > 0.01 || (sim.flame.out > 0 && sim.flame.out < 1) || (sim.flame.down > 0 && !sim.flame.out)) return true;
   return sim.bodies.some(b => b.liq && b.liq.f > 0 && !b.gone && (Math.abs(b.liq.sx) + Math.abs(b.liq.sz) > 0.003 || Math.abs(b.liq.vx) + Math.abs(b.liq.vz) > 0.03));
 }
 // Pieces moved or broke, or the cloth left its place.
@@ -952,6 +1341,9 @@ export function startReset(sim) {
   };
   for (const b of sim.bodies) { b.awake = false; b.breakAt = null; }
   sim.hand.follow = false;
+  // The fire goes out; the cloth heals as it flies back.
+  sim.reset.fuel = Float32Array.from(cl.fuel);
+  cl.heat.fill(0); sim.burning = 0; sim.fireT = 0; sim.embers.length = 0;
   sim.events.push({ type: 'reset' });
   return true;
 }
@@ -1012,6 +1404,7 @@ function resetTick(sim, dt) {
     const lift = sim.calm ? 0 : Math.sin(k * Math.PI) * Math.min(0.12, far * 0.3) * (0.8 + 0.2 * Math.sin(p * 0.37));
     P[i] = A[i] + (B[i] - A[i]) * k; P[i + 1] = A[i + 1] + (B[i + 1] - A[i + 1]) * k + lift; P[i + 2] = A[i + 2] + (B[i + 2] - A[i + 2]) * k;
   }
+  for (let p = 0; p < NP; p++) { cl.fuel[p] = R.fuel[p] + (1 - R.fuel[p]) * k; SHRINK[p] = 0.82 + 0.18 * cl.fuel[p]; if (k > 0.5) cl.cut[p] = 0; }
   if (!R.whump && u >= 1) { R.whump = true; sim.events.push({ type: 'lay' }); }
   cl.Q.set(P);
   sim.flame.out = Math.max(0, sim.flame.out - dt * 2);
@@ -1022,7 +1415,9 @@ function resetTick(sim, dt) {
     for (const b of sim.bodies) if (BREAKS.has(b.kind)) plans.delete(b);
     sim.shards.length = 0; sim.glitter.length = 0; sim.puddles.length = 0;
     cl.P.set(cl.rest); cl.Q.set(cl.rest); cl.W.fill(1); cl.awake = false; cl.onTop = NP;
-    sim.flame.out = 0; sim.flame.lean = 0; sim.flame.v = 0;
+    regrid(sim);
+    sim.flame.out = 0; sim.flame.lean = 0; sim.flame.v = 0; sim.flame.down = 0; sim.flame.touch = 0; sim.flame.spat = false;
+    cl.fuel.fill(1); cl.cut.fill(0); cl.heat.fill(0); SHRINK.fill(1);
     sim.reset = null; sim.dirty = false; sim.quiet = 0;
     sim.events.push({ type: 'ready' });
   }
@@ -1046,4 +1441,4 @@ export function autoReset(sim, dt, active) {
 }
 export const DIMS = { NX, NZ, NP, CR };
 // The scene pushes its fine cloth mesh out of the table with these.
-export { block, N3 as BLOCK_N, BY0 };
+export { block, N3 as BLOCK_N, BY0, LEGS, LEG_R, flamePoint };

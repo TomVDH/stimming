@@ -123,6 +123,24 @@ function bank(ac) {
       d[i] = lp * (Math.exp(-t / 0.05) + 0.4 * Math.exp(-t / 0.2)) * (0.5 + 0.5 * Math.random());
     }
   }));
+  // Fire: a whoosh as the cloth catches, the spit of hot wax, and crackles.
+  const whoosh = [0, 1].map(() => make(1100, (d, sr) => {
+    let lp = 0, lp2 = 0;
+    for (let i = 0; i < d.length; i++) {
+      const t = i / sr, k = 0.02 + 0.25 * Math.min(1, t / 0.35);
+      lp += (noise() - lp) * k; lp2 += (lp - lp2) * k;
+      d[i] = lp2 * Math.min(1, t / 0.08) * Math.exp(-Math.max(0, t - 0.3) / 0.35) + Math.sin(TAU * 55 * t) * Math.exp(-t / 0.12) * 0.5;
+    }
+  }));
+  const spit = [0, 1].map(() => make(360, (d, sr) => {
+    let hp = 0, prev = 0;
+    for (let i = 0; i < d.length; i++) {
+      const t = i / sr, n = noise() * (Math.random() < 0.02 ? 3 : 0.5);
+      hp = n - prev + 0.7 * hp; prev = n;
+      d[i] = hp * Math.exp(-t / 0.09);
+    }
+  }));
+  const crackle = [0, 1, 2, 3, 4].map(() => { const f = r(900, 2600); return modes(60, [[f, 1, 0.006], [f * 1.9, 0.6, 0.004]], 1.6, 0.0007); });
   // A small dining room: a short, warm tail.
   const ir = ac.createBuffer(2, Math.round(sr * 0.9), sr);
   for (let c = 0; c < 2; c++) {
@@ -135,7 +153,7 @@ function bank(ac) {
       d[i] = lp * (Math.exp(-t / 0.22) * 0.5 * Math.min(1, t / 0.006) + slap);
     }
   }
-  return { china, wineRing, tumbler, steel, brass, tock, thud, crashGlass, crashChina, tinks, rustle, snap, slosh, drip, splash, ir };
+  return { china, wineRing, tumbler, steel, brass, tock, thud, crashGlass, crashChina, tinks, rustle, snap, slosh, drip, splash, whoosh, spit, crackle, ir };
 }
 
 export function tableSound(kit) {
@@ -157,7 +175,19 @@ export function tableSound(kit) {
     const hissPan = ac.createStereoPanner();
     src.connect(bp).connect(hiss).connect(hissPan).connect(kit.out);
     src.start();
-    V = { ac, B, verb, bp, hiss, hissPan };
+    // The fire's roar: low rumble and a fluttering band, both on looped noise.
+    const fsrc = ac.createBufferSource();
+    fsrc.buffer = kit.noise; fsrc.loop = true; fsrc.playbackRate.value = 0.83;
+    const rumble = ac.createBiquadFilter(); rumble.type = 'lowpass'; rumble.frequency.value = 260;
+    const flutter = ac.createBiquadFilter(); flutter.type = 'bandpass'; flutter.frequency.value = 1100; flutter.Q.value = 0.6;
+    const fg = ac.createGain(); fg.gain.value = 0;
+    const flg = ac.createGain(); flg.gain.value = 0.35;
+    const fPan = ac.createStereoPanner();
+    fsrc.connect(rumble).connect(fg);
+    fsrc.connect(flutter).connect(flg).connect(fg);
+    fg.connect(fPan).connect(kit.out);
+    fsrc.start();
+    V = { ac, B, verb, bp, hiss, hissPan, fg, flg, fPan };
     return V;
   }
   function shot(v, buf, t, rate, gain, pan, send = 0.25, lp = 0) {
@@ -254,6 +284,8 @@ export function tableSound(kit) {
           break;
         case 'drip': shot(v, pick(v.B.drip), t, jit(0.2), 0.05 * jit(0.4), pan, 0.2); break;
         case 'snuff': shot(v, pick(v.B.rustle), t, 2.2, 0.05, pan, 0.05); break;
+        case 'ignite': shot(v, pick(v.B.whoosh), t, jit(0.08), 0.5, pan, 0.35); break;
+        case 'spit': shot(v, pick(v.B.spit), t, jit(0.1), 0.25, pan, 0.2); break;
         case 'reset': shot(v, pick(v.B.rustle), t, 0.6, 0.1, 0, 0.2); break;
         case 'lay': shot(v, pick(v.B.rustle), t, 0.5 * jit(0.05), 0.18, 0, 0.2); break;
         case 'set': {
@@ -269,10 +301,18 @@ export function tableSound(kit) {
     v.hiss.gain.setTargetAtTime(0.22 * k * k + (moving ? 0.01 : 0), now, 0.03);
     v.bp.frequency.setTargetAtTime(500 + 2600 * k, now, 0.04);
     v.hissPan.pan.setTargetAtTime(0.45, now, 0.1);
+    // The roar swells with the fire; it wavers, and crackles pop at random.
+    const f = sim.reset ? 0 : clamp(Math.sqrt(sim.burning) / 28);
+    v.fg.gain.setTargetAtTime(0.5 * f * (0.8 + 0.4 * Math.random()), now, 0.08);
+    v.flg.gain.setTargetAtTime(0.25 + 0.3 * Math.random(), now, 0.05);
+    if (f > 0) v.fPan.pan.setTargetAtTime(panOf(sim.fireC[0], sim.fireC[1], sim.fireC[2]), now, 0.2);
+    for (let c = 0; c < 3; c++) {
+      if (Math.random() < f * dt * 14) shot(v, pick(v.B.crackle), now + LEAD + Math.random() * dt, jit(0.2), 0.12 * jit(0.5), v.fPan.pan.value + (Math.random() - 0.5) * 0.4, 0.2);
+    }
   }
   // Quiet the hiss when the loop stops.
   function hush() {
-    if (V) V.hiss.gain.setTargetAtTime(0, V.ac.currentTime, 0.03);
+    if (V) { V.hiss.gain.setTargetAtTime(0, V.ac.currentTime, 0.03); V.fg.gain.setTargetAtTime(0, V.ac.currentTime, 0.05); }
   }
   return { tick, hush };
 }

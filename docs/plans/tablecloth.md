@@ -1,6 +1,6 @@
 # Tablecloth yank
 
-Status: done, built as a Lab toy, 2026-11-23. Bean `stimming-nf4i`. Toy doc: `docs/toys/tablecloth.md`.
+Status: done, built as a Lab toy, 2026-11-23; second pass the same day (look, no clipping, fire). Bean `stimming-nf4i`. Toy doc: `docs/toys/tablecloth.md`.
 Idea 112, group E, a physics loop: "Drag the cloth edge and yank it. Plates and glasses stay put or crash, depending on how fast you pull."
 Tom's brief: an MVP at high fidelity, Lab and intro icons, Bar v3. One hero moment, finished.
 
@@ -40,6 +40,14 @@ Sources: University of Maryland lecture demo "Tablecloth" (lecdem.physics.umd.ed
 - Pieces: rigid bodies after Wrecking ball (sphere sets) at 240 Hz; plane contacts solve friction once at the contact centroid. Each contact under the cloth takes the cloth's velocity at that point; elsewhere the table's wood.
 - Shatter: a glass or plate that meets the floor fast breaks into curved shards (lathe patches of its own shape) and glitter. The foot and stem of a wine glass survive.
 - Liquid: each glass has a slosh oscillator (first mode of a cylinder). The surface stays level in the world and lags the glass. A tipped glass pours.
+
+## Second pass (Tom, 2026-11-23)
+
+Tom: "improve the look of the models and the assets, incl no collision clipping on the fabric sim; when the candle falls, things light up in fire (fire toy shaders remember)".
+
+1. Clipping: link and quad midpoints collide with the table; off the top, pieces meet the cloth's triangles and keep to their side; the cloth keeps clear of the legs and of itself on the floor.
+2. Look: turned legs and an apron bead; candle drips; whiter linen with a weave and a hem stitch; deeper wine; brighter steel; a far wall with a wainscot and a night window; moonlight.
+3. Fire: a fallen candle stays lit and throws embers; the cloth catches, burns up its folds, chars and burns through to ash. Flames and smoke follow Fire's method, ported to three.js 0.170 WebGL2 (`tablecloth/fire.js`, K3). The fire lights the room; it has its own sound. Reset puts it out.
 
 ## Sound
 

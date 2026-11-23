@@ -47,7 +47,7 @@ export function makeTableware(keep) {
   const glass = k(glassMat(0.04, 0.5));
   const glassShard = k(glassMat(0.12, 0.6));
   const brass = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.78, 0.55, 0.24), metalness: 1, roughness: 0.3, envMapIntensity: 1.2 }));
-  const steel = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.86, 0.86, 0.87), metalness: 1, roughness: 0.17, envMapIntensity: 1.3 }));
+  const steel = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.9, 0.91, 0.93), metalness: 1, roughness: 0.13, envMapIntensity: 1.6 }));
   const wax = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.94, 0.9, 0.82), roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color(1, 0.9, 0.75) }));
   wax.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vY;')
@@ -70,15 +70,30 @@ export function makeTableware(keep) {
     wine: k(new THREE.LatheGeometry(V2(WINE), 56)),
     tumbler: k(new THREE.LatheGeometry(V2(TUMBLER), 56)),
     stick: k(new THREE.LatheGeometry(V2(STICK), 48)),
-    candle: k(new THREE.CylinderGeometry(CANDLE.r, CANDLE.r, CANDLE.y1 - CANDLE.y0, 28, 1, false).translate(0, (CANDLE.y0 + CANDLE.y1) / 2, 0)),
+    candle: k(new THREE.CylinderGeometry(CANDLE.r, CANDLE.r, CANDLE.y1 - CANDLE.y0, 40, 48, false).translate(0, (CANDLE.y0 + CANDLE.y1) / 2, 0)),
     wick: k(new THREE.CylinderGeometry(0.0009, 0.0011, 0.013, 6).translate(0, CANDLE.y1 + 0.005, 0)),
   };
   // A melt pool: the top of the candle dips a little at the wick.
+  // Wax runs down the side in a few drips, thickest at the lip.
   {
     const p = G.candle.attributes.position;
+    const DRIPS = [[0.4, 0.05], [1.5, 0.022], [2.3, 0.075], [3.6, 0.035], [4.9, 0.055], [5.6, 0.016]];
     for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i), r = Math.hypot(p.getX(i), p.getZ(i));
-      if (y > CANDLE.y1 - 1e-4 && r < CANDLE.r * 0.9) p.setY(i, y - 0.003 * (1 - r / CANDLE.r));
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), r = Math.hypot(x, z);
+      if (y > CANDLE.y1 - 1e-4 && r < CANDLE.r * 0.9) { p.setY(i, y - 0.003 * (1 - r / CANDLE.r)); continue; }
+      if (r < CANDLE.r * 0.99) continue;
+      const a = Math.atan2(x, z), down = CANDLE.y1 - y;
+      let bump = 0.00035 * Math.exp(-down / 0.006);
+      for (const [a0, len] of DRIPS) {
+        let da = Math.abs(a - a0); da = Math.min(da, Math.PI * 2 - da);
+        const w = 0.13 + 0.05 * Math.sin(down * 300 + a0);
+        const along = down < len ? 1 - (down / len) ** 3 : 0;
+        // A drip ends in a round bead.
+        const bead = Math.exp(-(((down - len) / 0.003) ** 2)) * 0.6;
+        bump += 0.0013 * Math.exp(-((da / w) ** 2)) * Math.max(along, bead);
+      }
+      const k2 = (r + bump) / r;
+      p.setX(i, x * k2); p.setZ(i, z * k2);
     }
     G.candle.computeVertexNormals();
   }
@@ -190,7 +205,7 @@ export function liquidMats(kind, keep) {
   };
   const mk = cap => {
     const m = wine
-      ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.34, 0.02, 0.045), roughness: 0.05, clearcoat: 0.6, transparent: true, opacity: 0.94, emissive: new THREE.Color(0.06, 0.0, 0.008), side: THREE.DoubleSide })
+      ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.14, 0.004, 0.018), roughness: 0.03, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.96, emissive: new THREE.Color(0.035, 0.0, 0.004), side: THREE.DoubleSide })
       : glassMat(cap ? 0.06 : 0.03, cap ? 0.55 : 0.25, [0.004, 0.006, 0.007]);
     const prev = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => {
