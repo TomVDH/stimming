@@ -1,6 +1,6 @@
 # Ship launch (`shiplaunch`) plan
 
-Status: active, MVP built in the Lab, the sweep planned (2026-11-23) · Beans: `stimming-y9pf`, `stimming-z2w5`
+Status: paused (Tom, 2026-11-23), MVP and the port basin in the Lab, the sweep at stage 1 (state in bean `stimming-z2w5`) · Beans: `stimming-y9pf`, `stimming-z2w5`
 
 ## Context
 
