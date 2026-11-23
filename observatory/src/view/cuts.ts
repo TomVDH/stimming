@@ -113,7 +113,8 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 // glass: the glass shot's eye distance, in metres.
 // Its eye follows the glass's place of rest each frame.
 // focus: metres from the eye to the sharp plane.
-type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; mirror?: boolean };
+// az: the slit's azimuth in degrees that the plan turned with.
+type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; mirror?: boolean; az?: number };
 
 const centre = new Vector3();
 const ray = new Ray();
@@ -204,12 +205,12 @@ function place(cut: Cut, az: number, aspect: number): Framed {
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
       if (plan.inside && !clearInside(eye)) continue;
       if (blocked(look, eye, halfW)) continue;
-      return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
+      return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture, az };
     }
   }
   // No clear eye: the nearest eye of the plan as it stands.
   slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
-  return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
+  return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture, az };
 }
 
 // These shots stand inside the dome, so they take no mist.
@@ -736,6 +737,26 @@ export const camDev = {
       else (key[0] === 'e' ? p.eye : p.look)['xyz'.indexOf(key[1])] = v;
     } else return;
     locks.clear();
+  },
+  // The lab: the locked camera of a shot.
+  framed(shot: Shot): { eye: Vector3; aim: Vector3 } { return locks.of(cutOf(shot)); },
+  // The lab: sets a shot's plan from a world eye and look.
+  // The glass shots follow the glass, so they give false.
+  aim(shot: Shot, eye: Vector3, look: Vector3): boolean {
+    if (shot === 'glass' || shot === 'mirror') return false;
+    const a = (locks.of(cutOf(shot)).az ?? slitNow()) * DEG, p = planOf(shot);
+    // The inverse of slitPoint.
+    const toPlan = (w: Vector3, out: Point): void => {
+      const x = (w.x - centre.x) / R, z = (w.z - centre.z) / R;
+      out[0] = Math.sin(a) * x - Math.cos(a) * z;
+      out[1] = Math.cos(a) * x + Math.sin(a) * z;
+      out[2] = (w.y - centre.y) / R;
+    };
+    toPlan(eye, p.eye);
+    toPlan(look, p.look);
+    delete p.tall;
+    locks.clear();
+    return true;
   },
   // The shot's lines for PLANS and CUTS, to paste into the code.
   line(shot: Shot): string {

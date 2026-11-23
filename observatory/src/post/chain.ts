@@ -80,8 +80,13 @@ export function cutMist(on: boolean): void {
   mist.enabled = on;
 }
 
+// The cut lab's clay look draws with no post.
+let bypass = false;
+export function postBypass(on: boolean): void { bypass = on; }
+
 // Draws one frame through the chain.
 export function renderPost(): void {
+  if (bypass) { renderer.setRenderTarget(null); renderer.render(scene, camera); return; }
   // The grain moves with each frame.
   // Reduced motion keeps it still.
   if (!reduced()) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value % 997) + 1;

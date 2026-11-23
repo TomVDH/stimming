@@ -23,6 +23,7 @@ import { selectorView } from './view/selector.ts';
 import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, applySweep, eyeAt, type View } from './view/camera.ts';
 import { camDev, cuts, type CamKey } from './view/cuts.ts';
+import { initLab, labFrame } from './view/lab.ts';
 import { scopeView } from './view/through.ts';
 import type { Shot } from './core/sequence.ts';
 import { hero } from './world/hero.ts';
@@ -102,6 +103,8 @@ const clock = makeClock(Date.now);
 // The review switch, ?cuts: it plays the pick sequence for Tom.
 // The page reads it once, at boot.
 const REVIEW = new URLSearchParams(location.search).has('cuts');
+// The cut lab, ?cuts&dev&lab: draw() reads it, so it stands here.
+const LAB = new URLSearchParams(location.search).has('dev') && new URLSearchParams(location.search).has('lab');
 // The opening: dusk into night before play.
 // Reduced motion and the review switch open at night.
 const opening = makeOpening(reduced() || REVIEW);
@@ -195,6 +198,7 @@ export function draw(): void {
   pose();
   // A close shot sets the camera after the pose, so it can frame the tube.
   cuts.frame();
+  if (LAB) labFrame();
   renderPost();
   cuts.afterRender();
   drawSelector();
@@ -578,9 +582,11 @@ const REPLAY_DT = 1 / 60, REPLAY_MAX_S = 60;
 // The machine and the cuts then run unseen to the shot.
 // The small domes and the sky do not take part.
 // A pause holds: the shot's first frame shows, and Play runs it.
-function replayShot(shot: Shot): void {
-  if (!pickStart) return;
-  const { az, shutter, star, scope } = pickStart, held = paused;
+// scope: the telescope to replay in; the pick's own by default.
+function replayShot(shot: Shot, scope = pickStart?.scope): void {
+  if (!pickStart || !scope) return;
+  pickStart.scope = scope;
+  const { az, shutter, star } = pickStart, held = paused;
   cuts.skip();
   bind(scope);
   machine = makeMachine({ az, shutter01: shutter });
@@ -681,6 +687,16 @@ if (strip) {
   stageEl.append(strip);
   syncStrip();
 }
+
+/* ---------- the cut lab, ?cuts&dev&lab ---------- */
+// Clay, a free camera and a contact sheet; see view/lab.ts.
+if (LAB) void initLab({
+  replay: (shot, scope) => replayShot(shot, scope),
+  setPaused,
+  draw: () => { dirty = true; draw(); },
+  get scope() { return pickStart?.scope ?? bound; },
+  get shot() { return cuts.showing ? cuts.shot : null; },
+});
 
 // Test hooks for QA scripts.
 declare global { interface Window { __qa?: Record<string, unknown> } }
