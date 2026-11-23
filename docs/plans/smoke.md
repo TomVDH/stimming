@@ -1,6 +1,6 @@
 # Smoke light: Fire's smoke lighting in GLSL
 
-Status: active · Bean: `stimming-kxmu` · Tom approved the design, 2026-11-23.
+Status: done · Bean: `stimming-kxmu` · Tom approved the design, 2026-11-23. Merged in TomVDH/stimming#100 (3d304369).
 
 Tom picked smoke lighting after `shared/precipfield.js` landed (TomVDH/stimming#99). The rule since `stimming-kq0z`: small-scale smoke, fog, steam and cloud volumes use Fire's smoke shading.
 
