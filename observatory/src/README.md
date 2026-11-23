@@ -19,7 +19,7 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 - Any other boot failure sets the line to "Observatory could not start.": an uncaught error or rejection, or a catalog that does not load. The boot ends when the stars are in.
 - A lost WebGL context shows the line too.
 - On a real leave (`pagehide` without `persisted`), each module frees the GPU objects it registered with `onLeave`; then the renderer goes. A page in the back-forward cache keeps everything and carries on when it comes back.
-- `world/observatory.ts`, `world/hero.ts`, `world/hero-scope.ts`, `world/modern-scope.ts` and `view/cuts.ts` register nothing yet.
+- `world/observatory.ts`, `world/hero.ts`, `world/hero-scope.ts`, `world/modern-scope.ts`, `view/cuts.ts` and `view/through.ts` register nothing yet.
 
 ## Modules
 
@@ -57,9 +57,10 @@ A failed or slow model leaves the woods out, with one console warning; the page 
 | `viewer.ts` | The telescope viewer workbench, `../scope.html`: orbit, tube altitude and azimuth, Turn, Sweep azimuth; `?clearance` runs a fixed pose list (the sky every 15° and 30°, four meridian flips at 41 samples each) and prints one report: clashes, the drives read back, mirrored instances, the tube on the pole round RA, both pier sides, and a legend of the meshes |
 | `sky/stars.ts` | The catalog stars on a far shell, one `Points` draw; one matrix turns the sky by LST at 51 N; a magnitude limit for the dusk; in the opening, one instanced draw instead: each star as a streak along its turn round the pole (the idea of Railgun's Time drag), which settles into the Points at speed 1; `skyAt`, `starAltAz`, `setStarDpr`, `setStarLimit`, `setStreak` |
 | `view/camera.ts` | The locked-off shot from the rise: eye, pitch, yaw, fov for wide and tall frames; `setView`; `applyShot` for a close shot |
-| `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the final shot on the objective glass, locked on its place of rest, with tonight's stars in it; the letterbox, sized for a 2.39:1 film frame, with each shot framed for that band (a lens is the band's vertical fov); the dip to black back to the wide shot, the reduced-motion still of the settled glass; the swap to the hero model in the close shots |
+| `view/cuts.ts` | The pick sequence: locked cuts of the main dome and its telescope, one inside on the observing floor; each cut's camera locks at its first frame; the final shot on the objective glass, locked on its place of rest, with tonight's stars in it; the letterbox, sized for a 2.39:1 film frame, with each shot framed for that band (a lens is the band's vertical fov); the push into the glass, which opens into the view through the telescope; the dip to black back to the wide shot, the reduced-motion still of the settled glass; the swap to the hero model in the close shots |
 | `input.ts` | Pointer: aim with a move or a drag, a tap; Esc; alt and az from the camera ray |
-| `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the `?cuts` review switch; `window.__qa` |
+| `view/through.ts` | The view through the telescope after the cuts: `../sim.html?embed` in a frame over the stage, loaded at the pick, opened as an iris in the glass during the push; Esc or its Back button fades it out and the wide shot fades up from black |
+| `loop.ts` | The frame loop and sleep; the opening, the machine, the small domes, the lights, the cuts; the scene sleeps while the view through the telescope shows; the `?cuts` review switch; `window.__qa` |
 | `main.ts` | Resize (pixel budget, post chain, star size), the first draw, the end of the boot |
 
 ## Review switch

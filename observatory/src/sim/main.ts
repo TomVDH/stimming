@@ -58,6 +58,30 @@ const failLine = $<HTMLElement>('fail');
 const statusLine = $<HTMLElement>('status');
 const screen = new Screen();
 
+/* ---------- the toy's frame ---------- */
+// ?embed: the toy opens the simulator in a frame after its cuts.
+// ra and dec: the picked star, in degrees.
+// t: the toy's sky time in ms.
+const params = new URLSearchParams(location.search);
+const EMBED = params.has('embed');
+const START_RA = Number(params.get('ra')), START_DEC = Number(params.get('dec'));
+const START_T = Number(params.get('t'));
+// The frame loads during the cuts and draws nothing until the toy says go.
+let held = EMBED;
+if (EMBED) document.documentElement.classList.add('embed');
+// Tells the toy that the view closes or is ready.
+const toToy = (msg: 'close' | 'ready'): void => {
+  if (EMBED && parent !== window) parent.postMessage({ obsSim: msg }, location.origin);
+};
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin || e.source !== parent) return;
+  const d = e.data as { obsSim?: string } | null;
+  if (d?.obsSim !== 'go') return;
+  held = false;
+  stage.focus();
+  wake(true);
+});
+
 /* ---------- state ---------- */
 type Mode = 'eye' | 'camera';
 let mode: Mode = 'eye';
@@ -173,7 +197,9 @@ const fwhm = (): number => Math.hypot(seeingAt(seeingZ, pose.alt), diffraction(s
 const tracking = (): boolean => (mode === 'eye' ? drive : rig.tracking);
 
 /* ---------- pointing ---------- */
-const skyMs = (): number => Date.now();
+// In the toy's frame, the sky keeps the toy's time.
+const skyLead = Number.isFinite(START_T) && START_T > 0 ? START_T - Date.now() : 0;
+const skyMs = (): number => Date.now() + skyLead;
 
 function rowsNow(): number[] {
   return skyRows(lst(skyMs(), LON), LAT);
@@ -540,7 +566,7 @@ function readStats(L: Layout, black: number, soft: number, white: number, area: 
 
 function wake(input = false): void {
   if (input) lastInput = performance.now();
-  if (!raf && !document.hidden && renderer) {
+  if (!raf && !document.hidden && renderer && !held) {
     lastT = 0;
     raf = requestAnimationFrame(frame);
   }
@@ -1039,12 +1065,24 @@ async function boot(): Promise<void> {
   setCatalog(stars);
   renderer.setAtlas(buildAtlas(), ATLAS_COLS, ATLAS_ROWS);
   statusLine.hidden = true;
-  const b = brightest();
+  // The toy's picked star comes first; else the brightest star up.
+  const b = Number.isFinite(START_RA) && Number.isFinite(START_DEC) ? shellDir(START_RA, START_DEC) : brightest();
   if (b) {
     aim = { x: b.x, y: b.y, z: b.z };
     pose = shellToPose(aim, rowsNow());
   }
   resize();
+  toToy('ready');
+}
+
+// Esc in the frame, or the back button, returns to the dome.
+if (EMBED) {
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    toToy('close');
+  });
+  document.getElementById('back')?.addEventListener('click', () => toToy('close'));
 }
 
 boot().catch((err: unknown) => {

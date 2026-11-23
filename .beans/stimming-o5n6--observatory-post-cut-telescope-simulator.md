@@ -104,3 +104,16 @@ Tom: simplify; make the 1 m's software diegetic (we look at a computer screen); 
 - [x] The 1 m's software is a text-mode program: 120 x 42 cells, VGA colours, double-line boxes, a cyan title bar, a function-key bar (F2 slew, F3 expose, F4 filter, F6 focus, F8 guide, F9 night), keys 1-6 for targets, block progress bar
 - [x] Boxes: IMAGE (stats on its border), LOG, TELESCOPE (RA, Dec, HA, alt, az, air mass, tracking, seeing, guiding), CAMERA, FOCUS (V-curve), TARGETS, SPECTROGRAPH (teff and class, or z, lookback and distance)
 - [x] The LCD monitor shader stays; panel.ts keeps only the element rows
+- [x] The screen effect fills the view: no bezel, no room; black bars take up any difference in shape
+
+## Round 7: into the toy (Tom, 2026-11-23)
+
+Tom: integrate it into the toy for now; an overview with a sweeping scene, a sleek animation, then the sim.
+
+- [x] The glass shot pushes into the objective glass (1.8 s, speeding up); the view through the telescope opens as an iris in the glass (view/through.ts)
+- [x] sim.html?embed&ra&dec&t: loads hidden at the pick, starts on the picked star at the toy's sky time, draws only after the toy's go
+- [x] Esc or "Back to the dome" fades the view out; the wide shot fades up from black; the scene sleeps while the view shows
+- [x] A skip during the cuts or the push drops the view; reduced motion fades the view in with no push
+- [ ] Tom sees the push and the iris in the pane
+- [ ] Open: the sweeping overview (a camera move in the wide shot?) and what "medium fidelity" trims from the sim
+- [ ] Open: optics.ts still says a 41 cm refractor; at the main dome's scale 3.64 the hero glass is about 1 m
