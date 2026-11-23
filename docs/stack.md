@@ -8,7 +8,7 @@ Audit of every toy on 2026-11-09. `AGENTS.md` keeps the short rules; this file h
 | Role | Library | Notes |
 |---|---|---|
 | 3D scenes | three.js 0.170.0 (WebGL) | About 170 KB gzipped, 690 KB parsed. |
-| 3D on WebGPU | three.js 0.186.1 WebGPU build | Galaxy, Fire, Ink Water, Spark wheel and Cauldron (Tom, 2026-11-16) only. About 205 KB gzipped. Spark wheel keeps its WebGL build as Classic and goes there when the browser has no WebGPU. |
+| 3D on WebGPU | three.js 0.186.1 WebGPU build | Galaxy, Fire, Ink Water, Spark wheel and Cauldron (Tom, 2026-11-16), and Jet hover (Tom, 2026-11-23) only. About 205 KB gzipped. Spark wheel keeps its WebGL build as Classic and goes there when the browser has no WebGPU. |
 | Colour | culori 4.0.1 | `shared/stim.js` loads it once; use its OKLCH helpers. |
 | Sound | Tone.js 15.0.4 | Through `audioKit()`, so mute and gesture start hold. |
 | Motion | GSAP 3.13.0 | DOM and SVG tweens; the menu keeps the UMD build. |
@@ -36,7 +36,7 @@ Pick the lightest one that does the job. Move up a tier only for a feature the l
 2. Does it need a perspective camera moving through several objects, lights or shadows? Use **three.js**.
 3. Is it a few hundred moving shapes with no shading? Use **Canvas 2D**.
 4. Is it a handful of crisp objects or text? Use **DOM or SVG**.
-5. **Offer WebGPU wherever it helps performance** (Tom, 2026-11-09). three.js `WebGPURenderer` falls back to WebGL2 by itself, so a three.js toy can switch with one renderer change. Shader toys move where compute pays off: particles, fluids, cellular sims. Galaxy, Fire, Ink Water, Spark wheel and Cauldron already run it. The short list lives in the epic bean `stimming-2s6y`.
+5. **Offer WebGPU wherever it helps performance** (Tom, 2026-11-09). three.js `WebGPURenderer` falls back to WebGL2 by itself, so a three.js toy can switch with one renderer change. Shader toys move where compute pays off: particles, fluids, cellular sims. Galaxy, Fire, Ink Water, Spark wheel, Cauldron and Jet hover already run it. The short list lives in the epic bean `stimming-2s6y`.
 
 ### Why it matters
 

@@ -25,10 +25,13 @@ Tom sized the full toy XXL. This build is the MVP: one shot, the hover. The plan
 
 ## Direction
 
-- 3D, with a fixed low camera at three-quarter front: a diorama with no orbit. The shimmer needs air between the craft and a far horizon.
-- Blue hour, just after sunset. The camera looks toward the last light, so the dark craft has a cool rim and a warm underside from its own exhaust.
-- An open plain and a damp concrete pad, a far ridge and a row of far lights. The shimmer bends the far lights, the ridge and the slab joints.
-- A tall stage pulls the camera back so the whole craft fits.
+- 3D, a fixed long-lens shot as Villeneuve frames scale (Tom, 2026-11-23: "more villeneuveian the camera and positioning"). The eye stands 1.7 m up, 150 m out on the apron, with a 9 degree lens.
+- The craft hovers nose on, a little off the axis, small in the middle of the frame. The two plumes stand side by side.
+- Behind it, three ranges at true scale sink into the haze: low hills at 2.6 km, table mountains at 7 km, a massif at 18 km. A row of far lights runs at the foot of the hills.
+- The long lens is where heat haze shows in real life: the hot gas bends the far ranges and the lights.
+- Blue hour, just after sunset. The camera looks toward the last light, so the craft has a warm underside from its own exhaust.
+- A wet concrete apron runs to 260 m. Wet patches mirror the far country and the plumes.
+- A tall stage widens the lens to 17 degrees and backs off until 30 m of width fits.
 
 ## Controls
 
@@ -54,11 +57,11 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 | | |
 |---|---|
-| Stack type | Scene |
-| Tier | three.js 0.170 |
-| Libraries | three (core, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass, OutputPass); Web Audio for sound |
-| Kits | K3 volume fluid, ported to WebGL2 in `fluid.js` (marked K3) |
-| Importmap | Word for word |
+| Stack type | Compute |
+| Tier | three.js 0.186.1 WebGPU (`WebGPURenderer`, TSL), WebGPU backend only (Tom, 2026-11-23: "truster will become webgpu") |
+| Libraries | `three/webgpu`, `three/tsl`, `BloomNode`, `GaussianBlurNode`, `curlNoise`; Web Audio for sound |
+| Kits | K3: `gas.js` is a copy of `shared/fire.js` with Jet hover's additions marked |
+| Importmap | Differs: three 0.186.1 entries only, word for word from `galaxy/index.html` |
 
 ## Shared modules
 
@@ -74,9 +77,9 @@ Bar v3, from the `bar` spec in `initPage()`.
 |---|---|
 | `index.html` | The page |
 | `main.js` | Bar, renderer and passes, engine and craft motion, pointer, frame loop, life cycle |
-| `scene.js` | Sky dome, pad shader, the craft from lofts and plates, lights, environment |
-| `fx.js` | Plume ribbons, jet-core heat ribbons, the refraction and gas composite, the grade |
-| `fluid.js` | K3, the volume fluid, ported to WebGL2: the gas sim and its ray-marched volume |
+| `scene.js` | Sky and far country, the apron, the craft from lofts and plates, lights |
+| `fx.js` | Plume ribbons; the post chain: heat bend, gas over the scene, bloom, the grade |
+| `gas.js` | K3, Fire's fluid and volume (copy of `shared/fire.js`), with jets, a solid floor, steam, sky light and a heat volume |
 | `sound.js` | Roar, rumble, hiss, turbine whine, fan buzz and reheat crackle |
 
 ## How it works
@@ -100,10 +103,10 @@ flowchart LR
 - **Craft.** Extra thrust over the hover setting lifts it on a soft spring. The drift is a slower spring toward the pointer, with a roll from the side speed.
 - **Plumes.** One view-facing ribbon per nozzle, from the nozzle to the pad, under the gas. A hot throat, a body that runs orange to violet blue, and shock diamonds: rhombs on the axis, spaced wider with more throttle, each dimmer than the one above. The cold lift-fan jet shows only in the gas it drives.
 - **Pad.** Damp concrete with slab joints and soot, light from the nozzles and a hot pool under each plume, a wet mirror of the sky and a streak of each plume, then haze.
-- **Gas.** K3, the volume fluid of Fire (`shared/fire.js`), ported from WebGPU to WebGL2 fragment passes. A 64 x 28 x 64 grid of 0.375 m cells covers 24 x 10.5 x 24 m over the pad; its y slices lie as tiles in one 448 x 256 texture. Each step: curl, advection with buoyancy, drifting turbulence and vorticity confinement, divergence, 20 Jacobi sweeps, projection, then dye transport. Each jet drives its core down its axis and the hot jets heat it. The pad is a solid floor; the far walls and the roof are open. Steam flashes off the damp pad where a jet lands, and the wall jet tears more off where it runs fast. Steam is warm, so it rises; hot gas rises faster.
-- **Volume.** A half-size ray march through the grid, 64 steps, stopped at the craft by the jet-core pass's depth. Fire's method: a velocity-warped lookup, cloud erosion by three noise octaves, light from the hot pools through three self-shadow taps with Beer and multi-scatter terms, a powder term and a Henyey-Greenstein phase, the plumes as a line light so the steam round them glows and the jets read through it, cool sky light from above, interleaved gradient noise on the start, then a light blur.
-- **Heat.** The same march sums the heat along each ray, times rising noise cells in world space. The cells are about 20 cm and rise fast; the hot core saturates, so the plumes stay readable. The composite bends the scene along the gradient of that sum, capped at 4 px, so the shimmer sits where the hot gas really is and keeps its perspective. A fine ribbon heat along each jet core adds the near shimmer; the craft writes depth there, so heat behind it does not bend it.
-- **Frames.** Scene with MSAA, jet-core heat and depth, gas step and volume, refraction and composite, bloom with a threshold, grade, ACES output.
+- **Gas.** Fire's fluid (`shared/fire.js`), copied into `gas.js`. A 112 x 56 x 112 grid of 0.25 m cells covers 28 x 14 x 28 m over the pad. Compute passes each step: curl, advection with buoyancy, curl-noise turbulence and vorticity confinement, divergence, 12 Jacobi sweeps, projection, dye transport. Jet hover adds: each jet drives its core down its axis; where it lands, a wall jet runs out over the floor; the floor is solid. The hot jets heat their cores, and steam flashes off the damp floor in a ring round each landing point.
+- **Volume.** Fire's lit volume, unchanged in method: a velocity-warped lookup, simplex detail, light from the lamps through a short self-shadow march with Beer, multi-scatter and powder terms, a Henyey-Greenstein phase. Flame light comes from heat through Fire's flame ramp, so the exhaust and the hot gas at the pad glow by the same shader. Jet hover adds a flat flame gain, a glow that fades with the gas's age, and blue-hour sky light on the steam. The march stops behind the craft. It draws at half size and is blurred a little.
+- **Heat.** A twin volume sums heat times rising noise cells along each ray, at half size. The post chain bends the frame along the gradient of that sum, capped at 3 px, so the shimmer sits where the hot gas is.
+- **Frames.** Scene; gas and heat volumes at half size; heat bend; gas over the scene; bloom; ACES; the grade: colour pulled toward one cool key, highs to cream, a vignette, grain and lifted blacks, after Railgun's Villeneuve print.
 
 ## Frame loop
 
@@ -118,27 +121,29 @@ flowchart LR
 The first frame is a picture: five seconds of gas run before it, so the steam is up.
 Sound follows the hand: it plays while the throttle is worked and through the spool-down, then fades and the audio context sleeps while the hover drifts on.
 
-Slow frames step down: pixel ratio, then the bloom buffer to a quarter, then the volume march to 36 steps.
+Slow frames step down: pixel ratio, then the volume march from 72 to 44 steps.
 
-## QA (2026-11-22)
+## QA (2026-11-23, WebGPU build)
 
-Headless Chromium with `--use-angle=gl`. Captures: `docs/qa/jethover/`.
+Headless Edge, WebGPU on D3D12 (`--enable-unsafe-webgpu`), on Tom's PC. Captures 11 to 14: `docs/qa/jethover/`. Captures 01 to 10 show the first WebGL build.
 
 | Check | Result |
 |---|---|
-| Q1 syntax | `node --check` passes on every module and the menu script |
+| Q1 syntax | `node --check` passes on every module |
 | Q2 console | Clean at 1280, 375 x 812, 812 x 375, reduced motion and with sound on |
-| Q4 idle | 30 frames a second while drifting; 0 frames in 2 s at 65 s after the last input |
+| Q4 idle | 32 frames a second while drifting; 0 frames in 2 s at 65 s after the last input |
 | Q5 hidden | 0 frames in 2 s |
 | Q6 reduced motion | No frames while idle; 0 frames in 2 s once the craft settles after a gesture |
-| Q7 bar | 2 controls (Reheat, Throttle); 4 How rows |
 | Q8 keys | Space held runs the engine to 0.95; release spools back to the hover |
 | Q9 sound | The context runs during the gesture and is suspended 9 s after release |
-| Q10 frames | 16.7 ms median, 16.7 ms p90 during a hold and drag, on Tom's PC through ANGLE GL (vsync bound); about 565 fps unthrottled at 1280 x 800 and 350 at 1920 x 1080, with the gas on |
+| Q10 frames | 7.5 ms median, 8.1 ms p90 during a hold and drag at 1280 x 800 |
+
+The renderer's own frame loop is stopped; the page ticks the node clock before each render.
 
 ## Open for Tom
 
-- 3D or flat: 3D by default, a fixed low camera. A flat elevation would lose the air the shimmer bends.
+- The shot: 9 degree lens from 150 m; the craft nose on. A closer or wider framing is one number each.
+- No WebGPU, no toy: the page shows one line. A WebGL Classic build could stay as `legacy.html` if Tom wants one.
 - The name (working name Jet hover), the Dutch name (draft Zweefjet) and the accent.
 - Sound follows the hand and fades after the spool-down; a steady hover hum while idle is possible but loud for an office.
 - Icon pick: A is on the menu until Tom picks (spike `jethover-1`).

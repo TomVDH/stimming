@@ -23,8 +23,8 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 
 ## Defaults chosen (Tom's open question: 3D or flat, and the presentation)
 
-- 3D, three.js 0.170 (Scene type). A fixed low three-quarter camera, a diorama with no orbit. Heat shimmer needs depth.
-- Blue hour on an open plain over a damp pad; far ridge and far lights for the shimmer to bend.
+- 3D, three.js 0.186.1 WebGPU (Compute type) since 2026-11-23. A fixed long-lens shot from 150 m at eye height, after Villeneuve. Heat shimmer needs depth.
+- Blue hour on a wet apron; three far ranges in haze and far lights for the shimmer to bend.
 - A generic twin-nozzle VTOL, plain dark grey, no markings or real shapes (hard rule 11).
 - The hand: throttle. Hold or Space for full reheat; drag to drift and yaw; click for a blip. Slider: Throttle (the hover setting).
 - Sound follows the throttle and fades after the spool-down; muted by default.
@@ -41,7 +41,9 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 - [x] Lab entry: toys.json, menu tile and hook
 - [x] QA Q1 to Q10 at 1280 px and 375 px
 - [x] Toy doc docs/toys/jethover.md
-- [x] Fidelity pass on steam, smoke and heat haze: K3 (Fire's volume fluid) ported to WebGL2 in jethover/fluid.js (Tom, 2026-11-22: "consult the fire toy fire shader")
+- [x] Fidelity pass on steam, smoke and heat haze: K3 (Fire's volume fluid) ported to WebGL2 in jethover/fluid.js (Tom, 2026-11-22: "consult the fire toy fire shader"); replaced on 2026-11-23 by jethover/gas.js
+- [x] WebGPU move: three.js 0.186.1, Fire's fluid and volume copied into jethover/gas.js for steam and exhaust (Tom, 2026-11-23: "truster will become webgpu", "fire shader for smoke and exhaust")
+- [x] Villeneuve shot: long lens from 150 m at eye height, far ranges in haze (Tom, 2026-11-23: "more villeneuveian the camera and positioning")
 - [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
 - [ ] Tom's sign-off
