@@ -5,8 +5,8 @@
 export const L = 230;
 export const RADIUS = L / (2 * Math.PI);
 export const MAX_CARS = 32;
-// The model's terms. A stop jam at 22 cars slows cars for about 30 s.
-export const P = { v0: 14, T: 0.6, s0: 1.3, a: 1.6, b: 1.6 };
+// The model's terms. A stop jam at 22 cars slows cars for about 75 s.
+export const P = { v0: 14, T: 0.6, s0: 1.3, a: 2.2, b: 1.6 };
 const SUB = 1 / 120;
 // The tap: a hard stop, then a short hold before the driver moves off.
 const STOP_DECEL = 7, HOLD_AFTER = 0.7;
@@ -47,8 +47,11 @@ export function makeSim(count = 22) {
     return {
       id: nextId++, pos, v, acc: 0,
       len: 4.1 + 0.6 * rand(),
-      // Each driver keeps a slightly own gap and pull.
+      // Each driver keeps an own headway, pull and stopping gap.
       T: P.T * (0.94 + 0.12 * rand()), a: P.a * (0.92 + 0.16 * rand()),
+      s0: P.s0 * (0.55 + 0.9 * rand()),
+      // Reaction time: the foot follows the wanted pull this late.
+      react: 0.25 + 0.5 * rand(),
       paint: Math.floor(r * 997) % 9,
       lamp: 0, braking: false, stop: 0, held: false,
       // 0 to 1 as a car joins; 1 to 0 as it leaves.
@@ -73,15 +76,22 @@ export function makeSim(count = 22) {
       const c = cars[i], lead = cars[(i + 1) % n];
       const s = n === 1 ? L - c.len : gapOf(c, lead);
       const dv = c.v - lead.v;
-      const ss = P.s0 + Math.max(0, c.v * c.T + c.v * dv / (2 * Math.sqrt(c.a * P.b)));
+      const ss = c.s0 + Math.max(0, c.v * c.T + c.v * dv / (2 * Math.sqrt(c.a * P.b)));
       let a = c.a * (1 - (c.v / P.v0) ** 4 - (ss / Math.max(0.2, s)) ** 2);
       // A small wander of the foot; dense rings jam by themselves from it.
       a += noise * (rand() - 0.5);
+      a = clamp(a, -9, 3);
+      // The foot lags the wish; braking comes twice as fast as pulling away.
+      // Inside the stopping gap the driver brakes at once.
+      const tau = a < c.acc ? c.react * 0.5 : c.react;
+      if (s > c.s0) a = c.acc + (a - c.acc) * Math.min(1, dt / tau);
       if (c.held || c.stop > 0) a = Math.min(a, c.v > 0.01 ? -STOP_DECEL : -c.v / dt);
       c.acc = clamp(a, -9, 3);
     }
     for (const c of cars) {
       c.v = Math.max(0, c.v + c.acc * dt);
+      // A standing car rests its foot: the lag starts from zero.
+      if (c.v === 0 && c.acc < 0) c.acc = 0;
       c.pos = wrap(c.pos + c.v * dt);
       // The hold counts down only once the car stands.
       if (c.stop > 0 && c.v < 0.05) c.stop = Math.max(0, c.stop - dt);

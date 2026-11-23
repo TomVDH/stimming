@@ -91,11 +91,12 @@ void main() {
     vec2 ds = d - away * 1.1;
     float ss = sdBox(vec2(dot(ds, dir), dot(ds, nrm)), vec2(hl - 0.1, 0.85), 0.5);
     fsh *= 1.0 - 0.85 * fade * (1.0 - smoothstep(-0.3, 0.7, ss));
-    // Headlights: a cone along the heading from the front bumper.
+    // Headlights: two cones from the two lamps, splayed a little outward.
     float uf = u - hl + 0.1;
     if (uf > 0.0 && uf < 26.0) {
-      float spread = 0.55 + uf * 0.15;
-      float beam = exp(-pow(w / spread, 2.0)) * smoothstep(0.0, 2.2, uf) * smoothstep(26.0, 14.0, uf) / (1.0 + pow(uf / 7.5, 2.0));
+      float spread = 0.3 + uf * 0.1, side = 0.6 + uf * 0.035;
+      float pair = exp(-pow((w - side) / spread, 2.0)) + exp(-pow((w + side) / spread, 2.0));
+      float beam = 0.62 * pair * smoothstep(0.0, 2.2, uf) * smoothstep(26.0, 14.0, uf) / (1.0 + pow(uf / 7.5, 2.0));
       // The car ahead blocks the beam: its shadow fans out behind it.
       int j = (i + 1) % n;
       vec4 L = uA[j];

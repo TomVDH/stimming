@@ -22,6 +22,7 @@ Stack type: Shader (raw WebGL2 on shared/gl.js). The car-following model (IDM) r
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/traffic.md
 - [x] Commit and push
+- [x] Tom's round 1: twin headlight cones; own stopping gap and reaction time per driver
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -29,9 +30,9 @@ Stack type: Shader (raw WebGL2 on shared/gl.js). The car-following model (IDM) r
 ## Defaults chosen (Tom's open questions: 3D or flat, and the presentation)
 
 - Flat, top down, at night: a high camera over a lot, as in the 2008 footage. The circle stays a true circle, so the place on the ring reads as an angle. Kept apart from Lit motorway: a high view of one ring and one wave, not a drive.
-- Light carries it: one flood mast off the top left (the key), a cool moon fill, headlight cones along each heading, tail lights, and brake lights that flare and pool red in the jam. The car ahead blocks its follower's beam and lights up on its boot.
+- Light carries it: one flood mast off the top left (the key), a cool moon fill, twin headlight cones along each heading, tail lights, and brake lights that flare and pool red in the jam. The car ahead blocks its follower's beam and lights up on its boot.
 - The strip sits beside the ring on a wide stage, under it on a phone. Now is the edge next to the ring. Paths: blue-white in flow, amber when slow, red under brakes; a deep red field where cars crawl; a white ring at each tap.
-- Model: IDM, v0 14 m/s, T 0.6 s, s0 1.3 m, a 1.6 m/s², b 1.6 m/s², drivers vary a few percent. At 22 cars a tap leaves a jam that slows cars for about 30 s, keeps brake lights flickering about 60 s, and runs backward at about 20 km/h. Past about 25 cars the ring jams by itself.
+- Model: IDM, v0 14 m/s, T 0.6 s, s0 1.3 m, a 2.2 m/s², b 1.6 m/s². Each driver has an own stopping gap (0.7 to 1.9 m) and reaction time (0.25 to 0.75 s). At 22 cars a tap leaves a jam that slows cars for about 75 s, keeps brake lights flickering about 105 s, and runs backward at about 25 km/h. Past about 25 cars the ring jams by itself.
 - Bar v3: Brake (Space), Even out (E), slider Cars 12 to 30. Tap a car to brake; hold to keep it stopped.
 - Sound: engine drone and tyre roar with the mean speed; a soft tyre scrub per brake light coming on, panned, so the ripple is heard; a squeal and thump on a tap; a swell for Even out.
 - Icons: no pick. A = the ring as a glossy slab at a tilt, seven chunky cars, three to four in a jam with red glow; D = the ring on an iso block. On hover a queue model runs: cars stop at the back of the jam and leave its front a moment after the car ahead, so the jam slides backward.

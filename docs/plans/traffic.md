@@ -21,7 +21,7 @@ The paper's space-time plot draws each car's path: time on one axis, place on th
 
 ## Defaults (Tom's open question: 3D or flat, and the presentation)
 
-- **Flat, top down, at night.** A high camera looks straight down on the ring, as in the footage. The circle stays a true circle, so the place on the ring reads as an angle. Light carries the scene: headlights throw cones along the lane, tail lights glow, brake lights flare red in the jam.
+- **Flat, top down, at night.** A high camera looks straight down on the ring, as in the footage. The circle stays a true circle, so the place on the ring reads as an angle. Light carries the scene: headlights throw twin cones along the lane, tail lights glow, brake lights flare red in the jam.
 - Lit motorway is a driver's view of a night road with no jam model. Traffic wave is a high view of one ring and one wave.
 - **The strip.** A space-time strip beside the ring (below it on a phone). Now is at the edge next to the ring; history streams away from it. Each car draws its path, coloured by speed; the jam draws a red band that leans backward.
 
@@ -34,11 +34,13 @@ The Intelligent Driver Model on the CPU, 120 Hz substeps.
 | Desired speed v0 | 14 m/s | Free cars cruise near 30 km/h on this ring |
 | Time gap T | 0.6 s | The close gaps of the experiment |
 | Jam gap s0 | 1.3 m | |
-| Acceleration a | 1.6 m/s² | A stop jam at 22 cars slows cars for about 30 s, then heals |
+| Acceleration a | 2.2 m/s² | With the reaction lag, a stop jam at 22 cars slows cars for about 75 s, then heals |
 | Comfortable braking b | 1.6 m/s² | |
 | Car length | 4.1 to 4.7 m | |
+| Stopping gap per driver | 0.7 to 1.9 m | A stopped queue has uneven gaps (Tom, 2026-11-23) |
+| Reaction time per driver | 0.25 to 0.75 s | A first-order lag on the pull; braking lags half as long (Tom, 2026-11-23) |
 
-A scan of the model on the ring with a = 1.8 m/s² and identical drivers (stop one car for 1.4 s). The toy uses a = 1.6 m/s² and drivers that differ by a few percent:
+A scan of the model on the ring with a = 1.8 m/s² and identical drivers (stop one car for 1.4 s). The toy now uses a = 2.2 m/s² with the reaction lag and the stopping-gap spread above; the shape of the table holds, the times are longer:
 
 | Cars | Free speed | Stop jam lives |
 |---|---|---|
@@ -53,9 +55,9 @@ So the Cars slider is the real control of the experiment: past about 25 cars the
 1. The first frame is a picture: 22 cars in smooth flow, headlights on the lane.
 2. Tap a car: its brake lights flare in the same frame and it stops. Hold keeps it stopped.
 3. The car behind brakes, then the next: a red ripple runs back round the ring.
-4. The first car pulls away. The clump stays and slides backward at about 18 km/h.
+4. The first car pulls away. The clump stays and slides backward at about 25 km/h.
 5. The strip draws the backward band as it happens.
-6. The jam thins and heals over about 30 s; brake lights flicker in the soft wave for about 60 s.
+6. The jam thins and heals over about 75 s; brake lights flicker in the soft wave for about 105 s.
 
 ## Bar v3
 
