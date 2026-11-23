@@ -187,6 +187,20 @@ Tom: "we want protruding god rays in the distance and evoke a sense of scale wit
 
 Frame time 7.8 to 7.9 ms in the voids. The march links in 1.9 s on D3D11 (all passes 2.5 s): near the 3 s budget.
 
+### Four new layers (Tom, 2026-11-23: "Okay" to the proposed stack)
+
+| Layer | Build |
+|---|---|
+| Haze lid, 40 to 22 km | Thin teal sheets 5.5 km apart over the tops, density 0.015, so they veil and never hide the deck. |
+| Mushball fall, -38 to -64 | The lower void renamed: slush hail falls at 0.6 km/s in streaks, in patches 50 to 100 km across. It does not yet read in the stills. |
+| Gyre, -262 to -360 | The abyss renamed: an eyewall 280 to 400 km across, 440 km ahead, that flares as it rises and swirls on angle and log radius; thin feeder bands hug the floor; its eye is open to the deck above, so rays fall down it. It does not yet read as a wall in the stills. |
+| Lightning nest, -385 to -425 | A new void: thin towers, three flash starts a second, each bolt a jagged channel floor to ceiling with a glow round it. |
+| Stairs | Now -425 to -470. |
+
+The light taps skip the details that cast no shade, so the compiler drops them: the march links in 2.0 s (it reached 2.8 s). Frame time 7.8 to 7.9 ms.
+
+Next (Tom, 2026-11-23): "let's focus on above dive, first touch with gas giant and the first two layers -- before continuing".
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech

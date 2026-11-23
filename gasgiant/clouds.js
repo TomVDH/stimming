@@ -62,7 +62,7 @@ uniform float uRays;
 ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
-const float TOP = 34.0, BOT = -505.0;
+const float TOP = 42.0, BOT = -505.0;
 const vec3 FLASH_C = vec3(0.64, 0.74, 1.0);
 const vec3 SKY_C = vec3(0.07, 0.14, 0.17);
 vec4 lut(float h) { return textureLod(uLut, vec2(clamp((h - LUT_LO) / (LUT_HI - LUT_LO), 0.0, 1.0), 0.5), 0.0); }
@@ -114,6 +114,9 @@ float sheets(float h, float bot, float gap, float thick, float nb, float hole, f
   return (1.0 - smoothstep(th * 0.3, th + 0.4 + lod, abs(y))) * cov;
 }
 float band(float h, float lo, float hi, float w) { return smoothstep(lo - w, lo + w, h) * (1.0 - smoothstep(hi - w, hi + w, h)); }
+// The gyre: a vast vortex in the abyss, its eyewall 280 km across, far ahead.
+const vec2 GY_C = vec2(-120.0, -420.0);
+float gyreEye(vec2 xz) { return 1.0 - smoothstep(110.0, 135.0, length(xz - GY_C)); }
 // A break in a void's ceiling: ragged gaps 20 to 40 km across that drift slowly.
 // The same gap runs through the deck above, so light falls through it.
 // soft widens the edge: light through a thick deck spreads into a penumbra.
@@ -124,14 +127,35 @@ float breakAt(vec2 xz, float seed, float soft) {
 // The void round a height, floor included: its ceiling and its seed. x under -1000 means none.
 vec2 voidOver(float h) {
   return h > -30.0 && h < 0.0 ? vec2(2.0, 3.1) : h > -70.0 && h < -38.0 ? vec2(-38.0, 7.7)
-    : h > -236.0 && h < -158.0 ? vec2(-158.0, 11.3) : h > -366.0 && h < -262.0 ? vec2(-262.0, 5.9) : vec2(-1e4, 0.0);
+    : h > -236.0 && h < -158.0 ? vec2(-158.0, 11.3) : h > -366.0 && h < -262.0 ? vec2(-262.0, 5.9)
+    : h > -431.0 && h < -385.0 ? vec2(-385.0, 9.4) : vec2(-1e4, 0.0);
 }
 // The share of the light from above that reaches p through a break.
 float shaftAt(vec3 p, float h, vec3 ld, vec3 upv, vec2 vo) {
   vec3 q = p + ld * ((vo.x - h) / max(dot(ld, upv), 0.2));
-  return breakAt(q.xz, vo.y, 0.12);
+  // The gyre's eye is open to the deck above.
+  return max(breakAt(q.xz, vo.y, 0.12), vo.y == 5.9 ? gyreEye(q.xz) : 0.0);
 }
 // The light's way down in the decks: slanted to the sun's side.
+// f is the height in the void, 0 at the floor, 1 at the ceiling.
+float gyre(vec3 p, float f) {
+  vec2 q = p.xz - GY_C;
+  float r = length(q);
+  // The wall flares outward as it rises.
+  float Rw = mix(140.0, 200.0, f * f);
+  float res = 0.0;
+  if (r < Rw + 260.0) {
+    // The wall and the bands swirl on angle and log radius, as the storm does.
+    float a = atan(q.y, q.x) + uT * 0.004 - 1.6 * log(r / Rw + 0.05);
+    float sw = textureLod(uVol, vec3(cos(a) * 0.45, f * 0.8 + uT * 0.001, sin(a) * 0.45) + vec3(0.21, 0.0, 0.63), 0.0).r;
+    float wall = smoothstep(Rw + 30.0, Rw + 6.0, r) * smoothstep(Rw - 18.0, Rw - 4.0, r);
+    // Feeder bands: thin spirals that hug the floor.
+    float arm = smoothstep(0.75, 0.92, 0.5 + 0.5 * sin(3.0 * a + 4.0 * sw)) * smoothstep(Rw + 220.0, Rw + 60.0, r)
+      * smoothstep(Rw + 10.0, Rw + 40.0, r) * (1.0 - smoothstep(0.04, 0.14, f));
+    res = max(wall * (0.5 + 0.6 * sw), arm * 0.7 * sw);
+  }
+  return res;
+}
 vec3 deepLight(vec3 upv) { return normalize(upv * 0.75 + normalize(SUN - upv * dot(SUN, upv)) * 0.66); }
 // Storm curtains and rare twisters in a void from flo to cei.
 // cu is the share of storm cells with a curtain; tw the share of curtains with a twister.
@@ -180,7 +204,8 @@ float stormsIn(vec3 p, float h, float flo, float cei, float seed, float cs, floa
 // Density at p, 0 to 1. It sets gAlb, the albedo, and gOpen, how near a top it lies.
 // The branches follow LAYERS in world.js, top down. No cloud lies under -500 km.
 // fine scales the small billows; lod grows with distance.
-float dens(vec3 p, float lod, float fine) {
+// full is 0 for the light taps: they skip the details that cast no shade, so the compiler drops them.
+float dens(vec3 p, float lod, float fine, float full) {
   float h = altOf(p);
   float d = 0.0;
   gAlb = vec3(0.9);
@@ -244,6 +269,12 @@ float dens(vec3 p, float lod, float fine) {
       float sat = clamp(m.b + 0.35 * (1.0 - ao), 0.0, 1.0);
       gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), sat);
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
+      // The haze lid: thin teal sheets over the tops.
+      if (full > 0.5 && h > 20.0) {
+        vec3 hid;
+        float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * 0.015 * band(h, 22.0, 40.0, 2.0);
+        if (hz > d) { d = hz; gAlb = mix(pal(0.45), vec3(0.9), 0.5); gOpen = 1.0; }
+      }
     } else if (h > -24.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
       d = tower(p, h, -24.0, 2.0, 3.1, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
@@ -259,10 +290,17 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
       gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
     } else if (h > -64.0) {
-      // The lower void: darker towers from the water deck to the brown ceiling.
+      // The mushball fall: darker towers, and slush hail falling in streaks.
       d = tower(p, h, -64.0, -38.0, 7.7, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
       gOpen = f;
+      // The hail falls in patches 50 to 100 km across, at 0.6 km/s.
+      float mp = full > 0.5 ? smoothstep(0.5, 0.75, textureLod(uVol, vec3(p.xz / 220.0, 0.83), 0.0).a) : 0.0;
+      if (mp > 0.0) {
+        float st = textureLod(uVol, vec3(p.x / 2.2, h / 24.0 + uT * 0.025, p.z / 2.2), 0.0).g;
+        float mb = 0.18 * mp * smoothstep(0.62, 0.85, st);
+        if (mb > d) { d = mb; gAlb = vec3(0.85, 0.9, 0.95); gOpen = 0.6; }
+      }
       vd = vec4(-64.0, -38.0, 7.7, 0.95);
       vk = vec4(60.0, 0.15, 0.4, 0.45);
     } else if (h > -92.0) {
@@ -298,27 +336,36 @@ float dens(vec3 p, float lod, float fine) {
       float base = -265.0;
       float sh = min(top - h, (h - base) * 0.8);
       float cov = smoothstep(0.22, 0.42, nc.a + 0.12);
-      d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov * (1.0 - breakAt(p.xz, 5.9, 0.0));
+      d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov * (1.0 - breakAt(p.xz, 5.9, 0.0)) * (1.0 - gyreEye(p.xz));
       gAlb = mix(vec3(0.36, 0.34, 0.74), pal(0.5), 0.35 * n1.a);
       gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
     } else if (h > -360.0) {
-      // The abyss: colossal towers 150 km apart, and a few floating shelves.
+      // The gyre: colossal towers, floating shelves, and a vast eyewall far ahead.
       d = tower(p, h, -360.0, -262.0, 5.9, nb, 150.0, 0.45, f) * (0.55 + 0.45 * n1.b);
       vec3 id;
       float sv = sheets(h, -360.0, 33.0, 1.0, nb, nc.a - 0.25, lod, id);
       gAlb = mix(mix(pal(0.45), pal(0.15), f), pal(1.05 + 0.15 * id.x), step(d, sv));
       d = max(d, sv * 0.8);
+      float gy = full > 0.5 ? gyre(p, f) : 0.0;
+      if (gy > d) { d = gy; gAlb = mix(pal(0.2 + 0.1 * n1.a), vec3(0.95), 0.5); gOpen = 0.8; }
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-360.0, -262.0, 5.9, 0.15);
       vk = vec4(150.0, 0.18, 0.35, 0.8);
     } else if (h > -385.0) {
       // The salt deck: pale jade, flat, its top in long wave rows.
       float top = -360.0 + 3.0 * sin(qr.x / 9.0 + 4.0 * n1.r) * (0.6 + 0.4 * nb);
-      float base = -385.0 + 3.0 * (nb - 0.5);
+      float base = -388.0;
       float sh = min(top - h, (h - base) * 0.8);
       d = smoothstep(0.0, 1.0 + lod, sh) * (0.6 + 0.4 * n1.b) * smoothstep(0.12, 0.3, nc.a + 0.1);
       gAlb = mix(pal(0.08), pal(0.25), n1.a);
       gOpen = clamp(1.0 - (top - h) / 5.0, 0.0, 1.0);
+    } else if (h > -425.0) {
+      // The lightning nest: thin towers lit from inside by discharge.
+      d = tower(p, h, -425.0, -385.0, 9.4, nb, 40.0, 0.6, f) * (0.55 + 0.45 * n1.b);
+      gAlb = mix(pal(0.6), pal(1.0), f);
+      gOpen = 0.3 + 0.7 * f;
+      vd = vec4(-425.0, -385.0, 9.4, 0.6);
+      vk = vec4(60.0, 0.0, 0.25, 0.1);
     } else if (h > -470.0) {
       // The stairs: thin laminae 9 km apart, teal and violet by turns.
       vec3 id;
@@ -335,7 +382,7 @@ float dens(vec3 p, float lod, float fine) {
       gOpen = clamp(1.0 - (top - h) / 10.0, 0.0, 1.0);
     }
     // One call for every void: the storms in it.
-    if (vk.x > 0.0) {
+    if (full > 0.5 && vk.x > 0.0) {
       // The ceiling is a storm base, after Tornado alley's: deep folded lumps on a warped field,
       // broad rolls, billows on the skin, ragged scud under it.
       // The lumps come from flat maps, so each keeps its shape through its depth.
@@ -357,7 +404,7 @@ float dens(vec3 p, float lod, float fine) {
         sc = smoothstep(0.6, 0.8, n2.r + 0.2 * (n1.b - 0.5)) * band(h, cb - 3.0, cb - 0.3, 0.6) * 0.45;
       }
       float dc = smoothstep(0.0, 0.25 + 0.5 * lod, h - cb) * (0.7 + 0.3 * n1.b);
-      float br = breakAt(p.xz, vd.z, 0.0);
+      float br = max(breakAt(p.xz, vd.z, 0.0), vd.z == 5.9 ? gyreEye(p.xz) : 0.0);
       float dd = max(dc * (1.0 - br), sc * (1.0 - 0.5 * br));
       if (dd > d) {
         d = dd;
@@ -382,7 +429,7 @@ float lightOD(vec3 p, vec3 ld, float lod) {
   float od = 0.0, st = 1.2;
   for (int j = 0; j < 4; j++) {
     p += ld * st;
-    od += dens(p, lod + 1.0, 0.0) * st;
+    od += dens(p, lod + 1.0, 0.0, 0.0) * st;
     st *= 2.6;
   }
   return od;
@@ -397,7 +444,7 @@ void main() {
   float t0 = camH > TOP ? hT.x : 0.0;
   float t1 = hB.x > 0.0 && hB.x < 1e8 ? hB.x : hT.y;
   if (camH > TOP && hT.x > hT.y) t1 = -1.0;
-  bool inWin = camH < TOP + 4.0;
+  bool inWin = camH < 38.0;
   // In a void the window opens to 1,600 km and the steps grow faster.
   float vw = clamp((uWin - 220.0) / 1380.0, 0.0, 1.0);
   float grow = mix(0.012, 0.024, vw), cap = mix(9.0, 30.0, vw);
@@ -419,7 +466,7 @@ void main() {
       float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t) * sk;
       sk = min(1.0, sk * 1.3);
       float lod = clamp(log2(1.0 + t / 120.0), 0.0, 4.0);
-      float dn = dens(p, lod, uFine * (1.0 - smoothstep(1.5, 3.0, lod)));
+      float dn = dens(p, lod, uFine * (1.0 - smoothstep(1.5, 3.0, lod)), 1.0);
       // At the first hit in a deck, step back and come in again at a fifth of the step.
       if (inWin && dn > 0.003 && !refined && ds > 0.5) {
         refined = true;
@@ -478,7 +525,7 @@ void main() {
         // The voids stay clear to the horizon; the gaps between sheets stay fairly clear.
         float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 300.0 * band(hg, -24.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -38.0, 3.0)
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
-          + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -385.0, 6.0) + 40.0 * step(hg, -500.0);
+          + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -425.0, 6.0) + 300.0 * band(hg, -425.0, -385.0, 3.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
         float ag = 1.0 - exp(-sg * ds * 1.6);
         vec3 gs = lut(hg).rgb * vec3(0.38, 0.42, 0.44);
@@ -492,6 +539,16 @@ void main() {
           gs = gs * 0.55 + lut(vo.x + 6.0).rgb * sh * mix(1.0, clPhase(dot(rd, lg)), 0.8) * 4.0 * uRays;
         }
         col += T * gs * ag;
+        // In the lightning nest the bolts show: a jagged channel floor to ceiling, and its glow.
+        float nk = band(hg, -425.0, -385.0, 2.0);
+        if (nk > 0.0) for (int k = 0; k < 4; k++) {
+          vec4 fl = uFlash[k];
+          if (fl.w <= 0.0) continue;
+          vec2 jg = vec2(1.4 * sin(hg * 1.7 + fl.x) + 0.6 * sin(hg * 4.3), 1.4 * cos(hg * 1.3 + fl.z) + 0.6 * sin(hg * 3.7 + 1.0));
+          vec2 cq = p.xz - fl.xz - jg;
+          vec3 fq = fl.xyz - p;
+          col += T * FLASH_C * fl.w * nk * (2.0 * exp(-dot(cq, cq) / 0.8) + 0.15 * exp(-dot(fq, fq) / 400.0)) * ds * 0.5;
+        }
         T *= 1.0 - ag;
       }
       t += ds * (dn > 0.003 ? 1.0 : 1.6);

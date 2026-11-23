@@ -21,7 +21,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - One descent column. The capsule hangs where the hand lets go; the Depth slider takes it back up.
 - A held dive takes about 3 min 20 s to crush depth: fast in the sky, slow in the decks, a glide through the voids.
 - Units are km and seconds; altitude counts from the 1 bar level. Thunder runs at 1.2 km/s, the speed of sound in hydrogen.
-- No more than three flash starts a second, always. Lightning starts in four decks (water, indigo, salt, last); none under the last deck.
+- No more than three flash starts a second, always. Lightning starts in the water, indigo, salt and last decks and the lightning nest; none under the last deck.
 - The loop runs at full rate while the hand dives, the capsule moves or a flash runs. The bands flow and the storm turns at 30 fps until the toy sleeps.
 
 ## Direction
@@ -34,22 +34,24 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
-- A deep, majestic, abyssal dive with much variance in the layers (Tom, 2026-11-23). Fourteen layers, top down:
+- A deep, majestic, abyssal dive with much variance in the layers (Tom, 2026-11-23). Sixteen layers, top down (diagram: [gasgiant-layers.svg](../plans/gasgiant-layers.svg)):
 
 | km | Layer | Kind |
 |---|---|---|
+| 40 to 22 | Haze lid | Thin teal sheets over the tops |
 | 22 to 0 | Ammonia | White deck, popcorn heads and ridges |
-| 0 to -24 | Upper void | Hourglass towers |
+| 0 to -24 | Upper void | Storm ceiling, god rays, towers, a few twisters |
 | -24 to -38 | Brown | Deck |
-| -38 to -64 | Lower void | Towers |
+| -38 to -64 | Mushball fall | Void: slush hail falls in streaks |
 | -64 to -92 | Water | Deck, lightning |
 | -92 to -140 | Shelves | Violet sheets 16 km apart, some whole, some lace |
 | -140 to -158 | Veil | Purple gauze |
 | -158 to -230 | Nave | A forest of columns 72 km tall |
-| -230 to -262 | Indigo | Heaped deck, pouches under it, lightning |
-| -262 to -360 | Abyss | Colossal towers 150 km apart, floating shelves |
+| -230 to -262 | Indigo | Heaped deck, lightning |
+| -262 to -360 | Gyre | Void: colossal towers, a vast eyewall 440 km off, rays down its eye |
 | -360 to -385 | Salt | Pale jade deck in long wave rows, lightning |
-| -385 to -470 | Stairs | Laminae 9 km apart, teal and violet by turns |
+| -385 to -425 | Lightning nest | Void: floor-to-ceiling bolts, three flash starts a second |
+| -425 to -470 | Stairs | Laminae 9 km apart, teal and violet by turns |
 | -470 to -500 | Last | Dark magenta deck, tall heads, rare lightning |
 | -500 to -640 | Dark | Clear gas; the light fails; the hull fails at -640 |
 

@@ -26,21 +26,23 @@ export const ALT_TOP = 260, ALT_DEEP = -640;
 export const bar = h => h > 0 ? Math.exp(-h / 27) : Math.pow(1 - h / 105.6, 3.5);
 
 // The layers, top down, km over the 1 bar level.
-// kind: deck (heaped cloud), void (towers), sheets (thin layers), haze (gauze), dark (clear gas).
+// kind: lid (thin haze over the tops), deck (heaped cloud), void (towers), sheets (thin layers), haze (gauze), dark (clear gas).
 // bolts: lightning starts in it. The march in clouds.js holds the same bounds.
 export const LAYERS = [
+  { id: 'haze lid', kind: 'lid', top: 40, bot: 22 },
   { id: 'ammonia', kind: 'deck', top: 22, bot: 0 },
   { id: 'upper void', kind: 'void', top: 0, bot: -24 },
   { id: 'brown', kind: 'deck', top: -24, bot: -38 },
-  { id: 'lower void', kind: 'void', top: -38, bot: -64 },
+  { id: 'mushball fall', kind: 'void', top: -38, bot: -64 },
   { id: 'water', kind: 'deck', top: -64, bot: -92, bolts: 1 },
   { id: 'shelves', kind: 'sheets', top: -92, bot: -140 },
   { id: 'veil', kind: 'haze', top: -140, bot: -158 },
   { id: 'nave', kind: 'void', top: -158, bot: -230 },
   { id: 'indigo', kind: 'deck', top: -230, bot: -262, bolts: 1 },
-  { id: 'abyss', kind: 'void', top: -262, bot: -360 },
+  { id: 'gyre', kind: 'void', top: -262, bot: -360 },
   { id: 'salt', kind: 'deck', top: -360, bot: -385, bolts: 0.6 },
-  { id: 'stairs', kind: 'sheets', top: -385, bot: -470 },
+  { id: 'lightning nest', kind: 'void', top: -385, bot: -425, bolts: 3 },
+  { id: 'stairs', kind: 'sheets', top: -425, bot: -470 },
   { id: 'last', kind: 'deck', top: -470, bot: -500, bolts: 0.3 },
   { id: 'dark', kind: 'dark', top: -500, bot: -640 },
 ];
