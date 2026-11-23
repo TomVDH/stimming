@@ -31,7 +31,9 @@ A toy has at most three icons:
 
 - A round is one gallery, `icons/spike-<toy>-<n>.html`, with three cards: Current, A and D. Then add the toy to the sheet's `GALLERY` table.
 - The sheet opens on All rounds: every icon of every gallery a toy has had, newest round first, from `icons/rounds.json` plus `GALLERY`. `?latest` shows only A and D of the voted rounds. Cut directions show dimmed, marked "cut".
-- The All view also shows each toy's earlier menu tiles, newest first, as stills (`icons/history/`, listed in `history/menu.json`). Each still is the tile at rest in the last commit that had it. Its hover is gone.
+- The All view also shows each toy's earlier menu tiles, newest first, live. Each runs in a snapshot of the menu from a commit that holds its exact markup (`icons/history/live/<sha>.html`, listed in `history/menu.json`). Its WebP still shows until the snapshot loads.
+- Toys that left the menu sit last on the sheet, under Retired. The three icon lab directions (`icons/index.html`) show under their toys.
+- A gallery's emblems come from its own data URIs. A cut emblem without one comes from `icons/archive/emblems/`.
 - A new round joins the toy's `GALLERY` list, oldest first. Earlier rounds stay on the sheet under the newest, for the vote (Tom, 2026-11-23). A mark names its round.
 - An emblem name that is taken by an earlier round gets the round number: `<toy><n>-a.svg`.
 - Emblems: `icons/spike/emblems/<toy>-a.svg` and `<toy>-d.svg`. The gallery also carries each as a data URI.

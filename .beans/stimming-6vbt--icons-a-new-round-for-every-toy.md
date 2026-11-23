@@ -5,7 +5,7 @@ status: in-progress
 type: epic
 priority: normal
 created_at: 2026-11-23T08:46:34Z
-updated_at: 2026-11-23T21:45:00Z
+updated_at: 2026-11-23T23:10:00Z
 ---
 
 Tom, 2026-11-23: "we want to have all our current toys have a one by one pass for new icons -- this is a new subsession we work chunked there -- ensure we involve our sheet".
@@ -35,3 +35,10 @@ Tom: "can we get the sheet with ALL logos per toy we've had so far". The sheet o
 
 Tom: the old menu icons did not come through. The early galleries never held a Current card; old menu tiles lived only in the git history of `index.html`. A headless pass loaded the last commit of each tile version from git history and took the tile at rest: 217 stills for 90 toys in `icons/history/` (WebP, 700 KB), listed in `icons/history/menu.json`. The All view shows them under each toy's rounds as "menu, earlier", newest first, markable (`<toy>-menu<n>@menu`). Stills, not live: the hover of that day is gone. Six retired toys (Morph set, Ribbon, Keys, Ripple, Jelly, Bench) have no menu row, so their old tiles are not shown.
 - [x] Earlier menu tiles on the sheet
+
+## Sheet: every iteration, live (Tom, 2026-11-23)
+
+Tom: "Like all iterations we ever had, per toy, all functional and displaying". The earlier menu tiles now run live. Each runs in a snapshot of the menu from a commit that holds its exact markup: 51 pages in `icons/history/live/`, 8.5 MB. A snapshot keeps only the wanted tiles. Each top-level hook statement and each forEach step runs in its own try, so a tile that is left out fails alone. The WebP still shows until the snapshot loads. 218 tiles: the Kiwi tile joins Fruit slice. Five retired toys sit last, under Retired. The icon lab directions (`icons/index.html`) show under their toys. A gallery's emblems come from its own data URIs, and cut ones come from the archive. On phones the All view gets two columns. In Latest A and D, Plasma globe and Snow globe draw again: the big tile now hides only after the gallery fits its icons on it.
+- [x] Live earlier menu tiles, Retired group, icon lab row
+- [x] Emblems resolve without 404s
+- [x] Phone layout of the All view

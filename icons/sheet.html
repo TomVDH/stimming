@@ -68,13 +68,22 @@ h3 span { color: var(--faint); }
 .all .alts .slot { grid-column: 1; }
 .all .cols .two { display: block; }
 .all .alts iframe { height: calc(var(--tile) + 24px); }
-/* Earlier menu tiles are stills from the commit each one lived in. */
+/* Earlier menu tiles run live in a snapshot of their day; the still shows until it loads. */
 .past { display: grid; grid-template-columns: repeat(auto-fill, var(--tile)); gap: 10px var(--gap); }
 .past > div { display: grid; gap: 4px; width: var(--tile); cursor: pointer; }
-.past img { display: block; width: var(--tile); height: var(--tile); border-radius: 14px; background: var(--panel); object-fit: contain; }
+.past .still { position: relative; display: block; width: var(--tile); height: var(--tile); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.past .still > img, .past .still > iframe { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; object-fit: contain; }
+.past .still > iframe { opacity: 0; background: transparent; }
+.past .live > iframe { opacity: 1; }
+.past .live > img { visibility: hidden; }
+/* The mark ring sits above the live frame. */
+.past .still::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.past .marked .still::after { box-shadow: inset 0 0 0 2px var(--mark); }
+/* Icon lab directions keep the lab's own lift on hover. */
+.past .fig > svg { position: absolute; inset: 7%; width: 86%; height: 86%; overflow: visible; transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.past > div:hover .fig > svg, .past > div:focus-visible .fig > svg { transform: translateY(-4px) rotate(-3deg); }
 .past p { margin: 0; overflow: hidden; color: oklch(0.6 0.02 275); font-size: 10px; line-height: 1.3; letter-spacing: 0.04em; white-space: nowrap; text-overflow: ellipsis; }
 .past p b { color: var(--fg); font-weight: 700; }
-.past .marked img { outline: 2px solid var(--mark); outline-offset: -2px; }
 .cell { position: relative; display: grid; gap: 6px; width: var(--tile); border-radius: 14px; cursor: pointer; }
 .tile, .logo, .slot { width: var(--tile); aspect-ratio: 1; border-radius: 14px; }
 /* The Current column sits on its own panel. */
@@ -104,9 +113,11 @@ h3 span { color: var(--faint); }
   .cols, .row { grid-template-columns: var(--tile) calc(var(--tile) * 2 + var(--gap)); row-gap: 8px; }
   .cols > :first-child { display: none; }
   .row h2 { grid-column: 1 / -1; }
+  /* All rounds on a phone: the name goes above, the icons get the rest of the width. */
+  .all .cols, .all .row { grid-template-columns: var(--tile) minmax(0, 1fr); }
 }
 @media (pointer: coarse) { .seg button { padding: 8px 14px; } .chip { padding: 8px 14px; } }
-@media (prefers-reduced-motion: reduce) { .seg button, .chip { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .seg button, .chip, .past .fig > svg { transition: none; } }
 </style>
 </head>
 <body>
@@ -234,7 +245,9 @@ const FRAME_CSS = `
 html, body { background: transparent !important; }
 body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
 .wrap, #out, main { max-width: none !important; margin: 0 !important; padding: 0 !important; gap: 0 !important; display: block !important; }
-h1, h2, .lede, .dir > header, .dir > .tag, .idea, .pick, .size, .dir > .big { display: none !important; }
+h1, h2, .lede, .dir > header, .dir > .tag, .idea, .pick, .size { display: none !important; }
+/* The big tile hides only after the gallery fits its icons on it. */
+body.fitted .dir > .big { display: none !important; }
 .emb, .embs { display: none !important; }
 body.trans .icons, body.trans .flash, body.both .flash { display: none !important; }
 body.trans .emb, body.trans .embs, body.both .emb, body.both .embs { display: block !important; }
@@ -290,13 +303,35 @@ const names = await fetch('../toys.json').then(r => r.json()).catch(() => ({}));
 const archived = await fetch('archive/cut.json').then(r => r.json()).catch(() => ({ cut: {} }));
 const gone = new Set(Object.entries(archived.cut || {}).flatMap(([id, ls]) => ls.map(l => `${id}-${l.toLowerCase()}`)));
 // Earlier menu tiles per toy, oldest first. The note in the file says how they were made.
-const past = ALL ? await fetch('history/menu.json').then(r => r.json()).then(j => j.tiles || {}).catch(() => ({})) : {};
+const history = ALL ? await fetch('history/menu.json').then(r => r.json()).catch(() => ({})) : {};
+const past = history.tiles || {}, pastNames = history.retired || {};
+// The icon lab page holds three early directions; each figure names its toy.
+const LAB_TOY = { 'Domino run': 'domino', Morphset: 'morphset' };
+const early = {};
+if (ALL) {
+  const lab = new DOMParser().parseFromString(await fetch('index.html').then(r => r.text()).catch(() => ''), 'text/html');
+  for (const sec of lab.querySelectorAll('section')) {
+    const set = sec.querySelector('h2')?.textContent.trim();
+    for (const fig of sec.querySelectorAll('figure')) {
+      const cap = fig.querySelector('figcaption')?.textContent.trim() || '';
+      const id = LAB_TOY[cap] || Object.keys(names).find(k => names[k]?.name === cap) || cap.toLowerCase();
+      const svg = fig.querySelector('svg');
+      if (set && svg) (early[id] ||= []).push({ set, svg: svg.outerHTML });
+    }
+  }
+  // The lab's shared gradients come along, for the sphere glint.
+  const defs = lab.querySelector('body > .wrap > svg defs, body > svg defs');
+  if (defs) document.body.insertAdjacentHTML('beforeend', `<svg width="0" height="0" style="position: absolute" aria-hidden="true">${defs.outerHTML}</svg>`);
+}
+const slug = s => s.toLowerCase().replace(/\W+/g, '-');
 
 // The menu gives the toy list and the Current icons.
 // It loads off screen at full width first, because its script fits each icon.
 const menuFrame = Object.assign(document.createElement('iframe'), { src: '../index.html?lab', title: 'Current menu icons', id: 'live' });
 $('rows').append(menuFrame);
 await new Promise(r => { menuFrame.addEventListener('load', r, { once: true }); setTimeout(r, 6000); });
+// A slow server can hold the menu past that wait; the sheet waits for its tiles.
+for (let t = 0; t < 40 && !menuFrame.contentDocument?.querySelector('a.toy[id]'); t++) await new Promise(r => setTimeout(r, 500));
 await new Promise(r => setTimeout(r, 900));
 const menu = menuFrame.contentDocument;
 // The order is toys.json: the main shelf by number, then the Lab by name.
@@ -322,15 +357,25 @@ const keyOf = (id, l, r) => `${id}-${l}@${r}`;
 const slot = (id, l, s, r) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${keyOf(id, l, r)}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}, round ${r}">${wordOf(id, s, r)}</div>`;
 // The All view knows its cards only once the gallery loads; it holds one waiting slot.
 const alts = (id, r) => (ALL ? `<div class="alts"><div class="slot load">${r}</div></div>` : `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`);
-// Earlier menu tiles: one still each, newest first, under the rounds.
+// Earlier menu tiles, newest first, under the rounds.
+// Each runs live in a snapshot of its day's menu; the still is the fallback.
 const day = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const span = t => (t.from === t.to ? day(t.from) : `${day(t.from)} to ${day(t.to)}`);
 const hist = id => (past[id]?.length ? `<section class="row old" data-toy="${id}" data-round="">
     <h2><small>menu, earlier</small></h2>
     <div class="none"></div>
     <div class="alts"><div class="past">${past[id].map((t, i) => [t, i + 1]).reverse().map(([t, n]) => `<div data-key="${id}-menu${n}@menu" tabindex="0" role="button" aria-label="${nameOf(id)}, menu tile ${n}, ${span(t)}">
-      <img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">
+      <span class="still"><img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">${t.page ? `<iframe src="${t.page}?lab#${t.id || id}" title="${nameOf(id)}, menu tile ${n}" loading="lazy" tabindex="-1" scrolling="no"></iframe>` : ''}</span>
       <p><b>Menu ${n}</b> · ${span(t)}</p>
+    </div>`).join('')}</div></div>
+  </section>` : '');
+// Icon lab directions: live SVG, with the lab's own hover.
+const labRow = id => (early[id]?.length ? `<section class="row old" data-toy="${id}" data-round="">
+    <h2><small>icon lab, early</small></h2>
+    <div class="none"></div>
+    <div class="alts"><div class="past">${early[id].map(e => `<div data-key="${id}-${slug(e.set)}@lab" tabindex="0" role="button" aria-label="${nameOf(id)}, icon lab, ${e.set}">
+      <span class="still fig">${e.svg}</span>
+      <p><b>${e.set}</b> · icon lab</p>
     </div>`).join('')}</div></div>
   </section>` : '');
 const row = ({ id }) => {
@@ -346,10 +391,15 @@ const row = ({ id }) => {
     <h2><small>${o}</small></h2>
     <div class="none"></div>
     ${alts(id, o)}
-  </section>`).join('') + hist(id);
+  </section>`).join('') + hist(id) + labRow(id);
 };
 const group = (title, list) => (list.length ? `<h3>${title} <span>· ${list.length}</span></h3>${list.map(row).join('')}` : '');
-$('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
+// Toys that left the menu keep their earlier tiles, last on the sheet.
+const gone2 = [...new Set([...Object.keys(past), ...Object.keys(early)])].filter(id => !toys.some(t => t.id === id));
+const retired = gone2.length ? `<h3>Retired <span>· ${gone2.length}</span></h3>${gone2.map(id => `<section class="row" data-toy="${id}" data-round="">
+    <h2>${pastNames[id] || id}<small>retired</small></h2>
+  </section>${hist(id)}${labRow(id)}`).join('')}` : '';
+$('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab)) + retired;
 
 // The menu frame turns into the Current column: only its tiles stay, one on each row.
 // A tile keeps its own listeners, styles and gradients, so its hover is the menu's own.
@@ -400,8 +450,9 @@ const place = () => {
 };
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
 const older = toys.reduce((n, t) => n + Math.max(0, rounds(t.id).length - 1), 0);
-const pastN = toys.reduce((n, t) => n + (past[t.id]?.length || 0), 0);
-$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}${pastN ? ` · <b>${pastN}</b> earlier menu tiles` : ''}`;
+const pastN = Object.values(past).flat().length;
+const labN = Object.values(early).flat().length;
+$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}${pastN ? ` · <b>${pastN}</b> earlier menu tiles` : ''}${labN ? ` · <b>${labN}</b> icon lab directions` : ''}`;
 
 // The tile size fits three columns; the name moves above them on phones.
 const layout = () => {
@@ -419,13 +470,14 @@ const layout = () => {
 const titles = new Map();
 const output = () => {
   const o = {};
-  for (const { id } of toys) {
+  for (const id of [...toys.map(t => t.id), ...gone2]) {
     const ls = marks.has(`${id}-current`) ? ['Current'] : [];
     for (const k of marks) {
       const m = k.startsWith(`${id}-`) && k.slice(id.length + 1).match(/^(.+)@(.+)$/);
       if (!m) continue;
       const n = m[1].match(/^menu(\d+)$/)?.[1], t = n && past[id]?.[n - 1];
-      const word = t ? `Menu tile ${n}, ${t.from} to ${t.to}, ${t.sha}` : COLS.find(c => c[0] === m[1])?.[1] || m[1].toUpperCase();
+      const e = m[2] === 'lab' && early[id]?.find(x => slug(x.set) === m[1]);
+      const word = t ? `Menu tile ${n}, ${t.from} to ${t.to}, ${t.sha}` : e ? `Icon lab, ${e.set}` : COLS.find(c => c[0] === m[1])?.[1] || m[1].toUpperCase();
       ls.push(`${word}${titles.get(k) ? ` · ${titles.get(k)}` : ''} (${m[2]})`);
     }
     if (ls.length) o[id] = ls;
@@ -477,6 +529,29 @@ if (ALL) document.querySelector('.cols .two').innerHTML = '<span>Every icon of e
 
 // A gallery mounts when its row comes near the view, one at a time.
 const base = new URL('./', location.href).href;
+// Inside a gallery, each emblem comes from the gallery's own copy.
+// A cut emblem without one comes from the archive; nothing asks for a moved file.
+const EMB_FIX = `<script>
+(() => {
+  const CUT = new Set(${JSON.stringify([...gone])});
+  const fix = el => {
+    const v = el.getAttribute('style');
+    if (!v || !v.includes('spike/emblems/')) return;
+    const w = v.replace(/url\\((["']?)spike\\/emblems\\/([\\w-]+)\\.svg\\1\\)/g, (m, q, f) => {
+      const s = window.EMBLEMS && window.EMBLEMS[f];
+      if (s) return 'url("data:image/svg+xml,' + encodeURIComponent(s) + '")';
+      return CUT.has(f) ? 'url(archive/emblems/' + f + '.svg)' : m;
+    });
+    if (w !== v) el.setAttribute('style', w);
+  };
+  new MutationObserver(ms => {
+    for (const m of ms) {
+      if (m.type === 'attributes') { fix(m.target); continue; }
+      for (const n of m.addedNodes) if (n.nodeType === 1) { fix(n); n.querySelectorAll('[style*="spike/emblems/"]').forEach(fix); }
+    }
+  }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+})();
+<\/script>`;
 const sources = new Map();
 // The local server drops some requests under load; a gallery gets three tries.
 const fetchText = async (url, tries = 3) => {
@@ -496,7 +571,7 @@ async function mount(sec) {
   frame.title = `${nameOf(id)}: Shaded object and Isometric block`;
   frame.className = 'wait';
   frame.setAttribute('scrolling', 'no');
-  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
+  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">${EMB_FIX}`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
   alts.append(frame);
   // The cards are ready before the fonts and emblems finish; do not wait for those.
   await new Promise(r => {
@@ -508,6 +583,7 @@ async function mount(sec) {
     }, 60);
   });
   const doc = frame.contentDocument;
+  doc.body.classList.add('fitted');
   let own = null;
   for (const s of doc.querySelectorAll('section')) {
     const first = s.querySelector('.dir');
@@ -568,7 +644,7 @@ async function mountAll(sec) {
   frame.title = `${nameOf(id)}: round ${r}`;
   frame.className = 'wait';
   frame.setAttribute('scrolling', 'no');
-  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">`).replace(/<\/head>/i, `<style>${ALL_CSS}</style></head>`);
+  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">${EMB_FIX}`).replace(/<\/head>/i, `<style>${ALL_CSS}</style></head>`);
   alts.append(frame);
   await new Promise(res => {
     const t0 = performance.now();
@@ -648,6 +724,21 @@ for (const sec of document.querySelectorAll('.row')) {
   const id = sec.dataset.toy, r = sec.dataset.round;
   if (r && (ALL || COLS.some(([l]) => stateOf(id, l, r) === 'have'))) near.observe(sec);
 }
+// A live menu tile takes over from its still once its snapshot shows the tile.
+const wirePast = f => {
+  const key = f.closest('[data-key]').dataset.key, t0 = performance.now();
+  const poll = setInterval(() => {
+    const d = f.contentDocument, ready = d?.documentElement.dataset.ready;
+    if (!ready && performance.now() - t0 < 12000) return;
+    clearInterval(poll);
+    if (ready !== '1') { f.remove(); return; }
+    // A click marks the tile; it does not open the toy.
+    d.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); toggle(key); }, true);
+    f.parentElement.classList.add('live');
+    f.dataset.ready = '1';
+  }, 100);
+};
+for (const f of document.querySelectorAll('.past iframe')) f.addEventListener('load', () => wirePast(f), { once: true });
 goLive();
 layout();
 paint();

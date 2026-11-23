@@ -1,0 +1,1584 @@
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<script>
+// A snapshot of an earlier menu for the icon sheet: one tile, live.
+window.__miss = (e, l) => (window.__misses ||= []).push((l ?? '') + ' ' + String(e && e.message || e));
+addEventListener('error', e => window.__miss(e.error || e.message));
+// The page sits three folders down; its fetches resolve from the site root.
+(() => {
+  const here = new URL('./', location.href).href, root = new URL('../../../', location.href).href, f = window.fetch.bind(window);
+  window.fetch = (u, o) => {
+    if (u instanceof Request) return f(u, o);
+    // Hover warm-ups fetch toy pages and emblems; a snapshot skips them.
+    if (o && o.priority === 'low') return Promise.resolve(null);
+    const s = new URL(String(u), location.href).href;
+    return f(s.startsWith(here) ? root + s.slice(here.length) : s, o);
+  };
+  // Series badges are hidden here, so they load nothing; other images resolve from the root.
+  const src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+  Object.defineProperty(HTMLImageElement.prototype, 'src', { ...src, set(v) {
+    if (this.classList.contains('series') || v == null || v === 'null' || v === 'undefined') return;
+    const s = new URL(String(v), location.href).href;
+    src.set.call(this, s.startsWith(here) ? root + s.slice(here.length) : s);
+  } });
+  // The menu focused its first tile; here that would play the tile at rest.
+  HTMLElement.prototype.focus = function () {};
+  // The series switch stays off here; the switch only reads, it never writes.
+  const get = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (k) { return k === 'stimming.series' ? 'off' : get.call(this, k); };
+  // One broken tile must not stop the others: each forEach step runs on its own.
+  for (const P of [Array.prototype, NodeList.prototype]) {
+    const each = P.forEach;
+    P.forEach = function (fn, that) { return each.call(this, function (...a) { try { return fn.apply(this, a); } catch (e) { window.__miss(e, 'each'); } }, that); };
+  }
+})();
+</script>
+<title>Stimming</title>
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* Layout: the title, then the toys, all centred. The menu is always dark. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --sketch: oklch(0.52 0.025 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 16px/1.3 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--pick); }
+.defs { position: absolute; width: 0; height: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: clamp(40px, 7vw, 88px) 72px; display: grid; justify-items: center; gap: clamp(36px, 6vw, 72px); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Title letters rest white, askew and in mixed weights. */
+.title {
+  margin: 0; display: flex; align-items: baseline; gap: 0.01em;
+  font-size: clamp(48px, 9vw, 104px); line-height: 1; letter-spacing: -0.02em;
+  cursor: default; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+/* A touched letter flashes its own colour, then fades back to white. */
+.title .l { display: inline-block; color: color-mix(in oklch, var(--c) calc(var(--p, 0) * 100%), var(--fg)); font-weight: var(--w); }
+main { width: 100%; }
+/* Rows wrap and centre, so a short last row sits in the middle. */
+.shelf {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px);
+  max-width: 980px; margin: 0 auto; padding: 0; list-style: none;
+}
+.shelf > li { width: clamp(96px, 26vw, 150px); }
+/* The main toys sit on the shelf; the rest wait folded in the Lab. */
+main { display: grid; justify-items: center; gap: clamp(28px, 5vw, 56px); }
+/* The main shelf holds six toys a row at most and wraps on smaller screens. */
+main > .shelf { max-width: calc(6 * 150px + 5 * 28px); }
+/* The Lab is its own view at ?lab; the menu never shows it. */
+.lab { display: none; width: 100%; max-width: 980px; gap: clamp(24px, 4vw, 40px); }
+:root[data-view="lab"] .lab { display: grid; }
+:root[data-view="lab"] main > .shelf { display: none; }
+.lab-back {
+  justify-self: center; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; text-decoration: none;
+  font-size: 15px; color: var(--muted); transition: color 0.2s ease;
+}
+.lab-back:hover { color: var(--fg); }
+.lab-back:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.lab-back svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: reduce) { .lab-back { transition: none; } }
+/* The credit line closes the page, as quiet as the Lab toggle. */
+.credit { color: var(--muted); font-size: 13px; letter-spacing: 0.01em; text-align: center; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 14px; }
+/* A small stamped version tag: number in a box, codename beside it. */
+.ver-tag { display: inline-flex; align-items: stretch; font-size: 11px; line-height: 1; border: 1px solid oklch(0.36 0.02 275); border-radius: 6px; overflow: hidden; }
+.ver-tag b { padding: 4px 6px; font-weight: 800; color: var(--bg); background: oklch(0.86 0.15 128); letter-spacing: 0.02em; }
+.ver-tag i { padding: 4px 7px; font-style: normal; font-weight: 600; letter-spacing: 0.06em; }
+@media (max-width: 560px) { .name { font-size: 13px; } }
+.toy { display: grid; justify-items: center; gap: 10px; color: inherit; text-decoration: none; border-radius: 16px; text-align: center; }
+a.toy { cursor: pointer; }
+a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
+.obj svg { width: 70%; height: 70%; overflow: visible; }
+/* Each toy arrives through grainy blur as it scrolls into view. */
+.js-reveal .toy:not(.is-in) { opacity: 0; filter: blur(14px); }
+.js-reveal .toy { transition: opacity 0.5s steps(15, end), filter 0.6s steps(18, end); transition-delay: var(--d, 0s); }
+.js-reveal .toy .obj::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E");
+  -webkit-mask: radial-gradient(closest-side, #000 35%, transparent); mask: radial-gradient(closest-side, #000 35%, transparent);
+  opacity: 0.55; transition: opacity 0.8s steps(24, end); transition-delay: calc(var(--d, 0s) + 0.15s);
+}
+.js-reveal .toy.is-in .obj::after { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .js-reveal .toy:not(.is-in) { opacity: 1; filter: none; } .js-reveal .toy .obj::after { display: none; } }
+.name { font-size: 15px; letter-spacing: -0.01em; }
+/* Signed-off toys sit apart up top. */
+main > .shelf--done { width: 100%; padding-bottom: clamp(24px, 4vw, 44px); border-bottom: 1px solid oklch(0.3 0.015 275); }
+.toy:not(a) .name { color: var(--muted); }
+.sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* Planned toys draw as outlines until they ship. */
+.planned .art, .planned .art * { fill: none !important; stroke: var(--sketch) !important; stroke-width: 2px !important; }
+</style>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lit" cx="0.32" cy="0.26" r="0.7">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="g-morph" x1="0" y1="0" x2="1" y2="1">
+      <stop id="morph-a" offset="0" style="stop-color: #f7b65b"/>
+      <stop id="morph-b" offset="1" style="stop-color: #d23c34"/>
+    </linearGradient>
+    <linearGradient id="g-blob" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: #f7a1c4"/>
+      <stop offset="1" style="stop-color: #d63b6e"/>
+    </linearGradient>
+    <linearGradient id="g-knob" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.89 0.13 88)"/>
+      <stop offset="1" style="stop-color: oklch(0.64 0.17 48)"/>
+    </linearGradient>
+    <linearGradient id="g-cell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.1 165)"/>
+      <stop offset="1" style="stop-color: oklch(0.64 0.13 225)"/>
+    </linearGradient>
+    <linearGradient id="g-sand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.05 85)"/>
+      <stop offset="1" style="stop-color: oklch(0.76 0.07 62)"/>
+    </linearGradient>
+    <linearGradient id="g-stone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.5 0.015 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.22 0.01 260)"/>
+    </linearGradient>
+    <linearGradient id="g-fire" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.9 0.14 85)"/>
+      <stop offset="0.45" style="stop-color: oklch(0.74 0.19 55)"/>
+      <stop offset="1" style="stop-color: oklch(0.56 0.21 30)"/>
+    </linearGradient>
+    <linearGradient id="g-fire-core" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.98 0.05 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.88 0.15 80)"/>
+    </linearGradient>
+    <linearGradient id="g-slime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.72 0.2 318)"/>
+      <stop offset="1" style="stop-color: oklch(0.52 0.24 296)"/>
+    </linearGradient>
+    <radialGradient id="g-ball" cx="0.36" cy="0.3" r="0.72">
+      <stop offset="0" style="stop-color: oklch(0.98 0.004 260)"/>
+      <stop offset="0.38" style="stop-color: oklch(0.72 0.01 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.3 0.012 260)"/>
+    </radialGradient>
+    <linearGradient id="g-lid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.08 220)"/>
+      <stop offset="1" style="stop-color: oklch(0.76 0.1 232)"/>
+    </linearGradient>
+    <linearGradient id="g-shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.66 0.16 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.48 0.17 266)"/>
+    </linearGradient>
+    <linearGradient id="g-ferro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.46 0.03 270)"/>
+      <stop offset="1" style="stop-color: oklch(0.12 0.01 270)"/>
+    </linearGradient>
+    <linearGradient id="g-galaxy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.86 0.12 70)"/>
+      <stop offset="1" style="stop-color: oklch(0.7 0.14 250)"/>
+    </linearGradient>
+    <linearGradient id="g-soap" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.06 350)"/>
+      <stop offset="1" style="stop-color: oklch(0.78 0.11 345)"/>
+    </linearGradient>
+    <linearGradient id="g-tape" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.64 0.12 200)"/>
+      <stop offset="1" style="stop-color: oklch(0.48 0.12 215)"/>
+    </linearGradient>
+    <linearGradient id="g-film" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.15 340)"/>
+      <stop offset="0.5" style="stop-color: oklch(0.9 0.13 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.84 0.11 200)"/>
+    </linearGradient>
+    <linearGradient id="g-rain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.4 0.07 285)"/>
+      <stop offset="1" style="stop-color: oklch(0.25 0.05 250)"/>
+    </linearGradient>
+    <linearGradient id="g-top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.15 45)"/>
+      <stop offset="1" style="stop-color: oklch(0.55 0.2 25)"/>
+    </linearGradient>
+    <radialGradient id="g-plasma" cx="0.5" cy="0.5" r="0.55">
+      <stop offset="0" style="stop-color: oklch(0.46 0.17 305)"/>
+      <stop offset="1" style="stop-color: oklch(0.18 0.06 285)"/>
+    </radialGradient>
+    <linearGradient id="g-marble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.97 0.02 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.88 0.04 80)"/>
+    </linearGradient>
+    <linearGradient id="g-pool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.12 192)"/>
+      <stop offset="1" style="stop-color: oklch(0.5 0.13 235)"/>
+    </linearGradient>
+    <linearGradient id="g-lava-glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.52 0.15 300)"/>
+      <stop offset="1" style="stop-color: oklch(0.3 0.12 285)"/>
+    </linearGradient>
+    <linearGradient id="g-lava" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.16 75)"/>
+      <stop offset="1" style="stop-color: oklch(0.68 0.21 35)"/>
+    </linearGradient>
+    <linearGradient id="g-k1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.78 0.16 350)"/>
+      <stop offset="1" style="stop-color: oklch(0.55 0.21 305)"/>
+    </linearGradient>
+    <linearGradient id="g-k2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.86 0.12 175)"/>
+      <stop offset="1" style="stop-color: oklch(0.58 0.15 240)"/>
+    </linearGradient>
+    <linearGradient id="g-k3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.14 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.18 50)"/>
+    </linearGradient>
+    <linearGradient id="g-plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.44 0.02 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.24 0.015 260)"/>
+    </linearGradient>
+    <linearGradient id="g-prism" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.94 0.04 210)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.09 250)"/>
+    </linearGradient>
+    <radialGradient id="g-globe" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" style="stop-color: oklch(0.66 0.09 235)"/>
+      <stop offset="1" style="stop-color: oklch(0.36 0.09 258)"/>
+    </radialGradient>
+    <linearGradient id="g-wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.56 0.08 55)"/>
+      <stop offset="1" style="stop-color: oklch(0.36 0.06 45)"/>
+    </linearGradient>
+    <linearGradient id="g-dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.82 0.12 62)"/>
+      <stop offset="1" style="stop-color: oklch(0.46 0.15 305)"/>
+    </linearGradient>
+    <linearGradient id="g-frostglass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.4 0.09 245)"/>
+      <stop offset="1" style="stop-color: oklch(0.2 0.05 262)"/>
+    </linearGradient>
+    <linearGradient id="g-brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.12 92)"/>
+      <stop offset="1" style="stop-color: oklch(0.62 0.12 68)"/>
+    </linearGradient>
+    <linearGradient id="g-steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.01 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.56 0.02 255)"/>
+    </linearGradient>
+    <linearGradient id="g-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.97 0.015 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.9 0.03 85)"/>
+    </linearGradient>
+    <linearGradient id="g-flap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.34 0.012 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.22 0.01 260)"/>
+    </linearGradient>
+    <clipPath id="mb-clip"><rect x="22" y="34" width="52" height="60" rx="10"/></clipPath>
+    <linearGradient id="g-tv" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.14 28)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.17 15)"/>
+    </linearGradient>
+    <linearGradient id="g-screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.12 190)"/>
+      <stop offset="1" style="stop-color: oklch(0.62 0.18 285)"/>
+    </linearGradient>
+    <linearGradient id="g-ribbon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.75 0.18 350)"/>
+      <stop offset="0.5" style="stop-color: oklch(0.68 0.2 300)"/>
+      <stop offset="1" style="stop-color: oklch(0.8 0.13 200)"/>
+    </linearGradient>
+    <radialGradient id="g-sun" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" style="stop-color: oklch(0.95 0.1 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.18 55)"/>
+    </radialGradient>
+    <linearGradient id="g-balloon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.82 0.15 355)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.23 340)"/>
+    </linearGradient>
+    <!-- Brut style: neutral grey shading and fine grain. -->
+    <linearGradient id="g-gray" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.004 275)"/>
+      <stop offset="1" style="stop-color: oklch(0.5 0.008 275)"/>
+    </linearGradient>
+    <filter id="grain" filterUnits="userSpaceOnUse" x="-8" y="-8" width="144" height="144">
+      <feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.25" result="specks"/>
+      <feComposite in="specks" in2="SourceGraphic" operator="in" result="grit"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="grit"/></feMerge>
+    </filter>
+    <radialGradient id="g-pin" cx="0.36" cy="0.3" r="0.72">
+      <stop offset="0" style="stop-color: oklch(0.98 0.02 215)"/>
+      <stop offset="0.45" style="stop-color: oklch(0.84 0.09 225)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.13 245)"/>
+    </radialGradient>
+    <linearGradient id="g-pinframe" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.2"/>
+    </linearGradient>
+    <clipPath id="tray-clip"><rect x="12" y="20" width="104" height="88" rx="18"/></clipPath>
+  </defs>
+</svg>
+
+<script>
+  // ?lab shows the Lab shelf in place of the menu.
+  if (new URLSearchParams(location.search).has('lab')) document.documentElement.dataset.view = 'lab';
+</script>
+<div class="wrap">
+  <h1 class="title" id="title"><span class="sr">Stimming</span><span aria-hidden="true"><span class="l" style="--c: oklch(0.8 0.15 62); --w: 800">S</span><span class="l" style="--c: oklch(0.72 0.2 318); --w: 500">t</span><span class="l" style="--c: oklch(0.8 0.12 195); --w: 900">i</span><span class="l" style="--c: oklch(0.7 0.19 32); --w: 600">m</span><span class="l" style="--c: oklch(0.72 0.14 255); --w: 700">m</span><span class="l" style="--c: oklch(0.82 0.11 345); --w: 400">i</span><span class="l" style="--c: oklch(0.86 0.15 100); --w: 800">n</span><span class="l" style="--c: oklch(0.78 0.16 150); --w: 600">g</span></span></h1>
+  <main>
+    <ul class="shelf" aria-label="Toys">
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      <li>
+        <a class="toy" id="scope" href="scope/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-scope" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.42 0.02 160)"/><stop offset="1" stop-color="oklch(0.24 0.015 160)"/></linearGradient>
+              <rect x="10" y="14" width="108" height="100" rx="16" fill="url(#g-scope)"/>
+              <rect x="10" y="14" width="108" height="100" rx="16" fill="url(#lit)"/>
+              <rect x="18" y="22" width="92" height="84" rx="9" fill="oklch(0.15 0.03 155)"/>
+              <!-- The face matches the toy: cut centre bars and corner brackets. -->
+              <path d="M24 64H104M64 28V100" stroke="oklch(0.4 0.07 150)" stroke-width="2.4" stroke-dasharray="7 3"/>
+              <path d="M24 35V28H31M97 28H104V35M24 93V100H31M97 100H104V93" fill="none" stroke="oklch(0.62 0.08 150)" stroke-width="2.4"/>
+              <!-- The trace is a 3:2 Lissajous: a phosphor body, a bright core, a hot beam head. -->
+              <path id="scope-body" fill="none" stroke="oklch(0.55 0.15 148)" stroke-width="7" stroke-opacity="0.4" stroke-linejoin="round"/>
+              <path id="scope-trace" fill="none" stroke="oklch(0.92 0.2 145)" stroke-width="3" stroke-linejoin="round"/>
+              <circle id="scope-head" r="3.4" fill="oklch(0.98 0.06 140)"/>
+            </svg>
+          </span>
+          <span class="name">Oscilloscope</span>
+        </a>
+      </li>
+      
+      <li>
+        <a class="toy" id="fire" href="fire/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-fireiron" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.38 0.02 50)"/><stop offset="1" stop-color="oklch(0.2 0.012 50)"/></linearGradient>
+              <!-- Three angular tongues rise out of a slotted iron box. -->
+              <path id="fire-outer" fill="url(#g-fire)"/>
+              <path id="fire-inner" fill="url(#g-fire-core)"/>
+              <g id="fire-sparks" fill="oklch(0.92 0.12 85)"><rect x="38" y="30" width="4" height="4"/><rect x="88" y="22" width="4" height="4"/><rect x="62" y="6" width="3.5" height="3.5"/></g>
+              <rect x="32" y="78" width="64" height="38" rx="4" fill="url(#g-fireiron)"/>
+              <rect x="32" y="78" width="64" height="38" rx="4" fill="url(#lit)"/>
+              <rect x="32" y="78" width="64" height="38" rx="4" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              <rect x="32" y="78" width="64" height="5" rx="2" fill="oklch(0.66 0.2 40)"/>
+              <!-- The slots are cuts that show the fire inside. -->
+              <g id="fire-slots" fill="url(#g-fire-core)"><rect x="44" y="89" width="7" height="19" rx="1"/><rect x="60.5" y="89" width="7" height="19" rx="1"/><rect x="77" y="89" width="7" height="19" rx="1"/></g>
+            </svg>
+          </span>
+          <span class="name">Fire</span>
+        </a>
+      </li>
+      
+      
+      
+    </ul>
+    <script>
+      // Toys fade in through grain as they enter the view, a few frames apart.
+      (() => {
+        if (!('IntersectionObserver' in window)) return;
+        document.documentElement.classList.add('js-reveal');
+        let batch = 0, batchT = 0;
+        const io = new IntersectionObserver(entries => {
+          entries.forEach(e => {
+            if (!e.isIntersecting) return;
+            clearTimeout(batchT);
+            e.target.style.setProperty('--d', `${(batch++ % 12) * 0.06}s`);
+            e.target.classList.add('is-in');
+            io.unobserve(e.target);
+          });
+          batchT = setTimeout(() => { batch = 0; }, 120);
+        }, { rootMargin: '0px 0px -6% 0px' });
+        const watch = () => document.querySelectorAll('.toy').forEach(t => io.observe(t));
+        document.readyState === 'loading' ? addEventListener('DOMContentLoaded', watch) : watch();
+      })();
+    </script>
+    <script>
+      // The main shelf deals its toys in a fresh order on every load.
+      // Toys Tom signed off (data-done) sit apart on their own shelf up top.
+      (() => {
+        const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
+        for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+        const done = items.filter(li => li.hasAttribute('data-done'));
+        shelf.append(...items.filter(li => !done.includes(li)));
+        if (!done.length) return;
+        const top = document.createElement('ul');
+        top.className = 'shelf shelf--done';
+        top.setAttribute('aria-label', 'Signed off');
+        top.append(...done);
+        shelf.before(top);
+      })();
+    </script>
+    <section class="lab" aria-label="Lab">
+      <a class="lab-back" href="./"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>Toys</a>
+      <ul class="shelf" aria-label="Lab">
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+      </ul>
+    </section>
+  </main>
+  <footer class="credit">
+    <span>yet another onnøzelaer concoction · made with AI</span>
+    <!-- The version: minor steps once per signed-off toy; the codename is that toy's Dutch name. -->
+    <span class="ver-tag" title="Version 0.3.0, codename Knalveld (Pop field, the latest toy signed off)"><b>v0.3</b><i>Knalveld</i></span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js"></script>
+<script>
+(() => {
+  let gsap, MorphSVGPlugin; try { ({ gsap, MorphSVGPlugin } = window); } catch (e) { window.__miss?.(e, 2); }
+  try { gsap.registerPlugin(MorphSVGPlugin);
+} catch (e) { window.__miss?.(e, 3); }
+  // Menu motion runs at 30 fps, like the intros; toys keep their own rate.
+  try { gsap.ticker.fps(30);
+} catch (e) { window.__miss?.(e, 5); }
+  let NS; try { (NS = 'http://www.w3.org/2000/svg'); } catch (e) { window.__miss?.(e, 6); }
+  let TAU; try { (TAU = Math.PI * 2); } catch (e) { window.__miss?.(e, 7); }
+  let reduce; try { (reduce = matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { window.__miss?.(e, 8); }
+  let el; try { (el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  }); } catch (e) { window.__miss?.(e, 9); }
+  let d; try { (d = pts => 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z'); } catch (e) { window.__miss?.(e, 15); }
+  let ring; try { (ring = (n, r, rot = -Math.PI / 2, cx = 64, cy = 64) =>
+    Array.from({ length: n }, (_, k) => [cx + r * Math.cos(rot + (k * TAU) / n), cy + r * Math.sin(rot + (k * TAU) / n)])); } catch (e) { window.__miss?.(e, 16); }
+  let polar; try { (polar = fn => Array.from({ length: 120 }, (_, k) => {
+    const a = (k / 120) * TAU, r = fn(a);
+    return [64 + r * Math.sin(a), 64 - r * Math.cos(a)];
+  })); } catch (e) { window.__miss?.(e, 18); }
+
+
+  // Lab toys have a looping timeline while active and a way back to rest.
+  let toys; try { (toys = {}); } catch (e) { window.__miss?.(e, 25); }
+
+  // Caustic pool: rings spread from two drops; one step out per loop is seamless.
+  let rippleRings; try { (rippleRings = [[48, 54], [86, 82]].flatMap(([x, y]) => Array.from({ length: 6 }, (_, k) => ({ el: el('circle', { cx: x, cy: y, r: 8 + k * 11 }, document.getElementById('ripple-rings')), k })))); } catch (e) { window.__miss?.(e, 28); }
+  let rippleState; try { (rippleState = { o: 0 }); } catch (e) { window.__miss?.(e, 29); }
+  let drawRipple; try { (drawRipple = () => rippleRings.forEach(({ el: c, k }) => c.setAttribute('r', (8 + k * 11 + rippleState.o).toFixed(2)))); } catch (e) { window.__miss?.(e, 30); }
+  try { toys.pool = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(rippleState, { o: 0 }, { o: 11, duration: 1, ease: 'none', onUpdate: drawRipple }),
+    rest: () => gsap.to(rippleState, { o: 0, duration: 0.3, onUpdate: drawRipple, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 31); }
+
+  // Heat putty: the print cools away, then a press warms it back.
+  try { toys.putty = {
+    play: () => gsap.timeline({ repeat: -1, repeatDelay: 0.2 })
+      .to('#putty-print', { opacity: 0.1, duration: 1, ease: 'power1.in' })
+      .to('#putty-blob', { scaleX: 1.05, scaleY: 0.92, svgOrigin: '64 106', duration: 0.16, ease: 'power2.out' })
+      .to('#putty-print', { opacity: 1, duration: 0.35, ease: 'power2.out' }, '<')
+      .to('#putty-blob', { scaleX: 1, scaleY: 1, svgOrigin: '64 106', duration: 0.7, ease: 'elastic.out(1, 0.45)' }, '>'),
+    rest: () => {
+      gsap.to('#putty-print', { opacity: 1, duration: 0.3, overwrite: true });
+      gsap.to('#putty-blob', { scaleX: 1, scaleY: 1, svgOrigin: '64 106', duration: 0.3, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 37); }
+
+  // Oscilloscope: a 3:2 Lissajous trace; hover rolls its phase one full turn.
+  // The beam head rests on a turning point and runs four laps per roll.
+  let scopeTrace; try { (scopeTrace = document.getElementById('scope-trace')); } catch (e) { window.__miss?.(e, 51); }
+let scopeBody; try { (scopeBody = document.getElementById('scope-body')); } catch (e) { window.__miss?.(e, 51); }
+  let scopeHead; try { (scopeHead = document.getElementById('scope-head')); } catch (e) { window.__miss?.(e, 52); }
+let scopeState; try { (scopeState = { q: 0 }); } catch (e) { window.__miss?.(e, 52); }
+  let SCOPE_REST; try { (SCOPE_REST = (Math.PI / 2 - 0.6) / 3); } catch (e) { window.__miss?.(e, 53); }
+  let scopeAt; try { (scopeAt = (t, p) => [64 + 30 * Math.sin(3 * t + p), 64 + 27 * Math.sin(2 * t)]); } catch (e) { window.__miss?.(e, 54); }
+  let drawScope; try { (drawScope = () => {
+    const p = 0.6 + Math.PI * 2 * scopeState.q;
+    let d = '';
+    for (let i = 0; i <= 160; i++) {
+      const [x, y] = scopeAt((i / 160) * Math.PI * 2, p);
+      d += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
+    }
+    scopeTrace.setAttribute('d', d + 'Z');
+    scopeBody.setAttribute('d', d + 'Z');
+    const [hx, hy] = scopeAt(SCOPE_REST + Math.PI * 8 * scopeState.q, p);
+    scopeHead.setAttribute('cx', hx.toFixed(1)); scopeHead.setAttribute('cy', hy.toFixed(1));
+  }); } catch (e) { window.__miss?.(e, 55); }
+  try { drawScope();
+} catch (e) { window.__miss?.(e, 67); }
+  try { toys.scope = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(scopeState, { q: 0 }, { q: 1, duration: 4, ease: 'none', onUpdate: drawScope }),
+    rest: () => gsap.to(scopeState, { q: 0, duration: 0.4, onUpdate: drawScope, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 68); }
+
+  // Beach walker: three leg pairs on the true linkage; the flag flutters with the gait.
+  let WJ; try { (WJ = { a: 38, b: 41.5, c: 39.3, d: 40.1, e: 55.8, f: 39.4, g: 36.7, h: 65.7, i: 49, j: 50, k: 61.9, l: 7.8, m: 15 }); } catch (e) { window.__miss?.(e, 74); }
+  let wf; try { (wf = n => (+n).toFixed(1)); } catch (e) { window.__miss?.(e, 75); }
+let wpt; try { (wpt = p => wf(p[0]) + ' ' + wf(p[1])); } catch (e) { window.__miss?.(e, 75); }
+  // Two circles meet; pick chooses which of the two points.
+  let wmeet; try { (wmeet = (p, r1, q, r2, pick) => {
+    const dx = q[0] - p[0], dy = q[1] - p[1], D = Math.hypot(dx, dy);
+    const A = (r1 * r1 - r2 * r2 + D * D) / (2 * D), H = Math.sqrt(Math.max(0, r1 * r1 - A * A));
+    const mx = p[0] + (A * dx) / D, my = p[1] + (A * dy) / D;
+    const s1 = [mx - (H * dy) / D, my + (H * dx) / D], s2 = [mx + (H * dy) / D, my - (H * dx) / D];
+    return pick(s1, s2) ? s1 : s2;
+  }); } catch (e) { window.__miss?.(e, 77); }
+  let wUp; try { (wUp = (p, q) => p[1] > q[1]); } catch (e) { window.__miss?.(e, 84); }
+let wDown; try { (wDown = (p, q) => p[1] < q[1]); } catch (e) { window.__miss?.(e, 84); }
+let wLeft; try { (wLeft = (p, q) => p[0] < q[0]); } catch (e) { window.__miss?.(e, 84); }
+  // One leg for crank angle th; y points up.
+  let wLeg; try { (wLeg = th => {
+    const O = [0, 0], B = [-WJ.a, -WJ.l], M = [WJ.m * Math.cos(th), WJ.m * Math.sin(th)];
+    const C = wmeet(M, WJ.j, B, WJ.b, wUp), D = wmeet(B, WJ.d, C, WJ.e, wLeft), E = wmeet(M, WJ.k, B, WJ.c, wDown);
+    const F = wmeet(D, WJ.f, E, WJ.g, wLeft), G = wmeet(F, WJ.h, E, WJ.i, wDown);
+    return { O, B, M, C, D, E, F, G };
+  }); } catch (e) { window.__miss?.(e, 86); }
+  let W_S; try { (W_S = 0.32); } catch (e) { window.__miss?.(e, 92); }
+let W_AY; try { (W_AY = 59); } catch (e) { window.__miss?.(e, 92); }
+let W_MODS; try { (W_MODS = [[30, 0], [64, TAU / 3], [98, (2 * TAU) / 3]]); } catch (e) { window.__miss?.(e, 92); }
+  let walkerBars; try { (walkerBars = document.getElementById('walker-bars')); } catch (e) { window.__miss?.(e, 93); }
+let walkerPlates; try { (walkerPlates = document.getElementById('walker-plates')); } catch (e) { window.__miss?.(e, 93); }
+  let walkerBody; try { (walkerBody = document.getElementById('walker-body')); } catch (e) { window.__miss?.(e, 94); }
+let walkerFlag; try { (walkerFlag = document.getElementById('walker-flag')); } catch (e) { window.__miss?.(e, 94); }
+  let walkState; try { (walkState = { th: 0 }); } catch (e) { window.__miss?.(e, 95); }
+  let drawWalk; try { (drawWalk = () => {
+    let bars = '', plates = '';
+    const xs = [];
+    W_MODS.forEach(([ax, ph]) => {
+      // The mirror leg shares the crank pin.
+      const Lw = wLeg(walkState.th + ph), R0 = wLeg(Math.PI - walkState.th - ph), Rw = {};
+      for (const k in R0) Rw[k] = [-R0[k][0], R0[k][1]];
+      [Lw, Rw].forEach(P => {
+        const L = {};
+        for (const k in P) L[k] = [ax + P[k][0] * W_S, W_AY - P[k][1] * W_S];
+        bars += `M${wpt(L.O)}L${wpt(L.M)}M${wpt(L.M)}L${wpt(L.C)}M${wpt(L.M)}L${wpt(L.E)}M${wpt(L.B)}L${wpt(L.E)}M${wpt(L.D)}L${wpt(L.F)}`;
+        plates += `M${wpt(L.B)}L${wpt(L.C)}L${wpt(L.D)}ZM${wpt(L.E)}L${wpt(L.F)}L${wpt(L.G)}Z`;
+        xs.push(L.B[0]);
+      });
+    });
+    walkerBars.setAttribute('d', bars); walkerPlates.setAttribute('d', plates);
+    walkerBody.setAttribute('d', `M${wf(Math.min(...xs))} ${wf(W_AY + WJ.l * W_S)}L${wf(Math.max(...xs))} ${wf(W_AY + WJ.l * W_S)}`);
+    const k = Math.sin(walkState.th * 2) * 2.2, y0 = W_AY - 38;
+    walkerFlag.setAttribute('d', `M64 ${y0}C72 ${wf(y0 - 2 + k)} 80 ${wf(y0 + 3 - k)} 90 ${wf(y0 + 2 + k * 0.6)}L64 ${y0 + 9}Z`);
+  }); } catch (e) { window.__miss?.(e, 96); }
+  try { drawWalk();
+} catch (e) { window.__miss?.(e, 116); }
+  try { toys.walker = {
+    play: () => gsap.timeline({ repeat: -1, onUpdate: drawWalk }).fromTo(walkState, { th: 0 }, { th: TAU, duration: 1.8, ease: 'none' }),
+    // The crank settles to the nearer rest so the legs never spin backwards.
+    rest: () => gsap.to(walkState, { th: walkState.th > Math.PI ? TAU : 0, duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: drawWalk, onComplete() { walkState.th = 0; drawWalk(); } }),
+  };
+} catch (e) { window.__miss?.(e, 117); }
+
+  // Zen sand: grooves ring the stone; on hover each groove travels out one step.
+  let grooves; try { (grooves = document.getElementById('sand-grooves')); } catch (e) { window.__miss?.(e, 124); }
+  let SAND_STEP; try { (SAND_STEP = 9); } catch (e) { window.__miss?.(e, 125); }
+  let rings; try { (rings = Array.from({ length: 9 }, (_, k) => el('circle', { cx: 58, cy: 60, r: 20 + k * SAND_STEP }, grooves))); } catch (e) { window.__miss?.(e, 126); }
+  let sandState; try { (sandState = { o: 0 }); } catch (e) { window.__miss?.(e, 127); }
+  let drawSand; try { (drawSand = () => rings.forEach((r, k) => r.setAttribute('r', (20 + k * SAND_STEP + sandState.o).toFixed(2)))); } catch (e) { window.__miss?.(e, 128); }
+  try { toys.sand = {
+    // One step out lands every ring on the next, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(sandState, { o: 0 }, { o: SAND_STEP, duration: 1.2, ease: 'none', onUpdate: drawSand }),
+    rest: () => gsap.to(sandState, { o: 0, duration: 0.3, onUpdate: drawSand, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 129); }
+
+
+  // Three angular tongues snap between poses; slots flicker, sparks lift.
+  let fireOuter; try { (fireOuter = document.getElementById('fire-outer')); } catch (e) { window.__miss?.(e, 137); }
+let fireInner; try { (fireInner = document.getElementById('fire-inner')); } catch (e) { window.__miss?.(e, 137); }
+  let fireSlots; try { (fireSlots = document.getElementById('fire-slots')); } catch (e) { window.__miss?.(e, 138); }
+let fireSparks; try { (fireSparks = [...document.querySelectorAll('#fire-sparks rect')]); } catch (e) { window.__miss?.(e, 138); }
+  // A pose is the left tip, left notch, centre tip, right notch and right tip.
+  let fireTongues; try { (fireTongues = p => `M34 82L34 60L${p[0]}L${p[1]}L${p[2]}L${p[3]}L${p[4]}L94 60L94 82Z`); } catch (e) { window.__miss?.(e, 140); }
+  let fireCore; try { (fireCore = p => `M46 82L46 68L${p[0]}L${p[1]}L${p[2]}L${p[3]}L${p[4]}L82 68L82 82Z`); } catch (e) { window.__miss?.(e, 141); }
+  let firePoses; try { (firePoses = [
+    [['40 28', '52 50', '64 4', '75 46', '88 20'], ['52 52', '58 62', '64 30', '70 60', '77 48']],
+    [['36 34', '50 48', '58 8', '72 42', '90 28'], ['50 56', '57 60', '60 34', '69 58', '78 52']],
+    [['44 22', '54 52', '70 6', '77 48', '86 30'], ['54 50', '60 62', '68 32', '72 60', '76 54']],
+  ].map(([o, i]) => [fireTongues(o), fireCore(i)])); } catch (e) { window.__miss?.(e, 142); }
+  try { fireOuter.setAttribute('d', firePoses[0][0]);
+} catch (e) { window.__miss?.(e, 147); }
+  try { fireInner.setAttribute('d', firePoses[0][1]);
+} catch (e) { window.__miss?.(e, 148); }
+  try { gsap.set(fireSparks, { opacity: 0 });
+} catch (e) { window.__miss?.(e, 149); }
+  try { toys.fire = {
+    play() {
+      const tl = gsap.timeline({ repeat: -1 });
+      [1, 2, 0].forEach(k => tl
+        .to(fireOuter, { morphSVG: firePoses[k][0], duration: 0.22, ease: 'steps(3)' })
+        .to(fireInner, { morphSVG: firePoses[k][1], duration: 0.22, ease: 'steps(3)' }, '<'));
+      tl.to(fireSlots, { opacity: 0.55, duration: 0.11, yoyo: true, repeat: 5, ease: 'steps(1)' }, 0);
+      fireSparks.forEach((s, i) => tl.fromTo(s, { y: 0, opacity: 1 }, { y: -18, opacity: 0, duration: 0.5, ease: 'power1.out' }, i * 0.22));
+      return tl;
+    },
+    rest() {
+      gsap.to(fireOuter, { morphSVG: firePoses[0][0], duration: 0.3 });
+      gsap.to(fireInner, { morphSVG: firePoses[0][1], duration: 0.3 });
+      gsap.to(fireSlots, { opacity: 1, duration: 0.2 });
+      gsap.to(fireSparks, { opacity: 0, y: 0, duration: 0.2 });
+    },
+  };
+} catch (e) { window.__miss?.(e, 150); }
+
+  let slime; try { (slime = document.getElementById('slime-body')); } catch (e) { window.__miss?.(e, 168); }
+  try { toys.slime = {
+    // The blob squashes and springs back like putty.
+    play() {
+      return gsap.timeline({ repeat: -1, repeatDelay: 0.2 })
+        .to(slime, { scaleX: 1.12, scaleY: 0.86, transformOrigin: '50% 82%', duration: 0.35, ease: 'power2.out' })
+        .to(slime, { scaleX: 0.94, scaleY: 1.08, duration: 0.3, ease: 'power2.inOut' })
+        .to(slime, { scaleX: 1, scaleY: 1, duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+    },
+    rest() { gsap.to(slime, { scaleX: 1, scaleY: 1, duration: 0.4, overwrite: true }); },
+  };
+} catch (e) { window.__miss?.(e, 169); }
+
+  let cubeTop; try { (cubeTop = document.getElementById('cube-top')); } catch (e) { window.__miss?.(e, 180); }
+let cubeAll; try { (cubeAll = document.getElementById('cube-all')); } catch (e) { window.__miss?.(e, 180); }
+  try { toys.cube = {
+    // The top half folds down, then the cube turns a quarter.
+    play() {
+      return gsap.timeline({ repeat: -1 })
+        .to(cubeTop, { scaleY: -1, transformOrigin: '50% 100%', duration: 0.45, ease: 'power2.inOut' })
+        .to(cubeTop, { scaleY: 1, duration: 0.45, ease: 'power2.inOut' })
+        .to(cubeAll, { rotation: '+=90', svgOrigin: '64 64', duration: 0.4, ease: 'back.out(2)' });
+    },
+    rest() { gsap.to(cubeTop, { scaleY: 1, duration: 0.3, overwrite: true }); },
+  };
+} catch (e) { window.__miss?.(e, 181); }
+
+  // Magnet balls: a hex pack of nineteen; on hover it bursts apart and snaps back.
+  let magRing; try { (magRing = document.getElementById('magnet-balls')); } catch (e) { window.__miss?.(e, 193); }
+  let MAG; try { (MAG = [[0, 0]]); } catch (e) { window.__miss?.(e, 194); }
+  try { for (let ring = 1; ring <= 2; ring++) { try { for (let side = 0; side < 6; side++) for (let k = 0; k < ring; k++) {
+    const a = (side * TAU) / 6, b = ((side + 2) * TAU) / 6;
+    MAG.push([ring * Math.cos(a) + k * Math.cos(b), ring * Math.sin(a) + k * Math.sin(b)]);
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 195); }
+  let magBalls; try { (magBalls = MAG.map(([u, v]) => {
+    const x = 64 + u * 21, y = 64 + v * 21, g = el('g', {}, magRing);
+    el('circle', { cx: x, cy: y, r: 11.5, style: 'fill: var(--bg)' }, g);
+    el('circle', { cx: x, cy: y, r: 9.4, fill: 'url(#g-magball)' }, g);
+    el('circle', { cx: x - 3.2, cy: y - 3.6, r: 2.2, fill: 'oklch(0.98 0.03 40 / 0.9)' }, g);
+    return { g, u, v };
+  })); } catch (e) { window.__miss?.(e, 199); }
+  try { toys.magnet = {
+    play() {
+      // Balls fly out by their distance from the centre, then the pack snaps shut.
+      return gsap.timeline({ repeat: -1, repeatDelay: 0.25 })
+        .to(magBalls.map(b => b.g), { x: i => magBalls[i].u * 7, y: i => magBalls[i].v * 7, duration: 0.35, ease: 'power2.out' })
+        .to(magBalls.map(b => b.g), { x: 0, y: 0, duration: 0.55, ease: 'elastic.out(1.1, 0.35)', stagger: { each: 0.015, from: 'edges' } });
+    },
+    rest: () => gsap.to(magBalls.map(b => b.g), { x: 0, y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 206); }
+
+
+
+  /* ---------- toys ten onwards ---------- */
+  let $; try { ($ = id => document.getElementById(id)); } catch (e) { window.__miss?.(e, 219); }
+  let loop; try { (loop = (o = {}) => gsap.timeline({ repeat: -1, ...o })); } catch (e) { window.__miss?.(e, 220); }
+
+  // Pendulum wave: an isometric rail block; the bobs swing out of its side.
+  // Bob k makes 8 + k swings in PEND_T, so the loop is seamless.
+  try { {
+    const N = 6, PEND_T = 9, AMP = 0.42, S = 96, OX = 20, OY = 20, F = k => (8 + k) / PEND_T;
+    const r2 = n => +n.toFixed(2);
+    const P = (x, y, z) => [OX + (x - y) * 0.866 * S, OY + (x + y) * 0.5 * S - z * S];
+    const XK = k => 0.08 + 0.168 * k, LK = k => 0.8 - 0.075 * k, RB = 6.6, HUE = k => 28 + (k * 288) / (N - 1);
+    const x0 = -0.04, x1 = 1.04, y0 = -0.05, y1 = 0.05, z1 = 0.1;
+    const poly = pts => 'M' + pts.map(p => `${r2(p[0])} ${r2(p[1])}`).join('L') + 'Z';
+    // Faces: top, long side, end cap.
+    const FACES = [
+      [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+      [[x0, y1, z1], [x1, y1, z1], [x1, y1, 0], [x0, y1, 0]],
+      [[x1, y0, z1], [x1, y1, z1], [x1, y1, 0], [x1, y0, 0]],
+    ].map(q => poly(q.map(p => P(...p))));
+    const bobAt = (k, a) => P(XK(k), LK(k) * Math.sin(a), -LK(k) * Math.cos(a));
+    const svg = $('pend-art'), defs = el('defs', {}, svg);
+    const cords = el('g', { stroke: 'oklch(0.72 0.01 260)', 'stroke-width': 1.2 }, svg), bobsG = el('g', {}, svg);
+    ['oklch(0.82 0.015 250)', 'oklch(0.6 0.02 255)', 'oklch(0.44 0.02 258)'].forEach((c, i) => el('path', { d: FACES[i], style: `fill: ${c}; stroke: var(--bg)`, 'stroke-width': 1.2, 'stroke-linejoin': 'round' }, svg));
+    // A cut line runs along the side, under the top edge.
+    el('path', { d: `M${P(x0, y1, z1 * 0.45).map(r2).join(' ')}L${P(x1, y1, z1 * 0.45).map(r2).join(' ')}`, style: 'stroke: var(--bg)', 'stroke-width': 1.4 }, svg);
+    const B = Array.from({ length: N }, (_, k) => {
+      const g = el('g', {}, bobsG), grad = el('radialGradient', { id: `g-pend${k}`, cx: 0.35, cy: 0.3, r: 0.75 }, defs);
+      [[0, 0.95, 0.06], [0.45, 0.74, 0.17], [1, 0.45, 0.13]].forEach(([o, l, c]) => el('stop', { offset: o, 'stop-color': `oklch(${l} ${c} ${HUE(k)})` }, grad));
+      el('circle', { r: RB, fill: `url(#g-pend${k})` }, g);
+      el('path', { d: `M${-RB + 0.6} 0.8H${RB - 0.6}`, stroke: `oklch(0.3 0.08 ${HUE(k)})`, 'stroke-width': 1.6 }, g);
+      return { a: 0, g, s: el('line', {}, cords), top: P(XK(k), 0, 0) };
+    });
+    let order = '';
+    const draw = () => {
+      B.forEach((b, k) => {
+        const p = bobAt(k, b.a);
+        b.g.setAttribute('transform', `translate(${r2(p[0])} ${r2(p[1])})`);
+        b.s.setAttribute('x1', r2(b.top[0])); b.s.setAttribute('y1', r2(b.top[1]));
+        b.s.setAttribute('x2', r2(p[0])); b.s.setAttribute('y2', r2(p[1]));
+        b.depth = XK(k) + LK(k) * Math.sin(b.a);
+      });
+      // Nearer bobs draw last.
+      const sorted = B.slice().sort((p, q) => p.depth - q.depth), key = sorted.map(b => B.indexOf(b)).join();
+      if (key !== order) { order = key; sorted.forEach(b => bobsG.appendChild(b.g)); }
+    };
+    draw();
+    const st = { t: 0 };
+    toys.pendulum = {
+      play: () => gsap.timeline({ repeat: -1 }).fromTo(st, { t: 0 }, { t: PEND_T, duration: PEND_T, ease: 'none', onUpdate() { B.forEach((b, k) => (b.a = AMP * Math.sin(TAU * F(k) * st.t))); draw(); } }),
+      rest: () => B.forEach(b => gsap.to(b, { a: 0, duration: 0.6, ease: 'power2.out', overwrite: true, onUpdate: draw })),
+    };
+  }
+} catch (e) { window.__miss?.(e, 224); }
+
+
+  let strings; try { (strings = Array.from({ length: 6 }, (_, k) => {
+    const x1 = 31 + k * 13, y1 = 27 + k * 2, x2 = 26 + k * 15, y2 = 104;
+    const s = { b: 0, p: el('path', { style: `stroke: oklch(0.76 0.15 ${10 + k * 60})` }, $('harp-strings')) };
+    s.draw = () => s.p.setAttribute('d', `M${x1} ${y1}Q${(x1 + x2) / 2 + s.b} ${(y1 + y2) / 2} ${x2} ${y2}`);
+    s.draw();
+    return s;
+  })); } catch (e) { window.__miss?.(e, 272); }
+  try { toys.harp = {
+    // A strum runs across the strings and each one rings down.
+    play() {
+      const t = loop({ repeatDelay: 0.3 });
+      strings.forEach((s, k) => t.fromTo(s, { b: 7 }, { b: 0, duration: 1.1, ease: 'elastic.out(1.4, 0.08)', onUpdate: s.draw }, k * 0.08));
+      return t;
+    },
+    rest: () => strings.forEach(s => gsap.to(s, { b: 0, duration: 0.3, onUpdate: s.draw, overwrite: true })),
+  };
+} catch (e) { window.__miss?.(e, 279); }
+
+  try { toys.glass = {
+    // Shards drift out from the impact, the outer ones furthest, then close up.
+    play() {
+      const shards = [...document.querySelectorAll('#glass .shard')];
+      return loop({ yoyo: true, repeatDelay: 0.2 }).to(shards, {
+        x: i => Math.cos(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+        y: i => Math.sin(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+        duration: 0.6, ease: 'power3.out',
+      });
+    },
+    rest: () => gsap.to('#glass .shard', { x: 0, y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 289); }
+
+
+  // Tesseract: sixteen corners of a 4D cube, turned in the XW plane and projected twice.
+  let TV; try { (TV = Array.from({ length: 16 }, (_, k) => [0, 1, 2, 3].map(b => ((k >> b) & 1 ? 1 : -1)))); } catch (e) { window.__miss?.(e, 304); }
+  let TE; try { (TE = []); } catch (e) { window.__miss?.(e, 305); }
+  try { TV.forEach((_, a) => [1, 2, 4, 8].forEach(bit => { if (!(a & bit)) TE.push([a, a | bit]); }));
+} catch (e) { window.__miss?.(e, 306); }
+  let tLines; try { (tLines = TE.map(() => el('line', {}, $('tess-edges')))); } catch (e) { window.__miss?.(e, 307); }
+  let tess; try { (tess = { a: 0.35 }); } catch (e) { window.__miss?.(e, 308); }
+  let drawTess; try { (drawTess = () => {
+    const c = Math.cos(tess.a), sn = Math.sin(tess.a), tilt = 0.5;
+    const P = TV.map(([x, y, z, w]) => {
+      // Turn in XW, then a fixed tilt in YZ shows the depth.
+      const x2 = x * c - w * sn, w2 = x * sn + w * c;
+      const y2 = y * Math.cos(tilt) - z * Math.sin(tilt), z2 = y * Math.sin(tilt) + z * Math.cos(tilt);
+      const k4 = 1 / (2.4 - w2), X = x2 * k4, Y = y2 * k4, Z = z2 * k4;
+      const k3 = 1 / (2.8 - Z * 0.9);
+      return [64 + X * k3 * 98, 64 + Y * k3 * 98, w2];
+    });
+    TE.forEach(([a, b], i) => {
+      const [x1, y1, wa] = P[a], [x2, y2, wb] = P[b], w = (wa + wb) / 2;
+      // Near edges in W run cyan and thick; far ones magenta and thin.
+      const t = (w + 1.42) / 2.84;
+      const l = tLines[i];
+      l.setAttribute('x1', x1.toFixed(1)); l.setAttribute('y1', y1.toFixed(1));
+      l.setAttribute('x2', x2.toFixed(1)); l.setAttribute('y2', y2.toFixed(1));
+      l.setAttribute('stroke', `oklch(${(0.66 + 0.2 * t).toFixed(3)} ${(0.2 - 0.06 * t).toFixed(3)} ${Math.round(340 - 145 * t)})`);
+      l.setAttribute('stroke-width', (1.6 + 2.6 * t).toFixed(2));
+    });
+  }); } catch (e) { window.__miss?.(e, 309); }
+  try { drawTess();
+} catch (e) { window.__miss?.(e, 330); }
+  try { toys.tesseract = {
+    // A quarter turn in XW lands every corner on another, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).to(tess, { a: '+=' + Math.PI / 2, duration: 2.6, ease: 'none', onUpdate: drawTess }),
+    rest: () => gsap.to(tess, { a: 0.35 + Math.round((tess.a - 0.35) / (Math.PI / 2)) * (Math.PI / 2), duration: 0.4, onUpdate: drawTess, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 331); }
+
+
+  // Soap cutting: a cleaver sweeps the middle cut; the cubes pop free in a diagonal wave.
+  let soapCubes; try { (soapCubes = [...document.querySelectorAll('#soap .soap-cube')]); } catch (e) { window.__miss?.(e, 339); }
+let soapBlade; try { (soapBlade = document.getElementById('soap-blade')); } catch (e) { window.__miss?.(e, 339); }
+  try { toys.soap = {
+    play: () => loop({ repeatDelay: 0.4 })
+      .fromTo(soapBlade, { x: -56, opacity: 1 }, { x: 134, duration: 0.5, ease: 'power2.in' })
+      .to(soapCubes, { scale: 1.14, y: -4, transformOrigin: '50% 50%', duration: 0.16, ease: 'power2.out', stagger: i => +soapCubes[i].dataset.k * 0.06 }, 0.22)
+      .to(soapCubes, { scale: 1, y: 0, duration: 0.45, ease: 'back.out(3)', stagger: i => +soapCubes[i].dataset.k * 0.06 }, 0.38)
+      .set(soapBlade, { opacity: 0 }),
+    rest: () => { gsap.to(soapCubes, { scale: 1, y: 0, duration: 0.3, overwrite: true }); gsap.set(soapBlade, { opacity: 0, x: -56 }); },
+  };
+} catch (e) { window.__miss?.(e, 340); }
+
+
+  let slider; try { (slider = $('zip-slider')); } catch (e) { window.__miss?.(e, 350); }
+  try { toys.zipper = {
+    play: () => loop({ yoyo: true })
+      .fromTo(slider, { x: 0 }, { x: -40, duration: 0.6, ease: 'power2.inOut' })
+      .to(slider, { x: 34, duration: 1, ease: 'power2.inOut' }),
+    rest: () => gsap.to(slider, { x: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 351); }
+
+  let bubbleSet; try { (bubbleSet = [...$('bubble-set').children]); } catch (e) { window.__miss?.(e, 358); }
+  try { toys.bubbles = {
+    // Bubbles rise and fade, then drift back.
+    play: () => loop().fromTo(bubbleSet, { y: 0, opacity: 1 }, { y: -14, opacity: 0.2, duration: 1.4, ease: 'sine.inOut', stagger: 0.18, yoyo: true, repeat: 1 }),
+    rest: () => gsap.to(bubbleSet, { y: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 359); }
+
+  let drops; try { (drops = [[38, 34], [58, 48], [82, 30], [94, 58], [46, 74], [74, 80]].map(([x, y]) => el('ellipse', { cx: x, cy: y, rx: 2.6, ry: 3.6 }, $('rain-drops')))); } catch (e) { window.__miss?.(e, 365); }
+  try { toys.rain = {
+    // Drops run down the pane one after another.
+    play: () => gsap.fromTo(drops, { y: 0, opacity: 1 }, { y: 22, opacity: 0, duration: 1.1, ease: 'power1.in', stagger: { each: 0.15, repeat: -1 } }),
+    rest: () => gsap.to(drops, { y: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 366); }
+
+  let topBody; try { (topBody = $('top-body')); } catch (e) { window.__miss?.(e, 372); }
+  try { toys.top = {
+    // The top wobbles about its tip.
+    play: () => loop({ yoyo: true }).fromTo(topBody, { rotation: -9 }, { rotation: 9, svgOrigin: '64 108', duration: 0.45, ease: 'sine.inOut' }),
+    rest: () => gsap.to(topBody, { rotation: 0, svgOrigin: '64 108', duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 373); }
+
+  let arcs; try { (arcs = $('plasma-arcs')); } catch (e) { window.__miss?.(e, 379); }
+let arcPaths; try { (arcPaths = [...arcs.children]); } catch (e) { window.__miss?.(e, 379); }
+  try { toys.plasma = {
+    // Filaments turn about the core and flicker.
+    play: () => loop()
+      .to(arcs, { rotation: 360, svgOrigin: '64 64', duration: 4, ease: 'none' })
+      .to(arcPaths, { opacity: 0.3, duration: 0.1, yoyo: true, repeat: 39, stagger: { each: 0.07, from: 'random' } }, 0),
+    rest() {
+      gsap.to(arcs, { rotation: 0, svgOrigin: '64 64', duration: 0.4, overwrite: true });
+      gsap.to(arcPaths, { opacity: 1, duration: 0.2, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 380); }
+
+  let swirl; try { (swirl = [...$('marble-swirl').children]); } catch (e) { window.__miss?.(e, 391); }
+  try { toys.marble = {
+    // The comb drags each ink line in turn.
+    play: () => loop({ yoyo: true }).to(swirl, { x: 6, skewX: -8, duration: 0.9, ease: 'sine.inOut', stagger: 0.15 }),
+    rest: () => gsap.to(swirl, { x: 0, skewX: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 392); }
+
+  let blobs; try { (blobs = [...$('lava-blobs').children]); } catch (e) { window.__miss?.(e, 398); }
+  try { toys.lava = {
+    // Warm wax rises while cool wax sinks.
+    play: () => loop({ yoyo: true })
+      .to(blobs[0], { y: -30, scaleY: 1.15, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.inOut' }, 0)
+      .to(blobs[1], { y: 20, duration: 2.2, ease: 'sine.inOut' }, 0)
+      .to(blobs[2], { y: 30, scale: 1.3, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.inOut' }, 0),
+    rest: () => gsap.to(blobs, { y: 0, scale: 1, scaleY: 1, duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 399); }
+
+  // Grains sit on one nodal figure and travel to another.
+  let along; try { (along = (n, f) => Array.from({ length: n }, (_, k) => f((k + 0.5) / n))); } catch (e) { window.__miss?.(e, 409); }
+  // Chladni plate: 640 grains move to the next figure as the pointer tunes across.
+  try { {
+    const PI = Math.PI;
+    const smooth = t => t * t * (3 - 2 * t);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const mix = (a, b, t) => a + (b - a) * t;
+    // Seeded noise keeps every load the same.
+    const rng = seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    // A free square plate: nodal lines are the zeros of this mode sum.
+    const mode = (n, m) => (u, v) => Math.cos(n * PI * u) * Math.cos(m * PI * v) + Math.cos(m * PI * u) * Math.cos(n * PI * v);
+    const MODES = [mode(1, 3), mode(2, 4), mode(3, 5), mode(4, 6), mode(3, 7)];
+    const REST = 1, GRAINS = 640;
+    // Grains settle where the plate is still; each set builds on first use.
+    const sets = [];
+    const grainsOf = mi => sets[mi] || (sets[mi] = (() => {
+      const f = MODES[mi], r = rng(17 + mi * 101), out = [];
+      let guard = 0;
+      while (out.length < GRAINS && guard++ < 400000) {
+        const u = r(), v = r(), e = 1e-3;
+        const gx = (f(u + e, v) - f(u - e, v)) / (2 * e), gy = (f(u, v + e) - f(u, v - e)) / (2 * e);
+        if (Math.abs(f(u, v)) / (Math.hypot(gx, gy) + 1e-6) < 0.011 * (0.4 + r())) out.push([12 + u * 104, 12 + v * 104]);
+      }
+      // Grains sort by angle, so a mode change swirls and does not cross.
+      return out.sort((p, q) => Math.atan2(p[1] - 64, p[0] - 64) - Math.atan2(q[1] - 64, q[0] - 64));
+    })());
+    const sand = document.getElementById('chladni-sand');
+    const cur = grainsOf(REST).map(p => p.slice());
+    const draw = () => { let d = ''; for (const [x, y] of cur) d += `M${x.toFixed(1)} ${y.toFixed(1)}h1.5v1.5h-1.5z`; sand.setAttribute('d', d); };
+    draw();
+    const lag = cur.map((_, k) => ((k * 7919) % 97) / 97 * 0.3);
+    const prox = { t: 0 };
+    let idx = REST, from = null, to = null;
+    const migrate = k => {
+      if (k === idx) return;
+      idx = k;
+      from = cur.map(p => p.slice());
+      to = grainsOf(k);
+      prox.t = 0;
+      gsap.to(prox, { t: 1, duration: 0.95, ease: 'none', overwrite: true, onUpdate() {
+        for (let i = 0; i < cur.length; i++) {
+          const s = smooth(clamp((prox.t - lag[i]) / 0.7, 0, 1));
+          cur[i][0] = mix(from[i][0], to[i][0], s);
+          cur[i][1] = mix(from[i][1], to[i][1], s);
+        }
+        draw();
+      } });
+    };
+    // The pointer's x picks one of five figures, low on the left.
+    const pick = p => migrate(clamp(Math.floor(((p[0] - 9) / 110) * MODES.length), 0, MODES.length - 1));
+    toys.chladni = { enter: p => (p ? pick(p) : migrate(3)), move: p => p && pick(p), leave: () => migrate(REST) };
+  }
+} catch (e) { window.__miss?.(e, 411); }
+
+
+
+  // Each title letter rests askew and has its own fidget.
+  let letters; try { (letters = [...document.querySelectorAll('#title .l')]); } catch (e) { window.__miss?.(e, 465); }
+  let REST; try { (REST = [[-8, 2], [6, -4], [-3, 3], [4, -2], [-5, 4], [7, -5], [-4, 1], [3, -3]]); } catch (e) { window.__miss?.(e, 466); }
+  let weights; try { (weights = letters.map(l => +l.style.getPropertyValue('--w'))); } catch (e) { window.__miss?.(e, 467); }
+  try { letters.forEach((l, i) => gsap.set(l, { rotation: REST[i][0], y: REST[i][1], transformOrigin: '50% 70%', '--p': 0 }));
+} catch (e) { window.__miss?.(e, 468); }
+  let hop; try { (hop = (l, [r, y], h) => gsap.timeline()
+    .to(l, { y: y - h, duration: 0.22, ease: 'power2.out' })
+    .to(l, { y, duration: 0.75, ease: 'bounce.out' })); } catch (e) { window.__miss?.(e, 469); }
+  let moves; try { (moves = [
+    // S spins once.
+    l => gsap.timeline().to(l, { rotation: '+=360', duration: 0.9, ease: 'power3.out' }),
+    // t wobbles on its foot.
+    (l, [r]) => gsap.timeline()
+      .to(l, { rotation: r + 18, duration: 0.12, ease: 'power2.out' })
+      .to(l, { rotation: r, duration: 1.1, ease: 'elastic.out(1.2, 0.25)' }),
+    (l, rest) => hop(l, rest, 22),
+    // The first m squashes flat.
+    l => gsap.timeline()
+      .to(l, { scaleY: 0.55, scaleX: 1.3, transformOrigin: '50% 100%', duration: 0.14, ease: 'power2.out' })
+      .to(l, { scaleY: 1, scaleX: 1, duration: 0.9, ease: 'elastic.out(1, 0.3)' }),
+    // The second m swings from its top.
+    (l, [r]) => gsap.timeline()
+      .to(l, { rotation: r + 28, transformOrigin: '50% 0%', duration: 0.18, ease: 'power2.out' })
+      .to(l, { rotation: r, duration: 1.4, ease: 'elastic.out(1, 0.2)' }),
+    (l, rest) => hop(l, rest, 30),
+    // n turns over in depth.
+    l => gsap.timeline().to(l, { rotationY: '+=360', transformPerspective: 400, duration: 0.8, ease: 'power2.inOut' }),
+    // g bounces and leans back.
+    (l, [r, y]) => gsap.timeline()
+      .to(l, { y: y - 14, rotation: r - 12, duration: 0.2, ease: 'power2.out' })
+      .to(l, { y, rotation: r, duration: 0.8, ease: 'elastic.out(1, 0.35)' }),
+  ]); } catch (e) { window.__miss?.(e, 472); }
+  let busy; try { (busy = []); } catch (e) { window.__miss?.(e, 496); }
+  function fidget(i) {
+    if (reduce || busy[i]?.isActive()) return;
+    const l = letters[i], w = weights[i];
+    // Heavy letters deflate; light letters puff up.
+    busy[i] = moves[i](l, REST[i])
+      .to(l, { '--w': w >= 800 ? 400 : 900, duration: 0.15, ease: 'power2.out' }, 0)
+      .to(l, { '--w': w, duration: 0.6, ease: 'power2.inOut' }, 0.15)
+      .to(l, { '--p': 1, duration: 0.12, ease: 'power2.out' }, 0)
+      .to(l, { '--p': 0, duration: 1, ease: 'power2.in' }, 0.3);
+  }
+  try { letters.forEach((l, i) => {
+    l.addEventListener('pointerenter', () => fidget(i));
+    l.addEventListener('pointerdown', () => fidget(i));
+  });
+} catch (e) { window.__miss?.(e, 507); }
+  // A click on the gaps sends a wave through the word.
+  try { $('title').addEventListener('click', e => {
+    if (e.target.classList.contains('l')) return;
+    letters.forEach((l, i) => gsap.delayedCall(i * 0.06, () => fidget(i)));
+  });
+} catch (e) { window.__miss?.(e, 512); }
+  try { if (!reduce) {
+    gsap.from(letters, { y: -48, opacity: 0, duration: 1, ease: 'elastic.out(1, 0.5)', stagger: 0.05 });
+    // Now and then one letter fidgets by itself.
+    const idle = () => {
+      if (!document.hidden) fidget(Math.floor(Math.random() * letters.length));
+      setTimeout(idle, 6000 + Math.random() * 6000);
+    };
+    setTimeout(idle, 4000);
+  }
+} catch (e) { window.__miss?.(e, 516); }
+
+  // Snow drifts down inside the dome after a shake.
+  let globe; try { (globe = $('snow-globe')); } catch (e) { window.__miss?.(e, 527); }
+  let flakes; try { (flakes = Array.from({ length: 12 }, (_, k) => el('circle', {
+    cx: (40 + ((k * 37) % 48)).toFixed(1), cy: (28 + ((k * 23) % 40)).toFixed(1), r: k % 3 ? 1.6 : 2.4,
+  }, $('snow-flakes')))); } catch (e) { window.__miss?.(e, 528); }
+  try { toys.snow = {
+    play: () => loop()
+      .fromTo(globe, { rotation: -6, svgOrigin: '64 104' }, { rotation: 0, svgOrigin: '64 104', duration: 0.6, ease: 'elastic.out(1, 0.4)' })
+      .fromTo(flakes, { y: -10, x: 0, opacity: 0 }, { y: 14, x: 'random(-6, 6)', opacity: 1, duration: 2.2, ease: 'sine.inOut', stagger: 0.12 }, 0),
+    rest() {
+      gsap.to(globe, { rotation: 0, svgOrigin: '64 104', duration: 0.3, overwrite: true });
+      gsap.to(flakes, { y: 0, x: 0, opacity: 1, duration: 0.3, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 531); }
+
+  // Birds gather in one cloud that wheels and breathes.
+  let flockG; try { (flockG = $('flock-birds')); } catch (e) { window.__miss?.(e, 542); }
+  let birds; try { (birds = Array.from({ length: 28 }, (_, k) => {
+    const a = k * 2.4, r = 6 + (k % 7) * 3.4;
+    const x = 64 + r * Math.cos(a) * 1.5, y = 62 + r * Math.sin(a) * 0.8;
+    return el('path', { d: `M${(x - 2.6).toFixed(1)} ${(y - 1).toFixed(1)}L${x.toFixed(1)} ${(y + 1).toFixed(1)}L${(x + 2.6).toFixed(1)} ${(y - 1).toFixed(1)}` }, flockG);
+  })); } catch (e) { window.__miss?.(e, 543); }
+  try { toys.flock = {
+    play: () => loop({ yoyo: true })
+      .to(flockG, { scaleX: 0.7, scaleY: 1.25, rotation: 18, svgOrigin: '64 62', duration: 1.1, ease: 'sine.inOut' })
+      .to(birds, { y: 'random(-3, 3)', x: 'random(-3, 3)', duration: 1.1, ease: 'sine.inOut' }, 0),
+    rest() {
+      gsap.to(flockG, { scaleX: 1, scaleY: 1, rotation: 0, svgOrigin: '64 62', duration: 0.4, overwrite: true });
+      gsap.to(birds, { x: 0, y: 0, duration: 0.4, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 548); }
+
+  // The coil stretches down and springs back.
+  let coilRings; try { (coilRings = [...$('coil-rings').children]); } catch (e) { window.__miss?.(e, 559); }
+  try { toys.coil = {
+    play: () => loop({ repeatDelay: 0.1 })
+      .to(coilRings, { y: i => i * 3.2, duration: 0.5, ease: 'power2.in' })
+      .to(coilRings, { y: 0, duration: 1, ease: 'elastic.out(1, 0.3)' }),
+    rest: () => gsap.to(coilRings, { y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 560); }
+
+  // The crystal grows out along its arms, then fades.
+  let crystal; try { (crystal = $('frost-crystal')); } catch (e) { window.__miss?.(e, 568); }
+  try { gsap.set(crystal, { strokeDasharray: 1 });
+} catch (e) { window.__miss?.(e, 569); }
+  try { toys.frost = {
+    play: () => loop({ repeatDelay: 0.3 })
+      .fromTo(crystal, { strokeDashoffset: 1, opacity: 1 }, { strokeDashoffset: 0, duration: 1.6, ease: 'power1.out' })
+      .to(crystal, { opacity: 0.25, duration: 0.5, ease: 'power1.in' }),
+    rest: () => gsap.to(crystal, { strokeDashoffset: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 570); }
+
+  // Twelve teeth drive eight, so the small gear turns 1.5 times as fast.
+  let gearA; try { (gearA = $('gear-a')); } catch (e) { window.__miss?.(e, 578); }
+let gearB; try { (gearB = $('gear-b')); } catch (e) { window.__miss?.(e, 578); }
+  try { toys.gears = {
+    play: () => loop()
+      .to(gearA, { rotation: '+=360', svgOrigin: '50 54', duration: 4, ease: 'none' })
+      .to(gearB, { rotation: '-=540', svgOrigin: '87 87', duration: 4, ease: 'none' }, 0),
+    rest() {
+      gsap.killTweensOf([gearA, gearB]);
+    },
+  };
+} catch (e) { window.__miss?.(e, 579); }
+
+  // The pen draws the decaying figure again.
+  let hPath; try { (hPath = $('harmono-path')); } catch (e) { window.__miss?.(e, 589); }
+  try { gsap.set(hPath, { strokeDasharray: 1 });
+} catch (e) { window.__miss?.(e, 590); }
+  try { toys.harmono = {
+    play: () => loop({ repeatDelay: 0.4 }).fromTo(hPath, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 2.6, ease: 'power1.inOut' }),
+    rest: () => gsap.to(hPath, { strokeDashoffset: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 591); }
+
+  // Each leaf drops over its hinge and the digit steps on.
+  let leaves; try { (leaves = [...document.querySelectorAll('#flap-set .flap-leaf')]); } catch (e) { window.__miss?.(e, 597); }
+  let digits; try { (digits = [...document.querySelectorAll('#flap-set text')]); } catch (e) { window.__miss?.(e, 598); }
+  try { toys.flap = {
+    play: () => loop({ repeatDelay: 0.25 }).to(leaves, {
+      scaleY: -1, svgOrigin: '64 64', duration: 0.22, ease: 'power2.in',
+      stagger: {
+        each: 0.14,
+        onComplete() {
+          const i = leaves.indexOf(this.targets()[0]);
+          digits[i].textContent = (+digits[i].textContent + 1) % 10;
+          gsap.set(leaves[i], { scaleY: 1 });
+        },
+      },
+    }),
+    rest: () => gsap.set(leaves, { scaleY: 1 }),
+  };
+} catch (e) { window.__miss?.(e, 599); }
+
+  // A few seeds lift off and drift away, then the head refills.
+  let seedG; try { (seedG = $('dandelion-seeds')); } catch (e) { window.__miss?.(e, 615); }
+  let seeds; try { (seeds = Array.from({ length: 18 }, (_, k) => {
+    const a = (k / 18) * Math.PI * 2, x = 64 + 22 * Math.cos(a), y = 52 + 22 * Math.sin(a);
+    const fx = 64 + 26 * Math.cos(a), fy = 52 + 26 * Math.sin(a);
+    const g = el('g', {}, seedG);
+    el('path', { d: `M64 52L${x.toFixed(1)} ${y.toFixed(1)}` }, g);
+    el('path', { d: `M${x.toFixed(1)} ${y.toFixed(1)}L${(fx + 3 * Math.cos(a + 1)).toFixed(1)} ${(fy + 3 * Math.sin(a + 1)).toFixed(1)}M${x.toFixed(1)} ${y.toFixed(1)}L${(fx + 3 * Math.cos(a - 1)).toFixed(1)} ${(fy + 3 * Math.sin(a - 1)).toFixed(1)}` }, g);
+    return g;
+  })); } catch (e) { window.__miss?.(e, 616); }
+  let flyers; try { (flyers = seeds.filter((_, k) => k % 4 === 1)); } catch (e) { window.__miss?.(e, 624); }
+  try { toys.dandelion = {
+    play: () => loop({ repeatDelay: 0.2 })
+      .to(flyers, { x: 'random(30, 46)', y: 'random(-40, -18)', rotation: 'random(-40, 40)', opacity: 0, duration: 1.8, ease: 'power1.out', stagger: 0.18 })
+      .set(flyers, { x: 0, y: 0, rotation: 0 })
+      .to(flyers, { opacity: 1, duration: 0.4 }),
+    rest: () => gsap.to(flyers, { x: 0, y: 0, rotation: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 625); }
+
+  // The drum turns one pin row per beat and the teeth ring.
+  let mbPins; try { (mbPins = $('mb-pins')); } catch (e) { window.__miss?.(e, 634); }
+let mbTeeth; try { (mbTeeth = [...$('mb-teeth').children]); } catch (e) { window.__miss?.(e, 634); }
+  try { toys.musicbox = {
+    play: () => loop()
+      .fromTo(mbPins, { y: 0 }, { y: -12, duration: 1, ease: 'none' })
+      .fromTo(mbTeeth, { rotation: 0, svgOrigin: '94 86' }, { rotation: 4, svgOrigin: '94 86', duration: 0.08, yoyo: true, repeat: 1, stagger: { each: 0.13, from: 'random' } }, 0),
+    rest: () => gsap.to(mbPins, { y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 635); }
+
+  // Each set swings from its branch and its screen flickers.
+  let tvSets; try { (tvSets = [...document.querySelectorAll('#tv-sets .tv-set')]); } catch (e) { window.__miss?.(e, 643); }
+  let tvScreens; try { (tvScreens = tvSets.map(g => g.querySelector('.tv-screen'))); } catch (e) { window.__miss?.(e, 644); }
+  try { toys.tvtree = {
+    play: () => loop({ yoyo: true })
+      .fromTo(tvSets, { rotation: -10, svgOrigin: i => tvSets[i].dataset.hang }, { rotation: 10, svgOrigin: i => tvSets[i].dataset.hang, duration: 0.9, ease: 'sine.inOut', stagger: 0.15 })
+      .to(tvScreens, { keyframes: { opacity: [1, 0.4, 1, 0.7, 1] }, duration: 0.9, ease: 'steps(5)' }, 0),
+    rest() {
+      gsap.to(tvSets, { rotation: 0, svgOrigin: i => tvSets[i].dataset.hang, duration: 0.3, overwrite: true });
+      gsap.to(tvScreens, { opacity: 1, duration: 0.2, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 645); }
+
+  // The ribbon folds into its mirror curve and back.
+  let band; try { (band = $('ribbon-band')); } catch (e) { window.__miss?.(e, 656); }
+let bandRest; try { (bandRest = band.getAttribute('d')); } catch (e) { window.__miss?.(e, 656); }
+  try { toys.ribbon = {
+    play: () => loop({ yoyo: true }).to(band, { morphSVG: 'M16 56C36 98 56 30 76 72S106 92 112 66', duration: 1.1, ease: 'sine.inOut' }),
+    rest: () => gsap.to(band, { morphSVG: bandRest, duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 657); }
+
+  // The inner planet laps the outer one twice.
+  let orbitA; try { (orbitA = $('orbit-a')); } catch (e) { window.__miss?.(e, 663); }
+let orbitB; try { (orbitB = $('orbit-b')); } catch (e) { window.__miss?.(e, 663); }
+  try { toys.orbits = {
+    play: () => loop()
+      .to(orbitA, { rotation: '+=720', svgOrigin: '64 64', duration: 4, ease: 'none' })
+      .to(orbitB, { rotation: '+=360', svgOrigin: '64 64', duration: 4, ease: 'none' }, 0),
+    rest: () => gsap.killTweensOf([orbitA, orbitB]),
+  };
+} catch (e) { window.__miss?.(e, 664); }
+
+  // Pupils rattle about inside their whites.
+  let pupils; try { (pupils = [...document.querySelectorAll('#eye-set .pupil')]); } catch (e) { window.__miss?.(e, 672); }
+  let reach; try { (reach = [8, 6, 4]); } catch (e) { window.__miss?.(e, 673); }
+  try { toys.eyes = {
+    play: () => loop({ repeatRefresh: true })
+      .to(pupils, { x: i => gsap.utils.random(-reach[i], reach[i]), y: i => gsap.utils.random(-reach[i], reach[i]), duration: 0.35, ease: 'back.out(3)', stagger: 0.06 }),
+    rest: () => gsap.to(pupils, { x: 0, y: 0, duration: 0.3, ease: 'back.out(2)', overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 674); }
+
+  // Each letter bobs on its own string.
+  let balloons; try { (balloons = [...$('balloon-set').children]); } catch (e) { window.__miss?.(e, 681); }
+  try { toys.balloons = {
+    play: () => loop({ yoyo: true })
+      .to(balloons, { y: -8, rotation: i => (i ? 6 : -5), svgOrigin: '64 114', duration: 1.1, ease: 'sine.inOut', stagger: 0.25 }),
+    rest: () => gsap.to(balloons, { y: 0, rotation: 0, svgOrigin: '64 114', duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 682); }
+
+  // The seven main icons answer the pointer and never play on their own.
+  // Each art fills the same 104-unit square, centred at 64 64.
+  // enter, move and leave get a point in viewBox units, or null from the keyboard.
+
+  // Morpher: the triangle turns a third over the disc; the overlap stays cut.
+  let tris; try { (tris = [...document.querySelectorAll('.m-tri')]); } catch (e) { window.__miss?.(e, 693); }
+  let morphTurn; try { (morphTurn = 0); } catch (e) { window.__miss?.(e, 694); }
+  let turnTri; try { (turnTri = () => {
+    morphTurn += 120;
+    gsap.to(tris, { rotation: morphTurn, svgOrigin: '82 66.91', duration: 0.6, ease: 'back.inOut(1.6)', overwrite: true });
+  }); } catch (e) { window.__miss?.(e, 695); }
+  try { toys.morpher = { enter: turnTri, move() {}, leave() {} };
+} catch (e) { window.__miss?.(e, 699); }
+
+  // Pop field: a cell pops when the pointer crosses it, then refills.
+  let cellsG; try { (cellsG = $('pop-cells')); } catch (e) { window.__miss?.(e, 702); }
+  let cells; try { (cells = [[64, 64], ...ring(6, 36, -Math.PI / 3)].map(([x, y]) => {
+    const g = el('g', {}, cellsG), hex = d(ring(6, 18, -Math.PI / 2, x, y));
+    el('path', { d: hex, fill: 'url(#g-cell)' }, g);
+    el('path', { d: hex, fill: 'url(#lit)' }, g);
+    el('path', { d: hex, fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, g);
+    // An inner ring marks each cell, as in the emblem.
+    el('path', { d: d(ring(6, 11, -Math.PI / 2, x, y)), fill: 'none', stroke: 'oklch(0.45 0.09 215 / 0.55)', 'stroke-width': 2 }, g);
+    return { g, x, y, up: true };
+  })); } catch (e) { window.__miss?.(e, 703); }
+  let pop; try { (pop = c => {
+    if (!c.up) return;
+    c.up = false;
+    gsap.timeline({ onComplete: () => (c.up = true) })
+      .to(c.g, { scaleX: 1.14, scaleY: 0.8, transformOrigin: '50% 50%', duration: 0.08, ease: 'power2.out' })
+      .to(c.g, { scale: 0.3, opacity: 0.25, duration: 0.1, ease: 'power3.in' })
+      .to(c.g, { scale: 1, opacity: 1, duration: 0.9, ease: 'elastic.out(1, 0.45)' }, '+=1.2');
+  }); } catch (e) { window.__miss?.(e, 712); }
+  let popAt; try { (popAt = p => p && cells.forEach(c => Math.hypot(p[0] - c.x, p[1] - c.y) < 17 && pop(c))); } catch (e) { window.__miss?.(e, 720); }
+  try { toys.pop = { enter: p => (p ? popAt(p) : pop(cells[0])), move: popAt, leave() {} };
+} catch (e) { window.__miss?.(e, 721); }
+
+  // Fidget board: the dial turns to face the pointer in 15° detents.
+  let ticks; try { (ticks = $('dial-ticks')); } catch (e) { window.__miss?.(e, 724); }
+let knob; try { (knob = $('dial-knob')); } catch (e) { window.__miss?.(e, 724); }
+  // The bezel skips the corner where the key sits.
+  try { for (let k = 0; k < 24; k++) { try { {
+    const a = (k / 24) * TAU, r0 = k % 6 ? 51 : 47;
+    if (a > 1.9 && a < 2.9) continue;
+    el('line', { x1: 64 + r0 * Math.sin(a), y1: 64 - r0 * Math.cos(a), x2: 64 + 58 * Math.sin(a), y2: 64 - 58 * Math.cos(a) }, ticks);
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 726); }
+  let dial; try { (dial = 0); } catch (e) { window.__miss?.(e, 731); }
+  let aim; try { (aim = p => {
+    if (!p) return;
+    const want = Math.round((Math.atan2(p[0] - 64, 64 - p[1]) * 180) / Math.PI / 15) * 15;
+    const step = ((((want - dial) % 360) + 540) % 360) - 180;
+    if (!step) return;
+    dial += step;
+    gsap.to(knob, { rotation: dial, svgOrigin: '64 64', duration: 0.25, ease: 'back.out(3)', overwrite: true });
+  }); } catch (e) { window.__miss?.(e, 732); }
+  try { toys.fidget = { enter: aim, move: aim, leave() {} };
+} catch (e) { window.__miss?.(e, 740); }
+
+  // Domino run: a domino-day spiral seen from above.
+  // Standing tiles show their thin edge; a fallen tile lies along the path.
+  let spiral; try { (spiral = []); } catch (e) { window.__miss?.(e, 744); }
+  try { for (let th = 0.6, last = null; th < 17; th += 0.02) { try { {
+    const r = 10 + 3.2 * th, x = 64 + r * Math.cos(th), y = 64 + r * Math.sin(th);
+    if (r > 53) break;
+    if (!last || Math.hypot(x - last[0], y - last[1]) >= 10) {
+      // The tile faces along the path, outward from the centre.
+      const a = Math.atan2(3.2 * Math.sin(th) + r * Math.cos(th), 3.2 * Math.cos(th) - r * Math.sin(th));
+      spiral.push([x, y, (a * 180) / Math.PI]);
+      last = [x, y];
+    }
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 745); }
+  let dominoGrey; try { (dominoGrey = spiral.map((_, k) => `hsl(235, 6%, ${[78, 60, 70, 54, 84, 64][k % 6]}%)`)); } catch (e) { window.__miss?.(e, 755); }
+  let dominoHue; try { (dominoHue = spiral.map((_, k) => `hsl(${(k * 12) % 360}, 52%, 70%)`)); } catch (e) { window.__miss?.(e, 756); }
+  let tiles; try { (tiles = spiral.map(([x, y, a], k) => {
+    const g = el('g', { transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${a.toFixed(1)})` }, $('domino-tiles'));
+    return el('rect', { x: -2, y: -4.5, width: 4, height: 9, rx: 1, style: `fill: ${dominoGrey[k]}` }, g);
+  })); } catch (e) { window.__miss?.(e, 757); }
+  // The fall runs from the outside in, one tile every film frame or so.
+  let fallTl; try { (fallTl = gsap.timeline({ paused: true })); } catch (e) { window.__miss?.(e, 762); }
+  try { tiles.forEach((t, k) => fallTl
+    .to(t, { attr: { width: 10 }, duration: 0.12, ease: 'power2.in' }, k * 0.035)
+    .to(t, { fill: dominoHue[k], duration: 0.1 }, k * 0.035));
+} catch (e) { window.__miss?.(e, 763); }
+  try { toys.domino = {
+    enter() { fallTl.timeScale(1).play(); },
+    move() {},
+    leave() { fallTl.timeScale(2.2).reverse(); },
+  };
+} catch (e) { window.__miss?.(e, 766); }
+
+
+
+  // Pin art: pins near the pointer push out, then sink back slowly.
+  let heads; try { (heads = []); } catch (e) { window.__miss?.(e, 775); }
+  try { for (let r = 0; r < 9; r++) { try { for (let c = 0; c < 9; c++) {
+    const x = 18 + c * 11.5, y = 18 + r * 11.5;
+    // A fingertip presses in off centre, as in the emblem.
+    const k = Math.exp(-((x - 54) ** 2 + (y - 58) ** 2) / (2 * 22 * 22));
+    const r0 = 1.4 + 4.3 * k, o0 = 0.35 + 0.65 * Math.min(1, (r0 - 1.4) / 3);
+    heads.push({ n: el('circle', { cx: x, cy: y, r: r0.toFixed(1), 'fill-opacity': o0.toFixed(2) }, $('pin-heads')), x, y, r0, o0 });
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 776); }
+  let press; try { (press = p => heads.forEach(h => {
+    const k = Math.exp(-((p[0] - h.x) ** 2 + (p[1] - h.y) ** 2) / (2 * 13 * 13));
+    const r = 1.4 + 4.3 * k;
+    // Only a deeper press restarts a pin, so moving never makes it flicker.
+    if (r <= +h.n.getAttribute('r') + 0.2) return;
+    gsap.timeline({ overwrite: true })
+      .to(h.n, { attr: { r, 'fill-opacity': 1 }, duration: 0.12, ease: 'power2.out' })
+      .to(h.n, { attr: { r: h.r0, 'fill-opacity': h.o0 }, duration: 1.2, ease: 'power2.inOut' }, '+=0.35');
+  })); } catch (e) { window.__miss?.(e, 783); }
+  try { toys.pins = { enter: p => press(p || [64, 64]), move: p => p && press(p), leave() {} };
+} catch (e) { window.__miss?.(e, 792); }
+
+  // Galaxy: circling the pointer spins the disc; it coasts to a stop.
+  let disc; try { (disc = $('galaxy-stars')); } catch (e) { window.__miss?.(e, 795); }
+  let spin; try { (spin = 0); } catch (e) { window.__miss?.(e, 796); }
+let turn; try { (turn = 0); } catch (e) { window.__miss?.(e, 796); }
+let last; try { (last = null); } catch (e) { window.__miss?.(e, 796); }
+  let coast; try { (coast = () => {
+    turn += spin;
+    spin *= 0.95;
+    gsap.set(disc, { rotation: turn, svgOrigin: '64 64' });
+    if (Math.abs(spin) < 0.02) { spin = 0; gsap.ticker.remove(coast); }
+  }); } catch (e) { window.__miss?.(e, 797); }
+  let kick; try { (kick = w => {
+    if (!spin) gsap.ticker.add(coast);
+    spin = Math.max(-14, Math.min(14, spin + w));
+  }); } catch (e) { window.__miss?.(e, 803); }
+  try { toys.galaxy = {
+    enter: p => { last = p; if (!p) kick(6); },
+    move(p) {
+      if (last && p) {
+        const ax = last[0] - 64, ay = last[1] - 64, bx = p[0] - 64, by = p[1] - 64;
+        kick(((ax * by - ay * bx) / Math.max(ax * ax + ay * ay, 200)) * 40);
+      }
+      last = p;
+    },
+    leave: () => (last = null),
+  };
+} catch (e) { window.__miss?.(e, 807); }
+
+  // Prism: a faded cone follows the pointer; the bands bundle or scatter.
+  let ray; try { (ray = $('prism-ray')); } catch (e) { window.__miss?.(e, 820); }
+let bands; try { (bands = [...document.querySelectorAll('#prism-fan path')]); } catch (e) { window.__miss?.(e, 820); }
+  let light; try { (light = { y: 68, t: 0 }); } catch (e) { window.__miss?.(e, 821); }
+  let drawPrism; try { (drawPrism = () => {
+    ray.setAttribute('d', `M6 ${(light.y - 13).toFixed(1)}L6 ${(light.y + 13).toFixed(1)}L40 60.8Z`);
+    // t 0 packs the bands into one spectrum; t 1 splits them into thin lines.
+    const step = 7 + 7 * light.t, half = 3.5 - 2.7 * light.t, mid = 62 - (light.y - 68) * 0.45;
+    bands.forEach((b, i) => {
+      const c = mid + (i - 2) * step;
+      b.setAttribute('d', `M76 60.8L118 ${(c - half).toFixed(1)}V${(c + half).toFixed(1)}Z`);
+    });
+  }); } catch (e) { window.__miss?.(e, 822); }
+  try { drawPrism();
+} catch (e) { window.__miss?.(e, 831); }
+  let aimBeam; try { (aimBeam = y => gsap.to(light, { y, t: Math.min(1, Math.abs(y - 68) / 36), duration: 0.3, ease: 'power3.out', overwrite: true, onUpdate: drawPrism })); } catch (e) { window.__miss?.(e, 832); }
+  try { toys.prism = {
+    enter: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
+    move: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
+    leave: () => aimBeam(68),
+  };
+} catch (e) { window.__miss?.(e, 833); }
+
+  // Lab icons: hover or focus plays a loop; touch plays them in view.
+  let running; try { (running = new Map()); } catch (e) { window.__miss?.(e, 840); }
+  function start(t) {
+    if (running.has(t)) return;
+    t.classList.add('on');
+    running.set(t, reduce ? null : toys[t.id].play());
+  }
+  function stop(t) {
+    if (!running.has(t)) return;
+    t.classList.remove('on');
+    running.get(t)?.kill();
+    running.delete(t);
+    toys[t.id].rest();
+  }
+  // The three newest icons play a seamless loop while hovered, then settle.
+  let hoverLoop; try { (hoverLoop = (build, settle) => {
+    let tl = null;
+    return { enter() { if (!tl) tl = build(); }, move() {}, leave() { tl?.kill(); tl = null; settle(); } };
+  }); } catch (e) { window.__miss?.(e, 854); }
+  // Kaleidoscope: the petals breathe as the flower turns; one full turn per loop.
+  let kAll; try { (kAll = $('kaleido-all')); } catch (e) { window.__miss?.(e, 859); }
+let kPetals; try { (kPetals = document.querySelectorAll('#kaleido .petal')); } catch (e) { window.__miss?.(e, 859); }
+  try { toys.kaleido = hoverLoop(
+    () => gsap.timeline()
+      .to(kAll, { rotation: '+=360', svgOrigin: '64 64', duration: 12, ease: 'none', repeat: -1 }, 0)
+      .to(kPetals, { scale: 0.84, svgOrigin: '64 64', duration: 1, ease: 'sine.inOut', yoyo: true, repeat: -1 }, 0),
+    () => {
+      gsap.to(kAll, { rotation: Math.round(gsap.getProperty(kAll, 'rotation') / 360) * 360, svgOrigin: '64 64', duration: 0.4, ease: 'power2.out' });
+      gsap.to(kPetals, { scale: 1, svgOrigin: '64 64', duration: 0.3 });
+    });
+} catch (e) { window.__miss?.(e, 860); }
+  // Ferrofluid: a crown of spikes around a glowing pool, seen from above.
+  // On hover the field charges: spikes reach out and the glow swells.
+  let fCrown; try { (fCrown = [$('ferro-crown')]); } catch (e) { window.__miss?.(e, 870); }
+let fGlow; try { (fGlow = $('ferro-glow')); } catch (e) { window.__miss?.(e, 870); }
+let ferroState; try { (ferroState = { reach: 1 }); } catch (e) { window.__miss?.(e, 870); }
+  let drawFerro; try { (drawFerro = () => {
+    const n = 14, inner = 29, gap = 0.16, h = Math.PI / n, d = [];
+    const p = (r, t) => `${(64 + r * Math.cos(t)).toFixed(1)} ${(64 + r * Math.sin(t)).toFixed(1)}`;
+    for (let k = 0; k < n; k++) {
+      // Every other spike reaches further.
+      const a = (k * TAU) / n - Math.PI / 2, tip = inner + (k % 2 ? 14 : 22) * ferroState.reach;
+      // The flanks curve in, so each spike is a sharp concave cone.
+      const c = inner + 0.32 * (tip - inner);
+      d.push(`${k ? 'L' : 'M'}${p(inner, a - h + gap * h)}Q${p(c, a - 0.07)} ${p(tip, a)}Q${p(c, a + 0.07)} ${p(inner, a + h - gap * h)}`);
+    }
+    fCrown.forEach(el => el.setAttribute('d', d.join('') + 'Z'));
+    fGlow.setAttribute('r', (6 + 2.5 * ferroState.reach).toFixed(2));
+  }); } catch (e) { window.__miss?.(e, 871); }
+  try { drawFerro();
+} catch (e) { window.__miss?.(e, 884); }
+  try { toys.ferro = hoverLoop(
+    () => gsap.timeline({ repeat: -1, yoyo: true }).to(ferroState, { reach: 1.18, duration: 0.7, ease: 'sine.inOut', onUpdate: drawFerro }),
+    () => gsap.to(ferroState, { reach: 1, duration: 0.4, ease: 'back.out(2)', onUpdate: drawFerro }));
+} catch (e) { window.__miss?.(e, 885); }
+  // Neon sign: on hover the tube sputters like a tired bar sign, then holds.
+  let nLit; try { (nLit = $('neon-lit')); } catch (e) { window.__miss?.(e, 889); }
+  try { toys.neon = hoverLoop(
+    () => gsap.timeline({ repeat: -1 })
+      .to(nLit, { keyframes: [
+        { opacity: 0.25, duration: 0.05 }, { opacity: 1, duration: 0.04 }, { opacity: 0.55, duration: 0.07 },
+        { opacity: 1, duration: 0.6 }, { opacity: 0.1, duration: 0.04 }, { opacity: 0.85, duration: 0.05 },
+        { opacity: 0.35, duration: 0.03 }, { opacity: 1, duration: 1.1 },
+      ], easeEach: 'none' }),
+    () => gsap.set(nLit, { opacity: 1 }));
+} catch (e) { window.__miss?.(e, 890); }
+
+  // Brut style (?style=brut): grey shading, grain, one signal accent per icon.
+  try { if (new URLSearchParams(location.search).get('style') === 'brut') {
+    const ACCENT = 'oklch(0.7 0.21 35)';
+    const accent = {
+      morpher: '.m-tri:not([style])', pop: '#pop-cells > g:nth-child(2) path:first-child',
+      fidget: 'rect[fill="url(#g-cell)"]', domino: '#domino-tiles rect:nth-child(5)',
+      pins: '#pin-heads circle:is(:nth-child(28), :nth-child(29), :nth-child(36), :nth-child(37))',
+      galaxy: '#galaxy circle[fill^="oklch"]', prism: '#prism-fan path:first-child',
+    };
+    // Highlights, rims, cut-outs and dark details keep their own paint.
+    const keepPaint = (n, v) => {
+      if (!v || v === 'none' || /#(lit|rim)\b/.test(v) || /var\(--bg\)/.test(n.getAttribute('style') || '')) return true;
+      const m = v.match(/rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/);
+      return m && (0.2126 * m[1] + 0.7152 * m[2] + 0.0722 * m[3]) / 255 < 0.3;
+    };
+    document.querySelectorAll('main > .shelf .toy').forEach(t => {
+      const svg = t.querySelector('.obj svg');
+      const hot = new Set(svg.querySelectorAll(accent[t.id]));
+      svg.querySelectorAll('path, circle, rect, line, ellipse').forEach(n => {
+        if (n.closest('clipPath')) return;
+        const cs = getComputedStyle(n);
+        if (hot.has(n)) { n.style.fill = ACCENT; return; }
+        if (!keepPaint(n, cs.fill)) n.style.fill = 'url(#g-gray)';
+        if (!keepPaint(n, cs.stroke)) n.style.stroke = 'oklch(0.72 0.006 275)';
+      });
+      // One grain filter wraps the whole icon.
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('filter', 'url(#grain)');
+      g.append(...[...svg.childNodes].filter(c => c.nodeName !== 'clipPath' && c.nodeName !== 'linearGradient'));
+      svg.append(g);
+    });
+  }
+} catch (e) { window.__miss?.(e, 900); }
+
+  // Every icon is framed to its drawing, so its long side fills 110 of 128 like Pin art.
+  // Icons whose drawing runs past the tile (clipped art) keep their frame.
+  let fitIcon; try { (fitIcon = svg => {
+    const b = svg.getBBox(), side = Math.max(b.width, b.height);
+    if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
+    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    svg.setAttribute('viewBox', `${(cx - size / 2).toFixed(2)} ${(cy - size / 2).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`);
+    svg.style.overflow = 'visible';
+  }); } catch (e) { window.__miss?.(e, 934); }
+  let fitAll; try { (fitAll = root => root.querySelectorAll('.toy .obj svg').forEach(fitIcon)); } catch (e) { window.__miss?.(e, 941); }
+  try { fitAll(document.querySelector('main'));
+} catch (e) { window.__miss?.(e, 942); }
+
+  // Main icons map the pointer into viewBox units and react to it.
+  let local; try { (local = (t, e) => {
+    const svg = t.querySelector('.obj svg'), r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  }); } catch (e) { window.__miss?.(e, 945); }
+  let main; try { (main = [...document.querySelectorAll('main > .shelf .toy')]); } catch (e) { window.__miss?.(e, 949); }
+  try { if (!reduce) main.forEach(t => {
+    let toy = toys[t.id];
+    // Icons with a play loop run it while hovered and rest when the pointer leaves.
+    if (!toy.enter) {
+      const { play, rest } = toy;
+      let tl = null;
+      toy = { enter() { if (!tl) tl = play(); }, move() {}, leave() { tl?.kill(); tl = null; rest(); } };
+    }
+    t.addEventListener('pointerenter', e => toy.enter(local(t, e)));
+    t.addEventListener('pointermove', e => toy.move(local(t, e)));
+    t.addEventListener('pointerleave', () => toy.leave());
+    t.addEventListener('focusin', () => toy.enter(null));
+    t.addEventListener('focusout', () => toy.leave());
+  });
+} catch (e) { window.__miss?.(e, 950); }
+  let all; try { (all = [...document.querySelectorAll('.lab .toy')]); } catch (e) { window.__miss?.(e, 964); }
+  try { if (matchMedia('(hover: hover)').matches) {
+    all.forEach(t => {
+      t.addEventListener('pointerenter', () => start(t));
+      t.addEventListener('pointerleave', () => stop(t));
+      t.addEventListener('focusin', () => start(t));
+      t.addEventListener('focusout', () => stop(t));
+    });
+  } else {
+    const io = new IntersectionObserver(es => es.forEach(e => (e.isIntersecting ? start(e.target) : stop(e.target))), { threshold: 0.6 });
+    all.forEach(t => io.observe(t));
+  }
+} catch (e) { window.__miss?.(e, 965); }
+})();
+</script>
+<script>
+// Only the tile named in the hash stays; it fills the frame and keeps its hover.
+addEventListener('load', () => setTimeout(() => {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const a = document.querySelector('a.toy#' + CSS.escape(id));
+  if (!a) { document.documentElement.dataset.ready = 'none'; return; }
+  document.activeElement?.blur?.();
+  const NAKED = '; display: block !important; position: static !important; transform: none !important; filter: none !important; opacity: 1 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; animation: none !important; transition: none !important; contain: none !important; visibility: visible !important; overflow: visible !important;';
+  const off = n => n.style.setProperty('display', 'none', 'important');
+  const path = new Set();
+  for (let n = a.parentElement; n && n !== document.documentElement; n = n.parentElement) path.add(n);
+  for (const n of path) {
+    for (const c of n.children) if (!path.has(c) && c !== a && !c.matches('svg.defs, script, style, link')) off(c);
+    n.style.cssText += NAKED;
+    // The early menus keep the Lab in a closed details element.
+    if (n.tagName === 'DETAILS') n.open = true;
+  }
+  for (const c of a.children) if (!c.matches('.obj')) off(c);
+  a.style.cssText += '; position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; display: grid !important; place-items: center !important; gap: 0 !important; margin: 0 !important; padding: 0 !important; opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important; visibility: visible !important;';
+  const css = document.createElement('style');
+  css.textContent = 'html, body { background: transparent !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; } a.toy .obj { display: grid !important; place-items: center; width: 100% !important; height: 100% !important; max-width: none !important; margin: 0 !important; } a.toy .obj svg { width: 90% !important; height: 90% !important; } a.toy .obj .series, a.toy .obj::after, a.toy .obj::before { display: none !important; } a.toy:focus-visible { outline: none !important; }';
+  document.head.append(css);
+  document.documentElement.dataset.ready = '1';
+}, 500));
+</script>

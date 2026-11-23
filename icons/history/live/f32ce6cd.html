@@ -1,0 +1,1491 @@
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<script>
+// A snapshot of an earlier menu for the icon sheet: one tile, live.
+window.__miss = (e, l) => (window.__misses ||= []).push((l ?? '') + ' ' + String(e && e.message || e));
+addEventListener('error', e => window.__miss(e.error || e.message));
+// The page sits three folders down; its fetches resolve from the site root.
+(() => {
+  const here = new URL('./', location.href).href, root = new URL('../../../', location.href).href, f = window.fetch.bind(window);
+  window.fetch = (u, o) => {
+    if (u instanceof Request) return f(u, o);
+    // Hover warm-ups fetch toy pages and emblems; a snapshot skips them.
+    if (o && o.priority === 'low') return Promise.resolve(null);
+    const s = new URL(String(u), location.href).href;
+    return f(s.startsWith(here) ? root + s.slice(here.length) : s, o);
+  };
+  // Series badges are hidden here, so they load nothing; other images resolve from the root.
+  const src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+  Object.defineProperty(HTMLImageElement.prototype, 'src', { ...src, set(v) {
+    if (this.classList.contains('series') || v == null || v === 'null' || v === 'undefined') return;
+    const s = new URL(String(v), location.href).href;
+    src.set.call(this, s.startsWith(here) ? root + s.slice(here.length) : s);
+  } });
+  // The menu focused its first tile; here that would play the tile at rest.
+  HTMLElement.prototype.focus = function () {};
+  // The series switch stays off here; the switch only reads, it never writes.
+  const get = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (k) { return k === 'stimming.series' ? 'off' : get.call(this, k); };
+  // One broken tile must not stop the others: each forEach step runs on its own.
+  for (const P of [Array.prototype, NodeList.prototype]) {
+    const each = P.forEach;
+    P.forEach = function (fn, that) { return each.call(this, function (...a) { try { return fn.apply(this, a); } catch (e) { window.__miss(e, 'each'); } }, that); };
+  }
+})();
+</script>
+<title>Stimming</title>
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.16 0.012 275); }</style>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gabarito:wght@400..900&display=swap">
+<style>
+/* Layout: the title, then the toys, all centred. The menu is always dark. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --sketch: oklch(0.52 0.025 275);
+  --focus: oklch(0.84 0.13 205);
+  --pick: oklch(0.7 0.18 320 / 0.35);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 500 16px/1.3 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--pick); }
+.defs { position: absolute; width: 0; height: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: clamp(40px, 7vw, 88px) 72px; display: grid; justify-items: center; gap: clamp(36px, 6vw, 72px); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Title letters rest white, askew and in mixed weights. */
+.title {
+  margin: 0; display: flex; align-items: baseline; gap: 0.01em;
+  font-size: clamp(48px, 9vw, 104px); line-height: 1; letter-spacing: -0.02em;
+  cursor: default; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+/* A touched letter flashes its own colour, then fades back to white. */
+.title .l { display: inline-block; color: color-mix(in oklch, var(--c) calc(var(--p, 0) * 100%), var(--fg)); font-weight: var(--w); }
+main { width: 100%; }
+/* Rows wrap and centre, so a short last row sits in the middle. */
+.shelf {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: clamp(16px, 2.6vw, 28px) clamp(12px, 2.4vw, 28px);
+  max-width: 980px; margin: 0 auto; padding: 0; list-style: none;
+}
+.shelf > li { width: clamp(96px, 26vw, 150px); }
+/* The six main toys sit in one row; the rest wait folded in the Lab. */
+main { display: grid; justify-items: center; gap: clamp(28px, 5vw, 56px); }
+main > .shelf { max-width: 1220px; }
+.lab { width: 100%; max-width: 980px; display: grid; gap: clamp(24px, 4vw, 40px); }
+.lab summary {
+  list-style: none; justify-self: center; display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  font-size: 15px; color: var(--muted); transition: color 0.2s ease;
+}
+.lab summary::-webkit-details-marker { display: none; }
+.lab summary:hover { color: var(--fg); }
+/* The credit line closes the page, as quiet as the Lab toggle. */
+.credit { color: var(--muted); font-size: 13px; letter-spacing: 0.01em; text-align: center; }
+.lab summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.lab summary svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: rotate 0.3s ease; }
+.lab[open] summary svg { rotate: 180deg; }
+@media (prefers-reduced-motion: reduce) { .lab summary, .lab summary svg { transition: none; } }
+@media (max-width: 560px) { .name { font-size: 13px; } }
+.toy { display: grid; justify-items: center; gap: 10px; color: inherit; text-decoration: none; border-radius: 16px; text-align: center; }
+a.toy { cursor: pointer; }
+a.toy:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.obj { position: relative; width: 100%; max-width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
+.obj svg { width: 70%; height: 70%; overflow: visible; }
+.name { font-size: 15px; letter-spacing: -0.01em; }
+.toy:not(a) .name { color: var(--muted); }
+.sketch { fill: none; stroke: var(--sketch); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* Planned toys draw as outlines until they ship. */
+.planned .art, .planned .art * { fill: none !important; stroke: var(--sketch) !important; stroke-width: 2px !important; }
+</style>
+
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lit" cx="0.32" cy="0.26" r="0.7">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="g-morph" x1="0" y1="0" x2="1" y2="1">
+      <stop id="morph-a" offset="0" style="stop-color: #f7b65b"/>
+      <stop id="morph-b" offset="1" style="stop-color: #d23c34"/>
+    </linearGradient>
+    <linearGradient id="g-blob" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: #f7a1c4"/>
+      <stop offset="1" style="stop-color: #d63b6e"/>
+    </linearGradient>
+    <linearGradient id="g-knob" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.89 0.13 88)"/>
+      <stop offset="1" style="stop-color: oklch(0.64 0.17 48)"/>
+    </linearGradient>
+    <linearGradient id="g-cell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.1 165)"/>
+      <stop offset="1" style="stop-color: oklch(0.64 0.13 225)"/>
+    </linearGradient>
+    <linearGradient id="g-sand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.05 85)"/>
+      <stop offset="1" style="stop-color: oklch(0.76 0.07 62)"/>
+    </linearGradient>
+    <linearGradient id="g-stone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.5 0.015 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.22 0.01 260)"/>
+    </linearGradient>
+    <linearGradient id="g-fire" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.9 0.14 85)"/>
+      <stop offset="0.45" style="stop-color: oklch(0.74 0.19 55)"/>
+      <stop offset="1" style="stop-color: oklch(0.56 0.21 30)"/>
+    </linearGradient>
+    <linearGradient id="g-fire-core" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.98 0.05 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.88 0.15 80)"/>
+    </linearGradient>
+    <linearGradient id="g-slime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.72 0.2 318)"/>
+      <stop offset="1" style="stop-color: oklch(0.52 0.24 296)"/>
+    </linearGradient>
+    <radialGradient id="g-ball" cx="0.36" cy="0.3" r="0.72">
+      <stop offset="0" style="stop-color: oklch(0.98 0.004 260)"/>
+      <stop offset="0.38" style="stop-color: oklch(0.72 0.01 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.3 0.012 260)"/>
+    </radialGradient>
+    <linearGradient id="g-lid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.08 220)"/>
+      <stop offset="1" style="stop-color: oklch(0.76 0.1 232)"/>
+    </linearGradient>
+    <linearGradient id="g-shell" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.66 0.16 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.48 0.17 266)"/>
+    </linearGradient>
+    <linearGradient id="g-ferro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.46 0.03 270)"/>
+      <stop offset="1" style="stop-color: oklch(0.12 0.01 270)"/>
+    </linearGradient>
+    <linearGradient id="g-galaxy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.86 0.12 70)"/>
+      <stop offset="1" style="stop-color: oklch(0.7 0.14 250)"/>
+    </linearGradient>
+    <linearGradient id="g-soap" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.06 350)"/>
+      <stop offset="1" style="stop-color: oklch(0.78 0.11 345)"/>
+    </linearGradient>
+    <linearGradient id="g-tape" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.64 0.12 200)"/>
+      <stop offset="1" style="stop-color: oklch(0.48 0.12 215)"/>
+    </linearGradient>
+    <linearGradient id="g-film" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.15 340)"/>
+      <stop offset="0.5" style="stop-color: oklch(0.9 0.13 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.84 0.11 200)"/>
+    </linearGradient>
+    <linearGradient id="g-rain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.4 0.07 285)"/>
+      <stop offset="1" style="stop-color: oklch(0.25 0.05 250)"/>
+    </linearGradient>
+    <linearGradient id="g-top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.15 45)"/>
+      <stop offset="1" style="stop-color: oklch(0.55 0.2 25)"/>
+    </linearGradient>
+    <radialGradient id="g-plasma" cx="0.5" cy="0.5" r="0.55">
+      <stop offset="0" style="stop-color: oklch(0.46 0.17 305)"/>
+      <stop offset="1" style="stop-color: oklch(0.18 0.06 285)"/>
+    </radialGradient>
+    <linearGradient id="g-marble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.97 0.02 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.88 0.04 80)"/>
+    </linearGradient>
+    <linearGradient id="g-pool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.12 192)"/>
+      <stop offset="1" style="stop-color: oklch(0.5 0.13 235)"/>
+    </linearGradient>
+    <linearGradient id="g-lava-glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.52 0.15 300)"/>
+      <stop offset="1" style="stop-color: oklch(0.3 0.12 285)"/>
+    </linearGradient>
+    <linearGradient id="g-lava" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.16 75)"/>
+      <stop offset="1" style="stop-color: oklch(0.68 0.21 35)"/>
+    </linearGradient>
+    <linearGradient id="g-k1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.78 0.16 350)"/>
+      <stop offset="1" style="stop-color: oklch(0.55 0.21 305)"/>
+    </linearGradient>
+    <linearGradient id="g-k2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.86 0.12 175)"/>
+      <stop offset="1" style="stop-color: oklch(0.58 0.15 240)"/>
+    </linearGradient>
+    <linearGradient id="g-k3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.92 0.14 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.18 50)"/>
+    </linearGradient>
+    <linearGradient id="g-plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.44 0.02 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.24 0.015 260)"/>
+    </linearGradient>
+    <linearGradient id="g-prism" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.94 0.04 210)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.09 250)"/>
+    </linearGradient>
+    <radialGradient id="g-globe" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" style="stop-color: oklch(0.66 0.09 235)"/>
+      <stop offset="1" style="stop-color: oklch(0.36 0.09 258)"/>
+    </radialGradient>
+    <linearGradient id="g-wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.56 0.08 55)"/>
+      <stop offset="1" style="stop-color: oklch(0.36 0.06 45)"/>
+    </linearGradient>
+    <linearGradient id="g-dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.82 0.12 62)"/>
+      <stop offset="1" style="stop-color: oklch(0.46 0.15 305)"/>
+    </linearGradient>
+    <linearGradient id="g-frostglass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.4 0.09 245)"/>
+      <stop offset="1" style="stop-color: oklch(0.2 0.05 262)"/>
+    </linearGradient>
+    <linearGradient id="g-brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.12 92)"/>
+      <stop offset="1" style="stop-color: oklch(0.62 0.12 68)"/>
+    </linearGradient>
+    <linearGradient id="g-steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.01 250)"/>
+      <stop offset="1" style="stop-color: oklch(0.56 0.02 255)"/>
+    </linearGradient>
+    <linearGradient id="g-paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.97 0.015 90)"/>
+      <stop offset="1" style="stop-color: oklch(0.9 0.03 85)"/>
+    </linearGradient>
+    <linearGradient id="g-flap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.34 0.012 260)"/>
+      <stop offset="1" style="stop-color: oklch(0.22 0.01 260)"/>
+    </linearGradient>
+    <clipPath id="mb-clip"><rect x="22" y="34" width="52" height="60" rx="10"/></clipPath>
+    <linearGradient id="g-tv" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.8 0.14 28)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.17 15)"/>
+    </linearGradient>
+    <linearGradient id="g-screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.88 0.12 190)"/>
+      <stop offset="1" style="stop-color: oklch(0.62 0.18 285)"/>
+    </linearGradient>
+    <linearGradient id="g-ribbon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" style="stop-color: oklch(0.75 0.18 350)"/>
+      <stop offset="0.5" style="stop-color: oklch(0.68 0.2 300)"/>
+      <stop offset="1" style="stop-color: oklch(0.8 0.13 200)"/>
+    </linearGradient>
+    <radialGradient id="g-sun" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" style="stop-color: oklch(0.95 0.1 95)"/>
+      <stop offset="1" style="stop-color: oklch(0.72 0.18 55)"/>
+    </radialGradient>
+    <linearGradient id="g-balloon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.82 0.15 355)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.23 340)"/>
+    </linearGradient>
+    <!-- Brut style: neutral grey shading and fine grain. -->
+    <linearGradient id="g-gray" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: oklch(0.9 0.004 275)"/>
+      <stop offset="1" style="stop-color: oklch(0.5 0.008 275)"/>
+    </linearGradient>
+    <filter id="grain" filterUnits="userSpaceOnUse" x="-8" y="-8" width="144" height="144">
+      <feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" seed="7" result="noise"/>
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.25" result="specks"/>
+      <feComposite in="specks" in2="SourceGraphic" operator="in" result="grit"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="grit"/></feMerge>
+    </filter>
+    <radialGradient id="g-pin" cx="0.36" cy="0.3" r="0.72">
+      <stop offset="0" style="stop-color: oklch(0.98 0.02 215)"/>
+      <stop offset="0.45" style="stop-color: oklch(0.84 0.09 225)"/>
+      <stop offset="1" style="stop-color: oklch(0.6 0.13 245)"/>
+    </radialGradient>
+    <linearGradient id="g-pinframe" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.2"/>
+    </linearGradient>
+    <clipPath id="tray-clip"><rect x="12" y="20" width="104" height="88" rx="18"/></clipPath>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <h1 class="title" id="title"><span class="sr">Stimming</span><span aria-hidden="true"><span class="l" style="--c: oklch(0.8 0.15 62); --w: 800">S</span><span class="l" style="--c: oklch(0.72 0.2 318); --w: 500">t</span><span class="l" style="--c: oklch(0.8 0.12 195); --w: 900">i</span><span class="l" style="--c: oklch(0.7 0.19 32); --w: 600">m</span><span class="l" style="--c: oklch(0.72 0.14 255); --w: 700">m</span><span class="l" style="--c: oklch(0.82 0.11 345); --w: 400">i</span><span class="l" style="--c: oklch(0.86 0.15 100); --w: 800">n</span><span class="l" style="--c: oklch(0.78 0.16 150); --w: 600">g</span></span></h1>
+  <main>
+    <ul class="shelf" aria-label="Toys">
+      <li>
+        <a class="toy" id="morphset" href="morphset/index.html">
+          <span class="obj">
+            <svg class="flat" viewBox="0 0 128 128" aria-hidden="true">
+              <clipPath id="m-disc"><circle cx="52" cy="76" r="34"/></clipPath>
+              <circle cx="52" cy="76" r="34" fill="url(#g-blob)"/>
+              <circle cx="52" cy="76" r="34" fill="url(#lit)"/>
+              <circle cx="52" cy="76" r="34" fill="none" stroke="url(#rim)" stroke-width="2"/>
+              <path class="m-tri" d="M82 20.72L122 90H42Z" fill="url(#g-morph)"/>
+              <path class="m-tri" d="M82 20.72L122 90H42Z" fill="url(#lit)"/>
+              <path class="m-tri" d="M82 20.72L122 90H42Z" fill="none" stroke="url(#rim)" stroke-width="2" stroke-linejoin="round"/>
+              <g clip-path="url(#m-disc)"><path class="m-tri" d="M82 20.72L122 90H42Z" style="fill: var(--bg)"/></g>
+            </svg>
+          </span>
+          <span class="name">Morpher</span>
+        </a>
+      </li>
+      
+      
+      <li>
+        <a class="toy" id="domino" href="domino/index.html">
+          <span class="obj">
+            <svg viewBox="0 0 128 128" aria-hidden="true">
+              <g id="domino-tiles"></g>
+            </svg>
+          </span>
+          <span class="name">Domino run</span>
+        </a>
+      </li>
+      
+      <li>
+        <a class="toy" id="galaxy" href="galaxy/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <g id="galaxy-stars">
+                <path d="M76 58C100 70 92 108 50 106C32 105 18 92 12 74C26 88 44 94 58 91C76 87 82 72 72 64ZM52 70C28 58 36 20 78 22C96 23 110 36 116 54C102 40 84 34 70 37C52 41 46 56 56 64Z" fill="url(#g-galaxy)"/>
+                <path d="M76 58C100 70 92 108 50 106C32 105 18 92 12 74C26 88 44 94 58 91C76 87 82 72 72 64ZM52 70C28 58 36 20 78 22C96 23 110 36 116 54C102 40 84 34 70 37C52 41 46 56 56 64Z" fill="url(#lit)"/>
+                <path d="M76 58C100 70 92 108 50 106C32 105 18 92 12 74C26 88 44 94 58 91C76 87 82 72 72 64ZM52 70C28 58 36 20 78 22C96 23 110 36 116 54C102 40 84 34 70 37C52 41 46 56 56 64Z" fill="none" stroke="url(#rim)" stroke-width="2"/>
+                </g>
+              <rect x="17" y="20" width="9" height="9" fill="oklch(0.92 0.05 230)"/><rect x="101" y="94" width="9" height="9" fill="oklch(0.92 0.05 230)"/><rect x="104" y="18" width="5" height="5" fill="oklch(0.92 0.05 230)"/>
+              <circle cx="64" cy="64" r="16" fill="oklch(0.96 0.07 88)" style="stroke: var(--bg)" stroke-width="4"/>
+              <circle cx="64" cy="64" r="14" fill="url(#lit)"/>
+            </svg>
+          </span>
+          <span class="name">Galaxy</span>
+        </a>
+      </li>
+      
+      
+      <li>
+        <a class="toy" id="ferro" href="ferro/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-ferrocrown" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.42 0.02 270)"/><stop offset="0.45" stop-color="oklch(0.2 0.012 270)"/><stop offset="0.7" stop-color="oklch(0.34 0.02 265)"/><stop offset="1" stop-color="oklch(0.12 0.01 270)"/></linearGradient>
+              <path id="ferro-crown" fill="url(#g-ferrocrown)"/>
+              <circle cx="64" cy="64" r="21" fill="none" stroke="oklch(0.6 0.02 265)" stroke-width="2"/>
+              <circle cx="64" cy="64" r="8" fill="oklch(0.6 0.02 265)"/>
+            </svg>
+          </span>
+          <span class="name">Ferrofluid</span>
+        </a>
+      </li>
+      
+      
+      <li>
+        <a class="toy" id="soap" href="soap/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <!-- A block of soap diced into sixteen cubes, lilac to peach. -->
+              <g class="soap-cube" data-k="0"><rect x="14" y="14" width="22" height="22" rx="4" fill="oklch(0.84 0.1 300)"/><rect x="14" y="14" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 300 / 0.7)"/></g><g class="soap-cube" data-k="1"><rect x="40" y="14" width="22" height="22" rx="4" fill="oklch(0.84 0.1 314)"/><rect x="40" y="14" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 314 / 0.7)"/></g><g class="soap-cube" data-k="2"><rect x="66" y="14" width="22" height="22" rx="4" fill="oklch(0.84 0.1 328)"/><rect x="66" y="14" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 328 / 0.7)"/></g><g class="soap-cube" data-k="3"><rect x="92" y="14" width="22" height="22" rx="4" fill="oklch(0.84 0.1 342)"/><rect x="92" y="14" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 342 / 0.7)"/></g><g class="soap-cube" data-k="1"><rect x="14" y="40" width="22" height="22" rx="4" fill="oklch(0.84 0.1 314)"/><rect x="14" y="40" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 314 / 0.7)"/></g><g class="soap-cube" data-k="2"><rect x="40" y="40" width="22" height="22" rx="4" fill="oklch(0.84 0.1 328)"/><rect x="40" y="40" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 328 / 0.7)"/></g><g class="soap-cube" data-k="3"><rect x="66" y="40" width="22" height="22" rx="4" fill="oklch(0.84 0.1 342)"/><rect x="66" y="40" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 342 / 0.7)"/></g><g class="soap-cube" data-k="4"><rect x="92" y="40" width="22" height="22" rx="4" fill="oklch(0.84 0.1 356)"/><rect x="92" y="40" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 356 / 0.7)"/></g><g class="soap-cube" data-k="2"><rect x="14" y="66" width="22" height="22" rx="4" fill="oklch(0.84 0.1 328)"/><rect x="14" y="66" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 328 / 0.7)"/></g><g class="soap-cube" data-k="3"><rect x="40" y="66" width="22" height="22" rx="4" fill="oklch(0.84 0.1 342)"/><rect x="40" y="66" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 342 / 0.7)"/></g><g class="soap-cube" data-k="4"><rect x="66" y="66" width="22" height="22" rx="4" fill="oklch(0.84 0.1 356)"/><rect x="66" y="66" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 356 / 0.7)"/></g><g class="soap-cube" data-k="5"><rect x="92" y="66" width="22" height="22" rx="4" fill="oklch(0.84 0.1 10)"/><rect x="92" y="66" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 10 / 0.7)"/></g><g class="soap-cube" data-k="3"><rect x="14" y="92" width="22" height="22" rx="4" fill="oklch(0.84 0.1 342)"/><rect x="14" y="92" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 342 / 0.7)"/></g><g class="soap-cube" data-k="4"><rect x="40" y="92" width="22" height="22" rx="4" fill="oklch(0.84 0.1 356)"/><rect x="40" y="92" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 356 / 0.7)"/></g><g class="soap-cube" data-k="5"><rect x="66" y="92" width="22" height="22" rx="4" fill="oklch(0.84 0.1 10)"/><rect x="66" y="92" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 10 / 0.7)"/></g><g class="soap-cube" data-k="6"><rect x="92" y="92" width="22" height="22" rx="4" fill="oklch(0.84 0.1 24)"/><rect x="92" y="92" width="22" height="7" rx="3.5" fill="oklch(0.95 0.05 24 / 0.7)"/></g>
+            </svg>
+          </span>
+          <span class="name">Soap cutting</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="glass" href="glass/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <!-- A pane broken into shards round an impact; the cuts are stencil gaps. -->
+              <clipPath id="glass-clip"><rect x="14" y="14" width="100" height="100" rx="8"/></clipPath>
+              <g clip-path="url(#glass-clip)"><path class="shard" data-a="-1.425" data-b="0" d="M70.0 54.0L67.3 39.2L72.2 39.2L76.8 40.6Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.775" data-b="0" d="M70.0 54.0L76.8 40.6L80.7 43.5L83.5 47.5Z" fill="oklch(0.72 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.100" data-b="0" d="M70.0 54.0L83.5 47.5L84.9 52.5L84.5 57.7Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="0.575" data-b="0" d="M70.0 54.0L84.5 57.7L82.6 62.2L79.3 65.7Z" fill="oklch(0.72 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.225" data-b="0" d="M70.0 54.0L79.3 65.7L75.1 68.1L70.3 69.0Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.875" data-b="0" d="M70.0 54.0L70.3 69.0L65.5 68.3L61.2 66.1Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="2.525" data-b="0" d="M70.0 54.0L61.2 66.1L57.8 62.7L55.6 58.3Z" fill="oklch(0.72 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.200" data-b="0" d="M70.0 54.0L55.6 58.3L55.0 53.1L56.2 48.0Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.850" data-b="0" d="M70.0 54.0L56.2 48.0L58.6 44.2L62.0 41.3Z" fill="oklch(0.72 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="4.342" data-b="0" d="M70.0 54.0L62.0 41.3L64.6 40.0L67.3 39.2Z" fill="oklch(0.72 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-1.425" data-b="1" d="M67.3 39.2L63.6 18.6L75.2 18.4L86.3 21.9L76.8 40.6Z" fill="oklch(0.78 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.775" data-b="1" d="M76.8 40.6L86.3 21.9L95.7 28.8L102.4 38.3L83.5 47.5Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.100" data-b="1" d="M83.5 47.5L102.4 38.3L105.8 50.4L104.9 62.9L84.5 57.7Z" fill="oklch(0.78 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="0.575" data-b="1" d="M84.5 57.7L104.9 62.9L100.2 73.6L92.4 82.2L79.3 65.7Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.225" data-b="1" d="M79.3 65.7L92.4 82.2L82.2 87.9L70.7 90.0L70.3 69.0Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.875" data-b="1" d="M70.3 69.0L70.7 90.0L59.2 88.3L48.8 83.1L61.2 66.1Z" fill="oklch(0.78 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="2.525" data-b="1" d="M61.2 66.1L48.8 83.1L40.6 74.8L35.5 64.3L55.6 58.3Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.200" data-b="1" d="M55.6 58.3L35.5 64.3L34.1 51.9L37.0 39.7L56.2 48.0Z" fill="oklch(0.78 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.850" data-b="1" d="M56.2 48.0L37.0 39.7L42.7 30.6L50.8 23.5L62.0 41.3Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="4.342" data-b="1" d="M62.0 41.3L50.8 23.5L57.0 20.4L63.6 18.6L67.3 39.2Z" fill="oklch(0.78 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-1.425" data-b="2" d="M63.6 18.6L45.0 -83.8L90.3 -84.5L133.5 -70.8L86.3 21.9Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.775" data-b="2" d="M86.3 21.9L133.5 -70.8L170.0 -44.0L196.1 -6.9L102.4 38.3Z" fill="oklch(0.84 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="-0.100" data-b="2" d="M102.4 38.3L196.1 -6.9L209.3 40.0L205.6 88.6L104.9 62.9Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="0.575" data-b="2" d="M104.9 62.9L205.6 88.6L187.5 130.1L157.0 163.7L92.4 82.2Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.225" data-b="2" d="M92.4 82.2L157.0 163.7L117.5 185.7L72.9 194.0L70.7 90.0Z" fill="oklch(0.84 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="1.875" data-b="2" d="M70.7 90.0L72.9 194.0L28.1 187.6L-12.4 167.2L48.8 83.1Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="2.525" data-b="2" d="M48.8 83.1L-12.4 167.2L-44.2 135.0L-64.1 94.2L35.5 64.3Z" fill="oklch(0.84 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.200" data-b="2" d="M35.5 64.3L-64.1 94.2L-69.8 45.8L-58.5 -1.6L37.0 39.7Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="3.850" data-b="2" d="M37.0 39.7L-58.5 -1.6L-36.3 -37.1L-4.6 -64.4L50.8 23.5Z" fill="oklch(0.84 0.07 215 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><path class="shard" data-a="4.342" data-b="2" d="M50.8 23.5L-4.6 -64.4L19.3 -76.5L45.0 -83.8L63.6 18.6Z" fill="oklch(0.84 0.07 230 / 0.8)" style="stroke: var(--bg)" stroke-width="2.4" stroke-linejoin="round"/><circle cx="70" cy="54" r="3.5" style="fill: var(--bg)"/></g>
+            </svg>
+          </span>
+          <span class="name">Glass</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="tesseract" href="tesseract/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <g id="tess-edges" fill="none" stroke-linecap="round"></g>
+            </svg>
+          </span>
+          <span class="name">Tesseract</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="chladni" href="chladni/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-plate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.34 0.06 268 / 0.7)"/><stop offset="1" stop-color="oklch(0.2 0.04 275 / 0.6)"/></linearGradient>
+              <g id="chladni-plate">
+                <rect x="12" y="12" width="104" height="104" rx="6" fill="url(#g-plate)"/>
+                <rect x="12" y="12" width="104" height="104" rx="6" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
+                <!-- Sand gathers on the nodal lines; two modes swap on hover. -->
+                <path id="chladni-a" d="M42.2 16.0L42.1 17.3M85.8 16.0L85.9 17.3M42.1 17.3L42.1 18.7M85.9 17.3L85.9 18.7M42.1 18.7L42.0 20.0M85.9 18.7L86.0 20.0M42.0 20.0L41.8 21.3M86.0 20.0L86.2 21.3M41.8 21.3L41.6 22.7M86.2 21.3L86.4 22.7M41.3 23.7L41.3 24.0M41.6 22.7L41.3 23.7M86.4 22.7L86.7 23.7M86.7 24.0L86.7 23.7M41.3 24.0L40.9 25.3M86.7 24.0L87.1 25.3M40.9 25.3L40.5 26.7M87.1 25.3L87.5 26.7M40.0 28.0L40.0 28.0M40.5 26.7L40.0 28.0M64.0 28.0L64.0 28.0M64.0 28.0L64.0 28.0M87.5 26.7L88.0 28.0M88.0 28.0L88.0 28.0M40.0 28.0L39.4 29.3M60.0 29.2L59.9 29.3M61.3 28.5L60.0 29.2M62.7 28.1L61.3 28.5M64.0 28.0L62.7 28.1M64.0 28.0L65.3 28.1M66.7 28.5L65.3 28.1M68.0 29.2L66.7 28.5M68.1 29.3L68.0 29.2M88.0 28.0L88.6 29.3M39.4 29.3L38.7 30.7M58.7 30.2L58.1 30.7M59.9 29.3L58.7 30.2M68.1 29.3L69.3 30.2M69.9 30.7L69.3 30.2M88.6 29.3L89.3 30.7M38.7 30.7L37.9 32.0M38.7 30.7L38.7 30.7M57.3 31.4L56.8 32.0M58.1 30.7L57.3 31.4M69.9 30.7L70.7 31.4M71.2 32.0L70.7 31.4M89.3 30.7L89.3 30.7M90.1 32.0L89.3 30.7M37.3 32.7L36.9 33.3M37.9 32.0L37.3 32.7M56.0 32.9L55.7 33.3M56.8 32.0L56.0 32.9M71.2 32.0L72.0 32.9M72.3 33.3L72.0 32.9M90.1 32.0L90.7 32.7M91.1 33.3L90.7 32.7M36.0 34.4L35.7 34.7M36.9 33.3L36.0 34.4M55.7 33.3L54.7 34.7M72.3 33.3L73.3 34.7M91.1 33.3L92.0 34.4M92.3 34.7L92.0 34.4M34.7 35.7L34.4 36.0M35.7 34.7L34.7 35.7M54.7 34.8L53.9 36.0M54.7 34.7L54.7 34.8M73.3 34.7L73.3 34.8M74.1 36.0L73.3 34.8M92.3 34.7L93.3 35.7M93.6 36.0L93.3 35.7M33.3 36.9L32.7 37.3M34.4 36.0L33.3 36.9M53.3 37.1L53.2 37.3M53.9 36.0L53.3 37.1M74.1 36.0L74.7 37.1M74.8 37.3L74.7 37.1M93.6 36.0L94.7 36.9M95.3 37.3L94.7 36.9M32.0 37.9L30.7 38.7M32.7 37.3L32.0 37.9M53.2 37.3L52.6 38.7M74.8 37.3L75.4 38.7M95.3 37.3L96.0 37.9M97.3 38.7L96.0 37.9M28.0 40.0L28.0 40.0M29.3 39.4L28.0 40.0M30.7 38.7L29.3 39.4M30.7 38.7L30.7 38.7M52.0 40.0L52.0 40.0M52.6 38.7L52.0 40.0M75.4 38.7L76.0 40.0M76.0 40.0L76.0 40.0M97.3 38.7L97.3 38.7M98.7 39.4L97.3 38.7M100.0 40.0L98.7 39.4M100.0 40.0L100.0 40.0M24.0 41.3L23.7 41.3M25.3 40.9L24.0 41.3M26.7 40.5L25.3 40.9M28.0 40.0L26.7 40.5M52.0 40.0L51.5 41.3M76.0 40.0L76.5 41.3M100.0 40.0L101.3 40.5M102.7 40.9L101.3 40.5M104.0 41.3L102.7 40.9M104.3 41.3L104.0 41.3M17.3 42.1L16.0 42.2M18.7 42.1L17.3 42.1M20.0 42.0L18.7 42.1M21.3 41.8L20.0 42.0M22.7 41.6L21.3 41.8M23.7 41.3L22.7 41.6M51.5 41.3L50.9 42.7M76.5 41.3L77.1 42.7M104.3 41.3L105.3 41.6M106.7 41.8L105.3 41.6M108.0 42.0L106.7 41.8M109.3 42.1L108.0 42.0M110.7 42.1L109.3 42.1M112.0 42.2L110.7 42.1M50.7 43.4L50.4 44.0M50.9 42.7L50.7 43.4M77.1 42.7L77.3 43.4M77.6 44.0L77.3 43.4M50.4 44.0L49.8 45.3M77.6 44.0L78.2 45.3M49.3 46.2L49.1 46.7M49.8 45.3L49.3 46.2M78.2 45.3L78.7 46.2M78.9 46.7L78.7 46.2M49.1 46.7L48.0 48.0M78.9 46.7L80.0 48.0M80.0 48.0L80.0 48.0M46.7 49.1L46.2 49.3M48.0 48.0L46.7 49.1M48.0 48.0L48.0 48.0M80.0 48.0L81.3 49.1M81.8 49.3L81.3 49.1M44.0 50.4L43.4 50.7M45.3 49.8L44.0 50.4M46.2 49.3L45.3 49.8M81.8 49.3L82.7 49.8M84.0 50.4L82.7 49.8M84.6 50.7L84.0 50.4M40.0 52.0L40.0 52.0M41.3 51.5L40.0 52.0M42.7 50.9L41.3 51.5M43.4 50.7L42.7 50.9M64.0 52.0L64.0 52.0M64.0 52.0L64.0 52.0M84.6 50.7L85.3 50.9M86.7 51.5L85.3 50.9M88.0 52.0L86.7 51.5M88.0 52.0L88.0 52.0M37.3 53.2L37.1 53.3M38.7 52.6L37.3 53.2M40.0 52.0L38.7 52.6M56.0 53.3L55.9 53.3M57.3 52.8L56.0 53.3M58.7 52.4L57.3 52.8M60.0 52.2L58.7 52.4M61.3 52.1L60.0 52.2M62.7 52.0L61.3 52.1M64.0 52.0L62.7 52.0M64.0 52.0L65.3 52.0M66.7 52.1L65.3 52.0M68.0 52.2L66.7 52.1M69.3 52.4L68.0 52.2M70.7 52.8L69.3 52.4M72.0 53.3L70.7 52.8M72.1 53.3L72.0 53.3M88.0 52.0L89.3 52.6M90.7 53.2L89.3 52.6M90.9 53.3L90.7 53.2M36.0 53.9L34.8 54.7M37.1 53.3L36.0 53.9M54.7 54.1L54.1 54.7M55.9 53.3L54.7 54.1M72.1 53.3L73.3 54.1M73.9 54.7L73.3 54.1M90.9 53.3L92.0 53.9M93.2 54.7L92.0 53.9M33.3 55.7L32.9 56.0M34.7 54.7L33.3 55.7M34.8 54.7L34.7 54.7M53.3 55.9L53.3 56.0M54.1 54.7L53.3 55.9M73.9 54.7L74.7 55.9M74.7 56.0L74.7 55.9M93.2 54.7L93.3 54.7M94.7 55.7L93.3 54.7M95.1 56.0L94.7 55.7M32.0 56.8L31.4 57.3M32.9 56.0L32.0 56.8M53.3 56.0L52.8 57.3M74.7 56.0L75.2 57.3M95.1 56.0L96.0 56.8M96.6 57.3L96.0 56.8M30.7 58.1L30.2 58.7M31.4 57.3L30.7 58.1M52.8 57.3L52.4 58.7M75.2 57.3L75.6 58.7M96.6 57.3L97.3 58.1M97.8 58.7L97.3 58.1M29.3 59.9L29.2 60.0M30.2 58.7L29.3 59.9M52.4 58.7L52.2 60.0M75.6 58.7L75.8 60.0M97.8 58.7L98.7 59.9M98.8 60.0L98.7 59.9M29.2 60.0L28.5 61.3M52.2 60.0L52.1 61.3M75.8 60.0L75.9 61.3M98.8 60.0L99.5 61.3M28.5 61.3L28.1 62.7M52.1 61.3L52.0 62.7M75.9 61.3L76.0 62.7M99.5 61.3L99.9 62.7M28.0 64.0L28.0 64.0M28.1 62.7L28.0 64.0M52.0 64.0L52.0 64.0M52.0 62.7L52.0 64.0M76.0 62.7L76.0 64.0M76.0 64.0L76.0 64.0M99.9 62.7L100.0 64.0M100.0 64.0L100.0 64.0M28.0 64.0L28.0 64.0M28.1 65.3L28.0 64.0M52.0 64.0L52.0 64.0M52.0 65.3L52.0 64.0M76.0 64.0L76.0 65.3M76.0 64.0L76.0 64.0M100.0 64.0L99.9 65.3M100.0 64.0L100.0 64.0M28.1 65.3L28.5 66.7M52.0 65.3L52.1 66.7M76.0 65.3L75.9 66.7M99.9 65.3L99.5 66.7M28.5 66.7L29.2 68.0M52.1 66.7L52.2 68.0M75.9 66.7L75.8 68.0M99.5 66.7L98.8 68.0M29.2 68.0L29.3 68.1M30.2 69.3L29.3 68.1M52.2 68.0L52.4 69.3M75.8 68.0L75.6 69.3M98.7 68.1L97.8 69.3M98.8 68.0L98.7 68.1M30.2 69.3L30.7 69.9M31.4 70.7L30.7 69.9M52.4 69.3L52.8 70.7M75.6 69.3L75.2 70.7M97.3 69.9L96.6 70.7M97.8 69.3L97.3 69.9M31.4 70.7L32.0 71.2M32.9 72.0L32.0 71.2M52.8 70.7L53.3 72.0M75.2 70.7L74.7 72.0M96.0 71.2L95.1 72.0M96.6 70.7L96.0 71.2M32.9 72.0L33.3 72.3M34.7 73.3L33.3 72.3M34.8 73.3L34.7 73.3M53.3 72.0L53.3 72.1M54.1 73.3L53.3 72.1M74.7 72.1L73.9 73.3M74.7 72.0L74.7 72.1M93.3 73.3L93.2 73.3M94.7 72.3L93.3 73.3M95.1 72.0L94.7 72.3M34.8 73.3L36.0 74.1M37.1 74.7L36.0 74.1M54.1 73.3L54.7 73.9M55.9 74.7L54.7 73.9M73.3 73.9L72.1 74.7M73.9 73.3L73.3 73.9M92.0 74.1L90.9 74.7M93.2 73.3L92.0 74.1M37.1 74.7L37.3 74.8M38.7 75.4L37.3 74.8M40.0 76.0L38.7 75.4M55.9 74.7L56.0 74.7M57.3 75.2L56.0 74.7M58.7 75.6L57.3 75.2M60.0 75.8L58.7 75.6M61.3 75.9L60.0 75.8M62.7 76.0L61.3 75.9M64.0 76.0L62.7 76.0M65.3 76.0L64.0 76.0M66.7 75.9L65.3 76.0M68.0 75.8L66.7 75.9M69.3 75.6L68.0 75.8M70.7 75.2L69.3 75.6M72.0 74.7L70.7 75.2M72.1 74.7L72.0 74.7M89.3 75.4L88.0 76.0M90.7 74.8L89.3 75.4M90.9 74.7L90.7 74.8M40.0 76.0L40.0 76.0M41.3 76.5L40.0 76.0M42.7 77.1L41.3 76.5M43.4 77.3L42.7 77.1M64.0 76.0L64.0 76.0M64.0 76.0L64.0 76.0M85.3 77.1L84.6 77.3M86.7 76.5L85.3 77.1M88.0 76.0L86.7 76.5M88.0 76.0L88.0 76.0M43.4 77.3L44.0 77.6M45.3 78.2L44.0 77.6M46.2 78.7L45.3 78.2M82.7 78.2L81.8 78.7M84.0 77.6L82.7 78.2M84.6 77.3L84.0 77.6M46.2 78.7L46.7 78.9M48.0 80.0L46.7 78.9M81.3 78.9L80.0 80.0M81.8 78.7L81.3 78.9M48.0 80.0L48.0 80.0M49.1 81.3L48.0 80.0M80.0 80.0L78.9 81.3M80.0 80.0L80.0 80.0M49.1 81.3L49.3 81.8M49.8 82.7L49.3 81.8M78.7 81.8L78.2 82.7M78.9 81.3L78.7 81.8M49.8 82.7L50.4 84.0M78.2 82.7L77.6 84.0M50.4 84.0L50.7 84.6M50.9 85.3L50.7 84.6M77.3 84.6L77.1 85.3M77.6 84.0L77.3 84.6M17.3 85.9L16.0 85.8M18.7 85.9L17.3 85.9M20.0 86.0L18.7 85.9M21.3 86.2L20.0 86.0M22.7 86.4L21.3 86.2M23.7 86.7L22.7 86.4M50.9 85.3L51.5 86.7M77.1 85.3L76.5 86.7M105.3 86.4L104.3 86.7M106.7 86.2L105.3 86.4M108.0 86.0L106.7 86.2M109.3 85.9L108.0 86.0M110.7 85.9L109.3 85.9M112.0 85.8L110.7 85.9M23.7 86.7L24.0 86.7M25.3 87.1L24.0 86.7M26.7 87.5L25.3 87.1M28.0 88.0L26.7 87.5M51.5 86.7L52.0 88.0M76.5 86.7L76.0 88.0M101.3 87.5L100.0 88.0M102.7 87.1L101.3 87.5M104.0 86.7L102.7 87.1M104.3 86.7L104.0 86.7M28.0 88.0L28.0 88.0M29.3 88.6L28.0 88.0M30.7 89.3L29.3 88.6M30.7 89.3L30.7 89.3M52.0 88.0L52.0 88.0M52.6 89.3L52.0 88.0M76.0 88.0L75.4 89.3M76.0 88.0L76.0 88.0M97.3 89.3L97.3 89.3M98.7 88.6L97.3 89.3M100.0 88.0L98.7 88.6M100.0 88.0L100.0 88.0M30.7 89.3L32.0 90.1M32.7 90.7L32.0 90.1M52.6 89.3L53.2 90.7M75.4 89.3L74.8 90.7M96.0 90.1L95.3 90.7M97.3 89.3L96.0 90.1M32.7 90.7L33.3 91.1M34.4 92.0L33.3 91.1M53.2 90.7L53.3 90.9M53.9 92.0L53.3 90.9M74.7 90.9L74.1 92.0M74.8 90.7L74.7 90.9M94.7 91.1L93.6 92.0M95.3 90.7L94.7 91.1M34.4 92.0L34.7 92.3M35.7 93.3L34.7 92.3M53.9 92.0L54.7 93.2M54.7 93.3L54.7 93.2M73.3 93.2L73.3 93.3M74.1 92.0L73.3 93.2M93.3 92.3L92.3 93.3M93.6 92.0L93.3 92.3M35.7 93.3L36.0 93.6M36.9 94.7L36.0 93.6M54.7 93.3L55.7 94.7M73.3 93.3L72.3 94.7M92.0 93.6L91.1 94.7M92.3 93.3L92.0 93.6M36.9 94.7L37.3 95.3M37.9 96.0L37.3 95.3M55.7 94.7L56.0 95.1M56.8 96.0L56.0 95.1M72.0 95.1L71.2 96.0M72.3 94.7L72.0 95.1M90.7 95.3L90.1 96.0M91.1 94.7L90.7 95.3M37.9 96.0L38.7 97.3M38.7 97.3L38.7 97.3M56.8 96.0L57.3 96.6M58.1 97.3L57.3 96.6M70.7 96.6L69.9 97.3M71.2 96.0L70.7 96.6M89.3 97.3L89.3 97.3M90.1 96.0L89.3 97.3M38.7 97.3L39.4 98.7M58.1 97.3L58.7 97.8M59.9 98.7L58.7 97.8M69.3 97.8L68.1 98.7M69.9 97.3L69.3 97.8M89.3 97.3L88.6 98.7M39.4 98.7L40.0 100.0M59.9 98.7L60.0 98.8M61.3 99.5L60.0 98.8M62.7 99.9L61.3 99.5M64.0 100.0L62.7 99.9M65.3 99.9L64.0 100.0M66.7 99.5L65.3 99.9M68.0 98.8L66.7 99.5M68.1 98.7L68.0 98.8M88.6 98.7L88.0 100.0M40.0 100.0L40.0 100.0M40.5 101.3L40.0 100.0M64.0 100.0L64.0 100.0M64.0 100.0L64.0 100.0M88.0 100.0L87.5 101.3M88.0 100.0L88.0 100.0M40.5 101.3L40.9 102.7M87.5 101.3L87.1 102.7M40.9 102.7L41.3 104.0M87.1 102.7L86.7 104.0M41.3 104.0L41.3 104.3M41.6 105.3L41.3 104.3M86.7 104.3L86.4 105.3M86.7 104.0L86.7 104.3M41.6 105.3L41.8 106.7M86.4 105.3L86.2 106.7M41.8 106.7L42.0 108.0M86.2 106.7L86.0 108.0M42.0 108.0L42.1 109.3M86.0 108.0L85.9 109.3M42.1 109.3L42.1 110.7M85.9 109.3L85.9 110.7M42.1 110.7L42.2 112.0M85.9 110.7L85.8 112.0" fill="none" stroke="oklch(0.9 0.15 88)" stroke-width="3.6" stroke-linecap="round"/>
+                <path id="chladni-b" d="M52.1 16.0L52.1 17.3M75.9 16.0L75.9 17.3M52.1 17.3L52.2 18.7M75.9 17.3L75.8 18.7M52.2 18.7L52.4 20.0M75.8 18.7L75.6 20.0M52.4 20.0L52.7 21.3M75.6 20.0L75.3 21.3M52.7 21.3L53.1 22.7M75.3 21.3L74.9 22.7M53.1 22.7L53.3 23.1M53.6 24.0L53.3 23.1M74.7 23.1L74.4 24.0M74.9 22.7L74.7 23.1M36.0 25.3L35.9 25.3M37.3 25.0L36.0 25.3M38.7 25.1L37.3 25.0M39.3 25.3L38.7 25.1M53.6 24.0L54.2 25.3M74.4 24.0L73.8 25.3M89.3 25.1L88.7 25.3M90.7 25.0L89.3 25.1M92.0 25.3L90.7 25.0M92.1 25.3L92.0 25.3M33.3 26.7L33.3 26.7M34.7 25.8L33.3 26.7M35.9 25.3L34.7 25.8M39.3 25.3L40.0 25.6M41.3 26.6L40.0 25.6M41.4 26.7L41.3 26.6M54.2 25.3L54.7 26.1M55.0 26.7L54.7 26.1M73.3 26.1L73.0 26.7M73.8 25.3L73.3 26.1M86.7 26.6L86.6 26.7M88.0 25.6L86.7 26.6M88.7 25.3L88.0 25.6M92.1 25.3L93.3 25.8M94.7 26.7L93.3 25.8M94.7 26.7L94.7 26.7M32.0 27.6L31.6 28.0M33.3 26.7L32.0 27.6M41.4 26.7L42.5 28.0M55.0 26.7L55.9 28.0M73.0 26.7L72.1 28.0M86.6 26.7L85.5 28.0M94.7 26.7L96.0 27.6M96.4 28.0L96.0 27.6M30.7 28.8L30.1 29.3M31.6 28.0L30.7 28.8M42.5 28.0L42.7 28.3M43.3 29.3L42.7 28.3M55.9 28.0L56.0 28.2M56.8 29.3L56.0 28.2M72.0 28.2L71.2 29.3M72.1 28.0L72.0 28.2M85.3 28.3L84.7 29.3M85.5 28.0L85.3 28.3M96.4 28.0L97.3 28.8M97.9 29.3L97.3 28.8M29.3 30.1L28.8 30.7M30.1 29.3L29.3 30.1M43.3 29.3L43.8 30.7M56.8 29.3L57.3 30.0M57.9 30.7L57.3 30.0M70.7 30.0L70.1 30.7M71.2 29.3L70.7 30.0M84.7 29.3L84.2 30.7M97.9 29.3L98.7 30.1M99.2 30.7L98.7 30.1M28.0 31.6L27.6 32.0M28.8 30.7L28.0 31.6M43.8 30.7L44.0 31.2M44.2 32.0L44.0 31.2M57.9 30.7L58.7 31.5M59.2 32.0L58.7 31.5M69.3 31.5L68.8 32.0M70.1 30.7L69.3 31.5M84.0 31.2L83.8 32.0M84.2 30.7L84.0 31.2M99.2 30.7L100.0 31.6M100.4 32.0L100.0 31.6M26.7 33.3L26.7 33.3M27.6 32.0L26.7 33.3M44.2 32.0L44.5 33.3M59.2 32.0L60.0 32.9M60.6 33.3L60.0 32.9M68.0 32.9L67.4 33.3M68.8 32.0L68.0 32.9M83.8 32.0L83.5 33.3M100.4 32.0L101.3 33.3M101.3 33.3L101.3 33.3M26.7 33.3L25.8 34.7M44.5 33.3L44.7 34.7M60.6 33.3L61.3 34.1M62.4 34.7L61.3 34.1M66.7 34.1L65.6 34.7M67.4 33.3L66.7 34.1M83.5 33.3L83.3 34.7M101.3 33.3L102.2 34.7M25.3 35.9L25.3 36.0M25.8 34.7L25.3 35.9M44.7 34.7L44.9 36.0M62.4 34.7L62.7 34.9M64.0 35.3L62.7 34.9M65.3 34.9L64.0 35.3M65.6 34.7L65.3 34.9M83.3 34.7L83.1 36.0M102.2 34.7L102.7 35.9M102.7 36.0L102.7 35.9M25.3 36.0L25.0 37.3M44.9 36.0L44.9 37.3M83.1 36.0L83.1 37.3M102.7 36.0L103.0 37.3M25.0 37.3L25.1 38.7M44.9 37.3L44.9 38.7M83.1 37.3L83.1 38.7M103.0 37.3L102.9 38.7M25.1 38.7L25.3 39.3M25.6 40.0L25.3 39.3M44.9 38.7L44.8 40.0M64.0 40.0L64.0 40.0M64.0 40.0L64.0 40.0M83.1 38.7L83.2 40.0M102.7 39.3L102.4 40.0M102.9 38.7L102.7 39.3M25.6 40.0L26.6 41.3M44.8 40.0L44.6 41.3M61.3 40.9L60.7 41.3M62.7 40.2L61.3 40.9M64.0 40.0L62.7 40.2M64.0 40.0L65.3 40.2M66.7 40.9L65.3 40.2M67.3 41.3L66.7 40.9M83.2 40.0L83.4 41.3M102.4 40.0L101.4 41.3M26.6 41.3L26.7 41.4M28.0 42.5L26.7 41.4M28.3 42.7L28.0 42.5M44.6 41.3L44.0 42.7M58.7 42.5L58.5 42.7M60.0 41.7L58.7 42.5M60.7 41.3L60.0 41.7M67.3 41.3L68.0 41.7M69.3 42.5L68.0 41.7M69.5 42.7L69.3 42.5M83.4 41.3L84.0 42.7M100.0 42.5L99.7 42.7M101.3 41.4L100.0 42.5M101.4 41.3L101.3 41.4M28.3 42.7L29.3 43.3M30.7 43.8L29.3 43.3M31.2 44.0L30.7 43.8M44.0 42.7L42.7 44.0M44.0 42.7L44.0 42.7M57.3 43.3L56.1 44.0M58.5 42.7L57.3 43.3M69.5 42.7L70.7 43.3M71.9 44.0L70.7 43.3M84.0 42.7L84.0 42.7M85.3 44.0L84.0 42.7M97.3 43.8L96.8 44.0M98.7 43.3L97.3 43.8M99.7 42.7L98.7 43.3M31.2 44.0L32.0 44.2M33.3 44.5L32.0 44.2M34.7 44.7L33.3 44.5M36.0 44.9L34.7 44.7M37.3 44.9L36.0 44.9M38.7 44.9L37.3 44.9M40.0 44.8L38.7 44.9M41.3 44.6L40.0 44.8M42.7 44.0L41.3 44.6M42.7 44.0L42.7 44.0M53.3 45.3L53.1 45.3M54.7 44.7L53.3 45.3M56.0 44.0L54.7 44.7M56.1 44.0L56.0 44.0M71.9 44.0L72.0 44.0M73.3 44.7L72.0 44.0M74.7 45.3L73.3 44.7M74.9 45.3L74.7 45.3M85.3 44.0L85.3 44.0M86.7 44.6L85.3 44.0M88.0 44.8L86.7 44.6M89.3 44.9L88.0 44.8M90.7 44.9L89.3 44.9M92.0 44.9L90.7 44.9M93.3 44.7L92.0 44.9M94.7 44.5L93.3 44.7M96.0 44.2L94.7 44.5M96.8 44.0L96.0 44.2M50.7 46.4L50.0 46.7M52.0 45.8L50.7 46.4M53.1 45.3L52.0 45.8M74.9 45.3L76.0 45.8M77.3 46.4L76.0 45.8M78.0 46.7L77.3 46.4M49.3 47.0L48.0 48.0M50.0 46.7L49.3 47.0M78.0 46.7L78.7 47.0M80.0 48.0L78.7 47.0M80.0 48.0L80.0 48.0M48.0 48.0L47.0 49.3M48.0 48.0L48.0 48.0M80.0 48.0L81.0 49.3M46.7 50.0L46.4 50.7M47.0 49.3L46.7 50.0M81.0 49.3L81.3 50.0M81.6 50.7L81.3 50.0M46.4 50.7L45.8 52.0M81.6 50.7L82.2 52.0M17.3 52.1L16.0 52.1M18.7 52.2L17.3 52.1M20.0 52.4L18.7 52.2M21.3 52.7L20.0 52.4M22.7 53.1L21.3 52.7M23.1 53.3L22.7 53.1M45.3 53.1L45.3 53.3M45.8 52.0L45.3 53.1M82.2 52.0L82.7 53.1M82.7 53.3L82.7 53.1M105.3 53.1L104.9 53.3M106.7 52.7L105.3 53.1M108.0 52.4L106.7 52.7M109.3 52.2L108.0 52.4M110.7 52.1L109.3 52.2M112.0 52.1L110.7 52.1M23.1 53.3L24.0 53.6M25.3 54.2L24.0 53.6M26.1 54.7L25.3 54.2M45.3 53.3L44.7 54.7M62.7 54.5L61.7 54.7M64.0 54.4L62.7 54.5M65.3 54.5L64.0 54.4M66.3 54.7L65.3 54.5M82.7 53.3L83.3 54.7M102.7 54.2L101.9 54.7M104.0 53.6L102.7 54.2M104.9 53.3L104.0 53.6M26.1 54.7L26.7 55.0M28.0 55.9L26.7 55.0M28.2 56.0L28.0 55.9M44.7 54.7L44.0 56.0M58.7 55.9L58.5 56.0M60.0 55.2L58.7 55.9M61.3 54.7L60.0 55.2M61.7 54.7L61.3 54.7M66.3 54.7L66.7 54.7M68.0 55.2L66.7 54.7M69.3 55.9L68.0 55.2M69.5 56.0L69.3 55.9M83.3 54.7L84.0 56.0M100.0 55.9L99.8 56.0M101.3 55.0L100.0 55.9M101.9 54.7L101.3 55.0M28.2 56.0L29.3 56.8M30.0 57.3L29.3 56.8M44.0 56.1L43.3 57.3M44.0 56.0L44.0 56.1M57.3 57.0L57.0 57.3M58.5 56.0L57.3 57.0M69.5 56.0L70.7 57.0M71.0 57.3L70.7 57.0M84.0 56.0L84.0 56.1M84.7 57.3L84.0 56.1M98.7 56.8L98.0 57.3M99.8 56.0L98.7 56.8M30.0 57.3L30.7 57.9M31.5 58.7L30.7 57.9M42.7 58.5L42.5 58.7M43.3 57.3L42.7 58.5M56.0 58.5L55.9 58.7M57.0 57.3L56.0 58.5M71.0 57.3L72.0 58.5M72.1 58.7L72.0 58.5M84.7 57.3L85.3 58.5M85.5 58.7L85.3 58.5M97.3 57.9L96.5 58.7M98.0 57.3L97.3 57.9M31.5 58.7L32.0 59.2M32.9 60.0L32.0 59.2M42.5 58.7L41.7 60.0M55.9 58.7L55.2 60.0M72.1 58.7L72.8 60.0M85.5 58.7L86.3 60.0M96.0 59.2L95.1 60.0M96.5 58.7L96.0 59.2M32.9 60.0L33.3 60.6M34.1 61.3L33.3 60.6M41.3 60.7L40.9 61.3M41.7 60.0L41.3 60.7M55.2 60.0L54.7 61.3M72.8 60.0L73.3 61.3M86.3 60.0L86.7 60.7M87.1 61.3L86.7 60.7M94.7 60.6L93.9 61.3M95.1 60.0L94.7 60.6M34.1 61.3L34.7 62.4M34.9 62.7L34.7 62.4M40.9 61.3L40.2 62.7M54.7 61.7L54.5 62.7M54.7 61.3L54.7 61.7M73.3 61.3L73.3 61.7M73.5 62.7L73.3 61.7M87.1 61.3L87.8 62.7M93.3 62.4L93.1 62.7M93.9 61.3L93.3 62.4M34.9 62.7L35.3 64.0M40.0 64.0L40.0 64.0M40.2 62.7L40.0 64.0M54.5 62.7L54.4 64.0M73.5 62.7L73.6 64.0M87.8 62.7L88.0 64.0M88.0 64.0L88.0 64.0M93.1 62.7L92.7 64.0M35.3 64.0L34.9 65.3M40.0 64.0L40.0 64.0M40.2 65.3L40.0 64.0M54.4 64.0L54.5 65.3M73.6 64.0L73.5 65.3M88.0 64.0L87.8 65.3M88.0 64.0L88.0 64.0M92.7 64.0L93.1 65.3M34.7 65.6L34.1 66.7M34.9 65.3L34.7 65.6M40.2 65.3L40.9 66.7M54.5 65.3L54.7 66.3M54.7 66.7L54.7 66.3M73.3 66.3L73.3 66.7M73.5 65.3L73.3 66.3M87.8 65.3L87.1 66.7M93.1 65.3L93.3 65.6M93.9 66.7L93.3 65.6M33.3 67.4L32.9 68.0M34.1 66.7L33.3 67.4M40.9 66.7L41.3 67.3M41.7 68.0L41.3 67.3M54.7 66.7L55.2 68.0M73.3 66.7L72.8 68.0M86.7 67.3L86.3 68.0M87.1 66.7L86.7 67.3M93.9 66.7L94.7 67.4M95.1 68.0L94.7 67.4M32.0 68.8L31.5 69.3M32.9 68.0L32.0 68.8M41.7 68.0L42.5 69.3M55.2 68.0L55.9 69.3M72.8 68.0L72.1 69.3M86.3 68.0L85.5 69.3M95.1 68.0L96.0 68.8M96.5 69.3L96.0 68.8M30.7 70.1L30.0 70.7M31.5 69.3L30.7 70.1M42.5 69.3L42.7 69.5M43.3 70.7L42.7 69.5M55.9 69.3L56.0 69.5M57.0 70.7L56.0 69.5M72.0 69.5L71.0 70.7M72.1 69.3L72.0 69.5M85.3 69.5L84.7 70.7M85.5 69.3L85.3 69.5M96.5 69.3L97.3 70.1M98.0 70.7L97.3 70.1M29.3 71.2L28.2 72.0M30.0 70.7L29.3 71.2M43.3 70.7L44.0 71.9M44.0 72.0L44.0 71.9M57.0 70.7L57.3 71.0M58.5 72.0L57.3 71.0M70.7 71.0L69.5 72.0M71.0 70.7L70.7 71.0M84.0 71.9L84.0 72.0M84.7 70.7L84.0 71.9M98.0 70.7L98.7 71.2M99.8 72.0L98.7 71.2M26.7 73.0L26.1 73.3M28.0 72.1L26.7 73.0M28.2 72.0L28.0 72.1M44.0 72.0L44.7 73.3M58.5 72.0L58.7 72.1M60.0 72.8L58.7 72.1M61.3 73.3L60.0 72.8M61.7 73.3L61.3 73.3M66.7 73.3L66.3 73.3M68.0 72.8L66.7 73.3M69.3 72.1L68.0 72.8M69.5 72.0L69.3 72.1M84.0 72.0L83.3 73.3M99.8 72.0L100.0 72.1M101.3 73.0L100.0 72.1M101.9 73.3L101.3 73.0M24.0 74.4L23.1 74.7M25.3 73.8L24.0 74.4M26.1 73.3L25.3 73.8M44.7 73.3L45.3 74.7M61.7 73.3L62.7 73.5M64.0 73.6L62.7 73.5M65.3 73.5L64.0 73.6M66.3 73.3L65.3 73.5M83.3 73.3L82.7 74.7M101.9 73.3L102.7 73.8M104.0 74.4L102.7 73.8M104.9 74.7L104.0 74.4M17.3 75.9L16.0 75.9M18.7 75.8L17.3 75.9M20.0 75.6L18.7 75.8M21.3 75.3L20.0 75.6M22.7 74.9L21.3 75.3M23.1 74.7L22.7 74.9M45.3 74.7L45.3 74.9M45.8 76.0L45.3 74.9M82.7 74.9L82.2 76.0M82.7 74.7L82.7 74.9M104.9 74.7L105.3 74.9M106.7 75.3L105.3 74.9M108.0 75.6L106.7 75.3M109.3 75.8L108.0 75.6M110.7 75.9L109.3 75.8M112.0 75.9L110.7 75.9M45.8 76.0L46.4 77.3M82.2 76.0L81.6 77.3M46.4 77.3L46.7 78.0M47.0 78.7L46.7 78.0M81.3 78.0L81.0 78.7M81.6 77.3L81.3 78.0M47.0 78.7L48.0 80.0M81.0 78.7L80.0 80.0M48.0 80.0L48.0 80.0M49.3 81.0L48.0 80.0M50.0 81.3L49.3 81.0M78.7 81.0L78.0 81.3M80.0 80.0L78.7 81.0M80.0 80.0L80.0 80.0M50.0 81.3L50.7 81.6M52.0 82.2L50.7 81.6M53.1 82.7L52.0 82.2M76.0 82.2L74.9 82.7M77.3 81.6L76.0 82.2M78.0 81.3L77.3 81.6M32.0 83.8L31.2 84.0M33.3 83.5L32.0 83.8M34.7 83.3L33.3 83.5M36.0 83.1L34.7 83.3M37.3 83.1L36.0 83.1M38.7 83.1L37.3 83.1M40.0 83.2L38.7 83.1M41.3 83.4L40.0 83.2M42.7 84.0L41.3 83.4M42.7 84.0L42.7 84.0M53.1 82.7L53.3 82.7M54.7 83.3L53.3 82.7M56.0 84.0L54.7 83.3M56.1 84.0L56.0 84.0M72.0 84.0L71.9 84.0M73.3 83.3L72.0 84.0M74.7 82.7L73.3 83.3M74.9 82.7L74.7 82.7M85.3 84.0L85.3 84.0M86.7 83.4L85.3 84.0M88.0 83.2L86.7 83.4M89.3 83.1L88.0 83.2M90.7 83.1L89.3 83.1M92.0 83.1L90.7 83.1M93.3 83.3L92.0 83.1M94.7 83.5L93.3 83.3M96.0 83.8L94.7 83.5M96.8 84.0L96.0 83.8M29.3 84.7L28.3 85.3M30.7 84.2L29.3 84.7M31.2 84.0L30.7 84.2M42.7 84.0L44.0 85.3M44.0 85.3L44.0 85.3M56.1 84.0L57.3 84.7M58.5 85.3L57.3 84.7M70.7 84.7L69.5 85.3M71.9 84.0L70.7 84.7M84.0 85.3L84.0 85.3M85.3 84.0L84.0 85.3M96.8 84.0L97.3 84.2M98.7 84.7L97.3 84.2M99.7 85.3L98.7 84.7M26.7 86.6L26.6 86.7M28.0 85.5L26.7 86.6M28.3 85.3L28.0 85.5M44.0 85.3L44.6 86.7M58.5 85.3L58.7 85.5M60.0 86.3L58.7 85.5M60.7 86.7L60.0 86.3M68.0 86.3L67.3 86.7M69.3 85.5L68.0 86.3M69.5 85.3L69.3 85.5M84.0 85.3L83.4 86.7M99.7 85.3L100.0 85.5M101.3 86.6L100.0 85.5M101.4 86.7L101.3 86.6M26.6 86.7L25.6 88.0M44.6 86.7L44.8 88.0M60.7 86.7L61.3 87.1M62.7 87.8L61.3 87.1M64.0 88.0L62.7 87.8M65.3 87.8L64.0 88.0M66.7 87.1L65.3 87.8M67.3 86.7L66.7 87.1M83.4 86.7L83.2 88.0M101.4 86.7L102.4 88.0M25.3 88.7L25.1 89.3M25.6 88.0L25.3 88.7M44.8 88.0L44.9 89.3M64.0 88.0L64.0 88.0M64.0 88.0L64.0 88.0M83.2 88.0L83.1 89.3M102.4 88.0L102.7 88.7M102.9 89.3L102.7 88.7M25.1 89.3L25.0 90.7M44.9 89.3L44.9 90.7M83.1 89.3L83.1 90.7M102.9 89.3L103.0 90.7M25.0 90.7L25.3 92.0M44.9 90.7L44.9 92.0M83.1 90.7L83.1 92.0M103.0 90.7L102.7 92.0M25.3 92.0L25.3 92.1M25.8 93.3L25.3 92.1M44.9 92.0L44.7 93.3M62.7 93.1L62.4 93.3M64.0 92.7L62.7 93.1M65.3 93.1L64.0 92.7M65.6 93.3L65.3 93.1M83.1 92.0L83.3 93.3M102.7 92.1L102.2 93.3M102.7 92.0L102.7 92.1M25.8 93.3L26.7 94.7M44.7 93.3L44.5 94.7M61.3 93.9L60.6 94.7M62.4 93.3L61.3 93.9M65.6 93.3L66.7 93.9M67.4 94.7L66.7 93.9M83.3 93.3L83.5 94.7M102.2 93.3L101.3 94.7M26.7 94.7L26.7 94.7M27.6 96.0L26.7 94.7M44.5 94.7L44.2 96.0M60.0 95.1L59.2 96.0M60.6 94.7L60.0 95.1M67.4 94.7L68.0 95.1M68.8 96.0L68.0 95.1M83.5 94.7L83.8 96.0M101.3 94.7L100.4 96.0M101.3 94.7L101.3 94.7M27.6 96.0L28.0 96.4M28.8 97.3L28.0 96.4M44.0 96.8L43.8 97.3M44.2 96.0L44.0 96.8M58.7 96.5L57.9 97.3M59.2 96.0L58.7 96.5M68.8 96.0L69.3 96.5M70.1 97.3L69.3 96.5M83.8 96.0L84.0 96.8M84.2 97.3L84.0 96.8M100.0 96.4L99.2 97.3M100.4 96.0L100.0 96.4M28.8 97.3L29.3 97.9M30.1 98.7L29.3 97.9M43.8 97.3L43.3 98.7M57.3 98.0L56.8 98.7M57.9 97.3L57.3 98.0M70.1 97.3L70.7 98.0M71.2 98.7L70.7 98.0M84.2 97.3L84.7 98.7M98.7 97.9L97.9 98.7M99.2 97.3L98.7 97.9M30.1 98.7L30.7 99.2M31.6 100.0L30.7 99.2M42.7 99.7L42.5 100.0M43.3 98.7L42.7 99.7M56.0 99.8L55.9 100.0M56.8 98.7L56.0 99.8M71.2 98.7L72.0 99.8M72.1 100.0L72.0 99.8M84.7 98.7L85.3 99.7M85.5 100.0L85.3 99.7M97.3 99.2L96.4 100.0M97.9 98.7L97.3 99.2M31.6 100.0L32.0 100.4M33.3 101.3L32.0 100.4M42.5 100.0L41.4 101.3M55.9 100.0L55.0 101.3M72.1 100.0L73.0 101.3M85.5 100.0L86.6 101.3M96.0 100.4L94.7 101.3M96.4 100.0L96.0 100.4M33.3 101.3L33.3 101.3M34.7 102.2L33.3 101.3M35.9 102.7L34.7 102.2M40.0 102.4L39.3 102.7M41.3 101.4L40.0 102.4M41.4 101.3L41.3 101.4M54.7 101.9L54.2 102.7M55.0 101.3L54.7 101.9M73.0 101.3L73.3 101.9M73.8 102.7L73.3 101.9M86.6 101.3L86.7 101.4M88.0 102.4L86.7 101.4M88.7 102.7L88.0 102.4M93.3 102.2L92.1 102.7M94.7 101.3L93.3 102.2M94.7 101.3L94.7 101.3M35.9 102.7L36.0 102.7M37.3 103.0L36.0 102.7M38.7 102.9L37.3 103.0M39.3 102.7L38.7 102.9M54.2 102.7L53.6 104.0M73.8 102.7L74.4 104.0M88.7 102.7L89.3 102.9M90.7 103.0L89.3 102.9M92.0 102.7L90.7 103.0M92.1 102.7L92.0 102.7M53.3 104.9L53.1 105.3M53.6 104.0L53.3 104.9M74.4 104.0L74.7 104.9M74.9 105.3L74.7 104.9M53.1 105.3L52.7 106.7M74.9 105.3L75.3 106.7M52.7 106.7L52.4 108.0M75.3 106.7L75.6 108.0M52.4 108.0L52.2 109.3M75.6 108.0L75.8 109.3M52.2 109.3L52.1 110.7M75.8 109.3L75.9 110.7M52.1 110.7L52.1 112.0M75.9 110.7L75.9 112.0" fill="none" stroke="oklch(0.9 0.15 88)" stroke-width="3.6" stroke-linecap="round" opacity="0"/>
+              </g>
+            </svg>
+          </span>
+          <span class="name">Chladni plate</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="pendulum" href="pendulum/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <g id="pend-bobs"></g>
+              <rect x="12" y="13" width="104" height="8" rx="4" fill="url(#g-steel)"/>
+              <rect x="12" y="13" width="104" height="8" rx="4" fill="none" stroke="url(#rim)" stroke-width="1"/>
+            </svg>
+          </span>
+          <span class="name">Pendulum wave</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="keys" href="keys/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <!-- Nine oversized keycaps; one lime accent. -->
+              <g class="kc" data-k="0"><rect x="14" y="22" width="30" height="26" rx="5" fill="oklch(0.5 0.15 40)"/><rect class="kc-top" x="18" y="17" width="22" height="22" rx="4" fill="oklch(0.72 0.19 45)"/></g><g class="kc" data-k="1"><rect x="49" y="22" width="30" height="26" rx="5" fill="oklch(0.5 0.15 40)"/><rect class="kc-top" x="53" y="17" width="22" height="22" rx="4" fill="oklch(0.72 0.19 45)"/></g><g class="kc" data-k="2"><rect x="84" y="22" width="30" height="26" rx="5" fill="oklch(0.5 0.15 40)"/><rect class="kc-top" x="88" y="17" width="22" height="22" rx="4" fill="oklch(0.72 0.19 45)"/></g><g class="kc" data-k="1"><rect x="14" y="56" width="30" height="26" rx="5" fill="oklch(0.68 0.02 90)"/><rect class="kc-top" x="18" y="51" width="22" height="22" rx="4" fill="oklch(0.9 0.02 90)"/></g><g class="kc" data-k="2"><rect x="49" y="56" width="30" height="26" rx="5" fill="oklch(0.68 0.02 90)"/><rect class="kc-top" x="53" y="51" width="22" height="22" rx="4" fill="oklch(0.9 0.02 90)"/></g><g class="kc" data-k="3"><rect x="84" y="56" width="30" height="26" rx="5" fill="oklch(0.3 0.02 265)"/><rect class="kc-top" x="88" y="51" width="22" height="22" rx="4" fill="oklch(0.86 0.17 128)"/></g><g class="kc" data-k="2"><rect x="14" y="90" width="30" height="26" rx="5" fill="oklch(0.28 0.02 265)"/><rect class="kc-top" x="18" y="85" width="22" height="22" rx="4" fill="oklch(0.42 0.02 265)"/></g><g class="kc" data-k="3"><rect x="49" y="90" width="30" height="26" rx="5" fill="oklch(0.28 0.02 265)"/><rect class="kc-top" x="53" y="85" width="22" height="22" rx="4" fill="oklch(0.42 0.02 265)"/></g><g class="kc" data-k="4"><rect x="84" y="90" width="30" height="26" rx="5" fill="oklch(0.28 0.02 265)"/><rect class="kc-top" x="88" y="85" width="22" height="22" rx="4" fill="oklch(0.42 0.02 265)"/></g>
+            </svg>
+          </span>
+          <span class="name">Keycaps</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="ripple" href="ripple/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-ripple" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.86 0.12 195)"/><stop offset="1" stop-color="oklch(0.58 0.13 225)"/></linearGradient>
+              <clipPath id="ripple-clip"><rect x="12" y="12" width="104" height="104" rx="10"/></clipPath>
+              <rect x="12" y="12" width="104" height="104" rx="10" fill="url(#g-ripple)"/>
+              <!-- Rings are stencil cuts spreading from two drops. -->
+              <g id="ripple-rings" clip-path="url(#ripple-clip)" fill="none" style="stroke: var(--bg)" stroke-width="3.2"></g>
+            </svg>
+          </span>
+          <span class="name">Ripple tank</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="putty" href="putty/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-putty" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.56 0.17 305)"/><stop offset="1" stop-color="oklch(0.38 0.15 295)"/></linearGradient>
+              <linearGradient id="g-putty-warm" gradientUnits="userSpaceOnUse" x1="28" y1="0" x2="100" y2="0"><stop offset="0" stop-color="oklch(0.9 0.08 60)"/><stop offset="0.6" stop-color="oklch(0.72 0.2 350)"/><stop offset="1" stop-color="oklch(0.62 0.21 330)"/></linearGradient>
+              <rect x="12" y="22" width="104" height="84" rx="22" fill="url(#g-putty)"/>
+              <rect x="12" y="22" width="104" height="84" rx="22" fill="url(#lit)"/>
+              <!-- A warm finger trail in the putty. -->
+              <path id="putty-trail" d="M28 82C30 52 52 40 66 52C80 64 70 86 86 88C100 90 104 66 100 46" pathLength="1" stroke-dasharray="1 1" fill="none" stroke="url(#g-putty-warm)" stroke-width="13" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="name">Heat putty</span>
+        </a>
+      </li>
+      <li>
+        <a class="toy" id="jelly" href="jelly/index.html">
+          <span class="obj">
+            <svg class="art" viewBox="0 0 128 128" aria-hidden="true">
+              <linearGradient id="g-jelly" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.84 0.17 10)"/><stop offset="1" stop-color="oklch(0.54 0.22 15)"/></linearGradient>
+              <g id="jelly-body">
+                <rect x="20" y="104" width="90" height="5" rx="2.5" fill="oklch(0.42 0.02 260)"/>
+                <path d="M30 46C30 34 38 28 52 28H78C92 28 100 34 100 46V80C100 94 92 102 78 102H52C38 102 30 94 30 80Z" fill="url(#g-jelly)"/>
+                <!-- A wet stencil highlight. -->
+                <path d="M42 46C46 38 56 36 62 38" fill="none" stroke="oklch(0.98 0.03 20 / 0.85)" stroke-width="6" stroke-linecap="round"/>
+                <circle cx="70" cy="38" r="3.4" fill="oklch(0.98 0.03 20 / 0.9)"/>
+              </g>
+            </svg>
+          </span>
+          <span class="name">Jelly</span>
+        </a>
+      </li>
+    </ul>
+    <details class="lab">
+      <summary>Lab<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg></summary>
+      <ul class="shelf" aria-label="Lab">
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+      </ul>
+    </details>
+  </main>
+  <footer class="credit">yet another onnøzelaer concoction · made with AI</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js"></script>
+<script>
+(() => {
+  let gsap, MorphSVGPlugin; try { ({ gsap, MorphSVGPlugin } = window); } catch (e) { window.__miss?.(e, 2); }
+  try { gsap.registerPlugin(MorphSVGPlugin);
+} catch (e) { window.__miss?.(e, 3); }
+  // Menu motion runs at 30 fps, like the intros; toys keep their own rate.
+  try { gsap.ticker.fps(30);
+} catch (e) { window.__miss?.(e, 5); }
+  let NS; try { (NS = 'http://www.w3.org/2000/svg'); } catch (e) { window.__miss?.(e, 6); }
+  let TAU; try { (TAU = Math.PI * 2); } catch (e) { window.__miss?.(e, 7); }
+  let reduce; try { (reduce = matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { window.__miss?.(e, 8); }
+  let el; try { (el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  }); } catch (e) { window.__miss?.(e, 9); }
+  let d; try { (d = pts => 'M' + pts.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L') + 'Z'); } catch (e) { window.__miss?.(e, 15); }
+  let ring; try { (ring = (n, r, rot = -Math.PI / 2, cx = 64, cy = 64) =>
+    Array.from({ length: n }, (_, k) => [cx + r * Math.cos(rot + (k * TAU) / n), cy + r * Math.sin(rot + (k * TAU) / n)])); } catch (e) { window.__miss?.(e, 16); }
+  let polar; try { (polar = fn => Array.from({ length: 120 }, (_, k) => {
+    const a = (k / 120) * TAU, r = fn(a);
+    return [64 + r * Math.sin(a), 64 - r * Math.cos(a)];
+  })); } catch (e) { window.__miss?.(e, 18); }
+
+
+  // Lab toys have a looping timeline while active and a way back to rest.
+  let toys; try { (toys = {}); } catch (e) { window.__miss?.(e, 25); }
+
+  // Ripple tank: rings spread from two drops; one step out per loop is seamless.
+  let rippleRings; try { (rippleRings = [[48, 54], [86, 82]].flatMap(([x, y]) => Array.from({ length: 6 }, (_, k) => ({ el: el('circle', { cx: x, cy: y, r: 8 + k * 11 }, document.getElementById('ripple-rings')), k })))); } catch (e) { window.__miss?.(e, 28); }
+  let rippleState; try { (rippleState = { o: 0 }); } catch (e) { window.__miss?.(e, 29); }
+  let drawRipple; try { (drawRipple = () => rippleRings.forEach(({ el: c, k }) => c.setAttribute('r', (8 + k * 11 + rippleState.o).toFixed(2)))); } catch (e) { window.__miss?.(e, 30); }
+  try { toys.ripple = {
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(rippleState, { o: 0 }, { o: 11, duration: 1, ease: 'none', onUpdate: drawRipple }),
+    rest: () => gsap.to(rippleState, { o: 0, duration: 0.3, onUpdate: drawRipple, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 31); }
+
+  // Heat putty: the warm trail fades, then a finger draws it again.
+  try { toys.putty = {
+    play: () => gsap.timeline({ repeat: -1, repeatDelay: 0.2 })
+      .to('#putty-trail', { opacity: 0, duration: 0.5, ease: 'power1.in' })
+      .set('#putty-trail', { strokeDashoffset: 1, opacity: 1 })
+      .to('#putty-trail', { strokeDashoffset: 0, duration: 1.1, ease: 'power1.inOut' }),
+    rest: () => gsap.to('#putty-trail', { strokeDashoffset: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 37); }
+
+  // Jelly: the cube squashes and wobbles back, like a poke.
+  try { toys.jelly = {
+    play: () => gsap.timeline({ repeat: -1, repeatDelay: 0.25 })
+      .to('#jelly-body path', { scaleX: 1.18, scaleY: 0.8, svgOrigin: '65 102', duration: 0.14, ease: 'power2.out' })
+      .to('#jelly-body path', { scaleX: 1, scaleY: 1, svgOrigin: '65 102', duration: 0.9, ease: 'elastic.out(1.1, 0.25)' }),
+    rest: () => gsap.to('#jelly-body path', { scaleX: 1, scaleY: 1, svgOrigin: '65 102', duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 46); }
+
+  // Keycaps: the caps press down in a diagonal wave and spring back.
+  try { toys.keys = {
+    play() {
+      const tops = [...document.querySelectorAll('#keys .kc-top')];
+      return gsap.timeline({ repeat: -1, repeatDelay: 0.3 })
+        .to(tops, { y: 4, duration: 0.07, ease: 'power2.in', stagger: i => +tops[i].parentNode.dataset.k * 0.09 })
+        .to(tops, { y: 0, duration: 0.25, ease: 'back.out(3)', stagger: i => +tops[i].parentNode.dataset.k * 0.09 }, 0.12);
+    },
+    rest: () => gsap.to('#keys .kc-top', { y: 0, duration: 0.2, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 54); }
+
+
+  // Zen sand: grooves ring the stone; on hover each groove travels out one step.
+  let grooves; try { (grooves = document.getElementById('sand-grooves')); } catch (e) { window.__miss?.(e, 66); }
+  let SAND_STEP; try { (SAND_STEP = 9); } catch (e) { window.__miss?.(e, 67); }
+  let rings; try { (rings = Array.from({ length: 9 }, (_, k) => el('circle', { cx: 58, cy: 60, r: 20 + k * SAND_STEP }, grooves))); } catch (e) { window.__miss?.(e, 68); }
+  let sandState; try { (sandState = { o: 0 }); } catch (e) { window.__miss?.(e, 69); }
+  let drawSand; try { (drawSand = () => rings.forEach((r, k) => r.setAttribute('r', (20 + k * SAND_STEP + sandState.o).toFixed(2)))); } catch (e) { window.__miss?.(e, 70); }
+  try { toys.sand = {
+    // One step out lands every ring on the next, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(sandState, { o: 0 }, { o: SAND_STEP, duration: 1.2, ease: 'none', onUpdate: drawSand }),
+    rest: () => gsap.to(sandState, { o: 0, duration: 0.3, onUpdate: drawSand, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 71); }
+
+
+  // Flame tongues sway between three outlines.
+  let fireOuter; try { (fireOuter = document.getElementById('fire-outer')); } catch (e) { window.__miss?.(e, 79); }
+let fireInner; try { (fireInner = document.getElementById('fire-inner')); } catch (e) { window.__miss?.(e, 79); }
+  let flame; try { (flame = (x, y, s) => `M${x} ${y}C${x + 8 + s} ${y + 26} 96 56 94 84C92 104 80 114 64 114C48 114 36 104 34 86C32 66 44 58 50 44C52 54 56 60 60 62C58 46 ${x - 6 + s} ${y + 20} ${x} ${y}Z`); } catch (e) { window.__miss?.(e, 80); }
+  let core; try { (core = (x, y) => `M${x} ${y}C${x + 6} ${y + 18} 80 82 79 94C78 106 72 112 64 112C56 112 49 106 49 95C49 84 ${x - 6} ${y + 16} ${x} ${y}Z`); } catch (e) { window.__miss?.(e, 81); }
+  let flames; try { (flames = [[flame(64, 10, 0), core(64, 56)], [flame(58, 16, -4), core(61, 60)], [flame(70, 12, 4), core(67, 57)]]); } catch (e) { window.__miss?.(e, 82); }
+  try { fireOuter.setAttribute('d', flames[0][0]);
+} catch (e) { window.__miss?.(e, 83); }
+  try { fireInner.setAttribute('d', flames[0][1]);
+} catch (e) { window.__miss?.(e, 84); }
+  try { toys.fire = {
+    play() {
+      const tl = gsap.timeline({ repeat: -1 });
+      [1, 2, 0].forEach(k => tl
+        .to(fireOuter, { morphSVG: flames[k][0], duration: 0.24, ease: 'sine.inOut' })
+        .to(fireInner, { morphSVG: flames[k][1], duration: 0.24, ease: 'sine.inOut' }, '<'));
+      return tl;
+    },
+    rest() {
+      gsap.to(fireOuter, { morphSVG: flames[0][0], duration: 0.3 });
+      gsap.to(fireInner, { morphSVG: flames[0][1], duration: 0.3 });
+    },
+  };
+} catch (e) { window.__miss?.(e, 85); }
+
+  let slime; try { (slime = document.getElementById('slime-body')); } catch (e) { window.__miss?.(e, 99); }
+  try { toys.slime = {
+    // The blob squashes and springs back like putty.
+    play() {
+      return gsap.timeline({ repeat: -1, repeatDelay: 0.2 })
+        .to(slime, { scaleX: 1.12, scaleY: 0.86, transformOrigin: '50% 82%', duration: 0.35, ease: 'power2.out' })
+        .to(slime, { scaleX: 0.94, scaleY: 1.08, duration: 0.3, ease: 'power2.inOut' })
+        .to(slime, { scaleX: 1, scaleY: 1, duration: 0.6, ease: 'elastic.out(1, 0.4)' });
+    },
+    rest() { gsap.to(slime, { scaleX: 1, scaleY: 1, duration: 0.4, overwrite: true }); },
+  };
+} catch (e) { window.__miss?.(e, 100); }
+
+  let cubeTop; try { (cubeTop = document.getElementById('cube-top')); } catch (e) { window.__miss?.(e, 111); }
+let cubeAll; try { (cubeAll = document.getElementById('cube-all')); } catch (e) { window.__miss?.(e, 111); }
+  try { toys.cube = {
+    // The top half folds down, then the cube turns a quarter.
+    play() {
+      return gsap.timeline({ repeat: -1 })
+        .to(cubeTop, { scaleY: -1, transformOrigin: '50% 100%', duration: 0.45, ease: 'power2.inOut' })
+        .to(cubeTop, { scaleY: 1, duration: 0.45, ease: 'power2.inOut' })
+        .to(cubeAll, { rotation: '+=90', svgOrigin: '64 64', duration: 0.4, ease: 'back.out(2)' });
+    },
+    rest() { gsap.to(cubeTop, { scaleY: 1, duration: 0.3, overwrite: true }); },
+  };
+} catch (e) { window.__miss?.(e, 112); }
+
+  // Magnet balls: a hex pack of nineteen; on hover it bursts apart and snaps back.
+  let magRing; try { (magRing = document.getElementById('magnet-balls')); } catch (e) { window.__miss?.(e, 124); }
+  let MAG; try { (MAG = [[0, 0]]); } catch (e) { window.__miss?.(e, 125); }
+  try { for (let ring = 1; ring <= 2; ring++) { try { for (let side = 0; side < 6; side++) for (let k = 0; k < ring; k++) {
+    const a = (side * TAU) / 6, b = ((side + 2) * TAU) / 6;
+    MAG.push([ring * Math.cos(a) + k * Math.cos(b), ring * Math.sin(a) + k * Math.sin(b)]);
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 126); }
+  let magBalls; try { (magBalls = MAG.map(([u, v]) => {
+    const x = 64 + u * 21, y = 64 + v * 21, g = el('g', {}, magRing);
+    el('circle', { cx: x, cy: y, r: 11.5, style: 'fill: var(--bg)' }, g);
+    el('circle', { cx: x, cy: y, r: 9.4, fill: 'url(#g-magball)' }, g);
+    el('circle', { cx: x - 3.2, cy: y - 3.6, r: 2.2, fill: 'oklch(0.98 0.03 40 / 0.9)' }, g);
+    return { g, u, v };
+  })); } catch (e) { window.__miss?.(e, 130); }
+  try { toys.magnet = {
+    play() {
+      // Balls fly out by their distance from the centre, then the pack snaps shut.
+      return gsap.timeline({ repeat: -1, repeatDelay: 0.25 })
+        .to(magBalls.map(b => b.g), { x: i => magBalls[i].u * 7, y: i => magBalls[i].v * 7, duration: 0.35, ease: 'power2.out' })
+        .to(magBalls.map(b => b.g), { x: 0, y: 0, duration: 0.55, ease: 'elastic.out(1.1, 0.35)', stagger: { each: 0.015, from: 'edges' } });
+    },
+    rest: () => gsap.to(magBalls.map(b => b.g), { x: 0, y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 137); }
+
+
+
+  /* ---------- toys ten onwards ---------- */
+  let $; try { ($ = id => document.getElementById(id)); } catch (e) { window.__miss?.(e, 150); }
+  let loop; try { (loop = (o = {}) => gsap.timeline({ repeat: -1, ...o })); } catch (e) { window.__miss?.(e, 151); }
+
+  // Pendulum wave: seven bobs on rising lengths, swung so they realign every six seconds.
+  let PEND_T; try { (PEND_T = 6); } catch (e) { window.__miss?.(e, 154); }
+  let bobs; try { (bobs = Array.from({ length: 7 }, (_, k) => {
+    const x = 22 + k * 14, len = 50 + k * 6.5, g = el('g', {}, $('pend-bobs'));
+    const grad = el('radialGradient', { id: `g-bob${k}`, cx: 0.35, cy: 0.3, r: 0.75 }, g);
+    el('stop', { offset: 0, 'stop-color': `oklch(0.95 0.06 ${30 + k * 48})` }, grad);
+    el('stop', { offset: 0.45, 'stop-color': `oklch(0.74 0.17 ${30 + k * 48})` }, grad);
+    el('stop', { offset: 1, 'stop-color': `oklch(0.45 0.13 ${30 + k * 48})` }, grad);
+    el('line', { x1: x, y1: 18, x2: x, y2: 18 + len, stroke: 'oklch(0.72 0.01 260)', 'stroke-width': 1.2 }, g);
+    el('circle', { cx: x, cy: 18 + len, r: 6.5, fill: `url(#g-bob${k})` }, g);
+    return { g, x, f: (8 + k) / PEND_T };
+  })); } catch (e) { window.__miss?.(e, 155); }
+  let pend; try { (pend = { t: 0 }); } catch (e) { window.__miss?.(e, 165); }
+  let swing; try { (swing = () => bobs.forEach(b => gsap.set(b.g, { rotation: 22 * Math.cos(TAU * b.f * pend.t), svgOrigin: `${b.x} 18` }))); } catch (e) { window.__miss?.(e, 166); }
+  try { toys.pendulum = {
+    // Every bob makes a whole number of swings in PEND_T, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).fromTo(pend, { t: 0 }, { t: PEND_T, duration: PEND_T, ease: 'none', onUpdate: swing }),
+    rest: () => bobs.forEach(b => gsap.to(b.g, { rotation: 0, svgOrigin: `${b.x} 18`, duration: 0.5, ease: 'power2.out', overwrite: true })),
+  };
+} catch (e) { window.__miss?.(e, 167); }
+
+
+  let strings; try { (strings = Array.from({ length: 6 }, (_, k) => {
+    const x1 = 31 + k * 13, y1 = 27 + k * 2, x2 = 26 + k * 15, y2 = 104;
+    const s = { b: 0, p: el('path', { style: `stroke: oklch(0.76 0.15 ${10 + k * 60})` }, $('harp-strings')) };
+    s.draw = () => s.p.setAttribute('d', `M${x1} ${y1}Q${(x1 + x2) / 2 + s.b} ${(y1 + y2) / 2} ${x2} ${y2}`);
+    s.draw();
+    return s;
+  })); } catch (e) { window.__miss?.(e, 174); }
+  try { toys.harp = {
+    // A strum runs across the strings and each one rings down.
+    play() {
+      const t = loop({ repeatDelay: 0.3 });
+      strings.forEach((s, k) => t.fromTo(s, { b: 7 }, { b: 0, duration: 1.1, ease: 'elastic.out(1.4, 0.08)', onUpdate: s.draw }, k * 0.08));
+      return t;
+    },
+    rest: () => strings.forEach(s => gsap.to(s, { b: 0, duration: 0.3, onUpdate: s.draw, overwrite: true })),
+  };
+} catch (e) { window.__miss?.(e, 181); }
+
+  try { toys.glass = {
+    // Shards drift out from the impact, the outer ones furthest, then close up.
+    play() {
+      const shards = [...document.querySelectorAll('#glass .shard')];
+      return loop({ yoyo: true, repeatDelay: 0.2 }).to(shards, {
+        x: i => Math.cos(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+        y: i => Math.sin(+shards[i].dataset.a) * (2 + 2.5 * +shards[i].dataset.b),
+        duration: 0.6, ease: 'power3.out',
+      });
+    },
+    rest: () => gsap.to('#glass .shard', { x: 0, y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 191); }
+
+
+  // Tesseract: sixteen corners of a 4D cube, turned in the XW plane and projected twice.
+  let TV; try { (TV = Array.from({ length: 16 }, (_, k) => [0, 1, 2, 3].map(b => ((k >> b) & 1 ? 1 : -1)))); } catch (e) { window.__miss?.(e, 206); }
+  let TE; try { (TE = []); } catch (e) { window.__miss?.(e, 207); }
+  try { TV.forEach((_, a) => [1, 2, 4, 8].forEach(bit => { if (!(a & bit)) TE.push([a, a | bit]); }));
+} catch (e) { window.__miss?.(e, 208); }
+  let tLines; try { (tLines = TE.map(() => el('line', {}, $('tess-edges')))); } catch (e) { window.__miss?.(e, 209); }
+  let tess; try { (tess = { a: 0.35 }); } catch (e) { window.__miss?.(e, 210); }
+  let drawTess; try { (drawTess = () => {
+    const c = Math.cos(tess.a), sn = Math.sin(tess.a), tilt = 0.5;
+    const P = TV.map(([x, y, z, w]) => {
+      // Turn in XW, then a fixed tilt in YZ shows the depth.
+      const x2 = x * c - w * sn, w2 = x * sn + w * c;
+      const y2 = y * Math.cos(tilt) - z * Math.sin(tilt), z2 = y * Math.sin(tilt) + z * Math.cos(tilt);
+      const k4 = 1 / (2.4 - w2), X = x2 * k4, Y = y2 * k4, Z = z2 * k4;
+      const k3 = 1 / (2.8 - Z * 0.9);
+      return [64 + X * k3 * 98, 64 + Y * k3 * 98, w2];
+    });
+    TE.forEach(([a, b], i) => {
+      const [x1, y1, wa] = P[a], [x2, y2, wb] = P[b], w = (wa + wb) / 2;
+      // Near edges in W run cyan and thick; far ones magenta and thin.
+      const t = (w + 1.42) / 2.84;
+      const l = tLines[i];
+      l.setAttribute('x1', x1.toFixed(1)); l.setAttribute('y1', y1.toFixed(1));
+      l.setAttribute('x2', x2.toFixed(1)); l.setAttribute('y2', y2.toFixed(1));
+      l.setAttribute('stroke', `oklch(${(0.66 + 0.2 * t).toFixed(3)} ${(0.2 - 0.06 * t).toFixed(3)} ${Math.round(340 - 145 * t)})`);
+      l.setAttribute('stroke-width', (1.6 + 2.6 * t).toFixed(2));
+    });
+  }); } catch (e) { window.__miss?.(e, 211); }
+  try { drawTess();
+} catch (e) { window.__miss?.(e, 232); }
+  try { toys.tesseract = {
+    // A quarter turn in XW lands every corner on another, so the loop is seamless.
+    play: () => gsap.timeline({ repeat: -1 }).to(tess, { a: '+=' + Math.PI / 2, duration: 2.6, ease: 'none', onUpdate: drawTess }),
+    rest: () => gsap.to(tess, { a: 0.35 + Math.round((tess.a - 0.35) / (Math.PI / 2)) * (Math.PI / 2), duration: 0.4, onUpdate: drawTess, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 233); }
+
+
+  // Soap cutting: the diced cubes pop up in a diagonal wave, then settle.
+  let soapCubes; try { (soapCubes = [...document.querySelectorAll('#soap .soap-cube')]); } catch (e) { window.__miss?.(e, 241); }
+  try { toys.soap = {
+    play: () => loop({ repeatDelay: 0.35 })
+      .to(soapCubes, { scale: 1.16, y: -3, transformOrigin: '50% 50%', duration: 0.18, ease: 'power2.out', stagger: i => +soapCubes[i].dataset.k * 0.07 })
+      .to(soapCubes, { scale: 1, y: 0, duration: 0.45, ease: 'back.out(3)', stagger: i => +soapCubes[i].dataset.k * 0.07 }, 0.18),
+    rest: () => gsap.to(soapCubes, { scale: 1, y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 242); }
+
+
+  let slider; try { (slider = $('zip-slider')); } catch (e) { window.__miss?.(e, 250); }
+  try { toys.zipper = {
+    play: () => loop({ yoyo: true })
+      .fromTo(slider, { x: 0 }, { x: -40, duration: 0.6, ease: 'power2.inOut' })
+      .to(slider, { x: 34, duration: 1, ease: 'power2.inOut' }),
+    rest: () => gsap.to(slider, { x: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 251); }
+
+  let bubbleSet; try { (bubbleSet = [...$('bubble-set').children]); } catch (e) { window.__miss?.(e, 258); }
+  try { toys.bubbles = {
+    // Bubbles rise and fade, then drift back.
+    play: () => loop().fromTo(bubbleSet, { y: 0, opacity: 1 }, { y: -14, opacity: 0.2, duration: 1.4, ease: 'sine.inOut', stagger: 0.18, yoyo: true, repeat: 1 }),
+    rest: () => gsap.to(bubbleSet, { y: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 259); }
+
+  let drops; try { (drops = [[38, 34], [58, 48], [82, 30], [94, 58], [46, 74], [74, 80]].map(([x, y]) => el('ellipse', { cx: x, cy: y, rx: 2.6, ry: 3.6 }, $('rain-drops')))); } catch (e) { window.__miss?.(e, 265); }
+  try { toys.rain = {
+    // Drops run down the pane one after another.
+    play: () => gsap.fromTo(drops, { y: 0, opacity: 1 }, { y: 22, opacity: 0, duration: 1.1, ease: 'power1.in', stagger: { each: 0.15, repeat: -1 } }),
+    rest: () => gsap.to(drops, { y: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 266); }
+
+  let topBody; try { (topBody = $('top-body')); } catch (e) { window.__miss?.(e, 272); }
+  try { toys.top = {
+    // The top wobbles about its tip.
+    play: () => loop({ yoyo: true }).fromTo(topBody, { rotation: -9 }, { rotation: 9, svgOrigin: '64 108', duration: 0.45, ease: 'sine.inOut' }),
+    rest: () => gsap.to(topBody, { rotation: 0, svgOrigin: '64 108', duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 273); }
+
+  let arcs; try { (arcs = $('plasma-arcs')); } catch (e) { window.__miss?.(e, 279); }
+let arcPaths; try { (arcPaths = [...arcs.children]); } catch (e) { window.__miss?.(e, 279); }
+  try { toys.plasma = {
+    // Filaments turn about the core and flicker.
+    play: () => loop()
+      .to(arcs, { rotation: 360, svgOrigin: '64 64', duration: 4, ease: 'none' })
+      .to(arcPaths, { opacity: 0.3, duration: 0.1, yoyo: true, repeat: 39, stagger: { each: 0.07, from: 'random' } }, 0),
+    rest() {
+      gsap.to(arcs, { rotation: 0, svgOrigin: '64 64', duration: 0.4, overwrite: true });
+      gsap.to(arcPaths, { opacity: 1, duration: 0.2, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 280); }
+
+  let swirl; try { (swirl = [...$('marble-swirl').children]); } catch (e) { window.__miss?.(e, 291); }
+  try { toys.marble = {
+    // The comb drags each ink line in turn.
+    play: () => loop({ yoyo: true }).to(swirl, { x: 6, skewX: -8, duration: 0.9, ease: 'sine.inOut', stagger: 0.15 }),
+    rest: () => gsap.to(swirl, { x: 0, skewX: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 292); }
+
+  let net; try { (net = $('pool-net')); } catch (e) { window.__miss?.(e, 298); }
+let ripples; try { (ripples = [...$('pool-ripples').children]); } catch (e) { window.__miss?.(e, 298); }
+  try { toys.pool = {
+    // Rings spread from the centre; the light net sways.
+    play: () => loop()
+      .fromTo(ripples, { scale: 1, opacity: 1, svgOrigin: '64 64' }, { scale: 5, opacity: 0, duration: 1.4, ease: 'power1.out', stagger: 0.7 })
+      .fromTo(net, { x: -2 }, { x: 2, duration: 1.05, ease: 'sine.inOut', yoyo: true, repeat: 1 }, 0),
+    rest() {
+      gsap.to(ripples, { scale: 1, opacity: 1, svgOrigin: '64 64', duration: 0.3, overwrite: true });
+      gsap.to(net, { x: 0, duration: 0.3, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 299); }
+
+  let blobs; try { (blobs = [...$('lava-blobs').children]); } catch (e) { window.__miss?.(e, 310); }
+  try { toys.lava = {
+    // Warm wax rises while cool wax sinks.
+    play: () => loop({ yoyo: true })
+      .to(blobs[0], { y: -30, scaleY: 1.15, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.inOut' }, 0)
+      .to(blobs[1], { y: 20, duration: 2.2, ease: 'sine.inOut' }, 0)
+      .to(blobs[2], { y: 30, scale: 1.3, transformOrigin: '50% 50%', duration: 2.2, ease: 'sine.inOut' }, 0),
+    rest: () => gsap.to(blobs, { y: 0, scale: 1, scaleY: 1, duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 311); }
+
+  // Grains sit on one nodal figure and travel to another.
+  let along; try { (along = (n, f) => Array.from({ length: n }, (_, k) => f((k + 0.5) / n))); } catch (e) { window.__miss?.(e, 321); }
+  // Chladni plate: the plate buzzes and the sand jumps to a second mode, then back.
+  try { toys.chladni = {
+    play: () => loop({ yoyo: true, repeatDelay: 0.6 })
+      .to('#chladni-plate', { x: 0.8, duration: 0.03, repeat: 11, yoyo: true, ease: 'none' })
+      .to('#chladni-a', { opacity: 0, duration: 0.2 }, 0.1)
+      .to('#chladni-b', { opacity: 1, duration: 0.2 }, 0.2),
+    rest() {
+      gsap.to('#chladni-a', { opacity: 1, duration: 0.3, overwrite: true });
+      gsap.to('#chladni-b', { opacity: 0, duration: 0.3, overwrite: true });
+      gsap.to('#chladni-plate', { x: 0, duration: 0.2, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 323); }
+
+
+
+  // Each title letter rests askew and has its own fidget.
+  let letters; try { (letters = [...document.querySelectorAll('#title .l')]); } catch (e) { window.__miss?.(e, 338); }
+  let REST; try { (REST = [[-8, 2], [6, -4], [-3, 3], [4, -2], [-5, 4], [7, -5], [-4, 1], [3, -3]]); } catch (e) { window.__miss?.(e, 339); }
+  let weights; try { (weights = letters.map(l => +l.style.getPropertyValue('--w'))); } catch (e) { window.__miss?.(e, 340); }
+  try { letters.forEach((l, i) => gsap.set(l, { rotation: REST[i][0], y: REST[i][1], transformOrigin: '50% 70%', '--p': 0 }));
+} catch (e) { window.__miss?.(e, 341); }
+  let hop; try { (hop = (l, [r, y], h) => gsap.timeline()
+    .to(l, { y: y - h, duration: 0.22, ease: 'power2.out' })
+    .to(l, { y, duration: 0.75, ease: 'bounce.out' })); } catch (e) { window.__miss?.(e, 342); }
+  let moves; try { (moves = [
+    // S spins once.
+    l => gsap.timeline().to(l, { rotation: '+=360', duration: 0.9, ease: 'power3.out' }),
+    // t wobbles on its foot.
+    (l, [r]) => gsap.timeline()
+      .to(l, { rotation: r + 18, duration: 0.12, ease: 'power2.out' })
+      .to(l, { rotation: r, duration: 1.1, ease: 'elastic.out(1.2, 0.25)' }),
+    (l, rest) => hop(l, rest, 22),
+    // The first m squashes flat.
+    l => gsap.timeline()
+      .to(l, { scaleY: 0.55, scaleX: 1.3, transformOrigin: '50% 100%', duration: 0.14, ease: 'power2.out' })
+      .to(l, { scaleY: 1, scaleX: 1, duration: 0.9, ease: 'elastic.out(1, 0.3)' }),
+    // The second m swings from its top.
+    (l, [r]) => gsap.timeline()
+      .to(l, { rotation: r + 28, transformOrigin: '50% 0%', duration: 0.18, ease: 'power2.out' })
+      .to(l, { rotation: r, duration: 1.4, ease: 'elastic.out(1, 0.2)' }),
+    (l, rest) => hop(l, rest, 30),
+    // n turns over in depth.
+    l => gsap.timeline().to(l, { rotationY: '+=360', transformPerspective: 400, duration: 0.8, ease: 'power2.inOut' }),
+    // g bounces and leans back.
+    (l, [r, y]) => gsap.timeline()
+      .to(l, { y: y - 14, rotation: r - 12, duration: 0.2, ease: 'power2.out' })
+      .to(l, { y, rotation: r, duration: 0.8, ease: 'elastic.out(1, 0.35)' }),
+  ]); } catch (e) { window.__miss?.(e, 345); }
+  let busy; try { (busy = []); } catch (e) { window.__miss?.(e, 369); }
+  function fidget(i) {
+    if (reduce || busy[i]?.isActive()) return;
+    const l = letters[i], w = weights[i];
+    // Heavy letters deflate; light letters puff up.
+    busy[i] = moves[i](l, REST[i])
+      .to(l, { '--w': w >= 800 ? 400 : 900, duration: 0.15, ease: 'power2.out' }, 0)
+      .to(l, { '--w': w, duration: 0.6, ease: 'power2.inOut' }, 0.15)
+      .to(l, { '--p': 1, duration: 0.12, ease: 'power2.out' }, 0)
+      .to(l, { '--p': 0, duration: 1, ease: 'power2.in' }, 0.3);
+  }
+  try { letters.forEach((l, i) => {
+    l.addEventListener('pointerenter', () => fidget(i));
+    l.addEventListener('pointerdown', () => fidget(i));
+  });
+} catch (e) { window.__miss?.(e, 380); }
+  // A click on the gaps sends a wave through the word.
+  try { $('title').addEventListener('click', e => {
+    if (e.target.classList.contains('l')) return;
+    letters.forEach((l, i) => gsap.delayedCall(i * 0.06, () => fidget(i)));
+  });
+} catch (e) { window.__miss?.(e, 385); }
+  try { if (!reduce) {
+    gsap.from(letters, { y: -48, opacity: 0, duration: 1, ease: 'elastic.out(1, 0.5)', stagger: 0.05 });
+    // Now and then one letter fidgets by itself.
+    const idle = () => {
+      if (!document.hidden) fidget(Math.floor(Math.random() * letters.length));
+      setTimeout(idle, 6000 + Math.random() * 6000);
+    };
+    setTimeout(idle, 4000);
+  }
+} catch (e) { window.__miss?.(e, 389); }
+
+  // Snow drifts down inside the dome after a shake.
+  let globe; try { (globe = $('snow-globe')); } catch (e) { window.__miss?.(e, 400); }
+  let flakes; try { (flakes = Array.from({ length: 12 }, (_, k) => el('circle', {
+    cx: (40 + ((k * 37) % 48)).toFixed(1), cy: (28 + ((k * 23) % 40)).toFixed(1), r: k % 3 ? 1.6 : 2.4,
+  }, $('snow-flakes')))); } catch (e) { window.__miss?.(e, 401); }
+  try { toys.snow = {
+    play: () => loop()
+      .fromTo(globe, { rotation: -6, svgOrigin: '64 104' }, { rotation: 0, svgOrigin: '64 104', duration: 0.6, ease: 'elastic.out(1, 0.4)' })
+      .fromTo(flakes, { y: -10, x: 0, opacity: 0 }, { y: 14, x: 'random(-6, 6)', opacity: 1, duration: 2.2, ease: 'sine.inOut', stagger: 0.12 }, 0),
+    rest() {
+      gsap.to(globe, { rotation: 0, svgOrigin: '64 104', duration: 0.3, overwrite: true });
+      gsap.to(flakes, { y: 0, x: 0, opacity: 1, duration: 0.3, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 404); }
+
+  // Birds gather in one cloud that wheels and breathes.
+  let flockG; try { (flockG = $('flock-birds')); } catch (e) { window.__miss?.(e, 415); }
+  let birds; try { (birds = Array.from({ length: 28 }, (_, k) => {
+    const a = k * 2.4, r = 6 + (k % 7) * 3.4;
+    const x = 64 + r * Math.cos(a) * 1.5, y = 62 + r * Math.sin(a) * 0.8;
+    return el('path', { d: `M${(x - 2.6).toFixed(1)} ${(y - 1).toFixed(1)}L${x.toFixed(1)} ${(y + 1).toFixed(1)}L${(x + 2.6).toFixed(1)} ${(y - 1).toFixed(1)}` }, flockG);
+  })); } catch (e) { window.__miss?.(e, 416); }
+  try { toys.flock = {
+    play: () => loop({ yoyo: true })
+      .to(flockG, { scaleX: 0.7, scaleY: 1.25, rotation: 18, svgOrigin: '64 62', duration: 1.1, ease: 'sine.inOut' })
+      .to(birds, { y: 'random(-3, 3)', x: 'random(-3, 3)', duration: 1.1, ease: 'sine.inOut' }, 0),
+    rest() {
+      gsap.to(flockG, { scaleX: 1, scaleY: 1, rotation: 0, svgOrigin: '64 62', duration: 0.4, overwrite: true });
+      gsap.to(birds, { x: 0, y: 0, duration: 0.4, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 421); }
+
+  // The coil stretches down and springs back.
+  let coilRings; try { (coilRings = [...$('coil-rings').children]); } catch (e) { window.__miss?.(e, 432); }
+  try { toys.coil = {
+    play: () => loop({ repeatDelay: 0.1 })
+      .to(coilRings, { y: i => i * 3.2, duration: 0.5, ease: 'power2.in' })
+      .to(coilRings, { y: 0, duration: 1, ease: 'elastic.out(1, 0.3)' }),
+    rest: () => gsap.to(coilRings, { y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 433); }
+
+  // The crystal grows out along its arms, then fades.
+  let crystal; try { (crystal = $('frost-crystal')); } catch (e) { window.__miss?.(e, 441); }
+  try { gsap.set(crystal, { strokeDasharray: 1 });
+} catch (e) { window.__miss?.(e, 442); }
+  try { toys.frost = {
+    play: () => loop({ repeatDelay: 0.3 })
+      .fromTo(crystal, { strokeDashoffset: 1, opacity: 1 }, { strokeDashoffset: 0, duration: 1.6, ease: 'power1.out' })
+      .to(crystal, { opacity: 0.25, duration: 0.5, ease: 'power1.in' }),
+    rest: () => gsap.to(crystal, { strokeDashoffset: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 443); }
+
+  // Twelve teeth drive eight, so the small gear turns 1.5 times as fast.
+  let gearA; try { (gearA = $('gear-a')); } catch (e) { window.__miss?.(e, 451); }
+let gearB; try { (gearB = $('gear-b')); } catch (e) { window.__miss?.(e, 451); }
+  try { toys.gears = {
+    play: () => loop()
+      .to(gearA, { rotation: '+=360', svgOrigin: '50 54', duration: 4, ease: 'none' })
+      .to(gearB, { rotation: '-=540', svgOrigin: '87 87', duration: 4, ease: 'none' }, 0),
+    rest() {
+      gsap.killTweensOf([gearA, gearB]);
+    },
+  };
+} catch (e) { window.__miss?.(e, 452); }
+
+  // The pen draws the decaying figure again.
+  let hPath; try { (hPath = $('harmono-path')); } catch (e) { window.__miss?.(e, 462); }
+  try { gsap.set(hPath, { strokeDasharray: 1 });
+} catch (e) { window.__miss?.(e, 463); }
+  try { toys.harmono = {
+    play: () => loop({ repeatDelay: 0.4 }).fromTo(hPath, { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 2.6, ease: 'power1.inOut' }),
+    rest: () => gsap.to(hPath, { strokeDashoffset: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 464); }
+
+  // Each leaf drops over its hinge and the digit steps on.
+  let leaves; try { (leaves = [...document.querySelectorAll('#flap-set .flap-leaf')]); } catch (e) { window.__miss?.(e, 470); }
+  let digits; try { (digits = [...document.querySelectorAll('#flap-set text')]); } catch (e) { window.__miss?.(e, 471); }
+  try { toys.flap = {
+    play: () => loop({ repeatDelay: 0.25 }).to(leaves, {
+      scaleY: -1, svgOrigin: '64 64', duration: 0.22, ease: 'power2.in',
+      stagger: {
+        each: 0.14,
+        onComplete() {
+          const i = leaves.indexOf(this.targets()[0]);
+          digits[i].textContent = (+digits[i].textContent + 1) % 10;
+          gsap.set(leaves[i], { scaleY: 1 });
+        },
+      },
+    }),
+    rest: () => gsap.set(leaves, { scaleY: 1 }),
+  };
+} catch (e) { window.__miss?.(e, 472); }
+
+  // A few seeds lift off and drift away, then the head refills.
+  let seedG; try { (seedG = $('dandelion-seeds')); } catch (e) { window.__miss?.(e, 488); }
+  let seeds; try { (seeds = Array.from({ length: 18 }, (_, k) => {
+    const a = (k / 18) * Math.PI * 2, x = 64 + 22 * Math.cos(a), y = 52 + 22 * Math.sin(a);
+    const fx = 64 + 26 * Math.cos(a), fy = 52 + 26 * Math.sin(a);
+    const g = el('g', {}, seedG);
+    el('path', { d: `M64 52L${x.toFixed(1)} ${y.toFixed(1)}` }, g);
+    el('path', { d: `M${x.toFixed(1)} ${y.toFixed(1)}L${(fx + 3 * Math.cos(a + 1)).toFixed(1)} ${(fy + 3 * Math.sin(a + 1)).toFixed(1)}M${x.toFixed(1)} ${y.toFixed(1)}L${(fx + 3 * Math.cos(a - 1)).toFixed(1)} ${(fy + 3 * Math.sin(a - 1)).toFixed(1)}` }, g);
+    return g;
+  })); } catch (e) { window.__miss?.(e, 489); }
+  let flyers; try { (flyers = seeds.filter((_, k) => k % 4 === 1)); } catch (e) { window.__miss?.(e, 497); }
+  try { toys.dandelion = {
+    play: () => loop({ repeatDelay: 0.2 })
+      .to(flyers, { x: 'random(30, 46)', y: 'random(-40, -18)', rotation: 'random(-40, 40)', opacity: 0, duration: 1.8, ease: 'power1.out', stagger: 0.18 })
+      .set(flyers, { x: 0, y: 0, rotation: 0 })
+      .to(flyers, { opacity: 1, duration: 0.4 }),
+    rest: () => gsap.to(flyers, { x: 0, y: 0, rotation: 0, opacity: 1, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 498); }
+
+  // The drum turns one pin row per beat and the teeth ring.
+  let mbPins; try { (mbPins = $('mb-pins')); } catch (e) { window.__miss?.(e, 507); }
+let mbTeeth; try { (mbTeeth = [...$('mb-teeth').children]); } catch (e) { window.__miss?.(e, 507); }
+  try { toys.musicbox = {
+    play: () => loop()
+      .fromTo(mbPins, { y: 0 }, { y: -12, duration: 1, ease: 'none' })
+      .fromTo(mbTeeth, { rotation: 0, svgOrigin: '94 86' }, { rotation: 4, svgOrigin: '94 86', duration: 0.08, yoyo: true, repeat: 1, stagger: { each: 0.13, from: 'random' } }, 0),
+    rest: () => gsap.to(mbPins, { y: 0, duration: 0.3, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 508); }
+
+  // Each set swings from its branch and its screen flickers.
+  let tvSets; try { (tvSets = [...document.querySelectorAll('#tv-sets .tv-set')]); } catch (e) { window.__miss?.(e, 516); }
+  let tvScreens; try { (tvScreens = tvSets.map(g => g.querySelector('.tv-screen'))); } catch (e) { window.__miss?.(e, 517); }
+  try { toys.tvtree = {
+    play: () => loop({ yoyo: true })
+      .fromTo(tvSets, { rotation: -10, svgOrigin: i => tvSets[i].dataset.hang }, { rotation: 10, svgOrigin: i => tvSets[i].dataset.hang, duration: 0.9, ease: 'sine.inOut', stagger: 0.15 })
+      .to(tvScreens, { keyframes: { opacity: [1, 0.4, 1, 0.7, 1] }, duration: 0.9, ease: 'steps(5)' }, 0),
+    rest() {
+      gsap.to(tvSets, { rotation: 0, svgOrigin: i => tvSets[i].dataset.hang, duration: 0.3, overwrite: true });
+      gsap.to(tvScreens, { opacity: 1, duration: 0.2, overwrite: true });
+    },
+  };
+} catch (e) { window.__miss?.(e, 518); }
+
+  // The ribbon folds into its mirror curve and back.
+  let band; try { (band = $('ribbon-band')); } catch (e) { window.__miss?.(e, 529); }
+let bandRest; try { (bandRest = band.getAttribute('d')); } catch (e) { window.__miss?.(e, 529); }
+  try { toys.ribbon = {
+    play: () => loop({ yoyo: true }).to(band, { morphSVG: 'M16 56C36 98 56 30 76 72S106 92 112 66', duration: 1.1, ease: 'sine.inOut' }),
+    rest: () => gsap.to(band, { morphSVG: bandRest, duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 530); }
+
+  // The inner planet laps the outer one twice.
+  let orbitA; try { (orbitA = $('orbit-a')); } catch (e) { window.__miss?.(e, 536); }
+let orbitB; try { (orbitB = $('orbit-b')); } catch (e) { window.__miss?.(e, 536); }
+  try { toys.orbits = {
+    play: () => loop()
+      .to(orbitA, { rotation: '+=720', svgOrigin: '64 64', duration: 4, ease: 'none' })
+      .to(orbitB, { rotation: '+=360', svgOrigin: '64 64', duration: 4, ease: 'none' }, 0),
+    rest: () => gsap.killTweensOf([orbitA, orbitB]),
+  };
+} catch (e) { window.__miss?.(e, 537); }
+
+  // Pupils rattle about inside their whites.
+  let pupils; try { (pupils = [...document.querySelectorAll('#eye-set .pupil')]); } catch (e) { window.__miss?.(e, 545); }
+  let reach; try { (reach = [8, 6, 4]); } catch (e) { window.__miss?.(e, 546); }
+  try { toys.eyes = {
+    play: () => loop({ repeatRefresh: true })
+      .to(pupils, { x: i => gsap.utils.random(-reach[i], reach[i]), y: i => gsap.utils.random(-reach[i], reach[i]), duration: 0.35, ease: 'back.out(3)', stagger: 0.06 }),
+    rest: () => gsap.to(pupils, { x: 0, y: 0, duration: 0.3, ease: 'back.out(2)', overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 547); }
+
+  // Each letter bobs on its own string.
+  let balloons; try { (balloons = [...$('balloon-set').children]); } catch (e) { window.__miss?.(e, 554); }
+  try { toys.balloons = {
+    play: () => loop({ yoyo: true })
+      .to(balloons, { y: -8, rotation: i => (i ? 6 : -5), svgOrigin: '64 114', duration: 1.1, ease: 'sine.inOut', stagger: 0.25 }),
+    rest: () => gsap.to(balloons, { y: 0, rotation: 0, svgOrigin: '64 114', duration: 0.4, overwrite: true }),
+  };
+} catch (e) { window.__miss?.(e, 555); }
+
+  // The seven main icons answer the pointer and never play on their own.
+  // Each art fills the same 104-unit square, centred at 64 64.
+  // enter, move and leave get a point in viewBox units, or null from the keyboard.
+
+  // Morpher: the triangle turns a third over the disc; the overlap stays cut.
+  let tris; try { (tris = [...document.querySelectorAll('.m-tri')]); } catch (e) { window.__miss?.(e, 566); }
+  let morphTurn; try { (morphTurn = 0); } catch (e) { window.__miss?.(e, 567); }
+  let turnTri; try { (turnTri = () => {
+    morphTurn += 120;
+    gsap.to(tris, { rotation: morphTurn, svgOrigin: '82 66.91', duration: 0.6, ease: 'back.inOut(1.6)', overwrite: true });
+  }); } catch (e) { window.__miss?.(e, 568); }
+  try { toys.morphset = { enter: turnTri, move() {}, leave() {} };
+} catch (e) { window.__miss?.(e, 572); }
+
+  // Pop field: a cell pops when the pointer crosses it, then refills.
+  let cellsG; try { (cellsG = $('pop-cells')); } catch (e) { window.__miss?.(e, 575); }
+  let cells; try { (cells = [[64, 64], ...ring(6, 36, -Math.PI / 3)].map(([x, y]) => {
+    const g = el('g', {}, cellsG), hex = d(ring(6, 18, -Math.PI / 2, x, y));
+    el('path', { d: hex, fill: 'url(#g-cell)' }, g);
+    el('path', { d: hex, fill: 'url(#lit)' }, g);
+    el('path', { d: hex, fill: 'none', stroke: 'url(#rim)', 'stroke-width': 1.5 }, g);
+    // An inner ring marks each cell, as in the emblem.
+    el('path', { d: d(ring(6, 11, -Math.PI / 2, x, y)), fill: 'none', stroke: 'oklch(0.45 0.09 215 / 0.55)', 'stroke-width': 2 }, g);
+    return { g, x, y, up: true };
+  })); } catch (e) { window.__miss?.(e, 576); }
+  let pop; try { (pop = c => {
+    if (!c.up) return;
+    c.up = false;
+    gsap.timeline({ onComplete: () => (c.up = true) })
+      .to(c.g, { scaleX: 1.14, scaleY: 0.8, transformOrigin: '50% 50%', duration: 0.08, ease: 'power2.out' })
+      .to(c.g, { scale: 0.3, opacity: 0.25, duration: 0.1, ease: 'power3.in' })
+      .to(c.g, { scale: 1, opacity: 1, duration: 0.9, ease: 'elastic.out(1, 0.45)' }, '+=1.2');
+  }); } catch (e) { window.__miss?.(e, 585); }
+  let popAt; try { (popAt = p => p && cells.forEach(c => Math.hypot(p[0] - c.x, p[1] - c.y) < 17 && pop(c))); } catch (e) { window.__miss?.(e, 593); }
+  try { toys.pop = { enter: p => (p ? popAt(p) : pop(cells[0])), move: popAt, leave() {} };
+} catch (e) { window.__miss?.(e, 594); }
+
+  // Fidget board: the dial turns to face the pointer in 15° detents.
+  let ticks; try { (ticks = $('dial-ticks')); } catch (e) { window.__miss?.(e, 597); }
+let knob; try { (knob = $('dial-knob')); } catch (e) { window.__miss?.(e, 597); }
+  // The bezel skips the corner where the key sits.
+  try { for (let k = 0; k < 24; k++) { try { {
+    const a = (k / 24) * TAU, r0 = k % 6 ? 51 : 47;
+    if (a > 1.9 && a < 2.9) continue;
+    el('line', { x1: 64 + r0 * Math.sin(a), y1: 64 - r0 * Math.cos(a), x2: 64 + 58 * Math.sin(a), y2: 64 - 58 * Math.cos(a) }, ticks);
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 599); }
+  let dial; try { (dial = 0); } catch (e) { window.__miss?.(e, 604); }
+  let aim; try { (aim = p => {
+    if (!p) return;
+    const want = Math.round((Math.atan2(p[0] - 64, 64 - p[1]) * 180) / Math.PI / 15) * 15;
+    const step = ((((want - dial) % 360) + 540) % 360) - 180;
+    if (!step) return;
+    dial += step;
+    gsap.to(knob, { rotation: dial, svgOrigin: '64 64', duration: 0.25, ease: 'back.out(3)', overwrite: true });
+  }); } catch (e) { window.__miss?.(e, 605); }
+  try { toys.fidget = { enter: aim, move: aim, leave() {} };
+} catch (e) { window.__miss?.(e, 613); }
+
+  // Domino run: a domino-day spiral seen from above.
+  // Standing tiles show their thin edge; a fallen tile lies along the path.
+  let spiral; try { (spiral = []); } catch (e) { window.__miss?.(e, 617); }
+  try { for (let th = 0.6, last = null; th < 17; th += 0.02) { try { {
+    const r = 10 + 3.2 * th, x = 64 + r * Math.cos(th), y = 64 + r * Math.sin(th);
+    if (r > 53) break;
+    if (!last || Math.hypot(x - last[0], y - last[1]) >= 10) {
+      // The tile faces along the path, outward from the centre.
+      const a = Math.atan2(3.2 * Math.sin(th) + r * Math.cos(th), 3.2 * Math.cos(th) - r * Math.sin(th));
+      spiral.push([x, y, (a * 180) / Math.PI]);
+      last = [x, y];
+    }
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 618); }
+  let dominoGrey; try { (dominoGrey = spiral.map((_, k) => `hsl(235, 6%, ${[78, 60, 70, 54, 84, 64][k % 6]}%)`)); } catch (e) { window.__miss?.(e, 628); }
+  let dominoHue; try { (dominoHue = spiral.map((_, k) => `hsl(${(k * 12) % 360}, 52%, 70%)`)); } catch (e) { window.__miss?.(e, 629); }
+  let tiles; try { (tiles = spiral.map(([x, y, a], k) => {
+    const g = el('g', { transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${a.toFixed(1)})` }, $('domino-tiles'));
+    return el('rect', { x: -2, y: -4.5, width: 4, height: 9, rx: 1, style: `fill: ${dominoGrey[k]}` }, g);
+  })); } catch (e) { window.__miss?.(e, 630); }
+  // The fall runs from the outside in, one tile every film frame or so.
+  let fallTl; try { (fallTl = gsap.timeline({ paused: true })); } catch (e) { window.__miss?.(e, 635); }
+  try { tiles.forEach((t, k) => fallTl
+    .to(t, { attr: { width: 10 }, duration: 0.12, ease: 'power2.in' }, k * 0.035)
+    .to(t, { fill: dominoHue[k], duration: 0.1 }, k * 0.035));
+} catch (e) { window.__miss?.(e, 636); }
+  try { toys.domino = {
+    enter() { fallTl.timeScale(1).play(); },
+    move() {},
+    leave() { fallTl.timeScale(2.2).reverse(); },
+  };
+} catch (e) { window.__miss?.(e, 639); }
+
+
+
+  // Pin art: pins near the pointer push out, then sink back slowly.
+  let heads; try { (heads = []); } catch (e) { window.__miss?.(e, 648); }
+  try { for (let r = 0; r < 9; r++) { try { for (let c = 0; c < 9; c++) {
+    const x = 18 + c * 11.5, y = 18 + r * 11.5;
+    // A fingertip presses in off centre, as in the emblem.
+    const k = Math.exp(-((x - 54) ** 2 + (y - 58) ** 2) / (2 * 22 * 22));
+    const r0 = 1.4 + 4.3 * k, o0 = 0.35 + 0.65 * Math.min(1, (r0 - 1.4) / 3);
+    heads.push({ n: el('circle', { cx: x, cy: y, r: r0.toFixed(1), 'fill-opacity': o0.toFixed(2) }, $('pin-heads')), x, y, r0, o0 });
+  }
+} catch (e) { window.__miss?.(e, 'loop'); } }
+} catch (e) { window.__miss?.(e, 649); }
+  let press; try { (press = p => heads.forEach(h => {
+    const k = Math.exp(-((p[0] - h.x) ** 2 + (p[1] - h.y) ** 2) / (2 * 13 * 13));
+    const r = 1.4 + 4.3 * k;
+    // Only a deeper press restarts a pin, so moving never makes it flicker.
+    if (r <= +h.n.getAttribute('r') + 0.2) return;
+    gsap.timeline({ overwrite: true })
+      .to(h.n, { attr: { r, 'fill-opacity': 1 }, duration: 0.12, ease: 'power2.out' })
+      .to(h.n, { attr: { r: h.r0, 'fill-opacity': h.o0 }, duration: 1.2, ease: 'power2.inOut' }, '+=0.35');
+  })); } catch (e) { window.__miss?.(e, 656); }
+  try { toys.pins = { enter: p => press(p || [64, 64]), move: p => p && press(p), leave() {} };
+} catch (e) { window.__miss?.(e, 665); }
+
+  // Galaxy: circling the pointer spins the disc; it coasts to a stop.
+  let disc; try { (disc = $('galaxy-stars')); } catch (e) { window.__miss?.(e, 668); }
+  let spin; try { (spin = 0); } catch (e) { window.__miss?.(e, 669); }
+let turn; try { (turn = 0); } catch (e) { window.__miss?.(e, 669); }
+let last; try { (last = null); } catch (e) { window.__miss?.(e, 669); }
+  let coast; try { (coast = () => {
+    turn += spin;
+    spin *= 0.95;
+    gsap.set(disc, { rotation: turn, svgOrigin: '64 64' });
+    if (Math.abs(spin) < 0.02) { spin = 0; gsap.ticker.remove(coast); }
+  }); } catch (e) { window.__miss?.(e, 670); }
+  let kick; try { (kick = w => {
+    if (!spin) gsap.ticker.add(coast);
+    spin = Math.max(-14, Math.min(14, spin + w));
+  }); } catch (e) { window.__miss?.(e, 676); }
+  try { toys.galaxy = {
+    enter: p => { last = p; if (!p) kick(6); },
+    move(p) {
+      if (last && p) {
+        const ax = last[0] - 64, ay = last[1] - 64, bx = p[0] - 64, by = p[1] - 64;
+        kick(((ax * by - ay * bx) / Math.max(ax * ax + ay * ay, 200)) * 40);
+      }
+      last = p;
+    },
+    leave: () => (last = null),
+  };
+} catch (e) { window.__miss?.(e, 680); }
+
+  // Prism: a faded cone follows the pointer; the bands bundle or scatter.
+  let ray; try { (ray = $('prism-ray')); } catch (e) { window.__miss?.(e, 693); }
+let bands; try { (bands = [...document.querySelectorAll('#prism-fan path')]); } catch (e) { window.__miss?.(e, 693); }
+  let light; try { (light = { y: 68, t: 0 }); } catch (e) { window.__miss?.(e, 694); }
+  let drawPrism; try { (drawPrism = () => {
+    ray.setAttribute('d', `M6 ${(light.y - 13).toFixed(1)}L6 ${(light.y + 13).toFixed(1)}L40 60.8Z`);
+    // t 0 packs the bands into one spectrum; t 1 splits them into thin lines.
+    const step = 7 + 7 * light.t, half = 3.5 - 2.7 * light.t, mid = 62 - (light.y - 68) * 0.45;
+    bands.forEach((b, i) => {
+      const c = mid + (i - 2) * step;
+      b.setAttribute('d', `M76 60.8L118 ${(c - half).toFixed(1)}V${(c + half).toFixed(1)}Z`);
+    });
+  }); } catch (e) { window.__miss?.(e, 695); }
+  try { drawPrism();
+} catch (e) { window.__miss?.(e, 704); }
+  let aimBeam; try { (aimBeam = y => gsap.to(light, { y, t: Math.min(1, Math.abs(y - 68) / 36), duration: 0.3, ease: 'power3.out', overwrite: true, onUpdate: drawPrism })); } catch (e) { window.__miss?.(e, 705); }
+  try { toys.prism = {
+    enter: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
+    move: p => p && aimBeam(Math.max(24, Math.min(104, p[1]))),
+    leave: () => aimBeam(68),
+  };
+} catch (e) { window.__miss?.(e, 706); }
+
+  // Lab icons: hover or focus plays a loop; touch plays them in view.
+  let running; try { (running = new Map()); } catch (e) { window.__miss?.(e, 713); }
+  function start(t) {
+    if (running.has(t)) return;
+    t.classList.add('on');
+    running.set(t, reduce ? null : toys[t.id].play());
+  }
+  function stop(t) {
+    if (!running.has(t)) return;
+    t.classList.remove('on');
+    running.get(t)?.kill();
+    running.delete(t);
+    toys[t.id].rest();
+  }
+  // The three newest icons play a seamless loop while hovered, then settle.
+  let hoverLoop; try { (hoverLoop = (build, settle) => {
+    let tl = null;
+    return { enter() { if (!tl) tl = build(); }, move() {}, leave() { tl?.kill(); tl = null; settle(); } };
+  }); } catch (e) { window.__miss?.(e, 727); }
+  // Kaleidoscope: the petals breathe as the flower turns; one full turn per loop.
+  let kAll; try { (kAll = $('kaleido-all')); } catch (e) { window.__miss?.(e, 732); }
+let kPetals; try { (kPetals = document.querySelectorAll('#kaleido .petal')); } catch (e) { window.__miss?.(e, 732); }
+  try { toys.kaleido = hoverLoop(
+    () => gsap.timeline()
+      .to(kAll, { rotation: '+=360', svgOrigin: '64 64', duration: 12, ease: 'none', repeat: -1 }, 0)
+      .to(kPetals, { scale: 0.84, svgOrigin: '64 64', duration: 1, ease: 'sine.inOut', yoyo: true, repeat: -1 }, 0),
+    () => {
+      gsap.to(kAll, { rotation: Math.round(gsap.getProperty(kAll, 'rotation') / 360) * 360, svgOrigin: '64 64', duration: 0.4, ease: 'power2.out' });
+      gsap.to(kPetals, { scale: 1, svgOrigin: '64 64', duration: 0.3 });
+    });
+} catch (e) { window.__miss?.(e, 733); }
+  // Ferrofluid: a crown of spikes seen from above; on hover the spikes breathe.
+  let fCrown; try { (fCrown = [$('ferro-crown')]); } catch (e) { window.__miss?.(e, 742); }
+let ferroState; try { (ferroState = { reach: 1 }); } catch (e) { window.__miss?.(e, 742); }
+  let drawFerro; try { (drawFerro = () => {
+    const n = 14, inner = 30, d = [];
+    for (let k = 0; k < n; k++) {
+      // Every other spike reaches further, and the reach breathes on hover.
+      const a = (k * TAU) / n - Math.PI / 2, tip = inner + (k % 2 ? 15 : 22) * ferroState.reach;
+      const a0 = a - Math.PI / n, a1 = a + Math.PI / n;
+      const p = (r, t) => `${(64 + r * Math.cos(t)).toFixed(1)} ${(64 + r * Math.sin(t)).toFixed(1)}`;
+      d.push(`${k ? 'L' : 'M'}${p(inner, a0)}Q${p(inner + 4, a - 0.05)} ${p(tip, a)}Q${p(inner + 4, a + 0.05)} ${p(inner, a1)}`);
+    }
+    fCrown.forEach(el => el.setAttribute('d', d.join('') + 'Z'));
+  }); } catch (e) { window.__miss?.(e, 743); }
+  try { drawFerro();
+} catch (e) { window.__miss?.(e, 754); }
+  try { toys.ferro = hoverLoop(
+    () => gsap.timeline({ repeat: -1, yoyo: true }).to(ferroState, { reach: 0.55, duration: 0.7, ease: 'sine.inOut', onUpdate: drawFerro }),
+    () => gsap.to(ferroState, { reach: 1, duration: 0.4, ease: 'back.out(2)', onUpdate: drawFerro }));
+} catch (e) { window.__miss?.(e, 755); }
+  // Neon sign: on hover the tube sputters like a tired bar sign, then holds.
+  let nLit; try { (nLit = $('neon-lit')); } catch (e) { window.__miss?.(e, 759); }
+  try { toys.neon = hoverLoop(
+    () => gsap.timeline({ repeat: -1 })
+      .to(nLit, { keyframes: [
+        { opacity: 0.25, duration: 0.05 }, { opacity: 1, duration: 0.04 }, { opacity: 0.55, duration: 0.07 },
+        { opacity: 1, duration: 0.6 }, { opacity: 0.1, duration: 0.04 }, { opacity: 0.85, duration: 0.05 },
+        { opacity: 0.35, duration: 0.03 }, { opacity: 1, duration: 1.1 },
+      ], easeEach: 'none' }),
+    () => gsap.set(nLit, { opacity: 1 }));
+} catch (e) { window.__miss?.(e, 760); }
+
+  // Brut style (?style=brut): grey shading, grain, one signal accent per icon.
+  try { if (new URLSearchParams(location.search).get('style') === 'brut') {
+    const ACCENT = 'oklch(0.7 0.21 35)';
+    const accent = {
+      morphset: '.m-tri:not([style])', pop: '#pop-cells > g:nth-child(2) path:first-child',
+      fidget: 'rect[fill="url(#g-cell)"]', domino: '#domino-tiles rect:nth-child(5)',
+      pins: '#pin-heads circle:is(:nth-child(28), :nth-child(29), :nth-child(36), :nth-child(37))',
+      galaxy: '#galaxy circle[fill^="oklch"]', prism: '#prism-fan path:first-child',
+    };
+    // Highlights, rims, cut-outs and dark details keep their own paint.
+    const keepPaint = (n, v) => {
+      if (!v || v === 'none' || /#(lit|rim)\b/.test(v) || /var\(--bg\)/.test(n.getAttribute('style') || '')) return true;
+      const m = v.match(/rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/);
+      return m && (0.2126 * m[1] + 0.7152 * m[2] + 0.0722 * m[3]) / 255 < 0.3;
+    };
+    document.querySelectorAll('main > .shelf .toy').forEach(t => {
+      const svg = t.querySelector('.obj svg');
+      const hot = new Set(svg.querySelectorAll(accent[t.id]));
+      svg.querySelectorAll('path, circle, rect, line, ellipse').forEach(n => {
+        if (n.closest('clipPath')) return;
+        const cs = getComputedStyle(n);
+        if (hot.has(n)) { n.style.fill = ACCENT; return; }
+        if (!keepPaint(n, cs.fill)) n.style.fill = 'url(#g-gray)';
+        if (!keepPaint(n, cs.stroke)) n.style.stroke = 'oklch(0.72 0.006 275)';
+      });
+      // One grain filter wraps the whole icon.
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('filter', 'url(#grain)');
+      g.append(...[...svg.childNodes].filter(c => c.nodeName !== 'clipPath' && c.nodeName !== 'linearGradient'));
+      svg.append(g);
+    });
+  }
+} catch (e) { window.__miss?.(e, 770); }
+
+  // Main icons map the pointer into viewBox units and react to it.
+  let local; try { (local = (t, e) => {
+    const r = t.querySelector('.obj svg').getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * 128, ((e.clientY - r.top) / r.height) * 128];
+  }); } catch (e) { window.__miss?.(e, 803); }
+  let main; try { (main = [...document.querySelectorAll('main > .shelf .toy')]); } catch (e) { window.__miss?.(e, 807); }
+  try { if (!reduce) main.forEach(t => {
+    let toy = toys[t.id];
+    // Icons with a play loop run it while hovered and rest when the pointer leaves.
+    if (!toy.enter) {
+      const { play, rest } = toy;
+      let tl = null;
+      toy = { enter() { if (!tl) tl = play(); }, move() {}, leave() { tl?.kill(); tl = null; rest(); } };
+    }
+    t.addEventListener('pointerenter', e => toy.enter(local(t, e)));
+    t.addEventListener('pointermove', e => toy.move(local(t, e)));
+    t.addEventListener('pointerleave', () => toy.leave());
+    t.addEventListener('focusin', () => toy.enter(null));
+    t.addEventListener('focusout', () => toy.leave());
+  });
+} catch (e) { window.__miss?.(e, 808); }
+  let all; try { (all = [...document.querySelectorAll('.lab .toy')]); } catch (e) { window.__miss?.(e, 822); }
+  try { if (matchMedia('(hover: hover)').matches) {
+    all.forEach(t => {
+      t.addEventListener('pointerenter', () => start(t));
+      t.addEventListener('pointerleave', () => stop(t));
+      t.addEventListener('focusin', () => start(t));
+      t.addEventListener('focusout', () => stop(t));
+    });
+  } else {
+    const io = new IntersectionObserver(es => es.forEach(e => (e.isIntersecting ? start(e.target) : stop(e.target))), { threshold: 0.6 });
+    all.forEach(t => io.observe(t));
+  }
+} catch (e) { window.__miss?.(e, 823); }
+})();
+</script>
+<script>
+// Only the tile named in the hash stays; it fills the frame and keeps its hover.
+addEventListener('load', () => setTimeout(() => {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const a = document.querySelector('a.toy#' + CSS.escape(id));
+  if (!a) { document.documentElement.dataset.ready = 'none'; return; }
+  document.activeElement?.blur?.();
+  const NAKED = '; display: block !important; position: static !important; transform: none !important; filter: none !important; opacity: 1 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; animation: none !important; transition: none !important; contain: none !important; visibility: visible !important; overflow: visible !important;';
+  const off = n => n.style.setProperty('display', 'none', 'important');
+  const path = new Set();
+  for (let n = a.parentElement; n && n !== document.documentElement; n = n.parentElement) path.add(n);
+  for (const n of path) {
+    for (const c of n.children) if (!path.has(c) && c !== a && !c.matches('svg.defs, script, style, link')) off(c);
+    n.style.cssText += NAKED;
+    // The early menus keep the Lab in a closed details element.
+    if (n.tagName === 'DETAILS') n.open = true;
+  }
+  for (const c of a.children) if (!c.matches('.obj')) off(c);
+  a.style.cssText += '; position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; display: grid !important; place-items: center !important; gap: 0 !important; margin: 0 !important; padding: 0 !important; opacity: 1 !important; filter: none !important; transform: none !important; transition: none !important; visibility: visible !important;';
+  const css = document.createElement('style');
+  css.textContent = 'html, body { background: transparent !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; min-height: 0 !important; } a.toy .obj { display: grid !important; place-items: center; width: 100% !important; height: 100% !important; max-width: none !important; margin: 0 !important; } a.toy .obj svg { width: 90% !important; height: 90% !important; } a.toy .obj .series, a.toy .obj::after, a.toy .obj::before { display: none !important; } a.toy:focus-visible { outline: none !important; }';
+  document.head.append(css);
+  document.documentElement.dataset.ready = '1';
+}, 500));
+</script>
