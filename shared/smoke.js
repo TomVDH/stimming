@@ -23,7 +23,8 @@ float smTransmit(float tau, float multi, float powder) {
   float pw = 1.0 - exp(-tau * 2.0);
   return mix(base, base * pw, powder);
 }
-// The light share with an ambient floor, so shadowed smoke never goes black.
+// The light share with an ambient floor.
+// Shadowed smoke never goes black.
 float smLight(float tau, float multi, float powder, float ambient) {
   return clamp(smTransmit(tau, multi, powder) + ambient, 0.0, 1.0);
 }
@@ -38,7 +39,10 @@ float smPhase(float c, float g) {
 /**
  * A smoke look.
  * @typedef {Readonly<{ absorb: number, ambient: number, powder: number, multi: number, g: number }>} SmLook
- * absorb scales tau. ambient is the floor. powder and multi are 0 to 1. g is the phase.
+ * absorb scales tau.
+ * ambient is the floor.
+ * powder and multi run from 0 to 1.
+ * g is the phase.
  */
 
 /**
@@ -50,6 +54,8 @@ export const SM_FIRE = Object.freeze({ absorb: 2.0, ambient: 0.5, powder: 0.59, 
 
 /**
  * A look as GLSL constants: smAbsorb, smAmbient, smPowder, smMulti, smG.
+ * A shader takes one smConsts() line.
+ * A second look passes its numbers to smLight() directly.
  * @param {SmLook} [look] SM_FIRE by default.
  * @returns {string} One `const float` line.
  */

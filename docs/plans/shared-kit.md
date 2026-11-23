@@ -52,7 +52,7 @@ Every copy is a fork of a neighbour, so a family drifts one toy at a time. Examp
 | `rocket.js` | 328 | three.js 0.170 | `makeRocket`, `makeFlame` | 2: ascent, launch |
 | `air.js` | 101 | JS | `AIR`, `sunLight` | 1: ascent |
 | `weather.js` | 37 | JS | `weather()` | 1: foghorn |
-| `smoke.js` | 65 | GLSL + JS | `sm`, `SM_FIRE`, `smConsts` | 1: whiteout (seven more carry a `K3 lighting` copy) |
+| `smoke.js` | 71 | GLSL + JS | `sm`, `SM_FIRE`, `smConsts` | 1: whiteout (seven more carry a `K3 lighting` copy) |
 | `fire.js` | 664 | three.js 0.186.1 WebGPU, TSL | `createFire`, `volume()` | 1: fire (Jet hover carries a full copy) |
 
 ## Inventory by effect family
