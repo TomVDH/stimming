@@ -1,10 +1,10 @@
 ---
 # stimming-4itb
 title: 'Observatory: no laser, a quieter selector, Little and Big Observatory'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-23T21:43:47Z
-updated_at: 2026-11-23T21:43:47Z
+updated_at: 2026-11-23T22:05:00Z
 parent: stimming-wqq9
 ---
 
@@ -18,4 +18,4 @@ Tom, 2026-11-23, on "the selector too": restyle it, not delete it.
 - [x] Restyle the selector in the bar v3 look: corner ticks and the name on hover; bar v3 words on a lock; one faint hairline only on a word
 - [x] Screenshot to Tom early; he approved the direction (docs/qa/observatory-pick/)
 - [x] check:observatory and check:railgun 0 errors; 153 node tests pass
-- [ ] Tom's sign-off
+- [x] Tom's sign-off, 2026-11-23: "New look fine for now"
