@@ -130,5 +130,6 @@ Captures: `docs/qa/jellyfish/`. Q1 to Q10 pass on 2026-11-23 (headless Chromium,
 
 ## Open for Tom
 
-- 3D with a round window (the default), the presentation, the Dutch name (draft Kwallentank), the icon pick.
-- The icon pick across rounds 1 and 2. Round 2 (`icons/spike-jellyfish-2.html`) has the new colours: A a sea nettle, D a water block with the nettle and five small jellies. The menu and the intro emblem keep round 1 A, the moon jelly, until Tom picks.
+- 3D with a round window (the default), the presentation, the Dutch name (draft Kwallentank).
+
+Icon: Tom kept the current one on 2026-11-23, A of round 1, the moon jelly; it is the menu tile and the intro emblem. Round 2 (`icons/spike-jellyfish-2.html`, a sea nettle and a water block with the starfield) stays on the sheet.
