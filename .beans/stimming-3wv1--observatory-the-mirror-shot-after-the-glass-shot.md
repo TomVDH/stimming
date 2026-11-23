@@ -5,8 +5,10 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-23T09:50:55Z
-updated_at: 2026-11-23T10:31:06Z
+updated_at: 2026-11-23T23:34:23Z
+parent: stimming-wqq9
 ---
+
 
 Tom, 2026-11-23: an extra shot after the final cut for the modern telescope. As the central disk at the tube's entry crests the camera, zoom onto the mirror with the starry sky reflecting in it.
 
