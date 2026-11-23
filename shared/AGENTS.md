@@ -18,6 +18,7 @@ Code every toy uses. A change here reaches every page.
 | `environment.js` | Environment runner: a toy gives `vec3 envScene(vec2 uv)`. Start a new Environment toy here. |
 | `fire.js` | Fire and smoke (three.js 0.186.1, WebGPU, TSL). It imports nothing; the toy passes the namespaces. Fire is the reference. |
 | `wetglass.js`, `water.js`, `precip.js`, `sky.js`, `flare.js`, `glow.js`, `grade.js`, `output.js`, `weather.js`, `detail.js` | Shader bundles. Each has a card in `fxlab/`. Glass effects stay one group. |
+| `precipfield.js` | Rain and snow as particles in the world, lit by lamps: streaks, blur discs, the forward lobe. Each toy keeps its crowds, lights and depth test. Whiteout is the reference; no `fxlab/` card. |
 | `clouds.js` | Cloud light: the two-lobe phase and light shafts under clouds. The look is common; each toy gives its occlusion source. Railgun is the reference; no `fxlab/` card. |
 | `intro.js`, `intro.css` | The intro. Signal ships (`DEFAULT_VARIETY`). |
 | `loadwatch.js` | Load watch for heavy toys: a visible, stored load step. A load that died shows on the next open. Opt-in per toy. |

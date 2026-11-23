@@ -5,6 +5,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
+import { PF_SNOW } from '../shared/precipfield.js';
 import { makeScene, GUST_N } from './scene.js';
 import { makeSound } from './sound.js';
 import { EYE, AIM, LAMP, MAST } from './world.js';
@@ -70,7 +71,7 @@ cam.project = p => {
   return [(sx + 1) / 2 * cam.w, (1 - sy) / 2 * cam.h];
 };
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__whiteout = { st, lamp, gust, cam, toggle: () => toggleLamp(), callGust: () => callGust(), get loop() { return { raf, tmo, lively: lively() }; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__whiteout = { st, lamp, gust, cam, toggle: () => toggleLamp(), callGust: () => callGust(), draw: () => draw(), get loop() { return { raf, tmo, lively: lively() }; } };
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
@@ -225,7 +226,7 @@ function makeView() {
   view.gustSpan = gustSpan();
   view.sigNow = view.sig * (1 + view.gustK * gh) * 0.8;
   view.vel = baseVel() * (1 + 0.5 * gh) * st.pace;
-  view.expo = 1 / 60;
+  view.expo = PF_SNOW.expo;
   // The storm's own light: a dim blue-grey that whitens a little in the gusts.
   const a = 1 + 0.55 * Math.min(gh, 1.2);
   view.amb[0] = 0.017 * a; view.amb[1] = 0.023 * a; view.amb[2] = 0.034 * a;
@@ -265,7 +266,7 @@ function step(dt, now) {
   pushHistory(sdt, storm);
   const gh = gustAtHut();
   st.windS += baseVel() * (1 + 0.5 * gh) * sdt;
-  st.fallS += 1.1 * sdt;
+  st.fallS += PF_SNOW.fall * sdt;
   stepLamp(dt, now);
   snd.update({ wind: strength(), gust: gh, pace: st.pace, panLamp: panOf(LAMP), panMast: panOf([MAST.x, MAST.guy, MAST.z]), dt });
 }
