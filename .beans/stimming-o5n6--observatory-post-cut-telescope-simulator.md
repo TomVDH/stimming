@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T20:16:30Z
+updated_at: 2026-11-23T17:01:42Z
 parent: stimming-wqq9
 ---
 
@@ -13,11 +13,11 @@ After the pick cuts, a telescope simulator: the player drives the tube and the e
 
 ## Checklist
 
-- [ ] observatory/src/sim/ optics maths (tube pose, eyepieces, projection)
-- [ ] observatory/src/sim/main.ts: entry, Canvas 2D eyepiece view, controls
-- [ ] observatory/sim.html workbench page (noindex)
-- [ ] tools/build.mjs: sim/main in the observatory extras (one line)
-- [ ] npm run check: 0 errors
+- [x] observatory/src/sim/ optics maths (tube pose, eyepieces, projection)
+- [x] observatory/src/sim/main.ts: entry, Canvas 2D eyepiece view, controls
+- [x] observatory/sim.html workbench page (noindex)
+- [x] tools/build.mjs: sim/main in the observatory extras (one line)
+- [x] npm run check: 0 errors
 - [x] npm run build: dist/sim/main.js written
 - [ ] Browser pane: sky renders; tube controls move the view
 - [x] Commit on claude/obs-sim-5faa06 with tools/commit.sh --no-push
@@ -104,3 +104,5 @@ Tom: simplify; make the 1 m's software diegetic (we look at a computer screen); 
 - [x] The 1 m's software is a text-mode program: 120 x 42 cells, VGA colours, double-line boxes, a cyan title bar, a function-key bar (F2 slew, F3 expose, F4 filter, F6 focus, F8 guide, F9 night), keys 1-6 for targets, block progress bar
 - [x] Boxes: IMAGE (stats on its border), LOG, TELESCOPE (RA, Dec, HA, alt, az, air mass, tracking, seeing, guiding), CAMERA, FOCUS (V-curve), TARGETS, SPECTROGRAPH (teff and class, or z, lookback and distance)
 - [x] The LCD monitor shader stays; panel.ts keeps only the element rows
+
+Merged to main on 2026-11-22 (5e9c4a6a, 7937852b). Later work is on claude/obs-sim-integrate (pushed).
