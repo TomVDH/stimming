@@ -13,6 +13,31 @@ export const JUG = {
 // The stopper's half height; its top carries the hose.
 export const STOP_H = 0.0175;
 
+// The jug profile in GLSL, for the scene and the fluid.
+export const PROFILE = `
+const float R = ${JUG.R.toFixed(4)}, BODY = ${JUG.BODY.toFixed(4)}, SH = ${JUG.SH.toFixed(4)};
+const float RN = ${JUG.RN.toFixed(4)}, TOP = ${JUG.TOP.toFixed(4)}, TH = ${JUG.TH.toFixed(4)};
+const float WATER = ${JUG.WATER.toFixed(4)};
+float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+// The outer jug as a solid, in the profile plane (radius, height).
+float jug2(vec2 q) {
+  // The body runs 2 cm into the shoulder, so its top corners hide in it.
+  float hb = (BODY + 0.02) * 0.5;
+  vec2 d = abs(q - vec2(0.0, hb)) - vec2(R - 0.02, hb - 0.02);
+  float body = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.02;
+  vec2 e = (q - vec2(0.0, BODY)) / vec2(R, SH);
+  float k = length(e);
+  float sh = (k - 1.0) * k / max(length(e / vec2(R, SH)), 1e-4);
+  vec2 nd = abs(q - vec2(0.0, 0.5 * (BODY + TOP))) - vec2(RN, 0.5 * (TOP - BODY));
+  float neck = length(max(nd, 0.0)) + min(max(nd.x, nd.y), 0.0);
+  float s = smin(min(body, sh), neck, 0.022);
+  float lip = length(q - vec2(RN + 0.0012, TOP - 0.006)) - 0.0058;
+  return smin(s, lip, 0.004);
+}
+// Below zero inside the jug's air and water.
+float jugInner(vec3 p) { return jug2(vec2(length(p.xz), p.y)) + TH; }
+`;
+
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];

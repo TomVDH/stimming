@@ -69,7 +69,7 @@ Every toy page that uses them carries this importmap, word for word:
 - A toy chat that needs a change in `shared/` opens its own bean and gets Tom's yes first.
 - A toy adopts a shared module in that toy's own chat, never from a workbench chat.
 - One module at a time. A reference toy proves it first. The audit order: `docs/code-health.md`.
-- Small-scale volumetric smoke, fog, steam or cloud uses Fire's smoke shading (`shared/fire.js`, `volume()`). Tom, 2026-11-23: "whenever we use volumetric clouds or smoke etc on smaller scale -- that shader comes in". A raw WebGL2 toy copies the lighting as a marked `K3 lighting` section; start from `jethover/fluid.js` or `cloudbottle/scene.js`.
+- Small-scale volumetric smoke, fog, steam or cloud uses Fire's smoke shading (`shared/fire.js`, `volume()`). Tom, 2026-11-23: "whenever we use volumetric clouds or smoke etc on smaller scale -- that shader comes in". A raw WebGL2 toy copies the lighting as a marked `K3 lighting` section; start from `cloudbottle/scene.js`. Its fluid port is `cloudbottle/fluid.js`.
 
 ## Toy page
 

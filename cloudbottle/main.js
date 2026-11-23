@@ -38,8 +38,10 @@ const jar = {
   seated: true, lift: 0, vy: 0, tx: 0, tz: 0, ttx: 0, ttz: 0, flying: false, home: 0,
   // The bulb: squash from 0 to 1 and its speed.
   sq: 0, sqv: 0, sqHold: 0,
-  // The fog: level, its target, how formed, swirl, roll, the wisp, its age.
-  fog: 0, fogTo: 0, form: 1, spin: 0, spinV: 0, roll: 0, plume: 0, plumeT: 9, age: 0, t: 0,
+  // The fog: level, its target, how formed, stir, turbulence, the wisp.
+  fog: 0, fogTo: 0, form: 1, spinV: 0, roll: 0, plume: 0, plumeT: 9, t: 0,
+  // The gas: the glass's warmth against it, the squeeze jet, the pop's expansion, a fill.
+  chill: 0, jet: 0, expand: 0, fill: 0,
   popTimer: -1,
 };
 
@@ -111,6 +113,9 @@ function squeeze() {
   snd.squeeze(pan, jar.p);
   // Pressure warms the air: droplets evaporate.
   if (jar.fog > 0.002) { jar.fogTo *= 0.45; jar.spinV += calm ? 0 : 0.6; jar.roll = Math.min(1.2, jar.roll + (calm ? 0 : 0.35)); }
+  // The air goes in down the stopper; compression warms the gas past the glass.
+  jar.jet = calm ? 0 : 1;
+  jar.chill = Math.max(-0.5, jar.chill - 0.3);
   // The stopper creeps and creaks near the limit.
   const k = jar.p / jar.popAt;
   if (k > 0.5 && Math.random() < k) snd.creak(jugPan(), k);
@@ -141,12 +146,16 @@ function pop(dp) {
     jar.fogTo = Math.max(jar.fogTo, add);
     jar.fog = Math.max(jar.fog, before);
     jar.form = before > 0.05 ? Math.min(jar.form, 0.6) : 0;
-    jar.age = 0;
+    jar.fill = before > 0.05 ? 0.6 : 0.95;
     jar.plume = calm ? 0 : 0.6 * frac * (0.3 + 0.7 * jar.smoke);
     jar.plumeT = 0;
     jar.spinV = calm ? 0 : 0.5 + 0.8 * k;
     jar.roll = calm ? 0 : 1.2;
+    // The cold gas meets warmer glass.
+    jar.chill = Math.max(jar.chill, 0.4 + 0.6 * frac);
   }
+  // The gas swells and rushes out of the mouth.
+  jar.expand = calm ? 0 : k;
   snd.pop(jugPan(), k, add);
   jar.p = 0;
 }
@@ -188,11 +197,14 @@ function step(dt) {
   j.fogTo *= Math.exp(-dt / FOG_TAU);
   j.fog += (j.fogTo - j.fog) * (1 - Math.exp(-dt / (j.fogTo > j.fog ? 0.05 : 0.35)));
   if (j.fog < 0.004 && j.fogTo < 0.004) { j.fog = 0; j.fogTo = 0; }
-  j.age = Math.min(1, j.age + dt / 30);
-  // Swirl: a kick dies away to a slow drift while fog remains.
+  // Stir: a kick dies away to a slow drift while fog remains.
   const drift = calm || j.fog <= 0 ? 0 : 0.07;
   j.spinV = drift + (j.spinV - drift) * Math.exp(-dt / 1.6);
-  j.spin += j.spinV * dt;
+  j.chill *= Math.exp(-dt / 20);
+  j.jet *= Math.exp(-dt / 0.2);
+  if (j.jet < 0.01) j.jet = 0;
+  j.expand *= Math.exp(-dt / 0.1);
+  if (j.expand < 0.01) j.expand = 0;
   j.roll = Math.max(calm || j.fog <= 0 ? 0 : 0.25, j.roll * Math.exp(-dt / 3));
   j.plumeT += dt;
   j.plume *= Math.exp(-dt / 0.9);
@@ -220,11 +232,21 @@ function view() {
     bulb,
     hose,
     key: KEY,
-    fog: { dens: j.fog, form: j.form, spin: j.spin, roll: j.roll, t: j.t, plume: j.plume, plumeT: j.plumeT, age: j.age },
+    fog: { dens: j.fog, form: j.form, t: j.t, plume: j.plume, plumeT: j.plumeT },
   };
 }
 // The key light: a cool spot at the back left, a little above.
 const KEY = (() => { const v = [-0.68, 0.7, -0.42]; const l = Math.hypot(...v); return v.map(x => x / l); })();
+
+// One fluid step. Reduced motion only fills the cloud in place.
+function sim(dt) {
+  const j = jar;
+  scene.sim({
+    dt: calm ? 0 : dt, t: j.t, open: !j.seated, fill: j.fill, wall: j.chill,
+    turb: 0.05 * (0.4 + 1.6 * j.roll), jet: j.jet, expand: 0.0012 * j.expand,
+  });
+  j.fill = 0;
+}
 
 function draw() {
   if (!scene) return;
@@ -248,7 +270,9 @@ function frame() {
     if (pace < 0.002) pace = 0;
     const fast = busy();
     // Hands-on events run at full pace, even past the idle mark.
-    step(fast ? dt : dt * pace);
+    const sdt = fast ? dt : dt * pace;
+    step(sdt);
+    sim(sdt);
     if (pointer.id !== null && pointer.hold && performance.now() - pointer.lastPump > 420) { pointer.lastPump = performance.now(); squeeze(); }
     draw();
     D.frame(dt);
@@ -334,7 +358,7 @@ async function setup() {
 }
 onContextLoss(canvas, {
   lost: () => { halt(); gl = null; scene = null; },
-  restored: async () => { await setup(); resize(true); poke(); },
+  restored: async () => { await setup(); prewarmGas(); resize(true); poke(); },
   failed: () => fail.removeAttribute('hidden'),
 });
 
@@ -342,8 +366,15 @@ onContextLoss(canvas, {
 function prewarm() {
   Object.assign(jar, { seated: false, lift: 0.007, tx: 0.16, tz: 0.26, ttx: 0.16, ttz: 0.26, p: 0 });
   jar.fog = jar.fogTo = 0.15 + 0.85 * jar.smoke;
-  jar.form = 1; jar.roll = 0.4; jar.spin = 1.3; jar.spinV = 0.15; jar.t = 6;
-  jar.age = 0.2; jar.plume = 0; jar.plumeT = 9;
+  jar.form = 1; jar.roll = 0.4; jar.spinV = 0.15; jar.t = 0;
+  jar.plume = 0; jar.plumeT = 9; jar.chill = 0.8; jar.fill = 1;
+  prewarmGas();
+}
+// Three seconds of gas: the warm glass sets up its slow roll.
+// A restored context runs it again, since the grid died with the old one.
+function prewarmGas() {
+  if (jar.fog > 0) jar.fill = 1;
+  for (let i = 0; i < 90; i++) { jar.t += 1 / 30; sim(1 / 30); }
 }
 
 mark('build');
