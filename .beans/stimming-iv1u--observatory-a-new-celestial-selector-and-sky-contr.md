@@ -1,10 +1,10 @@
 ---
 # stimming-iv1u
 title: 'Observatory: a new celestial selector and sky controls'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-23T09:45:28Z
-updated_at: 2026-11-23T09:45:28Z
+updated_at: 2026-11-23T20:35:00Z
 parent: stimming-wqq9
 ---
 
@@ -21,6 +21,6 @@ Related: stimming-hben (aim marker: thin white line, soft glow on the sky).
 - [x] Selector in the wide shot
 - [x] Switchable hero dome: obs-cuts made cuts.start take the dome; the selector passes the chosen dome (rebased on integration 357658dd)
 - [x] Sky controls: Night, City light, Site
-- [x] npm run check: 0 errors; node tests
-- [ ] Screenshots to Tom; his sign-off
+- [x] check:observatory and check:railgun: 0 errors; check:shared keeps main's 3 errors in shared/flare.js; 153 node tests pass
+- [x] Screenshots to Tom; his sign-off: Tom signed off the look and approved the merge to main, 2026-11-23 (a7aa2fd1)
 - [x] The classic dome from the building session replaces the stand-in: refractor in complex.main, 1 m in complex.big
