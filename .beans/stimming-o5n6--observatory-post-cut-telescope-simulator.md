@@ -117,8 +117,20 @@ Tom: integrate it into the toy for now; an overview with a sweeping scene, a sle
 - [ ] Tom sees the push and the iris in the pane
 - [x] The sweeping overview: the opening (golden hour to night, 10 s) starts toward the sunset, the dome low on the left, and pans and tilts down onto the dome; it lands on the wide shot (view/camera.ts applySweep). It stays on the rise: the woods and the land are built for that view only
 - [x] Tom keeps the pan, not an orbit round the summit (2026-11-23)
-- [ ] Open: what "medium fidelity" trims from the sim
+- [x] Tom keeps the current fidelity: nothing is trimmed (2026-11-23)
 - [ ] Open: optics.ts still says a 41 cm refractor; at the main dome's scale 3.64 the hero glass is about 1 m
+
+## Round 8: working controls and smart tips (Tom, 2026-11-23)
+
+Tom: keep the current fidelity; make every control we have work; add smart tooltips that tell the user more about modern telescope operations.
+
+- [x] Every control in the 1 m's program and on the refractor's case does what it shows: 62 headless checks pass (tips-qa)
+- [x] TRACK turns sidereal tracking on and off (click or T)
+- [x] The CCD's cooler set point goes down and up (< and >)
+- [x] Hover tips in the program: a DOS help window that reads the state now (F1 or H turns tips off)
+- [x] The advisor: one TIP line in the log when stars trail, focus drifts, the CCD is warm, the target is low, tracking is off or a filter needs longer subs
+- [x] Brass and felt tooltips on the eyepiece case, the clock drive and the telescope switch
+- [ ] Tom sees the tips
 
 Merged to main on 2026-11-22 (5e9c4a6a, 7937852b).
 Round 7 merged to main on 2026-11-23 with the selector and cuts chain (claude/obs-sim-integrate).

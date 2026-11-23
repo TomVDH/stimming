@@ -13,8 +13,9 @@ import {
 } from './optics.ts';
 import { Renderer, STRIDE } from './render.ts';
 import { BINS, Run, classFromTeff, cosmology, isFound, model } from './spectrum.ts';
-import { FILTERS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, hfrAt, rig, stepRig, type Filter } from './rig.ts';
-import { IMG, SH, SW, Screen, af, fitV, log, type Target } from './ui.ts';
+import { FILTERS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
+import { IMG, SH, SW, Screen, TIP_COLS, af, fitV, log, logText, type Target } from './ui.ts';
+import { ADVICE, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -122,6 +123,18 @@ let jx = 0, jy = 0, breath = 0;
 let targets: (Target & { dir: Vec3 })[] = [];
 // The monitor's glass on the canvas, in device px.
 let glass: [number, number, number, number] = [0, 0, 1, 1];
+// Tips: on or off, the region under the pointer, and since when.
+let tipsOn = true;
+let tipId: string | null = null;
+let tipSince = 0;
+let tipTimer = 0;
+// A tip shows after the pointer rests this long, in ms.
+const TIP_DWELL = 450;
+// The advisor: when each condition last spoke, and if it cleared since.
+const advised = new Map<string, { said: number; cleared: boolean }>();
+let lastAdvice = 0;
+// A condition speaks again only after it clears for this long, in ms.
+const ADVICE_REST = 45000;
 
 const random = Math.random;
 const gauss = (): number => Math.sqrt(-2 * Math.log(random() + 1e-12)) * Math.cos(6.2831853 * random());
@@ -477,6 +490,7 @@ function frame(t: number): void {
     if (tick) {
       lastPanel = t;
       if (t - lastTargets > 5000) refreshTargets();
+      advise(t, lstDeg);
     }
     const fresh = tick || uiDirty || lively || moved;
     if (fresh) drawScreen(L, lstDeg, inView);
@@ -581,6 +595,42 @@ function niceBar(arcsecPerPx: number): { px: number; label: string } {
   return { px: 600 / arcsecPerPx, label: '10′' };
 }
 
+// The 1 m's state, as the tips read it.
+function tipCtx(lstDeg: number): Ctx {
+  const rd = raDec(aim);
+  const haH = ((((lstDeg - rd.ra) / 15) % 24) + 36) % 24 - 12;
+  return {
+    alt: pose.alt, air: airmass(pose.alt), ha: haH, lst: fmtLst(lstDeg), fwhm: fwhm(),
+    hfr: hfrNow || hfrAt(rig.focus, fwhm(), false), hfrBest: hfrAt(rig.best, fwhm(), false), focus: rig.focus,
+    tracking: rig.tracking, slewing: !!rig.slew, guiding: rig.guiding, rms: guideRms()[2],
+    exposure: rig.exposure, filter: rig.filter, subs, looping: rig.looping, max: stats.max,
+    temp: rig.sensorTemp, coolerSet: rig.coolerSet, coolerPower: rig.coolerPower,
+    night: screen.night, tipsOn,
+    sel: selected ? { name: selected.name, galaxy: selected.galaxy !== 'none', snr: run ? run.snr : 0 } : null,
+  };
+}
+
+// The advisor reads the state once a second.
+// Each condition says one TIP line, then rests.
+function advise(t: number, lstDeg: number): void {
+  if (!tipsOn || t - lastAdvice < 1000) return;
+  lastAdvice = t;
+  const c = tipCtx(lstDeg);
+  for (const a of ADVICE) {
+    const st = advised.get(a.id) ?? { said: -Infinity, cleared: true };
+    advised.set(a.id, st);
+    if (!a.when(c)) { st.cleared = true; continue; }
+    // A condition that never cleared stays quiet.
+    if (!st.cleared || t - st.said < ADVICE_REST) continue;
+    log(a.say(c), 'tip');
+    st.said = t;
+    st.cleared = false;
+    uiDirty = true;
+    // One tip a second at most.
+    return;
+  }
+}
+
 function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
   const rd = raDec(aim);
   const pct = kOf(L) * 100;
@@ -611,6 +661,12 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
     const kind = selected.galaxy === 'none' ? `Star · ${selected.spect}` : `${selected.galaxy === 'spiral' ? 'Spiral' : 'Elliptical'} galaxy`;
     sel = { name: selected.name, info: `${kind} · mag ${selected.mag.toFixed(1)}`, run, found, lines };
   }
+  // The help window shows once the pointer rests on one region.
+  let tip = null;
+  if (tipsOn && tipId && performance.now() - tipSince >= TIP_DWELL) {
+    const tp = programTip(tipId, tipCtx(lstDeg));
+    if (tp) tip = { title: tp.title, lines: wrap(tp.text, TIP_COLS), at: screen.hover };
+  }
   const state = rig.slew ? 'Slewing' : rig.autofocus ? 'Autofocus running' : !rig.looping ? 'Idle'
     : `Exposing ${subClock.toFixed(1)} / ${rig.exposure} s · ${rig.filter}`;
   // The hour angle: how far the target has turned past the meridian.
@@ -621,12 +677,12 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
     seeing: `${fwhm().toFixed(1)}"`, time: performance.now() / 1000, still: reduced.matches,
     ra: fmtRa(rd.ra), dec: fmtDec(rd.dec), alt: `${pose.alt.toFixed(1)}°`, az: `${pose.az.toFixed(1)}°`, air: airmass(pose.alt).toFixed(2),
     state, progress: rig.looping ? Math.min(1, subClock / rig.exposure) : 0, subs,
-    temp: `${rig.sensorTemp >= 0 ? '+' : '−'}${Math.abs(rig.sensorTemp).toFixed(1)} °C · ${Math.round(rig.coolerPower)}%`,
+    temp: `${rig.sensorTemp >= 0 ? '+' : '−'}${Math.abs(rig.sensorTemp).toFixed(1)}°`,
     zoom: `${rig.zoom <= 1.001 ? 'Fit ' : ''}${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`,
     stars: detected.length, hfr: hfrNow, stats, targets,
     centre: [L.cx, L.cy], detected, box: box ? [box.x, box.y] : null,
     bar: niceBar(1 / (L.scale * ARCSEC)), banner: rig.slew ? 'SLEWING' : rig.autofocus ? 'AUTOFOCUS' : '',
-    sel,
+    sel, tip, tipsOn,
   }, actions);
 }
 
@@ -691,6 +747,8 @@ async function autofocus(): Promise<void> {
 }
 
 const EXPOSURES = [2, 5, 10, 30, 60];
+// The cooler's set points in °C.
+const COOLER_SETS = [-25, -20, -15, -10, -5, 0];
 const actions = {
   fit: (): void => { rig.panX = rig.panY = 0; zoomTo(1); },
   one: (): void => zoomTo(1 / (fitScale().s * PIXEL_RAD)),
@@ -730,6 +788,22 @@ const actions = {
   slewSelected: (): void => {
     if (selected) slewTo({ x: selected.x, y: selected.y, z: selected.z }, selected.name);
     else log('Slew: click a target in the image first', 'w');
+  },
+  track: (): void => {
+    if (rig.slew) { log('Tracking: the mount is slewing; it tracks when it arrives', 'w'); return; }
+    rig.tracking = !rig.tracking;
+    log(rig.tracking ? 'Tracking: sidereal' : 'Tracking stopped: the sky drifts west', rig.tracking ? 'ok' : 'w');
+    restack = 'reset';
+  },
+  cooler: (dir: number): void => {
+    const i = Math.max(0, Math.min(COOLER_SETS.length - 1, COOLER_SETS.indexOf(rig.coolerSet) + dir));
+    if (COOLER_SETS[i] === rig.coolerSet) return;
+    rig.coolerSet = COOLER_SETS[i];
+    log(`Cooler set point: ${rig.coolerSet} °C`);
+  },
+  tips: (): void => {
+    tipsOn = !tipsOn;
+    log(tipsOn ? 'Tips on' : 'Tips off');
   },
 };
 
@@ -834,11 +908,58 @@ driveBtn.addEventListener('click', () => {
   wake(true);
 });
 
+/* ---------- tooltips on the page ---------- */
+const tipEl = $<HTMLDivElement>('tip');
+let pageTip: HTMLElement | null = null;
+let pageTimer = 0;
+const eyeCtx = (): EyeCtx => ({ fwhm: fwhm(), dec: raDec(aim).dec, drive });
+
+function showPageTip(el: HTMLElement): void {
+  const t = tipsOn ? eyeTip(el.dataset.tip ?? '', eyeCtx()) : null;
+  if (!t) return;
+  const b = document.createElement('b');
+  b.textContent = t.title;
+  const p = document.createElement('span');
+  p.textContent = t.text;
+  tipEl.replaceChildren(b, p);
+  tipEl.hidden = false;
+  // Above the control, inside the window.
+  const r = el.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  const x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const y = r.top - h - 10 >= 8 ? r.top - h - 10 : r.bottom + 10;
+  tipEl.style.left = `${Math.round(x)}px`;
+  tipEl.style.top = `${Math.round(y)}px`;
+  el.setAttribute('aria-describedby', 'tip');
+  pageTip = el;
+}
+
+function hidePageTip(): void {
+  clearTimeout(pageTimer);
+  tipEl.hidden = true;
+  pageTip?.removeAttribute('aria-describedby');
+  pageTip = null;
+}
+
+for (const el of document.querySelectorAll<HTMLElement>('[data-tip]')) {
+  el.addEventListener('pointerenter', (e) => {
+    if (e.pointerType === 'touch') return;
+    clearTimeout(pageTimer);
+    pageTimer = window.setTimeout(() => showPageTip(el), TIP_DWELL);
+  });
+  el.addEventListener('pointerleave', hidePageTip);
+  // Keyboard focus shows the tip at once.
+  el.addEventListener('focusin', () => { if (el.querySelector(':focus-visible') || el.matches(':focus-visible')) showPageTip(el); });
+  el.addEventListener('focusout', hidePageTip);
+  // A click changes the state, so the open tip reads it again.
+  el.addEventListener('click', () => { if (pageTip === el) showPageTip(el); });
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') hidePageTip(); });
+
 stage.addEventListener('keydown', (e) => {
   if (mode === 'camera') {
     // The program's keys, as its function-key bar shows them.
     const fkeys: Record<string, () => void> = {
-      F2: actions.slewSelected, F3: actions.startStop, F6: actions.autofocus, F8: actions.guide, F9: actions.night,
+      F1: actions.tips, F2: actions.slewSelected, F3: actions.startStop, F6: actions.autofocus, F8: actions.guide, F9: actions.night,
       F4: () => {
         const fs: Filter[] = ['L', 'R', 'G', 'B', 'Hα'];
         actions.filter(fs[(fs.indexOf(rig.filter) + 1) % fs.length]);
@@ -851,6 +972,8 @@ stage.addEventListener('keydown', (e) => {
     else if (e.key === 'f' || e.key === 'F') actions.fit();
     else if (e.key === 'z' || e.key === 'Z') actions.one();
     else if (e.key === ' ') actions.startStop();
+    else if (e.key === 't' || e.key === 'T') actions.track();
+    else if (e.key === 'h' || e.key === 'H') actions.tips();
     else if (e.key.startsWith('Arrow')) {
       // Arrows nudge the mount by a tenth of the view.
       // Shift makes the nudge a fiftieth.
@@ -881,6 +1004,7 @@ stage.addEventListener('keydown', (e) => {
 let drag: { x: number; y: number; x0: number; y0: number; t0: number; moved: boolean; act: (() => void) | null } | null = null;
 stage.addEventListener('pointerdown', (e) => {
   stage.focus();
+  tipSince = performance.now();
   let act: (() => void) | null = null;
   if (mode === 'camera') {
     const m = toMonitor(e);
@@ -894,6 +1018,13 @@ stage.addEventListener('pointermove', (e) => {
     const m = toMonitor(e) ?? [-1, -1];
     if (m[0] !== screen.hover[0] || m[1] !== screen.hover[1]) {
       screen.hover = m;
+      const id = screen.tipAt(m[0], m[1]);
+      if (id !== tipId) {
+        tipId = id;
+        tipSince = performance.now();
+        clearTimeout(tipTimer);
+        if (id && tipsOn) tipTimer = window.setTimeout(() => { uiDirty = true; wake(true); }, TIP_DWELL + 20);
+      }
       uiDirty = true;
       wake(true);
     }
@@ -938,6 +1069,13 @@ stage.addEventListener('pointerup', (e) => {
   drag = null;
 });
 const endDrag = (): void => { drag = null; };
+stage.addEventListener('pointerleave', () => {
+  if (mode !== 'camera') return;
+  screen.hover = [-1, -1];
+  tipId = null;
+  uiDirty = true;
+  wake(true);
+});
 stage.addEventListener('pointercancel', endDrag);
 stage.addEventListener('lostpointercapture', endDrag);
 stage.addEventListener('dblclick', (e) => {
@@ -1045,6 +1183,14 @@ function brightest(): Body | null {
   },
   focus: (mm: number): void => { eyeFocus = mm; wake(true); },
   rig,
+  // The program's buttons, its tips and its log.
+  actions,
+  tipAt: (x: number, y: number): string | null => screen.tipAt(x, y),
+  tip: (id: string): ReturnType<typeof programTip> => programTip(id, tipCtx(lst(skyMs(), LON))),
+  get glass() { return glass; },
+  get log() { return logText(); },
+  get tipsOn() { return tipsOn; },
+  get state() { return { subs, hfr: hfrNow, stats, eyepiece: eyepiece.mm, grating, drive, eyeFocus, pose, zoom: rig.zoom, selected: selected?.name ?? null, targets: targets.map((t) => t.name) }; },
 };
 
 async function boot(): Promise<void> {
