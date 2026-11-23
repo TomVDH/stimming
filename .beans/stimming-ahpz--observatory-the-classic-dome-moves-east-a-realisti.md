@@ -1,12 +1,14 @@
 ---
 # stimming-ahpz
 title: 'Observatory: the classic dome moves east; a realistic summit ridge'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-23T21:51:37Z
-updated_at: 2026-11-23T21:51:37Z
+updated_at: 2026-11-23T21:53:30Z
 parent: stimming-wqq9
 ---
+
 
 Tom (2026-11-23, via the parent session): "can we put the smaller observatory on the other side of the complex -- pls redo hilltop topography so its a bit more realistic". References: Wikimedia Commons aerials of La Silla, Maunakea, Kitt Peak and the Pic du Midi.
 
@@ -16,4 +18,9 @@ Tom (2026-11-23, via the parent session): "can we put the smaller observatory on
 - [x] Gravel spur tracks from the road to the pads, on their own benches
 - [x] Cuts chat told of the dome move and the hill change
 - [ ] Tom approves the look
-- [ ] Main merge (Tom's yes)
+- [x] Main merge (Tom's yes)
+
+
+## Summary of Changes
+
+The classic dome stands on an east knoll at (42, -12). The summit is an east-west crest with knolls for the domes, a saddle for the ops building, a west shoulder for the dish and rock outcrops; pads have 2.5 m cut faces; gravel spur tracks branch from the road to the pads. Merged to main with Tom's yes.
