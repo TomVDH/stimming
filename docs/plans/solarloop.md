@@ -69,6 +69,18 @@ Tom's words: a long lens, a tight frame of the quarter arc (crop of its top half
 | Stars | The Band choice becomes a Star choice: Sun, Proxima, Rigel, Betelgeuse, VY CMa. The model runs in star units, so a scale body's size carries the scale: the earth beside the sun and Proxima, our sun beside the giants |
 | Giants | Few giant convection cells, strong limb darkening, a dust envelope (arcs, knots, patches over the disk), dimmer loops |
 
+## The corner, the pan, the haze and three more stars (Tom, 2026-11-23)
+
+Tom's words: no camera movement possible in the arc crop; I said bottom left; layer distance haze, volumetric, clouds and other things better for the celestial body, which only shows on Sol; convey a sense of scale with the different stars; come up with more, including at least one neutron star; noise, grain and great post, again Danny Boyle's *Sunshine*.
+
+| | Choice |
+|---|---|
+| Corner | Read as the star's bottom left quarter: the star fills the frame, its limb cuts off the bottom left corner, and the star turns so its prominences stand in that corner |
+| Pan | On the long lens a drag pans along the limb, so prominences and regions slide through the corner; the haze layers slide at their own depths |
+| Haze | Four layers lit by each star's own light: far veils, middle clouds with self shadow, near dust, motes |
+| Stars | Added a neutron star (pulsar beams, ticks, field lines, bent light; Phobos for scale), Sirius B (a white dwarf smaller than the earth; the moon in transit) and Sirius (our sun beside it) |
+| Film | Coarse and fine grain, colour noise in the shadows, gate weave, an exposure flicker, lens dirt, burnt-out highlights, a stronger colour split |
+
 ## Tasks
 
 1. Blockout: disk, limb, corona, a few loops, camera. Screenshot.

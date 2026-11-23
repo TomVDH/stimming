@@ -33,6 +33,15 @@ const LUTS = [
   // VY Canis Majoris: blood red with brown shadows.
   [['000000', 0], ['0c0201', 0.1], ['2a0603', 0.28], ['5e1006', 0.46], ['a0240c', 0.64], ['d8501c', 0.8], ['ffa070', 0.92], ['ffe6d6', 1]],
   [['000000', 0], ['0e0304', 0.12], ['300a0c', 0.3], ['6a1a18', 0.5], ['a8402c', 0.68], ['e08050', 0.84], ['fff0e0', 1]],
+  // Neutron star: electric blue to white; violet for cool light.
+  [['000000', 0], ['03030c', 0.1], ['0e0f36', 0.26], ['2a2f8a', 0.44], ['5a6ff0', 0.62], ['a6b8ff', 0.78], ['e6ecff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['0d0412', 0.12], ['32104a', 0.3], ['6a2a9a', 0.5], ['b070e0', 0.68], ['e8c8ff', 0.84], ['ffffff', 1]],
+  // Sirius B: a white dwarf, cyan white.
+  [['000000', 0], ['04080a', 0.1], ['10262c', 0.26], ['2f6470', 0.44], ['70b0bc', 0.62], ['b8e2ea', 0.78], ['ecfbff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['08060e', 0.12], ['221c36', 0.3], ['4e4672', 0.5], ['9088b8', 0.68], ['d4d0ec', 0.84], ['ffffff', 1]],
+  // Sirius: blue white, pale rose prominences.
+  [['000000', 0], ['05070c', 0.1], ['141c30', 0.26], ['3a5078', 0.44], ['7e98c4', 0.62], ['c2d2f0', 0.78], ['f0f5ff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['0e0608', 0.12], ['3a1a22', 0.3], ['7a4250', 0.5], ['c08a96', 0.68], ['ecd2d8', 0.84], ['ffffff', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -83,7 +92,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex;
+uniform vec4 uDisk, uDisk2, uTex, uBeam;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
@@ -113,7 +122,7 @@ void main() {
     float mot = fbm(q * 14.0 + vec3(0.0, tb * 0.3, 0.0));
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
-    float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil;
+    float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
     // The photosphere darkens to the limb; the corona brightens.
     float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
@@ -131,6 +140,8 @@ void main() {
       // Behind the wave the corona dims.
       hot *= 1.0 - 0.3 * uFlW[k].y * smoothstep(uFlW[k].x, 0.0, a);
     }
+    // A neutron star's magnetic poles burn hot.
+    if (uBeam.w > 0.0) hot += uDisk.x * 1.6 * uBeam.w * exp(-(1.0 - abs(dot(n, uBeam.xyz))) / 0.03);
     // The chromosphere glows red at the very edge.
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
     // Dust in front of the disk dims it in slow patches.
@@ -160,6 +171,22 @@ void main() {
     vec2 d = P - c.xy;
     float vis = r < R ? smoothstep(-60.0, 60.0, c.z) : 1.0;
     hot += uDisk2.w * uReg[k].w * vis * exp(-dot(d, d) / (2.0 * 70.0 * 70.0));
+  }
+  // A pulsar's two beams sweep out from its magnetic poles; facing us, they flash.
+  if (uBeam.w > 0.0) {
+    for (int k = 0; k < 2; k++) {
+      vec3 b = k == 0 ? uBeam.xyz : -uBeam.xyz;
+      float l2 = length(b.xy);
+      float behind = b.z < 0.0 && r < R ? 0.0 : 1.0;
+      if (l2 > 1e-3 && r > R * 0.98) {
+        float da = acos(clamp(dot(P / r, b.xy / l2), -1.0, 1.0));
+        float wid = 0.05 + 0.3 * (1.0 - l2);
+        float fall = exp(-(r - R) / (1800.0 * l2 + 300.0));
+        float grain = 0.75 + 0.5 * fbm(vec3(r * 0.004 - uTime * 2.0, da * 30.0, float(k)));
+        hot += uBeam.w * 1.4 * exp(-pow(da / wid, 2.0)) * fall * grain * behind;
+      }
+      hot += uBeam.w * 4.0 * pow(max(b.z, 0.0), 14.0) * exp(-max(r - R, 0.0) / 500.0);
+    }
   }
   // The erupting bubble: a faint shell, dim inside.
   for (int k = 0; k < 2; k++) {
@@ -311,11 +338,11 @@ void main() {
   o = vec4(s / float(${RAY_N}) * sh, 1.0);
 }`;
 
-/* ---------- final: heat bend, grade, lens ---------- */
+/* ---------- final: heat bend, grade, haze layers, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut;
 uniform vec4 uSat[2];
-uniform vec4 uView, uMix, uBodyA, uBodyB;
+uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 uniform vec2 uRes, uC;
@@ -337,54 +364,93 @@ float kern(vec2 fc) {
   return s;
 }
 vec2 sig(vec2 uv, float kx) {
-  vec3 h = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * 0.3 + texture(uRays, uv).rgb * uMix.x;
+  vec3 h = texture(uHdr, uv).rgb + texture(uBloom, uv).rgb * 0.38 + texture(uRays, uv).rgb * uMix.x;
   return vec2(h.r * uMix.y + kx, h.g * uMix.z);
 }
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
-  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.2 * uLens));
+  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.35 * uLens));
   // The long lens presses the tones: a darker, harder curve.
-  t = pow(t, 1.0 + 0.3 * uLens);
+  t = pow(t, 1.0 + 0.35 * uLens);
   float fr = s.y / max(I, 1e-5);
   vec3 a = texture(uLut, vec2(t, (uRow * 2.0 + 0.5) / ${LUTS.length.toFixed(1)})).rgb;
   vec3 b = texture(uLut, vec2(t, (uRow * 2.0 + 1.5) / ${LUTS.length.toFixed(1)})).rgb;
   return mix(a, b, fr);
 }
+// The star's own light at a point: full on the disk, falling off above it.
+float starLight(vec2 P) {
+  float h = length(P) - R;
+  return h < 0.0 ? 1.0 : exp(-h / 240.0) * 0.8 + 0.05;
+}
 // One scale body: b is x, y, radius in pixels, and weight.
-vec3 body(vec3 c, vec2 fc, vec4 b, float bright) {
+// Kinds: 0 bare rock, 1 a star, 2 the earth, 3 the moon, 4 a lumpy moonlet.
+vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   if (b.w <= 0.0) return c;
   vec2 e = fc - b.xy;
   float r = max(b.z, 0.7);
   float d = length(e) / r;
-  if (bright > 0.5) {
+  if (kind == 1.0) {
     // A star too small to resolve still shines: a core and a halo.
-    float core = smoothstep(1.0, 0.6, d) + exp(-dot(e, e) / (2.0 * (r + 1.2) * (r + 1.2)));
-    float halo = exp(-length(e) / (4.0 + r * 1.5)) * 0.5;
-    return c + vec3(1.0, 0.93, 0.78) * (core + halo) * b.w;
+    float limb = sqrt(max(1.0 - d * d, 0.0));
+    // A resolved sun shows its darkened limb and its boiling surface.
+    float surf = 0.8 + 0.4 * fbm(vec3(e / max(r, 1.0) * 14.0, uTime * 0.02));
+    float core = smoothstep(1.0, 1.0 - 2.0 / r, d) * pow(limb, 0.5) * surf * 1.4 + exp(-dot(e, e) / (2.0 * (r * 0.3 + 1.2) * (r * 0.3 + 1.2)));
+    float halo = exp(-length(e) / (4.0 + r * 0.25)) * 0.5;
+    return c * (1.0 - smoothstep(1.0, 0.97, d) * b.w) + vec3(1.0, 0.82, 0.55) * (core + halo) * b.w;
   }
-  float disc = smoothstep(1.0, 0.86, d);
-  float face = 0.5 + 0.5 * dot(normalize(e + 1e-4), normalize(uC * uRes - b.xy));
-  float rim = exp(-pow((d - 0.97) / 0.07, 2.0)) * (0.05 + 0.95 * face * face * face);
-  return c * (1.0 - 0.97 * disc * b.w) + vec3(0.45, 0.66, 1.0) * rim * 0.55 * b.w;
+  float a = atan(e.y, e.x);
+  // A moonlet is lumpy: its edge wanders with the angle.
+  if (kind == 4.0) d *= 1.0 + 0.16 * (vn(vec3(a * 1.6, 2.0, 0.0)) - 0.5) + 0.06 * (vn(vec3(a * 5.0, 7.0, 0.0)) - 0.5);
+  float disc = smoothstep(1.0, 1.0 - 1.5 / r, d);
+  // The star stands behind the body: a crescent of light on its near side.
+  vec2 to = normalize(uC * uRes - b.xy + 1e-4);
+  vec3 L = normalize(vec3(to * 0.95, -0.28));
+  vec3 n = vec3(e / r, sqrt(max(1.0 - d * d, 0.0)));
+  float lam = max(dot(n, L), 0.0);
+  vec3 q = vec3(e / r * 3.0, 0.0);
+  vec3 alb = vec3(0.16);
+  if (kind == 2.0) {
+    float land = smoothstep(0.5, 0.56, fbm(q * 1.2 + 3.0) + 0.08 * fbm(q * 9.0));
+    vec3 cq = q * 3.2 + vec3(fbm(q * 2.0), fbm(q * 2.0 + 4.0), uTime * 0.01) * 1.4;
+    float cloud = smoothstep(0.45, 0.8, fbm(cq)) * (0.6 + 0.4 * fbm(q * 12.0));
+    alb = mix(mix(vec3(0.02, 0.06, 0.16), vec3(0.2, 0.18, 0.1), land), vec3(0.8), cloud);
+  } else if (kind == 3.0) {
+    alb = vec3(0.32) * (0.75 + 0.5 * fbm(q * 3.0)) * (1.0 - 0.3 * smoothstep(0.55, 0.7, fbm(q * 1.2 + 5.0)));
+  } else if (kind == 4.0) {
+    alb = vec3(0.17, 0.15, 0.13) * (0.7 + 0.6 * fbm(q * 4.0));
+  }
+  vec3 light = grade(vec2(2.5, 0.0)) * 1.3;
+  vec3 lit = alb * light * lam;
+  // A thin atmosphere glows round the earth; bare rock has only its sunlit edge.
+  float rim = exp(-pow((d - 0.98) / (kind == 2.0 ? 0.05 : 0.025), 2.0)) * pow(0.5 + 0.5 * dot(normalize(e + 1e-4), to), 3.0);
+  vec3 rimC = kind == 2.0 ? vec3(0.45, 0.7, 1.0) : light * 0.6;
+  return c * (1.0 - disc * b.w) + (lit * disc + rimC * rim * 0.8) * b.w;
 }
 void main() {
-  vec2 uv = vUv;
-  // Heat bends the air above the limb.
+  // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
+  vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
+  vec2 uv = vUv + weave;
   vec2 P = uView.xy + (uv * 2.0 - 1.0) * uView.zw;
-  float hr = length(P) - R;
+  float r = length(P);
+  // Gravity bends the light round a neutron star: the sky slides outward at the limb.
+  // The shift never reaches into the disk, so the limb stays single.
+  if (uCam.z > 0.0 && r > R) uv -= normalize(P) * min(uCam.z * 0.08 * R * R / r, (r - R) * 0.6) / uView.zw * 0.5;
+  // Heat bends the air above the limb.
+  float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
   vec2 wob = vec2(vn(vec3(P * 0.05, uTime * 0.3)), vn(vec3(P * 0.05 + 7.7, uTime * 0.3))) - 0.5;
   uv += wob * hz * uMix.w / uRes;
   // The lens splits colour toward the frame's edge.
-  vec2 ca = (uv - 0.5) * 0.0025;
+  vec2 ca = (uv - 0.5) * (0.004 + 0.003 * uLens);
   float kx = kern(gl_FragCoord.xy);
   vec3 c;
   c.r = grade(sig(uv + ca, kx)).r;
   c.g = grade(sig(uv, kx)).g;
-  c.b = grade(sig(uv - ca, kx)).b;
-  // Halation: the film's red glow round bright light.
+  c.b = grade(sig(uv - ca * 1.4, kx)).b;
   vec3 bl = texture(uBloom, uv).rgb;
-  c += uHal * (1.0 - exp(-(bl.r * uMix.y + bl.g * uMix.z) * 0.8)) * 0.35;
+  float bll = bl.r * uMix.y + bl.g * uMix.z;
+  // Halation: the film's red glow round bright light.
+  c += uHal * (1.0 - exp(-bll * 0.8)) * 0.45;
   // The lens: an anamorphic streak and ghosts from each saturated core.
   vec2 cs = uRes * 0.5;
   for (int k = 0; k < 2; k++) {
@@ -404,28 +470,66 @@ void main() {
       c += tint * disc * 0.05 * S;
     }
   }
-  // The scale bodies: a dark world lit at its rim, or a star that shines.
+  // The scale bodies stand behind the haze, so the haze veils them.
   vec2 fc = uv * uRes;
   c = body(c, fc, uBodyA, uBodyK.x);
   c = body(c, fc, uBodyB, uBodyK.y);
-  // Haze in layers: veils at three depths drift at three speeds.
+  // Haze in layers, lit by the star; nearer layers slide further as the camera pans.
+  vec2 sp = gl_FragCoord.xy / uRes.y;
+  vec2 cam = uCam.xy;
+  vec2 to = normalize(uC * vec2(uRes.x / uRes.y, 1.0) - sp + 1e-4);
+  float sl = starLight(P);
+  vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   if (uHaze > 0.0) {
-    vec2 sp = gl_FragCoord.xy / uRes.y;
-    float hz = fbm(vec3(sp * 0.8 + vec2(uTime * 0.003, 0.0), 1.0)) * 0.5
-             + fbm(vec3(sp * 1.9 + vec2(uTime * 0.008, 0.0), 2.0)) * 0.35
-             + fbm(vec3(sp * 4.2 + vec2(uTime * 0.016, 0.0), 3.0)) * 0.2;
-    hz = smoothstep(0.32, 0.85, hz);
-    vec3 lit = texture(uBloom, uv).rgb + texture(uRays, uv).rgb;
-    float ll = lit.r * uMix.y + lit.g * uMix.z;
-    vec3 hc = grade(vec2(0.12 + ll * 0.5, 0.04 + ll * 0.1));
-    c = mix(c, hc, uHaze * hz * 0.45) + hc * hz * uHaze * 0.35;
+    // Far veils: broad and slow.
+    float far = smoothstep(0.3, 0.85, fbm(vec3(sp * 0.7 + cam * 0.15 + vec2(uTime * 0.002, 0.0), 1.0)));
+    // Middle clouds: billows, lit on the side toward the star.
+    vec2 q = sp * 1.6 + cam * 0.45 + vec2(uTime * 0.006, 0.0);
+    vec3 w = vec3(fbm(vec3(q, 4.0)), fbm(vec3(q + 3.3, 4.0)), 0.0);
+    float d1 = fbm(vec3(q + w.xy * 0.8, 6.0));
+    float d2 = fbm(vec3(q + w.xy * 0.8 + to * 0.06, 6.0));
+    float cloud = smoothstep(0.42, 0.8, d1);
+    float lit = clamp(0.5 + (d1 - d2) * 9.0, 0.0, 1.0);
+    // Near dust: dark wisps across the light, with bright edges.
+    vec2 nq = sp * 3.2 + cam * 1.1 + vec2(uTime * 0.014, uTime * 0.004);
+    float dust = smoothstep(0.55, 0.8, fbm(vec3(nq + 0.5 * fbm(vec3(nq * 0.7, 8.0)), 9.0)));
+    float H = uHaze;
+    // Over the bright disk the veils darken and shape the light rather than milk it.
+    float sky = smoothstep(0.98, 0.6, sl);
+    c = mix(c, hc * 0.7, H * far * 0.25 * sky) + hc * far * H * 0.12 * sl * sky;
+    c = mix(c, c * (0.55 + 0.7 * lit), H * cloud * 0.5 * (1.0 - sky));
+    c = mix(c, hc * (0.25 + 1.1 * lit), H * cloud * 0.38 * sky);
+    c *= 1.0 - H * dust * 0.5;
+    c += hc * H * dust * 0.25 * sl * pow(clamp(1.0 - abs(dust - 0.5) * 2.0, 0.0, 1.0), 2.0);
+    // Motes: a few specks very close, soft and out of focus, catching the light.
+    vec2 mq = sp * 9.0 + cam * 2.4 + vec2(uTime * 0.03, -uTime * 0.012);
+    vec2 mc = floor(mq), mf = fract(mq) - 0.5;
+    float mh = hash(mc);
+    vec2 mo = (vec2(hash(mc + 3.1), hash(mc + 7.7)) - 0.5) * 0.6;
+    float mote = mh > 0.985 ? smoothstep(0.09, 0.04, length(mf - mo)) : 0.0;
+    c += hc * mote * H * 0.18 * (0.3 + sl);
   }
+  // Lens dirt: smudges on the glass that glow where bright light falls.
+  float dirt = smoothstep(0.55, 0.85, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
+             + smoothstep(0.8, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
+  c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z;
+  // Highlights burn out to white, as on overexposed film.
+  float lum = dot(c, vec3(0.3, 0.55, 0.15));
+  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.82, 1.05, lum) * 0.6);
+  // Exposure flicker: the light breathes from frame to frame.
+  c *= 1.0 + uFilm.w * (hash(vec2(uFrame, 3.7)) - 0.5);
   vec2 v = vUv - 0.5;
-  c *= clamp(1.0 - (0.55 + 0.25 * uLens) * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.2, 1.0);
-  // Film grain, strongest in the mid tones.
+  c *= clamp(1.0 - (0.6 + 0.25 * uLens) * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
+  // Film grain: coarse clumps and fine grain, strongest in the mid tones.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
-  float gr = (hash(gl_FragCoord.xy + uFrame * 17.0) + hash(gl_FragCoord.xy * 1.7 + uFrame * 5.0) - 1.0);
-  c += gr * 0.035 * (0.3 + 3.0 * l * (1.0 - l));
+  vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 700.0));
+  float fine = hash(g2 + uFrame * 17.0) + hash(g2 * 1.7 + uFrame * 5.0) - 1.0;
+  float clump = vn(vec3(gl_FragCoord.xy * 0.45, uFrame * 7.3)) - 0.5;
+  float gr = fine * 0.7 + clump * 0.9;
+  c += gr * uFilm.x * (0.35 + 3.2 * l * (1.0 - l));
+  // Chroma noise in the shadows: the stock's colour layers part in the dark.
+  vec3 cn = vec3(hash(g2 + uFrame * 3.1), hash(g2 + uFrame * 5.3 + 9.0), hash(g2 + uFrame * 7.7 + 4.0)) - 0.5;
+  c += cn * uFilm.x * 0.6 * (1.0 - smoothstep(0.0, 0.35, l));
   o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
@@ -483,6 +587,7 @@ export async function makeRender(gl) {
     gl.uniform4fv(s.u.uDisk2, v.band.disk2);
     gl.uniform4fv(s.u.uTex, v.band.tex);
     gl.uniform1f(s.u.uDust, v.band.dust);
+    gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);
@@ -532,7 +637,9 @@ export async function makeRender(gl) {
     gl.uniform4fv(f.u.uBodyB, v.bodyB);
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
     gl.uniform1f(f.u.uLens, v.lens);
-    gl.uniform1f(f.u.uHaze, Math.max(v.lens, v.band.dust * 0.7));
+    gl.uniform4fv(f.u.uCam, v.cam);
+    gl.uniform4fv(f.u.uFilm, v.film);
+    gl.uniform1f(f.u.uHaze, Math.min(1, 0.4 + 0.6 * v.lens + 0.3 * v.band.dust));
     gl.uniform3fv(f.u.uHal, B.hal);
     gl.uniform3fv(f.u.uStreak, B.streak);
     gl.uniform2f(f.u.uRes, W, H);

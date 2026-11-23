@@ -10,7 +10,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // A minor pentatonic over two octaves: each arcade loop sounds one step higher.
 const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
 // The key falls as the star grows: the hypergiant hums lowest.
-const ROOT = { sun: 220, proxima: 261.63, rigel: 329.63, betelgeuse: 164.81, vycma: 110 };
+const ROOT = { neutron: 440, siriusb: 392, proxima: 261.63, sun: 220, sirius: 196, rigel: 146.83, betelgeuse: 123.47, vycma: 110 };
 
 export function makeSound(kit) {
   let pending = 0;
@@ -278,11 +278,27 @@ export function makeSound(kit) {
     wind = null;
   }
 
+  // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
+  function tick() {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t = ac.currentTime + 0.003;
+    const c = voice(ac, 0);
+    env(c, t, 0.12, 0.001, 0.05);
+    noise(ac, t, 0.08, 1.4).connect(filt(ac, 'bandpass', 2400, 2)).connect(c);
+    const th = voice(ac, 0);
+    env(th, t, 0.16, 0.002, 0.14);
+    const o = osc(ac, 'sine', 120, t, 0.2);
+    o.frequency.exponentialRampToValueAtTime(50, t + 0.12);
+    o.connect(th);
+    send(ac, c, 0.3);
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     wind = null;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, tick, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

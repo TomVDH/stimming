@@ -3,8 +3,9 @@
 Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
-Five stars, from the red dwarf Proxima to the hypergiant VY Canis Majoris. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. A scale body hangs at true size: the earth beside our sun and Proxima, our sun beside the giants.
-The long lens, the default, cuts the limb across the bottom left quarter of the frame; L opens the wide view; haze drifts in layers, and a small body crosses the disk: Mercury on our sun, a planet on Proxima, our sun itself on the giants.
+Eight stars, from a neutron star a city wide to the hypergiant VY Canis Majoris. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. A scale body hangs at true size: Phobos beside the neutron star, the earth beside Sirius B (larger than the star), our sun beside Sirius and the giants.
+The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where its prominences stand in open space. A drag pans along the limb. Haze drifts in layers at four depths, and a body crosses the disk: Mercury on our sun, the moon on Sirius B, our sun itself on the giants.
+The image is graded and printed like film stock: heavy grain, colour noise in the shadows, a gate weave, an exposure flicker, lens dirt that glows in bright light, burnt-out highlights.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
 ## Play
@@ -12,15 +13,15 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Input | Does |
 |---|---|
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
-| Drag | Turns the star up to 18 degrees each way; the surface follows the hand |
-| Star choice (1 to 5) | Sun, Proxima, Rigel, Betelgeuse, VY CMa |
+| Drag | Wide view: turns the star up to 18 degrees each way. Long lens: pans along the limb (up to 75 degrees) and tilts a little; the haze layers slide at their own depths |
+| Star choice (1 to 8) | Neutron star, Sirius B, Proxima, Sun, Sirius, Rigel, Betelgeuse, VY CMa: smallest to largest |
 | Lens (L) | Zooms over about two seconds between the long lens (the default) and the wide view |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
 
 - The first frame is a picture: every loop at its own stage of life.
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
-- The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The limb runs from the middle of the foot to the middle of the left side; black space fills the rest. The tone curve presses darker and harder, the vignette deepens and three layers of haze drift at three speeds.
+- The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The star fills the frame; its limb runs from the middle of the foot to the middle of the left side, and the bottom left corner is open space. The star turns about the line of sight so its prominences stand in that corner. The tone curve presses darker and harder and the vignette deepens.
 
 ## The stars
 
@@ -28,8 +29,11 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 
 | Star | Radius (suns) | Look | Scale body: wide, long lens |
 |---|---|---|---|
+| Neutron star | 0.0000172 (12 km) | Electric blue to white, a smooth surface with white-hot magnetic poles. It spins every 1.6 s: two beams sweep from the poles and the frame burns white each time one passes the eye; 30 dipole field lines turn with it; gravity bends the sky at its limb | Phobos, 22.5 km, as large as the star; none in transit |
+| Sirius B | 0.0084 | A white dwarf, cyan white and smooth | The earth, larger than the star; the moon in transit |
 | Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | The earth, 12.7 units; Mercury in transit, 4.9 units |
 | Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | The earth, 83 units: a seventh of the star's width; a planet in transit |
+| Sirius | 1.71 | Blue white, pale rose prominences | Our sun, more than half its size; the earth in transit |
 | Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays | Our sun, 17.7 units, a glowing bead |
 | Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope | Our sun, 1.8 units, a speck |
 | VY CMa | 1420 | Blood red, brown shadows; giant cells, a thick envelope of dust arcs and knots | Our sun, 1 unit, a speck of light |
@@ -42,7 +46,8 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 |---|---|
 | Regions | Five active regions round the visible limb: on the near side, on the limb, behind it (only the loop tops show), and on the disk (loops foreshortened) |
 | Prominences | A hedgerow: 80 fine upright threads along 260 units of limb, up to 165 tall, each swaying. An arch: 18 twisted threads between feet 270 apart, 205 high, its feet behind the limb. A curtain: 46 threads along 140 units, up to 240 tall, in the long lens's sky. Knots of cool plasma slide down every thread. An eruption lifts the prominence with growing speed (the arch swells into a bulb), fades it out by 17 s, and forms it again from 24 s to 44 s |
-| Scale | A dark body is a disc lit at its rim on the side of the star; a bright body is a core and a halo, so a speck one pixel wide still shines. The transit runs on a chord just inside the limb and takes about five minutes |
+| Scale | A dark body is a shaded sphere lit from behind by the star: the earth with land, sea and cloud and a blue rim; the moon grey and cratered; Phobos lumpy. A body too large for the sky hangs in the top right corner, cut by the frame. A star body shows its darkened limb and surface, or, too small to resolve, a core and a halo. The transit crosses the disk and takes about five minutes |
+| Haze | Four depths: far veils, middle clouds lit on the side toward the star, near dark dust with bright edges, and a few out-of-focus motes. Each is lit by the star's own light and graded through its ramp, so every star has them. Over the disk the clouds shape the light instead of milking it |
 | Loops | Bundles of three to six threads between two footpoints on the sphere, height about half the span, with a tilt, a shear and a turned axis. Each lives 24 to 46 s: it rises, shines, drains (knots slide down both legs with growing speed) and fades, then returns with a new shape. Faint long loops climb out of the frame |
 | Flows | Faint ripples climb from the feet: the upflows seen in real loops |
 | Flare | Peak in 0.05 s. Ribbons part from 12 to 62 percent of the region's span. The rope, 12 threads, rises at 14 Mm/s plus 20 Mm/s² and swells into a bulb. Arcade loops form at 0.45 s, then about every 0.6 s, low first; each is born at 22 million kelvin and cools with a 1.6 s time constant; rain from 12 s after its birth |
@@ -61,7 +66,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 - The disk pass: boiling granules, swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light, then slow angular shafts break it into rays.
-- The final pass: heat shimmer at the limb, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the earth, a vignette and film grain.
+- The final pass: gate weave, bent light round a neutron star, heat shimmer at the limb, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, the four haze layers, lens dirt, burnt-out highlights, an exposure flicker, a vignette, coarse and fine film grain, and colour noise in the shadows. Reduced motion stills the weave, the flicker and the grain.
 
 ## Frame loop
 
@@ -76,7 +81,8 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 
 Muted by default. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
-- Awake: a deep hum, a low chord whose filter breathes about every 20 s. The star sets the key.
+- Awake: a deep hum, a low chord whose filter breathes about every 20 s. The star sets the key: the larger the star, the lower.
+- A pulsar ticks: a dry click on a short thump each time a beam sweeps past the eye.
 - A flare or an eruption lands on a low brass blast: stacked saws through a soft clip, a filter that opens and closes.
 - An eruption: a long rush swept upward over 13 s, and a tone that bends up a fifth.
 
@@ -93,11 +99,11 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 |---|---|
 | Q1 | `node --check` passes on the four modules, the menu scripts and the icon page script |
 | Q2 | Clean console in play (every chip, key, tap, drag), on the menu with the tile hovered, and on the icon page |
-| Q3 | Captures in `docs/qa/solarloop/`: 1280 x 800, 375 x 812, each flare stage, a turned view, the arch erupting (15), the long lens (16), each star (17 to 21), the menu tile |
+| Q3 | Captures in `docs/qa/solarloop/`: 1280 x 800, 375 x 812, each flare stage, a turned view, the arch erupting (15), the long lens (16), the neutron star, Sirius B and Sirius (17 to 19, 21), VY CMa on the long lens (20), a pan (22), the phone long lens (23), the menu tile |
 | Q4 | Drifting: 32 rAF a second. Asleep 63 s after the last input: 0 rAF in 2 s |
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
 | Q7 | Star choice, Flare, Lens, Activity slider (4 controls); How to play has 3 rows |
-| Q8 | 1 to 5, L and Space each do their job |
+| Q8 | 1 to 8, L and Space each do their job |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |

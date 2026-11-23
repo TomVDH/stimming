@@ -54,6 +54,14 @@ Stack type: Shader, raw WebGL2 (shared/gl.js, bloom from shared/glow.js). No sha
 - Star choice (1 to 5) replaces Band. The model runs in star units, so the scale body carries the scale: the earth is a seventh of Proxima's width; our sun is a speck one pixel wide beside VY CMa.
 - The giants: a handful of giant cells, strong limb darkening, a dust envelope, dim loops.
 
+## The corner, the pan, the haze, more stars, film (Tom, 2026-11-23)
+
+- The long lens: the star fills the frame; its bottom left limb cuts off the corner; the star turns so its prominences stand there. A drag pans along the limb.
+- Haze at four depths for every star, lit by its own light: veils, clouds with self shadow, near dust, motes.
+- Eight stars, smallest to largest: neutron star (beams, ticks, field lines, bent light; Phobos), Sirius B (the earth beside it is larger; the moon in transit), Proxima, Sun, Sirius (our sun beside it), Rigel, Betelgeuse, VY CMa.
+- Scale bodies are shaded spheres: the earth with land, sea, cloud and a blue rim; the moon; Phobos.
+- Film post after *Sunshine*: heavy grain, shadow colour noise, gate weave, flicker, lens dirt, burnt highlights.
+
 ## Reference
 
 TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, bright feet, a dark mottled disk. SDO 131, 171 and 304, the limb flare of May 2013: a saturated core with a diagonal diffraction cross and a vertical bleed line; the three colour tables. Papers on flare-driven coronal rain: rain shows best in 304.
@@ -78,3 +86,4 @@ TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, b
 - a9d61361: menu Lab tile and hook, icon round solarloop-1, emblems, sheet row.
 - 69ca056c: the cinema pass.
 - be04ba72: five stars and the long lens.
+- cc31bb1b: the long lens is the default.
