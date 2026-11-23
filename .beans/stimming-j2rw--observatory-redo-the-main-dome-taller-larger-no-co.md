@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T09:43:50Z
-updated_at: 2026-11-23T00:31:42Z
+updated_at: 2026-11-23T00:52:23Z
 parent: stimming-wqq9
 ---
 
@@ -40,5 +40,6 @@ Tom: a big scientific observatory, like the Keck telescopes.
 - [x] Tom approves the size and the look (Tom, 2026-11-22)
 - [x] Base raised to 1.7 units (6.2 m); top at 22.2 m (Tom: higher cylinder)
 - [x] Keck-style hero model for the cuts (base, doors, louvres, track, skirt, vents, cap, rails, ladders, shutters, inside)
-- [ ] Cut cameras retuned for the big dome (shot 4 frames tight; cuts session's file)
+- [x] Outside cut cameras retuned for the big dome: edge and slit eyes on the summit, slit lens 17 degrees, sight lines across the frame clear the mast
+- [ ] Inside cut (lift) retuned for the big hero: its floor, wall and keep-out values are the classic hero's
 - [ ] Open truss telescope visible through the opening

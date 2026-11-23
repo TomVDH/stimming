@@ -1,7 +1,6 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
-import type { Object3D } from 'three';
+import { Box3, MathUtils, Matrix4, Ray, Texture, Vector3 } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
 import { AXES_UP, D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
@@ -11,7 +10,7 @@ import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
 import { sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
-import { hillHeight } from '../world/hill.ts';
+import { CLEAR, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
 import { hero, heroSlitAz } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
@@ -45,12 +44,12 @@ type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean; aperture:
 const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
   // a. Low and close on the slit's right: the dome looms, its crown on the stars.
   // The locked camera holds while the cupola turns and the leaves slowly part.
-  edge: { eye: [2.2, 1.6, -0.35], look: [0.3, 0.15, 0.62], aperture: 0.008 },
-  // b. Dead centre from the front, low, on a long lens.
-  // Only the slit, the dome's face and the catwalk rail show.
-  // The door lamp's glow lights the rail from below.
-  // The lower leaf drops and the slit opens on the tube.
-  slit: { eye: [6.5, 0, -0.86], look: [0.5, 0, 0.45], aperture: 0.006 },
+  edge: { eye: [2.7, 0.8, -0.25], look: [0.3, 0.15, 0.62], aperture: 0.008 },
+  // b. Dead centre from the front, at eye height, on a long lens.
+  // The open slit stands between the dome's shoulders.
+  // The lower shutter drops and the slit opens on the tube.
+  // The eye stays on the summit, so the lens is 17 degrees.
+  slit: { eye: [3.6, 0, -0.3], look: [0.6, 0, 0.4], aperture: 0.006 },
   // c. Inside, low, behind the mount, left of the slit.
   // The pier and mount stand dark on the right.
   // The wall lamp lights them red.
@@ -71,8 +70,11 @@ const EDGE_LEAD = 4.5;
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
 const NEAR = [1, 0.8, 0.65];
-// The eye stays inside the clearing; the trees start at about 45 m.
-const EYE_R = 42;
+// The eye stays over the bare summit, inside the trees' clearing.
+const EYE_R = CLEAR - 6;
+// A building's box grows by this many metres.
+// A thin mast near the eye then blocks it too.
+const BOX_PAD = 0.6;
 // Reduced motion: one still shot, then one crossfade to the wide shot.
 const STILL_S = 2.6, FADE_S = 1.2;
 // After the last cut, a quick dip to black leads to the wide shot.
@@ -101,8 +103,9 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number } };
 
 const centre = new Vector3();
-const ray = new Raycaster();
+const ray = new Ray();
 const tmp = new Vector3();
+const UP = new Vector3(0, 1, 0);
 // The cupola's radius in metres, set at the pick.
 let R = 1;
 
@@ -121,8 +124,29 @@ function clearInside(eye: Vector3): boolean {
   return KEEP_OUT.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
 }
 
-// Everything in the complex that can stand between the eye and the dome.
-const blockers = (): Object3D[] => complex.root.children.filter(o => o !== complex.main.root);
+// The boxes of everything in the complex that can stand before the dome.
+// They are set at the pick.
+let boxes: Box3[] = [];
+function setBoxes(): void {
+  boxes = complex.root.children.filter(o => o !== complex.main.root)
+    .map(o => new Box3().setFromObject(o).expandByScalar(BOX_PAD));
+}
+// True when a box stands between a point and the eye.
+function hidden(from: Vector3, eye: Vector3): boolean {
+  ray.set(from, tmp.copy(eye).sub(from).normalize());
+  const far = eye.distanceTo(from);
+  return boxes.some(b => { const hit = ray.intersectBox(b, tmp); return hit !== null && hit.distanceTo(from) < far; });
+}
+// The sight lines cross the frame at these shares of its half width.
+// A thin mast near the eye then falls on one of them.
+const ACROSS = [0, -0.45, 0.45, -0.9, 0.9];
+const side = new Vector3(), off = new Vector3();
+// True when a box stands anywhere across the middle of the frame.
+// halfW: the frame's half width over its distance, from the lens.
+function blocked(look: Vector3, eye: Vector3, halfW: number): boolean {
+  side.subVectors(eye, look).cross(UP).normalize().multiplyScalar(halfW * eye.distanceTo(look));
+  return ACROSS.some(k => hidden(off.copy(look).addScaledVector(side, k), eye));
+}
 
 // A point of the slit's frame in world space.
 // a: the frame's azimuth in radians.
@@ -146,6 +170,7 @@ function place(cut: Cut, az: number, aspect: number): Framed {
   const { fov, tall } = lens(cut.fov, aspect);
   const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
   const eye = new Vector3();
+  const halfW = Math.tan(fov * DEG / 2) * aspect;
   for (const near of NEAR) {
     for (const turn of TURNS) {
       slitPoint(plan.eye, (az + turn) * DEG, eye);
@@ -153,9 +178,7 @@ function place(cut: Cut, az: number, aspect: number): Framed {
       if (Math.hypot(eye.x, eye.z) > EYE_R) continue;
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
       if (plan.inside && !clearInside(eye)) continue;
-      ray.set(look, tmp.copy(eye).sub(look).normalize());
-      ray.far = eye.distanceTo(look);
-      if (ray.intersectObjects(blockers(), true).length) continue;
+      if (blocked(look, eye, halfW)) continue;
       return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
     }
   }
@@ -399,6 +422,7 @@ export const cuts = {
     main.root.updateMatrixWorld(true);
     main.cupola.getWorldPosition(centre);
     R = DOME_R1 * main.root.scale.x;
+    setBoxes();
     view = v;
     seq = startSeq(phase, v);
     // Reduced motion waits in the wide shot until the tube rests.
