@@ -389,14 +389,10 @@ function showBars(on: boolean, opacity = 1): void {
 export type View = Lift & { tubeAlt: number; tubeAz: number; restAlt: number; shutter: number; cupAz: number; cupGoal: number };
 // A skip asks the loop for a frame through this hook.
 let redraw: () => void = () => {};
-// A circle on the stage in CSS px.
-export type Circle = { x: number; y: number; r: number };
 // The view that the glass shot opens into, from the loop.
 export type Through = {
   // The dip into the view starts.
   begin(): void;
-  // Unused since the dip replaced the push; view/through.ts drops it.
-  step?(k: number, c: Circle | null): void;
   // The frame is black; the view fades up over the stage.
   done(): void;
   // A skip drops the view.
