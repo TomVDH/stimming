@@ -92,7 +92,7 @@ uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam;
-uniform float uDust, uFull;
+uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
 in vec2 vUv;
@@ -151,26 +151,6 @@ void main() {
     float st = fbm(vec3(ang * 7.0, h * 0.002 - tb * 0.1, 1.3));
     float fine = fbm(vec3(ang * 48.0, h * 0.006 - tb * 0.3, 4.1));
     hot = uDisk.w * (exp(-h / uDisk2.x) * (0.6 + 0.8 * fine) + 0.3 * exp(-h / 360.0) * (0.4 + 1.2 * st * st));
-    // The full view: a sweeping corona out to several radii.
-    if (uFull > 0.0) {
-      float x = r / R;
-      float lx = log(x);
-      // Streamers bend as they climb, like helmet streamers swept toward the equator.
-      float a = ang + 0.42 * sin(ang * 2.0 + 0.6) * lx + tb * 0.02;
-      float rays = fbm(vec3(a * 64.0, lx * 0.7 - tb * 0.05, 3.3));
-      rays = 0.3 + 1.3 * rays * rays;
-      float lobes = 0.0;
-      for (int k = 0; k < 5; k++) {
-        float c = k == 0 ? 0.95 : k == 1 ? 2.35 : k == 2 ? -1.15 : k == 3 ? -2.6 : 0.1;
-        float len = k == 1 || k == 3 ? 1.2 : 0.8;
-        // Each streamer narrows to a long ray as it leaves the star.
-        float w = (0.42 + 0.15 * float(k == 2)) / pow(x, 0.85);
-        float da = sin((a - c) * 0.5) * 2.0;
-        lobes += exp(-da * da / (w * w)) * len * (0.4 + 1.0 * fbm(vec3(a * 9.0, lx * 2.0, float(k))));
-      }
-      float near = pow(x, -3.0), far = pow(x, -0.95);
-      hot += uFull * uDisk.w * 4.2 * (near * 0.5 * rays + far * lobes * (0.35 + 0.5 * rays) + far * 0.05 * rays);
-    }
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
     float sh = 3.0 + 9.0 * pow(vn(vec3(ang * 300.0, uTime * 0.05, 0.5)), 2.0);
     cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(vec3(ang * 900.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
@@ -365,7 +345,8 @@ const VOL = `${HEAD}
 precision highp sampler3D;
 uniform sampler3D uNoise;
 uniform vec4 uView;
-uniform float uTime, uDens, uDust, uLight;
+uniform mat3 uToSun;
+uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -387,6 +368,31 @@ float dens(vec3 p, bool lite) {
   float face = 1.0 - 0.5 * smoothstep(0.2 * R, 1.2 * R, p.z) * smoothstep(1.1 * R, 0.6 * R, length(p.xy));
   return uDens * face * (shell * (0.08 + 2.4 * cl) + uDust * 0.15 * cl * smoothstep(3.5 * R, R, r));
 }
+// The corona in 3D, in the star's own frame: optically thin, it scatters the star's light.
+// Streamers gather on a warped sheet round the magnetic equator and narrow as they climb.
+// They bend in a slow spiral with height; polar plumes stand at the poles; fine rays run radially.
+float corona(vec3 p) {
+  vec3 q = uToSun * p;
+  float r = length(q);
+  if (r < R) return 0.0;
+  vec3 u = q / r;
+  float lx = log(r / R);
+  float tw = uBend * 0.5 * lx;
+  float cs = cos(tw), sn = sin(tw);
+  u = vec3(cs * u.x + sn * u.z, u.y, -sn * u.x + cs * u.z);
+  float phi = atan(u.x, u.z);
+  float sheetLat = 0.3 * sin(2.0 * phi + 0.7) + 0.12 * sin(3.0 * phi - 1.3 + uTime * 0.003);
+  float w = 0.36 * pow(R / r, 0.6);
+  float dl = (u.y - sheetLat) / w;
+  float sheet = exp(-dl * dl);
+  // Fine rays: noise on the direction alone, so it holds along each radius.
+  float rays = fbm3(u * 0.45 + 0.5);
+  rays = 0.15 + 2.6 * rays * rays * rays;
+  float lumps = 0.45 + 1.1 * nz(vec3(phi * 0.12, 0.3, 0.7));
+  float polar = smoothstep(0.72, 0.95, abs(u.y)) * rays;
+  return pow(R / r, 2.2) * (sheet * lumps * (0.5 + 0.7 * rays) + 0.1 * rays + 0.3 * polar);
+}
+
 /* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
 // A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
 // the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
@@ -408,8 +414,10 @@ float lightT(vec3 p) {
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
-  float z1 = r < R ? sqrt(R * R - r * r) : -2.0 * R;
-  float z0 = 2.2 * R;
+  // The corona reaches far, so the march does too when it shows.
+  float reach = uCorona > 0.0 ? 3.4 * R : 2.2 * R;
+  float z1 = r < R ? sqrt(R * R - r * r) : -reach;
+  float z0 = reach;
   const int N = 32;
   float dt = (z0 - z1) / float(N);
   // Interleaved gradient noise, fixed in place; the blur hides it.
@@ -418,6 +426,11 @@ void main() {
   float acc = 0.0;
   for (int i = 0; i < N; i++) {
     vec3 p = vec3(P, z0 - dt * (float(i) + j));
+    if (uCorona > 0.0) {
+      // Thomson scattering: brightest seen side on, a cos squared lobe toward the eye.
+      float cz = normalize(p).z;
+      acc += T * corona(p) * (0.75 * (1.0 + cz * cz)) * dt * 0.0009 * uCorona;
+    }
     float d = dens(p, false);
     if (d < 0.002) continue;
     float rr = length(p);
@@ -464,7 +477,7 @@ function noiseVolume(n) {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
-uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm;
+uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 uniform vec2 uRes, uC;
@@ -488,13 +501,13 @@ float kern(vec2 fc) {
 vec2 sig(vec2 uv, float kx) {
   vec4 v = texture(uVol, uv);
   // The volume dims what lies behind it and adds the star light it scatters.
-  vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x) * v.a + texture(uBloom, uv).rgb * 0.38;
+  vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x * uFx1.y) * v.a + texture(uBloom, uv).rgb * 0.38 * uFx1.x;
   return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15);
 }
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
   // The full view shows the whole bright disk, so it takes less exposure.
-  float t = 1.0 - exp(-I * uExpo * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull));
+  float t = 1.0 - exp(-I * uExpo * uFx3.y * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull));
   // The long lens presses the tones: a slightly darker, harder curve.
   t = pow(t, 1.0 + 0.15 * uLens);
   float fr = s.y / max(I, 1e-5);
@@ -564,9 +577,9 @@ void main() {
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
   vec2 wob = vec2(vn(vec3(P * 0.05, uTime * 0.3)), vn(vec3(P * 0.05 + 7.7, uTime * 0.3))) - 0.5;
-  uv += wob * hz * uMix.w / uRes;
+  uv += wob * hz * uMix.w * uFx3.z / uRes;
   // The lens splits colour toward the frame's edge.
-  vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens);
+  vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens) * uFx1.z;
   float kx = kern(gl_FragCoord.xy);
   vec3 c;
   c.r = grade(sig(uv + ca, kx)).r;
@@ -575,7 +588,7 @@ void main() {
   vec3 bl = texture(uBloom, uv).rgb;
   float bll = bl.r * uMix.y + bl.g * uMix.z;
   // Halation: the film's red glow round bright light.
-  c += uHal * (1.0 - exp(-bll * 0.8)) * 0.45;
+  c += uHal * (1.0 - exp(-bll * 0.8)) * 0.45 * uFx1.w;
   // The lens: an anamorphic streak and ghosts from each saturated core.
   vec2 cs = uRes * 0.5;
   for (int k = 0; k < 2; k++) {
@@ -584,7 +597,7 @@ void main() {
     vec2 d = (gl_FragCoord.xy - uSat[k].xy) / uSc;
     float st = exp(-d.y * d.y / 10.0) * exp(-abs(d.x) / (260.0 * (0.4 + S))) * 0.9
              + exp(-d.y * d.y / 160.0) * exp(-abs(d.x) / 500.0) * 0.25;
-    c += uStreak * st * min(S, 1.5);
+    c += uStreak * st * min(S, 1.5) * uFx2.x;
     for (int g = 0; g < 3; g++) {
       float m = g == 0 ? -0.45 : g == 1 ? -0.95 : -1.6;
       float rad = (g == 0 ? 18.0 : g == 1 ? 42.0 : 10.0) * uSc;
@@ -592,7 +605,7 @@ void main() {
       float dist = length(gl_FragCoord.xy - gp);
       float disc = smoothstep(rad, rad * 0.75, dist) * (0.6 + 0.4 * smoothstep(rad * 0.5, rad, dist));
       vec3 tint = g == 1 ? uStreak.bgr : uStreak;
-      c += tint * disc * 0.05 * S;
+      c += tint * disc * 0.05 * S * uFx2.x;
     }
   }
   // The scale bodies.
@@ -604,17 +617,17 @@ void main() {
   // Lens dirt: smudges on the glass that glow where bright light falls.
   float dirt = smoothstep(0.55, 0.85, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
              + smoothstep(0.8, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
-  c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z;
+  c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z * uFx2.y;
   // Highlights roll off to white, as on film.
   float lum = dot(c, vec3(0.3, 0.55, 0.15));
-  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.85, 1.05, lum) * 0.35);
+  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.85, 1.05, lum) * 0.35 * uFx2.z);
   vec2 v = vUv - 0.5;
-  c *= clamp(1.0 - (0.6 + 0.25 * uLens) * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
+  c *= clamp(1.0 - (0.6 + 0.25 * uLens) * uFx2.w * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
   // Fine film grain, strongest in the mid tones: a light touch.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
   vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 900.0));
   float gr = hash(g2 + uFrame * 17.0) + hash(g2 * 1.7 + uFrame * 5.0) - 1.0;
-  c += gr * uFilm.x * (0.3 + 3.0 * l * (1.0 - l));
+  c += gr * uFilm.x * uFx3.x * (0.3 + 3.0 * l * (1.0 - l));
   o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 
@@ -661,15 +674,16 @@ export async function makeRender(gl) {
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   let hdr = null, rays = null, volA = null, volB = null, W = 0, H = 0;
-  function resize(w, h) {
+  // shift: the volume's size as a power of two below the frame; 1 is half size.
+  function resize(w, h, shift = 1) {
     W = Math.max(2, w); H = Math.max(2, h);
     gl.canvas.width = W; gl.canvas.height = H;
     free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB);
     hdr = target(gl, W, H);
     rays = target(gl, Math.max(2, W >> 1), Math.max(2, H >> 1));
-    // The volume marches at a quarter of the size; the blur and the lerp hide it.
-    volA = target(gl, Math.max(2, W >> 2), Math.max(2, H >> 2));
-    volB = target(gl, Math.max(2, W >> 2), Math.max(2, H >> 2));
+    // The volume marches at half size, a quarter on slow machines; the blur hides the dither.
+    volA = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
+    volB = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
   }
   // v: view, rot, toSun, time, band (the star), regs, flares, sat, count, bloom, frame, centre, bodies, lens.
   function frame(v) {
@@ -732,6 +746,9 @@ export async function makeRender(gl) {
     gl.uniform1f(vp.u.uDens, v.volDens);
     gl.uniform1f(vp.u.uDust, v.band.dust);
     gl.uniform1f(vp.u.uLight, v.volLight);
+    gl.uniformMatrix3fv(vp.u.uToSun, false, v.toSun);
+    gl.uniform1f(vp.u.uCorona, v.corona);
+    gl.uniform1f(vp.u.uBend, v.bend);
     tri(gl, volA, empty);
     const bp = P.blur;
     gl.useProgram(bp.p);
@@ -760,6 +777,9 @@ export async function makeRender(gl) {
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
     gl.uniform4fv(f.u.uFilm, v.film);
+    gl.uniform4fv(f.u.uFx1, v.fx1);
+    gl.uniform4fv(f.u.uFx2, v.fx2);
+    gl.uniform4fv(f.u.uFx3, v.fx3);
     gl.uniform1f(f.u.uHaze, Math.min(1, 0.4 + 0.6 * v.lens + 0.3 * v.band.dust));
     gl.uniform3fv(f.u.uHal, B.hal);
     gl.uniform3fv(f.u.uStreak, B.streak);

@@ -22,7 +22,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 - The first frame is a picture: every loop at its own stage of life.
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
 - The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The star fills the frame; its limb runs from the middle of the foot to the middle of the left side, and the bottom left corner is open space with its own regions and prominences. The camera never moves there. Loops and prominences draw brighter; the tone curve presses a little darker and harder; the vignette deepens.
-- The full view fits the whole star with sky round it. The view pulls back to 3.2 radii tall, and a sweeping corona stretches out to the frame's edges: five streamers that bend as they climb and narrow to long rays, fine rays between them, light falling as the radius to the power 0.95 far out and 3 near the limb. The exposure halves, so the whole disk shows its surface.
+- The full view fits the whole star with sky round it. The view pulls back to 3.2 radii tall. The corona is a raymarched 3D volume in the star's own frame, so it turns with the star: streamers gather on a warped sheet round the magnetic equator, narrow as they climb and bend in a slow spiral with height; polar plumes stand at the poles; fine rays run radially. It scatters the star's light with a Thomson lobe (brightest side on) and falls as the radius to the power 2.2 in density. The march reaches 3.4 radii. The exposure halves, so the whole disk shows its surface.
 
 ## The stars
 
@@ -48,7 +48,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | Regions | Fourteen active regions all round the limb: five over the top, five on the bottom left limb the long lens frames, four on the sides; on the near side, on the limb, behind it, and on the disk |
 | Prominences | Eight: hedgerows of fine upright threads, twisted arches with feet behind the limb, and tall curtains; three over the top, three on the bottom left limb, two on the sides. The largest arch stands 220 units high. Knots of cool plasma slide down every thread. An eruption lifts the prominence with growing speed (the arch swells into a bulb), fades it out by 17 s, and forms it again from 24 s to 44 s |
 | Scale | A dark body is a shaded sphere lit from behind by the star: the earth with land, sea and cloud and a blue rim; the moon grey and cratered; Phobos lumpy. A body too large for the sky hangs in the top right corner, cut by the frame. A star body shows its darkened limb and surface, or, too small to resolve, a core and a halo. The transit crosses the disk and takes about five minutes |
-| Volume | A raymarched shell of haze and dust round the star, 32 steps per ray at a quarter of the size, blurred twice, as Fire does. The lighting is Fire's smoke shading (a marked K3 section copied from `cloudbottle/scene.js`): a self-shadow march toward the star, Beer plus a multiple-scatter lobe, the powder term and a Henyey-Greenstein phase, so dust backlit at the limb glows. The light falls with the square of the distance. The dust absorbs as well as scatters, so lanes darken what lies behind them. Denser on the long lens and round the giants |
+| Volume | A raymarched shell of haze and dust round the star, 32 steps per ray at half size (a quarter on slow machines), blurred twice, as Fire does. The lighting is Fire's smoke shading (a marked K3 section copied from `cloudbottle/scene.js`): a self-shadow march toward the star, Beer plus a multiple-scatter lobe, the powder term and a Henyey-Greenstein phase, so dust backlit at the limb glows. The light falls with the square of the distance. The dust absorbs as well as scatters, so lanes darken what lies behind them. Denser on the long lens and round the giants |
 | Loops | Bundles of three to six threads between two footpoints on the sphere, height about half the span, with a tilt, a shear and a turned axis. Each lives 24 to 46 s: it rises, shines, drains (knots slide down both legs with growing speed) and fades, then returns with a new shape. Faint long loops climb out of the frame |
 | Flows | Faint ripples climb from the feet: the upflows seen in real loops |
 | Flare | Peak in 0.05 s. Ribbons part from 12 to 62 percent of the region's span. The rope, 12 threads, rises at 14 Mm/s plus 20 Mm/s² and swells into a bulb. Arcade loops form at 0.45 s, then about every 0.6 s, low first; each is born at 22 million kelvin and cools with a 1.6 s time constant; rain from 12 s after its birth |
@@ -68,6 +68,15 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light, then slow angular shafts break it into rays.
 - The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt, highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
+
+## Dev (`?dev`)
+
+The Dev button shows only with `?dev` in the address. Its rows are stored per browser; 1 is the house default; Reset puts every row back.
+
+| Group | Rows |
+|---|---|
+| Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
+| Volume | Haze density, Haze light, Corona (full view), Corona bend |
 
 ## Frame loop
 

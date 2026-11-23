@@ -121,6 +121,28 @@ function regionPoint(rg) {
 
 if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
 
+/* ---------- dev: post effect knobs, 1 is the house default ---------- */
+// id, group, label, min, max, default.
+const FX = [
+  ['fxExpo', 'Post', 'Exposure', 0.3, 2, 1],
+  ['fxBloom', 'Post', 'Bloom', 0, 3, 1],
+  ['fxRays', 'Post', 'Light rays', 0, 3, 1],
+  ['fxHal', 'Post', 'Halation', 0, 3, 1],
+  ['fxSplit', 'Post', 'Colour split', 0, 4, 1],
+  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1],
+  ['fxStreak', 'Post', 'Flare streak and ghosts', 0, 3, 1],
+  ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1],
+  ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1],
+  ['fxVig', 'Post', 'Vignette', 0, 2, 1],
+  ['fxGrain', 'Post', 'Grain', 0, 5, 1],
+  ['fxVol', 'Volume', 'Haze density', 0, 4, 1],
+  ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1],
+  ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1],
+  ['fxBend', 'Volume', 'Corona bend', 0, 3, 1],
+];
+// A knob's value: its Dev row, else the default.
+const fxv = id => { const d = FX.find(f => f[0] === id)[5]; return ui?.setting?.(id)?.value ?? d; };
+
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
   choice: {
@@ -145,6 +167,11 @@ const ui = initPage({ id: ID, bar: {
   ],
   slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
   quality: true,
+  // Tuning for the people who build the toy; the Dev button shows with ?dev.
+  dev: [
+    ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
+    { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
+  ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
@@ -173,7 +200,7 @@ function resize(force = false) {
   if (!force && key === sizeKey) return;
   sizeKey = key;
   view.W = Math.round(cssW * dpr); view.H = Math.round(cssH * dpr);
-  ren.resize(view.W, view.H);
+  ren.resize(view.W, view.H, D.rung >= 1 ? 2 : 1);
   fitView(cssW, cssH, c.top || 0, c.bottom || 0);
   draw();
 }
@@ -233,7 +260,8 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0,
+  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
+  fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
 };
 function makeFrame() {
   const f = frameState;
@@ -301,8 +329,14 @@ function makeFrame() {
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
   f.film.set([0.018, 0, 0.35, 0]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
-  f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust);
-  f.volLight = 1.3 * star.disk[0] / (1 + star.dust);
+  f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
+  f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight');
+  // The 3D corona shows in the full view; its light follows the star's own corona.
+  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6;
+  f.bend = fxv('fxBend');
+  f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
+  f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
   f.lens = weight('long');
   f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;

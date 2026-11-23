@@ -92,7 +92,9 @@ Tom's words: I asked for no camera movement; the bottom left does not feature ac
 | Full view | A third framing: the whole star with sky round it. L steps long, wide, full |
 | Volume | A raymarched haze and dust shell lit with Fire's smoke shading (the K3 section from `cloudbottle/scene.js`), replacing the flat haze layers |
 | Film | Fine grain only, a soft colour split, faint lens dirt; no weave, no flicker, no colour noise |
-| Full view (Tom: a more sweeping corona; it is very bright) | Five bent streamers and fine rays out to several radii; half the exposure |
+| Full view (Tom: a more sweeping corona; it is very bright) | Half the exposure. The corona is raymarched in 3D (Tom: can it be raymarched or made 3D): streamers on a warped equatorial sheet, a spiral bend, polar plumes, radial rays |
+| Dev (Tom: give us controls for that in dev mode) | Bar v3 dev rows behind `?dev`: eleven post knobs and four volume knobs, stored, with Reset |
+| Fire's fluid (Tom asked where it could serve) | Proposed, not built: an eruption as Fire's 3D fluid in a box at the flaring region, the rope's plasma billowing out |
 
 ## Tasks
 
