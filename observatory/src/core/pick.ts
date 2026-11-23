@@ -26,3 +26,25 @@ export function pickStar(stars: Star[], aim: AltAz, lstDeg: number, latDeg: numb
   }
   return best;
 }
+
+// One magnitude weighs as much as this many degrees.
+// So distance leads, and brightness settles near ties.
+const MAG_WEIGHT = 0.1;
+
+// The star a hover shows and a tap locks.
+// The lowest score of distance plus a weighted magnitude wins, above 5 degrees.
+// It gives null when no star stands within radiusDeg.
+// A star fainter than maxMag does not show, so it is skipped.
+export function nearStar(stars: Star[], aim: AltAz, lstDeg: number, latDeg: number, radiusDeg = 1.5, maxMag = 99): Star | null {
+  let best: Star | null = null, bestScore = Infinity;
+  for (const s of stars) {
+    if (s.mag > maxMag) continue;
+    const p = toAltAz(s.ra, s.dec, lstDeg, latDeg);
+    if (p.alt <= MIN_ALT) continue;
+    const d = sep(p, aim);
+    if (d > radiusDeg) continue;
+    const score = d + MAG_WEIGHT * s.mag;
+    if (score < bestScore) { best = s; bestScore = score; }
+  }
+  return best;
+}
