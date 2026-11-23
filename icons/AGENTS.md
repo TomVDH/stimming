@@ -30,6 +30,8 @@ A toy has at most three icons:
 ## Files
 
 - A round is one gallery, `icons/spike-<toy>-<n>.html`, with three cards: Current, A and D. Then add the toy to the sheet's `GALLERY` table.
+- A new round joins the toy's `GALLERY` list, oldest first. Earlier rounds stay on the sheet under the newest, for the vote (Tom, 2026-11-23). A mark names its round.
+- An emblem name that is taken by an earlier round gets the round number: `<toy><n>-a.svg`.
 - Emblems: `icons/spike/emblems/<toy>-a.svg` and `<toy>-d.svg`. The gallery also carries each as a data URI.
 - Older galleries keep B, C and E cards for reference; the sheet hides them.
 - Cut directions go to `icons/archive/` (`cut.json`, `emblems/`). Leave that folder out of context unless Tom asks.

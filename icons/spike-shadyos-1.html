@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: ShadyOS 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: ShadyOS 1</h1>
+<p class="lede">ShadyOS, round 1. No pick yet. A: the toy's Notice dialog as one glossy object, three copies smeared down and left; the pointer drags it and the copies chase. D: the dialog as a thick slab on the iso grid, its faces left behind.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The menu tile's ids take the tile prefix, so three copies can live.
+  const ids = (m, u) => m.replace(/id="([^"]+)"/g, `id="${u}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${u}$1)`).replace(/href="#([^"]+)"/g, `href="#${u}$1"`);
+
+  const DIRS = [];
+
+  // The toy's tokens: cream chrome, a glossy title bar, an orange warning, a blue default button.
+  const CHROME = [[0, 'oklch(0.93 0.02 88)'], [1, 'oklch(0.76 0.03 80)']];
+  const BAR = [[0, 'oklch(0.97 0.01 90)'], [0.5, 'oklch(0.86 0.02 85)'], [1, 'oklch(0.78 0.025 80)']];
+  const PAGE = 'oklch(0.96 0.025 88)';
+  const WARN = [[0, 'oklch(0.86 0.17 75)'], [1, 'oklch(0.66 0.19 45)']];
+  const BLUE = [[0, 'oklch(0.86 0.09 220)'], [0.5, 'oklch(0.66 0.14 235)'], [1, 'oklch(0.56 0.15 240)']];
+  const GREY = [[0, 'oklch(0.97 0.005 90)'], [1, 'oklch(0.8 0.01 85)']];
+  const rr = (x, y, w, h, r) => `M${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h - r}Q${x + w} ${y + h} ${x + w - r} ${y + h}H${x + r}Q${x} ${y + h} ${x} ${y + h - r}V${y + r}Q${x} ${y} ${x + r} ${y}Z`;
+
+  /* ================= Current ================= */
+
+  // The menu icon today: a window in a dark square, three fading copies behind it.
+  const CUR = `<defs>
+      <g id="shadyos-pane">
+        <rect x="40" y="30" width="56" height="42" rx="4" fill="oklch(0.6 0.05 212)"/>
+        <rect x="40" y="30" width="56" height="9" rx="4" fill="oklch(0.84 0.04 210)"/>
+        <rect x="44" y="40" width="48" height="28" rx="1.5" fill="oklch(0.93 0.025 88)"/>
+        <circle cx="90" cy="35" r="2.4" fill="oklch(0.65 0.19 28)"/>
+        <circle cx="84" cy="35" r="2.4" fill="oklch(0.78 0.14 80)"/>
+        <path d="M48 47h26M48 53h18M48 59h22" stroke="oklch(0.6 0.03 240)" stroke-width="2" stroke-linecap="round"/>
+      </g>
+    </defs>
+    <rect x="16" y="16" width="92" height="92" fill="oklch(0.2 0.04 222)"/>
+    <path d="M16 96C40 82 70 92 108 64V74C74 98 44 92 16 106Z" fill="oklch(0.72 0.12 85)" opacity="0.35"/>
+    <g id="shadyos-ghosts">
+      <use href="#shadyos-pane" x="-21" y="21" opacity="0.45"/>
+      <use href="#shadyos-pane" x="-14" y="14" opacity="0.6"/>
+      <use href="#shadyos-pane" x="-7" y="7" opacity="0.75"/>
+    </g>
+    <use id="shadyos-win" href="#shadyos-pane"/>`;
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    box: 'bbox',
+    art(svg, u) {
+      svg.innerHTML = ids(CUR, u);
+      const win = svg.querySelector(`#${u}shadyos-win`), ghosts = svg.querySelectorAll(`#${u}shadyos-ghosts use`), base = [0.45, 0.6, 0.75];
+      let tl = null;
+      return {
+        enter() {
+          tl = gsap.timeline({ repeat: -1, repeatDelay: 0.4 })
+            .set(ghosts, { opacity: 0 })
+            .fromTo(win, { x: -21, y: 21 }, { x: 0, y: 0, duration: 0.9, ease: 'sine.inOut' })
+            .to(ghosts, { opacity: i => base[i], duration: 0.05, stagger: 0.25 }, 0.2)
+            .to(ghosts, { opacity: 0, duration: 0.5, ease: 'sine.in' }, '+=0.6');
+        },
+        move() {},
+        leave() { tl?.kill(); gsap.to(win, { x: 0, y: 0, duration: 0.3, overwrite: true }); gsap.to(ghosts, { opacity: i => base[i], duration: 0.3, overwrite: true }); },
+      };
+    },
+  });
+
+  /* ================= The dialog ================= */
+
+  // The Notice dialog in its own frame, 100 by 72.
+  const FRAME = rr(0, 0, 100, 72, 6);
+  const dialogDefs = u => `${light(u)}${blur(`${u}b`, 2.6)}
+    ${lg(`${u}chrome`, CHROME)}${lg(`${u}bar`, BAR)}${lg(`${u}warn`, WARN)}${lg(`${u}blue`, BLUE)}${lg(`${u}grey`, GREY)}`;
+  const dialog = u => `
+    ${body(FRAME, u, 'chrome')}
+    <path d="${rr(1, 1, 98, 15, 5.5)}" fill="url(#${u}bar)"/>
+    <circle cx="9" cy="8.5" r="3.4" fill="oklch(0.64 0.2 28)"/><circle cx="18" cy="8.5" r="3.4" fill="oklch(0.8 0.15 80)"/><circle cx="27" cy="8.5" r="3.4" fill="oklch(0.72 0.17 145)"/>
+    <path d="M42 8.5H62" stroke="oklch(0.45 0.02 80)" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <path d="${rr(6, 19, 88, 47, 2.5)}" fill="${PAGE}"/>
+    <path d="M24 23L37 46H11Z" fill="url(#${u}warn)" stroke="oklch(0.6 0.17 45)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M24 30V38" stroke="oklch(0.2 0.02 60)" stroke-width="3.2" stroke-linecap="round"/><circle cx="24" cy="42.2" r="1.8" fill="oklch(0.2 0.02 60)"/>
+    <path d="M44 28H84M44 36H74" stroke="oklch(0.32 0.02 80)" stroke-width="3.6" stroke-linecap="round" opacity="0.8"/>
+    <path d="${rr(40, 50, 22, 10, 5)}" fill="url(#${u}grey)" stroke="oklch(0.6 0.02 80)" stroke-width="1"/>
+    <path d="${rr(66, 50, 24, 10, 5)}" fill="url(#${u}blue)"/>
+    <path d="${rr(68, 51, 20, 4, 2)}" fill="#fff" opacity="0.5"/>`;
+  // A copy left behind: the frame and its bar, no detail.
+  const ghost = u => `<path d="${FRAME}" fill="url(#${u}chrome)"/><path d="${rr(1, 1, 98, 15, 5.5)}" fill="url(#${u}bar)"/><path d="${rr(6, 19, 88, 47, 2.5)}" fill="${PAGE}" opacity="0.8"/>`;
+  // Rest offsets of the three copies: down and left, as the toy smears.
+  const REST_A = [[-7, 7], [-14, 14], [-21, 21]], REST_D = [[0, 10], [0, 20], [0, 30]], BASE = [0.75, 0.55, 0.35];
+
+  // The shared motion: the pointer drags the dialog; the copies chase it in a chain and smear.
+  // When the dialog stops, the copies catch up and vanish. Leave lays the trail back down.
+  // place(el, x, y) moves a part; aim maps the pointer to a drag offset.
+  const run = (svg, place, aim, REST = REST_A) => {
+    const win = svg.querySelector('.win'), gh = [...svg.querySelectorAll('.ghost')].sort((a, b) => a.dataset.i - b.dataset.i);
+    const st = { live: false, k: 0, last: 0, t: [0, 0], w: [0, 0], g: REST.map(r => [...r]) };
+    const paint = () => {
+      place(win, st.w[0], st.w[1]);
+      gh.forEach((g, i) => {
+        const lead = i ? st.g[i - 1] : st.w, d = Math.hypot(st.g[i][0] - lead[0], st.g[i][1] - lead[1]);
+        place(g, st.g[i][0], st.g[i][1]);
+        g.setAttribute('opacity', f(BASE[i] * ((1 - st.k) + st.k * clamp(d / 5))));
+      });
+    };
+    const step = time => {
+      const dt = Math.min(0.05, time - (st.last || time));
+      st.last = time;
+      st.k = st.live ? Math.min(1, st.k + dt * 3) : Math.max(0, st.k - dt * 1.6);
+      const tw = st.live ? st.t : [0, 0];
+      st.w[0] += (tw[0] - st.w[0]) * Math.min(1, dt * 7);
+      st.w[1] += (tw[1] - st.w[1]) * Math.min(1, dt * 7);
+      st.g.forEach((g, i) => {
+        const lead = i ? st.g[i - 1] : st.w, tx = lead[0] + (REST[0][0]) * (1 - st.k), ty = lead[1] + (REST[0][1]) * (1 - st.k), r = Math.min(1, dt * (9 - i * 2));
+        g[0] += (tx - g[0]) * r;
+        g[1] += (ty - g[1]) * r;
+      });
+      paint();
+      const still = Math.hypot(st.w[0] - tw[0], st.w[1] - tw[1]) < 0.05 && st.g.every((g, i) => Math.hypot(g[0] - REST[i][0], g[1] - REST[i][1]) < 0.1);
+      if (!st.live && st.k <= 0 && still) { st.last = 0; loop.stop(); }
+    };
+    const loop = clock(step);
+    paint();
+    return {
+      enter(p) { st.live = true; if (p) st.t = aim(p); loop.start(); },
+      move(p) { if (p) st.t = aim(p); },
+      leave() { st.live = false; loop.start(); },
+    };
+  };
+  const dialogEmblem = `<path d="${FRAME}" fill="#fff"/><path d="${rr(6, 19, 88, 47, 2.5)}" fill="#6a6a6a"/><path d="M24 23L37 46H11Z" fill="#fff"/><path d="M24 30V38" stroke="#000" stroke-width="3.2" stroke-linecap="round"/><path d="M44 28H84M44 36H74" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/><path d="${rr(66, 50, 24, 10, 5)}" fill="#fff"/><path d="${rr(40, 50, 22, 10, 5)}" fill="#b0b0b0"/><circle cx="9" cy="8.5" r="3.4" fill="#000"/><circle cx="18" cy="8.5" r="3.4" fill="#000"/><circle cx="27" cy="8.5" r="3.4" fill="#000"/>`;
+
+  /* ================= A: Shaded object ================= */
+
+  // The dialog sits up and right; the trail runs down and left.
+  const AX = 24, AY = 22;
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [3, 20, 123, 95],
+    idea: 'The toy\'s Notice dialog as one glossy object: cream chrome, a gloss title bar with red, amber and green lights, an orange warning sign, two lines of text and a blue Keep on button. Three copies trail down and to the left, as the toy smears a dragged window. The pointer drags the dialog; the copies chase it in a chain and smear, then catch up and vanish when it stops. Leave lays the trail back down.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${dialogDefs(u)}</defs>
+        <ellipse cx="${AX + 40}" cy="${AY + 92}" rx="58" ry="4" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)"/>
+        ${[2, 1, 0].map(i => `<g class="ghost" data-i="${i}">${ghost(u)}</g>`).join('')}
+        <g class="win">${dialog(u)}</g>`;
+      const place = (el, x, y) => el.setAttribute('transform', `translate(${f(AX + x)} ${f(AY + y)})`);
+      return run(svg, place, p => [clamp((p[0] - 74) * 0.4, -12, 12), clamp((p[1] - 58) * 0.4, -10, 10)]);
+    },
+    emblem: `${EMB_HEAD}${REST_A.map(([x, y], i) => `<path d="${FRAME}" transform="translate(${AX + x} ${AY + y})" fill="${['#8c8c8c', '#5a5a5a', '#3a3a3a'][i]}" stroke="#000" stroke-width="2"/>`).reverse().join('')}<g transform="translate(${AX} ${AY})">${dialogEmblem}</g></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The dialog as a thick slab on the iso grid; its copies are faces left behind.
+  const CY = 60, K = 0.7, T = 9;
+  const iso = (x, y) => [64 + ((x - 50) - (y - 36)) * 0.866 * K, CY + ((x - 50) + (y - 36)) * 0.5 * K];
+  const M = `matrix(${f(0.866 * K)} ${f(0.5 * K)} ${f(-0.866 * K)} ${f(0.5 * K)} ${f(iso(0, 0)[0])} ${f(iso(0, 0)[1])})`;
+  const dn = p => [p[0], p[1] + T];
+  // The two near faces: along the bottom edge and along the right edge.
+  const LEFT = poly([iso(0, 72), iso(100, 72), dn(iso(100, 72)), dn(iso(0, 72))]);
+  const RIGHT = poly([iso(100, 72), iso(100, 0), dn(iso(100, 0)), dn(iso(100, 72))]);
+  // A plane offset moves the slab on the grid.
+  const shift = (x, y) => [(x - y) * 0.866 * K, (x + y) * 0.5 * K];
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [8, 22, 112, 92],
+    idea: 'The dialog is the block: its face is the top at 30 degrees, a cream chrome slab under it with a mid left face and a dark right face, a rim on the top edges. Three faces trail behind it on the grid, down and left. The pointer drags the slab across the grid and the copies smear after it, as in A.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${dialogDefs(u)}
+          ${lg(`${u}L`, [[0, 'oklch(0.72 0.03 80)'], [1, 'oklch(0.58 0.03 75)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.5 0.03 75)'], [1, 'oklch(0.38 0.03 70)']])}</defs>
+        <path d="${poly([iso(0, 72), iso(100, 72), iso(100, 0), dn(iso(100, 0)), dn(iso(100, 72)), dn(iso(0, 72))])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 6)"/>
+        ${[2, 1, 0].map(i => `<g class="ghost" data-i="${i}"><g transform="${M}">${ghost(u)}</g></g>`).join('')}
+        <g class="win">
+          <path d="${LEFT}" fill="url(#${u}L)"/><path d="${RIGHT}" fill="url(#${u}R)"/>
+          <g transform="${M}">${dialog(u)}</g>
+          <path d="M${poly([iso(0, 72), iso(0, 0), iso(100, 0)]).slice(1, -1)}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+        </g>`;
+      const place = (el, x, y) => { const [dx, dy] = shift(x, y); el.setAttribute('transform', `translate(${f(dx)} ${f(dy)})`); };
+      // The pointer's screen offset, turned back into the plane.
+      const aim = p => { const a = (p[0] - 64) / (0.866 * K), b = (p[1] - CY) / (0.5 * K); return [clamp((a + b) / 2 * 0.35, -14, 14), clamp((b - a) / 2 * 0.35, -12, 12)]; };
+      return run(svg, place, aim, REST_D);
+    },
+    emblem: `${EMB_HEAD}${REST_D.map(([x, y], i) => { const [dx, dy] = shift(x, y); return `<path d="${poly([iso(0, 0), iso(100, 0), iso(100, 72), iso(0, 72)])}" transform="translate(${f(dx)} ${f(dy)})" fill="${['#8c8c8c', '#5a5a5a', '#3a3a3a'][i]}" stroke="#000" stroke-width="2"/>`; }).reverse().join('')}<path d="${LEFT}" fill="#9a9a9a"/><path d="${RIGHT}" fill="#5a5a5a"/><g transform="${M}">${dialogEmblem}</g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = "ShadyOS";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-shadyos';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `shadyos-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      // A menu tile with no data-box fits its drawn bounds, as the menu does.
+      const bb = D.box === "bbox" && svg.getBBox();
+      fitIcon(svg, bb ? [bb.x, bb.y, bb.width, bb.height] : D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

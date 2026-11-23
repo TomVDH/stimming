@@ -56,6 +56,11 @@ h3 { margin: 40px 0 0; padding-bottom: 10px; color: var(--muted); font-size: 11p
 h3 span { color: var(--faint); }
 .row { padding: 12px 0; border-top: 1px solid var(--line); }
 .row h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.row h2 small { display: block; margin-top: 2px; color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; }
+/* An earlier round sits under its toy, quieter, with no Current tile. */
+.row.old { padding-top: 0; border-top: 0; }
+.row.old h2 small { margin: 0; text-align: right; }
+.row .none { width: var(--tile); }
 .cell { position: relative; display: grid; gap: 6px; width: var(--tile); border-radius: 14px; cursor: pointer; }
 .tile, .logo, .slot { width: var(--tile); aspect-ratio: 1; border-radius: 14px; }
 /* The Current column sits on its own panel. */
@@ -146,13 +151,26 @@ const GALLERY = {
   leafshadows: 'leafshadows-1',
   supercon: 'supercon-1',
   lavacoast: 'lavacoast-1',
+  lava: ['lava-1', 'lava-2'],
+  eyes: 'eyes-1',
+  shadyos: 'shadyos-1',
+  chamber: 'chamber-1',
+  ink: 'ink-1',
+  frietkot: 'frietkot-5',
+  railgun: ['railgun-1', 'railgun-2', 'railgun-3'],
+  trainride: 'trainride-3',
+  motorway: ['motorway-1', 'motorway-2'],
+  kintsugi: 'kintsugi-1',
   tide: 'tide-1',
   eclipse: 'eclipse-1',
   cloudbottle: 'cloudbottle-1',
   wreckingball: 'wreckingball-1',
 };
-// A gallery that lacks one of the two letters.
-const LACKS = { launch: ['a'], wires: ['d'] };
+// A toy with more rounds lists them oldest first; the newest leads its row.
+// Earlier rounds stay on the sheet under it, for comparison.
+const rounds = id => [].concat(GALLERY[id] ?? []);
+// A gallery that lacks one of the two letters, by round.
+const LACKS = { 31: ['a'], 'wires-1': ['d'] };
 const COLS = [['a', 'Shaded object'], ['d', 'Isometric block']];
 const KEY = 'stimming.icons.marks';
 
@@ -183,6 +201,11 @@ section > .row, section > .dirs { display: contents !important; }
 
 const $ = id => document.getElementById(id);
 const marks = (() => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } })();
+// A mark from before rounds names no round: it was on the first round.
+for (const k of [...marks]) {
+  const m = k.match(/^(.+)-([ad])$/);
+  if (m && rounds(m[1]).length) { marks.delete(k); marks.add(`${k}@${rounds(m[1])[0]}`); }
+}
 const docs = [];
 let view = 'icon';
 
@@ -207,21 +230,33 @@ const toys = links.size
   : listed.map(id => ({ id, lab: names[id].number == null }));
 const nameOf = id => names[id]?.name ?? menu?.querySelector(`a.toy#${id}`)?.textContent.trim() ?? id;
 // have: the gallery holds it. cut: Tom cut it. none: nobody drew it.
-const stateOf = (id, l) => (GALLERY[id] == null || LACKS[id]?.includes(l) ? 'none' : gone.has(`${id}-${l}`) ? 'cut' : 'have');
+// Tom's cuts date from the first round on the sheet, so only that round has them.
+const newest = id => rounds(id).at(-1);
+const stateOf = (id, l, r = newest(id)) => (r == null || LACKS[r]?.includes(l) ? 'none' : r === rounds(id)[0] && gone.has(`${id}-${l}`) ? 'cut' : 'have');
 const WORD = { have: '', cut: 'Cut', none: 'To draw' };
+// An earlier round with no such letter shows an empty slot: nothing is left to draw there.
+const wordOf = (id, s, r) => (s === 'none' && r !== newest(id) ? '' : WORD[s]);
+// A mark names the toy, the letter and the round.
+const keyOf = (id, l, r) => `${id}-${l}@${r}`;
 
 // Rows: the name, the Current icon, then the two alt slots.
-const slot = (id, l, s) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${id}-${l}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}">${WORD[s]}</div>`;
+// An earlier round gets a row of its own: its name, no Current, its two slots.
+const slot = (id, l, s, r) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${keyOf(id, l, r)}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}, round ${r}">${wordOf(id, s, r)}</div>`;
+const alts = (id, r) => `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`;
 const row = ({ id }) => {
-  const emb = names[id]?.emblem;
-  return `<section class="row" id="row-${id}" data-toy="${id}">
-    <h2>${nameOf(id)}</h2>
+  const emb = names[id]?.emblem, rs = rounds(id), r = rs.at(-1);
+  return `<section class="row" id="row-${id}" data-toy="${id}" data-round="${r ?? ''}">
+    <h2>${nameOf(id)}${rs.length > 1 ? `<small>${r}</small>` : ''}</h2>
     <div class="cell" data-key="${id}-current" tabindex="0" role="button" aria-label="${nameOf(id)}, Current">
       <div class="tile"></div>
       <div class="logo">${emb ? `<i style="--emblem: url(../${emb})"></i>` : ''}</div>
     </div>
-    <div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l))).join('')}</div>
-  </section>`;
+    ${alts(id, r)}
+  </section>` + rs.slice(0, -1).reverse().map(o => `<section class="row old" data-toy="${id}" data-round="${o}">
+    <h2><small>${o}</small></h2>
+    <div class="none"></div>
+    ${alts(id, o)}
+  </section>`).join('');
 };
 const group = (title, list) => (list.length ? `<h3>${title} <span>· ${list.length}</span></h3>${list.map(row).join('')}` : '');
 $('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
@@ -274,7 +309,8 @@ const place = () => {
   for (const [id, a] of tiles) a.style.setProperty('top', `${document.querySelector(`#row-${id} .cell`).offsetTop}px`, 'important');
 };
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
-$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric`;
+const older = toys.reduce((n, t) => n + Math.max(0, rounds(t.id).length - 1), 0);
+$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}`;
 
 // The tile size fits three columns; the name moves above them on phones.
 const layout = () => {
@@ -291,7 +327,8 @@ const layout = () => {
 const output = () => {
   const o = {};
   for (const { id } of toys) {
-    const ls = ['current', 'a', 'd'].filter(l => marks.has(`${id}-${l}`)).map(l => ({ current: 'Current', a: 'Shaded object', d: 'Isometric block' })[l]);
+    const ls = marks.has(`${id}-current`) ? ['Current'] : [];
+    for (const r of rounds(id).reverse()) for (const [l, word] of COLS) if (marks.has(keyOf(id, l, r))) ls.push(`${word} (${r})`);
     if (ls.length) o[id] = ls;
   }
   return JSON.stringify({ marked: o }, null, 2);
@@ -336,8 +373,8 @@ const base = new URL('./', location.href).href;
 const sources = new Map();
 const source = n => sources.get(n) ?? sources.set(n, fetch(`spike-${n}.html`).then(r => (r.ok ? r.text() : '')).catch(() => '')).get(n);
 async function mount(sec) {
-  const id = sec.dataset.toy, alts = sec.querySelector('.alts');
-  const src = await source(GALLERY[id]);
+  const id = sec.dataset.toy, r = sec.dataset.round, alts = sec.querySelector('.alts');
+  const src = await source(r);
   if (!src) return;
   const frame = document.createElement('iframe');
   frame.title = `${nameOf(id)}: Shaded object and Isometric block`;
@@ -366,16 +403,16 @@ async function mount(sec) {
   const holder = own.querySelector('.row, .dirs') || own, kept = {};
   for (const card of own.querySelectorAll('.dir')) {
     const l = card.querySelector('b')?.textContent.trim().toLowerCase(), col = COLS.findIndex(c => c[0] === l);
-    if (col < 0 || gone.has(`${id}-${l}`) || !card.querySelector('.t128, .s128')) { card.remove(); continue; }
+    if (col < 0 || stateOf(id, l, r) === 'cut' || !card.querySelector('.t128, .s128')) { card.remove(); continue; }
     card.dataset.col = String(col);
-    card.dataset.key = `${id}-${l}`;
+    card.dataset.key = keyOf(id, l, r);
     kept[l] = true;
   }
   // A missing letter keeps its slot, with the reason.
   COLS.forEach(([l], col) => {
     if (kept[l]) return;
-    const s = stateOf(id, l) === 'cut' ? 'cut' : 'none';
-    holder.insertAdjacentHTML('beforeend', `<article class="dir slot" data-col="${col}" data-key="${id}-${l}">${WORD[s]}</article>`);
+    const s = stateOf(id, l, r) === 'cut' ? 'cut' : 'none';
+    holder.insertAdjacentHTML('beforeend', `<article class="dir slot" data-col="${col}" data-key="${keyOf(id, l, r)}">${wordOf(id, s, r)}</article>`);
   });
   docs.push(doc);
   doc.addEventListener('click', onClick);
@@ -405,8 +442,8 @@ const near = new IntersectionObserver(es => {
   pump();
 }, { rootMargin: '600px 0px' });
 for (const sec of document.querySelectorAll('.row')) {
-  const id = sec.dataset.toy;
-  if (COLS.some(([l]) => stateOf(id, l) === 'have')) near.observe(sec);
+  const id = sec.dataset.toy, r = sec.dataset.round;
+  if (r && COLS.some(([l]) => stateOf(id, l, r) === 'have')) near.observe(sec);
 }
 goLive();
 layout();
