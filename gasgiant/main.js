@@ -273,6 +273,8 @@ const DECK_K = { deck: 1, haze: 1, sheets: 0.4 };
 const deckAt = h => Math.min(1, LAYERS.reduce((a, l) => a + (DECK_K[l.kind] || 0) * bump(l.bot + (l.id === 'ammonia' ? 2 : 0), l.top, h), 0));
 
 /* ---------- render ---------- */
+// ?qa: __gg.bench(n) renders n frames and waits for the GPU each time; it returns ms a frame.
+if (QS.has('qa')) globalThis.__gg.bench = n => { const t0 = performance.now(); const px = new Uint8Array(4); for (let i = 0; i < n; i++) { render(1 / 60); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } return (performance.now() - t0) / n; };
 // Sets the sun on a program that reads it.
 const sunTo = pr => { if (pr.u.uSun) gl.uniform3fv(pr.u.uSun, sunV); };
 let frameNo = 0, mapAge = 1e9;
@@ -310,7 +312,8 @@ function render(dt) {
   gl.uniform1f(u.uFine, m.fine);
   // In a void the eye sees to the horizon, 1,600 km; in a deck, 220 km.
   const vk = voidAt(S.alt);
-  gl.uniform1f(u.uWin, 220 + 1380 * vk);
+  // Over the tops the window opens as wide as in a void.
+  gl.uniform1f(u.uWin, 220 + 1380 * Math.max(vk, smooth(14, 30, S.alt)));
   gl.uniform1f(u.uSeed, frameNo % 64);
   flashUniform(B, flash);
   // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.

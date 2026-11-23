@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T23:20:00Z
+updated_at: 2026-11-23T23:40:00Z
 parent: stimming-oh7b
 ---
 
@@ -33,7 +33,7 @@ MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom
 - [x] Dev sheet: go to a layer, free look, light tuning (?dev)
 - [x] Tom, 2026-11-23: god rays through breaks, light pools, scale
 - [x] Tom, 2026-11-23: haze lid, mushball fall, gyre, lightning nest (first pass)
-- [ ] Focus: the dive from above, first touch, the first two layers
+- [ ] Focus: the dive from above, first touch, the first two layers (first pass in: the horizon over the tops, a lit interior; the interior still soft)
 - [ ] More weirdness in the voids
 - [ ] Tom's later pass: the window effects for the deep layers
 - [ ] Record link times, frame times and the session cost

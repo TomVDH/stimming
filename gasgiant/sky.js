@@ -40,7 +40,8 @@ vec3 skyAt(vec3 ro, vec3 rd, float camH) {
       vec2 ps = sphereHit(hp, SUN, R + 60.0);
       float lit = ps.x < ps.y && ps.x > 0.0 ? 0.0 : 1.0;
       float cover = 1.0 - exp(-tau / muV);
-      c = c * (1.0 - cover) + RING_C * pass * fwd * lit * 0.6;
+      // The low sun leaves the rings faint, so they take a little more light.
+      c = c * (1.0 - cover) + RING_C * pass * fwd * lit * 1.1;
     }
   }
   // The limb: haze over the horizon, and a thin detached layer above it.

@@ -201,6 +201,17 @@ The light taps skip the details that cast no shade, so the compiler drops them: 
 
 Next (Tom, 2026-11-23): "let's focus on above dive, first touch with gas giant and the first two layers -- before continuing".
 
+### The descent and the first touch (Tom, 2026-11-23: "Yes, go")
+
+| Part | Change |
+|---|---|
+| First touch | Over the tops (14 to 38 km) the window opens to 1,600 km and the air clears (mean free path up to 870 km), and a ray that leaves through the top sees the sky, not fog. The deck runs to its horizon as the capsule skims it. |
+| White deck | Inside, the deck thins to pockets 4 km across, so billows 3 to 5 km off show. Sunlight diffuses down into it, most 3 to 6 km in, fading over 14 km. Inside, the light taps look up, so a billow under a pocket is lit and one under thick cloud is not. First pass: it still reads soft. |
+| Orbit | The march steps back at its first hit from above too, so the far deck has less speckle. The rings take more light under the low sun. |
+| QA | `?qa` exposes `__gg.bench(n)`: n frames, each waiting on the GPU. 1280 x 800 on the RTX 3070: 3.3 ms at 260 km, 6.5 at 60, 3.9 at 36, 3.3 in the deck, 3.4 to 4.6 in the voids. |
+
+One capture at 36 km lost the WebGL context (a GPU reset); a second load and the bench did not repeat it.
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech

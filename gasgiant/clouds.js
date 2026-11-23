@@ -76,6 +76,8 @@ vec3 gAlb = vec3(1.0);
 float gOpen = 0.0;
 // gUnder: 1 on a void's ceiling, where the floor's light bounces up.
 float gUnder = 0.0;
+// gDeep: km under a deck's top, for the light that diffuses down into it; -1 outside.
+float gDeep = -1.0;
 // The floor's colour, for the light it bounces up.
 vec3 gBounceC = vec3(1.0);
 vec3 th3(vec2 c) { vec3 p = vec3(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)), dot(c, vec2(419.2, 371.9))); return fract(sin(p) * 43758.5453); }
@@ -211,6 +213,7 @@ float dens(vec3 p, float lod, float fine, float full) {
   gAlb = vec3(0.9);
   gOpen = 0.0;
   gUnder = 0.0;
+  gDeep = -1.0;
   if (h < TOP && h > BOT) {
     vec4 m = mapAt(p.xz);
     // A slow, wide warp breaks the noise lattice; the fine octave turns off its axes.
@@ -263,6 +266,12 @@ float dens(vec3 p, float lod, float fine, float full) {
       float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
       // A crisp top near the eye lets the heads cast shadows.
       d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b) * cov * (1.0 - breakAt(p.xz, 3.1, 0.0));
+      // Inside, the deck churns: dense billows round thin pockets the eye sees through.
+      // The top keeps its skin; the pockets open from 2 km down.
+      // Pockets are 4 km across; the interior is thin enough to see billows 3 to 5 km off.
+      float pocket = mix(0.06, 1.0, smoothstep(0.35, 0.7, n2.r + 0.4 * (n1.r - 0.5)));
+      d *= mix(1.0, 0.45 * pocket, smoothstep(1.5, 4.0, top - h));
+      gDeep = max(top - h, 0.0);
       // Hue drifts a little with the billows, so the colours blend in the cloud.
       // Valleys between heads see less sky; their colour runs deeper.
       float ao = clamp(0.5 + 0.2 * rel, 0.2, 1.15);
@@ -448,6 +457,8 @@ void main() {
   // In a void the window opens to 1,600 km and the steps grow faster.
   float vw = clamp((uWin - 220.0) / 1380.0, 0.0, 1.0);
   float grow = mix(0.012, 0.024, vw), cap = mix(9.0, 30.0, vw);
+  // A ray that the window cuts ends in fog; one that leaves through the top sees the sky.
+  bool winEnd = inWin && uWin < t1;
   if (inWin) t1 = min(t1, uWin);
   vec4 res = vec4(0.0);
   if (t1 > t0) {
@@ -467,8 +478,8 @@ void main() {
       sk = min(1.0, sk * 1.3);
       float lod = clamp(log2(1.0 + t / 120.0), 0.0, 4.0);
       float dn = dens(p, lod, uFine * (1.0 - smoothstep(1.5, 3.0, lod)), 1.0);
-      // At the first hit in a deck, step back and come in again at a fifth of the step.
-      if (inWin && dn > 0.003 && !refined && ds > 0.5) {
+      // At the first hit, step back and come in again at a fifth of the step.
+      if (dn > 0.003 && !refined && ds > 0.5) {
         refined = true;
         // The loop's end adds this step back, so step back two.
         t -= ds * 3.2;
@@ -479,6 +490,7 @@ void main() {
         vec3 alb = gAlb;
         float open = gOpen;
         float under = gUnder;
+        float deep = gDeep;
         vec3 bc = gBounceC;
         if (tHit < 0.0) tHit = t;
         float h = altOf(p);
@@ -486,6 +498,8 @@ void main() {
         // Under the deck tops the light comes down through the ceiling, slanted to the sun's side.
         vec3 upv = normalize(p - PC);
         vec3 ld = normalize(mix(deepLight(upv), SUN, L.a));
+        // Inside a deck the light comes down from the bright cloud above, so the taps look up.
+        if (deep > 0.0) ld = normalize(mix(ld, upv, smoothstep(1.5, 4.0, deep)));
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
         // Far clouds in the decks take a mean depth; far ones seen from above take none.
         float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
@@ -505,7 +519,9 @@ void main() {
         vec3 sky = SKY_C * L.a * (0.25 + 0.75 * open) * (0.6 + 0.4 * ring);
         // The lit floor bounces its light up onto the ceiling's underside.
         vec3 bounce = L.rgb * mix(vec3(1.0), bc * 1.3, 0.5) * (1.0 - L.a) * uTune.z * 2.0 * under;
-        vec3 Lc = alb * (sun + diffuse + sky + bounce);
+        // Sunlight diffuses down into a deck: none at the skin, most 3 to 6 km in, then it fades.
+        vec3 inner = deep >= 0.0 ? L.rgb * 1.2 * (1.0 - exp(-deep / 1.5)) * exp(-deep / 14.0) * (0.25 + 0.75 * lit) : vec3(0.0);
+        vec3 Lc = alb * (sun + diffuse + sky + bounce + inner);
         // Flashes light the cloud round them, with no shadow.
         for (int k = 0; k < 4; k++) {
           vec4 f = uFlash[k];
@@ -523,7 +539,8 @@ void main() {
       if (inWin && dn <= 0.003) {
         float hg = altOf(p);
         // The voids stay clear to the horizon; the gaps between sheets stay fairly clear.
-        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 300.0 * band(hg, -24.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -38.0, 3.0)
+        // Over the tops the air clears, so the deck runs to its far horizon.
+        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 700.0 * smoothstep(16.0, 34.0, hg) + 300.0 * band(hg, -24.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -38.0, 3.0)
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -425.0, 6.0) + 300.0 * band(hg, -425.0, -385.0, 3.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
@@ -554,7 +571,7 @@ void main() {
       t += ds * (dn > 0.003 ? 1.0 : 1.6);
     }
     // Inside the decks, the medium past the window is fog of the same light.
-    if (inWin && t >= t1 - 0.01 && T > 0.02) {
+    if (winEnd && t >= t1 - 0.01 && T > 0.02) {
       vec4 L = lut(camH - 0.15 * min(uWin, 220.0));
       vec3 fog = vec3(0.74, 0.8, 0.82) * L.rgb * (0.5 + 0.5 * (1.0 - L.a));
       col += T * fog;
