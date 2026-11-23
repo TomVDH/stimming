@@ -3,10 +3,9 @@
 // a teardrop pressed flat where it meets its neighbours. Arils that cross the cut
 // are sliced flat and show their juice and a white seed in section.
 import * as THREE from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D } from 'simplex-noise';
-import { LIGHT, DENT, BEAD } from './glsl.js';
 import { bedMesh, solidMaterial, rng } from './half.js';
+import { makeArils } from './arils.js';
 
 const A = 0.8, B = 0.86, C = 0.86;
 const CH = 6;
@@ -77,84 +76,6 @@ const FLOOR = /* glsl */`
 float relief(vec2 f) { return 0.0; }
 vec3 bed(vec2 f, float r, float a, inout float glow) { glow = 0.2; return vec3(0.05, 0.003, 0.006); }`;
 
-// The aril shader: light through the juice, a seed seen inside, a sliced cap.
-const ARIL_VERT = /* glsl */`
-${DENT}
-attribute vec3 aC, aSeed, aCol;
-attribute float aR, aAo, aCut, aSig;
-uniform vec3 uCamL, uKeyL, uRimL;
-varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vSeed, vCapN, vL;
-varying float vAo, vCut, vSig;
-void main() {
-  // Bead space: the teardrop stays inside the unit sphere.
-  vP = (position - aC) / (aR * 1.45);
-  vEye = (uCamL - aC) / (aR * 1.45);
-  vKey = uKeyL;
-  vRim = uRimL;
-  vSeed = (aSeed - aC) / (aR * 1.45);
-  vec3 hp = position + dent(aC) - aC;
-  vL = position;
-  vec4 wp = modelMatrix * vec4(hp, 1.0);
-  vW = wp.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
-  vCapN = normalize(mat3(modelMatrix) * vec3(1.0, 0.0, 0.0));
-  vCol = aCol; vAo = aAo; vCut = aCut; vSig = aSig;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}`;
-const ARIL_FRAG = /* glsl */`
-${LIGHT}
-${BEAD}
-uniform float uGlow;
-varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vSeed, vCapN, vL;
-varying float vAo, vCut, vSig;
-const float RS = 0.2;
-void main() {
-  bool cap = vCut > 0.5;
-  vec3 n = normalize(cap ? vCapN : vN);
-  vec3 vw = normalize(cameraPosition - vW);
-  vec3 p = vP;
-  vec3 v = normalize(vEye - vP);
-  vec3 d = -v;
-  // The view ray inside: to the far wall, or to the seed.
-  float chord = max(exitLen(p, d), 0.0);
-  vec3 oc = p - vSeed;
-  float sb = dot(oc, d), sc = dot(oc, oc) - RS * RS, disc = sb * sb - sc;
-  bool onSeed = false;
-  if (disc > 0.0) { float t = -sb - sqrt(disc); if (t > 0.0 && t < chord) { chord = t; onSeed = true; } }
-  vec3 sigma = vSig * (vec3(1.0) - vCol) * 3.2;
-  float scale = 1.2;
-  vec3 col;
-  if (cap && sc < 0.0) {
-    // The knife went through the seed: white seed flesh, a thin coat round it.
-    float edge = smoothstep(RS * RS - 0.06, RS * RS - 0.01, dot(oc, oc));
-    vec3 seed = mix(vec3(0.62, 0.55, 0.45), vec3(0.42, 0.24, 0.18), edge);
-    col = shade(seed, n, vw, 0.35, 0.5, seed * 0.5, 0.0);
-  } else {
-    vec3 sk = beadScatter(p, v, vKey, sigma, scale, chord);
-    vec3 sr = beadScatter(p, v, vRim, sigma, scale, chord);
-    vec3 through = exp(-sigma * chord * scale);
-    float fw = 0.6 + 0.9 * pow(max(dot(-vw, uRimDir), 0.0), 2.0);
-    float skm = dot(sk, vec3(0.333)), srm = dot(sr, vec3(0.333));
-    col = vCol * (uKeyCol * skm * 0.45 + uRimCol * srm * fw * 0.35 + hemi(n) * 0.08);
-    if (onSeed) {
-      vec3 sn = normalize(p + d * chord - vSeed);
-      col += vec3(0.7, 0.45, 0.4) * (uKeyCol * (0.2 + 0.5 * max(dot(sn, vKey), 0.0)) + hemi(n) * 0.3) * through;
-    } else {
-      // Light that came in round the far side, dyed deep by the juice.
-      col += vCol * (uRimCol * uGlow * 0.5 + uKeyCol * 0.16) * through;
-    }
-  }
-  // Contact and depth: arils pressed together, and those deep in the chamber, sit in shade.
-  col *= vAo * mix(0.45, 1.0, smoothstep(-0.11, -0.01, vL.x));
-  // A wet skin: the studio, mirrored sharp.
-  col += studio(reflect(-vw, n), cap ? 0.03 : 0.015) * fresnel(max(dot(n, vw), 0.0), 0.03);
-  // max drops a NaN on D3D; one bad pixel must not bloom.
-  gl_FragColor = vec4(min(max(col, vec3(0.0)), vec3(24.0)), 1.0);
-}`;
-
-// A smooth minimum: rounds the edge where two limits meet.
-const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
-
 // The arils, packed into the chambers in a slab below the cut.
 function arils(U, R) {
   const list = [];
@@ -166,82 +87,9 @@ function arils(U, R) {
     const loose = R() < 0.22;
     const c = new THREE.Vector3(loose ? -0.03 + R() * 0.035 : -0.012 - R() * 0.07, Math.cos(a) * fr * B, Math.sin(a) * fr * C);
     if (list.some(o => o.c.distanceToSquared(c) < ((o.r + r) * 0.74) ** 2)) continue;
-    list.push({ c, r, a, fr, loose });
+    list.push({ c, r, loose });
   }
-  const base = mergeVertices(new THREE.IcosahedronGeometry(1, 3).deleteAttribute('normal').deleteAttribute('uv'));
-  const BP = base.attributes.position, nv = BP.count, ni = base.index.count;
-  const n = list.length;
-  const pos = new Float32Array(n * nv * 3), cen = new Float32Array(n * nv * 3), sed = new Float32Array(n * nv * 3), col = new Float32Array(n * nv * 3);
-  const rad = new Float32Array(n * nv), ao = new Float32Array(n * nv), cut = new Float32Array(n * nv), sig = new Float32Array(n * nv);
-  const idx = new Uint32Array(n * ni);
-  const u = new THREE.Vector3(), nb = new THREE.Vector3(), axis = new THREE.Vector3();
-  const noise = createNoise3D(rng(23));
-  list.forEach((o, i) => {
-    // Each aril hangs from a stalk: mostly along the ray, in or out, and a little tipped.
-    axis.set(0, o.c.y, o.c.z).normalize().multiplyScalar(R() < 0.5 ? 1 : -1).add(new THREE.Vector3((R() - 0.5) * 1.2, (R() - 0.5) * 0.9, (R() - 0.5) * 0.9)).normalize();
-    const near = list.filter(q => q !== o && q.c.distanceTo(o.c) < (q.r + o.r) * 1.5);
-    const sliced = !o.loose && o.c.x + o.r * 0.95 > CUT;
-    const t = R();
-    const colr = [0.72 + t * 0.2, 0.004 + t * 0.02, 0.05 + t * 0.05];
-    const sg = 0.9 + R() * 0.5;
-    const seedC = o.c.clone().addScaledVector(axis, o.r * 0.3);
-    for (let v = 0; v < nv; v++) {
-      u.fromBufferAttribute(BP, v).normalize();
-      // A long teardrop: an oval along the stalk, narrowing to a soft point at it.
-      const ax = u.dot(axis);
-      let rr = o.r / Math.sqrt((ax / 1.38) ** 2 + (1 - ax * ax) / 0.86 ** 2);
-      rr *= (1 - 0.3 * Math.max(ax, 0) ** 3) * (1 + 0.04 * noise(u.x * 2 + i, u.y * 2, u.z * 2));
-      const r0 = rr;
-      // Pressed flat where a neighbour pushes back.
-      for (const q of near) {
-        nb.subVectors(q.c, o.c);
-        const dist = nb.length();
-        nb.divideScalar(dist);
-        const k = u.dot(nb);
-        if (k > 0.05) rr = smin(rr, (dist * o.r / (o.r + q.r) - 0.0015) / k, o.r * 0.25);
-      }
-      let isCut = 0;
-      if (sliced && u.x > 0.02) {
-        const tc = (CUT - o.c.x) / u.x;
-        if (tc < rr) { rr = tc; isCut = 1; }
-      }
-      const j = i * nv + v;
-      pos.set([o.c.x + u.x * rr, o.c.y + u.y * rr, o.c.z + u.z * rr], j * 3);
-      cen.set([o.c.x, o.c.y, o.c.z], j * 3);
-      sed.set([seedC.x, seedC.y, seedC.z], j * 3);
-      col.set(colr, j * 3);
-      rad[j] = o.r;
-      // Faces pressed against a neighbour get less light.
-      ao[j] = isCut ? 1 : 0.5 + 0.5 * Math.min(1, Math.max(0, (rr / r0 - 0.7) / 0.3));
-      cut[j] = isCut;
-      sig[j] = sg;
-    }
-    for (let q = 0; q < ni; q++) idx[i * ni + q] = base.index.array[q] + i * nv;
-  });
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('aC', new THREE.BufferAttribute(cen, 3));
-  g.setAttribute('aSeed', new THREE.BufferAttribute(sed, 3));
-  g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
-  g.setAttribute('aR', new THREE.BufferAttribute(rad, 1));
-  g.setAttribute('aAo', new THREE.BufferAttribute(ao, 1));
-  g.setAttribute('aCut', new THREE.BufferAttribute(cut, 1));
-  g.setAttribute('aSig', new THREE.BufferAttribute(sig, 1));
-  g.setIndex(new THREE.BufferAttribute(idx, 1));
-  g.computeVertexNormals();
-  const AU = { ...U, uCamL: { value: new THREE.Vector3() }, uKeyL: { value: new THREE.Vector3() }, uRimL: { value: new THREE.Vector3() } };
-  const mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: AU, vertexShader: ARIL_VERT, fragmentShader: ARIL_FRAG }));
-  // The camera and the lights, in the half's own space, before each draw.
-  const inv = new THREE.Matrix4(), m3 = new THREE.Matrix3();
-  mesh.onBeforeRender = (r, s, cam) => {
-    inv.copy(mesh.matrixWorld).invert();
-    AU.uCamL.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(inv);
-    m3.setFromMatrix4(inv);
-    AU.uKeyL.value.copy(U.uKeyDir.value).applyMatrix3(m3).normalize();
-    AU.uRimL.value.copy(U.uRimDir.value).applyMatrix3(m3).normalize();
-  };
-  mesh.frustumCulled = false;
-  return mesh;
+  return makeArils(U, list, R, { cut: CUT });
 }
 
 // The crown: a flared tube whose rim splits into six sepals; dry stamens inside.

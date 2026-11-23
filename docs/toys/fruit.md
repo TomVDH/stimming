@@ -15,7 +15,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | 5 | Dragon fruit | White flesh speckled with black seeds in clear gel; curled bracts on the skin |
 | 6 | Rambutan | Glassy white flesh round a brown seed; long hooked spines (the fuzz ribbons) |
 | 7 | Mangosteen | A thick crimson rind round white segments; a green four-lobed cap |
-| 8 | Passion fruit | Golden jelly sacs, each a juice bead round a black seed, in a cream pith |
+| 8 | Passion fruit | A mound of 300 soft golden jelly sacs as real geometry, each with a dark seed off its middle, over a juice floor; a thick spongy pith with a yellow lining. Skin: deep purple folds and dimples, fine white specks |
 | 9 | Starfruit | A star slice: translucent yellow flesh, a pale star core, brown seeds |
 | 0 | Fig | A white rind round red fibres and pale seeds, a small dark hollow |
 
@@ -45,7 +45,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 | Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio (key, rim, fill and top softboxes) blurred by roughness; Schlick Fresnel |
 | Halves | `half.js` | A lathe skin per half, the cut face at x = 0. Skin colour, specks and pores run in fruit space, so the seam does not show. |
 | Cut face | `half.js` | A disc that follows the fruit's outline (a crease, a star), or a ring round a pit. Each fruit gives its colour and a relief; the relief bends a wet film that reflects the studio. |
-| Arils | `pomegranate.js` | Each aril is its own mesh: a teardrop whose radius is capped by a smooth minimum against the plane to each neighbour, and by the cut plane. Shading runs in the aril's own sphere space: the view chord, the seed, Beer-Lambert, a sharp studio reflection. Contact and depth darken it. |
+| Arils | `arils.js` (pomegranate, passion fruit) | Each aril is its own mesh: a teardrop whose radius is capped by a smooth minimum against the plane to each neighbour, and by the cut plane. Shading runs in the aril's own sphere space: the view chord, the seed, Beer-Lambert, a sharp studio reflection. Contact and depth darken it. |
 | Juice beads | `half.js` | Instanced ellipsoids. Four steps along the view chord in the bead's own space, a chord to each light from every step, Beer-Lambert per channel. A seed inside ends the view ray: seen through the juice. |
 | Fuzz | `fuzz.js` | Instanced ribbons on four control points with fibre wrap light. Per fruit: count, length, width, lift and curl (the rambutan's spines). |
 | Fruits | `kiwi.js` to `fig.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |

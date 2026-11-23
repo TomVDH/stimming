@@ -29,6 +29,7 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
 - [ ] Raspberry-grade procedural pass, one fruit at a time (Tom's order)
   - [x] Pomegranate (QA 16)
   - [x] Kiwi (QA 17)
+  - [x] Passion fruit (QA 18)
 - [ ] Menu icon for Fruit slice (the tile still shows the kiwi of round kiwi-1)
 - [ ] Tom sets the Dutch name
 - [ ] Tom hears the sound
