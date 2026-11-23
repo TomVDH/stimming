@@ -30,7 +30,11 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
   - [x] Pomegranate (QA 16)
   - [x] Kiwi (QA 17)
   - [x] Passion fruit (QA 18)
-  - [x] Blood orange (QA 19)
+  - [x] Blood orange (QA 19 to 22)
+  - [x] Dragon fruit (QA 23)
+- [ ] Floor contact for every fruit and half; no seams on whole fruit
+- [ ] Halves jiggle, squish and drip juice on their own
+- [ ] Backlit subsurface scattering
 - [ ] Menu icon for Fruit slice (the tile still shows the kiwi of round kiwi-1)
 - [ ] Tom sets the Dutch name
 - [ ] Tom hears the sound
